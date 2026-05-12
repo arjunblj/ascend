@@ -1715,6 +1715,77 @@ describe('applyOperation', () => {
 		expect(s.tables).toHaveLength(0)
 	})
 
+	test('row and column shifts reject ambiguous overlapping table ownership', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.cells.set(1, 0, { value: stringValue('kept'), formula: null, styleId: sid })
+		s.tables.push(
+			{
+				id: createTableId(),
+				name: 'Sales',
+				sheetId: s.id,
+				ref: { start: { row: 0, col: 0 }, end: { row: 2, col: 1 } },
+				columns: [{ name: 'Region' }, { name: 'Amount' }],
+				hasHeaders: true,
+				hasTotals: false,
+			},
+			{
+				id: createTableId(),
+				name: 'Forecast',
+				sheetId: s.id,
+				ref: { start: { row: 1, col: 1 }, end: { row: 3, col: 2 } },
+				columns: [{ name: 'Scenario' }, { name: 'Value' }],
+				hasHeaders: true,
+				hasTotals: false,
+			},
+		)
+
+		const result = applyOperation(wb, { op: 'insertRows', sheet: 'Sheet1', at: 1, count: 1 })
+
+		expectErr(result)
+		expect(result.error.message).toContain('would overlap table Forecast')
+		expect(s.cells.get(1, 0)?.value).toEqual(stringValue('kept'))
+		expect(s.tables[0]?.ref.end.row).toBe(2)
+		expect(s.tables[1]?.ref.start.row).toBe(1)
+
+		const colWb = createWorkbook()
+		const colSheet = colWb.addSheet('Sheet1')
+		colSheet.cells.set(0, 1, { value: stringValue('kept'), formula: null, styleId: sid })
+		colSheet.tables.push(
+			{
+				id: createTableId(),
+				name: 'Actuals',
+				sheetId: colSheet.id,
+				ref: { start: { row: 0, col: 0 }, end: { row: 1, col: 2 } },
+				columns: [{ name: 'Region' }, { name: 'Amount' }, { name: 'Owner' }],
+				hasHeaders: true,
+				hasTotals: false,
+			},
+			{
+				id: createTableId(),
+				name: 'Targets',
+				sheetId: colSheet.id,
+				ref: { start: { row: 1, col: 1 }, end: { row: 2, col: 3 } },
+				columns: [{ name: 'Scenario' }, { name: 'Value' }, { name: 'Owner' }],
+				hasHeaders: true,
+				hasTotals: false,
+			},
+		)
+
+		const colResult = applyOperation(colWb, {
+			op: 'insertCols',
+			sheet: 'Sheet1',
+			at: 1,
+			count: 1,
+		})
+
+		expectErr(colResult)
+		expect(colResult.error.message).toContain('would overlap table Targets')
+		expect(colSheet.cells.get(0, 1)?.value).toEqual(stringValue('kept'))
+		expect(colSheet.tables[0]?.ref.end.col).toBe(2)
+		expect(colSheet.tables[1]?.ref.start.col).toBe(1)
+	})
+
 	test('deleteCols prunes deleted sortCondition refs across sheet, autofilter, and table sort states', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')

@@ -4,6 +4,7 @@ import type {
 	SheetConditionalFormat,
 	SheetConditionalFormatValueObject,
 	SheetDataValidation,
+	Table,
 	Workbook,
 } from '@ascend/core'
 import { parseA1, parseRange, toA1 } from '@ascend/core'
@@ -19,6 +20,7 @@ import {
 	rewriteWorkbookFormulasForShift,
 	rewriteWorkbookMetadataFormulasForMove,
 } from '../structural/formula-rewrite.ts'
+import { shiftRangeRef } from '../structural/ref-shift.ts'
 import { shiftSheetCellMetadata } from '../structural/sheet-topology.ts'
 import {
 	collectDeletedTableColumns,
@@ -65,6 +67,8 @@ function applyAxisShift(
 	const tableBoundaryBlocker =
 		axis === 'row' && delta < 0 ? findPartialTableBoundaryRowDelete(sheet, at, count) : null
 	if (tableBoundaryBlocker) return err(tableBoundaryRowStructuralEditError(tableBoundaryBlocker))
+	const tableOverlapBlocker = findShiftedTableOverlap(sheet, axis, at, delta)
+	if (tableOverlapBlocker) return err(tableStructuralShiftOverlapError(tableOverlapBlocker))
 
 	if (axis === 'row') {
 		delta > 0 ? sheet.cells.insertRows(at, count) : sheet.cells.deleteRows(at, count)
@@ -385,6 +389,55 @@ function tableBoundaryRowStructuralEditError(
 			refs: [blocker.ref],
 			suggestedFix:
 				'Resize or delete the table explicitly before removing its header or totals row, or delete the full table range in one structural edit.',
+		},
+	)
+}
+
+interface ShiftedTableOverlap {
+	readonly leftName: string
+	readonly leftRef: string
+	readonly rightName: string
+	readonly rightRef: string
+}
+
+function findShiftedTableOverlap(
+	sheet: Sheet,
+	axis: 'row' | 'col',
+	at: number,
+	delta: number,
+): ShiftedTableOverlap | null {
+	const shiftedTables: Array<{ readonly table: Table; readonly ref: RangeRef }> = []
+	for (const table of sheet.tables) {
+		const ref = shiftRangeRef(table.ref, axis, at, delta)
+		if (ref) shiftedTables.push({ table, ref })
+	}
+	for (let i = 0; i < shiftedTables.length; i++) {
+		const left = shiftedTables[i]
+		if (!left) continue
+		for (let j = i + 1; j < shiftedTables.length; j++) {
+			const right = shiftedTables[j]
+			if (!right || !rangesOverlap(left.ref, right.ref)) continue
+			return {
+				leftName: left.table.name,
+				leftRef: rangeToA1(left.ref),
+				rightName: right.table.name,
+				rightRef: rangeToA1(right.ref),
+			}
+		}
+	}
+	return null
+}
+
+function tableStructuralShiftOverlapError(
+	blocker: ShiftedTableOverlap,
+): ReturnType<typeof ascendError> {
+	return ascendError(
+		'VALIDATION_ERROR',
+		`Cannot structurally edit rows or columns because shifted table ${blocker.leftName} at ${blocker.leftRef} would overlap table ${blocker.rightName} at ${blocker.rightRef}`,
+		{
+			refs: [blocker.leftRef, blocker.rightRef],
+			suggestedFix:
+				'Resolve the overlapping table ranges before applying row or column structural edits.',
 		},
 	)
 }

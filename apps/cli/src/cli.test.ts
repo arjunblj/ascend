@@ -95,6 +95,7 @@ afterAll(() => {
 		'exported.tsv',
 		'exported.json',
 		'plan-ops.json',
+		'plan-risk-ops.json',
 		'commit-ops.json',
 		'commit-output.xlsx',
 		'commit-pretty-output.xlsx',
@@ -318,6 +319,24 @@ describe('ascend cli', () => {
 		)
 		expect(prettyCommit.exitCode).toBe(0)
 		expect(prettyCommit.stdout).toContain('Post-write package graph issues: 0')
+	})
+
+	test('plan pretty output exposes write-policy package part details', async () => {
+		await Bun.write(`${import.meta.dir}/${ACTIVE_CONTENT_FILE}`, signedMacroWorkbook())
+		await Bun.write(
+			`${import.meta.dir}/plan-risk-ops.json`,
+			JSON.stringify([
+				{ op: 'setCells', sheet: 'Data', updates: [{ ref: 'A1', value: 'risk-visible' }] },
+			]),
+		)
+
+		const plan = await run('plan', ACTIVE_CONTENT_FILE, '--ops', 'plan-risk-ops.json')
+		expect(plan.exitCode).toBe(0)
+		expect(plan.stdout).toContain('Write policy diagnostics:')
+		expect(plan.stdout).toContain('Write policy active-content-preserved:')
+		expect(plan.stdout).toContain('active-content-preserved package parts:')
+		expect(plan.stdout).toContain('xl/vbaProject.bin (preservedMacro')
+		expect(plan.stdout).toContain('Write policy approval-required-feature:')
 	})
 
 	test('plan, commit, and check can emit JSONL progress events', async () => {

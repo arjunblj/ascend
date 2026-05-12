@@ -4,6 +4,7 @@ import { type AgentCommitOptions, commitAgentPlan, parseOperations } from '@asce
 import { cliError, jsonOut } from '../output/json.ts'
 import { bullet, heading } from '../output/pretty.ts'
 import { createAgentProgressReporter } from '../progress.ts'
+import { printWritePolicySummary } from './agent-workflow-output.ts'
 
 export const usage = `Usage: ascend commit <file> --ops <file.json> --output <out.xlsx> [flags]
        ascend commit <file> --ops <file.json> --in-place [--backup <backup.xlsx>]
@@ -62,6 +63,7 @@ export async function commitCommand(args: string[], flags: Map<string, string>):
 	console.log(bullet('Output SHA-256', result.outputSha256))
 	console.log(bullet('Plan digest', result.planDigest))
 	console.log(bullet('Package graph issues', result.packageGraphAudit.issues.length))
+	printWritePolicySummary(result.writePolicy)
 	console.log(
 		bullet('Post-write package graph issues', result.postWrite.packageGraphAudit.issues.length),
 	)

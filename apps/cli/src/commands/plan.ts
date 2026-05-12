@@ -4,6 +4,7 @@ import { createAgentPlan, parseOperations } from '@ascend/sdk'
 import { cliError, jsonErr, jsonOut } from '../output/json.ts'
 import { bullet, heading } from '../output/pretty.ts'
 import { createAgentProgressReporter } from '../progress.ts'
+import { printWritePolicySummary } from './agent-workflow-output.ts'
 
 export const usage = `Usage: ascend plan <file> --ops <file.json> [flags]
 
@@ -54,6 +55,7 @@ export async function planCommand(args: string[], flags: Map<string, string>): P
 	console.log(bullet('Cell changes', result.preview.cellChanges.length))
 	console.log(bullet('Package graph issues', result.packageGraphAudit.issues.length))
 	console.log(bullet('Write parts', result.preservation.totalParts))
+	printWritePolicySummary(result.writePolicy)
 	console.log(bullet('Approval required', result.needsApproval ? 'yes' : 'no'))
 	for (const approval of result.approvals) {
 		console.log(bullet(`Approval ${approval.id}`, approval.title))

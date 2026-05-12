@@ -29,6 +29,9 @@ export type {
 	PackageGraphAudit,
 	RepairAction,
 	RepairPlanResult,
+	WritePolicyDiagnostic,
+	WritePolicyPackagePart,
+	WritePolicyReport,
 } from './agent-workflow.ts'
 export {
 	auditLossPolicy,

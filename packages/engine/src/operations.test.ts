@@ -2106,6 +2106,65 @@ describe('applyOperation', () => {
 		expect(s.x14ConditionalFormats[0]?.iconSet?.cfvo[0]?.value).toBe('B3')
 	})
 
+	test('deleteRows rewrites deleted formula refs to #REF! across formula surfaces', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.cells.set(0, 0, cell(numberValue(1)))
+		s.cells.set(1, 0, cell(numberValue(2)))
+		s.cells.set(2, 0, cell(numberValue(3)))
+		s.cells.set(0, 3, cell(EMPTY, 'A2'))
+		s.cells.set(0, 4, cell(EMPTY, 'SUM(A2)'))
+		s.cells.set(0, 5, cell(EMPTY, 'SUM(A1:A3)'))
+		wb.definedNames.set('DeletedInput', 'Sheet1!A2')
+		s.dataValidations.push({ sqref: 'G1', type: 'list', formula1: 'A2' })
+		s.conditionalFormats.push({
+			sqref: 'H1',
+			rules: [
+				{
+					type: 'expression',
+					formulas: ['A2>0'],
+					colorScale: {
+						cfvo: [{ type: 'formula', value: 'A2' }],
+						colors: [{ rgb: 'FFFF0000' }],
+					},
+				},
+			],
+		})
+		s.x14DataValidations.push({ index: 0, sqref: 'I1', type: 'list', formula1: 'A2' })
+		s.x14ConditionalFormats.push({
+			index: 0,
+			sqref: 'J1',
+			formulas: ['A2>0'],
+			dataBar: { cfvo: [{ type: 'formula', value: 'A2' }] },
+			iconSet: { cfvo: [{ type: 'formula', value: 'A2' }] },
+		})
+		s.tables.push({
+			id: createTableId(),
+			name: 'FormulaTable',
+			sheetId: s.id,
+			ref: { start: { row: 4, col: 0 }, end: { row: 5, col: 1 } },
+			columns: [{ name: 'Name' }, { name: 'Calc', formula: 'A2', totalsRowFormula: 'SUM(A1:A3)' }],
+			hasHeaders: true,
+			hasTotals: false,
+		})
+
+		expectOk(applyOperation(wb, { op: 'deleteRows', sheet: 'Sheet1', at: 1, count: 1 }))
+
+		expect(s.cells.get(0, 3)?.formula).toBe('#REF!')
+		expect(s.cells.get(0, 4)?.formula).toBe('SUM(#REF!)')
+		expect(s.cells.get(0, 5)?.formula).toBe('SUM(A1:A2)')
+		expect(wb.definedNames.get('DeletedInput')).toBe('#REF!')
+		expect(s.dataValidations[0]?.formula1).toBe('#REF!')
+		expect(s.conditionalFormats[0]?.rules[0]?.formulas).toEqual(['#REF!>0'])
+		expect(s.conditionalFormats[0]?.rules[0]?.colorScale?.cfvo[0]?.value).toBe('#REF!')
+		expect(s.x14DataValidations[0]?.formula1).toBe('#REF!')
+		expect(s.x14ConditionalFormats[0]?.formulas).toEqual(['#REF!>0'])
+		expect(s.x14ConditionalFormats[0]?.dataBar?.cfvo[0]?.value).toBe('#REF!')
+		expect(s.x14ConditionalFormats[0]?.iconSet?.cfvo[0]?.value).toBe('#REF!')
+		expect(s.tables[0]?.columns[1]?.formula).toBe('#REF!')
+		expect(s.tables[0]?.columns[1]?.totalsRowFormula).toBe('SUM(A1:A2)')
+	})
+
 	test('deleteRows rejects partial table header row deletion', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')
@@ -2993,6 +3052,40 @@ describe('applyOperation', () => {
 
 		expect(s.cells.get(1, 0)?.formula).toBe('SUM(A1:B1)')
 		expect(s.cells.get(2, 0)?.formula).toBe('SUM(A:B)')
+	})
+
+	test('deleteCols rewrites deleted formula refs to #REF! across formula surfaces', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.cells.set(0, 0, cell(numberValue(1)))
+		s.cells.set(0, 1, cell(numberValue(2)))
+		s.cells.set(0, 2, cell(numberValue(3)))
+		s.cells.set(1, 0, cell(EMPTY, 'B1'))
+		s.cells.set(2, 0, cell(EMPTY, 'SUM(A1:C1)'))
+		wb.definedNames.set('DeletedColumnInput', 'Sheet1!B1')
+		s.dataValidations.push({ sqref: 'A4', type: 'list', formula1: 'B1' })
+		s.conditionalFormats.push({
+			sqref: 'A5',
+			rules: [{ type: 'expression', formulas: ['B1>0'] }],
+		})
+		s.x14DataValidations.push({ index: 0, sqref: 'A6', type: 'list', formula1: 'B1' })
+		s.x14ConditionalFormats.push({
+			index: 0,
+			sqref: 'A7',
+			formulas: ['B1>0'],
+			dataBar: { cfvo: [{ type: 'formula', value: 'B1' }] },
+		})
+
+		expectOk(applyOperation(wb, { op: 'deleteCols', sheet: 'Sheet1', at: 1, count: 1 }))
+
+		expect(s.cells.get(1, 0)?.formula).toBe('#REF!')
+		expect(s.cells.get(2, 0)?.formula).toBe('SUM(A1:B1)')
+		expect(wb.definedNames.get('DeletedColumnInput')).toBe('#REF!')
+		expect(s.dataValidations[0]?.formula1).toBe('#REF!')
+		expect(s.conditionalFormats[0]?.rules[0]?.formulas).toEqual(['#REF!>0'])
+		expect(s.x14DataValidations[0]?.formula1).toBe('#REF!')
+		expect(s.x14ConditionalFormats[0]?.formulas).toEqual(['#REF!>0'])
+		expect(s.x14ConditionalFormats[0]?.dataBar?.cfvo[0]?.value).toBe('#REF!')
 	})
 
 	test('row and column shifts reject legacy array formula impact', () => {

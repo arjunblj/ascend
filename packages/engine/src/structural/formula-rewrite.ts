@@ -2,11 +2,12 @@ import type { Cell, RangeRef, Sheet, Table, Workbook } from '@ascend/core'
 import { parseRange } from '@ascend/core'
 import type { FormulaCellRef, FormulaNode } from '@ascend/formulas'
 import { cachedParseFormula, printFormula } from '@ascend/formulas'
-import { shiftIndex } from './ref-shift.ts'
+import { shiftIndex, shiftRangeBounds } from './ref-shift.ts'
 
 type ConditionalFormatRule = Sheet['conditionalFormats'][number]['rules'][number]
 type X14ConditionalFormat = Sheet['x14ConditionalFormats'][number]
 type FormulaTextRewriter = (formula: string | undefined) => string | undefined
+const REF_ERROR_NODE: FormulaNode = { type: 'error', value: '#REF!' }
 
 export function rewriteWorkbookFormulasForShift(
 	workbook: Workbook,
@@ -1107,29 +1108,18 @@ export function rewriteFormulaAstForShift(
 ): FormulaNode {
 	const onTarget = (refSheet: string | undefined) => (refSheet ?? formulaSheet) === targetSheet
 
-	const shiftRef = (ref: FormulaCellRef, isOnTarget: boolean): FormulaCellRef => {
+	const shiftRef = (ref: FormulaCellRef, isOnTarget: boolean): FormulaCellRef | null => {
 		if (!isOnTarget) return ref
-		if (axis === 'row') {
-			if (delta > 0) {
-				if (ref.row >= at) return { ...ref, row: ref.row + delta }
-			} else {
-				const deleteEnd = at - delta
-				if (ref.row >= deleteEnd) return { ...ref, row: ref.row + delta }
-			}
-		} else {
-			if (delta > 0) {
-				if (ref.col >= at) return { ...ref, col: ref.col + delta }
-			} else {
-				const deleteEnd = at - delta
-				if (ref.col >= deleteEnd) return { ...ref, col: ref.col + delta }
-			}
-		}
-		return ref
+		const next = axis === 'row' ? shiftIndex(ref.row, at, delta) : shiftIndex(ref.col, at, delta)
+		if (next === null) return null
+		if (axis === 'row') return next === ref.row ? ref : { ...ref, row: next }
+		return next === ref.col ? ref : { ...ref, col: next }
 	}
 
 	switch (node.type) {
 		case 'cellRef': {
 			const ref = shiftRef(node.ref, onTarget(node.sheet))
+			if (!ref) return REF_ERROR_NODE
 			return ref === node.ref
 				? node
 				: node.sheet !== undefined
@@ -1138,8 +1128,17 @@ export function rewriteFormulaAstForShift(
 		}
 		case 'rangeRef': {
 			const hit = onTarget(node.sheet)
-			const start = shiftRef(node.start, hit)
-			const end = shiftRef(node.end, hit)
+			if (!hit) return node
+			const startIndex = axis === 'row' ? node.start.row : node.start.col
+			const endIndex = axis === 'row' ? node.end.row : node.end.col
+			const shifted = shiftRangeBounds(startIndex, endIndex, at, delta)
+			if (!shifted) return REF_ERROR_NODE
+			const start =
+				axis === 'row'
+					? { ...node.start, row: shifted.start }
+					: { ...node.start, col: shifted.start }
+			const end =
+				axis === 'row' ? { ...node.end, row: shifted.end } : { ...node.end, col: shifted.end }
 			return start === node.start && end === node.end
 				? node
 				: node.sheet !== undefined
@@ -1148,9 +1147,10 @@ export function rewriteFormulaAstForShift(
 		}
 		case 'wholeRowRange': {
 			if (!onTarget(node.sheet) || axis !== 'row') return node
-			const startRow = shiftIndex(node.startRow, at, delta)
-			const endRow = shiftIndex(node.endRow, at, delta)
-			if (startRow === null || endRow === null) return node
+			const shifted = shiftRangeBounds(node.startRow, node.endRow, at, delta)
+			if (!shifted) return REF_ERROR_NODE
+			const startRow = shifted.start
+			const endRow = shifted.end
 			return startRow === node.startRow && endRow === node.endRow
 				? node
 				: node.sheet !== undefined
@@ -1159,9 +1159,10 @@ export function rewriteFormulaAstForShift(
 		}
 		case 'wholeColumnRange': {
 			if (!onTarget(node.sheet) || axis !== 'col') return node
-			const startCol = shiftIndex(node.startCol, at, delta)
-			const endCol = shiftIndex(node.endCol, at, delta)
-			if (startCol === null || endCol === null) return node
+			const shifted = shiftRangeBounds(node.startCol, node.endCol, at, delta)
+			if (!shifted) return REF_ERROR_NODE
+			const startCol = shifted.start
+			const endCol = shifted.end
 			return startCol === node.startCol && endCol === node.endCol
 				? node
 				: node.sheet !== undefined

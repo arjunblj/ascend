@@ -121,25 +121,33 @@ describe('OOXML feature probe', () => {
 		const bytes = makeXlsx({
 			'xl/workbook.xml': '<workbook/>',
 			'xl/worksheets/sheet1.xml': '<worksheet/>',
+			'xl/tables/custom_sales.xml': '<table/>',
+			'xl/tables/_rels/custom_sales.xml.rels': '<Relationships/>',
+			'xl/tables/custom_sales.bin': 'not xml',
 			'xl/slicerCaches/cache_region.xml': `<?xml version="1.0"?>
 <slicerCacheDefinition name="Slicer_Region">
   <pivotTables><pivotTable name="PivotTable1"/></pivotTables>
 </slicerCacheDefinition>`,
 			'xl/slicerCaches/_rels/cache_region.xml.rels': '<Relationships/>',
+			'xl/slicerCaches/cache_region.bin': 'not xml',
 			'xl/slicers/ui_region.xml': `<?xml version="1.0"?>
 <slicers><slicer name="Region" cache="Slicer_Region"/></slicers>`,
+			'xl/slicers/ui_region.bin': 'not xml',
 			'xl/timelineCaches/cache_date.xml': `<?xml version="1.0"?>
 <timelineCacheDefinition name="Timeline_Date">
   <pivotTables><pivotTable name="PivotTable1"/></pivotTables>
 </timelineCacheDefinition>`,
 			'xl/timelineCaches/_rels/cache_date.xml.rels': '<Relationships/>',
+			'xl/timelineCaches/cache_date.bin': 'not xml',
 			'xl/timelines/ui_date.xml': `<?xml version="1.0"?>
 <timelines><timeline name="Date" cache="Timeline_Date"/></timelines>`,
+			'xl/timelines/ui_date.bin': 'not xml',
 		})
 
 		const probe = inspectOoxmlPackageFeatures(bytes)
 
 		expect(probe.counts).toMatchObject({
+			tables: 1,
 			slicer_caches: 1,
 			slicers: 1,
 			timeline_caches: 1,

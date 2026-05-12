@@ -423,6 +423,16 @@ describe('checker', () => {
 						featureFamily: 'preservedTable',
 						ownerScope: 'worksheet',
 					},
+					{
+						path: 'xl/tables/table_custom.bin',
+						featureFamily: 'preservedTable',
+						ownerScope: 'worksheet',
+					},
+					{
+						path: 'xl/tables/_rels/table_custom.xml.rels',
+						featureFamily: 'preservedTable',
+						ownerScope: 'relationship-part',
+					},
 				],
 				relationships: [
 					{
@@ -919,9 +929,19 @@ describe('checker', () => {
 						ownerScope: 'relationship-part',
 					},
 					{
+						path: 'xl/slicerCaches/cache_region.bin',
+						featureFamily: 'preservedSlicer',
+						ownerScope: 'workbook',
+					},
+					{
 						path: 'xl/timelineCaches/_rels/cache_date.xml.rels',
 						featureFamily: 'packageRelationships',
 						ownerScope: 'relationship-part',
+					},
+					{
+						path: 'xl/timelines/ui_date.bin',
+						featureFamily: 'preservedTimeline',
+						ownerScope: 'worksheet',
 					},
 				],
 				relationships: [],

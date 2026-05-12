@@ -38,17 +38,25 @@ describe('OOXML package summaries', () => {
 		const bytes = makeXlsx({
 			'xl/workbook.xml': '<workbook/>',
 			'xl/worksheets/sheet1.xml': '<worksheet/>',
+			'xl/tables/custom_sales.xml': '<table/>',
+			'xl/tables/_rels/custom_sales.xml.rels': '<Relationships/>',
+			'xl/tables/custom_sales.bin': 'not xml',
 			'xl/slicerCaches/cache_region.xml': '<slicerCacheDefinition/>',
 			'xl/slicerCaches/_rels/cache_region.xml.rels': '<Relationships/>',
+			'xl/slicerCaches/cache_region.bin': 'not xml',
 			'xl/slicers/ui_region.xml': '<slicers/>',
 			'xl/slicers/_rels/ui_region.xml.rels': '<Relationships/>',
+			'xl/slicers/ui_region.bin': 'not xml',
 			'xl/timelineCaches/cache_date.xml': '<timelineCacheDefinition/>',
 			'xl/timelineCaches/_rels/cache_date.xml.rels': '<Relationships/>',
+			'xl/timelineCaches/cache_date.bin': 'not xml',
 			'xl/timelines/ui_date.xml': '<timelines/>',
 			'xl/timelines/_rels/ui_date.xml.rels': '<Relationships/>',
+			'xl/timelines/ui_date.bin': 'not xml',
 		})
 
 		expect(summarizeOoxmlPackage(bytes).families).toMatchObject({
+			tables: 1,
 			slicerCaches: 1,
 			slicers: 1,
 			timelineCaches: 1,

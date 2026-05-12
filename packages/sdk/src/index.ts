@@ -119,6 +119,7 @@ export type {
 	FormulaReferenceScope,
 	GetPivotDataFilter,
 	GetPivotDataMatchInfo,
+	GetPivotDataOutputInfo,
 	GetPivotDataQuery,
 	GetPivotDataResult,
 	HyperlinkSummary,

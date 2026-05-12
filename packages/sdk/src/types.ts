@@ -487,12 +487,19 @@ export interface GetPivotDataMatchInfo {
 	readonly dataField: PivotDataFieldInfo
 	readonly matchedFilters: readonly GetPivotDataFilter[]
 	readonly unmatchedFilters: readonly GetPivotDataFilter[]
+	readonly output?: GetPivotDataOutputInfo
+}
+
+export interface GetPivotDataOutputInfo {
+	readonly sheetName: string
+	readonly ref: string
+	readonly value: CellValue
 }
 
 export interface GetPivotDataResult {
 	readonly query: GetPivotDataQuery
 	readonly matches: readonly GetPivotDataMatchInfo[]
-	readonly canResolveOutput: false
+	readonly canResolveOutput: boolean
 	readonly warnings: readonly string[]
 }
 

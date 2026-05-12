@@ -69,6 +69,7 @@ import type {
 	FlatCellValue,
 	FormulaInfo,
 	FormulaReferenceInfo,
+	GetPivotDataFilter,
 	GetPivotDataQuery,
 	GetPivotDataResult,
 	PivotCacheDecodedValueInfo,
@@ -706,7 +707,7 @@ export class WorkbookReadView {
 	}
 
 	getPivotData(query: GetPivotDataQuery): GetPivotDataResult {
-		return buildGetPivotDataResult(query, this.wb.pivotTables)
+		return buildGetPivotDataResult(query, this.wb)
 	}
 
 	slicerCaches(): readonly SlicerCacheInfo[] {
@@ -3749,14 +3750,11 @@ function copyPivotTableInfo(pivot: PivotTableInfo): PivotTableInfo {
 	return clonePivotTableInfo(pivot)
 }
 
-function buildGetPivotDataResult(
-	query: GetPivotDataQuery,
-	pivots: readonly PivotTableInfo[],
-): GetPivotDataResult {
+function buildGetPivotDataResult(query: GetPivotDataQuery, workbook: Workbook): GetPivotDataResult {
 	const normalizedDataField = query.dataField.toLowerCase()
 	const normalizedPivotTable = query.pivotTable?.toLowerCase()
 	const filters = query.filters ?? []
-	const matches = pivots.flatMap((pivot) => {
+	const matches = workbook.pivotTables.flatMap((pivot) => {
 		if (normalizedPivotTable && pivot.name?.toLowerCase() !== normalizedPivotTable) return []
 		const dataField = pivot.dataFields.find((field) => {
 			return (
@@ -3774,32 +3772,148 @@ function buildGetPivotDataResult(
 		const unmatchedFilters = filters.filter(
 			(filter) => !pivotFieldNames.has(filter.field.toLowerCase()),
 		)
+		const output =
+			unmatchedFilters.length === 0
+				? resolveSavedPivotOutput(workbook, pivot, query.dataField, filters)
+				: undefined
 		return [
 			{
 				pivotTable: copyPivotTableInfo(pivot),
 				dataField: { ...dataField },
 				matchedFilters,
 				unmatchedFilters,
+				...(output ? { output } : {}),
 			},
 		]
 	})
-	const warnings = [
-		'GETPIVOTDATA metadata can be resolved, but pivot output values are not recalculated headlessly.',
-	]
+	const canResolveOutput = matches.some((match) => match.output !== undefined)
+	const warnings: string[] = []
 	if (matches.length === 0) {
 		warnings.push('No matching pivot table/data field metadata was found.')
+	}
+	if (matches.length > 0 && !canResolveOutput) {
+		warnings.push(
+			'GETPIVOTDATA metadata can be resolved, but no matching saved pivot output value was found.',
+		)
 	}
 	if (matches.some((match) => match.unmatchedFilters.length > 0)) {
 		warnings.push(
 			'Some requested field/item filters are not present in inspectable pivot metadata.',
 		)
 	}
+	warnings.push('GETPIVOTDATA saved output values are read from the workbook, not recalculated.')
 	return {
 		query,
 		matches,
-		canResolveOutput: false,
+		canResolveOutput,
 		warnings,
 	}
+}
+
+function resolveSavedPivotOutput(
+	workbook: Workbook,
+	pivot: PivotTableInfo,
+	dataField: string,
+	filters: readonly GetPivotDataFilter[],
+): { sheetName: string; ref: string; value: CellValue } | undefined {
+	if (!pivot.locationRef) return undefined
+	let bounds: RangeRef
+	try {
+		bounds = parseRange(pivot.locationRef)
+	} catch {
+		return undefined
+	}
+	const sheetIndex = workbook.sheets.findIndex((entry) => entry.name === pivot.sheetName)
+	const sheet = workbook.sheets[sheetIndex]
+	if (!sheet) return undefined
+	const header = findSavedPivotDataHeader(sheet, bounds, dataField)
+	if (!header) return undefined
+	const fieldColumns = filters.map((filter) => ({
+		filter,
+		col: findSavedPivotFieldColumn(sheet, bounds, header.row, header.col, filter.field),
+	}))
+	if (fieldColumns.some((entry) => entry.col === undefined)) return undefined
+	for (let row = header.row + 1; row <= bounds.end.row; row++) {
+		if (!savedPivotRowMatchesFilters(sheet, bounds, row, fieldColumns)) continue
+		const col =
+			fieldColumns.length === 0 && header.col === bounds.start.col
+				? rightmostSavedPivotRowValueCol(sheet, bounds, row)
+				: header.col
+		if (col === undefined) return undefined
+		return {
+			sheetName: pivot.sheetName,
+			ref: `${indexToColumn(col)}${row + 1}`,
+			value: sheet.cells.get(row, col)?.value ?? EMPTY,
+		}
+	}
+	return undefined
+}
+
+function findSavedPivotDataHeader(
+	sheet: Workbook['sheets'][number],
+	bounds: RangeRef,
+	dataField: string,
+): { row: number; col: number } | undefined {
+	const normalizedDataField = normalizePivotAuditText(dataField)
+	const maxHeaderRow = Math.min(bounds.end.row, bounds.start.row + 8)
+	for (let row = bounds.start.row; row <= maxHeaderRow; row++) {
+		for (let col = bounds.start.col; col <= bounds.end.col; col++) {
+			const header = normalizePivotAuditText(cellText(sheet.cells.get(row, col)?.value ?? EMPTY))
+			if (header === normalizedDataField) {
+				return { row, col }
+			}
+		}
+	}
+	return undefined
+}
+
+function findSavedPivotFieldColumn(
+	sheet: Workbook['sheets'][number],
+	bounds: RangeRef,
+	headerRow: number,
+	dataCol: number,
+	fieldName: string,
+): number | undefined {
+	const normalizedFieldName = normalizePivotAuditText(fieldName)
+	for (let col = bounds.start.col; col < dataCol; col++) {
+		const header = normalizePivotAuditText(
+			cellText(sheet.cells.get(headerRow, col)?.value ?? EMPTY),
+		)
+		if (header === normalizedFieldName) return col
+	}
+	return dataCol > bounds.start.col ? bounds.start.col : undefined
+}
+
+function savedPivotRowMatchesFilters(
+	sheet: Workbook['sheets'][number],
+	bounds: RangeRef,
+	row: number,
+	fieldColumns: readonly {
+		readonly filter: GetPivotDataFilter
+		readonly col: number | undefined
+	}[],
+): boolean {
+	if (fieldColumns.length === 0) {
+		const label = cellText(sheet.cells.get(row, bounds.start.col)?.value ?? EMPTY)
+		return normalizeGrandTotalLabel(label) === 'Grand Total'
+	}
+	for (const entry of fieldColumns) {
+		if (entry.col === undefined) return false
+		const value = normalizePivotAuditText(cellText(sheet.cells.get(row, entry.col)?.value ?? EMPTY))
+		if (value !== normalizePivotAuditText(entry.filter.item)) return false
+	}
+	return true
+}
+
+function rightmostSavedPivotRowValueCol(
+	sheet: Workbook['sheets'][number],
+	bounds: RangeRef,
+	row: number,
+): number | undefined {
+	for (let col = bounds.end.col; col > bounds.start.col; col--) {
+		if ((sheet.cells.get(row, col)?.value ?? EMPTY).kind !== 'empty') return col
+	}
+	return undefined
 }
 
 function buildExternalReferenceUsages(

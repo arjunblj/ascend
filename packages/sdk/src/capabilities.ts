@@ -657,8 +657,8 @@ export const EXCEL_CAPABILITIES: readonly ExcelCapability[] = [
 		'GETPIVOTDATA',
 		'inspectable',
 		'P1',
-		'Resolve output values after headless pivot-cache recalculation exists.',
-		'GETPIVOTDATA-style SDK queries resolve matching pivot table/data-field metadata and return explicit warnings that output values are not recalculated headlessly.',
+		'Resolve output values from recalculated pivot output after headless pivot-cache refresh exists.',
+		'GETPIVOTDATA-style SDK queries resolve matching pivot table/data-field metadata and saved visible output values when present; stale, missing, or structurally unsupported pivot output still requires pivot refresh work.',
 		['packages/sdk/src/get-pivot-data.test.ts'],
 	),
 

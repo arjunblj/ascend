@@ -155,6 +155,50 @@ export function createServer(): McpServer {
 	)
 
 	server.tool(
+		'ascend.active_content',
+		'Inspect macros, Excel 4 macro sheets, ActiveX/form controls, signatures, and related preserve-first edit risks',
+		{
+			file: z.string().describe('Path to workbook file'),
+		},
+		async ({ file }) => {
+			try {
+				const wb = await WorkbookDocument.open(file, { mode: 'full' })
+				const info = wb.inspect()
+				const activeFeatureFamilies = new Set([
+					'preservedMacro',
+					'preservedMacroSheet',
+					'preservedActiveContent',
+					'preservedSignature',
+				])
+				const compatibilityFeatures = info.compatibility.features.filter(
+					(feature) =>
+						activeFeatureFamilies.has(feature.feature) ||
+						feature.locations.some((location) =>
+							/(vba|macro|activex|ctrlprops|_xmlsignatures|signature)/i.test(location),
+						),
+				)
+				return okResponse(
+					{
+						activeContentCount: info.activeContentCount,
+						macroSheetCount: info.macroSheetCount,
+						activeContent: info.activeContent,
+						macroSheets: info.macroSheets,
+						compatibilityFeatures,
+						capabilityWarnings: info.capabilityWarnings.filter(
+							(warning) => warning.family === 'active content',
+						),
+					},
+					`Inspected ${info.activeContentCount} active-content part(s) in "${file}"`,
+				)
+			} catch (e) {
+				return errorResponse(
+					e instanceof AscendException ? e.ascendError : String(e instanceof Error ? e.message : e),
+				)
+			}
+		},
+	)
+
+	server.tool(
 		'ascend.visuals',
 		'Inspect workbook visual inventory: charts, drawings, media, image anchors, drawing object links, and preserve-first visual gaps',
 		{
@@ -1088,13 +1132,14 @@ function buildAgentWorkflowGuide(): string {
 		'# Ascend Agent Workflow',
 		'',
 		'1. Inspect workbook structure with ascend.inspect or ascend.list_sheets.',
-		'2. Locate data with ascend.find, ascend.read, ascend.read_table, ascend.visuals, and ascend.pivots for PivotTable inventory/audits/materialization ops.',
-		'3. Use ascend.search_docs or ascend.search_examples when you need command, schema, workflow, or example recovery context.',
-		'4. Fetch operation schemas from ascend.list_operations or ascend://operations.',
-		'5. Preview edits with ascend.plan before writing.',
-		'6. Commit with ascend.commit using output paths, input hash guards, approvals, and allow-loss only when explicit.',
-		'7. Verify with ascend.check, ascend.lint, ascend.trace, ascend.diff, and ascend.export as needed.',
-		'8. Use ascend.repair_plan when checks, lints, approvals, or unsupported-feature audits need recovery actions.',
+		'2. Audit high-risk workbook content with ascend.active_content before editing macro-enabled, signed, ActiveX, or Excel 4 macro-sheet files.',
+		'3. Locate data with ascend.find, ascend.read, ascend.read_table, ascend.visuals, and ascend.pivots for PivotTable inventory/audits/materialization ops.',
+		'4. Use ascend.search_docs or ascend.search_examples when you need command, schema, workflow, or example recovery context.',
+		'5. Fetch operation schemas from ascend.list_operations or ascend://operations.',
+		'6. Preview edits with ascend.plan before writing.',
+		'7. Commit with ascend.commit using output paths, input hash guards, approvals, and allow-loss only when explicit.',
+		'8. Verify with ascend.check, ascend.lint, ascend.trace, ascend.diff, and ascend.export as needed.',
+		'9. Use ascend.repair_plan when checks, lints, approvals, or unsupported-feature audits need recovery actions.',
 	].join('\n')
 }
 
@@ -1109,7 +1154,8 @@ function buildAgentWorkflowPrompt(file?: string, task?: string): string {
 		'',
 		'Use Ascend as the source of truth for spreadsheet structure and edit safety.',
 		'If you need recovery context, call ascend.search_docs or ascend.search_examples before guessing.',
-		'Start with ascend.inspect or ascend.list_sheets, then use ascend.read, ascend.read_table, ascend.find, ascend.visuals, and ascend.pivots to gather only the necessary workbook context.',
+		'Start with ascend.inspect or ascend.list_sheets; call ascend.active_content before editing macro-enabled, signed, ActiveX, or Excel 4 macro-sheet workbooks.',
+		'Then use ascend.read, ascend.read_table, ascend.find, ascend.visuals, and ascend.pivots to gather only the necessary workbook context.',
 		'Before modifying anything, read ascend://operations or call ascend.list_operations and build operations that match the published schemas.',
 		'Always run ascend.plan and inspect approvals, unsupported features, preview diffs, recalc status, and modelOutput before commit.',
 		'Use ascend.commit with a non-destructive output path by default, pass expectSha256 when available, and only pass approvals or allowLoss values emitted by the plan.',

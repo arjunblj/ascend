@@ -3,6 +3,7 @@ import { unlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { AscendWorkbook, parseOperations } from '@ascend/sdk'
+import { makeXlsx } from '../../../packages/io-xlsx/test/helpers.ts'
 import { createServer } from './index.ts'
 
 const TEMP_FILE = join(
@@ -32,6 +33,7 @@ describe('MCP server', () => {
 		const names = Object.keys(registered)
 
 		expect(names).toContain('ascend.inspect')
+		expect(names).toContain('ascend.active_content')
 		expect(names).toContain('ascend.search_docs')
 		expect(names).toContain('ascend.search_examples')
 		expect(names).toContain('ascend.read')
@@ -55,7 +57,7 @@ describe('MCP server', () => {
 		expect(names).toContain('ascend.plan')
 		expect(names).toContain('ascend.commit')
 		expect(names).toContain('ascend.repair_plan')
-		expect(names.length).toBe(24)
+		expect(names.length).toBe(25)
 	})
 
 	test('agent resources and prompts are registered', () => {
@@ -165,7 +167,68 @@ describe('MCP server', () => {
 		expect(text).toContain('Workbook: book.xlsx')
 		expect(text).toContain('ascend.plan')
 		expect(text).toContain('ascend.commit')
+		expect(text).toContain('ascend.active_content')
 		expect(text).toContain('allowLoss')
+	})
+
+	test('ascend.active_content exposes focused active-content provenance for agents', async () => {
+		const activeFile = join(
+			tmpdir(),
+			`ascend-mcp-active-${Date.now()}-${Math.random().toString(16).slice(2)}.xlsm`,
+		)
+		await Bun.write(activeFile, signedMacroWorkbook())
+		try {
+			const server = createServer()
+			// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+			const handler = (server as any)._registeredTools['ascend.active_content'].handler as (args: {
+				file: string
+			}) => Promise<{
+				structuredContent?: {
+					ok?: boolean
+					data?: {
+						activeContentCount?: number
+						activeContent?: Array<{
+							kind?: string
+							partPath?: string
+							sourcePartPath?: string
+							sourceRelationshipId?: string
+							relType?: string
+						}>
+						compatibilityFeatures?: Array<{ feature?: string; locations?: readonly string[] }>
+					}
+				}
+			}>
+
+			const result = await handler({ file: activeFile })
+			const data = result.structuredContent?.data
+
+			expect(result.structuredContent?.ok).toBe(true)
+			expect(data?.activeContentCount).toBe(2)
+			expect(data?.activeContent).toContainEqual(
+				expect.objectContaining({
+					kind: 'vbaProject',
+					partPath: 'xl/vbaProject.bin',
+					sourceRelationshipId: 'rIdVba',
+				}),
+			)
+			expect(data?.activeContent).toContainEqual(
+				expect.objectContaining({
+					kind: 'vbaSignature',
+					partPath: 'xl/vbaProjectSignature.bin',
+					sourcePartPath: 'xl/vbaProject.bin',
+					sourceRelationshipId: 'rIdVbaSignature',
+					relType: 'http://schemas.microsoft.com/office/2006/relationships/vbaProjectSignature',
+				}),
+			)
+			expect(data?.compatibilityFeatures).toContainEqual(
+				expect.objectContaining({
+					feature: 'preservedMacro',
+					locations: ['xl/vbaProject.bin', 'xl/vbaProjectSignature.bin'],
+				}),
+			)
+		} finally {
+			await unlink(activeFile).catch(() => {})
+		}
 	})
 
 	test('ascend.write recalculates before saving when needed', async () => {
@@ -959,3 +1022,40 @@ describe('MCP server', () => {
 		expect(result.isError).toBe(true)
 	})
 })
+
+function signedMacroWorkbook(): Uint8Array {
+	return makeXlsx({
+		'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Default Extension="bin" ContentType="application/vnd.ms-office.vbaProject"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.ms-excel.sheet.macroEnabled.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/vbaProject.bin" ContentType="application/vnd.ms-office.vbaProject"/>
+  <Override PartName="/xl/vbaProjectSignature.bin" ContentType="application/vnd.ms-office.vbaProjectSignature"/>
+</Types>`,
+		'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+		'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSheet" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rIdVba" Type="http://schemas.microsoft.com/office/2006/relationships/vbaProject" Target="vbaProject.bin"/>
+</Relationships>`,
+		'xl/_rels/vbaProject.bin.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdVbaSignature" Type="http://schemas.microsoft.com/office/2006/relationships/vbaProjectSignature" Target="vbaProjectSignature.bin"/>
+</Relationships>`,
+		'xl/workbook.xml': `<?xml version="1.0"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Data" sheetId="1" r:id="rIdSheet"/></sheets>
+</workbook>`,
+		'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`,
+		'xl/vbaProject.bin': 'macro-bytes',
+		'xl/vbaProjectSignature.bin': 'signature-bytes',
+	})
+}

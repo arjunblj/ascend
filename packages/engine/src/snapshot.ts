@@ -152,16 +152,21 @@ export function compareSnapshots(a: WorkbookSnapshot, b: WorkbookSnapshot): Work
 		const sheetA = sheetsA.get(name)
 		const sheetB = sheetsB.get(name)
 		if (!sheetA || !sheetB) continue
+		const dataValidationsChanged = sheetA.dataValidationsJson !== sheetB.dataValidationsJson
+		const x14DataValidationsChanged =
+			sheetA.x14DataValidationsJson !== sheetB.x14DataValidationsJson
+		const conditionalFormatsChanged =
+			sheetA.conditionalFormatsJson !== sheetB.conditionalFormatsJson
+		const x14ConditionalFormatsChanged =
+			sheetA.x14ConditionalFormatsJson !== sheetB.x14ConditionalFormatsJson
 		const featureDiff: SheetFeatureDiff = {
 			name,
 			mergesChanged: sheetA.mergesJson !== sheetB.mergesJson,
 			tablesChanged: sheetA.tablesJson !== sheetB.tablesJson,
-			dataValidationsChanged:
-				sheetA.dataValidationsJson !== sheetB.dataValidationsJson ||
-				sheetA.x14DataValidationsJson !== sheetB.x14DataValidationsJson,
-			conditionalFormatsChanged:
-				sheetA.conditionalFormatsJson !== sheetB.conditionalFormatsJson ||
-				sheetA.x14ConditionalFormatsJson !== sheetB.x14ConditionalFormatsJson,
+			dataValidationsChanged: dataValidationsChanged || x14DataValidationsChanged,
+			x14DataValidationsChanged,
+			conditionalFormatsChanged: conditionalFormatsChanged || x14ConditionalFormatsChanged,
+			x14ConditionalFormatsChanged,
 			sheetProtectionChanged: sheetA.protectionJson !== sheetB.protectionJson,
 		}
 		if (

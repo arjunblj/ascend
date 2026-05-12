@@ -157,7 +157,40 @@ describe('diffWorkbooks', () => {
 				mergesChanged: true,
 				tablesChanged: false,
 				dataValidationsChanged: false,
+				x14DataValidationsChanged: false,
 				conditionalFormatsChanged: false,
+				x14ConditionalFormatsChanged: false,
+				sheetProtectionChanged: false,
+			},
+		])
+	})
+
+	test('distinguishes classic validation and conditional format changes from x14 changes', () => {
+		const a = createWorkbook()
+		a.addSheet('Sheet1')
+
+		const b = createWorkbook()
+		const sheet = b.addSheet('Sheet1')
+		sheet.dataValidations.push({
+			sqref: 'A1',
+			type: 'list',
+			formula1: '"Yes,No"',
+		})
+		sheet.conditionalFormats.push({
+			sqref: 'B1',
+			rules: [{ type: 'expression', formulas: ['B1>0'] }],
+		})
+
+		const diff = diffWorkbooks(a, b)
+		expect(diff.sheetFeatures).toEqual([
+			{
+				name: 'Sheet1',
+				mergesChanged: false,
+				tablesChanged: false,
+				dataValidationsChanged: true,
+				x14DataValidationsChanged: false,
+				conditionalFormatsChanged: true,
+				x14ConditionalFormatsChanged: false,
 				sheetProtectionChanged: false,
 			},
 		])
@@ -190,7 +223,9 @@ describe('diffWorkbooks', () => {
 				mergesChanged: false,
 				tablesChanged: false,
 				dataValidationsChanged: true,
+				x14DataValidationsChanged: true,
 				conditionalFormatsChanged: true,
+				x14ConditionalFormatsChanged: true,
 				sheetProtectionChanged: false,
 			},
 		])
@@ -323,7 +358,40 @@ describe('snapshot round-trip', () => {
 				mergesChanged: true,
 				tablesChanged: false,
 				dataValidationsChanged: false,
+				x14DataValidationsChanged: false,
 				conditionalFormatsChanged: false,
+				x14ConditionalFormatsChanged: false,
+				sheetProtectionChanged: false,
+			},
+		])
+	})
+
+	test('compareSnapshots distinguishes classic validation and conditional format changes from x14 changes', () => {
+		const wb1 = createWorkbook()
+		wb1.addSheet('Sheet1')
+
+		const wb2 = createWorkbook()
+		const s2 = wb2.addSheet('Sheet1')
+		s2.dataValidations.push({
+			sqref: 'A1',
+			type: 'list',
+			formula1: '"Yes,No"',
+		})
+		s2.conditionalFormats.push({
+			sqref: 'B1',
+			rules: [{ type: 'expression', formulas: ['B1>0'] }],
+		})
+
+		const diff = compareSnapshots(createSnapshot(wb1), createSnapshot(wb2))
+		expect(diff.sheetFeatures).toEqual([
+			{
+				name: 'Sheet1',
+				mergesChanged: false,
+				tablesChanged: false,
+				dataValidationsChanged: true,
+				x14DataValidationsChanged: false,
+				conditionalFormatsChanged: true,
+				x14ConditionalFormatsChanged: false,
 				sheetProtectionChanged: false,
 			},
 		])
@@ -356,7 +424,9 @@ describe('snapshot round-trip', () => {
 				mergesChanged: false,
 				tablesChanged: false,
 				dataValidationsChanged: true,
+				x14DataValidationsChanged: true,
 				conditionalFormatsChanged: true,
+				x14ConditionalFormatsChanged: true,
 				sheetProtectionChanged: false,
 			},
 		])

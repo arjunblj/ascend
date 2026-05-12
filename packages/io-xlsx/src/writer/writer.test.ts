@@ -5488,9 +5488,43 @@ describe('writeXlsx', () => {
 		if (!worksheet) return
 		const xml = new TextDecoder().decode(worksheet)
 
+		expect(xml).not.toContain('<x14:dataValidations')
 		expect(xml).not.toContain('<x14:dataValidation ')
 		expect(xml).not.toContain('<xm:sqref>C2:C3</xm:sqref>')
 		expect(xml).not.toContain('<xm:f>A2:A3</xm:f>')
+	})
+
+	it('removes x14 conditional-format extension containers deleted by structural edits', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Data')
+		sheet.x14ConditionalFormats.push({
+			index: 0,
+			sqref: 'C2:C3',
+			formulas: ['A2>0'],
+			type: 'expression',
+			preservedRuleChildXml: [
+				'<x14:extLst><x14:ext uri="{cf-extension}"><x14ac:metadata flag="1"/></x14:ext></x14:extLst>',
+			],
+		})
+		sheet.preservedExtLst = `<extLst xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main" xmlns:xm="http://schemas.microsoft.com/office/excel/2006/main" xmlns:x14ac="http://schemas.microsoft.com/office/spreadsheetml/2009/9/ac"><ext uri="{CCE6A557-97BC-4b89-ADB6-D9C93CAAB3DF}"><x14:conditionalFormattings><x14:conditionalFormatting><x14:cfRule type="expression"><xm:f>A2&gt;0</xm:f><x14:extLst><x14:ext uri="{cf-extension}"><x14ac:metadata flag="1"/></x14:ext></x14:extLst></x14:cfRule><xm:sqref>C2:C3</xm:sqref></x14:conditionalFormatting></x14:conditionalFormattings><x14ac:metadata flag="keep"/></ext></extLst>`
+
+		const applied = applyOperations(wb, [{ op: 'deleteRows', sheet: 'Data', at: 1, count: 2 }])
+		expectOk(applied)
+		expect(sheet.x14ConditionalFormats[0]?.deleted).toBe(true)
+		const written = writeXlsx(wb, [], { dirtySheetNames: applied.value.sheetsModified })
+		expectOk(written)
+		const entries = unzipSync(written.value)
+		const worksheet = entries['xl/worksheets/sheet1.xml']
+		expect(worksheet).toBeDefined()
+		if (!worksheet) return
+		const xml = new TextDecoder().decode(worksheet)
+
+		expect(xml).not.toContain('<x14:conditionalFormattings')
+		expect(xml).not.toContain('<x14:conditionalFormatting')
+		expect(xml).not.toContain('<x14:cfRule')
+		expect(xml).not.toContain('<xm:sqref>C2:C3</xm:sqref>')
+		expect(xml).not.toContain('<xm:f>A2&gt;0</xm:f>')
+		expect(xml).toContain('<x14ac:metadata flag="keep"/>')
 	})
 
 	it('updates mixed self-closing x14 data-validation entries by document-order index', () => {

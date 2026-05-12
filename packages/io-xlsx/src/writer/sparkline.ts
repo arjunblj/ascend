@@ -19,6 +19,10 @@ const CONDITIONAL_FORMATTING_RE = new RegExp(
 	String.raw`<(${PREFIXED_TAG}conditionalFormatting)\b([^>]*)>([\s\S]*?)<\/\1>`,
 	'g',
 )
+const CONDITIONAL_FORMATTINGS_CONTAINER_RE = new RegExp(
+	String.raw`<(${PREFIXED_TAG}conditionalFormattings)\b([^>]*)>([\s\S]*?)<\/\1>`,
+	'g',
+)
 const DATA_VALIDATION_ENTRY_SOURCE = String.raw`<(${PREFIXED_TAG}dataValidation)\b([^>]*?)(?:\/>|>([\s\S]*?)<\/\1>)`
 const DATA_VALIDATION_RE = new RegExp(DATA_VALIDATION_ENTRY_SOURCE, 'g')
 const DATA_VALIDATIONS_CONTAINER_RE = new RegExp(
@@ -192,7 +196,7 @@ function updateX14ConditionalFormattingExtLstXml(
 		},
 	)
 	const missing = formats.filter((entry) => !entry.deleted && entry.index >= entryIndex)
-	return appendX14ConditionalFormattings(next, missing)
+	return normalizeX14ConditionalFormattingContainers(appendX14ConditionalFormattings(next, missing))
 }
 
 function updateX14DataValidationExtLstXml(
@@ -231,7 +235,18 @@ function normalizeX14DataValidationCounts(xml: string): string {
 		DATA_VALIDATIONS_CONTAINER_RE,
 		(_match, tag: string, attrs: string, body: string) => {
 			const count = [...body.matchAll(new RegExp(DATA_VALIDATION_ENTRY_SOURCE, 'g'))].length
+			if (count === 0) return ''
 			return `<${tag}${setXmlAttr(attrs, 'count', String(count))}>${body}</${tag}>`
+		},
+	)
+}
+
+function normalizeX14ConditionalFormattingContainers(xml: string): string {
+	return xml.replace(
+		CONDITIONAL_FORMATTINGS_CONTAINER_RE,
+		(_match, tag: string, attrs: string, body: string) => {
+			const count = [...body.matchAll(CONDITIONAL_FORMATTING_RE)].length
+			return count === 0 ? '' : `<${tag}${attrs}>${body}</${tag}>`
 		},
 	)
 }

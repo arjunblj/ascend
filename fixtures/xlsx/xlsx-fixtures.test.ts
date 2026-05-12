@@ -395,6 +395,7 @@ if (poiFixtures.length > 0) {
 			expect(worksheetXml).not.toContain('<xm:sqref>E2:E17</xm:sqref>')
 			expect(worksheetXml).not.toContain('<xm:sqref>Q2:Q17</xm:sqref>')
 			expect(worksheetXml).not.toContain('<xm:sqref>U2:U17</xm:sqref>')
+			expect(worksheetXml).not.toContain('<x14:conditionalFormattings')
 			expect(worksheetXml).not.toContain('<x14:conditionalFormatting ')
 			expect(worksheetXml).not.toContain('<x14:cfRule')
 		})

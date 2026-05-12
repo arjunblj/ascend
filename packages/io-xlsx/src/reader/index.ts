@@ -1209,9 +1209,11 @@ function collectActiveContent(
 ): ActiveContentInfo[] {
 	const activeContent: ActiveContentInfo[] = []
 	const worksheetControls = collectWorksheetControls(archive, sheetPathToAnchor, sheetRelsByPath)
+	const capsuleRelationshipByTarget = mapCapsuleRelationshipsByTarget(capsules)
 	for (const capsule of capsules) {
 		const kind = classifyActiveContent(capsule)
 		if (!kind) continue
+		const sourceRelationship = capsuleRelationshipByTarget.get(capsule.partPath)
 		const worksheetControl =
 			capsule.anchor.kind === 'sheet' && capsule.anchor.sheetName && capsule.relId
 				? worksheetControls.get(controlKey(capsule.anchor.sheetName, capsule.relId))
@@ -1232,16 +1234,17 @@ function collectActiveContent(
 			kind === 'formControl'
 				? parseFormControlInfo(readXmlMetadataPart(archive, capsule.partPath, capsule.contentType))
 				: undefined
+		const relType = capsule.relType ?? sourceRelationship?.relationship.type
+		const sourceRelationshipId = capsule.relId ?? sourceRelationship?.relationship.id
 		activeContent.push({
 			kind,
 			partPath: capsule.partPath,
 			contentType: capsule.contentType,
 			anchor: capsule.anchor.kind,
 			...(capsule.anchor.kind === 'sheet' ? { sheetName: capsule.anchor.sheetName } : {}),
-			...(capsule.relType ? { relType: capsule.relType } : {}),
-			...(capsule.relId && (kind === 'activeX' || kind === 'formControl')
-				? { sourceRelationshipId: capsule.relId }
-				: {}),
+			...(sourceRelationship ? { sourcePartPath: sourceRelationship.sourcePartPath } : {}),
+			...(relType ? { relType } : {}),
+			...(sourceRelationshipId ? { sourceRelationshipId } : {}),
 			relationshipCount: capsule.relationships.length,
 			...(kind === 'vbaProject' && entry ? { byteSize: entry.uncompressedSize } : {}),
 			...(kind === 'vbaProject' ? { opaque: true, executionPolicy: 'blocked' as const } : {}),
@@ -1259,6 +1262,32 @@ function collectActiveContent(
 		})
 	}
 	return activeContent
+}
+
+function mapCapsuleRelationshipsByTarget(capsules: readonly PreservationCapsule[]): Map<
+	string,
+	{
+		readonly sourcePartPath: string
+		readonly relationship: PreservationCapsule['relationships'][number]
+	}
+> {
+	const byTarget = new Map<
+		string,
+		{
+			readonly sourcePartPath: string
+			readonly relationship: PreservationCapsule['relationships'][number]
+		}
+	>()
+	for (const capsule of capsules) {
+		for (const relationship of capsule.relationships) {
+			if (relationship.targetMode === 'External') continue
+			const targetPath = resolvePath(capsule.partPath, relationship.target)
+			if (!byTarget.has(targetPath)) {
+				byTarget.set(targetPath, { sourcePartPath: capsule.partPath, relationship })
+			}
+		}
+	}
+	return byTarget
 }
 
 function collectWorksheetControls(

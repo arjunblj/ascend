@@ -64,6 +64,7 @@ export interface ActiveContentInfo {
 	readonly contentType: string
 	readonly anchor: 'workbook' | 'sheet'
 	readonly sheetName?: string
+	readonly sourcePartPath?: string
 	readonly relType?: string
 	readonly sourceRelationshipId?: string
 	readonly relationshipCount: number

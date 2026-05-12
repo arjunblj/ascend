@@ -29,6 +29,7 @@ describe('macro sheet SDK inventory', () => {
 			anchor: 'sheet',
 			sheetName: 'Macro1',
 			relType: 'http://schemas.microsoft.com/office/2006/relationships/xlMacrosheet',
+			sourceRelationshipId: 'rIdMacro',
 			relationshipCount: 0,
 			opaque: true,
 			executionPolicy: 'blocked',

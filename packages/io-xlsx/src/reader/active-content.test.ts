@@ -66,6 +66,7 @@ describe('active content inventory', () => {
 				contentType: 'application/vnd.ms-office.vbaProject',
 				anchor: 'workbook',
 				relType: 'http://schemas.microsoft.com/office/2006/relationships/vbaProject',
+				sourceRelationshipId: 'rId2',
 				relationshipCount: 0,
 				byteSize: 11,
 				opaque: true,
@@ -155,6 +156,74 @@ describe('active content inventory', () => {
 			{ name: 'testVBA', kind: 'standard' },
 		])
 		expect(JSON.stringify(vbaProject?.vbaProject)).not.toContain('Attribute VB_Name')
+	})
+
+	test('links VBA project signatures to their signed VBA project relationship', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Default Extension="bin" ContentType="application/vnd.ms-office.vbaProject"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.ms-excel.sheet.macroEnabled.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/vbaProject.bin" ContentType="application/vnd.ms-office.vbaProject"/>
+  <Override PartName="/xl/vbaProjectSignature.bin" ContentType="application/vnd.ms-office.vbaProjectSignature"/>
+</Types>`,
+			'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSheet" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rIdVba" Type="http://schemas.microsoft.com/office/2006/relationships/vbaProject" Target="vbaProject.bin"/>
+</Relationships>`,
+			'xl/_rels/vbaProject.bin.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdVbaSignature" Type="http://schemas.microsoft.com/office/2006/relationships/vbaProjectSignature" Target="vbaProjectSignature.bin"/>
+</Relationships>`,
+			'xl/workbook.xml': `<?xml version="1.0"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Data" sheetId="1" r:id="rIdSheet"/></sheets>
+</workbook>`,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`,
+			'xl/vbaProject.bin': 'macro-bytes',
+			'xl/vbaProjectSignature.bin': 'signature-bytes',
+		})
+
+		const result = readXlsx(bytes)
+		expectOk(result)
+
+		expect(result.value.workbook.activeContent).toContainEqual(
+			expect.objectContaining({
+				kind: 'vbaProject',
+				partPath: 'xl/vbaProject.bin',
+				relType: 'http://schemas.microsoft.com/office/2006/relationships/vbaProject',
+				sourceRelationshipId: 'rIdVba',
+				relationshipCount: 1,
+			}),
+		)
+		expect(result.value.workbook.activeContent).toContainEqual({
+			kind: 'vbaSignature',
+			partPath: 'xl/vbaProjectSignature.bin',
+			contentType: 'application/vnd.ms-office.vbaProjectSignature',
+			anchor: 'workbook',
+			sourcePartPath: 'xl/vbaProject.bin',
+			relType: 'http://schemas.microsoft.com/office/2006/relationships/vbaProjectSignature',
+			sourceRelationshipId: 'rIdVbaSignature',
+			relationshipCount: 0,
+			invalidationPolicy: 'invalidatedByPackageEdit',
+			resigningPolicy: 'notSupported',
+		})
+		expect(
+			result.value.report.features.find((feature) => feature.feature === 'preservedMacro'),
+		).toMatchObject({
+			count: 2,
+			locations: ['xl/vbaProject.bin', 'xl/vbaProjectSignature.bin'],
+		})
 	})
 
 	test('summarizes real LibreOffice ActiveX relationship metadata', () => {

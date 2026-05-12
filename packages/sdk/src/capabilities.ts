@@ -668,8 +668,8 @@ export const EXCEL_CAPABILITIES: readonly ExcelCapability[] = [
 		'VBA macros',
 		'inspectable',
 		'P1',
-		'Add signed macro provenance and richer non-source project metadata.',
-		'VBA project parts are inventoried with names-only CFB PROJECT-stream module summaries, opaque byte-size summaries, preservation, and executionPolicy=blocked; macro execution, source inspection, and semantic edits remain blocked by policy.',
+		'Add richer non-source project metadata.',
+		'VBA project parts are inventoried with names-only CFB PROJECT-stream module summaries, opaque byte-size summaries, signed-project relationship provenance, preservation, and executionPolicy=blocked; macro execution, source inspection, and semantic edits remain blocked by policy.',
 		['packages/io-xlsx/src/reader/active-content.test.ts'],
 	),
 	cap(
@@ -705,8 +705,11 @@ export const EXCEL_CAPABILITIES: readonly ExcelCapability[] = [
 		'inspectable',
 		'P1',
 		'Add signed-package re-sign hooks.',
-		'Digital signature origin/signature parts are inventoried with explicit invalidationPolicy metadata, package-root relationships are preserved on write, and signatures are not re-signed after generated edits.',
-		['packages/io-xlsx/src/reader/signature.test.ts'],
+		'Digital signature origin/signature parts and VBA project signatures are inventoried with source relationship provenance and explicit invalidationPolicy metadata; package-root relationships are preserved on clean write, and signatures are not re-signed after generated edits.',
+		[
+			'packages/io-xlsx/src/reader/signature.test.ts',
+			'packages/io-xlsx/src/reader/active-content.test.ts',
+		],
 	),
 
 	cap(

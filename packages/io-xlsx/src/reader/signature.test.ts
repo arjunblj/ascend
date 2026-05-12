@@ -22,6 +22,7 @@ describe('digital signature inventory', () => {
 				partPath: '_xmlsignatures/origin.sigs',
 				contentType: 'application/vnd.openxmlformats-package.digital-signature-origin',
 				anchor: 'workbook',
+				sourceRelationshipId: 'rIdSignatureOrigin',
 				relationshipCount: 1,
 				relType:
 					'http://schemas.openxmlformats.org/package/2006/relationships/digital-signature/origin',
@@ -33,7 +34,11 @@ describe('digital signature inventory', () => {
 				partPath: '_xmlsignatures/sig1.xml',
 				contentType: 'application/vnd.openxmlformats-package.digital-signature-xmlsignature+xml',
 				anchor: 'workbook',
+				sourcePartPath: '_xmlsignatures/origin.sigs',
+				sourceRelationshipId: 'rIdSignature',
 				relationshipCount: 0,
+				relType:
+					'http://schemas.openxmlformats.org/package/2006/relationships/digital-signature/signature',
 				invalidationPolicy: 'invalidatedByPackageEdit',
 				resigningPolicy: 'notSupported',
 			},

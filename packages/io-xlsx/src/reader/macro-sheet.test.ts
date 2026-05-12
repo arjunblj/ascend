@@ -37,6 +37,7 @@ describe('macro sheet inventory', () => {
 			anchor: 'sheet',
 			sheetName: 'Macro1',
 			relType: 'http://schemas.microsoft.com/office/2006/relationships/xlMacrosheet',
+			sourceRelationshipId: 'rIdMacro',
 			relationshipCount: 1,
 			opaque: true,
 			executionPolicy: 'blocked',

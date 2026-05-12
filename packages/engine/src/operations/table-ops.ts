@@ -12,6 +12,11 @@ import {
 } from '../structural/formula-rewrite.ts'
 import { expandSqrefRows } from '../structural/ref-shift.ts'
 import { sortSheetRange } from '../structural/sort-range.ts'
+import {
+	collectDroppedTableColumnsForResize,
+	type DeletedTableColumnReference,
+	findDeletedTableColumnReference,
+} from '../structural/table-field-guards.ts'
 import type { PatchResult } from './helpers.ts'
 import {
 	buildTableColumns,
@@ -246,6 +251,14 @@ export function handleResizeTable(
 	const rangeResult = safeParseRange(op.ref)
 	if (!rangeResult.ok) return rangeResult
 	const ref = rangeResult.value
+	const droppedColumnBlocker = findDeletedTableColumnReference(
+		workbook,
+		collectDroppedTableColumnsForResize(table, ref),
+		{ skipDeletedTableColumnFormulas: true },
+	)
+	if (droppedColumnBlocker) {
+		return err(tableResizeDroppedColumnReferenceError(droppedColumnBlocker))
+	}
 	const columns = buildResizedTableColumns(sheet, table, ref)
 	const idx = sheet.tables.findIndex((t) => t.id === table.id)
 	if (idx >= 0) {
@@ -259,6 +272,20 @@ export function handleResizeTable(
 	}
 	clearFormulaMetadata(workbook)
 	return ok(patch([], [sheet.name], true))
+}
+
+function tableResizeDroppedColumnReferenceError(
+	blocker: DeletedTableColumnReference,
+): ReturnType<typeof ascendError> {
+	return ascendError(
+		'VALIDATION_ERROR',
+		`Cannot resize table because ${blocker.sourceRef} ${blocker.sourceKind} references table column ${blocker.tableName}[${blocker.columnName}]`,
+		{
+			refs: [blocker.sourceRef],
+			suggestedFix:
+				'Rewrite or remove structured references to the table field before resizing the table to exclude it.',
+		},
+	)
 }
 
 function buildResizedTableColumns(

@@ -3210,6 +3210,116 @@ describe('applyOperation', () => {
 		])
 	})
 
+	test('resizeTable rejects dropping table fields referenced by cell formulas', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.tables.push({
+			id: createTableId(),
+			name: 'Sales',
+			sheetId: sheet.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 3, col: 2 } },
+			columns: [
+				{ id: 1, name: 'Region' },
+				{ id: 2, name: 'Rep' },
+				{ id: 3, name: 'Amount' },
+			],
+			hasHeaders: true,
+			hasTotals: false,
+		})
+		sheet.cells.set(0, 4, { value: EMPTY, formula: 'COUNTA(Sales[Rep])', styleId: sid })
+
+		const result = applyOperation(wb, { op: 'resizeTable', table: 'Sales', ref: 'A1:A4' })
+
+		expectErr(result)
+		expect(result.error.message).toContain('Sales[Rep]')
+		expect(sheet.tables[0]?.columns.map((column) => column.name)).toEqual([
+			'Region',
+			'Rep',
+			'Amount',
+		])
+	})
+
+	test('resizeTable rejects dropping table fields referenced by defined names', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.tables.push({
+			id: createTableId(),
+			name: 'Sales',
+			sheetId: sheet.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 3, col: 2 } },
+			columns: [
+				{ id: 1, name: 'Region' },
+				{ id: 2, name: 'Rep' },
+				{ id: 3, name: 'Amount' },
+			],
+			hasHeaders: true,
+			hasTotals: false,
+		})
+		wb.definedNames.set('SalesReps', 'COUNTA(Sales[Rep])')
+
+		const result = applyOperation(wb, { op: 'resizeTable', table: 'Sales', ref: 'A1:A4' })
+
+		expectErr(result)
+		expect(result.error.message).toContain('Sales[Rep]')
+		expect(wb.definedNames.get('SalesReps')).toBe('COUNTA(Sales[Rep])')
+	})
+
+	test('resizeTable rejects dropping table fields referenced by worksheet metadata', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.tables.push({
+			id: createTableId(),
+			name: 'Sales',
+			sheetId: sheet.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 3, col: 2 } },
+			columns: [
+				{ id: 1, name: 'Region' },
+				{ id: 2, name: 'Rep' },
+				{ id: 3, name: 'Amount' },
+			],
+			hasHeaders: true,
+			hasTotals: false,
+		})
+		sheet.dataValidations.push({ sqref: 'E1:E4', type: 'list', formula1: 'Sales[Rep]' })
+
+		const result = applyOperation(wb, { op: 'resizeTable', table: 'Sales', ref: 'A1:A4' })
+
+		expectErr(result)
+		expect(result.error.message).toContain('Sales[Rep]')
+		expect(sheet.dataValidations[0]?.formula1).toBe('Sales[Rep]')
+	})
+
+	test('resizeTable rejects shifted ranges dropping referenced left-edge fields', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 3, { value: stringValue('Forecast'), formula: null, styleId: sid })
+		sheet.tables.push({
+			id: createTableId(),
+			name: 'Sales',
+			sheetId: sheet.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 3, col: 2 } },
+			columns: [
+				{ id: 1, name: 'Region' },
+				{ id: 2, name: 'Amount' },
+				{ id: 3, name: 'Status' },
+			],
+			hasHeaders: true,
+			hasTotals: false,
+		})
+		sheet.cells.set(0, 4, { value: EMPTY, formula: 'COUNTA(Sales[Region])', styleId: sid })
+
+		const result = applyOperation(wb, { op: 'resizeTable', table: 'Sales', ref: 'B1:D4' })
+
+		expectErr(result)
+		expect(result.error.message).toContain('Sales[Region]')
+		expect(sheet.tables[0]?.ref.start.col).toBe(0)
+		expect(sheet.tables[0]?.columns.map((column) => column.name)).toEqual([
+			'Region',
+			'Amount',
+			'Status',
+		])
+	})
+
 	test('table management operations rename, resize, and delete table metadata', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

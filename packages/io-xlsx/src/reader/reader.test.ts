@@ -3538,10 +3538,11 @@ describe('readXlsx', () => {
 			return `<c r="${ref}"><v>${col + 1}</v></c>`
 		}).join('')
 		const xml = `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-  <dimension ref="A1:AB2"/>
+  <dimension ref="A1:AB3"/>
   <sheetData>
     <row r="1"><c r="A1"><v>7</v></c><c r="B1" t="inlineStr"><is><t>fast &amp; safe</t></is></c><c r="AA1"><v>-3.5</v></c></row>
     <row r="2">${sequentialWideCells}</row>
+    <row r="3"><c><v>-12</v></c><c><v>1.25E3</v></c><c><v>12345678901234567</v></c></row>
   </sheetData>
 </worksheet>`
 		const sheet = parseSheetValuesOnlyBytes('Sheet1', new TextEncoder().encode(xml), {
@@ -3558,6 +3559,9 @@ describe('readXlsx', () => {
 		expect(sheet?.cells.get(1, 25)?.value).toEqual(numberValue(26))
 		expect(sheet?.cells.get(1, 26)?.value).toEqual(numberValue(27))
 		expect(sheet?.cells.get(1, 27)?.value).toEqual(numberValue(28))
+		expect(sheet?.cells.get(2, 0)?.value).toEqual(numberValue(-12))
+		expect(sheet?.cells.get(2, 1)?.value).toEqual(numberValue(1250))
+		expect(sheet?.cells.get(2, 2)?.value).toEqual(numberValue(Number('12345678901234567')))
 	})
 
 	it('values mode preserves mixed direct values, dates, row metadata, maxRows, and sheet metadata', () => {

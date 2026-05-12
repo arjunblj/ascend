@@ -3763,18 +3763,24 @@ function parseSimpleXmlNumberBytes(
 ): number | undefined {
 	if (start >= end) return undefined
 	let cursor = start
+	let sign = 1
 	if (bytes[cursor] === 45) {
+		sign = -1
 		cursor += 1
 		if (cursor >= end) return undefined
 	}
 	let sawDigit = false
 	let sawDecimal = false
 	let sawExponent = false
+	let integerValue = 0
+	let digitCount = 0
 	while (cursor < end) {
 		const code = bytes[cursor]
 		if (code === BYTE_AMP || code === BYTE_LT) return undefined
 		if (isAsciiDigit(code)) {
 			sawDigit = true
+			digitCount += 1
+			if (!sawDecimal && !sawExponent) integerValue = integerValue * 10 + ((code ?? 48) - 48)
 			cursor += 1
 			continue
 		}
@@ -3792,6 +3798,7 @@ function parseSimpleXmlNumberBytes(
 		return undefined
 	}
 	if (!sawDigit) return undefined
+	if (!sawDecimal && !sawExponent && digitCount <= 15) return sign * integerValue
 	const text = asciiSlice(bytes, start, end)
 	const value = Number(text)
 	return Number.isNaN(value) ? undefined : value

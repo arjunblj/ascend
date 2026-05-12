@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import type { Workbook } from '../../packages/core/src/index.ts'
 import { readXlsx, readXlsxRowsStream } from '../../packages/io-xlsx/src/index.ts'
 import { extractZip } from '../../packages/io-xlsx/src/reader/zip.ts'
 import {
@@ -56,6 +57,8 @@ interface PhaseSample {
 	readonly rssAfterBytes: number
 	readonly heapUsedBytes: number
 }
+
+type ReadXlsxOptions = NonNullable<Parameters<typeof readXlsx>[1]>
 
 interface WorksheetXmlPart {
 	readonly text: string
@@ -295,6 +298,23 @@ function summarize(samples: readonly PhaseSample[]) {
 	}
 }
 
+function readOptionsForWorkload(workload: WorkloadName): ReadXlsxOptions {
+	if (workload === 'selected-sheet') return { mode: 'values', sheets: ['Data'] }
+	if (workload === 'metadata-only') return { mode: 'metadata-only' }
+	return { mode: 'values' }
+}
+
+function assertReadPhaseWorkbook(workbook: Workbook, input: CompetitiveDataSet): void {
+	if (input.workloadName !== 'metadata-only') {
+		denseWorkbookAssertions(workbook, input)
+		return
+	}
+	const cellCount = workbook.sheets.reduce((sum, sheet) => sum + sheet.cells.cellCount(), 0)
+	if (cellCount !== 0) {
+		throw new Error(`metadata-only read hydrated ${cellCount} cells`)
+	}
+}
+
 function withOptionalMedian<T extends string>(
 	name: T,
 	values: readonly (number | undefined)[],
@@ -404,7 +424,7 @@ async function runSample(
 
 	if (args.phase === 'all' || args.phase === 'read' || args.phase === 'hydrate') {
 		const readStart = performance.now()
-		const read = readXlsx(input.xlsxBytes, { mode: 'values' })
+		const read = readXlsx(input.xlsxBytes, readOptionsForWorkload(args.workload))
 		const readXlsxMs = performance.now() - readStart
 		if (!read.ok) throw new Error(read.error.message)
 		sample.readXlsxMs = readXlsxMs
@@ -412,7 +432,7 @@ async function runSample(
 
 		if (args.phase === 'all' || args.phase === 'hydrate') {
 			const materializeStart = performance.now()
-			denseWorkbookAssertions(read.value.workbook, input)
+			assertReadPhaseWorkbook(read.value.workbook, input)
 			const materializeHashMs = performance.now() - materializeStart
 			sample.materializeHashMs = materializeHashMs
 			sample.totalHydratedMs = readXlsxMs + materializeHashMs

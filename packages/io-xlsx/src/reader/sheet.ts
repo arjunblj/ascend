@@ -2618,6 +2618,7 @@ function parseSimpleFullScalarRow(
 		col: number
 		numberValue: number | undefined
 		sharedStringIndex: number
+		booleanRaw: number
 		formulaText: string | null
 		styleIdx: number
 	} = {
@@ -2625,6 +2626,7 @@ function parseSimpleFullScalarRow(
 		col: 0,
 		numberValue: undefined,
 		sharedStringIndex: -1,
+		booleanRaw: -1,
 		formulaText: null,
 		styleIdx: 0,
 	}
@@ -2654,6 +2656,14 @@ function parseSimpleFullScalarRow(
 					styleId,
 				)
 			}
+		} else if (out.booleanRaw >= 0) {
+			sheet.cells.setResolved(
+				out.row,
+				out.col,
+				internValue(ctx, booleanValue(out.booleanRaw === 1)),
+				formula,
+				styleId,
+			)
 		} else if (out.numberValue === undefined && formula === null) {
 			return false
 		} else if (out.numberValue === undefined) {
@@ -2686,6 +2696,7 @@ function parseCanonicalFullScalarCell(
 		col: number
 		numberValue: number | undefined
 		sharedStringIndex: number
+		booleanRaw: number
 		formulaText: string | null
 		styleIdx: number
 	},
@@ -2708,6 +2719,7 @@ function parseCanonicalFullScalarCell(
 	out.col = col
 	out.numberValue = undefined
 	out.sharedStringIndex = -1
+	out.booleanRaw = -1
 	out.formulaText = null
 	out.styleIdx = 0
 
@@ -2719,10 +2731,11 @@ function parseCanonicalFullScalarCell(
 	}
 	if (!xml.startsWith('<v>', contentStart)) return -1
 	const valueStart = contentStart + 3
-	if (content.kind === 'sharedString') {
+	if (content.kind === 'sharedString' || content.kind === 'boolean') {
 		const parsedIndex = parseCanonicalUnsignedIntegerValue(xml, valueStart, bodyEnd)
 		if (!parsedIndex) return -1
-		out.sharedStringIndex = parsedIndex.value
+		if (content.kind === 'sharedString') out.sharedStringIndex = parsedIndex.value
+		else out.booleanRaw = parsedIndex.value === 1 ? 1 : 0
 		return parsedIndex.next
 	}
 	const parsedInt = parseCanonicalIntegerValue(xml, valueStart, bodyEnd)
@@ -2742,10 +2755,11 @@ function parseCanonicalFullFormulaContent(
 	xml: string,
 	contentStart: number,
 	bodyEnd: number,
-	kind: 'number' | 'sharedString',
+	kind: 'number' | 'sharedString' | 'boolean',
 	out: {
 		numberValue: number | undefined
 		sharedStringIndex: number
+		booleanRaw: number
 		formulaText: string | null
 	},
 ): number {
@@ -2758,10 +2772,11 @@ function parseCanonicalFullFormulaContent(
 	if (xml.startsWith('</c>', cursor)) return cursor + 4
 	if (!xml.startsWith('<v>', cursor)) return -1
 	const valueStart = cursor + 3
-	if (kind === 'sharedString') {
+	if (kind === 'sharedString' || kind === 'boolean') {
 		const parsedIndex = parseCanonicalUnsignedIntegerValue(xml, valueStart, bodyEnd)
 		if (!parsedIndex) return -1
-		out.sharedStringIndex = parsedIndex.value
+		if (kind === 'sharedString') out.sharedStringIndex = parsedIndex.value
+		else out.booleanRaw = parsedIndex.value === 1 ? 1 : 0
 		return parsedIndex.next
 	}
 	const parsedInt = parseCanonicalIntegerValue(xml, valueStart, bodyEnd)
@@ -2782,9 +2797,9 @@ function resolveCanonicalFullScalarContentStart(
 	refEnd: number,
 	bodyEnd: number,
 	out: { styleIdx: number },
-): { start: number; kind: 'number' | 'sharedString' } | undefined {
+): { start: number; kind: 'number' | 'sharedString' | 'boolean' } | undefined {
 	let cursor = refEnd + 1
-	let kind: 'number' | 'sharedString' = 'number'
+	let kind: 'number' | 'sharedString' | 'boolean' = 'number'
 	while (cursor < bodyEnd) {
 		cursor = skipXmlWhitespace(xml, cursor, bodyEnd)
 		const marker = xml.charCodeAt(cursor)
@@ -2814,6 +2829,8 @@ function resolveCanonicalFullScalarContentStart(
 		} else if (attrNameEquals(xml, nameStart, nameEnd, 't')) {
 			if (cursor === valueStart + 1 && xml.charCodeAt(valueStart) === 115) {
 				kind = 'sharedString'
+			} else if (cursor === valueStart + 1 && xml.charCodeAt(valueStart) === 98) {
+				kind = 'boolean'
 			} else if (!(cursor === valueStart + 1 && xml.charCodeAt(valueStart) === 110)) {
 				return undefined
 			}

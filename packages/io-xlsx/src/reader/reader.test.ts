@@ -3473,6 +3473,29 @@ describe('readXlsx', () => {
 		expect(sheet?.cells.get(0, 26)?.value).toEqual(stringValue('World'))
 	})
 
+	it('full mode preserves simple boolean cell references', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': CONTENT_TYPES,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': WORKBOOK_RELS,
+			'xl/workbook.xml': WORKBOOK_XML,
+			'xl/sharedStrings.xml': SHARED_STRINGS,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData><row r="1"><c r="A1" t="b"><v>1</v></c><c r="AA1" t="b"><v>0</v></c><c r="AB1" t="b"><f>A1</f><v>1</v></c></row></sheetData>
+</worksheet>`,
+		})
+
+		const result = readXlsx(bytes)
+		expectOk(result)
+
+		const sheet = result.value.workbook.sheets[0]
+		expect(sheet?.cells.get(0, 0)?.value).toEqual(booleanValue(true))
+		expect(sheet?.cells.get(0, 26)?.value).toEqual(booleanValue(false))
+		expect(sheet?.cells.get(0, 27)?.value).toEqual(booleanValue(true))
+		expect(sheet?.cells.get(0, 27)?.formula).toBe('A1')
+	})
+
 	it('full mode preserves simple formula cells without cached values', () => {
 		const bytes = makeXlsx({
 			'[Content_Types].xml': CONTENT_TYPES,

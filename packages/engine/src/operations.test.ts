@@ -3195,6 +3195,44 @@ describe('applyOperation', () => {
 		})
 		sheet.cells.set(4, 0, { value: EMPTY, formula: 'SUM(Sales[[Qty]:[Price]])', styleId: sid })
 		wb.definedNames.set('SalesQty', 'SUM(Sales[Qty])')
+		sheet.dataValidations.push({
+			sqref: 'D2:D3',
+			type: 'list',
+			formula1: 'SUM(Sales[Qty])',
+		})
+		sheet.conditionalFormats.push({
+			sqref: 'E2:E3',
+			rules: [
+				{
+					type: 'expression',
+					formulas: ['SUM(Sales[Qty])>0'],
+					colorScale: {
+						cfvo: [{ type: 'formula', value: 'SUM(Sales[Qty])' }],
+						colors: [{ rgb: 'FFFF0000' }],
+					},
+					dataBar: {
+						cfvo: [{ type: 'formula', value: 'SUM(Sales[Qty])' }],
+						color: { rgb: 'FF00AA00' },
+					},
+					iconSet: {
+						cfvo: [{ type: 'formula', value: 'SUM(Sales[Qty])' }],
+					},
+				},
+			],
+		})
+		sheet.x14DataValidations.push({
+			index: 0,
+			sqref: 'F2:F3',
+			type: 'list',
+			formula1: 'SUM(Sales[Qty])',
+		})
+		sheet.x14ConditionalFormats.push({
+			index: 0,
+			sqref: 'G2:G3',
+			formulas: ['SUM(Sales[Qty])>0'],
+			dataBar: { cfvo: [{ type: 'formula', value: 'SUM(Sales[Qty])' }] },
+			iconSet: { cfvo: [{ type: 'formula', value: 'SUM(Sales[Qty])' }] },
+		})
 
 		const result = applyOperation(wb, {
 			op: 'setTableColumn',
@@ -3216,6 +3254,16 @@ describe('applyOperation', () => {
 		expect(sheet.tables[0]?.columns[2]?.totalsRowFormula).toBe('SUM(Sales[Units])')
 		expect(sheet.cells.get(4, 0)?.formula).toBe('SUM(Sales[[Units]:[Price]])')
 		expect(wb.definedNames.get('SalesQty')).toBe('SUM(Sales[Units])')
+		expect(sheet.dataValidations[0]?.formula1).toBe('SUM(Sales[Units])')
+		const rule = sheet.conditionalFormats[0]?.rules[0]
+		expect(rule?.formulas[0]).toBe('SUM(Sales[Units])>0')
+		expect(rule?.colorScale?.cfvo[0]?.value).toBe('SUM(Sales[Units])')
+		expect(rule?.dataBar?.cfvo[0]?.value).toBe('SUM(Sales[Units])')
+		expect(rule?.iconSet?.cfvo[0]?.value).toBe('SUM(Sales[Units])')
+		expect(sheet.x14DataValidations[0]?.formula1).toBe('SUM(Sales[Units])')
+		expect(sheet.x14ConditionalFormats[0]?.formulas[0]).toBe('SUM(Sales[Units])>0')
+		expect(sheet.x14ConditionalFormats[0]?.dataBar?.cfvo[0]?.value).toBe('SUM(Sales[Units])')
+		expect(sheet.x14ConditionalFormats[0]?.iconSet?.cfvo[0]?.value).toBe('SUM(Sales[Units])')
 
 		const duplicate = applyOperation(wb, {
 			op: 'setTableColumn',
@@ -3606,6 +3654,44 @@ describe('applyOperation', () => {
 		})
 		sheet.cells.set(3, 0, { value: EMPTY, formula: 'SUM(Sales[Value])', styleId: sid })
 		wb.definedNames.set('SalesValues', 'SUM(Sales[Value])')
+		sheet.dataValidations.push({
+			sqref: 'D2:D3',
+			type: 'list',
+			formula1: 'SUM(Sales[Value])',
+		})
+		sheet.conditionalFormats.push({
+			sqref: 'E2:E3',
+			rules: [
+				{
+					type: 'expression',
+					formulas: ['SUM(Sales[Value])>0'],
+					colorScale: {
+						cfvo: [{ type: 'formula', value: 'SUM(Sales[Value])' }],
+						colors: [{ rgb: 'FFFF0000' }],
+					},
+					dataBar: {
+						cfvo: [{ type: 'formula', value: 'SUM(Sales[Value])' }],
+						color: { rgb: 'FF00AA00' },
+					},
+					iconSet: {
+						cfvo: [{ type: 'formula', value: 'SUM(Sales[Value])' }],
+					},
+				},
+			],
+		})
+		sheet.x14DataValidations.push({
+			index: 0,
+			sqref: 'F2:F3',
+			type: 'list',
+			formula1: 'SUM(Sales[Value])',
+		})
+		sheet.x14ConditionalFormats.push({
+			index: 0,
+			sqref: 'G2:G3',
+			formulas: ['SUM(Sales[Value])>0'],
+			dataBar: { cfvo: [{ type: 'formula', value: 'SUM(Sales[Value])' }] },
+			iconSet: { cfvo: [{ type: 'formula', value: 'SUM(Sales[Value])' }] },
+		})
 
 		const renamed = applyOperation(wb, {
 			op: 'renameTable',
@@ -3617,6 +3703,16 @@ describe('applyOperation', () => {
 		expect(sheet.tables[0]?.name).toBe('Revenue')
 		expect(sheet.cells.get(3, 0)?.formula).toBe('SUM(Revenue[Value])')
 		expect(wb.definedNames.get('SalesValues')).toBe('SUM(Revenue[Value])')
+		expect(sheet.dataValidations[0]?.formula1).toBe('SUM(Revenue[Value])')
+		const rule = sheet.conditionalFormats[0]?.rules[0]
+		expect(rule?.formulas[0]).toBe('SUM(Revenue[Value])>0')
+		expect(rule?.colorScale?.cfvo[0]?.value).toBe('SUM(Revenue[Value])')
+		expect(rule?.dataBar?.cfvo[0]?.value).toBe('SUM(Revenue[Value])')
+		expect(rule?.iconSet?.cfvo[0]?.value).toBe('SUM(Revenue[Value])')
+		expect(sheet.x14DataValidations[0]?.formula1).toBe('SUM(Revenue[Value])')
+		expect(sheet.x14ConditionalFormats[0]?.formulas[0]).toBe('SUM(Revenue[Value])>0')
+		expect(sheet.x14ConditionalFormats[0]?.dataBar?.cfvo[0]?.value).toBe('SUM(Revenue[Value])')
+		expect(sheet.x14ConditionalFormats[0]?.iconSet?.cfvo[0]?.value).toBe('SUM(Revenue[Value])')
 
 		const revenue = sheet.tables[0]
 		if (!revenue) throw new Error('expected renamed table')

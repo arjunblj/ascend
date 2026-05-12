@@ -3,6 +3,10 @@ import type { FormulaCellRef, FormulaNode } from '@ascend/formulas'
 import { cachedParseFormula, printFormula } from '@ascend/formulas'
 import { shiftIndex } from './ref-shift.ts'
 
+type ConditionalFormatRule = Sheet['conditionalFormats'][number]['rules'][number]
+type X14ConditionalFormat = Sheet['x14ConditionalFormats'][number]
+type FormulaTextRewriter = (formula: string | undefined) => string | undefined
+
 export function rewriteWorkbookFormulasForShift(
 	workbook: Workbook,
 	targetSheet: string,
@@ -582,13 +586,13 @@ function rewriteConditionalFormatValueObjectForMove<T extends { readonly value?:
 }
 
 function rewriteConditionalFormatRuleForMove(
-	rule: Sheet['conditionalFormats'][number]['rules'][number],
+	rule: ConditionalFormatRule,
 	sourceSheet: string,
 	targetSheet: string,
 	formulaSheet: string,
 	sourceRange: RangeRef,
 	targetRange: RangeRef,
-): Sheet['conditionalFormats'][number]['rules'][number] {
+): ConditionalFormatRule {
 	return {
 		...rule,
 		formulas: rule.formulas.map(
@@ -651,6 +655,89 @@ function rewriteConditionalFormatRuleForMove(
 								sourceRange,
 								targetRange,
 							),
+						),
+					},
+				}
+			: {}),
+	}
+}
+
+function rewriteConditionalFormatValueObjectWith<T extends { readonly value?: string }>(
+	entry: T,
+	rewrite: FormulaTextRewriter,
+): T {
+	if (entry.value === undefined) return entry
+	return {
+		...entry,
+		value: rewrite(entry.value) ?? entry.value,
+	}
+}
+
+function rewriteConditionalFormatRuleWith(
+	rule: ConditionalFormatRule,
+	rewrite: FormulaTextRewriter,
+): ConditionalFormatRule {
+	return {
+		...rule,
+		formulas: rule.formulas.map((formula) => rewrite(formula) ?? formula),
+		...(rule.colorScale
+			? {
+					colorScale: {
+						...rule.colorScale,
+						cfvo: rule.colorScale.cfvo.map((entry) =>
+							rewriteConditionalFormatValueObjectWith(entry, rewrite),
+						),
+						colors: rule.colorScale.colors.map((color) => ({ ...color })),
+					},
+				}
+			: {}),
+		...(rule.dataBar
+			? {
+					dataBar: {
+						...rule.dataBar,
+						cfvo: rule.dataBar.cfvo.map((entry) =>
+							rewriteConditionalFormatValueObjectWith(entry, rewrite),
+						),
+						...(rule.dataBar.color ? { color: { ...rule.dataBar.color } } : {}),
+					},
+				}
+			: {}),
+		...(rule.iconSet
+			? {
+					iconSet: {
+						...rule.iconSet,
+						cfvo: rule.iconSet.cfvo.map((entry) =>
+							rewriteConditionalFormatValueObjectWith(entry, rewrite),
+						),
+					},
+				}
+			: {}),
+	}
+}
+
+function rewriteX14ConditionalFormatWith(
+	format: X14ConditionalFormat,
+	rewrite: FormulaTextRewriter,
+): X14ConditionalFormat {
+	return {
+		...format,
+		formulas: format.formulas.map((formula) => rewrite(formula) ?? formula),
+		...(format.dataBar
+			? {
+					dataBar: {
+						...format.dataBar,
+						cfvo: format.dataBar.cfvo.map((entry) =>
+							rewriteConditionalFormatValueObjectWith(entry, rewrite),
+						),
+					},
+				}
+			: {}),
+		...(format.iconSet
+			? {
+					iconSet: {
+						...format.iconSet,
+						cfvo: format.iconSet.cfvo.map((entry) =>
+							rewriteConditionalFormatValueObjectWith(entry, rewrite),
 						),
 					},
 				}
@@ -869,11 +956,13 @@ export function rewriteSheetMetadataFormulasForTableRename(
 	oldName: string,
 	newName: string,
 ): void {
+	const rewrite = (formula: string | undefined): string | undefined =>
+		rewriteFormulaTextForTableRename(formula, oldName, newName)
 	for (let i = 0; i < sheet.dataValidations.length; i++) {
 		const validation = sheet.dataValidations[i]
 		if (!validation) continue
-		const formula1 = rewriteFormulaTextForTableRename(validation.formula1, oldName, newName)
-		const formula2 = rewriteFormulaTextForTableRename(validation.formula2, oldName, newName)
+		const formula1 = rewrite(validation.formula1)
+		const formula2 = rewrite(validation.formula2)
 		sheet.dataValidations[i] = {
 			...validation,
 			...(formula1 !== undefined ? { formula1 } : {}),
@@ -885,13 +974,24 @@ export function rewriteSheetMetadataFormulasForTableRename(
 		if (!format) continue
 		sheet.conditionalFormats[i] = {
 			...format,
-			rules: format.rules.map((rule) => ({
-				...rule,
-				formulas: rule.formulas.map(
-					(formula) => rewriteFormulaTextForTableRename(formula, oldName, newName) ?? formula,
-				),
-			})),
+			rules: format.rules.map((rule) => rewriteConditionalFormatRuleWith(rule, rewrite)),
 		}
+	}
+	for (let i = 0; i < sheet.x14DataValidations.length; i++) {
+		const validation = sheet.x14DataValidations[i]
+		if (!validation) continue
+		const formula1 = rewrite(validation.formula1)
+		const formula2 = rewrite(validation.formula2)
+		sheet.x14DataValidations[i] = {
+			...validation,
+			...(formula1 !== undefined ? { formula1 } : {}),
+			...(formula2 !== undefined ? { formula2 } : {}),
+		}
+	}
+	for (let i = 0; i < sheet.x14ConditionalFormats.length; i++) {
+		const format = sheet.x14ConditionalFormats[i]
+		if (!format) continue
+		sheet.x14ConditionalFormats[i] = rewriteX14ConditionalFormatWith(format, rewrite)
 	}
 	for (let i = 0; i < sheet.tables.length; i++) {
 		const table = sheet.tables[i]
@@ -919,21 +1019,13 @@ export function rewriteSheetMetadataFormulasForTableColumnRename(
 	oldColumn: string,
 	newColumn: string,
 ): void {
+	const rewrite = (formula: string | undefined): string | undefined =>
+		rewriteFormulaTextForTableColumnRename(formula, tableName, oldColumn, newColumn)
 	for (let i = 0; i < sheet.dataValidations.length; i++) {
 		const validation = sheet.dataValidations[i]
 		if (!validation) continue
-		const formula1 = rewriteFormulaTextForTableColumnRename(
-			validation.formula1,
-			tableName,
-			oldColumn,
-			newColumn,
-		)
-		const formula2 = rewriteFormulaTextForTableColumnRename(
-			validation.formula2,
-			tableName,
-			oldColumn,
-			newColumn,
-		)
+		const formula1 = rewrite(validation.formula1)
+		const formula2 = rewrite(validation.formula2)
 		sheet.dataValidations[i] = {
 			...validation,
 			...(formula1 !== undefined ? { formula1 } : {}),
@@ -945,15 +1037,24 @@ export function rewriteSheetMetadataFormulasForTableColumnRename(
 		if (!format) continue
 		sheet.conditionalFormats[i] = {
 			...format,
-			rules: format.rules.map((rule) => ({
-				...rule,
-				formulas: rule.formulas.map(
-					(formula) =>
-						rewriteFormulaTextForTableColumnRename(formula, tableName, oldColumn, newColumn) ??
-						formula,
-				),
-			})),
+			rules: format.rules.map((rule) => rewriteConditionalFormatRuleWith(rule, rewrite)),
 		}
+	}
+	for (let i = 0; i < sheet.x14DataValidations.length; i++) {
+		const validation = sheet.x14DataValidations[i]
+		if (!validation) continue
+		const formula1 = rewrite(validation.formula1)
+		const formula2 = rewrite(validation.formula2)
+		sheet.x14DataValidations[i] = {
+			...validation,
+			...(formula1 !== undefined ? { formula1 } : {}),
+			...(formula2 !== undefined ? { formula2 } : {}),
+		}
+	}
+	for (let i = 0; i < sheet.x14ConditionalFormats.length; i++) {
+		const format = sheet.x14ConditionalFormats[i]
+		if (!format) continue
+		sheet.x14ConditionalFormats[i] = rewriteX14ConditionalFormatWith(format, rewrite)
 	}
 	for (let i = 0; i < sheet.tables.length; i++) {
 		const table = sheet.tables[i]

@@ -16,13 +16,33 @@ describe('external link metadata', () => {
 		expect(parseExternalBookRelationshipId('<externalLink/>')).toBeUndefined()
 	})
 
+	test('ignores externalBook id attributes outside the relationships namespace', () => {
+		expect(
+			parseExternalBookRelationshipId(
+				'<externalLink xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:foo="urn:not-relationships"><externalBook foo:id="rIdBad"/></externalLink>',
+			),
+		).toBeUndefined()
+		expect(
+			parseExternalBookRelationshipId(
+				'<externalLink xmlns:foo="urn:not-relationships"><externalBook foo:id="rIdBad" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:id="rIdGood"/></externalLink>',
+			),
+		).toBe('rIdGood')
+		expect(parseExternalBookRelationshipId('<externalBook rel:id="rIdUnbound"/>')).toBeUndefined()
+	})
+
 	test('decodes XML entities in relationship ids', () => {
-		expect(parseExternalBookRelationshipId('<externalBook r:id="rId&amp;2"/>')).toBe('rId&2')
+		expect(
+			parseExternalBookRelationshipId(
+				'<externalBook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:id="rId&amp;2"/>',
+			),
+		).toBe('rId&2')
 	})
 
 	test('parses XML-legal single-quoted externalBook relationship ids', () => {
-		expect(parseExternalBookRelationshipId("<externalBook r:id='rId&amp;Single'/>")).toBe(
-			'rId&Single',
-		)
+		expect(
+			parseExternalBookRelationshipId(
+				"<externalBook xmlns:r='http://schemas.openxmlformats.org/officeDocument/2006/relationships' r:id='rId&amp;Single'/>",
+			),
+		).toBe('rId&Single')
 	})
 })

@@ -425,7 +425,7 @@ function parseSheetDataBytes(
 		const rowTagEnd = findTagEndBytes(bytes, rowOpen)
 		if (rowTagEnd === -1 || rowTagEnd >= sheetData.contentEnd) return false
 		const rowAttrStart = rowOpen + BYTES_ROW_OPEN.length
-		const explicitRowIndex = rawPositiveIntAttrInBytes(bytes, rowAttrStart, rowTagEnd, 'r')
+		const explicitRowIndex = rawRowIndexAttrInBytes(bytes, rowAttrStart, rowTagEnd)
 		const row = explicitRowIndex !== undefined ? explicitRowIndex - 1 : currentRow + 1
 		currentRow = row
 		if (ctx.maxRows !== undefined && row >= ctx.maxRows) return true
@@ -1241,12 +1241,7 @@ export function* streamSheetRowsByteChunks(
 			}
 			const rowTagEnd = findTagEndBytes(buffer, 0)
 			if (rowTagEnd === -1) break
-			const explicitRowIndex = rawPositiveIntAttrInBytes(
-				buffer,
-				BYTES_ROW_OPEN.length,
-				rowTagEnd,
-				'r',
-			)
+			const explicitRowIndex = rawRowIndexAttrInBytes(buffer, BYTES_ROW_OPEN.length, rowTagEnd)
 			const row = explicitRowIndex !== undefined ? explicitRowIndex - 1 : currentRow + 1
 			if (ctx.maxRows !== undefined && row >= ctx.maxRows) return
 			const rowMetadata = streamedRowMetadataFromRawByteAttrs(
@@ -1492,7 +1487,7 @@ function parseStreamedValuesRowBytes(
 	const rowTagEnd = findTagEndBytes(bytes, rowOpen)
 	if (rowTagEnd === -1 || rowTagEnd > rowEnd) return null
 	const rowAttrStart = rowOpen + BYTES_ROW_OPEN.length
-	const explicitRowIndex = rawPositiveIntAttrInBytes(bytes, rowAttrStart, rowTagEnd, 'r')
+	const explicitRowIndex = rawRowIndexAttrInBytes(bytes, rowAttrStart, rowTagEnd)
 	const row = explicitRowIndex !== undefined ? explicitRowIndex - 1 : currentRow + 1
 	if (ctx.maxRows !== undefined && row >= ctx.maxRows) return null
 	if (isSelfClosingTagBytes(bytes, rowOpen, rowTagEnd)) return { row, cells: [] }
@@ -3204,6 +3199,60 @@ function rawPositiveIntAttrInBytes(
 		value = value * 10 + (code - 48)
 	}
 	return range.end > range.start ? value : undefined
+}
+
+function rawRowIndexAttrInBytes(bytes: Uint8Array, start: number, end: number): number | undefined {
+	let cursor = skipXmlWhitespaceBytes(bytes, start, end)
+	if (
+		cursor + 3 < end &&
+		bytes[cursor] === 114 &&
+		bytes[cursor + 1] === 61 &&
+		(bytes[cursor + 2] === BYTE_QUOTE || bytes[cursor + 2] === BYTE_APOS)
+	) {
+		const quote = bytes[cursor + 2]
+		cursor += 3
+		let value = 0
+		const valueStart = cursor
+		while (cursor < end && bytes[cursor] !== quote) {
+			const code = bytes[cursor] ?? -1
+			if (code < 48 || code > 57) return undefined
+			value = value * 10 + (code - 48)
+			cursor += 1
+		}
+		return cursor > valueStart && cursor < end ? value : undefined
+	}
+	cursor = start
+	while (cursor < end) {
+		cursor = skipXmlWhitespaceBytes(bytes, cursor, end)
+		if (cursor >= end || bytes[cursor] === BYTE_SLASH) break
+		const nameStart = cursor
+		while (cursor < end) {
+			const code = bytes[cursor]
+			if (code === 61 || isXmlWhitespaceByte(code)) break
+			cursor += 1
+		}
+		const nameEnd = cursor
+		cursor = skipXmlWhitespaceBytes(bytes, cursor, end)
+		if (bytes[cursor] !== 61) return undefined
+		cursor = skipXmlWhitespaceBytes(bytes, cursor + 1, end)
+		const quote = bytes[cursor]
+		if (quote !== BYTE_QUOTE && quote !== BYTE_APOS) return undefined
+		const valueStart = cursor + 1
+		cursor = valueStart
+		while (cursor < end && bytes[cursor] !== quote) cursor += 1
+		if (cursor >= end) return undefined
+		if (nameEnd === nameStart + 1 && bytes[nameStart] === 114) {
+			let value = 0
+			for (let index = valueStart; index < cursor; index++) {
+				const code = bytes[index] ?? -1
+				if (code < 48 || code > 57) return undefined
+				value = value * 10 + (code - 48)
+			}
+			return cursor > valueStart ? value : undefined
+		}
+		cursor += 1
+	}
+	return undefined
 }
 
 function rawBoolAttrInBytes(

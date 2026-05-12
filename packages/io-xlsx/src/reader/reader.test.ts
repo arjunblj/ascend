@@ -3404,6 +3404,54 @@ describe('readXlsx', () => {
 		expect(sheet?.cells.get(0, 702)?.value).toEqual({ kind: 'number', value: 702 })
 	})
 
+	it('full mode preserves simple numeric cell references and style indexes', () => {
+		const cells = [
+			'<c r="A1"><v>7</v></c>',
+			'<c r="AA1" s="1"><v>0.25</v></c>',
+			'<c r="AAA1"><v>-3.5</v></c>',
+		].join('')
+		const bytes = makeXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+</Types>`,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+</Relationships>`,
+			'xl/workbook.xml': WORKBOOK_XML,
+			'xl/styles.xml': `<?xml version="1.0"?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <numFmts count="1"><numFmt numFmtId="164" formatCode="0.0%"/></numFmts>
+  <cellXfs count="2">
+    <xf numFmtId="0" fontId="0" fillId="0" borderId="0"/>
+    <xf numFmtId="164" fontId="0" fillId="0" borderId="0"/>
+  </cellXfs>
+</styleSheet>`,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData><row r="1">${cells}</row></sheetData>
+</worksheet>`,
+		})
+
+		const result = readXlsx(bytes)
+		expectOk(result)
+
+		const workbook = result.value.workbook
+		const sheet = workbook.sheets[0]
+		expect(sheet?.cells.get(0, 0)?.value).toEqual(numberValue(7))
+		const styled = sheet?.cells.get(0, 26)
+		expect(styled?.value).toEqual(numberValue(0.25))
+		expect(workbook.styles.get(styled?.styleId ?? S0)?.numberFormat).toBe('0.0%')
+		expect(sheet?.cells.get(0, 702)?.value).toEqual(numberValue(-3.5))
+	})
+
 	it('values mode reads simple inline strings without full cell XML parsing', () => {
 		const bytes = makeXlsx({
 			'[Content_Types].xml': CONTENT_TYPES,

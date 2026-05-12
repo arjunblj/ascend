@@ -239,6 +239,9 @@ export function parseSheet(
 	if (ctx.valuesOnly && !richMetadata && !hasValuesModeSheetMetadata(xml, sheetDataLoc)) {
 		return sheet
 	}
+	if (richMetadata && sheetDataLoc && hasOnlyCellTableAndDimensionOuterMarkup(xml, sheetDataLoc)) {
+		return sheet
+	}
 	const strippedXml = sheetDataLoc
 		? `${xml.slice(0, sheetDataLoc.tagStart)}<sheetData/>${xml.slice(sheetDataLoc.closeEnd)}`
 		: xml
@@ -366,6 +369,57 @@ function hasWorksheetTagInRange(xml: string, start: number, end: number, tagName
 		cursor = index + tagName.length + 1
 	}
 	return false
+}
+
+function hasOnlyCellTableAndDimensionOuterMarkup(
+	xml: string,
+	sheetDataLoc: SheetDataLocation,
+): boolean {
+	return (
+		hasOnlyTrivialWorksheetMarkupInRange(xml, 0, sheetDataLoc.tagStart) &&
+		hasOnlyTrivialWorksheetMarkupInRange(xml, sheetDataLoc.closeEnd, xml.length)
+	)
+}
+
+function hasOnlyTrivialWorksheetMarkupInRange(xml: string, start: number, end: number): boolean {
+	let cursor = start
+	while (cursor < end) {
+		const open = xml.indexOf('<', cursor)
+		if (open === -1) return isXmlWhitespaceInRange(xml, cursor, end)
+		if (!isXmlWhitespaceInRange(xml, cursor, open)) return false
+		const marker = xml.charCodeAt(open + 1)
+		const tagEnd = findTagEnd(xml, open)
+		if (tagEnd === -1 || tagEnd >= end) return false
+		if (marker === 63 || marker === 33) {
+			cursor = tagEnd + 1
+			continue
+		}
+		const closing = marker === 47
+		const nameStart = open + (closing ? 2 : 1)
+		let nameEnd = nameStart
+		while (nameEnd < tagEnd) {
+			const code = xml.charCodeAt(nameEnd)
+			if (code === 47 || code === 62 || isXmlWhitespaceCode(code)) break
+			nameEnd += 1
+		}
+		if (closing) {
+			if (!attrNameEquals(xml, nameStart, nameEnd, 'worksheet')) return false
+		} else if (
+			!attrNameEquals(xml, nameStart, nameEnd, 'worksheet') &&
+			!attrNameEquals(xml, nameStart, nameEnd, 'dimension')
+		) {
+			return false
+		}
+		cursor = tagEnd + 1
+	}
+	return true
+}
+
+function isXmlWhitespaceInRange(xml: string, start: number, end: number): boolean {
+	for (let index = start; index < end; index++) {
+		if (!isXmlWhitespaceCode(xml.charCodeAt(index))) return false
+	}
+	return true
 }
 
 function hasRowPresentationMetadataInRange(xml: string, start: number, end: number): boolean {
@@ -1045,6 +1099,10 @@ function parseSheetDataFromLoc(
 
 		const rowClose = xml.indexOf('</row>', rowTagEnd + 1)
 		if (rowClose === -1 || rowClose > sheetData.contentEnd) return
+		if (parseSimpleFullNumberRow(xml, rowTagEnd + 1, rowClose, row, cellCtx, sheet)) {
+			rowCursor = rowClose + 6
+			continue
+		}
 		if (parseSimpleValuesRow(xml, rowTagEnd + 1, rowClose, row, cellCtx, sheet)) {
 			rowCursor = rowClose + 6
 			continue
@@ -2403,6 +2461,121 @@ function parseSimpleValuesRow(
 		nextCol = out.col + 1
 		cursor += 4
 	}
+}
+
+function parseSimpleFullNumberRow(
+	xml: string,
+	bodyStart: number,
+	bodyEnd: number,
+	row: number,
+	ctx: SheetParseContext,
+	sheet: Sheet,
+): boolean {
+	if (ctx.valuesOnly || ctx.formulaOnly) return false
+	let cursor = bodyStart
+	let nextCol = 0
+	const rowText = String(row + 1)
+	const out: {
+		row: number
+		col: number
+		numberValue: number | undefined
+		styleIdx: number
+	} = {
+		row,
+		col: 0,
+		numberValue: undefined,
+		styleIdx: 0,
+	}
+	while (true) {
+		cursor = skipXmlWhitespace(xml, cursor, bodyEnd)
+		if (cursor >= bodyEnd) return true
+		const next = parseCanonicalFullNumberCell(xml, cursor, bodyEnd, rowText, row, nextCol, out)
+		if (next === -1 || out.numberValue === undefined) return false
+		const styleId = ctx.styleIds[out.styleIdx] ?? DEFAULT_STYLE_ID
+		if (ctx.isDateFormat[out.styleIdx]) {
+			sheet.cells.setResolved(out.row, out.col, dateValue(out.numberValue), null, styleId)
+		} else if (styleId === DEFAULT_STYLE_ID) {
+			sheet.cells.setPlainNumber(out.row, out.col, out.numberValue)
+		} else {
+			sheet.cells.setNumberResolved(out.row, out.col, out.numberValue, null, styleId)
+		}
+		nextCol = out.col + 1
+		cursor = next
+	}
+}
+
+function parseCanonicalFullNumberCell(
+	xml: string,
+	cursor: number,
+	bodyEnd: number,
+	fallbackRowText: string,
+	fallbackRow: number,
+	fallbackCol: number,
+	out: {
+		row: number
+		col: number
+		numberValue: number | undefined
+		styleIdx: number
+	},
+): number {
+	if (!xml.startsWith('<c r="', cursor)) return -1
+	let index = cursor + 6
+	let row = fallbackRow
+	let col = fallbackCol
+	const expectedRefEnd = consumeExpectedCellRef(xml, index, bodyEnd, fallbackRowText, fallbackCol)
+	if (expectedRefEnd === -1) {
+		const parsed = parseCellRefInXml(xml, index, bodyEnd)
+		if (!parsed) return -1
+		index = parsed.end
+		row = parsed.row
+		col = parsed.col
+	} else {
+		index = expectedRefEnd
+	}
+	out.row = row
+	out.col = col
+	out.numberValue = undefined
+	out.styleIdx = 0
+
+	const contentStart = resolveCanonicalFullNumberContentStart(xml, index, bodyEnd, out)
+	if (contentStart === -1) return -1
+	if (!xml.startsWith('<v>', contentStart)) return -1
+	const valueStart = contentStart + 3
+	const parsedInt = parseCanonicalIntegerValue(xml, valueStart, bodyEnd)
+	if (parsedInt) {
+		out.numberValue = parsedInt.value
+		return parsedInt.next
+	}
+	const valueEnd = xml.indexOf('</v></c>', valueStart)
+	if (valueEnd === -1 || valueEnd > bodyEnd) return -1
+	const value = parseSimpleXmlNumber(xml, valueStart, valueEnd)
+	if (value === undefined) return -1
+	out.numberValue = value
+	return valueEnd + 8
+}
+
+function resolveCanonicalFullNumberContentStart(
+	xml: string,
+	refEnd: number,
+	bodyEnd: number,
+	out: { styleIdx: number },
+): number {
+	if (xml.startsWith('">', refEnd)) return refEnd + 2
+	if (!xml.startsWith('" s="', refEnd)) return -1
+	let cursor = refEnd + 5
+	let styleIdx = 0
+	const digitStart = cursor
+	while (cursor < bodyEnd) {
+		const code = xml.charCodeAt(cursor)
+		if (code < 48 || code > 57) break
+		styleIdx = styleIdx * 10 + (code - 48)
+		cursor += 1
+	}
+	if (cursor === digitStart || cursor >= bodyEnd || xml.charCodeAt(cursor) !== 34) return -1
+	const tagEnd = cursor + 1
+	if (tagEnd >= bodyEnd || xml.charCodeAt(tagEnd) !== 62) return -1
+	out.styleIdx = styleIdx
+	return tagEnd + 1
 }
 
 function parseCanonicalValuesCell(

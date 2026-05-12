@@ -1001,8 +1001,9 @@ export function resolveFormulaDependencies(
 		}
 	}
 	rangeDeps.push(
-		...collectStructuredRefDependencies(
+		...collectStructuredRefDependenciesWithNames(
 			formula.ast,
+			workbook,
 			structuredRefResolver,
 			formula.sheetIndex,
 			formula.row,
@@ -1569,6 +1570,61 @@ function collectStructuredRefDependencies(
 ): RangeDependency[] {
 	const result: RangeDependency[] = []
 	walkStructuredRefDependencies(node, structuredRefResolver, sheetIndex, row, col, result)
+	return result
+}
+
+function collectStructuredRefDependenciesWithNames(
+	node: FormulaNode,
+	workbook: Workbook,
+	structuredRefResolver: StructuredRefResolver,
+	sheetIndex: number,
+	row: number,
+	col: number,
+	seenNames: readonly string[] = [],
+	nameDependencyCache = new Map<string, RangeDependency[]>(),
+): RangeDependency[] {
+	const result = collectStructuredRefDependencies(node, structuredRefResolver, sheetIndex, row, col)
+	const nameRefs = collectNameRefs(node)
+	for (const nameRef of nameRefs) {
+		const currentSheet = workbook.sheets[sheetIndex]
+		const explicitSheet = nameRef.sheet ? workbook.getSheet(nameRef.sheet) : undefined
+		const entry = workbook.definedNames.resolve(nameRef.name, currentSheet?.id, explicitSheet?.id)
+		if (!entry) continue
+
+		const entryKey =
+			entry.scope.kind === 'workbook'
+				? `workbook:${entry.name.toLowerCase()}`
+				: `sheet:${entry.scope.sheetId}:${entry.name.toLowerCase()}`
+		if (seenNames.includes(entryKey)) continue
+
+		let formulaSheetIndex = sheetIndex
+		if (entry.scope.kind === 'sheet') {
+			const scope = entry.scope
+			const localSheetIndex = workbook.sheets.findIndex(
+				(workbookSheet) => workbookSheet.id === scope.sheetId,
+			)
+			if (localSheetIndex >= 0) formulaSheetIndex = localSheetIndex
+		}
+
+		const cacheKey = `${entryKey}:${formulaSheetIndex}:${row}:${col}`
+		let resolved = nameDependencyCache.get(cacheKey)
+		if (resolved === undefined) {
+			const parsed = cachedParseFormula(entry.formula)
+			if (!parsed.ok) continue
+			resolved = collectStructuredRefDependenciesWithNames(
+				parsed.value,
+				workbook,
+				structuredRefResolver,
+				formulaSheetIndex,
+				row,
+				col,
+				[...seenNames, entryKey],
+				nameDependencyCache,
+			)
+			nameDependencyCache.set(cacheKey, resolved)
+		}
+		result.push(...resolved)
+	}
 	return result
 }
 

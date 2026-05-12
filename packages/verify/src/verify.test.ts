@@ -2701,4 +2701,33 @@ describe('tracer', () => {
 		expect(result.value.precedents).toHaveLength(1)
 		expect(result.value.precedents[0]?.ref).toBe('B2:B3')
 	})
+
+	test('reports structured-reference precedents through defined names', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.cells.set(0, 0, { value: stringValue('Player'), formula: null, styleId: SID })
+		s.cells.set(0, 1, { value: stringValue('Score'), formula: null, styleId: SID })
+		s.cells.set(1, 0, { value: stringValue('Mina'), formula: null, styleId: SID })
+		s.cells.set(1, 1, { value: numberValue(10), formula: null, styleId: SID })
+		s.cells.set(2, 0, { value: stringValue('Noah'), formula: null, styleId: SID })
+		s.cells.set(2, 1, { value: numberValue(12), formula: null, styleId: SID })
+		s.tables.push({
+			id: createTableId(),
+			name: 'Scores',
+			sheetId: s.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 2, col: 1 } },
+			columns: [{ name: 'Player' }, { name: 'Score' }],
+			hasHeaders: true,
+			hasTotals: false,
+		})
+		wb.definedNames.set('ScoreValues', 'Scores[Score]')
+		s.cells.set(4, 0, { value: EMPTY, formula: 'SUM(ScoreValues)', styleId: SID })
+
+		const result = trace(wb, 'Sheet1', 'A5')
+		expect(result.ok).toBe(true)
+		if (!result.ok) throw new Error(result.error.message)
+
+		expect(result.value.precedents).toHaveLength(1)
+		expect(result.value.precedents[0]?.ref).toBe('B2:B3')
+	})
 })

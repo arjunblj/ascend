@@ -558,6 +558,45 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(4, 0)?.value).toEqual(numberValue(22))
 	})
 
+	test('dirty recalc updates same-sheet defined name backed by a structured reference', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		populateRegionSalesRows(sheet)
+		addSalesTable(sheet, 'Sales')
+		wb.definedNames.set('SalesValues', 'Sales[Sales]')
+		sheet.cells.set(0, 3, { value: EMPTY, formula: 'SUM(SalesValues)', styleId: sid })
+
+		expect(recalculate(wb, makeCtx()).errors).toEqual([])
+		expect(sheet.cells.get(0, 3)?.value).toEqual(numberValue(90))
+
+		sheet.cells.set(2, 1, { value: numberValue(300), formula: null, styleId: sid })
+		const result = recalculate(wb, makeCtx(), { dirtyRefs: ['Sheet1!B3'] })
+
+		expect(result.errors).toEqual([])
+		expect(result.changed).toEqual(['Sheet1!D1'])
+		expect(sheet.cells.get(0, 3)?.value).toEqual(numberValue(360))
+	})
+
+	test('dirty recalc updates cross-sheet defined name backed by a structured reference', () => {
+		const wb = createWorkbook()
+		const data = wb.addSheet('Data')
+		const summary = wb.addSheet('Summary')
+		populateRegionSalesRows(data)
+		addSalesTable(data, 'Sales')
+		wb.definedNames.set('SalesValues', 'Sales[Sales]')
+		summary.cells.set(0, 0, { value: EMPTY, formula: 'SUM(SalesValues)', styleId: sid })
+
+		expect(recalculate(wb, makeCtx()).errors).toEqual([])
+		expect(summary.cells.get(0, 0)?.value).toEqual(numberValue(90))
+
+		data.cells.set(2, 1, { value: numberValue(300), formula: null, styleId: sid })
+		const result = recalculate(wb, makeCtx(), { dirtyRefs: ['Data!B3'] })
+
+		expect(result.errors).toEqual([])
+		expect(result.changed).toEqual(['Summary!A1'])
+		expect(summary.cells.get(0, 0)?.value).toEqual(numberValue(360))
+	})
+
 	test('whole-column references can aggregate used cells in a column', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

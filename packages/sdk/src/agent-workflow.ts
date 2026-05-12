@@ -124,6 +124,7 @@ export interface WritePolicyReport {
 		readonly externalReferences: number
 		readonly externalReferenceBindingIssues: number
 		readonly x14ConditionalFormatExtensionPayloads: number
+		readonly x14DataValidationExtensionPayloads: number
 		readonly calcChainPolicy: 'not-present' | 'preserved' | 'discarded-for-formula-topology'
 	}
 }
@@ -139,6 +140,7 @@ export interface WritePolicyDiagnostic {
 		| 'active-content-preserved'
 		| 'visual-sidecar-preservation-risk'
 		| 'conditional-format-extension-preservation'
+		| 'data-validation-extension-preservation'
 		| 'external-link-dependency'
 		| 'external-link-binding-risk'
 		| 'package-graph-audit-issue'
@@ -1372,6 +1374,25 @@ function buildWritePolicyReport(
 			details: { x14ConditionalFormats: x14ConditionalFormatExtensionPayloads },
 		})
 	}
+	const x14DataValidationExtensionPayloads = collectX14DataValidationExtensionPayloads(workbook)
+	if (x14DataValidationExtensionPayloads.length > 0) {
+		const partPaths = uniqueStrings(
+			x14DataValidationExtensionPayloads.flatMap((entry) =>
+				entry.sheetPartPath ? [entry.sheetPartPath] : [],
+			),
+		)
+		diagnostics.push({
+			code: 'data-validation-extension-preservation',
+			severity: 'warning',
+			message: `${x14DataValidationExtensionPayloads.length} x14 data-validation extension rule(s) will be preserved inside generated worksheet XML.`,
+			suggestedAction:
+				'Inspect sheet x14DataValidations before editing validation ranges or formulas, then verify postWrite.packageGraphAudit after write.',
+			...(partPaths.length > 0 ? { partPaths } : {}),
+			featureFamily: 'x14DataValidation',
+			preservationPolicy: 'generated',
+			details: { x14DataValidations: x14DataValidationExtensionPayloads },
+		})
+	}
 	if (externalReferences.length > 0) {
 		const externalReferencePartPaths = uniqueStrings(
 			externalReferences.map((entry) => entry.partPath),
@@ -1460,6 +1481,7 @@ function buildWritePolicyReport(
 			externalReferences: externalReferences.length,
 			externalReferenceBindingIssues: externalReferenceBindingIssues.length,
 			x14ConditionalFormatExtensionPayloads: x14ConditionalFormatExtensionPayloads.length,
+			x14DataValidationExtensionPayloads: x14DataValidationExtensionPayloads.length,
 			calcChainPolicy,
 		},
 	}
@@ -1498,6 +1520,44 @@ function collectX14ConditionalFormatExtensionPayloads(
 				...(format.type ? { type: format.type } : {}),
 				preservedAttributeNames,
 				preservedChildElements,
+			})
+		}
+	}
+	return payloads
+}
+
+interface X14DataValidationExtensionPayload {
+	readonly sheetName: string
+	readonly sheetPartPath?: string
+	readonly sqref: string
+	readonly index: number
+	readonly type?: string
+	readonly operator?: string
+	readonly hasFormula1: boolean
+	readonly hasFormula2: boolean
+	readonly preservedAttributeNames: readonly string[]
+	readonly preservedChildElements: readonly string[]
+}
+
+function collectX14DataValidationExtensionPayloads(
+	workbook: Workbook,
+): X14DataValidationExtensionPayload[] {
+	const payloads: X14DataValidationExtensionPayload[] = []
+	for (const sheet of workbook.sheets) {
+		for (const validation of sheet.x14DataValidations) {
+			payloads.push({
+				sheetName: sheet.name,
+				...(sheet.preservedXml?.partPath ? { sheetPartPath: sheet.preservedXml.partPath } : {}),
+				sqref: validation.sqref,
+				index: validation.index,
+				...(validation.type ? { type: validation.type } : {}),
+				...(validation.operator ? { operator: validation.operator } : {}),
+				hasFormula1: validation.formula1 !== undefined,
+				hasFormula2: validation.formula2 !== undefined,
+				preservedAttributeNames: Object.keys(validation.preservedAttributes ?? {}).sort(),
+				preservedChildElements: uniqueStrings(
+					(validation.preservedChildXml ?? []).map(preservedChildElementName),
+				).sort(),
 			})
 		}
 	}

@@ -496,6 +496,57 @@ describe('agent workflow loss audit', () => {
 		)
 	})
 
+	test('plans surface preserved x14 data validation extension payloads', async () => {
+		const input = join(TEMP_DIR, 'x14-data-validation.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		const wb = AscendWorkbook.create()
+		wb.getWorkbookModel().sheets[0]?.x14DataValidations.push({
+			index: 0,
+			sqref: 'C2:C5',
+			type: 'list',
+			operator: 'between',
+			formula1: 'Lookup!$A$1:$A$4',
+			preservedAttributes: {
+				'xr:uid': '{DV-UID}',
+				showErrorMessage: '1',
+			},
+			preservedChildXml: ['<x14ac:metadata flag="1"><x14ac:item val="keep"/></x14ac:metadata>'],
+		})
+		await wb.save(input)
+
+		const plan = await createAgentPlan(input, [
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 7 }] },
+		])
+
+		expect(plan.writePolicy.summary.x14DataValidationExtensionPayloads).toBe(1)
+		expect(plan.writePolicy.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: 'data-validation-extension-preservation',
+				severity: 'warning',
+				partPaths: ['xl/worksheets/sheet1.xml'],
+				featureFamily: 'x14DataValidation',
+				preservationPolicy: 'generated',
+				details: {
+					x14DataValidations: [
+						{
+							sheetName: 'Sheet1',
+							sheetPartPath: 'xl/worksheets/sheet1.xml',
+							sqref: 'C2:C5',
+							index: 0,
+							type: 'list',
+							operator: 'between',
+							hasFormula1: true,
+							hasFormula2: false,
+							preservedAttributeNames: ['xr:uid'],
+							preservedChildElements: ['x14ac:metadata'],
+						},
+					],
+				},
+			}),
+		)
+		expect(plan.modelOutput.warnings).toContainEqual(expect.stringContaining('write-policy:'))
+	})
+
 	test('partial workbook views cannot produce full-fidelity write plans', async () => {
 		const wb = AscendWorkbook.create()
 		const bytes = wb.toBytes()

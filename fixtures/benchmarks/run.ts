@@ -772,6 +772,19 @@ const scenarios: readonly Scenario[] = [
 		},
 	},
 	{
+		name: 'read-values-wide',
+		category: 'read',
+		build() {
+			const workbook = buildDenseWorkbook(2000, 100)
+			const bytes = mustWrite(workbook)
+			return { bytes, rows: 2000, cols: 100, cells: 200_000 }
+		},
+		run(input) {
+			const result = readXlsx(requireBytes(input), { mode: 'values' })
+			if (!result.ok) throw new Error(result.error.message)
+		},
+	},
+	{
 		name: 'read-full-string-dense',
 		category: 'read',
 		build() {

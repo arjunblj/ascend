@@ -2544,9 +2544,28 @@ function consumeExpectedCellRef(
 	rowText: string,
 	col: number,
 ): number {
-	if (col < 0 || col > 25) return -1
-	if (start >= end || xml.charCodeAt(start) !== 65 + col) return -1
-	let cursor = start + 1
+	if (col < 0) return -1
+	let cursor = start
+	const oneBasedCol = col + 1
+	if (oneBasedCol <= 26) {
+		if (cursor >= end || xml.charCodeAt(cursor) !== 64 + oneBasedCol) return -1
+		cursor += 1
+	} else {
+		let parsedCol = 0
+		while (cursor < end) {
+			const code = xml.charCodeAt(cursor)
+			if (code >= 48 && code <= 57) break
+			if (code >= 65 && code <= 90) {
+				parsedCol = parsedCol * 26 + (code - 64)
+			} else if (code >= 97 && code <= 122) {
+				parsedCol = parsedCol * 26 + (code - 96)
+			} else {
+				return -1
+			}
+			cursor += 1
+		}
+		if (parsedCol !== oneBasedCol) return -1
+	}
 	for (let index = 0; index < rowText.length; index++) {
 		if (cursor >= end) return -1
 		if (xml.charCodeAt(cursor) !== rowText.charCodeAt(index)) return -1

@@ -3362,6 +3362,34 @@ describe('readXlsx', () => {
 		expect(sheet?.cells.get(0, 2)?.formula).toBeNull()
 	})
 
+	it('values mode reads sequential A1-style refs beyond Z without shifting columns', () => {
+		const cells = Array.from(
+			{ length: 703 },
+			(_, col) => `<c r="${indexToColumn(col)}1"><v>${col}</v></c>`,
+		).join('')
+		const bytes = makeXlsx({
+			'[Content_Types].xml': CONTENT_TYPES,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': WORKBOOK_RELS,
+			'xl/workbook.xml': WORKBOOK_XML,
+			'xl/sharedStrings.xml': SHARED_STRINGS,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData><row r="1">${cells}</row></sheetData>
+</worksheet>`,
+		})
+
+		const result = readXlsx(bytes, { mode: 'values' })
+		expectOk(result)
+
+		const sheet = result.value.workbook.sheets[0]
+		expect(sheet?.cells.get(0, 0)?.value).toEqual({ kind: 'number', value: 0 })
+		expect(sheet?.cells.get(0, 25)?.value).toEqual({ kind: 'number', value: 25 })
+		expect(sheet?.cells.get(0, 26)?.value).toEqual({ kind: 'number', value: 26 })
+		expect(sheet?.cells.get(0, 701)?.value).toEqual({ kind: 'number', value: 701 })
+		expect(sheet?.cells.get(0, 702)?.value).toEqual({ kind: 'number', value: 702 })
+	})
+
 	it('values mode reads simple inline strings without full cell XML parsing', () => {
 		const bytes = makeXlsx({
 			'[Content_Types].xml': CONTENT_TYPES,

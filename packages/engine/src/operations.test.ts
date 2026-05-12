@@ -3583,6 +3583,87 @@ describe('applyOperation', () => {
 		])
 	})
 
+	test('resizeTable remaps table filter criteria and prunes dropped sort conditions', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 3, { value: stringValue('Forecast'), formula: null, styleId: sid })
+		sheet.tables.push({
+			id: createTableId(),
+			name: 'Sales',
+			sheetId: sheet.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 3, col: 2 } },
+			columns: [
+				{ id: 1, name: 'Region' },
+				{ id: 2, name: 'Amount' },
+				{ id: 3, name: 'Status' },
+			],
+			hasHeaders: true,
+			hasTotals: false,
+			autoFilter: {
+				ref: 'A1:C4',
+				columns: [
+					{ colId: 0, kind: 'filters', values: ['West'] },
+					{ colId: 2, kind: 'filters', values: ['Open'] },
+				],
+				sortState: {
+					ref: 'A1:C4',
+					conditions: [{ ref: 'A2:A4' }, { ref: 'C2:C4', descending: true }],
+				},
+			},
+			sortState: {
+				ref: 'A1:C4',
+				conditions: [{ ref: 'A2:A4' }, { ref: 'C2:C4', descending: true }],
+			},
+		})
+
+		expectOk(applyOperation(wb, { op: 'resizeTable', table: 'Sales', ref: 'B1:D4' }))
+
+		expect(sheet.tables[0]?.autoFilter).toEqual({
+			ref: 'B1:D4',
+			columns: [{ colId: 1, kind: 'filters', values: ['Open'] }],
+			sortState: {
+				ref: 'B1:D4',
+				conditions: [{ ref: 'C2:C4', descending: true }],
+			},
+		})
+		expect(sheet.tables[0]?.sortState).toEqual({
+			ref: 'B1:D4',
+			conditions: [{ ref: 'C2:C4', descending: true }],
+		})
+	})
+
+	test('resizeTable removes table sort states when all conditions target dropped columns', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.tables.push({
+			id: createTableId(),
+			name: 'Sales',
+			sheetId: sheet.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 3, col: 2 } },
+			columns: [
+				{ id: 1, name: 'Region' },
+				{ id: 2, name: 'Amount' },
+				{ id: 3, name: 'Status' },
+			],
+			hasHeaders: true,
+			hasTotals: false,
+			autoFilter: {
+				ref: 'A1:C4',
+				columns: [{ colId: 2, kind: 'filters', values: ['Open'] }],
+				sortState: { ref: 'A1:C4', conditions: [{ ref: 'C2:C4', descending: true }] },
+			},
+			sortState: { ref: 'A1:C4', conditions: [{ ref: 'C2:C4', descending: true }] },
+		})
+
+		expectOk(applyOperation(wb, { op: 'resizeTable', table: 'Sales', ref: 'A1:B4' }))
+
+		expect(sheet.tables[0]?.autoFilter).toEqual({
+			ref: 'A1:B4',
+			columns: [],
+		})
+		expect(sheet.tables[0]?.sortState).toBeUndefined()
+	})
+
 	test('resizeTable preserves existing tableColumn metadata when expanding columns', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

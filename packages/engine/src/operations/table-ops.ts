@@ -1,13 +1,15 @@
 import type {
 	AutoFilter,
+	RangeRef,
 	Sheet,
+	SortState,
 	Table,
 	TableColumn,
 	TableId,
 	TableStyleInfo,
 	Workbook,
 } from '@ascend/core'
-import { createTableId, parseA1Safe, toA1 } from '@ascend/core'
+import { createTableId, parseA1Safe, parseRange, toA1 } from '@ascend/core'
 import { normalizeFormulaInput } from '@ascend/formulas'
 import type { Operation, Result } from '@ascend/schema'
 import { ascendError, EMPTY, err, ok, stringValue } from '@ascend/schema'
@@ -299,14 +301,19 @@ export function handleResizeTable(
 		return err(tableResizeDroppedColumnReferenceError(droppedColumnBlocker))
 	}
 	const columns = buildResizedTableColumns(sheet, table, ref)
+	const autoFilter = table.autoFilter
+		? resizeTableAutoFilter(table.autoFilter, table.ref, ref)
+		: undefined
+	const sortState = resizeTableSortState(table.sortState, ref)
 	const idx = sheet.tables.findIndex((t) => t.id === table.id)
 	if (idx >= 0) {
+		const { autoFilter: _autoFilter, sortState: _sortState, ...tableWithoutFilterState } = table
 		sheet.tables[idx] = {
-			...table,
+			...tableWithoutFilterState,
 			ref,
 			columns,
-			...(table.autoFilter ? { autoFilter: resizeTableAutoFilter(table.autoFilter, op.ref) } : {}),
-			...(table.sortState ? { sortState: { ...table.sortState, ref: op.ref } } : {}),
+			...(autoFilter ? { autoFilter } : {}),
+			...(sortState ? { sortState } : {}),
 		}
 	}
 	clearFormulaMetadata(workbook)
@@ -757,10 +764,53 @@ function updateTableStyle(
 	return Object.keys(next).length > 0 ? next : undefined
 }
 
-function resizeTableAutoFilter(autoFilter: AutoFilter, ref: string): AutoFilter {
+function resizeTableAutoFilter(
+	autoFilter: AutoFilter,
+	oldRef: RangeRef,
+	nextRef: RangeRef,
+): AutoFilter {
+	const sortState = resizeTableSortState(autoFilter.sortState, nextRef)
+	const { sortState: _sortState, ref: _ref, columns: _columns, ...rest } = autoFilter
 	return {
-		...autoFilter,
-		ref,
-		...(autoFilter.sortState ? { sortState: { ...autoFilter.sortState, ref } } : {}),
+		...rest,
+		ref: rangeToA1(nextRef),
+		columns: remapTableFilterColumns(autoFilter.columns, oldRef, nextRef),
+		...(sortState ? { sortState } : {}),
+	}
+}
+
+function remapTableFilterColumns(
+	columns: AutoFilter['columns'],
+	oldRef: RangeRef,
+	nextRef: RangeRef,
+): AutoFilter['columns'] {
+	return columns
+		.map((column) => {
+			const absoluteCol = oldRef.start.col + column.colId
+			if (absoluteCol < nextRef.start.col || absoluteCol > nextRef.end.col) return null
+			return { ...column, colId: absoluteCol - nextRef.start.col }
+		})
+		.filter((column): column is AutoFilter['columns'][number] => column !== null)
+		.sort((left, right) => left.colId - right.colId)
+}
+
+function resizeTableSortState(
+	sortState: SortState | null | undefined,
+	nextRef: RangeRef,
+): SortState | undefined {
+	if (!sortState) return undefined
+	const conditions = sortState.conditions.filter((condition) =>
+		sortConditionOverlapsTable(condition.ref, nextRef),
+	)
+	if (conditions.length === 0) return undefined
+	return { ...sortState, ref: rangeToA1(nextRef), conditions }
+}
+
+function sortConditionOverlapsTable(ref: string, tableRef: RangeRef): boolean {
+	try {
+		const conditionRef = parseRange(ref)
+		return tableRangesOverlap(conditionRef, tableRef)
+	} catch {
+		return true
 	}
 }

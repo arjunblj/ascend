@@ -4105,6 +4105,25 @@ function checkLegacyCommentDrawingIntegrity(
 	const vmlRelationships = packageGraph.relationships.filter((relationship) =>
 		isVmlDrawingRelationshipType(relationship.type),
 	)
+	const vmlRelationshipsByTarget = relationshipsByTarget(vmlRelationships)
+	const rawVmlNoteObjects: Array<{
+		readonly sheetName: string
+		readonly objectIndex: number
+		readonly drawingPartPath: string
+		readonly shapeId?: string
+	}> = []
+	for (const sheet of wb.sheets) {
+		for (let objectIndex = 0; objectIndex < sheet.drawingObjectRefs.length; objectIndex++) {
+			const object = sheet.drawingObjectRefs[objectIndex]
+			if (!object || object.source !== 'vml' || object.vmlObjectType !== 'Note') continue
+			rawVmlNoteObjects.push({
+				sheetName: sheet.name,
+				objectIndex,
+				drawingPartPath: object.drawingPartPath,
+				...(object.vmlShapeId ? { shapeId: object.vmlShapeId } : {}),
+			})
+		}
+	}
 	const commentSheetPartPaths = new Set(
 		wb.sheets
 			.filter((sheet) => sheet.comments.size > 0 && sheet.preservedXml?.partPath)
@@ -4120,6 +4139,51 @@ function checkLegacyCommentDrawingIntegrity(
 	)
 	const shouldClassifyCommentsPartOrphans =
 		workbookCommentCount === 0 || commentSheetPartPaths.size > 0
+	if (rawVmlNoteObjects.length > 0 && commentsRelationships.length === 0) {
+		issues.push({
+			rule: 'legacy-comment-drawing-integrity',
+			severity: 'warning',
+			message:
+				'Legacy comment VML note shapes exist but the package graph has no comments relationship',
+			refs: [...new Set(rawVmlNoteObjects.map((object) => object.drawingPartPath))],
+			suggestedFix:
+				'Restore the worksheet comments relationship and comments part or remove the orphan VML note shapes before writing.',
+			details: {
+				kind: 'legacy-comment-vml-without-comments-part',
+				noteShapeCount: rawVmlNoteObjects.length,
+				noteShapes: rawVmlNoteObjects,
+			},
+		})
+	}
+	const rawNoteShapeOwners = new Map<string, (typeof rawVmlNoteObjects)[number]>()
+	for (const object of rawVmlNoteObjects) {
+		if (!object.shapeId) continue
+		const key = `${object.drawingPartPath}#${object.shapeId}`
+		const first = rawNoteShapeOwners.get(key)
+		if (!first) {
+			rawNoteShapeOwners.set(key, object)
+			continue
+		}
+		issues.push({
+			rule: 'legacy-comment-drawing-integrity',
+			severity: 'warning',
+			message: `Duplicate raw legacy comment VML shape id "${object.shapeId}" in "${object.drawingPartPath}"`,
+			refs: [
+				`${first.sheetName}#drawingObject${first.objectIndex}`,
+				`${object.sheetName}#drawingObject${object.objectIndex}`,
+				object.drawingPartPath,
+			],
+			suggestedFix:
+				'Assign distinct VML note shape ids before editing or regenerating legacy comment drawings.',
+			details: {
+				kind: 'duplicate-raw-legacy-comment-vml-shape-id',
+				drawingPartPath: object.drawingPartPath,
+				shapeId: object.shapeId,
+				first,
+				duplicate: object,
+			},
+		})
+	}
 	if (shouldClassifyCommentsPartOrphans) {
 		for (const part of commentsParts) {
 			if (workbookCommentCount > 0 && claimedCommentsPartPaths.has(part.path)) continue
@@ -4209,6 +4273,28 @@ function checkLegacyCommentDrawingIntegrity(
 			details: {
 				kind: 'legacy-comment-vml-relationship-missing-target',
 				relationship: queryTableRelationshipDetails(relationship),
+			},
+		})
+	}
+	for (const part of vmlParts) {
+		if (vmlRelationshipsByTarget.has(part.path)) continue
+		const hasRawNoteObjects = rawVmlNoteObjects.some(
+			(object) => object.drawingPartPath === part.path,
+		)
+		if (!hasRawNoteObjects) continue
+		issues.push({
+			rule: 'legacy-comment-drawing-integrity',
+			severity: 'warning',
+			message: `Legacy comment VML part "${part.path}" has note shapes but no worksheet VML relationship`,
+			refs: [part.path],
+			suggestedFix:
+				'Restore the worksheet legacyDrawing relationship before writing preserved comment VML layout.',
+			details: {
+				kind: 'orphan-legacy-comment-vml-part',
+				partPath: part.path,
+				ownerScope: part.ownerScope,
+				contentType: part.contentType,
+				noteShapes: rawVmlNoteObjects.filter((object) => object.drawingPartPath === part.path),
 			},
 		})
 	}

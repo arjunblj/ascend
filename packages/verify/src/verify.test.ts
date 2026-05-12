@@ -3173,6 +3173,138 @@ describe('checker', () => {
 		})
 	})
 
+	test('detects legacy comment VML note sidecars without comments XML', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.preservedXml = { partPath: 'xl/worksheets/sheet1.xml' }
+		s.drawingObjectRefs.push({
+			drawingPartPath: 'xl/drawings/vmlDrawing1.vml',
+			source: 'vml',
+			kind: 'shape',
+			vmlObjectType: 'Note',
+			vmlShapeId: '_x0000_s1025',
+		})
+
+		const result = check(wb, {
+			packageGraph: {
+				parts: [
+					{ path: 'xl/worksheets/sheet1.xml', featureFamily: 'worksheet' },
+					{
+						path: 'xl/drawings/vmlDrawing1.vml',
+						featureFamily: 'preservedVml',
+						ownerScope: 'worksheet',
+					},
+				],
+				relationships: [
+					{
+						sourcePartPath: 'xl/worksheets/sheet1.xml',
+						relationshipPartPath: 'xl/worksheets/_rels/sheet1.xml.rels',
+						id: 'rIdVml',
+						type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/vmlDrawing',
+						rawTarget: '../drawings/vmlDrawing1.vml',
+						resolvedTarget: 'xl/drawings/vmlDrawing1.vml',
+					},
+				],
+			},
+		})
+		const issue = result.issues.find(
+			(i) =>
+				i.rule === 'legacy-comment-drawing-integrity' &&
+				i.details?.kind === 'legacy-comment-vml-without-comments-part',
+		)
+
+		expect(result.passed).toBe(false)
+		expect(issue?.severity).toBe('warning')
+		expect(issue?.refs).toEqual(['xl/drawings/vmlDrawing1.vml'])
+		expect(issue?.details).toMatchObject({
+			noteShapeCount: 1,
+			noteShapes: [
+				{
+					sheetName: 'Sheet1',
+					objectIndex: 0,
+					drawingPartPath: 'xl/drawings/vmlDrawing1.vml',
+					shapeId: '_x0000_s1025',
+				},
+			],
+		})
+	})
+
+	test('detects duplicate raw legacy comment VML note shape ids from drawing inventory', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.preservedXml = { partPath: 'xl/worksheets/sheet1.xml' }
+		s.drawingObjectRefs.push(
+			{
+				drawingPartPath: 'xl/drawings/vmlDrawing1.vml',
+				source: 'vml',
+				kind: 'shape',
+				vmlObjectType: 'Note',
+				vmlShapeId: '_x0000_s1025',
+			},
+			{
+				drawingPartPath: 'xl/drawings/vmlDrawing1.vml',
+				source: 'vml',
+				kind: 'shape',
+				vmlObjectType: 'Note',
+				vmlShapeId: '_x0000_s1025',
+			},
+		)
+
+		const result = check(wb, {
+			packageGraph: {
+				parts: [
+					{ path: 'xl/worksheets/sheet1.xml', featureFamily: 'worksheet' },
+					{
+						path: 'xl/comments1.xml',
+						featureFamily: 'preservedComments',
+						ownerScope: 'worksheet',
+					},
+					{
+						path: 'xl/drawings/vmlDrawing1.vml',
+						featureFamily: 'preservedVml',
+						ownerScope: 'worksheet',
+					},
+				],
+				relationships: [
+					{
+						sourcePartPath: 'xl/worksheets/sheet1.xml',
+						relationshipPartPath: 'xl/worksheets/_rels/sheet1.xml.rels',
+						id: 'rIdComments',
+						type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments',
+						rawTarget: '../comments1.xml',
+						resolvedTarget: 'xl/comments1.xml',
+					},
+					{
+						sourcePartPath: 'xl/worksheets/sheet1.xml',
+						relationshipPartPath: 'xl/worksheets/_rels/sheet1.xml.rels',
+						id: 'rIdVml',
+						type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/vmlDrawing',
+						rawTarget: '../drawings/vmlDrawing1.vml',
+						resolvedTarget: 'xl/drawings/vmlDrawing1.vml',
+					},
+				],
+			},
+		})
+		const duplicateIssue = result.issues.find(
+			(i) =>
+				i.rule === 'legacy-comment-drawing-integrity' &&
+				i.details?.kind === 'duplicate-raw-legacy-comment-vml-shape-id',
+		)
+
+		expect(result.passed).toBe(false)
+		expect(duplicateIssue?.refs).toEqual([
+			'Sheet1#drawingObject0',
+			'Sheet1#drawingObject1',
+			'xl/drawings/vmlDrawing1.vml',
+		])
+		expect(duplicateIssue?.details).toMatchObject({
+			drawingPartPath: 'xl/drawings/vmlDrawing1.vml',
+			shapeId: '_x0000_s1025',
+			first: { sheetName: 'Sheet1', objectIndex: 0 },
+			duplicate: { sheetName: 'Sheet1', objectIndex: 1 },
+		})
+	})
+
 	test('detects external workbook references', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')

@@ -752,18 +752,10 @@ function readPartWithPath(
 ): { readonly path: string; readonly text: string } | undefined {
 	const text = archive.readText(path)
 	if (text !== undefined) return { path, text }
-	const resolvedPath = resolvePartPathCaseInsensitive(archive, path)
+	const resolvedPath = archive.resolvePathCaseInsensitive(path)
 	if (!resolvedPath || resolvedPath === path) return undefined
 	const resolvedText = archive.readText(resolvedPath)
 	return resolvedText === undefined ? undefined : { path: resolvedPath, text: resolvedText }
-}
-
-function resolvePartPathCaseInsensitive(archive: ZipArchive, path: string): string | undefined {
-	const expected = path.toLowerCase()
-	for (const entry of archive.entries()) {
-		if (entry.path.toLowerCase() === expected) return entry.path
-	}
-	return undefined
 }
 
 function readPartBytes(archive: ZipArchive, path: string): Uint8Array | undefined {

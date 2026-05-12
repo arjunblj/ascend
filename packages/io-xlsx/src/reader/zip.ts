@@ -33,6 +33,7 @@ export class ZipArchive {
 	private readonly decoder = new TextDecoder('utf-8')
 	private readonly bytesCache = new Map<string, Uint8Array>()
 	private readonly textCache = new Map<string, string>()
+	private caseInsensitivePathByLower: Map<string, string> | undefined
 
 	constructor(bytes: Uint8Array) {
 		this.bytes = bytes
@@ -49,6 +50,11 @@ export class ZipArchive {
 
 	entries(): IterableIterator<ZipEntry> {
 		return this.entriesByPath.values()
+	}
+
+	resolvePathCaseInsensitive(path: string): string | undefined {
+		this.caseInsensitivePathByLower ??= buildCaseInsensitivePathMap(this.entriesByPath)
+		return this.caseInsensitivePathByLower.get(path.toLowerCase())
 	}
 
 	readBytes(path: string): Uint8Array | undefined {
@@ -247,6 +253,15 @@ export class ZipArchive {
 
 export function extractZip(bytes: Uint8Array): ZipArchive {
 	return new ZipArchive(bytes)
+}
+
+function buildCaseInsensitivePathMap(entries: ReadonlyMap<string, ZipEntry>): Map<string, string> {
+	const byLower = new Map<string, string>()
+	for (const path of entries.keys()) {
+		const lower = path.toLowerCase()
+		if (!byLower.has(lower)) byLower.set(lower, path)
+	}
+	return byLower
 }
 
 function inflateRawBytesSync(compressed: Uint8Array): Uint8Array {

@@ -1,3 +1,4 @@
+import type { SheetThreadedComment } from '@ascend/core'
 import { readXmlAttr } from './xml-attrs.ts'
 
 const XML_NAME = String.raw`[A-Za-z_][\w.-]*`
@@ -11,7 +12,18 @@ const TEXT_RE = new RegExp(String.raw`<(${PREFIXED_TAG}text)\b([^>]*)>([\s\S]*?)
 export interface ThreadedCommentTextRef {
 	readonly id?: string
 	readonly ref?: string
+	readonly parentId?: string
+	readonly personId?: string
+	readonly dateTime?: string
+	readonly done?: boolean
 	readonly text: string
+}
+
+interface SourceThreadedComment extends ThreadedCommentTextRef {
+	readonly xml: string
+	readonly tag: string
+	readonly attrs: string
+	readonly body: string
 }
 
 export function updateThreadedCommentsXml(
@@ -31,19 +43,64 @@ export function updateThreadedCommentsXml(
 }
 
 export function readThreadedCommentTextRefs(xml: string): readonly ThreadedCommentTextRef[] {
-	const refs: ThreadedCommentTextRef[] = []
-	for (const match of xml.matchAll(THREADED_COMMENT_RE)) {
-		const attrs = match[2] ?? ''
-		const body = match[3] ?? ''
-		const id = readXmlAttr(attrs, 'id')
-		const ref = readXmlAttr(attrs, 'ref')
-		refs.push({
+	return readSourceThreadedComments(xml).map(
+		({ id, ref, parentId, personId, dateTime, done, text }) => ({
 			...(id !== undefined ? { id } : {}),
 			...(ref !== undefined ? { ref } : {}),
-			text: readThreadedCommentText(body),
-		})
+			...(parentId !== undefined ? { parentId } : {}),
+			...(personId !== undefined ? { personId } : {}),
+			...(dateTime !== undefined ? { dateTime } : {}),
+			...(done !== undefined ? { done } : {}),
+			text,
+		}),
+	)
+}
+
+export function threadedCommentsMatchModel(
+	xml: string,
+	comments: readonly SheetThreadedComment[],
+): boolean {
+	const sourceComments = readThreadedCommentTextRefs(xml)
+	if (sourceComments.length !== comments.length) return false
+	const seen = new Set<string>()
+	for (const comment of comments) {
+		const source = findMatchingThreadedComment(sourceComments, comment, seen)
+		if (!source || !threadedCommentMatches(source, comment)) return false
 	}
-	return refs
+	return true
+}
+
+export function syncThreadedCommentsXml(
+	xml: string,
+	comments: readonly SheetThreadedComment[],
+): string {
+	const sourceComments = readSourceThreadedComments(xml)
+	const sourceByKey = new Map<string, SourceThreadedComment>()
+	for (const source of sourceComments) {
+		const key =
+			source.id !== undefined ? `id:${source.id}` : source.ref ? `ref:${source.ref}` : null
+		if (key && !sourceByKey.has(key)) sourceByKey.set(key, source)
+	}
+	const fallbackTag = sourceComments[0]?.tag ?? 'threadedComment'
+	const renderedComments = comments
+		.map((comment) => {
+			const source =
+				(comment.id ? sourceByKey.get(`id:${comment.id}`) : undefined) ??
+				sourceByKey.get(`ref:${comment.ref}`)
+			return source
+				? updateThreadedCommentElement(source, comment)
+				: buildThreadedCommentElement(fallbackTag, comment)
+		})
+		.join('\n')
+	const stripped = xml.replace(THREADED_COMMENT_RE, '').replace(/\s+$/, '')
+	const rootClose = /<\/((?:[A-Za-z_][\w.-]*:)?(?:ThreadedComments|threadedComments))>\s*$/u
+	const match = stripped.match(rootClose)
+	if (!match) return `${stripped}\n${renderedComments}`
+	const closingTag = match[0].trim()
+	return stripped.replace(
+		rootClose,
+		`${renderedComments ? `\n${renderedComments}\n` : '\n'}${closingTag}`,
+	)
 }
 
 function findThreadedCommentUpdate(
@@ -57,6 +114,98 @@ function findThreadedCommentUpdate(
 		if (update.ref !== undefined) return update.ref === ref
 		return false
 	})
+}
+
+function findMatchingThreadedComment(
+	sourceComments: readonly ThreadedCommentTextRef[],
+	comment: SheetThreadedComment,
+	seen: Set<string>,
+): ThreadedCommentTextRef | undefined {
+	const candidates = comment.id
+		? sourceComments.filter((source) => source.id === comment.id)
+		: sourceComments.filter((source) => source.ref === comment.ref && source.id === undefined)
+	if (candidates.length !== 1) return undefined
+	const key = comment.id ? `id:${comment.id}` : `ref:${comment.ref}`
+	if (seen.has(key)) return undefined
+	seen.add(key)
+	return candidates[0]
+}
+
+function threadedCommentMatches(
+	source: ThreadedCommentTextRef,
+	comment: SheetThreadedComment,
+): boolean {
+	return (
+		source.ref === comment.ref &&
+		source.text === comment.text &&
+		source.id === comment.id &&
+		source.parentId === comment.parentId &&
+		source.personId === comment.personId &&
+		source.dateTime === comment.dateTime &&
+		source.done === comment.done
+	)
+}
+
+function readSourceThreadedComments(xml: string): readonly SourceThreadedComment[] {
+	const refs: SourceThreadedComment[] = []
+	for (const match of xml.matchAll(THREADED_COMMENT_RE)) {
+		const attrs = match[2] ?? ''
+		const body = match[3] ?? ''
+		const id = readXmlAttr(attrs, 'id')
+		const ref = readXmlAttr(attrs, 'ref')
+		const parentId = readXmlAttr(attrs, 'parentId')
+		const personId = readXmlAttr(attrs, 'personId')
+		const dateTime = readXmlAttr(attrs, 'dT')
+		const done = readBoolXmlAttr(attrs, 'done')
+		refs.push({
+			xml: match[0],
+			tag: match[1] ?? 'threadedComment',
+			attrs,
+			body,
+			...(id !== undefined ? { id } : {}),
+			...(ref !== undefined ? { ref } : {}),
+			...(parentId !== undefined ? { parentId } : {}),
+			...(personId !== undefined ? { personId } : {}),
+			...(dateTime !== undefined ? { dateTime } : {}),
+			...(done !== undefined ? { done } : {}),
+			text: readThreadedCommentText(body),
+		})
+	}
+	return refs
+}
+
+function updateThreadedCommentElement(
+	source: SourceThreadedComment,
+	comment: SheetThreadedComment,
+): string {
+	const attrs = threadedCommentAttrs(source.attrs, comment)
+	const withAttrs = `<${source.tag}${attrs}>${source.body}</${source.tag}>`
+	return replaceThreadedCommentText(withAttrs, source.tag, attrs, source.body, comment.text)
+}
+
+function buildThreadedCommentElement(tag: string, comment: SheetThreadedComment): string {
+	const prefix = tag.includes(':') ? `${tag.slice(0, tag.indexOf(':'))}:` : ''
+	const attrs = threadedCommentAttrs('', comment)
+	return `<${tag}${attrs}><${prefix}text>${escapeXml(comment.text)}</${prefix}text></${tag}>`
+}
+
+function threadedCommentAttrs(attrs: string, comment: SheetThreadedComment): string {
+	let next = attrs
+	next = setXmlAttr(next, 'ref', comment.ref)
+	next = setXmlAttr(next, 'personId', comment.personId)
+	next = setXmlAttr(next, 'id', comment.id)
+	next = setXmlAttr(next, 'parentId', comment.parentId)
+	next = setXmlAttr(next, 'dT', comment.dateTime)
+	next = setXmlAttr(next, 'done', comment.done === undefined ? undefined : comment.done ? '1' : '0')
+	return next
+}
+
+function setXmlAttr(attrs: string, name: string, value: string | undefined): string {
+	const attrRe = new RegExp(String.raw`\s${name}\s*=\s*(?:"[^"]*"|'[^']*')`, 'u')
+	if (value === undefined) return attrs.replace(attrRe, '')
+	const escaped = escapeXml(value)
+	if (attrRe.test(attrs)) return attrs.replace(attrRe, ` ${name}="${escaped}"`)
+	return `${attrs} ${name}="${escaped}"`
 }
 
 function replaceThreadedCommentText(
@@ -88,6 +237,15 @@ function decodeXmlText(value: string): string {
 		.replaceAll('&quot;', '"')
 		.replaceAll('&apos;', "'")
 		.replaceAll('&amp;', '&')
+}
+
+function readBoolXmlAttr(attrs: string, name: string): boolean | undefined {
+	const value = readXmlAttr(attrs, name)
+	if (value === undefined) return undefined
+	const normalized = value.toLowerCase()
+	if (normalized === '1' || normalized === 'true') return true
+	if (normalized === '0' || normalized === 'false') return false
+	return undefined
 }
 
 function escapeXml(value: string): string {

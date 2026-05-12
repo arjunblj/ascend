@@ -6260,6 +6260,96 @@ describe('writeXlsx', () => {
 		})
 	})
 
+	it('writes shifted threaded comment refs from the current model', () => {
+		const source = commentsAndThreadedCommentsWorkbook()
+		const opened = readXlsx(source)
+		expectOk(opened)
+		const applied = applyOperations(opened.value.workbook, [
+			{ op: 'insertRows', sheet: 'Sheet1', at: 0, count: 1 },
+		])
+		expectOk(applied)
+
+		const sheet = opened.value.workbook.getSheet('Sheet1')
+		expect(sheet?.threadedComments).toEqual([
+			expect.objectContaining({
+				ref: 'D5',
+				id: '{root-thread}',
+				personId: '{person-ada}',
+				dateTime: '2024-03-01T10:11:12.000Z',
+			}),
+			expect.objectContaining({
+				ref: 'D5',
+				id: '{reply-thread}',
+				parentId: '{root-thread}',
+				personId: '{person-grace}',
+				done: true,
+			}),
+		])
+
+		const written = writeXlsx(opened.value.workbook, opened.value.capsules, {
+			dirtySheetNames: applied.value.sheetsModified,
+		})
+		expectOk(written)
+		const entries = unzipSync(written.value)
+		const threadedXml = new TextDecoder().decode(
+			entries['xl/threadedComments/threadedComment1.xml'],
+		)
+		expect(threadedXml).toContain('ref="D5"')
+		expect(threadedXml).not.toContain('ref="D4"')
+		expect(threadedXml).toContain('parentId="{root-thread}"')
+		expect(threadedXml).toContain('done="1"')
+
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+		expect(reopened.value.workbook.getSheet('Sheet1')?.threadedComments).toEqual(
+			sheet?.threadedComments,
+		)
+	})
+
+	it('writes cloned threaded comments created by comment copy operations', () => {
+		const source = commentsAndThreadedCommentsWorkbook()
+		const opened = readXlsx(source)
+		expectOk(opened)
+		const applied = applyOperations(opened.value.workbook, [
+			{ op: 'copyRange', sheet: 'Sheet1', source: 'D4', target: 'E4', mode: 'comments' },
+		])
+		expectOk(applied)
+
+		const sheet = opened.value.workbook.getSheet('Sheet1')
+		expect(sheet?.threadedComments).toEqual([
+			expect.objectContaining({ ref: 'D4', id: '{root-thread}' }),
+			expect.objectContaining({
+				ref: 'D4',
+				id: '{reply-thread}',
+				parentId: '{root-thread}',
+			}),
+			expect.objectContaining({ ref: 'E4', id: '{root-thread}-copy' }),
+			expect.objectContaining({
+				ref: 'E4',
+				id: '{reply-thread}-copy',
+				parentId: '{root-thread}-copy',
+			}),
+		])
+
+		const written = writeXlsx(opened.value.workbook, opened.value.capsules, {
+			dirtySheetNames: applied.value.sheetsModified,
+		})
+		expectOk(written)
+		const entries = unzipSync(written.value)
+		const threadedXml = new TextDecoder().decode(
+			entries['xl/threadedComments/threadedComment1.xml'],
+		)
+		expect(threadedXml).toContain('id="{root-thread}-copy"')
+		expect(threadedXml).toContain('parentId="{root-thread}-copy"')
+		expect(threadedXml).toContain('ref="E4"')
+
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+		expect(reopened.value.workbook.getSheet('Sheet1')?.threadedComments).toEqual(
+			sheet?.threadedComments,
+		)
+	})
+
 	it('produces a valid ZIP file', () => {
 		const wb = new Workbook()
 		wb.addSheet('Empty')

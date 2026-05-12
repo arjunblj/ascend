@@ -75,11 +75,7 @@ import { updateSlicerCacheDefinitionXml } from './slicer-cache.ts'
 import { buildPreservedStylesXml, buildStylesXml } from './styles.ts'
 import { buildTableXml } from './table.ts'
 import { buildThemeXml, themeXmlMatches, updateThemeXml } from './theme.ts'
-import {
-	readThreadedCommentTextRefs,
-	type ThreadedCommentTextRef,
-	updateThreadedCommentsXml,
-} from './threaded-comments.ts'
+import { syncThreadedCommentsXml, threadedCommentsMatchModel } from './threaded-comments.ts'
 import { updateTimelineCacheDefinitionXml } from './timeline-cache.ts'
 import { buildWorkbookXml } from './workbook.ts'
 import { createZip, encode, StreamingZipBuilder } from './zip.ts'
@@ -1740,12 +1736,10 @@ export function planWriteXlsx(
 				}
 				if (isThreadedCommentCapsule(capsule)) {
 					const xml = new TextDecoder().decode(content)
-					const threadedCommentUpdates = collectThreadedCommentTextUpdates(
-						workbook,
-						capsule.partPath,
-						xml,
-					)
-					if (threadedCommentUpdates.length > 0) {
+					const threadedComments = collectThreadedCommentsForPart(workbook, capsule.partPath)
+					const shouldSyncThreadedComments =
+						threadedComments.length > 0 || isDirtySheetCapsule(capsule, options.dirtySheetNames)
+					if (shouldSyncThreadedComments && !threadedCommentsMatchModel(xml, threadedComments)) {
 						recordXml(
 							capsule.partPath,
 							{
@@ -1753,7 +1747,7 @@ export function planWriteXlsx(
 								origin: 'generated',
 								contentType: capsule.contentType,
 							},
-							() => updateThreadedCommentsXml(xml, threadedCommentUpdates),
+							() => syncThreadedCommentsXml(xml, threadedComments),
 						)
 						plan.addOverride(capsule.partPath, capsule.contentType)
 						if (capsule.relationships.length > 0) {
@@ -2681,6 +2675,18 @@ function isThreadedCommentCapsule(capsule: PreservationCapsule): boolean {
 	)
 }
 
+function isDirtySheetCapsule(
+	capsule: PreservationCapsule,
+	dirtySheetNames: readonly string[] | undefined,
+): boolean {
+	return (
+		capsule.anchor?.kind === 'sheet' &&
+		capsule.anchor.sheetName !== undefined &&
+		dirtySheetNames !== undefined &&
+		dirtySheetNames.includes(capsule.anchor.sheetName)
+	)
+}
+
 function collectDrawingTextUpdates(
 	workbook: Workbook,
 	partPath: string,
@@ -2707,29 +2713,18 @@ function collectDrawingTextUpdates(
 	return updates
 }
 
-function collectThreadedCommentTextUpdates(
+function collectThreadedCommentsForPart(
 	workbook: Workbook,
 	partPath: string,
-	sourceXml: string,
-): readonly ThreadedCommentTextRef[] {
-	const sourceRefs = readThreadedCommentTextRefs(sourceXml)
-	const updates: ThreadedCommentTextRef[] = []
-	const seen = new Set<string>()
+): readonly Workbook['sheets'][number]['threadedComments'][number][] {
+	const comments: Workbook['sheets'][number]['threadedComments'][number][] = []
 	for (const sheet of workbook.sheets) {
 		for (const comment of sheet.threadedComments) {
 			if (comment.partPath !== partPath) continue
-			const source = findMatchingThreadedComment(sourceRefs, comment)
-			if (!source || source.text === comment.text) continue
-			const key = comment.id !== undefined ? `id:${comment.id}` : `ref:${comment.ref}`
-			if (seen.has(key)) continue
-			updates.push({
-				...(comment.id !== undefined ? { id: comment.id } : { ref: comment.ref }),
-				text: comment.text,
-			})
-			seen.add(key)
+			comments.push(comment)
 		}
 	}
-	return updates
+	return comments
 }
 
 function findMatchingDrawingObject(
@@ -2740,17 +2735,6 @@ function findMatchingDrawingObject(
 		if (ref.id !== undefined) return sourceRef.id === ref.id
 		if (ref.name !== undefined) return sourceRef.name === ref.name
 		return false
-	})
-	return matches.length === 1 ? matches[0] : undefined
-}
-
-function findMatchingThreadedComment(
-	sourceRefs: readonly ThreadedCommentTextRef[],
-	comment: { readonly id?: string; readonly ref: string },
-): ThreadedCommentTextRef | undefined {
-	const matches = sourceRefs.filter((sourceRef) => {
-		if (comment.id !== undefined) return sourceRef.id === comment.id
-		return sourceRef.ref?.toUpperCase() === comment.ref.toUpperCase()
 	})
 	return matches.length === 1 ? matches[0] : undefined
 }

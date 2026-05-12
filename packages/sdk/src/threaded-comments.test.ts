@@ -68,6 +68,32 @@ describe('threaded comment SDK inventory', () => {
 			done: true,
 		})
 	})
+
+	test('structural edits save shifted threaded comment refs', async () => {
+		const wb = await AscendWorkbook.open(threadedCommentWorkbook())
+		const result = wb.apply([{ op: 'insertRows', sheet: 'Data', at: 0, count: 1 }])
+		expect(result.errors).toEqual([])
+
+		const reopened = await AscendWorkbook.open(wb.toBytes())
+		expect(reopened.inspectSheet('Data')?.threadedComments).toEqual([
+			expect.objectContaining({
+				ref: 'A2',
+				id: 'tc1',
+				personId: '0',
+				author: 'Ada Lovelace',
+				dateTime: '2024-01-01T00:00:00.000',
+			}),
+			expect.objectContaining({
+				ref: 'A2',
+				id: 'tc2',
+				parentId: 'tc1',
+				personId: '1',
+				author: 'Grace Hopper',
+				dateTime: '2024-01-02T00:00:00.000',
+				done: true,
+			}),
+		])
+	})
 })
 
 function threadedCommentWorkbook(): Uint8Array {

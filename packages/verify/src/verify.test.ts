@@ -196,6 +196,91 @@ describe('checker', () => {
 		})
 	})
 
+	test('detects duplicate threaded comment ids in the same part', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.threadedComments.push(
+			{
+				ref: 'A1',
+				text: 'Root',
+				id: '{thread-1}',
+				personId: '{person-1}',
+				author: 'Alex',
+				partPath: 'xl/threadedComments/threadedComment1.xml',
+			},
+			{
+				ref: 'A2',
+				text: 'Unexpected duplicate',
+				id: '{thread-1}',
+				personId: '{person-1}',
+				author: 'Alex',
+				partPath: 'xl/threadedComments/threadedComment1.xml',
+			},
+		)
+
+		const result = check(wb)
+		const issues = result.issues.filter((i) => i.rule === 'threaded-comment-integrity')
+		expect(result.passed).toBe(false)
+		expect(issues).toHaveLength(1)
+		expect(issues[0]?.message).toContain('Duplicate threaded comment id')
+		expect(issues[0]?.refs).toEqual(['Sheet1!A1', 'Sheet1!A2'])
+		expect(issues[0]?.details).toEqual({
+			partPath: 'xl/threadedComments/threadedComment1.xml',
+			id: '{thread-1}',
+			firstCommentIndex: 0,
+			duplicateCommentIndex: 1,
+		})
+	})
+
+	test('detects threaded comment replies with missing parent ids', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.threadedComments.push({
+			ref: 'C3',
+			text: 'Reply without preserved root',
+			id: '{reply-1}',
+			parentId: '{missing-root}',
+			personId: '{person-1}',
+			author: 'Alex',
+			partPath: 'xl/threadedComments/threadedComment1.xml',
+		})
+
+		const result = check(wb)
+		const issues = result.issues.filter((i) => i.rule === 'threaded-comment-integrity')
+		expect(issues).toHaveLength(1)
+		expect(issues[0]?.message).toContain('references missing parent id')
+		expect(issues[0]?.refs).toEqual(['Sheet1!C3'])
+		expect(issues[0]?.details).toMatchObject({
+			partPath: 'xl/threadedComments/threadedComment1.xml',
+			commentIndex: 0,
+			id: '{reply-1}',
+			parentId: '{missing-root}',
+		})
+	})
+
+	test('detects threaded comments with unresolved person ids', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.threadedComments.push({
+			ref: 'D4',
+			text: 'Author sidecar missing',
+			id: '{thread-1}',
+			personId: '{missing-person}',
+			partPath: 'xl/threadedComments/threadedComment1.xml',
+		})
+
+		const result = check(wb)
+		const issues = result.issues.filter((i) => i.rule === 'threaded-comment-integrity')
+		expect(issues).toHaveLength(1)
+		expect(issues[0]?.message).toContain('references unknown person id')
+		expect(issues[0]?.details).toMatchObject({
+			partPath: 'xl/threadedComments/threadedComment1.xml',
+			commentIndex: 0,
+			id: '{thread-1}',
+			personId: '{missing-person}',
+		})
+	})
+
 	test('detects external workbook references', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')

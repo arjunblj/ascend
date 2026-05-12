@@ -482,6 +482,84 @@ function checkConditionalFormatIntegrity(wb: Workbook): CheckIssue[] {
 	return issues
 }
 
+function checkThreadedCommentIntegrity(wb: Workbook): CheckIssue[] {
+	const issues: CheckIssue[] = []
+	for (const sheet of wb.sheets) {
+		const idsByPart = new Map<
+			string,
+			Map<string, { readonly ref: string; readonly index: number }>
+		>()
+		for (let index = 0; index < sheet.threadedComments.length; index++) {
+			const comment = sheet.threadedComments[index]
+			if (!comment) continue
+			const partPath = comment.partPath ?? '(unknown threaded comment part)'
+			if (comment.id) {
+				let ids = idsByPart.get(partPath)
+				if (!ids) {
+					ids = new Map()
+					idsByPart.set(partPath, ids)
+				}
+				const existing = ids.get(comment.id)
+				if (existing) {
+					issues.push({
+						rule: 'threaded-comment-integrity',
+						severity: 'warning',
+						message: `Duplicate threaded comment id "${comment.id}" on sheet "${sheet.name}"`,
+						refs: [`${sheet.name}!${existing.ref}`, `${sheet.name}!${comment.ref}`],
+						suggestedFix:
+							'Inspect the threadedComments part before editing this thread; duplicate ids make replies ambiguous.',
+						details: {
+							partPath,
+							id: comment.id,
+							firstCommentIndex: existing.index,
+							duplicateCommentIndex: index,
+						},
+					})
+				} else {
+					ids.set(comment.id, { ref: comment.ref, index })
+				}
+			}
+			if (comment.personId && !comment.author) {
+				issues.push({
+					rule: 'threaded-comment-integrity',
+					severity: 'warning',
+					message: `Threaded comment at ${sheet.name}!${comment.ref} references unknown person id "${comment.personId}"`,
+					refs: [`${sheet.name}!${comment.ref}`],
+					suggestedFix:
+						'Preserve or repair the threaded comment persons part before author-sensitive edits.',
+					details: {
+						partPath,
+						commentIndex: index,
+						personId: comment.personId,
+						...(comment.id ? { id: comment.id } : {}),
+					},
+				})
+			}
+		}
+		for (let index = 0; index < sheet.threadedComments.length; index++) {
+			const comment = sheet.threadedComments[index]
+			if (!comment?.parentId) continue
+			const partPath = comment.partPath ?? '(unknown threaded comment part)'
+			if (idsByPart.get(partPath)?.has(comment.parentId)) continue
+			issues.push({
+				rule: 'threaded-comment-integrity',
+				severity: 'warning',
+				message: `Threaded comment at ${sheet.name}!${comment.ref} references missing parent id "${comment.parentId}"`,
+				refs: [`${sheet.name}!${comment.ref}`],
+				suggestedFix:
+					'Inspect the threadedComments part before editing replies; the parent thread id is missing.',
+				details: {
+					partPath,
+					commentIndex: index,
+					parentId: comment.parentId,
+					...(comment.id ? { id: comment.id } : {}),
+				},
+			})
+		}
+	}
+	return issues
+}
+
 export function check(
 	workbook: Workbook,
 	analysis?: {
@@ -502,6 +580,7 @@ export function check(
 		...checkMergeOverlaps(workbook),
 		...checkTableIntegrity(workbook),
 		...checkConditionalFormatIntegrity(workbook),
+		...checkThreadedCommentIntegrity(workbook),
 	]
 	return { passed: issues.length === 0, issues }
 }

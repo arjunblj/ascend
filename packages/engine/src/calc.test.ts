@@ -1187,6 +1187,79 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(4, 0)?.value).toEqual(EMPTY)
 	})
 
+	test('GETPIVOTDATA resolves column field filters from visible pivot output', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Pivot Tables')
+		sheet.cells.set(0, 0, { value: stringValue('Sum of Sales'), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: stringValue('Region'), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: stringValue('Product'), formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: stringValue('North'), formula: null, styleId: sid })
+		sheet.cells.set(1, 2, { value: stringValue('South'), formula: null, styleId: sid })
+		sheet.cells.set(1, 3, { value: stringValue('Grand Total'), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: stringValue('Widget'), formula: null, styleId: sid })
+		sheet.cells.set(2, 1, { value: numberValue(10), formula: null, styleId: sid })
+		sheet.cells.set(2, 2, { value: numberValue(20), formula: null, styleId: sid })
+		sheet.cells.set(2, 3, { value: numberValue(30), formula: null, styleId: sid })
+		sheet.cells.set(3, 0, { value: stringValue('Gadget'), formula: null, styleId: sid })
+		sheet.cells.set(3, 1, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(3, 2, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(3, 3, { value: numberValue(3), formula: null, styleId: sid })
+		sheet.cells.set(4, 0, { value: stringValue('Grand Total'), formula: null, styleId: sid })
+		sheet.cells.set(4, 1, { value: numberValue(11), formula: null, styleId: sid })
+		sheet.cells.set(4, 2, { value: numberValue(22), formula: null, styleId: sid })
+		sheet.cells.set(4, 3, { value: numberValue(33), formula: null, styleId: sid })
+		sheet.cells.set(6, 0, {
+			value: EMPTY,
+			formula: 'GETPIVOTDATA("Sales",$A$1,"Region","South")',
+			styleId: sid,
+		})
+		sheet.cells.set(7, 0, {
+			value: EMPTY,
+			formula: 'GETPIVOTDATA("Sales",$A$1,"Product","Widget","Region","South")',
+			styleId: sid,
+		})
+		sheet.cells.set(8, 0, {
+			value: EMPTY,
+			formula: 'GETPIVOTDATA("Sales",$A$1,"Region","South","Product","Widget")',
+			styleId: sid,
+		})
+		sheet.cells.set(9, 0, {
+			value: EMPTY,
+			formula: 'GETPIVOTDATA("Sales",$A$1,"Region","West")',
+			styleId: sid,
+		})
+		sheet.cells.set(10, 0, {
+			value: EMPTY,
+			formula: 'GETPIVOTDATA("Sales",$A$1,"Region","2")',
+			styleId: sid,
+		})
+		wb.pivotTables.push({
+			partPath: 'xl/pivotTables/pivotTable1.xml',
+			sheetName: 'Pivot Tables',
+			name: 'PivotTable1',
+			cacheId: 1,
+			locationRef: 'A1:D5',
+			fields: [
+				{ index: 0, axis: 'axisRow', name: 'Product' },
+				{ index: 1, axis: 'axisCol', name: 'Region' },
+				{ index: 2, dataField: true, name: 'Sales' },
+			],
+			rowFields: [{ index: 0 }],
+			columnFields: [{ index: 1 }],
+			pageFields: [],
+			dataFields: [{ fieldIndex: 2, name: 'Sum of Sales', subtotal: 'sum' }],
+		})
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(6, 0)?.value).toEqual(numberValue(22))
+		expect(sheet.cells.get(7, 0)?.value).toEqual(numberValue(20))
+		expect(sheet.cells.get(8, 0)?.value).toEqual(numberValue(20))
+		expect(sheet.cells.get(9, 0)?.value).toEqual(errorValue('#REF!'))
+		expect(sheet.cells.get(10, 0)?.value).toEqual(errorValue('#REF!'))
+	})
+
 	test('GETPIVOTDATA returns #REF! for missing visible pivot items', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Pivot Tables')

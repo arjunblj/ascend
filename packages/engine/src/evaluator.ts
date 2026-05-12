@@ -1256,6 +1256,8 @@ type PivotFilter = {
 	item: string
 }
 
+type PivotFieldReference = Workbook['pivotTables'][number]['columnFields'][number]
+
 function evalGetPivotDataArray(
 	ctx: EvalContext,
 	anchorSheetName: string,
@@ -1335,6 +1337,10 @@ function lookupPivotValueForFilters(
 		const bounds = parsePivotLocation(pivot.locationRef)
 		if (!bounds) continue
 		if (!rangesIntersect(anchorBounds, bounds)) continue
+		const cache =
+			pivot.cacheId === undefined
+				? undefined
+				: ctx.workbook.pivotCaches.find((entry) => entry.cacheId === pivot.cacheId)
 		const visibleFilters = resolvePivotPageFilters(
 			ctx.workbook,
 			pivot,
@@ -1346,6 +1352,8 @@ function lookupPivotValueForFilters(
 			ctx,
 			anchorBounds.sheetIndex,
 			bounds,
+			pivot,
+			cache,
 			dataField,
 			visibleFilters,
 		)
@@ -1386,14 +1394,20 @@ function pivotFieldCaptionsMatch(
 	fieldIndex: number,
 	filterField: string,
 ): boolean {
+	const reference = pivot.pageFields.find((entry) => entry.index === fieldIndex)
+	return pivotFieldReferenceCaptionsMatch(pivot, cache, fieldIndex, reference, filterField)
+}
+
+function pivotFieldReferenceCaptionsMatch(
+	pivot: Workbook['pivotTables'][number],
+	cache: Workbook['pivotCaches'][number] | undefined,
+	fieldIndex: number,
+	reference: Workbook['pivotTables'][number]['pageFields'][number] | undefined,
+	filterField: string,
+): boolean {
 	const field = pivot.fields[fieldIndex]
 	const cacheField = cache?.fields[fieldIndex]
-	return [
-		field?.name,
-		cacheField?.name,
-		pivot.pageFields.find((entry) => entry.index === fieldIndex)?.name,
-		pivot.pageFields.find((entry) => entry.index === fieldIndex)?.caption,
-	]
+	return [field?.name, cacheField?.name, reference?.name, reference?.caption]
 		.filter((caption): caption is string => caption !== undefined)
 		.some((caption) => normalizePivotText(caption) === filterField)
 }
@@ -1470,16 +1484,21 @@ function lookupVisiblePivotValue(
 	ctx: EvalContext,
 	sheetIndex: number,
 	bounds: { startRow: number; startCol: number; endRow: number; endCol: number },
+	pivot: Workbook['pivotTables'][number],
+	cache: Workbook['pivotCaches'][number] | undefined,
 	dataField: string,
 	filters: readonly PivotFilter[],
 ): CellValue | null {
 	const header = findPivotDataHeader(ctx, sheetIndex, bounds, dataField)
 	if (!header) return null
-	const fieldColumns = filters.map((filter) => ({
+	const axisFilters = splitPivotAxisFilters(pivot, cache, filters)
+	const fieldColumns = axisFilters.row.map((filter) => ({
 		filter,
-		col: findPivotFieldColumn(ctx, sheetIndex, bounds, header.row, header.col, filter.field),
+		col: findPivotRowFieldColumn(ctx, sheetIndex, bounds, header, filter.field),
 	}))
 	if (fieldColumns.some((entry) => entry.col === null)) return null
+	const columnHeaderEndRow =
+		(findPivotDataStartRow(ctx, sheetIndex, bounds, pivot, cache, header) ?? bounds.endRow + 1) - 1
 
 	for (let row = header.row + 1; row <= bounds.endRow; row++) {
 		let matches = true
@@ -1502,24 +1521,162 @@ function lookupVisiblePivotValue(
 			}
 		}
 		if (matches) {
-			if (fieldColumns.length === 0 && header.col === bounds.startCol) {
-				const rowTotal = rightmostVisiblePivotRowValue(ctx, sheetIndex, bounds, row)
-				if (rowTotal) return rowTotal
-			}
-			return getCellValue(ctx.workbook, sheetIndex, row, header.col)
+			const valueCol = findPivotValueColumn(
+				ctx,
+				sheetIndex,
+				bounds,
+				header,
+				columnHeaderEndRow,
+				axisFilters.column,
+			)
+			return valueCol === null ? null : getCellValue(ctx.workbook, sheetIndex, row, valueCol)
 		}
 	}
 	return null
 }
 
-function rightmostVisiblePivotRowValue(
+function splitPivotAxisFilters(
+	pivot: Workbook['pivotTables'][number],
+	cache: Workbook['pivotCaches'][number] | undefined,
+	filters: readonly PivotFilter[],
+): { readonly row: readonly PivotFilter[]; readonly column: readonly PivotFilter[] } {
+	const row: PivotFilter[] = []
+	const column: PivotFilter[] = []
+	for (const filter of filters) {
+		if (pivotFieldReferenceListMatches(pivot, cache, pivot.columnFields, filter.field)) {
+			column.push(filter)
+		} else {
+			row.push(filter)
+		}
+	}
+	return { row, column }
+}
+
+function pivotFieldReferenceListMatches(
+	pivot: Workbook['pivotTables'][number],
+	cache: Workbook['pivotCaches'][number] | undefined,
+	references: readonly PivotFieldReference[],
+	filterField: string,
+): boolean {
+	return references.some((reference) =>
+		pivotFieldReferenceCaptionsMatch(pivot, cache, reference.index, reference, filterField),
+	)
+}
+
+function findPivotValueColumn(
 	ctx: EvalContext,
 	sheetIndex: number,
 	bounds: { startRow: number; startCol: number; endRow: number; endCol: number },
-	row: number,
-): CellValue | null {
-	if (bounds.endCol <= bounds.startCol) return null
-	return getCellValue(ctx.workbook, sheetIndex, row, bounds.endCol)
+	header: { row: number; col: number },
+	columnHeaderEndRow: number,
+	columnFilters: readonly PivotFilter[],
+): number | null {
+	if (columnFilters.length === 0) {
+		return header.col === bounds.startCol ? rightmostPivotRowValueColumn(bounds) : header.col
+	}
+	const minDataCol = Math.max(bounds.startCol + 1, header.col)
+	for (let col = minDataCol; col <= bounds.endCol; col++) {
+		if (
+			pivotColumnMatchesFilters(ctx, sheetIndex, bounds, col, columnHeaderEndRow, columnFilters)
+		) {
+			return col
+		}
+	}
+	return null
+}
+
+function pivotColumnMatchesFilters(
+	ctx: EvalContext,
+	sheetIndex: number,
+	bounds: { startRow: number; startCol: number; endRow: number; endCol: number },
+	col: number,
+	columnHeaderEndRow: number,
+	filters: readonly PivotFilter[],
+): boolean {
+	if (columnHeaderEndRow < bounds.startRow) return false
+	for (const filter of filters) {
+		let matched = false
+		for (let row = bounds.startRow; row <= columnHeaderEndRow; row++) {
+			const value = normalizePivotText(
+				coerceToString(getCellValue(ctx.workbook, sheetIndex, row, col)),
+			)
+			if (value === filter.item) {
+				matched = true
+				break
+			}
+		}
+		if (!matched) return false
+	}
+	return true
+}
+
+function rightmostPivotRowValueColumn(bounds: {
+	startRow: number
+	startCol: number
+	endRow: number
+	endCol: number
+}): number | null {
+	return bounds.endCol <= bounds.startCol ? null : bounds.endCol
+}
+
+function findPivotDataStartRow(
+	ctx: EvalContext,
+	sheetIndex: number,
+	bounds: { startRow: number; startCol: number; endRow: number; endCol: number },
+	pivot: Workbook['pivotTables'][number],
+	cache: Workbook['pivotCaches'][number] | undefined,
+	header: { row: number; col: number },
+): number | null {
+	if (pivot.rowFields.length === 0) return null
+	const rowFieldCols = pivot.rowFields
+		.map((reference) =>
+			findPivotRowFieldColumn(
+				ctx,
+				sheetIndex,
+				bounds,
+				header,
+				normalizePivotText(
+					pivot.fields[reference.index]?.name ?? cache?.fields[reference.index]?.name ?? '',
+				),
+			),
+		)
+		.filter((col): col is number => col !== null)
+	if (rowFieldCols.length === 0) return null
+	for (let row = header.row + 1; row <= bounds.endRow; row++) {
+		for (const col of rowFieldCols) {
+			const label = normalizePivotText(
+				coerceToString(getCellValue(ctx.workbook, sheetIndex, row, col)),
+			)
+			if (
+				label &&
+				label !== 'grand total' &&
+				!pivotFieldReferenceListMatches(pivot, cache, pivot.rowFields, label)
+			) {
+				return row
+			}
+		}
+	}
+	return null
+}
+
+function findPivotRowFieldColumn(
+	ctx: EvalContext,
+	sheetIndex: number,
+	bounds: { startRow: number; startCol: number; endRow: number; endCol: number },
+	header: { row: number; col: number },
+	fieldName: string,
+): number | null {
+	const maxHeaderRow = Math.min(bounds.endRow, header.row + 3)
+	const maxLabelCol = header.col > bounds.startCol ? header.col - 1 : bounds.startCol
+	for (let row = bounds.startRow; row <= maxHeaderRow; row++) {
+		for (let col = bounds.startCol; col <= maxLabelCol; col++) {
+			const label = normalizePivotText(
+				coerceToString(getCellValue(ctx.workbook, sheetIndex, row, col)),
+			)
+			if (label === fieldName) return col
+		}
+	}
+	return findPivotFieldColumn(ctx, sheetIndex, bounds, header.row, header.col, fieldName)
 }
 
 function findPivotDataHeader(

@@ -2043,6 +2043,9 @@ function buildTablePartRelationships(
 	const queryTableRel: RelEntry = {
 		id: table.queryTable.relationshipId,
 		type: table.queryTable.relationshipType || REL_QUERY_TABLE,
+		...(table.queryTable.relationshipRawType
+			? { rawType: table.queryTable.relationshipRawType }
+			: {}),
 		target: table.queryTable.targetMode
 			? table.queryTable.target
 			: computeRelativePath(partDir(tablePartPath), table.queryTable.partPath),

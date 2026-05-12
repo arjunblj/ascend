@@ -78,6 +78,7 @@ export interface TableQueryTableRef {
 	readonly relationshipId: string
 	readonly partPath: string
 	readonly relationshipType: string
+	readonly relationshipRawType?: string
 	readonly target: string
 	readonly targetMode?: string
 }

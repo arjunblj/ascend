@@ -283,6 +283,7 @@ function parseQueryTableRef(
 		relationshipId: rel.id,
 		partPath: resolvePath(tablePath, rel.target),
 		relationshipType: rel.type,
+		...(rel.rawType ? { relationshipRawType: rel.rawType } : {}),
 		target: rel.target,
 		...(rel.targetMode ? { targetMode: rel.targetMode } : {}),
 	}

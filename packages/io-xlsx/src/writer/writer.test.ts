@@ -299,6 +299,94 @@ describe('writeXlsx', () => {
 		expect(readXlsx(written.value).ok).toBe(true)
 	})
 
+	it('preserves strict table queryTable relationship dialect when dirty writes regenerate table rels', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/tables/table1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml"/>
+  <Override PartName="/xl/queryTables/queryTable1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.queryTable+xml"/>
+</Types>`,
+			'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSheet" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`,
+			'xl/workbook.xml': `<?xml version="1.0"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Data" sheetId="1" r:id="rIdSheet"/></sheets>
+</workbook>`,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheetData>
+    <row r="1"><c r="A1" t="str"><v>Name</v></c><c r="B1" t="str"><v>Value</v></c></row>
+    <row r="2"><c r="A2" t="str"><v>A</v></c><c r="B2"><v>1</v></c></row>
+  </sheetData>
+  <tableParts count="1"><tablePart r:id="rIdTable"/></tableParts>
+</worksheet>`,
+			'xl/worksheets/_rels/sheet1.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdTable" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/table" Target="../tables/table1.xml"/>
+</Relationships>`,
+			'xl/tables/table1.xml': `<?xml version="1.0"?>
+<table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" id="7" name="QueryTable" displayName="QueryTable" ref="A1:B2" headerRowCount="1" totalsRowCount="0" tableType="queryTable">
+  <autoFilter ref="A1:B2"/>
+  <tableColumns count="2">
+    <tableColumn id="1" name="Name" queryTableFieldId="1"/>
+    <tableColumn id="2" name="Value" queryTableFieldId="2"/>
+  </tableColumns>
+</table>`,
+			'xl/tables/_rels/table1.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdQuery99" Type="http://purl.oclc.org/ooxml/officeDocument/relationships/queryTable" Target="../queryTables/queryTable1.xml"/>
+</Relationships>`,
+			'xl/queryTables/queryTable1.xml': `<?xml version="1.0"?>
+<queryTable xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" name="QueryTable" connectionId="1"/>`,
+		})
+		const read = readXlsx(bytes)
+		expectOk(read)
+		const table = read.value.workbook.sheets[0]?.tables[0]
+		expect(table?.queryTable).toMatchObject({
+			relationshipId: 'rIdQuery99',
+			relationshipType:
+				'http://schemas.openxmlformats.org/officeDocument/2006/relationships/queryTable',
+			relationshipRawType: 'http://purl.oclc.org/ooxml/officeDocument/relationships/queryTable',
+			partPath: 'xl/queryTables/queryTable1.xml',
+			target: '../queryTables/queryTable1.xml',
+		})
+		read.value.workbook.sheets[0]?.cells.set(1, 1, {
+			value: numberValue(2),
+			formula: null,
+			styleId: S0,
+		})
+
+		const written = writeXlsx(read.value.workbook, read.value.capsules, {
+			dirtySheetNames: ['Data'],
+		})
+		expectOk(written)
+		const zip = unzipSync(written.value)
+		const tableRels = new TextDecoder().decode(
+			zip['xl/tables/_rels/table1.xml.rels'] ?? new Uint8Array(),
+		)
+		expect(tableRels).toContain(
+			'Type="http://purl.oclc.org/ooxml/officeDocument/relationships/queryTable"',
+		)
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+		expect(reopened.value.workbook.sheets[0]?.tables[0]?.queryTable).toMatchObject({
+			relationshipId: 'rIdQuery99',
+			relationshipRawType: 'http://purl.oclc.org/ooxml/officeDocument/relationships/queryTable',
+		})
+	})
+
 	it('writes edited tabular slicer cache item state back into preserved package XML', () => {
 		const slicerCacheXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <slicerCacheDefinition xmlns="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main" name="Slicer_State" sourceName="State">

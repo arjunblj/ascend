@@ -2921,6 +2921,58 @@ const scenarios: readonly Scenario[] = [
 		},
 	},
 	{
+		name: 'real-dense-prepared-open-cpu',
+		category: 'workflow',
+		build() {
+			const target = realInteractivePatchCorpusTarget('stress-dense-100k')
+			return {
+				rows: target.rowCount,
+				cols: target.colCount,
+				cells: target.rowCount * target.colCount,
+				byteCount: realInteractivePatchCorpusTargetBytes(target).byteLength,
+			}
+		},
+		async run() {
+			const target = realInteractivePatchCorpusTarget('stress-dense-100k')
+			const bytes = realInteractivePatchCorpusTargetBytes(target)
+			WorkbookDocument.clearCache()
+
+			const openStart = performance.now()
+			const session = await AscendSession.open(bytes, {
+				mode: 'interactive',
+				prepareEdits: true,
+			})
+			const preparedOpenMs = performance.now() - openStart
+			const readiness = session.editReadiness()
+			if (!readiness.ready) throw new Error('Dense prepared-open CPU session was not edit-ready')
+			const readModel = workbookDocumentModel(session.workbook())
+			const mutableWorkbook = sessionMutableWorkbook(session)
+			if (!readModel) throw new Error('Dense prepared-open CPU read model was unavailable')
+			if (!mutableWorkbook)
+				throw new Error('Dense prepared-open CPU mutable workbook was unavailable')
+			const mutableModel = mutableWorkbook.getWorkbookModel()
+			session.close()
+			WorkbookDocument.clearCache()
+
+			return {
+				assertions: {
+					bytes: bytes.byteLength,
+					preparedOpenMs,
+					readinessReady: readiness.ready,
+					readinessReusedReadModel: readiness.timings?.mutableWorkbookReusedReadModel ?? false,
+					readinessMutableWorkbookOpenMs: readiness.timings?.mutableWorkbookOpenMs ?? null,
+					readinessRebaseViewportSnapshotsMs: readiness.timings?.rebaseViewportSnapshotsMs ?? null,
+					readAndMutableShareSourceArchive:
+						readModel.sourceArchiveBytes === mutableModel.sourceArchiveBytes ? 1 : 0,
+					...prefixAssertions(
+						'readMutableGridSharing',
+						workbookGridSharingAssertions(readModel, mutableModel),
+					),
+				},
+			}
+		},
+	},
+	{
 		name: 'real-dense-prepared-open-only-memory',
 		category: 'workflow',
 		build() {
@@ -4106,6 +4158,7 @@ const scenarioSets = {
 	'ui-real-corpus': ['patch-stream-real-corpus-prepared-first-edit'],
 	'real-open': ['real-corpus-open-phases', 'real-corpus-grid-storage'],
 	'real-memory': [
+		'real-dense-prepared-open-cpu',
 		'real-dense-promotion-memory',
 		'real-dense-prepared-open-only-memory',
 		'real-dense-prepared-open-memory',

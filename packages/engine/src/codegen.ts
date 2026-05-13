@@ -1646,14 +1646,6 @@ function indexedLookup(lookup: CellValue, index: ReadonlyMap<string, ExactLookup
 	return hit !== undefined ? exactLookupHitFirst(hit) : -1
 }
 
-function hasWildcardChars(text: string): boolean {
-	for (let i = 0; i < text.length; i++) {
-		const ch = text[i]
-		if ((ch === '*' || ch === '?') && text[i - 1] !== '~') return true
-	}
-	return false
-}
-
 function indexRange(
 	ctx: EvalContext,
 	currentSheet: import('@ascend/core').Workbook['sheets'][number] | undefined,
@@ -1737,7 +1729,7 @@ function matchExact(
 	if (lookupVal.kind === 'array') return treeEvaluate(fallbackNode, ctx)
 	const lookup = topLeftScalar(lookupVal)
 	if (lookup.kind === 'error') return lookup
-	if (lookup.kind === 'string' && hasWildcardChars(lookup.value))
+	if (lookup.kind === 'string' && hasWildcardPatternSyntax(lookup.value))
 		return treeEvaluate(fallbackNode, ctx)
 
 	const sr = resolveRelativeIndex(startRow, startRowAbsolute, ctx.row, anchorRow)

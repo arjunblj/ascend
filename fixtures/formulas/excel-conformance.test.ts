@@ -735,6 +735,13 @@ describe('Excel conformance', () => {
 			expectNum(evalFormula('MATCH(25, A1:A4, -1)', cells), 2)
 		})
 
+		test('MATCH exact mode honors escaped wildcard literals', () => {
+			const cells = { A1: '*', A2: '?', A3: '~', A4: '~*' }
+			expectNum(evalFormula('MATCH("~*", A1:A4, 0)', cells), 1)
+			expectNum(evalFormula('MATCH("~?", A1:A4, 0)', cells), 2)
+			expectNum(evalFormula('MATCH("~~", A1:A4, 0)', cells), 3)
+		})
+
 		test('XMATCH exact match', () => {
 			const cells = { A1: 'a', A2: 'b', A3: 'c' }
 			expectNum(evalFormula('XMATCH("b", A1:A3, 0)', cells), 2)

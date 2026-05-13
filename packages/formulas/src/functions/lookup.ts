@@ -17,6 +17,7 @@ import {
 	exactLookupHitLast,
 	type FunctionEvalContext,
 	getRange,
+	hasWildcardPatternSyntax,
 	numArg,
 	packExactLookupHit,
 	rangeShape,
@@ -108,14 +109,6 @@ function exactMatch(lookup: CellValue, data: readonly CellValue[]): number {
 		if (valuesEqual(lookup, v(data, i))) return i
 	}
 	return -1
-}
-
-function hasWildcardPattern(text: string): boolean {
-	for (let i = 0; i < text.length; i++) {
-		const ch = text[i]
-		if ((ch === '*' || ch === '?') && text[i - 1] !== '~') return true
-	}
-	return false
 }
 
 function exactLookupValueKey(value: CellValue): string | null {
@@ -529,7 +522,7 @@ function matchScalar(
 ): CellValue {
 	if (lookup.kind === 'error') return lookup
 	if (matchType === 0) {
-		if (exactIndex && (lookup.kind !== 'string' || !hasWildcardPattern(lookup.value))) {
+		if (exactIndex && (lookup.kind !== 'string' || !hasWildcardPatternSyntax(lookup.value))) {
 			const idx = indexedExactMatch(lookup, exactIndex)
 			if (idx >= 0) return numberValue(idx + 1)
 		}

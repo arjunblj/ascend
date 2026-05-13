@@ -2550,11 +2550,14 @@ describe('MCP server', () => {
 		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
 		const handler = (server as any)._registeredTools['ascend.plan'].handler as (args: {
 			file: string
-			ops: unknown[]
+			ops?: unknown[]
+			mutations?: Array<{ path: string; value?: unknown }>
+			prepare?: boolean
 			maxRows?: number
 		}) => Promise<{
 			isError?: boolean
 			structuredContent?: {
+				data?: { preparedPlan?: { id?: string } }
 				error?: {
 					code?: string
 					details?: {
@@ -2579,6 +2582,19 @@ describe('MCP server', () => {
 			allSheets: true,
 			maxRows: null,
 		})
+
+		const mutationPlan = await handler({
+			file: TEMP_FILE,
+			prepare: true,
+			mutations: [{ path: '/sheets/Sheet1/cells/A1/value', value: 1 }],
+			maxRows: 1,
+		})
+		expect(mutationPlan.isError).toBe(true)
+		expect(mutationPlan.structuredContent?.data?.preparedPlan).toBeUndefined()
+		expect(mutationPlan.structuredContent?.error?.code).toBe('VALIDATION_ERROR')
+		expect(mutationPlan.structuredContent?.error?.details?.unsupportedLoadOptions).toEqual([
+			'maxRows',
+		])
 	})
 
 	test('ascend.commit rejects capped load options instead of silently producing full commits', async () => {
@@ -2589,7 +2605,8 @@ describe('MCP server', () => {
 		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
 		const handler = (server as any)._registeredTools['ascend.commit'].handler as (args: {
 			file: string
-			ops: unknown[]
+			ops?: unknown[]
+			mutations?: Array<{ path: string; value?: unknown }>
 			output: string
 			maxRows?: number
 		}) => Promise<{
@@ -2620,6 +2637,21 @@ describe('MCP server', () => {
 			allSheets: true,
 			maxRows: null,
 		})
+
+		const mutationOutput = `${TEMP_FILE}.partial-mutation-commit.xlsx`
+		const mutationCommit = await handler({
+			file: TEMP_FILE,
+			mutations: [{ path: '/sheets/Sheet1/cells/A1/value', value: 1 }],
+			output: mutationOutput,
+			maxRows: 1,
+		})
+		expect(mutationCommit.isError).toBe(true)
+		expect(mutationCommit.structuredContent?.error?.code).toBe('VALIDATION_ERROR')
+		expect(mutationCommit.structuredContent?.error?.details?.unsupportedLoadOptions).toEqual([
+			'maxRows',
+		])
+		expect(await Bun.file(mutationOutput).exists()).toBe(false)
+		await unlink(mutationOutput).catch(() => {})
 	})
 
 	test('MCP operation schema accepts capability extension operations', () => {

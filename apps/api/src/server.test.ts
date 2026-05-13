@@ -1379,6 +1379,56 @@ describe('Ascend API server', () => {
 		expect(plan.body.data?.preview?.wouldSucceed).toBe(true)
 	})
 
+	test('plan and commit reject partial load options before preparing or writing', async () => {
+		const wb = AscendWorkbook.create()
+		await wb.save(TEMP_FILE)
+		const output = `${OUTPUT_FILE}.partial-load.xlsx`
+		try {
+			const plan = await postJson('/plan', {
+				file: TEMP_FILE,
+				prepare: true,
+				maxRows: 1,
+				mode: 'values',
+				sheets: ['Sheet1'],
+				mutations: [{ path: '/sheets/Sheet1/cells/A1/value', value: 123 }],
+			})
+			expect(plan.status).toBe(400)
+			expect(plan.body.ok).toBe(false)
+			expect(plan.body.data?.preparedPlan).toBeUndefined()
+			expect(plan.body.error?.code).toBe('VALIDATION_ERROR')
+			expect(plan.body.error?.details?.unsupportedLoadOptions).toEqual([
+				'maxRows',
+				'mode',
+				'sheets',
+			])
+			expect(plan.body.error?.details?.requiredLoad).toEqual({
+				mode: 'full',
+				allSheets: true,
+				maxRows: null,
+			})
+
+			const commit = await postJson('/commit', {
+				file: TEMP_FILE,
+				output,
+				maxRows: 1,
+				mode: 'values',
+				sheets: ['Sheet1'],
+				ops: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 123 }] }],
+			})
+			expect(commit.status).toBe(400)
+			expect(commit.body.ok).toBe(false)
+			expect(commit.body.error?.code).toBe('VALIDATION_ERROR')
+			expect(commit.body.error?.details?.unsupportedLoadOptions).toEqual([
+				'maxRows',
+				'mode',
+				'sheets',
+			])
+			expect(await Bun.file(output).exists()).toBe(false)
+		} finally {
+			await unlink(output).catch(() => {})
+		}
+	})
+
 	test('prepared plan handles expire before commit', async () => {
 		const wb = AscendWorkbook.create()
 		await wb.save(TEMP_FILE)

@@ -884,6 +884,48 @@ function ascendWorkbookRetentionAssertions(workbook: AscendWorkbook): Record<str
 	}
 }
 
+function workbookGridSharingAssertions(
+	readWorkbook: Workbook,
+	mutableWorkbook: Workbook,
+): Record<string, number> {
+	let comparableSheetCount = 0
+	let sharedGridMaps = 0
+	let readSharedGrids = 0
+	let mutableSharedGrids = 0
+	let readCopyOnWriteChunkKeys = 0
+	let mutableCopyOnWriteChunkKeys = 0
+	for (const readSheet of readWorkbook.sheets) {
+		const mutableSheet = mutableWorkbook.getSheet(readSheet.name)
+		if (!mutableSheet) continue
+		comparableSheetCount++
+		const readCells = readSheet.cells as unknown as {
+			readonly chunkRows?: unknown
+			readonly _shared?: boolean
+			readonly _sharedChunks?: ReadonlySet<number> | null
+		}
+		const mutableCells = mutableSheet.cells as unknown as {
+			readonly chunkRows?: unknown
+			readonly _shared?: boolean
+			readonly _sharedChunks?: ReadonlySet<number> | null
+		}
+		if (readCells.chunkRows === mutableCells.chunkRows) sharedGridMaps++
+		if (readCells._shared) readSharedGrids++
+		if (mutableCells._shared) mutableSharedGrids++
+		readCopyOnWriteChunkKeys += readCells._sharedChunks?.size ?? 0
+		mutableCopyOnWriteChunkKeys += mutableCells._sharedChunks?.size ?? 0
+	}
+	return {
+		comparableSheetCount,
+		sharedGridMaps,
+		readSharedGrids,
+		mutableSharedGrids,
+		readCopyOnWriteChunkKeys,
+		mutableCopyOnWriteChunkKeys,
+		allComparableGridsShareMaps:
+			comparableSheetCount > 0 && sharedGridMaps === comparableSheetCount ? 1 : 0,
+	}
+}
+
 function workbookGridShapeAssertions(workbook: Workbook): Record<string, number> {
 	let nonEmptySheets = 0
 	let maxUsedRows = 0
@@ -2946,6 +2988,10 @@ const scenarios: readonly Scenario[] = [
 					mutableOriginalSharesSourceArchive:
 						mutableOriginalBytes === mutableModel.sourceArchiveBytes ? 1 : 0,
 					readSourceArchiveSharesInput: readModel.sourceArchiveBytes === bytes ? 1 : 0,
+					...prefixAssertions(
+						'readMutableGridSharing',
+						workbookGridSharingAssertions(readModel, mutableModel),
+					),
 					baselineRssBytes: baseline.rssBytes,
 					afterPreparedOpenRssDeltaBytes: memoryDelta(
 						afterPreparedOpen.rssBytes,
@@ -3100,6 +3146,10 @@ const scenarios: readonly Scenario[] = [
 					mutableOriginalSharesSourceArchive:
 						mutableOriginalBytes === mutableModel.sourceArchiveBytes ? 1 : 0,
 					readSourceArchiveSharesInput: readModel.sourceArchiveBytes === bytes ? 1 : 0,
+					...prefixAssertions(
+						'readMutableGridSharing',
+						workbookGridSharingAssertions(readModel, mutableModel),
+					),
 					viewportMs,
 					editFrameMs,
 					sessionApplyMs: edit.timings.totalMs,

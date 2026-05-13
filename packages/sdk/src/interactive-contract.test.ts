@@ -2,7 +2,13 @@ import { describe, expect, test } from 'bun:test'
 import { unlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { DEFAULT_STYLE_ID } from '@ascend/core'
+import {
+	DEFAULT_STYLE_ID,
+	parseA1,
+	type RangeRef,
+	rangeIntersects,
+	sqrefIntersects,
+} from '@ascend/core'
 import { numberValue } from '@ascend/schema'
 import type { InteractiveViewportCell, InteractiveViewportPatch } from './index.ts'
 import { AscendSession, AscendWorkbook } from './index.ts'
@@ -200,6 +206,114 @@ describe('interactive client contract', () => {
 		expect(after.cells.find((cell) => cell.ref === 'A1')?.flags.validation).toBe(true)
 		expect(after.cells.find((cell) => cell.ref === 'B1')?.flags.validation).toBe(true)
 		session.close()
+	})
+
+	test('interactive viewport overlay indexes match exhaustive metadata scans', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'Region' },
+					{ ref: 'B1', value: 'Qty' },
+					{ ref: 'C1', value: 'Amount' },
+					{ ref: 'D1', value: 'Status' },
+					{ ref: 'B2', value: 2 },
+					{ ref: 'C3', value: 30 },
+					{ ref: 'D4', value: 'Open' },
+					{ ref: 'E5', value: 'Outside' },
+				],
+			},
+			{ op: 'setComment', sheet: 'Sheet1', ref: 'B2', text: 'review' },
+			{ op: 'setComment', sheet: 'Sheet1', ref: 'G7', text: 'outside' },
+			{ op: 'setHyperlink', sheet: 'Sheet1', ref: 'C3', url: 'https://example.com' },
+			{ op: 'setHyperlink', sheet: 'Sheet1', ref: 'H1', url: 'https://outside.example' },
+			{
+				op: 'setDataValidation',
+				sheet: 'Sheet1',
+				range: 'B2:B4 D2:E2 H1:H2',
+				rule: { type: 'list', formula1: '"Open,Closed"', allowBlank: true },
+			},
+			{
+				op: 'setConditionalFormat',
+				sheet: 'Sheet1',
+				range: 'C3:D5 A8:A9',
+				rule: { type: 'expression', formula: 'C3>10', priority: 1 },
+			},
+			{ op: 'mergeCells', sheet: 'Sheet1', range: 'B2:C3' },
+			{ op: 'mergeCells', sheet: 'Sheet1', range: 'F6:G7' },
+			{ op: 'createTable', sheet: 'Sheet1', ref: 'A1:D4', name: 'Sales', hasHeaders: true },
+			{ op: 'setAutoFilter', sheet: 'Sheet1', range: 'A1:D4', column: 3, values: ['Open'] },
+		])
+		const model = wb.getWorkbookModel()
+		const sheet = model.getSheet('Sheet1')
+		if (!sheet) throw new Error('Sheet1 missing')
+		const session = await AscendSession.open(wb.toBytes(), { mode: 'interactive' })
+		try {
+			for (const request of [
+				{ topRow: 1, leftCol: 1, rowCount: 3, colCount: 3 },
+				{ topRow: 4, leftCol: 3, rowCount: 3, colCount: 2 },
+				{ topRow: 0, leftCol: 7, rowCount: 2, colCount: 1 },
+			]) {
+				const viewport = session.readViewport({
+					sheet: 'Sheet1',
+					...request,
+				})
+				const range = viewport.viewport
+				expect(viewport.comments.map((comment) => comment.ref).sort()).toEqual(
+					[...sheet.comments.keys()].filter((ref) => cellRefOverlapsRange(ref, range)).sort(),
+				)
+				expect(viewport.hyperlinks.map((hyperlink) => hyperlink.ref).sort()).toEqual(
+					[...sheet.hyperlinks.keys()].filter((ref) => cellRefOverlapsRange(ref, range)).sort(),
+				)
+				expect(viewport.merges.map(rangeKey).sort()).toEqual(
+					sheet.merges
+						.filter((merge) => rangeIntersects(merge, range))
+						.map(rangeKey)
+						.sort(),
+				)
+				expect(viewport.dataValidations.map((validation) => validation.sqref).sort()).toEqual(
+					sheet.dataValidations
+						.filter((validation) => sqrefIntersects(validation.sqref, range))
+						.map((validation) => validation.sqref)
+						.sort(),
+				)
+				expect(viewport.conditionalFormats.map((format) => format.sqref).sort()).toEqual(
+					sheet.conditionalFormats
+						.filter((format) => sqrefIntersects(format.sqref, range))
+						.map((format) => format.sqref)
+						.sort(),
+				)
+				expect(viewport.tables.map((table) => table.name).sort()).toEqual(
+					sheet.tables
+						.filter((table) => rangeIntersects(table.ref, range))
+						.map((table) => table.name)
+						.sort(),
+				)
+				expect(viewport.autoFilter?.ref ?? null).toBe(
+					sheet.autoFilter && sqrefIntersects(sheet.autoFilter.ref, range)
+						? sheet.autoFilter.ref
+						: null,
+				)
+				for (const cell of viewport.cells) {
+					expect(cell.flags).toMatchObject({
+						comment: sheet.comments.has(cell.ref),
+						hyperlink: sheet.hyperlinks.has(cell.ref),
+						merged: sheet.merges.some((merge) => cellInRange(cell.row, cell.col, merge)),
+						validation: sheet.dataValidations.some((validation) =>
+							sqrefIntersects(validation.sqref, cellRange(cell.row, cell.col)),
+						),
+						conditionalFormat: sheet.conditionalFormats.some((format) =>
+							sqrefIntersects(format.sqref, cellRange(cell.row, cell.col)),
+						),
+						table: sheet.tables.some((table) => cellInRange(cell.row, cell.col, table.ref)),
+					})
+				}
+			}
+		} finally {
+			session.close()
+		}
 	})
 
 	test('interactive viewport resolves shared formula member text', async () => {
@@ -3238,6 +3352,27 @@ function semanticInteractiveCellMap(
 			return [cell.ref, semanticCell]
 		}),
 	)
+}
+
+function cellRefOverlapsRange(ref: string, range: RangeRef): boolean {
+	const cell = parseA1(ref)
+	return cellInRange(cell.row, cell.col, range)
+}
+
+function cellInRange(row: number, col: number, range: RangeRef): boolean {
+	const startRow = Math.min(range.start.row, range.end.row)
+	const endRow = Math.max(range.start.row, range.end.row)
+	const startCol = Math.min(range.start.col, range.end.col)
+	const endCol = Math.max(range.start.col, range.end.col)
+	return row >= startRow && row <= endRow && col >= startCol && col <= endCol
+}
+
+function cellRange(row: number, col: number): RangeRef {
+	return { start: { row, col }, end: { row, col } }
+}
+
+function rangeKey(range: RangeRef): string {
+	return `${range.start.row}:${range.start.col}:${range.end.row}:${range.end.col}`
 }
 
 function quoteSheet(sheet: string): string {

@@ -17,6 +17,8 @@ describe('agent workflow benchmark', () => {
 				'10',
 				'--mutations',
 				'12',
+				'--surface',
+				'both',
 				'--repeat',
 				'1',
 				'--warmup',
@@ -73,6 +75,20 @@ describe('agent workflow benchmark', () => {
 				readonly preparedCommitVerifiedHydratedOpenCountMedian?: number
 				readonly fullHydratedOpenCountMedian?: number
 				readonly preparedHydratedOpenCountMedian?: number
+				readonly mcpTotalMedianMs?: number
+				readonly mcpPreparedTotalMedianMs?: number
+				readonly mcpCommitVerifiedTotalMedianMs?: number
+				readonly mcpPreparedCommitVerifiedTotalMedianMs?: number
+				readonly mcpPayloadBytesMedian?: number
+				readonly mcpCommitVerifiedPayloadBytesMedian?: number
+				readonly mcpReadCellsMedian?: number
+				readonly mcpCompactHydratedOpenCountMedian?: number
+				readonly mcpCommitVerifiedHydratedOpenCountMedian?: number
+				readonly mcpPreparedHydratedOpenCountMedian?: number
+				readonly mcpPreparedCommitVerifiedHydratedOpenCountMedian?: number
+				readonly mcpReadPartial?: boolean
+				readonly mcpValid?: boolean
+				readonly mcpPreparedValid?: boolean
 				readonly planHydratedOpenCountMedian?: number
 				readonly preparedPlanHydratedOpenCountMedian?: number
 				readonly commitHydratedOpenCountMedian?: number
@@ -125,6 +141,17 @@ describe('agent workflow benchmark', () => {
 		expect(payload.summary?.preparedCommitVerifiedHydratedOpenCountMedian).toBeNumber()
 		expect(payload.summary?.fullHydratedOpenCountMedian).toBeNumber()
 		expect(payload.summary?.preparedHydratedOpenCountMedian).toBeNumber()
+		expect(payload.summary?.mcpTotalMedianMs).toBeNumber()
+		expect(payload.summary?.mcpPreparedTotalMedianMs).toBeNumber()
+		expect(payload.summary?.mcpCommitVerifiedTotalMedianMs).toBeNumber()
+		expect(payload.summary?.mcpPreparedCommitVerifiedTotalMedianMs).toBeNumber()
+		expect(payload.summary?.mcpPayloadBytesMedian).toBeNumber()
+		expect(payload.summary?.mcpCommitVerifiedPayloadBytesMedian).toBeNumber()
+		expect(payload.summary?.mcpReadCellsMedian).toBe(60)
+		expect(payload.summary?.mcpCompactHydratedOpenCountMedian).toBeNumber()
+		expect(payload.summary?.mcpCommitVerifiedHydratedOpenCountMedian).toBeNumber()
+		expect(payload.summary?.mcpPreparedHydratedOpenCountMedian).toBeNumber()
+		expect(payload.summary?.mcpPreparedCommitVerifiedHydratedOpenCountMedian).toBeNumber()
 		expect(payload.summary?.planHydratedOpenCountMedian).toBeNumber()
 		expect(payload.summary?.preparedPlanHydratedOpenCountMedian).toBeNumber()
 		expect(payload.summary?.commitHydratedOpenCountMedian).toBeNumber()
@@ -139,6 +166,12 @@ describe('agent workflow benchmark', () => {
 		expect(payload.summary?.preparedCommitVerifiedHydratedOpenCountMedian).toBeLessThan(
 			payload.summary?.preparedHydratedOpenCountMedian ?? 0,
 		)
+		expect(payload.summary?.mcpCommitVerifiedHydratedOpenCountMedian).toBeLessThan(
+			payload.summary?.mcpCompactHydratedOpenCountMedian ?? 0,
+		)
+		expect(payload.summary?.mcpPreparedCommitVerifiedHydratedOpenCountMedian).toBeLessThan(
+			payload.summary?.mcpPreparedHydratedOpenCountMedian ?? 0,
+		)
 		expect(payload.summary?.preparedCommitHydratedOpenCountMedian).toBeLessThan(
 			payload.summary?.commitHydratedOpenCountMedian ?? 0,
 		)
@@ -147,6 +180,9 @@ describe('agent workflow benchmark', () => {
 		expect(payload.summary?.readPartial).toBe(true)
 		expect(payload.summary?.valid).toBe(true)
 		expect(payload.summary?.preparedValid).toBe(true)
+		expect(payload.summary?.mcpReadPartial).toBe(true)
+		expect(payload.summary?.mcpValid).toBe(true)
+		expect(payload.summary?.mcpPreparedValid).toBe(true)
 	})
 
 	test('runs the full workflow against an existing input workbook without deleting it', async () => {

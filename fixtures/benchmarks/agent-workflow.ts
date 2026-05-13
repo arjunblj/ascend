@@ -3,15 +3,19 @@ import { rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { createApiFetch } from '../../apps/api/src/server.ts'
+import { createServer } from '../../apps/mcp/src/index.ts'
 import { indexToColumn } from '../../packages/core/src/index.ts'
 import { AscendWorkbook, WorkbookDocument } from '../../packages/sdk/src/index.ts'
 import { buildRawReadWorkloadDataSet, type WorkloadName } from './competitive-io.ts'
+
+type Surface = 'api' | 'both'
 
 interface Args {
 	readonly rows: number
 	readonly cols: number
 	readonly rowLimit: number
 	readonly mutations: number
+	readonly surface: Surface
 	readonly inputFile?: string
 	readonly sheet?: string
 	readonly range?: string
@@ -88,6 +92,30 @@ interface WorkflowSample {
 	readonly preparedCommitVerifiedHydratedOpenCount: number
 	readonly fullHydratedOpenCount: number
 	readonly preparedHydratedOpenCount: number
+	readonly mcpTotalMs?: number
+	readonly mcpPreparedTotalMs?: number
+	readonly mcpCommitVerifiedTotalMs?: number
+	readonly mcpPreparedCommitVerifiedTotalMs?: number
+	readonly mcpInspectMs?: number
+	readonly mcpReadMs?: number
+	readonly mcpPlanMs?: number
+	readonly mcpPreparedPlanMs?: number
+	readonly mcpCommitMs?: number
+	readonly mcpPreparedCommitMs?: number
+	readonly mcpVerifyMs?: number
+	readonly mcpPreparedVerifyMs?: number
+	readonly mcpPayloadBytes?: number
+	readonly mcpPreparedPayloadBytes?: number
+	readonly mcpCommitVerifiedPayloadBytes?: number
+	readonly mcpPreparedCommitVerifiedPayloadBytes?: number
+	readonly mcpReadCells?: number
+	readonly mcpReadPartial?: boolean
+	readonly mcpCompactHydratedOpenCount?: number
+	readonly mcpCommitVerifiedHydratedOpenCount?: number
+	readonly mcpPreparedHydratedOpenCount?: number
+	readonly mcpPreparedCommitVerifiedHydratedOpenCount?: number
+	readonly mcpValid?: boolean
+	readonly mcpPreparedValid?: boolean
 	readonly planHydratedOpenCount: number
 	readonly preparedPlanHydratedOpenCount: number
 	readonly commitHydratedOpenCount: number
@@ -239,6 +267,10 @@ function nonNegativeInt(raw: string | undefined, fallback: number): number {
 function parseArgs(): Args {
 	const workload = readOption(process.argv, '--workload') ?? 'mixed-10pct-text'
 	if (!WORKLOADS.has(workload)) throw new Error(`Unsupported --workload "${workload}"`)
+	const surface = readOption(process.argv, '--surface') ?? 'api'
+	if (surface !== 'api' && surface !== 'both') {
+		throw new Error(`Unsupported --surface "${surface}". Use api or both.`)
+	}
 	const inputFile = readOption(process.argv, '--input-file')
 	const sheet = readOption(process.argv, '--sheet')
 	const range = readOption(process.argv, '--range')
@@ -247,6 +279,7 @@ function parseArgs(): Args {
 		cols: positiveInt(readOption(process.argv, '--cols'), 10),
 		rowLimit: positiveInt(readOption(process.argv, '--row-limit'), 500),
 		mutations: positiveInt(readOption(process.argv, '--mutations'), 1),
+		surface,
 		...(inputFile !== undefined ? { inputFile } : {}),
 		...(sheet !== undefined ? { sheet } : {}),
 		...(range !== undefined ? { range } : {}),
@@ -316,6 +349,58 @@ interface ApiEnvelope {
 	}
 }
 
+interface SurfaceResponse {
+	readonly ms: number
+	readonly text: string
+	readonly payload: ApiEnvelope
+	readonly openStats: OpenStats
+}
+
+interface McpWorkflowClient {
+	inspect(body: unknown): Promise<SurfaceResponse>
+	read(body: unknown): Promise<SurfaceResponse>
+	plan(body: unknown): Promise<SurfaceResponse>
+	commit(body: unknown): Promise<SurfaceResponse>
+	check(body: unknown): Promise<SurfaceResponse>
+}
+
+function createMcpWorkflowClient(): McpWorkflowClient {
+	const server = createServer()
+	type McpTool = { handler: (args: unknown) => Promise<unknown> }
+	const tools = (server as unknown as { _registeredTools: Record<string, McpTool> })
+		._registeredTools
+	const required = {
+		inspect: tools['ascend.inspect'],
+		read: tools['ascend.read'],
+		plan: tools['ascend.plan'],
+		commit: tools['ascend.commit'],
+		check: tools['ascend.check'],
+	}
+	for (const [name, tool] of Object.entries(required)) {
+		if (!tool) throw new Error(`MCP tool ${name} is not registered`)
+	}
+	const call = async (handler: McpTool['handler'], body: unknown): Promise<SurfaceResponse> => {
+		const beforeOpenStats = snapshotOpenStats()
+		const start = performance.now()
+		const result = await handler(body)
+		const structured = (result as { readonly structuredContent?: ApiEnvelope }).structuredContent
+		const payload = structured ?? {}
+		const text = JSON.stringify(payload)
+		const ms = performance.now() - start
+		if ((payload as { readonly ok?: boolean }).ok !== true) {
+			throw new Error(`MCP tool failed: ${text}`)
+		}
+		return { ms, text, payload, openStats: diffOpenStats(snapshotOpenStats(), beforeOpenStats) }
+	}
+	return {
+		inspect: (body) => call(required.inspect.handler, body),
+		read: (body) => call(required.read.handler, body),
+		plan: (body) => call(required.plan.handler, body),
+		commit: (body) => call(required.commit.handler, body),
+		check: (body) => call(required.check.handler, body),
+	}
+}
+
 interface PostWriteTimings {
 	readonly reopenMs: number | null
 	readonly checkMs: number | null
@@ -361,8 +446,128 @@ function postWriteTimings(payload: ApiEnvelope): PostWriteTimings {
 	}
 }
 
+async function runMcpWorkflow(
+	mcpClient: McpWorkflowClient,
+	inputPath: string,
+	outputPath: string,
+	sheetName: string,
+	range: string,
+	rowLimit: number,
+	mutations: readonly ReturnType<typeof buildCellMutations>[number][],
+): Promise<Partial<WorkflowSample>> {
+	const preparedOutputPath = `${outputPath}.prepared.xlsx`
+	await rm(outputPath, { force: true })
+	await rm(preparedOutputPath, { force: true })
+	const inspect = await mcpClient.inspect({ file: inputPath })
+	const read = await mcpClient.read({
+		file: inputPath,
+		sheet: sheetName,
+		range,
+		format: 'compact',
+		rowLimit,
+	})
+	const plan = await mcpClient.plan({
+		file: inputPath,
+		mutations,
+		compact: true,
+		maxChangedCells: 25,
+	})
+	const preparedPlan = await mcpClient.plan({
+		file: inputPath,
+		mutations,
+		compact: true,
+		prepare: true,
+		maxChangedCells: 25,
+	})
+	const planHandle = preparedPlan.payload.data?.preparedPlan?.id
+	if (!planHandle) throw new Error('MCP prepared plan did not return a handle')
+	const commit = await mcpClient.commit({
+		file: inputPath,
+		output: outputPath,
+		mutations,
+		approvals: [],
+		compact: true,
+	})
+	const preparedCommit = await mcpClient.commit({
+		planHandle,
+		output: preparedOutputPath,
+		approvals: [],
+		compact: true,
+	})
+	const verify = await mcpClient.check({ file: outputPath })
+	const preparedVerify = await mcpClient.check({ file: preparedOutputPath })
+	const sharedOpenStats = addOpenStats(inspect.openStats, read.openStats)
+	const compactOpenStats = addOpenStats(
+		sharedOpenStats,
+		plan.openStats,
+		commit.openStats,
+		verify.openStats,
+	)
+	const compactCommitVerifiedOpenStats = addOpenStats(
+		sharedOpenStats,
+		plan.openStats,
+		commit.openStats,
+	)
+	const preparedOpenStats = addOpenStats(
+		sharedOpenStats,
+		preparedPlan.openStats,
+		preparedCommit.openStats,
+		preparedVerify.openStats,
+	)
+	const preparedCommitVerifiedOpenStats = addOpenStats(
+		sharedOpenStats,
+		preparedPlan.openStats,
+		preparedCommit.openStats,
+	)
+	const workflowBytes =
+		inspect.text.length +
+		read.text.length +
+		plan.text.length +
+		commit.text.length +
+		verify.text.length
+	const preparedWorkflowBytes =
+		inspect.text.length +
+		read.text.length +
+		preparedPlan.text.length +
+		preparedCommit.text.length +
+		preparedVerify.text.length
+	return {
+		mcpTotalMs: inspect.ms + read.ms + plan.ms + commit.ms + verify.ms,
+		mcpPreparedTotalMs:
+			inspect.ms + read.ms + preparedPlan.ms + preparedCommit.ms + preparedVerify.ms,
+		mcpCommitVerifiedTotalMs: inspect.ms + read.ms + plan.ms + commit.ms,
+		mcpPreparedCommitVerifiedTotalMs: inspect.ms + read.ms + preparedPlan.ms + preparedCommit.ms,
+		mcpInspectMs: inspect.ms,
+		mcpReadMs: read.ms,
+		mcpPlanMs: plan.ms,
+		mcpPreparedPlanMs: preparedPlan.ms,
+		mcpCommitMs: commit.ms,
+		mcpPreparedCommitMs: preparedCommit.ms,
+		mcpVerifyMs: verify.ms,
+		mcpPreparedVerifyMs: preparedVerify.ms,
+		mcpPayloadBytes: workflowBytes,
+		mcpPreparedPayloadBytes: preparedWorkflowBytes,
+		mcpCommitVerifiedPayloadBytes:
+			inspect.text.length + read.text.length + plan.text.length + commit.text.length,
+		mcpPreparedCommitVerifiedPayloadBytes:
+			inspect.text.length +
+			read.text.length +
+			preparedPlan.text.length +
+			preparedCommit.text.length,
+		mcpReadCells: read.payload.data?.cells?.length ?? 0,
+		mcpReadPartial: read.payload.data?.load?.isPartial === true,
+		mcpCompactHydratedOpenCount: hydratedOpenCount(compactOpenStats),
+		mcpCommitVerifiedHydratedOpenCount: hydratedOpenCount(compactCommitVerifiedOpenStats),
+		mcpPreparedHydratedOpenCount: hydratedOpenCount(preparedOpenStats),
+		mcpPreparedCommitVerifiedHydratedOpenCount: hydratedOpenCount(preparedCommitVerifiedOpenStats),
+		mcpValid: verify.payload.data?.valid === true,
+		mcpPreparedValid: preparedVerify.payload.data?.valid === true,
+	}
+}
+
 async function runWorkflow(
 	apiFetch: typeof fetch,
+	mcpClient: McpWorkflowClient | undefined,
 	inputPath: string,
 	outputPath: string,
 	sheetName: string,
@@ -419,6 +624,18 @@ async function runWorkflow(
 	const verify = await post(apiFetch, '/check', { file: outputPath })
 	const preparedVerify = await post(apiFetch, '/check', { file: preparedOutputPath })
 	const measuredSampleMs = performance.now() - totalStart
+	const mcpOutputPath = `${outputPath}.mcp.xlsx`
+	const mcpWorkflow = mcpClient
+		? await runMcpWorkflow(
+				mcpClient,
+				inputPath,
+				mcpOutputPath,
+				sheetName,
+				range,
+				rowLimit,
+				mutations,
+			)
+		: {}
 	const rssAfter = rssMb()
 	const readLoad = read.payload.data?.load
 	const commitPostWrite = postWriteTimings(commit.payload)
@@ -554,6 +771,7 @@ async function runWorkflow(
 			verify.openStats,
 			preparedVerify.openStats,
 		).documentCacheHits,
+		...mcpWorkflow,
 		mutationCount,
 		rssDeltaMb: rssAfter - rssBefore,
 		valid: verify.payload.data?.valid === true,
@@ -691,6 +909,54 @@ function summarize(samples: readonly WorkflowSample[]) {
 		preparedHydratedOpenCountMedian: median(
 			samples.map((sample) => sample.preparedHydratedOpenCount),
 		),
+		mcpTotalMedianMs: medianOptional(samples.map((sample) => sample.mcpTotalMs)),
+		mcpPreparedTotalMedianMs: medianOptional(samples.map((sample) => sample.mcpPreparedTotalMs)),
+		mcpCommitVerifiedTotalMedianMs: medianOptional(
+			samples.map((sample) => sample.mcpCommitVerifiedTotalMs),
+		),
+		mcpPreparedCommitVerifiedTotalMedianMs: medianOptional(
+			samples.map((sample) => sample.mcpPreparedCommitVerifiedTotalMs),
+		),
+		mcpInspectMedianMs: medianOptional(samples.map((sample) => sample.mcpInspectMs)),
+		mcpReadMedianMs: medianOptional(samples.map((sample) => sample.mcpReadMs)),
+		mcpPlanMedianMs: medianOptional(samples.map((sample) => sample.mcpPlanMs)),
+		mcpPreparedPlanMedianMs: medianOptional(samples.map((sample) => sample.mcpPreparedPlanMs)),
+		mcpCommitMedianMs: medianOptional(samples.map((sample) => sample.mcpCommitMs)),
+		mcpPreparedCommitMedianMs: medianOptional(samples.map((sample) => sample.mcpPreparedCommitMs)),
+		mcpVerifyMedianMs: medianOptional(samples.map((sample) => sample.mcpVerifyMs)),
+		mcpPreparedVerifyMedianMs: medianOptional(samples.map((sample) => sample.mcpPreparedVerifyMs)),
+		mcpPayloadBytesMedian: medianOptional(samples.map((sample) => sample.mcpPayloadBytes)),
+		mcpPreparedPayloadBytesMedian: medianOptional(
+			samples.map((sample) => sample.mcpPreparedPayloadBytes),
+		),
+		mcpCommitVerifiedPayloadBytesMedian: medianOptional(
+			samples.map((sample) => sample.mcpCommitVerifiedPayloadBytes),
+		),
+		mcpPreparedCommitVerifiedPayloadBytesMedian: medianOptional(
+			samples.map((sample) => sample.mcpPreparedCommitVerifiedPayloadBytes),
+		),
+		mcpReadCellsMedian: medianOptional(samples.map((sample) => sample.mcpReadCells)),
+		mcpCompactHydratedOpenCountMedian: medianOptional(
+			samples.map((sample) => sample.mcpCompactHydratedOpenCount),
+		),
+		mcpCommitVerifiedHydratedOpenCountMedian: medianOptional(
+			samples.map((sample) => sample.mcpCommitVerifiedHydratedOpenCount),
+		),
+		mcpPreparedHydratedOpenCountMedian: medianOptional(
+			samples.map((sample) => sample.mcpPreparedHydratedOpenCount),
+		),
+		mcpPreparedCommitVerifiedHydratedOpenCountMedian: medianOptional(
+			samples.map((sample) => sample.mcpPreparedCommitVerifiedHydratedOpenCount),
+		),
+		mcpReadPartial: samples.some((sample) => sample.mcpReadPartial !== undefined)
+			? samples.every((sample) => sample.mcpReadPartial === true)
+			: undefined,
+		mcpValid: samples.some((sample) => sample.mcpValid !== undefined)
+			? samples.every((sample) => sample.mcpValid === true)
+			: undefined,
+		mcpPreparedValid: samples.some((sample) => sample.mcpPreparedValid !== undefined)
+			? samples.every((sample) => sample.mcpPreparedValid === true)
+			: undefined,
 		planHydratedOpenCountMedian: median(samples.map((sample) => sample.planHydratedOpenCount)),
 		preparedPlanHydratedOpenCountMedian: median(
 			samples.map((sample) => sample.preparedPlanHydratedOpenCount),
@@ -787,12 +1053,14 @@ async function run() {
 	const args = parseArgs()
 	const data = await resolveBenchmarkInput(args)
 	const apiFetch = createApiFetch()
+	const mcpClient = args.surface === 'both' ? createMcpWorkflowClient() : undefined
 	const outputPath = workflowOutputPath(data)
 	const samples: WorkflowSample[] = []
 	try {
 		for (let i = 0; i < args.warmup; i++) {
 			await runWorkflow(
 				apiFetch,
+				mcpClient,
 				data.xlsxPath,
 				outputPath,
 				data.sheet,
@@ -808,6 +1076,7 @@ async function run() {
 			samples.push(
 				await runWorkflow(
 					apiFetch,
+					mcpClient,
 					data.xlsxPath,
 					outputPath,
 					data.sheet,
@@ -833,6 +1102,8 @@ async function run() {
 		if (data.cleanup) await rm(data.xlsxPath, { force: true })
 		await rm(outputPath, { force: true })
 		await rm(`${outputPath}.prepared.xlsx`, { force: true })
+		await rm(`${outputPath}.mcp.xlsx`, { force: true })
+		await rm(`${outputPath}.mcp.xlsx.prepared.xlsx`, { force: true })
 	}
 }
 

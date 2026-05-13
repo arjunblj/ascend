@@ -56,14 +56,114 @@ describe('path-addressed mutations', () => {
 		])
 	})
 
+	test('compiles sheet metadata and table metadata paths into canonical ops', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'Name' },
+					{ ref: 'B1', value: 'Revenue' },
+					{ ref: 'A2', value: 'Acme' },
+					{ ref: 'B2', value: 10 },
+				],
+			},
+			{ op: 'createTable', sheet: 'Sheet1', ref: 'A1:B2', name: 'Sales', hasHeaders: true },
+		])
+
+		const result = wb.compilePathMutations([
+			{ path: '/sheets/Sheet1/cells/G2/comment', value: { text: 'review', author: 'agent' } },
+			{
+				path: '/sheets/Sheet1/cells/G2/hyperlink',
+				value: { url: 'https://example.com', display: 'Open' },
+			},
+			{ path: '/sheets/Sheet1/ranges/C2:C10/numberFormat', value: '0.00' },
+			{ path: '/sheets/Sheet1/ranges/C2:C10/style', value: { font: { bold: true } } },
+			{
+				path: '/sheets/Sheet1/ranges/C2:C10/validation',
+				value: { type: 'whole', operator: 'greaterThan', formula1: '0' },
+			},
+			{
+				path: '/sheets/Sheet1/ranges/C2:C10/conditionalFormat',
+				value: {
+					rule: { type: 'cellIs', operator: 'greaterThan', formula: '10' },
+					mode: 'append',
+					reassignPriorities: true,
+				},
+			},
+			{ path: '/sheets/Sheet1/ranges/H1:I1/merge', value: true },
+			{
+				path: '/sheets/Sheet1/autofilter',
+				value: { range: 'A1:B10', column: 1, values: ['Open'] },
+			},
+			{ path: '/tables/Sales/columns/Revenue/formula', value: 'SUM([Revenue])' },
+			{
+				path: '/tables/Sales/style',
+				value: { styleName: 'TableStyleMedium2', showRowStripes: true },
+			},
+			{ path: '/tables/Sales/name', value: 'SalesData' },
+		])
+
+		expect(result.replayable).toBe(true)
+		expect(result.issues).toEqual([])
+		expect(result.ops).toEqual([
+			{ op: 'setComment', sheet: 'Sheet1', ref: 'G2', text: 'review', author: 'agent' },
+			{
+				op: 'setHyperlink',
+				sheet: 'Sheet1',
+				ref: 'G2',
+				url: 'https://example.com',
+				display: 'Open',
+			},
+			{ op: 'setNumberFormat', sheet: 'Sheet1', range: 'C2:C10', format: '0.00' },
+			{ op: 'setStyle', sheet: 'Sheet1', range: 'C2:C10', style: { font: { bold: true } } },
+			{
+				op: 'setDataValidation',
+				sheet: 'Sheet1',
+				range: 'C2:C10',
+				rule: { type: 'whole', operator: 'greaterThan', formula1: '0' },
+			},
+			{
+				op: 'setConditionalFormat',
+				sheet: 'Sheet1',
+				range: 'C2:C10',
+				rule: { type: 'cellIs', operator: 'greaterThan', formula: '10' },
+				mode: 'append',
+				reassignPriorities: true,
+			},
+			{ op: 'mergeCells', sheet: 'Sheet1', range: 'H1:I1' },
+			{ op: 'setAutoFilter', sheet: 'Sheet1', range: 'A1:B10', column: 1, values: ['Open'] },
+			{ op: 'setTableColumn', table: 'Sales', column: 'Revenue', formula: 'SUM([Revenue])' },
+			{
+				op: 'setTableStyle',
+				table: 'Sales',
+				styleName: 'TableStyleMedium2',
+				showRowStripes: true,
+			},
+			{ op: 'renameTable', table: 'Sales', newName: 'SalesData' },
+		])
+
+		const applied = wb.batch(result.ops)
+		expect(applied.errors).toEqual([])
+		expect(wb.sheet('Sheet1')?.comment('G2')?.text).toBe('review')
+		expect(wb.sheet('Sheet1')?.hyperlink('G2')?.target).toBe('https://example.com')
+		expect(wb.table('SalesData')?.styleInfo?.name).toBe('TableStyleMedium2')
+	})
+
 	test('reports invalid paths and values without emitting unsafe operations', () => {
 		const wb = AscendWorkbook.create()
+		wb.apply([
+			{ op: 'createTable', sheet: 'Sheet1', ref: 'A1:B2', name: 'Sales', hasHeaders: true },
+		])
 
 		const result = wb.compilePathMutations([
 			{ path: '/sheets/Missing/cells/A1/value', value: 1 },
 			{ path: '/sheets/Sheet1/cells/NotARef/value', value: 1 },
 			{ path: '/sheets/Sheet1/cells/A1/value', value: { nested: true } },
 			{ path: '/tables/Missing/rows/append', value: [[1]] },
+			{ path: '/tables/Sales/columns/Missing/formula', value: '1+1' },
+			{ path: '/sheets/Sheet1/cells/A1/hyperlink', value: { display: 'missing target' } },
 			{ path: '/workbook/properties/title', value: 'Unsupported' },
 		])
 
@@ -74,6 +174,8 @@ describe('path-addressed mutations', () => {
 			'invalid_ref',
 			'invalid_value',
 			'table_not_found',
+			'invalid_path',
+			'invalid_value',
 			'unsupported_path',
 		])
 	})

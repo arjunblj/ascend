@@ -472,16 +472,21 @@ describe('MCP server', () => {
 
 		const writeResult = await write({
 			file: TEMP_FILE,
-			mutations: [{ path: '/sheets/Sheet1/cells/B1/formula', value: 'A1&"-ok"' }],
+			mutations: [
+				{ path: '/sheets/Sheet1/cells/B1/formula', value: 'A1&"-ok"' },
+				{ path: '/sheets/Sheet1/cells/C1/comment', value: { text: 'review', author: 'agent' } },
+			],
 		})
 		expect(writeResult.structuredContent?.ok).toBe(true)
 		expect(writeResult.structuredContent?.data?.pathMutations?.ops).toEqual([
 			{ op: 'setFormula', sheet: 'Sheet1', ref: 'B1', formula: 'A1&"-ok"' },
+			{ op: 'setComment', sheet: 'Sheet1', ref: 'C1', text: 'review', author: 'agent' },
 		])
 
 		const reopened = await AscendWorkbook.open(TEMP_FILE)
 		expect(reopened.sheet('Sheet1')?.cell('A1')?.value).toEqual({ kind: 'string', value: 'old' })
 		expect(reopened.sheet('Sheet1')?.cell('B1')?.formula).toBe('A1&"-ok"')
+		expect(reopened.sheet('Sheet1')?.comment('C1')?.text).toBe('review')
 	})
 
 	test('ascend.plan reports path mutation compiler errors as structured repair details', async () => {

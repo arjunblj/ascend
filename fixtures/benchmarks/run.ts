@@ -20,7 +20,12 @@ import {
 	numberValue,
 	stringValue,
 } from '../../packages/schema/src/index.ts'
-import { AscendSession, AscendWorkbook, SheetHandle } from '../../packages/sdk/src/index.ts'
+import {
+	AscendSession,
+	AscendWorkbook,
+	SheetHandle,
+	WorkbookDocument,
+} from '../../packages/sdk/src/index.ts'
 import {
 	type BenchmarkCaseResult,
 	createBenchmarkSuite,
@@ -1908,6 +1913,99 @@ const scenarios: readonly Scenario[] = [
 		},
 	},
 	{
+		name: 'real-corpus-open-phases',
+		category: 'read',
+		build() {
+			return {
+				rows: REAL_INTERACTIVE_PATCH_CORPUS.length,
+				cols: 4,
+				cells: REAL_INTERACTIVE_PATCH_CORPUS.length * 4,
+				byteCount: realInteractivePatchCorpusByteCount(),
+			}
+		},
+		async run() {
+			const targetAssertions: Record<string, string | number | boolean | null> = {}
+			let totalBytes = 0
+			let totalFormulaReadXlsxMs = 0
+			let totalFullReadXlsxMs = 0
+			let totalSessionColdOpenMs = 0
+			let totalSessionHotOpenMs = 0
+			let totalFullWorkbookOpenMs = 0
+			let maxFullWorkbookOpenMs = 0
+			let slowestFullWorkbookOpenTarget = ''
+
+			for (const target of REAL_INTERACTIVE_PATCH_CORPUS) {
+				const bytes = realInteractivePatchCorpusTargetBytes(target)
+				const assertionPrefix = target.label.replaceAll('-', '_')
+				totalBytes += bytes.byteLength
+
+				const formulaReadStart = performance.now()
+				const formulaRead = readXlsx(bytes, { mode: 'formula', richMetadata: true })
+				const formulaReadXlsxMs = performance.now() - formulaReadStart
+				if (!formulaRead.ok) {
+					throw new Error(`Formula read failed for ${target.label}: ${formulaRead.error.message}`)
+				}
+
+				const fullReadStart = performance.now()
+				const fullRead = readXlsx(bytes, { mode: 'full', richMetadata: true })
+				const fullReadXlsxMs = performance.now() - fullReadStart
+				if (!fullRead.ok) {
+					throw new Error(`Full read failed for ${target.label}: ${fullRead.error.message}`)
+				}
+
+				WorkbookDocument.clearCache()
+				const sessionColdOpenStart = performance.now()
+				const coldSession = await AscendSession.open(bytes, { mode: 'interactive' })
+				const sessionColdOpenMs = performance.now() - sessionColdOpenStart
+				coldSession.close()
+
+				const sessionHotOpenStart = performance.now()
+				const hotSession = await AscendSession.open(bytes, { mode: 'interactive' })
+				const sessionHotOpenMs = performance.now() - sessionHotOpenStart
+				hotSession.close()
+
+				const fullWorkbookOpenStart = performance.now()
+				const workbook = await AscendWorkbook.open(bytes, { mode: 'full', richMetadata: true })
+				const fullWorkbookOpenMs = performance.now() - fullWorkbookOpenStart
+				if (workbook.inspect().load.isPartial) {
+					throw new Error(`Full workbook open stayed partial for ${target.label}`)
+				}
+
+				totalFormulaReadXlsxMs += formulaReadXlsxMs
+				totalFullReadXlsxMs += fullReadXlsxMs
+				totalSessionColdOpenMs += sessionColdOpenMs
+				totalSessionHotOpenMs += sessionHotOpenMs
+				totalFullWorkbookOpenMs += fullWorkbookOpenMs
+				if (fullWorkbookOpenMs > maxFullWorkbookOpenMs) {
+					maxFullWorkbookOpenMs = fullWorkbookOpenMs
+					slowestFullWorkbookOpenTarget = target.label
+				}
+
+				targetAssertions[`${assertionPrefix}.bytes`] = bytes.byteLength
+				targetAssertions[`${assertionPrefix}.formulaReadXlsxMs`] = formulaReadXlsxMs
+				targetAssertions[`${assertionPrefix}.fullReadXlsxMs`] = fullReadXlsxMs
+				targetAssertions[`${assertionPrefix}.sessionColdOpenMs`] = sessionColdOpenMs
+				targetAssertions[`${assertionPrefix}.sessionHotOpenMs`] = sessionHotOpenMs
+				targetAssertions[`${assertionPrefix}.fullWorkbookOpenMs`] = fullWorkbookOpenMs
+			}
+
+			return {
+				assertions: {
+					workbooks: REAL_INTERACTIVE_PATCH_CORPUS.length,
+					totalBytes,
+					formulaReadXlsxMs: totalFormulaReadXlsxMs,
+					fullReadXlsxMs: totalFullReadXlsxMs,
+					sessionColdOpenMs: totalSessionColdOpenMs,
+					sessionHotOpenMs: totalSessionHotOpenMs,
+					fullWorkbookOpenMs: totalFullWorkbookOpenMs,
+					maxFullWorkbookOpenMs,
+					slowestFullWorkbookOpenTarget,
+					...targetAssertions,
+				},
+			}
+		},
+	},
+	{
 		name: 'workflow-reopen-values-window',
 		category: 'workflow',
 		build() {
@@ -2725,6 +2823,7 @@ const scenarioSets = {
 		'patch-stream-real-rich-prepared-first-edit',
 	],
 	'ui-real-corpus': ['patch-stream-real-corpus-prepared-first-edit'],
+	'real-open': ['real-corpus-open-phases'],
 } as const
 
 function getRssBytes(): number | undefined {

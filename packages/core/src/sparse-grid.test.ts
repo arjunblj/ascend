@@ -247,6 +247,20 @@ describe('SparseGrid', () => {
 		])
 	})
 
+	test('forEachValueInRange respects sparse row mask bounds across word split', () => {
+		const grid = new SparseGrid()
+		for (const col of [30, 31, 32, 33, 63]) {
+			grid.set(0, col, makeCell(numberValue(col)))
+		}
+		grid.delete(0, 30)
+		grid.delete(0, 63)
+
+		const coords: number[] = []
+		grid.forEachValueInRange(0, 31, 0, 32, (_value, _row, col) => coords.push(col))
+
+		expect(coords).toEqual([31, 32])
+	})
+
 	test('forEachRow calls fn with row and Map of col->value', () => {
 		const grid = new SparseGrid()
 		grid.set(2, 3, makeCell(stringValue('hello')))

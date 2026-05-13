@@ -234,6 +234,8 @@ const COMMON_INTERNED_STRINGS = [
 class SparseChunk implements GridChunk {
 	private readonly slots = new Map<number, StoredSlot>()
 	private readonly rowCounts = new Uint16Array(CHUNK_SIZE)
+	private readonly rowMaskLo = new Uint32Array(CHUNK_SIZE)
+	private readonly rowMaskHi = new Uint32Array(CHUNK_SIZE)
 	private readonly rowMinCol = new Int16Array(CHUNK_SIZE)
 	private readonly rowMaxCol = new Int16Array(CHUNK_SIZE)
 
@@ -252,6 +254,8 @@ class SparseChunk implements GridChunk {
 			next.slots.set(index, slot)
 		}
 		next.rowCounts.set(this.rowCounts)
+		next.rowMaskLo.set(this.rowMaskLo)
+		next.rowMaskHi.set(this.rowMaskHi)
 		next.rowMinCol.set(this.rowMinCol)
 		next.rowMaxCol.set(this.rowMaxCol)
 		return next
@@ -380,6 +384,7 @@ class SparseChunk implements GridChunk {
 			const rowIndex = localIndex >>> CHUNK_BITS
 			const localCol = localIndex & CHUNK_MASK
 			this.rowCounts[rowIndex] = (this.rowCounts[rowIndex] ?? 0) + 1
+			this.setRowMaskBit(rowIndex, localCol)
 			this.updateRowBounds(rowIndex, localCol, true)
 		}
 		this.slots.set(localIndex, slot)
@@ -396,8 +401,27 @@ class SparseChunk implements GridChunk {
 		const rowIndex = localIndex >>> CHUNK_BITS
 		const localCol = localIndex & CHUNK_MASK
 		this.rowCounts[rowIndex] = Math.max(0, (this.rowCounts[rowIndex] ?? 0) - 1)
+		this.clearRowMaskBit(rowIndex, localCol)
 		this.updateRowBounds(rowIndex, localCol, false)
 		return true
+	}
+
+	private setRowMaskBit(rowIndex: number, localCol: number): void {
+		if (localCol < 32) {
+			this.rowMaskLo[rowIndex] = ((this.rowMaskLo[rowIndex] ?? 0) | ((1 << localCol) >>> 0)) >>> 0
+		} else {
+			const bit = localCol - 32
+			this.rowMaskHi[rowIndex] = ((this.rowMaskHi[rowIndex] ?? 0) | ((1 << bit) >>> 0)) >>> 0
+		}
+	}
+
+	private clearRowMaskBit(rowIndex: number, localCol: number): void {
+		if (localCol < 32) {
+			this.rowMaskLo[rowIndex] = ((this.rowMaskLo[rowIndex] ?? 0) & ~((1 << localCol) >>> 0)) >>> 0
+		} else {
+			const bit = localCol - 32
+			this.rowMaskHi[rowIndex] = ((this.rowMaskHi[rowIndex] ?? 0) & ~((1 << bit) >>> 0)) >>> 0
+		}
 	}
 
 	private updateRowBounds(rowIndex: number, localCol: number, isAdd: boolean): void {
@@ -425,17 +449,20 @@ class SparseChunk implements GridChunk {
 	}
 
 	private recomputeRowBounds(rowIndex: number): void {
-		const rowBase = rowIndex << CHUNK_BITS
-		let minC = ROW_EMPTY_MIN
-		let maxC = ROW_EMPTY_MAX
-		for (let localCol = 0; localCol <= CHUNK_MASK; localCol++) {
-			if (this.slots.has(rowBase + localCol)) {
-				minC = Math.min(minC, localCol)
-				maxC = Math.max(maxC, localCol)
-			}
+		const lo = this.rowMaskLo[rowIndex] ?? 0
+		const hi = this.rowMaskHi[rowIndex] ?? 0
+		if (lo !== 0) {
+			this.rowMinCol[rowIndex] = trailingZeroCount32(lo)
+			this.rowMaxCol[rowIndex] = hi !== 0 ? 32 + (31 - Math.clz32(hi)) : 31 - Math.clz32(lo)
+			return
 		}
-		this.rowMinCol[rowIndex] = minC
-		this.rowMaxCol[rowIndex] = maxC
+		if (hi !== 0) {
+			this.rowMinCol[rowIndex] = 32 + trailingZeroCount32(hi)
+			this.rowMaxCol[rowIndex] = 32 + (31 - Math.clz32(hi))
+			return
+		}
+		this.rowMinCol[rowIndex] = ROW_EMPTY_MIN
+		this.rowMaxCol[rowIndex] = ROW_EMPTY_MAX
 	}
 
 	forEachRow(
@@ -451,10 +478,10 @@ class SparseChunk implements GridChunk {
 		const startCol = Math.max(minLocalCol, rowMin)
 		const endCol = Math.min(maxLocalCol, rowMax)
 		const rowBase = localRow << CHUNK_BITS
-		for (let localCol = startCol; localCol <= endCol; localCol++) {
+		this.forEachOccupiedLocalCol(localRow, startCol, endCol, (localCol) => {
 			const slot = this.slots.get(rowBase | localCol)
 			if (slot) fn(localCol, slot)
-		}
+		})
 	}
 
 	forEachValueInRow(
@@ -471,18 +498,54 @@ class SparseChunk implements GridChunk {
 		const startCol = Math.max(minLocalCol, rowMin)
 		const endCol = Math.min(maxLocalCol, rowMax)
 		const rowBase = localRow << CHUNK_BITS
-		for (let localCol = startCol; localCol <= endCol; localCol++) {
+		this.forEachOccupiedLocalCol(localRow, startCol, endCol, (localCol) => {
 			const slot = this.slots.get(rowBase | localCol)
 			if (slot) {
 				const value = readSlotValue(slot, stringTable)
 				if (value !== undefined) fn(localCol, value)
 			}
+		})
+	}
+
+	private forEachOccupiedLocalCol(
+		localRow: number,
+		startCol: number,
+		endCol: number,
+		fn: (localCol: number) => void,
+	): void {
+		const loEnd = Math.min(endCol, 31)
+		if (startCol <= loEnd) {
+			let mask = ((this.rowMaskLo[localRow] ?? 0) & bitRangeMask32(startCol, loEnd)) >>> 0
+			while (mask !== 0) {
+				const localCol = trailingZeroCount32(mask)
+				mask = (mask & (mask - 1)) >>> 0
+				fn(localCol)
+			}
+		}
+		if (endCol < 32) return
+		const hiStart = Math.max(startCol - 32, 0)
+		const hiEnd = Math.min(endCol - 32, 31)
+		let mask = ((this.rowMaskHi[localRow] ?? 0) & bitRangeMask32(hiStart, hiEnd)) >>> 0
+		while (mask !== 0) {
+			const localCol = 32 + trailingZeroCount32(mask)
+			mask = (mask & (mask - 1)) >>> 0
+			fn(localCol)
 		}
 	}
 }
 
 const ROW_EMPTY_MIN = CHUNK_SIZE
 const ROW_EMPTY_MAX = -1
+
+function bitRangeMask32(startBit: number, endBit: number): number {
+	const lower = startBit <= 0 ? 0xffffffff : (0xffffffff << startBit) >>> 0
+	const upper = endBit >= 31 ? 0xffffffff : 0xffffffff >>> (31 - endBit)
+	return (lower & upper) >>> 0
+}
+
+function trailingZeroCount32(value: number): number {
+	return 31 - Math.clz32(value & -value)
+}
 
 class DenseChunk implements GridChunk {
 	private readonly metaBuffer = createChunkBuffer(CHUNK_AREA * 5)

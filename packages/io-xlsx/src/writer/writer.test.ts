@@ -4495,6 +4495,35 @@ describe('writeXlsx', () => {
 		expect(readSheet?.cells.get(2, 1)?.value).toEqual({ kind: 'number', value: 21 })
 	})
 
+	it('applies omitted dense row refs to boolean and repeated row fast paths', () => {
+		const booleanRows = writeDenseRowsXlsx({
+			rows: 1,
+			cols: 2,
+			omitCellRefs: true,
+			omitRowRefs: true,
+			allCellsPresent: true,
+			valueType: 'boolean',
+			valueAt: (_row, col) => col === 0,
+		})
+		expectOk(booleanRows)
+		const repeatedRows = writeDenseRowsXlsx({
+			rows: 2,
+			cols: 2,
+			omitCellRefs: true,
+			omitRowRefs: true,
+			cacheRepeatedRows: true,
+			valueAt: (_row, col) => col,
+		})
+		expectOk(repeatedRows)
+
+		for (const bytes of [booleanRows.value, repeatedRows.value]) {
+			const zip = unzipSync(bytes)
+			const sheetXml = new TextDecoder().decode(zip['xl/worksheets/sheet1.xml'] ?? new Uint8Array())
+			expect(sheetXml).toContain('<row>')
+			expect(sheetXml).not.toContain('<row r=')
+		}
+	})
+
 	it('reuses constant dense row bodies when explicitly requested', () => {
 		let calls = 0
 		const written = writeDenseRowsXlsx({

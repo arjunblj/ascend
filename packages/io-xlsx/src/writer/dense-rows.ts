@@ -332,7 +332,7 @@ function buildDenseRowXmlWithoutRefs(
 		return buildRowXmlWithRefs(options, row)
 	}
 	if (state && values && sameValues(values, state.lastValues)) {
-		return `<row r="${row + 1}">${state.lastBody}</row>`
+		return `${rowOpenXml(options, row)}${state.lastBody}</row>`
 	}
 	if (state && values) {
 		state.lastValues = values
@@ -445,7 +445,7 @@ function buildPresentBooleanRowXmlWithoutRefs(
 		if (typeof value !== 'boolean') return buildPresentGenericRowXmlWithoutRefs(options, row)
 		body += value ? '<c t="b"><v>1</v></c>' : '<c t="b"><v>0</v></c>'
 	}
-	return body.length === 0 ? '' : `<row r="${row + 1}">${body}</row>`
+	return body.length === 0 ? '' : `${rowOpenXml(options, row)}${body}</row>`
 }
 
 function buildRowXmlWithRefs(options: WriteDenseRowsXlsxOptions, row: number): string {

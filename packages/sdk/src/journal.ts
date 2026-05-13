@@ -13,6 +13,7 @@ import {
 	type SheetConditionalFormat,
 	type SheetConditionalFormatRule,
 	type SheetDataValidation,
+	type SheetDrawingObjectRef,
 	type SheetHyperlink,
 	type SheetThreadedComment,
 	type Table,
@@ -66,6 +67,12 @@ export interface MutationJournalThreadedCommentPreimage {
 	readonly sheet: string
 	readonly commentIndex: number | null
 	readonly threadedComment: SheetThreadedComment | null
+}
+
+export interface MutationJournalDrawingTextPreimage {
+	readonly sheet: string
+	readonly drawingObjectIndex: number | null
+	readonly drawingObject: SheetDrawingObjectRef | null
 }
 
 export interface MutationJournalPanePreimage {
@@ -142,6 +149,7 @@ export type MutationJournalPreimage =
 			readonly kind: 'threaded-comment'
 			readonly threadedComment: MutationJournalThreadedCommentPreimage
 	  }
+	| { readonly kind: 'drawing-text'; readonly drawingText: MutationJournalDrawingTextPreimage }
 	| { readonly kind: 'pane'; readonly pane: MutationJournalPanePreimage }
 	| { readonly kind: 'merge'; readonly merge: MutationJournalMergePreimage }
 	| { readonly kind: 'auto-filter'; readonly autoFilter: MutationJournalAutoFilterPreimage }
@@ -323,6 +331,8 @@ function buildSupportedJournalEntry(
 			return journalDeleteHyperlink(workbook, op, opIndex)
 		case 'setThreadedComment':
 			return journalSetThreadedComment(workbook, op, opIndex)
+		case 'setDrawingText':
+			return journalSetDrawingText(workbook, op, opIndex)
 		case 'freezePane':
 			return journalFreezePane(workbook, op, opIndex)
 		case 'renameSheet':
@@ -871,6 +881,41 @@ function journalSetThreadedComment(
 		op,
 		inverseOps,
 		preimages: [{ kind: 'threaded-comment', threadedComment: preimage }],
+		issues,
+	}
+}
+
+function journalSetDrawingText(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'setDrawingText' }>,
+	opIndex: number,
+): DraftJournalEntry {
+	const preimage = drawingTextPreimage(workbook, op)
+	const inverseOps: Operation[] =
+		preimage.drawingObject?.text !== undefined
+			? [
+					{
+						op: 'setDrawingText',
+						sheet: preimage.sheet,
+						text: preimage.drawingObject.text,
+						...drawingObjectStableSelector(preimage),
+					},
+				]
+			: []
+	const issues: MutationJournalIssue[] =
+		preimage.drawingObject?.text !== undefined
+			? []
+			: [
+					{
+						code: 'LOSSY_INVERSE',
+						message: `Drawing object selector on ${op.sheet} cannot be resolved to editable text exactly`,
+					},
+				]
+	return {
+		opIndex,
+		op,
+		inverseOps,
+		preimages: [{ kind: 'drawing-text', drawingText: preimage }],
 		issues,
 	}
 }
@@ -1925,6 +1970,56 @@ function threadedCommentStableSelector(
 	return { ref: comment.ref }
 }
 
+function drawingTextPreimage(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'setDrawingText' }>,
+): MutationJournalDrawingTextPreimage {
+	const sheet = workbook.getSheet(op.sheet)
+	if (
+		!sheet ||
+		(op.drawingObjectIndex !== undefined &&
+			(op.drawingObjectIndex < 0 || !Number.isInteger(op.drawingObjectIndex)))
+	) {
+		return { sheet: op.sheet, drawingObjectIndex: null, drawingObject: null }
+	}
+	const matches = sheet.drawingObjectRefs
+		.map((object, index) => ({ object, index }))
+		.filter(({ object, index }) => {
+			if (op.drawingObjectIndex !== undefined && index !== op.drawingObjectIndex) return false
+			if (op.drawingPartPath !== undefined && object.drawingPartPath !== op.drawingPartPath) {
+				return false
+			}
+			if (op.id !== undefined && object.id !== op.id) return false
+			if (op.name !== undefined && object.name !== op.name) return false
+			return true
+		})
+	const match = matches.length === 1 ? matches[0] : undefined
+	return {
+		sheet: op.sheet,
+		drawingObjectIndex: match?.index ?? null,
+		drawingObject: match ? cloneDrawingObjectRef(match.object) : null,
+	}
+}
+
+function drawingObjectStableSelector(
+	preimage: MutationJournalDrawingTextPreimage,
+): Omit<Extract<Operation, { op: 'setDrawingText' }>, 'op' | 'sheet' | 'text'> {
+	const object = preimage.drawingObject
+	if (!object) return {}
+	if (object.drawingPartPath !== undefined && object.id !== undefined) {
+		return { drawingPartPath: object.drawingPartPath, id: object.id }
+	}
+	if (object.id !== undefined) return { id: object.id }
+	if (object.drawingPartPath !== undefined && object.name !== undefined) {
+		return { drawingPartPath: object.drawingPartPath, name: object.name }
+	}
+	if (object.name !== undefined) return { name: object.name }
+	if (preimage.drawingObjectIndex !== null) {
+		return { drawingObjectIndex: preimage.drawingObjectIndex }
+	}
+	return { drawingPartPath: object.drawingPartPath }
+}
+
 function setHyperlinkInverse(
 	sheet: string,
 	ref: string,
@@ -2000,6 +2095,17 @@ function cloneTable(table: Table): Table {
 
 function cloneThreadedComment(comment: SheetThreadedComment): SheetThreadedComment {
 	return { ...comment }
+}
+
+function cloneDrawingObjectRef(object: SheetDrawingObjectRef): SheetDrawingObjectRef {
+	return {
+		...object,
+		...(object.anchor ? { anchor: clonePlain(object.anchor) } : {}),
+		...(object.relIds ? { relIds: [...object.relIds] } : {}),
+		...(object.relationshipRefs
+			? { relationshipRefs: object.relationshipRefs.map((ref) => ({ ...ref })) }
+			: {}),
+	}
 }
 
 function cloneConditionalFormat(format: SheetConditionalFormat): SheetConditionalFormat {

@@ -425,6 +425,133 @@ describe('interactive client contract', () => {
 		expect(sheet?.threadedComments.map((comment) => comment.text)).toEqual(['first', 'second'])
 	})
 
+	test('journal inverse ops restore drawing text without losing relationship metadata', () => {
+		const wb = AscendWorkbook.create()
+		const sheet = wb.getWorkbookModel().sheets[0]
+		sheet?.drawingObjectRefs.push({
+			drawingPartPath: 'xl/drawings/drawing1.xml',
+			kind: 'graphicFrame',
+			id: 7,
+			name: 'Chart Callout',
+			description: 'Revenue callout',
+			text: 'Original',
+			anchor: {
+				kind: 'absolute',
+				x: 1000,
+				y: 2000,
+				cx: 3000,
+				cy: 4000,
+			},
+			relIds: ['rIdChart1'],
+			relationshipRefs: [
+				{
+					id: 'rIdChart1',
+					type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart',
+					target: '../charts/chart1.xml',
+				},
+			],
+		})
+
+		const changed = wb.apply(
+			[
+				{
+					op: 'setDrawingText',
+					sheet: 'Sheet1',
+					drawingPartPath: 'xl/drawings/drawing1.xml',
+					id: 7,
+					text: 'Updated',
+				},
+			],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(true)
+		expect(changed.journal?.inverseOps).toEqual([
+			{
+				op: 'setDrawingText',
+				sheet: 'Sheet1',
+				drawingPartPath: 'xl/drawings/drawing1.xml',
+				id: 7,
+				text: 'Original',
+			},
+		])
+		expect(wb.getWorkbookModel().sheets[0]?.drawingObjectRefs[0]).toMatchObject({
+			id: 7,
+			name: 'Chart Callout',
+			text: 'Updated',
+			relIds: ['rIdChart1'],
+		})
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(wb.getWorkbookModel().sheets[0]?.drawingObjectRefs[0]).toEqual({
+			drawingPartPath: 'xl/drawings/drawing1.xml',
+			kind: 'graphicFrame',
+			id: 7,
+			name: 'Chart Callout',
+			description: 'Revenue callout',
+			text: 'Original',
+			anchor: {
+				kind: 'absolute',
+				x: 1000,
+				y: 2000,
+				cx: 3000,
+				cy: 4000,
+			},
+			relIds: ['rIdChart1'],
+			relationshipRefs: [
+				{
+					id: 'rIdChart1',
+					type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart',
+					target: '../charts/chart1.xml',
+				},
+			],
+		})
+	})
+
+	test('drawing text journals do not claim exact rollback for ambiguous or non-text selectors', () => {
+		const wb = AscendWorkbook.create()
+		const sheet = wb.getWorkbookModel().sheets[0]
+		sheet?.drawingObjectRefs.push(
+			{
+				drawingPartPath: 'xl/drawings/drawing1.xml',
+				kind: 'textBox',
+				id: 1,
+				name: 'Duplicate',
+				text: 'First',
+			},
+			{
+				drawingPartPath: 'xl/drawings/drawing1.xml',
+				kind: 'shape',
+				id: 2,
+				name: 'Duplicate',
+			},
+		)
+
+		const ambiguous = buildMutationJournal(wb.getWorkbookModel(), [
+			{ op: 'setDrawingText', sheet: 'Sheet1', name: 'Duplicate', text: 'Updated' },
+		])
+		expect(ambiguous.supported).toBe(true)
+		expect(ambiguous.exact).toBe(false)
+		expect(ambiguous.issues).toEqual([
+			{
+				code: 'LOSSY_INVERSE',
+				message: 'Drawing object selector on Sheet1 cannot be resolved to editable text exactly',
+			},
+		])
+		expect(ambiguous.inverseOps).toEqual([])
+
+		const noText = buildMutationJournal(wb.getWorkbookModel(), [
+			{ op: 'setDrawingText', sheet: 'Sheet1', id: 2, text: 'Updated' },
+		])
+		expect(noText.supported).toBe(true)
+		expect(noText.exact).toBe(false)
+		expect(noText.inverseOps).toEqual([])
+		expect(sheet?.drawingObjectRefs.map((object) => object.text)).toEqual(['First', undefined])
+	})
+
 	test('journal inverse ops restore conditional format replacements', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

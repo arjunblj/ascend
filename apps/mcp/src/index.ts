@@ -32,6 +32,7 @@ import {
 	type RangeRowsInfo,
 	type RangeWindowInfo,
 	readAgentDoc,
+	SUPPORTED_PATH_MUTATION_SHAPES,
 	searchAgentDocs,
 	summarizeCapabilities,
 	toA1Ref,
@@ -41,6 +42,8 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 import { errorResponse, okResponse } from './response.ts'
+
+const DEFAULT_MCP_RAW_PART_MAX_BYTES = 64 * 1024
 
 const pathMutationSchema = z.object({
 	path: z.union([z.string(), z.array(z.string())]),
@@ -85,9 +88,9 @@ function resolveOperationInputShape(
 	ops: readonly Record<string, unknown>[] | undefined,
 	mutations: readonly PathMutation[] | undefined,
 ): OperationInputShape {
-	const hasOps = ops !== undefined && ops.length > 0
-	const hasMutations = mutations !== undefined && mutations.length > 0
-	if (hasOps && hasMutations) {
+	const hasOpsKey = ops !== undefined
+	const hasMutationsKey = mutations !== undefined
+	if (hasOpsKey && hasMutationsKey) {
 		return {
 			ok: false,
 			error: ascendError('VALIDATION_ERROR', 'Provide either ops or mutations, not both', {
@@ -96,6 +99,8 @@ function resolveOperationInputShape(
 			}),
 		}
 	}
+	const hasOps = ops !== undefined && ops.length > 0
+	const hasMutations = mutations !== undefined && mutations.length > 0
 	if (!hasOps && !hasMutations) {
 		return {
 			ok: false,
@@ -140,6 +145,7 @@ function pathMutationCompileError(result: PathMutationResult): AscendError {
 			issues: result.issues.map((issue) => issue.message),
 			issueDetails: result.issues,
 			compiledOps: result.ops,
+			supportedPathShapes: SUPPORTED_PATH_MUTATION_SHAPES,
 		},
 		retryStrategy: 'modified',
 		suggestedFix:
@@ -345,6 +351,61 @@ export function createServer(): McpServer {
 	)
 
 	server.tool(
+		'ascend.raw_part',
+		'Read a bounded raw XLSX OPC package part for diagnostics. This is raw package inspection, not semantic workbook truth, and it does not bypass write-risk checks.',
+		{
+			file: z.string().describe('Path to workbook file'),
+			partPath: z
+				.string()
+				.describe('Exact case-sensitive package part path, for example xl/workbook.xml'),
+			encoding: z
+				.enum(['text', 'base64', 'none'])
+				.optional()
+				.describe('Return part preview as UTF-8 text, base64, or metadata only'),
+			maxBytes: z
+				.number()
+				.int()
+				.nonnegative()
+				.optional()
+				.describe('Maximum bytes to include in the text/base64 preview'),
+			caseInsensitive: z
+				.boolean()
+				.optional()
+				.describe(
+					'Allow diagnostic case-insensitive fallback; result marks fallback matches explicitly',
+				),
+		},
+		async ({ file, partPath, encoding, maxBytes, caseInsensitive }) => {
+			try {
+				const wb = await WorkbookDocument.open(file, { mode: 'metadata-only' })
+				const result = await wb.rawPackagePart({
+					partPath,
+					...(encoding ? { encoding } : {}),
+					maxBytes: maxBytes ?? DEFAULT_MCP_RAW_PART_MAX_BYTES,
+					...(caseInsensitive === true ? { caseInsensitive: true } : {}),
+				})
+				if (!result.found) {
+					return errorResponse(
+						ascendError('FILE_NOT_FOUND', `Package part not found: ${partPath}`, {
+							details: { ...result },
+							retryStrategy: 'modified',
+							suggestedFix: 'Call ascend.package_graph and retry with an exact part path.',
+						}),
+					)
+				}
+				return okResponse(
+					result,
+					`Read ${result.byteLength ?? 0} byte(s) from package part ${result.partPath}`,
+				)
+			} catch (e) {
+				return errorResponse(
+					e instanceof AscendException ? e.ascendError : String(e instanceof Error ? e.message : e),
+				)
+			}
+		},
+	)
+
+	server.tool(
 		'ascend.visuals',
 		'Inspect workbook visual inventory: charts, drawings, media, image anchors, drawing object links, and preserve-first visual gaps',
 		{
@@ -416,6 +477,14 @@ export function createServer(): McpServer {
 			sheet: z.string().optional().describe('Sheet name (defaults to first sheet)'),
 			rowOffset: z.number().int().nonnegative().optional().describe('Row offset within the range'),
 			rowLimit: z.number().int().positive().optional().describe('Maximum rows to return'),
+			maxRows: z
+				.number()
+				.int()
+				.positive()
+				.optional()
+				.describe(
+					'Maximum worksheet rows to hydrate for lazy preview reads; defaults to rowOffset + rowLimit when rowLimit is provided',
+				),
 			changedSince: z
 				.string()
 				.optional()
@@ -447,6 +516,7 @@ export function createServer(): McpServer {
 			sheet,
 			rowOffset,
 			rowLimit,
+			maxRows,
 			changedSince,
 			format,
 			display,
@@ -454,10 +524,11 @@ export function createServer(): McpServer {
 			cols,
 		}) => {
 			try {
-				const wb = await WorkbookDocument.open(
-					file,
-					sheet ? { mode: 'values', sheets: [sheet] } : { mode: 'values' },
-				)
+				const wb = await WorkbookDocument.open(file, {
+					mode: 'values',
+					...(sheet ? { sheets: [sheet] } : {}),
+					...readPreviewLoadOptions(maxRows, rowOffset, rowLimit),
+				})
 				const sheetName = sheet ?? wb.sheets[0]
 				if (!sheetName) {
 					return errorResponse('No sheets in workbook')
@@ -475,29 +546,38 @@ export function createServer(): McpServer {
 				const mode = format ?? 'cells'
 				const info =
 					mode === 'compact'
-						? buildCompactReadResult(
-								handle.readWindowCompact(range, {
-									...readOpts,
-									includeRefs: false,
-									omitEmpty: true,
-									flatValues: true,
-									changedSince: changedSince ?? '',
-								}),
-								cols,
+						? withPartialLoadInfo(
+								buildCompactReadResult(
+									handle.readWindowCompact(range, {
+										...readOpts,
+										includeRefs: false,
+										omitEmpty: true,
+										flatValues: true,
+										changedSince: changedSince ?? '',
+									}),
+									cols,
+								),
+								wb,
 							)
 						: mode === 'tsv'
-							? buildTsvReadResult(handle.readRows(range, readOpts), cols)
+							? withPartialLoadInfo(buildTsvReadResult(handle.readRows(range, readOpts), cols), wb)
 							: mode === 'rows'
-								? pruneRowsInfo(handle.readRows(range, readOpts), cols)
+								? withPartialLoadInfo(pruneRowsInfo(handle.readRows(range, readOpts), cols), wb)
 								: mode === 'objects'
-									? pruneObjectsInfo(
-											handle.readObjects(range, {
-												...readOpts,
-												headers: headers && headers.length > 0 ? headers : 'first-row',
-											}),
-											cols,
+									? withPartialLoadInfo(
+											pruneObjectsInfo(
+												handle.readObjects(range, {
+													...readOpts,
+													headers: headers && headers.length > 0 ? headers : 'first-row',
+												}),
+												cols,
+											),
+											wb,
 										)
-									: pruneWindowInfo(handle.readWindow(range, readOpts), cols)
+									: withPartialLoadInfo(
+											pruneWindowInfo(handle.readWindow(range, readOpts), cols),
+											wb,
+										)
 				return okResponse(
 					mode === 'tsv' || mode === 'compact'
 						? info
@@ -1459,6 +1539,22 @@ interface SelectedColumnInfo {
 	readonly col: number
 	readonly letter: string
 	readonly header?: string
+}
+
+function readPreviewLoadOptions(
+	explicitMaxRows: number | undefined,
+	rowOffset: number | undefined,
+	rowLimit: number | undefined,
+): { readonly maxRows?: number } {
+	if (explicitMaxRows !== undefined) return { maxRows: explicitMaxRows }
+	if (rowLimit === undefined) return {}
+	const offset = Math.max(0, rowOffset ?? 0)
+	return { maxRows: offset + rowLimit }
+}
+
+function withPartialLoadInfo<T extends object>(info: T, wb: WorkbookDocument): T {
+	const load = wb.inspect().load
+	return load.isPartial ? ({ ...info, load } as T) : info
 }
 
 function resolveColumnSelection(

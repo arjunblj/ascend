@@ -22,6 +22,33 @@ interface CompiledPathMutation {
 	readonly op: Operation
 }
 
+export const SUPPORTED_PATH_MUTATION_ROOTS = ['sheets', 'tables', 'names'] as const
+
+export const SUPPORTED_PATH_MUTATION_SHAPES = [
+	'/sheets/{sheet}/cells/{A1}/value',
+	'/sheets/{sheet}/cells/{A1}/formula',
+	'/sheets/{sheet}/cells/{A1}/comment',
+	'/sheets/{sheet}/cells/{A1}/hyperlink',
+	'/sheets/{sheet}/ranges/{A1:B2}/clear',
+	'/sheets/{sheet}/ranges/{A1:B2}/style',
+	'/sheets/{sheet}/ranges/{A1:B2}/numberFormat',
+	'/sheets/{sheet}/ranges/{A1:B2}/validation',
+	'/sheets/{sheet}/ranges/{A1:B2}/conditionalFormat',
+	'/sheets/{sheet}/ranges/{A1:B2}/merge',
+	'/sheets/{sheet}/autofilter',
+	'/sheets/{sheet}/name',
+	'/tables/{table}/name',
+	'/tables/{table}/rows/append',
+	'/tables/{table}/columns/{nameOrIndex}/name',
+	'/tables/{table}/columns/{nameOrIndex}/formula',
+	'/tables/{table}/columns/{nameOrIndex}/totalsRowFunction',
+	'/tables/{table}/columns/{nameOrIndex}/totalsRowFormula',
+	'/tables/{table}/columns/{nameOrIndex}/totalsRowLabel',
+	'/tables/{table}/style',
+	'/names/{name}/ref',
+	'/sheets/{sheet}/names/{name}/ref',
+] as const
+
 export function compilePathMutations(
 	workbook: Workbook,
 	mutations: readonly PathMutation[],
@@ -61,7 +88,8 @@ function compilePathMutation(
 	if (segments[0] === 'tables') return compileTablePath(workbook, mutation, segments)
 	if (segments[0] === 'names') return compileWorkbookNamePath(mutation, segments)
 	return issue(mutation.path, 'unsupported_path', `Unsupported path root "${segments[0]}".`, {
-		supportedRoots: ['sheets', 'tables', 'names'],
+		supportedRoots: SUPPORTED_PATH_MUTATION_ROOTS,
+		supportedShapes: SUPPORTED_PATH_MUTATION_SHAPES,
 	})
 }
 
@@ -713,30 +741,7 @@ function isValidRange(range: string): boolean {
 
 function unsupportedShape(path: PathMutationPath, segments: PathSegments): PathMutationIssue {
 	return issue(path, 'unsupported_path', `Unsupported path shape "${segments.join('/')}".`, {
-		supportedShapes: [
-			'/sheets/{sheet}/cells/{A1}/value',
-			'/sheets/{sheet}/cells/{A1}/formula',
-			'/sheets/{sheet}/cells/{A1}/comment',
-			'/sheets/{sheet}/cells/{A1}/hyperlink',
-			'/sheets/{sheet}/ranges/{A1:B2}/clear',
-			'/sheets/{sheet}/ranges/{A1:B2}/style',
-			'/sheets/{sheet}/ranges/{A1:B2}/numberFormat',
-			'/sheets/{sheet}/ranges/{A1:B2}/validation',
-			'/sheets/{sheet}/ranges/{A1:B2}/conditionalFormat',
-			'/sheets/{sheet}/ranges/{A1:B2}/merge',
-			'/sheets/{sheet}/autofilter',
-			'/sheets/{sheet}/name',
-			'/tables/{table}/name',
-			'/tables/{table}/rows/append',
-			'/tables/{table}/columns/{nameOrIndex}/name',
-			'/tables/{table}/columns/{nameOrIndex}/formula',
-			'/tables/{table}/columns/{nameOrIndex}/totalsRowFunction',
-			'/tables/{table}/columns/{nameOrIndex}/totalsRowFormula',
-			'/tables/{table}/columns/{nameOrIndex}/totalsRowLabel',
-			'/tables/{table}/style',
-			'/names/{name}/ref',
-			'/sheets/{sheet}/names/{name}/ref',
-		],
+		supportedShapes: SUPPORTED_PATH_MUTATION_SHAPES,
 	})
 }
 

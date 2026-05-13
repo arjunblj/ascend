@@ -300,6 +300,7 @@ function fullLoadInfo(): WorkbookLoadInfo {
 		cellsHydrated: true,
 		richSheetMetadataHydrated: true,
 		hasAllSheets: true,
+		partialReasons: [],
 		sourceSheets: ['Sheet1'],
 		loadedSheets: ['Sheet1'],
 	}
@@ -312,6 +313,7 @@ function metadataLoadInfo(): WorkbookLoadInfo {
 		cellsHydrated: false,
 		richSheetMetadataHydrated: false,
 		hasAllSheets: true,
+		partialReasons: [],
 		sourceSheets: ['Sheet1'],
 		loadedSheets: ['Sheet1'],
 	}

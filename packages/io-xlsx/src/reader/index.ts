@@ -140,6 +140,8 @@ export interface ReadXlsxLoadInfo {
 	readonly cellsHydrated: boolean
 	readonly richSheetMetadataHydrated: boolean
 	readonly hasAllSheets: boolean
+	readonly maxRows?: number
+	readonly partialReasons: readonly string[]
 	readonly sourceSheetNames: readonly string[]
 	readonly loadedSheetNames: readonly string[]
 }
@@ -722,12 +724,22 @@ export function readXlsx(
 		const richSheetMetadataHydrated = hydrateRichSheetMetadata
 		const fidelityPartial = mode === 'values' || mode === 'formula' || options.maxRows !== undefined
 		const isPartial = !hasAllSheets || !cellsHydrated || fidelityPartial
+		const partialReasons = buildPartialLoadReasons({
+			mode: selectedSheets ? 'selective' : mode,
+			isPartial,
+			cellsHydrated,
+			richSheetMetadataHydrated,
+			hasAllSheets,
+			...(options.maxRows !== undefined ? { maxRows: options.maxRows } : {}),
+		})
 		const loadInfo: ReadXlsxLoadInfo = {
 			mode: selectedSheets ? 'selective' : mode,
 			isPartial,
 			cellsHydrated,
 			richSheetMetadataHydrated,
 			hasAllSheets,
+			...(options.maxRows !== undefined ? { maxRows: options.maxRows } : {}),
+			partialReasons,
 			sourceSheetNames,
 			loadedSheetNames,
 		}
@@ -1694,16 +1706,10 @@ function buildReport(
 	}
 
 	if (loadInfo.isPartial) {
-		const reasons: string[] = []
-		if (!loadInfo.hasAllSheets) reasons.push('only selected sheets are loaded')
-		if (!loadInfo.cellsHydrated) reasons.push('sheet cells are not hydrated')
-		if (loadInfo.mode === 'values') {
-			reasons.push(
-				loadInfo.richSheetMetadataHydrated
-					? 'formulas, styles, and preservation capsules are not hydrated'
-					: 'only cell values are hydrated',
-			)
-		}
+		const reasons =
+			loadInfo.partialReasons.length > 0
+				? loadInfo.partialReasons
+				: buildPartialLoadReasons(loadInfo)
 		features.push({
 			feature: 'partialLoad',
 			tier: 'normalized',
@@ -1729,6 +1735,38 @@ function buildReport(
 		summary,
 		sourceFormat: 'xlsx',
 	}
+}
+
+function buildPartialLoadReasons(
+	loadInfo: Pick<
+		ReadXlsxLoadInfo,
+		| 'mode'
+		| 'isPartial'
+		| 'cellsHydrated'
+		| 'richSheetMetadataHydrated'
+		| 'hasAllSheets'
+		| 'maxRows'
+	>,
+): readonly string[] {
+	if (!loadInfo.isPartial) return []
+	const reasons: string[] = []
+	if (!loadInfo.hasAllSheets) reasons.push('only selected sheets are loaded')
+	if (loadInfo.maxRows !== undefined) {
+		reasons.push(`only the first ${loadInfo.maxRows} row(s) are hydrated per loaded sheet`)
+	}
+	if (!loadInfo.cellsHydrated) reasons.push('sheet cells are not hydrated')
+	if (loadInfo.mode === 'values') {
+		reasons.push(
+			loadInfo.richSheetMetadataHydrated
+				? 'formulas, styles, and preservation capsules are not hydrated'
+				: 'only cell values are hydrated',
+		)
+	}
+	if (loadInfo.mode === 'formula') reasons.push('styles and preservation capsules are not hydrated')
+	if (loadInfo.mode === 'selective' && reasons.length === 0) {
+		reasons.push('only selected workbook data is hydrated')
+	}
+	return reasons
 }
 
 function attachTables(

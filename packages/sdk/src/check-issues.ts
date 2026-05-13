@@ -1,5 +1,5 @@
 import type { CheckIssue as VerifyCheckIssue } from '@ascend/verify'
-import type { CheckIssue } from './types.ts'
+import type { CheckIssue, LintWarning } from './types.ts'
 
 export function sdkCheckIssueFromVerify(issue: VerifyCheckIssue): CheckIssue {
 	return {
@@ -19,5 +19,12 @@ export function partialDependencyCheckIssue(message: string): CheckIssue {
 		severity: 'warning',
 		message,
 		suggestedFix: 'Open the workbook with all referenced sheets loaded before running check.',
+	}
+}
+
+export function partialDependencyLintWarning(message: string): LintWarning {
+	return {
+		rule: 'partial-dependency-analysis',
+		message,
 	}
 }

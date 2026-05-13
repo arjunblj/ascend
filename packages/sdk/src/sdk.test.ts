@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test'
+import { Buffer } from 'node:buffer'
+import { createHash } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { unlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -1868,11 +1870,26 @@ describe('AscendWorkbook', () => {
 		const reopened = await AscendWorkbook.open(bytes, { mode: 'values', maxRows: 1 })
 		expect(reopened.inspect().load.mode).toBe('values')
 		expect(reopened.inspect().load.isPartial).toBe(true)
+		expect(reopened.inspect().load.maxRows).toBe(1)
+		expect(reopened.inspect().load.partialReasons).toContain(
+			'only the first 1 row(s) are hydrated per loaded sheet',
+		)
 		expect(reopened.sheet('Sheet1')?.cell('A1')?.value).toEqual({
 			kind: 'string',
 			value: 'loaded',
 		})
 		expect(reopened.sheet('Sheet1')?.cell('A2')).toBeUndefined()
+		const check = reopened.check()
+		expect(check.valid).toBe(false)
+		expect(check.issues[0]?.message).toContain(
+			'only the first 1 row(s) are hydrated per loaded sheet',
+		)
+		const lint = reopened.lint()
+		expect(lint.clean).toBe(false)
+		expect(lint.warnings[0]?.rule).toBe('partial-dependency-analysis')
+		expect(lint.warnings[0]?.message).toContain(
+			'only the first 1 row(s) are hydrated per loaded sheet',
+		)
 		expect(() => reopened.toBytes()).toThrow(
 			'Cannot export a partial workbook view. Reopen the workbook with a full load before saving or exporting.',
 		)
@@ -2082,6 +2099,10 @@ describe('AscendWorkbook', () => {
 		expect(check.issues[0]?.message).toContain(
 			'Cannot verify workbook dependencies from this partial view',
 		)
+		const lint = reopened.lint()
+		expect(lint.clean).toBe(false)
+		expect(lint.warnings[0]?.rule).toBe('partial-dependency-analysis')
+		expect(lint.warnings[0]?.message).toContain('not all sheets are loaded')
 		expect(reopened.trace('Archive!A1')).toBeUndefined()
 	})
 
@@ -2507,6 +2528,114 @@ describe('AscendWorkbook', () => {
 		expect(summary.byOrigin['preserved-source']).toBeGreaterThan(0)
 		expect(summary.byOrigin.generated).toBeGreaterThan(0)
 		expect(summary.byOwnerKind.workbook).toBeGreaterThan(0)
+	})
+
+	test('rawPackagePart returns bounded source text with package metadata', async () => {
+		const binaryBytes = new Uint8Array([0, 1, 2, 3, 4, 255])
+		const sourceBytes = makeSyntheticXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Default Extension="png" ContentType="image/png"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`,
+			'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`,
+			'xl/workbook.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets>
+</workbook>`,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`,
+			'xl/media/image1.png': binaryBytes,
+		})
+		const wb = await AscendWorkbook.open(sourceBytes)
+
+		const raw = wb.rawPackagePart({ partPath: '/xl/workbook.xml', maxBytes: 80 })
+
+		expect(raw.found).toBe(true)
+		expect(raw.partPath).toBe('xl/workbook.xml')
+		expect(raw.validPath).toBe(true)
+		expect(raw.normalizedFromRoot).toBe(true)
+		expect(raw.origin).toBe('source')
+		expect(raw.semantics).toBe('raw-package-bytes')
+		expect(raw.featureFamily).toBe('workbook')
+		expect(raw.ownerScope).toBe('workbook')
+		expect(raw.byteLength).toBeGreaterThan(80)
+		expect(raw.sha256).toMatch(/^[a-f0-9]{64}$/)
+		expect(raw.truncated).toBe(true)
+		expect(raw.previewByteLength).toBe(80)
+		expect(raw.binaryLike).toBe(false)
+		expect(raw.text).toContain('<?xml')
+		expect(raw.text?.length).toBeLessThan(raw.byteLength ?? 0)
+
+		const binary = wb.rawPackagePart({
+			partPath: 'xl/media/image1.png',
+			encoding: 'base64',
+			maxBytes: 3,
+		})
+		expect(binary.found).toBe(true)
+		expect(binary.encoding).toBe('base64')
+		expect(binary.byteLength).toBe(binaryBytes.byteLength)
+		expect(binary.previewByteLength).toBe(3)
+		expect(binary.truncated).toBe(true)
+		expect(binary.binaryLike).toBe(true)
+		expect(binary.base64).toBe(Buffer.from(binaryBytes.subarray(0, 3)).toString('base64'))
+		expect(binary.sha256).toBe(createHash('sha256').update(binaryBytes).digest('hex'))
+		expect(binary.text).toBeUndefined()
+
+		const metadataOnly = wb.rawPackagePart({
+			partPath: 'xl/media/image1.png',
+			encoding: 'none',
+			maxBytes: 3,
+		})
+		expect(metadataOnly.encoding).toBe('none')
+		expect(metadataOnly.previewByteLength).toBe(0)
+		expect(metadataOnly.truncated).toBe(false)
+		expect(metadataOnly.text).toBeUndefined()
+		expect(metadataOnly.base64).toBeUndefined()
+		expect(metadataOnly.sha256).toBe(binary.sha256)
+
+		const missing = wb.rawPackagePart({ partPath: 'xl/missing.xml' })
+		expect(missing.found).toBe(false)
+		expect(missing.validPath).toBe(true)
+		expect(missing.partPath).toBe('xl/missing.xml')
+
+		const invalid = wb.rawPackagePart({ partPath: 'xl//workbook.xml' })
+		expect(invalid.found).toBe(false)
+		expect(invalid.validPath).toBe(false)
+		expect(invalid.invalidReason).toContain('duplicate slashes')
+		expect(wb.rawPackagePart({ partPath: 'xl\\workbook.xml' }).invalidReason).toContain(
+			'forward slashes',
+		)
+
+		const wrongCase = wb.rawPackagePart({ partPath: 'XL/WORKBOOK.XML' })
+		expect(wrongCase.found).toBe(false)
+		expect(wrongCase.caseInsensitiveFallback).toBe(false)
+
+		const fallback = wb.rawPackagePart({ partPath: 'XL/WORKBOOK.XML', caseInsensitive: true })
+		expect(fallback.found).toBe(true)
+		expect(fallback.partPath).toBe('xl/workbook.xml')
+		expect(fallback.caseInsensitiveRequested).toBe(true)
+		expect(fallback.caseInsensitiveFallback).toBe(true)
+
+		const doc = await WorkbookDocument.open(sourceBytes, { mode: 'metadata-only' })
+		const sessionRaw = await doc.rawPackagePart({ partPath: 'xl/workbook.xml', maxBytes: 16 })
+		expect(sessionRaw.origin).toBe('source')
+		expect(sessionRaw.semantics).toBe('raw-package-bytes')
+
+		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'dirty' }] }])
+		const dirtyRaw = wb.rawPackagePart({ partPath: 'xl/worksheets/sheet1.xml', maxBytes: 128 })
+		expect(dirtyRaw.found).toBe(true)
+		expect(dirtyRaw.origin).toBe('serialized-current')
 	})
 
 	test('report returns compatibility info', () => {
@@ -3652,10 +3781,10 @@ describe('capabilities registry', () => {
 	})
 })
 
-function makeSyntheticXlsx(parts: Record<string, string>): Uint8Array {
+function makeSyntheticXlsx(parts: Record<string, string | Uint8Array>): Uint8Array {
 	const entries = new Map<string, Uint8Array>()
 	for (const [path, content] of Object.entries(parts)) {
-		entries.set(path, encode(content))
+		entries.set(path, typeof content === 'string' ? encode(content) : content)
 	}
 	return createZip(entries)
 }

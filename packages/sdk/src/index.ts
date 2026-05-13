@@ -118,6 +118,12 @@ export {
 	operationValidationDetails,
 	parseOperations,
 } from './ops.ts'
+export {
+	compilePathMutations,
+	SUPPORTED_PATH_MUTATION_ROOTS,
+	SUPPORTED_PATH_MUTATION_SHAPES,
+} from './path-mutations.ts'
+export { inspectRawPackagePart } from './raw-package.ts'
 /** Base class for read-only workbook views (inspect, read, formula, check, lint, trace, diff). */
 export { WorkbookReadView } from './read-view.ts'
 export type {
@@ -241,6 +247,8 @@ export type {
 	RangeObjectsInfo,
 	RangeRowsInfo,
 	RangeWindowInfo,
+	RawPackagePartInfo,
+	RawPackagePartOptions,
 	RecalcResult,
 	SheetCommentInfo,
 	SheetHyperlinkInfo,

@@ -64,13 +64,14 @@ describe('MCP server', () => {
 		expect(names).toContain('ascend.export')
 		expect(names).toContain('ascend.list_sheets')
 		expect(names).toContain('ascend.package_graph')
+		expect(names).toContain('ascend.raw_part')
 		expect(names).toContain('ascend.visuals')
 		expect(names).toContain('ascend.pivots')
 		expect(names).toContain('ascend.capabilities')
 		expect(names).toContain('ascend.plan')
 		expect(names).toContain('ascend.commit')
 		expect(names).toContain('ascend.repair_plan')
-		expect(names.length).toBe(28)
+		expect(names.length).toBe(29)
 	})
 
 	test('agent resources and prompts are registered', () => {
@@ -294,6 +295,80 @@ describe('MCP server', () => {
 		)
 	})
 
+	test('ascend.raw_part exposes bounded package text and metadata', async () => {
+		const wb = AscendWorkbook.create()
+		await wb.save(TEMP_FILE)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: accessing internals for test
+		const handler = (server as any)._registeredTools['ascend.raw_part'].handler as (args: {
+			file: string
+			partPath: string
+			encoding?: 'text' | 'base64' | 'none'
+			maxBytes?: number
+			caseInsensitive?: boolean
+		}) => Promise<{
+			isError?: boolean
+			structuredContent?: {
+				ok?: boolean
+				data?: {
+					partPath?: string
+					featureFamily?: string
+					text?: string
+					base64?: string
+					origin?: string
+					semantics?: string
+					encoding?: string
+					previewByteLength?: number
+					truncated?: boolean
+					sha256?: string
+					caseInsensitiveFallback?: boolean
+				}
+				error?: { code?: string; details?: { validPath?: boolean } }
+			}
+		}>
+
+		const result = await handler({ file: TEMP_FILE, partPath: 'xl/workbook.xml', maxBytes: 64 })
+		expect(result.structuredContent?.ok).toBe(true)
+		expect(result.structuredContent?.data?.partPath).toBe('xl/workbook.xml')
+		expect(result.structuredContent?.data?.origin).toBe('source')
+		expect(result.structuredContent?.data?.semantics).toBe('raw-package-bytes')
+		expect(result.structuredContent?.data?.featureFamily).toBe('workbook')
+		expect(result.structuredContent?.data?.text).toContain('<?xml')
+		expect(result.structuredContent?.data?.previewByteLength).toBe(64)
+		expect(result.structuredContent?.data?.truncated).toBe(true)
+		expect(result.structuredContent?.data?.sha256).toMatch(/^[a-f0-9]{64}$/)
+
+		const base64 = await handler({
+			file: TEMP_FILE,
+			partPath: '/xl/workbook.xml',
+			encoding: 'base64',
+			maxBytes: 12,
+		})
+		expect(base64.structuredContent?.ok).toBe(true)
+		expect(base64.structuredContent?.data?.encoding).toBe('base64')
+		expect(base64.structuredContent?.data?.base64).toBeDefined()
+		expect(base64.structuredContent?.data?.text).toBeUndefined()
+
+		const fallback = await handler({
+			file: TEMP_FILE,
+			partPath: 'XL/WORKBOOK.XML',
+			caseInsensitive: true,
+			maxBytes: 8,
+		})
+		expect(fallback.structuredContent?.ok).toBe(true)
+		expect(fallback.structuredContent?.data?.partPath).toBe('xl/workbook.xml')
+		expect(fallback.structuredContent?.data?.caseInsensitiveFallback).toBe(true)
+
+		const missing = await handler({ file: TEMP_FILE, partPath: 'xl/missing.xml' })
+		expect(missing.isError).toBe(true)
+		expect(missing.structuredContent?.error?.code).toBe('FILE_NOT_FOUND')
+
+		const invalid = await handler({ file: TEMP_FILE, partPath: 'xl//workbook.xml' })
+		expect(invalid.isError).toBe(true)
+		expect(invalid.structuredContent?.error?.details?.validPath).toBe(false)
+	})
+
 	test('ascend.write recalculates before saving when needed', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([
@@ -455,6 +530,14 @@ describe('MCP server', () => {
 		}) => Promise<{
 			structuredContent?: { ok?: boolean; data?: { pathMutations?: { ops?: unknown[] } } }
 		}>
+		const ambiguousPreview = preview as (args: {
+			file: string
+			ops: unknown[]
+			mutations: Array<{ path: string; value?: unknown }>
+		}) => Promise<{
+			isError?: boolean
+			structuredContent?: { error?: { message?: string } }
+		}>
 
 		const previewResult = await preview({
 			file: TEMP_FILE,
@@ -469,6 +552,16 @@ describe('MCP server', () => {
 		expect(previewResult.structuredContent?.data?.journal?.inverseOps).toEqual([
 			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'old' }] },
 		])
+
+		const ambiguous = await ambiguousPreview({
+			file: TEMP_FILE,
+			ops: [],
+			mutations: [{ path: '/sheets/Sheet1/cells/A1/value', value: 'new' }],
+		})
+		expect(ambiguous.isError).toBe(true)
+		expect(ambiguous.structuredContent?.error?.message).toBe(
+			'Provide either ops or mutations, not both',
+		)
 
 		const writeResult = await write({
 			file: TEMP_FILE,
@@ -506,6 +599,7 @@ describe('MCP server', () => {
 					code?: string
 					details?: {
 						issueCount?: number
+						supportedPathShapes?: readonly string[]
 						issueDetails?: readonly { code?: string; path?: string }[]
 					}
 				}
@@ -527,6 +621,13 @@ describe('MCP server', () => {
 				path: '/sheets/Missing/cells/A1/value',
 			}),
 		])
+		expect(result.structuredContent?.error?.details?.supportedPathShapes).toEqual(
+			expect.arrayContaining([
+				'/sheets/{sheet}/ranges/{A1:B2}/conditionalFormat',
+				'/tables/{table}/columns/{nameOrIndex}/totalsRowLabel',
+				'/sheets/{sheet}/names/{name}/ref',
+			]),
+		)
 	})
 
 	test('ascend.export writes JSON/TSV and rejects unsupported formats', async () => {
@@ -737,6 +838,64 @@ describe('MCP server', () => {
 		expect(unchanged.structuredContent?.ok).toBe(true)
 		expect(unchanged.structuredContent?.data?.cells).toEqual([])
 		expect(unchanged.structuredContent?.data?.changeToken).toBeDefined()
+	})
+
+	test('ascend.read returns compact first-window data with partial load metadata', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: Array.from({ length: 20 }, (_, row) => [
+					{ ref: `A${row + 1}`, value: row + 1 },
+					{ ref: `B${row + 1}`, value: `row-${row + 1}` },
+				]).flat(),
+			},
+		])
+		await wb.save(TEMP_FILE)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const handler = (server as any)._registeredTools['ascend.read'].handler as (args: {
+			file: string
+			range: string
+			format: 'compact'
+			rowLimit?: number
+		}) => Promise<{
+			structuredContent?: {
+				ok?: boolean
+				data?: {
+					cells?: unknown[]
+					rowCount?: number
+					load?: {
+						mode?: string
+						isPartial?: boolean
+						maxRows?: number
+						partialReasons?: readonly string[]
+						cellsHydrated?: boolean
+						loadedSheets?: readonly string[]
+					}
+				}
+			}
+		}>
+
+		const result = await handler({
+			file: TEMP_FILE,
+			range: 'A1:B20',
+			format: 'compact',
+			rowLimit: 3,
+		})
+		expect(result.structuredContent?.ok).toBe(true)
+		expect(result.structuredContent?.data?.rowCount).toBe(3)
+		expect(result.structuredContent?.data?.cells).toHaveLength(6)
+		expect(result.structuredContent?.data?.load?.mode).toBe('values')
+		expect(result.structuredContent?.data?.load?.isPartial).toBe(true)
+		expect(result.structuredContent?.data?.load?.maxRows).toBe(3)
+		expect(result.structuredContent?.data?.load?.partialReasons).toContain(
+			'only the first 3 row(s) are hydrated per loaded sheet',
+		)
+		expect(result.structuredContent?.data?.load?.cellsHydrated).toBe(true)
+		expect(result.structuredContent?.data?.load?.loadedSheets).toEqual(['Sheet1'])
 	})
 
 	test('ascend.read prunes compact cells by column', async () => {

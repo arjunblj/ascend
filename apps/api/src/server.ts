@@ -25,10 +25,13 @@ import {
 	type PivotOutputMaterializeMode,
 	type PivotOutputMaterializeOptions,
 	parseOperations,
+	SUPPORTED_PATH_MUTATION_SHAPES,
 	summarizeCapabilities,
 	WorkbookDocument,
 } from '@ascend/sdk'
 import { binaryResponse, jsonFailure, jsonFailureError, jsonSuccess } from './response.ts'
+
+const DEFAULT_API_RAW_PART_MAX_BYTES = 64 * 1024
 
 async function parseJson<T>(req: Request): Promise<T | null> {
 	try {
@@ -55,6 +58,31 @@ function requireOptionalNumber(obj: unknown, key: string): number | undefined {
 	if (obj === null || typeof obj !== 'object') return undefined
 	const v = (obj as Record<string, unknown>)[key]
 	return typeof v === 'number' && Number.isFinite(v) ? v : undefined
+}
+
+function firstWindowMaxRows(
+	explicitMaxRows: number | undefined,
+	rowOffset: number | undefined,
+	rowLimit: number | undefined,
+): number | undefined {
+	if (explicitMaxRows !== undefined) return Math.max(1, Math.floor(explicitMaxRows))
+	if (rowLimit === undefined) return undefined
+	const offset = Math.max(0, Math.floor(rowOffset ?? 0))
+	return offset + Math.max(1, Math.floor(rowLimit))
+}
+
+function withPartialLoadInfo<T extends object>(info: T, wb: WorkbookDocument): T {
+	const load = wb.inspect().load
+	return load.isPartial ? ({ ...info, load } as T) : info
+}
+
+function rawPartEncoding(
+	value: unknown,
+): { readonly ok: true; readonly encoding?: 'text' | 'base64' | 'none' } | { readonly ok: false } {
+	if (value === undefined) return { ok: true }
+	return value === 'text' || value === 'base64' || value === 'none'
+		? { ok: true, encoding: value }
+		: { ok: false }
 }
 
 type OperationInput =
@@ -90,11 +118,11 @@ type OperationInputShape =
 	| { readonly ok: false; readonly error: AscendError }
 
 function resolveOperationInputShape(body: Record<string, unknown> | null): OperationInputShape {
+	const hasOpsKey = body !== null && Object.hasOwn(body, 'ops')
+	const hasMutationsKey = body !== null && Object.hasOwn(body, 'mutations')
 	const opsArr = body ? requireArray(body, 'ops') : null
 	const mutationArr = body ? requireArray(body, 'mutations') : null
-	const hasOps = opsArr !== null && opsArr.length > 0
-	const hasMutations = mutationArr !== null && mutationArr.length > 0
-	if (hasOps && hasMutations) {
+	if (hasOpsKey && hasMutationsKey) {
 		return {
 			ok: false,
 			error: ascendError('VALIDATION_ERROR', 'Provide either ops or mutations, not both', {
@@ -103,6 +131,8 @@ function resolveOperationInputShape(body: Record<string, unknown> | null): Opera
 			}),
 		}
 	}
+	const hasOps = opsArr !== null && opsArr.length > 0
+	const hasMutations = mutationArr !== null && mutationArr.length > 0
 	if (!hasOps && !hasMutations) {
 		return {
 			ok: false,
@@ -197,6 +227,7 @@ function pathMutationCompileError(result: PathMutationResult): AscendError {
 			issues: result.issues.map((issue) => issue.message),
 			issueDetails: result.issues,
 			compiledOps: result.ops,
+			supportedPathShapes: SUPPORTED_PATH_MUTATION_SHAPES,
 		},
 		retryStrategy: 'modified',
 		suggestedFix:
@@ -424,6 +455,38 @@ export function createApiFetch() {
 				}
 			}
 
+			if (method === 'POST' && path === '/raw-part') {
+				const body = await parseJson<Record<string, unknown>>(req)
+				const file = body ? requireString(body, 'file') : null
+				const partPath = body ? requireString(body, 'partPath') : null
+				if (!file) return jsonFailure('Missing or invalid file', 400)
+				if (!partPath) return jsonFailure('Missing or invalid partPath', 400)
+				const encoding = rawPartEncoding(body?.encoding)
+				if (!encoding.ok) return jsonFailure('Invalid raw part encoding', 400)
+				try {
+					const wb = await WorkbookDocument.open(file, { mode: 'metadata-only' })
+					const maxBytes = body ? requireOptionalNumber(body, 'maxBytes') : undefined
+					const result = await wb.rawPackagePart({
+						partPath,
+						...(encoding.encoding ? { encoding: encoding.encoding } : {}),
+						maxBytes: maxBytes ?? DEFAULT_API_RAW_PART_MAX_BYTES,
+						...(body?.caseInsensitive === true ? { caseInsensitive: true } : {}),
+					})
+					if (!result.found) {
+						return jsonFailureError(
+							ascendError('FILE_NOT_FOUND', `Package part not found: ${partPath}`, {
+								details: { ...result },
+								suggestedFix: 'Call /package-graph and retry with an exact part path.',
+							}),
+							404,
+						)
+					}
+					return jsonSuccess(result)
+				} catch (e) {
+					return handleError(e, file)
+				}
+			}
+
 			if (method === 'POST' && path === '/visuals') {
 				const body = await parseJson<{ file?: string }>(req)
 				const file = body ? requireString(body, 'file') : null
@@ -547,6 +610,7 @@ export function createApiFetch() {
 					format?: string
 					headers?: string[]
 					display?: boolean
+					maxRows?: number
 				}>(req)
 				const file = body ? requireString(body, 'file') : null
 				const range = body ? requireString(body, 'range') : null
@@ -558,14 +622,20 @@ export function createApiFetch() {
 					const headers = body ? requireArray(body, 'headers') : null
 					const rowOffset = body ? requireOptionalNumber(body, 'rowOffset') : undefined
 					const rowLimit = body ? requireOptionalNumber(body, 'rowLimit') : undefined
+					const maxRows = firstWindowMaxRows(
+						body ? requireOptionalNumber(body, 'maxRows') : undefined,
+						rowOffset,
+						rowLimit,
+					)
 					const display =
 						body !== null &&
 						typeof body === 'object' &&
 						(body as Record<string, unknown>).display === true
-					const wb = await WorkbookDocument.open(
-						file,
-						sheetName ? { mode: 'values', sheets: [sheetName] } : { mode: 'values' },
-					)
+					const wb = await WorkbookDocument.open(file, {
+						mode: 'values',
+						...(sheetName ? { sheets: [sheetName] } : {}),
+						...(maxRows !== undefined ? { maxRows } : {}),
+					})
 					const sheet = sheetName ? wb.sheet(sheetName) : wb.sheet(wb.sheets[0] ?? '')
 					if (!sheet) {
 						const missing = sheetName ?? wb.sheets[0] ?? ''
@@ -576,7 +646,7 @@ export function createApiFetch() {
 							...(rowOffset !== undefined ? { rowOffset } : {}),
 							...(rowLimit !== undefined ? { rowLimit } : {}),
 						})
-						return jsonSuccess(display ? displayRows(info) : info)
+						return jsonSuccess(withPartialLoadInfo(display ? displayRows(info) : info, wb))
 					}
 					if (format === 'objects') {
 						const info = sheet.readObjects(range, {
@@ -586,14 +656,24 @@ export function createApiFetch() {
 								? (headers as string[])
 								: 'first-row',
 						})
-						return jsonSuccess(display ? displayObjects(info) : info)
+						return jsonSuccess(withPartialLoadInfo(display ? displayObjects(info) : info, wb))
+					}
+					if (format === 'compact') {
+						const info = sheet.readWindowCompact(range, {
+							...(rowOffset !== undefined ? { rowOffset } : {}),
+							...(rowLimit !== undefined ? { rowLimit } : {}),
+							includeRefs: false,
+							omitEmpty: true,
+							flatValues: true,
+						})
+						return jsonSuccess(withPartialLoadInfo(info, wb))
 					}
 					if (format !== 'cells') return jsonFailure('Invalid read format', 400)
 					const info = sheet.readWindow(range, {
 						...(rowOffset !== undefined ? { rowOffset } : {}),
 						...(rowLimit !== undefined ? { rowLimit } : {}),
 					})
-					return jsonSuccess(display ? displayCells(info) : info)
+					return jsonSuccess(withPartialLoadInfo(display ? displayCells(info) : info, wb))
 				} catch (e) {
 					return handleError(e, file)
 				}

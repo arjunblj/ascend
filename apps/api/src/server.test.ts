@@ -37,6 +37,24 @@ interface ApiEnvelope {
 			readonly ops?: unknown[]
 		}
 		readonly journal?: { readonly supported?: boolean; readonly inverseOps?: unknown[] }
+		readonly partPath?: string
+		readonly featureFamily?: string
+		readonly text?: string
+		readonly base64?: string
+		readonly origin?: string
+		readonly semantics?: string
+		readonly encoding?: string
+		readonly previewByteLength?: number
+		readonly truncated?: boolean
+		readonly sha256?: string
+		readonly rowCount?: number
+		readonly cells?: unknown[]
+		readonly load?: {
+			readonly mode?: string
+			readonly isPartial?: boolean
+			readonly cellsHydrated?: boolean
+			readonly loadedSheets?: readonly string[]
+		}
 	}
 	readonly error?: {
 		readonly message?: string
@@ -44,6 +62,8 @@ interface ApiEnvelope {
 		readonly details?: {
 			readonly issueCount?: number
 			readonly issues?: readonly string[]
+			readonly validPath?: boolean
+			readonly supportedPathShapes?: readonly string[]
 			readonly issueDetails?: readonly {
 				readonly code?: string
 				readonly opIndex?: number
@@ -150,6 +170,90 @@ describe('Ascend API server', () => {
 		])
 	})
 
+	test('raw-part returns bounded package text and metadata', async () => {
+		const wb = AscendWorkbook.create()
+		await wb.save(TEMP_FILE)
+
+		const result = await postJson('/raw-part', {
+			file: TEMP_FILE,
+			partPath: 'xl/workbook.xml',
+			maxBytes: 64,
+		})
+
+		expect(result.status).toBe(200)
+		expect(result.body.ok).toBe(true)
+		expect(result.body.data?.partPath).toBe('xl/workbook.xml')
+		expect(result.body.data?.origin).toBe('source')
+		expect(result.body.data?.semantics).toBe('raw-package-bytes')
+		expect(result.body.data?.featureFamily).toBe('workbook')
+		expect(result.body.data?.text).toContain('<?xml')
+		expect(result.body.data?.previewByteLength).toBe(64)
+		expect(result.body.data?.truncated).toBe(true)
+		expect(result.body.data?.sha256).toMatch(/^[a-f0-9]{64}$/)
+
+		const metadataOnly = await postJson('/raw-part', {
+			file: TEMP_FILE,
+			partPath: '/xl/workbook.xml',
+			encoding: 'none',
+		})
+		expect(metadataOnly.status).toBe(200)
+		expect(metadataOnly.body.data?.encoding).toBe('none')
+		expect(metadataOnly.body.data?.previewByteLength).toBe(0)
+		expect(metadataOnly.body.data?.text).toBeUndefined()
+
+		const missing = await postJson('/raw-part', { file: TEMP_FILE, partPath: 'xl/missing.xml' })
+		expect(missing.status).toBe(404)
+		expect(missing.body.ok).toBe(false)
+		expect(missing.body.error?.code).toBe('FILE_NOT_FOUND')
+
+		const invalid = await postJson('/raw-part', { file: TEMP_FILE, partPath: 'xl//workbook.xml' })
+		expect(invalid.status).toBe(404)
+		expect(invalid.body.error?.code).toBe('FILE_NOT_FOUND')
+		expect(invalid.body.error?.details?.validPath).toBe(false)
+
+		const badEncoding = await postJson('/raw-part', {
+			file: TEMP_FILE,
+			partPath: 'xl/workbook.xml',
+			encoding: 'utf16',
+		})
+		expect(badEncoding.status).toBe(400)
+	})
+
+	test('read returns compact first-window data with partial load metadata', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: Array.from({ length: 20 }, (_, row) => [
+					{ ref: `A${row + 1}`, value: row + 1 },
+					{ ref: `B${row + 1}`, value: `row-${row + 1}` },
+				]).flat(),
+			},
+		])
+		await wb.save(TEMP_FILE)
+
+		const result = await postJson('/read', {
+			file: TEMP_FILE,
+			range: 'A1:B20',
+			format: 'compact',
+			rowLimit: 3,
+		})
+
+		expect(result.status).toBe(200)
+		expect(result.body.ok).toBe(true)
+		expect(result.body.data?.rowCount).toBe(3)
+		expect(result.body.data?.cells).toHaveLength(6)
+		expect(result.body.data?.load?.mode).toBe('values')
+		expect(result.body.data?.load?.isPartial).toBe(true)
+		expect(result.body.data?.load?.maxRows).toBe(3)
+		expect(result.body.data?.load?.partialReasons).toContain(
+			'only the first 3 row(s) are hydrated per loaded sheet',
+		)
+		expect(result.body.data?.load?.cellsHydrated).toBe(true)
+		expect(result.body.data?.load?.loadedSheets).toEqual(['Sheet1'])
+	})
+
 	test('preview accepts path-addressed mutations without saving', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'old' }] }])
@@ -177,6 +281,14 @@ describe('Ascend API server', () => {
 			kind: 'string',
 			value: 'old',
 		})
+
+		const ambiguous = await postJson('/preview', {
+			file: TEMP_FILE,
+			ops: [],
+			mutations: [{ path: '/sheets/Sheet1/cells/A1/value', value: 'new' }],
+		})
+		expect(ambiguous.status).toBe(400)
+		expect(ambiguous.body.error?.message).toBe('Provide either ops or mutations, not both')
 	})
 
 	test('plan reports path mutation compiler errors as structured repair details', async () => {
@@ -199,6 +311,13 @@ describe('Ascend API server', () => {
 				path: '/sheets/Missing/cells/A1/value',
 			}),
 		])
+		expect(result.body.error?.details?.supportedPathShapes).toEqual(
+			expect.arrayContaining([
+				'/sheets/{sheet}/ranges/{A1:B2}/conditionalFormat',
+				'/tables/{table}/columns/{nameOrIndex}/totalsRowLabel',
+				'/sheets/{sheet}/names/{name}/ref',
+			]),
+		)
 	})
 
 	test('plan invalid ops return structured batch repair details', async () => {

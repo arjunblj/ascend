@@ -926,6 +926,9 @@ export class WorkbookReadView {
 	dependencyVerificationIssue(): string | undefined {
 		const reasons: string[] = []
 		if (!this.loadInfo.hasAllSheets) reasons.push('not all sheets are loaded')
+		if (this.loadInfo.maxRows !== undefined) {
+			reasons.push(`only the first ${this.loadInfo.maxRows} row(s) are hydrated per loaded sheet`)
+		}
 		if (!this.loadInfo.cellsHydrated) reasons.push('sheet cells are not hydrated')
 		if (this.loadInfo.mode === 'values') reasons.push('only cell values are hydrated')
 		if (reasons.length === 0) return undefined

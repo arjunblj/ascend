@@ -365,6 +365,103 @@ describe('interactive client contract', () => {
 		expect(created.journal?.inverseOps).toEqual([{ op: 'deleteDefinedName', name: 'Scratch' }])
 	})
 
+	test('journal exact inverse restores mixed semantic workbook state', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'Region' },
+					{ ref: 'B1', value: 'Qty' },
+					{ ref: 'C1', value: 'Amount' },
+					{ ref: 'A2', value: 'West' },
+					{ ref: 'B2', value: 2 },
+					{ ref: 'C2', value: 20 },
+					{ ref: 'A3', value: 'East' },
+					{ ref: 'B3', value: 3 },
+					{ ref: 'C3', value: 30 },
+				],
+			},
+			{ op: 'setStyle', sheet: 'Sheet1', range: 'B2:B2', style: { numberFormat: '0.00' } },
+			{ op: 'setComment', sheet: 'Sheet1', ref: 'D4', text: 'initial', author: 'analyst' },
+			{ op: 'setHyperlink', sheet: 'Sheet1', ref: 'E5', url: 'https://example.com' },
+			{
+				op: 'setDataValidation',
+				sheet: 'Sheet1',
+				range: 'A2:A5',
+				rule: { type: 'list', formula1: '"West,East"', allowBlank: true },
+			},
+			{
+				op: 'setConditionalFormat',
+				sheet: 'Sheet1',
+				range: 'B2:B5',
+				rule: { type: 'cellIs', operator: 'greaterThan', formula: '1', priority: 2 },
+			},
+			{ op: 'mergeCells', sheet: 'Sheet1', range: 'F1:G1' },
+			{ op: 'setAutoFilter', sheet: 'Sheet1', range: 'A1:C5', column: 0, values: ['West'] },
+			{ op: 'setDefinedName', name: 'Budget', ref: 'Sheet1!$B$2:$B$3' },
+			{ op: 'createTable', sheet: 'Sheet1', ref: 'A1:C3', name: 'Sales', hasHeaders: true },
+			{ op: 'setTableStyle', table: 'Sales', styleName: 'TableStyleMedium2' },
+			{ op: 'setTableColumn', table: 'Sales', column: 'Amount', formula: '=SUM([Qty])' },
+			{ op: 'freezePane', sheet: 'Sheet1', row: 1, col: 1 },
+		])
+		const before = journalComparableState(wb)
+
+		const changed = wb.apply(
+			[
+				{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'B2', value: 9 }] },
+				{ op: 'setFormula', sheet: 'Sheet1', ref: 'H2', formula: 'B2*10' },
+				{ op: 'setStyle', sheet: 'Sheet1', range: 'B2:B2', style: { numberFormat: '$0.00' } },
+				{ op: 'setComment', sheet: 'Sheet1', ref: 'D4', text: 'changed', author: 'agent' },
+				{
+					op: 'setHyperlink',
+					sheet: 'Sheet1',
+					ref: 'E5',
+					url: 'https://example.org',
+					display: 'updated',
+				},
+				{
+					op: 'setDataValidation',
+					sheet: 'Sheet1',
+					range: 'A2:A5',
+					rule: { type: 'list', formula1: '"North,South"' },
+				},
+				{
+					op: 'setConditionalFormat',
+					sheet: 'Sheet1',
+					range: 'B2:B5',
+					rule: { type: 'expression', formula: 'B2>5', priority: 1 },
+				},
+				{ op: 'unmergeCells', sheet: 'Sheet1', range: 'F1:G1' },
+				{ op: 'clearAutoFilter', sheet: 'Sheet1' },
+				{ op: 'setDefinedName', name: 'Budget', ref: 'Sheet1!$C$2:$C$3' },
+				{ op: 'renameTable', table: 'Sales', newName: 'Revenue' },
+				{
+					op: 'setTableColumn',
+					table: 'Revenue',
+					column: 'Amount',
+					newName: 'RevenueAmount',
+					formula: '=SUM([Qty])*2',
+				},
+				{ op: 'setTableStyle', table: 'Revenue', styleName: null },
+				{ op: 'freezePane', sheet: 'Sheet1', row: 2, col: 0 },
+				{ op: 'renameSheet', sheet: 'Sheet1', newName: 'Summary' },
+			],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(true)
+		expect(changed.journal?.inverseOps.length).toBeGreaterThan(0)
+		expect(journalComparableState(wb)).not.toEqual(before)
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(journalComparableState(wb)).toEqual(before)
+	})
+
 	test('journal inverse ops restore table renames and column metadata edits', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([
@@ -632,3 +729,27 @@ describe('interactive client contract', () => {
 		])
 	})
 })
+
+function journalComparableState(wb: AscendWorkbook): object {
+	const snapshot = wb.snapshot()
+	return {
+		sheets: snapshot.sheets,
+		names: snapshot.names,
+		workbookProtectionJson: snapshot.workbookProtectionJson,
+		sheetMetadata: wb.sheets.map((name) => {
+			const sheet = wb.sheet(name)
+			return {
+				name,
+				frozenRows: sheet?.frozenRows,
+				frozenCols: sheet?.frozenCols,
+				comments: sheet?.getComments(),
+				hyperlinks: sheet?.getHyperlinks(),
+				autoFilter: sheet?.autoFilter,
+			}
+		}),
+		styles: {
+			b2: wb.cellStyle(`${wb.sheets[0]}!B2`),
+			c2: wb.cellStyle(`${wb.sheets[0]}!C2`),
+		},
+	}
+}

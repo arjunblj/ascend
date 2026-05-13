@@ -963,6 +963,8 @@ export interface WorkbookLoadInfo {
 	readonly cellsHydrated: boolean
 	readonly richSheetMetadataHydrated: boolean
 	readonly hasAllSheets: boolean
+	readonly maxRows?: number
+	readonly partialReasons: readonly string[]
 	readonly sourceSheets: readonly string[]
 	readonly loadedSheets: readonly string[]
 }
@@ -1308,6 +1310,43 @@ export interface PathMutationResult {
 	readonly issueCount: number
 	readonly issues: readonly PathMutationIssue[]
 	readonly replayable: boolean
+}
+
+export interface RawPackagePartOptions {
+	readonly partPath: string
+	readonly encoding?: 'text' | 'base64' | 'none'
+	readonly maxBytes?: number
+	readonly caseInsensitive?: boolean
+	readonly origin?: 'source' | 'serialized-current'
+}
+
+export interface RawPackagePartInfo {
+	readonly requestedPartPath: string
+	readonly partPath: string
+	readonly found: boolean
+	readonly validPath: boolean
+	readonly invalidReason?: string
+	readonly semantics: 'raw-package-bytes'
+	readonly origin?: 'source' | 'serialized-current'
+	readonly normalizedFromRoot?: boolean
+	readonly caseInsensitiveRequested?: boolean
+	readonly caseInsensitiveFallback?: boolean
+	readonly contentType?: string
+	readonly contentTypeSource?: string
+	readonly featureFamily?: string
+	readonly ownerScope?: string
+	readonly preservationPolicy?: string
+	readonly bytePreservationExpected?: boolean
+	readonly byteLength?: number
+	readonly sha256?: string
+	readonly encoding?: 'text' | 'base64' | 'none'
+	readonly text?: string
+	readonly base64?: string
+	readonly previewByteLength?: number
+	readonly truncated?: boolean
+	readonly maxBytes?: number
+	readonly binaryLike?: boolean
+	readonly textWarning?: string
 }
 
 export type {

@@ -275,7 +275,9 @@ export function handleRenameTable(
 		sheet.tables[idx] = {
 			...table,
 			name: op.newName,
-			...(table.nameAttribute !== null ? { nameAttribute: op.newName } : {}),
+			...(table.nameAttribute !== undefined && table.nameAttribute !== null
+				? { nameAttribute: op.newName }
+				: {}),
 		}
 	}
 	clearFormulaMetadata(workbook)

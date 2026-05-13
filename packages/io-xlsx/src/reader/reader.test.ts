@@ -4345,6 +4345,10 @@ ${rowEntries.join('\n')}
 		const result = readXlsx(bytes, { maxRows: 10 })
 		expectOk(result)
 		expect(result.value.loadInfo.isPartial).toBe(true)
+		expect(result.value.loadInfo.maxRows).toBe(10)
+		expect(result.value.loadInfo.partialReasons).toContain(
+			'only the first 10 row(s) are hydrated per loaded sheet',
+		)
 		expect(result.value.workbook.sourceArchiveBytes).toBeNull()
 
 		const sheet = result.value.workbook.sheets[0]

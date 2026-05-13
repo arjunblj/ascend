@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { AscendWorkbook } from './index.ts'
+import { AscendWorkbook, SUPPORTED_PATH_MUTATION_SHAPES } from './index.ts'
 
 describe('path-addressed mutations', () => {
 	test('compiles cell, formula, range, sheet, name, and table paths into replayable ops', () => {
@@ -17,8 +17,8 @@ describe('path-addressed mutations', () => {
 			{ path: '/sheets/Sheet1/name', value: 'Summary' },
 		])
 
-		expect(result.replayable).toBe(true)
 		expect(result.issues).toEqual([])
+		expect(result.replayable).toBe(true)
 		expect(result.ops).toEqual([
 			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'C1', value: 10 }] },
 			{ op: 'setFormula', sheet: 'Sheet1', ref: 'D1', formula: 'C1*2' },
@@ -53,6 +53,65 @@ describe('path-addressed mutations', () => {
 					{ ref: 'A2', value: 'escaped' },
 				],
 			},
+		])
+	})
+
+	test('keeps JSON Pointer and escaped-dot paths equivalent for agent-addressed names', () => {
+		const sheetName = "Q1.Forecast's Café Δ"
+		const tableName = 'Sales.Δ'
+		const columnName = 'Gross.Profit'
+		const definedName = "Revenue/North ~ Café's Δ"
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{ op: 'renameSheet', sheet: 'Sheet1', newName: sheetName },
+			{
+				op: 'setCells',
+				sheet: sheetName,
+				updates: [
+					{ ref: 'A1', value: 'Region' },
+					{ ref: 'B1', value: columnName },
+					{ ref: 'A2', value: 'North' },
+					{ ref: 'B2', value: 10 },
+				],
+			},
+			{ op: 'createTable', sheet: sheetName, ref: 'A1:B2', name: tableName, hasHeaders: true },
+		])
+
+		const result = wb.compilePathMutations([
+			{ path: `/sheets/${pointerSegment(sheetName)}/cells/A1/value`, value: 'pointer' },
+			{ path: `sheets.${dotSegment(sheetName)}.cells.A2.value`, value: 'dot' },
+			{
+				path: `/tables/${pointerSegment(tableName)}/columns/${pointerSegment(columnName)}/formula`,
+				value: 'SUM([Gross.Profit])',
+			},
+			{
+				path: `tables.${dotSegment(tableName)}.columns.${dotSegment(columnName)}.totalsRowLabel`,
+				value: 'Total',
+			},
+			{ path: `/names/${pointerSegment(definedName)}/ref`, value: `'${sheetName}'!$B$2` },
+			{ path: `names.${dotSegment(definedName)}.ref`, value: `'${sheetName}'!$B$2` },
+		])
+
+		expect(result.issues).toEqual([])
+		expect(result.replayable).toBe(true)
+		expect(result.ops).toEqual([
+			{
+				op: 'setCells',
+				sheet: sheetName,
+				updates: [
+					{ ref: 'A1', value: 'pointer' },
+					{ ref: 'A2', value: 'dot' },
+				],
+			},
+			{
+				op: 'setTableColumn',
+				table: tableName,
+				column: columnName,
+				formula: 'SUM([Gross.Profit])',
+			},
+			{ op: 'setTableColumn', table: tableName, column: columnName, totalsRowLabel: 'Total' },
+			{ op: 'setDefinedName', name: definedName, ref: `'${sheetName}'!$B$2` },
+			{ op: 'setDefinedName', name: definedName, ref: `'${sheetName}'!$B$2` },
 		])
 	})
 
@@ -178,5 +237,14 @@ describe('path-addressed mutations', () => {
 			'invalid_value',
 			'unsupported_path',
 		])
+		expect(result.issues.at(-1)?.details?.supportedShapes).toEqual(SUPPORTED_PATH_MUTATION_SHAPES)
 	})
 })
+
+function pointerSegment(value: string): string {
+	return encodeURIComponent(value.replace(/~/g, '~0').replace(/\//g, '~1'))
+}
+
+function dotSegment(value: string): string {
+	return value.replace(/\\/g, '\\\\').replace(/\./g, '\\.')
+}

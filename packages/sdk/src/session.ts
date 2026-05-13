@@ -4,8 +4,13 @@ import { readFile, stat } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { inspectXlsxPackageGraph, type XlsxPackageGraph } from '@ascend/io-xlsx'
 import { check as verifyCheck, lint as verifyLint } from '@ascend/verify'
-import { partialDependencyCheckIssue, sdkCheckIssueFromVerify } from './check-issues.ts'
+import {
+	partialDependencyCheckIssue,
+	partialDependencyLintWarning,
+	sdkCheckIssueFromVerify,
+} from './check-issues.ts'
 import { openWorkbookSource } from './load.ts'
+import { inspectRawPackagePart } from './raw-package.ts'
 import { WorkbookReadView } from './read-view.ts'
 import type { CellSelector } from './ref-selectors.ts'
 import type { SheetHandle } from './sheet-handle.ts'
@@ -21,6 +26,7 @@ import type {
 	ExternalReferenceUsageInfo,
 	FormulaInfo,
 	LintResult,
+	LintWarning,
 	PivotCacheInfo,
 	PivotCacheMaterializedRowInfo,
 	PivotCacheRowsOptions,
@@ -33,6 +39,8 @@ import type {
 	RangeObjectsInfo,
 	RangeRowsInfo,
 	RangeWindowInfo,
+	RawPackagePartInfo,
+	RawPackagePartOptions,
 	SheetInspectInfo,
 	SlicerCacheInfo,
 	SlicerInfo,
@@ -217,6 +225,10 @@ export class WorkbookDocument {
 		return inspectXlsxPackageGraph(await this.readSourceBytes())
 	}
 
+	async rawPackagePart(options: RawPackagePartOptions): Promise<RawPackagePartInfo> {
+		return inspectRawPackagePart(await this.readSourceBytes(), { ...options, origin: 'source' })
+	}
+
 	inspectSheet(name: string): SheetInspectInfo | undefined {
 		return this.view.inspectSheet(name)
 	}
@@ -346,16 +358,16 @@ export class WorkbookDocument {
 	}
 
 	lint(): LintResult {
+		const issue = this.view.dependencyVerificationIssue()
 		const result = verifyLint(this.view.getWorkbookModel(), this.view.formulaAnalysis())
 		this.refreshCacheFootprint('verify')
-		return {
-			clean: result.violations.length === 0,
-			warnings: result.violations.map((violation) => ({
-				rule: violation.rule,
-				message: violation.message,
-				ref: violation.ref,
-			})),
-		}
+		const warnings: LintWarning[] = result.violations.map((violation) => ({
+			rule: violation.rule,
+			message: violation.message,
+			ref: violation.ref,
+		}))
+		if (issue) warnings.unshift(partialDependencyLintWarning(issue))
+		return { clean: warnings.length === 0, warnings }
 	}
 
 	definedName(name: string, sheetName?: string): DefinedNameInfo | undefined {

@@ -45,11 +45,16 @@ import {
 } from '@ascend/schema'
 import { check as verifyCheck, lint as verifyLint } from '@ascend/verify'
 import { getCapability, listCapabilities, summarizeCapabilities } from './capabilities.ts'
-import { partialDependencyCheckIssue, sdkCheckIssueFromVerify } from './check-issues.ts'
+import {
+	partialDependencyCheckIssue,
+	partialDependencyLintWarning,
+	sdkCheckIssueFromVerify,
+} from './check-issues.ts'
 import { buildMutationJournal } from './journal.ts'
 import { buildWorkbookLoadInfo, openWorkbookSource } from './load.ts'
 import { getOperationsSchema, listOperations, parseOperations } from './ops.ts'
 import { compilePathMutations } from './path-mutations.ts'
+import { inspectRawPackagePart } from './raw-package.ts'
 import { WorkbookReadView } from './read-view.ts'
 import {
 	type CellSelector,
@@ -74,6 +79,8 @@ import type {
 	PathMutationResult,
 	PivotOutputMaterializeOptions,
 	PivotOutputMaterializeResult,
+	RawPackagePartInfo,
+	RawPackagePartOptions,
 	RecalcOptions,
 	RecalcResult,
 	TemplateMergeOptions,
@@ -380,6 +387,7 @@ export class AscendWorkbook extends WorkbookReadView {
 				cellsHydrated: true,
 				richSheetMetadataHydrated: true,
 				hasAllSheets: true,
+				partialReasons: [],
 				sourceSheetNames: ['Sheet1'],
 				loadedSheetNames: ['Sheet1'],
 			}),
@@ -405,6 +413,7 @@ export class AscendWorkbook extends WorkbookReadView {
 				cellsHydrated: true,
 				richSheetMetadataHydrated: true,
 				hasAllSheets: true,
+				partialReasons: [],
 				sourceSheetNames: result.value.sheets.map((sheet) => sheet.name),
 				loadedSheetNames: result.value.sheets.map((sheet) => sheet.name),
 			}),
@@ -999,12 +1008,14 @@ export class AscendWorkbook extends WorkbookReadView {
 	}
 
 	lint(): LintResult {
+		const issue = this.dependencyVerificationIssue()
 		const result = verifyLint(this.wb, this.formulaAnalysis())
 		const warnings: LintWarning[] = result.violations.map((violation) => ({
 			rule: violation.rule,
 			message: violation.message,
 			ref: violation.ref,
 		}))
+		if (issue) warnings.unshift(partialDependencyLintWarning(issue))
 		return { clean: warnings.length === 0, warnings }
 	}
 
@@ -1244,6 +1255,16 @@ export class AscendWorkbook extends WorkbookReadView {
 		return inspectXlsxPackageGraph(
 			this.originalBytes && !this.dirty ? this.originalBytes : this.toBytes(),
 		)
+	}
+
+	rawPackagePart(options: RawPackagePartOptions): RawPackagePartInfo {
+		if (this.originalBytes && !this.dirty) {
+			return inspectRawPackagePart(this.originalBytes, { ...options, origin: 'source' })
+		}
+		return inspectRawPackagePart(this.toBytes(), {
+			...options,
+			origin: 'serialized-current',
+		})
 	}
 
 	private assertWritable(): void {

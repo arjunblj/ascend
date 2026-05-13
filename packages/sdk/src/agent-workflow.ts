@@ -383,22 +383,23 @@ export async function createPreparedAgentPlan(
 					}),
 				)
 			}
-			const currentIdentity = await readSourceIdentity(file)
-			if (!isAgentSourceIdentityEqual(source.identity, currentIdentity)) {
+			const currentSource = await readStableAgentSource(file)
+			const actualSha256 = sha256Bytes(currentSource.sourceBytes)
+			if (actualSha256 !== inputSha256) {
 				throw new AscendException(
 					ascendError('VALIDATION_ERROR', 'Input workbook changed after agent plan was prepared', {
 						details: {
 							expected: source.identity,
-							actual: currentIdentity,
-							inputSha256,
+							actual: currentSource.identity,
+							expectedSha256: inputSha256,
+							actualSha256,
 							planDigest: plan.planDigest,
 						},
 						suggestedFix: 'Re-run ascend plan and commit with the new input workbook.',
 					}),
 				)
 			}
-			committed = true
-			return commitAgentPlanFromWorkbook(
+			const committedResult = await commitAgentPlanFromWorkbook(
 				file,
 				inputSha256,
 				wb,
@@ -406,6 +407,8 @@ export async function createPreparedAgentPlan(
 				{ ...commitOptions, expectSha256: commitOptions.expectSha256 ?? inputSha256 },
 				{ sourceBytes: source.sourceBytes },
 			)
+			committed = true
+			return committedResult
 		},
 	}
 }

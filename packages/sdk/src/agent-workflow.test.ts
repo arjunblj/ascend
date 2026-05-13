@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { Buffer } from 'node:buffer'
-import { existsSync, mkdirSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, rmSync, statSync, utimesSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { inspectXlsxPackageGraph } from '@ascend/io-xlsx'
@@ -2435,8 +2435,10 @@ describe('agent workflow loss audit', () => {
 		const input = join(TEMP_DIR, 'prepared.xlsx')
 		const output = join(TEMP_DIR, 'prepared-out.xlsx')
 		const staleOutput = join(TEMP_DIR, 'prepared-stale-out.xlsx')
+		const retryOutput = join(TEMP_DIR, 'prepared-retry-out.xlsx')
 		mkdirSync(TEMP_DIR, { recursive: true })
 		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'addSheet', name: 'Scratch' }])
 		await wb.save(input)
 		const ops = [{ op: 'setCells' as const, sheet: 'Sheet1', updates: [{ ref: 'A1', value: 42 }] }]
 
@@ -2463,6 +2465,52 @@ describe('agent workflow loss audit', () => {
 		await expect(stale.commit({ output: staleOutput })).rejects.toThrow(
 			'Input workbook changed after agent plan was prepared',
 		)
+
+		await wb.save(input)
+		const destructive = await createPreparedAgentPlan(input, [
+			{ op: 'deleteSheet' as const, sheet: 'Scratch' },
+		])
+		const approval = destructive.plan.approvals.find(
+			(entry) => entry.kind === 'destructive-operation',
+		)
+		await expect(destructive.commit({ output: retryOutput })).rejects.toThrow(
+			'Commit requires explicit approval',
+		)
+		const retryCommitted = await destructive.commit({
+			output: retryOutput,
+			approvals: [approval?.id ?? ''],
+		})
+		expect(retryCommitted.approvals[0]?.id).toBe(approval?.id)
+		await expect(
+			destructive.commit({ output: retryOutput, approvals: [approval?.id ?? ''] }),
+		).rejects.toThrow('Prepared agent plan has already been committed')
+	})
+
+	test('prepared agent plans reject same-size source changes by content hash', async () => {
+		const input = join(TEMP_DIR, 'prepared-stale.csv')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		await Bun.write(input, 'Name,Value\nA,1\n')
+		const originalStat = statSync(input)
+		const prepared = await createPreparedAgentPlan(input, [
+			{ op: 'setCells' as const, sheet: 'Sheet1', updates: [{ ref: 'B2', value: 2 }] },
+		])
+
+		await Bun.write(input, 'Name,Value\nA,2\n')
+		utimesSync(input, originalStat.atime, originalStat.mtime)
+		let staleError: unknown
+		try {
+			await prepared.commit()
+		} catch (error) {
+			staleError = error
+		}
+		expect((staleError as { message?: string } | undefined)?.message).toBe(
+			'Input workbook changed after agent plan was prepared',
+		)
+		const details = (staleError as { ascendError?: { details?: Record<string, unknown> } })
+			.ascendError?.details
+		expect(details?.expectedSha256).toBe(prepared.inputSha256)
+		expect(details?.actualSha256).toMatch(/^[a-f0-9]{64}$/)
+		expect(details?.actualSha256).not.toBe(prepared.inputSha256)
 	})
 
 	test('destructive operations require explicit approval ids', async () => {

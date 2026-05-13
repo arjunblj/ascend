@@ -42,6 +42,7 @@ interface ApiEnvelope {
 			readonly changedCells?: unknown[]
 			readonly wouldSucceed?: boolean
 		}
+		readonly preparedPlan?: { readonly id?: string }
 		readonly journal?: { readonly supported?: boolean; readonly inverseOps?: unknown[] }
 		readonly partPath?: string
 		readonly featureFamily?: string
@@ -738,6 +739,40 @@ describe('Ascend API server', () => {
 		expect(result.body.data?.preview?.changedCellCount).toBe(3)
 		expect(result.body.data?.preview?.emittedChangedCellCount).toBe(1)
 		expect(result.body.data?.preview?.changedCells).toHaveLength(1)
+	})
+
+	test('prepared plan handles commit without reopening operation input', async () => {
+		const wb = AscendWorkbook.create()
+		await wb.save(TEMP_FILE)
+		const output = `${OUTPUT_FILE}.prepared.xlsx`
+		try {
+			const plan = await postJson('/plan', {
+				file: TEMP_FILE,
+				prepare: true,
+				mutations: [{ path: '/sheets/Sheet1/cells/A1/value', value: 123 }],
+			})
+			expect(plan.status).toBe(200)
+			expect(plan.body.ok).toBe(true)
+			expect(plan.body.data?.preparedPlan?.id).toBeString()
+			expect(plan.body.data?.pathMutations?.ops).toEqual([
+				{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 123 }] },
+			])
+
+			const commit = await postJson('/commit', {
+				planHandle: plan.body.data?.preparedPlan?.id,
+				output,
+				approvals: [],
+			})
+			expect(commit.status).toBe(200)
+			expect(commit.body.ok).toBe(true)
+			expect(commit.body.data?.pathMutations?.ops).toEqual([
+				{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 123 }] },
+			])
+			const reopened = await AscendWorkbook.open(output)
+			expect(reopened.sheet('Sheet1')?.cell('A1')?.value).toEqual({ kind: 'number', value: 123 })
+		} finally {
+			await unlink(output).catch(() => {})
+		}
 	})
 })
 

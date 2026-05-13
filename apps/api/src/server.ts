@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import {
 	type AscendError,
 	AscendException,
@@ -17,6 +18,7 @@ import {
 	compactAgentPlanResult,
 	createAgentPlan,
 	createAgentPlanFromWorkbook,
+	createPreparedAgentPlan,
 	createRepairPlan,
 	formatDisplayCellValue,
 	getOperationsSchema,
@@ -28,6 +30,7 @@ import {
 	type PathMutationResult,
 	type PivotOutputMaterializeMode,
 	type PivotOutputMaterializeOptions,
+	type PreparedAgentPlan,
 	parseOperations,
 	SUPPORTED_PATH_MUTATION_SHAPES,
 	sha256Bytes,
@@ -105,6 +108,15 @@ type OperationInput =
 			readonly pathMutations?: PathMutationResult
 	  }
 	| { readonly ok: false; readonly error: AscendError }
+
+interface PreparedPlanHandle {
+	readonly file: string
+	readonly inputSha256: string
+	readonly planDigest: string
+	readonly plan: Awaited<ReturnType<typeof createAgentPlan>>
+	readonly pathMutations?: PathMutationResult
+	commit(options: AgentCommitOptions): Promise<Awaited<ReturnType<typeof commitAgentPlan>>>
+}
 
 function resolveOperationInputForWorkbook(
 	wb: AscendWorkbook,
@@ -245,6 +257,23 @@ function withPathMutationResult<T extends object>(
 	return compiled ? { ...result, pathMutations: compiled } : result
 }
 
+function withPreparedPlanHandle<T extends object>(
+	result: T,
+	id: string | undefined,
+): T | (T & { readonly preparedPlan: { readonly id: string } }) {
+	return id ? { ...result, preparedPlan: { id } } : result
+}
+
+function preparedPlanHandle(prepared: PreparedAgentPlan): PreparedPlanHandle {
+	return {
+		file: prepared.file,
+		inputSha256: prepared.inputSha256,
+		planDigest: prepared.planDigest,
+		plan: prepared.plan,
+		commit: (options) => prepared.commit(options),
+	}
+}
+
 function parsePivotOutputMaterializeOptions(
 	body: Record<string, unknown> | null,
 ): PivotOutputMaterializeOptions | null {
@@ -379,6 +408,7 @@ function withCors(res: Response): Response {
 }
 
 export function createApiFetch() {
+	const preparedPlans = new Map<string, PreparedPlanHandle>()
 	return async (req: Request) => {
 		const url = new URL(req.url)
 		const method = req.method
@@ -746,6 +776,7 @@ export function createApiFetch() {
 					let input: OperationInput
 					let pathMutations: PathMutationResult | undefined
 					let result: Awaited<ReturnType<typeof createAgentPlan>> | null
+					let preparedPlanId: string | undefined
 					if ('mutations' in inputShape) {
 						const opened = await AscendWorkbook.openSourceBytes(file)
 						const inputSha256 = sha256Bytes(opened.sourceBytes)
@@ -755,9 +786,52 @@ export function createApiFetch() {
 						result = input.ok
 							? await createAgentPlanFromWorkbook(file, inputSha256, wb, input.ops)
 							: null
+						if (input.ok && result && body?.prepare === true) {
+							const preparedOps = input.ops
+							const preparedPlan = result
+							preparedPlanId = randomUUID()
+							preparedPlans.set(preparedPlanId, {
+								file,
+								inputSha256,
+								planDigest: preparedPlan.planDigest,
+								plan: preparedPlan,
+								...(pathMutations !== undefined ? { pathMutations } : {}),
+								commit: async (options) => {
+									const current = await Bun.file(file).bytes()
+									const currentSha256 = sha256Bytes(current)
+									if (currentSha256 !== inputSha256) {
+										throw new AscendException(
+											ascendError(
+												'VALIDATION_ERROR',
+												'Input workbook changed after agent plan was prepared',
+												{
+													details: {
+														expected: inputSha256,
+														actual: currentSha256,
+														planDigest: preparedPlan.planDigest,
+													},
+													suggestedFix:
+														'Re-run ascend plan and commit with the new input workbook.',
+												},
+											),
+										)
+									}
+									return commitAgentPlanFromWorkbook(file, inputSha256, wb, preparedOps, options, {
+										sourceBytes: opened.sourceBytes,
+									})
+								},
+							})
+						}
 					} else {
 						input = inputShape
-						result = await createAgentPlan(file, inputShape.ops)
+						if (body?.prepare === true) {
+							const prepared = await createPreparedAgentPlan(file, inputShape.ops)
+							result = prepared.plan
+							preparedPlanId = randomUUID()
+							preparedPlans.set(preparedPlanId, preparedPlanHandle(prepared))
+						} else {
+							result = await createAgentPlan(file, inputShape.ops)
+						}
 					}
 					if (!input.ok) return jsonFailureError(input.error, 400)
 					if (!result) {
@@ -779,19 +853,20 @@ export function createApiFetch() {
 									...(maxChangedCells !== undefined ? { maxChangedCells } : {}),
 								})
 							: result
-					return jsonSuccess(withPathMutationResult(payload, pathMutations))
+					return jsonSuccess(
+						withPreparedPlanHandle(withPathMutationResult(payload, pathMutations), preparedPlanId),
+					)
 				} catch (e) {
-					return handleError(e, file)
+					return handleError(e, file ?? undefined)
 				}
 			}
 
 			if (method === 'POST' && path === '/commit') {
 				const body = await parseJson<Record<string, unknown>>(req)
+				const planHandle = body ? requireString(body, 'planHandle') : null
 				const file = body ? requireString(body, 'file') : null
-				if (!file) return jsonFailure('Missing or invalid file', 400)
+				if (!file && !planHandle) return jsonFailure('Missing or invalid file', 400)
 				try {
-					const inputShape = resolveOperationInputShape(body)
-					if (!inputShape.ok) return jsonFailureError(inputShape.error, 400)
 					const output = body ? requireString(body, 'output') : null
 					const backup = body ? requireString(body, 'backup') : null
 					const expectSha256 = body ? requireString(body, 'expectSha256') : null
@@ -813,10 +888,27 @@ export function createApiFetch() {
 						...(allowLoss ? { allowLoss } : {}),
 						...(approvals ? { approvals } : {}),
 					}
+					if (planHandle) {
+						const prepared = preparedPlans.get(planHandle)
+						if (!prepared) {
+							return jsonFailureError(
+								ascendError('VALIDATION_ERROR', 'Prepared plan handle was not found', {
+									suggestedFix: 'Re-run ascend plan with prepare=true before committing.',
+								}),
+								400,
+							)
+						}
+						const result = await prepared.commit(options)
+						preparedPlans.delete(planHandle)
+						return jsonSuccess(withPathMutationResult(result, prepared.pathMutations))
+					}
+					const inputShape = resolveOperationInputShape(body)
+					if (!inputShape.ok) return jsonFailureError(inputShape.error, 400)
 					let input: OperationInput
 					let pathMutations: PathMutationResult | undefined
 					let result: Awaited<ReturnType<typeof commitAgentPlan>>
 					if ('mutations' in inputShape) {
+						if (!file) return jsonFailure('Missing or invalid file', 400)
 						const opened = await AscendWorkbook.openSourceBytes(file)
 						const inputSha256 = sha256Bytes(opened.sourceBytes)
 						const wb = opened.workbook
@@ -828,11 +920,12 @@ export function createApiFetch() {
 						})
 					} else {
 						input = inputShape
+						if (!file) return jsonFailure('Missing or invalid file', 400)
 						result = await commitAgentPlan(file, input.ops, options)
 					}
 					return jsonSuccess(withPathMutationResult(result, pathMutations))
 				} catch (e) {
-					return handleError(e, file)
+					return handleError(e, file ?? undefined)
 				}
 			}
 

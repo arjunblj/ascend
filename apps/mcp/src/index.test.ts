@@ -894,6 +894,64 @@ describe('MCP server', () => {
 		expect(result.structuredContent?.data?.preview?.changedCells).toHaveLength(1)
 	})
 
+	test('ascend.commit accepts prepared plan handles', async () => {
+		const wb = AscendWorkbook.create()
+		await wb.save(TEMP_FILE)
+		const output = `${TEMP_FILE}.prepared-mcp.xlsx`
+		const server = createServer()
+		try {
+			// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+			const plan = (server as any)._registeredTools['ascend.plan'].handler as (args: {
+				file: string
+				prepare?: boolean
+				mutations: Array<{ path: string; value?: unknown }>
+			}) => Promise<{
+				structuredContent?: {
+					ok?: boolean
+					data?: {
+						preparedPlan?: { id?: string }
+						pathMutations?: { ops?: unknown[] }
+					}
+				}
+			}>
+			// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+			const commit = (server as any)._registeredTools['ascend.commit'].handler as (args: {
+				planHandle?: string
+				output?: string
+				approvals?: string[]
+			}) => Promise<{
+				structuredContent?: {
+					ok?: boolean
+					data?: { pathMutations?: { ops?: unknown[] } }
+				}
+			}>
+			const planned = await plan({
+				file: TEMP_FILE,
+				prepare: true,
+				mutations: [{ path: '/sheets/Sheet1/cells/A1/value', value: 321 }],
+			})
+			expect(planned.structuredContent?.ok).toBe(true)
+			expect(planned.structuredContent?.data?.preparedPlan?.id).toBeString()
+			expect(planned.structuredContent?.data?.pathMutations?.ops).toEqual([
+				{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 321 }] },
+			])
+
+			const committed = await commit({
+				planHandle: planned.structuredContent?.data?.preparedPlan?.id,
+				output,
+				approvals: [],
+			})
+			expect(committed.structuredContent?.ok).toBe(true)
+			expect(committed.structuredContent?.data?.pathMutations?.ops).toEqual([
+				{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 321 }] },
+			])
+			const reopened = await AscendWorkbook.open(output)
+			expect(reopened.sheet('Sheet1')?.cell('A1')?.value).toEqual({ kind: 'number', value: 321 })
+		} finally {
+			await unlink(output).catch(() => {})
+		}
+	})
+
 	test('malformed path mutations block MCP preview, write, and commit consistently', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'old' }] }])

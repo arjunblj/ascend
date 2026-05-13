@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import {
 	type AscendError,
 	AscendException,
@@ -17,6 +18,7 @@ import {
 	compactAgentPlanResult,
 	createAgentPlan,
 	createAgentPlanFromWorkbook,
+	createPreparedAgentPlan,
 	createRepairPlan,
 	ensureOutputExtension,
 	escapeDelimitedCell,
@@ -29,6 +31,7 @@ import {
 	type PathMutation,
 	type PathMutationResult,
 	type PivotOutputMaterializeMode,
+	type PreparedAgentPlan,
 	parseA1,
 	parseOperations,
 	type RangeObjectsInfo,
@@ -61,6 +64,15 @@ type ResolvedOperationInput =
 			readonly pathMutations?: PathMutationResult
 	  }
 	| { readonly ok: false; readonly error: AscendError }
+
+interface PreparedPlanHandle {
+	readonly file: string
+	readonly inputSha256: string
+	readonly planDigest: string
+	readonly plan: Awaited<ReturnType<typeof createAgentPlan>>
+	readonly pathMutations?: PathMutationResult
+	commit(options: AgentCommitOptions): Promise<Awaited<ReturnType<typeof commitAgentPlan>>>
+}
 
 function resolveOperationInputForWorkbook(
 	wb: AscendWorkbook,
@@ -153,11 +165,29 @@ function withPathMutationResult<T extends object>(
 	return compiled ? { ...result, pathMutations: compiled } : result
 }
 
+function withPreparedPlanHandle<T extends object>(
+	result: T,
+	id: string | undefined,
+): T | (T & { readonly preparedPlan: { readonly id: string } }) {
+	return id ? { ...result, preparedPlan: { id } } : result
+}
+
+function preparedPlanHandle(prepared: PreparedAgentPlan): PreparedPlanHandle {
+	return {
+		file: prepared.file,
+		inputSha256: prepared.inputSha256,
+		planDigest: prepared.planDigest,
+		plan: prepared.plan,
+		commit: (options) => prepared.commit(options),
+	}
+}
+
 export function createServer(): McpServer {
 	const server = new McpServer({
 		name: 'ascend',
 		version: '0.0.0',
 	})
+	const preparedPlans = new Map<string, PreparedPlanHandle>()
 
 	registerAgentResources(server)
 	registerAgentPrompts(server)
@@ -1110,6 +1140,10 @@ export function createServer(): McpServer {
 				.boolean()
 				.optional()
 				.describe('Return a compact plan payload with bounded changed-cell details'),
+			prepare: z
+				.boolean()
+				.optional()
+				.describe('Return a one-shot prepared plan handle that can be passed to ascend.commit'),
 			maxChangedCells: z
 				.number()
 				.int()
@@ -1117,13 +1151,14 @@ export function createServer(): McpServer {
 				.optional()
 				.describe('Maximum preview changed cells to include when compact is true'),
 		},
-		async ({ file, ops, mutations, compact, maxChangedCells }) => {
+		async ({ file, ops, mutations, compact, prepare, maxChangedCells }) => {
 			try {
 				const inputShape = resolveOperationInputShape(ops, mutations)
 				if (!inputShape.ok) return errorResponse(inputShape.error)
 				let input: ResolvedOperationInput
 				let pathMutations: PathMutationResult | undefined
 				let result: Awaited<ReturnType<typeof createAgentPlan>> | null
+				let preparedPlanId: string | undefined
 				if ('mutations' in inputShape) {
 					const opened = await AscendWorkbook.openSourceBytes(file)
 					const inputSha256 = sha256Bytes(opened.sourceBytes)
@@ -1133,9 +1168,51 @@ export function createServer(): McpServer {
 					result = input.ok
 						? await createAgentPlanFromWorkbook(file, inputSha256, wb, input.ops)
 						: null
+					if (input.ok && result && prepare === true) {
+						const preparedOps = input.ops
+						const preparedPlan = result
+						preparedPlanId = randomUUID()
+						preparedPlans.set(preparedPlanId, {
+							file,
+							inputSha256,
+							planDigest: preparedPlan.planDigest,
+							plan: preparedPlan,
+							...(pathMutations !== undefined ? { pathMutations } : {}),
+							commit: async (options) => {
+								const current = await Bun.file(file).bytes()
+								const currentSha256 = sha256Bytes(current)
+								if (currentSha256 !== inputSha256) {
+									throw new AscendException(
+										ascendError(
+											'VALIDATION_ERROR',
+											'Input workbook changed after agent plan was prepared',
+											{
+												details: {
+													expected: inputSha256,
+													actual: currentSha256,
+													planDigest: preparedPlan.planDigest,
+												},
+												suggestedFix: 'Re-run ascend plan and commit with the new input workbook.',
+											},
+										),
+									)
+								}
+								return commitAgentPlanFromWorkbook(file, inputSha256, wb, preparedOps, options, {
+									sourceBytes: opened.sourceBytes,
+								})
+							},
+						})
+					}
 				} else {
 					input = inputShape
-					result = await createAgentPlan(file, inputShape.ops)
+					if (prepare === true) {
+						const prepared = await createPreparedAgentPlan(file, inputShape.ops)
+						result = prepared.plan
+						preparedPlanId = randomUUID()
+						preparedPlans.set(preparedPlanId, preparedPlanHandle(prepared))
+					} else {
+						result = await createAgentPlan(file, inputShape.ops)
+					}
 				}
 				if (!input.ok) return errorResponse(input.error)
 				if (!result) return errorResponse('Plan failed')
@@ -1153,7 +1230,7 @@ export function createServer(): McpServer {
 						})
 					: result
 				return okResponse(
-					withPathMutationResult(payload, pathMutations),
+					withPreparedPlanHandle(withPathMutationResult(payload, pathMutations), preparedPlanId),
 					`Planned ${input.ops.length} operation(s)`,
 				)
 			} catch (e) {
@@ -1168,7 +1245,11 @@ export function createServer(): McpServer {
 		'ascend.commit',
 		'Commit an agent edit plan atomically with optional input hash guard',
 		{
-			file: z.string().describe('Path to workbook file'),
+			file: z.string().optional().describe('Path to workbook file'),
+			planHandle: z
+				.string()
+				.optional()
+				.describe('Prepared plan handle returned by ascend.plan with prepare=true'),
 			ops: z
 				.array(z.record(z.string(), z.unknown()))
 				.optional()
@@ -1195,6 +1276,7 @@ export function createServer(): McpServer {
 		},
 		async ({
 			file,
+			planHandle,
 			ops,
 			mutations,
 			output,
@@ -1205,8 +1287,6 @@ export function createServer(): McpServer {
 			approvals,
 		}) => {
 			try {
-				const inputShape = resolveOperationInputShape(ops, mutations)
-				if (!inputShape.ok) return errorResponse(inputShape.error)
 				const options: AgentCommitOptions = {
 					...(output ? { output } : {}),
 					...(inPlace ? { inPlace: true } : {}),
@@ -1215,6 +1295,19 @@ export function createServer(): McpServer {
 					...(allowLoss ? { allowLoss: parseAllowLoss(allowLoss) } : {}),
 					...(approvals ? { approvals: parseStringListOrAll(approvals) } : {}),
 				}
+				if (planHandle) {
+					const prepared = preparedPlans.get(planHandle)
+					if (!prepared) return errorResponse('Prepared plan handle was not found')
+					const result = await prepared.commit(options)
+					preparedPlans.delete(planHandle)
+					return okResponse(
+						withPathMutationResult(result, prepared.pathMutations),
+						`Committed ${result.operationCount} operation(s)`,
+					)
+				}
+				if (!file) return errorResponse('Missing file')
+				const inputShape = resolveOperationInputShape(ops, mutations)
+				if (!inputShape.ok) return errorResponse(inputShape.error)
 				let input: ResolvedOperationInput
 				let pathMutations: PathMutationResult | undefined
 				let result: Awaited<ReturnType<typeof commitAgentPlan>>

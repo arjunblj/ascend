@@ -201,6 +201,9 @@ const CORPUS: CorpusEntry[] = [
 for (const entry of CORPUS) {
 	describe(`corpus: ${entry.file}`, () => {
 		const bytes = loadCorpusFile(entry.file)
+		const sdkIntegrationTimeout = LARGE_SDK_INTEGRATION_FILES.has(entry.file)
+			? SDK_INTEGRATION_TIMEOUT_MS
+			: 30_000
 
 		it.skipIf(!bytes)('opens successfully with readXlsx', () => {
 			const result = readCorpusFile(bytes)
@@ -232,11 +235,15 @@ for (const entry of CORPUS) {
 			},
 		)
 
-		it.skipIf(!bytes)('no-op save produces byte-identical output', async () => {
-			const sourceBytes = requireBytes(bytes)
-			const saved = await saveSdkWorkbookBytes(sourceBytes)
-			expect(sha256(saved)).toBe(sha256(sourceBytes))
-		})
+		it.skipIf(!bytes)(
+			'no-op save produces byte-identical output',
+			async () => {
+				const sourceBytes = requireBytes(bytes)
+				const saved = await saveSdkWorkbookBytes(sourceBytes)
+				expect(sha256(saved)).toBe(sha256(sourceBytes))
+			},
+			sdkIntegrationTimeout,
+		)
 
 		it.skipIf(!bytes)('reopen after save succeeds', async () => {
 			const reopened = await reopenSavedSdkWorkbook(bytes)

@@ -1151,24 +1151,31 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 			}
 
 			if (method === 'POST' && path === '/check') {
-				const body = await parseJson<{ file?: string }>(req)
+				const body = await parseJson<{ file?: string; maxRows?: number }>(req)
 				const file = body ? requireString(body, 'file') : null
 				if (!file) return jsonFailure('Missing or invalid file', 400)
 				try {
-					const wb = await WorkbookDocument.open(file)
-					return jsonSuccess(wb.check())
+					const maxRows = body ? requireOptionalNumber(body, 'maxRows') : undefined
+					const wb = await WorkbookDocument.open(file, {
+						...(maxRows !== undefined ? { maxRows } : {}),
+					})
+					return jsonSuccess(withPartialLoadInfo(wb.check(), wb))
 				} catch (e) {
 					return handleError(e, file)
 				}
 			}
 
 			if (method === 'POST' && path === '/lint') {
-				const body = await parseJson<{ file?: string }>(req)
+				const body = await parseJson<{ file?: string; maxRows?: number }>(req)
 				const file = body ? requireString(body, 'file') : null
 				if (!file) return jsonFailure('Missing or invalid file', 400)
 				try {
-					const wb = await WorkbookDocument.open(file, { mode: 'formula' })
-					return jsonSuccess(wb.lint())
+					const maxRows = body ? requireOptionalNumber(body, 'maxRows') : undefined
+					const wb = await WorkbookDocument.open(file, {
+						mode: 'formula',
+						...(maxRows !== undefined ? { maxRows } : {}),
+					})
+					return jsonSuccess(withPartialLoadInfo(wb.lint(), wb))
 				} catch (e) {
 					return handleError(e, file)
 				}

@@ -1760,6 +1760,87 @@ describe('MCP server', () => {
 		)
 	})
 
+	test('ascend.check and ascend.lint expose partial-load metadata for capped formula views', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 2 }] },
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'A2', formula: 'A1*2' },
+		])
+		await wb.save(TEMP_FILE)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const checkHandler = (server as any)._registeredTools['ascend.check'].handler as (args: {
+			file: string
+			maxRows?: number
+		}) => Promise<{
+			isError?: boolean
+			structuredContent?: {
+				ok?: boolean
+				error?: {
+					code?: string
+					details?: {
+						check?: {
+							valid?: boolean
+							issues?: readonly { readonly rule?: string }[]
+							load?: {
+								isPartial?: boolean
+								maxRows?: number
+								partialReasons?: readonly string[]
+							}
+						}
+					}
+				}
+			}
+		}>
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const lintHandler = (server as any)._registeredTools['ascend.lint'].handler as (args: {
+			file: string
+			maxRows?: number
+		}) => Promise<{
+			isError?: boolean
+			structuredContent?: {
+				ok?: boolean
+				data?: {
+					clean?: boolean
+					warnings?: readonly { readonly rule?: string }[]
+					load?: {
+						isPartial?: boolean
+						maxRows?: number
+						partialReasons?: readonly string[]
+					}
+				}
+			}
+		}>
+
+		const check = await checkHandler({ file: TEMP_FILE, maxRows: 1 })
+
+		expect(check.isError).toBe(true)
+		expect(check.structuredContent?.ok).toBe(false)
+		expect(check.structuredContent?.error?.code).toBe('VALIDATION_ERROR')
+		expect(check.structuredContent?.error?.details?.check?.valid).toBe(false)
+		expect(check.structuredContent?.error?.details?.check?.issues?.[0]?.rule).toBe(
+			'partial-dependency-analysis',
+		)
+		expect(check.structuredContent?.error?.details?.check?.load?.isPartial).toBe(true)
+		expect(check.structuredContent?.error?.details?.check?.load?.maxRows).toBe(1)
+		expect(check.structuredContent?.error?.details?.check?.load?.partialReasons).toContain(
+			'only the first 1 row(s) are hydrated per loaded sheet',
+		)
+
+		const lint = await lintHandler({ file: TEMP_FILE, maxRows: 1 })
+
+		expect(lint.isError).toBeFalsy()
+		expect(lint.structuredContent?.ok).toBe(true)
+		expect(lint.structuredContent?.data?.clean).toBe(false)
+		expect(lint.structuredContent?.data?.warnings?.[0]?.rule).toBe('partial-dependency-analysis')
+		expect(lint.structuredContent?.data?.load?.isPartial).toBe(true)
+		expect(lint.structuredContent?.data?.load?.maxRows).toBe(1)
+		expect(lint.structuredContent?.data?.load?.partialReasons).toContain(
+			'only the first 1 row(s) are hydrated per loaded sheet',
+		)
+	})
+
 	test('ascend.read prunes compact cells by column', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

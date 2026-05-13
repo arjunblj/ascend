@@ -64,12 +64,23 @@ interface ApiEnvelope {
 		readonly cells?: unknown[]
 		readonly format?: string
 		readonly changeToken?: string
+		readonly valid?: boolean
+		readonly issues?: readonly {
+			readonly rule?: string
+			readonly message?: string
+		}[]
+		readonly clean?: boolean
+		readonly warnings?: readonly {
+			readonly rule?: string
+			readonly message?: string
+		}[]
 		readonly load?: {
 			readonly mode?: string
 			readonly isPartial?: boolean
 			readonly maxRows?: number
 			readonly cellsHydrated?: boolean
 			readonly loadedSheets?: readonly string[]
+			readonly partialReasons?: readonly string[]
 		}
 	}
 	readonly error?: {
@@ -440,6 +451,45 @@ describe('Ascend API server', () => {
 		expect(result.body.error?.details?.rule).toBe('partial-dependency-analysis')
 		expect(result.body.error?.details?.load?.maxRows).toBe(1)
 		expect(result.body.error?.details?.load?.partialReasons).toContain(
+			'only the first 1 row(s) are hydrated per loaded sheet',
+		)
+	})
+
+	test('check and lint expose partial-load metadata for capped formula views', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 2 }] },
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'A2', formula: 'A1*2' },
+		])
+		await wb.save(TEMP_FILE)
+
+		const check = await postJson('/check', {
+			file: TEMP_FILE,
+			maxRows: 1,
+		})
+
+		expect(check.status).toBe(200)
+		expect(check.body.ok).toBe(true)
+		expect(check.body.data?.valid).toBe(false)
+		expect(check.body.data?.issues?.[0]?.rule).toBe('partial-dependency-analysis')
+		expect(check.body.data?.load?.isPartial).toBe(true)
+		expect(check.body.data?.load?.maxRows).toBe(1)
+		expect(check.body.data?.load?.partialReasons).toContain(
+			'only the first 1 row(s) are hydrated per loaded sheet',
+		)
+
+		const lint = await postJson('/lint', {
+			file: TEMP_FILE,
+			maxRows: 1,
+		})
+
+		expect(lint.status).toBe(200)
+		expect(lint.body.ok).toBe(true)
+		expect(lint.body.data?.clean).toBe(false)
+		expect(lint.body.data?.warnings?.[0]?.rule).toBe('partial-dependency-analysis')
+		expect(lint.body.data?.load?.isPartial).toBe(true)
+		expect(lint.body.data?.load?.maxRows).toBe(1)
+		expect(lint.body.data?.load?.partialReasons).toContain(
 			'only the first 1 row(s) are hydrated per loaded sheet',
 		)
 	})

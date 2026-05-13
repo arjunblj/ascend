@@ -1504,11 +1504,19 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 		'Run structural checks on a workbook',
 		{
 			file: z.string().describe('Path to workbook file'),
+			maxRows: z
+				.number()
+				.int()
+				.positive()
+				.optional()
+				.describe('Maximum worksheet rows to hydrate; capped checks return partial-load metadata'),
 		},
-		async ({ file }) => {
+		async ({ file, maxRows }) => {
 			try {
-				const wb = await WorkbookDocument.open(file)
-				const result = wb.check()
+				const wb = await WorkbookDocument.open(file, {
+					...(maxRows !== undefined ? { maxRows } : {}),
+				})
+				const result = withPartialLoadInfo(wb.check(), wb)
 				if (!result.valid) {
 					const summary = `${result.issues.length} issue(s) found`
 					return errorResponse(
@@ -1531,11 +1539,22 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 		'Lint formulas for common issues',
 		{
 			file: z.string().describe('Path to workbook file'),
+			maxRows: z
+				.number()
+				.int()
+				.positive()
+				.optional()
+				.describe(
+					'Maximum worksheet rows to hydrate; capped lint results include partial-load warnings',
+				),
 		},
-		async ({ file }) => {
+		async ({ file, maxRows }) => {
 			try {
-				const wb = await WorkbookDocument.open(file, { mode: 'formula' })
-				const result = wb.lint()
+				const wb = await WorkbookDocument.open(file, {
+					mode: 'formula',
+					...(maxRows !== undefined ? { maxRows } : {}),
+				})
+				const result = withPartialLoadInfo(wb.lint(), wb)
 				return okResponse(result, `Linted workbook "${file}"`)
 			} catch (e) {
 				return errorResponse(

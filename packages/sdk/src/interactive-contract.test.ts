@@ -149,6 +149,56 @@ describe('interactive client contract', () => {
 		session.close()
 	})
 
+	test('interactive viewport overlay cache refreshes after metadata edits', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'old' },
+					{ ref: 'B1', value: 'new' },
+				],
+			},
+			{
+				op: 'setDataValidation',
+				sheet: 'Sheet1',
+				range: 'A1:A1',
+				rule: { type: 'list', formula1: '"old,new"', allowBlank: true },
+			},
+		])
+		const session = await AscendSession.open(wb.toBytes(), { mode: 'interactive' })
+		const before = session.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 2,
+		})
+		expect(before.cells.find((cell) => cell.ref === 'A1')?.flags.validation).toBe(true)
+		expect(before.cells.find((cell) => cell.ref === 'B1')?.flags.validation).toBe(false)
+
+		const edit = await session.apply([
+			{
+				op: 'setDataValidation',
+				sheet: 'Sheet1',
+				range: 'B1:B1',
+				rule: { type: 'list', formula1: '"old,new"', allowBlank: true },
+			},
+		])
+		expect(edit.apply.errors).toEqual([])
+		const after = session.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 2,
+		})
+		expect(after.cells.find((cell) => cell.ref === 'A1')?.flags.validation).toBe(true)
+		expect(after.cells.find((cell) => cell.ref === 'B1')?.flags.validation).toBe(true)
+		session.close()
+	})
+
 	test('interactive viewport resolves shared formula member text', async () => {
 		const wb = AscendWorkbook.create()
 		const sheet = wb.getWorkbookModel().getSheet('Sheet1')

@@ -10,6 +10,8 @@ import {
 	type RangeIndexEntry,
 	type RangeRef,
 	rangeMaskOffsets,
+	type SheetConditionalFormat,
+	type SheetDataValidation,
 	sqrefIntersects,
 	toA1,
 } from '@ascend/core'
@@ -255,6 +257,22 @@ interface InteractiveChangeEntry {
 	readonly generation: number
 	readonly refs: ReadonlySet<string> | null
 }
+
+type InteractiveSheetModel = ReturnType<WorkbookReadView['getWorkbookModel']>['sheets'][number]
+
+interface InteractiveViewportOverlayIndexes {
+	readonly sheet: InteractiveSheetModel
+	readonly sheetMetadataGeneration: number
+	readonly mergeIndex: RangeIndex<RangeRef>
+	readonly validationIndex: RangeIndex<SheetDataValidation>
+	readonly conditionalFormatIndex: RangeIndex<SheetConditionalFormat>
+	readonly tableIndex: RangeIndex<TableInfo>
+}
+
+const interactiveViewportOverlayIndexCache = new WeakMap<
+	WorkbookReadView,
+	Map<string, InteractiveViewportOverlayIndexes>
+>()
 
 export interface SessionCacheOptions {
 	readonly maxCacheSize?: number
@@ -1203,21 +1221,17 @@ function createInteractiveViewportContext(
 		request.colCount + Math.max(0, request.overscanCols ?? 0) * 2,
 	)
 	const sheetIndex = workbook.sheets.findIndex((candidate) => candidate.name === request.sheet)
-	const mergeEntries = RangeIndex.fromRanges(sheet.merges, (merge) => merge).intersectingEntries(
-		viewport,
+	const overlayIndexes = interactiveViewportOverlayIndexes(
+		view,
+		request.sheet,
+		sheet,
+		snapshot.generations.sheetMetadata,
 	)
-	const validationEntries = RangeIndex.fromSqrefs(
-		sheet.dataValidations,
-		(validation) => validation.sqref,
-	).intersectingEntries(viewport)
-	const conditionalFormatEntries = RangeIndex.fromSqrefs(
-		sheet.conditionalFormats,
-		(format) => format.sqref,
-	).intersectingEntries(viewport)
-	const tableEntries = RangeIndex.fromRanges(
-		view.inspectSheet(request.sheet)?.tables ?? [],
-		(table) => table.ref,
-	).intersectingEntries(viewport)
+	const mergeEntries = overlayIndexes.mergeIndex.intersectingEntries(viewport)
+	const validationEntries = overlayIndexes.validationIndex.intersectingEntries(viewport)
+	const conditionalFormatEntries =
+		overlayIndexes.conditionalFormatIndex.intersectingEntries(viewport)
+	const tableEntries = overlayIndexes.tableIndex.intersectingEntries(viewport)
 	return {
 		snapshot,
 		workbook,
@@ -1250,6 +1264,43 @@ function createInteractiveViewportContext(
 			viewport,
 		),
 	}
+}
+
+function interactiveViewportOverlayIndexes(
+	view: WorkbookReadView,
+	sheetName: string,
+	sheet: InteractiveSheetModel,
+	sheetMetadataGeneration: number,
+): InteractiveViewportOverlayIndexes {
+	let bySheet = interactiveViewportOverlayIndexCache.get(view)
+	if (!bySheet) {
+		bySheet = new Map()
+		interactiveViewportOverlayIndexCache.set(view, bySheet)
+	}
+	const cached = bySheet.get(sheetName)
+	if (
+		cached &&
+		cached.sheet === sheet &&
+		cached.sheetMetadataGeneration === sheetMetadataGeneration
+	) {
+		return cached
+	}
+	const indexes: InteractiveViewportOverlayIndexes = {
+		sheet,
+		sheetMetadataGeneration,
+		mergeIndex: RangeIndex.fromRanges(sheet.merges, (merge) => merge),
+		validationIndex: RangeIndex.fromSqrefs(sheet.dataValidations, (validation) => validation.sqref),
+		conditionalFormatIndex: RangeIndex.fromSqrefs(
+			sheet.conditionalFormats,
+			(format) => format.sqref,
+		),
+		tableIndex: RangeIndex.fromRanges(
+			view.inspectSheet(sheetName)?.tables ?? [],
+			(table) => table.ref,
+		),
+	}
+	bySheet.set(sheetName, indexes)
+	return indexes
 }
 
 function interactiveViewportCellFromContent(

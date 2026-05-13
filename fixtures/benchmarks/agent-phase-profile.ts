@@ -3,9 +3,13 @@ import { rm } from 'node:fs/promises'
 import type { Operation } from '@ascend/schema'
 import {
 	type AgentWorkflowProgressEvent,
+	AscendWorkbook,
 	commitAgentPlan,
+	commitAgentPlanFromWorkbook,
 	createAgentPlan,
+	createAgentPlanFromWorkbook,
 	indexToColumn,
+	sha256Bytes,
 } from '../../packages/sdk/src/index.ts'
 import { buildRawReadWorkloadDataSet, type WorkloadName } from './competitive-io.ts'
 
@@ -37,15 +41,25 @@ interface Sample {
 	readonly planMs: number
 	readonly commitMs: number
 	readonly totalMs: number
+	readonly sharedPlanMs: number
+	readonly sharedCommitMs: number
+	readonly sharedTotalMs: number
 	readonly planPayloadBytes: number
 	readonly commitPayloadBytes: number
+	readonly sharedPlanPayloadBytes: number
+	readonly sharedCommitPayloadBytes: number
 	readonly planPhaseMs: Record<string, number>
 	readonly commitPhaseMs: Record<string, number>
+	readonly sharedPlanPhaseMs: Record<string, number>
+	readonly sharedCommitPhaseMs: Record<string, number>
 	readonly operationCount: number
 	readonly updateCount: number
 	readonly changedCells: number
 	readonly commitChangedCells: number
+	readonly sharedChangedCells: number
+	readonly sharedCommitChangedCells: number
 	readonly postWriteValid: boolean
+	readonly sharedPostWriteValid: boolean
 }
 
 const WORKLOADS = new Set<string>([
@@ -156,34 +170,68 @@ async function runSample(
 	updateCount: number,
 ): Promise<Sample> {
 	await rm(outputPath, { force: true })
+	const sharedOutputPath = `${outputPath}.shared.xlsx`
+	await rm(sharedOutputPath, { force: true })
 	runGc()
 	const plan = await timedWorkflow((onProgress) => createAgentPlan(inputPath, ops, { onProgress }))
 	const commit = await timedWorkflow((onProgress) =>
 		commitAgentPlan(inputPath, ops, { output: outputPath, approvals: [], onProgress }),
 	)
+	const opened = await AscendWorkbook.openSourceBytes(inputPath)
+	const inputSha256 = sha256Bytes(opened.sourceBytes)
+	const sharedPlan = await timedWorkflow((onProgress) =>
+		createAgentPlanFromWorkbook(inputPath, inputSha256, opened.workbook, ops, { onProgress }),
+	)
+	const sharedCommit = await timedWorkflow(async (onProgress) => {
+		try {
+			return await commitAgentPlanFromWorkbook(
+				inputPath,
+				inputSha256,
+				opened.workbook,
+				ops,
+				{ output: sharedOutputPath, approvals: [], onProgress },
+				{ sourceBytes: opened.sourceBytes },
+			)
+		} finally {
+			await rm(sharedOutputPath, { force: true })
+		}
+	})
 	return {
 		planMs: plan.ms,
 		commitMs: commit.ms,
 		totalMs: plan.ms + commit.ms,
+		sharedPlanMs: sharedPlan.ms,
+		sharedCommitMs: sharedCommit.ms,
+		sharedTotalMs: sharedPlan.ms + sharedCommit.ms,
 		planPayloadBytes: payloadBytes(plan.value),
 		commitPayloadBytes: payloadBytes(commit.value),
+		sharedPlanPayloadBytes: payloadBytes(sharedPlan.value),
+		sharedCommitPayloadBytes: payloadBytes(sharedCommit.value),
 		planPhaseMs: phaseMap(plan.phases),
 		commitPhaseMs: phaseMap(commit.phases),
+		sharedPlanPhaseMs: phaseMap(sharedPlan.phases),
+		sharedCommitPhaseMs: phaseMap(sharedCommit.phases),
 		operationCount: ops.length,
 		updateCount,
 		changedCells: plan.value.preview.changedCells.length,
 		commitChangedCells: commit.value.apply.affectedCells.length,
+		sharedChangedCells: sharedPlan.value.preview.changedCells.length,
+		sharedCommitChangedCells: sharedCommit.value.apply.affectedCells.length,
 		postWriteValid: commit.value.postWrite.valid,
+		sharedPostWriteValid: sharedCommit.value.postWrite.valid,
 	}
 }
 
-function allPhaseNames(samples: readonly Sample[], key: 'planPhaseMs' | 'commitPhaseMs'): string[] {
+function allPhaseNames(
+	samples: readonly Sample[],
+	key: 'planPhaseMs' | 'commitPhaseMs' | 'sharedPlanPhaseMs' | 'sharedCommitPhaseMs',
+): string[] {
 	return [...new Set(samples.flatMap((sample) => Object.keys(sample[key])))].sort()
 }
 
 function summarizePhases(
 	samples: readonly Sample[],
-	key: 'planPhaseMs' | 'commitPhaseMs',
+	key: 'planPhaseMs' | 'commitPhaseMs' | 'sharedPlanPhaseMs' | 'sharedCommitPhaseMs',
 ): Record<string, number> {
 	const summary: Record<string, number> = {}
 	for (const phase of allPhaseNames(samples, key)) {
@@ -197,15 +245,32 @@ function summarize(samples: readonly Sample[]) {
 		planMedianMs: median(samples.map((sample) => sample.planMs)),
 		commitMedianMs: median(samples.map((sample) => sample.commitMs)),
 		totalMedianMs: median(samples.map((sample) => sample.totalMs)),
+		sharedPlanMedianMs: median(samples.map((sample) => sample.sharedPlanMs)),
+		sharedCommitMedianMs: median(samples.map((sample) => sample.sharedCommitMs)),
+		sharedTotalMedianMs: median(samples.map((sample) => sample.sharedTotalMs)),
+		sharedWorkflowSpeedupVsCold:
+			median(samples.map((sample) => sample.totalMs)) /
+			median(samples.map((sample) => sample.sharedTotalMs)),
 		planPayloadBytesMedian: median(samples.map((sample) => sample.planPayloadBytes)),
 		commitPayloadBytesMedian: median(samples.map((sample) => sample.commitPayloadBytes)),
+		sharedPlanPayloadBytesMedian: median(samples.map((sample) => sample.sharedPlanPayloadBytes)),
+		sharedCommitPayloadBytesMedian: median(
+			samples.map((sample) => sample.sharedCommitPayloadBytes),
+		),
 		operationCountMedian: median(samples.map((sample) => sample.operationCount)),
 		updateCountMedian: median(samples.map((sample) => sample.updateCount)),
 		changedCellsMedian: median(samples.map((sample) => sample.changedCells)),
 		commitChangedCellsMedian: median(samples.map((sample) => sample.commitChangedCells)),
+		sharedChangedCellsMedian: median(samples.map((sample) => sample.sharedChangedCells)),
+		sharedCommitChangedCellsMedian: median(
+			samples.map((sample) => sample.sharedCommitChangedCells),
+		),
 		postWriteValid: samples.every((sample) => sample.postWriteValid),
+		sharedPostWriteValid: samples.every((sample) => sample.sharedPostWriteValid),
 		planPhaseMedianMs: summarizePhases(samples, 'planPhaseMs'),
 		commitPhaseMedianMs: summarizePhases(samples, 'commitPhaseMs'),
+		sharedPlanPhaseMedianMs: summarizePhases(samples, 'sharedPlanPhaseMs'),
+		sharedCommitPhaseMedianMs: summarizePhases(samples, 'sharedCommitPhaseMs'),
 	}
 }
 

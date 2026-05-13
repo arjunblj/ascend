@@ -33,25 +33,43 @@ describe('agent phase profile benchmark', () => {
 			readonly summary?: {
 				readonly planMedianMs?: number
 				readonly commitMedianMs?: number
+				readonly sharedPlanMedianMs?: number
+				readonly sharedCommitMedianMs?: number
+				readonly sharedTotalMedianMs?: number
+				readonly sharedWorkflowSpeedupVsCold?: number
 				readonly operationCountMedian?: number
 				readonly updateCountMedian?: number
 				readonly changedCellsMedian?: number
 				readonly commitChangedCellsMedian?: number
+				readonly sharedChangedCellsMedian?: number
+				readonly sharedCommitChangedCellsMedian?: number
 				readonly postWriteValid?: boolean
+				readonly sharedPostWriteValid?: boolean
 				readonly planPhaseMedianMs?: Record<string, number>
 				readonly commitPhaseMedianMs?: Record<string, number>
+				readonly sharedPlanPhaseMedianMs?: Record<string, number>
+				readonly sharedCommitPhaseMedianMs?: Record<string, number>
 			}
 		}
 		expect(payload.summary?.planMedianMs).toBeNumber()
 		expect(payload.summary?.commitMedianMs).toBeNumber()
+		expect(payload.summary?.sharedPlanMedianMs).toBeNumber()
+		expect(payload.summary?.sharedCommitMedianMs).toBeNumber()
+		expect(payload.summary?.sharedTotalMedianMs).toBeNumber()
+		expect(payload.summary?.sharedWorkflowSpeedupVsCold).toBeNumber()
 		expect(payload.summary?.operationCountMedian).toBe(1)
 		expect(payload.summary?.updateCountMedian).toBe(12)
 		expect(payload.summary?.changedCellsMedian).toBe(12)
 		expect(payload.summary?.commitChangedCellsMedian).toBe(12)
+		expect(payload.summary?.sharedChangedCellsMedian).toBe(12)
+		expect(payload.summary?.sharedCommitChangedCellsMedian).toBe(12)
 		expect(payload.summary?.postWriteValid).toBe(true)
+		expect(payload.summary?.sharedPostWriteValid).toBe(true)
 		expect(payload.summary?.planPhaseMedianMs?.['load-workbook']).toBeNumber()
 		expect(payload.summary?.planPhaseMedianMs?.preview).toBeNumber()
 		expect(payload.summary?.commitPhaseMedianMs?.write).toBeNumber()
 		expect(payload.summary?.commitPhaseMedianMs?.['post-write']).toBeNumber()
+		expect(payload.summary?.sharedPlanPhaseMedianMs?.preview).toBeNumber()
+		expect(payload.summary?.sharedCommitPhaseMedianMs?.write).toBeNumber()
 	})
 })

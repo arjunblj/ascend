@@ -1236,17 +1236,21 @@ export class AscendSession {
 	}
 
 	private rebaseViewportSnapshots(workbook: AscendWorkbook): void {
-		for (const [key, snapshot] of this.viewportSnapshots) {
+		const rebaseRefs = new Set<string>()
+		for (const snapshot of this.viewportSnapshots.values()) {
 			const rebased = readInteractiveViewport(
 				workbook,
 				snapshot.request,
 				this.documentGeneration,
 				snapshot.token,
 			)
-			this.viewportSnapshots.set(key, {
-				...snapshot,
-				cells: interactiveCellMap(rebased.cells),
-			})
+			const cells = interactiveCellMap(rebased.cells)
+			collectInteractiveCellMapDiffRefs(snapshot.request.sheet, snapshot.cells, cells, rebaseRefs)
+		}
+		if (rebaseRefs.size > 0) {
+			this.recentChanges.push({ generation: this.documentGeneration + 1, refs: rebaseRefs })
+			if (this.recentChanges.length > 128)
+				this.recentChanges.splice(0, this.recentChanges.length - 128)
 		}
 	}
 
@@ -1655,6 +1659,21 @@ function interactiveCellMap(
 	cells: readonly InteractiveViewportCell[],
 ): Map<string, InteractiveViewportCell> {
 	return new Map(cells.map((cell) => [cell.ref, cell]))
+}
+
+function collectInteractiveCellMapDiffRefs(
+	sheet: string,
+	left: ReadonlyMap<string, InteractiveViewportCell>,
+	right: ReadonlyMap<string, InteractiveViewportCell>,
+	refs: Set<string>,
+): void {
+	for (const [ref, cell] of left) {
+		const other = right.get(ref)
+		if (!other || JSON.stringify(other) !== JSON.stringify(cell)) refs.add(`${sheet}!${ref}`)
+	}
+	for (const ref of right.keys()) {
+		if (!left.has(ref)) refs.add(`${sheet}!${ref}`)
+	}
 }
 
 function diffInteractiveViewportCells(

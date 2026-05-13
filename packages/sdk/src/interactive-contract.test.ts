@@ -463,6 +463,108 @@ describe('interactive client contract', () => {
 		session.close()
 	})
 
+	test('interactive sessions resume patching after an invalidating metadata refresh', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 1 },
+					{ ref: 'B1', value: 2 },
+				],
+			},
+		])
+
+		const session = await AscendSession.open(wb.toBytes(), { mode: 'interactive' })
+		const prepared = await session.prepareEdits()
+		expect(prepared.load.promotedToFull).toBe(true)
+		const base = session.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 2,
+		})
+
+		const valueEdit = await session.apply([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 10 }] },
+		])
+		expect(valueEdit.apply.errors).toEqual([])
+		const valuePatch = session.readViewportPatch({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 2,
+			changedSince: base.changeToken,
+		})
+		if (!valuePatch) throw new Error('expected value patch')
+		const afterValue = session.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 2,
+		})
+		expect(materializeViewportPatch(base.cells, valuePatch)).toEqual(
+			interactiveCellMap(afterValue.cells),
+		)
+
+		const metadataEdit = await session.apply([
+			{ op: 'setComment', sheet: 'Sheet1', ref: 'A1', text: 'reviewed' },
+		])
+		expect(metadataEdit.apply.errors).toEqual([])
+		expect(
+			session.readViewportPatch({
+				sheet: 'Sheet1',
+				topRow: 0,
+				leftCol: 0,
+				rowCount: 1,
+				colCount: 2,
+				changedSince: afterValue.changeToken,
+			}),
+		).toBeNull()
+		const afterMetadata = session.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 2,
+			changedSince: afterValue.changeToken,
+		})
+		expect(afterMetadata.patch).toBeUndefined()
+		expect(afterMetadata.cells.find((cell) => cell.ref === 'A1')?.flags.comment).toBe(true)
+
+		const resumedEdit = await session.apply([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'B1', value: 20 }] },
+		])
+		expect(resumedEdit.apply.errors).toEqual([])
+		const resumedPatch = session.readViewportPatch({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 2,
+			changedSince: afterMetadata.changeToken,
+		})
+		if (!resumedPatch) throw new Error('expected resumed patch')
+		expect(resumedPatch.changedCells.map((cell) => [cell.ref, cell.flatValue])).toEqual([
+			['B1', 20],
+		])
+		const afterResume = session.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 2,
+		})
+		expect(materializeViewportPatch(afterMetadata.cells, resumedPatch)).toEqual(
+			interactiveCellMap(afterResume.cells),
+		)
+		session.close()
+	})
+
 	test('interactive structural viewport shifts force fresh snapshots instead of ref patches', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

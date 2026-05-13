@@ -12,7 +12,12 @@ import {
 } from '../../packages/engine/src/index.ts'
 import { clearGlobalParseCache, parseFormula } from '../../packages/formulas/src/index.ts'
 import { readCsv, writeCsv } from '../../packages/io-csv/src/index.ts'
-import { readXlsx, writeXlsx, writeXlsxStreaming } from '../../packages/io-xlsx/src/index.ts'
+import {
+	extractZip,
+	readXlsx,
+	writeXlsx,
+	writeXlsxStreaming,
+} from '../../packages/io-xlsx/src/index.ts'
 import {
 	booleanValue,
 	dateValue,
@@ -718,6 +723,47 @@ function realInteractivePatchCorpusByteCount(): number {
 		(total, target) => total + realInteractivePatchCorpusTargetBytes(target).byteLength,
 		0,
 	)
+}
+
+function xlsxArchiveFootprint(bytes: Uint8Array): {
+	readonly partCount: number
+	readonly compressedBytes: number
+	readonly uncompressedBytes: number
+	readonly worksheetUncompressedBytes: number
+	readonly largestPartPath: string
+	readonly largestPartCompressedBytes: number
+	readonly largestPartUncompressedBytes: number
+} {
+	const archive = extractZip(bytes)
+	let partCount = 0
+	let compressedBytes = 0
+	let uncompressedBytes = 0
+	let worksheetUncompressedBytes = 0
+	let largestPartPath = ''
+	let largestPartCompressedBytes = 0
+	let largestPartUncompressedBytes = 0
+	for (const entry of archive.entries()) {
+		partCount += 1
+		compressedBytes += entry.compressedSize
+		uncompressedBytes += entry.uncompressedSize
+		if (entry.path.startsWith('xl/worksheets/')) {
+			worksheetUncompressedBytes += entry.uncompressedSize
+		}
+		if (entry.uncompressedSize > largestPartUncompressedBytes) {
+			largestPartPath = entry.path
+			largestPartCompressedBytes = entry.compressedSize
+			largestPartUncompressedBytes = entry.uncompressedSize
+		}
+	}
+	return {
+		partCount,
+		compressedBytes,
+		uncompressedBytes,
+		worksheetUncompressedBytes,
+		largestPartPath,
+		largestPartCompressedBytes,
+		largestPartUncompressedBytes,
+	}
 }
 
 function interactiveSessionFor(bytes: Uint8Array): Promise<AscendSession> {
@@ -2050,6 +2096,7 @@ const scenarios: readonly Scenario[] = [
 		async run() {
 			const target = realInteractivePatchCorpusTarget('stress-dense-100k')
 			const bytes = realInteractivePatchCorpusTargetBytes(target)
+			const archiveFootprint = xlsxArchiveFootprint(bytes)
 			WorkbookDocument.clearCache()
 			runGc()
 			const baseline = phaseMemorySnapshot()
@@ -2115,6 +2162,13 @@ const scenarios: readonly Scenario[] = [
 			return {
 				assertions: {
 					bytes: bytes.byteLength,
+					archivePartCount: archiveFootprint.partCount,
+					archiveCompressedBytes: archiveFootprint.compressedBytes,
+					archiveUncompressedBytes: archiveFootprint.uncompressedBytes,
+					archiveWorksheetUncompressedBytes: archiveFootprint.worksheetUncompressedBytes,
+					archiveLargestPartPath: archiveFootprint.largestPartPath,
+					archiveLargestPartCompressedBytes: archiveFootprint.largestPartCompressedBytes,
+					archiveLargestPartUncompressedBytes: archiveFootprint.largestPartUncompressedBytes,
 					viewportCells: viewport.cells.length,
 					viewportFlatValues: viewport.flatValues.length,
 					changedCells: patch.changedCells.length,
@@ -2377,6 +2431,7 @@ const scenarios: readonly Scenario[] = [
 		async run() {
 			const target = realInteractivePatchCorpusTarget('stress-dense-100k')
 			const bytes = realInteractivePatchCorpusTargetBytes(target)
+			const archiveFootprint = xlsxArchiveFootprint(bytes)
 			WorkbookDocument.clearCache()
 			runGc()
 			const baseline = phaseMemorySnapshot()
@@ -2450,6 +2505,13 @@ const scenarios: readonly Scenario[] = [
 			return {
 				assertions: {
 					bytes: bytes.byteLength,
+					archivePartCount: archiveFootprint.partCount,
+					archiveCompressedBytes: archiveFootprint.compressedBytes,
+					archiveUncompressedBytes: archiveFootprint.uncompressedBytes,
+					archiveWorksheetUncompressedBytes: archiveFootprint.worksheetUncompressedBytes,
+					archiveLargestPartPath: archiveFootprint.largestPartPath,
+					archiveLargestPartCompressedBytes: archiveFootprint.largestPartCompressedBytes,
+					archiveLargestPartUncompressedBytes: archiveFootprint.largestPartUncompressedBytes,
 					viewportCells: viewport.cells.length,
 					viewportFlatValues: viewport.flatValues.length,
 					changedCells: patch.changedCells.length,

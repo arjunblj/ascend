@@ -10,7 +10,6 @@ import { extractZip } from '../../packages/io-xlsx/src/reader/zip.ts'
 import { booleanValue, type CellValue } from '../../packages/schema/src/index.ts'
 import { SheetHandle } from '../../packages/sdk/src/index.ts'
 import {
-	buildGeneratedWriteDataSet,
 	buildRawReadWorkloadDataSet,
 	buildWorkloadDataSet,
 	type CompetitiveDataSet,
@@ -876,25 +875,15 @@ async function loadInput(args: Args): Promise<CompetitiveDataSet> {
 		return buildWorkloadDataSet(args.workload, args.rows, args.cols, args.readSource)
 	}
 	const bytes = await Bun.file(args.inputFile).bytes()
-	if (args.phase !== 'all' && args.phase !== 'hydrate') {
-		return {
-			workloadName: args.workload,
-			readSource: args.readSource,
-			sourceMode: 'full',
-			rows: args.rows,
-			cols: args.cols,
-			cells: workloadCellCount(args.workload, args.rows, args.cols),
-			values: [],
-			semanticCellValuesHash: '',
-			orderedSemanticCellValuesHash: '',
-			xlsxPath: args.inputFile,
-			xlsxBytes: bytes,
-		}
-	}
 	return {
-		...buildGeneratedWriteDataSet(args.workload, args.rows, args.cols),
+		workloadName: args.workload,
 		readSource: args.readSource,
 		sourceMode: 'full',
+		rows: args.rows,
+		cols: args.cols,
+		cells: workloadCellCount(args.workload, args.rows, args.cols),
+		values: [],
+		semanticCellValuesHash: '',
 		xlsxPath: args.inputFile,
 		xlsxBytes: bytes,
 	}

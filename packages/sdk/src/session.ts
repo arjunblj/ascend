@@ -968,7 +968,7 @@ export class AscendSession {
 			)
 			const before = previous.cells.get(parsed.ref)
 			nextCells.set(parsed.ref, current)
-			if (!before || JSON.stringify(before) !== JSON.stringify(current)) changedCells.push(current)
+			if (!before || !interactiveViewportCellsEqual(before, current)) changedCells.push(current)
 		}
 		this.viewportSnapshots.set(snapshotKey, {
 			token: changeToken,
@@ -1669,7 +1669,7 @@ function collectInteractiveCellMapDiffRefs(
 ): void {
 	for (const [ref, cell] of left) {
 		const other = right.get(ref)
-		if (!other || JSON.stringify(other) !== JSON.stringify(cell)) refs.add(`${sheet}!${ref}`)
+		if (!other || !interactiveViewportCellsEqual(other, cell)) refs.add(`${sheet}!${ref}`)
 	}
 	for (const ref of right.keys()) {
 		if (!left.has(ref)) refs.add(`${sheet}!${ref}`)
@@ -1686,7 +1686,7 @@ function diffInteractiveViewportCells(
 	const removedRefs: string[] = []
 	for (const [ref, cell] of current) {
 		const before = previous.get(ref)
-		if (!before || JSON.stringify(before) !== JSON.stringify(cell)) changedCells.push(cell)
+		if (!before || !interactiveViewportCellsEqual(before, cell)) changedCells.push(cell)
 	}
 	for (const ref of previous.keys()) {
 		if (!current.has(ref)) removedRefs.push(ref)
@@ -1698,6 +1698,58 @@ function diffInteractiveViewportCells(
 		removedRefs,
 		byteLength: JSON.stringify({ changedCells, removedRefs }).length,
 	}
+}
+
+function interactiveViewportCellsEqual(
+	left: InteractiveViewportCell,
+	right: InteractiveViewportCell,
+): boolean {
+	return (
+		left.row === right.row &&
+		left.col === right.col &&
+		left.ref === right.ref &&
+		left.flatValue === right.flatValue &&
+		left.displayText === right.displayText &&
+		left.formula === right.formula &&
+		left.styleId === right.styleId &&
+		interactiveCellValuesEqual(left.value, right.value) &&
+		interactiveFormulaBindingsEqual(left.formulaBinding, right.formulaBinding) &&
+		left.flags.formula === right.flags.formula &&
+		left.flags.comment === right.flags.comment &&
+		left.flags.hyperlink === right.flags.hyperlink &&
+		left.flags.merged === right.flags.merged &&
+		left.flags.validation === right.flags.validation &&
+		left.flags.conditionalFormat === right.flags.conditionalFormat &&
+		left.flags.table === right.flags.table
+	)
+}
+
+function interactiveCellValuesEqual(left: CellValue, right: CellValue): boolean {
+	if (left === right) return true
+	if (left.kind !== right.kind) return false
+	switch (left.kind) {
+		case 'empty':
+			return true
+		case 'number':
+		case 'string':
+		case 'boolean':
+		case 'error':
+			return left.value === (right as typeof left).value
+		case 'date':
+			return left.serial === (right as typeof left).serial
+		case 'richText':
+		case 'array':
+			return JSON.stringify(left) === JSON.stringify(right)
+	}
+}
+
+function interactiveFormulaBindingsEqual(
+	left: InteractiveViewportCell['formulaBinding'],
+	right: InteractiveViewportCell['formulaBinding'],
+): boolean {
+	if (left === right) return true
+	if (!left || !right || left.kind !== right.kind) return false
+	return JSON.stringify(left) === JSON.stringify(right)
 }
 
 function interactiveTokenGeneration(token: string): number | null {

@@ -987,6 +987,42 @@ describe('agent workflow loss audit', () => {
 		)
 	})
 
+	test('plans flag structural edits that can shift legacy comment anchors', async () => {
+		const input = join(TEMP_DIR, 'legacy-comment-structural-edit.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		const wb = AscendWorkbook.create()
+		wb.getWorkbookModel().sheets[0]?.comments.set('B2', {
+			text: 'Review this',
+			author: 'Ada',
+		})
+		await wb.save(input)
+
+		const plan = await createAgentPlan(input, [
+			{ op: 'insertRows', sheet: 'Sheet1', at: 1, count: 1 },
+		])
+
+		expect(plan.writePolicy.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: 'legacy-comment-preservation-risk',
+				severity: 'warning',
+				suggestedAction: expect.stringContaining('inspectSheet(sheet).comments'),
+				details: expect.objectContaining({
+					structuralEditVerification: expect.stringContaining('legacyDrawing/VML metadata'),
+					relatedOperations: [
+						expect.objectContaining({
+							operationIndex: 0,
+							op: 'insertRows',
+							sheetName: 'Sheet1',
+							axis: 'row',
+							range: '2:2',
+							affectedLocations: ['Sheet1!B2'],
+						}),
+					],
+				}),
+			}),
+		)
+	})
+
 	test('plans group threaded comment identity and persons sidecar write-risk locations', async () => {
 		const input = join(TEMP_DIR, 'threaded-comments.xlsx')
 		mkdirSync(TEMP_DIR, { recursive: true })
@@ -1053,6 +1089,37 @@ describe('agent workflow loss audit', () => {
 						}),
 					],
 					verifyIssues: [],
+				}),
+			}),
+		)
+	})
+
+	test('plans flag structural edits that can shift threaded comment anchors', async () => {
+		const input = join(TEMP_DIR, 'threaded-comment-structural-edit.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		await Bun.write(input, makeThreadedCommentXlsx())
+
+		const plan = await createAgentPlan(input, [
+			{ op: 'deleteCols', sheet: 'Sheet1', at: 0, count: 1 },
+		])
+
+		expect(plan.writePolicy.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: 'threaded-comment-preservation-risk',
+				severity: 'warning',
+				suggestedAction: expect.stringContaining('inspectSheet(sheet).threadedComments'),
+				details: expect.objectContaining({
+					structuralEditVerification: expect.stringContaining('person metadata'),
+					relatedOperations: [
+						expect.objectContaining({
+							operationIndex: 0,
+							op: 'deleteCols',
+							sheetName: 'Sheet1',
+							axis: 'column',
+							range: 'A:A',
+							affectedLocations: ['Sheet1!A1'],
+						}),
+					],
 				}),
 			}),
 		)

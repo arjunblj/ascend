@@ -2664,6 +2664,32 @@ describe('checker', () => {
 		})
 	})
 
+	test('detects threaded comments that no longer reference valid worksheet cells', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.threadedComments.push({
+			ref: 'A0',
+			text: 'Stale delete',
+			id: '{thread-1}',
+			partPath: 'xl/threadedComments/threadedComment1.xml',
+		})
+
+		const result = check(wb)
+		const issues = result.issues.filter((i) => i.rule === 'threaded-comment-integrity')
+
+		expect(result.passed).toBe(false)
+		expect(issues).toHaveLength(1)
+		expect(issues[0]?.message).toContain('invalid cell reference "A0"')
+		expect(issues[0]?.refs).toEqual(['Sheet1!A0'])
+		expect(issues[0]?.details).toEqual({
+			kind: 'invalid-threaded-comment-ref',
+			partPath: 'xl/threadedComments/threadedComment1.xml',
+			commentIndex: 0,
+			ref: 'A0',
+			id: '{thread-1}',
+		})
+	})
+
 	test('detects threaded comments with unresolved person ids', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')
@@ -3225,6 +3251,34 @@ describe('checker', () => {
 			expectedColumn: 1,
 			actualRow: 4,
 			actualColumn: 3,
+			shapeId: '_x0000_s1025',
+		})
+	})
+
+	test('detects legacy comments that no longer reference valid worksheet cells', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.comments.set('A0', {
+			text: 'Stale delete',
+			author: 'Ada',
+			legacyDrawing: {
+				shapeId: '_x0000_s1025',
+				row: 0,
+				column: 0,
+				anchor: [0, 0, 0, 0, 1, 0, 2, 0],
+			},
+		})
+
+		const result = check(wb)
+		const issues = result.issues.filter((i) => i.rule === 'legacy-comment-drawing-integrity')
+
+		expect(result.passed).toBe(false)
+		expect(issues).toHaveLength(1)
+		expect(issues[0]?.message).toContain('invalid cell reference "A0"')
+		expect(issues[0]?.refs).toEqual(['Sheet1!A0'])
+		expect(issues[0]?.details).toEqual({
+			kind: 'legacy-comment-invalid-ref',
+			ref: 'A0',
 			shapeId: '_x0000_s1025',
 		})
 	})

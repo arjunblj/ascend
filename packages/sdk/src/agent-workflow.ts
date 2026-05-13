@@ -1571,7 +1571,10 @@ function buildWritePolicyReport(
 		commentIntegrityIssues.legacy.length > 0 ||
 		legacyCommentPackageGraphIssues.length > 0
 	) {
-		const relatedOperations = collectLegacyCommentRelatedOperations(operations)
+		const relatedOperations = collectLegacyCommentRelatedOperations(
+			legacyCommentLocations,
+			operations,
+		)
 		diagnostics.push({
 			code: 'legacy-comment-preservation-risk',
 			severity: 'warning',
@@ -1596,6 +1599,8 @@ function buildWritePolicyReport(
 				packageGraphIssues: legacyCommentPackageGraphIssues,
 				verifyIssues: commentIntegrityIssues.legacy,
 				safeTextEdit: 'setComment',
+				structuralEditVerification:
+					'For row or column inserts/deletes near comments, inspectSheet(sheet).comments legacyDrawing/VML metadata before and after the write.',
 			},
 		})
 	}
@@ -1619,7 +1624,10 @@ function buildWritePolicyReport(
 		commentIntegrityIssues.threaded.length > 0 ||
 		threadedCommentPackageGraphIssues.length > 0
 	) {
-		const relatedOperations = collectThreadedCommentRelatedOperations(operations)
+		const relatedOperations = collectThreadedCommentRelatedOperations(
+			threadedCommentLocations,
+			operations,
+		)
 		diagnostics.push({
 			code: 'threaded-comment-preservation-risk',
 			severity: 'warning',
@@ -1644,6 +1652,8 @@ function buildWritePolicyReport(
 				packageGraphIssues: threadedCommentPackageGraphIssues,
 				verifyIssues: commentIntegrityIssues.threaded,
 				safeTextEdit: 'setThreadedComment',
+				structuralEditVerification:
+					'For row or column inserts/deletes near threaded comments, inspectSheet(sheet).threadedComments ids/person metadata before and after the write.',
 			},
 		})
 	}
@@ -3399,6 +3409,11 @@ interface CommentRelatedOperation {
 	readonly target?: string
 	readonly targetSheet?: string
 	readonly mode?: string
+	readonly at?: number
+	readonly count?: number
+	readonly axis?: 'row' | 'column'
+	readonly range?: string
+	readonly affectedLocations?: readonly string[]
 	readonly partPath?: string
 	readonly threadedCommentId?: string
 	readonly commentIndex?: number
@@ -3819,6 +3834,7 @@ function packageGraphIssuesForParts(
 }
 
 function collectLegacyCommentRelatedOperations(
+	locations: readonly LegacyCommentLocation[],
 	operations: readonly Operation[],
 ): CommentRelatedOperation[] {
 	const related: CommentRelatedOperation[] = []
@@ -3842,18 +3858,22 @@ function collectLegacyCommentRelatedOperations(
 				...(op.targetSheet ? { targetSheet: op.targetSheet } : {}),
 				...(op.mode ? { mode: op.mode } : {}),
 			})
+			continue
 		}
+		const topology = collectCommentTopologyRelatedOperation(locations, op, operationIndex)
+		if (topology) related.push(topology)
 	}
 	return related
 }
 
 function collectThreadedCommentRelatedOperations(
+	locations: readonly ThreadedCommentLocation[],
 	operations: readonly Operation[],
 ): CommentRelatedOperation[] {
-	return operations.flatMap((op, operationIndex) => {
-		if (op.op !== 'setThreadedComment') return []
-		return [
-			{
+	const related: CommentRelatedOperation[] = []
+	for (const [operationIndex, op] of operations.entries()) {
+		if (op.op === 'setThreadedComment') {
+			related.push({
 				operationIndex,
 				op: op.op,
 				sheetName: op.sheet,
@@ -3861,13 +3881,57 @@ function collectThreadedCommentRelatedOperations(
 				...(op.partPath ? { partPath: op.partPath } : {}),
 				...(op.threadedCommentId ? { threadedCommentId: op.threadedCommentId } : {}),
 				...(op.commentIndex !== undefined ? { commentIndex: op.commentIndex } : {}),
-			},
-		]
-	})
+			})
+			continue
+		}
+		const topology = collectCommentTopologyRelatedOperation(locations, op, operationIndex)
+		if (topology) related.push(topology)
+	}
+	return related
 }
 
 function copiesComments(mode: string | undefined): boolean {
 	return mode === undefined || mode === 'all' || mode === 'comments'
+}
+
+function collectCommentTopologyRelatedOperation(
+	locations: readonly (LegacyCommentLocation | ThreadedCommentLocation)[],
+	operation: Operation,
+	operationIndex: number,
+): CommentRelatedOperation | undefined {
+	if (!isRowColumnTopologyOperation(operation)) return undefined
+	const affectedLocations = locations
+		.filter(
+			(location) =>
+				location.sheetName === operation.sheet &&
+				commentLocationAffectedByTopologyOperation(location, operation),
+		)
+		.map((location) => location.location)
+	if (affectedLocations.length === 0) return undefined
+	return {
+		operationIndex,
+		op: operation.op,
+		sheetName: operation.sheet,
+		at: operation.at,
+		count: operation.count,
+		axis: operation.op === 'insertRows' || operation.op === 'deleteRows' ? 'row' : 'column',
+		range: topologyOperationRange(operation),
+		affectedLocations: uniqueStrings(affectedLocations),
+	}
+}
+
+function commentLocationAffectedByTopologyOperation(
+	location: LegacyCommentLocation | ThreadedCommentLocation,
+	operation: Extract<Operation, { op: 'insertRows' | 'deleteRows' | 'insertCols' | 'deleteCols' }>,
+): boolean {
+	let range: RangeRef
+	try {
+		range = parseRange(location.ref)
+	} catch {
+		return true
+	}
+	const axis = operation.op === 'insertRows' || operation.op === 'deleteRows' ? 'row' : 'col'
+	return topologyOperationAffectsRange(operation, axis, range)
 }
 
 interface X14ConditionalFormatExtensionPayload {

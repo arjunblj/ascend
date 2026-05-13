@@ -108,6 +108,55 @@ describe('XLSX package graph fidelity audits', () => {
 		)
 	})
 
+	test('reports orphan comment relationship sidecars by their missing comment source parts', () => {
+		const graph = inspectXlsxPackageGraph(
+			makeXlsx({
+				'[Content_Types].xml': contentTypesXml(`
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/drawings/vmlDrawing1.vml" ContentType="application/vnd.openxmlformats-officedocument.vmlDrawing"/>
+  <Override PartName="/xl/metadata.xml" ContentType="application/xml"/>
+`),
+				'_rels/.rels': relationshipsXml(`
+  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+`),
+				'xl/workbook.xml': '<workbook/>',
+				'xl/drawings/vmlDrawing1.vml': '<xml/>',
+				'xl/metadata.xml': '<metadata/>',
+				'xl/_rels/comments1.xml.rels': relationshipsXml(`
+  <Relationship Id="rIdCommentVml" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/vmlDrawing" Target="drawings/vmlDrawing1.vml"/>
+`),
+				'xl/threadedComments/_rels/threadedComment1.xml.rels': relationshipsXml(`
+  <Relationship Id="rIdThreadedMeta" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="../metadata.xml"/>
+`),
+			}),
+		)
+
+		const issues = auditXlsxPackageGraphReadIntegrity(graph)
+		expect(issues).toContainEqual(
+			expect.objectContaining({
+				code: 'package_relationship_source',
+				severity: 'error',
+				sourcePartPath: 'xl/comments1.xml',
+				relationshipPartPath: 'xl/_rels/comments1.xml.rels',
+				relationshipId: 'rIdCommentVml',
+				featureFamily: 'preservedVml',
+				suggestedAction: expect.stringContaining('orphan relationship sidecar'),
+			}),
+		)
+		expect(issues).toContainEqual(
+			expect.objectContaining({
+				code: 'package_relationship_source',
+				severity: 'error',
+				sourcePartPath: 'xl/threadedComments/threadedComment1.xml',
+				relationshipPartPath: 'xl/threadedComments/_rels/threadedComment1.xml.rels',
+				relationshipId: 'rIdThreadedMeta',
+				suggestedAction: expect.stringContaining('orphan relationship sidecar'),
+			}),
+		)
+	})
+
 	test('accepts empty relationship sidecars whose source part exists', () => {
 		const graph = inspectXlsxPackageGraph(
 			makeXlsx({

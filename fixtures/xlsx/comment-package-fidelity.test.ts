@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { strToU8, unzipSync, zipSync } from 'fflate'
 import type { StyleId } from '../../packages/core/src/index.ts'
+import { applyOperation } from '../../packages/engine/src/index.ts'
 import {
 	auditXlsxPackageGraphBytePreservation,
 	auditXlsxPackageGraphReadIntegrity,
@@ -164,6 +165,194 @@ describe('comment package graph fidelity', () => {
 			author: 'LO',
 			legacyDrawing: original.legacyDrawing,
 		})
+	})
+
+	test('row and column structural edits rewrite comment sidecars coherently', () => {
+		const legacyFixture = legacyCommentFixtures[1]
+		const legacySourceBytes = readFileSync(legacyFixture.path)
+		const legacyBeforeGraph = inspectXlsxPackageGraph(legacySourceBytes)
+		expectNoPackageGraphIssues(auditXlsxPackageGraphReadIntegrity(legacyBeforeGraph))
+		const legacyBeforeCommentParts = featurePartIdentities(legacyBeforeGraph, 'preservedComments')
+		const legacyBeforeVmlParts = featurePartIdentities(legacyBeforeGraph, 'preservedVml')
+		const legacyBeforeRelationships = commentRelationshipIdentities(legacyBeforeGraph)
+		const legacyBeforeOverrides = featureContentTypeOverrides(legacyBeforeGraph, [
+			'preservedComments',
+			'preservedVml',
+		])
+		const legacyCommentPartPath = singleFeaturePartPath(legacyBeforeGraph, 'preservedComments')
+		const legacyVmlPartPath = singleFeaturePartPath(legacyBeforeGraph, 'preservedVml')
+		const legacySourceEntries = unzipSync(legacySourceBytes)
+
+		const legacyOpened = readXlsx(legacySourceBytes)
+		expectOk(legacyOpened)
+		expectOk(
+			applyOperation(legacyOpened.value.workbook, {
+				op: 'insertRows',
+				sheet: legacyFixture.sheetName,
+				at: 0,
+				count: 1,
+			}),
+		)
+		expectOk(
+			applyOperation(legacyOpened.value.workbook, {
+				op: 'insertCols',
+				sheet: legacyFixture.sheetName,
+				at: 1,
+				count: 1,
+			}),
+		)
+		const legacySheet = legacyOpened.value.workbook.getSheet(legacyFixture.sheetName)
+		expect(legacySheet).toBeDefined()
+		if (!legacySheet) return
+		expect([...legacySheet.comments.keys()]).toEqual(['D10'])
+		for (const [ref, comment] of legacySheet.comments) {
+			const drawing = comment.legacyDrawing
+			expect(drawing).toBeDefined()
+			if (!drawing) return
+			expect(`${String.fromCharCode(65 + drawing.column)}${drawing.row + 1}`).toBe(ref)
+		}
+
+		const legacyWritten = writeXlsx(legacyOpened.value.workbook, legacyOpened.value.capsules, {
+			dirtySheetNames: [legacyFixture.sheetName],
+		})
+		expectOk(legacyWritten)
+		const legacyWrittenEntries = unzipSync(legacyWritten.value)
+		expect(legacyWrittenEntries[legacyCommentPartPath]).not.toEqual(
+			legacySourceEntries[legacyCommentPartPath],
+		)
+		expect(legacyWrittenEntries[legacyVmlPartPath]).not.toEqual(
+			legacySourceEntries[legacyVmlPartPath],
+		)
+		const legacyCommentXml = decodeZipPart(legacyWritten.value, legacyCommentPartPath)
+		expect(legacyCommentXml).toContain('ref="D10"')
+		expect(legacyCommentXml).not.toContain('ref="C9"')
+		const legacyVmlXml = decodeZipPart(legacyWritten.value, legacyVmlPartPath)
+		expect(legacyVmlXml).toContain('<x:Row>9</x:Row><x:Column>3</x:Column>')
+
+		const legacyAfterGraph = inspectXlsxPackageGraph(legacyWritten.value)
+		expectNoPackageGraphIssues(auditXlsxPackageGraphReadIntegrity(legacyAfterGraph))
+		expectNoPackageGraphIssues(
+			auditXlsxPackageGraphSafeEditIntegrity(legacyBeforeGraph, legacyAfterGraph),
+		)
+		expect(featurePartIdentities(legacyAfterGraph, 'preservedComments')).toEqual(
+			legacyBeforeCommentParts,
+		)
+		expect(featurePartIdentities(legacyAfterGraph, 'preservedVml')).toEqual(legacyBeforeVmlParts)
+		expect(commentRelationshipIdentities(legacyAfterGraph)).toEqual(legacyBeforeRelationships)
+		expect(
+			featureContentTypeOverrides(legacyAfterGraph, ['preservedComments', 'preservedVml']),
+		).toEqual(legacyBeforeOverrides)
+
+		const legacyReopened = readXlsx(legacyWritten.value)
+		expectOk(legacyReopened)
+		const legacyReopenedSheet = legacyReopened.value.workbook.getSheet(legacyFixture.sheetName)
+		expect([...(legacyReopenedSheet?.comments.keys() ?? [])]).toEqual(['D10'])
+		expect(legacyReopenedSheet?.comments.get('D10')?.legacyDrawing).toMatchObject({
+			row: 9,
+			column: 3,
+		})
+
+		const threadedSourceBytes = threadedCommentWorkbook()
+		const threadedSourceEntries = unzipSync(threadedSourceBytes)
+		const threadedBeforeGraph = inspectXlsxPackageGraph(threadedSourceBytes)
+		expectNoPackageGraphIssues(auditXlsxPackageGraphReadIntegrity(threadedBeforeGraph))
+		const threadedBeforeParts = featurePartIdentities(
+			threadedBeforeGraph,
+			'preservedThreadedComments',
+		)
+		const threadedBeforeRelationships = commentRelationshipIdentities(threadedBeforeGraph)
+		const threadedBeforeOverrides = featureContentTypeOverrides(threadedBeforeGraph, [
+			'preservedThreadedComments',
+		])
+
+		const threadedOpened = readXlsx(threadedSourceBytes)
+		expectOk(threadedOpened)
+		expectOk(
+			applyOperation(threadedOpened.value.workbook, {
+				op: 'insertRows',
+				sheet: 'Sheet1',
+				at: 0,
+				count: 1,
+			}),
+		)
+		expectOk(
+			applyOperation(threadedOpened.value.workbook, {
+				op: 'insertCols',
+				sheet: 'Sheet1',
+				at: 0,
+				count: 1,
+			}),
+		)
+		const threadedSheet = threadedOpened.value.workbook.getSheet('Sheet1')
+		expect(threadedSheet?.threadedComments.map((comment) => comment.ref)).toEqual(['B2', 'B2'])
+
+		const threadedWritten = writeXlsx(
+			threadedOpened.value.workbook,
+			threadedOpened.value.capsules,
+			{ dirtySheetNames: ['Sheet1'] },
+		)
+		expectOk(threadedWritten)
+		const threadedWrittenEntries = unzipSync(threadedWritten.value)
+		expect(threadedWrittenEntries['xl/threadedComments/threadedComment1.xml']).not.toEqual(
+			threadedSourceEntries['xl/threadedComments/threadedComment1.xml'],
+		)
+		expect(threadedWrittenEntries['xl/persons/person.xml']).toEqual(
+			threadedSourceEntries['xl/persons/person.xml'],
+		)
+		const threadedCommentXml = decodeZipPart(
+			threadedWritten.value,
+			'xl/threadedComments/threadedComment1.xml',
+		)
+		expect(threadedCommentXml).toContain('ref="B2"')
+		expect(threadedCommentXml).not.toContain('ref="A1"')
+
+		const threadedAfterGraph = inspectXlsxPackageGraph(threadedWritten.value)
+		expectNoPackageGraphIssues(auditXlsxPackageGraphReadIntegrity(threadedAfterGraph))
+		expectNoPackageGraphIssues(
+			auditXlsxPackageGraphSafeEditIntegrity(threadedBeforeGraph, threadedAfterGraph),
+		)
+		expect(featurePartIdentities(threadedAfterGraph, 'preservedThreadedComments')).toEqual(
+			threadedBeforeParts,
+		)
+		expect(commentRelationshipIdentities(threadedAfterGraph)).toEqual(threadedBeforeRelationships)
+		expect(featureContentTypeOverrides(threadedAfterGraph, ['preservedThreadedComments'])).toEqual(
+			threadedBeforeOverrides,
+		)
+
+		const threadedReopened = readXlsx(threadedWritten.value)
+		expectOk(threadedReopened)
+		expect(
+			threadedReopened.value.workbook
+				.getSheet('Sheet1')
+				?.threadedComments.map(({ ref, text, id, parentId, personId, author, done }) => ({
+					ref,
+					text,
+					id,
+					parentId,
+					personId,
+					author,
+					done,
+				})),
+		).toEqual([
+			{
+				ref: 'B2',
+				text: 'Please review',
+				id: 'tc1',
+				parentId: undefined,
+				personId: '0',
+				author: 'Ada Lovelace',
+				done: undefined,
+			},
+			{
+				ref: 'B2',
+				text: 'Reviewed',
+				id: 'tc2',
+				parentId: 'tc1',
+				personId: '1',
+				author: 'Grace Hopper',
+				done: true,
+			},
+		])
 	})
 
 	test('synthetic threaded comments preserve thread and person sidecars after safe dirty edit', () => {

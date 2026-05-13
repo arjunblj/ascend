@@ -3478,6 +3478,26 @@ function isWorksheetPartPath(partPath: string): boolean {
 	return /(^|\/)worksheets\/sheet\d+\.xml$/i.test(partPath)
 }
 
+const MAX_WORKSHEET_ROW_COUNT = 1_048_576
+const MAX_WORKSHEET_COLUMN_COUNT = 16_384
+
+function parseWorksheetCellRef(ref: string): { readonly row: number; readonly col: number } | null {
+	try {
+		const cellRef = parseA1(ref)
+		if (
+			cellRef.row < 0 ||
+			cellRef.col < 0 ||
+			cellRef.row >= MAX_WORKSHEET_ROW_COUNT ||
+			cellRef.col >= MAX_WORKSHEET_COLUMN_COUNT
+		) {
+			return null
+		}
+		return cellRef
+	} catch {
+		return null
+	}
+}
+
 function isThreadedCommentPart(part: VerifyPackageGraphPart): boolean {
 	return (
 		part.featureFamily === 'preservedThreadedComments' && /\/threadedComments\//i.test(part.path)
@@ -3540,9 +3560,7 @@ function checkThreadedCommentIntegrity(
 					},
 				})
 			} else {
-				try {
-					parseA1(comment.ref)
-				} catch {
+				if (!parseWorksheetCellRef(comment.ref)) {
 					issues.push({
 						rule: 'threaded-comment-integrity',
 						severity: 'error',
@@ -4151,12 +4169,26 @@ function checkLegacyCommentDrawingIntegrity(
 		const shapeIds = new Map<string, string>()
 		for (const [ref, comment] of sheet.comments) {
 			workbookCommentCount++
+			const sheetRef = `${sheet.name}!${ref}`
+			const cellRef = parseWorksheetCellRef(ref)
+			if (!cellRef) {
+				issues.push({
+					rule: 'legacy-comment-drawing-integrity',
+					severity: 'warning',
+					message: `Legacy comment has invalid cell reference "${ref}"`,
+					refs: [sheetRef],
+					suggestedFix: 'Repair the comment reference before preserving or editing its VML layout.',
+					details: {
+						kind: 'legacy-comment-invalid-ref',
+						ref,
+						...(comment.legacyDrawing?.shapeId ? { shapeId: comment.legacyDrawing.shapeId } : {}),
+					},
+				})
+			}
 			const drawing = comment.legacyDrawing
 			if (!drawing) continue
 			workbookLegacyDrawingCount++
-			const sheetRef = `${sheet.name}!${ref}`
-			try {
-				const cellRef = parseA1(ref)
+			if (cellRef) {
 				if (
 					drawing.row === undefined ||
 					drawing.column === undefined ||
@@ -4181,19 +4213,6 @@ function checkLegacyCommentDrawingIntegrity(
 						},
 					})
 				}
-			} catch {
-				issues.push({
-					rule: 'legacy-comment-drawing-integrity',
-					severity: 'warning',
-					message: `Legacy comment has invalid cell reference "${ref}"`,
-					refs: [sheetRef],
-					suggestedFix: 'Repair the comment reference before preserving or editing its VML layout.',
-					details: {
-						kind: 'legacy-comment-invalid-ref',
-						ref,
-						...(drawing.shapeId ? { shapeId: drawing.shapeId } : {}),
-					},
-				})
 			}
 			if (drawing.shapeId) {
 				if (!/^_x0000_s\d+$/i.test(drawing.shapeId)) {

@@ -3171,6 +3171,96 @@ describe('applyOperation', () => {
 		expect(s.threadedComments).toEqual([{ ref: 'B2', text: 'keep thread', id: 'tc2' }])
 	})
 
+	test('deleteRows removes deleted comments and retargets surviving VML metadata', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.comments.set('B2', {
+			text: 'delete me',
+			legacyDrawing: {
+				shapeId: '_x0000_s1027',
+				row: 1,
+				column: 1,
+				anchor: [1, 15, 1, 2, 3, 15, 4, 16],
+			},
+		})
+		s.comments.set('C4', {
+			text: 'keep me',
+			legacyDrawing: {
+				shapeId: '_x0000_s1028',
+				row: 3,
+				column: 2,
+				anchor: [2, 15, 3, 2, 4, 15, 6, 16],
+			},
+		})
+		s.threadedComments.push(
+			{ ref: 'D2', text: 'delete thread', id: 'tc-delete' },
+			{ ref: 'E4', text: 'keep thread', id: 'tc-keep' },
+		)
+
+		expectOk(applyOperation(wb, { op: 'deleteRows', sheet: 'Sheet1', at: 1, count: 2 }))
+
+		expect([...s.comments.entries()]).toEqual([
+			[
+				'C2',
+				{
+					text: 'keep me',
+					legacyDrawing: {
+						shapeId: '_x0000_s1028',
+						row: 1,
+						column: 2,
+						anchor: [2, 15, 1, 2, 4, 15, 4, 16],
+					},
+				},
+			],
+		])
+		expect(s.threadedComments).toEqual([{ ref: 'E2', text: 'keep thread', id: 'tc-keep' }])
+	})
+
+	test('deleteCols removes deleted comments and retargets surviving VML metadata', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.comments.set('B2', {
+			text: 'delete me',
+			legacyDrawing: {
+				shapeId: '_x0000_s1029',
+				row: 1,
+				column: 1,
+				anchor: [1, 15, 1, 2, 3, 15, 4, 16],
+			},
+		})
+		s.comments.set('E3', {
+			text: 'keep me',
+			legacyDrawing: {
+				shapeId: '_x0000_s1030',
+				row: 2,
+				column: 4,
+				anchor: [4, 15, 2, 2, 6, 15, 5, 16],
+			},
+		})
+		s.threadedComments.push(
+			{ ref: 'C4', text: 'delete thread', id: 'tc-delete' },
+			{ ref: 'F4', text: 'keep thread', id: 'tc-keep' },
+		)
+
+		expectOk(applyOperation(wb, { op: 'deleteCols', sheet: 'Sheet1', at: 1, count: 2 }))
+
+		expect([...s.comments.entries()]).toEqual([
+			[
+				'C3',
+				{
+					text: 'keep me',
+					legacyDrawing: {
+						shapeId: '_x0000_s1030',
+						row: 2,
+						column: 2,
+						anchor: [2, 15, 2, 2, 4, 15, 5, 16],
+					},
+				},
+			],
+		])
+		expect(s.threadedComments).toEqual([{ ref: 'D4', text: 'keep thread', id: 'tc-keep' }])
+	})
+
 	test('insertCols shifts tables, filters, comments, and hyperlinks', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')

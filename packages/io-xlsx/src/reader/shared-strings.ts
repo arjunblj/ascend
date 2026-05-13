@@ -19,6 +19,8 @@ const preserveTextParser = new XMLParser({
 	processEntities: true,
 })
 
+const BYTE_XML_DECODER = new TextDecoder('utf-8')
+
 export interface SharedStringResolver {
 	readonly count: number
 	get(index: number): CellValue | undefined
@@ -36,6 +38,17 @@ export function parseSharedStrings(
 	xml = normalizeMainSpreadsheetNamespacePrefix(xml)
 	if (options.lazy) return createLazySharedStrings(xml, options.normalize, options.normalizeString)
 	return createEagerSharedStrings(xml, options.normalize, options.normalizeString)
+}
+
+export function parseSharedStringsBytes(
+	bytes: Uint8Array,
+	options: {
+		readonly normalize?: (value: CellValue) => CellValue
+		readonly normalizeString?: (value: string) => CellValue
+		readonly lazy?: boolean
+	} = {},
+): SharedStringResolver {
+	return parseSharedStrings(BYTE_XML_DECODER.decode(bytes), options)
 }
 
 export function emptySharedStrings(): SharedStringResolver {

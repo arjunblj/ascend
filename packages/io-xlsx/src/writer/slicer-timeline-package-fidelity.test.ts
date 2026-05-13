@@ -280,7 +280,137 @@ describe('slicer and timeline package fidelity', () => {
 		expect(reopened.value.workbook.slicers).toEqual(opened.value.workbook.slicers)
 		expect(reopened.value.workbook.timelines).toEqual(opened.value.workbook.timelines)
 	})
+
+	test('keeps workbook slicer and timeline cache refs bound to pivot cache and UI parts', () => {
+		const sourceBytes = analyticsPackageWorkbook()
+		const beforeGraph = inspectXlsxPackageGraph(sourceBytes)
+		expect(auditXlsxPackageGraphReadIntegrity(beforeGraph)).toEqual([])
+
+		const opened = readXlsx(sourceBytes)
+		expectOk(opened)
+		expect(analyticsLinkBindings(opened.value.workbook)).toEqual({
+			pivotCacheIds: [42],
+			pivotTableNames: ['PivotTableMain'],
+			slicer: {
+				cacheName: 'Slicer_Region',
+				cachePivotCacheId: 42,
+				cachePivotTableNames: ['PivotTableMain'],
+				uiCacheName: 'Slicer_Region',
+				uiPartPath: 'xl/slicers/slicer7.xml',
+			},
+			timeline: {
+				cacheName: 'Timeline_Order_Date',
+				cachePivotCacheId: 42,
+				statePivotCacheId: 42,
+				cachePivotTableNames: ['PivotTableMain'],
+				uiCacheName: 'Timeline_Order_Date',
+				uiPartPath: 'xl/timelines/timeline4.xml',
+			},
+		})
+
+		const dataSheet = opened.value.workbook.sheets.find((sheet) => sheet.name === 'Data')
+		if (!dataSheet) throw new Error('Data sheet was not parsed')
+		dataSheet.cells.set(4, 0, {
+			value: stringValue('dirty edit with analytics cache refs'),
+			formula: null,
+			styleId: S0,
+		})
+
+		const written = writeXlsx(opened.value.workbook, opened.value.capsules, {
+			dirtySheetNames: ['Data'],
+			workbookMetaDirty: true,
+		})
+		expectOk(written)
+
+		const afterGraph = inspectXlsxPackageGraph(written.value)
+		expect(auditXlsxPackageGraphSafeEditIntegrity(beforeGraph, afterGraph)).toEqual([])
+		expect(auditXlsxPackageGraphBytePreservation(beforeGraph, sourceBytes, written.value)).toEqual(
+			[],
+		)
+		expect(analyticsRelationshipIdentities(afterGraph)).toEqual(
+			analyticsRelationshipIdentities(beforeGraph),
+		)
+
+		const afterZip = unzipSync(written.value)
+		const workbookXml = decode(afterZip['xl/workbook.xml'])
+		const workbookRelsXml = decode(afterZip['xl/_rels/workbook.xml.rels'])
+		expect(workbookXml).toContain('<x14:slicerCache r:id="rIdSlicerCacheOdd"/>')
+		expect(workbookXml).toContain('<x15:timelineCacheRef r:id="rIdTimelineCacheAbsolute"/>')
+		expect(workbookRelsXml).toContain(
+			'Id="rIdSlicerCacheOdd" Type="http://schemas.microsoft.com/office/2007/relationships/slicerCache" Target="slicerCaches/slicerCache7.xml"',
+		)
+		expect(workbookRelsXml).toContain(
+			'Id="rIdTimelineCacheAbsolute" Type="http://schemas.microsoft.com/office/2011/relationships/timelineCache" Target="/xl/timelineCaches/timelineCache4.xml"',
+		)
+		expect(decode(afterZip['xl/slicerCaches/slicerCache7.xml'])).toContain(
+			'<data><tabular pivotCacheId="42">',
+		)
+		expect(decode(afterZip['xl/slicerCaches/_rels/slicerCache7.xml.rels'])).toContain(
+			'Id="rIdSlicerUi" Type="http://schemas.microsoft.com/office/2007/relationships/slicer" Target="../slicers/slicer7.xml"',
+		)
+		expect(decode(afterZip['xl/timelineCaches/timelineCache4.xml'])).toContain(
+			'<data><tabular pivotCacheId="42"/></data>',
+		)
+		expect(decode(afterZip['xl/timelineCaches/timelineCache4.xml'])).toContain('pivotCacheId="42"')
+		expect(decode(afterZip['xl/timelineCaches/_rels/timelineCache4.xml.rels'])).toContain(
+			'Id="rIdTimelineUiFromCache" Type="http://schemas.microsoft.com/office/2011/relationships/timeline" Target="/xl/timelines/timeline4.xml"',
+		)
+
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+		expect(analyticsLinkBindings(reopened.value.workbook)).toEqual(
+			analyticsLinkBindings(opened.value.workbook),
+		)
+	})
 })
+
+function analyticsLinkBindings(workbook: {
+	readonly pivotCaches: readonly { readonly cacheId?: number }[]
+	readonly pivotTables: readonly { readonly name?: string }[]
+	readonly slicerCaches: readonly {
+		readonly name?: string
+		readonly pivotCacheId?: number
+		readonly pivotTableNames?: readonly string[]
+	}[]
+	readonly slicers: readonly {
+		readonly partPath: string
+		readonly cacheName?: string
+	}[]
+	readonly timelineCaches: readonly {
+		readonly name?: string
+		readonly pivotCacheId?: number
+		readonly pivotTableNames?: readonly string[]
+		readonly state?: { readonly pivotCacheId?: number }
+	}[]
+	readonly timelines: readonly {
+		readonly partPath: string
+		readonly cacheName?: string
+	}[]
+}): Record<string, unknown> {
+	const slicerCache = workbook.slicerCaches[0]
+	const slicer = workbook.slicers.find((entry) => entry.cacheName === slicerCache?.name)
+	const timelineCache = workbook.timelineCaches[0]
+	const timeline = workbook.timelines.find((entry) => entry.cacheName === timelineCache?.name)
+	return {
+		pivotCacheIds: workbook.pivotCaches.map((cache) => cache.cacheId),
+		pivotTableNames: workbook.pivotTables.map((pivot) => pivot.name),
+		slicer: {
+			cacheName: slicerCache?.name,
+			cachePivotCacheId: slicerCache?.pivotCacheId,
+			cachePivotTableNames: slicerCache?.pivotTableNames,
+			uiCacheName: slicer?.cacheName,
+			uiPartPath: slicer?.partPath,
+		},
+		timeline: {
+			cacheName: timelineCache?.name,
+			cachePivotCacheId: timelineCache?.pivotCacheId,
+			statePivotCacheId: timelineCache?.state?.pivotCacheId,
+			cachePivotTableNames: timelineCache?.pivotTableNames,
+			uiCacheName: timeline?.cacheName,
+			uiPartPath: timeline?.partPath,
+		},
+	}
+}
 
 function analyticsPartIdentities(graph: XlsxPackageGraph): readonly Record<string, unknown>[] {
 	return graph.parts

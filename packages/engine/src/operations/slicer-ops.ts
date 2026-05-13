@@ -51,7 +51,26 @@ export function handleSetSlicerCacheItem(
 
 	const cache = matches[0]
 	if (!cache) return err(ascendError('VALIDATION_ERROR', 'No matching slicer cache found'))
-	const items = upsertSlicerCacheItem(cache.items ?? [], op)
+	const itemMatches = (cache.items ?? []).filter((item) => item.index === op.item)
+	if (itemMatches.length === 0) {
+		return err(
+			ascendError('VALIDATION_ERROR', `Slicer cache item ${op.item} was not found`, {
+				suggestedFix: 'Use an item index from the selected slicer cache inventory.',
+			}),
+		)
+	}
+	if (itemMatches.length > 1) {
+		return err(
+			ascendError(
+				'VALIDATION_ERROR',
+				`Slicer cache item ${op.item} matched ${itemMatches.length} items`,
+				{
+					suggestedFix: 'Repair duplicate slicer cache item indexes before editing item state.',
+				},
+			),
+		)
+	}
+	const items = updateSlicerCacheItem(cache.items ?? [], op)
 	Object.assign(cache, { items })
 
 	const impact = markLinkedPivotCachesStale(workbook, cache.pivotTableNames, cache.pivotCacheId)
@@ -98,18 +117,17 @@ function resolveSlicerCacheMatches(
 	})
 }
 
-function upsertSlicerCacheItem(
+function updateSlicerCacheItem(
 	items: readonly SlicerCacheItemInfo[],
 	op: SetSlicerCacheItemOp,
 ): SlicerCacheItemInfo[] {
-	const next = items.map((item) => ({ ...item }))
-	const existing = next.find((item) => item.index === op.item)
-	const target = existing ?? { index: op.item }
-	applyNullableBool(target, 'selected', op.selected)
-	applyNullableBool(target, 'noData', op.noData)
-	if (!existing) next.push(target)
-	next.sort((left, right) => left.index - right.index)
-	return next
+	return items.map((item) => {
+		const next = { ...item }
+		if (item.index !== op.item) return next
+		applyNullableBool(next, 'selected', op.selected)
+		applyNullableBool(next, 'noData', op.noData)
+		return next
+	})
 }
 
 function applyNullableBool(

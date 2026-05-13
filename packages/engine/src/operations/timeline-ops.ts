@@ -10,16 +10,16 @@ export function handleSetTimelineRange(
 	workbook: Workbook,
 	op: SetTimelineRangeOp,
 ): Result<PatchResult> {
-	if (!op.timelineCache && !op.partPath) {
+	if (op.timelineCache === undefined && op.partPath === undefined) {
 		return err(
 			ascendError('VALIDATION_ERROR', 'setTimelineRange requires timelineCache or partPath', {
 				suggestedFix: 'Use inspect --detail timelines to find timeline cache names and part paths.',
 			}),
 		)
 	}
-	const startTime = Date.parse(op.startDate)
-	const endTime = Date.parse(op.endDate)
-	if (!isDateTimeLike(startTime) || !isDateTimeLike(endTime)) {
+	const startTime = parseTimelineDateTime(op.startDate)
+	const endTime = parseTimelineDateTime(op.endDate)
+	if (startTime === null || endTime === null) {
 		return err(
 			ascendError('VALIDATION_ERROR', 'setTimelineRange requires ISO-like startDate and endDate', {
 				suggestedFix: 'Use dateTime strings such as 2024-01-01T00:00:00.',
@@ -103,6 +103,27 @@ function resolveTimelineCacheMatches(
 	})
 }
 
-function isDateTimeLike(value: number): boolean {
-	return Number.isFinite(value)
+const ISO_LIKE_DATE_TIME_RE =
+	/^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2})(?::(\d{2})(\.\d{1,9})?)?(?:Z|[+-]\d{2}:\d{2})?)?$/
+
+function parseTimelineDateTime(value: string): number | null {
+	const match = ISO_LIKE_DATE_TIME_RE.exec(value)
+	if (!match) return null
+	const year = Number.parseInt(match[1] ?? '', 10)
+	const month = Number.parseInt(match[2] ?? '', 10)
+	const day = Number.parseInt(match[3] ?? '', 10)
+	const hour = match[4] === undefined ? 0 : Number.parseInt(match[4], 10)
+	const minute = match[5] === undefined ? 0 : Number.parseInt(match[5], 10)
+	const second = match[6] === undefined ? 0 : Number.parseInt(match[6], 10)
+	if (hour > 23 || minute > 59 || second > 59) return null
+	const calendarDate = new Date(Date.UTC(year, month - 1, day))
+	if (
+		calendarDate.getUTCFullYear() !== year ||
+		calendarDate.getUTCMonth() !== month - 1 ||
+		calendarDate.getUTCDate() !== day
+	) {
+		return null
+	}
+	const parsed = Date.parse(value)
+	return Number.isFinite(parsed) ? parsed : null
 }

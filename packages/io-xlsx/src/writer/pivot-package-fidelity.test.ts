@@ -240,7 +240,116 @@ describe('pivot package fidelity', () => {
 			})),
 		)
 	})
+
+	test('keeps workbook pivot cache ids bound to the intended cache packages', () => {
+		const sourceBytes = pivotPackageWorkbook({ secondPivotTableCacheId: 31 })
+		const beforeGraph = inspectXlsxPackageGraph(sourceBytes)
+		expect(auditXlsxPackageGraphReadIntegrity(beforeGraph)).toEqual([])
+
+		const opened = readXlsx(sourceBytes, { pivotCacheRecordMaterializeLimit: 'all' })
+		expectOk(opened)
+		expect(pivotTableCacheBindings(opened.value.workbook)).toEqual([
+			{
+				name: 'PivotTableA',
+				cacheId: 7,
+				cachePartPath: 'xl/pivotCache/pivotCacheDefinition5.xml',
+				recordsPartPath: 'xl/pivotCache/pivotCacheRecords5.xml',
+				parsedCount: 2,
+			},
+			{
+				name: 'PivotTableB',
+				cacheId: 31,
+				cachePartPath: 'xl/pivotCache/pivotCacheDefinition9.xml',
+				recordsPartPath: 'xl/pivotCache/pivotCacheRecords9.xml',
+				parsedCount: 1,
+			},
+		])
+
+		const dataSheet = opened.value.workbook.sheets.find((sheet) => sheet.name === 'Data')
+		if (!dataSheet) throw new Error('Data sheet was not parsed')
+		dataSheet.cells.set(3, 1, {
+			value: stringValue('dirty edit with split pivot caches'),
+			formula: null,
+			styleId: S0,
+		})
+
+		const written = writeXlsx(opened.value.workbook, opened.value.capsules, {
+			dirtySheetNames: ['Data'],
+			workbookMetaDirty: true,
+		})
+		expectOk(written)
+
+		const afterGraph = inspectXlsxPackageGraph(written.value)
+		expect(auditXlsxPackageGraphSafeEditIntegrity(beforeGraph, afterGraph)).toEqual([])
+		expect(auditXlsxPackageGraphBytePreservation(beforeGraph, sourceBytes, written.value)).toEqual(
+			[],
+		)
+		expect(pivotRelationshipIdentities(afterGraph)).toEqual(
+			pivotRelationshipIdentities(beforeGraph),
+		)
+
+		const afterZip = unzipSync(written.value)
+		const workbookXml = decode(afterZip['xl/workbook.xml'])
+		const workbookRelsXml = decode(afterZip['xl/_rels/workbook.xml.rels'])
+		expect(workbookXml).toContain('<pivotCache cacheId="7" r:id="rIdPivotCacheAlpha"/>')
+		expect(workbookXml).toContain('<pivotCache cacheId="31" r:id="rIdPivotCacheOmega"/>')
+		expect(workbookRelsXml).toContain(
+			'Id="rIdPivotCacheAlpha" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotCacheDefinition" Target="pivotCache/pivotCacheDefinition5.xml"',
+		)
+		expect(workbookRelsXml).toContain(
+			'Id="rIdPivotCacheOmega" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotCacheDefinition" Target="pivotCache/pivotCacheDefinition9.xml"',
+		)
+		expect(decode(afterZip['xl/pivotTables/pivotTable1.xml'])).toContain(
+			'name="PivotTableA" cacheId="7"',
+		)
+		expect(decode(afterZip['xl/pivotTables/pivotTable2.xml'])).toContain(
+			'name="PivotTableB" cacheId="31"',
+		)
+		expect(decode(afterZip['xl/pivotCache/pivotCacheDefinition5.xml'])).toContain(
+			'r:id="rIdCacheRecordsAbsolute"',
+		)
+		expect(decode(afterZip['xl/pivotCache/pivotCacheDefinition9.xml'])).toContain(
+			'r:id="rIdCacheRecordsRelative"',
+		)
+		expect(decode(afterZip['xl/pivotCache/_rels/pivotCacheDefinition5.xml.rels'])).toContain(
+			'Id="rIdCacheRecordsAbsolute" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotCacheRecords" Target="/xl/pivotCache/pivotCacheRecords5.xml"',
+		)
+		expect(decode(afterZip['xl/pivotCache/_rels/pivotCacheDefinition9.xml.rels'])).toContain(
+			'Id="rIdCacheRecordsRelative" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotCacheRecords" Target="pivotCacheRecords9.xml"',
+		)
+
+		const reopened = readXlsx(written.value, { pivotCacheRecordMaterializeLimit: 'all' })
+		expectOk(reopened)
+		expect(pivotTableCacheBindings(reopened.value.workbook)).toEqual(
+			pivotTableCacheBindings(opened.value.workbook),
+		)
+	})
 })
+
+function pivotTableCacheBindings(workbook: {
+	readonly pivotTables: readonly {
+		readonly name?: string
+		readonly cacheId?: number
+	}[]
+	readonly pivotCaches: readonly {
+		readonly cacheId?: number
+		readonly partPath: string
+		readonly recordsPartPath?: string
+		readonly records?: { readonly parsedCount: number }
+	}[]
+}): readonly Record<string, unknown>[] {
+	const cacheById = new Map(workbook.pivotCaches.map((cache) => [cache.cacheId, cache]))
+	return workbook.pivotTables.map((pivot) => {
+		const cache = cacheById.get(pivot.cacheId)
+		return {
+			name: pivot.name,
+			cacheId: pivot.cacheId,
+			cachePartPath: cache?.partPath,
+			recordsPartPath: cache?.recordsPartPath,
+			parsedCount: cache?.records?.parsedCount,
+		}
+	})
+}
 
 function pivotPartIdentities(graph: XlsxPackageGraph): readonly Record<string, unknown>[] {
 	return graph.parts
@@ -277,7 +386,9 @@ function decode(bytes: Uint8Array | undefined): string {
 	return new TextDecoder().decode(bytes)
 }
 
-function pivotPackageWorkbook(): Uint8Array {
+function pivotPackageWorkbook(
+	options: { readonly secondPivotTableCacheId?: number } = {},
+): Uint8Array {
 	return makeXlsx({
 		'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
@@ -334,7 +445,11 @@ function pivotPackageWorkbook(): Uint8Array {
   <Relationship Id="rIdPivotTable42" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotTable" Target="../pivotTables/pivotTable2.xml"/>
 </Relationships>`,
 		'xl/pivotTables/pivotTable1.xml': pivotTableXml('PivotTableA', 7, 'A3:C8'),
-		'xl/pivotTables/pivotTable2.xml': pivotTableXml('PivotTableB', 7, 'E3:G8'),
+		'xl/pivotTables/pivotTable2.xml': pivotTableXml(
+			'PivotTableB',
+			options.secondPivotTableCacheId ?? 7,
+			'E3:G8',
+		),
 		'xl/pivotCache/pivotCacheDefinition5.xml': pivotCacheDefinitionXml(
 			'rIdCacheRecordsAbsolute',
 			2,

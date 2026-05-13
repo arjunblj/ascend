@@ -254,6 +254,11 @@ describe('agent workflow loss audit', () => {
 			),
 		).toBe(false)
 		expect(
+			committed.writePolicy.diagnostics.some(
+				(entry) => entry.code === 'analytics-preservation-risk',
+			),
+		).toBe(false)
+		expect(
 			committed.writePolicy.diagnostics.some((entry) =>
 				[
 					'visual-sidecar-preservation-risk',
@@ -685,16 +690,64 @@ describe('agent workflow loss audit', () => {
 			},
 		])
 
+		expect(
+			plan.writePolicy.diagnostics.some(
+				(diagnostic) => diagnostic.code === 'visual-sidecar-preservation-risk',
+			),
+		).toBe(false)
 		expect(plan.writePolicy.diagnostics).toContainEqual(
 			expect.objectContaining({
-				code: 'visual-sidecar-preservation-risk',
+				code: 'analytics-preservation-risk',
 				severity: 'warning',
+				partPaths: expect.arrayContaining([
+					'xl/pivotTables/pivotTable1.xml',
+					'xl/pivotCache/pivotCacheDefinition1.xml',
+					'xl/slicerCaches/slicerCache1.xml',
+					'xl/timelineCaches/timelineCache1.xml',
+				]),
 				details: expect.objectContaining({
 					operationScoped: true,
-					analyticsPivotRefreshRisk: expect.arrayContaining([
-						expect.objectContaining({ op: 'setPivotFieldItem' }),
-						expect.objectContaining({ op: 'setSlicerCacheItem' }),
-						expect.objectContaining({ op: 'setTimelineRange' }),
+					copiedThroughAnalyticsParts: expect.any(Array),
+					generatedOrReplacementAnalyticsParts: expect.any(Array),
+					packageGraphAudit: expect.objectContaining({
+						ok: true,
+						analyticsIssueCount: 0,
+					}),
+					pivotCacheRisks: [
+						expect.objectContaining({
+							partPath: 'xl/pivotCache/pivotCacheDefinition1.xml',
+							cacheId: 34,
+							sourceSheet: 'Raw',
+							sourceRef: 'A1:B3',
+							outputState: 'refresh-on-open',
+							requiresExternalRefresh: true,
+							warnings: expect.arrayContaining([
+								expect.stringContaining('output is not recalculated headlessly'),
+							]),
+						}),
+					],
+					slicerTimelineCacheDependencies: expect.arrayContaining([
+						expect.objectContaining({
+							kind: 'slicerCache',
+							name: 'Slicer_Region',
+							pivotCacheId: 34,
+							pivotTableNames: ['PivotTable1'],
+							slicerPartPaths: ['xl/slicers/slicer1.xml'],
+						}),
+						expect.objectContaining({
+							kind: 'timelineCache',
+							name: 'Timeline_Order_Date',
+							pivotCacheId: 34,
+							pivotTableNames: ['PivotTable1'],
+							timelinePartPaths: ['xl/timelines/timeline1.xml'],
+						}),
+					]),
+					unsupportedHeadlessRefresh: expect.stringContaining('cannot refresh pivot caches'),
+					recommendedInspection: expect.arrayContaining([
+						'inspect --detail pivots',
+						'inspect --detail slicers',
+						'inspect --detail timelines',
+						'pivotRefreshPlans',
 					]),
 				}),
 			}),
@@ -804,6 +857,123 @@ describe('agent workflow loss audit', () => {
 				}),
 			}),
 		)
+	})
+
+	test('plans pivot cache source edits with generated analytics parts and headless refresh notes', async () => {
+		const input = join(TEMP_DIR, 'pivot-cache-source-edit.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		await Bun.write(input, makeAnalyticsRefreshXlsx())
+
+		const plan = await createAgentPlan(input, [
+			{
+				op: 'setPivotCache',
+				cacheId: 34,
+				sourceSheet: 'Raw',
+				sourceRef: 'A1:C10',
+				refreshOnLoad: true,
+				invalid: true,
+				saveData: false,
+			},
+		])
+
+		expect(plan.writePolicy.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: 'analytics-preservation-risk',
+				severity: 'warning',
+				details: expect.objectContaining({
+					generatedOrReplacementAnalyticsParts: expect.arrayContaining([
+						expect.objectContaining({
+							partPath: 'xl/pivotCache/pivotCacheDefinition1.xml',
+							origin: 'generated',
+						}),
+					]),
+					copiedThroughAnalyticsParts: expect.arrayContaining([
+						expect.objectContaining({
+							partPath: 'xl/pivotCache/pivotCacheRecords1.xml',
+							featureFamily: 'preservedPivot',
+						}),
+					]),
+				}),
+			}),
+		)
+		expect(plan.writePolicy.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: 'analytics-pivot-refresh-risk',
+				severity: 'warning',
+				suggestedAction: expect.stringContaining('cannot refresh pivots headlessly'),
+				details: expect.objectContaining({
+					unsupportedHeadlessRefresh: expect.stringContaining('pivot-aware engine'),
+					analyticsPivotRefreshRisk: [
+						expect.objectContaining({
+							op: 'setPivotCache',
+							targetKind: 'pivotCache',
+							matchCount: 1,
+							selector: expect.objectContaining({
+								cacheId: 34,
+								sourceSheet: 'Raw',
+								sourceRef: 'A1:C10',
+							}),
+							matches: [
+								expect.objectContaining({
+									pivotCache: 'xl/pivotCache/pivotCacheDefinition1.xml',
+									nextSourceRef: 'A1:C10',
+									outputState: 'refresh-on-open',
+									linkedPivotTableNames: ['PivotTable1'],
+								}),
+							],
+							recommendation: expect.stringContaining('mark invalid/refreshOnLoad'),
+						}),
+					],
+				}),
+			}),
+		)
+	})
+
+	test('routes analytics package graph issues into analytics diagnostics', async () => {
+		const input = join(TEMP_DIR, 'stale-pivot-override.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		await Bun.write(
+			input,
+			makeStaleContentTypeOverrideXlsx(
+				'xl/pivotCache/missing.xml',
+				'application/vnd.openxmlformats-officedocument.spreadsheetml.pivotCacheDefinition+xml',
+			),
+		)
+
+		const plan = await createAgentPlan(input, [
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'ok' }] },
+		])
+
+		expect(plan.packageGraphAudit.issues).toContainEqual(
+			expect.objectContaining({
+				code: 'package_content_type_override_target',
+				partPath: 'xl/pivotCache/missing.xml',
+			}),
+		)
+		expect(plan.writePolicy.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: 'analytics-preservation-risk',
+				severity: 'warning',
+				details: expect.objectContaining({
+					packageGraphAudit: expect.objectContaining({
+						analyticsIssueCount: 1,
+						issues: expect.arrayContaining([
+							expect.objectContaining({
+								code: 'package_content_type_override_target',
+								partPath: 'xl/pivotCache/missing.xml',
+							}),
+						]),
+					}),
+				}),
+			}),
+		)
+		expect(
+			plan.writePolicy.diagnostics.some(
+				(diagnostic) =>
+					diagnostic.code === 'package-graph-audit-issue' &&
+					diagnostic.partPaths?.includes('xl/pivotCache/missing.xml'),
+			),
+		).toBe(false)
 	})
 
 	test('plans image replacement with selector and sidecar recommendations', async () => {

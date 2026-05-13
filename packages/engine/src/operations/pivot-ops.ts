@@ -1,4 +1,10 @@
-import type { PivotCacheInfo, PivotFieldItemInfo, PivotTableInfo, Workbook } from '@ascend/core'
+import {
+	type PivotCacheInfo,
+	type PivotFieldItemInfo,
+	type PivotTableInfo,
+	parseRange,
+	type Workbook,
+} from '@ascend/core'
 import type { Operation, Result } from '@ascend/schema'
 import { ascendError, err, ok } from '@ascend/schema'
 import { type PatchResult, patch } from './helpers.ts'
@@ -22,6 +28,10 @@ export function handleSetPivotCache(workbook: Workbook, op: SetPivotCacheOp): Re
 			}),
 		)
 	}
+	const sourceRefValidation = validatePivotCacheSourceRef(op.sourceRef)
+	if (sourceRefValidation) return err(sourceRefValidation)
+	const pivotTableSelectorValidation = validatePivotCacheTableSelector(workbook, op)
+	if (pivotTableSelectorValidation) return err(pivotTableSelectorValidation)
 
 	const matches = resolvePivotCacheMatches(workbook, op)
 	if (matches.length === 0) {
@@ -129,19 +139,56 @@ export function handleSetPivotFieldItem(
 
 	const pivot = matches[0]
 	if (!pivot) return err(ascendError('VALIDATION_ERROR', 'No matching pivot table found'))
-	const field = pivot.fields[op.fieldIndex]
-	if (!field) {
+	const fieldMatches = pivot.fields.filter((entry) => entry.index === op.fieldIndex)
+	if (fieldMatches.length === 0) {
 		return err(
 			ascendError('VALIDATION_ERROR', `Pivot field ${op.fieldIndex} was not found`, {
 				suggestedFix: 'Use a fieldIndex from the pivot table fields inventory.',
 			}),
 		)
 	}
-	const item = field.items?.[op.itemIndex]
-	if (!item) {
+	if (fieldMatches.length > 1) {
+		return err(
+			ascendError(
+				'VALIDATION_ERROR',
+				`Pivot field ${op.fieldIndex} matched ${fieldMatches.length} fields`,
+				{
+					suggestedFix: 'Repair duplicate pivot field indexes before editing item state.',
+				},
+			),
+		)
+	}
+	const field = fieldMatches[0]
+	if (!field)
+		return err(ascendError('VALIDATION_ERROR', `Pivot field ${op.fieldIndex} was not found`))
+	const itemMatches = (field.items ?? []).filter((entry) => entry.index === op.itemIndex)
+	if (itemMatches.length === 0) {
 		return err(
 			ascendError('VALIDATION_ERROR', `Pivot field item ${op.itemIndex} was not found`, {
 				suggestedFix: 'Use an itemIndex from the selected pivot field items inventory.',
+			}),
+		)
+	}
+	if (itemMatches.length > 1) {
+		return err(
+			ascendError(
+				'VALIDATION_ERROR',
+				`Pivot field item ${op.itemIndex} matched ${itemMatches.length} items`,
+				{
+					suggestedFix: 'Repair duplicate pivot field item indexes before editing item state.',
+				},
+			),
+		)
+	}
+	if (
+		op.selectedPageItem !== undefined &&
+		op.selectedPageItem !== null &&
+		(!Number.isInteger(op.selectedPageItem) || op.selectedPageItem < 0)
+	) {
+		return err(
+			ascendError('VALIDATION_ERROR', 'setPivotFieldItem selectedPageItem must be non-negative', {
+				suggestedFix:
+					'Use selectedPageItem from the selected pivot field items inventory, or null to clear it.',
 			}),
 		)
 	}
@@ -150,8 +197,8 @@ export function handleSetPivotFieldItem(
 
 	const selectedPageItem = op.selectedPageItem
 	Object.assign(pivot, {
-		fields: pivot.fields.map((entry, index) =>
-			index === op.fieldIndex
+		fields: pivot.fields.map((entry) =>
+			entry.index === op.fieldIndex
 				? { ...entry, items: updatePivotFieldItems(entry.items ?? [], op) }
 				: entry,
 		),
@@ -204,6 +251,60 @@ function hasPivotUpdate(op: SetPivotCacheOp): boolean {
 		op.invalid !== undefined ||
 		op.saveData !== undefined
 	)
+}
+
+function validatePivotCacheSourceRef(sourceRef: string | undefined) {
+	if (sourceRef === undefined) return null
+	try {
+		const body = sourceRef.includes('!') ? sourceRef.slice(sourceRef.indexOf('!') + 1) : sourceRef
+		if (body.split(':').length > 2) throw new Error('Invalid range reference')
+		const range = parseRange(sourceRef)
+		if (range.start.row > range.end.row || range.start.col > range.end.col) {
+			return ascendError(
+				'VALIDATION_ERROR',
+				'setPivotCache sourceRef must be an ordered A1 range',
+				{
+					suggestedFix: 'Use an A1 range whose top-left cell is before its bottom-right cell.',
+				},
+			)
+		}
+	} catch {
+		return ascendError('VALIDATION_ERROR', 'setPivotCache sourceRef must be a valid A1 range', {
+			suggestedFix: 'Use a range such as A1:D100 or Sheet1!A1:D100.',
+		})
+	}
+	return null
+}
+
+function validatePivotCacheTableSelector(workbook: Workbook, op: SetPivotCacheOp) {
+	if (op.pivotTable === undefined) return null
+	const pivots = workbook.pivotTables.filter((entry) => entry.name === op.pivotTable)
+	if (pivots.length === 0) {
+		return ascendError('VALIDATION_ERROR', `Pivot table "${op.pivotTable}" was not found`, {
+			suggestedFix: 'Inspect pivotTables and provide a matching pivotTable name.',
+		})
+	}
+	if (pivots.length > 1) {
+		return ascendError(
+			'VALIDATION_ERROR',
+			`setPivotCache pivotTable matched ${pivots.length} pivots`,
+			{
+				suggestedFix: 'Provide cacheId or partPath without the ambiguous pivotTable selector.',
+			},
+		)
+	}
+	const pivot = pivots[0]
+	if (pivot?.cacheId === undefined) {
+		return ascendError('VALIDATION_ERROR', `Pivot table "${op.pivotTable}" has no cacheId`, {
+			suggestedFix: 'Select the pivot cache by partPath or repair the pivot table cache binding.',
+		})
+	}
+	if (op.cacheId !== undefined && op.cacheId !== pivot.cacheId) {
+		return ascendError('VALIDATION_ERROR', 'setPivotCache cacheId does not match pivotTable', {
+			suggestedFix: 'Use selectors that identify the same pivot cache.',
+		})
+	}
+	return null
 }
 
 function resolvePivotCacheMatches(workbook: Workbook, op: SetPivotCacheOp): PivotCacheInfo[] {
@@ -274,8 +375,8 @@ function updatePivotFieldItems(
 	items: readonly PivotFieldItemInfo[],
 	op: SetPivotFieldItemOp,
 ): PivotFieldItemInfo[] {
-	return items.map((item, index) =>
-		index === op.itemIndex
+	return items.map((item) =>
+		item.index === op.itemIndex
 			? applyPivotItemUpdates({ ...item }, op)
 			: {
 					...item,

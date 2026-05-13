@@ -205,6 +205,72 @@ describe('XLSX package graph fidelity audits', () => {
 		)
 	})
 
+	test('reports orphan analytical relationship sidecars by their missing source parts', () => {
+		const graph = inspectXlsxPackageGraph(
+			makeXlsx({
+				'[Content_Types].xml': contentTypesXml(`
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/pivotCache/pivotCacheRecords1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.pivotCacheRecords+xml"/>
+  <Override PartName="/xl/slicers/slicer1.xml" ContentType="application/vnd.ms-excel.slicer+xml"/>
+  <Override PartName="/xl/timelines/timeline1.xml" ContentType="application/vnd.ms-excel.timeline+xml"/>
+`),
+				'_rels/.rels': relationshipsXml(`
+  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+`),
+				'xl/workbook.xml': '<workbook/>',
+				'xl/pivotCache/pivotCacheRecords1.xml': '<pivotCacheRecords/>',
+				'xl/slicers/slicer1.xml': '<slicers/>',
+				'xl/timelines/timeline1.xml': '<timelines/>',
+				'xl/pivotCache/_rels/pivotCacheDefinition99.xml.rels': relationshipsXml(`
+  <Relationship Id="rIdRecords" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotCacheRecords" Target="pivotCacheRecords1.xml"/>
+`),
+				'xl/slicerCaches/_rels/slicerCache99.xml.rels': relationshipsXml(`
+  <Relationship Id="rIdSlicerUi" Type="http://schemas.microsoft.com/office/2007/relationships/slicer" Target="../slicers/slicer1.xml"/>
+`),
+				'xl/timelineCaches/_rels/timelineCache99.xml.rels': relationshipsXml(`
+  <Relationship Id="rIdTimelineUi" Type="http://schemas.microsoft.com/office/2011/relationships/timeline" Target="../timelines/timeline1.xml"/>
+`),
+			}),
+		)
+
+		const issues = auditXlsxPackageGraphReadIntegrity(graph)
+		expect(issues).toContainEqual(
+			expect.objectContaining({
+				code: 'package_relationship_source',
+				severity: 'error',
+				sourcePartPath: 'xl/pivotCache/pivotCacheDefinition99.xml',
+				relationshipPartPath: 'xl/pivotCache/_rels/pivotCacheDefinition99.xml.rels',
+				relationshipId: 'rIdRecords',
+				featureFamily: 'preservedPivot',
+				suggestedAction: expect.stringContaining('orphan relationship sidecar'),
+			}),
+		)
+		expect(issues).toContainEqual(
+			expect.objectContaining({
+				code: 'package_relationship_source',
+				severity: 'error',
+				sourcePartPath: 'xl/slicerCaches/slicerCache99.xml',
+				relationshipPartPath: 'xl/slicerCaches/_rels/slicerCache99.xml.rels',
+				relationshipId: 'rIdSlicerUi',
+				featureFamily: 'preservedSlicer',
+				suggestedAction: expect.stringContaining('orphan relationship sidecar'),
+			}),
+		)
+		expect(issues).toContainEqual(
+			expect.objectContaining({
+				code: 'package_relationship_source',
+				severity: 'error',
+				sourcePartPath: 'xl/timelineCaches/timelineCache99.xml',
+				relationshipPartPath: 'xl/timelineCaches/_rels/timelineCache99.xml.rels',
+				relationshipId: 'rIdTimelineUi',
+				featureFamily: 'preservedTimeline',
+				suggestedAction: expect.stringContaining('orphan relationship sidecar'),
+			}),
+		)
+	})
+
 	test('accepts empty relationship sidecars whose source part exists', () => {
 		const graph = inspectXlsxPackageGraph(
 			makeXlsx({

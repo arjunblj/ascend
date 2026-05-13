@@ -850,24 +850,95 @@ describe('checker', () => {
 		expect(kinds).toContain('pivot-cache-record-width-mismatch')
 	})
 
+	test('detects pivot cache definition and records payload path mismatches', () => {
+		const wb = createWorkbook()
+		wb.addSheet('Sheet1')
+		wb.pivotCaches.push(
+			{
+				partPath: 'xl/pivotCache/pivotCacheDefinition1.xml',
+				cacheId: 1,
+				recordsPartPath: 'xl/pivotCache/pivotCacheRecords1.xml',
+				records: {
+					partPath: 'xl/pivotCache/pivotCacheRecords2.xml',
+					declaredCount: 1,
+					parsedCount: 1,
+					preview: [],
+					valueKindCounts: [],
+				},
+				fields: [],
+			},
+			{
+				partPath: 'xl/pivotCache/pivotCacheDefinition2.xml',
+				cacheId: 2,
+				records: {
+					partPath: 'xl/pivotCache/pivotCacheRecords3.xml',
+					declaredCount: 1,
+					parsedCount: 1,
+					preview: [],
+					valueKindCounts: [],
+				},
+				fields: [],
+			},
+			{
+				partPath: 'xl/pivotCache/pivotCacheDefinition3.xml',
+				cacheId: 3,
+				recordsPartPath: 'xl/pivotCache/pivotCacheRecords4.xml',
+				fields: [],
+			},
+		)
+
+		const result = check(wb)
+		const kinds = result.issues
+			.filter((issue) => issue.rule === 'pivot-integrity')
+			.map((issue) => issue.details?.kind)
+		expect(result.passed).toBe(false)
+		expect(kinds).toContain('pivot-cache-records-part-path-mismatch')
+		expect(kinds).toContain('pivot-cache-records-relationship-missing')
+		expect(kinds).toContain('pivot-cache-records-unparsed')
+	})
+
 	test('detects duplicate and missing pivot cache ids and worksheet ownership', () => {
 		const wb = createWorkbook()
 		wb.addSheet('Sheet1')
 		wb.pivotCaches.push(
 			{ partPath: 'xl/pivotCache/pivotCacheDefinition1.xml', cacheId: 1, fields: [] },
 			{ partPath: 'xl/pivotCache/pivotCacheDefinition2.xml', cacheId: 1, fields: [] },
+			{ partPath: 'xl/pivotCache/pivotCacheDefinition3.xml', fields: [] },
 		)
-		wb.pivotTables.push({
-			partPath: 'xl/pivotTables/pivotTable1.xml',
-			sheetName: 'MissingSheet',
-			name: 'PivotTable1',
-			cacheId: 99,
-			fields: [],
-			rowFields: [],
-			columnFields: [],
-			pageFields: [],
-			dataFields: [],
-		})
+		wb.pivotTables.push(
+			{
+				partPath: 'xl/pivotTables/pivotTable1.xml',
+				sheetName: 'MissingSheet',
+				name: 'PivotTable1',
+				cacheId: 99,
+				fields: [],
+				rowFields: [],
+				columnFields: [],
+				pageFields: [],
+				dataFields: [],
+			},
+			{
+				partPath: 'xl/pivotTables/pivotTable2.xml',
+				sheetName: 'Sheet1',
+				name: 'PivotTable2',
+				cacheId: 1,
+				fields: [],
+				rowFields: [],
+				columnFields: [],
+				pageFields: [],
+				dataFields: [],
+			},
+			{
+				partPath: 'xl/pivotTables/pivotTable3.xml',
+				sheetName: 'Sheet1',
+				name: 'PivotTable3',
+				fields: [],
+				rowFields: [],
+				columnFields: [],
+				pageFields: [],
+				dataFields: [],
+			},
+		)
 
 		const result = check(wb, {
 			packageGraph: {
@@ -896,10 +967,46 @@ describe('checker', () => {
 			.filter((issue) => issue.rule === 'pivot-integrity')
 			.map((issue) => issue.details?.kind)
 		expect(result.passed).toBe(false)
+		expect(kinds).toContain('pivot-cache-id-missing')
 		expect(kinds).toContain('duplicate-pivot-cache-id')
+		expect(kinds).toContain('pivot-table-cache-id-ambiguous')
+		expect(kinds).toContain('pivot-table-cache-id-absent')
 		expect(kinds).toContain('pivot-table-sheet-missing')
 		expect(kinds).toContain('pivot-table-cache-id-missing')
 		expect(kinds).toContain('pivot-table-worksheet-relationship-binding-mismatch')
+	})
+
+	test('detects missing workbook pivot cache relationships', () => {
+		const wb = createWorkbook()
+		wb.addSheet('Sheet1')
+		wb.pivotCaches.push({
+			partPath: 'xl/pivotCache/pivotCacheDefinition1.xml',
+			cacheId: 1,
+			fields: [],
+		})
+
+		const result = check(wb, {
+			packageGraph: {
+				parts: [
+					{
+						path: 'xl/pivotCache/pivotCacheDefinition1.xml',
+						featureFamily: 'preservedPivot',
+						ownerScope: 'workbook',
+					},
+				],
+				relationships: [],
+			},
+		})
+
+		const issue = result.issues.find(
+			(entry) =>
+				entry.rule === 'pivot-integrity' &&
+				entry.details?.kind === 'pivot-cache-workbook-relationship-missing',
+		)
+		expect(result.passed).toBe(false)
+		expect(issue?.severity).toBe('error')
+		expect(issue?.refs).toEqual(['xl/pivotCache/pivotCacheDefinition1.xml'])
+		expect(issue?.suggestedFix).toContain('workbook pivotCache relationship')
 	})
 
 	test('detects pivot cache source sheet and table integrity issues', () => {
@@ -1147,7 +1254,10 @@ describe('checker', () => {
 			.filter((issue) => issue.rule === 'timeline-integrity')
 			.map((issue) => issue.details?.kind)
 		expect(result.passed).toBe(false)
-		expect(slicerKinds).toEqual(['slicer-cache-ui-relationship-binding-mismatch'])
+		expect(slicerKinds).toEqual([
+			'slicer-cache-ui-relationship-binding-mismatch',
+			'slicer-worksheet-relationship-binding-mismatch',
+		])
 		expect(timelineKinds).toEqual([
 			'timeline-cache-ui-relationship-binding-mismatch',
 			'timeline-worksheet-relationship-binding-mismatch',
@@ -1255,7 +1365,9 @@ describe('checker', () => {
 			.map((issue) => issue.details?.kind)
 		expect(result.passed).toBe(false)
 		expect(kinds).toContain('pivot-cache-refresh-required')
+		expect(kinds).toContain('pivot-headless-refresh-unsupported')
 		expect(kinds).toContain('pivot-cache-refresh-disabled')
+		expect(kinds).toContain('pivot-saved-output-stale-after-source-edit')
 		expect(kinds).toContain('pivot-output-may-be-stale')
 	})
 

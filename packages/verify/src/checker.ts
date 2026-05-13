@@ -1255,7 +1255,18 @@ function checkPivotSlicerTimelineIntegrity(
 	const pivotCachesById = new Map<number, Workbook['pivotCaches'][number]>()
 	const duplicateCacheIds = new Map<number, Workbook['pivotCaches'][number][]>()
 	for (const cache of wb.pivotCaches) {
-		if (cache.cacheId === undefined) continue
+		if (cache.cacheId === undefined) {
+			issues.push({
+				rule: 'pivot-integrity',
+				severity: 'error',
+				message: `Pivot cache "${cache.partPath}" is missing a workbook cacheId`,
+				refs: [cache.partPath],
+				suggestedFix:
+					'Restore the workbook pivotCache id before editing pivot tables or cache definitions.',
+				details: { kind: 'pivot-cache-id-missing', cache: pivotCacheSummary(cache) },
+			})
+			continue
+		}
 		const existing = pivotCachesById.get(cache.cacheId)
 		if (existing)
 			duplicateCacheIds.set(cache.cacheId, [
@@ -1292,7 +1303,32 @@ function checkPivotSlicerTimelineIntegrity(
 				details: { kind: 'pivot-table-sheet-missing', pivotTable: pivotSummary(pivot) },
 			})
 		}
-		if (pivot.cacheId !== undefined && !pivotCachesById.has(pivot.cacheId)) {
+		if (pivot.cacheId === undefined) {
+			issues.push({
+				rule: 'pivot-integrity',
+				severity: 'error',
+				message: `Pivot table "${pivot.name ?? pivot.partPath}" is missing cacheId binding`,
+				refs: [pivot.partPath],
+				suggestedFix:
+					'Reconnect the pivot table to a workbook pivot cache definition before editing pivot output.',
+				details: { kind: 'pivot-table-cache-id-absent', pivotTable: pivotSummary(pivot) },
+			})
+		} else if (duplicateCacheIds.has(pivot.cacheId)) {
+			const caches = duplicateCacheIds.get(pivot.cacheId) ?? []
+			issues.push({
+				rule: 'pivot-integrity',
+				severity: 'error',
+				message: `Pivot table "${pivot.name ?? pivot.partPath}" cacheId "${pivot.cacheId}" is ambiguous`,
+				refs: [pivot.partPath, ...caches.map((cache) => cache.partPath)],
+				suggestedFix:
+					'Repair duplicate workbook pivotCache ids before resolving pivot table cache bindings.',
+				details: {
+					kind: 'pivot-table-cache-id-ambiguous',
+					pivotTable: pivotSummary(pivot),
+					caches: caches.map(pivotCacheSummary),
+				},
+			})
+		} else if (!pivotCachesById.has(pivot.cacheId)) {
 			issues.push({
 				rule: 'pivot-integrity',
 				severity: 'error',
@@ -1393,7 +1429,53 @@ function checkPivotCacheSourceIntegrity(
 function checkPivotCacheRecordIntegrity(cache: Workbook['pivotCaches'][number]): CheckIssue[] {
 	const issues: CheckIssue[] = []
 	const records = cache.records
-	if (!records) return issues
+	if (!records) {
+		if (cache.recordsPartPath) {
+			issues.push({
+				rule: 'pivot-integrity',
+				severity: 'warning',
+				message: `Pivot cache "${cache.partPath}" references records part "${cache.recordsPartPath}" but no records were parsed`,
+				refs: [cache.partPath, cache.recordsPartPath],
+				suggestedFix:
+					'Load or restore the pivotCacheRecords payload before relying on saved cache rows.',
+				details: {
+					kind: 'pivot-cache-records-unparsed',
+					cache: pivotCacheSummary(cache),
+				},
+			})
+		}
+		return issues
+	}
+	if (!cache.recordsPartPath) {
+		issues.push({
+			rule: 'pivot-integrity',
+			severity: 'error',
+			message: `Pivot cache "${cache.partPath}" has parsed records but no cache definition records relationship`,
+			refs: [cache.partPath, records.partPath],
+			suggestedFix:
+				'Restore the pivotCacheDefinition relationship to its records part before cache edits.',
+			details: {
+				kind: 'pivot-cache-records-relationship-missing',
+				cache: pivotCacheSummary(cache),
+				recordsPartPath: records.partPath,
+			},
+		})
+	} else if (records.partPath !== cache.recordsPartPath) {
+		issues.push({
+			rule: 'pivot-integrity',
+			severity: 'error',
+			message: `Pivot cache "${cache.partPath}" records payload path does not match definition relationship`,
+			refs: [cache.partPath, cache.recordsPartPath, records.partPath],
+			suggestedFix:
+				'Make the parsed records payload and pivotCacheDefinition records relationship point to the same part.',
+			details: {
+				kind: 'pivot-cache-records-part-path-mismatch',
+				cache: pivotCacheSummary(cache),
+				expectedRecordsPartPath: cache.recordsPartPath,
+				actualRecordsPartPath: records.partPath,
+			},
+		})
+	}
 	const counts = [
 		['cacheRecordCount', cache.recordCount],
 		['recordsDeclaredCount', records.declaredCount],
@@ -1493,6 +1575,24 @@ function checkPivotRefreshIntegrity(
 			},
 		},
 	})
+	issues.push({
+		rule: 'pivot-refresh-integrity',
+		severity: 'warning',
+		message: `Pivot cache "${cache.partPath}" requires a pivot-aware refresh; headless refresh is not supported`,
+		refs: [cache.partPath],
+		suggestedFix:
+			'Open the workbook in Excel or another pivot-aware engine before treating saved pivot cache or output cells as current.',
+		details: {
+			kind: 'pivot-headless-refresh-unsupported',
+			cache: pivotCacheSummary(cache),
+			signals: {
+				invalid: cache.invalid,
+				refreshOnLoad: cache.refreshOnLoad,
+				upgradeOnRefresh: cache.upgradeOnRefresh,
+				saveData: cache.saveData,
+			},
+		},
+	})
 	if (cache.enableRefresh === false) {
 		issues.push({
 			rule: 'pivot-refresh-integrity',
@@ -1505,6 +1605,21 @@ function checkPivotRefreshIntegrity(
 		})
 	}
 	for (const pivot of wb.pivotTables.filter((pivot) => pivot.cacheId === cache.cacheId)) {
+		if (cache.invalid === true) {
+			issues.push({
+				rule: 'pivot-refresh-integrity',
+				severity: 'warning',
+				message: `Pivot table "${pivot.name ?? pivot.partPath}" saved output is stale after pivot source or filter edits`,
+				refs: [pivot.partPath, cache.partPath],
+				suggestedFix:
+					'Refresh the pivot cache in Excel or another pivot-aware engine before trusting saved pivot output cells.',
+				details: {
+					kind: 'pivot-saved-output-stale-after-source-edit',
+					pivotTable: pivotSummary(pivot),
+					cache: pivotCacheSummary(cache),
+				},
+			})
+		}
 		issues.push({
 			rule: 'pivot-refresh-integrity',
 			severity: 'warning',
@@ -1536,6 +1651,12 @@ function checkPivotPackageGraphIntegrity(
 	)
 
 	for (const cache of wb.pivotCaches) {
+		const workbookRelationships = packageGraph.relationships.filter(
+			(rel) =>
+				rel.sourcePartPath === 'xl/workbook.xml' &&
+				rel.resolvedTarget === cache.partPath &&
+				isPivotCacheDefinitionRelationshipType(rel.type),
+		)
 		if (!graphPartByPath.has(cache.partPath)) {
 			issues.push({
 				rule: 'pivot-integrity',
@@ -1544,6 +1665,42 @@ function checkPivotPackageGraphIntegrity(
 				refs: [cache.partPath],
 				suggestedFix: 'Restore the pivot cache definition part before writing.',
 				details: { kind: 'missing-pivot-cache-part', cache: pivotCacheSummary(cache) },
+			})
+		}
+		if (workbookRelationships.length > 1) {
+			issues.push({
+				rule: 'pivot-integrity',
+				severity: 'error',
+				message: `Pivot cache "${cache.partPath}" is targeted by multiple workbook pivotCache relationships`,
+				refs: [
+					cache.partPath,
+					...workbookRelationships.map((rel) => `${rel.relationshipPartPath}#${rel.id}`),
+				],
+				suggestedFix:
+					'Repair workbook pivotCache relationship ids so each cache definition has a single workbook binding.',
+				details: {
+					kind: 'duplicate-pivot-cache-workbook-relationships',
+					cache: pivotCacheSummary(cache),
+					workbookRelationships: workbookRelationships.map(packageRelationshipDetails),
+				},
+			})
+		}
+		if (
+			graphPartByPath.has(cache.partPath) &&
+			cache.relId === undefined &&
+			workbookRelationships.length === 0
+		) {
+			issues.push({
+				rule: 'pivot-integrity',
+				severity: 'error',
+				message: `Pivot cache "${cache.partPath}" is missing its workbook pivotCache relationship`,
+				refs: [cache.partPath],
+				suggestedFix:
+					'Restore the workbook pivotCache relationship before editing or writing pivot caches.',
+				details: {
+					kind: 'pivot-cache-workbook-relationship-missing',
+					cache: pivotCacheSummary(cache),
+				},
 			})
 		}
 		if (cache.recordsPartPath && !graphPartByPath.has(cache.recordsPartPath)) {
@@ -1859,6 +2016,23 @@ function checkSlicerTimelinePackageGraphIntegrity(
 					),
 				)
 			}
+			if (
+				!packageGraph.relationships.some(
+					(rel) =>
+						rel.sourcePartPath.startsWith('xl/worksheets/') &&
+						rel.resolvedTarget === slicer.partPath &&
+						isSlicerRelationshipType(rel.type),
+				)
+			) {
+				issues.push(
+					worksheetAnalyticalUiBindingIssue(
+						'slicer-integrity',
+						'slicer-worksheet-relationship-binding-mismatch',
+						slicer.partPath,
+						graphRelationshipsByTarget,
+					),
+				)
+			}
 		}
 	}
 	for (const cache of wb.timelineCaches) {
@@ -1916,10 +2090,9 @@ function checkSlicerTimelinePackageGraphIntegrity(
 				)
 			) {
 				issues.push(
-					analyticalUiBindingIssue(
+					worksheetAnalyticalUiBindingIssue(
 						'timeline-integrity',
 						'timeline-worksheet-relationship-binding-mismatch',
-						cache.partPath,
 						timeline.partPath,
 						graphRelationshipsByTarget,
 					),
@@ -2087,6 +2260,29 @@ function analyticalUiBindingIssue(
 		details: {
 			kind,
 			cachePartPath,
+			uiPartPath,
+			incomingRelationships: (graphRelationshipsByTarget.get(uiPartPath) ?? []).map(
+				packageRelationshipDetails,
+			),
+		},
+	}
+}
+
+function worksheetAnalyticalUiBindingIssue(
+	rule: 'slicer-integrity' | 'timeline-integrity',
+	kind: string,
+	uiPartPath: string,
+	graphRelationshipsByTarget: ReadonlyMap<string, readonly VerifyPackageGraphRelationship[]>,
+): CheckIssue {
+	return {
+		rule,
+		severity: 'error',
+		message: `Analytical UI part "${uiPartPath}" is not bound from an owning worksheet relationship`,
+		refs: [uiPartPath],
+		suggestedFix:
+			'Repair the worksheet slicer/timeline package relationship before editing analytical filter UI state.',
+		details: {
+			kind,
 			uiPartPath,
 			incomingRelationships: (graphRelationshipsByTarget.get(uiPartPath) ?? []).map(
 				packageRelationshipDetails,

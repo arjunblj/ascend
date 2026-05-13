@@ -5733,8 +5733,10 @@ describe('applyOperation', () => {
 		wb.pivotCaches.push({
 			partPath: 'xl/pivotCache/pivotCacheDefinition1.xml',
 			cacheId: 34,
+			relId: 'rIdPivotCache1',
 			sourceSheet: 'Raw',
 			sourceRef: 'A1:D10',
+			recordsPartPath: 'xl/pivotCacheRecords/pivotCacheRecords1.xml',
 			fields: [],
 		})
 
@@ -5758,12 +5760,88 @@ describe('applyOperation', () => {
 			invalid: true,
 		})
 		expect(wb.pivotCaches[0]).toMatchObject({
+			partPath: 'xl/pivotCache/pivotCacheDefinition1.xml',
+			cacheId: 34,
+			relId: 'rIdPivotCache1',
 			sourceSheet: 'RawData',
 			sourceRef: 'A1:E20',
+			recordsPartPath: 'xl/pivotCacheRecords/pivotCacheRecords1.xml',
 			refreshOnLoad: true,
 			invalid: true,
 			saveData: false,
 		})
+	})
+
+	test('setPivotCache rejects invalid source ranges and mismatched selectors without mutation', () => {
+		const wb = setup()
+		wb.pivotTables.push({
+			partPath: 'xl/pivotTables/pivotTable1.xml',
+			sheetName: 'Sheet1',
+			name: 'PivotTable1',
+			cacheId: 34,
+			fields: [],
+			rowFields: [],
+			columnFields: [],
+			pageFields: [],
+			dataFields: [],
+		})
+		wb.pivotCaches.push({
+			partPath: 'xl/pivotCache/pivotCacheDefinition1.xml',
+			cacheId: 34,
+			relId: 'rIdPivotCache1',
+			sourceSheet: 'Raw',
+			sourceRef: 'A1:D10',
+			fields: [],
+		})
+
+		const beforeInvalidRange = JSON.stringify(wb.pivotCaches)
+		const invalidRange = applyOperation(wb, {
+			op: 'setPivotCache',
+			cacheId: 34,
+			sourceRef: 'D10:A1',
+		})
+		expectErr(invalidRange)
+		expect(invalidRange.error.message).toContain('sourceRef must be an ordered A1 range')
+		expect(JSON.stringify(wb.pivotCaches)).toBe(beforeInvalidRange)
+
+		const beforeMismatch = JSON.stringify(wb.pivotCaches)
+		const mismatchedSelectors = applyOperation(wb, {
+			op: 'setPivotCache',
+			cacheId: 99,
+			pivotTable: 'PivotTable1',
+			sourceRef: 'A1:E20',
+		})
+		expectErr(mismatchedSelectors)
+		expect(mismatchedSelectors.error.message).toContain('cacheId does not match pivotTable')
+		expect(JSON.stringify(wb.pivotCaches)).toBe(beforeMismatch)
+
+		const unbound = setup()
+		unbound.pivotTables.push({
+			partPath: 'xl/pivotTables/pivotTable1.xml',
+			sheetName: 'Sheet1',
+			name: 'PivotTable1',
+			fields: [],
+			rowFields: [],
+			columnFields: [],
+			pageFields: [],
+			dataFields: [],
+		})
+		unbound.pivotCaches.push({
+			partPath: 'xl/pivotCache/pivotCacheDefinition1.xml',
+			cacheId: 34,
+			sourceSheet: 'Raw',
+			sourceRef: 'A1:D10',
+			fields: [],
+		})
+		const beforeUnbound = JSON.stringify(unbound.pivotCaches)
+		const unboundPivot = applyOperation(unbound, {
+			op: 'setPivotCache',
+			pivotTable: 'PivotTable1',
+			sourceRef: 'A1:E20',
+		})
+		expectErr(unboundPivot)
+		expect(unboundPivot.error.message).toContain('has no cacheId')
+		expect(JSON.stringify(unbound.pivotCaches)).toBe(beforeUnbound)
 	})
 
 	test('setConnectionRefresh updates query-table refresh metadata', () => {
@@ -5887,6 +5965,63 @@ describe('applyOperation', () => {
 		expect(wb.pivotCaches[0]).toMatchObject({ refreshOnLoad: true, invalid: true })
 	})
 
+	test('setPivotFieldItem targets explicit inventory indexes and preserves item metadata', () => {
+		const wb = setup()
+		wb.pivotTables.push({
+			partPath: 'xl/pivotTables/pivotTable1.xml',
+			sheetName: 'Sheet1',
+			name: 'PivotTable1',
+			cacheId: 34,
+			fields: [
+				{
+					index: 2,
+					axis: 'axisPage',
+					items: [
+						{ index: 4, cacheIndex: 9, caption: 'Q1', calculated: true },
+						{ index: 7, cacheIndex: 12, missing: true },
+					],
+				},
+			],
+			rowFields: [],
+			columnFields: [],
+			pageFields: [{ index: 2, item: 4, name: 'Quarter' }],
+			dataFields: [],
+		})
+		wb.pivotCaches.push({
+			partPath: 'xl/pivotCache/pivotCacheDefinition1.xml',
+			cacheId: 34,
+			fields: [],
+		})
+
+		const result = applyOperation(wb, {
+			op: 'setPivotFieldItem',
+			pivotTable: 'PivotTable1',
+			fieldIndex: 2,
+			itemIndex: 4,
+			showDetails: true,
+			selectedPageItem: 7,
+		})
+		expectOk(result)
+
+		expect(wb.pivotTables[0]?.fields[0]?.items).toEqual([
+			{ index: 4, cacheIndex: 9, caption: 'Q1', calculated: true, showDetails: true },
+			{ index: 7, cacheIndex: 12, missing: true },
+		])
+		expect(wb.pivotTables[0]?.pageFields).toEqual([{ index: 2, item: 7, name: 'Quarter' }])
+
+		const beforeMissingItem = JSON.stringify(wb.pivotTables)
+		const missingItem = applyOperation(wb, {
+			op: 'setPivotFieldItem',
+			pivotTable: 'PivotTable1',
+			fieldIndex: 2,
+			itemIndex: 5,
+			hidden: true,
+		})
+		expectErr(missingItem)
+		expect(missingItem.error.message).toContain('Pivot field item 5 was not found')
+		expect(JSON.stringify(wb.pivotTables)).toBe(beforeMissingItem)
+	})
+
 	test('setPivotFieldItem validates selectors and existing inventory indexes', () => {
 		const wb = setup()
 		wb.pivotTables.push({
@@ -5999,6 +6134,13 @@ describe('applyOperation', () => {
 			cachePartPaths: ['xl/pivotCache/pivotCacheDefinition1.xml'],
 		})
 		expect(wb.slicerCaches[0]?.items).toEqual([{ index: 0, noData: true }, { index: 1 }])
+		expect(wb.slicerCaches[0]).toMatchObject({
+			partPath: 'xl/slicerCaches/slicerCache1.xml',
+			name: 'Slicer_State',
+			sourceName: 'State',
+			pivotCacheId: 34,
+			pivotTableNames: ['PivotTable1'],
+		})
 		expect(wb.pivotCaches[0]).toMatchObject({ refreshOnLoad: true, invalid: true })
 	})
 
@@ -6027,6 +6169,46 @@ describe('applyOperation', () => {
 		expect(missingUpdate.error.message).toContain('requires selected or noData')
 	})
 
+	test('setSlicerCacheItem rejects missing item indexes and duplicate names without mutation', () => {
+		const wb = setup()
+		wb.slicerCaches.push(
+			{
+				partPath: 'xl/slicerCaches/slicerCache1.xml',
+				name: 'Slicer_State',
+				pivotTableNames: [],
+				items: [{ index: 0, selected: true }],
+			},
+			{
+				partPath: 'xl/slicerCaches/slicerCache2.xml',
+				name: 'Slicer_State',
+				pivotTableNames: [],
+				items: [{ index: 0, selected: false }],
+			},
+		)
+
+		const beforeMissingItem = JSON.stringify(wb.slicerCaches)
+		const missingItem = applyOperation(wb, {
+			op: 'setSlicerCacheItem',
+			partPath: 'xl/slicerCaches/slicerCache1.xml',
+			item: 2,
+			selected: false,
+		})
+		expectErr(missingItem)
+		expect(missingItem.error.message).toContain('Slicer cache item 2 was not found')
+		expect(JSON.stringify(wb.slicerCaches)).toBe(beforeMissingItem)
+
+		const beforeDuplicateName = JSON.stringify(wb.slicerCaches)
+		const duplicateName = applyOperation(wb, {
+			op: 'setSlicerCacheItem',
+			slicerCache: 'Slicer_State',
+			item: 0,
+			selected: false,
+		})
+		expectErr(duplicateName)
+		expect(duplicateName.error.message).toContain('matched 2 caches')
+		expect(JSON.stringify(wb.slicerCaches)).toBe(beforeDuplicateName)
+	})
+
 	test('setTimelineRange updates selected date range with refresh warning', () => {
 		const wb = setup()
 		wb.pivotTables.push({
@@ -6047,10 +6229,16 @@ describe('applyOperation', () => {
 			pivotCacheId: 34,
 			pivotTableNames: ['PivotTable1'],
 			state: {
+				filterId: 7,
+				filterPivotName: 'PivotTable1',
 				singleRangeFilterState: true,
 				selection: {
 					startDate: '2024-01-01T00:00:00',
 					endDate: '2024-03-31T00:00:00',
+				},
+				bounds: {
+					startDate: '2023-01-01T00:00:00',
+					endDate: '2024-12-31T00:00:00',
 				},
 			},
 		})
@@ -6081,6 +6269,21 @@ describe('applyOperation', () => {
 			startDate: '2024-04-01T00:00:00',
 			endDate: '2024-06-30T00:00:00',
 		})
+		expect(wb.timelineCaches[0]).toMatchObject({
+			partPath: 'xl/timelineCaches/timelineCache1.xml',
+			name: 'Timeline_Order_Date',
+			sourceName: 'Order Date',
+			pivotCacheId: 34,
+			pivotTableNames: ['PivotTable1'],
+			state: {
+				filterId: 7,
+				filterPivotName: 'PivotTable1',
+				bounds: {
+					startDate: '2023-01-01T00:00:00',
+					endDate: '2024-12-31T00:00:00',
+				},
+			},
+		})
 		expect(wb.pivotCaches[0]).toMatchObject({ refreshOnLoad: true, invalid: true })
 	})
 
@@ -6108,6 +6311,57 @@ describe('applyOperation', () => {
 		})
 		expectErr(reversedRange)
 		expect(reversedRange.error.message).toContain('startDate must be <= endDate')
+		expect(wb.timelineCaches[0]?.state).toBeUndefined()
+	})
+
+	test('setTimelineRange rejects impossible dates and duplicate names without mutation', () => {
+		const wb = setup()
+		wb.timelineCaches.push(
+			{
+				partPath: 'xl/timelineCaches/timelineCache1.xml',
+				name: 'Timeline_Order_Date',
+				pivotTableNames: [],
+				state: {
+					selection: {
+						startDate: '2024-01-01T00:00:00',
+						endDate: '2024-03-31T00:00:00',
+					},
+				},
+			},
+			{
+				partPath: 'xl/timelineCaches/timelineCache2.xml',
+				name: 'Timeline_Order_Date',
+				pivotTableNames: [],
+				state: {
+					selection: {
+						startDate: '2024-01-01T00:00:00',
+						endDate: '2024-03-31T00:00:00',
+					},
+				},
+			},
+		)
+
+		const beforeImpossibleDate = JSON.stringify(wb.timelineCaches)
+		const impossibleDate = applyOperation(wb, {
+			op: 'setTimelineRange',
+			partPath: 'xl/timelineCaches/timelineCache1.xml',
+			startDate: '2024-02-31T00:00:00',
+			endDate: '2024-03-31T00:00:00',
+		})
+		expectErr(impossibleDate)
+		expect(impossibleDate.error.message).toContain('requires ISO-like startDate and endDate')
+		expect(JSON.stringify(wb.timelineCaches)).toBe(beforeImpossibleDate)
+
+		const beforeDuplicateName = JSON.stringify(wb.timelineCaches)
+		const duplicateName = applyOperation(wb, {
+			op: 'setTimelineRange',
+			timelineCache: 'Timeline_Order_Date',
+			startDate: '2024-04-01T00:00:00',
+			endDate: '2024-06-30T00:00:00',
+		})
+		expectErr(duplicateName)
+		expect(duplicateName.error.message).toContain('matched 2 caches')
+		expect(JSON.stringify(wb.timelineCaches)).toBe(beforeDuplicateName)
 	})
 
 	test('rewriteExternalLink updates selected external workbook target metadata', () => {

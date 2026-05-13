@@ -30,6 +30,9 @@ let server: ReturnType<typeof createServer> | undefined
 interface ApiEnvelope {
 	readonly ok: boolean
 	readonly data?: {
+		readonly output?: string
+		readonly backup?: string
+		readonly outputSha256?: string
 		readonly approvals?: readonly { readonly id: string }[]
 		readonly replayable?: boolean
 		readonly formulaCount?: number
@@ -65,6 +68,7 @@ interface ApiEnvelope {
 		}
 		readonly postWrite?: {
 			readonly valid?: boolean
+			readonly outputSha256?: string
 			readonly auditsPassed?: boolean
 			readonly expectedPackageGraphIssueCount?: number
 			readonly unresolvedPackageGraphIssueCount?: number
@@ -1360,6 +1364,50 @@ describe('Ascend API server', () => {
 		} finally {
 			await unlink(output).catch(() => {})
 			await unlink(`${output}.reuse.xlsx`).catch(() => {})
+		}
+	})
+
+	test('direct path mutation commits preserve in-place backups and post-write truth', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'original' }] }])
+		await wb.save(TEMP_FILE)
+		const backup = `${OUTPUT_FILE}.direct-backup.xlsx`
+		try {
+			const commit = await postJson('/commit', {
+				file: TEMP_FILE,
+				mutations: [{ path: '/sheets/Sheet1/cells/A1/value', value: 'updated' }],
+				inPlace: true,
+				backup,
+				approvals: [],
+				compact: true,
+			})
+			expect(commit.status).toBe(200)
+			expect(commit.body.ok).toBe(true)
+			expect(commit.body.data?.output).toBe(TEMP_FILE)
+			expect(commit.body.data?.backup).toBe(backup)
+			expect(commit.body.data?.outputSha256).toMatch(/^[a-f0-9]{64}$/)
+			expect(commit.body.data?.pathMutations?.ops).toEqual([
+				{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'updated' }] },
+			])
+			expect(commit.body.data?.postWrite?.valid).toBe(true)
+			expect(commit.body.data?.postWrite?.auditsPassed).toBe(true)
+			expect(commit.body.data?.postWrite?.reopened).toBe(true)
+			expect(commit.body.data?.postWrite?.outputSha256).toBe(commit.body.data?.outputSha256)
+			expect(commit.body.data?.postWrite?.check?.valid).toBe(true)
+			expect(commit.body.data?.postWrite?.packageGraphAudit?.ok).toBe(true)
+
+			const reopenedInput = await AscendWorkbook.open(TEMP_FILE)
+			expect(reopenedInput.sheet('Sheet1')?.cell('A1')?.value).toEqual({
+				kind: 'string',
+				value: 'updated',
+			})
+			const reopenedBackup = await AscendWorkbook.open(backup)
+			expect(reopenedBackup.sheet('Sheet1')?.cell('A1')?.value).toEqual({
+				kind: 'string',
+				value: 'original',
+			})
+		} finally {
+			await unlink(backup).catch(() => {})
 		}
 	})
 

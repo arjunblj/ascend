@@ -1263,6 +1263,80 @@ describe('MCP server', () => {
 		}
 	})
 
+	test('direct MCP path mutation commits preserve in-place backups and post-write truth', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'original' }] }])
+		await wb.save(TEMP_FILE)
+		const backup = `${TEMP_FILE}.direct-backup-mcp.xlsx`
+		const server = createServer()
+		try {
+			// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+			const commit = (server as any)._registeredTools['ascend.commit'].handler as (args: {
+				file: string
+				mutations: Array<{ path: string; value?: unknown }>
+				inPlace?: boolean
+				backup?: string
+				approvals?: string[]
+				compact?: boolean
+			}) => Promise<{
+				structuredContent?: {
+					ok?: boolean
+					data?: {
+						output?: string
+						backup?: string
+						outputSha256?: string
+						pathMutations?: { ops?: unknown[] }
+						postWrite?: {
+							valid?: boolean
+							outputSha256?: string
+							auditsPassed?: boolean
+							reopened?: boolean
+							check?: { valid?: boolean }
+							packageGraphAudit?: { ok?: boolean }
+						}
+					}
+				}
+			}>
+
+			const committed = await commit({
+				file: TEMP_FILE,
+				mutations: [{ path: '/sheets/Sheet1/cells/A1/value', value: 'updated' }],
+				inPlace: true,
+				backup,
+				approvals: [],
+				compact: true,
+			})
+			expect(committed.structuredContent?.ok).toBe(true)
+			expect(committed.structuredContent?.data?.output).toBe(TEMP_FILE)
+			expect(committed.structuredContent?.data?.backup).toBe(backup)
+			expect(committed.structuredContent?.data?.outputSha256).toMatch(/^[a-f0-9]{64}$/)
+			expect(committed.structuredContent?.data?.pathMutations?.ops).toEqual([
+				{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'updated' }] },
+			])
+			expect(committed.structuredContent?.data?.postWrite?.valid).toBe(true)
+			expect(committed.structuredContent?.data?.postWrite?.auditsPassed).toBe(true)
+			expect(committed.structuredContent?.data?.postWrite?.reopened).toBe(true)
+			expect(committed.structuredContent?.data?.postWrite?.outputSha256).toBe(
+				committed.structuredContent?.data?.outputSha256,
+			)
+			expect(committed.structuredContent?.data?.postWrite?.check?.valid).toBe(true)
+			expect(committed.structuredContent?.data?.postWrite?.packageGraphAudit?.ok).toBe(true)
+
+			const reopenedInput = await AscendWorkbook.open(TEMP_FILE)
+			expect(reopenedInput.sheet('Sheet1')?.cell('A1')?.value).toEqual({
+				kind: 'string',
+				value: 'updated',
+			})
+			const reopenedBackup = await AscendWorkbook.open(backup)
+			expect(reopenedBackup.sheet('Sheet1')?.cell('A1')?.value).toEqual({
+				kind: 'string',
+				value: 'original',
+			})
+		} finally {
+			await unlink(backup).catch(() => {})
+		}
+	})
+
 	test('prepared MCP path mutation handles preserve in-place backups and remain one-shot', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'original' }] }])

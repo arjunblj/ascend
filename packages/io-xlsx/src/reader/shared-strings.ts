@@ -191,23 +191,47 @@ function parseSimplePlainSharedStringEntry(
 	xml: string,
 	start: number,
 ): { readonly text: string; readonly next: number } | undefined {
-	if (!xml.startsWith('<si><t>', start)) return undefined
+	if (!startsSimplePlainSharedString(xml, start)) return undefined
 	const valueStart = start + 7
 	const valueEnd = xml.indexOf('</t>', valueStart)
 	if (valueEnd === -1) return undefined
-	if (!xml.startsWith('</si>', valueEnd + 4)) return undefined
+	if (!endsSimplePlainSharedString(xml, valueEnd + 4)) return undefined
 	const text = xml.slice(valueStart, valueEnd)
 	return { text: text.includes('&') ? decodeXmlText(text) : text, next: valueEnd + 9 }
 }
 
 function parseSimplePlainSharedStringText(xml: string, start: number): string | undefined {
-	if (!xml.startsWith('<si><t>', start)) return undefined
+	if (!startsSimplePlainSharedString(xml, start)) return undefined
 	const valueStart = start + 7
 	const valueEnd = xml.indexOf('</t>', valueStart)
 	if (valueEnd === -1) return undefined
-	if (!xml.startsWith('</si>', valueEnd + 4)) return undefined
+	if (!endsSimplePlainSharedString(xml, valueEnd + 4)) return undefined
 	const text = xml.slice(valueStart, valueEnd)
 	return text.includes('&') ? decodeXmlText(text) : text
+}
+
+function startsSimplePlainSharedString(xml: string, start: number): boolean {
+	return (
+		start + 6 < xml.length &&
+		xml.charCodeAt(start) === 60 &&
+		xml.charCodeAt(start + 1) === 115 &&
+		xml.charCodeAt(start + 2) === 105 &&
+		xml.charCodeAt(start + 3) === 62 &&
+		xml.charCodeAt(start + 4) === 60 &&
+		xml.charCodeAt(start + 5) === 116 &&
+		xml.charCodeAt(start + 6) === 62
+	)
+}
+
+function endsSimplePlainSharedString(xml: string, start: number): boolean {
+	return (
+		start + 4 < xml.length &&
+		xml.charCodeAt(start) === 60 &&
+		xml.charCodeAt(start + 1) === 47 &&
+		xml.charCodeAt(start + 2) === 115 &&
+		xml.charCodeAt(start + 3) === 105 &&
+		xml.charCodeAt(start + 4) === 62
+	)
 }
 
 function parseSharedStringEntries(

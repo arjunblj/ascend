@@ -73,12 +73,13 @@ export function compilePathMutations(
 		}
 	}
 
+	const replayable = issues.length === 0
 	return {
-		ops,
+		ops: replayable ? ops : [],
 		mutationCount: mutations.length,
 		issueCount: issues.length,
 		issues,
-		replayable: issues.length === 0,
+		replayable,
 	}
 }
 

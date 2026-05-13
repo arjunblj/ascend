@@ -242,6 +242,28 @@ describe('path-addressed mutations', () => {
 		expect(result.issues.at(-1)?.details?.supportedShapes).toEqual(SUPPORTED_PATH_MUTATION_SHAPES)
 	})
 
+	test('does not emit partial ops when any mutation makes the batch non-replayable', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'old' }] }])
+
+		const result = wb.compilePathMutations([
+			{ path: '/sheets/Sheet1/cells/A1/value', value: 'new' },
+			{ path: '/sheets/Missing/cells/A1/value', value: 1 },
+		])
+
+		expect(result.replayable).toBe(false)
+		expect(result.ops).toEqual([])
+		expect(result.issues).toEqual([
+			expect.objectContaining({
+				code: 'sheet_not_found',
+				path: '/sheets/Missing/cells/A1/value',
+			}),
+		])
+		const applied = wb.batch(result.ops)
+		expect(applied.errors).toEqual([])
+		expect(wb.sheet('Sheet1')?.cell('A1')?.value).toEqual({ kind: 'string', value: 'old' })
+	})
+
 	test('rejects malformed path syntax instead of repairing it silently', () => {
 		const wb = AscendWorkbook.create()
 

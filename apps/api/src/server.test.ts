@@ -81,6 +81,7 @@ interface ApiEnvelope {
 				readonly partialReasons?: readonly string[]
 			}
 			readonly supportedPathShapes?: readonly string[]
+			readonly compiledOps?: readonly unknown[]
 			readonly issueDetails?: readonly {
 				readonly code?: string
 				readonly opIndex?: number
@@ -549,6 +550,41 @@ describe('Ascend API server', () => {
 				expect.objectContaining({
 					code: 'invalid_path',
 					path: '/sheets//cells/A1/value',
+				}),
+			])
+		}
+
+		const reopened = await AscendWorkbook.open(TEMP_FILE)
+		expect(reopened.sheet('Sheet1')?.cell('A1')?.value).toEqual({
+			kind: 'string',
+			value: 'old',
+		})
+	})
+
+	test('non-replayable path mutation batches do not expose or apply partial ops', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'old' }] }])
+		await wb.save(TEMP_FILE)
+
+		for (const endpoint of ['/plan', '/preview', '/write', '/commit'] as const) {
+			const result = await postJson(endpoint, {
+				file: TEMP_FILE,
+				output: OUTPUT_FILE,
+				mutations: [
+					{ path: '/sheets/Sheet1/cells/A1/value', value: 'new' },
+					{ path: '/sheets/Missing/cells/A1/value', value: 1 },
+				],
+			})
+
+			expect(result.status).toBe(400)
+			expect(result.body.ok).toBe(false)
+			expect(result.body.error?.code).toBe('VALIDATION_ERROR')
+			expect(result.body.error?.details?.issueCount).toBe(1)
+			expect(result.body.error?.details?.compiledOps).toEqual([])
+			expect(result.body.error?.details?.issueDetails).toEqual([
+				expect.objectContaining({
+					code: 'sheet_not_found',
+					path: '/sheets/Missing/cells/A1/value',
 				}),
 			])
 		}

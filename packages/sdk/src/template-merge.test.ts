@@ -91,4 +91,13 @@ describe('template merge', () => {
 			},
 		])
 	})
+
+	test('rejects non-scalar template data before formula interpolation', () => {
+		const wb = AscendWorkbook.create()
+		wb.setFormula('Sheet1!A1', '{{unsafe}}')
+
+		expect(() => wb.templateMerge({ unsafe: { nested: true } })).toThrow(
+			'Template value "unsafe" must be string, number, boolean, or null',
+		)
+	})
 })

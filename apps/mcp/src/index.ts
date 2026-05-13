@@ -584,6 +584,59 @@ export function createServer(): McpServer {
 	)
 
 	server.tool(
+		'ascend.template_merge',
+		'Compile {{key}} workbook template placeholders into deterministic operations that can be replayed through ascend.plan and ascend.commit',
+		{
+			file: z.string().describe('Path to workbook file'),
+			data: z
+				.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()]))
+				.describe('Template values keyed by placeholder name; values must be JSON scalars'),
+			sheet: z.string().optional().describe('Optional sheet name to scan'),
+			valuesOnly: z.boolean().optional().describe('Omit formulas from the template merge scan'),
+			formulasOnly: z
+				.boolean()
+				.optional()
+				.describe('Omit literal values from the template merge scan'),
+			open: z.string().optional().describe('Placeholder opening delimiter, default {{'),
+			close: z.string().optional().describe('Placeholder closing delimiter, default }}'),
+		},
+		async ({ file, data, sheet, valuesOnly, formulasOnly, open, close }) => {
+			if (valuesOnly && formulasOnly) {
+				return errorResponse(
+					ascendError('INVALID_ARGUMENT', 'Use either valuesOnly or formulasOnly, not both', {
+						retryStrategy: 'modified',
+						suggestedFix: 'Retry with only one template merge mode flag.',
+					}),
+				)
+			}
+			try {
+				const wb = await AscendWorkbook.open(file)
+				const result = wb.templateMerge(data, {
+					...(sheet ? { sheets: [sheet] } : {}),
+					...(valuesOnly ? { includeFormulas: false } : {}),
+					...(formulasOnly ? { includeValues: false } : {}),
+					...(open || close
+						? {
+								delimiters: {
+									...(open ? { open } : {}),
+									...(close ? { close } : {}),
+								},
+							}
+						: {}),
+				})
+				return okResponse(
+					result,
+					`Compiled ${result.ops.length} template merge operation(s) from ${result.sheetCount} sheet(s)`,
+				)
+			} catch (e) {
+				return errorResponse(
+					e instanceof AscendException ? e.ascendError : String(e instanceof Error ? e.message : e),
+				)
+			}
+		},
+	)
+
+	server.tool(
 		'ascend.agent_view',
 		'Read a compressed semantic summary for a worksheet range',
 		{

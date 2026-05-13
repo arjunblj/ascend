@@ -8,6 +8,7 @@ import { runCli } from './index.ts'
 const CLI = new URL('./index.ts', import.meta.url).pathname
 const TEST_FILE = 'test-output.xlsx'
 const DUMP_TEST_FILE = 'test-dump.xlsx'
+const TEMPLATE_TEST_FILE = 'test-template.xlsx'
 const APPROVAL_TEST_FILE = 'test-approval.xlsx'
 const MULTI_SHEET_FILE = 'test-multi.xlsx'
 const NAMED_RANGE_FILE = 'test-named.xlsx'
@@ -91,6 +92,7 @@ afterAll(() => {
 	for (const f of [
 		TEST_FILE,
 		DUMP_TEST_FILE,
+		TEMPLATE_TEST_FILE,
 		MULTI_SHEET_FILE,
 		NAMED_RANGE_FILE,
 		TUI_TEST_FILE,
@@ -394,6 +396,51 @@ describe('ascend cli', () => {
 				],
 			},
 			{ op: 'setFormula', sheet: 'Sheet1', ref: 'B2', formula: 'A1*2' },
+		])
+	})
+
+	test('template-merge --json emits replayable operations and unresolved placeholders', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: '{{amount}}' },
+					{ ref: 'A2', value: 'Missing {{client}}' },
+				],
+			},
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'B1', formula: 'A1+{{tax}}' },
+		])
+		await wb.save(`${import.meta.dir}/${TEMPLATE_TEST_FILE}`)
+
+		const result = await run(
+			'template-merge',
+			TEMPLATE_TEST_FILE,
+			'--data',
+			'{"amount":10,"tax":2}',
+			'--json',
+		)
+		expect(result.exitCode).toBe(2)
+		const parsed = JSON.parse(result.stdout)
+		expect(parsed.ok).toBe(true)
+		expect(parsed.data.replayable).toBe(false)
+		expect(parsed.data.unresolved).toEqual([
+			{
+				sheet: 'Sheet1',
+				ref: 'A2',
+				source: 'value',
+				placeholder: '{{client}}',
+				key: 'client',
+			},
+		])
+		expect(parsed.data.ops).toEqual([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [{ ref: 'A1', value: 10 }],
+			},
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'B1', formula: 'A1+2' },
 		])
 	})
 

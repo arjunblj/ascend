@@ -49,6 +49,7 @@ describe('MCP server', () => {
 		expect(names).toContain('ascend.read')
 		expect(names).toContain('ascend.read_table')
 		expect(names).toContain('ascend.dump')
+		expect(names).toContain('ascend.template_merge')
 		expect(names).toContain('ascend.find')
 		expect(names).toContain('ascend.agent_view')
 		expect(names).toContain('ascend.preview')
@@ -69,7 +70,7 @@ describe('MCP server', () => {
 		expect(names).toContain('ascend.plan')
 		expect(names).toContain('ascend.commit')
 		expect(names).toContain('ascend.repair_plan')
-		expect(names.length).toBe(27)
+		expect(names.length).toBe(28)
 	})
 
 	test('agent resources and prompts are registered', () => {
@@ -713,6 +714,64 @@ describe('MCP server', () => {
 				],
 			},
 			{ op: 'setFormula', sheet: 'Sheet1', ref: 'B2', formula: 'A1*2' },
+		])
+	})
+
+	test('ascend.template_merge emits replayable operation batches and unresolved placeholders', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: '{{amount}}' },
+					{ ref: 'A2', value: 'Missing {{client}}' },
+				],
+			},
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'B1', formula: 'A1+{{tax}}' },
+		])
+		await wb.save(TEMP_FILE)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const handler = (server as any)._registeredTools['ascend.template_merge'].handler as (args: {
+			file: string
+			sheet?: string
+			data: Record<string, string | number | boolean | null>
+		}) => Promise<{
+			structuredContent?: {
+				ok?: boolean
+				data?: {
+					replayable?: boolean
+					ops?: unknown[]
+					unresolved?: unknown[]
+				}
+			}
+		}>
+
+		const result = await handler({
+			file: TEMP_FILE,
+			sheet: 'Sheet1',
+			data: { amount: 10, tax: 2 },
+		})
+		expect(result.structuredContent?.ok).toBe(true)
+		expect(result.structuredContent?.data?.replayable).toBe(false)
+		expect(result.structuredContent?.data?.unresolved).toEqual([
+			{
+				sheet: 'Sheet1',
+				ref: 'A2',
+				source: 'value',
+				placeholder: '{{client}}',
+				key: 'client',
+			},
+		])
+		expect(result.structuredContent?.data?.ops).toEqual([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [{ ref: 'A1', value: 10 }],
+			},
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'B1', formula: 'A1+2' },
 		])
 	})
 

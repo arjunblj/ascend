@@ -300,6 +300,51 @@ export function createApiFetch() {
 				}
 			}
 
+			if (method === 'POST' && path === '/template-merge') {
+				const body = await parseJson<{
+					file?: string
+					data?: Record<string, unknown>
+					sheet?: string
+					valuesOnly?: boolean
+					formulasOnly?: boolean
+					delimiters?: { open?: string; close?: string }
+				}>(req)
+				const file = body ? requireString(body, 'file') : null
+				if (!file) return jsonFailure('Missing or invalid file', 400)
+				if (!body || !body.data || Array.isArray(body.data) || typeof body.data !== 'object') {
+					return jsonFailure('Missing or invalid template data', 400)
+				}
+				if (body.valuesOnly === true && body.formulasOnly === true) {
+					return jsonFailure('Use either valuesOnly or formulasOnly, not both', 400)
+				}
+				try {
+					const wb = await AscendWorkbook.open(file)
+					return jsonSuccess(
+						wb.templateMerge(body.data, {
+							...(body.sheet ? { sheets: [body.sheet] } : {}),
+							...(body.valuesOnly === true ? { includeFormulas: false } : {}),
+							...(body.formulasOnly === true ? { includeValues: false } : {}),
+							...(body.delimiters &&
+							(typeof body.delimiters.open === 'string' ||
+								typeof body.delimiters.close === 'string')
+								? {
+										delimiters: {
+											...(typeof body.delimiters.open === 'string'
+												? { open: body.delimiters.open }
+												: {}),
+											...(typeof body.delimiters.close === 'string'
+												? { close: body.delimiters.close }
+												: {}),
+										},
+									}
+								: {}),
+						}),
+					)
+				} catch (e) {
+					return handleError(e, file)
+				}
+			}
+
 			if (method === 'POST' && path === '/pivots') {
 				const body = await parseJson<{
 					file?: string

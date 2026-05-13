@@ -103,6 +103,48 @@ describe('Ascend API server', () => {
 		])
 	})
 
+	test('template-merge emits replayable operation batches and unresolved placeholders', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: '{{amount}}' },
+					{ ref: 'A2', value: 'Missing {{client}}' },
+				],
+			},
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'B1', formula: 'A1+{{tax}}' },
+		])
+		await wb.save(TEMP_FILE)
+
+		const result = await postJson('/template-merge', {
+			file: TEMP_FILE,
+			sheet: 'Sheet1',
+			data: { amount: 10, tax: 2 },
+		})
+		expect(result.status).toBe(200)
+		expect(result.body.ok).toBe(true)
+		expect(result.body.data?.replayable).toBe(false)
+		expect(result.body.data?.unresolved).toEqual([
+			{
+				sheet: 'Sheet1',
+				ref: 'A2',
+				source: 'value',
+				placeholder: '{{client}}',
+				key: 'client',
+			},
+		])
+		expect(result.body.data?.ops).toEqual([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [{ ref: 'A1', value: 10 }],
+			},
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'B1', formula: 'A1+2' },
+		])
+	})
+
 	test('plan invalid ops return structured batch repair details', async () => {
 		const ops = [
 			{ op: 'insertRows', sheet: 'Sheet1', at: 0, count: '2' },

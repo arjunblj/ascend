@@ -236,6 +236,37 @@ function richTextPlainText(value: Extract<CellValue, { kind: 'richText' }>): str
 	return value.runs.map((run) => run.text).join('')
 }
 
+function normalizeTemplateMergeData(
+	data: Readonly<Record<string, unknown>>,
+): ReadonlyMap<string, TemplateMergeValue> {
+	const values = new Map<string, TemplateMergeValue>()
+	for (const [key, value] of Object.entries(data)) {
+		if (
+			value === null ||
+			typeof value === 'string' ||
+			typeof value === 'number' ||
+			typeof value === 'boolean'
+		) {
+			values.set(key, value)
+			continue
+		}
+		throw new AscendException(
+			ascendError(
+				'INVALID_ARGUMENT',
+				`Template value "${key}" must be string, number, boolean, or null`,
+				{
+					details: {
+						key,
+						valueType: Array.isArray(value) ? 'array' : typeof value,
+					},
+					suggestedFix: 'Pass only scalar JSON values for template merge data.',
+				},
+			),
+		)
+	}
+	return values
+}
+
 /**
  * Full mutable workbook. Use for apply, recalc, save, export, and any editing.
  * Opens the full workbook into memory. Use `WorkbookDocument` for read-only
@@ -689,14 +720,14 @@ export class AscendWorkbook extends WorkbookReadView {
 	 * Missing keys and unsupported rich-text placeholders are reported without mutating.
 	 */
 	templateMerge(
-		data: Readonly<Record<string, TemplateMergeValue>>,
+		data: Readonly<Record<string, unknown>>,
 		options: TemplateMergeOptions = {},
 	): TemplateMergeResult {
 		const includeValues = options.includeValues ?? true
 		const includeFormulas = options.includeFormulas ?? true
 		const selectedSheets = options.sheets ? new Set(options.sheets) : null
 		const delimiters = normalizeTemplateDelimiters(options)
-		const values = new Map(Object.entries(data))
+		const values = normalizeTemplateMergeData(data)
 		const ops: Operation[] = []
 		const unresolved: TemplateMergePlaceholder[] = []
 		const unsupported: TemplateMergeUnsupportedCell[] = []

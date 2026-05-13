@@ -24,6 +24,7 @@ import { planCommand, usage as planUsage } from './commands/plan.ts'
 import { previewCommand, usage as previewUsage } from './commands/preview.ts'
 import { readCommand, usage as readUsage } from './commands/read.ts'
 import { repairPlanCommand, usage as repairPlanUsage } from './commands/repair-plan.ts'
+import { templateMergeCommand, usage as templateMergeUsage } from './commands/template-merge.ts'
 import { traceCommand, usage as traceUsage } from './commands/trace.ts'
 import { tuiCommand, usage as tuiUsage } from './commands/tui.ts'
 import { writeCommand, usage as writeUsage } from './commands/write.ts'
@@ -42,6 +43,7 @@ Commands:
   list <file>                   List sheets and tables
   read <file> <range>           Read cell values from a range
   dump <file>                   Dump a replayable operation batch
+  template-merge <file>         Compile template placeholders into operations
   find <file> <query>           Search for cells matching a value
   agent-view <file>             Get AI-friendly sheet summary
   agent-init                    Print the recommended agent workflow contract
@@ -104,6 +106,11 @@ const COMMANDS: Record<string, Command> = {
 		run: dumpCommand,
 		usage: dumpUsage,
 		allowedFlags: ['sheet', 'values-only', 'formulas-only', 'json'],
+	},
+	'template-merge': {
+		run: templateMergeCommand,
+		usage: templateMergeUsage,
+		allowedFlags: ['data', 'sheet', 'values-only', 'formulas-only', 'open', 'close', 'json'],
 	},
 	ops: { run: opsCommand, usage: opsUsage, allowedFlags: ['op', 'json'] },
 	capabilities: {

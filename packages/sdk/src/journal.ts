@@ -454,6 +454,14 @@ function buildSupportedJournalEntry(
 				preimages: [],
 				issues: [],
 			}
+		case 'copySheet':
+			return {
+				opIndex,
+				op,
+				inverseOps: [{ op: 'deleteSheet', sheet: op.newName }],
+				preimages: [],
+				issues: [],
+			}
 		case 'setRowHeight':
 			return journalSetSheetLayout(workbook, op, opIndex, 'row')
 		case 'setColWidth':

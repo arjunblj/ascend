@@ -3939,6 +3939,45 @@ describe('interactive client contract', () => {
 		expect(journalComparableState(wb)).toEqual(before)
 	})
 
+	test('journal inverse ops restore copied sheets and copied chart metadata', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'Region' },
+					{ ref: 'B1', value: 'Amount' },
+					{ ref: 'A2', value: 'West' },
+					{ ref: 'B2', value: 20 },
+				],
+			},
+		])
+		wb.getWorkbookModel().chartParts.push({
+			partPath: 'xl/charts/chart1.xml',
+			sheetName: 'Sheet1',
+			chartType: 'barChart',
+			series: [{ nameRef: 'Sheet1!$B$1', categoryRef: 'Sheet1!$A$2', valueRef: 'Sheet1!$B$2' }],
+		})
+		const before = journalComparableState(wb)
+
+		const copied = wb.apply([{ op: 'copySheet', sheet: 'Sheet1', newName: 'Copy', position: 0 }], {
+			journal: true,
+		})
+
+		expect(copied.errors).toEqual([])
+		expect(copied.journal?.supported).toBe(true)
+		expect(copied.journal?.exact).toBe(true)
+		expect(copied.journal?.inverseOps).toEqual([{ op: 'deleteSheet', sheet: 'Copy' }])
+		expect(wb.sheets[0]).toBe('Copy')
+		expect(wb.getWorkbookModel().chartParts).toHaveLength(2)
+		expect(journalComparableState(wb)).not.toEqual(before)
+
+		const undo = wb.apply(copied.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(journalComparableState(wb)).toEqual(before)
+	})
+
 	test('journal inverse ops restore existing row and column layout edits', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

@@ -2613,6 +2613,39 @@ describe('agent workflow loss audit', () => {
 		expect(details?.actualSha256).not.toBe(prepared.inputSha256)
 	})
 
+	test('prepared agent plans preserve in-place backup and remain one-shot', async () => {
+		const input = join(TEMP_DIR, 'prepared-in-place.xlsx')
+		const backup = join(TEMP_DIR, 'prepared-in-place-backup.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'original' }] }])
+		await wb.save(input)
+
+		const prepared = await createPreparedAgentPlan(input, [
+			{ op: 'setCells' as const, sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'updated' }] },
+		])
+		const committed = await prepared.commit({ inPlace: true, backup })
+
+		expect(committed.output).toBe(input)
+		expect(committed.backup).toBe(backup)
+		expect(committed.postWrite.valid).toBe(true)
+		expect(committed.postWrite.reopened).toBe(true)
+		expect(committed.postWrite.check?.valid).toBe(true)
+		const reopenedInput = await AscendWorkbook.open(input)
+		expect(reopenedInput.sheet('Sheet1')?.cell('A1')?.value).toEqual({
+			kind: 'string',
+			value: 'updated',
+		})
+		const reopenedBackup = await AscendWorkbook.open(backup)
+		expect(reopenedBackup.sheet('Sheet1')?.cell('A1')?.value).toEqual({
+			kind: 'string',
+			value: 'original',
+		})
+		await expect(prepared.commit({ inPlace: true, backup })).rejects.toThrow(
+			'Prepared agent plan has already been committed',
+		)
+	})
+
 	test('destructive operations require explicit approval ids', async () => {
 		const input = join(TEMP_DIR, 'destructive.xlsx')
 		const output = join(TEMP_DIR, 'destructive-out.xlsx')

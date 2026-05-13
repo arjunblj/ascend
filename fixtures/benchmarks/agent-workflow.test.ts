@@ -53,6 +53,14 @@ describe('agent workflow benchmark', () => {
 				readonly planEmittedChangedCellCountMedian?: number
 				readonly preparedPlanChangedCellCountMedian?: number
 				readonly preparedPlanEmittedChangedCellCountMedian?: number
+				readonly compactHydratedOpenCountMedian?: number
+				readonly fullHydratedOpenCountMedian?: number
+				readonly preparedHydratedOpenCountMedian?: number
+				readonly planHydratedOpenCountMedian?: number
+				readonly preparedPlanHydratedOpenCountMedian?: number
+				readonly commitHydratedOpenCountMedian?: number
+				readonly preparedCommitHydratedOpenCountMedian?: number
+				readonly documentCacheHitCountMedian?: number
 				readonly mutationCountMedian?: number
 				readonly rssDeltaMbMedian?: number
 				readonly readPartial?: boolean
@@ -80,6 +88,20 @@ describe('agent workflow benchmark', () => {
 		expect(payload.summary?.planEmittedChangedCellCountMedian).toBe(12)
 		expect(payload.summary?.preparedPlanChangedCellCountMedian).toBe(12)
 		expect(payload.summary?.preparedPlanEmittedChangedCellCountMedian).toBe(12)
+		expect(payload.summary?.compactHydratedOpenCountMedian).toBeNumber()
+		expect(payload.summary?.fullHydratedOpenCountMedian).toBeNumber()
+		expect(payload.summary?.preparedHydratedOpenCountMedian).toBeNumber()
+		expect(payload.summary?.planHydratedOpenCountMedian).toBeNumber()
+		expect(payload.summary?.preparedPlanHydratedOpenCountMedian).toBeNumber()
+		expect(payload.summary?.commitHydratedOpenCountMedian).toBeNumber()
+		expect(payload.summary?.preparedCommitHydratedOpenCountMedian).toBeNumber()
+		expect(payload.summary?.documentCacheHitCountMedian).toBeNumber()
+		expect(payload.summary?.preparedHydratedOpenCountMedian).toBeLessThan(
+			payload.summary?.compactHydratedOpenCountMedian ?? 0,
+		)
+		expect(payload.summary?.preparedCommitHydratedOpenCountMedian).toBeLessThan(
+			payload.summary?.commitHydratedOpenCountMedian ?? 0,
+		)
 		expect(payload.summary?.mutationCountMedian).toBe(12)
 		expect(payload.summary?.rssDeltaMbMedian).toBeNumber()
 		expect(payload.summary?.readPartial).toBe(true)

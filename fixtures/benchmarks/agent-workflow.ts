@@ -2,6 +2,7 @@
 import { rm } from 'node:fs/promises'
 import { createApiFetch } from '../../apps/api/src/server.ts'
 import { indexToColumn } from '../../packages/core/src/index.ts'
+import { AscendWorkbook, WorkbookDocument } from '../../packages/sdk/src/index.ts'
 import { buildRawReadWorkloadDataSet, type WorkloadName } from './competitive-io.ts'
 
 interface Args {
@@ -48,11 +49,129 @@ interface WorkflowSample {
 	readonly planEmittedChangedCellCount: number | null
 	readonly preparedPlanChangedCellCount: number | null
 	readonly preparedPlanEmittedChangedCellCount: number | null
+	readonly compactHydratedOpenCount: number
+	readonly fullHydratedOpenCount: number
+	readonly preparedHydratedOpenCount: number
+	readonly planHydratedOpenCount: number
+	readonly preparedPlanHydratedOpenCount: number
+	readonly commitHydratedOpenCount: number
+	readonly preparedCommitHydratedOpenCount: number
+	readonly documentCacheHitCount: number
 	readonly mutationCount: number
 	readonly rssDeltaMb: number
 	readonly valid: boolean
 	readonly preparedValid: boolean
 }
+
+interface OpenStats {
+	readonly workbookOpenCalls: number
+	readonly workbookOpenSourceBytesCalls: number
+	readonly workbookHydrations: number
+	readonly documentOpenCalls: number
+	readonly documentHydrations: number
+	readonly documentCacheHits: number
+}
+
+type MutableOpenStats = {
+	-readonly [K in keyof OpenStats]: OpenStats[K]
+}
+
+const openStats: MutableOpenStats = {
+	workbookOpenCalls: 0,
+	workbookOpenSourceBytesCalls: 0,
+	workbookHydrations: 0,
+	documentOpenCalls: 0,
+	documentHydrations: 0,
+	documentCacheHits: 0,
+}
+
+const seenDocuments = new WeakSet<WorkbookDocument>()
+
+function installOpenStatsInstrumentation(): void {
+	type WorkbookOpen = typeof AscendWorkbook.open
+	type WorkbookOpenSourceBytes = typeof AscendWorkbook.openSourceBytes
+	type DocumentOpen = typeof WorkbookDocument.open
+
+	const originalWorkbookOpen = AscendWorkbook.open.bind(AscendWorkbook) as WorkbookOpen
+	const originalWorkbookOpenSourceBytes = AscendWorkbook.openSourceBytes.bind(
+		AscendWorkbook,
+	) as WorkbookOpenSourceBytes
+	const originalDocumentOpen = WorkbookDocument.open.bind(WorkbookDocument) as DocumentOpen
+
+	Object.defineProperty(AscendWorkbook, 'open', {
+		configurable: true,
+		value: (async (...args: Parameters<WorkbookOpen>) => {
+			openStats.workbookOpenCalls += 1
+			openStats.workbookHydrations += 1
+			return originalWorkbookOpen(...args)
+		}) satisfies WorkbookOpen,
+	})
+	Object.defineProperty(AscendWorkbook, 'openSourceBytes', {
+		configurable: true,
+		value: (async (...args: Parameters<WorkbookOpenSourceBytes>) => {
+			openStats.workbookOpenSourceBytesCalls += 1
+			openStats.workbookHydrations += 1
+			return originalWorkbookOpenSourceBytes(...args)
+		}) satisfies WorkbookOpenSourceBytes,
+	})
+	Object.defineProperty(WorkbookDocument, 'open', {
+		configurable: true,
+		value: (async (...args: Parameters<DocumentOpen>) => {
+			openStats.documentOpenCalls += 1
+			const document = await originalDocumentOpen(...args)
+			if (seenDocuments.has(document)) openStats.documentCacheHits += 1
+			else {
+				seenDocuments.add(document)
+				openStats.documentHydrations += 1
+			}
+			return document
+		}) satisfies DocumentOpen,
+	})
+}
+
+function snapshotOpenStats(): OpenStats {
+	return { ...openStats }
+}
+
+function diffOpenStats(after: OpenStats, before: OpenStats): OpenStats {
+	return {
+		workbookOpenCalls: after.workbookOpenCalls - before.workbookOpenCalls,
+		workbookOpenSourceBytesCalls:
+			after.workbookOpenSourceBytesCalls - before.workbookOpenSourceBytesCalls,
+		workbookHydrations: after.workbookHydrations - before.workbookHydrations,
+		documentOpenCalls: after.documentOpenCalls - before.documentOpenCalls,
+		documentHydrations: after.documentHydrations - before.documentHydrations,
+		documentCacheHits: after.documentCacheHits - before.documentCacheHits,
+	}
+}
+
+function addOpenStats(...items: readonly OpenStats[]): OpenStats {
+	return items.reduce<OpenStats>(
+		(total, item) => ({
+			workbookOpenCalls: total.workbookOpenCalls + item.workbookOpenCalls,
+			workbookOpenSourceBytesCalls:
+				total.workbookOpenSourceBytesCalls + item.workbookOpenSourceBytesCalls,
+			workbookHydrations: total.workbookHydrations + item.workbookHydrations,
+			documentOpenCalls: total.documentOpenCalls + item.documentOpenCalls,
+			documentHydrations: total.documentHydrations + item.documentHydrations,
+			documentCacheHits: total.documentCacheHits + item.documentCacheHits,
+		}),
+		{
+			workbookOpenCalls: 0,
+			workbookOpenSourceBytesCalls: 0,
+			workbookHydrations: 0,
+			documentOpenCalls: 0,
+			documentHydrations: 0,
+			documentCacheHits: 0,
+		},
+	)
+}
+
+function hydratedOpenCount(stats: OpenStats): number {
+	return stats.workbookHydrations + stats.documentHydrations
+}
+
+installOpenStatsInstrumentation()
 
 const WORKLOADS = new Set<string>([
 	'dense-values',
@@ -109,6 +228,7 @@ function medianOptional(values: readonly (number | null | undefined)[]): number 
 }
 
 async function post(apiFetch: typeof fetch, path: string, body: unknown) {
+	const beforeOpenStats = snapshotOpenStats()
 	const start = performance.now()
 	const response = await apiFetch(
 		new Request(`http://ascend.local${path}`, {
@@ -120,7 +240,12 @@ async function post(apiFetch: typeof fetch, path: string, body: unknown) {
 	const text = await response.text()
 	const ms = performance.now() - start
 	if (response.status !== 200) throw new Error(`${path} failed: ${text}`)
-	return { ms, text, payload: JSON.parse(text) as ApiEnvelope }
+	return {
+		ms,
+		text,
+		payload: JSON.parse(text) as ApiEnvelope,
+		openStats: diffOpenStats(snapshotOpenStats(), beforeOpenStats),
+	}
 }
 
 interface ApiEnvelope {
@@ -214,6 +339,25 @@ async function runWorkflow(
 	const measuredSampleMs = performance.now() - totalStart
 	const rssAfter = rssMb()
 	const readLoad = read.payload.data?.load
+	const sharedOpenStats = addOpenStats(inspect.openStats, read.openStats)
+	const compactOpenStats = addOpenStats(
+		sharedOpenStats,
+		plan.openStats,
+		commit.openStats,
+		verify.openStats,
+	)
+	const fullOpenStats = addOpenStats(
+		sharedOpenStats,
+		fullPlan.openStats,
+		commit.openStats,
+		verify.openStats,
+	)
+	const preparedOpenStats = addOpenStats(
+		sharedOpenStats,
+		preparedPlan.openStats,
+		preparedCommit.openStats,
+		preparedVerify.openStats,
+	)
 	const compactWorkflowBytes =
 		inspect.text.length +
 		read.text.length +
@@ -266,6 +410,24 @@ async function runWorkflow(
 		preparedPlanChangedCellCount: preparedPlan.payload.data?.preview?.changedCellCount ?? null,
 		preparedPlanEmittedChangedCellCount:
 			preparedPlan.payload.data?.preview?.emittedChangedCellCount ?? null,
+		compactHydratedOpenCount: hydratedOpenCount(compactOpenStats),
+		fullHydratedOpenCount: hydratedOpenCount(fullOpenStats),
+		preparedHydratedOpenCount: hydratedOpenCount(preparedOpenStats),
+		planHydratedOpenCount: hydratedOpenCount(plan.openStats),
+		preparedPlanHydratedOpenCount: hydratedOpenCount(preparedPlan.openStats),
+		commitHydratedOpenCount: hydratedOpenCount(commit.openStats),
+		preparedCommitHydratedOpenCount: hydratedOpenCount(preparedCommit.openStats),
+		documentCacheHitCount: addOpenStats(
+			inspect.openStats,
+			read.openStats,
+			fullPlan.openStats,
+			plan.openStats,
+			preparedPlan.openStats,
+			commit.openStats,
+			preparedCommit.openStats,
+			verify.openStats,
+			preparedVerify.openStats,
+		).documentCacheHits,
 		mutationCount,
 		rssDeltaMb: rssAfter - rssBefore,
 		valid: verify.payload.data?.valid === true,
@@ -329,6 +491,22 @@ function summarize(samples: readonly WorkflowSample[]) {
 		preparedPlanEmittedChangedCellCountMedian: medianOptional(
 			samples.map((sample) => sample.preparedPlanEmittedChangedCellCount),
 		),
+		compactHydratedOpenCountMedian: median(
+			samples.map((sample) => sample.compactHydratedOpenCount),
+		),
+		fullHydratedOpenCountMedian: median(samples.map((sample) => sample.fullHydratedOpenCount)),
+		preparedHydratedOpenCountMedian: median(
+			samples.map((sample) => sample.preparedHydratedOpenCount),
+		),
+		planHydratedOpenCountMedian: median(samples.map((sample) => sample.planHydratedOpenCount)),
+		preparedPlanHydratedOpenCountMedian: median(
+			samples.map((sample) => sample.preparedPlanHydratedOpenCount),
+		),
+		commitHydratedOpenCountMedian: median(samples.map((sample) => sample.commitHydratedOpenCount)),
+		preparedCommitHydratedOpenCountMedian: median(
+			samples.map((sample) => sample.preparedCommitHydratedOpenCount),
+		),
+		documentCacheHitCountMedian: median(samples.map((sample) => sample.documentCacheHitCount)),
 		mutationCountMedian: median(samples.map((sample) => sample.mutationCount)),
 		rssDeltaMbMedian: median(samples.map((sample) => sample.rssDeltaMb)),
 		readPartial: samples.every((sample) => sample.readPartial),

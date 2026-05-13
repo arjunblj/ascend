@@ -852,6 +852,7 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 					file?: string
 					range?: string
 					sheet?: string
+					maxRows?: number
 					rowChunkSize?: number
 					sampleRowLimit?: number
 					sampleValueLimit?: number
@@ -862,6 +863,7 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 				if (!range) return jsonFailure('Missing or invalid range', 400)
 				try {
 					const sheetName = body ? requireString(body, 'sheet') : null
+					const maxRows = body ? requireOptionalNumber(body, 'maxRows') : undefined
 					const rowChunkSize = body ? requireOptionalNumber(body, 'rowChunkSize') : undefined
 					const sampleRowLimit = body ? requireOptionalNumber(body, 'sampleRowLimit') : undefined
 					const sampleValueLimit = body
@@ -869,7 +871,13 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 						: undefined
 					const wb = await WorkbookDocument.open(
 						file,
-						sheetName ? { mode: 'formula', sheets: [sheetName] } : { mode: 'formula' },
+						sheetName
+							? {
+									mode: 'formula',
+									sheets: [sheetName],
+									...(maxRows !== undefined ? { maxRows } : {}),
+								}
+							: { mode: 'formula', ...(maxRows !== undefined ? { maxRows } : {}) },
 					)
 					const targetSheet = sheetName ?? wb.sheets[0]
 					if (!targetSheet) return sheetNotFoundResponse(sheetName ?? '', wb)
@@ -879,7 +887,7 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 						...(sampleValueLimit !== undefined ? { sampleValueLimit } : {}),
 					})
 					if (!info) return sheetNotFoundResponse(targetSheet, wb)
-					return jsonSuccess(info)
+					return jsonSuccess(withPartialLoadInfo(info, wb))
 				} catch (e) {
 					return handleError(e, file)
 				}

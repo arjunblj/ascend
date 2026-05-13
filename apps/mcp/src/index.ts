@@ -1025,6 +1025,12 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 			file: z.string().describe('Path to workbook file'),
 			range: z.string().describe('Cell range (e.g. "A1:Z200")'),
 			sheet: z.string().optional().describe('Sheet name (defaults to first sheet)'),
+			maxRows: z
+				.number()
+				.int()
+				.positive()
+				.optional()
+				.describe('Maximum worksheet rows to hydrate; partial agent views include load metadata'),
 			rowChunkSize: z.number().int().positive().optional().describe('Rows per streamed chunk'),
 			sampleRowLimit: z.number().int().positive().optional().describe('Maximum sample rows'),
 			sampleValueLimit: z
@@ -1034,11 +1040,17 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 				.optional()
 				.describe('Maximum sample values per column'),
 		},
-		async ({ file, range, sheet, rowChunkSize, sampleRowLimit, sampleValueLimit }) => {
+		async ({ file, range, sheet, maxRows, rowChunkSize, sampleRowLimit, sampleValueLimit }) => {
 			try {
 				const wb = await WorkbookDocument.open(
 					file,
-					sheet ? { mode: 'formula', sheets: [sheet] } : { mode: 'formula' },
+					sheet
+						? {
+								mode: 'formula',
+								sheets: [sheet],
+								...(maxRows !== undefined ? { maxRows } : {}),
+							}
+						: { mode: 'formula', ...(maxRows !== undefined ? { maxRows } : {}) },
 				)
 				const sheetName = sheet ?? wb.sheets[0]
 				if (!sheetName) return errorResponse('No sheets in workbook')
@@ -1052,7 +1064,10 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 						sheetNotFoundError(sheetName, await loadAvailableSheets(file, wb.sheets)),
 					)
 				}
-				return okResponse(view, `Generated agent view for ${range} on "${sheetName}"`)
+				return okResponse(
+					withPartialLoadInfo(view, wb),
+					`Generated agent view for ${range} on "${sheetName}"`,
+				)
 			} catch (e) {
 				return errorResponse(
 					e instanceof AscendException ? e.ascendError : String(e instanceof Error ? e.message : e),

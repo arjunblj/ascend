@@ -431,6 +431,33 @@ describe('Ascend API server', () => {
 		)
 	})
 
+	test('agent-view exposes partial-load metadata for sheet-scoped capped formula views', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{ op: 'addSheet', name: 'Data' },
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 2 }] },
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'A2', formula: 'A1*2' },
+			{ op: 'setCells', sheet: 'Data', updates: [{ ref: 'A1', value: 'hidden' }] },
+		])
+		await wb.save(TEMP_FILE)
+
+		const result = await postJson('/agent-view', {
+			file: TEMP_FILE,
+			sheet: 'Sheet1',
+			range: 'A1:A3',
+			maxRows: 1,
+		})
+
+		expect(result.status).toBe(200)
+		expect(result.body.ok).toBe(true)
+		expect(result.body.data?.load?.isPartial).toBe(true)
+		expect(result.body.data?.load?.maxRows).toBe(1)
+		expect(result.body.data?.load?.partialReasons).toContain('only selected sheets are loaded')
+		expect(result.body.data?.load?.partialReasons).toContain(
+			'only the first 1 row(s) are hydrated per loaded sheet',
+		)
+	})
+
 	test('trace returns structured partial-load diagnostics for capped formula views', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

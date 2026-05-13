@@ -366,6 +366,40 @@ describe('Ascend API server', () => {
 		expect(unchanged.body.data?.changeToken).toBeDefined()
 	})
 
+	test('read preview defaults compact reads to a bounded first window', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: Array.from({ length: 520 }, (_, row) => [
+					{ ref: `A${row + 1}`, value: row + 1 },
+					{ ref: `B${row + 1}`, value: `row-${row + 1}` },
+				]).flat(),
+			},
+		])
+		await wb.save(TEMP_FILE)
+
+		const result = await postJson('/read', {
+			file: TEMP_FILE,
+			range: 'A1:B520',
+			format: 'compact',
+			preview: true,
+		})
+
+		expect(result.status).toBe(200)
+		expect(result.body.ok).toBe(true)
+		expect(result.body.data?.format).toBe('compact')
+		expect(result.body.data?.rowCount).toBe(500)
+		expect(result.body.data?.cells).toHaveLength(1000)
+		expect(result.body.data?.load?.mode).toBe('values')
+		expect(result.body.data?.load?.isPartial).toBe(true)
+		expect(result.body.data?.load?.maxRows).toBe(500)
+		expect(result.body.data?.load?.partialReasons).toContain(
+			'only the first 500 row(s) are hydrated per loaded sheet',
+		)
+	})
+
 	test('trace returns structured partial-load diagnostics for capped formula views', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

@@ -1541,6 +1541,60 @@ describe('MCP server', () => {
 		expect(result.structuredContent?.data?.load?.loadedSheets).toEqual(['Sheet1'])
 	})
 
+	test('ascend.read preview defaults compact reads to a bounded first window', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: Array.from({ length: 520 }, (_, row) => [
+					{ ref: `A${row + 1}`, value: row + 1 },
+					{ ref: `B${row + 1}`, value: `row-${row + 1}` },
+				]).flat(),
+			},
+		])
+		await wb.save(TEMP_FILE)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const handler = (server as any)._registeredTools['ascend.read'].handler as (args: {
+			file: string
+			range: string
+			format: 'compact'
+			preview?: boolean
+		}) => Promise<{
+			structuredContent?: {
+				ok?: boolean
+				data?: {
+					cells?: unknown[]
+					rowCount?: number
+					load?: {
+						mode?: string
+						isPartial?: boolean
+						maxRows?: number
+						partialReasons?: readonly string[]
+					}
+				}
+			}
+		}>
+
+		const result = await handler({
+			file: TEMP_FILE,
+			range: 'A1:B520',
+			format: 'compact',
+			preview: true,
+		})
+		expect(result.structuredContent?.ok).toBe(true)
+		expect(result.structuredContent?.data?.rowCount).toBe(500)
+		expect(result.structuredContent?.data?.cells).toHaveLength(1000)
+		expect(result.structuredContent?.data?.load?.mode).toBe('values')
+		expect(result.structuredContent?.data?.load?.isPartial).toBe(true)
+		expect(result.structuredContent?.data?.load?.maxRows).toBe(500)
+		expect(result.structuredContent?.data?.load?.partialReasons).toContain(
+			'only the first 500 row(s) are hydrated per loaded sheet',
+		)
+	})
+
 	test('ascend.trace returns structured partial-load diagnostics for capped formula views', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

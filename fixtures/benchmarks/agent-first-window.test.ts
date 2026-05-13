@@ -10,11 +10,11 @@ describe('agent first-window benchmark', () => {
 				Bun.argv[0],
 				runnerPath,
 				'--rows',
-				'120',
+				'800',
 				'--cols',
 				'8',
 				'--row-limit',
-				'25',
+				'500',
 				'--repeat',
 				'1',
 				'--warmup',
@@ -58,8 +58,8 @@ describe('agent first-window benchmark', () => {
 		expect(payload.summary?.cappedOpenWindowMedianMs).toBeNumber()
 		expect(payload.summary?.apiFirstWindowMedianMs).toBeNumber()
 		expect(payload.summary?.mcpFirstWindowMedianMs).toBeNumber()
-		expect(payload.summary?.fullHydratedCellsMedian).toBe(120 * 8)
-		expect(payload.summary?.cappedHydratedCellsMedian).toBe(25 * 8)
+		expect(payload.summary?.fullHydratedCellsMedian).toBe(800 * 8)
+		expect(payload.summary?.cappedHydratedCellsMedian).toBe(500 * 8)
 		expect(payload.summary?.fullOpenCallsMedian).toBe(1)
 		expect(payload.summary?.fullHydratedOpenCountMedian).toBe(1)
 		expect(payload.summary?.fullDocumentCacheHitsMedian).toBe(0)

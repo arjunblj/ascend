@@ -40,6 +40,7 @@ import {
 import { binaryResponse, jsonFailure, jsonFailureError, jsonSuccess } from './response.ts'
 
 const DEFAULT_API_RAW_PART_MAX_BYTES = 64 * 1024
+const DEFAULT_AGENT_PREVIEW_ROWS = 500
 
 async function parseJson<T>(req: Request): Promise<T | null> {
 	try {
@@ -72,11 +73,17 @@ function firstWindowMaxRows(
 	explicitMaxRows: number | undefined,
 	rowOffset: number | undefined,
 	rowLimit: number | undefined,
+	preview: boolean,
 ): number | undefined {
 	if (explicitMaxRows !== undefined) return Math.max(1, Math.floor(explicitMaxRows))
-	if (rowLimit === undefined) return undefined
+	if (rowLimit === undefined && !preview) return undefined
 	const offset = Math.max(0, Math.floor(rowOffset ?? 0))
-	return offset + Math.max(1, Math.floor(rowLimit))
+	const limit = rowLimit ?? DEFAULT_AGENT_PREVIEW_ROWS
+	return offset + Math.max(1, Math.floor(limit))
+}
+
+function firstWindowRowLimit(rowLimit: number | undefined, preview: boolean): number | undefined {
+	return rowLimit ?? (preview ? DEFAULT_AGENT_PREVIEW_ROWS : undefined)
 }
 
 function withPartialLoadInfo<T extends object>(info: T, wb: WorkbookDocument): T {
@@ -744,6 +751,7 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 					headers?: string[]
 					display?: boolean
 					maxRows?: number
+					preview?: boolean
 					changedSince?: string
 				}>(req)
 				const file = body ? requireString(body, 'file') : null
@@ -756,11 +764,17 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 					const headers = body ? requireArray(body, 'headers') : null
 					const changedSince = body ? requireString(body, 'changedSince') : null
 					const rowOffset = body ? requireOptionalNumber(body, 'rowOffset') : undefined
-					const rowLimit = body ? requireOptionalNumber(body, 'rowLimit') : undefined
+					const explicitRowLimit = body ? requireOptionalNumber(body, 'rowLimit') : undefined
+					const preview =
+						body !== null &&
+						typeof body === 'object' &&
+						(body as Record<string, unknown>).preview === true
+					const rowLimit = firstWindowRowLimit(explicitRowLimit, preview)
 					const maxRows = firstWindowMaxRows(
 						body ? requireOptionalNumber(body, 'maxRows') : undefined,
 						rowOffset,
-						rowLimit,
+						explicitRowLimit,
+						preview,
 					)
 					const display =
 						body !== null &&

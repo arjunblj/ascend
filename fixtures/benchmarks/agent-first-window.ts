@@ -233,7 +233,7 @@ async function runCappedOpenWindow(
 async function runApiFirstWindow(
 	path: string,
 	range: string,
-	rowLimit: number,
+	_rowLimit: number,
 ): Promise<
 	Pick<
 		Sample,
@@ -253,7 +253,7 @@ async function runApiFirstWindow(
 		file: path,
 		range,
 		format: 'compact',
-		rowLimit,
+		preview: true,
 	})
 	const measured = await time(async () => {
 		const response = await apiFetch(
@@ -302,13 +302,13 @@ type McpReadHandler = (args: {
 	readonly file: string
 	readonly range: string
 	readonly format: 'compact'
-	readonly rowLimit: number
+	readonly preview: boolean
 }) => Promise<McpReadResult>
 
 async function runMcpFirstWindow(
 	path: string,
 	range: string,
-	rowLimit: number,
+	_rowLimit: number,
 ): Promise<
 	Pick<
 		Sample,
@@ -333,7 +333,7 @@ async function runMcpFirstWindow(
 			file: path,
 			range,
 			format: 'compact',
-			rowLimit,
+			preview: true,
 		}),
 	)
 	const content = measured.result.structuredContent

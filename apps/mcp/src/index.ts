@@ -51,6 +51,7 @@ import { z } from 'zod'
 import { errorResponse, okResponse } from './response.ts'
 
 const DEFAULT_MCP_RAW_PART_MAX_BYTES = 64 * 1024
+const DEFAULT_AGENT_PREVIEW_ROWS = 500
 
 const pathMutationSchema = z.object({
 	path: z.union([z.string(), z.array(z.string())]),
@@ -587,6 +588,12 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 				.describe(
 					'Maximum worksheet rows to hydrate for lazy preview reads; defaults to rowOffset + rowLimit when rowLimit is provided',
 				),
+			preview: z
+				.boolean()
+				.optional()
+				.describe(
+					`When true, default to the first ${DEFAULT_AGENT_PREVIEW_ROWS} rows if rowLimit is omitted`,
+				),
 			changedSince: z
 				.string()
 				.optional()
@@ -619,6 +626,7 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 			rowOffset,
 			rowLimit,
 			maxRows,
+			preview,
 			changedSince,
 			format,
 			display,
@@ -626,10 +634,11 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 			cols,
 		}) => {
 			try {
+				const effectiveRowLimit = firstWindowRowLimit(rowLimit, preview === true)
 				const wb = await WorkbookDocument.open(file, {
 					mode: 'values',
 					...(sheet ? { sheets: [sheet] } : {}),
-					...readPreviewLoadOptions(maxRows, rowOffset, rowLimit),
+					...readPreviewLoadOptions(maxRows, rowOffset, rowLimit, preview === true),
 				})
 				const sheetName = sheet ?? wb.sheets[0]
 				if (!sheetName) {
@@ -643,7 +652,7 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 				}
 				const readOpts = {
 					...(rowOffset !== undefined ? { rowOffset } : {}),
-					...(rowLimit !== undefined ? { rowLimit } : {}),
+					...(effectiveRowLimit !== undefined ? { rowLimit: effectiveRowLimit } : {}),
 				}
 				const mode = format ?? 'cells'
 				const info =
@@ -1779,11 +1788,16 @@ function readPreviewLoadOptions(
 	explicitMaxRows: number | undefined,
 	rowOffset: number | undefined,
 	rowLimit: number | undefined,
+	preview: boolean,
 ): { readonly maxRows?: number } {
 	if (explicitMaxRows !== undefined) return { maxRows: explicitMaxRows }
-	if (rowLimit === undefined) return {}
+	if (rowLimit === undefined && !preview) return {}
 	const offset = Math.max(0, rowOffset ?? 0)
-	return { maxRows: offset + rowLimit }
+	return { maxRows: offset + (rowLimit ?? DEFAULT_AGENT_PREVIEW_ROWS) }
+}
+
+function firstWindowRowLimit(rowLimit: number | undefined, preview: boolean): number | undefined {
+	return rowLimit ?? (preview ? DEFAULT_AGENT_PREVIEW_ROWS : undefined)
 }
 
 function withPartialLoadInfo<T extends object>(info: T, wb: WorkbookDocument): T {

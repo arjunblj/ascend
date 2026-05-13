@@ -21,9 +21,12 @@ import {
 	type SheetConditionalFormatValueObject,
 	type SheetDataValidation,
 	type SheetDrawingObjectRef,
+	type SheetFormatPr,
 	type SheetHyperlink,
 	type SheetImageAnchor,
+	type SheetOutlinePr,
 	type SheetProtection,
+	type SheetRowDef,
 	type SheetState,
 	type SheetTabColor,
 	type SheetThreadedComment,
@@ -213,6 +216,23 @@ export interface MutationJournalColsHiddenPreimage {
 	}[]
 }
 
+export interface MutationJournalOutlinePreimage {
+	readonly sheet: string
+	readonly axis: 'row' | 'col'
+	readonly from: number
+	readonly to: number
+	readonly outlinePr: SheetOutlinePr | null
+	readonly sheetFormatPr: SheetFormatPr | null
+	readonly rowDefs?: readonly {
+		readonly row: number
+		readonly rowDef: SheetRowDef | null
+	}[]
+	readonly colDefs?: readonly {
+		readonly col: number
+		readonly colDef: SheetColDef | null
+	}[]
+}
+
 export interface MutationJournalStructuralPreimage {
 	readonly sheet: string
 	readonly axis: 'row' | 'col'
@@ -292,6 +312,7 @@ export type MutationJournalPreimage =
 	  }
 	| { readonly kind: 'rows-hidden'; readonly rowsHidden: MutationJournalRowsHiddenPreimage }
 	| { readonly kind: 'cols-hidden'; readonly colsHidden: MutationJournalColsHiddenPreimage }
+	| { readonly kind: 'outline'; readonly outline: MutationJournalOutlinePreimage }
 	| { readonly kind: 'structural'; readonly structural: MutationJournalStructuralPreimage }
 	| {
 			readonly kind: 'workbook-properties'
@@ -534,6 +555,10 @@ function buildSupportedJournalEntry(
 			return journalHideRows(workbook, op, opIndex)
 		case 'hideCols':
 			return journalHideCols(workbook, op, opIndex)
+		case 'groupRows':
+			return journalGroupOutline(workbook, op, opIndex, 'row')
+		case 'groupCols':
+			return journalGroupOutline(workbook, op, opIndex, 'col')
 		default:
 			return null
 	}
@@ -936,8 +961,93 @@ function journalHideCols(
 	}
 }
 
+function journalGroupOutline(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'groupRows' | 'groupCols' }>,
+	opIndex: number,
+	axis: 'row' | 'col',
+): DraftJournalEntry {
+	const sheet = workbook.getSheet(op.sheet)
+	const preimage: MutationJournalOutlinePreimage = {
+		sheet: op.sheet,
+		axis,
+		from: op.from,
+		to: op.to,
+		outlinePr: sheet?.outlinePr ? cloneSheetOutlinePr(sheet.outlinePr) : null,
+		sheetFormatPr: sheet?.sheetFormatPr ? cloneSheetFormatPr(sheet.sheetFormatPr) : null,
+		...(axis === 'row'
+			? {
+					rowDefs: outlineIndexes(op).map((row) => {
+						const rowDef = sheet?.rowDefs.get(row)
+						return {
+							row,
+							rowDef: rowDef ? cloneSheetRowDef(rowDef) : null,
+						}
+					}),
+				}
+			: {
+					colDefs: outlineIndexes(op).map((col) => ({
+						col,
+						colDef: cloneMatchingSheetColDef(sheet, col),
+					})),
+				}),
+	}
+	if (!sheet) {
+		return {
+			opIndex,
+			op,
+			inverseOps: [],
+			preimages: [{ kind: 'outline', outline: preimage }],
+			issues: [
+				{
+					code: 'UNSUPPORTED_VALUE',
+					message: `Cannot restore ${axis} outline grouping for ${op.sheet} because the sheet was not found`,
+					refs: [`sheet:${op.sheet}`],
+				},
+			],
+		}
+	}
+	const outlineRef = axis === 'row' ? 'summaryBelow' : 'summaryRight'
+	const formatRef = axis === 'row' ? 'outlineLevelRow' : 'outlineLevelCol'
+	const refs = [
+		...outlineIndexes(op).map((index) => layoutRef(op.sheet, axis, index)),
+		`sheet:${op.sheet}:outlinePr:${outlineRef}`,
+		`sheet:${op.sheet}:sheetFormatPr:${formatRef}`,
+	]
+	return {
+		opIndex,
+		op,
+		inverseOps: [],
+		preimages: [{ kind: 'outline', outline: preimage }],
+		issues: [
+			{
+				code: 'LOSSY_INVERSE',
+				message: `Grouped ${axis === 'row' ? 'rows' : 'columns'} for ${op.sheet} cannot be restored with public operations`,
+				refs: [...new Set(refs)],
+			},
+		],
+	}
+}
+
 function cloneSheetColDef(def: SheetColDef): SheetColDef {
 	return { ...def }
+}
+
+function cloneMatchingSheetColDef(sheet: Sheet | undefined, col: number): SheetColDef | null {
+	const colDef = sheet?.colDefs.find((def) => def.min === col && def.max === col)
+	return colDef ? cloneSheetColDef(colDef) : null
+}
+
+function cloneSheetRowDef(def: SheetRowDef): SheetRowDef {
+	return { ...def }
+}
+
+function cloneSheetOutlinePr(outlinePr: SheetOutlinePr): SheetOutlinePr {
+	return { ...outlinePr }
+}
+
+function cloneSheetFormatPr(sheetFormatPr: SheetFormatPr): SheetFormatPr {
+	return { ...sheetFormatPr }
 }
 
 function cloneSheetTabColor(tabColor: SheetTabColor): SheetTabColor {
@@ -992,6 +1102,20 @@ const SHEET_PROTECTION_OPTION_KEYS = [
 function unsupportedSheetProtectionKeys(protection: SheetProtection): string[] {
 	const supported = new Set<string>(['sheet', 'password', ...SHEET_PROTECTION_OPTION_KEYS])
 	return Object.keys(protection).filter((key) => !supported.has(key))
+}
+
+function outlineIndexes(op: Extract<Operation, { op: 'groupRows' | 'groupCols' }>): number[] {
+	const indexes: number[] = []
+	if (op.from <= op.to) {
+		for (let index = op.from; index <= op.to; index++) indexes.push(index)
+	}
+	if (op.collapsed) {
+		const summaryAfter =
+			op.op === 'groupRows' ? (op.summaryBelow ?? true) : (op.summaryRight ?? true)
+		const boundary = summaryAfter ? op.to + 1 : op.from - 1
+		if (boundary >= 0) indexes.push(boundary)
+	}
+	return indexes
 }
 
 function layoutRef(sheet: string, axis: 'row' | 'col', index: number): string {

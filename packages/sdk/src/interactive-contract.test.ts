@@ -4208,6 +4208,80 @@ describe('interactive client contract', () => {
 		])
 	})
 
+	test('journal classifies grouped row and column outline metadata as lossy', () => {
+		const wb = AscendWorkbook.create()
+		const modelSheet = wb.getWorkbookModel().getSheet('Sheet1')
+		if (modelSheet) {
+			modelSheet.outlinePr = { summaryBelow: false, summaryRight: false }
+			modelSheet.sheetFormatPr = { outlineLevelRow: 1, outlineLevelCol: 1 }
+			modelSheet.rowDefs.set(1, { outlineLevel: 1, hidden: false })
+			modelSheet.colDefs.push({ min: 0, max: 0, outlineLevel: 1, hidden: false })
+		}
+		const before = journalComparableState(wb)
+
+		const changed = wb.apply(
+			[
+				{ op: 'groupRows', sheet: 'Sheet1', from: 1, to: 2, collapsed: true },
+				{
+					op: 'groupCols',
+					sheet: 'Sheet1',
+					from: 0,
+					to: 1,
+					collapsed: true,
+					summaryRight: false,
+				},
+			],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(false)
+		expect(changed.journal?.inverseOps).toEqual([])
+		expect(changed.journal?.issues).toEqual([
+			{
+				code: 'LOSSY_INVERSE',
+				message: 'Grouped rows for Sheet1 cannot be restored with public operations',
+				refs: [
+					'Sheet1!2',
+					'Sheet1!3',
+					'Sheet1!4',
+					'sheet:Sheet1:outlinePr:summaryBelow',
+					'sheet:Sheet1:sheetFormatPr:outlineLevelRow',
+				],
+			},
+			{
+				code: 'LOSSY_INVERSE',
+				message: 'Grouped columns for Sheet1 cannot be restored with public operations',
+				refs: [
+					'Sheet1!A',
+					'Sheet1!B',
+					'sheet:Sheet1:outlinePr:summaryRight',
+					'sheet:Sheet1:sheetFormatPr:outlineLevelCol',
+				],
+			},
+		])
+		expect(changed.journal?.entries[0]?.preimages).toEqual([
+			{
+				kind: 'outline',
+				outline: {
+					sheet: 'Sheet1',
+					axis: 'row',
+					from: 1,
+					to: 2,
+					outlinePr: { summaryBelow: false, summaryRight: false },
+					sheetFormatPr: { outlineLevelRow: 1, outlineLevelCol: 1 },
+					rowDefs: [
+						{ row: 1, rowDef: { outlineLevel: 1, hidden: false } },
+						{ row: 2, rowDef: null },
+						{ row: 3, rowDef: null },
+					],
+				},
+			},
+		])
+		expect(journalComparableState(wb)).not.toEqual(before)
+	})
+
 	test('journal inverse ops restore sheet and existing row/column visibility metadata', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([
@@ -5447,6 +5521,8 @@ function journalComparableState(wb: AscendWorkbook): object {
 				tabColor: modelSheet?.tabColor,
 				protection: modelSheet?.protection,
 				state: modelSheet?.state,
+				outlinePr: modelSheet?.outlinePr,
+				sheetFormatPr: modelSheet?.sheetFormatPr,
 				rowHeights: modelSheet ? [...modelSheet.rowHeights.entries()] : undefined,
 				colWidths: modelSheet ? [...modelSheet.colWidths.entries()] : undefined,
 				rowDefs: modelSheet ? [...modelSheet.rowDefs.entries()] : undefined,

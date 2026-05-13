@@ -28,6 +28,7 @@ import {
 	type Workbook,
 	type WorkbookDocumentProperties,
 	type WorkbookProperties,
+	type WorkbookProtection,
 	type WorkbookView,
 } from '@ascend/core'
 import { applyOperation } from '@ascend/engine'
@@ -179,6 +180,10 @@ export interface MutationJournalCalcSettingsPreimage {
 	readonly workbookProperties: WorkbookProperties
 }
 
+export interface MutationJournalWorkbookProtectionPreimage {
+	readonly protection: WorkbookProtection | null
+}
+
 export type MutationJournalPreimage =
 	| { readonly kind: 'cells'; readonly cells: readonly MutationJournalCellPreimage[] }
 	| { readonly kind: 'comment'; readonly comment: MutationJournalCommentPreimage }
@@ -217,6 +222,10 @@ export type MutationJournalPreimage =
 	  }
 	| { readonly kind: 'workbook-view'; readonly workbookView: MutationJournalWorkbookViewPreimage }
 	| { readonly kind: 'calc-settings'; readonly calcSettings: MutationJournalCalcSettingsPreimage }
+	| {
+			readonly kind: 'workbook-protection'
+			readonly workbookProtection: MutationJournalWorkbookProtectionPreimage
+	  }
 
 export interface MutationJournalEntry {
 	readonly opIndex: number
@@ -397,6 +406,8 @@ function buildSupportedJournalEntry(
 			return journalSetWorkbookView(workbook, op, opIndex)
 		case 'setCalcSettings':
 			return journalSetCalcSettings(workbook, op, opIndex)
+		case 'setWorkbookProtection':
+			return journalSetWorkbookProtection(workbook, op, opIndex)
 		case 'renameSheet':
 			return {
 				opIndex,
@@ -1121,6 +1132,31 @@ function journalSetCalcSettings(
 		],
 		preimages: [{ kind: 'calc-settings', calcSettings: preimage }],
 		issues: [],
+	}
+}
+
+function journalSetWorkbookProtection(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'setWorkbookProtection' }>,
+	opIndex: number,
+): DraftJournalEntry {
+	const preimage = {
+		protection: workbook.workbookProtection ? { ...workbook.workbookProtection } : null,
+	}
+	const issues: MutationJournalIssue[] = preimage.protection
+		? []
+		: [
+				{
+					code: 'LOSSY_INVERSE',
+					message: 'Workbook protection absence cannot be restored exactly with public operations',
+				},
+			]
+	return {
+		opIndex,
+		op,
+		inverseOps: [{ op: 'setWorkbookProtection', protection: preimage.protection ?? {} }],
+		preimages: [{ kind: 'workbook-protection', workbookProtection: preimage }],
+		issues,
 	}
 }
 

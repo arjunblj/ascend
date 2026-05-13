@@ -1030,6 +1030,65 @@ describe('interactive client contract', () => {
 		expect(journalComparableState(wb)).toEqual(before)
 	})
 
+	test('journal inverse ops restore workbook protection when public ops can be exact', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setWorkbookProtection',
+				protection: {
+					lockStructure: true,
+					workbookAlgorithmName: 'SHA-512',
+					workbookSpinCount: 100000,
+				},
+			},
+		])
+		const before = journalComparableState(wb)
+
+		const changed = wb.apply(
+			[
+				{
+					op: 'setWorkbookProtection',
+					protection: { lockWindows: true, workbookPassword: 'ABCD' },
+				},
+			],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(true)
+		expect(changed.journal?.inverseOps).toEqual([
+			{
+				op: 'setWorkbookProtection',
+				protection: {
+					lockStructure: true,
+					workbookAlgorithmName: 'SHA-512',
+					workbookSpinCount: 100000,
+				},
+			},
+		])
+		expect(journalComparableState(wb)).not.toEqual(before)
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(journalComparableState(wb)).toEqual(before)
+
+		const unprotected = AscendWorkbook.create()
+		const lossy = unprotected.preview(
+			[{ op: 'setWorkbookProtection', protection: { lockStructure: true } }],
+			{ journal: true },
+		)
+		expect(lossy.journal?.supported).toBe(true)
+		expect(lossy.journal?.exact).toBe(false)
+		expect(lossy.journal?.issues).toEqual([
+			{
+				code: 'LOSSY_INVERSE',
+				message: 'Workbook protection absence cannot be restored exactly with public operations',
+			},
+		])
+		expect(lossy.journal?.inverseOps).toEqual([{ op: 'setWorkbookProtection', protection: {} }])
+	})
+
 	test('journal exact inverse restores mixed semantic workbook state', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

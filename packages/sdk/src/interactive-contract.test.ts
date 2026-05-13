@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test'
+import { DEFAULT_STYLE_ID } from '@ascend/core'
+import { numberValue } from '@ascend/schema'
 import { AscendSession, AscendWorkbook } from './index.ts'
 import { buildMutationJournal } from './journal.ts'
 
@@ -142,6 +144,38 @@ describe('interactive client contract', () => {
 			removedRefs: [],
 			byteLength: 36,
 		})
+		session.close()
+	})
+
+	test('interactive viewport resolves shared formula member text', async () => {
+		const wb = AscendWorkbook.create()
+		const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+		if (!sheet) throw new Error('missing sheet')
+		sheet.cells.set(0, 1, { value: numberValue(10), formula: null, styleId: DEFAULT_STYLE_ID })
+		sheet.cells.set(1, 1, { value: numberValue(20), formula: null, styleId: DEFAULT_STYLE_ID })
+		sheet.cells.set(0, 0, {
+			value: numberValue(20),
+			formula: 'B1*2',
+			styleId: DEFAULT_STYLE_ID,
+			formulaInfo: { kind: 'shared', sharedIndex: '0', isMaster: true, masterRef: 'A1' },
+		})
+		sheet.cells.set(1, 0, {
+			value: numberValue(40),
+			formula: null,
+			styleId: DEFAULT_STYLE_ID,
+			formulaInfo: { kind: 'shared', sharedIndex: '0', isMaster: false, masterRef: 'A1' },
+		})
+
+		const session = await AscendSession.open(wb.toBytes(), { mode: 'interactive' })
+		const viewport = session.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 2,
+			colCount: 2,
+		})
+		expect(viewport.cells.find((cell) => cell.ref === 'A1')?.formula).toBe('B1*2')
+		expect(viewport.cells.find((cell) => cell.ref === 'A2')?.formula).toBe('B2*2')
 		session.close()
 	})
 

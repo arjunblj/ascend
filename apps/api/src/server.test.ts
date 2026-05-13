@@ -37,6 +37,14 @@ interface ApiEnvelope {
 		readonly replayable?: boolean
 		readonly formulaCount?: number
 		readonly ops?: unknown[]
+		readonly changed?: readonly string[]
+		readonly dirtyRegions?: readonly unknown[]
+		readonly generations?: {
+			readonly workbook?: number
+			readonly formulas?: number
+			readonly sheetMetadata?: number
+			readonly styles?: number
+		}
 		readonly pathMutations?: {
 			readonly replayable?: boolean
 			readonly ops?: unknown[]
@@ -367,6 +375,53 @@ describe('Ascend API server', () => {
 		} finally {
 			await unlink(replayOutput).catch(() => {})
 		}
+	})
+
+	test('calc supports range-scoped recalc without clearing pending formulas outside the range', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 1 },
+					{ ref: 'C1', value: 10 },
+				],
+			},
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'B1', formula: 'A1*2' },
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'D1', formula: 'C1*2' },
+		])
+		wb.recalc()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 5 },
+					{ ref: 'C1', value: 20 },
+				],
+			},
+		])
+		await wb.save(TEMP_FILE)
+
+		const ranged = await postJson('/calc', { file: TEMP_FILE, range: 'Sheet1!B1:B1' })
+		expect(ranged.status).toBe(200)
+		expect(ranged.body.ok).toBe(true)
+		expect(ranged.body.data?.changed).toEqual(['Sheet1!B1'])
+		expect(ranged.body.data?.dirtyRegions).toEqual([
+			{ sheet: 'Sheet1', range: 'B1:B1', refs: ['Sheet1!B1'] },
+		])
+		expect(ranged.body.data?.generations?.formulas).toBeNumber()
+		let reopened = await AscendWorkbook.open(TEMP_FILE)
+		expect(reopened.sheet('Sheet1')?.cell('B1')?.value).toEqual({ kind: 'number', value: 10 })
+		expect(reopened.sheet('Sheet1')?.cell('D1')?.value).toEqual({ kind: 'number', value: 20 })
+
+		const full = await postJson('/calc', { file: TEMP_FILE })
+		expect(full.status).toBe(200)
+		expect(full.body.ok).toBe(true)
+		expect(full.body.data?.changed).toEqual(['Sheet1!D1'])
+		reopened = await AscendWorkbook.open(TEMP_FILE)
+		expect(reopened.sheet('Sheet1')?.cell('D1')?.value).toEqual({ kind: 'number', value: 40 })
 	})
 
 	test('raw-part returns bounded package text and metadata', async () => {

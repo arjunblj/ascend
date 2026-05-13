@@ -1212,12 +1212,12 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 			}
 
 			if (method === 'POST' && path === '/calc') {
-				const body = await parseJson<{ file?: string }>(req)
+				const body = await parseJson<{ file?: string; range?: string }>(req)
 				const file = body ? requireString(body, 'file') : null
 				if (!file) return jsonFailure('Missing or invalid file', 400)
 				try {
 					const wb = await AscendWorkbook.open(file)
-					const result = wb.recalc()
+					const result = wb.recalc(body?.range ? { range: body.range } : undefined)
 					if (result.errors.length > 0) {
 						const first = result.errors[0]
 						return jsonFailureError(

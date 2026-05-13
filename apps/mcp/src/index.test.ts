@@ -573,6 +573,67 @@ describe('MCP server', () => {
 		expect(result.structuredContent?.error?.message).toContain('Circular reference detected')
 	})
 
+	test('ascend.calc supports range-scoped recalc without clearing pending formulas outside the range', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 1 },
+					{ ref: 'C1', value: 10 },
+				],
+			},
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'B1', formula: 'A1*2' },
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'D1', formula: 'C1*2' },
+		])
+		wb.recalc()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 5 },
+					{ ref: 'C1', value: 20 },
+				],
+			},
+		])
+		await wb.save(TEMP_FILE)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const handler = (server as any)._registeredTools['ascend.calc'].handler as (args: {
+			file: string
+			range?: string
+		}) => Promise<{
+			structuredContent?: {
+				ok?: boolean
+				data?: {
+					changed?: readonly string[]
+					dirtyRegions?: readonly unknown[]
+					generations?: { formulas?: number }
+				}
+			}
+		}>
+
+		const ranged = await handler({ file: TEMP_FILE, range: 'Sheet1!B1:B1' })
+		expect(ranged.structuredContent?.ok).toBe(true)
+		expect(ranged.structuredContent?.data?.changed).toEqual(['Sheet1!B1'])
+		expect(ranged.structuredContent?.data?.dirtyRegions).toEqual([
+			{ sheet: 'Sheet1', range: 'B1:B1', refs: ['Sheet1!B1'] },
+		])
+		expect(ranged.structuredContent?.data?.generations?.formulas).toBeNumber()
+		let reopened = await AscendWorkbook.open(TEMP_FILE)
+		expect(reopened.sheet('Sheet1')?.cell('B1')?.value).toEqual({ kind: 'number', value: 10 })
+		expect(reopened.sheet('Sheet1')?.cell('D1')?.value).toEqual({ kind: 'number', value: 20 })
+
+		const full = await handler({ file: TEMP_FILE })
+		expect(full.structuredContent?.ok).toBe(true)
+		expect(full.structuredContent?.data?.changed).toEqual(['Sheet1!D1'])
+		reopened = await AscendWorkbook.open(TEMP_FILE)
+		expect(reopened.sheet('Sheet1')?.cell('D1')?.value).toEqual({ kind: 'number', value: 40 })
+	})
+
 	test('ascend.preview returns an error response when recalculation fails', async () => {
 		const wb = AscendWorkbook.create()
 		await wb.save(TEMP_FILE)

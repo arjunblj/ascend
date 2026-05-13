@@ -1254,11 +1254,15 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 		'Recalculate all formulas in a workbook',
 		{
 			file: z.string().describe('Path to workbook file'),
+			range: z
+				.string()
+				.optional()
+				.describe('Optional sheet-qualified A1 range to recalculate, e.g. Sheet1!A1:C10'),
 		},
-		async ({ file }) => {
+		async ({ file, range }) => {
 			try {
 				const wb = await Ascend.open(file)
-				const result = wb.recalc()
+				const result = wb.recalc(range ? { range } : undefined)
 				if (result.errors.length > 0) {
 					const first = result.errors[0]
 					return errorResponse(

@@ -1062,6 +1062,13 @@ export class AscendWorkbook extends WorkbookReadView {
 		if (opts?.range) {
 			rangeRef = parseRange(opts.range)
 		}
+		const rangeLimited = rangeRef !== undefined
+		const hadGlobalCalcStaleness =
+			this.calcStateDirty ||
+			this.calcChainDirty ||
+			this.pendingFullRecalc ||
+			this.pendingDirtyRefs.length > 0 ||
+			calcSettingsNeedClean(this.wb.calcSettings)
 		const result = recalculate(
 			this.wb,
 			ctx,
@@ -1074,7 +1081,7 @@ export class AscendWorkbook extends WorkbookReadView {
 			this.workbookGeneration += 1
 			this.formulaGeneration += 1
 			this.markDirty()
-			this.calcStateDirty = result.errors.length > 0
+			this.calcStateDirty = result.errors.length > 0 || (rangeLimited && hadGlobalCalcStaleness)
 			this.sharedStringsDirty = true
 			for (const ref of result.changed) {
 				const bang = ref.indexOf('!')
@@ -1085,7 +1092,8 @@ export class AscendWorkbook extends WorkbookReadView {
 				}
 			}
 		}
-		if (result.errors.length === 0) {
+		const keepGlobalCalcStale = rangeLimited && hadGlobalCalcStaleness
+		if (result.errors.length === 0 && !keepGlobalCalcStale) {
 			const sourceCalcSettings = this.wb.calcSettings
 			const cleanCalcSettings = {
 				...sourceCalcSettings,
@@ -1111,8 +1119,10 @@ export class AscendWorkbook extends WorkbookReadView {
 			this.wb.calcSettings = cleanCalcSettings
 		}
 		this.clearReadCaches()
-		this.pendingDirtyRefs = []
-		this.pendingFullRecalc = false
+		if (!keepGlobalCalcStale) {
+			this.pendingDirtyRefs = []
+			this.pendingFullRecalc = false
+		}
 		return {
 			changed: result.changed,
 			dirtyRegions: dirtyRegionsFromRefs(result.changed, [], this.wb),
@@ -1814,6 +1824,15 @@ function partialWorkbookEditError(
 			suggestedFix:
 				'Open the workbook with mode "full" and all sheets loaded before editing or recalculating.',
 		},
+	)
+}
+
+function calcSettingsNeedClean(calcSettings: Workbook['calcSettings']): boolean {
+	return (
+		calcSettings.fullCalcOnLoad ||
+		calcSettings.calcCompleted === false ||
+		calcSettings.calcOnSave === false ||
+		calcSettings.forceFullCalc === true
 	)
 }
 

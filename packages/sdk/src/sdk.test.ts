@@ -1141,6 +1141,45 @@ describe('AscendWorkbook', () => {
 		expect(workbookXml).toContain('forceFullCalc="0"')
 	})
 
+	test('range recalc preserves pending global formula state outside the requested range', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 1 },
+					{ ref: 'C1', value: 10 },
+				],
+			},
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'B1', formula: 'A1*2' },
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'D1', formula: 'C1*2' },
+		])
+		expect(wb.recalc().errors).toEqual([])
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 5 },
+					{ ref: 'C1', value: 20 },
+				],
+			},
+		])
+
+		const ranged = wb.recalc({ range: 'Sheet1!B1:B1' })
+		expect(ranged.errors).toEqual([])
+		expect(ranged.changed).toEqual(['Sheet1!B1'])
+		expect(wb.sheet('Sheet1')?.cell('B1')?.value).toEqual({ kind: 'number', value: 10 })
+		expect(wb.sheet('Sheet1')?.cell('D1')?.value).toEqual({ kind: 'number', value: 20 })
+
+		const full = wb.recalc()
+		expect(full.errors).toEqual([])
+		expect(full.changed).toEqual(['Sheet1!D1'])
+		expect(full.generations.formulas).toBeGreaterThan(ranged.generations.formulas)
+		expect(wb.sheet('Sheet1')?.cell('D1')?.value).toEqual({ kind: 'number', value: 40 })
+	})
+
 	test('recalc can resolve external workbook references with a caller hook', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

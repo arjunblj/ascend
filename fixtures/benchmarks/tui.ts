@@ -6,6 +6,7 @@ import { runRendererBakeoff } from '../../apps/tui/src/render/renderer-bakeoff.t
 import { WorkbookTuiEngine } from '../../apps/tui/src/runtime/engine.ts'
 import type { TerminalSize } from '../../apps/tui/src/runtime/types.ts'
 import { AscendWorkbook } from '../../packages/sdk/src/index.ts'
+import { buildRawReadWorkloadDataSet, type CompetitiveDataSet } from './competitive-io.ts'
 import { type BenchmarkCaseResult, createBenchmarkSuite, summarizeSamples } from './results.ts'
 import { checkTuiTargets, formatTuiTargetResults } from './tui-targets.ts'
 
@@ -561,6 +562,65 @@ const scenarios: readonly TuiScenario[] = [
 			return { bytes: frame.stats.bytes, sheet: engine.state().sheetName }
 		},
 	},
+	{
+		name: 'xlsx-open-grid-paint-65536x10-full',
+		category: 'paint',
+		dimensions: { workbookRows: 65_536, workbookCols: 10, workload: 'mixed-10pct-text' },
+		async setup() {
+			return {
+				data: await buildRawReadWorkloadDataSet('mixed-10pct-text', 65_536, 10),
+			}
+		},
+		async teardown(context) {
+			const { data } = requireOpenWorkbookContext(context)
+			await rm(data.xlsxPath, { force: true })
+		},
+		async run(size, context) {
+			const { data } = requireOpenWorkbookContext(context)
+			const engine = await WorkbookTuiEngine.create({ path: data.xlsxPath, size })
+			const frame = engine.render(size)
+			const document = engine.state().workspace.documents[0]
+			return {
+				bytes: frame.stats.bytes,
+				readOnly: document?.readOnly ?? null,
+				partial: document?.info?.load.isPartial ?? null,
+			}
+		},
+	},
+	{
+		name: 'xlsx-open-grid-paint-65536x10-preview-500',
+		category: 'paint',
+		dimensions: {
+			workbookRows: 65_536,
+			workbookCols: 10,
+			workload: 'mixed-10pct-text',
+			previewRows: 500,
+		},
+		async setup() {
+			return {
+				data: await buildRawReadWorkloadDataSet('mixed-10pct-text', 65_536, 10),
+			}
+		},
+		async teardown(context) {
+			const { data } = requireOpenWorkbookContext(context)
+			await rm(data.xlsxPath, { force: true })
+		},
+		async run(size, context) {
+			const { data } = requireOpenWorkbookContext(context)
+			const engine = await WorkbookTuiEngine.create({
+				path: data.xlsxPath,
+				loadOptions: { mode: 'values', maxRows: 500 },
+				size,
+			})
+			const frame = engine.render(size)
+			const document = engine.state().workspace.documents[0]
+			return {
+				bytes: frame.stats.bytes,
+				readOnly: document?.readOnly ?? null,
+				partial: document?.info?.load.isPartial ?? null,
+			}
+		},
+	},
 ]
 
 async function runScenario(
@@ -668,6 +728,22 @@ function requireFileWorkflowContext(context: unknown): {
 		throw new Error('TUI file workflow benchmark scenario has invalid context')
 	}
 	return candidate
+}
+
+function requireOpenWorkbookContext(context: unknown): { data: CompetitiveDataSet } {
+	if (typeof context !== 'object' || context === null || !('data' in context)) {
+		throw new Error('TUI open workbook benchmark scenario missing context')
+	}
+	const candidate = context as { data: unknown }
+	if (
+		typeof candidate.data !== 'object' ||
+		candidate.data === null ||
+		!('xlsxPath' in candidate.data) ||
+		typeof candidate.data.xlsxPath !== 'string'
+	) {
+		throw new Error('TUI open workbook benchmark scenario has invalid context')
+	}
+	return candidate as { data: CompetitiveDataSet }
 }
 
 function buildTsv(rows: number, cols: number): string {

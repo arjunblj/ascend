@@ -2,7 +2,12 @@ import { writeFile } from 'node:fs/promises'
 import { type CellStyle, parseRange, toA1 } from '@ascend/core'
 import type { CellValue, InputValue, Operation, StyleInput } from '@ascend/schema'
 import { topLeftScalar } from '@ascend/schema'
-import type { AscendWorkbook, WorkbookInfo, TraceResult as WorkbookTraceResult } from '@ascend/sdk'
+import type {
+	AscendWorkbook,
+	WorkbookInfo,
+	WorkbookLoadOptions,
+	TraceResult as WorkbookTraceResult,
+} from '@ascend/sdk'
 import { indexToColumn, inferExportFormat, normalizeExportFormat, parseA1 } from '@ascend/sdk'
 import { commandsForGroup, findCommand, listCommands } from '../commands/registry.ts'
 import type { DialogId, FindReplaceInput } from '../dialogs/index.ts'
@@ -67,6 +72,7 @@ export interface WorkbookTuiEngineOptions {
 	readonly size?: TerminalSize
 	readonly persistState?: boolean
 	readonly recentStorePath?: string
+	readonly loadOptions?: WorkbookLoadOptions
 }
 
 export class WorkbookTuiEngine implements TuiEngine {
@@ -104,13 +110,11 @@ export class WorkbookTuiEngine implements TuiEngine {
 		engine.recentStore = createRecentWorkbookStore(options)
 		engine.refreshRecentWorkbooks()
 		if (options.path) {
-			const document = await engine.session.open(options.path)
+			const document = await engine.session.open(options.path, options.loadOptions)
 			engine.recordRecentWorkbook(options.path)
 			engine.workspace = setActiveDocument(engine.workspace, document)
 			if (options.sheet) engine.selectSheetByName(options.sheet)
-			engine.message = document.protectedReview
-				? `Protected review: ${document.info ? protectedReviewReasons(document.info).join(', ') : 'metadata unavailable'}`
-				: `Opened ${document.name}`
+			engine.message = openedWorkbookMessage(document, options.loadOptions)
 		}
 		return engine
 	}
@@ -1186,6 +1190,10 @@ export class WorkbookTuiEngine implements TuiEngine {
 			this.message = 'Open or create a workbook first.'
 			return { handled: true, shouldRender: true }
 		}
+		if (this.activeDocumentReadOnly()) {
+			this.message = 'Workbook is read-only. Reopen with a full load before editing.'
+			return { handled: false, shouldRender: true, message: this.message }
+		}
 		this.mode = prefix === '=' ? 'editing' : 'entering'
 		this.editBuffer = prefix === '' ? this.activeCellEditText() : prefix
 		this.editCursor = this.editBuffer.length
@@ -1593,6 +1601,10 @@ export class WorkbookTuiEngine implements TuiEngine {
 		if (!this.hasWorkbook()) {
 			this.message = 'Open or create a workbook first.'
 			return { handled: true, shouldRender: true }
+		}
+		if (this.activeDocumentReadOnly()) {
+			this.message = 'Workbook is read-only. Reopen with a full load before editing.'
+			return { handled: false, shouldRender: true, message: this.message }
 		}
 		const before = options.selectionBefore ?? this.selection
 		const inverseOps = this.buildInverseOperations(operations)
@@ -2286,6 +2298,10 @@ export class WorkbookTuiEngine implements TuiEngine {
 		return activeDocument(this.workspace) !== undefined
 	}
 
+	private activeDocumentReadOnly(): boolean {
+		return activeDocument(this.workspace)?.readOnly === true
+	}
+
 	private sheetName(): string {
 		return this.sheetNames()[this.activeSheetIndex] ?? 'Sheet1'
 	}
@@ -2438,6 +2454,23 @@ function workbookHealthWarnings(
 	if (info.pivotRefreshPlans.length > 0) warnings.push('Pivot tables may need refresh.')
 	if (info.hasWorkbookProtection) warnings.push('Workbook structure protection is present.')
 	return warnings
+}
+
+function openedWorkbookMessage(
+	document: ReturnType<WorkbookSessionController['createEmpty']>,
+	options?: WorkbookLoadOptions,
+): string {
+	if (document.readOnly) {
+		const scope =
+			options?.maxRows !== undefined
+				? `first ${options.maxRows.toLocaleString()} rows`
+				: 'partial workbook view'
+		return `Opened ${document.name} (${scope}, read-only)`
+	}
+	if (document.protectedReview) {
+		return `Protected review: ${document.info ? protectedReviewReasons(document.info).join(', ') : 'metadata unavailable'}`
+	}
+	return `Opened ${document.name}`
 }
 
 function formatNullableCount(value: number | null | undefined): string {

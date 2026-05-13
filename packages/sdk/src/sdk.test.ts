@@ -1851,6 +1851,33 @@ describe('AscendWorkbook', () => {
 		)
 	})
 
+	test('maxRows opens a row-capped partial workbook view through the SDK', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'loaded' },
+					{ ref: 'A2', value: 'not loaded' },
+				],
+			},
+		])
+		const bytes = wb.toBytes()
+
+		const reopened = await AscendWorkbook.open(bytes, { mode: 'values', maxRows: 1 })
+		expect(reopened.inspect().load.mode).toBe('values')
+		expect(reopened.inspect().load.isPartial).toBe(true)
+		expect(reopened.sheet('Sheet1')?.cell('A1')?.value).toEqual({
+			kind: 'string',
+			value: 'loaded',
+		})
+		expect(reopened.sheet('Sheet1')?.cell('A2')).toBeUndefined()
+		expect(() => reopened.toBytes()).toThrow(
+			'Cannot export a partial workbook view. Reopen the workbook with a full load before saving or exporting.',
+		)
+	})
+
 	test('values mode can expose rich sheet metadata as an opt-in partial view', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 2 }] }])

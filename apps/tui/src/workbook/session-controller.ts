@@ -5,6 +5,7 @@ import {
 	auditLossPolicy,
 	type PreviewResult,
 	type WorkbookInfo,
+	type WorkbookLoadOptions,
 } from '@ascend/sdk'
 import type { CommandIntent, CommandPreview, OpenWorkbook } from '../runtime/types.ts'
 
@@ -28,19 +29,20 @@ export class WorkbookSessionController {
 	private dirtyVersion = 0
 	private workbookVersion = 0
 
-	async open(path: string): Promise<OpenWorkbook> {
-		this.workbook = await AscendWorkbook.open(path)
+	async open(path: string, options: WorkbookLoadOptions = {}): Promise<OpenWorkbook> {
+		this.workbook = await AscendWorkbook.open(path, options)
 		this.workbookVersion += 1
 		this.path = path
 		this.dirty = false
 		this.dirtyVersion = 0
 		const info = this.workbook.inspect()
+		const readOnly = info.load.isPartial
 		return {
 			id: path,
 			path,
 			name: path.split(/[\\/]/).pop() ?? path,
 			info,
-			readOnly: false,
+			readOnly,
 			protectedReview: hasProtectedReviewSignals(info),
 			dirty: false,
 		}

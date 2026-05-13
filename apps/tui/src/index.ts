@@ -24,6 +24,7 @@ Interactive terminal spreadsheet.
 
 Flags:
   --sheet <name>          Start on a sheet
+  --preview-rows <n>      Open the first n rows in read-only values mode
   --renderer <name>       ansi (default) or opentui
   --calibrate             Open terminal capability calibration on start
   --telemetry-json        Print telemetry JSON after the session exits
@@ -35,6 +36,7 @@ Friendly entrypoint for the Ascend terminal spreadsheet.
 
 Flags:
   --sheet <name>          Start on a sheet
+  --preview-rows <n>      Open the first n rows in read-only values mode
   --renderer <name>       ansi (default) or opentui
   --calibrate             Open terminal capability calibration on start
   --telemetry-json        Print telemetry JSON after the session exits
@@ -42,9 +44,11 @@ Flags:
 
 export async function tuiCommand(args: string[], flags: Map<string, string>): Promise<number> {
 	const sheet = flags.get('sheet')
+	const previewRows = parsePreviewRows(flags.get('preview-rows'))
 	const telemetry = await runTui({
 		...(args[0] ? { path: args[0] } : {}),
 		...(sheet ? { sheet } : {}),
+		...(previewRows !== undefined ? { previewRows } : {}),
 		renderer: flags.get('renderer') === 'opentui' ? 'opentui' : 'ansi',
 		calibrate: flags.has('calibrate'),
 	})
@@ -64,12 +68,16 @@ export async function runTui(input: {
 	readonly renderer?: 'ansi' | 'opentui'
 	readonly calibrate?: boolean
 	readonly recentStorePath?: string
+	readonly previewRows?: number
 }): Promise<readonly TelemetrySample[]> {
 	const size = input.size ?? currentTerminalSize()
 	const engine = await WorkbookTuiEngine.create({
 		...(input.path ? { path: input.path } : {}),
 		...(input.sheet ? { sheet: input.sheet } : {}),
 		...(input.recentStorePath ? { recentStorePath: input.recentStorePath } : {}),
+		...(input.previewRows !== undefined
+			? { loadOptions: { mode: 'values', maxRows: input.previewRows } }
+			: {}),
 		persistState: process.stdin.isTTY && process.stdout.isTTY,
 		size,
 	})
@@ -217,4 +225,13 @@ function currentTerminalSize(): TerminalSize {
 		rows: process.stdout.rows || 32,
 		cols: process.stdout.columns || 120,
 	}
+}
+
+function parsePreviewRows(value: string | undefined): number | undefined {
+	if (value === undefined) return undefined
+	const parsed = Number.parseInt(value, 10)
+	if (!Number.isFinite(parsed) || parsed < 1) {
+		throw new Error('--preview-rows must be a positive integer')
+	}
+	return parsed
 }

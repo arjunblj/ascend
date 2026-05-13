@@ -47,6 +47,7 @@ import type {
 export interface WorkbookLoadOptions {
 	readonly mode?: 'full' | 'metadata-only' | 'values' | 'formula'
 	readonly sheets?: readonly string[]
+	readonly maxRows?: number
 	readonly richMetadata?: boolean
 	readonly password?: string
 	readonly pivotCacheRecordMaterializeLimit?: number | 'all'
@@ -577,6 +578,7 @@ function normalizeOptions(options: WorkbookLoadOptions): WorkbookLoadOptions {
 	return {
 		...(options.mode ? { mode: options.mode } : {}),
 		...(options.sheets ? { sheets: [...options.sheets].sort((a, b) => a.localeCompare(b)) } : {}),
+		...(options.maxRows !== undefined ? { maxRows: options.maxRows } : {}),
 		...(options.richMetadata ? { richMetadata: true } : {}),
 		...(options.password !== undefined ? { password: options.password } : {}),
 		...(options.pivotCacheRecordMaterializeLimit !== undefined
@@ -600,9 +602,18 @@ function mergeOpenOptions(
 		current.pivotCacheRecordMaterializeLimit,
 		next.pivotCacheRecordMaterializeLimit,
 	)
+	const maxRows =
+		next.maxRows !== undefined
+			? current.maxRows === undefined
+				? undefined
+				: Math.max(current.maxRows, next.maxRows)
+			: next.mode === 'full'
+				? undefined
+				: current.maxRows
 	return normalizeOptions({
 		...(mode ? { mode } : {}),
 		...(mergedSheets ? { sheets: mergedSheets } : {}),
+		...(maxRows !== undefined ? { maxRows } : {}),
 		...(current.richMetadata || next.richMetadata ? { richMetadata: true } : {}),
 		...(next.password !== undefined || current.password !== undefined
 			? { password: next.password ?? current.password }
@@ -615,6 +626,7 @@ function sameOpenOptions(left: WorkbookLoadOptions, right: WorkbookLoadOptions):
 	const normalizedLeft = normalizeOptions(left)
 	const normalizedRight = normalizeOptions(right)
 	if ((normalizedLeft.mode ?? 'full') !== (normalizedRight.mode ?? 'full')) return false
+	if (normalizedLeft.maxRows !== normalizedRight.maxRows) return false
 	if (
 		normalizedLeft.pivotCacheRecordMaterializeLimit !==
 		normalizedRight.pivotCacheRecordMaterializeLimit
@@ -703,6 +715,7 @@ function makeSessionKey(identity: SessionIdentity, options: WorkbookLoadOptions)
 		source: 'path' in identity ? identity.path : identity.key,
 		mode: normalized.mode ?? 'full',
 		sheets: normalized.sheets ?? [],
+		maxRows: normalized.maxRows ?? null,
 		richMetadata: normalized.richMetadata ?? false,
 		password: normalized.password ?? null,
 		pivotCacheRecordMaterializeLimit: normalized.pivotCacheRecordMaterializeLimit ?? null,

@@ -131,6 +131,42 @@ describe('WorkbookTuiEngine', () => {
 		}
 	})
 
+	test('opens row-limited workbook previews as read-only', async () => {
+		const dir = await mkdtemp(join(tmpdir(), 'ascend-tui-'))
+		try {
+			const path = join(dir, 'preview.xlsx')
+			const workbook = AscendWorkbook.create()
+			workbook.applyAndRecalc([
+				{
+					op: 'setCells',
+					sheet: 'Sheet1',
+					updates: [
+						{ ref: 'A1', value: 'visible' },
+						{ ref: 'A2', value: 'capped' },
+					],
+				},
+			])
+			await workbook.save(path)
+			const engine = await WorkbookTuiEngine.create({
+				path,
+				loadOptions: { mode: 'values', maxRows: 1 },
+				size: { rows: 18, cols: 90 },
+			})
+			const document = engine.state().workspace.documents[0]
+			expect(document?.readOnly).toBe(true)
+			expect(document?.info?.load.isPartial).toBe(true)
+			expect(engine.state().message).toContain('first 1 rows')
+			expect(engine.render({ rows: 18, cols: 90 }).lines.join('\n')).toContain('visible')
+
+			const edit = await engine.dispatch({ kind: 'key', key: 'text', text: 'x' })
+			expect(edit.handled).toBe(false)
+			expect(engine.state().dirty).toBe(false)
+			expect(engine.state().message).toContain('read-only')
+		} finally {
+			await rm(dir, { recursive: true, force: true })
+		}
+	})
+
 	test('open command loads a workbook path inside the TUI session', async () => {
 		const dir = await mkdtemp(join(tmpdir(), 'ascend-tui-'))
 		try {

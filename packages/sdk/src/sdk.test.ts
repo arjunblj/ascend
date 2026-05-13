@@ -1021,6 +1021,23 @@ describe('AscendWorkbook', () => {
 		expect(wb.sheet('Sheet1')?.cell('A2')).toBeUndefined()
 	})
 
+	test('transactional setCells rollback restores formulas', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setFormula', sheet: 'Sheet1', ref: 'A1', formula: '1+1' }])
+
+		const result = wb.apply(
+			[
+				{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 5 }] },
+				{ op: 'setCells', sheet: 'Missing', updates: [{ ref: 'A1', value: 9 }] },
+			],
+			{ transaction: true },
+		)
+
+		expect(result.errors).toHaveLength(1)
+		expect(wb.sheet('Sheet1')?.cell('A1')?.formula).toBe('1+1')
+		expect(wb.sheet('Sheet1')?.cell('A1')?.value.kind).toBe('empty')
+	})
+
 	test('apply with collectAllErrors returns all validation errors', () => {
 		const wb = AscendWorkbook.create()
 		const result = wb.apply(

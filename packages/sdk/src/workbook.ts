@@ -1,5 +1,6 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import {
+	type Cell,
 	createWorkbook,
 	indexToColumn,
 	parseA1,
@@ -123,6 +124,67 @@ function maybeBuildMutationJournal(
 	} catch {
 		return undefined
 	}
+}
+
+interface CellRollbackSnapshot {
+	readonly sheet: string
+	readonly row: number
+	readonly col: number
+	readonly cell: Cell | undefined
+}
+
+function collectSetCellsRollbackSnapshots(
+	workbook: Workbook,
+	ops: readonly Operation[],
+): CellRollbackSnapshot[] | null {
+	const snapshots: CellRollbackSnapshot[] = []
+	const seen = new Set<string>()
+	for (const op of ops) {
+		if (op.op !== 'setCells') return null
+		const sheet = workbook.getSheet(op.sheet)
+		if (!sheet) continue
+		for (const update of op.updates) {
+			const ref = parseA1Safe(update.ref)
+			if (!ref) return null
+			const key = `${sheet.id}:${ref.row}:${ref.col}`
+			if (seen.has(key)) continue
+			seen.add(key)
+			snapshots.push({
+				sheet: op.sheet,
+				row: ref.row,
+				col: ref.col,
+				cell: sheet.cells.get(ref.row, ref.col),
+			})
+		}
+	}
+	return snapshots
+}
+
+function restoreCellRollbackSnapshots(
+	workbook: Workbook,
+	snapshots: readonly CellRollbackSnapshot[],
+): void {
+	for (let i = snapshots.length - 1; i >= 0; i--) {
+		const snapshot = snapshots[i]
+		if (!snapshot) continue
+		const sheet = workbook.getSheet(snapshot.sheet)
+		if (!sheet) continue
+		if (snapshot.cell) sheet.cells.set(snapshot.row, snapshot.col, snapshot.cell)
+		else sheet.cells.delete(snapshot.row, snapshot.col)
+	}
+}
+
+function applySetCellsTransactionInPlace(
+	workbook: Workbook,
+	ops: readonly Operation[],
+	options?: ApplyOptions,
+): ReturnType<typeof applyOperations> | null {
+	if (options?.collectAllErrors) return null
+	const snapshots = collectSetCellsRollbackSnapshots(workbook, ops)
+	if (!snapshots) return null
+	const result = applyOperations(workbook, ops, options)
+	if (!result.ok) restoreCellRollbackSnapshots(workbook, snapshots)
+	return result
 }
 
 function stringMatches(
@@ -598,7 +660,8 @@ export class AscendWorkbook extends WorkbookReadView {
 		const dirtyFlags = this.deriveDirtyFlags(ops)
 		const nextWorkbook = options?.transaction ? this.wb : cloneWorkbook(this.wb)
 		const result = options?.transaction
-			? applyWithTransaction(nextWorkbook, ops, options)
+			? (applySetCellsTransactionInPlace(nextWorkbook, ops, options) ??
+				applyWithTransaction(nextWorkbook, ops, options))
 			: applyOperations(nextWorkbook, ops, options)
 		if (!result.ok) {
 			const errors = 'errors' in result.error ? result.error.errors : [result.error]

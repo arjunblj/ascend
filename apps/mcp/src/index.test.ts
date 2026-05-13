@@ -10,6 +10,14 @@ const TEMP_FILE = join(
 	tmpdir(),
 	`ascend-mcp-${Date.now()}-${Math.random().toString(16).slice(2)}.xlsx`,
 )
+const TEMP_MACRO_FILE = join(
+	tmpdir(),
+	`ascend-mcp-macro-${Date.now()}-${Math.random().toString(16).slice(2)}.xlsm`,
+)
+const TEMP_MACRO_OUTPUT = join(
+	tmpdir(),
+	`ascend-mcp-macro-out-${Date.now()}-${Math.random().toString(16).slice(2)}.xlsm`,
+)
 const PIVOT_FIXTURE = join(
 	import.meta.dir,
 	'../../../fixtures/xlsx/libreoffice/PivotTable_CachedDefinitionAndDataInSync.xlsx',
@@ -17,6 +25,8 @@ const PIVOT_FIXTURE = join(
 
 afterAll(async () => {
 	await unlink(TEMP_FILE).catch(() => {})
+	await unlink(TEMP_MACRO_FILE).catch(() => {})
+	await unlink(TEMP_MACRO_OUTPUT).catch(() => {})
 })
 
 describe('MCP server', () => {
@@ -1066,6 +1076,54 @@ describe('MCP server', () => {
 		})
 		expect(committed.isError).not.toBe(true)
 		expect(committed.structuredContent?.data?.approvals?.[0]?.id).toBe('op:0:deletesheet')
+	})
+
+	test('ascend.commit requires exact approval ids for preserved lossy features', async () => {
+		await Bun.write(TEMP_MACRO_FILE, signedMacroWorkbook())
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: accessing internals for test
+		const planHandler = (server as any)._registeredTools['ascend.plan'].handler as (args: {
+			file: string
+			ops: unknown[]
+		}) => Promise<{ structuredContent?: { data?: { approvals?: Array<{ id: string }> } } }>
+		// biome-ignore lint/suspicious/noExplicitAny: accessing internals for test
+		const commitHandler = (server as any)._registeredTools['ascend.commit'].handler as (args: {
+			file: string
+			ops: unknown[]
+			output?: string
+			approvals?: string[] | string
+		}) => Promise<{
+			isError?: boolean
+			structuredContent?: { data?: { approvals?: Array<{ id: string }> } }
+		}>
+		const ops = [{ op: 'setCells', sheet: 'Data', updates: [{ ref: 'A1', value: 7 }] }]
+		const planned = await planHandler({ file: TEMP_MACRO_FILE, ops })
+		const approvalIds = planned.structuredContent?.data?.approvals?.map((approval) => approval.id)
+		expect(approvalIds).toEqual(
+			expect.arrayContaining([
+				expect.stringMatching(/^loss:preservedmacro:preserved:/),
+				expect.stringMatching(/^loss:preservedsignature:preserved:/),
+			]),
+		)
+
+		const aliasBlocked = await commitHandler({
+			file: TEMP_MACRO_FILE,
+			ops,
+			output: TEMP_MACRO_OUTPUT,
+			approvals: ['preservedMacro', 'preservedSignature'],
+		})
+		expect(aliasBlocked.isError).toBe(true)
+
+		const committed = await commitHandler({
+			file: TEMP_MACRO_FILE,
+			ops,
+			output: TEMP_MACRO_OUTPUT,
+			approvals: approvalIds ?? [],
+		})
+		expect(committed.isError).not.toBe(true)
+		expect(committed.structuredContent?.data?.approvals?.map((approval) => approval.id)).toEqual(
+			approvalIds,
+		)
 	})
 
 	test('file-not-found returns structured error', async () => {

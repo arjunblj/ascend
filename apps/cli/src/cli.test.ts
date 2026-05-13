@@ -104,6 +104,9 @@ afterAll(() => {
 		'approval-ops.json',
 		'approval-alias-out.xlsx',
 		'approval-exact-out.xlsx',
+		'lossy-ops.json',
+		'lossy-alias-out.xlsm',
+		'lossy-exact-out.xlsm',
 		'progress-ops.json',
 		'progress-output.xlsx',
 	]) {
@@ -390,6 +393,57 @@ describe('ascend cli', () => {
 		expect(plan.stdout).toContain('active-content-preserved package parts:')
 		expect(plan.stdout).toContain('xl/vbaProject.bin (preservedMacro')
 		expect(plan.stdout).toContain('Write policy approval-required-feature:')
+	})
+
+	test('lossy preserved-feature commits require exact approval ids', async () => {
+		await Bun.write(`${import.meta.dir}/${ACTIVE_CONTENT_FILE}`, signedMacroWorkbook())
+		await Bun.write(
+			`${import.meta.dir}/lossy-ops.json`,
+			JSON.stringify([{ op: 'setCells', sheet: 'Data', updates: [{ ref: 'A1', value: 7 }] }]),
+		)
+
+		const plan = await run('plan', ACTIVE_CONTENT_FILE, '--ops', 'lossy-ops.json', '--json')
+		expect(plan.exitCode).toBe(0)
+		const planned = JSON.parse(plan.stdout)
+		const approvalIds = planned.data.approvals.map((approval: { id: string }) => approval.id)
+		expect(approvalIds).toEqual(
+			expect.arrayContaining([
+				expect.stringMatching(/^loss:preservedmacro:preserved:/),
+				expect.stringMatching(/^loss:preservedsignature:preserved:/),
+			]),
+		)
+
+		const aliasCommit = await run(
+			'commit',
+			ACTIVE_CONTENT_FILE,
+			'--ops',
+			'lossy-ops.json',
+			'--output',
+			'lossy-alias-out.xlsm',
+			'--approval',
+			'preservedMacro,preservedSignature',
+			'--json',
+		)
+		expect(aliasCommit.exitCode).toBe(1)
+		const aliasFailure = JSON.parse(aliasCommit.stdout)
+		expect(aliasFailure.ok).toBe(false)
+		expect(aliasFailure.error.message).toBe('Commit requires explicit approval')
+
+		const exactCommit = await run(
+			'commit',
+			ACTIVE_CONTENT_FILE,
+			'--ops',
+			'lossy-ops.json',
+			'--output',
+			'lossy-exact-out.xlsm',
+			'--approval',
+			approvalIds.join(','),
+			'--json',
+		)
+		expect(exactCommit.exitCode).toBe(0)
+		const exact = JSON.parse(exactCommit.stdout)
+		expect(exact.ok).toBe(true)
+		expect(exact.data.approvals.map((approval: { id: string }) => approval.id)).toEqual(approvalIds)
 	})
 
 	test('plan, commit, and check can emit JSONL progress events', async () => {

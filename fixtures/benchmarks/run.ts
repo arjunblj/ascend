@@ -1678,6 +1678,8 @@ const scenarios: readonly Scenario[] = [
 					initialViewportMs,
 					prepareEditsMs: prepare.timings.totalMs,
 					prepareEnsureMutableWorkbookMs: prepare.timings.ensureMutableWorkbookMs,
+					prepareMutableWorkbookOpenMs: prepare.timings.mutableWorkbookOpenMs ?? null,
+					prepareRebaseViewportSnapshotsMs: prepare.timings.rebaseViewportSnapshotsMs ?? null,
 					editFrameMs,
 					sessionApplyMs: edit.timings.totalMs,
 					ensureMutableWorkbookMs: edit.timings.ensureMutableWorkbookMs,
@@ -1795,6 +1797,8 @@ const scenarios: readonly Scenario[] = [
 			let totalInitialViewportMs = 0
 			let totalPrepareEditsMs = 0
 			let totalPrepareEnsureMutableWorkbookMs = 0
+			let totalPrepareMutableWorkbookOpenMs = 0
+			let totalPrepareRebaseViewportSnapshotsMs = 0
 			let totalEditFrameMs = 0
 			let totalSessionApplyMs = 0
 			let totalApplyMs = 0
@@ -1844,6 +1848,8 @@ const scenarios: readonly Scenario[] = [
 				const prepareEnsureMutableWorkbookMs = prepare.timings.ensureMutableWorkbookMs
 				totalPrepareEditsMs += prepare.timings.totalMs
 				totalPrepareEnsureMutableWorkbookMs += prepare.timings.ensureMutableWorkbookMs
+				totalPrepareMutableWorkbookOpenMs += prepare.timings.mutableWorkbookOpenMs ?? 0
+				totalPrepareRebaseViewportSnapshotsMs += prepare.timings.rebaseViewportSnapshotsMs ?? 0
 				if (prepareEditsMs > maxPrepareEditsMs) {
 					maxPrepareEditsMs = prepareEditsMs
 					slowestPrepareTarget = target.label
@@ -1893,6 +1899,10 @@ const scenarios: readonly Scenario[] = [
 				targetAssertions[`${assertionPrefix}.prepareEditsMs`] = prepareEditsMs
 				targetAssertions[`${assertionPrefix}.prepareEnsureMutableWorkbookMs`] =
 					prepareEnsureMutableWorkbookMs
+				targetAssertions[`${assertionPrefix}.prepareMutableWorkbookOpenMs`] =
+					prepare.timings.mutableWorkbookOpenMs ?? null
+				targetAssertions[`${assertionPrefix}.prepareRebaseViewportSnapshotsMs`] =
+					prepare.timings.rebaseViewportSnapshotsMs ?? null
 				targetAssertions[`${assertionPrefix}.editFrameMs`] = editFrameMs
 				targetAssertions[`${assertionPrefix}.sessionApplyMs`] = edit.timings.totalMs
 				targetAssertions[`${assertionPrefix}.applyMs`] = edit.timings.applyMs
@@ -1918,6 +1928,8 @@ const scenarios: readonly Scenario[] = [
 					initialViewportMs: totalInitialViewportMs,
 					prepareEditsMs: totalPrepareEditsMs,
 					prepareEnsureMutableWorkbookMs: totalPrepareEnsureMutableWorkbookMs,
+					prepareMutableWorkbookOpenMs: totalPrepareMutableWorkbookOpenMs,
+					prepareRebaseViewportSnapshotsMs: totalPrepareRebaseViewportSnapshotsMs,
 					editFrameMs: totalEditFrameMs,
 					sessionApplyMs: totalSessionApplyMs,
 					applyMs: totalApplyMs,
@@ -2291,6 +2303,9 @@ const scenarios: readonly Scenario[] = [
 					currentInitialViewportMs,
 					currentTimeToFirstViewportMs: currentOpenMs + currentInitialViewportMs,
 					currentPrepareEditsMs: currentPrepare.timings.totalMs,
+					currentPrepareMutableWorkbookOpenMs: currentPrepare.timings.mutableWorkbookOpenMs ?? null,
+					currentPrepareRebaseViewportSnapshotsMs:
+						currentPrepare.timings.rebaseViewportSnapshotsMs ?? null,
 					currentTimeToEditReadyMs:
 						currentOpenMs + currentInitialViewportMs + currentPrepare.timings.totalMs,
 					currentViewportCells: currentViewport.cells.length,
@@ -2305,6 +2320,10 @@ const scenarios: readonly Scenario[] = [
 					backgroundPrepareEditsMs: backgroundPrepare.timings.totalMs,
 					backgroundPrepareEnsureMutableWorkbookMs:
 						backgroundPrepare.timings.ensureMutableWorkbookMs,
+					backgroundPrepareMutableWorkbookOpenMs:
+						backgroundPrepare.timings.mutableWorkbookOpenMs ?? null,
+					backgroundPrepareRebaseViewportSnapshotsMs:
+						backgroundPrepare.timings.rebaseViewportSnapshotsMs ?? null,
 					backgroundPrepareTotalMs,
 					progressiveTimeToEditReadyMs,
 					progressiveEditReadyDeltaVsCurrentMs:

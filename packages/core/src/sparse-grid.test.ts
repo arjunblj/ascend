@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import {
+	arrayValue,
 	type CellValue,
 	dateValue,
 	EMPTY,
@@ -133,6 +134,25 @@ describe('SparseGrid', () => {
 		grid.delete(0, 1)
 		expect(grid.stringCellCount()).toBe(0)
 		expect(grid.richTextCellCount()).toBe(0)
+	})
+
+	test('tracks array values so scalar grid copies avoid full mutable scans', () => {
+		const grid = new SparseGrid()
+		const array = arrayValue([[numberValue(1), stringValue('two')]])
+		grid.set(0, 0, makeCell(array))
+
+		expect(grid.arrayCellCount()).toBe(1)
+
+		const clone = grid.clone()
+		expect(clone.arrayCellCount()).toBe(1)
+		expect(clone.get(0, 0)).toEqual(makeCell(array))
+
+		clone.setPlainNumber(0, 0, 3)
+		expect(clone.arrayCellCount()).toBe(0)
+		expect(grid.arrayCellCount()).toBe(1)
+
+		grid.delete(0, 0)
+		expect(grid.arrayCellCount()).toBe(0)
 	})
 
 	test('tracks string and rich text counts through whole-chunk row deletion', () => {

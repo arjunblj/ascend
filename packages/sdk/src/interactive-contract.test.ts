@@ -454,4 +454,73 @@ describe('interactive client contract', () => {
 		expect(undoRename.errors).toEqual([])
 		expect(wb.table('Sales')?.name).toBe('Sales')
 	})
+
+	test('journal inverse ops restore table lifecycle metadata edits', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'Product' },
+					{ ref: 'B1', value: 'Qty' },
+					{ ref: 'A2', value: 'Widget' },
+					{ ref: 'B2', value: 2 },
+					{ ref: 'A3', value: 'Gadget' },
+					{ ref: 'B3', value: 3 },
+				],
+			},
+		])
+
+		const created = wb.apply(
+			[{ op: 'createTable', sheet: 'Sheet1', ref: 'A1:B3', name: 'Sales', hasHeaders: true }],
+			{ journal: true },
+		)
+		expect(created.journal?.exact).toBe(true)
+		expect(created.journal?.inverseOps).toEqual([{ op: 'deleteTable', table: 'Sales' }])
+
+		wb.apply([
+			{ op: 'setTableColumn', table: 'Sales', column: 'Qty', formula: '=1+1' },
+			{ op: 'setTableStyle', table: 'Sales', styleName: 'TableStyleMedium2' },
+		])
+
+		const resized = wb.apply([{ op: 'resizeTable', table: 'Sales', ref: 'A1:B2' }], {
+			journal: true,
+		})
+		expect(resized.journal?.exact).toBe(true)
+		expect(resized.journal?.inverseOps).toEqual([
+			{ op: 'resizeTable', table: 'Sales', ref: 'A1:B3' },
+			{ op: 'setTableStyle', table: 'Sales', styleName: 'TableStyleMedium2' },
+			{ op: 'setTableColumn', table: 'Sales', column: 1, formula: '1+1' },
+		])
+
+		const undoResize = wb.apply(resized.journal?.inverseOps ?? [], { transaction: true })
+		expect(undoResize.errors).toEqual([])
+		expect(wb.table('Sales')?.ref).toEqual({
+			start: { row: 0, col: 0 },
+			end: { row: 2, col: 1 },
+		})
+		expect(wb.table('Sales')?.columnDefs[1]?.formula).toBe('1+1')
+
+		const deleted = wb.apply([{ op: 'deleteTable', table: 'Sales' }], { journal: true })
+		expect(deleted.journal?.exact).toBe(true)
+		expect(deleted.journal?.inverseOps).toEqual([
+			{
+				op: 'createTable',
+				sheet: 'Sheet1',
+				ref: 'A1:B3',
+				name: 'Sales',
+				hasHeaders: true,
+			},
+			{ op: 'setTableStyle', table: 'Sales', styleName: 'TableStyleMedium2' },
+			{ op: 'setTableColumn', table: 'Sales', column: 0, newName: 'Product' },
+			{ op: 'setTableColumn', table: 'Sales', column: 1, newName: 'Qty', formula: '1+1' },
+		])
+
+		const undoDelete = wb.apply(deleted.journal?.inverseOps ?? [], { transaction: true })
+		expect(undoDelete.errors).toEqual([])
+		expect(wb.table('Sales')?.columns).toEqual(['Product', 'Qty'])
+		expect(wb.table('Sales')?.columnDefs[1]?.formula).toBe('1+1')
+		expect(wb.table('Sales')?.styleInfo).toEqual({ name: 'TableStyleMedium2' })
+	})
 })

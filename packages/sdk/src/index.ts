@@ -97,7 +97,9 @@ export type {
 	MutationJournalPanePreimage,
 	MutationJournalPreimage,
 	MutationJournalTableColumnPreimage,
+	MutationJournalTablePreimage,
 	MutationJournalTableRenamePreimage,
+	MutationJournalTableStylePreimage,
 } from './journal.ts'
 export type {
 	OperationApprovalMetadata,

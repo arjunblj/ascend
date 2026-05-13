@@ -14,7 +14,9 @@ import {
 	type SheetConditionalFormatRule,
 	type SheetDataValidation,
 	type SheetHyperlink,
+	type Table,
 	type TableColumn,
+	type TableStyleInfo,
 	toA1,
 	toRangeString,
 	type Workbook,
@@ -106,6 +108,17 @@ export interface MutationJournalTableColumnPreimage {
 	readonly columnState: TableColumn | null
 }
 
+export interface MutationJournalTablePreimage {
+	readonly table: Table | null
+	readonly sheet: string | null
+	readonly ref: string | null
+}
+
+export interface MutationJournalTableStylePreimage {
+	readonly table: string
+	readonly style: TableStyleInfo | null
+}
+
 export type MutationJournalPreimage =
 	| { readonly kind: 'cells'; readonly cells: readonly MutationJournalCellPreimage[] }
 	| { readonly kind: 'comment'; readonly comment: MutationJournalCommentPreimage }
@@ -124,6 +137,8 @@ export type MutationJournalPreimage =
 	| { readonly kind: 'defined-name'; readonly definedName: MutationJournalDefinedNamePreimage }
 	| { readonly kind: 'table-rename'; readonly tableRename: MutationJournalTableRenamePreimage }
 	| { readonly kind: 'table-column'; readonly tableColumn: MutationJournalTableColumnPreimage }
+	| { readonly kind: 'table'; readonly table: MutationJournalTablePreimage }
+	| { readonly kind: 'table-style'; readonly tableStyle: MutationJournalTableStylePreimage }
 
 export interface MutationJournalEntry {
 	readonly opIndex: number
@@ -241,8 +256,16 @@ function buildSupportedJournalEntry(
 			return journalDeleteDefinedName(workbook, op, opIndex)
 		case 'renameTable':
 			return journalRenameTable(op, opIndex)
+		case 'createTable':
+			return journalCreateTable(op, opIndex)
+		case 'deleteTable':
+			return journalDeleteTable(workbook, op, opIndex)
+		case 'resizeTable':
+			return journalResizeTable(workbook, op, opIndex)
 		case 'setTableColumn':
 			return journalSetTableColumn(workbook, op, opIndex)
+		case 'setTableStyle':
+			return journalSetTableStyle(workbook, op, opIndex)
 		case 'setComment':
 			return journalSetComment(workbook, op, opIndex)
 		case 'deleteComment':
@@ -550,6 +573,61 @@ function journalRenameTable(
 	}
 }
 
+function journalCreateTable(
+	op: Extract<Operation, { op: 'createTable' }>,
+	opIndex: number,
+): DraftJournalEntry {
+	return {
+		opIndex,
+		op,
+		inverseOps: [{ op: 'deleteTable', table: op.name }],
+		preimages: [
+			{
+				kind: 'table',
+				table: { table: null, sheet: op.sheet, ref: op.ref },
+			},
+		],
+		issues: [],
+	}
+}
+
+function journalDeleteTable(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'deleteTable' }>,
+	opIndex: number,
+): DraftJournalEntry {
+	const preimage = tablePreimage(workbook, op.table)
+	const { inverseOps, issues } = restoreTableOps(preimage)
+	return {
+		opIndex,
+		op,
+		inverseOps,
+		preimages: [{ kind: 'table', table: preimage }],
+		issues,
+	}
+}
+
+function journalResizeTable(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'resizeTable' }>,
+	opIndex: number,
+): DraftJournalEntry {
+	const preimage = tablePreimage(workbook, op.table)
+	const { inverseOps, issues } = preimage.table
+		? restoreExistingTableOps(preimage.table, preimage.sheet ?? undefined, {
+				includeCreate: false,
+				tableName: op.table,
+			})
+		: { inverseOps: [], issues: missingTableIssues(op.table) }
+	return {
+		opIndex,
+		op,
+		inverseOps,
+		preimages: [{ kind: 'table', table: preimage }],
+		issues,
+	}
+}
+
 function journalSetTableColumn(
 	workbook: Workbook,
 	op: Extract<Operation, { op: 'setTableColumn' }>,
@@ -562,6 +640,22 @@ function journalSetTableColumn(
 		op,
 		inverseOps,
 		preimages: [{ kind: 'table-column', tableColumn: preimage }],
+		issues,
+	}
+}
+
+function journalSetTableStyle(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'setTableStyle' }>,
+	opIndex: number,
+): DraftJournalEntry {
+	const style = tableStylePreimage(workbook, op.table)
+	const issues = tableStyleRestoreIssues(op, style.style)
+	return {
+		opIndex,
+		op,
+		inverseOps: [tableStyleSetOperation(op.table, style.style)],
+		preimages: [{ kind: 'table-style', tableStyle: style }],
 		issues,
 	}
 }
@@ -1089,6 +1183,235 @@ function restoreTableColumnOps(
 	return { inverseOps: [inverse], issues: [] }
 }
 
+function tablePreimage(workbook: Workbook, tableName: string): MutationJournalTablePreimage {
+	const located = findTable(workbook, tableName)
+	return {
+		table: located ? cloneTable(located.table) : null,
+		sheet: located?.sheet.name ?? null,
+		ref: located ? toRangeString(located.table.ref) : null,
+	}
+}
+
+function restoreTableOps(preimage: MutationJournalTablePreimage): {
+	readonly inverseOps: readonly Operation[]
+	readonly issues: readonly MutationJournalIssue[]
+} {
+	if (!preimage.table) {
+		return {
+			inverseOps: [],
+			issues: [
+				{
+					code: 'UNSUPPORTED_VALUE',
+					message: 'Cannot restore deleted table because it was not found before the edit',
+				},
+			],
+		}
+	}
+	return restoreExistingTableOps(preimage.table, preimage.sheet ?? undefined, {
+		includeCreate: true,
+	})
+}
+
+function restoreExistingTableOps(
+	table: Table,
+	sheet: string | undefined,
+	options: { readonly includeCreate: boolean; readonly tableName?: string },
+): {
+	readonly inverseOps: readonly Operation[]
+	readonly issues: readonly MutationJournalIssue[]
+} {
+	const issues = tableRestoreIssues(table, sheet, options.includeCreate)
+	if (!sheet) {
+		return {
+			inverseOps: [],
+			issues: [
+				...issues,
+				{
+					code: 'UNSUPPORTED_VALUE',
+					message: `Cannot restore table ${table.name} because its sheet is missing`,
+				},
+			],
+		}
+	}
+	const inverseOps: Operation[] = options.includeCreate
+		? [
+				{
+					op: 'createTable',
+					sheet,
+					ref: toRangeString(table.ref),
+					name: table.name,
+					hasHeaders: table.hasHeaders,
+				},
+			]
+		: [
+				{
+					op: 'resizeTable',
+					table: options.tableName ?? table.name,
+					ref: toRangeString(table.ref),
+				},
+			]
+	if (table.tableStyleInfo) {
+		inverseOps.push(tableStyleSetOperation(table.name, table.tableStyleInfo))
+	}
+	table.columns.forEach((column, index) => {
+		const op = tableColumnRestoreOperation(table.name, index, column, {
+			restoreName: options.includeCreate,
+		})
+		if (op) inverseOps.push(op)
+	})
+	return { inverseOps, issues }
+}
+
+function tableStylePreimage(
+	workbook: Workbook,
+	tableName: string,
+): MutationJournalTableStylePreimage {
+	const style = findTable(workbook, tableName)?.table.tableStyleInfo
+	return {
+		table: tableName,
+		style: style ? { ...style } : null,
+	}
+}
+
+function tableStyleSetOperation(
+	table: string,
+	style: TableStyleInfo | null,
+): Extract<Operation, { op: 'setTableStyle' }> {
+	return {
+		op: 'setTableStyle',
+		table,
+		styleName: style?.name ?? null,
+		...(style?.showFirstColumn !== undefined ? { showFirstColumn: style.showFirstColumn } : {}),
+		...(style?.showLastColumn !== undefined ? { showLastColumn: style.showLastColumn } : {}),
+		...(style?.showRowStripes !== undefined ? { showRowStripes: style.showRowStripes } : {}),
+		...(style?.showColumnStripes !== undefined
+			? { showColumnStripes: style.showColumnStripes }
+			: {}),
+	}
+}
+
+function tableStyleRestoreIssues(
+	op: Extract<Operation, { op: 'setTableStyle' }>,
+	style: TableStyleInfo | null,
+): MutationJournalIssue[] {
+	const touchedBooleanWithNoPreimage =
+		(op.showFirstColumn !== undefined && style?.showFirstColumn === undefined) ||
+		(op.showLastColumn !== undefined && style?.showLastColumn === undefined) ||
+		(op.showRowStripes !== undefined && style?.showRowStripes === undefined) ||
+		(op.showColumnStripes !== undefined && style?.showColumnStripes === undefined)
+	return touchedBooleanWithNoPreimage
+		? [
+				{
+					code: 'LOSSY_INVERSE',
+					message: `Table style flags for ${op.table} cannot be cleared with public operations`,
+				},
+			]
+		: []
+}
+
+function tableColumnRestoreOperation(
+	table: string,
+	columnIndex: number,
+	column: TableColumn,
+	options: { readonly restoreName: boolean },
+): Extract<Operation, { op: 'setTableColumn' }> | null {
+	const op: Extract<Operation, { op: 'setTableColumn' }> = {
+		op: 'setTableColumn',
+		table,
+		column: columnIndex,
+		...(options.restoreName ? { newName: column.name } : {}),
+		...(column.formula !== undefined ? { formula: column.formula } : {}),
+		...(column.totalsRowFunction !== undefined
+			? { totalsRowFunction: column.totalsRowFunction }
+			: {}),
+		...(column.totalsRowFormula !== undefined ? { totalsRowFormula: column.totalsRowFormula } : {}),
+		...(column.totalsRowLabel !== undefined ? { totalsRowLabel: column.totalsRowLabel } : {}),
+	}
+	return Object.keys(op).length > 3 ? op : null
+}
+
+function tableRestoreIssues(
+	table: Table,
+	sheet: string | undefined,
+	includeCreate: boolean,
+): MutationJournalIssue[] {
+	const refs = [sheet ? `${sheet}!${toRangeString(table.ref)}` : table.name]
+	const issues: MutationJournalIssue[] = []
+	if (
+		table.partPath !== undefined ||
+		table.contentType !== undefined ||
+		table.contentTypeSource !== undefined ||
+		table.sourcePartPath !== undefined ||
+		table.sourceRelationshipPart !== undefined ||
+		table.sourceRelationshipId !== undefined ||
+		table.sourceRelationshipType !== undefined ||
+		table.sourceRelationshipRawType !== undefined ||
+		table.sourceRelationshipRawTarget !== undefined ||
+		table.sourceRelationshipResolvedTarget !== undefined ||
+		table.sourceRelationshipTargetMode !== undefined ||
+		table.uid !== undefined ||
+		table.tableType !== undefined ||
+		table.insertRow !== undefined ||
+		table.insertRowShift !== undefined ||
+		table.altText !== undefined ||
+		table.altTextSummary !== undefined ||
+		table.autoFilter !== undefined ||
+		table.sortState !== undefined ||
+		table.dxfId !== undefined ||
+		table.dataCellStyle !== undefined ||
+		table.headerRowDxfId !== undefined ||
+		table.headerRowCellStyle !== undefined ||
+		table.dataDxfId !== undefined ||
+		table.totalsRowDxfId !== undefined ||
+		table.headerRowBorderDxfId !== undefined ||
+		table.tableBorderDxfId !== undefined ||
+		table.queryTable !== undefined
+	) {
+		issues.push({
+			code: 'LOSSY_INVERSE',
+			message: `Table ${table.name} has metadata that cannot be restored with public operations`,
+			refs,
+		})
+	}
+	if (includeCreate && table.hasTotals) {
+		issues.push({
+			code: 'LOSSY_INVERSE',
+			message: `Table ${table.name} totals-row state cannot be recreated with public operations`,
+			refs,
+		})
+	}
+	for (const column of table.columns) {
+		if (
+			column.id !== undefined ||
+			column.uid !== undefined ||
+			column.uniqueName !== undefined ||
+			column.formulaIsArray !== undefined ||
+			column.xmlColumnPr !== undefined ||
+			column.queryTableFieldId !== undefined ||
+			column.dataCellStyle !== undefined ||
+			column.dataDxfId !== undefined ||
+			column.headerRowDxfId !== undefined ||
+			column.totalsRowDxfId !== undefined
+		) {
+			issues.push({
+				code: 'LOSSY_INVERSE',
+				message: `Table column ${table.name}[${column.name}] has metadata that cannot be restored with public operations`,
+				refs,
+			})
+		}
+	}
+	return issues
+}
+
+function missingTableIssues(table: string): readonly MutationJournalIssue[] {
+	return [
+		{
+			code: 'UNSUPPORTED_VALUE',
+			message: `Cannot restore table ${table} because it was not found before the edit`,
+		},
+	]
+}
+
 function cellPreimages(
 	workbook: Workbook,
 	sheetName: string,
@@ -1215,25 +1538,33 @@ function sheetNameForId(workbook: Workbook, sheetId: string): string | undefined
 	return workbook.sheets.find((sheet) => sheet.id === sheetId)?.name
 }
 
+function findTable(
+	workbook: Workbook,
+	tableName: string,
+): { readonly sheet: Sheet; readonly table: Table } | null {
+	for (const sheet of workbook.sheets) {
+		for (const table of sheet.tables) {
+			if (table.name.toLowerCase() === tableName.toLowerCase()) return { sheet, table }
+		}
+	}
+	return null
+}
+
 function findTableColumn(
 	workbook: Workbook,
 	tableName: string,
 	columnSelector: string | number,
 ): { readonly columnIndex: number; readonly column: TableColumn } | null {
-	for (const sheet of workbook.sheets) {
-		for (const table of sheet.tables) {
-			if (table.name.toLowerCase() !== tableName.toLowerCase()) continue
-			const columnIndex =
-				typeof columnSelector === 'number'
-					? columnSelector
-					: table.columns.findIndex(
-							(column) => column.name.toLowerCase() === columnSelector.toLowerCase(),
-						)
-			const column = table.columns[columnIndex]
-			return column ? { columnIndex, column } : null
-		}
-	}
-	return null
+	const located = findTable(workbook, tableName)
+	if (!located) return null
+	const columnIndex =
+		typeof columnSelector === 'number'
+			? columnSelector
+			: located.table.columns.findIndex(
+					(column) => column.name.toLowerCase() === columnSelector.toLowerCase(),
+				)
+	const column = located.table.columns[columnIndex]
+	return column ? { columnIndex, column } : null
 }
 
 function commentPreimage(
@@ -1328,6 +1659,28 @@ function cloneTableColumn(column: TableColumn): TableColumn {
 	return {
 		...column,
 		...(column.xmlColumnPr ? { xmlColumnPr: { ...column.xmlColumnPr } } : {}),
+	}
+}
+
+function cloneTable(table: Table): Table {
+	return {
+		...table,
+		ref: { start: { ...table.ref.start }, end: { ...table.ref.end } },
+		columns: table.columns.map(cloneTableColumn),
+		...(table.autoFilter ? { autoFilter: cloneAutoFilter(table.autoFilter) } : {}),
+		...(table.sortState
+			? {
+					sortState: {
+						...table.sortState,
+						...(table.sortState.preservedAttributes
+							? { preservedAttributes: { ...table.sortState.preservedAttributes } }
+							: {}),
+						conditions: table.sortState.conditions.map((condition) => ({ ...condition })),
+					},
+				}
+			: {}),
+		...(table.tableStyleInfo ? { tableStyleInfo: { ...table.tableStyleInfo } } : {}),
+		...(table.queryTable ? { queryTable: { ...table.queryTable } } : {}),
 	}
 }
 

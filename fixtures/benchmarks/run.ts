@@ -840,6 +840,50 @@ function workbookGridStorageAssertions(workbook: Workbook): Record<string, numbe
 	}
 }
 
+function workbookModelRetentionAssertions(workbook: Workbook): Record<string, number> {
+	return {
+		sheetCount: workbook.sheets.length,
+		sourceArchiveBytesRetained: workbook.sourceArchiveBytes?.byteLength ?? 0,
+		...workbookGridShapeAssertions(workbook),
+		...workbookGridStorageAssertions(workbook),
+	}
+}
+
+function workbookDocumentModel(document: WorkbookDocument): Workbook | null {
+	const internals = document as unknown as {
+		readonly view?: { getWorkbookModel(): Workbook }
+	}
+	return internals.view?.getWorkbookModel() ?? null
+}
+
+function sessionMutableWorkbook(session: AscendSession): AscendWorkbook | null {
+	const internals = session as unknown as { readonly mutableWorkbook?: AscendWorkbook | null }
+	return internals.mutableWorkbook ?? null
+}
+
+function ascendWorkbookOriginalBytes(workbook: AscendWorkbook): Uint8Array | null {
+	const internals = workbook as unknown as { readonly originalBytes?: Uint8Array | null }
+	return internals.originalBytes ?? null
+}
+
+function ascendWorkbookRetentionAssertions(workbook: AscendWorkbook): Record<string, number> {
+	const internals = workbook as unknown as {
+		readonly caps?: readonly { readonly content?: Uint8Array }[]
+		readonly originalBytes?: Uint8Array | null
+		readonly sourceArchive?: unknown
+	}
+	const capsules = internals.caps ?? []
+	let capsuleContentBytes = 0
+	for (const capsule of capsules) capsuleContentBytes += capsule.content?.byteLength ?? 0
+	return {
+		originalBytesRetained: internals.originalBytes?.byteLength ?? 0,
+		capsuleCount: capsules.length,
+		capsuleContentBytes,
+		sourceArchiveCached: internals.sourceArchive ? 1 : 0,
+		...workbookModelRetentionAssertions(workbook.getWorkbookModel()),
+	}
+}
+
 function workbookGridShapeAssertions(workbook: Workbook): Record<string, number> {
 	let nonEmptySheets = 0
 	let maxUsedRows = 0
@@ -2862,6 +2906,13 @@ const scenarios: readonly Scenario[] = [
 			const preparedOpenMs = performance.now() - openStart
 			const readiness = session.editReadiness()
 			if (!readiness.ready) throw new Error('Dense prepared-open-only session was not edit-ready')
+			const readModel = workbookDocumentModel(session.workbook())
+			const mutableWorkbook = sessionMutableWorkbook(session)
+			if (!readModel) throw new Error('Dense prepared-open-only read model was unavailable')
+			if (!mutableWorkbook)
+				throw new Error('Dense prepared-open-only mutable workbook was unavailable')
+			const mutableModel = mutableWorkbook.getWorkbookModel()
+			const mutableOriginalBytes = ascendWorkbookOriginalBytes(mutableWorkbook)
 			runGc()
 			const afterPreparedOpen = phaseMemorySnapshot()
 
@@ -2885,6 +2936,16 @@ const scenarios: readonly Scenario[] = [
 					readinessReusedReadModel: readiness.timings?.mutableWorkbookReusedReadModel ?? false,
 					readinessMutableWorkbookOpenMs: readiness.timings?.mutableWorkbookOpenMs ?? null,
 					readinessRebaseViewportSnapshotsMs: readiness.timings?.rebaseViewportSnapshotsMs ?? null,
+					...prefixAssertions('readModel', workbookModelRetentionAssertions(readModel)),
+					...prefixAssertions(
+						'mutableWorkbook',
+						ascendWorkbookRetentionAssertions(mutableWorkbook),
+					),
+					readAndMutableShareSourceArchive:
+						readModel.sourceArchiveBytes === mutableModel.sourceArchiveBytes ? 1 : 0,
+					mutableOriginalSharesSourceArchive:
+						mutableOriginalBytes === mutableModel.sourceArchiveBytes ? 1 : 0,
+					readSourceArchiveSharesInput: readModel.sourceArchiveBytes === bytes ? 1 : 0,
 					baselineRssBytes: baseline.rssBytes,
 					afterPreparedOpenRssDeltaBytes: memoryDelta(
 						afterPreparedOpen.rssBytes,
@@ -2947,6 +3008,12 @@ const scenarios: readonly Scenario[] = [
 			const preparedOpenMs = performance.now() - openStart
 			const readiness = session.editReadiness()
 			if (!readiness.ready) throw new Error('Dense prepared-open session was not edit-ready')
+			const readModel = workbookDocumentModel(session.workbook())
+			const mutableWorkbook = sessionMutableWorkbook(session)
+			if (!readModel) throw new Error('Dense prepared-open read model was unavailable')
+			if (!mutableWorkbook) throw new Error('Dense prepared-open mutable workbook was unavailable')
+			const mutableModel = mutableWorkbook.getWorkbookModel()
+			const mutableOriginalBytes = ascendWorkbookOriginalBytes(mutableWorkbook)
 			runGc()
 			const afterPreparedOpen = phaseMemorySnapshot()
 
@@ -3023,6 +3090,16 @@ const scenarios: readonly Scenario[] = [
 					readinessReady: readiness.ready,
 					readinessReusedReadModel: readiness.timings?.mutableWorkbookReusedReadModel ?? false,
 					readinessMutableWorkbookOpenMs: readiness.timings?.mutableWorkbookOpenMs ?? null,
+					...prefixAssertions('readModel', workbookModelRetentionAssertions(readModel)),
+					...prefixAssertions(
+						'mutableWorkbook',
+						ascendWorkbookRetentionAssertions(mutableWorkbook),
+					),
+					readAndMutableShareSourceArchive:
+						readModel.sourceArchiveBytes === mutableModel.sourceArchiveBytes ? 1 : 0,
+					mutableOriginalSharesSourceArchive:
+						mutableOriginalBytes === mutableModel.sourceArchiveBytes ? 1 : 0,
+					readSourceArchiveSharesInput: readModel.sourceArchiveBytes === bytes ? 1 : 0,
 					viewportMs,
 					editFrameMs,
 					sessionApplyMs: edit.timings.totalMs,

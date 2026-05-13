@@ -271,6 +271,58 @@ describe('xlsx-read-phase CLI', () => {
 		{ timeout: 30_000 },
 	)
 
+	test(
+		'infers input-file worksheet shape when rows and columns are omitted',
+		async () => {
+			const input = await buildWorkloadDataSet('mixed-10pct-text', 12, 6, 'raw-ooxml')
+			const proc = Bun.spawn(
+				[
+					'bun',
+					'run',
+					'fixtures/benchmarks/xlsx-read-phase.ts',
+					'--input-file',
+					input.xlsxPath,
+					'--phase',
+					'full-read',
+					'--repeat',
+					'1',
+					'--warmup',
+					'0',
+					'--json',
+				],
+				{ cwd: process.cwd(), stderr: 'pipe', stdout: 'pipe' },
+			)
+			const [stdout, stderr, exitCode] = await Promise.all([
+				new Response(proc.stdout).text(),
+				new Response(proc.stderr).text(),
+				proc.exited,
+			])
+			expect(stderr).toBe('')
+			expect(exitCode).toBe(0)
+			const result = JSON.parse(stdout) as {
+				readonly args?: {
+					readonly rows?: number
+					readonly cols?: number
+				}
+				readonly inputFileShape?: {
+					readonly rows?: number
+					readonly cols?: number
+					readonly cells?: number
+				}
+				readonly summary?: {
+					readonly fullReadXlsxMedianMs?: number
+				}
+			}
+			expect(result.args?.rows).toBe(12)
+			expect(result.args?.cols).toBe(6)
+			expect(result.inputFileShape?.rows).toBe(12)
+			expect(result.inputFileShape?.cols).toBe(6)
+			expect(result.inputFileShape?.cells).toBe(72)
+			expect(result.summary?.fullReadXlsxMedianMs).toBeNumber()
+		},
+		{ timeout: 30_000 },
+	)
+
 	test('direct ordered verifier counts shared-string physical cells once', async () => {
 		const input = await buildWorkloadDataSet('mixed-50pct-text', 8, 6, 'raw-ooxml')
 		const args: Args = {

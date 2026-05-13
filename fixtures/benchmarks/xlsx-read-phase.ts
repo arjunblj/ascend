@@ -3,6 +3,8 @@ import {
 	createWorkbook,
 	DEFAULT_STYLE_ID,
 	indexToColumn,
+	normalizeRange,
+	parseRange,
 	type Workbook,
 } from '../../packages/core/src/index.ts'
 import { readXlsx, readXlsxRowsStream } from '../../packages/io-xlsx/src/index.ts'
@@ -37,6 +39,18 @@ interface Args {
 	readonly phase: PhaseMode
 	readonly gcBetweenSamples: boolean
 	readonly json: boolean
+}
+
+interface InputFileShape {
+	readonly rows: number
+	readonly cols: number
+	readonly cells: number
+	readonly source: 'worksheet-dimension' | 'worksheet-scan'
+}
+
+interface InputFileContext {
+	readonly bytes: Uint8Array
+	readonly shape?: InputFileShape
 }
 
 interface PhaseSample {
@@ -137,8 +151,7 @@ function nonNegativeInt(raw: string | undefined, fallback: number): number {
 	return Number.isFinite(value) && value >= 0 ? value : fallback
 }
 
-function parseArgs(): Args {
-	const argv = process.argv.slice(2)
+function parseArgs(argv = process.argv.slice(2)): Args {
 	const profileName = readOption(argv, '--profile')
 	const profile = profileName
 		? UPSTREAM_PROFILES.find((entry) => entry.name === profileName)
@@ -774,8 +787,18 @@ async function runSample(
 	} as PhaseSample
 }
 
-const args = parseArgs()
-let input = await loadInput(args)
+const argv = process.argv.slice(2)
+const parsedArgs = parseArgs(argv)
+const rowsExplicit = readOption(argv, '--rows') !== undefined
+const colsExplicit = readOption(argv, '--cols') !== undefined
+const inputFileContext = parsedArgs.inputFile
+	? await loadInputFileContext(parsedArgs.inputFile, !rowsExplicit || !colsExplicit)
+	: undefined
+const args = applyInputFileShape(parsedArgs, inputFileContext?.shape, {
+	rowsExplicit,
+	colsExplicit,
+})
+let input = await loadInput(args, inputFileContext)
 const worksheetXml =
 	args.phase === 'all' || args.phase === 'xml' ? loadFirstWorksheetXml(input.xlsxBytes) : undefined
 if (
@@ -806,6 +829,7 @@ for (let i = 0; i < args.repeat; i++) {
 const payload = {
 	tool: 'xlsx-read-phase',
 	args,
+	...(inputFileContext?.shape ? { inputFileShape: inputFileContext.shape } : {}),
 	summary: summarize(samples),
 	samples,
 }
@@ -867,25 +891,89 @@ async function consumeRowsWindow(
 	return { cells, firstRowMs }
 }
 
-async function loadInput(args: Args): Promise<CompetitiveDataSet> {
+async function loadInput(
+	args: Args,
+	inputFileContext?: InputFileContext,
+): Promise<CompetitiveDataSet> {
 	if (!args.inputFile) {
 		if (args.readSource === 'raw-ooxml') {
 			return buildRawReadWorkloadDataSet(args.workload, args.rows, args.cols)
 		}
 		return buildWorkloadDataSet(args.workload, args.rows, args.cols, args.readSource)
 	}
-	const bytes = await Bun.file(args.inputFile).bytes()
+	const bytes = inputFileContext?.bytes ?? (await Bun.file(args.inputFile).bytes())
 	return {
 		workloadName: args.workload,
 		readSource: args.readSource,
 		sourceMode: 'full',
 		rows: args.rows,
 		cols: args.cols,
-		cells: workloadCellCount(args.workload, args.rows, args.cols),
+		cells: inputFileContext?.shape?.cells ?? workloadCellCount(args.workload, args.rows, args.cols),
 		values: [],
 		semanticCellValuesHash: '',
 		xlsxPath: args.inputFile,
 		xlsxBytes: bytes,
+	}
+}
+
+async function loadInputFileContext(path: string, inferShape: boolean): Promise<InputFileContext> {
+	const bytes = await Bun.file(path).bytes()
+	return {
+		bytes,
+		...(inferShape ? { shape: inferInputFileShape(bytes) } : {}),
+	}
+}
+
+function applyInputFileShape(
+	args: Args,
+	shape: InputFileShape | undefined,
+	options: { readonly rowsExplicit: boolean; readonly colsExplicit: boolean },
+): Args {
+	if (!args.inputFile || !shape) return args
+	return {
+		...args,
+		rows: options.rowsExplicit ? args.rows : shape.rows,
+		cols: options.colsExplicit ? args.cols : shape.cols,
+	}
+}
+
+function inferInputFileShape(bytes: Uint8Array): InputFileShape {
+	const archive = extractZip(bytes)
+	const sheetPath = firstWorksheetPath(archive)
+	const sheetBytes = archive.readBytes(sheetPath)
+	if (!sheetBytes) throw new Error(`Missing worksheet XML part ${sheetPath}`)
+	const scan = scanWorksheetXmlBytes(sheetBytes)
+	const dimension = inferWorksheetDimensionShape(sheetBytes)
+	if (dimension) {
+		return {
+			...dimension,
+			cells: scan.cells,
+			source: 'worksheet-dimension',
+		}
+	}
+	return {
+		rows: Math.max(1, scan.lastRow),
+		cols: Math.max(1, scan.maxCol),
+		cells: scan.cells,
+		source: 'worksheet-scan',
+	}
+}
+
+function inferWorksheetDimensionShape(
+	bytes: Uint8Array,
+): { readonly rows: number; readonly cols: number } | undefined {
+	const head = new TextDecoder('utf-8').decode(bytes.subarray(0, Math.min(bytes.byteLength, 4096)))
+	const match = /<dimension\b[^>]*\bref=(["'])(.*?)\1/i.exec(head)
+	const ref = match?.[2]
+	if (!ref) return undefined
+	try {
+		const range = normalizeRange(parseRange(ref))
+		return {
+			rows: Math.max(1, range.end.row + 1),
+			cols: Math.max(1, range.end.col + 1),
+		}
+	} catch {
+		return undefined
 	}
 }
 

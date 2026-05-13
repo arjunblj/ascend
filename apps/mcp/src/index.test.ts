@@ -1203,11 +1203,13 @@ describe('MCP server', () => {
 				handler: (args: {
 					file: string
 					output?: string
+					prepare?: boolean
 					mutations: Array<{ path: string; value?: unknown }>
 				}) => Promise<{
 					isError?: boolean
 					structuredContent?: {
 						ok?: boolean
+						data?: { preparedPlan?: { id?: string } }
 						error?: {
 							code?: string
 							details?: {
@@ -1395,6 +1397,25 @@ describe('MCP server', () => {
 		})
 		expect(reopened.sheets).toContain('Sheet1')
 		expect(reopened.table('Sales')?.name).toBe('Sales')
+
+		const prepared = await tools['ascend.plan']?.handler({
+			file: TEMP_FILE,
+			prepare: true,
+			mutations: [
+				{ path: '/sheets/Sheet1/cells/A1/value', value: 'new' },
+				{ path: '/sheets/Sheet1/name', value: 'Bad/Name' },
+			],
+		})
+		expect(prepared?.isError).toBe(true)
+		expect(prepared?.structuredContent?.ok).toBe(false)
+		expect(prepared?.structuredContent?.data?.preparedPlan).toBeUndefined()
+		expect(prepared?.structuredContent?.error?.details?.compiledOps).toEqual([])
+		expect(prepared?.structuredContent?.error?.details?.issueDetails).toEqual([
+			expect.objectContaining({
+				code: 'invalid_value',
+				path: '/sheets/Sheet1/name',
+			}),
+		])
 	})
 
 	test('ascend.export writes JSON/TSV and rejects unsupported formats', async () => {

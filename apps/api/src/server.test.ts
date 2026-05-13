@@ -939,6 +939,25 @@ describe('Ascend API server', () => {
 		})
 		expect(reopened.sheets).toContain('Sheet1')
 		expect(reopened.table('Sales')?.name).toBe('Sales')
+
+		const prepared = await postJson('/plan', {
+			file: TEMP_FILE,
+			prepare: true,
+			mutations: [
+				{ path: '/sheets/Sheet1/cells/A1/value', value: 'new' },
+				{ path: '/sheets/Sheet1/name', value: 'Bad/Name' },
+			],
+		})
+		expect(prepared.status).toBe(400)
+		expect(prepared.body.ok).toBe(false)
+		expect(prepared.body.data?.preparedPlan).toBeUndefined()
+		expect(prepared.body.error?.details?.compiledOps).toEqual([])
+		expect(prepared.body.error?.details?.issueDetails).toEqual([
+			expect.objectContaining({
+				code: 'invalid_value',
+				path: '/sheets/Sheet1/name',
+			}),
+		])
 	})
 
 	test('plan invalid ops return structured batch repair details', async () => {

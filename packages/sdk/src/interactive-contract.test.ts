@@ -279,6 +279,49 @@ describe('interactive client contract', () => {
 		expect(created.journal?.inverseOps).toEqual([{ op: 'clearAutoFilter', sheet: 'Sheet1' }])
 	})
 
+	test('journal inverse ops restore deleted hyperlink metadata exactly', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setHyperlink',
+				sheet: 'Sheet1',
+				ref: 'b2',
+				url: 'https://example.com/report',
+				display: 'Report',
+				tooltip: 'Open report',
+			},
+		])
+
+		const deleted = wb.apply([{ op: 'deleteHyperlink', sheet: 'Sheet1', ref: 'B2' }], {
+			journal: true,
+		})
+
+		expect(deleted.errors).toEqual([])
+		expect(deleted.journal?.exact).toBe(true)
+		expect(deleted.journal?.inverseOps).toEqual([
+			{
+				op: 'setHyperlink',
+				sheet: 'Sheet1',
+				ref: 'B2',
+				url: 'https://example.com/report',
+				display: 'Report',
+				tooltip: 'Open report',
+			},
+		])
+		expect(wb.sheet('Sheet1')?.getHyperlinks()).toEqual([])
+
+		const undo = wb.apply(deleted.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(wb.sheet('Sheet1')?.getHyperlinks()).toEqual([
+			{
+				ref: 'B2',
+				target: 'https://example.com/report',
+				display: 'Report',
+				tooltip: 'Open report',
+			},
+		])
+	})
+
 	test('journal inverse ops restore conditional format replacements', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

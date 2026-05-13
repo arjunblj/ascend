@@ -588,14 +588,18 @@ export function handleSetHyperlink(
 			}),
 		)
 	}
+	const ref = op.ref.toUpperCase()
 	result.value.ensureWritable()
-	result.value.hyperlinks.set(op.ref, {
+	for (const [linkRef] of result.value.hyperlinks) {
+		if (linkRef.toUpperCase() === ref && linkRef !== ref) result.value.hyperlinks.delete(linkRef)
+	}
+	result.value.hyperlinks.set(ref, {
 		...(hasLinkDestination(op.url) ? { target: op.url } : {}),
 		...(hasLinkDestination(op.location) ? { location: op.location } : {}),
 		...(op.display !== undefined ? { display: op.display } : {}),
 		...(op.tooltip !== undefined ? { tooltip: op.tooltip } : {}),
 	})
-	return ok(patch([op.ref], [op.sheet]))
+	return ok(patch([ref], [op.sheet]))
 }
 
 function hasLinkDestination(value: string | undefined): boolean {
@@ -610,7 +614,10 @@ export function handleDeleteHyperlink(
 	if (!sheetResult.ok) return sheetResult
 	const sheet = sheetResult.value
 	sheet.ensureWritable()
-	sheet.hyperlinks.delete(op.ref.toUpperCase())
+	const ref = op.ref.toUpperCase()
+	for (const [linkRef] of sheet.hyperlinks) {
+		if (linkRef.toUpperCase() === ref) sheet.hyperlinks.delete(linkRef)
+	}
 	return ok(patch([`${op.sheet}!${op.ref}`], [op.sheet]))
 }
 

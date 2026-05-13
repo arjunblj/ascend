@@ -4522,6 +4522,40 @@ describe('applyOperation', () => {
 		})
 	})
 
+	test('hyperlink operations canonicalize refs and delete case-insensitively', () => {
+		const wb = setup()
+		const lower = applyOperation(wb, {
+			op: 'setHyperlink',
+			sheet: 'Sheet1',
+			ref: 'b1',
+			url: 'https://example.com/report',
+			display: 'Report',
+			tooltip: 'Open report',
+		})
+		expectOk(lower)
+		expect(wb.getSheet('Sheet1')?.hyperlinks.has('b1')).toBe(false)
+		expect(wb.getSheet('Sheet1')?.hyperlinks.get('B1')).toEqual({
+			target: 'https://example.com/report',
+			display: 'Report',
+			tooltip: 'Open report',
+		})
+
+		const overwrite = applyOperation(wb, {
+			op: 'setHyperlink',
+			sheet: 'Sheet1',
+			ref: 'B1',
+			location: 'Sheet1!A1',
+		})
+		expectOk(overwrite)
+		expect(wb.getSheet('Sheet1')?.hyperlinks.get('B1')).toEqual({
+			location: 'Sheet1!A1',
+		})
+
+		const deleted = applyOperation(wb, { op: 'deleteHyperlink', sheet: 'Sheet1', ref: 'b1' })
+		expectOk(deleted)
+		expect(wb.getSheet('Sheet1')?.hyperlinks.size).toBe(0)
+	})
+
 	test('setHyperlink rejects links without a url or location', () => {
 		const wb = setup()
 		const result = applyOperation(wb, {

@@ -30,6 +30,16 @@ interface Sample {
 	readonly payloadBytes?: number
 	readonly mcpPayloadBytes?: number
 	readonly tuiFrameBytes?: number
+	readonly fullRssDeltaMb?: number
+	readonly fullRetainedRssDeltaMb?: number
+	readonly cappedRssDeltaMb?: number
+	readonly cappedRetainedRssDeltaMb?: number
+	readonly apiRssDeltaMb?: number
+	readonly apiRetainedRssDeltaMb?: number
+	readonly mcpRssDeltaMb?: number
+	readonly mcpRetainedRssDeltaMb?: number
+	readonly tuiRssDeltaMb?: number
+	readonly tuiRetainedRssDeltaMb?: number
 	readonly fullHydratedCells?: number | null
 	readonly cappedHydratedCells?: number | null
 	readonly tuiHydratedCells?: number | null
@@ -183,6 +193,10 @@ function runGc(): void {
 	;(Bun as unknown as { gc?: (force?: boolean) => void }).gc?.(true)
 }
 
+function rssMb(): number {
+	return process.memoryUsage().rss / (1024 * 1024)
+}
+
 async function runFullOpenWindow(
 	path: string,
 	range: string,
@@ -193,12 +207,16 @@ async function runFullOpenWindow(
 		| 'fullOpenWindowMs'
 		| 'cells'
 		| 'fullHydratedCells'
+		| 'fullRssDeltaMb'
+		| 'fullRetainedRssDeltaMb'
 		| 'fullOpenCalls'
 		| 'fullHydratedOpenCount'
 		| 'fullDocumentCacheHits'
 	>
 > {
 	WorkbookDocument.clearCache()
+	runGc()
+	const rssBefore = rssMb()
 	const beforeOpenStats = snapshotOpenStats()
 	const measured = await time(async () => {
 		const document = await WorkbookDocument.open(path, { mode: 'values' })
@@ -211,11 +229,16 @@ async function runFullOpenWindow(
 		})
 		return { info, window }
 	})
+	const rssAfter = rssMb()
+	runGc()
+	const rssAfterGc = rssMb()
 	const openStats = diffOpenStats(snapshotOpenStats(), beforeOpenStats)
 	return {
 		fullOpenWindowMs: measured.ms,
 		cells: measured.result.window?.cells.length ?? 0,
 		fullHydratedCells: measured.result.info.cellCount,
+		fullRssDeltaMb: rssAfter - rssBefore,
+		fullRetainedRssDeltaMb: rssAfterGc - rssBefore,
 		fullOpenCalls: openStats.documentOpenCalls,
 		fullHydratedOpenCount: openStats.documentHydrations,
 		fullDocumentCacheHits: openStats.documentCacheHits,
@@ -232,12 +255,16 @@ async function runCappedOpenWindow(
 		| 'cappedOpenWindowMs'
 		| 'cells'
 		| 'cappedHydratedCells'
+		| 'cappedRssDeltaMb'
+		| 'cappedRetainedRssDeltaMb'
 		| 'cappedOpenCalls'
 		| 'cappedHydratedOpenCount'
 		| 'cappedDocumentCacheHits'
 	>
 > {
 	WorkbookDocument.clearCache()
+	runGc()
+	const rssBefore = rssMb()
 	const beforeOpenStats = snapshotOpenStats()
 	const measured = await time(async () => {
 		const preview = await WorkbookDocument.openFirstWindow(path, {
@@ -246,11 +273,16 @@ async function runCappedOpenWindow(
 		})
 		return preview
 	})
+	const rssAfter = rssMb()
+	runGc()
+	const rssAfterGc = rssMb()
 	const openStats = diffOpenStats(snapshotOpenStats(), beforeOpenStats)
 	return {
 		cappedOpenWindowMs: measured.ms,
 		cells: measured.result.window.cells.length,
 		cappedHydratedCells: measured.result.info.cellCount,
+		cappedRssDeltaMb: rssAfter - rssBefore,
+		cappedRetainedRssDeltaMb: rssAfterGc - rssBefore,
 		cappedOpenCalls: openStats.documentOpenCalls,
 		cappedHydratedOpenCount: openStats.documentHydrations,
 		cappedDocumentCacheHits: openStats.documentCacheHits,
@@ -267,6 +299,8 @@ async function runApiFirstWindow(
 		| 'apiFirstWindowMs'
 		| 'cells'
 		| 'payloadBytes'
+		| 'apiRssDeltaMb'
+		| 'apiRetainedRssDeltaMb'
 		| 'apiPartial'
 		| 'apiOpenCalls'
 		| 'apiHydratedOpenCount'
@@ -274,6 +308,8 @@ async function runApiFirstWindow(
 	>
 > {
 	WorkbookDocument.clearCache()
+	runGc()
+	const rssBefore = rssMb()
 	const beforeOpenStats = snapshotOpenStats()
 	const apiFetch = createApiFetch()
 	const body = JSON.stringify({
@@ -295,12 +331,17 @@ async function runApiFirstWindow(
 		if (response.status !== 200) throw new Error(text)
 		return { text, payload: JSON.parse(text) as ApiEnvelope }
 	})
+	const rssAfter = rssMb()
+	runGc()
+	const rssAfterGc = rssMb()
 	const openStats = diffOpenStats(snapshotOpenStats(), beforeOpenStats)
 	const data = measured.result.payload.data
 	return {
 		apiFirstWindowMs: measured.ms,
 		cells: data?.cells?.length ?? 0,
 		payloadBytes: measured.result.text.length,
+		apiRssDeltaMb: rssAfter - rssBefore,
+		apiRetainedRssDeltaMb: rssAfterGc - rssBefore,
 		apiPartial: data?.load?.isPartial ?? false,
 		apiOpenCalls: openStats.documentOpenCalls,
 		apiHydratedOpenCount: openStats.documentHydrations,
@@ -344,6 +385,8 @@ async function runMcpFirstWindow(
 		| 'mcpFirstWindowMs'
 		| 'cells'
 		| 'mcpPayloadBytes'
+		| 'mcpRssDeltaMb'
+		| 'mcpRetainedRssDeltaMb'
 		| 'mcpPartial'
 		| 'mcpOpenCalls'
 		| 'mcpHydratedOpenCount'
@@ -351,6 +394,8 @@ async function runMcpFirstWindow(
 	>
 > {
 	WorkbookDocument.clearCache()
+	runGc()
+	const rssBefore = rssMb()
 	const beforeOpenStats = snapshotOpenStats()
 	const server = createServer()
 	const handler = (
@@ -370,12 +415,17 @@ async function runMcpFirstWindow(
 	if (content?.ok !== true) {
 		throw new Error(`MCP ascend.read failed: ${JSON.stringify(content?.error ?? content)}`)
 	}
+	const rssAfter = rssMb()
+	runGc()
+	const rssAfterGc = rssMb()
 	const openStats = diffOpenStats(snapshotOpenStats(), beforeOpenStats)
 	const data = content.data
 	return {
 		mcpFirstWindowMs: measured.ms,
 		cells: data?.cells?.length ?? 0,
 		mcpPayloadBytes: JSON.stringify(content).length,
+		mcpRssDeltaMb: rssAfter - rssBefore,
+		mcpRetainedRssDeltaMb: rssAfterGc - rssBefore,
 		mcpPartial: data?.load?.isPartial ?? false,
 		mcpOpenCalls: openStats.documentOpenCalls,
 		mcpHydratedOpenCount: openStats.documentHydrations,
@@ -394,6 +444,8 @@ async function runTuiFirstPaint(
 		| 'tuiRenderMs'
 		| 'tuiHydrateMs'
 		| 'tuiFrameBytes'
+		| 'tuiRssDeltaMb'
+		| 'tuiRetainedRssDeltaMb'
 		| 'tuiHydratedCells'
 		| 'tuiPartial'
 		| 'tuiOpenCalls'
@@ -402,6 +454,8 @@ async function runTuiFirstPaint(
 	>
 > {
 	WorkbookDocument.clearCache()
+	runGc()
+	const rssBefore = rssMb()
 	const beforeOpenStats = snapshotOpenStats()
 	const start = performance.now()
 	const opened = await time(() =>
@@ -413,6 +467,9 @@ async function runTuiFirstPaint(
 	)
 	const rendered = await time(async () => opened.result.render({ rows: 24, cols: 100 }))
 	const totalMs = performance.now() - start
+	const rssAfter = rssMb()
+	runGc()
+	const rssAfterGc = rssMb()
 	const openStats = diffOpenStats(snapshotOpenStats(), beforeOpenStats)
 	const state = opened.result.state()
 	const document = state.workspace.documents[0]
@@ -423,6 +480,8 @@ async function runTuiFirstPaint(
 		tuiRenderMs: rendered.ms,
 		tuiHydrateMs: latestTelemetry?.hydrateMs,
 		tuiFrameBytes: rendered.result.stats.bytes,
+		tuiRssDeltaMb: rssAfter - rssBefore,
+		tuiRetainedRssDeltaMb: rssAfterGc - rssBefore,
 		tuiHydratedCells: document?.info?.cellCount ?? null,
 		tuiPartial: document?.info?.load.isPartial ?? false,
 		tuiOpenCalls: openStats.workbookOpenCalls + openStats.documentOpenCalls,
@@ -448,6 +507,26 @@ function summarize(samples: readonly Sample[]) {
 		tuiOpenMedianMs: medianOptional(samples.map((sample) => sample.tuiOpenMs)),
 		tuiRenderMedianMs: medianOptional(samples.map((sample) => sample.tuiRenderMs)),
 		tuiHydrateMedianMs: medianOptional(samples.map((sample) => sample.tuiHydrateMs)),
+		fullRssDeltaMbMedian: medianOptional(samples.map((sample) => sample.fullRssDeltaMb)),
+		fullRetainedRssDeltaMbMedian: medianOptional(
+			samples.map((sample) => sample.fullRetainedRssDeltaMb),
+		),
+		cappedRssDeltaMbMedian: medianOptional(samples.map((sample) => sample.cappedRssDeltaMb)),
+		cappedRetainedRssDeltaMbMedian: medianOptional(
+			samples.map((sample) => sample.cappedRetainedRssDeltaMb),
+		),
+		apiRssDeltaMbMedian: medianOptional(samples.map((sample) => sample.apiRssDeltaMb)),
+		apiRetainedRssDeltaMbMedian: medianOptional(
+			samples.map((sample) => sample.apiRetainedRssDeltaMb),
+		),
+		mcpRssDeltaMbMedian: medianOptional(samples.map((sample) => sample.mcpRssDeltaMb)),
+		mcpRetainedRssDeltaMbMedian: medianOptional(
+			samples.map((sample) => sample.mcpRetainedRssDeltaMb),
+		),
+		tuiRssDeltaMbMedian: medianOptional(samples.map((sample) => sample.tuiRssDeltaMb)),
+		tuiRetainedRssDeltaMbMedian: medianOptional(
+			samples.map((sample) => sample.tuiRetainedRssDeltaMb),
+		),
 		...(fullOpenWindowMedianMs !== undefined && cappedOpenWindowMedianMs !== undefined
 			? { cappedSpeedupVsFull: fullOpenWindowMedianMs / cappedOpenWindowMedianMs }
 			: {}),

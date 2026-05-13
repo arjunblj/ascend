@@ -39,6 +39,16 @@ describe('agent first-window benchmark', () => {
 				readonly tuiOpenMedianMs?: number
 				readonly tuiRenderMedianMs?: number
 				readonly tuiHydrateMedianMs?: number
+				readonly fullRssDeltaMbMedian?: number
+				readonly fullRetainedRssDeltaMbMedian?: number
+				readonly cappedRssDeltaMbMedian?: number
+				readonly cappedRetainedRssDeltaMbMedian?: number
+				readonly apiRssDeltaMbMedian?: number
+				readonly apiRetainedRssDeltaMbMedian?: number
+				readonly mcpRssDeltaMbMedian?: number
+				readonly mcpRetainedRssDeltaMbMedian?: number
+				readonly tuiRssDeltaMbMedian?: number
+				readonly tuiRetainedRssDeltaMbMedian?: number
 				readonly cellsMedian?: number
 				readonly payloadBytesMedian?: number
 				readonly fullHydratedCellsMedian?: number
@@ -74,6 +84,16 @@ describe('agent first-window benchmark', () => {
 		expect(payload.summary?.tuiOpenMedianMs).toBeNumber()
 		expect(payload.summary?.tuiRenderMedianMs).toBeNumber()
 		expect(payload.summary?.tuiHydrateMedianMs).toBeNumber()
+		expect(payload.summary?.fullRssDeltaMbMedian).toBeNumber()
+		expect(payload.summary?.fullRetainedRssDeltaMbMedian).toBeNumber()
+		expect(payload.summary?.cappedRssDeltaMbMedian).toBeNumber()
+		expect(payload.summary?.cappedRetainedRssDeltaMbMedian).toBeNumber()
+		expect(payload.summary?.apiRssDeltaMbMedian).toBeNumber()
+		expect(payload.summary?.apiRetainedRssDeltaMbMedian).toBeNumber()
+		expect(payload.summary?.mcpRssDeltaMbMedian).toBeNumber()
+		expect(payload.summary?.mcpRetainedRssDeltaMbMedian).toBeNumber()
+		expect(payload.summary?.tuiRssDeltaMbMedian).toBeNumber()
+		expect(payload.summary?.tuiRetainedRssDeltaMbMedian).toBeNumber()
 		expect(payload.summary?.cellsMedian).toBe(500 * 8)
 		expect(payload.summary?.payloadBytesMedian).toBeGreaterThan(0)
 		expect(payload.summary?.fullHydratedCellsMedian).toBe(800 * 8)

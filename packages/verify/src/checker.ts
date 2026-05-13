@@ -1078,6 +1078,66 @@ function checkTableQueryTableIntegrity(
 					},
 				})
 			}
+			const fieldIds = new Map<number, TableColumnQueryFieldEntry>()
+			const missingFieldIdColumns: TableColumnQueryFieldEntry[] = []
+			for (let columnIndex = 0; columnIndex < table.columns.length; columnIndex++) {
+				const column = table.columns[columnIndex]
+				if (!column) continue
+				const columnEntry: TableColumnQueryFieldEntry = {
+					columnName: column.name,
+					columnIndex,
+					ref: table.hasHeaders
+						? `${sheet.name}!${toA1({
+								row: table.ref.start.row,
+								col: table.ref.start.col + columnIndex,
+							})}`
+						: `${sheet.name}!${tableRef}`,
+				}
+				if (column.queryTableFieldId === undefined) {
+					missingFieldIdColumns.push(columnEntry)
+					continue
+				}
+				const existingColumn = fieldIds.get(column.queryTableFieldId)
+				if (existingColumn) {
+					issues.push({
+						rule: 'table-query-integrity',
+						severity: 'error',
+						message: `Table "${table.name}" has duplicate queryTableFieldId "${column.queryTableFieldId}"`,
+						refs: [
+							`${sheet.name}!${tableRef}`,
+							existingColumn.ref,
+							columnEntry.ref,
+							queryTable.partPath,
+						],
+						suggestedFix:
+							'Repair the tableColumn queryTableFieldId bindings before editing query-backed table columns.',
+						details: {
+							kind: 'duplicate-query-table-field-id',
+							table: entry,
+							queryTableFieldId: column.queryTableFieldId,
+							first: existingColumn,
+							duplicate: columnEntry,
+						},
+					})
+				} else {
+					fieldIds.set(column.queryTableFieldId, columnEntry)
+				}
+			}
+			if (missingFieldIdColumns.length > 0) {
+				issues.push({
+					rule: 'table-query-integrity',
+					severity: 'error',
+					message: `Table "${table.name}" is queryTable-backed but ${missingFieldIdColumns.length} table column(s) lack queryTableFieldId bindings`,
+					refs: [`${sheet.name}!${tableRef}`, queryTable.partPath],
+					suggestedFix:
+						'Restore tableColumn queryTableFieldId bindings or rebuild the queryTable sidecar before editing query-backed table columns.',
+					details: {
+						kind: 'missing-query-table-field-id',
+						table: entry,
+						columns: missingFieldIdColumns,
+					},
+				})
+			}
 
 			const existingClaim = claimedQueryParts.get(queryTable.partPath)
 			if (existingClaim) {
@@ -1264,6 +1324,12 @@ interface TableQueryTableIntegrityEntry {
 	readonly tablePartPath?: string
 	readonly queryTablePartPath: string
 	readonly relationshipId: string
+}
+
+interface TableColumnQueryFieldEntry {
+	readonly columnName: string
+	readonly columnIndex: number
+	readonly ref: string
 }
 
 function worksheetQueryTableIntegrityEntry(

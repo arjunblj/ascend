@@ -22,6 +22,16 @@ function makeCleanWorkbook() {
 	return wb
 }
 
+function queryTableRef() {
+	return {
+		relationshipId: 'rIdQuery',
+		partPath: 'xl/queryTables/queryTable1.xml',
+		relationshipType:
+			'http://schemas.openxmlformats.org/officeDocument/2006/relationships/queryTable',
+		target: '../queryTables/queryTable1.xml',
+	}
+}
+
 describe('checker', () => {
 	test('passes on clean workbook', () => {
 		const wb = makeCleanWorkbook()
@@ -394,16 +404,13 @@ describe('checker', () => {
 			partPath: 'xl/tables/table1.xml',
 			tableType: 'queryTable',
 			ref: { start: { row: 0, col: 0 }, end: { row: 2, col: 1 } },
-			columns: [{ name: 'Name' }, { name: 'Amount' }],
+			columns: [
+				{ name: 'Name', queryTableFieldId: 1 },
+				{ name: 'Amount', queryTableFieldId: 2 },
+			],
 			hasHeaders: true,
 			hasTotals: false,
-			queryTable: {
-				relationshipId: 'rIdQuery',
-				partPath: 'xl/queryTables/queryTable1.xml',
-				relationshipType:
-					'http://schemas.openxmlformats.org/officeDocument/2006/relationships/queryTable',
-				target: '../queryTables/queryTable1.xml',
-			},
+			queryTable: queryTableRef(),
 		})
 
 		const result = check(wb, {
@@ -456,6 +463,65 @@ describe('checker', () => {
 					resolvedTarget: 'xl/queryTables/queryTable1.xml',
 				},
 			],
+		})
+	})
+
+	test('detects missing and duplicate queryTable field bindings', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.tables.push({
+			id: createTableId(),
+			name: 'SalesQuery',
+			sheetId: s.id,
+			partPath: 'xl/tables/table1.xml',
+			tableType: 'queryTable',
+			ref: { start: { row: 0, col: 0 }, end: { row: 2, col: 2 } },
+			columns: [
+				{ name: 'Name', queryTableFieldId: 1 },
+				{ name: 'Amount', queryTableFieldId: 1 },
+				{ name: 'Status' },
+			],
+			hasHeaders: true,
+			hasTotals: false,
+			queryTable: queryTableRef(),
+		})
+
+		const result = check(wb)
+		const queryIssues = result.issues.filter((i) => i.rule === 'table-query-integrity')
+		const duplicateFieldId = queryIssues.find(
+			(issue) => issue.details?.kind === 'duplicate-query-table-field-id',
+		)
+		const missingFieldId = queryIssues.find(
+			(issue) => issue.details?.kind === 'missing-query-table-field-id',
+		)
+
+		expect(result.passed).toBe(false)
+		expect(duplicateFieldId?.severity).toBe('error')
+		expect(duplicateFieldId?.refs).toEqual([
+			'Sheet1!A1:C3',
+			'Sheet1!A1',
+			'Sheet1!B1',
+			'xl/queryTables/queryTable1.xml',
+		])
+		expect(duplicateFieldId?.suggestedFix).toContain('queryTableFieldId bindings')
+		expect(duplicateFieldId?.details).toMatchObject({
+			kind: 'duplicate-query-table-field-id',
+			queryTableFieldId: 1,
+			table: {
+				tableName: 'SalesQuery',
+				queryTablePartPath: 'xl/queryTables/queryTable1.xml',
+			},
+		})
+		expect(missingFieldId?.severity).toBe('error')
+		expect(missingFieldId?.refs).toEqual(['Sheet1!A1:C3', 'xl/queryTables/queryTable1.xml'])
+		expect(missingFieldId?.suggestedFix).toContain('Restore tableColumn queryTableFieldId')
+		expect(missingFieldId?.details).toMatchObject({
+			kind: 'missing-query-table-field-id',
+			table: {
+				tableName: 'SalesQuery',
+				queryTablePartPath: 'xl/queryTables/queryTable1.xml',
+			},
+			columns: [{ columnName: 'Status', columnIndex: 2, ref: 'Sheet1!C1' }],
 		})
 	})
 

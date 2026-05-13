@@ -1,9 +1,12 @@
 #!/usr/bin/env bun
 import { rm } from 'node:fs/promises'
 import { createApiFetch } from '../../apps/api/src/server.ts'
+import { createServer } from '../../apps/mcp/src/index.ts'
 import { indexToColumn } from '../../packages/core/src/index.ts'
 import type { PathMutation } from '../../packages/sdk/src/types.ts'
 import { buildRawReadWorkloadDataSet, type WorkloadName } from './competitive-io.ts'
+
+type Surface = 'api' | 'mcp'
 
 interface Args {
 	readonly rows: number
@@ -11,6 +14,7 @@ interface Args {
 	readonly mutations: number
 	readonly handles: number
 	readonly maxHandles: number
+	readonly surface: Surface
 	readonly workload: WorkloadName
 	readonly repeat: number
 	readonly warmup: number
@@ -34,7 +38,7 @@ interface Sample {
 	readonly latestCommitOk: boolean
 }
 
-interface ApiEnvelope {
+interface PreparedEnvelope {
 	readonly ok?: boolean
 	readonly data?: {
 		readonly preparedPlan?: {
@@ -42,6 +46,18 @@ interface ApiEnvelope {
 			readonly ttlMs?: number
 		}
 	}
+}
+
+interface PreparedResponse {
+	readonly ms: number
+	readonly status: number
+	readonly text: string
+	readonly payload: PreparedEnvelope
+}
+
+interface PreparedClient {
+	plan(body: unknown): Promise<PreparedResponse>
+	commit(body: unknown): Promise<PreparedResponse>
 }
 
 const WORKLOADS = new Set<string>([
@@ -74,6 +90,8 @@ function nonNegativeInt(raw: string | undefined, fallback: number): number {
 function parseArgs(): Args {
 	const workload = readOption(process.argv, '--workload') ?? 'mixed-10pct-text'
 	if (!WORKLOADS.has(workload)) throw new Error(`Unsupported --workload "${workload}"`)
+	const surface = readOption(process.argv, '--surface') ?? 'api'
+	if (surface !== 'api' && surface !== 'mcp') throw new Error(`Unsupported --surface "${surface}"`)
 	const handles = positiveInt(readOption(process.argv, '--handles'), 96)
 	return {
 		rows: positiveInt(readOption(process.argv, '--rows'), 65_536),
@@ -81,6 +99,7 @@ function parseArgs(): Args {
 		mutations: positiveInt(readOption(process.argv, '--mutations'), 25),
 		handles,
 		maxHandles: positiveInt(readOption(process.argv, '--max-handles'), Math.min(handles, 64)),
+		surface,
 		workload: workload as WorkloadName,
 		repeat: positiveInt(readOption(process.argv, '--repeat'), 5),
 		warmup: nonNegativeInt(readOption(process.argv, '--warmup'), 1),
@@ -120,12 +139,7 @@ async function post(
 	apiFetch: typeof fetch,
 	path: string,
 	body: unknown,
-): Promise<{
-	readonly ms: number
-	readonly status: number
-	readonly text: string
-	readonly payload: ApiEnvelope
-}> {
+): Promise<PreparedResponse> {
 	const start = performance.now()
 	const response = await apiFetch(
 		new Request(`http://ascend.local${path}`, {
@@ -139,8 +153,50 @@ async function post(
 		ms: performance.now() - start,
 		status: response.status,
 		text,
-		payload: JSON.parse(text) as ApiEnvelope,
+		payload: JSON.parse(text) as PreparedEnvelope,
 	}
+}
+
+function createApiPreparedClient(maxHandles: number): PreparedClient {
+	const apiFetch = createApiFetch({ preparedPlanMaxHandles: maxHandles })
+	return {
+		plan: (body) => post(apiFetch, '/plan', body),
+		commit: (body) => post(apiFetch, '/commit', body),
+	}
+}
+
+function createMcpPreparedClient(maxHandles: number): PreparedClient {
+	const server = createServer({ preparedPlanMaxHandles: maxHandles })
+	type McpTool = { handler: (args: unknown) => Promise<unknown> }
+	const tools = (server as unknown as { _registeredTools: Record<string, McpTool> })
+		._registeredTools
+	const planTool = tools['ascend.plan']
+	const commitTool = tools['ascend.commit']
+	if (!planTool || !commitTool) throw new Error('MCP prepared plan tools are not registered')
+	const call = async (handler: McpTool['handler'], body: unknown): Promise<PreparedResponse> => {
+		const start = performance.now()
+		const result = await handler(body)
+		const structured = (result as { readonly structuredContent?: PreparedEnvelope })
+			.structuredContent
+		const payload = structured ?? { ok: false }
+		const text = JSON.stringify(payload)
+		return {
+			ms: performance.now() - start,
+			status: payload.ok === true ? 200 : 400,
+			text,
+			payload,
+		}
+	}
+	return {
+		plan: (body) => call(planTool.handler, body),
+		commit: (body) => call(commitTool.handler, body),
+	}
+}
+
+function createPreparedClient(args: Args): PreparedClient {
+	return args.surface === 'mcp'
+		? createMcpPreparedClient(args.maxHandles)
+		: createApiPreparedClient(args.maxHandles)
 }
 
 async function runSample(
@@ -149,14 +205,14 @@ async function runSample(
 	mutations: readonly PathMutation[],
 	args: Args,
 ): Promise<Sample> {
-	const apiFetch = createApiFetch({ preparedPlanMaxHandles: args.maxHandles })
+	const client = createPreparedClient(args)
 	const handles: string[] = []
 	const payloadBytes: number[] = []
 	const planStart = performance.now()
 	runGc()
 	const rssBefore = rssMb()
 	for (let index = 0; index < args.handles; index++) {
-		const plan = await post(apiFetch, '/plan', {
+		const plan = await client.plan({
 			file: inputPath,
 			mutations,
 			compact: true,
@@ -177,7 +233,7 @@ async function runSample(
 	let firstCommitStatus: number | null = null
 	let firstHandleEvicted: boolean | null = null
 	if (firstHandle && latestHandle && firstHandle !== latestHandle) {
-		const firstCommit = await post(apiFetch, '/commit', {
+		const firstCommit = await client.commit({
 			planHandle: firstHandle,
 			output: `${outputPrefix}.first.xlsx`,
 			approvals: [],
@@ -186,7 +242,7 @@ async function runSample(
 		firstHandleEvicted = firstCommit.status !== 200
 	}
 	if (!latestHandle) throw new Error('No latest prepared handle captured')
-	const latestCommit = await post(apiFetch, '/commit', {
+	const latestCommit = await client.commit({
 		planHandle: latestHandle,
 		output: `${outputPrefix}.latest.xlsx`,
 		approvals: [],
@@ -248,6 +304,7 @@ async function run() {
 		const payload = {
 			tool: 'prepared-plan-pressure',
 			args,
+			surface: args.surface,
 			summary: summarize(samples),
 			samples,
 		}

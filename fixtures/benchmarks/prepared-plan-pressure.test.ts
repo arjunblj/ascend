@@ -62,4 +62,51 @@ describe('prepared plan pressure benchmark', () => {
 		expect(payload.summary?.latestCommitPayloadBytesMedian).toBeNumber()
 		expect(payload.summary?.latestCommitOk).toBe(true)
 	}, 20_000)
+
+	test('measures MCP prepared handle pressure', async () => {
+		const proc = Bun.spawn(
+			[
+				Bun.argv[0],
+				runnerPath,
+				'--surface',
+				'mcp',
+				'--rows',
+				'60',
+				'--cols',
+				'5',
+				'--mutations',
+				'6',
+				'--handles',
+				'3',
+				'--max-handles',
+				'2',
+				'--repeat',
+				'1',
+				'--warmup',
+				'0',
+				'--json',
+			],
+			{ cwd: process.cwd(), stderr: 'pipe', stdout: 'pipe' },
+		)
+		const [stdout, stderr, exitCode] = await Promise.all([
+			new Response(proc.stdout).text(),
+			new Response(proc.stderr).text(),
+			proc.exited,
+		])
+		expect(exitCode, stderr).toBe(0)
+		const payload = JSON.parse(stdout) as {
+			readonly surface?: string
+			readonly summary?: {
+				readonly preparedHandlesCreatedMedian?: number
+				readonly estimatedEvictedHandlesMedian?: number
+				readonly firstHandleEvicted?: boolean
+				readonly latestCommitOk?: boolean
+			}
+		}
+		expect(payload.surface).toBe('mcp')
+		expect(payload.summary?.preparedHandlesCreatedMedian).toBe(3)
+		expect(payload.summary?.estimatedEvictedHandlesMedian).toBe(1)
+		expect(payload.summary?.firstHandleEvicted).toBe(true)
+		expect(payload.summary?.latestCommitOk).toBe(true)
+	}, 20_000)
 })

@@ -595,6 +595,16 @@ const REAL_INTERACTIVE_PATCH_CORPUS: readonly RealInteractivePatchTarget[] = [
 		rowCount: 50,
 		colCount: 12,
 	},
+	{
+		label: 'stress-dense-100k',
+		path: 'fixtures/xlsx/stress/dense-100k.xlsx',
+		sheet: 'Data',
+		editRef: 'A1',
+		topRow: 0,
+		leftCol: 0,
+		rowCount: 100,
+		colCount: 20,
+	},
 ]
 
 function cachedDenseViewportWorkbookBytes(): Uint8Array {

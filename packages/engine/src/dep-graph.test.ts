@@ -427,6 +427,16 @@ describe('IntervalIndex', () => {
 		expect(idx.queryBatch(match)).toEqual([fk])
 	})
 
+	test('queryBatch matches wide ranges from the last changed column', () => {
+		const idx = new IntervalIndex()
+		const fk = cellKey(0, 10, 0)
+		idx.insert(0, 5, 0, 16_383, fk)
+
+		const cells = new Map<number, number[]>([[16_383, [3]]])
+
+		expect(idx.queryBatch(cells)).toEqual([fk])
+	})
+
 	test('query skips columns outside all indexed ranges', () => {
 		const idx = new IntervalIndex()
 		const fk = cellKey(0, 10, 0)

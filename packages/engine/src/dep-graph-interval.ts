@@ -71,14 +71,14 @@ export class IntervalIndex {
 	 */
 	queryBatch(cellsByCol: ReadonlyMap<number, readonly number[]>): CellKey[] {
 		if (this.entries.length === 0) return []
-		let hasRelevantColumn = false
+		const queryCols: number[] = []
 		for (const col of cellsByCol.keys()) {
 			if (col >= this.minCol && col <= this.maxCol) {
-				hasRelevantColumn = true
-				break
+				queryCols.push(col)
 			}
 		}
-		if (!hasRelevantColumn) return []
+		if (queryCols.length === 0) return []
+		queryCols.sort((a, b) => a - b)
 		if (this.dirty) this.rebuild()
 		const result: CellKey[] = []
 		const seen = new Set<CellKey>()
@@ -86,7 +86,12 @@ export class IntervalIndex {
 			const e = this.entries[i] as RangeEntry
 			if (seen.has(e.formulaKey)) continue
 			let found = false
-			for (let c = e.startCol; c <= e.endCol && !found; c++) {
+			for (
+				let cIndex = lowerBound(queryCols, e.startCol);
+				cIndex < queryCols.length && (queryCols[cIndex] as number) <= e.endCol && !found;
+				cIndex++
+			) {
+				const c = queryCols[cIndex] as number
 				const sortedRows = cellsByCol.get(c)
 				if (!sortedRows || sortedRows.length === 0) continue
 				found = hasRowInRange(sortedRows, e.startRow, e.endRow)
@@ -195,6 +200,17 @@ export class IntervalIndex {
 		}
 		if (mid < hi) this.queryRange(mid + 1, hi, row, col, result)
 	}
+}
+
+function lowerBound(values: readonly number[], target: number): number {
+	let lo = 0
+	let hi = values.length
+	while (lo < hi) {
+		const mid = (lo + hi) >>> 1
+		if ((values[mid] as number) < target) lo = mid + 1
+		else hi = mid
+	}
+	return lo
 }
 
 function hasRowInRange(sortedRows: readonly number[], startRow: number, endRow: number): boolean {

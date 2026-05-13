@@ -1487,6 +1487,102 @@ describe('interactive client contract', () => {
 		}
 	})
 
+	test('values-mode sessions refuse stale promotion before full writable hydration', async () => {
+		const input = join(tmpdir(), `ascend-stale-values-promotion-${Date.now()}-${process.pid}.xlsx`)
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 1 },
+					{ ref: 'B1', value: 2 },
+				],
+			},
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'C1', formula: 'A1+B1' },
+		])
+		wb.recalc()
+		await wb.save(input)
+
+		const session = await AscendSession.open(input, { mode: 'values' })
+		try {
+			const viewport = session.readViewport({
+				sheet: 'Sheet1',
+				topRow: 0,
+				leftCol: 0,
+				rowCount: 1,
+				colCount: 3,
+			})
+			expect(viewport.cells.find((cell) => cell.ref === 'C1')?.flatValue).toBe(3)
+			expect(viewport.cells.find((cell) => cell.ref === 'C1')?.formula).toBeNull()
+			expect(session.editReadiness()).toMatchObject({
+				ready: false,
+				generation: viewport.generation.session,
+				read: { mode: 'values', isPartial: true },
+				write: null,
+			})
+
+			const changed = AscendWorkbook.create()
+			changed.apply([
+				{
+					op: 'setCells',
+					sheet: 'Sheet1',
+					updates: [
+						{ ref: 'A1', value: 'changed elsewhere' },
+						{ ref: 'B1', value: 20 },
+					],
+				},
+				{ op: 'setFormula', sheet: 'Sheet1', ref: 'C1', formula: 'A1&B1' },
+			])
+			changed.recalc()
+			await changed.save(input)
+			expect(session.isStale()).toBe(true)
+
+			let prepareError: unknown
+			try {
+				await session.prepareEdits()
+			} catch (error) {
+				prepareError = error
+			}
+			expect(prepareError).toBeInstanceOf(Error)
+			expect((prepareError as Error).message).toContain(
+				'Cannot promote a stale interactive session',
+			)
+			expect(session.editReadiness()).toMatchObject({
+				ready: false,
+				generation: viewport.generation.session,
+				write: null,
+			})
+
+			const edit = await session.apply([
+				{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'agent edit' }] },
+			])
+			expect(edit.apply.errors[0]).toMatchObject({
+				code: 'VALIDATION_ERROR',
+				details: {
+					rule: 'stale-interactive-session',
+					staleSession: true,
+					requiredAction: 'refresh',
+				},
+			})
+			expect(edit.load).toMatchObject({
+				read: { mode: 'values', isPartial: true },
+				write: { mode: 'values', isPartial: true },
+				promotedToFull: false,
+			})
+			expect(edit.generation.session).toBe(viewport.generation.session)
+
+			const reopened = await AscendWorkbook.open(input)
+			expect(reopened.sheet('Sheet1')?.cell('A1')?.value).toEqual({
+				kind: 'string',
+				value: 'changed elsewhere',
+			})
+		} finally {
+			session.close()
+			await unlink(input).catch(() => {})
+		}
+	})
+
 	test('apply returns dirty regions and monotonic generation tokens', () => {
 		const wb = AscendWorkbook.create()
 

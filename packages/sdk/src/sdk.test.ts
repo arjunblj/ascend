@@ -1403,6 +1403,69 @@ describe('AscendWorkbook', () => {
 		expect(workbookXml).toContain('forceFullCalc="1"')
 	})
 
+	test('workbook metadata edits regenerate workbook XML without forcing stale calc state', async () => {
+		const sourceBytes = makeSyntheticXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`,
+			'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`,
+			'xl/workbook.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <workbookPr codeName="OldBook"/>
+  <bookViews><workbookView activeTab="0" firstSheet="0" tabRatio="600"/></bookViews>
+  <sheets><sheet name="Calc" sheetId="1" r:id="rId1"/></sheets>
+  <calcPr calcMode="auto" fullCalcOnLoad="0" calcCompleted="1" calcOnSave="1" forceFullCalc="0" calcId="1"/>
+</workbook>`,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`,
+		})
+		const wb = await AscendWorkbook.open(sourceBytes)
+		const apply = wb.apply([
+			{ op: 'setWorkbookProperties', properties: { codeName: 'NewBook' } },
+			{ op: 'setWorkbookView', view: { activeTab: 0, firstSheet: 0, tabRatio: 720 } },
+			{
+				op: 'setCalcSettings',
+				settings: {
+					calcMode: 'manual',
+					fullCalcOnLoad: false,
+					calcCompleted: true,
+					calcOnSave: false,
+					forceFullCalc: false,
+					calcId: 42,
+				},
+			},
+		])
+		expect(apply.errors).toHaveLength(0)
+
+		const saved = wb.toBytes()
+		const workbookXml = extractZip(saved).readText('xl/workbook.xml') ?? ''
+		expect(workbookXml).toContain('codeName="NewBook"')
+		expect(workbookXml).toContain('tabRatio="720"')
+		expect(workbookXml).toContain('calcMode="manual"')
+		expect(workbookXml).not.toContain('fullCalcOnLoad="1"')
+		expect(workbookXml).toContain('calcCompleted="1"')
+		expect(workbookXml).toContain('calcOnSave="0"')
+		expect(workbookXml).toContain('forceFullCalc="0"')
+		expect(workbookXml).toContain('calcId="42"')
+
+		const reopened = await AscendWorkbook.open(saved)
+		expect(reopened.workbookViews()[0]?.tabRatio).toBe(720)
+		expect(
+			(reopened.toJSON() as { calcSettings: { calcMode: string; calcId?: number } }).calcSettings,
+		).toMatchObject({ calcMode: 'manual', calcId: 42 })
+	})
+
 	test('value edits drop calcChain when replacing an existing formula cell', async () => {
 		const sourceBytes = makeSyntheticXlsx({
 			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

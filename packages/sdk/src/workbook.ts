@@ -293,6 +293,7 @@ export class AscendWorkbook extends WorkbookReadView {
 			| {
 					workbookMetaDirty: boolean
 					documentPropertiesDirty: boolean
+					calcStateDirty: boolean
 					calcChainDirty: boolean
 					sharedStringsDirty: boolean
 					stylesDirty: boolean
@@ -320,7 +321,7 @@ export class AscendWorkbook extends WorkbookReadView {
 						dirtySheetNames: result.value.sheetsModified,
 						workbookMetaDirty: cachedDirtyFlags.workbookMetaDirty,
 						documentPropertiesDirty: cachedDirtyFlags.documentPropertiesDirty,
-						calcStateDirty: cachedDirtyFlags.workbookMetaDirty || result.value.recalcRequired,
+						calcStateDirty: cachedDirtyFlags.calcStateDirty || result.value.recalcRequired,
 						calcChainDirty: cachedDirtyFlags.calcChainDirty,
 						sharedStringsDirty: cachedDirtyFlags.sharedStringsDirty,
 						stylesDirty: cachedDirtyFlags.stylesDirty,
@@ -372,7 +373,7 @@ export class AscendWorkbook extends WorkbookReadView {
 		for (const sheetName of result.value.sheetsModified) this.dirtySheets.add(sheetName)
 		this.workbookMetaDirty ||= dirtyFlags.workbookMetaDirty
 		this.documentPropertiesDirty ||= dirtyFlags.documentPropertiesDirty
-		this.calcStateDirty ||= dirtyFlags.workbookMetaDirty || result.value.recalcRequired
+		this.calcStateDirty ||= dirtyFlags.calcStateDirty || result.value.recalcRequired
 		this.calcChainDirty ||= dirtyFlags.calcChainDirty
 		this.sharedStringsDirty ||= dirtyFlags.sharedStringsDirty
 		this.stylesDirty ||= dirtyFlags.stylesDirty
@@ -472,7 +473,7 @@ export class AscendWorkbook extends WorkbookReadView {
 		for (const sheetName of result.value.sheetsModified) this.dirtySheets.add(sheetName)
 		this.workbookMetaDirty ||= dirtyFlags.workbookMetaDirty
 		this.documentPropertiesDirty ||= dirtyFlags.documentPropertiesDirty
-		this.calcStateDirty ||= dirtyFlags.workbookMetaDirty || result.value.recalcRequired
+		this.calcStateDirty ||= dirtyFlags.calcStateDirty || result.value.recalcRequired
 		this.calcChainDirty ||= dirtyFlags.calcChainDirty
 		this.sharedStringsDirty ||= dirtyFlags.sharedStringsDirty
 		this.stylesDirty ||= dirtyFlags.stylesDirty
@@ -862,12 +863,14 @@ export class AscendWorkbook extends WorkbookReadView {
 	private deriveDirtyFlags(ops: readonly Operation[]): {
 		workbookMetaDirty: boolean
 		documentPropertiesDirty: boolean
+		calcStateDirty: boolean
 		calcChainDirty: boolean
 		sharedStringsDirty: boolean
 		stylesDirty: boolean
 	} {
 		let workbookMetaDirty = false
 		let documentPropertiesDirty = false
+		let calcStateDirty = false
 		let calcChainDirty = false
 		let sharedStringsDirty = false
 		let stylesDirty = false
@@ -891,12 +894,17 @@ export class AscendWorkbook extends WorkbookReadView {
 				case 'setTimelineRange':
 				case 'rewriteExternalLink':
 					workbookMetaDirty = true
+					calcStateDirty = true
 					calcChainDirty = true
 					break
 				case 'setDocumentProperties':
 					workbookMetaDirty = true
 					documentPropertiesDirty = true
+					calcStateDirty = true
 					break
+				case 'setWorkbookProperties':
+				case 'setWorkbookView':
+				case 'setCalcSettings':
 				case 'setTheme':
 					workbookMetaDirty = true
 					break
@@ -974,6 +982,7 @@ export class AscendWorkbook extends WorkbookReadView {
 		return {
 			workbookMetaDirty,
 			documentPropertiesDirty,
+			calcStateDirty,
 			calcChainDirty,
 			sharedStringsDirty,
 			stylesDirty,

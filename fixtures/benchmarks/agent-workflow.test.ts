@@ -38,6 +38,12 @@ describe('agent workflow benchmark', () => {
 				readonly preparedTotalMedianMs?: number
 				readonly measuredSampleMedianMs?: number
 				readonly readMedianMs?: number
+				readonly commitPostWriteReopenMedianMs?: number
+				readonly commitPostWriteCheckMedianMs?: number
+				readonly commitPostWritePackageGraphAuditMedianMs?: number
+				readonly preparedCommitPostWriteReopenMedianMs?: number
+				readonly preparedCommitPostWriteCheckMedianMs?: number
+				readonly preparedCommitPostWritePackageGraphAuditMedianMs?: number
 				readonly payloadBytesMedian?: number
 				readonly fullPayloadBytesMedian?: number
 				readonly preparedPayloadBytesMedian?: number
@@ -73,6 +79,12 @@ describe('agent workflow benchmark', () => {
 		expect(payload.summary?.preparedTotalMedianMs).toBeNumber()
 		expect(payload.summary?.measuredSampleMedianMs).toBeNumber()
 		expect(payload.summary?.readMedianMs).toBeNumber()
+		expect(payload.summary?.commitPostWriteReopenMedianMs).toBeNumber()
+		expect(payload.summary?.commitPostWriteCheckMedianMs).toBeNumber()
+		expect(payload.summary?.commitPostWritePackageGraphAuditMedianMs).toBeNumber()
+		expect(payload.summary?.preparedCommitPostWriteReopenMedianMs).toBeNumber()
+		expect(payload.summary?.preparedCommitPostWriteCheckMedianMs).toBeNumber()
+		expect(payload.summary?.preparedCommitPostWritePackageGraphAuditMedianMs).toBeNumber()
 		expect(payload.summary?.payloadBytesMedian).toBeNumber()
 		expect(payload.summary?.fullPayloadBytesMedian).toBeNumber()
 		expect(payload.summary?.preparedPayloadBytesMedian).toBeNumber()

@@ -43,6 +43,18 @@ interface WorkflowSample {
 	readonly preparedPlanMs: number
 	readonly commitMs: number
 	readonly preparedCommitMs: number
+	readonly commitPostWriteReopenMs: number | null
+	readonly commitPostWriteCheckMs: number | null
+	readonly commitPostWriteLintMs: number | null
+	readonly commitPostWritePreservationMs: number | null
+	readonly commitPostWritePackageGraphMs: number | null
+	readonly commitPostWritePackageGraphAuditMs: number | null
+	readonly preparedCommitPostWriteReopenMs: number | null
+	readonly preparedCommitPostWriteCheckMs: number | null
+	readonly preparedCommitPostWriteLintMs: number | null
+	readonly preparedCommitPostWritePreservationMs: number | null
+	readonly preparedCommitPostWritePackageGraphMs: number | null
+	readonly preparedCommitPostWritePackageGraphAuditMs: number | null
 	readonly verifyMs: number
 	readonly preparedVerifyMs: number
 	readonly payloadBytes: number
@@ -282,7 +294,26 @@ interface ApiEnvelope {
 			readonly emittedChangedCellCount?: number
 		}
 		readonly preparedPlan?: { readonly id?: string }
+		readonly postWrite?: {
+			readonly timings?: {
+				readonly reopenMs?: number
+				readonly checkMs?: number
+				readonly lintMs?: number
+				readonly preservationMs?: number
+				readonly packageGraphMs?: number
+				readonly packageGraphAuditMs?: number
+			}
+		}
 	}
+}
+
+interface PostWriteTimings {
+	readonly reopenMs: number | null
+	readonly checkMs: number | null
+	readonly lintMs: number | null
+	readonly preservationMs: number | null
+	readonly packageGraphMs: number | null
+	readonly packageGraphAuditMs: number | null
 }
 
 function runGc(): void {
@@ -307,6 +338,18 @@ function buildCellMutations(count: number, rows: number, cols: number, sheetName
 
 function pointerSegment(value: string): string {
 	return encodeURIComponent(value.replace(/~/g, '~0').replace(/\//g, '~1'))
+}
+
+function postWriteTimings(payload: ApiEnvelope): PostWriteTimings {
+	const timings = payload.data?.postWrite?.timings
+	return {
+		reopenMs: timings?.reopenMs ?? null,
+		checkMs: timings?.checkMs ?? null,
+		lintMs: timings?.lintMs ?? null,
+		preservationMs: timings?.preservationMs ?? null,
+		packageGraphMs: timings?.packageGraphMs ?? null,
+		packageGraphAuditMs: timings?.packageGraphAuditMs ?? null,
+	}
 }
 
 async function runWorkflow(
@@ -367,6 +410,8 @@ async function runWorkflow(
 	const measuredSampleMs = performance.now() - totalStart
 	const rssAfter = rssMb()
 	const readLoad = read.payload.data?.load
+	const commitPostWrite = postWriteTimings(commit.payload)
+	const preparedCommitPostWrite = postWriteTimings(preparedCommit.payload)
 	const sharedOpenStats = addOpenStats(inspect.openStats, read.openStats)
 	const compactOpenStats = addOpenStats(
 		sharedOpenStats,
@@ -416,6 +461,18 @@ async function runWorkflow(
 		preparedPlanMs: preparedPlan.ms,
 		commitMs: commit.ms,
 		preparedCommitMs: preparedCommit.ms,
+		commitPostWriteReopenMs: commitPostWrite.reopenMs,
+		commitPostWriteCheckMs: commitPostWrite.checkMs,
+		commitPostWriteLintMs: commitPostWrite.lintMs,
+		commitPostWritePreservationMs: commitPostWrite.preservationMs,
+		commitPostWritePackageGraphMs: commitPostWrite.packageGraphMs,
+		commitPostWritePackageGraphAuditMs: commitPostWrite.packageGraphAuditMs,
+		preparedCommitPostWriteReopenMs: preparedCommitPostWrite.reopenMs,
+		preparedCommitPostWriteCheckMs: preparedCommitPostWrite.checkMs,
+		preparedCommitPostWriteLintMs: preparedCommitPostWrite.lintMs,
+		preparedCommitPostWritePreservationMs: preparedCommitPostWrite.preservationMs,
+		preparedCommitPostWritePackageGraphMs: preparedCommitPostWrite.packageGraphMs,
+		preparedCommitPostWritePackageGraphAuditMs: preparedCommitPostWrite.packageGraphAuditMs,
 		verifyMs: verify.ms,
 		preparedVerifyMs: preparedVerify.ms,
 		payloadBytes: compactWorkflowBytes,
@@ -476,6 +533,42 @@ function summarize(samples: readonly WorkflowSample[]) {
 		preparedPlanMedianMs: median(samples.map((sample) => sample.preparedPlanMs)),
 		commitMedianMs: median(samples.map((sample) => sample.commitMs)),
 		preparedCommitMedianMs: median(samples.map((sample) => sample.preparedCommitMs)),
+		commitPostWriteReopenMedianMs: medianOptional(
+			samples.map((sample) => sample.commitPostWriteReopenMs),
+		),
+		commitPostWriteCheckMedianMs: medianOptional(
+			samples.map((sample) => sample.commitPostWriteCheckMs),
+		),
+		commitPostWriteLintMedianMs: medianOptional(
+			samples.map((sample) => sample.commitPostWriteLintMs),
+		),
+		commitPostWritePreservationMedianMs: medianOptional(
+			samples.map((sample) => sample.commitPostWritePreservationMs),
+		),
+		commitPostWritePackageGraphMedianMs: medianOptional(
+			samples.map((sample) => sample.commitPostWritePackageGraphMs),
+		),
+		commitPostWritePackageGraphAuditMedianMs: medianOptional(
+			samples.map((sample) => sample.commitPostWritePackageGraphAuditMs),
+		),
+		preparedCommitPostWriteReopenMedianMs: medianOptional(
+			samples.map((sample) => sample.preparedCommitPostWriteReopenMs),
+		),
+		preparedCommitPostWriteCheckMedianMs: medianOptional(
+			samples.map((sample) => sample.preparedCommitPostWriteCheckMs),
+		),
+		preparedCommitPostWriteLintMedianMs: medianOptional(
+			samples.map((sample) => sample.preparedCommitPostWriteLintMs),
+		),
+		preparedCommitPostWritePreservationMedianMs: medianOptional(
+			samples.map((sample) => sample.preparedCommitPostWritePreservationMs),
+		),
+		preparedCommitPostWritePackageGraphMedianMs: medianOptional(
+			samples.map((sample) => sample.preparedCommitPostWritePackageGraphMs),
+		),
+		preparedCommitPostWritePackageGraphAuditMedianMs: medianOptional(
+			samples.map((sample) => sample.preparedCommitPostWritePackageGraphAuditMs),
+		),
 		verifyMedianMs: median(samples.map((sample) => sample.verifyMs)),
 		preparedVerifyMedianMs: median(samples.map((sample) => sample.preparedVerifyMs)),
 		payloadBytesMedian: median(samples.map((sample) => sample.payloadBytes)),

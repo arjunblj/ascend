@@ -131,6 +131,54 @@ describe('interactive client contract', () => {
 		expect(wb.sheet('Sheet1')?.cell('A1')?.formula).toBe('1+1')
 	})
 
+	test('journals do not claim exact rollback for supported mutations without inverse coverage', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'Region' },
+					{ ref: 'B1', value: 'Qty' },
+					{ ref: 'A2', value: 'West' },
+					{ ref: 'B2', value: 1 },
+				],
+			},
+			{ op: 'createTable', sheet: 'Sheet1', ref: 'A1:B2', name: 'Sales', hasHeaders: true },
+		])
+
+		const changed = wb.apply(
+			[
+				{ op: 'appendRows', table: 'Sales', rows: [['East', 2]] },
+				{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'D1', value: 'audit' }] },
+			],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(false)
+		expect(changed.journal?.exact).toBe(false)
+		expect(changed.journal?.issues).toContainEqual({
+			code: 'UNSUPPORTED_OPERATION',
+			message: 'No reversible journal support for appendRows',
+		})
+		expect(changed.journal?.entries[0]).toMatchObject({
+			opIndex: 0,
+			supported: false,
+			exact: false,
+			inverseOps: [],
+		})
+		expect(changed.journal?.entries[1]).toMatchObject({
+			opIndex: 1,
+			supported: true,
+			exact: true,
+			inverseOps: [{ op: 'clearRange', sheet: 'Sheet1', range: 'D1', what: 'all' }],
+		})
+		expect(changed.journal?.inverseOps).toEqual([
+			{ op: 'clearRange', sheet: 'Sheet1', range: 'D1', what: 'all' },
+		])
+	})
+
 	test('journal inverse ops preserve internal order when restoring cleared cell state', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'C3', value: 12 }] }])

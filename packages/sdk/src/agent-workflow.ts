@@ -269,6 +269,10 @@ export interface AgentModelOutput {
 	}
 }
 
+interface ExpectedPostWritePackageGraphChanges {
+	readonly removedPartPaths: ReadonlySet<string>
+}
+
 export interface ApprovalRequirement {
 	readonly id: string
 	readonly kind: 'lossy-write' | 'destructive-operation'
@@ -525,6 +529,10 @@ export async function commitAgentPlan(
 		wb.inspect().externalReferenceDetails,
 		writePolicyCheck.issues,
 	)
+	const expectedPostWritePackageGraphChanges = expectedPackageGraphChangesForOperations(
+		writePolicyWorkbook,
+		ops,
+	)
 	await progressFromPhase(writePolicyPhase(writePolicy), progress)
 	if (writePolicy.diagnostics.some((diagnostic) => diagnostic.severity === 'blocker')) {
 		throw new AscendException(
@@ -547,7 +555,7 @@ export async function commitAgentPlan(
 		packageGraph,
 		new Uint8Array(sourceBytes.buffer, sourceBytes.byteOffset, sourceBytes.byteLength),
 	)
-	await progressFromPhase(postWritePhase(postWrite), progress)
+	await progressFromPhase(postWritePhase(postWrite, expectedPostWritePackageGraphChanges), progress)
 	await progress('check', 'started', 'Running structural checks.')
 	const check = wb.check()
 	await progressFromPhase(checkPhase(check), progress)
@@ -576,7 +584,7 @@ export async function commitAgentPlan(
 			preservationPhase(preservation),
 			writePolicyPhase(writePolicy),
 			okPhase('write', `Workbook written to ${output}.`),
-			postWritePhase(postWrite),
+			postWritePhase(postWrite, expectedPostWritePackageGraphChanges),
 			checkPhase(check),
 			lintPhase(lint),
 		],
@@ -1093,7 +1101,12 @@ function writePolicyPhase(writePolicy: WritePolicyReport): AgentTracePhase {
 	)
 }
 
-function postWritePhase(postWrite: AgentPostWriteVerification): AgentTracePhase {
+function postWritePhase(
+	postWrite: AgentPostWriteVerification,
+	expectedPackageGraphChanges: ExpectedPostWritePackageGraphChanges = {
+		removedPartPaths: new Set(),
+	},
+): AgentTracePhase {
 	const checkErrors = postWrite.check.issues.filter((issue) => issue.severity === 'error')
 	if (!postWrite.valid || checkErrors.length > 0) {
 		return phaseResult(
@@ -1102,6 +1115,45 @@ function postWritePhase(postWrite: AgentPostWriteVerification): AgentTracePhase 
 			`Written workbook reopened but structural verification found ${checkErrors.length} error(s).`,
 			checkErrors.length,
 			{ output: postWrite.output, outputSha256: postWrite.outputSha256, errors: checkErrors },
+		)
+	}
+	if (!postWrite.packageGraphAudit.ok) {
+		const unresolvedPackageGraphIssues = postWrite.packageGraphAudit.issues.filter(
+			(issue) => !isExpectedPostWritePackageGraphIssue(issue, expectedPackageGraphChanges),
+		)
+		if (unresolvedPackageGraphIssues.length === 0) {
+			return phaseResult(
+				'post-write',
+				'warning',
+				`Written workbook reopened with ${postWrite.packageGraphAudit.issues.length} expected package graph change(s) from approved operations.`,
+				postWrite.packageGraphAudit.issues.length,
+				{
+					output: postWrite.output,
+					outputSha256: postWrite.outputSha256,
+					check: postWrite.check,
+					lint: postWrite.lint,
+					packageGraphAudit: postWrite.packageGraphAudit,
+					expectedPackageGraphChanges: {
+						removedPartPaths: [...expectedPackageGraphChanges.removedPartPaths],
+					},
+				},
+			)
+		}
+		return phaseResult(
+			'post-write',
+			'blocked',
+			`Written workbook reopened but package graph roundtrip audit found ${unresolvedPackageGraphIssues.length} unresolved issue(s).`,
+			postWrite.check.issues.length +
+				postWrite.lint.warnings.length +
+				unresolvedPackageGraphIssues.length,
+			{
+				output: postWrite.output,
+				outputSha256: postWrite.outputSha256,
+				check: postWrite.check,
+				lint: postWrite.lint,
+				packageGraphAudit: postWrite.packageGraphAudit,
+				unresolvedPackageGraphIssues,
+			},
 		)
 	}
 	if (postWrite.check.issues.length > 0 || postWrite.lint.warnings.length > 0) {
@@ -1117,19 +1169,6 @@ function postWritePhase(postWrite: AgentPostWriteVerification): AgentTracePhase 
 				outputSha256: postWrite.outputSha256,
 				check: postWrite.check,
 				lint: postWrite.lint,
-				packageGraphAudit: postWrite.packageGraphAudit,
-			},
-		)
-	}
-	if (!postWrite.packageGraphAudit.ok) {
-		return phaseResult(
-			'post-write',
-			'warning',
-			`Written workbook reopened but package graph roundtrip audit found ${postWrite.packageGraphAudit.issues.length} issue(s).`,
-			postWrite.packageGraphAudit.issues.length,
-			{
-				output: postWrite.output,
-				outputSha256: postWrite.outputSha256,
 				packageGraphAudit: postWrite.packageGraphAudit,
 			},
 		)
@@ -1240,6 +1279,44 @@ function postWritePackageGraphIssueCount(trace: AgentWorkflowTrace): number | un
 	const postWrite = trace.phases.find((phase) => phase.phase === 'post-write')
 	const audit = packageGraphAuditFromDetails(postWrite?.details)
 	return audit ? audit.issues.length : undefined
+}
+
+function expectedPackageGraphChangesForOperations(
+	workbook: Workbook,
+	ops: readonly Operation[],
+): ExpectedPostWritePackageGraphChanges {
+	const removedPartPaths = new Set<string>()
+	for (const op of ops) {
+		if (op.op !== 'deleteSheet') continue
+		const sheet = workbook.getSheet(op.sheet)
+		const partPath = sheet?.preservedXml?.partPath
+		if (partPath) removedPartPaths.add(partPath)
+	}
+	return { removedPartPaths }
+}
+
+function isExpectedPostWritePackageGraphIssue(
+	issue: XlsxPackageGraphFidelityIssue,
+	expected: ExpectedPostWritePackageGraphChanges,
+): boolean {
+	const targetPath = packageGraphIssueTargetPath(issue)
+	if (!targetPath || !expected.removedPartPaths.has(targetPath)) return false
+	return (
+		issue.code === 'package_content_type_override' ||
+		(issue.code === 'package_preserved_relationship' && issue.featureFamily === 'worksheet')
+	)
+}
+
+function packageGraphIssueTargetPath(issue: XlsxPackageGraphFidelityIssue): string | undefined {
+	if (issue.partPath) return issue.partPath
+	if (!issue.expected || typeof issue.expected !== 'object') return undefined
+	const expected = issue.expected as {
+		readonly partPath?: unknown
+		readonly resolvedTarget?: unknown
+	}
+	if (typeof expected.partPath === 'string') return expected.partPath
+	if (typeof expected.resolvedTarget === 'string') return expected.resolvedTarget
+	return undefined
 }
 
 function packageGraphAuditFromDetails(details: unknown): PackageGraphAudit | undefined {

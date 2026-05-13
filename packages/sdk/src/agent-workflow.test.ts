@@ -196,13 +196,13 @@ describe('agent workflow loss audit', () => {
 		expect(committed.trace.kind).toBe('commit')
 		expect(committed.trace.outputSha256).toBe(committed.outputSha256)
 		expect(committed.trace.phases.find((phase) => phase.phase === 'post-write')?.status).toBe(
-			'warning',
+			'blocked',
 		)
 		expect(committed.modelOutput.counts.postWritePackageGraphIssues).toBeGreaterThan(0)
 		expect(committed.modelOutput.nextActions.join('\n')).toContain(
 			'postWrite.packageGraphAudit.issues',
 		)
-		expect(committed.modelOutput.blocked).toBe(false)
+		expect(committed.modelOutput.blocked).toBe(true)
 		expect(committed.modelOutput.digests.traceDigest).toBe(committed.trace.traceDigest)
 	})
 

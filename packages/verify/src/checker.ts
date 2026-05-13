@@ -1015,6 +1015,7 @@ function checkTableQueryTableIntegrity(
 		if (relationships) relationships.push(relationship)
 		else graphRelationshipsByTarget.set(relationship.resolvedTarget, [relationship])
 	}
+	const workbookConnectionsById = workbookConnectionPartsById(wb)
 	const claimedQueryParts = new Map<string, TableQueryTableIntegrityEntry>()
 
 	for (const sheet of wb.sheets) {
@@ -1205,6 +1206,7 @@ function checkTableQueryTableIntegrity(
 	}
 	for (const part of wb.connectionParts) {
 		if (part.kind !== 'queryTable') continue
+		issues.push(...queryTableConnectionIdIssues(part, workbookConnectionsById))
 		if (claimedQueryParts.has(part.partPath)) continue
 		const sheet = part.sheetName
 			? wb.sheets.find((entry) => entry.name === part.sheetName)
@@ -1330,6 +1332,97 @@ interface TableColumnQueryFieldEntry {
 	readonly columnName: string
 	readonly columnIndex: number
 	readonly ref: string
+}
+
+interface WorkbookConnectionIntegrityEntry {
+	readonly partPath: string
+	readonly connectionId: number
+	readonly name?: string
+}
+
+function workbookConnectionPartsById(
+	wb: Workbook,
+): Map<number, WorkbookConnectionIntegrityEntry[]> {
+	const byId = new Map<number, WorkbookConnectionIntegrityEntry[]>()
+	for (const part of wb.connectionParts) {
+		if (part.kind !== 'connection' || part.connectionId === undefined) continue
+		const entry = workbookConnectionIntegrityEntry(part)
+		const entries = byId.get(part.connectionId)
+		if (entries) entries.push(entry)
+		else byId.set(part.connectionId, [entry])
+	}
+	return byId
+}
+
+function workbookConnectionIntegrityEntry(
+	part: Workbook['connectionParts'][number],
+): WorkbookConnectionIntegrityEntry {
+	return {
+		partPath: part.partPath,
+		connectionId: part.connectionId ?? -1,
+		...(part.name ? { name: part.name } : {}),
+	}
+}
+
+function queryTableConnectionIdIssues(
+	part: Workbook['connectionParts'][number],
+	workbookConnectionsById: ReadonlyMap<number, readonly WorkbookConnectionIntegrityEntry[]>,
+): CheckIssue[] {
+	const entry = worksheetQueryTableIntegrityEntry(part)
+	const refs = [part.sheetName ?? part.partPath, part.partPath]
+	if (part.connectionId === undefined) {
+		return [
+			{
+				rule: 'table-query-integrity',
+				severity: 'error',
+				message: `QueryTable part "${part.partPath}" is missing connectionId binding`,
+				refs,
+				suggestedFix:
+					'Restore the queryTable connectionId so the queryTable can bind to one workbook connection before refresh or write.',
+				details: {
+					kind: 'query-table-connection-id-missing',
+					connectionPart: entry,
+				},
+			},
+		]
+	}
+	const workbookConnections = workbookConnectionsById.get(part.connectionId) ?? []
+	if (workbookConnections.length === 0) {
+		return [
+			{
+				rule: 'table-query-integrity',
+				severity: 'error',
+				message: `QueryTable part "${part.partPath}" connectionId "${part.connectionId}" does not match a workbook connection`,
+				refs,
+				suggestedFix:
+					'Restore a matching workbook connection entry or update the queryTable connectionId before editing query-backed data.',
+				details: {
+					kind: 'query-table-connection-id-missing-workbook-connection',
+					connectionPart: entry,
+					connectionId: part.connectionId,
+				},
+			},
+		]
+	}
+	if (workbookConnections.length > 1) {
+		return [
+			{
+				rule: 'table-query-integrity',
+				severity: 'error',
+				message: `QueryTable part "${part.partPath}" connectionId "${part.connectionId}" matches multiple workbook connections`,
+				refs,
+				suggestedFix:
+					'Repair duplicate workbook connection ids before editing query-backed data or refresh metadata.',
+				details: {
+					kind: 'query-table-connection-id-ambiguous',
+					connectionPart: entry,
+					connectionId: part.connectionId,
+					workbookConnections,
+				},
+			},
+		]
+	}
+	return []
 }
 
 function worksheetQueryTableIntegrityEntry(

@@ -32,6 +32,17 @@ function queryTableRef() {
 	}
 }
 
+function workbookConnectionPart(connectionId: number, name = `Connection${connectionId}`) {
+	return {
+		kind: 'connection' as const,
+		partPath: 'xl/connections.xml',
+		contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.connections+xml',
+		relationshipCount: 0,
+		name,
+		connectionId,
+	}
+}
+
 describe('checker', () => {
 	test('passes on clean workbook', () => {
 		const wb = makeCleanWorkbook()
@@ -580,7 +591,7 @@ describe('checker', () => {
 	test('does not treat worksheet-owned queryTable connection parts as table orphans', () => {
 		const wb = createWorkbook()
 		wb.addSheet('Sheet1')
-		wb.connectionParts.push({
+		wb.connectionParts.push(workbookConnectionPart(1), {
 			kind: 'queryTable',
 			partPath: 'xl/queryTables/queryTable1.xml',
 			contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.queryTable+xml',
@@ -640,11 +651,142 @@ describe('checker', () => {
 		expect(orphanIssues[0]?.refs).toEqual(['xl/queryTables/queryTable2.xml'])
 	})
 
+	test('detects queryTable connectionId workbook binding issues', () => {
+		const wb = createWorkbook()
+		wb.addSheet('Sheet1')
+		wb.connectionParts.push(
+			workbookConnectionPart(1, 'MainConnection'),
+			workbookConnectionPart(7, 'FirstDuplicate'),
+			workbookConnectionPart(7, 'SecondDuplicate'),
+			{
+				kind: 'queryTable',
+				partPath: 'xl/queryTables/missingConnectionId.xml',
+				contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.queryTable+xml',
+				relType: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/queryTable',
+				sheetName: 'Sheet1',
+				relationshipCount: 0,
+				name: 'MissingConnectionId',
+			},
+			{
+				kind: 'queryTable',
+				partPath: 'xl/queryTables/missingWorkbookConnection.xml',
+				contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.queryTable+xml',
+				relType: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/queryTable',
+				sheetName: 'Sheet1',
+				relationshipCount: 0,
+				name: 'MissingWorkbookConnection',
+				connectionId: 9,
+			},
+			{
+				kind: 'queryTable',
+				partPath: 'xl/queryTables/ambiguousConnection.xml',
+				contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.queryTable+xml',
+				relType: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/queryTable',
+				sheetName: 'Sheet1',
+				relationshipCount: 0,
+				name: 'AmbiguousConnection',
+				connectionId: 7,
+			},
+			{
+				kind: 'queryTable',
+				partPath: 'xl/queryTables/validConnection.xml',
+				contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.queryTable+xml',
+				relType: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/queryTable',
+				sheetName: 'Sheet1',
+				relationshipCount: 0,
+				name: 'ValidConnection',
+				connectionId: 1,
+			},
+		)
+
+		const result = check(wb)
+		const connectionIssues = result.issues.filter(
+			(issue) =>
+				issue.rule === 'table-query-integrity' &&
+				typeof issue.details?.kind === 'string' &&
+				issue.details.kind.startsWith('query-table-connection-id'),
+		)
+
+		expect(result.passed).toBe(false)
+		expect(connectionIssues.map((issue) => issue.details?.kind)).toEqual([
+			'query-table-connection-id-missing',
+			'query-table-connection-id-missing-workbook-connection',
+			'query-table-connection-id-ambiguous',
+		])
+		expect(connectionIssues[1]?.details).toMatchObject({
+			connectionId: 9,
+			connectionPart: {
+				partPath: 'xl/queryTables/missingWorkbookConnection.xml',
+				sheetName: 'Sheet1',
+			},
+		})
+		expect(connectionIssues[2]?.details).toMatchObject({
+			connectionId: 7,
+			workbookConnections: [
+				{ partPath: 'xl/connections.xml', connectionId: 7, name: 'FirstDuplicate' },
+				{ partPath: 'xl/connections.xml', connectionId: 7, name: 'SecondDuplicate' },
+			],
+		})
+		expect(
+			connectionIssues.some((issue) => issue.refs?.includes('xl/queryTables/validConnection.xml')),
+		).toBe(false)
+	})
+
+	test('detects table-owned queryTable connectionId mismatch before sidecar skip', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.tables.push({
+			id: createTableId(),
+			name: 'SalesQuery',
+			sheetId: s.id,
+			partPath: 'xl/tables/table1.xml',
+			tableType: 'queryTable',
+			ref: { start: { row: 0, col: 0 }, end: { row: 2, col: 1 } },
+			columns: [
+				{ name: 'Name', queryTableFieldId: 1 },
+				{ name: 'Amount', queryTableFieldId: 2 },
+			],
+			hasHeaders: true,
+			hasTotals: false,
+			queryTable: queryTableRef(),
+		})
+		wb.connectionParts.push({
+			kind: 'queryTable',
+			partPath: 'xl/queryTables/queryTable1.xml',
+			contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.queryTable+xml',
+			relType: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/queryTable',
+			sheetName: 'Sheet1',
+			relationshipCount: 0,
+			name: 'SalesQuery',
+			connectionId: 9,
+		})
+
+		const result = check(wb)
+		const issue = result.issues.find(
+			(entry) =>
+				entry.rule === 'table-query-integrity' &&
+				entry.details?.kind === 'query-table-connection-id-missing-workbook-connection',
+		)
+
+		expect(result.passed).toBe(false)
+		expect(issue?.refs).toEqual(['Sheet1', 'xl/queryTables/queryTable1.xml'])
+		expect(issue?.details).toMatchObject({
+			connectionId: 9,
+			connectionPart: {
+				partPath: 'xl/queryTables/queryTable1.xml',
+				sheetName: 'Sheet1',
+			},
+		})
+	})
+
 	test('detects stale worksheet-owned queryTable inventory', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')
 		sheet.preservedXml = { partPath: 'xl/worksheets/sheet1.xml' }
 		wb.connectionParts.push(
+			workbookConnectionPart(1),
+			workbookConnectionPart(2),
+			workbookConnectionPart(3),
 			{
 				kind: 'queryTable',
 				partPath: 'xl/queryTables/queryTable1.xml',

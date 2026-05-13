@@ -2,8 +2,9 @@
 import { rm } from 'node:fs/promises'
 import { createApiFetch } from '../../apps/api/src/server.ts'
 import { createServer } from '../../apps/mcp/src/index.ts'
+import { WorkbookTuiEngine } from '../../apps/tui/src/runtime/engine.ts'
 import { indexToColumn } from '../../packages/core/src/index.ts'
-import { WorkbookDocument } from '../../packages/sdk/src/index.ts'
+import { AscendWorkbook, WorkbookDocument } from '../../packages/sdk/src/index.ts'
 import { buildRawReadWorkloadDataSet, type WorkloadName } from './competitive-io.ts'
 
 interface Args {
@@ -21,13 +22,20 @@ interface Sample {
 	readonly cappedOpenWindowMs?: number
 	readonly apiFirstWindowMs?: number
 	readonly mcpFirstWindowMs?: number
+	readonly tuiFirstPaintMs?: number
+	readonly tuiOpenMs?: number
+	readonly tuiRenderMs?: number
+	readonly tuiHydrateMs?: number
 	readonly cells: number
 	readonly payloadBytes?: number
 	readonly mcpPayloadBytes?: number
+	readonly tuiFrameBytes?: number
 	readonly fullHydratedCells?: number | null
 	readonly cappedHydratedCells?: number | null
+	readonly tuiHydratedCells?: number | null
 	readonly apiPartial?: boolean
 	readonly mcpPartial?: boolean
+	readonly tuiPartial?: boolean
 	readonly fullOpenCalls?: number
 	readonly fullHydratedOpenCount?: number
 	readonly fullDocumentCacheHits?: number
@@ -40,9 +48,14 @@ interface Sample {
 	readonly mcpOpenCalls?: number
 	readonly mcpHydratedOpenCount?: number
 	readonly mcpDocumentCacheHits?: number
+	readonly tuiOpenCalls?: number
+	readonly tuiHydratedOpenCount?: number
+	readonly tuiDocumentCacheHits?: number
 }
 
 interface OpenStats {
+	readonly workbookOpenCalls: number
+	readonly workbookHydrations: number
 	readonly documentOpenCalls: number
 	readonly documentHydrations: number
 	readonly documentCacheHits: number
@@ -53,6 +66,8 @@ type MutableOpenStats = {
 }
 
 const openStats: MutableOpenStats = {
+	workbookOpenCalls: 0,
+	workbookHydrations: 0,
 	documentOpenCalls: 0,
 	documentHydrations: 0,
 	documentCacheHits: 0,
@@ -61,8 +76,18 @@ const openStats: MutableOpenStats = {
 const seenDocuments = new WeakSet<WorkbookDocument>()
 
 function installOpenStatsInstrumentation(): void {
+	type WorkbookOpen = typeof AscendWorkbook.open
 	type DocumentOpen = typeof WorkbookDocument.open
+	const originalWorkbookOpen = AscendWorkbook.open.bind(AscendWorkbook) as WorkbookOpen
 	const originalDocumentOpen = WorkbookDocument.open.bind(WorkbookDocument) as DocumentOpen
+	Object.defineProperty(AscendWorkbook, 'open', {
+		configurable: true,
+		value: (async (...args: Parameters<WorkbookOpen>) => {
+			openStats.workbookOpenCalls += 1
+			openStats.workbookHydrations += 1
+			return originalWorkbookOpen(...args)
+		}) satisfies WorkbookOpen,
+	})
 	Object.defineProperty(WorkbookDocument, 'open', {
 		configurable: true,
 		value: (async (...args: Parameters<DocumentOpen>) => {
@@ -84,6 +109,8 @@ function snapshotOpenStats(): OpenStats {
 
 function diffOpenStats(after: OpenStats, before: OpenStats): OpenStats {
 	return {
+		workbookOpenCalls: after.workbookOpenCalls - before.workbookOpenCalls,
+		workbookHydrations: after.workbookHydrations - before.workbookHydrations,
 		documentOpenCalls: after.documentOpenCalls - before.documentOpenCalls,
 		documentHydrations: after.documentHydrations - before.documentHydrations,
 		documentCacheHits: after.documentCacheHits - before.documentCacheHits,
@@ -233,7 +260,7 @@ async function runCappedOpenWindow(
 async function runApiFirstWindow(
 	path: string,
 	range: string,
-	_rowLimit: number,
+	rowLimit: number,
 ): Promise<
 	Pick<
 		Sample,
@@ -254,6 +281,7 @@ async function runApiFirstWindow(
 		range,
 		format: 'compact',
 		preview: true,
+		rowLimit,
 	})
 	const measured = await time(async () => {
 		const response = await apiFetch(
@@ -303,12 +331,13 @@ type McpReadHandler = (args: {
 	readonly range: string
 	readonly format: 'compact'
 	readonly preview: boolean
+	readonly rowLimit: number
 }) => Promise<McpReadResult>
 
 async function runMcpFirstWindow(
 	path: string,
 	range: string,
-	_rowLimit: number,
+	rowLimit: number,
 ): Promise<
 	Pick<
 		Sample,
@@ -334,6 +363,7 @@ async function runMcpFirstWindow(
 			range,
 			format: 'compact',
 			preview: true,
+			rowLimit,
 		}),
 	)
 	const content = measured.result.structuredContent
@@ -353,6 +383,54 @@ async function runMcpFirstWindow(
 	}
 }
 
+async function runTuiFirstPaint(
+	path: string,
+	rowLimit: number,
+): Promise<
+	Pick<
+		Sample,
+		| 'tuiFirstPaintMs'
+		| 'tuiOpenMs'
+		| 'tuiRenderMs'
+		| 'tuiHydrateMs'
+		| 'tuiFrameBytes'
+		| 'tuiHydratedCells'
+		| 'tuiPartial'
+		| 'tuiOpenCalls'
+		| 'tuiHydratedOpenCount'
+		| 'tuiDocumentCacheHits'
+	>
+> {
+	WorkbookDocument.clearCache()
+	const beforeOpenStats = snapshotOpenStats()
+	const start = performance.now()
+	const opened = await time(() =>
+		WorkbookTuiEngine.create({
+			path,
+			loadOptions: { mode: 'values', maxRows: rowLimit },
+			size: { rows: 24, cols: 100 },
+		}),
+	)
+	const rendered = await time(async () => opened.result.render({ rows: 24, cols: 100 }))
+	const totalMs = performance.now() - start
+	const openStats = diffOpenStats(snapshotOpenStats(), beforeOpenStats)
+	const state = opened.result.state()
+	const document = state.workspace.documents[0]
+	const latestTelemetry = state.telemetry.at(-1)
+	return {
+		tuiFirstPaintMs: totalMs,
+		tuiOpenMs: opened.ms,
+		tuiRenderMs: rendered.ms,
+		tuiHydrateMs: latestTelemetry?.hydrateMs,
+		tuiFrameBytes: rendered.result.stats.bytes,
+		tuiHydratedCells: document?.info?.cellCount ?? null,
+		tuiPartial: document?.info?.load.isPartial ?? false,
+		tuiOpenCalls: openStats.workbookOpenCalls + openStats.documentOpenCalls,
+		tuiHydratedOpenCount: openStats.workbookHydrations + openStats.documentHydrations,
+		tuiDocumentCacheHits: openStats.documentCacheHits,
+	}
+}
+
 function summarize(samples: readonly Sample[]) {
 	const fullOpenWindowMedianMs = medianOptional(samples.map((sample) => sample.fullOpenWindowMs))
 	const cappedOpenWindowMedianMs = medianOptional(
@@ -360,11 +438,16 @@ function summarize(samples: readonly Sample[]) {
 	)
 	const apiFirstWindowMedianMs = medianOptional(samples.map((sample) => sample.apiFirstWindowMs))
 	const mcpFirstWindowMedianMs = medianOptional(samples.map((sample) => sample.mcpFirstWindowMs))
+	const tuiFirstPaintMedianMs = medianOptional(samples.map((sample) => sample.tuiFirstPaintMs))
 	return {
 		fullOpenWindowMedianMs,
 		cappedOpenWindowMedianMs,
 		apiFirstWindowMedianMs,
 		mcpFirstWindowMedianMs,
+		tuiFirstPaintMedianMs,
+		tuiOpenMedianMs: medianOptional(samples.map((sample) => sample.tuiOpenMs)),
+		tuiRenderMedianMs: medianOptional(samples.map((sample) => sample.tuiRenderMs)),
+		tuiHydrateMedianMs: medianOptional(samples.map((sample) => sample.tuiHydrateMs)),
 		...(fullOpenWindowMedianMs !== undefined && cappedOpenWindowMedianMs !== undefined
 			? { cappedSpeedupVsFull: fullOpenWindowMedianMs / cappedOpenWindowMedianMs }
 			: {}),
@@ -374,11 +457,16 @@ function summarize(samples: readonly Sample[]) {
 		...(fullOpenWindowMedianMs !== undefined && mcpFirstWindowMedianMs !== undefined
 			? { mcpSpeedupVsFull: fullOpenWindowMedianMs / mcpFirstWindowMedianMs }
 			: {}),
+		...(fullOpenWindowMedianMs !== undefined && tuiFirstPaintMedianMs !== undefined
+			? { tuiSpeedupVsFull: fullOpenWindowMedianMs / tuiFirstPaintMedianMs }
+			: {}),
 		cellsMedian: medianOptional(samples.map((sample) => sample.cells)),
 		payloadBytesMedian: medianOptional(samples.map((sample) => sample.payloadBytes)),
 		mcpPayloadBytesMedian: medianOptional(samples.map((sample) => sample.mcpPayloadBytes)),
+		tuiFrameBytesMedian: medianOptional(samples.map((sample) => sample.tuiFrameBytes)),
 		fullHydratedCellsMedian: medianOptional(samples.map((sample) => sample.fullHydratedCells)),
 		cappedHydratedCellsMedian: medianOptional(samples.map((sample) => sample.cappedHydratedCells)),
+		tuiHydratedCellsMedian: medianOptional(samples.map((sample) => sample.tuiHydratedCells)),
 		fullOpenCallsMedian: medianOptional(samples.map((sample) => sample.fullOpenCalls)),
 		fullHydratedOpenCountMedian: medianOptional(
 			samples.map((sample) => sample.fullHydratedOpenCount),
@@ -407,8 +495,16 @@ function summarize(samples: readonly Sample[]) {
 		mcpDocumentCacheHitsMedian: medianOptional(
 			samples.map((sample) => sample.mcpDocumentCacheHits),
 		),
+		tuiOpenCallsMedian: medianOptional(samples.map((sample) => sample.tuiOpenCalls)),
+		tuiHydratedOpenCountMedian: medianOptional(
+			samples.map((sample) => sample.tuiHydratedOpenCount),
+		),
+		tuiDocumentCacheHitsMedian: medianOptional(
+			samples.map((sample) => sample.tuiDocumentCacheHits),
+		),
 		apiPartial: samples.some((sample) => sample.apiPartial === true),
 		mcpPartial: samples.some((sample) => sample.mcpPartial === true),
+		tuiPartial: samples.some((sample) => sample.tuiPartial === true),
 	}
 }
 
@@ -423,6 +519,7 @@ async function run() {
 			await runCappedOpenWindow(data.xlsxPath, range, args.rowLimit)
 			await runApiFirstWindow(data.xlsxPath, range, args.rowLimit)
 			await runMcpFirstWindow(data.xlsxPath, range, args.rowLimit)
+			await runTuiFirstPaint(data.xlsxPath, args.rowLimit)
 			runGc()
 		}
 		for (let i = 0; i < args.repeat; i++) {
@@ -434,7 +531,9 @@ async function run() {
 			runGc()
 			const mcp = await runMcpFirstWindow(data.xlsxPath, range, args.rowLimit)
 			runGc()
-			samples.push({ ...full, ...capped, ...api, ...mcp, cells: mcp.cells })
+			const tui = await runTuiFirstPaint(data.xlsxPath, args.rowLimit)
+			runGc()
+			samples.push({ ...full, ...capped, ...api, ...mcp, ...tui, cells: mcp.cells })
 		}
 		const payload = {
 			tool: 'agent-first-window',

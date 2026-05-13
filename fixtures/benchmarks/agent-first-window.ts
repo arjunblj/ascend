@@ -11,10 +11,21 @@ interface Args {
 	readonly rows: number
 	readonly cols: number
 	readonly rowLimit: number
+	readonly inputFile?: string
+	readonly sheet?: string
+	readonly range?: string
 	readonly workload: WorkloadName
 	readonly repeat: number
 	readonly warmup: number
 	readonly json: boolean
+}
+
+interface BenchmarkInput {
+	readonly xlsxPath: string
+	readonly range: string
+	readonly sheet?: string
+	readonly cleanup: boolean
+	readonly source: 'generated' | 'input-file'
 }
 
 interface Sample {
@@ -160,10 +171,16 @@ function nonNegativeInt(raw: string | undefined, fallback: number): number {
 function parseArgs(): Args {
 	const workload = readOption(process.argv, '--workload') ?? 'mixed-10pct-text'
 	if (!WORKLOADS.has(workload)) throw new Error(`Unsupported --workload "${workload}"`)
+	const inputFile = readOption(process.argv, '--input-file')
+	const sheet = readOption(process.argv, '--sheet')
+	const range = readOption(process.argv, '--range')
 	return {
 		rows: positiveInt(readOption(process.argv, '--rows'), 65_536),
 		cols: positiveInt(readOption(process.argv, '--cols'), 10),
 		rowLimit: positiveInt(readOption(process.argv, '--row-limit'), 500),
+		...(inputFile !== undefined ? { inputFile } : {}),
+		...(sheet !== undefined ? { sheet } : {}),
+		...(range !== undefined ? { range } : {}),
 		workload: workload as WorkloadName,
 		repeat: positiveInt(readOption(process.argv, '--repeat'), 5),
 		warmup: nonNegativeInt(readOption(process.argv, '--warmup'), 1),
@@ -199,6 +216,7 @@ function rssMb(): number {
 
 async function runFullOpenWindow(
 	path: string,
+	sheetName: string | undefined,
 	range: string,
 	rowLimit: number,
 ): Promise<
@@ -221,7 +239,8 @@ async function runFullOpenWindow(
 	const measured = await time(async () => {
 		const document = await WorkbookDocument.open(path, { mode: 'values' })
 		const info = document.inspect()
-		const window = document.readWindowCompact(info.sheets[0]?.name ?? 'Sheet1', range, {
+		const targetSheet = sheetName ?? info.sheets[0]?.name ?? 'Sheet1'
+		const window = document.readWindowCompact(targetSheet, range, {
 			rowLimit,
 			includeRefs: false,
 			omitEmpty: true,
@@ -247,6 +266,7 @@ async function runFullOpenWindow(
 
 async function runCappedOpenWindow(
 	path: string,
+	sheet: string | undefined,
 	range: string,
 	rowLimit: number,
 ): Promise<
@@ -269,6 +289,7 @@ async function runCappedOpenWindow(
 	const measured = await time(async () => {
 		const preview = await WorkbookDocument.openFirstWindow(path, {
 			range,
+			...(sheet !== undefined ? { sheet } : {}),
 			rowLimit,
 		})
 		return preview
@@ -291,6 +312,7 @@ async function runCappedOpenWindow(
 
 async function runApiFirstWindow(
 	path: string,
+	sheet: string | undefined,
 	range: string,
 	rowLimit: number,
 ): Promise<
@@ -315,6 +337,7 @@ async function runApiFirstWindow(
 	const body = JSON.stringify({
 		file: path,
 		range,
+		...(sheet !== undefined ? { sheet } : {}),
 		format: 'compact',
 		preview: true,
 		rowLimit,
@@ -369,6 +392,7 @@ interface McpReadResult {
 
 type McpReadHandler = (args: {
 	readonly file: string
+	readonly sheet?: string
 	readonly range: string
 	readonly format: 'compact'
 	readonly preview: boolean
@@ -377,6 +401,7 @@ type McpReadHandler = (args: {
 
 async function runMcpFirstWindow(
 	path: string,
+	sheet: string | undefined,
 	range: string,
 	rowLimit: number,
 ): Promise<
@@ -406,6 +431,7 @@ async function runMcpFirstWindow(
 		handler({
 			file: path,
 			range,
+			...(sheet !== undefined ? { sheet } : {}),
 			format: 'compact',
 			preview: true,
 			rowLimit,
@@ -435,6 +461,7 @@ async function runMcpFirstWindow(
 
 async function runTuiFirstPaint(
 	path: string,
+	sheet: string | undefined,
 	rowLimit: number,
 ): Promise<
 	Pick<
@@ -461,6 +488,7 @@ async function runTuiFirstPaint(
 	const opened = await time(() =>
 		WorkbookTuiEngine.create({
 			path,
+			...(sheet !== undefined ? { sheet } : {}),
 			loadOptions: { mode: 'values', maxRows: rowLimit },
 			size: { rows: 24, cols: 100 },
 		}),
@@ -487,6 +515,48 @@ async function runTuiFirstPaint(
 		tuiOpenCalls: openStats.workbookOpenCalls + openStats.documentOpenCalls,
 		tuiHydratedOpenCount: openStats.workbookHydrations + openStats.documentHydrations,
 		tuiDocumentCacheHits: openStats.documentCacheHits,
+	}
+}
+
+async function resolveBenchmarkInput(args: Args): Promise<BenchmarkInput> {
+	if (args.inputFile === undefined) {
+		const data = await buildRawReadWorkloadDataSet(args.workload, args.rows, args.cols)
+		return {
+			xlsxPath: data.xlsxPath,
+			range: args.range ?? `A1:${indexToColumn(args.cols - 1)}${args.rows}`,
+			...(args.sheet !== undefined ? { sheet: args.sheet } : {}),
+			cleanup: true,
+			source: 'generated',
+		}
+	}
+	if (args.range !== undefined) {
+		return {
+			xlsxPath: args.inputFile,
+			range: args.range,
+			...(args.sheet !== undefined ? { sheet: args.sheet } : {}),
+			cleanup: false,
+			source: 'input-file',
+		}
+	}
+	const document = await WorkbookDocument.open(args.inputFile, {
+		mode: 'metadata-only',
+		...(args.sheet !== undefined ? { sheets: [args.sheet] } : {}),
+	})
+	const info = document.inspect()
+	const sheetInfo =
+		(args.sheet !== undefined
+			? info.sheets.find((sheet) => sheet.name === args.sheet)
+			: info.sheets[0]) ?? info.sheets[0]
+	if (!sheetInfo) throw new Error(`No sheets found in ${args.inputFile}`)
+	const rows = Math.max(1, sheetInfo.rowCount ?? args.rows)
+	const cols = Math.max(1, sheetInfo.colCount ?? args.cols)
+	WorkbookDocument.clearCache()
+	return {
+		xlsxPath: args.inputFile,
+		range: `A1:${indexToColumn(cols - 1)}${rows}`,
+		sheet: sheetInfo.name,
+		cleanup: false,
+		source: 'input-file',
 	}
 }
 
@@ -589,41 +659,41 @@ function summarize(samples: readonly Sample[]) {
 
 async function run() {
 	const args = parseArgs()
-	const data = await buildRawReadWorkloadDataSet(args.workload, args.rows, args.cols)
-	const range = `A1:${indexToColumn(args.cols - 1)}${args.rows}`
+	const data = await resolveBenchmarkInput(args)
 	const samples: Sample[] = []
 	try {
 		for (let i = 0; i < args.warmup; i++) {
-			await runFullOpenWindow(data.xlsxPath, range, args.rowLimit)
-			await runCappedOpenWindow(data.xlsxPath, range, args.rowLimit)
-			await runApiFirstWindow(data.xlsxPath, range, args.rowLimit)
-			await runMcpFirstWindow(data.xlsxPath, range, args.rowLimit)
-			await runTuiFirstPaint(data.xlsxPath, args.rowLimit)
+			await runFullOpenWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit)
+			await runCappedOpenWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit)
+			await runApiFirstWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit)
+			await runMcpFirstWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit)
+			await runTuiFirstPaint(data.xlsxPath, data.sheet, args.rowLimit)
 			runGc()
 		}
 		for (let i = 0; i < args.repeat; i++) {
-			const full = await runFullOpenWindow(data.xlsxPath, range, args.rowLimit)
+			const full = await runFullOpenWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit)
 			runGc()
-			const capped = await runCappedOpenWindow(data.xlsxPath, range, args.rowLimit)
+			const capped = await runCappedOpenWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit)
 			runGc()
-			const api = await runApiFirstWindow(data.xlsxPath, range, args.rowLimit)
+			const api = await runApiFirstWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit)
 			runGc()
-			const mcp = await runMcpFirstWindow(data.xlsxPath, range, args.rowLimit)
+			const mcp = await runMcpFirstWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit)
 			runGc()
-			const tui = await runTuiFirstPaint(data.xlsxPath, args.rowLimit)
+			const tui = await runTuiFirstPaint(data.xlsxPath, data.sheet, args.rowLimit)
 			runGc()
 			samples.push({ ...full, ...capped, ...api, ...mcp, ...tui, cells: mcp.cells })
 		}
 		const payload = {
 			tool: 'agent-first-window',
 			args,
+			input: data,
 			summary: summarize(samples),
 			samples,
 		}
 		if (args.json) console.log(JSON.stringify(payload, null, 2))
 		else console.log(payload.summary)
 	} finally {
-		await rm(data.xlsxPath, { force: true })
+		if (data.cleanup) await rm(data.xlsxPath, { force: true })
 	}
 }
 

@@ -120,4 +120,57 @@ describe('agent first-window benchmark', () => {
 		expect(payload.summary?.mcpPayloadBytesMedian).toBeGreaterThan(0)
 		expect(payload.summary?.tuiFrameBytesMedian).toBeGreaterThan(0)
 	})
+
+	test('runs against an existing input workbook without deleting it', async () => {
+		const proc = Bun.spawn(
+			[
+				Bun.argv[0],
+				runnerPath,
+				'--input-file',
+				'fixtures/xlsx/poi/SampleSS.xlsx',
+				'--range',
+				'A1:D10',
+				'--row-limit',
+				'5',
+				'--repeat',
+				'1',
+				'--warmup',
+				'0',
+				'--json',
+			],
+			{ cwd: process.cwd(), stderr: 'pipe', stdout: 'pipe' },
+		)
+		const [stdout, stderr, exitCode] = await Promise.all([
+			new Response(proc.stdout).text(),
+			new Response(proc.stderr).text(),
+			proc.exited,
+		])
+		expect(exitCode, stderr).toBe(0)
+		const payload = JSON.parse(stdout) as {
+			readonly input?: {
+				readonly xlsxPath?: string
+				readonly range?: string
+				readonly cleanup?: boolean
+				readonly source?: string
+			}
+			readonly summary?: {
+				readonly cellsMedian?: number
+				readonly apiPartial?: boolean
+				readonly mcpPartial?: boolean
+				readonly tuiPartial?: boolean
+				readonly fullRetainedRssDeltaMbMedian?: number
+			}
+		}
+		expect(payload.input).toEqual({
+			xlsxPath: 'fixtures/xlsx/poi/SampleSS.xlsx',
+			range: 'A1:D10',
+			cleanup: false,
+			source: 'input-file',
+		})
+		expect(payload.summary?.cellsMedian).toBeGreaterThan(0)
+		expect(payload.summary?.apiPartial).toBe(true)
+		expect(payload.summary?.mcpPartial).toBe(true)
+		expect(payload.summary?.tuiPartial).toBe(true)
+		expect(payload.summary?.fullRetainedRssDeltaMbMedian).toBeNumber()
+	}, 20_000)
 })

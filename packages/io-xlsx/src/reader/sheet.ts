@@ -720,6 +720,60 @@ function parseSimpleValuesRowBytes(
 			cursor = plainValueNext
 			continue
 		}
+		const omittedRefNext = parseCanonicalOmittedRefValueCellBytes(
+			bytes,
+			cursor,
+			bodyEnd,
+			row,
+			nextCol,
+			out,
+		)
+		if (omittedRefNext !== -1) {
+			if (out.numberValue !== undefined) {
+				sheet.cells.setPlainNumber(out.row, out.col, out.numberValue)
+			} else if (out.sharedStringIndex >= 0) {
+				let text: string | undefined
+				let entry: CellValue | undefined
+				if (out.sharedStringIndex === cachedSharedStringIndex) {
+					text = cachedSharedStringText
+					entry = cachedSharedStringEntry
+				} else {
+					text = ctx.sharedStrings.getString?.(out.sharedStringIndex)
+					entry = text === undefined ? ctx.sharedStrings.get(out.sharedStringIndex) : undefined
+					cachedSharedStringIndex = out.sharedStringIndex
+					cachedSharedStringText = text
+					cachedSharedStringEntry = entry
+				}
+				if (text !== undefined)
+					sheet.cells.setStringResolved(out.row, out.col, text, null, DEFAULT_STYLE_ID)
+				else {
+					sheet.cells.setResolved(
+						out.row,
+						out.col,
+						entry ?? stringValue(''),
+						null,
+						DEFAULT_STYLE_ID,
+					)
+				}
+			} else if (out.booleanRaw >= 0) {
+				sheet.cells.setResolved(
+					out.row,
+					out.col,
+					internValue(ctx, booleanValue(out.booleanRaw === 1)),
+					null,
+					DEFAULT_STYLE_ID,
+				)
+			} else if (out.stringStart >= 0) {
+				sheet.cells.setPlainString(
+					out.row,
+					out.col,
+					decodeXmlBytesTextKnown(bytes, out.stringStart, out.stringEnd, out.stringHasEntity),
+				)
+			} else return false
+			nextCol = out.col + 1
+			cursor = omittedRefNext
+			continue
+		}
 		const canonicalNext = parseCanonicalValuesCellBytes(
 			bytes,
 			cursor,
@@ -898,6 +952,95 @@ function parseCanonicalPlainValueCellBytes(
 	out.stringStart = inlineValueStart
 	out.stringEnd = valueEnd
 	return valueEnd + BYTES_CANONICAL_INLINE_STRING_SUFFIX.length
+}
+
+function parseCanonicalOmittedRefValueCellBytes(
+	bytes: Uint8Array,
+	cursor: number,
+	bodyEnd: number,
+	row: number,
+	col: number,
+	out: {
+		row: number
+		col: number
+		numberValue: number | undefined
+		sharedStringIndex: number
+		booleanRaw: number
+		stringStart: number
+		stringEnd: number
+		stringHasEntity: boolean
+	},
+): number {
+	if (cursor + 6 >= bodyEnd || bytes[cursor] !== BYTE_LT || bytes[cursor + 1] !== 99) {
+		return -1
+	}
+	out.row = row
+	out.col = col
+	out.numberValue = undefined
+	out.sharedStringIndex = -1
+	out.booleanRaw = -1
+	out.stringStart = -1
+	out.stringEnd = -1
+	out.stringHasEntity = false
+	if (
+		bytes[cursor + 2] === 62 &&
+		bytes[cursor + 3] === BYTE_LT &&
+		bytes[cursor + 4] === 118 &&
+		bytes[cursor + 5] === 62
+	) {
+		return parseCanonicalIntegerValueIntoOutBytes(bytes, cursor + 6, bodyEnd, out)
+	}
+	if (
+		cursor + 12 < bodyEnd &&
+		bytes[cursor + 2] === BYTE_SPACE &&
+		bytes[cursor + 3] === 116 &&
+		bytes[cursor + 4] === 61 &&
+		bytes[cursor + 5] === BYTE_QUOTE &&
+		bytes[cursor + 7] === BYTE_QUOTE &&
+		bytes[cursor + 8] === 62 &&
+		bytes[cursor + 9] === BYTE_LT &&
+		bytes[cursor + 10] === 118 &&
+		bytes[cursor + 11] === 62
+	) {
+		const type = bytes[cursor + 6]
+		if (type === 115) {
+			return parseCanonicalSharedStringIndexIntoOutBytes(bytes, cursor + 12, bodyEnd, out)
+		}
+		if (type === 98) {
+			return parseCanonicalBooleanValueIntoOutBytes(bytes, cursor + 12, bodyEnd, out)
+		}
+		if (type === 110) {
+			return parseCanonicalIntegerValueIntoOutBytes(bytes, cursor + 12, bodyEnd, out)
+		}
+	}
+	if (
+		cursor + 14 >= bodyEnd ||
+		bytes[cursor + 2] !== BYTE_SPACE ||
+		bytes[cursor + 3] !== 116 ||
+		bytes[cursor + 4] !== 61 ||
+		bytes[cursor + 5] !== BYTE_QUOTE ||
+		bytes[cursor + 6] !== 115 ||
+		bytes[cursor + 7] !== 116 ||
+		bytes[cursor + 8] !== 114 ||
+		bytes[cursor + 9] !== BYTE_QUOTE ||
+		bytes[cursor + 10] !== 62 ||
+		bytes[cursor + 11] !== BYTE_LT ||
+		bytes[cursor + 12] !== 118 ||
+		bytes[cursor + 13] !== 62
+	) {
+		return -1
+	}
+	let valueEnd = cursor + 14
+	while (valueEnd < bodyEnd) {
+		const byte = bytes[valueEnd]
+		if (byte === BYTE_LT) break
+		if (byte === BYTE_AMP) out.stringHasEntity = true
+		valueEnd += 1
+	}
+	if (!hasCanonicalValueCellCloseBytes(bytes, valueEnd, bodyEnd)) return -1
+	out.stringStart = cursor + 14
+	out.stringEnd = valueEnd
+	return valueEnd + BYTES_VALUE_CELL_CLOSE.length
 }
 
 function parseCanonicalValuesCellBytes(
@@ -1989,6 +2132,16 @@ function parseCanonicalStreamedValuesRowBytes(
 			nextCol,
 			out,
 		)
+		if (canonicalNext === -1) {
+			canonicalNext = parseCanonicalOmittedRefValueCellBytes(
+				bytes,
+				cursor,
+				bodyEnd,
+				row,
+				nextCol,
+				out,
+			)
+		}
 		if (canonicalNext === -1) {
 			canonicalNext = parseCanonicalValuesCellBytes(
 				bytes,

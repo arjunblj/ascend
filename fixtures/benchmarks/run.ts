@@ -2236,8 +2236,8 @@ const scenarios: readonly Scenario[] = [
 			WorkbookDocument.clearCache()
 			const backgroundPrepareStart = performance.now()
 			const backgroundSession = await AscendSession.open(bytes, {
-				mode: 'full',
-				richMetadata: true,
+				mode: 'interactive',
+				prepareEdits: true,
 			})
 			const backgroundInitialReadiness = backgroundSession.editReadiness()
 			const backgroundOpenMs = performance.now() - backgroundPrepareStart
@@ -2326,9 +2326,14 @@ const scenarios: readonly Scenario[] = [
 					backgroundOpenMs,
 					backgroundInitialReady: backgroundInitialReadiness.ready,
 					backgroundInitialPreparing: backgroundInitialReadiness.preparing,
+					backgroundReadinessReusedReadModel:
+						backgroundInitialReadiness.timings?.mutableWorkbookReusedReadModel ?? false,
+					backgroundReadinessMutableWorkbookOpenMs:
+						backgroundInitialReadiness.timings?.mutableWorkbookOpenMs ?? null,
 					backgroundPrepareEditsMs: backgroundPrepare.timings.totalMs,
 					backgroundPrepareEnsureMutableWorkbookMs:
 						backgroundPrepare.timings.ensureMutableWorkbookMs,
+					backgroundPrepareCached: backgroundPrepare.timings.mutableWorkbookCached ?? false,
 					backgroundPrepareReusedReadModel:
 						backgroundPrepare.timings.mutableWorkbookReusedReadModel ?? false,
 					backgroundPrepareMutableWorkbookOpenMs:

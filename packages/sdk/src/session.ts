@@ -106,6 +106,7 @@ export interface WorkbookSessionFirstWindowResult extends WorkbookFirstWindowRes
 
 export interface AscendSessionOpenOptions extends Omit<WorkbookLoadOptions, 'mode'> {
 	readonly mode?: WorkbookLoadOptions['mode'] | 'interactive'
+	readonly prepareEdits?: boolean
 }
 
 export interface InteractiveViewportRequest {
@@ -896,8 +897,11 @@ export class AscendSession {
 		pathOrBytes: string | Uint8Array,
 		options: AscendSessionOpenOptions = {},
 	): Promise<AscendSession> {
-		const session = await WorkbookSession.open(pathOrBytes, interactiveOpenOptions(options))
-		return new AscendSession(session, pathOrBytes, options)
+		const loadOptions = stripPrepareEditsOption(options)
+		const session = await WorkbookSession.open(pathOrBytes, interactiveInitialOpenOptions(options))
+		const ascendSession = new AscendSession(session, pathOrBytes, loadOptions)
+		if (options.prepareEdits) await ascendSession.prepareEdits()
+		return ascendSession
 	}
 
 	inspect(): WorkbookInfo {
@@ -1273,18 +1277,41 @@ export class AscendSession {
 }
 
 function interactiveOpenOptions(options: AscendSessionOpenOptions): WorkbookLoadOptions {
-	const { mode, ...rest } = options
+	const loadOptions = stripPrepareEditsOption(options)
+	const { mode, ...rest } = loadOptions
 	if (mode === 'interactive' || mode === undefined) {
 		return normalizeOptions({ ...rest, mode: 'formula', richMetadata: true })
 	}
 	return normalizeOptions({ ...rest, mode })
 }
 
-function writableOpenOptions(options: AscendSessionOpenOptions): WorkbookLoadOptions {
-	if (options.maxRows !== undefined || options.sheets !== undefined) {
-		return interactiveOpenOptions(options)
+function interactiveInitialOpenOptions(options: AscendSessionOpenOptions): WorkbookLoadOptions {
+	const loadOptions = stripPrepareEditsOption(options)
+	if (
+		options.prepareEdits === true &&
+		loadOptions.maxRows === undefined &&
+		loadOptions.sheets === undefined &&
+		(loadOptions.mode === undefined ||
+			loadOptions.mode === 'interactive' ||
+			loadOptions.mode === 'full')
+	) {
+		const { mode: _mode, ...rest } = loadOptions
+		return normalizeOptions({ ...rest, mode: 'full', richMetadata: true })
 	}
-	const { mode: _mode, ...rest } = options
+	return interactiveOpenOptions(loadOptions)
+}
+
+function stripPrepareEditsOption(options: AscendSessionOpenOptions): AscendSessionOpenOptions {
+	const { prepareEdits: _prepareEdits, ...loadOptions } = options
+	return loadOptions
+}
+
+function writableOpenOptions(options: AscendSessionOpenOptions): WorkbookLoadOptions {
+	const loadOptions = stripPrepareEditsOption(options)
+	if (loadOptions.maxRows !== undefined || loadOptions.sheets !== undefined) {
+		return interactiveOpenOptions(loadOptions)
+	}
+	const { mode: _mode, ...rest } = loadOptions
 	return normalizeOptions({ ...rest, mode: 'full', richMetadata: true })
 }
 

@@ -387,6 +387,51 @@ describe('Ascend API server', () => {
 		}
 	})
 
+	test('dump and template-merge reject capped load options instead of emitting replay ops', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [{ ref: 'A1', value: '{{name}}' }],
+			},
+		])
+		await wb.save(TEMP_FILE)
+
+		const dump = await postJson('/dump', {
+			file: TEMP_FILE,
+			maxRows: 1,
+		})
+		expect(dump.status).toBe(400)
+		expect(dump.body.ok).toBe(false)
+		expect(dump.body.data?.ops).toBeUndefined()
+		expect(dump.body.error?.code).toBe('VALIDATION_ERROR')
+		expect(dump.body.error?.details?.unsupportedLoadOptions).toEqual(['maxRows'])
+		expect(dump.body.error?.details?.requiredLoad).toEqual({
+			mode: 'full',
+			allSheets: true,
+			maxRows: null,
+		})
+
+		const merge = await postJson('/template-merge', {
+			file: TEMP_FILE,
+			data: { name: 'Acme' },
+			maxRows: 1,
+			mode: 'values',
+			sheets: ['Sheet1'],
+		})
+		expect(merge.status).toBe(400)
+		expect(merge.body.ok).toBe(false)
+		expect(merge.body.data?.ops).toBeUndefined()
+		expect(merge.body.error?.code).toBe('VALIDATION_ERROR')
+		expect(merge.body.error?.details?.unsupportedLoadOptions).toEqual(['maxRows', 'mode', 'sheets'])
+		expect(merge.body.error?.details?.requiredLoad).toEqual({
+			mode: 'full',
+			allSheets: true,
+			maxRows: null,
+		})
+	})
+
 	test('calc supports range-scoped recalc without clearing pending formulas outside the range', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

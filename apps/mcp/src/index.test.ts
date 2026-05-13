@@ -3252,6 +3252,78 @@ describe('MCP server', () => {
 		}
 	})
 
+	test('ascend.dump and ascend.template_merge reject capped load options instead of emitting replay ops', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [{ ref: 'A1', value: '{{name}}' }],
+			},
+		])
+		await wb.save(TEMP_FILE)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const dumpHandler = (server as any)._registeredTools['ascend.dump'].handler as (args: {
+			file: string
+			maxRows?: number
+		}) => Promise<{
+			isError?: boolean
+			structuredContent?: {
+				data?: { ops?: unknown[] }
+				error?: {
+					code?: string
+					details?: {
+						unsupportedLoadOptions?: readonly string[]
+						requiredLoad?: { mode?: string; allSheets?: boolean; maxRows?: null | number }
+					}
+				}
+			}
+		}>
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const mergeHandler = (server as any)._registeredTools['ascend.template_merge']
+			.handler as (args: {
+			file: string
+			data: Record<string, string | number | boolean | null>
+			maxRows?: number
+		}) => Promise<{
+			isError?: boolean
+			structuredContent?: {
+				data?: { ops?: unknown[] }
+				error?: {
+					code?: string
+					details?: {
+						unsupportedLoadOptions?: readonly string[]
+						requiredLoad?: { mode?: string; allSheets?: boolean; maxRows?: null | number }
+					}
+				}
+			}
+		}>
+
+		const dump = await dumpHandler({ file: TEMP_FILE, maxRows: 1 })
+		expect(dump.isError).toBe(true)
+		expect(dump.structuredContent?.data?.ops).toBeUndefined()
+		expect(dump.structuredContent?.error?.code).toBe('VALIDATION_ERROR')
+		expect(dump.structuredContent?.error?.details?.unsupportedLoadOptions).toEqual(['maxRows'])
+		expect(dump.structuredContent?.error?.details?.requiredLoad).toEqual({
+			mode: 'full',
+			allSheets: true,
+			maxRows: null,
+		})
+
+		const merge = await mergeHandler({ file: TEMP_FILE, data: { name: 'Acme' }, maxRows: 1 })
+		expect(merge.isError).toBe(true)
+		expect(merge.structuredContent?.data?.ops).toBeUndefined()
+		expect(merge.structuredContent?.error?.code).toBe('VALIDATION_ERROR')
+		expect(merge.structuredContent?.error?.details?.unsupportedLoadOptions).toEqual(['maxRows'])
+		expect(merge.structuredContent?.error?.details?.requiredLoad).toEqual({
+			mode: 'full',
+			allSheets: true,
+			maxRows: null,
+		})
+	})
+
 	test('ascend.eval evaluates formulas without writing scratch cells', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

@@ -123,6 +123,21 @@ function agentPlanLoadOptionsError(options: readonly string[]): AscendError {
 	)
 }
 
+function replayBatchLoadOptionsError(kind: string, options: readonly string[]): AscendError {
+	return ascendError(
+		'VALIDATION_ERROR',
+		`${kind} replay batches require a full workbook load; partial or capped load options are not supported`,
+		{
+			details: {
+				unsupportedLoadOptions: options,
+				requiredLoad: { mode: 'full', allSheets: true, maxRows: null },
+			},
+			suggestedFix:
+				'Use ascend.read or ascend.agent_view for bounded inspection, then call this replay-batch tool without load options.',
+		},
+	)
+}
+
 class PreparedPlanStore {
 	private readonly handles = new Map<string, PreparedPlanRecord>()
 	private readonly unavailableReasons = new Map<string, PreparedPlanUnavailableReason>()
@@ -1005,8 +1020,18 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 			sheet: z.string().optional().describe('Optional sheet name to dump'),
 			valuesOnly: z.boolean().optional().describe('Omit formulas from the dumped batch'),
 			formulasOnly: z.boolean().optional().describe('Omit literal values from the dumped batch'),
+			maxRows: z
+				.number()
+				.int()
+				.positive()
+				.optional()
+				.describe(
+					'Unsupported on dump; use ascend.read or ascend.agent_view for capped inspection',
+				),
 		},
-		async ({ file, sheet, valuesOnly, formulasOnly }) => {
+		async ({ file, sheet, valuesOnly, formulasOnly, maxRows }) => {
+			if (maxRows !== undefined)
+				return errorResponse(replayBatchLoadOptionsError('Dump', ['maxRows']))
 			if (valuesOnly && formulasOnly) {
 				return errorResponse(
 					ascendError('INVALID_ARGUMENT', 'Use either valuesOnly or formulasOnly, not both', {
@@ -1048,10 +1073,21 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 				.boolean()
 				.optional()
 				.describe('Omit literal values from the template merge scan'),
+			maxRows: z
+				.number()
+				.int()
+				.positive()
+				.optional()
+				.describe(
+					'Unsupported on template merge; use ascend.read or ascend.agent_view for capped inspection',
+				),
 			open: z.string().optional().describe('Placeholder opening delimiter, default {{'),
 			close: z.string().optional().describe('Placeholder closing delimiter, default }}'),
 		},
-		async ({ file, data, sheet, valuesOnly, formulasOnly, open, close }) => {
+		async ({ file, data, sheet, valuesOnly, formulasOnly, maxRows, open, close }) => {
+			if (maxRows !== undefined) {
+				return errorResponse(replayBatchLoadOptionsError('Template merge', ['maxRows']))
+			}
 			if (valuesOnly && formulasOnly) {
 				return errorResponse(
 					ascendError('INVALID_ARGUMENT', 'Use either valuesOnly or formulasOnly, not both', {

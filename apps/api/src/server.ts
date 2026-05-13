@@ -137,6 +137,21 @@ function agentPlanLoadOptionsError(options: readonly string[]): AscendError {
 	)
 }
 
+function replayBatchLoadOptionsError(kind: string, options: readonly string[]): AscendError {
+	return ascendError(
+		'VALIDATION_ERROR',
+		`${kind} replay batches require a full workbook load; partial or capped load options are not supported`,
+		{
+			details: {
+				unsupportedLoadOptions: options,
+				requiredLoad: { mode: 'full', allSheets: true, maxRows: null },
+			},
+			suggestedFix:
+				'Use read or agent-view for bounded inspection, then call this replay-batch endpoint without load options.',
+		},
+	)
+}
+
 type OperationInput =
 	| {
 			readonly ok: true
@@ -737,6 +752,10 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 				}>(req)
 				const file = body ? requireString(body, 'file') : null
 				if (!file) return jsonFailure('Missing or invalid file', 400)
+				const unsupportedLoadOptions = unsupportedAgentPlanLoadOptions(body)
+				if (unsupportedLoadOptions.length > 0) {
+					return jsonFailureError(replayBatchLoadOptionsError('Dump', unsupportedLoadOptions), 400)
+				}
 				if (body?.valuesOnly === true && body?.formulasOnly === true) {
 					return jsonFailure('Use either valuesOnly or formulasOnly, not both', 400)
 				}
@@ -765,6 +784,13 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 				}>(req)
 				const file = body ? requireString(body, 'file') : null
 				if (!file) return jsonFailure('Missing or invalid file', 400)
+				const unsupportedLoadOptions = unsupportedAgentPlanLoadOptions(body)
+				if (unsupportedLoadOptions.length > 0) {
+					return jsonFailureError(
+						replayBatchLoadOptionsError('Template merge', unsupportedLoadOptions),
+						400,
+					)
+				}
 				if (!body || !body.data || Array.isArray(body.data) || typeof body.data !== 'object') {
 					return jsonFailure('Missing or invalid template data', 400)
 				}

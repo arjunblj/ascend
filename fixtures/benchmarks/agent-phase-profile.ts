@@ -1,5 +1,7 @@
 #!/usr/bin/env bun
 import { rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { basename, join } from 'node:path'
 import type { Operation } from '@ascend/schema'
 import {
 	type AgentWorkflowProgressEvent,
@@ -7,6 +9,7 @@ import {
 	createAgentPlan,
 	createPreparedAgentPlan,
 	indexToColumn,
+	WorkbookDocument,
 } from '../../packages/sdk/src/index.ts'
 import { buildRawReadWorkloadDataSet, type WorkloadName } from './competitive-io.ts'
 
@@ -14,10 +17,21 @@ interface Args {
 	readonly rows: number
 	readonly cols: number
 	readonly updates: number
+	readonly inputFile?: string
+	readonly sheet?: string
 	readonly workload: WorkloadName
 	readonly repeat: number
 	readonly warmup: number
 	readonly json: boolean
+}
+
+interface BenchmarkInput {
+	readonly xlsxPath: string
+	readonly sheet: string
+	readonly rows: number
+	readonly cols: number
+	readonly cleanup: boolean
+	readonly source: 'generated' | 'input-file'
 }
 
 interface TimedRun<T> {
@@ -89,10 +103,14 @@ function nonNegativeInt(raw: string | undefined, fallback: number): number {
 function parseArgs(): Args {
 	const workload = readOption(process.argv, '--workload') ?? 'mixed-10pct-text'
 	if (!WORKLOADS.has(workload)) throw new Error(`Unsupported --workload "${workload}"`)
+	const inputFile = readOption(process.argv, '--input-file')
+	const sheet = readOption(process.argv, '--sheet')
 	return {
 		rows: positiveInt(readOption(process.argv, '--rows'), 65_536),
 		cols: positiveInt(readOption(process.argv, '--cols'), 10),
 		updates: positiveInt(readOption(process.argv, '--updates'), 1_000),
+		...(inputFile !== undefined ? { inputFile } : {}),
+		...(sheet !== undefined ? { sheet } : {}),
 		workload: workload as WorkloadName,
 		repeat: positiveInt(readOption(process.argv, '--repeat'), 5),
 		warmup: nonNegativeInt(readOption(process.argv, '--warmup'), 1),
@@ -111,7 +129,12 @@ function runGc(): void {
 	;(Bun as unknown as { gc?: (force?: boolean) => void }).gc?.(true)
 }
 
-function buildSetCellsOperation(count: number, rows: number, cols: number): Operation {
+function buildSetCellsOperation(
+	count: number,
+	rows: number,
+	cols: number,
+	sheet: string,
+): Operation {
 	const updates: Extract<Operation, { op: 'setCells' }>['updates'] = []
 	for (let index = 0; index < count; index++) {
 		const row = Math.floor(index / cols) % rows
@@ -121,7 +144,7 @@ function buildSetCellsOperation(count: number, rows: number, cols: number): Oper
 			value: 200_000 + index,
 		})
 	}
-	return { op: 'setCells', sheet: 'Data', updates }
+	return { op: 'setCells', sheet, updates }
 }
 
 async function timedWorkflow<T>(
@@ -262,11 +285,57 @@ function summarize(samples: readonly Sample[]) {
 	}
 }
 
+async function resolveBenchmarkInput(args: Args): Promise<BenchmarkInput> {
+	if (args.inputFile === undefined) {
+		const data = await buildRawReadWorkloadDataSet(args.workload, args.rows, args.cols)
+		return {
+			xlsxPath: data.xlsxPath,
+			sheet: args.sheet ?? 'Data',
+			rows: args.rows,
+			cols: args.cols,
+			cleanup: true,
+			source: 'generated',
+		}
+	}
+	if (args.sheet !== undefined) {
+		return {
+			xlsxPath: args.inputFile,
+			sheet: args.sheet,
+			rows: args.rows,
+			cols: args.cols,
+			cleanup: false,
+			source: 'input-file',
+		}
+	}
+	const document = await WorkbookDocument.open(args.inputFile, { mode: 'metadata-only' })
+	const info = document.inspect()
+	const sheetInfo = info.sheets[0]
+	if (!sheetInfo) throw new Error(`No sheets found in ${args.inputFile}`)
+	const rows = Math.max(1, sheetInfo.rowCount ?? args.rows)
+	const cols = Math.max(1, sheetInfo.colCount ?? args.cols)
+	WorkbookDocument.clearCache()
+	return {
+		xlsxPath: args.inputFile,
+		sheet: sheetInfo.name,
+		rows,
+		cols,
+		cleanup: false,
+		source: 'input-file',
+	}
+}
+
+function phaseOutputPath(input: BenchmarkInput): string {
+	return join(
+		tmpdir(),
+		`ascend-agent-phase-${process.pid}-${Date.now()}-${basename(input.xlsxPath)}.out.xlsx`,
+	)
+}
+
 async function run() {
 	const args = parseArgs()
-	const data = await buildRawReadWorkloadDataSet(args.workload, args.rows, args.cols)
-	const outputPath = `${data.xlsxPath}.agent-phase-output.xlsx`
-	const ops = [buildSetCellsOperation(args.updates, args.rows, args.cols)]
+	const data = await resolveBenchmarkInput(args)
+	const outputPath = phaseOutputPath(data)
+	const ops = [buildSetCellsOperation(args.updates, data.rows, data.cols, data.sheet)]
 	const samples: Sample[] = []
 	try {
 		for (let i = 0; i < args.warmup; i++) {
@@ -280,13 +349,14 @@ async function run() {
 		const payload = {
 			tool: 'agent-phase-profile',
 			args,
+			input: data,
 			summary: summarize(samples),
 			samples,
 		}
 		if (args.json) console.log(JSON.stringify(payload, null, 2))
 		else console.log(payload.summary)
 	} finally {
-		await rm(data.xlsxPath, { force: true })
+		if (data.cleanup) await rm(data.xlsxPath, { force: true })
 		await rm(outputPath, { force: true })
 	}
 }

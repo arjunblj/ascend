@@ -72,4 +72,61 @@ describe('agent phase profile benchmark', () => {
 		expect(payload.summary?.sharedPlanPhaseMedianMs?.preview).toBeNumber()
 		expect(payload.summary?.sharedCommitPhaseMedianMs?.write).toBeNumber()
 	})
+
+	test('profiles agent phases against an existing input workbook without deleting it', async () => {
+		const proc = Bun.spawn(
+			[
+				Bun.argv[0],
+				runnerPath,
+				'--input-file',
+				'fixtures/xlsx/poi/SampleSS.xlsx',
+				'--updates',
+				'1',
+				'--repeat',
+				'1',
+				'--warmup',
+				'0',
+				'--json',
+			],
+			{ cwd: process.cwd(), stderr: 'pipe', stdout: 'pipe' },
+		)
+		const [stdout, stderr, exitCode] = await Promise.all([
+			new Response(proc.stdout).text(),
+			new Response(proc.stderr).text(),
+			proc.exited,
+		])
+		expect(exitCode, stderr).toBe(0)
+		const payload = JSON.parse(stdout) as {
+			readonly input?: {
+				readonly xlsxPath?: string
+				readonly sheet?: string
+				readonly rows?: number
+				readonly cols?: number
+				readonly cleanup?: boolean
+				readonly source?: string
+			}
+			readonly summary?: {
+				readonly sharedTotalMedianMs?: number
+				readonly updateCountMedian?: number
+				readonly sharedChangedCellsMedian?: number
+				readonly postWriteValid?: boolean
+				readonly sharedPostWriteValid?: boolean
+				readonly sharedCommitPhaseMedianMs?: Record<string, number>
+			}
+		}
+		expect(payload.input).toEqual({
+			xlsxPath: 'fixtures/xlsx/poi/SampleSS.xlsx',
+			sheet: 'First Sheet',
+			rows: 65_536,
+			cols: 10,
+			cleanup: false,
+			source: 'input-file',
+		})
+		expect(payload.summary?.sharedTotalMedianMs).toBeNumber()
+		expect(payload.summary?.updateCountMedian).toBe(1)
+		expect(payload.summary?.sharedChangedCellsMedian).toBe(1)
+		expect(payload.summary?.postWriteValid).toBe(true)
+		expect(payload.summary?.sharedPostWriteValid).toBe(true)
+		expect(payload.summary?.sharedCommitPhaseMedianMs?.write).toBeNumber()
+	}, 20_000)
 })

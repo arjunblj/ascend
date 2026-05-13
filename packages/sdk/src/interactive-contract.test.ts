@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { AscendWorkbook } from './index.ts'
+import { buildMutationJournal } from './journal.ts'
 
 describe('interactive client contract', () => {
 	test('apply returns dirty regions and monotonic generation tokens', () => {
@@ -320,6 +321,108 @@ describe('interactive client contract', () => {
 				tooltip: 'Open report',
 			},
 		])
+	})
+
+	test('journal inverse ops restore threaded comment text without losing metadata', () => {
+		const wb = AscendWorkbook.create()
+		const sheet = wb.getWorkbookModel().sheets[0]
+		sheet?.threadedComments.push(
+			{
+				ref: 'B2',
+				text: 'original',
+				id: 'tc-1',
+				personId: 'person-1',
+				author: 'Analyst',
+				dateTime: '2026-05-13T10:00:00Z',
+				done: false,
+				partPath: 'xl/threadedComments/threadedComment1.xml',
+			},
+			{
+				ref: 'B2',
+				text: 'follow-up',
+				id: 'tc-2',
+				parentId: 'tc-1',
+				personId: 'person-2',
+				author: 'Reviewer',
+				dateTime: '2026-05-13T10:05:00Z',
+				done: true,
+				partPath: 'xl/threadedComments/threadedComment1.xml',
+			},
+		)
+
+		const changed = wb.apply(
+			[
+				{
+					op: 'setThreadedComment',
+					sheet: 'Sheet1',
+					partPath: 'xl/threadedComments/threadedComment1.xml',
+					threadedCommentId: 'tc-2',
+					text: 'resolved by agent',
+				},
+			],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(true)
+		expect(changed.journal?.inverseOps).toEqual([
+			{
+				op: 'setThreadedComment',
+				sheet: 'Sheet1',
+				partPath: 'xl/threadedComments/threadedComment1.xml',
+				threadedCommentId: 'tc-2',
+				text: 'follow-up',
+			},
+		])
+		const changedThread = wb.getWorkbookModel().sheets[0]?.threadedComments[1]
+		expect(changedThread).toMatchObject({
+			text: 'resolved by agent',
+			id: 'tc-2',
+			parentId: 'tc-1',
+			personId: 'person-2',
+			author: 'Reviewer',
+			done: true,
+			partPath: 'xl/threadedComments/threadedComment1.xml',
+		})
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(wb.getWorkbookModel().sheets[0]?.threadedComments[1]).toEqual({
+			ref: 'B2',
+			text: 'follow-up',
+			id: 'tc-2',
+			parentId: 'tc-1',
+			personId: 'person-2',
+			author: 'Reviewer',
+			dateTime: '2026-05-13T10:05:00Z',
+			done: true,
+			partPath: 'xl/threadedComments/threadedComment1.xml',
+		})
+	})
+
+	test('threaded comment journals do not claim exact rollback for ambiguous selectors', () => {
+		const wb = AscendWorkbook.create()
+		const sheet = wb.getWorkbookModel().sheets[0]
+		sheet?.threadedComments.push(
+			{ ref: 'B2', text: 'first', id: 'tc-1' },
+			{ ref: 'B2', text: 'second', id: 'tc-2' },
+		)
+
+		const journal = buildMutationJournal(wb.getWorkbookModel(), [
+			{ op: 'setThreadedComment', sheet: 'Sheet1', ref: 'B2', text: 'ambiguous' },
+		])
+
+		expect(journal.supported).toBe(true)
+		expect(journal.exact).toBe(false)
+		expect(journal.issues).toEqual([
+			{
+				code: 'LOSSY_INVERSE',
+				message: 'Threaded comment selector on Sheet1 cannot be resolved exactly',
+			},
+		])
+		expect(journal.inverseOps).toEqual([])
+		expect(sheet?.threadedComments.map((comment) => comment.text)).toEqual(['first', 'second'])
 	})
 
 	test('journal inverse ops restore conditional format replacements', () => {

@@ -14,6 +14,7 @@ import {
 	type SheetConditionalFormatRule,
 	type SheetDataValidation,
 	type SheetHyperlink,
+	type SheetThreadedComment,
 	type Table,
 	type TableColumn,
 	type TableStyleInfo,
@@ -59,6 +60,12 @@ export interface MutationJournalHyperlinkPreimage {
 	readonly sheet: string
 	readonly ref: string
 	readonly hyperlink: SheetHyperlink | null
+}
+
+export interface MutationJournalThreadedCommentPreimage {
+	readonly sheet: string
+	readonly commentIndex: number | null
+	readonly threadedComment: SheetThreadedComment | null
 }
 
 export interface MutationJournalPanePreimage {
@@ -131,6 +138,10 @@ export type MutationJournalPreimage =
 	| { readonly kind: 'cells'; readonly cells: readonly MutationJournalCellPreimage[] }
 	| { readonly kind: 'comment'; readonly comment: MutationJournalCommentPreimage }
 	| { readonly kind: 'hyperlink'; readonly hyperlink: MutationJournalHyperlinkPreimage }
+	| {
+			readonly kind: 'threaded-comment'
+			readonly threadedComment: MutationJournalThreadedCommentPreimage
+	  }
 	| { readonly kind: 'pane'; readonly pane: MutationJournalPanePreimage }
 	| { readonly kind: 'merge'; readonly merge: MutationJournalMergePreimage }
 	| { readonly kind: 'auto-filter'; readonly autoFilter: MutationJournalAutoFilterPreimage }
@@ -310,6 +321,8 @@ function buildSupportedJournalEntry(
 			return journalSetHyperlink(workbook, op, opIndex)
 		case 'deleteHyperlink':
 			return journalDeleteHyperlink(workbook, op, opIndex)
+		case 'setThreadedComment':
+			return journalSetThreadedComment(workbook, op, opIndex)
 		case 'freezePane':
 			return journalFreezePane(workbook, op, opIndex)
 		case 'renameSheet':
@@ -826,6 +839,39 @@ function journalDeleteHyperlink(
 		inverseOps,
 		preimages: [{ kind: 'hyperlink', hyperlink }],
 		issues: [],
+	}
+}
+
+function journalSetThreadedComment(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'setThreadedComment' }>,
+	opIndex: number,
+): DraftJournalEntry {
+	const preimage = threadedCommentPreimage(workbook, op)
+	const inverseOps: Operation[] = preimage.threadedComment
+		? [
+				{
+					op: 'setThreadedComment',
+					sheet: preimage.sheet,
+					text: preimage.threadedComment.text,
+					...threadedCommentStableSelector(preimage),
+				},
+			]
+		: []
+	const issues: MutationJournalIssue[] = preimage.threadedComment
+		? []
+		: [
+				{
+					code: 'LOSSY_INVERSE',
+					message: `Threaded comment selector on ${op.sheet} cannot be resolved exactly`,
+				},
+			]
+	return {
+		opIndex,
+		op,
+		inverseOps,
+		preimages: [{ kind: 'threaded-comment', threadedComment: preimage }],
+		issues,
 	}
 }
 
@@ -1837,6 +1883,48 @@ function findHyperlink(sheet: Sheet | undefined, ref: string): SheetHyperlink | 
 	return null
 }
 
+function threadedCommentPreimage(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'setThreadedComment' }>,
+): MutationJournalThreadedCommentPreimage {
+	const sheet = workbook.getSheet(op.sheet)
+	if (
+		!sheet ||
+		(op.commentIndex !== undefined && (op.commentIndex < 0 || !Number.isInteger(op.commentIndex)))
+	) {
+		return { sheet: op.sheet, commentIndex: null, threadedComment: null }
+	}
+	const matches = sheet.threadedComments
+		.map((comment, index) => ({ comment, index }))
+		.filter(({ comment, index }) => {
+			if (op.commentIndex !== undefined && index !== op.commentIndex) return false
+			if (op.partPath !== undefined && comment.partPath !== op.partPath) return false
+			if (op.threadedCommentId !== undefined && comment.id !== op.threadedCommentId) return false
+			if (op.ref !== undefined && comment.ref.toUpperCase() !== op.ref.toUpperCase()) return false
+			return true
+		})
+	const match = matches.length === 1 ? matches[0] : undefined
+	return {
+		sheet: op.sheet,
+		commentIndex: match?.index ?? null,
+		threadedComment: match ? cloneThreadedComment(match.comment) : null,
+	}
+}
+
+function threadedCommentStableSelector(
+	preimage: MutationJournalThreadedCommentPreimage,
+): Omit<Extract<Operation, { op: 'setThreadedComment' }>, 'op' | 'sheet' | 'text'> {
+	const comment = preimage.threadedComment
+	if (!comment) return {}
+	if (comment.partPath !== undefined && comment.id !== undefined) {
+		return { partPath: comment.partPath, threadedCommentId: comment.id }
+	}
+	if (comment.id !== undefined) return { threadedCommentId: comment.id }
+	if (comment.partPath !== undefined) return { partPath: comment.partPath }
+	if (preimage.commentIndex !== null) return { commentIndex: preimage.commentIndex }
+	return { ref: comment.ref }
+}
+
 function setHyperlinkInverse(
 	sheet: string,
 	ref: string,
@@ -1908,6 +1996,10 @@ function cloneTable(table: Table): Table {
 		...(table.tableStyleInfo ? { tableStyleInfo: { ...table.tableStyleInfo } } : {}),
 		...(table.queryTable ? { queryTable: { ...table.queryTable } } : {}),
 	}
+}
+
+function cloneThreadedComment(comment: SheetThreadedComment): SheetThreadedComment {
+	return { ...comment }
 }
 
 function cloneConditionalFormat(format: SheetConditionalFormat): SheetConditionalFormat {

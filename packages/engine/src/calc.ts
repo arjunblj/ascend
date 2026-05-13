@@ -1029,9 +1029,13 @@ function findBlockedSpillRefs(
 	for (let rowOffset = 0; rowOffset < matrix.length; rowOffset++) {
 		const sourceRow = matrix[rowOffset] ?? []
 		for (let colOffset = 0; colOffset < sourceRow.length; colOffset++) {
-			if (rowOffset === 0 && colOffset === 0) continue
 			const targetRow = anchorRow + rowOffset
 			const targetCol = anchorCol + colOffset
+			if (cellHasSpillLayoutBlocker(sheet, targetRow, targetCol)) {
+				blocked.push(toA1Ref(targetRow, targetCol))
+				continue
+			}
+			if (rowOffset === 0 && colOffset === 0) continue
 			const existingFormulaInfo = sheet.cells.readFormulaInfo(targetRow, targetCol)
 			if (existingFormulaInfo === undefined && !sheet.cells.has(targetRow, targetCol)) continue
 			if (
@@ -1045,6 +1049,23 @@ function findBlockedSpillRefs(
 		}
 	}
 	return blocked
+}
+
+function cellHasSpillLayoutBlocker(
+	sheet: Workbook['sheets'][number],
+	row: number,
+	col: number,
+): boolean {
+	return (
+		sheet.merges.some((merge) => rangeContainsCell(merge, row, col)) ||
+		sheet.tables.some((table) => rangeContainsCell(table.ref, row, col))
+	)
+}
+
+function rangeContainsCell(range: RangeRef, row: number, col: number): boolean {
+	return (
+		row >= range.start.row && row <= range.end.row && col >= range.start.col && col <= range.end.col
+	)
 }
 
 function stringArraysEqual(a: readonly string[], b: readonly string[]): boolean {
@@ -1385,7 +1406,7 @@ export function recalculate(
 	setRangeValueCache(scratch.rangeValueCache)
 	const isDirtyRecalc = opts?.dirtyOnly || (opts?.dirtyRefs?.length ?? 0) > 0
 
-	if (!isDirtyRecalc) clearOrphanedSpills(workbook, spillIndex, changed)
+	clearOrphanedSpills(workbook, spillIndex, changed)
 	if (!isDirtyRecalc && !opts?.range) {
 		exactLookupCache.clear()
 		lookupVectorCache.clear()

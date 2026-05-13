@@ -2651,6 +2651,49 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(0, 0)?.value).toEqual(errorValue('#SPILL!'))
 	})
 
+	test('spill collision: merged cells block dynamic array output', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.merges.push(parseRange('A2:B2'))
+		sheet.cells.set(0, 0, { value: EMPTY, formula: 'SEQUENCE(3)', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 0)?.value).toEqual(errorValue('#SPILL!'))
+		const info = sheet.cells.get(0, 0)?.formulaInfo
+		expect(info).toMatchObject({
+			kind: 'blockedSpill',
+			ref: 'A1:A3',
+			blockingRefs: ['A2'],
+		})
+		expect(sheet.cells.get(1, 0)).toBeUndefined()
+	})
+
+	test('spill collision: table ranges block dynamic array output', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.tables.push({
+			id: createTableId(),
+			name: 'Table1',
+			sheetId: sheet.id,
+			ref: parseRange('A2:A3'),
+			columns: [{ id: 1, name: 'Value' }],
+			hasHeaders: true,
+			hasTotals: false,
+		})
+		sheet.cells.set(0, 0, { value: EMPTY, formula: 'SEQUENCE(3)', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 0)?.value).toEqual(errorValue('#SPILL!'))
+		const info = sheet.cells.get(0, 0)?.formulaInfo
+		expect(info).toMatchObject({
+			kind: 'blockedSpill',
+			ref: 'A1:A3',
+			blockingRefs: ['A2', 'A3'],
+		})
+		expect(sheet.cells.get(1, 0)).toBeUndefined()
+		expect(sheet.cells.get(2, 0)).toBeUndefined()
+	})
+
 	test('spill cell clearing: when spill anchor is deleted, all spill cells are cleared', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')
@@ -2665,6 +2708,42 @@ describe('recalculate', () => {
 		recalculate(wb, makeCtx())
 
 		expect(sheet.cells.get(0, 0)).toBeUndefined()
+		expect(sheet.cells.get(1, 0)).toBeUndefined()
+		expect(sheet.cells.get(2, 0)).toBeUndefined()
+	})
+
+	test('dirty recalc clears stale spill footprint when spill anchor is deleted', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: EMPTY, formula: 'SEQUENCE(3)', styleId: sid })
+		sheet.cells.set(0, 1, { value: EMPTY, formula: 'SUM(A1#)', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(0, 1)?.value).toEqual(numberValue(6))
+
+		sheet.cells.delete(0, 0)
+		recalculate(wb, makeCtx(), { dirtyOnly: true, dirtyRefs: ['Sheet1!A1'] })
+
+		expect(sheet.cells.get(0, 0)).toBeUndefined()
+		expect(sheet.cells.get(1, 0)).toBeUndefined()
+		expect(sheet.cells.get(2, 0)).toBeUndefined()
+		expect(sheet.cells.get(0, 1)?.value).toEqual(errorValue('#REF!'))
+	})
+
+	test('dirty recalc clears stale spill cells when spill anchor becomes a value', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: EMPTY, formula: 'SEQUENCE(3)', styleId: sid })
+
+		recalculate(wb, makeCtx())
+		expect(sheet.cells.get(1, 0)?.value).toEqual(numberValue(2))
+		expect(sheet.cells.get(2, 0)?.value).toEqual(numberValue(3))
+
+		sheet.cells.set(0, 0, { value: numberValue(99), formula: null, styleId: sid })
+		recalculate(wb, makeCtx(), { dirtyOnly: true, dirtyRefs: ['Sheet1!A1'] })
+
+		expect(sheet.cells.get(0, 0)?.value).toEqual(numberValue(99))
+		expect(sheet.cells.get(0, 0)?.formulaInfo).toBeUndefined()
 		expect(sheet.cells.get(1, 0)).toBeUndefined()
 		expect(sheet.cells.get(2, 0)).toBeUndefined()
 	})

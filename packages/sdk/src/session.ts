@@ -2,13 +2,23 @@ import { createHash } from 'node:crypto'
 import { statSync } from 'node:fs'
 import { readFile, stat } from 'node:fs/promises'
 import { resolve } from 'node:path'
+import {
+	DEFAULT_STYLE_ID,
+	parseRange,
+	type RangeRef,
+	rangeIntersects,
+	sqrefIntersects,
+	toA1,
+} from '@ascend/core'
 import { inspectXlsxPackageGraph, type XlsxPackageGraph } from '@ascend/io-xlsx'
+import type { CellValue } from '@ascend/schema'
 import { check as verifyCheck, lint as verifyLint } from '@ascend/verify'
 import {
 	partialDependencyCheckIssue,
 	partialDependencyLintWarning,
 	sdkCheckIssueFromVerify,
 } from './check-issues.ts'
+import { formatStyledDisplayCellValue } from './format-helpers.ts'
 import { openWorkbookSource } from './load.ts'
 import { inspectRawPackagePart } from './raw-package.ts'
 import { WorkbookReadView } from './read-view.ts'
@@ -45,6 +55,7 @@ import type {
 	SheetInspectInfo,
 	SlicerCacheInfo,
 	SlicerInfo,
+	TableInfo,
 	TimelineCacheInfo,
 	TimelineInfo,
 	TraceResult,
@@ -84,6 +95,88 @@ export interface WorkbookFirstWindowResult {
 
 export interface WorkbookSessionFirstWindowResult extends WorkbookFirstWindowResult {
 	readonly session: WorkbookSession
+}
+
+export interface AscendSessionOpenOptions extends Omit<WorkbookLoadOptions, 'mode'> {
+	readonly mode?: WorkbookLoadOptions['mode'] | 'interactive'
+}
+
+export interface InteractiveViewportRequest {
+	readonly sheet: string
+	readonly topRow: number
+	readonly leftCol: number
+	readonly rowCount: number
+	readonly colCount: number
+	readonly overscanRows?: number
+	readonly overscanCols?: number
+	readonly changedSince?: string
+}
+
+export interface InteractiveViewportCell {
+	readonly row: number
+	readonly col: number
+	readonly ref: string
+	readonly value: CellValue
+	readonly flatValue: number | string | boolean | null
+	readonly displayText: string
+	readonly formula: string | null
+	readonly formulaBinding: import('@ascend/core').CellFormulaBinding | null
+	readonly styleId: number
+	readonly flags: {
+		readonly formula: boolean
+		readonly comment: boolean
+		readonly hyperlink: boolean
+		readonly merged: boolean
+		readonly validation: boolean
+		readonly conditionalFormat: boolean
+		readonly table: boolean
+	}
+}
+
+export interface InteractiveViewportLayoutEntry {
+	readonly index: number
+	readonly size?: number
+	readonly hidden?: boolean
+	readonly outlineLevel?: number
+	readonly collapsed?: boolean
+}
+
+export interface InteractiveViewportPatch {
+	readonly baseToken: string
+	readonly changedCells: readonly InteractiveViewportCell[]
+	readonly removedRefs: readonly string[]
+	readonly byteLength: number
+}
+
+export interface InteractiveViewportResult {
+	readonly sheet: string
+	readonly requested: RangeRef
+	readonly viewport: RangeRef
+	readonly generation: {
+		readonly session: number
+		readonly workbook: number
+		readonly sheetMetadata: number
+		readonly formulas: number
+		readonly styles: number
+	}
+	readonly changeToken: string
+	readonly load: WorkbookLoadInfo
+	readonly rowCount: number
+	readonly colCount: number
+	readonly cells: readonly InteractiveViewportCell[]
+	readonly flatValues: readonly (number | string | boolean | null)[]
+	readonly displayText: readonly string[]
+	readonly rowLayout: readonly InteractiveViewportLayoutEntry[]
+	readonly colLayout: readonly InteractiveViewportLayoutEntry[]
+	readonly frozen: { readonly rows: number; readonly cols: number }
+	readonly merges: readonly RangeRef[]
+	readonly comments: readonly import('./types.ts').SheetCommentInfo[]
+	readonly hyperlinks: readonly import('./types.ts').SheetHyperlinkInfo[]
+	readonly dataValidations: readonly import('@ascend/core').SheetDataValidation[]
+	readonly conditionalFormats: readonly import('@ascend/core').SheetConditionalFormat[]
+	readonly tables: readonly TableInfo[]
+	readonly autoFilter: import('@ascend/core').AutoFilter | null
+	readonly patch?: InteractiveViewportPatch
 }
 
 interface SessionFileIdentity {
@@ -301,6 +394,10 @@ export class WorkbookDocument {
 		opts?: import('./types.ts').AgentReadOptions,
 	): CompactRangeWindowInfo | undefined {
 		return this.view.readWindowCompact(sheetName, range, opts)
+	}
+
+	readViewport(request: InteractiveViewportRequest): InteractiveViewportResult {
+		return readInteractiveViewport(this.view, request, 0, '0')
 	}
 
 	agentView(
@@ -629,6 +726,339 @@ export class WorkbookSession {
 
 	private assertOpen(): void {
 		if (this.closed) throw new Error('WorkbookSession is closed')
+	}
+}
+
+/**
+ * Experimental interactive session facade for grid-like clients. It keeps a
+ * retained WorkbookSession and returns viewport-shaped payloads with generation
+ * and change tokens so callers do not need to stitch together range reads and
+ * broad sheet metadata scans.
+ */
+export class AscendSession {
+	private readonly session: WorkbookSession
+	private documentGeneration = 0
+	private changeVersion = 0
+	private readonly viewportSnapshots = new Map<
+		string,
+		{ readonly token: string; readonly cells: Map<string, InteractiveViewportCell> }
+	>()
+
+	private constructor(session: WorkbookSession) {
+		this.session = session
+	}
+
+	static async open(
+		pathOrBytes: string | Uint8Array,
+		options: AscendSessionOpenOptions = {},
+	): Promise<AscendSession> {
+		const session = await WorkbookSession.open(pathOrBytes, interactiveOpenOptions(options))
+		return new AscendSession(session)
+	}
+
+	inspect(): WorkbookInfo {
+		return this.session.inspect()
+	}
+
+	readViewport(request: InteractiveViewportRequest): InteractiveViewportResult {
+		const workbook = this.session.workbook()
+		const changeToken = `${this.documentGeneration}:${this.changeVersion++}`
+		const base = workbook.readViewport(request)
+		const result = {
+			...base,
+			generation: { ...base.generation, session: this.documentGeneration },
+			changeToken,
+		}
+		const snapshotKey = interactiveViewportSnapshotKey(request)
+		const currentCells = interactiveCellMap(result.cells)
+		const previous = this.viewportSnapshots.get(snapshotKey)
+		this.viewportSnapshots.set(snapshotKey, { token: changeToken, cells: currentCells })
+		if (!previous || previous.token !== request.changedSince) return result
+		const patch = diffInteractiveViewportCells(previous.token, previous.cells, currentCells)
+		return { ...result, patch }
+	}
+
+	isStale(): boolean {
+		return this.session.isStale()
+	}
+
+	async refresh(): Promise<void> {
+		await this.session.refresh()
+		this.documentGeneration += 1
+		this.viewportSnapshots.clear()
+	}
+
+	workbook(): WorkbookDocument {
+		return this.session.workbook()
+	}
+
+	close(): void {
+		this.session.close()
+		this.viewportSnapshots.clear()
+	}
+}
+
+function interactiveOpenOptions(options: AscendSessionOpenOptions): WorkbookLoadOptions {
+	const { mode, ...rest } = options
+	if (mode === 'interactive' || mode === undefined) {
+		return normalizeOptions({ ...rest, mode: 'formula', richMetadata: true })
+	}
+	return normalizeOptions({ ...rest, mode })
+}
+
+function readInteractiveViewport(
+	view: WorkbookReadView,
+	request: InteractiveViewportRequest,
+	sessionGeneration: number,
+	changeToken: string,
+): InteractiveViewportResult {
+	const snapshot = view.readSnapshotInfo()
+	const workbook = view.getWorkbookModel()
+	const sheet = workbook.getSheet(request.sheet)
+	if (!sheet) throw new Error(`Sheet "${request.sheet}" not found`)
+	const requested = viewportRange(
+		request.sheet,
+		request.topRow,
+		request.leftCol,
+		request.rowCount,
+		request.colCount,
+	)
+	const viewport = viewportRange(
+		request.sheet,
+		Math.max(0, request.topRow - Math.max(0, request.overscanRows ?? 0)),
+		Math.max(0, request.leftCol - Math.max(0, request.overscanCols ?? 0)),
+		request.rowCount + Math.max(0, request.overscanRows ?? 0) * 2,
+		request.colCount + Math.max(0, request.overscanCols ?? 0) * 2,
+	)
+	const sheetHandle = view.sheet(request.sheet)
+	const comments = sheet.comments
+	const hyperlinks = sheet.hyperlinks
+	const merges = sheet.merges.filter((merge) => rangeIntersects(merge, viewport))
+	const dataValidations = sheet.dataValidations.filter((validation) =>
+		sqrefIntersects(validation.sqref, viewport),
+	)
+	const conditionalFormats = sheet.conditionalFormats.filter((format) =>
+		sqrefIntersects(format.sqref, viewport),
+	)
+	const tables = (view.inspectSheet(request.sheet)?.tables ?? []).filter((table) =>
+		rangeIntersects(table.ref, viewport),
+	)
+	const autoFilter =
+		sheet.autoFilter && sqrefIntersects(sheet.autoFilter.ref, viewport) ? sheet.autoFilter : null
+	const cells: InteractiveViewportCell[] = []
+	const flatValues = Array.from({ length: viewportCellCount(viewport) }, () => null) as Array<
+		number | string | boolean | null
+	>
+	const displayText = Array.from({ length: viewportCellCount(viewport) }, () => '')
+	sheet.cells.forEachCellContentInRange(viewport, (row, col, value, formula, formulaBinding) => {
+		const ref = toA1({ row, col })
+		const styleId = sheet.cells.readStyleId(row, col) ?? DEFAULT_STYLE_ID
+		const formulaText = sheetHandle?.cellCompact(ref)?.formula ?? formula
+		const flatValue = flattenViewportValue(value)
+		const display =
+			sheetHandle?.formatCellForDisplay(ref) ??
+			formatStyledDisplayCellValue(value, workbook.styles.get(styleId), {
+				dateSystem: workbook.calcSettings.dateSystem,
+			})
+		const index = viewportFlatIndex(viewport, row, col)
+		flatValues[index] = flatValue
+		displayText[index] = display
+		cells.push({
+			row,
+			col,
+			ref,
+			value,
+			flatValue,
+			displayText: display,
+			formula: formulaText,
+			formulaBinding: formulaBinding ?? null,
+			styleId,
+			flags: {
+				formula: formulaText !== null,
+				comment: comments.has(ref),
+				hyperlink: hyperlinks.has(ref),
+				merged: merges.some((merge) => cellInRange(row, col, merge)),
+				validation: dataValidations.some((validation) =>
+					sqrefIntersects(validation.sqref, { start: { row, col }, end: { row, col } }),
+				),
+				conditionalFormat: conditionalFormats.some((format) =>
+					sqrefIntersects(format.sqref, { start: { row, col }, end: { row, col } }),
+				),
+				table: tables.some((table) => cellInRange(row, col, table.ref)),
+			},
+		})
+	})
+	return {
+		sheet: request.sheet,
+		requested,
+		viewport,
+		generation: {
+			session: sessionGeneration,
+			workbook: snapshot.generations.workbook,
+			sheetMetadata: snapshot.generations.sheetMetadata,
+			formulas: snapshot.generations.formulas,
+			styles: snapshot.generations.styles,
+		},
+		changeToken,
+		load: snapshot.load,
+		rowCount: viewport.end.row - viewport.start.row + 1,
+		colCount: viewport.end.col - viewport.start.col + 1,
+		cells,
+		flatValues,
+		displayText,
+		rowLayout: rowLayout(sheet, viewport),
+		colLayout: colLayout(sheet, viewport),
+		frozen: { rows: sheet.frozenRows, cols: sheet.frozenCols },
+		merges,
+		comments: [...sheet.comments.entries()]
+			.filter(([ref]) => cellRefInRange(ref, viewport))
+			.map(([ref, comment]) => ({ ref, ...comment })),
+		hyperlinks: [...sheet.hyperlinks.entries()]
+			.filter(([ref]) => cellRefInRange(ref, viewport))
+			.map(([ref, hyperlink]) => ({ ref, ...hyperlink })),
+		dataValidations,
+		conditionalFormats,
+		tables,
+		autoFilter,
+	}
+}
+
+function viewportRange(
+	sheet: string,
+	topRow: number,
+	leftCol: number,
+	rowCount: number,
+	colCount: number,
+): RangeRef {
+	const safeRowCount = Math.max(1, Math.floor(rowCount))
+	const safeColCount = Math.max(1, Math.floor(colCount))
+	const start = {
+		row: Math.max(0, Math.floor(topRow)),
+		col: Math.max(0, Math.floor(leftCol)),
+	}
+	return {
+		sheet,
+		start,
+		end: {
+			row: start.row + safeRowCount - 1,
+			col: start.col + safeColCount - 1,
+		},
+	}
+}
+
+function viewportCellCount(range: RangeRef): number {
+	return (range.end.row - range.start.row + 1) * (range.end.col - range.start.col + 1)
+}
+
+function viewportFlatIndex(range: RangeRef, row: number, col: number): number {
+	return (row - range.start.row) * (range.end.col - range.start.col + 1) + (col - range.start.col)
+}
+
+function flattenViewportValue(value: CellValue): number | string | boolean | null {
+	switch (value.kind) {
+		case 'number':
+		case 'string':
+		case 'boolean':
+			return value.value
+		default:
+			return null
+	}
+}
+
+function rowLayout(
+	sheet: ReturnType<WorkbookReadView['getWorkbookModel']>['sheets'][number],
+	range: RangeRef,
+): InteractiveViewportLayoutEntry[] {
+	const rows: InteractiveViewportLayoutEntry[] = []
+	for (let row = range.start.row; row <= range.end.row; row++) {
+		const def = sheet.rowDefs.get(row)
+		const size = sheet.rowHeights.get(row)
+		if (def || size !== undefined) {
+			rows.push({
+				index: row,
+				...(size !== undefined ? { size } : {}),
+				...(def?.hidden !== undefined ? { hidden: def.hidden } : {}),
+				...(def?.outlineLevel !== undefined ? { outlineLevel: def.outlineLevel } : {}),
+				...(def?.collapsed !== undefined ? { collapsed: def.collapsed } : {}),
+			})
+		}
+	}
+	return rows
+}
+
+function colLayout(
+	sheet: ReturnType<WorkbookReadView['getWorkbookModel']>['sheets'][number],
+	range: RangeRef,
+): InteractiveViewportLayoutEntry[] {
+	const cols: InteractiveViewportLayoutEntry[] = []
+	for (let col = range.start.col; col <= range.end.col; col++) {
+		const def = sheet.colDefs.find(
+			(candidate) =>
+				(col >= candidate.min && col <= candidate.max) ||
+				(col + 1 >= candidate.min && col + 1 <= candidate.max),
+		)
+		const size = sheet.colWidths.get(col)
+		if (def || size !== undefined) {
+			cols.push({
+				index: col,
+				...(size !== undefined ? { size } : {}),
+				...(def?.hidden !== undefined ? { hidden: def.hidden } : {}),
+				...(def?.outlineLevel !== undefined ? { outlineLevel: def.outlineLevel } : {}),
+				...(def?.collapsed !== undefined ? { collapsed: def.collapsed } : {}),
+			})
+		}
+	}
+	return cols
+}
+
+function cellInRange(row: number, col: number, range: RangeRef): boolean {
+	return (
+		row >= range.start.row && row <= range.end.row && col >= range.start.col && col <= range.end.col
+	)
+}
+
+function cellRefInRange(ref: string, range: RangeRef): boolean {
+	const parsed = parseRange(ref)
+	return cellInRange(parsed.start.row, parsed.start.col, range)
+}
+
+function interactiveViewportSnapshotKey(request: InteractiveViewportRequest): string {
+	return [
+		request.sheet,
+		request.topRow,
+		request.leftCol,
+		request.rowCount,
+		request.colCount,
+		request.overscanRows ?? 0,
+		request.overscanCols ?? 0,
+	].join(':')
+}
+
+function interactiveCellMap(
+	cells: readonly InteractiveViewportCell[],
+): Map<string, InteractiveViewportCell> {
+	return new Map(cells.map((cell) => [cell.ref, cell]))
+}
+
+function diffInteractiveViewportCells(
+	baseToken: string,
+	previous: ReadonlyMap<string, InteractiveViewportCell>,
+	current: ReadonlyMap<string, InteractiveViewportCell>,
+): InteractiveViewportPatch {
+	const changedCells: InteractiveViewportCell[] = []
+	const removedRefs: string[] = []
+	for (const [ref, cell] of current) {
+		const before = previous.get(ref)
+		if (!before || JSON.stringify(before) !== JSON.stringify(cell)) changedCells.push(cell)
+	}
+	for (const ref of previous.keys()) {
+		if (!current.has(ref)) removedRefs.push(ref)
+	}
+	return {
+		baseToken,
+		changedCells,
+		removedRefs,
+		byteLength: JSON.stringify({ changedCells, removedRefs }).length,
 	}
 }
 

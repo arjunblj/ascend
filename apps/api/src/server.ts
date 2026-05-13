@@ -1373,6 +1373,7 @@ function displayObjects<
 
 function buildCompactReadResult(info: CompactRangeWindowInfo) {
 	return {
+		snapshot: info.snapshot,
 		requestedRef: info.requestedRef,
 		ref: info.ref,
 		rowCount: info.rowCount,

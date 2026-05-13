@@ -93,6 +93,20 @@ interface ApiEnvelope {
 		readonly cells?: unknown[]
 		readonly format?: string
 		readonly changeToken?: string
+		readonly snapshot?: {
+			readonly token?: string
+			readonly generations?: {
+				readonly workbook?: number
+				readonly sheetMetadata?: number
+				readonly formulas?: number
+				readonly styles?: number
+			}
+			readonly load?: {
+				readonly mode?: string
+				readonly isPartial?: boolean
+				readonly maxRows?: number
+			}
+		}
 		readonly valid?: boolean
 		readonly issues?: readonly {
 			readonly rule?: string
@@ -438,6 +452,18 @@ describe('Ascend API server', () => {
 			[2, 1, 'row-3'],
 		])
 		expect(result.body.data?.changeToken).toBeDefined()
+		expect(result.body.data?.snapshot?.token).toContain('partial')
+		expect(result.body.data?.snapshot?.generations).toEqual({
+			workbook: 0,
+			sheetMetadata: 0,
+			formulas: 0,
+			styles: 0,
+		})
+		expect(result.body.data?.snapshot?.load).toMatchObject({
+			mode: 'values',
+			isPartial: true,
+			maxRows: 3,
+		})
 		expect(result.body.data?.load?.mode).toBe('values')
 		expect(result.body.data?.load?.isPartial).toBe(true)
 		expect(result.body.data?.load?.maxRows).toBe(3)

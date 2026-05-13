@@ -1055,6 +1055,7 @@ export interface AgentViewResult {
 }
 
 export interface RangeInfo {
+	readonly snapshot: WorkbookReadSnapshotInfo
 	readonly ref: RangeRef
 	readonly cells: readonly CellInfo[]
 	readonly rowCount: number
@@ -1062,6 +1063,7 @@ export interface RangeInfo {
 }
 
 export interface CompactRangeInfo {
+	readonly snapshot: WorkbookReadSnapshotInfo
 	readonly ref: RangeRef
 	readonly cells: readonly CompactCellInfo[]
 	readonly rowCount: number
@@ -1086,6 +1088,7 @@ export interface CompactRangeWindowInfo extends CompactRangeInfo {
 }
 
 export interface RangeRowsInfo {
+	readonly snapshot: WorkbookReadSnapshotInfo
 	readonly requestedRef: RangeRef
 	readonly ref: RangeRef
 	readonly rowCount: number
@@ -1098,6 +1101,7 @@ export interface RangeRowsInfo {
 }
 
 export interface RangeObjectsInfo {
+	readonly snapshot: WorkbookReadSnapshotInfo
 	readonly requestedRef: RangeRef
 	readonly ref: RangeRef
 	readonly rowCount: number
@@ -1160,6 +1164,27 @@ export interface WorkbookGenerationInfo {
 	readonly formulas: number
 	readonly styles: number
 }
+
+export interface WorkbookReadSnapshotInfo {
+	readonly token: string
+	readonly generations: WorkbookGenerationInfo
+	readonly load: WorkbookLoadInfo
+}
+
+export type ReadSnapshotValidationResult =
+	| {
+			readonly ok: true
+			readonly current: true
+			readonly expected: WorkbookReadSnapshotInfo
+			readonly receivedToken: string
+	  }
+	| {
+			readonly ok: false
+			readonly current: false
+			readonly expected: WorkbookReadSnapshotInfo
+			readonly receivedToken: string
+			readonly error: AscendError
+	  }
 
 export interface PreviewResult {
 	readonly diff: WorkbookDiff

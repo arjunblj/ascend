@@ -42,6 +42,7 @@ import type {
 	RangeObjectsInfo,
 	RangeRowsInfo,
 	RangeWindowInfo,
+	WorkbookReadSnapshotInfo,
 } from './types.ts'
 
 export interface SheetMetadataQueryOptions {
@@ -62,6 +63,7 @@ export class SheetHandle {
 		cell: CellDisplaySource,
 		options?: FormatDisplayOptions,
 	) => string
+	private readonly resolveSnapshot: () => WorkbookReadSnapshotInfo
 	private _changeVersion = 0
 	private readonly _changeSnapshots = new Map<
 		string,
@@ -78,11 +80,13 @@ export class SheetHandle {
 			cell: CellDisplaySource,
 			options?: FormatDisplayOptions,
 		) => string,
+		resolveSnapshot?: () => WorkbookReadSnapshotInfo,
 	) {
 		this.sheetName = sheetName
 		this.resolveSheet = resolveSheet
 		this.resolveFormula = resolveFormula
 		this.resolveDisplay = resolveDisplay
+		this.resolveSnapshot = resolveSnapshot ?? fallbackReadSnapshot
 	}
 
 	get name(): string {
@@ -129,6 +133,7 @@ export class SheetHandle {
 	range(rangeRef: RangeSelector): RangeInfo {
 		const compact = this.rangeCompact(rangeRef, { includeRefs: true })
 		return {
+			snapshot: compact.snapshot,
 			ref: compact.ref,
 			cells: compact.cells.map((cell) => toCellInfo(cell)),
 			rowCount: compact.rowCount,
@@ -152,6 +157,7 @@ export class SheetHandle {
 			}))
 		}
 		return {
+			snapshot: this.resolveSnapshot(),
 			ref: parsed,
 			cells,
 			rowCount: parsed.end.row - parsed.start.row + 1,
@@ -162,6 +168,7 @@ export class SheetHandle {
 	readWindow(rangeRef: string, opts?: { rowOffset?: number; rowLimit?: number }): RangeWindowInfo {
 		const compact = this.readWindowCompact(rangeRef, { ...opts, includeRefs: true })
 		return {
+			snapshot: compact.snapshot,
 			requestedRef: compact.requestedRef,
 			ref: compact.ref,
 			cells: compact.cells.map((cell) => toCellInfo(cell)),
@@ -222,6 +229,7 @@ export class SheetHandle {
 			}
 		}
 		return {
+			snapshot: this.resolveSnapshot(),
 			requestedRef,
 			ref: windowRef,
 			cells,
@@ -242,6 +250,7 @@ export class SheetHandle {
 			includeRefs: false,
 		})
 		return {
+			snapshot: window.snapshot,
 			requestedRef: window.requestedRef,
 			ref: window.ref,
 			rowCount: window.rowCount,
@@ -275,6 +284,7 @@ export class SheetHandle {
 			: [...(opts?.headers ?? [])]
 		const dataRows = useFirstRow ? sourceRows.slice(1) : sourceRows
 		return {
+			snapshot: rowsInfo.snapshot,
 			requestedRef: rowsInfo.requestedRef,
 			ref: rowsInfo.ref,
 			rowCount: useFirstRow ? Math.max(0, rowsInfo.rowCount - 1) : rowsInfo.rowCount,
@@ -691,6 +701,23 @@ function makeCompactCellInfo(
 		formulaBinding: formulaInfo ?? null,
 		row,
 		col,
+	}
+}
+
+function fallbackReadSnapshot(): WorkbookReadSnapshotInfo {
+	return {
+		token: 'w0:m0:f0:s0:full|cells|rich|all-sheets|rows:all|loaded:',
+		generations: { workbook: 0, sheetMetadata: 0, formulas: 0, styles: 0 },
+		load: {
+			mode: 'full',
+			isPartial: false,
+			cellsHydrated: true,
+			richSheetMetadataHydrated: true,
+			hasAllSheets: true,
+			partialReasons: [],
+			sourceSheets: [],
+			loadedSheets: [],
+		},
 	}
 }
 

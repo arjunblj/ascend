@@ -2070,6 +2070,7 @@ function buildTsvReadResult(sourceInfo: RangeRowsInfo, cols?: readonly string[])
 		row.map((cell) => escapeDelimitedCell(formatDisplayCellValue(cell), '\t')),
 	)
 	return {
+		snapshot: info.snapshot,
 		requestedRef: info.requestedRef,
 		ref: info.ref,
 		rowCount: info.rowCount,
@@ -2087,6 +2088,7 @@ function buildTsvReadResult(sourceInfo: RangeRowsInfo, cols?: readonly string[])
 function buildCompactReadResult(sourceInfo: CompactRangeWindowInfo, cols?: readonly string[]) {
 	const info = pruneCompactWindowInfo(sourceInfo, cols)
 	return {
+		snapshot: info.snapshot,
 		requestedRef: info.requestedRef,
 		ref: info.ref,
 		rowCount: info.rowCount,

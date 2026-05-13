@@ -1797,6 +1797,20 @@ describe('MCP server', () => {
 				data?: {
 					cells?: unknown[]
 					rowCount?: number
+					snapshot?: {
+						token?: string
+						generations?: {
+							workbook?: number
+							sheetMetadata?: number
+							formulas?: number
+							styles?: number
+						}
+						load?: {
+							mode?: string
+							isPartial?: boolean
+							maxRows?: number
+						}
+					}
 					load?: {
 						mode?: string
 						isPartial?: boolean
@@ -1818,6 +1832,18 @@ describe('MCP server', () => {
 		expect(result.structuredContent?.ok).toBe(true)
 		expect(result.structuredContent?.data?.rowCount).toBe(3)
 		expect(result.structuredContent?.data?.cells).toHaveLength(6)
+		expect(result.structuredContent?.data?.snapshot?.token).toContain('partial')
+		expect(result.structuredContent?.data?.snapshot?.generations).toEqual({
+			workbook: 0,
+			sheetMetadata: 0,
+			formulas: 0,
+			styles: 0,
+		})
+		expect(result.structuredContent?.data?.snapshot?.load).toMatchObject({
+			mode: 'values',
+			isPartial: true,
+			maxRows: 3,
+		})
 		expect(result.structuredContent?.data?.load?.mode).toBe('values')
 		expect(result.structuredContent?.data?.load?.isPartial).toBe(true)
 		expect(result.structuredContent?.data?.load?.maxRows).toBe(3)

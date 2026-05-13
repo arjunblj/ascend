@@ -1360,6 +1360,10 @@ export class AscendWorkbook extends WorkbookReadView {
 		}
 	}
 
+	protected override currentReadGenerations(): WorkbookGenerationInfo {
+		return this.currentGenerations()
+	}
+
 	private advanceApplyGenerations(
 		ops: readonly Operation[],
 		dirtyFlags: ReturnType<AscendWorkbook['deriveDirtyFlags']>,

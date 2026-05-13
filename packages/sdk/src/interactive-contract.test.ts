@@ -1,8 +1,150 @@
 import { describe, expect, test } from 'bun:test'
-import { AscendWorkbook } from './index.ts'
+import { AscendSession, AscendWorkbook } from './index.ts'
 import { buildMutationJournal } from './journal.ts'
 
 describe('interactive client contract', () => {
+	test('viewport reads carry generation and load snapshot tokens', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'label' },
+					{ ref: 'B2', value: 1 },
+				],
+			},
+		])
+		const before = wb.readWindowCompact('Sheet1', 'A1:B2', { includeRefs: true })
+		if (!before) throw new Error('missing viewport')
+		expect(before.snapshot.load.isPartial).toBe(false)
+		expect(before.snapshot.generations).toEqual({
+			workbook: 1,
+			sheetMetadata: 0,
+			formulas: 1,
+			styles: 0,
+		})
+		expect(wb.validateReadSnapshot(before.snapshot)).toEqual({
+			ok: true,
+			current: true,
+			expected: before.snapshot,
+			receivedToken: before.snapshot.token,
+		})
+
+		const apply = wb.apply([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'B2', value: 7 }] },
+		])
+		expect(apply.errors).toEqual([])
+		const stale = wb.validateReadSnapshot(before.snapshot)
+		expect(stale.ok).toBe(false)
+		if (stale.ok) throw new Error('snapshot unexpectedly current')
+		expect(stale.error.details).toMatchObject({
+			rule: 'stale-read-snapshot',
+			receivedToken: before.snapshot.token,
+			expectedGenerations: apply.generations,
+		})
+
+		const fresh = wb.readWindowCompact('Sheet1', 'A1:B2', { includeRefs: true })
+		if (!fresh) throw new Error('missing fresh viewport')
+		expect(fresh.snapshot.generations).toEqual(apply.generations)
+		const patchedCells = before.cells.map((cell) =>
+			cell.ref === 'B2' ? { ...cell, value: { kind: 'number' as const, value: 7 } } : cell,
+		)
+		expect(patchedCells).toEqual(fresh.cells)
+	})
+
+	test('interactive session returns viewport-shaped semantic payloads and stable patch tokens', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'Region' },
+					{ ref: 'B1', value: 'Qty' },
+					{ ref: 'C1', value: 'Amount' },
+					{ ref: 'A2', value: 'West' },
+					{ ref: 'B2', value: 2 },
+					{ ref: 'C2', value: 20 },
+					{ ref: 'A3', value: 'East' },
+					{ ref: 'B3', value: 3 },
+					{ ref: 'C3', value: 30 },
+				],
+			},
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'H2', formula: 'B2*C2' },
+			{ op: 'setStyle', sheet: 'Sheet1', range: 'B2:B2', style: { numberFormat: '0.00' } },
+			{ op: 'setComment', sheet: 'Sheet1', ref: 'D4', text: 'review', author: 'agent' },
+			{ op: 'setHyperlink', sheet: 'Sheet1', ref: 'E5', url: 'https://example.com' },
+			{
+				op: 'setDataValidation',
+				sheet: 'Sheet1',
+				range: 'A2:A5',
+				rule: { type: 'list', formula1: '"West,East"', allowBlank: true },
+			},
+			{
+				op: 'setConditionalFormat',
+				sheet: 'Sheet1',
+				range: 'B2:B5',
+				rule: { type: 'cellIs', operator: 'greaterThan', formula: '1', priority: 1 },
+			},
+			{ op: 'mergeCells', sheet: 'Sheet1', range: 'F1:G1' },
+			{ op: 'setAutoFilter', sheet: 'Sheet1', range: 'A1:C5', column: 1, values: ['Open'] },
+			{ op: 'createTable', sheet: 'Sheet1', ref: 'A1:C3', name: 'Sales', hasHeaders: true },
+			{ op: 'freezePane', sheet: 'Sheet1', row: 1, col: 1 },
+			{ op: 'setRowHeight', sheet: 'Sheet1', row: 2, height: 24 },
+		])
+
+		const session = await AscendSession.open(wb.toBytes(), { mode: 'interactive' })
+		const viewport = session.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 5,
+			colCount: 8,
+		})
+
+		expect(viewport.load.mode).toBe('formula')
+		expect(viewport.load.richSheetMetadataHydrated).toBe(true)
+		expect(viewport.rowCount).toBe(5)
+		expect(viewport.colCount).toBe(8)
+		expect(viewport.flatValues[0]).toBe('Region')
+		expect(viewport.displayText[0]).toBe('Region')
+		expect(viewport.frozen).toEqual({ rows: 1, cols: 1 })
+		expect(viewport.merges).toEqual([{ start: { row: 0, col: 5 }, end: { row: 0, col: 6 } }])
+		expect(viewport.comments).toEqual([
+			expect.objectContaining({ ref: 'D4', text: 'review', author: 'agent' }),
+		])
+		expect(viewport.hyperlinks[0]).toMatchObject({ ref: 'E5', target: 'https://example.com' })
+		expect(viewport.dataValidations).toHaveLength(1)
+		expect(viewport.conditionalFormats).toHaveLength(1)
+		expect(viewport.tables.map((table) => table.name)).toEqual(['Sales'])
+		expect(viewport.autoFilter?.ref).toBe('A1:C3')
+		expect(viewport.rowLayout).toEqual([{ index: 2, size: 24 }])
+
+		const formulaCell = viewport.cells.find((cell) => cell.ref === 'H2')
+		expect(formulaCell?.formula).toBe('B2*C2')
+		expect(formulaCell?.flags.formula).toBe(true)
+		expect(viewport.cells.find((cell) => cell.ref === 'A2')?.flags.validation).toBe(true)
+		expect(viewport.cells.find((cell) => cell.ref === 'B2')?.flags.conditionalFormat).toBe(true)
+		expect(viewport.cells.find((cell) => cell.ref === 'A2')?.flags.table).toBe(true)
+
+		const repeated = session.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 5,
+			colCount: 8,
+			changedSince: viewport.changeToken,
+		})
+		expect(repeated.patch).toEqual({
+			baseToken: viewport.changeToken,
+			changedCells: [],
+			removedRefs: [],
+			byteLength: 36,
+		})
+		session.close()
+	})
+
 	test('apply returns dirty regions and monotonic generation tokens', () => {
 		const wb = AscendWorkbook.create()
 

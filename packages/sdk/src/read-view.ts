@@ -98,6 +98,7 @@ import type {
 	RangeObjectsInfo,
 	RangeRowsInfo,
 	RangeWindowInfo,
+	ReadSnapshotValidationResult,
 	SheetInfo,
 	SheetInspectInfo,
 	SlicerCacheInfo,
@@ -110,6 +111,7 @@ import type {
 	WorkbookDataModelPartInfo,
 	WorkbookInfo,
 	WorkbookLoadInfo,
+	WorkbookReadSnapshotInfo,
 	WorkbookRefreshMetadataEntry,
 	WorkbookRefreshMetadataInfo,
 	WorkbookVisualInventoryInfo,
@@ -141,6 +143,52 @@ export class WorkbookReadView {
 
 	getWorkbookModel(): Workbook {
 		return this.wb
+	}
+
+	readSnapshotInfo(): WorkbookReadSnapshotInfo {
+		return this.currentReadSnapshot()
+	}
+
+	validateReadSnapshot(snapshot: WorkbookReadSnapshotInfo | string): ReadSnapshotValidationResult {
+		const expected = this.currentReadSnapshot()
+		const receivedToken = typeof snapshot === 'string' ? snapshot : snapshot.token
+		if (receivedToken === expected.token) {
+			return { ok: true, current: true, expected, receivedToken }
+		}
+		return {
+			ok: false,
+			current: false,
+			expected,
+			receivedToken,
+			error: {
+				code: 'VALIDATION_ERROR',
+				message:
+					'Read snapshot token is stale; refresh the viewport before applying derived patches.',
+				retryable: false,
+				details: {
+					rule: 'stale-read-snapshot',
+					expectedToken: expected.token,
+					receivedToken,
+					expectedGenerations: expected.generations,
+					load: expected.load,
+				},
+				suggestedFix:
+					'Read the viewport again or explicitly promote the plan against the latest snapshot token.',
+			},
+		}
+	}
+
+	protected currentReadGenerations(): import('./types.ts').WorkbookGenerationInfo {
+		return { workbook: 0, sheetMetadata: 0, formulas: 0, styles: 0 }
+	}
+
+	protected currentReadSnapshot(): WorkbookReadSnapshotInfo {
+		const generations = this.currentReadGenerations()
+		return {
+			token: readSnapshotToken(generations, this.loadInfo),
+			generations,
+			load: this.loadInfo,
+		}
 	}
 
 	inspect(): WorkbookInfo {
@@ -447,6 +495,7 @@ export class WorkbookReadView {
 					dateSystem: this.wb.calcSettings.dateSystem,
 					...options,
 				}),
+			() => this.currentReadSnapshot(),
 		)
 		this.sheetHandleCache.set(name, handle)
 		return handle
@@ -1142,6 +1191,28 @@ function classifyVisualFeature(
 	if (normalized.includes('drawing') || normalized.includes('vml') || normalized.includes('shape'))
 		return 'drawing'
 	return null
+}
+
+function readSnapshotToken(
+	generations: import('./types.ts').WorkbookGenerationInfo,
+	load: WorkbookLoadInfo,
+): string {
+	const loadFlags = [
+		load.mode,
+		load.isPartial ? 'partial' : 'full',
+		load.cellsHydrated ? 'cells' : 'no-cells',
+		load.richSheetMetadataHydrated ? 'rich' : 'lean',
+		load.hasAllSheets ? 'all-sheets' : 'selected-sheets',
+		`rows:${load.maxRows ?? 'all'}`,
+		`loaded:${load.loadedSheets.join(',')}`,
+	].join('|')
+	return [
+		`w${generations.workbook}`,
+		`m${generations.sheetMetadata}`,
+		`f${generations.formulas}`,
+		`s${generations.styles}`,
+		loadFlags,
+	].join(':')
 }
 
 function copyDocumentProperties(

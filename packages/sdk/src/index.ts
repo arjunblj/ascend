@@ -155,6 +155,12 @@ export type {
 	RangeSelectorObject,
 } from './ref-selectors.ts'
 export type {
+	AscendSessionOpenOptions,
+	InteractiveViewportCell,
+	InteractiveViewportLayoutEntry,
+	InteractiveViewportPatch,
+	InteractiveViewportRequest,
+	InteractiveViewportResult,
 	SessionCacheOptions,
 	WorkbookFirstWindowOptions,
 	WorkbookFirstWindowResult,
@@ -163,7 +169,12 @@ export type {
 	WorkbookSessionOpenOptions,
 } from './session.ts'
 /** Cache and session management for multi-request read-only workbook access. */
-export { configureSessionCache, WorkbookDocument, WorkbookSession } from './session.ts'
+export {
+	AscendSession,
+	configureSessionCache,
+	WorkbookDocument,
+	WorkbookSession,
+} from './session.ts'
 export type { SheetMetadataQueryOptions } from './sheet-handle.ts'
 /** Fluent handle for reading/writing a single sheet inside an `AscendWorkbook`. */
 export { SheetHandle } from './sheet-handle.ts'
@@ -272,6 +283,7 @@ export type {
 	RangeWindowInfo,
 	RawPackagePartInfo,
 	RawPackagePartOptions,
+	ReadSnapshotValidationResult,
 	RecalcResult,
 	SheetCommentInfo,
 	SheetHyperlinkInfo,
@@ -302,6 +314,7 @@ export type {
 	WorkbookGenerationInfo,
 	WorkbookInfo,
 	WorkbookLoadInfo,
+	WorkbookReadSnapshotInfo,
 	WorkbookViewInfo,
 	WorkbookVisualInventoryInfo,
 	WritePlanInfo,

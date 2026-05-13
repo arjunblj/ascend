@@ -1804,6 +1804,65 @@ describe('MCP server', () => {
 		}
 	})
 
+	test('direct MCP commits surface post-write formula lint failures as blocked output', async () => {
+		const input = `${TEMP_FILE}.direct-lint-source.xlsx`
+		const output = `${TEMP_FILE}.direct-lint-out.xlsx`
+		const wb = AscendWorkbook.create()
+		await wb.save(input)
+		const complexFormula = `=${Array.from({ length: 26 }, () => '1').join('+')}`
+		const server = createServer()
+		try {
+			// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+			const commit = (server as any)._registeredTools['ascend.commit'].handler as (args: {
+				file?: string
+				ops?: unknown[]
+				output?: string
+				compact?: boolean
+			}) => Promise<{
+				isError?: boolean
+				structuredContent?: {
+					ok?: boolean
+					data?: {
+						postWrite?: {
+							valid?: boolean
+							auditsPassed?: boolean
+							lint?: { clean?: boolean; errorCount?: number }
+							packageGraphAudit?: { ok?: boolean }
+						}
+						modelOutput?: {
+							blocked?: boolean
+							nextActions?: readonly string[]
+							counts?: { postWriteLintFailures?: number }
+						}
+					}
+				}
+			}>
+			const committed = await commit({
+				file: input,
+				ops: [{ op: 'setFormula', sheet: 'Sheet1', ref: 'A1', formula: complexFormula }],
+				output,
+				compact: true,
+			})
+			expect(committed.isError).not.toBe(true)
+			expect(committed.structuredContent?.ok).toBe(true)
+			expect(committed.structuredContent?.data?.postWrite?.valid).toBe(true)
+			expect(committed.structuredContent?.data?.postWrite?.auditsPassed).toBe(false)
+			expect(committed.structuredContent?.data?.postWrite?.lint?.clean).toBe(false)
+			expect(committed.structuredContent?.data?.postWrite?.lint?.errorCount).toBeGreaterThan(0)
+			expect(committed.structuredContent?.data?.postWrite?.packageGraphAudit?.ok).toBe(true)
+			expect(committed.structuredContent?.data?.modelOutput?.blocked).toBe(true)
+			expect(
+				committed.structuredContent?.data?.modelOutput?.counts?.postWriteLintFailures,
+			).toBeGreaterThan(0)
+			expect(committed.structuredContent?.data?.modelOutput?.nextActions?.join('\n')).toContain(
+				'postWrite.lint.warnings',
+			)
+		} finally {
+			await unlink(input).catch(() => {})
+			await unlink(output).catch(() => {})
+		}
+	})
+
 	test('ascend.plan can opt out of default prepared handles', async () => {
 		const wb = AscendWorkbook.create()
 		await wb.save(TEMP_FILE)

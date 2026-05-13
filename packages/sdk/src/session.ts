@@ -14,7 +14,7 @@ import {
 } from '@ascend/core'
 import { resolveCellFormulaText } from '@ascend/engine'
 import { inspectXlsxPackageGraph, type XlsxPackageGraph } from '@ascend/io-xlsx'
-import type { CellValue } from '@ascend/schema'
+import type { CellValue, Operation } from '@ascend/schema'
 import { check as verifyCheck, lint as verifyLint } from '@ascend/verify'
 import {
 	partialDependencyCheckIssue,
@@ -67,6 +67,7 @@ import type {
 	WorkbookRefreshMetadataInfo,
 	WorkbookVisualInventoryInfo,
 } from './types.ts'
+import { type ApplyOptions, AscendWorkbook } from './workbook.ts'
 
 export interface WorkbookLoadOptions {
 	readonly mode?: 'full' | 'metadata-only' | 'values' | 'formula'
@@ -180,6 +181,22 @@ export interface InteractiveViewportResult {
 	readonly tables: readonly TableInfo[]
 	readonly autoFilter: import('@ascend/core').AutoFilter | null
 	readonly patch?: InteractiveViewportPatch
+}
+
+export interface AscendSessionApplyOptions extends Pick<ApplyOptions, 'journal'> {
+	readonly recalc?: boolean
+}
+
+export interface AscendSessionApplyResult {
+	readonly apply: import('./types.ts').ApplyResult
+	readonly recalc: import('./types.ts').RecalcResult | null
+	readonly generation: {
+		readonly session: number
+		readonly workbook: number
+		readonly sheetMetadata: number
+		readonly formulas: number
+		readonly styles: number
+	}
 }
 
 interface SessionFileIdentity {
@@ -740,15 +757,28 @@ export class WorkbookSession {
  */
 export class AscendSession {
 	private readonly session: WorkbookSession
+	private readonly source: string | Uint8Array
+	private readonly options: AscendSessionOpenOptions
+	private mutableWorkbook: AscendWorkbook | null = null
 	private documentGeneration = 0
 	private changeVersion = 0
 	private readonly viewportSnapshots = new Map<
 		string,
-		{ readonly token: string; readonly cells: Map<string, InteractiveViewportCell> }
+		{
+			readonly token: string
+			readonly request: InteractiveViewportRequest
+			readonly cells: Map<string, InteractiveViewportCell>
+		}
 	>()
 
-	private constructor(session: WorkbookSession) {
+	private constructor(
+		session: WorkbookSession,
+		source: string | Uint8Array,
+		options: AscendSessionOpenOptions,
+	) {
 		this.session = session
+		this.source = source
+		this.options = options
 	}
 
 	static async open(
@@ -756,7 +786,7 @@ export class AscendSession {
 		options: AscendSessionOpenOptions = {},
 	): Promise<AscendSession> {
 		const session = await WorkbookSession.open(pathOrBytes, interactiveOpenOptions(options))
-		return new AscendSession(session)
+		return new AscendSession(session, pathOrBytes, options)
 	}
 
 	inspect(): WorkbookInfo {
@@ -764,9 +794,10 @@ export class AscendSession {
 	}
 
 	readViewport(request: InteractiveViewportRequest): InteractiveViewportResult {
-		const workbook = this.session.workbook()
 		const changeToken = `${this.documentGeneration}:${this.changeVersion++}`
-		const base = workbook.readViewport(request)
+		const base = this.mutableWorkbook
+			? readInteractiveViewport(this.mutableWorkbook, request, this.documentGeneration, changeToken)
+			: this.session.workbook().readViewport(request)
 		const result = {
 			...base,
 			generation: { ...base.generation, session: this.documentGeneration },
@@ -775,10 +806,34 @@ export class AscendSession {
 		const snapshotKey = interactiveViewportSnapshotKey(request)
 		const currentCells = interactiveCellMap(result.cells)
 		const previous = this.viewportSnapshots.get(snapshotKey)
-		this.viewportSnapshots.set(snapshotKey, { token: changeToken, cells: currentCells })
+		this.viewportSnapshots.set(snapshotKey, { token: changeToken, request, cells: currentCells })
 		if (!previous || previous.token !== request.changedSince) return result
 		const patch = diffInteractiveViewportCells(previous.token, previous.cells, currentCells)
 		return { ...result, patch }
+	}
+
+	async apply(
+		ops: readonly Operation[],
+		options: AscendSessionApplyOptions = {},
+	): Promise<AscendSessionApplyResult> {
+		const workbook = await this.ensureMutableWorkbook()
+		const apply = workbook.apply(ops, {
+			transaction: true,
+			...(options.journal !== undefined ? { journal: options.journal } : {}),
+		})
+		let recalc: import('./types.ts').RecalcResult | null = null
+		if (apply.errors.length === 0 && apply.recalcRequired && options.recalc !== false) {
+			recalc = workbook.recalc()
+		}
+		if (apply.errors.length === 0) {
+			this.documentGeneration += 1
+		}
+		const generations = workbook.readSnapshotInfo().generations
+		return {
+			apply,
+			recalc,
+			generation: { session: this.documentGeneration, ...generations },
+		}
 	}
 
 	isStale(): boolean {
@@ -787,6 +842,7 @@ export class AscendSession {
 
 	async refresh(): Promise<void> {
 		await this.session.refresh()
+		this.mutableWorkbook = null
 		this.documentGeneration += 1
 		this.viewportSnapshots.clear()
 	}
@@ -797,7 +853,30 @@ export class AscendSession {
 
 	close(): void {
 		this.session.close()
+		this.mutableWorkbook = null
 		this.viewportSnapshots.clear()
+	}
+
+	private async ensureMutableWorkbook(): Promise<AscendWorkbook> {
+		if (this.mutableWorkbook) return this.mutableWorkbook
+		this.mutableWorkbook = await AscendWorkbook.open(this.source, writableOpenOptions(this.options))
+		this.rebaseViewportSnapshots(this.mutableWorkbook)
+		return this.mutableWorkbook
+	}
+
+	private rebaseViewportSnapshots(workbook: AscendWorkbook): void {
+		for (const [key, snapshot] of this.viewportSnapshots) {
+			const rebased = readInteractiveViewport(
+				workbook,
+				snapshot.request,
+				this.documentGeneration,
+				snapshot.token,
+			)
+			this.viewportSnapshots.set(key, {
+				...snapshot,
+				cells: interactiveCellMap(rebased.cells),
+			})
+		}
 	}
 }
 
@@ -807,6 +886,14 @@ function interactiveOpenOptions(options: AscendSessionOpenOptions): WorkbookLoad
 		return normalizeOptions({ ...rest, mode: 'formula', richMetadata: true })
 	}
 	return normalizeOptions({ ...rest, mode })
+}
+
+function writableOpenOptions(options: AscendSessionOpenOptions): WorkbookLoadOptions {
+	if (options.maxRows !== undefined || options.sheets !== undefined) {
+		return interactiveOpenOptions(options)
+	}
+	const { mode: _mode, ...rest } = options
+	return normalizeOptions({ ...rest, mode: 'full', richMetadata: true })
 }
 
 function readInteractiveViewport(

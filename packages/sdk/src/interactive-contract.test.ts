@@ -179,6 +179,69 @@ describe('interactive client contract', () => {
 		session.close()
 	})
 
+	test('interactive session applies edits and returns pull viewport patches', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] },
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'B1', formula: 'A1*2' },
+		])
+		wb.recalc()
+
+		const session = await AscendSession.open(wb.toBytes(), { mode: 'interactive' })
+		const before = session.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 2,
+		})
+		const edit = await session.apply([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 5 }] },
+		])
+		expect(edit.apply.errors).toEqual([])
+		expect(edit.recalc?.changed).toEqual(['Sheet1!B1'])
+		expect(edit.generation.session).toBe(1)
+
+		const after = session.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 2,
+			changedSince: before.changeToken,
+		})
+		expect(after.patch?.baseToken).toBe(before.changeToken)
+		expect(after.patch?.changedCells.map((cell) => cell.ref).sort()).toEqual(['A1', 'B1'])
+		expect(after.cells.find((cell) => cell.ref === 'A1')?.flatValue).toBe(5)
+		expect(after.cells.find((cell) => cell.ref === 'B1')?.flatValue).toBe(10)
+		session.close()
+	})
+
+	test('interactive session blocks edits against partial workbooks', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 1 },
+					{ ref: 'A2', value: 2 },
+				],
+			},
+		])
+
+		const session = await AscendSession.open(wb.toBytes(), {
+			mode: 'interactive',
+			maxRows: 1,
+		})
+		const edit = await session.apply([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 5 }] },
+		])
+		expect(edit.apply.errors[0]?.message).toContain('partial workbook')
+		expect(edit.generation.session).toBe(0)
+		session.close()
+	})
+
 	test('apply returns dirty regions and monotonic generation tokens', () => {
 		const wb = AscendWorkbook.create()
 

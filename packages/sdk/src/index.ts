@@ -155,6 +155,8 @@ export type {
 	RangeSelectorObject,
 } from './ref-selectors.ts'
 export type {
+	AscendSessionApplyOptions,
+	AscendSessionApplyResult,
 	AscendSessionOpenOptions,
 	InteractiveViewportCell,
 	InteractiveViewportLayoutEntry,

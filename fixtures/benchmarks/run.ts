@@ -501,6 +501,14 @@ function buildSdkEditCycleWorkbook(rows: number): Workbook {
 }
 
 const interactiveSessionCache = new WeakMap<Uint8Array, Promise<AscendSession>>()
+const patchStreamStateCache = new WeakMap<
+	Uint8Array,
+	Promise<{
+		readonly session: AscendSession
+		lastToken: string
+		iteration: number
+	}>
+>()
 let cachedDenseViewportBytes: Uint8Array | undefined
 let cachedSparseWideViewportBytes: Uint8Array | undefined
 let cachedSemanticViewportBytes: Uint8Array | undefined
@@ -595,6 +603,27 @@ function interactiveSessionFor(bytes: Uint8Array): Promise<AscendSession> {
 	const session = AscendSession.open(bytes, { mode: 'interactive' })
 	interactiveSessionCache.set(bytes, session)
 	return session
+}
+
+async function patchStreamStateFor(bytes: Uint8Array): Promise<{
+	readonly session: AscendSession
+	lastToken: string
+	iteration: number
+}> {
+	const cached = patchStreamStateCache.get(bytes)
+	if (cached) return cached
+	const state = AscendSession.open(bytes, { mode: 'interactive' }).then((session) => {
+		const viewport = session.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 250,
+			colCount: 20,
+		})
+		return { session, lastToken: viewport.changeToken, iteration: 0 }
+	})
+	patchStreamStateCache.set(bytes, state)
+	return state
 }
 
 function buildDefinedNameHeavyWorkbook(nameCount: number, formulaCount: number): Workbook {
@@ -1351,6 +1380,44 @@ const scenarios: readonly Scenario[] = [
 					merges: viewport.merges.length,
 					validations: viewport.dataValidations.length,
 					conditionalFormats: viewport.conditionalFormats.length,
+				},
+			}
+		},
+	},
+	{
+		name: 'patch-stream-small-edit',
+		category: 'workflow',
+		build() {
+			return { bytes: cachedDenseViewportWorkbookBytes(), rows: 100, cols: 1, cells: 100 }
+		},
+		async run(input) {
+			const state = await patchStreamStateFor(requireBytes(input))
+			state.iteration += 1
+			const updates = Array.from({ length: 100 }, (_, index) => ({
+				ref: `A${index + 1}`,
+				value: state.iteration * 10_000 + index,
+			}))
+			const edit = await state.session.apply([{ op: 'setCells', sheet: 'Sheet1', updates }], {
+				recalc: false,
+			})
+			if (edit.apply.errors.length > 0) throw new Error('Patch-stream edit failed')
+			const viewport = state.session.readViewport({
+				sheet: 'Sheet1',
+				topRow: 0,
+				leftCol: 0,
+				rowCount: 250,
+				colCount: 20,
+				changedSince: state.lastToken,
+			})
+			state.lastToken = viewport.changeToken
+			if (!viewport.patch || viewport.patch.changedCells.length !== 100) {
+				throw new Error('Patch-stream benchmark returned an unexpected patch')
+			}
+			return {
+				assertions: {
+					changedCells: viewport.patch.changedCells.length,
+					removedRefs: viewport.patch.removedRefs.length,
+					patchBytes: viewport.patch.byteLength,
 				},
 			}
 		},
@@ -2167,6 +2234,7 @@ const scenarioSets = {
 		'sdk-viewport-read-sparse-wide-hot',
 		'sdk-semantic-viewport-rich',
 		'sdk-semantic-viewport-many-overlays',
+		'patch-stream-small-edit',
 	],
 } as const
 

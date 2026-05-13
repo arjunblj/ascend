@@ -89,6 +89,7 @@ import type {
 	TemplateMergeUnsupportedCell,
 	TemplateMergeValue,
 	WorkbookGenerationInfo,
+	WorkbookLoadInfo,
 	WritePlanInfo,
 } from './types.ts'
 
@@ -440,7 +441,7 @@ export class AscendWorkbook extends WorkbookReadView {
 				recalcScope: 0,
 				warnings: [],
 				wouldSucceed: false,
-				errors: [partialWorkbookEditError()],
+				errors: [partialWorkbookEditError(this.loadInfo)],
 			}
 		}
 		const journal = maybeBuildMutationJournal(this.wb, ops, options?.journal)
@@ -571,7 +572,7 @@ export class AscendWorkbook extends WorkbookReadView {
 				recalcRequired: false,
 				dirtyRegions: [],
 				generations: this.currentGenerations(),
-				errors: [partialWorkbookEditError()],
+				errors: [partialWorkbookEditError(this.loadInfo)],
 			}
 		}
 		const journal = maybeBuildMutationJournal(this.wb, ops, options?.journal)
@@ -672,10 +673,10 @@ export class AscendWorkbook extends WorkbookReadView {
 		if (typeof opsOrFn === 'function') {
 			if (this.loadInfo.isPartial) {
 				throw new AscendException(
-					ascendError(
-						'VALIDATION_ERROR',
-						'Cannot run batch in a partial workbook view. Reopen with a full load before editing.',
-					),
+					partialWorkbookEditError(this.loadInfo, {
+						message:
+							'Cannot run batch in a partial workbook view. Reopen with a full load before editing.',
+					}),
 				)
 			}
 			this._batchMode = true
@@ -690,7 +691,7 @@ export class AscendWorkbook extends WorkbookReadView {
 			return
 		}
 		if (this.loadInfo.isPartial) {
-			return { errors: [partialWorkbookEditError()] }
+			return { errors: [partialWorkbookEditError(this.loadInfo)] }
 		}
 		const dirtyFlags = this.deriveDirtyFlags(opsOrFn)
 		const nextWorkbook = cloneWorkbook(this.wb)
@@ -893,7 +894,7 @@ export class AscendWorkbook extends WorkbookReadView {
 				changed: [],
 				dirtyRegions: [],
 				generations: this.currentGenerations(),
-				errors: [{ ref: '', error: partialWorkbookEditError() }],
+				errors: [{ ref: '', error: partialWorkbookEditError(this.loadInfo) }],
 				duration: 0,
 			}
 		}
@@ -1273,6 +1274,11 @@ export class AscendWorkbook extends WorkbookReadView {
 			ascendError(
 				'EXPORT_ERROR',
 				'Cannot export a partial workbook view. Reopen the workbook with a full load before saving or exporting.',
+				{
+					details: partialLoadErrorDetails(this.loadInfo),
+					suggestedFix:
+						'Open the workbook with mode "full" and all sheets loaded before saving or exporting.',
+				},
 			),
 		)
 	}
@@ -1572,15 +1578,40 @@ function parseCellRef(cellRef: CellSelector, workbook: Workbook): { sheet: strin
 	return { sheet: parsed.sheetName, ref: parsed.ref }
 }
 
-function partialWorkbookEditError() {
+function partialWorkbookEditError(
+	loadInfo: WorkbookLoadInfo,
+	options: { readonly message?: string } = {},
+) {
 	return ascendError(
 		'VALIDATION_ERROR',
-		'Cannot modify a partial workbook view. Reopen the workbook with a full load before applying edits or recalculation.',
+		options.message ??
+			'Cannot modify a partial workbook view. Reopen the workbook with a full load before applying edits or recalculation.',
 		{
+			details: partialLoadErrorDetails(loadInfo),
 			suggestedFix:
 				'Open the workbook with mode "full" and all sheets loaded before editing or recalculating.',
 		},
 	)
+}
+
+function partialLoadErrorDetails(loadInfo: WorkbookLoadInfo): Record<string, unknown> {
+	return {
+		partialWorkbookView: true,
+		mode: loadInfo.mode,
+		isPartial: loadInfo.isPartial,
+		cellsHydrated: loadInfo.cellsHydrated,
+		richSheetMetadataHydrated: loadInfo.richSheetMetadataHydrated,
+		hasAllSheets: loadInfo.hasAllSheets,
+		...(loadInfo.maxRows !== undefined ? { maxRows: loadInfo.maxRows } : {}),
+		partialReasons: loadInfo.partialReasons,
+		sourceSheets: loadInfo.sourceSheets,
+		loadedSheets: loadInfo.loadedSheets,
+		requiredLoad: {
+			mode: 'full',
+			allSheets: true,
+			maxRows: null,
+		},
+	}
 }
 
 function operationChangesSheetMetadata(op: Operation): boolean {

@@ -2110,20 +2110,33 @@ describe('AscendWorkbook', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'locked' }] }])
 		const bytes = wb.toBytes()
-		const reopened = await AscendWorkbook.open(bytes, { mode: 'values' })
+		const reopened = await AscendWorkbook.open(bytes, { mode: 'values', maxRows: 1 })
 
 		const preview = reopened.preview([
 			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'next' }] },
 		])
 		expect(preview.errors[0]?.message).toContain('Cannot modify a partial workbook view')
+		expect(preview.errors[0]?.details).toMatchObject({
+			partialWorkbookView: true,
+			mode: 'values',
+			maxRows: 1,
+			requiredLoad: { mode: 'full', allSheets: true, maxRows: null },
+		})
+		expect(preview.errors[0]?.details?.partialReasons).toContain(
+			'only the first 1 row(s) are hydrated per loaded sheet',
+		)
 
 		const apply = reopened.apply([
 			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'next' }] },
 		])
 		expect(apply.errors[0]?.message).toContain('Cannot modify a partial workbook view')
+		expect(apply.errors[0]?.details?.partialWorkbookView).toBe(true)
+		expect(apply.errors[0]?.details?.loadedSheets).toEqual(['Sheet1'])
 
 		const recalc = reopened.recalc()
 		expect(recalc.errors[0]?.error.message).toContain('Cannot modify a partial workbook view')
+		expect(recalc.errors[0]?.error.details?.partialWorkbookView).toBe(true)
+		expect(recalc.errors[0]?.error.details?.maxRows).toBe(1)
 	})
 
 	test('CSV import creates workbook', () => {

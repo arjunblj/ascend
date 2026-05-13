@@ -51,7 +51,10 @@ export interface InsertFormulaReferenceResult {
 }
 
 export interface FormulaDiagnostic {
-	readonly code: 'formula-parse-error' | 'formula-structured-reference-error'
+	readonly code:
+		| 'formula-parse-error'
+		| 'formula-structured-reference-error'
+		| 'formula-reference-qualifier-error'
 	readonly severity: 'error'
 	readonly message: string
 	readonly start: number
@@ -243,6 +246,15 @@ function formulaLexicalDiagnostics(formula: string): FormulaDiagnostic[] {
 	for (let index = 0; index < spans.length; index++) {
 		const span = spans[index]
 		if (!span || span.token.type !== TokenType.Name) continue
+		if (span.text.startsWith("'") && !quotedNameClosed(span.text)) {
+			diagnostics.push({
+				code: 'formula-reference-qualifier-error',
+				severity: 'error',
+				message: 'Unterminated quoted sheet or workbook reference',
+				start: span.start,
+				end: span.end,
+			})
+		}
 		const next = nextNonWhitespace(spans, index + 1)
 		if (next?.span.token.type !== TokenType.Name || !next.span.text.startsWith('[')) continue
 		const balance = bracketBalance(next.span.text)
@@ -439,6 +451,19 @@ function bracketBalance(text: string): number {
 		if (balance < 0) return balance
 	}
 	return balance
+}
+
+function quotedNameClosed(text: string): boolean {
+	if (!text.startsWith("'")) return true
+	for (let index = 1; index < text.length; index++) {
+		if (text[index] !== "'") continue
+		if (text[index + 1] === "'") {
+			index += 1
+			continue
+		}
+		return index === text.length - 1
+	}
+	return false
 }
 
 function parseDiagnosticPosition(message: string): number | null {

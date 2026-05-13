@@ -270,6 +270,56 @@ describe('formula editing utilities', () => {
 		})
 	})
 
+	test('reports malformed quoted sheet and workbook reference qualifiers', () => {
+		expect(formulaDiagnostics("='Q1''s Plan'!A1")).toEqual({
+			parseOk: true,
+			diagnostics: [],
+		})
+		expect(formulaDiagnostics("='Q1 Plan!A1")).toEqual({
+			parseOk: false,
+			diagnostics: [
+				{
+					code: 'formula-reference-qualifier-error',
+					severity: 'error',
+					message: 'Unterminated quoted sheet or workbook reference',
+					start: 1,
+					end: 12,
+				},
+			],
+		})
+		expect(formulaDiagnostics("='[Book.xlsx]Q1 Plan!A1")).toEqual({
+			parseOk: false,
+			diagnostics: [
+				{
+					code: 'formula-reference-qualifier-error',
+					severity: 'error',
+					message: 'Unterminated quoted sheet or workbook reference',
+					start: 1,
+					end: 23,
+				},
+			],
+		})
+		expect(formulaDiagnostics("=SUM('Q1 Plan!A1)")).toEqual({
+			parseOk: false,
+			diagnostics: [
+				{
+					code: 'formula-reference-qualifier-error',
+					severity: 'error',
+					message: 'Unterminated quoted sheet or workbook reference',
+					start: 5,
+					end: 17,
+				},
+				{
+					code: 'formula-parse-error',
+					severity: 'error',
+					message: 'Expected CloseParen, got EOF "" at position 16',
+					start: 17,
+					end: 17,
+				},
+			],
+		})
+	})
+
 	test('exposes function completions and generic signature help from the registry', () => {
 		expect(formulaFunctionCompletions('xlo', { limit: 5 }).map((entry) => entry.name)).toEqual([
 			'XLOOKUP',

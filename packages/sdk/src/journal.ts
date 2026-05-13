@@ -8,6 +8,7 @@ import {
 	DEFAULT_STYLE_ID,
 	type DefinedName,
 	type DefinedNameScope,
+	indexToColumn,
 	type PivotCacheInfo,
 	parseA1,
 	parseRange,
@@ -164,6 +165,13 @@ export interface MutationJournalSheetMovePreimage {
 	readonly position: number | null
 }
 
+export interface MutationJournalSheetLayoutPreimage {
+	readonly sheet: string
+	readonly axis: 'row' | 'col'
+	readonly index: number
+	readonly value: number | null
+}
+
 export interface MutationJournalStructuralPreimage {
 	readonly sheet: string
 	readonly axis: 'row' | 'col'
@@ -227,6 +235,7 @@ export type MutationJournalPreimage =
 	| { readonly kind: 'table'; readonly table: MutationJournalTablePreimage }
 	| { readonly kind: 'table-style'; readonly tableStyle: MutationJournalTableStylePreimage }
 	| { readonly kind: 'sheet-move'; readonly sheetMove: MutationJournalSheetMovePreimage }
+	| { readonly kind: 'sheet-layout'; readonly sheetLayout: MutationJournalSheetLayoutPreimage }
 	| { readonly kind: 'structural'; readonly structural: MutationJournalStructuralPreimage }
 	| {
 			readonly kind: 'workbook-properties'
@@ -445,6 +454,10 @@ function buildSupportedJournalEntry(
 				preimages: [],
 				issues: [],
 			}
+		case 'setRowHeight':
+			return journalSetSheetLayout(workbook, op, opIndex, 'row')
+		case 'setColWidth':
+			return journalSetSheetLayout(workbook, op, opIndex, 'col')
 		default:
 			return null
 	}
@@ -476,6 +489,74 @@ function journalMoveSheet(
 		preimages: [{ kind: 'sheet-move', sheetMove: preimage }],
 		issues,
 	}
+}
+
+function journalSetSheetLayout(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'setRowHeight' | 'setColWidth' }>,
+	opIndex: number,
+	axis: 'row' | 'col',
+): DraftJournalEntry {
+	const sheet = workbook.getSheet(op.sheet)
+	const index =
+		axis === 'row' && op.op === 'setRowHeight' ? op.row : op.op === 'setColWidth' ? op.col : -1
+	const value = sheet
+		? axis === 'row'
+			? sheet.rowHeights.get(index)
+			: sheet.colWidths.get(index)
+		: undefined
+	const preimage: MutationJournalSheetLayoutPreimage = {
+		sheet: op.sheet,
+		axis,
+		index,
+		value: value ?? null,
+	}
+	const ref = layoutRef(op.sheet, axis, index)
+	if (!sheet) {
+		return {
+			opIndex,
+			op,
+			inverseOps: [],
+			preimages: [{ kind: 'sheet-layout', sheetLayout: preimage }],
+			issues: [
+				{
+					code: 'UNSUPPORTED_VALUE',
+					message: `Cannot restore ${axis} layout at ${ref} because the sheet was not found`,
+					refs: [ref],
+				},
+			],
+		}
+	}
+	if (value === undefined) {
+		return {
+			opIndex,
+			op,
+			inverseOps: [],
+			preimages: [{ kind: 'sheet-layout', sheetLayout: preimage }],
+			issues: [
+				{
+					code: 'LOSSY_INVERSE',
+					message: `Created ${axis} layout at ${ref} cannot be cleared with public operations`,
+					refs: [ref],
+				},
+			],
+		}
+	}
+	const inverseOps: Operation[] =
+		axis === 'row'
+			? [{ op: 'setRowHeight', sheet: op.sheet, row: index, height: value }]
+			: [{ op: 'setColWidth', sheet: op.sheet, col: index, width: value }]
+	return {
+		opIndex,
+		op,
+		inverseOps,
+		preimages: [{ kind: 'sheet-layout', sheetLayout: preimage }],
+		issues: [],
+	}
+}
+
+function layoutRef(sheet: string, axis: 'row' | 'col', index: number): string {
+	return axis === 'row' ? `${sheet}!${index + 1}` : `${sheet}!${indexToColumn(index)}`
 }
 
 function journalSetCells(

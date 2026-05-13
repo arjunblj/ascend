@@ -3939,6 +3939,64 @@ describe('interactive client contract', () => {
 		expect(journalComparableState(wb)).toEqual(before)
 	})
 
+	test('journal inverse ops restore existing row and column layout edits', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{ op: 'setRowHeight', sheet: 'Sheet1', row: 2, height: 24 },
+			{ op: 'setColWidth', sheet: 'Sheet1', col: 1, width: 14 },
+		])
+		const before = journalComparableState(wb)
+
+		const changed = wb.apply(
+			[
+				{ op: 'setRowHeight', sheet: 'Sheet1', row: 2, height: 32 },
+				{ op: 'setColWidth', sheet: 'Sheet1', col: 1, width: 20 },
+			],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(true)
+		expect(changed.journal?.inverseOps).toEqual([
+			{ op: 'setColWidth', sheet: 'Sheet1', col: 1, width: 14 },
+			{ op: 'setRowHeight', sheet: 'Sheet1', row: 2, height: 24 },
+		])
+		expect(journalComparableState(wb)).not.toEqual(before)
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(journalComparableState(wb)).toEqual(before)
+	})
+
+	test('journal marks newly-created row and column layout as lossy', () => {
+		const wb = AscendWorkbook.create()
+		const changed = wb.preview(
+			[
+				{ op: 'setRowHeight', sheet: 'Sheet1', row: 2, height: 32 },
+				{ op: 'setColWidth', sheet: 'Sheet1', col: 1, width: 20 },
+			],
+			{ journal: true },
+		)
+
+		expect(changed.wouldSucceed).toBe(true)
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(false)
+		expect(changed.journal?.inverseOps).toEqual([])
+		expect(changed.journal?.issues).toEqual([
+			{
+				code: 'LOSSY_INVERSE',
+				message: 'Created row layout at Sheet1!3 cannot be cleared with public operations',
+				refs: ['Sheet1!3'],
+			},
+			{
+				code: 'LOSSY_INVERSE',
+				message: 'Created col layout at Sheet1!B cannot be cleared with public operations',
+				refs: ['Sheet1!B'],
+			},
+		])
+	})
+
 	test('journal inverse ops restore table renames and column metadata edits', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([
@@ -5102,6 +5160,8 @@ function journalComparableState(wb: AscendWorkbook): object {
 				hyperlinks: sheet?.getHyperlinks(),
 				autoFilter: sheet?.autoFilter,
 				tables: modelSheet?.tables,
+				rowHeights: modelSheet ? [...modelSheet.rowHeights.entries()] : undefined,
+				colWidths: modelSheet ? [...modelSheet.colWidths.entries()] : undefined,
 			}
 		}),
 		chartParts: wb.getWorkbookModel().chartParts,

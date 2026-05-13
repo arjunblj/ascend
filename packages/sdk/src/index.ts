@@ -43,6 +43,7 @@ export {
 	commitAgentPlan,
 	compactAgentPlanResult,
 	createAgentPlan,
+	createAgentPlanFromWorkbook,
 	createRepairPlan,
 	digestPlan,
 	sha256Bytes,

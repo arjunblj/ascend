@@ -335,8 +335,22 @@ export async function createAgentPlan(
 	await progress('hash-input', 'ok', 'Input workbook hash captured.')
 	await progress('load-workbook', 'started', 'Opening workbook.')
 	const wb = await AscendWorkbook.open(file)
-	const writePolicyWorkbook = snapshotWritePolicyWorkbook(wb.getWorkbookModel())
 	await progress('load-workbook', 'ok', 'Workbook opened.')
+	return createAgentPlanFromWorkbook(file, inputSha256, wb, ops, { progress })
+}
+
+export async function createAgentPlanFromWorkbook(
+	file: string,
+	inputSha256: string,
+	wb: AscendWorkbook,
+	ops: readonly Operation[],
+	options: {
+		readonly progress?: ReturnType<typeof createProgressEmitter>
+		readonly onProgress?: AgentWorkflowProgressHandler
+	} = {},
+): Promise<AgentPlanResult> {
+	const progress = options.progress ?? createProgressEmitter('plan', options.onProgress)
+	const writePolicyWorkbook = snapshotWritePolicyWorkbook(wb.getWorkbookModel())
 	await progress('preview', 'started', 'Previewing operations.', { count: ops.length })
 	const preview = wb.preview(ops)
 	await progressFromPhase(previewPhase(preview), progress)

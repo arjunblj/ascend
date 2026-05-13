@@ -15,6 +15,7 @@ import {
 	commitAgentPlan,
 	compactAgentPlanResult,
 	createAgentPlan,
+	createAgentPlanFromWorkbook,
 	createRepairPlan,
 	formatDisplayCellValue,
 	getOperationsSchema,
@@ -28,6 +29,7 @@ import {
 	type PivotOutputMaterializeOptions,
 	parseOperations,
 	SUPPORTED_PATH_MUTATION_SHAPES,
+	sha256Bytes,
 	summarizeCapabilities,
 	WorkbookDocument,
 } from '@ascend/sdk'
@@ -250,6 +252,11 @@ function withPathMutationResult<T extends object>(
 	compiled: PathMutationResult | undefined,
 ): T | (T & { readonly pathMutations: PathMutationResult }) {
 	return compiled ? { ...result, pathMutations: compiled } : result
+}
+
+async function hashInputFile(file: string): Promise<string> {
+	const bytes = await Bun.file(file).bytes()
+	return sha256Bytes(bytes)
 }
 
 function parsePivotOutputMaterializeOptions(
@@ -748,9 +755,27 @@ export function createApiFetch() {
 				const file = body ? requireString(body, 'file') : null
 				if (!file) return jsonFailure('Missing or invalid file', 400)
 				try {
-					const input = await resolveOperationInput(file, body)
+					const inputShape = resolveOperationInputShape(body)
+					if (!inputShape.ok) return jsonFailureError(inputShape.error, 400)
+					let input: OperationInput
+					let pathMutations: PathMutationResult | undefined
+					let result: Awaited<ReturnType<typeof createAgentPlan>> | null
+					if ('mutations' in inputShape) {
+						const inputSha256 = await hashInputFile(file)
+						const wb = await AscendWorkbook.open(file)
+						input = compilePathMutationInput(wb, inputShape.mutations)
+						if (input.ok) pathMutations = input.pathMutations
+						result = input.ok
+							? await createAgentPlanFromWorkbook(file, inputSha256, wb, input.ops)
+							: null
+					} else {
+						input = inputShape
+						result = await createAgentPlan(file, inputShape.ops)
+					}
 					if (!input.ok) return jsonFailureError(input.error, 400)
-					const result = await createAgentPlan(file, input.ops)
+					if (!result) {
+						return jsonFailureError(ascendError('VALIDATION_ERROR', 'Plan failed'), 400)
+					}
 					if (result.preview.errors.length > 0) {
 						const first = result.preview.errors[0]
 						return jsonFailureError(
@@ -767,7 +792,7 @@ export function createApiFetch() {
 									...(maxChangedCells !== undefined ? { maxChangedCells } : {}),
 								})
 							: result
-					return jsonSuccess(withPathMutationResult(payload, input.pathMutations))
+					return jsonSuccess(withPathMutationResult(payload, pathMutations))
 				} catch (e) {
 					return handleError(e, file)
 				}

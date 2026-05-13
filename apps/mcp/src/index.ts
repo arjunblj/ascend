@@ -15,6 +15,7 @@ import {
 	commitAgentPlan,
 	compactAgentPlanResult,
 	createAgentPlan,
+	createAgentPlanFromWorkbook,
 	createRepairPlan,
 	ensureOutputExtension,
 	escapeDelimitedCell,
@@ -35,6 +36,7 @@ import {
 	readAgentDoc,
 	SUPPORTED_PATH_MUTATION_SHAPES,
 	searchAgentDocs,
+	sha256Bytes,
 	summarizeCapabilities,
 	toA1Ref,
 	WorkbookDocument,
@@ -159,6 +161,11 @@ function withPathMutationResult<T extends object>(
 	compiled: PathMutationResult | undefined,
 ): T | (T & { readonly pathMutations: PathMutationResult }) {
 	return compiled ? { ...result, pathMutations: compiled } : result
+}
+
+async function hashInputFile(file: string): Promise<string> {
+	const bytes = await Bun.file(file).bytes()
+	return sha256Bytes(bytes)
 }
 
 export function createServer(): McpServer {
@@ -1127,9 +1134,25 @@ export function createServer(): McpServer {
 		},
 		async ({ file, ops, mutations, compact, maxChangedCells }) => {
 			try {
-				const input = await resolveOperationInput(file, ops, mutations)
+				const inputShape = resolveOperationInputShape(ops, mutations)
+				if (!inputShape.ok) return errorResponse(inputShape.error)
+				let input: ResolvedOperationInput
+				let pathMutations: PathMutationResult | undefined
+				let result: Awaited<ReturnType<typeof createAgentPlan>> | null
+				if ('mutations' in inputShape) {
+					const inputSha256 = await hashInputFile(file)
+					const wb = await Ascend.open(file)
+					input = compilePathMutationInput(wb, inputShape.mutations)
+					if (input.ok) pathMutations = input.pathMutations
+					result = input.ok
+						? await createAgentPlanFromWorkbook(file, inputSha256, wb, input.ops)
+						: null
+				} else {
+					input = inputShape
+					result = await createAgentPlan(file, inputShape.ops)
+				}
 				if (!input.ok) return errorResponse(input.error)
-				const result = await createAgentPlan(file, input.ops)
+				if (!result) return errorResponse('Plan failed')
 				if (result.preview.errors.length > 0) {
 					const first = result.preview.errors[0]
 					return errorResponse(
@@ -1144,7 +1167,7 @@ export function createServer(): McpServer {
 						})
 					: result
 				return okResponse(
-					withPathMutationResult(payload, input.pathMutations),
+					withPathMutationResult(payload, pathMutations),
 					`Planned ${input.ops.length} operation(s)`,
 				)
 			} catch (e) {

@@ -620,6 +620,27 @@ describe('readXlsx', () => {
 		])
 	})
 
+	it('streams a bounded values row window without requiring callers to drain the sheet', async () => {
+		const result = await readXlsxRowsStream(minimalXlsx(), {
+			sheet: 'Data',
+			mode: 'values',
+			maxRows: 1,
+		})
+		expectOk(result)
+		const rows: StreamedSheetRow[] = []
+		for await (const row of result.value) rows.push(row)
+		expect(rows).toEqual([
+			{
+				row: 0,
+				cells: [
+					[0, { value: { kind: 'string', value: 'Hello' }, formula: null, styleId: S0 }],
+					[1, { value: { kind: 'number', value: 42 }, formula: null, styleId: S0 }],
+					[2, { value: { kind: 'boolean', value: true }, formula: null, styleId: S0 }],
+				],
+			},
+		])
+	})
+
 	it('streams worksheet rows from an async iterable byte source', async () => {
 		const bytes = minimalXlsx()
 		async function* chunks() {

@@ -137,6 +137,51 @@ describe('xlsx-read-phase CLI', () => {
 	)
 
 	test(
+		'reports rows window first-row and window timings',
+		async () => {
+			const proc = Bun.spawn(
+				[
+					'bun',
+					'run',
+					'fixtures/benchmarks/xlsx-read-phase.ts',
+					'--workload',
+					'mixed-50pct-text',
+					'--rows',
+					'12',
+					'--cols',
+					'6',
+					'--phase',
+					'rows-window',
+					'--repeat',
+					'1',
+					'--warmup',
+					'0',
+					'--json',
+				],
+				{ cwd: process.cwd(), stderr: 'pipe', stdout: 'pipe' },
+			)
+			const [stdout, stderr, exitCode] = await Promise.all([
+				new Response(proc.stdout).text(),
+				new Response(proc.stderr).text(),
+				proc.exited,
+			])
+			expect(stderr).toBe('')
+			expect(exitCode).toBe(0)
+			const result = JSON.parse(stdout) as {
+				readonly summary?: {
+					readonly rowsWindowFirstRowMedianMs?: number
+					readonly rowsWindowMedianMs?: number
+					readonly rowsWindowCellsPerSecondMedian?: number
+				}
+			}
+			expect(result.summary?.rowsWindowFirstRowMedianMs).toBeNumber()
+			expect(result.summary?.rowsWindowMedianMs).toBeNumber()
+			expect(result.summary?.rowsWindowCellsPerSecondMedian).toBeNumber()
+		},
+		{ timeout: 30_000 },
+	)
+
+	test(
 		'reports capped first-window phase timings',
 		async () => {
 			const proc = Bun.spawn(

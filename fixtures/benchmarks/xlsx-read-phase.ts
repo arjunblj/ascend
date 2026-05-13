@@ -47,6 +47,7 @@ interface PhaseSample {
 	readonly directOrderedMs?: number
 	readonly rowsStreamMs?: number
 	readonly rowsStreamChunkedMs?: number
+	readonly rowsWindowFirstRowMs?: number
 	readonly rowsWindowMs?: number
 	readonly worksheetXmlScanMs?: number
 	readonly worksheetXmlByteScanMs?: number
@@ -230,6 +231,9 @@ function summarize(samples: readonly PhaseSample[]) {
 	const rowsStreamChunkedMedianMs = medianOptional(
 		samples.map((sample) => sample.rowsStreamChunkedMs),
 	)
+	const rowsWindowFirstRowMedianMs = medianOptional(
+		samples.map((sample) => sample.rowsWindowFirstRowMs),
+	)
 	const rowsWindowMedianMs = medianOptional(samples.map((sample) => sample.rowsWindowMs))
 	const worksheetXmlScanMedianMs = medianOptional(
 		samples.map((sample) => sample.worksheetXmlScanMs),
@@ -270,6 +274,9 @@ function summarize(samples: readonly PhaseSample[]) {
 		...(rowsStreamChunkedMedianMs === undefined
 			? []
 			: ([['rowsStreamChunked', rowsStreamChunkedMedianMs]] as const)),
+		...(rowsWindowFirstRowMedianMs === undefined
+			? []
+			: ([['rowsWindowFirstRow', rowsWindowFirstRowMedianMs]] as const)),
 		...(rowsWindowMedianMs === undefined ? [] : ([['rowsWindow', rowsWindowMedianMs]] as const)),
 		...(worksheetXmlScanMedianMs === undefined
 			? []
@@ -304,6 +311,7 @@ function summarize(samples: readonly PhaseSample[]) {
 		...(directOrderedMedianMs === undefined ? {} : { directOrderedMedianMs }),
 		...(rowsStreamMedianMs === undefined ? {} : { rowsStreamMedianMs }),
 		...(rowsStreamChunkedMedianMs === undefined ? {} : { rowsStreamChunkedMedianMs }),
+		...(rowsWindowFirstRowMedianMs === undefined ? {} : { rowsWindowFirstRowMedianMs }),
 		...(rowsWindowMedianMs === undefined ? {} : { rowsWindowMedianMs }),
 		...(readXlsxMedianMs === undefined || rowsStreamMedianMs === undefined
 			? {}
@@ -622,13 +630,14 @@ async function runSample(
 	if (args.phase === 'all' || args.phase === 'rows-window') {
 		const rowLimit = Math.min(500, Math.max(1, input.rows))
 		const windowStart = performance.now()
-		const windowCells = await consumeRowsWindow(input.xlsxBytes, rowLimit)
+		const window = await consumeRowsWindow(input.xlsxBytes, rowLimit)
 		const rowsWindowMs = performance.now() - windowStart
-		if (windowCells <= 0 && input.cells > 0) {
+		if (window.cells <= 0 && input.cells > 0) {
 			throw new Error('rows window stream returned no cells')
 		}
+		sample.rowsWindowFirstRowMs = window.firstRowMs
 		sample.rowsWindowMs = rowsWindowMs
-		sample.rowsWindowCellsPerSecond = windowCells / (rowsWindowMs / 1000)
+		sample.rowsWindowCellsPerSecond = window.cells / (rowsWindowMs / 1000)
 	}
 
 	if (args.phase === 'all' || args.phase === 'xml') {
@@ -816,17 +825,23 @@ async function consumeRowsStream(bytes: Uint8Array, chunkedSheetXml: boolean): P
 	return cells
 }
 
-async function consumeRowsWindow(bytes: Uint8Array, rowLimit: number): Promise<number> {
-	const result = await readXlsxRowsStream(bytes, { mode: 'values' })
+async function consumeRowsWindow(
+	bytes: Uint8Array,
+	rowLimit: number,
+): Promise<{ readonly cells: number; readonly firstRowMs: number | undefined }> {
+	const start = performance.now()
+	const result = await readXlsxRowsStream(bytes, { mode: 'values', maxRows: rowLimit })
 	if (!result.ok) throw new Error(result.error.message)
 	let rows = 0
 	let cells = 0
+	let firstRowMs: number | undefined
 	for await (const row of result.value) {
+		firstRowMs ??= performance.now() - start
 		rows++
 		cells += row.cells.length
 		if (rows >= rowLimit) break
 	}
-	return cells
+	return { cells, firstRowMs }
 }
 
 async function loadInput(args: Args): Promise<CompetitiveDataSet> {

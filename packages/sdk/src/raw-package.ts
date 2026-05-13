@@ -33,10 +33,18 @@ export function inspectRawPackagePart(
 	}
 	const archive = extractZip(bytes)
 	const exact = archive.has(normalized.path)
-	const fallbackPath =
+	const fallbackMatches =
 		!exact && options.caseInsensitive === true
-			? archive.resolvePathCaseInsensitive(normalized.path)
-			: null
+			? findCaseInsensitiveMatches(archive, normalized.path)
+			: []
+	if (fallbackMatches.length > 1) {
+		return {
+			...baseInfo,
+			caseInsensitiveAmbiguous: true,
+			caseInsensitiveMatches: fallbackMatches,
+		}
+	}
+	const fallbackPath = fallbackMatches[0] ?? null
 	const partPath = fallbackPath ?? normalized.path
 	const partBytes = archive.readBytes(partPath)
 	if (!partBytes) {
@@ -90,6 +98,9 @@ function normalizePackagePartPath(
 	path: string,
 ): { ok: true; path: string; normalizedFromRoot?: boolean } | { ok: false; reason: string } {
 	const trimmed = path.trim()
+	if (trimmed !== path) {
+		return { ok: false, reason: 'Package part path must not contain leading or trailing spaces.' }
+	}
 	if (trimmed.length === 0) return { ok: false, reason: 'Package part path is empty.' }
 	if (trimmed.includes('\\')) {
 		return { ok: false, reason: 'Package part path must use forward slashes.' }
@@ -110,6 +121,18 @@ function normalizePackagePartPath(
 		return { ok: false, reason: 'Package part path must not contain dot segments.' }
 	}
 	return { ok: true, path: normalized, ...(normalizedFromRoot ? { normalizedFromRoot } : {}) }
+}
+
+function findCaseInsensitiveMatches(
+	archive: ReturnType<typeof extractZip>,
+	path: string,
+): readonly string[] {
+	const lower = path.toLowerCase()
+	const matches: string[] = []
+	for (const entry of archive.entries()) {
+		if (entry.path.toLowerCase() === lower) matches.push(entry.path)
+	}
+	return matches
 }
 
 function looksBinary(bytes: Uint8Array): boolean {

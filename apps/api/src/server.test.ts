@@ -80,6 +80,7 @@ interface ApiEnvelope {
 			readonly issues?: readonly string[]
 			readonly validPath?: boolean
 			readonly rule?: string
+			readonly caseInsensitiveAmbiguous?: boolean
 			readonly load?: {
 				readonly mode?: string
 				readonly isPartial?: boolean
@@ -261,6 +262,15 @@ describe('Ascend API server', () => {
 		expect(badMaxBytes.body.error?.code).toBe('VALIDATION_ERROR')
 		expect(badMaxBytes.body.error?.details?.rule).toBe('nonnegative integer')
 
+		const tooLargeMaxBytes = await postJson('/raw-part', {
+			file: TEMP_FILE,
+			partPath: 'xl/workbook.xml',
+			maxBytes: 1024 * 1024 + 1,
+		})
+		expect(tooLargeMaxBytes.status).toBe(400)
+		expect(tooLargeMaxBytes.body.error?.code).toBe('VALIDATION_ERROR')
+		expect(tooLargeMaxBytes.body.error?.details?.rule).toContain('at most')
+
 		const badEncoding = await postJson('/raw-part', {
 			file: TEMP_FILE,
 			partPath: 'xl/workbook.xml',
@@ -306,6 +316,15 @@ describe('Ascend API server', () => {
 			expect(metadataOnly.body.data?.previewByteLength).toBe(0)
 			expect(metadataOnly.body.data?.truncated).toBe(false)
 			expect(metadataOnly.body.data?.sha256).toBe(result.body.data?.sha256)
+
+			const ambiguous = await postJson('/raw-part', {
+				file: binaryFile,
+				partPath: 'Xl/Media/Case.Png',
+				caseInsensitive: true,
+			})
+			expect(ambiguous.status).toBe(400)
+			expect(ambiguous.body.error?.code).toBe('VALIDATION_ERROR')
+			expect(ambiguous.body.error?.details?.caseInsensitiveAmbiguous).toBe(true)
 		} finally {
 			await unlink(binaryFile).catch(() => {})
 		}
@@ -1102,6 +1121,8 @@ function binaryRawPartWorkbook(binaryBytes: Uint8Array): Uint8Array {
 				'xl/worksheets/sheet1.xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`),
 				'xl/media/image1.png': binaryBytes,
+				'xl/media/case.png': new Uint8Array([1]),
+				'XL/MEDIA/CASE.PNG': new Uint8Array([2]),
 			}),
 		),
 	)

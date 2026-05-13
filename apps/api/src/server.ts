@@ -40,6 +40,7 @@ import {
 import { binaryResponse, jsonFailure, jsonFailureError, jsonSuccess } from './response.ts'
 
 const DEFAULT_API_RAW_PART_MAX_BYTES = 64 * 1024
+const MAX_API_RAW_PART_MAX_BYTES = 1024 * 1024
 const DEFAULT_AGENT_PREVIEW_ROWS = 500
 
 async function parseJson<T>(req: Request): Promise<T | null> {
@@ -102,9 +103,16 @@ function rawPartEncoding(
 
 function rawPartMaxBytes(
 	value: unknown,
-): { readonly ok: true; readonly maxBytes?: number } | { readonly ok: false } {
+):
+	| { readonly ok: true; readonly maxBytes?: number }
+	| { readonly ok: false; readonly rule: string } {
 	if (value === undefined) return { ok: true }
-	if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) return { ok: false }
+	if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
+		return { ok: false, rule: 'nonnegative integer' }
+	}
+	if (value > MAX_API_RAW_PART_MAX_BYTES) {
+		return { ok: false, rule: `at most ${MAX_API_RAW_PART_MAX_BYTES} bytes` }
+	}
 	return { ok: true, maxBytes: value }
 }
 
@@ -586,9 +594,8 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 				if (!maxBytes.ok) {
 					return jsonFailureError(
 						ascendError('VALIDATION_ERROR', 'Invalid raw part maxBytes', {
-							details: { receivedMaxBytes: body?.maxBytes, rule: 'nonnegative integer' },
-							suggestedFix:
-								'Omit maxBytes for the bounded default, or provide a nonnegative integer.',
+							details: { receivedMaxBytes: body?.maxBytes, rule: maxBytes.rule },
+							suggestedFix: `Omit maxBytes for the bounded default, or provide a nonnegative integer up to ${MAX_API_RAW_PART_MAX_BYTES}.`,
 						}),
 						400,
 					)
@@ -607,6 +614,16 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 								details: { ...result },
 								suggestedFix:
 									'Use an exact OPC package part path with forward slashes and no dot or empty segments.',
+							}),
+							400,
+						)
+					}
+					if (result.caseInsensitiveAmbiguous) {
+						return jsonFailureError(
+							ascendError('VALIDATION_ERROR', `Ambiguous package part path: ${partPath}`, {
+								details: { ...result },
+								suggestedFix:
+									'Retry with an exact case-sensitive package part path from /package-graph.',
 							}),
 							400,
 						)

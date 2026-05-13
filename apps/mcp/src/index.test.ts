@@ -328,7 +328,10 @@ describe('MCP server', () => {
 					caseInsensitiveFallback?: boolean
 					load?: { mode?: string; isPartial?: boolean }
 				}
-				error?: { code?: string; details?: { validPath?: boolean } }
+				error?: {
+					code?: string
+					details?: { validPath?: boolean; rule?: string; caseInsensitiveAmbiguous?: boolean }
+				}
 			}
 		}>
 
@@ -374,6 +377,15 @@ describe('MCP server', () => {
 		expect(invalid.isError).toBe(true)
 		expect(invalid.structuredContent?.error?.code).toBe('VALIDATION_ERROR')
 		expect(invalid.structuredContent?.error?.details?.validPath).toBe(false)
+
+		const tooLargeMaxBytes = await handler({
+			file: TEMP_FILE,
+			partPath: 'xl/workbook.xml',
+			maxBytes: 1024 * 1024 + 1,
+		})
+		expect(tooLargeMaxBytes.isError).toBe(true)
+		expect(tooLargeMaxBytes.structuredContent?.error?.code).toBe('VALIDATION_ERROR')
+		expect(tooLargeMaxBytes.structuredContent?.error?.details?.rule).toContain('at most')
 	})
 
 	test('ascend.raw_part returns binary base64 previews with full-byte metadata', async () => {
@@ -388,7 +400,9 @@ describe('MCP server', () => {
 				partPath: string
 				encoding?: 'text' | 'base64' | 'none'
 				maxBytes?: number
+				caseInsensitive?: boolean
 			}) => Promise<{
+				isError?: boolean
 				structuredContent?: {
 					ok?: boolean
 					data?: {
@@ -398,6 +412,10 @@ describe('MCP server', () => {
 						previewByteLength?: number
 						truncated?: boolean
 						sha256?: string
+					}
+					error?: {
+						code?: string
+						details?: { caseInsensitiveAmbiguous?: boolean }
 					}
 				}
 			}>
@@ -435,6 +453,15 @@ describe('MCP server', () => {
 			expect(metadataOnly.structuredContent?.data?.sha256).toBe(
 				result.structuredContent?.data?.sha256,
 			)
+
+			const ambiguous = await handler({
+				file: binaryFile,
+				partPath: 'Xl/Media/Case.Png',
+				caseInsensitive: true,
+			})
+			expect(ambiguous.isError).toBe(true)
+			expect(ambiguous.structuredContent?.error?.code).toBe('VALIDATION_ERROR')
+			expect(ambiguous.structuredContent?.error?.details?.caseInsensitiveAmbiguous).toBe(true)
 		} finally {
 			await unlink(binaryFile).catch(() => {})
 		}
@@ -2519,6 +2546,8 @@ function binaryRawPartWorkbook(binaryBytes: Uint8Array): Uint8Array {
 				'xl/worksheets/sheet1.xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`),
 				'xl/media/image1.png': binaryBytes,
+				'xl/media/case.png': new Uint8Array([1]),
+				'XL/MEDIA/CASE.PNG': new Uint8Array([2]),
 			}),
 		),
 	)

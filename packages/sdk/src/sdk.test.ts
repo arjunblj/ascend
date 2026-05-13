@@ -2701,6 +2701,8 @@ describe('AscendWorkbook', () => {
 			'xl/worksheets/sheet1.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`,
 			'xl/media/image1.png': binaryBytes,
+			'xl/media/case.png': new Uint8Array([1]),
+			'XL/MEDIA/CASE.PNG': new Uint8Array([2]),
 		})
 		const wb = await AscendWorkbook.open(sourceBytes)
 
@@ -2760,6 +2762,9 @@ describe('AscendWorkbook', () => {
 		expect(invalid.found).toBe(false)
 		expect(invalid.validPath).toBe(false)
 		expect(invalid.invalidReason).toContain('duplicate slashes')
+		expect(wb.rawPackagePart({ partPath: ' xl/workbook.xml' }).invalidReason).toContain(
+			'leading or trailing spaces',
+		)
 		expect(wb.rawPackagePart({ partPath: 'xl/' }).invalidReason).toContain('empty segments')
 		expect(wb.rawPackagePart({ partPath: 'xl\\workbook.xml' }).invalidReason).toContain(
 			'forward slashes',
@@ -2774,6 +2779,14 @@ describe('AscendWorkbook', () => {
 		expect(fallback.partPath).toBe('xl/workbook.xml')
 		expect(fallback.caseInsensitiveRequested).toBe(true)
 		expect(fallback.caseInsensitiveFallback).toBe(true)
+
+		const ambiguous = wb.rawPackagePart({
+			partPath: 'Xl/Media/Case.Png',
+			caseInsensitive: true,
+		})
+		expect(ambiguous.found).toBe(false)
+		expect(ambiguous.caseInsensitiveAmbiguous).toBe(true)
+		expect(ambiguous.caseInsensitiveMatches).toEqual(['xl/media/case.png', 'XL/MEDIA/CASE.PNG'])
 
 		const doc = await WorkbookDocument.open(sourceBytes, { mode: 'metadata-only' })
 		const sessionRaw = await doc.rawPackagePart({ partPath: 'xl/workbook.xml', maxBytes: 16 })

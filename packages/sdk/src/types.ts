@@ -1342,6 +1342,8 @@ export interface RawPackagePartInfo {
 	readonly normalizedFromRoot?: boolean
 	readonly caseInsensitiveRequested?: boolean
 	readonly caseInsensitiveFallback?: boolean
+	readonly caseInsensitiveAmbiguous?: boolean
+	readonly caseInsensitiveMatches?: readonly string[]
 	readonly contentType?: string
 	readonly contentTypeSource?: string
 	readonly featureFamily?: string

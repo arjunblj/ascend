@@ -51,6 +51,7 @@ import { z } from 'zod'
 import { errorResponse, okResponse } from './response.ts'
 
 const DEFAULT_MCP_RAW_PART_MAX_BYTES = 64 * 1024
+const MAX_MCP_RAW_PART_MAX_BYTES = 1024 * 1024
 const DEFAULT_AGENT_PREVIEW_ROWS = 500
 
 const pathMutationSchema = z.object({
@@ -469,6 +470,18 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 		},
 		async ({ file, partPath, encoding, maxBytes, caseInsensitive }) => {
 			try {
+				if (maxBytes !== undefined && maxBytes > MAX_MCP_RAW_PART_MAX_BYTES) {
+					return errorResponse(
+						ascendError('VALIDATION_ERROR', 'Invalid raw part maxBytes', {
+							details: {
+								receivedMaxBytes: maxBytes,
+								rule: `at most ${MAX_MCP_RAW_PART_MAX_BYTES} bytes`,
+							},
+							retryStrategy: 'modified',
+							suggestedFix: `Omit maxBytes for the bounded default, or provide a nonnegative integer up to ${MAX_MCP_RAW_PART_MAX_BYTES}.`,
+						}),
+					)
+				}
 				const wb = await WorkbookDocument.open(file, { mode: 'metadata-only' })
 				const result = await wb.rawPackagePart({
 					partPath,
@@ -483,6 +496,16 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 							retryStrategy: 'modified',
 							suggestedFix:
 								'Use an exact OPC package part path with forward slashes and no dot or empty segments.',
+						}),
+					)
+				}
+				if (result.caseInsensitiveAmbiguous) {
+					return errorResponse(
+						ascendError('VALIDATION_ERROR', `Ambiguous package part path: ${partPath}`, {
+							details: { ...result },
+							retryStrategy: 'modified',
+							suggestedFix:
+								'Retry with an exact case-sensitive package part path from ascend.package_graph.',
 						}),
 					)
 				}

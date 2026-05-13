@@ -2658,6 +2658,48 @@ describe('interactive client contract', () => {
 		expect(journalComparableState(wb)).toEqual(before)
 	})
 
+	test('structural column delete exact journals restore escaped-sheet formulas and defined names', () => {
+		const wb = AscendWorkbook.create()
+		const inputSheet = "Input.Data's Δ"
+		wb.apply([
+			{ op: 'renameSheet', sheet: 'Sheet1', newName: inputSheet },
+			{ op: 'addSheet', name: 'Middle' },
+			{ op: 'addSheet', name: 'Report' },
+			{
+				op: 'setCells',
+				sheet: inputSheet,
+				updates: [
+					{ ref: 'A1', value: 'Header' },
+					{ ref: 'B1', value: 'deleted' },
+					{ ref: 'D1', value: 9 },
+				],
+			},
+			{ op: 'setFormula', sheet: 'Report', ref: 'A1', formula: `${quoteSheet(inputSheet)}!D1` },
+			{
+				op: 'setFormula',
+				sheet: 'Report',
+				ref: 'A2',
+				formula: `SUM(${quoteSheetSpan(inputSheet, 'Report')}!D1)`,
+			},
+			{ op: 'setDefinedName', name: 'GlobalLater', ref: `${quoteSheet(inputSheet)}!$D$1` },
+			{ op: 'setDefinedName', name: 'LocalLater', scope: inputSheet, ref: '$D$1' },
+		])
+		const before = journalComparableState(wb)
+
+		const deleted = wb.apply([{ op: 'deleteCols', sheet: inputSheet, at: 1, count: 1 }], {
+			journal: true,
+		})
+
+		expect(deleted.errors).toEqual([])
+		expect(deleted.journal?.supported).toBe(true)
+		expect(deleted.journal?.exact).toBe(true)
+		expect(journalComparableState(wb)).not.toEqual(before)
+
+		const undo = wb.apply(deleted.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(journalComparableState(wb)).toEqual(before)
+	})
+
 	test('structural delete journals surface escaped names 3D refs and x14 losses precisely', () => {
 		const wb = AscendWorkbook.create()
 		const inputSheet = "Input.Data's Δ"
@@ -2718,6 +2760,68 @@ describe('interactive client contract', () => {
 			refs: [`${inputSheet}!x14Validation:C2:C5:7`, `${inputSheet}!x14ConditionalFormat:D2:D5:8`],
 		})
 		expect(wb.sheet(inputSheet)?.cell('A2')?.value).toEqual({ kind: 'number', value: 5 })
+	})
+
+	test('column delete journals surface escaped names 3D refs and x14 losses precisely', () => {
+		const wb = AscendWorkbook.create()
+		const inputSheet = "Input.Data's Δ"
+		wb.apply([
+			{ op: 'renameSheet', sheet: 'Sheet1', newName: inputSheet },
+			{ op: 'addSheet', name: 'Middle' },
+			{ op: 'addSheet', name: 'Report' },
+			{ op: 'setCells', sheet: inputSheet, updates: [{ ref: 'B1', value: 5 }] },
+			{
+				op: 'setFormula',
+				sheet: 'Report',
+				ref: 'A1',
+				formula: `SUM(${quoteSheetSpan(inputSheet, 'Report')}!B1)`,
+			},
+			{ op: 'setDefinedName', name: 'GlobalDeleted', ref: `${quoteSheet(inputSheet)}!$B$1` },
+			{ op: 'setDefinedName', name: 'LocalDeleted', scope: inputSheet, ref: '$B$1' },
+		])
+		const sheet = wb.getWorkbookModel().getSheet(inputSheet)
+		if (!sheet) throw new Error('input sheet missing')
+		sheet.x14DataValidations.push({
+			index: 7,
+			sqref: 'B2:E2',
+			type: 'list',
+			formula1: '$A$1:$B$1',
+			preservedChildXml: ['<x14ac:metadata flag="1"/>'],
+		})
+		sheet.x14ConditionalFormats.push({
+			index: 8,
+			sqref: 'B3:E3',
+			type: 'dataBar',
+			priority: 1,
+			formulas: [],
+			dataBar: { cfvo: [{ type: 'formula', value: '$B$1' }] },
+			preservedRuleChildXml: ['<x14:extLst><x14:ext uri="{cf-extension}"/></x14:extLst>'],
+		})
+
+		const deleted = wb.preview([{ op: 'deleteCols', sheet: inputSheet, at: 1, count: 1 }], {
+			journal: true,
+		})
+
+		expect(deleted.wouldSucceed).toBe(true)
+		expect(deleted.journal?.supported).toBe(true)
+		expect(deleted.journal?.exact).toBe(false)
+		expect(deleted.journal?.issues).toContainEqual({
+			code: 'LOSSY_INVERSE',
+			message: `Deleted column formula references on ${inputSheet} cannot be restored with public operations`,
+			refs: expect.arrayContaining([
+				`${inputSheet}!x14Validation:B2:E2:formula1`,
+				`${inputSheet}!x14ConditionalFormat:B3:E3:8:dataBar.cfvo:0`,
+				'Report!A1',
+				'name:GlobalDeleted',
+				`name:${inputSheet}!LocalDeleted`,
+			]),
+		})
+		expect(deleted.journal?.issues).toContainEqual({
+			code: 'LOSSY_INVERSE',
+			message: `Deleted column x14 metadata on ${inputSheet} cannot be fully restored with public operations`,
+			refs: [`${inputSheet}!x14Validation:B2:E2:7`, `${inputSheet}!x14ConditionalFormat:B3:E3:8`],
+		})
+		expect(wb.sheet(inputSheet)?.cell('B1')?.value).toEqual({ kind: 'number', value: 5 })
 	})
 })
 

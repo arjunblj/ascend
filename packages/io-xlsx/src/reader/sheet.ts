@@ -861,6 +861,33 @@ function parseCanonicalPlainValueCellBytes(
 		const valueStart = refEnd + 5
 		return parseCanonicalIntegerValueIntoOutBytes(bytes, valueStart, bodyEnd, out)
 	}
+	if (
+		refEnd + 10 < bodyEnd &&
+		bytes[refEnd + 1] === BYTE_SPACE &&
+		bytes[refEnd + 2] === 116 &&
+		bytes[refEnd + 3] === 61 &&
+		bytes[refEnd + 4] === BYTE_QUOTE &&
+		bytes[refEnd + 6] === BYTE_QUOTE &&
+		bytes[refEnd + 7] === 62 &&
+		bytes[refEnd + 8] === BYTE_LT &&
+		bytes[refEnd + 9] === 118 &&
+		bytes[refEnd + 10] === 62
+	) {
+		const typedNext = parseCanonicalIntegerValueIntoOutBytes(bytes, refEnd + 11, bodyEnd, out)
+		if (typedNext !== -1) {
+			const type = bytes[refEnd + 5]
+			if (type === 115) {
+				out.sharedStringIndex = out.numberValue ?? -1
+				out.numberValue = undefined
+			} else if (type === 98) {
+				out.booleanRaw = out.numberValue === 1 ? 1 : 0
+				out.numberValue = undefined
+			} else if (type !== 110) {
+				return -1
+			}
+			return typedNext
+		}
+	}
 	const inlineValueStart = parseCanonicalInlineStringValueStartBytes(bytes, refEnd, bodyEnd)
 	if (inlineValueStart === -1) return -1
 	let valueEnd = inlineValueStart

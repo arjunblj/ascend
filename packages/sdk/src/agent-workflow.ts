@@ -1049,8 +1049,8 @@ export async function commitAgentPlanFromWorkbook(
 		progress,
 	)
 	await progressFromPhase(postWritePhase(postWrite, expectedPostWritePackageGraphChanges), progress)
-	await progress('check', 'started', 'Running structural checks.')
-	const check = wb.check()
+	await progress('check', 'started', 'Reusing pre-write structural checks.')
+	const check = writePolicyCheck
 	await progressFromPhase(checkPhase(check), progress)
 	await progress('lint', 'started', 'Running formula lint.')
 	const lint = wb.lint()

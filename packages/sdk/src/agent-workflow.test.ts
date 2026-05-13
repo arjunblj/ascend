@@ -66,6 +66,19 @@ describe('agent workflow loss audit', () => {
 		expect(unknownPackageAudit.ok).toBe(false)
 		expect(unknownPackageAudit.blockedFeatures[0]?.feature).toBe('preservedOther')
 		expect(unknownPackageAudit.blockedPackageParts).toHaveLength(0)
+		expect(
+			auditLossPolicy(
+				[
+					{
+						feature: 'preservedOther',
+						tier: 'preserved',
+						count: 1,
+						locations: ['xl/custom/custom1.xml'],
+					},
+				],
+				['preserved'],
+			).ok,
+		).toBe(false)
 
 		const packageGraphAudit = auditLossPolicy(
 			[
@@ -150,6 +163,19 @@ describe('agent workflow loss audit', () => {
 		await expect(commitAgentPlan(input, ops, { output })).rejects.toThrow(
 			'Commit requires explicit approval',
 		)
+		await expect(
+			commitAgentPlan(input, ops, { output, approvals: ['preservedOther'] }),
+		).rejects.toThrow('Commit requires explicit approval')
+		await expect(commitAgentPlan(input, ops, { output, approvals: ['preserved'] })).rejects.toThrow(
+			'Commit requires explicit approval',
+		)
+
+		const approvalCommitted = await commitAgentPlan(input, ops, {
+			output: join(TEMP_DIR, 'approval-out.xlsx'),
+			approvals: [plan.approvals[0]?.id ?? ''],
+		})
+		expect(approvalCommitted.lossAudit.ok).toBe(true)
+		expect(approvalCommitted.approvals[0]?.id).toBe(plan.approvals[0]?.id)
 
 		const committed = await commitAgentPlan(input, ops, {
 			output,

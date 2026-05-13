@@ -841,11 +841,11 @@ export function createServer(): McpServer {
 			allowLoss: z
 				.union([z.string(), z.array(z.string())])
 				.optional()
-				.describe('Allow preserved/unsupported feature loss by feature, tier, or "all"'),
+				.describe('Allow preserved/unsupported feature loss by feature, feature:tier, or "all"'),
 			approvals: z
 				.union([z.string(), z.array(z.string())])
 				.optional()
-				.describe('Approve explicit plan approval ids, aliases, or "all"'),
+				.describe('Approve explicit plan approval ids or "all"'),
 		},
 		async ({ file, ops, output, inPlace, backup, expectSha256, allowLoss, approvals }) => {
 			const parsed = parseOperations(ops)

@@ -674,7 +674,11 @@ export function auditLossPolicy(
 		if (feature.tier !== 'preserved' && feature.tier !== 'unsupported') return false
 		if (isSafePackagePreservationFeature(feature)) return false
 		if (allowed === 'all') return false
-		return !allowed.includes(feature.feature.toLowerCase()) && !allowed.includes(feature.tier)
+		return (
+			!allowed.includes(feature.feature.toLowerCase()) &&
+			!allowed.includes(lossFeatureTierKey(feature)) &&
+			!allowed.includes(lossFeatureApprovalId(feature))
+		)
 	})
 	const blockedPackageParts = packageGraph
 		? buildBlockedPackageParts(packageGraph, blockedFeatures)
@@ -5254,10 +5258,9 @@ function buildApprovalRequirements(
 	for (const feature of features) {
 		if (feature.tier !== 'preserved' && feature.tier !== 'unsupported') continue
 		if (isSafePackagePreservationFeature(feature)) continue
-		const featureKey = feature.feature.toLowerCase()
-		const tierKey = feature.tier.toLowerCase()
+		const id = lossFeatureApprovalId(feature)
 		approvals.push({
-			id: `loss:${featureKey}:${shortDigest(feature.locations)}`,
+			id,
 			kind: 'lossy-write',
 			severity: feature.tier === 'unsupported' ? 'critical' : 'high',
 			title: `Approve write with ${feature.feature}`,
@@ -5265,7 +5268,7 @@ function buildApprovalRequirements(
 				'Workbook contains preserved or unsupported package features that require explicit approval before writing.',
 			feature: feature.feature,
 			tier: feature.tier,
-			satisfies: [`loss:${featureKey}`, featureKey, tierKey],
+			satisfies: [id],
 		})
 	}
 	for (const [operationIndex, op] of ops.entries()) {
@@ -5345,7 +5348,7 @@ function destructiveApproval(
 		reason: 'Operation can remove workbook content or metadata and requires explicit approval.',
 		operationIndex,
 		operation: op.op,
-		satisfies: [`op:${operationIndex}`, opKey],
+		satisfies: [`op:${operationIndex}:${opKey}`],
 	}
 }
 
@@ -5356,8 +5359,7 @@ function approvalSatisfiedLossFeatures(
 	if (!granted) return []
 	return approvals
 		.filter((approval) => approval.kind === 'lossy-write' && isApprovalSatisfied(approval, granted))
-		.map((approval) => approval.feature)
-		.filter((feature): feature is string => feature !== undefined)
+		.map((approval) => approval.id)
 }
 
 function unsatisfiedApprovalRequirements(
@@ -5366,12 +5368,11 @@ function unsatisfiedApprovalRequirements(
 	granted: readonly string[] | 'all' | undefined,
 ): ApprovalRequirement[] {
 	const blockedLossKeys = new Set(
-		lossAudit.blockedFeatures.map((feature) => `${feature.feature}:${feature.tier}`.toLowerCase()),
+		lossAudit.blockedFeatures.map((feature) => lossFeatureApprovalId(feature)),
 	)
 	return approvals.filter((approval) => {
 		if (approval.kind === 'lossy-write') {
-			const key = `${approval.feature ?? ''}:${approval.tier ?? ''}`.toLowerCase()
-			return blockedLossKeys.has(key)
+			return blockedLossKeys.has(approval.id.toLowerCase())
 		}
 		return !isApprovalSatisfied(approval, granted)
 	})
@@ -5383,10 +5384,15 @@ function isApprovalSatisfied(
 ): boolean {
 	if (granted === 'all') return true
 	const normalized = new Set((granted ?? []).map((entry) => entry.toLowerCase()))
-	return (
-		normalized.has(approval.id.toLowerCase()) ||
-		approval.satisfies.some((entry) => normalized.has(entry.toLowerCase()))
-	)
+	return normalized.has(approval.id.toLowerCase())
+}
+
+function lossFeatureTierKey(feature: FeatureReport): string {
+	return `${feature.feature}:${feature.tier}`.toLowerCase()
+}
+
+function lossFeatureApprovalId(feature: FeatureReport): string {
+	return `loss:${lossFeatureTierKey(feature)}:${shortDigest(feature.locations)}`
 }
 
 function mergeAllowLoss(

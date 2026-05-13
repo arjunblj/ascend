@@ -2109,7 +2109,7 @@ describe('AscendWorkbook', () => {
 		expect(reopened.trace('Archive!A1')).toBeUndefined()
 	})
 
-	test('partial workbook views reject preview, apply, and recalc operations', async () => {
+	test('partial workbook views reject preview, apply, path mutations, and recalc operations', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'locked' }] }])
 		const bytes = wb.toBytes()
@@ -2135,6 +2135,28 @@ describe('AscendWorkbook', () => {
 		expect(apply.errors[0]?.message).toContain('Cannot modify a partial workbook view')
 		expect(apply.errors[0]?.details?.partialWorkbookView).toBe(true)
 		expect(apply.errors[0]?.details?.loadedSheets).toEqual(['Sheet1'])
+
+		const pathMutations = reopened.compilePathMutations([
+			{ path: '/sheets/Sheet1/cells/A1/value', value: 'next' },
+		])
+		expect(pathMutations).toMatchObject({
+			ops: [],
+			mutationCount: 1,
+			issueCount: 1,
+			replayable: false,
+			issues: [
+				{
+					path: '/sheets/Sheet1/cells/A1/value',
+					code: 'partial_workbook_view',
+					details: {
+						partialWorkbookView: true,
+						mode: 'values',
+						maxRows: 1,
+						requiredLoad: { mode: 'full', allSheets: true, maxRows: null },
+					},
+				},
+			],
+		})
 
 		const recalc = reopened.recalc()
 		expect(recalc.errors[0]?.error.message).toContain('Cannot modify a partial workbook view')

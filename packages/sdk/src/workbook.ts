@@ -879,6 +879,9 @@ export class AscendWorkbook extends WorkbookReadView {
 	 * Compile stable path-addressed mutations into canonical operations for plan/commit.
 	 */
 	compilePathMutations(mutations: readonly PathMutation[]): PathMutationResult {
+		if (this.loadInfo.isPartial && mutations.length > 0) {
+			return partialWorkbookPathMutationResult(this.loadInfo, mutations)
+		}
 		return compilePathMutations(this.wb, mutations)
 	}
 
@@ -1598,6 +1601,26 @@ function partialWorkbookEditError(
 				'Open the workbook with mode "full" and all sheets loaded before editing or recalculating.',
 		},
 	)
+}
+
+function partialWorkbookPathMutationResult(
+	loadInfo: WorkbookLoadInfo,
+	mutations: readonly PathMutation[],
+): PathMutationResult {
+	const details = partialLoadErrorDetails(loadInfo)
+	return {
+		ops: [],
+		mutationCount: mutations.length,
+		issueCount: mutations.length,
+		issues: mutations.map((mutation) => ({
+			path: mutation.path,
+			code: 'partial_workbook_view',
+			message:
+				'Cannot compile path mutations from a partial workbook view. Reopen with a full load before planning or committing edits.',
+			details,
+		})),
+		replayable: false,
+	}
 }
 
 function partialLoadErrorDetails(loadInfo: WorkbookLoadInfo): Record<string, unknown> {

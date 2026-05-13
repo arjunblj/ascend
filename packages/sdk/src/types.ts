@@ -1300,6 +1300,7 @@ export interface PathMutationIssue {
 		| 'table_not_found'
 		| 'invalid_ref'
 		| 'invalid_value'
+		| 'partial_workbook_view'
 	readonly message: string
 	readonly details?: Readonly<Record<string, unknown>>
 }

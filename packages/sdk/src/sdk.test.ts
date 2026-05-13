@@ -2103,6 +2103,9 @@ describe('AscendWorkbook', () => {
 		expect(lint.clean).toBe(false)
 		expect(lint.warnings[0]?.rule).toBe('partial-dependency-analysis')
 		expect(lint.warnings[0]?.message).toContain('not all sheets are loaded')
+		const traceIssue = reopened.traceIssue('Archive!A1')
+		expect(traceIssue?.rule).toBe('partial-dependency-analysis')
+		expect(traceIssue?.message).toContain('not all sheets are loaded')
 		expect(reopened.trace('Archive!A1')).toBeUndefined()
 	})
 

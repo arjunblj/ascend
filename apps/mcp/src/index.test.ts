@@ -898,6 +898,49 @@ describe('MCP server', () => {
 		expect(result.structuredContent?.data?.load?.loadedSheets).toEqual(['Sheet1'])
 	})
 
+	test('ascend.trace returns structured partial-load diagnostics for capped formula views', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 2 }] },
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'A2', formula: 'A1*2' },
+		])
+		await wb.save(TEMP_FILE)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const handler = (server as any)._registeredTools['ascend.trace'].handler as (args: {
+			file: string
+			cell: string
+			maxRows?: number
+		}) => Promise<{
+			isError?: boolean
+			structuredContent?: {
+				ok?: boolean
+				error?: {
+					code?: string
+					details?: {
+						rule?: string
+						load?: {
+							maxRows?: number
+							partialReasons?: readonly string[]
+						}
+					}
+				}
+			}
+		}>
+
+		const result = await handler({ file: TEMP_FILE, cell: 'Sheet1!A1', maxRows: 1 })
+
+		expect(result.isError).toBe(true)
+		expect(result.structuredContent?.ok).toBe(false)
+		expect(result.structuredContent?.error?.code).toBe('VALIDATION_ERROR')
+		expect(result.structuredContent?.error?.details?.rule).toBe('partial-dependency-analysis')
+		expect(result.structuredContent?.error?.details?.load?.maxRows).toBe(1)
+		expect(result.structuredContent?.error?.details?.load?.partialReasons).toContain(
+			'only the first 1 row(s) are hydrated per loaded sheet',
+		)
+	})
+
 	test('ascend.read prunes compact cells by column', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

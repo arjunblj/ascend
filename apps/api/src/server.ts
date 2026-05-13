@@ -906,13 +906,31 @@ export function createApiFetch() {
 			}
 
 			if (method === 'POST' && path === '/trace') {
-				const body = await parseJson<{ file?: string; cell?: string }>(req)
+				const body = await parseJson<{ file?: string; cell?: string; maxRows?: number }>(req)
 				const file = body ? requireString(body, 'file') : null
 				const cell = body ? requireString(body, 'cell') : null
 				if (!file) return jsonFailure('Missing or invalid file', 400)
 				if (!cell) return jsonFailure('Missing or invalid cell', 400)
 				try {
-					const wb = await WorkbookDocument.open(file, { mode: 'formula' })
+					const maxRows = body ? requireOptionalNumber(body, 'maxRows') : undefined
+					const wb = await WorkbookDocument.open(file, {
+						mode: 'formula',
+						...(maxRows !== undefined ? { maxRows } : {}),
+					})
+					const traceIssue = wb.traceIssue(cell)
+					if (traceIssue) {
+						return jsonFailureError(
+							ascendError('VALIDATION_ERROR', traceIssue.message, {
+								details: {
+									...(traceIssue.rule ? { rule: traceIssue.rule } : {}),
+									...(traceIssue.ref ? { ref: traceIssue.ref } : {}),
+									load: wb.inspect().load,
+								},
+								...(traceIssue.suggestedFix ? { suggestedFix: traceIssue.suggestedFix } : {}),
+							}),
+							400,
+						)
+					}
 					const result = wb.trace(cell)
 					if (!result) return jsonFailure('Cell not found', 400)
 					return jsonSuccess(result)

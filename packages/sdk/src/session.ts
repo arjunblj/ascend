@@ -19,6 +19,7 @@ import type {
 	ActiveContentInfo,
 	AgentViewOptions,
 	AgentViewResult,
+	CheckIssue,
 	CheckResult,
 	CompactRangeInfo,
 	CompactRangeWindowInfo,
@@ -332,6 +333,11 @@ export class WorkbookDocument {
 		return this.view.trace(cellRef, opts)
 	}
 
+	traceIssue(cellRef: CellSelector): CheckIssue | undefined {
+		this.refreshCacheFootprint('verify')
+		return this.view.traceIssue(cellRef)
+	}
+
 	formula(cellRef: CellSelector): FormulaInfo | undefined {
 		return this.view.formula(cellRef)
 	}
@@ -520,6 +526,11 @@ export class WorkbookSession {
 	trace(ref: CellSelector, opts?: { maxDepth?: number }): TraceResult | undefined {
 		this.assertOpen()
 		return this.document.trace(ref, opts)
+	}
+
+	traceIssue(ref: CellSelector): CheckIssue | undefined {
+		this.assertOpen()
+		return this.document.traceIssue(ref)
 	}
 
 	pivotCacheRows(options?: PivotCacheRowsOptions): readonly PivotCacheMaterializedRowInfo[] {

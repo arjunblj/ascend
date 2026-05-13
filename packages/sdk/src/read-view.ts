@@ -42,6 +42,7 @@ import type { CellUpdate, CellValue, CompatibilityReport, Operation } from '@asc
 import { EMPTY } from '@ascend/schema'
 import { trace as verifyTrace } from '@ascend/verify'
 import { getCapability, isCapabilityGap } from './capabilities.ts'
+import { partialDependencyCheckIssue } from './check-issues.ts'
 import { type FormatDisplayOptions, formatStyledDisplayCellValue } from './format-helpers.ts'
 import {
 	buildFormulaInfo,
@@ -62,6 +63,7 @@ import type {
 	AgentViewOptions,
 	AgentViewResult,
 	CapabilityWarningInfo,
+	CheckIssue,
 	CompactCellInfo,
 	CompactRangeInfo,
 	CompactRangeWindowInfo,
@@ -830,6 +832,11 @@ export class WorkbookReadView {
 			dependsOn: result.value.precedents.map((node) => `${node.sheet}!${node.ref}`),
 			feedsInto: result.value.dependents.map((node) => `${node.sheet}!${node.ref}`),
 		}
+	}
+
+	traceIssue(_cellRef: CellSelector): CheckIssue | undefined {
+		const issue = this.dependencyVerificationIssue()
+		return issue ? partialDependencyCheckIssue(issue) : undefined
 	}
 
 	formula(cellRef: CellSelector): FormulaInfo | undefined {

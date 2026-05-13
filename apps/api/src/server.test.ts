@@ -63,6 +63,13 @@ interface ApiEnvelope {
 			readonly issueCount?: number
 			readonly issues?: readonly string[]
 			readonly validPath?: boolean
+			readonly rule?: string
+			readonly load?: {
+				readonly mode?: string
+				readonly isPartial?: boolean
+				readonly maxRows?: number
+				readonly partialReasons?: readonly string[]
+			}
 			readonly supportedPathShapes?: readonly string[]
 			readonly issueDetails?: readonly {
 				readonly code?: string
@@ -252,6 +259,30 @@ describe('Ascend API server', () => {
 		)
 		expect(result.body.data?.load?.cellsHydrated).toBe(true)
 		expect(result.body.data?.load?.loadedSheets).toEqual(['Sheet1'])
+	})
+
+	test('trace returns structured partial-load diagnostics for capped formula views', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 2 }] },
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'A2', formula: 'A1*2' },
+		])
+		await wb.save(TEMP_FILE)
+
+		const result = await postJson('/trace', {
+			file: TEMP_FILE,
+			cell: 'Sheet1!A1',
+			maxRows: 1,
+		})
+
+		expect(result.status).toBe(400)
+		expect(result.body.ok).toBe(false)
+		expect(result.body.error?.code).toBe('VALIDATION_ERROR')
+		expect(result.body.error?.details?.rule).toBe('partial-dependency-analysis')
+		expect(result.body.error?.details?.load?.maxRows).toBe(1)
+		expect(result.body.error?.details?.load?.partialReasons).toContain(
+			'only the first 1 row(s) are hydrated per loaded sheet',
+		)
 	})
 
 	test('preview accepts path-addressed mutations without saving', async () => {

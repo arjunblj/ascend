@@ -1263,10 +1263,34 @@ export function createServer(): McpServer {
 		{
 			file: z.string().describe('Path to workbook file'),
 			cell: z.string().describe('Cell reference (e.g. "Sheet1!A1" or "A1")'),
+			maxRows: z
+				.number()
+				.int()
+				.positive()
+				.optional()
+				.describe(
+					'Maximum worksheet rows to hydrate; partial traces return structured diagnostics',
+				),
 		},
-		async ({ file, cell }) => {
+		async ({ file, cell, maxRows }) => {
 			try {
-				const wb = await WorkbookDocument.open(file, { mode: 'formula' })
+				const wb = await WorkbookDocument.open(file, {
+					mode: 'formula',
+					...(maxRows !== undefined ? { maxRows } : {}),
+				})
+				const traceIssue = wb.traceIssue(cell)
+				if (traceIssue) {
+					return errorResponse(
+						ascendError('VALIDATION_ERROR', traceIssue.message, {
+							details: {
+								...(traceIssue.rule ? { rule: traceIssue.rule } : {}),
+								...(traceIssue.ref ? { ref: traceIssue.ref } : {}),
+								load: wb.inspect().load,
+							},
+							...(traceIssue.suggestedFix ? { suggestedFix: traceIssue.suggestedFix } : {}),
+						}),
+					)
+				}
 				const result = wb.trace(cell)
 				if (!result) {
 					return errorResponse(`Cannot trace "${cell}"`)

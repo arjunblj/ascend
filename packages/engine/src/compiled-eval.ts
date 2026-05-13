@@ -939,6 +939,16 @@ export function aggregateNumericRange(
 	const cells = sheet?.cells
 	if (!cells) return { sum: 0, count: 0, min: Infinity, max: -Infinity, error: null }
 	const maxCells = Math.max(0, endRow - startRow + 1) * Math.max(0, endCol - startCol + 1)
+	if (maxCells >= 4096 && cells.cellCount() * 4 < maxCells) {
+		const result = cells.aggregateNumericInRange(startRow, startCol, endRow, endCol)
+		return {
+			sum: result.sum,
+			count: result.count,
+			min: result.min,
+			max: result.max,
+			error: result.error ? errorValue(result.error) : null,
+		}
+	}
 	const wasmEarly = maxCells >= WASM_RANGE_THRESHOLD ? getWasmRangeOps() : null
 	const wasmPad = wasmEarly?.numericScratch(maxCells) ?? null
 	let count = 0

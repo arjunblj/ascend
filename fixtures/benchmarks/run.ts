@@ -1074,6 +1074,34 @@ const scenarios: readonly Scenario[] = [
 		},
 	},
 	{
+		name: 'recalc-sparse-wide-aggregation',
+		category: 'calc',
+		build() {
+			const workbook = createWorkbook()
+			workbook.addSheet('Sheet1')
+			const sheet = workbook.sheets[0]
+			if (!sheet) throw new Error('Benchmark workbook missing first sheet')
+			const random = createDeterministicRandom(0x51a7e)
+			for (let r = 0; r < 100_000; r += 100) {
+				sheet.cells.set(r, 0, {
+					value: numberValue(random() * 1000),
+					formula: null,
+					styleId: SID,
+				})
+				sheet.cells.set(r, 99, {
+					value: numberValue(random() * 1000),
+					formula: null,
+					styleId: SID,
+				})
+			}
+			sheet.cells.set(0, 100, { value: EMPTY, formula: 'SUM(A1:CV100000)', styleId: SID })
+			return { workbook, rows: 100_000, cols: 101, cells: 2001 }
+		},
+		run(input) {
+			recalculate(requireWorkbook(input), defaultCalcContext())
+		},
+	},
+	{
 		name: 'recalc-lookup-exact-large',
 		category: 'calc',
 		build() {

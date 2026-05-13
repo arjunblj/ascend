@@ -161,6 +161,34 @@ interface GridChunk {
 		stringTable: StringTable,
 		fn: (localCol: number, value: CellValue) => void,
 	): void
+	aggregateNumericInRange(
+		localRowStart: number,
+		localRowEnd: number,
+		minLocalCol: number,
+		maxLocalCol: number,
+		baseRow: number,
+		baseCol: number,
+		stringTable: StringTable,
+		state: NumericRangeAggregateState,
+	): void
+}
+
+export interface NumericRangeAggregate {
+	readonly sum: number
+	readonly count: number
+	readonly min: number
+	readonly max: number
+	readonly error: ExcelError | null
+}
+
+interface NumericRangeAggregateState {
+	sum: number
+	count: number
+	min: number
+	max: number
+	error: ExcelError | null
+	errorRow: number
+	errorCol: number
 }
 
 class StringTable {
@@ -505,6 +533,25 @@ class SparseChunk implements GridChunk {
 				if (value !== undefined) fn(localCol, value)
 			}
 		})
+	}
+
+	aggregateNumericInRange(
+		localRowStart: number,
+		localRowEnd: number,
+		minLocalCol: number,
+		maxLocalCol: number,
+		baseRow: number,
+		baseCol: number,
+		stringTable: StringTable,
+		state: NumericRangeAggregateState,
+	): void {
+		for (const [localIndex, slot] of this.slots) {
+			const localRow = localIndex >>> CHUNK_BITS
+			if (localRow < localRowStart || localRow > localRowEnd) continue
+			const localCol = localIndex & CHUNK_MASK
+			if (localCol < minLocalCol || localCol > maxLocalCol) continue
+			aggregateNumericSlot(slot, stringTable, state, baseRow + localRow, baseCol + localCol)
+		}
 	}
 
 	private forEachOccupiedLocalCol(
@@ -1058,6 +1105,40 @@ class DenseChunk implements GridChunk {
 			if (value !== undefined) fn(localCol, value)
 		}
 	}
+
+	aggregateNumericInRange(
+		localRowStart: number,
+		localRowEnd: number,
+		minLocalCol: number,
+		maxLocalCol: number,
+		baseRow: number,
+		baseCol: number,
+		stringTable: StringTable,
+		state: NumericRangeAggregateState,
+	): void {
+		for (let localRow = localRowStart; localRow <= localRowEnd; localRow++) {
+			if ((this.rowCounts[localRow] ?? 0) === 0) continue
+			const rowMin = this.rowMinCol[localRow] ?? ROW_EMPTY_MIN
+			const rowMax = this.rowMaxCol[localRow] ?? ROW_EMPTY_MAX
+			if (rowMin > rowMax || rowMax < minLocalCol || rowMin > maxLocalCol) continue
+			const startCol = Math.max(minLocalCol, rowMin)
+			const endCol = Math.min(maxLocalCol, rowMax)
+			const rowBase = localRow << CHUNK_BITS
+			for (let localCol = startCol; localCol <= endCol; localCol++) {
+				const localIndex = rowBase + localCol
+				if (!this.has(localIndex)) continue
+				aggregateNumericTag(
+					this.readTag(localIndex),
+					this.numbers[localIndex] ?? 0,
+					this.stringIds[localIndex] ?? 0,
+					stringTable,
+					state,
+					baseRow + localRow,
+					baseCol + localCol,
+				)
+			}
+		}
+	}
 }
 
 export type ExpectedDensity = 'sparse' | 'dense' | 'auto'
@@ -1529,6 +1610,54 @@ export class SparseGrid {
 				}
 			}
 		}
+	}
+
+	aggregateNumericInRange(
+		startRow: number,
+		startCol: number,
+		endRow: number,
+		endCol: number,
+	): NumericRangeAggregate {
+		const state: NumericRangeAggregateState = {
+			sum: 0,
+			count: 0,
+			min: Number.POSITIVE_INFINITY,
+			max: Number.NEGATIVE_INFINITY,
+			error: null,
+			errorRow: Number.POSITIVE_INFINITY,
+			errorCol: Number.POSITIVE_INFINITY,
+		}
+		if (this._cellCount === 0) return numericRangeAggregateResult(state)
+		const startChunkRow = startRow >> CHUNK_BITS
+		const endChunkRow = endRow >> CHUNK_BITS
+		const startChunkCol = startCol >> CHUNK_BITS
+		const endChunkCol = endCol >> CHUNK_BITS
+
+		for (let chunkRow = startChunkRow; chunkRow <= endChunkRow; chunkRow++) {
+			const cols = this.chunkRows.get(chunkRow)
+			if (!cols) continue
+			const localRowStart = chunkRow === startChunkRow ? startRow & CHUNK_MASK : 0
+			const localRowEnd = chunkRow === endChunkRow ? endRow & CHUNK_MASK : CHUNK_MASK
+			const sortedChunkCols = this.getSortedChunkCols(chunkRow, cols)
+			for (const chunkCol of sortedChunkCols) {
+				if (chunkCol < startChunkCol || chunkCol > endChunkCol) continue
+				const chunk = cols.get(chunkCol)
+				if (!chunk) continue
+				const localColStart = chunkCol === startChunkCol ? startCol & CHUNK_MASK : 0
+				const localColEnd = chunkCol === endChunkCol ? endCol & CHUNK_MASK : CHUNK_MASK
+				chunk.aggregateNumericInRange(
+					localRowStart,
+					localRowEnd,
+					localColStart,
+					localColEnd,
+					chunkRow << CHUNK_BITS,
+					chunkCol << CHUNK_BITS,
+					this.stringTable,
+					state,
+				)
+			}
+		}
+		return numericRangeAggregateResult(state)
 	}
 
 	forEachRow(fn: (row: number, cells: ReadonlyMap<number, CellValue>) => void): void {
@@ -2374,6 +2503,69 @@ function readSlotValue(
 			return dateValue(slot.numberValue ?? 0)
 		case SlotTag.Heap:
 			return slot.heapValue
+	}
+}
+
+function aggregateNumericSlot(
+	slot: StoredSlot,
+	stringTable: StringTable,
+	state: NumericRangeAggregateState,
+	row = Number.POSITIVE_INFINITY,
+	col = Number.POSITIVE_INFINITY,
+): void {
+	aggregateNumericTag(
+		slot.tag,
+		slot.numberValue ?? 0,
+		slot.stringId ?? 0,
+		stringTable,
+		state,
+		row,
+		col,
+	)
+}
+
+function aggregateNumericTag(
+	tag: SlotTag,
+	number: number,
+	stringId: number,
+	stringTable: StringTable,
+	state: NumericRangeAggregateState,
+	row = Number.POSITIVE_INFINITY,
+	col = Number.POSITIVE_INFINITY,
+): void {
+	if (tag === SlotTag.Number || tag === SlotTag.Date) {
+		state.sum += number
+		state.count += 1
+		if (number < state.min) state.min = number
+		if (number > state.max) state.max = number
+		return
+	}
+	if (
+		tag === SlotTag.Error &&
+		(row < state.errorRow || (row === state.errorRow && col < state.errorCol))
+	) {
+		state.error = stringTable.lookup(stringId) as ExcelError
+		state.errorRow = row
+		state.errorCol = col
+	}
+}
+
+function numericRangeAggregateResult(state: NumericRangeAggregateState): NumericRangeAggregate {
+	if (state.error) {
+		return {
+			sum: 0,
+			count: 0,
+			min: Number.POSITIVE_INFINITY,
+			max: Number.NEGATIVE_INFINITY,
+			error: state.error,
+		}
+	}
+	return {
+		sum: state.sum,
+		count: state.count,
+		min: state.min,
+		max: state.max,
+		error: state.error,
 	}
 }
 

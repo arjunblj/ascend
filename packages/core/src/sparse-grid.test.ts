@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 import {
 	type CellValue,
+	dateValue,
 	EMPTY,
+	errorValue,
 	numberValue,
 	richTextValue,
 	type ScalarCellValue,
@@ -259,6 +261,38 @@ describe('SparseGrid', () => {
 		grid.forEachValueInRange(0, 31, 0, 32, (_value, _row, col) => coords.push(col))
 
 		expect(coords).toEqual([31, 32])
+	})
+
+	test('aggregateNumericInRange sums numbers and dates while ignoring nonnumeric cells', () => {
+		const grid = new SparseGrid()
+		grid.set(0, 0, makeCell(numberValue(4)))
+		grid.set(0, 1, makeCell(stringValue('ignored')))
+		grid.set(64, 0, makeCell(dateValue(10)))
+		grid.set(64, 1, makeCell(richTextValue([{ text: 'ignored rich' }])))
+		grid.set(128, 0, makeCell(numberValue(-2)))
+
+		expect(grid.aggregateNumericInRange(0, 0, 128, 1)).toEqual({
+			sum: 12,
+			count: 3,
+			min: -2,
+			max: 10,
+			error: null,
+		})
+	})
+
+	test('aggregateNumericInRange reports first row-major error in range', () => {
+		const grid = new SparseGrid()
+		grid.set(0, 1, makeCell(errorValue('#VALUE!')))
+		grid.set(0, 2, makeCell(errorValue('#REF!')))
+		grid.set(1, 0, makeCell(numberValue(5)))
+
+		expect(grid.aggregateNumericInRange(0, 0, 1, 2)).toEqual({
+			sum: 0,
+			count: 0,
+			min: Number.POSITIVE_INFINITY,
+			max: Number.NEGATIVE_INFINITY,
+			error: '#VALUE!',
+		})
 	})
 
 	test('forEachRow calls fn with row and Map of col->value', () => {

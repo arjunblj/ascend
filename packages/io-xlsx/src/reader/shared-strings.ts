@@ -195,8 +195,8 @@ function createEagerSharedStrings(
 	normalize?: (value: CellValue) => CellValue,
 	normalizeString?: (value: string) => CellValue,
 ): SharedStringResolver {
-	const entries = parseSharedStringEntries(xml, normalize, normalizeString)
-	if (entries.length === 0 && xml.includes('<si')) {
+	const parsed = parseEagerSharedStringEntries(xml, normalize, normalizeString)
+	if (parsed.entries.length === 0 && xml.includes('<si')) {
 		const fallback = parseSharedStringEntriesWithDom(xml, normalize)
 		if (fallback.length > 0) {
 			return {
@@ -213,12 +213,22 @@ function createEagerSharedStrings(
 	}
 
 	return {
-		count: entries.length,
+		count: parsed.entries.length,
 		get(index: number): CellValue | undefined {
-			return entries[index]
+			const entry = parsed.entries[index]
+			if (entry) return entry
+			const text = parsed.plainTextEntries[index]
+			if (text === undefined || text === null) return undefined
+			const result = normalizeString
+				? normalizeString(text)
+				: normalizeCellValue(stringValue(text), normalize)
+			parsed.entries[index] = result
+			return result
 		},
 		getString(index: number): string | undefined {
-			const entry = entries[index]
+			const text = parsed.plainTextEntries[index]
+			if (text !== undefined) return text === null ? undefined : text
+			const entry = parsed.entries[index]
 			return entry?.kind === 'string' ? entry.value : undefined
 		},
 	}
@@ -384,42 +394,49 @@ function endsSimplePlainSharedString(xml: string, start: number): boolean {
 	)
 }
 
-function parseSharedStringEntries(
+function parseEagerSharedStringEntries(
 	xml: string,
 	normalize?: (value: CellValue) => CellValue,
 	normalizeString?: (value: string) => CellValue,
-): CellValue[] {
-	const entries: CellValue[] = []
+): {
+	readonly entries: (CellValue | undefined)[]
+	readonly plainTextEntries: (string | null | undefined)[]
+} {
+	const entries: (CellValue | undefined)[] = []
+	const plainTextEntries: (string | null | undefined)[] = []
 	let cursor = 0
 	while (true) {
 		const open = xml.indexOf('<si', cursor)
 		if (open === -1) break
 		const fastPlain = parseSimplePlainSharedStringEntry(xml, open)
 		if (fastPlain !== undefined) {
-			entries.push(
-				normalizeString
-					? normalizeString(fastPlain.text)
-					: normalizeCellValue(stringValue(fastPlain.text), normalize),
-			)
+			entries.push(undefined)
+			plainTextEntries.push(fastPlain.text)
 			cursor = fastPlain.next
 			continue
 		}
 		const tagEnd = findTagEnd(xml, open)
 		if (tagEnd === -1) break
 		if (isSelfClosingTag(xml, open, tagEnd)) {
-			entries.push(
-				normalizeString ? normalizeString('') : normalizeCellValue(stringValue(''), normalize),
-			)
+			entries.push(undefined)
+			plainTextEntries.push('')
 			cursor = tagEnd + 1
 			continue
 		}
 		const close = xml.indexOf('</si>', tagEnd + 1)
 		if (close === -1) break
-		const parsed = parseSharedStringEntry(xml, tagEnd + 1, close)
-		entries.push(normalizeSharedStringValue(parsed, normalize, normalizeString))
+		const text = parsePlainSharedStringEntry(xml, tagEnd + 1, close)
+		if (text !== undefined) {
+			entries.push(undefined)
+			plainTextEntries.push(text)
+		} else {
+			const parsed = parseSharedStringEntry(xml, tagEnd + 1, close)
+			entries.push(normalizeSharedStringValue(parsed, normalize, normalizeString))
+			plainTextEntries.push(null)
+		}
 		cursor = close + 5
 	}
-	return entries
+	return { entries, plainTextEntries }
 }
 
 function normalizeSharedStringValue(

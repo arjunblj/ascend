@@ -65,6 +65,9 @@ interface ApiEnvelope {
 		}
 		readonly postWrite?: {
 			readonly valid?: boolean
+			readonly auditsPassed?: boolean
+			readonly expectedPackageGraphIssueCount?: number
+			readonly unresolvedPackageGraphIssueCount?: number
 			readonly reopened?: boolean
 			readonly timings?: {
 				readonly reopenMs?: number
@@ -1329,6 +1332,9 @@ describe('Ascend API server', () => {
 			expect(commit.body.data?.timings?.toBytesMs).toBeNumber()
 			expect(commit.body.data?.timings?.outputByteReadMs).toBeNumber()
 			expect(commit.body.data?.postWrite?.valid).toBe(true)
+			expect(commit.body.data?.postWrite?.auditsPassed).toBe(true)
+			expect(commit.body.data?.postWrite?.expectedPackageGraphIssueCount).toBe(0)
+			expect(commit.body.data?.postWrite?.unresolvedPackageGraphIssueCount).toBe(0)
 			expect(commit.body.data?.postWrite?.reopened).toBe(true)
 			expect(commit.body.data?.postWrite?.timings?.reopenMs).toBeNumber()
 			expect(commit.body.data?.postWrite?.check?.valid).toBe(true)

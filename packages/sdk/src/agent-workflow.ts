@@ -196,6 +196,7 @@ export interface CompactWritePolicySummary {
 
 export interface CompactAgentPostWriteVerification {
 	readonly valid: boolean
+	readonly auditsPassed: boolean
 	readonly output: string
 	readonly outputSha256: string
 	readonly reopened: true
@@ -204,6 +205,8 @@ export interface CompactAgentPostWriteVerification {
 	readonly lint: CompactLintSummary
 	readonly preservation: CompactWritePlanSummary
 	readonly packageGraphAudit: CompactPackageGraphAuditSummary
+	readonly expectedPackageGraphIssueCount: number
+	readonly unresolvedPackageGraphIssueCount: number
 }
 
 export interface CompactLossAuditSummary {
@@ -222,6 +225,7 @@ export interface CompactPackageGraphAuditSummary {
 
 export interface AgentPostWriteVerification {
 	readonly valid: boolean
+	readonly auditsPassed: boolean
 	readonly output: string
 	readonly outputSha256: string
 	readonly reopened: true
@@ -230,6 +234,8 @@ export interface AgentPostWriteVerification {
 	readonly lint: ReturnType<AscendWorkbook['lint']>
 	readonly preservation: ReturnType<AscendWorkbook['writePlanSummary']>
 	readonly packageGraphAudit: PackageGraphAudit
+	readonly expectedPackageGraphIssueCount: number
+	readonly unresolvedPackageGraphIssueCount: number
 }
 
 export interface AgentPostWriteVerificationTimings {
@@ -793,11 +799,14 @@ function compactPostWriteVerification(
 		output: postWrite.output,
 		outputSha256: postWrite.outputSha256,
 		reopened: postWrite.reopened,
+		auditsPassed: postWrite.auditsPassed,
 		...(postWrite.timings ? { timings: postWrite.timings } : {}),
 		check: compactCheckSummary(postWrite.check),
 		lint: compactLintSummary(postWrite.lint),
 		preservation: compactWritePlanSummary(postWrite.preservation),
 		packageGraphAudit: compactPackageGraphAuditSummary(postWrite.packageGraphAudit),
+		expectedPackageGraphIssueCount: postWrite.expectedPackageGraphIssueCount,
+		unresolvedPackageGraphIssueCount: postWrite.unresolvedPackageGraphIssueCount,
 	}
 }
 
@@ -1046,6 +1055,7 @@ export async function commitAgentPlanFromWorkbook(
 		packageGraph,
 		sourceBytes,
 		outputBytes,
+		expectedPostWritePackageGraphChanges,
 		progress,
 	)
 	await progressFromPhase(postWritePhase(postWrite, expectedPostWritePackageGraphChanges), progress)
@@ -1143,6 +1153,7 @@ async function verifyWrittenWorkbook(
 	sourceGraph: XlsxPackageGraph,
 	sourceBytes: Uint8Array,
 	outputBytes: Uint8Array,
+	expectedPackageGraphChanges: ExpectedPostWritePackageGraphChanges,
 	progress: ReturnType<typeof createProgressEmitter>,
 ): Promise<AgentPostWriteVerification> {
 	const reopened = await timedPostWriteStep(
@@ -1187,8 +1198,14 @@ async function verifyWrittenWorkbook(
 		'Post-write package graph roundtrip audit completed.',
 		() => auditPackageGraphRoundtrip(sourceGraph, sourceBytes, outputGraph.value, outputBytes),
 	)
+	const unresolvedPackageGraphIssues = packageGraphAudit.value.issues.filter(
+		(issue) => !isExpectedPostWritePackageGraphIssue(issue, expectedPackageGraphChanges),
+	)
+	const expectedPackageGraphIssueCount =
+		packageGraphAudit.value.issues.length - unresolvedPackageGraphIssues.length
 	return {
 		valid: check.value.valid,
+		auditsPassed: check.value.valid && unresolvedPackageGraphIssues.length === 0,
 		output,
 		outputSha256,
 		reopened: true,
@@ -1204,6 +1221,8 @@ async function verifyWrittenWorkbook(
 		lint: lint.value,
 		preservation: preservation.value,
 		packageGraphAudit: packageGraphAudit.value,
+		expectedPackageGraphIssueCount,
+		unresolvedPackageGraphIssueCount: unresolvedPackageGraphIssues.length,
 	}
 }
 

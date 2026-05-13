@@ -1190,6 +1190,9 @@ describe('MCP server', () => {
 						}
 						postWrite?: {
 							valid?: boolean
+							auditsPassed?: boolean
+							expectedPackageGraphIssueCount?: number
+							unresolvedPackageGraphIssueCount?: number
 							reopened?: boolean
 							timings?: { reopenMs?: number }
 							check?: { valid?: boolean }
@@ -1228,6 +1231,9 @@ describe('MCP server', () => {
 			expect(committed.structuredContent?.data?.timings?.toBytesMs).toBeNumber()
 			expect(committed.structuredContent?.data?.timings?.outputByteReadMs).toBeNumber()
 			expect(committed.structuredContent?.data?.postWrite?.valid).toBe(true)
+			expect(committed.structuredContent?.data?.postWrite?.auditsPassed).toBe(true)
+			expect(committed.structuredContent?.data?.postWrite?.expectedPackageGraphIssueCount).toBe(0)
+			expect(committed.structuredContent?.data?.postWrite?.unresolvedPackageGraphIssueCount).toBe(0)
 			expect(committed.structuredContent?.data?.postWrite?.reopened).toBe(true)
 			expect(committed.structuredContent?.data?.postWrite?.timings?.reopenMs).toBeNumber()
 			expect(committed.structuredContent?.data?.postWrite?.check?.valid).toBe(true)

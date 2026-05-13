@@ -332,6 +332,7 @@ export function analyzeWorkbookFormulas(
 	for (let sheetIndex = 0; sheetIndex < workbook.sheets.length; sheetIndex++) {
 		const sheet = workbook.sheets[sheetIndex]
 		if (!sheet) continue
+		if (sheet.cells.formulaCellCount() === 0) continue
 		const previousFormulaByCol = new Map<number, IndexedFormula>()
 		for (const [row, rowCells] of sheet.cells.iterateRows()) {
 			for (const [col, cell] of rowCells) {

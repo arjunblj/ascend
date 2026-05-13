@@ -34,6 +34,7 @@ const SID = 0 as StyleId
 interface ScenarioInput {
 	readonly workbook?: Workbook
 	readonly bytes?: Uint8Array
+	readonly byteCount?: number
 	readonly content?: string
 	readonly rows: number
 	readonly cols: number
@@ -515,6 +516,81 @@ let cachedSparseWideViewportBytes: Uint8Array | undefined
 let cachedSemanticViewportBytes: Uint8Array | undefined
 let cachedManyOverlayViewportBytes: Uint8Array | undefined
 let cachedRealRichViewportBytes: Uint8Array | undefined
+const realInteractivePatchCorpusBytes = new Map<string, Uint8Array>()
+
+interface RealInteractivePatchTarget {
+	readonly label: string
+	readonly path: string
+	readonly sheet: string
+	readonly editRef: string
+	readonly topRow: number
+	readonly leftCol: number
+	readonly rowCount: number
+	readonly colCount: number
+}
+
+const REAL_INTERACTIVE_PATCH_CORPUS: readonly RealInteractivePatchTarget[] = [
+	{
+		label: 'xlsxwriter-styles-formulas',
+		path: 'fixtures/xlsx/xlsxwriter/styles_formulas.xlsx',
+		sheet: 'Data',
+		editRef: 'C2',
+		topRow: 0,
+		leftCol: 0,
+		rowCount: 100,
+		colCount: 20,
+	},
+	{
+		label: 'xlsxwriter-strings-links',
+		path: 'fixtures/xlsx/xlsxwriter/strings_links.xlsx',
+		sheet: 'Strings',
+		editRef: 'A2',
+		topRow: 0,
+		leftCol: 0,
+		rowCount: 50,
+		colCount: 12,
+	},
+	{
+		label: 'poi-with-table',
+		path: 'fixtures/xlsx/poi/WithTable.xlsx',
+		sheet: 'Foglio1',
+		editRef: 'A2',
+		topRow: 0,
+		leftCol: 0,
+		rowCount: 50,
+		colCount: 12,
+	},
+	{
+		label: 'poi-structured-references',
+		path: 'fixtures/xlsx/poi/StructuredReferences.xlsx',
+		sheet: 'Formulas',
+		editRef: 'A2',
+		topRow: 0,
+		leftCol: 0,
+		rowCount: 50,
+		colCount: 12,
+	},
+	{
+		label: 'poi-comments',
+		path: 'fixtures/xlsx/poi/comments.xlsx',
+		sheet: 'Sheet1',
+		editRef: 'A1',
+		topRow: 0,
+		leftCol: 0,
+		rowCount: 50,
+		colCount: 12,
+	},
+	{
+		label: 'poi-merge-cells',
+		path: 'fixtures/xlsx/poi/merge_cells.xlsx',
+		sheet: 'Merge',
+		editRef: 'A1',
+		topRow: 0,
+		leftCol: 0,
+		rowCount: 50,
+		colCount: 12,
+	},
+]
 
 function cachedDenseViewportWorkbookBytes(): Uint8Array {
 	cachedDenseViewportBytes ??= mustWrite(buildDenseWorkbook(5000, 20))
@@ -604,6 +680,21 @@ function cachedRealRichViewportWorkbookBytes(): Uint8Array {
 		readFileSync('fixtures/xlsx/xlsxwriter/styles_formulas.xlsx'),
 	)
 	return cachedRealRichViewportBytes
+}
+
+function realInteractivePatchCorpusTargetBytes(target: RealInteractivePatchTarget): Uint8Array {
+	const cached = realInteractivePatchCorpusBytes.get(target.path)
+	if (cached) return cached
+	const bytes = new Uint8Array(readFileSync(target.path))
+	realInteractivePatchCorpusBytes.set(target.path, bytes)
+	return bytes
+}
+
+function realInteractivePatchCorpusByteCount(): number {
+	return REAL_INTERACTIVE_PATCH_CORPUS.reduce(
+		(total, target) => total + realInteractivePatchCorpusTargetBytes(target).byteLength,
+		0,
+	)
 }
 
 function interactiveSessionFor(bytes: Uint8Array): Promise<AscendSession> {
@@ -1664,6 +1755,159 @@ const scenarios: readonly Scenario[] = [
 		},
 	},
 	{
+		name: 'patch-stream-real-corpus-prepared-first-edit',
+		category: 'workflow',
+		build() {
+			return {
+				rows: REAL_INTERACTIVE_PATCH_CORPUS.length,
+				cols: 1,
+				cells: REAL_INTERACTIVE_PATCH_CORPUS.length,
+				byteCount: realInteractivePatchCorpusByteCount(),
+			}
+		},
+		async run() {
+			const targetAssertions: Record<string, string | number | boolean | null> = {}
+			let totalBytes = 0
+			let totalOpenMs = 0
+			let totalInitialViewportMs = 0
+			let totalPrepareEditsMs = 0
+			let totalPrepareEnsureMutableWorkbookMs = 0
+			let totalEditFrameMs = 0
+			let totalSessionApplyMs = 0
+			let totalApplyMs = 0
+			let totalPatchReadMs = 0
+			let totalPatchBytes = 0
+			let totalChangedCells = 0
+			let totalViewportCells = 0
+			let totalViewportFlatValues = 0
+			let totalTables = 0
+			let totalComments = 0
+			let totalHyperlinks = 0
+			let totalValidations = 0
+			let totalConditionalFormats = 0
+			let totalMerges = 0
+			let maxPrepareEditsMs = 0
+			let slowestPrepareTarget = ''
+
+			for (const [index, target] of REAL_INTERACTIVE_PATCH_CORPUS.entries()) {
+				const bytes = realInteractivePatchCorpusTargetBytes(target)
+				const assertionPrefix = target.label.replaceAll('-', '_')
+				totalBytes += bytes.byteLength
+				const openStart = performance.now()
+				const session = await AscendSession.open(bytes, { mode: 'interactive' })
+				const openMs = performance.now() - openStart
+				totalOpenMs += openMs
+				const previewStart = performance.now()
+				const viewport = session.readViewport({
+					sheet: target.sheet,
+					topRow: target.topRow,
+					leftCol: target.leftCol,
+					rowCount: target.rowCount,
+					colCount: target.colCount,
+				})
+				const initialViewportMs = performance.now() - previewStart
+				totalInitialViewportMs += initialViewportMs
+				totalViewportCells += viewport.cells.length
+				totalViewportFlatValues += viewport.flatValues.length
+				totalTables += viewport.tables.length
+				totalComments += viewport.comments.length
+				totalHyperlinks += viewport.hyperlinks.length
+				totalValidations += viewport.dataValidations.length
+				totalConditionalFormats += viewport.conditionalFormats.length
+				totalMerges += viewport.merges.length
+
+				const prepare = await session.prepareEdits()
+				const prepareEditsMs = prepare.timings.totalMs
+				const prepareEnsureMutableWorkbookMs = prepare.timings.ensureMutableWorkbookMs
+				totalPrepareEditsMs += prepare.timings.totalMs
+				totalPrepareEnsureMutableWorkbookMs += prepare.timings.ensureMutableWorkbookMs
+				if (prepareEditsMs > maxPrepareEditsMs) {
+					maxPrepareEditsMs = prepareEditsMs
+					slowestPrepareTarget = target.label
+				}
+
+				const editFrameStart = performance.now()
+				const edit = await session.apply(
+					[
+						{
+							op: 'setCells',
+							sheet: target.sheet,
+							updates: [{ ref: target.editRef, value: 70_000 + index }],
+						},
+					],
+					{ recalc: false },
+				)
+				if (edit.apply.errors.length > 0) {
+					throw new Error(`Real patch corpus edit failed for ${target.label}`)
+				}
+				const patchRequest = {
+					sheet: target.sheet,
+					topRow: target.topRow,
+					leftCol: target.leftCol,
+					rowCount: target.rowCount,
+					colCount: target.colCount,
+					changedSince: viewport.changeToken,
+				}
+				const patchStart = performance.now()
+				const patch =
+					session.readViewportPatch(patchRequest) ?? session.readViewport(patchRequest).patch
+				const patchReadMs = performance.now() - patchStart
+				const editFrameMs = performance.now() - editFrameStart
+				totalPatchReadMs += patchReadMs
+				totalEditFrameMs += editFrameMs
+				session.close()
+				if (!patch || patch.changedCells.length !== 1) {
+					throw new Error(`Real patch corpus returned an unexpected patch for ${target.label}`)
+				}
+				totalSessionApplyMs += edit.timings.totalMs
+				totalApplyMs += edit.timings.applyMs
+				totalPatchBytes += patch.byteLength
+				totalChangedCells += patch.changedCells.length
+				targetAssertions[`${assertionPrefix}.bytes`] = bytes.byteLength
+				targetAssertions[`${assertionPrefix}.viewportCells`] = viewport.cells.length
+				targetAssertions[`${assertionPrefix}.openMs`] = openMs
+				targetAssertions[`${assertionPrefix}.initialViewportMs`] = initialViewportMs
+				targetAssertions[`${assertionPrefix}.prepareEditsMs`] = prepareEditsMs
+				targetAssertions[`${assertionPrefix}.prepareEnsureMutableWorkbookMs`] =
+					prepareEnsureMutableWorkbookMs
+				targetAssertions[`${assertionPrefix}.editFrameMs`] = editFrameMs
+				targetAssertions[`${assertionPrefix}.sessionApplyMs`] = edit.timings.totalMs
+				targetAssertions[`${assertionPrefix}.applyMs`] = edit.timings.applyMs
+				targetAssertions[`${assertionPrefix}.patchReadMs`] = patchReadMs
+				targetAssertions[`${assertionPrefix}.patchBytes`] = patch.byteLength
+			}
+
+			return {
+				assertions: {
+					workbooks: REAL_INTERACTIVE_PATCH_CORPUS.length,
+					totalBytes,
+					totalViewportCells,
+					totalViewportFlatValues,
+					tables: totalTables,
+					comments: totalComments,
+					hyperlinks: totalHyperlinks,
+					validations: totalValidations,
+					conditionalFormats: totalConditionalFormats,
+					merges: totalMerges,
+					changedCells: totalChangedCells,
+					patchBytes: totalPatchBytes,
+					openMs: totalOpenMs,
+					initialViewportMs: totalInitialViewportMs,
+					prepareEditsMs: totalPrepareEditsMs,
+					prepareEnsureMutableWorkbookMs: totalPrepareEnsureMutableWorkbookMs,
+					editFrameMs: totalEditFrameMs,
+					sessionApplyMs: totalSessionApplyMs,
+					applyMs: totalApplyMs,
+					patchReadMs: totalPatchReadMs,
+					maxPrepareEditsMs,
+					slowestPrepareTarget,
+					patchMode: 'delta',
+					...targetAssertions,
+				},
+			}
+		},
+	},
+	{
 		name: 'workflow-reopen-values-window',
 		category: 'workflow',
 		build() {
@@ -2480,6 +2724,7 @@ const scenarioSets = {
 		'patch-stream-prepared-first-edit',
 		'patch-stream-real-rich-prepared-first-edit',
 	],
+	'ui-real-corpus': ['patch-stream-real-corpus-prepared-first-edit'],
 } as const
 
 function getRssBytes(): number | undefined {
@@ -2615,7 +2860,7 @@ async function runScenario(
 			rows: input.rows,
 			cols: input.cols,
 			cells: input.cells,
-			bytes: input.bytes?.byteLength ?? 0,
+			bytes: input.byteCount ?? input.bytes?.byteLength ?? 0,
 			repeat,
 		},
 		metrics: summarizeSamples(samples),

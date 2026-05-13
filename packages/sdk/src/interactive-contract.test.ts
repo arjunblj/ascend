@@ -416,6 +416,7 @@ describe('interactive client contract', () => {
 		})
 		expect(afterComment.comments).toHaveLength(1)
 		expect(afterComment.cells.find((cell) => cell.ref === 'A1')?.flags.comment).toBe(true)
+		expect(afterComment.patch).toBeUndefined()
 
 		const layoutEdit = await session.apply([
 			{ op: 'setRowHeight', sheet: 'Sheet1', row: 0, height: 28 },
@@ -431,6 +432,16 @@ describe('interactive client contract', () => {
 				changedSince: afterComment.changeToken,
 			}),
 		).toBeNull()
+		const afterLayout = session.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 2,
+			colCount: 1,
+			changedSince: afterComment.changeToken,
+		})
+		expect(afterLayout.rowLayout).toEqual([{ index: 0, size: 28 }])
+		expect(afterLayout.patch).toBeUndefined()
 		session.close()
 	})
 

@@ -868,6 +868,8 @@ export class AscendSession {
 		const previous = this.viewportSnapshots.get(snapshotKey)
 		this.viewportSnapshots.set(snapshotKey, { token: changeToken, request, cells: currentCells })
 		if (!previous || previous.token !== request.changedSince) return result
+		const baseGeneration = interactiveTokenGeneration(request.changedSince)
+		if (baseGeneration === null || !this.changedRefsSince(baseGeneration)) return result
 		const patch = diffInteractiveViewportCells(
 			previous.token,
 			changeToken,

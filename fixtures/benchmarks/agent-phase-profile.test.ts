@@ -118,7 +118,7 @@ describe('agent phase profile benchmark', () => {
 			xlsxPath: 'fixtures/xlsx/poi/SampleSS.xlsx',
 			sheet: 'First Sheet',
 			rows: 65_536,
-			cols: 10,
+			cols: 2,
 			cleanup: false,
 			source: 'input-file',
 		})

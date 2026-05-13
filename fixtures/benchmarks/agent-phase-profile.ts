@@ -285,6 +285,21 @@ function summarize(samples: readonly Sample[]) {
 	}
 }
 
+async function inferLoadedColumnCount(
+	path: string,
+	sheetName: string,
+	fallbackCols: number,
+): Promise<number> {
+	const preview = await WorkbookDocument.open(path, {
+		mode: 'values',
+		sheets: [sheetName],
+		maxRows: 100,
+	})
+	const sheetInfo = preview.inspect().sheets.find((sheet) => sheet.name === sheetName)
+	WorkbookDocument.clearCache()
+	return Math.max(1, sheetInfo?.colCount ?? fallbackCols)
+}
+
 async function resolveBenchmarkInput(args: Args): Promise<BenchmarkInput> {
 	if (args.inputFile === undefined) {
 		const data = await buildRawReadWorkloadDataSet(args.workload, args.rows, args.cols)
@@ -314,8 +329,11 @@ async function resolveBenchmarkInput(args: Args): Promise<BenchmarkInput> {
 		)
 	}
 	const rows = Math.max(1, sheetInfo.rowCount ?? args.rows)
-	const cols = Math.max(1, sheetInfo.colCount ?? args.cols)
 	WorkbookDocument.clearCache()
+	const cols = Math.max(
+		1,
+		sheetInfo.colCount ?? (await inferLoadedColumnCount(args.inputFile, sheetInfo.name, args.cols)),
+	)
 	return {
 		xlsxPath: args.inputFile,
 		sheet: sheetInfo.name,

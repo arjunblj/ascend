@@ -183,10 +183,10 @@ describe('agent workflow benchmark', () => {
 		}
 		expect(payload.input).toEqual({
 			xlsxPath: 'fixtures/xlsx/poi/SampleSS.xlsx',
-			range: 'A1:J65536',
+			range: 'A1:B65536',
 			sheet: 'First Sheet',
 			rows: 65_536,
-			cols: 10,
+			cols: 2,
 			cleanup: false,
 			source: 'input-file',
 		})

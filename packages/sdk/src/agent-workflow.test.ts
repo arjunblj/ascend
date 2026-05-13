@@ -2590,6 +2590,45 @@ describe('agent workflow loss audit', () => {
 		).rejects.toThrow('Prepared agent plan has already been committed')
 	})
 
+	test('prepared agent plans expose rollback journal safety facts', async () => {
+		const input = join(TEMP_DIR, 'prepared-journal.xlsx')
+		const output = join(TEMP_DIR, 'prepared-journal-out.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		const wb = AscendWorkbook.create()
+		await wb.save(input)
+		const ops = [{ op: 'groupRows' as const, sheet: 'Sheet1', from: 1, to: 2, collapsed: true }]
+		const expectedIssue = {
+			code: 'LOSSY_INVERSE',
+			message: 'Grouped rows for Sheet1 cannot be restored with public operations',
+			refs: [
+				'Sheet1!2',
+				'Sheet1!3',
+				'Sheet1!4',
+				'sheet:Sheet1:outlinePr:summaryBelow',
+				'sheet:Sheet1:sheetFormatPr:outlineLevelRow',
+			],
+		}
+
+		const prepared = await createPreparedAgentPlan(input, ops)
+
+		expect(prepared.plan.preview.journal?.supported).toBe(true)
+		expect(prepared.plan.preview.journal?.exact).toBe(false)
+		expect(prepared.plan.preview.journal?.inverseOps).toEqual([])
+		expect(prepared.plan.preview.journal?.issues).toEqual([expectedIssue])
+
+		const committed = await prepared.commit({ output })
+		expect(committed.apply.journal?.supported).toBe(true)
+		expect(committed.apply.journal?.exact).toBe(false)
+		expect(committed.apply.journal?.inverseOps).toEqual([])
+		expect(committed.apply.journal?.issues).toEqual([expectedIssue])
+
+		const reopened = await AscendWorkbook.open(output)
+		const sheet = reopened.getWorkbookModel().getSheet('Sheet1')
+		expect(sheet?.rowDefs.get(1)).toEqual({ hidden: true, outlineLevel: 1 })
+		expect(sheet?.rowDefs.get(2)).toEqual({ hidden: true, outlineLevel: 1 })
+		expect(sheet?.rowDefs.get(3)).toEqual({ collapsed: true })
+	})
+
 	test('prepared agent commits surface post-write audit failures as blocking model output', async () => {
 		const input = join(TEMP_DIR, 'prepared-preserved.xlsx')
 		const output = join(TEMP_DIR, 'prepared-preserved-out.xlsx')

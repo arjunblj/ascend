@@ -586,7 +586,7 @@ export async function createAgentPlanFromWorkbook(
 	}
 	const writePolicyWorkbook = snapshotWritePolicyWorkbook(wb.getWorkbookModel())
 	await progress('preview', 'started', 'Previewing operations.', { count: ops.length })
-	const preview = wb.preview(ops)
+	const preview = wb.preview(ops, { journal: true })
 	await progressFromPhase(previewPhase(preview), progress)
 	const packageGraph = wb.packageGraph()
 	await progress('loss-audit', 'started', 'Auditing preserved and unsupported features.')
@@ -966,7 +966,9 @@ export async function commitAgentPlanFromWorkbook(
 		)
 	}
 	await progress('apply', 'started', 'Applying operations.', { count: ops.length })
-	const applyResult = await timedCommitStep(() => wb.apply(ops, { transaction: true }))
+	const applyResult = await timedCommitStep(() =>
+		wb.apply(ops, { transaction: true, journal: true }),
+	)
 	const apply = applyResult.value
 	await progressFromPhase(applyPhase(apply), progress)
 	if (apply.errors.length > 0)

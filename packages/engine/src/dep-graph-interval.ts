@@ -25,6 +25,8 @@ export class IntervalIndex {
 	private entries: RangeEntry[] = []
 	private formulaIndices = new Map<CellKey, Set<number>>()
 	private subMax: Int32Array | null = null
+	private minRow = Number.POSITIVE_INFINITY
+	private maxRow = Number.NEGATIVE_INFINITY
 	private minCol = Number.POSITIVE_INFINITY
 	private maxCol = Number.NEGATIVE_INFINITY
 	private dirty = true
@@ -38,6 +40,8 @@ export class IntervalIndex {
 	): void {
 		const index = this.entries.length
 		this.entries.push({ startRow, endRow, startCol, endCol, formulaKey })
+		if (startRow < this.minRow) this.minRow = startRow
+		if (endRow > this.maxRow) this.maxRow = endRow
 		if (startCol < this.minCol) this.minCol = startCol
 		if (endCol > this.maxCol) this.maxCol = endCol
 		let indices = this.formulaIndices.get(formulaKey)
@@ -51,6 +55,7 @@ export class IntervalIndex {
 
 	query(row: number, col: number): CellKey[] {
 		if (this.entries.length === 0) return []
+		if (row < this.minRow || row > this.maxRow) return []
 		if (col < this.minCol || col > this.maxCol) return []
 		if (this.dirty) this.rebuild()
 		const result: CellKey[] = []
@@ -103,7 +108,7 @@ export class IntervalIndex {
 			this.removeAt(index)
 		}
 		this.formulaIndices.delete(formulaKey)
-		this.recomputeColumnBounds()
+		this.recomputeBounds()
 		this.dirty = true
 	}
 
@@ -129,11 +134,15 @@ export class IntervalIndex {
 		this.dirty = false
 	}
 
-	private recomputeColumnBounds(): void {
+	private recomputeBounds(): void {
+		this.minRow = Number.POSITIVE_INFINITY
+		this.maxRow = Number.NEGATIVE_INFINITY
 		this.minCol = Number.POSITIVE_INFINITY
 		this.maxCol = Number.NEGATIVE_INFINITY
 		for (let i = 0; i < this.entries.length; i++) {
 			const entry = this.entries[i] as RangeEntry
+			if (entry.startRow < this.minRow) this.minRow = entry.startRow
+			if (entry.endRow > this.maxRow) this.maxRow = entry.endRow
 			if (entry.startCol < this.minCol) this.minCol = entry.startCol
 			if (entry.endCol > this.maxCol) this.maxCol = entry.endCol
 		}

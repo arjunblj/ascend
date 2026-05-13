@@ -449,4 +449,17 @@ describe('IntervalIndex', () => {
 		expect(idx.query(5, 0)).toEqual([])
 		expect(idx.query(5, 2)).toEqual([right])
 	})
+
+	test('query row bounds update after removing a formula', () => {
+		const idx = new IntervalIndex()
+		const top = cellKey(0, 10, 0)
+		const bottom = cellKey(0, 11, 0)
+		idx.insert(0, 10, 0, 0, top)
+		idx.insert(20, 30, 0, 0, bottom)
+
+		idx.remove(top)
+
+		expect(idx.query(5, 0)).toEqual([])
+		expect(idx.query(25, 0)).toEqual([bottom])
+	})
 })

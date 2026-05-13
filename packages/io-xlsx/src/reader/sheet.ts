@@ -26,6 +26,7 @@ import {
 	indexToColumn,
 	parseRange,
 	Sheet,
+	SPARSE_GRID_CHUNK_SIZE,
 	SPARSE_TO_DENSE_THRESHOLD,
 } from '@ascend/core'
 import type { FormulaNode } from '@ascend/formulas'
@@ -221,8 +222,6 @@ function buildSmallNumberCache(): readonly CellValue[] {
 	return cache
 }
 
-const CHUNK_SIZE = 64
-
 function parseDimensionRef(xml: string): string | null {
 	const m = /<dimension\b([^>]*)/.exec(xml)
 	return m ? (rawAttr(m[1] ?? '', 'ref') ?? null) : null
@@ -237,7 +236,8 @@ function applyDensityHintFromDimension(sheet: Sheet, xml: string): void {
 		const cols = range.end.col - range.start.col + 1
 		if (rows <= 0 || cols <= 0) return
 		if (rows >= 1_048_576 && cols >= 16_384) return
-		const numChunks = Math.ceil(rows / CHUNK_SIZE) * Math.ceil(cols / CHUNK_SIZE)
+		const numChunks =
+			Math.ceil(rows / SPARSE_GRID_CHUNK_SIZE) * Math.ceil(cols / SPARSE_GRID_CHUNK_SIZE)
 		const cellsPerChunk = (rows * cols) / numChunks
 		if (cellsPerChunk >= SPARSE_TO_DENSE_THRESHOLD) {
 			sheet.cells.setExpectedDensity('dense')
@@ -3853,7 +3853,8 @@ function applyDensityHintFromDimensionRef(sheet: Sheet, ref: string | null): voi
 		const cols = range.end.col - range.start.col + 1
 		if (rows <= 0 || cols <= 0) return
 		if (rows >= 1_048_576 && cols >= 16_384) return
-		const numChunks = Math.ceil(rows / CHUNK_SIZE) * Math.ceil(cols / CHUNK_SIZE)
+		const numChunks =
+			Math.ceil(rows / SPARSE_GRID_CHUNK_SIZE) * Math.ceil(cols / SPARSE_GRID_CHUNK_SIZE)
 		const cellsPerChunk = (rows * cols) / numChunks
 		if (cellsPerChunk >= SPARSE_TO_DENSE_THRESHOLD) {
 			sheet.cells.setExpectedDensity('dense')

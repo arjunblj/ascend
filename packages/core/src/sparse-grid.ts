@@ -92,7 +92,7 @@ const CHUNK_MASK = CHUNK_SIZE - 1
 const CHUNK_AREA = CHUNK_SIZE * CHUNK_SIZE
 const CHUNK_COL_FACTOR = (16_383 >> CHUNK_BITS) + 1
 /** SparseChunk upgrades to DenseChunk when cell count reaches this. DenseChunk uses fixed arrays; SparseChunk uses a Map. */
-export const SPARSE_TO_DENSE_THRESHOLD = Math.min(384, CHUNK_AREA)
+export const SPARSE_TO_DENSE_THRESHOLD = Math.min(256, CHUNK_AREA)
 
 const AUTO_DENSE_SAMPLE_CHUNKS = 4
 const AUTO_DENSE_FILL_RATIO = 0.5

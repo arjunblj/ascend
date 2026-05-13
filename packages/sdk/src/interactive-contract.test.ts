@@ -947,6 +947,89 @@ describe('interactive client contract', () => {
 		expect(journalComparableState(wb)).toEqual(before)
 	})
 
+	test('journal inverse ops restore workbook views and calc settings', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{ op: 'setWorkbookView', index: 0, view: { activeTab: 0, firstSheet: 0, tabRatio: 600 } },
+			{
+				op: 'setCalcSettings',
+				settings: {
+					calcMode: 'auto',
+					fullCalcOnLoad: false,
+					calcCompleted: true,
+					calcOnSave: true,
+					forceFullCalc: false,
+					calcId: 1,
+					dateSystem: '1900',
+					iterativeCalc: { enabled: false, maxIterations: 100, maxChange: 0.001 },
+				},
+			},
+		])
+		const before = journalComparableState(wb)
+
+		const changed = wb.apply(
+			[
+				{
+					op: 'setWorkbookView',
+					index: 0,
+					mode: 'replace',
+					view: { activeTab: 2, firstSheet: 1 },
+				},
+				{
+					op: 'setWorkbookView',
+					index: 1,
+					view: { activeTab: 1, tabRatio: 720 },
+				},
+				{
+					op: 'setCalcSettings',
+					settings: {
+						calcMode: 'manual',
+						fullCalcOnLoad: true,
+						calcCompleted: null,
+						calcOnSave: false,
+						forceFullCalc: true,
+						calcId: 42,
+						dateSystem: '1904',
+						iterativeCalc: { enabled: true, maxIterations: 50, maxChange: 0.0001 },
+					},
+				},
+			],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(true)
+		expect(changed.journal?.inverseOps).toEqual([
+			{
+				op: 'setCalcSettings',
+				settings: {
+					calcMode: 'auto',
+					fullCalcOnLoad: false,
+					calcCompleted: true,
+					calcOnSave: true,
+					forceFullCalc: false,
+					calcId: 1,
+					dateSystem: '1900',
+					iterativeCalc: { enabled: false, maxIterations: 100, maxChange: 0.001 },
+				},
+			},
+			{ op: 'setWorkbookProperties', properties: { date1904: false }, mode: 'replace' },
+			{ op: 'setWorkbookView', index: 1, view: null },
+			{
+				op: 'setWorkbookView',
+				index: 0,
+				view: { activeTab: 0, firstSheet: 0, tabRatio: 600 },
+				mode: 'replace',
+			},
+		])
+		expect(journalComparableState(wb)).not.toEqual(before)
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(journalComparableState(wb)).toEqual(before)
+	})
+
 	test('journal exact inverse restores mixed semantic workbook state', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([
@@ -1370,6 +1453,8 @@ function journalComparableState(wb: AscendWorkbook): object {
 		workbookProtectionJson: snapshot.workbookProtectionJson,
 		workbookProperties: wb.getWorkbookModel().workbookProperties,
 		documentProperties: wb.inspect().documentProperties,
+		workbookViews: wb.inspect().workbookViews,
+		calcSettings: wb.getWorkbookModel().calcSettings,
 		sheetMetadata: wb.sheets.map((name) => {
 			const sheet = wb.sheet(name)
 			return {

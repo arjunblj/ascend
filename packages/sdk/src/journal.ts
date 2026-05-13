@@ -28,9 +28,11 @@ import {
 	type Workbook,
 	type WorkbookDocumentProperties,
 	type WorkbookProperties,
+	type WorkbookView,
 } from '@ascend/core'
 import { applyOperation } from '@ascend/engine'
 import type {
+	CalcSettings,
 	CellValue,
 	ConditionalFormatRule,
 	DataValidationRule,
@@ -167,6 +169,16 @@ export interface MutationJournalDocumentPropertiesPreimage {
 	readonly properties: WorkbookDocumentProperties
 }
 
+export interface MutationJournalWorkbookViewPreimage {
+	readonly index: number
+	readonly view: WorkbookView | null
+}
+
+export interface MutationJournalCalcSettingsPreimage {
+	readonly settings: CalcSettings
+	readonly workbookProperties: WorkbookProperties
+}
+
 export type MutationJournalPreimage =
 	| { readonly kind: 'cells'; readonly cells: readonly MutationJournalCellPreimage[] }
 	| { readonly kind: 'comment'; readonly comment: MutationJournalCommentPreimage }
@@ -203,6 +215,8 @@ export type MutationJournalPreimage =
 			readonly kind: 'document-properties'
 			readonly documentProperties: MutationJournalDocumentPropertiesPreimage
 	  }
+	| { readonly kind: 'workbook-view'; readonly workbookView: MutationJournalWorkbookViewPreimage }
+	| { readonly kind: 'calc-settings'; readonly calcSettings: MutationJournalCalcSettingsPreimage }
 
 export interface MutationJournalEntry {
 	readonly opIndex: number
@@ -379,6 +393,10 @@ function buildSupportedJournalEntry(
 			return journalSetWorkbookProperties(workbook, op, opIndex)
 		case 'setDocumentProperties':
 			return journalSetDocumentProperties(workbook, op, opIndex)
+		case 'setWorkbookView':
+			return journalSetWorkbookView(workbook, op, opIndex)
+		case 'setCalcSettings':
+			return journalSetCalcSettings(workbook, op, opIndex)
 		case 'renameSheet':
 			return {
 				opIndex,
@@ -1060,6 +1078,48 @@ function journalSetDocumentProperties(
 		op,
 		inverseOps: [{ op: 'setDocumentProperties', properties: preimage.properties, mode: 'replace' }],
 		preimages: [{ kind: 'document-properties', documentProperties: preimage }],
+		issues: [],
+	}
+}
+
+function journalSetWorkbookView(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'setWorkbookView' }>,
+	opIndex: number,
+): DraftJournalEntry {
+	const index = op.index ?? 0
+	const view = workbook.workbookViews[index]
+	const preimage = { index, view: view ? { ...view } : null }
+	return {
+		opIndex,
+		op,
+		inverseOps: [
+			preimage.view
+				? { op: 'setWorkbookView', index, view: preimage.view, mode: 'replace' }
+				: { op: 'setWorkbookView', index, view: null },
+		],
+		preimages: [{ kind: 'workbook-view', workbookView: preimage }],
+		issues: [],
+	}
+}
+
+function journalSetCalcSettings(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'setCalcSettings' }>,
+	opIndex: number,
+): DraftJournalEntry {
+	const preimage = {
+		settings: clonePlain(workbook.calcSettings) as CalcSettings,
+		workbookProperties: { ...workbook.workbookProperties },
+	}
+	return {
+		opIndex,
+		op,
+		inverseOps: [
+			{ op: 'setCalcSettings', settings: preimage.settings },
+			{ op: 'setWorkbookProperties', properties: preimage.workbookProperties, mode: 'replace' },
+		],
+		preimages: [{ kind: 'calc-settings', calcSettings: preimage }],
 		issues: [],
 	}
 }

@@ -14,6 +14,7 @@ import {
 	inferExportFormat,
 	listCapabilities,
 	normalizeExportFormat,
+	operationValidationDetails,
 	type PivotOutputMaterializeMode,
 	parseA1,
 	parseOperations,
@@ -599,7 +600,7 @@ export function createServer(): McpServer {
 			if (!parsed.ok) {
 				return errorResponse(
 					ascendError('VALIDATION_ERROR', parsed.error, {
-						details: { issues: parsed.issues },
+						details: operationValidationDetails(parsed),
 						retryStrategy: 'modified',
 						suggestedFix:
 							'Use ascend.list_operations for canonical operation schemas and examples.',
@@ -641,7 +642,7 @@ export function createServer(): McpServer {
 			if (!parsed.ok) {
 				return errorResponse(
 					ascendError('VALIDATION_ERROR', parsed.error, {
-						details: { issues: parsed.issues },
+						details: operationValidationDetails(parsed),
 						retryStrategy: 'modified',
 						suggestedFix:
 							'Use ascend.list_operations for canonical operation schemas and examples.',
@@ -799,7 +800,7 @@ export function createServer(): McpServer {
 			if (!parsed.ok) {
 				return errorResponse(
 					ascendError('VALIDATION_ERROR', parsed.error, {
-						details: { issues: parsed.issues },
+						details: operationValidationDetails(parsed),
 						retryStrategy: 'modified',
 						suggestedFix:
 							'Use ascend.list_operations for canonical operation schemas and examples.',
@@ -852,7 +853,7 @@ export function createServer(): McpServer {
 			if (!parsed.ok) {
 				return errorResponse(
 					ascendError('VALIDATION_ERROR', parsed.error, {
-						details: { issues: parsed.issues },
+						details: operationValidationDetails(parsed),
 						retryStrategy: 'modified',
 						suggestedFix:
 							'Use ascend.list_operations for canonical operation schemas and examples.',

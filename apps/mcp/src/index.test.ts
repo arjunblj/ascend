@@ -761,6 +761,57 @@ describe('MCP server', () => {
 		}
 	})
 
+	test('ascend.plan invalid ops return structured batch repair details', async () => {
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const handler = (server as any)._registeredTools['ascend.plan'].handler as (args: {
+			file: string
+			ops: unknown[]
+		}) => Promise<{
+			isError?: boolean
+			structuredContent?: {
+				error?: {
+					code?: string
+					details?: {
+						issueCount?: number
+						issues?: readonly string[]
+						issueDetails?: readonly {
+							code?: string
+							opIndex?: number
+							path?: string
+						}[]
+					}
+				}
+			}
+		}>
+
+		const result = await handler({
+			file: TEMP_FILE,
+			ops: [
+				{ op: 'insertRows', sheet: 'Sheet1', at: 0, count: '2' },
+				{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: { nested: true } }] },
+				{ op: 'missingOp', sheet: 'Sheet1' },
+			],
+		})
+		expect(result.isError).toBe(true)
+		expect(result.structuredContent?.error?.code).toBe('VALIDATION_ERROR')
+		expect(result.structuredContent?.error?.details?.issueCount).toBe(3)
+		expect(result.structuredContent?.error?.details?.issues).toEqual(
+			expect.arrayContaining([
+				'ops[0].count must be a positive integer',
+				'ops[1].updates[0].value must be a scalar value or null',
+				'ops[2].op "missingOp" is not supported',
+			]),
+		)
+		expect(result.structuredContent?.error?.details?.issueDetails).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ code: 'invalid_type', opIndex: 0, path: 'ops[0].count' }),
+				expect.objectContaining({ code: 'invalid_type', opIndex: 1 }),
+				expect.objectContaining({ code: 'invalid_operation', opIndex: 2, path: 'ops[2].op' }),
+			]),
+		)
+	})
+
 	test('MCP operation schema accepts capability extension operations', () => {
 		const result = parseOperations([
 			{

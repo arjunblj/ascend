@@ -98,6 +98,7 @@ afterAll(() => {
 		'exported.json',
 		'plan-ops.json',
 		'plan-risk-ops.json',
+		'invalid-agent-ops.json',
 		'commit-ops.json',
 		'commit-output.xlsx',
 		'commit-pretty-output.xlsx',
@@ -327,6 +328,38 @@ describe('ascend cli', () => {
 		)
 		expect(prettyCommit.exitCode).toBe(0)
 		expect(prettyCommit.stdout).toContain('Post-write package graph issues: 0')
+	})
+
+	test('plan invalid ops return structured batch repair details', async () => {
+		await Bun.write(
+			`${import.meta.dir}/invalid-agent-ops.json`,
+			JSON.stringify([
+				{ op: 'insertRows', sheet: 'Sheet1', at: 0, count: '2' },
+				{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: { nested: true } }] },
+				{ op: 'missingOp', sheet: 'Sheet1' },
+			]),
+		)
+
+		const result = await run('plan', TEST_FILE, '--ops', 'invalid-agent-ops.json', '--json')
+		expect(result.exitCode).toBe(1)
+		const parsed = JSON.parse(result.stdout)
+		expect(parsed.ok).toBe(false)
+		expect(parsed.error.code).toBe('VALIDATION_ERROR')
+		expect(parsed.error.details.issueCount).toBe(3)
+		expect(parsed.error.details.issues).toEqual(
+			expect.arrayContaining([
+				'ops[0].count must be a positive integer',
+				'ops[1].updates[0].value must be a scalar value or null',
+				'ops[2].op "missingOp" is not supported',
+			]),
+		)
+		expect(parsed.error.details.issueDetails).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ code: 'invalid_type', opIndex: 0, path: 'ops[0].count' }),
+				expect.objectContaining({ code: 'invalid_type', opIndex: 1 }),
+				expect.objectContaining({ code: 'invalid_operation', opIndex: 2, path: 'ops[2].op' }),
+			]),
+		)
 	})
 
 	test('commit accepts only exact approval ids emitted by plan', async () => {

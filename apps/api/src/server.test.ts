@@ -32,6 +32,16 @@ interface ApiEnvelope {
 	}
 	readonly error?: {
 		readonly message?: string
+		readonly code?: string
+		readonly details?: {
+			readonly issueCount?: number
+			readonly issues?: readonly string[]
+			readonly issueDetails?: readonly {
+				readonly code?: string
+				readonly opIndex?: number
+				readonly path?: string
+			}[]
+		}
 	}
 }
 
@@ -57,6 +67,34 @@ async function postJson(
 }
 
 describe('Ascend API server', () => {
+	test('plan invalid ops return structured batch repair details', async () => {
+		const ops = [
+			{ op: 'insertRows', sheet: 'Sheet1', at: 0, count: '2' },
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: { nested: true } }] },
+			{ op: 'missingOp', sheet: 'Sheet1' },
+		]
+
+		const result = await postJson('/plan', { file: TEMP_FILE, ops })
+		expect(result.status).toBe(400)
+		expect(result.body.ok).toBe(false)
+		expect(result.body.error?.code).toBe('VALIDATION_ERROR')
+		expect(result.body.error?.details?.issueCount).toBe(3)
+		expect(result.body.error?.details?.issues).toEqual(
+			expect.arrayContaining([
+				'ops[0].count must be a positive integer',
+				'ops[1].updates[0].value must be a scalar value or null',
+				'ops[2].op "missingOp" is not supported',
+			]),
+		)
+		expect(result.body.error?.details?.issueDetails).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ code: 'invalid_type', opIndex: 0, path: 'ops[0].count' }),
+				expect.objectContaining({ code: 'invalid_type', opIndex: 1 }),
+				expect.objectContaining({ code: 'invalid_operation', opIndex: 2, path: 'ops[2].op' }),
+			]),
+		)
+	})
+
 	test('plan and commit require exact approval ids', async () => {
 		const workbook = AscendWorkbook.create()
 		workbook.apply([{ op: 'addSheet', name: 'Scratch' }])

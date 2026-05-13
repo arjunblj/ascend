@@ -38,7 +38,31 @@ export interface OperationJsonSchema {
 
 export type ParseOperationsResult =
 	| { readonly ok: true; readonly value: readonly Operation[] }
-	| { readonly ok: false; readonly error: string; readonly issues: readonly string[] }
+	| {
+			readonly ok: false
+			readonly error: string
+			readonly issues: readonly string[]
+			readonly issueDetails: readonly OperationValidationIssue[]
+	  }
+
+export interface OperationValidationIssue {
+	readonly message: string
+	readonly path?: string
+	readonly opIndex?: number
+	readonly code:
+		| 'invalid_payload'
+		| 'invalid_operation'
+		| 'invalid_field'
+		| 'missing_required'
+		| 'invalid_type'
+		| 'invalid_value'
+}
+
+export interface OperationValidationDetails extends Record<string, unknown> {
+	readonly issueCount: number
+	readonly issues: readonly string[]
+	readonly issueDetails: readonly OperationValidationIssue[]
+}
 
 export interface OperationApprovalMetadata {
 	readonly required: boolean
@@ -778,10 +802,12 @@ export function getOperationsSchema(): readonly OperationJsonSchema[] {
 
 export function parseOperations(input: unknown): ParseOperationsResult {
 	if (!Array.isArray(input)) {
+		const issues = ['ops must be an array']
 		return {
 			ok: false,
 			error: 'Operations payload must be an array',
-			issues: ['ops must be an array'],
+			issues,
+			issueDetails: issues.map(operationValidationIssueFromMessage),
 		}
 	}
 	const schemas = new Map(listOperations().map((op) => [op.op, op]))
@@ -829,8 +855,48 @@ export function parseOperations(input: unknown): ParseOperationsResult {
 		issues.push(...validateOperationSemantics(record, `ops[${index}]`))
 		ops.push(normalizeOperationRecord(record) as Operation)
 	})
-	if (issues.length > 0) return { ok: false, error: issues[0] ?? 'Invalid operations', issues }
+	if (issues.length > 0) {
+		return {
+			ok: false,
+			error: issues[0] ?? 'Invalid operations',
+			issues,
+			issueDetails: issues.map(operationValidationIssueFromMessage),
+		}
+	}
 	return { ok: true, value: ops }
+}
+
+export function operationValidationDetails(
+	result: Extract<ParseOperationsResult, { ok: false }>,
+): OperationValidationDetails {
+	return {
+		issueCount: result.issues.length,
+		issues: result.issues,
+		issueDetails: result.issueDetails,
+	}
+}
+
+function operationValidationIssueFromMessage(message: string): OperationValidationIssue {
+	const path = message.match(/^(ops(?:\[\d+\])?(?:\.[A-Za-z0-9_]+)?)/)?.[1]
+	const opIndexMatch = path?.match(/^ops\[(\d+)\]/)
+	return {
+		message,
+		...(path ? { path } : {}),
+		...(opIndexMatch ? { opIndex: Number(opIndexMatch[1]) } : {}),
+		code: operationValidationCode(message),
+	}
+}
+
+function operationValidationCode(message: string): OperationValidationIssue['code'] {
+	if (message === 'ops must be an array' || message.includes('must be an object')) {
+		return 'invalid_payload'
+	}
+	if (message.includes('is not supported')) return 'invalid_operation'
+	if (message.includes('is not valid for')) return 'invalid_field'
+	if (message.includes('is required')) return 'missing_required'
+	if (message.includes('must be one of')) return 'invalid_value'
+	if (message.includes('must be')) return 'invalid_type'
+	return 'invalid_value'
 }
 
 function normalizeOperationRecord(record: Record<string, unknown>): Record<string, unknown> {

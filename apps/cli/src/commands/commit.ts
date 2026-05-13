@@ -1,6 +1,11 @@
 import { readFile } from 'node:fs/promises'
 import { ascendError, type Operation } from '@ascend/schema'
-import { type AgentCommitOptions, commitAgentPlan, parseOperations } from '@ascend/sdk'
+import {
+	type AgentCommitOptions,
+	commitAgentPlan,
+	operationValidationDetails,
+	parseOperations,
+} from '@ascend/sdk'
 import { cliError, jsonOut } from '../output/json.ts'
 import { bullet, heading } from '../output/pretty.ts'
 import { createAgentProgressReporter } from '../progress.ts'
@@ -96,7 +101,7 @@ async function readOpsFile(
 	if (!parsed.ok) {
 		cliError(
 			ascendError('VALIDATION_ERROR', parsed.error, {
-				details: { issues: parsed.issues },
+				details: operationValidationDetails(parsed),
 				suggestedFix: 'Run ascend ops --json for canonical operation schemas and examples.',
 			}),
 			flags,

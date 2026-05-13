@@ -36,12 +36,35 @@ describe('operation schema agent DX', () => {
 			{ op: 'insertRows', sheet: 'Sheet1', at: 0, count: '2' },
 			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: { nested: true } }] },
 			{ op: 'copyRange', sheet: 'Sheet1', source: 'A1', target: 'B1', mode: 'everything' },
+			{ op: 'missingOp', sheet: 'Sheet1' },
 		])
 		expect(parsed.ok).toBe(false)
 		if (!parsed.ok) {
 			expect(parsed.issues).toContain('ops[0].count must be a positive integer')
 			expect(parsed.issues).toContain('ops[1].updates[0].value must be a scalar value or null')
 			expect(parsed.issues[2]).toContain('ops[2].mode must be one of')
+			expect(parsed.issues).toContain('ops[3].op "missingOp" is not supported')
+			expect(parsed.issueDetails).toContainEqual(
+				expect.objectContaining({
+					code: 'invalid_type',
+					opIndex: 0,
+					path: 'ops[0].count',
+				}),
+			)
+			expect(parsed.issueDetails).toContainEqual(
+				expect.objectContaining({
+					code: 'invalid_value',
+					opIndex: 2,
+					path: 'ops[2].mode',
+				}),
+			)
+			expect(parsed.issueDetails).toContainEqual(
+				expect.objectContaining({
+					code: 'invalid_operation',
+					opIndex: 3,
+					path: 'ops[3].op',
+				}),
+			)
 		}
 	})
 

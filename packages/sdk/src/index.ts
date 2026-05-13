@@ -78,7 +78,12 @@ export type {
 /** Typed operation builders and introspection. */
 export * as ops from './ops.ts'
 /** List all supported patch operations or generate JSON-schema-style descriptors for agents. */
-export { getOperationsSchema, listOperations, parseOperations } from './ops.ts'
+export {
+	getOperationsSchema,
+	listOperations,
+	operationValidationDetails,
+	parseOperations,
+} from './ops.ts'
 /** Base class for read-only workbook views (inspect, read, formula, check, lint, trace, diff). */
 export { WorkbookReadView } from './read-view.ts'
 export type {

@@ -13,6 +13,7 @@ import {
 	listCapabilities,
 	listOperations,
 	normalizeExportFormat,
+	operationValidationDetails,
 	type PivotOutputMaterializeMode,
 	type PivotOutputMaterializeOptions,
 	parseOperations,
@@ -413,7 +414,7 @@ export function createApiFetch() {
 				if (!parsed.ok) {
 					return jsonFailureError(
 						ascendError('VALIDATION_ERROR', parsed.error, {
-							details: { issues: parsed.issues },
+							details: operationValidationDetails(parsed),
 							suggestedFix: 'Call /operations for canonical operation schemas and examples.',
 						}),
 						400,
@@ -455,7 +456,7 @@ export function createApiFetch() {
 				if (!parsed.ok) {
 					return jsonFailureError(
 						ascendError('VALIDATION_ERROR', parsed.error, {
-							details: { issues: parsed.issues },
+							details: operationValidationDetails(parsed),
 							suggestedFix: 'Call /operations for canonical operation schemas and examples.',
 						}),
 						400,
@@ -511,7 +512,7 @@ export function createApiFetch() {
 				if (!parsed.ok) {
 					return jsonFailureError(
 						ascendError('VALIDATION_ERROR', parsed.error, {
-							details: { issues: parsed.issues },
+							details: operationValidationDetails(parsed),
 							suggestedFix: 'Call /operations for canonical operation schemas and examples.',
 						}),
 						400,
@@ -559,7 +560,7 @@ export function createApiFetch() {
 				if (!parsed.ok) {
 					return jsonFailureError(
 						ascendError('VALIDATION_ERROR', parsed.error, {
-							details: { issues: parsed.issues },
+							details: operationValidationDetails(parsed),
 							suggestedFix: 'Call /operations for canonical operation schemas and examples.',
 						}),
 						400,

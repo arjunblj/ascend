@@ -1,4 +1,7 @@
 import { describe, expect, test } from 'bun:test'
+import { unlink } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { DEFAULT_STYLE_ID } from '@ascend/core'
 import { numberValue } from '@ascend/schema'
 import type { InteractiveViewportCell, InteractiveViewportPatch } from './index.ts'
@@ -591,6 +594,82 @@ describe('interactive client contract', () => {
 		expect(edit.load.promotedToFull).toBe(false)
 		expect(edit.generation.session).toBe(0)
 		session.close()
+	})
+
+	test('interactive partial session refuses promotion after backing file changes', async () => {
+		const input = join(tmpdir(), `ascend-stale-promotion-${Date.now()}-${process.pid}.xlsx`)
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'original' },
+					{ ref: 'A2', value: 'not loaded' },
+				],
+			},
+		])
+		await wb.save(input)
+
+		const session = await AscendSession.open(input, { mode: 'interactive', maxRows: 1 })
+		try {
+			const viewport = session.readViewport({
+				sheet: 'Sheet1',
+				topRow: 0,
+				leftCol: 0,
+				rowCount: 1,
+				colCount: 1,
+			})
+			expect(viewport.cells[0]?.flatValue).toBe('original')
+
+			const changed = AscendWorkbook.create()
+			changed.apply([
+				{
+					op: 'setCells',
+					sheet: 'Sheet1',
+					updates: [
+						{ ref: 'A1', value: 'changed elsewhere' },
+						{ ref: 'A2', value: 'different tail value that changes the package size' },
+					],
+				},
+			])
+			await changed.save(input)
+			expect(session.isStale()).toBe(true)
+
+			let prepareError: unknown
+			try {
+				await session.prepareEdits()
+			} catch (error) {
+				prepareError = error
+			}
+			expect(prepareError).toBeInstanceOf(Error)
+			expect((prepareError as Error).message).toContain(
+				'Cannot promote a stale interactive session',
+			)
+
+			const edit = await session.apply([
+				{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'agent edit' }] },
+			])
+			expect(edit.apply.errors[0]).toMatchObject({
+				code: 'VALIDATION_ERROR',
+				details: {
+					rule: 'stale-interactive-session',
+					staleSession: true,
+					requiredAction: 'refresh',
+				},
+			})
+			expect(edit.load.promotedToFull).toBe(false)
+			expect(edit.generation.session).toBe(viewport.generation.session)
+
+			const reopened = await AscendWorkbook.open(input)
+			expect(reopened.sheet('Sheet1')?.cell('A1')?.value).toEqual({
+				kind: 'string',
+				value: 'changed elsewhere',
+			})
+		} finally {
+			session.close()
+			await unlink(input).catch(() => {})
+		}
 	})
 
 	test('apply returns dirty regions and monotonic generation tokens', () => {

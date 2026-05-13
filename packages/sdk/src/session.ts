@@ -17,7 +17,7 @@ import {
 } from '@ascend/core'
 import { resolveCellFormulaText } from '@ascend/engine'
 import { inspectXlsxPackageGraph, type XlsxPackageGraph } from '@ascend/io-xlsx'
-import type { CellValue, Operation } from '@ascend/schema'
+import { AscendException, ascendError, type CellValue, type Operation } from '@ascend/schema'
 import { check as verifyCheck, lint as verifyLint } from '@ascend/verify'
 import {
 	partialDependencyCheckIssue,
@@ -932,6 +932,7 @@ export class AscendSession {
 	async prepareEdits(): Promise<AscendSessionPrepareEditsResult> {
 		const totalStart = performance.now()
 		const readLoad = this.session.inspect().load
+		if (this.session.isStale()) throw new AscendException(staleInteractiveSessionError())
 		const ensureStart = performance.now()
 		const workbook = await this.ensureMutableWorkbook()
 		const ensureMutableWorkbookMs = performance.now() - ensureStart
@@ -971,6 +972,36 @@ export class AscendSession {
 					dirtyRegions: [],
 					generations,
 					errors: [],
+				},
+				recalc: null,
+				load: {
+					read: readLoad,
+					write: readLoad,
+					promotedToFull: false,
+				},
+				generation: { session: this.documentGeneration, ...generations },
+				timings: {
+					inspectReadMs,
+					ensureMutableWorkbookMs: 0,
+					applyMs: 0,
+					recalcMs: 0,
+					generationSnapshotMs: 0,
+					inspectWriteMs: 0,
+					totalMs: performance.now() - totalStart,
+				},
+			}
+		}
+		if (this.session.isStale()) {
+			const generations = (this.mutableWorkbook ?? this.session.workbook()).readSnapshotInfo()
+				.generations
+			return {
+				apply: {
+					affectedCells: [],
+					sheetsModified: [],
+					recalcRequired: false,
+					dirtyRegions: [],
+					generations,
+					errors: [staleInteractiveSessionError()],
 				},
 				recalc: null,
 				load: {
@@ -1526,6 +1557,22 @@ function collectInteractiveChangeRefs(
 	}
 	for (const ref of recalc?.changed ?? []) refs.add(ref)
 	return refs
+}
+
+function staleInteractiveSessionError() {
+	return ascendError(
+		'VALIDATION_ERROR',
+		'Cannot promote a stale interactive session. Refresh the session and reread before applying edits.',
+		{
+			details: {
+				rule: 'stale-interactive-session',
+				staleSession: true,
+				requiredAction: 'refresh',
+			},
+			suggestedFix:
+				'Call refresh(), reread the viewport, and reapply the edit against the fresh session.',
+		},
+	)
 }
 
 function isCellLocalViewportPatchOperation(op: Operation): boolean {

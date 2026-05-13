@@ -36,10 +36,14 @@ interface Sample {
 	readonly cappedWarmOpenWindowMs?: number
 	readonly apiFirstWindowMs?: number
 	readonly apiWarmFirstWindowMs?: number
+	readonly apiCompactDefaultMs?: number
+	readonly apiWarmCompactDefaultMs?: number
 	readonly cliReadFirstWindowMs?: number
 	readonly cliWarmReadFirstWindowMs?: number
 	readonly mcpFirstWindowMs?: number
 	readonly mcpWarmFirstWindowMs?: number
+	readonly mcpCompactDefaultMs?: number
+	readonly mcpWarmCompactDefaultMs?: number
 	readonly tuiFirstPaintMs?: number
 	readonly tuiWarmFirstPaintMs?: number
 	readonly tuiOpenMs?: number
@@ -50,7 +54,9 @@ interface Sample {
 	readonly tuiWarmHydrateMs?: number
 	readonly cells: number
 	readonly payloadBytes?: number
+	readonly apiCompactDefaultPayloadBytes?: number
 	readonly mcpPayloadBytes?: number
+	readonly mcpCompactDefaultPayloadBytes?: number
 	readonly tuiFrameBytes?: number
 	readonly fullRssDeltaMb?: number
 	readonly fullRetainedRssDeltaMb?: number
@@ -65,9 +71,13 @@ interface Sample {
 	readonly fullHydratedCells?: number | null
 	readonly cappedHydratedCells?: number | null
 	readonly tuiHydratedCells?: number | null
+	readonly apiCompactDefaultCells?: number
+	readonly mcpCompactDefaultCells?: number
 	readonly apiPartial?: boolean
+	readonly apiCompactDefaultPartial?: boolean
 	readonly cliPartial?: boolean
 	readonly mcpPartial?: boolean
+	readonly mcpCompactDefaultPartial?: boolean
 	readonly tuiPartial?: boolean
 	readonly fullOpenCalls?: number
 	readonly fullWarmOpenCalls?: number
@@ -408,6 +418,50 @@ async function runApiFirstWindow(
 	}
 }
 
+async function runApiCompactDefault(
+	path: string,
+	sheet: string | undefined,
+	range: string,
+	clearCache = true,
+): Promise<
+	Pick<
+		Sample,
+		| 'apiCompactDefaultMs'
+		| 'apiCompactDefaultPayloadBytes'
+		| 'apiCompactDefaultCells'
+		| 'apiCompactDefaultPartial'
+	>
+> {
+	if (clearCache) WorkbookDocument.clearCache()
+	runGc()
+	const apiFetch = createApiFetch()
+	const body = JSON.stringify({
+		file: path,
+		range,
+		...(sheet !== undefined ? { sheet } : {}),
+		format: 'compact',
+	})
+	const measured = await time(async () => {
+		const response = await apiFetch(
+			new Request('http://ascend.local/read', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body,
+			}),
+		)
+		const text = await response.text()
+		if (response.status !== 200) throw new Error(text)
+		return { text, payload: JSON.parse(text) as ApiEnvelope }
+	})
+	const data = measured.result.payload.data
+	return {
+		apiCompactDefaultMs: measured.ms,
+		apiCompactDefaultPayloadBytes: measured.result.text.length,
+		apiCompactDefaultCells: data?.cells?.length ?? 0,
+		apiCompactDefaultPartial: data?.load?.isPartial ?? false,
+	}
+}
+
 interface ApiEnvelope {
 	readonly data?: {
 		readonly cells?: readonly unknown[]
@@ -484,8 +538,8 @@ type McpReadHandler = (args: {
 	readonly sheet?: string
 	readonly range: string
 	readonly format: 'compact'
-	readonly preview: boolean
-	readonly rowLimit: number
+	readonly preview?: boolean
+	readonly rowLimit?: number
 }) => Promise<McpReadResult>
 
 async function runMcpFirstWindow(
@@ -546,6 +600,48 @@ async function runMcpFirstWindow(
 		mcpOpenCalls: openStats.documentOpenCalls,
 		mcpHydratedOpenCount: openStats.documentHydrations,
 		mcpDocumentCacheHits: openStats.documentCacheHits,
+	}
+}
+
+async function runMcpCompactDefault(
+	path: string,
+	sheet: string | undefined,
+	range: string,
+	clearCache = true,
+): Promise<
+	Pick<
+		Sample,
+		| 'mcpCompactDefaultMs'
+		| 'mcpCompactDefaultPayloadBytes'
+		| 'mcpCompactDefaultCells'
+		| 'mcpCompactDefaultPartial'
+	>
+> {
+	if (clearCache) WorkbookDocument.clearCache()
+	runGc()
+	const server = createServer()
+	const handler = (
+		server as unknown as { _registeredTools: Record<string, { handler: McpReadHandler }> }
+	)._registeredTools['ascend.read']?.handler
+	if (!handler) throw new Error('MCP ascend.read handler not registered')
+	const measured = await time(() =>
+		handler({
+			file: path,
+			range,
+			...(sheet !== undefined ? { sheet } : {}),
+			format: 'compact',
+		}),
+	)
+	const content = measured.result.structuredContent
+	if (content?.ok !== true) {
+		throw new Error(`MCP ascend.read failed: ${JSON.stringify(content?.error ?? content)}`)
+	}
+	const data = content.data
+	return {
+		mcpCompactDefaultMs: measured.ms,
+		mcpCompactDefaultPayloadBytes: JSON.stringify(content).length,
+		mcpCompactDefaultCells: data?.cells?.length ?? 0,
+		mcpCompactDefaultPartial: data?.load?.isPartial ?? false,
 	}
 }
 
@@ -680,6 +776,12 @@ function summarize(samples: readonly Sample[]) {
 	const apiWarmFirstWindowMedianMs = medianOptional(
 		samples.map((sample) => sample.apiWarmFirstWindowMs),
 	)
+	const apiCompactDefaultMedianMs = medianOptional(
+		samples.map((sample) => sample.apiCompactDefaultMs),
+	)
+	const apiWarmCompactDefaultMedianMs = medianOptional(
+		samples.map((sample) => sample.apiWarmCompactDefaultMs),
+	)
 	const cliReadFirstWindowMedianMs = medianOptional(
 		samples.map((sample) => sample.cliReadFirstWindowMs),
 	)
@@ -689,6 +791,12 @@ function summarize(samples: readonly Sample[]) {
 	const mcpFirstWindowMedianMs = medianOptional(samples.map((sample) => sample.mcpFirstWindowMs))
 	const mcpWarmFirstWindowMedianMs = medianOptional(
 		samples.map((sample) => sample.mcpWarmFirstWindowMs),
+	)
+	const mcpCompactDefaultMedianMs = medianOptional(
+		samples.map((sample) => sample.mcpCompactDefaultMs),
+	)
+	const mcpWarmCompactDefaultMedianMs = medianOptional(
+		samples.map((sample) => sample.mcpWarmCompactDefaultMs),
 	)
 	const tuiFirstPaintMedianMs = medianOptional(samples.map((sample) => sample.tuiFirstPaintMs))
 	const tuiWarmFirstPaintMedianMs = medianOptional(
@@ -701,10 +809,14 @@ function summarize(samples: readonly Sample[]) {
 		cappedWarmOpenWindowMedianMs,
 		apiFirstWindowMedianMs,
 		apiWarmFirstWindowMedianMs,
+		apiCompactDefaultMedianMs,
+		apiWarmCompactDefaultMedianMs,
 		cliReadFirstWindowMedianMs,
 		cliWarmReadFirstWindowMedianMs,
 		mcpFirstWindowMedianMs,
 		mcpWarmFirstWindowMedianMs,
+		mcpCompactDefaultMedianMs,
+		mcpWarmCompactDefaultMedianMs,
 		tuiFirstPaintMedianMs,
 		tuiWarmFirstPaintMedianMs,
 		tuiOpenMedianMs: medianOptional(samples.map((sample) => sample.tuiOpenMs)),
@@ -745,11 +857,23 @@ function summarize(samples: readonly Sample[]) {
 		...(apiFirstWindowMedianMs !== undefined && apiWarmFirstWindowMedianMs !== undefined
 			? { apiWarmSpeedupVsCold: apiFirstWindowMedianMs / apiWarmFirstWindowMedianMs }
 			: {}),
+		...(apiCompactDefaultMedianMs !== undefined && apiWarmCompactDefaultMedianMs !== undefined
+			? {
+					apiCompactDefaultWarmSpeedupVsCold:
+						apiCompactDefaultMedianMs / apiWarmCompactDefaultMedianMs,
+				}
+			: {}),
 		...(cliReadFirstWindowMedianMs !== undefined && cliWarmReadFirstWindowMedianMs !== undefined
 			? { cliWarmSpeedupVsCold: cliReadFirstWindowMedianMs / cliWarmReadFirstWindowMedianMs }
 			: {}),
 		...(mcpFirstWindowMedianMs !== undefined && mcpWarmFirstWindowMedianMs !== undefined
 			? { mcpWarmSpeedupVsCold: mcpFirstWindowMedianMs / mcpWarmFirstWindowMedianMs }
+			: {}),
+		...(mcpCompactDefaultMedianMs !== undefined && mcpWarmCompactDefaultMedianMs !== undefined
+			? {
+					mcpCompactDefaultWarmSpeedupVsCold:
+						mcpCompactDefaultMedianMs / mcpWarmCompactDefaultMedianMs,
+				}
 			: {}),
 		...(tuiFirstPaintMedianMs !== undefined && tuiWarmFirstPaintMedianMs !== undefined
 			? { tuiWarmSpeedupVsCold: tuiFirstPaintMedianMs / tuiWarmFirstPaintMedianMs }
@@ -757,22 +881,40 @@ function summarize(samples: readonly Sample[]) {
 		...(fullOpenWindowMedianMs !== undefined && apiFirstWindowMedianMs !== undefined
 			? { apiSpeedupVsFull: fullOpenWindowMedianMs / apiFirstWindowMedianMs }
 			: {}),
+		...(fullOpenWindowMedianMs !== undefined && apiCompactDefaultMedianMs !== undefined
+			? { apiCompactDefaultSpeedupVsFull: fullOpenWindowMedianMs / apiCompactDefaultMedianMs }
+			: {}),
 		...(fullOpenWindowMedianMs !== undefined && cliReadFirstWindowMedianMs !== undefined
 			? { cliSpeedupVsFull: fullOpenWindowMedianMs / cliReadFirstWindowMedianMs }
 			: {}),
 		...(fullOpenWindowMedianMs !== undefined && mcpFirstWindowMedianMs !== undefined
 			? { mcpSpeedupVsFull: fullOpenWindowMedianMs / mcpFirstWindowMedianMs }
 			: {}),
+		...(fullOpenWindowMedianMs !== undefined && mcpCompactDefaultMedianMs !== undefined
+			? { mcpCompactDefaultSpeedupVsFull: fullOpenWindowMedianMs / mcpCompactDefaultMedianMs }
+			: {}),
 		...(fullOpenWindowMedianMs !== undefined && tuiFirstPaintMedianMs !== undefined
 			? { tuiSpeedupVsFull: fullOpenWindowMedianMs / tuiFirstPaintMedianMs }
 			: {}),
 		cellsMedian: medianOptional(samples.map((sample) => sample.cells)),
 		payloadBytesMedian: medianOptional(samples.map((sample) => sample.payloadBytes)),
+		apiCompactDefaultPayloadBytesMedian: medianOptional(
+			samples.map((sample) => sample.apiCompactDefaultPayloadBytes),
+		),
 		mcpPayloadBytesMedian: medianOptional(samples.map((sample) => sample.mcpPayloadBytes)),
+		mcpCompactDefaultPayloadBytesMedian: medianOptional(
+			samples.map((sample) => sample.mcpCompactDefaultPayloadBytes),
+		),
 		tuiFrameBytesMedian: medianOptional(samples.map((sample) => sample.tuiFrameBytes)),
 		fullHydratedCellsMedian: medianOptional(samples.map((sample) => sample.fullHydratedCells)),
 		cappedHydratedCellsMedian: medianOptional(samples.map((sample) => sample.cappedHydratedCells)),
 		tuiHydratedCellsMedian: medianOptional(samples.map((sample) => sample.tuiHydratedCells)),
+		apiCompactDefaultCellsMedian: medianOptional(
+			samples.map((sample) => sample.apiCompactDefaultCells),
+		),
+		mcpCompactDefaultCellsMedian: medianOptional(
+			samples.map((sample) => sample.mcpCompactDefaultCells),
+		),
 		fullOpenCallsMedian: medianOptional(samples.map((sample) => sample.fullOpenCalls)),
 		fullWarmOpenCallsMedian: medianOptional(samples.map((sample) => sample.fullWarmOpenCalls)),
 		fullHydratedOpenCountMedian: medianOptional(
@@ -858,8 +1000,10 @@ function summarize(samples: readonly Sample[]) {
 			samples.map((sample) => sample.tuiWarmDocumentCacheHits),
 		),
 		apiPartial: samples.some((sample) => sample.apiPartial === true),
+		apiCompactDefaultPartial: samples.some((sample) => sample.apiCompactDefaultPartial === true),
 		cliPartial: samples.some((sample) => sample.cliPartial === true),
 		mcpPartial: samples.some((sample) => sample.mcpPartial === true),
+		mcpCompactDefaultPartial: samples.some((sample) => sample.mcpCompactDefaultPartial === true),
 		tuiPartial: samples.some((sample) => sample.tuiPartial === true),
 	}
 }
@@ -876,10 +1020,14 @@ async function run() {
 			await runCappedOpenWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit, false)
 			await runApiFirstWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit)
 			await runApiFirstWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit, false)
+			await runApiCompactDefault(data.xlsxPath, data.sheet, data.range)
+			await runApiCompactDefault(data.xlsxPath, data.sheet, data.range, false)
 			await runCliReadFirstWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit)
 			await runCliReadFirstWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit, false)
 			await runMcpFirstWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit)
 			await runMcpFirstWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit, false)
+			await runMcpCompactDefault(data.xlsxPath, data.sheet, data.range)
+			await runMcpCompactDefault(data.xlsxPath, data.sheet, data.range, false)
 			await runTuiFirstPaint(data.xlsxPath, data.sheet, args.rowLimit)
 			await runTuiFirstPaint(data.xlsxPath, data.sheet, args.rowLimit, false)
 			runGc()
@@ -911,6 +1059,13 @@ async function run() {
 				args.rowLimit,
 				false,
 			)
+			const apiCompactDefault = await runApiCompactDefault(data.xlsxPath, data.sheet, data.range)
+			const apiCompactDefaultWarm = await runApiCompactDefault(
+				data.xlsxPath,
+				data.sheet,
+				data.range,
+				false,
+			)
 			runGc()
 			const cli = await runCliReadFirstWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit)
 			const cliWarm = await runCliReadFirstWindow(
@@ -929,6 +1084,13 @@ async function run() {
 				args.rowLimit,
 				false,
 			)
+			const mcpCompactDefault = await runMcpCompactDefault(data.xlsxPath, data.sheet, data.range)
+			const mcpCompactDefaultWarm = await runMcpCompactDefault(
+				data.xlsxPath,
+				data.sheet,
+				data.range,
+				false,
+			)
 			runGc()
 			const tui = await runTuiFirstPaint(data.xlsxPath, data.sheet, args.rowLimit)
 			const tuiWarm = await runTuiFirstPaint(data.xlsxPath, data.sheet, args.rowLimit, false)
@@ -937,8 +1099,10 @@ async function run() {
 				...full,
 				...capped,
 				...api,
+				...apiCompactDefault,
 				...cli,
 				...mcp,
+				...mcpCompactDefault,
 				...tui,
 				fullWarmOpenWindowMs: fullWarm.fullOpenWindowMs,
 				fullWarmOpenCalls: fullWarm.fullOpenCalls,
@@ -949,6 +1113,7 @@ async function run() {
 				cappedWarmHydratedOpenCount: cappedWarm.cappedHydratedOpenCount,
 				cappedWarmDocumentCacheHits: cappedWarm.cappedDocumentCacheHits,
 				apiWarmFirstWindowMs: apiWarm.apiFirstWindowMs,
+				apiWarmCompactDefaultMs: apiCompactDefaultWarm.apiCompactDefaultMs,
 				apiWarmOpenCalls: apiWarm.apiOpenCalls,
 				apiWarmHydratedOpenCount: apiWarm.apiHydratedOpenCount,
 				apiWarmDocumentCacheHits: apiWarm.apiDocumentCacheHits,
@@ -957,6 +1122,7 @@ async function run() {
 				cliWarmHydratedOpenCount: cliWarm.cliHydratedOpenCount,
 				cliWarmDocumentCacheHits: cliWarm.cliDocumentCacheHits,
 				mcpWarmFirstWindowMs: mcpWarm.mcpFirstWindowMs,
+				mcpWarmCompactDefaultMs: mcpCompactDefaultWarm.mcpCompactDefaultMs,
 				mcpWarmOpenCalls: mcpWarm.mcpOpenCalls,
 				mcpWarmHydratedOpenCount: mcpWarm.mcpHydratedOpenCount,
 				mcpWarmDocumentCacheHits: mcpWarm.mcpDocumentCacheHits,

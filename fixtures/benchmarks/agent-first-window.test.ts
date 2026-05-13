@@ -37,10 +37,14 @@ describe('agent first-window benchmark', () => {
 				readonly cappedWarmOpenWindowMedianMs?: number
 				readonly apiFirstWindowMedianMs?: number
 				readonly apiWarmFirstWindowMedianMs?: number
+				readonly apiCompactDefaultMedianMs?: number
+				readonly apiWarmCompactDefaultMedianMs?: number
 				readonly cliReadFirstWindowMedianMs?: number
 				readonly cliWarmReadFirstWindowMedianMs?: number
 				readonly mcpFirstWindowMedianMs?: number
 				readonly mcpWarmFirstWindowMedianMs?: number
+				readonly mcpCompactDefaultMedianMs?: number
+				readonly mcpWarmCompactDefaultMedianMs?: number
 				readonly tuiFirstPaintMedianMs?: number
 				readonly tuiWarmFirstPaintMedianMs?: number
 				readonly tuiOpenMedianMs?: number
@@ -61,6 +65,8 @@ describe('agent first-window benchmark', () => {
 				readonly tuiRetainedRssDeltaMbMedian?: number
 				readonly cellsMedian?: number
 				readonly payloadBytesMedian?: number
+				readonly apiCompactDefaultPayloadBytesMedian?: number
+				readonly apiCompactDefaultCellsMedian?: number
 				readonly fullHydratedCellsMedian?: number
 				readonly cappedHydratedCellsMedian?: number
 				readonly tuiHydratedCellsMedian?: number
@@ -94,6 +100,8 @@ describe('agent first-window benchmark', () => {
 				readonly mcpWarmHydratedOpenCountMedian?: number
 				readonly mcpDocumentCacheHitsMedian?: number
 				readonly mcpWarmDocumentCacheHitsMedian?: number
+				readonly mcpCompactDefaultPayloadBytesMedian?: number
+				readonly mcpCompactDefaultCellsMedian?: number
 				readonly tuiOpenCallsMedian?: number
 				readonly tuiWarmOpenCallsMedian?: number
 				readonly tuiHydratedOpenCountMedian?: number
@@ -101,8 +109,10 @@ describe('agent first-window benchmark', () => {
 				readonly tuiDocumentCacheHitsMedian?: number
 				readonly tuiWarmDocumentCacheHitsMedian?: number
 				readonly apiPartial?: boolean
+				readonly apiCompactDefaultPartial?: boolean
 				readonly cliPartial?: boolean
 				readonly mcpPartial?: boolean
+				readonly mcpCompactDefaultPartial?: boolean
 				readonly tuiPartial?: boolean
 				readonly mcpPayloadBytesMedian?: number
 				readonly tuiFrameBytesMedian?: number
@@ -114,10 +124,14 @@ describe('agent first-window benchmark', () => {
 		expect(payload.summary?.cappedWarmOpenWindowMedianMs).toBeNumber()
 		expect(payload.summary?.apiFirstWindowMedianMs).toBeNumber()
 		expect(payload.summary?.apiWarmFirstWindowMedianMs).toBeNumber()
+		expect(payload.summary?.apiCompactDefaultMedianMs).toBeNumber()
+		expect(payload.summary?.apiWarmCompactDefaultMedianMs).toBeNumber()
 		expect(payload.summary?.cliReadFirstWindowMedianMs).toBeNumber()
 		expect(payload.summary?.cliWarmReadFirstWindowMedianMs).toBeNumber()
 		expect(payload.summary?.mcpFirstWindowMedianMs).toBeNumber()
 		expect(payload.summary?.mcpWarmFirstWindowMedianMs).toBeNumber()
+		expect(payload.summary?.mcpCompactDefaultMedianMs).toBeNumber()
+		expect(payload.summary?.mcpWarmCompactDefaultMedianMs).toBeNumber()
 		expect(payload.summary?.tuiFirstPaintMedianMs).toBeNumber()
 		expect(payload.summary?.tuiWarmFirstPaintMedianMs).toBeNumber()
 		expect(payload.summary?.tuiOpenMedianMs).toBeNumber()
@@ -138,6 +152,8 @@ describe('agent first-window benchmark', () => {
 		expect(payload.summary?.tuiRetainedRssDeltaMbMedian).toBeNumber()
 		expect(payload.summary?.cellsMedian).toBe(500 * 8)
 		expect(payload.summary?.payloadBytesMedian).toBeGreaterThan(0)
+		expect(payload.summary?.apiCompactDefaultPayloadBytesMedian).toBeGreaterThan(0)
+		expect(payload.summary?.apiCompactDefaultCellsMedian).toBe(500 * 8)
 		expect(payload.summary?.fullHydratedCellsMedian).toBe(800 * 8)
 		expect(payload.summary?.cappedHydratedCellsMedian).toBe(500 * 8)
 		expect(payload.summary?.tuiHydratedCellsMedian).toBe(500 * 8)
@@ -171,6 +187,8 @@ describe('agent first-window benchmark', () => {
 		expect(payload.summary?.mcpWarmHydratedOpenCountMedian).toBe(0)
 		expect(payload.summary?.mcpDocumentCacheHitsMedian).toBe(0)
 		expect(payload.summary?.mcpWarmDocumentCacheHitsMedian).toBe(1)
+		expect(payload.summary?.mcpCompactDefaultPayloadBytesMedian).toBeGreaterThan(0)
+		expect(payload.summary?.mcpCompactDefaultCellsMedian).toBe(500 * 8)
 		expect(payload.summary?.tuiOpenCallsMedian).toBe(1)
 		expect(payload.summary?.tuiWarmOpenCallsMedian).toBe(1)
 		expect(payload.summary?.tuiHydratedOpenCountMedian).toBe(1)
@@ -178,8 +196,10 @@ describe('agent first-window benchmark', () => {
 		expect(payload.summary?.tuiDocumentCacheHitsMedian).toBe(0)
 		expect(payload.summary?.tuiWarmDocumentCacheHitsMedian).toBe(1)
 		expect(payload.summary?.apiPartial).toBe(true)
+		expect(payload.summary?.apiCompactDefaultPartial).toBe(true)
 		expect(payload.summary?.cliPartial).toBe(true)
 		expect(payload.summary?.mcpPartial).toBe(true)
+		expect(payload.summary?.mcpCompactDefaultPartial).toBe(true)
 		expect(payload.summary?.tuiPartial).toBe(true)
 		expect(payload.summary?.mcpPayloadBytesMedian).toBeGreaterThan(0)
 		expect(payload.summary?.tuiFrameBytesMedian).toBeGreaterThan(0)

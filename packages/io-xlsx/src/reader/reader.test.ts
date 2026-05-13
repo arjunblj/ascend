@@ -140,6 +140,24 @@ describe('readXlsx', () => {
 		expect(report.status).toBe('clean')
 	})
 
+	it('maps default workbook cell styles to the default style id', () => {
+		const source = createWorkbook()
+		const sourceSheet = source.addSheet('Sheet1')
+		sourceSheet.cells.setPlainNumberSpan(0, 0, [1, 2, 3])
+
+		const written = writeXlsx(source)
+		expectOk(written)
+		const result = readXlsx(written.value, { mode: 'full', richMetadata: true })
+		expectOk(result)
+
+		const workbook = result.value.workbook
+		const sheet = workbook.getSheet('Sheet1')
+		expect(sheet?.cells.get(0, 0)?.styleId).toBe(S0)
+		expect(workbook.styles.size).toBe(1)
+		expect(workbook.preservedStyles?.xfByStyleId[S0]).toBe(0)
+		expect(sheet?.cells.storageStats().styleArrayBufferBytes).toBe(0)
+	})
+
 	it('parses compact inline strings without explicit cell refs', () => {
 		const bytes = makeXlsx({
 			'[Content_Types].xml': CONTENT_TYPES,

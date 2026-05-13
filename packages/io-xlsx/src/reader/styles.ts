@@ -251,6 +251,11 @@ function buildCellStylesFast(
 		const fill = fills[fillId]
 		const border = borders[borderId]
 		const formatCode = numFmts.get(numFmtId)
+		if (isDefaultCellXf(fontId, fillId, borderId, numFmtId, formatCode)) {
+			cellStyles.push({})
+			isDateFormat.push(false)
+			continue
+		}
 		const style: WritablePartial<CellStyle> = {}
 		if (font && hasProps(font)) style.font = font
 		if (fill && hasProps(fill)) style.fill = fill
@@ -771,6 +776,17 @@ function buildCellStyles(
 		const fill = fills[fillId]
 		const border = borders[borderId]
 		const formatCode = numFmts.get(numFmtId)
+		const alignment = parseAlignment(xf)
+		const protection = parseProtection(xf)
+		if (
+			isDefaultCellXf(fontId, fillId, borderId, numFmtId, formatCode) &&
+			!alignment &&
+			!protection
+		) {
+			cellStyles.push({})
+			isDateFormat.push(false)
+			continue
+		}
 
 		const style: WritablePartial<CellStyle> = {}
 		if (font && hasProps(font)) style.font = font
@@ -780,10 +796,8 @@ function buildCellStyles(
 			style.numberFormat = formatCode
 		}
 
-		const alignment = parseAlignment(xf)
 		if (alignment) style.alignment = alignment
 
-		const protection = parseProtection(xf)
 		if (protection) style.protection = protection
 
 		cellStyles.push(style as CellStyle)
@@ -796,6 +810,22 @@ function buildCellStyles(
 	}
 
 	return { cellStyles, isDateFormat }
+}
+
+function isDefaultCellXf(
+	fontId: number,
+	fillId: number,
+	borderId: number,
+	numFmtId: number,
+	formatCode: string | undefined,
+): boolean {
+	return (
+		fontId === 0 &&
+		fillId === 0 &&
+		borderId === 0 &&
+		numFmtId === 0 &&
+		(formatCode === undefined || formatCode === 'General')
+	)
 }
 
 function parseAlignment(xf: XmlNode): AlignmentStyle | undefined {

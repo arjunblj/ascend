@@ -668,6 +668,54 @@ function parseSimpleValuesRowBytes(
 	let cachedSharedStringIndex = -1
 	let cachedSharedStringText: string | undefined
 	let cachedSharedStringEntry: CellValue | undefined
+	let pendingNumberCol = -1
+	let pendingNumberValue = 0
+	let numberSpanStartCol = -1
+	const numberSpanValues: number[] = []
+	const flushNumberSpan = () => {
+		if (numberSpanValues.length > 0) {
+			sheet.cells.setPlainNumberSpan(row, numberSpanStartCol, numberSpanValues)
+			numberSpanValues.length = 0
+			numberSpanStartCol = -1
+			pendingNumberCol = -1
+			return
+		}
+		if (pendingNumberCol >= 0) {
+			sheet.cells.setPlainNumber(row, pendingNumberCol, pendingNumberValue)
+			pendingNumberCol = -1
+		}
+	}
+	const appendNumber = (cellRow: number, cellCol: number, value: number, styleIdx: number) => {
+		if (cellRow !== row || ctx.isDateFormat[styleIdx]) {
+			flushNumberSpan()
+			setSimpleValuesNumberCell(sheet, ctx, cellRow, cellCol, value, styleIdx)
+			return
+		}
+		if (numberSpanValues.length === 0) {
+			if (pendingNumberCol < 0) {
+				pendingNumberCol = cellCol
+				pendingNumberValue = value
+				return
+			}
+			if (cellCol === pendingNumberCol + 1) {
+				numberSpanStartCol = pendingNumberCol
+				numberSpanValues.push(pendingNumberValue, value)
+				pendingNumberCol = -1
+				return
+			}
+			flushNumberSpan()
+			pendingNumberCol = cellCol
+			pendingNumberValue = value
+			return
+		}
+		if (cellCol !== numberSpanStartCol + numberSpanValues.length) {
+			flushNumberSpan()
+			pendingNumberCol = cellCol
+			pendingNumberValue = value
+			return
+		}
+		numberSpanValues.push(value)
+	}
 	const out: SimpleValuesCellOut = {
 		row,
 		col: 0,
@@ -681,7 +729,10 @@ function parseSimpleValuesRowBytes(
 	}
 	while (true) {
 		cursor = skipXmlWhitespaceBytes(bytes, cursor, bodyEnd)
-		if (cursor >= bodyEnd) return true
+		if (cursor >= bodyEnd) {
+			flushNumberSpan()
+			return true
+		}
 		const plainValueNext = parseCanonicalPlainValueCellBytes(
 			bytes,
 			cursor,
@@ -694,8 +745,9 @@ function parseSimpleValuesRowBytes(
 		)
 		if (plainValueNext !== -1) {
 			if (out.numberValue !== undefined) {
-				setSimpleValuesNumberCell(sheet, ctx, out.row, out.col, out.numberValue, out.styleIdx)
+				appendNumber(out.row, out.col, out.numberValue, out.styleIdx)
 			} else if (out.sharedStringIndex >= 0) {
+				flushNumberSpan()
 				let text: string | undefined
 				let entry: CellValue | undefined
 				if (out.sharedStringIndex === cachedSharedStringIndex) {
@@ -720,6 +772,7 @@ function parseSimpleValuesRowBytes(
 					)
 				}
 			} else if (out.booleanRaw >= 0) {
+				flushNumberSpan()
 				sheet.cells.setResolved(
 					out.row,
 					out.col,
@@ -728,6 +781,7 @@ function parseSimpleValuesRowBytes(
 					DEFAULT_STYLE_ID,
 				)
 			} else if (out.stringStart >= 0) {
+				flushNumberSpan()
 				sheet.cells.setPlainString(
 					out.row,
 					out.col,
@@ -748,8 +802,9 @@ function parseSimpleValuesRowBytes(
 		)
 		if (omittedRefNext !== -1) {
 			if (out.numberValue !== undefined) {
-				setSimpleValuesNumberCell(sheet, ctx, out.row, out.col, out.numberValue, out.styleIdx)
+				appendNumber(out.row, out.col, out.numberValue, out.styleIdx)
 			} else if (out.sharedStringIndex >= 0) {
+				flushNumberSpan()
 				let text: string | undefined
 				let entry: CellValue | undefined
 				if (out.sharedStringIndex === cachedSharedStringIndex) {
@@ -774,6 +829,7 @@ function parseSimpleValuesRowBytes(
 					)
 				}
 			} else if (out.booleanRaw >= 0) {
+				flushNumberSpan()
 				sheet.cells.setResolved(
 					out.row,
 					out.col,
@@ -782,6 +838,7 @@ function parseSimpleValuesRowBytes(
 					DEFAULT_STYLE_ID,
 				)
 			} else if (out.stringStart >= 0) {
+				flushNumberSpan()
 				sheet.cells.setPlainString(
 					out.row,
 					out.col,
@@ -803,8 +860,9 @@ function parseSimpleValuesRowBytes(
 		)
 		if (canonicalNext !== -1) {
 			if (out.numberValue !== undefined) {
-				setSimpleValuesNumberCell(sheet, ctx, out.row, out.col, out.numberValue, out.styleIdx)
+				appendNumber(out.row, out.col, out.numberValue, out.styleIdx)
 			} else if (out.sharedStringIndex >= 0) {
+				flushNumberSpan()
 				let text: string | undefined
 				let entry: CellValue | undefined
 				if (out.sharedStringIndex === cachedSharedStringIndex) {
@@ -829,6 +887,7 @@ function parseSimpleValuesRowBytes(
 					)
 				}
 			} else if (out.booleanRaw >= 0) {
+				flushNumberSpan()
 				sheet.cells.setResolved(
 					out.row,
 					out.col,
@@ -837,6 +896,7 @@ function parseSimpleValuesRowBytes(
 					DEFAULT_STYLE_ID,
 				)
 			} else if (out.stringStart >= 0) {
+				flushNumberSpan()
 				sheet.cells.setPlainString(
 					out.row,
 					out.col,
@@ -882,7 +942,7 @@ function parseSimpleValuesRowBytes(
 		) {
 			return false
 		}
-		setSimpleValuesNumberCell(sheet, ctx, out.row, out.col, value, out.styleIdx)
+		appendNumber(out.row, out.col, value, out.styleIdx)
 		nextCol = out.col + 1
 		cursor += BYTES_CELL_CLOSE.length
 	}

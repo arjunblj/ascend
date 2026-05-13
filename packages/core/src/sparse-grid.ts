@@ -113,6 +113,14 @@ const PLAIN_WRITE_HAD_FORMULA_INFO = 1 << 2
 const PLAIN_WRITE_PREVIOUS_STRING = 1 << 3
 const PLAIN_WRITE_PREVIOUS_RICH_TEXT = 1 << 4
 
+interface PlainNumberSpanWriteResult {
+	inserted: number
+	formulaCleared: number
+	formulaInfoCleared: number
+	previousString: number
+	previousRichText: number
+}
+
 interface GridChunk {
 	readonly count: number
 	clone(): GridChunk
@@ -944,6 +952,60 @@ class DenseChunk implements GridChunk {
 		return previous
 	}
 
+	writePlainNumberSpan(
+		localRow: number,
+		startLocalCol: number,
+		values: readonly number[],
+		valueOffset: number,
+		count: number,
+	): PlainNumberSpanWriteResult {
+		const endLocalCol = startLocalCol + count - 1
+		const rowBase = localRow << CHUNK_BITS
+		const existingRowCount = this.rowCounts[localRow] ?? 0
+		if (existingRowCount === 0) {
+			for (let offset = 0; offset < count; offset++) {
+				const localIndex = rowBase | (startLocalCol + offset)
+				this.slotMeta[localIndex] = SLOT_OCCUPIED_BIT | SlotTag.Number
+				this.numbers[localIndex] = values[valueOffset + offset] ?? 0
+				if (this.styleIds !== null) this.styleIds[localIndex] = DEFAULT_STYLE_ID
+				if (this.formulas !== null) this.formulas[localIndex] = null
+				if (this.formulaInfos !== null) this.formulaInfos[localIndex] = undefined
+				if (this.heapValues !== null) this.heapValues[localIndex] = undefined
+			}
+			this.rowCounts[localRow] = count
+			this.rowMinCol[localRow] = startLocalCol
+			this.rowMaxCol[localRow] = endLocalCol
+			this._count += count
+			return {
+				inserted: count,
+				formulaCleared: 0,
+				formulaInfoCleared: 0,
+				previousString: 0,
+				previousRichText: 0,
+			}
+		}
+
+		const result: PlainNumberSpanWriteResult = {
+			inserted: 0,
+			formulaCleared: 0,
+			formulaInfoCleared: 0,
+			previousString: 0,
+			previousRichText: 0,
+		}
+		for (let offset = 0; offset < count; offset++) {
+			const flags = this.writePlainNumber(
+				rowBase | (startLocalCol + offset),
+				values[valueOffset + offset] ?? 0,
+			)
+			if ((flags & PLAIN_WRITE_EXISTED) === 0) result.inserted++
+			if ((flags & PLAIN_WRITE_HAD_FORMULA) !== 0) result.formulaCleared++
+			if ((flags & PLAIN_WRITE_HAD_FORMULA_INFO) !== 0) result.formulaInfoCleared++
+			if ((flags & PLAIN_WRITE_PREVIOUS_STRING) !== 0) result.previousString++
+			if ((flags & PLAIN_WRITE_PREVIOUS_RICH_TEXT) !== 0) result.previousRichText++
+		}
+		return result
+	}
+
 	writePlainString(localIndex: number, value: string, stringTable: StringTable): number {
 		const previous = this.preparePlainWrite(localIndex)
 		this.writeResolved(
@@ -1528,6 +1590,58 @@ export class SparseGrid {
 			if (hadFormulaInfo) this._formulaInfoCellCount--
 		}
 		this._trackBounds(row, col)
+	}
+
+	setPlainNumberSpan(
+		row: number,
+		startCol: number,
+		values: readonly number[],
+		valueOffset = 0,
+		count = values.length - valueOffset,
+	): void {
+		if (count <= 0) return
+		this.ensureWritable()
+		let remaining = count
+		let col = startCol
+		let offset = valueOffset
+		while (remaining > 0) {
+			const chunkRow = row >> CHUNK_BITS
+			const chunkCol = col >> CHUNK_BITS
+			const localRow = row & CHUNK_MASK
+			const startLocalCol = col & CHUNK_MASK
+			const segmentCount = Math.min(remaining, CHUNK_SIZE - startLocalCol)
+			let chunk = this._writableChunkDirect(chunkRow, chunkCol)
+			const cols = this._lastWriteCols as Map<number, GridChunk>
+			chunk = this.ensureChunkWritable(chunkRow, chunkCol, cols, chunk)
+			if (!(chunk instanceof DenseChunk)) {
+				for (let index = 0; index < segmentCount; index++) {
+					this.setPlainNumber(row, col + index, values[offset + index] ?? 0)
+				}
+				col += segmentCount
+				offset += segmentCount
+				remaining -= segmentCount
+				continue
+			}
+			const result = chunk.writePlainNumberSpan(
+				localRow,
+				startLocalCol,
+				values,
+				offset,
+				segmentCount,
+			)
+			this._rememberWriteChunk(chunkRow, chunkCol, cols, chunk)
+			this._cellCount += result.inserted
+			if (this._expectedDensity === 'auto') this._autoTotalCells += result.inserted
+			this._formulaCellCount -= result.formulaCleared
+			this._formulaInfoCellCount -= result.formulaInfoCleared
+			this._stringCellCount -= result.previousString
+			this._richTextCellCount -= result.previousRichText
+			this._trackBounds(row, col)
+			this._trackBounds(row, col + segmentCount - 1)
+			col += segmentCount
+			offset += segmentCount
+			remaining -= segmentCount
+		}
 	}
 
 	delete(row: number, col: number): boolean {

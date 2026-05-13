@@ -79,6 +79,32 @@ describe('SparseGrid', () => {
 		expect(grid.richTextCellCount()).toBe(0)
 	})
 
+	test('plain number spans store contiguous dense row values and clear prior metadata', () => {
+		const grid = new SparseGrid()
+		grid.setExpectedDensity('dense')
+		grid.set(0, 1, {
+			value: richTextValue([{ text: 'old' }]),
+			formula: 'B2',
+			styleId: S7,
+			formulaInfo: { kind: 'array', ref: 'B1' },
+		})
+
+		grid.setPlainNumberSpan(0, 0, [10, 20, 30])
+
+		expect(grid.cellCount()).toBe(3)
+		expect(grid.formulaCellCount()).toBe(0)
+		expect(grid.formulaInfoCellCount()).toBe(0)
+		expect(grid.richTextCellCount()).toBe(0)
+		expect(grid.readNumber(0, 0)).toBe(10)
+		expect(grid.readNumber(0, 1)).toBe(20)
+		expect(grid.readNumber(0, 2)).toBe(30)
+		expect(grid.get(0, 1)).toEqual(makeCell(numberValue(20)))
+		expect(grid.usedRange()).toEqual({
+			start: { row: 0, col: 0 },
+			end: { row: 0, col: 2 },
+		})
+	})
+
 	test('tracks string and rich text cell counts across mutations', () => {
 		const grid = new SparseGrid()
 		const rich = richTextValue([{ text: 'rich', bold: true }])

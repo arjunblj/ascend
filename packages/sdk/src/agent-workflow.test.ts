@@ -283,6 +283,39 @@ describe('agent workflow loss audit', () => {
 		expect(committed.modelOutput.counts.operations).toBe(1)
 	})
 
+	test('commit stops before write when write policy has structural blockers', async () => {
+		const input = join(TEMP_DIR, 'pre-write-check-error.xlsx')
+		const output = join(TEMP_DIR, 'pre-write-check-error-out.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		await Bun.write(input, makeBrokenConditionalFormatXlsx())
+		const ops = [{ op: 'setCells' as const, sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] }]
+
+		const plan = await createAgentPlan(input, ops)
+		expect(plan.writePolicy.ok).toBe(false)
+		expect(plan.trace.phases.find((phase) => phase.phase === 'write-policy')?.status).toBe(
+			'blocked',
+		)
+		expect(plan.writePolicy.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: 'pre-write-check-error',
+				severity: 'blocker',
+				details: expect.objectContaining({
+					checkIssues: expect.arrayContaining([
+						expect.objectContaining({
+							rule: 'conditional-format-integrity',
+							severity: 'error',
+						}),
+					]),
+				}),
+			}),
+		)
+
+		await expect(commitAgentPlan(input, ops, { output })).rejects.toThrow(
+			'Commit blocked by write policy',
+		)
+		expect(existsSync(output)).toBe(false)
+	})
+
 	test('plans explain calc chain preservation versus formula-topology invalidation', async () => {
 		const input = join(TEMP_DIR, 'calc-chain.xlsx')
 		mkdirSync(TEMP_DIR, { recursive: true })
@@ -452,8 +485,14 @@ describe('agent workflow loss audit', () => {
 			}),
 		)
 		expect(plan.writePolicy.ok).toBe(false)
+		expect(plan.writePolicy.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: 'pre-write-check-error',
+				severity: 'blocker',
+			}),
+		)
 		expect(plan.trace.phases.find((phase) => phase.phase === 'write-policy')?.status).toBe(
-			'warning',
+			'blocked',
 		)
 	})
 
@@ -2422,6 +2461,44 @@ function makePreservedCustomXlsx(): Uint8Array {
 				'xl/worksheets/sheet1.xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`),
 				'xl/custom/custom1.xml': encode('<custom>preserve me</custom>'),
+			}),
+		),
+	)
+}
+
+function makeBrokenConditionalFormatXlsx(): Uint8Array {
+	return createZip(
+		new Map(
+			Object.entries({
+				'[Content_Types].xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`),
+				'_rels/.rels': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`),
+				'xl/_rels/workbook.xml.rels':
+					encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`),
+				'xl/workbook.xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets>
+</workbook>`),
+				'xl/worksheets/sheet1.xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData/>
+  <conditionalFormatting sqref="A1:A3">
+    <cfRule type="expression" priority="1">
+      <formula>MissingSheet!A1&gt;0</formula>
+    </cfRule>
+  </conditionalFormatting>
+</worksheet>`),
 			}),
 		),
 	)

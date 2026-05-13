@@ -169,6 +169,7 @@ export interface WritePolicyDiagnostic {
 		| 'external-link-binding-risk'
 		| 'external-link-package-risk'
 		| 'package-graph-audit-issue'
+		| 'pre-write-check-error'
 		| 'approval-required-feature'
 	readonly severity: 'info' | 'warning' | 'blocker'
 	readonly message: string
@@ -525,6 +526,15 @@ export async function commitAgentPlan(
 		writePolicyCheck.issues,
 	)
 	await progressFromPhase(writePolicyPhase(writePolicy), progress)
+	if (writePolicy.diagnostics.some((diagnostic) => diagnostic.severity === 'blocker')) {
+		throw new AscendException(
+			ascendError('VALIDATION_ERROR', 'Commit blocked by write policy', {
+				details: { writePolicy },
+				suggestedFix:
+					'Inspect writePolicy.diagnostics and repair blocker diagnostics before committing.',
+			}),
+		)
+	}
 	const sourceBytes = await readFile(file)
 	await progress('write', 'started', `Writing workbook to ${output}.`)
 	await writeWorkbookAtomically(wb, output)
@@ -1262,6 +1272,17 @@ function buildWritePolicyReport(
 	const generatedParts = preservation.parts.filter((part) => part.origin === 'generated')
 	const skipped = preservation.skippedCapsules
 	const packagePartByPath = new Map(packageGraph.parts.map((part) => [part.path, part]))
+	const checkErrors = checkIssues.filter((issue) => issue.severity === 'error')
+	if (checkErrors.length > 0) {
+		diagnostics.push({
+			code: 'pre-write-check-error',
+			severity: 'blocker',
+			message: `${checkErrors.length} structural check error(s) would be written to the output workbook.`,
+			suggestedAction:
+				'Run ascend check or repair-plan, fix the reported workbook integrity errors, and re-run plan before committing.',
+			details: { checkIssues: checkErrors },
+		})
+	}
 	if (generatedParts.length > 0) {
 		diagnostics.push({
 			code: 'generated-replacement-parts',

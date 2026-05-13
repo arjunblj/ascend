@@ -1177,6 +1177,13 @@ describe('MCP server', () => {
 					data?: {
 						pathMutations?: { ops?: unknown[] }
 						apply?: { affectedCellCount?: number }
+						timings?: {
+							applyMs?: number
+							writePlanSummaryMs?: number
+							writePolicyCheckMs?: number
+							toBytesMs?: number
+							outputByteReadMs?: number
+						}
 						postWrite?: {
 							valid?: boolean
 							reopened?: boolean
@@ -1190,7 +1197,6 @@ describe('MCP server', () => {
 			}>
 			const planned = await plan({
 				file: TEMP_FILE,
-				prepare: true,
 				mutations: [{ path: '/sheets/Sheet1/cells/A1/value', value: 321 }],
 			})
 			expect(planned.structuredContent?.ok).toBe(true)
@@ -1212,6 +1218,11 @@ describe('MCP server', () => {
 				{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 321 }] },
 			])
 			expect(committed.structuredContent?.data?.apply?.affectedCellCount).toBe(1)
+			expect(committed.structuredContent?.data?.timings?.applyMs).toBeNumber()
+			expect(committed.structuredContent?.data?.timings?.writePlanSummaryMs).toBeNumber()
+			expect(committed.structuredContent?.data?.timings?.writePolicyCheckMs).toBeNumber()
+			expect(committed.structuredContent?.data?.timings?.toBytesMs).toBeNumber()
+			expect(committed.structuredContent?.data?.timings?.outputByteReadMs).toBeNumber()
 			expect(committed.structuredContent?.data?.postWrite?.valid).toBe(true)
 			expect(committed.structuredContent?.data?.postWrite?.reopened).toBe(true)
 			expect(committed.structuredContent?.data?.postWrite?.timings?.reopenMs).toBeNumber()
@@ -1232,6 +1243,37 @@ describe('MCP server', () => {
 			await unlink(output).catch(() => {})
 			await unlink(`${output}.reuse.xlsx`).catch(() => {})
 		}
+	})
+
+	test('ascend.plan can opt out of default prepared handles', async () => {
+		const wb = AscendWorkbook.create()
+		await wb.save(TEMP_FILE)
+		const server = createServer()
+
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const plan = (server as any)._registeredTools['ascend.plan'].handler as (args: {
+			file: string
+			prepare?: boolean
+			ops?: unknown[]
+		}) => Promise<{
+			structuredContent?: {
+				ok?: boolean
+				data?: {
+					preparedPlan?: { id?: string }
+					preview?: { wouldSucceed?: boolean }
+				}
+			}
+		}>
+
+		const planned = await plan({
+			file: TEMP_FILE,
+			prepare: false,
+			ops: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 12 }] }],
+		})
+
+		expect(planned.structuredContent?.ok).toBe(true)
+		expect(planned.structuredContent?.data?.preparedPlan).toBeUndefined()
+		expect(planned.structuredContent?.data?.preview?.wouldSucceed).toBe(true)
 	})
 
 	test('prepared MCP plan handles are bounded', async () => {
@@ -1260,12 +1302,10 @@ describe('MCP server', () => {
 
 			const first = await plan({
 				file: TEMP_FILE,
-				prepare: true,
 				mutations: [{ path: '/sheets/Sheet1/cells/A1/value', value: 1 }],
 			})
 			const second = await plan({
 				file: TEMP_FILE,
-				prepare: true,
 				mutations: [{ path: '/sheets/Sheet1/cells/A1/value', value: 2 }],
 			})
 			expect(first.structuredContent?.data?.preparedPlan?.id).toBeString()

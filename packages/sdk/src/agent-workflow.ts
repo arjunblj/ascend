@@ -101,6 +101,7 @@ export interface AgentCommitResult {
 	readonly modelOutput: AgentModelOutput
 	readonly apply: ReturnType<AscendWorkbook['apply']>
 	readonly recalc: ReturnType<AscendWorkbook['recalc']> | null
+	readonly timings: AgentCommitTimings
 	readonly check: ReturnType<AscendWorkbook['check']>
 	readonly lint: ReturnType<AscendWorkbook['lint']>
 	readonly preservation: ReturnType<AscendWorkbook['writePlanSummary']>
@@ -122,6 +123,7 @@ export interface CompactAgentCommitResult
 		| 'operationCount'
 		| 'approvals'
 		| 'modelOutput'
+		| 'timings'
 	> {
 	readonly trace: CompactAgentTraceSummary
 	readonly apply: CompactApplySummary
@@ -237,6 +239,23 @@ export interface AgentPostWriteVerificationTimings {
 	readonly preservationMs: number
 	readonly packageGraphMs: number
 	readonly packageGraphAuditMs: number
+}
+
+export interface AgentCommitTimings {
+	readonly packageGraphMs: number
+	readonly approvalAuditMs: number
+	readonly lossAuditMs: number
+	readonly packageGraphAuditMs: number
+	readonly applyMs: number
+	readonly recalcMs: number
+	readonly writePlanSummaryMs: number
+	readonly writePolicyCheckMs: number
+	readonly writePolicyBuildMs: number
+	readonly toBytesMs: number
+	readonly writeFileMs: number
+	readonly renameMs: number
+	readonly outputByteReadMs: number
+	readonly outputHashMs: number
 }
 
 export interface LossAudit {
@@ -681,6 +700,7 @@ export function compactAgentCommitResult(result: AgentCommitResult): CompactAgen
 		planDigest: result.planDigest,
 		operationCount: result.operationCount,
 		approvals: result.approvals,
+		timings: result.timings,
 		trace: compactTraceSummary(result.trace),
 		modelOutput: result.modelOutput,
 		apply: {
@@ -894,18 +914,28 @@ export async function commitAgentPlanFromWorkbook(
 	const output =
 		internal.output ?? (await resolveCommitOutputTarget(file, inputSha256, options, progress))
 	const writePolicyWorkbook = snapshotWritePolicyWorkbook(wb.getWorkbookModel())
-	const packageGraph = wb.packageGraph()
+	const packageGraphResult = await timedCommitStep(() => wb.packageGraph())
+	const packageGraph = packageGraphResult.value
 	await progress('approval-audit', 'started', 'Auditing explicit approval requirements.')
-	const approvals = buildApprovalRequirements(wb.report.features, ops)
+	const approvalsResult = await timedCommitStep(() =>
+		buildApprovalRequirements(wb.report.features, ops),
+	)
+	const approvals = approvalsResult.value
 	const effectiveAllowLoss = mergeAllowLoss(
 		options.allowLoss,
 		approvalSatisfiedLossFeatures(approvals, options.approvals),
 	)
 	await progress('loss-audit', 'started', 'Auditing preserved and unsupported features.')
-	const lossAudit = auditLossPolicy(wb.report.features, effectiveAllowLoss, packageGraph)
+	const lossAuditResult = await timedCommitStep(() =>
+		auditLossPolicy(wb.report.features, effectiveAllowLoss, packageGraph),
+	)
+	const lossAudit = lossAuditResult.value
 	await progressFromPhase(lossAuditPhase(lossAudit), progress)
 	await progress('package-graph-audit', 'started', 'Auditing package graph fidelity.')
-	const packageGraphAudit = auditPackageGraphIntegrity(packageGraph)
+	const packageGraphAuditResult = await timedCommitStep(() =>
+		auditPackageGraphIntegrity(packageGraph),
+	)
+	const packageGraphAudit = packageGraphAuditResult.value
 	const blockedApprovals = unsatisfiedApprovalRequirements(approvals, lossAudit, options.approvals)
 	await progressFromPhase(packageGraphAuditPhase(packageGraphAudit), progress)
 	await progressFromPhase(approvalPhase(approvals, options.approvals, blockedApprovals), progress)
@@ -919,15 +949,19 @@ export async function commitAgentPlanFromWorkbook(
 		)
 	}
 	await progress('apply', 'started', 'Applying operations.', { count: ops.length })
-	const apply = wb.apply(ops, { transaction: true })
+	const applyResult = await timedCommitStep(() => wb.apply(ops, { transaction: true }))
+	const apply = applyResult.value
 	await progressFromPhase(applyPhase(apply), progress)
 	if (apply.errors.length > 0)
 		throw new AscendException(apply.errors[0] ?? ascendError('VALIDATION_ERROR', 'Apply failed'))
 
 	let recalc: ReturnType<AscendWorkbook['recalc']> | null = null
+	let recalcMs = 0
 	if (apply.recalcRequired) {
 		await progress('recalc', 'started', 'Recalculating formulas.')
-		recalc = wb.recalc()
+		const recalcResult = await timedCommitStep(() => wb.recalc())
+		recalc = recalcResult.value
+		recalcMs = recalcResult.ms
 		await progressFromPhase(recalcPhase(recalc), progress)
 		if (recalc.errors.length > 0) {
 			const first = recalc.errors[0]
@@ -948,20 +982,25 @@ export async function commitAgentPlanFromWorkbook(
 
 	if (options.inPlace && options.backup) await copyFile(file, options.backup)
 	await progress('preservation-audit', 'started', 'Summarizing package preservation.')
-	const preservation = wb.writePlanSummary()
+	const preservationResult = await timedCommitStep(() => wb.writePlanSummary())
+	const preservation = preservationResult.value
 	await progressFromPhase(preservationPhase(preservation), progress)
 	await progress('write-policy', 'started', 'Explaining write preservation and loss policy.')
-	const writePolicyCheck = wb.check()
-	const writePolicy = buildWritePolicyReport(
-		wb.report.features,
-		packageGraph,
-		preservation,
-		packageGraphAudit,
-		writePolicyWorkbook,
-		ops,
-		wb.inspect().externalReferenceDetails,
-		writePolicyCheck.issues,
+	const writePolicyCheckResult = await timedCommitStep(() => wb.check())
+	const writePolicyCheck = writePolicyCheckResult.value
+	const writePolicyResult = await timedCommitStep(() =>
+		buildWritePolicyReport(
+			wb.report.features,
+			packageGraph,
+			preservation,
+			packageGraphAudit,
+			writePolicyWorkbook,
+			ops,
+			wb.inspect().externalReferenceDetails,
+			writePolicyCheck.issues,
+		),
 	)
+	const writePolicy = writePolicyResult.value
 	const expectedPostWritePackageGraphChanges = expectedPackageGraphChangesForOperations(
 		writePolicyWorkbook,
 		ops,
@@ -978,10 +1017,28 @@ export async function commitAgentPlanFromWorkbook(
 	}
 	const sourceBytes = internal.sourceBytes ?? (await fileBytes(file))
 	await progress('write', 'started', `Writing workbook to ${output}.`)
-	await writeWorkbookAtomically(wb, output)
-	const outputBytes = await fileBytes(output)
-	const outputSha256 = sha256Bytes(outputBytes)
+	const writeTimings = await writeWorkbookAtomically(wb, output)
+	const outputBytesResult = await timedCommitStep(() => fileBytes(output))
+	const outputBytes = outputBytesResult.value
+	const outputSha256Result = await timedCommitStep(() => sha256Bytes(outputBytes))
+	const outputSha256 = outputSha256Result.value
 	await progress('write', 'ok', `Workbook written to ${output}.`)
+	const timings: AgentCommitTimings = {
+		packageGraphMs: packageGraphResult.ms,
+		approvalAuditMs: approvalsResult.ms,
+		lossAuditMs: lossAuditResult.ms,
+		packageGraphAuditMs: packageGraphAuditResult.ms,
+		applyMs: applyResult.ms,
+		recalcMs,
+		writePlanSummaryMs: preservationResult.ms,
+		writePolicyCheckMs: writePolicyCheckResult.ms,
+		writePolicyBuildMs: writePolicyResult.ms,
+		toBytesMs: writeTimings.toBytesMs,
+		writeFileMs: writeTimings.writeFileMs,
+		renameMs: writeTimings.renameMs,
+		outputByteReadMs: outputBytesResult.ms,
+		outputHashMs: outputSha256Result.ms,
+	}
 	await progress('post-write', 'started', 'Reopening written workbook for verification.')
 	const postWrite = await verifyWrittenWorkbook(
 		output,
@@ -1068,6 +1125,7 @@ export async function commitAgentPlanFromWorkbook(
 		modelOutput: modelOutputFromTrace(trace),
 		apply,
 		recalc,
+		timings,
 		check,
 		lint,
 		preservation,
@@ -1410,6 +1468,14 @@ async function timedPostWriteStep<T>(
 		await emit(phase, 'failed', `${startedSummary} failed.`, { details: { durationMs: ms } })
 		throw error
 	}
+}
+
+async function timedCommitStep<T>(
+	fn: () => T | Promise<T>,
+): Promise<{ readonly value: T; readonly ms: number }> {
+	const start = performance.now()
+	const value = await fn()
+	return { value, ms: performance.now() - start }
 }
 
 function definedProgressExtras(
@@ -6052,15 +6118,36 @@ function traceArtifactCount(trace: AgentWorkflowTrace, name: string): number | u
 	return match ? Number(match[1]) : undefined
 }
 
-async function writeWorkbookAtomically(wb: AscendWorkbook, output: string): Promise<void> {
+interface AtomicWorkbookWriteTimings {
+	readonly toBytesMs: number
+	readonly writeFileMs: number
+	readonly renameMs: number
+}
+
+async function writeWorkbookAtomically(
+	wb: AscendWorkbook,
+	output: string,
+): Promise<AtomicWorkbookWriteTimings> {
 	const ext = extname(output)
 	const temp = join(dirname(output), `.${Date.now()}.${process.pid}.ascend-tmp${ext}`)
 	if (ext === '.csv' || ext === '.tsv') {
-		await wb.save(temp)
+		const save = await timedCommitStep(() => wb.save(temp))
+		const renameResult = await timedCommitStep(() => rename(temp, output))
+		return {
+			toBytesMs: 0,
+			writeFileMs: save.ms,
+			renameMs: renameResult.ms,
+		}
 	} else {
-		await writeFile(temp, wb.toBytes())
+		const bytes = await timedCommitStep(() => wb.toBytes())
+		const write = await timedCommitStep(() => writeFile(temp, bytes.value))
+		const renameResult = await timedCommitStep(() => rename(temp, output))
+		return {
+			toBytesMs: bytes.ms,
+			writeFileMs: write.ms,
+			renameMs: renameResult.ms,
+		}
 	}
-	await rename(temp, output)
 }
 
 function stableStringify(value: unknown): string {

@@ -930,6 +930,7 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 					let pathMutations: PathMutationResult | undefined
 					let result: Awaited<ReturnType<typeof createAgentPlan>> | null
 					let preparedPlan: PreparedPlanMetadata | undefined
+					const prepare = body?.prepare !== false
 					if ('mutations' in inputShape) {
 						const opened = await AscendWorkbook.openSourceBytes(file)
 						const inputSha256 = sha256Bytes(opened.sourceBytes)
@@ -939,7 +940,7 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 						result = input.ok
 							? await createAgentPlanFromWorkbook(file, inputSha256, wb, input.ops)
 							: null
-						if (input.ok && result && body?.prepare === true) {
+						if (input.ok && result && prepare) {
 							const preparedOps = input.ops
 							const planDigest = result.planDigest
 							preparedPlan = preparedPlans.add({
@@ -975,7 +976,7 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 						}
 					} else {
 						input = inputShape
-						if (body?.prepare === true) {
+						if (prepare) {
 							const prepared = await createPreparedAgentPlan(file, inputShape.ops)
 							result = prepared.plan
 							preparedPlan = preparedPlans.add(preparedPlanHandle(prepared))

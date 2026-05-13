@@ -1323,7 +1323,9 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 			prepare: z
 				.boolean()
 				.optional()
-				.describe('Return a one-shot prepared plan handle that can be passed to ascend.commit'),
+				.describe(
+					'Return a one-shot prepared plan handle that can be passed to ascend.commit; defaults to true, set false to opt out',
+				),
 			maxChangedCells: z
 				.number()
 				.int()
@@ -1348,6 +1350,7 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 				let pathMutations: PathMutationResult | undefined
 				let result: Awaited<ReturnType<typeof createAgentPlan>> | null
 				let preparedPlan: PreparedPlanMetadata | undefined
+				const shouldPrepare = prepare !== false
 				if ('mutations' in inputShape) {
 					const opened = await AscendWorkbook.openSourceBytes(file)
 					const inputSha256 = sha256Bytes(opened.sourceBytes)
@@ -1357,7 +1360,7 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 					result = input.ok
 						? await createAgentPlanFromWorkbook(file, inputSha256, wb, input.ops)
 						: null
-					if (input.ok && result && prepare === true) {
+					if (input.ok && result && shouldPrepare) {
 						const preparedOps = input.ops
 						const planDigest = result.planDigest
 						preparedPlan = preparedPlans.add({
@@ -1392,7 +1395,7 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 					}
 				} else {
 					input = inputShape
-					if (prepare === true) {
+					if (shouldPrepare) {
 						const prepared = await createPreparedAgentPlan(file, inputShape.ops)
 						result = prepared.plan
 						preparedPlan = preparedPlans.add(preparedPlanHandle(prepared))

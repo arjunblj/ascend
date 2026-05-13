@@ -52,6 +52,13 @@ interface ApiEnvelope {
 		readonly apply?: {
 			readonly affectedCellCount?: number
 		}
+		readonly timings?: {
+			readonly applyMs?: number
+			readonly writePlanSummaryMs?: number
+			readonly writePolicyCheckMs?: number
+			readonly toBytesMs?: number
+			readonly outputByteReadMs?: number
+		}
 		readonly trace?: {
 			readonly artifactCount?: number
 			readonly artifacts?: unknown[]
@@ -1265,7 +1272,6 @@ describe('Ascend API server', () => {
 		try {
 			const plan = await postJson('/plan', {
 				file: TEMP_FILE,
-				prepare: true,
 				mutations: [{ path: '/sheets/Sheet1/cells/A1/value', value: 123 }],
 			})
 			expect(plan.status).toBe(200)
@@ -1289,6 +1295,11 @@ describe('Ascend API server', () => {
 				{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 123 }] },
 			])
 			expect(commit.body.data?.apply?.affectedCellCount).toBe(1)
+			expect(commit.body.data?.timings?.applyMs).toBeNumber()
+			expect(commit.body.data?.timings?.writePlanSummaryMs).toBeNumber()
+			expect(commit.body.data?.timings?.writePolicyCheckMs).toBeNumber()
+			expect(commit.body.data?.timings?.toBytesMs).toBeNumber()
+			expect(commit.body.data?.timings?.outputByteReadMs).toBeNumber()
 			expect(commit.body.data?.postWrite?.valid).toBe(true)
 			expect(commit.body.data?.postWrite?.reopened).toBe(true)
 			expect(commit.body.data?.postWrite?.timings?.reopenMs).toBeNumber()
@@ -1310,6 +1321,22 @@ describe('Ascend API server', () => {
 			await unlink(output).catch(() => {})
 			await unlink(`${output}.reuse.xlsx`).catch(() => {})
 		}
+	})
+
+	test('plan can opt out of the default prepared handle', async () => {
+		const wb = AscendWorkbook.create()
+		await wb.save(TEMP_FILE)
+
+		const plan = await postJson('/plan', {
+			file: TEMP_FILE,
+			prepare: false,
+			ops: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 11 }] }],
+		})
+
+		expect(plan.status).toBe(200)
+		expect(plan.body.ok).toBe(true)
+		expect(plan.body.data?.preparedPlan).toBeUndefined()
+		expect(plan.body.data?.preview?.wouldSucceed).toBe(true)
 	})
 
 	test('prepared plan handles expire before commit', async () => {

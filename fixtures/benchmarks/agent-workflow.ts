@@ -51,6 +51,26 @@ interface WorkflowSample {
 	readonly preparedPlanMs: number
 	readonly commitMs: number
 	readonly preparedCommitMs: number
+	readonly commitPackageGraphMs: number | null
+	readonly commitPackageGraphAuditMs: number | null
+	readonly commitApplyMs: number | null
+	readonly commitWritePlanSummaryMs: number | null
+	readonly commitWritePolicyCheckMs: number | null
+	readonly commitWritePolicyBuildMs: number | null
+	readonly commitToBytesMs: number | null
+	readonly commitWriteFileMs: number | null
+	readonly commitOutputByteReadMs: number | null
+	readonly commitOutputHashMs: number | null
+	readonly preparedCommitApplyMs: number | null
+	readonly preparedCommitWritePlanSummaryMs: number | null
+	readonly preparedCommitWritePolicyCheckMs: number | null
+	readonly preparedCommitWritePolicyBuildMs: number | null
+	readonly preparedCommitToBytesMs: number | null
+	readonly preparedCommitWriteFileMs: number | null
+	readonly preparedCommitOutputByteReadMs: number | null
+	readonly preparedCommitOutputHashMs: number | null
+	readonly preparedCommitPackageGraphMs: number | null
+	readonly preparedCommitPackageGraphAuditMs: number | null
 	readonly commitPostWriteReopenMs: number | null
 	readonly commitPostWriteCheckMs: number | null
 	readonly commitPostWriteLintMs: number | null
@@ -103,6 +123,26 @@ interface WorkflowSample {
 	readonly mcpPreparedPlanMs?: number
 	readonly mcpCommitMs?: number
 	readonly mcpPreparedCommitMs?: number
+	readonly mcpCommitPackageGraphMs?: number | null
+	readonly mcpCommitPackageGraphAuditMs?: number | null
+	readonly mcpCommitApplyMs?: number | null
+	readonly mcpCommitWritePlanSummaryMs?: number | null
+	readonly mcpCommitWritePolicyCheckMs?: number | null
+	readonly mcpCommitWritePolicyBuildMs?: number | null
+	readonly mcpCommitToBytesMs?: number | null
+	readonly mcpCommitWriteFileMs?: number | null
+	readonly mcpCommitOutputByteReadMs?: number | null
+	readonly mcpCommitOutputHashMs?: number | null
+	readonly mcpPreparedCommitApplyMs?: number | null
+	readonly mcpPreparedCommitWritePlanSummaryMs?: number | null
+	readonly mcpPreparedCommitWritePolicyCheckMs?: number | null
+	readonly mcpPreparedCommitWritePolicyBuildMs?: number | null
+	readonly mcpPreparedCommitToBytesMs?: number | null
+	readonly mcpPreparedCommitWriteFileMs?: number | null
+	readonly mcpPreparedCommitOutputByteReadMs?: number | null
+	readonly mcpPreparedCommitOutputHashMs?: number | null
+	readonly mcpPreparedCommitPackageGraphMs?: number | null
+	readonly mcpPreparedCommitPackageGraphAuditMs?: number | null
 	readonly mcpVerifyMs?: number
 	readonly mcpPreparedVerifyMs?: number
 	readonly mcpPayloadBytes?: number
@@ -349,6 +389,18 @@ interface ApiEnvelope {
 			readonly emittedChangedCellCount?: number
 		}
 		readonly preparedPlan?: { readonly id?: string }
+		readonly timings?: {
+			readonly packageGraphMs?: number
+			readonly packageGraphAuditMs?: number
+			readonly applyMs?: number
+			readonly writePlanSummaryMs?: number
+			readonly writePolicyCheckMs?: number
+			readonly writePolicyBuildMs?: number
+			readonly toBytesMs?: number
+			readonly writeFileMs?: number
+			readonly outputByteReadMs?: number
+			readonly outputHashMs?: number
+		}
 		readonly postWrite?: {
 			readonly timings?: {
 				readonly reopenMs?: number
@@ -423,6 +475,19 @@ interface PostWriteTimings {
 	readonly packageGraphAuditMs: number | null
 }
 
+interface CommitTimings {
+	readonly packageGraphMs: number | null
+	readonly packageGraphAuditMs: number | null
+	readonly applyMs: number | null
+	readonly writePlanSummaryMs: number | null
+	readonly writePolicyCheckMs: number | null
+	readonly writePolicyBuildMs: number | null
+	readonly toBytesMs: number | null
+	readonly writeFileMs: number | null
+	readonly outputByteReadMs: number | null
+	readonly outputHashMs: number | null
+}
+
 function runGc(): void {
 	;(Bun as unknown as { gc?: (force?: boolean) => void }).gc?.(true)
 }
@@ -459,6 +524,22 @@ function postWriteTimings(payload: ApiEnvelope): PostWriteTimings {
 	}
 }
 
+function commitTimings(payload: ApiEnvelope): CommitTimings {
+	const timings = payload.data?.timings
+	return {
+		packageGraphMs: timings?.packageGraphMs ?? null,
+		packageGraphAuditMs: timings?.packageGraphAuditMs ?? null,
+		applyMs: timings?.applyMs ?? null,
+		writePlanSummaryMs: timings?.writePlanSummaryMs ?? null,
+		writePolicyCheckMs: timings?.writePolicyCheckMs ?? null,
+		writePolicyBuildMs: timings?.writePolicyBuildMs ?? null,
+		toBytesMs: timings?.toBytesMs ?? null,
+		writeFileMs: timings?.writeFileMs ?? null,
+		outputByteReadMs: timings?.outputByteReadMs ?? null,
+		outputHashMs: timings?.outputHashMs ?? null,
+	}
+}
+
 async function runMcpWorkflow(
 	mcpClient: McpWorkflowClient,
 	inputPath: string,
@@ -484,13 +565,13 @@ async function runMcpWorkflow(
 		file: inputPath,
 		mutations,
 		compact: true,
+		prepare: false,
 		maxChangedCells: 25,
 	})
 	const preparedPlan = await mcpClient.plan({
 		file: inputPath,
 		mutations,
 		compact: true,
-		prepare: true,
 		maxChangedCells: 25,
 	})
 	const planHandle = preparedPlan.payload.data?.preparedPlan?.id
@@ -545,6 +626,8 @@ async function runMcpWorkflow(
 		preparedPlan.text.length +
 		preparedCommit.text.length +
 		preparedVerify.text.length
+	const mcpCommitTimings = commitTimings(commit.payload)
+	const mcpPreparedCommitTimings = commitTimings(preparedCommit.payload)
 	return {
 		mcpTotalMs: inspect.ms + read.ms + plan.ms + commit.ms + verify.ms,
 		mcpPreparedTotalMs:
@@ -557,6 +640,26 @@ async function runMcpWorkflow(
 		mcpPreparedPlanMs: preparedPlan.ms,
 		mcpCommitMs: commit.ms,
 		mcpPreparedCommitMs: preparedCommit.ms,
+		mcpCommitPackageGraphMs: mcpCommitTimings.packageGraphMs,
+		mcpCommitPackageGraphAuditMs: mcpCommitTimings.packageGraphAuditMs,
+		mcpCommitApplyMs: mcpCommitTimings.applyMs,
+		mcpCommitWritePlanSummaryMs: mcpCommitTimings.writePlanSummaryMs,
+		mcpCommitWritePolicyCheckMs: mcpCommitTimings.writePolicyCheckMs,
+		mcpCommitWritePolicyBuildMs: mcpCommitTimings.writePolicyBuildMs,
+		mcpCommitToBytesMs: mcpCommitTimings.toBytesMs,
+		mcpCommitWriteFileMs: mcpCommitTimings.writeFileMs,
+		mcpCommitOutputByteReadMs: mcpCommitTimings.outputByteReadMs,
+		mcpCommitOutputHashMs: mcpCommitTimings.outputHashMs,
+		mcpPreparedCommitApplyMs: mcpPreparedCommitTimings.applyMs,
+		mcpPreparedCommitWritePlanSummaryMs: mcpPreparedCommitTimings.writePlanSummaryMs,
+		mcpPreparedCommitWritePolicyCheckMs: mcpPreparedCommitTimings.writePolicyCheckMs,
+		mcpPreparedCommitWritePolicyBuildMs: mcpPreparedCommitTimings.writePolicyBuildMs,
+		mcpPreparedCommitToBytesMs: mcpPreparedCommitTimings.toBytesMs,
+		mcpPreparedCommitWriteFileMs: mcpPreparedCommitTimings.writeFileMs,
+		mcpPreparedCommitOutputByteReadMs: mcpPreparedCommitTimings.outputByteReadMs,
+		mcpPreparedCommitOutputHashMs: mcpPreparedCommitTimings.outputHashMs,
+		mcpPreparedCommitPackageGraphMs: mcpPreparedCommitTimings.packageGraphMs,
+		mcpPreparedCommitPackageGraphAuditMs: mcpPreparedCommitTimings.packageGraphAuditMs,
 		mcpVerifyMs: verify.ms,
 		mcpPreparedVerifyMs: preparedVerify.ms,
 		mcpPayloadBytes: workflowBytes,
@@ -607,18 +710,18 @@ async function runWorkflow(
 		rowLimit,
 	})
 	const mutations = buildCellMutations(mutationCount, rows, cols, sheetName)
-	const fullPlan = await post(apiFetch, '/plan', { file: inputPath, mutations })
+	const fullPlan = await post(apiFetch, '/plan', { file: inputPath, mutations, prepare: false })
 	const plan = await post(apiFetch, '/plan', {
 		file: inputPath,
 		mutations,
 		compact: true,
+		prepare: false,
 		maxChangedCells: 25,
 	})
 	const preparedPlan = await post(apiFetch, '/plan', {
 		file: inputPath,
 		mutations,
 		compact: true,
-		prepare: true,
 		maxChangedCells: 25,
 	})
 	const planHandle = preparedPlan.payload.data?.preparedPlan?.id
@@ -654,6 +757,8 @@ async function runWorkflow(
 		: {}
 	const rssAfter = rssMb()
 	const readLoad = read.payload.data?.load
+	const commitTiming = commitTimings(commit.payload)
+	const preparedCommitTiming = commitTimings(preparedCommit.payload)
 	const commitPostWrite = postWriteTimings(commit.payload)
 	const preparedCommitPostWrite = postWriteTimings(preparedCommit.payload)
 	const sharedOpenStats = addOpenStats(inspect.openStats, read.openStats)
@@ -729,6 +834,26 @@ async function runWorkflow(
 		preparedPlanMs: preparedPlan.ms,
 		commitMs: commit.ms,
 		preparedCommitMs: preparedCommit.ms,
+		commitPackageGraphMs: commitTiming.packageGraphMs,
+		commitPackageGraphAuditMs: commitTiming.packageGraphAuditMs,
+		commitApplyMs: commitTiming.applyMs,
+		commitWritePlanSummaryMs: commitTiming.writePlanSummaryMs,
+		commitWritePolicyCheckMs: commitTiming.writePolicyCheckMs,
+		commitWritePolicyBuildMs: commitTiming.writePolicyBuildMs,
+		commitToBytesMs: commitTiming.toBytesMs,
+		commitWriteFileMs: commitTiming.writeFileMs,
+		commitOutputByteReadMs: commitTiming.outputByteReadMs,
+		commitOutputHashMs: commitTiming.outputHashMs,
+		preparedCommitApplyMs: preparedCommitTiming.applyMs,
+		preparedCommitWritePlanSummaryMs: preparedCommitTiming.writePlanSummaryMs,
+		preparedCommitWritePolicyCheckMs: preparedCommitTiming.writePolicyCheckMs,
+		preparedCommitWritePolicyBuildMs: preparedCommitTiming.writePolicyBuildMs,
+		preparedCommitToBytesMs: preparedCommitTiming.toBytesMs,
+		preparedCommitWriteFileMs: preparedCommitTiming.writeFileMs,
+		preparedCommitOutputByteReadMs: preparedCommitTiming.outputByteReadMs,
+		preparedCommitOutputHashMs: preparedCommitTiming.outputHashMs,
+		preparedCommitPackageGraphMs: preparedCommitTiming.packageGraphMs,
+		preparedCommitPackageGraphAuditMs: preparedCommitTiming.packageGraphAuditMs,
 		commitPostWriteReopenMs: commitPostWrite.reopenMs,
 		commitPostWriteCheckMs: commitPostWrite.checkMs,
 		commitPostWriteLintMs: commitPostWrite.lintMs,
@@ -815,6 +940,58 @@ function summarize(samples: readonly WorkflowSample[]) {
 		preparedPlanMedianMs: median(samples.map((sample) => sample.preparedPlanMs)),
 		commitMedianMs: median(samples.map((sample) => sample.commitMs)),
 		preparedCommitMedianMs: median(samples.map((sample) => sample.preparedCommitMs)),
+		commitPackageGraphMedianMs: medianOptional(
+			samples.map((sample) => sample.commitPackageGraphMs),
+		),
+		commitPackageGraphAuditMedianMs: medianOptional(
+			samples.map((sample) => sample.commitPackageGraphAuditMs),
+		),
+		commitApplyMedianMs: medianOptional(samples.map((sample) => sample.commitApplyMs)),
+		commitWritePlanSummaryMedianMs: medianOptional(
+			samples.map((sample) => sample.commitWritePlanSummaryMs),
+		),
+		commitWritePolicyCheckMedianMs: medianOptional(
+			samples.map((sample) => sample.commitWritePolicyCheckMs),
+		),
+		commitWritePolicyBuildMedianMs: medianOptional(
+			samples.map((sample) => sample.commitWritePolicyBuildMs),
+		),
+		commitToBytesMedianMs: medianOptional(samples.map((sample) => sample.commitToBytesMs)),
+		commitWriteFileMedianMs: medianOptional(samples.map((sample) => sample.commitWriteFileMs)),
+		commitOutputByteReadMedianMs: medianOptional(
+			samples.map((sample) => sample.commitOutputByteReadMs),
+		),
+		commitOutputHashMedianMs: medianOptional(samples.map((sample) => sample.commitOutputHashMs)),
+		preparedCommitApplyMedianMs: medianOptional(
+			samples.map((sample) => sample.preparedCommitApplyMs),
+		),
+		preparedCommitPackageGraphMedianMs: medianOptional(
+			samples.map((sample) => sample.preparedCommitPackageGraphMs),
+		),
+		preparedCommitPackageGraphAuditMedianMs: medianOptional(
+			samples.map((sample) => sample.preparedCommitPackageGraphAuditMs),
+		),
+		preparedCommitWritePlanSummaryMedianMs: medianOptional(
+			samples.map((sample) => sample.preparedCommitWritePlanSummaryMs),
+		),
+		preparedCommitWritePolicyCheckMedianMs: medianOptional(
+			samples.map((sample) => sample.preparedCommitWritePolicyCheckMs),
+		),
+		preparedCommitWritePolicyBuildMedianMs: medianOptional(
+			samples.map((sample) => sample.preparedCommitWritePolicyBuildMs),
+		),
+		preparedCommitToBytesMedianMs: medianOptional(
+			samples.map((sample) => sample.preparedCommitToBytesMs),
+		),
+		preparedCommitWriteFileMedianMs: medianOptional(
+			samples.map((sample) => sample.preparedCommitWriteFileMs),
+		),
+		preparedCommitOutputByteReadMedianMs: medianOptional(
+			samples.map((sample) => sample.preparedCommitOutputByteReadMs),
+		),
+		preparedCommitOutputHashMedianMs: medianOptional(
+			samples.map((sample) => sample.preparedCommitOutputHashMs),
+		),
 		commitPostWriteReopenMedianMs: medianOptional(
 			samples.map((sample) => sample.commitPostWriteReopenMs),
 		),
@@ -939,6 +1116,62 @@ function summarize(samples: readonly WorkflowSample[]) {
 		mcpPreparedPlanMedianMs: medianOptional(samples.map((sample) => sample.mcpPreparedPlanMs)),
 		mcpCommitMedianMs: medianOptional(samples.map((sample) => sample.mcpCommitMs)),
 		mcpPreparedCommitMedianMs: medianOptional(samples.map((sample) => sample.mcpPreparedCommitMs)),
+		mcpCommitPackageGraphMedianMs: medianOptional(
+			samples.map((sample) => sample.mcpCommitPackageGraphMs),
+		),
+		mcpCommitPackageGraphAuditMedianMs: medianOptional(
+			samples.map((sample) => sample.mcpCommitPackageGraphAuditMs),
+		),
+		mcpCommitApplyMedianMs: medianOptional(samples.map((sample) => sample.mcpCommitApplyMs)),
+		mcpCommitWritePlanSummaryMedianMs: medianOptional(
+			samples.map((sample) => sample.mcpCommitWritePlanSummaryMs),
+		),
+		mcpCommitWritePolicyCheckMedianMs: medianOptional(
+			samples.map((sample) => sample.mcpCommitWritePolicyCheckMs),
+		),
+		mcpCommitWritePolicyBuildMedianMs: medianOptional(
+			samples.map((sample) => sample.mcpCommitWritePolicyBuildMs),
+		),
+		mcpCommitToBytesMedianMs: medianOptional(samples.map((sample) => sample.mcpCommitToBytesMs)),
+		mcpCommitWriteFileMedianMs: medianOptional(
+			samples.map((sample) => sample.mcpCommitWriteFileMs),
+		),
+		mcpCommitOutputByteReadMedianMs: medianOptional(
+			samples.map((sample) => sample.mcpCommitOutputByteReadMs),
+		),
+		mcpCommitOutputHashMedianMs: medianOptional(
+			samples.map((sample) => sample.mcpCommitOutputHashMs),
+		),
+		mcpPreparedCommitApplyMedianMs: medianOptional(
+			samples.map((sample) => sample.mcpPreparedCommitApplyMs),
+		),
+		mcpPreparedCommitPackageGraphMedianMs: medianOptional(
+			samples.map((sample) => sample.mcpPreparedCommitPackageGraphMs),
+		),
+		mcpPreparedCommitPackageGraphAuditMedianMs: medianOptional(
+			samples.map((sample) => sample.mcpPreparedCommitPackageGraphAuditMs),
+		),
+		mcpPreparedCommitWritePlanSummaryMedianMs: medianOptional(
+			samples.map((sample) => sample.mcpPreparedCommitWritePlanSummaryMs),
+		),
+		mcpPreparedCommitWritePolicyCheckMedianMs: medianOptional(
+			samples.map((sample) => sample.mcpPreparedCommitWritePolicyCheckMs),
+		),
+		mcpPreparedCommitWritePolicyBuildMedianMs: medianOptional(
+			samples.map((sample) => sample.mcpPreparedCommitWritePolicyBuildMs),
+		),
+		mcpPreparedCommitToBytesMedianMs: medianOptional(
+			samples.map((sample) => sample.mcpPreparedCommitToBytesMs),
+		),
+		mcpPreparedCommitWriteFileMedianMs: medianOptional(
+			samples.map((sample) => sample.mcpPreparedCommitWriteFileMs),
+		),
+		mcpPreparedCommitOutputByteReadMedianMs: medianOptional(
+			samples.map((sample) => sample.mcpPreparedCommitOutputByteReadMs),
+		),
+		mcpPreparedCommitOutputHashMedianMs: medianOptional(
+			samples.map((sample) => sample.mcpPreparedCommitOutputHashMs),
+		),
 		mcpVerifyMedianMs: medianOptional(samples.map((sample) => sample.mcpVerifyMs)),
 		mcpPreparedVerifyMedianMs: medianOptional(samples.map((sample) => sample.mcpPreparedVerifyMs)),
 		mcpPayloadBytesMedian: medianOptional(samples.map((sample) => sample.mcpPayloadBytes)),

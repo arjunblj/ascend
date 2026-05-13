@@ -435,6 +435,19 @@ export async function createAgentPlanFromWorkbook(
 	} = {},
 ): Promise<AgentPlanResult> {
 	const progress = options.progress ?? createProgressEmitter('plan', options.onProgress)
+	const load = wb.inspect().load
+	if (load.isPartial) {
+		throw new AscendException(
+			ascendError(
+				'VALIDATION_ERROR',
+				'Cannot create an agent write plan from a partial workbook view',
+				{
+					details: { load },
+					suggestedFix: 'Reopen the workbook with a full load before planning or committing edits.',
+				},
+			),
+		)
+	}
 	const writePolicyWorkbook = snapshotWritePolicyWorkbook(wb.getWorkbookModel())
 	await progress('preview', 'started', 'Previewing operations.', { count: ops.length })
 	const preview = wb.preview(ops)

@@ -12,6 +12,7 @@ import {
 	auditPackageGraphIntegrity,
 	commitAgentPlan,
 	createAgentPlan,
+	createAgentPlanFromWorkbook,
 	createPreparedAgentPlan,
 } from './index.ts'
 
@@ -2397,6 +2398,37 @@ describe('agent workflow loss audit', () => {
 		expect(() => partial.writePlanSummary()).toThrow(
 			'Cannot export a partial workbook view. Reopen the workbook with a full load before saving or exporting.',
 		)
+	})
+
+	test('partial workbook views cannot produce agent write plans', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] }])
+		const bytes = wb.toBytes()
+		const partial = await AscendWorkbook.open(bytes, { mode: 'values', maxRows: 1 })
+
+		let thrown: unknown
+		try {
+			await createAgentPlanFromWorkbook('partial.xlsx', 'sha', partial, [
+				{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 2 }] },
+			])
+		} catch (error) {
+			thrown = error
+		}
+
+		expect(thrown).toBeInstanceOf(Error)
+		expect((thrown as Error).message).toContain(
+			'Cannot create an agent write plan from a partial workbook view',
+		)
+		expect(
+			(
+				thrown as {
+					ascendError?: { details?: { load?: { isPartial?: boolean; maxRows?: number } } }
+				}
+			).ascendError?.details?.load,
+		).toMatchObject({
+			isPartial: true,
+			maxRows: 1,
+		})
 	})
 
 	test('plan and commit emit ordered workflow progress events', async () => {

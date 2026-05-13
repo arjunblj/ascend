@@ -4,6 +4,8 @@ import { detectTerminalCapabilities } from './render/terminal-capabilities.ts'
 import { WorkbookTuiEngine } from './runtime/engine.ts'
 import type { InputEvent, TelemetrySample, TerminalSize } from './runtime/types.ts'
 
+const DEFAULT_OPEN_PREVIEW_ROWS = 500
+
 export { WorkbookTuiEngine } from './runtime/engine.ts'
 export { runHeadlessTrace } from './runtime/headless-trace.ts'
 export type {
@@ -32,11 +34,11 @@ Flags:
 
 export const openUsage = `ascend open [file] [flags]
 
-Friendly entrypoint for the Ascend terminal spreadsheet.
+Friendly preview-first entrypoint for the Ascend terminal spreadsheet.
 
 Flags:
   --sheet <name>          Start on a sheet
-  --preview-rows <n>      Open the first n rows in read-only values mode
+  --preview-rows <n>      Open the first n rows in read-only values mode (default: 500 for files)
   --renderer <name>       ansi (default) or opentui
   --calibrate             Open terminal capability calibration on start
   --telemetry-json        Print telemetry JSON after the session exits
@@ -57,7 +59,11 @@ export async function tuiCommand(args: string[], flags: Map<string, string>): Pr
 }
 
 export async function openCommand(args: string[], flags: Map<string, string>): Promise<number> {
-	return tuiCommand(args, flags)
+	const previewFlags = new Map(flags)
+	if (args[0] && !previewFlags.has('preview-rows')) {
+		previewFlags.set('preview-rows', String(DEFAULT_OPEN_PREVIEW_ROWS))
+	}
+	return tuiCommand(args, previewFlags)
 }
 
 export async function runTui(input: {

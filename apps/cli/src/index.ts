@@ -157,12 +157,12 @@ const COMMANDS: Record<string, Command> = {
 	tui: {
 		run: tuiCommand,
 		usage: tuiUsage,
-		allowedFlags: ['sheet', 'renderer', 'calibrate', 'telemetry-json'],
+		allowedFlags: ['sheet', 'preview-rows', 'renderer', 'calibrate', 'telemetry-json'],
 	},
 	open: {
 		run: openCommand,
 		usage: openUsage,
-		allowedFlags: ['sheet', 'renderer', 'calibrate', 'telemetry-json'],
+		allowedFlags: ['sheet', 'preview-rows', 'renderer', 'calibrate', 'telemetry-json'],
 	},
 	doctor: { run: doctorCommand, usage: doctorUsage },
 }

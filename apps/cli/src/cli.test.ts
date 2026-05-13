@@ -204,6 +204,27 @@ describe('ascend cli', () => {
 		expect(stdout).toContain('loaded')
 	})
 
+	test('tui accepts explicit preview rows for row-limited first paint', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'visible' },
+					{ ref: 'A2', value: 'capped' },
+				],
+			},
+		])
+		await wb.save(`${import.meta.dir}/${TUI_TEST_FILE}`)
+
+		const { stdout, exitCode } = await run('tui', TUI_TEST_FILE, '--preview-rows', '1')
+		expect(exitCode).toBe(0)
+		expect(stdout).toContain('visible')
+		expect(stdout).toContain('first 1 rows')
+		expect(stdout).toContain('read-only')
+	})
+
 	test('open forwards --sheet into the TUI entrypoint', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([
@@ -216,6 +237,18 @@ describe('ascend cli', () => {
 		expect(exitCode).toBe(0)
 		expect(stdout).toContain('data')
 		expect(stdout).toContain('Data')
+	})
+
+	test('open defaults file loads to a preview-first read-only window', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'preview' }] }])
+		await wb.save(`${import.meta.dir}/${TUI_TEST_FILE}`)
+
+		const { stdout, exitCode } = await run('open', TUI_TEST_FILE)
+		expect(exitCode).toBe(0)
+		expect(stdout).toContain('preview')
+		expect(stdout).toContain('first 500 rows')
+		expect(stdout).toContain('read-only')
 	})
 
 	test('ops --json exposes operation schemas with examples', async () => {

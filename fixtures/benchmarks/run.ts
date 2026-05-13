@@ -25,6 +25,7 @@ import {
 	AscendWorkbook,
 	SheetHandle,
 	WorkbookDocument,
+	WorkbookSession,
 } from '../../packages/sdk/src/index.ts'
 import {
 	type BenchmarkCaseResult,
@@ -2176,6 +2177,90 @@ const scenarios: readonly Scenario[] = [
 		},
 	},
 	{
+		name: 'real-dense-progressive-readiness',
+		category: 'workflow',
+		build() {
+			const target = REAL_INTERACTIVE_PATCH_CORPUS.find(
+				(candidate) => candidate.label === 'stress-dense-100k',
+			)
+			if (!target) throw new Error('Missing dense stress corpus target')
+			return {
+				rows: target.rowCount,
+				cols: target.colCount,
+				cells: target.rowCount * target.colCount,
+				byteCount: realInteractivePatchCorpusTargetBytes(target).byteLength,
+			}
+		},
+		async run() {
+			const target = REAL_INTERACTIVE_PATCH_CORPUS.find(
+				(candidate) => candidate.label === 'stress-dense-100k',
+			)
+			if (!target) throw new Error('Missing dense stress corpus target')
+			const bytes = realInteractivePatchCorpusTargetBytes(target)
+
+			WorkbookDocument.clearCache()
+			const currentOpenStart = performance.now()
+			const currentSession = await AscendSession.open(bytes, { mode: 'interactive' })
+			const currentOpenMs = performance.now() - currentOpenStart
+			const currentViewportStart = performance.now()
+			const currentViewport = currentSession.readViewport({
+				sheet: target.sheet,
+				topRow: target.topRow,
+				leftCol: target.leftCol,
+				rowCount: target.rowCount,
+				colCount: target.colCount,
+			})
+			const currentInitialViewportMs = performance.now() - currentViewportStart
+			const currentPrepare = await currentSession.prepareEdits()
+			currentSession.close()
+
+			WorkbookDocument.clearCache()
+			const progressiveFirstWindowStart = performance.now()
+			const firstWindow = await WorkbookSession.openFirstWindow(bytes, {
+				sheet: target.sheet,
+				range: 'A1:T100',
+				rowLimit: target.rowCount,
+				flatValues: true,
+				omitEmpty: true,
+			})
+			const progressiveFirstWindowMs = performance.now() - progressiveFirstWindowStart
+			firstWindow.session.close()
+
+			WorkbookDocument.clearCache()
+			const backgroundPrepareStart = performance.now()
+			const backgroundSession = await AscendSession.open(bytes, { mode: 'interactive' })
+			const backgroundOpenMs = performance.now() - backgroundPrepareStart
+			const backgroundPrepare = await backgroundSession.prepareEdits()
+			const backgroundPrepareTotalMs = performance.now() - backgroundPrepareStart
+			backgroundSession.close()
+
+			return {
+				assertions: {
+					bytes: bytes.byteLength,
+					currentOpenMs,
+					currentInitialViewportMs,
+					currentTimeToFirstViewportMs: currentOpenMs + currentInitialViewportMs,
+					currentPrepareEditsMs: currentPrepare.timings.totalMs,
+					currentTimeToEditReadyMs:
+						currentOpenMs + currentInitialViewportMs + currentPrepare.timings.totalMs,
+					currentViewportCells: currentViewport.cells.length,
+					currentViewportFlatValues: currentViewport.flatValues.length,
+					progressiveFirstWindowMs,
+					progressiveWindowCells: firstWindow.window.cells.length,
+					progressiveWindowFlatValues: firstWindow.window.cells.length,
+					progressiveHasMore: firstWindow.window.hasMore,
+					backgroundOpenMs,
+					backgroundPrepareEditsMs: backgroundPrepare.timings.totalMs,
+					backgroundPrepareEnsureMutableWorkbookMs:
+						backgroundPrepare.timings.ensureMutableWorkbookMs,
+					backgroundPrepareTotalMs,
+					firstPaintSpeedupVsCurrent:
+						(currentOpenMs + currentInitialViewportMs) / progressiveFirstWindowMs,
+				},
+			}
+		},
+	},
+	{
 		name: 'workflow-reopen-values-window',
 		category: 'workflow',
 		build() {
@@ -2995,6 +3080,7 @@ const scenarioSets = {
 	'ui-real-corpus': ['patch-stream-real-corpus-prepared-first-edit'],
 	'real-open': ['real-corpus-open-phases'],
 	'real-memory': ['real-dense-promotion-memory'],
+	'real-readiness': ['real-dense-progressive-readiness'],
 } as const
 
 function phaseMemorySnapshot(): {

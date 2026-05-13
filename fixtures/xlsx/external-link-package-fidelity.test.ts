@@ -183,6 +183,50 @@ describe('external link package graph fidelity', () => {
 			targetMode: 'External',
 		})
 	})
+
+	test('generates an externalBook-bound path relationship when a missing link target is rewritten', () => {
+		const read = readXlsx(externalLinkPackageFixture())
+		expectOk(read)
+		expect(read.value.workbook.externalReferenceDetails[3]).toMatchObject({
+			partPath: 'xl/externalLinks/externalLink4.xml',
+			externalBookRelId: 'rIdAbsent',
+			linkBindingStatus: 'missingPathRelationship',
+		})
+
+		const rewritten = applyOperation(read.value.workbook, {
+			op: 'rewriteExternalLink',
+			partPath: 'xl/externalLinks/externalLink4.xml',
+			newTarget: '../sources/repaired-missing.xlsx',
+		})
+		expectOk(rewritten)
+		const written = writeXlsx(read.value.workbook, read.value.capsules, {
+			workbookMetaDirty: true,
+		})
+		expectOk(written)
+
+		const rels = decodeZipPart(written.value, 'xl/externalLinks/_rels/externalLink4.xml.rels')
+		expect(rels).toContain('Id="rIdAbsent"')
+		expect(rels).toContain(
+			'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLinkPath"',
+		)
+		expect(rels).toContain('Target="../sources/repaired-missing.xlsx"')
+		expect(rels).toContain('TargetMode="External"')
+
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+		expect(reopened.value.workbook.externalReferenceDetails[3]).toMatchObject({
+			partPath: 'xl/externalLinks/externalLink4.xml',
+			externalBookRelId: 'rIdAbsent',
+			linkRelId: 'rIdAbsent',
+			linkRelationshipKind: 'externalLinkPath',
+			linkBindingStatus: 'externalBookRelId',
+			target: '../sources/repaired-missing.xlsx',
+			targetMode: 'External',
+		})
+		expectNoPackageGraphIssues(
+			auditXlsxPackageGraphReadIntegrity(inspectXlsxPackageGraph(written.value)),
+		)
+	})
 })
 
 function externalLinkPackageFixture(): Uint8Array {

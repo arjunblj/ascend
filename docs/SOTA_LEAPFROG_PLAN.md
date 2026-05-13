@@ -327,6 +327,17 @@ Goal: make Ascend the best spreadsheet MCP/API surface.
 - Add response size limits with automatic compact/TSV fallback.
 - Add task-level evaluator for SpreadsheetBench-style workflows.
 
+## Recent Evidence Log
+
+### 2026-05-13: Values-Mode Numeric Hydration
+
+- Bottleneck: dense raw-OOXML values reads still spent measurable time in per-cell grid writes after the byte worksheet parser avoided DOM parsing.
+- Change: `SparseGrid` now has a contiguous plain-number span path, and the values byte parser batches only adjacent non-date numeric cells. One-cell numeric runs still use the old setter so mixed text sheets do not pay span overhead.
+- Evidence: `dense-values`, raw OOXML, 65,536 x 10, `--phase read` improved from a prior 48.77 ms median to 45.94 ms median over 7 repeats after warmup.
+- Guardrail: `fastexcel-reader-65536`, mixed 50% text, `--phase read` stayed in the recent 73-78 ms range at 73.95 ms median.
+- Validation: focused core/reader tests, `bunx tsc --build`, Biome, and `bun run ci:perf-smoke` passed.
+- Negative result: byte-backed and sequential shared-string resolvers reduced RSS only marginally and regressed the mixed-text read profile to 83 ms and 175 ms medians. Keep the existing lazy SST resolver until access-locality evidence supports a chunked index or other design.
+
 ## Near-Term PR Sequence
 
 1. Fix public contract drift and MCP operation parity.

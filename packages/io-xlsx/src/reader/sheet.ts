@@ -2954,6 +2954,7 @@ function parseSimpleFullScalarRow(
 		row: number
 		col: number
 		numberValue: number | undefined
+		stringValue: string | undefined
 		sharedStringIndex: number
 		booleanRaw: number
 		formulaText: string | null
@@ -2962,6 +2963,7 @@ function parseSimpleFullScalarRow(
 		row,
 		col: 0,
 		numberValue: undefined,
+		stringValue: undefined,
 		sharedStringIndex: -1,
 		booleanRaw: -1,
 		formulaText: null,
@@ -2980,7 +2982,9 @@ function parseSimpleFullScalarRow(
 				? (ctx.valuePool?.internString(normalizedFormula) ?? normalizedFormula)
 				: null
 		if (out.formulaText !== null && (!formula || formula === '')) return false
-		if (out.sharedStringIndex >= 0) {
+		if (out.stringValue !== undefined) {
+			sheet.cells.setPlainString(out.row, out.col, out.stringValue)
+		} else if (out.sharedStringIndex >= 0) {
 			const text = ctx.sharedStrings.getString?.(out.sharedStringIndex)
 			if (text !== undefined) {
 				sheet.cells.setStringResolved(out.row, out.col, text, formula, styleId)
@@ -3032,6 +3036,7 @@ function parseCanonicalFullScalarCell(
 		row: number
 		col: number
 		numberValue: number | undefined
+		stringValue: string | undefined
 		sharedStringIndex: number
 		booleanRaw: number
 		formulaText: string | null
@@ -3067,10 +3072,27 @@ function parseCanonicalFullScalarCell(
 	out.row = row
 	out.col = col
 	out.numberValue = undefined
+	out.stringValue = undefined
 	out.sharedStringIndex = -1
 	out.booleanRaw = -1
 	out.formulaText = null
 	out.styleIdx = 0
+
+	const inlineValueStart = parseCanonicalInlineStringValueStart(xml, attrsEnd)
+	if (inlineValueStart !== -1) {
+		let valueEnd = inlineValueStart
+		let hasEntity = false
+		while (valueEnd < bodyEnd) {
+			const code = xml.charCodeAt(valueEnd)
+			if (code === 60) break
+			if (code === 38) hasEntity = true
+			valueEnd += 1
+		}
+		if (!xml.startsWith('</t></is></c>', valueEnd)) return -1
+		const rawText = xml.slice(inlineValueStart, valueEnd)
+		out.stringValue = hasEntity ? decodeXmlText(rawText) : rawText
+		return valueEnd + 13
+	}
 
 	const content = resolveCanonicalFullScalarContentStart(xml, attrsEnd, bodyEnd, out)
 	if (!content) return -1

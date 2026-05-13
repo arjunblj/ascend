@@ -3581,6 +3581,28 @@ describe('readXlsx', () => {
 		expect(sheet?.cells.get(0, 26)?.value).toEqual(stringValue('World'))
 	})
 
+	it('full mode preserves simple inline-string cell references', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': CONTENT_TYPES,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': WORKBOOK_RELS,
+			'xl/workbook.xml': WORKBOOK_XML,
+			'xl/sharedStrings.xml': SHARED_STRINGS,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Hello &amp; fast</t></is></c><c r="AA1" t="inlineStr"><is><t>World</t></is></c><c r="AB1"><v>7</v></c></row></sheetData>
+</worksheet>`,
+		})
+
+		const result = readXlsx(bytes)
+		expectOk(result)
+
+		const sheet = result.value.workbook.sheets[0]
+		expect(sheet?.cells.get(0, 0)?.value).toEqual(stringValue('Hello & fast'))
+		expect(sheet?.cells.get(0, 26)?.value).toEqual(stringValue('World'))
+		expect(sheet?.cells.get(0, 27)?.value).toEqual(numberValue(7))
+	})
+
 	it('full mode infers omitted shared-string cell references in dense rows', () => {
 		const bytes = makeXlsx({
 			'[Content_Types].xml': CONTENT_TYPES,

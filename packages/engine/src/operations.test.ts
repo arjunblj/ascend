@@ -2600,6 +2600,77 @@ describe('applyOperation', () => {
 		expect(s.tables[0]?.columns[1]?.totalsRowFormula).toBe('SUM(A1:A2)')
 	})
 
+	test('insertRows rewrites cross-sheet worksheet metadata formulas', () => {
+		const wb = createWorkbook()
+		const input = wb.addSheet('Input')
+		const summary = wb.addSheet('Summary')
+		input.cells.set(1, 0, cell(numberValue(1)))
+		input.cells.set(1, 1, cell(numberValue(2)))
+		summary.dataValidations.push({
+			sqref: 'A1',
+			type: 'list',
+			formula1: 'Input!A2',
+			formula2: 'A2',
+		})
+		summary.conditionalFormats.push({
+			sqref: 'A2',
+			rules: [
+				{
+					type: 'expression',
+					formulas: ['Input!A2>0'],
+					colorScale: {
+						cfvo: [{ type: 'formula', value: 'Input!B2' }],
+						colors: [{ rgb: 'FFFF0000' }],
+					},
+					dataBar: { cfvo: [{ type: 'formula', value: 'Input!A2' }] },
+					iconSet: { cfvo: [{ type: 'formula', value: 'Input!B2' }] },
+				},
+			],
+		})
+		summary.x14DataValidations.push({
+			index: 0,
+			sqref: 'B1',
+			type: 'list',
+			formula1: 'Input!A2',
+			formula2: 'A2',
+		})
+		summary.x14ConditionalFormats.push({
+			index: 0,
+			sqref: 'B2',
+			formulas: ['Input!A2>0'],
+			dataBar: { cfvo: [{ type: 'formula', value: 'Input!A2' }] },
+			iconSet: { cfvo: [{ type: 'formula', value: 'Input!B2' }] },
+		})
+		summary.tables.push({
+			id: createTableId(),
+			name: 'SummaryTable',
+			sheetId: summary.id,
+			ref: { start: { row: 4, col: 0 }, end: { row: 5, col: 1 } },
+			columns: [
+				{ name: 'Name' },
+				{ name: 'Calc', formula: 'Input!A2', totalsRowFormula: 'SUM(Input!A2:A3)' },
+			],
+			hasHeaders: true,
+			hasTotals: false,
+		})
+
+		expectOk(applyOperation(wb, { op: 'insertRows', sheet: 'Input', at: 0, count: 1 }))
+
+		expect(summary.dataValidations[0]?.formula1).toBe('Input!A3')
+		expect(summary.dataValidations[0]?.formula2).toBe('A2')
+		expect(summary.conditionalFormats[0]?.rules[0]?.formulas).toEqual(['Input!A3>0'])
+		expect(summary.conditionalFormats[0]?.rules[0]?.colorScale?.cfvo[0]?.value).toBe('Input!B3')
+		expect(summary.conditionalFormats[0]?.rules[0]?.dataBar?.cfvo[0]?.value).toBe('Input!A3')
+		expect(summary.conditionalFormats[0]?.rules[0]?.iconSet?.cfvo[0]?.value).toBe('Input!B3')
+		expect(summary.x14DataValidations[0]?.formula1).toBe('Input!A3')
+		expect(summary.x14DataValidations[0]?.formula2).toBe('A2')
+		expect(summary.x14ConditionalFormats[0]?.formulas).toEqual(['Input!A3>0'])
+		expect(summary.x14ConditionalFormats[0]?.dataBar?.cfvo[0]?.value).toBe('Input!A3')
+		expect(summary.x14ConditionalFormats[0]?.iconSet?.cfvo[0]?.value).toBe('Input!B3')
+		expect(summary.tables[0]?.columns[1]?.formula).toBe('Input!A3')
+		expect(summary.tables[0]?.columns[1]?.totalsRowFormula).toBe('SUM(Input!A3:A4)')
+	})
+
 	test('deleteRows rejects partial table header row deletion', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')
@@ -3611,6 +3682,61 @@ describe('applyOperation', () => {
 		expect(s.x14DataValidations[0]?.formula1).toBe('#REF!')
 		expect(s.x14ConditionalFormats[0]?.formulas).toEqual(['#REF!>0'])
 		expect(s.x14ConditionalFormats[0]?.dataBar?.cfvo[0]?.value).toBe('#REF!')
+	})
+
+	test('deleteCols rewrites cross-sheet worksheet metadata formulas to #REF!', () => {
+		const wb = createWorkbook()
+		const input = wb.addSheet('Input')
+		const summary = wb.addSheet('Summary')
+		input.cells.set(0, 0, cell(numberValue(1)))
+		input.cells.set(0, 1, cell(numberValue(2)))
+		input.cells.set(0, 2, cell(numberValue(3)))
+		summary.dataValidations.push({ sqref: 'A1', type: 'list', formula1: 'Input!B1' })
+		summary.conditionalFormats.push({
+			sqref: 'A2',
+			rules: [
+				{
+					type: 'expression',
+					formulas: ['Input!B1>0'],
+					dataBar: { cfvo: [{ type: 'formula', value: 'Input!B1' }] },
+				},
+			],
+		})
+		summary.x14DataValidations.push({
+			index: 0,
+			sqref: 'B1',
+			type: 'list',
+			formula1: 'Input!B1',
+		})
+		summary.x14ConditionalFormats.push({
+			index: 0,
+			sqref: 'B2',
+			formulas: ['Input!B1>0'],
+			dataBar: { cfvo: [{ type: 'formula', value: 'Input!B1' }] },
+		})
+		summary.tables.push({
+			id: createTableId(),
+			name: 'SummaryTable',
+			sheetId: summary.id,
+			ref: { start: { row: 4, col: 0 }, end: { row: 5, col: 1 } },
+			columns: [
+				{ name: 'Name' },
+				{ name: 'Calc', formula: 'Input!B1', totalsRowFormula: 'SUM(Input!A1:C1)' },
+			],
+			hasHeaders: true,
+			hasTotals: false,
+		})
+
+		expectOk(applyOperation(wb, { op: 'deleteCols', sheet: 'Input', at: 1, count: 1 }))
+
+		expect(summary.dataValidations[0]?.formula1).toBe('#REF!')
+		expect(summary.conditionalFormats[0]?.rules[0]?.formulas).toEqual(['#REF!>0'])
+		expect(summary.conditionalFormats[0]?.rules[0]?.dataBar?.cfvo[0]?.value).toBe('#REF!')
+		expect(summary.x14DataValidations[0]?.formula1).toBe('#REF!')
+		expect(summary.x14ConditionalFormats[0]?.formulas).toEqual(['#REF!>0'])
+		expect(summary.x14ConditionalFormats[0]?.dataBar?.cfvo[0]?.value).toBe('#REF!')
+		expect(summary.tables[0]?.columns[1]?.formula).toBe('#REF!')
+		expect(summary.tables[0]?.columns[1]?.totalsRowFormula).toBe('SUM(Input!A1:B1)')
 	})
 
 	test('row and column shifts reject legacy array formula impact', () => {

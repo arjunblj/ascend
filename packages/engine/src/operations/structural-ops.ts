@@ -21,6 +21,7 @@ import {
 	rewriteWorkbookFormulasForMove,
 	rewriteWorkbookFormulasForShift,
 	rewriteWorkbookMetadataFormulasForMove,
+	rewriteWorkbookMetadataFormulasForShift,
 } from '../structural/formula-rewrite.ts'
 import { shiftSheetCellMetadata } from '../structural/sheet-topology.ts'
 import {
@@ -83,6 +84,7 @@ function applyAxisShift(
 	clearFormulaMetadata(workbook)
 	rewriteWorkbookFormulasForShift(workbook, sheetName, axis, at, delta)
 	rewriteDefinedNameFormulasForShift(workbook, sheetName, axis, at, delta)
+	rewriteWorkbookMetadataFormulasForShift(workbook, sheetName, axis, at, delta)
 
 	return ok(patch([], [sheetName], true))
 }

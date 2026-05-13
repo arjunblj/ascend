@@ -522,21 +522,45 @@ export function rewriteSheetMetadataFormulasForShift(
 	at: number,
 	delta: number,
 ): void {
+	rewriteSheetMetadataFormulasForShiftTarget(sheet, sheet.name, sheet.name, axis, at, delta)
+}
+
+export function rewriteWorkbookMetadataFormulasForShift(
+	workbook: Workbook,
+	targetSheet: string,
+	axis: 'row' | 'col',
+	at: number,
+	delta: number,
+): void {
+	for (const sheet of workbook.sheets) {
+		if (sheet.name === targetSheet) continue
+		rewriteSheetMetadataFormulasForShiftTarget(sheet, targetSheet, sheet.name, axis, at, delta)
+	}
+}
+
+function rewriteSheetMetadataFormulasForShiftTarget(
+	sheet: Sheet,
+	targetSheet: string,
+	formulaSheet: string,
+	axis: 'row' | 'col',
+	at: number,
+	delta: number,
+): void {
 	for (let i = 0; i < sheet.dataValidations.length; i++) {
 		const validation = sheet.dataValidations[i]
 		if (!validation) continue
 		const formula1 = rewriteFormulaTextForShift(
 			validation.formula1,
-			sheet.name,
-			sheet.name,
+			targetSheet,
+			formulaSheet,
 			axis,
 			at,
 			delta,
 		)
 		const formula2 = rewriteFormulaTextForShift(
 			validation.formula2,
-			sheet.name,
-			sheet.name,
+			targetSheet,
+			formulaSheet,
 			axis,
 			at,
 			delta,
@@ -551,7 +575,7 @@ export function rewriteSheetMetadataFormulasForShift(
 		const format = sheet.conditionalFormats[i]
 		if (!format) continue
 		const rewrite = (formula: string | undefined): string | undefined =>
-			rewriteFormulaTextForShift(formula, sheet.name, sheet.name, axis, at, delta)
+			rewriteFormulaTextForShift(formula, targetSheet, formulaSheet, axis, at, delta)
 		sheet.conditionalFormats[i] = {
 			...format,
 			rules: format.rules.map((rule) => rewriteConditionalFormatRuleWith(rule, rewrite)),
@@ -562,16 +586,16 @@ export function rewriteSheetMetadataFormulasForShift(
 		if (!validation || validation.deleted) continue
 		const formula1 = rewriteFormulaTextForShift(
 			validation.formula1,
-			sheet.name,
-			sheet.name,
+			targetSheet,
+			formulaSheet,
 			axis,
 			at,
 			delta,
 		)
 		const formula2 = rewriteFormulaTextForShift(
 			validation.formula2,
-			sheet.name,
-			sheet.name,
+			targetSheet,
+			formulaSheet,
 			axis,
 			at,
 			delta,
@@ -589,14 +613,22 @@ export function rewriteSheetMetadataFormulasForShift(
 			...format,
 			formulas: format.formulas.map(
 				(formula) =>
-					rewriteFormulaTextForShift(formula, sheet.name, sheet.name, axis, at, delta) ?? formula,
+					rewriteFormulaTextForShift(formula, targetSheet, formulaSheet, axis, at, delta) ??
+					formula,
 			),
 			...(format.dataBar
 				? {
 						dataBar: {
 							...format.dataBar,
 							cfvo: format.dataBar.cfvo.map((entry) =>
-								rewriteConditionalFormatValueObject(entry, sheet.name, axis, at, delta),
+								rewriteConditionalFormatValueObject(
+									entry,
+									targetSheet,
+									formulaSheet,
+									axis,
+									at,
+									delta,
+								),
 							),
 						},
 					}
@@ -606,7 +638,14 @@ export function rewriteSheetMetadataFormulasForShift(
 						iconSet: {
 							...format.iconSet,
 							cfvo: format.iconSet.cfvo.map((entry) =>
-								rewriteConditionalFormatValueObject(entry, sheet.name, axis, at, delta),
+								rewriteConditionalFormatValueObject(
+									entry,
+									targetSheet,
+									formulaSheet,
+									axis,
+									at,
+									delta,
+								),
 							),
 						},
 					}
@@ -619,16 +658,16 @@ export function rewriteSheetMetadataFormulasForShift(
 		const columns = table.columns.map((column) => {
 			const formula = rewriteFormulaTextForShift(
 				column.formula,
-				sheet.name,
-				sheet.name,
+				targetSheet,
+				formulaSheet,
 				axis,
 				at,
 				delta,
 			)
 			const totalsRowFormula = rewriteFormulaTextForShift(
 				column.totalsRowFormula,
-				sheet.name,
-				sheet.name,
+				targetSheet,
+				formulaSheet,
 				axis,
 				at,
 				delta,
@@ -645,7 +684,8 @@ export function rewriteSheetMetadataFormulasForShift(
 
 function rewriteConditionalFormatValueObject<T extends { readonly value?: string }>(
 	entry: T,
-	sheetName: string,
+	targetSheet: string,
+	formulaSheet: string,
 	axis: 'row' | 'col',
 	at: number,
 	delta: number,
@@ -654,7 +694,8 @@ function rewriteConditionalFormatValueObject<T extends { readonly value?: string
 	return {
 		...entry,
 		value:
-			rewriteFormulaTextForShift(entry.value, sheetName, sheetName, axis, at, delta) ?? entry.value,
+			rewriteFormulaTextForShift(entry.value, targetSheet, formulaSheet, axis, at, delta) ??
+			entry.value,
 	}
 }
 

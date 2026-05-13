@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
 	cycleFormulaReferenceMode,
+	formulaDiagnostics,
 	formulaTokenRanges,
 	insertFormulaReference,
 	referenceAtCursor,
@@ -105,6 +106,36 @@ describe('formula editing utilities', () => {
 				end: 23,
 				kind: 'structured',
 			},
+		})
+	})
+
+	test('returns formula parse diagnostics with stable source spans', () => {
+		expect(formulaDiagnostics('=SUM(A1, 2)')).toEqual({ parseOk: true, diagnostics: [] })
+
+		expect(formulaDiagnostics('=SUM(A1:')).toEqual({
+			parseOk: false,
+			diagnostics: [
+				{
+					code: 'formula-parse-error',
+					severity: 'error',
+					message: 'Unexpected token EOF "" at position 7',
+					start: 8,
+					end: 8,
+				},
+			],
+		})
+
+		expect(formulaDiagnostics('=)')).toEqual({
+			parseOk: false,
+			diagnostics: [
+				{
+					code: 'formula-parse-error',
+					severity: 'error',
+					message: 'Unexpected token CloseParen ")" at position 0',
+					start: 1,
+					end: 2,
+				},
+			],
 		})
 	})
 

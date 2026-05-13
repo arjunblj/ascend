@@ -91,6 +91,8 @@ export {
 } from './format-helpers.ts'
 export type {
 	CycleReferenceResult,
+	FormulaDiagnostic,
+	FormulaDiagnosticsResult,
 	FormulaReferenceRange,
 	FormulaTokenClass,
 	FormulaTokenRange,
@@ -99,6 +101,7 @@ export type {
 } from './formula-edit.ts'
 export {
 	cycleFormulaReferenceMode,
+	formulaDiagnostics,
 	formulaTokenRanges,
 	insertFormulaReference,
 	referenceAtCursor,

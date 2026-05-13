@@ -1,4 +1,10 @@
-import { type Token, TokenType, tokenize } from '@ascend/formulas'
+import {
+	normalizeFormulaInput,
+	parseFormula,
+	type Token,
+	TokenType,
+	tokenize,
+} from '@ascend/formulas'
 
 export type FormulaTokenClass =
 	| 'reference'
@@ -40,6 +46,19 @@ export interface InsertFormulaReferenceResult {
 	readonly cursor: number
 	readonly inserted: string
 	readonly replaced?: FormulaReferenceRange
+}
+
+export interface FormulaDiagnostic {
+	readonly code: 'formula-parse-error'
+	readonly severity: 'error'
+	readonly message: string
+	readonly start: number
+	readonly end: number
+}
+
+export interface FormulaDiagnosticsResult {
+	readonly parseOk: boolean
+	readonly diagnostics: readonly FormulaDiagnostic[]
 }
 
 interface TokenSpan {
@@ -114,6 +133,28 @@ export function insertFormulaReference(
 		cursor: start + reference.length,
 		inserted: reference,
 		...(replaced ? { replaced } : {}),
+	}
+}
+
+export function formulaDiagnostics(formula: string): FormulaDiagnosticsResult {
+	const normalized = normalizeFormulaInput(formula)
+	const parsed = parseFormula(normalized)
+	if (parsed.ok) return { parseOk: true, diagnostics: [] }
+	const offset = formula.startsWith('=') ? 1 : 0
+	const position = parseDiagnosticPosition(parsed.error.message)
+	const start =
+		position === null ? formula.length : Math.max(0, Math.min(formula.length, position + offset))
+	return {
+		parseOk: false,
+		diagnostics: [
+			{
+				code: 'formula-parse-error',
+				severity: 'error',
+				message: parsed.error.message,
+				start,
+				end: start < formula.length ? start + 1 : start,
+			},
+		],
 	}
 }
 
@@ -249,4 +290,11 @@ function cycleA1Reference(ref: string): string {
 	if (colAbs && rowAbs) return `${col.toUpperCase()}$${row}`
 	if (!colAbs && rowAbs) return `$${col.toUpperCase()}${row}`
 	return `${col.toUpperCase()}${row}`
+}
+
+function parseDiagnosticPosition(message: string): number | null {
+	const match = /\bat position (-?\d+)/.exec(message)
+	if (!match) return null
+	const position = Number(match[1])
+	return Number.isSafeInteger(position) && position >= 0 ? position : null
 }

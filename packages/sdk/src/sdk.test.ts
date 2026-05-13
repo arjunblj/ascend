@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { Buffer } from 'node:buffer'
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
-import { unlink } from 'node:fs/promises'
+import { unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { extractZip } from '../../io-xlsx/src/reader/zip.ts'
@@ -2173,6 +2173,34 @@ describe('AscendWorkbook', () => {
 		expect(handle).toBeDefined()
 		expect(handle?.cell('A1')?.value).toEqual({ kind: 'string', value: 'Name' })
 		expect(handle?.cell('B2')?.value).toEqual({ kind: 'number', value: 30 })
+	})
+
+	test('openSourceBytes preserves extension-sensitive text workbook semantics', async () => {
+		const path = join(
+			tmpdir(),
+			`ascend-open-source-bytes-${Date.now()}-${Math.random().toString(16).slice(2)}.tsv`,
+		)
+		const tsv = 'Name\tAge\nAlice\t30'
+		await writeFile(path, tsv, 'utf-8')
+		try {
+			const opened = await AscendWorkbook.openSourceBytes(path)
+			expect(new TextDecoder().decode(opened.sourceBytes)).toBe(tsv)
+			expect(opened.workbook.inspect().sourceFormat).toBe('csv')
+			expect(opened.workbook.sheet('Sheet1')?.cell('A1')?.value).toEqual({
+				kind: 'string',
+				value: 'Name',
+			})
+			expect(opened.workbook.sheet('Sheet1')?.cell('B1')?.value).toEqual({
+				kind: 'string',
+				value: 'Age',
+			})
+			expect(opened.workbook.sheet('Sheet1')?.cell('B2')?.value).toEqual({
+				kind: 'number',
+				value: 30,
+			})
+		} finally {
+			await unlink(path).catch(() => {})
+		}
 	})
 
 	test('sheet handles stay current across workbook replacement', () => {

@@ -48,6 +48,7 @@ describe('MCP server', () => {
 		expect(names).toContain('ascend.search_examples')
 		expect(names).toContain('ascend.read')
 		expect(names).toContain('ascend.read_table')
+		expect(names).toContain('ascend.dump')
 		expect(names).toContain('ascend.find')
 		expect(names).toContain('ascend.agent_view')
 		expect(names).toContain('ascend.preview')
@@ -68,7 +69,7 @@ describe('MCP server', () => {
 		expect(names).toContain('ascend.plan')
 		expect(names).toContain('ascend.commit')
 		expect(names).toContain('ascend.repair_plan')
-		expect(names.length).toBe(26)
+		expect(names.length).toBe(27)
 	})
 
 	test('agent resources and prompts are registered', () => {
@@ -665,6 +666,54 @@ describe('MCP server', () => {
 		expect(result.structuredContent?.data?.name).toBe('Scores')
 		expect(result.structuredContent?.data?.columns).toEqual(['Name', 'Score'])
 		expect(result.structuredContent?.data?.rows).toEqual([{ Name: 'Alice', Score: '10' }])
+	})
+
+	test('ascend.dump emits replayable operation batches', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 10 },
+					{ ref: 'B1', value: 'label' },
+				],
+			},
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'B2', formula: 'A1*2' },
+		])
+		await wb.save(TEMP_FILE)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const handler = (server as any)._registeredTools['ascend.dump'].handler as (args: {
+			file: string
+			sheet?: string
+		}) => Promise<{
+			structuredContent?: {
+				ok?: boolean
+				data?: {
+					replayable?: boolean
+					ops?: unknown[]
+					formulaCount?: number
+				}
+			}
+		}>
+
+		const result = await handler({ file: TEMP_FILE, sheet: 'Sheet1' })
+		expect(result.structuredContent?.ok).toBe(true)
+		expect(result.structuredContent?.data?.replayable).toBe(true)
+		expect(result.structuredContent?.data?.formulaCount).toBe(1)
+		expect(result.structuredContent?.data?.ops).toEqual([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 10 },
+					{ ref: 'B1', value: 'label' },
+				],
+			},
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'B2', formula: 'A1*2' },
+		])
 	})
 
 	test('ascend.eval evaluates formulas without writing scratch cells', async () => {

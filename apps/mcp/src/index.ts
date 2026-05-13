@@ -2,6 +2,7 @@ import { AscendException, ascendError, type CellValue, EMPTY } from '@ascend/sch
 import {
 	type AgentCommitOptions,
 	Ascend,
+	AscendWorkbook,
 	type CapabilityFilters,
 	type CompactRangeWindowInfo,
 	commitAgentPlan,
@@ -536,6 +537,43 @@ export function createServer(): McpServer {
 						rows: rows.map((row) => row.values),
 					},
 					`Read table "${table}"`,
+				)
+			} catch (e) {
+				return errorResponse(
+					e instanceof AscendException ? e.ascendError : String(e instanceof Error ? e.message : e),
+				)
+			}
+		},
+	)
+
+	server.tool(
+		'ascend.dump',
+		'Dump supported workbook cells and formulas as deterministic operations that can be replayed through ascend.plan and ascend.commit',
+		{
+			file: z.string().describe('Path to workbook file'),
+			sheet: z.string().optional().describe('Optional sheet name to dump'),
+			valuesOnly: z.boolean().optional().describe('Omit formulas from the dumped batch'),
+			formulasOnly: z.boolean().optional().describe('Omit literal values from the dumped batch'),
+		},
+		async ({ file, sheet, valuesOnly, formulasOnly }) => {
+			if (valuesOnly && formulasOnly) {
+				return errorResponse(
+					ascendError('INVALID_ARGUMENT', 'Use either valuesOnly or formulasOnly, not both', {
+						retryStrategy: 'modified',
+						suggestedFix: 'Retry with only one dump mode flag.',
+					}),
+				)
+			}
+			try {
+				const wb = await AscendWorkbook.open(file)
+				const result = wb.dumpBatch({
+					...(sheet ? { sheets: [sheet] } : {}),
+					...(valuesOnly ? { includeFormulas: false } : {}),
+					...(formulasOnly ? { includeValues: false } : {}),
+				})
+				return okResponse(
+					result,
+					`Dumped ${result.ops.length} replay operation(s) from ${result.sheetCount} sheet(s)`,
 				)
 			} catch (e) {
 				return errorResponse(

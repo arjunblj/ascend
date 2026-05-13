@@ -29,6 +29,9 @@ interface ApiEnvelope {
 	readonly ok: boolean
 	readonly data?: {
 		readonly approvals?: readonly { readonly id: string }[]
+		readonly replayable?: boolean
+		readonly formulaCount?: number
+		readonly ops?: unknown[]
 	}
 	readonly error?: {
 		readonly message?: string
@@ -67,6 +70,39 @@ async function postJson(
 }
 
 describe('Ascend API server', () => {
+	test('dump emits replayable operation batches', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 10 },
+					{ ref: 'B1', value: 'label' },
+				],
+			},
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'B2', formula: 'A1*2' },
+		])
+		await wb.save(TEMP_FILE)
+
+		const result = await postJson('/dump', { file: TEMP_FILE, sheet: 'Sheet1' })
+		expect(result.status).toBe(200)
+		expect(result.body.ok).toBe(true)
+		expect(result.body.data?.replayable).toBe(true)
+		expect(result.body.data?.formulaCount).toBe(1)
+		expect(result.body.data?.ops).toEqual([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 10 },
+					{ ref: 'B1', value: 'label' },
+				],
+			},
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'B2', formula: 'A1*2' },
+		])
+	})
+
 	test('plan invalid ops return structured batch repair details', async () => {
 		const ops = [
 			{ op: 'insertRows', sheet: 'Sheet1', at: 0, count: '2' },

@@ -274,6 +274,32 @@ export function createApiFetch() {
 				}
 			}
 
+			if (method === 'POST' && path === '/dump') {
+				const body = await parseJson<{
+					file?: string
+					sheet?: string
+					valuesOnly?: boolean
+					formulasOnly?: boolean
+				}>(req)
+				const file = body ? requireString(body, 'file') : null
+				if (!file) return jsonFailure('Missing or invalid file', 400)
+				if (body?.valuesOnly === true && body?.formulasOnly === true) {
+					return jsonFailure('Use either valuesOnly or formulasOnly, not both', 400)
+				}
+				try {
+					const wb = await AscendWorkbook.open(file)
+					return jsonSuccess(
+						wb.dumpBatch({
+							...(body?.sheet ? { sheets: [body.sheet] } : {}),
+							...(body?.valuesOnly === true ? { includeFormulas: false } : {}),
+							...(body?.formulasOnly === true ? { includeValues: false } : {}),
+						}),
+					)
+				} catch (e) {
+					return handleError(e, file)
+				}
+			}
+
 			if (method === 'POST' && path === '/pivots') {
 				const body = await parseJson<{
 					file?: string

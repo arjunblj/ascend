@@ -12,7 +12,7 @@ import {
 } from '@ascend/schema'
 import type { StyleId } from './ids.ts'
 import type { Cell } from './sparse-grid.ts'
-import { SparseGrid } from './sparse-grid.ts'
+import { SPARSE_GRID_CHUNK_SIZE, SPARSE_TO_DENSE_THRESHOLD, SparseGrid } from './sparse-grid.ts'
 
 const S0 = 0 as StyleId
 const S7 = 7 as StyleId
@@ -767,9 +767,14 @@ describe('SparseGrid', () => {
 	test('setExpectedDensity sparse: SparseChunk upgrades to DenseChunk at threshold', () => {
 		const grid = new SparseGrid()
 		grid.setExpectedDensity('sparse')
-		// 100 cells in a 10x10 block stay inside chunk (0,0) for supported chunk sizes.
-		for (let i = 0; i < 100; i++) {
-			grid.setResolved(Math.floor(i / 10), i % 10, numberValue(i), null, S0)
+		for (let i = 0; i < SPARSE_TO_DENSE_THRESHOLD; i++) {
+			grid.setResolved(
+				Math.floor(i / SPARSE_GRID_CHUNK_SIZE),
+				i % SPARSE_GRID_CHUNK_SIZE,
+				numberValue(i),
+				null,
+				S0,
+			)
 		}
 		expect(grid.getChunkKindAt(0, 0)).toBe('dense')
 	})

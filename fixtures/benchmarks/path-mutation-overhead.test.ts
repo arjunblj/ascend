@@ -15,6 +15,8 @@ describe('path mutation overhead benchmark', () => {
 				'6',
 				'--mutations',
 				'12',
+				'--surface',
+				'both',
 				'--repeat',
 				'1',
 				'--warmup',
@@ -37,7 +39,11 @@ describe('path mutation overhead benchmark', () => {
 				readonly apiPlanMedianMs?: number
 				readonly apiCompactPlanMedianMs?: number
 				readonly apiCommitMedianMs?: number
+				readonly mcpPlanMedianMs?: number
+				readonly mcpCompactPlanMedianMs?: number
+				readonly mcpCommitMedianMs?: number
 				readonly apiCompactPlanPayloadBytesMedian?: number
+				readonly mcpCompactPlanPayloadBytesMedian?: number
 				readonly mutationCountMedian?: number
 				readonly compiledOpsMedian?: number
 				readonly compileIssuesMedian?: number
@@ -46,6 +52,7 @@ describe('path mutation overhead benchmark', () => {
 				readonly applyJournalEntriesMedian?: number
 				readonly applyPreimagesMedian?: number
 				readonly commitOk?: boolean
+				readonly mcpCommitOk?: boolean
 			}
 		}
 		expect(payload.summary?.directCompileMedianMs).toBeNumber()
@@ -54,7 +61,11 @@ describe('path mutation overhead benchmark', () => {
 		expect(payload.summary?.apiPlanMedianMs).toBeNumber()
 		expect(payload.summary?.apiCompactPlanMedianMs).toBeNumber()
 		expect(payload.summary?.apiCommitMedianMs).toBeNumber()
+		expect(payload.summary?.mcpPlanMedianMs).toBeNumber()
+		expect(payload.summary?.mcpCompactPlanMedianMs).toBeNumber()
+		expect(payload.summary?.mcpCommitMedianMs).toBeNumber()
 		expect(payload.summary?.apiCompactPlanPayloadBytesMedian).toBeNumber()
+		expect(payload.summary?.mcpCompactPlanPayloadBytesMedian).toBeNumber()
 		expect(payload.summary?.mutationCountMedian).toBe(12)
 		expect(payload.summary?.compiledOpsMedian).toBe(1)
 		expect(payload.summary?.compileIssuesMedian).toBe(0)
@@ -63,5 +74,6 @@ describe('path mutation overhead benchmark', () => {
 		expect(payload.summary?.applyJournalEntriesMedian).toBe(1)
 		expect(payload.summary?.applyPreimagesMedian).toBe(12)
 		expect(payload.summary?.commitOk).toBe(true)
+		expect(payload.summary?.mcpCommitOk).toBe(true)
 	})
 })

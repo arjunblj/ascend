@@ -1,15 +1,19 @@
 #!/usr/bin/env bun
 import { rm } from 'node:fs/promises'
 import { createApiFetch } from '../../apps/api/src/server.ts'
+import { createServer } from '../../apps/mcp/src/index.ts'
 import { indexToColumn } from '../../packages/core/src/index.ts'
 import { AscendWorkbook } from '../../packages/sdk/src/index.ts'
 import type { ApplyResult, PathMutation, PreviewResult } from '../../packages/sdk/src/types.ts'
 import { buildRawReadWorkloadDataSet, type WorkloadName } from './competitive-io.ts'
 
+type Surface = 'api' | 'both'
+
 interface Args {
 	readonly rows: number
 	readonly cols: number
 	readonly mutations: number
+	readonly surface: Surface
 	readonly workload: WorkloadName
 	readonly repeat: number
 	readonly warmup: number
@@ -24,9 +28,15 @@ interface Sample {
 	readonly apiPlanMs: number
 	readonly apiCompactPlanMs: number
 	readonly apiCommitMs: number
+	readonly mcpPlanMs?: number
+	readonly mcpCompactPlanMs?: number
+	readonly mcpCommitMs?: number
 	readonly apiPlanPayloadBytes: number
 	readonly apiCompactPlanPayloadBytes: number
 	readonly apiCommitPayloadBytes: number
+	readonly mcpPlanPayloadBytes?: number
+	readonly mcpCompactPlanPayloadBytes?: number
+	readonly mcpCommitPayloadBytes?: number
 	readonly mutationCount: number
 	readonly compiledOps: number
 	readonly compileIssues: number
@@ -38,6 +48,7 @@ interface Sample {
 	readonly applyPreimages: number
 	readonly rssDeltaMb: number
 	readonly commitOk: boolean
+	readonly mcpCommitOk?: boolean
 }
 
 const WORKLOADS = new Set<string>([
@@ -70,10 +81,15 @@ function nonNegativeInt(raw: string | undefined, fallback: number): number {
 function parseArgs(): Args {
 	const workload = readOption(process.argv, '--workload') ?? 'mixed-10pct-text'
 	if (!WORKLOADS.has(workload)) throw new Error(`Unsupported --workload "${workload}"`)
+	const surface = readOption(process.argv, '--surface') ?? 'api'
+	if (surface !== 'api' && surface !== 'both') {
+		throw new Error(`Unsupported --surface "${surface}". Use api or both.`)
+	}
 	return {
 		rows: positiveInt(readOption(process.argv, '--rows'), 65_536),
 		cols: positiveInt(readOption(process.argv, '--cols'), 10),
 		mutations: positiveInt(readOption(process.argv, '--mutations'), 1_000),
+		surface,
 		workload: workload as WorkloadName,
 		repeat: positiveInt(readOption(process.argv, '--repeat'), 5),
 		warmup: nonNegativeInt(readOption(process.argv, '--warmup'), 1),
@@ -86,6 +102,11 @@ function median(values: readonly number[]): number {
 	const middle = Math.floor(sorted.length / 2)
 	const upper = sorted[middle] ?? 0
 	return sorted.length % 2 === 1 ? upper : ((sorted[middle - 1] ?? upper) + upper) / 2
+}
+
+function medianOptional(values: readonly (number | undefined)[]): number | undefined {
+	const present = values.filter((value): value is number => value !== undefined)
+	return present.length > 0 ? median(present) : undefined
 }
 
 function runGc(): void {
@@ -121,6 +142,41 @@ async function post(apiFetch: typeof fetch, path: string, body: unknown) {
 
 interface ApiEnvelope {
 	readonly ok?: boolean
+}
+
+interface SurfaceResponse {
+	readonly ms: number
+	readonly text: string
+	readonly payload: ApiEnvelope
+}
+
+interface McpMutationClient {
+	plan(body: unknown): Promise<SurfaceResponse>
+	commit(body: unknown): Promise<SurfaceResponse>
+}
+
+function createMcpMutationClient(): McpMutationClient {
+	const server = createServer()
+	type McpTool = { handler: (args: unknown) => Promise<unknown> }
+	const tools = (server as unknown as { _registeredTools: Record<string, McpTool> })
+		._registeredTools
+	const planTool = tools['ascend.plan']
+	const commitTool = tools['ascend.commit']
+	if (!planTool || !commitTool) throw new Error('MCP plan/commit tools are not registered')
+	const call = async (handler: McpTool['handler'], body: unknown): Promise<SurfaceResponse> => {
+		const start = performance.now()
+		const result = await handler(body)
+		const structured = (result as { readonly structuredContent?: ApiEnvelope }).structuredContent
+		const payload = structured ?? { ok: false }
+		const text = JSON.stringify(payload)
+		const ms = performance.now() - start
+		if (payload.ok !== true) throw new Error(`MCP tool failed: ${text}`)
+		return { ms, text, payload }
+	}
+	return {
+		plan: (body) => call(planTool.handler, body),
+		commit: (body) => call(commitTool.handler, body),
+	}
 }
 
 function buildCellMutations(count: number, rows: number, cols: number): readonly PathMutation[] {
@@ -161,11 +217,14 @@ function journalPreimages(result: PreviewResult | ApplyResult): number {
 
 async function runSample(
 	apiFetch: typeof fetch,
+	mcpClient: McpMutationClient | undefined,
 	inputPath: string,
 	outputPath: string,
 	mutations: readonly PathMutation[],
 ): Promise<Sample> {
 	await rm(outputPath, { force: true })
+	const mcpOutputPath = `${outputPath}.mcp.xlsx`
+	await rm(mcpOutputPath, { force: true })
 	runGc()
 	const rssBefore = rssMb()
 	const opened = await timed(() => AscendWorkbook.open(inputPath))
@@ -188,7 +247,25 @@ async function runSample(
 		mutations,
 		approvals: [],
 	})
+	const mcpPlan = mcpClient ? await mcpClient.plan({ file: inputPath, mutations }) : undefined
+	const mcpCompactPlan = mcpClient
+		? await mcpClient.plan({
+				file: inputPath,
+				mutations,
+				compact: true,
+				maxChangedCells: 25,
+			})
+		: undefined
+	const mcpCommit = mcpClient
+		? await mcpClient.commit({
+				file: inputPath,
+				output: mcpOutputPath,
+				mutations,
+				approvals: [],
+			})
+		: undefined
 	const rssAfter = rssMb()
+	await rm(mcpOutputPath, { force: true })
 	return {
 		directOpenMs: opened.ms,
 		directCompileMs: compile.ms,
@@ -197,9 +274,15 @@ async function runSample(
 		apiPlanMs: apiPlan.ms,
 		apiCompactPlanMs: apiCompactPlan.ms,
 		apiCommitMs: apiCommit.ms,
+		...(mcpPlan ? { mcpPlanMs: mcpPlan.ms } : {}),
+		...(mcpCompactPlan ? { mcpCompactPlanMs: mcpCompactPlan.ms } : {}),
+		...(mcpCommit ? { mcpCommitMs: mcpCommit.ms } : {}),
 		apiPlanPayloadBytes: apiPlan.text.length,
 		apiCompactPlanPayloadBytes: apiCompactPlan.text.length,
 		apiCommitPayloadBytes: apiCommit.text.length,
+		...(mcpPlan ? { mcpPlanPayloadBytes: mcpPlan.text.length } : {}),
+		...(mcpCompactPlan ? { mcpCompactPlanPayloadBytes: mcpCompactPlan.text.length } : {}),
+		...(mcpCommit ? { mcpCommitPayloadBytes: mcpCommit.text.length } : {}),
 		mutationCount: mutations.length,
 		compiledOps: compile.value.ops.length,
 		compileIssues: compile.value.issueCount,
@@ -211,6 +294,7 @@ async function runSample(
 		applyPreimages: journalPreimages(apply.value),
 		rssDeltaMb: rssAfter - rssBefore,
 		commitOk: apiCommit.payload.ok === true,
+		...(mcpCommit ? { mcpCommitOk: mcpCommit.payload.ok === true } : {}),
 	}
 }
 
@@ -223,11 +307,21 @@ function summarize(samples: readonly Sample[]) {
 		apiPlanMedianMs: median(samples.map((sample) => sample.apiPlanMs)),
 		apiCompactPlanMedianMs: median(samples.map((sample) => sample.apiCompactPlanMs)),
 		apiCommitMedianMs: median(samples.map((sample) => sample.apiCommitMs)),
+		mcpPlanMedianMs: medianOptional(samples.map((sample) => sample.mcpPlanMs)),
+		mcpCompactPlanMedianMs: medianOptional(samples.map((sample) => sample.mcpCompactPlanMs)),
+		mcpCommitMedianMs: medianOptional(samples.map((sample) => sample.mcpCommitMs)),
 		apiPlanPayloadBytesMedian: median(samples.map((sample) => sample.apiPlanPayloadBytes)),
 		apiCompactPlanPayloadBytesMedian: median(
 			samples.map((sample) => sample.apiCompactPlanPayloadBytes),
 		),
 		apiCommitPayloadBytesMedian: median(samples.map((sample) => sample.apiCommitPayloadBytes)),
+		mcpPlanPayloadBytesMedian: medianOptional(samples.map((sample) => sample.mcpPlanPayloadBytes)),
+		mcpCompactPlanPayloadBytesMedian: medianOptional(
+			samples.map((sample) => sample.mcpCompactPlanPayloadBytes),
+		),
+		mcpCommitPayloadBytesMedian: medianOptional(
+			samples.map((sample) => sample.mcpCommitPayloadBytes),
+		),
 		mutationCountMedian: median(samples.map((sample) => sample.mutationCount)),
 		compiledOpsMedian: median(samples.map((sample) => sample.compiledOps)),
 		compileIssuesMedian: median(samples.map((sample) => sample.compileIssues)),
@@ -239,6 +333,9 @@ function summarize(samples: readonly Sample[]) {
 		applyPreimagesMedian: median(samples.map((sample) => sample.applyPreimages)),
 		rssDeltaMbMedian: median(samples.map((sample) => sample.rssDeltaMb)),
 		commitOk: samples.every((sample) => sample.commitOk),
+		mcpCommitOk: samples.some((sample) => sample.mcpCommitOk !== undefined)
+			? samples.every((sample) => sample.mcpCommitOk !== false)
+			: undefined,
 	}
 }
 
@@ -248,14 +345,15 @@ async function run() {
 	const outputPath = `${data.xlsxPath}.path-mutation-output.xlsx`
 	const mutations = buildCellMutations(args.mutations, args.rows, args.cols)
 	const apiFetch = createApiFetch()
+	const mcpClient = args.surface === 'both' ? createMcpMutationClient() : undefined
 	const samples: Sample[] = []
 	try {
 		for (let i = 0; i < args.warmup; i++) {
-			await runSample(apiFetch, data.xlsxPath, outputPath, mutations)
+			await runSample(apiFetch, mcpClient, data.xlsxPath, outputPath, mutations)
 			runGc()
 		}
 		for (let i = 0; i < args.repeat; i++) {
-			samples.push(await runSample(apiFetch, data.xlsxPath, outputPath, mutations))
+			samples.push(await runSample(apiFetch, mcpClient, data.xlsxPath, outputPath, mutations))
 			runGc()
 		}
 		const payload = {
@@ -269,6 +367,7 @@ async function run() {
 	} finally {
 		await rm(data.xlsxPath, { force: true })
 		await rm(outputPath, { force: true })
+		await rm(`${outputPath}.mcp.xlsx`, { force: true })
 	}
 }
 

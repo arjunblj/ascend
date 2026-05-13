@@ -21,6 +21,21 @@ export interface ScenarioThroughputTarget {
 export const smokeScenarioThroughputTargets: readonly ScenarioThroughputTarget[] = [
 	{ name: 'read-full-dense', metric: 'read-full-dense throughput', minCellsPerSec: 800_000 },
 	{ name: 'read-values-dense', metric: 'read-values-dense throughput', minCellsPerSec: 2_500_000 },
+	{
+		name: 'sdk-window-dense-values-compact-hot',
+		metric: 'sdk-window-dense-values-compact-hot throughput',
+		minCellsPerSec: 3_000_000,
+	},
+	{
+		name: 'sdk-window-formula-chain-compact-hot',
+		metric: 'sdk-window-formula-chain-compact-hot throughput',
+		minCellsPerSec: 750_000,
+	},
+	{
+		name: 'sdk-window-sparse-wide-compact-hot',
+		metric: 'sdk-window-sparse-wide-compact-hot throughput',
+		minCellsPerSec: 300_000,
+	},
 	{ name: 'write-csv-large', metric: 'write-csv-large throughput', minCellsPerSec: 3_000_000 },
 	{
 		name: 'workflow-sdk-edit-cycle',

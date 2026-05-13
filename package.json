@@ -26,7 +26,7 @@
 		"ci:graph": "bun run scripts/check-ci-graph.ts",
 		"ci:check": "bunx biome ci && bunx tsc --build && bun run build:js && bun run ci:graph && bun run test:ci",
 		"ci:coverage": "bun run test:coverage && bun run coverage:audit",
-		"ci:perf-smoke": "bun run fixtures/benchmarks/run.ts --set smoke --repeat 3 --ci > benchmark-results.json && bun run fixtures/benchmarks/check-targets.ts benchmark-results.json --min-ratio 0.75 --scope category",
+		"ci:perf-smoke": "bun run fixtures/benchmarks/run.ts --set smoke --repeat 3 --ci > benchmark-results.json && bun run fixtures/benchmarks/check-targets.ts benchmark-results.json --min-ratio 0.75 --scope all",
 		"ci:local": "bun ci && bun run ci:check",
 		"docs:sdk": "typedoc --options typedoc.sdk.json",
 		"corpus:audit": "bun run fixtures/corpus/audit.ts",

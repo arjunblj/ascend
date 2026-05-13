@@ -933,10 +933,36 @@ const scenarios: readonly Scenario[] = [
 				rowLimit: 250,
 				includeRefs: false,
 			})
+			const first = window.cells[0]
+			const last = window.cells[window.cells.length - 1]
+			if (
+				!first ||
+				!last ||
+				window.cells.length !== 5000 ||
+				!window.hasMore ||
+				window.nextRowOffset !== 250 ||
+				first?.row !== 0 ||
+				first.col !== 0 ||
+				first.ref !== undefined ||
+				first.value.kind !== 'number' ||
+				first.value.value !== 1 ||
+				last?.row !== 249 ||
+				last.col !== 19 ||
+				last.ref !== undefined ||
+				last.value.kind !== 'number' ||
+				last.value.value !== 5000
+			) {
+				throw new Error('Dense compact-window benchmark returned an unexpected payload')
+			}
 			return {
 				assertions: {
 					returnedCells: window.cells.length,
 					hasMore: window.hasMore,
+					nextRowOffset: window.nextRowOffset ?? null,
+					firstValue: first.value.kind === 'number' ? first.value.value : null,
+					lastRow: last.row,
+					lastCol: last.col,
+					lastValue: last.value.kind === 'number' ? last.value.value : null,
 				},
 			}
 		},
@@ -954,11 +980,42 @@ const scenarios: readonly Scenario[] = [
 				rowLimit: 500,
 				includeRefs: false,
 			})
+			const first = window.cells[0]
+			const second = window.cells[1]
+			const last = window.cells[window.cells.length - 1]
+			const formulaCount = window.cells.filter((cell) => cell.formula !== null).length
+			if (
+				!first ||
+				!second ||
+				!last ||
+				window.cells.length !== 500 ||
+				!window.hasMore ||
+				window.nextRowOffset !== 500 ||
+				formulaCount !== 499 ||
+				first?.row !== 0 ||
+				first.col !== 0 ||
+				first.ref !== undefined ||
+				first.value.kind !== 'number' ||
+				first.value.value !== 1 ||
+				first.formula !== null ||
+				second?.row !== 1 ||
+				second.formula !== 'A1+1' ||
+				last?.row !== 499 ||
+				last.col !== 0 ||
+				last.ref !== undefined ||
+				last.formula !== 'A499+1'
+			) {
+				throw new Error('Formula-chain compact-window benchmark returned an unexpected payload')
+			}
 			return {
 				assertions: {
 					returnedCells: window.cells.length,
 					hasMore: window.hasMore,
-					formulaCount: window.cells.filter((cell) => cell.formula !== null).length,
+					nextRowOffset: window.nextRowOffset ?? null,
+					formulaCount,
+					firstValue: first.value.kind === 'number' ? first.value.value : null,
+					secondFormula: second.formula,
+					lastFormula: last.formula,
 				},
 			}
 		},
@@ -976,10 +1033,36 @@ const scenarios: readonly Scenario[] = [
 				rowLimit: 5000,
 				includeRefs: false,
 			})
+			const first = window.cells[0]
+			const last = window.cells[window.cells.length - 1]
+			if (
+				!first ||
+				!last ||
+				window.cells.length !== 200 ||
+				!window.hasMore ||
+				window.nextRowOffset !== 5000 ||
+				first?.row !== 0 ||
+				first.col !== 0 ||
+				first.ref !== undefined ||
+				first.value.kind !== 'number' ||
+				first.value.value !== 1 ||
+				last?.row !== 4500 ||
+				last.col !== 19 ||
+				last.ref !== undefined ||
+				last.value.kind !== 'number' ||
+				last.value.value !== 4520
+			) {
+				throw new Error('Sparse compact-window benchmark returned an unexpected payload')
+			}
 			return {
 				assertions: {
 					returnedCells: window.cells.length,
 					hasMore: window.hasMore,
+					nextRowOffset: window.nextRowOffset ?? null,
+					firstValue: first.value.kind === 'number' ? first.value.value : null,
+					lastRow: last.row,
+					lastCol: last.col,
+					lastValue: last.value.kind === 'number' ? last.value.value : null,
 				},
 			}
 		},
@@ -1768,6 +1851,9 @@ const scenarioSets = {
 	smoke: [
 		'read-full-dense',
 		'read-values-dense',
+		'sdk-window-dense-values-compact-hot',
+		'sdk-window-formula-chain-compact-hot',
+		'sdk-window-sparse-wide-compact-hot',
 		'write-csv-large',
 		'workflow-sdk-edit-cycle',
 		'workflow-sdk-defined-names-edit-cycle',

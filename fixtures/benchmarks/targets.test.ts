@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import type { BenchmarkCaseResult, BenchmarkSuiteResult } from './results.ts'
-import { checkThroughputTargets } from './targets.ts'
+import { checkThroughputTargets, smokeScenarioThroughputTargets } from './targets.ts'
 
 const runtime = { platform: 'test', arch: 'arm64' } as const
 const git = {} as const
@@ -82,6 +82,43 @@ describe('benchmark throughput targets', () => {
 		expect(quickselect?.passed).toBe(false)
 		expect(missing?.passed).toBe(false)
 		expect(missing?.actualCellsPerSec).toBeNull()
+	})
+
+	test('agent compact-window scenarios have smoke throughput floors', () => {
+		const targets = new Map(
+			smokeScenarioThroughputTargets.map((target) => [target.name, target.minCellsPerSec]),
+		)
+
+		expect(targets.get('sdk-window-dense-values-compact-hot')).toBe(3_000_000)
+		expect(targets.get('sdk-window-formula-chain-compact-hot')).toBe(750_000)
+		expect(targets.get('sdk-window-sparse-wide-compact-hot')).toBe(300_000)
+
+		const results = checkThroughputTargets(
+			suite(
+				[
+					benchmarkCase('sdk-window-dense-values-compact-hot', 'read', 3_100_000),
+					benchmarkCase('sdk-window-formula-chain-compact-hot', 'read', 800_000),
+					benchmarkCase('sdk-window-sparse-wide-compact-hot', 'read', 299_999),
+				],
+				'smoke',
+			),
+		)
+		const sparse = results.find(
+			(result) => result.target.metric === 'sdk-window-sparse-wide-compact-hot throughput',
+		)
+
+		expect(
+			results.find(
+				(result) => result.target.metric === 'sdk-window-dense-values-compact-hot throughput',
+			)?.passed,
+		).toBe(true)
+		expect(
+			results.find(
+				(result) => result.target.metric === 'sdk-window-formula-chain-compact-hot throughput',
+			)?.passed,
+		).toBe(true)
+		expect(sparse?.passed).toBe(false)
+		expect(sparse?.actualCellsPerSec).toBe(299_999)
 	})
 
 	test('smoke scenario floors can be disabled for noisy shared-runner gates', () => {

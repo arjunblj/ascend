@@ -33,7 +33,7 @@ function deflateOptionsForPart(
 		}
 		return uncompressedSize > HUGE_WORKSHEET_XML_BYTES
 			? { level: 1, strategy: zlibConstants.Z_FILTERED }
-			: { level: 2 }
+			: { level: 1 }
 	}
 	if (profile === 'compact' && uncompressedSize > 512_000) return { level: 2 }
 	if (uncompressedSize > 512_000) return { level: 1 }

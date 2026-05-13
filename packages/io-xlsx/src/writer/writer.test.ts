@@ -4641,6 +4641,16 @@ describe('writeXlsx', () => {
 	})
 
 	it('supports compact dense writer compression without changing values', async () => {
+		const fast = await writeDenseRowsXlsxStreaming({
+			rows: 200,
+			cols: 20,
+			omitCellRefs: true,
+			allCellsPresent: true,
+			stringsAreXmlSafe: true,
+			valueType: 'string',
+			valueAt: (row, col) => `text-${row}-${col}`,
+		})
+		expectOk(fast)
 		const written = await writeDenseRowsXlsxStreaming({
 			rows: 200,
 			cols: 20,
@@ -4652,6 +4662,7 @@ describe('writeXlsx', () => {
 			valueAt: (row, col) => `text-${row}-${col}`,
 		})
 		expectOk(written)
+		expect(written.value.byteLength).toBeLessThan(fast.value.byteLength)
 
 		const read = readXlsx(written.value, { mode: 'values' })
 		expectOk(read)

@@ -586,7 +586,7 @@ describe('MCP server', () => {
 		expect(reopened.sheet('Sheet1')?.comment('C1')?.text).toBe('review')
 	})
 
-	test('ascend.preview keeps JSON Pointer, escaped-dot, and segment-array path mutations canonical', async () => {
+	test('ascend.preview, plan, write, and commit keep escaped path mutations canonical', async () => {
 		const sheetName = "Q1.Forecast's Café Δ"
 		const tableName = 'Sales.Δ'
 		const columnName = 'Gross Profit/Δ~'
@@ -618,24 +618,53 @@ describe('MCP server', () => {
 				data?: { pathMutations?: { replayable?: boolean; ops?: unknown[] } }
 			}
 		}>
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const plan = (server as any)._registeredTools['ascend.plan'].handler as (args: {
+			file: string
+			mutations: Array<{ path: string | string[]; value?: unknown }>
+		}) => Promise<{
+			structuredContent?: {
+				ok?: boolean
+				data?: {
+					approvals?: Array<{ id: string }>
+					pathMutations?: { ops?: unknown[] }
+				}
+			}
+		}>
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const write = (server as any)._registeredTools['ascend.write'].handler as (args: {
+			file: string
+			mutations: Array<{ path: string | string[]; value?: unknown }>
+		}) => Promise<{
+			structuredContent?: {
+				ok?: boolean
+				data?: { pathMutations?: { ops?: unknown[] } }
+			}
+		}>
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const commit = (server as any)._registeredTools['ascend.commit'].handler as (args: {
+			file: string
+			output: string
+			mutations: Array<{ path: string | string[]; value?: unknown }>
+			approvals?: string[]
+		}) => Promise<{
+			structuredContent?: {
+				ok?: boolean
+				data?: { pathMutations?: { ops?: unknown[] } }
+			}
+		}>
 
-		const result = await preview({
-			file: TEMP_FILE,
-			mutations: [
-				{ path: `/sheets/${pointerSegment(sheetName)}/cells/A2/value`, value: 'pointer' },
-				{ path: `sheets.${dotSegment(sheetName)}.cells.A3.value`, value: 'dot' },
-				{ path: ['sheets', sheetName, 'cells', 'A4', 'value'], value: 'array' },
-				{
-					path: `tables.${dotSegment(tableName)}.columns.${dotSegment(columnName)}.formula`,
-					value: 'SUM([Gross Profit/Δ~])',
-				},
-				{ path: ['tables', tableName, 'columns', columnName, 'name'], value: 'Net_Δ' },
-			],
-		})
-
-		expect(result.structuredContent?.ok).toBe(true)
-		expect(result.structuredContent?.data?.pathMutations?.replayable).toBe(true)
-		expect(result.structuredContent?.data?.pathMutations?.ops).toEqual([
+		const mutations = [
+			{ path: `/sheets/${pointerSegment(sheetName)}/cells/A2/value`, value: 'pointer' },
+			{ path: `sheets.${dotSegment(sheetName)}.cells.A3.value`, value: 'dot' },
+			{ path: ['sheets', sheetName, 'cells', 'A4', 'value'], value: 'array' },
+			{
+				path: `tables.${dotSegment(tableName)}.columns.${dotSegment(columnName)}.formula`,
+				value: 'SUM([Region])',
+			},
+			{ path: ['tables', tableName, 'columns', columnName, 'name'], value: 'Net_Δ' },
+		]
+		const canonicalOps = [
 			{
 				op: 'setCells',
 				sheet: sheetName,
@@ -649,10 +678,63 @@ describe('MCP server', () => {
 				op: 'setTableColumn',
 				table: tableName,
 				column: columnName,
-				formula: 'SUM([Gross Profit/Δ~])',
+				formula: 'SUM([Region])',
 			},
 			{ op: 'setTableColumn', table: tableName, column: columnName, newName: 'Net_Δ' },
-		])
+		]
+
+		const result = await preview({ file: TEMP_FILE, mutations })
+		expect(result.structuredContent?.ok).toBe(true)
+		expect(result.structuredContent?.data?.pathMutations?.replayable).toBe(true)
+		expect(result.structuredContent?.data?.pathMutations?.ops).toEqual(canonicalOps)
+
+		const planned = await plan({ file: TEMP_FILE, mutations })
+		expect(planned.structuredContent?.ok).toBe(true)
+		expect(planned.structuredContent?.data?.pathMutations?.ops).toEqual(canonicalOps)
+		const approvalIds =
+			planned.structuredContent?.data?.approvals?.map((approval) => approval.id) ?? []
+
+		const writePath = `${TEMP_FILE}.escaped-write.xlsx`
+		const commitInput = `${TEMP_FILE}.escaped-commit-input.xlsx`
+		const commitOutput = `${TEMP_MACRO_OUTPUT}.escaped-commit-output.xlsx`
+		try {
+			await wb.save(writePath)
+			const written = await write({ file: writePath, mutations })
+			expect(written.structuredContent?.ok).toBe(true)
+			expect(written.structuredContent?.data?.pathMutations?.ops).toEqual(canonicalOps)
+			const writeReopened = await AscendWorkbook.open(writePath)
+			expect(writeReopened.sheet(sheetName)?.cell('A3')?.value).toEqual({
+				kind: 'string',
+				value: 'dot',
+			})
+			expect(writeReopened.sheet(sheetName)?.cell('A4')?.value).toEqual({
+				kind: 'string',
+				value: 'array',
+			})
+
+			await wb.save(commitInput)
+			const committed = await commit({
+				file: commitInput,
+				output: commitOutput,
+				mutations,
+				approvals: approvalIds,
+			})
+			expect(committed.structuredContent?.ok).toBe(true)
+			expect(committed.structuredContent?.data?.pathMutations?.ops).toEqual(canonicalOps)
+			const commitReopened = await AscendWorkbook.open(commitOutput)
+			expect(commitReopened.sheet(sheetName)?.cell('A3')?.value).toEqual({
+				kind: 'string',
+				value: 'dot',
+			})
+			expect(commitReopened.sheet(sheetName)?.cell('A4')?.value).toEqual({
+				kind: 'string',
+				value: 'array',
+			})
+		} finally {
+			await unlink(writePath).catch(() => {})
+			await unlink(commitInput).catch(() => {})
+			await unlink(commitOutput).catch(() => {})
+		}
 	})
 
 	test('ascend.plan reports path mutation compiler errors as structured repair details', async () => {

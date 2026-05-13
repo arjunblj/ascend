@@ -360,7 +360,7 @@ describe('Ascend API server', () => {
 		expect(ambiguous.body.error?.message).toBe('Provide either ops or mutations, not both')
 	})
 
-	test('preview keeps JSON Pointer, escaped-dot, and segment-array path mutations canonical', async () => {
+	test('preview, plan, write, and commit keep escaped path mutations canonical', async () => {
 		const sheetName = "Q1.Forecast's Café Δ"
 		const tableName = 'Sales.Δ'
 		const columnName = 'Gross Profit/Δ~'
@@ -380,28 +380,20 @@ describe('Ascend API server', () => {
 			{ op: 'createTable', sheet: sheetName, ref: 'A1:B2', name: tableName, hasHeaders: true },
 		])
 		await wb.save(TEMP_FILE)
-
-		const result = await postJson('/preview', {
-			file: TEMP_FILE,
-			mutations: [
-				{ path: `/sheets/${pointerSegment(sheetName)}/cells/A2/value`, value: 'pointer' },
-				{ path: `sheets.${dotSegment(sheetName)}.cells.A3.value`, value: 'dot' },
-				{ path: ['sheets', sheetName, 'cells', 'A4', 'value'], value: 'array' },
-				{
-					path: `tables.${dotSegment(tableName)}.columns.${dotSegment(columnName)}.formula`,
-					value: 'SUM([Gross Profit/Δ~])',
-				},
-				{
-					path: ['tables', tableName, 'columns', columnName, 'name'],
-					value: 'Net_Δ',
-				},
-			],
-		})
-
-		expect(result.status).toBe(200)
-		expect(result.body.ok).toBe(true)
-		expect(result.body.data?.pathMutations?.replayable).toBe(true)
-		expect(result.body.data?.pathMutations?.ops).toEqual([
+		const mutations = [
+			{ path: `/sheets/${pointerSegment(sheetName)}/cells/A2/value`, value: 'pointer' },
+			{ path: `sheets.${dotSegment(sheetName)}.cells.A3.value`, value: 'dot' },
+			{ path: ['sheets', sheetName, 'cells', 'A4', 'value'], value: 'array' },
+			{
+				path: `tables.${dotSegment(tableName)}.columns.${dotSegment(columnName)}.formula`,
+				value: 'SUM([Region])',
+			},
+			{
+				path: ['tables', tableName, 'columns', columnName, 'name'],
+				value: 'Net_Δ',
+			},
+		]
+		const canonicalOps = [
 			{
 				op: 'setCells',
 				sheet: sheetName,
@@ -415,10 +407,66 @@ describe('Ascend API server', () => {
 				op: 'setTableColumn',
 				table: tableName,
 				column: columnName,
-				formula: 'SUM([Gross Profit/Δ~])',
+				formula: 'SUM([Region])',
 			},
 			{ op: 'setTableColumn', table: tableName, column: columnName, newName: 'Net_Δ' },
-		])
+		]
+
+		const preview = await postJson('/preview', { file: TEMP_FILE, mutations })
+		expect(preview.status).toBe(200)
+		expect(preview.body.ok).toBe(true)
+		expect(preview.body.data?.pathMutations?.replayable).toBe(true)
+		expect(preview.body.data?.pathMutations?.ops).toEqual(canonicalOps)
+
+		const plan = await postJson('/plan', { file: TEMP_FILE, mutations })
+		expect(plan.status).toBe(200)
+		expect(plan.body.ok).toBe(true)
+		expect(plan.body.data?.pathMutations?.ops).toEqual(canonicalOps)
+		const approvalIds = plan.body.data?.approvals?.map((approval) => approval.id) ?? []
+
+		const writePath = `${TEMP_FILE}.escaped-write.xlsx`
+		const commitInput = `${TEMP_FILE}.escaped-commit-input.xlsx`
+		const commitOutput = `${OUTPUT_FILE}.escaped-commit-output.xlsx`
+		try {
+			await wb.save(writePath)
+			const write = await postJson('/write', { file: writePath, mutations })
+			expect(write.status).toBe(200)
+			expect(write.body.ok).toBe(true)
+			expect(write.body.data?.pathMutations?.ops).toEqual(canonicalOps)
+			const writeReopened = await AscendWorkbook.open(writePath)
+			expect(writeReopened.sheet(sheetName)?.cell('A3')?.value).toEqual({
+				kind: 'string',
+				value: 'dot',
+			})
+			expect(writeReopened.sheet(sheetName)?.cell('A4')?.value).toEqual({
+				kind: 'string',
+				value: 'array',
+			})
+
+			await wb.save(commitInput)
+			const commit = await postJson('/commit', {
+				file: commitInput,
+				output: commitOutput,
+				mutations,
+				approvals: approvalIds,
+			})
+			expect(commit.status).toBe(200)
+			expect(commit.body.ok).toBe(true)
+			expect(commit.body.data?.pathMutations?.ops).toEqual(canonicalOps)
+			const commitReopened = await AscendWorkbook.open(commitOutput)
+			expect(commitReopened.sheet(sheetName)?.cell('A3')?.value).toEqual({
+				kind: 'string',
+				value: 'dot',
+			})
+			expect(commitReopened.sheet(sheetName)?.cell('A4')?.value).toEqual({
+				kind: 'string',
+				value: 'array',
+			})
+		} finally {
+			await unlink(writePath).catch(() => {})
+			await unlink(commitInput).catch(() => {})
+			await unlink(commitOutput).catch(() => {})
+		}
 	})
 
 	test('plan reports path mutation compiler errors as structured repair details', async () => {

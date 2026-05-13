@@ -1102,6 +1102,20 @@ const scenarios: readonly Scenario[] = [
 		},
 	},
 	{
+		name: 'recalc-dense-rectangle-aggregation',
+		category: 'calc',
+		build() {
+			const workbook = buildDenseWorkbook(5000, 20)
+			const sheet = workbook.sheets[0]
+			if (!sheet) throw new Error('Benchmark workbook missing first sheet')
+			sheet.cells.set(0, 20, { value: EMPTY, formula: 'SUM(A1:T5000)', styleId: SID })
+			return { workbook, rows: 5000, cols: 21, cells: 100_001 }
+		},
+		run(input) {
+			recalculate(requireWorkbook(input), defaultCalcContext())
+		},
+	},
+	{
 		name: 'recalc-lookup-exact-large',
 		category: 'calc',
 		build() {

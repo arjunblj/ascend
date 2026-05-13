@@ -939,7 +939,8 @@ export function aggregateNumericRange(
 	const cells = sheet?.cells
 	if (!cells) return { sum: 0, count: 0, min: Infinity, max: -Infinity, error: null }
 	const maxCells = Math.max(0, endRow - startRow + 1) * Math.max(0, endCol - startCol + 1)
-	if (maxCells >= 4096 && cells.cellCount() * 4 < maxCells) {
+	const width = Math.max(0, endCol - startCol + 1)
+	if (maxCells >= 4096 && (width >= 2 || cells.cellCount() * 4 < maxCells)) {
 		const result = cells.aggregateNumericInRange(startRow, startCol, endRow, endCol)
 		return {
 			sum: result.sum,

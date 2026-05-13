@@ -32,13 +32,21 @@ describe('agent first-window benchmark', () => {
 		const payload = JSON.parse(stdout) as {
 			readonly summary?: {
 				readonly fullOpenWindowMedianMs?: number
+				readonly fullWarmOpenWindowMedianMs?: number
 				readonly cappedOpenWindowMedianMs?: number
+				readonly cappedWarmOpenWindowMedianMs?: number
 				readonly apiFirstWindowMedianMs?: number
+				readonly apiWarmFirstWindowMedianMs?: number
 				readonly mcpFirstWindowMedianMs?: number
+				readonly mcpWarmFirstWindowMedianMs?: number
 				readonly tuiFirstPaintMedianMs?: number
+				readonly tuiWarmFirstPaintMedianMs?: number
 				readonly tuiOpenMedianMs?: number
+				readonly tuiWarmOpenMedianMs?: number
 				readonly tuiRenderMedianMs?: number
+				readonly tuiWarmRenderMedianMs?: number
 				readonly tuiHydrateMedianMs?: number
+				readonly tuiWarmHydrateMedianMs?: number
 				readonly fullRssDeltaMbMedian?: number
 				readonly fullRetainedRssDeltaMbMedian?: number
 				readonly cappedRssDeltaMbMedian?: number
@@ -55,20 +63,35 @@ describe('agent first-window benchmark', () => {
 				readonly cappedHydratedCellsMedian?: number
 				readonly tuiHydratedCellsMedian?: number
 				readonly fullOpenCallsMedian?: number
+				readonly fullWarmOpenCallsMedian?: number
 				readonly fullHydratedOpenCountMedian?: number
+				readonly fullWarmHydratedOpenCountMedian?: number
 				readonly fullDocumentCacheHitsMedian?: number
+				readonly fullWarmDocumentCacheHitsMedian?: number
 				readonly cappedOpenCallsMedian?: number
+				readonly cappedWarmOpenCallsMedian?: number
 				readonly cappedHydratedOpenCountMedian?: number
+				readonly cappedWarmHydratedOpenCountMedian?: number
 				readonly cappedDocumentCacheHitsMedian?: number
+				readonly cappedWarmDocumentCacheHitsMedian?: number
 				readonly apiOpenCallsMedian?: number
+				readonly apiWarmOpenCallsMedian?: number
 				readonly apiHydratedOpenCountMedian?: number
+				readonly apiWarmHydratedOpenCountMedian?: number
 				readonly apiDocumentCacheHitsMedian?: number
+				readonly apiWarmDocumentCacheHitsMedian?: number
 				readonly mcpOpenCallsMedian?: number
+				readonly mcpWarmOpenCallsMedian?: number
 				readonly mcpHydratedOpenCountMedian?: number
+				readonly mcpWarmHydratedOpenCountMedian?: number
 				readonly mcpDocumentCacheHitsMedian?: number
+				readonly mcpWarmDocumentCacheHitsMedian?: number
 				readonly tuiOpenCallsMedian?: number
+				readonly tuiWarmOpenCallsMedian?: number
 				readonly tuiHydratedOpenCountMedian?: number
+				readonly tuiWarmHydratedOpenCountMedian?: number
 				readonly tuiDocumentCacheHitsMedian?: number
+				readonly tuiWarmDocumentCacheHitsMedian?: number
 				readonly apiPartial?: boolean
 				readonly mcpPartial?: boolean
 				readonly tuiPartial?: boolean
@@ -77,13 +100,21 @@ describe('agent first-window benchmark', () => {
 			}
 		}
 		expect(payload.summary?.fullOpenWindowMedianMs).toBeNumber()
+		expect(payload.summary?.fullWarmOpenWindowMedianMs).toBeNumber()
 		expect(payload.summary?.cappedOpenWindowMedianMs).toBeNumber()
+		expect(payload.summary?.cappedWarmOpenWindowMedianMs).toBeNumber()
 		expect(payload.summary?.apiFirstWindowMedianMs).toBeNumber()
+		expect(payload.summary?.apiWarmFirstWindowMedianMs).toBeNumber()
 		expect(payload.summary?.mcpFirstWindowMedianMs).toBeNumber()
+		expect(payload.summary?.mcpWarmFirstWindowMedianMs).toBeNumber()
 		expect(payload.summary?.tuiFirstPaintMedianMs).toBeNumber()
+		expect(payload.summary?.tuiWarmFirstPaintMedianMs).toBeNumber()
 		expect(payload.summary?.tuiOpenMedianMs).toBeNumber()
+		expect(payload.summary?.tuiWarmOpenMedianMs).toBeNumber()
 		expect(payload.summary?.tuiRenderMedianMs).toBeNumber()
+		expect(payload.summary?.tuiWarmRenderMedianMs).toBeNumber()
 		expect(payload.summary?.tuiHydrateMedianMs).toBeNumber()
+		expect(payload.summary?.tuiWarmHydrateMedianMs).toBeNumber()
 		expect(payload.summary?.fullRssDeltaMbMedian).toBeNumber()
 		expect(payload.summary?.fullRetainedRssDeltaMbMedian).toBeNumber()
 		expect(payload.summary?.cappedRssDeltaMbMedian).toBeNumber()
@@ -100,20 +131,35 @@ describe('agent first-window benchmark', () => {
 		expect(payload.summary?.cappedHydratedCellsMedian).toBe(500 * 8)
 		expect(payload.summary?.tuiHydratedCellsMedian).toBe(500 * 8)
 		expect(payload.summary?.fullOpenCallsMedian).toBe(1)
+		expect(payload.summary?.fullWarmOpenCallsMedian).toBe(1)
 		expect(payload.summary?.fullHydratedOpenCountMedian).toBe(1)
+		expect(payload.summary?.fullWarmHydratedOpenCountMedian).toBe(0)
 		expect(payload.summary?.fullDocumentCacheHitsMedian).toBe(0)
+		expect(payload.summary?.fullWarmDocumentCacheHitsMedian).toBe(1)
 		expect(payload.summary?.cappedOpenCallsMedian).toBe(1)
+		expect(payload.summary?.cappedWarmOpenCallsMedian).toBe(1)
 		expect(payload.summary?.cappedHydratedOpenCountMedian).toBe(1)
+		expect(payload.summary?.cappedWarmHydratedOpenCountMedian).toBe(0)
 		expect(payload.summary?.cappedDocumentCacheHitsMedian).toBe(0)
+		expect(payload.summary?.cappedWarmDocumentCacheHitsMedian).toBe(1)
 		expect(payload.summary?.apiOpenCallsMedian).toBe(1)
+		expect(payload.summary?.apiWarmOpenCallsMedian).toBe(1)
 		expect(payload.summary?.apiHydratedOpenCountMedian).toBe(1)
+		expect(payload.summary?.apiWarmHydratedOpenCountMedian).toBe(0)
 		expect(payload.summary?.apiDocumentCacheHitsMedian).toBe(0)
+		expect(payload.summary?.apiWarmDocumentCacheHitsMedian).toBe(1)
 		expect(payload.summary?.mcpOpenCallsMedian).toBe(1)
+		expect(payload.summary?.mcpWarmOpenCallsMedian).toBe(1)
 		expect(payload.summary?.mcpHydratedOpenCountMedian).toBe(1)
+		expect(payload.summary?.mcpWarmHydratedOpenCountMedian).toBe(0)
 		expect(payload.summary?.mcpDocumentCacheHitsMedian).toBe(0)
+		expect(payload.summary?.mcpWarmDocumentCacheHitsMedian).toBe(1)
 		expect(payload.summary?.tuiOpenCallsMedian).toBe(1)
+		expect(payload.summary?.tuiWarmOpenCallsMedian).toBe(1)
 		expect(payload.summary?.tuiHydratedOpenCountMedian).toBe(1)
+		expect(payload.summary?.tuiWarmHydratedOpenCountMedian).toBe(1)
 		expect(payload.summary?.tuiDocumentCacheHitsMedian).toBe(0)
+		expect(payload.summary?.tuiWarmDocumentCacheHitsMedian).toBe(0)
 		expect(payload.summary?.apiPartial).toBe(true)
 		expect(payload.summary?.mcpPartial).toBe(true)
 		expect(payload.summary?.tuiPartial).toBe(true)

@@ -30,13 +30,21 @@ interface BenchmarkInput {
 
 interface Sample {
 	readonly fullOpenWindowMs?: number
+	readonly fullWarmOpenWindowMs?: number
 	readonly cappedOpenWindowMs?: number
+	readonly cappedWarmOpenWindowMs?: number
 	readonly apiFirstWindowMs?: number
+	readonly apiWarmFirstWindowMs?: number
 	readonly mcpFirstWindowMs?: number
+	readonly mcpWarmFirstWindowMs?: number
 	readonly tuiFirstPaintMs?: number
+	readonly tuiWarmFirstPaintMs?: number
 	readonly tuiOpenMs?: number
+	readonly tuiWarmOpenMs?: number
 	readonly tuiRenderMs?: number
+	readonly tuiWarmRenderMs?: number
 	readonly tuiHydrateMs?: number
+	readonly tuiWarmHydrateMs?: number
 	readonly cells: number
 	readonly payloadBytes?: number
 	readonly mcpPayloadBytes?: number
@@ -58,20 +66,35 @@ interface Sample {
 	readonly mcpPartial?: boolean
 	readonly tuiPartial?: boolean
 	readonly fullOpenCalls?: number
+	readonly fullWarmOpenCalls?: number
 	readonly fullHydratedOpenCount?: number
+	readonly fullWarmHydratedOpenCount?: number
 	readonly fullDocumentCacheHits?: number
+	readonly fullWarmDocumentCacheHits?: number
 	readonly cappedOpenCalls?: number
+	readonly cappedWarmOpenCalls?: number
 	readonly cappedHydratedOpenCount?: number
+	readonly cappedWarmHydratedOpenCount?: number
 	readonly cappedDocumentCacheHits?: number
+	readonly cappedWarmDocumentCacheHits?: number
 	readonly apiOpenCalls?: number
+	readonly apiWarmOpenCalls?: number
 	readonly apiHydratedOpenCount?: number
+	readonly apiWarmHydratedOpenCount?: number
 	readonly apiDocumentCacheHits?: number
+	readonly apiWarmDocumentCacheHits?: number
 	readonly mcpOpenCalls?: number
+	readonly mcpWarmOpenCalls?: number
 	readonly mcpHydratedOpenCount?: number
+	readonly mcpWarmHydratedOpenCount?: number
 	readonly mcpDocumentCacheHits?: number
+	readonly mcpWarmDocumentCacheHits?: number
 	readonly tuiOpenCalls?: number
+	readonly tuiWarmOpenCalls?: number
 	readonly tuiHydratedOpenCount?: number
+	readonly tuiWarmHydratedOpenCount?: number
 	readonly tuiDocumentCacheHits?: number
+	readonly tuiWarmDocumentCacheHits?: number
 }
 
 interface OpenStats {
@@ -219,6 +242,7 @@ async function runFullOpenWindow(
 	sheetName: string | undefined,
 	range: string,
 	rowLimit: number,
+	clearCache = true,
 ): Promise<
 	Pick<
 		Sample,
@@ -232,7 +256,7 @@ async function runFullOpenWindow(
 		| 'fullDocumentCacheHits'
 	>
 > {
-	WorkbookDocument.clearCache()
+	if (clearCache) WorkbookDocument.clearCache()
 	runGc()
 	const rssBefore = rssMb()
 	const beforeOpenStats = snapshotOpenStats()
@@ -269,6 +293,7 @@ async function runCappedOpenWindow(
 	sheet: string | undefined,
 	range: string,
 	rowLimit: number,
+	clearCache = true,
 ): Promise<
 	Pick<
 		Sample,
@@ -282,7 +307,7 @@ async function runCappedOpenWindow(
 		| 'cappedDocumentCacheHits'
 	>
 > {
-	WorkbookDocument.clearCache()
+	if (clearCache) WorkbookDocument.clearCache()
 	runGc()
 	const rssBefore = rssMb()
 	const beforeOpenStats = snapshotOpenStats()
@@ -315,6 +340,7 @@ async function runApiFirstWindow(
 	sheet: string | undefined,
 	range: string,
 	rowLimit: number,
+	clearCache = true,
 ): Promise<
 	Pick<
 		Sample,
@@ -329,7 +355,7 @@ async function runApiFirstWindow(
 		| 'apiDocumentCacheHits'
 	>
 > {
-	WorkbookDocument.clearCache()
+	if (clearCache) WorkbookDocument.clearCache()
 	runGc()
 	const rssBefore = rssMb()
 	const beforeOpenStats = snapshotOpenStats()
@@ -404,6 +430,7 @@ async function runMcpFirstWindow(
 	sheet: string | undefined,
 	range: string,
 	rowLimit: number,
+	clearCache = true,
 ): Promise<
 	Pick<
 		Sample,
@@ -418,7 +445,7 @@ async function runMcpFirstWindow(
 		| 'mcpDocumentCacheHits'
 	>
 > {
-	WorkbookDocument.clearCache()
+	if (clearCache) WorkbookDocument.clearCache()
 	runGc()
 	const rssBefore = rssMb()
 	const beforeOpenStats = snapshotOpenStats()
@@ -463,6 +490,7 @@ async function runTuiFirstPaint(
 	path: string,
 	sheet: string | undefined,
 	rowLimit: number,
+	clearCache = true,
 ): Promise<
 	Pick<
 		Sample,
@@ -480,7 +508,7 @@ async function runTuiFirstPaint(
 		| 'tuiDocumentCacheHits'
 	>
 > {
-	WorkbookDocument.clearCache()
+	if (clearCache) WorkbookDocument.clearCache()
 	runGc()
 	const rssBefore = rssMb()
 	const beforeOpenStats = snapshotOpenStats()
@@ -562,21 +590,44 @@ async function resolveBenchmarkInput(args: Args): Promise<BenchmarkInput> {
 
 function summarize(samples: readonly Sample[]) {
 	const fullOpenWindowMedianMs = medianOptional(samples.map((sample) => sample.fullOpenWindowMs))
+	const fullWarmOpenWindowMedianMs = medianOptional(
+		samples.map((sample) => sample.fullWarmOpenWindowMs),
+	)
 	const cappedOpenWindowMedianMs = medianOptional(
 		samples.map((sample) => sample.cappedOpenWindowMs),
 	)
+	const cappedWarmOpenWindowMedianMs = medianOptional(
+		samples.map((sample) => sample.cappedWarmOpenWindowMs),
+	)
 	const apiFirstWindowMedianMs = medianOptional(samples.map((sample) => sample.apiFirstWindowMs))
+	const apiWarmFirstWindowMedianMs = medianOptional(
+		samples.map((sample) => sample.apiWarmFirstWindowMs),
+	)
 	const mcpFirstWindowMedianMs = medianOptional(samples.map((sample) => sample.mcpFirstWindowMs))
+	const mcpWarmFirstWindowMedianMs = medianOptional(
+		samples.map((sample) => sample.mcpWarmFirstWindowMs),
+	)
 	const tuiFirstPaintMedianMs = medianOptional(samples.map((sample) => sample.tuiFirstPaintMs))
+	const tuiWarmFirstPaintMedianMs = medianOptional(
+		samples.map((sample) => sample.tuiWarmFirstPaintMs),
+	)
 	return {
 		fullOpenWindowMedianMs,
+		fullWarmOpenWindowMedianMs,
 		cappedOpenWindowMedianMs,
+		cappedWarmOpenWindowMedianMs,
 		apiFirstWindowMedianMs,
+		apiWarmFirstWindowMedianMs,
 		mcpFirstWindowMedianMs,
+		mcpWarmFirstWindowMedianMs,
 		tuiFirstPaintMedianMs,
+		tuiWarmFirstPaintMedianMs,
 		tuiOpenMedianMs: medianOptional(samples.map((sample) => sample.tuiOpenMs)),
+		tuiWarmOpenMedianMs: medianOptional(samples.map((sample) => sample.tuiWarmOpenMs)),
 		tuiRenderMedianMs: medianOptional(samples.map((sample) => sample.tuiRenderMs)),
+		tuiWarmRenderMedianMs: medianOptional(samples.map((sample) => sample.tuiWarmRenderMs)),
 		tuiHydrateMedianMs: medianOptional(samples.map((sample) => sample.tuiHydrateMs)),
+		tuiWarmHydrateMedianMs: medianOptional(samples.map((sample) => sample.tuiWarmHydrateMs)),
 		fullRssDeltaMbMedian: medianOptional(samples.map((sample) => sample.fullRssDeltaMb)),
 		fullRetainedRssDeltaMbMedian: medianOptional(
 			samples.map((sample) => sample.fullRetainedRssDeltaMb),
@@ -600,6 +651,21 @@ function summarize(samples: readonly Sample[]) {
 		...(fullOpenWindowMedianMs !== undefined && cappedOpenWindowMedianMs !== undefined
 			? { cappedSpeedupVsFull: fullOpenWindowMedianMs / cappedOpenWindowMedianMs }
 			: {}),
+		...(fullOpenWindowMedianMs !== undefined && fullWarmOpenWindowMedianMs !== undefined
+			? { fullWarmSpeedupVsCold: fullOpenWindowMedianMs / fullWarmOpenWindowMedianMs }
+			: {}),
+		...(cappedOpenWindowMedianMs !== undefined && cappedWarmOpenWindowMedianMs !== undefined
+			? { cappedWarmSpeedupVsCold: cappedOpenWindowMedianMs / cappedWarmOpenWindowMedianMs }
+			: {}),
+		...(apiFirstWindowMedianMs !== undefined && apiWarmFirstWindowMedianMs !== undefined
+			? { apiWarmSpeedupVsCold: apiFirstWindowMedianMs / apiWarmFirstWindowMedianMs }
+			: {}),
+		...(mcpFirstWindowMedianMs !== undefined && mcpWarmFirstWindowMedianMs !== undefined
+			? { mcpWarmSpeedupVsCold: mcpFirstWindowMedianMs / mcpWarmFirstWindowMedianMs }
+			: {}),
+		...(tuiFirstPaintMedianMs !== undefined && tuiWarmFirstPaintMedianMs !== undefined
+			? { tuiWarmSpeedupVsCold: tuiFirstPaintMedianMs / tuiWarmFirstPaintMedianMs }
+			: {}),
 		...(fullOpenWindowMedianMs !== undefined && apiFirstWindowMedianMs !== undefined
 			? { apiSpeedupVsFull: fullOpenWindowMedianMs / apiFirstWindowMedianMs }
 			: {}),
@@ -617,39 +683,74 @@ function summarize(samples: readonly Sample[]) {
 		cappedHydratedCellsMedian: medianOptional(samples.map((sample) => sample.cappedHydratedCells)),
 		tuiHydratedCellsMedian: medianOptional(samples.map((sample) => sample.tuiHydratedCells)),
 		fullOpenCallsMedian: medianOptional(samples.map((sample) => sample.fullOpenCalls)),
+		fullWarmOpenCallsMedian: medianOptional(samples.map((sample) => sample.fullWarmOpenCalls)),
 		fullHydratedOpenCountMedian: medianOptional(
 			samples.map((sample) => sample.fullHydratedOpenCount),
+		),
+		fullWarmHydratedOpenCountMedian: medianOptional(
+			samples.map((sample) => sample.fullWarmHydratedOpenCount),
 		),
 		fullDocumentCacheHitsMedian: medianOptional(
 			samples.map((sample) => sample.fullDocumentCacheHits),
 		),
+		fullWarmDocumentCacheHitsMedian: medianOptional(
+			samples.map((sample) => sample.fullWarmDocumentCacheHits),
+		),
 		cappedOpenCallsMedian: medianOptional(samples.map((sample) => sample.cappedOpenCalls)),
+		cappedWarmOpenCallsMedian: medianOptional(samples.map((sample) => sample.cappedWarmOpenCalls)),
 		cappedHydratedOpenCountMedian: medianOptional(
 			samples.map((sample) => sample.cappedHydratedOpenCount),
+		),
+		cappedWarmHydratedOpenCountMedian: medianOptional(
+			samples.map((sample) => sample.cappedWarmHydratedOpenCount),
 		),
 		cappedDocumentCacheHitsMedian: medianOptional(
 			samples.map((sample) => sample.cappedDocumentCacheHits),
 		),
+		cappedWarmDocumentCacheHitsMedian: medianOptional(
+			samples.map((sample) => sample.cappedWarmDocumentCacheHits),
+		),
 		apiOpenCallsMedian: medianOptional(samples.map((sample) => sample.apiOpenCalls)),
+		apiWarmOpenCallsMedian: medianOptional(samples.map((sample) => sample.apiWarmOpenCalls)),
 		apiHydratedOpenCountMedian: medianOptional(
 			samples.map((sample) => sample.apiHydratedOpenCount),
+		),
+		apiWarmHydratedOpenCountMedian: medianOptional(
+			samples.map((sample) => sample.apiWarmHydratedOpenCount),
 		),
 		apiDocumentCacheHitsMedian: medianOptional(
 			samples.map((sample) => sample.apiDocumentCacheHits),
 		),
+		apiWarmDocumentCacheHitsMedian: medianOptional(
+			samples.map((sample) => sample.apiWarmDocumentCacheHits),
+		),
 		mcpOpenCallsMedian: medianOptional(samples.map((sample) => sample.mcpOpenCalls)),
+		mcpWarmOpenCallsMedian: medianOptional(samples.map((sample) => sample.mcpWarmOpenCalls)),
 		mcpHydratedOpenCountMedian: medianOptional(
 			samples.map((sample) => sample.mcpHydratedOpenCount),
+		),
+		mcpWarmHydratedOpenCountMedian: medianOptional(
+			samples.map((sample) => sample.mcpWarmHydratedOpenCount),
 		),
 		mcpDocumentCacheHitsMedian: medianOptional(
 			samples.map((sample) => sample.mcpDocumentCacheHits),
 		),
+		mcpWarmDocumentCacheHitsMedian: medianOptional(
+			samples.map((sample) => sample.mcpWarmDocumentCacheHits),
+		),
 		tuiOpenCallsMedian: medianOptional(samples.map((sample) => sample.tuiOpenCalls)),
+		tuiWarmOpenCallsMedian: medianOptional(samples.map((sample) => sample.tuiWarmOpenCalls)),
 		tuiHydratedOpenCountMedian: medianOptional(
 			samples.map((sample) => sample.tuiHydratedOpenCount),
 		),
+		tuiWarmHydratedOpenCountMedian: medianOptional(
+			samples.map((sample) => sample.tuiWarmHydratedOpenCount),
+		),
 		tuiDocumentCacheHitsMedian: medianOptional(
 			samples.map((sample) => sample.tuiDocumentCacheHits),
+		),
+		tuiWarmDocumentCacheHitsMedian: medianOptional(
+			samples.map((sample) => sample.tuiWarmDocumentCacheHits),
 		),
 		apiPartial: samples.some((sample) => sample.apiPartial === true),
 		mcpPartial: samples.some((sample) => sample.mcpPartial === true),
@@ -664,24 +765,88 @@ async function run() {
 	try {
 		for (let i = 0; i < args.warmup; i++) {
 			await runFullOpenWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit)
+			await runFullOpenWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit, false)
 			await runCappedOpenWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit)
+			await runCappedOpenWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit, false)
 			await runApiFirstWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit)
+			await runApiFirstWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit, false)
 			await runMcpFirstWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit)
+			await runMcpFirstWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit, false)
 			await runTuiFirstPaint(data.xlsxPath, data.sheet, args.rowLimit)
+			await runTuiFirstPaint(data.xlsxPath, data.sheet, args.rowLimit, false)
 			runGc()
 		}
 		for (let i = 0; i < args.repeat; i++) {
 			const full = await runFullOpenWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit)
+			const fullWarm = await runFullOpenWindow(
+				data.xlsxPath,
+				data.sheet,
+				data.range,
+				args.rowLimit,
+				false,
+			)
 			runGc()
 			const capped = await runCappedOpenWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit)
+			const cappedWarm = await runCappedOpenWindow(
+				data.xlsxPath,
+				data.sheet,
+				data.range,
+				args.rowLimit,
+				false,
+			)
 			runGc()
 			const api = await runApiFirstWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit)
+			const apiWarm = await runApiFirstWindow(
+				data.xlsxPath,
+				data.sheet,
+				data.range,
+				args.rowLimit,
+				false,
+			)
 			runGc()
 			const mcp = await runMcpFirstWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit)
+			const mcpWarm = await runMcpFirstWindow(
+				data.xlsxPath,
+				data.sheet,
+				data.range,
+				args.rowLimit,
+				false,
+			)
 			runGc()
 			const tui = await runTuiFirstPaint(data.xlsxPath, data.sheet, args.rowLimit)
+			const tuiWarm = await runTuiFirstPaint(data.xlsxPath, data.sheet, args.rowLimit, false)
 			runGc()
-			samples.push({ ...full, ...capped, ...api, ...mcp, ...tui, cells: mcp.cells })
+			samples.push({
+				...full,
+				...capped,
+				...api,
+				...mcp,
+				...tui,
+				fullWarmOpenWindowMs: fullWarm.fullOpenWindowMs,
+				fullWarmOpenCalls: fullWarm.fullOpenCalls,
+				fullWarmHydratedOpenCount: fullWarm.fullHydratedOpenCount,
+				fullWarmDocumentCacheHits: fullWarm.fullDocumentCacheHits,
+				cappedWarmOpenWindowMs: cappedWarm.cappedOpenWindowMs,
+				cappedWarmOpenCalls: cappedWarm.cappedOpenCalls,
+				cappedWarmHydratedOpenCount: cappedWarm.cappedHydratedOpenCount,
+				cappedWarmDocumentCacheHits: cappedWarm.cappedDocumentCacheHits,
+				apiWarmFirstWindowMs: apiWarm.apiFirstWindowMs,
+				apiWarmOpenCalls: apiWarm.apiOpenCalls,
+				apiWarmHydratedOpenCount: apiWarm.apiHydratedOpenCount,
+				apiWarmDocumentCacheHits: apiWarm.apiDocumentCacheHits,
+				mcpWarmFirstWindowMs: mcpWarm.mcpFirstWindowMs,
+				mcpWarmOpenCalls: mcpWarm.mcpOpenCalls,
+				mcpWarmHydratedOpenCount: mcpWarm.mcpHydratedOpenCount,
+				mcpWarmDocumentCacheHits: mcpWarm.mcpDocumentCacheHits,
+				tuiWarmFirstPaintMs: tuiWarm.tuiFirstPaintMs,
+				tuiWarmOpenMs: tuiWarm.tuiOpenMs,
+				tuiWarmRenderMs: tuiWarm.tuiRenderMs,
+				tuiWarmHydrateMs: tuiWarm.tuiHydrateMs,
+				tuiWarmOpenCalls: tuiWarm.tuiOpenCalls,
+				tuiWarmHydratedOpenCount: tuiWarm.tuiHydratedOpenCount,
+				tuiWarmDocumentCacheHits: tuiWarm.tuiDocumentCacheHits,
+				cells: mcp.cells,
+			})
 		}
 		const payload = {
 			tool: 'agent-first-window',

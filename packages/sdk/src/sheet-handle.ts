@@ -565,19 +565,17 @@ function collectCellsCompact(
 	opts?: { includeRefs?: boolean },
 ): CompactCellInfo[] {
 	const cells: CompactCellInfo[] = []
-	for (const [row, rowCells] of sheet.cells.iterateRowsInRange(range)) {
-		for (const [col, cell] of rowCells) {
-			cells.push(
-				makeCompactCellInfo(
-					row,
-					col,
-					cell,
-					resolveFormula(row, col, cell),
-					opts?.includeRefs === false ? undefined : toA1({ row, col }),
-				),
-			)
-		}
-	}
+	sheet.cells.forEachCellInRange(range, (row, col, cell) => {
+		cells.push(
+			makeCompactCellInfo(
+				row,
+				col,
+				cell,
+				resolveFormula(row, col, cell),
+				opts?.includeRefs === false ? undefined : toA1({ row, col }),
+			),
+		)
+	})
 	return cells
 }
 

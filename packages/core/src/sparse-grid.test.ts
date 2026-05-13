@@ -432,6 +432,31 @@ describe('SparseGrid', () => {
 		])
 	})
 
+	test('forEachCellInRange visits populated cells in row-major order without row arrays', () => {
+		const grid = new SparseGrid()
+		grid.set(0, 0, makeCell(numberValue(1)))
+		grid.set(0, 5, makeCell(numberValue(2)))
+		grid.set(3, 1, makeCell(numberValue(3)))
+		grid.set(4, 2, makeCell(numberValue(4)))
+		grid.set(33, 1, makeCell(numberValue(5)))
+
+		const visited: Array<readonly [number, number, Cell]> = []
+		grid.forEachCellInRange(
+			{
+				start: { row: 0, col: 1 },
+				end: { row: 33, col: 5 },
+			},
+			(row, col, cell) => visited.push([row, col, cell] as const),
+		)
+
+		expect(visited).toEqual([
+			[0, 5, makeCell(numberValue(2))],
+			[3, 1, makeCell(numberValue(3))],
+			[4, 2, makeCell(numberValue(4))],
+			[33, 1, makeCell(numberValue(5))],
+		])
+	})
+
 	test('clear removes all cells', () => {
 		const grid = new SparseGrid()
 		grid.set(0, 0, makeCell(numberValue(1)))

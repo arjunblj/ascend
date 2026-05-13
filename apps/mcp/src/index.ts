@@ -153,11 +153,6 @@ function withPathMutationResult<T extends object>(
 	return compiled ? { ...result, pathMutations: compiled } : result
 }
 
-async function hashInputFile(file: string): Promise<string> {
-	const bytes = await Bun.file(file).bytes()
-	return sha256Bytes(bytes)
-}
-
 export function createServer(): McpServer {
 	const server = new McpServer({
 		name: 'ascend',
@@ -1130,8 +1125,9 @@ export function createServer(): McpServer {
 				let pathMutations: PathMutationResult | undefined
 				let result: Awaited<ReturnType<typeof createAgentPlan>> | null
 				if ('mutations' in inputShape) {
-					const inputSha256 = await hashInputFile(file)
-					const wb = await Ascend.open(file)
+					const opened = await AscendWorkbook.openSourceBytes(file)
+					const inputSha256 = sha256Bytes(opened.sourceBytes)
+					const wb = opened.workbook
 					input = compilePathMutationInput(wb, inputShape.mutations)
 					if (input.ok) pathMutations = input.pathMutations
 					result = input.ok
@@ -1223,12 +1219,15 @@ export function createServer(): McpServer {
 				let pathMutations: PathMutationResult | undefined
 				let result: Awaited<ReturnType<typeof commitAgentPlan>>
 				if ('mutations' in inputShape) {
-					const inputSha256 = await hashInputFile(file)
-					const wb = await Ascend.open(file)
+					const opened = await AscendWorkbook.openSourceBytes(file)
+					const inputSha256 = sha256Bytes(opened.sourceBytes)
+					const wb = opened.workbook
 					input = compilePathMutationInput(wb, inputShape.mutations)
 					if (!input.ok) return errorResponse(input.error)
 					pathMutations = input.pathMutations
-					result = await commitAgentPlanFromWorkbook(file, inputSha256, wb, input.ops, options)
+					result = await commitAgentPlanFromWorkbook(file, inputSha256, wb, input.ops, options, {
+						sourceBytes: opened.sourceBytes,
+					})
 				} else {
 					input = inputShape
 					result = await commitAgentPlan(file, input.ops, options)

@@ -331,10 +331,11 @@ export async function createAgentPlan(
 ): Promise<AgentPlanResult> {
 	const progress = createProgressEmitter('plan', options.onProgress)
 	await progress('hash-input', 'started', 'Hashing input workbook.')
-	const inputSha256 = await fileSha256(file)
+	const sourceBytes = await fileBytes(file)
+	const inputSha256 = sha256Bytes(sourceBytes)
 	await progress('hash-input', 'ok', 'Input workbook hash captured.')
 	await progress('load-workbook', 'started', 'Opening workbook.')
-	const wb = await AscendWorkbook.open(file)
+	const wb = await openWorkbookFromBytes(file, sourceBytes)
 	await progress('load-workbook', 'ok', 'Workbook opened.')
 	return createAgentPlanFromWorkbook(file, inputSha256, wb, ops, { progress })
 }
@@ -519,13 +520,18 @@ export async function commitAgentPlan(
 ): Promise<AgentCommitResult> {
 	const progress = createProgressEmitter('commit', options.onProgress)
 	await progress('hash-input', 'started', 'Hashing input workbook.')
-	const inputSha256 = await fileSha256(file)
+	const sourceBytes = await fileBytes(file)
+	const inputSha256 = sha256Bytes(sourceBytes)
 	await progress('hash-input', 'ok', 'Input workbook hash captured.')
 	const output = await resolveCommitOutputTarget(file, inputSha256, options, progress)
 	await progress('load-workbook', 'started', 'Opening workbook.')
-	const wb = await AscendWorkbook.open(file)
+	const wb = await openWorkbookFromBytes(file, sourceBytes)
 	await progress('load-workbook', 'ok', 'Workbook opened.')
-	return commitAgentPlanFromWorkbook(file, inputSha256, wb, ops, options, { progress, output })
+	return commitAgentPlanFromWorkbook(file, inputSha256, wb, ops, options, {
+		progress,
+		output,
+		sourceBytes,
+	})
 }
 
 export async function commitAgentPlanFromWorkbook(
@@ -537,6 +543,7 @@ export async function commitAgentPlanFromWorkbook(
 	internal: {
 		readonly progress?: ReturnType<typeof createProgressEmitter>
 		readonly output?: string
+		readonly sourceBytes?: Uint8Array
 	} = {},
 ): Promise<AgentCommitResult> {
 	const progress = internal.progress ?? createProgressEmitter('commit', options.onProgress)
@@ -625,18 +632,13 @@ export async function commitAgentPlanFromWorkbook(
 			}),
 		)
 	}
-	const sourceBytes = await readFile(file)
+	const sourceBytes = internal.sourceBytes ?? (await fileBytes(file))
 	await progress('write', 'started', `Writing workbook to ${output}.`)
 	await writeWorkbookAtomically(wb, output)
 	const outputSha256 = await fileSha256(output)
 	await progress('write', 'ok', `Workbook written to ${output}.`)
 	await progress('post-write', 'started', 'Reopening written workbook for verification.')
-	const postWrite = await verifyWrittenWorkbook(
-		output,
-		outputSha256,
-		packageGraph,
-		new Uint8Array(sourceBytes.buffer, sourceBytes.byteOffset, sourceBytes.byteLength),
-	)
+	const postWrite = await verifyWrittenWorkbook(output, outputSha256, packageGraph, sourceBytes)
 	await progressFromPhase(postWritePhase(postWrite, expectedPostWritePackageGraphChanges), progress)
 	await progress('check', 'started', 'Running structural checks.')
 	const check = wb.check()
@@ -893,8 +895,18 @@ export function sha256Bytes(bytes: Uint8Array): string {
 }
 
 async function fileSha256(file: string): Promise<string> {
+	return sha256Bytes(await fileBytes(file))
+}
+
+async function fileBytes(file: string): Promise<Uint8Array> {
+	if (typeof Bun !== 'undefined') return Bun.file(file).bytes()
 	const bytes = await readFile(file)
-	return sha256Bytes(new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength))
+	return new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+}
+
+async function openWorkbookFromBytes(file: string, bytes: Uint8Array): Promise<AscendWorkbook> {
+	const sourceExtension = extname(file).replace(/^\./, '').toLowerCase()
+	return AscendWorkbook.open(bytes, sourceExtension ? { sourceExtension } : undefined)
 }
 
 function sha256Text(text: string): string {

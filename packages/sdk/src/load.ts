@@ -21,19 +21,22 @@ export interface LoadedWorkbookSource {
 	readonly originalBytes: Uint8Array | null
 }
 
+export interface OpenWorkbookSourceOptions {
+	readonly mode?: 'full' | 'metadata-only' | 'values' | 'formula'
+	readonly sheets?: readonly string[]
+	readonly maxRows?: number
+	readonly richMetadata?: boolean
+	readonly password?: string
+	readonly pivotCacheRecordMaterializeLimit?: number | 'all'
+	readonly sourceExtension?: string
+}
+
 export async function openWorkbookSource(
 	pathOrBytes: string | Uint8Array,
-	options?: {
-		mode?: 'full' | 'metadata-only' | 'values' | 'formula'
-		sheets?: readonly string[]
-		maxRows?: number
-		richMetadata?: boolean
-		password?: string
-		pivotCacheRecordMaterializeLimit?: number | 'all'
-	},
+	options?: OpenWorkbookSourceOptions,
 ): Promise<LoadedWorkbookSource> {
 	let bytes: Uint8Array
-	let ext = ''
+	let ext = options?.sourceExtension?.replace(/^\./, '').toLowerCase() ?? ''
 
 	if (typeof pathOrBytes === 'string') {
 		ext = pathOrBytes.split('.').pop()?.toLowerCase() ?? ''

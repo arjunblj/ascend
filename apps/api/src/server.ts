@@ -245,11 +245,6 @@ function withPathMutationResult<T extends object>(
 	return compiled ? { ...result, pathMutations: compiled } : result
 }
 
-async function hashInputFile(file: string): Promise<string> {
-	const bytes = await Bun.file(file).bytes()
-	return sha256Bytes(bytes)
-}
-
 function parsePivotOutputMaterializeOptions(
 	body: Record<string, unknown> | null,
 ): PivotOutputMaterializeOptions | null {
@@ -752,8 +747,9 @@ export function createApiFetch() {
 					let pathMutations: PathMutationResult | undefined
 					let result: Awaited<ReturnType<typeof createAgentPlan>> | null
 					if ('mutations' in inputShape) {
-						const inputSha256 = await hashInputFile(file)
-						const wb = await AscendWorkbook.open(file)
+						const opened = await AscendWorkbook.openSourceBytes(file)
+						const inputSha256 = sha256Bytes(opened.sourceBytes)
+						const wb = opened.workbook
 						input = compilePathMutationInput(wb, inputShape.mutations)
 						if (input.ok) pathMutations = input.pathMutations
 						result = input.ok
@@ -821,12 +817,15 @@ export function createApiFetch() {
 					let pathMutations: PathMutationResult | undefined
 					let result: Awaited<ReturnType<typeof commitAgentPlan>>
 					if ('mutations' in inputShape) {
-						const inputSha256 = await hashInputFile(file)
-						const wb = await AscendWorkbook.open(file)
+						const opened = await AscendWorkbook.openSourceBytes(file)
+						const inputSha256 = sha256Bytes(opened.sourceBytes)
+						const wb = opened.workbook
 						input = compilePathMutationInput(wb, inputShape.mutations)
 						if (!input.ok) return jsonFailureError(input.error, 400)
 						pathMutations = input.pathMutations
-						result = await commitAgentPlanFromWorkbook(file, inputSha256, wb, input.ops, options)
+						result = await commitAgentPlanFromWorkbook(file, inputSha256, wb, input.ops, options, {
+							sourceBytes: opened.sourceBytes,
+						})
 					} else {
 						input = inputShape
 						result = await commitAgentPlan(file, input.ops, options)

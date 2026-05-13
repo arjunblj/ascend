@@ -1,4 +1,4 @@
-import { writeFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
 import {
 	createWorkbook,
 	indexToColumn,
@@ -51,7 +51,12 @@ import {
 	sdkCheckIssueFromVerify,
 } from './check-issues.ts'
 import { buildMutationJournal } from './journal.ts'
-import { buildWorkbookLoadInfo, openWorkbookSource } from './load.ts'
+import {
+	buildWorkbookLoadInfo,
+	type LoadedWorkbookSource,
+	type OpenWorkbookSourceOptions,
+	openWorkbookSource,
+} from './load.ts'
 import { getOperationsSchema, listOperations, parseOperations } from './ops.ts'
 import { compilePathMutations } from './path-mutations.ts'
 import { inspectRawPackagePart } from './raw-package.ts'
@@ -351,16 +356,26 @@ export class AscendWorkbook extends WorkbookReadView {
 	 */
 	static async open(
 		pathOrBytes: string | Uint8Array,
-		options?: {
-			mode?: 'full' | 'metadata-only' | 'values' | 'formula'
-			sheets?: readonly string[]
-			maxRows?: number
-			richMetadata?: boolean
-			password?: string
-			pivotCacheRecordMaterializeLimit?: number | 'all'
-		},
+		options?: OpenWorkbookSourceOptions,
 	): Promise<AscendWorkbook> {
 		const loaded = await openWorkbookSource(pathOrBytes, options)
+		return AscendWorkbook.fromLoadedSource(loaded)
+	}
+
+	static async openSourceBytes(
+		path: string,
+		options?: Omit<OpenWorkbookSourceOptions, 'sourceExtension'>,
+	): Promise<{ readonly workbook: AscendWorkbook; readonly sourceBytes: Uint8Array }> {
+		const sourceBytes =
+			typeof Bun !== 'undefined'
+				? await Bun.file(path).bytes()
+				: new Uint8Array(await readFile(path))
+		const sourceExtension = path.split('.').pop()?.toLowerCase() ?? ''
+		const loaded = await openWorkbookSource(sourceBytes, { ...options, sourceExtension })
+		return { workbook: AscendWorkbook.fromLoadedSource(loaded), sourceBytes }
+	}
+
+	private static fromLoadedSource(loaded: LoadedWorkbookSource): AscendWorkbook {
 		return new AscendWorkbook(
 			loaded.workbook,
 			[...loaded.capsules],

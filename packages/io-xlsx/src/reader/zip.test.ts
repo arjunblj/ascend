@@ -41,6 +41,18 @@ describe('extractZip', () => {
 		expect(concatBytes(chunks)).toEqual(expected)
 	})
 
+	test('can prefer streaming byte chunks without caching partial output', () => {
+		const text = 'alpha😀beta\n'.repeat(4096)
+		const expected = encode(text)
+		const archive = extractZip(createZip(new Map([['hello.txt', expected]])))
+		const iterator = archive.readByteChunks('hello.txt', 128, { preferStreaming: true })
+		const first = iterator.next()
+		expect(first.done).toBe(false)
+		expect(first.value.byteLength).toBeGreaterThan(0)
+		iterator.return?.()
+		expect(archive.readBytes('hello.txt')).toEqual(expected)
+	})
+
 	test('streams stored text chunks without changing decoded content', () => {
 		const text = 'x'
 		const archive = extractZip(createZip(new Map([['stored.txt', encode(text)]])))

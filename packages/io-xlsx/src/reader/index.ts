@@ -618,7 +618,7 @@ export function readXlsx(
 				let sheet = canUseStreamedMaxRowsParser
 					? parseSheetValuesOnlyByteChunks(
 							entry.name,
-							archive.readByteChunks(entry.path),
+							archive.readByteChunks(entry.path, 64 * 1024, { preferStreaming: true }),
 							sheetCtx,
 							resolvedSheetId,
 						)

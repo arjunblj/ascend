@@ -27,6 +27,10 @@ export interface ZipEntry {
 	readonly dataOffset: number
 }
 
+interface ReadChunksOptions {
+	readonly preferStreaming?: boolean
+}
+
 export class ZipArchive {
 	private readonly bytes: Uint8Array
 	private readonly entriesByPath: Map<string, ZipEntry>
@@ -130,7 +134,11 @@ export class ZipArchive {
 		}
 	}
 
-	*readByteChunks(path: string, chunkSize = STREAM_CHUNK_BYTES): IterableIterator<Uint8Array> {
+	*readByteChunks(
+		path: string,
+		chunkSize = STREAM_CHUNK_BYTES,
+		options: ReadChunksOptions = {},
+	): IterableIterator<Uint8Array> {
 		const entry = this.entriesByPath.get(path)
 		if (!entry) return
 		const compressed = this.bytes.subarray(
@@ -146,7 +154,11 @@ export class ZipArchive {
 		if (entry.compressionMethod !== 8) {
 			throw new Error(`Unsupported ZIP compression method ${entry.compressionMethod} for ${path}`)
 		}
-		if (bunInflateRawSync && entry.uncompressedSize <= FULL_INFLATE_TEXT_CHUNK_LIMIT_BYTES) {
+		if (
+			!options.preferStreaming &&
+			bunInflateRawSync &&
+			entry.uncompressedSize <= FULL_INFLATE_TEXT_CHUNK_LIMIT_BYTES
+		) {
 			const bytes = inflateRawBytesSync(compressed)
 			for (let offset = 0; offset < bytes.byteLength; offset += chunkSize) {
 				yield bytes.subarray(offset, offset + chunkSize)

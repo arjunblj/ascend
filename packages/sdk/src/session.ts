@@ -5,9 +5,10 @@ import { resolve } from 'node:path'
 import {
 	DEFAULT_STYLE_ID,
 	parseRange,
-	parseSqref,
+	RangeIndex,
+	type RangeIndexEntry,
 	type RangeRef,
-	rangeIntersects,
+	rangeMaskOffsets,
 	sqrefIntersects,
 	toA1,
 } from '@ascend/core'
@@ -835,23 +836,40 @@ function readInteractiveViewport(
 	const sheetIndex = workbook.sheets.findIndex((candidate) => candidate.name === request.sheet)
 	const comments = sheet.comments
 	const hyperlinks = sheet.hyperlinks
-	const merges = sheet.merges.filter((merge) => rangeIntersects(merge, viewport))
-	const validationRanges = sheet.dataValidations.map((validation) => ({
-		validation,
-		ranges: parseSqref(validation.sqref),
-	}))
-	const conditionalFormatRanges = sheet.conditionalFormats.map((format) => ({
-		format,
-		ranges: parseSqref(format.sqref),
-	}))
-	const dataValidations = validationRanges
-		.filter(({ ranges }) => ranges.some((range) => rangeIntersects(range, viewport)))
-		.map(({ validation }) => validation)
-	const conditionalFormats = conditionalFormatRanges
-		.filter(({ ranges }) => ranges.some((range) => rangeIntersects(range, viewport)))
-		.map(({ format }) => format)
-	const tables = (view.inspectSheet(request.sheet)?.tables ?? []).filter((table) =>
-		rangeIntersects(table.ref, viewport),
+	const mergeEntries = RangeIndex.fromRanges(sheet.merges, (merge) => merge).intersectingEntries(
+		viewport,
+	)
+	const validationEntries = RangeIndex.fromSqrefs(
+		sheet.dataValidations,
+		(validation) => validation.sqref,
+	).intersectingEntries(viewport)
+	const conditionalFormatEntries = RangeIndex.fromSqrefs(
+		sheet.conditionalFormats,
+		(format) => format.sqref,
+	).intersectingEntries(viewport)
+	const tableEntries = RangeIndex.fromRanges(
+		view.inspectSheet(request.sheet)?.tables ?? [],
+		(table) => table.ref,
+	).intersectingEntries(viewport)
+	const merges = mergeEntries.map((entry) => entry.value)
+	const dataValidations = uniqueRangeIndexValues(validationEntries)
+	const conditionalFormats = uniqueRangeIndexValues(conditionalFormatEntries)
+	const tables = uniqueRangeIndexValues(tableEntries)
+	const mergeMask = rangeMaskOffsets(
+		mergeEntries.map((entry) => entry.range),
+		viewport,
+	)
+	const validationMask = rangeMaskOffsets(
+		validationEntries.map((entry) => entry.range),
+		viewport,
+	)
+	const conditionalFormatMask = rangeMaskOffsets(
+		conditionalFormatEntries.map((entry) => entry.range),
+		viewport,
+	)
+	const tableMask = rangeMaskOffsets(
+		tableEntries.map((entry) => entry.range),
+		viewport,
 	)
 	const autoFilter =
 		sheet.autoFilter && sqrefIntersects(sheet.autoFilter.ref, viewport) ? sheet.autoFilter : null
@@ -891,14 +909,10 @@ function readInteractiveViewport(
 				formula: formulaText !== null,
 				comment: comments.has(ref),
 				hyperlink: hyperlinks.has(ref),
-				merged: merges.some((merge) => cellInRange(row, col, merge)),
-				validation: validationRanges.some(({ ranges }) =>
-					ranges.some((range) => cellInRange(row, col, range)),
-				),
-				conditionalFormat: conditionalFormatRanges.some(({ ranges }) =>
-					ranges.some((range) => cellInRange(row, col, range)),
-				),
-				table: tables.some((table) => cellInRange(row, col, table.ref)),
+				merged: mergeMask.has(index),
+				validation: validationMask.has(index),
+				conditionalFormat: conditionalFormatMask.has(index),
+				table: tableMask.has(index),
 			},
 		})
 	})
@@ -977,6 +991,17 @@ function flattenViewportValue(value: CellValue): number | string | boolean | nul
 		default:
 			return null
 	}
+}
+
+function uniqueRangeIndexValues<T>(entries: readonly RangeIndexEntry<T>[]): T[] {
+	const values: T[] = []
+	const seen = new Set<number>()
+	for (const entry of entries) {
+		if (seen.has(entry.sourceIndex)) continue
+		seen.add(entry.sourceIndex)
+		values.push(entry.value)
+	}
+	return values
 }
 
 function rowLayout(

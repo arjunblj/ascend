@@ -1,4 +1,9 @@
-import { createWorkbook, type StyleId, type Workbook } from '../../packages/core/src/index.ts'
+import {
+	createWorkbook,
+	parseRange,
+	type StyleId,
+	type Workbook,
+} from '../../packages/core/src/index.ts'
 import {
 	applyOperations,
 	defaultCalcContext,
@@ -499,6 +504,7 @@ const interactiveSessionCache = new WeakMap<Uint8Array, Promise<AscendSession>>(
 let cachedDenseViewportBytes: Uint8Array | undefined
 let cachedSparseWideViewportBytes: Uint8Array | undefined
 let cachedSemanticViewportBytes: Uint8Array | undefined
+let cachedManyOverlayViewportBytes: Uint8Array | undefined
 
 function cachedDenseViewportWorkbookBytes(): Uint8Array {
 	cachedDenseViewportBytes ??= mustWrite(buildDenseWorkbook(5000, 20))
@@ -551,6 +557,36 @@ function cachedSemanticViewportWorkbookBytes(): Uint8Array {
 	])
 	cachedSemanticViewportBytes = workbook.toBytes()
 	return cachedSemanticViewportBytes
+}
+
+function cachedManyOverlayViewportWorkbookBytes(): Uint8Array {
+	if (cachedManyOverlayViewportBytes) return cachedManyOverlayViewportBytes
+	const workbook = AscendWorkbook.create()
+	const sheet = workbook.getWorkbookModel().getSheet('Sheet1')
+	if (!sheet) throw new Error('Benchmark workbook missing Sheet1')
+	for (let row = 0; row < 250; row++) {
+		for (let col = 0; col < 20; col++) {
+			sheet.cells.set(row, col, {
+				value: numberValue(row * 20 + col + 1),
+				formula: null,
+				styleId: SID,
+			})
+		}
+		const rowRange = `A${row + 1}:T${row + 1}`
+		sheet.dataValidations.push({
+			sqref: rowRange,
+			type: 'whole',
+			operator: 'greaterThan',
+			formula1: '0',
+		})
+		sheet.conditionalFormats.push({
+			sqref: rowRange,
+			rules: [{ type: 'expression', formulas: [`$A${row + 1}>0`], priority: row + 1 }],
+		})
+		sheet.merges.push(parseRange(`S${row + 1}:T${row + 1}`))
+	}
+	cachedManyOverlayViewportBytes = workbook.toBytes()
+	return cachedManyOverlayViewportBytes
 }
 
 function interactiveSessionFor(bytes: Uint8Array): Promise<AscendSession> {
@@ -1273,6 +1309,48 @@ const scenarios: readonly Scenario[] = [
 					validations: viewport.dataValidations.length,
 					conditionalFormats: viewport.conditionalFormats.length,
 					tables: viewport.tables.length,
+				},
+			}
+		},
+	},
+	{
+		name: 'sdk-semantic-viewport-many-overlays',
+		category: 'read',
+		build() {
+			return { bytes: cachedManyOverlayViewportWorkbookBytes(), rows: 250, cols: 20, cells: 5000 }
+		},
+		async run(input) {
+			const session = await interactiveSessionFor(requireBytes(input))
+			const viewport = session.readViewport({
+				sheet: 'Sheet1',
+				topRow: 0,
+				leftCol: 0,
+				rowCount: 250,
+				colCount: 20,
+			})
+			if (
+				viewport.cells.length !== 5000 ||
+				viewport.merges.length !== 250 ||
+				viewport.dataValidations.length !== 250 ||
+				viewport.conditionalFormats.length !== 250 ||
+				viewport.cells.some(
+					(cell) =>
+						!cell.flags.validation ||
+						!cell.flags.conditionalFormat ||
+						(cell.col >= 18 && !cell.flags.merged),
+				)
+			) {
+				throw new Error(
+					'Many-overlay interactive viewport benchmark returned an unexpected payload',
+				)
+			}
+			return {
+				assertions: {
+					returnedCells: viewport.cells.length,
+					flatValues: viewport.flatValues.length,
+					merges: viewport.merges.length,
+					validations: viewport.dataValidations.length,
+					conditionalFormats: viewport.conditionalFormats.length,
 				},
 			}
 		},
@@ -2088,6 +2166,7 @@ const scenarioSets = {
 		'sdk-viewport-read-dense-hot',
 		'sdk-viewport-read-sparse-wide-hot',
 		'sdk-semantic-viewport-rich',
+		'sdk-semantic-viewport-many-overlays',
 	],
 } as const
 

@@ -380,6 +380,38 @@ describe('Ascend API server', () => {
 		])
 	})
 
+	test('malformed path mutations block preview, write, and commit consistently', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'old' }] }])
+		await wb.save(TEMP_FILE)
+
+		for (const endpoint of ['/preview', '/write', '/commit'] as const) {
+			const result = await postJson(endpoint, {
+				file: TEMP_FILE,
+				output: OUTPUT_FILE,
+				mutations: [{ path: '/sheets//cells/A1/value', value: 'new' }],
+			})
+
+			expect(result.status).toBe(400)
+			expect(result.body.ok).toBe(false)
+			expect(result.body.error?.code).toBe('VALIDATION_ERROR')
+			expect(result.body.error?.details?.issueCount).toBe(1)
+			expect(result.body.error?.details?.issues).toEqual(['Path segment 1 must not be empty.'])
+			expect(result.body.error?.details?.issueDetails).toEqual([
+				expect.objectContaining({
+					code: 'invalid_path',
+					path: '/sheets//cells/A1/value',
+				}),
+			])
+		}
+
+		const reopened = await AscendWorkbook.open(TEMP_FILE)
+		expect(reopened.sheet('Sheet1')?.cell('A1')?.value).toEqual({
+			kind: 'string',
+			value: 'old',
+		})
+	})
+
 	test('plan invalid ops return structured batch repair details', async () => {
 		const ops = [
 			{ op: 'insertRows', sheet: 'Sheet1', at: 0, count: '2' },

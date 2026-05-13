@@ -679,6 +679,66 @@ describe('MCP server', () => {
 		])
 	})
 
+	test('malformed path mutations block MCP preview, write, and commit consistently', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'old' }] }])
+		await wb.save(TEMP_FILE)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const tools = (server as any)._registeredTools as Record<
+			string,
+			{
+				handler: (args: {
+					file: string
+					output?: string
+					mutations: Array<{ path: string; value?: unknown }>
+				}) => Promise<{
+					isError?: boolean
+					structuredContent?: {
+						ok?: boolean
+						error?: {
+							code?: string
+							details?: {
+								issueCount?: number
+								issues?: readonly string[]
+								issueDetails?: readonly { code?: string; path?: string }[]
+							}
+						}
+					}
+				}>
+			}
+		>
+
+		for (const toolName of ['ascend.preview', 'ascend.write', 'ascend.commit'] as const) {
+			const result = await tools[toolName]?.handler({
+				file: TEMP_FILE,
+				output: `${TEMP_FILE}.out.xlsx`,
+				mutations: [{ path: '/sheets//cells/A1/value', value: 'new' }],
+			})
+
+			expect(result?.isError).toBe(true)
+			expect(result?.structuredContent?.ok).toBe(false)
+			expect(result?.structuredContent?.error?.code).toBe('VALIDATION_ERROR')
+			expect(result?.structuredContent?.error?.details?.issueCount).toBe(1)
+			expect(result?.structuredContent?.error?.details?.issues).toEqual([
+				'Path segment 1 must not be empty.',
+			])
+			expect(result?.structuredContent?.error?.details?.issueDetails).toEqual([
+				expect.objectContaining({
+					code: 'invalid_path',
+					path: '/sheets//cells/A1/value',
+				}),
+			])
+		}
+
+		const reopened = await AscendWorkbook.open(TEMP_FILE)
+		expect(reopened.sheet('Sheet1')?.cell('A1')?.value).toEqual({
+			kind: 'string',
+			value: 'old',
+		})
+	})
+
 	test('ascend.export writes JSON/TSV and rejects unsupported formats', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

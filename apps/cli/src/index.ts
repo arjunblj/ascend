@@ -131,6 +131,7 @@ const COMMANDS: Record<string, Command> = {
 			'allow-loss',
 			'approval',
 			'progress',
+			'compact',
 			'json',
 		],
 	},
@@ -178,6 +179,7 @@ const BOOLEAN_FLAGS = new Set([
 	'in-place',
 	'examples',
 	'list',
+	'compact',
 	'telemetry-json',
 	'calibrate',
 ])

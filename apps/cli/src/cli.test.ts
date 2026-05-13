@@ -105,6 +105,7 @@ afterAll(() => {
 		'invalid-agent-ops.json',
 		'commit-ops.json',
 		'commit-output.xlsx',
+		'commit-compact-output.xlsx',
 		'commit-pretty-output.xlsx',
 		'approval-ops.json',
 		'approval-alias-out.xlsx',
@@ -352,6 +353,33 @@ describe('ascend cli', () => {
 		expect(committed.ok).toBe(true)
 		expect(committed.data.outputSha256).toMatch(/^[a-f0-9]{64}$/)
 		expect(existsSync(`${import.meta.dir}/commit-output.xlsx`)).toBe(true)
+
+		const compactCommit = await run(
+			'commit',
+			TEST_FILE,
+			'--ops',
+			'commit-ops.json',
+			'--output',
+			'commit-compact-output.xlsx',
+			'--expect-sha256',
+			planned.data.inputSha256,
+			'--compact',
+			'--json',
+		)
+		expect(compactCommit.exitCode).toBe(0)
+		const compact = JSON.parse(compactCommit.stdout)
+		expect(compact.ok).toBe(true)
+		expect(compact.data.outputSha256).toMatch(/^[a-f0-9]{64}$/)
+		expect(compact.data.apply.affectedCellCount).toBe(1)
+		expect(compact.data.check.valid).toBe(true)
+		expect(compact.data.postWrite.valid).toBe(true)
+		expect(compact.data.postWrite.reopened).toBe(true)
+		expect(compact.data.postWrite.check.valid).toBe(true)
+		expect(compact.data.postWrite.packageGraphAudit.ok).toBe(true)
+		expect(compact.data.trace.artifactCount).toBeNumber()
+		expect(compact.data.trace.artifacts).toBeUndefined()
+		expect(compact.data.apply.affectedCells).toBeUndefined()
+		expect(existsSync(`${import.meta.dir}/commit-compact-output.xlsx`)).toBe(true)
 
 		const prettyCommit = await run(
 			'commit',

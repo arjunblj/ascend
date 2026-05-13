@@ -3,6 +3,7 @@ import { ascendError, type Operation } from '@ascend/schema'
 import {
 	type AgentCommitOptions,
 	commitAgentPlan,
+	compactAgentCommitResult,
 	operationValidationDetails,
 	parseOperations,
 } from '@ascend/sdk'
@@ -28,6 +29,7 @@ Flags:
   --allow-loss <feature>    Allow preserved/unsupported feature loss by feature, tier, or "all"
   --approval <id>           Approve an explicit plan approval id, comma-separated list, or "all"
   --progress jsonl          Emit machine-readable progress events to stderr
+  --compact                 Return compact JSON verification counts instead of full trace artifacts
   --json                    Output as JSON
 `
 
@@ -57,7 +59,8 @@ export async function commitCommand(args: string[], flags: Map<string, string>):
 	}
 	const result = await commitAgentPlan(file, ops, options)
 	if (flags.has('json')) {
-		console.log(jsonOut(result))
+		const payload = flags.has('compact') ? compactAgentCommitResult(result) : result
+		console.log(jsonOut(payload))
 		return 0
 	}
 	console.log(heading(`Committed: ${file}`))

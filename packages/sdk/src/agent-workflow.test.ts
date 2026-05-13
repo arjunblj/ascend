@@ -13,6 +13,7 @@ import {
 	commitAgentPlan,
 	commitAgentPlanFromWorkbook,
 	compactAgentCommitResult,
+	compactAgentPlanResult,
 	createAgentPlan,
 	createAgentPlanFromWorkbook,
 	createPreparedAgentPlan,
@@ -2615,12 +2616,26 @@ describe('agent workflow loss audit', () => {
 		expect(prepared.plan.preview.journal?.exact).toBe(false)
 		expect(prepared.plan.preview.journal?.inverseOps).toEqual([])
 		expect(prepared.plan.preview.journal?.issues).toEqual([expectedIssue])
+		expect(compactAgentPlanResult(prepared.plan).preview.journalSummary).toEqual({
+			supported: true,
+			exact: false,
+			inverseOpCount: 0,
+			issueCount: 1,
+			issues: [expectedIssue],
+		})
 
 		const committed = await prepared.commit({ output })
 		expect(committed.apply.journal?.supported).toBe(true)
 		expect(committed.apply.journal?.exact).toBe(false)
 		expect(committed.apply.journal?.inverseOps).toEqual([])
 		expect(committed.apply.journal?.issues).toEqual([expectedIssue])
+		expect(compactAgentCommitResult(committed).apply.journalSummary).toEqual({
+			supported: true,
+			exact: false,
+			inverseOpCount: 0,
+			issueCount: 1,
+			issues: [expectedIssue],
+		})
 
 		const reopened = await AscendWorkbook.open(output)
 		const sheet = reopened.getWorkbookModel().getSheet('Sheet1')

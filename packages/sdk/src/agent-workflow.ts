@@ -26,6 +26,7 @@ import {
 import { AscendException, ascendError, type FeatureReport, type Operation } from '@ascend/schema'
 import { listCapabilities, summarizeCapabilities } from './capabilities.ts'
 import { collectFormulaReferences } from './formula-info.ts'
+import type { MutationJournal, MutationJournalIssue } from './journal.ts'
 import type { CheckIssue, FormulaReferenceInfo } from './types.ts'
 import { AscendWorkbook } from './workbook.ts'
 
@@ -63,6 +64,7 @@ export interface CompactAgentPreview {
 	readonly errorCount: number
 	readonly warnings: ReturnType<AscendWorkbook['preview']>['warnings']
 	readonly errors: ReturnType<AscendWorkbook['preview']>['errors']
+	readonly journalSummary?: CompactJournalSummary
 }
 
 export interface CompactAgentPlanResult extends Omit<AgentPlanResult, 'preview'> {
@@ -158,6 +160,15 @@ export interface CompactApplySummary {
 	readonly recalcRequired: boolean
 	readonly warningCount: number
 	readonly errorCount: number
+	readonly journalSummary?: CompactJournalSummary
+}
+
+export interface CompactJournalSummary {
+	readonly supported: boolean
+	readonly exact: boolean
+	readonly inverseOpCount: number
+	readonly issueCount: number
+	readonly issues: readonly MutationJournalIssue[]
 }
 
 export interface CompactRecalcSummary {
@@ -695,6 +706,9 @@ export function compactAgentPlanResult(
 			errorCount: result.preview.errors.length,
 			warnings: result.preview.warnings,
 			errors: result.preview.errors,
+			...(result.preview.journal
+				? { journalSummary: compactJournalSummary(result.preview.journal) }
+				: {}),
 		},
 	}
 }
@@ -718,6 +732,9 @@ export function compactAgentCommitResult(result: AgentCommitResult): CompactAgen
 			recalcRequired: result.apply.recalcRequired,
 			warningCount: result.apply.warnings?.length ?? 0,
 			errorCount: result.apply.errors.length,
+			...(result.apply.journal
+				? { journalSummary: compactJournalSummary(result.apply.journal) }
+				: {}),
 		},
 		recalc: {
 			required: result.recalc !== null,
@@ -732,6 +749,16 @@ export function compactAgentCommitResult(result: AgentCommitResult): CompactAgen
 		postWrite: compactPostWriteVerification(result.postWrite),
 		lossAudit: compactLossAuditSummary(result.lossAudit),
 		packageGraphAudit: compactPackageGraphAuditSummary(result.packageGraphAudit),
+	}
+}
+
+function compactJournalSummary(journal: MutationJournal): CompactJournalSummary {
+	return {
+		supported: journal.supported,
+		exact: journal.exact,
+		inverseOpCount: journal.inverseOps.length,
+		issueCount: journal.issues.length,
+		issues: journal.issues,
 	}
 }
 

@@ -49,6 +49,26 @@ export interface AgentPlanResult {
 	readonly capabilities: ReturnType<typeof summarizeCapabilities>
 }
 
+export interface CompactAgentPlanOptions {
+	readonly maxChangedCells?: number
+}
+
+export interface CompactAgentPreview {
+	readonly wouldSucceed: boolean
+	readonly changedCellCount: number
+	readonly emittedChangedCellCount: number
+	readonly changedCells: ReturnType<AscendWorkbook['preview']>['changedCells']
+	readonly recalcScope: number
+	readonly warningCount: number
+	readonly errorCount: number
+	readonly warnings: ReturnType<AscendWorkbook['preview']>['warnings']
+	readonly errors: ReturnType<AscendWorkbook['preview']>['errors']
+}
+
+export interface CompactAgentPlanResult extends Omit<AgentPlanResult, 'preview'> {
+	readonly preview: CompactAgentPreview
+}
+
 export interface AgentCommitOptions {
 	readonly output?: string
 	readonly inPlace?: boolean
@@ -406,6 +426,28 @@ export async function createAgentPlan(
 		lossAudit,
 		packageGraphAudit,
 		capabilities: summarizeCapabilities(listCapabilities({ gapsOnly: true })),
+	}
+}
+
+export function compactAgentPlanResult(
+	result: AgentPlanResult,
+	options: CompactAgentPlanOptions = {},
+): CompactAgentPlanResult {
+	const maxChangedCells = Math.max(0, Math.floor(options.maxChangedCells ?? 50))
+	const changedCells = result.preview.changedCells.slice(0, maxChangedCells)
+	return {
+		...result,
+		preview: {
+			wouldSucceed: result.preview.wouldSucceed,
+			changedCellCount: result.preview.changedCells.length,
+			emittedChangedCellCount: changedCells.length,
+			changedCells,
+			recalcScope: result.preview.recalcScope,
+			warningCount: result.preview.warnings.length,
+			errorCount: result.preview.errors.length,
+			warnings: result.preview.warnings,
+			errors: result.preview.errors,
+		},
 	}
 }
 

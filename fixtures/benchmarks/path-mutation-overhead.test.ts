@@ -35,7 +35,9 @@ describe('path mutation overhead benchmark', () => {
 				readonly directPreviewJournalMedianMs?: number
 				readonly directApplyJournalMedianMs?: number
 				readonly apiPlanMedianMs?: number
+				readonly apiCompactPlanMedianMs?: number
 				readonly apiCommitMedianMs?: number
+				readonly apiCompactPlanPayloadBytesMedian?: number
 				readonly mutationCountMedian?: number
 				readonly compiledOpsMedian?: number
 				readonly compileIssuesMedian?: number
@@ -50,7 +52,9 @@ describe('path mutation overhead benchmark', () => {
 		expect(payload.summary?.directPreviewJournalMedianMs).toBeNumber()
 		expect(payload.summary?.directApplyJournalMedianMs).toBeNumber()
 		expect(payload.summary?.apiPlanMedianMs).toBeNumber()
+		expect(payload.summary?.apiCompactPlanMedianMs).toBeNumber()
 		expect(payload.summary?.apiCommitMedianMs).toBeNumber()
+		expect(payload.summary?.apiCompactPlanPayloadBytesMedian).toBeNumber()
 		expect(payload.summary?.mutationCountMedian).toBe(12)
 		expect(payload.summary?.compiledOpsMedian).toBe(1)
 		expect(payload.summary?.compileIssuesMedian).toBe(0)

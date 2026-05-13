@@ -36,6 +36,12 @@ interface ApiEnvelope {
 			readonly replayable?: boolean
 			readonly ops?: unknown[]
 		}
+		readonly preview?: {
+			readonly changedCellCount?: number
+			readonly emittedChangedCellCount?: number
+			readonly changedCells?: unknown[]
+			readonly wouldSucceed?: boolean
+		}
 		readonly journal?: { readonly supported?: boolean; readonly inverseOps?: unknown[] }
 		readonly partPath?: string
 		readonly featureFamily?: string
@@ -632,6 +638,46 @@ describe('Ascend API server', () => {
 		const reopened = await AscendWorkbook.open(output)
 		expect(reopened.sheet('Sheet1')?.cell('A1')?.value).toEqual({ kind: 'number', value: 11 })
 		await unlink(output).catch(() => {})
+	})
+
+	test('plan can return compact bounded preview details', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 1 },
+					{ ref: 'A2', value: 2 },
+					{ ref: 'A3', value: 3 },
+				],
+			},
+		])
+		await wb.save(TEMP_FILE)
+
+		const result = await postJson('/plan', {
+			file: TEMP_FILE,
+			compact: true,
+			maxChangedCells: 1,
+			ops: [
+				{
+					op: 'setCells',
+					sheet: 'Sheet1',
+					updates: [
+						{ ref: 'A1', value: 10 },
+						{ ref: 'A2', value: 20 },
+						{ ref: 'A3', value: 30 },
+					],
+				},
+			],
+		})
+
+		expect(result.status).toBe(200)
+		expect(result.body.ok).toBe(true)
+		expect(result.body.data?.preview?.wouldSucceed).toBe(true)
+		expect(result.body.data?.preview?.changedCellCount).toBe(3)
+		expect(result.body.data?.preview?.emittedChangedCellCount).toBe(1)
+		expect(result.body.data?.preview?.changedCells).toHaveLength(1)
 	})
 })
 

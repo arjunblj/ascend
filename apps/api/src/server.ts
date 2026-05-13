@@ -13,6 +13,7 @@ import {
 	type CapabilityStatus,
 	type CompactRangeWindowInfo,
 	commitAgentPlan,
+	compactAgentPlanResult,
 	createAgentPlan,
 	createRepairPlan,
 	formatDisplayCellValue,
@@ -759,7 +760,14 @@ export function createApiFetch() {
 							400,
 						)
 					}
-					return jsonSuccess(withPathMutationResult(result, input.pathMutations))
+					const maxChangedCells = body ? requireOptionalNumber(body, 'maxChangedCells') : undefined
+					const payload =
+						body?.compact === true
+							? compactAgentPlanResult(result, {
+									...(maxChangedCells !== undefined ? { maxChangedCells } : {}),
+								})
+							: result
+					return jsonSuccess(withPathMutationResult(payload, input.pathMutations))
 				} catch (e) {
 					return handleError(e, file)
 				}

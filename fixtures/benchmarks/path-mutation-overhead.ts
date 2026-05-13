@@ -22,8 +22,10 @@ interface Sample {
 	readonly directPreviewJournalMs: number
 	readonly directApplyJournalMs: number
 	readonly apiPlanMs: number
+	readonly apiCompactPlanMs: number
 	readonly apiCommitMs: number
 	readonly apiPlanPayloadBytes: number
+	readonly apiCompactPlanPayloadBytes: number
 	readonly apiCommitPayloadBytes: number
 	readonly mutationCount: number
 	readonly compiledOps: number
@@ -174,6 +176,12 @@ async function runSample(
 	const preview = await timed(() => opened.value.preview(compile.value.ops, { journal: true }))
 	const apply = await timed(() => opened.value.apply(compile.value.ops, { journal: true }))
 	const apiPlan = await post(apiFetch, '/plan', { file: inputPath, mutations })
+	const apiCompactPlan = await post(apiFetch, '/plan', {
+		file: inputPath,
+		mutations,
+		compact: true,
+		maxChangedCells: 25,
+	})
 	const apiCommit = await post(apiFetch, '/commit', {
 		file: inputPath,
 		output: outputPath,
@@ -187,8 +195,10 @@ async function runSample(
 		directPreviewJournalMs: preview.ms,
 		directApplyJournalMs: apply.ms,
 		apiPlanMs: apiPlan.ms,
+		apiCompactPlanMs: apiCompactPlan.ms,
 		apiCommitMs: apiCommit.ms,
 		apiPlanPayloadBytes: apiPlan.text.length,
+		apiCompactPlanPayloadBytes: apiCompactPlan.text.length,
 		apiCommitPayloadBytes: apiCommit.text.length,
 		mutationCount: mutations.length,
 		compiledOps: compile.value.ops.length,
@@ -211,8 +221,12 @@ function summarize(samples: readonly Sample[]) {
 		directPreviewJournalMedianMs: median(samples.map((sample) => sample.directPreviewJournalMs)),
 		directApplyJournalMedianMs: median(samples.map((sample) => sample.directApplyJournalMs)),
 		apiPlanMedianMs: median(samples.map((sample) => sample.apiPlanMs)),
+		apiCompactPlanMedianMs: median(samples.map((sample) => sample.apiCompactPlanMs)),
 		apiCommitMedianMs: median(samples.map((sample) => sample.apiCommitMs)),
 		apiPlanPayloadBytesMedian: median(samples.map((sample) => sample.apiPlanPayloadBytes)),
+		apiCompactPlanPayloadBytesMedian: median(
+			samples.map((sample) => sample.apiCompactPlanPayloadBytes),
+		),
 		apiCommitPayloadBytesMedian: median(samples.map((sample) => sample.apiCommitPayloadBytes)),
 		mutationCountMedian: median(samples.map((sample) => sample.mutationCount)),
 		compiledOpsMedian: median(samples.map((sample) => sample.compiledOps)),

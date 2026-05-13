@@ -13,6 +13,7 @@ import {
 	type CapabilityFilters,
 	type CompactRangeWindowInfo,
 	commitAgentPlan,
+	compactAgentPlanResult,
 	createAgentPlan,
 	createRepairPlan,
 	ensureOutputExtension,
@@ -1113,8 +1114,18 @@ export function createServer(): McpServer {
 				.array(pathMutationSchema)
 				.optional()
 				.describe('Path-addressed mutations to compile and plan'),
+			compact: z
+				.boolean()
+				.optional()
+				.describe('Return a compact plan payload with bounded changed-cell details'),
+			maxChangedCells: z
+				.number()
+				.int()
+				.nonnegative()
+				.optional()
+				.describe('Maximum preview changed cells to include when compact is true'),
 		},
-		async ({ file, ops, mutations }) => {
+		async ({ file, ops, mutations, compact, maxChangedCells }) => {
 			try {
 				const input = await resolveOperationInput(file, ops, mutations)
 				if (!input.ok) return errorResponse(input.error)
@@ -1127,8 +1138,13 @@ export function createServer(): McpServer {
 							: ascendError('VALIDATION_ERROR', 'Plan failed', { details: { plan: result } }),
 					)
 				}
+				const payload = compact
+					? compactAgentPlanResult(result, {
+							...(maxChangedCells !== undefined ? { maxChangedCells } : {}),
+						})
+					: result
 				return okResponse(
-					withPathMutationResult(result, input.pathMutations),
+					withPathMutationResult(payload, input.pathMutations),
 					`Planned ${input.ops.length} operation(s)`,
 				)
 			} catch (e) {

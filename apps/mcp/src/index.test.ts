@@ -740,6 +740,66 @@ describe('MCP server', () => {
 		])
 	})
 
+	test('ascend.plan can return compact bounded preview details', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 1 },
+					{ ref: 'A2', value: 2 },
+					{ ref: 'A3', value: 3 },
+				],
+			},
+		])
+		await wb.save(TEMP_FILE)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const handler = (server as any)._registeredTools['ascend.plan'].handler as (args: {
+			file: string
+			compact?: boolean
+			maxChangedCells?: number
+			ops: readonly Record<string, unknown>[]
+		}) => Promise<{
+			structuredContent?: {
+				ok?: boolean
+				data?: {
+					preview?: {
+						changedCellCount?: number
+						emittedChangedCellCount?: number
+						changedCells?: unknown[]
+						wouldSucceed?: boolean
+					}
+				}
+			}
+		}>
+
+		const result = await handler({
+			file: TEMP_FILE,
+			compact: true,
+			maxChangedCells: 1,
+			ops: [
+				{
+					op: 'setCells',
+					sheet: 'Sheet1',
+					updates: [
+						{ ref: 'A1', value: 10 },
+						{ ref: 'A2', value: 20 },
+						{ ref: 'A3', value: 30 },
+					],
+				},
+			],
+		})
+
+		expect(result.structuredContent?.ok).toBe(true)
+		expect(result.structuredContent?.data?.preview?.wouldSucceed).toBe(true)
+		expect(result.structuredContent?.data?.preview?.changedCellCount).toBe(3)
+		expect(result.structuredContent?.data?.preview?.emittedChangedCellCount).toBe(1)
+		expect(result.structuredContent?.data?.preview?.changedCells).toHaveLength(1)
+	})
+
 	test('malformed path mutations block MCP preview, write, and commit consistently', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'old' }] }])

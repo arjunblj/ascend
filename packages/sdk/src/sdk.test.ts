@@ -1118,10 +1118,15 @@ describe('AscendWorkbook', () => {
 </worksheet>`,
 		})
 		const wb = await AscendWorkbook.open(sourceBytes)
+		const beforeGenerations = wb.readSnapshotInfo().generations
 
 		const result = wb.recalc()
 		expect(result.errors).toHaveLength(0)
 		expect(result.changed).toHaveLength(0)
+		expect(result.generations.workbook).toBeGreaterThan(beforeGenerations.workbook)
+		expect(result.generations.formulas).toBeGreaterThan(beforeGenerations.formulas)
+		expect(result.generations.sheetMetadata).toBe(beforeGenerations.sheetMetadata)
+		expect(result.generations.styles).toBe(beforeGenerations.styles)
 		const out = wb.toBytes()
 
 		expect(out).not.toEqual(sourceBytes)

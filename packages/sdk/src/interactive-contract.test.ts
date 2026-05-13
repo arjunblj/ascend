@@ -636,6 +636,72 @@ describe('interactive client contract', () => {
 		session.close()
 	})
 
+	test('interactive explicit recalc advances generations for calc freshness metadata only', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] },
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'B1', formula: 'A1*2' },
+		])
+		wb.recalc()
+		const internal = wb as unknown as {
+			wb: {
+				calcSettings: {
+					fullCalcOnLoad?: boolean
+					calcCompleted?: boolean
+					calcOnSave?: boolean
+					forceFullCalc?: boolean
+				}
+			}
+		}
+		internal.wb.calcSettings = {
+			...internal.wb.calcSettings,
+			fullCalcOnLoad: true,
+			calcCompleted: false,
+			calcOnSave: false,
+			forceFullCalc: true,
+		}
+
+		const session = await AscendSession.open(wb.toBytes(), {
+			mode: 'full',
+			prepareEdits: true,
+		})
+		const before = session.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 2,
+		})
+		const recalc = await session.apply([], { recalc: true })
+		expect(recalc.apply.errors).toEqual([])
+		expect(recalc.recalc?.errors).toEqual([])
+		expect(recalc.recalc?.changed).toEqual([])
+		expect(recalc.generation.session).toBe(before.generation.session + 1)
+		expect(recalc.generation.workbook).toBeGreaterThan(before.generation.workbook)
+		expect(recalc.generation.formulas).toBeGreaterThan(before.generation.formulas)
+
+		const patch = session.readViewportPatch({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 2,
+			changedSince: before.changeToken,
+		})
+		if (!patch) throw new Error('expected empty calc-freshness patch')
+		expect(patch.changedCells).toEqual([])
+		expect(patch.removedRefs).toEqual([])
+		const fresh = session.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 2,
+		})
+		expect(materializeViewportPatch(before.cells, patch)).toEqual(interactiveCellMap(fresh.cells))
+		session.close()
+	})
+
 	test('interactive sessions resume patching after an invalidating metadata refresh', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

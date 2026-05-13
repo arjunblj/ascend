@@ -1069,7 +1069,8 @@ export class AscendWorkbook extends WorkbookReadView {
 				? { range: rangeRef }
 				: resolveRecalcOptions(this.pendingFullRecalc, this.pendingDirtyRefs),
 		)
-		if (result.changed.length > 0 || result.errors.length > 0) {
+		const formulaValuesChangedOrErrored = result.changed.length > 0 || result.errors.length > 0
+		if (formulaValuesChangedOrErrored) {
 			this.workbookGeneration += 1
 			this.formulaGeneration += 1
 			this.markDirty()
@@ -1099,6 +1100,10 @@ export class AscendWorkbook extends WorkbookReadView {
 				sourceCalcSettings.calcOnSave !== cleanCalcSettings.calcOnSave ||
 				sourceCalcSettings.forceFullCalc !== cleanCalcSettings.forceFullCalc
 			if (calcSettingsChanged) {
+				if (!formulaValuesChangedOrErrored) {
+					this.workbookGeneration += 1
+					this.formulaGeneration += 1
+				}
 				this.markDirty()
 				this.workbookMetaDirty = true
 			}

@@ -1110,6 +1110,7 @@ export class AscendSession {
 		const ensured = await this.ensureMutableWorkbook()
 		const workbook = ensured.workbook
 		const ensureMutableWorkbookMs = performance.now() - ensureStart
+		const beforeGenerations = workbook.readSnapshotInfo().generations
 		const applyStart = performance.now()
 		const apply = workbook.apply(ops, {
 			transaction: true,
@@ -1126,13 +1127,16 @@ export class AscendSession {
 			recalc = workbook.recalc()
 			recalcMs = performance.now() - recalcStart
 		}
-		if (apply.errors.length === 0 && sessionApplyChanged(apply, recalc)) {
-			this.documentGeneration += 1
-			this.recordInteractiveChanges(ops, apply, recalc)
-		}
 		const generationStart = performance.now()
 		const generations = workbook.readSnapshotInfo().generations
 		const generationSnapshotMs = performance.now() - generationStart
+		if (
+			apply.errors.length === 0 &&
+			sessionApplyChanged(apply, recalc, beforeGenerations, generations)
+		) {
+			this.documentGeneration += 1
+			this.recordInteractiveChanges(ops, apply, recalc)
+		}
 		const inspectWriteStart = performance.now()
 		const writeLoad = workbook.inspect().load
 		const inspectWriteMs = performance.now() - inspectWriteStart
@@ -1323,13 +1327,30 @@ function stripPrepareEditsOption(options: AscendSessionOpenOptions): AscendSessi
 function sessionApplyChanged(
 	apply: import('./types.ts').ApplyResult,
 	recalc: import('./types.ts').RecalcResult | null,
+	beforeGenerations?: import('./types.ts').WorkbookGenerationInfo,
+	afterGenerations?: import('./types.ts').WorkbookGenerationInfo,
 ): boolean {
 	return (
 		apply.affectedCells.length > 0 ||
 		apply.sheetsModified.length > 0 ||
 		apply.dirtyRegions.length > 0 ||
 		apply.recalcRequired ||
-		(recalc?.changed.length ?? 0) > 0
+		(recalc?.changed.length ?? 0) > 0 ||
+		(beforeGenerations !== undefined &&
+			afterGenerations !== undefined &&
+			workbookGenerationsChanged(beforeGenerations, afterGenerations))
+	)
+}
+
+function workbookGenerationsChanged(
+	before: import('./types.ts').WorkbookGenerationInfo,
+	after: import('./types.ts').WorkbookGenerationInfo,
+): boolean {
+	return (
+		before.workbook !== after.workbook ||
+		before.sheetMetadata !== after.sheetMetadata ||
+		before.formulas !== after.formulas ||
+		before.styles !== after.styles
 	)
 }
 

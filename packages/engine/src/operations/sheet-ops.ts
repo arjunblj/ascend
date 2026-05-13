@@ -1,6 +1,6 @@
 import type { Workbook } from '@ascend/core'
 import type { Operation, Result } from '@ascend/schema'
-import { ascendError, err, ok } from '@ascend/schema'
+import { ascendError, err, ok, validateExcelWorksheetName } from '@ascend/schema'
 import { invalidateSheetIndexCache } from '../evaluator.ts'
 import {
 	rewriteFormulaTextForRename,
@@ -16,6 +16,8 @@ export function handleAddSheet(
 	workbook: Workbook,
 	op: Extract<Operation, { op: 'addSheet' }>,
 ): Result<PatchResult> {
+	const nameError = worksheetNameError(op.name)
+	if (nameError) return err(nameError)
 	if (workbook.getSheet(op.name)) {
 		return err(
 			ascendError('NAME_CONFLICT', `Sheet "${op.name}" already exists`, {
@@ -65,6 +67,8 @@ export function handleRenameSheet(
 	if (!result.ok) return result
 	const sheet = result.value
 
+	const nameError = worksheetNameError(op.newName)
+	if (nameError) return err(nameError)
 	if (workbook.getSheet(op.newName)) {
 		return err(
 			ascendError('NAME_CONFLICT', `Sheet "${op.newName}" already exists`, {
@@ -118,6 +122,15 @@ export function handleCopySheet(
 	const sheetResult = getSheet(workbook, op.sheet)
 	if (!sheetResult.ok) return sheetResult
 	const source = sheetResult.value
+	const nameError = worksheetNameError(op.newName)
+	if (nameError) return err(nameError)
+	if (workbook.getSheet(op.newName)) {
+		return err(
+			ascendError('NAME_CONFLICT', `Sheet "${op.newName}" already exists`, {
+				suggestedFix: 'Choose a different name; a sheet with that name already exists',
+			}),
+		)
+	}
 	const pos = op.position ?? workbook.sheets.length
 	const newSheet = source.clone()
 	newSheet.name = op.newName
@@ -130,6 +143,14 @@ export function handleCopySheet(
 	workbook.invalidateSheetCache()
 	invalidateSheetIndexCache(workbook)
 	return ok(patch([], [op.newName]))
+}
+
+function worksheetNameError(name: string): ReturnType<typeof ascendError> | null {
+	const validation = validateExcelWorksheetName(name)
+	if (!validation) return null
+	return ascendError('VALIDATION_ERROR', validation.message, {
+		suggestedFix: validation.suggestedFix,
+	})
 }
 
 export function handleHideSheet(

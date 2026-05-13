@@ -2436,6 +2436,14 @@ describe('applyOperation', () => {
 		expect(result.error.code).toBe('NAME_CONFLICT')
 	})
 
+	test('addSheet rejects Excel-invalid names', () => {
+		const wb = setup()
+		const result = applyOperation(wb, { op: 'addSheet', name: 'Bad/Name' })
+		expectErr(result)
+		expect(result.error.code).toBe('VALIDATION_ERROR')
+		expect(result.error.message).toContain('invalid characters')
+	})
+
 	test('deleteSheet removes sheet', () => {
 		const wb = setup()
 		wb.addSheet('Sheet2')
@@ -4112,6 +4120,20 @@ describe('applyOperation', () => {
 		expect(wb.definedNames.get('Budget')).toBe('Data!A1')
 	})
 
+	test('renameSheet rejects Excel-invalid target names before mutating workbook', () => {
+		const wb = setup()
+		const result = applyOperation(wb, {
+			op: 'renameSheet',
+			sheet: 'Sheet1',
+			newName: 'Bad/Name',
+		})
+		expectErr(result)
+		expect(result.error.code).toBe('VALIDATION_ERROR')
+		expect(result.error.message).toContain('invalid characters')
+		expect(wb.getSheet('Sheet1')).toBeDefined()
+		expect(wb.getSheet('Bad/Name')).toBeUndefined()
+	})
+
 	test('renameSheet updates whole-column references in formulas and defined names', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')
@@ -4301,6 +4323,29 @@ describe('applyOperation', () => {
 		)
 		expect(Array.from(source.imageRefs[0]?.content ?? [])).toEqual([1, 2, 3])
 		expect(Array.from(copy.imageRefs[0]?.content ?? [])).toEqual([4, 5, 6])
+	})
+
+	test('copySheet rejects duplicate and Excel-invalid target names before mutating workbook', () => {
+		const wb = setup()
+		wb.addSheet('Existing')
+
+		const duplicate = applyOperation(wb, {
+			op: 'copySheet',
+			sheet: 'Sheet1',
+			newName: 'Existing',
+		})
+		expectErr(duplicate)
+		expect(duplicate.error.code).toBe('NAME_CONFLICT')
+
+		const invalid = applyOperation(wb, {
+			op: 'copySheet',
+			sheet: 'Sheet1',
+			newName: 'Bad/Name',
+		})
+		expectErr(invalid)
+		expect(invalid.error.code).toBe('VALIDATION_ERROR')
+		expect(wb.getSheet('Bad/Name')).toBeUndefined()
+		expect(wb.sheets).toHaveLength(2)
 	})
 
 	test('moveSheet preserves visual metadata and chart source refs', () => {

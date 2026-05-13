@@ -279,8 +279,10 @@ describe('path-addressed mutations', () => {
 			{ path: '/sheets/Missing/cells/A1/value', value: 1 },
 			{ path: '/sheets/Sheet1/cells/NotARef/value', value: 1 },
 			{ path: '/sheets/Sheet1/cells/A1/value', value: { nested: true } },
+			{ path: '/sheets/Sheet1/name', value: 'Bad/Name' },
 			{ path: '/tables/Missing/rows/append', value: [[1]] },
 			{ path: '/tables/Sales/columns/Missing/formula', value: '1+1' },
+			{ path: '/tables/Sales/name', value: 'Bad Name' },
 			{ path: '/sheets/Sheet1/cells/A1/hyperlink', value: { display: 'missing target' } },
 			{ path: '/workbook/properties/title', value: 'Unsupported' },
 		])
@@ -291,11 +293,15 @@ describe('path-addressed mutations', () => {
 			'sheet_not_found',
 			'invalid_ref',
 			'invalid_value',
+			'invalid_value',
 			'table_not_found',
 			'invalid_path',
 			'invalid_value',
+			'invalid_value',
 			'unsupported_path',
 		])
+		expect(result.issues[3]?.message).toContain('invalid characters')
+		expect(result.issues[6]?.message).toContain('invalid characters')
 		expect(result.issues.at(-1)?.details?.supportedShapes).toEqual(SUPPORTED_PATH_MUTATION_SHAPES)
 	})
 

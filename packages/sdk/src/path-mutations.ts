@@ -6,6 +6,7 @@ import type {
 	Operation,
 	StyleInput,
 } from '@ascend/schema'
+import { validateExcelTableName, validateExcelWorksheetName } from '@ascend/schema'
 import type {
 	PathMutation,
 	PathMutationIssue,
@@ -113,6 +114,12 @@ function compileSheetPath(
 	if (segments.length === 3 && segments[2] === 'name') {
 		if (typeof mutation.value !== 'string' || mutation.value.length === 0) {
 			return issue(mutation.path, 'invalid_value', 'Sheet rename value must be a non-empty string.')
+		}
+		const validation = validateExcelWorksheetName(mutation.value)
+		if (validation) {
+			return issue(mutation.path, 'invalid_value', validation.message, {
+				suggestedFix: validation.suggestedFix,
+			})
 		}
 		return { op: { op: 'renameSheet', sheet, newName: mutation.value } }
 	}
@@ -452,6 +459,12 @@ function compileTablePath(
 	if (segments.length === 3 && segments[2] === 'name') {
 		if (typeof mutation.value !== 'string' || mutation.value.length === 0) {
 			return issue(mutation.path, 'invalid_value', 'Table rename value must be a non-empty string.')
+		}
+		const validation = validateExcelTableName(mutation.value)
+		if (validation) {
+			return issue(mutation.path, 'invalid_value', validation.message, {
+				suggestedFix: validation.suggestedFix,
+			})
 		}
 		return { op: { op: 'renameTable', table, newName: mutation.value } }
 	}

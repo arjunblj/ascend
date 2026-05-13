@@ -18,6 +18,8 @@ export type {
 	Result,
 } from './errors.ts'
 export { AscendException, ascendError, assertUnreachable, err, ok } from './errors.ts'
+export type { ExcelNameValidationIssue } from './excel-names.ts'
+export { validateExcelTableName, validateExcelWorksheetName } from './excel-names.ts'
 export { levenshtein } from './levenshtein.ts'
 export type { MachineEnvelope, MachineFailure, MachineSuccess } from './machine.ts'
 export { MACHINE_FORMAT_VERSION, machineFailure, machineSuccess } from './machine.ts'

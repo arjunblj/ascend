@@ -1209,7 +1209,18 @@ describe('MCP server', () => {
 
 	test('non-replayable path mutation batches do not expose or apply partial MCP ops', async () => {
 		const wb = AscendWorkbook.create()
-		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'old' }] }])
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'old' },
+					{ ref: 'B1', value: 'Amount' },
+					{ ref: 'B2', value: 1 },
+				],
+			},
+			{ op: 'createTable', sheet: 'Sheet1', ref: 'A1:B2', name: 'Sales', hasHeaders: true },
+		])
 		await wb.save(TEMP_FILE)
 
 		const server = createServer()
@@ -1249,19 +1260,24 @@ describe('MCP server', () => {
 				output: `${TEMP_FILE}.out.xlsx`,
 				mutations: [
 					{ path: '/sheets/Sheet1/cells/A1/value', value: 'new' },
-					{ path: '/sheets/Missing/cells/A1/value', value: 1 },
+					{ path: '/sheets/Sheet1/name', value: 'Bad/Name' },
+					{ path: '/tables/Sales/name', value: 'Bad Name' },
 				],
 			})
 
 			expect(result?.isError).toBe(true)
 			expect(result?.structuredContent?.ok).toBe(false)
 			expect(result?.structuredContent?.error?.code).toBe('VALIDATION_ERROR')
-			expect(result?.structuredContent?.error?.details?.issueCount).toBe(1)
+			expect(result?.structuredContent?.error?.details?.issueCount).toBe(2)
 			expect(result?.structuredContent?.error?.details?.compiledOps).toEqual([])
 			expect(result?.structuredContent?.error?.details?.issueDetails).toEqual([
 				expect.objectContaining({
-					code: 'sheet_not_found',
-					path: '/sheets/Missing/cells/A1/value',
+					code: 'invalid_value',
+					path: '/sheets/Sheet1/name',
+				}),
+				expect.objectContaining({
+					code: 'invalid_value',
+					path: '/tables/Sales/name',
 				}),
 			])
 		}
@@ -1271,6 +1287,8 @@ describe('MCP server', () => {
 			kind: 'string',
 			value: 'old',
 		})
+		expect(reopened.sheets).toContain('Sheet1')
+		expect(reopened.table('Sales')?.name).toBe('Sales')
 	})
 
 	test('ascend.export writes JSON/TSV and rejects unsupported formats', async () => {

@@ -99,6 +99,12 @@ interface ApiEnvelope {
 				readonly partialReasons?: readonly string[]
 			}
 			readonly supportedPathShapes?: readonly string[]
+			readonly unsupportedLoadOptions?: readonly string[]
+			readonly requiredLoad?: {
+				readonly mode?: string
+				readonly allSheets?: boolean
+				readonly maxRows?: null | number
+			}
 			readonly compiledOps?: readonly unknown[]
 			readonly issueDetails?: readonly {
 				readonly code?: string
@@ -926,6 +932,27 @@ describe('Ascend API server', () => {
 				expect.objectContaining({ code: 'invalid_operation', opIndex: 2, path: 'ops[2].op' }),
 			]),
 		)
+	})
+
+	test('plan rejects capped load options instead of silently producing full plans', async () => {
+		const wb = AscendWorkbook.create()
+		await wb.save(TEMP_FILE)
+
+		const result = await postJson('/plan', {
+			file: TEMP_FILE,
+			ops: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] }],
+			maxRows: 1,
+		})
+
+		expect(result.status).toBe(400)
+		expect(result.body.ok).toBe(false)
+		expect(result.body.error?.code).toBe('VALIDATION_ERROR')
+		expect(result.body.error?.details?.unsupportedLoadOptions).toEqual(['maxRows'])
+		expect(result.body.error?.details?.requiredLoad).toEqual({
+			mode: 'full',
+			allSheets: true,
+			maxRows: null,
+		})
 	})
 
 	test('plan and commit require exact approval ids', async () => {

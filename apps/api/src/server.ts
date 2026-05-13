@@ -116,6 +116,26 @@ function rawPartMaxBytes(
 	return { ok: true, maxBytes: value }
 }
 
+function unsupportedAgentPlanLoadOptions(body: Record<string, unknown> | null): readonly string[] {
+	if (!body) return []
+	return ['maxRows', 'mode', 'sheets'].filter((key) => body[key] !== undefined)
+}
+
+function agentPlanLoadOptionsError(options: readonly string[]): AscendError {
+	return ascendError(
+		'VALIDATION_ERROR',
+		'Agent plans require a full workbook load; partial or capped load options are not supported',
+		{
+			details: {
+				unsupportedLoadOptions: options,
+				requiredLoad: { mode: 'full', allSheets: true, maxRows: null },
+			},
+			suggestedFix:
+				'Use read or agent-view for bounded inspection, then call plan without load options.',
+		},
+	)
+}
+
 type OperationInput =
 	| {
 			readonly ok: true
@@ -898,6 +918,10 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 				const file = body ? requireString(body, 'file') : null
 				if (!file) return jsonFailure('Missing or invalid file', 400)
 				try {
+					const unsupportedLoadOptions = unsupportedAgentPlanLoadOptions(body)
+					if (unsupportedLoadOptions.length > 0) {
+						return jsonFailureError(agentPlanLoadOptionsError(unsupportedLoadOptions), 400)
+					}
 					const inputShape = resolveOperationInputShape(body)
 					if (!inputShape.ok) return jsonFailureError(inputShape.error, 400)
 					let input: OperationInput

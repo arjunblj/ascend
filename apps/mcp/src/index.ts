@@ -101,6 +101,21 @@ function positiveIntegerOption(value: number | undefined, fallback: number): num
 	return Math.max(1, Math.floor(value))
 }
 
+function agentPlanLoadOptionsError(options: readonly string[]): AscendError {
+	return ascendError(
+		'VALIDATION_ERROR',
+		'Agent plans require a full workbook load; partial or capped load options are not supported',
+		{
+			details: {
+				unsupportedLoadOptions: options,
+				requiredLoad: { mode: 'full', allSheets: true, maxRows: null },
+			},
+			suggestedFix:
+				'Use read or agent-view for bounded inspection, then call plan without load options.',
+		},
+	)
+}
+
 class PreparedPlanStore {
 	private readonly handles = new Map<string, PreparedPlanRecord>()
 	private readonly maxHandles: number
@@ -1313,9 +1328,18 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 				.nonnegative()
 				.optional()
 				.describe('Maximum preview changed cells to include when compact is true'),
+			maxRows: z
+				.number()
+				.int()
+				.positive()
+				.optional()
+				.describe(
+					'Unsupported on plan; use ascend.read or ascend.agent_view for capped inspection',
+				),
 		},
-		async ({ file, ops, mutations, compact, prepare, maxChangedCells }) => {
+		async ({ file, ops, mutations, compact, prepare, maxChangedCells, maxRows }) => {
 			try {
+				if (maxRows !== undefined) return errorResponse(agentPlanLoadOptionsError(['maxRows']))
 				const inputShape = resolveOperationInputShape(ops, mutations)
 				if (!inputShape.ok) return errorResponse(inputShape.error)
 				let input: ResolvedOperationInput

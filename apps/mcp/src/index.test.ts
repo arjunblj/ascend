@@ -2216,6 +2216,45 @@ describe('MCP server', () => {
 		)
 	})
 
+	test('ascend.plan rejects capped load options instead of silently producing full plans', async () => {
+		const wb = AscendWorkbook.create()
+		await wb.save(TEMP_FILE)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const handler = (server as any)._registeredTools['ascend.plan'].handler as (args: {
+			file: string
+			ops: unknown[]
+			maxRows?: number
+		}) => Promise<{
+			isError?: boolean
+			structuredContent?: {
+				error?: {
+					code?: string
+					details?: {
+						unsupportedLoadOptions?: readonly string[]
+						requiredLoad?: { mode?: string; allSheets?: boolean; maxRows?: null | number }
+					}
+				}
+			}
+		}>
+
+		const result = await handler({
+			file: TEMP_FILE,
+			ops: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] }],
+			maxRows: 1,
+		})
+
+		expect(result.isError).toBe(true)
+		expect(result.structuredContent?.error?.code).toBe('VALIDATION_ERROR')
+		expect(result.structuredContent?.error?.details?.unsupportedLoadOptions).toEqual(['maxRows'])
+		expect(result.structuredContent?.error?.details?.requiredLoad).toEqual({
+			mode: 'full',
+			allSheets: true,
+			maxRows: null,
+		})
+	})
+
 	test('MCP operation schema accepts capability extension operations', () => {
 		const result = parseOperations([
 			{

@@ -851,6 +851,89 @@ describe('interactive client contract', () => {
 		])
 	})
 
+	test('journal marks extended validation and autofilter metadata inverses lossy', () => {
+		const wb = AscendWorkbook.create()
+		const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+		if (!sheet) throw new Error('Sheet1 missing')
+		sheet.dataValidations.push({
+			sqref: 'A1:A3',
+			source: 'x14',
+			uid: '{validation-uid}',
+			type: 'list',
+			formula1: '"Open,Closed"',
+		})
+		sheet.autoFilter = {
+			ref: 'A1:B10',
+			uid: '{filter-uid}',
+			columns: [{ colId: 0, kind: 'filters', values: ['Open'], hiddenButton: true }],
+			sortState: {
+				ref: 'A1:B10',
+				caseSensitive: true,
+				conditions: [{ ref: 'A2:A10', descending: true }, { ref: 'B2:B10' }],
+			},
+		}
+
+		const changed = wb.preview(
+			[
+				{
+					op: 'setDataValidation',
+					sheet: 'Sheet1',
+					range: 'A1:A3',
+					rule: { type: 'list', formula1: '"Yes,No"' },
+				},
+				{ op: 'clearAutoFilter', sheet: 'Sheet1' },
+			],
+			{ journal: true },
+		)
+
+		expect(changed.wouldSucceed).toBe(true)
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(false)
+		expect(changed.journal?.issues).toEqual([
+			{
+				code: 'LOSSY_INVERSE',
+				message:
+					'Data validation extension metadata at Sheet1!A1:A3 cannot be restored with public operations',
+				refs: ['Sheet1!A1:A3'],
+			},
+			{
+				code: 'LOSSY_INVERSE',
+				message:
+					'AutoFilter column 0 on Sheet1!A1:B10 cannot be fully restored with public operations',
+				refs: ['Sheet1!A1:B10'],
+			},
+			{
+				code: 'LOSSY_INVERSE',
+				message:
+					'AutoFilter extension metadata on Sheet1!A1:B10 cannot be restored with public operations',
+				refs: ['Sheet1!A1:B10'],
+			},
+			{
+				code: 'LOSSY_INVERSE',
+				message:
+					'AutoFilter sort metadata on Sheet1!A1:B10 cannot be fully restored with public operations',
+				refs: ['Sheet1!A1:B10'],
+			},
+		])
+		expect(changed.journal?.inverseOps).toEqual([
+			{ op: 'setAutoFilter', sheet: 'Sheet1', range: 'A1:B10' },
+			{
+				op: 'setAutoFilter',
+				sheet: 'Sheet1',
+				range: 'A1:B10',
+				sortRef: 'A1:B10',
+				sortBy: 'A2:A10',
+				descending: true,
+			},
+			{
+				op: 'setDataValidation',
+				sheet: 'Sheet1',
+				range: 'A1:A3',
+				rule: { type: 'list', formula1: '"Open,Closed"' },
+			},
+		])
+	})
+
 	test('journal inverse ops restore defined name edits', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([{ op: 'setDefinedName', name: 'Budget', ref: 'Sheet1!A1:A10' }])

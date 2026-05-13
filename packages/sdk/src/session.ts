@@ -1248,7 +1248,8 @@ export class AscendSession {
 			collectInteractiveCellMapDiffRefs(snapshot.request.sheet, snapshot.cells, cells, rebaseRefs)
 		}
 		if (rebaseRefs.size > 0) {
-			this.recentChanges.push({ generation: this.documentGeneration + 1, refs: null })
+			this.documentGeneration += 1
+			this.recentChanges.push({ generation: this.documentGeneration, refs: null })
 			if (this.recentChanges.length > 128)
 				this.recentChanges.splice(0, this.recentChanges.length - 128)
 		}

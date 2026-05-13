@@ -872,6 +872,7 @@ describe('interactive client contract', () => {
 		expect(session.editReadiness()).toMatchObject({
 			ready: true,
 			preparing: false,
+			generation: before.generation.session,
 			promotedToFull: true,
 			timings: {
 				mutableWorkbookCached: false,
@@ -886,6 +887,7 @@ describe('interactive client contract', () => {
 		])
 		expect(edit.apply.errors).toEqual([])
 		expect(edit.load.promotedToFull).toBe(true)
+		expect(edit.generation.session).toBe(before.generation.session + 1)
 		expect(edit.timings.mutableWorkbookCached).toBe(true)
 		expect(edit.timings.ensureMutableWorkbookMs).toBeLessThan(1)
 		expect(
@@ -992,6 +994,98 @@ describe('interactive client contract', () => {
 		expect(resumedPatch?.changedCells.map((cell) => [cell.ref, cell.flatValue])).toEqual([
 			['D1', 10],
 		])
+		session.close()
+	})
+
+	test('prepareEdits advances session generation when edit-ready hydration invalidates viewport semantics', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 1 },
+					{ ref: 'B1', value: 2 },
+				],
+			},
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'C1', formula: 'A1+B1' },
+		])
+		wb.recalc()
+
+		const session = await AscendSession.open(wb.toBytes(), { mode: 'values' })
+		const before = session.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 4,
+		})
+		expect(before.generation.session).toBe(0)
+		expect(before.cells.find((cell) => cell.ref === 'C1')?.flatValue).toBe(3)
+		expect(before.cells.find((cell) => cell.ref === 'C1')?.formula).toBeNull()
+
+		const prepared = await session.prepareEdits()
+		expect(prepared.load.read).toMatchObject({
+			mode: 'values',
+			isPartial: true,
+			partialReasons: ['only cell values are hydrated'],
+		})
+		expect(prepared.load.write).toMatchObject({ mode: 'full', isPartial: false })
+		expect(session.editReadiness()).toMatchObject({
+			ready: true,
+			generation: 1,
+			write: { mode: 'full', isPartial: false },
+		})
+		expect(
+			session.readViewportPatch({
+				sheet: 'Sheet1',
+				topRow: 0,
+				leftCol: 0,
+				rowCount: 1,
+				colCount: 4,
+				changedSince: before.changeToken,
+			}),
+		).toBeNull()
+
+		const refreshed = session.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 4,
+			changedSince: before.changeToken,
+		})
+		expect(refreshed.patch).toBeUndefined()
+		expect(refreshed.generation.session).toBe(1)
+		expect(refreshed.cells.find((cell) => cell.ref === 'C1')?.flatValue).toBe(3)
+		expect(refreshed.cells.find((cell) => cell.ref === 'C1')?.formula).toBe('A1+B1')
+
+		const edit = await session.apply(
+			[{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'D1', value: 9 }] }],
+			{ recalc: false },
+		)
+		expect(edit.apply.errors).toEqual([])
+		expect(edit.generation.session).toBe(2)
+		const patch = session.readViewportPatch({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 4,
+			changedSince: refreshed.changeToken,
+		})
+		expect(patch?.changedCells.map((cell) => [cell.ref, cell.flatValue])).toEqual([['D1', 9]])
+		const fresh = session.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 4,
+		})
+		if (!patch) throw new Error('expected resumed patch')
+		expect(materializeViewportPatch(refreshed.cells, patch)).toEqual(
+			interactiveCellMap(fresh.cells),
+		)
 		session.close()
 	})
 

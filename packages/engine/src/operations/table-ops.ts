@@ -72,6 +72,7 @@ export function handleCreateTable(
 	}
 	const width = ref.end.col - ref.start.col + 1
 	const columns = buildTableColumns(sheet, ref, width, op.hasHeaders)
+	sheet.ensureWritable()
 	sheet.tables.push({
 		id: createTableId(),
 		name: op.name,
@@ -167,6 +168,7 @@ export function handleAppendRows(
 
 	const tableIndex = sheet.tables.findIndex((candidate) => candidate.id === table.id)
 	if (tableIndex >= 0) {
+		sheet.ensureWritable()
 		const autoFilter = table.autoFilter
 			? resizeTableAutoFilter(table.autoFilter, table.ref, nextTableRef)
 			: undefined
@@ -222,6 +224,7 @@ export function handleDeleteTable(
 		return err(tableDeleteReferenceError(deletedColumnBlocker))
 	}
 	const idx = sheet.tables.findIndex((t) => t.id === table.id)
+	sheet.ensureWritable()
 	if (idx >= 0) sheet.tables.splice(idx, 1)
 	if (table.queryTable?.partPath) {
 		for (let i = workbook.connectionParts.length - 1; i >= 0; i--) {
@@ -268,6 +271,7 @@ export function handleRenameTable(
 	}
 	const idx = sheet.tables.findIndex((t) => t.id === table.id)
 	if (idx >= 0) {
+		sheet.ensureWritable()
 		sheet.tables[idx] = {
 			...table,
 			name: op.newName,
@@ -314,6 +318,7 @@ export function handleResizeTable(
 	const sortState = resizeTableSortState(table.sortState, table.ref, ref)
 	const idx = sheet.tables.findIndex((t) => t.id === table.id)
 	if (idx >= 0) {
+		sheet.ensureWritable()
 		const { autoFilter: _autoFilter, sortState: _sortState, ...tableWithoutFilterState } = table
 		sheet.tables[idx] = {
 			...tableWithoutFilterState,
@@ -609,6 +614,7 @@ export function handleSetTableColumn(
 	const nextColumn = updateTableColumn(column, op)
 	const tableIndex = sheet.tables.findIndex((candidate) => candidate.id === table.id)
 	if (tableIndex >= 0) {
+		sheet.ensureWritable()
 		sheet.tables[tableIndex] = {
 			...table,
 			columns: table.columns.map((candidate, index) =>
@@ -694,6 +700,7 @@ export function handleSetTableStyle(
 	const { table, sheet } = located
 	const tableIndex = sheet.tables.findIndex((candidate) => candidate.id === table.id)
 	if (tableIndex >= 0) {
+		sheet.ensureWritable()
 		const nextStyle = updateTableStyle(table.tableStyleInfo, op)
 		const { tableStyleInfo: _tableStyleInfo, ...tableWithoutStyle } = table
 		sheet.tables[tableIndex] = nextStyle

@@ -332,4 +332,126 @@ describe('interactive client contract', () => {
 			{ type: 'cellIs', priority: 3, range: 'B1:B10' },
 		])
 	})
+
+	test('journal inverse ops restore defined name edits', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setDefinedName', name: 'Budget', ref: 'Sheet1!A1:A10' }])
+
+		const changed = wb.apply([{ op: 'setDefinedName', name: 'Budget', ref: 'Sheet1!B1:B10' }], {
+			journal: true,
+		})
+
+		expect(changed.journal?.exact).toBe(true)
+		expect(changed.journal?.inverseOps).toEqual([
+			{ op: 'setDefinedName', name: 'Budget', ref: 'Sheet1!A1:A10' },
+		])
+
+		const undoChange = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undoChange.errors).toEqual([])
+		expect(wb.definedName('Budget')?.formula).toBe('Sheet1!A1:A10')
+
+		const deleted = wb.apply([{ op: 'deleteDefinedName', name: 'Budget' }], { journal: true })
+		expect(deleted.journal?.inverseOps).toEqual([
+			{ op: 'setDefinedName', name: 'Budget', ref: 'Sheet1!A1:A10' },
+		])
+
+		const undoDelete = wb.apply(deleted.journal?.inverseOps ?? [], { transaction: true })
+		expect(undoDelete.errors).toEqual([])
+		expect(wb.definedName('Budget')?.formula).toBe('Sheet1!A1:A10')
+
+		const created = wb.apply([{ op: 'setDefinedName', name: 'Scratch', ref: 'Sheet1!C1:C2' }], {
+			journal: true,
+		})
+		expect(created.journal?.inverseOps).toEqual([{ op: 'deleteDefinedName', name: 'Scratch' }])
+	})
+
+	test('journal inverse ops restore table renames and column metadata edits', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'Region' },
+					{ ref: 'B1', value: 'Qty' },
+					{ ref: 'C1', value: 'Amount' },
+					{ ref: 'A2', value: 'West' },
+					{ ref: 'B2', value: 2 },
+					{ ref: 'C2', value: 5 },
+					{ ref: 'A3', value: 'Total' },
+					{ ref: 'B3', value: 2 },
+					{ ref: 'C3', value: 5 },
+				],
+			},
+			{ op: 'createTable', sheet: 'Sheet1', ref: 'A1:C3', name: 'Sales', hasHeaders: true },
+			{
+				op: 'setTableColumn',
+				table: 'Sales',
+				column: 'Amount',
+				formula: '=[@Qty]*10',
+				totalsRowFunction: 'sum',
+			},
+		])
+		const internal = wb as unknown as {
+			wb: {
+				sheets: Array<{
+					tables: Array<{
+						hasTotals?: boolean
+						ref: { start: { row: number; col: number }; end: { row: number; col: number } }
+					}>
+				}>
+			}
+		}
+		const tableModel = internal.wb.sheets[0]?.tables[0]
+		if (tableModel) {
+			tableModel.hasTotals = true
+			tableModel.ref = { start: { row: 0, col: 0 }, end: { row: 2, col: 2 } }
+		}
+
+		const columnEdit = wb.apply(
+			[
+				{
+					op: 'setTableColumn',
+					table: 'Sales',
+					column: 'Amount',
+					newName: 'Revenue',
+					formula: '=[@Qty]*12',
+					totalsRowFunction: 'average',
+				},
+			],
+			{ journal: true },
+		)
+
+		expect(columnEdit.journal?.exact).toBe(true)
+		expect(columnEdit.journal?.inverseOps).toEqual([
+			{
+				op: 'setTableColumn',
+				table: 'Sales',
+				column: 'Revenue',
+				newName: 'Amount',
+				formula: '[@Qty]*10',
+				totalsRowFunction: 'sum',
+			},
+		])
+
+		const undoColumn = wb.apply(columnEdit.journal?.inverseOps ?? [], { transaction: true })
+		expect(undoColumn.errors).toEqual([])
+		expect(wb.table('Sales')?.columns).toEqual(['Region', 'Qty', 'Amount'])
+		expect(wb.table('Sales')?.columnDefs[2]).toMatchObject({
+			name: 'Amount',
+			formula: '[@Qty]*10',
+			totalsRowFunction: 'sum',
+		})
+
+		const renamed = wb.apply([{ op: 'renameTable', table: 'Sales', newName: 'RevenueTable' }], {
+			journal: true,
+		})
+		expect(renamed.journal?.inverseOps).toEqual([
+			{ op: 'renameTable', table: 'RevenueTable', newName: 'Sales' },
+		])
+
+		const undoRename = wb.apply(renamed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undoRename.errors).toEqual([])
+		expect(wb.table('Sales')?.name).toBe('Sales')
+	})
 })

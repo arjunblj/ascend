@@ -89,12 +89,15 @@ export type {
 	MutationJournalCommentPreimage,
 	MutationJournalConditionalFormatPreimage,
 	MutationJournalDataValidationPreimage,
+	MutationJournalDefinedNamePreimage,
 	MutationJournalEntry,
 	MutationJournalHyperlinkPreimage,
 	MutationJournalIssue,
 	MutationJournalMergePreimage,
 	MutationJournalPanePreimage,
 	MutationJournalPreimage,
+	MutationJournalTableColumnPreimage,
+	MutationJournalTableRenamePreimage,
 } from './journal.ts'
 export type {
 	OperationApprovalMetadata,

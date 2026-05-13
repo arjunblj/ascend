@@ -5143,6 +5143,42 @@ describe('applyOperation', () => {
 		expectErr(duplicate)
 	})
 
+	test('setTableColumn on a cloned workbook does not mutate the source table', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, cell(stringValue('Qty')))
+		sheet.cells.set(0, 1, cell(stringValue('Amount')))
+		sheet.tables.push({
+			id: createTableId(),
+			name: 'Sales',
+			sheetId: sheet.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 1, col: 1 } },
+			columns: [{ name: 'Qty' }, { name: 'Amount', formula: '[@Qty]*10' }],
+			hasHeaders: true,
+			hasTotals: false,
+		})
+		const clone = wb.clone()
+
+		expectOk(
+			applyOperation(clone, {
+				op: 'setTableColumn',
+				table: 'Sales',
+				column: 'Amount',
+				newName: 'Revenue',
+				formula: '=[@Qty]*12',
+			}),
+		)
+
+		expect(wb.getSheet('Sheet1')?.tables[0]?.columns[1]).toMatchObject({
+			name: 'Amount',
+			formula: '[@Qty]*10',
+		})
+		expect(clone.getSheet('Sheet1')?.tables[0]?.columns[1]).toMatchObject({
+			name: 'Revenue',
+			formula: '[@Qty]*12',
+		})
+	})
+
 	test('setTableColumn rewrites table-scoped worksheet metadata local structured refs', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

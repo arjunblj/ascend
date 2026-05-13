@@ -3,6 +3,8 @@ import {
 	type CellStyle,
 	cloneCellStyle,
 	DEFAULT_STYLE_ID,
+	type DefinedName,
+	type DefinedNameScope,
 	parseA1,
 	parseRange,
 	type RangeRef,
@@ -12,6 +14,7 @@ import {
 	type SheetConditionalFormatRule,
 	type SheetDataValidation,
 	type SheetHyperlink,
+	type TableColumn,
 	toA1,
 	toRangeString,
 	type Workbook,
@@ -85,6 +88,24 @@ export interface MutationJournalConditionalFormatPreimage {
 	readonly formats: readonly SheetConditionalFormat[]
 }
 
+export interface MutationJournalDefinedNamePreimage {
+	readonly name: string
+	readonly scope?: string
+	readonly definedName: DefinedName | null
+}
+
+export interface MutationJournalTableRenamePreimage {
+	readonly table: string
+	readonly existed: boolean
+}
+
+export interface MutationJournalTableColumnPreimage {
+	readonly table: string
+	readonly column: string | number
+	readonly columnIndex: number
+	readonly columnState: TableColumn | null
+}
+
 export type MutationJournalPreimage =
 	| { readonly kind: 'cells'; readonly cells: readonly MutationJournalCellPreimage[] }
 	| { readonly kind: 'comment'; readonly comment: MutationJournalCommentPreimage }
@@ -100,6 +121,9 @@ export type MutationJournalPreimage =
 			readonly kind: 'conditional-formats'
 			readonly conditionalFormats: MutationJournalConditionalFormatPreimage
 	  }
+	| { readonly kind: 'defined-name'; readonly definedName: MutationJournalDefinedNamePreimage }
+	| { readonly kind: 'table-rename'; readonly tableRename: MutationJournalTableRenamePreimage }
+	| { readonly kind: 'table-column'; readonly tableColumn: MutationJournalTableColumnPreimage }
 
 export interface MutationJournalEntry {
 	readonly opIndex: number
@@ -211,6 +235,14 @@ function buildSupportedJournalEntry(
 			return journalSetConditionalFormat(workbook, op, opIndex)
 		case 'deleteConditionalFormat':
 			return journalDeleteConditionalFormat(workbook, op, opIndex)
+		case 'setDefinedName':
+			return journalSetDefinedName(workbook, op, opIndex)
+		case 'deleteDefinedName':
+			return journalDeleteDefinedName(workbook, op, opIndex)
+		case 'renameTable':
+			return journalRenameTable(op, opIndex)
+		case 'setTableColumn':
+			return journalSetTableColumn(workbook, op, opIndex)
 		case 'setComment':
 			return journalSetComment(workbook, op, opIndex)
 		case 'deleteComment':
@@ -467,6 +499,70 @@ function journalDeleteConditionalFormat(
 					]
 				: []),
 		],
+	}
+}
+
+function journalSetDefinedName(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'setDefinedName' }>,
+	opIndex: number,
+): DraftJournalEntry {
+	const preimage = definedNamePreimage(workbook, op.name, op.scope)
+	const { inverseOps, issues } = restoreDefinedNameOps(workbook, preimage)
+	return {
+		opIndex,
+		op,
+		inverseOps,
+		preimages: [{ kind: 'defined-name', definedName: preimage }],
+		issues,
+	}
+}
+
+function journalDeleteDefinedName(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'deleteDefinedName' }>,
+	opIndex: number,
+): DraftJournalEntry {
+	const preimage = definedNamePreimage(workbook, op.name, op.scope)
+	const { inverseOps, issues } = preimage.definedName
+		? restoreDefinedNameOps(workbook, preimage)
+		: { inverseOps: [], issues: [] }
+	return {
+		opIndex,
+		op,
+		inverseOps,
+		preimages: [{ kind: 'defined-name', definedName: preimage }],
+		issues,
+	}
+}
+
+function journalRenameTable(
+	op: Extract<Operation, { op: 'renameTable' }>,
+	opIndex: number,
+): DraftJournalEntry {
+	const tableRename = { table: op.table, existed: true }
+	return {
+		opIndex,
+		op,
+		inverseOps: [{ op: 'renameTable', table: op.newName, newName: op.table }],
+		preimages: [{ kind: 'table-rename', tableRename }],
+		issues: [],
+	}
+}
+
+function journalSetTableColumn(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'setTableColumn' }>,
+	opIndex: number,
+): DraftJournalEntry {
+	const preimage = tableColumnPreimage(workbook, op.table, op.column)
+	const { inverseOps, issues } = restoreTableColumnOps(op, preimage)
+	return {
+		opIndex,
+		op,
+		inverseOps,
+		preimages: [{ kind: 'table-column', tableColumn: preimage }],
+		issues,
 	}
 }
 
@@ -869,6 +965,130 @@ function conditionalFormatRuleFromSheet(
 	}
 }
 
+function definedNamePreimage(
+	workbook: Workbook,
+	name: string,
+	scopeSheetName: string | undefined,
+): MutationJournalDefinedNamePreimage {
+	const scope = scopeSheetName
+		? sheetScopeForName(workbook, scopeSheetName)
+		: ({ kind: 'workbook' } as const)
+	const definedName = scope ? workbook.definedNames.getEntry(name, scope) : undefined
+	return {
+		name,
+		...(scopeSheetName !== undefined ? { scope: scopeSheetName } : {}),
+		definedName: definedName ? cloneDefinedName(definedName) : null,
+	}
+}
+
+function restoreDefinedNameOps(
+	workbook: Workbook,
+	preimage: MutationJournalDefinedNamePreimage,
+): {
+	readonly inverseOps: readonly Operation[]
+	readonly issues: readonly MutationJournalIssue[]
+} {
+	const definedName = preimage.definedName
+	if (!definedName) {
+		return {
+			inverseOps: [
+				{
+					op: 'deleteDefinedName',
+					name: preimage.name,
+					...(preimage.scope !== undefined ? { scope: preimage.scope } : {}),
+				},
+			],
+			issues: [],
+		}
+	}
+	const scope =
+		definedName.scope.kind === 'sheet'
+			? sheetNameForId(workbook, definedName.scope.sheetId)
+			: undefined
+	const refs = [`${scope ? `${scope}!` : ''}${definedName.name}`]
+	const issues: MutationJournalIssue[] = []
+	if (definedName.hidden !== undefined || definedName.extraAttributes !== undefined) {
+		issues.push({
+			code: 'LOSSY_INVERSE',
+			message: `Defined name ${refs[0]} has metadata that cannot be restored with public operations`,
+			refs,
+		})
+	}
+	if (definedName.scope.kind === 'sheet' && scope === undefined) {
+		return {
+			inverseOps: [],
+			issues: [
+				...issues,
+				{
+					code: 'UNSUPPORTED_VALUE',
+					message: `Cannot restore sheet-scoped defined name ${definedName.name} because its sheet scope is missing`,
+				},
+			],
+		}
+	}
+	return {
+		inverseOps: [
+			{
+				op: 'setDefinedName',
+				name: definedName.name,
+				ref: definedName.formula,
+				...(scope !== undefined ? { scope } : {}),
+			},
+		],
+		issues,
+	}
+}
+
+function tableColumnPreimage(
+	workbook: Workbook,
+	tableName: string,
+	column: string | number,
+): MutationJournalTableColumnPreimage {
+	const located = findTableColumn(workbook, tableName, column)
+	return {
+		table: tableName,
+		column,
+		columnIndex: located?.columnIndex ?? -1,
+		columnState: located?.column ? cloneTableColumn(located.column) : null,
+	}
+}
+
+function restoreTableColumnOps(
+	op: Extract<Operation, { op: 'setTableColumn' }>,
+	preimage: MutationJournalTableColumnPreimage,
+): {
+	readonly inverseOps: readonly Operation[]
+	readonly issues: readonly MutationJournalIssue[]
+} {
+	const column = preimage.columnState
+	if (!column) {
+		return {
+			inverseOps: [],
+			issues: [
+				{
+					code: 'UNSUPPORTED_VALUE',
+					message: `Cannot restore table column ${op.table}[${String(op.column)}] because it was not found before the edit`,
+				},
+			],
+		}
+	}
+	const inverse: Extract<Operation, { op: 'setTableColumn' }> = {
+		op: 'setTableColumn',
+		table: op.table,
+		column: op.newName ?? op.column,
+		...(op.newName !== undefined ? { newName: column.name } : {}),
+		...(op.formula !== undefined ? { formula: column.formula ?? null } : {}),
+		...(op.totalsRowFunction !== undefined
+			? { totalsRowFunction: column.totalsRowFunction ?? null }
+			: {}),
+		...(op.totalsRowFormula !== undefined
+			? { totalsRowFormula: column.totalsRowFormula ?? null }
+			: {}),
+		...(op.totalsRowLabel !== undefined ? { totalsRowLabel: column.totalsRowLabel ?? null } : {}),
+	}
+	return { inverseOps: [inverse], issues: [] }
+}
+
 function cellPreimages(
 	workbook: Workbook,
 	sheetName: string,
@@ -983,6 +1203,39 @@ function sameRange(a: RangeRef, b: RangeRef): boolean {
 	)
 }
 
+function sheetScopeForName(
+	workbook: Workbook,
+	sheetName: string,
+): Extract<DefinedNameScope, { kind: 'sheet' }> | null {
+	const sheet = workbook.getSheet(sheetName)
+	return sheet ? { kind: 'sheet', sheetId: sheet.id } : null
+}
+
+function sheetNameForId(workbook: Workbook, sheetId: string): string | undefined {
+	return workbook.sheets.find((sheet) => sheet.id === sheetId)?.name
+}
+
+function findTableColumn(
+	workbook: Workbook,
+	tableName: string,
+	columnSelector: string | number,
+): { readonly columnIndex: number; readonly column: TableColumn } | null {
+	for (const sheet of workbook.sheets) {
+		for (const table of sheet.tables) {
+			if (table.name.toLowerCase() !== tableName.toLowerCase()) continue
+			const columnIndex =
+				typeof columnSelector === 'number'
+					? columnSelector
+					: table.columns.findIndex(
+							(column) => column.name.toLowerCase() === columnSelector.toLowerCase(),
+						)
+			const column = table.columns[columnIndex]
+			return column ? { columnIndex, column } : null
+		}
+	}
+	return null
+}
+
 function commentPreimage(
 	workbook: Workbook,
 	sheetName: string,
@@ -1059,6 +1312,23 @@ function cloneCellValue(value: CellValue): CellValue {
 
 function cloneScalarCellValue(value: ScalarCellValue): ScalarCellValue {
 	return cloneCellValue(value) as ScalarCellValue
+}
+
+function cloneDefinedName(definedName: DefinedName): DefinedName {
+	return {
+		...definedName,
+		scope: { ...definedName.scope },
+		...(definedName.extraAttributes
+			? { extraAttributes: definedName.extraAttributes.map((attribute) => ({ ...attribute })) }
+			: {}),
+	}
+}
+
+function cloneTableColumn(column: TableColumn): TableColumn {
+	return {
+		...column,
+		...(column.xmlColumnPr ? { xmlColumnPr: { ...column.xmlColumnPr } } : {}),
+	}
 }
 
 function cloneConditionalFormat(format: SheetConditionalFormat): SheetConditionalFormat {

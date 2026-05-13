@@ -2660,6 +2660,53 @@ describe('checker', () => {
 		})
 	})
 
+	test('detects conflicting threaded comment authors for the same person id', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.threadedComments.push(
+			{
+				ref: 'D4',
+				text: 'Root',
+				id: '{thread-1}',
+				personId: '{person-1}',
+				author: 'Ada',
+				partPath: 'xl/threadedComments/threadedComment1.xml',
+			},
+			{
+				ref: 'D5',
+				text: 'Reply',
+				id: '{thread-2}',
+				parentId: '{thread-1}',
+				personId: '{person-1}',
+				author: 'Grace',
+				partPath: 'xl/threadedComments/threadedComment1.xml',
+			},
+		)
+
+		const result = check(wb)
+		const issue = result.issues.find(
+			(i) =>
+				i.rule === 'threaded-comment-integrity' &&
+				i.details?.kind === 'threaded-comment-person-author-conflict',
+		)
+
+		expect(result.passed).toBe(false)
+		expect(issue?.severity).toBe('warning')
+		expect(issue?.refs).toEqual(['Sheet1!D4', 'Sheet1!D5'])
+		expect(issue?.details).toMatchObject({
+			personId: '{person-1}',
+			firstAuthor: 'Ada',
+			duplicateAuthor: 'Grace',
+			firstPartPath: 'xl/threadedComments/threadedComment1.xml',
+			duplicatePartPath: 'xl/threadedComments/threadedComment1.xml',
+			firstCommentIndex: 0,
+			duplicateCommentIndex: 1,
+			firstId: '{thread-1}',
+			duplicateId: '{thread-2}',
+		})
+		expect(issue?.suggestedFix).toContain('one personId')
+	})
+
 	test('detects threaded comment missing ids and duplicate root refs', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')

@@ -3458,6 +3458,8 @@ interface ThreadedCommentIntegrityEntry {
 	readonly partPath: string
 	readonly id?: string
 	readonly parentId?: string
+	readonly personId?: string
+	readonly author?: string
 }
 
 function isThreadedCommentRelationshipType(relationshipType: string | undefined): boolean {
@@ -3502,6 +3504,7 @@ function checkThreadedCommentIntegrity(
 	const idsByPart = new Map<string, Map<string, ThreadedCommentIntegrityEntry>>()
 	const idsByWorkbook = new Map<string, ThreadedCommentIntegrityEntry>()
 	const rootRefsByPart = new Map<string, Map<string, ThreadedCommentIntegrityEntry>>()
+	const authorsByPersonId = new Map<string, ThreadedCommentIntegrityEntry>()
 	const claimedPartsBySheet = new Map<string, Set<string>>()
 	const sheetsByName = new Map(wb.sheets.map((sheet) => [sheet.name, sheet]))
 	let threadedCommentCount = 0
@@ -3707,6 +3710,46 @@ function checkThreadedCommentIntegrity(
 				})
 			} else if (comment.personId) {
 				threadedCommentsWithPersonIds++
+				const author = comment.author
+				if (!author) continue
+				const existingAuthor = authorsByPersonId.get(comment.personId)
+				if (!existingAuthor) {
+					authorsByPersonId.set(comment.personId, {
+						sheetName: sheet.name,
+						ref: comment.ref,
+						index,
+						partPath,
+						...(comment.id ? { id: comment.id } : {}),
+						personId: comment.personId,
+						author,
+					})
+				} else if (existingAuthor.author !== author) {
+					issues.push({
+						rule: 'threaded-comment-integrity',
+						severity: 'warning',
+						message: `Threaded comments bind person id "${comment.personId}" to conflicting authors`,
+						refs: [
+							`${existingAuthor.sheetName}!${existingAuthor.ref}`,
+							`${sheet.name}!${comment.ref}`,
+						],
+						suggestedFix:
+							'Repair the threaded comment persons binding before author-sensitive edits; one personId must identify one display name.',
+						details: {
+							kind: 'threaded-comment-person-author-conflict',
+							personId: comment.personId,
+							firstAuthor: existingAuthor.author,
+							duplicateAuthor: author,
+							firstPartPath: existingAuthor.partPath,
+							duplicatePartPath: partPath,
+							firstSheetName: existingAuthor.sheetName,
+							duplicateSheetName: sheet.name,
+							firstCommentIndex: existingAuthor.index,
+							duplicateCommentIndex: index,
+							...(existingAuthor.id ? { firstId: existingAuthor.id } : {}),
+							...(comment.id ? { duplicateId: comment.id } : {}),
+						},
+					})
+				}
 			}
 		}
 	}

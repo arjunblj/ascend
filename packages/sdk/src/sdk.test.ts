@@ -1059,6 +1059,52 @@ describe('AscendWorkbook', () => {
 		expect(a3?.value).toEqual({ kind: 'number', value: 30 })
 	})
 
+	test('recalc persists clean calc freshness when formula values are unchanged', async () => {
+		const sourceBytes = makeSyntheticXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`,
+			'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`,
+			'xl/workbook.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Calc" sheetId="1" r:id="rId1"/></sheets>
+  <calcPr fullCalcOnLoad="1" calcCompleted="0" calcOnSave="0" forceFullCalc="1" calcId="191029"/>
+</workbook>`,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData><row r="1"><c r="A1"><v>1</v></c><c r="B1"><f>A1*2</f><v>2</v></c></row></sheetData>
+</worksheet>`,
+		})
+		const wb = await AscendWorkbook.open(sourceBytes)
+
+		const result = wb.recalc()
+		expect(result.errors).toHaveLength(0)
+		expect(result.changed).toHaveLength(0)
+		const out = wb.toBytes()
+
+		expect(out).not.toEqual(sourceBytes)
+		const archive = extractZip(out)
+		const workbookXml = archive.readText('xl/workbook.xml') ?? ''
+		expect(workbookXml).not.toContain('fullCalcOnLoad="1"')
+		expect(workbookXml).not.toContain('calcCompleted="0"')
+		expect(workbookXml).not.toContain('calcOnSave="0"')
+		expect(workbookXml).not.toContain('forceFullCalc="1"')
+		expect(workbookXml).toContain('calcCompleted="1"')
+		expect(workbookXml).toContain('calcOnSave="1"')
+		expect(workbookXml).toContain('forceFullCalc="0"')
+	})
+
 	test('recalc can resolve external workbook references with a caller hook', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

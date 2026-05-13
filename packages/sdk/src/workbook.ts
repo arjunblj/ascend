@@ -520,14 +520,25 @@ export class AscendWorkbook extends WorkbookReadView {
 			}
 		}
 		if (result.errors.length === 0) {
-			this.calcStateDirty = false
-			this.wb.calcSettings = {
-				...this.wb.calcSettings,
+			const sourceCalcSettings = this.wb.calcSettings
+			const cleanCalcSettings = {
+				...sourceCalcSettings,
 				fullCalcOnLoad: false,
-				calcCompleted: true,
-				calcOnSave: true,
-				forceFullCalc: false,
+				...(sourceCalcSettings.calcCompleted !== undefined ? { calcCompleted: true } : {}),
+				...(sourceCalcSettings.calcOnSave !== undefined ? { calcOnSave: true } : {}),
+				...(sourceCalcSettings.forceFullCalc !== undefined ? { forceFullCalc: false } : {}),
 			}
+			const calcSettingsChanged =
+				sourceCalcSettings.fullCalcOnLoad !== cleanCalcSettings.fullCalcOnLoad ||
+				sourceCalcSettings.calcCompleted !== cleanCalcSettings.calcCompleted ||
+				sourceCalcSettings.calcOnSave !== cleanCalcSettings.calcOnSave ||
+				sourceCalcSettings.forceFullCalc !== cleanCalcSettings.forceFullCalc
+			if (calcSettingsChanged) {
+				this.markDirty()
+				this.workbookMetaDirty = true
+			}
+			this.calcStateDirty = false
+			this.wb.calcSettings = cleanCalcSettings
 		}
 		this.clearReadCaches()
 		this.pendingDirtyRefs = []

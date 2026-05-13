@@ -187,7 +187,7 @@ export function buildWorkbookXml(workbook: Workbook, options: WorkbookXmlOptions
 	const calcAttrs: string[] = []
 	const calcMode = options.calcStateDirty ? 'auto' : cs.calcMode
 	if (calcMode !== 'auto') calcAttrs.push(`calcMode="${calcMode}"`)
-	calcAttrs.push('fullCalcOnLoad="1"')
+	if (options.calcStateDirty || cs.fullCalcOnLoad) calcAttrs.push('fullCalcOnLoad="1"')
 	if (options.calcStateDirty || cs.calcCompleted === false) calcAttrs.push('calcCompleted="0"')
 	else if (cs.calcCompleted === true) calcAttrs.push('calcCompleted="1"')
 	if (options.calcStateDirty || cs.calcOnSave === true) calcAttrs.push('calcOnSave="1"')

@@ -7139,6 +7139,31 @@ describe('writeXlsx', () => {
 		)
 	})
 
+	it('does not request full recalculation on load for clean generated calc settings', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Calc')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: S0 })
+		sheet.cells.set(0, 1, { value: numberValue(2), formula: 'A1*2', styleId: S0 })
+		wb.calcSettings = {
+			...wb.calcSettings,
+			calcMode: 'auto',
+			fullCalcOnLoad: false,
+			calcCompleted: true,
+			calcOnSave: true,
+			forceFullCalc: false,
+		}
+
+		const written = writeXlsx(wb)
+		expectOk(written)
+
+		const zip = unzipSync(written.value)
+		const workbookXml = new TextDecoder().decode(zip['xl/workbook.xml'] ?? new Uint8Array())
+		expect(workbookXml).not.toContain('fullCalcOnLoad="1"')
+		expect(workbookXml).toContain('calcCompleted="1"')
+		expect(workbookXml).toContain('calcOnSave="1"')
+		expect(workbookXml).toContain('forceFullCalc="0"')
+	})
+
 	it('drops calcChain and marks workbook stale after formula-affecting edits', () => {
 		const sourceBytes = makeXlsx({
 			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

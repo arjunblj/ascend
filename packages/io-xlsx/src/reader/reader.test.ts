@@ -1814,7 +1814,7 @@ describe('readXlsx', () => {
 <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
   xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
   <sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets>
-  <calcPr calcMode="manual" fullCalcOnLoad="1"/>
+  <calcPr calcCompleted="0" forceFullCalc="1"/>
 </workbook>`,
 			'xl/sharedStrings.xml': SHARED_STRINGS,
 			'xl/worksheets/sheet1.xml': SHEET_XML,
@@ -1827,6 +1827,11 @@ describe('readXlsx', () => {
 		expect(
 			result.value.report.features.some((feature) => feature.feature === 'formulaFreshness'),
 		).toBe(true)
+		const freshness = result.value.report.features.find(
+			(feature) => feature.feature === 'formulaFreshness',
+		)
+		expect(freshness?.note).toContain('calculation not completed')
+		expect(freshness?.note).toContain('forced full recalculation')
 		expect(result.value.report.features.some((feature) => feature.feature === 'calcChain')).toBe(
 			true,
 		)

@@ -1612,10 +1612,17 @@ function buildReport(
 		})
 	}
 
-	if (workbook.calcSettings.calcMode === 'manual' || workbook.calcSettings.fullCalcOnLoad) {
+	if (
+		workbook.calcSettings.calcMode === 'manual' ||
+		workbook.calcSettings.fullCalcOnLoad ||
+		workbook.calcSettings.calcCompleted === false ||
+		workbook.calcSettings.forceFullCalc === true
+	) {
 		const reasons: string[] = []
 		if (workbook.calcSettings.calcMode === 'manual') reasons.push('manual calculation mode')
 		if (workbook.calcSettings.fullCalcOnLoad) reasons.push('full recalculation requested on load')
+		if (workbook.calcSettings.calcCompleted === false) reasons.push('calculation not completed')
+		if (workbook.calcSettings.forceFullCalc === true) reasons.push('forced full recalculation')
 		features.push({
 			feature: 'formulaFreshness',
 			tier: 'normalized',

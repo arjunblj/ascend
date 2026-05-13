@@ -3,6 +3,7 @@ import {
 	createWorkbook,
 	indexToColumn,
 	parseA1,
+	parseA1Safe,
 	parseRange,
 	type RangeRef,
 	type Workbook,
@@ -938,6 +939,23 @@ export class AscendWorkbook extends WorkbookReadView {
 					stylesDirty = true
 					break
 				case 'setCells':
+					{
+						const sheet = this.wb.getSheet(op.sheet)
+						if (
+							sheet &&
+							op.updates.some((update) => {
+								const ref = parseA1Safe(update.ref)
+								if (!ref) return false
+								const formula = sheet.cells.readFormula(ref.row, ref.col)
+								return (
+									(formula !== undefined && formula !== null) ||
+									sheet.cells.readFormulaInfo(ref.row, ref.col) !== undefined
+								)
+							})
+						) {
+							calcChainDirty = true
+						}
+					}
 					if (
 						op.updates.some((update) => {
 							if (typeof update.value !== 'string') return false

@@ -1384,7 +1384,16 @@ describe('AscendWorkbook', () => {
 <calcChain xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><c r="B1" i="1"/></calcChain>`,
 		})
 		const wb = await AscendWorkbook.open(sourceBytes)
-		wb.apply([{ op: 'setCells', sheet: 'Calc', updates: [{ ref: 'A1', value: 3 }] }])
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Calc',
+				updates: [
+					{ ref: 'A1', value: 3 },
+					{ ref: 'C3', value: '__ascend_feature_contract__' },
+				],
+			},
+		])
 
 		const archive = extractZip(wb.toBytes())
 		expect(archive.has('xl/calcChain.xml')).toBe(true)
@@ -1392,6 +1401,51 @@ describe('AscendWorkbook', () => {
 		const workbookXml = archive.readText('xl/workbook.xml') ?? ''
 		expect(workbookXml).toContain('calcCompleted="0"')
 		expect(workbookXml).toContain('forceFullCalc="1"')
+	})
+
+	test('value edits drop calcChain when replacing an existing formula cell', async () => {
+		const sourceBytes = makeSyntheticXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/calcChain.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.calcChain+xml"/>
+</Types>`,
+			'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/calcChain" Target="calcChain.xml"/>
+</Relationships>`,
+			'xl/workbook.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Calc" sheetId="1" r:id="rId1"/></sheets>
+  <calcPr calcMode="manual" fullCalcOnLoad="0" calcCompleted="1" calcOnSave="0" calcId="191029"/>
+</workbook>`,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData><row r="1"><c r="A1"><v>1</v></c><c r="B1"><f>A1*2</f><v>2</v></c></row></sheetData>
+</worksheet>`,
+			'xl/calcChain.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<calcChain xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><c r="B1" i="1"/></calcChain>`,
+		})
+		const wb = await AscendWorkbook.open(sourceBytes)
+		wb.apply([{ op: 'setCells', sheet: 'Calc', updates: [{ ref: 'B1', value: 123 }] }])
+
+		const saved = wb.toBytes()
+		const archive = extractZip(saved)
+		expect(archive.has('xl/calcChain.xml')).toBe(false)
+		expect(archive.readText('xl/_rels/workbook.xml.rels')).not.toContain('relationships/calcChain')
+		expect(archive.readText('[Content_Types].xml')).not.toContain('/xl/calcChain.xml')
+
+		const reopened = await AscendWorkbook.open(saved)
+		expect(reopened.sheet('Calc')?.cell('B1')?.formula).toBeNull()
+		expect(reopened.sheet('Calc')?.cell('B1')?.value).toEqual({ kind: 'number', value: 123 })
 	})
 
 	test('reusing an existing shared string avoids dirtying the shared string table', async () => {

@@ -463,6 +463,97 @@ describe('interactive client contract', () => {
 		session.close()
 	})
 
+	test('interactive structural viewport shifts force fresh snapshots instead of ref patches', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'r1-a' },
+					{ ref: 'B1', value: 'r1-b' },
+					{ ref: 'C1', value: 'r1-c' },
+					{ ref: 'A2', value: 'r2-a' },
+					{ ref: 'B2', value: 'r2-b' },
+					{ ref: 'C2', value: 'r2-c' },
+					{ ref: 'A3', value: 'r3-a' },
+					{ ref: 'B3', value: 'r3-b' },
+					{ ref: 'C3', value: 'r3-c' },
+				],
+			},
+		])
+
+		const session = await AscendSession.open(wb.toBytes(), { mode: 'interactive' })
+		const base = session.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 2,
+			colCount: 2,
+		})
+
+		const rowDelete = await session.apply([{ op: 'deleteRows', sheet: 'Sheet1', at: 0, count: 1 }])
+		expect(rowDelete.apply.errors).toEqual([])
+		expect(
+			session.readViewportPatch({
+				sheet: 'Sheet1',
+				topRow: 0,
+				leftCol: 0,
+				rowCount: 2,
+				colCount: 2,
+				changedSince: base.changeToken,
+			}),
+		).toBeNull()
+		const afterRowDelete = session.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 2,
+			colCount: 2,
+			changedSince: base.changeToken,
+		})
+		expect(afterRowDelete.patch).toBeUndefined()
+		expect(new Map(afterRowDelete.cells.map((cell) => [cell.ref, cell.flatValue]))).toEqual(
+			new Map([
+				['A1', 'r2-a'],
+				['B1', 'r2-b'],
+				['A2', 'r3-a'],
+				['B2', 'r3-b'],
+			]),
+		)
+
+		const colDelete = await session.apply([{ op: 'deleteCols', sheet: 'Sheet1', at: 0, count: 1 }])
+		expect(colDelete.apply.errors).toEqual([])
+		expect(
+			session.readViewportPatch({
+				sheet: 'Sheet1',
+				topRow: 0,
+				leftCol: 0,
+				rowCount: 2,
+				colCount: 2,
+				changedSince: afterRowDelete.changeToken,
+			}),
+		).toBeNull()
+		const afterColDelete = session.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 2,
+			colCount: 2,
+			changedSince: afterRowDelete.changeToken,
+		})
+		expect(afterColDelete.patch).toBeUndefined()
+		expect(new Map(afterColDelete.cells.map((cell) => [cell.ref, cell.flatValue]))).toEqual(
+			new Map([
+				['A1', 'r2-b'],
+				['B1', 'r2-c'],
+				['A2', 'r3-b'],
+				['B2', 'r3-c'],
+			]),
+		)
+		session.close()
+	})
+
 	test('interactive edit journal undo patches materialize back to the base viewport', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

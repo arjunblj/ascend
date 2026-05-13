@@ -37,7 +37,6 @@ import {
 	clearFormulaMetadataForSheet,
 	createLegacyArrayFormulaIndex,
 	DEFAULT_SID,
-	findTable,
 	getSheet,
 	inputToCellValue,
 	legacyArrayFormulaEditError,
@@ -95,11 +94,9 @@ export function handleAppendRows(
 	workbook: Workbook,
 	op: Extract<Operation, { op: 'appendRows' }>,
 ): Result<PatchResult> {
-	const located = findTable(workbook, op.table)
-	if (!located) {
-		return err(ascendError('NAME_NOT_FOUND', `Table "${op.table}" not found`))
-	}
-	const { table, sheet } = located
+	const located = resolveUniqueTable(workbook, op.table, 'appendRows')
+	if (!located.ok) return located
+	const { table, sheet } = located.value
 	if (op.rows.length === 0) return ok(patch([], [sheet.name], false))
 
 	const width = table.columns.length
@@ -210,11 +207,9 @@ export function handleDeleteTable(
 	workbook: Workbook,
 	op: Extract<Operation, { op: 'deleteTable' }>,
 ): Result<PatchResult> {
-	const located = findTable(workbook, op.table)
-	if (!located) {
-		return err(ascendError('NAME_NOT_FOUND', `Table "${op.table}" not found`))
-	}
-	const { table, sheet } = located
+	const located = resolveUniqueTable(workbook, op.table, 'deleteTable')
+	if (!located.ok) return located
+	const { table, sheet } = located.value
 	const deletedColumnBlocker = findDeletedTableColumnReference(
 		workbook,
 		collectTableColumnsForDelete(table),
@@ -254,11 +249,9 @@ export function handleRenameTable(
 	workbook: Workbook,
 	op: Extract<Operation, { op: 'renameTable' }>,
 ): Result<PatchResult> {
-	const located = findTable(workbook, op.table)
-	if (!located) {
-		return err(ascendError('NAME_NOT_FOUND', `Table "${op.table}" not found`))
-	}
-	const { table, sheet } = located
+	const located = resolveUniqueTable(workbook, op.table, 'renameTable')
+	if (!located.ok) return located
+	const { table, sheet } = located.value
 	const nameError = tableNameError(op.newName)
 	if (nameError) return err(nameError)
 	if (findTableNameCollision(workbook, op.newName, table.id)) {
@@ -290,11 +283,9 @@ export function handleResizeTable(
 	workbook: Workbook,
 	op: Extract<Operation, { op: 'resizeTable' }>,
 ): Result<PatchResult> {
-	const located = findTable(workbook, op.table)
-	if (!located) {
-		return err(ascendError('NAME_NOT_FOUND', `Table "${op.table}" not found`))
-	}
-	const { table, sheet } = located
+	const located = resolveUniqueTable(workbook, op.table, 'resizeTable')
+	if (!located.ok) return located
+	const { table, sheet } = located.value
 	const rangeResult = safeParseRange(op.ref)
 	if (!rangeResult.ok) return rangeResult
 	const ref = rangeResult.value
@@ -336,6 +327,63 @@ export function handleResizeTable(
 
 function tableColumnsChanged(before: RangeRef, after: RangeRef): boolean {
 	return before.start.col !== after.start.col || before.end.col !== after.end.col
+}
+
+function resolveUniqueTable(
+	workbook: Workbook,
+	name: string,
+	operation: Extract<
+		Operation['op'],
+		| 'appendRows'
+		| 'deleteTable'
+		| 'renameTable'
+		| 'resizeTable'
+		| 'setTableColumn'
+		| 'setTableStyle'
+	>,
+): Result<{ readonly table: Table; readonly sheet: Sheet }> {
+	const lowerName = name.toLowerCase()
+	const matches: { table: Table; sheet: Sheet }[] = []
+	for (const sheet of workbook.sheets) {
+		for (const table of sheet.tables) {
+			if (table.name.toLowerCase() === lowerName) matches.push({ table, sheet })
+		}
+	}
+	if (matches.length === 0) {
+		return err(ascendError('NAME_NOT_FOUND', `Table "${name}" not found`))
+	}
+	if (matches.length > 1) {
+		return err(duplicateTableNameOperationError(name, operation, matches))
+	}
+	const match = matches[0]
+	if (!match) return err(ascendError('NAME_NOT_FOUND', `Table "${name}" not found`))
+	return ok(match)
+}
+
+function duplicateTableNameOperationError(
+	tableName: string,
+	operation: string,
+	matches: readonly { readonly table: Table; readonly sheet: Sheet }[],
+): ReturnType<typeof ascendError> {
+	return ascendError(
+		'VALIDATION_ERROR',
+		`Cannot ${operation} table "${tableName}" because ${matches.length} table parts use that name, making structured references ambiguous`,
+		{
+			refs: matches.map(({ table }) => rangeToA1(table.ref)),
+			suggestedFix:
+				'Repair duplicate imported table names first so the target table and structured-reference rewrites are unambiguous.',
+			details: {
+				kind: 'duplicate-table-name-operation',
+				operation,
+				tableName,
+				matches: matches.map(({ table, sheet }) => ({
+					sheetName: sheet.name,
+					ref: rangeToA1(table.ref),
+					...(table.partPath ? { partPath: table.partPath } : {}),
+				})),
+			},
+		},
+	)
 }
 
 function tableNameError(name: string): ReturnType<typeof ascendError> | null {
@@ -554,11 +602,9 @@ export function handleSetTableColumn(
 	workbook: Workbook,
 	op: Extract<Operation, { op: 'setTableColumn' }>,
 ): Result<PatchResult> {
-	const located = findTable(workbook, op.table)
-	if (!located) {
-		return err(ascendError('NAME_NOT_FOUND', `Table "${op.table}" not found`))
-	}
-	const { table, sheet } = located
+	const located = resolveUniqueTable(workbook, op.table, 'setTableColumn')
+	if (!located.ok) return located
+	const { table, sheet } = located.value
 	const columnIndex = resolveTableColumnIndex(table.columns, op.column)
 	if (columnIndex < 0) {
 		return err(
@@ -655,10 +701,8 @@ export function handleSetTableStyle(
 	workbook: Workbook,
 	op: Extract<Operation, { op: 'setTableStyle' }>,
 ): Result<PatchResult> {
-	const located = findTable(workbook, op.table)
-	if (!located) {
-		return err(ascendError('NAME_NOT_FOUND', `Table "${op.table}" not found`))
-	}
+	const located = resolveUniqueTable(workbook, op.table, 'setTableStyle')
+	if (!located.ok) return located
 	if (
 		op.styleName === undefined &&
 		op.showFirstColumn === undefined &&
@@ -674,7 +718,7 @@ export function handleSetTableStyle(
 		)
 	}
 
-	const { table, sheet } = located
+	const { table, sheet } = located.value
 	const tableIndex = sheet.tables.findIndex((candidate) => candidate.id === table.id)
 	if (tableIndex >= 0) {
 		sheet.ensureWritable()

@@ -92,6 +92,33 @@ function setupQueryTableBackedSalesTable() {
 	return { wb, sheet }
 }
 
+function setupDuplicateSalesTables() {
+	const wb = createWorkbook()
+	const sheet1 = wb.addSheet('Sheet1')
+	const sheet2 = wb.addSheet('Sheet2')
+	sheet1.tables.push({
+		id: createTableId(),
+		name: 'Sales',
+		sheetId: sheet1.id,
+		partPath: 'xl/tables/table1.xml',
+		ref: { start: { row: 0, col: 0 }, end: { row: 2, col: 1 } },
+		columns: [{ name: 'Region' }, { name: 'Amount' }],
+		hasHeaders: true,
+		hasTotals: false,
+	})
+	sheet2.tables.push({
+		id: createTableId(),
+		name: 'Sales',
+		sheetId: sheet2.id,
+		partPath: 'xl/tables/table2.xml',
+		ref: { start: { row: 4, col: 3 }, end: { row: 6, col: 4 } },
+		columns: [{ name: 'Region' }, { name: 'Amount' }],
+		hasHeaders: true,
+		hasTotals: false,
+	})
+	return { wb, sheet1, sheet2 }
+}
+
 const TABLE_FIELD_METADATA_BLOCKERS: readonly {
 	readonly label: string
 	readonly sourceKind: string
@@ -6142,6 +6169,42 @@ describe('applyOperation', () => {
 			expect(diagnostic).toContain('Sales[Rep]')
 			expect(result.error.suggestedFix).toContain('Rewrite or remove structured references')
 			expect(sheet.tables).toHaveLength(1)
+		}
+	})
+
+	test('table edit operations reject duplicate imported table names before mutation', () => {
+		const operations = [
+			{
+				op: 'appendRows',
+				table: 'Sales',
+				rows: [['North', 10]],
+			},
+			{ op: 'deleteTable', table: 'Sales' },
+			{ op: 'renameTable', table: 'Sales', newName: 'Revenue' },
+			{ op: 'resizeTable', table: 'sales', ref: 'A1:B4' },
+			{ op: 'setTableColumn', table: 'Sales', column: 'Amount', newName: 'Revenue' },
+			{ op: 'setTableStyle', table: 'Sales', showRowStripes: false },
+		] as const
+
+		for (const op of operations) {
+			const { wb, sheet1, sheet2 } = setupDuplicateSalesTables()
+			const result = applyOperation(wb, op)
+
+			expectErr(result)
+			expect(result.error.code).toBe('VALIDATION_ERROR')
+			expect(result.error.message).toContain('2 table parts use that name')
+			expect(result.error.details).toMatchObject({
+				kind: 'duplicate-table-name-operation',
+				operation: op.op,
+				matches: [
+					{ sheetName: 'Sheet1', ref: 'A1:B3', partPath: 'xl/tables/table1.xml' },
+					{ sheetName: 'Sheet2', ref: 'D5:E7', partPath: 'xl/tables/table2.xml' },
+				],
+			})
+			expect(sheet1.tables[0]?.name).toBe('Sales')
+			expect(sheet1.tables[0]?.ref.end.row).toBe(2)
+			expect(sheet2.tables[0]?.name).toBe('Sales')
+			expect(sheet2.tables[0]?.ref.end.row).toBe(6)
 		}
 	})
 

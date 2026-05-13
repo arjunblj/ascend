@@ -1392,6 +1392,15 @@ describe('checker', () => {
 						featureFamily: 'preservedExternalLink',
 					},
 					{
+						sourcePartPath: 'xl/workbook.xml',
+						relationshipPartPath: 'xl/_rels/workbook.xml.rels',
+						id: 'rIdOrphanExternal',
+						type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLink',
+						rawTarget: 'externalLinks/externalLink1.xml',
+						resolvedTarget: 'xl/externalLinks/externalLink1.xml',
+						featureFamily: 'preservedExternalLink',
+					},
+					{
 						sourcePartPath: 'xl/externalLinks/externalLink2.xml',
 						relationshipPartPath: 'xl/externalLinks/_rels/externalLink2.xml.rels',
 						id: 'rIdBad',
@@ -1480,6 +1489,25 @@ describe('checker', () => {
 				refs: ['xl/externalLinks/externalLink1.xml'],
 				details: expect.objectContaining({
 					kind: 'orphan-external-link-part',
+				}),
+			}),
+		)
+		expect(externalIssues).toContainEqual(
+			expect.objectContaining({
+				severity: 'warning',
+				message: expect.stringContaining('not claimed by workbook externalReferences metadata'),
+				refs: ['xl/_rels/workbook.xml.rels#rIdOrphanExternal'],
+				suggestedFix: expect.stringContaining('Reconnect the workbook externalReference metadata'),
+				details: expect.objectContaining({
+					kind: 'orphan-external-link-relationship',
+					relationship: expect.objectContaining({
+						sourcePartPath: 'xl/workbook.xml',
+						relationshipPartPath: 'xl/_rels/workbook.xml.rels',
+						id: 'rIdOrphanExternal',
+						type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLink',
+						rawTarget: 'externalLinks/externalLink1.xml',
+						resolvedTarget: 'xl/externalLinks/externalLink1.xml',
+					}),
 				}),
 			}),
 		)

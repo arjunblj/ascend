@@ -83,6 +83,24 @@ describe('formula editing utilities', () => {
 		})
 	})
 
+	test('cycles sheet-qualified refs when the cursor is in the qualifier', () => {
+		expect(cycleFormulaReferenceMode("'My Sheet'!A1", 3)).toMatchObject({
+			formula: "'My Sheet'!$A$1",
+			cursor: 15,
+			changed: true,
+		})
+		expect(cycleFormulaReferenceMode("='[Book.xlsx]Q1 Plan'!A1", 8)).toMatchObject({
+			formula: "='[Book.xlsx]Q1 Plan'!$A$1",
+			cursor: 26,
+			changed: true,
+		})
+		expect(cycleFormulaReferenceMode("'Q1 Plan'!A1:B2", 4)).toMatchObject({
+			formula: "'Q1 Plan'!$A$1:B2",
+			cursor: 14,
+			changed: true,
+		})
+	})
+
 	test('does not cycle stale references from empty formula edit slots', () => {
 		expect(cycleFormulaReferenceMode('=A1 + ', 6)).toEqual({
 			formula: '=A1 + ',

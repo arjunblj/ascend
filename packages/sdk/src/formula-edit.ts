@@ -124,14 +124,7 @@ export function referenceAtCursor(formula: string, cursor: number): FormulaRefer
 export function cycleFormulaReferenceMode(formula: string, cursor: number): CycleReferenceResult {
 	const spans = tokenSpans(formula)
 	const clampedCursor = Math.max(0, Math.min(formula.length, cursor))
-	let target: TokenSpan | undefined
-	for (const span of spans) {
-		if (span.token.type !== TokenType.CellRef) continue
-		if (clampedCursor >= span.start && clampedCursor <= span.end) {
-			target = span
-			break
-		}
-	}
+	const target = cycleTargetCellSpan(formula, spans, clampedCursor)
 	if (!target) return { formula, cursor, changed: false }
 	const cycled = cycleA1Reference(target.text)
 	if (cycled === target.text) return { formula, cursor, changed: false }
@@ -143,6 +136,35 @@ export function cycleFormulaReferenceMode(formula: string, cursor: number): Cycl
 		changed: true,
 	}
 	return reference ? { ...result, reference } : result
+}
+
+function cycleTargetCellSpan(
+	formula: string,
+	spans: readonly TokenSpan[],
+	cursor: number,
+): TokenSpan | undefined {
+	for (const span of spans) {
+		if (span.token.type === TokenType.CellRef && cursor >= span.start && cursor <= span.end) {
+			return span
+		}
+	}
+	const activeReference = collectFormulaReferenceRanges(formula, spans).find(
+		(reference) => cursor >= reference.start && cursor <= reference.end,
+	)
+	if (
+		!activeReference ||
+		(activeReference.kind !== 'sheet-cell' && activeReference.kind !== 'sheet-range')
+	) {
+		return undefined
+	}
+	const firstCell = spans.find(
+		(span) =>
+			span.token.type === TokenType.CellRef &&
+			span.start >= activeReference.start &&
+			span.end <= activeReference.end,
+	)
+	if (!firstCell || cursor >= firstCell.start) return undefined
+	return firstCell
 }
 
 export function insertFormulaReference(

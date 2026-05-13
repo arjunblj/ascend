@@ -1452,6 +1452,30 @@ describe('interactive client contract', () => {
 		})
 		expect(wb.readSnapshotInfo().generations).toEqual(afterMetadataChanged)
 
+		const styleOps = [
+			{ op: 'setNumberFormat' as const, sheet: 'Sheet1', range: 'C1:C1', format: '0.00%' },
+			{
+				op: 'setStyle' as const,
+				sheet: 'Sheet1',
+				range: 'C1:C1',
+				style: { font: { bold: true }, numberFormat: '0.00%' },
+			},
+		]
+		const styleChanged = wb.apply(styleOps)
+		expect(styleChanged.errors).toEqual([])
+		expect(styleChanged.affectedCells).toEqual(['C1', 'C1'])
+		const afterStyleChanged = wb.readSnapshotInfo().generations
+		const styleNoOp = wb.apply(styleOps)
+		expect(styleNoOp).toMatchObject({
+			affectedCells: [],
+			sheetsModified: [],
+			recalcRequired: false,
+			dirtyRegions: [],
+			generations: afterStyleChanged,
+			errors: [],
+		})
+		expect(wb.readSnapshotInfo().generations).toEqual(afterStyleChanged)
+
 		const fullSession = await AscendSession.open(wb.toBytes(), { mode: 'interactive' })
 		const fullViewport = fullSession.readViewport({
 			sheet: 'Sheet1',
@@ -1504,6 +1528,18 @@ describe('interactive client contract', () => {
 			errors: [],
 		})
 		expect(sessionMetadataNoOp.generation.session).toBe(fullViewport.generation.session)
+
+		const sessionStyleChanged = await fullSession.apply(styleOps)
+		expect(sessionStyleChanged.apply.errors).toEqual([])
+		const sessionStyleNoOp = await fullSession.apply(styleOps)
+		expect(sessionStyleNoOp.apply).toMatchObject({
+			affectedCells: [],
+			sheetsModified: [],
+			recalcRequired: false,
+			dirtyRegions: [],
+			errors: [],
+		})
+		expect(sessionStyleNoOp.generation.session).toBe(sessionStyleChanged.generation.session)
 		fullSession.close()
 
 		const session = await AscendSession.open(wb.toBytes(), { mode: 'interactive', maxRows: 1 })

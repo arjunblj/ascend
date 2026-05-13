@@ -214,6 +214,7 @@ export function handleSetStyle(
 			const currentStyle = workbook.styles.get(existingStyleId) ?? {}
 			const merged = mergeStyleInput(currentStyle, op.style)
 			const styleId = workbook.styles.register(merged)
+			if (styleId === existingStyleId) continue
 			sheet.cells.set(
 				row,
 				col,
@@ -228,5 +229,5 @@ export function handleSetStyle(
 		}
 	}
 
-	return ok(patch(affected, [op.sheet]))
+	return ok(patch(affected, affected.length > 0 ? [op.sheet] : []))
 }

@@ -4706,6 +4706,52 @@ describe('applyOperation', () => {
 		expect(styleA2?.numberFormat).toBe('0.00%')
 	})
 
+	test('style setters skip semantic no-ops without dirtying styles', () => {
+		const wb = setup()
+		expectOk(
+			applyOperation(wb, {
+				op: 'setNumberFormat',
+				sheet: 'Sheet1',
+				range: 'A1:A1',
+				format: '0.00%',
+			}),
+		)
+		expectOk(
+			applyOperation(wb, {
+				op: 'setStyle',
+				sheet: 'Sheet1',
+				range: 'B1:B1',
+				style: { font: { bold: true }, numberFormat: '$0.00' },
+			}),
+		)
+
+		const numberFormat = applyOperation(wb, {
+			op: 'setNumberFormat',
+			sheet: 'Sheet1',
+			range: 'A1:A1',
+			format: '0.00%',
+		})
+		expectOk(numberFormat)
+		expect(numberFormat.value).toEqual({
+			affectedCells: [],
+			sheetsModified: [],
+			recalcRequired: false,
+		})
+
+		const style = applyOperation(wb, {
+			op: 'setStyle',
+			sheet: 'Sheet1',
+			range: 'B1:B1',
+			style: { font: { bold: true }, numberFormat: '$0.00' },
+		})
+		expectOk(style)
+		expect(style.value).toEqual({
+			affectedCells: [],
+			sheetsModified: [],
+			recalcRequired: false,
+		})
+	})
+
 	test('sortRange sorts a block by header name and moves metadata with rows', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

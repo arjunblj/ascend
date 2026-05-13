@@ -44,6 +44,7 @@ export function handleSetNumberFormat(
 				numberFormat: op.format,
 			}
 			const styleId = workbook.styles.register(style)
+			if (styleId === existingStyleId) continue
 			if (workbook.preservedStyles && styleId !== existingStyleId) {
 				const baseStyleId =
 					workbook.preservedStyles.baseStyleIdByStyleId?.[existingStyleId] ?? existingStyleId
@@ -69,7 +70,7 @@ export function handleSetNumberFormat(
 		}
 	}
 
-	return ok(patch(affected, [op.sheet]))
+	return ok(patch(affected, affected.length > 0 ? [op.sheet] : []))
 }
 
 export function handleSetConditionalFormat(

@@ -158,6 +158,7 @@ export interface WritePolicyDiagnostic {
 		| 'drawingml-vml-drift-risk'
 		| 'chart-source-ref-drift-risk'
 		| 'analytics-pivot-refresh-risk'
+		| 'table-preservation-risk'
 		| 'legacy-comment-preservation-risk'
 		| 'threaded-comment-preservation-risk'
 		| 'conditional-format-extension-preservation'
@@ -1493,6 +1494,61 @@ function buildWritePolicyReport(
 			},
 		})
 	}
+	const tableIntegrityIssues = collectTableIntegrityIssues(checkIssues)
+	const tableLocations = collectTableLocations(workbook)
+	const tablePackageIssuePartPaths = packageGraphAudit.issues.flatMap((issue) =>
+		isTablePackageGraphIssue(issue) ? packageGraphIssuePackagePaths(issue) : [],
+	)
+	const tablePartPaths = collectTablePartPaths(
+		packageGraph.parts,
+		tableLocations,
+		tableIntegrityIssues,
+		tablePackageIssuePartPaths,
+	)
+	const tablePackageGraphIssues = packageGraphIssuesForParts(packageGraphAudit, tablePartPaths, [
+		'preservedTable',
+		'preservedQueryTable',
+	])
+	if (
+		tableLocations.length > 0 ||
+		tableIntegrityIssues.length > 0 ||
+		tablePackageGraphIssues.length > 0
+	) {
+		const relatedOperations = collectTableRelatedOperations(workbook, operations)
+		diagnostics.push({
+			code: 'table-preservation-risk',
+			severity:
+				tableIntegrityIssues.length > 0 ||
+				tablePackageGraphIssues.some((issue) => issue.severity === 'error')
+					? 'warning'
+					: 'info',
+			message:
+				tablePackageGraphIssues.length > 0 || tableIntegrityIssues.length > 0
+					? `${tablePackageGraphIssues.length + tableIntegrityIssues.length} table or queryTable integrity issue(s) require inspection before write.`
+					: `${tableLocations.length} table location(s) depend on worksheet table relationships and table/queryTable sidecar preservation.`,
+			suggestedAction:
+				'Use inspectSheet(sheet).tables for table part paths, queryTable sidecars, filters, sort state, style metadata, and topology preconditions; verify postWrite.check plus postWrite.packageGraphAudit after table or structural edits.',
+			locations: tableLocations.map((entry) => entry.location),
+			...(tablePartPaths.length > 0 ? { partPaths: tablePartPaths } : {}),
+			...(tablePartPaths.length > 0
+				? { packageParts: packagePartDetails(packagePartByPath, tablePartPaths) }
+				: {}),
+			featureFamily: 'preservedTable,preservedQueryTable',
+			preservationPolicy: 'preserve-exact',
+			details: {
+				tables: tableLocations,
+				relatedOperations,
+				packageGraphIssues: tablePackageGraphIssues,
+				verifyIssues: tableIntegrityIssues,
+				preconditions: [
+					'workbook-unique table names',
+					'workbook-unique table ids',
+					'non-overlapping same-sheet table ranges',
+					'table/queryTable relationship binding preserved',
+				],
+			},
+		})
+	}
 	const commentIntegrityIssues = collectCommentIntegrityIssues(checkIssues)
 	const legacyCommentLocations = collectLegacyCommentLocations(workbook)
 	const legacyCommentPartPaths = collectLegacyCommentPartPaths(
@@ -1731,19 +1787,23 @@ function buildWritePolicyReport(
 			},
 		})
 	}
-	if (!packageGraphAudit.ok) {
+	const genericPackageGraphIssues = packageGraphAudit.issues.filter(
+		(issue) => !isRoutedPackageGraphIssue(issue),
+	)
+	if (genericPackageGraphIssues.length > 0) {
 		const issuePartPaths = uniqueStrings(
-			packageGraphAudit.issues.flatMap((issue) => (issue.partPath ? [issue.partPath] : [])),
+			genericPackageGraphIssues.flatMap((issue) => packageGraphIssuePackagePaths(issue)),
 		)
 		const packageParts = packagePartDetails(packagePartByPath, issuePartPaths)
 		diagnostics.push({
 			code: 'package-graph-audit-issue',
 			severity: 'warning',
-			message: `${packageGraphAudit.issues.length} package graph issue(s) were found before write planning.`,
+			message: `${genericPackageGraphIssues.length} package graph issue(s) were found before write planning.`,
 			suggestedAction:
 				'Inspect packageGraphAudit.issues and resolve or explicitly accept package graph risk before committing.',
 			partPaths: issuePartPaths,
 			...(packageParts.length > 0 ? { packageParts } : {}),
+			details: { packageGraphIssues: genericPackageGraphIssues },
 		})
 	}
 	for (const feature of features) {
@@ -3247,6 +3307,27 @@ interface ThreadedCommentLocation {
 	readonly author?: string
 }
 
+interface TableLocation {
+	readonly sheetName: string
+	readonly tableName: string
+	readonly location: string
+	readonly partPath?: string
+	readonly tableId?: string
+	readonly queryTablePartPath?: string
+	readonly queryTableRelationshipId?: string
+}
+
+interface TableRelatedOperation {
+	readonly operationIndex: number
+	readonly op: string
+	readonly sheetName?: string
+	readonly tableName?: string
+	readonly ref?: string
+	readonly at?: number
+	readonly count?: number
+	readonly axis?: 'row' | 'column'
+}
+
 interface CommentRelatedOperation {
 	readonly operationIndex: number
 	readonly op: string
@@ -3269,6 +3350,115 @@ function collectCommentIntegrityIssues(checkIssues: readonly CheckIssue[]): {
 		legacy: checkIssues.filter(isLegacyCommentIntegrityIssue),
 		threaded: checkIssues.filter(isThreadedCommentIntegrityIssue),
 	}
+}
+
+function collectTableIntegrityIssues(checkIssues: readonly CheckIssue[]): readonly CheckIssue[] {
+	return checkIssues.filter(
+		(issue) =>
+			issue.rule === 'table-integrity' ||
+			issue.rule === 'table-package-integrity' ||
+			issue.rule === 'table-query-integrity' ||
+			(issue.rule === 'package-graph-integrity' &&
+				(checkIssueFeatureFamilies(issue).some(isTableFeatureFamily) ||
+					checkIssuePackagePartPaths(issue).some(isTablePackagePartPath))),
+	)
+}
+
+function collectTableLocations(workbook: Workbook): TableLocation[] {
+	return workbook.sheets.flatMap((sheet) =>
+		sheet.tables.map((table) => {
+			const location = `${sheet.name}!${rangeRefToA1(table.ref)}`
+			return {
+				sheetName: sheet.name,
+				tableName: table.name,
+				location,
+				...(table.partPath ? { partPath: table.partPath } : {}),
+				tableId: String(table.id),
+				...(table.queryTable?.partPath ? { queryTablePartPath: table.queryTable.partPath } : {}),
+				...(table.queryTable?.relationshipId
+					? { queryTableRelationshipId: table.queryTable.relationshipId }
+					: {}),
+			}
+		}),
+	)
+}
+
+function collectTablePartPaths(
+	parts: readonly XlsxPackageGraph['parts'][number][],
+	locations: readonly TableLocation[],
+	issues: readonly CheckIssue[] = [],
+	packageIssuePartPaths: readonly string[] = [],
+): string[] {
+	return uniqueStrings([
+		...parts.filter((part) => isTableFeatureFamily(part.featureFamily)).map((part) => part.path),
+		...locations.flatMap((location) => [
+			...(location.partPath ? [location.partPath] : []),
+			...(location.queryTablePartPath ? [location.queryTablePartPath] : []),
+		]),
+		...issues.flatMap((issue) => checkIssuePackagePartPaths(issue).filter(isTablePackagePartPath)),
+		...packageIssuePartPaths.filter(isTablePackagePartPath),
+	])
+}
+
+function collectTableRelatedOperations(
+	workbook: Workbook,
+	operations: readonly Operation[],
+): TableRelatedOperation[] {
+	const tableSheets = new Set(
+		workbook.sheets.filter((sheet) => sheet.tables.length > 0).map((sheet) => sheet.name),
+	)
+	const related: TableRelatedOperation[] = []
+	for (const [operationIndex, op] of operations.entries()) {
+		switch (op.op) {
+			case 'createTable':
+				related.push({
+					operationIndex,
+					op: op.op,
+					sheetName: op.sheet,
+					tableName: op.name,
+					ref: op.ref,
+				})
+				break
+			case 'appendRows':
+			case 'deleteTable':
+			case 'renameTable':
+			case 'resizeTable':
+			case 'setTableColumn':
+			case 'setTableStyle':
+				related.push({
+					operationIndex,
+					op: op.op,
+					tableName: op.table,
+					...('ref' in op ? { ref: op.ref } : {}),
+				})
+				break
+			case 'insertRows':
+			case 'deleteRows':
+				if (!tableSheets.has(op.sheet)) break
+				related.push({
+					operationIndex,
+					op: op.op,
+					sheetName: op.sheet,
+					at: op.at,
+					count: op.count,
+					axis: 'row',
+				})
+				break
+			case 'insertCols':
+			case 'deleteCols':
+				if (!tableSheets.has(op.sheet)) break
+				related.push({
+					operationIndex,
+					op: op.op,
+					sheetName: op.sheet,
+					at: op.at,
+					count: op.count,
+					axis: 'column',
+				})
+				break
+		}
+	}
+	return related
 }
 
 function collectLegacyCommentLocations(workbook: Workbook): LegacyCommentLocation[] {
@@ -3417,12 +3607,35 @@ function isThreadedCommentPackagePartPath(path: string): boolean {
 	return /^xl\/threadedComments\/[^/]+\.xml$/i.test(path) || /^xl\/persons\/[^/]+\.xml$/i.test(path)
 }
 
+function isTablePackagePartPath(path: string): boolean {
+	return /^xl\/tables\/[^/]+\.xml$/i.test(path) || /^xl\/queryTables\/[^/]+\.xml$/i.test(path)
+}
+
 function isLegacyCommentFeatureFamily(featureFamily: string): boolean {
 	return featureFamily === 'preservedComments' || featureFamily === 'preservedVml'
 }
 
 function isThreadedCommentFeatureFamily(featureFamily: string): boolean {
 	return featureFamily === 'preservedThreadedComments'
+}
+
+function isTableFeatureFamily(featureFamily: string): boolean {
+	return featureFamily === 'preservedTable' || featureFamily === 'preservedQueryTable'
+}
+
+function isTablePackageGraphIssue(issue: XlsxPackageGraphFidelityIssue): boolean {
+	if (issue.featureFamily && isTableFeatureFamily(issue.featureFamily)) return true
+	return packageGraphIssuePackagePaths(issue).some(isTablePackagePartPath)
+}
+
+function isRoutedPackageGraphIssue(issue: XlsxPackageGraphFidelityIssue): boolean {
+	if (!issue.featureFamily) return false
+	return (
+		isTableFeatureFamily(issue.featureFamily) ||
+		isLegacyCommentFeatureFamily(issue.featureFamily) ||
+		isThreadedCommentFeatureFamily(issue.featureFamily) ||
+		issue.featureFamily === 'preservedExternalLink'
+	)
 }
 
 function isLegacyCommentContentType(contentType: string): boolean {
@@ -3437,6 +3650,17 @@ function isThreadedCommentContentType(contentType: string): boolean {
 		contentType === 'application/vnd.ms-excel.threadedcomments+xml' ||
 		contentType === 'application/vnd.ms-excel.person+xml'
 	)
+}
+
+function packageGraphIssuePackagePaths(issue: XlsxPackageGraphFidelityIssue): string[] {
+	const values = [
+		issue.partPath,
+		issue.sourcePartPath,
+		issue.relationshipPartPath,
+		typeof issue.actual === 'string' ? issue.actual : undefined,
+		typeof issue.expected === 'string' ? issue.expected : undefined,
+	].filter((value): value is string => value !== undefined && isPackagePartPath(value))
+	return uniqueStrings(values)
 }
 
 function packageGraphIssuesForParts(
@@ -4148,6 +4372,10 @@ function packagePartDetailsFromParts(
 
 function uniqueStrings(values: readonly string[]): string[] {
 	return [...new Set(values)]
+}
+
+function rangeRefToA1(range: RangeRef): string {
+	return `${indexToColumn(range.start.col)}${range.start.row + 1}:${indexToColumn(range.end.col)}${range.end.row + 1}`
 }
 
 function isActiveContentFeature(featureFamily: string): boolean {

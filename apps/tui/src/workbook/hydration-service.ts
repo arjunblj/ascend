@@ -25,7 +25,7 @@ export class HydrationService {
 			return cached
 		}
 		this.misses += 1
-		const data = this.session.requireWorkbook().readRangeCompact(sheetName, range, {
+		const data = this.session.readRangeCompact(sheetName, range, {
 			includeRefs: true,
 		})
 		this.rawTileCache.set(key, data)

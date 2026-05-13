@@ -161,9 +161,7 @@ export class WorkbookTuiEngine implements TuiEngine {
 		const data = this.hasWorkbook()
 			? this.hydration.readViewport(sheetName, this.viewport)
 			: undefined
-		const sheetInfo = this.hasWorkbook()
-			? this.session.requireWorkbook().inspectSheet(sheetName)
-			: undefined
+		const sheetInfo = this.hasWorkbook() ? this.session.inspectSheet(sheetName) : undefined
 		const hydrateMs = performance.now() - hydrateStart
 		const frame = renderWorkspace({
 			size,
@@ -2312,9 +2310,9 @@ export class WorkbookTuiEngine implements TuiEngine {
 
 	private activeCellEditText(): string {
 		const ref = activeCellRef(this.selection)
-		const formula = this.session.requireWorkbook().formula(`${this.sheetName()}!${ref}`)
+		const formula = this.session.formula(`${this.sheetName()}!${ref}`)
 		if (formula?.formula) return `=${formula.formula}`
-		const cell = this.session.requireWorkbook().sheet(this.sheetName())?.cellCompact(ref)
+		const cell = this.session.cellCompact(this.sheetName(), ref)
 		return cell ? displayCellValue(cell.value) : ''
 	}
 

@@ -33,13 +33,9 @@ describe('HydrationService', () => {
 
 function fakeSession(reads: string[]): WorkbookSessionController {
 	return {
-		requireWorkbook() {
-			return {
-				readRangeCompact(sheet: string, range: string) {
-					reads.push(`${sheet}:${range}`)
-					return undefined
-				},
-			}
+		readRangeCompact(sheet: string, range: string) {
+			reads.push(`${sheet}:${range}`)
+			return undefined
 		},
 	} as unknown as WorkbookSessionController
 }

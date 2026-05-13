@@ -179,6 +179,11 @@ export function buildMutationJournal(
 	workbook: Workbook,
 	ops: readonly Operation[],
 ): MutationJournal {
+	if (ops.length === 1) {
+		const op = ops[0]
+		if (!op) return emptyMutationJournal()
+		return mutationJournalFromEntries([buildJournalEntry(workbook, op, 0)])
+	}
 	const journalWorkbook = workbook.clone()
 	const entries: MutationJournalEntry[] = []
 	for (let opIndex = 0; opIndex < ops.length; opIndex++) {
@@ -188,6 +193,20 @@ export function buildMutationJournal(
 		const result = applyOperation(journalWorkbook, op)
 		if (!result.ok) break
 	}
+	return mutationJournalFromEntries(entries)
+}
+
+function emptyMutationJournal(): MutationJournal {
+	return {
+		entries: [],
+		inverseOps: [],
+		supported: true,
+		exact: true,
+		issues: [],
+	}
+}
+
+function mutationJournalFromEntries(entries: readonly MutationJournalEntry[]): MutationJournal {
 	const inverseOps = [...entries].reverse().flatMap((entry) => entry.inverseOps)
 	const issues = entries.flatMap((entry) => entry.issues)
 	return {

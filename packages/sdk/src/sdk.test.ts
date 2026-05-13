@@ -2714,6 +2714,19 @@ describe('AscendWorkbook', () => {
 		})
 		expect(wb.sheet('Calc')?.cell('B2')?.formula).toBe('A2*2')
 		expect(wb.formula('Calc!B2')?.normalizedFormula).toBe('A2*2')
+		const compact = wb.readWindowCompact('Calc', 'A1:B2', { includeRefs: true })
+		expect(compact?.cells.map((cell) => [cell.ref, cell.formula, cell.formulaBinding])).toEqual([
+			['A1', 'SUM(B1:B2)', { kind: 'array', ref: 'A1:A2' }],
+			['B1', 'A1*2', { kind: 'shared', sharedIndex: '0', isMaster: true, masterRef: 'B1' }],
+			['B2', 'A2*2', { kind: 'shared', sharedIndex: '0', isMaster: false, masterRef: 'B1' }],
+		])
+		const compactNoRefs = wb.readWindowCompact('Calc', 'A1:B2', { includeRefs: false })
+		expect(compactNoRefs?.cells.map((cell) => cell.ref)).toEqual([undefined, undefined, undefined])
+		expect(compactNoRefs?.cells.map((cell) => [cell.row, cell.col, cell.formula])).toEqual([
+			[0, 0, 'SUM(B1:B2)'],
+			[0, 1, 'A1*2'],
+			[1, 1, 'A2*2'],
+		])
 	})
 
 	test('getFormulaBinding returns summary for formula cells, null for non-formula', async () => {

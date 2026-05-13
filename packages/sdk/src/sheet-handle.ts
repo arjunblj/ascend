@@ -47,7 +47,7 @@ export class SheetHandle {
 	private readonly resolveFormula: (
 		row: number,
 		col: number,
-		cell: NonNullable<ReturnType<Sheet['cells']['get']>>,
+		cell: CellFormulaSource,
 	) => string | null
 	private _changeVersion = 0
 	private readonly _changeSnapshots = new Map<
@@ -58,11 +58,7 @@ export class SheetHandle {
 	constructor(
 		sheetName: string,
 		resolveSheet: () => Sheet | undefined,
-		resolveFormula: (
-			row: number,
-			col: number,
-			cell: NonNullable<ReturnType<Sheet['cells']['get']>>,
-		) => string | null,
+		resolveFormula: (row: number, col: number, cell: CellFormulaSource) => string | null,
 	) {
 		this.sheetName = sheetName
 		this.resolveSheet = resolveSheet
@@ -96,7 +92,8 @@ export class SheetHandle {
 		return makeCompactCellInfo(
 			parsed.row,
 			parsed.col,
-			cell,
+			cell.value,
+			cell.formulaInfo,
 			this.resolveFormula(parsed.row, parsed.col, cell),
 			refText,
 		)
@@ -291,7 +288,8 @@ export class SheetHandle {
 					makeCompactCellInfo(
 						row,
 						col,
-						cell,
+						cell.value,
+						cell.formulaInfo,
 						this.resolveFormula(row, col, cell),
 						opts?.includeRefs === false ? undefined : toA1({ row, col }),
 					),
@@ -557,21 +555,19 @@ function toFormulaBindingSummary(
 function collectCellsCompact(
 	sheet: Sheet,
 	range: RangeRef,
-	resolveFormula: (
-		row: number,
-		col: number,
-		cell: NonNullable<ReturnType<Sheet['cells']['get']>>,
-	) => string | null,
+	resolveFormula: (row: number, col: number, cell: CellFormulaSource) => string | null,
 	opts?: { includeRefs?: boolean },
 ): CompactCellInfo[] {
 	const cells: CompactCellInfo[] = []
-	sheet.cells.forEachCellInRange(range, (row, col, cell) => {
+	sheet.cells.forEachCellContentInRange(range, (row, col, value, formula, formulaInfo) => {
+		const formulaSource = { formula, formulaInfo }
 		cells.push(
 			makeCompactCellInfo(
 				row,
 				col,
-				cell,
-				resolveFormula(row, col, cell),
+				value,
+				formulaInfo,
+				resolveFormula(row, col, formulaSource),
 				opts?.includeRefs === false ? undefined : toA1({ row, col }),
 			),
 		)
@@ -582,18 +578,24 @@ function collectCellsCompact(
 function makeCompactCellInfo(
 	row: number,
 	col: number,
-	cell: NonNullable<ReturnType<Sheet['cells']['get']>>,
+	value: CellValue,
+	formulaInfo: CellFormulaBinding | undefined,
 	formula: string | null,
 	ref?: string,
 ): CompactCellInfo {
 	return {
 		...(ref ? { ref } : {}),
-		value: cell.value,
+		value,
 		formula,
-		formulaBinding: cell.formulaInfo ?? null,
+		formulaBinding: formulaInfo ?? null,
 		row,
 		col,
 	}
+}
+
+interface CellFormulaSource {
+	readonly formula: string | null
+	readonly formulaInfo?: CellFormulaBinding | undefined
 }
 
 function toCellInfo(cell: CompactCellInfo, explicitRef?: string): CellInfo {

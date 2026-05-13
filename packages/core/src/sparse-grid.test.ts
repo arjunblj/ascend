@@ -457,6 +457,43 @@ describe('SparseGrid', () => {
 		])
 	})
 
+	test('forEachCellContentInRange visits values and formulas without materializing cells', () => {
+		const grid = new SparseGrid()
+		grid.setExpectedDensity('dense')
+		const formulaInfo = { kind: 'array', ref: 'B1:B2' } as const
+		const rich = richTextValue([{ text: 'rich', bold: true }])
+		grid.set(0, 0, makeCell(numberValue(1)))
+		grid.set(0, 1, {
+			value: numberValue(2),
+			formula: 'A1+1',
+			formulaInfo,
+			styleId: S7,
+		})
+		grid.set(1, 1, {
+			value: rich,
+			formula: null,
+			styleId: S7,
+		})
+		grid.set(33, 2, makeCell(stringValue('next chunk')))
+
+		const visited: Array<readonly [number, number, CellValue, string | null, Cell['formulaInfo']]> =
+			[]
+		grid.forEachCellContentInRange(
+			{
+				start: { row: 0, col: 1 },
+				end: { row: 33, col: 2 },
+			},
+			(row, col, value, formula, binding) =>
+				visited.push([row, col, value, formula, binding] as const),
+		)
+
+		expect(visited).toEqual([
+			[0, 1, numberValue(2), 'A1+1', formulaInfo],
+			[1, 1, rich, null, undefined],
+			[33, 2, stringValue('next chunk'), null, undefined],
+		])
+	})
+
 	test('clear removes all cells', () => {
 		const grid = new SparseGrid()
 		grid.set(0, 0, makeCell(numberValue(1)))

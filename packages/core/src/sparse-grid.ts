@@ -1974,6 +1974,51 @@ export class SparseGrid {
 		}
 	}
 
+	forEachCellContentInRange(
+		range: RangeRef,
+		fn: (
+			row: number,
+			col: number,
+			value: CellValue,
+			formula: string | null,
+			formulaInfo: CellFormulaBinding | undefined,
+		) => void,
+	): void {
+		if (this._cellCount === 0) return
+		const startChunkRow = range.start.row >> CHUNK_BITS
+		const endChunkRow = range.end.row >> CHUNK_BITS
+		for (let chunkRow = startChunkRow; chunkRow <= endChunkRow; chunkRow++) {
+			const cols = this.chunkRows.get(chunkRow)
+			if (!cols) continue
+			const sortedChunkCols = this.getSortedChunkCols(chunkRow, cols)
+			const rowStart = chunkRow === startChunkRow ? range.start.row & CHUNK_MASK : 0
+			const rowEnd = chunkRow === endChunkRow ? range.end.row & CHUNK_MASK : CHUNK_MASK
+			for (let localRow = rowStart; localRow <= rowEnd; localRow++) {
+				const row = (chunkRow << CHUNK_BITS) + localRow
+				for (const chunkCol of sortedChunkCols) {
+					const chunk = cols.get(chunkCol)
+					if (!chunk) continue
+					const chunkStartCol = chunkCol << CHUNK_BITS
+					const chunkEndCol = chunkStartCol + CHUNK_MASK
+					if (chunkEndCol < range.start.col || chunkStartCol > range.end.col) continue
+					const minLocalCol =
+						chunkCol === range.start.col >> CHUNK_BITS ? range.start.col & CHUNK_MASK : 0
+					const maxLocalCol =
+						chunkCol === range.end.col >> CHUNK_BITS ? range.end.col & CHUNK_MASK : CHUNK_MASK
+					chunk.forEachRow(localRow, minLocalCol, maxLocalCol, (localCol, slot) => {
+						fn(
+							row,
+							chunkStartCol + localCol,
+							readSlotValue(slot, this.stringTable) ?? EMPTY,
+							slot.formula,
+							slot.formulaInfo,
+						)
+					})
+				}
+			}
+		}
+	}
+
 	cellCount(): number {
 		return this._cellCount
 	}

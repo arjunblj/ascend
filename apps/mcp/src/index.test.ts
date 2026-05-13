@@ -1294,6 +1294,70 @@ describe('MCP server', () => {
 		expect(planned.structuredContent?.data?.preview?.wouldSucceed).toBe(true)
 	})
 
+	test('prepared MCP path mutation handles reject stale input before writing output', async () => {
+		const wb = AscendWorkbook.create()
+		await wb.save(TEMP_FILE)
+		const output = `${TEMP_FILE}.prepared-stale-mcp.xlsx`
+		const server = createServer()
+		try {
+			// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+			const plan = (server as any)._registeredTools['ascend.plan'].handler as (args: {
+				file: string
+				mutations: Array<{ path: string; value?: unknown }>
+			}) => Promise<{
+				structuredContent?: { data?: { preparedPlan?: { id?: string } } }
+			}>
+			// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+			const commit = (server as any)._registeredTools['ascend.commit'].handler as (args: {
+				planHandle?: string
+				output?: string
+				approvals?: string[]
+			}) => Promise<{
+				structuredContent?: {
+					ok?: boolean
+					error?: {
+						code?: string
+						message?: string
+						details?: {
+							expected?: string
+							actual?: string
+							planDigest?: string
+						}
+					}
+				}
+			}>
+			const planned = await plan({
+				file: TEMP_FILE,
+				mutations: [{ path: '/sheets/Sheet1/cells/A1/value', value: 123 }],
+			})
+			expect(planned.structuredContent?.data?.preparedPlan?.id).toBeString()
+
+			const changed = AscendWorkbook.create()
+			changed.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 9 }] }])
+			await changed.save(TEMP_FILE)
+
+			const stale = await commit({
+				planHandle: planned.structuredContent?.data?.preparedPlan?.id,
+				output,
+				approvals: [],
+			})
+			expect(stale.structuredContent?.ok).toBe(false)
+			expect(stale.structuredContent?.error?.code).toBe('VALIDATION_ERROR')
+			expect(stale.structuredContent?.error?.message).toBe(
+				'Input workbook changed after agent plan was prepared',
+			)
+			expect(stale.structuredContent?.error?.details?.expected).toMatch(/^[a-f0-9]{64}$/)
+			expect(stale.structuredContent?.error?.details?.actual).toMatch(/^[a-f0-9]{64}$/)
+			expect(stale.structuredContent?.error?.details?.actual).not.toBe(
+				stale.structuredContent?.error?.details?.expected,
+			)
+			expect(stale.structuredContent?.error?.details?.planDigest).toMatch(/^[a-f0-9]{64}$/)
+			expect(await Bun.file(output).exists()).toBe(false)
+		} finally {
+			await unlink(output).catch(() => {})
+		}
+	})
+
 	test('prepared MCP plan handles are bounded', async () => {
 		const wb = AscendWorkbook.create()
 		await wb.save(TEMP_FILE)

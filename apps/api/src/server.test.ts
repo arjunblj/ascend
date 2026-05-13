@@ -1379,6 +1379,43 @@ describe('Ascend API server', () => {
 		expect(plan.body.data?.preview?.wouldSucceed).toBe(true)
 	})
 
+	test('prepared path mutation handles reject stale input before writing output', async () => {
+		const wb = AscendWorkbook.create()
+		await wb.save(TEMP_FILE)
+		const output = `${OUTPUT_FILE}.prepared-stale.xlsx`
+		try {
+			const plan = await postJson('/plan', {
+				file: TEMP_FILE,
+				mutations: [{ path: '/sheets/Sheet1/cells/A1/value', value: 123 }],
+			})
+			expect(plan.status).toBe(200)
+			expect(plan.body.data?.preparedPlan?.id).toBeString()
+
+			const changed = AscendWorkbook.create()
+			changed.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 9 }] }])
+			await changed.save(TEMP_FILE)
+
+			const commit = await postJson('/commit', {
+				planHandle: plan.body.data?.preparedPlan?.id,
+				output,
+				approvals: [],
+			})
+			expect(commit.status).toBe(400)
+			expect(commit.body.ok).toBe(false)
+			expect(commit.body.error?.code).toBe('VALIDATION_ERROR')
+			expect(commit.body.error?.message).toBe(
+				'Input workbook changed after agent plan was prepared',
+			)
+			expect(commit.body.error?.details?.expected).toMatch(/^[a-f0-9]{64}$/)
+			expect(commit.body.error?.details?.actual).toMatch(/^[a-f0-9]{64}$/)
+			expect(commit.body.error?.details?.actual).not.toBe(commit.body.error?.details?.expected)
+			expect(commit.body.error?.details?.planDigest).toMatch(/^[a-f0-9]{64}$/)
+			expect(await Bun.file(output).exists()).toBe(false)
+		} finally {
+			await unlink(output).catch(() => {})
+		}
+	})
+
 	test('plan and commit reject partial load options before preparing or writing', async () => {
 		const wb = AscendWorkbook.create()
 		await wb.save(TEMP_FILE)

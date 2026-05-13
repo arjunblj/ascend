@@ -805,12 +805,13 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 						body !== null &&
 						typeof body === 'object' &&
 						(body as Record<string, unknown>).preview === true
-					const rowLimit = firstWindowRowLimit(explicitRowLimit, preview)
+					const firstWindow = preview || format === 'compact'
+					const rowLimit = firstWindowRowLimit(explicitRowLimit, firstWindow)
 					const maxRows = firstWindowMaxRows(
 						body ? requireOptionalNumber(body, 'maxRows') : undefined,
 						rowOffset,
 						explicitRowLimit,
-						preview,
+						firstWindow,
 					)
 					const display =
 						body !== null &&

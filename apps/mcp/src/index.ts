@@ -719,11 +719,13 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 			cols,
 		}) => {
 			try {
-				const effectiveRowLimit = firstWindowRowLimit(rowLimit, preview === true)
+				const mode = format ?? 'cells'
+				const firstWindow = preview === true || mode === 'compact'
+				const effectiveRowLimit = firstWindowRowLimit(rowLimit, firstWindow)
 				const wb = await WorkbookDocument.open(file, {
 					mode: 'values',
 					...(sheet ? { sheets: [sheet] } : {}),
-					...readPreviewLoadOptions(maxRows, rowOffset, rowLimit, preview === true),
+					...readPreviewLoadOptions(maxRows, rowOffset, rowLimit, firstWindow),
 				})
 				const sheetName = sheet ?? wb.sheets[0]
 				if (!sheetName) {
@@ -739,7 +741,6 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 					...(rowOffset !== undefined ? { rowOffset } : {}),
 					...(effectiveRowLimit !== undefined ? { rowLimit: effectiveRowLimit } : {}),
 				}
-				const mode = format ?? 'cells'
 				const info =
 					mode === 'compact'
 						? withPartialLoadInfo(

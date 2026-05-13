@@ -165,6 +165,7 @@ export interface WritePolicyDiagnostic {
 		| 'data-validation-extension-preservation'
 		| 'external-link-dependency'
 		| 'external-link-binding-risk'
+		| 'external-link-package-risk'
 		| 'package-graph-audit-issue'
 		| 'approval-required-feature'
 	readonly severity: 'info' | 'warning' | 'blocker'
@@ -1695,6 +1696,21 @@ function buildWritePolicyReport(
 		})
 	}
 	const externalLinkRisk = buildExternalLinkRisk(workbook, operations, externalReferences)
+	const externalLinkIntegrityIssues = collectExternalLinkIntegrityIssues(checkIssues)
+	const externalLinkPackageIssuePartPaths = packageGraphAudit.issues.flatMap((issue) =>
+		isExternalLinkPackageGraphIssue(issue) ? packageGraphIssuePackagePaths(issue) : [],
+	)
+	const externalLinkPartPaths = collectExternalLinkPartPaths(
+		packageGraph.parts,
+		externalReferences,
+		externalLinkIntegrityIssues,
+		externalLinkPackageIssuePartPaths,
+	)
+	const externalLinkPackageGraphIssues = packageGraphIssuesForParts(
+		packageGraphAudit,
+		externalLinkPartPaths,
+		['preservedExternalLink'],
+	)
 	if (externalReferences.length > 0) {
 		const externalReferencePartPaths = uniqueStrings(
 			externalReferences.map((entry) => entry.partPath),
@@ -1784,6 +1800,29 @@ function buildWritePolicyReport(
 				rewriteExternalLinkRecommendations: bindingIssueGroups.map(
 					externalLinkRewriteRecommendation,
 				),
+			},
+		})
+	}
+	if (externalLinkIntegrityIssues.length > 0 || externalLinkPackageGraphIssues.length > 0) {
+		diagnostics.push({
+			code: 'external-link-package-risk',
+			severity: 'warning',
+			message: `${externalLinkIntegrityIssues.length + externalLinkPackageGraphIssues.length} external-link package issue(s) require inspection before write.`,
+			suggestedAction:
+				'Inspect externalReferenceDetails, external-link package relationships, externalBook r:id bindings, and packageGraphAudit before committing; use rewriteExternalLink only with a stable partPath/linkRelId selector.',
+			...(externalLinkPartPaths.length > 0 ? { partPaths: externalLinkPartPaths } : {}),
+			...(externalLinkPartPaths.length > 0
+				? { packageParts: packagePartDetails(packagePartByPath, externalLinkPartPaths) }
+				: {}),
+			featureFamily: 'preservedExternalLink',
+			preservationPolicy: 'preserve-exact',
+			details: {
+				externalLinks: externalLinkRisk.linkGroups,
+				packageGraphIssues: externalLinkPackageGraphIssues,
+				verifyIssues: externalLinkIntegrityIssues,
+				rewriteExternalLinkRecommendations: externalLinkRisk.linkGroups
+					.filter((group) => group.externalReference !== undefined)
+					.map(externalLinkRewriteRecommendation),
 			},
 		})
 	}
@@ -3364,6 +3403,33 @@ function collectTableIntegrityIssues(checkIssues: readonly CheckIssue[]): readon
 	)
 }
 
+function collectExternalLinkIntegrityIssues(
+	checkIssues: readonly CheckIssue[],
+): readonly CheckIssue[] {
+	return checkIssues.filter(isExternalLinkIntegrityIssue)
+}
+
+function collectExternalLinkPartPaths(
+	parts: readonly XlsxPackageGraph['parts'][number][],
+	externalReferences: readonly ExternalReferenceInfo[],
+	issues: readonly CheckIssue[] = [],
+	packageIssuePartPaths: readonly string[] = [],
+): string[] {
+	return uniqueStrings([
+		...parts
+			.filter((part) => isExternalLinkFeatureFamily(part.featureFamily))
+			.map((part) => part.path),
+		...externalReferences.flatMap((reference) => [
+			reference.partPath,
+			...(reference.linkRelationshipPart ? [reference.linkRelationshipPart] : []),
+		]),
+		...issues.flatMap((issue) =>
+			checkIssuePackagePartPaths(issue).filter(isExternalLinkPackagePartPath),
+		),
+		...packageIssuePartPaths.filter(isExternalLinkPackagePartPath),
+	])
+}
+
 function collectTableLocations(workbook: Workbook): TableLocation[] {
 	return workbook.sheets.flatMap((sheet) =>
 		sheet.tables.map((table) => {
@@ -3563,6 +3629,13 @@ function isThreadedCommentIntegrityIssue(issue: CheckIssue): boolean {
 	)
 }
 
+function isExternalLinkIntegrityIssue(issue: CheckIssue): boolean {
+	if (issue.rule === 'external-link-integrity') return true
+	if (issue.rule !== 'package-graph-integrity') return false
+	if (checkIssueFeatureFamilies(issue).some(isExternalLinkFeatureFamily)) return true
+	return checkIssuePackagePartPaths(issue).some(isExternalLinkPackagePartPath)
+}
+
 function checkIssuePackagePartPaths(issue: CheckIssue): string[] {
 	const details = issue.details ?? {}
 	const values = [
@@ -3611,6 +3684,10 @@ function isTablePackagePartPath(path: string): boolean {
 	return /^xl\/tables\/[^/]+\.xml$/i.test(path) || /^xl\/queryTables\/[^/]+\.xml$/i.test(path)
 }
 
+function isExternalLinkPackagePartPath(path: string): boolean {
+	return /^xl\/externalLinks\/[^/]+\.xml$/i.test(path)
+}
+
 function isLegacyCommentFeatureFamily(featureFamily: string): boolean {
 	return featureFamily === 'preservedComments' || featureFamily === 'preservedVml'
 }
@@ -3623,15 +3700,25 @@ function isTableFeatureFamily(featureFamily: string): boolean {
 	return featureFamily === 'preservedTable' || featureFamily === 'preservedQueryTable'
 }
 
+function isExternalLinkFeatureFamily(featureFamily: string): boolean {
+	return featureFamily === 'preservedExternalLink'
+}
+
 function isTablePackageGraphIssue(issue: XlsxPackageGraphFidelityIssue): boolean {
 	if (issue.featureFamily && isTableFeatureFamily(issue.featureFamily)) return true
 	return packageGraphIssuePackagePaths(issue).some(isTablePackagePartPath)
+}
+
+function isExternalLinkPackageGraphIssue(issue: XlsxPackageGraphFidelityIssue): boolean {
+	if (issue.featureFamily && isExternalLinkFeatureFamily(issue.featureFamily)) return true
+	return packageGraphIssuePackagePaths(issue).some(isExternalLinkPackagePartPath)
 }
 
 function isRoutedPackageGraphIssue(issue: XlsxPackageGraphFidelityIssue): boolean {
 	if (!issue.featureFamily) return false
 	return (
 		isTableFeatureFamily(issue.featureFamily) ||
+		isExternalLinkFeatureFamily(issue.featureFamily) ||
 		isLegacyCommentFeatureFamily(issue.featureFamily) ||
 		isThreadedCommentFeatureFamily(issue.featureFamily)
 	)

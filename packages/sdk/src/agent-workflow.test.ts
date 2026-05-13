@@ -461,9 +461,10 @@ describe('agent workflow loss audit', () => {
 		)
 		expect(plan.writePolicy.diagnostics).toContainEqual(
 			expect.objectContaining({
-				code: 'package-graph-audit-issue',
+				code: 'external-link-package-risk',
 				severity: 'warning',
 				partPaths: expect.arrayContaining(['xl/externalLinks/missing.xml']),
+				featureFamily: 'preservedExternalLink',
 				details: expect.objectContaining({
 					packageGraphIssues: expect.arrayContaining([
 						expect.objectContaining({
@@ -475,6 +476,13 @@ describe('agent workflow loss audit', () => {
 				}),
 			}),
 		)
+		expect(
+			plan.writePolicy.diagnostics.some(
+				(diagnostic) =>
+					diagnostic.code === 'package-graph-audit-issue' &&
+					diagnostic.partPaths?.includes('xl/externalLinks/missing.xml'),
+			),
+		).toBe(false)
 	})
 
 	test('plans report preserved active content without implying execution support', async () => {

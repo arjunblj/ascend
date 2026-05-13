@@ -69,6 +69,19 @@ export {
 	toA1Ref,
 } from './format-helpers.ts'
 export type {
+	CycleReferenceResult,
+	FormulaReferenceRange,
+	FormulaTokenClass,
+	FormulaTokenRange,
+} from './formula-edit.ts'
+export {
+	cycleFormulaReferenceMode,
+	formulaTokenRanges,
+	referenceAtCursor,
+} from './formula-edit.ts'
+export type { CellInputParseOptions, ParsedCellInput } from './input-parser.ts'
+export { parseCellInput, parseCellInputOperation } from './input-parser.ts'
+export type {
 	OperationApprovalMetadata,
 	OperationInvalidExample,
 	OperationJsonSchema,

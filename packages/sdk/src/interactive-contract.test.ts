@@ -980,6 +980,56 @@ describe('interactive client contract', () => {
 		expect(journalComparableState(wb)).toEqual(before)
 	})
 
+	test('journal exact inverse restores deleted metadata surfaces', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{ op: 'setComment', sheet: 'Sheet1', ref: 'B2', text: 'review', author: 'analyst' },
+			{
+				op: 'setHyperlink',
+				sheet: 'Sheet1',
+				ref: 'C3',
+				url: 'https://example.com',
+				display: 'Report',
+			},
+			{
+				op: 'setDataValidation',
+				sheet: 'Sheet1',
+				range: 'D2:D10',
+				rule: { type: 'whole', operator: 'greaterThan', formula1: '0', allowBlank: true },
+			},
+			{
+				op: 'setConditionalFormat',
+				sheet: 'Sheet1',
+				range: 'E2:E10',
+				rule: { type: 'cellIs', operator: 'greaterThan', formula: '5', priority: 3 },
+			},
+			{ op: 'setAutoFilter', sheet: 'Sheet1', range: 'A1:E10', column: 0, values: ['Open'] },
+			{ op: 'setDefinedName', name: 'ReviewRange', ref: 'Sheet1!$B$2:$E$10' },
+		])
+		const before = journalComparableState(wb)
+
+		const changed = wb.apply(
+			[
+				{ op: 'deleteComment', sheet: 'Sheet1', ref: 'B2' },
+				{ op: 'deleteHyperlink', sheet: 'Sheet1', ref: 'C3' },
+				{ op: 'deleteDataValidation', sheet: 'Sheet1', range: 'D2:D10' },
+				{ op: 'deleteConditionalFormat', sheet: 'Sheet1', range: 'E2:E10' },
+				{ op: 'clearAutoFilter', sheet: 'Sheet1' },
+				{ op: 'deleteDefinedName', name: 'ReviewRange' },
+			],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(true)
+		expect(journalComparableState(wb)).not.toEqual(before)
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(journalComparableState(wb)).toEqual(before)
+	})
+
 	test('journal inverse ops restore table renames and column metadata edits', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([
@@ -1260,6 +1310,9 @@ function journalComparableState(wb: AscendWorkbook): object {
 				name,
 				frozenRows: sheet?.frozenRows,
 				frozenCols: sheet?.frozenCols,
+				merges: sheet?.merges,
+				dataValidations: sheet?.dataValidations,
+				conditionalFormats: sheet?.conditionalFormats,
 				comments: sheet?.getComments(),
 				hyperlinks: sheet?.getHyperlinks(),
 				autoFilter: sheet?.autoFilter,

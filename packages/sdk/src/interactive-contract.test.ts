@@ -340,6 +340,94 @@ describe('interactive client contract', () => {
 		session.close()
 	})
 
+	test('interactive edit journal undo patches materialize back to the base viewport', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 1 },
+					{ ref: 'C1', value: 3 },
+				],
+			},
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'B1', formula: 'A1*2' },
+		])
+		wb.recalc()
+
+		const session = await AscendSession.open(wb.toBytes(), { mode: 'interactive' })
+		const before = session.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 4,
+		})
+		const edit = await session.apply(
+			[
+				{
+					op: 'setCells',
+					sheet: 'Sheet1',
+					updates: [
+						{ ref: 'A1', value: 4 },
+						{ ref: 'D1', value: 8 },
+					],
+				},
+				{ op: 'clearRange', sheet: 'Sheet1', range: 'C1:C1', what: 'all' },
+				{ op: 'setNumberFormat', sheet: 'Sheet1', range: 'D1:D1', format: '0.00' },
+			],
+			{ journal: true },
+		)
+		expect(edit.apply.errors).toEqual([])
+		expect(edit.apply.journal?.exact).toBe(true)
+
+		const editPatch = session.readViewportPatch({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 4,
+			changedSince: before.changeToken,
+		})
+		if (!editPatch) throw new Error('expected edit patch')
+		const edited = session.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 4,
+		})
+		expect(materializeViewportPatch(before.cells, editPatch)).toEqual(
+			interactiveCellMap(edited.cells),
+		)
+
+		const undo = await session.apply(edit.apply.journal?.inverseOps ?? [])
+		expect(undo.apply.errors).toEqual([])
+		const undoPatch = session.readViewportPatch({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 4,
+			changedSince: edited.changeToken,
+		})
+		if (!undoPatch) throw new Error('expected undo patch')
+		const restored = session.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 4,
+		})
+		expect(materializeViewportPatch(edited.cells, undoPatch)).toEqual(
+			interactiveCellMap(restored.cells),
+		)
+		expect(semanticInteractiveCellMap(restored.cells)).toEqual(
+			semanticInteractiveCellMap(before.cells),
+		)
+		session.close()
+	})
+
 	test('interactive sessions can prepare mutable edit state before first edit', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] }])
@@ -2953,6 +3041,17 @@ function interactiveCellMap(
 	cells: readonly InteractiveViewportCell[],
 ): Map<string, InteractiveViewportCell> {
 	return new Map(cells.map((cell) => [cell.ref, cell]))
+}
+
+function semanticInteractiveCellMap(
+	cells: readonly InteractiveViewportCell[],
+): Map<string, Omit<InteractiveViewportCell, 'styleId'>> {
+	return new Map(
+		cells.map((cell) => {
+			const { styleId: _styleId, ...semanticCell } = cell
+			return [cell.ref, semanticCell]
+		}),
+	)
 }
 
 function quoteSheet(sheet: string): string {

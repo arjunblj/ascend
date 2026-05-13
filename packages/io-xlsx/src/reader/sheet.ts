@@ -873,20 +873,17 @@ function parseCanonicalPlainValueCellBytes(
 		bytes[refEnd + 9] === 118 &&
 		bytes[refEnd + 10] === 62
 	) {
-		const typedNext = parseCanonicalIntegerValueIntoOutBytes(bytes, refEnd + 11, bodyEnd, out)
-		if (typedNext !== -1) {
-			const type = bytes[refEnd + 5]
-			if (type === 115) {
-				out.sharedStringIndex = out.numberValue ?? -1
-				out.numberValue = undefined
-			} else if (type === 98) {
-				out.booleanRaw = out.numberValue === 1 ? 1 : 0
-				out.numberValue = undefined
-			} else if (type !== 110) {
-				return -1
-			}
-			return typedNext
+		const type = bytes[refEnd + 5]
+		if (type === 115) {
+			return parseCanonicalSharedStringIndexIntoOutBytes(bytes, refEnd + 11, bodyEnd, out)
 		}
+		if (type === 98) {
+			return parseCanonicalBooleanValueIntoOutBytes(bytes, refEnd + 11, bodyEnd, out)
+		}
+		if (type === 110) {
+			return parseCanonicalIntegerValueIntoOutBytes(bytes, refEnd + 11, bodyEnd, out)
+		}
+		return -1
 	}
 	const inlineValueStart = parseCanonicalInlineStringValueStartBytes(bytes, refEnd, bodyEnd)
 	if (inlineValueStart === -1) return -1
@@ -4166,6 +4163,54 @@ function parseCanonicalIntegerValueIntoOutBytes(
 	}
 	out.numberValue = sign * value
 	return cursor + BYTES_VALUE_CELL_CLOSE.length
+}
+
+function parseCanonicalSharedStringIndexIntoOutBytes(
+	bytes: Uint8Array,
+	start: number,
+	end: number,
+	out: { sharedStringIndex: number },
+): number {
+	let cursor = start
+	let value = 0
+	const digitStart = cursor
+	while (cursor < end) {
+		const code = bytes[cursor] ?? 0
+		if (code < 48 || code > 57) break
+		value = value * 10 + (code - 48)
+		cursor += 1
+	}
+	if (cursor === digitStart || !hasCanonicalValueCellCloseBytes(bytes, cursor, end)) return -1
+	out.sharedStringIndex = value
+	return cursor + BYTES_VALUE_CELL_CLOSE.length
+}
+
+function parseCanonicalBooleanValueIntoOutBytes(
+	bytes: Uint8Array,
+	start: number,
+	end: number,
+	out: { booleanRaw: number },
+): number {
+	const raw = bytes[start]
+	if ((raw !== 48 && raw !== 49) || !hasCanonicalValueCellCloseBytes(bytes, start + 1, end)) {
+		return -1
+	}
+	out.booleanRaw = raw - 48
+	return start + 1 + BYTES_VALUE_CELL_CLOSE.length
+}
+
+function hasCanonicalValueCellCloseBytes(bytes: Uint8Array, start: number, end: number): boolean {
+	return (
+		start + BYTES_VALUE_CELL_CLOSE.length <= end &&
+		(bytes[start] ?? -1) === 60 &&
+		(bytes[start + 1] ?? -1) === 47 &&
+		(bytes[start + 2] ?? -1) === 118 &&
+		(bytes[start + 3] ?? -1) === 62 &&
+		(bytes[start + 4] ?? -1) === 60 &&
+		(bytes[start + 5] ?? -1) === 47 &&
+		(bytes[start + 6] ?? -1) === 99 &&
+		(bytes[start + 7] ?? -1) === 62
+	)
 }
 
 function consumeExpectedCellRefBytes(

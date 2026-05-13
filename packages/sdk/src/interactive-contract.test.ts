@@ -2951,6 +2951,124 @@ describe('interactive client contract', () => {
 		expect(wb.table('Sales')?.styleInfo).toEqual({ name: 'TableStyleMedium2' })
 	})
 
+	test('journal exact inverse restores table lifecycle mixed with structural row edits', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A4', value: 'Region' },
+					{ ref: 'B4', value: 'Amount' },
+					{ ref: 'A5', value: 'West' },
+					{ ref: 'B5', value: 20 },
+					{ ref: 'A6', value: 'East' },
+					{ ref: 'B6', value: 30 },
+				],
+			},
+		])
+		const before = journalComparableState(wb)
+
+		const changed = wb.apply(
+			[
+				{
+					op: 'createTable',
+					sheet: 'Sheet1',
+					ref: 'A4:B6',
+					name: 'Sales',
+					hasHeaders: true,
+				},
+				{ op: 'setTableStyle', table: 'Sales', styleName: 'TableStyleMedium2' },
+				{ op: 'insertRows', sheet: 'Sheet1', at: 1, count: 1 },
+				{ op: 'renameTable', table: 'Sales', newName: 'Revenue' },
+				{
+					op: 'setTableColumn',
+					table: 'Revenue',
+					column: 'Amount',
+					newName: 'Net',
+					formula: '=[@Net]*2',
+					totalsRowFormula: 'SUM([Net])',
+				},
+				{ op: 'deleteRows', sheet: 'Sheet1', at: 2, count: 1 },
+			],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(true)
+		expect(changed.journal?.issues).toEqual([])
+		expect(wb.table('Revenue')?.ref).toEqual({
+			start: { row: 3, col: 0 },
+			end: { row: 5, col: 1 },
+		})
+		expect(wb.table('Revenue')?.columns).toEqual(['Region', 'Net'])
+		expect(journalComparableState(wb)).not.toEqual(before)
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(journalComparableState(wb)).toEqual(before)
+	})
+
+	test('journal exact inverse restores table lifecycle mixed with structural column edits', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'D1', value: 'Region' },
+					{ ref: 'E1', value: 'Amount' },
+					{ ref: 'D2', value: 'West' },
+					{ ref: 'E2', value: 20 },
+					{ ref: 'D3', value: 'East' },
+					{ ref: 'E3', value: 30 },
+				],
+			},
+		])
+		const before = journalComparableState(wb)
+
+		const changed = wb.apply(
+			[
+				{
+					op: 'createTable',
+					sheet: 'Sheet1',
+					ref: 'D1:E3',
+					name: 'Sales',
+					hasHeaders: true,
+				},
+				{ op: 'setTableStyle', table: 'Sales', styleName: 'TableStyleMedium2' },
+				{ op: 'insertCols', sheet: 'Sheet1', at: 1, count: 1 },
+				{ op: 'renameTable', table: 'Sales', newName: 'Revenue' },
+				{
+					op: 'setTableColumn',
+					table: 'Revenue',
+					column: 'Amount',
+					newName: 'Net',
+					formula: '=[@Net]*2',
+					totalsRowFormula: 'SUM([Net])',
+				},
+				{ op: 'deleteCols', sheet: 'Sheet1', at: 2, count: 1 },
+			],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(true)
+		expect(changed.journal?.issues).toEqual([])
+		expect(wb.table('Revenue')?.ref).toEqual({
+			start: { row: 0, col: 3 },
+			end: { row: 2, col: 4 },
+		})
+		expect(wb.table('Revenue')?.columns).toEqual(['Region', 'Net'])
+		expect(journalComparableState(wb)).not.toEqual(before)
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(journalComparableState(wb)).toEqual(before)
+	})
+
 	test('journal inverse ops restore structural row and column edits', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

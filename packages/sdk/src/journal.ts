@@ -2007,7 +2007,31 @@ function structuralDeleteIssues(
 		})
 	}
 	issues.push(...structuralFormulaReferenceIssues(workbook, preimage))
+	issues.push(...structuralX14MetadataIssues(sheet, preimage, affected))
 	return issues
+}
+
+function structuralX14MetadataIssues(
+	sheet: Sheet,
+	preimage: MutationJournalStructuralPreimage,
+	affected: RangeRef,
+): readonly MutationJournalIssue[] {
+	const refs = [
+		...sheet.x14DataValidations
+			.filter((validation) => !validation.deleted && sqrefOverlaps(validation.sqref, affected))
+			.map((validation) => `${sheet.name}!x14Validation:${validation.sqref}:${validation.index}`),
+		...sheet.x14ConditionalFormats
+			.filter((format) => !format.deleted && sqrefOverlaps(format.sqref, affected))
+			.map((format) => `${sheet.name}!x14ConditionalFormat:${format.sqref}:${format.index}`),
+	]
+	if (refs.length === 0) return []
+	return [
+		{
+			code: 'LOSSY_INVERSE',
+			message: `Deleted ${preimage.axis === 'row' ? 'row' : 'column'} x14 metadata on ${preimage.sheet} cannot be fully restored with public operations`,
+			refs,
+		},
+	]
 }
 
 function structuralFormulaReferenceIssues(

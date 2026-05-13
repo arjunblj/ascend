@@ -1873,7 +1873,117 @@ describe('interactive client contract', () => {
 		expect(wb.sheet('Sheet1')?.dataValidations[0]?.formula1).toBe('#REF!>0')
 		expect(wb.sheet('Sheet1')?.conditionalFormats[0]?.rules[0]?.formulas[0]).toBe('#REF!>0')
 	})
+
+	test('structural delete exact journals restore escaped-sheet formulas and defined names', () => {
+		const wb = AscendWorkbook.create()
+		const inputSheet = "Input.Data's Δ"
+		wb.apply([
+			{ op: 'renameSheet', sheet: 'Sheet1', newName: inputSheet },
+			{ op: 'addSheet', name: 'Middle' },
+			{ op: 'addSheet', name: 'Report' },
+			{
+				op: 'setCells',
+				sheet: inputSheet,
+				updates: [
+					{ ref: 'A1', value: 'Header' },
+					{ ref: 'A2', value: 'deleted' },
+					{ ref: 'A4', value: 9 },
+				],
+			},
+			{ op: 'setFormula', sheet: 'Report', ref: 'A1', formula: `${quoteSheet(inputSheet)}!A4` },
+			{
+				op: 'setFormula',
+				sheet: 'Report',
+				ref: 'A2',
+				formula: `SUM(${quoteSheetSpan(inputSheet, 'Report')}!A4)`,
+			},
+			{ op: 'setDefinedName', name: 'GlobalLater', ref: `${quoteSheet(inputSheet)}!$A$4` },
+			{ op: 'setDefinedName', name: 'LocalLater', scope: inputSheet, ref: '$A$4' },
+		])
+		const before = journalComparableState(wb)
+
+		const deleted = wb.apply([{ op: 'deleteRows', sheet: inputSheet, at: 1, count: 1 }], {
+			journal: true,
+		})
+
+		expect(deleted.errors).toEqual([])
+		expect(deleted.journal?.supported).toBe(true)
+		expect(deleted.journal?.exact).toBe(true)
+		expect(journalComparableState(wb)).not.toEqual(before)
+
+		const undo = wb.apply(deleted.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(journalComparableState(wb)).toEqual(before)
+	})
+
+	test('structural delete journals surface escaped names 3D refs and x14 losses precisely', () => {
+		const wb = AscendWorkbook.create()
+		const inputSheet = "Input.Data's Δ"
+		wb.apply([
+			{ op: 'renameSheet', sheet: 'Sheet1', newName: inputSheet },
+			{ op: 'addSheet', name: 'Middle' },
+			{ op: 'addSheet', name: 'Report' },
+			{ op: 'setCells', sheet: inputSheet, updates: [{ ref: 'A2', value: 5 }] },
+			{
+				op: 'setFormula',
+				sheet: 'Report',
+				ref: 'A1',
+				formula: `SUM(${quoteSheetSpan(inputSheet, 'Report')}!A2)`,
+			},
+			{ op: 'setDefinedName', name: 'GlobalDeleted', ref: `${quoteSheet(inputSheet)}!$A$2` },
+			{ op: 'setDefinedName', name: 'LocalDeleted', scope: inputSheet, ref: '$A$2' },
+		])
+		const sheet = wb.getWorkbookModel().getSheet(inputSheet)
+		if (!sheet) throw new Error('input sheet missing')
+		sheet.x14DataValidations.push({
+			index: 7,
+			sqref: 'C2:C5',
+			type: 'list',
+			formula1: '$A$1:$A$4',
+			preservedChildXml: ['<x14ac:metadata flag="1"/>'],
+		})
+		sheet.x14ConditionalFormats.push({
+			index: 8,
+			sqref: 'D2:D5',
+			type: 'dataBar',
+			priority: 1,
+			formulas: [],
+			preservedRuleChildXml: ['<x14:extLst><x14:ext uri="{cf-extension}"/></x14:extLst>'],
+		})
+
+		const deleted = wb.preview([{ op: 'deleteRows', sheet: inputSheet, at: 1, count: 1 }], {
+			journal: true,
+		})
+
+		expect(deleted.wouldSucceed).toBe(true)
+		expect(deleted.journal?.supported).toBe(true)
+		expect(deleted.journal?.exact).toBe(false)
+		expect(deleted.journal?.issues).toContainEqual({
+			code: 'LOSSY_INVERSE',
+			message: `Deleted row formula references on ${inputSheet} cannot be restored with public operations`,
+			refs: expect.arrayContaining([
+				`${inputSheet}!x14Validation:C2:C5:formula1`,
+				'Report!A1',
+				'name:GlobalDeleted',
+				`name:${inputSheet}!LocalDeleted`,
+			]),
+		})
+		expect(deleted.journal?.issues).toContainEqual({
+			code: 'LOSSY_INVERSE',
+			message: `Deleted row x14 metadata on ${inputSheet} cannot be fully restored with public operations`,
+			refs: [`${inputSheet}!x14Validation:C2:C5:7`, `${inputSheet}!x14ConditionalFormat:D2:D5:8`],
+		})
+		expect(wb.sheet(inputSheet)?.cell('A2')?.value).toEqual({ kind: 'number', value: 5 })
+	})
 })
+
+function quoteSheet(sheet: string): string {
+	return `'${sheet.replace(/'/g, "''")}'`
+}
+
+function quoteSheetSpan(startSheet: string, endSheet: string): string {
+	return `'${startSheet.replace(/'/g, "''")}:${endSheet.replace(/'/g, "''")}'`
+}
 
 function journalComparableState(wb: AscendWorkbook): object {
 	const snapshot = wb.snapshot()

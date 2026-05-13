@@ -715,6 +715,52 @@ describe('interactive client contract', () => {
 		fullSession.close()
 	})
 
+	test('full read model reuse keeps retained read document and source bytes immutable', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] }])
+
+		const session = await AscendSession.open(wb.toBytes(), {
+			mode: 'full',
+			richMetadata: true,
+		})
+		const readDocument = session.workbook()
+		const beforeRaw = await readDocument.rawPackagePart({
+			partPath: 'xl/worksheets/sheet1.xml',
+			maxBytes: 2048,
+		})
+		expect(beforeRaw.origin).toBe('source')
+		expect(beforeRaw.text).toContain('<v>1</v>')
+
+		const prepared = await session.prepareEdits()
+		expect(prepared.timings.mutableWorkbookReusedReadModel).toBe(true)
+		const edit = await session.apply([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 2 }] },
+		])
+		expect(edit.apply.errors).toEqual([])
+		expect(
+			session.readViewport({
+				sheet: 'Sheet1',
+				topRow: 0,
+				leftCol: 0,
+				rowCount: 1,
+				colCount: 1,
+			}).cells[0]?.flatValue,
+		).toBe(2)
+		expect(readDocument.sheet('Sheet1')?.cell('A1')?.value).toEqual({
+			kind: 'number',
+			value: 1,
+		})
+
+		const afterRaw = await readDocument.rawPackagePart({
+			partPath: 'xl/worksheets/sheet1.xml',
+			maxBytes: 2048,
+		})
+		expect(afterRaw.origin).toBe('source')
+		expect(afterRaw.sha256).toBe(beforeRaw.sha256)
+		expect(afterRaw.text).toBe(beforeRaw.text)
+		session.close()
+	})
+
 	test('interactive viewport tokens from other sessions refreshes and retained-log gaps force fresh reads', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] }])

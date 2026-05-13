@@ -1742,6 +1742,78 @@ describe('MCP server', () => {
 		)
 	})
 
+	test('ascend.commit preserves path mutation canonical ops and exact approval ids', async () => {
+		await Bun.write(TEMP_MACRO_FILE, signedMacroWorkbook())
+		const output = `${TEMP_MACRO_OUTPUT}.path.xlsm`
+		await unlink(output).catch(() => {})
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: accessing internals for test
+		const planHandler = (server as any)._registeredTools['ascend.plan'].handler as (args: {
+			file: string
+			mutations: Array<{ path: string; value?: unknown }>
+		}) => Promise<{
+			structuredContent?: {
+				data?: {
+					approvals?: Array<{ id: string }>
+					pathMutations?: { replayable?: boolean; ops?: unknown[] }
+				}
+			}
+		}>
+		// biome-ignore lint/suspicious/noExplicitAny: accessing internals for test
+		const commitHandler = (server as any)._registeredTools['ascend.commit'].handler as (args: {
+			file: string
+			mutations: Array<{ path: string; value?: unknown }>
+			output?: string
+			approvals?: string[] | string
+		}) => Promise<{
+			isError?: boolean
+			structuredContent?: {
+				data?: {
+					approvals?: Array<{ id: string }>
+					pathMutations?: { ops?: unknown[] }
+				}
+				error?: { message?: string }
+			}
+		}>
+		const mutations = [{ path: '/sheets/Data/cells/A1/value', value: 11 }]
+		const canonicalOps = [{ op: 'setCells', sheet: 'Data', updates: [{ ref: 'A1', value: 11 }] }]
+
+		const planned = await planHandler({ file: TEMP_MACRO_FILE, mutations })
+		expect(planned.structuredContent?.data?.pathMutations?.replayable).toBe(true)
+		expect(planned.structuredContent?.data?.pathMutations?.ops).toEqual(canonicalOps)
+		const approvalIds = planned.structuredContent?.data?.approvals?.map((approval) => approval.id)
+		expect(approvalIds).toEqual(
+			expect.arrayContaining([
+				expect.stringMatching(/^loss:preservedmacro:preserved:/),
+				expect.stringMatching(/^loss:preservedsignature:preserved:/),
+			]),
+		)
+
+		const aliasBlocked = await commitHandler({
+			file: TEMP_MACRO_FILE,
+			mutations,
+			output,
+			approvals: ['preservedMacro', 'preservedSignature'],
+		})
+		expect(aliasBlocked.isError).toBe(true)
+		expect(aliasBlocked.structuredContent?.error?.message).toBe('Commit requires explicit approval')
+
+		const committed = await commitHandler({
+			file: TEMP_MACRO_FILE,
+			mutations,
+			output,
+			approvals: approvalIds ?? [],
+		})
+		expect(committed.isError).not.toBe(true)
+		expect(committed.structuredContent?.data?.pathMutations?.ops).toEqual(canonicalOps)
+		expect(committed.structuredContent?.data?.approvals?.map((approval) => approval.id)).toEqual(
+			approvalIds,
+		)
+		const reopened = await AscendWorkbook.open(output)
+		expect(reopened.sheet('Data')?.cell('A1')?.value).toEqual({ kind: 'number', value: 11 })
+		await unlink(output).catch(() => {})
+	})
+
 	test('file-not-found returns structured error', async () => {
 		const server = createServer()
 		// biome-ignore lint/suspicious/noExplicitAny: accessing internals for test

@@ -4469,6 +4469,32 @@ describe('writeXlsx', () => {
 		expect(readSheet?.cells.get(1, 2)?.value).toEqual({ kind: 'string', value: 'r1c2' })
 	})
 
+	it('can omit dense row refs for sequential generated exports', () => {
+		const written = writeDenseRowsXlsx({
+			rows: 3,
+			cols: 2,
+			omitCellRefs: true,
+			omitRowRefs: true,
+			allCellsPresent: true,
+			valueType: 'number',
+			valueAt: (row, col) => (row === 1 ? null : row * 10 + col),
+		})
+		expectOk(written)
+
+		const zip = unzipSync(written.value)
+		const sheetXml = new TextDecoder().decode(zip['xl/worksheets/sheet1.xml'] ?? new Uint8Array())
+		expect(sheetXml).toContain('<row><c><v>0</v></c><c><v>1</v></c></row>')
+		expect(sheetXml).toContain('<row></row>')
+		expect(sheetXml).not.toContain('<row r=')
+
+		const read = readXlsx(written.value, { mode: 'values' })
+		expectOk(read)
+		const readSheet = read.value.workbook.sheets[0]
+		expect(readSheet?.cells.get(0, 0)?.value).toEqual({ kind: 'number', value: 0 })
+		expect(readSheet?.cells.get(1, 0)).toBeUndefined()
+		expect(readSheet?.cells.get(2, 1)?.value).toEqual({ kind: 'number', value: 21 })
+	})
+
 	it('reuses constant dense row bodies when explicitly requested', () => {
 		let calls = 0
 		const written = writeDenseRowsXlsx({

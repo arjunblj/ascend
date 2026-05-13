@@ -221,6 +221,7 @@ async function runSample(args: Args): Promise<PhaseSample> {
 				rows: args.rows,
 				cols: args.cols,
 				omitCellRefs: true,
+				omitRowRefs: args.workload !== 'sparse-wide',
 				cacheRepeatedRows: args.workload === 'mixed-closedxml-10text-5number',
 				constantRows: args.workload === 'mixed-closedxml-10text-5number',
 				stringsAreXmlSafe: shouldUseXmlSafeGeneratedStrings(args.workload),

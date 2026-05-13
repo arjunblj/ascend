@@ -13,6 +13,8 @@ export interface WriteDenseRowsXlsxOptions {
 	readonly sheetName?: string
 	readonly valueAt: (row: number, col: number) => DenseXlsxCellValue
 	readonly omitCellRefs?: boolean
+	/** Skip row indexes for sequential generated rows; empty rows are still emitted to preserve order. */
+	readonly omitRowRefs?: boolean
 	/** Reuse generated XML for consecutive rows with identical values. */
 	readonly cacheRepeatedRows?: boolean
 	/** Treat every row as identical to row 0 and call valueAt only for the first row. */
@@ -288,8 +290,8 @@ function buildRowXml(options: WriteDenseRowsXlsxOptions, row: number, state?: Ro
 		)
 		if (xml.length > 0) cells.push(xml)
 	}
-	if (!hasValue) return ''
-	return `<row r="${row + 1}">${cells.join('')}</row>`
+	if (!hasValue) return emptyRowXml(options)
+	return `${rowOpenXml(options, row)}${cells.join('')}</row>`
 }
 
 function buildDenseRowXmlWithoutRefs(
@@ -299,7 +301,9 @@ function buildDenseRowXmlWithoutRefs(
 ): string {
 	if (state?.constantRows === true && row > 0 && !state.constantFallback) {
 		if (state.constantBody === null) return ''
-		if (state.constantBody !== undefined) return `<row r="${row + 1}">${state.constantBody}</row>`
+		if (state.constantBody !== undefined) {
+			return `${rowOpenXml(options, row)}${state.constantBody}</row>`
+		}
 	}
 	if (state === undefined && options.allCellsPresent === true) {
 		return buildPresentDenseRowXmlWithoutRefs(options, row)
@@ -321,7 +325,7 @@ function buildDenseRowXmlWithoutRefs(
 	}
 	if (!hasValue) {
 		if (state?.constantRows === true) state.constantBody = null
-		return ''
+		return emptyRowXml(options)
 	}
 	if (hasNull) {
 		if (state?.constantRows === true) state.constantFallback = true
@@ -335,7 +339,7 @@ function buildDenseRowXmlWithoutRefs(
 		state.lastBody = body
 		if (state.constantRows) state.constantBody = body
 	}
-	return `<row r="${row + 1}">${body}</row>`
+	return `${rowOpenXml(options, row)}${body}</row>`
 }
 
 function buildPresentDenseRowXmlWithoutRefs(
@@ -363,7 +367,7 @@ function buildPresentGenericRowXmlWithoutRefs(
 		if (value === null) return buildRowXmlWithRefs(options, row)
 		body += cellXml(value, undefined, options.stringsAreXmlSafe, options.valueType)
 	}
-	return body.length === 0 ? '' : `<row r="${row + 1}">${body}</row>`
+	return body.length === 0 ? '' : `${rowOpenXml(options, row)}${body}</row>`
 }
 
 function buildPresentColumnTypedRowXmlWithoutRefs(
@@ -397,7 +401,7 @@ function buildPresentColumnTypedRowXmlWithoutRefs(
 		}
 		body += cellXml(value, undefined, options.stringsAreXmlSafe, options.valueType)
 	}
-	return body.length === 0 ? '' : `<row r="${row + 1}">${body}</row>`
+	return body.length === 0 ? '' : `${rowOpenXml(options, row)}${body}</row>`
 }
 
 function buildPresentSafeStringRowXmlWithoutRefs(
@@ -412,7 +416,7 @@ function buildPresentSafeStringRowXmlWithoutRefs(
 		// biome-ignore lint/style/useTemplate: Bun/JSC is measurably faster with concatenation here.
 		body += '<c t="str"><v>' + value + '</v></c>'
 	}
-	return body.length === 0 ? '' : `<row r="${row + 1}">${body}</row>`
+	return body.length === 0 ? '' : `${rowOpenXml(options, row)}${body}</row>`
 }
 
 function buildPresentNumberRowXmlWithoutRefs(
@@ -427,7 +431,7 @@ function buildPresentNumberRowXmlWithoutRefs(
 		// biome-ignore lint/style/useTemplate: Bun/JSC is measurably faster with concatenation here.
 		body += '<c><v>' + value + '</v></c>'
 	}
-	return body.length === 0 ? '' : `<row r="${row + 1}">${body}</row>`
+	return body.length === 0 ? '' : `${rowOpenXml(options, row)}${body}</row>`
 }
 
 function buildPresentBooleanRowXmlWithoutRefs(
@@ -455,8 +459,16 @@ function buildRowXmlWithRefs(options: WriteDenseRowsXlsxOptions, row: number): s
 			cellXml(value, `${columnName(col)}${row + 1}`, options.stringsAreXmlSafe, options.valueType),
 		)
 	}
-	if (!hasValue) return ''
-	return `<row r="${row + 1}">${cells.join('')}</row>`
+	if (!hasValue) return emptyRowXml(options)
+	return `${rowOpenXml(options, row)}${cells.join('')}</row>`
+}
+
+function rowOpenXml(options: WriteDenseRowsXlsxOptions, row: number): string {
+	return options.omitRowRefs === true ? '<row>' : `<row r="${row + 1}">`
+}
+
+function emptyRowXml(options: WriteDenseRowsXlsxOptions): string {
+	return options.omitRowRefs === true ? '<row></row>' : ''
 }
 
 function sameValues(

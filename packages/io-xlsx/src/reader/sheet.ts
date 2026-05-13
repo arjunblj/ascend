@@ -123,6 +123,7 @@ interface RowIndexAttrBytes {
 	readonly value: number
 	readonly start: number
 	readonly end: number
+	readonly onlyAttr: boolean
 }
 
 export class ValueInternPool {
@@ -573,7 +574,10 @@ function parseSheetDataRowsBytes(
 			const close = indexOfBytes(bytes, BYTES_SHEET_DATA_CLOSE, rowOpen, contentEnd)
 			return close === -1 ? false : close + BYTES_SHEET_DATA_CLOSE.length
 		}
-		if (hasRowPresentationMetadataBytes(bytes, rowAttrStart, rowTagEnd)) {
+		if (
+			!explicitRowIndex?.onlyAttr &&
+			hasRowPresentationMetadataBytes(bytes, rowAttrStart, rowTagEnd)
+		) {
 			parseRowPresentationMetadataBytes(bytes, rowAttrStart, rowTagEnd, row, sheet)
 		}
 		if (isSelfClosingTagBytes(bytes, rowOpen, rowTagEnd)) {
@@ -3897,9 +3901,14 @@ function rawRowIndexAttrInfoInBytes(
 			value = value * 10 + (code - 48)
 			cursor += 1
 		}
-		return cursor > valueStart && cursor < end
-			? { value, start: valueStart, end: cursor }
-			: undefined
+		if (cursor <= valueStart || cursor >= end) return undefined
+		const nextAttr = skipXmlWhitespaceBytes(bytes, cursor + 1, end)
+		return {
+			value,
+			start: valueStart,
+			end: cursor,
+			onlyAttr: nextAttr >= end || bytes[nextAttr] === BYTE_SLASH,
+		}
 	}
 	cursor = start
 	while (cursor < end) {
@@ -3928,7 +3937,9 @@ function rawRowIndexAttrInfoInBytes(
 				if (code < 48 || code > 57) return undefined
 				value = value * 10 + (code - 48)
 			}
-			return cursor > valueStart ? { value, start: valueStart, end: cursor } : undefined
+			return cursor > valueStart
+				? { value, start: valueStart, end: cursor, onlyAttr: false }
+				: undefined
 		}
 		cursor += 1
 	}

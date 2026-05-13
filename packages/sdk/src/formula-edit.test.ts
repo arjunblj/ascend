@@ -41,12 +41,24 @@ describe('formula editing utilities', () => {
 			end: 7,
 			kind: 'cell',
 		})
+		expect(referenceAtCursor("='[Book.xlsx]Q1 Plan'!$A$1", 24)).toEqual({
+			text: "'[Book.xlsx]Q1 Plan'!$A$1",
+			start: 1,
+			end: 26,
+			kind: 'sheet-cell',
+		})
 		expect(referenceAtCursor('Table1[[#Totals],[Amount]]', 14)).toEqual({
 			text: 'Table1[[#Totals],[Amount]]',
 			start: 0,
 			end: 26,
 			kind: 'structured',
 		})
+	})
+
+	test('does not treat earlier references as active in empty formula edit slots', () => {
+		expect(referenceAtCursor('=A1 + ', 6)).toBeNull()
+		expect(referenceAtCursor('=SUM(A1, )', 9)).toBeNull()
+		expect(referenceAtCursor('=A1+ B2', 4)).toBeNull()
 	})
 
 	test('cycles the cell reference under the cursor with Excel F4 semantics', () => {
@@ -108,6 +120,28 @@ describe('formula editing utilities', () => {
 				end: 23,
 				kind: 'structured',
 			},
+		})
+	})
+
+	test('inserts pointed references in empty formula slots without replacing earlier refs', () => {
+		expect(
+			insertFormulaReference('=A1 + ', 6, 'B2', {
+				replaceReferenceAtCursor: true,
+			}),
+		).toEqual({
+			formula: '=A1 + B2',
+			cursor: 8,
+			inserted: 'B2',
+		})
+
+		expect(
+			insertFormulaReference('=SUM(A1, )', 9, 'B2', {
+				replaceReferenceAtCursor: true,
+			}),
+		).toEqual({
+			formula: '=SUM(A1, B2)',
+			cursor: 11,
+			inserted: 'B2',
 		})
 	})
 

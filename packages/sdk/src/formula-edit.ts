@@ -114,12 +114,11 @@ export function formulaTokenRanges(formula: string): FormulaTokenRange[] {
 export function referenceAtCursor(formula: string, cursor: number): FormulaReferenceRange | null {
 	const spans = tokenSpans(formula)
 	const references = collectFormulaReferenceRanges(formula, spans)
-	let best: FormulaReferenceRange | null = null
+	const clampedCursor = Math.max(0, Math.min(formula.length, cursor))
 	for (const reference of references) {
-		if (cursor >= reference.start && cursor <= reference.end) return reference
-		if (reference.end <= cursor && (!best || reference.end > best.end)) best = reference
+		if (clampedCursor >= reference.start && clampedCursor <= reference.end) return reference
 	}
-	return best
+	return null
 }
 
 export function cycleFormulaReferenceMode(formula: string, cursor: number): CycleReferenceResult {

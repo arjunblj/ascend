@@ -321,7 +321,13 @@ export interface SheetX14ConditionalFormatDataBarInfo {
 	readonly minLength?: number
 	readonly maxLength?: number
 	readonly border?: boolean
+	readonly showValue?: boolean
+	readonly gradient?: boolean
+	readonly direction?: string
+	readonly axisPosition?: string
+	readonly negativeBarColorSameAsPositive?: boolean
 	readonly negativeBarBorderColorSameAsPositive?: boolean
+	readonly fillColor?: SheetConditionalFormatColor
 	readonly borderColor?: SheetConditionalFormatColor
 	readonly negativeFillColor?: SheetConditionalFormatColor
 	readonly negativeBorderColor?: SheetConditionalFormatColor
@@ -826,6 +832,7 @@ export function cloneX14ConditionalFormatInfo(
 					dataBar: {
 						...format.dataBar,
 						cfvo: format.dataBar.cfvo.map((entry) => ({ ...entry })),
+						...(format.dataBar.fillColor ? { fillColor: { ...format.dataBar.fillColor } } : {}),
 						...(format.dataBar.borderColor
 							? { borderColor: { ...format.dataBar.borderColor } }
 							: {}),

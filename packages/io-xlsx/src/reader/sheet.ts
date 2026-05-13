@@ -6259,6 +6259,21 @@ function parseX14DataBar(xml: string): SheetX14ConditionalFormatDataBarInfo | un
 	if (maxLength !== undefined) Object.assign(parsed, { maxLength })
 	const border = readBoolAttribute(dataBar.attrs, 'border')
 	if (border !== undefined) Object.assign(parsed, { border })
+	const showValue = readBoolAttribute(dataBar.attrs, 'showValue')
+	if (showValue !== undefined) Object.assign(parsed, { showValue })
+	const gradient = readBoolAttribute(dataBar.attrs, 'gradient')
+	if (gradient !== undefined) Object.assign(parsed, { gradient })
+	const direction = attr(dataBar.attrs, 'direction')
+	if (direction) Object.assign(parsed, { direction })
+	const axisPosition = attr(dataBar.attrs, 'axisPosition')
+	if (axisPosition) Object.assign(parsed, { axisPosition })
+	const negativeBarColorSameAsPositive = readBoolAttribute(
+		dataBar.attrs,
+		'negativeBarColorSameAsPositive',
+	)
+	if (negativeBarColorSameAsPositive !== undefined) {
+		Object.assign(parsed, { negativeBarColorSameAsPositive })
+	}
 	const negativeBarBorderColorSameAsPositive = readBoolAttribute(
 		dataBar.attrs,
 		'negativeBarBorderColorSameAsPositive',
@@ -6266,6 +6281,8 @@ function parseX14DataBar(xml: string): SheetX14ConditionalFormatDataBarInfo | un
 	if (negativeBarBorderColorSameAsPositive !== undefined) {
 		Object.assign(parsed, { negativeBarBorderColorSameAsPositive })
 	}
+	const fillColor = readX14Color(dataBar.body, 'fillColor')
+	if (fillColor) Object.assign(parsed, { fillColor })
 	const borderColor = readX14Color(dataBar.body, 'borderColor')
 	if (borderColor) Object.assign(parsed, { borderColor })
 	const negativeFillColor = readX14Color(dataBar.body, 'negativeFillColor')

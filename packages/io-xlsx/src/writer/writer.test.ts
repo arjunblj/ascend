@@ -6496,12 +6496,21 @@ describe('writeXlsx', () => {
 				minLength: 5,
 				maxLength: 95,
 				border: true,
+				showValue: false,
+				gradient: false,
+				direction: 'rightToLeft',
+				axisPosition: 'middle',
+				negativeBarColorSameAsPositive: false,
+				negativeBarBorderColorSameAsPositive: true,
 				cfvo: [
 					{ type: 'formula', value: 'A2' },
 					{ type: 'num', value: '10', gte: false },
 				],
+				fillColor: { rgb: 'FF638EC6' },
 				borderColor: { rgb: 'FF003300' },
 				negativeFillColor: { rgb: 'FF00AA00' },
+				negativeBorderColor: { theme: 5 },
+				axisColor: { auto: true },
 			},
 			iconSet: {
 				iconSet: '3Flags',
@@ -6537,7 +6546,7 @@ describe('writeXlsx', () => {
 		expect(ruleXml).toContain('xr:uid="{NEW-UID}"')
 		expect(ruleXml).toContain('<xm:f>A2&gt;0</xm:f>')
 		expect(ruleXml).toContain(
-			'<x14:dataBar minLength="5" maxLength="95" border="1"><x14:cfvo type="formula"><xm:f>A2</xm:f></x14:cfvo><x14:cfvo type="num" gte="0" val="10"/><x14:borderColor rgb="FF003300"/><x14:negativeFillColor rgb="FF00AA00"/></x14:dataBar>',
+			'<x14:dataBar minLength="5" maxLength="95" border="1" showValue="0" gradient="0" direction="rightToLeft" axisPosition="middle" negativeBarColorSameAsPositive="0" negativeBarBorderColorSameAsPositive="1"><x14:cfvo type="formula"><xm:f>A2</xm:f></x14:cfvo><x14:cfvo type="num" gte="0" val="10"/><x14:fillColor rgb="FF638EC6"/><x14:borderColor rgb="FF003300"/><x14:negativeFillColor rgb="FF00AA00"/><x14:negativeBorderColor theme="5"/><x14:axisColor auto="1"/></x14:dataBar>',
 		)
 		expect(ruleXml).toContain(
 			'<x14:iconSet iconSet="3Flags" showValue="0" reverse="1"><x14:cfvo type="percent" val="0"/><x14:cfvo type="percent" val="50"/><x14:cfvo type="percent" val="90"/><x14:cfIcon iconSet="3Flags" iconId="0"/><x14:cfIcon iconSet="3Flags" iconId="1"/><x14:cfIcon iconSet="3Flags" iconId="2"/></x14:iconSet>',

@@ -515,6 +515,15 @@ function buildX14DataBarXml(
 	if (dataBar.minLength !== undefined) attrs.push(`minLength="${dataBar.minLength}"`)
 	if (dataBar.maxLength !== undefined) attrs.push(`maxLength="${dataBar.maxLength}"`)
 	if (dataBar.border !== undefined) attrs.push(`border="${dataBar.border ? '1' : '0'}"`)
+	if (dataBar.showValue !== undefined) attrs.push(`showValue="${dataBar.showValue ? '1' : '0'}"`)
+	if (dataBar.gradient !== undefined) attrs.push(`gradient="${dataBar.gradient ? '1' : '0'}"`)
+	if (dataBar.direction) attrs.push(`direction="${escapeXml(dataBar.direction)}"`)
+	if (dataBar.axisPosition) attrs.push(`axisPosition="${escapeXml(dataBar.axisPosition)}"`)
+	if (dataBar.negativeBarColorSameAsPositive !== undefined) {
+		attrs.push(
+			`negativeBarColorSameAsPositive="${dataBar.negativeBarColorSameAsPositive ? '1' : '0'}"`,
+		)
+	}
 	if (dataBar.negativeBarBorderColorSameAsPositive !== undefined) {
 		attrs.push(
 			`negativeBarBorderColorSameAsPositive="${dataBar.negativeBarBorderColorSameAsPositive ? '1' : '0'}"`,
@@ -522,6 +531,7 @@ function buildX14DataBarXml(
 	}
 	const body = [
 		...dataBar.cfvo.map(buildX14CfvoXml),
+		colorXml('x14:fillColor', dataBar.fillColor),
 		colorXml('x14:borderColor', dataBar.borderColor),
 		colorXml('x14:negativeFillColor', dataBar.negativeFillColor),
 		colorXml('x14:negativeBorderColor', dataBar.negativeBorderColor),

@@ -3279,7 +3279,7 @@ describe('readXlsx', () => {
       <x14:conditionalFormattings>
         <x14:conditionalFormatting>
           <x14:cfRule type="dataBar" priority="4" activePresent="1" xr:uid="{CF-UID}">
-            <x14:dataBar><x14:cfvo type="formula"><xm:f>A1</xm:f></x14:cfvo></x14:dataBar>
+            <x14:dataBar minLength="3" maxLength="97" border="1" showValue="0" gradient="0" direction="rightToLeft" axisPosition="middle" negativeBarColorSameAsPositive="0" negativeBarBorderColorSameAsPositive="1"><x14:cfvo type="formula"><xm:f>A1</xm:f></x14:cfvo><x14:fillColor rgb="FF638EC6"/><x14:borderColor theme="4" tint="-0.25"/><x14:negativeFillColor rgb="FFFF0000"/><x14:axisColor auto="1"/></x14:dataBar>
             <x14:extLst><x14:ext uri="{cf-extension}"><x14ac:metadata flag="1"/></x14:ext></x14:extLst>
           </x14:cfRule>
           <xm:sqref>A1:A5</xm:sqref>
@@ -3307,7 +3307,22 @@ describe('readXlsx', () => {
 				preservedRuleChildXml: [
 					'<x14:extLst><x14:ext uri="{cf-extension}"><x14ac:metadata flag="1"/></x14:ext></x14:extLst>',
 				],
-				dataBar: { cfvo: [{ type: 'formula', value: 'A1' }] },
+				dataBar: {
+					cfvo: [{ type: 'formula', value: 'A1' }],
+					minLength: 3,
+					maxLength: 97,
+					border: true,
+					showValue: false,
+					gradient: false,
+					direction: 'rightToLeft',
+					axisPosition: 'middle',
+					negativeBarColorSameAsPositive: false,
+					negativeBarBorderColorSameAsPositive: true,
+					fillColor: { rgb: 'FF638EC6' },
+					borderColor: { theme: 4, tint: -0.25 },
+					negativeFillColor: { rgb: 'FFFF0000' },
+					axisColor: { auto: true },
+				},
 			},
 		])
 	})

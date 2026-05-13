@@ -2633,14 +2633,20 @@ function inverseCellOps(cells: readonly MutationJournalCellPreimage[]): {
 }
 
 function styleInverseOps(cells: readonly MutationJournalCellPreimage[]): Operation[] {
-	return cells
-		.filter((cell) => cell.existed)
-		.map((cell) => ({
-			op: 'setStyle',
-			sheet: cell.sheet,
-			range: cell.ref,
-			style: cell.style,
-		}))
+	const inverseOps: Operation[] = []
+	for (const cell of cells) {
+		if (!cell.existed) continue
+		inverseOps.push({ op: 'clearRange', sheet: cell.sheet, range: cell.ref, what: 'styles' })
+		if (Object.keys(cell.style).length > 0) {
+			inverseOps.push({
+				op: 'setStyle',
+				sheet: cell.sheet,
+				range: cell.ref,
+				style: cell.style,
+			})
+		}
+	}
+	return inverseOps
 }
 
 function cellValueToInput(

@@ -849,6 +849,103 @@ describe('interactive client contract', () => {
 		session.close()
 	})
 
+	test('interactive undo resumes patching after metadata invalidates the edited snapshot', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 1 },
+					{ ref: 'C1', value: 3 },
+					{ ref: 'D1', value: 'metadata target' },
+				],
+			},
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'B1', formula: 'A1*2' },
+		])
+		wb.recalc()
+
+		const session = await AscendSession.open(wb.toBytes(), { mode: 'interactive' })
+		const before = session.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 4,
+		})
+		const edit = await session.apply(
+			[
+				{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 4 }] },
+				{ op: 'setNumberFormat', sheet: 'Sheet1', range: 'C1:C1', format: '0.00' },
+			],
+			{ journal: true },
+		)
+		expect(edit.apply.errors).toEqual([])
+		expect(edit.apply.journal?.exact).toBe(true)
+		const edited = session.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 4,
+		})
+
+		const metadata = await session.apply([
+			{ op: 'setComment', sheet: 'Sheet1', ref: 'D1', text: 'metadata changed' },
+		])
+		expect(metadata.apply.errors).toEqual([])
+		expect(
+			session.readViewportPatch({
+				sheet: 'Sheet1',
+				topRow: 0,
+				leftCol: 0,
+				rowCount: 1,
+				colCount: 4,
+				changedSince: edited.changeToken,
+			}),
+		).toBeNull()
+		const afterMetadata = session.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 4,
+			changedSince: edited.changeToken,
+		})
+		expect(afterMetadata.patch).toBeUndefined()
+		expect(afterMetadata.comments).toHaveLength(1)
+
+		const undo = await session.apply(edit.apply.journal?.inverseOps ?? [])
+		expect(undo.apply.errors).toEqual([])
+		const undoPatch = session.readViewportPatch({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 4,
+			changedSince: afterMetadata.changeToken,
+		})
+		if (!undoPatch) throw new Error('expected undo patch after fresh metadata snapshot')
+		const restored = session.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 4,
+		})
+		expect(materializeViewportPatch(afterMetadata.cells, undoPatch)).toEqual(
+			interactiveCellMap(restored.cells),
+		)
+		expect(restored.comments).toHaveLength(1)
+		const restoredSemantic = semanticInteractiveCellMap(restored.cells)
+		const beforeSemantic = semanticInteractiveCellMap(before.cells)
+		expect(restoredSemantic.get('A1')).toEqual(beforeSemantic.get('A1'))
+		expect(restoredSemantic.get('B1')).toEqual(beforeSemantic.get('B1'))
+		expect(restoredSemantic.get('C1')).toEqual(beforeSemantic.get('C1'))
+		expect(restoredSemantic.get('D1')?.flags.comment).toBe(true)
+		session.close()
+	})
+
 	test('interactive sessions can prepare mutable edit state before first edit', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] }])
@@ -3630,7 +3727,8 @@ describe('interactive client contract', () => {
 					{ ref: 'B2', value: 4 },
 				],
 			},
-			{ op: 'setStyle', sheet: 'Sheet1', range: 'A2', style: {} },
+			{ op: 'clearRange', sheet: 'Sheet1', range: 'A2', what: 'styles' },
+			{ op: 'clearRange', sheet: 'Sheet1', range: 'B2', what: 'styles' },
 			{ op: 'setStyle', sheet: 'Sheet1', range: 'B2', style: { numberFormat: '0.00' } },
 		])
 		const undoDeleteRow = wb.apply(deletedRow.journal?.inverseOps ?? [], { transaction: true })

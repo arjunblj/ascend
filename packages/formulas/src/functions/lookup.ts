@@ -85,6 +85,24 @@ function reverseApproximateMatch(lookup: CellValue, data: readonly CellValue[]):
 	return result
 }
 
+function descendingNextSmallerMatch(lookup: CellValue, data: readonly CellValue[]): number {
+	let lo = 0
+	let hi = data.length - 1
+	let result = -1
+	while (lo <= hi) {
+		const mid = (lo + hi) >>> 1
+		const probe = nearestNonBlankIndex(data, lo, hi, mid)
+		if (probe < 0) break
+		if (compareValues(v(data, probe), lookup) <= 0) {
+			result = probe
+			hi = probe - 1
+		} else {
+			lo = probe + 1
+		}
+	}
+	return result
+}
+
 function exactMatch(lookup: CellValue, data: readonly CellValue[]): number {
 	for (let i = 0; i < data.length; i++) {
 		if (valuesEqual(lookup, v(data, i))) return i
@@ -336,8 +354,12 @@ function findInArray(
 		}
 		return -1
 	}
-	if (matchMode === -1) return approximateMatch(lookup, data)
-	if (matchMode === 1) return nextLargerMatch(lookup, data)
+	if (matchMode === -1)
+		return searchMode === -2
+			? descendingNextSmallerMatch(lookup, data)
+			: approximateMatch(lookup, data)
+	if (matchMode === 1)
+		return searchMode === -2 ? reverseApproximateMatch(lookup, data) : nextLargerMatch(lookup, data)
 	return -1
 }
 

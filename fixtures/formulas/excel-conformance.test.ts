@@ -686,6 +686,20 @@ describe('Excel conformance', () => {
 			)
 		})
 
+		test('XLOOKUP descending binary next smaller match mode', () => {
+			const cells = { A1: 30, B1: 'thirty', A2: 20, B2: 'twenty', A3: 10, B3: 'ten' }
+			expect(evalFormula('XLOOKUP(25, A1:A3, B1:B3, "none", -1, -2)', cells)).toEqual(
+				stringValue('twenty'),
+			)
+		})
+
+		test('XLOOKUP descending binary next larger match mode', () => {
+			const cells = { A1: 30, B1: 'thirty', A2: 20, B2: 'twenty', A3: 10, B3: 'ten' }
+			expect(evalFormula('XLOOKUP(25, A1:A3, B1:B3, "none", 1, -2)', cells)).toEqual(
+				stringValue('thirty'),
+			)
+		})
+
 		test('INDEX single cell', () => {
 			const cells = { A1: 10, A2: 20, A3: 30 }
 			expectNum(evalFormula('INDEX(A1:A3, 2)', cells), 20)
@@ -709,6 +723,16 @@ describe('Excel conformance', () => {
 		test('XMATCH exact match', () => {
 			const cells = { A1: 'a', A2: 'b', A3: 'c' }
 			expectNum(evalFormula('XMATCH("b", A1:A3, 0)', cells), 2)
+		})
+
+		test('XMATCH descending binary next smaller match mode', () => {
+			const cells = { A1: 30, A2: 20, A3: 10 }
+			expectNum(evalFormula('XMATCH(25, A1:A3, -1, -2)', cells), 2)
+		})
+
+		test('XMATCH descending binary next larger match mode', () => {
+			const cells = { A1: 30, A2: 20, A3: 10 }
+			expectNum(evalFormula('XMATCH(25, A1:A3, 1, -2)', cells), 1)
 		})
 
 		test('CHOOSE selects nth value', () => {

@@ -263,6 +263,59 @@ describe('SparseGrid', () => {
 		expect(coords).toEqual([31, 32])
 	})
 
+	test('forEachValueInRangeUnordered visits bounded occupied cells without row-major contract', () => {
+		const grid = new SparseGrid()
+		for (let row = 0; row < 10; row++) {
+			for (let col = 0; col < 10; col++) {
+				grid.set(row, col, makeCell(numberValue(row * 10 + col)))
+			}
+		}
+		grid.set(64, 64, makeCell(stringValue('next-chunk')))
+		grid.set(0, 511, makeCell(numberValue(511)))
+		grid.set(80, 0, makeCell(numberValue(80)))
+
+		const visited: Array<[number, number, CellValue]> = []
+		grid.forEachValueInRangeUnordered(0, 0, 70, 70, (value, row, col) => {
+			visited.push([row, col, value])
+		})
+
+		const coords = visited
+			.map(([row, col]) => [row, col])
+			.sort((a, b) => a[0] - b[0] || a[1] - b[1])
+		expect(coords).toHaveLength(101)
+		expect(coords).toContainEqual([0, 0])
+		expect(coords).toContainEqual([9, 9])
+		expect(coords).toContainEqual([64, 64])
+		expect(coords).not.toContainEqual([0, 511])
+		expect(coords).not.toContainEqual([80, 0])
+		expect(visited.find(([row, col]) => row === 64 && col === 64)?.[2]).toEqual(
+			stringValue('next-chunk'),
+		)
+	})
+
+	test('forEachOccupiedInRangeUnordered visits bounded coordinates without materializing values', () => {
+		const grid = new SparseGrid()
+		for (let row = 0; row < 10; row++) {
+			for (let col = 0; col < 10; col++) {
+				grid.set(row, col, makeCell(numberValue(row * 10 + col)))
+			}
+		}
+		grid.set(64, 64, makeCell(stringValue('next-chunk')))
+		grid.set(0, 511, makeCell(numberValue(511)))
+		grid.set(80, 0, makeCell(numberValue(80)))
+
+		const coords: Array<[number, number]> = []
+		grid.forEachOccupiedInRangeUnordered(0, 0, 70, 70, (row, col) => coords.push([row, col]))
+		coords.sort((a, b) => a[0] - b[0] || a[1] - b[1])
+
+		expect(coords).toHaveLength(101)
+		expect(coords).toContainEqual([0, 0])
+		expect(coords).toContainEqual([9, 9])
+		expect(coords).toContainEqual([64, 64])
+		expect(coords).not.toContainEqual([0, 511])
+		expect(coords).not.toContainEqual([80, 0])
+	})
+
 	test('aggregateNumericInRange sums numbers and dates while ignoring nonnumeric cells', () => {
 		const grid = new SparseGrid()
 		grid.set(0, 0, makeCell(numberValue(4)))

@@ -161,6 +161,25 @@ interface GridChunk {
 		stringTable: StringTable,
 		fn: (localCol: number, value: CellValue) => void,
 	): void
+	forEachValueInRangeUnordered(
+		localRowStart: number,
+		localRowEnd: number,
+		minLocalCol: number,
+		maxLocalCol: number,
+		baseRow: number,
+		baseCol: number,
+		stringTable: StringTable,
+		fn: (value: CellValue, row: number, col: number) => void,
+	): void
+	forEachOccupiedInRangeUnordered(
+		localRowStart: number,
+		localRowEnd: number,
+		minLocalCol: number,
+		maxLocalCol: number,
+		baseRow: number,
+		baseCol: number,
+		fn: (row: number, col: number) => void,
+	): void
 	aggregateNumericInRange(
 		localRowStart: number,
 		localRowEnd: number,
@@ -533,6 +552,44 @@ class SparseChunk implements GridChunk {
 				if (value !== undefined) fn(localCol, value)
 			}
 		})
+	}
+
+	forEachValueInRangeUnordered(
+		localRowStart: number,
+		localRowEnd: number,
+		minLocalCol: number,
+		maxLocalCol: number,
+		baseRow: number,
+		baseCol: number,
+		stringTable: StringTable,
+		fn: (value: CellValue, row: number, col: number) => void,
+	): void {
+		for (const [localIndex, slot] of this.slots) {
+			const localRow = localIndex >>> CHUNK_BITS
+			if (localRow < localRowStart || localRow > localRowEnd) continue
+			const localCol = localIndex & CHUNK_MASK
+			if (localCol < minLocalCol || localCol > maxLocalCol) continue
+			const value = readSlotValue(slot, stringTable)
+			if (value !== undefined) fn(value, baseRow + localRow, baseCol + localCol)
+		}
+	}
+
+	forEachOccupiedInRangeUnordered(
+		localRowStart: number,
+		localRowEnd: number,
+		minLocalCol: number,
+		maxLocalCol: number,
+		baseRow: number,
+		baseCol: number,
+		fn: (row: number, col: number) => void,
+	): void {
+		for (const localIndex of this.slots.keys()) {
+			const localRow = localIndex >>> CHUNK_BITS
+			if (localRow < localRowStart || localRow > localRowEnd) continue
+			const localCol = localIndex & CHUNK_MASK
+			if (localCol < minLocalCol || localCol > maxLocalCol) continue
+			fn(baseRow + localRow, baseCol + localCol)
+		}
 	}
 
 	aggregateNumericInRange(
@@ -1106,6 +1163,62 @@ class DenseChunk implements GridChunk {
 		}
 	}
 
+	forEachValueInRangeUnordered(
+		localRowStart: number,
+		localRowEnd: number,
+		minLocalCol: number,
+		maxLocalCol: number,
+		baseRow: number,
+		baseCol: number,
+		stringTable: StringTable,
+		fn: (value: CellValue, row: number, col: number) => void,
+	): void {
+		for (let localRow = localRowStart; localRow <= localRowEnd; localRow++) {
+			if ((this.rowCounts[localRow] ?? 0) === 0) continue
+			const rowMin = this.rowMinCol[localRow] ?? ROW_EMPTY_MIN
+			const rowMax = this.rowMaxCol[localRow] ?? ROW_EMPTY_MAX
+			if (rowMin > rowMax || rowMax < minLocalCol || rowMin > maxLocalCol) continue
+			const startCol = Math.max(minLocalCol, rowMin)
+			const endCol = Math.min(maxLocalCol, rowMax)
+			const rowBase = localRow << CHUNK_BITS
+			for (let localCol = startCol; localCol <= endCol; localCol++) {
+				const localIndex = rowBase + localCol
+				if (!this.has(localIndex)) continue
+				const value = readDenseValue(
+					this.readTag(localIndex),
+					this.numbers[localIndex] ?? 0,
+					this.stringIds[localIndex] ?? 0,
+					this.heapValues?.[localIndex],
+					stringTable,
+				)
+				if (value !== undefined) fn(value, baseRow + localRow, baseCol + localCol)
+			}
+		}
+	}
+
+	forEachOccupiedInRangeUnordered(
+		localRowStart: number,
+		localRowEnd: number,
+		minLocalCol: number,
+		maxLocalCol: number,
+		baseRow: number,
+		baseCol: number,
+		fn: (row: number, col: number) => void,
+	): void {
+		for (let localRow = localRowStart; localRow <= localRowEnd; localRow++) {
+			if ((this.rowCounts[localRow] ?? 0) === 0) continue
+			const rowMin = this.rowMinCol[localRow] ?? ROW_EMPTY_MIN
+			const rowMax = this.rowMaxCol[localRow] ?? ROW_EMPTY_MAX
+			if (rowMin > rowMax || rowMax < minLocalCol || rowMin > maxLocalCol) continue
+			const startCol = Math.max(minLocalCol, rowMin)
+			const endCol = Math.min(maxLocalCol, rowMax)
+			const rowBase = localRow << CHUNK_BITS
+			for (let localCol = startCol; localCol <= endCol; localCol++) {
+				if (this.has(rowBase + localCol)) fn(baseRow + localRow, baseCol + localCol)
+			}
+		}
+	}
+
 	aggregateNumericInRange(
 		localRowStart: number,
 		localRowEnd: number,
@@ -1608,6 +1721,75 @@ export class SparseGrid {
 						(localCol, value) => fn(value, row, baseCol + localCol),
 					)
 				}
+			}
+		}
+	}
+
+	forEachValueInRangeUnordered(
+		startRow: number,
+		startCol: number,
+		endRow: number,
+		endCol: number,
+		fn: (value: CellValue, row: number, col: number) => void,
+	): void {
+		if (this._cellCount === 0) return
+		const startChunkRow = startRow >> CHUNK_BITS
+		const endChunkRow = endRow >> CHUNK_BITS
+		const startChunkCol = startCol >> CHUNK_BITS
+		const endChunkCol = endCol >> CHUNK_BITS
+
+		for (const [chunkRow, cols] of this.chunkRows) {
+			if (chunkRow < startChunkRow || chunkRow > endChunkRow) continue
+			const localRowStart = chunkRow === startChunkRow ? startRow & CHUNK_MASK : 0
+			const localRowEnd = chunkRow === endChunkRow ? endRow & CHUNK_MASK : CHUNK_MASK
+			for (const [chunkCol, chunk] of cols) {
+				if (chunkCol < startChunkCol || chunkCol > endChunkCol) continue
+				const localColStart = chunkCol === startChunkCol ? startCol & CHUNK_MASK : 0
+				const localColEnd = chunkCol === endChunkCol ? endCol & CHUNK_MASK : CHUNK_MASK
+				chunk.forEachValueInRangeUnordered(
+					localRowStart,
+					localRowEnd,
+					localColStart,
+					localColEnd,
+					chunkRow << CHUNK_BITS,
+					chunkCol << CHUNK_BITS,
+					this.stringTable,
+					fn,
+				)
+			}
+		}
+	}
+
+	forEachOccupiedInRangeUnordered(
+		startRow: number,
+		startCol: number,
+		endRow: number,
+		endCol: number,
+		fn: (row: number, col: number) => void,
+	): void {
+		if (this._cellCount === 0) return
+		const startChunkRow = startRow >> CHUNK_BITS
+		const endChunkRow = endRow >> CHUNK_BITS
+		const startChunkCol = startCol >> CHUNK_BITS
+		const endChunkCol = endCol >> CHUNK_BITS
+
+		for (const [chunkRow, cols] of this.chunkRows) {
+			if (chunkRow < startChunkRow || chunkRow > endChunkRow) continue
+			const localRowStart = chunkRow === startChunkRow ? startRow & CHUNK_MASK : 0
+			const localRowEnd = chunkRow === endChunkRow ? endRow & CHUNK_MASK : CHUNK_MASK
+			for (const [chunkCol, chunk] of cols) {
+				if (chunkCol < startChunkCol || chunkCol > endChunkCol) continue
+				const localColStart = chunkCol === startChunkCol ? startCol & CHUNK_MASK : 0
+				const localColEnd = chunkCol === endChunkCol ? endCol & CHUNK_MASK : CHUNK_MASK
+				chunk.forEachOccupiedInRangeUnordered(
+					localRowStart,
+					localRowEnd,
+					localColStart,
+					localColEnd,
+					chunkRow << CHUNK_BITS,
+					chunkCol << CHUNK_BITS,
+					fn,
+				)
 			}
 		}
 	}

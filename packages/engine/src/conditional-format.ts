@@ -312,7 +312,7 @@ function buildRangeContext(sheet: Sheet, parts: readonly ParsedSqrefPart[]): Ran
 	const values: DuplicateUniqueValue[] = []
 	for (const part of parts) {
 		const range = part.range
-		sheet.cells.forEachValueInRange(
+		sheet.cells.forEachValueInRangeUnordered(
 			range.start.row,
 			range.start.col,
 			range.end.row,
@@ -634,12 +634,12 @@ export function evaluateConditionalFormats(
 		for (const part of parts) {
 			const range = part.range
 			if (skipBlankCells) {
-				sheet.cells.forEachValueInRange(
+				sheet.cells.forEachOccupiedInRangeUnordered(
 					range.start.row,
 					range.start.col,
 					range.end.row,
 					range.end.col,
-					(_value, row, col) => {
+					(row, col) => {
 						cellsToCheck.add(row * EXCEL_MAX_COLS + col)
 					},
 				)

@@ -36,6 +36,9 @@ describe('agent workflow benchmark', () => {
 				readonly totalMedianMs?: number
 				readonly fullTotalMedianMs?: number
 				readonly preparedTotalMedianMs?: number
+				readonly commitVerifiedTotalMedianMs?: number
+				readonly fullCommitVerifiedTotalMedianMs?: number
+				readonly preparedCommitVerifiedTotalMedianMs?: number
 				readonly measuredSampleMedianMs?: number
 				readonly readMedianMs?: number
 				readonly commitPostWriteReopenMedianMs?: number
@@ -47,11 +50,16 @@ describe('agent workflow benchmark', () => {
 				readonly payloadBytesMedian?: number
 				readonly fullPayloadBytesMedian?: number
 				readonly preparedPayloadBytesMedian?: number
+				readonly commitVerifiedPayloadBytesMedian?: number
+				readonly fullCommitVerifiedPayloadBytesMedian?: number
+				readonly preparedCommitVerifiedPayloadBytesMedian?: number
 				readonly planPayloadBytesMedian?: number
 				readonly fullPlanPayloadBytesMedian?: number
 				readonly preparedPlanPayloadBytesMedian?: number
 				readonly compactWorkflowSpeedupVsFull?: number
+				readonly commitVerifiedWorkflowSpeedupVsFull?: number
 				readonly preparedWorkflowSpeedupVsCompact?: number
+				readonly preparedCommitVerifiedWorkflowSpeedupVsCompact?: number
 				readonly planPayloadReduction?: number
 				readonly readCellsMedian?: number
 				readonly readWindowRowsMedian?: number
@@ -77,6 +85,9 @@ describe('agent workflow benchmark', () => {
 		expect(payload.summary?.totalMedianMs).toBeNumber()
 		expect(payload.summary?.fullTotalMedianMs).toBeNumber()
 		expect(payload.summary?.preparedTotalMedianMs).toBeNumber()
+		expect(payload.summary?.commitVerifiedTotalMedianMs).toBeNumber()
+		expect(payload.summary?.fullCommitVerifiedTotalMedianMs).toBeNumber()
+		expect(payload.summary?.preparedCommitVerifiedTotalMedianMs).toBeNumber()
 		expect(payload.summary?.measuredSampleMedianMs).toBeNumber()
 		expect(payload.summary?.readMedianMs).toBeNumber()
 		expect(payload.summary?.commitPostWriteReopenMedianMs).toBeNumber()
@@ -88,11 +99,16 @@ describe('agent workflow benchmark', () => {
 		expect(payload.summary?.payloadBytesMedian).toBeNumber()
 		expect(payload.summary?.fullPayloadBytesMedian).toBeNumber()
 		expect(payload.summary?.preparedPayloadBytesMedian).toBeNumber()
+		expect(payload.summary?.commitVerifiedPayloadBytesMedian).toBeNumber()
+		expect(payload.summary?.fullCommitVerifiedPayloadBytesMedian).toBeNumber()
+		expect(payload.summary?.preparedCommitVerifiedPayloadBytesMedian).toBeNumber()
 		expect(payload.summary?.planPayloadBytesMedian).toBeNumber()
 		expect(payload.summary?.fullPlanPayloadBytesMedian).toBeNumber()
 		expect(payload.summary?.preparedPlanPayloadBytesMedian).toBeNumber()
 		expect(payload.summary?.compactWorkflowSpeedupVsFull).toBeNumber()
+		expect(payload.summary?.commitVerifiedWorkflowSpeedupVsFull).toBeNumber()
 		expect(payload.summary?.preparedWorkflowSpeedupVsCompact).toBeNumber()
+		expect(payload.summary?.preparedCommitVerifiedWorkflowSpeedupVsCompact).toBeNumber()
 		expect(payload.summary?.planPayloadReduction).toBeNumber()
 		expect(payload.summary?.readCellsMedian).toBe(60)
 		expect(payload.summary?.readWindowRowsMedian).toBe(10)

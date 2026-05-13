@@ -35,6 +35,9 @@ interface WorkflowSample {
 	readonly totalMs: number
 	readonly fullTotalMs: number
 	readonly preparedTotalMs: number
+	readonly commitVerifiedTotalMs: number
+	readonly fullCommitVerifiedTotalMs: number
+	readonly preparedCommitVerifiedTotalMs: number
 	readonly measuredSampleMs: number
 	readonly inspectMs: number
 	readonly readMs: number
@@ -60,6 +63,9 @@ interface WorkflowSample {
 	readonly payloadBytes: number
 	readonly fullPayloadBytes: number
 	readonly preparedPayloadBytes: number
+	readonly commitVerifiedPayloadBytes: number
+	readonly fullCommitVerifiedPayloadBytes: number
+	readonly preparedCommitVerifiedPayloadBytes: number
 	readonly inspectPayloadBytes: number
 	readonly readPayloadBytes: number
 	readonly planPayloadBytes: number
@@ -437,22 +443,31 @@ async function runWorkflow(
 		plan.text.length +
 		commit.text.length +
 		verify.text.length
+	const compactCommitVerifiedWorkflowBytes =
+		inspect.text.length + read.text.length + plan.text.length + commit.text.length
 	const fullWorkflowBytes =
 		inspect.text.length +
 		read.text.length +
 		fullPlan.text.length +
 		commit.text.length +
 		verify.text.length
+	const fullCommitVerifiedWorkflowBytes =
+		inspect.text.length + read.text.length + fullPlan.text.length + commit.text.length
 	const preparedWorkflowBytes =
 		inspect.text.length +
 		read.text.length +
 		preparedPlan.text.length +
 		preparedCommit.text.length +
 		preparedVerify.text.length
+	const preparedCommitVerifiedWorkflowBytes =
+		inspect.text.length + read.text.length + preparedPlan.text.length + preparedCommit.text.length
 	return {
 		totalMs: inspect.ms + read.ms + plan.ms + commit.ms + verify.ms,
 		fullTotalMs: inspect.ms + read.ms + fullPlan.ms + commit.ms + verify.ms,
 		preparedTotalMs: inspect.ms + read.ms + preparedPlan.ms + preparedCommit.ms + preparedVerify.ms,
+		commitVerifiedTotalMs: inspect.ms + read.ms + plan.ms + commit.ms,
+		fullCommitVerifiedTotalMs: inspect.ms + read.ms + fullPlan.ms + commit.ms,
+		preparedCommitVerifiedTotalMs: inspect.ms + read.ms + preparedPlan.ms + preparedCommit.ms,
 		measuredSampleMs,
 		inspectMs: inspect.ms,
 		readMs: read.ms,
@@ -478,6 +493,9 @@ async function runWorkflow(
 		payloadBytes: compactWorkflowBytes,
 		fullPayloadBytes: fullWorkflowBytes,
 		preparedPayloadBytes: preparedWorkflowBytes,
+		commitVerifiedPayloadBytes: compactCommitVerifiedWorkflowBytes,
+		fullCommitVerifiedPayloadBytes: fullCommitVerifiedWorkflowBytes,
+		preparedCommitVerifiedPayloadBytes: preparedCommitVerifiedWorkflowBytes,
 		inspectPayloadBytes: inspect.text.length,
 		readPayloadBytes: read.text.length,
 		planPayloadBytes: plan.text.length,
@@ -525,6 +543,13 @@ function summarize(samples: readonly WorkflowSample[]) {
 		totalMedianMs: median(samples.map((sample) => sample.totalMs)),
 		fullTotalMedianMs: median(samples.map((sample) => sample.fullTotalMs)),
 		preparedTotalMedianMs: median(samples.map((sample) => sample.preparedTotalMs)),
+		commitVerifiedTotalMedianMs: median(samples.map((sample) => sample.commitVerifiedTotalMs)),
+		fullCommitVerifiedTotalMedianMs: median(
+			samples.map((sample) => sample.fullCommitVerifiedTotalMs),
+		),
+		preparedCommitVerifiedTotalMedianMs: median(
+			samples.map((sample) => sample.preparedCommitVerifiedTotalMs),
+		),
 		measuredSampleMedianMs: median(samples.map((sample) => sample.measuredSampleMs)),
 		inspectMedianMs: median(samples.map((sample) => sample.inspectMs)),
 		readMedianMs: median(samples.map((sample) => sample.readMs)),
@@ -574,6 +599,15 @@ function summarize(samples: readonly WorkflowSample[]) {
 		payloadBytesMedian: median(samples.map((sample) => sample.payloadBytes)),
 		fullPayloadBytesMedian: median(samples.map((sample) => sample.fullPayloadBytes)),
 		preparedPayloadBytesMedian: median(samples.map((sample) => sample.preparedPayloadBytes)),
+		commitVerifiedPayloadBytesMedian: median(
+			samples.map((sample) => sample.commitVerifiedPayloadBytes),
+		),
+		fullCommitVerifiedPayloadBytesMedian: median(
+			samples.map((sample) => sample.fullCommitVerifiedPayloadBytes),
+		),
+		preparedCommitVerifiedPayloadBytesMedian: median(
+			samples.map((sample) => sample.preparedCommitVerifiedPayloadBytes),
+		),
 		inspectPayloadBytesMedian: median(samples.map((sample) => sample.inspectPayloadBytes)),
 		readPayloadBytesMedian: median(samples.map((sample) => sample.readPayloadBytes)),
 		planPayloadBytesMedian: median(samples.map((sample) => sample.planPayloadBytes)),
@@ -592,9 +626,15 @@ function summarize(samples: readonly WorkflowSample[]) {
 		compactWorkflowSpeedupVsFull:
 			median(samples.map((sample) => sample.fullTotalMs)) /
 			median(samples.map((sample) => sample.totalMs)),
+		commitVerifiedWorkflowSpeedupVsFull:
+			median(samples.map((sample) => sample.fullCommitVerifiedTotalMs)) /
+			median(samples.map((sample) => sample.commitVerifiedTotalMs)),
 		preparedWorkflowSpeedupVsCompact:
 			median(samples.map((sample) => sample.totalMs)) /
 			median(samples.map((sample) => sample.preparedTotalMs)),
+		preparedCommitVerifiedWorkflowSpeedupVsCompact:
+			median(samples.map((sample) => sample.commitVerifiedTotalMs)) /
+			median(samples.map((sample) => sample.preparedCommitVerifiedTotalMs)),
 		planPayloadReduction:
 			median(samples.map((sample) => sample.fullPlanPayloadBytes)) /
 			median(samples.map((sample) => sample.planPayloadBytes)),

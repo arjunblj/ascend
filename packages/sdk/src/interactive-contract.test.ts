@@ -3978,6 +3978,69 @@ describe('interactive client contract', () => {
 		expect(journalComparableState(wb)).toEqual(before)
 	})
 
+	test('journal inverse ops restore empty deleted sheets exactly', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'addSheet', name: 'Scratch', position: 0 }])
+		const before = journalComparableState(wb)
+
+		const deleted = wb.apply([{ op: 'deleteSheet', sheet: 'Scratch' }], { journal: true })
+
+		expect(deleted.errors).toEqual([])
+		expect(deleted.journal?.supported).toBe(true)
+		expect(deleted.journal?.exact).toBe(true)
+		expect(deleted.journal?.inverseOps).toEqual([{ op: 'addSheet', name: 'Scratch', position: 0 }])
+		expect(journalComparableState(wb)).not.toEqual(before)
+
+		const undo = wb.apply(deleted.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(journalComparableState(wb)).toEqual(before)
+	})
+
+	test('delete sheet journals surface lost sheet contents and dependent metadata', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{ op: 'addSheet', name: 'Data' },
+			{
+				op: 'setCells',
+				sheet: 'Data',
+				updates: [
+					{ ref: 'A1', value: 'Region' },
+					{ ref: 'B1', value: 'Amount' },
+					{ ref: 'A2', value: 'West' },
+					{ ref: 'B2', value: 20 },
+				],
+			},
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'A1', formula: 'Data!B2' },
+			{ op: 'setDefinedName', name: 'DataTotal', ref: 'Data!$B$2' },
+			{ op: 'setComment', sheet: 'Data', ref: 'A1', text: 'source', author: 'analyst' },
+		])
+		wb.getWorkbookModel().chartParts.push({
+			partPath: 'xl/charts/chart1.xml',
+			sheetName: 'Sheet1',
+			series: [{ valueRef: 'Data!$B$2' }],
+		})
+
+		const deleted = wb.apply([{ op: 'deleteSheet', sheet: 'Data' }], { journal: true })
+
+		expect(deleted.errors).toEqual([])
+		expect(deleted.journal?.supported).toBe(true)
+		expect(deleted.journal?.exact).toBe(false)
+		expect(deleted.journal?.inverseOps).toEqual([{ op: 'addSheet', name: 'Data', position: 1 }])
+		expect(deleted.journal?.issues).toEqual([
+			{
+				code: 'LOSSY_INVERSE',
+				message: 'Deleted sheet Data cannot be fully restored with public operations',
+				refs: [
+					'Data!cells:4',
+					'Data!comments:1',
+					'name:DataTotal',
+					'Sheet1!A1',
+					'chart:xl/charts/chart1.xml:series:0:valueRef',
+				],
+			},
+		])
+	})
+
 	test('journal inverse ops restore existing row and column layout edits', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

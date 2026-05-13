@@ -165,6 +165,12 @@ export interface MutationJournalSheetMovePreimage {
 	readonly position: number | null
 }
 
+export interface MutationJournalSheetDeletePreimage {
+	readonly sheet: string
+	readonly position: number | null
+	readonly existed: boolean
+}
+
 export interface MutationJournalSheetLayoutPreimage {
 	readonly sheet: string
 	readonly axis: 'row' | 'col'
@@ -235,6 +241,7 @@ export type MutationJournalPreimage =
 	| { readonly kind: 'table'; readonly table: MutationJournalTablePreimage }
 	| { readonly kind: 'table-style'; readonly tableStyle: MutationJournalTableStylePreimage }
 	| { readonly kind: 'sheet-move'; readonly sheetMove: MutationJournalSheetMovePreimage }
+	| { readonly kind: 'sheet-delete'; readonly sheetDelete: MutationJournalSheetDeletePreimage }
 	| { readonly kind: 'sheet-layout'; readonly sheetLayout: MutationJournalSheetLayoutPreimage }
 	| { readonly kind: 'structural'; readonly structural: MutationJournalStructuralPreimage }
 	| {
@@ -454,6 +461,8 @@ function buildSupportedJournalEntry(
 				preimages: [],
 				issues: [],
 			}
+		case 'deleteSheet':
+			return journalDeleteSheet(workbook, op, opIndex)
 		case 'copySheet':
 			return {
 				opIndex,
@@ -468,6 +477,52 @@ function buildSupportedJournalEntry(
 			return journalSetSheetLayout(workbook, op, opIndex, 'col')
 		default:
 			return null
+	}
+}
+
+function journalDeleteSheet(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'deleteSheet' }>,
+	opIndex: number,
+): DraftJournalEntry {
+	const position = workbook.sheets.findIndex((sheet) => sheet.name === op.sheet)
+	const sheet = position >= 0 ? workbook.sheets[position] : undefined
+	const preimage: MutationJournalSheetDeletePreimage = {
+		sheet: op.sheet,
+		position: position >= 0 ? position : null,
+		existed: sheet !== undefined,
+	}
+	if (!sheet) {
+		return {
+			opIndex,
+			op,
+			inverseOps: [],
+			preimages: [{ kind: 'sheet-delete', sheetDelete: preimage }],
+			issues: [
+				{
+					code: 'UNSUPPORTED_VALUE',
+					message: `Cannot restore deleted sheet ${op.sheet} because it was not found`,
+					refs: [`sheet:${op.sheet}`],
+				},
+			],
+		}
+	}
+	const refs = sheetDeleteLossRefs(workbook, sheet)
+	return {
+		opIndex,
+		op,
+		inverseOps: [{ op: 'addSheet', name: op.sheet, position }],
+		preimages: [{ kind: 'sheet-delete', sheetDelete: preimage }],
+		issues:
+			refs.length === 0
+				? []
+				: [
+						{
+							code: 'LOSSY_INVERSE',
+							message: `Deleted sheet ${op.sheet} cannot be fully restored with public operations`,
+							refs,
+						},
+					],
 	}
 }
 
@@ -565,6 +620,115 @@ function journalSetSheetLayout(
 
 function layoutRef(sheet: string, axis: 'row' | 'col', index: number): string {
 	return axis === 'row' ? `${sheet}!${index + 1}` : `${sheet}!${indexToColumn(index)}`
+}
+
+function sheetDeleteLossRefs(workbook: Workbook, sheet: Sheet): string[] {
+	const refs: string[] = []
+	const cellCount = sheet.cells.storageStats().cellCount
+	if (cellCount > 0) refs.push(`${sheet.name}!cells:${cellCount}`)
+	if (sheet.merges.length > 0) refs.push(`${sheet.name}!merges:${sheet.merges.length}`)
+	if (sheet.tables.length > 0) refs.push(`${sheet.name}!tables:${sheet.tables.length}`)
+	if (sheet.comments.size > 0) refs.push(`${sheet.name}!comments:${sheet.comments.size}`)
+	if (sheet.threadedComments.length > 0) {
+		refs.push(`${sheet.name}!threadedComments:${sheet.threadedComments.length}`)
+	}
+	if (sheet.hyperlinks.size > 0) refs.push(`${sheet.name}!hyperlinks:${sheet.hyperlinks.size}`)
+	if (sheet.dataValidations.length > 0) {
+		refs.push(`${sheet.name}!validations:${sheet.dataValidations.length}`)
+	}
+	if (sheet.conditionalFormats.length > 0) {
+		refs.push(`${sheet.name}!conditionalFormats:${sheet.conditionalFormats.length}`)
+	}
+	if (sheet.autoFilter) refs.push(`${sheet.name}!autoFilter:${sheet.autoFilter.ref}`)
+	if (sheet.rowHeights.size > 0) refs.push(`${sheet.name}!rowHeights:${sheet.rowHeights.size}`)
+	if (sheet.colWidths.size > 0) refs.push(`${sheet.name}!colWidths:${sheet.colWidths.size}`)
+	if (sheet.frozenRows > 0 || sheet.frozenCols > 0) refs.push(`${sheet.name}!pane`)
+	if (sheet.state !== 'visible') refs.push(`${sheet.name}!state:${sheet.state}`)
+	if (sheet.imageRefs.length > 0) refs.push(`${sheet.name}!images:${sheet.imageRefs.length}`)
+	if (sheet.drawingObjectRefs.length > 0) {
+		refs.push(`${sheet.name}!drawings:${sheet.drawingObjectRefs.length}`)
+	}
+	if (sheet.x14DataValidations.length > 0) {
+		refs.push(`${sheet.name}!x14Validations:${sheet.x14DataValidations.length}`)
+	}
+	if (sheet.x14ConditionalFormats.length > 0) {
+		refs.push(`${sheet.name}!x14ConditionalFormats:${sheet.x14ConditionalFormats.length}`)
+	}
+	if (sheet.advancedFilters.length > 0) {
+		refs.push(`${sheet.name}!advancedFilters:${sheet.advancedFilters.length}`)
+	}
+	for (const entry of workbook.definedNames.list()) {
+		const scopeSheet =
+			entry.scope.kind === 'sheet' ? sheetNameForId(workbook, entry.scope.sheetId) : undefined
+		if (scopeSheet === sheet.name) refs.push(definedNameJournalKey(workbook, entry))
+		if (formulaReferencesSheet(workbook, entry.formula, scopeSheet ?? sheet.name, sheet.name)) {
+			refs.push(definedNameJournalKey(workbook, entry))
+		}
+	}
+	for (const workbookSheet of workbook.sheets) {
+		if (workbookSheet.name === sheet.name) continue
+		for (const [row, col, cell] of workbookSheet.cells.iterate()) {
+			if (
+				cell.formula &&
+				formulaReferencesSheet(workbook, cell.formula, workbookSheet.name, sheet.name)
+			) {
+				refs.push(`${workbookSheet.name}!${toA1({ row, col })}`)
+			}
+		}
+	}
+	for (const chart of workbook.chartParts) {
+		if (chart.sheetName === sheet.name) refs.push(`chart:${chart.partPath}`)
+		chart.series.forEach((series, seriesIndex) => {
+			for (const [field, formula] of [
+				['nameRef', series.nameRef],
+				['categoryRef', series.categoryRef],
+				['valueRef', series.valueRef],
+			] as const) {
+				if (
+					formula &&
+					formulaReferencesSheet(workbook, formula, chart.sheetName ?? sheet.name, sheet.name)
+				) {
+					refs.push(`chart:${chart.partPath}:series:${seriesIndex}:${field}`)
+				}
+			}
+		})
+	}
+	for (const pivot of workbook.pivotTables) {
+		if (pivot.sheetName === sheet.name) refs.push(`pivotTable:${pivot.partPath}`)
+	}
+	for (const pivotCache of workbook.pivotCaches) {
+		if (pivotCache.sourceSheet === sheet.name) refs.push(`pivotCache:${pivotCache.partPath}`)
+	}
+	return [...new Set(refs)]
+}
+
+function formulaReferencesSheet(
+	workbook: Workbook,
+	formula: string,
+	ownerSheet: string,
+	sheetName: string,
+): boolean {
+	const parsed = cachedParseFormula(formula)
+	if (!parsed.ok) return false
+	return extractRefs(parsed.value).some((ref) =>
+		formulaRefReferencesSheet(workbook, ref, ownerSheet, sheetName),
+	)
+}
+
+function formulaRefReferencesSheet(
+	workbook: Workbook,
+	ref: FormulaRef,
+	ownerSheet: string,
+	sheetName: string,
+): boolean {
+	if (ref.kind === 'sheetSpan') {
+		return (
+			sheetSpanIncludes(workbook, ref.startSheet, ref.endSheet, sheetName) ||
+			formulaRefReferencesSheet(workbook, ref.target, ownerSheet, sheetName)
+		)
+	}
+	const refSheet = 'sheet' in ref && ref.sheet !== undefined ? ref.sheet : ownerSheet
+	return refSheet === sheetName
 }
 
 function journalSetCells(

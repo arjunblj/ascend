@@ -1218,6 +1218,56 @@ describe('agent workflow loss audit', () => {
 		)
 	})
 
+	test('surfaces verify chart source integrity issues in write-risk diagnostics', async () => {
+		const input = join(TEMP_DIR, 'structured-chart-source-broken-column.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		await Bun.write(input, makeStructuredTableChartXlsx({ valueRef: 'Sales[MissingQty]' }))
+
+		const plan = await createAgentPlan(input, [
+			{ op: 'setCells', sheet: 'Data', updates: [{ ref: 'C2', value: 10 }] },
+		])
+
+		expect(plan.writePolicy.summary.chartSourceIntegrityIssues).toBe(1)
+		expect(plan.writePolicy.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: 'visual-sidecar-preservation-risk',
+				severity: 'warning',
+				partPaths: expect.arrayContaining(['xl/charts/chart1.xml']),
+				details: expect.objectContaining({
+					verifyIssues: [
+						expect.objectContaining({
+							rule: 'chart-series-integrity',
+							details: expect.objectContaining({
+								kind: 'chart-series-missing-table-column-reference',
+								partPath: 'xl/charts/chart1.xml',
+								tableName: 'Sales',
+								column: 'MissingQty',
+							}),
+						}),
+					],
+				}),
+			}),
+		)
+		expect(plan.writePolicy.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: 'chart-source-ref-drift-risk',
+				severity: 'warning',
+				partPaths: expect.arrayContaining(['xl/charts/chart1.xml']),
+				details: expect.objectContaining({
+					verifyIssues: [
+						expect.objectContaining({
+							rule: 'chart-series-integrity',
+							details: expect.objectContaining({
+								kind: 'chart-series-missing-table-column-reference',
+								tableName: 'Sales',
+							}),
+						}),
+					],
+				}),
+			}),
+		)
+	})
+
 	test('plans DrawingML versus VML drift for visual edits on mixed sheets', async () => {
 		const input = join(TEMP_DIR, 'mixed-drawings.xlsx')
 		mkdirSync(TEMP_DIR, { recursive: true })
@@ -3060,7 +3110,11 @@ function makeMissingDrawingTargetXlsx(): Uint8Array {
 	)
 }
 
-function makeStructuredTableChartXlsx(): Uint8Array {
+function makeStructuredTableChartXlsx(
+	options: { readonly categoryRef?: string; readonly valueRef?: string } = {},
+): Uint8Array {
+	const categoryRef = options.categoryRef ?? 'Sales[Region]'
+	const valueRef = options.valueRef ?? 'Sales[Qty]'
 	return createZip(
 		new Map(
 			Object.entries({
@@ -3141,8 +3195,8 @@ function makeStructuredTableChartXlsx(): Uint8Array {
     <c:plotArea>
       <c:barChart>
         <c:ser>
-          <c:cat><c:strRef><c:f>Sales[Region]</c:f></c:strRef></c:cat>
-          <c:val><c:numRef><c:f>Sales[Qty]</c:f></c:numRef></c:val>
+          <c:cat><c:strRef><c:f>${categoryRef}</c:f></c:strRef></c:cat>
+          <c:val><c:numRef><c:f>${valueRef}</c:f></c:numRef></c:val>
         </c:ser>
       </c:barChart>
     </c:plotArea>

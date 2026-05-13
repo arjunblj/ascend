@@ -135,6 +135,7 @@ export interface WritePolicyReport {
 		readonly packageGraphIssues: number
 		readonly externalReferences: number
 		readonly externalReferenceBindingIssues: number
+		readonly chartSourceIntegrityIssues: number
 		readonly legacyCommentLocations: number
 		readonly threadedCommentLocations: number
 		readonly commentIntegrityIssues: number
@@ -1385,6 +1386,7 @@ function buildWritePolicyReport(
 		if (isAnalyticalSidecar(part.featureFamily)) analyticsPartPaths.push(part.path)
 	}
 	const visualWriteRisk = buildVisualWriteRisk(workbook, operations, packageGraph.parts)
+	const chartIntegrityIssues = collectChartIntegrityIssues(checkIssues)
 	const visualHasOperationRisk =
 		visualWriteRisk.relatedOperations.length > 0 ||
 		visualWriteRisk.chartSourceRefDrift.length > 0 ||
@@ -1392,18 +1394,25 @@ function buildWritePolicyReport(
 	const visualPackageGraphIssues = packageGraphAudit.issues.filter((issue) =>
 		isVisualPackageGraphIssue(issue),
 	)
-	const visualIssuePartPaths = uniqueStrings(
-		visualPackageGraphIssues.flatMap((issue) =>
+	const visualIssuePartPaths = uniqueStrings([
+		...visualPackageGraphIssues.flatMap((issue) =>
 			packageGraphIssuePackagePaths(issue).filter(isVisualPackagePartPath),
 		),
-	)
+		...chartIntegrityIssues.flatMap((issue) =>
+			checkIssuePackagePartPaths(issue).filter(isVisualPackagePartPath),
+		),
+	])
 	const visualDiagnosticPartPaths = uniqueStrings([...visualPartPaths, ...visualIssuePartPaths])
 	for (const issue of visualPackageGraphIssues) {
 		if (issue.featureFamily && isVisualSidecar(issue.featureFamily)) {
 			visualFamilies.add(issue.featureFamily)
 		}
 	}
-	if (visualDiagnosticPartPaths.length > 0 || visualPackageGraphIssues.length > 0) {
+	if (
+		visualDiagnosticPartPaths.length > 0 ||
+		visualPackageGraphIssues.length > 0 ||
+		chartIntegrityIssues.length > 0
+	) {
 		const copiedThroughVisualPartPaths = copiedThroughParts
 			.map((part) => part.path)
 			.filter((path) => visualPartPaths.includes(path))
@@ -1416,6 +1425,7 @@ function buildWritePolicyReport(
 			(issue) => issue.severity === 'error' || issue.severity === 'warning',
 		).length
 		const visualHasPackageRisk = visualWarningIssueCount > 0
+		const visualHasIntegrityRisk = chartIntegrityIssues.length > 0
 		const visualPartCount = uniqueStrings(
 			visualDiagnosticPartPaths.length > 0
 				? visualDiagnosticPartPaths
@@ -1423,14 +1433,17 @@ function buildWritePolicyReport(
 		)
 		diagnostics.push({
 			code: 'visual-sidecar-preservation-risk',
-			severity: visualHasOperationRisk || visualHasPackageRisk ? 'warning' : 'info',
+			severity:
+				visualHasOperationRisk || visualHasPackageRisk || visualHasIntegrityRisk
+					? 'warning'
+					: 'info',
 			message:
-				visualHasOperationRisk || visualHasPackageRisk
-					? `${visualPartCount.length} chart, drawing, image, or VML sidecar package path(s) have operation-scoped write risk or package graph issues.`
+				visualHasOperationRisk || visualHasPackageRisk || visualHasIntegrityRisk
+					? `${visualPartCount.length} chart, drawing, image, or VML sidecar package path(s) have operation-scoped write risk, package graph issues, or verify issues.`
 					: `${visualPartCount.length} chart, drawing, image, or VML sidecar part(s) will be copied through; no visual or chart-source edit is planned.`,
 			suggestedAction:
-				visualHasOperationRisk || visualHasPackageRisk
-					? 'Inspect visualInventory and postWrite.packageGraphAudit before treating visuals as fidelity-safe.'
+				visualHasOperationRisk || visualHasPackageRisk || visualHasIntegrityRisk
+					? 'Inspect visualInventory, verify chart source refs, and check postWrite.packageGraphAudit before treating visuals as fidelity-safe.'
 					: 'No action is required for unrelated cell edits; retain visualInventory/packageGraphAudit with the edit record when visual fidelity is audited.',
 			...(visualDiagnosticPartPaths.length > 0 ? { partPaths: visualDiagnosticPartPaths } : {}),
 			...(visualDiagnosticPartPaths.length > 0
@@ -1447,6 +1460,7 @@ function buildWritePolicyReport(
 					visualIssueCount: visualPackageGraphIssues.length,
 					issues: visualPackageGraphIssues,
 				},
+				verifyIssues: chartIntegrityIssues,
 				copiedThroughVisualParts: packagePartDetails(
 					packagePartByPath,
 					copiedThroughVisualPartPaths,
@@ -1455,7 +1469,7 @@ function buildWritePolicyReport(
 				chartSourceRefs: collectChartSourceRefSummary(workbook),
 				drawingModel: collectDrawingModelSummary(workbook, packageGraph.parts),
 				recommendedInspection:
-					'Inspect visualInventory before visual edits; after write, inspect postWrite.packageGraphAudit plus chart source refs, DrawingML drawing relationships/media bytes, and any separate VML legacy drawing/comment layout.',
+					'Inspect visualInventory before visual edits; after write, inspect postWrite.check, postWrite.packageGraphAudit, chart source refs, DrawingML drawing relationships/media bytes, and any separate VML legacy drawing/comment layout.',
 				relatedOperations: visualWriteRisk.relatedOperations,
 				chartSourceRefDrift: visualWriteRisk.chartSourceRefDrift,
 				drawingmlVmlDrift: visualWriteRisk.drawingmlVmlDrift,
@@ -1574,16 +1588,22 @@ function buildWritePolicyReport(
 			},
 		})
 	}
-	if (visualWriteRisk.chartSourceRefDrift.length > 0) {
-		const driftPartPaths = uniqueStrings(
-			visualWriteRisk.chartSourceRefDrift.flatMap((entry) => entry.partPaths),
-		)
+	if (visualWriteRisk.chartSourceRefDrift.length > 0 || chartIntegrityIssues.length > 0) {
+		const driftPartPaths = uniqueStrings([
+			...visualWriteRisk.chartSourceRefDrift.flatMap((entry) => entry.partPaths),
+			...chartIntegrityIssues.flatMap((issue) =>
+				checkIssuePackagePartPaths(issue).filter(isVisualPackagePartPath),
+			),
+		])
 		diagnostics.push({
 			code: 'chart-source-ref-drift-risk',
 			severity: 'warning',
-			message: `${visualWriteRisk.chartSourceRefDrift.length} chart source reference group(s) may drift under planned sheet, row, or column topology edits.`,
+			message: chartSourceRefRiskMessage(
+				visualWriteRisk.chartSourceRefDrift.length,
+				chartIntegrityIssues.length,
+			),
 			suggestedAction:
-				'Use setChartSeriesSource with explicit partPath, chartIndex, and seriesIndex when a structural edit should move chart name/category/value refs; verify chart series refs after write.',
+				'Use setChartSeriesSource with explicit partPath, chartIndex, and seriesIndex when a structural edit should move chart name/category/value refs; repair verify chart source issues before write and verify chart series refs after write.',
 			...(driftPartPaths.length > 0 ? { partPaths: driftPartPaths } : {}),
 			...(driftPartPaths.length > 0
 				? { packageParts: packagePartDetails(packagePartByPath, driftPartPaths) }
@@ -1592,6 +1612,8 @@ function buildWritePolicyReport(
 			preservationPolicy: 'preserve-exact',
 			details: {
 				chartSourceRefDrift: visualWriteRisk.chartSourceRefDrift,
+				verifyIssues: chartIntegrityIssues,
+				chartSourceRefs: collectChartSourceRefSummary(workbook),
 			},
 		})
 	}
@@ -2039,6 +2061,7 @@ function buildWritePolicyReport(
 			packageGraphIssues: packageGraphAudit.issues.length,
 			externalReferences: externalReferences.length,
 			externalReferenceBindingIssues: externalReferenceBindingIssues.length,
+			chartSourceIntegrityIssues: chartIntegrityIssues.length,
 			legacyCommentLocations: legacyCommentLocations.length,
 			threadedCommentLocations: threadedCommentLocations.length,
 			commentIntegrityIssues:
@@ -3898,6 +3921,20 @@ function collectTableIntegrityIssues(checkIssues: readonly CheckIssue[]): readon
 				(checkIssueFeatureFamilies(issue).some(isTableFeatureFamily) ||
 					checkIssuePackagePartPaths(issue).some(isTablePackagePartPath))),
 	)
+}
+
+function collectChartIntegrityIssues(checkIssues: readonly CheckIssue[]): readonly CheckIssue[] {
+	return checkIssues.filter((issue) => issue.rule === 'chart-series-integrity')
+}
+
+function chartSourceRefRiskMessage(driftCount: number, integrityIssueCount: number): string {
+	if (driftCount > 0 && integrityIssueCount > 0) {
+		return `${driftCount} chart source reference group(s) may drift under planned topology edits and ${integrityIssueCount} chart source verify issue(s) require repair.`
+	}
+	if (integrityIssueCount > 0) {
+		return `${integrityIssueCount} chart source verify issue(s) require repair before write.`
+	}
+	return `${driftCount} chart source reference group(s) may drift under planned sheet, row, or column topology edits.`
 }
 
 function collectExternalLinkIntegrityIssues(

@@ -1562,6 +1562,117 @@ describe('MCP server', () => {
 		}
 	})
 
+	test('prepared MCP path mutation handles surface post-write audit failures as blocked output', async () => {
+		await Bun.write(TEMP_FILE, preservedCustomWorkbook())
+		const output = `${TEMP_FILE}.prepared-preserved-mcp.xlsx`
+		const mutations = [{ path: '/sheets/Sheet1/cells/A1/value', value: 17 }]
+		const canonicalOps = [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 17 }] }]
+		const server = createServer()
+		try {
+			// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+			const plan = (server as any)._registeredTools['ascend.plan'].handler as (args: {
+				file: string
+				mutations: Array<{ path: string; value?: unknown }>
+			}) => Promise<{
+				structuredContent?: {
+					data?: {
+						preparedPlan?: { id?: string }
+						approvals?: Array<{ id: string }>
+						pathMutations?: { ops?: unknown[] }
+					}
+				}
+			}>
+			// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+			const commit = (server as any)._registeredTools['ascend.commit'].handler as (args: {
+				planHandle?: string
+				output?: string
+				approvals?: string[]
+				compact?: boolean
+			}) => Promise<{
+				isError?: boolean
+				structuredContent?: {
+					ok?: boolean
+					error?: { message?: string }
+					data?: {
+						outputSha256?: string
+						approvals?: Array<{ id: string }>
+						pathMutations?: { ops?: unknown[] }
+						postWrite?: {
+							valid?: boolean
+							outputSha256?: string
+							auditsPassed?: boolean
+							expectedPackageGraphIssueCount?: number
+							unresolvedPackageGraphIssueCount?: number
+							packageGraphAudit?: { ok?: boolean; issueCount?: number }
+						}
+						modelOutput?: {
+							blocked?: boolean
+							nextActions?: readonly string[]
+							counts?: { postWritePackageGraphIssues?: number }
+						}
+					}
+				}
+			}>
+			const planned = await plan({ file: TEMP_FILE, mutations })
+			expect(planned.structuredContent?.data?.preparedPlan?.id).toBeString()
+			expect(planned.structuredContent?.data?.pathMutations?.ops).toEqual(canonicalOps)
+			const approvalIds =
+				planned.structuredContent?.data?.approvals?.map((approval) => approval.id) ?? []
+			expect(approvalIds).toEqual([expect.stringMatching(/^loss:preservedother:preserved:/)])
+
+			const aliasCommit = await commit({
+				planHandle: planned.structuredContent?.data?.preparedPlan?.id,
+				output,
+				approvals: ['preservedOther'],
+				compact: true,
+			})
+			expect(aliasCommit.isError).toBe(true)
+			expect(aliasCommit.structuredContent?.ok).toBe(false)
+			expect(aliasCommit.structuredContent?.error?.message).toBe(
+				'Commit requires explicit approval',
+			)
+			expect(await Bun.file(output).exists()).toBe(false)
+
+			const retryPlan = await plan({ file: TEMP_FILE, mutations })
+			expect(retryPlan.structuredContent?.data?.preparedPlan?.id).toBeString()
+			expect(retryPlan.structuredContent?.data?.pathMutations?.ops).toEqual(canonicalOps)
+			const exactCommit = await commit({
+				planHandle: retryPlan.structuredContent?.data?.preparedPlan?.id,
+				output,
+				approvals: approvalIds,
+				compact: true,
+			})
+			expect(exactCommit.isError).not.toBe(true)
+			expect(exactCommit.structuredContent?.ok).toBe(true)
+			expect(exactCommit.structuredContent?.data?.pathMutations?.ops).toEqual(canonicalOps)
+			expect(
+				exactCommit.structuredContent?.data?.approvals?.map((approval) => approval.id),
+			).toEqual(approvalIds)
+			expect(exactCommit.structuredContent?.data?.postWrite?.valid).toBe(true)
+			expect(exactCommit.structuredContent?.data?.postWrite?.auditsPassed).toBe(false)
+			expect(exactCommit.structuredContent?.data?.postWrite?.outputSha256).toBe(
+				exactCommit.structuredContent?.data?.outputSha256,
+			)
+			expect(exactCommit.structuredContent?.data?.postWrite?.packageGraphAudit?.ok).toBe(false)
+			expect(
+				exactCommit.structuredContent?.data?.postWrite?.packageGraphAudit?.issueCount,
+			).toBeGreaterThan(0)
+			expect(exactCommit.structuredContent?.data?.postWrite?.expectedPackageGraphIssueCount).toBe(0)
+			expect(
+				exactCommit.structuredContent?.data?.postWrite?.unresolvedPackageGraphIssueCount,
+			).toBeGreaterThan(0)
+			expect(exactCommit.structuredContent?.data?.modelOutput?.blocked).toBe(true)
+			expect(
+				exactCommit.structuredContent?.data?.modelOutput?.counts?.postWritePackageGraphIssues,
+			).toBeGreaterThan(0)
+			expect(exactCommit.structuredContent?.data?.modelOutput?.nextActions?.join('\n')).toContain(
+				'postWrite.packageGraphAudit.issues',
+			)
+		} finally {
+			await unlink(output).catch(() => {})
+		}
+	})
+
 	test('ascend.plan can opt out of default prepared handles', async () => {
 		const wb = AscendWorkbook.create()
 		await wb.save(TEMP_FILE)
@@ -3500,6 +3611,35 @@ function signedMacroWorkbook(): Uint8Array {
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`,
 		'xl/vbaProject.bin': 'macro-bytes',
 		'xl/vbaProjectSignature.bin': 'signature-bytes',
+	})
+}
+
+function preservedCustomWorkbook(): Uint8Array {
+	return makeXlsx({
+		'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/custom/custom1.xml" ContentType="application/custom+xml"/>
+</Types>`,
+		'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+		'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSheet" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`,
+		'xl/workbook.xml': `<?xml version="1.0"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Sheet1" sheetId="1" r:id="rIdSheet"/></sheets>
+</workbook>`,
+		'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`,
+		'xl/custom/custom1.xml': '<custom>preserve me</custom>',
 	})
 }
 

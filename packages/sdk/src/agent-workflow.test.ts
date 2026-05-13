@@ -2590,6 +2590,51 @@ describe('agent workflow loss audit', () => {
 		).rejects.toThrow('Prepared agent plan has already been committed')
 	})
 
+	test('prepared agent commits surface post-write audit failures as blocking model output', async () => {
+		const input = join(TEMP_DIR, 'prepared-preserved.xlsx')
+		const output = join(TEMP_DIR, 'prepared-preserved-out.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		await Bun.write(input, makePreservedCustomXlsx())
+		const ops = [{ op: 'setCells' as const, sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] }]
+
+		const prepared = await createPreparedAgentPlan(input, ops)
+		const approval = prepared.plan.approvals.find((entry) => entry.kind === 'lossy-write')
+		expect(prepared.plan.needsApproval).toBe(true)
+		expect(prepared.plan.packageGraphAudit.ok).toBe(false)
+		await expect(prepared.commit({ output })).rejects.toThrow('Commit requires explicit approval')
+
+		const committed = await prepared.commit({
+			output,
+			approvals: [approval?.id ?? ''],
+		})
+
+		expect(committed.lossAudit.ok).toBe(true)
+		expect(committed.postWrite.valid).toBe(true)
+		expect(committed.postWrite.auditsPassed).toBe(false)
+		expect(committed.postWrite.outputSha256).toBe(committed.outputSha256)
+		expect(committed.postWrite.packageGraphAudit.ok).toBe(false)
+		expect(committed.postWrite.packageGraphAudit.issues).toContainEqual(
+			expect.objectContaining({
+				code: 'package_feature_classification',
+				partPath: 'xl/custom/custom1.xml',
+			}),
+		)
+		expect(committed.postWrite.expectedPackageGraphIssueCount).toBe(0)
+		expect(committed.postWrite.unresolvedPackageGraphIssueCount).toBeGreaterThan(0)
+		expect(committed.trace.phases.find((phase) => phase.phase === 'hash-guard')?.status).toBe('ok')
+		expect(committed.trace.phases.find((phase) => phase.phase === 'post-write')?.status).toBe(
+			'blocked',
+		)
+		expect(committed.modelOutput.blocked).toBe(true)
+		expect(committed.modelOutput.counts.postWritePackageGraphIssues).toBeGreaterThan(0)
+		expect(committed.modelOutput.nextActions.join('\n')).toContain(
+			'postWrite.packageGraphAudit.issues',
+		)
+		await expect(prepared.commit({ output, approvals: [approval?.id ?? ''] })).rejects.toThrow(
+			'Prepared agent plan has already been committed',
+		)
+	})
+
 	test('prepared agent plans reject same-size source changes by content hash', async () => {
 		const input = join(TEMP_DIR, 'prepared-stale.csv')
 		mkdirSync(TEMP_DIR, { recursive: true })

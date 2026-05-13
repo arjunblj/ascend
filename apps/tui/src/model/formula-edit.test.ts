@@ -35,4 +35,12 @@ describe('formula edit model', () => {
 		state = cycleReferenceMode(state)
 		expect(state.buffer).toBe('=A1+B2')
 	})
+
+	test('uses shared SDK formula reference cycling for sheet-qualified refs', () => {
+		const buffer = "='My Sheet'!A1+B2"
+		let state = createFormulaEditState(buffer, buffer.indexOf('A1') + 1)
+		state = cycleReferenceMode(state)
+		expect(state.buffer).toBe("='My Sheet'!$A$1+B2")
+		expect(state.cursor).toBe("='My Sheet'!$A$1".length)
+	})
 })

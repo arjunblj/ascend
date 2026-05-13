@@ -94,10 +94,13 @@ export type {
 	FormulaReferenceRange,
 	FormulaTokenClass,
 	FormulaTokenRange,
+	InsertFormulaReferenceOptions,
+	InsertFormulaReferenceResult,
 } from './formula-edit.ts'
 export {
 	cycleFormulaReferenceMode,
 	formulaTokenRanges,
+	insertFormulaReference,
 	referenceAtCursor,
 } from './formula-edit.ts'
 export type { CellInputParseOptions, ParsedCellInput } from './input-parser.ts'

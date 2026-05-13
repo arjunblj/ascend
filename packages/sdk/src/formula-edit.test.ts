@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import { cycleFormulaReferenceMode, formulaTokenRanges, referenceAtCursor } from './index.ts'
+import {
+	cycleFormulaReferenceMode,
+	formulaTokenRanges,
+	insertFormulaReference,
+	referenceAtCursor,
+} from './index.ts'
 
 describe('formula editing utilities', () => {
 	test('finds cell, range, sheet-qualified, structured, and spill references at the cursor', () => {
@@ -60,6 +65,46 @@ describe('formula editing utilities', () => {
 		expect(cycleFormulaReferenceMode('SUM(A1:B2)', 8)).toMatchObject({
 			formula: 'SUM(A1:$B$2)',
 			changed: true,
+		})
+	})
+
+	test('inserts pointed references and can replace the reference under the cursor', () => {
+		expect(insertFormulaReference('=SUM()', 5, "'Q1 Plan'!$A$1")).toEqual({
+			formula: "=SUM('Q1 Plan'!$A$1)",
+			cursor: 19,
+			inserted: "'Q1 Plan'!$A$1",
+		})
+
+		expect(
+			insertFormulaReference('=SUM(A1)+Table1[Amount]', 7, '$C$3', {
+				replaceReferenceAtCursor: true,
+			}),
+		).toEqual({
+			formula: '=SUM($C$3)+Table1[Amount]',
+			cursor: 9,
+			inserted: '$C$3',
+			replaced: {
+				text: 'A1',
+				start: 5,
+				end: 7,
+				kind: 'cell',
+			},
+		})
+
+		expect(
+			insertFormulaReference('=SUM(A1)+Table1[Amount]', 15, 'Sales[Total]', {
+				replaceReferenceAtCursor: true,
+			}),
+		).toEqual({
+			formula: '=SUM(A1)+Sales[Total]',
+			cursor: 21,
+			inserted: 'Sales[Total]',
+			replaced: {
+				text: 'Table1[Amount]',
+				start: 9,
+				end: 23,
+				kind: 'structured',
+			},
 		})
 	})
 

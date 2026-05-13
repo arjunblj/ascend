@@ -31,6 +31,17 @@ export interface CycleReferenceResult {
 	readonly reference?: FormulaReferenceRange
 }
 
+export interface InsertFormulaReferenceOptions {
+	readonly replaceReferenceAtCursor?: boolean
+}
+
+export interface InsertFormulaReferenceResult {
+	readonly formula: string
+	readonly cursor: number
+	readonly inserted: string
+	readonly replaced?: FormulaReferenceRange
+}
+
 interface TokenSpan {
 	readonly token: Token
 	readonly start: number
@@ -84,6 +95,26 @@ export function cycleFormulaReferenceMode(formula: string, cursor: number): Cycl
 		changed: true,
 	}
 	return reference ? { ...result, reference } : result
+}
+
+export function insertFormulaReference(
+	formula: string,
+	cursor: number,
+	reference: string,
+	options: InsertFormulaReferenceOptions = {},
+): InsertFormulaReferenceResult {
+	const clampedCursor = Math.max(0, Math.min(formula.length, cursor))
+	const replaced = options.replaceReferenceAtCursor
+		? referenceAtCursor(formula, clampedCursor)
+		: null
+	const start = replaced?.start ?? clampedCursor
+	const end = replaced?.end ?? clampedCursor
+	return {
+		formula: `${formula.slice(0, start)}${reference}${formula.slice(end)}`,
+		cursor: start + reference.length,
+		inserted: reference,
+		...(replaced ? { replaced } : {}),
+	}
 }
 
 function tokenSpans(formula: string): TokenSpan[] {

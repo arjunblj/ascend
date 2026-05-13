@@ -25,7 +25,7 @@ export function buildTableXml(table: Table, tableNumber: number): string {
 	)}`
 	const attrs = [
 		`xmlns="${NS}"`,
-		`id="${tableNumber}"`,
+		`id="${table.ooxmlId ?? tableNumber}"`,
 		`displayName="${escapeXml(table.name)}"`,
 		`ref="${ref}"`,
 		`headerRowCount="${table.hasHeaders ? 1 : 0}"`,

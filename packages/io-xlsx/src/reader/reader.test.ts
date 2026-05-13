@@ -1689,6 +1689,7 @@ describe('readXlsx', () => {
 		expect(sheet?.tables[0]?.name).toBe('Scores')
 		expect(sheet?.tables[0]).toMatchObject({
 			partPath: 'xl/tables/table1.xml',
+			ooxmlId: 1,
 			contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml',
 			contentTypeSource: 'override',
 			sourcePartPath: 'xl/worksheets/sheet1.xml',

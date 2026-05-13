@@ -36,6 +36,7 @@ export interface TableStyleInfo {
 
 export interface Table {
 	readonly id: TableId
+	readonly ooxmlId?: number
 	readonly name: string
 	readonly nameAttribute?: string | null
 	readonly sheetId: SheetId

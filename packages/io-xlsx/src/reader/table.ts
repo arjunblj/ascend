@@ -43,6 +43,7 @@ export function parseTable(
 	const name = displayName ?? nameAttribute
 	const refText = attr(table, 'ref')
 	if (!name || !refText) return null
+	const ooxmlId = numAttr(table, 'id')
 
 	let ref: RangeRef
 	try {
@@ -77,6 +78,7 @@ export function parseTable(
 
 	const parsed: {
 		id: Table['id']
+		ooxmlId?: number
 		name: string
 		nameAttribute?: string | null
 		sheetId: SheetId
@@ -123,6 +125,7 @@ export function parseTable(
 		hasTotals: totalsRowCount > 0,
 	}
 	if (tableType) parsed.tableType = tableType
+	if (ooxmlId !== undefined) parsed.ooxmlId = ooxmlId
 	if (nameAttribute !== undefined) parsed.nameAttribute = nameAttribute
 	else parsed.nameAttribute = null
 	if (options.tablePath) parsed.partPath = options.tablePath

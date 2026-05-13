@@ -5591,6 +5591,7 @@ describe('writeXlsx', () => {
 		sheet.cells.set(1, 1, { value: numberValue(5), formula: null, styleId: S0 })
 		sheet.tables.push({
 			id: createTableId(),
+			ooxmlId: 42,
 			name: 'InventoryTable',
 			nameAttribute: null,
 			sheetId: sheet.id,
@@ -5648,6 +5649,7 @@ describe('writeXlsx', () => {
 			expect.objectContaining({
 				name: 'InventoryTable',
 				nameAttribute: null,
+				ooxmlId: 42,
 				uid: '{TABLE-UID}',
 				altText: 'Inventory',
 				altTextSummary: 'Inventory summary table',
@@ -5693,6 +5695,7 @@ describe('writeXlsx', () => {
 		expect(tableEntry).toBeDefined()
 		if (!tableEntry) return
 		const tableXml = new TextDecoder().decode(tableEntry)
+		expect(tableXml).toContain('id="42"')
 		expect(tableXml).toContain('displayName="InventoryTable"')
 		expect(tableXml).not.toContain(' name="InventoryTable"')
 		expect(tableXml).toContain(

@@ -892,7 +892,8 @@ function checkTableIntegrity(wb: Workbook): CheckIssue[] {
 
 			const entry: TableIntegrityEntry = {
 				tableName: table.name,
-				tableId: String(table.id),
+				tableId: String(table.ooxmlId ?? table.id),
+				tableIdSource: table.ooxmlId !== undefined ? 'ooxml' : 'internal',
 				sheetName: sheet.name,
 				ref,
 				...(table.partPath ? { partPath: table.partPath } : {}),
@@ -985,7 +986,8 @@ function checkTablePackageGraphIntegrity(
 			const tableRef = rangeToA1(table.ref)
 			const entry: TableIntegrityEntry = {
 				tableName: table.name,
-				tableId: String(table.id),
+				tableId: String(table.ooxmlId ?? table.id),
+				tableIdSource: table.ooxmlId !== undefined ? 'ooxml' : 'internal',
 				sheetName: sheet.name,
 				ref: tableRef,
 				partPath: table.partPath,
@@ -1396,6 +1398,7 @@ function checkTableQueryTableIntegrity(
 interface TableIntegrityEntry {
 	readonly tableName: string
 	readonly tableId: string
+	readonly tableIdSource: 'ooxml' | 'internal'
 	readonly sheetName: string
 	readonly ref: string
 	readonly partPath?: string

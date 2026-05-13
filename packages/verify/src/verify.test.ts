@@ -327,9 +327,9 @@ describe('checker', () => {
 		const wb = createWorkbook()
 		const s1 = wb.addSheet('Sheet1')
 		const s2 = wb.addSheet('Sheet2')
-		const duplicateId = createTableId()
 		s1.tables.push({
-			id: duplicateId,
+			id: createTableId(),
+			ooxmlId: 7,
 			name: 'Sales',
 			sheetId: s1.id,
 			ref: { start: { row: 0, col: 0 }, end: { row: 2, col: 1 } },
@@ -339,7 +339,8 @@ describe('checker', () => {
 			partPath: 'xl/tables/table1.xml',
 		})
 		s2.tables.push({
-			id: duplicateId,
+			id: createTableId(),
+			ooxmlId: 7,
 			name: 'SALES',
 			sheetId: s2.id,
 			ref: { start: { row: 4, col: 2 }, end: { row: 6, col: 3 } },
@@ -355,6 +356,9 @@ describe('checker', () => {
 		expect(result.passed).toBe(false)
 		expect(tableIssues.some((issue) => issue.details?.kind === 'duplicate-table-name')).toBe(true)
 		expect(tableIssues.some((issue) => issue.details?.kind === 'duplicate-table-id')).toBe(true)
+		expect(
+			tableIssues.find((issue) => issue.details?.kind === 'duplicate-table-id')?.details,
+		).toMatchObject({ tableId: '7', first: { tableIdSource: 'ooxml' } })
 		expect(
 			tableIssues.find((issue) => issue.details?.kind === 'duplicate-table-name')?.refs,
 		).toEqual(['Sheet1!A1:B3', 'Sheet2!C5:D7'])

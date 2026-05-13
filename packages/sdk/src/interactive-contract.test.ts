@@ -948,6 +948,49 @@ describe('interactive client contract', () => {
 		session.close()
 	})
 
+	test('prepareEdits on a partial session does not report writable readiness', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 1 },
+					{ ref: 'A2', value: 2 },
+				],
+			},
+		])
+
+		const session = await AscendSession.open(wb.toBytes(), {
+			mode: 'interactive',
+			maxRows: 1,
+		})
+		const viewport = session.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 1,
+		})
+		const prepared = await session.prepareEdits()
+		expect(prepared.load.read).toMatchObject({ isPartial: true, maxRows: 1 })
+		expect(prepared.load.write).toMatchObject({ isPartial: true, maxRows: 1 })
+		expect(prepared.load.promotedToFull).toBe(false)
+		expect(session.editReadiness()).toMatchObject({
+			ready: false,
+			preparing: false,
+			promotedToFull: false,
+			write: { isPartial: true, maxRows: 1 },
+		})
+
+		const edit = await session.apply([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 5 }] },
+		])
+		expect(edit.apply.errors[0]?.message).toContain('partial workbook')
+		expect(edit.generation.session).toBe(viewport.generation.session)
+		session.close()
+	})
+
 	test('interactive partial session refuses promotion after backing file changes', async () => {
 		const input = join(tmpdir(), `ascend-stale-promotion-${Date.now()}-${process.pid}.xlsx`)
 		const wb = AscendWorkbook.create()

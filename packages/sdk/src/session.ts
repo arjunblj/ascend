@@ -1014,7 +1014,7 @@ export class AscendSession {
 		const write = this.mutableWorkbook?.inspect().load ?? null
 		const timings = this.mutableWorkbookReadyTimings
 		return {
-			ready: this.mutableWorkbook !== null,
+			ready: write !== null && !write.isPartial,
 			preparing: this.mutableWorkbook === null && this.mutableWorkbookPromise !== null,
 			generation: this.documentGeneration,
 			read,

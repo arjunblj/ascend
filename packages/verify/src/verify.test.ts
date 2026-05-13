@@ -142,6 +142,34 @@ describe('checker', () => {
 		})
 	})
 
+	test('reports sheet-edge spill diagnostics without invented blocking cells', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.cells.set(0, 16_383, {
+			value: errorValue('#SPILL!'),
+			formula: 'SEQUENCE(1,2)',
+			styleId: SID,
+			formulaInfo: {
+				kind: 'blockedSpill',
+				anchorRef: 'Sheet1!XFD1',
+				ref: 'XFD1:XFE1',
+				reason: 'sheet-edge',
+				blockingRefs: [],
+			},
+		})
+
+		const result = check(wb)
+		const spillIssue = result.issues.find((issue) => issue.rule === 'spill-diagnostics')
+		expect(result.passed).toBe(false)
+		expect(spillIssue?.message).toBe('Formula spill exceeds worksheet bounds')
+		expect(spillIssue?.refs).toEqual(['Sheet1!XFD1'])
+		expect(spillIssue?.details).toEqual({
+			error: '#SPILL!',
+			cause: 'sheet-edge',
+			spillRange: 'Sheet1!XFD1:XFE1',
+		})
+	})
+
 	test('refreshes blocked spill diagnostics for stale imported caches', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')

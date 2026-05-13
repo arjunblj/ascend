@@ -640,6 +640,7 @@ function toFormulaBindingSummary(
 				kind: 'blocked-spill',
 				formula,
 				range: info.ref,
+				...(info.reason ? { cause: info.reason } : {}),
 				blockingRefs: info.blockingRefs,
 			}
 		default:

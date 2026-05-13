@@ -58,6 +58,7 @@ export interface BlockedSpillFormulaInfo {
 	readonly kind: 'blockedSpill'
 	readonly anchorRef: string
 	readonly ref: string
+	readonly reason?: 'occupied-cell' | 'sheet-edge'
 	readonly blockingRefs: readonly string[]
 }
 

@@ -2726,6 +2726,42 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(2, 0)).toBeUndefined()
 	})
 
+	test('spill collision: worksheet row edge blocks dynamic array output', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(1_048_575, 0, { value: EMPTY, formula: 'SEQUENCE(2)', styleId: sid })
+
+		recalculate(wb, makeCtx())
+
+		expect(sheet.cells.get(1_048_575, 0)?.value).toEqual(errorValue('#SPILL!'))
+		expect(sheet.cells.get(1_048_575, 0)?.formulaInfo).toEqual({
+			kind: 'blockedSpill',
+			anchorRef: 'Sheet1!A1048576',
+			ref: 'A1048576:A1048577',
+			reason: 'sheet-edge',
+			blockingRefs: [],
+		})
+		expect(sheet.cells.get(1_048_576, 0)).toBeUndefined()
+	})
+
+	test('spill collision: worksheet column edge blocks dynamic array output', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 16_383, { value: EMPTY, formula: 'SEQUENCE(1,2)', styleId: sid })
+
+		recalculate(wb, makeCtx())
+
+		expect(sheet.cells.get(0, 16_383)?.value).toEqual(errorValue('#SPILL!'))
+		expect(sheet.cells.get(0, 16_383)?.formulaInfo).toEqual({
+			kind: 'blockedSpill',
+			anchorRef: 'Sheet1!XFD1',
+			ref: 'XFD1:XFE1',
+			reason: 'sheet-edge',
+			blockingRefs: [],
+		})
+		expect(sheet.cells.get(0, 16_384)).toBeUndefined()
+	})
+
 	test('spill cell clearing: when spill anchor is deleted, all spill cells are cleared', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

@@ -630,6 +630,21 @@ function blockedSpillIssue(
 	binding: Extract<CellFormulaBinding, { kind: 'blockedSpill' }>,
 ): CheckIssue {
 	const anchorRef = `${sheetName}!${toA1({ row, col })}`
+	if (binding.reason === 'sheet-edge') {
+		return {
+			rule: 'spill-diagnostics',
+			severity: 'warning',
+			message: 'Formula spill exceeds worksheet bounds',
+			refs: [anchorRef],
+			suggestedFix:
+				'Move the formula or reduce the spill size so it fits within the worksheet grid.',
+			details: {
+				error: '#SPILL!',
+				cause: 'sheet-edge',
+				spillRange: `${sheetName}!${binding.ref}`,
+			},
+		}
+	}
 	const blockingRefs = binding.blockingRefs.map((ref) => `${sheetName}!${ref}`)
 	return {
 		rule: 'spill-diagnostics',

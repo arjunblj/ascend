@@ -841,6 +841,7 @@ export type FormulaBindingSummary =
 			readonly kind: 'blocked-spill'
 			readonly formula: string
 			readonly range: string
+			readonly cause?: 'occupied-cell' | 'sheet-edge'
 			readonly blockingRefs: readonly string[]
 	  }
 

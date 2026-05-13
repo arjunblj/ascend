@@ -70,6 +70,13 @@ interface SpillIndexState {
 	readonly initializedSheets: Set<number>
 }
 
+type BlockedSpillReason = 'occupied-cell' | 'sheet-edge'
+
+interface BlockedSpillCheck {
+	readonly reason: BlockedSpillReason
+	readonly blockingRefs: readonly string[]
+}
+
 interface GrowingRangeAggregateOptimization {
 	readonly functionName: GrowingRangeAggregateFunction
 	readonly previousKey: CellKey
@@ -121,6 +128,9 @@ interface ScalarIfAggregateFallbackFormula {
 	readonly trueRef: { row: number; col: number }
 	readonly fallbackAggregate: RangeAggregateOptimization
 }
+
+const EXCEL_MAX_ROWS = 1_048_576
+const EXCEL_MAX_COLS = 16_384
 
 interface ScalarIfAggregateFallbackBlock {
 	readonly sheetIndex: number
@@ -1017,20 +1027,25 @@ function clearSpillFootprint(
 	return true
 }
 
-function findBlockedSpillRefs(
+function findBlockedSpill(
 	sheet: Workbook['sheets'][number],
 	anchorRow: number,
 	anchorCol: number,
 	anchorRef: string,
 	matrix: readonly (readonly CellValue[])[],
-): string[] {
-	if (!sheet) return [anchorRef]
+): BlockedSpillCheck | null {
+	if (!sheet) return { reason: 'sheet-edge', blockingRefs: [] }
 	const blocked: string[] = []
+	let blockedBySheetEdge = false
 	for (let rowOffset = 0; rowOffset < matrix.length; rowOffset++) {
 		const sourceRow = matrix[rowOffset] ?? []
 		for (let colOffset = 0; colOffset < sourceRow.length; colOffset++) {
 			const targetRow = anchorRow + rowOffset
 			const targetCol = anchorCol + colOffset
+			if (!isWithinExcelGrid(targetRow, targetCol)) {
+				blockedBySheetEdge = true
+				continue
+			}
 			if (cellHasSpillLayoutBlocker(sheet, targetRow, targetCol)) {
 				blocked.push(toA1Ref(targetRow, targetCol))
 				continue
@@ -1048,7 +1063,12 @@ function findBlockedSpillRefs(
 			blocked.push(toA1Ref(targetRow, targetCol))
 		}
 	}
-	return blocked
+	if (blockedBySheetEdge) return { reason: 'sheet-edge', blockingRefs: [] }
+	return blocked.length > 0 ? { reason: 'occupied-cell', blockingRefs: blocked } : null
+}
+
+function isWithinExcelGrid(row: number, col: number): boolean {
+	return row >= 0 && row < EXCEL_MAX_ROWS && col >= 0 && col < EXCEL_MAX_COLS
 }
 
 function cellHasSpillLayoutBlocker(
@@ -1103,8 +1123,8 @@ function applyArrayResult(
 		return anchorValue
 	}
 	clearSpillFootprint(sheet, sheetIndex, anchorRef, changed, spillIndex)
-	const blockingRefs = findBlockedSpillRefs(sheet, row, col, anchorRef, matrix)
-	if (blockingRefs.length > 0) {
+	const blockedSpill = findBlockedSpill(sheet, row, col, anchorRef, matrix)
+	if (blockedSpill) {
 		const spillError = errorValue('#SPILL!')
 		const currentValue = sheet.cells.readValue(row, col)
 		const currentBinding = sheet.cells.readFormulaInfo(row, col)
@@ -1112,12 +1132,14 @@ function applyArrayResult(
 			kind: 'blockedSpill' as const,
 			anchorRef,
 			ref: spillRef,
-			blockingRefs,
+			...(blockedSpill.reason === 'sheet-edge' ? { reason: blockedSpill.reason } : {}),
+			blockingRefs: blockedSpill.blockingRefs,
 		}
 		const alreadyBlocked =
 			currentBinding?.kind === 'blockedSpill' &&
 			currentBinding.ref === spillRef &&
-			stringArraysEqual(currentBinding.blockingRefs, blockingRefs) &&
+			(currentBinding.reason ?? 'occupied-cell') === blockedSpill.reason &&
+			stringArraysEqual(currentBinding.blockingRefs, blockedSpill.blockingRefs) &&
 			valuesEqual(currentValue, spillError)
 		if (!alreadyBlocked) {
 			sheet.cells.setResolved(row, col, spillError, oldFormula, oldStyleId, blockedInfo)

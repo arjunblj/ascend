@@ -2566,6 +2566,30 @@ describe('AscendWorkbook', () => {
 		})
 	})
 
+	test('check exposes worksheet-edge spill causes for agent repair', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setFormula', sheet: 'Sheet1', ref: 'XFD1', formula: '=SEQUENCE(1,2)' }])
+		wb.recalc()
+
+		const result = wb.check()
+		const issue = result.issues.find((entry) => entry.rule === 'spill-diagnostics')
+		expect(result.valid).toBe(false)
+		expect(issue?.ref).toBe('Sheet1!XFD1')
+		expect(issue?.refs).toEqual(['Sheet1!XFD1'])
+		expect(issue?.details).toEqual({
+			error: '#SPILL!',
+			cause: 'sheet-edge',
+			spillRange: 'Sheet1!XFD1:XFE1',
+		})
+		expect(wb.sheet('Sheet1').getFormulaBinding('XFD1')).toEqual({
+			kind: 'blocked-spill',
+			formula: 'SEQUENCE(1,2)',
+			range: 'XFD1:XFE1',
+			cause: 'sheet-edge',
+			blockingRefs: [],
+		})
+	})
+
 	test('lint detects formula parse errors', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([{ op: 'setFormula', sheet: 'Sheet1', ref: 'A1', formula: '=INVALID((' }])

@@ -559,18 +559,23 @@ function collectCellsCompact(
 	opts?: { includeRefs?: boolean },
 ): CompactCellInfo[] {
 	const cells: CompactCellInfo[] = []
+	const includeRefs = opts?.includeRefs !== false
 	sheet.cells.forEachCellContentInRange(range, (row, col, value, formula, formulaInfo) => {
 		const formulaSource = { formula, formulaInfo }
-		cells.push(
-			makeCompactCellInfo(
-				row,
-				col,
-				value,
-				formulaInfo,
-				resolveFormula(row, col, formulaSource),
-				opts?.includeRefs === false ? undefined : toA1({ row, col }),
-			),
-		)
+		const resolvedFormula = resolveFormula(row, col, formulaSource)
+		if (includeRefs) {
+			cells.push(
+				makeCompactCellInfo(row, col, value, formulaInfo, resolvedFormula, toA1({ row, col })),
+			)
+			return
+		}
+		cells.push({
+			value,
+			formula: resolvedFormula,
+			formulaBinding: formulaInfo ?? null,
+			row,
+			col,
+		})
 	})
 	return cells
 }

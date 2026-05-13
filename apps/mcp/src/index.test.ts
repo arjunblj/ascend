@@ -3054,7 +3054,17 @@ describe('MCP server', () => {
 		}) => Promise<{
 			structuredContent?: {
 				ok?: boolean
-				data?: { postWrite?: { valid?: boolean; auditsPassed?: boolean } }
+				data?: {
+					outputSha256?: string
+					postWrite?: {
+						valid?: boolean
+						auditsPassed?: boolean
+						reopened?: boolean
+						outputSha256?: string
+						check?: { valid?: boolean }
+						packageGraphAudit?: { ok?: boolean }
+					}
+				}
 			}
 		}>
 
@@ -3088,8 +3098,15 @@ describe('MCP server', () => {
 				compact: true,
 			})
 			expect(committed.structuredContent?.ok).toBe(true)
+			expect(committed.structuredContent?.data?.outputSha256).toMatch(/^[a-f0-9]{64}$/)
 			expect(committed.structuredContent?.data?.postWrite?.valid).toBe(true)
 			expect(committed.structuredContent?.data?.postWrite?.auditsPassed).toBe(true)
+			expect(committed.structuredContent?.data?.postWrite?.reopened).toBe(true)
+			expect(committed.structuredContent?.data?.postWrite?.outputSha256).toBe(
+				committed.structuredContent?.data?.outputSha256,
+			)
+			expect(committed.structuredContent?.data?.postWrite?.check?.valid).toBe(true)
+			expect(committed.structuredContent?.data?.postWrite?.packageGraphAudit?.ok).toBe(true)
 
 			const replayed = await AscendWorkbook.open(replayOutput)
 			expect(replayed.sheet('Sheet1')?.cell('A1')?.value).toEqual({
@@ -3153,7 +3170,17 @@ describe('MCP server', () => {
 		}) => Promise<{
 			structuredContent?: {
 				ok?: boolean
-				data?: { postWrite?: { valid?: boolean; auditsPassed?: boolean } }
+				data?: {
+					outputSha256?: string
+					postWrite?: {
+						valid?: boolean
+						auditsPassed?: boolean
+						reopened?: boolean
+						outputSha256?: string
+						check?: { valid?: boolean }
+						packageGraphAudit?: { ok?: boolean }
+					}
+				}
 			}
 		}>
 
@@ -3203,8 +3230,15 @@ describe('MCP server', () => {
 				compact: true,
 			})
 			expect(committed.structuredContent?.ok).toBe(true)
+			expect(committed.structuredContent?.data?.outputSha256).toMatch(/^[a-f0-9]{64}$/)
 			expect(committed.structuredContent?.data?.postWrite?.valid).toBe(true)
 			expect(committed.structuredContent?.data?.postWrite?.auditsPassed).toBe(true)
+			expect(committed.structuredContent?.data?.postWrite?.reopened).toBe(true)
+			expect(committed.structuredContent?.data?.postWrite?.outputSha256).toBe(
+				committed.structuredContent?.data?.outputSha256,
+			)
+			expect(committed.structuredContent?.data?.postWrite?.check?.valid).toBe(true)
+			expect(committed.structuredContent?.data?.postWrite?.packageGraphAudit?.ok).toBe(true)
 
 			const merged = await AscendWorkbook.open(replayOutput)
 			expect(merged.sheet('Sheet1')?.cell('A1')?.value).toEqual({ kind: 'number', value: 10 })

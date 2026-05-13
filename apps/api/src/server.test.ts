@@ -278,8 +278,13 @@ describe('Ascend API server', () => {
 			})
 			expect(commit.status).toBe(200)
 			expect(commit.body.ok).toBe(true)
+			expect(commit.body.data?.outputSha256).toMatch(/^[a-f0-9]{64}$/)
 			expect(commit.body.data?.postWrite?.valid).toBe(true)
 			expect(commit.body.data?.postWrite?.auditsPassed).toBe(true)
+			expect(commit.body.data?.postWrite?.reopened).toBe(true)
+			expect(commit.body.data?.postWrite?.outputSha256).toBe(commit.body.data?.outputSha256)
+			expect(commit.body.data?.postWrite?.check?.valid).toBe(true)
+			expect(commit.body.data?.postWrite?.packageGraphAudit?.ok).toBe(true)
 
 			const replayed = await AscendWorkbook.open(replayOutput)
 			expect(replayed.sheet('Sheet1')?.cell('A1')?.value).toEqual({
@@ -362,8 +367,13 @@ describe('Ascend API server', () => {
 			})
 			expect(commit.status).toBe(200)
 			expect(commit.body.ok).toBe(true)
+			expect(commit.body.data?.outputSha256).toMatch(/^[a-f0-9]{64}$/)
 			expect(commit.body.data?.postWrite?.valid).toBe(true)
 			expect(commit.body.data?.postWrite?.auditsPassed).toBe(true)
+			expect(commit.body.data?.postWrite?.reopened).toBe(true)
+			expect(commit.body.data?.postWrite?.outputSha256).toBe(commit.body.data?.outputSha256)
+			expect(commit.body.data?.postWrite?.check?.valid).toBe(true)
+			expect(commit.body.data?.postWrite?.packageGraphAudit?.ok).toBe(true)
 
 			const merged = await AscendWorkbook.open(replayOutput)
 			expect(merged.sheet('Sheet1')?.cell('A1')?.value).toEqual({ kind: 'number', value: 10 })

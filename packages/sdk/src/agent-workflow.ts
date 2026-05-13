@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { copyFile, readFile, rename, writeFile } from 'node:fs/promises'
+import { copyFile, readFile, rename, stat, writeFile } from 'node:fs/promises'
 import { dirname, extname, join } from 'node:path'
 import {
 	type ChartPartInfo,
@@ -67,6 +67,15 @@ export interface CompactAgentPreview {
 
 export interface CompactAgentPlanResult extends Omit<AgentPlanResult, 'preview'> {
 	readonly preview: CompactAgentPreview
+}
+
+export interface PreparedAgentPlan {
+	readonly file: string
+	readonly inputSha256: string
+	readonly planDigest: string
+	readonly operationCount: number
+	readonly plan: AgentPlanResult
+	commit(options?: AgentCommitOptions): Promise<AgentCommitResult>
 }
 
 export interface AgentCommitOptions {
@@ -324,6 +333,11 @@ export interface RepairAction {
 	readonly details?: unknown
 }
 
+interface AgentSourceIdentity {
+	readonly size: number
+	readonly mtimeMs: number
+}
+
 export async function createAgentPlan(
 	file: string,
 	ops: readonly Operation[],
@@ -331,13 +345,69 @@ export async function createAgentPlan(
 ): Promise<AgentPlanResult> {
 	const progress = createProgressEmitter('plan', options.onProgress)
 	await progress('hash-input', 'started', 'Hashing input workbook.')
-	const sourceBytes = await fileBytes(file)
-	const inputSha256 = sha256Bytes(sourceBytes)
+	const source = await readStableAgentSource(file)
+	const inputSha256 = sha256Bytes(source.sourceBytes)
 	await progress('hash-input', 'ok', 'Input workbook hash captured.')
 	await progress('load-workbook', 'started', 'Opening workbook.')
-	const wb = await openWorkbookFromBytes(file, sourceBytes)
+	const wb = await openWorkbookFromBytes(file, source.sourceBytes)
 	await progress('load-workbook', 'ok', 'Workbook opened.')
 	return createAgentPlanFromWorkbook(file, inputSha256, wb, ops, { progress })
+}
+
+export async function createPreparedAgentPlan(
+	file: string,
+	ops: readonly Operation[],
+	options: { readonly onProgress?: AgentWorkflowProgressHandler } = {},
+): Promise<PreparedAgentPlan> {
+	const progress = createProgressEmitter('plan', options.onProgress)
+	await progress('hash-input', 'started', 'Hashing input workbook.')
+	const source = await readStableAgentSource(file)
+	const inputSha256 = sha256Bytes(source.sourceBytes)
+	await progress('hash-input', 'ok', 'Input workbook hash captured.')
+	await progress('load-workbook', 'started', 'Opening workbook.')
+	const wb = await openWorkbookFromBytes(file, source.sourceBytes)
+	await progress('load-workbook', 'ok', 'Workbook opened.')
+	const plan = await createAgentPlanFromWorkbook(file, inputSha256, wb, ops, { progress })
+	let committed = false
+	return {
+		file,
+		inputSha256,
+		planDigest: plan.planDigest,
+		operationCount: ops.length,
+		plan,
+		async commit(commitOptions: AgentCommitOptions = {}): Promise<AgentCommitResult> {
+			if (committed) {
+				throw new AscendException(
+					ascendError('VALIDATION_ERROR', 'Prepared agent plan has already been committed', {
+						suggestedFix: 'Create a fresh prepared plan before committing another output.',
+					}),
+				)
+			}
+			const currentIdentity = await readSourceIdentity(file)
+			if (!isAgentSourceIdentityEqual(source.identity, currentIdentity)) {
+				throw new AscendException(
+					ascendError('VALIDATION_ERROR', 'Input workbook changed after agent plan was prepared', {
+						details: {
+							expected: source.identity,
+							actual: currentIdentity,
+							inputSha256,
+							planDigest: plan.planDigest,
+						},
+						suggestedFix: 'Re-run ascend plan and commit with the new input workbook.',
+					}),
+				)
+			}
+			committed = true
+			return commitAgentPlanFromWorkbook(
+				file,
+				inputSha256,
+				wb,
+				ops,
+				{ ...commitOptions, expectSha256: commitOptions.expectSha256 ?? inputSha256 },
+				{ sourceBytes: source.sourceBytes },
+			)
+		},
+	}
 }
 
 export async function createAgentPlanFromWorkbook(
@@ -520,17 +590,17 @@ export async function commitAgentPlan(
 ): Promise<AgentCommitResult> {
 	const progress = createProgressEmitter('commit', options.onProgress)
 	await progress('hash-input', 'started', 'Hashing input workbook.')
-	const sourceBytes = await fileBytes(file)
-	const inputSha256 = sha256Bytes(sourceBytes)
+	const source = await readStableAgentSource(file)
+	const inputSha256 = sha256Bytes(source.sourceBytes)
 	await progress('hash-input', 'ok', 'Input workbook hash captured.')
 	const output = await resolveCommitOutputTarget(file, inputSha256, options, progress)
 	await progress('load-workbook', 'started', 'Opening workbook.')
-	const wb = await openWorkbookFromBytes(file, sourceBytes)
+	const wb = await openWorkbookFromBytes(file, source.sourceBytes)
 	await progress('load-workbook', 'ok', 'Workbook opened.')
 	return commitAgentPlanFromWorkbook(file, inputSha256, wb, ops, options, {
 		progress,
 		output,
-		sourceBytes,
+		sourceBytes: source.sourceBytes,
 	})
 }
 
@@ -902,6 +972,40 @@ async function fileBytes(file: string): Promise<Uint8Array> {
 	if (typeof Bun !== 'undefined') return Bun.file(file).bytes()
 	const bytes = await readFile(file)
 	return new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+}
+
+async function readStableAgentSource(file: string): Promise<{
+	readonly sourceBytes: Uint8Array
+	readonly identity: AgentSourceIdentity
+}> {
+	let lastSource: {
+		readonly sourceBytes: Uint8Array
+		readonly identity: AgentSourceIdentity
+	} | null = null
+	for (let attempt = 0; attempt < 2; attempt++) {
+		const before = await readSourceIdentity(file)
+		const sourceBytes = await fileBytes(file)
+		const after = await readSourceIdentity(file)
+		lastSource = { sourceBytes, identity: after }
+		if (isAgentSourceIdentityEqual(before, after)) return lastSource
+	}
+	if (!lastSource) {
+		const sourceBytes = await fileBytes(file)
+		return { sourceBytes, identity: await readSourceIdentity(file) }
+	}
+	return lastSource
+}
+
+async function readSourceIdentity(file: string): Promise<AgentSourceIdentity> {
+	const info = await stat(file)
+	return { size: info.size, mtimeMs: info.mtimeMs }
+}
+
+function isAgentSourceIdentityEqual(
+	left: AgentSourceIdentity,
+	right: AgentSourceIdentity,
+): boolean {
+	return left.size === right.size && left.mtimeMs === right.mtimeMs
 }
 
 async function openWorkbookFromBytes(file: string, bytes: Uint8Array): Promise<AscendWorkbook> {

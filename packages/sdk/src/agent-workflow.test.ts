@@ -12,6 +12,7 @@ import {
 	auditPackageGraphIntegrity,
 	commitAgentPlan,
 	createAgentPlan,
+	createPreparedAgentPlan,
 } from './index.ts'
 
 const TEMP_DIR = join(tmpdir(), `ascend-agent-workflow-${process.pid}`)
@@ -2428,6 +2429,40 @@ describe('agent workflow loss audit', () => {
 		expect(commitEvents.some((event) => event.includes('apply:ok'))).toBe(true)
 		expect(commitEvents.some((event) => event.includes('post-write:ok'))).toBe(true)
 		expect(commitEvents.at(-1)).toContain('finalize:ok')
+	})
+
+	test('prepared agent plans reuse full workflow state with staleness guards', async () => {
+		const input = join(TEMP_DIR, 'prepared.xlsx')
+		const output = join(TEMP_DIR, 'prepared-out.xlsx')
+		const staleOutput = join(TEMP_DIR, 'prepared-stale-out.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		const wb = AscendWorkbook.create()
+		await wb.save(input)
+		const ops = [{ op: 'setCells' as const, sheet: 'Sheet1', updates: [{ ref: 'A1', value: 42 }] }]
+
+		const prepared = await createPreparedAgentPlan(input, ops)
+		expect(prepared.planDigest).toBe(prepared.plan.planDigest)
+		expect(prepared.inputSha256).toBe(prepared.plan.inputSha256)
+		expect(prepared.operationCount).toBe(1)
+		const committed = await prepared.commit({ output })
+		expect(committed.inputSha256).toBe(prepared.inputSha256)
+		expect(committed.planDigest).toBe(prepared.planDigest)
+		expect(committed.postWrite.valid).toBe(true)
+		expect(committed.trace.phases.find((phase) => phase.phase === 'hash-guard')?.status).toBe('ok')
+		const reopened = await AscendWorkbook.open(output)
+		expect(reopened.sheet('Sheet1')?.cell('A1')?.value).toEqual({ kind: 'number', value: 42 })
+
+		await expect(prepared.commit({ output })).rejects.toThrow(
+			'Prepared agent plan has already been committed',
+		)
+
+		const stale = await createPreparedAgentPlan(input, ops)
+		const changed = AscendWorkbook.create()
+		changed.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 7 }] }])
+		await changed.save(input)
+		await expect(stale.commit({ output: staleOutput })).rejects.toThrow(
+			'Input workbook changed after agent plan was prepared',
+		)
 	})
 
 	test('destructive operations require explicit approval ids', async () => {

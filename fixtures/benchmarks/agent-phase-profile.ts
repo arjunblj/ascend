@@ -3,13 +3,10 @@ import { rm } from 'node:fs/promises'
 import type { Operation } from '@ascend/schema'
 import {
 	type AgentWorkflowProgressEvent,
-	AscendWorkbook,
 	commitAgentPlan,
-	commitAgentPlanFromWorkbook,
 	createAgentPlan,
-	createAgentPlanFromWorkbook,
+	createPreparedAgentPlan,
 	indexToColumn,
-	sha256Bytes,
 } from '../../packages/sdk/src/index.ts'
 import { buildRawReadWorkloadDataSet, type WorkloadName } from './competitive-io.ts'
 
@@ -177,21 +174,12 @@ async function runSample(
 	const commit = await timedWorkflow((onProgress) =>
 		commitAgentPlan(inputPath, ops, { output: outputPath, approvals: [], onProgress }),
 	)
-	const opened = await AscendWorkbook.openSourceBytes(inputPath)
-	const inputSha256 = sha256Bytes(opened.sourceBytes)
 	const sharedPlan = await timedWorkflow((onProgress) =>
-		createAgentPlanFromWorkbook(inputPath, inputSha256, opened.workbook, ops, { onProgress }),
+		createPreparedAgentPlan(inputPath, ops, { onProgress }),
 	)
 	const sharedCommit = await timedWorkflow(async (onProgress) => {
 		try {
-			return await commitAgentPlanFromWorkbook(
-				inputPath,
-				inputSha256,
-				opened.workbook,
-				ops,
-				{ output: sharedOutputPath, approvals: [], onProgress },
-				{ sourceBytes: opened.sourceBytes },
-			)
+			return await sharedPlan.value.commit({ output: sharedOutputPath, approvals: [], onProgress })
 		} finally {
 			await rm(sharedOutputPath, { force: true })
 		}
@@ -205,7 +193,7 @@ async function runSample(
 		sharedTotalMs: sharedPlan.ms + sharedCommit.ms,
 		planPayloadBytes: payloadBytes(plan.value),
 		commitPayloadBytes: payloadBytes(commit.value),
-		sharedPlanPayloadBytes: payloadBytes(sharedPlan.value),
+		sharedPlanPayloadBytes: payloadBytes(sharedPlan.value.plan),
 		sharedCommitPayloadBytes: payloadBytes(sharedCommit.value),
 		planPhaseMs: phaseMap(plan.phases),
 		commitPhaseMs: phaseMap(commit.phases),
@@ -215,7 +203,7 @@ async function runSample(
 		updateCount,
 		changedCells: plan.value.preview.changedCells.length,
 		commitChangedCells: commit.value.apply.affectedCells.length,
-		sharedChangedCells: sharedPlan.value.preview.changedCells.length,
+		sharedChangedCells: sharedPlan.value.plan.preview.changedCells.length,
 		sharedCommitChangedCells: sharedCommit.value.apply.affectedCells.length,
 		postWriteValid: commit.value.postWrite.valid,
 		sharedPostWriteValid: sharedCommit.value.postWrite.valid,

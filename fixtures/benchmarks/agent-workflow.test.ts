@@ -15,6 +15,8 @@ describe('agent workflow benchmark', () => {
 				'6',
 				'--row-limit',
 				'10',
+				'--mutations',
+				'12',
 				'--repeat',
 				'1',
 				'--warmup',
@@ -32,11 +34,19 @@ describe('agent workflow benchmark', () => {
 		const payload = JSON.parse(stdout) as {
 			readonly summary?: {
 				readonly totalMedianMs?: number
+				readonly fullTotalMedianMs?: number
+				readonly measuredSampleMedianMs?: number
 				readonly readMedianMs?: number
 				readonly payloadBytesMedian?: number
+				readonly fullPayloadBytesMedian?: number
 				readonly planPayloadBytesMedian?: number
+				readonly fullPlanPayloadBytesMedian?: number
+				readonly compactWorkflowSpeedupVsFull?: number
+				readonly planPayloadReduction?: number
 				readonly readCellsMedian?: number
 				readonly readWindowRowsMedian?: number
+				readonly planChangedCellCountMedian?: number
+				readonly planEmittedChangedCellCountMedian?: number
 				readonly mutationCountMedian?: number
 				readonly rssDeltaMbMedian?: number
 				readonly readPartial?: boolean
@@ -44,12 +54,20 @@ describe('agent workflow benchmark', () => {
 			}
 		}
 		expect(payload.summary?.totalMedianMs).toBeNumber()
+		expect(payload.summary?.fullTotalMedianMs).toBeNumber()
+		expect(payload.summary?.measuredSampleMedianMs).toBeNumber()
 		expect(payload.summary?.readMedianMs).toBeNumber()
 		expect(payload.summary?.payloadBytesMedian).toBeNumber()
+		expect(payload.summary?.fullPayloadBytesMedian).toBeNumber()
 		expect(payload.summary?.planPayloadBytesMedian).toBeNumber()
+		expect(payload.summary?.fullPlanPayloadBytesMedian).toBeNumber()
+		expect(payload.summary?.compactWorkflowSpeedupVsFull).toBeNumber()
+		expect(payload.summary?.planPayloadReduction).toBeNumber()
 		expect(payload.summary?.readCellsMedian).toBe(60)
 		expect(payload.summary?.readWindowRowsMedian).toBe(10)
-		expect(payload.summary?.mutationCountMedian).toBe(1)
+		expect(payload.summary?.planChangedCellCountMedian).toBe(12)
+		expect(payload.summary?.planEmittedChangedCellCountMedian).toBe(12)
+		expect(payload.summary?.mutationCountMedian).toBe(12)
 		expect(payload.summary?.rssDeltaMbMedian).toBeNumber()
 		expect(payload.summary?.readPartial).toBe(true)
 		expect(payload.summary?.valid).toBe(true)

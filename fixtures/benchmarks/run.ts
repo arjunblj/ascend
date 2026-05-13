@@ -42,6 +42,8 @@ import {
 
 const SID = 0 as StyleId
 const xlsxSharedStringUsageCache = new WeakMap<Uint8Array, SharedStringUsageAssertions>()
+const xlsxWorksheetScalarUsageCache = new WeakMap<Uint8Array, WorksheetScalarUsageAssertions>()
+const WORKSHEET_SCALAR_USAGE_CELL_SAMPLE_LIMIT = 5_000
 
 interface ScenarioInput {
 	readonly workbook?: Workbook
@@ -808,6 +810,29 @@ interface SharedStringUsageAssertions {
 	readonly sharedStringReferenceFanout: number
 }
 
+interface WorksheetScalarUsageAssertions {
+	readonly worksheetScalarScanCellLimit: number
+	readonly worksheetScalarScanLimitReached: boolean
+	readonly worksheetCount: number
+	readonly worksheetRows: number
+	readonly worksheetCells: number
+	readonly worksheetValueCells: number
+	readonly worksheetFormulaCells: number
+	readonly worksheetNumericCells: number
+	readonly worksheetDefaultStyleNumericCells: number
+	readonly worksheetDefaultStyleNumericRuns: number
+	readonly worksheetDefaultStyleNumericMaxRun: number
+	readonly worksheetDefaultStyleNumericAvgRun: number
+	readonly worksheetSharedStringCells: number
+	readonly worksheetInlineStringCells: number
+	readonly worksheetBooleanCells: number
+	readonly worksheetStyledCells: number
+}
+
+type MutableWorksheetScalarUsageAssertions = {
+	-readonly [K in keyof WorksheetScalarUsageAssertions]: WorksheetScalarUsageAssertions[K]
+}
+
 function xlsxSharedStringUsage(bytes: Uint8Array): SharedStringUsageAssertions {
 	const cached = xlsxSharedStringUsageCache.get(bytes)
 	if (cached) return cached
@@ -841,6 +866,155 @@ function xlsxSharedStringUsage(bytes: Uint8Array): SharedStringUsageAssertions {
 	}
 	xlsxSharedStringUsageCache.set(bytes, result)
 	return result
+}
+
+function xlsxWorksheetScalarUsage(bytes: Uint8Array): WorksheetScalarUsageAssertions {
+	const cached = xlsxWorksheetScalarUsageCache.get(bytes)
+	if (cached) return cached
+	const archive = extractZip(bytes)
+	const result = {
+		worksheetScalarScanCellLimit: WORKSHEET_SCALAR_USAGE_CELL_SAMPLE_LIMIT,
+		worksheetScalarScanLimitReached: false,
+		worksheetCount: 0,
+		worksheetRows: 0,
+		worksheetCells: 0,
+		worksheetValueCells: 0,
+		worksheetFormulaCells: 0,
+		worksheetNumericCells: 0,
+		worksheetDefaultStyleNumericCells: 0,
+		worksheetDefaultStyleNumericRuns: 0,
+		worksheetDefaultStyleNumericMaxRun: 0,
+		worksheetDefaultStyleNumericAvgRun: 0,
+		worksheetSharedStringCells: 0,
+		worksheetInlineStringCells: 0,
+		worksheetBooleanCells: 0,
+		worksheetStyledCells: 0,
+	}
+	for (const entry of archive.entries()) {
+		if (!entry.path.startsWith('xl/worksheets/') || !entry.path.endsWith('.xml')) continue
+		const xml = archive.readText(entry.path)
+		if (!xml) continue
+		result.worksheetCount += 1
+		collectWorksheetScalarUsage(xml, result)
+		if (result.worksheetScalarScanLimitReached) break
+	}
+	result.worksheetDefaultStyleNumericAvgRun =
+		result.worksheetDefaultStyleNumericRuns > 0
+			? result.worksheetDefaultStyleNumericCells / result.worksheetDefaultStyleNumericRuns
+			: 0
+	xlsxWorksheetScalarUsageCache.set(bytes, result)
+	return result
+}
+
+function collectWorksheetScalarUsage(
+	xml: string,
+	result: MutableWorksheetScalarUsageAssertions,
+): void {
+	let rowCursor = 0
+	while (true) {
+		if (result.worksheetCells >= WORKSHEET_SCALAR_USAGE_CELL_SAMPLE_LIMIT) {
+			result.worksheetScalarScanLimitReached = true
+			return
+		}
+		const rowOpen = xml.indexOf('<row', rowCursor)
+		if (rowOpen === -1) return
+		const rowTagEnd = xml.indexOf('>', rowOpen + 4)
+		if (rowTagEnd === -1) return
+		const rowClose = xml.indexOf('</row>', rowTagEnd + 1)
+		if (rowClose === -1) return
+		result.worksheetRows += 1
+		collectWorksheetRowScalarUsage(xml, rowTagEnd + 1, rowClose, result)
+		rowCursor = rowClose + 6
+	}
+}
+
+function collectWorksheetRowScalarUsage(
+	xml: string,
+	rowStart: number,
+	rowEnd: number,
+	result: MutableWorksheetScalarUsageAssertions,
+): void {
+	let cursor = rowStart
+	let nextCol = 0
+	let numericRunStartCol = -1
+	let numericRunLength = 0
+	const flushNumericRun = () => {
+		if (numericRunLength <= 0) return
+		result.worksheetDefaultStyleNumericRuns += 1
+		result.worksheetDefaultStyleNumericMaxRun = Math.max(
+			result.worksheetDefaultStyleNumericMaxRun,
+			numericRunLength,
+		)
+		numericRunStartCol = -1
+		numericRunLength = 0
+	}
+	while (true) {
+		if (result.worksheetCells >= WORKSHEET_SCALAR_USAGE_CELL_SAMPLE_LIMIT) {
+			flushNumericRun()
+			result.worksheetScalarScanLimitReached = true
+			return
+		}
+		const cellOpen = xml.indexOf('<c', cursor)
+		if (cellOpen === -1 || cellOpen >= rowEnd) {
+			flushNumericRun()
+			return
+		}
+		const next = xml.charCodeAt(cellOpen + 2)
+		if (next !== 32 && next !== 9 && next !== 10 && next !== 13 && next !== 62) {
+			cursor = cellOpen + 2
+			continue
+		}
+		const cellTagEnd = xml.indexOf('>', cellOpen + 2)
+		if (cellTagEnd === -1 || cellTagEnd >= rowEnd) {
+			flushNumericRun()
+			return
+		}
+		const selfClosing = xml.charCodeAt(cellTagEnd - 1) === 47
+		const cellClose = selfClosing ? cellTagEnd + 1 : xml.indexOf('</c>', cellTagEnd + 1)
+		if (cellClose === -1 || cellClose > rowEnd) {
+			flushNumericRun()
+			return
+		}
+		const attrs = xml.slice(cellOpen + 2, cellTagEnd)
+		const type = readXmlAttribute(attrs, 't')
+		const styleIdx = parseNonNegativeIntegerAttribute(attrs, 's')
+		const styleIsDefault = styleIdx === undefined || styleIdx === 0
+		const cellCol = parseCellRefCol(attrs) ?? nextCol
+		const bodyStart = cellTagEnd + 1
+		const bodyEnd = selfClosing ? cellTagEnd : cellClose
+		const hasValue = xml.indexOf('<v>', bodyStart) !== -1 && xml.indexOf('<v>', bodyStart) < bodyEnd
+		const hasFormula = xml.indexOf('<f', bodyStart) !== -1 && xml.indexOf('<f', bodyStart) < bodyEnd
+		result.worksheetCells += 1
+		if (hasValue) result.worksheetValueCells += 1
+		if (hasFormula) result.worksheetFormulaCells += 1
+		if (!styleIsDefault) result.worksheetStyledCells += 1
+		if (type === 's') result.worksheetSharedStringCells += 1
+		else if (type === 'inlineStr') result.worksheetInlineStringCells += 1
+		else if (type === 'b') result.worksheetBooleanCells += 1
+		const isNumeric = !hasFormula && hasValue && (type === undefined || type === 'n')
+		if (isNumeric) {
+			result.worksheetNumericCells += 1
+			if (styleIsDefault) {
+				result.worksheetDefaultStyleNumericCells += 1
+				if (numericRunLength === 0) {
+					numericRunStartCol = cellCol
+					numericRunLength = 1
+				} else if (cellCol === numericRunStartCol + numericRunLength) {
+					numericRunLength += 1
+				} else {
+					flushNumericRun()
+					numericRunStartCol = cellCol
+					numericRunLength = 1
+				}
+			} else {
+				flushNumericRun()
+			}
+		} else {
+			flushNumericRun()
+		}
+		nextCol = cellCol + 1
+		cursor = selfClosing ? cellTagEnd + 1 : cellClose + 4
+	}
 }
 
 function countElementOpens(xml: string, tagName: string): number {
@@ -889,6 +1063,34 @@ function collectSharedStringRefs(xml: string, referenced: Set<number>): number {
 
 function hasSharedStringCellType(attrs: string): boolean {
 	return /\bt\s*=\s*(?:"s"|'s')/.test(attrs)
+}
+
+function readXmlAttribute(attrs: string, name: string): string | undefined {
+	const pattern = new RegExp(`(?:^|\\s)${name}\\s*=\\s*("[^"]*"|'[^']*')`)
+	const match = pattern.exec(attrs)
+	if (!match?.[1]) return undefined
+	return match[1].slice(1, -1)
+}
+
+function parseNonNegativeIntegerAttribute(attrs: string, name: string): number | undefined {
+	const raw = readXmlAttribute(attrs, name)
+	if (raw === undefined) return undefined
+	return parseNonNegativeIntText(raw, 0, raw.length)
+}
+
+function parseCellRefCol(attrs: string): number | undefined {
+	const ref = readXmlAttribute(attrs, 'r')
+	if (!ref) return undefined
+	let col = 0
+	let index = 0
+	while (index < ref.length) {
+		const code = ref.charCodeAt(index)
+		if (code >= 65 && code <= 90) col = col * 26 + (code - 64)
+		else if (code >= 97 && code <= 122) col = col * 26 + (code - 96)
+		else break
+		index++
+	}
+	return col > 0 ? col - 1 : undefined
 }
 
 function parseNonNegativeIntText(xml: string, start: number, end: number): number | undefined {
@@ -3030,6 +3232,31 @@ const scenarios: readonly Scenario[] = [
 		},
 	},
 	{
+		name: 'real-dense-worksheet-shape',
+		category: 'workflow',
+		build() {
+			const target = realInteractivePatchCorpusTarget('stress-dense-100k')
+			const bytes = realInteractivePatchCorpusTargetBytes(target)
+			return {
+				rows: target.rowCount,
+				cols: target.colCount,
+				cells: target.rowCount * target.colCount,
+				byteCount: bytes.byteLength,
+			}
+		},
+		run() {
+			const target = realInteractivePatchCorpusTarget('stress-dense-100k')
+			const bytes = realInteractivePatchCorpusTargetBytes(target)
+			return {
+				assertions: {
+					bytes: bytes.byteLength,
+					...prefixAssertions('sharedStrings', xlsxSharedStringUsage(bytes)),
+					...prefixAssertions('worksheetScalar', xlsxWorksheetScalarUsage(bytes)),
+				},
+			}
+		},
+	},
+	{
 		name: 'real-dense-prepared-open-cpu',
 		category: 'workflow',
 		build() {
@@ -4290,6 +4517,7 @@ const scenarioSets = {
 		'real-dense-read-memory-full',
 	],
 	'real-readiness': ['real-dense-progressive-readiness'],
+	'real-shape': ['real-dense-worksheet-shape'],
 } as const
 
 function phaseMemorySnapshot(): {

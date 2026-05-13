@@ -236,7 +236,7 @@ function createEagerSharedStringsFromBytes(
 	const parsed = parseEagerSharedStringEntriesBytes(bytes)
 	if (!parsed) return undefined
 	return createEagerSharedStringResolver(
-		parsed.entries,
+		undefined,
 		parsed.plainTextEntries,
 		normalize,
 		normalizeString,
@@ -244,28 +244,30 @@ function createEagerSharedStringsFromBytes(
 }
 
 function createEagerSharedStringResolver(
-	entries: (CellValue | undefined)[],
+	entries: (CellValue | undefined)[] | undefined,
 	plainTextEntries: (string | null | undefined)[],
 	normalize?: (value: CellValue) => CellValue,
 	normalizeString?: (value: string) => CellValue,
 ): SharedStringResolver {
+	let materializedEntries: (CellValue | undefined)[] | undefined = entries
 	return {
-		count: entries.length,
+		count: materializedEntries?.length ?? plainTextEntries.length,
 		get(index: number): CellValue | undefined {
-			const entry = entries[index]
+			const entry = materializedEntries?.[index]
 			if (entry) return entry
 			const text = plainTextEntries[index]
 			if (text === undefined || text === null) return undefined
 			const result = normalizeString
 				? normalizeString(text)
 				: normalizeCellValue(stringValue(text), normalize)
-			entries[index] = result
+			materializedEntries ??= new Array(plainTextEntries.length)
+			materializedEntries[index] = result
 			return result
 		},
 		getString(index: number): string | undefined {
 			const text = plainTextEntries[index]
 			if (text !== undefined) return text === null ? undefined : text
-			const entry = entries[index]
+			const entry = materializedEntries?.[index]
 			return entry?.kind === 'string' ? entry.value : undefined
 		},
 	}
@@ -409,12 +411,10 @@ function parseSimplePlainSharedStringText(xml: string, start: number): string | 
 
 function parseEagerSharedStringEntriesBytes(bytes: Uint8Array):
 	| {
-			readonly entries: (CellValue | undefined)[]
-			readonly plainTextEntries: (string | null | undefined)[]
+			readonly plainTextEntries: string[]
 	  }
 	| undefined {
-	const entries: (CellValue | undefined)[] = []
-	const plainTextEntries: (string | null | undefined)[] = []
+	const plainTextEntries: string[] = []
 	let cursor = 0
 	let sawSharedString = false
 	while (true) {
@@ -423,13 +423,10 @@ function parseEagerSharedStringEntriesBytes(bytes: Uint8Array):
 		sawSharedString = true
 		const fastPlain = parseSimplePlainSharedStringEntryBytes(bytes, open)
 		if (fastPlain === undefined) return undefined
-		entries.push(undefined)
 		plainTextEntries.push(fastPlain.text)
 		cursor = fastPlain.next
 	}
-	return sawSharedString || !bytesIncludeSharedStringOpen(bytes)
-		? { entries, plainTextEntries }
-		: undefined
+	return sawSharedString || !bytesIncludeSharedStringOpen(bytes) ? { plainTextEntries } : undefined
 }
 
 function parseSimplePlainSharedStringEntryBytes(

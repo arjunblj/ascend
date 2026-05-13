@@ -338,6 +338,13 @@ Goal: make Ascend the best spreadsheet MCP/API surface.
 - Validation: focused core/reader tests, `bunx tsc --build`, Biome, and `bun run ci:perf-smoke` passed.
 - Negative result: byte-backed and sequential shared-string resolvers reduced RSS only marginally and regressed the mixed-text read profile to 83 ms and 175 ms medians. Keep the existing lazy SST resolver until access-locality evidence supports a chunked index or other design.
 
+### 2026-05-13: Capped First-Window Read Evidence
+
+- Hypothesis: agent/TUI inspect workflows should not pay full-workbook hydration cost before showing the first compact window.
+- Measurement: `xlsx-read-phase --phase capped-agent-window` now measures `readXlsx({ mode: "values", maxRows: 500 })` followed by the same compact window read as the full `agent-window` phase.
+- Evidence: on `fastexcel-reader-65536`, capped first-window total was 13.75 ms median standalone and 15.01 ms median in `--phase all`, compared with 77.92 ms full open plus window in the same all-phase run.
+- Product implication: SDK/API/MCP/TUI should expose a first-window or lazy-session open path that returns partial load metadata and pagination, then hydrates more rows/sheets on demand.
+
 ## Near-Term PR Sequence
 
 1. Fix public contract drift and MCP operation parity.

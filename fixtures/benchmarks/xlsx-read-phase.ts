@@ -51,11 +51,14 @@ interface PhaseSample {
 	readonly worksheetXmlScanMs?: number
 	readonly worksheetXmlByteScanMs?: number
 	readonly readXlsxMs?: number
+	readonly cappedReadWindowMs?: number
 	readonly agentWindowMs?: number
+	readonly cappedAgentWindowMs?: number
 	readonly gridFillMs?: number
 	readonly materializeHashMs?: number
 	readonly totalHydratedMs?: number
 	readonly totalAgentWindowMs?: number
+	readonly totalCappedAgentWindowMs?: number
 	readonly directOrderedCellsPerSecond?: number
 	readonly rowsStreamCellsPerSecond?: number
 	readonly rowsStreamChunkedCellsPerSecond?: number
@@ -63,7 +66,9 @@ interface PhaseSample {
 	readonly worksheetXmlScanCellsPerSecond?: number
 	readonly worksheetXmlByteScanCellsPerSecond?: number
 	readonly readXlsxCellsPerSecond?: number
+	readonly cappedReadWindowCellsPerSecond?: number
 	readonly agentWindowCellsPerSecond?: number
+	readonly cappedAgentWindowCellsPerSecond?: number
 	readonly gridFillCellsPerSecond?: number
 	readonly worksheetInflateBytesPerSecond?: number
 	readonly worksheetDecodeBytesPerSecond?: number
@@ -90,6 +95,7 @@ type PhaseMode =
 	| 'read'
 	| 'hydrate'
 	| 'agent-window'
+	| 'capped-agent-window'
 	| 'grid-fill'
 
 const WORKLOADS = new Set<string>([
@@ -178,12 +184,13 @@ function parsePhase(raw: string | undefined): PhaseMode {
 		raw === 'read' ||
 		raw === 'hydrate' ||
 		raw === 'agent-window' ||
+		raw === 'capped-agent-window' ||
 		raw === 'grid-fill'
 	) {
 		return raw
 	}
 	throw new Error(
-		'--phase must be all, zip, direct, rows, rows-chunked, rows-window, xml, read, hydrate, agent-window, or grid-fill',
+		'--phase must be all, zip, direct, rows, rows-chunked, rows-window, xml, read, hydrate, agent-window, capped-agent-window, or grid-fill',
 	)
 }
 
@@ -227,12 +234,21 @@ function summarize(samples: readonly PhaseSample[]) {
 		samples.map((sample) => sample.worksheetXmlByteScanMs),
 	)
 	const readXlsxMedianMs = medianOptional(samples.map((sample) => sample.readXlsxMs))
+	const cappedReadWindowMedianMs = medianOptional(
+		samples.map((sample) => sample.cappedReadWindowMs),
+	)
 	const agentWindowMedianMs = medianOptional(samples.map((sample) => sample.agentWindowMs))
+	const cappedAgentWindowMedianMs = medianOptional(
+		samples.map((sample) => sample.cappedAgentWindowMs),
+	)
 	const gridFillMedianMs = medianOptional(samples.map((sample) => sample.gridFillMs))
 	const materializeHashMedianMs = medianOptional(samples.map((sample) => sample.materializeHashMs))
 	const totalHydratedMedianMs = medianOptional(samples.map((sample) => sample.totalHydratedMs))
 	const totalAgentWindowMedianMs = medianOptional(
 		samples.map((sample) => sample.totalAgentWindowMs),
+	)
+	const totalCappedAgentWindowMedianMs = medianOptional(
+		samples.map((sample) => sample.totalCappedAgentWindowMs),
 	)
 	const phaseDurations = [
 		...(zipOpenMedianMs === undefined ? [] : ([['zipOpen', zipOpenMedianMs]] as const)),
@@ -257,7 +273,13 @@ function summarize(samples: readonly PhaseSample[]) {
 			? []
 			: ([['worksheetXmlByteScan', worksheetXmlByteScanMedianMs]] as const)),
 		...(readXlsxMedianMs === undefined ? [] : ([['readXlsx', readXlsxMedianMs]] as const)),
+		...(cappedReadWindowMedianMs === undefined
+			? []
+			: ([['cappedReadWindow', cappedReadWindowMedianMs]] as const)),
 		...(agentWindowMedianMs === undefined ? [] : ([['agentWindow', agentWindowMedianMs]] as const)),
+		...(cappedAgentWindowMedianMs === undefined
+			? []
+			: ([['cappedAgentWindow', cappedAgentWindowMedianMs]] as const)),
 		...(gridFillMedianMs === undefined ? [] : ([['gridFill', gridFillMedianMs]] as const)),
 		...(materializeHashMedianMs === undefined
 			? []
@@ -301,11 +323,23 @@ function summarize(samples: readonly PhaseSample[]) {
 			? {}
 			: { xmlByteScanVsReadXlsxHeadroom: readXlsxMedianMs / worksheetXmlByteScanMedianMs }),
 		...(readXlsxMedianMs === undefined ? {} : { readXlsxMedianMs }),
+		...(cappedReadWindowMedianMs === undefined ? {} : { cappedReadWindowMedianMs }),
+		...(readXlsxMedianMs === undefined || cappedReadWindowMedianMs === undefined
+			? {}
+			: { cappedReadWindowVsReadXlsxHeadroom: readXlsxMedianMs / cappedReadWindowMedianMs }),
 		...(agentWindowMedianMs === undefined ? {} : { agentWindowMedianMs }),
+		...(cappedAgentWindowMedianMs === undefined ? {} : { cappedAgentWindowMedianMs }),
 		...(gridFillMedianMs === undefined ? {} : { gridFillMedianMs }),
 		...(materializeHashMedianMs === undefined ? {} : { materializeHashMedianMs }),
 		...(totalHydratedMedianMs === undefined ? {} : { totalHydratedMedianMs }),
 		...(totalAgentWindowMedianMs === undefined ? {} : { totalAgentWindowMedianMs }),
+		...(totalCappedAgentWindowMedianMs === undefined ? {} : { totalCappedAgentWindowMedianMs }),
+		...(totalAgentWindowMedianMs === undefined || totalCappedAgentWindowMedianMs === undefined
+			? {}
+			: {
+					totalCappedAgentWindowVsFullAgentWindowHeadroom:
+						totalAgentWindowMedianMs / totalCappedAgentWindowMedianMs,
+				}),
 		dominantPhase,
 		...withOptionalMedian(
 			'directOrderedCellsPerSecondMedian',
@@ -336,8 +370,16 @@ function summarize(samples: readonly PhaseSample[]) {
 			samples.map((sample) => sample.readXlsxCellsPerSecond),
 		),
 		...withOptionalMedian(
+			'cappedReadWindowCellsPerSecondMedian',
+			samples.map((sample) => sample.cappedReadWindowCellsPerSecond),
+		),
+		...withOptionalMedian(
 			'agentWindowCellsPerSecondMedian',
 			samples.map((sample) => sample.agentWindowCellsPerSecond),
+		),
+		...withOptionalMedian(
+			'cappedAgentWindowCellsPerSecondMedian',
+			samples.map((sample) => sample.cappedAgentWindowCellsPerSecond),
 		),
 		...withOptionalMedian(
 			'gridFillCellsPerSecondMedian',
@@ -637,6 +679,32 @@ async function runSample(
 		}
 	}
 
+	if (
+		(args.phase === 'all' && args.workload !== 'metadata-only') ||
+		args.phase === 'capped-agent-window'
+	) {
+		if (args.workload === 'metadata-only') {
+			throw new Error('capped-agent-window is not supported for metadata-only workloads')
+		}
+		const rowLimit = Math.min(500, Math.max(1, input.rows))
+		const readOptions = {
+			...readOptionsForWorkload(args.workload),
+			maxRows: rowLimit,
+		} satisfies ReadXlsxOptions
+		const cappedReadStart = performance.now()
+		const read = readXlsx(input.xlsxBytes, readOptions)
+		const cappedReadWindowMs = performance.now() - cappedReadStart
+		if (!read.ok) throw new Error(read.error.message)
+		const cappedWindowStart = performance.now()
+		const windowCells = readAgentWindow(read.value.workbook, input)
+		const cappedAgentWindowMs = performance.now() - cappedWindowStart
+		sample.cappedReadWindowMs = cappedReadWindowMs
+		sample.cappedAgentWindowMs = cappedAgentWindowMs
+		sample.totalCappedAgentWindowMs = cappedReadWindowMs + cappedAgentWindowMs
+		sample.cappedReadWindowCellsPerSecond = windowCells / (cappedReadWindowMs / 1000)
+		sample.cappedAgentWindowCellsPerSecond = windowCells / (cappedAgentWindowMs / 1000)
+	}
+
 	const sampleMemory = memory()
 	writeHeapSnapshotFromEnv()
 	return {
@@ -658,6 +726,7 @@ if (
 	args.phase === 'xml' ||
 	args.phase === 'zip' ||
 	args.phase === 'agent-window' ||
+	args.phase === 'capped-agent-window' ||
 	args.phase === 'grid-fill'
 ) {
 	input = { ...input, values: [] }

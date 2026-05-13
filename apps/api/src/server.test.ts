@@ -49,9 +49,12 @@ interface ApiEnvelope {
 		readonly sha256?: string
 		readonly rowCount?: number
 		readonly cells?: unknown[]
+		readonly format?: string
+		readonly changeToken?: string
 		readonly load?: {
 			readonly mode?: string
 			readonly isPartial?: boolean
+			readonly maxRows?: number
 			readonly cellsHydrated?: boolean
 			readonly loadedSheets?: readonly string[]
 		}
@@ -249,8 +252,17 @@ describe('Ascend API server', () => {
 
 		expect(result.status).toBe(200)
 		expect(result.body.ok).toBe(true)
+		expect(result.body.data?.format).toBe('compact')
 		expect(result.body.data?.rowCount).toBe(3)
-		expect(result.body.data?.cells).toHaveLength(6)
+		expect(result.body.data?.cells).toEqual([
+			[0, 0, 1],
+			[0, 1, 'row-1'],
+			[1, 0, 2],
+			[1, 1, 'row-2'],
+			[2, 0, 3],
+			[2, 1, 'row-3'],
+		])
+		expect(result.body.data?.changeToken).toBeDefined()
 		expect(result.body.data?.load?.mode).toBe('values')
 		expect(result.body.data?.load?.isPartial).toBe(true)
 		expect(result.body.data?.load?.maxRows).toBe(3)
@@ -259,6 +271,17 @@ describe('Ascend API server', () => {
 		)
 		expect(result.body.data?.load?.cellsHydrated).toBe(true)
 		expect(result.body.data?.load?.loadedSheets).toEqual(['Sheet1'])
+
+		const unchanged = await postJson('/read', {
+			file: TEMP_FILE,
+			range: 'A1:B20',
+			format: 'compact',
+			rowLimit: 3,
+			changedSince: result.body.data?.changeToken,
+		})
+		expect(unchanged.status).toBe(200)
+		expect(unchanged.body.data?.cells).toEqual([])
+		expect(unchanged.body.data?.changeToken).toBeDefined()
 	})
 
 	test('trace returns structured partial-load diagnostics for capped formula views', async () => {

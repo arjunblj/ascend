@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { rm } from 'node:fs/promises'
 import { createApiFetch } from '../../apps/api/src/server.ts'
+import { createServer } from '../../apps/mcp/src/index.ts'
 import { indexToColumn } from '../../packages/core/src/index.ts'
 import { WorkbookDocument } from '../../packages/sdk/src/index.ts'
 import { buildRawReadWorkloadDataSet, type WorkloadName } from './competitive-io.ts'
@@ -19,11 +20,14 @@ interface Sample {
 	readonly fullOpenWindowMs?: number
 	readonly cappedOpenWindowMs?: number
 	readonly apiFirstWindowMs?: number
+	readonly mcpFirstWindowMs?: number
 	readonly cells: number
 	readonly payloadBytes?: number
+	readonly mcpPayloadBytes?: number
 	readonly fullHydratedCells?: number | null
 	readonly cappedHydratedCells?: number | null
 	readonly apiPartial?: boolean
+	readonly mcpPartial?: boolean
 }
 
 const WORKLOADS = new Set<string>([
@@ -179,27 +183,84 @@ interface ApiEnvelope {
 	}
 }
 
+interface McpReadResult {
+	readonly structuredContent?: {
+		readonly ok?: boolean
+		readonly data?: {
+			readonly cells?: readonly unknown[]
+			readonly load?: { readonly isPartial?: boolean }
+		}
+		readonly error?: unknown
+	}
+}
+
+type McpReadHandler = (args: {
+	readonly file: string
+	readonly range: string
+	readonly format: 'compact'
+	readonly rowLimit: number
+}) => Promise<McpReadResult>
+
+async function runMcpFirstWindow(
+	path: string,
+	range: string,
+	rowLimit: number,
+): Promise<Pick<Sample, 'mcpFirstWindowMs' | 'cells' | 'mcpPayloadBytes' | 'mcpPartial'>> {
+	WorkbookDocument.clearCache()
+	const server = createServer()
+	const handler = (
+		server as unknown as { _registeredTools: Record<string, { handler: McpReadHandler }> }
+	)._registeredTools['ascend.read']?.handler
+	if (!handler) throw new Error('MCP ascend.read handler not registered')
+	const measured = await time(() =>
+		handler({
+			file: path,
+			range,
+			format: 'compact',
+			rowLimit,
+		}),
+	)
+	const content = measured.result.structuredContent
+	if (content?.ok !== true) {
+		throw new Error(`MCP ascend.read failed: ${JSON.stringify(content?.error ?? content)}`)
+	}
+	const data = content.data
+	return {
+		mcpFirstWindowMs: measured.ms,
+		cells: data?.cells?.length ?? 0,
+		mcpPayloadBytes: JSON.stringify(content).length,
+		mcpPartial: data?.load?.isPartial ?? false,
+	}
+}
+
 function summarize(samples: readonly Sample[]) {
 	const fullOpenWindowMedianMs = medianOptional(samples.map((sample) => sample.fullOpenWindowMs))
 	const cappedOpenWindowMedianMs = medianOptional(
 		samples.map((sample) => sample.cappedOpenWindowMs),
 	)
 	const apiFirstWindowMedianMs = medianOptional(samples.map((sample) => sample.apiFirstWindowMs))
+	const mcpFirstWindowMedianMs = medianOptional(samples.map((sample) => sample.mcpFirstWindowMs))
 	return {
 		fullOpenWindowMedianMs,
 		cappedOpenWindowMedianMs,
 		apiFirstWindowMedianMs,
+		mcpFirstWindowMedianMs,
 		...(fullOpenWindowMedianMs !== undefined && cappedOpenWindowMedianMs !== undefined
 			? { cappedSpeedupVsFull: fullOpenWindowMedianMs / cappedOpenWindowMedianMs }
 			: {}),
 		...(fullOpenWindowMedianMs !== undefined && apiFirstWindowMedianMs !== undefined
 			? { apiSpeedupVsFull: fullOpenWindowMedianMs / apiFirstWindowMedianMs }
 			: {}),
+		...(fullOpenWindowMedianMs !== undefined && mcpFirstWindowMedianMs !== undefined
+			? { mcpSpeedupVsFull: fullOpenWindowMedianMs / mcpFirstWindowMedianMs }
+			: {}),
 		cellsMedian: medianOptional(samples.map((sample) => sample.cells)),
 		payloadBytesMedian: medianOptional(samples.map((sample) => sample.payloadBytes)),
+		mcpPayloadBytesMedian: medianOptional(samples.map((sample) => sample.mcpPayloadBytes)),
 		fullHydratedCellsMedian: medianOptional(samples.map((sample) => sample.fullHydratedCells)),
 		cappedHydratedCellsMedian: medianOptional(samples.map((sample) => sample.cappedHydratedCells)),
 		apiPartial: samples.some((sample) => sample.apiPartial === true),
+		mcpPartial: samples.some((sample) => sample.mcpPartial === true),
 	}
 }
 
@@ -213,6 +274,7 @@ async function run() {
 			await runFullOpenWindow(data.xlsxPath, range, args.rowLimit)
 			await runCappedOpenWindow(data.xlsxPath, range, args.rowLimit)
 			await runApiFirstWindow(data.xlsxPath, range, args.rowLimit)
+			await runMcpFirstWindow(data.xlsxPath, range, args.rowLimit)
 			runGc()
 		}
 		for (let i = 0; i < args.repeat; i++) {
@@ -222,7 +284,9 @@ async function run() {
 			runGc()
 			const api = await runApiFirstWindow(data.xlsxPath, range, args.rowLimit)
 			runGc()
-			samples.push({ ...full, ...capped, ...api, cells: api.cells })
+			const mcp = await runMcpFirstWindow(data.xlsxPath, range, args.rowLimit)
+			runGc()
+			samples.push({ ...full, ...capped, ...api, ...mcp, cells: mcp.cells })
 		}
 		const payload = {
 			tool: 'agent-first-window',

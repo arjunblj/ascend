@@ -11,6 +11,7 @@ import {
 	type CapabilityFilters,
 	type CapabilityPriority,
 	type CapabilityStatus,
+	type CompactRangeWindowInfo,
 	commitAgentPlan,
 	createAgentPlan,
 	createRepairPlan,
@@ -611,6 +612,7 @@ export function createApiFetch() {
 					headers?: string[]
 					display?: boolean
 					maxRows?: number
+					changedSince?: string
 				}>(req)
 				const file = body ? requireString(body, 'file') : null
 				const range = body ? requireString(body, 'range') : null
@@ -620,6 +622,7 @@ export function createApiFetch() {
 					const sheetName = body ? requireString(body, 'sheet') : null
 					const format = (body ? requireString(body, 'format') : null) ?? 'cells'
 					const headers = body ? requireArray(body, 'headers') : null
+					const changedSince = body ? requireString(body, 'changedSince') : null
 					const rowOffset = body ? requireOptionalNumber(body, 'rowOffset') : undefined
 					const rowLimit = body ? requireOptionalNumber(body, 'rowLimit') : undefined
 					const maxRows = firstWindowMaxRows(
@@ -659,13 +662,16 @@ export function createApiFetch() {
 						return jsonSuccess(withPartialLoadInfo(display ? displayObjects(info) : info, wb))
 					}
 					if (format === 'compact') {
-						const info = sheet.readWindowCompact(range, {
-							...(rowOffset !== undefined ? { rowOffset } : {}),
-							...(rowLimit !== undefined ? { rowLimit } : {}),
-							includeRefs: false,
-							omitEmpty: true,
-							flatValues: true,
-						})
+						const info = buildCompactReadResult(
+							sheet.readWindowCompact(range, {
+								...(rowOffset !== undefined ? { rowOffset } : {}),
+								...(rowLimit !== undefined ? { rowLimit } : {}),
+								includeRefs: false,
+								omitEmpty: true,
+								flatValues: true,
+								changedSince: changedSince ?? '',
+							}),
+						)
 						return jsonSuccess(withPartialLoadInfo(info, wb))
 					}
 					if (format !== 'cells') return jsonFailure('Invalid read format', 400)
@@ -1050,5 +1056,26 @@ function displayObjects<
 				Object.entries(row).map(([key, value]) => [key, formatDisplayCellValue(value)]),
 			),
 		),
+	}
+}
+
+function buildCompactReadResult(info: CompactRangeWindowInfo) {
+	return {
+		requestedRef: info.requestedRef,
+		ref: info.ref,
+		rowCount: info.rowCount,
+		colCount: info.colCount,
+		rowOffset: info.rowOffset,
+		rowLimit: info.rowLimit,
+		hasMore: info.hasMore,
+		...(info.nextRowOffset !== undefined ? { nextRowOffset: info.nextRowOffset } : {}),
+		...(info.changeToken !== undefined ? { changeToken: info.changeToken } : {}),
+		format: 'compact' as const,
+		cells: info.cells.map((cell) => [
+			cell.row - info.ref.start.row,
+			cell.col - info.ref.start.col,
+			cell.value as unknown,
+			...(cell.formula ? [cell.formula] : []),
+		]),
 	}
 }

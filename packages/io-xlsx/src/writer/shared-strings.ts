@@ -21,34 +21,40 @@ export interface WorkbookWriteFacts {
 	readonly dynamicArrayMetadataEntries: readonly DynamicArrayMetadataEntry[]
 }
 
+export interface ExistingSharedStringEntries {
+	readonly count: number
+	get(index: number): CellValue | undefined
+}
+
 export class IncrementalSharedStringTable {
 	private readonly entries: CellValue[] = []
 	private readonly lookup = new Map<string, number>()
 	private readonly preservedXml: string | undefined
 	private readonly preservedEntryCount: number
+	private readonly existingEntries: ExistingSharedStringEntries | undefined
+	private existingEntriesHydrated = false
 	private _count = 0
 	readonly facts: WorkbookWriteFacts
 
 	constructor(
-		existingEntries: readonly CellValue[],
+		existingEntries: readonly CellValue[] | ExistingSharedStringEntries,
 		facts: WorkbookWriteFacts,
 		preservedXml?: string,
 	) {
 		this.facts = facts
 		this.preservedXml = preservedXml
-		this.preservedEntryCount = existingEntries.length
-		for (let i = 0; i < existingEntries.length; i++) {
-			const entry = existingEntries[i]
-			if (!entry) continue
-			const key = makeKey(entry)
-			if (key !== undefined && !this.lookup.has(key)) {
-				this.lookup.set(key, i)
-			}
-			this.entries.push(entry)
+		if ('count' in existingEntries) {
+			this.preservedEntryCount = existingEntries.count
+			this.existingEntries = existingEntries
+		} else {
+			this.preservedEntryCount = existingEntries.length
+			this.hydrateExistingEntries(existingEntries)
+			this.existingEntriesHydrated = true
 		}
 	}
 
 	getIndex(value: CellValue): number | undefined {
+		this.ensureExistingEntries()
 		const key = makeKey(value)
 		if (key === undefined) return undefined
 		let idx = this.lookup.get(key)
@@ -62,6 +68,7 @@ export class IncrementalSharedStringTable {
 	}
 
 	toXml(): string {
+		this.ensureExistingEntries()
 		if (this.preservedXml && this.entries.length >= this.preservedEntryCount) {
 			return appendSharedStringEntries(
 				this.preservedXml,
@@ -85,11 +92,36 @@ export class IncrementalSharedStringTable {
 	}
 
 	get uniqueCount(): number {
+		this.ensureExistingEntries()
 		return this.lookup.size
 	}
 
 	get entryCount(): number {
-		return this.entries.length
+		if (!this.existingEntries) return this.entries.length
+		return this.existingEntriesHydrated ? this.entries.length : this.preservedEntryCount
+	}
+
+	private ensureExistingEntries(): void {
+		if (this.existingEntriesHydrated || !this.existingEntries) return
+		const entries: CellValue[] = []
+		for (let i = 0; i < this.existingEntries.count; i++) {
+			const entry = this.existingEntries.get(i)
+			if (entry) entries.push(entry)
+		}
+		this.hydrateExistingEntries(entries)
+		this.existingEntriesHydrated = true
+	}
+
+	private hydrateExistingEntries(existingEntries: readonly CellValue[]): void {
+		for (let i = 0; i < existingEntries.length; i++) {
+			const entry = existingEntries[i]
+			if (!entry) continue
+			const key = makeKey(entry)
+			if (key !== undefined && !this.lookup.has(key)) {
+				this.lookup.set(key, i)
+			}
+			this.entries.push(entry)
+		}
 	}
 }
 

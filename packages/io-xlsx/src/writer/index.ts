@@ -68,7 +68,11 @@ import {
 } from './plan.ts'
 import type { RelEntry } from './relationships.ts'
 import { buildRelsXml } from './relationships.ts'
-import { IncrementalSharedStringTable, scanWorkbookWriteFactsFast } from './shared-strings.ts'
+import {
+	type ExistingSharedStringEntries,
+	IncrementalSharedStringTable,
+	scanWorkbookWriteFactsFast,
+} from './shared-strings.ts'
 import { buildSheetXml, buildSheetXmlStreaming } from './sheet.ts'
 import { updateSlicerCacheDefinitionXml } from './slicer-cache.ts'
 import { buildPreservedStylesXml, buildStylesXml } from './styles.ts'
@@ -570,10 +574,16 @@ export function planWriteXlsx(
 				!effectiveSharedStringsDirty &&
 				preservedSharedStringsXml !== undefined,
 		)
-		const preservedSharedStringEntries =
+		const preservedSharedStringEntries: readonly CellValue[] | ExistingSharedStringEntries =
 			!options.summaryOnly && preservedSharedStringsXml
-				? materializeSharedStringEntries(preservedSharedStringsXml)
+				? dirtyPatchMode
+					? parseSharedStrings(preservedSharedStringsXml, { lazy: true })
+					: materializeSharedStringEntries(preservedSharedStringsXml)
 				: []
+		const preservedSharedStringEntryCount =
+			'count' in preservedSharedStringEntries
+				? preservedSharedStringEntries.count
+				: preservedSharedStringEntries.length
 		const hasSharedStringEligibleCells = workbookHasSharedStringEligibleCells(workbook)
 		const needsWriteFactScan = workbookHasFormulaInfoCells(workbook)
 		const workbookWriteFacts = needsWriteFactScan
@@ -589,7 +599,7 @@ export function planWriteXlsx(
 							return ''
 						},
 						count: preserveSharedStrings || workbookWriteFacts.hasStringCells ? 1 : 0,
-						entryCount: preservedSharedStringEntries.length,
+						entryCount: preservedSharedStringEntryCount,
 						facts: workbookWriteFacts,
 					}
 				: new IncrementalSharedStringTable(
@@ -1524,7 +1534,7 @@ export function planWriteXlsx(
 			const canReuseSharedStringsXml =
 				preservedSharedStringsXml !== undefined &&
 				(preserveSharedStrings || dirtyPatchMode || hasPreservedSheetXmlInDirtyPatchMode) &&
-				(useInlineStrings || ssTable.entryCount <= preservedSharedStringEntries.length)
+				(useInlineStrings || ssTable.entryCount <= preservedSharedStringEntryCount)
 			const preservedSharedStringBytes = canReuseSharedStringsXml
 				? resolvePreservedBytes(sourceArchive, workbook.preservedSharedStrings?.path)
 				: undefined

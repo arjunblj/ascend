@@ -32,6 +32,17 @@ describe('extractZip', () => {
 		expect([...archive.readTextChunks('hello.txt', 7)].join('')).toBe(text)
 	})
 
+	test('can prefer streaming text chunks without caching partial output', () => {
+		const text = 'alpha😀beta\n'.repeat(4096)
+		const archive = extractZip(createZip(new Map([['hello.txt', encode(text)]])))
+		const iterator = archive.readTextChunks('hello.txt', 128, { preferStreaming: true })
+		const first = iterator.next()
+		expect(first.done).toBe(false)
+		expect(first.value.length).toBeGreaterThan(0)
+		iterator.return?.()
+		expect(archive.readText('hello.txt')).toBe(text)
+	})
+
 	test('streams deflated byte chunks without changing bytes', async () => {
 		const text = 'alpha😀beta\n'.repeat(256)
 		const expected = encode(text)

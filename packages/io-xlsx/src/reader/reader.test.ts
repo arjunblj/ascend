@@ -10,6 +10,7 @@ import {
 	emptySharedStrings,
 	parseSharedStrings,
 	parseSharedStringsBytes,
+	parseSharedStringsChunks,
 } from './shared-strings.ts'
 import type { StreamedSheetRow } from './sheet.ts'
 import {
@@ -985,6 +986,35 @@ describe('readXlsx', () => {
 		expect(sharedStrings.getString?.(0)).toBe('First')
 		expect(sharedStrings.getString?.(1)).toBe('Second')
 		expect(sharedStrings.get(0)).toEqual({ kind: 'string', value: 'First' })
+	})
+
+	it('streams shared string chunks on demand with fallback for unsupported markup', () => {
+		const chunks = [
+			'<?xml version="1.0"?><sst>',
+			'<si><t>Alpha</t></si><si><t>Be',
+			'ta</t></si><si><r><t>Rich</t></r></si></sst>',
+		]
+		let fallbackCalls = 0
+		const sharedStrings = parseSharedStringsChunks(chunks, {
+			fallback: () => {
+				fallbackCalls += 1
+				return emptySharedStrings()
+			},
+		})
+		expect(sharedStrings.getString?.(1)).toBe('Beta')
+		expect(sharedStrings.get(2)).toEqual({ kind: 'string', value: 'Rich' })
+		expect(fallbackCalls).toBe(0)
+
+		const prefixed = parseSharedStringsChunks(['<x:sst><x:si><x:t>Fallback</x:t></x:si></x:sst>'], {
+			fallback: () => {
+				fallbackCalls += 1
+				return parseSharedStrings(
+					'<x:sst xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><x:si><x:t>Fallback</x:t></x:si></x:sst>',
+				)
+			},
+		})
+		expect(prefixed.getString?.(0)).toBe('Fallback')
+		expect(fallbackCalls).toBe(1)
 	})
 
 	it('parses theme and indexed colors in shared string rich text runs', () => {

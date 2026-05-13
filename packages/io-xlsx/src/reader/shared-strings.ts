@@ -51,6 +51,22 @@ export function parseSharedStringsBytes(
 	return parseSharedStrings(BYTE_XML_DECODER.decode(bytes), options)
 }
 
+export function parseSharedStringsChunks(
+	chunks: Iterable<string>,
+	options: {
+		readonly normalize?: (value: CellValue) => CellValue
+		readonly normalizeString?: (value: string) => CellValue
+		readonly fallback?: () => SharedStringResolver
+	} = {},
+): SharedStringResolver {
+	return createStreamingSharedStrings(
+		chunks,
+		options.normalize,
+		options.normalizeString,
+		options.fallback,
+	)
+}
+
 export function emptySharedStrings(): SharedStringResolver {
 	return {
 		count: 0,
@@ -60,6 +76,117 @@ export function emptySharedStrings(): SharedStringResolver {
 		getString(): string | undefined {
 			return undefined
 		},
+	}
+}
+
+function createStreamingSharedStrings(
+	chunks: Iterable<string>,
+	normalize?: (value: CellValue) => CellValue,
+	normalizeString?: (value: string) => CellValue,
+	fallbackFactory?: () => SharedStringResolver,
+): SharedStringResolver {
+	const iterator = chunks[Symbol.iterator]()
+	const entries: (CellValue | undefined)[] = []
+	const plainTextEntries: (string | null)[] = []
+	let fallback: SharedStringResolver | undefined
+	let buffer = ''
+	let exhausted = false
+
+	const fallbackResolver = () => {
+		fallback ??= fallbackFactory?.() ?? emptySharedStrings()
+		return fallback
+	}
+	const ensure = (index: number): boolean => {
+		if (index < entries.length || index < plainTextEntries.length) return true
+		while (entries.length <= index && plainTextEntries.length <= index) {
+			const parsed = parseNextStreamingSharedString()
+			if (parsed === true) continue
+			if (exhausted) return false
+			const next = iterator.next()
+			if (next.done) exhausted = true
+			else buffer += next.value
+		}
+		return true
+	}
+	const parseNextStreamingSharedString = (): boolean | null => {
+		while (true) {
+			const open = nextSharedStringOpen(buffer)
+			if (open === -1) {
+				if (exhausted) return false
+				buffer = buffer.slice(Math.max(0, buffer.length - 3))
+				return null
+			}
+			if (open > 0) buffer = buffer.slice(open)
+			const tagEnd = findTagEnd(buffer, 0)
+			if (tagEnd === -1) return null
+			if (isSelfClosingTag(buffer, 0, tagEnd)) {
+				plainTextEntries.push('')
+				entries.push(undefined)
+				buffer = buffer.slice(tagEnd + 1)
+				return true
+			}
+			const close = buffer.indexOf('</si>', tagEnd + 1)
+			if (close === -1) return null
+			const text = parsePlainSharedStringEntry(buffer, tagEnd + 1, close)
+			if (text !== undefined) {
+				plainTextEntries.push(text)
+				entries.push(undefined)
+			} else {
+				plainTextEntries.push(null)
+				entries.push(
+					normalizeSharedStringValue(
+						parseSharedStringEntry(buffer, tagEnd + 1, close),
+						normalize,
+						normalizeString,
+					),
+				)
+			}
+			buffer = buffer.slice(close + 5)
+			return true
+		}
+	}
+
+	return {
+		get count(): number {
+			return (
+				fallback?.count ??
+				(exhausted ? Math.max(entries.length, plainTextEntries.length) : Number.MAX_SAFE_INTEGER)
+			)
+		},
+		getString(index: number): string | undefined {
+			if (index < 0) return undefined
+			if (!ensure(index)) return fallbackResolver().getString?.(index)
+			const text = plainTextEntries[index]
+			if (text !== undefined) return text === null ? undefined : text
+			const entry = entries[index]
+			if (entry) return entry.kind === 'string' ? entry.value : undefined
+			return fallback ? fallback.getString?.(index) : undefined
+		},
+		get(index: number): CellValue | undefined {
+			if (index < 0) return undefined
+			if (!ensure(index)) return fallbackResolver().get(index)
+			const entry = entries[index]
+			if (entry) return entry
+			const text = plainTextEntries[index]
+			if (text !== undefined && text !== null) {
+				const result = normalizeString
+					? normalizeString(text)
+					: normalizeCellValue(stringValue(text), normalize)
+				entries[index] = result
+				return result
+			}
+			return fallback ? fallback.get(index) : undefined
+		},
+	}
+}
+
+function nextSharedStringOpen(xml: string): number {
+	let cursor = 0
+	while (true) {
+		const open = xml.indexOf('<si', cursor)
+		if (open === -1) return -1
+		if (isXmlNameTerminator(xml.charCodeAt(open + 3))) return open
+		cursor = open + 3
 	}
 }
 

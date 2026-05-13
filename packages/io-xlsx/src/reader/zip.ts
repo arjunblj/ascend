@@ -94,7 +94,11 @@ export class ZipArchive {
 		return text
 	}
 
-	*readTextChunks(path: string, chunkSize = STREAM_CHUNK_BYTES): IterableIterator<string> {
+	*readTextChunks(
+		path: string,
+		chunkSize = STREAM_CHUNK_BYTES,
+		options: ReadChunksOptions = {},
+	): IterableIterator<string> {
 		const entry = this.entriesByPath.get(path)
 		if (!entry) return
 		const compressed = this.bytes.subarray(
@@ -109,7 +113,11 @@ export class ZipArchive {
 		if (entry.compressionMethod !== 8) {
 			throw new Error(`Unsupported ZIP compression method ${entry.compressionMethod} for ${path}`)
 		}
-		if (bunInflateRawSync && entry.uncompressedSize <= FULL_INFLATE_TEXT_CHUNK_LIMIT_BYTES) {
+		if (
+			!options.preferStreaming &&
+			bunInflateRawSync &&
+			entry.uncompressedSize <= FULL_INFLATE_TEXT_CHUNK_LIMIT_BYTES
+		) {
 			yield* decodeTextChunks(inflateRawBytesSync(compressed), decoder, chunkSize)
 			return
 		}

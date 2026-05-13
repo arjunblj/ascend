@@ -10,6 +10,7 @@ import type {
 import { DEFAULT_STYLE_ID, Workbook } from '@ascend/core'
 import type {
 	AscendError,
+	CellValue,
 	CompatibilityReport,
 	CompatibilityStatus,
 	FeatureReport,
@@ -81,7 +82,11 @@ import {
 	type Relationship,
 	resolvePath,
 } from './relationships.ts'
-import { emptySharedStrings, parseSharedStrings } from './shared-strings.ts'
+import {
+	emptySharedStrings,
+	parseSharedStrings,
+	parseSharedStringsChunks,
+} from './shared-strings.ts'
 import {
 	parseSheet,
 	parseSheetValuesOnlyByteChunks,
@@ -495,19 +500,39 @@ export function readXlsx(
 			}
 		} else {
 			const valuePool = valuesOnly ? undefined : new ValueInternPool()
-			const ssXml = ssPath ? readPart(archive, ssPath) : undefined
-			const sharedStrings = ssXml
-				? parseSharedStrings(ssXml, {
-						...(valuesOnly || formulaOnly
-							? {}
-							: {
-									normalize: (value) => valuePool?.internValue(value) ?? value,
-									...(valuePool
-										? { normalizeString: (value: string) => valuePool.internStringValue(value) }
-										: {}),
-								}),
-						lazy: valuesOnly || formulaOnly || selectedSheets !== null,
-					})
+			const sharedStringOptions = {
+				...(valuesOnly || formulaOnly
+					? {}
+					: {
+							normalize: (value: CellValue) => valuePool?.internValue(value) ?? value,
+							...(valuePool
+								? { normalizeString: (value: string) => valuePool.internStringValue(value) }
+								: {}),
+						}),
+				lazy: valuesOnly || formulaOnly || selectedSheets !== null,
+			}
+			const canStreamSharedStrings =
+				ssPath !== undefined &&
+				valuesOnly &&
+				!hydrateRichSheetMetadata &&
+				options.maxRows !== undefined
+			const ssXml = ssPath && !canStreamSharedStrings ? readPart(archive, ssPath) : undefined
+			const sharedStrings = ssPath
+				? canStreamSharedStrings
+					? parseSharedStringsChunks(
+							archive.readTextChunks(ssPath, STREAMED_MAX_ROWS_COMPRESSED_CHUNK_BYTES, {
+								preferStreaming: true,
+							}),
+							{
+								fallback: () => {
+									const xml = readPart(archive, ssPath)
+									return xml ? parseSharedStrings(xml, sharedStringOptions) : emptySharedStrings()
+								},
+							},
+						)
+					: ssXml
+						? parseSharedStrings(ssXml, sharedStringOptions)
+						: emptySharedStrings()
 				: emptySharedStrings()
 
 			const parseLiteStyles = !((valuesOnly || formulaOnly) && options.parseDates === false)

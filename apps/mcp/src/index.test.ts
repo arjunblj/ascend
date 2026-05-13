@@ -1170,10 +1170,22 @@ describe('MCP server', () => {
 				planHandle?: string
 				output?: string
 				approvals?: string[]
+				compact?: boolean
 			}) => Promise<{
 				structuredContent?: {
 					ok?: boolean
-					data?: { pathMutations?: { ops?: unknown[] } }
+					data?: {
+						pathMutations?: { ops?: unknown[] }
+						apply?: { affectedCellCount?: number }
+						postWrite?: {
+							valid?: boolean
+							reopened?: boolean
+							timings?: { reopenMs?: number }
+							check?: { valid?: boolean }
+							packageGraphAudit?: { ok?: boolean }
+						}
+						trace?: { artifactCount?: number; artifacts?: unknown[] }
+					}
 				}
 			}>
 			const planned = await plan({
@@ -1193,11 +1205,20 @@ describe('MCP server', () => {
 				planHandle: planned.structuredContent?.data?.preparedPlan?.id,
 				output,
 				approvals: [],
+				compact: true,
 			})
 			expect(committed.structuredContent?.ok).toBe(true)
 			expect(committed.structuredContent?.data?.pathMutations?.ops).toEqual([
 				{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 321 }] },
 			])
+			expect(committed.structuredContent?.data?.apply?.affectedCellCount).toBe(1)
+			expect(committed.structuredContent?.data?.postWrite?.valid).toBe(true)
+			expect(committed.structuredContent?.data?.postWrite?.reopened).toBe(true)
+			expect(committed.structuredContent?.data?.postWrite?.timings?.reopenMs).toBeNumber()
+			expect(committed.structuredContent?.data?.postWrite?.check?.valid).toBe(true)
+			expect(committed.structuredContent?.data?.postWrite?.packageGraphAudit?.ok).toBe(true)
+			expect(committed.structuredContent?.data?.trace?.artifactCount).toBeNumber()
+			expect(committed.structuredContent?.data?.trace?.artifacts).toBeUndefined()
 			const reopened = await AscendWorkbook.open(output)
 			expect(reopened.sheet('Sheet1')?.cell('A1')?.value).toEqual({ kind: 'number', value: 321 })
 

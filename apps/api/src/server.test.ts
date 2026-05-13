@@ -49,6 +49,26 @@ interface ApiEnvelope {
 			readonly expiresAt?: string
 			readonly ttlMs?: number
 		}
+		readonly apply?: {
+			readonly affectedCellCount?: number
+		}
+		readonly trace?: {
+			readonly artifactCount?: number
+			readonly artifacts?: unknown[]
+		}
+		readonly postWrite?: {
+			readonly valid?: boolean
+			readonly reopened?: boolean
+			readonly timings?: {
+				readonly reopenMs?: number
+			}
+			readonly check?: {
+				readonly valid?: boolean
+			}
+			readonly packageGraphAudit?: {
+				readonly ok?: boolean
+			}
+		}
 		readonly journal?: { readonly supported?: boolean; readonly inverseOps?: unknown[] }
 		readonly partPath?: string
 		readonly featureFamily?: string
@@ -1233,12 +1253,21 @@ describe('Ascend API server', () => {
 				planHandle: plan.body.data?.preparedPlan?.id,
 				output,
 				approvals: [],
+				compact: true,
 			})
 			expect(commit.status).toBe(200)
 			expect(commit.body.ok).toBe(true)
 			expect(commit.body.data?.pathMutations?.ops).toEqual([
 				{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 123 }] },
 			])
+			expect(commit.body.data?.apply?.affectedCellCount).toBe(1)
+			expect(commit.body.data?.postWrite?.valid).toBe(true)
+			expect(commit.body.data?.postWrite?.reopened).toBe(true)
+			expect(commit.body.data?.postWrite?.timings?.reopenMs).toBeNumber()
+			expect(commit.body.data?.postWrite?.check?.valid).toBe(true)
+			expect(commit.body.data?.postWrite?.packageGraphAudit?.ok).toBe(true)
+			expect(commit.body.data?.trace?.artifactCount).toBeNumber()
+			expect(commit.body.data?.trace?.artifacts).toBeUndefined()
 			const reopened = await AscendWorkbook.open(output)
 			expect(reopened.sheet('Sheet1')?.cell('A1')?.value).toEqual({ kind: 'number', value: 123 })
 

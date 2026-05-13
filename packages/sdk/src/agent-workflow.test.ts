@@ -11,6 +11,7 @@ import {
 	auditLossPolicy,
 	auditPackageGraphIntegrity,
 	commitAgentPlan,
+	compactAgentCommitResult,
 	createAgentPlan,
 	createAgentPlanFromWorkbook,
 	createPreparedAgentPlan,
@@ -309,6 +310,37 @@ describe('agent workflow loss audit', () => {
 		expect(committed.trace.artifacts.map((artifact) => artifact.name)).toContain('apply')
 		expect(committed.trace.artifacts.map((artifact) => artifact.name)).toContain('postWrite')
 		expect(committed.modelOutput.counts.operations).toBe(1)
+	})
+
+	test('compact commit result keeps post-write verification evidence', async () => {
+		const input = join(TEMP_DIR, 'compact-commit.xlsx')
+		const output = join(TEMP_DIR, 'compact-commit-out.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		const wb = AscendWorkbook.create()
+		await wb.save(input)
+
+		const committed = await commitAgentPlan(
+			input,
+			[{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'compact' }] }],
+			{ output },
+		)
+		const compact = compactAgentCommitResult(committed)
+		expect(compact.outputSha256).toBe(committed.outputSha256)
+		expect(compact.trace.traceDigest).toBe(committed.trace.traceDigest)
+		expect(compact.trace.artifactCount).toBe(committed.trace.artifacts.length)
+		expect(compact.apply.affectedCellCount).toBe(1)
+		expect(compact.check.valid).toBe(true)
+		expect(compact.postWrite.valid).toBe(true)
+		expect(compact.postWrite.reopened).toBe(true)
+		expect(compact.postWrite.check.valid).toBe(true)
+		expect(compact.postWrite.packageGraphAudit.ok).toBe(true)
+		expect(compact.postWrite.timings?.reopenMs).toBeNumber()
+		expect(compact.preservation.totalParts).toBeGreaterThan(0)
+		expect(compact.writePolicy.ok).toBe(true)
+		expect(compact.lossAudit.ok).toBe(true)
+		expect(compact.packageGraphAudit.ok).toBe(true)
+		expect('artifacts' in compact.trace).toBe(false)
+		expect('affectedCells' in compact.apply).toBe(false)
 	})
 
 	test('commit stops before write when write policy has structural blockers', async () => {

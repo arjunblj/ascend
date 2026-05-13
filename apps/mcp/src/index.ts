@@ -15,6 +15,7 @@ import {
 	type CompactRangeWindowInfo,
 	commitAgentPlan,
 	commitAgentPlanFromWorkbook,
+	compactAgentCommitResult,
 	compactAgentPlanResult,
 	createAgentPlan,
 	createAgentPlanFromWorkbook,
@@ -1458,6 +1459,10 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 				.union([z.string(), z.array(z.string())])
 				.optional()
 				.describe('Approve explicit plan approval ids or "all"'),
+			compact: z
+				.boolean()
+				.optional()
+				.describe('Return compact commit verification counts instead of full trace artifacts'),
 		},
 		async ({
 			file,
@@ -1470,6 +1475,7 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 			expectSha256,
 			allowLoss,
 			approvals,
+			compact,
 		}) => {
 			try {
 				const options: AgentCommitOptions = {
@@ -1484,8 +1490,9 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 					const prepared = preparedPlans.take(planHandle)
 					if (!prepared) return errorResponse('Prepared plan handle was not found')
 					const result = await prepared.commit(options)
+					const payload = compact ? compactAgentCommitResult(result) : result
 					return okResponse(
-						withPathMutationResult(result, prepared.pathMutations),
+						withPathMutationResult(payload, prepared.pathMutations),
 						`Committed ${result.operationCount} operation(s)`,
 					)
 				}
@@ -1509,8 +1516,9 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 					input = inputShape
 					result = await commitAgentPlan(file, input.ops, options)
 				}
+				const payload = compact ? compactAgentCommitResult(result) : result
 				return okResponse(
-					withPathMutationResult(result, pathMutations),
+					withPathMutationResult(payload, pathMutations),
 					`Committed ${input.ops.length} operation(s)`,
 				)
 			} catch (e) {

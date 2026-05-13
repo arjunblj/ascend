@@ -110,6 +110,114 @@ export interface AgentCommitResult {
 	readonly packageGraphAudit: PackageGraphAudit
 }
 
+export interface CompactAgentCommitResult
+	extends Pick<
+		AgentCommitResult,
+		| 'file'
+		| 'output'
+		| 'backup'
+		| 'inputSha256'
+		| 'outputSha256'
+		| 'planDigest'
+		| 'operationCount'
+		| 'approvals'
+		| 'modelOutput'
+	> {
+	readonly trace: CompactAgentTraceSummary
+	readonly apply: CompactApplySummary
+	readonly recalc: CompactRecalcSummary
+	readonly check: CompactCheckSummary
+	readonly lint: CompactLintSummary
+	readonly preservation: CompactWritePlanSummary
+	readonly writePolicy: CompactWritePolicySummary
+	readonly postWrite: CompactAgentPostWriteVerification
+	readonly lossAudit: CompactLossAuditSummary
+	readonly packageGraphAudit: CompactPackageGraphAuditSummary
+}
+
+export interface CompactAgentTraceSummary {
+	readonly kind: AgentWorkflowTrace['kind']
+	readonly file: string
+	readonly inputSha256: string
+	readonly outputSha256?: string
+	readonly planDigest?: string
+	readonly traceDigest: string
+	readonly phaseCount: number
+	readonly warningCount: number
+	readonly blockedCount: number
+	readonly failedCount: number
+	readonly artifactCount: number
+	readonly phases: readonly AgentTracePhase[]
+}
+
+export interface CompactApplySummary {
+	readonly applied: boolean
+	readonly affectedCellCount: number
+	readonly recalcRequired: boolean
+	readonly warningCount: number
+	readonly errorCount: number
+}
+
+export interface CompactRecalcSummary {
+	readonly required: boolean
+	readonly changedCellCount: number
+	readonly errorCount: number
+	readonly durationMs: number | null
+}
+
+export interface CompactCheckSummary {
+	readonly valid: boolean
+	readonly issueCount: number
+	readonly errorCount: number
+	readonly warningCount: number
+	readonly infoCount: number
+}
+
+export interface CompactLintSummary {
+	readonly clean: boolean
+	readonly warningCount: number
+}
+
+export interface CompactWritePlanSummary {
+	readonly totalParts: number
+	readonly byOrigin: ReturnType<AscendWorkbook['writePlanSummary']>['byOrigin']
+	readonly skippedCapsuleCount: number
+}
+
+export interface CompactWritePolicySummary {
+	readonly ok: boolean
+	readonly diagnosticCount: number
+	readonly blockerCount: number
+	readonly warningCount: number
+	readonly summary: WritePolicyReport['summary']
+}
+
+export interface CompactAgentPostWriteVerification {
+	readonly valid: boolean
+	readonly output: string
+	readonly outputSha256: string
+	readonly reopened: true
+	readonly timings?: AgentPostWriteVerificationTimings
+	readonly check: CompactCheckSummary
+	readonly lint: CompactLintSummary
+	readonly preservation: CompactWritePlanSummary
+	readonly packageGraphAudit: CompactPackageGraphAuditSummary
+}
+
+export interface CompactLossAuditSummary {
+	readonly ok: boolean
+	readonly blockedFeatureCount: number
+	readonly blockedPackagePartCount: number
+	readonly allowedLoss: readonly string[] | 'all'
+	readonly policy: LossAudit['policy']
+}
+
+export interface CompactPackageGraphAuditSummary {
+	readonly ok: boolean
+	readonly issueCount: number
+	readonly policy: PackageGraphAudit['policy']
+}
+
 export interface AgentPostWriteVerification {
 	readonly valid: boolean
 	readonly output: string
@@ -561,6 +669,132 @@ export function compactAgentPlanResult(
 			errors: result.preview.errors,
 		},
 	}
+}
+
+export function compactAgentCommitResult(result: AgentCommitResult): CompactAgentCommitResult {
+	return {
+		file: result.file,
+		output: result.output,
+		...(result.backup ? { backup: result.backup } : {}),
+		inputSha256: result.inputSha256,
+		outputSha256: result.outputSha256,
+		planDigest: result.planDigest,
+		operationCount: result.operationCount,
+		approvals: result.approvals,
+		trace: compactTraceSummary(result.trace),
+		modelOutput: result.modelOutput,
+		apply: {
+			applied: result.apply.errors.length === 0,
+			affectedCellCount: result.apply.affectedCells.length,
+			recalcRequired: result.apply.recalcRequired,
+			warningCount: result.apply.warnings?.length ?? 0,
+			errorCount: result.apply.errors.length,
+		},
+		recalc: {
+			required: result.recalc !== null,
+			changedCellCount: result.recalc?.changed.length ?? 0,
+			errorCount: result.recalc?.errors.length ?? 0,
+			durationMs: result.recalc?.duration ?? null,
+		},
+		check: compactCheckSummary(result.check),
+		lint: compactLintSummary(result.lint),
+		preservation: compactWritePlanSummary(result.preservation),
+		writePolicy: compactWritePolicySummary(result.writePolicy),
+		postWrite: compactPostWriteVerification(result.postWrite),
+		lossAudit: compactLossAuditSummary(result.lossAudit),
+		packageGraphAudit: compactPackageGraphAuditSummary(result.packageGraphAudit),
+	}
+}
+
+function compactTraceSummary(trace: AgentWorkflowTrace): CompactAgentTraceSummary {
+	return {
+		kind: trace.kind,
+		file: trace.file,
+		inputSha256: trace.inputSha256,
+		...(trace.outputSha256 ? { outputSha256: trace.outputSha256 } : {}),
+		...(trace.planDigest ? { planDigest: trace.planDigest } : {}),
+		traceDigest: trace.traceDigest,
+		phaseCount: trace.phases.length,
+		warningCount: trace.phases.filter((phase) => phase.status === 'warning').length,
+		blockedCount: trace.phases.filter((phase) => phase.status === 'blocked').length,
+		failedCount: trace.phases.filter((phase) => phase.status === 'failed').length,
+		artifactCount: trace.artifacts.length,
+		phases: trace.phases.map(({ phase, status, summary, count, refs }) => ({
+			phase,
+			status,
+			summary,
+			...(count !== undefined ? { count } : {}),
+			...(refs ? { refs } : {}),
+		})),
+	}
+}
+
+function compactCheckSummary(check: ReturnType<AscendWorkbook['check']>): CompactCheckSummary {
+	return {
+		valid: check.valid,
+		issueCount: check.issues.length,
+		errorCount: check.issues.filter((issue) => issue.severity === 'error').length,
+		warningCount: check.issues.filter((issue) => issue.severity === 'warning').length,
+		infoCount: check.issues.filter((issue) => issue.severity === 'info').length,
+	}
+}
+
+function compactLintSummary(lint: ReturnType<AscendWorkbook['lint']>): CompactLintSummary {
+	return { clean: lint.clean, warningCount: lint.warnings.length }
+}
+
+function compactWritePlanSummary(
+	preservation: ReturnType<AscendWorkbook['writePlanSummary']>,
+): CompactWritePlanSummary {
+	return {
+		totalParts: preservation.totalParts,
+		byOrigin: preservation.byOrigin,
+		skippedCapsuleCount: preservation.skippedCapsules.length,
+	}
+}
+
+function compactWritePolicySummary(writePolicy: WritePolicyReport): CompactWritePolicySummary {
+	return {
+		ok: writePolicy.ok,
+		diagnosticCount: writePolicy.diagnostics.length,
+		blockerCount: writePolicy.diagnostics.filter((diagnostic) => diagnostic.severity === 'blocker')
+			.length,
+		warningCount: writePolicy.diagnostics.filter((diagnostic) => diagnostic.severity === 'warning')
+			.length,
+		summary: writePolicy.summary,
+	}
+}
+
+function compactPostWriteVerification(
+	postWrite: AgentPostWriteVerification,
+): CompactAgentPostWriteVerification {
+	return {
+		valid: postWrite.valid,
+		output: postWrite.output,
+		outputSha256: postWrite.outputSha256,
+		reopened: postWrite.reopened,
+		...(postWrite.timings ? { timings: postWrite.timings } : {}),
+		check: compactCheckSummary(postWrite.check),
+		lint: compactLintSummary(postWrite.lint),
+		preservation: compactWritePlanSummary(postWrite.preservation),
+		packageGraphAudit: compactPackageGraphAuditSummary(postWrite.packageGraphAudit),
+	}
+}
+
+function compactLossAuditSummary(lossAudit: LossAudit): CompactLossAuditSummary {
+	return {
+		ok: lossAudit.ok,
+		blockedFeatureCount: lossAudit.blockedFeatures.length,
+		blockedPackagePartCount: lossAudit.blockedPackageParts.length,
+		allowedLoss: lossAudit.allowedLoss,
+		policy: lossAudit.policy,
+	}
+}
+
+function compactPackageGraphAuditSummary(
+	audit: PackageGraphAudit,
+): CompactPackageGraphAuditSummary {
+	return { ok: audit.ok, issueCount: audit.issues.length, policy: audit.policy }
 }
 
 async function resolveCommitOutputTarget(

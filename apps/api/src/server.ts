@@ -15,6 +15,7 @@ import {
 	type CompactRangeWindowInfo,
 	commitAgentPlan,
 	commitAgentPlanFromWorkbook,
+	compactAgentCommitResult,
 	compactAgentPlanResult,
 	createAgentPlan,
 	createAgentPlanFromWorkbook,
@@ -1025,6 +1026,7 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 					const approvals = body
 						? parseApprovals((body as Record<string, unknown>).approvals)
 						: undefined
+					const compact = body?.compact === true
 					const inPlace =
 						body !== null &&
 						typeof body === 'object' &&
@@ -1048,7 +1050,8 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 							)
 						}
 						const result = await prepared.commit(options)
-						return jsonSuccess(withPathMutationResult(result, prepared.pathMutations))
+						const payload = compact ? compactAgentCommitResult(result) : result
+						return jsonSuccess(withPathMutationResult(payload, prepared.pathMutations))
 					}
 					const inputShape = resolveOperationInputShape(body)
 					if (!inputShape.ok) return jsonFailureError(inputShape.error, 400)
@@ -1071,7 +1074,8 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 						if (!file) return jsonFailure('Missing or invalid file', 400)
 						result = await commitAgentPlan(file, input.ops, options)
 					}
-					return jsonSuccess(withPathMutationResult(result, pathMutations))
+					const payload = compact ? compactAgentCommitResult(result) : result
+					return jsonSuccess(withPathMutationResult(payload, pathMutations))
 				} catch (e) {
 					return handleError(e, file ?? undefined)
 				}

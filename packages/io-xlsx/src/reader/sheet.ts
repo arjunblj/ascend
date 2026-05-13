@@ -3080,6 +3080,22 @@ function parseCanonicalFullScalarCell(
 	out.formulaText = null
 	out.styleIdx = 0
 
+	const compactInlineValueStart = parseCompactCanonicalInlineStringValueStart(xml, cursor)
+	if (compactInlineValueStart !== -1) {
+		let valueEnd = compactInlineValueStart
+		let hasEntity = false
+		while (valueEnd < bodyEnd) {
+			const code = xml.charCodeAt(valueEnd)
+			if (code === 60) break
+			if (code === 38) hasEntity = true
+			valueEnd += 1
+		}
+		if (!xml.startsWith('</t></is></c>', valueEnd)) return -1
+		const rawText = xml.slice(compactInlineValueStart, valueEnd)
+		out.stringValue = hasEntity ? decodeXmlText(rawText) : rawText
+		return valueEnd + 13
+	}
+
 	const inlineValueStart = parseCanonicalInlineStringValueStart(xml, attrsEnd)
 	if (inlineValueStart !== -1) {
 		let valueEnd = inlineValueStart
@@ -3313,6 +3329,11 @@ function parseCanonicalValuesCell(
 function parseCanonicalInlineStringValueStart(xml: string, refEnd: number): number {
 	const prefix = '" t="inlineStr"><is><t>'
 	return xml.startsWith(prefix, refEnd) ? refEnd + prefix.length : -1
+}
+
+function parseCompactCanonicalInlineStringValueStart(xml: string, cellStart: number): number {
+	const prefix = '<c t="inlineStr"><is><t>'
+	return xml.startsWith(prefix, cellStart) ? cellStart + prefix.length : -1
 }
 
 function resolveCanonicalNumberContentStart(xml: string, refEnd: number, bodyEnd: number): number {

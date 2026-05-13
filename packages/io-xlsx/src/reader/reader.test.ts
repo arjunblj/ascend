@@ -140,6 +140,31 @@ describe('readXlsx', () => {
 		expect(report.status).toBe('clean')
 	})
 
+	it('parses compact inline strings without explicit cell refs', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': CONTENT_TYPES,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': WORKBOOK_RELS,
+			'xl/workbook.xml': WORKBOOK_XML,
+			'xl/sharedStrings.xml': SHARED_STRINGS,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    <row r="1"><c t="inlineStr"><is><t>alpha</t></is></c><c><v>42</v></c></row>
+    <row r="2"><c t="inlineStr"><is><t>A&amp;B</t></is></c><c><v>84</v></c></row>
+  </sheetData>
+</worksheet>`,
+		})
+
+		const result = readXlsx(bytes)
+		expectOk(result)
+		const sheet = result.value.workbook.sheets[0]
+		expect(sheet?.cells.get(0, 0)?.value).toEqual(stringValue('alpha'))
+		expect(sheet?.cells.get(0, 1)?.value).toEqual(numberValue(42))
+		expect(sheet?.cells.get(1, 0)?.value).toEqual(stringValue('A&B'))
+		expect(sheet?.cells.get(1, 1)?.value).toEqual(numberValue(84))
+	})
+
 	it('parses XML-legal single-quoted worksheet attributes', () => {
 		const bytes = makeXlsx({
 			'[Content_Types].xml': CONTENT_TYPES,

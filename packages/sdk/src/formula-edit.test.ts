@@ -2,6 +2,8 @@ import { describe, expect, test } from 'bun:test'
 import {
 	cycleFormulaReferenceMode,
 	formulaDiagnostics,
+	formulaFunctionCompletions,
+	formulaFunctionSignature,
 	formulaTokenRanges,
 	insertFormulaReference,
 	referenceAtCursor,
@@ -137,6 +139,39 @@ describe('formula editing utilities', () => {
 				},
 			],
 		})
+	})
+
+	test('exposes function completions and generic signature help from the registry', () => {
+		expect(formulaFunctionCompletions('xlo', { limit: 5 }).map((entry) => entry.name)).toEqual([
+			'XLOOKUP',
+		])
+		expect(formulaFunctionSignature('if')).toEqual({
+			name: 'IF',
+			minArgs: 2,
+			maxArgs: 3,
+			volatile: false,
+			label: 'IF(arg1, arg2, [arg3])',
+			parameters: [
+				{ label: 'arg1', index: 0, required: true },
+				{ label: 'arg2', index: 1, required: true },
+				{ label: 'arg3', index: 2, required: false },
+			],
+			variadic: false,
+		})
+		expect(formulaFunctionSignature('RAND')).toMatchObject({
+			label: 'RAND()',
+			volatile: true,
+			parameters: [],
+			variadic: false,
+		})
+		expect(formulaFunctionSignature('SUM')).toMatchObject({
+			label: 'SUM(arg1, [arg2], ...)',
+			variadic: true,
+		})
+		expect(formulaFunctionCompletions('sum', { limit: 2 })).toEqual([
+			expect.objectContaining({ name: 'SUM' }),
+			expect.objectContaining({ name: 'SUMIF' }),
+		])
 	})
 
 	test('exposes token ranges with syntax classes for highlighting', () => {

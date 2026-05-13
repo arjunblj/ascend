@@ -1,4 +1,6 @@
 import {
+	type FunctionDef,
+	functionRegistry,
 	normalizeFormulaInput,
 	parseFormula,
 	type Token,
@@ -59,6 +61,34 @@ export interface FormulaDiagnostic {
 export interface FormulaDiagnosticsResult {
 	readonly parseOk: boolean
 	readonly diagnostics: readonly FormulaDiagnostic[]
+}
+
+export interface FormulaSignatureParameter {
+	readonly label: string
+	readonly index: number
+	readonly required: boolean
+}
+
+export interface FormulaFunctionSignature {
+	readonly name: string
+	readonly minArgs: number
+	readonly maxArgs: number
+	readonly volatile: boolean
+	readonly label: string
+	readonly parameters: readonly FormulaSignatureParameter[]
+	readonly variadic: boolean
+}
+
+export interface FormulaFunctionCompletion {
+	readonly name: string
+	readonly minArgs: number
+	readonly maxArgs: number
+	readonly volatile: boolean
+	readonly signature: FormulaFunctionSignature
+}
+
+export interface FormulaFunctionCompletionOptions {
+	readonly limit?: number
 }
 
 interface TokenSpan {
@@ -134,6 +164,31 @@ export function insertFormulaReference(
 		inserted: reference,
 		...(replaced ? { replaced } : {}),
 	}
+}
+
+export function formulaFunctionSignature(name: string): FormulaFunctionSignature | null {
+	const def = functionRegistry.get(name.toUpperCase())
+	return def ? buildFormulaFunctionSignature(def) : null
+}
+
+export function formulaFunctionCompletions(
+	prefix = '',
+	options: FormulaFunctionCompletionOptions = {},
+): FormulaFunctionCompletion[] {
+	const normalizedPrefix = prefix.toUpperCase()
+	const limit = Math.max(0, Math.floor(options.limit ?? 50))
+	if (limit === 0) return []
+	return Array.from(functionRegistry.values())
+		.filter((def) => def.name.startsWith(normalizedPrefix))
+		.sort((left, right) => left.name.localeCompare(right.name))
+		.slice(0, limit)
+		.map((def) => ({
+			name: def.name,
+			minArgs: def.minArgs,
+			maxArgs: def.maxArgs,
+			volatile: def.volatile === true,
+			signature: buildFormulaFunctionSignature(def),
+		}))
 }
 
 export function formulaDiagnostics(formula: string): FormulaDiagnosticsResult {
@@ -290,6 +345,35 @@ function cycleA1Reference(ref: string): string {
 	if (colAbs && rowAbs) return `${col.toUpperCase()}$${row}`
 	if (!colAbs && rowAbs) return `$${col.toUpperCase()}${row}`
 	return `${col.toUpperCase()}${row}`
+}
+
+function buildFormulaFunctionSignature(def: FunctionDef): FormulaFunctionSignature {
+	const showAllOptional = def.maxArgs - def.minArgs <= 3
+	const shownOptionalCount = showAllOptional
+		? def.maxArgs - def.minArgs
+		: def.maxArgs > def.minArgs
+			? 1
+			: 0
+	const shownCount = def.minArgs + shownOptionalCount
+	const parameters: FormulaSignatureParameter[] = []
+	const labels: string[] = []
+	for (let index = 0; index < shownCount; index++) {
+		const required = index < def.minArgs
+		const label = `arg${index + 1}`
+		parameters.push({ label, index, required })
+		labels.push(required ? label : `[${label}]`)
+	}
+	const variadic = shownCount < def.maxArgs
+	if (variadic) labels.push('...')
+	return {
+		name: def.name,
+		minArgs: def.minArgs,
+		maxArgs: def.maxArgs,
+		volatile: def.volatile === true,
+		label: `${def.name}(${labels.join(', ')})`,
+		parameters,
+		variadic,
+	}
 }
 
 function parseDiagnosticPosition(message: string): number | null {

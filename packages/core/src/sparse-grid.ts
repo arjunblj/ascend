@@ -1390,7 +1390,7 @@ export class SparseGrid {
 		const cols = this._lastWriteCols as Map<number, GridChunk>
 		chunk = this.ensureChunkWritable(chunkRow, chunkCol, cols, chunk)
 		const existed = chunk.has(localIndex)
-		const oldSlot = chunk.getSlot(localIndex)
+		const oldSlot = existed ? chunk.getSlot(localIndex) : undefined
 		const hadFormula = existed && slotHasFormula(oldSlot)
 		const hadFormulaInfo = oldSlot?.formulaInfo !== undefined
 		const previousSharedStringKind = sharedStringKindFromSlot(oldSlot)
@@ -1432,7 +1432,7 @@ export class SparseGrid {
 		const cols = this._lastWriteCols as Map<number, GridChunk>
 		chunk = this.ensureChunkWritable(chunkRow, chunkCol, cols, chunk)
 		const existed = chunk.has(localIndex)
-		const oldSlot = chunk.getSlot(localIndex)
+		const oldSlot = existed ? chunk.getSlot(localIndex) : undefined
 		const hadFormula = existed && slotHasFormula(oldSlot)
 		const hadFormulaInfo = oldSlot?.formulaInfo !== undefined
 		const previousSharedStringKind = sharedStringKindFromSlot(oldSlot)
@@ -1528,7 +1528,7 @@ export class SparseGrid {
 		const cols = this._lastWriteCols as Map<number, GridChunk>
 		chunk = this.ensureChunkWritable(chunkRow, chunkCol, cols, chunk)
 		const existed = chunk.has(localIndex)
-		const oldSlot = chunk.getSlot(localIndex)
+		const oldSlot = existed ? chunk.getSlot(localIndex) : undefined
 		const hadFormula = existed && slotHasFormula(oldSlot)
 		const hadFormulaInfo = oldSlot?.formulaInfo !== undefined
 		const previousSharedStringKind = sharedStringKindFromSlot(oldSlot)

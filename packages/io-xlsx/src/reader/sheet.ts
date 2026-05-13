@@ -2987,7 +2987,9 @@ function parseSimpleFullScalarRow(
 		} else if (out.sharedStringIndex >= 0) {
 			const text = ctx.sharedStrings.getString?.(out.sharedStringIndex)
 			if (text !== undefined) {
-				sheet.cells.setStringResolved(out.row, out.col, text, formula, styleId)
+				if (formula === null && styleId === DEFAULT_STYLE_ID) {
+					sheet.cells.setPlainString(out.row, out.col, text)
+				} else sheet.cells.setStringResolved(out.row, out.col, text, formula, styleId)
 			} else {
 				sheet.cells.setResolved(
 					out.row,

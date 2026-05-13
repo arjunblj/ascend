@@ -470,6 +470,113 @@ describe('interactive client contract', () => {
 		session.close()
 	})
 
+	test('interactive viewport tokens from other sessions refreshes and retained-log gaps force fresh reads', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] }])
+		const bytes = wb.toBytes()
+
+		const session = await AscendSession.open(bytes, { mode: 'interactive' })
+		const base = session.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 1,
+		})
+		const other = await AscendSession.open(bytes, { mode: 'interactive' })
+		try {
+			const crossSession = other.readViewport({
+				sheet: 'Sheet1',
+				topRow: 0,
+				leftCol: 0,
+				rowCount: 1,
+				colCount: 1,
+				changedSince: base.changeToken,
+			})
+			expect(crossSession.cells[0]?.flatValue).toBe(1)
+			expect(crossSession.patch).toBeUndefined()
+			expect(
+				other.readViewportPatch({
+					sheet: 'Sheet1',
+					topRow: 0,
+					leftCol: 0,
+					rowCount: 1,
+					colCount: 1,
+					changedSince: base.changeToken,
+				}),
+			).toBeNull()
+		} finally {
+			other.close()
+		}
+
+		const edit = await session.apply([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 2 }] },
+		])
+		expect(edit.apply.errors).toEqual([])
+		const changed = session.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 1,
+			changedSince: base.changeToken,
+		})
+		expect(changed.patch?.changedCells.map((cell) => [cell.ref, cell.flatValue])).toEqual([
+			['A1', 2],
+		])
+
+		await session.refresh()
+		const afterRefresh = session.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 1,
+			changedSince: changed.changeToken,
+		})
+		expect(afterRefresh.patch).toBeUndefined()
+		session.close()
+
+		const expiring = await AscendSession.open(bytes, { mode: 'interactive' })
+		try {
+			const beforeGap = expiring.readViewport({
+				sheet: 'Sheet1',
+				topRow: 0,
+				leftCol: 0,
+				rowCount: 1,
+				colCount: 1,
+			})
+			for (let i = 0; i < 130; i++) {
+				const gapEdit = await expiring.apply([
+					{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: i + 2 }] },
+				])
+				expect(gapEdit.apply.errors).toEqual([])
+			}
+			expect(
+				expiring.readViewportPatch({
+					sheet: 'Sheet1',
+					topRow: 0,
+					leftCol: 0,
+					rowCount: 1,
+					colCount: 1,
+					changedSince: beforeGap.changeToken,
+				}),
+			).toBeNull()
+			const afterGap = expiring.readViewport({
+				sheet: 'Sheet1',
+				topRow: 0,
+				leftCol: 0,
+				rowCount: 1,
+				colCount: 1,
+				changedSince: beforeGap.changeToken,
+			})
+			expect(afterGap.cells[0]?.flatValue).toBe(131)
+			expect(afterGap.patch).toBeUndefined()
+		} finally {
+			expiring.close()
+		}
+	})
+
 	test('interactive pull patches refuse metadata and layout edits that need fresh viewport state', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] }])

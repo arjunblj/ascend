@@ -144,6 +144,8 @@ interface ApiEnvelope {
 				readonly partialReasons?: readonly string[]
 			}
 			readonly supportedPathShapes?: readonly string[]
+			readonly planHandle?: string
+			readonly reason?: string
 			readonly unsupportedLoadOptions?: readonly string[]
 			readonly requiredLoad?: {
 				readonly mode?: string
@@ -1343,6 +1345,12 @@ describe('Ascend API server', () => {
 			})
 			expect(reused.status).toBe(400)
 			expect(reused.body.error?.code).toBe('VALIDATION_ERROR')
+			expect(reused.body.error?.message).toBe('Prepared plan handle has already been used')
+			expect(reused.body.error?.details).toMatchObject({
+				rule: 'prepared-plan-handle-unavailable',
+				reason: 'already-used',
+				planHandle: plan.body.data?.preparedPlan?.id,
+			})
 		} finally {
 			await unlink(output).catch(() => {})
 			await unlink(`${output}.reuse.xlsx`).catch(() => {})
@@ -1391,7 +1399,44 @@ describe('Ascend API server', () => {
 		})
 		expect(commit.status).toBe(400)
 		expect(commit.body.error?.code).toBe('VALIDATION_ERROR')
+		expect(commit.body.error?.message).toBe('Prepared plan handle expired')
+		expect(commit.body.error?.details).toMatchObject({
+			rule: 'prepared-plan-handle-unavailable',
+			reason: 'expired',
+			planHandle: plan.body.data?.preparedPlan?.id,
+		})
 		await unlink(`${OUTPUT_FILE}.expired.xlsx`).catch(() => {})
+	})
+
+	test('prepared plan handle eviction is structured', async () => {
+		const wb = AscendWorkbook.create()
+		await wb.save(TEMP_FILE)
+		const apiFetch = createApiFetch({ preparedPlanMaxHandles: 1 })
+
+		const first = await postApiFetch(apiFetch, '/plan', {
+			file: TEMP_FILE,
+			mutations: [{ path: '/sheets/Sheet1/cells/A1/value', value: 1 }],
+		})
+		const second = await postApiFetch(apiFetch, '/plan', {
+			file: TEMP_FILE,
+			mutations: [{ path: '/sheets/Sheet1/cells/A1/value', value: 2 }],
+		})
+		expect(first.body.data?.preparedPlan?.id).toBeString()
+		expect(second.body.data?.preparedPlan?.id).toBeString()
+
+		const evicted = await postApiFetch(apiFetch, '/commit', {
+			planHandle: first.body.data?.preparedPlan?.id,
+			output: `${OUTPUT_FILE}.evicted.xlsx`,
+			approvals: [],
+		})
+		expect(evicted.status).toBe(400)
+		expect(evicted.body.error?.message).toBe('Prepared plan handle was evicted')
+		expect(evicted.body.error?.details).toMatchObject({
+			rule: 'prepared-plan-handle-unavailable',
+			reason: 'evicted',
+			planHandle: first.body.data?.preparedPlan?.id,
+		})
+		await unlink(`${OUTPUT_FILE}.evicted.xlsx`).catch(() => {})
 	})
 })
 

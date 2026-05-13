@@ -1174,6 +1174,10 @@ describe('MCP server', () => {
 			}) => Promise<{
 				structuredContent?: {
 					ok?: boolean
+					error?: {
+						message?: string
+						details?: { rule?: string; reason?: string; planHandle?: string }
+					}
 					data?: {
 						pathMutations?: { ops?: unknown[] }
 						apply?: { affectedCellCount?: number }
@@ -1239,6 +1243,14 @@ describe('MCP server', () => {
 				approvals: [],
 			})
 			expect(reused.structuredContent?.ok).toBe(false)
+			expect(reused.structuredContent?.error?.message).toBe(
+				'Prepared plan handle has already been used',
+			)
+			expect(reused.structuredContent?.error?.details).toMatchObject({
+				rule: 'prepared-plan-handle-unavailable',
+				reason: 'already-used',
+				planHandle: planned.structuredContent?.data?.preparedPlan?.id,
+			})
 		} finally {
 			await unlink(output).catch(() => {})
 			await unlink(`${output}.reuse.xlsx`).catch(() => {})
@@ -1298,7 +1310,15 @@ describe('MCP server', () => {
 				planHandle?: string
 				output?: string
 				approvals?: string[]
-			}) => Promise<{ structuredContent?: { ok?: boolean } }>
+			}) => Promise<{
+				structuredContent?: {
+					ok?: boolean
+					error?: {
+						message?: string
+						details?: { rule?: string; reason?: string; planHandle?: string }
+					}
+				}
+			}>
 
 			const first = await plan({
 				file: TEMP_FILE,
@@ -1317,6 +1337,12 @@ describe('MCP server', () => {
 				approvals: [],
 			})
 			expect(evicted.structuredContent?.ok).toBe(false)
+			expect(evicted.structuredContent?.error?.message).toBe('Prepared plan handle was evicted')
+			expect(evicted.structuredContent?.error?.details).toMatchObject({
+				rule: 'prepared-plan-handle-unavailable',
+				reason: 'evicted',
+				planHandle: first.structuredContent?.data?.preparedPlan?.id,
+			})
 
 			const committed = await commit({
 				planHandle: second.structuredContent?.data?.preparedPlan?.id,
@@ -1330,6 +1356,57 @@ describe('MCP server', () => {
 			await unlink(output).catch(() => {})
 			await unlink(`${output}.evicted.xlsx`).catch(() => {})
 		}
+	})
+
+	test('prepared MCP plan handles expire with structured reason metadata', async () => {
+		const wb = AscendWorkbook.create()
+		await wb.save(TEMP_FILE)
+		let now = 1_000
+		const server = createServer({ preparedPlanTtlMs: 10, now: () => now })
+
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const plan = (server as any)._registeredTools['ascend.plan'].handler as (args: {
+			file: string
+			mutations: Array<{ path: string; value?: unknown }>
+		}) => Promise<{
+			structuredContent?: { data?: { preparedPlan?: { id?: string; ttlMs?: number } } }
+		}>
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const commit = (server as any)._registeredTools['ascend.commit'].handler as (args: {
+			planHandle?: string
+			output?: string
+			approvals?: string[]
+		}) => Promise<{
+			structuredContent?: {
+				ok?: boolean
+				error?: {
+					message?: string
+					details?: { rule?: string; reason?: string; planHandle?: string }
+				}
+			}
+		}>
+
+		const planned = await plan({
+			file: TEMP_FILE,
+			mutations: [{ path: '/sheets/Sheet1/cells/A1/value', value: 9 }],
+		})
+		expect(planned.structuredContent?.data?.preparedPlan?.id).toBeString()
+		expect(planned.structuredContent?.data?.preparedPlan?.ttlMs).toBe(10)
+
+		now += 11
+		const expired = await commit({
+			planHandle: planned.structuredContent?.data?.preparedPlan?.id,
+			output: `${TEMP_FILE}.expired-prepared-mcp.xlsx`,
+			approvals: [],
+		})
+		expect(expired.structuredContent?.ok).toBe(false)
+		expect(expired.structuredContent?.error?.message).toBe('Prepared plan handle expired')
+		expect(expired.structuredContent?.error?.details).toMatchObject({
+			rule: 'prepared-plan-handle-unavailable',
+			reason: 'expired',
+			planHandle: planned.structuredContent?.data?.preparedPlan?.id,
+		})
+		await unlink(`${TEMP_FILE}.expired-prepared-mcp.xlsx`).catch(() => {})
 	})
 
 	test('malformed path mutations block MCP preview, write, and commit consistently', async () => {

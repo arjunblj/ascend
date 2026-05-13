@@ -170,6 +170,12 @@ interface PreparedPlanRecord {
 	readonly expiresAtMs: number
 }
 
+type PreparedPlanUnavailableReason = 'expired' | 'evicted' | 'already-used' | 'unknown'
+
+type PreparedPlanTakeResult =
+	| { readonly ok: true; readonly handle: PreparedPlanHandle }
+	| { readonly ok: false; readonly error: AscendError }
+
 const DEFAULT_PREPARED_PLAN_MAX_HANDLES = 64
 const DEFAULT_PREPARED_PLAN_TTL_MS = 5 * 60 * 1000
 
@@ -180,6 +186,7 @@ function positiveIntegerOption(value: number | undefined, fallback: number): num
 
 class PreparedPlanStore {
 	private readonly handles = new Map<string, PreparedPlanRecord>()
+	private readonly unavailableReasons = new Map<string, PreparedPlanUnavailableReason>()
 	private readonly maxHandles: number
 	private readonly ttlMs: number
 	private readonly now: () => number
@@ -199,6 +206,7 @@ class PreparedPlanStore {
 			const oldest = this.handles.keys().next().value
 			if (oldest === undefined) break
 			this.handles.delete(oldest)
+			this.rememberUnavailable(oldest, 'evicted')
 		}
 		const id = randomUUID()
 		const expiresAtMs = this.now() + this.ttlMs
@@ -206,20 +214,64 @@ class PreparedPlanStore {
 		return { id, expiresAt: new Date(expiresAtMs).toISOString(), ttlMs: this.ttlMs }
 	}
 
-	take(id: string): PreparedPlanHandle | null {
-		this.pruneExpired()
+	take(id: string): PreparedPlanTakeResult {
 		const record = this.handles.get(id)
-		if (!record) return null
+		if (!record) {
+			this.pruneExpired()
+			return { ok: false, error: preparedPlanUnavailableError(id, this.unavailableReason(id)) }
+		}
+		if (record.expiresAtMs <= this.now()) {
+			this.handles.delete(id)
+			this.rememberUnavailable(id, 'expired')
+			return { ok: false, error: preparedPlanUnavailableError(id, 'expired') }
+		}
 		this.handles.delete(id)
-		return record.handle
+		this.rememberUnavailable(id, 'already-used')
+		return { ok: true, handle: record.handle }
 	}
 
 	private pruneExpired(): void {
 		const now = this.now()
 		for (const [id, record] of this.handles) {
-			if (record.expiresAtMs <= now) this.handles.delete(id)
+			if (record.expiresAtMs <= now) {
+				this.handles.delete(id)
+				this.rememberUnavailable(id, 'expired')
+			}
 		}
 	}
+
+	private unavailableReason(id: string): PreparedPlanUnavailableReason {
+		return this.unavailableReasons.get(id) ?? 'unknown'
+	}
+
+	private rememberUnavailable(id: string, reason: PreparedPlanUnavailableReason): void {
+		this.unavailableReasons.set(id, reason)
+		while (this.unavailableReasons.size > this.maxHandles * 2) {
+			const oldest = this.unavailableReasons.keys().next().value
+			if (oldest === undefined) break
+			this.unavailableReasons.delete(oldest)
+		}
+	}
+}
+
+function preparedPlanUnavailableError(
+	planHandle: string,
+	reason: PreparedPlanUnavailableReason,
+): AscendError {
+	const messages: Record<PreparedPlanUnavailableReason, string> = {
+		expired: 'Prepared plan handle expired',
+		evicted: 'Prepared plan handle was evicted',
+		'already-used': 'Prepared plan handle has already been used',
+		unknown: 'Prepared plan handle was not found',
+	}
+	return ascendError('VALIDATION_ERROR', messages[reason], {
+		details: {
+			rule: 'prepared-plan-handle-unavailable',
+			reason,
+			planHandle,
+		},
+		suggestedFix: 'Re-run ascend plan with prepare=true before committing.',
+	})
 }
 
 function resolveOperationInputForWorkbook(
@@ -1046,17 +1098,10 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 					}
 					if (planHandle) {
 						const prepared = preparedPlans.take(planHandle)
-						if (!prepared) {
-							return jsonFailureError(
-								ascendError('VALIDATION_ERROR', 'Prepared plan handle was not found', {
-									suggestedFix: 'Re-run ascend plan with prepare=true before committing.',
-								}),
-								400,
-							)
-						}
-						const result = await prepared.commit(options)
+						if (!prepared.ok) return jsonFailureError(prepared.error, 400)
+						const result = await prepared.handle.commit(options)
 						const payload = compact ? compactAgentCommitResult(result) : result
-						return jsonSuccess(withPathMutationResult(payload, prepared.pathMutations))
+						return jsonSuccess(withPathMutationResult(payload, prepared.handle.pathMutations))
 					}
 					const inputShape = resolveOperationInputShape(body)
 					if (!inputShape.ok) return jsonFailureError(inputShape.error, 400)

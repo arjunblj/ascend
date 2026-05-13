@@ -835,6 +835,88 @@ function buildSdkDefinedNameEditWorkbook(nameCount: number): Workbook {
 	return workbook
 }
 
+function createRealDenseReadMemoryScenario(
+	name: string,
+	readOptions: NonNullable<Parameters<typeof readXlsx>[1]>,
+): Scenario {
+	return {
+		name,
+		category: 'read',
+		build() {
+			const target = realInteractivePatchCorpusTarget('stress-dense-100k')
+			return {
+				rows: target.rowCount,
+				cols: target.colCount,
+				cells: target.rowCount * target.colCount,
+				byteCount: realInteractivePatchCorpusTargetBytes(target).byteLength,
+			}
+		},
+		run() {
+			const target = realInteractivePatchCorpusTarget('stress-dense-100k')
+			const bytes = realInteractivePatchCorpusTargetBytes(target)
+			const archiveFootprint = xlsxArchiveFootprint(bytes)
+			WorkbookDocument.clearCache()
+			runGc()
+			const baseline = phaseMemorySnapshot()
+
+			const readStart = performance.now()
+			const result = readXlsx(bytes, readOptions)
+			const readMs = performance.now() - readStart
+			if (!result.ok) throw new Error(`Dense read failed: ${result.error.message}`)
+			runGc()
+			const afterRead = phaseMemorySnapshot()
+
+			const workbook = result.value.workbook
+			const loadedCells = workbook.sheets.reduce(
+				(total, sheet) => total + sheet.cells.cellCount(),
+				0,
+			)
+			const retainedArrayBuffers = memoryDelta(
+				afterRead.arrayBuffersBytes,
+				baseline.arrayBuffersBytes,
+			)
+
+			return {
+				assertions: {
+					mode: readOptions.mode ?? 'full',
+					richMetadata: readOptions.richMetadata ?? null,
+					bytes: bytes.byteLength,
+					archivePartCount: archiveFootprint.partCount,
+					archiveCompressedBytes: archiveFootprint.compressedBytes,
+					archiveUncompressedBytes: archiveFootprint.uncompressedBytes,
+					archiveWorksheetUncompressedBytes: archiveFootprint.worksheetUncompressedBytes,
+					archiveLargestPartPath: archiveFootprint.largestPartPath,
+					archiveLargestPartCompressedBytes: archiveFootprint.largestPartCompressedBytes,
+					archiveLargestPartUncompressedBytes: archiveFootprint.largestPartUncompressedBytes,
+					readMs,
+					loadMode: result.value.loadInfo.mode,
+					loadIsPartial: result.value.loadInfo.isPartial,
+					cellsHydrated: result.value.loadInfo.cellsHydrated,
+					richSheetMetadataHydrated: result.value.loadInfo.richSheetMetadataHydrated,
+					sheetCount: workbook.sheets.length,
+					loadedCells,
+					capsuleCount: result.value.capsules.length,
+					activeContentCount: workbook.activeContent.length,
+					sourceArchiveBytesRetained: workbook.sourceArchiveBytes?.byteLength ?? 0,
+					baselineRssBytes: baseline.rssBytes,
+					afterReadRssDeltaBytes: memoryDelta(afterRead.rssBytes, baseline.rssBytes),
+					baselineHeapUsedBytes: baseline.heapUsedBytes,
+					afterReadHeapDeltaBytes: memoryDelta(afterRead.heapUsedBytes, baseline.heapUsedBytes),
+					baselineExternalBytes: baseline.externalBytes,
+					afterReadExternalDeltaBytes: memoryDelta(afterRead.externalBytes, baseline.externalBytes),
+					baselineArrayBuffersBytes: baseline.arrayBuffersBytes,
+					afterReadArrayBuffersDeltaBytes: retainedArrayBuffers,
+					arrayBuffersPerLoadedCell: loadedCells > 0 ? retainedArrayBuffers / loadedCells : null,
+					arrayBuffersToArchiveUncompressedRatio:
+						archiveFootprint.uncompressedBytes > 0
+							? retainedArrayBuffers / archiveFootprint.uncompressedBytes
+							: null,
+				},
+			}
+		},
+	}
+}
+
 const scenarios: readonly Scenario[] = [
 	{
 		name: 'write-dense-40k',
@@ -2081,6 +2163,22 @@ const scenarios: readonly Scenario[] = [
 			}
 		},
 	},
+	createRealDenseReadMemoryScenario('real-dense-read-memory-metadata', {
+		mode: 'metadata-only',
+		richMetadata: true,
+	}),
+	createRealDenseReadMemoryScenario('real-dense-read-memory-values', {
+		mode: 'values',
+		richMetadata: true,
+	}),
+	createRealDenseReadMemoryScenario('real-dense-read-memory-formula', {
+		mode: 'formula',
+		richMetadata: true,
+	}),
+	createRealDenseReadMemoryScenario('real-dense-read-memory-full', {
+		mode: 'full',
+		richMetadata: true,
+	}),
 	{
 		name: 'real-dense-promotion-memory',
 		category: 'workflow',
@@ -3403,6 +3501,12 @@ const scenarioSets = {
 	'ui-real-corpus': ['patch-stream-real-corpus-prepared-first-edit'],
 	'real-open': ['real-corpus-open-phases'],
 	'real-memory': ['real-dense-promotion-memory', 'real-dense-prepared-open-memory'],
+	'real-read-memory': [
+		'real-dense-read-memory-metadata',
+		'real-dense-read-memory-values',
+		'real-dense-read-memory-formula',
+		'real-dense-read-memory-full',
+	],
 	'real-readiness': ['real-dense-progressive-readiness'],
 } as const
 

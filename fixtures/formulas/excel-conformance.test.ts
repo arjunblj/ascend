@@ -700,6 +700,21 @@ describe('Excel conformance', () => {
 			)
 		})
 
+		test('XLOOKUP invalid match mode returns #VALUE!', () => {
+			const cells = { A1: 10, B1: 'ten', A2: 20, B2: 'twenty' }
+			expect(evalFormula('XLOOKUP(10, A1:A2, B1:B2, "missing", 3)')).toEqual(errorValue('#VALUE!'))
+			expect(evalFormula('XLOOKUP(10, A1:A2, B1:B2, "missing", 3)', cells)).toEqual(
+				errorValue('#VALUE!'),
+			)
+		})
+
+		test('XLOOKUP invalid search mode returns #VALUE!', () => {
+			const cells = { A1: 10, B1: 'ten', A2: 20, B2: 'twenty' }
+			expect(evalFormula('XLOOKUP(10, A1:A2, B1:B2, "missing", 0, 3)', cells)).toEqual(
+				errorValue('#VALUE!'),
+			)
+		})
+
 		test('INDEX single cell', () => {
 			const cells = { A1: 10, A2: 20, A3: 30 }
 			expectNum(evalFormula('INDEX(A1:A3, 2)', cells), 20)
@@ -733,6 +748,16 @@ describe('Excel conformance', () => {
 		test('XMATCH descending binary next larger match mode', () => {
 			const cells = { A1: 30, A2: 20, A3: 10 }
 			expectNum(evalFormula('XMATCH(25, A1:A3, 1, -2)', cells), 1)
+		})
+
+		test('XMATCH invalid match mode returns #VALUE!', () => {
+			const cells = { A1: 10, A2: 20 }
+			expect(evalFormula('XMATCH(10, A1:A2, 3)', cells)).toEqual(errorValue('#VALUE!'))
+		})
+
+		test('XMATCH invalid search mode returns #VALUE!', () => {
+			const cells = { A1: 10, A2: 20 }
+			expect(evalFormula('XMATCH(10, A1:A2, 0, 3)', cells)).toEqual(errorValue('#VALUE!'))
 		})
 
 		test('CHOOSE selects nth value', () => {

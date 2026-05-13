@@ -363,6 +363,14 @@ function findInArray(
 	return -1
 }
 
+function isValidXlookupMatchMode(mode: number): boolean {
+	return mode === -1 || mode === 0 || mode === 1 || mode === 2
+}
+
+function isValidXlookupSearchMode(mode: number): boolean {
+	return mode === -2 || mode === -1 || mode === 1 || mode === 2
+}
+
 function resolveApproximate(v: CellValue): boolean {
 	if (v.kind === 'boolean') return v.value
 	if (v.kind === 'number') return v.value !== 0
@@ -552,6 +560,9 @@ function xlookup(args: EvalArg[], ctx?: FunctionEvalContext): CellValue {
 	if (typeof matchMode !== 'number') return matchMode
 	const searchMode = args.length > 5 ? numArg(args[5]) : 1
 	if (typeof searchMode !== 'number') return searchMode
+	if (!isValidXlookupMatchMode(matchMode) || !isValidXlookupSearchMode(searchMode)) {
+		return errorValue('#VALUE!')
+	}
 
 	const needExactIndex = matchMode === 0 && Math.abs(searchMode) !== 2
 	const lookupVector = getArgVectorWithIndex(args[1], ctx, needExactIndex)
@@ -652,6 +663,9 @@ function xmatch(args: EvalArg[], ctx?: FunctionEvalContext): CellValue {
 	if (typeof matchMode !== 'number') return matchMode
 	const searchMode = args.length > 3 ? numArg(args[3]) : 1
 	if (typeof searchMode !== 'number') return searchMode
+	if (!isValidXlookupMatchMode(matchMode) || !isValidXlookupSearchMode(searchMode)) {
+		return errorValue('#VALUE!')
+	}
 
 	const lookupVector = getArgVector(args[1], ctx)
 	if (lookupVector) {

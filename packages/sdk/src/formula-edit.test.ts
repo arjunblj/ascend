@@ -175,6 +175,65 @@ describe('formula editing utilities', () => {
 		})
 	})
 
+	test('reports malformed structured references even when the parser accepts names', () => {
+		expect(formulaDiagnostics('=Table1[Amount]')).toEqual({
+			parseOk: true,
+			diagnostics: [],
+		})
+		expect(formulaDiagnostics('=Table1[[#Totals],[Amount]]')).toEqual({
+			parseOk: true,
+			diagnostics: [],
+		})
+		expect(formulaDiagnostics("=Table1[Q1']Total]")).toEqual({
+			parseOk: true,
+			diagnostics: [],
+		})
+
+		expect(formulaDiagnostics('=Table1[')).toEqual({
+			parseOk: false,
+			diagnostics: [
+				{
+					code: 'formula-structured-reference-error',
+					severity: 'error',
+					message: 'Unterminated structured reference',
+					start: 7,
+					end: 8,
+				},
+			],
+		})
+		expect(formulaDiagnostics('=SUM(Table1[')).toEqual({
+			parseOk: false,
+			diagnostics: [
+				{
+					code: 'formula-structured-reference-error',
+					severity: 'error',
+					message: 'Unterminated structured reference',
+					start: 11,
+					end: 12,
+				},
+				{
+					code: 'formula-parse-error',
+					severity: 'error',
+					message: 'Expected CloseParen, got EOF "" at position 11',
+					start: 12,
+					end: 12,
+				},
+			],
+		})
+		expect(formulaDiagnostics('=Table1[Amount]]')).toEqual({
+			parseOk: false,
+			diagnostics: [
+				{
+					code: 'formula-structured-reference-error',
+					severity: 'error',
+					message: 'Malformed structured reference',
+					start: 7,
+					end: 16,
+				},
+			],
+		})
+	})
+
 	test('exposes function completions and generic signature help from the registry', () => {
 		expect(formulaFunctionCompletions('xlo', { limit: 5 }).map((entry) => entry.name)).toEqual([
 			'XLOOKUP',

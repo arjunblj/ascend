@@ -51,7 +51,7 @@ export interface InsertFormulaReferenceResult {
 }
 
 export interface FormulaDiagnostic {
-	readonly code: 'formula-parse-error'
+	readonly code: 'formula-parse-error' | 'formula-structured-reference-error'
 	readonly severity: 'error'
 	readonly message: string
 	readonly start: number
@@ -191,9 +191,11 @@ export function formulaFunctionCompletions(
 }
 
 export function formulaDiagnostics(formula: string): FormulaDiagnosticsResult {
+	const lexicalDiagnostics = formulaLexicalDiagnostics(formula)
 	const normalized = normalizeFormulaInput(formula)
 	const parsed = parseFormula(normalized)
-	if (parsed.ok) return { parseOk: true, diagnostics: [] }
+	if (parsed.ok && lexicalDiagnostics.length === 0) return { parseOk: true, diagnostics: [] }
+	if (parsed.ok) return { parseOk: false, diagnostics: lexicalDiagnostics }
 	const offset = formula.startsWith('=') ? 1 : 0
 	const position = parseDiagnosticPosition(parsed.error.message)
 	const start =
@@ -201,6 +203,7 @@ export function formulaDiagnostics(formula: string): FormulaDiagnosticsResult {
 	return {
 		parseOk: false,
 		diagnostics: [
+			...lexicalDiagnostics,
 			{
 				code: 'formula-parse-error',
 				severity: 'error',
@@ -210,6 +213,28 @@ export function formulaDiagnostics(formula: string): FormulaDiagnosticsResult {
 			},
 		],
 	}
+}
+
+function formulaLexicalDiagnostics(formula: string): FormulaDiagnostic[] {
+	const spans = tokenSpans(formula)
+	const diagnostics: FormulaDiagnostic[] = []
+	for (let index = 0; index < spans.length; index++) {
+		const span = spans[index]
+		if (!span || span.token.type !== TokenType.Name) continue
+		const next = nextNonWhitespace(spans, index + 1)
+		if (next?.span.token.type !== TokenType.Name || !next.span.text.startsWith('[')) continue
+		const balance = bracketBalance(next.span.text)
+		if (balance === 0) continue
+		diagnostics.push({
+			code: 'formula-structured-reference-error',
+			severity: 'error',
+			message: balance > 0 ? 'Unterminated structured reference' : 'Malformed structured reference',
+			start: next.span.start,
+			end: next.span.end,
+		})
+		index = next.index
+	}
+	return diagnostics
 }
 
 function tokenSpans(formula: string): TokenSpan[] {
@@ -373,6 +398,25 @@ function buildFormulaFunctionSignature(def: FunctionDef): FormulaFunctionSignatu
 		parameters,
 		variadic,
 	}
+}
+
+function bracketBalance(text: string): number {
+	let balance = 0
+	let escaped = false
+	for (const char of text) {
+		if (escaped) {
+			escaped = false
+			continue
+		}
+		if (char === "'") {
+			escaped = true
+			continue
+		}
+		if (char === '[') balance += 1
+		if (char === ']') balance -= 1
+		if (balance < 0) return balance
+	}
+	return balance
 }
 
 function parseDiagnosticPosition(message: string): number | null {

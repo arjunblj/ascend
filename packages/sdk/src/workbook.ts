@@ -646,6 +646,16 @@ export class AscendWorkbook extends WorkbookReadView {
 	 * wb.apply(ops, { transaction: true })
 	 */
 	apply(ops: readonly Operation[], options?: ApplyOptions): ApplyResult {
+		if (ops.length === 0) {
+			return {
+				affectedCells: [],
+				sheetsModified: [],
+				recalcRequired: false,
+				dirtyRegions: [],
+				generations: this.currentGenerations(),
+				errors: [],
+			}
+		}
 		if (this.loadInfo.isPartial) {
 			return {
 				affectedCells: [],

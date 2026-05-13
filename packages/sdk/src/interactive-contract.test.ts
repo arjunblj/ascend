@@ -496,6 +496,106 @@ describe('interactive client contract', () => {
 		})
 	})
 
+	test('no-op and failed applies do not advance workbook or session generations', async () => {
+		const wb = AscendWorkbook.create()
+		const initial = wb.readSnapshotInfo().generations
+		const empty = wb.apply([])
+		expect(empty).toMatchObject({
+			affectedCells: [],
+			sheetsModified: [],
+			recalcRequired: false,
+			dirtyRegions: [],
+			generations: initial,
+			errors: [],
+		})
+		expect(wb.readSnapshotInfo().generations).toEqual(initial)
+
+		const failed = wb.apply([
+			{ op: 'setCells', sheet: 'Missing', updates: [{ ref: 'A1', value: 1 }] },
+		])
+		expect(failed.errors[0]?.code).toBe('SHEET_NOT_FOUND')
+		expect(failed.generations).toEqual(initial)
+		expect(wb.readSnapshotInfo().generations).toEqual(initial)
+
+		const session = await AscendSession.open(wb.toBytes(), { mode: 'interactive', maxRows: 1 })
+		const viewport = session.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 1,
+		})
+		const sessionEmpty = await session.apply([])
+		expect(sessionEmpty.apply.errors).toEqual([])
+		const { session: viewportSessionGeneration, ...viewportWorkbookGenerations } =
+			viewport.generation
+		expect(sessionEmpty.apply.generations).toEqual(viewportWorkbookGenerations)
+		expect(sessionEmpty.generation.session).toBe(viewportSessionGeneration)
+		expect(sessionEmpty.load.promotedToFull).toBe(false)
+
+		const sessionFailed = await session.apply([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 5 }] },
+		])
+		expect(sessionFailed.apply.errors[0]?.message).toContain('partial workbook')
+		expect(sessionFailed.generation.session).toBe(viewportSessionGeneration)
+		session.close()
+	})
+
+	test('generation layers advance for formula recalc metadata style and workbook edits', () => {
+		const wb = AscendWorkbook.create()
+
+		const formulaEdit = wb.apply([{ op: 'setFormula', sheet: 'Sheet1', ref: 'A1', formula: '1+1' }])
+		expect(formulaEdit.errors).toEqual([])
+		expect(formulaEdit.generations).toEqual({
+			workbook: 1,
+			sheetMetadata: 0,
+			formulas: 1,
+			styles: 0,
+		})
+
+		const recalc = wb.recalc()
+		expect(recalc.errors).toEqual([])
+		expect(recalc.generations).toEqual({
+			workbook: 2,
+			sheetMetadata: 0,
+			formulas: 2,
+			styles: 0,
+		})
+
+		const commentEdit = wb.apply([
+			{ op: 'setComment', sheet: 'Sheet1', ref: 'B1', text: 'reviewed' },
+		])
+		expect(commentEdit.errors).toEqual([])
+		expect(commentEdit.generations).toEqual({
+			workbook: 3,
+			sheetMetadata: 1,
+			formulas: 2,
+			styles: 0,
+		})
+
+		const styleEdit = wb.apply([
+			{ op: 'setNumberFormat', sheet: 'Sheet1', range: 'C1:C1', format: '0.00' },
+		])
+		expect(styleEdit.errors).toEqual([])
+		expect(styleEdit.generations).toEqual({
+			workbook: 4,
+			sheetMetadata: 1,
+			formulas: 2,
+			styles: 1,
+		})
+
+		const workbookMetadataEdit = wb.apply([
+			{ op: 'setWorkbookProperties', properties: { date1904: true } },
+		])
+		expect(workbookMetadataEdit.errors).toEqual([])
+		expect(workbookMetadataEdit.generations).toEqual({
+			workbook: 5,
+			sheetMetadata: 2,
+			formulas: 3,
+			styles: 1,
+		})
+	})
+
 	test('recalc returns changed dirty regions and advances formula generation once', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

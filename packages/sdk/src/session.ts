@@ -456,6 +456,10 @@ export class WorkbookDocument {
 		return readInteractiveViewport(this.view, request, 0, '0')
 	}
 
+	readSnapshotInfo(): import('./types.ts').WorkbookReadSnapshotInfo {
+		return this.view.readSnapshotInfo()
+	}
+
 	agentView(
 		sheetName: string,
 		range: string,
@@ -936,6 +940,36 @@ export class AscendSession {
 		const inspectReadStart = performance.now()
 		const readLoad = this.session.inspect().load
 		const inspectReadMs = performance.now() - inspectReadStart
+		if (ops.length === 0) {
+			const generations = (this.mutableWorkbook ?? this.session.workbook()).readSnapshotInfo()
+				.generations
+			return {
+				apply: {
+					affectedCells: [],
+					sheetsModified: [],
+					recalcRequired: false,
+					dirtyRegions: [],
+					generations,
+					errors: [],
+				},
+				recalc: null,
+				load: {
+					read: readLoad,
+					write: readLoad,
+					promotedToFull: false,
+				},
+				generation: { session: this.documentGeneration, ...generations },
+				timings: {
+					inspectReadMs,
+					ensureMutableWorkbookMs: 0,
+					applyMs: 0,
+					recalcMs: 0,
+					generationSnapshotMs: 0,
+					inspectWriteMs: 0,
+					totalMs: performance.now() - totalStart,
+				},
+			}
+		}
 		const ensureStart = performance.now()
 		const workbook = await this.ensureMutableWorkbook()
 		const ensureMutableWorkbookMs = performance.now() - ensureStart

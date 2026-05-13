@@ -105,7 +105,7 @@ function positiveIntegerOption(value: number | undefined, fallback: number): num
 function agentPlanLoadOptionsError(options: readonly string[]): AscendError {
 	return ascendError(
 		'VALIDATION_ERROR',
-		'Agent plans require a full workbook load; partial or capped load options are not supported',
+		'Agent plans and commits require a full workbook load; partial or capped load options are not supported',
 		{
 			details: {
 				unsupportedLoadOptions: options,
@@ -1463,6 +1463,14 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 				.boolean()
 				.optional()
 				.describe('Return compact commit verification counts instead of full trace artifacts'),
+			maxRows: z
+				.number()
+				.int()
+				.positive()
+				.optional()
+				.describe(
+					'Unsupported on commit; use ascend.read or ascend.agent_view for capped inspection',
+				),
 		},
 		async ({
 			file,
@@ -1476,8 +1484,10 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 			allowLoss,
 			approvals,
 			compact,
+			maxRows,
 		}) => {
 			try {
+				if (maxRows !== undefined) return errorResponse(agentPlanLoadOptionsError(['maxRows']))
 				const options: AgentCommitOptions = {
 					...(output ? { output } : {}),
 					...(inPlace ? { inPlace: true } : {}),

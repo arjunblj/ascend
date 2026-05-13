@@ -878,6 +878,19 @@ export async function commitAgentPlanFromWorkbook(
 	} = {},
 ): Promise<AgentCommitResult> {
 	const progress = internal.progress ?? createProgressEmitter('commit', options.onProgress)
+	const load = wb.inspect().load
+	if (load.isPartial) {
+		throw new AscendException(
+			ascendError(
+				'VALIDATION_ERROR',
+				'Cannot commit an agent write plan from a partial workbook view',
+				{
+					details: { load },
+					suggestedFix: 'Reopen the workbook with a full load before planning or committing edits.',
+				},
+			),
+		)
+	}
 	const output =
 		internal.output ?? (await resolveCommitOutputTarget(file, inputSha256, options, progress))
 	const writePolicyWorkbook = snapshotWritePolicyWorkbook(wb.getWorkbookModel())

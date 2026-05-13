@@ -11,6 +11,7 @@ import {
 	auditLossPolicy,
 	auditPackageGraphIntegrity,
 	commitAgentPlan,
+	commitAgentPlanFromWorkbook,
 	compactAgentCommitResult,
 	createAgentPlan,
 	createAgentPlanFromWorkbook,
@@ -2450,6 +2451,37 @@ describe('agent workflow loss audit', () => {
 		expect(thrown).toBeInstanceOf(Error)
 		expect((thrown as Error).message).toContain(
 			'Cannot create an agent write plan from a partial workbook view',
+		)
+		expect(
+			(
+				thrown as {
+					ascendError?: { details?: { load?: { isPartial?: boolean; maxRows?: number } } }
+				}
+			).ascendError?.details?.load,
+		).toMatchObject({
+			isPartial: true,
+			maxRows: 1,
+		})
+	})
+
+	test('partial workbook views cannot commit agent write plans', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] }])
+		const bytes = wb.toBytes()
+		const partial = await AscendWorkbook.open(bytes, { mode: 'values', maxRows: 1 })
+
+		let thrown: unknown
+		try {
+			await commitAgentPlanFromWorkbook('partial.xlsx', 'sha', partial, [
+				{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 2 }] },
+			])
+		} catch (error) {
+			thrown = error
+		}
+
+		expect(thrown).toBeInstanceOf(Error)
+		expect((thrown as Error).message).toContain(
+			'Cannot commit an agent write plan from a partial workbook view',
 		)
 		expect(
 			(

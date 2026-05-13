@@ -1077,6 +1077,34 @@ describe('Ascend API server', () => {
 		})
 	})
 
+	test('commit rejects capped load options instead of silently producing full commits', async () => {
+		const wb = AscendWorkbook.create()
+		await wb.save(TEMP_FILE)
+
+		const result = await postJson('/commit', {
+			file: TEMP_FILE,
+			ops: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] }],
+			output: OUTPUT_FILE,
+			maxRows: 1,
+			mode: 'values',
+			sheets: ['Sheet1'],
+		})
+
+		expect(result.status).toBe(400)
+		expect(result.body.ok).toBe(false)
+		expect(result.body.error?.code).toBe('VALIDATION_ERROR')
+		expect(result.body.error?.details?.unsupportedLoadOptions).toEqual([
+			'maxRows',
+			'mode',
+			'sheets',
+		])
+		expect(result.body.error?.details?.requiredLoad).toEqual({
+			mode: 'full',
+			allSheets: true,
+			maxRows: null,
+		})
+	})
+
 	test('plan and commit require exact approval ids', async () => {
 		const workbook = AscendWorkbook.create()
 		workbook.apply([{ op: 'addSheet', name: 'Scratch' }])

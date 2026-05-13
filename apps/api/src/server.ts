@@ -125,7 +125,7 @@ function unsupportedAgentPlanLoadOptions(body: Record<string, unknown> | null): 
 function agentPlanLoadOptionsError(options: readonly string[]): AscendError {
 	return ascendError(
 		'VALIDATION_ERROR',
-		'Agent plans require a full workbook load; partial or capped load options are not supported',
+		'Agent plans and commits require a full workbook load; partial or capped load options are not supported',
 		{
 			details: {
 				unsupportedLoadOptions: options,
@@ -1017,6 +1017,10 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 				const file = body ? requireString(body, 'file') : null
 				if (!file && !planHandle) return jsonFailure('Missing or invalid file', 400)
 				try {
+					const unsupportedLoadOptions = unsupportedAgentPlanLoadOptions(body)
+					if (unsupportedLoadOptions.length > 0) {
+						return jsonFailureError(agentPlanLoadOptionsError(unsupportedLoadOptions), 400)
+					}
 					const output = body ? requireString(body, 'output') : null
 					const backup = body ? requireString(body, 'backup') : null
 					const expectSha256 = body ? requireString(body, 'expectSha256') : null

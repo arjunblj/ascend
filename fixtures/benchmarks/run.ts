@@ -2889,7 +2889,6 @@ const scenarios: readonly Scenario[] = [
 		build() {
 			const target = realInteractivePatchCorpusTarget('stress-dense-100k')
 			const bytes = realInteractivePatchCorpusTargetBytes(target)
-			xlsxSharedStringUsage(bytes)
 			return {
 				rows: target.rowCount,
 				cols: target.colCount,
@@ -3273,7 +3272,6 @@ const scenarios: readonly Scenario[] = [
 		async run() {
 			const target = realInteractivePatchCorpusTarget('stress-dense-100k')
 			const bytes = realInteractivePatchCorpusTargetBytes(target)
-			const sharedStringUsage = xlsxSharedStringUsage(bytes)
 			WorkbookDocument.clearCache()
 
 			const openStart = performance.now()
@@ -3301,7 +3299,6 @@ const scenarios: readonly Scenario[] = [
 					readinessReusedReadModel: readiness.timings?.mutableWorkbookReusedReadModel ?? false,
 					readinessMutableWorkbookOpenMs: readiness.timings?.mutableWorkbookOpenMs ?? null,
 					readinessRebaseViewportSnapshotsMs: readiness.timings?.rebaseViewportSnapshotsMs ?? null,
-					...prefixAssertions('sharedStrings', sharedStringUsage),
 					readAndMutableShareSourceArchive:
 						readModel.sourceArchiveBytes === mutableModel.sourceArchiveBytes ? 1 : 0,
 					...prefixAssertions(

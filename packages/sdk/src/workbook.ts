@@ -71,6 +71,11 @@ import type {
 	PivotOutputMaterializeResult,
 	RecalcOptions,
 	RecalcResult,
+	TemplateMergeOptions,
+	TemplateMergePlaceholder,
+	TemplateMergeResult,
+	TemplateMergeUnsupportedCell,
+	TemplateMergeValue,
 	WritePlanInfo,
 } from './types.ts'
 
@@ -128,6 +133,107 @@ function dumpableInputValue(
 				reason: 'Array values require spill-aware formula serialization before replay.',
 			}
 	}
+}
+
+interface TemplateDelimiters {
+	readonly open: string
+	readonly close: string
+}
+
+interface TemplatePlaceholderMatch {
+	readonly key: string
+	readonly placeholder: string
+	readonly start: number
+	readonly end: number
+}
+
+function normalizeTemplateDelimiters(options: TemplateMergeOptions): TemplateDelimiters {
+	return {
+		open: options.delimiters?.open ?? '{{',
+		close: options.delimiters?.close ?? '}}',
+	}
+}
+
+function findTemplatePlaceholders(
+	text: string,
+	delimiters: TemplateDelimiters,
+): TemplatePlaceholderMatch[] {
+	if (delimiters.open.length === 0 || delimiters.close.length === 0) return []
+	const matches: TemplatePlaceholderMatch[] = []
+	let cursor = 0
+	while (cursor < text.length) {
+		const start = text.indexOf(delimiters.open, cursor)
+		if (start === -1) break
+		const contentStart = start + delimiters.open.length
+		const close = text.indexOf(delimiters.close, contentStart)
+		if (close === -1) break
+		const end = close + delimiters.close.length
+		const key = text.slice(contentStart, close).trim()
+		if (key.length > 0) {
+			matches.push({
+				key,
+				placeholder: text.slice(start, end),
+				start,
+				end,
+			})
+		}
+		cursor = end
+	}
+	return matches
+}
+
+function missingTemplatePlaceholders(
+	sheet: string,
+	ref: string,
+	source: 'value' | 'formula',
+	matches: readonly TemplatePlaceholderMatch[],
+	data: ReadonlyMap<string, TemplateMergeValue>,
+): TemplateMergePlaceholder[] {
+	const missing: TemplateMergePlaceholder[] = []
+	for (const match of matches) {
+		if (!data.has(match.key)) {
+			missing.push({
+				sheet,
+				ref,
+				source,
+				placeholder: match.placeholder,
+				key: match.key,
+			})
+		}
+	}
+	return missing
+}
+
+function replaceTemplatePlaceholders(
+	text: string,
+	matches: readonly TemplatePlaceholderMatch[],
+	valueFor: (value: TemplateMergeValue) => string,
+	data: ReadonlyMap<string, TemplateMergeValue>,
+): string {
+	let output = ''
+	let cursor = 0
+	for (const match of matches) {
+		output += text.slice(cursor, match.start)
+		output += valueFor(data.get(match.key) ?? null)
+		cursor = match.end
+	}
+	output += text.slice(cursor)
+	return output
+}
+
+function templateTextValue(value: TemplateMergeValue): string {
+	return value === null ? '' : String(value)
+}
+
+function templateFormulaValue(value: TemplateMergeValue): string {
+	if (value === null) return '""'
+	if (typeof value === 'boolean') return value ? 'TRUE' : 'FALSE'
+	if (typeof value === 'number') return String(value)
+	return `"${value.replaceAll('"', '""')}"`
+}
+
+function richTextPlainText(value: Extract<CellValue, { kind: 'richText' }>): string {
+	return value.runs.map((run) => run.text).join('')
 }
 
 /**
@@ -575,6 +681,109 @@ export class AscendWorkbook extends WorkbookReadView {
 			formulaCount,
 			unsupported,
 			replayable: unsupported.length === 0,
+		}
+	}
+
+	/**
+	 * Compile {{key}} template replacements into replayable operations.
+	 * Missing keys and unsupported rich-text placeholders are reported without mutating.
+	 */
+	templateMerge(
+		data: Readonly<Record<string, TemplateMergeValue>>,
+		options: TemplateMergeOptions = {},
+	): TemplateMergeResult {
+		const includeValues = options.includeValues ?? true
+		const includeFormulas = options.includeFormulas ?? true
+		const selectedSheets = options.sheets ? new Set(options.sheets) : null
+		const delimiters = normalizeTemplateDelimiters(options)
+		const values = new Map(Object.entries(data))
+		const ops: Operation[] = []
+		const unresolved: TemplateMergePlaceholder[] = []
+		const unsupported: TemplateMergeUnsupportedCell[] = []
+		let sheetCount = 0
+		let cellCount = 0
+		let formulaCount = 0
+		let replacementCount = 0
+
+		for (const sheet of this.wb.sheets) {
+			if (selectedSheets && !selectedSheets.has(sheet.name)) continue
+			sheetCount += 1
+			const updates: Array<{ ref: string; value: InputValue }> = []
+			const formulaOps: Operation[] = []
+
+			for (const [row, col, cell] of sheet.cells.iterate()) {
+				const ref = `${indexToColumn(col)}${row + 1}`
+				const formula = sheet.cells.readFormula(row, col)
+				if (formula) {
+					if (!includeFormulas) continue
+					const matches = findTemplatePlaceholders(formula, delimiters)
+					if (matches.length === 0) continue
+					formulaCount += 1
+					cellCount += 1
+					const missing = missingTemplatePlaceholders(sheet.name, ref, 'formula', matches, values)
+					unresolved.push(...missing)
+					if (missing.length > 0) continue
+					formulaOps.push({
+						op: 'setFormula',
+						sheet: sheet.name,
+						ref,
+						formula: replaceTemplatePlaceholders(formula, matches, templateFormulaValue, values),
+					})
+					replacementCount += matches.length
+					continue
+				}
+
+				if (!includeValues) continue
+				const value = cell.value ?? EMPTY
+				const text =
+					value.kind === 'string'
+						? value.value
+						: value.kind === 'richText'
+							? richTextPlainText(value)
+							: null
+				if (text === null) continue
+				const matches = findTemplatePlaceholders(text, delimiters)
+				if (matches.length === 0) continue
+				cellCount += 1
+				if (value.kind === 'richText') {
+					unsupported.push({
+						sheet: sheet.name,
+						ref,
+						source: 'value',
+						valueKind: value.kind,
+						reason: 'Rich text placeholders require run-preserving merge support before replay.',
+					})
+					continue
+				}
+
+				const missing = missingTemplatePlaceholders(sheet.name, ref, 'value', matches, values)
+				unresolved.push(...missing)
+				if (missing.length > 0) continue
+				const firstMatch = matches[0]
+				const wholeCellPlaceholder =
+					matches.length === 1 &&
+					firstMatch !== undefined &&
+					firstMatch.start === 0 &&
+					firstMatch.end === text.length
+				const mergedValue = wholeCellPlaceholder
+					? (values.get(firstMatch.key) ?? null)
+					: replaceTemplatePlaceholders(text, matches, templateTextValue, values)
+				updates.push({ ref, value: mergedValue })
+				replacementCount += matches.length
+			}
+			if (updates.length > 0) ops.push({ op: 'setCells', sheet: sheet.name, updates })
+			ops.push(...formulaOps)
+		}
+
+		return {
+			ops,
+			sheetCount,
+			cellCount,
+			formulaCount,
+			replacementCount,
+			unresolved,
+			unsupported,
+			replayable: unresolved.length === 0 && unsupported.length === 0,
 		}
 	}
 

@@ -64,6 +64,7 @@ import type {
 	CellValue,
 	CompatibilityReport,
 	FeatureReport,
+	InputValue,
 	Operation,
 } from '@ascend/schema'
 import type { CapabilityPriority, CapabilityStatus } from './capabilities.ts'
@@ -1205,6 +1206,45 @@ export interface DumpBatchResult {
 	readonly cellCount: number
 	readonly formulaCount: number
 	readonly unsupported: readonly DumpBatchUnsupportedCell[]
+	readonly replayable: boolean
+}
+
+export type TemplateMergeValue = Exclude<InputValue, Date>
+
+export interface TemplateMergeOptions {
+	readonly includeValues?: boolean
+	readonly includeFormulas?: boolean
+	readonly sheets?: readonly string[]
+	readonly delimiters?: {
+		readonly open?: string
+		readonly close?: string
+	}
+}
+
+export interface TemplateMergePlaceholder {
+	readonly sheet: string
+	readonly ref: string
+	readonly source: 'value' | 'formula'
+	readonly placeholder: string
+	readonly key: string
+}
+
+export interface TemplateMergeUnsupportedCell {
+	readonly sheet: string
+	readonly ref: string
+	readonly source: 'value' | 'formula'
+	readonly valueKind: CellValue['kind']
+	readonly reason: string
+}
+
+export interface TemplateMergeResult {
+	readonly ops: readonly Operation[]
+	readonly sheetCount: number
+	readonly cellCount: number
+	readonly formulaCount: number
+	readonly replacementCount: number
+	readonly unresolved: readonly TemplateMergePlaceholder[]
+	readonly unsupported: readonly TemplateMergeUnsupportedCell[]
 	readonly replayable: boolean
 }
 

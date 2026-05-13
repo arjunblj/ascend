@@ -1983,7 +1983,7 @@ function parseCanonicalStreamedValuesRowBytes(
 	while (true) {
 		cursor = skipXmlWhitespaceBytes(bytes, cursor, bodyEnd)
 		if (cursor >= bodyEnd) return { row, cells }
-		const canonicalNext = parseCanonicalValuesCellBytes(
+		let canonicalNext = parseCanonicalPlainValueCellBytes(
 			bytes,
 			cursor,
 			bodyEnd,
@@ -1992,6 +1992,17 @@ function parseCanonicalStreamedValuesRowBytes(
 			nextCol,
 			out,
 		)
+		if (canonicalNext === -1) {
+			canonicalNext = parseCanonicalValuesCellBytes(
+				bytes,
+				cursor,
+				bodyEnd,
+				rowNumber,
+				row,
+				nextCol,
+				out,
+			)
+		}
 		if (canonicalNext === -1) return null
 		const value =
 			out.numberValue !== undefined

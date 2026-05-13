@@ -157,6 +157,7 @@ export type {
 export type {
 	AscendSessionApplyOptions,
 	AscendSessionApplyResult,
+	AscendSessionEditReadiness,
 	AscendSessionOpenOptions,
 	InteractiveViewportCell,
 	InteractiveViewportLayoutEntry,

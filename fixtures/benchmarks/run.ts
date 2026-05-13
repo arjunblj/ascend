@@ -2236,8 +2236,10 @@ const scenarios: readonly Scenario[] = [
 			WorkbookDocument.clearCache()
 			const backgroundPrepareStart = performance.now()
 			const backgroundSession = await AscendSession.open(bytes, { mode: 'interactive' })
+			const backgroundInitialReadiness = backgroundSession.editReadiness()
 			const backgroundOpenMs = performance.now() - backgroundPrepareStart
 			const backgroundPrepare = await backgroundSession.prepareEdits()
+			const backgroundPreparedReadiness = backgroundSession.editReadiness()
 			const backgroundPrepareTotalMs = performance.now() - backgroundPrepareStart
 			const backgroundViewportStart = performance.now()
 			const backgroundViewport = backgroundSession.readViewport({
@@ -2317,6 +2319,8 @@ const scenarios: readonly Scenario[] = [
 					progressiveLoadIsPartial: firstWindow.load.isPartial,
 					progressivePartialReasons: firstWindow.load.partialReasons.length,
 					backgroundOpenMs,
+					backgroundInitialReady: backgroundInitialReadiness.ready,
+					backgroundInitialPreparing: backgroundInitialReadiness.preparing,
 					backgroundPrepareEditsMs: backgroundPrepare.timings.totalMs,
 					backgroundPrepareEnsureMutableWorkbookMs:
 						backgroundPrepare.timings.ensureMutableWorkbookMs,
@@ -2324,6 +2328,8 @@ const scenarios: readonly Scenario[] = [
 						backgroundPrepare.timings.mutableWorkbookOpenMs ?? null,
 					backgroundPrepareRebaseViewportSnapshotsMs:
 						backgroundPrepare.timings.rebaseViewportSnapshotsMs ?? null,
+					backgroundPreparedReady: backgroundPreparedReadiness.ready,
+					backgroundPreparedPreparing: backgroundPreparedReadiness.preparing,
 					backgroundPrepareTotalMs,
 					progressiveTimeToEditReadyMs,
 					progressiveEditReadyDeltaVsCurrentMs:

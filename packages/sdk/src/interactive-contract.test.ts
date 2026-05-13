@@ -357,6 +357,12 @@ describe('interactive client contract', () => {
 		wb.recalc()
 
 		const session = await AscendSession.open(wb.toBytes(), { mode: 'interactive' })
+		expect(session.editReadiness()).toMatchObject({
+			ready: false,
+			preparing: false,
+			write: null,
+			promotedToFull: false,
+		})
 		const before = session.readViewport({
 			sheet: 'Sheet1',
 			topRow: 0,
@@ -559,15 +565,29 @@ describe('interactive client contract', () => {
 		})
 		const prepared = await session.prepareEdits()
 		expect(prepared.load.promotedToFull).toBe(true)
+		expect(prepared.timings.mutableWorkbookCached).toBe(false)
+		expect(prepared.timings.mutableWorkbookOpenMs).toBeGreaterThanOrEqual(0)
+		expect(prepared.timings.rebaseViewportSnapshotsMs).toBeGreaterThanOrEqual(0)
 		expect(prepared.timings.totalMs).toBeGreaterThanOrEqual(
 			prepared.timings.ensureMutableWorkbookMs,
 		)
+		expect(session.editReadiness()).toMatchObject({
+			ready: true,
+			preparing: false,
+			promotedToFull: true,
+			timings: {
+				mutableWorkbookCached: false,
+				mutableWorkbookOpenMs: prepared.timings.mutableWorkbookOpenMs,
+				rebaseViewportSnapshotsMs: prepared.timings.rebaseViewportSnapshotsMs,
+			},
+		})
 
 		const edit = await session.apply([
 			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 10 }] },
 		])
 		expect(edit.apply.errors).toEqual([])
 		expect(edit.load.promotedToFull).toBe(true)
+		expect(edit.timings.mutableWorkbookCached).toBe(true)
 		expect(edit.timings.ensureMutableWorkbookMs).toBeLessThan(1)
 		expect(
 			session

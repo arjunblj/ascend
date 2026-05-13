@@ -238,6 +238,20 @@ export interface AscendSessionPrepareEditsResult {
 	}
 }
 
+export interface AscendSessionEditReadiness {
+	readonly ready: boolean
+	readonly preparing: boolean
+	readonly generation: number
+	readonly read: WorkbookLoadInfo
+	readonly write: WorkbookLoadInfo | null
+	readonly promotedToFull: boolean
+	readonly timings: {
+		readonly mutableWorkbookCached: boolean
+		readonly mutableWorkbookOpenMs: number
+		readonly rebaseViewportSnapshotsMs: number
+	} | null
+}
+
 interface SessionFileIdentity {
 	readonly path: string
 	readonly size: number
@@ -967,6 +981,27 @@ export class AscendSession {
 				inspectWriteMs,
 				totalMs: performance.now() - totalStart,
 			},
+		}
+	}
+
+	editReadiness(): AscendSessionEditReadiness {
+		const read = this.session.inspect().load
+		const write = this.mutableWorkbook?.inspect().load ?? null
+		const timings = this.mutableWorkbookReadyTimings
+		return {
+			ready: this.mutableWorkbook !== null,
+			preparing: this.mutableWorkbook === null && this.mutableWorkbookPromise !== null,
+			generation: this.documentGeneration,
+			read,
+			write,
+			promotedToFull: write !== null && read.isPartial && !write.isPartial,
+			timings: timings
+				? {
+						mutableWorkbookCached: timings.cached,
+						mutableWorkbookOpenMs: timings.openMs,
+						rebaseViewportSnapshotsMs: timings.rebaseViewportSnapshotsMs,
+					}
+				: null,
 		}
 	}
 

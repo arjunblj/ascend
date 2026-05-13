@@ -290,6 +290,45 @@ describe('interactive client contract', () => {
 		session.close()
 	})
 
+	test('interactive sessions can prepare mutable edit state before first edit', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] }])
+
+		const session = await AscendSession.open(wb.toBytes(), { mode: 'interactive' })
+		const before = session.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 1,
+		})
+		const prepared = await session.prepareEdits()
+		expect(prepared.load.promotedToFull).toBe(true)
+		expect(prepared.timings.totalMs).toBeGreaterThanOrEqual(
+			prepared.timings.ensureMutableWorkbookMs,
+		)
+
+		const edit = await session.apply([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 10 }] },
+		])
+		expect(edit.apply.errors).toEqual([])
+		expect(edit.load.promotedToFull).toBe(true)
+		expect(edit.timings.ensureMutableWorkbookMs).toBeLessThan(1)
+		expect(
+			session
+				.readViewportPatch({
+					sheet: 'Sheet1',
+					topRow: 0,
+					leftCol: 0,
+					rowCount: 1,
+					colCount: 1,
+					changedSince: before.changeToken,
+				})
+				?.changedCells.map((cell) => [cell.ref, cell.flatValue]),
+		).toEqual([['A1', 10]])
+		session.close()
+	})
+
 	test('interactive pull patches refuse metadata and layout edits that need fresh viewport state', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] }])

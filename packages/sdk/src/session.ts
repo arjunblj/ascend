@@ -217,6 +217,19 @@ export interface AscendSessionApplyResult {
 	readonly timings: AscendSessionApplyTimings
 }
 
+export interface AscendSessionPrepareEditsResult {
+	readonly load: {
+		readonly read: WorkbookLoadInfo
+		readonly write: WorkbookLoadInfo
+		readonly promotedToFull: boolean
+	}
+	readonly timings: {
+		readonly ensureMutableWorkbookMs: number
+		readonly inspectWriteMs: number
+		readonly totalMs: number
+	}
+}
+
 interface SessionFileIdentity {
 	readonly path: string
 	readonly size: number
@@ -783,6 +796,7 @@ export class AscendSession {
 	private readonly source: string | Uint8Array
 	private readonly options: AscendSessionOpenOptions
 	private mutableWorkbook: AscendWorkbook | null = null
+	private mutableWorkbookPromise: Promise<AscendWorkbook> | null = null
 	private documentGeneration = 0
 	private changeVersion = 0
 	private readonly recentChanges: InteractiveChangeEntry[] = []
@@ -891,6 +905,29 @@ export class AscendSession {
 		}
 	}
 
+	async prepareEdits(): Promise<AscendSessionPrepareEditsResult> {
+		const totalStart = performance.now()
+		const readLoad = this.session.inspect().load
+		const ensureStart = performance.now()
+		const workbook = await this.ensureMutableWorkbook()
+		const ensureMutableWorkbookMs = performance.now() - ensureStart
+		const inspectWriteStart = performance.now()
+		const writeLoad = workbook.inspect().load
+		const inspectWriteMs = performance.now() - inspectWriteStart
+		return {
+			load: {
+				read: readLoad,
+				write: writeLoad,
+				promotedToFull: readLoad.isPartial && !writeLoad.isPartial,
+			},
+			timings: {
+				ensureMutableWorkbookMs,
+				inspectWriteMs,
+				totalMs: performance.now() - totalStart,
+			},
+		}
+	}
+
 	async apply(
 		ops: readonly Operation[],
 		options: AscendSessionApplyOptions = {},
@@ -953,6 +990,7 @@ export class AscendSession {
 	async refresh(): Promise<void> {
 		await this.session.refresh()
 		this.mutableWorkbook = null
+		this.mutableWorkbookPromise = null
 		this.documentGeneration += 1
 		this.viewportSnapshots.clear()
 	}
@@ -964,14 +1002,26 @@ export class AscendSession {
 	close(): void {
 		this.session.close()
 		this.mutableWorkbook = null
+		this.mutableWorkbookPromise = null
 		this.viewportSnapshots.clear()
 	}
 
 	private async ensureMutableWorkbook(): Promise<AscendWorkbook> {
 		if (this.mutableWorkbook) return this.mutableWorkbook
-		this.mutableWorkbook = await AscendWorkbook.open(this.source, writableOpenOptions(this.options))
-		this.rebaseViewportSnapshots(this.mutableWorkbook)
-		return this.mutableWorkbook
+		if (!this.mutableWorkbookPromise) {
+			this.mutableWorkbookPromise = AscendWorkbook.open(
+				this.source,
+				writableOpenOptions(this.options),
+			).then((workbook) => {
+				this.mutableWorkbook = workbook
+				this.rebaseViewportSnapshots(workbook)
+				return workbook
+			})
+			this.mutableWorkbookPromise.catch(() => {
+				this.mutableWorkbookPromise = null
+			})
+		}
+		return this.mutableWorkbookPromise
 	}
 
 	private rebaseViewportSnapshots(workbook: AscendWorkbook): void {

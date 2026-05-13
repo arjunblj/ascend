@@ -29,6 +29,8 @@ import {
 	type WorkbookDocumentProperties,
 	type WorkbookProperties,
 	type WorkbookProtection,
+	type WorkbookThemeColor,
+	type WorkbookThemeMetadata,
 	type WorkbookView,
 } from '@ascend/core'
 import { applyOperation } from '@ascend/engine'
@@ -184,6 +186,11 @@ export interface MutationJournalWorkbookProtectionPreimage {
 	readonly protection: WorkbookProtection | null
 }
 
+export interface MutationJournalThemePreimage {
+	readonly metadata: WorkbookThemeMetadata
+	readonly colors: readonly WorkbookThemeColor[]
+}
+
 export type MutationJournalPreimage =
 	| { readonly kind: 'cells'; readonly cells: readonly MutationJournalCellPreimage[] }
 	| { readonly kind: 'comment'; readonly comment: MutationJournalCommentPreimage }
@@ -226,6 +233,7 @@ export type MutationJournalPreimage =
 			readonly kind: 'workbook-protection'
 			readonly workbookProtection: MutationJournalWorkbookProtectionPreimage
 	  }
+	| { readonly kind: 'theme'; readonly theme: MutationJournalThemePreimage }
 
 export interface MutationJournalEntry {
 	readonly opIndex: number
@@ -408,6 +416,8 @@ function buildSupportedJournalEntry(
 			return journalSetCalcSettings(workbook, op, opIndex)
 		case 'setWorkbookProtection':
 			return journalSetWorkbookProtection(workbook, op, opIndex)
+		case 'setTheme':
+			return journalSetTheme(workbook, op, opIndex)
 		case 'renameSheet':
 			return {
 				opIndex,
@@ -1156,6 +1166,91 @@ function journalSetWorkbookProtection(
 		op,
 		inverseOps: [{ op: 'setWorkbookProtection', protection: preimage.protection ?? {} }],
 		preimages: [{ kind: 'workbook-protection', workbookProtection: preimage }],
+		issues,
+	}
+}
+
+function journalSetTheme(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'setTheme' }>,
+	opIndex: number,
+): DraftJournalEntry {
+	const preimage = {
+		metadata: { ...workbook.themeMetadata },
+		colors: workbook.themeColors.map((color) => ({ ...color })),
+	}
+	const inverse = themeInverseOperation(op, preimage)
+	return {
+		opIndex,
+		op,
+		inverseOps: inverse.op ? [inverse.op] : [],
+		preimages: [{ kind: 'theme', theme: preimage }],
+		issues: inverse.issues,
+	}
+}
+
+type SetThemeOperation = Extract<Operation, { op: 'setTheme' }>
+type MutableSetThemeOperation = {
+	-readonly [K in keyof SetThemeOperation]: SetThemeOperation[K]
+}
+
+function themeInverseOperation(
+	op: SetThemeOperation,
+	preimage: MutationJournalThemePreimage,
+): {
+	readonly op: SetThemeOperation | null
+	readonly issues: readonly MutationJournalIssue[]
+} {
+	const inverse: Partial<MutableSetThemeOperation> = { op: 'setTheme' }
+	const issues: MutationJournalIssue[] = []
+	for (const [opKey, metadataKey] of [
+		['themeName', 'name'],
+		['colorSchemeName', 'colorSchemeName'],
+		['majorFontLatin', 'majorFontLatin'],
+		['minorFontLatin', 'minorFontLatin'],
+	] as const) {
+		if (op[opKey] === undefined) continue
+		const previous = preimage.metadata[metadataKey]
+		if (previous !== undefined) {
+			inverse[opKey] = previous
+			continue
+		}
+		issues.push({
+			code: 'LOSSY_INVERSE',
+			message: `Theme metadata field ${opKey} cannot be removed with public operations`,
+		})
+	}
+	if (op.themeColors !== undefined) {
+		const colorsBySlot = new Map(preimage.colors.map((color) => [color.slot, color]))
+		const inverseColors: WorkbookThemeColor[] = []
+		for (const color of op.themeColors) {
+			const previous = colorsBySlot.get(color.slot)
+			if (!previous) {
+				issues.push({
+					code: 'LOSSY_INVERSE',
+					message: `Theme color slot ${color.slot} cannot be removed with public operations`,
+				})
+				continue
+			}
+			if (previous.rgb === undefined && previous.systemColor === undefined) {
+				issues.push({
+					code: 'LOSSY_INVERSE',
+					message: `Theme color slot ${color.slot} cannot be restored with public operations`,
+				})
+				continue
+			}
+			inverseColors.push({ ...previous })
+		}
+		if (inverseColors.length > 0) inverse.themeColors = inverseColors
+	}
+	const hasInverse =
+		inverse.themeName !== undefined ||
+		inverse.colorSchemeName !== undefined ||
+		inverse.majorFontLatin !== undefined ||
+		inverse.minorFontLatin !== undefined ||
+		inverse.themeColors !== undefined
+	return {
+		op: hasInverse ? (inverse as SetThemeOperation) : null,
 		issues,
 	}
 }

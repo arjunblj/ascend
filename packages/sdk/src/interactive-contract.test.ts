@@ -1089,6 +1089,88 @@ describe('interactive client contract', () => {
 		expect(lossy.journal?.inverseOps).toEqual([{ op: 'setWorkbookProtection', protection: {} }])
 	})
 
+	test('theme journals restore representable edits and mark additions lossy', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setTheme',
+				themeName: 'Office',
+				colorSchemeName: 'Office Colors',
+				majorFontLatin: 'Aptos Display',
+				minorFontLatin: 'Aptos',
+				themeColors: [
+					{ slot: 'accent1', rgb: '4F81BD' },
+					{ slot: 'lt1', systemColor: 'window', lastColor: 'FFFFFF' },
+				],
+			},
+		])
+		const before = journalComparableState(wb)
+
+		const changed = wb.apply(
+			[
+				{
+					op: 'setTheme',
+					themeName: 'Brand',
+					colorSchemeName: 'Brand Colors',
+					majorFontLatin: 'Inter Display',
+					minorFontLatin: 'Inter',
+					themeColors: [
+						{ slot: 'accent1', rgb: '0F6CBD' },
+						{ slot: 'lt1', systemColor: 'windowText', lastColor: '000000' },
+					],
+				},
+			],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(true)
+		expect(changed.journal?.inverseOps).toEqual([
+			{
+				op: 'setTheme',
+				themeName: 'Office',
+				colorSchemeName: 'Office Colors',
+				majorFontLatin: 'Aptos Display',
+				minorFontLatin: 'Aptos',
+				themeColors: [
+					{ slot: 'accent1', rgb: '4F81BD' },
+					{ slot: 'lt1', systemColor: 'window', lastColor: 'FFFFFF' },
+				],
+			},
+		])
+		expect(journalComparableState(wb)).not.toEqual(before)
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(journalComparableState(wb)).toEqual(before)
+
+		const sparse = AscendWorkbook.create()
+		const lossy = sparse.preview(
+			[
+				{
+					op: 'setTheme',
+					themeName: 'New Brand',
+					themeColors: [{ slot: 'accent1', rgb: '123456' }],
+				},
+			],
+			{ journal: true },
+		)
+		expect(lossy.journal?.supported).toBe(true)
+		expect(lossy.journal?.exact).toBe(false)
+		expect(lossy.journal?.issues).toEqual([
+			{
+				code: 'LOSSY_INVERSE',
+				message: 'Theme metadata field themeName cannot be removed with public operations',
+			},
+			{
+				code: 'LOSSY_INVERSE',
+				message: 'Theme color slot accent1 cannot be removed with public operations',
+			},
+		])
+		expect(lossy.journal?.inverseOps).toEqual([])
+	})
+
 	test('journal exact inverse restores mixed semantic workbook state', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([
@@ -1514,6 +1596,7 @@ function journalComparableState(wb: AscendWorkbook): object {
 		documentProperties: wb.inspect().documentProperties,
 		workbookViews: wb.inspect().workbookViews,
 		calcSettings: wb.getWorkbookModel().calcSettings,
+		themeSummary: wb.inspect().themeSummary,
 		sheetMetadata: wb.sheets.map((name) => {
 			const sheet = wb.sheet(name)
 			return {

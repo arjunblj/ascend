@@ -64,6 +64,7 @@ export {
 	ensureOutputExtension,
 	escapeDelimitedCell,
 	formatDisplayCellValue,
+	formatStyledDisplayCellValue,
 	inferExportFormat,
 	normalizeExportFormat,
 	toA1Ref,

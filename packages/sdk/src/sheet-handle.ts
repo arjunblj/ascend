@@ -11,9 +11,11 @@ import type {
 	SheetImageRef,
 	SheetProtection,
 	SheetTabColor,
+	StyleId,
 } from '@ascend/core'
 import { parseA1, parseRange, toA1, toRangeString } from '@ascend/core'
 import { AscendException, ascendError, type CellValue, topLeftScalar } from '@ascend/schema'
+import type { FormatDisplayOptions } from './format-helpers.ts'
 import {
 	type CellSelector,
 	parseLocalCellSelector,
@@ -54,6 +56,12 @@ export class SheetHandle {
 		col: number,
 		cell: CellFormulaSource,
 	) => string | null
+	private readonly resolveDisplay: (
+		row: number,
+		col: number,
+		cell: CellDisplaySource,
+		options?: FormatDisplayOptions,
+	) => string
 	private _changeVersion = 0
 	private readonly _changeSnapshots = new Map<
 		string,
@@ -64,10 +72,17 @@ export class SheetHandle {
 		sheetName: string,
 		resolveSheet: () => Sheet | undefined,
 		resolveFormula: (row: number, col: number, cell: CellFormulaSource) => string | null,
+		resolveDisplay: (
+			row: number,
+			col: number,
+			cell: CellDisplaySource,
+			options?: FormatDisplayOptions,
+		) => string,
 	) {
 		this.sheetName = sheetName
 		this.resolveSheet = resolveSheet
 		this.resolveFormula = resolveFormula
+		this.resolveDisplay = resolveDisplay
 	}
 
 	get name(): string {
@@ -102,6 +117,13 @@ export class SheetHandle {
 			this.resolveFormula(parsed.row, parsed.col, cell),
 			refText,
 		)
+	}
+
+	formatCellForDisplay(ref: CellSelector, options?: FormatDisplayOptions): string | undefined {
+		const { cell: parsed } = parseLocalCellSelector(ref)
+		const cell = this.requireSheet().cells.get(parsed.row, parsed.col)
+		if (!cell) return undefined
+		return this.resolveDisplay(parsed.row, parsed.col, cell, options)
 	}
 
 	range(rangeRef: RangeSelector): RangeInfo {
@@ -673,6 +695,13 @@ function makeCompactCellInfo(
 
 interface CellFormulaSource {
 	readonly formula: string | null
+	readonly formulaInfo?: CellFormulaBinding | undefined
+}
+
+interface CellDisplaySource {
+	readonly value: CellValue
+	readonly formula: string | null
+	readonly styleId: StyleId
 	readonly formulaInfo?: CellFormulaBinding | undefined
 }
 

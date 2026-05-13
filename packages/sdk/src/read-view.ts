@@ -42,6 +42,7 @@ import type { CellUpdate, CellValue, CompatibilityReport, Operation } from '@asc
 import { EMPTY } from '@ascend/schema'
 import { trace as verifyTrace } from '@ascend/verify'
 import { getCapability, isCapabilityGap } from './capabilities.ts'
+import { type FormatDisplayOptions, formatStyledDisplayCellValue } from './format-helpers.ts'
 import {
 	buildFormulaInfo,
 	collectFormulaReferences,
@@ -439,6 +440,11 @@ export class WorkbookReadView {
 				sheetIndex >= 0
 					? resolveCellFormulaText(this.wb, sheetIndex, row, col, cell)
 					: cell.formula,
+			(_row, _col, cell, options) =>
+				formatStyledDisplayCellValue(cell.value, this.wb.styles.get(cell.styleId), {
+					dateSystem: this.wb.calcSettings.dateSystem,
+					...options,
+				}),
 		)
 		this.sheetHandleCache.set(name, handle)
 		return handle
@@ -465,6 +471,11 @@ export class WorkbookReadView {
 		if (styleId === undefined) return undefined
 		const style = this.wb.styles.get(styleId)
 		return style ? cloneStyle(style) : undefined
+	}
+
+	formatCellForDisplay(cellRef: CellSelector, options?: FormatDisplayOptions): string | undefined {
+		const { sheetName, ref } = normalizeCellSelector(cellRef, this.wb)
+		return this.sheet(sheetName)?.formatCellForDisplay(ref, options)
 	}
 
 	readWindow(

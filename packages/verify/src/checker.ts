@@ -657,21 +657,22 @@ function unknownSpillIssue(sheetName: string, row: number, col: number): CheckIs
 	}
 }
 
-function checkBlockedSpills(wb: Workbook): CheckIssue[] {
+function checkBlockedSpills(wb: Workbook, formulas: WorkbookFormulaAnalysis): CheckIssue[] {
 	const issues: CheckIssue[] = []
 	const unknownSpills: Array<{ sheetIndex: number; row: number; col: number }> = []
-	for (let sheetIndex = 0; sheetIndex < wb.sheets.length; sheetIndex++) {
+	for (const formula of formulas.formulas.values()) {
+		const sheetIndex = formula.sheetIndex
 		const sheet = wb.sheets[sheetIndex]
 		if (!sheet) continue
-		for (const [row, col, cell] of sheet.cells.iterate()) {
-			if (!cellHasFormula(cell) || !isError(cell.value) || cell.value.value !== '#SPILL!') continue
-			const binding = cell.formulaInfo
-			if (binding?.kind === 'blockedSpill') {
-				issues.push(blockedSpillIssue(sheet.name, row, col, binding))
-				continue
-			}
-			unknownSpills.push({ sheetIndex, row, col })
+		const cell = sheet.cells.get(formula.row, formula.col)
+		if (!cell || !cellHasFormula(cell) || !isError(cell.value) || cell.value.value !== '#SPILL!')
+			continue
+		const binding = cell.formulaInfo
+		if (binding?.kind === 'blockedSpill') {
+			issues.push(blockedSpillIssue(sheet.name, formula.row, formula.col, binding))
+			continue
 		}
+		unknownSpills.push({ sheetIndex, row: formula.row, col: formula.col })
 	}
 	if (unknownSpills.length > 0) {
 		const recalculated = wb.clone()
@@ -6508,7 +6509,7 @@ export function check(workbook: Workbook, analysis?: CheckAnalysis): CheckResult
 		...checkChartPartOwnership(workbook, sheetNames, analysis?.packageGraph),
 		...checkCircularRefs(workbook, dependencies),
 		...checkFormulaErrors(workbook, formulas),
-		...checkBlockedSpills(workbook),
+		...checkBlockedSpills(workbook, formulas),
 		...checkOrphanedNames(workbook),
 		...checkMergeOverlaps(workbook),
 		...checkTableIntegrity(workbook),

@@ -1296,6 +1296,142 @@ describe('interactive client contract', () => {
 		session.close()
 	})
 
+	test('interactive deferred recalc undo patches stay truthful after metadata invalidation', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 1 },
+					{ ref: 'D1', value: 'metadata target' },
+				],
+			},
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'B1', formula: 'A1*2' },
+		])
+		wb.recalc()
+
+		const session = await AscendSession.open(wb.toBytes(), { mode: 'interactive' })
+		const base = session.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 4,
+		})
+		const edit = await session.apply(
+			[{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 5 }] }],
+			{ recalc: false, journal: true },
+		)
+		expect(edit.apply.errors).toEqual([])
+		expect(edit.apply.recalcRequired).toBe(true)
+		expect(edit.recalc).toBeNull()
+		expect(edit.apply.journal?.exact).toBe(true)
+		const editPatch = session.readViewportPatch({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 4,
+			changedSince: base.changeToken,
+		})
+		if (!editPatch) throw new Error('expected deferred edit patch')
+		expect(editPatch.changedCells.map((cell) => [cell.ref, cell.flatValue])).toEqual([['A1', 5]])
+		const afterEdit = session.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 4,
+		})
+		expect(afterEdit.cells.find((cell) => cell.ref === 'B1')?.flatValue).toBe(2)
+		expect(materializeViewportPatch(base.cells, editPatch)).toEqual(
+			interactiveCellMap(afterEdit.cells),
+		)
+
+		const recalc = await session.apply([], { recalc: true })
+		expect(recalc.apply.errors).toEqual([])
+		expect(recalc.recalc?.changed).toEqual(['Sheet1!B1'])
+		const recalcPatch = session.readViewportPatch({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 4,
+			changedSince: afterEdit.changeToken,
+		})
+		if (!recalcPatch) throw new Error('expected explicit recalc patch')
+		expect(recalcPatch.changedCells.map((cell) => [cell.ref, cell.flatValue])).toEqual([['B1', 10]])
+		const afterRecalc = session.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 4,
+		})
+		expect(materializeViewportPatch(afterEdit.cells, recalcPatch)).toEqual(
+			interactiveCellMap(afterRecalc.cells),
+		)
+
+		const metadata = await session.apply([
+			{ op: 'setComment', sheet: 'Sheet1', ref: 'D1', text: 'reviewed' },
+		])
+		expect(metadata.apply.errors).toEqual([])
+		expect(
+			session.readViewportPatch({
+				sheet: 'Sheet1',
+				topRow: 0,
+				leftCol: 0,
+				rowCount: 1,
+				colCount: 4,
+				changedSince: afterRecalc.changeToken,
+			}),
+		).toBeNull()
+		const afterMetadata = session.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 4,
+			changedSince: afterRecalc.changeToken,
+		})
+		expect(afterMetadata.patch).toBeUndefined()
+		expect(afterMetadata.cells.find((cell) => cell.ref === 'D1')?.flags.comment).toBe(true)
+
+		const undo = await session.apply(edit.apply.journal?.inverseOps ?? [])
+		expect(undo.apply.errors).toEqual([])
+		expect(undo.recalc?.changed).toEqual(['Sheet1!B1'])
+		const undoPatch = session.readViewportPatch({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 4,
+			changedSince: afterMetadata.changeToken,
+		})
+		if (!undoPatch) throw new Error('expected undo patch after metadata refresh')
+		expect(undoPatch.changedCells.map((cell) => [cell.ref, cell.flatValue]).sort()).toEqual([
+			['A1', 1],
+			['B1', 2],
+		])
+		const restored = session.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 4,
+		})
+		expect(materializeViewportPatch(afterMetadata.cells, undoPatch)).toEqual(
+			interactiveCellMap(restored.cells),
+		)
+		expect(restored.cells.find((cell) => cell.ref === 'D1')?.flags.comment).toBe(true)
+		const restoredSemantic = semanticInteractiveCellMap(restored.cells)
+		const baseSemantic = semanticInteractiveCellMap(base.cells)
+		expect(restoredSemantic.get('A1')).toEqual(baseSemantic.get('A1'))
+		expect(restoredSemantic.get('B1')).toEqual(baseSemantic.get('B1'))
+		session.close()
+	})
+
 	test('interactive sessions can prepare mutable edit state before first edit', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] }])

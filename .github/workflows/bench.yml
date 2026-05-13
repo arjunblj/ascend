@@ -1,10 +1,9 @@
 name: Benchmarks
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: '17 10 * * *'
 
 concurrency:
   group: bench-${{ github.ref }}
@@ -14,13 +13,8 @@ permissions:
   contents: read
 
 jobs:
-  bench-smoke:
-    if: github.event_name == 'pull_request'
+  targeted:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: write
-      actions: read
     steps:
       - uses: actions/checkout@v6
 
@@ -37,106 +31,20 @@ jobs:
 
       - run: bun ci
 
-      - name: Run smoke benchmarks
-        run: bun fixtures/benchmarks/run.ts --set smoke --repeat 3 --json > bench-current.json
-
-      - name: Upload current results
-        uses: actions/upload-artifact@v7
-        with:
-          name: bench-smoke-${{ github.sha }}
-          path: bench-current.json
-
-      - name: Download baseline from main
-        id: baseline
-        uses: dawidd6/action-download-artifact@v11
-        with:
-          workflow: bench.yml
-          branch: main
-          name: bench-full-*
-          name_is_regexp: true
-          path: baseline-dir
-          if_no_artifact_found: warn
-          search_artifacts: true
-
-      - name: Compare against baseline
-        id: compare
-        if: steps.baseline.outcome == 'success'
+      - name: Run targeted benchmarks
         run: |
-          baseline_file=$(find baseline-dir -name 'bench-results.json' -type f | head -1)
-          if [ -z "$baseline_file" ]; then
-            echo "No baseline file found, skipping comparison"
-            echo "has_regression=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          set +e
-          bun fixtures/benchmarks/compare.ts "$baseline_file" bench-current.json --threshold-median 0.15 --json > comparison.json 2>&1
-          exit_code=$?
-          set -e
-          if [ $exit_code -ne 0 ]; then
-            echo "has_regression=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "has_regression=false" >> "$GITHUB_OUTPUT"
-          fi
-          cat comparison.json
+          mkdir -p benchmark-results
+          bun fixtures/benchmarks/run.ts --scenario read-full-dense --repeat 3 --warmup 1 --json > benchmark-results/read-full-dense.json
+          bun fixtures/benchmarks/run.ts --scenario write-dense-40k --repeat 3 --warmup 1 --json > benchmark-results/write-dense-40k.json
+          bun fixtures/benchmarks/run.ts --scenario recalc-formula-chain --repeat 3 --warmup 1 --json > benchmark-results/recalc-formula-chain.json
+          bun fixtures/benchmarks/run.ts --scenario memory-100k-cells --repeat 3 --warmup 1 --json > benchmark-results/memory-100k-cells.json
 
-      - name: Post regression comment
-        if: steps.compare.outputs.has_regression == 'true'
-        uses: actions/github-script@v9
-        with:
-          script: |
-            const fs = require('fs');
-            let comparison;
-            try {
-              comparison = JSON.parse(fs.readFileSync('comparison.json', 'utf8'));
-            } catch {
-              return;
-            }
-            const regressed = (comparison.cases || []).filter(c => c.status === 'regressed');
-            if (regressed.length === 0) return;
+      - name: Print benchmark summary
+        run: |
+          bun -e 'const fs = require("node:fs"); const files = fs.readdirSync("benchmark-results").filter((f) => f.endsWith(".json")).sort(); for (const file of files) { const result = JSON.parse(fs.readFileSync(`benchmark-results/${file}`, "utf8")); const metrics = result.metrics; const throughput = metrics.throughputPerSec == null ? "n/a" : `${Math.round(metrics.throughputPerSec).toLocaleString()}/s`; const heap = metrics.heapDeltaBytes == null ? "n/a" : `${Math.round(metrics.heapDeltaBytes / 1024 / 1024 * 100) / 100} MB`; console.log(`${result.name}: median=${metrics.medianMs.toFixed(2)}ms p95=${metrics.p95Ms.toFixed(2)}ms throughput=${throughput} heapDelta=${heap}`); }'
 
-            let body = '## Benchmark Regression Detected\n\n';
-            body += `${regressed.length} scenario(s) regressed more than 15%:\n\n`;
-            body += '| Scenario | Metric | Baseline | Current | Change |\n';
-            body += '|----------|--------|----------|---------|--------|\n';
-            for (const c of regressed) {
-              for (const m of c.comparisons.filter(m => m.status === 'regressed')) {
-                const pct = m.deltaPct != null ? `${(m.deltaPct * 100).toFixed(1)}%` : 'n/a';
-                body += `| ${c.name} | ${m.name} | ${m.baseline.toFixed(2)} | ${m.candidate.toFixed(2)} | ${pct} |\n`;
-              }
-            }
-            body += '\n> Threshold: 15% regression on median timing';
-
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-              body
-            });
-
-  bench-full:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version-file: package.json
-
-      - name: Cache Bun packages
-        uses: actions/cache@v5
-        with:
-          path: ~/.bun/install/cache
-          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
-          restore-keys: ${{ runner.os }}-bun-
-
-      - run: bun ci
-
-      - name: Run full benchmark suite
-        run: bun fixtures/benchmarks/run.ts --repeat 3 --json > bench-results.json
-
-      - name: Upload full results
+      - name: Upload benchmark results
         uses: actions/upload-artifact@v7
         with:
-          name: bench-full-${{ github.sha }}
-          path: bench-results.json
+          name: targeted-benchmarks-${{ github.sha }}
+          path: benchmark-results/*.json

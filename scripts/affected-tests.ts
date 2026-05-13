@@ -17,6 +17,7 @@ type ProjectName =
 	| 'fixtures-corpus'
 	| 'fixtures-benchmarks'
 	| 'fixtures-formulas'
+	| 'fixtures-xlsx'
 	| 'examples'
 
 interface Project {
@@ -52,6 +53,11 @@ const PROJECTS: readonly Project[] = [
 		name: 'fixtures-formulas',
 		dir: 'fixtures/formulas',
 		deps: ['schema', 'core', 'formulas', 'engine'],
+	},
+	{
+		name: 'fixtures-xlsx',
+		dir: 'fixtures/xlsx',
+		deps: ['schema', 'core', 'engine', 'io-xlsx', 'sdk', 'fixtures-benchmarks', 'fixtures-corpus'],
 	},
 	{ name: 'examples', dir: 'examples', deps: ['sdk'] },
 ]

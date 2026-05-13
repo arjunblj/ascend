@@ -62,6 +62,7 @@ import type {
 	BatchResult,
 	CheckIssue,
 	CheckResult,
+	DirtyRegion,
 	DumpBatchOptions,
 	DumpBatchResult,
 	DumpBatchUnsupportedCell,
@@ -79,6 +80,7 @@ import type {
 	TemplateMergeResult,
 	TemplateMergeUnsupportedCell,
 	TemplateMergeValue,
+	WorkbookGenerationInfo,
 	WritePlanInfo,
 } from './types.ts'
 
@@ -290,6 +292,10 @@ export class AscendWorkbook extends WorkbookReadView {
 	private calcChainDirty = false
 	private sharedStringsDirty = false
 	private stylesDirty = false
+	private workbookGeneration = 0
+	private sheetMetadataGeneration = 0
+	private formulaGeneration = 0
+	private styleGeneration = 0
 
 	private constructor(
 		workbook: Workbook,
@@ -444,6 +450,8 @@ export class AscendWorkbook extends WorkbookReadView {
 			)
 			recalcResult = {
 				changed: calcResult.changed,
+				dirtyRegions: dirtyRegionsFromRefs(calcResult.changed, [], clone),
+				generations: this.currentGenerations(),
 				errors: calcResult.errors,
 				duration: calcResult.duration,
 			}
@@ -530,6 +538,8 @@ export class AscendWorkbook extends WorkbookReadView {
 				affectedCells: [],
 				sheetsModified: [],
 				recalcRequired: false,
+				dirtyRegions: [],
+				generations: this.currentGenerations(),
 				errors: [partialWorkbookEditError()],
 			}
 		}
@@ -543,11 +553,14 @@ export class AscendWorkbook extends WorkbookReadView {
 				affectedCells: [],
 				sheetsModified: [],
 				recalcRequired: false,
+				dirtyRegions: [],
+				generations: this.currentGenerations(),
 				errors,
 			}
 		}
 
 		this.wb = nextWorkbook
+		this.advanceApplyGenerations(ops, dirtyFlags, result.value)
 		this.markDirty()
 		for (const sheetName of result.value.sheetsModified) this.dirtySheets.add(sheetName)
 		this.workbookMetaDirty ||= dirtyFlags.workbookMetaDirty
@@ -562,6 +575,12 @@ export class AscendWorkbook extends WorkbookReadView {
 			affectedCells: result.value.affectedCells,
 			sheetsModified: result.value.sheetsModified,
 			recalcRequired: result.value.recalcRequired,
+			dirtyRegions: dirtyRegionsFromRefs(
+				result.value.affectedCells,
+				result.value.sheetsModified,
+				this.wb,
+			),
+			generations: this.currentGenerations(),
 			errors: [],
 			...(result.value.warnings && result.value.warnings.length > 0
 				? { warnings: result.value.warnings }
@@ -600,6 +619,8 @@ export class AscendWorkbook extends WorkbookReadView {
 					affectedCells: [],
 					sheetsModified: [],
 					recalcRequired: false,
+					dirtyRegions: [],
+					generations: this.currentGenerations(),
 					errors: [],
 				},
 			}
@@ -838,6 +859,8 @@ export class AscendWorkbook extends WorkbookReadView {
 		if (this.loadInfo.isPartial) {
 			return {
 				changed: [],
+				dirtyRegions: [],
+				generations: this.currentGenerations(),
 				errors: [{ ref: '', error: partialWorkbookEditError() }],
 				duration: 0,
 			}
@@ -859,6 +882,8 @@ export class AscendWorkbook extends WorkbookReadView {
 				: resolveRecalcOptions(this.pendingFullRecalc, this.pendingDirtyRefs),
 		)
 		if (result.changed.length > 0 || result.errors.length > 0) {
+			this.workbookGeneration += 1
+			this.formulaGeneration += 1
 			this.markDirty()
 			this.calcStateDirty = result.errors.length > 0
 			this.sharedStringsDirty = true
@@ -893,6 +918,8 @@ export class AscendWorkbook extends WorkbookReadView {
 		this.pendingFullRecalc = false
 		return {
 			changed: result.changed,
+			dirtyRegions: dirtyRegionsFromRefs(result.changed, [], this.wb),
+			generations: this.currentGenerations(),
 			errors: result.errors,
 			duration: result.duration,
 		}
@@ -1206,6 +1233,32 @@ export class AscendWorkbook extends WorkbookReadView {
 		)
 	}
 
+	private currentGenerations(): WorkbookGenerationInfo {
+		return {
+			workbook: this.workbookGeneration,
+			sheetMetadata: this.sheetMetadataGeneration,
+			formulas: this.formulaGeneration,
+			styles: this.styleGeneration,
+		}
+	}
+
+	private advanceApplyGenerations(
+		ops: readonly Operation[],
+		dirtyFlags: ReturnType<AscendWorkbook['deriveDirtyFlags']>,
+		applyResult: PatchResult,
+	): void {
+		this.workbookGeneration += 1
+		if (dirtyFlags.workbookMetaDirty || ops.some((op) => operationChangesSheetMetadata(op))) {
+			this.sheetMetadataGeneration += 1
+		}
+		if (dirtyFlags.calcStateDirty || dirtyFlags.calcChainDirty || applyResult.recalcRequired) {
+			this.formulaGeneration += 1
+		}
+		if (dirtyFlags.stylesDirty) {
+			this.styleGeneration += 1
+		}
+	}
+
 	private deriveDirtyFlags(ops: readonly Operation[]): {
 		workbookMetaDirty: boolean
 		documentPropertiesDirty: boolean
@@ -1484,6 +1537,132 @@ function partialWorkbookEditError() {
 				'Open the workbook with mode "full" and all sheets loaded before editing or recalculating.',
 		},
 	)
+}
+
+function operationChangesSheetMetadata(op: Operation): boolean {
+	switch (op.op) {
+		case 'addSheet':
+		case 'deleteSheet':
+		case 'renameSheet':
+		case 'moveSheet':
+		case 'copySheet':
+		case 'hideSheet':
+		case 'setTabColor':
+		case 'setSheetProtection':
+		case 'freezePane':
+		case 'setColWidth':
+		case 'setRowHeight':
+		case 'hideRows':
+		case 'hideCols':
+		case 'createTable':
+		case 'appendRows':
+		case 'deleteTable':
+		case 'renameTable':
+		case 'resizeTable':
+		case 'setTableColumn':
+		case 'setTableStyle':
+		case 'setComment':
+		case 'setThreadedComment':
+		case 'deleteComment':
+		case 'setHyperlink':
+		case 'deleteHyperlink':
+		case 'setDataValidation':
+		case 'deleteDataValidation':
+		case 'setConditionalFormat':
+		case 'deleteConditionalFormat':
+		case 'setAutoFilter':
+		case 'clearAutoFilter':
+		case 'setAdvancedFilter':
+		case 'setPrintArea':
+		case 'setPageSetup':
+		case 'mergeCells':
+		case 'unmergeCells':
+		case 'insertRows':
+		case 'deleteRows':
+		case 'insertCols':
+		case 'deleteCols':
+		case 'copyRange':
+		case 'moveRange':
+		case 'insertImage':
+		case 'deleteImage':
+		case 'replaceImage':
+		case 'setDrawingText':
+		case 'setSparklineGroup':
+			return true
+		default:
+			return false
+	}
+}
+
+function dirtyRegionsFromRefs(
+	refs: readonly string[],
+	fallbackSheets: readonly string[],
+	workbook: Workbook,
+): DirtyRegion[] {
+	const bySheet = new Map<
+		string,
+		{ minRow: number; minCol: number; maxRow: number; maxCol: number; refs: string[] }
+	>()
+	for (const ref of refs) {
+		const parsed = parseDirtyRef(ref, fallbackSheets, workbook)
+		if (!parsed) continue
+		const current = bySheet.get(parsed.sheet)
+		const fullRef = `${parsed.sheet}!${parsed.ref}`
+		if (current) {
+			current.minRow = Math.min(current.minRow, parsed.start.row)
+			current.minCol = Math.min(current.minCol, parsed.start.col)
+			current.maxRow = Math.max(current.maxRow, parsed.end.row)
+			current.maxCol = Math.max(current.maxCol, parsed.end.col)
+			current.refs.push(fullRef)
+		} else {
+			bySheet.set(parsed.sheet, {
+				minRow: parsed.start.row,
+				minCol: parsed.start.col,
+				maxRow: parsed.end.row,
+				maxCol: parsed.end.col,
+				refs: [fullRef],
+			})
+		}
+	}
+	return [...bySheet.entries()].map(([sheet, region]) => ({
+		sheet,
+		range: `${indexToColumn(region.minCol)}${region.minRow + 1}:${indexToColumn(region.maxCol)}${region.maxRow + 1}`,
+		refs: region.refs,
+	}))
+}
+
+function parseDirtyRef(
+	ref: string,
+	fallbackSheets: readonly string[],
+	workbook: Workbook,
+):
+	| {
+			sheet: string
+			ref: string
+			start: { row: number; col: number }
+			end: { row: number; col: number }
+	  }
+	| undefined {
+	const bang = ref.lastIndexOf('!')
+	const sheet =
+		bang === -1
+			? fallbackSheets.length === 1
+				? fallbackSheets[0]
+				: workbook.sheets[0]?.name
+			: ref.slice(0, bang).replace(/^'|'$/g, '')
+	const body = bang === -1 ? ref : ref.slice(bang + 1)
+	if (!sheet || !body) return undefined
+	try {
+		const range = parseRange(body)
+		return {
+			sheet,
+			ref: body,
+			start: range.start,
+			end: range.end,
+		}
+	} catch {
+		return undefined
+	}
 }
 
 function buildFastPreviewDiff(

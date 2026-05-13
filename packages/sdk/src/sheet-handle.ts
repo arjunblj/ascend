@@ -13,7 +13,7 @@ import type {
 	SheetTabColor,
 } from '@ascend/core'
 import { parseA1, parseRange, toA1, toRangeString } from '@ascend/core'
-import { AscendException, ascendError, type CellValue } from '@ascend/schema'
+import { AscendException, ascendError, type CellValue, topLeftScalar } from '@ascend/schema'
 import {
 	type CellSelector,
 	parseLocalCellSelector,
@@ -35,6 +35,7 @@ import type {
 	HyperlinkSummary,
 	MergeRangeSummary,
 	PageMetadataSummary,
+	RangeAggregateInfo,
 	RangeInfo,
 	RangeObjectsInfo,
 	RangeRowsInfo,
@@ -266,6 +267,68 @@ export class SheetHandle {
 				}
 				return objectRow
 			}),
+		}
+	}
+
+	aggregateRange(rangeRef: string): RangeAggregateInfo {
+		const ref = parseRange(rangeRef)
+		const sheet = this.requireSheet()
+		const rowCount = ref.end.row - ref.start.row + 1
+		const colCount = ref.end.col - ref.start.col + 1
+		const totalCells = rowCount * colCount
+		let populatedCells = 0
+		let numericCount = 0
+		let textCount = 0
+		let booleanCount = 0
+		let errorCount = 0
+		let sum = 0
+		let min = Number.POSITIVE_INFINITY
+		let max = Number.NEGATIVE_INFINITY
+		let firstError: string | undefined
+
+		sheet.cells.forEachCellInRange(ref, (_row, _col, cell) => {
+			const value = topLeftScalar(cell.value)
+			if (value.kind === 'empty') return
+			populatedCells += 1
+			switch (value.kind) {
+				case 'number':
+				case 'date':
+					{
+						const numericValue = value.kind === 'number' ? value.value : value.serial
+						numericCount += 1
+						sum += numericValue
+						min = Math.min(min, numericValue)
+						max = Math.max(max, numericValue)
+					}
+					break
+				case 'string':
+				case 'richText':
+					textCount += 1
+					break
+				case 'boolean':
+					booleanCount += 1
+					break
+				case 'error':
+					errorCount += 1
+					firstError ??= value.value
+					break
+			}
+		})
+
+		return {
+			ref,
+			totalCells,
+			populatedCells,
+			blankCount: totalCells - populatedCells,
+			numericCount,
+			textCount,
+			booleanCount,
+			errorCount,
+			sum,
+			average: numericCount > 0 ? sum / numericCount : null,
+			min: numericCount > 0 ? min : null,
+			max: numericCount > 0 ? max : null,
+			...(firstError ? { firstError } : {}),
 		}
 	}
 

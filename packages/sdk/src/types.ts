@@ -1106,6 +1106,22 @@ export interface RangeObjectsInfo {
 	readonly rows: readonly Readonly<Record<string, CellValue>>[]
 }
 
+export interface RangeAggregateInfo {
+	readonly ref: RangeRef
+	readonly totalCells: number
+	readonly populatedCells: number
+	readonly blankCount: number
+	readonly numericCount: number
+	readonly textCount: number
+	readonly booleanCount: number
+	readonly errorCount: number
+	readonly sum: number
+	readonly average: number | null
+	readonly min: number | null
+	readonly max: number | null
+	readonly firstError?: string
+}
+
 export interface TableRowInfo {
 	readonly index: number
 	readonly sheetRow: number
@@ -1128,6 +1144,19 @@ export interface ChangedCell {
 	readonly newValue: CellValue
 }
 
+export interface DirtyRegion {
+	readonly sheet: string
+	readonly range: string
+	readonly refs: readonly string[]
+}
+
+export interface WorkbookGenerationInfo {
+	readonly workbook: number
+	readonly sheetMetadata: number
+	readonly formulas: number
+	readonly styles: number
+}
+
 export interface PreviewResult {
 	readonly diff: WorkbookDiff
 	readonly sheetDiffs: readonly SheetDiff[]
@@ -1148,6 +1177,8 @@ export interface ApplyResult {
 	readonly affectedCells: readonly string[]
 	readonly sheetsModified: readonly string[]
 	readonly recalcRequired: boolean
+	readonly dirtyRegions: readonly DirtyRegion[]
+	readonly generations: WorkbookGenerationInfo
 	readonly errors: readonly AscendError[]
 	readonly warnings?: readonly AscendError[]
 }
@@ -1293,6 +1324,8 @@ export interface EvalOptions {
 
 export interface RecalcResult {
 	readonly changed: readonly string[]
+	readonly dirtyRegions: readonly DirtyRegion[]
+	readonly generations: WorkbookGenerationInfo
 	readonly errors: ReadonlyArray<{ ref: string; error: AscendError }>
 	readonly duration: number
 }

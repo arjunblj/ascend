@@ -499,6 +499,13 @@ export class WorkbookReadView {
 		return this.sheet(sheetName)?.readObjects(range, opts)
 	}
 
+	aggregateRange(
+		sheetName: string,
+		range: string,
+	): import('./types.ts').RangeAggregateInfo | undefined {
+		return this.sheet(sheetName)?.aggregateRange(range)
+	}
+
 	agentView(
 		sheetName: string,
 		range: string,

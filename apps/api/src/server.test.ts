@@ -1609,8 +1609,13 @@ describe('Ascend API server', () => {
 			expect(commit.body.data?.pathMutations?.ops).toEqual([
 				{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'updated' }] },
 			])
+			expect(commit.body.data?.outputSha256).toMatch(/^[a-f0-9]{64}$/)
 			expect(commit.body.data?.postWrite?.valid).toBe(true)
+			expect(commit.body.data?.postWrite?.auditsPassed).toBe(true)
 			expect(commit.body.data?.postWrite?.reopened).toBe(true)
+			expect(commit.body.data?.postWrite?.outputSha256).toBe(commit.body.data?.outputSha256)
+			expect(commit.body.data?.postWrite?.check?.valid).toBe(true)
+			expect(commit.body.data?.postWrite?.packageGraphAudit?.ok).toBe(true)
 
 			const reopenedInput = await AscendWorkbook.open(TEMP_FILE)
 			expect(reopenedInput.sheet('Sheet1')?.cell('A1')?.value).toEqual({

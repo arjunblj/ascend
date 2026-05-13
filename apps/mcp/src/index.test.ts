@@ -1424,9 +1424,17 @@ describe('MCP server', () => {
 					error?: { message?: string }
 					data?: {
 						output?: string
+						outputSha256?: string
 						backup?: string
 						pathMutations?: { ops?: unknown[] }
-						postWrite?: { valid?: boolean; reopened?: boolean }
+						postWrite?: {
+							valid?: boolean
+							auditsPassed?: boolean
+							reopened?: boolean
+							outputSha256?: string
+							check?: { valid?: boolean }
+							packageGraphAudit?: { ok?: boolean }
+						}
 					}
 				}
 			}>
@@ -1448,8 +1456,15 @@ describe('MCP server', () => {
 			expect(committed.structuredContent?.data?.pathMutations?.ops).toEqual([
 				{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'updated' }] },
 			])
+			expect(committed.structuredContent?.data?.outputSha256).toMatch(/^[a-f0-9]{64}$/)
 			expect(committed.structuredContent?.data?.postWrite?.valid).toBe(true)
+			expect(committed.structuredContent?.data?.postWrite?.auditsPassed).toBe(true)
 			expect(committed.structuredContent?.data?.postWrite?.reopened).toBe(true)
+			expect(committed.structuredContent?.data?.postWrite?.outputSha256).toBe(
+				committed.structuredContent?.data?.outputSha256,
+			)
+			expect(committed.structuredContent?.data?.postWrite?.check?.valid).toBe(true)
+			expect(committed.structuredContent?.data?.postWrite?.packageGraphAudit?.ok).toBe(true)
 
 			const reopenedInput = await AscendWorkbook.open(TEMP_FILE)
 			expect(reopenedInput.sheet('Sheet1')?.cell('A1')?.value).toEqual({

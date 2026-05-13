@@ -93,6 +93,58 @@ export function toRangeString(ref: RangeRef): string {
 	return ref.sheet ? `${ref.sheet}!${range}` : range
 }
 
+export function normalizeRange(range: RangeRef): RangeRef {
+	const start = {
+		row: Math.min(range.start.row, range.end.row),
+		col: Math.min(range.start.col, range.end.col),
+	}
+	const end = {
+		row: Math.max(range.start.row, range.end.row),
+		col: Math.max(range.start.col, range.end.col),
+	}
+	return range.sheet !== undefined ? { start, end, sheet: range.sheet } : { start, end }
+}
+
+export function rangeIntersects(left: RangeRef, right: RangeRef): boolean {
+	if (left.sheet !== undefined && right.sheet !== undefined && left.sheet !== right.sheet) {
+		return false
+	}
+	const a = normalizeRange(left)
+	const b = normalizeRange(right)
+	return (
+		a.start.row <= b.end.row &&
+		a.end.row >= b.start.row &&
+		a.start.col <= b.end.col &&
+		a.end.col >= b.start.col
+	)
+}
+
+export function rangeIntersection(left: RangeRef, right: RangeRef): RangeRef | null {
+	if (!rangeIntersects(left, right)) return null
+	const a = normalizeRange(left)
+	const b = normalizeRange(right)
+	const sheet = a.sheet ?? b.sheet
+	const range = {
+		start: {
+			row: Math.max(a.start.row, b.start.row),
+			col: Math.max(a.start.col, b.start.col),
+		},
+		end: {
+			row: Math.min(a.end.row, b.end.row),
+			col: Math.min(a.end.col, b.end.col),
+		},
+	}
+	return sheet !== undefined ? { ...range, sheet } : range
+}
+
+export function parseSqref(sqref: string): RangeRef[] {
+	return sqref.trim().split(/\s+/).filter(Boolean).map(parseRange)
+}
+
+export function sqrefIntersects(sqref: string, range: RangeRef): boolean {
+	return parseSqref(sqref).some((candidate) => rangeIntersects(candidate, range))
+}
+
 export function expandRange(range: RangeRef): CellRef[] {
 	const cells: CellRef[] = []
 	for (let row = range.start.row; row <= range.end.row; row++) {

@@ -5,11 +5,13 @@ import { resolve } from 'node:path'
 import {
 	DEFAULT_STYLE_ID,
 	parseRange,
+	parseSqref,
 	type RangeRef,
 	rangeIntersects,
 	sqrefIntersects,
 	toA1,
 } from '@ascend/core'
+import { resolveCellFormulaText } from '@ascend/engine'
 import { inspectXlsxPackageGraph, type XlsxPackageGraph } from '@ascend/io-xlsx'
 import type { CellValue } from '@ascend/schema'
 import { check as verifyCheck, lint as verifyLint } from '@ascend/verify'
@@ -830,16 +832,24 @@ function readInteractiveViewport(
 		request.rowCount + Math.max(0, request.overscanRows ?? 0) * 2,
 		request.colCount + Math.max(0, request.overscanCols ?? 0) * 2,
 	)
-	const sheetHandle = view.sheet(request.sheet)
+	const sheetIndex = workbook.sheets.findIndex((candidate) => candidate.name === request.sheet)
 	const comments = sheet.comments
 	const hyperlinks = sheet.hyperlinks
 	const merges = sheet.merges.filter((merge) => rangeIntersects(merge, viewport))
-	const dataValidations = sheet.dataValidations.filter((validation) =>
-		sqrefIntersects(validation.sqref, viewport),
-	)
-	const conditionalFormats = sheet.conditionalFormats.filter((format) =>
-		sqrefIntersects(format.sqref, viewport),
-	)
+	const validationRanges = sheet.dataValidations.map((validation) => ({
+		validation,
+		ranges: parseSqref(validation.sqref),
+	}))
+	const conditionalFormatRanges = sheet.conditionalFormats.map((format) => ({
+		format,
+		ranges: parseSqref(format.sqref),
+	}))
+	const dataValidations = validationRanges
+		.filter(({ ranges }) => ranges.some((range) => rangeIntersects(range, viewport)))
+		.map(({ validation }) => validation)
+	const conditionalFormats = conditionalFormatRanges
+		.filter(({ ranges }) => ranges.some((range) => rangeIntersects(range, viewport)))
+		.map(({ format }) => format)
 	const tables = (view.inspectSheet(request.sheet)?.tables ?? []).filter((table) =>
 		rangeIntersects(table.ref, viewport),
 	)
@@ -853,13 +863,17 @@ function readInteractiveViewport(
 	sheet.cells.forEachCellContentInRange(viewport, (row, col, value, formula, formulaBinding) => {
 		const ref = toA1({ row, col })
 		const styleId = sheet.cells.readStyleId(row, col) ?? DEFAULT_STYLE_ID
-		const formulaText = sheetHandle?.cellCompact(ref)?.formula ?? formula
+		const formulaText =
+			sheetIndex >= 0
+				? resolveCellFormulaText(workbook, sheetIndex, row, col, {
+						formula,
+						formulaInfo: formulaBinding,
+					})
+				: formula
 		const flatValue = flattenViewportValue(value)
-		const display =
-			sheetHandle?.formatCellForDisplay(ref) ??
-			formatStyledDisplayCellValue(value, workbook.styles.get(styleId), {
-				dateSystem: workbook.calcSettings.dateSystem,
-			})
+		const display = formatStyledDisplayCellValue(value, workbook.styles.get(styleId), {
+			dateSystem: workbook.calcSettings.dateSystem,
+		})
 		const index = viewportFlatIndex(viewport, row, col)
 		flatValues[index] = flatValue
 		displayText[index] = display
@@ -878,11 +892,11 @@ function readInteractiveViewport(
 				comment: comments.has(ref),
 				hyperlink: hyperlinks.has(ref),
 				merged: merges.some((merge) => cellInRange(row, col, merge)),
-				validation: dataValidations.some((validation) =>
-					sqrefIntersects(validation.sqref, { start: { row, col }, end: { row, col } }),
+				validation: validationRanges.some(({ ranges }) =>
+					ranges.some((range) => cellInRange(row, col, range)),
 				),
-				conditionalFormat: conditionalFormats.some((format) =>
-					sqrefIntersects(format.sqref, { start: { row, col }, end: { row, col } }),
+				conditionalFormat: conditionalFormatRanges.some(({ ranges }) =>
+					ranges.some((range) => cellInRange(row, col, range)),
 				),
 				table: tables.some((table) => cellInRange(row, col, table.ref)),
 			},

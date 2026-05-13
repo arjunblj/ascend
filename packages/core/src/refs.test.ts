@@ -3,9 +3,14 @@ import {
 	columnToIndex,
 	expandRange,
 	indexToColumn,
+	normalizeRange,
 	parseA1,
 	parseA1Safe,
 	parseRange,
+	parseSqref,
+	rangeIntersection,
+	rangeIntersects,
+	sqrefIntersects,
 	toA1,
 	toRangeString,
 } from './refs.ts'
@@ -143,5 +148,34 @@ describe('expandRange', () => {
 	test('cell count matches dimensions', () => {
 		const cells = expandRange(parseRange('A1:D5'))
 		expect(cells).toHaveLength(4 * 5)
+	})
+})
+
+describe('range algebra', () => {
+	test('normalizes inverted ranges', () => {
+		expect(normalizeRange({ start: { row: 9, col: 3 }, end: { row: 1, col: 0 } })).toEqual({
+			start: { row: 1, col: 0 },
+			end: { row: 9, col: 3 },
+		})
+	})
+
+	test('detects range intersections and respects explicit sheet names', () => {
+		expect(rangeIntersects(parseRange('A1:C3'), parseRange('C3:D4'))).toBe(true)
+		expect(rangeIntersects(parseRange('A1:B2'), parseRange('C3:D4'))).toBe(false)
+		expect(rangeIntersects(parseRange('Sheet1!A1:B2'), parseRange('Sheet2!A1:B2'))).toBe(false)
+	})
+
+	test('returns intersection ranges', () => {
+		expect(rangeIntersection(parseRange('A1:C3'), parseRange('B2:D4'))).toEqual({
+			start: { row: 1, col: 1 },
+			end: { row: 2, col: 2 },
+		})
+		expect(rangeIntersection(parseRange('A1:A1'), parseRange('B1:B1'))).toBeNull()
+	})
+
+	test('parses and intersects sqref ranges', () => {
+		expect(parseSqref('A1:A2 C1:D1')).toEqual([parseRange('A1:A2'), parseRange('C1:D1')])
+		expect(sqrefIntersects('A1:A2 C1:D1', parseRange('B1:B2'))).toBe(false)
+		expect(sqrefIntersects('A1:A2 C1:D1', parseRange('B1:C2'))).toBe(true)
 	})
 })

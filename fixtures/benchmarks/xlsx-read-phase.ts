@@ -484,6 +484,30 @@ function readAgentWindow(workbook: Workbook, input: CompetitiveDataSet): number 
 		'Data',
 		() => sheet,
 		(_row, _col, cell) => cell.formula,
+		(_row, _col, cell) => {
+			switch (cell.value.kind) {
+				case 'number':
+				case 'string':
+				case 'boolean':
+					return String(cell.value.value)
+				default:
+					return ''
+			}
+		},
+		() => ({
+			token: 'benchmark',
+			generations: { workbook: 0, sheetMetadata: 0, formulas: 0, styles: 0 },
+			load: {
+				mode: 'full',
+				isPartial: false,
+				cellsHydrated: true,
+				richSheetMetadataHydrated: true,
+				hasAllSheets: true,
+				partialReasons: [],
+				sourceSheets: ['Data'],
+				loadedSheets: ['Data'],
+			},
+		}),
 	)
 	const endCol = indexToColumn(Math.max(0, input.cols - 1))
 	const rowLimit = Math.min(500, Math.max(1, input.rows))

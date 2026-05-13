@@ -14,7 +14,7 @@ import {
 	numberValue,
 	stringValue,
 } from '../../packages/schema/src/index.ts'
-import { AscendWorkbook, SheetHandle } from '../../packages/sdk/src/index.ts'
+import { AscendSession, AscendWorkbook, SheetHandle } from '../../packages/sdk/src/index.ts'
 import {
 	type BenchmarkCaseResult,
 	createBenchmarkSuite,
@@ -67,6 +67,30 @@ function makeBenchmarkSheetHandle(workbook: Workbook, name = 'Sheet1'): SheetHan
 		name,
 		() => sheet,
 		(_row, _col, cell) => cell.formula,
+		(_row, _col, cell) => {
+			switch (cell.value.kind) {
+				case 'number':
+				case 'string':
+				case 'boolean':
+					return String(cell.value.value)
+				default:
+					return ''
+			}
+		},
+		() => ({
+			token: 'benchmark',
+			generations: { workbook: 0, sheetMetadata: 0, formulas: 0, styles: 0 },
+			load: {
+				mode: 'full',
+				isPartial: false,
+				cellsHydrated: true,
+				richSheetMetadataHydrated: true,
+				hasAllSheets: true,
+				partialReasons: [],
+				sourceSheets: [name],
+				loadedSheets: [name],
+			},
+		}),
 	)
 }
 
@@ -469,6 +493,72 @@ function buildSdkEditCycleWorkbook(rows: number): Workbook {
 	}
 	recalculate(workbook, defaultCalcContext())
 	return workbook
+}
+
+const interactiveSessionCache = new WeakMap<Uint8Array, Promise<AscendSession>>()
+let cachedDenseViewportBytes: Uint8Array | undefined
+let cachedSparseWideViewportBytes: Uint8Array | undefined
+let cachedSemanticViewportBytes: Uint8Array | undefined
+
+function cachedDenseViewportWorkbookBytes(): Uint8Array {
+	cachedDenseViewportBytes ??= mustWrite(buildDenseWorkbook(5000, 20))
+	return cachedDenseViewportBytes
+}
+
+function cachedSparseWideViewportWorkbookBytes(): Uint8Array {
+	cachedSparseWideViewportBytes ??= mustWrite(buildSparseWorkbook(100_000, 20, 500))
+	return cachedSparseWideViewportBytes
+}
+
+function cachedSemanticViewportWorkbookBytes(): Uint8Array {
+	if (cachedSemanticViewportBytes) return cachedSemanticViewportBytes
+	const workbook = AscendWorkbook.create()
+	workbook.apply([
+		{
+			op: 'setCells',
+			sheet: 'Sheet1',
+			updates: [
+				{ ref: 'A1', value: 'Region' },
+				{ ref: 'B1', value: 'Status' },
+				{ ref: 'C1', value: 'Amount' },
+				...Array.from({ length: 100 }, (_, index) => [
+					{ ref: `A${index + 2}`, value: index % 2 === 0 ? 'West' : 'East' },
+					{ ref: `B${index + 2}`, value: index % 3 === 0 ? 'Open' : 'Closed' },
+					{ ref: `C${index + 2}`, value: (index + 1) * 10 },
+				]).flat(),
+			],
+		},
+		{ op: 'setFormula', sheet: 'Sheet1', ref: 'D2', formula: 'C2*2' },
+		{ op: 'setStyle', sheet: 'Sheet1', range: 'C2:C101', style: { numberFormat: '$0.00' } },
+		{ op: 'setComment', sheet: 'Sheet1', ref: 'E5', text: 'review', author: 'agent' },
+		{ op: 'setHyperlink', sheet: 'Sheet1', ref: 'F5', url: 'https://example.com' },
+		{
+			op: 'setDataValidation',
+			sheet: 'Sheet1',
+			range: 'B2:B101',
+			rule: { type: 'list', formula1: '"Open,Closed"', allowBlank: true },
+		},
+		{
+			op: 'setConditionalFormat',
+			sheet: 'Sheet1',
+			range: 'C2:C101',
+			rule: { type: 'cellIs', operator: 'greaterThan', formula: '100', priority: 1 },
+		},
+		{ op: 'mergeCells', sheet: 'Sheet1', range: 'H1:I1' },
+		{ op: 'setAutoFilter', sheet: 'Sheet1', range: 'A1:C101', column: 1, values: ['Open'] },
+		{ op: 'createTable', sheet: 'Sheet1', ref: 'A1:C101', name: 'Sales', hasHeaders: true },
+		{ op: 'freezePane', sheet: 'Sheet1', row: 1, col: 1 },
+	])
+	cachedSemanticViewportBytes = workbook.toBytes()
+	return cachedSemanticViewportBytes
+}
+
+function interactiveSessionFor(bytes: Uint8Array): Promise<AscendSession> {
+	const cached = interactiveSessionCache.get(bytes)
+	if (cached) return cached
+	const session = AscendSession.open(bytes, { mode: 'interactive' })
+	interactiveSessionCache.set(bytes, session)
+	return session
 }
 
 function buildDefinedNameHeavyWorkbook(nameCount: number, formulaCount: number): Workbook {
@@ -1063,6 +1153,126 @@ const scenarios: readonly Scenario[] = [
 					lastRow: last.row,
 					lastCol: last.col,
 					lastValue: last.value.kind === 'number' ? last.value.value : null,
+				},
+			}
+		},
+	},
+	{
+		name: 'sdk-viewport-read-dense-hot',
+		category: 'read',
+		build() {
+			return { bytes: cachedDenseViewportWorkbookBytes(), rows: 250, cols: 20, cells: 5000 }
+		},
+		async run(input) {
+			const session = await interactiveSessionFor(requireBytes(input))
+			const viewport = session.readViewport({
+				sheet: 'Sheet1',
+				topRow: 0,
+				leftCol: 0,
+				rowCount: 250,
+				colCount: 20,
+			})
+			const first = viewport.cells[0]
+			const last = viewport.cells[viewport.cells.length - 1]
+			if (
+				!first ||
+				!last ||
+				viewport.cells.length !== 5000 ||
+				viewport.flatValues.length !== 5000 ||
+				first.flatValue !== 1 ||
+				last.flatValue !== 5000
+			) {
+				throw new Error('Dense interactive viewport benchmark returned an unexpected payload')
+			}
+			return {
+				assertions: {
+					returnedCells: viewport.cells.length,
+					flatValues: viewport.flatValues.length,
+					firstValue: first.flatValue,
+					lastValue: last.flatValue,
+				},
+			}
+		},
+	},
+	{
+		name: 'sdk-viewport-read-sparse-wide-hot',
+		category: 'read',
+		build() {
+			return {
+				bytes: cachedSparseWideViewportWorkbookBytes(),
+				rows: 5000,
+				cols: 20,
+				cells: 100_000,
+			}
+		},
+		async run(input) {
+			const session = await interactiveSessionFor(requireBytes(input))
+			const viewport = session.readViewport({
+				sheet: 'Sheet1',
+				topRow: 0,
+				leftCol: 0,
+				rowCount: 5000,
+				colCount: 20,
+			})
+			const first = viewport.cells[0]
+			const last = viewport.cells[viewport.cells.length - 1]
+			if (
+				!first ||
+				!last ||
+				viewport.cells.length !== 200 ||
+				viewport.flatValues.length !== 100_000 ||
+				first.flatValue !== 1 ||
+				last.flatValue !== 4520
+			) {
+				throw new Error('Sparse interactive viewport benchmark returned an unexpected payload')
+			}
+			return {
+				assertions: {
+					returnedCells: viewport.cells.length,
+					flatValues: viewport.flatValues.length,
+					firstValue: first.flatValue,
+					lastValue: last.flatValue,
+				},
+			}
+		},
+	},
+	{
+		name: 'sdk-semantic-viewport-rich',
+		category: 'read',
+		build() {
+			return { bytes: cachedSemanticViewportWorkbookBytes(), rows: 50, cols: 10, cells: 500 }
+		},
+		async run(input) {
+			const session = await interactiveSessionFor(requireBytes(input))
+			const viewport = session.readViewport({
+				sheet: 'Sheet1',
+				topRow: 0,
+				leftCol: 0,
+				rowCount: 50,
+				colCount: 10,
+			})
+			if (
+				viewport.cells.length < 150 ||
+				viewport.merges.length !== 1 ||
+				viewport.comments.length !== 1 ||
+				viewport.hyperlinks.length !== 1 ||
+				viewport.dataValidations.length !== 1 ||
+				viewport.conditionalFormats.length !== 1 ||
+				viewport.tables.length !== 1 ||
+				viewport.autoFilter?.ref !== 'A1:C101'
+			) {
+				throw new Error('Semantic interactive viewport benchmark returned an unexpected payload')
+			}
+			return {
+				assertions: {
+					returnedCells: viewport.cells.length,
+					flatValues: viewport.flatValues.length,
+					merges: viewport.merges.length,
+					comments: viewport.comments.length,
+					hyperlinks: viewport.hyperlinks.length,
+					validations: viewport.dataValidations.length,
+					conditionalFormats: viewport.conditionalFormats.length,
+					tables: viewport.tables.length,
 				},
 			}
 		},
@@ -1873,6 +2083,11 @@ const scenarioSets = {
 		'read-string-heavy',
 		'read-formula-dense',
 		'read-large-200k-values',
+	],
+	'ui-latency': [
+		'sdk-viewport-read-dense-hot',
+		'sdk-viewport-read-sparse-wide-hot',
+		'sdk-semantic-viewport-rich',
 	],
 } as const
 

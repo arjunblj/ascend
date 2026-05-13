@@ -910,6 +910,20 @@ function buildMixedGridStorageAssertions(rows: number, width: number): Record<st
 	}
 }
 
+function readXlsxGridStorageAssertions(bytes: Uint8Array): Record<string, number | boolean> {
+	const readStart = performance.now()
+	const result = readXlsx(bytes, { mode: 'full', richMetadata: true })
+	const readMs = performance.now() - readStart
+	if (!result.ok) throw new Error(`XLSX grid storage read failed: ${result.error.message}`)
+	return {
+		bytes: bytes.byteLength,
+		readMs,
+		loadIsPartial: result.value.loadInfo.isPartial,
+		...workbookGridShapeAssertions(result.value.workbook),
+		...workbookGridStorageAssertions(result.value.workbook),
+	}
+}
+
 function prefixAssertions(
 	prefix: string,
 	assertions: Record<string, number>,
@@ -1178,6 +1192,20 @@ const scenarios: readonly Scenario[] = [
 			},
 			run(input) {
 				return { assertions: buildMixedGridStorageAssertions(input.rows, width) }
+			},
+		}),
+	),
+	...([5, 10, 20] as const).map(
+		(width): Scenario => ({
+			name: `xlsx-grid-storage-width-${width}`,
+			category: 'read',
+			build() {
+				const rows = 20_000
+				const bytes = mustWrite(buildPlainNumericWorkbook(rows, width))
+				return { bytes, rows, cols: width, cells: rows * width, byteCount: bytes.byteLength }
+			},
+			run(input) {
+				return { assertions: readXlsxGridStorageAssertions(requireBytes(input)) }
 			},
 		}),
 	),
@@ -3869,6 +3897,9 @@ const scenarioSets = {
 		'grid-storage-width-50',
 		'grid-storage-mixed-width-10',
 		'grid-storage-mixed-width-20',
+		'xlsx-grid-storage-width-5',
+		'xlsx-grid-storage-width-10',
+		'xlsx-grid-storage-width-20',
 	],
 	'large-read': [
 		'read-large-200k',

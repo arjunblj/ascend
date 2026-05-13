@@ -41,6 +41,7 @@ export {
 	auditPackageGraphIntegrity,
 	auditPackageGraphRoundtrip,
 	commitAgentPlan,
+	commitAgentPlanFromWorkbook,
 	compactAgentPlanResult,
 	createAgentPlan,
 	createAgentPlanFromWorkbook,

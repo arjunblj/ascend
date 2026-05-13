@@ -13,6 +13,7 @@ import {
 	type CapabilityFilters,
 	type CompactRangeWindowInfo,
 	commitAgentPlan,
+	commitAgentPlanFromWorkbook,
 	compactAgentPlanResult,
 	createAgentPlan,
 	createAgentPlanFromWorkbook,
@@ -60,17 +61,6 @@ type ResolvedOperationInput =
 			readonly pathMutations?: PathMutationResult
 	  }
 	| { readonly ok: false; readonly error: AscendError }
-
-async function resolveOperationInput(
-	file: string,
-	ops: readonly Record<string, unknown>[] | undefined,
-	mutations: readonly PathMutation[] | undefined,
-): Promise<ResolvedOperationInput> {
-	const shape = resolveOperationInputShape(ops, mutations)
-	if (!shape.ok || !('mutations' in shape)) return shape
-	const wb = await Ascend.open(file)
-	return compilePathMutationInput(wb, shape.mutations)
-}
 
 function resolveOperationInputForWorkbook(
 	wb: AscendWorkbook,
@@ -1219,8 +1209,8 @@ export function createServer(): McpServer {
 			approvals,
 		}) => {
 			try {
-				const input = await resolveOperationInput(file, ops, mutations)
-				if (!input.ok) return errorResponse(input.error)
+				const inputShape = resolveOperationInputShape(ops, mutations)
+				if (!inputShape.ok) return errorResponse(inputShape.error)
 				const options: AgentCommitOptions = {
 					...(output ? { output } : {}),
 					...(inPlace ? { inPlace: true } : {}),
@@ -1229,9 +1219,22 @@ export function createServer(): McpServer {
 					...(allowLoss ? { allowLoss: parseAllowLoss(allowLoss) } : {}),
 					...(approvals ? { approvals: parseStringListOrAll(approvals) } : {}),
 				}
-				const result = await commitAgentPlan(file, input.ops, options)
+				let input: ResolvedOperationInput
+				let pathMutations: PathMutationResult | undefined
+				let result: Awaited<ReturnType<typeof commitAgentPlan>>
+				if ('mutations' in inputShape) {
+					const inputSha256 = await hashInputFile(file)
+					const wb = await Ascend.open(file)
+					input = compilePathMutationInput(wb, inputShape.mutations)
+					if (!input.ok) return errorResponse(input.error)
+					pathMutations = input.pathMutations
+					result = await commitAgentPlanFromWorkbook(file, inputSha256, wb, input.ops, options)
+				} else {
+					input = inputShape
+					result = await commitAgentPlan(file, input.ops, options)
+				}
 				return okResponse(
-					withPathMutationResult(result, input.pathMutations),
+					withPathMutationResult(result, pathMutations),
 					`Committed ${input.ops.length} operation(s)`,
 				)
 			} catch (e) {

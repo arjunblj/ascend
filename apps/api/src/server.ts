@@ -13,6 +13,7 @@ import {
 	type CapabilityStatus,
 	type CompactRangeWindowInfo,
 	commitAgentPlan,
+	commitAgentPlanFromWorkbook,
 	compactAgentPlanResult,
 	createAgentPlan,
 	createAgentPlanFromWorkbook,
@@ -104,16 +105,6 @@ type OperationInput =
 			readonly pathMutations?: PathMutationResult
 	  }
 	| { readonly ok: false; readonly error: AscendError }
-
-async function resolveOperationInput(
-	file: string,
-	body: Record<string, unknown> | null,
-): Promise<OperationInput> {
-	const shape = resolveOperationInputShape(body)
-	if (!shape.ok || !('mutations' in shape)) return shape
-	const wb = await AscendWorkbook.open(file)
-	return compilePathMutationInput(wb, shape.mutations)
-}
 
 function resolveOperationInputForWorkbook(
 	wb: AscendWorkbook,
@@ -803,8 +794,8 @@ export function createApiFetch() {
 				const file = body ? requireString(body, 'file') : null
 				if (!file) return jsonFailure('Missing or invalid file', 400)
 				try {
-					const input = await resolveOperationInput(file, body)
-					if (!input.ok) return jsonFailureError(input.error, 400)
+					const inputShape = resolveOperationInputShape(body)
+					if (!inputShape.ok) return jsonFailureError(inputShape.error, 400)
 					const output = body ? requireString(body, 'output') : null
 					const backup = body ? requireString(body, 'backup') : null
 					const expectSha256 = body ? requireString(body, 'expectSha256') : null
@@ -826,8 +817,21 @@ export function createApiFetch() {
 						...(allowLoss ? { allowLoss } : {}),
 						...(approvals ? { approvals } : {}),
 					}
-					const result = await commitAgentPlan(file, input.ops, options)
-					return jsonSuccess(withPathMutationResult(result, input.pathMutations))
+					let input: OperationInput
+					let pathMutations: PathMutationResult | undefined
+					let result: Awaited<ReturnType<typeof commitAgentPlan>>
+					if ('mutations' in inputShape) {
+						const inputSha256 = await hashInputFile(file)
+						const wb = await AscendWorkbook.open(file)
+						input = compilePathMutationInput(wb, inputShape.mutations)
+						if (!input.ok) return jsonFailureError(input.error, 400)
+						pathMutations = input.pathMutations
+						result = await commitAgentPlanFromWorkbook(file, inputSha256, wb, input.ops, options)
+					} else {
+						input = inputShape
+						result = await commitAgentPlan(file, input.ops, options)
+					}
+					return jsonSuccess(withPathMutationResult(result, pathMutations))
 				} catch (e) {
 					return handleError(e, file)
 				}

@@ -465,15 +465,12 @@ export function compactAgentPlanResult(
 	}
 }
 
-export async function commitAgentPlan(
+async function resolveCommitOutputTarget(
 	file: string,
-	ops: readonly Operation[],
-	options: AgentCommitOptions = {},
-): Promise<AgentCommitResult> {
-	const progress = createProgressEmitter('commit', options.onProgress)
-	await progress('hash-input', 'started', 'Hashing input workbook.')
-	const inputSha256 = await fileSha256(file)
-	await progress('hash-input', 'ok', 'Input workbook hash captured.')
+	inputSha256: string,
+	options: AgentCommitOptions,
+	progress: ReturnType<typeof createProgressEmitter>,
+): Promise<string> {
 	if (options.expectSha256 && options.expectSha256 !== inputSha256) {
 		await progress('hash-guard', 'failed', 'Input hash did not match expected SHA-256.', {
 			details: { expected: options.expectSha256, actual: inputSha256 },
@@ -512,11 +509,40 @@ export async function commitAgentPlan(
 		)
 	}
 	await progress('output-policy', 'ok', `Commit output target resolved to ${output}.`)
+	return output
+}
 
+export async function commitAgentPlan(
+	file: string,
+	ops: readonly Operation[],
+	options: AgentCommitOptions = {},
+): Promise<AgentCommitResult> {
+	const progress = createProgressEmitter('commit', options.onProgress)
+	await progress('hash-input', 'started', 'Hashing input workbook.')
+	const inputSha256 = await fileSha256(file)
+	await progress('hash-input', 'ok', 'Input workbook hash captured.')
+	const output = await resolveCommitOutputTarget(file, inputSha256, options, progress)
 	await progress('load-workbook', 'started', 'Opening workbook.')
 	const wb = await AscendWorkbook.open(file)
-	const writePolicyWorkbook = snapshotWritePolicyWorkbook(wb.getWorkbookModel())
 	await progress('load-workbook', 'ok', 'Workbook opened.')
+	return commitAgentPlanFromWorkbook(file, inputSha256, wb, ops, options, { progress, output })
+}
+
+export async function commitAgentPlanFromWorkbook(
+	file: string,
+	inputSha256: string,
+	wb: AscendWorkbook,
+	ops: readonly Operation[],
+	options: AgentCommitOptions = {},
+	internal: {
+		readonly progress?: ReturnType<typeof createProgressEmitter>
+		readonly output?: string
+	} = {},
+): Promise<AgentCommitResult> {
+	const progress = internal.progress ?? createProgressEmitter('commit', options.onProgress)
+	const output =
+		internal.output ?? (await resolveCommitOutputTarget(file, inputSha256, options, progress))
+	const writePolicyWorkbook = snapshotWritePolicyWorkbook(wb.getWorkbookModel())
 	const packageGraph = wb.packageGraph()
 	await progress('approval-audit', 'started', 'Auditing explicit approval requirements.')
 	const approvals = buildApprovalRequirements(wb.report.features, ops)

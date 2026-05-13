@@ -1285,9 +1285,10 @@ function collectActiveContent(
 	},
 ): ActiveContentInfo[] {
 	const activeContent: ActiveContentInfo[] = []
-	const worksheetControls = options.hydrateWorksheetControlDetails
-		? collectWorksheetControls(archive, sheetPathToAnchor, sheetRelsByPath)
-		: new Map<string, NonNullable<ActiveContentInfo['worksheetControl']>>()
+	const worksheetControls =
+		options.hydrateWorksheetControlDetails && hasWorksheetControlActiveContent(capsules)
+			? collectWorksheetControls(archive, sheetPathToAnchor, sheetRelsByPath)
+			: new Map<string, NonNullable<ActiveContentInfo['worksheetControl']>>()
 	const capsuleRelationshipByTarget = mapCapsuleRelationshipsByTarget(capsules)
 	for (const capsule of capsules) {
 		const kind = classifyActiveContent(capsule)
@@ -1347,6 +1348,17 @@ function collectActiveContent(
 		})
 	}
 	return activeContent
+}
+
+function hasWorksheetControlActiveContent(capsules: readonly PreservationCapsule[]): boolean {
+	for (const capsule of capsules) {
+		if (capsule.anchor.kind !== 'sheet' || !capsule.relId) continue
+		const kind = classifyActiveContent(capsule)
+		if (kind === 'activeX' || kind === 'formControl' || kind === 'unknownActiveContent') {
+			return true
+		}
+	}
+	return false
 }
 
 function mapCapsuleRelationshipsByTarget(capsules: readonly PreservationCapsule[]): Map<

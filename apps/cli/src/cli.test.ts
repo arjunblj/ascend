@@ -7,6 +7,7 @@ import { runCli } from './index.ts'
 
 const CLI = new URL('./index.ts', import.meta.url).pathname
 const TEST_FILE = 'test-output.xlsx'
+const DUMP_TEST_FILE = 'test-dump.xlsx'
 const APPROVAL_TEST_FILE = 'test-approval.xlsx'
 const MULTI_SHEET_FILE = 'test-multi.xlsx'
 const NAMED_RANGE_FILE = 'test-named.xlsx'
@@ -89,6 +90,7 @@ function formatConsole(values: readonly unknown[]): string {
 afterAll(() => {
 	for (const f of [
 		TEST_FILE,
+		DUMP_TEST_FILE,
 		MULTI_SHEET_FILE,
 		NAMED_RANGE_FILE,
 		TUI_TEST_FILE,
@@ -360,6 +362,39 @@ describe('ascend cli', () => {
 				expect.objectContaining({ code: 'invalid_operation', opIndex: 2, path: 'ops[2].op' }),
 			]),
 		)
+	})
+
+	test('dump --json emits a replayable operation batch', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 10 },
+					{ ref: 'B1', value: 'label' },
+				],
+			},
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'B2', formula: 'A1*2' },
+		])
+		await wb.save(`${import.meta.dir}/${DUMP_TEST_FILE}`)
+
+		const result = await run('dump', DUMP_TEST_FILE, '--json')
+		expect(result.exitCode).toBe(0)
+		const parsed = JSON.parse(result.stdout)
+		expect(parsed.ok).toBe(true)
+		expect(parsed.data.replayable).toBe(true)
+		expect(parsed.data.ops).toEqual([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 10 },
+					{ ref: 'B1', value: 'label' },
+				],
+			},
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'B2', formula: 'A1*2' },
+		])
 	})
 
 	test('commit accepts only exact approval ids emitted by plan', async () => {

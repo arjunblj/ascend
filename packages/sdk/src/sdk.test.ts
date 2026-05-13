@@ -1184,6 +1184,52 @@ describe('AscendWorkbook', () => {
 		expect(wb.sheet('Sheet1')?.cell('A3')?.value).toEqual({ kind: 'number', value: 30 })
 	})
 
+	test('dumpBatch emits deterministic replay ops and reports unsupported values', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 10 },
+					{ ref: 'B1', value: 'label' },
+					{ ref: 'A2', value: true },
+				],
+			},
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'B2', formula: 'A1*2' },
+			{ op: 'setRichText', sheet: 'Sheet1', ref: 'C1', runs: [{ text: 'rich', bold: true }] },
+		])
+
+		const dump = wb.dumpBatch()
+		expect(dump.replayable).toBe(false)
+		expect(dump.cellCount).toBe(4)
+		expect(dump.formulaCount).toBe(1)
+		expect(dump.unsupported).toEqual([
+			expect.objectContaining({
+				sheet: 'Sheet1',
+				ref: 'C1',
+				valueKind: 'richText',
+			}),
+		])
+		expect(dump.ops).toEqual([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 10 },
+					{ ref: 'B1', value: 'label' },
+					{ ref: 'A2', value: true },
+				],
+			},
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'B2', formula: 'A1*2' },
+		])
+
+		const replayed = AscendWorkbook.create()
+		expect(replayed.batch(dump.ops).errors).toEqual([])
+		expect(replayed.recalc().errors).toEqual([])
+		expect(replayed.get('Sheet1!B2')).toEqual({ kind: 'number', value: 20 })
+	})
+
 	test('batch(fn) defers recalc until all mutations complete, triggers single recalc', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([{ op: 'setFormula', sheet: 'Sheet1', ref: 'A4', formula: 'A1+A2+A3' }])

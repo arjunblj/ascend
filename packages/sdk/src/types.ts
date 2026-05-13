@@ -1186,6 +1186,28 @@ export interface BatchResult {
 	readonly errors: readonly AscendError[]
 }
 
+export interface DumpBatchOptions {
+	readonly includeValues?: boolean
+	readonly includeFormulas?: boolean
+	readonly sheets?: readonly string[]
+}
+
+export interface DumpBatchUnsupportedCell {
+	readonly sheet: string
+	readonly ref: string
+	readonly valueKind: CellValue['kind']
+	readonly reason: string
+}
+
+export interface DumpBatchResult {
+	readonly ops: readonly Operation[]
+	readonly sheetCount: number
+	readonly cellCount: number
+	readonly formulaCount: number
+	readonly unsupported: readonly DumpBatchUnsupportedCell[]
+	readonly replayable: boolean
+}
+
 export type {
 	ExternalCellReference,
 	ExternalRangeReference,

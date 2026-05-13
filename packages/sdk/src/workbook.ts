@@ -61,6 +61,9 @@ import type {
 	BatchResult,
 	CheckIssue,
 	CheckResult,
+	DumpBatchOptions,
+	DumpBatchResult,
+	DumpBatchUnsupportedCell,
 	EvalOptions,
 	LintResult,
 	LintWarning,
@@ -89,6 +92,41 @@ function stringMatches(
 			return haystack.startsWith(needle)
 		case 'endsWith':
 			return haystack.endsWith(needle)
+	}
+}
+
+function dumpableInputValue(
+	value: CellValue,
+): { ok: true; value: InputValue } | { ok: false; reason: string } {
+	switch (value.kind) {
+		case 'empty':
+			return { ok: true, value: null }
+		case 'number':
+			return { ok: true, value: value.value }
+		case 'string':
+			return { ok: true, value: value.value }
+		case 'boolean':
+			return { ok: true, value: value.value }
+		case 'date':
+			return {
+				ok: false,
+				reason: 'Date cells require style-aware serialization before replay.',
+			}
+		case 'error':
+			return {
+				ok: false,
+				reason: 'Error values require formula/error-value operation support before replay.',
+			}
+		case 'richText':
+			return {
+				ok: false,
+				reason: 'Rich text requires setRichText operation support before replay.',
+			}
+		case 'array':
+			return {
+				ok: false,
+				reason: 'Array values require spill-aware formula serialization before replay.',
+			}
 	}
 }
 
@@ -480,6 +518,63 @@ export class AscendWorkbook extends WorkbookReadView {
 		if (result.value.recalcRequired) this.mergePendingRecalcTargets(opsOrFn)
 		this.clearReadCaches()
 		return { errors: [] }
+	}
+
+	/**
+	 * Serialize supported cell values and formulas into a deterministic operation batch.
+	 * Unsupported value kinds are reported instead of silently lossy-converted.
+	 */
+	dumpBatch(options: DumpBatchOptions = {}): DumpBatchResult {
+		const includeValues = options.includeValues ?? true
+		const includeFormulas = options.includeFormulas ?? true
+		const selectedSheets = options.sheets ? new Set(options.sheets) : null
+		const ops: Operation[] = []
+		const unsupported: DumpBatchUnsupportedCell[] = []
+		let sheetCount = 0
+		let cellCount = 0
+		let formulaCount = 0
+
+		for (const sheet of this.wb.sheets) {
+			if (selectedSheets && !selectedSheets.has(sheet.name)) continue
+			sheetCount += 1
+			const updates: Array<{ ref: string; value: InputValue }> = []
+			const formulaOps: Operation[] = []
+			for (const [row, col, cell] of sheet.cells.iterate()) {
+				const ref = `${indexToColumn(col)}${row + 1}`
+				const formula = sheet.cells.readFormula(row, col)
+				if (formula) {
+					cellCount += 1
+					formulaCount += 1
+					if (includeFormulas)
+						formulaOps.push({ op: 'setFormula', sheet: sheet.name, ref, formula })
+					continue
+				}
+				if (!includeValues) continue
+				const input = dumpableInputValue(cell.value ?? EMPTY)
+				if (input.ok) {
+					cellCount += 1
+					updates.push({ ref, value: input.value })
+				} else {
+					unsupported.push({
+						sheet: sheet.name,
+						ref,
+						valueKind: (cell.value ?? EMPTY).kind,
+						reason: input.reason,
+					})
+				}
+			}
+			if (updates.length > 0) ops.push({ op: 'setCells', sheet: sheet.name, updates })
+			ops.push(...formulaOps)
+		}
+
+		return {
+			ops,
+			sheetCount,
+			cellCount,
+			formulaCount,
+			unsupported,
+			replayable: unsupported.length === 0,
+		}
 	}
 
 	/**

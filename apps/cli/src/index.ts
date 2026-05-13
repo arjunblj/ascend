@@ -11,6 +11,7 @@ import { createCommand, usage as createUsage } from './commands/create.ts'
 import { diffCommand, usage as diffUsage } from './commands/diff.ts'
 import { docsCommand, usage as docsUsage } from './commands/docs.ts'
 import { doctorCommand, usage as doctorUsage } from './commands/doctor.ts'
+import { dumpCommand, usage as dumpUsage } from './commands/dump.ts'
 import { exportCommand, usage as exportUsage } from './commands/export.ts'
 import { findCommand, usage as findUsage } from './commands/find.ts'
 import { formulaCommand, usage as formulaUsage } from './commands/formula.ts'
@@ -40,6 +41,7 @@ Commands:
   inspect <file> [sheet]        Show workbook/sheet structure
   list <file>                   List sheets and tables
   read <file> <range>           Read cell values from a range
+  dump <file>                   Dump a replayable operation batch
   find <file> <query>           Search for cells matching a value
   agent-view <file>             Get AI-friendly sheet summary
   agent-init                    Print the recommended agent workflow contract
@@ -97,6 +99,11 @@ const COMMANDS: Record<string, Command> = {
 		run: readCommand,
 		usage: readUsage,
 		allowedFlags: ['sheet', 'mode', 'row-offset', 'row-limit', 'display', 'json'],
+	},
+	dump: {
+		run: dumpCommand,
+		usage: dumpUsage,
+		allowedFlags: ['sheet', 'values-only', 'formulas-only', 'json'],
 	},
 	ops: { run: opsCommand, usage: opsUsage, allowedFlags: ['op', 'json'] },
 	capabilities: {

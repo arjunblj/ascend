@@ -1672,6 +1672,34 @@ describe('interactive client contract', () => {
 		})
 		expect(wb.sheet('Sheet1')?.getComments()).toEqual([{ ref: 'B2', text: 'review' }])
 	})
+
+	test('structural delete journals mark broken external formula references as lossy', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A2', value: 5 }] },
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'B1', formula: 'A2' },
+			{ op: 'setDefinedName', name: 'DeletedInput', ref: 'Sheet1!A2' },
+		])
+
+		const deletedRow = wb.apply([{ op: 'deleteRows', sheet: 'Sheet1', at: 1, count: 1 }], {
+			journal: true,
+		})
+
+		expect(deletedRow.errors).toEqual([])
+		expect(deletedRow.journal?.supported).toBe(true)
+		expect(deletedRow.journal?.exact).toBe(false)
+		expect(deletedRow.journal?.issues).toContainEqual({
+			code: 'LOSSY_INVERSE',
+			message: 'Deleted row formula references on Sheet1 cannot be restored with public operations',
+			refs: ['Sheet1!B1', 'name:DeletedInput'],
+		})
+		expect(wb.sheet('Sheet1')?.cell('B1')?.formula).toBe('#REF!')
+
+		const undo = wb.apply(deletedRow.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(wb.sheet('Sheet1')?.cell('A2')?.value).toEqual({ kind: 'number', value: 5 })
+		expect(wb.sheet('Sheet1')?.cell('B1')?.formula).toBe('#REF!')
+	})
 })
 
 function journalComparableState(wb: AscendWorkbook): object {

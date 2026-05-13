@@ -34,6 +34,7 @@ import {
 	type WorkbookView,
 } from '@ascend/core'
 import { applyOperation } from '@ascend/engine'
+import { cachedParseFormula, extractRefs, type FormulaRef } from '@ascend/formulas'
 import type {
 	CalcSettings,
 	CellValue,
@@ -2005,7 +2006,113 @@ function structuralDeleteIssues(
 			refs,
 		})
 	}
+	issues.push(...structuralFormulaReferenceIssues(workbook, preimage))
 	return issues
+}
+
+function structuralFormulaReferenceIssues(
+	workbook: Workbook,
+	preimage: MutationJournalStructuralPreimage,
+): readonly MutationJournalIssue[] {
+	const refs = structuralFormulaReferenceLocations(workbook, preimage)
+	if (refs.length === 0) return []
+	return [
+		{
+			code: 'LOSSY_INVERSE',
+			message: `Deleted ${preimage.axis === 'row' ? 'row' : 'column'} formula references on ${preimage.sheet} cannot be restored with public operations`,
+			refs,
+		},
+	]
+}
+
+function structuralFormulaReferenceLocations(
+	workbook: Workbook,
+	preimage: MutationJournalStructuralPreimage,
+): string[] {
+	const refs: string[] = []
+	for (const sheet of workbook.sheets) {
+		for (const [row, col, cell] of sheet.cells.iterate()) {
+			if (!cell.formula) continue
+			if (formulaReferencesDeletedAxis(workbook, cell.formula, sheet.name, preimage)) {
+				refs.push(`${sheet.name}!${toA1({ row, col })}`)
+			}
+		}
+	}
+	for (const name of workbook.definedNames.list()) {
+		const scopeSheet =
+			name.scope.kind === 'sheet' ? sheetNameForId(workbook, name.scope.sheetId) : undefined
+		if (
+			formulaReferencesDeletedAxis(workbook, name.formula, scopeSheet ?? preimage.sheet, preimage)
+		) {
+			refs.push(definedNameJournalKey(workbook, name))
+		}
+	}
+	return refs
+}
+
+function formulaReferencesDeletedAxis(
+	workbook: Workbook,
+	formula: string,
+	ownerSheet: string,
+	preimage: MutationJournalStructuralPreimage,
+): boolean {
+	const parsed = cachedParseFormula(formula)
+	if (!parsed.ok) return false
+	return extractRefs(parsed.value).some((ref) =>
+		formulaRefOverlapsDeletedAxis(workbook, ref, ownerSheet, preimage),
+	)
+}
+
+function formulaRefOverlapsDeletedAxis(
+	workbook: Workbook,
+	ref: FormulaRef,
+	ownerSheet: string,
+	preimage: MutationJournalStructuralPreimage,
+): boolean {
+	if (ref.kind === 'sheetSpan') {
+		return (
+			sheetSpanIncludes(workbook, ref.startSheet, ref.endSheet, preimage.sheet) &&
+			formulaRefOverlapsDeletedAxis(workbook, ref.target, preimage.sheet, preimage)
+		)
+	}
+	const sheet = 'sheet' in ref && ref.sheet !== undefined ? ref.sheet : ownerSheet
+	if (sheet !== preimage.sheet) return false
+	const end = preimage.at + preimage.count - 1
+	switch (ref.kind) {
+		case 'cell':
+			return preimage.axis === 'row'
+				? ref.ref.row >= preimage.at && ref.ref.row <= end
+				: ref.ref.col >= preimage.at && ref.ref.col <= end
+		case 'range':
+			return preimage.axis === 'row'
+				? ref.start.row <= end && ref.end.row >= preimage.at
+				: ref.start.col <= end && ref.end.col >= preimage.at
+		case 'wholeRowRange':
+			return preimage.axis === 'row' && ref.startRow <= end && ref.endRow >= preimage.at
+		case 'wholeColumnRange':
+			return preimage.axis === 'col' && ref.startCol <= end && ref.endCol >= preimage.at
+		default:
+			return false
+	}
+}
+
+function sheetSpanIncludes(
+	workbook: Workbook,
+	startSheet: string,
+	endSheet: string,
+	targetSheet: string,
+): boolean {
+	const start = workbook.sheets.findIndex((sheet) => sheet.name === startSheet)
+	const end = workbook.sheets.findIndex((sheet) => sheet.name === endSheet)
+	const target = workbook.sheets.findIndex((sheet) => sheet.name === targetSheet)
+	if (start < 0 || end < 0 || target < 0) return false
+	return target >= Math.min(start, end) && target <= Math.max(start, end)
+}
+
+function definedNameJournalKey(workbook: Workbook, entry: DefinedName): string {
+	if (entry.scope.kind === 'workbook') return `name:${entry.name}`
+	const sheetName = sheetNameForId(workbook, entry.scope.sheetId) ?? 'Sheet'
+	return `name:${sheetName}!${entry.name}`
 }
 
 function structuralAffectedRange(axis: 'row' | 'col', at: number, count: number): RangeRef {

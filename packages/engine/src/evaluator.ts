@@ -227,10 +227,28 @@ function isLambdaBinding(binding: LetBinding): binding is LambdaInfo {
 	return typeof binding === 'object' && binding !== null && 'params' in binding && 'body' in binding
 }
 
-type ExternalEvalArea = EvalArea & { readonly externalReference: true }
+type ExternalEvalArea = EvalArea & {
+	readonly externalReference: true
+	readonly externalWorkbook: string
+	readonly externalSheet: string
+}
 
 function isExternalArea(area: EvalArea): area is ExternalEvalArea {
 	return (area as { externalReference?: boolean }).externalReference === true
+}
+
+function sameReferenceSurface(left: EvalArea, right: EvalArea): boolean {
+	const leftBounds = toAreaBounds(left.ref)
+	const rightBounds = toAreaBounds(right.ref)
+	if (isExternalArea(left) || isExternalArea(right)) {
+		return (
+			isExternalArea(left) &&
+			isExternalArea(right) &&
+			left.externalWorkbook === right.externalWorkbook &&
+			left.externalSheet === right.externalSheet
+		)
+	}
+	return leftBounds.sheetIndex === rightBounds.sheetIndex
 }
 
 type RangeValueCache = Map<number, readonly (readonly CellValue[])[]>
@@ -380,7 +398,16 @@ function resolveExternalRange(
 		allowCellFallback,
 	)
 	if (!values) return { value: errorValue('#REF!') }
-	return makeExternalRangeArg(ctx.sheetIndex, startRow, startCol, endRow, endCol, values)
+	return makeExternalRangeArg(
+		ctx.sheetIndex,
+		target.workbook,
+		target.sheet,
+		startRow,
+		startCol,
+		endRow,
+		endCol,
+		values,
+	)
 }
 
 function isCellInBounds(row: number, col: number): boolean {
@@ -2009,8 +2036,35 @@ function resolveIndexReference(argNodes: readonly FormulaNode[], ctx: EvalContex
 function resolveReferenceNode(node: FormulaNode, ctx: EvalContext): EvalArg | null {
 	switch (node.type) {
 		case 'cellRef': {
-			const external = resolveExternalCell(ctx, node.sheet, node.ref.row, node.ref.col)
-			if (external) {
+			const target = externalReferenceTarget(node.sheet)
+			const external = target
+				? resolveExternalCell(ctx, node.sheet, node.ref.row, node.ref.col)
+				: null
+			if (target && external) {
+				const area: ExternalEvalArea = {
+					externalReference: true,
+					externalWorkbook: target.workbook,
+					externalSheet: target.sheet,
+					ref: {
+						kind: 'range',
+						sheetIndex: ctx.sheetIndex,
+						row: node.ref.row,
+						col: node.ref.col,
+						endRow: node.ref.row,
+						endCol: node.ref.col,
+					},
+					topLeft: external,
+					values: [[external]],
+					valueAtOffset: (rowOffset, colOffset) =>
+						resolveExternalCell(
+							ctx,
+							node.sheet,
+							node.ref.row + rowOffset,
+							node.ref.col + colOffset,
+						) ?? errorValue('#REF!'),
+					forEachValue: (fn) => fn(external),
+					forEachCellInRange: (fn) => fn(external),
+				}
 				return {
 					value: external,
 					ref: {
@@ -2026,6 +2080,7 @@ function resolveReferenceNode(node: FormulaNode, ctx: EvalContext): EvalArg | nu
 							node.ref.row + rowOffset,
 							node.ref.col + colOffset,
 						) ?? errorValue('#REF!'),
+					areas: [area],
 				}
 			}
 			const si = resolveSheetIndex(ctx.workbook, node.sheet, ctx.sheetIndex)
@@ -2175,7 +2230,7 @@ function resolveReferenceNode(node: FormulaNode, ctx: EvalContext): EvalArg | nu
 				for (const rightArea of rightAreas) {
 					const leftRef = toAreaBounds(leftArea.ref)
 					const rightRef = toAreaBounds(rightArea.ref)
-					if (leftRef.sheetIndex !== rightRef.sheetIndex) continue
+					if (!sameReferenceSurface(leftArea, rightArea)) continue
 					const startRow = Math.max(leftRef.startRow, rightRef.startRow)
 					const startCol = Math.max(leftRef.startCol, rightRef.startCol)
 					const endRow = Math.min(leftRef.endRow, rightRef.endRow)
@@ -2255,7 +2310,9 @@ function resolveSpillReference(target: FormulaNode, ctx: EvalContext): EvalArg |
 	const sheet = ctx.workbook.sheets[targetRef.ref.sheetIndex]
 	if (!sheet) return null
 	const binding = sheet.cells.readFormulaInfo(targetRef.ref.row, targetRef.ref.col)
-	if (!binding || !isSpillFormulaBinding(binding)) return { value: errorValue('#REF!') }
+	if (!binding || !isSpillFormulaBinding(binding) || !binding.isAnchor) {
+		return { value: errorValue('#REF!') }
+	}
 	const parsed = cachedParseFormula(binding.ref)
 	if (!parsed.ok || parsed.value.type !== 'rangeRef') return null
 	return makeRangeArg(
@@ -2320,6 +2377,13 @@ function makeProjectedArea(
 		)
 	}
 	return {
+		...(isExternalArea(source)
+			? {
+					externalReference: true as const,
+					externalWorkbook: source.externalWorkbook,
+					externalSheet: source.externalSheet,
+				}
+			: {}),
 		ref: {
 			kind: 'range',
 			sheetIndex: sourceBounds.sheetIndex,
@@ -2386,6 +2450,8 @@ function makeProjectedArea(
 
 function makeExternalRangeArg(
 	sheetIndex: number,
+	workbook: string,
+	sheet: string,
 	startRow: number,
 	startCol: number,
 	endRow: number,
@@ -2395,6 +2461,8 @@ function makeExternalRangeArg(
 	const topLeft = values[0]?.[0] ?? EMPTY
 	const area: ExternalEvalArea = {
 		externalReference: true,
+		externalWorkbook: workbook,
+		externalSheet: sheet,
 		ref: {
 			kind: 'range',
 			sheetIndex,
@@ -3894,9 +3962,12 @@ function resolveDefinedName(
 	sheet: string | undefined,
 	ctx: EvalContext,
 ): { ast: FormulaNode; ctx: EvalContext } | null {
-	const explicitSheet = sheet ? ctx.workbook.getSheet(sheet) : undefined
+	const workbookIndexQualified = sheet !== undefined && /^\[\d+\]$/.test(sheet)
+	const explicitSheet = sheet && !workbookIndexQualified ? ctx.workbook.getSheet(sheet) : undefined
 	const currentSheet = ctx.workbook.sheets[ctx.sheetIndex]
-	const entry = ctx.workbook.definedNames.resolve(name, currentSheet?.id, explicitSheet?.id)
+	const entry = workbookIndexQualified
+		? ctx.workbook.definedNames.getEntry(name)
+		: ctx.workbook.definedNames.resolve(name, currentSheet?.id, explicitSheet?.id)
 	if (!entry) return null
 
 	const entryKey =

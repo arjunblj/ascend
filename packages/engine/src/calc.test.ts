@@ -542,6 +542,7 @@ describe('recalculate', () => {
 		data.cells.set(0, 0, { value: numberValue(2), formula: null, styleId: sid })
 		data.cells.set(1, 0, { value: numberValue(3), formula: null, styleId: sid })
 		wb.definedNames.set('col1_', 'Data!A1:A2')
+		wb.definedNames.set('col1_', 'Data!A2:A2', { kind: 'sheet', sheetId: calc.id })
 		calc.cells.set(0, 0, { value: EMPTY, formula: 'SUM([0]!col1_)', styleId: sid })
 		calc.cells.set(0, 1, { value: EMPTY, formula: 'SUM([0]!missing_name)', styleId: sid })
 
@@ -2589,9 +2590,11 @@ describe('recalculate', () => {
 		const sheet = wb.addSheet('Sheet1')
 		sheet.cells.set(0, 0, { value: EMPTY, formula: 'SEQUENCE(3)', styleId: sid })
 		sheet.cells.set(0, 1, { value: EMPTY, formula: 'SUM(A1#)', styleId: sid })
+		sheet.cells.set(1, 1, { value: EMPTY, formula: 'SUM(A2#)', styleId: sid })
 
 		recalculate(wb, makeCtx())
 		expect(sheet.cells.get(0, 1)?.value).toEqual(numberValue(6))
+		expect(sheet.cells.get(1, 1)?.value).toEqual(errorValue('#REF!'))
 	})
 
 	test('dirty recalc updates same-sheet spill dependents when a spill grows', () => {

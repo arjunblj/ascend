@@ -520,6 +520,60 @@ describe('interactive client contract', () => {
 		session.close()
 	})
 
+	test('interactive pull patches materialize fillFormula outputs and recalculated values', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 2 },
+					{ ref: 'A2', value: 4 },
+				],
+			},
+		])
+
+		const session = await AscendSession.open(wb.toBytes(), { mode: 'interactive' })
+		const before = session.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 2,
+			colCount: 3,
+		})
+		const edit = await session.apply([
+			{ op: 'fillFormula', sheet: 'Sheet1', range: 'B1:B2', formula: 'A1*2' },
+			{ op: 'setStyle', sheet: 'Sheet1', range: 'C2:C2', style: { numberFormat: '0.00' } },
+		])
+		expect(edit.apply.errors).toEqual([])
+		expect(edit.recalc?.changed).toEqual(['Sheet1!B1', 'Sheet1!B2'])
+
+		const patch = session.readViewportPatch({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 2,
+			colCount: 3,
+			changedSince: before.changeToken,
+		})
+		if (!patch) throw new Error('expected fillFormula patch')
+		expect(patch.changedCells.map((cell) => cell.ref).sort()).toEqual(['B1', 'B2', 'C2'])
+		const changed = new Map(patch.changedCells.map((cell) => [cell.ref, cell]))
+		expect(changed.get('B1')).toMatchObject({ formula: 'A1*2', flatValue: 4 })
+		expect(changed.get('B2')).toMatchObject({ formula: 'A2*2', flatValue: 8 })
+		expect(changed.get('C2')).toMatchObject({ formula: null, flatValue: null })
+		expect(changed.get('C2')?.styleId).not.toBe(0)
+		const fresh = session.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 2,
+			colCount: 3,
+		})
+		expect(materializeViewportPatch(before.cells, patch)).toEqual(interactiveCellMap(fresh.cells))
+		session.close()
+	})
+
 	test('interactive explicit recalc patches pending formula results after deferred recalc edits', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

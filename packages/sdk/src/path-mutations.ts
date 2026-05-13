@@ -497,11 +497,11 @@ function compileTableColumnPath(
 ): CompiledPathMutation | PathMutationIssue {
 	const column = tableColumnSelector(columnSegment)
 	if (!column.ok) return issue(mutation.path, 'invalid_path', column.message)
-	const exists =
+	const resolvedColumn =
 		typeof column.selector === 'number'
-			? column.selector >= 0 && column.selector < columns.length
-			: columns.includes(column.selector)
-	if (!exists) {
+			? resolveTableColumnIndex(column.selector, columns)
+			: resolveTableColumnName(column.selector, columns)
+	if (resolvedColumn === null) {
 		return issue(
 			mutation.path,
 			'invalid_path',
@@ -519,18 +519,18 @@ function compileTableColumnPath(
 				'Table column name value must be a non-empty string.',
 			)
 		}
-		return { op: { op: 'setTableColumn', table, column: column.selector, newName: mutation.value } }
+		return { op: { op: 'setTableColumn', table, column: resolvedColumn, newName: mutation.value } }
 	}
 	if (field === 'formula')
-		return compileTableColumnNullableString(table, column.selector, mutation, 'formula')
+		return compileTableColumnNullableString(table, resolvedColumn, mutation, 'formula')
 	if (field === 'totalsRowFunction') {
-		return compileTableColumnNullableString(table, column.selector, mutation, 'totalsRowFunction')
+		return compileTableColumnNullableString(table, resolvedColumn, mutation, 'totalsRowFunction')
 	}
 	if (field === 'totalsRowFormula') {
-		return compileTableColumnNullableString(table, column.selector, mutation, 'totalsRowFormula')
+		return compileTableColumnNullableString(table, resolvedColumn, mutation, 'totalsRowFormula')
 	}
 	if (field === 'totalsRowLabel') {
-		return compileTableColumnNullableString(table, column.selector, mutation, 'totalsRowLabel')
+		return compileTableColumnNullableString(table, resolvedColumn, mutation, 'totalsRowLabel')
 	}
 	return issue(
 		mutation.path,
@@ -546,6 +546,15 @@ function compileTableColumnPath(
 			],
 		},
 	)
+}
+
+function resolveTableColumnIndex(selector: number, columns: readonly string[]): number | null {
+	return selector >= 0 && selector < columns.length ? selector : null
+}
+
+function resolveTableColumnName(selector: string, columns: readonly string[]): string | null {
+	const lower = selector.toLowerCase()
+	return columns.find((candidate) => candidate.toLowerCase() === lower) ?? null
 }
 
 function tableColumnSelector(

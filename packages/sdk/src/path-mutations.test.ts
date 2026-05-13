@@ -185,6 +185,35 @@ describe('path-addressed mutations', () => {
 		expect(wb.table('SalesData')?.columns).toContain('Revenue')
 	})
 
+	test('canonicalizes case-insensitive table column path selectors', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'Region' },
+					{ ref: 'B1', value: 'Revenue' },
+					{ ref: 'A2', value: 'West' },
+					{ ref: 'B2', value: 10 },
+				],
+			},
+			{ op: 'createTable', sheet: 'Sheet1', ref: 'A1:B2', name: 'Sales', hasHeaders: true },
+		])
+
+		const result = wb.compilePathMutations([
+			{ path: '/tables/Sales/columns/revenue/formula', value: 'SUM([Revenue])' },
+			{ path: '/tables/Sales/columns/region/name', value: 'Market' },
+		])
+
+		expect(result.issues).toEqual([])
+		expect(result.replayable).toBe(true)
+		expect(result.ops).toEqual([
+			{ op: 'setTableColumn', table: 'Sales', column: 'Revenue', formula: 'SUM([Revenue])' },
+			{ op: 'setTableColumn', table: 'Sales', column: 'Region', newName: 'Market' },
+		])
+	})
+
 	test('compiles sheet metadata and table metadata paths into canonical ops', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

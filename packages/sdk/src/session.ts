@@ -314,7 +314,7 @@ export interface SessionCacheOptions {
 const cacheConfig = {
 	maxCacheSize: 50,
 	maxCacheAge: 5 * 60 * 1000,
-	maxCacheBytes: 32 * 1024 * 1024,
+	maxCacheBytes: 64 * 1024 * 1024,
 }
 
 const DEFAULT_FIRST_WINDOW_ROWS = 500

@@ -5,7 +5,11 @@ import { basename, join } from 'node:path'
 import { createApiFetch } from '../../apps/api/src/server.ts'
 import { createServer } from '../../apps/mcp/src/index.ts'
 import { indexToColumn } from '../../packages/core/src/index.ts'
-import { AscendWorkbook, WorkbookDocument } from '../../packages/sdk/src/index.ts'
+import {
+	AscendWorkbook,
+	configureSessionCache,
+	WorkbookDocument,
+} from '../../packages/sdk/src/index.ts'
 import { buildRawReadWorkloadDataSet, type WorkloadName } from './competitive-io.ts'
 
 type Surface = 'api' | 'both'
@@ -23,6 +27,7 @@ interface Args {
 	readonly workload: WorkloadName
 	readonly repeat: number
 	readonly warmup: number
+	readonly sessionCacheMb?: number
 	readonly json: boolean
 }
 
@@ -329,6 +334,11 @@ function parseArgs(): Args {
 		workload: workload as WorkloadName,
 		repeat: positiveInt(readOption(process.argv, '--repeat'), 5),
 		warmup: nonNegativeInt(readOption(process.argv, '--warmup'), 1),
+		...(readOption(process.argv, '--session-cache-mb') !== undefined
+			? {
+					sessionCacheMb: positiveInt(readOption(process.argv, '--session-cache-mb'), 32),
+				}
+			: {}),
 		json: hasFlag(process.argv, '--json'),
 	}
 }
@@ -1300,6 +1310,9 @@ function workflowOutputPath(input: BenchmarkInput): string {
 
 async function run() {
 	const args = parseArgs()
+	if (args.sessionCacheMb !== undefined) {
+		configureSessionCache({ maxCacheBytes: args.sessionCacheMb * 1024 * 1024 })
+	}
 	const data = await resolveBenchmarkInput(args)
 	const apiFetch = createApiFetch()
 	const mcpClient = args.surface === 'both' ? createMcpWorkflowClient() : undefined

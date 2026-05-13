@@ -178,6 +178,8 @@ export interface CompactCheckSummary {
 export interface CompactLintSummary {
 	readonly clean: boolean
 	readonly warningCount: number
+	readonly errorCount: number
+	readonly parseErrorCount: number
 }
 
 export interface CompactWritePlanSummary {
@@ -436,6 +438,7 @@ export interface AgentModelOutput {
 		readonly blockedFeatures?: number
 		readonly packageGraphIssues?: number
 		readonly postWritePackageGraphIssues?: number
+		readonly postWriteLintFailures?: number
 		readonly preservationParts?: number
 		readonly writePolicyDiagnostics?: number
 	}
@@ -766,7 +769,12 @@ function compactCheckSummary(check: ReturnType<AscendWorkbook['check']>): Compac
 }
 
 function compactLintSummary(lint: ReturnType<AscendWorkbook['lint']>): CompactLintSummary {
-	return { clean: lint.clean, warningCount: lint.warnings.length }
+	return {
+		clean: lint.clean,
+		warningCount: lint.warnings.length,
+		errorCount: lint.warnings.filter((warning) => warning.severity === 'error').length,
+		parseErrorCount: lint.warnings.filter((warning) => warning.rule === 'parse-error').length,
+	}
 }
 
 function compactWritePlanSummary(
@@ -1201,11 +1209,13 @@ async function verifyWrittenWorkbook(
 	const unresolvedPackageGraphIssues = packageGraphAudit.value.issues.filter(
 		(issue) => !isExpectedPostWritePackageGraphIssue(issue, expectedPackageGraphChanges),
 	)
+	const lintFailures = postWriteLintFailures(lint.value)
 	const expectedPackageGraphIssueCount =
 		packageGraphAudit.value.issues.length - unresolvedPackageGraphIssues.length
 	return {
 		valid: check.value.valid,
-		auditsPassed: check.value.valid && unresolvedPackageGraphIssues.length === 0,
+		auditsPassed:
+			check.value.valid && lintFailures.length === 0 && unresolvedPackageGraphIssues.length === 0,
 		output,
 		outputSha256,
 		reopened: true,
@@ -1743,6 +1753,7 @@ function postWritePhase(
 	},
 ): AgentTracePhase {
 	const checkErrors = postWrite.check.issues.filter((issue) => issue.severity === 'error')
+	const lintFailures = postWriteLintFailures(postWrite.lint)
 	if (!postWrite.valid || checkErrors.length > 0) {
 		return phaseResult(
 			'post-write',
@@ -1750,6 +1761,22 @@ function postWritePhase(
 			`Written workbook reopened but structural verification found ${checkErrors.length} error(s).`,
 			checkErrors.length,
 			{ output: postWrite.output, outputSha256: postWrite.outputSha256, errors: checkErrors },
+		)
+	}
+	if (lintFailures.length > 0) {
+		return phaseResult(
+			'post-write',
+			'blocked',
+			`Written workbook reopened but formula lint found ${lintFailures.length} blocking issue(s).`,
+			lintFailures.length,
+			{
+				output: postWrite.output,
+				outputSha256: postWrite.outputSha256,
+				check: postWrite.check,
+				lint: postWrite.lint,
+				lintFailures,
+				packageGraphAudit: postWrite.packageGraphAudit,
+			},
 		)
 	}
 	if (!postWrite.packageGraphAudit.ok) {
@@ -1838,6 +1865,7 @@ function modelOutputFromTrace(trace: AgentWorkflowTrace): AgentModelOutput {
 	setCount(counts, 'blockedFeatures', phaseCount(trace, 'loss-audit', 'blocked'))
 	setCount(counts, 'packageGraphIssues', phaseCount(trace, 'package-graph-audit', 'warning'))
 	setCount(counts, 'postWritePackageGraphIssues', postWritePackageGraphIssueCount(trace))
+	setCount(counts, 'postWriteLintFailures', postWriteLintFailureCount(trace))
 	setCount(counts, 'preservationParts', phaseCount(trace, 'preservation-audit'))
 	setCount(counts, 'writePolicyDiagnostics', phaseCount(trace, 'write-policy'))
 	return {
@@ -1888,6 +1916,12 @@ function buildNextActions(trace: AgentWorkflowTrace): string[] {
 			'Compare the output workbook hash and retain the traceDigest with the edit record.',
 		]
 	}
+	if ((postWriteLintFailureCount(trace) ?? 0) > 0) {
+		return [
+			'Inspect postWrite.lint.warnings before treating the output workbook formulas as safe.',
+			'Repair formula parse/error lint failures and rerun the saved-output workflow.',
+		]
+	}
 	if (trace.phases.some((phase) => phase.phase === 'write-policy' && phase.status === 'warning')) {
 		return [
 			'Inspect writePolicy.diagnostics before committing around invalidated or copied-through package features.',
@@ -1914,6 +1948,20 @@ function postWritePackageGraphIssueCount(trace: AgentWorkflowTrace): number | un
 	const postWrite = trace.phases.find((phase) => phase.phase === 'post-write')
 	const audit = packageGraphAuditFromDetails(postWrite?.details)
 	return audit ? audit.issues.length : undefined
+}
+
+function postWriteLintFailureCount(trace: AgentWorkflowTrace): number | undefined {
+	const postWrite = trace.phases.find((phase) => phase.phase === 'post-write')
+	const lint = lintFromDetails(postWrite?.details)
+	return lint ? postWriteLintFailures(lint).length : undefined
+}
+
+function postWriteLintFailures(
+	lint: ReturnType<AscendWorkbook['lint']>,
+): ReturnType<AscendWorkbook['lint']>['warnings'] {
+	return lint.warnings.filter(
+		(warning) => warning.severity === 'error' || warning.rule === 'parse-error',
+	)
 }
 
 function expectedPackageGraphChangesForOperations(
@@ -1965,6 +2013,16 @@ function packageGraphAuditFromDetails(details: unknown): PackageGraphAudit | und
 		return undefined
 	}
 	return audit as PackageGraphAudit
+}
+
+function lintFromDetails(details: unknown): ReturnType<AscendWorkbook['lint']> | undefined {
+	if (!details || typeof details !== 'object') return undefined
+	const lint = (details as { lint?: unknown }).lint
+	if (!lint || typeof lint !== 'object') return undefined
+	const clean = (lint as { clean?: unknown }).clean
+	const warnings = (lint as { warnings?: unknown }).warnings
+	if (typeof clean !== 'boolean' || !Array.isArray(warnings)) return undefined
+	return lint as ReturnType<AscendWorkbook['lint']>
 }
 
 function snapshotWritePolicyWorkbook(workbook: Workbook): Workbook {

@@ -1461,6 +1461,7 @@ export interface LintResult {
 
 export interface LintWarning {
 	readonly rule: string
+	readonly severity: 'error' | 'warning' | 'info'
 	readonly message: string
 	readonly ref?: string
 }

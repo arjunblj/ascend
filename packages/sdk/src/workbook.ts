@@ -1170,6 +1170,7 @@ export class AscendWorkbook extends WorkbookReadView {
 		const result = verifyLint(this.wb, this.formulaAnalysis())
 		const warnings: LintWarning[] = result.violations.map((violation) => ({
 			rule: violation.rule,
+			severity: violation.severity,
 			message: violation.message,
 			ref: violation.ref,
 		}))

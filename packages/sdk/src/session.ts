@@ -632,6 +632,7 @@ export class WorkbookDocument {
 		this.refreshCacheFootprint('verify')
 		const warnings: LintWarning[] = result.violations.map((violation) => ({
 			rule: violation.rule,
+			severity: violation.severity,
 			message: violation.message,
 			ref: violation.ref,
 		}))

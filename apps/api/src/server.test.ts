@@ -79,6 +79,12 @@ interface ApiEnvelope {
 			readonly check?: {
 				readonly valid?: boolean
 			}
+			readonly lint?: {
+				readonly clean?: boolean
+				readonly warningCount?: number
+				readonly errorCount?: number
+				readonly parseErrorCount?: number
+			}
 			readonly packageGraphAudit?: {
 				readonly ok?: boolean
 				readonly issueCount?: number
@@ -89,6 +95,7 @@ interface ApiEnvelope {
 			readonly nextActions?: readonly string[]
 			readonly counts?: {
 				readonly postWritePackageGraphIssues?: number
+				readonly postWriteLintFailures?: number
 			}
 		}
 		readonly journal?: { readonly supported?: boolean; readonly inverseOps?: unknown[] }
@@ -1719,6 +1726,44 @@ describe('Ascend API server', () => {
 				'postWrite.packageGraphAudit.issues',
 			)
 		} finally {
+			await unlink(output).catch(() => {})
+		}
+	})
+
+	test('prepared commits surface post-write formula lint failures as blocked output', async () => {
+		const input = `${TEMP_FILE}.prepared-lint-source.xlsx`
+		const output = `${OUTPUT_FILE}.prepared-lint-out.xlsx`
+		const wb = AscendWorkbook.create()
+		await wb.save(input)
+		const complexFormula = `=${Array.from({ length: 26 }, () => '1').join('+')}`
+		try {
+			const plan = await postJson('/plan', {
+				file: input,
+				ops: [{ op: 'setFormula', sheet: 'Sheet1', ref: 'A1', formula: complexFormula }],
+			})
+			expect(plan.status).toBe(200)
+			expect(plan.body.ok).toBe(true)
+			expect(plan.body.data?.preparedPlan?.id).toBeString()
+
+			const commit = await postJson('/commit', {
+				planHandle: plan.body.data?.preparedPlan?.id,
+				output,
+				compact: true,
+			})
+			expect(commit.status).toBe(200)
+			expect(commit.body.ok).toBe(true)
+			expect(commit.body.data?.postWrite?.valid).toBe(true)
+			expect(commit.body.data?.postWrite?.auditsPassed).toBe(false)
+			expect(commit.body.data?.postWrite?.lint?.clean).toBe(false)
+			expect(commit.body.data?.postWrite?.lint?.errorCount).toBeGreaterThan(0)
+			expect(commit.body.data?.postWrite?.packageGraphAudit?.ok).toBe(true)
+			expect(commit.body.data?.modelOutput?.blocked).toBe(true)
+			expect(commit.body.data?.modelOutput?.counts?.postWriteLintFailures).toBeGreaterThan(0)
+			expect(commit.body.data?.modelOutput?.nextActions?.join('\n')).toContain(
+				'postWrite.lint.warnings',
+			)
+		} finally {
+			await unlink(input).catch(() => {})
 			await unlink(output).catch(() => {})
 		}
 	})

@@ -25,6 +25,7 @@ export function partialDependencyCheckIssue(message: string): CheckIssue {
 export function partialDependencyLintWarning(message: string): LintWarning {
 	return {
 		rule: 'partial-dependency-analysis',
+		severity: 'warning',
 		message,
 	}
 }

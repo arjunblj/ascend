@@ -2635,6 +2635,38 @@ describe('agent workflow loss audit', () => {
 		)
 	})
 
+	test('prepared agent commits block saved outputs with formula lint failures', async () => {
+		const input = join(TEMP_DIR, 'prepared-lint-source.xlsx')
+		const output = join(TEMP_DIR, 'prepared-lint-out.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		const wb = AscendWorkbook.create()
+		await wb.save(input)
+		const complexFormula = `=${Array.from({ length: 26 }, () => '1').join('+')}`
+
+		const prepared = await createPreparedAgentPlan(input, [
+			{ op: 'setFormula' as const, sheet: 'Sheet1', ref: 'A1', formula: complexFormula },
+		])
+		const committed = await prepared.commit({ output })
+
+		expect(committed.postWrite.valid).toBe(true)
+		expect(committed.postWrite.auditsPassed).toBe(false)
+		expect(committed.postWrite.lint.clean).toBe(false)
+		expect(committed.postWrite.lint.warnings).toContainEqual(
+			expect.objectContaining({
+				rule: 'complex-formula',
+				severity: 'error',
+				ref: 'Sheet1!A1',
+			}),
+		)
+		expect(committed.postWrite.packageGraphAudit.ok).toBe(true)
+		expect(committed.trace.phases.find((phase) => phase.phase === 'post-write')?.status).toBe(
+			'blocked',
+		)
+		expect(committed.modelOutput.blocked).toBe(true)
+		expect(committed.modelOutput.counts.postWriteLintFailures).toBeGreaterThan(0)
+		expect(committed.modelOutput.nextActions.join('\n')).toContain('postWrite.lint.warnings')
+	})
+
 	test('prepared agent plans reject same-size source changes by content hash', async () => {
 		const input = join(TEMP_DIR, 'prepared-stale.csv')
 		mkdirSync(TEMP_DIR, { recursive: true })

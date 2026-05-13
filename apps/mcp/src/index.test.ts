@@ -586,7 +586,7 @@ describe('MCP server', () => {
 		expect(reopened.sheet('Sheet1')?.comment('C1')?.text).toBe('review')
 	})
 
-	test('ascend.preview keeps JSON Pointer and segment-array path mutations canonical', async () => {
+	test('ascend.preview keeps JSON Pointer, escaped-dot, and segment-array path mutations canonical', async () => {
 		const sheetName = "Q1.Forecast's Café Δ"
 		const tableName = 'Sales.Δ'
 		const columnName = 'Gross Profit/Δ~'
@@ -623,7 +623,12 @@ describe('MCP server', () => {
 			file: TEMP_FILE,
 			mutations: [
 				{ path: `/sheets/${pointerSegment(sheetName)}/cells/A2/value`, value: 'pointer' },
-				{ path: ['sheets', sheetName, 'cells', 'A3', 'value'], value: 'array' },
+				{ path: `sheets.${dotSegment(sheetName)}.cells.A3.value`, value: 'dot' },
+				{ path: ['sheets', sheetName, 'cells', 'A4', 'value'], value: 'array' },
+				{
+					path: `tables.${dotSegment(tableName)}.columns.${dotSegment(columnName)}.formula`,
+					value: 'SUM([Gross Profit/Δ~])',
+				},
 				{ path: ['tables', tableName, 'columns', columnName, 'name'], value: 'Net_Δ' },
 			],
 		})
@@ -636,8 +641,15 @@ describe('MCP server', () => {
 				sheet: sheetName,
 				updates: [
 					{ ref: 'A2', value: 'pointer' },
-					{ ref: 'A3', value: 'array' },
+					{ ref: 'A3', value: 'dot' },
+					{ ref: 'A4', value: 'array' },
 				],
+			},
+			{
+				op: 'setTableColumn',
+				table: tableName,
+				column: columnName,
+				formula: 'SUM([Gross Profit/Δ~])',
 			},
 			{ op: 'setTableColumn', table: tableName, column: columnName, newName: 'Net_Δ' },
 		])
@@ -1986,6 +1998,10 @@ function signedMacroWorkbook(): Uint8Array {
 
 function pointerSegment(value: string): string {
 	return encodeURIComponent(value.replace(/~/g, '~0').replace(/\//g, '~1'))
+}
+
+function dotSegment(value: string): string {
+	return value.replace(/\\/g, '\\\\').replace(/\./g, '\\.')
 }
 
 function threadedCommentMissingPersonsWorkbook(): Uint8Array {

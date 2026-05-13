@@ -83,6 +83,24 @@ describe('formula editing utilities', () => {
 		})
 	})
 
+	test('does not cycle stale references from empty formula edit slots', () => {
+		expect(cycleFormulaReferenceMode('=A1 + ', 6)).toEqual({
+			formula: '=A1 + ',
+			cursor: 6,
+			changed: false,
+		})
+		expect(cycleFormulaReferenceMode('=SUM(A1, )', 9)).toEqual({
+			formula: '=SUM(A1, )',
+			cursor: 9,
+			changed: false,
+		})
+		expect(cycleFormulaReferenceMode('=A1+ B2', 4)).toEqual({
+			formula: '=A1+ B2',
+			cursor: 4,
+			changed: false,
+		})
+	})
+
 	test('inserts pointed references and can replace the reference under the cursor', () => {
 		expect(insertFormulaReference('=SUM()', 5, "'Q1 Plan'!$A$1")).toEqual({
 			formula: "=SUM('Q1 Plan'!$A$1)",

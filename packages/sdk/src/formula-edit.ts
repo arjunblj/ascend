@@ -123,14 +123,14 @@ export function referenceAtCursor(formula: string, cursor: number): FormulaRefer
 
 export function cycleFormulaReferenceMode(formula: string, cursor: number): CycleReferenceResult {
 	const spans = tokenSpans(formula)
+	const clampedCursor = Math.max(0, Math.min(formula.length, cursor))
 	let target: TokenSpan | undefined
 	for (const span of spans) {
 		if (span.token.type !== TokenType.CellRef) continue
-		if (cursor >= span.start && cursor <= span.end) {
+		if (clampedCursor >= span.start && clampedCursor <= span.end) {
 			target = span
 			break
 		}
-		if (span.end <= cursor) target = span
 	}
 	if (!target) return { formula, cursor, changed: false }
 	const cycled = cycleA1Reference(target.text)

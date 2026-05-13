@@ -31,6 +31,7 @@ describe('post-write breakdown benchmark', () => {
 		expect(exitCode, stderr).toBe(0)
 		const payload = JSON.parse(stdout) as {
 			readonly summary?: {
+				readonly commitWriteMedianMs?: number
 				readonly commitPostWriteMedianMs?: number
 				readonly commitPostWriteReopenMedianMs?: number
 				readonly commitPostWriteCheckMedianMs?: number
@@ -50,6 +51,7 @@ describe('post-write breakdown benchmark', () => {
 				readonly valid?: boolean
 			}
 		}
+		expect(payload.summary?.commitWriteMedianMs).toBeNumber()
 		expect(payload.summary?.commitPostWriteMedianMs).toBeNumber()
 		expect(payload.summary?.commitPostWriteReopenMedianMs).toBeNumber()
 		expect(payload.summary?.commitPostWriteCheckMedianMs).toBeNumber()
@@ -102,6 +104,7 @@ describe('post-write breakdown benchmark', () => {
 				readonly source?: string
 			}
 			readonly summary?: {
+				readonly commitWriteMedianMs?: number
 				readonly commitPostWriteReopenMedianMs?: number
 				readonly reopenOutputMedianMs?: number
 				readonly packageGraphIssuesMedian?: number
@@ -116,6 +119,7 @@ describe('post-write breakdown benchmark', () => {
 			cleanup: false,
 			source: 'input-file',
 		})
+		expect(payload.summary?.commitWriteMedianMs).toBeNumber()
 		expect(payload.summary?.commitPostWriteReopenMedianMs).toBeNumber()
 		expect(payload.summary?.reopenOutputMedianMs).toBeNumber()
 		expect(payload.summary?.packageGraphIssuesMedian).toBe(0)

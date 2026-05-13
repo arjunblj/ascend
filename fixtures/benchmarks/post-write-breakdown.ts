@@ -36,6 +36,7 @@ interface BenchmarkInput {
 
 interface Sample {
 	readonly commitMs: number
+	readonly commitWriteMs: number
 	readonly commitPostWriteMs: number
 	readonly commitPostWriteReopenMs: number
 	readonly commitPostWriteCheckMs: number
@@ -143,6 +144,8 @@ function buildSetCellsOperation(
 }
 
 async function timedCommit(inputPath: string, outputPath: string, ops: readonly Operation[]) {
+	let writeStarted: number | undefined
+	let writeMs = 0
 	let postWriteStarted: number | undefined
 	let postWriteMs = 0
 	const postWriteTimings: Record<string, number> = {}
@@ -151,6 +154,14 @@ async function timedCommit(inputPath: string, outputPath: string, ops: readonly 
 			output: outputPath,
 			approvals: [],
 			onProgress: (event: AgentWorkflowProgressEvent) => {
+				if (event.phase === 'write') {
+					if (event.status === 'started') {
+						writeStarted = performance.now()
+						return
+					}
+					if (writeStarted !== undefined) writeMs = performance.now() - writeStarted
+					return
+				}
 				if (event.phase === 'post-write' && event.status === 'started') {
 					postWriteStarted = performance.now()
 					return
@@ -170,6 +181,7 @@ async function timedCommit(inputPath: string, outputPath: string, ops: readonly 
 	const timings = commit.value.postWrite.timings
 	return {
 		commitMs: commit.ms,
+		writeMs,
 		postWriteMs,
 		reopenMs: postWriteTimings.reopen ?? timings?.reopenMs ?? 0,
 		checkMs: postWriteTimings.check ?? timings?.checkMs ?? 0,
@@ -254,6 +266,7 @@ async function runSample(
 	runGc()
 	return {
 		commitMs: commit.commitMs,
+		commitWriteMs: commit.writeMs,
 		commitPostWriteMs: commit.postWriteMs,
 		commitPostWriteReopenMs: commit.reopenMs,
 		commitPostWriteCheckMs: commit.checkMs,
@@ -269,6 +282,7 @@ async function runSample(
 function summarize(samples: readonly Sample[]) {
 	return {
 		commitMedianMs: median(samples.map((sample) => sample.commitMs)),
+		commitWriteMedianMs: median(samples.map((sample) => sample.commitWriteMs)),
 		commitPostWriteMedianMs: median(samples.map((sample) => sample.commitPostWriteMs)),
 		commitPostWriteReopenMedianMs: median(samples.map((sample) => sample.commitPostWriteReopenMs)),
 		commitPostWriteCheckMedianMs: median(samples.map((sample) => sample.commitPostWriteCheckMs)),

@@ -1172,9 +1172,10 @@ function parseCanonicalValuesCellBytes(
 		return valueEnd + BYTES_VALUE_CELL_CLOSE.length
 	}
 
-	const contentStart = resolveCanonicalNumberContentStartBytes(bytes, index, bodyEnd)
-	if (contentStart === -1) return -1
-	const valueStart = resolveCanonicalValueStartBytes(bytes, contentStart, bodyEnd)
+	const content = resolveCanonicalNumberContentStartBytes(bytes, index, bodyEnd)
+	if (!content) return -1
+	out.styleIdx = content.styleIdx
+	const valueStart = resolveCanonicalValueStartBytes(bytes, content.start, bodyEnd)
 	if (valueStart === -1) return -1
 	const parsedIntNext = parseCanonicalIntegerValueIntoOutBytes(bytes, valueStart, bodyEnd, out)
 	if (parsedIntNext !== -1) return parsedIntNext
@@ -4270,9 +4271,9 @@ function resolveCanonicalNumberContentStartBytes(
 	bytes: Uint8Array,
 	refEnd: number,
 	end: number,
-): number {
+): { start: number; styleIdx: number } | undefined {
 	if (refEnd + 1 < end && bytes[refEnd] === BYTE_QUOTE && bytes[refEnd + 1] === 62) {
-		return refEnd + 2
+		return { start: refEnd + 2, styleIdx: 0 }
 	}
 	if (
 		refEnd + 5 >= end ||
@@ -4282,7 +4283,7 @@ function resolveCanonicalNumberContentStartBytes(
 		bytes[refEnd + 3] !== 61 ||
 		bytes[refEnd + 4] !== BYTE_QUOTE
 	) {
-		return -1
+		return undefined
 	}
 	const singleDigitStyleEnd = refEnd + 7
 	if (
@@ -4291,15 +4292,17 @@ function resolveCanonicalNumberContentStartBytes(
 		bytes[refEnd + 6] === BYTE_QUOTE &&
 		bytes[singleDigitStyleEnd] === 62
 	) {
-		return singleDigitStyleEnd + 1
+		return { start: singleDigitStyleEnd + 1, styleIdx: (bytes[refEnd + 5] ?? 48) - 48 }
 	}
 	let styleEnd = refEnd + 5
+	let styleIdx = 0
 	while (styleEnd < end && bytes[styleEnd] !== BYTE_QUOTE) {
-		if (!isAsciiDigit(bytes[styleEnd])) return -1
+		if (!isAsciiDigit(bytes[styleEnd])) return undefined
+		styleIdx = styleIdx * 10 + ((bytes[styleEnd] ?? 48) - 48)
 		styleEnd += 1
 	}
-	if (styleEnd >= end || bytes[styleEnd + 1] !== 62) return -1
-	return styleEnd + 2
+	if (styleEnd >= end || bytes[styleEnd + 1] !== 62) return undefined
+	return { start: styleEnd + 2, styleIdx }
 }
 
 function resolveCanonicalValueStartBytes(

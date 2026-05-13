@@ -6,7 +6,11 @@ import { defaultCalcContext, recalculate } from '../../../engine/src/index.ts'
 import { makeEmbeddedChartXlsx, makeXlsx } from '../../test/helpers.ts'
 import { writeXlsx } from '../writer/index.ts'
 import { readXlsx } from './index.ts'
-import { emptySharedStrings, parseSharedStrings } from './shared-strings.ts'
+import {
+	emptySharedStrings,
+	parseSharedStrings,
+	parseSharedStringsBytes,
+} from './shared-strings.ts'
 import type { StreamedSheetRow } from './sheet.ts'
 import {
 	parseSheetValuesOnlyBytes,
@@ -684,7 +688,7 @@ describe('readXlsx', () => {
 
 	it('streams worksheet byte chunks split inside rows, cells, and values', () => {
 		const xml =
-			'<worksheet><sheetData><row r="1"><c r="A1"><v>1</v></c><c><v>2</v></c></row><row><c t="str"><v>plain &amp; text</v></c></row><row r="3"><c r="A3"><v>3'
+			'<worksheet><sheetData><row r="1"><c r="A1"><v>1</v></c><c><v>2</v></c><c r="C1" s="1"><v>45293</v></c><c r="D1" s="1"><f>C1+1</f><v>45294</v></c></row><row><c t="str"><v>plain &amp; text</v></c></row><row r="3"><c r="A3"><v>3'
 		const bytes = new TextEncoder().encode(xml)
 		const rows = [
 			...streamSheetRowsByteChunks(
@@ -693,7 +697,8 @@ describe('readXlsx', () => {
 				{
 					sharedStrings: emptySharedStrings(),
 					styleIds: [S0],
-					isDateFormat: [false],
+					isDateFormat: [false, true],
+					hasDateStyles: true,
 					valuesOnly: true,
 					maxRows: 2,
 				},
@@ -705,6 +710,8 @@ describe('readXlsx', () => {
 				cells: [
 					[0, { value: { kind: 'number', value: 1 }, formula: null, styleId: S0 }],
 					[1, { value: { kind: 'number', value: 2 }, formula: null, styleId: S0 }],
+					[2, { value: { kind: 'date', serial: 45293 }, formula: null, styleId: S0 }],
+					[3, { value: { kind: 'date', serial: 45294 }, formula: null, styleId: S0 }],
 				],
 			},
 			{
@@ -942,6 +949,27 @@ describe('readXlsx', () => {
 		expect(sharedStrings.get(0)).toEqual({ kind: 'string', value: 'Alpha' })
 		expect(sharedStrings.get(1)).toEqual({ kind: 'string', value: 'Beta & Gamma' })
 		expect(sharedStrings.get(2)).toEqual({ kind: 'string', value: '  Delta  ' })
+	})
+
+	it('lazy byte shared strings preserve simple, escaped, rich, and xml:space entries', () => {
+		const bytes = new TextEncoder().encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="4" uniqueCount="4">
+  <si><t>Alpha</t></si>
+  <si><t>Beta &amp; Gamma</t></si>
+  <si><r><rPr><b/></rPr><t>Bold</t></r><r><t>Text</t></r></si>
+  <si><t xml:space="preserve">  Delta  </t></si>
+</sst>`)
+		const sharedStrings = parseSharedStringsBytes(bytes, { lazy: true })
+
+		expect(sharedStrings.getString?.(0)).toBe('Alpha')
+		expect(sharedStrings.getString?.(1)).toBe('Beta & Gamma')
+		expect(sharedStrings.getString?.(2)).toBeUndefined()
+		expect(sharedStrings.get(2)).toEqual({
+			kind: 'richText',
+			runs: [{ text: 'Bold', bold: true }, { text: 'Text' }],
+		})
+		expect(sharedStrings.getString?.(3)).toBe('  Delta  ')
+		expect(sharedStrings.get(1)).toEqual({ kind: 'string', value: 'Beta & Gamma' })
 	})
 
 	it('keeps lazy plain shared strings bounded when phonetic metadata follows text', () => {
@@ -3658,7 +3686,7 @@ describe('readXlsx', () => {
 		)
 		const xml = `<?xml version="1.0"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-  <dimension ref="A1:J2"/>
+  <dimension ref="A1:L2"/>
   <sheetData>
     <row r="1" ht="27" customHeight="1" hidden="1" collapsed="1" outlineLevel="2">
       <c r="A1"><v>42.5</v></c>
@@ -3671,6 +3699,8 @@ describe('readXlsx', () => {
       <c r="H1"><f>SUM(A1:A1)</f></c>
       <c r="I1" s="1"><v>45292</v></c>
       <c s="1" r="J1"><v>45293</v></c>
+      <c r="K1" s="1"><f>I1+2</f><v>45294</v></c>
+      <c r="L1" t="n" s="1"><v>45295</v></c>
     </row>
     <row r="2"><c r="A2"><v>99</v></c></row>
   </sheetData>
@@ -3698,6 +3728,9 @@ describe('readXlsx', () => {
 		expect(sheet?.cells.get(0, 7)?.formula).toBeNull()
 		expect(sheet?.cells.get(0, 8)?.value).toEqual(dateValue(45292))
 		expect(sheet?.cells.get(0, 9)?.value).toEqual(dateValue(45293))
+		expect(sheet?.cells.get(0, 10)?.value).toEqual(dateValue(45294))
+		expect(sheet?.cells.get(0, 10)?.formula).toBeNull()
+		expect(sheet?.cells.get(0, 11)?.value).toEqual(dateValue(45295))
 		expect(sheet?.cells.get(1, 0)?.value).toEqual(numberValue(99))
 		expect(sheet?.rowHeights.get(0)).toBe(27)
 		expect(sheet?.rowDefs.get(0)).toEqual({

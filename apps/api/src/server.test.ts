@@ -626,6 +626,25 @@ describe('Ascend API server', () => {
 		expect(ambiguous.body.error?.message).toBe('Provide either ops or mutations, not both')
 	})
 
+	test('ops and path mutations are mutually exclusive across edit endpoints', async () => {
+		const wb = AscendWorkbook.create()
+		await wb.save(TEMP_FILE)
+
+		for (const endpoint of ['/preview', '/plan', '/write', '/commit'] as const) {
+			const result = await postJson(endpoint, {
+				file: TEMP_FILE,
+				output: OUTPUT_FILE,
+				ops: [],
+				mutations: [{ path: '/sheets/Sheet1/cells/A1/value', value: 'new' }],
+			})
+
+			expect(result.status).toBe(400)
+			expect(result.body.ok).toBe(false)
+			expect(result.body.error?.code).toBe('VALIDATION_ERROR')
+			expect(result.body.error?.message).toBe('Provide either ops or mutations, not both')
+		}
+	})
+
 	test('preview, plan, write, and commit keep escaped path mutations canonical', async () => {
 		const sheetName = "Q1.Forecast's Café Δ"
 		const tableName = 'Sales.Δ'

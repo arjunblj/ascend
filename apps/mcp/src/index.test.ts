@@ -715,6 +715,52 @@ describe('MCP server', () => {
 		expect(reopened.sheet('Sheet1')?.comment('C1')?.text).toBe('review')
 	})
 
+	test('ops and path mutations are mutually exclusive across MCP edit tools', async () => {
+		const wb = AscendWorkbook.create()
+		await wb.save(TEMP_FILE)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const tools = (server as any)._registeredTools as Record<
+			string,
+			{
+				handler: (args: {
+					file: string
+					output?: string
+					ops?: unknown[]
+					mutations?: Array<{ path: string; value?: unknown }>
+				}) => Promise<{
+					isError?: boolean
+					structuredContent?: {
+						ok?: boolean
+						error?: { code?: string; message?: string }
+					}
+				}>
+			}
+		>
+
+		for (const toolName of [
+			'ascend.preview',
+			'ascend.plan',
+			'ascend.write',
+			'ascend.commit',
+		] as const) {
+			const result = await tools[toolName]?.handler({
+				file: TEMP_FILE,
+				output: `${TEMP_FILE}.out.xlsx`,
+				ops: [],
+				mutations: [{ path: '/sheets/Sheet1/cells/A1/value', value: 'new' }],
+			})
+
+			expect(result?.isError).toBe(true)
+			expect(result?.structuredContent?.ok).toBe(false)
+			expect(result?.structuredContent?.error?.code).toBe('VALIDATION_ERROR')
+			expect(result?.structuredContent?.error?.message).toBe(
+				'Provide either ops or mutations, not both',
+			)
+		}
+	})
+
 	test('ascend.preview, plan, write, and commit keep escaped path mutations canonical', async () => {
 		const sheetName = "Q1.Forecast's Café Δ"
 		const tableName = 'Sales.Δ'

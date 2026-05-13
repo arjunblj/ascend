@@ -118,11 +118,11 @@ function createLazySharedStrings(
 			}
 
 			const start = offsets[index] as number
-			const fastText = parseSimplePlainSharedStringEntry(xml, start)
+			const fastText = parseSimplePlainSharedStringText(xml, start)
 			if (fastText !== undefined) {
 				plainTextResolved[index] = 1
-				plainTextEntries[index] = fastText.text
-				return fastText.text
+				plainTextEntries[index] = fastText
+				return fastText
 			}
 			const tagEnd = findTagEnd(xml, start)
 			if (tagEnd === -1) {
@@ -198,6 +198,16 @@ function parseSimplePlainSharedStringEntry(
 	if (!xml.startsWith('</si>', valueEnd + 4)) return undefined
 	const text = xml.slice(valueStart, valueEnd)
 	return { text: text.includes('&') ? decodeXmlText(text) : text, next: valueEnd + 9 }
+}
+
+function parseSimplePlainSharedStringText(xml: string, start: number): string | undefined {
+	if (!xml.startsWith('<si><t>', start)) return undefined
+	const valueStart = start + 7
+	const valueEnd = xml.indexOf('</t>', valueStart)
+	if (valueEnd === -1) return undefined
+	if (!xml.startsWith('</si>', valueEnd + 4)) return undefined
+	const text = xml.slice(valueStart, valueEnd)
+	return text.includes('&') ? decodeXmlText(text) : text
 }
 
 function parseSharedStringEntries(

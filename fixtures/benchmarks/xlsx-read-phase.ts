@@ -1,8 +1,14 @@
 #!/usr/bin/env bun
-import { indexToColumn, type Workbook } from '../../packages/core/src/index.ts'
+import {
+	createWorkbook,
+	DEFAULT_STYLE_ID,
+	indexToColumn,
+	type Workbook,
+} from '../../packages/core/src/index.ts'
 import { readXlsx, readXlsxRowsStream } from '../../packages/io-xlsx/src/index.ts'
 import { extractZip } from '../../packages/io-xlsx/src/reader/zip.ts'
-import type { CellValue } from '../../packages/schema/src/index.ts'
+import { booleanValue, type CellValue } from '../../packages/schema/src/index.ts'
+import { SheetHandle } from '../../packages/sdk/src/index.ts'
 import {
 	buildGeneratedWriteDataSet,
 	buildRawReadWorkloadDataSet,
@@ -41,17 +47,24 @@ interface PhaseSample {
 	readonly directOrderedMs?: number
 	readonly rowsStreamMs?: number
 	readonly rowsStreamChunkedMs?: number
+	readonly rowsWindowMs?: number
 	readonly worksheetXmlScanMs?: number
 	readonly worksheetXmlByteScanMs?: number
 	readonly readXlsxMs?: number
+	readonly agentWindowMs?: number
+	readonly gridFillMs?: number
 	readonly materializeHashMs?: number
 	readonly totalHydratedMs?: number
+	readonly totalAgentWindowMs?: number
 	readonly directOrderedCellsPerSecond?: number
 	readonly rowsStreamCellsPerSecond?: number
 	readonly rowsStreamChunkedCellsPerSecond?: number
+	readonly rowsWindowCellsPerSecond?: number
 	readonly worksheetXmlScanCellsPerSecond?: number
 	readonly worksheetXmlByteScanCellsPerSecond?: number
 	readonly readXlsxCellsPerSecond?: number
+	readonly agentWindowCellsPerSecond?: number
+	readonly gridFillCellsPerSecond?: number
 	readonly worksheetInflateBytesPerSecond?: number
 	readonly worksheetDecodeBytesPerSecond?: number
 	readonly bytes: number
@@ -66,7 +79,18 @@ interface WorksheetXmlPart {
 	readonly bytes: Uint8Array
 }
 
-type PhaseMode = 'all' | 'zip' | 'direct' | 'rows' | 'rows-chunked' | 'xml' | 'read' | 'hydrate'
+type PhaseMode =
+	| 'all'
+	| 'zip'
+	| 'direct'
+	| 'rows'
+	| 'rows-chunked'
+	| 'rows-window'
+	| 'xml'
+	| 'read'
+	| 'hydrate'
+	| 'agent-window'
+	| 'grid-fill'
 
 const WORKLOADS = new Set<string>([
 	'dense-values',
@@ -149,13 +173,18 @@ function parsePhase(raw: string | undefined): PhaseMode {
 		raw === 'direct' ||
 		raw === 'rows' ||
 		raw === 'rows-chunked' ||
+		raw === 'rows-window' ||
 		raw === 'xml' ||
 		raw === 'read' ||
-		raw === 'hydrate'
+		raw === 'hydrate' ||
+		raw === 'agent-window' ||
+		raw === 'grid-fill'
 	) {
 		return raw
 	}
-	throw new Error('--phase must be all, zip, direct, rows, rows-chunked, xml, read, or hydrate')
+	throw new Error(
+		'--phase must be all, zip, direct, rows, rows-chunked, rows-window, xml, read, hydrate, agent-window, or grid-fill',
+	)
 }
 
 function memory() {
@@ -190,6 +219,7 @@ function summarize(samples: readonly PhaseSample[]) {
 	const rowsStreamChunkedMedianMs = medianOptional(
 		samples.map((sample) => sample.rowsStreamChunkedMs),
 	)
+	const rowsWindowMedianMs = medianOptional(samples.map((sample) => sample.rowsWindowMs))
 	const worksheetXmlScanMedianMs = medianOptional(
 		samples.map((sample) => sample.worksheetXmlScanMs),
 	)
@@ -197,8 +227,13 @@ function summarize(samples: readonly PhaseSample[]) {
 		samples.map((sample) => sample.worksheetXmlByteScanMs),
 	)
 	const readXlsxMedianMs = medianOptional(samples.map((sample) => sample.readXlsxMs))
+	const agentWindowMedianMs = medianOptional(samples.map((sample) => sample.agentWindowMs))
+	const gridFillMedianMs = medianOptional(samples.map((sample) => sample.gridFillMs))
 	const materializeHashMedianMs = medianOptional(samples.map((sample) => sample.materializeHashMs))
 	const totalHydratedMedianMs = medianOptional(samples.map((sample) => sample.totalHydratedMs))
+	const totalAgentWindowMedianMs = medianOptional(
+		samples.map((sample) => sample.totalAgentWindowMs),
+	)
 	const phaseDurations = [
 		...(zipOpenMedianMs === undefined ? [] : ([['zipOpen', zipOpenMedianMs]] as const)),
 		...(worksheetInflateMedianMs === undefined
@@ -214,6 +249,7 @@ function summarize(samples: readonly PhaseSample[]) {
 		...(rowsStreamChunkedMedianMs === undefined
 			? []
 			: ([['rowsStreamChunked', rowsStreamChunkedMedianMs]] as const)),
+		...(rowsWindowMedianMs === undefined ? [] : ([['rowsWindow', rowsWindowMedianMs]] as const)),
 		...(worksheetXmlScanMedianMs === undefined
 			? []
 			: ([['worksheetXmlScan', worksheetXmlScanMedianMs]] as const)),
@@ -221,6 +257,8 @@ function summarize(samples: readonly PhaseSample[]) {
 			? []
 			: ([['worksheetXmlByteScan', worksheetXmlByteScanMedianMs]] as const)),
 		...(readXlsxMedianMs === undefined ? [] : ([['readXlsx', readXlsxMedianMs]] as const)),
+		...(agentWindowMedianMs === undefined ? [] : ([['agentWindow', agentWindowMedianMs]] as const)),
+		...(gridFillMedianMs === undefined ? [] : ([['gridFill', gridFillMedianMs]] as const)),
 		...(materializeHashMedianMs === undefined
 			? []
 			: ([['materializeHash', materializeHashMedianMs]] as const)),
@@ -236,12 +274,16 @@ function summarize(samples: readonly PhaseSample[]) {
 		...(directOrderedMedianMs === undefined ? {} : { directOrderedMedianMs }),
 		...(rowsStreamMedianMs === undefined ? {} : { rowsStreamMedianMs }),
 		...(rowsStreamChunkedMedianMs === undefined ? {} : { rowsStreamChunkedMedianMs }),
+		...(rowsWindowMedianMs === undefined ? {} : { rowsWindowMedianMs }),
 		...(readXlsxMedianMs === undefined || rowsStreamMedianMs === undefined
 			? {}
 			: { rowsStreamVsReadXlsxHeadroom: readXlsxMedianMs / rowsStreamMedianMs }),
 		...(readXlsxMedianMs === undefined || rowsStreamChunkedMedianMs === undefined
 			? {}
 			: { rowsStreamChunkedVsReadXlsxHeadroom: readXlsxMedianMs / rowsStreamChunkedMedianMs }),
+		...(readXlsxMedianMs === undefined || rowsWindowMedianMs === undefined
+			? {}
+			: { rowsWindowVsReadXlsxHeadroom: readXlsxMedianMs / rowsWindowMedianMs }),
 		...(worksheetXmlScanMedianMs === undefined ? {} : { worksheetXmlScanMedianMs }),
 		...(worksheetXmlByteScanMedianMs === undefined ? {} : { worksheetXmlByteScanMedianMs }),
 		...(directOrderedMedianMs === undefined || worksheetXmlScanMedianMs === undefined
@@ -259,8 +301,11 @@ function summarize(samples: readonly PhaseSample[]) {
 			? {}
 			: { xmlByteScanVsReadXlsxHeadroom: readXlsxMedianMs / worksheetXmlByteScanMedianMs }),
 		...(readXlsxMedianMs === undefined ? {} : { readXlsxMedianMs }),
+		...(agentWindowMedianMs === undefined ? {} : { agentWindowMedianMs }),
+		...(gridFillMedianMs === undefined ? {} : { gridFillMedianMs }),
 		...(materializeHashMedianMs === undefined ? {} : { materializeHashMedianMs }),
 		...(totalHydratedMedianMs === undefined ? {} : { totalHydratedMedianMs }),
+		...(totalAgentWindowMedianMs === undefined ? {} : { totalAgentWindowMedianMs }),
 		dominantPhase,
 		...withOptionalMedian(
 			'directOrderedCellsPerSecondMedian',
@@ -275,6 +320,10 @@ function summarize(samples: readonly PhaseSample[]) {
 			samples.map((sample) => sample.rowsStreamChunkedCellsPerSecond),
 		),
 		...withOptionalMedian(
+			'rowsWindowCellsPerSecondMedian',
+			samples.map((sample) => sample.rowsWindowCellsPerSecond),
+		),
+		...withOptionalMedian(
 			'worksheetXmlScanCellsPerSecondMedian',
 			samples.map((sample) => sample.worksheetXmlScanCellsPerSecond),
 		),
@@ -285,6 +334,14 @@ function summarize(samples: readonly PhaseSample[]) {
 		...withOptionalMedian(
 			'readXlsxCellsPerSecondMedian',
 			samples.map((sample) => sample.readXlsxCellsPerSecond),
+		),
+		...withOptionalMedian(
+			'agentWindowCellsPerSecondMedian',
+			samples.map((sample) => sample.agentWindowCellsPerSecond),
+		),
+		...withOptionalMedian(
+			'gridFillCellsPerSecondMedian',
+			samples.map((sample) => sample.gridFillCellsPerSecond),
 		),
 		...withOptionalMedian(
 			'worksheetInflateBytesPerSecondMedian',
@@ -352,6 +409,58 @@ function assertDenseWorkbookOrderedValues(workbook: Workbook, input: Competitive
 			)
 		}
 	}
+}
+
+function readAgentWindow(workbook: Workbook, input: CompetitiveDataSet): number {
+	const sheet = workbook.getSheet('Data')
+	if (!sheet) throw new Error('Missing Data sheet')
+	const handle = new SheetHandle(
+		'Data',
+		() => sheet,
+		(_row, _col, cell) => cell.formula,
+	)
+	const endCol = indexToColumn(Math.max(0, input.cols - 1))
+	const rowLimit = Math.min(500, Math.max(1, input.rows))
+	const window = handle.readWindowCompact(`A1:${endCol}${Math.max(1, input.rows)}`, {
+		rowLimit,
+		includeRefs: false,
+		omitEmpty: true,
+	})
+	if (window.cells.length === 0 && input.cells > 0) {
+		throw new Error('agent compact window returned no cells')
+	}
+	if (!window.hasMore && input.rows > rowLimit) {
+		throw new Error('agent compact window did not report pagination')
+	}
+	return window.cells.length
+}
+
+function fillGeneratedCoreGrid(input: CompetitiveDataSet): number {
+	const workbook = createWorkbook()
+	const sheet = workbook.addSheet('Data')
+	if (input.workloadName !== 'sparse-wide') sheet.cells.setExpectedDensity('dense')
+	for (let row = 0; row < input.rows; row++) {
+		for (let col = 0; col < input.cols; col++) {
+			const value = workloadValue(input.workloadName, row, col, input.cols)
+			if (value === null) continue
+			if (typeof value === 'number') {
+				sheet.cells.setPlainNumber(row, col, value)
+			} else if (typeof value === 'string') {
+				sheet.cells.setStringResolved(row, col, value, null, DEFAULT_STYLE_ID)
+			} else {
+				sheet.cells.set(row, col, {
+					value: booleanValue(value),
+					formula: null,
+					styleId: DEFAULT_STYLE_ID,
+				})
+			}
+		}
+	}
+	const cellCount = sheet.cells.cellCount()
+	if (cellCount !== input.cells) {
+		throw new Error(`grid fill created ${cellCount} cells; expected ${input.cells}`)
+	}
+	return cellCount
 }
 
 function cellValuePayload(value: CellValue): string | null {
@@ -452,6 +561,18 @@ async function runSample(
 		sample.rowsStreamChunkedCellsPerSecond = input.cells / (rowsStreamChunkedMs / 1000)
 	}
 
+	if (args.phase === 'all' || args.phase === 'rows-window') {
+		const rowLimit = Math.min(500, Math.max(1, input.rows))
+		const windowStart = performance.now()
+		const windowCells = await consumeRowsWindow(input.xlsxBytes, rowLimit)
+		const rowsWindowMs = performance.now() - windowStart
+		if (windowCells <= 0 && input.cells > 0) {
+			throw new Error('rows window stream returned no cells')
+		}
+		sample.rowsWindowMs = rowsWindowMs
+		sample.rowsWindowCellsPerSecond = windowCells / (rowsWindowMs / 1000)
+	}
+
 	if (args.phase === 'all' || args.phase === 'xml') {
 		if (!worksheetXml) throw new Error('worksheet XML was not loaded for xml phase')
 		const scanStart = performance.now()
@@ -474,13 +595,38 @@ async function runSample(
 		sample.worksheetXmlByteScanCellsPerSecond = input.cells / (worksheetXmlByteScanMs / 1000)
 	}
 
-	if (args.phase === 'all' || args.phase === 'read' || args.phase === 'hydrate') {
+	if ((args.phase === 'all' && args.workload !== 'metadata-only') || args.phase === 'grid-fill') {
+		const gridFillStart = performance.now()
+		const gridFillCells = fillGeneratedCoreGrid(input)
+		const gridFillMs = performance.now() - gridFillStart
+		sample.gridFillMs = gridFillMs
+		sample.gridFillCellsPerSecond = gridFillCells / (gridFillMs / 1000)
+	}
+
+	if (
+		args.phase === 'all' ||
+		args.phase === 'read' ||
+		args.phase === 'hydrate' ||
+		args.phase === 'agent-window'
+	) {
 		const readStart = performance.now()
 		const read = readXlsx(input.xlsxBytes, readOptionsForWorkload(args.workload))
 		const readXlsxMs = performance.now() - readStart
 		if (!read.ok) throw new Error(read.error.message)
 		sample.readXlsxMs = readXlsxMs
 		sample.readXlsxCellsPerSecond = input.cells / (readXlsxMs / 1000)
+
+		if (
+			(args.phase === 'all' && args.workload !== 'metadata-only') ||
+			args.phase === 'agent-window'
+		) {
+			const windowStart = performance.now()
+			const windowCells = readAgentWindow(read.value.workbook, input)
+			const agentWindowMs = performance.now() - windowStart
+			sample.agentWindowMs = agentWindowMs
+			sample.totalAgentWindowMs = readXlsxMs + agentWindowMs
+			sample.agentWindowCellsPerSecond = windowCells / (agentWindowMs / 1000)
+		}
 
 		if (args.phase === 'all' || args.phase === 'hydrate') {
 			const materializeStart = performance.now()
@@ -508,8 +654,11 @@ if (
 	args.phase === 'direct' ||
 	args.phase === 'rows' ||
 	args.phase === 'rows-chunked' ||
+	args.phase === 'rows-window' ||
 	args.phase === 'xml' ||
-	args.phase === 'zip'
+	args.phase === 'zip' ||
+	args.phase === 'agent-window' ||
+	args.phase === 'grid-fill'
 ) {
 	input = { ...input, values: [] }
 	runGc()
@@ -565,6 +714,19 @@ async function consumeRowsStream(bytes: Uint8Array, chunkedSheetXml: boolean): P
 	if (!result.ok) throw new Error(result.error.message)
 	let cells = 0
 	for await (const row of result.value) cells += row.cells.length
+	return cells
+}
+
+async function consumeRowsWindow(bytes: Uint8Array, rowLimit: number): Promise<number> {
+	const result = await readXlsxRowsStream(bytes, { mode: 'values' })
+	if (!result.ok) throw new Error(result.error.message)
+	let rows = 0
+	let cells = 0
+	for await (const row of result.value) {
+		rows++
+		cells += row.cells.length
+		if (rows >= rowLimit) break
+	}
 	return cells
 }
 

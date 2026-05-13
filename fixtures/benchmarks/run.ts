@@ -14,7 +14,7 @@ import {
 	numberValue,
 	stringValue,
 } from '../../packages/schema/src/index.ts'
-import { AscendWorkbook } from '../../packages/sdk/src/index.ts'
+import { AscendWorkbook, SheetHandle } from '../../packages/sdk/src/index.ts'
 import {
 	type BenchmarkCaseResult,
 	createBenchmarkSuite,
@@ -58,6 +58,16 @@ function requireWorkbook(input: ScenarioInput): Workbook {
 function requireContent(input: ScenarioInput): string {
 	if (input.content === undefined) throw new Error('Scenario content was not built')
 	return input.content
+}
+
+function makeBenchmarkSheetHandle(workbook: Workbook, name = 'Sheet1'): SheetHandle {
+	const sheet = workbook.getSheet(name)
+	if (!sheet) throw new Error(`Benchmark workbook missing ${name}`)
+	return new SheetHandle(
+		name,
+		() => sheet,
+		(_row, _col, cell) => cell.formula,
+	)
 }
 
 function mustWrite(workbook: Workbook, options?: Parameters<typeof writeXlsx>[2]): Uint8Array {
@@ -902,6 +912,70 @@ const scenarios: readonly Scenario[] = [
 			const wb = await AscendWorkbook.open(requireBytes(input), { mode: 'values' })
 			const window = wb.readWindow('Sheet1', 'A1:T100000', { rowLimit: 5000 })
 			if (!window) throw new Error('Sparse window benchmark failed to read Sheet1')
+			return {
+				assertions: {
+					returnedCells: window.cells.length,
+					hasMore: window.hasMore,
+				},
+			}
+		},
+	},
+	{
+		name: 'sdk-window-dense-values-compact-hot',
+		category: 'read',
+		build() {
+			return { workbook: buildDenseWorkbook(5000, 20), rows: 250, cols: 20, cells: 5000 }
+		},
+		run(input) {
+			const workbook = requireWorkbook(input)
+			const handle = makeBenchmarkSheetHandle(workbook)
+			const window = handle.readWindowCompact('A1:T5000', {
+				rowLimit: 250,
+				includeRefs: false,
+			})
+			return {
+				assertions: {
+					returnedCells: window.cells.length,
+					hasMore: window.hasMore,
+				},
+			}
+		},
+	},
+	{
+		name: 'sdk-window-formula-chain-compact-hot',
+		category: 'read',
+		build() {
+			return { workbook: buildFormulaChainWorkbook(6000), rows: 500, cols: 1, cells: 500 }
+		},
+		run(input) {
+			const workbook = requireWorkbook(input)
+			const handle = makeBenchmarkSheetHandle(workbook)
+			const window = handle.readWindowCompact('A1:A6000', {
+				rowLimit: 500,
+				includeRefs: false,
+			})
+			return {
+				assertions: {
+					returnedCells: window.cells.length,
+					hasMore: window.hasMore,
+					formulaCount: window.cells.filter((cell) => cell.formula !== null).length,
+				},
+			}
+		},
+	},
+	{
+		name: 'sdk-window-sparse-wide-compact-hot',
+		category: 'read',
+		build() {
+			return { workbook: buildSparseWorkbook(100_000, 20, 500), rows: 5000, cols: 20, cells: 200 }
+		},
+		run(input) {
+			const workbook = requireWorkbook(input)
+			const handle = makeBenchmarkSheetHandle(workbook)
+			const window = handle.readWindowCompact('A1:T100000', {
+				rowLimit: 5000,
+				includeRefs: false,
+			})
 			return {
 				assertions: {
 					returnedCells: window.cells.length,

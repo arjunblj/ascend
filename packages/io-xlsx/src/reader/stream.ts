@@ -95,7 +95,8 @@ export async function readXlsxRowsStream(
 		(sheetZipEntry?.uncompressedSize ?? Number.POSITIVE_INFINITY) > 64 * 1024 * 1024
 	const shouldStreamWindow = mode === 'values' && options.maxRows !== undefined
 	const shouldParseSheetBytes = mode === 'values' && !shouldChunkSheetXml && !shouldStreamWindow
-	const shouldStreamSharedStrings = mode === 'values' && sharedStringsPath !== null
+	const shouldStreamSharedStrings =
+		mode === 'values' && sharedStringsPath !== null && shouldStreamWindow
 	const parsePaths =
 		mode === 'values' && (shouldChunkSheetXml || shouldParseSheetBytes || shouldStreamWindow)
 			? [shouldStreamSharedStrings ? null : sharedStringsPath, stylesPath].filter(

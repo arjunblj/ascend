@@ -1361,6 +1361,51 @@ async function patchStreamStateFor(bytes: Uint8Array): Promise<{
 	return state
 }
 
+type AscendSessionOpenOptions = NonNullable<Parameters<typeof AscendSession.open>[1]>
+
+async function measureInteractiveOpenPath(
+	label: string,
+	bytes: Uint8Array,
+	target: RealInteractivePatchTarget,
+	options: AscendSessionOpenOptions,
+): Promise<Record<string, string | number | boolean | null>> {
+	WorkbookDocument.clearCache()
+	const openStart = performance.now()
+	const session = await AscendSession.open(bytes, options)
+	const openMs = performance.now() - openStart
+	const load = session.inspect().load
+	const viewportStart = performance.now()
+	const viewport = session.readViewport({
+		sheet: target.sheet,
+		topRow: target.topRow,
+		leftCol: target.leftCol,
+		rowCount: target.rowCount,
+		colCount: target.colCount,
+	})
+	const viewportMs = performance.now() - viewportStart
+	const prepare = await session.prepareEdits()
+	const readiness = session.editReadiness()
+	session.close()
+	WorkbookDocument.clearCache()
+	return {
+		[`${label}OpenMs`]: openMs,
+		[`${label}LoadMode`]: load.mode,
+		[`${label}LoadIsPartial`]: load.isPartial,
+		[`${label}PartialReasons`]: load.partialReasons.length,
+		[`${label}ViewportMs`]: viewportMs,
+		[`${label}ViewportCells`]: viewport.cells.length,
+		[`${label}ViewportFlatValues`]: viewport.flatValues.length,
+		[`${label}PrepareEditsMs`]: prepare.timings.totalMs,
+		[`${label}PrepareEnsureMutableWorkbookMs`]: prepare.timings.ensureMutableWorkbookMs,
+		[`${label}PrepareReusedReadModel`]: prepare.timings.mutableWorkbookReusedReadModel ?? false,
+		[`${label}PrepareMutableWorkbookOpenMs`]: prepare.timings.mutableWorkbookOpenMs ?? null,
+		[`${label}PrepareCached`]: prepare.timings.mutableWorkbookCached ?? false,
+		[`${label}ReadyAfterPrepare`]: readiness.ready,
+		[`${label}TimeToFirstViewportMs`]: openMs + viewportMs,
+		[`${label}TimeToEditReadyMs`]: openMs + viewportMs + prepare.timings.totalMs,
+	}
+}
+
 function buildDefinedNameHeavyWorkbook(nameCount: number, formulaCount: number): Workbook {
 	const workbook = createWorkbook()
 	const sheet = workbook.addSheet('Sheet1')
@@ -3231,6 +3276,54 @@ const scenarios: readonly Scenario[] = [
 		},
 	},
 	{
+		name: 'real-dense-interactive-open-modes',
+		category: 'workflow',
+		build() {
+			const target = realInteractivePatchCorpusTarget('stress-dense-100k')
+			const bytes = realInteractivePatchCorpusTargetBytes(target)
+			return {
+				rows: target.rowCount,
+				cols: target.colCount,
+				cells: target.rowCount * target.colCount,
+				byteCount: bytes.byteLength,
+			}
+		},
+		async run() {
+			const target = realInteractivePatchCorpusTarget('stress-dense-100k')
+			const bytes = realInteractivePatchCorpusTargetBytes(target)
+			const defaultInteractive = await measureInteractiveOpenPath(
+				'defaultInteractive',
+				bytes,
+				target,
+				{ mode: 'interactive' },
+			)
+			const explicitFull = await measureInteractiveOpenPath('explicitFull', bytes, target, {
+				mode: 'full',
+			})
+			const preparedInteractive = await measureInteractiveOpenPath(
+				'preparedInteractive',
+				bytes,
+				target,
+				{ mode: 'interactive', prepareEdits: true },
+			)
+			const defaultEditReadyMs = Number(defaultInteractive.defaultInteractiveTimeToEditReadyMs)
+			const explicitFullEditReadyMs = Number(explicitFull.explicitFullTimeToEditReadyMs)
+			const preparedEditReadyMs = Number(preparedInteractive.preparedInteractiveTimeToEditReadyMs)
+			return {
+				assertions: {
+					bytes: bytes.byteLength,
+					...defaultInteractive,
+					...explicitFull,
+					...preparedInteractive,
+					explicitFullEditReadyDeltaVsDefaultMs: explicitFullEditReadyMs - defaultEditReadyMs,
+					preparedEditReadyDeltaVsDefaultMs: preparedEditReadyMs - defaultEditReadyMs,
+					defaultVsExplicitFullEditReadyHeadroom: defaultEditReadyMs / explicitFullEditReadyMs,
+					defaultVsPreparedEditReadyHeadroom: defaultEditReadyMs / preparedEditReadyMs,
+				},
+			}
+		},
+	},
+	{
 		name: 'real-dense-worksheet-shape',
 		category: 'workflow',
 		build() {
@@ -4513,7 +4606,7 @@ const scenarioSets = {
 		'real-dense-read-memory-formula',
 		'real-dense-read-memory-full',
 	],
-	'real-readiness': ['real-dense-progressive-readiness'],
+	'real-readiness': ['real-dense-progressive-readiness', 'real-dense-interactive-open-modes'],
 	'real-shape': ['real-dense-worksheet-shape'],
 } as const
 

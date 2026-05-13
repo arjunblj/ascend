@@ -648,6 +648,9 @@ function parseSimpleValuesRowBytes(
 	let cursor = bodyStart
 	let nextCol = 0
 	const rowNumber = row + 1
+	let cachedSharedStringIndex = -1
+	let cachedSharedStringText: string | undefined
+	let cachedSharedStringEntry: CellValue | undefined
 	const out = {
 		row,
 		col: 0,
@@ -675,11 +678,21 @@ function parseSimpleValuesRowBytes(
 			if (out.numberValue !== undefined) {
 				sheet.cells.setPlainNumber(out.row, out.col, out.numberValue)
 			} else if (out.sharedStringIndex >= 0) {
-				const text = ctx.sharedStrings.getString?.(out.sharedStringIndex)
+				let text: string | undefined
+				let entry: CellValue | undefined
+				if (out.sharedStringIndex === cachedSharedStringIndex) {
+					text = cachedSharedStringText
+					entry = cachedSharedStringEntry
+				} else {
+					text = ctx.sharedStrings.getString?.(out.sharedStringIndex)
+					entry = text === undefined ? ctx.sharedStrings.get(out.sharedStringIndex) : undefined
+					cachedSharedStringIndex = out.sharedStringIndex
+					cachedSharedStringText = text
+					cachedSharedStringEntry = entry
+				}
 				if (text !== undefined)
 					sheet.cells.setStringResolved(out.row, out.col, text, null, DEFAULT_STYLE_ID)
 				else {
-					const entry = ctx.sharedStrings.get(out.sharedStringIndex)
 					sheet.cells.setResolved(
 						out.row,
 						out.col,
@@ -720,11 +733,21 @@ function parseSimpleValuesRowBytes(
 			if (out.numberValue !== undefined) {
 				sheet.cells.setPlainNumber(out.row, out.col, out.numberValue)
 			} else if (out.sharedStringIndex >= 0) {
-				const text = ctx.sharedStrings.getString?.(out.sharedStringIndex)
+				let text: string | undefined
+				let entry: CellValue | undefined
+				if (out.sharedStringIndex === cachedSharedStringIndex) {
+					text = cachedSharedStringText
+					entry = cachedSharedStringEntry
+				} else {
+					text = ctx.sharedStrings.getString?.(out.sharedStringIndex)
+					entry = text === undefined ? ctx.sharedStrings.get(out.sharedStringIndex) : undefined
+					cachedSharedStringIndex = out.sharedStringIndex
+					cachedSharedStringText = text
+					cachedSharedStringEntry = entry
+				}
 				if (text !== undefined)
 					sheet.cells.setStringResolved(out.row, out.col, text, null, DEFAULT_STYLE_ID)
 				else {
-					const entry = ctx.sharedStrings.get(out.sharedStringIndex)
 					sheet.cells.setResolved(
 						out.row,
 						out.col,

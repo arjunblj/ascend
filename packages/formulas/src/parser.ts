@@ -452,7 +452,11 @@ class FormulaParser {
 
 	private parseNameOrSheetRef(): FormulaNode {
 		const token = this.advance(true)
-		if (token.value.includes(':') && this.peek(true).type === TokenType.Bang) {
+		if (
+			token.value.includes(':') &&
+			!isWorkbookQualifiedSheetToken(token.value) &&
+			this.peek(true).type === TokenType.Bang
+		) {
 			const [startSheet, endSheet] = token.value.split(':')
 			if (!startSheet || !endSheet) {
 				throw new Error(`Invalid 3D sheet span "${token.value}" at position ${token.position}`)
@@ -740,6 +744,12 @@ function isReferenceFunctionName(name: string): boolean {
 		default:
 			return false
 	}
+}
+
+function isWorkbookQualifiedSheetToken(token: string): boolean {
+	const open = token.indexOf('[')
+	const close = token.indexOf(']', open + 1)
+	return open >= 0 && close > open
 }
 
 function makeRangeFromEndpoints(left: FormulaNode, right: FormulaNode): FormulaNode {

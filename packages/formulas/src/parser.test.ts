@@ -378,6 +378,16 @@ describe('parse', () => {
 		})
 	})
 
+	it('parses quoted workbook-qualified paths with drive separators as external references', () => {
+		const node = p("'C:/tmp/[Budget.xlsx]Inputs'!A1")
+		expect(node).toEqual({
+			type: 'cellRef',
+			sheet: 'C:/tmp/[Budget.xlsx]Inputs',
+			ref: { row: 0, col: 0, rowAbsolute: false, colAbsolute: false },
+		})
+		expect(printFormula(node)).toBe("'C:/tmp/[Budget.xlsx]Inputs'!A1")
+	})
+
 	it('parses sheet-qualified invalid references as #REF!', () => {
 		expect(p("'1'!#REF!")).toEqual({ type: 'error', value: '#REF!' })
 		expect(printFormula(p("'1'!#REF!"))).toBe('#REF!')

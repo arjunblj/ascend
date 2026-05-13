@@ -3349,6 +3349,130 @@ const scenarios: readonly Scenario[] = [
 		},
 	},
 	{
+		name: 'real-dense-dirty-write-lifecycle',
+		category: 'workflow',
+		build() {
+			const target = realInteractivePatchCorpusTarget('stress-dense-100k')
+			const bytes = realInteractivePatchCorpusTargetBytes(target)
+			return {
+				rows: target.rowCount,
+				cols: target.colCount,
+				cells: target.rowCount * target.colCount,
+				byteCount: bytes.byteLength,
+			}
+		},
+		async run() {
+			const target = realInteractivePatchCorpusTarget('stress-dense-100k')
+			const bytes = realInteractivePatchCorpusTargetBytes(target)
+			const updates = Array.from({ length: 10 }, (_, index) => ({
+				ref: `A${index + 1}`,
+				value: 120_000 + index,
+			}))
+
+			WorkbookDocument.clearCache()
+			const openStart = performance.now()
+			const workbook = await AscendWorkbook.open(bytes)
+			const openMs = performance.now() - openStart
+
+			const applyStart = performance.now()
+			const apply = workbook.apply([{ op: 'setCells', sheet: target.sheet, updates }])
+			if (apply.errors.length > 0) throw new Error('Dense dirty write lifecycle apply failed')
+			const applyMs = performance.now() - applyStart
+
+			const summaryStart = performance.now()
+			const plan = workbook.writePlanSummary()
+			const writePlanSummaryMs = performance.now() - summaryStart
+
+			const checkStart = performance.now()
+			const check = workbook.check()
+			const writePolicyCheckMs = performance.now() - checkStart
+			if (!check.valid) throw new Error('Dense dirty write lifecycle check failed')
+
+			const toBytesStart = performance.now()
+			const output = workbook.toBytes()
+			const toBytesMs = performance.now() - toBytesStart
+
+			const reopenStart = performance.now()
+			const reopened = await AscendWorkbook.open(output)
+			const reopenMs = performance.now() - reopenStart
+			const edited = reopened.sheet(target.sheet)?.cell('A1')?.value
+			if (edited?.kind !== 'number' || edited.value !== 120_000) {
+				throw new Error('Dense dirty write lifecycle reopen missed edited value')
+			}
+
+			WorkbookDocument.clearCache()
+			const toBytesFirstOpenStart = performance.now()
+			const toBytesFirstWorkbook = await AscendWorkbook.open(bytes)
+			const toBytesFirstOpenMs = performance.now() - toBytesFirstOpenStart
+
+			const toBytesFirstApplyStart = performance.now()
+			const toBytesFirstApply = toBytesFirstWorkbook.apply([
+				{ op: 'setCells', sheet: target.sheet, updates },
+			])
+			if (toBytesFirstApply.errors.length > 0) {
+				throw new Error('Dense dirty write lifecycle toBytes-first apply failed')
+			}
+			const toBytesFirstApplyMs = performance.now() - toBytesFirstApplyStart
+
+			const toBytesFirstStart = performance.now()
+			const toBytesFirstOutput = toBytesFirstWorkbook.toBytes()
+			const toBytesFirstToBytesMs = performance.now() - toBytesFirstStart
+
+			const toBytesFirstCheckStart = performance.now()
+			const toBytesFirstCheck = toBytesFirstWorkbook.check()
+			const toBytesFirstCheckMs = performance.now() - toBytesFirstCheckStart
+			if (!toBytesFirstCheck.valid) {
+				throw new Error('Dense dirty write lifecycle toBytes-first check failed')
+			}
+
+			const toBytesFirstReopenStart = performance.now()
+			const toBytesFirstReopened = await AscendWorkbook.open(toBytesFirstOutput)
+			const toBytesFirstReopenMs = performance.now() - toBytesFirstReopenStart
+			const toBytesFirstEdited = toBytesFirstReopened.sheet(target.sheet)?.cell('A1')?.value
+			if (toBytesFirstEdited?.kind !== 'number' || toBytesFirstEdited.value !== 120_000) {
+				throw new Error('Dense dirty write lifecycle toBytes-first reopen missed edited value')
+			}
+
+			const generatedSheetParts = plan.parts.filter(
+				(part) => part.owner.kind === 'sheet' && part.origin === 'generated',
+			).length
+			const preservedSourceSheetParts = plan.parts.filter(
+				(part) => part.owner.kind === 'sheet' && part.origin === 'preserved-source',
+			).length
+
+			return {
+				assertions: {
+					bytes: bytes.byteLength,
+					outputBytes: output.byteLength,
+					outputDeltaBytes: output.byteLength - bytes.byteLength,
+					openMs,
+					applyMs,
+					writePlanSummaryMs,
+					writePolicyCheckMs,
+					toBytesMs,
+					reopenMs,
+					checkFirstTotalMs: openMs + applyMs + writePlanSummaryMs + writePolicyCheckMs + toBytesMs,
+					toBytesFirstOpenMs,
+					toBytesFirstApplyMs,
+					toBytesFirstToBytesMs,
+					toBytesFirstCheckMs,
+					toBytesFirstReopenMs,
+					toBytesFirstTotalMs:
+						toBytesFirstOpenMs + toBytesFirstApplyMs + toBytesFirstToBytesMs + toBytesFirstCheckMs,
+					toBytesFirstOutputBytes: toBytesFirstOutput.byteLength,
+					writePlanParts: plan.totalParts,
+					writePlanGeneratedParts: plan.byOrigin.generated,
+					writePlanPreservedSourceParts: plan.byOrigin['preserved-source'],
+					generatedSheetParts,
+					preservedSourceSheetParts,
+					checkIssues: check.issues.length,
+					toBytesFirstCheckIssues: toBytesFirstCheck.issues.length,
+					updatedCells: updates.length,
+				},
+			}
+		},
+	},
+	{
 		name: 'real-dense-prepared-open-cpu',
 		category: 'workflow',
 		build() {
@@ -4608,6 +4732,7 @@ const scenarioSets = {
 	],
 	'real-readiness': ['real-dense-progressive-readiness', 'real-dense-interactive-open-modes'],
 	'real-shape': ['real-dense-worksheet-shape'],
+	'real-write': ['real-dense-dirty-write-lifecycle'],
 } as const
 
 function phaseMemorySnapshot(): {

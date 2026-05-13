@@ -3324,6 +3324,110 @@ describe('interactive client contract', () => {
 		})
 	})
 
+	test('structural row delete exact journals restore shifted metadata outside the deleted band', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A4', value: 'Region' },
+					{ ref: 'B4', value: 'Amount' },
+					{ ref: 'A5', value: 'West' },
+					{ ref: 'B5', value: 20 },
+					{ ref: 'A6', value: 'East' },
+					{ ref: 'B6', value: 30 },
+				],
+			},
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'H4', formula: 'B5*2' },
+			{ op: 'setComment', sheet: 'Sheet1', ref: 'C4', text: 'below row', author: 'agent' },
+			{ op: 'setHyperlink', sheet: 'Sheet1', ref: 'C5', url: 'https://example.com' },
+			{
+				op: 'setDataValidation',
+				sheet: 'Sheet1',
+				range: 'D4:D6',
+				rule: { type: 'whole', operator: 'greaterThan', formula1: '0' },
+			},
+			{
+				op: 'setConditionalFormat',
+				sheet: 'Sheet1',
+				range: 'E4:E6',
+				rule: { type: 'expression', formula: 'B5>0' },
+			},
+			{ op: 'mergeCells', sheet: 'Sheet1', range: 'F4:G4' },
+			{ op: 'setAutoFilter', sheet: 'Sheet1', range: 'A4:B6', column: 0, values: ['West'] },
+			{ op: 'setDefinedName', name: 'BelowBand', ref: 'Sheet1!$A$4:$B$6' },
+			{ op: 'createTable', sheet: 'Sheet1', ref: 'A4:B6', name: 'ShiftedRows', hasHeaders: true },
+		])
+		const before = journalComparableState(wb)
+
+		const deleted = wb.apply([{ op: 'deleteRows', sheet: 'Sheet1', at: 1, count: 1 }], {
+			journal: true,
+		})
+
+		expect(deleted.errors).toEqual([])
+		expect(deleted.journal?.supported).toBe(true)
+		expect(deleted.journal?.exact).toBe(true)
+		expect(deleted.journal?.issues).toEqual([])
+		expect(journalComparableState(wb)).not.toEqual(before)
+
+		const undo = wb.apply(deleted.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(journalComparableState(wb)).toEqual(before)
+	})
+
+	test('structural column delete exact journals restore shifted metadata outside the deleted band', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'D1', value: 'Region' },
+					{ ref: 'E1', value: 'Amount' },
+					{ ref: 'D2', value: 'West' },
+					{ ref: 'E2', value: 20 },
+					{ ref: 'D3', value: 'East' },
+					{ ref: 'E3', value: 30 },
+				],
+			},
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'K1', formula: 'E2*2' },
+			{ op: 'setComment', sheet: 'Sheet1', ref: 'F1', text: 'right of column', author: 'agent' },
+			{ op: 'setHyperlink', sheet: 'Sheet1', ref: 'F2', url: 'https://example.com' },
+			{
+				op: 'setDataValidation',
+				sheet: 'Sheet1',
+				range: 'G1:G3',
+				rule: { type: 'whole', operator: 'greaterThan', formula1: '0' },
+			},
+			{
+				op: 'setConditionalFormat',
+				sheet: 'Sheet1',
+				range: 'H1:H3',
+				rule: { type: 'expression', formula: 'E2>0' },
+			},
+			{ op: 'mergeCells', sheet: 'Sheet1', range: 'I1:J1' },
+			{ op: 'setAutoFilter', sheet: 'Sheet1', range: 'D1:E3', column: 0, values: ['West'] },
+			{ op: 'setDefinedName', name: 'RightBand', ref: 'Sheet1!$D$1:$E$3' },
+			{ op: 'createTable', sheet: 'Sheet1', ref: 'D1:E3', name: 'ShiftedCols', hasHeaders: true },
+		])
+		const before = journalComparableState(wb)
+
+		const deleted = wb.apply([{ op: 'deleteCols', sheet: 'Sheet1', at: 1, count: 1 }], {
+			journal: true,
+		})
+
+		expect(deleted.errors).toEqual([])
+		expect(deleted.journal?.supported).toBe(true)
+		expect(deleted.journal?.exact).toBe(true)
+		expect(deleted.journal?.issues).toEqual([])
+		expect(journalComparableState(wb)).not.toEqual(before)
+
+		const undo = wb.apply(deleted.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(journalComparableState(wb)).toEqual(before)
+	})
+
 	test('structural delete journals mark broken external formula references as lossy', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

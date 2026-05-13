@@ -552,6 +552,131 @@ describe('interactive client contract', () => {
 		expect(sheet?.drawingObjectRefs.map((object) => object.text)).toEqual(['First', undefined])
 	})
 
+	test('journal inverse ops restore chart series source refs without losing chart metadata', () => {
+		const wb = AscendWorkbook.create()
+		wb.getWorkbookModel().chartParts.push({
+			partPath: 'xl/charts/chart1.xml',
+			sheetName: 'Sheet1',
+			chartType: 'lineChart',
+			title: 'Revenue',
+			series: [
+				{
+					nameRef: 'Sheet1!$B$1',
+					categoryRef: 'Sheet1!$A$2:$A$4',
+					valueRef: 'Sheet1!$B$2:$B$4',
+				},
+				{
+					nameText: 'Plan',
+					categoryRef: 'Sheet1!$A$2:$A$4',
+					valueRef: 'Sheet1!$C$2:$C$4',
+				},
+			],
+		})
+
+		const changed = wb.apply(
+			[
+				{
+					op: 'setChartSeriesSource',
+					partPath: 'xl/charts/chart1.xml',
+					seriesIndex: 0,
+					nameRef: 'Sheet1!$D$1',
+					categoryRef: 'Sheet1!$A$2:$A$10',
+					valueRef: 'Sheet1!$D$2:$D$10',
+				},
+			],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(true)
+		expect(changed.journal?.inverseOps).toEqual([
+			{
+				op: 'setChartSeriesSource',
+				partPath: 'xl/charts/chart1.xml',
+				seriesIndex: 0,
+				nameRef: 'Sheet1!$B$1',
+				categoryRef: 'Sheet1!$A$2:$A$4',
+				valueRef: 'Sheet1!$B$2:$B$4',
+			},
+		])
+		expect(wb.getWorkbookModel().chartParts[0]).toMatchObject({
+			partPath: 'xl/charts/chart1.xml',
+			sheetName: 'Sheet1',
+			chartType: 'lineChart',
+			title: 'Revenue',
+			series: [
+				{
+					nameRef: 'Sheet1!$D$1',
+					categoryRef: 'Sheet1!$A$2:$A$10',
+					valueRef: 'Sheet1!$D$2:$D$10',
+				},
+				{
+					nameText: 'Plan',
+					categoryRef: 'Sheet1!$A$2:$A$4',
+					valueRef: 'Sheet1!$C$2:$C$4',
+				},
+			],
+		})
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(wb.getWorkbookModel().chartParts[0]).toEqual({
+			partPath: 'xl/charts/chart1.xml',
+			sheetName: 'Sheet1',
+			chartType: 'lineChart',
+			title: 'Revenue',
+			series: [
+				{
+					nameRef: 'Sheet1!$B$1',
+					categoryRef: 'Sheet1!$A$2:$A$4',
+					valueRef: 'Sheet1!$B$2:$B$4',
+				},
+				{
+					nameText: 'Plan',
+					categoryRef: 'Sheet1!$A$2:$A$4',
+					valueRef: 'Sheet1!$C$2:$C$4',
+				},
+			],
+		})
+	})
+
+	test('chart series journals mark rollback lossy when refs cannot be unset', () => {
+		const wb = AscendWorkbook.create()
+		wb.getWorkbookModel().chartParts.push({
+			partPath: 'xl/charts/chart1.xml',
+			sheetName: 'Sheet1',
+			series: [{ nameText: 'Actual', valueRef: 'Sheet1!$B$2:$B$4' }],
+		})
+
+		const journal = buildMutationJournal(wb.getWorkbookModel(), [
+			{
+				op: 'setChartSeriesSource',
+				partPath: 'xl/charts/chart1.xml',
+				seriesIndex: 0,
+				nameRef: 'Sheet1!$B$1',
+				valueRef: 'Sheet1!$C$2:$C$4',
+			},
+		])
+
+		expect(journal.supported).toBe(true)
+		expect(journal.exact).toBe(false)
+		expect(journal.issues).toEqual([
+			{
+				code: 'LOSSY_INVERSE',
+				message: 'Chart series selector cannot be restored exactly for series 0',
+			},
+		])
+		expect(journal.inverseOps).toEqual([
+			{
+				op: 'setChartSeriesSource',
+				partPath: 'xl/charts/chart1.xml',
+				seriesIndex: 0,
+				valueRef: 'Sheet1!$B$2:$B$4',
+			},
+		])
+	})
+
 	test('journal inverse ops restore conditional format replacements', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

@@ -1,6 +1,8 @@
 import {
 	type AutoFilter,
 	type CellStyle,
+	type ChartPartInfo,
+	type ChartSeriesInfo,
 	cloneCellStyle,
 	DEFAULT_STYLE_ID,
 	type DefinedName,
@@ -73,6 +75,13 @@ export interface MutationJournalDrawingTextPreimage {
 	readonly sheet: string
 	readonly drawingObjectIndex: number | null
 	readonly drawingObject: SheetDrawingObjectRef | null
+}
+
+export interface MutationJournalChartSeriesPreimage {
+	readonly chartIndex: number | null
+	readonly seriesIndex: number
+	readonly chart: ChartPartInfo | null
+	readonly series: ChartSeriesInfo | null
 }
 
 export interface MutationJournalPanePreimage {
@@ -150,6 +159,7 @@ export type MutationJournalPreimage =
 			readonly threadedComment: MutationJournalThreadedCommentPreimage
 	  }
 	| { readonly kind: 'drawing-text'; readonly drawingText: MutationJournalDrawingTextPreimage }
+	| { readonly kind: 'chart-series'; readonly chartSeries: MutationJournalChartSeriesPreimage }
 	| { readonly kind: 'pane'; readonly pane: MutationJournalPanePreimage }
 	| { readonly kind: 'merge'; readonly merge: MutationJournalMergePreimage }
 	| { readonly kind: 'auto-filter'; readonly autoFilter: MutationJournalAutoFilterPreimage }
@@ -333,6 +343,8 @@ function buildSupportedJournalEntry(
 			return journalSetThreadedComment(workbook, op, opIndex)
 		case 'setDrawingText':
 			return journalSetDrawingText(workbook, op, opIndex)
+		case 'setChartSeriesSource':
+			return journalSetChartSeriesSource(workbook, op, opIndex)
 		case 'freezePane':
 			return journalFreezePane(workbook, op, opIndex)
 		case 'renameSheet':
@@ -916,6 +928,30 @@ function journalSetDrawingText(
 		op,
 		inverseOps,
 		preimages: [{ kind: 'drawing-text', drawingText: preimage }],
+		issues,
+	}
+}
+
+function journalSetChartSeriesSource(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'setChartSeriesSource' }>,
+	opIndex: number,
+): DraftJournalEntry {
+	const preimage = chartSeriesPreimage(workbook, op)
+	const inverse = chartSeriesInverseOperation(op, preimage)
+	const issues: MutationJournalIssue[] = inverse.exact
+		? []
+		: [
+				{
+					code: 'LOSSY_INVERSE',
+					message: `Chart series selector cannot be restored exactly for series ${op.seriesIndex}`,
+				},
+			]
+	return {
+		opIndex,
+		op,
+		inverseOps: inverse.op ? [inverse.op] : [],
+		preimages: [{ kind: 'chart-series', chartSeries: preimage }],
 		issues,
 	}
 }
@@ -2020,6 +2056,84 @@ function drawingObjectStableSelector(
 	return { drawingPartPath: object.drawingPartPath }
 }
 
+function chartSeriesPreimage(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'setChartSeriesSource' }>,
+): MutationJournalChartSeriesPreimage {
+	if (
+		op.seriesIndex < 0 ||
+		!Number.isInteger(op.seriesIndex) ||
+		(op.chartIndex !== undefined && (op.chartIndex < 0 || !Number.isInteger(op.chartIndex)))
+	) {
+		return { chartIndex: null, seriesIndex: op.seriesIndex, chart: null, series: null }
+	}
+	let candidates = workbook.chartParts.map((chart, index) => ({ chart, index }))
+	if (op.partPath !== undefined) {
+		candidates = candidates.filter(({ chart }) => chart.partPath === op.partPath)
+	}
+	if (op.sheet !== undefined) {
+		candidates = candidates.filter(({ chart }) => chart.sheetName === op.sheet)
+	}
+	if (op.chartIndex !== undefined) {
+		const chart = candidates[op.chartIndex]
+		candidates = chart ? [chart] : []
+	}
+	const match = candidates.length === 1 ? candidates[0] : undefined
+	const series = match?.chart.series[op.seriesIndex]
+	return {
+		chartIndex: match?.index ?? null,
+		seriesIndex: op.seriesIndex,
+		chart: match ? cloneChartPart(match.chart) : null,
+		series: series ? cloneChartSeries(series) : null,
+	}
+}
+
+function chartSeriesInverseOperation(
+	op: Extract<Operation, { op: 'setChartSeriesSource' }>,
+	preimage: MutationJournalChartSeriesPreimage,
+): { readonly exact: boolean; readonly op?: Operation } {
+	if (!preimage.chart || !preimage.series) return { exact: false }
+	const refs: { nameRef?: string; categoryRef?: string; valueRef?: string } = {}
+	let exact = true
+	for (const field of ['nameRef', 'categoryRef', 'valueRef'] as const) {
+		if (op[field] === undefined) continue
+		const value = preimage.series[field]
+		if (value === undefined) {
+			exact = false
+			continue
+		}
+		refs[field] = value
+	}
+	const inverse: Extract<Operation, { op: 'setChartSeriesSource' }> = {
+		op: 'setChartSeriesSource',
+		seriesIndex: preimage.seriesIndex,
+		...chartSeriesStableSelector(preimage),
+		...refs,
+	}
+	return hasChartSeriesRefUpdate(inverse) ? { exact, op: inverse } : { exact: false }
+}
+
+function chartSeriesStableSelector(
+	preimage: MutationJournalChartSeriesPreimage,
+): Omit<
+	Extract<Operation, { op: 'setChartSeriesSource' }>,
+	'op' | 'seriesIndex' | 'nameRef' | 'categoryRef' | 'valueRef'
+> {
+	const chart = preimage.chart
+	if (!chart) return {}
+	if (chart.partPath !== undefined) return { partPath: chart.partPath }
+	if (chart.sheetName !== undefined && preimage.chartIndex !== null) {
+		return { sheet: chart.sheetName, chartIndex: preimage.chartIndex }
+	}
+	if (chart.sheetName !== undefined) return { sheet: chart.sheetName }
+	if (preimage.chartIndex !== null) return { chartIndex: preimage.chartIndex }
+	return {}
+}
+
+function hasChartSeriesRefUpdate(op: Extract<Operation, { op: 'setChartSeriesSource' }>): boolean {
+	return op.nameRef !== undefined || op.categoryRef !== undefined || op.valueRef !== undefined
+}
+
 function setHyperlinkInverse(
 	sheet: string,
 	ref: string,
@@ -2106,6 +2220,17 @@ function cloneDrawingObjectRef(object: SheetDrawingObjectRef): SheetDrawingObjec
 			? { relationshipRefs: object.relationshipRefs.map((ref) => ({ ...ref })) }
 			: {}),
 	}
+}
+
+function cloneChartPart(chart: ChartPartInfo): ChartPartInfo {
+	return {
+		...chart,
+		series: chart.series.map(cloneChartSeries),
+	}
+}
+
+function cloneChartSeries(series: ChartSeriesInfo): ChartSeriesInfo {
+	return { ...series }
 }
 
 function cloneConditionalFormat(format: SheetConditionalFormat): SheetConditionalFormat {

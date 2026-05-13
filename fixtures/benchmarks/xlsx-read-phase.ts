@@ -51,6 +51,7 @@ interface PhaseSample {
 	readonly worksheetXmlScanMs?: number
 	readonly worksheetXmlByteScanMs?: number
 	readonly readXlsxMs?: number
+	readonly fullReadXlsxMs?: number
 	readonly cappedReadWindowMs?: number
 	readonly agentWindowMs?: number
 	readonly cappedAgentWindowMs?: number
@@ -66,6 +67,7 @@ interface PhaseSample {
 	readonly worksheetXmlScanCellsPerSecond?: number
 	readonly worksheetXmlByteScanCellsPerSecond?: number
 	readonly readXlsxCellsPerSecond?: number
+	readonly fullReadXlsxCellsPerSecond?: number
 	readonly cappedReadWindowCellsPerSecond?: number
 	readonly agentWindowCellsPerSecond?: number
 	readonly cappedAgentWindowCellsPerSecond?: number
@@ -93,6 +95,7 @@ type PhaseMode =
 	| 'rows-window'
 	| 'xml'
 	| 'read'
+	| 'full-read'
 	| 'hydrate'
 	| 'agent-window'
 	| 'capped-agent-window'
@@ -182,6 +185,7 @@ function parsePhase(raw: string | undefined): PhaseMode {
 		raw === 'rows-window' ||
 		raw === 'xml' ||
 		raw === 'read' ||
+		raw === 'full-read' ||
 		raw === 'hydrate' ||
 		raw === 'agent-window' ||
 		raw === 'capped-agent-window' ||
@@ -190,7 +194,7 @@ function parsePhase(raw: string | undefined): PhaseMode {
 		return raw
 	}
 	throw new Error(
-		'--phase must be all, zip, direct, rows, rows-chunked, rows-window, xml, read, hydrate, agent-window, capped-agent-window, or grid-fill',
+		'--phase must be all, zip, direct, rows, rows-chunked, rows-window, xml, read, full-read, hydrate, agent-window, capped-agent-window, or grid-fill',
 	)
 }
 
@@ -234,6 +238,7 @@ function summarize(samples: readonly PhaseSample[]) {
 		samples.map((sample) => sample.worksheetXmlByteScanMs),
 	)
 	const readXlsxMedianMs = medianOptional(samples.map((sample) => sample.readXlsxMs))
+	const fullReadXlsxMedianMs = medianOptional(samples.map((sample) => sample.fullReadXlsxMs))
 	const cappedReadWindowMedianMs = medianOptional(
 		samples.map((sample) => sample.cappedReadWindowMs),
 	)
@@ -273,6 +278,9 @@ function summarize(samples: readonly PhaseSample[]) {
 			? []
 			: ([['worksheetXmlByteScan', worksheetXmlByteScanMedianMs]] as const)),
 		...(readXlsxMedianMs === undefined ? [] : ([['readXlsx', readXlsxMedianMs]] as const)),
+		...(fullReadXlsxMedianMs === undefined
+			? []
+			: ([['fullReadXlsx', fullReadXlsxMedianMs]] as const)),
 		...(cappedReadWindowMedianMs === undefined
 			? []
 			: ([['cappedReadWindow', cappedReadWindowMedianMs]] as const)),
@@ -323,6 +331,10 @@ function summarize(samples: readonly PhaseSample[]) {
 			? {}
 			: { xmlByteScanVsReadXlsxHeadroom: readXlsxMedianMs / worksheetXmlByteScanMedianMs }),
 		...(readXlsxMedianMs === undefined ? {} : { readXlsxMedianMs }),
+		...(fullReadXlsxMedianMs === undefined ? {} : { fullReadXlsxMedianMs }),
+		...(readXlsxMedianMs === undefined || fullReadXlsxMedianMs === undefined
+			? {}
+			: { fullReadVsValuesReadHeadroom: fullReadXlsxMedianMs / readXlsxMedianMs }),
 		...(cappedReadWindowMedianMs === undefined ? {} : { cappedReadWindowMedianMs }),
 		...(readXlsxMedianMs === undefined || cappedReadWindowMedianMs === undefined
 			? {}
@@ -368,6 +380,10 @@ function summarize(samples: readonly PhaseSample[]) {
 		...withOptionalMedian(
 			'readXlsxCellsPerSecondMedian',
 			samples.map((sample) => sample.readXlsxCellsPerSecond),
+		),
+		...withOptionalMedian(
+			'fullReadXlsxCellsPerSecondMedian',
+			samples.map((sample) => sample.fullReadXlsxCellsPerSecond),
 		),
 		...withOptionalMedian(
 			'cappedReadWindowCellsPerSecondMedian',
@@ -679,6 +695,19 @@ async function runSample(
 		}
 	}
 
+	if (args.phase === 'full-read') {
+		if (args.workload === 'metadata-only') {
+			throw new Error('full-read is not supported for metadata-only workloads')
+		}
+		const fullReadStart = performance.now()
+		const read = readXlsx(input.xlsxBytes)
+		const fullReadXlsxMs = performance.now() - fullReadStart
+		if (!read.ok) throw new Error(read.error.message)
+		assertReadPhaseWorkbook(read.value.workbook, input)
+		sample.fullReadXlsxMs = fullReadXlsxMs
+		sample.fullReadXlsxCellsPerSecond = input.cells / (fullReadXlsxMs / 1000)
+	}
+
 	if (
 		(args.phase === 'all' && args.workload !== 'metadata-only') ||
 		args.phase === 'capped-agent-window'
@@ -725,6 +754,7 @@ if (
 	args.phase === 'rows-window' ||
 	args.phase === 'xml' ||
 	args.phase === 'zip' ||
+	args.phase === 'full-read' ||
 	args.phase === 'agent-window' ||
 	args.phase === 'capped-agent-window' ||
 	args.phase === 'grid-fill'

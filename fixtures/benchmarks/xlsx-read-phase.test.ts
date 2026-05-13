@@ -183,6 +183,49 @@ describe('xlsx-read-phase CLI', () => {
 		{ timeout: 30_000 },
 	)
 
+	test(
+		'reports full-fidelity read phase timings',
+		async () => {
+			const proc = Bun.spawn(
+				[
+					'bun',
+					'run',
+					'fixtures/benchmarks/xlsx-read-phase.ts',
+					'--workload',
+					'mixed-10pct-text',
+					'--rows',
+					'12',
+					'--cols',
+					'6',
+					'--phase',
+					'full-read',
+					'--repeat',
+					'1',
+					'--warmup',
+					'0',
+					'--json',
+				],
+				{ cwd: process.cwd(), stderr: 'pipe', stdout: 'pipe' },
+			)
+			const [stdout, stderr, exitCode] = await Promise.all([
+				new Response(proc.stdout).text(),
+				new Response(proc.stderr).text(),
+				proc.exited,
+			])
+			expect(stderr).toBe('')
+			expect(exitCode).toBe(0)
+			const result = JSON.parse(stdout) as {
+				readonly summary?: {
+					readonly fullReadXlsxMedianMs?: number
+					readonly fullReadXlsxCellsPerSecondMedian?: number
+				}
+			}
+			expect(result.summary?.fullReadXlsxMedianMs).toBeNumber()
+			expect(result.summary?.fullReadXlsxCellsPerSecondMedian).toBeNumber()
+		},
+		{ timeout: 30_000 },
+	)
+
 	test('direct ordered verifier counts shared-string physical cells once', async () => {
 		const input = await buildWorkloadDataSet('mixed-50pct-text', 8, 6, 'raw-ooxml')
 		const args: Args = {

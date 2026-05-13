@@ -2783,6 +2783,16 @@ describe('AscendWorkbook', () => {
 		expect(binary.sha256).toBe(createHash('sha256').update(binaryBytes).digest('hex'))
 		expect(binary.text).toBeUndefined()
 
+		const binaryText = wb.rawPackagePart({
+			partPath: 'xl/media/image1.png',
+			encoding: 'text',
+			maxBytes: 3,
+		})
+		expect(binaryText.found).toBe(true)
+		expect(binaryText.binaryLike).toBe(true)
+		expect(binaryText.textWarning).toContain('Part appears binary')
+		expect(binaryText.sha256).toBe(binary.sha256)
+
 		const metadataOnly = wb.rawPackagePart({
 			partPath: 'xl/media/image1.png',
 			encoding: 'none',
@@ -2810,6 +2820,13 @@ describe('AscendWorkbook', () => {
 		expect(wb.rawPackagePart({ partPath: 'xl/' }).invalidReason).toContain('empty segments')
 		expect(wb.rawPackagePart({ partPath: 'xl\\workbook.xml' }).invalidReason).toContain(
 			'forward slashes',
+		)
+		expect(wb.rawPackagePart({ partPath: '/' }).invalidReason).toContain('empty')
+		expect(wb.rawPackagePart({ partPath: 'xl/../workbook.xml' }).invalidReason).toContain(
+			'dot segments',
+		)
+		expect(wb.rawPackagePart({ partPath: './xl/workbook.xml' }).invalidReason).toContain(
+			'dot segments',
 		)
 
 		const wrongCase = wb.rawPackagePart({ partPath: 'XL/WORKBOOK.XML' })

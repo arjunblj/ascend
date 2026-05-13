@@ -60,6 +60,8 @@ interface ApiEnvelope {
 		readonly previewByteLength?: number
 		readonly truncated?: boolean
 		readonly sha256?: string
+		readonly binaryLike?: boolean
+		readonly textWarning?: string
 		readonly rowCount?: number
 		readonly cells?: unknown[]
 		readonly format?: string
@@ -89,7 +91,9 @@ interface ApiEnvelope {
 		readonly details?: {
 			readonly issueCount?: number
 			readonly issues?: readonly string[]
+			readonly found?: boolean
 			readonly validPath?: boolean
+			readonly semantics?: string
 			readonly rule?: string
 			readonly caseInsensitiveAmbiguous?: boolean
 			readonly load?: {
@@ -265,6 +269,9 @@ describe('Ascend API server', () => {
 		expect(missing.status).toBe(404)
 		expect(missing.body.ok).toBe(false)
 		expect(missing.body.error?.code).toBe('FILE_NOT_FOUND')
+		expect(missing.body.error?.details?.found).toBe(false)
+		expect(missing.body.error?.details?.validPath).toBe(true)
+		expect(missing.body.error?.details?.semantics).toBe('raw-package-bytes')
 
 		const invalid = await postJson('/raw-part', { file: TEMP_FILE, partPath: 'xl//workbook.xml' })
 		expect(invalid.status).toBe(400)
@@ -299,10 +306,32 @@ describe('Ascend API server', () => {
 	})
 
 	test('raw-part returns binary base64 previews with full-byte metadata', async () => {
-		const binaryBytes = new Uint8Array([0, 1, 2, 3, 4, 255])
+		const binaryBytes = Uint8Array.from({ length: 70 * 1024 }, (_, index) => index % 251)
 		const binaryFile = `${TEMP_FILE}.raw-binary.xlsx`
 		await writeFile(binaryFile, binaryRawPartWorkbook(binaryBytes))
 		try {
+			const textPreview = await postJson('/raw-part', {
+				file: binaryFile,
+				partPath: 'xl/media/image1.png',
+				encoding: 'text',
+				maxBytes: 6,
+			})
+			expect(textPreview.status).toBe(200)
+			expect(textPreview.body.data?.binaryLike).toBe(true)
+			expect(textPreview.body.data?.textWarning).toContain('Part appears binary')
+
+			const defaultBounded = await postJson('/raw-part', {
+				file: binaryFile,
+				partPath: 'xl/media/image1.png',
+				encoding: 'base64',
+			})
+			expect(defaultBounded.status).toBe(200)
+			expect(defaultBounded.body.data?.previewByteLength).toBe(64 * 1024)
+			expect(defaultBounded.body.data?.truncated).toBe(true)
+			expect(defaultBounded.body.data?.sha256).toBe(
+				createHash('sha256').update(binaryBytes).digest('hex'),
+			)
+
 			const result = await postJson('/raw-part', {
 				file: binaryFile,
 				partPath: 'xl/media/image1.png',

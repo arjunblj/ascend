@@ -326,11 +326,19 @@ describe('MCP server', () => {
 					truncated?: boolean
 					sha256?: string
 					caseInsensitiveFallback?: boolean
+					binaryLike?: boolean
+					textWarning?: string
 					load?: { mode?: string; isPartial?: boolean }
 				}
 				error?: {
 					code?: string
-					details?: { validPath?: boolean; rule?: string; caseInsensitiveAmbiguous?: boolean }
+					details?: {
+						found?: boolean
+						validPath?: boolean
+						semantics?: string
+						rule?: string
+						caseInsensitiveAmbiguous?: boolean
+					}
 				}
 			}
 		}>
@@ -372,6 +380,9 @@ describe('MCP server', () => {
 		const missing = await handler({ file: TEMP_FILE, partPath: 'xl/missing.xml' })
 		expect(missing.isError).toBe(true)
 		expect(missing.structuredContent?.error?.code).toBe('FILE_NOT_FOUND')
+		expect(missing.structuredContent?.error?.details?.found).toBe(false)
+		expect(missing.structuredContent?.error?.details?.validPath).toBe(true)
+		expect(missing.structuredContent?.error?.details?.semantics).toBe('raw-package-bytes')
 
 		const invalid = await handler({ file: TEMP_FILE, partPath: 'xl//workbook.xml' })
 		expect(invalid.isError).toBe(true)
@@ -389,7 +400,7 @@ describe('MCP server', () => {
 	})
 
 	test('ascend.raw_part returns binary base64 previews with full-byte metadata', async () => {
-		const binaryBytes = new Uint8Array([0, 1, 2, 3, 4, 255])
+		const binaryBytes = Uint8Array.from({ length: 70 * 1024 }, (_, index) => index % 251)
 		const binaryFile = `${TEMP_FILE}.raw-binary.xlsx`
 		await writeFile(binaryFile, binaryRawPartWorkbook(binaryBytes))
 		try {
@@ -412,6 +423,8 @@ describe('MCP server', () => {
 						previewByteLength?: number
 						truncated?: boolean
 						sha256?: string
+						binaryLike?: boolean
+						textWarning?: string
 					}
 					error?: {
 						code?: string
@@ -419,6 +432,28 @@ describe('MCP server', () => {
 					}
 				}
 			}>
+
+			const textPreview = await handler({
+				file: binaryFile,
+				partPath: 'xl/media/image1.png',
+				encoding: 'text',
+				maxBytes: 6,
+			})
+			expect(textPreview.structuredContent?.ok).toBe(true)
+			expect(textPreview.structuredContent?.data?.binaryLike).toBe(true)
+			expect(textPreview.structuredContent?.data?.textWarning).toContain('Part appears binary')
+
+			const defaultBounded = await handler({
+				file: binaryFile,
+				partPath: 'xl/media/image1.png',
+				encoding: 'base64',
+			})
+			expect(defaultBounded.structuredContent?.ok).toBe(true)
+			expect(defaultBounded.structuredContent?.data?.previewByteLength).toBe(64 * 1024)
+			expect(defaultBounded.structuredContent?.data?.truncated).toBe(true)
+			expect(defaultBounded.structuredContent?.data?.sha256).toBe(
+				createHash('sha256').update(binaryBytes).digest('hex'),
+			)
 
 			const result = await handler({
 				file: binaryFile,

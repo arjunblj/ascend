@@ -1243,6 +1243,7 @@ export interface DumpBatchResult {
 	readonly formulaCount: number
 	readonly unsupported: readonly DumpBatchUnsupportedCell[]
 	readonly replayable: boolean
+	readonly blocked?: PartialReplayBlockedInfo
 }
 
 export type TemplateMergeValue = Exclude<InputValue, Date>
@@ -1282,6 +1283,13 @@ export interface TemplateMergeResult {
 	readonly unresolved: readonly TemplateMergePlaceholder[]
 	readonly unsupported: readonly TemplateMergeUnsupportedCell[]
 	readonly replayable: boolean
+	readonly blocked?: PartialReplayBlockedInfo
+}
+
+export interface PartialReplayBlockedInfo {
+	readonly code: 'partial_workbook_view'
+	readonly message: string
+	readonly load: WorkbookLoadInfo
 }
 
 export type PathMutationPath = string | readonly string[]

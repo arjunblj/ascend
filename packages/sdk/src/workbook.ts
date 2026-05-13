@@ -735,6 +735,20 @@ export class AscendWorkbook extends WorkbookReadView {
 	 * Unsupported value kinds are reported instead of silently lossy-converted.
 	 */
 	dumpBatch(options: DumpBatchOptions = {}): DumpBatchResult {
+		if (this.loadInfo.isPartial) {
+			return {
+				ops: [],
+				sheetCount: 0,
+				cellCount: 0,
+				formulaCount: 0,
+				unsupported: [],
+				replayable: false,
+				blocked: partialReplayBlockedInfo(
+					this.loadInfo,
+					'Cannot dump replay operations from a partial workbook view. Reopen with a full load before producing dump batches.',
+				),
+			}
+		}
 		const includeValues = options.includeValues ?? true
 		const includeFormulas = options.includeFormulas ?? true
 		const selectedSheets = options.sheets ? new Set(options.sheets) : null
@@ -795,6 +809,22 @@ export class AscendWorkbook extends WorkbookReadView {
 		data: Readonly<Record<string, unknown>>,
 		options: TemplateMergeOptions = {},
 	): TemplateMergeResult {
+		if (this.loadInfo.isPartial) {
+			return {
+				ops: [],
+				sheetCount: 0,
+				cellCount: 0,
+				formulaCount: 0,
+				replacementCount: 0,
+				unresolved: [],
+				unsupported: [],
+				replayable: false,
+				blocked: partialReplayBlockedInfo(
+					this.loadInfo,
+					'Cannot compile template merge replay operations from a partial workbook view. Reopen with a full load before producing template merge batches.',
+				),
+			}
+		}
 		const includeValues = options.includeValues ?? true
 		const includeFormulas = options.includeFormulas ?? true
 		const selectedSheets = options.sheets ? new Set(options.sheets) : null
@@ -1635,6 +1665,17 @@ function partialWorkbookPathMutationResult(
 			details,
 		})),
 		replayable: false,
+	}
+}
+
+function partialReplayBlockedInfo(
+	loadInfo: WorkbookLoadInfo,
+	message: string,
+): import('./types.ts').PartialReplayBlockedInfo {
+	return {
+		code: 'partial_workbook_view',
+		message,
+		load: loadInfo,
 	}
 }
 

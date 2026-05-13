@@ -2164,6 +2164,61 @@ describe('AscendWorkbook', () => {
 		expect(recalc.errors[0]?.error.details?.maxRows).toBe(1)
 	})
 
+	test('partial workbook views cannot emit replayable dump or template merge batches', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: '{{name}}' },
+					{ ref: 'A2', value: 'not loaded' },
+				],
+			},
+		])
+		const bytes = wb.toBytes()
+		const reopened = await AscendWorkbook.open(bytes, { mode: 'values', maxRows: 1 })
+
+		const dump = reopened.dumpBatch()
+		expect(dump).toMatchObject({
+			ops: [],
+			sheetCount: 0,
+			cellCount: 0,
+			formulaCount: 0,
+			unsupported: [],
+			replayable: false,
+			blocked: {
+				code: 'partial_workbook_view',
+				load: {
+					isPartial: true,
+					mode: 'values',
+					maxRows: 1,
+				},
+			},
+		})
+		expect(dump.blocked?.message).toContain('Cannot dump replay operations')
+		expect(dump.blocked?.load.partialReasons).toContain(
+			'only the first 1 row(s) are hydrated per loaded sheet',
+		)
+
+		const merge = reopened.templateMerge({ name: 'Acme' })
+		expect(merge).toMatchObject({
+			ops: [],
+			sheetCount: 0,
+			cellCount: 0,
+			formulaCount: 0,
+			replacementCount: 0,
+			unresolved: [],
+			unsupported: [],
+			replayable: false,
+			blocked: {
+				code: 'partial_workbook_view',
+				load: { isPartial: true, mode: 'values', maxRows: 1 },
+			},
+		})
+		expect(merge.blocked?.message).toContain('Cannot compile template merge replay operations')
+	})
+
 	test('CSV import creates workbook', () => {
 		const csv = 'Name,Age\nAlice,30\nBob,25'
 		const wb = AscendWorkbook.fromCsv(csv)

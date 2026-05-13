@@ -84,11 +84,15 @@ export type { CellInputParseOptions, ParsedCellInput } from './input-parser.ts'
 export { parseCellInput, parseCellInputOperation } from './input-parser.ts'
 export type {
 	MutationJournal,
+	MutationJournalAutoFilterPreimage,
 	MutationJournalCellPreimage,
 	MutationJournalCommentPreimage,
+	MutationJournalConditionalFormatPreimage,
+	MutationJournalDataValidationPreimage,
 	MutationJournalEntry,
 	MutationJournalHyperlinkPreimage,
 	MutationJournalIssue,
+	MutationJournalMergePreimage,
 	MutationJournalPanePreimage,
 	MutationJournalPreimage,
 } from './journal.ts'

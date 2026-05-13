@@ -4398,6 +4398,15 @@ describe('applyOperation', () => {
 		expect(s.merges[0]?.end).toEqual({ row: 1, col: 1 })
 	})
 
+	test('mergeCells on a cloned workbook does not mutate the source sheet', () => {
+		const wb = setup()
+		const clone = wb.clone()
+		expectOk(applyOperation(clone, { op: 'mergeCells', sheet: 'Sheet1', range: 'C1:D1' }))
+
+		expect(wb.getSheet('Sheet1')?.merges).toEqual([])
+		expect(clone.getSheet('Sheet1')?.merges).toHaveLength(1)
+	})
+
 	test('mergeCells rejects overlapping merge ranges', () => {
 		const wb = setup()
 		expectOk(applyOperation(wb, { op: 'mergeCells', sheet: 'Sheet1', range: 'A1:B2' }))

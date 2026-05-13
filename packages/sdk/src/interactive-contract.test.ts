@@ -145,4 +145,191 @@ describe('interactive client contract', () => {
 		expect(wb.sheet('Sheet1')?.cell('C3')?.value).toEqual({ kind: 'number', value: 12 })
 		expect(wb.cellStyle('Sheet1!C3')?.numberFormat).toBe('0.00')
 	})
+
+	test('journal inverse ops restore merge and unmerge metadata', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'mergeCells', sheet: 'Sheet1', range: 'A1:B2' }])
+
+		const unmerged = wb.apply([{ op: 'unmergeCells', sheet: 'Sheet1', range: 'A1:B2' }], {
+			journal: true,
+		})
+
+		expect(unmerged.journal?.exact).toBe(true)
+		expect(unmerged.journal?.inverseOps).toEqual([
+			{ op: 'mergeCells', sheet: 'Sheet1', range: 'A1:B2' },
+		])
+
+		const undoUnmerge = wb.apply(unmerged.journal?.inverseOps ?? [], { transaction: true })
+		expect(undoUnmerge.errors).toEqual([])
+		expect(wb.sheet('Sheet1')?.merges).toEqual([
+			{ start: { row: 0, col: 0 }, end: { row: 1, col: 1 } },
+		])
+
+		const wb2 = AscendWorkbook.create()
+		const merged = wb2.apply([{ op: 'mergeCells', sheet: 'Sheet1', range: 'C1:D1' }], {
+			journal: true,
+		})
+		expect(merged.journal?.inverseOps).toEqual([
+			{ op: 'unmergeCells', sheet: 'Sheet1', range: 'C1:D1' },
+		])
+	})
+
+	test('journal inverse ops restore data validation changes', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setDataValidation',
+				sheet: 'Sheet1',
+				range: 'A1:A10',
+				rule: {
+					type: 'list',
+					formula1: '"Open,Closed"',
+					allowBlank: true,
+					showErrorMessage: true,
+				},
+			},
+		])
+
+		const changed = wb.apply(
+			[
+				{
+					op: 'setDataValidation',
+					sheet: 'Sheet1',
+					range: 'A1:A10',
+					rule: { type: 'whole', operator: 'greaterThan', formula1: '0' },
+				},
+			],
+			{ journal: true },
+		)
+
+		expect(changed.journal?.exact).toBe(true)
+		expect(changed.journal?.inverseOps).toEqual([
+			{
+				op: 'setDataValidation',
+				sheet: 'Sheet1',
+				range: 'A1:A10',
+				rule: {
+					type: 'list',
+					formula1: '"Open,Closed"',
+					allowBlank: true,
+					showErrorMessage: true,
+				},
+			},
+		])
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(wb.sheet('Sheet1')?.getDataValidations()).toEqual([
+			{ type: 'list', formula: '"Open,Closed"', range: 'A1:A10' },
+		])
+	})
+
+	test('journal inverse ops restore simple worksheet auto filters', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{ op: 'setAutoFilter', sheet: 'Sheet1', range: 'A1:C10' },
+			{ op: 'setAutoFilter', sheet: 'Sheet1', range: 'A1:C10', column: 1, values: ['Open'] },
+			{
+				op: 'setAutoFilter',
+				sheet: 'Sheet1',
+				range: 'A1:C10',
+				sortRef: 'A2:C10',
+				sortBy: 'B2:B10',
+				descending: true,
+			},
+		])
+
+		const cleared = wb.apply([{ op: 'clearAutoFilter', sheet: 'Sheet1' }], { journal: true })
+
+		expect(cleared.journal?.exact).toBe(true)
+		expect(cleared.journal?.inverseOps).toEqual([
+			{ op: 'setAutoFilter', sheet: 'Sheet1', range: 'A1:C10' },
+			{
+				op: 'setAutoFilter',
+				sheet: 'Sheet1',
+				range: 'A1:C10',
+				column: 1,
+				values: ['Open'],
+			},
+			{
+				op: 'setAutoFilter',
+				sheet: 'Sheet1',
+				range: 'A1:C10',
+				sortRef: 'A2:C10',
+				sortBy: 'B2:B10',
+				descending: true,
+			},
+		])
+
+		const undo = wb.apply(cleared.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(wb.sheet('Sheet1')?.autoFilter).toEqual({
+			ref: 'A1:C10',
+			columns: [{ colId: 1, kind: 'filters', values: ['Open'] }],
+			sortState: {
+				ref: 'A2:C10',
+				conditions: [{ ref: 'B2:B10', descending: true }],
+			},
+		})
+
+		const wb2 = AscendWorkbook.create()
+		const created = wb2.apply([{ op: 'setAutoFilter', sheet: 'Sheet1', range: 'D1:E5' }], {
+			journal: true,
+		})
+		expect(created.journal?.inverseOps).toEqual([{ op: 'clearAutoFilter', sheet: 'Sheet1' }])
+	})
+
+	test('journal inverse ops restore conditional format replacements', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setConditionalFormat',
+				sheet: 'Sheet1',
+				range: 'B1:B10',
+				rule: {
+					type: 'cellIs',
+					operator: 'greaterThan',
+					formula: '10',
+					priority: 3,
+					style: { font: { bold: true } },
+				},
+			},
+		])
+
+		const changed = wb.apply(
+			[
+				{
+					op: 'setConditionalFormat',
+					sheet: 'Sheet1',
+					range: 'B1:B10',
+					rule: { type: 'expression', formula: 'B1<0', priority: 1 },
+				},
+			],
+			{ journal: true },
+		)
+
+		expect(changed.journal?.exact).toBe(true)
+		expect(changed.journal?.inverseOps).toEqual([
+			{ op: 'deleteConditionalFormat', sheet: 'Sheet1', range: 'B1:B10' },
+			{
+				op: 'setConditionalFormat',
+				sheet: 'Sheet1',
+				range: 'B1:B10',
+				rule: {
+					type: 'cellIs',
+					operator: 'greaterThan',
+					formula: '10',
+					priority: 3,
+					style: { font: { bold: true } },
+				},
+				mode: 'replace',
+			},
+		])
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(wb.sheet('Sheet1')?.getConditionalFormats()).toEqual([
+			{ type: 'cellIs', priority: 3, range: 'B1:B10' },
+		])
+	})
 })

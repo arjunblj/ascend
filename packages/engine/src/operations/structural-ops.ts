@@ -1467,6 +1467,7 @@ export function handleMergeCells(
 		)
 	}
 
+	sheet.ensureWritable()
 	sheet.merges.push(rangeResult.value)
 	return ok(patch([], [op.sheet]))
 }
@@ -1482,6 +1483,7 @@ export function handleUnmergeCells(
 	if (!rangeResult.ok) return rangeResult
 	const r = rangeResult.value
 
+	sheetResult.value.ensureWritable()
 	const merges = sheetResult.value.merges
 	const idx = merges.findIndex(
 		(m) =>

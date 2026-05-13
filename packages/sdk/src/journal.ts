@@ -1,17 +1,31 @@
 import {
+	type AutoFilter,
 	type CellStyle,
 	cloneCellStyle,
 	DEFAULT_STYLE_ID,
 	parseA1,
 	parseRange,
+	type RangeRef,
 	type Sheet,
 	type SheetComment,
+	type SheetConditionalFormat,
+	type SheetConditionalFormatRule,
+	type SheetDataValidation,
 	type SheetHyperlink,
 	toA1,
+	toRangeString,
 	type Workbook,
 } from '@ascend/core'
 import { applyOperation } from '@ascend/engine'
-import type { CellValue, InputValue, Operation, ScalarCellValue } from '@ascend/schema'
+import type {
+	CellValue,
+	ConditionalFormatRule,
+	DataValidationRule,
+	InputValue,
+	Operation,
+	ScalarCellValue,
+	StyleInput,
+} from '@ascend/schema'
 import { EMPTY } from '@ascend/schema'
 
 export interface MutationJournalIssue {
@@ -48,11 +62,44 @@ export interface MutationJournalPanePreimage {
 	readonly frozenCols: number
 }
 
+export interface MutationJournalMergePreimage {
+	readonly sheet: string
+	readonly range: string
+	readonly existed: boolean
+}
+
+export interface MutationJournalAutoFilterPreimage {
+	readonly sheet: string
+	readonly autoFilter: AutoFilter | null
+}
+
+export interface MutationJournalDataValidationPreimage {
+	readonly sheet: string
+	readonly range: string
+	readonly validation: SheetDataValidation | null
+}
+
+export interface MutationJournalConditionalFormatPreimage {
+	readonly sheet: string
+	readonly range?: string
+	readonly formats: readonly SheetConditionalFormat[]
+}
+
 export type MutationJournalPreimage =
 	| { readonly kind: 'cells'; readonly cells: readonly MutationJournalCellPreimage[] }
 	| { readonly kind: 'comment'; readonly comment: MutationJournalCommentPreimage }
 	| { readonly kind: 'hyperlink'; readonly hyperlink: MutationJournalHyperlinkPreimage }
 	| { readonly kind: 'pane'; readonly pane: MutationJournalPanePreimage }
+	| { readonly kind: 'merge'; readonly merge: MutationJournalMergePreimage }
+	| { readonly kind: 'auto-filter'; readonly autoFilter: MutationJournalAutoFilterPreimage }
+	| {
+			readonly kind: 'data-validations'
+			readonly validations: readonly MutationJournalDataValidationPreimage[]
+	  }
+	| {
+			readonly kind: 'conditional-formats'
+			readonly conditionalFormats: MutationJournalConditionalFormatPreimage
+	  }
 
 export interface MutationJournalEntry {
 	readonly opIndex: number
@@ -148,6 +195,22 @@ function buildSupportedJournalEntry(
 		case 'setNumberFormat':
 		case 'setStyle':
 			return journalStyleRange(workbook, op, opIndex)
+		case 'mergeCells':
+			return journalMergeCells(workbook, op, opIndex)
+		case 'unmergeCells':
+			return journalUnmergeCells(workbook, op, opIndex)
+		case 'setDataValidation':
+			return journalSetDataValidation(workbook, op, opIndex)
+		case 'deleteDataValidation':
+			return journalDeleteDataValidation(workbook, op, opIndex)
+		case 'setAutoFilter':
+			return journalSetAutoFilter(workbook, op, opIndex)
+		case 'clearAutoFilter':
+			return journalClearAutoFilter(workbook, op, opIndex)
+		case 'setConditionalFormat':
+			return journalSetConditionalFormat(workbook, op, opIndex)
+		case 'deleteConditionalFormat':
+			return journalDeleteConditionalFormat(workbook, op, opIndex)
 		case 'setComment':
 			return journalSetComment(workbook, op, opIndex)
 		case 'deleteComment':
@@ -255,6 +318,155 @@ function journalStyleRange(
 		inverseOps: styleInverseOps(cells),
 		preimages: [{ kind: 'cells', cells }],
 		issues: [],
+	}
+}
+
+function journalMergeCells(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'mergeCells' }>,
+	opIndex: number,
+): DraftJournalEntry {
+	const merge = mergePreimage(workbook, op.sheet, op.range)
+	return {
+		opIndex,
+		op,
+		inverseOps: [{ op: 'unmergeCells', sheet: op.sheet, range: merge.range }],
+		preimages: [{ kind: 'merge', merge }],
+		issues: [],
+	}
+}
+
+function journalUnmergeCells(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'unmergeCells' }>,
+	opIndex: number,
+): DraftJournalEntry {
+	const merge = mergePreimage(workbook, op.sheet, op.range)
+	return {
+		opIndex,
+		op,
+		inverseOps: merge.existed ? [{ op: 'mergeCells', sheet: op.sheet, range: merge.range }] : [],
+		preimages: [{ kind: 'merge', merge }],
+		issues: [],
+	}
+}
+
+function journalSetDataValidation(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'setDataValidation' }>,
+	opIndex: number,
+): DraftJournalEntry {
+	const validation = dataValidationPreimage(workbook, op.sheet, op.range)
+	const { inverseOps, issues } = restoreDataValidationOps(validation)
+	return {
+		opIndex,
+		op,
+		inverseOps,
+		preimages: [{ kind: 'data-validations', validations: [validation] }],
+		issues,
+	}
+}
+
+function journalDeleteDataValidation(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'deleteDataValidation' }>,
+	opIndex: number,
+): DraftJournalEntry {
+	const validation = dataValidationPreimage(workbook, op.sheet, op.range)
+	const { inverseOps, issues } = validation.validation
+		? restoreDataValidationOps(validation)
+		: { inverseOps: [], issues: [] }
+	return {
+		opIndex,
+		op,
+		inverseOps,
+		preimages: [{ kind: 'data-validations', validations: [validation] }],
+		issues,
+	}
+}
+
+function journalSetAutoFilter(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'setAutoFilter' }>,
+	opIndex: number,
+): DraftJournalEntry {
+	const autoFilter = autoFilterPreimage(workbook, op.sheet)
+	const { inverseOps, issues } = restoreAutoFilterOps(autoFilter)
+	return {
+		opIndex,
+		op,
+		inverseOps,
+		preimages: [{ kind: 'auto-filter', autoFilter }],
+		issues,
+	}
+}
+
+function journalClearAutoFilter(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'clearAutoFilter' }>,
+	opIndex: number,
+): DraftJournalEntry {
+	const autoFilter = autoFilterPreimage(workbook, op.sheet)
+	const { inverseOps, issues } = autoFilter.autoFilter
+		? restoreAutoFilterOps(autoFilter)
+		: { inverseOps: [], issues: [] }
+	return {
+		opIndex,
+		op,
+		inverseOps,
+		preimages: [{ kind: 'auto-filter', autoFilter }],
+		issues,
+	}
+}
+
+function journalSetConditionalFormat(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'setConditionalFormat' }>,
+	opIndex: number,
+): DraftJournalEntry {
+	const preimage = conditionalFormatPreimage(workbook, op.sheet, op.range)
+	const { inverseOps, issues } =
+		preimage.formats.length > 0
+			? restoreConditionalFormatOps(op.sheet, preimage.formats)
+			: {
+					inverseOps: [
+						{ op: 'deleteConditionalFormat', sheet: op.sheet, range: op.range },
+					] satisfies Operation[],
+					issues: [],
+				}
+	return {
+		opIndex,
+		op,
+		inverseOps,
+		preimages: [{ kind: 'conditional-formats', conditionalFormats: preimage }],
+		issues,
+	}
+}
+
+function journalDeleteConditionalFormat(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'deleteConditionalFormat' }>,
+	opIndex: number,
+): DraftJournalEntry {
+	const preimage = conditionalFormatPreimage(workbook, op.sheet, op.range)
+	const { inverseOps, issues } = restoreConditionalFormatOps(op.sheet, preimage.formats)
+	return {
+		opIndex,
+		op,
+		inverseOps,
+		preimages: [{ kind: 'conditional-formats', conditionalFormats: preimage }],
+		issues: [
+			...issues,
+			...(op.range === undefined
+				? [
+						{
+							code: 'LOSSY_INVERSE' as const,
+							message:
+								'Conditional-format deletion without a range may not restore original rule ordering exactly',
+						},
+					]
+				: []),
+		],
 	}
 }
 
@@ -366,6 +578,297 @@ function journalFreezePane(
 	}
 }
 
+function mergePreimage(
+	workbook: Workbook,
+	sheetName: string,
+	rangeText: string,
+): MutationJournalMergePreimage {
+	const target = parseRange(rangeText)
+	const existed =
+		workbook.getSheet(sheetName)?.merges.some((merge) => sameRange(merge, target)) ?? false
+	return {
+		sheet: sheetName,
+		range: toRangeString(target),
+		existed,
+	}
+}
+
+function dataValidationPreimage(
+	workbook: Workbook,
+	sheetName: string,
+	range: string,
+): MutationJournalDataValidationPreimage {
+	const validation = workbook.getSheet(sheetName)?.dataValidations.find((dv) => dv.sqref === range)
+	return {
+		sheet: sheetName,
+		range,
+		validation: validation ? { ...validation } : null,
+	}
+}
+
+function restoreDataValidationOps(validation: MutationJournalDataValidationPreimage): {
+	readonly inverseOps: readonly Operation[]
+	readonly issues: readonly MutationJournalIssue[]
+} {
+	if (!validation.validation) {
+		return {
+			inverseOps: [
+				{ op: 'deleteDataValidation', sheet: validation.sheet, range: validation.range },
+			],
+			issues: [],
+		}
+	}
+	const { rule, issues } = dataValidationRuleFromSheet(validation)
+	return {
+		inverseOps: rule
+			? [{ op: 'setDataValidation', sheet: validation.sheet, range: validation.range, rule }]
+			: [],
+		issues,
+	}
+}
+
+function dataValidationRuleFromSheet(validation: MutationJournalDataValidationPreimage): {
+	readonly rule: DataValidationRule | null
+	readonly issues: readonly MutationJournalIssue[]
+} {
+	const source = validation.validation
+	if (!source?.type || !isDataValidationType(source.type)) {
+		return {
+			rule: null,
+			issues: [
+				{
+					code: 'UNSUPPORTED_VALUE',
+					message: `Cannot restore data validation at ${validation.sheet}!${validation.range} with unsupported type ${source?.type ?? '<missing>'}`,
+					refs: [`${validation.sheet}!${validation.range}`],
+				},
+			],
+		}
+	}
+	const issues: MutationJournalIssue[] = []
+	if (source.source === 'x14' || source.uid !== undefined) {
+		issues.push({
+			code: 'LOSSY_INVERSE',
+			message: `Data validation extension metadata at ${validation.sheet}!${validation.range} cannot be restored with public operations`,
+			refs: [`${validation.sheet}!${validation.range}`],
+		})
+	}
+	return {
+		rule: {
+			type: source.type,
+			...(isDataValidationOperator(source.operator) ? { operator: source.operator } : {}),
+			...(source.formula1 !== undefined ? { formula1: source.formula1 } : {}),
+			...(source.formula2 !== undefined ? { formula2: source.formula2 } : {}),
+			...(source.allowBlank !== undefined ? { allowBlank: source.allowBlank } : {}),
+			...(source.showDropDown !== undefined ? { showDropDown: source.showDropDown } : {}),
+			...(source.showErrorMessage !== undefined
+				? { showErrorMessage: source.showErrorMessage }
+				: {}),
+			...(source.errorTitle !== undefined ? { errorTitle: source.errorTitle } : {}),
+			...(source.error !== undefined ? { errorMessage: source.error } : {}),
+			...(source.errorStyle !== undefined ? { errorStyle: source.errorStyle } : {}),
+			...(source.imeMode !== undefined ? { imeMode: source.imeMode } : {}),
+			...(source.showInputMessage !== undefined
+				? { showInputMessage: source.showInputMessage }
+				: {}),
+			...(source.promptTitle !== undefined ? { promptTitle: source.promptTitle } : {}),
+			...(source.prompt !== undefined ? { prompt: source.prompt } : {}),
+		},
+		issues,
+	}
+}
+
+function autoFilterPreimage(
+	workbook: Workbook,
+	sheetName: string,
+): MutationJournalAutoFilterPreimage {
+	const autoFilter = workbook.getSheet(sheetName)?.autoFilter
+	return {
+		sheet: sheetName,
+		autoFilter: autoFilter ? cloneAutoFilter(autoFilter) : null,
+	}
+}
+
+function restoreAutoFilterOps(preimage: MutationJournalAutoFilterPreimage): {
+	readonly inverseOps: readonly Operation[]
+	readonly issues: readonly MutationJournalIssue[]
+} {
+	const autoFilter = preimage.autoFilter
+	if (!autoFilter) {
+		return {
+			inverseOps: [{ op: 'clearAutoFilter', sheet: preimage.sheet }],
+			issues: [],
+		}
+	}
+	const inverseOps: Operation[] = [
+		{ op: 'setAutoFilter', sheet: preimage.sheet, range: autoFilter.ref },
+	]
+	const issues: MutationJournalIssue[] = []
+	for (const column of autoFilter.columns) {
+		if (
+			column.kind === 'filters' &&
+			column.values !== undefined &&
+			column.blank === undefined &&
+			column.calendarType === undefined &&
+			column.dateGroupItems === undefined &&
+			column.hiddenButton === undefined &&
+			column.showButton === undefined
+		) {
+			inverseOps.push({
+				op: 'setAutoFilter',
+				sheet: preimage.sheet,
+				range: autoFilter.ref,
+				column: column.colId,
+				values: [...column.values],
+			})
+			continue
+		}
+		issues.push({
+			code: 'LOSSY_INVERSE',
+			message: `AutoFilter column ${column.colId} on ${preimage.sheet}!${autoFilter.ref} cannot be fully restored with public operations`,
+			refs: [`${preimage.sheet}!${autoFilter.ref}`],
+		})
+	}
+	if (autoFilter.uid !== undefined) {
+		issues.push({
+			code: 'LOSSY_INVERSE',
+			message: `AutoFilter extension metadata on ${preimage.sheet}!${autoFilter.ref} cannot be restored with public operations`,
+			refs: [`${preimage.sheet}!${autoFilter.ref}`],
+		})
+	}
+	if (autoFilter.sortState) {
+		const [firstCondition, ...extraConditions] = autoFilter.sortState.conditions
+		if (
+			autoFilter.sortState.caseSensitive !== undefined ||
+			autoFilter.sortState.columnSort !== undefined ||
+			autoFilter.sortState.sortMethod !== undefined ||
+			autoFilter.sortState.preservedAttributes !== undefined ||
+			extraConditions.length > 0 ||
+			firstCondition?.customList !== undefined ||
+			firstCondition?.dxfId !== undefined ||
+			firstCondition?.iconSet !== undefined ||
+			firstCondition?.iconId !== undefined
+		) {
+			issues.push({
+				code: 'LOSSY_INVERSE',
+				message: `AutoFilter sort metadata on ${preimage.sheet}!${autoFilter.ref} cannot be fully restored with public operations`,
+				refs: [`${preimage.sheet}!${autoFilter.ref}`],
+			})
+		}
+		if (firstCondition) {
+			inverseOps.push({
+				op: 'setAutoFilter',
+				sheet: preimage.sheet,
+				range: autoFilter.ref,
+				sortRef: autoFilter.sortState.ref,
+				sortBy: firstCondition.ref,
+				...(firstCondition.descending !== undefined
+					? { descending: firstCondition.descending }
+					: {}),
+			})
+		}
+	}
+	return { inverseOps, issues }
+}
+
+function conditionalFormatPreimage(
+	workbook: Workbook,
+	sheetName: string,
+	range: string | undefined,
+): MutationJournalConditionalFormatPreimage {
+	const formats = workbook
+		.getSheet(sheetName)
+		?.conditionalFormats.filter((cf) => range === undefined || cf.sqref === range)
+	return {
+		sheet: sheetName,
+		...(range !== undefined ? { range } : {}),
+		formats: (formats ?? []).map(cloneConditionalFormat),
+	}
+}
+
+function restoreConditionalFormatOps(
+	sheet: string,
+	formats: readonly SheetConditionalFormat[],
+): {
+	readonly inverseOps: readonly Operation[]
+	readonly issues: readonly MutationJournalIssue[]
+} {
+	const inverseOps: Operation[] = []
+	const issues: MutationJournalIssue[] = []
+	for (const format of formats) {
+		inverseOps.push({ op: 'deleteConditionalFormat', sheet, range: format.sqref })
+		format.rules.forEach((rule, index) => {
+			const converted = conditionalFormatRuleFromSheet(sheet, format.sqref, rule)
+			issues.push(...converted.issues)
+			if (!converted.rule) return
+			inverseOps.push({
+				op: 'setConditionalFormat',
+				sheet,
+				range: format.sqref,
+				rule: converted.rule,
+				mode: index === 0 ? 'replace' : 'append',
+			})
+		})
+	}
+	return { inverseOps, issues }
+}
+
+function conditionalFormatRuleFromSheet(
+	sheet: string,
+	range: string,
+	rule: SheetConditionalFormatRule,
+): {
+	readonly rule: ConditionalFormatRule | null
+	readonly issues: readonly MutationJournalIssue[]
+} {
+	const issues: MutationJournalIssue[] = []
+	if (!isConditionalFormatType(rule.type)) {
+		return {
+			rule: null,
+			issues: [
+				{
+					code: 'UNSUPPORTED_VALUE',
+					message: `Cannot restore conditional format at ${sheet}!${range} with unsupported type ${rule.type}`,
+					refs: [`${sheet}!${range}`],
+				},
+			],
+		}
+	}
+	if (
+		rule.dxfId !== undefined ||
+		rule.rank !== undefined ||
+		rule.percent !== undefined ||
+		rule.bottom !== undefined ||
+		rule.aboveAverage !== undefined ||
+		rule.equalAverage !== undefined ||
+		rule.stdDev !== undefined ||
+		rule.text !== undefined ||
+		rule.timePeriod !== undefined ||
+		rule.preservedRuleAttributes !== undefined ||
+		rule.preservedRuleChildXml !== undefined
+	) {
+		issues.push({
+			code: 'LOSSY_INVERSE',
+			message: `Conditional format metadata at ${sheet}!${range} cannot be fully restored with public operations`,
+			refs: [`${sheet}!${range}`],
+		})
+	}
+	return {
+		rule: {
+			type: rule.type,
+			...(isConditionalFormatOperator(rule.operator) ? { operator: rule.operator } : {}),
+			...(rule.formulas[0] !== undefined ? { formula: rule.formulas[0] } : {}),
+			...(rule.formulas[1] !== undefined ? { formula2: rule.formulas[1] } : {}),
+			...(rule.priority !== undefined ? { priority: rule.priority } : {}),
+			...(rule.stopIfTrue !== undefined ? { stopIfTrue: rule.stopIfTrue } : {}),
+			...(rule.style ? { style: cloneCellStyle(rule.style) as StyleInput } : {}),
+			...(rule.colorScale ? { colorScale: clonePlain(rule.colorScale) } : {}),
+			...(rule.dataBar ? { dataBar: clonePlain(rule.dataBar) } : {}),
+			...(rule.iconSet ? { iconSet: clonePlain(rule.iconSet) } : {}),
+		},
+		issues,
+	}
+}
+
 function cellPreimages(
 	workbook: Workbook,
 	sheetName: string,
@@ -471,6 +974,15 @@ function refsInRange(rangeText: string): string[] {
 	return refs
 }
 
+function sameRange(a: RangeRef, b: RangeRef): boolean {
+	return (
+		a.start.row === b.start.row &&
+		a.start.col === b.start.col &&
+		a.end.row === b.end.row &&
+		a.end.col === b.end.col
+	)
+}
+
 function commentPreimage(
 	workbook: Workbook,
 	sheetName: string,
@@ -548,3 +1060,124 @@ function cloneCellValue(value: CellValue): CellValue {
 function cloneScalarCellValue(value: ScalarCellValue): ScalarCellValue {
 	return cloneCellValue(value) as ScalarCellValue
 }
+
+function cloneConditionalFormat(format: SheetConditionalFormat): SheetConditionalFormat {
+	return {
+		...format,
+		rules: format.rules.map((rule) => ({
+			...rule,
+			formulas: [...rule.formulas],
+			...(rule.style ? { style: cloneCellStyle(rule.style) } : {}),
+			...(rule.preservedRuleAttributes
+				? { preservedRuleAttributes: { ...rule.preservedRuleAttributes } }
+				: {}),
+			...(rule.preservedRuleChildXml
+				? { preservedRuleChildXml: [...rule.preservedRuleChildXml] }
+				: {}),
+			...(rule.colorScale ? { colorScale: clonePlain(rule.colorScale) } : {}),
+			...(rule.dataBar ? { dataBar: clonePlain(rule.dataBar) } : {}),
+			...(rule.iconSet ? { iconSet: clonePlain(rule.iconSet) } : {}),
+		})),
+	}
+}
+
+function cloneAutoFilter(autoFilter: AutoFilter): AutoFilter {
+	return {
+		...autoFilter,
+		columns: autoFilter.columns.map((column) => ({
+			...column,
+			...(column.values ? { values: [...column.values] } : {}),
+			...(column.dateGroupItems
+				? { dateGroupItems: column.dateGroupItems.map((item) => ({ ...item })) }
+				: {}),
+			...(column.customFilters
+				? { customFilters: column.customFilters.map((filter) => ({ ...filter })) }
+				: {}),
+		})),
+		...(autoFilter.sortState
+			? {
+					sortState: {
+						...autoFilter.sortState,
+						...(autoFilter.sortState.preservedAttributes
+							? { preservedAttributes: { ...autoFilter.sortState.preservedAttributes } }
+							: {}),
+						conditions: autoFilter.sortState.conditions.map((condition) => ({ ...condition })),
+					},
+				}
+			: {}),
+	}
+}
+
+function clonePlain<T>(value: T): T {
+	return JSON.parse(JSON.stringify(value)) as T
+}
+
+function isDataValidationType(value: string): value is DataValidationRule['type'] {
+	return DATA_VALIDATION_TYPES.has(value as DataValidationRule['type'])
+}
+
+function isDataValidationOperator(
+	value: string | undefined,
+): value is NonNullable<DataValidationRule['operator']> {
+	return (
+		value !== undefined &&
+		DATA_VALIDATION_OPERATORS.has(value as NonNullable<DataValidationRule['operator']>)
+	)
+}
+
+function isConditionalFormatType(value: string): value is ConditionalFormatRule['type'] {
+	return CONDITIONAL_FORMAT_TYPES.has(value as ConditionalFormatRule['type'])
+}
+
+function isConditionalFormatOperator(
+	value: string | undefined,
+): value is NonNullable<ConditionalFormatRule['operator']> {
+	return (
+		value !== undefined &&
+		CONDITIONAL_FORMAT_OPERATORS.has(value as NonNullable<ConditionalFormatRule['operator']>)
+	)
+}
+
+const DATA_VALIDATION_TYPES = new Set<DataValidationRule['type']>([
+	'list',
+	'whole',
+	'decimal',
+	'date',
+	'time',
+	'textLength',
+	'custom',
+])
+
+const DATA_VALIDATION_OPERATORS = new Set<NonNullable<DataValidationRule['operator']>>([
+	'between',
+	'notBetween',
+	'equal',
+	'notEqual',
+	'greaterThan',
+	'lessThan',
+	'greaterThanOrEqual',
+	'lessThanOrEqual',
+])
+
+const CONDITIONAL_FORMAT_TYPES = new Set<ConditionalFormatRule['type']>([
+	'cellIs',
+	'expression',
+	'colorScale',
+	'dataBar',
+	'iconSet',
+	'top10',
+	'aboveAverage',
+	'duplicateValues',
+	'containsText',
+])
+
+const CONDITIONAL_FORMAT_OPERATORS = new Set<NonNullable<ConditionalFormatRule['operator']>>([
+	'greaterThan',
+	'lessThan',
+	'equal',
+	'between',
+	'greaterThanOrEqual',
+	'lessThanOrEqual',
+	'notEqual',
+	'notBetween',
+])

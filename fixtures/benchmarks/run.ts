@@ -41,6 +41,7 @@ import {
 } from './results.ts'
 
 const SID = 0 as StyleId
+const xlsxSharedStringUsageCache = new WeakMap<Uint8Array, SharedStringUsageAssertions>()
 
 interface ScenarioInput {
 	readonly workbook?: Workbook
@@ -793,6 +794,112 @@ function xlsxArchiveFootprint(bytes: Uint8Array): {
 		largestPartCompressedBytes,
 		largestPartUncompressedBytes,
 	}
+}
+
+interface SharedStringUsageAssertions {
+	readonly sharedStringsPartCompressedBytes: number
+	readonly sharedStringsPartUncompressedBytes: number
+	readonly sharedStringCount: number
+	readonly worksheetSharedStringCellRefs: number
+	readonly distinctSharedStringRefs: number
+	readonly maxSharedStringRef: number
+	readonly unusedSharedStringCount: number
+	readonly sharedStringReferenceCoverage: number
+	readonly sharedStringReferenceFanout: number
+}
+
+function xlsxSharedStringUsage(bytes: Uint8Array): SharedStringUsageAssertions {
+	const cached = xlsxSharedStringUsageCache.get(bytes)
+	if (cached) return cached
+	const archive = extractZip(bytes)
+	const sharedStringsEntry = archive.get('xl/sharedStrings.xml')
+	const sharedStringsXml = sharedStringsEntry
+		? archive.readText(sharedStringsEntry.path)
+		: undefined
+	const sharedStringCount = sharedStringsXml ? countElementOpens(sharedStringsXml, 'si') : 0
+	const referenced = new Set<number>()
+	let worksheetSharedStringCellRefs = 0
+	for (const entry of archive.entries()) {
+		if (!entry.path.startsWith('xl/worksheets/') || !entry.path.endsWith('.xml')) continue
+		const xml = archive.readText(entry.path)
+		if (!xml) continue
+		worksheetSharedStringCellRefs += collectSharedStringRefs(xml, referenced)
+	}
+	let maxSharedStringRef = -1
+	for (const index of referenced) if (index > maxSharedStringRef) maxSharedStringRef = index
+	const result = {
+		sharedStringsPartCompressedBytes: sharedStringsEntry?.compressedSize ?? 0,
+		sharedStringsPartUncompressedBytes: sharedStringsEntry?.uncompressedSize ?? 0,
+		sharedStringCount,
+		worksheetSharedStringCellRefs,
+		distinctSharedStringRefs: referenced.size,
+		maxSharedStringRef,
+		unusedSharedStringCount: Math.max(0, sharedStringCount - referenced.size),
+		sharedStringReferenceCoverage: sharedStringCount > 0 ? referenced.size / sharedStringCount : 0,
+		sharedStringReferenceFanout:
+			referenced.size > 0 ? worksheetSharedStringCellRefs / referenced.size : 0,
+	}
+	xlsxSharedStringUsageCache.set(bytes, result)
+	return result
+}
+
+function countElementOpens(xml: string, tagName: string): number {
+	let count = 0
+	let cursor = 0
+	while (true) {
+		const open = xml.indexOf(`<${tagName}`, cursor)
+		if (open === -1) return count
+		const next = xml.charCodeAt(open + tagName.length + 1)
+		if (next === 47 || next === 62 || next === 32 || next === 9 || next === 10 || next === 13) {
+			count += 1
+		}
+		cursor = open + tagName.length + 1
+	}
+}
+
+function collectSharedStringRefs(xml: string, referenced: Set<number>): number {
+	let refs = 0
+	let cursor = 0
+	while (true) {
+		const cellOpen = xml.indexOf('<c', cursor)
+		if (cellOpen === -1) return refs
+		const cellTagEnd = xml.indexOf('>', cellOpen + 2)
+		if (cellTagEnd === -1) return refs
+		const attrs = xml.slice(cellOpen + 2, cellTagEnd)
+		if (!hasSharedStringCellType(attrs)) {
+			cursor = cellTagEnd + 1
+			continue
+		}
+		const cellClose = xml.indexOf('</c>', cellTagEnd + 1)
+		if (cellClose === -1) return refs
+		const valueOpen = xml.indexOf('<v>', cellTagEnd + 1)
+		if (valueOpen !== -1 && valueOpen < cellClose) {
+			const valueClose = xml.indexOf('</v>', valueOpen + 3)
+			if (valueClose !== -1 && valueClose <= cellClose) {
+				const index = parseNonNegativeIntText(xml, valueOpen + 3, valueClose)
+				if (index !== undefined) {
+					referenced.add(index)
+					refs += 1
+				}
+			}
+		}
+		cursor = cellClose + 4
+	}
+}
+
+function hasSharedStringCellType(attrs: string): boolean {
+	return /\bt\s*=\s*(?:"s"|'s')/.test(attrs)
+}
+
+function parseNonNegativeIntText(xml: string, start: number, end: number): number | undefined {
+	if (start >= end) return undefined
+	let value = 0
+	for (let index = start; index < end; index++) {
+		const code = xml.charCodeAt(index)
+		if (code < 48 || code > 57) return undefined
+		value = value * 10 + (code - 48)
+	}
+	return value
 }
 
 function workbookGridStorageAssertions(workbook: Workbook): Record<string, number> {
@@ -2579,11 +2686,13 @@ const scenarios: readonly Scenario[] = [
 		category: 'workflow',
 		build() {
 			const target = realInteractivePatchCorpusTarget('stress-dense-100k')
+			const bytes = realInteractivePatchCorpusTargetBytes(target)
+			xlsxSharedStringUsage(bytes)
 			return {
 				rows: target.rowCount,
 				cols: target.colCount,
 				cells: target.rowCount * target.colCount,
-				byteCount: realInteractivePatchCorpusTargetBytes(target).byteLength,
+				byteCount: bytes.byteLength,
 			}
 		},
 		async run() {
@@ -2925,16 +3034,19 @@ const scenarios: readonly Scenario[] = [
 		category: 'workflow',
 		build() {
 			const target = realInteractivePatchCorpusTarget('stress-dense-100k')
+			const bytes = realInteractivePatchCorpusTargetBytes(target)
+			xlsxSharedStringUsage(bytes)
 			return {
 				rows: target.rowCount,
 				cols: target.colCount,
 				cells: target.rowCount * target.colCount,
-				byteCount: realInteractivePatchCorpusTargetBytes(target).byteLength,
+				byteCount: bytes.byteLength,
 			}
 		},
 		async run() {
 			const target = realInteractivePatchCorpusTarget('stress-dense-100k')
 			const bytes = realInteractivePatchCorpusTargetBytes(target)
+			const sharedStringUsage = xlsxSharedStringUsage(bytes)
 			WorkbookDocument.clearCache()
 
 			const openStart = performance.now()
@@ -2962,6 +3074,7 @@ const scenarios: readonly Scenario[] = [
 					readinessReusedReadModel: readiness.timings?.mutableWorkbookReusedReadModel ?? false,
 					readinessMutableWorkbookOpenMs: readiness.timings?.mutableWorkbookOpenMs ?? null,
 					readinessRebaseViewportSnapshotsMs: readiness.timings?.rebaseViewportSnapshotsMs ?? null,
+					...prefixAssertions('sharedStrings', sharedStringUsage),
 					readAndMutableShareSourceArchive:
 						readModel.sourceArchiveBytes === mutableModel.sourceArchiveBytes ? 1 : 0,
 					...prefixAssertions(
@@ -2977,17 +3090,20 @@ const scenarios: readonly Scenario[] = [
 		category: 'workflow',
 		build() {
 			const target = realInteractivePatchCorpusTarget('stress-dense-100k')
+			const bytes = realInteractivePatchCorpusTargetBytes(target)
+			xlsxSharedStringUsage(bytes)
 			return {
 				rows: target.rowCount,
 				cols: target.colCount,
 				cells: target.rowCount * target.colCount,
-				byteCount: realInteractivePatchCorpusTargetBytes(target).byteLength,
+				byteCount: bytes.byteLength,
 			}
 		},
 		async run() {
 			const target = realInteractivePatchCorpusTarget('stress-dense-100k')
 			const bytes = realInteractivePatchCorpusTargetBytes(target)
 			const archiveFootprint = xlsxArchiveFootprint(bytes)
+			const sharedStringUsage = xlsxSharedStringUsage(bytes)
 			WorkbookDocument.clearCache()
 			runGc()
 			const baseline = phaseMemorySnapshot()
@@ -3030,6 +3146,7 @@ const scenarios: readonly Scenario[] = [
 					readinessReusedReadModel: readiness.timings?.mutableWorkbookReusedReadModel ?? false,
 					readinessMutableWorkbookOpenMs: readiness.timings?.mutableWorkbookOpenMs ?? null,
 					readinessRebaseViewportSnapshotsMs: readiness.timings?.rebaseViewportSnapshotsMs ?? null,
+					...prefixAssertions('sharedStrings', sharedStringUsage),
 					...prefixAssertions('readModel', workbookModelRetentionAssertions(readModel)),
 					...prefixAssertions(
 						'mutableWorkbook',
@@ -3094,6 +3211,7 @@ const scenarios: readonly Scenario[] = [
 			const target = realInteractivePatchCorpusTarget('stress-dense-100k')
 			const bytes = realInteractivePatchCorpusTargetBytes(target)
 			const archiveFootprint = xlsxArchiveFootprint(bytes)
+			const sharedStringUsage = xlsxSharedStringUsage(bytes)
 			WorkbookDocument.clearCache()
 			runGc()
 			const baseline = phaseMemorySnapshot()
@@ -3188,6 +3306,7 @@ const scenarios: readonly Scenario[] = [
 					readinessReady: readiness.ready,
 					readinessReusedReadModel: readiness.timings?.mutableWorkbookReusedReadModel ?? false,
 					readinessMutableWorkbookOpenMs: readiness.timings?.mutableWorkbookOpenMs ?? null,
+					...prefixAssertions('sharedStrings', sharedStringUsage),
 					...prefixAssertions('readModel', workbookModelRetentionAssertions(readModel)),
 					...prefixAssertions(
 						'mutableWorkbook',

@@ -893,6 +893,22 @@ describe('Excel conformance', () => {
 	})
 
 	describe('text edge cases', () => {
+		test('Unicode surrogate pairs count as one character for modern text functions', () => {
+			expectNum(evalFormula('LEN("😀")'), 1)
+			expect(evalFormula('LEFT("😀B", 1)')).toEqual(stringValue('😀'))
+			expect(evalFormula('RIGHT("A😀", 1)')).toEqual(stringValue('😀'))
+			expect(evalFormula('MID("A😀B", 2, 1)')).toEqual(stringValue('😀'))
+			expectNum(evalFormula('FIND("😀", "A😀B")'), 2)
+			expectNum(evalFormula('SEARCH("😀", "a😀b")'), 2)
+			expect(evalFormula('REPLACE("A😀B", 2, 1, "X")')).toEqual(stringValue('AXB'))
+		})
+
+		test('Unicode variation selectors count separately from their base character', () => {
+			expectNum(evalFormula('LEN("✈️")'), 2)
+			expect(evalFormula('MID("✈️", 1, 1)')).toEqual(stringValue('✈'))
+			expect(evalFormula('MID("✈️", 2, 1)')).toEqual(stringValue('️'))
+		})
+
 		test('SUBSTITUTE with instance_num replaces only nth occurrence', () => {
 			expect(evalFormula('SUBSTITUTE("a-b-c-d", "-", ".", 2)')).toEqual(stringValue('a-b.c-d'))
 		})

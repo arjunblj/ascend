@@ -1194,7 +1194,7 @@ function leftText(args: EvalArg[]): CellValue {
 	const n = args.length >= 2 ? numArg(args[1]) : 1
 	if (typeof n !== 'number') return n
 	if (n < 0) return errorValue('#VALUE!')
-	return stringValue(s.slice(0, Math.trunc(n)))
+	return stringValue(textChars(s).slice(0, Math.trunc(n)).join(''))
 }
 
 function rightText(args: EvalArg[]): CellValue {
@@ -1205,7 +1205,8 @@ function rightText(args: EvalArg[]): CellValue {
 	if (n < 0) return errorValue('#VALUE!')
 	const count = Math.trunc(n)
 	if (count === 0) return stringValue('')
-	return stringValue(count >= s.length ? s : s.slice(-count))
+	const chars = textChars(s)
+	return stringValue(count >= chars.length ? s : chars.slice(-count).join(''))
 }
 
 function midText(args: EvalArg[]): CellValue {
@@ -1217,13 +1218,17 @@ function midText(args: EvalArg[]): CellValue {
 	if (typeof len !== 'number') return len
 	if (start < 1 || len < 0) return errorValue('#VALUE!')
 	const st = Math.trunc(start) - 1
-	return stringValue(s.slice(st, st + Math.trunc(len)))
+	return stringValue(
+		textChars(s)
+			.slice(st, st + Math.trunc(len))
+			.join(''),
+	)
 }
 
 function lenText(args: EvalArg[]): CellValue {
 	const s = strArg(args[0])
 	if (typeof s !== 'string') return s
-	return numberValue(s.length)
+	return numberValue(textChars(s).length)
 }
 
 function findText(args: EvalArg[], caseSensitive: boolean): CellValue {
@@ -1235,9 +1240,9 @@ function findText(args: EvalArg[], caseSensitive: boolean): CellValue {
 	if (typeof startNum !== 'number') return startNum
 	if (startNum < 1) return errorValue('#VALUE!')
 	const start = Math.trunc(startNum) - 1
-	const haystack = caseSensitive ? within : within.toLowerCase()
-	const needle = caseSensitive ? findText : findText.toLowerCase()
-	const idx = haystack.indexOf(needle, start)
+	const haystack = textChars(caseSensitive ? within : within.toLowerCase())
+	const needle = textChars(caseSensitive ? findText : findText.toLowerCase())
+	const idx = findCharSequence(haystack, needle, start)
 	return idx === -1 ? errorValue('#VALUE!') : numberValue(idx + 1)
 }
 
@@ -1254,7 +1259,31 @@ function replaceText(args: EvalArg[]): CellValue {
 	const count = Math.trunc(numChars)
 	if (start < 1 || count < 0) return errorValue('#VALUE!')
 	const s = start - 1
-	return stringValue(text.slice(0, s) + newT + text.slice(s + count))
+	const chars = textChars(text)
+	return stringValue(chars.slice(0, s).join('') + newT + chars.slice(s + count).join(''))
+}
+
+function textChars(value: string): string[] {
+	return Array.from(value)
+}
+
+function findCharSequence(
+	haystack: readonly string[],
+	needle: readonly string[],
+	start: number,
+): number {
+	if (needle.length === 0) return Math.min(start, haystack.length)
+	for (let index = start; index <= haystack.length - needle.length; index++) {
+		let matched = true
+		for (let offset = 0; offset < needle.length; offset++) {
+			if (haystack[index + offset] !== needle[offset]) {
+				matched = false
+				break
+			}
+		}
+		if (matched) return index
+	}
+	return -1
 }
 
 function ascText(args: EvalArg[]): CellValue {

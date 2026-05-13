@@ -354,6 +354,55 @@ describe('Ascend API server', () => {
 		expect(ambiguous.body.error?.message).toBe('Provide either ops or mutations, not both')
 	})
 
+	test('preview keeps JSON Pointer and segment-array path mutations canonical', async () => {
+		const sheetName = "Q1.Forecast's Café Δ"
+		const tableName = 'Sales.Δ'
+		const columnName = 'Gross Profit/Δ~'
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{ op: 'renameSheet', sheet: 'Sheet1', newName: sheetName },
+			{
+				op: 'setCells',
+				sheet: sheetName,
+				updates: [
+					{ ref: 'A1', value: 'Region' },
+					{ ref: 'B1', value: columnName },
+					{ ref: 'A2', value: 'North' },
+					{ ref: 'B2', value: 10 },
+				],
+			},
+			{ op: 'createTable', sheet: sheetName, ref: 'A1:B2', name: tableName, hasHeaders: true },
+		])
+		await wb.save(TEMP_FILE)
+
+		const result = await postJson('/preview', {
+			file: TEMP_FILE,
+			mutations: [
+				{ path: `/sheets/${pointerSegment(sheetName)}/cells/A2/value`, value: 'pointer' },
+				{ path: ['sheets', sheetName, 'cells', 'A3', 'value'], value: 'array' },
+				{
+					path: ['tables', tableName, 'columns', columnName, 'name'],
+					value: 'Net_Δ',
+				},
+			],
+		})
+
+		expect(result.status).toBe(200)
+		expect(result.body.ok).toBe(true)
+		expect(result.body.data?.pathMutations?.replayable).toBe(true)
+		expect(result.body.data?.pathMutations?.ops).toEqual([
+			{
+				op: 'setCells',
+				sheet: sheetName,
+				updates: [
+					{ ref: 'A2', value: 'pointer' },
+					{ ref: 'A3', value: 'array' },
+				],
+			},
+			{ op: 'setTableColumn', table: tableName, column: columnName, newName: 'Net_Δ' },
+		])
+	})
+
 	test('plan reports path mutation compiler errors as structured repair details', async () => {
 		const wb = AscendWorkbook.create()
 		await wb.save(TEMP_FILE)
@@ -626,4 +675,8 @@ function signedMacroWorkbook(): Uint8Array {
 			}),
 		),
 	)
+}
+
+function pointerSegment(value: string): string {
+	return encodeURIComponent(value.replace(/~/g, '~0').replace(/\//g, '~1'))
 }

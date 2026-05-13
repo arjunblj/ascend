@@ -59,7 +59,7 @@ describe('path-addressed mutations', () => {
 	test('keeps JSON Pointer and escaped-dot paths equivalent for agent-addressed names', () => {
 		const sheetName = "Q1.Forecast's Café Δ"
 		const tableName = 'Sales.Δ'
-		const columnName = 'Gross.Profit'
+		const columnName = "Gross.Profit / Δ~'s"
 		const definedName = "Revenue/North ~ Café's Δ"
 		const wb = AscendWorkbook.create()
 		wb.apply([
@@ -80,9 +80,10 @@ describe('path-addressed mutations', () => {
 		const result = wb.compilePathMutations([
 			{ path: `/sheets/${pointerSegment(sheetName)}/cells/A1/value`, value: 'pointer' },
 			{ path: `sheets.${dotSegment(sheetName)}.cells.A2.value`, value: 'dot' },
+			{ path: ['sheets', sheetName, 'cells', 'A3', 'value'], value: 'array' },
 			{
 				path: `/tables/${pointerSegment(tableName)}/columns/${pointerSegment(columnName)}/formula`,
-				value: 'SUM([Gross.Profit])',
+				value: "SUM([Gross.Profit / Δ~'s])",
 			},
 			{
 				path: `tables.${dotSegment(tableName)}.columns.${dotSegment(columnName)}.totalsRowLabel`,
@@ -101,13 +102,14 @@ describe('path-addressed mutations', () => {
 				updates: [
 					{ ref: 'A1', value: 'pointer' },
 					{ ref: 'A2', value: 'dot' },
+					{ ref: 'A3', value: 'array' },
 				],
 			},
 			{
 				op: 'setTableColumn',
 				table: tableName,
 				column: columnName,
-				formula: 'SUM([Gross.Profit])',
+				formula: "SUM([Gross.Profit / Δ~'s])",
 			},
 			{ op: 'setTableColumn', table: tableName, column: columnName, totalsRowLabel: 'Total' },
 			{ op: 'setDefinedName', name: definedName, ref: `'${sheetName}'!$B$2` },

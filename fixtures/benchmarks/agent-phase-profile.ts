@@ -297,20 +297,22 @@ async function resolveBenchmarkInput(args: Args): Promise<BenchmarkInput> {
 			source: 'generated',
 		}
 	}
-	if (args.sheet !== undefined) {
-		return {
-			xlsxPath: args.inputFile,
-			sheet: args.sheet,
-			rows: args.rows,
-			cols: args.cols,
-			cleanup: false,
-			source: 'input-file',
-		}
-	}
-	const document = await WorkbookDocument.open(args.inputFile, { mode: 'metadata-only' })
+	const document = await WorkbookDocument.open(args.inputFile, {
+		mode: 'metadata-only',
+		...(args.sheet !== undefined ? { sheets: [args.sheet] } : {}),
+	})
 	const info = document.inspect()
-	const sheetInfo = info.sheets[0]
-	if (!sheetInfo) throw new Error(`No sheets found in ${args.inputFile}`)
+	const sheetInfo =
+		args.sheet !== undefined
+			? info.sheets.find((sheet) => sheet.name === args.sheet)
+			: info.sheets[0]
+	if (!sheetInfo) {
+		throw new Error(
+			args.sheet !== undefined
+				? `Sheet "${args.sheet}" not found in ${args.inputFile}`
+				: `No sheets found in ${args.inputFile}`,
+		)
+	}
 	const rows = Math.max(1, sheetInfo.rowCount ?? args.rows)
 	const cols = Math.max(1, sheetInfo.colCount ?? args.cols)
 	WorkbookDocument.clearCache()

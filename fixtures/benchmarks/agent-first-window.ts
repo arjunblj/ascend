@@ -28,7 +28,69 @@ interface Sample {
 	readonly cappedHydratedCells?: number | null
 	readonly apiPartial?: boolean
 	readonly mcpPartial?: boolean
+	readonly fullOpenCalls?: number
+	readonly fullHydratedOpenCount?: number
+	readonly fullDocumentCacheHits?: number
+	readonly cappedOpenCalls?: number
+	readonly cappedHydratedOpenCount?: number
+	readonly cappedDocumentCacheHits?: number
+	readonly apiOpenCalls?: number
+	readonly apiHydratedOpenCount?: number
+	readonly apiDocumentCacheHits?: number
+	readonly mcpOpenCalls?: number
+	readonly mcpHydratedOpenCount?: number
+	readonly mcpDocumentCacheHits?: number
 }
+
+interface OpenStats {
+	readonly documentOpenCalls: number
+	readonly documentHydrations: number
+	readonly documentCacheHits: number
+}
+
+type MutableOpenStats = {
+	-readonly [K in keyof OpenStats]: OpenStats[K]
+}
+
+const openStats: MutableOpenStats = {
+	documentOpenCalls: 0,
+	documentHydrations: 0,
+	documentCacheHits: 0,
+}
+
+const seenDocuments = new WeakSet<WorkbookDocument>()
+
+function installOpenStatsInstrumentation(): void {
+	type DocumentOpen = typeof WorkbookDocument.open
+	const originalDocumentOpen = WorkbookDocument.open.bind(WorkbookDocument) as DocumentOpen
+	Object.defineProperty(WorkbookDocument, 'open', {
+		configurable: true,
+		value: (async (...args: Parameters<DocumentOpen>) => {
+			openStats.documentOpenCalls += 1
+			const document = await originalDocumentOpen(...args)
+			if (seenDocuments.has(document)) openStats.documentCacheHits += 1
+			else {
+				seenDocuments.add(document)
+				openStats.documentHydrations += 1
+			}
+			return document
+		}) satisfies DocumentOpen,
+	})
+}
+
+function snapshotOpenStats(): OpenStats {
+	return { ...openStats }
+}
+
+function diffOpenStats(after: OpenStats, before: OpenStats): OpenStats {
+	return {
+		documentOpenCalls: after.documentOpenCalls - before.documentOpenCalls,
+		documentHydrations: after.documentHydrations - before.documentHydrations,
+		documentCacheHits: after.documentCacheHits - before.documentCacheHits,
+	}
+}
+
+installOpenStatsInstrumentation()
 
 const WORKLOADS = new Set<string>([
 	'dense-values',
@@ -98,8 +160,19 @@ async function runFullOpenWindow(
 	path: string,
 	range: string,
 	rowLimit: number,
-): Promise<Pick<Sample, 'fullOpenWindowMs' | 'cells' | 'fullHydratedCells'>> {
+): Promise<
+	Pick<
+		Sample,
+		| 'fullOpenWindowMs'
+		| 'cells'
+		| 'fullHydratedCells'
+		| 'fullOpenCalls'
+		| 'fullHydratedOpenCount'
+		| 'fullDocumentCacheHits'
+	>
+> {
 	WorkbookDocument.clearCache()
+	const beforeOpenStats = snapshotOpenStats()
 	const measured = await time(async () => {
 		const document = await WorkbookDocument.open(path, { mode: 'values' })
 		const info = document.inspect()
@@ -111,10 +184,14 @@ async function runFullOpenWindow(
 		})
 		return { info, window }
 	})
+	const openStats = diffOpenStats(snapshotOpenStats(), beforeOpenStats)
 	return {
 		fullOpenWindowMs: measured.ms,
 		cells: measured.result.window?.cells.length ?? 0,
 		fullHydratedCells: measured.result.info.cellCount,
+		fullOpenCalls: openStats.documentOpenCalls,
+		fullHydratedOpenCount: openStats.documentHydrations,
+		fullDocumentCacheHits: openStats.documentCacheHits,
 	}
 }
 
@@ -122,8 +199,19 @@ async function runCappedOpenWindow(
 	path: string,
 	range: string,
 	rowLimit: number,
-): Promise<Pick<Sample, 'cappedOpenWindowMs' | 'cells' | 'cappedHydratedCells'>> {
+): Promise<
+	Pick<
+		Sample,
+		| 'cappedOpenWindowMs'
+		| 'cells'
+		| 'cappedHydratedCells'
+		| 'cappedOpenCalls'
+		| 'cappedHydratedOpenCount'
+		| 'cappedDocumentCacheHits'
+	>
+> {
 	WorkbookDocument.clearCache()
+	const beforeOpenStats = snapshotOpenStats()
 	const measured = await time(async () => {
 		const preview = await WorkbookDocument.openFirstWindow(path, {
 			range,
@@ -131,10 +219,14 @@ async function runCappedOpenWindow(
 		})
 		return preview
 	})
+	const openStats = diffOpenStats(snapshotOpenStats(), beforeOpenStats)
 	return {
 		cappedOpenWindowMs: measured.ms,
 		cells: measured.result.window.cells.length,
 		cappedHydratedCells: measured.result.info.cellCount,
+		cappedOpenCalls: openStats.documentOpenCalls,
+		cappedHydratedOpenCount: openStats.documentHydrations,
+		cappedDocumentCacheHits: openStats.documentCacheHits,
 	}
 }
 
@@ -142,8 +234,20 @@ async function runApiFirstWindow(
 	path: string,
 	range: string,
 	rowLimit: number,
-): Promise<Pick<Sample, 'apiFirstWindowMs' | 'cells' | 'payloadBytes' | 'apiPartial'>> {
+): Promise<
+	Pick<
+		Sample,
+		| 'apiFirstWindowMs'
+		| 'cells'
+		| 'payloadBytes'
+		| 'apiPartial'
+		| 'apiOpenCalls'
+		| 'apiHydratedOpenCount'
+		| 'apiDocumentCacheHits'
+	>
+> {
 	WorkbookDocument.clearCache()
+	const beforeOpenStats = snapshotOpenStats()
 	const apiFetch = createApiFetch()
 	const body = JSON.stringify({
 		file: path,
@@ -163,12 +267,16 @@ async function runApiFirstWindow(
 		if (response.status !== 200) throw new Error(text)
 		return { text, payload: JSON.parse(text) as ApiEnvelope }
 	})
+	const openStats = diffOpenStats(snapshotOpenStats(), beforeOpenStats)
 	const data = measured.result.payload.data
 	return {
 		apiFirstWindowMs: measured.ms,
 		cells: data?.cells?.length ?? 0,
 		payloadBytes: measured.result.text.length,
 		apiPartial: data?.load?.isPartial ?? false,
+		apiOpenCalls: openStats.documentOpenCalls,
+		apiHydratedOpenCount: openStats.documentHydrations,
+		apiDocumentCacheHits: openStats.documentCacheHits,
 	}
 }
 
@@ -201,8 +309,20 @@ async function runMcpFirstWindow(
 	path: string,
 	range: string,
 	rowLimit: number,
-): Promise<Pick<Sample, 'mcpFirstWindowMs' | 'cells' | 'mcpPayloadBytes' | 'mcpPartial'>> {
+): Promise<
+	Pick<
+		Sample,
+		| 'mcpFirstWindowMs'
+		| 'cells'
+		| 'mcpPayloadBytes'
+		| 'mcpPartial'
+		| 'mcpOpenCalls'
+		| 'mcpHydratedOpenCount'
+		| 'mcpDocumentCacheHits'
+	>
+> {
 	WorkbookDocument.clearCache()
+	const beforeOpenStats = snapshotOpenStats()
 	const server = createServer()
 	const handler = (
 		server as unknown as { _registeredTools: Record<string, { handler: McpReadHandler }> }
@@ -220,12 +340,16 @@ async function runMcpFirstWindow(
 	if (content?.ok !== true) {
 		throw new Error(`MCP ascend.read failed: ${JSON.stringify(content?.error ?? content)}`)
 	}
+	const openStats = diffOpenStats(snapshotOpenStats(), beforeOpenStats)
 	const data = content.data
 	return {
 		mcpFirstWindowMs: measured.ms,
 		cells: data?.cells?.length ?? 0,
 		mcpPayloadBytes: JSON.stringify(content).length,
 		mcpPartial: data?.load?.isPartial ?? false,
+		mcpOpenCalls: openStats.documentOpenCalls,
+		mcpHydratedOpenCount: openStats.documentHydrations,
+		mcpDocumentCacheHits: openStats.documentCacheHits,
 	}
 }
 
@@ -255,6 +379,34 @@ function summarize(samples: readonly Sample[]) {
 		mcpPayloadBytesMedian: medianOptional(samples.map((sample) => sample.mcpPayloadBytes)),
 		fullHydratedCellsMedian: medianOptional(samples.map((sample) => sample.fullHydratedCells)),
 		cappedHydratedCellsMedian: medianOptional(samples.map((sample) => sample.cappedHydratedCells)),
+		fullOpenCallsMedian: medianOptional(samples.map((sample) => sample.fullOpenCalls)),
+		fullHydratedOpenCountMedian: medianOptional(
+			samples.map((sample) => sample.fullHydratedOpenCount),
+		),
+		fullDocumentCacheHitsMedian: medianOptional(
+			samples.map((sample) => sample.fullDocumentCacheHits),
+		),
+		cappedOpenCallsMedian: medianOptional(samples.map((sample) => sample.cappedOpenCalls)),
+		cappedHydratedOpenCountMedian: medianOptional(
+			samples.map((sample) => sample.cappedHydratedOpenCount),
+		),
+		cappedDocumentCacheHitsMedian: medianOptional(
+			samples.map((sample) => sample.cappedDocumentCacheHits),
+		),
+		apiOpenCallsMedian: medianOptional(samples.map((sample) => sample.apiOpenCalls)),
+		apiHydratedOpenCountMedian: medianOptional(
+			samples.map((sample) => sample.apiHydratedOpenCount),
+		),
+		apiDocumentCacheHitsMedian: medianOptional(
+			samples.map((sample) => sample.apiDocumentCacheHits),
+		),
+		mcpOpenCallsMedian: medianOptional(samples.map((sample) => sample.mcpOpenCalls)),
+		mcpHydratedOpenCountMedian: medianOptional(
+			samples.map((sample) => sample.mcpHydratedOpenCount),
+		),
+		mcpDocumentCacheHitsMedian: medianOptional(
+			samples.map((sample) => sample.mcpDocumentCacheHits),
+		),
 		apiPartial: samples.some((sample) => sample.apiPartial === true),
 		mcpPartial: samples.some((sample) => sample.mcpPartial === true),
 	}

@@ -14,6 +14,9 @@ import type {
 } from './types.ts'
 
 type PathSegments = readonly string[]
+type ParsedPath =
+	| { readonly ok: true; readonly segments: PathSegments }
+	| { readonly ok: false; readonly message: string }
 type SetAutoFilterPathValue = Extract<Operation, { op: 'setAutoFilter' }>
 type SetTableColumnPathValue = Extract<Operation, { op: 'setTableColumn' }>
 type SetTableStylePathValue = Extract<Operation, { op: 'setTableStyle' }>
@@ -57,12 +60,12 @@ export function compilePathMutations(
 	const issues: PathMutationIssue[] = []
 
 	for (const mutation of mutations) {
-		const segments = parseMutationPath(mutation.path)
-		if (!segments) {
-			issues.push(issue(mutation.path, 'invalid_path', 'Path must not be empty.'))
+		const parsedPath = parseMutationPath(mutation.path)
+		if (!parsedPath.ok) {
+			issues.push(issue(mutation.path, 'invalid_path', parsedPath.message))
 			continue
 		}
-		const compiled = compilePathMutation(workbook, mutation, segments)
+		const compiled = compilePathMutation(workbook, mutation, parsedPath.segments)
 		if ('op' in compiled) {
 			pushOperation(ops, compiled.op)
 		} else {
@@ -683,29 +686,32 @@ function pushOperation(ops: Operation[], op: Operation): void {
 	ops.push(op)
 }
 
-function parseMutationPath(path: PathMutationPath): PathSegments | null {
+function parseMutationPath(path: PathMutationPath): ParsedPath {
 	if (typeof path !== 'string') {
-		const segments = path.map((segment) => String(segment)).filter((segment) => segment.length > 0)
-		return segments.length > 0 ? segments : null
+		if (path.length === 0) return { ok: false, message: 'Path must not be empty.' }
+		const emptyIndex = path.findIndex((segment) => segment.length === 0)
+		if (emptyIndex >= 0) {
+			return { ok: false, message: `Path segment ${emptyIndex} must not be empty.` }
+		}
+		return { ok: true, segments: [...path] }
 	}
 	if (path.startsWith('/')) {
-		const segments = path
-			.slice(1)
-			.split('/')
-			.map(decodePointerSegment)
-			.filter((segment) => segment.length > 0)
-		return segments.length > 0 ? segments : null
+		return parsePointerPath(path)
 	}
-	const segments = splitDotPath(path)
-	return segments.length > 0 ? segments : null
+	return splitDotPath(path)
 }
 
-function splitDotPath(path: string): string[] {
+function splitDotPath(path: string): ParsedPath {
+	if (path.length === 0) return { ok: false, message: 'Path must not be empty.' }
 	const segments: string[] = []
 	let segment = ''
 	let escaped = false
-	for (const char of path) {
+	for (let i = 0; i < path.length; i++) {
+		const char = path[i] ?? ''
 		if (escaped) {
+			if (char !== '.' && char !== '\\') {
+				return { ok: false, message: `Invalid escaped character "\\${char}" in dot path.` }
+			}
 			segment += char
 			escaped = false
 			continue
@@ -715,19 +721,55 @@ function splitDotPath(path: string): string[] {
 			continue
 		}
 		if (char === '.') {
-			if (segment.length > 0) segments.push(segment)
+			if (segment.length === 0) {
+				return { ok: false, message: `Path segment ${segments.length} must not be empty.` }
+			}
+			segments.push(segment)
 			segment = ''
 			continue
 		}
 		segment += char
 	}
-	if (escaped) segment += '\\'
-	if (segment.length > 0) segments.push(segment)
-	return segments
+	if (escaped) return { ok: false, message: 'Dot path must not end with an escape character.' }
+	if (segment.length === 0) {
+		return { ok: false, message: `Path segment ${segments.length} must not be empty.` }
+	}
+	segments.push(segment)
+	return { ok: true, segments }
 }
 
-function decodePointerSegment(segment: string): string {
-	return decodeURIComponent(segment).replace(/~1/g, '/').replace(/~0/g, '~')
+function parsePointerPath(path: string): ParsedPath {
+	const encodedSegments = path.slice(1).split('/')
+	if (encodedSegments.length === 0 || encodedSegments[0] === '') {
+		return { ok: false, message: 'Path must not be empty.' }
+	}
+	const segments: string[] = []
+	for (const [index, encodedSegment] of encodedSegments.entries()) {
+		if (encodedSegment.length === 0) {
+			return { ok: false, message: `Path segment ${index} must not be empty.` }
+		}
+		const decoded = decodePointerSegment(encodedSegment)
+		if (!decoded.ok) return decoded
+		segments.push(decoded.segment)
+	}
+	return { ok: true, segments }
+}
+
+function decodePointerSegment(
+	segment: string,
+):
+	| { readonly ok: true; readonly segment: string }
+	| { readonly ok: false; readonly message: string } {
+	let decoded: string
+	try {
+		decoded = decodeURIComponent(segment)
+	} catch {
+		return { ok: false, message: `Invalid percent encoding in path segment "${segment}".` }
+	}
+	if (/(^|[^~])~(?:[^01]|$)/.test(decoded) || decoded === '~') {
+		return { ok: false, message: `Invalid JSON Pointer escape in path segment "${segment}".` }
+	}
+	return { ok: true, segment: decoded.replace(/~1/g, '/').replace(/~0/g, '~') }
 }
 
 function isValidRange(range: string): boolean {

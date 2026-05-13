@@ -351,6 +351,35 @@ describe('Ascend API server', () => {
 		)
 	})
 
+	test('plan reports malformed path syntax as structured repair details', async () => {
+		const wb = AscendWorkbook.create()
+		await wb.save(TEMP_FILE)
+
+		const result = await postJson('/plan', {
+			file: TEMP_FILE,
+			mutations: [
+				{ path: '/sheets//cells/A1/value', value: 1 },
+				{ path: '/sheets/%E0%A4%A/cells/A1/value', value: 1 },
+				{ path: '/sheets/Sheet1~2/cells/A1/value', value: 1 },
+			],
+		})
+
+		expect(result.status).toBe(400)
+		expect(result.body.ok).toBe(false)
+		expect(result.body.error?.code).toBe('VALIDATION_ERROR')
+		expect(result.body.error?.details?.issueCount).toBe(3)
+		expect(result.body.error?.details?.issues).toEqual([
+			'Path segment 1 must not be empty.',
+			'Invalid percent encoding in path segment "%E0%A4%A".',
+			'Invalid JSON Pointer escape in path segment "Sheet1~2".',
+		])
+		expect(result.body.error?.details?.issueDetails).toEqual([
+			expect.objectContaining({ code: 'invalid_path', path: '/sheets//cells/A1/value' }),
+			expect.objectContaining({ code: 'invalid_path', path: '/sheets/%E0%A4%A/cells/A1/value' }),
+			expect.objectContaining({ code: 'invalid_path', path: '/sheets/Sheet1~2/cells/A1/value' }),
+		])
+	})
+
 	test('plan invalid ops return structured batch repair details', async () => {
 		const ops = [
 			{ op: 'insertRows', sheet: 'Sheet1', at: 0, count: '2' },

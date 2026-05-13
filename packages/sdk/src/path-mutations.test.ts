@@ -239,6 +239,41 @@ describe('path-addressed mutations', () => {
 		])
 		expect(result.issues.at(-1)?.details?.supportedShapes).toEqual(SUPPORTED_PATH_MUTATION_SHAPES)
 	})
+
+	test('rejects malformed path syntax instead of repairing it silently', () => {
+		const wb = AscendWorkbook.create()
+
+		const result = wb.compilePathMutations([
+			{ path: '/sheets//cells/A1/value', value: 1 },
+			{ path: '/sheets/Sheet1/cells/A1/value/', value: 1 },
+			{ path: 'sheets..Sheet1.cells.A1.value', value: 1 },
+			{ path: 'sheets.Sheet1\\cells.A1.value', value: 1 },
+			{ path: '/sheets/Sheet1~2/cells/A1/value', value: 1 },
+			{ path: '/sheets/%E0%A4%A/cells/A1/value', value: 1 },
+			{ path: ['sheets', '', 'cells', 'A1', 'value'], value: 1 },
+		])
+
+		expect(result.replayable).toBe(false)
+		expect(result.ops).toEqual([])
+		expect(result.issues.map((entry) => entry.code)).toEqual([
+			'invalid_path',
+			'invalid_path',
+			'invalid_path',
+			'invalid_path',
+			'invalid_path',
+			'invalid_path',
+			'invalid_path',
+		])
+		expect(result.issues.map((entry) => entry.message)).toEqual([
+			'Path segment 1 must not be empty.',
+			'Path segment 5 must not be empty.',
+			'Path segment 1 must not be empty.',
+			'Invalid escaped character "\\c" in dot path.',
+			'Invalid JSON Pointer escape in path segment "Sheet1~2".',
+			'Invalid percent encoding in path segment "%E0%A4%A".',
+			'Path segment 1 must not be empty.',
+		])
+	})
 })
 
 function pointerSegment(value: string): string {

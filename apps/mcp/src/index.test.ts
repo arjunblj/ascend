@@ -630,6 +630,55 @@ describe('MCP server', () => {
 		)
 	})
 
+	test('ascend.plan reports malformed path syntax as structured repair details', async () => {
+		const wb = AscendWorkbook.create()
+		await wb.save(TEMP_FILE)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const handler = (server as any)._registeredTools['ascend.plan'].handler as (args: {
+			file: string
+			mutations: Array<{ path: string; value?: unknown }>
+		}) => Promise<{
+			isError?: boolean
+			structuredContent?: {
+				ok?: boolean
+				error?: {
+					code?: string
+					details?: {
+						issueCount?: number
+						issues?: readonly string[]
+						issueDetails?: readonly { code?: string; path?: string }[]
+					}
+				}
+			}
+		}>
+
+		const result = await handler({
+			file: TEMP_FILE,
+			mutations: [
+				{ path: '/sheets//cells/A1/value', value: 1 },
+				{ path: '/sheets/%E0%A4%A/cells/A1/value', value: 1 },
+				{ path: '/sheets/Sheet1~2/cells/A1/value', value: 1 },
+			],
+		})
+
+		expect(result.isError).toBe(true)
+		expect(result.structuredContent?.ok).toBe(false)
+		expect(result.structuredContent?.error?.code).toBe('VALIDATION_ERROR')
+		expect(result.structuredContent?.error?.details?.issueCount).toBe(3)
+		expect(result.structuredContent?.error?.details?.issues).toEqual([
+			'Path segment 1 must not be empty.',
+			'Invalid percent encoding in path segment "%E0%A4%A".',
+			'Invalid JSON Pointer escape in path segment "Sheet1~2".',
+		])
+		expect(result.structuredContent?.error?.details?.issueDetails).toEqual([
+			expect.objectContaining({ code: 'invalid_path', path: '/sheets//cells/A1/value' }),
+			expect.objectContaining({ code: 'invalid_path', path: '/sheets/%E0%A4%A/cells/A1/value' }),
+			expect.objectContaining({ code: 'invalid_path', path: '/sheets/Sheet1~2/cells/A1/value' }),
+		])
+	})
+
 	test('ascend.export writes JSON/TSV and rejects unsupported formats', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

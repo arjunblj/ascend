@@ -2357,7 +2357,7 @@ function collectChartSourceRefDriftRisks(
 	const risks: ChartSourceRefDriftRisk[] = []
 	for (const [chartIndex, chart] of workbook.chartParts.entries()) {
 		for (const [seriesIndex, series] of chart.series.entries()) {
-			const sourceRefs = chartSourceRefs(series, chart.sheetName)
+			const sourceRefs = chartSourceRefs(workbook, series, chart.sheetName)
 			const referencedSheets = new Set(sourceRefs.flatMap((source) => source.referencedSheets))
 			const relatedOperations = chartSourceRelatedOperations(operations, referencedSheets)
 			if (sourceRefs.length === 0 || relatedOperations.length === 0) continue
@@ -3052,7 +3052,7 @@ function collectChartSourceRefSummary(workbook: Workbook): readonly Record<strin
 		chartIndex,
 		series: chart.series.map((series, seriesIndex) => ({
 			seriesIndex,
-			sourceRefs: chartSourceRefs(series, chart.sheetName),
+			sourceRefs: chartSourceRefs(workbook, series, chart.sheetName),
 		})),
 	}))
 }
@@ -3106,17 +3106,19 @@ function collectDrawingModelSummary(
 }
 
 function chartSourceRefs(
+	workbook: Workbook,
 	series: ChartPartInfo['series'][number],
 	defaultSheetName?: string,
 ): ChartSourceRefAudit[] {
 	return [
-		chartSourceRef('nameRef', series.nameRef, defaultSheetName),
-		chartSourceRef('categoryRef', series.categoryRef, defaultSheetName),
-		chartSourceRef('valueRef', series.valueRef, defaultSheetName),
+		chartSourceRef(workbook, 'nameRef', series.nameRef, defaultSheetName),
+		chartSourceRef(workbook, 'categoryRef', series.categoryRef, defaultSheetName),
+		chartSourceRef(workbook, 'valueRef', series.valueRef, defaultSheetName),
 	].filter((entry): entry is ChartSourceRefAudit => entry !== undefined)
 }
 
 function chartSourceRef(
+	workbook: Workbook,
 	sourceKind: ChartSourceRefAudit['sourceKind'],
 	ref: string | undefined,
 	defaultSheetName?: string,
@@ -3125,15 +3127,22 @@ function chartSourceRef(
 	return {
 		sourceKind,
 		ref,
-		referencedSheets: chartSourceReferencedSheets(ref, defaultSheetName),
+		referencedSheets: chartSourceReferencedSheets(workbook, ref, defaultSheetName),
 	}
 }
 
-function chartSourceReferencedSheets(ref: string, defaultSheetName?: string): string[] {
+function chartSourceReferencedSheets(
+	workbook: Workbook,
+	ref: string,
+	defaultSheetName?: string,
+): string[] {
 	const parsed = parseFormula(normalizeFormulaInput(ref))
 	if (parsed.ok) {
 		const sheets = flattenFormulaReferences(collectFormulaReferences(parsed.value)).flatMap(
 			(reference) => {
+				if (reference.kind === 'structured') {
+					return chartStructuredReferenceSheetNames(workbook, reference, defaultSheetName)
+				}
 				if (reference.scope?.kind === 'sheet') return [reference.scope.sheet]
 				if (reference.scope?.kind === 'sheetSpan') {
 					return [reference.scope.startSheet, reference.scope.endSheet]
@@ -3149,6 +3158,23 @@ function chartSourceReferencedSheets(ref: string, defaultSheetName?: string): st
 		return [regexMatch[0].slice(0, -1).replace(/^'|'$/g, '').replace(/''/g, "'")]
 	}
 	return defaultSheetName ? [defaultSheetName] : []
+}
+
+function chartStructuredReferenceSheetNames(
+	workbook: Workbook,
+	reference: Extract<FormulaReferenceInfo, { kind: 'structured' }>,
+	defaultSheetName?: string,
+): string[] {
+	const tableName = reference.table.trim()
+	if (tableName.length === 0) return defaultSheetName ? [defaultSheetName] : []
+	const normalizedTableName = tableName.toLowerCase()
+	return uniqueStrings(
+		workbook.sheets.flatMap((sheet) =>
+			sheet.tables.some((table) => table.name.toLowerCase() === normalizedTableName)
+				? [sheet.name]
+				: [],
+		),
+	)
 }
 
 function chartSourceRelatedOperations(

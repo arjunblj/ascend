@@ -1807,6 +1807,108 @@ describe('interactive client contract', () => {
 		expect(wb.sheet('Sheet1')?.getComments()).toEqual([{ ref: 'B2', text: 'review' }])
 	})
 
+	test('structural delete journals mark represented package metadata as lossy', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'Header' },
+					{ ref: 'A2', value: 1 },
+					{ ref: 'B2', value: 2 },
+					{ ref: 'D2', value: 'Pivot' },
+				],
+			},
+		])
+		const model = wb.getWorkbookModel()
+		const sheet = model.getSheet('Sheet1')
+		if (!sheet) throw new Error('sheet missing')
+		sheet.ignoredErrors.push({ sqref: 'A2:A2', formula: true })
+		sheet.sortState = {
+			ref: 'A1:A3',
+			conditions: [{ ref: 'A2:A2' }],
+		}
+		sheet.advancedFilters.push({
+			ref: 'B1:B3',
+			autoFilter: {
+				ref: 'B1:B3',
+				columns: [],
+				sortState: { ref: 'B1:B3', conditions: [{ ref: 'B2:B2' }] },
+			},
+			filterColumnCount: 0,
+			sortConditionCount: 1,
+		})
+		sheet.imageRefs.push({
+			drawingPartPath: 'xl/drawings/drawing1.xml',
+			relId: 'rId1',
+			targetPath: '../media/image1.png',
+			anchor: {
+				kind: 'twoCell',
+				from: { row: 1, col: 0 },
+				to: { row: 2, col: 1 },
+			},
+		})
+		sheet.drawingObjectRefs.push({
+			drawingPartPath: 'xl/drawings/drawing1.xml',
+			kind: 'shape',
+			anchor: { kind: 'oneCell', from: { row: 1, col: 1 } },
+		})
+		model.chartParts.push({
+			partPath: 'xl/charts/chart1.xml',
+			sheetName: 'Sheet1',
+			series: [{ valueRef: 'Sheet1!$A$2:$A$2' }],
+		})
+		model.pivotCaches.push({
+			partPath: 'xl/pivotCache/pivotCacheDefinition1.xml',
+			cacheId: 1,
+			sourceSheet: 'Sheet1',
+			sourceRef: 'A2:B4',
+			fields: [],
+		})
+		model.pivotTables.push({
+			partPath: 'xl/pivotTables/pivotTable1.xml',
+			sheetName: 'Sheet1',
+			name: 'PivotTable1',
+			cacheId: 1,
+			locationRef: 'D2:E5',
+			location: { ref: 'D2:E5' },
+			fields: [],
+			rowFields: [],
+			columnFields: [],
+			pageFields: [],
+			dataFields: [],
+		})
+
+		const deletedRow = wb.preview([{ op: 'deleteRows', sheet: 'Sheet1', at: 1, count: 1 }], {
+			journal: true,
+		})
+
+		expect(deletedRow.wouldSucceed).toBe(true)
+		expect(deletedRow.journal?.supported).toBe(true)
+		expect(deletedRow.journal?.exact).toBe(false)
+		expect(deletedRow.journal?.issues).toContainEqual({
+			code: 'LOSSY_INVERSE',
+			message:
+				'Deleted row represented metadata on Sheet1 cannot be fully restored with public operations',
+			refs: [
+				'Sheet1!ignoredError:A2:A2',
+				'Sheet1!sortState:A1:A3',
+				'Sheet1!sortState:condition:0:A2:A2',
+				'Sheet1!advancedFilter:0:B1:B3',
+				'Sheet1!advancedFilter:0:autoFilter:B1:B3',
+				'Sheet1!advancedFilter:0:autoFilter:sortState:B1:B3',
+				'Sheet1!advancedFilter:0:autoFilter:sortState:condition:0:B2:B2',
+				'Sheet1!image:xl/drawings/drawing1.xml:0',
+				'Sheet1!drawing:xl/drawings/drawing1.xml:0',
+				'chart:xl/charts/chart1.xml:series:0:valueRef',
+				'pivotCache:xl/pivotCache/pivotCacheDefinition1.xml:sourceRef',
+				'pivotTable:xl/pivotTables/pivotTable1.xml:locationRef',
+				'pivotTable:xl/pivotTables/pivotTable1.xml:location.ref',
+			],
+		})
+	})
+
 	test('structural delete journals mark broken external formula references as lossy', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([
@@ -1851,6 +1953,36 @@ describe('interactive client contract', () => {
 				range: 'D1:D1',
 				rule: { type: 'expression', formula: 'A2>0' },
 			},
+			{
+				op: 'setConditionalFormat',
+				sheet: 'Sheet1',
+				range: 'E1:E1',
+				rule: {
+					type: 'colorScale',
+					colorScale: {
+						cfvo: [{ type: 'formula', value: 'A2' }, { type: 'max' }],
+						colors: [{ rgb: 'FFFF0000' }, { rgb: 'FF00FF00' }],
+					},
+				},
+			},
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'F10', value: 'Name' },
+					{ ref: 'G10', value: 'Calc' },
+					{ ref: 'F11', value: 'row' },
+					{ ref: 'G11', value: 1 },
+				],
+			},
+			{ op: 'createTable', sheet: 'Sheet1', ref: 'F10:G11', name: 'Audit', hasHeaders: true },
+			{
+				op: 'setTableColumn',
+				table: 'Audit',
+				column: 'Calc',
+				formula: 'A2',
+				totalsRowFormula: 'SUM(A2)',
+			},
 		])
 
 		const deletedRow = wb.apply([{ op: 'deleteRows', sheet: 'Sheet1', at: 1, count: 1 }], {
@@ -1860,18 +1992,37 @@ describe('interactive client contract', () => {
 		expect(deletedRow.errors).toEqual([])
 		expect(deletedRow.journal?.supported).toBe(true)
 		expect(deletedRow.journal?.exact).toBe(false)
-		expect(deletedRow.journal?.issues).toContainEqual({
-			code: 'LOSSY_INVERSE',
-			message: 'Deleted row formula references on Sheet1 cannot be restored with public operations',
-			refs: ['Sheet1!validation:C1:C1:formula1', 'Sheet1!conditionalFormat:D1:D1:0:0:0'],
-		})
+		expect(deletedRow.journal?.issues).toContainEqual(
+			expect.objectContaining({
+				code: 'LOSSY_INVERSE',
+				message:
+					'Deleted row formula references on Sheet1 cannot be restored with public operations',
+				refs: expect.arrayContaining([
+					'Sheet1!validation:C1:C1:formula1',
+					'Sheet1!conditionalFormat:D1:D1:0:0:0',
+					'Sheet1!conditionalFormat:E1:E1:1:0:colorScale.cfvo:0',
+					'Sheet1!table:Audit:Calc:formula',
+					'Sheet1!table:Audit:Calc:totalsRowFormula',
+				]),
+			}),
+		)
 		expect(wb.sheet('Sheet1')?.dataValidations[0]?.formula1).toBe('#REF!>0')
 		expect(wb.sheet('Sheet1')?.conditionalFormats[0]?.rules[0]?.formulas[0]).toBe('#REF!>0')
+		expect(wb.sheet('Sheet1')?.conditionalFormats[1]?.rules[0]?.colorScale?.cfvo[0]?.value).toBe(
+			'#REF!',
+		)
+		expect(wb.table('Audit')?.columnDefs[1]?.formula).toBe('#REF!')
+		expect(wb.table('Audit')?.columnDefs[1]?.totalsRowFormula).toBe('SUM(#REF!)')
 
 		const undo = wb.apply(deletedRow.journal?.inverseOps ?? [], { transaction: true })
 		expect(undo.errors).toEqual([])
 		expect(wb.sheet('Sheet1')?.dataValidations[0]?.formula1).toBe('#REF!>0')
 		expect(wb.sheet('Sheet1')?.conditionalFormats[0]?.rules[0]?.formulas[0]).toBe('#REF!>0')
+		expect(wb.sheet('Sheet1')?.conditionalFormats[1]?.rules[0]?.colorScale?.cfvo[0]?.value).toBe(
+			'#REF!',
+		)
+		expect(wb.table('Audit')?.columnDefs[1]?.formula).toBe('#REF!')
+		expect(wb.table('Audit')?.columnDefs[1]?.totalsRowFormula).toBe('SUM(#REF!)')
 	})
 
 	test('structural delete exact journals restore escaped-sheet formulas and defined names', () => {
@@ -1948,6 +2099,7 @@ describe('interactive client contract', () => {
 			type: 'dataBar',
 			priority: 1,
 			formulas: [],
+			dataBar: { cfvo: [{ type: 'formula', value: '$A$2' }] },
 			preservedRuleChildXml: ['<x14:extLst><x14:ext uri="{cf-extension}"/></x14:extLst>'],
 		})
 
@@ -1963,6 +2115,7 @@ describe('interactive client contract', () => {
 			message: `Deleted row formula references on ${inputSheet} cannot be restored with public operations`,
 			refs: expect.arrayContaining([
 				`${inputSheet}!x14Validation:C2:C5:formula1`,
+				`${inputSheet}!x14ConditionalFormat:D2:D5:8:dataBar.cfvo:0`,
 				'Report!A1',
 				'name:GlobalDeleted',
 				`name:${inputSheet}!LocalDeleted`,
@@ -1998,6 +2151,7 @@ function journalComparableState(wb: AscendWorkbook): object {
 		themeSummary: wb.inspect().themeSummary,
 		sheetMetadata: wb.sheets.map((name) => {
 			const sheet = wb.sheet(name)
+			const modelSheet = wb.getWorkbookModel().getSheet(name)
 			return {
 				name,
 				frozenRows: sheet?.frozenRows,
@@ -2005,11 +2159,18 @@ function journalComparableState(wb: AscendWorkbook): object {
 				merges: sheet?.merges,
 				dataValidations: sheet?.dataValidations,
 				conditionalFormats: sheet?.conditionalFormats,
+				x14DataValidations: modelSheet?.x14DataValidations,
+				x14ConditionalFormats: modelSheet?.x14ConditionalFormats,
 				comments: sheet?.getComments(),
 				hyperlinks: sheet?.getHyperlinks(),
 				autoFilter: sheet?.autoFilter,
+				tables: modelSheet?.tables,
 			}
 		}),
+		chartParts: wb.getWorkbookModel().chartParts,
+		chartSheets: wb.getWorkbookModel().chartSheets,
+		pivotCaches: wb.getWorkbookModel().pivotCaches,
+		pivotTables: wb.getWorkbookModel().pivotTables,
 		styles: {
 			b2: wb.cellStyle(`${wb.sheets[0]}!B2`),
 			c2: wb.cellStyle(`${wb.sheets[0]}!C2`),

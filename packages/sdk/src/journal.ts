@@ -16,9 +16,11 @@ import {
 	type SheetComment,
 	type SheetConditionalFormat,
 	type SheetConditionalFormatRule,
+	type SheetConditionalFormatValueObject,
 	type SheetDataValidation,
 	type SheetDrawingObjectRef,
 	type SheetHyperlink,
+	type SheetImageAnchor,
 	type SheetThreadedComment,
 	type Table,
 	type TableColumn,
@@ -2008,6 +2010,7 @@ function structuralDeleteIssues(
 	}
 	issues.push(...structuralFormulaReferenceIssues(workbook, preimage))
 	issues.push(...structuralX14MetadataIssues(sheet, preimage, affected))
+	issues.push(...structuralRepresentedMetadataIssues(workbook, sheet, preimage, affected))
 	return issues
 }
 
@@ -2046,6 +2049,77 @@ function structuralFormulaReferenceIssues(
 			message: `Deleted ${preimage.axis === 'row' ? 'row' : 'column'} formula references on ${preimage.sheet} cannot be restored with public operations`,
 			refs,
 		},
+	]
+}
+
+function structuralRepresentedMetadataIssues(
+	workbook: Workbook,
+	sheet: Sheet,
+	preimage: MutationJournalStructuralPreimage,
+	affected: RangeRef,
+): readonly MutationJournalIssue[] {
+	const refs = [
+		...sheet.ignoredErrors
+			.filter((entry) => sqrefOverlaps(entry.sqref, affected))
+			.map((entry) => `${sheet.name}!ignoredError:${entry.sqref}`),
+		...sortStateStructuralRefs(sheet.name, sheet.sortState, affected, 'sortState'),
+		...sheet.advancedFilters.flatMap((filter, index) => [
+			...(filter.ref && sqrefOverlaps(filter.ref, affected)
+				? [`${sheet.name}!advancedFilter:${index}:${filter.ref}`]
+				: []),
+			...autoFilterStructuralRefs(
+				sheet.name,
+				filter.autoFilter,
+				affected,
+				`advancedFilter:${index}:autoFilter`,
+			),
+		]),
+		...sheet.imageRefs
+			.filter((image) => anchorOverlapsAffected(image.anchor, affected))
+			.map((image, index) => `${sheet.name}!image:${image.drawingPartPath}:${index}`),
+		...sheet.drawingObjectRefs
+			.filter((object) => anchorOverlapsAffected(object.anchor, affected))
+			.map((object, index) => `${sheet.name}!drawing:${object.drawingPartPath}:${index}`),
+		...chartStructuralFormulaRefs(workbook, preimage),
+		...pivotStructuralRefs(workbook, preimage, affected),
+	]
+	if (refs.length === 0) return []
+	return [
+		{
+			code: 'LOSSY_INVERSE',
+			message: `Deleted ${preimage.axis === 'row' ? 'row' : 'column'} represented metadata on ${preimage.sheet} cannot be fully restored with public operations`,
+			refs,
+		},
+	]
+}
+
+function autoFilterStructuralRefs(
+	sheetName: string,
+	autoFilter: AutoFilter | null | undefined,
+	affected: RangeRef,
+	prefix: string,
+): string[] {
+	if (!autoFilter) return []
+	return [
+		...(sqrefOverlaps(autoFilter.ref, affected)
+			? [`${sheetName}!${prefix}:${autoFilter.ref}`]
+			: []),
+		...sortStateStructuralRefs(sheetName, autoFilter.sortState, affected, `${prefix}:sortState`),
+	]
+}
+
+function sortStateStructuralRefs(
+	sheetName: string,
+	sortState: AutoFilter['sortState'] | null,
+	affected: RangeRef,
+	prefix: string,
+): string[] {
+	if (!sortState) return []
+	return [
+		...(sqrefOverlaps(sortState.ref, affected) ? [`${sheetName}!${prefix}:${sortState.ref}`] : []),
+		...sortState.conditions
+			.filter((condition) => sqrefOverlaps(condition.ref, affected))
+			.map((condition, index) => `${sheetName}!${prefix}:condition:${index}:${condition.ref}`),
 	]
 }
 
@@ -2110,6 +2184,30 @@ function structuralFormulaReferenceLocations(
 						`${sheet.name}!conditionalFormat:${format.sqref}:${formatIndex}:${ruleIndex}:${formulaIndex}`,
 					)
 				})
+				pushConditionalFormatValueObjectReferenceLocations(
+					refs,
+					workbook,
+					rule.colorScale?.cfvo,
+					sheet.name,
+					preimage,
+					`${sheet.name}!conditionalFormat:${format.sqref}:${formatIndex}:${ruleIndex}:colorScale.cfvo`,
+				)
+				pushConditionalFormatValueObjectReferenceLocations(
+					refs,
+					workbook,
+					rule.dataBar?.cfvo,
+					sheet.name,
+					preimage,
+					`${sheet.name}!conditionalFormat:${format.sqref}:${formatIndex}:${ruleIndex}:dataBar.cfvo`,
+				)
+				pushConditionalFormatValueObjectReferenceLocations(
+					refs,
+					workbook,
+					rule.iconSet?.cfvo,
+					sheet.name,
+					preimage,
+					`${sheet.name}!conditionalFormat:${format.sqref}:${formatIndex}:${ruleIndex}:iconSet.cfvo`,
+				)
 			})
 		})
 		sheet.x14ConditionalFormats.forEach((format) => {
@@ -2124,7 +2222,51 @@ function structuralFormulaReferenceLocations(
 					`${sheet.name}!x14ConditionalFormat:${format.sqref}:${format.index}:${formulaIndex}`,
 				)
 			})
+			pushConditionalFormatValueObjectReferenceLocations(
+				refs,
+				workbook,
+				format.colorScale?.cfvo,
+				sheet.name,
+				preimage,
+				`${sheet.name}!x14ConditionalFormat:${format.sqref}:${format.index}:colorScale.cfvo`,
+			)
+			pushConditionalFormatValueObjectReferenceLocations(
+				refs,
+				workbook,
+				format.dataBar?.cfvo,
+				sheet.name,
+				preimage,
+				`${sheet.name}!x14ConditionalFormat:${format.sqref}:${format.index}:dataBar.cfvo`,
+			)
+			pushConditionalFormatValueObjectReferenceLocations(
+				refs,
+				workbook,
+				format.iconSet?.cfvo,
+				sheet.name,
+				preimage,
+				`${sheet.name}!x14ConditionalFormat:${format.sqref}:${format.index}:iconSet.cfvo`,
+			)
 		})
+		for (const table of sheet.tables) {
+			for (const column of table.columns) {
+				pushMetadataFormulaReferenceLocation(
+					refs,
+					workbook,
+					column.formula,
+					sheet.name,
+					preimage,
+					`${sheet.name}!table:${table.name}:${column.name}:formula`,
+				)
+				pushMetadataFormulaReferenceLocation(
+					refs,
+					workbook,
+					column.totalsRowFormula,
+					sheet.name,
+					preimage,
+					`${sheet.name}!table:${table.name}:${column.name}:totalsRowFormula`,
+				)
+			}
+		}
 	}
 	for (const name of workbook.definedNames.list()) {
 		const scopeSheet =
@@ -2136,6 +2278,141 @@ function structuralFormulaReferenceLocations(
 		}
 	}
 	return refs
+}
+
+function pushConditionalFormatValueObjectReferenceLocations(
+	refs: string[],
+	workbook: Workbook,
+	entries: readonly SheetConditionalFormatValueObject[] | undefined,
+	ownerSheet: string,
+	preimage: MutationJournalStructuralPreimage,
+	location: string,
+): void {
+	entries?.forEach((entry, index) => {
+		pushMetadataFormulaReferenceLocation(
+			refs,
+			workbook,
+			entry.value,
+			ownerSheet,
+			preimage,
+			`${location}:${index}`,
+		)
+	})
+}
+
+function chartStructuralFormulaRefs(
+	workbook: Workbook,
+	preimage: MutationJournalStructuralPreimage,
+): string[] {
+	const refs: string[] = []
+	for (const chart of workbook.chartParts) {
+		chart.series.forEach((series, seriesIndex) => {
+			for (const field of ['nameRef', 'categoryRef', 'valueRef'] as const) {
+				const formula = series[field]
+				if (
+					formula !== undefined &&
+					formulaReferencesDeletedAxis(
+						workbook,
+						formula,
+						chart.sheetName ?? preimage.sheet,
+						preimage,
+					)
+				) {
+					refs.push(`chart:${chart.partPath}:series:${seriesIndex}:${field}`)
+				}
+			}
+		})
+	}
+	return refs
+}
+
+function pivotStructuralRefs(
+	workbook: Workbook,
+	preimage: MutationJournalStructuralPreimage,
+	affected: RangeRef,
+): string[] {
+	const refs: string[] = []
+	for (const cache of workbook.pivotCaches) {
+		if (
+			cache.sourceRef !== undefined &&
+			refTextOverlapsAffected(cache.sourceRef, cache.sourceSheet, preimage, affected)
+		) {
+			refs.push(`pivotCache:${cache.partPath}:sourceRef`)
+		}
+	}
+	for (const pivot of workbook.pivotTables) {
+		if (
+			pivot.locationRef &&
+			refTextOverlapsAffected(pivot.locationRef, pivot.sheetName, preimage, affected)
+		) {
+			refs.push(`pivotTable:${pivot.partPath}:locationRef`)
+		}
+		if (
+			pivot.location?.ref &&
+			refTextOverlapsAffected(pivot.location.ref, pivot.sheetName, preimage, affected)
+		) {
+			refs.push(`pivotTable:${pivot.partPath}:location.ref`)
+		}
+	}
+	return refs
+}
+
+function refTextOverlapsAffected(
+	refText: string,
+	ownerSheet: string | undefined,
+	preimage: MutationJournalStructuralPreimage,
+	affected: RangeRef,
+): boolean {
+	const split = splitSheetQualifiedRefText(refText)
+	const sheetName = split?.sheet ?? ownerSheet
+	if (sheetName !== preimage.sheet) return false
+	const ref = refTextToRange(split?.ref ?? refText)
+	return ref ? rangesOverlap(ref, affected) : false
+}
+
+function splitSheetQualifiedRefText(
+	input: string,
+): { readonly sheet: string; readonly ref: string } | null {
+	const bang = input.lastIndexOf('!')
+	if (bang < 0) return null
+	const sheet = input.slice(0, bang).replace(/^'|'$/g, '').replace(/''/g, "'")
+	const ref = input.slice(bang + 1)
+	return sheet && ref ? { sheet, ref } : null
+}
+
+function refTextToRange(input: string): RangeRef | null {
+	const normalized = input.replace(/\$/g, '')
+	try {
+		return parseRange(normalized)
+	} catch {
+		try {
+			const ref = parseA1(normalized)
+			return { start: ref, end: ref }
+		} catch {
+			return null
+		}
+	}
+}
+
+function anchorOverlapsAffected(anchor: SheetImageAnchor | undefined, affected: RangeRef): boolean {
+	if (!anchor || anchor.kind === 'absolute') return false
+	const range =
+		anchor.kind === 'oneCell'
+			? {
+					start: { row: anchor.from.row, col: anchor.from.col },
+					end: { row: anchor.from.row, col: anchor.from.col },
+				}
+			: {
+					start: {
+						row: Math.min(anchor.from.row, anchor.to.row),
+						col: Math.min(anchor.from.col, anchor.to.col),
+					},
+					end: {
+						row: Math.max(anchor.from.row, anchor.to.row),
+						col: Math.max(anchor.from.col, anchor.to.col),
+					},
+				}
+	return rangesOverlap(range, affected)
 }
 
 function pushMetadataFormulaReferenceLocation(

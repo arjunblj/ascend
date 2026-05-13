@@ -2520,6 +2520,91 @@ const scenarios: readonly Scenario[] = [
 		},
 	},
 	{
+		name: 'real-dense-prepared-open-only-memory',
+		category: 'workflow',
+		build() {
+			const target = realInteractivePatchCorpusTarget('stress-dense-100k')
+			return {
+				rows: target.rowCount,
+				cols: target.colCount,
+				cells: target.rowCount * target.colCount,
+				byteCount: realInteractivePatchCorpusTargetBytes(target).byteLength,
+			}
+		},
+		async run() {
+			const target = realInteractivePatchCorpusTarget('stress-dense-100k')
+			const bytes = realInteractivePatchCorpusTargetBytes(target)
+			const archiveFootprint = xlsxArchiveFootprint(bytes)
+			WorkbookDocument.clearCache()
+			runGc()
+			const baseline = phaseMemorySnapshot()
+
+			const openStart = performance.now()
+			const session = await AscendSession.open(bytes, {
+				mode: 'interactive',
+				prepareEdits: true,
+			})
+			const preparedOpenMs = performance.now() - openStart
+			const readiness = session.editReadiness()
+			if (!readiness.ready) throw new Error('Dense prepared-open-only session was not edit-ready')
+			runGc()
+			const afterPreparedOpen = phaseMemorySnapshot()
+
+			session.close()
+			WorkbookDocument.clearCache()
+			runGc()
+			const afterClose = phaseMemorySnapshot()
+
+			return {
+				assertions: {
+					bytes: bytes.byteLength,
+					archivePartCount: archiveFootprint.partCount,
+					archiveCompressedBytes: archiveFootprint.compressedBytes,
+					archiveUncompressedBytes: archiveFootprint.uncompressedBytes,
+					archiveWorksheetUncompressedBytes: archiveFootprint.worksheetUncompressedBytes,
+					archiveLargestPartPath: archiveFootprint.largestPartPath,
+					archiveLargestPartCompressedBytes: archiveFootprint.largestPartCompressedBytes,
+					archiveLargestPartUncompressedBytes: archiveFootprint.largestPartUncompressedBytes,
+					preparedOpenMs,
+					readinessReady: readiness.ready,
+					readinessReusedReadModel: readiness.timings?.mutableWorkbookReusedReadModel ?? false,
+					readinessMutableWorkbookOpenMs: readiness.timings?.mutableWorkbookOpenMs ?? null,
+					readinessRebaseViewportSnapshotsMs: readiness.timings?.rebaseViewportSnapshotsMs ?? null,
+					baselineRssBytes: baseline.rssBytes,
+					afterPreparedOpenRssDeltaBytes: memoryDelta(
+						afterPreparedOpen.rssBytes,
+						baseline.rssBytes,
+					),
+					afterCloseRssDeltaBytes: memoryDelta(afterClose.rssBytes, baseline.rssBytes),
+					baselineHeapUsedBytes: baseline.heapUsedBytes,
+					afterPreparedOpenHeapDeltaBytes: memoryDelta(
+						afterPreparedOpen.heapUsedBytes,
+						baseline.heapUsedBytes,
+					),
+					afterCloseHeapDeltaBytes: memoryDelta(afterClose.heapUsedBytes, baseline.heapUsedBytes),
+					baselineExternalBytes: baseline.externalBytes,
+					afterPreparedOpenExternalDeltaBytes: memoryDelta(
+						afterPreparedOpen.externalBytes,
+						baseline.externalBytes,
+					),
+					afterCloseExternalDeltaBytes: memoryDelta(
+						afterClose.externalBytes,
+						baseline.externalBytes,
+					),
+					baselineArrayBuffersBytes: baseline.arrayBuffersBytes,
+					afterPreparedOpenArrayBuffersDeltaBytes: memoryDelta(
+						afterPreparedOpen.arrayBuffersBytes,
+						baseline.arrayBuffersBytes,
+					),
+					afterCloseArrayBuffersDeltaBytes: memoryDelta(
+						afterClose.arrayBuffersBytes,
+						baseline.arrayBuffersBytes,
+					),
+				},
+			}
+		},
+	},
+	{
 		name: 'real-dense-prepared-open-memory',
 		category: 'workflow',
 		build() {
@@ -3505,7 +3590,11 @@ const scenarioSets = {
 	],
 	'ui-real-corpus': ['patch-stream-real-corpus-prepared-first-edit'],
 	'real-open': ['real-corpus-open-phases'],
-	'real-memory': ['real-dense-promotion-memory', 'real-dense-prepared-open-memory'],
+	'real-memory': [
+		'real-dense-promotion-memory',
+		'real-dense-prepared-open-only-memory',
+		'real-dense-prepared-open-memory',
+	],
 	'real-read-memory': [
 		'real-dense-read-memory-metadata',
 		'real-dense-read-memory-values',

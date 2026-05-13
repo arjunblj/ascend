@@ -49,6 +49,7 @@ import type {
 	TimelineInfo,
 	TraceResult,
 	WorkbookInfo,
+	WorkbookLoadInfo,
 	WorkbookRefreshMetadataInfo,
 	WorkbookVisualInventoryInfo,
 } from './types.ts'
@@ -60,6 +61,29 @@ export interface WorkbookLoadOptions {
 	readonly richMetadata?: boolean
 	readonly password?: string
 	readonly pivotCacheRecordMaterializeLimit?: number | 'all'
+}
+
+export interface WorkbookFirstWindowOptions
+	extends Omit<WorkbookLoadOptions, 'mode' | 'sheets' | 'maxRows'> {
+	readonly sheet?: string
+	readonly range: string
+	readonly rowOffset?: number
+	readonly rowLimit?: number
+	readonly includeRefs?: boolean
+	readonly omitEmpty?: boolean
+	readonly flatValues?: boolean
+}
+
+export interface WorkbookFirstWindowResult {
+	readonly document: WorkbookDocument
+	readonly info: WorkbookInfo
+	readonly sheet: string
+	readonly window: CompactRangeWindowInfo
+	readonly load: WorkbookLoadInfo
+}
+
+export interface WorkbookSessionFirstWindowResult extends WorkbookFirstWindowResult {
+	readonly session: WorkbookSession
 }
 
 interface SessionFileIdentity {
@@ -94,6 +118,8 @@ const cacheConfig = {
 	maxCacheAge: 5 * 60 * 1000,
 	maxCacheBytes: 32 * 1024 * 1024,
 }
+
+const DEFAULT_FIRST_WINDOW_ROWS = 500
 
 const sessionCache = new Map<string, SessionCacheEntry>()
 
@@ -161,6 +187,14 @@ export class WorkbookDocument {
 		)
 		document.refreshCacheFootprint('base')
 		return document
+	}
+
+	static async openFirstWindow(
+		source: string | Uint8Array,
+		options: WorkbookFirstWindowOptions,
+	): Promise<WorkbookFirstWindowResult> {
+		const document = await WorkbookDocument.open(source, firstWindowLoadOptions(options))
+		return readFirstWindow(document, options)
 	}
 
 	static clearCache(): void {
@@ -506,6 +540,15 @@ export class WorkbookSession {
 		return new WorkbookSession(document, source, opts, fileIdentity)
 	}
 
+	static async openFirstWindow(
+		pathOrBytes: string | Uint8Array,
+		options: WorkbookFirstWindowOptions,
+	): Promise<WorkbookSessionFirstWindowResult> {
+		const session = await WorkbookSession.open(pathOrBytes, firstWindowLoadOptions(options))
+		const result = readFirstWindow(session.workbook(), options)
+		return { ...result, session }
+	}
+
 	inspect(): WorkbookInfo {
 		this.assertOpen()
 		return this.document.inspect()
@@ -598,6 +641,57 @@ function parseRangeRef(range: string, defaultSheet: string): { sheetName: string
 		}
 	}
 	return { sheetName: defaultSheet, ref: range }
+}
+
+function sheetFilterFromFirstWindowOptions(
+	options: WorkbookFirstWindowOptions,
+): string | undefined {
+	if (options.sheet) return options.sheet
+	const bang = options.range.indexOf('!')
+	return bang === -1 ? undefined : options.range.substring(0, bang).replace(/^'|'$/g, '')
+}
+
+function firstWindowLoadOptions(options: WorkbookFirstWindowOptions): WorkbookLoadOptions {
+	const rowOffset = Math.max(0, options.rowOffset ?? 0)
+	const rowLimit = Math.max(1, options.rowLimit ?? DEFAULT_FIRST_WINDOW_ROWS)
+	const sheet = sheetFilterFromFirstWindowOptions(options)
+	return normalizeOptions({
+		mode: 'values',
+		maxRows: rowOffset + rowLimit,
+		...(sheet ? { sheets: [sheet] } : {}),
+		...(options.richMetadata ? { richMetadata: true } : {}),
+		...(options.password !== undefined ? { password: options.password } : {}),
+		...(options.pivotCacheRecordMaterializeLimit !== undefined
+			? { pivotCacheRecordMaterializeLimit: options.pivotCacheRecordMaterializeLimit }
+			: {}),
+	})
+}
+
+function readFirstWindow(
+	document: WorkbookDocument,
+	options: WorkbookFirstWindowOptions,
+): WorkbookFirstWindowResult {
+	const info = document.inspect()
+	const defaultSheet = options.sheet ?? document.sheets[0]
+	if (!defaultSheet) throw new Error('No sheets in workbook')
+	const { sheetName, ref } = parseRangeRef(options.range, defaultSheet)
+	const sheet = document.sheet(sheetName)
+	if (!sheet) throw new Error(`Sheet "${sheetName}" not found`)
+	const rowLimit = Math.max(1, options.rowLimit ?? DEFAULT_FIRST_WINDOW_ROWS)
+	const window = sheet.readWindowCompact(ref, {
+		...(options.rowOffset !== undefined ? { rowOffset: options.rowOffset } : {}),
+		rowLimit,
+		includeRefs: options.includeRefs ?? false,
+		omitEmpty: options.omitEmpty ?? true,
+		flatValues: options.flatValues ?? true,
+	})
+	return {
+		document,
+		info,
+		sheet: sheetName,
+		window,
+		load: info.load,
+	}
 }
 
 function normalizeOptions(options: WorkbookLoadOptions): WorkbookLoadOptions {

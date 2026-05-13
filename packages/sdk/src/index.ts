@@ -136,7 +136,10 @@ export type {
 } from './ref-selectors.ts'
 export type {
 	SessionCacheOptions,
+	WorkbookFirstWindowOptions,
+	WorkbookFirstWindowResult,
 	WorkbookLoadOptions,
+	WorkbookSessionFirstWindowResult,
 	WorkbookSessionOpenOptions,
 } from './session.ts'
 /** Cache and session management for multi-request read-only workbook access. */

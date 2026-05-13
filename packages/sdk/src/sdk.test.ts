@@ -3572,6 +3572,51 @@ describe('AscendWorkbook', () => {
 		expect(expanded.sheet('Data')?.cell('A1')?.value).toEqual({ kind: 'string', value: 'loaded' })
 		WorkbookDocument.clearCache()
 	})
+
+	test('WorkbookDocument opens explicit partial first-window snapshots', async () => {
+		WorkbookDocument.clearCache()
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: Array.from({ length: 20 }, (_, row) => [
+					{ ref: `A${row + 1}`, value: row + 1 },
+					{ ref: `B${row + 1}`, value: `row-${row + 1}` },
+				]).flat(),
+			},
+		])
+		const bytes = wb.toBytes()
+
+		const preview = await WorkbookDocument.openFirstWindow(bytes, {
+			range: 'Sheet1!A1:B20',
+			rowLimit: 3,
+		})
+
+		expect(preview.sheet).toBe('Sheet1')
+		expect(preview.load).toMatchObject({
+			isPartial: true,
+			maxRows: 3,
+			loadedSheets: ['Sheet1'],
+		})
+		expect(preview.info.cellCount).toBe(6)
+		expect(preview.window.cells.map((cell) => [cell.row, cell.col, cell.value])).toEqual([
+			[0, 0, 1],
+			[0, 1, 'row-1'],
+			[1, 0, 2],
+			[1, 1, 'row-2'],
+			[2, 0, 3],
+			[2, 1, 'row-3'],
+		])
+
+		const promoted = await preview.document.withLoad({ mode: 'full' })
+		expect(promoted.inspect().load.isPartial).toBe(false)
+		expect(promoted.sheet('Sheet1')?.cell('A20')?.value).toEqual({
+			kind: 'number',
+			value: 20,
+		})
+		WorkbookDocument.clearCache()
+	})
 })
 
 describe('WorkbookSession', () => {
@@ -3709,6 +3754,38 @@ describe('WorkbookSession', () => {
 		session.close()
 		expect(() => session.inspect()).toThrow('WorkbookSession is closed')
 		expect(() => session.workbook()).toThrow('WorkbookSession is closed')
+		WorkbookDocument.clearCache()
+	})
+
+	test('session opens explicit partial first-window snapshots', async () => {
+		WorkbookDocument.clearCache()
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: Array.from({ length: 12 }, (_, row) => [
+					{ ref: `A${row + 1}`, value: row + 1 },
+					{ ref: `B${row + 1}`, value: `row-${row + 1}` },
+				]).flat(),
+			},
+		])
+		const bytes = wb.toBytes()
+
+		const preview = await WorkbookSession.openFirstWindow(bytes, {
+			range: 'Sheet1!A1:B12',
+			rowLimit: 4,
+		})
+
+		expect(preview.session.workbook()).toBe(preview.document)
+		expect(preview.load).toMatchObject({
+			isPartial: true,
+			maxRows: 4,
+			loadedSheets: ['Sheet1'],
+		})
+		expect(preview.window.cells).toHaveLength(8)
+		expect(preview.session.inspect().cellCount).toBe(8)
+		preview.session.close()
 		WorkbookDocument.clearCache()
 	})
 })

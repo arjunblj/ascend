@@ -125,19 +125,15 @@ async function runCappedOpenWindow(
 ): Promise<Pick<Sample, 'cappedOpenWindowMs' | 'cells' | 'cappedHydratedCells'>> {
 	WorkbookDocument.clearCache()
 	const measured = await time(async () => {
-		const document = await WorkbookDocument.open(path, { mode: 'values', maxRows: rowLimit })
-		const info = document.inspect()
-		const window = document.readWindowCompact(info.sheets[0]?.name ?? 'Sheet1', range, {
+		const preview = await WorkbookDocument.openFirstWindow(path, {
+			range,
 			rowLimit,
-			includeRefs: false,
-			omitEmpty: true,
-			flatValues: true,
 		})
-		return { info, window }
+		return preview
 	})
 	return {
 		cappedOpenWindowMs: measured.ms,
-		cells: measured.result.window?.cells.length ?? 0,
+		cells: measured.result.window.cells.length,
 		cappedHydratedCells: measured.result.info.cellCount,
 	}
 }

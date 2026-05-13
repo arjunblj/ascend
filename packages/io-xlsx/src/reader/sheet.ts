@@ -2925,19 +2925,31 @@ function parseCanonicalFullScalarCell(
 		styleIdx: number
 	},
 ): number {
-	if (!xml.startsWith('<c r="', cursor)) return -1
-	let index = cursor + 6
 	let row = fallbackRow
 	let col = fallbackCol
-	const expectedRefEnd = consumeExpectedCellRef(xml, index, bodyEnd, fallbackRowText, fallbackCol)
-	if (expectedRefEnd === -1) {
-		const parsed = parseCellRefInXml(xml, index, bodyEnd)
-		if (!parsed) return -1
-		index = parsed.end
-		row = parsed.row
-		col = parsed.col
+	let attrsEnd = cursor + 1
+	if (xml.startsWith('<c r="', cursor)) {
+		const refStart = cursor + 6
+		const expectedRefEnd = consumeExpectedCellRef(
+			xml,
+			refStart,
+			bodyEnd,
+			fallbackRowText,
+			fallbackCol,
+		)
+		if (expectedRefEnd === -1) {
+			const parsed = parseCellRefInXml(xml, refStart, bodyEnd)
+			if (!parsed) return -1
+			attrsEnd = parsed.end
+			row = parsed.row
+			col = parsed.col
+		} else {
+			attrsEnd = expectedRefEnd
+		}
 	} else {
-		index = expectedRefEnd
+		if (!xml.startsWith('<c', cursor)) return -1
+		const nextCode = xml.charCodeAt(cursor + 2)
+		if (nextCode !== 62 && nextCode !== 47 && !isXmlWhitespaceCode(nextCode)) return -1
 	}
 	out.row = row
 	out.col = col
@@ -2947,7 +2959,7 @@ function parseCanonicalFullScalarCell(
 	out.formulaText = null
 	out.styleIdx = 0
 
-	const content = resolveCanonicalFullScalarContentStart(xml, index, bodyEnd, out)
+	const content = resolveCanonicalFullScalarContentStart(xml, attrsEnd, bodyEnd, out)
 	if (!content) return -1
 	const contentStart = content.start
 	if (xml.startsWith('<f>', contentStart)) {

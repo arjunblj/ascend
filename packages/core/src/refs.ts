@@ -47,7 +47,12 @@ export function indexToColumn(index: number): string {
 	return COLUMN_CACHE[index] ?? computeColumnLabel(index)
 }
 
-const A1_RE = /^([A-Za-z]+)(\d+)$/
+const MAX_EXCEL_ROW_INDEX = 1_048_575
+const MAX_EXCEL_COL_INDEX = 16_383
+
+const A1_RE = /^\$?([A-Za-z]+)\$?(\d+)$/
+const WHOLE_COLUMN_RE = /^\$?([A-Za-z]+)$/
+const WHOLE_ROW_RE = /^\$?(\d+)$/
 
 export function parseA1Safe(ref: string | undefined): CellRef | null {
 	if (!ref) return null
@@ -73,17 +78,28 @@ export function parseRange(ref: string): RangeRef {
 	let sheet: string | undefined
 	let body = ref
 
-	const bang = ref.indexOf('!')
+	const bang = findSheetSeparator(ref)
 	if (bang !== -1) {
-		sheet = ref.substring(0, bang).replace(/^'|'$/g, '')
+		sheet = ref.substring(0, bang).replace(/^'|'$/g, '').replace(/''/g, "'")
 		body = ref.substring(bang + 1)
 	}
 
 	const parts = body.split(':')
 	const startStr = parts[0]
 	if (!startStr) throw new Error(`Invalid range reference: ${ref}`)
-	const start = parseA1(startStr)
-	const end = parts[1] ? parseA1(parts[1]) : start
+	const endStr = parts[1]
+	let start: CellRef
+	let end: CellRef
+	if (endStr && WHOLE_ROW_RE.test(startStr) && WHOLE_ROW_RE.test(endStr)) {
+		start = { row: Number.parseInt(startStr.replace('$', ''), 10) - 1, col: 0 }
+		end = { row: Number.parseInt(endStr.replace('$', ''), 10) - 1, col: MAX_EXCEL_COL_INDEX }
+	} else if (endStr && WHOLE_COLUMN_RE.test(startStr) && WHOLE_COLUMN_RE.test(endStr)) {
+		start = { row: 0, col: columnToIndex(startStr.replace('$', '').toUpperCase()) }
+		end = { row: MAX_EXCEL_ROW_INDEX, col: columnToIndex(endStr.replace('$', '').toUpperCase()) }
+	} else {
+		start = parseA1(startStr)
+		end = endStr ? parseA1(endStr) : start
+	}
 
 	return sheet !== undefined ? { start, end, sheet } : { start, end }
 }
@@ -138,11 +154,55 @@ export function rangeIntersection(left: RangeRef, right: RangeRef): RangeRef | n
 }
 
 export function parseSqref(sqref: string): RangeRef[] {
-	return sqref.trim().split(/\s+/).filter(Boolean).map(parseRange)
+	return splitSqref(sqref).map(parseRange)
 }
 
 export function sqrefIntersects(sqref: string, range: RangeRef): boolean {
 	return parseSqref(sqref).some((candidate) => rangeIntersects(candidate, range))
+}
+
+function findSheetSeparator(ref: string): number {
+	let quoted = false
+	for (let index = 0; index < ref.length; index++) {
+		const ch = ref[index]
+		if (ch === "'") {
+			if (quoted && ref[index + 1] === "'") {
+				index++
+			} else {
+				quoted = !quoted
+			}
+		} else if (ch === '!' && !quoted) {
+			return index
+		}
+	}
+	return -1
+}
+
+function splitSqref(sqref: string): string[] {
+	const refs: string[] = []
+	let current = ''
+	let quoted = false
+	for (let index = 0; index < sqref.length; index++) {
+		const ch = sqref[index] ?? ''
+		if (ch === "'") {
+			current += ch
+			if (quoted && sqref[index + 1] === "'") {
+				current += "'"
+				index++
+			} else {
+				quoted = !quoted
+			}
+		} else if (/\s/.test(ch) && !quoted) {
+			if (current) {
+				refs.push(current)
+				current = ''
+			}
+		} else {
+			current += ch
+		}
+	}
+	if (current) refs.push(current)
+	return refs
 }
 
 export function expandRange(range: RangeRef): CellRef[] {

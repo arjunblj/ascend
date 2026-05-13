@@ -115,6 +115,31 @@ describe('parseRange / toRangeString', () => {
 		expect(range.sheet).toBe('My Sheet')
 	})
 
+	test('quoted sheet names may contain escaped apostrophes and separators', () => {
+		const range = parseRange("'Bob''s Q1'!A1:B2")
+		expect(range.sheet).toBe("Bob's Q1")
+	})
+
+	test('absolute and mixed references parse to canonical coordinates', () => {
+		expect(parseA1('$B$3')).toEqual({ row: 2, col: 1 })
+		expect(parseRange("'My Sheet'!$A1:B$2")).toEqual({
+			sheet: 'My Sheet',
+			start: { row: 0, col: 0 },
+			end: { row: 1, col: 1 },
+		})
+	})
+
+	test('whole row and whole column ranges expand to Excel grid boundaries', () => {
+		expect(parseRange('2:4')).toEqual({
+			start: { row: 1, col: 0 },
+			end: { row: 3, col: 16383 },
+		})
+		expect(parseRange('$B:$D')).toEqual({
+			start: { row: 0, col: 1 },
+			end: { row: 1048575, col: 3 },
+		})
+	})
+
 	test('single cell range', () => {
 		const range = parseRange('D5')
 		expect(range.start).toEqual({ row: 4, col: 3 })
@@ -177,5 +202,13 @@ describe('range algebra', () => {
 		expect(parseSqref('A1:A2 C1:D1')).toEqual([parseRange('A1:A2'), parseRange('C1:D1')])
 		expect(sqrefIntersects('A1:A2 C1:D1', parseRange('B1:B2'))).toBe(false)
 		expect(sqrefIntersects('A1:A2 C1:D1', parseRange('B1:C2'))).toBe(true)
+	})
+
+	test('parses sqref lists with quoted sheet names containing spaces', () => {
+		expect(parseSqref("'Data Sheet'!A1:A2 'Data Sheet'!C1:D1")).toEqual([
+			parseRange("'Data Sheet'!A1:A2"),
+			parseRange("'Data Sheet'!C1:D1"),
+		])
+		expect(sqrefIntersects("'Data Sheet'!A1:A2 Other!A1:A2", parseRange('Other!A1'))).toBe(true)
 	})
 })

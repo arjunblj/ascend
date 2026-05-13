@@ -883,6 +883,70 @@ describe('interactive client contract', () => {
 		expect(created.journal?.inverseOps).toEqual([{ op: 'deleteDefinedName', name: 'Scratch' }])
 	})
 
+	test('journal inverse ops restore workbook and document properties', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setWorkbookProperties',
+				properties: { codeName: 'OriginalBook', filterPrivacy: true, date1904: true },
+			},
+			{
+				op: 'setDocumentProperties',
+				properties: {
+					core: { title: 'Original', creator: 'Analyst' },
+					app: { Company: 'Ascend', TitlesOfParts: ['Sheet1'] },
+					custom: [{ name: 'Desk', value: 'North', type: 'lpwstr', pid: 2 }],
+				},
+			},
+		])
+		const before = journalComparableState(wb)
+
+		const changed = wb.apply(
+			[
+				{
+					op: 'setWorkbookProperties',
+					mode: 'replace',
+					properties: { codeName: 'AgentBook', date1904: false },
+				},
+				{
+					op: 'setDocumentProperties',
+					mode: 'replace',
+					properties: {
+						core: { title: 'Changed', lastModifiedBy: 'agent' },
+						app: { Company: 'Agent' },
+						custom: [{ name: 'Risk', value: true, type: 'bool', pid: 3 }],
+					},
+				},
+			],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(true)
+		expect(changed.journal?.inverseOps).toEqual([
+			{
+				op: 'setDocumentProperties',
+				mode: 'replace',
+				properties: {
+					core: { title: 'Original', creator: 'Analyst' },
+					app: { Company: 'Ascend', TitlesOfParts: ['Sheet1'] },
+					custom: [{ name: 'Desk', value: 'North', type: 'lpwstr', pid: 2 }],
+				},
+			},
+			{
+				op: 'setWorkbookProperties',
+				mode: 'replace',
+				properties: { codeName: 'OriginalBook', filterPrivacy: true, date1904: true },
+			},
+		])
+		expect(journalComparableState(wb)).not.toEqual(before)
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(journalComparableState(wb)).toEqual(before)
+	})
+
 	test('journal exact inverse restores mixed semantic workbook state', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([
@@ -1304,6 +1368,8 @@ function journalComparableState(wb: AscendWorkbook): object {
 		sheets: snapshot.sheets,
 		names: snapshot.names,
 		workbookProtectionJson: snapshot.workbookProtectionJson,
+		workbookProperties: wb.getWorkbookModel().workbookProperties,
+		documentProperties: wb.inspect().documentProperties,
 		sheetMetadata: wb.sheets.map((name) => {
 			const sheet = wb.sheet(name)
 			return {

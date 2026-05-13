@@ -26,6 +26,8 @@ import {
 	toA1,
 	toRangeString,
 	type Workbook,
+	type WorkbookDocumentProperties,
+	type WorkbookProperties,
 } from '@ascend/core'
 import { applyOperation } from '@ascend/engine'
 import type {
@@ -157,6 +159,14 @@ export interface MutationJournalStructuralPreimage {
 	readonly deletedCells: readonly MutationJournalCellPreimage[]
 }
 
+export interface MutationJournalWorkbookPropertiesPreimage {
+	readonly properties: WorkbookProperties
+}
+
+export interface MutationJournalDocumentPropertiesPreimage {
+	readonly properties: WorkbookDocumentProperties
+}
+
 export type MutationJournalPreimage =
 	| { readonly kind: 'cells'; readonly cells: readonly MutationJournalCellPreimage[] }
 	| { readonly kind: 'comment'; readonly comment: MutationJournalCommentPreimage }
@@ -185,6 +195,14 @@ export type MutationJournalPreimage =
 	| { readonly kind: 'table'; readonly table: MutationJournalTablePreimage }
 	| { readonly kind: 'table-style'; readonly tableStyle: MutationJournalTableStylePreimage }
 	| { readonly kind: 'structural'; readonly structural: MutationJournalStructuralPreimage }
+	| {
+			readonly kind: 'workbook-properties'
+			readonly workbookProperties: MutationJournalWorkbookPropertiesPreimage
+	  }
+	| {
+			readonly kind: 'document-properties'
+			readonly documentProperties: MutationJournalDocumentPropertiesPreimage
+	  }
 
 export interface MutationJournalEntry {
 	readonly opIndex: number
@@ -357,6 +375,10 @@ function buildSupportedJournalEntry(
 			return journalSetPivotCache(workbook, op, opIndex)
 		case 'freezePane':
 			return journalFreezePane(workbook, op, opIndex)
+		case 'setWorkbookProperties':
+			return journalSetWorkbookProperties(workbook, op, opIndex)
+		case 'setDocumentProperties':
+			return journalSetDocumentProperties(workbook, op, opIndex)
 		case 'renameSheet':
 			return {
 				opIndex,
@@ -1006,6 +1028,38 @@ function journalFreezePane(
 		op,
 		inverseOps: [{ op: 'freezePane', sheet: op.sheet, row: pane.frozenRows, col: pane.frozenCols }],
 		preimages: [{ kind: 'pane', pane }],
+		issues: [],
+	}
+}
+
+function journalSetWorkbookProperties(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'setWorkbookProperties' }>,
+	opIndex: number,
+): DraftJournalEntry {
+	const preimage = { properties: { ...workbook.workbookProperties } }
+	return {
+		opIndex,
+		op,
+		inverseOps: [{ op: 'setWorkbookProperties', properties: preimage.properties, mode: 'replace' }],
+		preimages: [{ kind: 'workbook-properties', workbookProperties: preimage }],
+		issues: [],
+	}
+}
+
+function journalSetDocumentProperties(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'setDocumentProperties' }>,
+	opIndex: number,
+): DraftJournalEntry {
+	const preimage = {
+		properties: clonePlain(workbook.documentProperties) as WorkbookDocumentProperties,
+	}
+	return {
+		opIndex,
+		op,
+		inverseOps: [{ op: 'setDocumentProperties', properties: preimage.properties, mode: 'replace' }],
+		preimages: [{ kind: 'document-properties', documentProperties: preimage }],
 		issues: [],
 	}
 }

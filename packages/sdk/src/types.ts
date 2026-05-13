@@ -1248,6 +1248,34 @@ export interface TemplateMergeResult {
 	readonly replayable: boolean
 }
 
+export type PathMutationPath = string | readonly string[]
+
+export interface PathMutation {
+	readonly path: PathMutationPath
+	readonly value?: unknown
+}
+
+export interface PathMutationIssue {
+	readonly path: PathMutationPath
+	readonly code:
+		| 'invalid_path'
+		| 'unsupported_path'
+		| 'sheet_not_found'
+		| 'table_not_found'
+		| 'invalid_ref'
+		| 'invalid_value'
+	readonly message: string
+	readonly details?: Readonly<Record<string, unknown>>
+}
+
+export interface PathMutationResult {
+	readonly ops: readonly Operation[]
+	readonly mutationCount: number
+	readonly issueCount: number
+	readonly issues: readonly PathMutationIssue[]
+	readonly replayable: boolean
+}
+
 export type {
 	ExternalCellReference,
 	ExternalRangeReference,

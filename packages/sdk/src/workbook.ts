@@ -48,6 +48,7 @@ import { getCapability, listCapabilities, summarizeCapabilities } from './capabi
 import { partialDependencyCheckIssue, sdkCheckIssueFromVerify } from './check-issues.ts'
 import { buildWorkbookLoadInfo, openWorkbookSource } from './load.ts'
 import { getOperationsSchema, listOperations, parseOperations } from './ops.ts'
+import { compilePathMutations } from './path-mutations.ts'
 import { WorkbookReadView } from './read-view.ts'
 import {
 	type CellSelector,
@@ -67,6 +68,8 @@ import type {
 	EvalOptions,
 	LintResult,
 	LintWarning,
+	PathMutation,
+	PathMutationResult,
 	PivotOutputMaterializeOptions,
 	PivotOutputMaterializeResult,
 	RecalcOptions,
@@ -816,6 +819,13 @@ export class AscendWorkbook extends WorkbookReadView {
 			unsupported,
 			replayable: unresolved.length === 0 && unsupported.length === 0,
 		}
+	}
+
+	/**
+	 * Compile stable path-addressed mutations into canonical operations for plan/commit.
+	 */
+	compilePathMutations(mutations: readonly PathMutation[]): PathMutationResult {
+		return compilePathMutations(this.wb, mutations)
 	}
 
 	/**

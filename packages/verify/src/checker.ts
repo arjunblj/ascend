@@ -211,6 +211,48 @@ function checkExternalRefs(wb: Workbook, analysis: WorkbookFormulaAnalysis): Che
 	return issues
 }
 
+function checkCalcFreshness(
+	wb: Workbook,
+	analysis: WorkbookFormulaAnalysis,
+	packageGraph?: VerifyPackageGraph,
+): CheckIssue[] {
+	const calcChainParts =
+		packageGraph?.parts.filter((part) => part.featureFamily === 'preservedCalcChain') ?? []
+	if (analysis.formulas.size === 0 && calcChainParts.length === 0) return []
+
+	const reasons: string[] = []
+	if (wb.calcSettings.calcMode === 'manual') reasons.push('manual calculation mode')
+	if (wb.calcSettings.fullCalcOnLoad) reasons.push('full recalculation requested on load')
+	if (wb.calcSettings.calcCompleted === false) reasons.push('calculation not completed')
+	if (wb.calcSettings.forceFullCalc === true) reasons.push('forced full recalculation')
+	if (reasons.length === 0) return []
+
+	const refs = [...analysis.formulas.values()]
+		.slice(0, 5)
+		.map((formula) => `${formula.sheetName}!${toA1({ row: formula.row, col: formula.col })}`)
+	return [
+		{
+			rule: 'calc-freshness',
+			severity: 'warning',
+			message: `Workbook calculation metadata indicates stale formula caches: ${reasons.join(', ')}`,
+			...(refs.length > 0 ? { refs } : {}),
+			suggestedFix:
+				'Recalculate the workbook with Ascend or Excel before trusting cached formula values or preserved calcChain ordering.',
+			details: {
+				kind: 'stale-calculation-metadata',
+				reasons,
+				formulaCount: analysis.formulas.size,
+				calcChainParts: calcChainParts.map((part) => part.path),
+				calcMode: wb.calcSettings.calcMode,
+				fullCalcOnLoad: wb.calcSettings.fullCalcOnLoad,
+				calcCompleted: wb.calcSettings.calcCompleted,
+				calcOnSave: wb.calcSettings.calcOnSave,
+				forceFullCalc: wb.calcSettings.forceFullCalc,
+			},
+		},
+	]
+}
+
 interface ChartSeriesReferenceEntry {
 	readonly field: 'nameRef' | 'categoryRef' | 'valueRef'
 	readonly reference: string
@@ -6193,6 +6235,7 @@ export function check(workbook: Workbook, analysis?: CheckAnalysis): CheckResult
 	const issues = [
 		...checkBrokenRefs(workbook, formulas, sheetNames),
 		...checkExternalRefs(workbook, formulas),
+		...checkCalcFreshness(workbook, formulas, analysis?.packageGraph),
 		...checkChartSeriesReferences(workbook, sheetNames),
 		...checkChartPartOwnership(workbook, sheetNames, analysis?.packageGraph),
 		...checkCircularRefs(workbook, dependencies),

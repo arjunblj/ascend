@@ -41,6 +41,58 @@ describe('checker', () => {
 		expect(errorIssues[0]?.message).toContain('#DIV/0!')
 	})
 
+	test('surfaces stale calculation metadata as workbook integrity warning', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: SID })
+		s.cells.set(0, 1, { value: numberValue(2), formula: 'A1*2', styleId: SID })
+		wb.calcSettings = {
+			...wb.calcSettings,
+			calcMode: 'manual',
+			fullCalcOnLoad: true,
+			calcCompleted: false,
+			calcOnSave: false,
+			forceFullCalc: true,
+		}
+
+		const result = check(wb, {
+			packageGraph: {
+				parts: [
+					{
+						path: 'xl/calcChain.xml',
+						featureFamily: 'preservedCalcChain',
+						ownerScope: 'metadata',
+						preservationPolicy: 'discard-on-recalc',
+					},
+				],
+				relationships: [],
+			},
+		})
+		const freshnessIssue = result.issues.find((issue) => issue.rule === 'calc-freshness')
+		expect(result.passed).toBe(false)
+		expect(freshnessIssue).toMatchObject({
+			severity: 'warning',
+			refs: ['Sheet1!B1'],
+			suggestedFix: expect.stringContaining('Recalculate the workbook'),
+			details: {
+				kind: 'stale-calculation-metadata',
+				reasons: [
+					'manual calculation mode',
+					'full recalculation requested on load',
+					'calculation not completed',
+					'forced full recalculation',
+				],
+				formulaCount: 1,
+				calcChainParts: ['xl/calcChain.xml'],
+				calcMode: 'manual',
+				fullCalcOnLoad: true,
+				calcCompleted: false,
+				calcOnSave: false,
+				forceFullCalc: true,
+			},
+		})
+	})
+
 	test('reports machine-readable blocked spill diagnostics', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')

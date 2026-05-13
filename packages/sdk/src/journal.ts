@@ -4,9 +4,11 @@ import {
 	type ChartPartInfo,
 	type ChartSeriesInfo,
 	cloneCellStyle,
+	clonePivotCacheInfo,
 	DEFAULT_STYLE_ID,
 	type DefinedName,
 	type DefinedNameScope,
+	type PivotCacheInfo,
 	parseA1,
 	parseRange,
 	type RangeRef,
@@ -82,6 +84,11 @@ export interface MutationJournalChartSeriesPreimage {
 	readonly seriesIndex: number
 	readonly chart: ChartPartInfo | null
 	readonly series: ChartSeriesInfo | null
+}
+
+export interface MutationJournalPivotCachePreimage {
+	readonly cacheIndex: number | null
+	readonly cache: PivotCacheInfo | null
 }
 
 export interface MutationJournalPanePreimage {
@@ -160,6 +167,7 @@ export type MutationJournalPreimage =
 	  }
 	| { readonly kind: 'drawing-text'; readonly drawingText: MutationJournalDrawingTextPreimage }
 	| { readonly kind: 'chart-series'; readonly chartSeries: MutationJournalChartSeriesPreimage }
+	| { readonly kind: 'pivot-cache'; readonly pivotCache: MutationJournalPivotCachePreimage }
 	| { readonly kind: 'pane'; readonly pane: MutationJournalPanePreimage }
 	| { readonly kind: 'merge'; readonly merge: MutationJournalMergePreimage }
 	| { readonly kind: 'auto-filter'; readonly autoFilter: MutationJournalAutoFilterPreimage }
@@ -345,6 +353,8 @@ function buildSupportedJournalEntry(
 			return journalSetDrawingText(workbook, op, opIndex)
 		case 'setChartSeriesSource':
 			return journalSetChartSeriesSource(workbook, op, opIndex)
+		case 'setPivotCache':
+			return journalSetPivotCache(workbook, op, opIndex)
 		case 'freezePane':
 			return journalFreezePane(workbook, op, opIndex)
 		case 'renameSheet':
@@ -952,6 +962,30 @@ function journalSetChartSeriesSource(
 		op,
 		inverseOps: inverse.op ? [inverse.op] : [],
 		preimages: [{ kind: 'chart-series', chartSeries: preimage }],
+		issues,
+	}
+}
+
+function journalSetPivotCache(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'setPivotCache' }>,
+	opIndex: number,
+): DraftJournalEntry {
+	const preimage = pivotCachePreimage(workbook, op)
+	const inverse = pivotCacheInverseOperation(op, preimage)
+	const issues: MutationJournalIssue[] = inverse.exact
+		? []
+		: [
+				{
+					code: 'LOSSY_INVERSE',
+					message: 'Pivot cache selector cannot be restored exactly',
+				},
+			]
+	return {
+		opIndex,
+		op,
+		inverseOps: inverse.op ? [inverse.op] : [],
+		preimages: [{ kind: 'pivot-cache', pivotCache: preimage }],
 		issues,
 	}
 }
@@ -2132,6 +2166,134 @@ function chartSeriesStableSelector(
 
 function hasChartSeriesRefUpdate(op: Extract<Operation, { op: 'setChartSeriesSource' }>): boolean {
 	return op.nameRef !== undefined || op.categoryRef !== undefined || op.valueRef !== undefined
+}
+
+function pivotCachePreimage(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'setPivotCache' }>,
+): MutationJournalPivotCachePreimage {
+	let expectedCacheId = op.cacheId
+	if (op.pivotTable !== undefined) {
+		const pivots = workbook.pivotTables.filter((pivot) => pivot.name === op.pivotTable)
+		if (pivots.length !== 1 || pivots[0]?.cacheId === undefined) {
+			return { cacheIndex: null, cache: null }
+		}
+		if (expectedCacheId !== undefined && expectedCacheId !== pivots[0].cacheId) {
+			return { cacheIndex: null, cache: null }
+		}
+		expectedCacheId = pivots[0].cacheId
+	}
+	const matches = workbook.pivotCaches
+		.map((cache, index) => ({ cache, index }))
+		.filter(({ cache }) => {
+			if (op.partPath !== undefined && cache.partPath !== op.partPath) return false
+			if (expectedCacheId !== undefined && cache.cacheId !== expectedCacheId) return false
+			return true
+		})
+	const match = matches.length === 1 ? matches[0] : undefined
+	return {
+		cacheIndex: match?.index ?? null,
+		cache: match ? clonePivotCacheInfo(match.cache) : null,
+	}
+}
+
+function pivotCacheInverseOperation(
+	op: Extract<Operation, { op: 'setPivotCache' }>,
+	preimage: MutationJournalPivotCachePreimage,
+): { readonly exact: boolean; readonly op?: Operation } {
+	if (!preimage.cache) return { exact: false }
+	const fields: {
+		sourceSheet?: string
+		sourceRef?: string
+		refreshOnLoad?: boolean
+		enableRefresh?: boolean
+		invalid?: boolean
+		saveData?: boolean
+	} = {}
+	let exact = true
+	for (const field of [
+		'sourceSheet',
+		'sourceRef',
+		'refreshOnLoad',
+		'enableRefresh',
+		'invalid',
+		'saveData',
+	] as const) {
+		if (op[field] === undefined) continue
+		switch (field) {
+			case 'sourceSheet': {
+				const value = preimage.cache.sourceSheet
+				if (value === undefined) {
+					exact = false
+					continue
+				}
+				fields.sourceSheet = value
+				break
+			}
+			case 'sourceRef': {
+				const value = preimage.cache.sourceRef
+				if (value === undefined) {
+					exact = false
+					continue
+				}
+				fields.sourceRef = value
+				break
+			}
+			case 'refreshOnLoad': {
+				const value = preimage.cache.refreshOnLoad
+				if (value === undefined) {
+					exact = false
+					continue
+				}
+				fields.refreshOnLoad = value
+				break
+			}
+			case 'enableRefresh': {
+				const value = preimage.cache.enableRefresh
+				if (value === undefined) {
+					exact = false
+					continue
+				}
+				fields.enableRefresh = value
+				break
+			}
+			case 'invalid': {
+				const value = preimage.cache.invalid
+				if (value === undefined) {
+					exact = false
+					continue
+				}
+				fields.invalid = value
+				break
+			}
+			case 'saveData': {
+				const value = preimage.cache.saveData
+				if (value === undefined) {
+					exact = false
+					continue
+				}
+				fields.saveData = value
+				break
+			}
+		}
+	}
+	const inverse: Extract<Operation, { op: 'setPivotCache' }> = {
+		op: 'setPivotCache',
+		partPath: preimage.cache.partPath,
+		...fields,
+	}
+	return hasPivotCacheUpdate(inverse) ? { exact, op: inverse } : { exact: false }
+}
+
+function hasPivotCacheUpdate(op: Extract<Operation, { op: 'setPivotCache' }>): boolean {
+	return (
+		op.sourceSheet !== undefined ||
+		op.sourceRef !== undefined ||
+		op.refreshOnLoad !== undefined ||
+		op.enableRefresh !== undefined ||
+		op.invalid !== undefined ||
+		op.saveData !== undefined
+	)
 }
 
 function setHyperlinkInverse(

@@ -677,6 +677,126 @@ describe('interactive client contract', () => {
 		])
 	})
 
+	test('journal inverse ops restore pivot cache source and refresh metadata', () => {
+		const wb = AscendWorkbook.create()
+		wb.getWorkbookModel().pivotTables.push({
+			partPath: 'xl/pivotTables/pivotTable1.xml',
+			sheetName: 'Sheet1',
+			name: 'PivotTable1',
+			cacheId: 34,
+			fields: [],
+			rowFields: [],
+			columnFields: [],
+			pageFields: [],
+			dataFields: [],
+		})
+		wb.getWorkbookModel().pivotCaches.push({
+			partPath: 'xl/pivotCache/pivotCacheDefinition1.xml',
+			cacheId: 34,
+			relId: 'rIdPivotCache1',
+			sourceSheet: 'Raw',
+			sourceRef: 'A1:D10',
+			recordsPartPath: 'xl/pivotCacheRecords/pivotCacheRecords1.xml',
+			refreshOnLoad: false,
+			enableRefresh: true,
+			invalid: false,
+			saveData: true,
+			fields: [],
+		})
+
+		const changed = wb.apply(
+			[
+				{
+					op: 'setPivotCache',
+					pivotTable: 'PivotTable1',
+					sourceSheet: 'RawData',
+					sourceRef: 'A1:E20',
+					refreshOnLoad: true,
+					enableRefresh: false,
+					invalid: true,
+					saveData: false,
+				},
+			],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(true)
+		expect(changed.journal?.inverseOps).toEqual([
+			{
+				op: 'setPivotCache',
+				partPath: 'xl/pivotCache/pivotCacheDefinition1.xml',
+				sourceSheet: 'Raw',
+				sourceRef: 'A1:D10',
+				refreshOnLoad: false,
+				enableRefresh: true,
+				invalid: false,
+				saveData: true,
+			},
+		])
+		expect(wb.getWorkbookModel().pivotCaches[0]).toMatchObject({
+			partPath: 'xl/pivotCache/pivotCacheDefinition1.xml',
+			relId: 'rIdPivotCache1',
+			recordsPartPath: 'xl/pivotCacheRecords/pivotCacheRecords1.xml',
+			sourceSheet: 'RawData',
+			sourceRef: 'A1:E20',
+			refreshOnLoad: true,
+			enableRefresh: false,
+			invalid: true,
+			saveData: false,
+		})
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(wb.getWorkbookModel().pivotCaches[0]).toEqual({
+			partPath: 'xl/pivotCache/pivotCacheDefinition1.xml',
+			cacheId: 34,
+			relId: 'rIdPivotCache1',
+			sourceSheet: 'Raw',
+			sourceRef: 'A1:D10',
+			recordsPartPath: 'xl/pivotCacheRecords/pivotCacheRecords1.xml',
+			refreshOnLoad: false,
+			enableRefresh: true,
+			invalid: false,
+			saveData: true,
+			fields: [],
+		})
+	})
+
+	test('pivot cache journals mark rollback lossy when public ops cannot unset fields', () => {
+		const wb = AscendWorkbook.create()
+		wb.getWorkbookModel().pivotCaches.push({
+			partPath: 'xl/pivotCache/pivotCacheDefinition1.xml',
+			cacheId: 34,
+			sourceRef: 'A1:D10',
+			fields: [],
+		})
+
+		const journal = buildMutationJournal(wb.getWorkbookModel(), [
+			{
+				op: 'setPivotCache',
+				cacheId: 34,
+				sourceSheet: 'RawData',
+				sourceRef: 'A1:E20',
+				refreshOnLoad: true,
+			},
+		])
+
+		expect(journal.supported).toBe(true)
+		expect(journal.exact).toBe(false)
+		expect(journal.issues).toEqual([
+			{ code: 'LOSSY_INVERSE', message: 'Pivot cache selector cannot be restored exactly' },
+		])
+		expect(journal.inverseOps).toEqual([
+			{
+				op: 'setPivotCache',
+				partPath: 'xl/pivotCache/pivotCacheDefinition1.xml',
+				sourceRef: 'A1:D10',
+			},
+		])
+	})
+
 	test('journal inverse ops restore conditional format replacements', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

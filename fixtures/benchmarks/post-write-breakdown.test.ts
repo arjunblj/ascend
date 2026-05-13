@@ -68,4 +68,57 @@ describe('post-write breakdown benchmark', () => {
 		expect(payload.summary?.packageGraphIssuesMedian).toBe(0)
 		expect(payload.summary?.valid).toBe(true)
 	})
+
+	test('profiles post-write verification against an existing input workbook', async () => {
+		const proc = Bun.spawn(
+			[
+				Bun.argv[0],
+				runnerPath,
+				'--input-file',
+				'fixtures/xlsx/poi/SampleSS.xlsx',
+				'--updates',
+				'1',
+				'--repeat',
+				'1',
+				'--warmup',
+				'0',
+				'--json',
+			],
+			{ cwd: process.cwd(), stderr: 'pipe', stdout: 'pipe' },
+		)
+		const [stdout, stderr, exitCode] = await Promise.all([
+			new Response(proc.stdout).text(),
+			new Response(proc.stderr).text(),
+			proc.exited,
+		])
+		expect(exitCode, stderr).toBe(0)
+		const payload = JSON.parse(stdout) as {
+			readonly input?: {
+				readonly xlsxPath?: string
+				readonly sheet?: string
+				readonly rows?: number
+				readonly cols?: number
+				readonly cleanup?: boolean
+				readonly source?: string
+			}
+			readonly summary?: {
+				readonly commitPostWriteReopenMedianMs?: number
+				readonly reopenOutputMedianMs?: number
+				readonly packageGraphIssuesMedian?: number
+				readonly valid?: boolean
+			}
+		}
+		expect(payload.input).toEqual({
+			xlsxPath: 'fixtures/xlsx/poi/SampleSS.xlsx',
+			sheet: 'First Sheet',
+			rows: 65_536,
+			cols: 2,
+			cleanup: false,
+			source: 'input-file',
+		})
+		expect(payload.summary?.commitPostWriteReopenMedianMs).toBeNumber()
+		expect(payload.summary?.reopenOutputMedianMs).toBeNumber()
+		expect(payload.summary?.packageGraphIssuesMedian).toBe(0)
+		expect(payload.summary?.valid).toBe(true)
+	})
 })

@@ -1046,7 +1046,7 @@ export class AscendSession {
 		const inspectReadStart = performance.now()
 		const readLoad = this.session.inspect().load
 		const inspectReadMs = performance.now() - inspectReadStart
-		if (ops.length === 0) {
+		if (ops.length === 0 && options.recalc !== true) {
 			const generations = (this.mutableWorkbook ?? this.session.workbook()).readSnapshotInfo()
 				.generations
 			return {
@@ -1118,7 +1118,10 @@ export class AscendSession {
 		const applyMs = performance.now() - applyStart
 		let recalc: import('./types.ts').RecalcResult | null = null
 		let recalcMs = 0
-		if (apply.errors.length === 0 && apply.recalcRequired && options.recalc !== false) {
+		if (
+			apply.errors.length === 0 &&
+			((apply.recalcRequired && options.recalc !== false) || options.recalc === true)
+		) {
 			const recalcStart = performance.now()
 			recalc = workbook.recalc()
 			recalcMs = performance.now() - recalcStart

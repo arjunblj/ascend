@@ -463,6 +463,179 @@ describe('interactive client contract', () => {
 		session.close()
 	})
 
+	test('interactive explicit recalc patches pending formula results after deferred recalc edits', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] },
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'B1', formula: 'A1*2' },
+		])
+		wb.recalc()
+
+		const session = await AscendSession.open(wb.toBytes(), {
+			mode: 'full',
+			prepareEdits: true,
+		})
+		const before = session.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 2,
+		})
+		const edit = await session.apply(
+			[{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 5 }] }],
+			{ recalc: false },
+		)
+		expect(edit.apply.errors).toEqual([])
+		expect(edit.apply.recalcRequired).toBe(true)
+		expect(edit.recalc).toBeNull()
+
+		const afterEdit = session.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 2,
+			changedSince: before.changeToken,
+		})
+		expect(afterEdit.patch?.changedCells.map((cell) => cell.ref)).toEqual(['A1'])
+		expect(afterEdit.cells.find((cell) => cell.ref === 'B1')?.flatValue).toBe(2)
+		if (!afterEdit.patch) throw new Error('expected deferred-edit patch')
+		expect(materializeViewportPatch(before.cells, afterEdit.patch)).toEqual(
+			interactiveCellMap(afterEdit.cells),
+		)
+
+		const recalc = await session.apply([], { recalc: true })
+		expect(recalc.apply.errors).toEqual([])
+		expect(recalc.recalc?.errors).toEqual([])
+		expect(recalc.recalc?.changed).toEqual(['Sheet1!B1'])
+		expect(recalc.generation.session).toBe(edit.generation.session + 1)
+
+		const recalcPatch = session.readViewportPatch({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 2,
+			changedSince: afterEdit.changeToken,
+		})
+		if (!recalcPatch) throw new Error('expected explicit-recalc patch')
+		expect(recalcPatch.changedCells.map((cell) => [cell.ref, cell.flatValue])).toEqual([['B1', 10]])
+		const fresh = session.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 2,
+		})
+		expect(materializeViewportPatch(afterEdit.cells, recalcPatch)).toEqual(
+			interactiveCellMap(fresh.cells),
+		)
+		session.close()
+	})
+
+	test('interactive explicit recalc honors prior metadata invalidation before resuming patches', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 1 },
+					{ ref: 'C1', value: 'review' },
+				],
+			},
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'B1', formula: 'A1*2' },
+		])
+		wb.recalc()
+
+		const session = await AscendSession.open(wb.toBytes(), {
+			mode: 'full',
+			prepareEdits: true,
+		})
+		const base = session.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 3,
+		})
+		const edit = await session.apply(
+			[{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 5 }] }],
+			{ recalc: false },
+		)
+		expect(edit.apply.errors).toEqual([])
+		const afterEdit = session.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 3,
+			changedSince: base.changeToken,
+		})
+		expect(afterEdit.patch?.changedCells.map((cell) => cell.ref)).toEqual(['A1'])
+
+		const metadata = await session.apply([
+			{ op: 'setComment', sheet: 'Sheet1', ref: 'C1', text: 'needs review' },
+		])
+		expect(metadata.apply.errors).toEqual([])
+		expect(
+			session.readViewportPatch({
+				sheet: 'Sheet1',
+				topRow: 0,
+				leftCol: 0,
+				rowCount: 1,
+				colCount: 3,
+				changedSince: afterEdit.changeToken,
+			}),
+		).toBeNull()
+		const afterMetadata = session.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 3,
+			changedSince: afterEdit.changeToken,
+		})
+		expect(afterMetadata.patch).toBeUndefined()
+		expect(afterMetadata.cells.find((cell) => cell.ref === 'C1')?.flags.comment).toBe(true)
+
+		const recalc = await session.apply([], { recalc: true })
+		expect(recalc.apply.errors).toEqual([])
+		expect(recalc.recalc?.changed).toEqual(['Sheet1!B1'])
+		expect(
+			session.readViewportPatch({
+				sheet: 'Sheet1',
+				topRow: 0,
+				leftCol: 0,
+				rowCount: 1,
+				colCount: 3,
+				changedSince: afterEdit.changeToken,
+			}),
+		).toBeNull()
+		const recalcPatch = session.readViewportPatch({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 3,
+			changedSince: afterMetadata.changeToken,
+		})
+		if (!recalcPatch) throw new Error('expected resumed explicit-recalc patch')
+		expect(recalcPatch.changedCells.map((cell) => [cell.ref, cell.flatValue])).toEqual([['B1', 10]])
+		const fresh = session.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 3,
+		})
+		expect(materializeViewportPatch(afterMetadata.cells, recalcPatch)).toEqual(
+			interactiveCellMap(fresh.cells),
+		)
+		session.close()
+	})
+
 	test('interactive sessions resume patching after an invalidating metadata refresh', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([
@@ -1462,6 +1635,53 @@ describe('interactive client contract', () => {
 		expect(edit.load.write).toMatchObject({ mode: 'formula', isPartial: true, maxRows: 1 })
 		expect(edit.load.promotedToFull).toBe(false)
 		expect(edit.generation.session).toBe(0)
+		session.close()
+	})
+
+	test('interactive explicit recalc stays read-only for capped partial sessions', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 1 },
+					{ ref: 'A2', value: 2 },
+				],
+			},
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'B1', formula: 'A1*2' },
+		])
+
+		const session = await AscendSession.open(wb.toBytes(), {
+			mode: 'interactive',
+			maxRows: 1,
+		})
+		const before = session.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 2,
+		})
+		const recalc = await session.apply([], { recalc: true })
+		expect(recalc.apply.errors).toEqual([])
+		expect(recalc.recalc?.errors[0]?.error.message).toContain('partial workbook')
+		expect(recalc.load.write).toMatchObject({ mode: 'formula', isPartial: true, maxRows: 1 })
+		expect(recalc.load.promotedToFull).toBe(false)
+		expect(recalc.generation.session).toBe(before.generation.session)
+		expect(
+			session.readViewportPatch({
+				sheet: 'Sheet1',
+				topRow: 0,
+				leftCol: 0,
+				rowCount: 1,
+				colCount: 2,
+				changedSince: before.changeToken,
+			}),
+		)?.toMatchObject({
+			changedCells: [],
+			removedRefs: [],
+		})
 		session.close()
 	})
 

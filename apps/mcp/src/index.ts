@@ -54,10 +54,11 @@ const DEFAULT_MCP_RAW_PART_MAX_BYTES = 64 * 1024
 const MAX_MCP_RAW_PART_MAX_BYTES = 1024 * 1024
 const DEFAULT_AGENT_PREVIEW_ROWS = 500
 
-const pathMutationSchema = z.object({
-	path: z.union([z.string(), z.array(z.string())]),
-	value: z.unknown().optional(),
-})
+const pathMutationSchema = z
+	.unknown()
+	.describe(
+		'Path-addressed mutation object with path as a string or string array and optional value',
+	)
 
 type ResolvedOperationInput =
 	| {
@@ -147,7 +148,7 @@ class PreparedPlanStore {
 function resolveOperationInputForWorkbook(
 	wb: AscendWorkbook,
 	ops: readonly Record<string, unknown>[] | undefined,
-	mutations: readonly PathMutation[] | undefined,
+	mutations: readonly unknown[] | undefined,
 ): ResolvedOperationInput {
 	const shape = resolveOperationInputShape(ops, mutations)
 	if (!shape.ok || !('mutations' in shape)) return shape
@@ -161,7 +162,7 @@ type OperationInputShape =
 
 function resolveOperationInputShape(
 	ops: readonly Record<string, unknown>[] | undefined,
-	mutations: readonly PathMutation[] | undefined,
+	mutations: readonly unknown[] | undefined,
 ): OperationInputShape {
 	const hasOpsKey = ops !== undefined
 	const hasMutationsKey = mutations !== undefined
@@ -200,7 +201,54 @@ function resolveOperationInputShape(
 		}
 		return { ok: true, ops: parsed.value }
 	}
-	return { ok: true, mutations: mutations ?? [] }
+	const parsedMutations = parsePathMutationBody(mutations ?? [])
+	if (!parsedMutations.ok) return parsedMutations
+	return { ok: true, mutations: parsedMutations.mutations }
+}
+
+function parsePathMutationBody(
+	value: readonly unknown[],
+):
+	| { readonly ok: true; readonly mutations: readonly PathMutation[] }
+	| { readonly ok: false; readonly error: AscendError } {
+	const mutations: PathMutation[] = []
+	for (const [index, entry] of value.entries()) {
+		if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
+			return {
+				ok: false,
+				error: pathMutationShapeError(index, 'Mutation must be an object with path and value.'),
+			}
+		}
+		const path = (entry as Record<string, unknown>).path
+		if (
+			typeof path !== 'string' &&
+			(!Array.isArray(path) || !path.every((segment) => typeof segment === 'string'))
+		) {
+			return {
+				ok: false,
+				error: pathMutationShapeError(index, 'Mutation path must be a string or string array.'),
+			}
+		}
+		mutations.push({
+			path,
+			...(Object.hasOwn(entry, 'value') ? { value: (entry as Record<string, unknown>).value } : {}),
+		})
+	}
+	return { ok: true, mutations }
+}
+
+function pathMutationShapeError(index: number, message: string): AscendError {
+	return ascendError('VALIDATION_ERROR', message, {
+		details: {
+			issueCount: 1,
+			issues: [`mutations[${index}]: ${message}`],
+			issueDetails: [
+				{ code: 'invalid_path_mutation', mutationIndex: index, path: `mutations[${index}]` },
+			],
+		},
+		retryStrategy: 'modified',
+		suggestedFix: 'Use mutations shaped like {"path":"/sheets/Sheet1/cells/A1/value","value":123}.',
+	})
 }
 
 function compilePathMutationInput(

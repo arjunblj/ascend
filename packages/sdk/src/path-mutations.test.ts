@@ -372,6 +372,28 @@ describe('path-addressed mutations', () => {
 			'Path segment 1 must not be empty.',
 		])
 	})
+
+	test('reports runtime-invalid mutation path shapes without throwing', () => {
+		const wb = AscendWorkbook.create()
+
+		const result = wb.compilePathMutations([
+			{ path: 123, value: 1 },
+			{ path: ['sheets', 1, 'cells', 'A1', 'value'], value: 1 },
+		] as never)
+
+		expect(result.replayable).toBe(false)
+		expect(result.ops).toEqual([])
+		expect(result.issues).toEqual([
+			expect.objectContaining({
+				code: 'invalid_path',
+				message: 'Path must be a string or string array.',
+			}),
+			expect.objectContaining({
+				code: 'invalid_path',
+				message: 'Path must be a string or string array.',
+			}),
+		])
+	})
 })
 
 function pointerSegment(value: string): string {

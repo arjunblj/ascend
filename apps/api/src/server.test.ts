@@ -91,6 +91,7 @@ interface ApiEnvelope {
 			readonly compiledOps?: readonly unknown[]
 			readonly issueDetails?: readonly {
 				readonly code?: string
+				readonly mutationIndex?: number
 				readonly opIndex?: number
 				readonly path?: string
 			}[]
@@ -740,6 +741,33 @@ describe('Ascend API server', () => {
 			kind: 'string',
 			value: 'old',
 		})
+	})
+
+	test('invalid path mutation shapes return structured repair details consistently', async () => {
+		const wb = AscendWorkbook.create()
+		await wb.save(TEMP_FILE)
+
+		for (const endpoint of ['/preview', '/plan', '/write', '/commit'] as const) {
+			const result = await postJson(endpoint, {
+				file: TEMP_FILE,
+				output: OUTPUT_FILE,
+				mutations: [{ path: 123, value: 'new' }],
+			})
+
+			expect(result.status).toBe(400)
+			expect(result.body.error?.code).toBe('VALIDATION_ERROR')
+			expect(result.body.error?.details?.issueCount).toBe(1)
+			expect(result.body.error?.details?.issues).toEqual([
+				'mutations[0]: Mutation path must be a string or string array.',
+			])
+			expect(result.body.error?.details?.issueDetails).toEqual([
+				expect.objectContaining({
+					code: 'invalid_path_mutation',
+					mutationIndex: 0,
+					path: 'mutations[0]',
+				}),
+			])
+		}
 	})
 
 	test('non-replayable path mutation batches do not expose or apply partial ops', async () => {

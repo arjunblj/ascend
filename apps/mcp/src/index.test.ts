@@ -1248,6 +1248,69 @@ describe('MCP server', () => {
 		})
 	})
 
+	test('invalid path mutation shapes return structured MCP repair details consistently', async () => {
+		const wb = AscendWorkbook.create()
+		await wb.save(TEMP_FILE)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const tools = (server as any)._registeredTools as Record<
+			string,
+			{
+				handler: (args: {
+					file: string
+					output?: string
+					mutations: readonly unknown[]
+				}) => Promise<{
+					isError?: boolean
+					structuredContent?: {
+						ok?: boolean
+						error?: {
+							code?: string
+							details?: {
+								issueCount?: number
+								issues?: readonly string[]
+								issueDetails?: readonly {
+									code?: string
+									mutationIndex?: number
+									path?: string
+								}[]
+							}
+						}
+					}
+				}>
+			}
+		>
+
+		for (const toolName of [
+			'ascend.preview',
+			'ascend.plan',
+			'ascend.write',
+			'ascend.commit',
+		] as const) {
+			const result = await tools[toolName]?.handler({
+				file: TEMP_FILE,
+				output: `${TEMP_FILE}.out.xlsx`,
+				mutations: [{ path: 123, value: 'new' }],
+			})
+
+			expect(result?.isError).toBe(true)
+			expect(result?.structuredContent?.ok).toBe(false)
+			expect(result?.structuredContent?.error?.code).toBe('VALIDATION_ERROR')
+			expect(result?.structuredContent?.error?.details?.issueCount).toBe(1)
+			expect(result?.structuredContent?.error?.details?.issues).toEqual([
+				'mutations[0]: Mutation path must be a string or string array.',
+			])
+			expect(result?.structuredContent?.error?.details?.issueDetails).toEqual([
+				expect.objectContaining({
+					code: 'invalid_path_mutation',
+					mutationIndex: 0,
+					path: 'mutations[0]',
+				}),
+			])
+		}
+	})
+
 	test('non-replayable path mutation batches do not expose or apply partial MCP ops', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

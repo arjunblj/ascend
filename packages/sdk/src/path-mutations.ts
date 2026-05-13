@@ -713,8 +713,11 @@ function deferRenameOperations(ops: readonly Operation[]): Operation[] {
 	return [...immediate, ...deferred]
 }
 
-function parseMutationPath(path: PathMutationPath): ParsedPath {
+function parseMutationPath(path: unknown): ParsedPath {
 	if (typeof path !== 'string') {
+		if (!Array.isArray(path) || !path.every((segment) => typeof segment === 'string')) {
+			return { ok: false, message: 'Path must be a string or string array.' }
+		}
 		if (path.length === 0) return { ok: false, message: 'Path must not be empty.' }
 		const emptyIndex = path.findIndex((segment) => segment.length === 0)
 		if (emptyIndex >= 0) {

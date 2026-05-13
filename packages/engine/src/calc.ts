@@ -3678,7 +3678,7 @@ function resolveBlockedSpillKeys(
 	if (!refs || refs.length === 0) return []
 	const dirtySheets = new Set<number>()
 	for (const ref of refs) {
-		const bang = ref.indexOf('!')
+		const bang = ref.lastIndexOf('!')
 		const sheetName =
 			bang >= 0 ? ref.slice(0, bang).replace(/^'|'$/g, '') : workbook.sheets[0]?.name
 		if (!sheetName) continue
@@ -3704,7 +3704,7 @@ function dirtyRefsMayUnblockSpill(
 ): boolean {
 	if (!refs || refs.length === 0) return false
 	for (const ref of refs) {
-		const bang = ref.indexOf('!')
+		const bang = ref.lastIndexOf('!')
 		const sheetName =
 			bang >= 0 ? ref.slice(0, bang).replace(/^'|'$/g, '') : workbook.sheets[0]?.name
 		const localRef = bang >= 0 ? ref.slice(bang + 1) : ref
@@ -3731,7 +3731,7 @@ function resolveDirtyKeys(
 	if (!refs || refs.length === 0) return []
 	const keys: CellKey[] = []
 	for (const ref of refs) {
-		const bang = ref.indexOf('!')
+		const bang = ref.lastIndexOf('!')
 		const sheetName =
 			bang >= 0 ? ref.slice(0, bang).replace(/^'|'$/g, '') : workbook.sheets[0]?.name
 		const localRef = bang >= 0 ? ref.slice(bang + 1) : ref

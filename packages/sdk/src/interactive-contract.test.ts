@@ -463,6 +463,63 @@ describe('interactive client contract', () => {
 		session.close()
 	})
 
+	test('interactive pull patches stay sheet-scoped for names with apostrophes and bangs', async () => {
+		const sheetName = "Q1's Data!"
+		const wb = AscendWorkbook.create()
+		expect(wb.renameSheet('Sheet1', sheetName).errors).toEqual([])
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: sheetName,
+				updates: [
+					{ ref: 'A1', value: 1 },
+					{ ref: 'B1', value: 2 },
+				],
+			},
+			{ op: 'setFormula', sheet: sheetName, ref: 'C1', formula: 'A1+B1' },
+		])
+		wb.recalc()
+
+		const session = await AscendSession.open(wb.toBytes(), { mode: 'interactive' })
+		const before = session.readViewport({
+			sheet: sheetName,
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 4,
+		})
+		const edit = await session.apply([
+			{ op: 'setCells', sheet: sheetName, updates: [{ ref: 'A1', value: 5 }] },
+			{ op: 'setNumberFormat', sheet: sheetName, range: 'D1:D1', format: '0.00' },
+		])
+		expect(edit.apply.errors).toEqual([])
+		expect(edit.recalc?.changed).toEqual([`${sheetName}!C1`])
+
+		const patch = session.readViewportPatch({
+			sheet: sheetName,
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 4,
+			changedSince: before.changeToken,
+		})
+		if (!patch) throw new Error('expected special sheet name patch')
+		expect(patch.changedCells.map((cell) => [cell.ref, cell.flatValue]).sort()).toEqual([
+			['A1', 5],
+			['C1', 7],
+			['D1', null],
+		])
+		const fresh = session.readViewport({
+			sheet: sheetName,
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 4,
+		})
+		expect(materializeViewportPatch(before.cells, patch)).toEqual(interactiveCellMap(fresh.cells))
+		session.close()
+	})
+
 	test('interactive explicit recalc patches pending formula results after deferred recalc edits', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

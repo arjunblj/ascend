@@ -62,6 +62,25 @@ describe('recalculate', () => {
 		expect(cell?.value).toEqual(numberValue(3))
 	})
 
+	test('dirty refs split at the final bang for sheet names containing bangs', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet("Q1's Data!")
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(0, 2, { value: EMPTY, formula: 'A1+B1', styleId: sid })
+
+		const initial = recalculate(wb, makeCtx())
+		expect(initial.errors).toEqual([])
+		expect(initial.changed).toEqual(["Q1's Data!!C1"])
+		expect(sheet.cells.get(0, 2)?.value).toEqual(numberValue(3))
+
+		sheet.cells.set(0, 0, { value: numberValue(5), formula: null, styleId: sid })
+		const dirty = recalculate(wb, makeCtx(), { dirtyRefs: ["Q1's Data!!A1"] })
+		expect(dirty.errors).toEqual([])
+		expect(dirty.changed).toEqual(["Q1's Data!!C1"])
+		expect(sheet.cells.get(0, 2)?.value).toEqual(numberValue(7))
+	})
+
 	test('external workbook references resolve through calculation hook', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

@@ -4455,6 +4455,33 @@ describe('writeXlsx', () => {
 		expect(readSheet?.cells.get(0, 1)?.value).toEqual({ kind: 'string', value: 'b' })
 	})
 
+	it('omits dense shared-string refs when a numeric cell starts the row', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Test')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: S0 })
+		sheet.cells.set(0, 1, { value: stringValue('b'), formula: null, styleId: S0 })
+		sheet.cells.set(0, 2, { value: numberValue(3), formula: null, styleId: S0 })
+
+		const written = writeXlsx(wb, undefined, {
+			useSharedStrings: true,
+			omitDenseCellRefs: true,
+		})
+		expectOk(written)
+
+		const zip = unzipSync(written.value)
+		const sheetXml = decodeTestXml(zip['xl/worksheets/sheet1.xml'])
+		expect(sheetXml).toContain(
+			'<row r="1"><c><v>1</v></c><c t="s"><v>0</v></c><c><v>3</v></c></row>',
+		)
+
+		const read = readXlsx(written.value, { mode: 'values' })
+		expectOk(read)
+		const readSheet = read.value.workbook.sheets[0]
+		expect(readSheet?.cells.get(0, 0)?.value).toEqual({ kind: 'number', value: 1 })
+		expect(readSheet?.cells.get(0, 1)?.value).toEqual({ kind: 'string', value: 'b' })
+		expect(readSheet?.cells.get(0, 2)?.value).toEqual({ kind: 'number', value: 3 })
+	})
+
 	it('keeps dense cell refs when formula state follows scalar cells', () => {
 		const wb = new Workbook()
 		const sheet = wb.addSheet('Test')

@@ -781,7 +781,8 @@ function defaultStyleScalarCellsWithoutRefsXml(
 	if (cells.length === 0) return false
 	const first = cells[0]
 	if (first?.[1].value.kind === 'number') {
-		return defaultStyleNumberCellsWithoutRefsXml(cells)
+		const numberBody = defaultStyleNumberCellsWithoutRefsXml(cells)
+		if (numberBody !== false) return numberBody
 	}
 	if (!canOmitDenseCellRefs(cells)) return false
 	let body = ''

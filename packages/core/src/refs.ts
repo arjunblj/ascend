@@ -85,6 +85,9 @@ export function parseRange(ref: string): RangeRef {
 	}
 
 	const parts = body.split(':')
+	if (parts.length > 2 || parts.some((part) => part === '')) {
+		throw new Error(`Invalid range reference: ${ref}`)
+	}
 	const startStr = parts[0]
 	if (!startStr) throw new Error(`Invalid range reference: ${ref}`)
 	const endStr = parts[1]
@@ -106,7 +109,7 @@ export function parseRange(ref: string): RangeRef {
 
 export function toRangeString(ref: RangeRef): string {
 	const range = `${toA1(ref.start)}:${toA1(ref.end)}`
-	return ref.sheet ? `${ref.sheet}!${range}` : range
+	return ref.sheet ? `${formatSheetName(ref.sheet)}!${range}` : range
 }
 
 export function normalizeRange(range: RangeRef): RangeRef {
@@ -176,6 +179,11 @@ function findSheetSeparator(ref: string): number {
 		}
 	}
 	return -1
+}
+
+function formatSheetName(sheet: string): string {
+	if (/^[A-Za-z_][A-Za-z0-9_.]*$/.test(sheet)) return sheet
+	return `'${sheet.replace(/'/g, "''")}'`
 }
 
 function splitSqref(sqref: string): string[] {

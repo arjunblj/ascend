@@ -1455,6 +1455,57 @@ describe('Ascend API server', () => {
 		}
 	})
 
+	test('prepared path mutation handles require exact preserved-loss approval ids', async () => {
+		await Bun.write(MACRO_FILE, signedMacroWorkbook())
+		const output = `${MACRO_OUTPUT_FILE}.prepared-path.xlsm`
+		const mutations = [{ path: '/sheets/Sheet1/cells/A1/value', value: 17 }]
+		const canonicalOps = [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 17 }] }]
+		try {
+			const plan = await postJson('/plan', { file: MACRO_FILE, mutations })
+			expect(plan.status).toBe(200)
+			expect(plan.body.ok).toBe(true)
+			expect(plan.body.data?.preparedPlan?.id).toBeString()
+			expect(plan.body.data?.pathMutations?.replayable).toBe(true)
+			expect(plan.body.data?.pathMutations?.ops).toEqual(canonicalOps)
+			const approvalIds = plan.body.data?.approvals?.map((approval) => approval.id) ?? []
+			expect(approvalIds).toEqual(
+				expect.arrayContaining([
+					expect.stringMatching(/^loss:preservedmacro:preserved:/),
+					expect.stringMatching(/^loss:preservedsignature:preserved:/),
+				]),
+			)
+
+			const aliasCommit = await postJson('/commit', {
+				planHandle: plan.body.data?.preparedPlan?.id,
+				output,
+				approvals: ['preservedMacro', 'preservedSignature'],
+			})
+			expect(aliasCommit.status).toBe(400)
+			expect(aliasCommit.body.ok).toBe(false)
+			expect(aliasCommit.body.error?.message).toBe('Commit requires explicit approval')
+			expect(await Bun.file(output).exists()).toBe(false)
+
+			const retryPlan = await postJson('/plan', { file: MACRO_FILE, mutations })
+			expect(retryPlan.body.data?.preparedPlan?.id).toBeString()
+			expect(retryPlan.body.data?.pathMutations?.ops).toEqual(canonicalOps)
+			const exactCommit = await postJson('/commit', {
+				planHandle: retryPlan.body.data?.preparedPlan?.id,
+				output,
+				approvals: approvalIds,
+			})
+			expect(exactCommit.status).toBe(200)
+			expect(exactCommit.body.ok).toBe(true)
+			expect(exactCommit.body.data?.pathMutations?.ops).toEqual(canonicalOps)
+			expect(exactCommit.body.data?.approvals?.map((approval) => approval.id)).toEqual(approvalIds)
+			expect(exactCommit.body.data?.postWrite?.valid).toBe(true)
+			expect(exactCommit.body.data?.postWrite?.reopened).toBe(true)
+			const reopened = await AscendWorkbook.open(output)
+			expect(reopened.sheet('Sheet1')?.cell('A1')?.value).toEqual({ kind: 'number', value: 17 })
+		} finally {
+			await unlink(output).catch(() => {})
+		}
+	})
+
 	test('plan can opt out of the default prepared handle', async () => {
 		const wb = AscendWorkbook.create()
 		await wb.save(TEMP_FILE)

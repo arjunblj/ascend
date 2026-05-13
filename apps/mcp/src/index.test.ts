@@ -1405,6 +1405,89 @@ describe('MCP server', () => {
 		}
 	})
 
+	test('prepared MCP path mutation handles require exact preserved-loss approval ids', async () => {
+		await Bun.write(TEMP_MACRO_FILE, signedMacroWorkbook())
+		const output = `${TEMP_MACRO_OUTPUT}.prepared-path.xlsm`
+		const mutations = [{ path: '/sheets/Data/cells/A1/value', value: 17 }]
+		const canonicalOps = [{ op: 'setCells', sheet: 'Data', updates: [{ ref: 'A1', value: 17 }] }]
+		const server = createServer()
+		try {
+			// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+			const plan = (server as any)._registeredTools['ascend.plan'].handler as (args: {
+				file: string
+				mutations: Array<{ path: string; value?: unknown }>
+			}) => Promise<{
+				structuredContent?: {
+					data?: {
+						preparedPlan?: { id?: string }
+						approvals?: Array<{ id: string }>
+						pathMutations?: { replayable?: boolean; ops?: unknown[] }
+					}
+				}
+			}>
+			// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+			const commit = (server as any)._registeredTools['ascend.commit'].handler as (args: {
+				planHandle?: string
+				output?: string
+				approvals?: string[]
+			}) => Promise<{
+				isError?: boolean
+				structuredContent?: {
+					ok?: boolean
+					error?: { message?: string }
+					data?: {
+						approvals?: Array<{ id: string }>
+						pathMutations?: { ops?: unknown[] }
+						postWrite?: { valid?: boolean; reopened?: boolean }
+					}
+				}
+			}>
+			const planned = await plan({ file: TEMP_MACRO_FILE, mutations })
+			expect(planned.structuredContent?.data?.preparedPlan?.id).toBeString()
+			expect(planned.structuredContent?.data?.pathMutations?.replayable).toBe(true)
+			expect(planned.structuredContent?.data?.pathMutations?.ops).toEqual(canonicalOps)
+			const approvalIds =
+				planned.structuredContent?.data?.approvals?.map((approval) => approval.id) ?? []
+			expect(approvalIds).toEqual(
+				expect.arrayContaining([
+					expect.stringMatching(/^loss:preservedmacro:preserved:/),
+					expect.stringMatching(/^loss:preservedsignature:preserved:/),
+				]),
+			)
+
+			const aliasCommit = await commit({
+				planHandle: planned.structuredContent?.data?.preparedPlan?.id,
+				output,
+				approvals: ['preservedMacro', 'preservedSignature'],
+			})
+			expect(aliasCommit.structuredContent?.ok).toBe(false)
+			expect(aliasCommit.structuredContent?.error?.message).toBe(
+				'Commit requires explicit approval',
+			)
+			expect(await Bun.file(output).exists()).toBe(false)
+
+			const retryPlan = await plan({ file: TEMP_MACRO_FILE, mutations })
+			expect(retryPlan.structuredContent?.data?.preparedPlan?.id).toBeString()
+			expect(retryPlan.structuredContent?.data?.pathMutations?.ops).toEqual(canonicalOps)
+			const exactCommit = await commit({
+				planHandle: retryPlan.structuredContent?.data?.preparedPlan?.id,
+				output,
+				approvals: approvalIds,
+			})
+			expect(exactCommit.structuredContent?.ok).toBe(true)
+			expect(exactCommit.structuredContent?.data?.pathMutations?.ops).toEqual(canonicalOps)
+			expect(
+				exactCommit.structuredContent?.data?.approvals?.map((approval) => approval.id),
+			).toEqual(approvalIds)
+			expect(exactCommit.structuredContent?.data?.postWrite?.valid).toBe(true)
+			expect(exactCommit.structuredContent?.data?.postWrite?.reopened).toBe(true)
+			const reopened = await AscendWorkbook.open(output)
+			expect(reopened.sheet('Data')?.cell('A1')?.value).toEqual({ kind: 'number', value: 17 })
+		} finally {
+			await unlink(output).catch(() => {})
+		}
+	})
+
 	test('ascend.plan can opt out of default prepared handles', async () => {
 		const wb = AscendWorkbook.create()
 		await wb.save(TEMP_FILE)

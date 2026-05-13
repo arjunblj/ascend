@@ -150,6 +150,21 @@ describe('parseRange / toRangeString', () => {
 		expect(toRangeString(parseRange('A1:C10'))).toBe('A1:C10')
 		expect(toRangeString(parseRange('Sheet1!A1:C10'))).toBe('Sheet1!A1:C10')
 	})
+
+	test('quotes sheet names so serialized ranges remain parseable', () => {
+		const range = parseRange("'Bob''s Q1 Δ'!A1:B2")
+		const serialized = toRangeString(range)
+
+		expect(serialized).toBe("'Bob''s Q1 Δ'!A1:B2")
+		expect(parseRange(serialized)).toEqual(range)
+	})
+
+	test('rejects malformed colon ranges instead of silently narrowing them', () => {
+		expect(() => parseRange('A1:')).toThrow('Invalid range reference')
+		expect(() => parseRange(':B2')).toThrow('Invalid range reference')
+		expect(() => parseRange('A1:B2:C3')).toThrow('Invalid range reference')
+		expect(() => parseSqref('A1:B2 C1: D1')).toThrow('Invalid range reference')
+	})
 })
 
 describe('expandRange', () => {

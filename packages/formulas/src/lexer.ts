@@ -1,7 +1,5 @@
 import { type Token, TokenType } from './tokens.ts'
 
-const CELL_REF_RE = /^\$?[A-Za-z]{1,3}\$?\d+$/
-
 const ERROR_RE = /^#(?:GETTING_DATA|NULL!|DIV\/0!|VALUE!|REF!|NAME\?|NUM!|N\/A|SPILL!|CALC!)/
 
 function isDigit(ch: string | undefined): ch is string {
@@ -21,9 +19,25 @@ function isIdPart(ch: string | undefined): ch is string {
 }
 
 function isValidCellRefToken(raw: string): boolean {
-	if (!CELL_REF_RE.test(raw)) return false
-	const rowMatch = /\$?(\d+)$/.exec(raw)
-	const row = Number(rowMatch?.[1] ?? 0)
+	let index = raw.charCodeAt(0) === 36 ? 1 : 0
+	let colLength = 0
+	while (index < raw.length) {
+		const code = raw.charCodeAt(index)
+		if (!((code >= 65 && code <= 90) || (code >= 97 && code <= 122))) break
+		colLength++
+		if (colLength > 3) return false
+		index++
+	}
+	if (colLength === 0) return false
+	if (raw.charCodeAt(index) === 36) index++
+	if (index >= raw.length) return false
+	let row = 0
+	while (index < raw.length) {
+		const code = raw.charCodeAt(index)
+		if (code < 48 || code > 57) return false
+		row = row * 10 + (code - 48)
+		index++
+	}
 	return row >= 1
 }
 

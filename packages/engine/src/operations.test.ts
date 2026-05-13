@@ -58,6 +58,40 @@ function setupSalesRepTable() {
 	return { wb, sheet }
 }
 
+function setupQueryTableBackedSalesTable() {
+	const { wb, sheet } = setupSalesRepTable()
+	const table = sheet.tables[0]
+	if (!table) throw new Error('Expected Sales table')
+	sheet.tables[0] = {
+		...table,
+		partPath: 'xl/tables/table1.xml',
+		columns: table.columns.map((column, index) => ({
+			...column,
+			queryTableFieldId: index + 1,
+		})),
+		queryTable: {
+			relationshipId: 'rIdQueryTable1',
+			partPath: 'xl/queryTables/queryTable1.xml',
+			relationshipType:
+				'http://schemas.openxmlformats.org/officeDocument/2006/relationships/queryTable',
+			relationshipRawType:
+				'http://schemas.openxmlformats.org/officeDocument/2006/relationships/queryTable',
+			target: '../queryTables/queryTable1.xml',
+		},
+	}
+	wb.connectionParts.push({
+		kind: 'queryTable',
+		partPath: 'xl/queryTables/queryTable1.xml',
+		contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.queryTable+xml',
+		relType: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/queryTable',
+		sheetName: 'Sheet1',
+		relationshipCount: 0,
+		name: 'SalesQuery',
+		connectionId: 1,
+	})
+	return { wb, sheet }
+}
+
 const TABLE_FIELD_METADATA_BLOCKERS: readonly {
 	readonly label: string
 	readonly sourceKind: string
@@ -3227,6 +3261,43 @@ describe('applyOperation', () => {
 		expect(s.tables).toHaveLength(0)
 	})
 
+	test('deleteCols removes queryTable sidecar metadata when the full table range is deleted', () => {
+		const { wb, sheet } = setupQueryTableBackedSalesTable()
+
+		expectOk(applyOperation(wb, { op: 'deleteCols', sheet: 'Sheet1', at: 0, count: 3 }))
+
+		expect(sheet.tables).toHaveLength(0)
+		expect(wb.connectionParts).toEqual([])
+	})
+
+	test('deleteRows removes queryTable sidecar metadata when the full table range is deleted', () => {
+		const { wb, sheet } = setupQueryTableBackedSalesTable()
+
+		expectOk(applyOperation(wb, { op: 'deleteRows', sheet: 'Sheet1', at: 0, count: 4 }))
+
+		expect(sheet.tables).toHaveLength(0)
+		expect(wb.connectionParts).toEqual([])
+	})
+
+	test('deleteCols rejects partial queryTable-backed table field deletion', () => {
+		const { wb, sheet } = setupQueryTableBackedSalesTable()
+
+		const result = applyOperation(wb, { op: 'deleteCols', sheet: 'Sheet1', at: 1, count: 1 })
+
+		expectErr(result)
+		expect(result.error.message).toContain('queryTable-backed table "Sales"')
+		expect(result.error.message).toContain('field bindings ambiguous')
+		expect(result.error.details).toMatchObject({
+			kind: 'query-table-column-structural-edit',
+			tableName: 'Sales',
+			currentRef: 'A1:C4',
+			shiftedRef: 'A1:B4',
+			queryTablePartPath: 'xl/queryTables/queryTable1.xml',
+		})
+		expect(sheet.tables[0]?.columns.map((column) => column.queryTableFieldId)).toEqual([1, 2, 3])
+		expect(wb.connectionParts).toHaveLength(1)
+	})
+
 	test('insertCols adds generated tableColumn metadata for inserted columns inside a table', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')
@@ -3264,6 +3335,41 @@ describe('applyOperation', () => {
 			ref: 'A1:D4',
 			columns: [{ colId: 2, kind: 'filters', values: ['West'] }],
 		})
+	})
+
+	test('insertCols rejects generated columns inside queryTable-backed tables', () => {
+		const { wb, sheet } = setupQueryTableBackedSalesTable()
+
+		const result = applyOperation(wb, { op: 'insertCols', sheet: 'Sheet1', at: 1, count: 1 })
+
+		expectErr(result)
+		expect(result.error.message).toContain('queryTable-backed table "Sales"')
+		expect(result.error.message).toContain('field bindings ambiguous')
+		expect(result.error.details).toMatchObject({
+			kind: 'query-table-column-structural-edit',
+			tableName: 'Sales',
+			currentRef: 'A1:C4',
+			shiftedRef: 'A1:D4',
+			queryTablePartPath: 'xl/queryTables/queryTable1.xml',
+		})
+		expect(sheet.tables[0]?.columns.map((column) => column.name)).toEqual([
+			'Region',
+			'Rep',
+			'Amount',
+		])
+	})
+
+	test('insertCols before queryTable-backed tables shifts ownership without remapping fields', () => {
+		const { wb, sheet } = setupQueryTableBackedSalesTable()
+
+		expectOk(applyOperation(wb, { op: 'insertCols', sheet: 'Sheet1', at: 0, count: 1 }))
+
+		expect(sheet.tables[0]?.ref).toEqual({
+			start: { row: 0, col: 1 },
+			end: { row: 3, col: 3 },
+		})
+		expect(sheet.tables[0]?.columns.map((column) => column.queryTableFieldId)).toEqual([1, 2, 3])
+		expect(wb.connectionParts).toHaveLength(1)
 	})
 
 	test('insertRows rewrites formulas', () => {

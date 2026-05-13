@@ -8,6 +8,12 @@ export interface TableRangeOverlap {
 	readonly rightRef: RangeRef
 }
 
+export interface QueryTableColumnShiftBlocker {
+	readonly table: Table
+	readonly currentRef: RangeRef
+	readonly shiftedRef: RangeRef
+}
+
 export function tableRangesOverlap(left: RangeRef, right: RangeRef): boolean {
 	return (
 		Math.min(left.start.row, left.end.row) <= Math.max(right.start.row, right.end.row) &&
@@ -69,4 +75,24 @@ export function findShiftedTableRangeOverlap(
 		}
 	}
 	return null
+}
+
+export function findQueryTableColumnShiftBlocker(
+	sheet: Pick<Sheet, 'tables'>,
+	at: number,
+	delta: number,
+): QueryTableColumnShiftBlocker | null {
+	for (const table of sheet.tables) {
+		if (!table.queryTable) continue
+		const shiftedRef = shiftRangeRef(table.ref, 'col', at, delta)
+		if (!shiftedRef) continue
+		if (rangeWidth(shiftedRef) !== rangeWidth(table.ref)) {
+			return { table, currentRef: table.ref, shiftedRef }
+		}
+	}
+	return null
+}
+
+function rangeWidth(ref: RangeRef): number {
+	return ref.end.col - ref.start.col + 1
 }

@@ -29,7 +29,12 @@ import {
 	type DeletedTableColumnReference,
 	findDeletedTableColumnReference,
 } from '../structural/table-field-guards.ts'
-import { findShiftedTableRangeOverlap, type TableRangeOverlap } from '../table-topology.ts'
+import {
+	findQueryTableColumnShiftBlocker,
+	findShiftedTableRangeOverlap,
+	type QueryTableColumnShiftBlocker,
+	type TableRangeOverlap,
+} from '../table-topology.ts'
 import type { PatchResult } from './helpers.ts'
 import {
 	cellWithExisting,
@@ -70,8 +75,20 @@ function applyAxisShift(
 	const tableBoundaryBlocker =
 		axis === 'row' && delta < 0 ? findPartialTableBoundaryRowDelete(sheet, at, count) : null
 	if (tableBoundaryBlocker) return err(tableBoundaryRowStructuralEditError(tableBoundaryBlocker))
+	const queryTableColumnBlocker =
+		axis === 'col' ? findQueryTableColumnShiftBlocker(sheet, at, delta) : null
+	if (queryTableColumnBlocker) {
+		return err(queryTableColumnStructuralEditError(queryTableColumnBlocker))
+	}
 	const tableOverlapBlocker = findShiftedTableRangeOverlap(sheet, axis, at, delta)
 	if (tableOverlapBlocker) return err(tableStructuralShiftOverlapError(tableOverlapBlocker))
+	const deletedQueryTablePartPaths = collectStructurallyDeletedQueryTablePartPaths(
+		sheet,
+		axis,
+		at,
+		count,
+		delta,
+	)
 
 	if (axis === 'row') {
 		delta > 0 ? sheet.cells.insertRows(at, count) : sheet.cells.deleteRows(at, count)
@@ -85,6 +102,7 @@ function applyAxisShift(
 	rewriteWorkbookFormulasForShift(workbook, sheetName, axis, at, delta)
 	rewriteDefinedNameFormulasForShift(workbook, sheetName, axis, at, delta)
 	rewriteWorkbookMetadataFormulasForShift(workbook, sheetName, axis, at, delta)
+	removeDeletedQueryTableConnectionParts(workbook, deletedQueryTablePartPaths)
 
 	return ok(patch([], [sheetName], true))
 }
@@ -444,6 +462,62 @@ function tableStructuralShiftOverlapError(
 			},
 		},
 	)
+}
+
+function queryTableColumnStructuralEditError(
+	blocker: QueryTableColumnShiftBlocker,
+): ReturnType<typeof ascendError> {
+	const currentRef = rangeToA1(blocker.currentRef)
+	const shiftedRef = rangeToA1(blocker.shiftedRef)
+	return ascendError(
+		'VALIDATION_ERROR',
+		`Cannot structurally edit columns through queryTable-backed table "${blocker.table.name}" because changing columns would leave queryTable field bindings ambiguous`,
+		{
+			refs: [currentRef, shiftedRef],
+			details: {
+				kind: 'query-table-column-structural-edit',
+				tableName: blocker.table.name,
+				currentRef,
+				shiftedRef,
+				queryTablePartPath: blocker.table.queryTable?.partPath,
+			},
+			suggestedFix:
+				'Insert or delete columns outside the table, resize only the row span, or remove and rebuild the queryTable sidecar with matching queryTableField bindings before changing table columns.',
+		},
+	)
+}
+
+function collectStructurallyDeletedQueryTablePartPaths(
+	sheet: Sheet,
+	axis: 'row' | 'col',
+	at: number,
+	count: number,
+	delta: number,
+): string[] {
+	if (delta >= 0) return []
+	const deleteEnd = at + count
+	const partPaths: string[] = []
+	for (const table of sheet.tables) {
+		if (!table.queryTable) continue
+		const start = axis === 'row' ? table.ref.start.row : table.ref.start.col
+		const end = axis === 'row' ? table.ref.end.row : table.ref.end.col
+		if (start >= at && end < deleteEnd) partPaths.push(table.queryTable.partPath)
+	}
+	return partPaths
+}
+
+function removeDeletedQueryTableConnectionParts(
+	workbook: Workbook,
+	partPaths: readonly string[],
+): void {
+	if (partPaths.length === 0) return
+	const deleted = new Set(partPaths)
+	for (let index = workbook.connectionParts.length - 1; index >= 0; index--) {
+		const connection = workbook.connectionParts[index]
+		if (connection?.kind === 'queryTable' && deleted.has(connection.partPath)) {
+			workbook.connectionParts.splice(index, 1)
+		}
+	}
 }
 
 function copyTransferMetadata(

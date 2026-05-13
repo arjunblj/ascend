@@ -3086,6 +3086,21 @@ function parseCanonicalFullScalarCell(
 	out.formulaText = null
 	out.styleIdx = 0
 
+	if (xml.startsWith('"><v>', attrsEnd)) {
+		const valueStart = attrsEnd + 5
+		const parsedInt = parseCanonicalIntegerValue(xml, valueStart, bodyEnd)
+		if (parsedInt) {
+			out.numberValue = parsedInt.value
+			return parsedInt.next
+		}
+		const valueEnd = xml.indexOf('</v></c>', valueStart)
+		if (valueEnd === -1 || valueEnd > bodyEnd) return -1
+		const value = parseSimpleXmlNumber(xml, valueStart, valueEnd)
+		if (value === undefined) return -1
+		out.numberValue = value
+		return valueEnd + 8
+	}
+
 	const compactInlineValueStart = parseCompactCanonicalInlineStringValueStart(xml, cursor)
 	if (compactInlineValueStart !== -1) {
 		let valueEnd = compactInlineValueStart

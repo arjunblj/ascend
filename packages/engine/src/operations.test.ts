@@ -4579,6 +4579,52 @@ describe('applyOperation', () => {
 		})
 	})
 
+	test('comment and hyperlink setters skip semantic no-ops without dirtying metadata', () => {
+		const wb = setup()
+		const sheet = wb.getSheet('Sheet1')
+		expect(sheet).toBeDefined()
+		if (!sheet) return
+		sheet.comments.set('A1', {
+			text: 'Review',
+			author: 'Ada',
+			legacyDrawing: { shapeId: '_x0000_s1025', row: 0, column: 0 },
+		})
+		sheet.hyperlinks.set('B1', {
+			target: 'https://example.com/report',
+			display: 'Report',
+			tooltip: 'Open report',
+		})
+
+		const comment = applyOperation(wb, {
+			op: 'setComment',
+			sheet: 'Sheet1',
+			ref: 'A1',
+			text: 'Review',
+			author: 'Ada',
+		})
+		expectOk(comment)
+		expect(comment.value).toEqual({
+			affectedCells: [],
+			sheetsModified: [],
+			recalcRequired: false,
+		})
+
+		const hyperlink = applyOperation(wb, {
+			op: 'setHyperlink',
+			sheet: 'Sheet1',
+			ref: 'B1',
+			url: 'https://example.com/report',
+			display: 'Report',
+			tooltip: 'Open report',
+		})
+		expectOk(hyperlink)
+		expect(hyperlink.value).toEqual({
+			affectedCells: [],
+			sheetsModified: [],
+			recalcRequired: false,
+		})
+	})
+
 	test('setHyperlink ignores blank destination fields when another destination is valid', () => {
 		const wb = setup()
 		const result = applyOperation(wb, {

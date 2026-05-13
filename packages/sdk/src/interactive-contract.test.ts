@@ -1426,6 +1426,32 @@ describe('interactive client contract', () => {
 		})
 		expect(wb.readSnapshotInfo().generations).toEqual(afterChanged)
 
+		const metadataOps = [
+			{ op: 'setComment' as const, sheet: 'Sheet1', ref: 'A1', text: 'Review', author: 'Ada' },
+			{
+				op: 'setHyperlink' as const,
+				sheet: 'Sheet1',
+				ref: 'B1',
+				url: 'https://example.com/report',
+				display: 'Report',
+				tooltip: 'Open report',
+			},
+		]
+		const metadataChanged = wb.apply(metadataOps)
+		expect(metadataChanged.errors).toEqual([])
+		expect(metadataChanged.affectedCells.sort()).toEqual(['A1', 'B1'])
+		const afterMetadataChanged = wb.readSnapshotInfo().generations
+		const metadataNoOp = wb.apply(metadataOps)
+		expect(metadataNoOp).toMatchObject({
+			affectedCells: [],
+			sheetsModified: [],
+			recalcRequired: false,
+			dirtyRegions: [],
+			generations: afterMetadataChanged,
+			errors: [],
+		})
+		expect(wb.readSnapshotInfo().generations).toEqual(afterMetadataChanged)
+
 		const fullSession = await AscendSession.open(wb.toBytes(), { mode: 'interactive' })
 		const fullViewport = fullSession.readViewport({
 			sheet: 'Sheet1',
@@ -1468,6 +1494,16 @@ describe('interactive client contract', () => {
 		})
 		expect(afterSessionNoOp.generation).toEqual(fullViewport.generation)
 		expect(afterSessionNoOp.cells).toEqual(fullViewport.cells)
+
+		const sessionMetadataNoOp = await fullSession.apply(metadataOps)
+		expect(sessionMetadataNoOp.apply).toMatchObject({
+			affectedCells: [],
+			sheetsModified: [],
+			recalcRequired: false,
+			dirtyRegions: [],
+			errors: [],
+		})
+		expect(sessionMetadataNoOp.generation.session).toBe(fullViewport.generation.session)
 		fullSession.close()
 
 		const session = await AscendSession.open(wb.toBytes(), { mode: 'interactive', maxRows: 1 })

@@ -467,11 +467,14 @@ export function handleSetComment(
 
 	const ref = op.ref.toUpperCase()
 	const existing = findCommentEntry(result.value.comments, ref)
-	if (existing && existing[0] !== ref) result.value.comments.delete(existing[0])
 	const comment =
 		op.author !== undefined
 			? { ...existing?.[1], text: op.text, author: op.author }
 			: { ...existing?.[1], text: op.text }
+	if (existing && existing[0] === ref && commentsEqual(existing[1], comment)) {
+		return ok(patch([], []))
+	}
+	if (existing && existing[0] !== ref) result.value.comments.delete(existing[0])
 	result.value.comments.set(ref, comment)
 
 	return ok(patch([ref], [op.sheet]))
@@ -574,6 +577,13 @@ function findCommentEntry(
 	return null
 }
 
+function commentsEqual(
+	left: Workbook['sheets'][number]['comments'] extends Map<string, infer T> ? T : never,
+	right: Workbook['sheets'][number]['comments'] extends Map<string, infer T> ? T : never,
+): boolean {
+	return JSON.stringify(left) === JSON.stringify(right)
+}
+
 export function handleSetHyperlink(
 	workbook: Workbook,
 	op: Extract<Operation, { op: 'setHyperlink' }>,
@@ -589,17 +599,44 @@ export function handleSetHyperlink(
 		)
 	}
 	const ref = op.ref.toUpperCase()
-	result.value.ensureWritable()
-	for (const [linkRef] of result.value.hyperlinks) {
-		if (linkRef.toUpperCase() === ref && linkRef !== ref) result.value.hyperlinks.delete(linkRef)
-	}
-	result.value.hyperlinks.set(ref, {
+	const existing = findHyperlinkEntry(result.value.hyperlinks, ref)
+	const next = {
 		...(hasLinkDestination(op.url) ? { target: op.url } : {}),
 		...(hasLinkDestination(op.location) ? { location: op.location } : {}),
 		...(op.display !== undefined ? { display: op.display } : {}),
 		...(op.tooltip !== undefined ? { tooltip: op.tooltip } : {}),
-	})
+	}
+	if (existing && existing[0] === ref && hyperlinksEqual(existing[1], next)) {
+		return ok(patch([], []))
+	}
+	result.value.ensureWritable()
+	if (existing && existing[0] !== ref) result.value.hyperlinks.delete(existing[0])
+	result.value.hyperlinks.set(ref, next)
 	return ok(patch([ref], [op.sheet]))
+}
+
+function findHyperlinkEntry(
+	hyperlinks: Workbook['sheets'][number]['hyperlinks'],
+	ref: string,
+):
+	| [string, Workbook['sheets'][number]['hyperlinks'] extends Map<string, infer T> ? T : never]
+	| null {
+	for (const entry of hyperlinks) {
+		if (entry[0].toUpperCase() === ref) return entry
+	}
+	return null
+}
+
+function hyperlinksEqual(
+	left: Workbook['sheets'][number]['hyperlinks'] extends Map<string, infer T> ? T : never,
+	right: Workbook['sheets'][number]['hyperlinks'] extends Map<string, infer T> ? T : never,
+): boolean {
+	return (
+		left.target === right.target &&
+		left.location === right.location &&
+		left.display === right.display &&
+		left.tooltip === right.tooltip
+	)
 }
 
 function hasLinkDestination(value: string | undefined): boolean {

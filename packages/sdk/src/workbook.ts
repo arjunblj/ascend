@@ -189,7 +189,7 @@ function applySetCellsTransactionInPlace(
 
 function isApplyPatchNoOp(ops: readonly Operation[], result: PatchResult): boolean {
 	return (
-		ops.every((op) => op.op === 'setCells') &&
+		ops.every((op) => op.op === 'setCells' || op.op === 'setComment' || op.op === 'setHyperlink') &&
 		result.affectedCells.length === 0 &&
 		result.sheetsModified.length === 0 &&
 		!result.recalcRequired &&

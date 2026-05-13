@@ -12,6 +12,7 @@ import type { Cell } from './sparse-grid.ts'
 import { SparseGrid } from './sparse-grid.ts'
 
 const S0 = 0 as StyleId
+const S7 = 7 as StyleId
 
 function makeCell(value: Cell['value'], formula: string | null = null): Cell {
 	return { value, formula, styleId: S0 }
@@ -56,6 +57,24 @@ describe('SparseGrid', () => {
 			start: { row: 0, col: 0 },
 			end: { row: 1, col: 1 },
 		})
+	})
+
+	test('plain number overwrite clears dense chunk side storage', () => {
+		const grid = new SparseGrid()
+		grid.setExpectedDensity('dense')
+		grid.set(0, 0, {
+			value: richTextValue([{ text: 'rich', bold: true }]),
+			formula: 'A2',
+			styleId: S7,
+			formulaInfo: { kind: 'array', ref: 'A1' },
+		})
+
+		grid.setPlainNumber(0, 0, 42)
+
+		expect(grid.get(0, 0)).toEqual(makeCell(numberValue(42)))
+		expect(grid.formulaCellCount()).toBe(0)
+		expect(grid.formulaInfoCellCount()).toBe(0)
+		expect(grid.richTextCellCount()).toBe(0)
 	})
 
 	test('tracks string and rich text cell counts across mutations', () => {

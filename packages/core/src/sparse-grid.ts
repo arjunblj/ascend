@@ -768,7 +768,12 @@ class DenseChunk implements GridChunk {
 
 	writePlainNumber(localIndex: number, value: number): number {
 		const previous = this.preparePlainWrite(localIndex)
-		this.writeResolved(localIndex, SlotTag.Number, DEFAULT_STYLE_ID, value, 0, null, undefined)
+		this.slotMeta[localIndex] = SLOT_OCCUPIED_BIT | SlotTag.Number
+		this.numbers[localIndex] = value
+		if (this.styleIds !== null) this.styleIds[localIndex] = DEFAULT_STYLE_ID
+		if (this.formulas !== null) this.formulas[localIndex] = null
+		if (this.formulaInfos !== null) this.formulaInfos[localIndex] = undefined
+		if (this.heapValues !== null) this.heapValues[localIndex] = undefined
 		return previous
 	}
 

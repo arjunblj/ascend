@@ -5420,6 +5420,7 @@ const SPREADSHEETML_NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/m
 const SPREADSHEET_DRAWING_NS = 'http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing'
 
 function extractExtLst(xml: string, sheet: Sheet): void {
+	if (!xml.includes('extLst')) return
 	let preserved: string | undefined
 	for (const match of xml.matchAll(WORKSHEET_EXTLST_RE)) {
 		preserved = withSpreadsheetmlNamespace(
@@ -5433,6 +5434,7 @@ function extractExtLst(xml: string, sheet: Sheet): void {
 }
 
 function extractCustomSheetViews(xml: string, sheet: Sheet): void {
+	if (!xml.includes('customSheetViews')) return
 	let preserved: string | undefined
 	for (const match of xml.matchAll(CUSTOM_SHEET_VIEWS_RE)) {
 		preserved = withSpreadsheetmlNamespace(
@@ -5446,6 +5448,7 @@ function extractCustomSheetViews(xml: string, sheet: Sheet): void {
 }
 
 function extractControls(xml: string, sheet: Sheet): void {
+	if (!xml.includes('controls')) return
 	let preserved: string | undefined
 	for (const match of xml.matchAll(WORKSHEET_CONTROLS_RE)) {
 		preserved = withSpreadsheetmlNamespace(

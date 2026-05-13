@@ -185,7 +185,7 @@ describe('path-addressed mutations', () => {
 		expect(wb.table('SalesData')?.columns).toContain('Revenue')
 	})
 
-	test('canonicalizes case-insensitive table column path selectors', () => {
+	test('canonicalizes case-insensitive table and column path selectors', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([
 			{
@@ -202,8 +202,8 @@ describe('path-addressed mutations', () => {
 		])
 
 		const result = wb.compilePathMutations([
-			{ path: '/tables/Sales/columns/revenue/formula', value: 'SUM([Revenue])' },
-			{ path: '/tables/Sales/columns/region/name', value: 'Market' },
+			{ path: '/tables/sales/columns/revenue/formula', value: 'SUM([Revenue])' },
+			{ path: '/tables/sales/columns/region/name', value: 'Market' },
 		])
 
 		expect(result.issues).toEqual([])

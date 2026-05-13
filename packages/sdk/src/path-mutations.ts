@@ -450,12 +450,13 @@ function compileTablePath(
 	if (!table) return issue(mutation.path, 'invalid_path', 'Table path must include a table name.')
 	const tableModel = workbook.sheets
 		.flatMap((sheet) => sheet.tables)
-		.find((entry) => entry.name === table)
+		.find((entry) => entry.name.toLowerCase() === table.toLowerCase())
 	if (!tableModel) {
 		return issue(mutation.path, 'table_not_found', `Table "${table}" not found.`, {
 			availableTables: workbook.sheets.flatMap((sheet) => sheet.tables.map((entry) => entry.name)),
 		})
 	}
+	const canonicalTable = tableModel.name
 	if (segments.length === 3 && segments[2] === 'name') {
 		if (typeof mutation.value !== 'string' || mutation.value.length === 0) {
 			return issue(mutation.path, 'invalid_value', 'Table rename value must be a non-empty string.')
@@ -466,16 +467,16 @@ function compileTablePath(
 				suggestedFix: validation.suggestedFix,
 			})
 		}
-		return { op: { op: 'renameTable', table, newName: mutation.value } }
+		return { op: { op: 'renameTable', table: canonicalTable, newName: mutation.value } }
 	}
 	if (segments.length === 4 && segments[2] === 'rows' && segments[3] === 'append') {
 		const rows = inputRows(mutation.value)
 		if (!rows.ok) return issue(mutation.path, 'invalid_value', rows.message)
-		return { op: { op: 'appendRows', table, rows: rows.rows } }
+		return { op: { op: 'appendRows', table: canonicalTable, rows: rows.rows } }
 	}
 	if (segments.length === 5 && segments[2] === 'columns') {
 		return compileTableColumnPath(
-			table,
+			canonicalTable,
 			tableModel.columns.map((column) => column.name),
 			mutation,
 			segments[3],
@@ -483,7 +484,7 @@ function compileTablePath(
 		)
 	}
 	if (segments.length === 3 && segments[2] === 'style') {
-		return compileTableStylePath(table, mutation)
+		return compileTableStylePath(canonicalTable, mutation)
 	}
 	return unsupportedShape(mutation.path, segments)
 }

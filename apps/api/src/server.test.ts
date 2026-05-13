@@ -567,6 +567,7 @@ describe('Ascend API server', () => {
 	test('preview, plan, write, and commit keep escaped path mutations canonical', async () => {
 		const sheetName = "Q1.Forecast's Café Δ"
 		const tableName = 'Sales.Δ'
+		const tablePathName = tableName.toLowerCase()
 		const columnName = 'Gross Profit/Δ~'
 		const columnPathName = columnName.toLowerCase()
 		const workbookName = 'Global.Rate_Δ'
@@ -593,7 +594,7 @@ describe('Ascend API server', () => {
 			{ path: `sheets.${dotSegment(sheetName)}.cells.A3.value`, value: 'dot' },
 			{ path: ['sheets', sheetName, 'cells', 'A4', 'value'], value: 'array' },
 			{
-				path: `tables.${dotSegment(tableName)}.columns.${dotSegment(columnPathName)}.formula`,
+				path: `tables.${dotSegment(tablePathName)}.columns.${dotSegment(columnPathName)}.formula`,
 				value: 'SUM([Region])',
 			},
 			{ path: `/names/${pointerSegment(workbookName)}/ref`, value: definedNameRef },

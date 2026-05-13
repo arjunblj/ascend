@@ -465,6 +465,9 @@ describe('Ascend API server', () => {
 		const sheetName = "Q1.Forecast's Café Δ"
 		const tableName = 'Sales.Δ'
 		const columnName = 'Gross Profit/Δ~'
+		const workbookName = 'Global.Rate_Δ'
+		const scopedName = 'Local.Rate_Δ'
+		const definedNameRef = `'${sheetName.replace(/'/g, "''")}'!$B$2`
 		const wb = AscendWorkbook.create()
 		wb.apply([
 			{ op: 'renameSheet', sheet: 'Sheet1', newName: sheetName },
@@ -489,6 +492,11 @@ describe('Ascend API server', () => {
 				path: `tables.${dotSegment(tableName)}.columns.${dotSegment(columnName)}.formula`,
 				value: 'SUM([Region])',
 			},
+			{ path: `/names/${pointerSegment(workbookName)}/ref`, value: definedNameRef },
+			{
+				path: `sheets.${dotSegment(sheetName)}.names.${dotSegment(scopedName)}.ref`,
+				value: definedNameRef,
+			},
 			{
 				path: ['tables', tableName, 'columns', columnName, 'name'],
 				value: 'Net_Δ',
@@ -510,6 +518,8 @@ describe('Ascend API server', () => {
 				column: columnName,
 				formula: 'SUM([Region])',
 			},
+			{ op: 'setDefinedName', name: workbookName, ref: definedNameRef },
+			{ op: 'setDefinedName', name: scopedName, scope: sheetName, ref: definedNameRef },
 			{ op: 'setTableColumn', table: tableName, column: columnName, newName: 'Net_Δ' },
 		]
 
@@ -543,6 +553,8 @@ describe('Ascend API server', () => {
 				kind: 'string',
 				value: 'array',
 			})
+			expect(writeReopened.definedName(workbookName)?.formula).toBe(definedNameRef)
+			expect(writeReopened.definedName(scopedName, sheetName)?.formula).toBe(definedNameRef)
 
 			await wb.save(commitInput)
 			const commit = await postJson('/commit', {
@@ -563,6 +575,8 @@ describe('Ascend API server', () => {
 				kind: 'string',
 				value: 'array',
 			})
+			expect(commitReopened.definedName(workbookName)?.formula).toBe(definedNameRef)
+			expect(commitReopened.definedName(scopedName, sheetName)?.formula).toBe(definedNameRef)
 		} finally {
 			await unlink(writePath).catch(() => {})
 			await unlink(commitInput).catch(() => {})

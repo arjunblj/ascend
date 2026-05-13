@@ -61,6 +61,7 @@ describe('path-addressed mutations', () => {
 		const tableName = 'Sales.Δ'
 		const columnName = "Gross.Profit / Δ~'s"
 		const definedName = "Revenue/North ~ Café's Δ"
+		const scopedName = 'Local.Rate_Δ'
 		const wb = AscendWorkbook.create()
 		wb.apply([
 			{ op: 'renameSheet', sheet: 'Sheet1', newName: sheetName },
@@ -91,6 +92,14 @@ describe('path-addressed mutations', () => {
 			},
 			{ path: `/names/${pointerSegment(definedName)}/ref`, value: `'${sheetName}'!$B$2` },
 			{ path: `names.${dotSegment(definedName)}.ref`, value: `'${sheetName}'!$B$2` },
+			{
+				path: `/sheets/${pointerSegment(sheetName)}/names/${pointerSegment(scopedName)}/ref`,
+				value: `'${sheetName}'!$B$2`,
+			},
+			{
+				path: `sheets.${dotSegment(sheetName)}.names.${dotSegment(scopedName)}.ref`,
+				value: `'${sheetName}'!$B$2`,
+			},
 		])
 
 		expect(result.issues).toEqual([])
@@ -114,6 +123,8 @@ describe('path-addressed mutations', () => {
 			{ op: 'setTableColumn', table: tableName, column: columnName, totalsRowLabel: 'Total' },
 			{ op: 'setDefinedName', name: definedName, ref: `'${sheetName}'!$B$2` },
 			{ op: 'setDefinedName', name: definedName, ref: `'${sheetName}'!$B$2` },
+			{ op: 'setDefinedName', name: scopedName, scope: sheetName, ref: `'${sheetName}'!$B$2` },
+			{ op: 'setDefinedName', name: scopedName, scope: sheetName, ref: `'${sheetName}'!$B$2` },
 		])
 	})
 

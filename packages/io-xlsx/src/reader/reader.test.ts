@@ -14,6 +14,7 @@ import {
 } from './shared-strings.ts'
 import type { StreamedSheetRow } from './sheet.ts'
 import {
+	parseSheetFullScalarBytes,
 	parseSheetValuesOnlyBytes,
 	streamSheetRowsByteChunks,
 	streamSheetRowsTextChunks,
@@ -3979,6 +3980,68 @@ describe('readXlsx', () => {
 		expect(sheet?.cells.get(2, 0)?.value).toEqual(numberValue(-12))
 		expect(sheet?.cells.get(2, 1)?.value).toEqual(numberValue(1250))
 		expect(sheet?.cells.get(2, 2)?.value).toEqual(numberValue(Number('12345678901234567')))
+	})
+
+	it('full scalar byte parser preserves simple rich-read cell semantics', () => {
+		const sharedStrings = parseSharedStrings(
+			`<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <si><t>Shared &amp; full</t></si>
+</sst>`,
+		)
+		const xml = `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <dimension ref="A1:E1"/>
+  <sheetData>
+    <row r="1" ht="18" customHeight="1"><c r="A1"><v>7</v></c><c r="B1" t="s"><v>0</v></c><c r="C1" t="inlineStr"><is><t>inline &amp; full</t></is></c><c r="D1" t="b"><v>1</v></c><c r="E1" s="1"><v>45292</v></c></row>
+  </sheetData>
+</worksheet>`
+		const sheet = parseSheetFullScalarBytes('Sheet1', new TextEncoder().encode(xml), {
+			sharedStrings,
+			styleIds: [S0, 1 as StyleId],
+			isDateFormat: [false, true],
+			hasDateStyles: true,
+			valuesOnly: false,
+			richMetadata: true,
+		})
+
+		expect(sheet).not.toBeNull()
+		expect(sheet?.preservedDimensionRef).toBe('A1:E1')
+		expect(sheet?.cells.get(0, 0)?.value).toEqual(numberValue(7))
+		expect(sheet?.cells.get(0, 1)?.value).toEqual(stringValue('Shared & full'))
+		expect(sheet?.cells.get(0, 1)?.formula).toBeNull()
+		expect(sheet?.cells.get(0, 2)?.value).toEqual(stringValue('inline & full'))
+		expect(sheet?.cells.get(0, 3)?.value).toEqual(booleanValue(true))
+		expect(sheet?.cells.get(0, 4)?.value).toEqual(dateValue(45292))
+		expect(sheet?.cells.get(0, 4)?.styleId).toBe(1)
+		expect(sheet?.rowHeights.get(0)).toBe(18)
+		expect(sheet?.rowDefs.get(0)).toEqual({ customHeight: true })
+	})
+
+	it('full scalar byte parser rejects formulas and sheet metadata for XML fallback', () => {
+		const ctx = {
+			sharedStrings: emptySharedStrings(),
+			styleIds: [S0],
+			isDateFormat: [false],
+			hasDateStyles: false,
+			valuesOnly: false,
+			richMetadata: true,
+		}
+		const formulaSheet = parseSheetFullScalarBytes(
+			'Sheet1',
+			new TextEncoder().encode(
+				`<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1"><f>1+1</f><v>2</v></c></row></sheetData></worksheet>`,
+			),
+			ctx,
+		)
+		const metadataSheet = parseSheetFullScalarBytes(
+			'Sheet1',
+			new TextEncoder().encode(
+				`<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews/><sheetData><row r="1"><c r="A1"><v>2</v></c></row></sheetData></worksheet>`,
+			),
+			ctx,
+		)
+
+		expect(formulaSheet).toBeNull()
+		expect(metadataSheet).toBeNull()
 	})
 
 	it('values mode preserves mixed direct values, dates, row metadata, maxRows, and sheet metadata', () => {

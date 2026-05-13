@@ -338,6 +338,43 @@ export function parseSheetValuesOnlyBytes(
 	return sheet
 }
 
+export function parseSheetFullScalarBytes(
+	name: string,
+	bytes: Uint8Array,
+	ctx: SheetParseContext,
+	sheetId?: Sheet['id'],
+): Sheet | null {
+	if (ctx.valuesOnly || ctx.formulaOnly) return null
+	const sheetDataStart = locateSheetDataStartBytes(bytes)
+	if (!sheetDataStart) return null
+	const sheet = new Sheet(name, sheetId)
+	const dimensionRef = parseDimensionRefBytes(bytes)
+	sheet.preservedDimensionRef = dimensionRef
+	applyDensityHintFromDimensionRef(sheet, dimensionRef)
+	if (sheetDataStart.selfClosing) {
+		if (
+			hasUnsupportedValuesOnlyOuterTagsInRangeBytes(bytes, 0, sheetDataStart.tagStart) ||
+			hasUnsupportedValuesOnlyOuterTagsInRangeBytes(bytes, sheetDataStart.closeEnd, bytes.length)
+		) {
+			return null
+		}
+		return sheet
+	}
+	if (hasUnsupportedValuesOnlyOuterTagsInRangeBytes(bytes, 0, sheetDataStart.tagStart)) {
+		return null
+	}
+
+	const closeEnd = parseFullScalarSheetDataBytesToClose(
+		bytes,
+		sheetDataStart.contentStart,
+		sheet,
+		ctx,
+	)
+	if (closeEnd === false) return null
+	if (hasUnsupportedValuesOnlyOuterTagsInRangeBytes(bytes, closeEnd, bytes.length)) return null
+	return sheet
+}
+
 function hasValuesModeSheetMetadata(xml: string, sheetDataLoc: SheetDataLocation | null): boolean {
 	const beforeEnd = sheetDataLoc?.tagStart ?? xml.length
 	const afterStart = sheetDataLoc?.closeEnd ?? xml.length
@@ -653,6 +690,74 @@ function parseSheetDataRowsBytes(
 	}
 }
 
+function parseFullScalarSheetDataBytesToClose(
+	bytes: Uint8Array,
+	contentStart: number,
+	sheet: Sheet,
+	ctx: SheetParseContext,
+): number | false {
+	let rowCursor = contentStart
+	let currentRow = -1
+
+	while (true) {
+		const rowOpen = nextXmlElementOpenBytes(bytes, rowCursor, bytes.length)
+		if (rowOpen === -1) return false
+		if (
+			indexOfBytes(
+				bytes,
+				BYTES_SHEET_DATA_CLOSE,
+				rowOpen,
+				rowOpen + BYTES_SHEET_DATA_CLOSE.length,
+			) === rowOpen
+		) {
+			return rowOpen + BYTES_SHEET_DATA_CLOSE.length
+		}
+		if (
+			rowOpen === -2 ||
+			!startsWithElementOpenAtBytes(bytes, BYTES_ROW_OPEN, rowOpen, bytes.length)
+		) {
+			return false
+		}
+		const rowTagEnd = findTagEndBytes(bytes, rowOpen)
+		if (rowTagEnd === -1) return false
+		const rowAttrStart = rowOpen + BYTES_ROW_OPEN.length
+		const explicitRowIndex = rawRowIndexAttrInfoInBytes(bytes, rowAttrStart, rowTagEnd)
+		const row = explicitRowIndex ? explicitRowIndex.value - 1 : currentRow + 1
+		currentRow = row
+		if (ctx.maxRows !== undefined && row >= ctx.maxRows) {
+			const close = indexOfBytes(bytes, BYTES_SHEET_DATA_CLOSE, rowOpen, bytes.length)
+			return close === -1 ? false : close + BYTES_SHEET_DATA_CLOSE.length
+		}
+		if (
+			!explicitRowIndex?.onlyAttr &&
+			hasRowPresentationMetadataBytes(bytes, rowAttrStart, rowTagEnd)
+		) {
+			parseRowPresentationMetadataBytes(bytes, rowAttrStart, rowTagEnd, row, sheet)
+		}
+		if (isSelfClosingTagBytes(bytes, rowOpen, rowTagEnd)) {
+			rowCursor = rowTagEnd + 1
+			continue
+		}
+
+		const rowClose = indexOfBytes(bytes, BYTES_ROW_CLOSE, rowTagEnd + 1, bytes.length)
+		if (rowClose === -1) return false
+		if (
+			!parseSimpleFullScalarRowBytes(
+				bytes,
+				rowTagEnd + 1,
+				rowClose,
+				row,
+				ctx,
+				sheet,
+				explicitRowIndex,
+			)
+		) {
+			return false
+		}
+		rowCursor = rowClose + BYTES_ROW_CLOSE.length
+	}
+}
+
 function parseSimpleValuesRowBytes(
 	bytes: Uint8Array,
 	bodyStart: number,
@@ -947,6 +1052,140 @@ function parseSimpleValuesRowBytes(
 		nextCol = out.col + 1
 		cursor += BYTES_CELL_CLOSE.length
 	}
+}
+
+function parseSimpleFullScalarRowBytes(
+	bytes: Uint8Array,
+	bodyStart: number,
+	bodyEnd: number,
+	row: number,
+	ctx: SheetParseContext,
+	sheet: Sheet,
+	rowIndexAttr?: RowIndexAttrBytes,
+): boolean {
+	if (
+		ctx.valuesOnly ||
+		ctx.formulaOnly ||
+		hasElementOpenBytes(bytes, BYTES_F_OPEN, bodyStart, bodyEnd)
+	) {
+		return false
+	}
+	let cursor = bodyStart
+	let nextCol = 0
+	const rowNumber = row + 1
+	const out: SimpleValuesCellOut = {
+		row,
+		col: 0,
+		numberValue: undefined,
+		sharedStringIndex: -1,
+		booleanRaw: -1,
+		stringStart: -1,
+		stringEnd: -1,
+		stringHasEntity: false,
+		styleIdx: 0,
+	}
+	while (true) {
+		cursor = skipXmlWhitespaceBytes(bytes, cursor, bodyEnd)
+		if (cursor >= bodyEnd) return true
+		const plainValueNext = parseCanonicalPlainValueCellBytes(
+			bytes,
+			cursor,
+			bodyEnd,
+			rowNumber,
+			row,
+			nextCol,
+			out,
+			rowIndexAttr,
+		)
+		if (plainValueNext !== -1) {
+			if (!setFullScalarCellBytes(sheet, ctx, bytes, out)) return false
+			nextCol = out.col + 1
+			cursor = plainValueNext
+			continue
+		}
+		const omittedRefNext = parseCanonicalOmittedRefValueCellBytes(
+			bytes,
+			cursor,
+			bodyEnd,
+			row,
+			nextCol,
+			out,
+		)
+		if (omittedRefNext !== -1) {
+			if (!setFullScalarCellBytes(sheet, ctx, bytes, out)) return false
+			nextCol = out.col + 1
+			cursor = omittedRefNext
+			continue
+		}
+		const canonicalNext = parseCanonicalValuesCellBytes(
+			bytes,
+			cursor,
+			bodyEnd,
+			rowNumber,
+			row,
+			nextCol,
+			out,
+		)
+		if (canonicalNext !== -1) {
+			if (!setFullScalarCellBytes(sheet, ctx, bytes, out)) return false
+			nextCol = out.col + 1
+			cursor = canonicalNext
+			continue
+		}
+		return false
+	}
+}
+
+function setFullScalarCellBytes(
+	sheet: Sheet,
+	ctx: SheetParseContext,
+	bytes: Uint8Array,
+	out: SimpleValuesCellOut,
+): boolean {
+	const styleId = ctx.styleIds[out.styleIdx] ?? DEFAULT_STYLE_ID
+	if (out.numberValue !== undefined) {
+		if (ctx.isDateFormat[out.styleIdx]) {
+			sheet.cells.setResolved(out.row, out.col, dateValue(out.numberValue), null, styleId)
+		} else if (styleId === DEFAULT_STYLE_ID) {
+			sheet.cells.setPlainNumber(out.row, out.col, out.numberValue)
+		} else {
+			sheet.cells.setNumberResolved(out.row, out.col, out.numberValue, null, styleId)
+		}
+		return true
+	}
+	if (out.sharedStringIndex >= 0) {
+		const text = ctx.sharedStrings.getString?.(out.sharedStringIndex)
+		if (text !== undefined) {
+			if (styleId === DEFAULT_STYLE_ID) sheet.cells.setPlainString(out.row, out.col, text)
+			else sheet.cells.setStringResolved(out.row, out.col, text, null, styleId)
+			return true
+		}
+		sheet.cells.setResolved(
+			out.row,
+			out.col,
+			ctx.sharedStrings.get(out.sharedStringIndex) ?? stringValue(''),
+			null,
+			styleId,
+		)
+		return true
+	}
+	if (out.booleanRaw >= 0) {
+		sheet.cells.setResolved(
+			out.row,
+			out.col,
+			internValue(ctx, booleanValue(out.booleanRaw === 1)),
+			null,
+			styleId,
+		)
+		return true
+	}
+	if (out.stringStart >= 0) {
+		const text = decodeXmlBytesTextKnown(bytes, out.stringStart, out.stringEnd, out.stringHasEntity)
+		if (styleId === DEFAULT_STYLE_ID) sheet.cells.setPlainString(out.row, out.col, text)
+		else sheet.cells.setStringResolved(out.row, out.col, text, null, styleId)
+		return true
+	}
+	return false
 }
 
 function setSimpleValuesNumberCell(

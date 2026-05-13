@@ -520,7 +520,14 @@ describe('MCP server', () => {
 		}) => Promise<{
 			structuredContent?: {
 				ok?: boolean
-				data?: { journal?: { supported?: boolean; inverseOps?: unknown[] } }
+				data?: {
+					journal?: {
+						supported?: boolean
+						exact?: boolean
+						inverseOps?: unknown[]
+						issues?: unknown[]
+					}
+				}
 			}
 		}>
 		const result = await handler({
@@ -695,6 +702,78 @@ describe('MCP server', () => {
 
 		const reopened = await AscendWorkbook.open(TEMP_FILE)
 		expect(reopened.sheet('Sheet1')?.cell('A1')?.value).toEqual({ kind: 'string', value: 'old' })
+	})
+
+	test('ascend.preview preserves lossy journal issue metadata', async () => {
+		const wb = AscendWorkbook.create()
+		await wb.save(TEMP_FILE)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const handler = (server as any)._registeredTools['ascend.preview'].handler as (args: {
+			file: string
+			ops: unknown[]
+			journal?: boolean
+		}) => Promise<{
+			structuredContent?: {
+				ok?: boolean
+				data?: {
+					journal?: {
+						supported?: boolean
+						exact?: boolean
+						inverseOps?: unknown[]
+						issues?: unknown[]
+					}
+				}
+			}
+		}>
+		const result = await handler({
+			file: TEMP_FILE,
+			journal: true,
+			ops: [
+				{ op: 'groupRows', sheet: 'Sheet1', from: 1, to: 2, collapsed: true },
+				{
+					op: 'groupCols',
+					sheet: 'Sheet1',
+					from: 0,
+					to: 1,
+					collapsed: true,
+					summaryRight: false,
+				},
+			],
+		})
+
+		expect(result.structuredContent?.ok).toBe(true)
+		expect(result.structuredContent?.data?.journal?.supported).toBe(true)
+		expect(result.structuredContent?.data?.journal?.exact).toBe(false)
+		expect(result.structuredContent?.data?.journal?.inverseOps).toEqual([])
+		expect(result.structuredContent?.data?.journal?.issues).toEqual([
+			{
+				code: 'LOSSY_INVERSE',
+				message: 'Grouped rows for Sheet1 cannot be restored with public operations',
+				refs: [
+					'Sheet1!2',
+					'Sheet1!3',
+					'Sheet1!4',
+					'sheet:Sheet1:outlinePr:summaryBelow',
+					'sheet:Sheet1:sheetFormatPr:outlineLevelRow',
+				],
+			},
+			{
+				code: 'LOSSY_INVERSE',
+				message: 'Grouped columns for Sheet1 cannot be restored with public operations',
+				refs: [
+					'Sheet1!A',
+					'Sheet1!B',
+					'sheet:Sheet1:outlinePr:summaryRight',
+					'sheet:Sheet1:sheetFormatPr:outlineLevelCol',
+				],
+			},
+		])
+
+		const reopened = await AscendWorkbook.open(TEMP_FILE)
+		expect(reopened.getWorkbookModel().getSheet('Sheet1')?.rowDefs.size).toBe(0)
+		expect(reopened.getWorkbookModel().getSheet('Sheet1')?.colDefs).toEqual([])
 	})
 
 	test('ascend.preview and ascend.write accept path-addressed mutations', async () => {

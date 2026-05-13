@@ -106,7 +106,12 @@ interface ApiEnvelope {
 				readonly postWriteLintFailures?: number
 			}
 		}
-		readonly journal?: { readonly supported?: boolean; readonly inverseOps?: unknown[] }
+		readonly journal?: {
+			readonly supported?: boolean
+			readonly exact?: boolean
+			readonly inverseOps?: unknown[]
+			readonly issues?: unknown[]
+		}
 		readonly partPath?: string
 		readonly featureFamily?: string
 		readonly text?: string
@@ -913,6 +918,60 @@ describe('Ascend API server', () => {
 		})
 		expect(ambiguous.status).toBe(400)
 		expect(ambiguous.body.error?.message).toBe('Provide either ops or mutations, not both')
+	})
+
+	test('preview preserves lossy journal issue metadata for agents', async () => {
+		const wb = AscendWorkbook.create()
+		await wb.save(TEMP_FILE)
+
+		const result = await postJson('/preview', {
+			file: TEMP_FILE,
+			journal: true,
+			ops: [
+				{ op: 'groupRows', sheet: 'Sheet1', from: 1, to: 2, collapsed: true },
+				{
+					op: 'groupCols',
+					sheet: 'Sheet1',
+					from: 0,
+					to: 1,
+					collapsed: true,
+					summaryRight: false,
+				},
+			],
+		})
+
+		expect(result.status).toBe(200)
+		expect(result.body.ok).toBe(true)
+		expect(result.body.data?.journal?.supported).toBe(true)
+		expect(result.body.data?.journal?.exact).toBe(false)
+		expect(result.body.data?.journal?.inverseOps).toEqual([])
+		expect(result.body.data?.journal?.issues).toEqual([
+			{
+				code: 'LOSSY_INVERSE',
+				message: 'Grouped rows for Sheet1 cannot be restored with public operations',
+				refs: [
+					'Sheet1!2',
+					'Sheet1!3',
+					'Sheet1!4',
+					'sheet:Sheet1:outlinePr:summaryBelow',
+					'sheet:Sheet1:sheetFormatPr:outlineLevelRow',
+				],
+			},
+			{
+				code: 'LOSSY_INVERSE',
+				message: 'Grouped columns for Sheet1 cannot be restored with public operations',
+				refs: [
+					'Sheet1!A',
+					'Sheet1!B',
+					'sheet:Sheet1:outlinePr:summaryRight',
+					'sheet:Sheet1:sheetFormatPr:outlineLevelCol',
+				],
+			},
+		])
+
+		const reopened = await AscendWorkbook.open(TEMP_FILE)
+		expect(reopened.getWorkbookModel().getSheet('Sheet1')?.rowDefs.size).toBe(0)
+		expect(reopened.getWorkbookModel().getSheet('Sheet1')?.colDefs).toEqual([])
 	})
 
 	test('ops and path mutations are mutually exclusive across edit endpoints', async () => {

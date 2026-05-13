@@ -1507,7 +1507,10 @@ const scenarios: readonly Scenario[] = [
 		},
 		async run(input) {
 			const bytes = requireBytes(input)
+			const openStart = performance.now()
 			const session = await AscendSession.open(bytes, { mode: 'interactive' })
+			const openMs = performance.now() - openStart
+			const previewStart = performance.now()
 			const viewport = session.readViewport({
 				sheet: 'Sheet1',
 				topRow: 0,
@@ -1515,6 +1518,7 @@ const scenarios: readonly Scenario[] = [
 				rowCount: 250,
 				colCount: 20,
 			})
+			const initialViewportMs = performance.now() - previewStart
 			const prepare = await session.prepareEdits()
 			const updates = Array.from({ length: 100 }, (_, index) => ({
 				ref: `A${index + 1}`,
@@ -1533,8 +1537,10 @@ const scenarios: readonly Scenario[] = [
 				colCount: 20,
 				changedSince: viewport.changeToken,
 			}
+			const patchStart = performance.now()
 			const patch =
 				session.readViewportPatch(patchRequest) ?? session.readViewport(patchRequest).patch
+			const patchReadMs = performance.now() - patchStart
 			const editFrameMs = performance.now() - editFrameStart
 			session.close()
 			if (!patch || patch.changedCells.length !== 100) {
@@ -1545,6 +1551,8 @@ const scenarios: readonly Scenario[] = [
 					changedCells: patch.changedCells.length,
 					removedRefs: patch.removedRefs.length,
 					patchBytes: patch.byteLength,
+					openMs,
+					initialViewportMs,
 					prepareEditsMs: prepare.timings.totalMs,
 					prepareEnsureMutableWorkbookMs: prepare.timings.ensureMutableWorkbookMs,
 					editFrameMs,
@@ -1554,6 +1562,7 @@ const scenarios: readonly Scenario[] = [
 					recalcMs: edit.timings.recalcMs,
 					generationSnapshotMs: edit.timings.generationSnapshotMs,
 					inspectWriteMs: edit.timings.inspectWriteMs,
+					patchReadMs,
 					promotedToFull: edit.load.promotedToFull,
 					patchMode: 'delta',
 				},

@@ -1389,27 +1389,53 @@ function buildWritePolicyReport(
 		visualWriteRisk.relatedOperations.length > 0 ||
 		visualWriteRisk.chartSourceRefDrift.length > 0 ||
 		visualWriteRisk.drawingmlVmlDrift.length > 0
-	if (visualPartPaths.length > 0) {
+	const visualPackageGraphIssues = packageGraphAudit.issues.filter((issue) =>
+		isVisualPackageGraphIssue(issue),
+	)
+	const visualIssuePartPaths = uniqueStrings(
+		visualPackageGraphIssues.flatMap((issue) =>
+			packageGraphIssuePackagePaths(issue).filter(isVisualPackagePartPath),
+		),
+	)
+	const visualDiagnosticPartPaths = uniqueStrings([...visualPartPaths, ...visualIssuePartPaths])
+	for (const issue of visualPackageGraphIssues) {
+		if (issue.featureFamily && isVisualSidecar(issue.featureFamily)) {
+			visualFamilies.add(issue.featureFamily)
+		}
+	}
+	if (visualDiagnosticPartPaths.length > 0 || visualPackageGraphIssues.length > 0) {
 		const copiedThroughVisualPartPaths = copiedThroughParts
 			.map((part) => part.path)
 			.filter((path) => visualPartPaths.includes(path))
 		const generatedOrReplacementVisualParts = generatedParts
-			.filter((part) => visualPartPaths.includes(part.path) || isDrawingMlVisualPath(part.path))
+			.filter(
+				(part) => visualDiagnosticPartPaths.includes(part.path) || isDrawingMlVisualPath(part.path),
+			)
 			.map((part) => ({ partPath: part.path, origin: part.origin }))
-		const visualPackageGraphIssues = packageGraphAudit.issues.filter((issue) =>
-			packageGraphIssuePackagePaths(issue).some((path) => visualPartPaths.includes(path)),
+		const visualWarningIssueCount = visualPackageGraphIssues.filter(
+			(issue) => issue.severity === 'error' || issue.severity === 'warning',
+		).length
+		const visualHasPackageRisk = visualWarningIssueCount > 0
+		const visualPartCount = uniqueStrings(
+			visualDiagnosticPartPaths.length > 0
+				? visualDiagnosticPartPaths
+				: visualPackageGraphIssues.flatMap((issue) => packageGraphIssuePackagePaths(issue)),
 		)
 		diagnostics.push({
 			code: 'visual-sidecar-preservation-risk',
-			severity: visualHasOperationRisk ? 'warning' : 'info',
-			message: visualHasOperationRisk
-				? `${visualPartPaths.length} chart, drawing, image, or VML sidecar part(s) intersect planned visual or chart-source edits and require post-write preservation audit.`
-				: `${visualPartPaths.length} chart, drawing, image, or VML sidecar part(s) will be copied through; no visual or chart-source edit is planned.`,
-			suggestedAction: visualHasOperationRisk
-				? 'Inspect visualInventory and postWrite.packageGraphAudit before treating visuals as fidelity-safe.'
-				: 'No action is required for unrelated cell edits; retain visualInventory/packageGraphAudit with the edit record when visual fidelity is audited.',
-			partPaths: visualPartPaths,
-			packageParts: packagePartDetails(packagePartByPath, visualPartPaths),
+			severity: visualHasOperationRisk || visualHasPackageRisk ? 'warning' : 'info',
+			message:
+				visualHasOperationRisk || visualHasPackageRisk
+					? `${visualPartCount.length} chart, drawing, image, or VML sidecar package path(s) have operation-scoped write risk or package graph issues.`
+					: `${visualPartCount.length} chart, drawing, image, or VML sidecar part(s) will be copied through; no visual or chart-source edit is planned.`,
+			suggestedAction:
+				visualHasOperationRisk || visualHasPackageRisk
+					? 'Inspect visualInventory and postWrite.packageGraphAudit before treating visuals as fidelity-safe.'
+					: 'No action is required for unrelated cell edits; retain visualInventory/packageGraphAudit with the edit record when visual fidelity is audited.',
+			...(visualDiagnosticPartPaths.length > 0 ? { partPaths: visualDiagnosticPartPaths } : {}),
+			...(visualDiagnosticPartPaths.length > 0
+				? { packageParts: packagePartDetails(packagePartByPath, visualDiagnosticPartPaths) }
+				: {}),
 			featureFamily: [...visualFamilies].sort().join(','),
 			preservationPolicy: 'preserve-exact',
 			details: {
@@ -4198,10 +4224,19 @@ function isThreadedCommentPackageGraphIssue(issue: XlsxPackageGraphFidelityIssue
 	)
 }
 
+function isVisualPackageGraphIssue(issue: XlsxPackageGraphFidelityIssue): boolean {
+	if (issue.featureFamily && isVisualSidecar(issue.featureFamily)) return true
+	return (
+		packageGraphIssuePackagePaths(issue).some(isVisualPackagePartPath) ||
+		packageGraphIssueContentTypes(issue).some(isVisualContentType)
+	)
+}
+
 function isRoutedPackageGraphIssue(issue: XlsxPackageGraphFidelityIssue): boolean {
 	if (isLegacyCommentPackageGraphIssue(issue) || isThreadedCommentPackageGraphIssue(issue)) {
 		return true
 	}
+	if (isVisualPackageGraphIssue(issue)) return true
 	if (isAnalyticalPackageGraphIssue(issue)) return true
 	if (!issue.featureFamily) return false
 	return (
@@ -4234,6 +4269,17 @@ function isAnalyticalContentType(contentType: string): boolean {
 		contentType === 'application/vnd.ms-excel.slicer+xml' ||
 		contentType === 'application/vnd.ms-excel.timelineCache+xml' ||
 		contentType === 'application/vnd.ms-excel.timeline+xml'
+	)
+}
+
+function isVisualContentType(contentType: string): boolean {
+	return (
+		contentType === 'application/vnd.openxmlformats-officedocument.drawing+xml' ||
+		contentType === 'application/vnd.openxmlformats-officedocument.drawingml.chart+xml' ||
+		contentType === 'application/vnd.ms-office.chartstyle+xml' ||
+		contentType === 'application/vnd.ms-office.chartcolorstyle+xml' ||
+		contentType === 'application/vnd.openxmlformats-officedocument.vmlDrawing' ||
+		contentType.startsWith('image/')
 	)
 }
 
@@ -5049,6 +5095,10 @@ function isDrawingMlVisualPath(path: string): boolean {
 		/^xl\/charts\/[^/]+\.xml$/i.test(path) ||
 		/^xl\/charts\/_rels\/[^/]+\.xml\.rels$/i.test(path)
 	)
+}
+
+function isVisualPackagePartPath(path: string): boolean {
+	return isDrawingMlVisualPath(path) || /^xl\/drawings\/[^/]+\.vml$/i.test(path)
 }
 
 function isAnalyticalSidecar(featureFamily: string): boolean {

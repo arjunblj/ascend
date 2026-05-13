@@ -663,6 +663,53 @@ describe('agent workflow loss audit', () => {
 		)
 	})
 
+	test('keeps unresolved visual package graph failures visible to agents', async () => {
+		const input = join(TEMP_DIR, 'visual-missing-target.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		await Bun.write(input, makeMissingDrawingTargetXlsx())
+
+		const plan = await createAgentPlan(input, [
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'ok' }] },
+		])
+
+		expect(plan.packageGraphAudit.issues).toContainEqual(
+			expect.objectContaining({
+				code: 'package_relationship_target',
+				relationshipPartPath: 'xl/worksheets/_rels/sheet1.xml.rels',
+				relationshipId: 'rIdDrawing1',
+				featureFamily: 'preservedDrawing',
+			}),
+		)
+		expect(plan.writePolicy.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: 'visual-sidecar-preservation-risk',
+				severity: 'warning',
+				partPaths: expect.arrayContaining(['xl/drawings/missing.xml']),
+				featureFamily: 'preservedDrawing',
+				details: expect.objectContaining({
+					packageGraphAudit: expect.objectContaining({
+						ok: false,
+						visualIssueCount: 1,
+						issues: expect.arrayContaining([
+							expect.objectContaining({
+								code: 'package_relationship_target',
+								relationshipId: 'rIdDrawing1',
+								featureFamily: 'preservedDrawing',
+							}),
+						]),
+					}),
+				}),
+			}),
+		)
+		expect(
+			plan.writePolicy.diagnostics.some(
+				(diagnostic) =>
+					diagnostic.code === 'package-graph-audit-issue' &&
+					diagnostic.partPaths?.includes('xl/drawings/missing.xml'),
+			),
+		).toBe(false)
+	})
+
 	test('plans analytics pivot refresh risk for pivot slicer and timeline edits', async () => {
 		const input = join(TEMP_DIR, 'analytics-refresh.xlsx')
 		mkdirSync(TEMP_DIR, { recursive: true })
@@ -2925,6 +2972,45 @@ function makeVisualXlsx(): Uint8Array {
 <cs:chartStyle xmlns:cs="http://schemas.microsoft.com/office/drawing/2012/chartStyle" id="10"/>`),
 				'xl/charts/colors1.xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <cs:colorStyle xmlns:cs="http://schemas.microsoft.com/office/drawing/2012/chartStyle" meth="cycle"/>`),
+			}),
+		),
+	)
+}
+
+function makeMissingDrawingTargetXlsx(): Uint8Array {
+	return createZip(
+		new Map(
+			Object.entries({
+				'[Content_Types].xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`),
+				'_rels/.rels': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`),
+				'xl/_rels/workbook.xml.rels':
+					encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSheet1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`),
+				'xl/worksheets/_rels/sheet1.xml.rels':
+					encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdDrawing1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/missing.xml"/>
+</Relationships>`),
+				'xl/workbook.xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Sheet1" sheetId="1" r:id="rIdSheet1"/></sheets>
+</workbook>`),
+				'xl/worksheets/sheet1.xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheetData/>
+  <drawing r:id="rIdDrawing1"/>
+</worksheet>`),
 			}),
 		),
 	)

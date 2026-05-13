@@ -18,6 +18,7 @@ import type {
 	SheetX14ConditionalFormatDataBarInfo,
 	SheetX14ConditionalFormatIconInfo,
 	SheetX14ConditionalFormatIconSetInfo,
+	SheetX14ConditionalFormatInfo,
 	StyleId,
 } from '@ascend/core'
 import {
@@ -6221,6 +6222,7 @@ function parseX14ConditionalFormats(xml: string, sheet: Sheet, pool?: ValueInter
 		const type = rule ? attr(rule.attrs, 'type') : undefined
 		const priority = rule ? numAttr(rule.attrs, 'priority') : undefined
 		const id = rule ? attr(rule.attrs, 'id') : undefined
+		const colorScale = rule ? parseX14ColorScale(rule.body) : undefined
 		const dataBar = rule ? parseX14DataBar(rule.body) : undefined
 		const iconSet = rule ? parseX14IconSet(rule.body) : undefined
 		const preservedRuleAttributes = rule
@@ -6240,10 +6242,24 @@ function parseX14ConditionalFormats(xml: string, sheet: Sheet, pool?: ValueInter
 			...(preservedRuleChildXml.length > 0
 				? { preservedRuleChildXml: internStringArray(preservedRuleChildXml, pool) }
 				: {}),
+			...(colorScale ? { colorScale: internX14ColorScale(colorScale, pool) } : {}),
 			...(dataBar ? { dataBar: internX14DataBar(dataBar, pool) } : {}),
 			...(iconSet ? { iconSet: internX14IconSet(iconSet, pool) } : {}),
 		})
 		index += 1
+	}
+}
+
+function parseX14ColorScale(xml: string): SheetX14ConditionalFormatInfo['colorScale'] | undefined {
+	const colorScale = readFirstXmlElement(xml, 'colorScale')
+	if (!colorScale) return undefined
+	const preservedAttributes = x14ColorScalePreservedAttributes(colorScale.attrs)
+	const preservedChildXml = x14ColorScalePreservedChildXml(colorScale.body)
+	return {
+		cfvo: readX14Cfvos(colorScale.body),
+		colors: readX14Colors(colorScale.body, 'color'),
+		...(Object.keys(preservedAttributes).length > 0 ? { preservedAttributes } : {}),
+		...(preservedChildXml.length > 0 ? { preservedChildXml } : {}),
 	}
 }
 
@@ -6333,7 +6349,34 @@ function x14ConditionalFormatRulePreservedChildXml(xml: string): readonly string
 	const preserved: string[] = []
 	for (const child of directChildXmlBlocks(xml)) {
 		const localName = xmlLocalName(child.name)
-		if (localName === 'f' || localName === 'dataBar' || localName === 'iconSet') continue
+		if (
+			localName === 'f' ||
+			localName === 'colorScale' ||
+			localName === 'dataBar' ||
+			localName === 'iconSet'
+		)
+			continue
+		preserved.push(child.xml)
+	}
+	return preserved
+}
+
+function x14ColorScalePreservedAttributes(attrs: XmlNode): Readonly<Record<string, string>> {
+	const preserved: Record<string, string> = {}
+	for (const [rawName, value] of Object.entries(attrs)) {
+		const name = rawName.startsWith('@_') ? rawName.slice(2) : rawName
+		if (name === 'xmlns' || name.startsWith('xmlns:')) continue
+		if (value === undefined || value === null) continue
+		preserved[name] = String(value)
+	}
+	return preserved
+}
+
+function x14ColorScalePreservedChildXml(xml: string): readonly string[] {
+	const preserved: string[] = []
+	for (const child of directChildXmlBlocks(xml)) {
+		const localName = xmlLocalName(child.name)
+		if (localName === 'cfvo' || localName === 'color') continue
 		preserved.push(child.xml)
 	}
 	return preserved
@@ -6451,18 +6494,45 @@ function readX14CfIcons(xml: string): SheetX14ConditionalFormatIconInfo[] {
 function readX14Color(xml: string, localName: string): SheetConditionalFormatColor | undefined {
 	const color = readFirstXmlElement(xml, localName)
 	if (!color) return undefined
+	return parseX14ColorAttrs(color.attrs)
+}
+
+function readX14Colors(xml: string, localName: string): SheetConditionalFormatColor[] {
+	return readXmlElements(xml, localName)
+		.map((color) => parseX14ColorAttrs(color.attrs))
+		.filter((color): color is SheetConditionalFormatColor => color !== undefined)
+}
+
+function parseX14ColorAttrs(attrs: XmlNode): SheetConditionalFormatColor | undefined {
 	const parsed: SheetConditionalFormatColor = {}
-	const rgb = attr(color.attrs, 'rgb')
+	const rgb = attr(attrs, 'rgb')
 	if (rgb) Object.assign(parsed, { rgb })
-	const theme = numAttr(color.attrs, 'theme')
+	const theme = numAttr(attrs, 'theme')
 	if (theme !== undefined) Object.assign(parsed, { theme })
-	const tint = numAttr(color.attrs, 'tint')
+	const tint = numAttr(attrs, 'tint')
 	if (tint !== undefined) Object.assign(parsed, { tint })
-	const indexed = numAttr(color.attrs, 'indexed')
+	const indexed = numAttr(attrs, 'indexed')
 	if (indexed !== undefined) Object.assign(parsed, { indexed })
-	const auto = readBoolAttribute(color.attrs, 'auto')
+	const auto = readBoolAttribute(attrs, 'auto')
 	if (auto !== undefined) Object.assign(parsed, { auto })
 	return Object.keys(parsed).length > 0 ? parsed : undefined
+}
+
+function internX14ColorScale(
+	colorScale: NonNullable<SheetX14ConditionalFormatInfo['colorScale']>,
+	pool: ValueInternPool | undefined,
+): NonNullable<SheetX14ConditionalFormatInfo['colorScale']> {
+	if (!pool) return colorScale
+	return {
+		cfvo: colorScale.cfvo.map((entry) => internConditionalFormatValueObject(entry, pool)),
+		colors: colorScale.colors.map((color) => ({ ...color })),
+		...(colorScale.preservedAttributes
+			? { preservedAttributes: internStringRecord(colorScale.preservedAttributes, pool) }
+			: {}),
+		...(colorScale.preservedChildXml
+			? { preservedChildXml: internStringArray(colorScale.preservedChildXml, pool) }
+			: {}),
+	}
 }
 
 function internX14DataBar(

@@ -311,6 +311,7 @@ export interface SheetX14ConditionalFormatInfo {
 	readonly id?: string
 	readonly preservedRuleAttributes?: Readonly<Record<string, string>>
 	readonly preservedRuleChildXml?: readonly string[]
+	readonly colorScale?: SheetConditionalFormatColorScale
 	readonly dataBar?: SheetX14ConditionalFormatDataBarInfo
 	readonly iconSet?: SheetX14ConditionalFormatIconSetInfo
 	readonly deleted?: boolean
@@ -446,6 +447,8 @@ export interface SheetConditionalFormatColor {
 export interface SheetConditionalFormatColorScale {
 	readonly cfvo: readonly SheetConditionalFormatValueObject[]
 	readonly colors: readonly SheetConditionalFormatColor[]
+	readonly preservedAttributes?: Readonly<Record<string, string>>
+	readonly preservedChildXml?: readonly string[]
 }
 
 export interface SheetConditionalFormatDataBar {
@@ -486,6 +489,12 @@ function cloneConditionalFormatRule(rule: SheetConditionalFormatRule): SheetCond
 					colorScale: {
 						cfvo: rule.colorScale.cfvo.map((entry) => ({ ...entry })),
 						colors: rule.colorScale.colors.map((entry) => ({ ...entry })),
+						...(rule.colorScale.preservedAttributes
+							? { preservedAttributes: { ...rule.colorScale.preservedAttributes } }
+							: {}),
+						...(rule.colorScale.preservedChildXml
+							? { preservedChildXml: [...rule.colorScale.preservedChildXml] }
+							: {}),
 					},
 				}
 			: {}),
@@ -826,6 +835,20 @@ export function cloneX14ConditionalFormatInfo(
 			: {}),
 		...(format.preservedRuleChildXml
 			? { preservedRuleChildXml: [...format.preservedRuleChildXml] }
+			: {}),
+		...(format.colorScale
+			? {
+					colorScale: {
+						cfvo: format.colorScale.cfvo.map((entry) => ({ ...entry })),
+						colors: format.colorScale.colors.map((entry) => ({ ...entry })),
+						...(format.colorScale.preservedAttributes
+							? { preservedAttributes: { ...format.colorScale.preservedAttributes } }
+							: {}),
+						...(format.colorScale.preservedChildXml
+							? { preservedChildXml: [...format.colorScale.preservedChildXml] }
+							: {}),
+					},
+				}
 			: {}),
 		...(format.dataBar
 			? {

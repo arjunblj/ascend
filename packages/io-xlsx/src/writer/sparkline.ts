@@ -410,6 +410,7 @@ function buildX14ConditionalFormattingXml(format: SheetX14ConditionalFormatInfo)
 	const ruleAttrs = x14ConditionalFormatRuleAttrs(format)
 	const ruleBody: string[] = []
 	for (const formula of format.formulas) ruleBody.push(`<xm:f>${escapeXml(formula)}</xm:f>`)
+	if (format.colorScale) ruleBody.push(buildX14ColorScaleXml(format.colorScale))
 	if (format.dataBar) ruleBody.push(buildX14DataBarXml(format.dataBar))
 	if (format.iconSet) ruleBody.push(buildX14IconSetXml(format.iconSet))
 	ruleBody.push(...(format.preservedRuleChildXml ?? []))
@@ -430,7 +431,21 @@ function x14ConditionalFormatRuleAttrs(format: SheetX14ConditionalFormatInfo): M
 		attrs.set('xmlns:xr', XR_NS)
 	}
 	if (
-		format.preservedRuleChildXml?.some((xml) => xml.includes('x14ac:')) &&
+		format.colorScale?.preservedChildXml?.some((xml) => xml.includes('xr:')) &&
+		!attrs.has('xmlns:xr')
+	) {
+		attrs.set('xmlns:xr', XR_NS)
+	}
+	if (
+		recordHasNamePrefix(format.colorScale?.preservedAttributes, 'xr:') &&
+		!attrs.has('xmlns:xr')
+	) {
+		attrs.set('xmlns:xr', XR_NS)
+	}
+	if (
+		(format.preservedRuleChildXml?.some((xml) => xml.includes('x14ac:')) ||
+			format.colorScale?.preservedChildXml?.some((xml) => xml.includes('x14ac:')) ||
+			recordHasNamePrefix(format.colorScale?.preservedAttributes, 'x14ac:')) &&
 		!attrs.has('xmlns:x14ac')
 	) {
 		attrs.set('xmlns:x14ac', X14AC_NS)
@@ -502,6 +517,13 @@ function canEmitPreservedOfficeExtensionAttr(name: string): boolean {
 	if (name === 'xmlns' || name.startsWith('xmlns:')) return false
 	if (!name.includes(':')) return true
 	return name.startsWith('xr:') || name.startsWith('x14ac:')
+}
+
+function recordHasNamePrefix(
+	record: Readonly<Record<string, string>> | undefined,
+	prefix: string,
+): boolean {
+	return Object.keys(record ?? {}).some((name) => name.startsWith(prefix))
 }
 
 function attrsXml(attrs: ReadonlyMap<string, string>): string {
@@ -581,6 +603,21 @@ function colorXml(tag: string, color: SheetConditionalFormatColor | undefined): 
 	if (color.indexed !== undefined) attrs.push(`indexed="${color.indexed}"`)
 	if (color.auto !== undefined) attrs.push(`auto="${color.auto ? '1' : '0'}"`)
 	return attrs.length > 0 ? `<${tag} ${attrs.join(' ')}/>` : ''
+}
+
+function buildX14ColorScaleXml(
+	colorScale: NonNullable<SheetX14ConditionalFormatInfo['colorScale']>,
+): string {
+	const attrs = new Map<string, string>()
+	for (const [name, value] of Object.entries(colorScale.preservedAttributes ?? {})) {
+		if (canEmitPreservedOfficeExtensionAttr(name)) attrs.set(name, value)
+	}
+	const body = [
+		...colorScale.cfvo.map(buildX14CfvoXml),
+		...colorScale.colors.map((color) => colorXml('x14:color', color)),
+		...(colorScale.preservedChildXml ?? []),
+	].filter((entry) => entry.length > 0)
+	return `<x14:colorScale${attrs.size > 0 ? ` ${attrsXml(attrs)}` : ''}>${body.join('')}</x14:colorScale>`
 }
 
 function setOptionalAttr(attrs: string, name: string, value: string | undefined): string {

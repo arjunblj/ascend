@@ -2666,6 +2666,7 @@ describe('checker', () => {
 			sqref: 'MissingCfRange!A1:A5',
 			type: 'dataBar',
 			formulas: ['MissingFormula!A1>0'],
+			colorScale: { cfvo: [{ type: 'formula', value: 'MissingScale!A1' }], colors: [] },
 			dataBar: { cfvo: [{ type: 'formula', value: 'MissingBar!A1' }] },
 			iconSet: { cfvo: [{ type: 'formula', value: 'MissingIcon!A1' }] },
 		})
@@ -2679,9 +2680,10 @@ describe('checker', () => {
 		)
 
 		expect(result.passed).toBe(false)
-		expect(issues).toHaveLength(4)
+		expect(issues).toHaveLength(5)
 		expect(issues.every((issue) => issue.severity === 'error')).toBe(true)
 		expect(issues.map((issue) => issue.details?.field).sort()).toEqual([
+			'colorScale.cfvo[0].value',
 			'dataBar.cfvo[0].value',
 			'formulas[0]',
 			'iconSet.cfvo[0].value',
@@ -4293,6 +4295,7 @@ describe('checker', () => {
 			sqref: 'D2:D5',
 			type: 'dataBar',
 			formulas: [],
+			colorScale: { cfvo: [{ type: 'formula', value: '[Rules.xlsx]Sheet1!C1' }], colors: [] },
 			dataBar: { cfvo: [{ type: 'formula', value: '[Rules.xlsx]Sheet1!B1' }] },
 		})
 
@@ -4329,8 +4332,9 @@ describe('checker', () => {
 			'[Lists.xlsx]',
 			'[Lists.xlsx]',
 		])
-		expect(conditionalIssues).toHaveLength(2)
+		expect(conditionalIssues).toHaveLength(3)
 		expect(conditionalIssues.map((issue) => issue.details?.externalTarget).sort()).toEqual([
+			'[Rules.xlsx]',
 			'[Rules.xlsx]',
 			'[Rules.xlsx]',
 		])

@@ -1759,6 +1759,10 @@ describe('applyOperation', () => {
 			index: 0,
 			sqref: 'D1',
 			formulas: ['Sheet1!A1>0'],
+			colorScale: {
+				cfvo: [{ type: 'formula', value: 'Sheet1!A1' }],
+				colors: [{ rgb: 'FF63BE7B' }],
+			},
 			dataBar: { cfvo: [{ type: 'formula', value: 'Sheet1!A1' }] },
 		})
 		summary.tables.push({
@@ -1792,6 +1796,7 @@ describe('applyOperation', () => {
 		expect(summary.conditionalFormats[0]?.rules[0]?.colorScale?.cfvo[0]?.value).toBe('Sheet2!B2')
 		expect(summary.x14DataValidations[0]?.formula1).toBe('Sheet2!B2')
 		expect(summary.x14ConditionalFormats[0]?.formulas[0]).toBe('Sheet2!B2>0')
+		expect(summary.x14ConditionalFormats[0]?.colorScale?.cfvo[0]?.value).toBe('Sheet2!B2')
 		expect(summary.x14ConditionalFormats[0]?.dataBar?.cfvo[0]?.value).toBe('Sheet2!B2')
 		expect(summary.tables[0]?.columns[0]?.formula).toBe('Sheet2!B2')
 		expect(summary.tables[0]?.columns[0]?.totalsRowFormula).toBe('SUM(Sheet2!B2)')
@@ -2604,6 +2609,10 @@ describe('applyOperation', () => {
 			index: 0,
 			sqref: 'J1',
 			formulas: ['A2>0'],
+			colorScale: {
+				cfvo: [{ type: 'formula', value: 'A2' }],
+				colors: [{ rgb: 'FF63BE7B' }],
+			},
 			dataBar: { cfvo: [{ type: 'formula', value: 'A2' }] },
 			iconSet: { cfvo: [{ type: 'formula', value: 'A2' }] },
 		})
@@ -2628,6 +2637,7 @@ describe('applyOperation', () => {
 		expect(s.conditionalFormats[0]?.rules[0]?.colorScale?.cfvo[0]?.value).toBe('#REF!')
 		expect(s.x14DataValidations[0]?.formula1).toBe('#REF!')
 		expect(s.x14ConditionalFormats[0]?.formulas).toEqual(['#REF!>0'])
+		expect(s.x14ConditionalFormats[0]?.colorScale?.cfvo[0]?.value).toBe('#REF!')
 		expect(s.x14ConditionalFormats[0]?.dataBar?.cfvo[0]?.value).toBe('#REF!')
 		expect(s.x14ConditionalFormats[0]?.iconSet?.cfvo[0]?.value).toBe('#REF!')
 		expect(s.tables[0]?.columns[1]?.formula).toBe('#REF!')
@@ -2672,6 +2682,10 @@ describe('applyOperation', () => {
 			index: 0,
 			sqref: 'B2',
 			formulas: ['Input!A2>0'],
+			colorScale: {
+				cfvo: [{ type: 'formula', value: 'Input!B2' }],
+				colors: [{ rgb: 'FF63BE7B' }],
+			},
 			dataBar: { cfvo: [{ type: 'formula', value: 'Input!A2' }] },
 			iconSet: { cfvo: [{ type: 'formula', value: 'Input!B2' }] },
 		})
@@ -2699,6 +2713,7 @@ describe('applyOperation', () => {
 		expect(summary.x14DataValidations[0]?.formula1).toBe('Input!A3')
 		expect(summary.x14DataValidations[0]?.formula2).toBe('A2')
 		expect(summary.x14ConditionalFormats[0]?.formulas).toEqual(['Input!A3>0'])
+		expect(summary.x14ConditionalFormats[0]?.colorScale?.cfvo[0]?.value).toBe('Input!B3')
 		expect(summary.x14ConditionalFormats[0]?.dataBar?.cfvo[0]?.value).toBe('Input!A3')
 		expect(summary.x14ConditionalFormats[0]?.iconSet?.cfvo[0]?.value).toBe('Input!B3')
 		expect(summary.tables[0]?.columns[1]?.formula).toBe('Input!A3')

@@ -5795,6 +5795,10 @@ describe('writeXlsx', () => {
 			index: 0,
 			sqref: 'G2:G3',
 			formulas: ['SUM(Sales[Qty])>0'],
+			colorScale: {
+				cfvo: [{ type: 'formula', value: 'SUM(Sales[Qty])' }],
+				colors: [{ rgb: 'FF63BE7B' }],
+			},
 			dataBar: { cfvo: [{ type: 'formula', value: 'SUM(Sales[Qty])' }] },
 			iconSet: { cfvo: [{ type: 'formula', value: 'SUM(Sales[Qty])' }] },
 		})
@@ -5822,6 +5826,9 @@ describe('writeXlsx', () => {
 		expect(rule?.iconSet?.cfvo[0]?.value).toBe('SUM(Inventory[Units])')
 		expect(roundTrippedSheet?.x14DataValidations[0]?.formula1).toBe('SUM(Inventory[Units])')
 		expect(roundTrippedSheet?.x14ConditionalFormats[0]?.formulas[0]).toBe('SUM(Inventory[Units])>0')
+		expect(roundTrippedSheet?.x14ConditionalFormats[0]?.colorScale?.cfvo[0]?.value).toBe(
+			'SUM(Inventory[Units])',
+		)
 		expect(roundTrippedSheet?.x14ConditionalFormats[0]?.dataBar?.cfvo[0]?.value).toBe(
 			'SUM(Inventory[Units])',
 		)
@@ -6187,6 +6194,15 @@ describe('writeXlsx', () => {
 			preservedRuleChildXml: [
 				'<x14:extLst><x14:ext uri="{cf-extension}"><x14ac:metadata flag="1"/></x14:ext></x14:extLst>',
 			],
+			colorScale: {
+				cfvo: [{ type: 'formula', value: 'Data!A2' }],
+				colors: [{ rgb: 'FF63BE7B' }, { theme: 4, tint: 0.25 }],
+				preservedAttributes: {
+					customScale: '1',
+					'x14ac:scaleId': '{SCALE-UID}',
+				},
+				preservedChildXml: ['<x14ac:metadata flag="scale"/>'],
+			},
 			dataBar: { cfvo: [{ type: 'formula', value: 'Data!A2' }] },
 			iconSet: { cfvo: [{ type: 'formula', value: 'Data!B2' }] },
 		})
@@ -6219,6 +6235,13 @@ describe('writeXlsx', () => {
 		expect(xml).toContain('<xm:sqref>A2:B2</xm:sqref>')
 		expect(xml).toContain('<xm:sqref>C2:D2</xm:sqref>')
 		expect(xml).toContain('<xm:f>Data!A2&gt;0</xm:f>')
+		expect(xml).toContain('customScale="1"')
+		expect(xml).toContain('x14ac:scaleId="{SCALE-UID}"')
+		expect(xml).toContain('<x14:colorScale')
+		expect(xml).toContain('<x14:cfvo type="formula"><xm:f>Data!A2</xm:f></x14:cfvo>')
+		expect(xml).toContain('<x14:color rgb="FF63BE7B"/>')
+		expect(xml).toContain('<x14:color theme="4" tint="0.25"/>')
+		expect(xml).toContain('<x14ac:metadata flag="scale"/>')
 		expect(xml).toContain('<x14:cfvo type="formula"><xm:f>Data!A2</xm:f></x14:cfvo>')
 		expect(xml).toContain('<x14:cfvo type="formula"><xm:f>Data!B2</xm:f></x14:cfvo>')
 
@@ -6234,6 +6257,15 @@ describe('writeXlsx', () => {
 				customFlag: '1',
 			},
 			preservedChildXml: ['<x14ac:metadata flag="1"><x14ac:item val="keep"/></x14ac:metadata>'],
+		})
+		expect(roundTripped?.x14ConditionalFormats[0]?.colorScale).toMatchObject({
+			cfvo: [{ type: 'formula', value: 'Data!A2' }],
+			colors: [{ rgb: 'FF63BE7B' }, { theme: 4, tint: 0.25 }],
+			preservedAttributes: {
+				customScale: '1',
+				'x14ac:scaleId': '{SCALE-UID}',
+			},
+			preservedChildXml: ['<x14ac:metadata flag="scale"/>'],
 		})
 		expect(roundTripped?.x14ConditionalFormats[0]?.dataBar?.cfvo[0]?.value).toBe('Data!A2')
 		expect(roundTripped?.x14ConditionalFormats[0]?.iconSet?.cfvo[0]?.value).toBe('Data!B2')
@@ -6492,6 +6524,12 @@ describe('writeXlsx', () => {
 				'xr:uid': '{NEW-UID}',
 			},
 			preservedRuleChildXml: ['<x14ac:metadata flag="new"/>'],
+			colorScale: {
+				cfvo: [{ type: 'formula', value: 'A2' }, { type: 'max' }],
+				colors: [{ rgb: 'FF63BE7B' }, { rgb: 'FFFFEB84' }],
+				preservedAttributes: { customScale: '1' },
+				preservedChildXml: ['<x14ac:metadata flag="scale-new"/>'],
+			},
 			dataBar: {
 				minLength: 5,
 				maxLength: 95,
@@ -6545,6 +6583,9 @@ describe('writeXlsx', () => {
 		expect(ruleXml).toContain('activePresent="1"')
 		expect(ruleXml).toContain('xr:uid="{NEW-UID}"')
 		expect(ruleXml).toContain('<xm:f>A2&gt;0</xm:f>')
+		expect(ruleXml).toContain(
+			'<x14:colorScale customScale="1"><x14:cfvo type="formula"><xm:f>A2</xm:f></x14:cfvo><x14:cfvo type="max"/><x14:color rgb="FF63BE7B"/><x14:color rgb="FFFFEB84"/><x14ac:metadata flag="scale-new"/></x14:colorScale>',
+		)
 		expect(ruleXml).toContain(
 			'<x14:dataBar minLength="5" maxLength="95" border="1" showValue="0" gradient="0" direction="rightToLeft" axisPosition="middle" negativeBarColorSameAsPositive="0" negativeBarBorderColorSameAsPositive="1"><x14:cfvo type="formula"><xm:f>A2</xm:f></x14:cfvo><x14:cfvo type="num" gte="0" val="10"/><x14:fillColor rgb="FF638EC6"/><x14:borderColor rgb="FF003300"/><x14:negativeFillColor rgb="FF00AA00"/><x14:negativeBorderColor theme="5"/><x14:axisColor auto="1"/></x14:dataBar>',
 		)

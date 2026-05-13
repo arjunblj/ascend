@@ -3343,6 +3343,11 @@ function x14ConditionalFormatFormulaEntries(
 		field: `formulas[${index}]`,
 		formula,
 	}))
+	for (let index = 0; index < (format.colorScale?.cfvo.length ?? 0); index++) {
+		const value = format.colorScale?.cfvo[index]?.value
+		if (value !== undefined)
+			entries.push({ field: `colorScale.cfvo[${index}].value`, formula: value })
+	}
 	for (let index = 0; index < (format.dataBar?.cfvo.length ?? 0); index++) {
 		const value = format.dataBar?.cfvo[index]?.value
 		if (value !== undefined) entries.push({ field: `dataBar.cfvo[${index}].value`, formula: value })

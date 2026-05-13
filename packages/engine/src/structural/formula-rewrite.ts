@@ -616,6 +616,24 @@ function rewriteSheetMetadataFormulasForShiftTarget(
 					rewriteFormulaTextForShift(formula, targetSheet, formulaSheet, axis, at, delta) ??
 					formula,
 			),
+			...(format.colorScale
+				? {
+						colorScale: {
+							...format.colorScale,
+							cfvo: format.colorScale.cfvo.map((entry) =>
+								rewriteConditionalFormatValueObject(
+									entry,
+									targetSheet,
+									formulaSheet,
+									axis,
+									at,
+									delta,
+								),
+							),
+							colors: format.colorScale.colors.map((color) => ({ ...color })),
+						},
+					}
+				: {}),
 			...(format.dataBar
 				? {
 						dataBar: {
@@ -859,6 +877,17 @@ function rewriteX14ConditionalFormatWith(
 	return {
 		...format,
 		formulas: format.formulas.map((formula) => rewrite(formula) ?? formula),
+		...(format.colorScale
+			? {
+					colorScale: {
+						...format.colorScale,
+						cfvo: format.colorScale.cfvo.map((entry) =>
+							rewriteConditionalFormatValueObjectWith(entry, rewrite),
+						),
+						colors: format.colorScale.colors.map((color) => ({ ...color })),
+					},
+				}
+			: {}),
 		...(format.dataBar
 			? {
 					dataBar: {
@@ -973,6 +1002,24 @@ export function rewriteSheetMetadataFormulasForMove(
 						targetRange,
 					) ?? formula,
 			),
+			...(format.colorScale
+				? {
+						colorScale: {
+							...format.colorScale,
+							cfvo: format.colorScale.cfvo.map((entry) =>
+								rewriteConditionalFormatValueObjectForMove(
+									entry,
+									sourceSheet,
+									targetSheet,
+									formulaSheet,
+									sourceRange,
+									targetRange,
+								),
+							),
+							colors: format.colorScale.colors.map((color) => ({ ...color })),
+						},
+					}
+				: {}),
 			...(format.dataBar
 				? {
 						dataBar: {

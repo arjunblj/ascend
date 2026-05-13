@@ -8,9 +8,11 @@ type Cfvo = ColorScale['cfvo'][number]
 type CfColor = ColorScale['colors'][number]
 
 export function buildColorScaleXml(colorScale: ColorScale): string {
-	const parts = ['<colorScale>']
+	const attrs = preservedAttrsXml(colorScale.preservedAttributes)
+	const parts = [attrs.length > 0 ? `<colorScale ${attrs}>` : '<colorScale>']
 	for (const cfvo of colorScale.cfvo) parts.push(cfvoXml(cfvo))
 	for (const color of colorScale.colors) parts.push(cfColorXml(color))
+	parts.push(...(colorScale.preservedChildXml ?? []))
 	parts.push('</colorScale>')
 	return parts.join('')
 }
@@ -55,4 +57,11 @@ function cfColorXml(color: CfColor): string {
 	if (color.indexed !== undefined) attrs.push(`indexed="${color.indexed}"`)
 	if (color.auto !== undefined) attrs.push(`auto="${color.auto ? '1' : '0'}"`)
 	return `<color ${attrs.join(' ')}/>`
+}
+
+function preservedAttrsXml(attrs: Readonly<Record<string, string>> | undefined): string {
+	return Object.entries(attrs ?? {})
+		.filter(([name]) => name !== 'xmlns' && !name.startsWith('xmlns:'))
+		.map(([name, value]) => `${name}="${escapeXml(value)}"`)
+		.join(' ')
 }

@@ -635,11 +635,15 @@ function sheetHasPreservedOfficeExtensionXml(sheet: Sheet, needle: string): bool
 	for (const format of sheet.x14ConditionalFormats) {
 		if (recordHasNamePrefix(format.preservedRuleAttributes, needle)) return true
 		if (format.preservedRuleChildXml?.some((xml) => xml.includes(needle))) return true
+		if (recordHasNamePrefix(format.colorScale?.preservedAttributes, needle)) return true
+		if (format.colorScale?.preservedChildXml?.some((xml) => xml.includes(needle))) return true
 	}
 	for (const format of sheet.conditionalFormats) {
 		for (const rule of format.rules) {
 			if (recordHasNamePrefix(rule.preservedRuleAttributes, needle)) return true
 			if (rule.preservedRuleChildXml?.some((xml) => xml.includes(needle))) return true
+			if (recordHasNamePrefix(rule.colorScale?.preservedAttributes, needle)) return true
+			if (rule.colorScale?.preservedChildXml?.some((xml) => xml.includes(needle))) return true
 		}
 	}
 	return false

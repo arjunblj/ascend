@@ -1436,6 +1436,70 @@ const scenarios: readonly Scenario[] = [
 		},
 	},
 	{
+		name: 'patch-stream-first-edit',
+		category: 'workflow',
+		build() {
+			return { bytes: cachedDenseViewportWorkbookBytes(), rows: 100, cols: 1, cells: 100 }
+		},
+		async run(input) {
+			const bytes = requireBytes(input)
+			const openStart = performance.now()
+			const session = await AscendSession.open(bytes, { mode: 'interactive' })
+			const openMs = performance.now() - openStart
+			const previewStart = performance.now()
+			const viewport = session.readViewport({
+				sheet: 'Sheet1',
+				topRow: 0,
+				leftCol: 0,
+				rowCount: 250,
+				colCount: 20,
+			})
+			const initialViewportMs = performance.now() - previewStart
+			const updates = Array.from({ length: 100 }, (_, index) => ({
+				ref: `A${index + 1}`,
+				value: 20_000 + index,
+			}))
+			const edit = await session.apply([{ op: 'setCells', sheet: 'Sheet1', updates }], {
+				recalc: false,
+			})
+			if (edit.apply.errors.length > 0) throw new Error('First-edit patch stream failed')
+			const patchStart = performance.now()
+			const patchRequest = {
+				sheet: 'Sheet1',
+				topRow: 0,
+				leftCol: 0,
+				rowCount: 250,
+				colCount: 20,
+				changedSince: viewport.changeToken,
+			}
+			const patch =
+				session.readViewportPatch(patchRequest) ?? session.readViewport(patchRequest).patch
+			const patchReadMs = performance.now() - patchStart
+			session.close()
+			if (!patch || patch.changedCells.length !== 100) {
+				throw new Error('First-edit patch stream returned an unexpected patch')
+			}
+			return {
+				assertions: {
+					changedCells: patch.changedCells.length,
+					removedRefs: patch.removedRefs.length,
+					patchBytes: patch.byteLength,
+					openMs,
+					initialViewportMs,
+					sessionApplyMs: edit.timings.totalMs,
+					ensureMutableWorkbookMs: edit.timings.ensureMutableWorkbookMs,
+					applyMs: edit.timings.applyMs,
+					recalcMs: edit.timings.recalcMs,
+					generationSnapshotMs: edit.timings.generationSnapshotMs,
+					inspectWriteMs: edit.timings.inspectWriteMs,
+					patchReadMs,
+					promotedToFull: edit.load.promotedToFull,
+					patchMode: 'delta',
+				},
+			}
+		},
+	},
+	{
 		name: 'workflow-reopen-values-window',
 		category: 'workflow',
 		build() {
@@ -2248,6 +2312,7 @@ const scenarioSets = {
 		'sdk-semantic-viewport-rich',
 		'sdk-semantic-viewport-many-overlays',
 		'patch-stream-small-edit',
+		'patch-stream-first-edit',
 	],
 } as const
 

@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import {
 	createWorkbook,
 	parseRange,
@@ -513,6 +514,7 @@ let cachedDenseViewportBytes: Uint8Array | undefined
 let cachedSparseWideViewportBytes: Uint8Array | undefined
 let cachedSemanticViewportBytes: Uint8Array | undefined
 let cachedManyOverlayViewportBytes: Uint8Array | undefined
+let cachedRealRichViewportBytes: Uint8Array | undefined
 
 function cachedDenseViewportWorkbookBytes(): Uint8Array {
 	cachedDenseViewportBytes ??= mustWrite(buildDenseWorkbook(5000, 20))
@@ -595,6 +597,13 @@ function cachedManyOverlayViewportWorkbookBytes(): Uint8Array {
 	}
 	cachedManyOverlayViewportBytes = workbook.toBytes()
 	return cachedManyOverlayViewportBytes
+}
+
+function cachedRealRichViewportWorkbookBytes(): Uint8Array {
+	cachedRealRichViewportBytes ??= new Uint8Array(
+		readFileSync('fixtures/xlsx/xlsxwriter/styles_formulas.xlsx'),
+	)
+	return cachedRealRichViewportBytes
 }
 
 function interactiveSessionFor(bytes: Uint8Array): Promise<AscendSession> {
@@ -1570,6 +1579,91 @@ const scenarios: readonly Scenario[] = [
 		},
 	},
 	{
+		name: 'patch-stream-real-rich-prepared-first-edit',
+		category: 'workflow',
+		build() {
+			return {
+				bytes: cachedRealRichViewportWorkbookBytes(),
+				rows: 100,
+				cols: 20,
+				cells: 4,
+			}
+		},
+		async run(input) {
+			const bytes = requireBytes(input)
+			const openStart = performance.now()
+			const session = await AscendSession.open(bytes, { mode: 'interactive' })
+			const openMs = performance.now() - openStart
+			const previewStart = performance.now()
+			const viewport = session.readViewport({
+				sheet: 'Data',
+				topRow: 0,
+				leftCol: 0,
+				rowCount: 100,
+				colCount: 20,
+			})
+			const initialViewportMs = performance.now() - previewStart
+			const prepare = await session.prepareEdits()
+			const updates = [
+				{ ref: 'C2', value: 42_001 },
+				{ ref: 'C3', value: 42_002 },
+				{ ref: 'C4', value: 42_003 },
+				{ ref: 'C5', value: 42_004 },
+			]
+			const editFrameStart = performance.now()
+			const edit = await session.apply([{ op: 'setCells', sheet: 'Data', updates }], {
+				recalc: false,
+			})
+			if (edit.apply.errors.length > 0) {
+				throw new Error('Real rich prepared patch stream edit failed')
+			}
+			const patchRequest = {
+				sheet: 'Data',
+				topRow: 0,
+				leftCol: 0,
+				rowCount: 100,
+				colCount: 20,
+				changedSince: viewport.changeToken,
+			}
+			const patchStart = performance.now()
+			const patch =
+				session.readViewportPatch(patchRequest) ?? session.readViewport(patchRequest).patch
+			const patchReadMs = performance.now() - patchStart
+			const editFrameMs = performance.now() - editFrameStart
+			session.close()
+			if (!patch || patch.changedCells.length !== updates.length) {
+				throw new Error('Real rich prepared patch stream returned an unexpected patch')
+			}
+			return {
+				assertions: {
+					changedCells: patch.changedCells.length,
+					removedRefs: patch.removedRefs.length,
+					patchBytes: patch.byteLength,
+					openMs,
+					initialViewportMs,
+					prepareEditsMs: prepare.timings.totalMs,
+					prepareEnsureMutableWorkbookMs: prepare.timings.ensureMutableWorkbookMs,
+					editFrameMs,
+					sessionApplyMs: edit.timings.totalMs,
+					ensureMutableWorkbookMs: edit.timings.ensureMutableWorkbookMs,
+					applyMs: edit.timings.applyMs,
+					recalcMs: edit.timings.recalcMs,
+					generationSnapshotMs: edit.timings.generationSnapshotMs,
+					inspectWriteMs: edit.timings.inspectWriteMs,
+					patchReadMs,
+					viewportCells: viewport.cells.length,
+					viewportFlatValues: viewport.flatValues.length,
+					tables: viewport.tables.length,
+					validations: viewport.dataValidations.length,
+					conditionalFormats: viewport.conditionalFormats.length,
+					merges: viewport.merges.length,
+					promotedToFull: edit.load.promotedToFull,
+					patchMode: 'delta',
+				},
+			}
+		},
+	},
+	{
 		name: 'workflow-reopen-values-window',
 		category: 'workflow',
 		build() {
@@ -2384,6 +2478,7 @@ const scenarioSets = {
 		'patch-stream-small-edit',
 		'patch-stream-first-edit',
 		'patch-stream-prepared-first-edit',
+		'patch-stream-real-rich-prepared-first-edit',
 	],
 } as const
 

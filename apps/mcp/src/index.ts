@@ -70,7 +70,6 @@ interface PreparedPlanHandle {
 	readonly file: string
 	readonly inputSha256: string
 	readonly planDigest: string
-	readonly plan: Awaited<ReturnType<typeof createAgentPlan>>
 	readonly pathMutations?: PathMutationResult
 	commit(options: AgentCommitOptions): Promise<Awaited<ReturnType<typeof commitAgentPlan>>>
 }
@@ -243,12 +242,12 @@ function withPreparedPlanHandle<T extends object>(
 }
 
 function preparedPlanHandle(prepared: PreparedAgentPlan): PreparedPlanHandle {
+	const commit = prepared.commit
 	return {
 		file: prepared.file,
 		inputSha256: prepared.inputSha256,
 		planDigest: prepared.planDigest,
-		plan: prepared.plan,
-		commit: (options) => prepared.commit(options),
+		commit: (options) => commit(options),
 	}
 }
 
@@ -1248,12 +1247,11 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 						: null
 					if (input.ok && result && prepare === true) {
 						const preparedOps = input.ops
-						const plannedResult = result
+						const planDigest = result.planDigest
 						preparedPlan = preparedPlans.add({
 							file,
 							inputSha256,
-							planDigest: plannedResult.planDigest,
-							plan: plannedResult,
+							planDigest,
 							...(pathMutations !== undefined ? { pathMutations } : {}),
 							commit: async (options) => {
 								const current = await Bun.file(file).bytes()
@@ -1267,7 +1265,7 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 												details: {
 													expected: inputSha256,
 													actual: currentSha256,
-													planDigest: plannedResult.planDigest,
+													planDigest,
 												},
 												suggestedFix: 'Re-run ascend plan and commit with the new input workbook.',
 											},

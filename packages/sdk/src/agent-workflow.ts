@@ -378,11 +378,12 @@ export async function createPreparedAgentPlan(
 	const wb = await openWorkbookFromBytes(file, source.sourceBytes)
 	await progress('load-workbook', 'ok', 'Workbook opened.')
 	const plan = await createAgentPlanFromWorkbook(file, inputSha256, wb, ops, { progress })
+	const planDigest = plan.planDigest
 	let committed = false
 	return {
 		file,
 		inputSha256,
-		planDigest: plan.planDigest,
+		planDigest,
 		operationCount: ops.length,
 		plan,
 		async commit(commitOptions: AgentCommitOptions = {}): Promise<AgentCommitResult> {
@@ -403,7 +404,7 @@ export async function createPreparedAgentPlan(
 							actual: currentSource.identity,
 							expectedSha256: inputSha256,
 							actualSha256,
-							planDigest: plan.planDigest,
+							planDigest,
 						},
 						suggestedFix: 'Re-run ascend plan and commit with the new input workbook.',
 					}),

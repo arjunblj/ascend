@@ -1916,7 +1916,7 @@ describe('writeXlsx', () => {
 		const sharedStrings = new TextDecoder().decode(zip['xl/sharedStrings.xml'] ?? new Uint8Array())
 		const sheetXml = new TextDecoder().decode(zip['xl/worksheets/sheet1.xml'] ?? new Uint8Array())
 		expect(sharedStrings.match(/<si>/g)).toHaveLength(4)
-		expect(sheetXml).toContain('<c r="A2" t="s"><v>3</v></c>')
+		expect(sheetXml).toContain('<row r="2"><c t="s"><v>3</v></c></row>')
 
 		const reopened = readXlsx(written.value)
 		expectOk(reopened)
@@ -1981,8 +1981,7 @@ describe('writeXlsx', () => {
 		const sharedStrings = new TextDecoder().decode(zip['xl/sharedStrings.xml'] ?? new Uint8Array())
 		expect(sharedStrings).toBe(sharedStringsXml)
 		const sheetXml = new TextDecoder().decode(zip['xl/worksheets/sheet1.xml'] ?? new Uint8Array())
-		expect(sheetXml).toContain('<c r="A1" t="s"><v>0</v></c>')
-		expect(sheetXml).toContain('<c r="B1"><v>2</v></c>')
+		expect(sheetXml).toContain('<row r="1"><c t="s"><v>0</v></c><c><v>2</v></c></row>')
 	})
 
 	it('appends to preserved rich sharedStrings.xml without rewriting existing entries', () => {
@@ -2044,7 +2043,7 @@ describe('writeXlsx', () => {
 		expect(sharedStrings).not.toContain('</sst><si>')
 		expect(sharedStrings).toContain('<si><t>New</t></si>')
 		const sheetXml = new TextDecoder().decode(zip['xl/worksheets/sheet1.xml'] ?? new Uint8Array())
-		expect(sheetXml).toContain('<c r="B1" t="s"><v>1</v></c>')
+		expect(sheetXml).toContain('<row r="1"><c t="s"><v>0</v></c><c t="s"><v>1</v></c></row>')
 	})
 
 	it('keeps dirty inline-string workbooks inline when the source has no sharedStrings part', () => {
@@ -4428,6 +4427,34 @@ describe('writeXlsx', () => {
 		expect(readSheet?.cells.get(1, 1)?.value).toEqual({ kind: 'string', value: 'sparse' })
 	})
 
+	it('omits dense shared-string refs when positions can be inferred', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Test')
+		sheet.cells.set(0, 0, { value: stringValue('a'), formula: null, styleId: S0 })
+		sheet.cells.set(0, 1, { value: stringValue('b'), formula: null, styleId: S0 })
+
+		const written = writeXlsx(wb, undefined, {
+			useSharedStrings: true,
+			omitDenseCellRefs: true,
+		})
+		expectOk(written)
+
+		const zip = unzipSync(written.value)
+		const sheetXml = decodeTestXml(zip['xl/worksheets/sheet1.xml'])
+		expect(sheetXml).toContain('<row r="1"><c t="s"><v>0</v></c><c t="s"><v>1</v></c></row>')
+
+		const sharedStringsXml = decodeTestXml(zip['xl/sharedStrings.xml'])
+		expect(sharedStringsXml).toContain('count="2" uniqueCount="2"')
+		expect(sharedStringsXml).toContain('<si><t>a</t></si>')
+		expect(sharedStringsXml).toContain('<si><t>b</t></si>')
+
+		const read = readXlsx(written.value, { mode: 'values' })
+		expectOk(read)
+		const readSheet = read.value.workbook.sheets[0]
+		expect(readSheet?.cells.get(0, 0)?.value).toEqual({ kind: 'string', value: 'a' })
+		expect(readSheet?.cells.get(0, 1)?.value).toEqual({ kind: 'string', value: 'b' })
+	})
+
 	it('keeps dense cell refs when formula state follows scalar cells', () => {
 		const wb = new Workbook()
 		const sheet = wb.addSheet('Test')
@@ -4442,6 +4469,29 @@ describe('writeXlsx', () => {
 		expect(sheetXml).toContain(
 			'<row r="1"><c r="A1"><v>1</v></c><c r="B1"><f>A1+1</f><v>2</v></c></row>',
 		)
+	})
+
+	it('does not count shared strings during dense-ref fallback preflight', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Test')
+		sheet.cells.set(0, 0, { value: stringValue('a'), formula: null, styleId: S0 })
+		sheet.cells.set(0, 1, { value: numberValue(2), formula: 'LEN(A1)', styleId: S0 })
+
+		const written = writeXlsx(wb, undefined, {
+			useSharedStrings: true,
+			omitDenseCellRefs: true,
+		})
+		expectOk(written)
+
+		const zip = unzipSync(written.value)
+		const sheetXml = decodeTestXml(zip['xl/worksheets/sheet1.xml'])
+		expect(sheetXml).toContain(
+			'<row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1"><f>LEN(A1)</f><v>2</v></c></row>',
+		)
+
+		const sharedStringsXml = decodeTestXml(zip['xl/sharedStrings.xml'])
+		expect(sharedStringsXml).toContain('count="1" uniqueCount="1"')
+		expect(sharedStringsXml.match(/<si>/g)).toHaveLength(1)
 	})
 
 	it('writes dense rows without materializing a workbook', () => {

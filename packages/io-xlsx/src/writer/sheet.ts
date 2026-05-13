@@ -296,6 +296,7 @@ function buildSheetXmlToSink(
 			options.batchRows && options.omitDenseCellRefs === true && blankCells.length === 0
 				? defaultStyleScalarCellsWithoutRefsXml(
 						cells,
+						ssTable,
 						options.useInlineStrings,
 						options.usePlainStrings,
 					)
@@ -311,7 +312,7 @@ function buildSheetXmlToSink(
 			denseCellsWithoutRefsXml === false &&
 			options.omitDenseCellRefs === true &&
 			blankCells.length === 0 &&
-			canOmitDenseCellRefs(cells, options.useInlineStrings, options.usePlainStrings)
+			canOmitDenseCellRefs(cells)
 		let cellIndex = 0
 		let blankIndex = 0
 		while (
@@ -749,11 +750,7 @@ function cachedColumnName(cache: string[], col: number): string {
 	return name
 }
 
-function canOmitDenseCellRefs(
-	cells: readonly (readonly [number, Cell])[],
-	useInlineStrings?: boolean,
-	usePlainStrings?: boolean,
-): boolean {
+function canOmitDenseCellRefs(cells: readonly (readonly [number, Cell])[]): boolean {
 	if (cells.length === 0) return false
 	for (let index = 0; index < cells.length; index++) {
 		const entry = cells[index]
@@ -763,7 +760,7 @@ function canOmitDenseCellRefs(
 			(cell.styleId as number) !== 0 ||
 			cell.formula ||
 			cell.formulaInfo ||
-			!canOmitDefaultStyleScalarCellRef(cell, useInlineStrings, usePlainStrings)
+			!canOmitDefaultStyleScalarCellRef(cell)
 		) {
 			return false
 		}
@@ -773,6 +770,7 @@ function canOmitDenseCellRefs(
 
 function defaultStyleScalarCellsWithoutRefsXml(
 	cells: readonly (readonly [number, Cell])[],
+	ssTable: SharedStringTable,
 	useInlineStrings?: boolean,
 	usePlainStrings?: boolean,
 ): string | false {
@@ -781,12 +779,12 @@ function defaultStyleScalarCellsWithoutRefsXml(
 	if (first?.[1].value.kind === 'number') {
 		return defaultStyleNumberCellsWithoutRefsXml(cells)
 	}
+	if (!canOmitDenseCellRefs(cells)) return false
 	let body = ''
 	for (let index = 0; index < cells.length; index++) {
 		const entry = cells[index]
-		if (!entry || entry[0] !== index) return false
+		if (!entry) return false
 		const cell = entry[1]
-		if ((cell.styleId as number) !== 0 || cell.formula || cell.formulaInfo) return false
 		const value = cell.value
 		if (value.kind === 'number') {
 			body += `<c><v>${value.value}</v></c>`
@@ -804,11 +802,19 @@ function defaultStyleScalarCellsWithoutRefsXml(
 			} else if (useInlineStrings) {
 				body += `<c t="inlineStr"><is><t>${escapeXml(value.value)}</t></is></c>`
 			} else {
-				return false
+				const index = ssTable.getIndex(value)
+				if (index === undefined) return false
+				body += `<c t="s"><v>${index}</v></c>`
 			}
-		} else if ((usePlainStrings || useInlineStrings) && value.kind === 'richText') {
-			const runsXml = value.runs.map((run) => inlineStrRunXml(run)).join('')
-			body += `<c t="inlineStr"><is>${runsXml}</is></c>`
+		} else if (value.kind === 'richText') {
+			if (usePlainStrings || useInlineStrings) {
+				const runsXml = value.runs.map((run) => inlineStrRunXml(run)).join('')
+				body += `<c t="inlineStr"><is>${runsXml}</is></c>`
+			} else {
+				const index = ssTable.getIndex(value)
+				if (index === undefined) return false
+				body += `<c t="s"><v>${index}</v></c>`
+			}
 		} else {
 			return false
 		}
@@ -832,11 +838,7 @@ function defaultStyleNumberCellsWithoutRefsXml(
 	return body
 }
 
-function canOmitDefaultStyleScalarCellRef(
-	cell: Cell,
-	useInlineStrings?: boolean,
-	usePlainStrings?: boolean,
-): boolean {
+function canOmitDefaultStyleScalarCellRef(cell: Cell): boolean {
 	const value = cell.value
 	if (
 		value.kind === 'number' ||
@@ -847,8 +849,8 @@ function canOmitDefaultStyleScalarCellRef(
 	) {
 		return true
 	}
-	if (value.kind === 'string') return useInlineStrings === true || usePlainStrings === true
-	if (value.kind === 'richText') return useInlineStrings === true || usePlainStrings === true
+	if (value.kind === 'string') return true
+	if (value.kind === 'richText') return true
 	return false
 }
 

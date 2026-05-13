@@ -3,6 +3,7 @@ import { extractZip } from './reader/zip.ts'
 
 export type XlsxPackageGraphFidelityIssueCode =
 	| 'package_feature_classification'
+	| 'package_relationship_duplicate_id'
 	| 'package_relationship_source'
 	| 'package_relationship_target'
 	| 'package_content_type_override_target'
@@ -55,6 +56,27 @@ export function auditXlsxPackageGraphReadIntegrity(
 	const partByPath = new Map(graph.parts.map((part) => [part.path, part]))
 	const reportedMissingSourceSidecars = new Set<string>()
 	const allowPreservedOtherPart = options.allowPreservedOtherPart ?? (() => false)
+	for (const duplicate of duplicateRelationshipIds(graph.relationships)) {
+		const first = duplicate[0] as XlsxPackageGraphRelationship
+		issues.push({
+			code: 'package_relationship_duplicate_id',
+			severity: 'error',
+			message: `relationship part ${first.relationshipPartPath} contains duplicate relationship id ${first.id}`,
+			sourcePartPath: first.sourcePartPath,
+			relationshipPartPath: first.relationshipPartPath,
+			relationshipId: first.id,
+			featureFamily: first.featureFamily,
+			suggestedAction:
+				'Repair duplicate OPC relationship ids before resolving or writing the package; relationship ids must be unique within each .rels part.',
+			expected: 'unique relationship id within the relationship part',
+			actual: duplicate.map((relationship) => ({
+				type: relationship.rawType ?? relationship.type,
+				target: relationship.rawTarget,
+				resolvedTarget: relationship.resolvedTarget,
+				targetMode: relationship.targetMode,
+			})),
+		})
+	}
 	for (const part of graph.parts) {
 		if (part.featureFamily !== 'preservedOther' || allowPreservedOtherPart(part.path)) continue
 		issues.push({
@@ -154,6 +176,19 @@ export function auditXlsxPackageGraphReadIntegrity(
 		}
 	}
 	return issues
+}
+
+function duplicateRelationshipIds(
+	relationships: readonly XlsxPackageGraphRelationship[],
+): XlsxPackageGraphRelationship[][] {
+	const byRelationshipId = new Map<string, XlsxPackageGraphRelationship[]>()
+	for (const relationship of relationships) {
+		const key = `${relationship.relationshipPartPath}\u0000${relationship.id}`
+		const group = byRelationshipId.get(key)
+		if (group) group.push(relationship)
+		else byRelationshipId.set(key, [relationship])
+	}
+	return [...byRelationshipId.values()].filter((group) => group.length > 1)
 }
 
 function sourcePartFromRelationshipPartPath(path: string): string | null {

@@ -80,6 +80,46 @@ describe('XLSX package graph fidelity audits', () => {
 		)
 	})
 
+	test('reports duplicate relationship ids within the same relationship part', () => {
+		const graph = inspectXlsxPackageGraph(
+			makeXlsx({
+				'[Content_Types].xml': contentTypesXml(`
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+`),
+				'_rels/.rels': relationshipsXml(`
+  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+`),
+				'xl/workbook.xml': '<workbook/>',
+				'xl/_rels/workbook.xml.rels': relationshipsXml(`
+  <Relationship Id="rIdSheet" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rIdSheet" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>
+`),
+				'xl/worksheets/sheet1.xml': '<worksheet/>',
+				'xl/worksheets/sheet2.xml': '<worksheet/>',
+			}),
+		)
+
+		const issues = auditXlsxPackageGraphReadIntegrity(graph)
+		expect(issues).toContainEqual(
+			expect.objectContaining({
+				code: 'package_relationship_duplicate_id',
+				severity: 'error',
+				sourcePartPath: 'xl/workbook.xml',
+				relationshipPartPath: 'xl/_rels/workbook.xml.rels',
+				relationshipId: 'rIdSheet',
+				featureFamily: 'worksheet',
+				actual: [
+					expect.objectContaining({ target: 'worksheets/sheet1.xml' }),
+					expect.objectContaining({ target: 'worksheets/sheet2.xml' }),
+				],
+			}),
+		)
+	})
+
 	test('reports empty relationship sidecars whose source part is missing', () => {
 		const graph = inspectXlsxPackageGraph(
 			makeXlsx({

@@ -6113,6 +6113,32 @@ function checkPackageGraphIntegrity(packageGraph?: VerifyPackageGraph): CheckIss
 	const partPaths = new Set(partByPath.keys())
 	const reportedMissingSourceSidecars = new Set<string>()
 
+	for (const duplicate of duplicateRelationshipIds(packageGraph.relationships)) {
+		const first = duplicate[0] as VerifyPackageGraphRelationship
+		issues.push({
+			rule: 'package-graph-integrity',
+			severity: 'error',
+			message: `Package relationship part ${first.relationshipPartPath} contains duplicate relationship id "${first.id}"`,
+			refs: [`${first.relationshipPartPath}#${first.id}`],
+			suggestedFix:
+				'Repair duplicate OPC relationship ids before resolving or writing the package; relationship ids must be unique within each .rels part.',
+			details: {
+				code: 'package_relationship_duplicate_id',
+				sourcePartPath: first.sourcePartPath,
+				relationshipPartPath: first.relationshipPartPath,
+				relationshipId: first.id,
+				featureFamily: first.featureFamily,
+				expected: 'unique relationship id within the relationship part',
+				actual: duplicate.map((relationship) => ({
+					type: relationship.rawType ?? relationship.type,
+					target: relationship.rawTarget,
+					resolvedTarget: relationship.resolvedTarget,
+					targetMode: relationship.targetMode,
+				})),
+			},
+		})
+	}
+
 	for (const relationship of packageGraph.relationships) {
 		if (relationship.sourcePartPath !== '' && !partPaths.has(relationship.sourcePartPath)) {
 			issues.push({
@@ -6217,6 +6243,19 @@ function checkPackageGraphIntegrity(packageGraph?: VerifyPackageGraph): CheckIss
 	}
 
 	return issues
+}
+
+function duplicateRelationshipIds(
+	relationships: readonly VerifyPackageGraphRelationship[],
+): VerifyPackageGraphRelationship[][] {
+	const byRelationshipId = new Map<string, VerifyPackageGraphRelationship[]>()
+	for (const relationship of relationships) {
+		const key = `${relationship.relationshipPartPath}\u0000${relationship.id}`
+		const group = byRelationshipId.get(key)
+		if (group) group.push(relationship)
+		else byRelationshipId.set(key, [relationship])
+	}
+	return [...byRelationshipId.values()].filter((group) => group.length > 1)
 }
 
 function sourcePartFromRelationshipPartPath(path: string): string | null {

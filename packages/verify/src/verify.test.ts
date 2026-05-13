@@ -1717,6 +1717,70 @@ describe('checker', () => {
 		expect(packageIssues[0]?.suggestedFix).toContain('restore the referenced package part')
 	})
 
+	test('surfaces duplicate package relationship ids as check diagnostics', () => {
+		const wb = createWorkbook()
+		wb.addSheet('Sheet1')
+
+		const result = check(wb, {
+			packageGraph: {
+				parts: [
+					{ path: 'xl/workbook.xml', featureFamily: 'workbook', ownerScope: 'workbook' },
+					{
+						path: 'xl/worksheets/sheet1.xml',
+						featureFamily: 'worksheet',
+						ownerScope: 'sheet',
+					},
+					{
+						path: 'xl/worksheets/sheet2.xml',
+						featureFamily: 'worksheet',
+						ownerScope: 'sheet',
+					},
+				],
+				relationships: [
+					{
+						sourcePartPath: 'xl/workbook.xml',
+						relationshipPartPath: 'xl/_rels/workbook.xml.rels',
+						id: 'rIdSheet',
+						type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet',
+						rawTarget: 'worksheets/sheet1.xml',
+						resolvedTarget: 'xl/worksheets/sheet1.xml',
+						featureFamily: 'worksheet',
+					},
+					{
+						sourcePartPath: 'xl/workbook.xml',
+						relationshipPartPath: 'xl/_rels/workbook.xml.rels',
+						id: 'rIdSheet',
+						type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet',
+						rawTarget: 'worksheets/sheet2.xml',
+						resolvedTarget: 'xl/worksheets/sheet2.xml',
+						featureFamily: 'worksheet',
+					},
+				],
+			},
+		})
+		const duplicateIssue = result.issues.find(
+			(issue) => issue.details?.code === 'package_relationship_duplicate_id',
+		)
+		expect(result.passed).toBe(false)
+		expect(duplicateIssue).toMatchObject({
+			rule: 'package-graph-integrity',
+			severity: 'error',
+			refs: ['xl/_rels/workbook.xml.rels#rIdSheet'],
+			suggestedFix: expect.stringContaining('unique'),
+			details: {
+				code: 'package_relationship_duplicate_id',
+				sourcePartPath: 'xl/workbook.xml',
+				relationshipPartPath: 'xl/_rels/workbook.xml.rels',
+				relationshipId: 'rIdSheet',
+				featureFamily: 'worksheet',
+				actual: [
+					expect.objectContaining({ target: 'worksheets/sheet1.xml' }),
+					expect.objectContaining({ target: 'worksheets/sheet2.xml' }),
+				],
+			},
+		})
+	})
+
 	test('surfaces package graph relationship source issues as check diagnostics', () => {
 		const wb = createWorkbook()
 		wb.addSheet('Sheet1')

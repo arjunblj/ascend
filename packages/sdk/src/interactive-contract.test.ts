@@ -1615,6 +1615,63 @@ describe('interactive client contract', () => {
 			{ start: { row: 1, col: 2 }, end: { row: 1, col: 3 } },
 		])
 	})
+
+	test('column delete journals mark metadata intersections as lossy', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'Name' },
+					{ ref: 'B1', value: 'Status' },
+					{ ref: 'C1', value: 'Amount' },
+					{ ref: 'A2', value: 'A' },
+					{ ref: 'B2', value: 'Open' },
+					{ ref: 'C2', value: 10 },
+				],
+			},
+			{ op: 'setComment', sheet: 'Sheet1', ref: 'B2', text: 'review' },
+			{ op: 'setHyperlink', sheet: 'Sheet1', ref: 'B3', url: 'https://example.com' },
+			{
+				op: 'setDataValidation',
+				sheet: 'Sheet1',
+				range: 'B2:B5',
+				rule: { type: 'list', formula1: '"Open,Closed"' },
+			},
+			{
+				op: 'setConditionalFormat',
+				sheet: 'Sheet1',
+				range: 'B2:B5',
+				rule: { type: 'expression', formula: 'B2="Open"', priority: 1 },
+			},
+			{ op: 'setAutoFilter', sheet: 'Sheet1', range: 'A1:C5', column: 1, values: ['Open'] },
+			{ op: 'createTable', sheet: 'Sheet1', ref: 'A1:C2', name: 'Tasks', hasHeaders: true },
+		])
+
+		const deletedCol = wb.preview([{ op: 'deleteCols', sheet: 'Sheet1', at: 1, count: 1 }], {
+			journal: true,
+		})
+
+		expect(deletedCol.wouldSucceed).toBe(true)
+		expect(deletedCol.journal?.supported).toBe(true)
+		expect(deletedCol.journal?.exact).toBe(false)
+		expect(deletedCol.journal?.issues).toEqual([
+			{
+				code: 'LOSSY_INVERSE',
+				message:
+					'Deleted column metadata on Sheet1 cannot be fully restored with public operations',
+				refs: ['Sheet1!B'],
+			},
+		])
+		expect(deletedCol.journal?.inverseOps[0]).toEqual({
+			op: 'insertCols',
+			sheet: 'Sheet1',
+			at: 1,
+			count: 1,
+		})
+		expect(wb.sheet('Sheet1')?.getComments()).toEqual([{ ref: 'B2', text: 'review' }])
+	})
 })
 
 function journalComparableState(wb: AscendWorkbook): object {

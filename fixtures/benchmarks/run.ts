@@ -840,6 +840,36 @@ function workbookGridStorageAssertions(workbook: Workbook): Record<string, numbe
 	}
 }
 
+function workbookGridShapeAssertions(workbook: Workbook): Record<string, number> {
+	let nonEmptySheets = 0
+	let maxUsedRows = 0
+	let maxUsedCols = 0
+	let formulaCells = 0
+	let stringCells = 0
+	let richTextCells = 0
+	let arrayCells = 0
+	for (const sheet of workbook.sheets) {
+		const used = sheet.cells.usedRange()
+		formulaCells += sheet.cells.formulaCellCount()
+		stringCells += sheet.cells.stringCellCount()
+		richTextCells += sheet.cells.richTextCellCount()
+		arrayCells += sheet.cells.arrayCellCount()
+		if (!used) continue
+		nonEmptySheets += 1
+		maxUsedRows = Math.max(maxUsedRows, used.end.row - used.start.row + 1)
+		maxUsedCols = Math.max(maxUsedCols, used.end.col - used.start.col + 1)
+	}
+	return {
+		nonEmptySheets,
+		maxUsedRows,
+		maxUsedCols,
+		formulaCells,
+		stringCells,
+		richTextCells,
+		arrayCells,
+	}
+}
+
 function buildGridStorageWidthAssertions(rows: number, width: number): Record<string, number> {
 	runGc()
 	const baseline = phaseMemorySnapshot()
@@ -2341,6 +2371,79 @@ const scenarios: readonly Scenario[] = [
 			}
 		},
 	},
+	{
+		name: 'real-corpus-grid-storage',
+		category: 'read',
+		build() {
+			return {
+				rows: REAL_INTERACTIVE_PATCH_CORPUS.length,
+				cols: 1,
+				cells: REAL_INTERACTIVE_PATCH_CORPUS.length,
+				byteCount: realInteractivePatchCorpusByteCount(),
+			}
+		},
+		run() {
+			const targetAssertions: Record<string, string | number | boolean | null> = {}
+			let totalBytes = 0
+			let totalReadMs = 0
+			let totalGridCells = 0
+			let totalDenseChunks = 0
+			let totalSparseChunks = 0
+			let totalGridArrayBufferBytes = 0
+			let densestTarget = ''
+			let maxDenseChunks = 0
+
+			for (const target of REAL_INTERACTIVE_PATCH_CORPUS) {
+				const bytes = realInteractivePatchCorpusTargetBytes(target)
+				const assertionPrefix = target.label.replaceAll('-', '_')
+				totalBytes += bytes.byteLength
+				const readStart = performance.now()
+				const result = readXlsx(bytes, { mode: 'full', richMetadata: true })
+				const readMs = performance.now() - readStart
+				if (!result.ok) {
+					throw new Error(`Grid storage read failed for ${target.label}: ${result.error.message}`)
+				}
+				const workbook = result.value.workbook
+				const storage = workbookGridStorageAssertions(workbook)
+				const shape = workbookGridShapeAssertions(workbook)
+				totalReadMs += readMs
+				totalGridCells += storage.gridCellCount
+				totalDenseChunks += storage.gridDenseChunkCount
+				totalSparseChunks += storage.gridSparseChunkCount
+				totalGridArrayBufferBytes += storage.gridTotalArrayBufferBytes
+				if (storage.gridDenseChunkCount > maxDenseChunks) {
+					maxDenseChunks = storage.gridDenseChunkCount
+					densestTarget = target.label
+				}
+
+				targetAssertions[`${assertionPrefix}.bytes`] = bytes.byteLength
+				targetAssertions[`${assertionPrefix}.readMs`] = readMs
+				for (const [key, value] of Object.entries(shape)) {
+					targetAssertions[`${assertionPrefix}.${key}`] = value
+				}
+				for (const [key, value] of Object.entries(storage)) {
+					targetAssertions[`${assertionPrefix}.${key}`] = value
+				}
+			}
+
+			return {
+				assertions: {
+					workbooks: REAL_INTERACTIVE_PATCH_CORPUS.length,
+					totalBytes,
+					totalReadMs,
+					totalGridCells,
+					totalDenseChunks,
+					totalSparseChunks,
+					totalGridArrayBufferBytes,
+					gridArrayBufferBytesPerCell:
+						totalGridCells > 0 ? totalGridArrayBufferBytes / totalGridCells : 0,
+					maxDenseChunks,
+					densestTarget,
+					...targetAssertions,
+				},
+			}
+		},
+	},
 	createRealDenseReadMemoryScenario('real-dense-read-memory-metadata', {
 		mode: 'metadata-only',
 		richMetadata: true,
@@ -3785,7 +3888,7 @@ const scenarioSets = {
 		'patch-stream-real-rich-prepared-first-edit',
 	],
 	'ui-real-corpus': ['patch-stream-real-corpus-prepared-first-edit'],
-	'real-open': ['real-corpus-open-phases'],
+	'real-open': ['real-corpus-open-phases', 'real-corpus-grid-storage'],
 	'real-memory': [
 		'real-dense-promotion-memory',
 		'real-dense-prepared-open-only-memory',

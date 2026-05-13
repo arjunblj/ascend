@@ -450,6 +450,7 @@ describe('API', () => {
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({
 				file: tempFile,
+				journal: true,
 				ops: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 5 }] }],
 			}),
 		})
@@ -458,6 +459,10 @@ describe('API', () => {
 		expect(body.formatVersion).toBe(1)
 		expect(body.ok).toBe(true)
 		expect(body.data.cellChanges.length).toBeGreaterThan(0)
+		expect(body.data.journal.supported).toBe(true)
+		expect(body.data.journal.inverseOps).toEqual([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 2 }] },
+		])
 		expect(body.data.writePlan.totalParts).toBeGreaterThan(0)
 
 		const reopened = await AscendWorkbook.open(tempFile)
@@ -505,6 +510,36 @@ describe('API', () => {
 		const body = await res.json()
 		expect(body.ok).toBe(false)
 		expect(body.error.message).toContain('Sheet')
+	})
+
+	test('write can include mutation journal metadata in the success envelope', async () => {
+		const tempFile = join(tempDir, 'write-journal.xlsx')
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'before' }] }])
+		await wb.save(tempFile)
+
+		const res = await api(`/write`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				file: tempFile,
+				journal: true,
+				ops: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'after' }] }],
+			}),
+		})
+		expect(res.status).toBe(200)
+		const body = await res.json()
+		expect(body.ok).toBe(true)
+		expect(body.data.journal.supported).toBe(true)
+		expect(body.data.journal.inverseOps).toEqual([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'before' }] },
+		])
+
+		const reopened = await AscendWorkbook.open(tempFile)
+		expect(reopened.sheet('Sheet1')?.cell('A1')?.value).toEqual({
+			kind: 'string',
+			value: 'after',
+		})
 	})
 
 	test('write returns a failure envelope when recalculation reports errors', async () => {

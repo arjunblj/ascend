@@ -308,11 +308,23 @@ describe('MCP server', () => {
 		const handler = (server as any)._registeredTools['ascend.write'].handler as (args: {
 			file: string
 			ops: unknown[]
-		}) => Promise<unknown>
-		await handler({
+			journal?: boolean
+		}) => Promise<{
+			structuredContent?: {
+				ok?: boolean
+				data?: { journal?: { supported?: boolean; inverseOps?: unknown[] } }
+			}
+		}>
+		const result = await handler({
 			file: TEMP_FILE,
+			journal: true,
 			ops: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 5 }] }],
 		})
+		expect(result.structuredContent?.ok).toBe(true)
+		expect(result.structuredContent?.data?.journal?.supported).toBe(true)
+		expect(result.structuredContent?.data?.journal?.inverseOps).toEqual([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 2 }] },
+		])
 
 		const reopened = await AscendWorkbook.open(TEMP_FILE)
 		expect(reopened.sheet('Sheet1')?.cell('A2')?.value).toEqual({ kind: 'number', value: 10 })
@@ -381,6 +393,39 @@ describe('MCP server', () => {
 
 		const reopened = await AscendWorkbook.open(TEMP_FILE)
 		expect(reopened.sheet('Sheet1')?.cell('A1')).toBeUndefined()
+	})
+
+	test('ascend.preview can include mutation journal metadata', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'old' }] }])
+		await wb.save(TEMP_FILE)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const handler = (server as any)._registeredTools['ascend.preview'].handler as (args: {
+			file: string
+			ops: unknown[]
+			journal?: boolean
+		}) => Promise<{
+			structuredContent?: {
+				ok?: boolean
+				data?: { journal?: { supported?: boolean; inverseOps?: unknown[] } }
+			}
+		}>
+		const result = await handler({
+			file: TEMP_FILE,
+			journal: true,
+			ops: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'new' }] }],
+		})
+
+		expect(result.structuredContent?.ok).toBe(true)
+		expect(result.structuredContent?.data?.journal?.supported).toBe(true)
+		expect(result.structuredContent?.data?.journal?.inverseOps).toEqual([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'old' }] },
+		])
+
+		const reopened = await AscendWorkbook.open(TEMP_FILE)
+		expect(reopened.sheet('Sheet1')?.cell('A1')?.value).toEqual({ kind: 'string', value: 'old' })
 	})
 
 	test('ascend.export writes JSON/TSV and rejects unsupported formats', async () => {

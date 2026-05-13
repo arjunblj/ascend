@@ -574,9 +574,10 @@ export function createApiFetch() {
 			}
 
 			if (method === 'POST' && path === '/write') {
-				const body = await parseJson<{ file?: string; ops?: unknown[] }>(req)
+				const body = await parseJson<{ file?: string; ops?: unknown[]; journal?: unknown }>(req)
 				const file = body ? requireString(body, 'file') : null
 				const opsArr = body ? requireArray(body, 'ops') : null
+				const journal = body?.journal === true
 				if (!file) return jsonFailure('Missing or invalid file', 400)
 				if (!opsArr || opsArr.length === 0) return jsonFailure('Missing or invalid ops', 400)
 				const parsed = parseOperations(opsArr)
@@ -591,7 +592,7 @@ export function createApiFetch() {
 				}
 				try {
 					const wb = await AscendWorkbook.open(file)
-					const result = wb.apply(parsed.value)
+					const result = wb.apply(parsed.value, { journal })
 					if (result.errors.length > 0) {
 						const first = result.errors[0]
 						return jsonFailureError(
@@ -622,9 +623,10 @@ export function createApiFetch() {
 			}
 
 			if (method === 'POST' && path === '/preview') {
-				const body = await parseJson<{ file?: string; ops?: unknown[] }>(req)
+				const body = await parseJson<{ file?: string; ops?: unknown[]; journal?: unknown }>(req)
 				const file = body ? requireString(body, 'file') : null
 				const opsArr = body ? requireArray(body, 'ops') : null
+				const journal = body?.journal === true
 				if (!file) return jsonFailure('Missing or invalid file', 400)
 				if (!opsArr || opsArr.length === 0) return jsonFailure('Missing or invalid ops', 400)
 				const parsed = parseOperations(opsArr)
@@ -639,7 +641,7 @@ export function createApiFetch() {
 				}
 				try {
 					const wb = await AscendWorkbook.open(file)
-					const result = wb.preview(parsed.value)
+					const result = wb.preview(parsed.value, { journal })
 					if (result.errors.length > 0) {
 						const first = result.errors[0]
 						return jsonFailureError(

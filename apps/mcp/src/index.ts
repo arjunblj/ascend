@@ -685,8 +685,12 @@ export function createServer(): McpServer {
 		{
 			file: z.string().describe('Path to workbook file'),
 			ops: z.array(z.record(z.string(), z.unknown())).describe('Operations to preview'),
+			journal: z
+				.boolean()
+				.optional()
+				.describe('Include reversible mutation journal metadata for supported operations'),
 		},
-		async ({ file, ops }) => {
+		async ({ file, ops, journal }) => {
 			const parsed = parseOperations(ops)
 			if (!parsed.ok) {
 				return errorResponse(
@@ -700,7 +704,7 @@ export function createServer(): McpServer {
 			}
 			try {
 				const wb = await Ascend.open(file)
-				const result = wb.preview(parsed.value)
+				const result = wb.preview(parsed.value, journal ? { journal: true } : undefined)
 				if (result.errors.length > 0) {
 					const first = result.errors[0]
 					return errorResponse(
@@ -727,8 +731,12 @@ export function createServer(): McpServer {
 		{
 			file: z.string().describe('Path to workbook file'),
 			ops: z.array(z.record(z.string(), z.unknown())).describe('Operations to apply'),
+			journal: z
+				.boolean()
+				.optional()
+				.describe('Include reversible mutation journal metadata for supported operations'),
 		},
-		async ({ file, ops }) => {
+		async ({ file, ops, journal }) => {
 			const parsed = parseOperations(ops)
 			if (!parsed.ok) {
 				return errorResponse(
@@ -742,7 +750,7 @@ export function createServer(): McpServer {
 			}
 			try {
 				const wb = await Ascend.open(file)
-				const result = wb.apply(parsed.value)
+				const result = wb.apply(parsed.value, journal ? { journal: true } : undefined)
 				if (result.errors.length > 0) {
 					const first = result.errors[0]
 					return errorResponse(

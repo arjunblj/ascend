@@ -34,7 +34,7 @@ export type {
 	WriteDenseRowsXlsxOptions,
 } from './writer/dense-rows.ts'
 export { writeDenseRowsXlsx, writeDenseRowsXlsxStreaming } from './writer/dense-rows.ts'
-export type { WriteXlsxOptions } from './writer/index.ts'
+export type { DirtyCellPatch, WriteXlsxOptions } from './writer/index.ts'
 export {
 	planWriteXlsx,
 	summarizePlannedWrite,

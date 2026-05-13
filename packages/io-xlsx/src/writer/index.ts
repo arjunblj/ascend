@@ -1,5 +1,7 @@
 import {
 	cloneCellStyle,
+	indexToColumn,
+	parseA1Safe,
 	type SheetDrawingObjectRef,
 	type SheetId,
 	type Table,
@@ -47,6 +49,7 @@ import {
 import { parseSharedStrings } from '../reader/shared-strings.ts'
 import { parseTable } from '../reader/table.ts'
 import { extractZip, type ZipArchive } from '../reader/zip.ts'
+import { escapeXml } from '../xml.ts'
 import { updateChartXml } from './chart.ts'
 import { buildCommentsVml, buildCommentsXml, syncCommentsXml } from './comments.ts'
 import { updateConnectionPartXml } from './connection.ts'
@@ -151,6 +154,7 @@ type BunArrayBufferSinkConstructor = new () => BunArrayBufferSink
 
 export interface WriteXlsxOptions {
 	readonly dirtySheetNames?: readonly string[]
+	readonly dirtyCellPatches?: readonly DirtyCellPatch[]
 	readonly workbookMetaDirty?: boolean
 	readonly documentPropertiesDirty?: boolean
 	readonly calcStateDirty?: boolean
@@ -168,6 +172,116 @@ export interface WriteXlsxOptions {
 	/** Omit cell ref attributes on dense contiguous default-style scalar rows. */
 	readonly omitDenseCellRefs?: boolean
 	readonly streaming?: boolean
+}
+
+export interface DirtyCellPatch {
+	readonly sheetName: string
+	readonly refs: readonly string[]
+}
+
+interface CellXmlMatch {
+	readonly start: number
+	readonly end: number
+	readonly replacement: string
+}
+
+interface PatchCellPayload {
+	readonly typeAttr?: 'b' | 'e' | 'str'
+	readonly valueXml: string
+}
+
+function patchPreservedSheetXmlCells(
+	sheet: Workbook['sheets'][number],
+	xml: string,
+	refs: readonly string[],
+): string | undefined {
+	if (refs.length === 0) return undefined
+	const replacements = new Map<string, PatchCellPayload>()
+	for (const rawRef of refs) {
+		const parsed = parseA1Safe(rawRef)
+		if (!parsed) return undefined
+		const ref = `${indexToColumn(parsed.col)}${parsed.row + 1}`
+		const cell = sheet.cells.get(parsed.row, parsed.col)
+		if (!cell || cell.formula || cell.formulaInfo || cell.value.kind === 'array') return undefined
+		const payload = scalarPatchValueXml(cell.value)
+		if (!payload) return undefined
+		replacements.set(ref, payload)
+	}
+	if (replacements.size === 0) return undefined
+
+	const matches: CellXmlMatch[] = []
+	const found = new Set<string>()
+	const cellRegex = /<c\b[^>]*\br=(["'])([^"']+)\1[^>]*(?:\/>|>[\s\S]*?<\/c>)/g
+	for (let match = cellRegex.exec(xml); match; match = cellRegex.exec(xml)) {
+		const ref = match[2]
+		if (!ref || !replacements.has(ref)) continue
+		const cellXml = match[0]
+		if (cellXml.includes('<f') || found.has(ref)) return undefined
+		const payload = replacements.get(ref)
+		if (!payload) return undefined
+		const attrs = patchedCellAttrs(cellXml, ref, payload.typeAttr)
+		if (!attrs) return undefined
+		const replacement = `<c${attrs}>${payload.valueXml}</c>`
+		matches.push({
+			start: match.index,
+			end: match.index + cellXml.length,
+			replacement,
+		})
+		found.add(ref)
+		if (found.size === replacements.size) break
+	}
+	if (found.size !== replacements.size) return undefined
+
+	let out = ''
+	let cursor = 0
+	for (const match of matches) {
+		out += xml.slice(cursor, match.start)
+		out += match.replacement
+		cursor = match.end
+	}
+	out += xml.slice(cursor)
+	return out
+}
+
+function scalarPatchValueXml(value: CellValue): PatchCellPayload | undefined {
+	switch (value.kind) {
+		case 'number':
+			return { valueXml: `<v>${value.value}</v>` }
+		case 'date':
+			return { valueXml: `<v>${value.serial}</v>` }
+		case 'boolean':
+			return { typeAttr: 'b', valueXml: `<v>${value.value ? '1' : '0'}</v>` }
+		case 'error':
+			return { typeAttr: 'e', valueXml: `<v>${escapeXml(value.value)}</v>` }
+		case 'string':
+			return { typeAttr: 'str', valueXml: `<v>${escapeXml(value.value)}</v>` }
+		case 'empty':
+		case 'richText':
+		case 'array':
+			return undefined
+	}
+}
+
+function patchedCellAttrs(
+	cellXml: string,
+	ref: string,
+	typeAttr: PatchCellPayload['typeAttr'],
+): string | undefined {
+	const startTag = /^<c\b([^>]*)(?:\/>|>)/.exec(cellXml)
+	if (!startTag) return undefined
+	const attrs = [`r="${ref}"`]
+	const attrRegex = /([A-Za-z_:][\w:.-]*)=(["'])(.*?)\2/g
+	for (
+		let match = attrRegex.exec(startTag[1] ?? '');
+		match;
+		match = attrRegex.exec(startTag[1] ?? '')
+	) {
+		const name = match[1]
+		if (!name || name === 'r' || name === 't') continue
+		attrs.push(`${name}="${match[3] ?? ''}"`)
+	}
+	if (typeAttr) attrs.push(`t="${typeAttr}"`)
+	return attrs.length > 0 ? ` ${attrs.join(' ')}` : ''
 }
 
 export function writeXlsx(
@@ -400,6 +514,9 @@ export function planWriteXlsx(
 				partPath,
 			) ?? fallback
 		const dirtyPatchMode = (options.dirtySheetNames?.length ?? 0) > 0 && sourceArchive !== undefined
+		const dirtyCellPatchesBySheet = new Map(
+			(options.dirtyCellPatches ?? []).map((patch) => [patch.sheetName, patch.refs] as const),
+		)
 		const effectiveStylesDirty = options.stylesDirty ?? dirtyPatchMode
 		const effectiveSharedStringsDirty = options.sharedStringsDirty ?? dirtyPatchMode
 		const effectiveWorkbookMetaDirty = options.workbookMetaDirty ?? dirtyPatchMode
@@ -1050,7 +1167,16 @@ export function planWriteXlsx(
 			const preserveSheetXml =
 				!(options.dirtySheetNames ?? []).includes(sheet.name) &&
 				(options.summaryOnly ? hasPreservedSheetXml : !!preservedSheetXmlText)
-			if (!preserveSheetXml) {
+			const patchedSheetXmlText =
+				!preserveSheetXml && preservedSheetXmlText
+					? patchPreservedSheetXmlCells(
+							sheet,
+							preservedSheetXmlText,
+							dirtyCellPatchesBySheet.get(sheet.name) ?? [],
+						)
+					: undefined
+			const preserveOrPatchSheetXml = preserveSheetXml || patchedSheetXmlText !== undefined
+			if (!preserveOrPatchSheetXml) {
 				if (sheet.comments.size > 0) {
 					const existingVmlCapsule = sheetCapsules.find(
 						(capsule) => capsule.relType === REL_VML_DRAWING,
@@ -1289,6 +1415,17 @@ export function planWriteXlsx(
 					},
 					() => preservedSheetXmlBytes,
 				)
+			} else if (patchedSheetXmlText !== undefined) {
+				recordXml(
+					sheetPartPath,
+					{
+						owner: { kind: 'sheet', sheetName: sheet.name },
+						origin: 'generated',
+						contentType:
+							'application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml',
+					},
+					() => patchedSheetXmlText,
+				)
 			} else if (options.streaming && !preserveSheetXml) {
 				const cfOverrides = cfDxfIdOverridesBySheet.get(sheet.name)
 				const sheetOptions = {
@@ -1349,7 +1486,7 @@ export function planWriteXlsx(
 				)
 			}
 			if (
-				preserveSheetXml &&
+				preserveOrPatchSheetXml &&
 				(options.summaryOnly ? hasPreservedSheetRels : !!preservedSheetRelsText)
 			) {
 				if (preservedSheetRelsBytes && !options.summaryOnly) {

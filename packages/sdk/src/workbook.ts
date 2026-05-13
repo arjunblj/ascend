@@ -320,6 +320,7 @@ export class AscendWorkbook extends WorkbookReadView {
 	private sourceArchive: ZipArchive | undefined
 	private dirty: boolean
 	private readonly dirtySheets = new Set<string>()
+	private readonly pendingDirtyCellRefs = new Map<string, Set<string>>()
 	private pendingDirtyRefs: string[] = []
 	private pendingFullRecalc = false
 	private _batchMode = false
@@ -610,6 +611,7 @@ export class AscendWorkbook extends WorkbookReadView {
 		this.advanceApplyGenerations(ops, dirtyFlags, result.value)
 		this.markDirty()
 		for (const sheetName of result.value.sheetsModified) this.dirtySheets.add(sheetName)
+		this.mergePendingDirtyCellRefs(ops)
 		this.workbookMetaDirty ||= dirtyFlags.workbookMetaDirty
 		this.documentPropertiesDirty ||= dirtyFlags.documentPropertiesDirty
 		this.calcStateDirty ||= dirtyFlags.calcStateDirty || result.value.recalcRequired
@@ -719,6 +721,7 @@ export class AscendWorkbook extends WorkbookReadView {
 		this.wb = nextWorkbook
 		this.markDirty()
 		for (const sheetName of result.value.sheetsModified) this.dirtySheets.add(sheetName)
+		this.mergePendingDirtyCellRefs(opsOrFn)
 		this.workbookMetaDirty ||= dirtyFlags.workbookMetaDirty
 		this.documentPropertiesDirty ||= dirtyFlags.documentPropertiesDirty
 		this.calcStateDirty ||= dirtyFlags.calcStateDirty || result.value.recalcRequired
@@ -970,7 +973,11 @@ export class AscendWorkbook extends WorkbookReadView {
 			this.sharedStringsDirty = true
 			for (const ref of result.changed) {
 				const bang = ref.indexOf('!')
-				if (bang !== -1) this.dirtySheets.add(ref.slice(0, bang))
+				if (bang !== -1) {
+					const sheetName = ref.slice(0, bang)
+					this.dirtySheets.add(sheetName)
+					this.pendingDirtyCellRefs.delete(sheetName)
+				}
 			}
 		}
 		if (result.errors.length === 0) {
@@ -1245,8 +1252,10 @@ export class AscendWorkbook extends WorkbookReadView {
 		this.assertWritable()
 		if (this.originalBytes && !this.dirty) return this.originalBytes
 		const sourceArchive = this.getSourceArchive()
+		const dirtyCellPatches = this.dirtyCellPatchOptions()
 		const writeOptions: import('@ascend/io-xlsx').WriteXlsxOptions = {
 			dirtySheetNames: [...this.dirtySheets],
+			...(dirtyCellPatches ? { dirtyCellPatches } : {}),
 			workbookMetaDirty: this.workbookMetaDirty,
 			documentPropertiesDirty: this.documentPropertiesDirty,
 			calcStateDirty: this.calcStateDirty,
@@ -1281,8 +1290,10 @@ export class AscendWorkbook extends WorkbookReadView {
 	writePlanSummary(): WritePlanInfo {
 		this.assertWritable()
 		const sourceArchive = this.getSourceArchive(false)
+		const dirtyCellPatches = this.dirtyCellPatchOptions()
 		const writeOptions: import('@ascend/io-xlsx').WriteXlsxOptions = {
 			dirtySheetNames: [...this.dirtySheets],
+			...(dirtyCellPatches ? { dirtyCellPatches } : {}),
 			workbookMetaDirty: this.workbookMetaDirty,
 			documentPropertiesDirty: this.documentPropertiesDirty,
 			calcStateDirty: this.calcStateDirty,
@@ -1492,6 +1503,47 @@ export class AscendWorkbook extends WorkbookReadView {
 		}
 	}
 
+	private mergePendingDirtyCellRefs(ops: readonly Operation[]): void {
+		const refsBySheet = new Map<string, Set<string>>()
+		for (const op of ops) {
+			if (op.op !== 'setCells') {
+				this.pendingDirtyCellRefs.clear()
+				return
+			}
+			let refs = refsBySheet.get(op.sheet)
+			if (!refs) {
+				refs = new Set<string>()
+				refsBySheet.set(op.sheet, refs)
+			}
+			for (const update of op.updates) {
+				const ref = parseA1Safe(update.ref)
+				if (!ref) {
+					this.pendingDirtyCellRefs.clear()
+					return
+				}
+				refs.add(`${indexToColumn(ref.col)}${ref.row + 1}`)
+			}
+		}
+		for (const [sheetName, refs] of refsBySheet) {
+			let pending = this.pendingDirtyCellRefs.get(sheetName)
+			if (!pending) {
+				pending = new Set<string>()
+				this.pendingDirtyCellRefs.set(sheetName, pending)
+			}
+			for (const ref of refs) pending.add(ref)
+		}
+	}
+
+	private dirtyCellPatchOptions(): import('@ascend/io-xlsx').DirtyCellPatch[] | undefined {
+		const patches: import('@ascend/io-xlsx').DirtyCellPatch[] = []
+		for (const sheetName of this.dirtySheets) {
+			const refs = this.pendingDirtyCellRefs.get(sheetName)
+			if (!refs || refs.size === 0) continue
+			patches.push({ sheetName, refs: [...refs] })
+		}
+		return patches.length > 0 ? patches : undefined
+	}
+
 	private markDirty(): void {
 		if (!this.dirty) this.originalBytes = null
 		this.dirty = true
@@ -1503,6 +1555,7 @@ export class AscendWorkbook extends WorkbookReadView {
 		this.sourceArchive = undefined
 		this.dirty = false
 		this.dirtySheets.clear()
+		this.pendingDirtyCellRefs.clear()
 		this.workbookMetaDirty = false
 		this.documentPropertiesDirty = false
 		this.calcStateDirty = false

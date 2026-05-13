@@ -821,6 +821,37 @@ function workbookGridStorageAssertions(workbook: Workbook): Record<string, numbe
 	}
 }
 
+function buildGridStorageWidthAssertions(rows: number, width: number): Record<string, number> {
+	runGc()
+	const baseline = phaseMemorySnapshot()
+	const buildStart = performance.now()
+	const workbook = buildPlainNumericWorkbook(rows, width)
+	const buildMs = performance.now() - buildStart
+	runGc()
+	const afterBuild = phaseMemorySnapshot()
+	return {
+		rows,
+		width,
+		cells: rows * width,
+		buildMs,
+		heapDeltaBytes: memoryDelta(afterBuild.heapUsedBytes, baseline.heapUsedBytes),
+		externalDeltaBytes: memoryDelta(afterBuild.externalBytes, baseline.externalBytes),
+		arrayBuffersDeltaBytes: memoryDelta(afterBuild.arrayBuffersBytes, baseline.arrayBuffersBytes),
+		...workbookGridStorageAssertions(workbook),
+	}
+}
+
+function prefixAssertions(
+	prefix: string,
+	assertions: Record<string, number>,
+): Record<string, number> {
+	const prefixed: Record<string, number> = {}
+	for (const [key, value] of Object.entries(assertions)) {
+		prefixed[`${prefix}.${key}`] = value
+	}
+	return prefixed
+}
+
 function interactiveSessionFor(bytes: Uint8Array): Promise<AscendSession> {
 	const cached = interactiveSessionCache.get(bytes)
 	if (cached) return cached
@@ -1047,36 +1078,27 @@ const scenarios: readonly Scenario[] = [
 			const widths = [5, 10, 20, 50] as const
 			const assertions: Record<string, number> = {}
 			for (const width of widths) {
-				runGc()
-				const baseline = phaseMemorySnapshot()
-				const buildStart = performance.now()
-				const workbook = buildPlainNumericWorkbook(rows, width)
-				const buildMs = performance.now() - buildStart
-				runGc()
-				const afterBuild = phaseMemorySnapshot()
-				const prefix = `width${width}`
-				assertions[`${prefix}.cells`] = rows * width
-				assertions[`${prefix}.buildMs`] = buildMs
-				assertions[`${prefix}.heapDeltaBytes`] = memoryDelta(
-					afterBuild.heapUsedBytes,
-					baseline.heapUsedBytes,
+				Object.assign(
+					assertions,
+					prefixAssertions(`width${width}`, buildGridStorageWidthAssertions(rows, width)),
 				)
-				assertions[`${prefix}.externalDeltaBytes`] = memoryDelta(
-					afterBuild.externalBytes,
-					baseline.externalBytes,
-				)
-				assertions[`${prefix}.arrayBuffersDeltaBytes`] = memoryDelta(
-					afterBuild.arrayBuffersBytes,
-					baseline.arrayBuffersBytes,
-				)
-				const storage = workbookGridStorageAssertions(workbook)
-				for (const [key, value] of Object.entries(storage)) {
-					assertions[`${prefix}.${key}`] = value
-				}
 			}
 			return { assertions }
 		},
 	},
+	...([5, 10, 20, 50] as const).map(
+		(width): Scenario => ({
+			name: `grid-storage-width-${width}`,
+			category: 'workflow',
+			build() {
+				const rows = 20_000
+				return { rows, cols: width, cells: rows * width }
+			},
+			run(input) {
+				return { assertions: buildGridStorageWidthAssertions(input.rows, width) }
+			},
+		}),
+	),
 	{
 		name: 'write-dirty-single-sheet',
 		category: 'write',
@@ -3686,6 +3708,10 @@ const scenarioSets = {
 		'memory-100k-cells',
 		'memory-1m-cells',
 		'grid-storage-width-sweep',
+		'grid-storage-width-5',
+		'grid-storage-width-10',
+		'grid-storage-width-20',
+		'grid-storage-width-50',
 	],
 	'large-read': [
 		'read-large-200k',

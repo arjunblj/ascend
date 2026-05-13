@@ -1656,14 +1656,17 @@ describe('interactive client contract', () => {
 		expect(deletedCol.wouldSucceed).toBe(true)
 		expect(deletedCol.journal?.supported).toBe(true)
 		expect(deletedCol.journal?.exact).toBe(false)
-		expect(deletedCol.journal?.issues).toEqual([
-			{
-				code: 'LOSSY_INVERSE',
-				message:
-					'Deleted column metadata on Sheet1 cannot be fully restored with public operations',
-				refs: ['Sheet1!B'],
-			},
-		])
+		expect(deletedCol.journal?.issues).toContainEqual({
+			code: 'LOSSY_INVERSE',
+			message: 'Deleted column metadata on Sheet1 cannot be fully restored with public operations',
+			refs: ['Sheet1!B'],
+		})
+		expect(deletedCol.journal?.issues).toContainEqual({
+			code: 'LOSSY_INVERSE',
+			message:
+				'Deleted column formula references on Sheet1 cannot be restored with public operations',
+			refs: ['Sheet1!conditionalFormat:B2:B5:0:0:0'],
+		})
 		expect(deletedCol.journal?.inverseOps[0]).toEqual({
 			op: 'insertCols',
 			sheet: 'Sheet1',
@@ -1699,6 +1702,45 @@ describe('interactive client contract', () => {
 		expect(undo.errors).toEqual([])
 		expect(wb.sheet('Sheet1')?.cell('A2')?.value).toEqual({ kind: 'number', value: 5 })
 		expect(wb.sheet('Sheet1')?.cell('B1')?.formula).toBe('#REF!')
+	})
+
+	test('structural delete journals mark broken metadata formula references as lossy', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A2', value: 5 }] },
+			{
+				op: 'setDataValidation',
+				sheet: 'Sheet1',
+				range: 'C1:C1',
+				rule: { type: 'custom', formula1: 'A2>0' },
+			},
+			{
+				op: 'setConditionalFormat',
+				sheet: 'Sheet1',
+				range: 'D1:D1',
+				rule: { type: 'expression', formula: 'A2>0' },
+			},
+		])
+
+		const deletedRow = wb.apply([{ op: 'deleteRows', sheet: 'Sheet1', at: 1, count: 1 }], {
+			journal: true,
+		})
+
+		expect(deletedRow.errors).toEqual([])
+		expect(deletedRow.journal?.supported).toBe(true)
+		expect(deletedRow.journal?.exact).toBe(false)
+		expect(deletedRow.journal?.issues).toContainEqual({
+			code: 'LOSSY_INVERSE',
+			message: 'Deleted row formula references on Sheet1 cannot be restored with public operations',
+			refs: ['Sheet1!validation:C1:C1:formula1', 'Sheet1!conditionalFormat:D1:D1:0:0:0'],
+		})
+		expect(wb.sheet('Sheet1')?.dataValidations[0]?.formula1).toBe('#REF!>0')
+		expect(wb.sheet('Sheet1')?.conditionalFormats[0]?.rules[0]?.formulas[0]).toBe('#REF!>0')
+
+		const undo = wb.apply(deletedRow.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(wb.sheet('Sheet1')?.dataValidations[0]?.formula1).toBe('#REF!>0')
+		expect(wb.sheet('Sheet1')?.conditionalFormats[0]?.rules[0]?.formulas[0]).toBe('#REF!>0')
 	})
 })
 

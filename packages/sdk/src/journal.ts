@@ -2037,6 +2037,70 @@ function structuralFormulaReferenceLocations(
 				refs.push(`${sheet.name}!${toA1({ row, col })}`)
 			}
 		}
+		for (const validation of sheet.dataValidations) {
+			pushMetadataFormulaReferenceLocation(
+				refs,
+				workbook,
+				validation.formula1,
+				sheet.name,
+				preimage,
+				`${sheet.name}!validation:${validation.sqref}:formula1`,
+			)
+			pushMetadataFormulaReferenceLocation(
+				refs,
+				workbook,
+				validation.formula2,
+				sheet.name,
+				preimage,
+				`${sheet.name}!validation:${validation.sqref}:formula2`,
+			)
+		}
+		for (const validation of sheet.x14DataValidations) {
+			if (validation.deleted) continue
+			pushMetadataFormulaReferenceLocation(
+				refs,
+				workbook,
+				validation.formula1,
+				sheet.name,
+				preimage,
+				`${sheet.name}!x14Validation:${validation.sqref}:formula1`,
+			)
+			pushMetadataFormulaReferenceLocation(
+				refs,
+				workbook,
+				validation.formula2,
+				sheet.name,
+				preimage,
+				`${sheet.name}!x14Validation:${validation.sqref}:formula2`,
+			)
+		}
+		sheet.conditionalFormats.forEach((format, formatIndex) => {
+			format.rules.forEach((rule, ruleIndex) => {
+				rule.formulas.forEach((formula, formulaIndex) => {
+					pushMetadataFormulaReferenceLocation(
+						refs,
+						workbook,
+						formula,
+						sheet.name,
+						preimage,
+						`${sheet.name}!conditionalFormat:${format.sqref}:${formatIndex}:${ruleIndex}:${formulaIndex}`,
+					)
+				})
+			})
+		})
+		sheet.x14ConditionalFormats.forEach((format) => {
+			if (format.deleted) return
+			format.formulas.forEach((formula, formulaIndex) => {
+				pushMetadataFormulaReferenceLocation(
+					refs,
+					workbook,
+					formula,
+					sheet.name,
+					preimage,
+					`${sheet.name}!x14ConditionalFormat:${format.sqref}:${format.index}:${formulaIndex}`,
+				)
+			})
+		})
 	}
 	for (const name of workbook.definedNames.list()) {
 		const scopeSheet =
@@ -2048,6 +2112,18 @@ function structuralFormulaReferenceLocations(
 		}
 	}
 	return refs
+}
+
+function pushMetadataFormulaReferenceLocation(
+	refs: string[],
+	workbook: Workbook,
+	formula: string | undefined,
+	ownerSheet: string,
+	preimage: MutationJournalStructuralPreimage,
+	location: string,
+): void {
+	if (formula === undefined) return
+	if (formulaReferencesDeletedAxis(workbook, formula, ownerSheet, preimage)) refs.push(location)
 }
 
 function formulaReferencesDeletedAxis(

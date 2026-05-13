@@ -127,6 +127,18 @@ interface RowIndexAttrBytes {
 	readonly onlyAttr: boolean
 }
 
+interface SimpleValuesCellOut {
+	row: number
+	col: number
+	numberValue: number | undefined
+	sharedStringIndex: number
+	booleanRaw: number
+	stringStart: number
+	stringEnd: number
+	stringHasEntity: boolean
+	styleIdx: number
+}
+
 export class ValueInternPool {
 	private readonly strings = new Map<string, string>()
 	private readonly stringValues = new Map<string, CellValue>()
@@ -649,14 +661,14 @@ function parseSimpleValuesRowBytes(
 	sheet: Sheet,
 	rowIndexAttr?: RowIndexAttrBytes,
 ): boolean {
-	if (!ctx.valuesOnly || ctx.hasDateStyles) return false
+	if (!ctx.valuesOnly) return false
 	let cursor = bodyStart
 	let nextCol = 0
 	const rowNumber = row + 1
 	let cachedSharedStringIndex = -1
 	let cachedSharedStringText: string | undefined
 	let cachedSharedStringEntry: CellValue | undefined
-	const out = {
+	const out: SimpleValuesCellOut = {
 		row,
 		col: 0,
 		numberValue: undefined as number | undefined,
@@ -665,6 +677,7 @@ function parseSimpleValuesRowBytes(
 		stringStart: -1,
 		stringEnd: -1,
 		stringHasEntity: false,
+		styleIdx: 0,
 	}
 	while (true) {
 		cursor = skipXmlWhitespaceBytes(bytes, cursor, bodyEnd)
@@ -681,7 +694,7 @@ function parseSimpleValuesRowBytes(
 		)
 		if (plainValueNext !== -1) {
 			if (out.numberValue !== undefined) {
-				sheet.cells.setPlainNumber(out.row, out.col, out.numberValue)
+				setSimpleValuesNumberCell(sheet, ctx, out.row, out.col, out.numberValue, out.styleIdx)
 			} else if (out.sharedStringIndex >= 0) {
 				let text: string | undefined
 				let entry: CellValue | undefined
@@ -735,7 +748,7 @@ function parseSimpleValuesRowBytes(
 		)
 		if (omittedRefNext !== -1) {
 			if (out.numberValue !== undefined) {
-				sheet.cells.setPlainNumber(out.row, out.col, out.numberValue)
+				setSimpleValuesNumberCell(sheet, ctx, out.row, out.col, out.numberValue, out.styleIdx)
 			} else if (out.sharedStringIndex >= 0) {
 				let text: string | undefined
 				let entry: CellValue | undefined
@@ -790,7 +803,7 @@ function parseSimpleValuesRowBytes(
 		)
 		if (canonicalNext !== -1) {
 			if (out.numberValue !== undefined) {
-				sheet.cells.setPlainNumber(out.row, out.col, out.numberValue)
+				setSimpleValuesNumberCell(sheet, ctx, out.row, out.col, out.numberValue, out.styleIdx)
 			} else if (out.sharedStringIndex >= 0) {
 				let text: string | undefined
 				let entry: CellValue | undefined
@@ -869,10 +882,25 @@ function parseSimpleValuesRowBytes(
 		) {
 			return false
 		}
-		sheet.cells.setPlainNumber(out.row, out.col, value)
+		setSimpleValuesNumberCell(sheet, ctx, out.row, out.col, value, out.styleIdx)
 		nextCol = out.col + 1
 		cursor += BYTES_CELL_CLOSE.length
 	}
+}
+
+function setSimpleValuesNumberCell(
+	sheet: Sheet,
+	ctx: SheetParseContext,
+	row: number,
+	col: number,
+	value: number,
+	styleIdx: number,
+): void {
+	if (ctx.isDateFormat[styleIdx]) {
+		sheet.cells.setResolved(row, col, internValue(ctx, dateValue(value)), null, DEFAULT_STYLE_ID)
+		return
+	}
+	sheet.cells.setPlainNumber(row, col, value)
 }
 
 function parseCanonicalPlainValueCellBytes(
@@ -891,6 +919,7 @@ function parseCanonicalPlainValueCellBytes(
 		stringStart: number
 		stringEnd: number
 		stringHasEntity: boolean
+		styleIdx: number
 	},
 	rowIndexAttr?: RowIndexAttrBytes,
 ): number {
@@ -911,6 +940,7 @@ function parseCanonicalPlainValueCellBytes(
 	out.stringStart = -1
 	out.stringEnd = -1
 	out.stringHasEntity = false
+	out.styleIdx = 0
 	if (
 		bytes[refEnd + 1] === 62 &&
 		bytes[refEnd + 2] === BYTE_LT &&
@@ -974,6 +1004,7 @@ function parseCanonicalOmittedRefValueCellBytes(
 		stringStart: number
 		stringEnd: number
 		stringHasEntity: boolean
+		styleIdx: number
 	},
 ): number {
 	if (cursor + 6 >= bodyEnd || bytes[cursor] !== BYTE_LT || bytes[cursor + 1] !== 99) {
@@ -987,6 +1018,7 @@ function parseCanonicalOmittedRefValueCellBytes(
 	out.stringStart = -1
 	out.stringEnd = -1
 	out.stringHasEntity = false
+	out.styleIdx = 0
 	if (
 		bytes[cursor + 2] === 62 &&
 		bytes[cursor + 3] === BYTE_LT &&
@@ -1064,6 +1096,7 @@ function parseCanonicalValuesCellBytes(
 		stringStart: number
 		stringEnd: number
 		stringHasEntity: boolean
+		styleIdx: number
 	},
 ): number {
 	if (!startsWithCellRefBytes(bytes, cursor, bodyEnd)) return -1
@@ -1094,6 +1127,7 @@ function parseCanonicalValuesCellBytes(
 	out.stringStart = -1
 	out.stringEnd = -1
 	out.stringHasEntity = false
+	out.styleIdx = 0
 
 	const inlineValueStart = parseCanonicalInlineStringValueStartBytes(bytes, index, bodyEnd)
 	if (inlineValueStart !== -1) {
@@ -1112,6 +1146,7 @@ function parseCanonicalValuesCellBytes(
 
 	const typed = resolveCanonicalTypedValueStartBytes(bytes, index, bodyEnd)
 	if (typed) {
+		out.styleIdx = typed.styleIdx
 		const parsedIntNext = parseCanonicalIntegerValueIntoOutBytes(
 			bytes,
 			typed.valueStart,
@@ -1155,9 +1190,12 @@ function resolveCanonicalTypedValueStartBytes(
 	bytes: Uint8Array,
 	refEnd: number,
 	end: number,
-): { kind: 'number' | 'sharedString' | 'boolean'; valueStart: number } | undefined {
+):
+	| { kind: 'number' | 'sharedString' | 'boolean'; valueStart: number; styleIdx: number }
+	| undefined {
 	let cursor = refEnd + 1
 	let kind: 'number' | 'sharedString' | 'boolean' = 'number'
+	let styleIdx = 0
 	while (cursor < end) {
 		cursor = skipXmlWhitespaceBytes(bytes, cursor, end)
 		const marker = bytes[cursor]
@@ -1166,7 +1204,7 @@ function resolveCanonicalTypedValueStartBytes(
 				bytes[cursor + 1] === BYTE_LT &&
 				bytes[cursor + 2] === 118 &&
 				bytes[cursor + 3] === 62
-				? { kind, valueStart: cursor + 4 }
+				? { kind, valueStart: cursor + 4, styleIdx }
 				: undefined
 		}
 		if (marker === BYTE_SLASH) return undefined
@@ -1195,9 +1233,12 @@ function resolveCanonicalTypedValueStartBytes(
 			else if (type === 98) kind = 'boolean'
 			else return undefined
 		} else if (nameEnd === nameStart + 1 && bytes[nameStart] === 115) {
+			let parsedStyle = 0
 			for (let index = valueStart; index < cursor; index++) {
 				if (!isAsciiDigit(bytes[index])) return undefined
+				parsedStyle = parsedStyle * 10 + ((bytes[index] ?? 48) - 48)
 			}
+			styleIdx = parsedStyle
 		} else {
 			return undefined
 		}
@@ -2110,12 +2151,12 @@ function parseCanonicalStreamedValuesRowBytes(
 	row: number,
 	ctx: SheetParseContext,
 ): StreamedSheetRow | null {
-	if (!ctx.valuesOnly || ctx.hasDateStyles) return null
+	if (!ctx.valuesOnly) return null
 	let cursor = bodyStart
 	let nextCol = 0
 	const rowNumber = row + 1
 	const cells: [number, Cell][] = []
-	const out = {
+	const out: SimpleValuesCellOut = {
 		row,
 		col: 0,
 		numberValue: undefined as number | undefined,
@@ -2124,6 +2165,7 @@ function parseCanonicalStreamedValuesRowBytes(
 		stringStart: -1,
 		stringEnd: -1,
 		stringHasEntity: false,
+		styleIdx: 0,
 	}
 	while (true) {
 		cursor = skipXmlWhitespaceBytes(bytes, cursor, bodyEnd)
@@ -2161,7 +2203,12 @@ function parseCanonicalStreamedValuesRowBytes(
 		if (canonicalNext === -1) return null
 		const value =
 			out.numberValue !== undefined
-				? internValue(ctx, numberValue(out.numberValue))
+				? internValue(
+						ctx,
+						ctx.isDateFormat[out.styleIdx]
+							? dateValue(out.numberValue)
+							: numberValue(out.numberValue),
+					)
 				: out.sharedStringIndex >= 0
 					? (ctx.sharedStrings.get(out.sharedStringIndex) ?? stringValue(''))
 					: out.booleanRaw >= 0
@@ -4500,11 +4547,12 @@ function resolveSimpleNumberCellOpenBytes(
 	attrEnd: number,
 	fallbackRow: number,
 	fallbackCol: number,
-	out: { row: number; col: number },
+	out: { row: number; col: number; styleIdx?: number },
 ): boolean {
 	let cursor = attrStart
 	let refStart = -1
 	let refEnd = -1
+	out.styleIdx = 0
 	while (cursor < attrEnd) {
 		cursor = skipXmlWhitespaceBytes(bytes, cursor, attrEnd)
 		if (cursor >= attrEnd) break
@@ -4531,6 +4579,13 @@ function resolveSimpleNumberCellOpenBytes(
 			if (name === 114) {
 				refStart = valueStart
 				refEnd = cursor
+			} else if (name === 115) {
+				let styleIdx = 0
+				for (let index = valueStart; index < cursor; index++) {
+					if (!isAsciiDigit(bytes[index])) return false
+					styleIdx = styleIdx * 10 + ((bytes[index] ?? 48) - 48)
+				}
+				out.styleIdx = styleIdx
 			} else if (name === 116) {
 				if (cursor !== valueStart + 1 || bytes[valueStart] !== 110) return false
 			}

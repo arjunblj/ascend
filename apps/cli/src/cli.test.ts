@@ -7,6 +7,7 @@ import { runCli } from './index.ts'
 
 const CLI = new URL('./index.ts', import.meta.url).pathname
 const TEST_FILE = 'test-output.xlsx'
+const APPROVAL_TEST_FILE = 'test-approval.xlsx'
 const MULTI_SHEET_FILE = 'test-multi.xlsx'
 const NAMED_RANGE_FILE = 'test-named.xlsx'
 const TUI_TEST_FILE = 'test-tui.xlsx'
@@ -92,6 +93,7 @@ afterAll(() => {
 		NAMED_RANGE_FILE,
 		TUI_TEST_FILE,
 		ACTIVE_CONTENT_FILE,
+		APPROVAL_TEST_FILE,
 		'exported.tsv',
 		'exported.json',
 		'plan-ops.json',
@@ -99,6 +101,9 @@ afterAll(() => {
 		'commit-ops.json',
 		'commit-output.xlsx',
 		'commit-pretty-output.xlsx',
+		'approval-ops.json',
+		'approval-alias-out.xlsx',
+		'approval-exact-out.xlsx',
 		'progress-ops.json',
 		'progress-output.xlsx',
 	]) {
@@ -319,6 +324,54 @@ describe('ascend cli', () => {
 		)
 		expect(prettyCommit.exitCode).toBe(0)
 		expect(prettyCommit.stdout).toContain('Post-write package graph issues: 0')
+	})
+
+	test('commit accepts only exact approval ids emitted by plan', async () => {
+		const workbook = AscendWorkbook.create()
+		workbook.apply([{ op: 'addSheet', name: 'Scratch' }])
+		await workbook.save(`${import.meta.dir}/${APPROVAL_TEST_FILE}`)
+		await Bun.write(
+			`${import.meta.dir}/approval-ops.json`,
+			JSON.stringify([{ op: 'deleteSheet', sheet: 'Scratch' }]),
+		)
+
+		const plan = await run('plan', APPROVAL_TEST_FILE, '--ops', 'approval-ops.json', '--json')
+		expect(plan.exitCode).toBe(0)
+		const planned = JSON.parse(plan.stdout)
+		const approvalId = planned.data.approvals[0].id
+		expect(approvalId).toBe('op:0:deletesheet')
+
+		const aliasCommit = await run(
+			'commit',
+			APPROVAL_TEST_FILE,
+			'--ops',
+			'approval-ops.json',
+			'--output',
+			'approval-alias-out.xlsx',
+			'--approval',
+			'deleteSheet',
+			'--json',
+		)
+		expect(aliasCommit.exitCode).toBe(1)
+		const aliasFailure = JSON.parse(aliasCommit.stdout)
+		expect(aliasFailure.ok).toBe(false)
+		expect(aliasFailure.error.message).toBe('Commit requires explicit approval')
+
+		const exactCommit = await run(
+			'commit',
+			APPROVAL_TEST_FILE,
+			'--ops',
+			'approval-ops.json',
+			'--output',
+			'approval-exact-out.xlsx',
+			'--approval',
+			approvalId,
+			'--json',
+		)
+		expect(exactCommit.exitCode).toBe(0)
+		const exact = JSON.parse(exactCommit.stdout)
+		expect(exact.ok).toBe(true)
+		expect(exact.data.approvals[0].id).toBe(approvalId)
 	})
 
 	test('plan pretty output exposes write-policy package part details', async () => {

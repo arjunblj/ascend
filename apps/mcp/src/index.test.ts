@@ -1050,6 +1050,14 @@ describe('MCP server', () => {
 		const blocked = await handler({ file: TEMP_FILE, ops, inPlace: true })
 		expect(blocked.isError).toBe(true)
 
+		const aliasBlocked = await handler({
+			file: TEMP_FILE,
+			ops,
+			inPlace: true,
+			approvals: ['deleteSheet'],
+		})
+		expect(aliasBlocked.isError).toBe(true)
+
 		const committed = await handler({
 			file: TEMP_FILE,
 			ops,

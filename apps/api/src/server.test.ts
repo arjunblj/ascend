@@ -1363,6 +1363,59 @@ describe('Ascend API server', () => {
 		}
 	})
 
+	test('prepared path mutation handles preserve in-place backups and remain one-shot', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'original' }] }])
+		await wb.save(TEMP_FILE)
+		const backup = `${OUTPUT_FILE}.prepared-backup.xlsx`
+		try {
+			const plan = await postJson('/plan', {
+				file: TEMP_FILE,
+				mutations: [{ path: '/sheets/Sheet1/cells/A1/value', value: 'updated' }],
+			})
+			expect(plan.status).toBe(200)
+			expect(plan.body.data?.preparedPlan?.id).toBeString()
+
+			const commit = await postJson('/commit', {
+				planHandle: plan.body.data?.preparedPlan?.id,
+				inPlace: true,
+				backup,
+				approvals: [],
+			})
+			expect(commit.status).toBe(200)
+			expect(commit.body.ok).toBe(true)
+			expect(commit.body.data?.output).toBe(TEMP_FILE)
+			expect(commit.body.data?.backup).toBe(backup)
+			expect(commit.body.data?.pathMutations?.ops).toEqual([
+				{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'updated' }] },
+			])
+			expect(commit.body.data?.postWrite?.valid).toBe(true)
+			expect(commit.body.data?.postWrite?.reopened).toBe(true)
+
+			const reopenedInput = await AscendWorkbook.open(TEMP_FILE)
+			expect(reopenedInput.sheet('Sheet1')?.cell('A1')?.value).toEqual({
+				kind: 'string',
+				value: 'updated',
+			})
+			const reopenedBackup = await AscendWorkbook.open(backup)
+			expect(reopenedBackup.sheet('Sheet1')?.cell('A1')?.value).toEqual({
+				kind: 'string',
+				value: 'original',
+			})
+
+			const reused = await postJson('/commit', {
+				planHandle: plan.body.data?.preparedPlan?.id,
+				inPlace: true,
+				backup,
+				approvals: [],
+			})
+			expect(reused.status).toBe(400)
+			expect(reused.body.error?.message).toBe('Prepared plan handle has already been used')
+		} finally {
+			await unlink(backup).catch(() => {})
+		}
+	})
+
 	test('plan can opt out of the default prepared handle', async () => {
 		const wb = AscendWorkbook.create()
 		await wb.save(TEMP_FILE)

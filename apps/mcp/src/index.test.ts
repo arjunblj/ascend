@@ -1263,6 +1263,85 @@ describe('MCP server', () => {
 		}
 	})
 
+	test('prepared MCP path mutation handles preserve in-place backups and remain one-shot', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'original' }] }])
+		await wb.save(TEMP_FILE)
+		const backup = `${TEMP_FILE}.prepared-backup-mcp.xlsx`
+		const server = createServer()
+		try {
+			// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+			const plan = (server as any)._registeredTools['ascend.plan'].handler as (args: {
+				file: string
+				mutations: Array<{ path: string; value?: unknown }>
+			}) => Promise<{
+				structuredContent?: { data?: { preparedPlan?: { id?: string } } }
+			}>
+			// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+			const commit = (server as any)._registeredTools['ascend.commit'].handler as (args: {
+				planHandle?: string
+				inPlace?: boolean
+				backup?: string
+				approvals?: string[]
+			}) => Promise<{
+				structuredContent?: {
+					ok?: boolean
+					error?: { message?: string }
+					data?: {
+						output?: string
+						backup?: string
+						pathMutations?: { ops?: unknown[] }
+						postWrite?: { valid?: boolean; reopened?: boolean }
+					}
+				}
+			}>
+			const planned = await plan({
+				file: TEMP_FILE,
+				mutations: [{ path: '/sheets/Sheet1/cells/A1/value', value: 'updated' }],
+			})
+			expect(planned.structuredContent?.data?.preparedPlan?.id).toBeString()
+
+			const committed = await commit({
+				planHandle: planned.structuredContent?.data?.preparedPlan?.id,
+				inPlace: true,
+				backup,
+				approvals: [],
+			})
+			expect(committed.structuredContent?.ok).toBe(true)
+			expect(committed.structuredContent?.data?.output).toBe(TEMP_FILE)
+			expect(committed.structuredContent?.data?.backup).toBe(backup)
+			expect(committed.structuredContent?.data?.pathMutations?.ops).toEqual([
+				{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'updated' }] },
+			])
+			expect(committed.structuredContent?.data?.postWrite?.valid).toBe(true)
+			expect(committed.structuredContent?.data?.postWrite?.reopened).toBe(true)
+
+			const reopenedInput = await AscendWorkbook.open(TEMP_FILE)
+			expect(reopenedInput.sheet('Sheet1')?.cell('A1')?.value).toEqual({
+				kind: 'string',
+				value: 'updated',
+			})
+			const reopenedBackup = await AscendWorkbook.open(backup)
+			expect(reopenedBackup.sheet('Sheet1')?.cell('A1')?.value).toEqual({
+				kind: 'string',
+				value: 'original',
+			})
+
+			const reused = await commit({
+				planHandle: planned.structuredContent?.data?.preparedPlan?.id,
+				inPlace: true,
+				backup,
+				approvals: [],
+			})
+			expect(reused.structuredContent?.ok).toBe(false)
+			expect(reused.structuredContent?.error?.message).toBe(
+				'Prepared plan handle has already been used',
+			)
+		} finally {
+			await unlink(backup).catch(() => {})
+		}
+	})
+
 	test('ascend.plan can opt out of default prepared handles', async () => {
 		const wb = AscendWorkbook.create()
 		await wb.save(TEMP_FILE)

@@ -708,10 +708,17 @@ export async function commitAgentPlanFromWorkbook(
 	const sourceBytes = internal.sourceBytes ?? (await fileBytes(file))
 	await progress('write', 'started', `Writing workbook to ${output}.`)
 	await writeWorkbookAtomically(wb, output)
-	const outputSha256 = await fileSha256(output)
+	const outputBytes = await fileBytes(output)
+	const outputSha256 = sha256Bytes(outputBytes)
 	await progress('write', 'ok', `Workbook written to ${output}.`)
 	await progress('post-write', 'started', 'Reopening written workbook for verification.')
-	const postWrite = await verifyWrittenWorkbook(output, outputSha256, packageGraph, sourceBytes)
+	const postWrite = await verifyWrittenWorkbook(
+		output,
+		outputSha256,
+		packageGraph,
+		sourceBytes,
+		outputBytes,
+	)
 	await progressFromPhase(postWritePhase(postWrite, expectedPostWritePackageGraphChanges), progress)
 	await progress('check', 'started', 'Running structural checks.')
 	const check = wb.check()
@@ -805,17 +812,17 @@ async function verifyWrittenWorkbook(
 	outputSha256: string,
 	sourceGraph: XlsxPackageGraph,
 	sourceBytes: Uint8Array,
+	outputBytes: Uint8Array,
 ): Promise<AgentPostWriteVerification> {
-	const reopened = await AscendWorkbook.open(output, { richMetadata: true })
+	const reopened = await openWorkbookFromBytes(output, outputBytes, { richMetadata: true })
 	const check = reopened.check()
 	const lint = reopened.lint()
 	const preservation = reopened.writePlanSummary()
-	const outputBytes = await readFile(output)
 	const packageGraphAudit = auditPackageGraphRoundtrip(
 		sourceGraph,
 		sourceBytes,
 		reopened.packageGraph(),
-		new Uint8Array(outputBytes.buffer, outputBytes.byteOffset, outputBytes.byteLength),
+		outputBytes,
 	)
 	return {
 		valid: check.valid,
@@ -1011,9 +1018,16 @@ function isAgentSourceIdentityEqual(
 	return left.size === right.size && left.mtimeMs === right.mtimeMs
 }
 
-async function openWorkbookFromBytes(file: string, bytes: Uint8Array): Promise<AscendWorkbook> {
+async function openWorkbookFromBytes(
+	file: string,
+	bytes: Uint8Array,
+	options: Omit<NonNullable<Parameters<typeof AscendWorkbook.open>[1]>, 'sourceExtension'> = {},
+): Promise<AscendWorkbook> {
 	const sourceExtension = extname(file).replace(/^\./, '').toLowerCase()
-	return AscendWorkbook.open(bytes, sourceExtension ? { sourceExtension } : undefined)
+	return AscendWorkbook.open(bytes, {
+		...options,
+		...(sourceExtension ? { sourceExtension } : {}),
+	})
 }
 
 function sha256Text(text: string): string {

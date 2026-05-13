@@ -779,6 +779,34 @@ describe('SparseGrid', () => {
 		expect(grid.getChunkKindAt(0, 0)).toBe('dense')
 	})
 
+	test('storageStats attributes sparse and dense chunk storage', () => {
+		const sparse = new SparseGrid()
+		sparse.setExpectedDensity('sparse')
+		sparse.setResolved(0, 0, numberValue(1), null, S0)
+		expect(sparse.storageStats()).toMatchObject({
+			cellCount: 1,
+			chunkCount: 1,
+			denseChunkCount: 0,
+			sparseChunkCount: 1,
+			sparseCellCount: 1,
+		})
+		expect(sparse.storageStats().sparseArrayBufferBytes).toBeGreaterThan(0)
+
+		const dense = new SparseGrid()
+		dense.setExpectedDensity('dense')
+		dense.setResolved(0, 0, numberValue(1), null, S0)
+		expect(dense.storageStats()).toMatchObject({
+			cellCount: 1,
+			chunkCount: 1,
+			denseChunkCount: 1,
+			sparseChunkCount: 0,
+			denseCellCount: 1,
+		})
+		expect(dense.storageStats().denseArrayBufferBytes).toBeGreaterThan(
+			sparse.storageStats().sparseArrayBufferBytes,
+		)
+	})
+
 	test('setExpectedDensity auto: switches to dense when fill ratio > 50%', () => {
 		const grid = new SparseGrid()
 		grid.setExpectedDensity('auto')

@@ -154,7 +154,12 @@ export type {
 	ExpectedDensity,
 	SharedFormulaInfo,
 } from './sparse-grid.ts'
-export { SPARSE_TO_DENSE_THRESHOLD, SparseGrid } from './sparse-grid.ts'
+export {
+	SPARSE_GRID_CHUNK_SIZE,
+	SPARSE_TO_DENSE_THRESHOLD,
+	SparseGrid,
+	type SparseGridStorageStats,
+} from './sparse-grid.ts'
 export type {
 	AlignmentStyle,
 	BorderEdge,

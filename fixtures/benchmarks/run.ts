@@ -766,6 +766,51 @@ function xlsxArchiveFootprint(bytes: Uint8Array): {
 	}
 }
 
+function workbookGridStorageAssertions(workbook: Workbook): Record<string, number> {
+	let gridCellCount = 0
+	let gridChunkCount = 0
+	let gridDenseChunkCount = 0
+	let gridSparseChunkCount = 0
+	let gridDenseCellCount = 0
+	let gridSparseCellCount = 0
+	let gridDenseCapacity = 0
+	let gridSparseCapacity = 0
+	let gridDenseArrayBufferBytes = 0
+	let gridSparseArrayBufferBytes = 0
+	let gridStyleArrayBufferBytes = 0
+	let gridTotalArrayBufferBytes = 0
+	for (const sheet of workbook.sheets) {
+		const stats = sheet.cells.storageStats()
+		gridCellCount += stats.cellCount
+		gridChunkCount += stats.chunkCount
+		gridDenseChunkCount += stats.denseChunkCount
+		gridSparseChunkCount += stats.sparseChunkCount
+		gridDenseCellCount += stats.denseCellCount
+		gridSparseCellCount += stats.sparseCellCount
+		gridDenseCapacity += stats.denseCapacity
+		gridSparseCapacity += stats.sparseCapacity
+		gridDenseArrayBufferBytes += stats.denseArrayBufferBytes
+		gridSparseArrayBufferBytes += stats.sparseArrayBufferBytes
+		gridStyleArrayBufferBytes += stats.styleArrayBufferBytes
+		gridTotalArrayBufferBytes += stats.totalArrayBufferBytes
+	}
+	return {
+		gridCellCount,
+		gridChunkCount,
+		gridDenseChunkCount,
+		gridSparseChunkCount,
+		gridDenseCellCount,
+		gridSparseCellCount,
+		gridDenseCapacity,
+		gridSparseCapacity,
+		gridDenseArrayBufferBytes,
+		gridSparseArrayBufferBytes,
+		gridStyleArrayBufferBytes,
+		gridTotalArrayBufferBytes,
+		gridArrayBufferBytesPerCell: gridCellCount > 0 ? gridTotalArrayBufferBytes / gridCellCount : 0,
+	}
+}
+
 function interactiveSessionFor(bytes: Uint8Array): Promise<AscendSession> {
 	const cached = interactiveSessionCache.get(bytes)
 	if (cached) return cached
@@ -897,6 +942,7 @@ function createRealDenseReadMemoryScenario(
 					richSheetMetadataHydrated: result.value.loadInfo.richSheetMetadataHydrated,
 					sheetCount: workbook.sheets.length,
 					loadedCells,
+					...workbookGridStorageAssertions(workbook),
 					capsuleCount: result.value.capsules.length,
 					activeContentCount: workbook.activeContent.length,
 					sourceArchiveBytesRetained: workbook.sourceArchiveBytes?.byteLength ?? 0,

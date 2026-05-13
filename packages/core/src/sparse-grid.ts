@@ -17,6 +17,21 @@ export interface Cell {
 	readonly formulaInfo?: CellFormulaBinding | undefined
 }
 
+export interface SparseGridStorageStats {
+	readonly cellCount: number
+	readonly chunkCount: number
+	readonly denseChunkCount: number
+	readonly sparseChunkCount: number
+	readonly denseCellCount: number
+	readonly sparseCellCount: number
+	readonly denseCapacity: number
+	readonly sparseCapacity: number
+	readonly denseArrayBufferBytes: number
+	readonly sparseArrayBufferBytes: number
+	readonly styleArrayBufferBytes: number
+	readonly totalArrayBufferBytes: number
+}
+
 export interface SharedFormulaInfo {
 	readonly kind: 'shared'
 	readonly sharedIndex: string
@@ -128,6 +143,7 @@ interface PlainNumberSpanWriteResult {
 interface GridChunk {
 	readonly count: number
 	clone(): GridChunk
+	storageStats(): ChunkStorageStats
 	has(localIndex: number): boolean
 	getSlot(localIndex: number): StoredSlot | undefined
 	getKind(localIndex: number): CellValueKind | undefined
@@ -203,6 +219,14 @@ interface GridChunk {
 		stringTable: StringTable,
 		state: NumericRangeAggregateState,
 	): void
+}
+
+interface ChunkStorageStats {
+	readonly kind: 'dense' | 'sparse'
+	readonly cellCount: number
+	readonly capacity: number
+	readonly arrayBufferBytes: number
+	readonly styleArrayBufferBytes: number
 }
 
 export interface NumericRangeAggregate {
@@ -319,6 +343,21 @@ class SparseChunk implements GridChunk {
 		next.rowMinCol.set(this.rowMinCol)
 		next.rowMaxCol.set(this.rowMaxCol)
 		return next
+	}
+
+	storageStats(): ChunkStorageStats {
+		return {
+			kind: 'sparse',
+			cellCount: this.slots.size,
+			capacity: CHUNK_AREA,
+			arrayBufferBytes:
+				this.rowCounts.byteLength +
+				this.rowMaskLo.byteLength +
+				this.rowMaskHi.byteLength +
+				this.rowMinCol.byteLength +
+				this.rowMaxCol.byteLength,
+			styleArrayBufferBytes: 0,
+		}
 	}
 
 	has(localIndex: number): boolean {
@@ -713,6 +752,23 @@ class DenseChunk implements GridChunk {
 		next.formulaInfos = this.formulaInfos ? this.formulaInfos.slice() : null
 		next.heapValues = this.heapValues ? this.heapValues.slice() : null
 		return next
+	}
+
+	storageStats(): ChunkStorageStats {
+		const styleArrayBufferBytes = this.styleIds?.byteLength ?? 0
+		return {
+			kind: 'dense',
+			cellCount: this._count,
+			capacity: CHUNK_AREA,
+			arrayBufferBytes:
+				this.metaBuffer.byteLength +
+				this.numberBuffer.byteLength +
+				this.rowCounts.byteLength +
+				this.rowMinCol.byteLength +
+				this.rowMaxCol.byteLength +
+				styleArrayBufferBytes,
+			styleArrayBufferBytes,
+		}
 	}
 
 	has(localIndex: number): boolean {
@@ -1382,6 +1438,43 @@ export class SparseGrid {
 		const chunk = this.chunkRows.get(chunkRow)?.get(chunkCol)
 		if (!chunk) return undefined
 		return chunk instanceof DenseChunk ? 'dense' : 'sparse'
+	}
+
+	storageStats(): SparseGridStorageStats {
+		const stats = {
+			cellCount: this._cellCount,
+			chunkCount: 0,
+			denseChunkCount: 0,
+			sparseChunkCount: 0,
+			denseCellCount: 0,
+			sparseCellCount: 0,
+			denseCapacity: 0,
+			sparseCapacity: 0,
+			denseArrayBufferBytes: 0,
+			sparseArrayBufferBytes: 0,
+			styleArrayBufferBytes: 0,
+			totalArrayBufferBytes: 0,
+		}
+		for (const cols of this.chunkRows.values()) {
+			for (const chunk of cols.values()) {
+				const chunkStats = chunk.storageStats()
+				stats.chunkCount += 1
+				stats.styleArrayBufferBytes += chunkStats.styleArrayBufferBytes
+				stats.totalArrayBufferBytes += chunkStats.arrayBufferBytes
+				if (chunkStats.kind === 'dense') {
+					stats.denseChunkCount += 1
+					stats.denseCellCount += chunkStats.cellCount
+					stats.denseCapacity += chunkStats.capacity
+					stats.denseArrayBufferBytes += chunkStats.arrayBufferBytes
+				} else {
+					stats.sparseChunkCount += 1
+					stats.sparseCellCount += chunkStats.cellCount
+					stats.sparseCapacity += chunkStats.capacity
+					stats.sparseArrayBufferBytes += chunkStats.arrayBufferBytes
+				}
+			}
+		}
+		return stats
 	}
 
 	get(row: number, col: number): Cell | undefined {

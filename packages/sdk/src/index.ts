@@ -82,6 +82,16 @@ export {
 export type { CellInputParseOptions, ParsedCellInput } from './input-parser.ts'
 export { parseCellInput, parseCellInputOperation } from './input-parser.ts'
 export type {
+	MutationJournal,
+	MutationJournalCellPreimage,
+	MutationJournalCommentPreimage,
+	MutationJournalEntry,
+	MutationJournalHyperlinkPreimage,
+	MutationJournalIssue,
+	MutationJournalPanePreimage,
+	MutationJournalPreimage,
+} from './journal.ts'
+export type {
 	OperationApprovalMetadata,
 	OperationInvalidExample,
 	OperationJsonSchema,
@@ -114,6 +124,7 @@ export type {
 } from './session.ts'
 /** Cache and session management for multi-request read-only workbook access. */
 export { configureSessionCache, WorkbookDocument, WorkbookSession } from './session.ts'
+export type { SheetMetadataQueryOptions } from './sheet-handle.ts'
 /** Fluent handle for reading/writing a single sheet inside an `AscendWorkbook`. */
 export { SheetHandle } from './sheet-handle.ts'
 export type { WorkbookRowStreamSource } from './stream.ts'
@@ -260,4 +271,5 @@ export type {
  *
  * `BatchBuilder` — fluent builder for batching cell/formula/structural operations.
  */
+export type { ApplyOptions, PreviewOptions } from './workbook.ts'
 export { Ascend, AscendWorkbook, BatchBuilder } from './workbook.ts'

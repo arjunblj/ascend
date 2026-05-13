@@ -42,6 +42,10 @@ import type {
 	RangeWindowInfo,
 } from './types.ts'
 
+export interface SheetMetadataQueryOptions {
+	readonly range?: RangeSelector
+}
+
 export class SheetHandle {
 	private readonly sheetName: string
 	private readonly resolveSheet: () => Sheet | undefined
@@ -462,27 +466,33 @@ export class SheetHandle {
 	/**
 	 * Return an array of comment summaries (ref, author, text).
 	 */
-	getComments(): readonly CommentSummary[] {
+	getComments(options: SheetMetadataQueryOptions = {}): readonly CommentSummary[] {
 		const sheet = this.requireSheet()
-		return [...sheet.comments.entries()].map(([ref, c]) => ({
-			ref,
-			...(c.author !== undefined ? { author: c.author } : {}),
-			text: c.text,
-		}))
+		const viewport = options.range ? parseLocalRangeSelector(options.range).ref : null
+		return [...sheet.comments.entries()]
+			.filter(([ref]) => !viewport || refInRange(ref, viewport))
+			.map(([ref, c]) => ({
+				ref,
+				...(c.author !== undefined ? { author: c.author } : {}),
+				text: c.text,
+			}))
 	}
 
 	/**
 	 * Return an array of hyperlink summaries.
 	 */
-	getHyperlinks(): readonly HyperlinkSummary[] {
+	getHyperlinks(options: SheetMetadataQueryOptions = {}): readonly HyperlinkSummary[] {
 		const sheet = this.requireSheet()
-		return [...sheet.hyperlinks.entries()].map(([ref, h]) => ({
-			ref,
-			...(h.target !== undefined ? { target: h.target } : {}),
-			...(h.location !== undefined ? { location: h.location } : {}),
-			...(h.display !== undefined ? { display: h.display } : {}),
-			...(h.tooltip !== undefined ? { tooltip: h.tooltip } : {}),
-		}))
+		const viewport = options.range ? parseLocalRangeSelector(options.range).ref : null
+		return [...sheet.hyperlinks.entries()]
+			.filter(([ref]) => !viewport || refInRange(ref, viewport))
+			.map(([ref, h]) => ({
+				ref,
+				...(h.target !== undefined ? { target: h.target } : {}),
+				...(h.location !== undefined ? { location: h.location } : {}),
+				...(h.display !== undefined ? { display: h.display } : {}),
+				...(h.tooltip !== undefined ? { tooltip: h.tooltip } : {}),
+			}))
 	}
 
 	/**
@@ -737,6 +747,16 @@ function buildCellMap(cells: readonly CompactCellInfo[]): Map<string, CompactCel
 		map.set(`${cell.row},${cell.col}`, cell)
 	}
 	return map
+}
+
+function refInRange(ref: string, range: RangeRef): boolean {
+	const cell = parseA1(ref)
+	return (
+		cell.row >= range.start.row &&
+		cell.row <= range.end.row &&
+		cell.col >= range.start.col &&
+		cell.col <= range.end.col
+	)
 }
 
 function cellInfoEqual(a: CompactCellInfo, b: CompactCellInfo): boolean {

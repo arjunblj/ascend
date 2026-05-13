@@ -68,6 +68,7 @@ import type {
 	Operation,
 } from '@ascend/schema'
 import type { CapabilityPriority, CapabilityStatus } from './capabilities.ts'
+import type { MutationJournal } from './journal.ts'
 
 export interface WorkbookInfo {
 	readonly sheetCount: number
@@ -1171,6 +1172,7 @@ export interface PreviewResult {
 	readonly wouldSucceed: boolean
 	readonly errors: readonly AscendError[]
 	readonly writePlan?: WritePlanInfo
+	readonly journal?: MutationJournal
 }
 
 export interface ApplyResult {
@@ -1181,6 +1183,7 @@ export interface ApplyResult {
 	readonly generations: WorkbookGenerationInfo
 	readonly errors: readonly AscendError[]
 	readonly warnings?: readonly AscendError[]
+	readonly journal?: MutationJournal
 }
 
 export interface ApplyAndRecalcResult {

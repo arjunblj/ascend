@@ -3029,6 +3029,10 @@ describe('AscendWorkbook', () => {
 		expect(comments).toHaveLength(2)
 		expect(comments).toContainEqual({ ref: 'A1', author: 'Alice', text: 'Review this' })
 		expect(comments).toContainEqual({ ref: 'B2', text: 'Note' })
+		expect(handle.getComments({ range: 'A1:A1' })).toEqual([
+			{ ref: 'A1', author: 'Alice', text: 'Review this' },
+		])
+		expect(handle.getComments({ range: 'C1:D5' })).toEqual([])
 	})
 
 	test('getConditionalFormats returns rule summaries', () => {
@@ -3080,6 +3084,10 @@ describe('AscendWorkbook', () => {
 		expect(links).toHaveLength(2)
 		expect(links).toContainEqual({ ref: 'A1', target: 'https://example.com' })
 		expect(links).toContainEqual({ ref: 'B2', target: 'mailto:test@example.com', display: 'Email' })
+		expect(handle.getHyperlinks({ range: 'B2:B2' })).toEqual([
+			{ ref: 'B2', target: 'mailto:test@example.com', display: 'Email' },
+		])
+		expect(handle.getHyperlinks({ range: 'C1:D5' })).toEqual([])
 	})
 
 	test('TableHandle exposes ref, styleInfo, autoFilter, sortState, header/totals rows, and columnDefs', () => {

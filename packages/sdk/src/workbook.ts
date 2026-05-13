@@ -46,6 +46,7 @@ import {
 import { check as verifyCheck, lint as verifyLint } from '@ascend/verify'
 import { getCapability, listCapabilities, summarizeCapabilities } from './capabilities.ts'
 import { partialDependencyCheckIssue, sdkCheckIssueFromVerify } from './check-issues.ts'
+import { buildMutationJournal } from './journal.ts'
 import { buildWorkbookLoadInfo, openWorkbookSource } from './load.ts'
 import { getOperationsSchema, listOperations, parseOperations } from './ops.ts'
 import { compilePathMutations } from './path-mutations.ts'
@@ -84,8 +85,31 @@ import type {
 	WritePlanInfo,
 } from './types.ts'
 
+export interface PreviewOptions {
+	readonly journal?: boolean
+}
+
+export interface ApplyOptions {
+	readonly collectAllErrors?: boolean
+	readonly transaction?: boolean
+	readonly journal?: boolean
+}
+
 function cloneWorkbook(source: Workbook): Workbook {
 	return source.clone()
+}
+
+function maybeBuildMutationJournal(
+	workbook: Workbook,
+	ops: readonly Operation[],
+	enabled: boolean | undefined,
+) {
+	if (!enabled) return undefined
+	try {
+		return buildMutationJournal(workbook, ops)
+	} catch {
+		return undefined
+	}
 }
 
 function stringMatches(
@@ -390,7 +414,7 @@ export class AscendWorkbook extends WorkbookReadView {
 
 	// --- Mutation ---
 
-	preview(ops: readonly Operation[]): import('./types.ts').PreviewResult {
+	preview(ops: readonly Operation[], options?: PreviewOptions): import('./types.ts').PreviewResult {
 		if (this.loadInfo.isPartial) {
 			return {
 				diff: {
@@ -410,6 +434,7 @@ export class AscendWorkbook extends WorkbookReadView {
 				errors: [partialWorkbookEditError()],
 			}
 		}
+		const journal = maybeBuildMutationJournal(this.wb, ops, options?.journal)
 		const clone = cloneWorkbook(this.wb)
 		const errors: import('@ascend/schema').AscendError[] = []
 
@@ -436,7 +461,6 @@ export class AscendWorkbook extends WorkbookReadView {
 		}
 
 		const warnings = [...(result.value.warnings ?? [])]
-
 		let recalcResult: import('./types.ts').RecalcResult | undefined
 		if (result.value.recalcRequired) {
 			const recalcTargets = deriveRecalcTargets(ops)
@@ -495,6 +519,7 @@ export class AscendWorkbook extends WorkbookReadView {
 			warnings,
 			wouldSucceed: errors.length === 0,
 			errors,
+			...(journal ? { journal } : {}),
 		}
 		Object.defineProperty(previewResult, 'writePlan', {
 			configurable: true,
@@ -529,10 +554,7 @@ export class AscendWorkbook extends WorkbookReadView {
 	 * wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 42 }] }])
 	 * wb.apply(ops, { transaction: true })
 	 */
-	apply(
-		ops: readonly Operation[],
-		options?: { collectAllErrors?: boolean; transaction?: boolean },
-	): ApplyResult {
+	apply(ops: readonly Operation[], options?: ApplyOptions): ApplyResult {
 		if (this.loadInfo.isPartial) {
 			return {
 				affectedCells: [],
@@ -543,6 +565,7 @@ export class AscendWorkbook extends WorkbookReadView {
 				errors: [partialWorkbookEditError()],
 			}
 		}
+		const journal = maybeBuildMutationJournal(this.wb, ops, options?.journal)
 		const dirtyFlags = this.deriveDirtyFlags(ops)
 		const nextWorkbook = cloneWorkbook(this.wb)
 		const applyFn = options?.transaction ? applyWithTransaction : applyOperations
@@ -558,7 +581,6 @@ export class AscendWorkbook extends WorkbookReadView {
 				errors,
 			}
 		}
-
 		this.wb = nextWorkbook
 		this.advanceApplyGenerations(ops, dirtyFlags, result.value)
 		this.markDirty()
@@ -582,6 +604,7 @@ export class AscendWorkbook extends WorkbookReadView {
 			),
 			generations: this.currentGenerations(),
 			errors: [],
+			...(journal ? { journal } : {}),
 			...(result.value.warnings && result.value.warnings.length > 0
 				? { warnings: result.value.warnings }
 				: {}),

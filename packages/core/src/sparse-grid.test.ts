@@ -227,6 +227,26 @@ describe('SparseGrid', () => {
 		expect(collected.map(([, r, c]) => [r, c])).not.toContainEqual([5, 5])
 	})
 
+	test('forEachValueInRange keeps row-major order across sparse chunk columns', () => {
+		const grid = new SparseGrid()
+		grid.set(0, 16_383, makeCell(numberValue(2)))
+		grid.set(0, 0, makeCell(numberValue(1)))
+		grid.set(1, 16_383, makeCell(numberValue(4)))
+		grid.set(1, 0, makeCell(numberValue(3)))
+
+		const coords: Array<[number, number]> = []
+		grid.forEachValueInRange(0, 0, 1, 16_383, (_value, row, col) => {
+			coords.push([row, col])
+		})
+
+		expect(coords).toEqual([
+			[0, 0],
+			[0, 16_383],
+			[1, 0],
+			[1, 16_383],
+		])
+	})
+
 	test('forEachRow calls fn with row and Map of col->value', () => {
 		const grid = new SparseGrid()
 		grid.set(2, 3, makeCell(stringValue('hello')))

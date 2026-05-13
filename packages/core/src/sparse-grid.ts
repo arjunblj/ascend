@@ -1421,8 +1421,32 @@ export class SparseGrid {
 		for (let chunkRow = startChunkRow; chunkRow <= endChunkRow; chunkRow++) {
 			const cols = this.chunkRows.get(chunkRow)
 			if (!cols) continue
+			const useSparseChunkCols = cols.size * 2 < endChunkCol - startChunkCol + 1
+			const sortedChunkCols = useSparseChunkCols ? this.getSortedChunkCols(chunkRow, cols) : null
 			const localRowStart = chunkRow === startChunkRow ? startRow & CHUNK_MASK : 0
 			const localRowEnd = chunkRow === endChunkRow ? endRow & CHUNK_MASK : CHUNK_MASK
+
+			if (sortedChunkCols) {
+				for (let localRow = localRowStart; localRow <= localRowEnd; localRow++) {
+					const row = (chunkRow << CHUNK_BITS) + localRow
+					for (const chunkCol of sortedChunkCols) {
+						if (chunkCol < startChunkCol || chunkCol > endChunkCol) continue
+						const chunk = cols.get(chunkCol)
+						if (!chunk) continue
+						const localColStart = chunkCol === startChunkCol ? startCol & CHUNK_MASK : 0
+						const localColEnd = chunkCol === endChunkCol ? endCol & CHUNK_MASK : CHUNK_MASK
+						const baseCol = chunkCol << CHUNK_BITS
+						chunk.forEachValueInRow(
+							localRow,
+							localColStart,
+							localColEnd,
+							this.stringTable,
+							(localCol, value) => fn(value, row, baseCol + localCol),
+						)
+					}
+				}
+				continue
+			}
 
 			for (let localRow = localRowStart; localRow <= localRowEnd; localRow++) {
 				const row = (chunkRow << CHUNK_BITS) + localRow

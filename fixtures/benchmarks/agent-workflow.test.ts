@@ -68,6 +68,9 @@ describe('agent workflow benchmark', () => {
 				readonly preparedPlanChangedCellCountMedian?: number
 				readonly preparedPlanEmittedChangedCellCountMedian?: number
 				readonly compactHydratedOpenCountMedian?: number
+				readonly commitVerifiedHydratedOpenCountMedian?: number
+				readonly fullCommitVerifiedHydratedOpenCountMedian?: number
+				readonly preparedCommitVerifiedHydratedOpenCountMedian?: number
 				readonly fullHydratedOpenCountMedian?: number
 				readonly preparedHydratedOpenCountMedian?: number
 				readonly planHydratedOpenCountMedian?: number
@@ -117,6 +120,9 @@ describe('agent workflow benchmark', () => {
 		expect(payload.summary?.preparedPlanChangedCellCountMedian).toBe(12)
 		expect(payload.summary?.preparedPlanEmittedChangedCellCountMedian).toBe(12)
 		expect(payload.summary?.compactHydratedOpenCountMedian).toBeNumber()
+		expect(payload.summary?.commitVerifiedHydratedOpenCountMedian).toBeNumber()
+		expect(payload.summary?.fullCommitVerifiedHydratedOpenCountMedian).toBeNumber()
+		expect(payload.summary?.preparedCommitVerifiedHydratedOpenCountMedian).toBeNumber()
 		expect(payload.summary?.fullHydratedOpenCountMedian).toBeNumber()
 		expect(payload.summary?.preparedHydratedOpenCountMedian).toBeNumber()
 		expect(payload.summary?.planHydratedOpenCountMedian).toBeNumber()
@@ -126,6 +132,12 @@ describe('agent workflow benchmark', () => {
 		expect(payload.summary?.documentCacheHitCountMedian).toBeNumber()
 		expect(payload.summary?.preparedHydratedOpenCountMedian).toBeLessThan(
 			payload.summary?.compactHydratedOpenCountMedian ?? 0,
+		)
+		expect(payload.summary?.commitVerifiedHydratedOpenCountMedian).toBeLessThan(
+			payload.summary?.compactHydratedOpenCountMedian ?? 0,
+		)
+		expect(payload.summary?.preparedCommitVerifiedHydratedOpenCountMedian).toBeLessThan(
+			payload.summary?.preparedHydratedOpenCountMedian ?? 0,
 		)
 		expect(payload.summary?.preparedCommitHydratedOpenCountMedian).toBeLessThan(
 			payload.summary?.commitHydratedOpenCountMedian ?? 0,

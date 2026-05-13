@@ -83,6 +83,9 @@ interface WorkflowSample {
 	readonly preparedPlanChangedCellCount: number | null
 	readonly preparedPlanEmittedChangedCellCount: number | null
 	readonly compactHydratedOpenCount: number
+	readonly commitVerifiedHydratedOpenCount: number
+	readonly fullCommitVerifiedHydratedOpenCount: number
+	readonly preparedCommitVerifiedHydratedOpenCount: number
 	readonly fullHydratedOpenCount: number
 	readonly preparedHydratedOpenCount: number
 	readonly planHydratedOpenCount: number
@@ -405,11 +408,13 @@ async function runWorkflow(
 		output: outputPath,
 		mutations,
 		approvals: [],
+		compact: true,
 	})
 	const preparedCommit = await post(apiFetch, '/commit', {
 		planHandle,
 		output: preparedOutputPath,
 		approvals: [],
+		compact: true,
 	})
 	const verify = await post(apiFetch, '/check', { file: outputPath })
 	const preparedVerify = await post(apiFetch, '/check', { file: preparedOutputPath })
@@ -425,17 +430,32 @@ async function runWorkflow(
 		commit.openStats,
 		verify.openStats,
 	)
+	const compactCommitVerifiedOpenStats = addOpenStats(
+		sharedOpenStats,
+		plan.openStats,
+		commit.openStats,
+	)
 	const fullOpenStats = addOpenStats(
 		sharedOpenStats,
 		fullPlan.openStats,
 		commit.openStats,
 		verify.openStats,
 	)
+	const fullCommitVerifiedOpenStats = addOpenStats(
+		sharedOpenStats,
+		fullPlan.openStats,
+		commit.openStats,
+	)
 	const preparedOpenStats = addOpenStats(
 		sharedOpenStats,
 		preparedPlan.openStats,
 		preparedCommit.openStats,
 		preparedVerify.openStats,
+	)
+	const preparedCommitVerifiedOpenStats = addOpenStats(
+		sharedOpenStats,
+		preparedPlan.openStats,
+		preparedCommit.openStats,
 	)
 	const compactWorkflowBytes =
 		inspect.text.length +
@@ -514,6 +534,9 @@ async function runWorkflow(
 		preparedPlanEmittedChangedCellCount:
 			preparedPlan.payload.data?.preview?.emittedChangedCellCount ?? null,
 		compactHydratedOpenCount: hydratedOpenCount(compactOpenStats),
+		commitVerifiedHydratedOpenCount: hydratedOpenCount(compactCommitVerifiedOpenStats),
+		fullCommitVerifiedHydratedOpenCount: hydratedOpenCount(fullCommitVerifiedOpenStats),
+		preparedCommitVerifiedHydratedOpenCount: hydratedOpenCount(preparedCommitVerifiedOpenStats),
 		fullHydratedOpenCount: hydratedOpenCount(fullOpenStats),
 		preparedHydratedOpenCount: hydratedOpenCount(preparedOpenStats),
 		planHydratedOpenCount: hydratedOpenCount(plan.openStats),
@@ -654,6 +677,15 @@ function summarize(samples: readonly WorkflowSample[]) {
 		),
 		compactHydratedOpenCountMedian: median(
 			samples.map((sample) => sample.compactHydratedOpenCount),
+		),
+		commitVerifiedHydratedOpenCountMedian: median(
+			samples.map((sample) => sample.commitVerifiedHydratedOpenCount),
+		),
+		fullCommitVerifiedHydratedOpenCountMedian: median(
+			samples.map((sample) => sample.fullCommitVerifiedHydratedOpenCount),
+		),
+		preparedCommitVerifiedHydratedOpenCountMedian: median(
+			samples.map((sample) => sample.preparedCommitVerifiedHydratedOpenCount),
 		),
 		fullHydratedOpenCountMedian: median(samples.map((sample) => sample.fullHydratedOpenCount)),
 		preparedHydratedOpenCountMedian: median(

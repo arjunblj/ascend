@@ -2733,7 +2733,7 @@ function resolveChunkBits(): number {
 	const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process
 		?.env
 	const raw = env?.ASCEND_CHUNK_BITS
-	if (!raw) return 6
+	if (!raw) return 5
 	const parsed = Number.parseInt(raw, 10)
 	return parsed === 4 || parsed === 5 || parsed === 6 ? parsed : 6
 }

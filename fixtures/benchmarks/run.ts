@@ -781,16 +781,18 @@ async function patchStreamStateFor(bytes: Uint8Array): Promise<{
 }> {
 	const cached = patchStreamStateCache.get(bytes)
 	if (cached) return cached
-	const state = AscendSession.open(bytes, { mode: 'interactive' }).then((session) => {
-		const viewport = session.readViewport({
-			sheet: 'Sheet1',
-			topRow: 0,
-			leftCol: 0,
-			rowCount: 250,
-			colCount: 20,
-		})
-		return { session, lastToken: viewport.changeToken, iteration: 0 }
-	})
+	const state = AscendSession.open(bytes, { mode: 'interactive', prepareEdits: true }).then(
+		(session) => {
+			const viewport = session.readViewport({
+				sheet: 'Sheet1',
+				topRow: 0,
+				leftCol: 0,
+				rowCount: 250,
+				colCount: 20,
+			})
+			return { session, lastToken: viewport.changeToken, iteration: 0 }
+		},
+	)
 	patchStreamStateCache.set(bytes, state)
 	return state
 }

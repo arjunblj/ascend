@@ -1498,7 +1498,9 @@ function parseSheetDataFromLoc(
 ): void {
 	const sharedFormulaMasters: SharedFormulaMasterMap = new Map()
 	const cellCtx =
-		ctx.formulaOnly && !sheetDataHasFormula(xml, sheetData) ? { ...ctx, valuesOnly: true } : ctx
+		ctx.formulaOnly && !ctx.richMetadata && !sheetDataHasFormula(xml, sheetData)
+			? { ...ctx, valuesOnly: true }
+			: ctx
 	let rowCursor = sheetData.contentStart
 	let currentRow = -1
 	const fallbackPos = { row: 0, col: 0 }

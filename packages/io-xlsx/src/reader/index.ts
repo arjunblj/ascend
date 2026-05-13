@@ -546,7 +546,14 @@ export function readXlsx(
 			let styleIds: StyleId[]
 			let isDateFormat: boolean[]
 			let differentialStyles: readonly CellStyle[]
-			if (valuesOnly || formulaOnly) {
+			if (formulaOnly && options.richMetadata === true && stylesXml) {
+				const parsedStyles = parseStyles(stylesXml)
+				styleIds = registerStyles(workbook, parsedStyles.cellStyles)
+				isDateFormat = parsedStyles.isDateFormat
+				differentialStyles = parsedStyles.differentialStyles
+				workbook.styleMetadata = parsedStyles.metadata
+				workbook.differentialStyles.push(...parsedStyles.differentialStyles)
+			} else if (valuesOnly || formulaOnly) {
 				const parsedStyles =
 					stylesXml && parseLiteStyles
 						? parseStylesLite(stylesXml)

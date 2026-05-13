@@ -527,6 +527,7 @@ export const dynamicFunctions: FunctionDef[] = [
 			if (typeof min !== 'number') return min
 			const max = args[3] ? num(args[3]) : 1
 			if (typeof max !== 'number') return max
+			if (min >= max) return errorValue('#VALUE!')
 			const whole = args[4] ? toNumber(args[4].value) === 1 : false
 			const rows = Math.max(1, Math.trunc(rowCount))
 			const cols = Math.max(1, Math.trunc(colCount))

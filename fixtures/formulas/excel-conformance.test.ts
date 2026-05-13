@@ -402,6 +402,11 @@ describe('Excel conformance', () => {
 			expectNum(sheet.cells.get(1, 3)?.value ?? EMPTY, 30)
 		})
 
+		test('RANDARRAY returns #VALUE! when min is not less than max', () => {
+			expect(evalFormula('RANDARRAY(1,1,5,5)')).toEqual(errorValue('#VALUE!'))
+			expect(evalFormula('RANDARRAY(1,1,5,4)')).toEqual(errorValue('#VALUE!'))
+		})
+
 		test('direct LAMBDA invocation evaluates', () => {
 			expectNum(evalFormula('LAMBDA(x, x+1)(5)'), 6)
 		})

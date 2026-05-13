@@ -108,4 +108,65 @@ describe('agent workflow benchmark', () => {
 		expect(payload.summary?.valid).toBe(true)
 		expect(payload.summary?.preparedValid).toBe(true)
 	})
+
+	test('runs the full workflow against an existing input workbook without deleting it', async () => {
+		const proc = Bun.spawn(
+			[
+				Bun.argv[0],
+				runnerPath,
+				'--input-file',
+				'fixtures/xlsx/poi/SampleSS.xlsx',
+				'--row-limit',
+				'5',
+				'--mutations',
+				'1',
+				'--repeat',
+				'1',
+				'--warmup',
+				'0',
+				'--json',
+			],
+			{ cwd: process.cwd(), stderr: 'pipe', stdout: 'pipe' },
+		)
+		const [stdout, stderr, exitCode] = await Promise.all([
+			new Response(proc.stdout).text(),
+			new Response(proc.stderr).text(),
+			proc.exited,
+		])
+		expect(exitCode, stderr).toBe(0)
+		const payload = JSON.parse(stdout) as {
+			readonly input?: {
+				readonly xlsxPath?: string
+				readonly range?: string
+				readonly sheet?: string
+				readonly rows?: number
+				readonly cols?: number
+				readonly cleanup?: boolean
+				readonly source?: string
+			}
+			readonly summary?: {
+				readonly readCellsMedian?: number
+				readonly readWindowRowsMedian?: number
+				readonly mutationCountMedian?: number
+				readonly readPartial?: boolean
+				readonly valid?: boolean
+				readonly preparedValid?: boolean
+			}
+		}
+		expect(payload.input).toEqual({
+			xlsxPath: 'fixtures/xlsx/poi/SampleSS.xlsx',
+			range: 'A1:J65536',
+			sheet: 'First Sheet',
+			rows: 65_536,
+			cols: 10,
+			cleanup: false,
+			source: 'input-file',
+		})
+		expect(payload.summary?.readCellsMedian).toBeGreaterThan(0)
+		expect(payload.summary?.readWindowRowsMedian).toBe(5)
+		expect(payload.summary?.mutationCountMedian).toBe(1)
+		expect(payload.summary?.readPartial).toBe(true)
+		expect(payload.summary?.valid).toBe(true)
+		expect(payload.summary?.preparedValid).toBe(true)
+	}, 20_000)
 })

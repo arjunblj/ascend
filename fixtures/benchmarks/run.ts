@@ -3569,6 +3569,7 @@ function renderHelp(): string {
 		'  --set <name>       Run a named scenario set.',
 		'  --repeat N         Number of measured samples. Defaults to 1.',
 		'  --warmup N         Number of warmup samples. Defaults to 1.',
+		'  --isolate-samples  Run each measured sample in a fresh process for memory-sensitive scenarios.',
 		'  --json             Emit JSON instead of a text summary.',
 		'  --ci               Emit JSON and CI-oriented target metadata.',
 		'  --profile          Run the selected set under V8 tracing when using Node.',
@@ -3620,6 +3621,52 @@ async function runScenarioIsolated(
 		console.log(`completed ${scenario.name}`)
 	}
 	return parsed
+}
+
+async function runScenarioSamplesIsolated(
+	scenario: Scenario,
+	repeat: number,
+	warmup: number,
+): Promise<BenchmarkCaseResult> {
+	const results: BenchmarkCaseResult[] = []
+	for (let i = 0; i < repeat; i++) {
+		results.push(await runScenarioIsolated(scenario, 1, warmup, true))
+	}
+	const first = results[0]
+	if (!first) throw new Error(`Synthetic benchmark scenario "${scenario.name}" produced no samples`)
+	const samples = results.map((result) => ({
+		durationMs: result.metrics.medianMs,
+		throughputPerSec: result.metrics.throughputPerSec,
+		...(result.metrics.rssDeltaBytes !== undefined
+			? { rssDeltaBytes: result.metrics.rssDeltaBytes }
+			: {}),
+		...(result.metrics.retainedRssDeltaBytes !== undefined
+			? { retainedRssDeltaBytes: result.metrics.retainedRssDeltaBytes }
+			: {}),
+		heapDeltaBytes: result.metrics.heapDeltaBytes ?? 0,
+		heapUsedBytes: result.metrics.heapUsedBytes ?? 0,
+		heapTotalBytes: result.metrics.heapTotalBytes ?? 0,
+		heapAfterGcBytes: result.metrics.heapAfterGcBytes ?? 0,
+	}))
+	return {
+		...first,
+		dimensions: { ...first.dimensions, repeat },
+		metrics: summarizeSamples(samples),
+		reproCommand: commandString([
+			'bun',
+			'run',
+			'fixtures/benchmarks/run.ts',
+			'--scenario',
+			scenario.name,
+			'--repeat',
+			String(repeat),
+			'--warmup',
+			String(warmup),
+			'--isolate-samples',
+			'--json',
+		]),
+		...(repeat > 1 ? { samples } : {}),
+	}
 }
 
 function isNodeRuntime(): boolean {
@@ -3724,6 +3771,7 @@ async function main(): Promise<void> {
 	const scenarioSetName = readFlag('--set')
 	const repeat = Math.max(1, Number.parseInt(readFlag('--repeat') ?? '1', 10) || 1)
 	const warmup = Math.max(0, Number.parseInt(readFlag('--warmup') ?? '1', 10) || 1)
+	const isolateSamples = hasFlag('--isolate-samples')
 	const outputJson = json || ci
 	if (profile) {
 		await runWithProfile(scenarioSetName, repeat, warmup)
@@ -3732,7 +3780,9 @@ async function main(): Promise<void> {
 	if (scenarioName) {
 		const scenario = scenarios.find((entry) => entry.name === scenarioName)
 		if (!scenario) throw new Error(`Unknown synthetic benchmark scenario "${scenarioName}"`)
-		const result = await runScenario(scenario, repeat, warmup)
+		const result = isolateSamples
+			? await runScenarioSamplesIsolated(scenario, repeat, warmup)
+			: await runScenario(scenario, repeat, warmup)
 		if (outputJson) {
 			console.log(JSON.stringify(result, null, 2))
 			return
@@ -3755,7 +3805,12 @@ async function main(): Promise<void> {
 		: scenarios
 	const results: BenchmarkCaseResult[] = []
 	for (const scenario of selectedScenarios) {
-		results.push(await runScenarioIsolated(scenario, repeat, warmup, outputJson))
+		results.push(
+			isolateSamples
+				? await runScenarioSamplesIsolated(scenario, repeat, warmup)
+				: await runScenarioIsolated(scenario, repeat, warmup, outputJson),
+		)
+		if (!outputJson && isolateSamples) console.log(`completed ${scenario.name}`)
 	}
 	const suite = createBenchmarkSuite({
 		suite: scenarioSetName
@@ -3767,6 +3822,7 @@ async function main(): Promise<void> {
 			repeat,
 			warmup,
 			...(scenarioSetName ? { set: scenarioSetName } : {}),
+			...(isolateSamples ? { isolateSamples: true } : {}),
 		},
 	})
 	if (outputJson) {

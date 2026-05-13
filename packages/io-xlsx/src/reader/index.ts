@@ -85,6 +85,7 @@ import {
 import {
 	emptySharedStrings,
 	parseSharedStrings,
+	parseSharedStringsBytes,
 	parseSharedStringsChunks,
 } from './shared-strings.ts'
 import {
@@ -520,7 +521,16 @@ export function readXlsx(
 				valuesOnly &&
 				!hydrateRichSheetMetadata &&
 				options.maxRows !== undefined
-			const ssXml = ssPath && !canStreamSharedStrings ? readPart(archive, ssPath) : undefined
+			const canUseSharedStringsByteParser =
+				ssPath !== undefined &&
+				!canStreamSharedStrings &&
+				!sharedStringOptions.lazy &&
+				(archive.get(ssPath)?.uncompressedSize ?? 0) >= VALUES_ONLY_BYTE_PARSE_MIN_BYTES
+			const ssBytes = canUseSharedStringsByteParser ? readPartBytes(archive, ssPath) : undefined
+			const ssXml =
+				ssPath && !canStreamSharedStrings && !canUseSharedStringsByteParser
+					? readPart(archive, ssPath)
+					: undefined
 			const sharedStrings = ssPath
 				? canStreamSharedStrings
 					? parseSharedStringsChunks(
@@ -534,9 +544,11 @@ export function readXlsx(
 								},
 							},
 						)
-					: ssXml
-						? parseSharedStrings(ssXml, sharedStringOptions)
-						: emptySharedStrings()
+					: ssBytes
+						? parseSharedStringsBytes(ssBytes, sharedStringOptions)
+						: ssXml
+							? parseSharedStrings(ssXml, sharedStringOptions)
+							: emptySharedStrings()
 				: emptySharedStrings()
 
 			const parseLiteStyles = !((valuesOnly || formulaOnly) && options.parseDates === false)

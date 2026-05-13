@@ -48,6 +48,14 @@ export function parseSharedStringsBytes(
 		readonly lazy?: boolean
 	} = {},
 ): SharedStringResolver {
+	if (!options.lazy) {
+		const parsed = createEagerSharedStringsFromBytes(
+			bytes,
+			options.normalize,
+			options.normalizeString,
+		)
+		if (parsed) return parsed
+	}
 	return parseSharedStrings(BYTE_XML_DECODER.decode(bytes), options)
 }
 
@@ -212,23 +220,52 @@ function createEagerSharedStrings(
 		}
 	}
 
+	return createEagerSharedStringResolver(
+		parsed.entries,
+		parsed.plainTextEntries,
+		normalize,
+		normalizeString,
+	)
+}
+
+function createEagerSharedStringsFromBytes(
+	bytes: Uint8Array,
+	normalize?: (value: CellValue) => CellValue,
+	normalizeString?: (value: string) => CellValue,
+): SharedStringResolver | undefined {
+	const parsed = parseEagerSharedStringEntriesBytes(bytes)
+	if (!parsed) return undefined
+	return createEagerSharedStringResolver(
+		parsed.entries,
+		parsed.plainTextEntries,
+		normalize,
+		normalizeString,
+	)
+}
+
+function createEagerSharedStringResolver(
+	entries: (CellValue | undefined)[],
+	plainTextEntries: (string | null | undefined)[],
+	normalize?: (value: CellValue) => CellValue,
+	normalizeString?: (value: string) => CellValue,
+): SharedStringResolver {
 	return {
-		count: parsed.entries.length,
+		count: entries.length,
 		get(index: number): CellValue | undefined {
-			const entry = parsed.entries[index]
+			const entry = entries[index]
 			if (entry) return entry
-			const text = parsed.plainTextEntries[index]
+			const text = plainTextEntries[index]
 			if (text === undefined || text === null) return undefined
 			const result = normalizeString
 				? normalizeString(text)
 				: normalizeCellValue(stringValue(text), normalize)
-			parsed.entries[index] = result
+			entries[index] = result
 			return result
 		},
 		getString(index: number): string | undefined {
-			const text = parsed.plainTextEntries[index]
+			const text = plainTextEntries[index]
 			if (text !== undefined) return text === null ? undefined : text
-			const entry = parsed.entries[index]
+			const entry = entries[index]
 			return entry?.kind === 'string' ? entry.value : undefined
 		},
 	}
@@ -368,6 +405,97 @@ function parseSimplePlainSharedStringText(xml: string, start: number): string | 
 	if (!endsSimplePlainSharedString(xml, valueEnd + 4)) return undefined
 	const text = xml.slice(valueStart, valueEnd)
 	return text.includes('&') ? decodeXmlText(text) : text
+}
+
+function parseEagerSharedStringEntriesBytes(bytes: Uint8Array):
+	| {
+			readonly entries: (CellValue | undefined)[]
+			readonly plainTextEntries: (string | null | undefined)[]
+	  }
+	| undefined {
+	const entries: (CellValue | undefined)[] = []
+	const plainTextEntries: (string | null | undefined)[] = []
+	let cursor = 0
+	let sawSharedString = false
+	while (true) {
+		const open = indexOfSharedStringOpenBytes(bytes, cursor)
+		if (open === -1) break
+		sawSharedString = true
+		const fastPlain = parseSimplePlainSharedStringEntryBytes(bytes, open)
+		if (fastPlain === undefined) return undefined
+		entries.push(undefined)
+		plainTextEntries.push(fastPlain.text)
+		cursor = fastPlain.next
+	}
+	return sawSharedString || !bytesIncludeSharedStringOpen(bytes)
+		? { entries, plainTextEntries }
+		: undefined
+}
+
+function parseSimplePlainSharedStringEntryBytes(
+	bytes: Uint8Array,
+	start: number,
+): { readonly text: string; readonly next: number } | undefined {
+	if (
+		start + 7 >= bytes.length ||
+		bytes[start] !== 60 ||
+		bytes[start + 1] !== 115 ||
+		bytes[start + 2] !== 105 ||
+		bytes[start + 3] !== 62 ||
+		bytes[start + 4] !== 60 ||
+		bytes[start + 5] !== 116 ||
+		bytes[start + 6] !== 62
+	) {
+		return undefined
+	}
+	const valueStart = start + 7
+	let valueEnd = valueStart
+	let hasEntity = false
+	while (valueEnd < bytes.length) {
+		const byte = bytes[valueEnd]
+		if (byte === 60) break
+		if (byte === 38) hasEntity = true
+		valueEnd += 1
+	}
+	if (!endsSimplePlainSharedStringBytes(bytes, valueEnd)) return undefined
+	const rawText = BYTE_XML_DECODER.decode(bytes.subarray(valueStart, valueEnd))
+	return { text: hasEntity ? decodeXmlText(rawText) : rawText, next: valueEnd + 9 }
+}
+
+function endsSimplePlainSharedStringBytes(bytes: Uint8Array, start: number): boolean {
+	return (
+		start + 8 < bytes.length &&
+		bytes[start] === 60 &&
+		bytes[start + 1] === 47 &&
+		bytes[start + 2] === 116 &&
+		bytes[start + 3] === 62 &&
+		bytes[start + 4] === 60 &&
+		bytes[start + 5] === 47 &&
+		bytes[start + 6] === 115 &&
+		bytes[start + 7] === 105 &&
+		bytes[start + 8] === 62
+	)
+}
+
+function indexOfSharedStringOpenBytes(bytes: Uint8Array, start: number): number {
+	let cursor = start
+	while (cursor + 2 < bytes.length) {
+		const open = bytes.indexOf(60, cursor)
+		if (open === -1 || open + 2 >= bytes.length) return -1
+		if (
+			bytes[open + 1] === 115 &&
+			bytes[open + 2] === 105 &&
+			isXmlNameTerminator(bytes[open + 3] ?? -1)
+		) {
+			return open
+		}
+		cursor = open + 1
+	}
+	return -1
+}
+
+function bytesIncludeSharedStringOpen(bytes: Uint8Array): boolean {
+	return indexOfSharedStringOpenBytes(bytes, 0) !== -1
 }
 
 function startsSimplePlainSharedString(xml: string, start: number): boolean {

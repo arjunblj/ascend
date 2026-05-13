@@ -1017,6 +1017,25 @@ describe('readXlsx', () => {
 		expect(sharedStrings.get(2)).toEqual({ kind: 'string', value: '  Delta  ' })
 	})
 
+	it('eager byte shared strings fast-path plain text and fallback for rich text', () => {
+		const plainBytes =
+			new TextEncoder().encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="2" uniqueCount="2"><si><t>Alpha</t></si><si><t>Beta &amp; Gamma</t></si></sst>`)
+		const plain = parseSharedStringsBytes(plainBytes)
+		expect(plain.getString?.(0)).toBe('Alpha')
+		expect(plain.get(1)).toEqual({ kind: 'string', value: 'Beta & Gamma' })
+
+		const richBytes =
+			new TextEncoder().encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="2" uniqueCount="2"><si><r><rPr><b/></rPr><t>Bold</t></r><r><t>Text</t></r></si><si><t xml:space="preserve">  Delta  </t></si></sst>`)
+		const rich = parseSharedStringsBytes(richBytes)
+		expect(rich.get(0)).toEqual({
+			kind: 'richText',
+			runs: [{ text: 'Bold', bold: true }, { text: 'Text' }],
+		})
+		expect(rich.getString?.(1)).toBe('  Delta  ')
+	})
+
 	it('lazy byte shared strings preserve simple, escaped, rich, and xml:space entries', () => {
 		const bytes = new TextEncoder().encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="4" uniqueCount="4">

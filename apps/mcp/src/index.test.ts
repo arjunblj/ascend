@@ -323,6 +323,7 @@ describe('MCP server', () => {
 					truncated?: boolean
 					sha256?: string
 					caseInsensitiveFallback?: boolean
+					load?: { mode?: string; isPartial?: boolean }
 				}
 				error?: { code?: string; details?: { validPath?: boolean } }
 			}
@@ -332,6 +333,8 @@ describe('MCP server', () => {
 		expect(result.structuredContent?.ok).toBe(true)
 		expect(result.structuredContent?.data?.partPath).toBe('xl/workbook.xml')
 		expect(result.structuredContent?.data?.origin).toBe('source')
+		expect(result.structuredContent?.data?.load?.mode).toBe('metadata-only')
+		expect(result.structuredContent?.data?.load?.isPartial).toBe(true)
 		expect(result.structuredContent?.data?.semantics).toBe('raw-package-bytes')
 		expect(result.structuredContent?.data?.featureFamily).toBe('workbook')
 		expect(result.structuredContent?.data?.text).toContain('<?xml')
@@ -366,6 +369,7 @@ describe('MCP server', () => {
 
 		const invalid = await handler({ file: TEMP_FILE, partPath: 'xl//workbook.xml' })
 		expect(invalid.isError).toBe(true)
+		expect(invalid.structuredContent?.error?.code).toBe('VALIDATION_ERROR')
 		expect(invalid.structuredContent?.error?.details?.validPath).toBe(false)
 	})
 

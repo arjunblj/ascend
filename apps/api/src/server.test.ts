@@ -194,6 +194,8 @@ describe('Ascend API server', () => {
 		expect(result.body.ok).toBe(true)
 		expect(result.body.data?.partPath).toBe('xl/workbook.xml')
 		expect(result.body.data?.origin).toBe('source')
+		expect(result.body.data?.load?.mode).toBe('metadata-only')
+		expect(result.body.data?.load?.isPartial).toBe(true)
 		expect(result.body.data?.semantics).toBe('raw-package-bytes')
 		expect(result.body.data?.featureFamily).toBe('workbook')
 		expect(result.body.data?.text).toContain('<?xml')
@@ -217,9 +219,16 @@ describe('Ascend API server', () => {
 		expect(missing.body.error?.code).toBe('FILE_NOT_FOUND')
 
 		const invalid = await postJson('/raw-part', { file: TEMP_FILE, partPath: 'xl//workbook.xml' })
-		expect(invalid.status).toBe(404)
-		expect(invalid.body.error?.code).toBe('FILE_NOT_FOUND')
+		expect(invalid.status).toBe(400)
+		expect(invalid.body.error?.code).toBe('VALIDATION_ERROR')
 		expect(invalid.body.error?.details?.validPath).toBe(false)
+
+		const badMaxBytes = await postJson('/raw-part', {
+			file: TEMP_FILE,
+			partPath: 'xl/workbook.xml',
+			maxBytes: -1,
+		})
+		expect(badMaxBytes.status).toBe(400)
 
 		const badEncoding = await postJson('/raw-part', {
 			file: TEMP_FILE,

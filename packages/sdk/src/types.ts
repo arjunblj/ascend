@@ -1328,6 +1328,7 @@ export interface RawPackagePartInfo {
 	readonly invalidReason?: string
 	readonly semantics: 'raw-package-bytes'
 	readonly origin?: 'source' | 'serialized-current'
+	readonly load?: WorkbookLoadInfo
 	readonly normalizedFromRoot?: boolean
 	readonly caseInsensitiveRequested?: boolean
 	readonly caseInsensitiveFallback?: boolean

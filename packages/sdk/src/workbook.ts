@@ -1260,12 +1260,18 @@ export class AscendWorkbook extends WorkbookReadView {
 
 	rawPackagePart(options: RawPackagePartOptions): RawPackagePartInfo {
 		if (this.originalBytes && !this.dirty) {
-			return inspectRawPackagePart(this.originalBytes, { ...options, origin: 'source' })
+			return {
+				...inspectRawPackagePart(this.originalBytes, { ...options, origin: 'source' }),
+				load: this.loadInfo,
+			}
 		}
-		return inspectRawPackagePart(this.toBytes(), {
-			...options,
-			origin: 'serialized-current',
-		})
+		return {
+			...inspectRawPackagePart(this.toBytes(), {
+				...options,
+				origin: 'serialized-current',
+			}),
+			load: this.loadInfo,
+		}
 	}
 
 	private assertWritable(): void {

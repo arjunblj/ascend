@@ -103,6 +103,9 @@ function normalizePackagePartPath(
 	if (normalized.includes('//')) {
 		return { ok: false, reason: 'Package part path must not contain duplicate slashes.' }
 	}
+	if (normalized.split('/').some((segment) => segment.length === 0)) {
+		return { ok: false, reason: 'Package part path must not contain empty segments.' }
+	}
 	if (normalized.split('/').some((segment) => segment === '..' || segment === '.')) {
 		return { ok: false, reason: 'Package part path must not contain dot segments.' }
 	}

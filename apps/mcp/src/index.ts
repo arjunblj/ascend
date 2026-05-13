@@ -384,6 +384,16 @@ export function createServer(): McpServer {
 					maxBytes: maxBytes ?? DEFAULT_MCP_RAW_PART_MAX_BYTES,
 					...(caseInsensitive === true ? { caseInsensitive: true } : {}),
 				})
+				if (!result.validPath) {
+					return errorResponse(
+						ascendError('VALIDATION_ERROR', `Invalid package part path: ${partPath}`, {
+							details: { ...result },
+							retryStrategy: 'modified',
+							suggestedFix:
+								'Use an exact OPC package part path with forward slashes and no dot or empty segments.',
+						}),
+					)
+				}
 				if (!result.found) {
 					return errorResponse(
 						ascendError('FILE_NOT_FOUND', `Package part not found: ${partPath}`, {

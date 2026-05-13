@@ -2582,6 +2582,8 @@ describe('AscendWorkbook', () => {
 		expect(raw.validPath).toBe(true)
 		expect(raw.normalizedFromRoot).toBe(true)
 		expect(raw.origin).toBe('source')
+		expect(raw.load?.mode).toBe('full')
+		expect(raw.load?.isPartial).toBe(false)
 		expect(raw.semantics).toBe('raw-package-bytes')
 		expect(raw.featureFamily).toBe('workbook')
 		expect(raw.ownerScope).toBe('workbook')
@@ -2629,6 +2631,7 @@ describe('AscendWorkbook', () => {
 		expect(invalid.found).toBe(false)
 		expect(invalid.validPath).toBe(false)
 		expect(invalid.invalidReason).toContain('duplicate slashes')
+		expect(wb.rawPackagePart({ partPath: 'xl/' }).invalidReason).toContain('empty segments')
 		expect(wb.rawPackagePart({ partPath: 'xl\\workbook.xml' }).invalidReason).toContain(
 			'forward slashes',
 		)
@@ -2646,12 +2649,15 @@ describe('AscendWorkbook', () => {
 		const doc = await WorkbookDocument.open(sourceBytes, { mode: 'metadata-only' })
 		const sessionRaw = await doc.rawPackagePart({ partPath: 'xl/workbook.xml', maxBytes: 16 })
 		expect(sessionRaw.origin).toBe('source')
+		expect(sessionRaw.load?.mode).toBe('metadata-only')
+		expect(sessionRaw.load?.isPartial).toBe(true)
 		expect(sessionRaw.semantics).toBe('raw-package-bytes')
 
 		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'dirty' }] }])
 		const dirtyRaw = wb.rawPackagePart({ partPath: 'xl/worksheets/sheet1.xml', maxBytes: 128 })
 		expect(dirtyRaw.found).toBe(true)
 		expect(dirtyRaw.origin).toBe('serialized-current')
+		expect(dirtyRaw.load?.mode).toBe('full')
 	})
 
 	test('report returns compatibility info', () => {

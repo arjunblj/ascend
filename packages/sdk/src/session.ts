@@ -227,7 +227,10 @@ export class WorkbookDocument {
 	}
 
 	async rawPackagePart(options: RawPackagePartOptions): Promise<RawPackagePartInfo> {
-		return inspectRawPackagePart(await this.readSourceBytes(), { ...options, origin: 'source' })
+		return {
+			...inspectRawPackagePart(await this.readSourceBytes(), { ...options, origin: 'source' }),
+			load: this.inspect().load,
+		}
 	}
 
 	inspectSheet(name: string): SheetInspectInfo | undefined {

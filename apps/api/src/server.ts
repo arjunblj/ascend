@@ -86,6 +86,14 @@ function rawPartEncoding(
 		: { ok: false }
 }
 
+function rawPartMaxBytes(
+	value: unknown,
+): { readonly ok: true; readonly maxBytes?: number } | { readonly ok: false } {
+	if (value === undefined) return { ok: true }
+	if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) return { ok: false }
+	return { ok: true, maxBytes: value }
+}
+
 type OperationInput =
 	| {
 			readonly ok: true
@@ -464,15 +472,26 @@ export function createApiFetch() {
 				if (!partPath) return jsonFailure('Missing or invalid partPath', 400)
 				const encoding = rawPartEncoding(body?.encoding)
 				if (!encoding.ok) return jsonFailure('Invalid raw part encoding', 400)
+				const maxBytes = rawPartMaxBytes(body?.maxBytes)
+				if (!maxBytes.ok) return jsonFailure('Invalid raw part maxBytes', 400)
 				try {
 					const wb = await WorkbookDocument.open(file, { mode: 'metadata-only' })
-					const maxBytes = body ? requireOptionalNumber(body, 'maxBytes') : undefined
 					const result = await wb.rawPackagePart({
 						partPath,
 						...(encoding.encoding ? { encoding: encoding.encoding } : {}),
-						maxBytes: maxBytes ?? DEFAULT_API_RAW_PART_MAX_BYTES,
+						maxBytes: maxBytes.maxBytes ?? DEFAULT_API_RAW_PART_MAX_BYTES,
 						...(body?.caseInsensitive === true ? { caseInsensitive: true } : {}),
 					})
+					if (!result.validPath) {
+						return jsonFailureError(
+							ascendError('VALIDATION_ERROR', `Invalid package part path: ${partPath}`, {
+								details: { ...result },
+								suggestedFix:
+									'Use an exact OPC package part path with forward slashes and no dot or empty segments.',
+							}),
+							400,
+						)
+					}
 					if (!result.found) {
 						return jsonFailureError(
 							ascendError('FILE_NOT_FOUND', `Package part not found: ${partPath}`, {

@@ -1342,6 +1342,69 @@ describe('MCP server', () => {
 		}
 	})
 
+	test('prepared MCP plan handles require exact destructive approval ids', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'addSheet', name: 'Scratch' }])
+		await wb.save(TEMP_FILE)
+		const output = `${TEMP_FILE}.prepared-approval-mcp.xlsx`
+		const ops = [{ op: 'deleteSheet', sheet: 'Scratch' }]
+		const server = createServer()
+		try {
+			// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+			const plan = (server as any)._registeredTools['ascend.plan'].handler as (args: {
+				file: string
+				ops: unknown[]
+			}) => Promise<{
+				structuredContent?: {
+					data?: {
+						preparedPlan?: { id?: string }
+						approvals?: Array<{ id: string }>
+					}
+				}
+			}>
+			// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+			const commit = (server as any)._registeredTools['ascend.commit'].handler as (args: {
+				planHandle?: string
+				output?: string
+				approvals?: string[]
+			}) => Promise<{
+				structuredContent?: {
+					ok?: boolean
+					error?: { message?: string }
+					data?: { approvals?: Array<{ id: string }> }
+				}
+			}>
+			const planned = await plan({ file: TEMP_FILE, ops })
+			expect(planned.structuredContent?.data?.preparedPlan?.id).toBeString()
+			const approvalId = planned.structuredContent?.data?.approvals?.[0]?.id
+			expect(approvalId).toBe('op:0:deletesheet')
+
+			const aliasCommit = await commit({
+				planHandle: planned.structuredContent?.data?.preparedPlan?.id,
+				output,
+				approvals: ['deleteSheet'],
+			})
+			expect(aliasCommit.structuredContent?.ok).toBe(false)
+			expect(aliasCommit.structuredContent?.error?.message).toBe(
+				'Commit requires explicit approval',
+			)
+			expect(await Bun.file(output).exists()).toBe(false)
+
+			const retryPlan = await plan({ file: TEMP_FILE, ops })
+			const exactCommit = await commit({
+				planHandle: retryPlan.structuredContent?.data?.preparedPlan?.id,
+				output,
+				approvals: [approvalId ?? ''],
+			})
+			expect(exactCommit.structuredContent?.ok).toBe(true)
+			expect(exactCommit.structuredContent?.data?.approvals?.[0]?.id).toBe(approvalId)
+			const reopened = await AscendWorkbook.open(output)
+			expect(reopened.sheets).not.toContain('Scratch')
+		} finally {
+			await unlink(output).catch(() => {})
+		}
+	})
+
 	test('ascend.plan can opt out of default prepared handles', async () => {
 		const wb = AscendWorkbook.create()
 		await wb.save(TEMP_FILE)

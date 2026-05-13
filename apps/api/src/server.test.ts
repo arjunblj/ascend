@@ -1416,6 +1416,45 @@ describe('Ascend API server', () => {
 		}
 	})
 
+	test('prepared plan handles require exact destructive approval ids', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'addSheet', name: 'Scratch' }])
+		await wb.save(TEMP_FILE)
+		const output = `${OUTPUT_FILE}.prepared-approval.xlsx`
+		const ops = [{ op: 'deleteSheet', sheet: 'Scratch' }]
+		try {
+			const plan = await postJson('/plan', { file: TEMP_FILE, ops })
+			expect(plan.status).toBe(200)
+			expect(plan.body.data?.preparedPlan?.id).toBeString()
+			const approvalId = plan.body.data?.approvals?.[0]?.id
+			expect(approvalId).toBe('op:0:deletesheet')
+
+			const aliasCommit = await postJson('/commit', {
+				planHandle: plan.body.data?.preparedPlan?.id,
+				output,
+				approvals: ['deleteSheet'],
+			})
+			expect(aliasCommit.status).toBe(400)
+			expect(aliasCommit.body.ok).toBe(false)
+			expect(aliasCommit.body.error?.message).toBe('Commit requires explicit approval')
+			expect(await Bun.file(output).exists()).toBe(false)
+
+			const retryPlan = await postJson('/plan', { file: TEMP_FILE, ops })
+			const exactCommit = await postJson('/commit', {
+				planHandle: retryPlan.body.data?.preparedPlan?.id,
+				output,
+				approvals: [approvalId],
+			})
+			expect(exactCommit.status).toBe(200)
+			expect(exactCommit.body.ok).toBe(true)
+			expect(exactCommit.body.data?.approvals?.[0]?.id).toBe(approvalId)
+			const reopened = await AscendWorkbook.open(output)
+			expect(reopened.sheets).not.toContain('Scratch')
+		} finally {
+			await unlink(output).catch(() => {})
+		}
+	})
+
 	test('plan can opt out of the default prepared handle', async () => {
 		const wb = AscendWorkbook.create()
 		await wb.save(TEMP_FILE)

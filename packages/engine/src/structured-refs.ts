@@ -140,19 +140,20 @@ function resolveStructuredRefRangeWithResolver(
 		if (row < bodyStartRow || row > bodyEndRow) return null
 		startRow = row
 		endRow = row
-	} else if (node.specifiers.includes('#Headers')) {
-		startRow = headerRow
-		endRow = headerRow
-	} else if (node.specifiers.includes('#Totals')) {
-		if (!table.hasTotals) return null
-		startRow = totalsRow
-		endRow = totalsRow
-	} else if (node.specifiers.includes('#All')) {
-		startRow = table.ref.start.row
-		endRow = table.ref.end.row
-	} else if (node.specifiers.includes('#Data')) {
-		startRow = bodyStartRow
-		endRow = bodyEndRow
+	} else {
+		const rowBand = resolveStructuredRefRowBand(
+			node.specifiers,
+			table.hasTotals,
+			table.ref.start.row,
+			table.ref.end.row,
+			bodyStartRow,
+			bodyEndRow,
+			headerRow,
+			totalsRow,
+		)
+		if (!rowBand) return null
+		startRow = rowBand.startRow
+		endRow = rowBand.endRow
 	}
 
 	let startCol = table.ref.start.col
@@ -177,4 +178,43 @@ function resolveStructuredRefRangeWithResolver(
 		startCol,
 		endCol,
 	}
+}
+
+function resolveStructuredRefRowBand(
+	specifiers: readonly string[],
+	hasTotals: boolean,
+	tableStartRow: number,
+	tableEndRow: number,
+	bodyStartRow: number,
+	bodyEndRow: number,
+	headerRow: number,
+	totalsRow: number,
+): { startRow: number; endRow: number } | null {
+	if (specifiers.includes('#All')) {
+		return { startRow: tableStartRow, endRow: tableEndRow }
+	}
+
+	const includesHeaders = specifiers.includes('#Headers')
+	const includesData = specifiers.length === 0 || specifiers.includes('#Data')
+	const includesTotals = specifiers.includes('#Totals')
+	if (includesTotals && !hasTotals) return null
+	if (!includesHeaders && !includesData && !includesTotals) {
+		return { startRow: bodyStartRow, endRow: bodyEndRow }
+	}
+
+	const bands: Array<{ startRow: number; endRow: number }> = []
+	if (includesHeaders) bands.push({ startRow: headerRow, endRow: headerRow })
+	if (includesData && bodyStartRow <= bodyEndRow) {
+		bands.push({ startRow: bodyStartRow, endRow: bodyEndRow })
+	}
+	if (includesTotals) bands.push({ startRow: totalsRow, endRow: totalsRow })
+	if (bands.length === 0) return null
+
+	for (let index = 1; index < bands.length; index++) {
+		if ((bands[index - 1]?.endRow ?? -1) + 1 !== bands[index]?.startRow) return null
+	}
+	const firstBand = bands[0]
+	const lastBand = bands.at(-1)
+	if (!firstBand || !lastBand) return null
+	return { startRow: firstBand.startRow, endRow: lastBand.endRow }
 }

@@ -227,6 +227,12 @@ function isLambdaBinding(binding: LetBinding): binding is LambdaInfo {
 	return typeof binding === 'object' && binding !== null && 'params' in binding && 'body' in binding
 }
 
+type ExternalEvalArea = EvalArea & { readonly externalReference: true }
+
+function isExternalArea(area: EvalArea): area is ExternalEvalArea {
+	return (area as { externalReference?: boolean }).externalReference === true
+}
+
 type RangeValueCache = Map<number, readonly (readonly CellValue[])[]>
 let activeRangeValueCache: RangeValueCache | null = null
 
@@ -298,6 +304,8 @@ function materializeExternalRange(
 	startCol: number,
 	endRow: number,
 	endCol: number,
+	normalize = true,
+	allowCellFallback = true,
 ): readonly (readonly CellValue[])[] | null {
 	const resolver = ctx.calcContext.externalReferences
 	if (resolver?.resolveRange) {
@@ -309,9 +317,12 @@ function materializeExternalRange(
 			endRow,
 			endCol,
 		})
-		if (resolved) return normalizeExternalRangeValues(resolved, startRow, startCol, endRow, endCol)
+		if (resolved)
+			return normalize
+				? normalizeExternalRangeValues(resolved, startRow, startCol, endRow, endCol)
+				: resolved
 	}
-	if (!resolver?.resolveCell) return null
+	if (!allowCellFallback || !resolver?.resolveCell) return null
 	const rows: CellValue[][] = []
 	for (let row = startRow; row <= endRow; row++) {
 		const values: CellValue[] = []
@@ -351,6 +362,8 @@ function resolveExternalRange(
 	startCol: number,
 	endRow: number,
 	endCol: number,
+	normalize = true,
+	allowCellFallback = true,
 ): EvalArg | null {
 	const target = externalReferenceTarget(sheet)
 	if (!target) return null
@@ -363,6 +376,8 @@ function resolveExternalRange(
 		startCol,
 		endRow,
 		endCol,
+		normalize,
+		allowCellFallback,
 	)
 	if (!values) return { value: errorValue('#REF!') }
 	return makeExternalRangeArg(ctx.sheetIndex, startRow, startCol, endRow, endCol, values)
@@ -2058,6 +2073,17 @@ function resolveReferenceNode(node: FormulaNode, ctx: EvalContext): EvalArg | nu
 		case 'dynamicRangeRef':
 			return resolveDynamicRangeReference(node.start, node.end, ctx)
 		case 'wholeRowRange': {
+			const external = resolveExternalRange(
+				ctx,
+				node.sheet,
+				node.startRow,
+				0,
+				node.endRow,
+				EXCEL_MAX_COLS - 1,
+				false,
+				false,
+			)
+			if (external) return external
 			const si = resolveSheetIndex(ctx.workbook, node.sheet, ctx.sheetIndex)
 			if (si < 0) return { value: errorValue('#REF!') }
 			return makeWholeRowArg(
@@ -2070,6 +2096,17 @@ function resolveReferenceNode(node: FormulaNode, ctx: EvalContext): EvalArg | nu
 			)
 		}
 		case 'wholeColumnRange': {
+			const external = resolveExternalRange(
+				ctx,
+				node.sheet,
+				0,
+				node.startCol,
+				EXCEL_MAX_ROWS - 1,
+				node.endCol,
+				false,
+				false,
+			)
+			if (external) return external
 			const si = resolveSheetIndex(ctx.workbook, node.sheet, ctx.sheetIndex)
 			if (si < 0) return { value: errorValue('#REF!') }
 			return makeWholeColumnArg(
@@ -2145,10 +2182,20 @@ function resolveReferenceNode(node: FormulaNode, ctx: EvalContext): EvalArg | nu
 					const endCol = Math.min(leftRef.endCol, rightRef.endCol)
 					if (startRow > endRow || startCol > endCol) continue
 					intersections.push(
-						makeRangeArea(ctx.workbook, leftRef.sheetIndex, startRow, startCol, endRow, endCol, {
-							dateSystem: ctx.calcContext.dateSystem,
-							today: ctx.calcContext.today,
-						}),
+						isExternalArea(leftArea)
+							? makeProjectedArea(leftArea, startRow, startCol, endRow, endCol)
+							: makeRangeArea(
+									ctx.workbook,
+									leftRef.sheetIndex,
+									startRow,
+									startCol,
+									endRow,
+									endCol,
+									{
+										dateSystem: ctx.calcContext.dateSystem,
+										today: ctx.calcContext.today,
+									},
+								),
 					)
 				}
 			}
@@ -2254,6 +2301,89 @@ function makeRangeArg(
 	])
 }
 
+function makeProjectedArea(
+	source: EvalArea,
+	startRow: number,
+	startCol: number,
+	endRow: number,
+	endCol: number,
+): EvalArea {
+	const sourceBounds = toAreaBounds(source.ref)
+	let cachedValues: readonly (readonly CellValue[])[] | undefined
+	const read = (rowOffset: number, colOffset: number): CellValue => {
+		const sourceRowOffset = startRow + rowOffset - sourceBounds.startRow
+		const sourceColOffset = startCol + colOffset - sourceBounds.startCol
+		return (
+			source.valueAtOffset?.(sourceRowOffset, sourceColOffset) ??
+			source.values[sourceRowOffset]?.[sourceColOffset] ??
+			EMPTY
+		)
+	}
+	return {
+		ref: {
+			kind: 'range',
+			sheetIndex: sourceBounds.sheetIndex,
+			row: startRow,
+			col: startCol,
+			endRow,
+			endCol,
+		},
+		get topLeft() {
+			return read(0, 0)
+		},
+		get values() {
+			if (!cachedValues) {
+				const rows: CellValue[][] = []
+				for (let row = startRow; row <= endRow; row++) {
+					const values: CellValue[] = []
+					for (let col = startCol; col <= endCol; col++) {
+						values.push(read(row - startRow, col - startCol))
+					}
+					rows.push(values)
+				}
+				cachedValues = rows
+			}
+			return cachedValues
+		},
+		valueAtOffset: read,
+		...(source.formulaAtOffset
+			? {
+					formulaAtOffset: (rowOffset: number, colOffset: number) =>
+						source.formulaAtOffset?.(
+							startRow + rowOffset - sourceBounds.startRow,
+							startCol + colOffset - sourceBounds.startCol,
+						),
+				}
+			: {}),
+		...(source.rowHiddenAtOffset
+			? {
+					rowHiddenAtOffset: (rowOffset: number) =>
+						source.rowHiddenAtOffset?.(startRow + rowOffset - sourceBounds.startRow) ?? false,
+				}
+			: {}),
+		...(source.rowFilteredAtOffset
+			? {
+					rowFilteredAtOffset: (rowOffset: number) =>
+						source.rowFilteredAtOffset?.(startRow + rowOffset - sourceBounds.startRow) ?? false,
+				}
+			: {}),
+		forEachValue: (fn) => {
+			for (let row = startRow; row <= endRow; row++) {
+				for (let col = startCol; col <= endCol; col++) {
+					fn(read(row - startRow, col - startCol))
+				}
+			}
+		},
+		forEachCellInRange: (fn) => {
+			for (let row = startRow; row <= endRow; row++) {
+				for (let col = startCol; col <= endCol; col++) {
+					fn(read(row - startRow, col - startCol))
+				}
+			}
+		},
+	}
+}
+
 function makeExternalRangeArg(
 	sheetIndex: number,
 	startRow: number,
@@ -2263,31 +2393,31 @@ function makeExternalRangeArg(
 	values: readonly (readonly CellValue[])[],
 ): EvalArg {
 	const topLeft = values[0]?.[0] ?? EMPTY
-	return makeMultiAreaArg([
-		{
-			ref: {
-				kind: 'range',
-				sheetIndex,
-				row: startRow,
-				col: startCol,
-				endRow,
-				endCol,
-			},
-			values,
-			topLeft,
-			valueAtOffset: (rowOffset, colOffset) => values[rowOffset]?.[colOffset] ?? EMPTY,
-			forEachValue: (fn) => {
-				for (const row of values) {
-					for (const value of row) fn(value)
-				}
-			},
-			forEachCellInRange: (fn) => {
-				for (const row of values) {
-					for (const value of row) fn(value)
-				}
-			},
+	const area: ExternalEvalArea = {
+		externalReference: true,
+		ref: {
+			kind: 'range',
+			sheetIndex,
+			row: startRow,
+			col: startCol,
+			endRow,
+			endCol,
 		},
-	])
+		values,
+		topLeft,
+		valueAtOffset: (rowOffset, colOffset) => values[rowOffset]?.[colOffset] ?? EMPTY,
+		forEachValue: (fn) => {
+			for (const row of values) {
+				for (const value of row) fn(value)
+			}
+		},
+		forEachCellInRange: (fn) => {
+			for (const row of values) {
+				for (const value of row) fn(value)
+			}
+		},
+	}
+	return makeMultiAreaArg([area])
 }
 
 function evaluateReferenceNode(node: FormulaNode, ctx: EvalContext): CellValue {
@@ -2309,6 +2439,17 @@ function referenceArgToValue(arg: EvalArg): CellValue {
 	return arg.value
 }
 
+function areaValueAt(
+	area: EvalArea,
+	bounds: ReturnType<typeof toAreaBounds>,
+	row: number,
+	col: number,
+): CellValue {
+	const rowOffset = row - bounds.startRow
+	const colOffset = col - bounds.startCol
+	return area.valueAtOffset?.(rowOffset, colOffset) ?? area.values[rowOffset]?.[colOffset] ?? EMPTY
+}
+
 function implicitIntersect(arg: EvalArg, ctx: EvalContext): CellValue {
 	const areas = areasOf(arg)
 	if (arg.value.kind === 'error' && !areas?.length) return arg.value
@@ -2323,11 +2464,11 @@ function implicitIntersect(arg: EvalArg, ctx: EvalContext): CellValue {
 	if (height === 1 && width === 1) return area.values[0]?.[0] ?? EMPTY
 	if (height === 1) {
 		if (ctx.col < bounds.startCol || ctx.col > bounds.endCol) return errorValue('#VALUE!')
-		return getCellValue(ctx.workbook, bounds.sheetIndex, bounds.startRow, ctx.col)
+		return areaValueAt(area, bounds, bounds.startRow, ctx.col)
 	}
 	if (width === 1) {
 		if (ctx.row < bounds.startRow || ctx.row > bounds.endRow) return errorValue('#VALUE!')
-		return getCellValue(ctx.workbook, bounds.sheetIndex, ctx.row, bounds.startCol)
+		return areaValueAt(area, bounds, ctx.row, bounds.startCol)
 	}
 	if (
 		ctx.row >= bounds.startRow &&
@@ -2335,7 +2476,7 @@ function implicitIntersect(arg: EvalArg, ctx: EvalContext): CellValue {
 		ctx.col >= bounds.startCol &&
 		ctx.col <= bounds.endCol
 	) {
-		return getCellValue(ctx.workbook, bounds.sheetIndex, ctx.row, ctx.col)
+		return areaValueAt(area, bounds, ctx.row, ctx.col)
 	}
 	return errorValue('#VALUE!')
 }

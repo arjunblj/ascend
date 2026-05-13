@@ -138,6 +138,29 @@ describe('analyzeWorkbook', () => {
 		expect(formula?.rangeDeps).toEqual([])
 	})
 
+	test('LAMBDA parameters do not get treated as defined-name dependencies', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		wb.definedNames.set('x', 'Sheet1!B1')
+		s.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: sid })
+		s.cells.set(1, 0, { value: numberValue(2), formula: null, styleId: sid })
+		s.cells.set(0, 1, { value: numberValue(99), formula: null, styleId: sid })
+		s.cells.set(0, 2, { value: EMPTY, formula: 'MAP(A1:A2,LAMBDA(x,x+1))', styleId: sid })
+
+		const analysis = analyzeWorkbook(wb)
+		const formula = [...analysis.formulas.values()][0]
+		expect(formula?.deps).toEqual([])
+		expect(formula?.rangeDeps).toEqual([
+			{
+				sheetIndex: 0,
+				startRow: 0,
+				startCol: 0,
+				endRow: 1,
+				endCol: 0,
+			},
+		])
+	})
+
 	test('formula group detection reuses AST for consecutive column cells with same shape', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')

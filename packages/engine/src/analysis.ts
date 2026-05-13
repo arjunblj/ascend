@@ -1755,6 +1755,17 @@ function walkNameRefs(
 				if (body) walkNameRefs(body, result, nextShadowed)
 				break
 			}
+			if (node.name.toUpperCase() === 'LAMBDA') {
+				const nextShadowed = new Set(shadowed)
+				for (let i = 0; i < node.args.length - 1; i++) {
+					const binder = node.args[i]
+					if (binder?.type !== 'name' || binder.sheet) break
+					nextShadowed.add(binder.name.toLowerCase())
+				}
+				const body = node.args[node.args.length - 1]
+				if (body) walkNameRefs(body, result, nextShadowed)
+				break
+			}
 			for (const arg of node.args) walkNameRefs(arg, result, shadowed)
 			break
 		case 'array':

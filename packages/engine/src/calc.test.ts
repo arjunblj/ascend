@@ -1899,6 +1899,35 @@ describe('recalculate', () => {
 			expect(sheet.cells.get(5, 0)?.value).toEqual(numberValue(660))
 		})
 
+		test('combined structured reference row specifiers include each contiguous table band', () => {
+			const { wb, sheet } = makeTable1Workbook()
+			sheet.cells.set(4, 0, { value: stringValue('Total'), formula: null, styleId: sid })
+			sheet.cells.set(4, 1, { value: numberValue(600), formula: null, styleId: sid })
+			sheet.cells.set(4, 2, { value: numberValue(60), formula: null, styleId: sid })
+			const table = sheet.tables[0]
+			if (!table) throw new Error('expected test table')
+			sheet.tables[0] = {
+				...table,
+				ref: { start: { row: 0, col: 0 }, end: { row: 4, col: 2 } },
+				hasTotals: true,
+			}
+			sheet.cells.set(6, 0, {
+				value: EMPTY,
+				formula: 'ROWS(Table1[[#Headers],[#Data],[Revenue]])',
+				styleId: sid,
+			})
+			sheet.cells.set(6, 1, {
+				value: EMPTY,
+				formula: 'SUM(Table1[[#Data],[#Totals],[Revenue]])',
+				styleId: sid,
+			})
+
+			const result = recalculate(wb, makeCtx())
+			expect(result.errors).toEqual([])
+			expect(sheet.cells.get(6, 0)?.value).toEqual(numberValue(4))
+			expect(sheet.cells.get(6, 1)?.value).toEqual(numberValue(1200))
+		})
+
 		test('Table1[#Totals] returns #REF! when table has no totals row', () => {
 			const { wb, sheet } = makeTable1Workbook()
 			sheet.cells.set(5, 0, { value: EMPTY, formula: 'SUM(Table1[#Totals])', styleId: sid })

@@ -565,6 +565,111 @@ describe('interactive client contract', () => {
 		session.close()
 	})
 
+	test('interactive patches stay truthful across recalc style edits and metadata invalidation', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 1 },
+					{ ref: 'C1', value: 10 },
+					{ ref: 'D1', value: 'note target' },
+				],
+			},
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'B1', formula: 'A1*2' },
+		])
+		wb.recalc()
+
+		const session = await AscendSession.open(wb.toBytes(), { mode: 'interactive' })
+		const base = session.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 4,
+		})
+
+		const firstEdit = await session.apply([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 5 }] },
+			{ op: 'setNumberFormat', sheet: 'Sheet1', range: 'C1:C1', format: '0.00' },
+		])
+		expect(firstEdit.apply.errors).toEqual([])
+		expect(firstEdit.recalc?.changed).toEqual(['Sheet1!B1'])
+		const firstPatch = session.readViewportPatch({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 4,
+			changedSince: base.changeToken,
+		})
+		if (!firstPatch) throw new Error('expected first patch')
+		expect(firstPatch.changedCells.map((cell) => cell.ref).sort()).toEqual(['A1', 'B1', 'C1'])
+		const afterFirst = session.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 4,
+		})
+		expect(materializeViewportPatch(base.cells, firstPatch)).toEqual(
+			interactiveCellMap(afterFirst.cells),
+		)
+
+		const metadataEdit = await session.apply([
+			{ op: 'setComment', sheet: 'Sheet1', ref: 'D1', text: 'metadata changed' },
+		])
+		expect(metadataEdit.apply.errors).toEqual([])
+		expect(
+			session.readViewportPatch({
+				sheet: 'Sheet1',
+				topRow: 0,
+				leftCol: 0,
+				rowCount: 1,
+				colCount: 4,
+				changedSince: afterFirst.changeToken,
+			}),
+		).toBeNull()
+		const afterMetadata = session.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 4,
+			changedSince: afterFirst.changeToken,
+		})
+		expect(afterMetadata.patch).toBeUndefined()
+
+		const secondEdit = await session.apply([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 7 }] },
+			{ op: 'setNumberFormat', sheet: 'Sheet1', range: 'C1:C1', format: '$0.00' },
+		])
+		expect(secondEdit.apply.errors).toEqual([])
+		expect(secondEdit.recalc?.changed).toEqual(['Sheet1!B1'])
+		const secondPatch = session.readViewportPatch({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 4,
+			changedSince: afterMetadata.changeToken,
+		})
+		if (!secondPatch) throw new Error('expected second patch')
+		expect(secondPatch.changedCells.map((cell) => cell.ref).sort()).toEqual(['A1', 'B1', 'C1'])
+		const afterSecond = session.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 4,
+		})
+		expect(materializeViewportPatch(afterMetadata.cells, secondPatch)).toEqual(
+			interactiveCellMap(afterSecond.cells),
+		)
+		session.close()
+	})
+
 	test('interactive structural viewport shifts force fresh snapshots instead of ref patches', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

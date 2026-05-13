@@ -2500,6 +2500,109 @@ describe('interactive client contract', () => {
 		})
 	})
 
+	test('column delete journals mark represented package metadata as lossy', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'Header' },
+					{ ref: 'B1', value: 'Sorted' },
+					{ ref: 'B2', value: 1 },
+					{ ref: 'C2', value: 2 },
+					{ ref: 'D2', value: 'Pivot' },
+				],
+			},
+		])
+		const model = wb.getWorkbookModel()
+		const sheet = model.getSheet('Sheet1')
+		if (!sheet) throw new Error('sheet missing')
+		sheet.ignoredErrors.push({ sqref: 'B2:B2', formula: true })
+		sheet.sortState = {
+			ref: 'B1:D1',
+			conditions: [{ ref: 'B2:B2' }],
+		}
+		sheet.advancedFilters.push({
+			ref: 'B1:B3',
+			autoFilter: {
+				ref: 'B1:B3',
+				columns: [],
+				sortState: { ref: 'B1:B3', conditions: [{ ref: 'B2:B2' }] },
+			},
+			filterColumnCount: 0,
+			sortConditionCount: 1,
+		})
+		sheet.imageRefs.push({
+			drawingPartPath: 'xl/drawings/drawing1.xml',
+			relId: 'rId1',
+			targetPath: '../media/image1.png',
+			anchor: {
+				kind: 'twoCell',
+				from: { row: 0, col: 1 },
+				to: { row: 2, col: 2 },
+			},
+		})
+		sheet.drawingObjectRefs.push({
+			drawingPartPath: 'xl/drawings/drawing1.xml',
+			kind: 'shape',
+			anchor: { kind: 'oneCell', from: { row: 1, col: 1 } },
+		})
+		model.chartParts.push({
+			partPath: 'xl/charts/chart1.xml',
+			sheetName: 'Sheet1',
+			series: [{ valueRef: 'Sheet1!$B$2:$B$2' }],
+		})
+		model.pivotCaches.push({
+			partPath: 'xl/pivotCache/pivotCacheDefinition1.xml',
+			cacheId: 1,
+			sourceSheet: 'Sheet1',
+			sourceRef: 'B2:C4',
+			fields: [],
+		})
+		model.pivotTables.push({
+			partPath: 'xl/pivotTables/pivotTable1.xml',
+			sheetName: 'Sheet1',
+			name: 'PivotTable1',
+			cacheId: 1,
+			locationRef: 'B4:C8',
+			location: { ref: 'B4:C8' },
+			fields: [],
+			rowFields: [],
+			columnFields: [],
+			pageFields: [],
+			dataFields: [],
+		})
+
+		const deletedCol = wb.preview([{ op: 'deleteCols', sheet: 'Sheet1', at: 1, count: 1 }], {
+			journal: true,
+		})
+
+		expect(deletedCol.wouldSucceed).toBe(true)
+		expect(deletedCol.journal?.supported).toBe(true)
+		expect(deletedCol.journal?.exact).toBe(false)
+		expect(deletedCol.journal?.issues).toContainEqual({
+			code: 'LOSSY_INVERSE',
+			message:
+				'Deleted column represented metadata on Sheet1 cannot be fully restored with public operations',
+			refs: [
+				'Sheet1!ignoredError:B2:B2',
+				'Sheet1!sortState:B1:D1',
+				'Sheet1!sortState:condition:0:B2:B2',
+				'Sheet1!advancedFilter:0:B1:B3',
+				'Sheet1!advancedFilter:0:autoFilter:B1:B3',
+				'Sheet1!advancedFilter:0:autoFilter:sortState:B1:B3',
+				'Sheet1!advancedFilter:0:autoFilter:sortState:condition:0:B2:B2',
+				'Sheet1!image:xl/drawings/drawing1.xml:0',
+				'Sheet1!drawing:xl/drawings/drawing1.xml:0',
+				'chart:xl/charts/chart1.xml:series:0:valueRef',
+				'pivotCache:xl/pivotCache/pivotCacheDefinition1.xml:sourceRef',
+				'pivotTable:xl/pivotTables/pivotTable1.xml:locationRef',
+				'pivotTable:xl/pivotTables/pivotTable1.xml:location.ref',
+			],
+		})
+	})
+
 	test('structural delete journals mark broken external formula references as lossy', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

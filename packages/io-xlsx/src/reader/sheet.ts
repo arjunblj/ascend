@@ -106,6 +106,7 @@ export interface SheetParseContext {
 }
 
 export interface SheetFormulaFeatures {
+	hasPlainFormula: boolean
 	hasSharedFormula: boolean
 	hasArrayFormula: boolean
 	hasDynamicArrayFormula: boolean
@@ -2977,6 +2978,9 @@ function parseSimpleFullScalarRow(
 		const styleId = ctx.styleIds[out.styleIdx] ?? DEFAULT_STYLE_ID
 		const normalizedFormula =
 			out.formulaText !== null ? normalizeStoredFormulaText(out.formulaText) : null
+		if (normalizedFormula !== null && ctx.formulaFeatures) {
+			ctx.formulaFeatures.hasPlainFormula = true
+		}
 		const formula =
 			normalizedFormula !== null
 				? (ctx.valuePool?.internString(normalizedFormula) ?? normalizedFormula)
@@ -5322,6 +5326,7 @@ function parseResolvedFormulaText(
 	const storedText = String(text)
 	const formula = normalizeStoredFormulaText(storedText)
 	if (formula === '') return NULL_FORMULA_TEXT
+	if (formulaFeatures) formulaFeatures.hasPlainFormula = true
 	return { text: pool ? pool.internString(formula) : formula, storedText }
 }
 

@@ -3,9 +3,12 @@ import { type FormulaNode, parseFormula } from '@ascend/formulas'
 
 const ARRAY_MAPPABLE_FUNCTIONS = new Set(['SQRT'])
 
-export function inferLegacyArrayFormulaBlocks(workbook: Workbook): readonly string[] {
+export function inferLegacyArrayFormulaBlocks(
+	workbook: Workbook,
+	candidateSheets: readonly Sheet[] = workbook.sheets,
+): readonly string[] {
 	const inferredSheets = new Set<string>()
-	for (const sheet of workbook.sheets) {
+	for (const sheet of candidateSheets) {
 		if (inferSheetLegacyArrayFormulaBlocks(workbook, sheet)) inferredSheets.add(sheet.name)
 	}
 	return [...inferredSheets]

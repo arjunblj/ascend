@@ -399,6 +399,7 @@ export function readXlsx(
 			arrayFormulaSheets: [],
 			dynamicArraySheets: [],
 		}
+		const sheetFormulaFeaturesByName = new Map<string, SheetFormulaFeatures>()
 		const metadataRel = wbRels.find((rel) => rel.type === REL_SHEET_METADATA)
 		const metadataPath = metadataRel ? resolvePath(workbookPath, metadataRel.target) : undefined
 		const needsMetadata = mode === 'full' || mode === 'formula'
@@ -622,6 +623,7 @@ export function readXlsx(
 					: (sheetRelsByPath.get(entry.path) ?? [])
 				if (sheetRelationships.length > 0) sheetRelsByPath.set(entry.path, sheetRelationships)
 				const sheetFormulaFeatures: SheetFormulaFeatures = {
+					hasPlainFormula: false,
 					hasSharedFormula: false,
 					hasArrayFormula: false,
 					hasDynamicArrayFormula: false,
@@ -669,6 +671,7 @@ export function readXlsx(
 				if (sheetFormulaFeatures.hasDynamicArrayFormula) {
 					formulaFeatures.dynamicArraySheets.push(entry.name)
 				}
+				sheetFormulaFeaturesByName.set(entry.name, sheetFormulaFeatures)
 				if (hydrateRichSheetMetadata) {
 					attachComments(archive, entry.path, sheet, sheetRelationships)
 					attachDrawingImages(archive, entry.path, sheet, sheetRelationships)
@@ -710,7 +713,11 @@ export function readXlsx(
 			workbook.definedNames.add(dn.name, normalizeStoredFormulaText(dn.formula), undefined, options)
 		}
 		if (!valuesOnly) {
-			for (const sheetName of inferLegacyArrayFormulaBlocks(workbook)) {
+			const legacyArrayCandidateSheets = workbook.sheets.filter((sheet) => {
+				const features = sheetFormulaFeaturesByName.get(sheet.name)
+				return features?.hasPlainFormula === true
+			})
+			for (const sheetName of inferLegacyArrayFormulaBlocks(workbook, legacyArrayCandidateSheets)) {
 				if (!formulaFeatures.arrayFormulaSheets.includes(sheetName)) {
 					formulaFeatures.arrayFormulaSheets.push(sheetName)
 				}

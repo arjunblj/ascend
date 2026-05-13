@@ -1,5 +1,7 @@
 import { afterAll, describe, expect, test } from 'bun:test'
-import { unlink } from 'node:fs/promises'
+import { Buffer } from 'node:buffer'
+import { createHash } from 'node:crypto'
+import { unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { AscendWorkbook } from '@ascend/sdk'
@@ -256,6 +258,8 @@ describe('Ascend API server', () => {
 			maxBytes: -1,
 		})
 		expect(badMaxBytes.status).toBe(400)
+		expect(badMaxBytes.body.error?.code).toBe('VALIDATION_ERROR')
+		expect(badMaxBytes.body.error?.details?.rule).toBe('nonnegative integer')
 
 		const badEncoding = await postJson('/raw-part', {
 			file: TEMP_FILE,
@@ -263,6 +267,48 @@ describe('Ascend API server', () => {
 			encoding: 'utf16',
 		})
 		expect(badEncoding.status).toBe(400)
+		expect(badEncoding.body.error?.code).toBe('VALIDATION_ERROR')
+	})
+
+	test('raw-part returns binary base64 previews with full-byte metadata', async () => {
+		const binaryBytes = new Uint8Array([0, 1, 2, 3, 4, 255])
+		const binaryFile = `${TEMP_FILE}.raw-binary.xlsx`
+		await writeFile(binaryFile, binaryRawPartWorkbook(binaryBytes))
+		try {
+			const result = await postJson('/raw-part', {
+				file: binaryFile,
+				partPath: 'xl/media/image1.png',
+				encoding: 'base64',
+				maxBytes: 3,
+			})
+
+			expect(result.status).toBe(200)
+			expect(result.body.ok).toBe(true)
+			expect(result.body.data?.encoding).toBe('base64')
+			expect(result.body.data?.base64).toBe(
+				Buffer.from(binaryBytes.subarray(0, 3)).toString('base64'),
+			)
+			expect(result.body.data?.text).toBeUndefined()
+			expect(result.body.data?.previewByteLength).toBe(3)
+			expect(result.body.data?.truncated).toBe(true)
+			expect(result.body.data?.sha256).toBe(createHash('sha256').update(binaryBytes).digest('hex'))
+
+			const metadataOnly = await postJson('/raw-part', {
+				file: binaryFile,
+				partPath: 'xl/media/image1.png',
+				encoding: 'none',
+				maxBytes: 3,
+			})
+			expect(metadataOnly.status).toBe(200)
+			expect(metadataOnly.body.data?.encoding).toBe('none')
+			expect(metadataOnly.body.data?.base64).toBeUndefined()
+			expect(metadataOnly.body.data?.text).toBeUndefined()
+			expect(metadataOnly.body.data?.previewByteLength).toBe(0)
+			expect(metadataOnly.body.data?.truncated).toBe(false)
+			expect(metadataOnly.body.data?.sha256).toBe(result.body.data?.sha256)
+		} finally {
+			await unlink(binaryFile).catch(() => {})
+		}
 	})
 
 	test('read returns compact first-window data with partial load metadata', async () => {
@@ -908,6 +954,39 @@ function signedMacroWorkbook(): Uint8Array {
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`),
 				'xl/vbaProject.bin': encode('macro-bytes'),
 				'xl/vbaProjectSignature.bin': encode('signature-bytes'),
+			}),
+		),
+	)
+}
+
+function binaryRawPartWorkbook(binaryBytes: Uint8Array): Uint8Array {
+	return createZip(
+		new Map(
+			Object.entries({
+				'[Content_Types].xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Default Extension="png" ContentType="image/png"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`),
+				'_rels/.rels': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`),
+				'xl/_rels/workbook.xml.rels':
+					encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`),
+				'xl/workbook.xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets>
+</workbook>`),
+				'xl/worksheets/sheet1.xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`),
+				'xl/media/image1.png': binaryBytes,
 			}),
 		),
 	)

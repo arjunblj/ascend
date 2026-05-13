@@ -564,9 +564,29 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 				if (!file) return jsonFailure('Missing or invalid file', 400)
 				if (!partPath) return jsonFailure('Missing or invalid partPath', 400)
 				const encoding = rawPartEncoding(body?.encoding)
-				if (!encoding.ok) return jsonFailure('Invalid raw part encoding', 400)
+				if (!encoding.ok) {
+					return jsonFailureError(
+						ascendError('VALIDATION_ERROR', 'Invalid raw part encoding', {
+							details: {
+								allowedEncodings: ['text', 'base64', 'none'],
+								receivedEncoding: body?.encoding,
+							},
+							suggestedFix: 'Use encoding "text", "base64", or "none".',
+						}),
+						400,
+					)
+				}
 				const maxBytes = rawPartMaxBytes(body?.maxBytes)
-				if (!maxBytes.ok) return jsonFailure('Invalid raw part maxBytes', 400)
+				if (!maxBytes.ok) {
+					return jsonFailureError(
+						ascendError('VALIDATION_ERROR', 'Invalid raw part maxBytes', {
+							details: { receivedMaxBytes: body?.maxBytes, rule: 'nonnegative integer' },
+							suggestedFix:
+								'Omit maxBytes for the bounded default, or provide a nonnegative integer.',
+						}),
+						400,
+					)
+				}
 				try {
 					const wb = await WorkbookDocument.open(file, { mode: 'metadata-only' })
 					const result = await wb.rawPackagePart({

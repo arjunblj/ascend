@@ -1,8 +1,11 @@
 import { afterAll, describe, expect, test } from 'bun:test'
-import { unlink } from 'node:fs/promises'
+import { Buffer } from 'node:buffer'
+import { createHash } from 'node:crypto'
+import { unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { AscendWorkbook, parseOperations } from '@ascend/sdk'
+import { createZip, encode } from '../../../packages/io-xlsx/src/writer/zip.ts'
 import { makeXlsx } from '../../../packages/io-xlsx/test/helpers.ts'
 import { createServer } from './index.ts'
 
@@ -371,6 +374,70 @@ describe('MCP server', () => {
 		expect(invalid.isError).toBe(true)
 		expect(invalid.structuredContent?.error?.code).toBe('VALIDATION_ERROR')
 		expect(invalid.structuredContent?.error?.details?.validPath).toBe(false)
+	})
+
+	test('ascend.raw_part returns binary base64 previews with full-byte metadata', async () => {
+		const binaryBytes = new Uint8Array([0, 1, 2, 3, 4, 255])
+		const binaryFile = `${TEMP_FILE}.raw-binary.xlsx`
+		await writeFile(binaryFile, binaryRawPartWorkbook(binaryBytes))
+		try {
+			const server = createServer()
+			// biome-ignore lint/suspicious/noExplicitAny: accessing internals for test
+			const handler = (server as any)._registeredTools['ascend.raw_part'].handler as (args: {
+				file: string
+				partPath: string
+				encoding?: 'text' | 'base64' | 'none'
+				maxBytes?: number
+			}) => Promise<{
+				structuredContent?: {
+					ok?: boolean
+					data?: {
+						encoding?: string
+						base64?: string
+						text?: string
+						previewByteLength?: number
+						truncated?: boolean
+						sha256?: string
+					}
+				}
+			}>
+
+			const result = await handler({
+				file: binaryFile,
+				partPath: 'xl/media/image1.png',
+				encoding: 'base64',
+				maxBytes: 3,
+			})
+			expect(result.structuredContent?.ok).toBe(true)
+			expect(result.structuredContent?.data?.encoding).toBe('base64')
+			expect(result.structuredContent?.data?.base64).toBe(
+				Buffer.from(binaryBytes.subarray(0, 3)).toString('base64'),
+			)
+			expect(result.structuredContent?.data?.text).toBeUndefined()
+			expect(result.structuredContent?.data?.previewByteLength).toBe(3)
+			expect(result.structuredContent?.data?.truncated).toBe(true)
+			expect(result.structuredContent?.data?.sha256).toBe(
+				createHash('sha256').update(binaryBytes).digest('hex'),
+			)
+
+			const metadataOnly = await handler({
+				file: binaryFile,
+				partPath: 'xl/media/image1.png',
+				encoding: 'none',
+				maxBytes: 3,
+			})
+			expect(metadataOnly.structuredContent?.ok).toBe(true)
+			expect(metadataOnly.structuredContent?.data?.encoding).toBe('none')
+			expect(metadataOnly.structuredContent?.data?.base64).toBeUndefined()
+			expect(metadataOnly.structuredContent?.data?.text).toBeUndefined()
+			expect(metadataOnly.structuredContent?.data?.previewByteLength).toBe(0)
+			expect(metadataOnly.structuredContent?.data?.truncated).toBe(false)
+			expect(metadataOnly.structuredContent?.data?.sha256).toBe(
+				result.structuredContent?.data?.sha256,
+			)
+		} finally {
+			await unlink(binaryFile).catch(() => {})
+		}
 	})
 
 	test('ascend.write recalculates before saving when needed', async () => {
@@ -2276,6 +2343,39 @@ function pointerSegment(value: string): string {
 
 function dotSegment(value: string): string {
 	return value.replace(/\\/g, '\\\\').replace(/\./g, '\\.')
+}
+
+function binaryRawPartWorkbook(binaryBytes: Uint8Array): Uint8Array {
+	return createZip(
+		new Map(
+			Object.entries({
+				'[Content_Types].xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Default Extension="png" ContentType="image/png"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`),
+				'_rels/.rels': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`),
+				'xl/_rels/workbook.xml.rels':
+					encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`),
+				'xl/workbook.xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets>
+</workbook>`),
+				'xl/worksheets/sheet1.xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`),
+				'xl/media/image1.png': binaryBytes,
+			}),
+		),
+	)
 }
 
 function threadedCommentMissingPersonsWorkbook(): Uint8Array {

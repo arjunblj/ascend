@@ -733,7 +733,7 @@ export interface WorkbookSessionOpenOptions extends WorkbookLoadOptions {}
  */
 export class WorkbookSession {
 	private document: WorkbookDocument
-	private readonly source: { path?: string; bytes?: Uint8Array }
+	private source: { path?: string; bytes?: Uint8Array } | null
 	private readonly options: WorkbookLoadOptions
 	private fileIdentity: SessionFileIdentity | null
 	private closed = false
@@ -824,7 +824,7 @@ export class WorkbookSession {
 
 	isStale(): boolean {
 		if (this.closed) return false
-		if (this.source.bytes || !this.fileIdentity) return false
+		if (this.source?.bytes || !this.fileIdentity) return false
 		try {
 			const info = statSync(this.fileIdentity.path)
 			return info.size !== this.fileIdentity.size || info.mtimeMs !== this.fileIdentity.mtimeMs
@@ -835,7 +835,7 @@ export class WorkbookSession {
 
 	async refresh(): Promise<void> {
 		this.assertOpen()
-		const path = this.source.path
+		const path = this.source?.path
 		if (!path) return
 		WorkbookDocument.drop(path, this.options)
 		const opened = await openStablePathDocument(path, this.options)
@@ -851,6 +851,8 @@ export class WorkbookSession {
 	close(): void {
 		this.closed = true
 		this.document = null as unknown as WorkbookDocument
+		this.source = null
+		this.fileIdentity = null
 	}
 
 	private assertOpen(): void {
@@ -866,7 +868,7 @@ export class WorkbookSession {
  */
 export class AscendSession {
 	private readonly session: WorkbookSession
-	private readonly source: string | Uint8Array
+	private source: string | Uint8Array | null
 	private readonly options: AscendSessionOpenOptions
 	private mutableWorkbook: AscendWorkbook | null = null
 	private mutableWorkbookPromise: Promise<AscendWorkbook> | null = null
@@ -1174,6 +1176,7 @@ export class AscendSession {
 
 	close(): void {
 		this.session.close()
+		this.source = null
 		this.mutableWorkbook = null
 		this.mutableWorkbookPromise = null
 		this.mutableWorkbookReadyTimings = null
@@ -1203,7 +1206,9 @@ export class AscendSession {
 				if (workbook) {
 					reusedReadModel = true
 				} else {
-					workbook = await AscendWorkbook.open(this.source, writableOpenOptions(this.options))
+					const source = this.source
+					if (source === null) throw new Error('AscendSession is closed')
+					workbook = await AscendWorkbook.open(source, writableOpenOptions(this.options))
 				}
 				const openMs = performance.now() - openStart
 				const rebaseStart = performance.now()

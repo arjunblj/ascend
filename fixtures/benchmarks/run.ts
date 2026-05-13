@@ -3087,6 +3087,64 @@ const scenarios: readonly Scenario[] = [
 		},
 	},
 	{
+		name: 'closed-byte-session-retention-memory',
+		category: 'workflow',
+		build() {
+			const target = realInteractivePatchCorpusTarget('stress-dense-100k')
+			return {
+				rows: target.rowCount,
+				cols: target.colCount,
+				cells: target.rowCount * target.colCount,
+				byteCount: realInteractivePatchCorpusTargetBytes(target).byteLength,
+			}
+		},
+		async run() {
+			const target = realInteractivePatchCorpusTarget('stress-dense-100k')
+			const sourceBytes = realInteractivePatchCorpusTargetBytes(target)
+			const closedSessions: AscendSession[] = []
+			const sessionCount = 8
+			WorkbookDocument.clearCache()
+			runGc()
+			const baseline = phaseMemorySnapshot()
+
+			for (let index = 0; index < sessionCount; index++) {
+				const bytes = new Uint8Array(sourceBytes)
+				const session = await AscendSession.open(bytes, {
+					mode: 'interactive',
+					prepareEdits: true,
+				})
+				session.close()
+				WorkbookDocument.clearCache()
+				closedSessions.push(session)
+				runGc()
+			}
+			runGc()
+			const afterClose = phaseMemorySnapshot()
+			const arrayBuffersDelta = memoryDelta(
+				afterClose.arrayBuffersBytes,
+				baseline.arrayBuffersBytes,
+			)
+
+			return {
+				assertions: {
+					bytes: sourceBytes.byteLength,
+					closedSessionsRetained: closedSessions.length,
+					expectedSourceBytesIfClosedSessionsRetainInput:
+						closedSessions.length * sourceBytes.byteLength,
+					afterCloseRssDeltaBytes: memoryDelta(afterClose.rssBytes, baseline.rssBytes),
+					afterCloseHeapDeltaBytes: memoryDelta(afterClose.heapUsedBytes, baseline.heapUsedBytes),
+					afterCloseExternalDeltaBytes: memoryDelta(
+						afterClose.externalBytes,
+						baseline.externalBytes,
+					),
+					afterCloseArrayBuffersDeltaBytes: arrayBuffersDelta,
+					arrayBuffersDeltaPerClosedSession:
+						closedSessions.length > 0 ? arrayBuffersDelta / closedSessions.length : null,
+				},
+			}
+		},
+	},
+	{
 		name: 'workflow-reopen-values-window',
 		category: 'workflow',
 		build() {
@@ -3924,6 +3982,7 @@ const scenarioSets = {
 		'real-dense-promotion-memory',
 		'real-dense-prepared-open-only-memory',
 		'real-dense-prepared-open-memory',
+		'closed-byte-session-retention-memory',
 	],
 	'real-read-memory': [
 		'real-dense-read-memory-metadata',

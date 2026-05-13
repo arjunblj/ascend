@@ -318,6 +318,9 @@ export class AscendWorkbook extends WorkbookReadView {
 	private readonly caps: PreservationCapsule[]
 	private originalBytes: Uint8Array | null
 	private sourceArchive: ZipArchive | undefined
+	private packageGraphCache:
+		| { readonly bytes: Uint8Array; readonly graph: XlsxPackageGraph }
+		| undefined
 	private dirty: boolean
 	private readonly dirtySheets = new Set<string>()
 	private readonly pendingDirtyCellRefs = new Map<string, Set<string>>()
@@ -1055,9 +1058,7 @@ export class AscendWorkbook extends WorkbookReadView {
 		const result = verifyCheck(this.wb, {
 			formulas: this.formulaAnalysis(),
 			dependencies: this.dependencyAnalysis(),
-			...(this.wb.sourceArchiveBytes
-				? { packageGraph: inspectXlsxPackageGraph(this.wb.sourceArchiveBytes) }
-				: {}),
+			...(this.wb.sourceArchiveBytes ? { packageGraph: this.packageGraph() } : {}),
 		})
 		const issues: CheckIssue[] = result.issues.map(sdkCheckIssueFromVerify)
 		return { valid: result.passed, issues }
@@ -1312,9 +1313,11 @@ export class AscendWorkbook extends WorkbookReadView {
 	}
 
 	packageGraph(): XlsxPackageGraph {
-		return inspectXlsxPackageGraph(
-			this.originalBytes && !this.dirty ? this.originalBytes : this.toBytes(),
-		)
+		const bytes = this.originalBytes && !this.dirty ? this.originalBytes : this.toBytes()
+		if (this.packageGraphCache?.bytes === bytes) return this.packageGraphCache.graph
+		const graph = inspectXlsxPackageGraph(bytes)
+		this.packageGraphCache = { bytes, graph }
+		return graph
 	}
 
 	rawPackagePart(options: RawPackagePartOptions): RawPackagePartInfo {
@@ -1546,6 +1549,7 @@ export class AscendWorkbook extends WorkbookReadView {
 
 	private markDirty(): void {
 		if (!this.dirty) this.originalBytes = null
+		this.packageGraphCache = undefined
 		this.dirty = true
 	}
 
@@ -1553,6 +1557,7 @@ export class AscendWorkbook extends WorkbookReadView {
 		this.originalBytes = bytes
 		this.wb.sourceArchiveBytes = bytes
 		this.sourceArchive = undefined
+		this.packageGraphCache = undefined
 		this.dirty = false
 		this.dirtySheets.clear()
 		this.pendingDirtyCellRefs.clear()

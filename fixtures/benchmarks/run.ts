@@ -2131,6 +2131,45 @@ const scenarios: readonly Scenario[] = [
 					),
 					afterPatchHeapDeltaBytes: memoryDelta(afterPatch.heapUsedBytes, baseline.heapUsedBytes),
 					afterCloseHeapDeltaBytes: memoryDelta(afterClose.heapUsedBytes, baseline.heapUsedBytes),
+					baselineExternalBytes: baseline.externalBytes,
+					afterOpenExternalDeltaBytes: memoryDelta(afterOpen.externalBytes, baseline.externalBytes),
+					afterViewportExternalDeltaBytes: memoryDelta(
+						afterViewport.externalBytes,
+						baseline.externalBytes,
+					),
+					afterPrepareExternalDeltaBytes: memoryDelta(
+						afterPrepare.externalBytes,
+						baseline.externalBytes,
+					),
+					afterPatchExternalDeltaBytes: memoryDelta(
+						afterPatch.externalBytes,
+						baseline.externalBytes,
+					),
+					afterCloseExternalDeltaBytes: memoryDelta(
+						afterClose.externalBytes,
+						baseline.externalBytes,
+					),
+					baselineArrayBuffersBytes: baseline.arrayBuffersBytes,
+					afterOpenArrayBuffersDeltaBytes: memoryDelta(
+						afterOpen.arrayBuffersBytes,
+						baseline.arrayBuffersBytes,
+					),
+					afterViewportArrayBuffersDeltaBytes: memoryDelta(
+						afterViewport.arrayBuffersBytes,
+						baseline.arrayBuffersBytes,
+					),
+					afterPrepareArrayBuffersDeltaBytes: memoryDelta(
+						afterPrepare.arrayBuffersBytes,
+						baseline.arrayBuffersBytes,
+					),
+					afterPatchArrayBuffersDeltaBytes: memoryDelta(
+						afterPatch.arrayBuffersBytes,
+						baseline.arrayBuffersBytes,
+					),
+					afterCloseArrayBuffersDeltaBytes: memoryDelta(
+						afterClose.arrayBuffersBytes,
+						baseline.arrayBuffersBytes,
+					),
 					patchMode: 'delta',
 				},
 			}
@@ -2958,10 +2997,18 @@ const scenarioSets = {
 	'real-memory': ['real-dense-promotion-memory'],
 } as const
 
-function phaseMemorySnapshot(): { readonly rssBytes: number; readonly heapUsedBytes: number } {
+function phaseMemorySnapshot(): {
+	readonly rssBytes: number
+	readonly heapUsedBytes: number
+	readonly externalBytes: number
+	readonly arrayBuffersBytes: number
+} {
+	const usage = process.memoryUsage()
 	return {
 		rssBytes: getRssBytes() ?? 0,
-		heapUsedBytes: process.memoryUsage().heapUsed,
+		heapUsedBytes: usage.heapUsed,
+		externalBytes: usage.external,
+		arrayBuffersBytes: usage.arrayBuffers,
 	}
 }
 

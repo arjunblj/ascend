@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { readFileSync } from 'node:fs'
 import type { StyleId } from '@ascend/core'
 import { stringValue } from '@ascend/schema'
 import { unzipSync } from 'fflate'
@@ -13,6 +14,15 @@ import { readXlsx } from '../reader/index.ts'
 import { writeXlsx } from './index.ts'
 
 const S0 = 0 as StyleId
+const VISUAL_BYTE_PRESERVED_FAMILIES = new Set([
+	'preservedChart',
+	'preservedChartColor',
+	'preservedChartSheet',
+	'preservedChartStyle',
+	'preservedDrawing',
+	'preservedMedia',
+	'preservedVml',
+])
 
 function expectOk<T, E extends { message: string }>(
 	result: { ok: true; value: T } | { ok: false; error: E },
@@ -22,6 +32,194 @@ function expectOk<T, E extends { message: string }>(
 }
 
 describe('visual package fidelity', () => {
+	test('preserves ClosedXML image drawing ownership, anchors, media, and relationships after a dirty cell edit', () => {
+		const sourceBytes = readFixture('closedxml/ImageHandling_ImageAnchors.xlsx')
+		const beforeGraph = inspectXlsxPackageGraph(sourceBytes)
+		expect(auditXlsxPackageGraphReadIntegrity(beforeGraph)).toEqual([])
+
+		const opened = readXlsx(sourceBytes)
+		expectOk(opened)
+		expect(
+			opened.value.workbook.sheets.map((sheet) => ({
+				name: sheet.name,
+				imageRefs: sheet.imageRefs.length,
+			})),
+		).toEqual([
+			{ name: 'Images1', imageRefs: 2 },
+			{ name: 'Images2', imageRefs: 1 },
+			{ name: 'Images3', imageRefs: 3 },
+			{ name: 'Images4', imageRefs: 1 },
+		])
+
+		const imageRefsBefore = opened.value.workbook.sheets.map((sheet) => ({
+			name: sheet.name,
+			imageRefs: sheet.imageRefs,
+		}))
+		const editedSheet = opened.value.workbook.sheets.find((sheet) => sheet.name === 'Images1')
+		if (!editedSheet) throw new Error('Images1 sheet was not parsed')
+		editedSheet.cells.set(0, 0, {
+			value: stringValue('Edited without moving image anchors'),
+			formula: null,
+			styleId: S0,
+		})
+
+		const written = writeXlsx(opened.value.workbook, opened.value.capsules, {
+			dirtySheetNames: ['Images1'],
+		})
+		expectOk(written)
+
+		const afterGraph = inspectXlsxPackageGraph(written.value)
+		expect(auditXlsxPackageGraphSafeEditIntegrity(beforeGraph, afterGraph)).toEqual([])
+		expectVisualBytePreservation(beforeGraph, sourceBytes, written.value)
+		expectGraphPart(afterGraph, 'xl/drawings/drawing1.xml', 'drawing', 'preservedDrawing')
+		expectGraphPart(afterGraph, 'xl/media/image.png', 'drawing', 'preservedMedia')
+		expectGraphRelationship(
+			afterGraph,
+			'xl/drawings/_rels/drawing1.xml.rels',
+			'rId9',
+			'xl/media/image.png',
+		)
+		expectGraphRelationship(
+			afterGraph,
+			'xl/drawings/_rels/drawing1.xml.rels',
+			'rId10',
+			'xl/media/image2.png',
+		)
+
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+		expect(
+			reopened.value.workbook.sheets.map((sheet) => ({
+				name: sheet.name,
+				imageRefs: sheet.imageRefs,
+			})),
+		).toEqual(imageRefsBefore)
+	})
+
+	test('preserves ClosedXML embedded chart ownership and chart sidecars after editing the owning sheet', () => {
+		const sourceBytes = readFixture('closedxml/Other_Charts_PreserveCharts_inputfile.xlsx')
+		const beforeGraph = inspectXlsxPackageGraph(sourceBytes)
+		expect(auditXlsxPackageGraphReadIntegrity(beforeGraph)).toEqual([])
+
+		const opened = readXlsx(sourceBytes)
+		expectOk(opened)
+		expect(opened.value.workbook.chartSheets).toEqual([])
+		expect(opened.value.workbook.chartParts).toEqual([
+			expect.objectContaining({
+				partPath: 'xl/charts/chart1.xml',
+				sheetName: 'Sheet2',
+				chartType: 'lineChart',
+			}),
+		])
+		expectGraphPart(beforeGraph, 'xl/charts/chart1.xml', 'chart', 'preservedChart')
+		expectGraphPart(beforeGraph, 'xl/charts/style1.xml', 'chart', 'preservedChartStyle')
+		expectGraphPart(beforeGraph, 'xl/charts/colors1.xml', 'chart', 'preservedChartColor')
+		expectGraphRelationship(
+			beforeGraph,
+			'xl/charts/_rels/chart1.xml.rels',
+			'rId1',
+			'xl/charts/style1.xml',
+		)
+		expectGraphRelationship(
+			beforeGraph,
+			'xl/charts/_rels/chart1.xml.rels',
+			'rId2',
+			'xl/charts/colors1.xml',
+		)
+
+		const chartSheet = opened.value.workbook.sheets.find((sheet) => sheet.name === 'Sheet2')
+		if (!chartSheet) throw new Error('Sheet2 sheet was not parsed')
+		const drawingObjectsBefore = chartSheet.drawingObjectRefs
+		chartSheet.cells.set(0, 0, {
+			value: stringValue('Edited without moving embedded chart'),
+			formula: null,
+			styleId: S0,
+		})
+
+		const written = writeXlsx(opened.value.workbook, opened.value.capsules, {
+			dirtySheetNames: ['Sheet2'],
+		})
+		expectOk(written)
+
+		const afterGraph = inspectXlsxPackageGraph(written.value)
+		expect(auditXlsxPackageGraphSafeEditIntegrity(beforeGraph, afterGraph)).toEqual([])
+		expectVisualBytePreservation(beforeGraph, sourceBytes, written.value)
+		expectGraphPart(afterGraph, 'xl/charts/chart1.xml', 'chart', 'preservedChart')
+		expectGraphPart(afterGraph, 'xl/charts/style1.xml', 'chart', 'preservedChartStyle')
+		expectGraphPart(afterGraph, 'xl/charts/colors1.xml', 'chart', 'preservedChartColor')
+
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+		expect(reopened.value.workbook.chartSheets).toEqual([])
+		expect(reopened.value.workbook.chartParts).toEqual(opened.value.workbook.chartParts)
+		expect(
+			reopened.value.workbook.sheets.find((sheet) => sheet.name === 'Sheet2')?.drawingObjectRefs,
+		).toEqual(drawingObjectsBefore)
+	})
+
+	test('preserves committed chartsheet ownership, drawing bridge, and chart sidecars after editing data cells', () => {
+		const sourceBytes = readFixture('exceljs/chart-sheet.xlsx')
+		const beforeGraph = inspectXlsxPackageGraph(sourceBytes)
+		expect(auditXlsxPackageGraphReadIntegrity(beforeGraph)).toEqual([])
+
+		const opened = readXlsx(sourceBytes)
+		expectOk(opened)
+		expect(opened.value.workbook.chartSheets).toEqual([
+			expect.objectContaining({
+				name: 'Chart1',
+				partPath: 'xl/chartsheets/sheet1.xml',
+				chartPartPaths: ['xl/charts/chart1.xml'],
+			}),
+		])
+		expect(opened.value.workbook.chartParts).toEqual([
+			expect.objectContaining({
+				partPath: 'xl/charts/chart1.xml',
+				sheetName: 'Chart1',
+				chartType: 'barChart',
+			}),
+		])
+		expectGraphPart(beforeGraph, 'xl/chartsheets/sheet1.xml', 'chartsheet', 'preservedChartSheet')
+		expectGraphPart(beforeGraph, 'xl/drawings/drawing1.xml', 'drawing', 'preservedDrawing')
+		expectGraphPart(beforeGraph, 'xl/charts/chart1.xml', 'chart', 'preservedChart')
+		expectGraphRelationship(
+			beforeGraph,
+			'xl/chartsheets/_rels/sheet1.xml.rels',
+			'rId1',
+			'xl/drawings/drawing1.xml',
+		)
+		expectGraphRelationship(
+			beforeGraph,
+			'xl/drawings/_rels/drawing1.xml.rels',
+			'rId1',
+			'xl/charts/chart1.xml',
+		)
+
+		const dataSheet = opened.value.workbook.sheets.find((sheet) => sheet.name === 'Sheet1')
+		if (!dataSheet) throw new Error('Sheet1 sheet was not parsed')
+		dataSheet.cells.set(0, 0, {
+			value: stringValue('Edited without changing chartsheet ownership'),
+			formula: null,
+			styleId: S0,
+		})
+
+		const written = writeXlsx(opened.value.workbook, opened.value.capsules, {
+			dirtySheetNames: ['Sheet1'],
+		})
+		expectOk(written)
+
+		const afterGraph = inspectXlsxPackageGraph(written.value)
+		expect(auditXlsxPackageGraphSafeEditIntegrity(beforeGraph, afterGraph)).toEqual([])
+		expectVisualBytePreservation(beforeGraph, sourceBytes, written.value)
+		expectGraphPart(afterGraph, 'xl/chartsheets/sheet1.xml', 'chartsheet', 'preservedChartSheet')
+		expectGraphPart(afterGraph, 'xl/drawings/drawing1.xml', 'drawing', 'preservedDrawing')
+		expectGraphPart(afterGraph, 'xl/charts/chart1.xml', 'chart', 'preservedChart')
+
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+		expect(reopened.value.workbook.chartSheets).toEqual(opened.value.workbook.chartSheets)
+		expect(reopened.value.workbook.chartParts).toEqual(opened.value.workbook.chartParts)
+	})
+
 	test('preserves DrawingML, VML, media, chart sidecars, and chart ownership after a dirty cell edit', () => {
 		const sourceBytes = visualOwnershipWorkbook()
 		const beforeGraph = inspectXlsxPackageGraph(sourceBytes)
@@ -320,6 +518,54 @@ function visualOwnershipWorkbook(
 
 function defaultCoveredChartSidecarWorkbook(): Uint8Array {
 	return visualOwnershipWorkbook({ defaultCoveredChartSidecars: true })
+}
+
+function readFixture(path: string): Uint8Array {
+	return readFileSync(new URL(`../../../../fixtures/xlsx/${path}`, import.meta.url))
+}
+
+function expectGraphPart(
+	graph: ReturnType<typeof inspectXlsxPackageGraph>,
+	path: string,
+	ownerScope: string,
+	featureFamily: string,
+): void {
+	expect(graph.parts).toContainEqual(
+		expect.objectContaining({
+			path,
+			ownerScope,
+			featureFamily,
+		}),
+	)
+}
+
+function expectGraphRelationship(
+	graph: ReturnType<typeof inspectXlsxPackageGraph>,
+	relationshipPartPath: string,
+	id: string,
+	resolvedTarget: string,
+): void {
+	expect(graph.relationships).toContainEqual(
+		expect.objectContaining({
+			relationshipPartPath,
+			id,
+			resolvedTarget,
+		}),
+	)
+}
+
+function expectVisualBytePreservation(
+	beforeGraph: ReturnType<typeof inspectXlsxPackageGraph>,
+	beforeBytes: Uint8Array,
+	afterBytes: Uint8Array,
+): void {
+	const visualGraph = {
+		...beforeGraph,
+		parts: beforeGraph.parts.filter((part) =>
+			VISUAL_BYTE_PRESERVED_FAMILIES.has(part.featureFamily),
+		),
+	}
+	expect(auditXlsxPackageGraphBytePreservation(visualGraph, beforeBytes, afterBytes)).toEqual([])
 }
 
 function chartXml(

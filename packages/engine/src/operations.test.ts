@@ -486,6 +486,68 @@ describe('applyOperation', () => {
 		})
 	})
 
+	test('setDrawingText preserves drawing object identity and relationship metadata', () => {
+		const wb = setup()
+		const sheet = wb.getSheet('Sheet1')
+		expect(sheet).toBeDefined()
+		if (!sheet) return
+		sheet.drawingObjectRefs.push({
+			drawingPartPath: 'xl/drawings/drawing1.xml',
+			kind: 'graphicFrame',
+			id: 7,
+			name: 'Chart Callout',
+			description: 'Revenue callout',
+			text: 'Original',
+			anchor: {
+				kind: 'absolute',
+				x: 1000,
+				y: 2000,
+				cx: 3000,
+				cy: 4000,
+			},
+			relIds: ['rIdChart1'],
+			relationshipRefs: [
+				{
+					id: 'rIdChart1',
+					type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart',
+					target: '../charts/chart1.xml',
+				},
+			],
+		})
+
+		const result = applyOperation(wb, {
+			op: 'setDrawingText',
+			sheet: 'Sheet1',
+			drawingObjectIndex: 0,
+			text: 'Updated',
+		})
+		expectOk(result)
+
+		expect(sheet.drawingObjectRefs[0]).toEqual({
+			drawingPartPath: 'xl/drawings/drawing1.xml',
+			kind: 'graphicFrame',
+			id: 7,
+			name: 'Chart Callout',
+			description: 'Revenue callout',
+			text: 'Updated',
+			anchor: {
+				kind: 'absolute',
+				x: 1000,
+				y: 2000,
+				cx: 3000,
+				cy: 4000,
+			},
+			relIds: ['rIdChart1'],
+			relationshipRefs: [
+				{
+					id: 'rIdChart1',
+					type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart',
+					target: '../charts/chart1.xml',
+				},
+			],
+		})
+	})
+
 	test('setDrawingText validates selectors and text-bearing objects', () => {
 		const wb = setup()
 		const sheet = wb.getSheet('Sheet1')
@@ -718,6 +780,52 @@ describe('applyOperation', () => {
 		expect(Array.from(sheet?.imageRefs[0]?.content ?? [])).toEqual([4, 5, 6])
 	})
 
+	test('insertImage reuses existing drawing object part without colliding with chart relationships', () => {
+		const wb = setup()
+		const sheet = wb.getSheet('Sheet1')
+		expect(sheet).toBeDefined()
+		if (!sheet) return
+		sheet.drawingObjectRefs.push({
+			drawingPartPath: 'xl/drawings/drawing7.xml',
+			kind: 'graphicFrame',
+			id: 5,
+			name: 'Revenue Chart',
+			relationshipRefs: [
+				{
+					id: 'rId1',
+					type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart',
+					target: '../charts/chart1.xml',
+				},
+			],
+		})
+
+		const result = applyOperation(wb, {
+			op: 'insertImage',
+			sheet: 'Sheet1',
+			contentBase64: 'BAUG',
+			contentType: 'image/png',
+			anchor: {
+				kind: 'twoCell',
+				from: { row: 2, col: 2, rowOff: 10 },
+				to: { row: 6, col: 5, colOff: 20 },
+				editAs: 'oneCell',
+			},
+		})
+		expectOk(result)
+
+		expect(sheet.imageRefs[0]).toMatchObject({
+			drawingPartPath: 'xl/drawings/drawing7.xml',
+			relId: 'rIdImage1',
+			anchor: {
+				kind: 'twoCell',
+				from: { row: 2, col: 2, rowOff: 10 },
+				to: { row: 6, col: 5, colOff: 20 },
+				editAs: 'oneCell',
+			},
+		})
+		expect(sheet.drawingObjectRefs[0]?.relationshipRefs?.[0]?.id).toBe('rId1')
+	})
+
 	test('deleteImage removes a selected image ref', () => {
 		const wb = setup()
 		const sheet = wb.getSheet('Sheet1')
@@ -801,6 +909,50 @@ describe('applyOperation', () => {
 		expect(result.error.message).toContain('targetPath already exists')
 	})
 
+	test('insertImage rejects relationship id collisions with drawing objects in the same drawing part', () => {
+		const wb = setup()
+		const sheet = wb.getSheet('Sheet1')
+		expect(sheet).toBeDefined()
+		if (!sheet) return
+		sheet.drawingObjectRefs.push({
+			drawingPartPath: 'xl/drawings/drawing1.xml',
+			kind: 'graphicFrame',
+			id: 5,
+			name: 'Revenue Chart',
+			relIds: ['rId2'],
+			relationshipRefs: [
+				{
+					id: 'rIdChart1',
+					type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart',
+					target: '../charts/chart1.xml',
+				},
+			],
+		})
+
+		const relIdsResult = applyOperation(wb, {
+			op: 'insertImage',
+			sheet: 'Sheet1',
+			drawingPartPath: 'xl/drawings/drawing1.xml',
+			relId: 'rId2',
+			contentBase64: 'BAUG',
+			contentType: 'image/png',
+		})
+		expectErr(relIdsResult)
+		expect(relIdsResult.error.message).toContain('relId already exists')
+
+		const relationshipRefsResult = applyOperation(wb, {
+			op: 'insertImage',
+			sheet: 'Sheet1',
+			drawingPartPath: 'xl/drawings/drawing1.xml',
+			relId: 'rIdChart1',
+			contentBase64: 'BAUG',
+			contentType: 'image/png',
+		})
+		expectErr(relationshipRefsResult)
+		expect(relationshipRefsResult.error.message).toContain('relId already exists')
+		expect(sheet.imageRefs).toEqual([])
+	})
+
 	test('setChartSeriesSource updates parsed chart source refs', () => {
 		const wb = setup()
 		wb.chartParts.push({
@@ -832,6 +984,97 @@ describe('applyOperation', () => {
 			categoryRef: 'Sheet1!$A$2:$A$10',
 			valueRef: 'Sheet1!$C$2:$C$10',
 		})
+	})
+
+	test('setChartSeriesSource preserves chart identity and untouched series metadata', () => {
+		const wb = setup()
+		wb.chartParts.push(
+			{
+				partPath: 'xl/charts/chart1.xml',
+				sheetName: 'Sheet1',
+				chartType: 'lineChart',
+				title: 'Revenue',
+				series: [
+					{
+						nameText: 'Actual',
+						categoryRef: 'Sheet1!$A$2:$A$4',
+						valueRef: 'Sheet1!$B$2:$B$4',
+					},
+					{
+						nameText: 'Plan',
+						categoryRef: 'Sheet1!$A$2:$A$4',
+						valueRef: 'Sheet1!$C$2:$C$4',
+					},
+				],
+			},
+			{
+				partPath: 'xl/charts/chart2.xml',
+				sheetName: 'Sheet2',
+				chartType: 'barChart',
+				series: [{ valueRef: 'Sheet2!$B$2:$B$4' }],
+			},
+		)
+
+		const result = applyOperation(wb, {
+			op: 'setChartSeriesSource',
+			partPath: 'xl/charts/chart1.xml',
+			seriesIndex: 0,
+			valueRef: 'Sheet1!$D$2:$D$4',
+		})
+		expectOk(result)
+
+		expect(wb.chartParts).toEqual([
+			{
+				partPath: 'xl/charts/chart1.xml',
+				sheetName: 'Sheet1',
+				chartType: 'lineChart',
+				title: 'Revenue',
+				series: [
+					{
+						nameText: 'Actual',
+						categoryRef: 'Sheet1!$A$2:$A$4',
+						valueRef: 'Sheet1!$D$2:$D$4',
+					},
+					{
+						nameText: 'Plan',
+						categoryRef: 'Sheet1!$A$2:$A$4',
+						valueRef: 'Sheet1!$C$2:$C$4',
+					},
+				],
+			},
+			{
+				partPath: 'xl/charts/chart2.xml',
+				sheetName: 'Sheet2',
+				chartType: 'barChart',
+				series: [{ valueRef: 'Sheet2!$B$2:$B$4' }],
+			},
+		])
+	})
+
+	test('setChartSeriesSource rejects ambiguous chart selectors', () => {
+		const wb = setup()
+		wb.chartParts.push(
+			{
+				partPath: 'xl/charts/chart1.xml',
+				sheetName: 'Sheet1',
+				series: [{ valueRef: 'Sheet1!$B$2:$B$4' }],
+			},
+			{
+				partPath: 'xl/charts/chart2.xml',
+				sheetName: 'Sheet1',
+				series: [{ valueRef: 'Sheet1!$C$2:$C$4' }],
+			},
+		)
+
+		const result = applyOperation(wb, {
+			op: 'setChartSeriesSource',
+			sheet: 'Sheet1',
+			seriesIndex: 0,
+			valueRef: 'Sheet1!$D$2:$D$4',
+		})
+
+		expectErr(result)
+		expect(result.error.message).toContain('matched 2 charts')
 	})
 
 	test('setSparklineGroup updates source ranges and display flags', () => {

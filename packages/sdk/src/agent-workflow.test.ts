@@ -253,6 +253,16 @@ describe('agent workflow loss audit', () => {
 				(entry) => entry.code === 'analytics-pivot-refresh-risk',
 			),
 		).toBe(false)
+		expect(
+			committed.writePolicy.diagnostics.some((entry) =>
+				[
+					'visual-sidecar-preservation-risk',
+					'visual-edit-preservation-risk',
+					'drawingml-vml-drift-risk',
+					'chart-source-ref-drift-risk',
+				].includes(entry.code),
+			),
+		).toBe(false)
 		expect(committed.writePolicy.diagnostics.some((entry) => entry.code.includes('comment'))).toBe(
 			false,
 		)
@@ -559,6 +569,41 @@ describe('agent workflow loss audit', () => {
 				]),
 				details: expect.objectContaining({
 					operationScoped: false,
+					packageGraphAudit: expect.objectContaining({
+						ok: true,
+						visualIssueCount: 0,
+						issues: [],
+					}),
+					copiedThroughVisualParts: expect.arrayContaining([
+						expect.objectContaining({
+							partPath: 'xl/drawings/drawing1.xml',
+							featureFamily: 'preservedDrawing',
+						}),
+						expect.objectContaining({
+							partPath: 'xl/media/image1.png',
+							featureFamily: 'preservedMedia',
+						}),
+					]),
+					generatedOrReplacementVisualParts: [],
+					chartSourceRefs: [],
+					drawingModel: expect.objectContaining({
+						packagePartCounts: expect.objectContaining({
+							drawingMl: 1,
+							media: 1,
+							chartSidecar: 2,
+							vml: 0,
+						}),
+						sheets: [
+							expect.objectContaining({
+								sheetName: 'Sheet1',
+								hasDrawingMl: true,
+								hasVml: false,
+								imageCount: 1,
+							}),
+						],
+						distinction: expect.stringContaining('VML drawings are separate'),
+					}),
+					recommendedInspection: expect.stringContaining('visualInventory'),
 					relatedOperations: [],
 					chartSourceRefDrift: [],
 					drawingmlVmlDrift: [],
@@ -780,7 +825,13 @@ describe('agent workflow loss audit', () => {
 			expect.objectContaining({
 				code: 'visual-sidecar-preservation-risk',
 				severity: 'warning',
-				details: expect.objectContaining({ operationScoped: true }),
+				details: expect.objectContaining({
+					operationScoped: true,
+					generatedOrReplacementVisualParts: expect.arrayContaining([
+						expect.objectContaining({ partPath: 'xl/media/image1.png' }),
+					]),
+					recommendedInspection: expect.stringContaining('media bytes'),
+				}),
 			}),
 		)
 		expect(plan.writePolicy.diagnostics).toContainEqual(
@@ -819,6 +870,42 @@ describe('agent workflow loss audit', () => {
 			{ op: 'insertRows', sheet: 'Data', at: 2, count: 1 },
 		])
 
+		expect(plan.writePolicy.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: 'visual-sidecar-preservation-risk',
+				details: expect.objectContaining({
+					chartSourceRefs: [
+						expect.objectContaining({
+							partPath: 'xl/charts/chart1.xml',
+							sheetName: 'Data',
+							chartIndex: 0,
+							series: [
+								expect.objectContaining({
+									seriesIndex: 0,
+									sourceRefs: expect.arrayContaining([
+										expect.objectContaining({
+											sourceKind: 'categoryRef',
+											ref: 'Data!$A$2:$A$4',
+										}),
+										expect.objectContaining({
+											sourceKind: 'valueRef',
+											ref: 'Data!$B$2:$B$4',
+										}),
+									]),
+								}),
+							],
+						}),
+					],
+					copiedThroughVisualParts: expect.arrayContaining([
+						expect.objectContaining({ partPath: 'xl/charts/style1.xml' }),
+						expect.objectContaining({ partPath: 'xl/charts/colors1.xml' }),
+					]),
+					generatedOrReplacementVisualParts: [
+						expect.objectContaining({ partPath: 'xl/charts/chart1.xml' }),
+					],
+				}),
+			}),
+		)
 		expect(plan.writePolicy.diagnostics).toContainEqual(
 			expect.objectContaining({
 				code: 'chart-source-ref-drift-risk',
@@ -904,6 +991,25 @@ describe('agent workflow loss audit', () => {
 							recommendation: expect.stringContaining('separate package graphs'),
 						}),
 					],
+				}),
+			}),
+		)
+		expect(plan.writePolicy.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: 'visual-sidecar-preservation-risk',
+				details: expect.objectContaining({
+					drawingModel: expect.objectContaining({
+						sheets: [
+							expect.objectContaining({
+								sheetName: 'Sheet1',
+								hasDrawingMl: true,
+								hasVml: true,
+								drawingMlObjectCount: 1,
+								vmlObjectCount: 1,
+							}),
+						],
+						distinction: expect.stringContaining('drawing/chart/media relationships'),
+					}),
 				}),
 			}),
 		)

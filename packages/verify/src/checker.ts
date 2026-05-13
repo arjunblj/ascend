@@ -366,6 +366,24 @@ function checkChartPartOwnership(
 	}
 	for (const chart of wb.chartParts) {
 		const chartSheetOwner = chartSheetOwnerByPartPath.get(chart.partPath)
+		if (chart.sheetName && sheetNameSet.has(chart.sheetName.toLowerCase()) && chartSheetOwner) {
+			issues.push({
+				rule: 'chart-part-ownership',
+				severity: 'warning',
+				message: `Chart part "${chart.partPath}" is attributed to both worksheet "${chart.sheetName}" and chartsheet "${chartSheetOwner}"`,
+				refs: [chart.partPath],
+				suggestedFix:
+					'Choose either worksheet drawing ownership or chartsheet ownership before editing this chart.',
+				details: {
+					kind: 'chart-worksheet-chartsheet-owner-ambiguity',
+					partPath: chart.partPath,
+					ownerSheet: chart.sheetName,
+					ownerChartSheet: chartSheetOwner,
+					...(chart.chartType ? { chartType: chart.chartType } : {}),
+				},
+			})
+			continue
+		}
 		if (chart.sheetName && sheetNameSet.has(chart.sheetName.toLowerCase())) continue
 		if (!chart.sheetName && chartSheetOwner) continue
 		if (chart.sheetName && !sheetNameSet.has(chart.sheetName.toLowerCase())) {
@@ -5117,6 +5135,17 @@ function checkDrawingPackageIntegrity(
 	for (const sheet of wb.sheets) {
 		for (const image of sheet.imageRefs) {
 			modelDrawingPartPaths.add(image.drawingPartPath)
+			pushDrawingAnchorIssues(issues, {
+				anchor: image.anchor,
+				ownerRef: `${sheet.name}#${image.relId}`,
+				kindPrefix: 'image',
+				details: {
+					sheetName: sheet.name,
+					drawingPartPath: image.drawingPartPath,
+					relationshipId: image.relId,
+					...(image.name ? { imageName: image.name } : {}),
+				},
+			})
 			const drawingPart = graphPartByPath.get(image.drawingPartPath)
 			if (!drawingPart) {
 				issues.push({
@@ -5195,6 +5224,18 @@ function checkDrawingPackageIntegrity(
 			const object = sheet.drawingObjectRefs[index]
 			if (!object) continue
 			modelDrawingPartPaths.add(object.drawingPartPath)
+			pushDrawingAnchorIssues(issues, {
+				anchor: object.anchor,
+				ownerRef: `${sheet.name}#drawingObject${index}`,
+				kindPrefix: 'drawing-object',
+				details: {
+					sheetName: sheet.name,
+					objectIndex: index,
+					drawingPartPath: object.drawingPartPath,
+					source: object.source,
+					objectKind: object.kind,
+				},
+			})
 			const ownerKey = drawingObjectOwnerKey(object)
 			if (ownerKey) {
 				let owners = drawingObjectNamesBySheet.get(sheet.name)
@@ -5302,6 +5343,47 @@ function checkDrawingPackageIntegrity(
 			isDrawingRelationshipType(relationship.type) ||
 			isVmlDrawingRelationshipType(relationship.type)
 		) {
+			const targetPart = relationship.resolvedTarget
+				? graphPartByPath.get(relationship.resolvedTarget)
+				: undefined
+			if (
+				isDrawingRelationshipType(relationship.type) &&
+				targetPart &&
+				!isDrawingPackagePart(targetPart)
+			) {
+				issues.push({
+					rule: 'drawing-integrity',
+					severity: 'error',
+					message: `Drawing relationship "${relationship.id}" targets non-DrawingML part "${relationship.resolvedTarget}"`,
+					refs: [`${relationship.relationshipPartPath}#${relationship.id}`],
+					suggestedFix:
+						'Repair worksheet drawing relationships so DrawingML and VML sidecars use their distinct relationship types.',
+					details: {
+						kind: 'drawing-relationship-target-type-mismatch',
+						relationship: packageRelationshipDetails(relationship),
+						targetPart,
+					},
+				})
+			}
+			if (
+				isVmlDrawingRelationshipType(relationship.type) &&
+				targetPart &&
+				!isVmlPackagePart(targetPart)
+			) {
+				issues.push({
+					rule: 'drawing-integrity',
+					severity: 'error',
+					message: `VML drawing relationship "${relationship.id}" targets non-VML part "${relationship.resolvedTarget}"`,
+					refs: [`${relationship.relationshipPartPath}#${relationship.id}`],
+					suggestedFix:
+						'Repair worksheet VML drawing relationships so VML and DrawingML sidecars use their distinct relationship types.',
+					details: {
+						kind: 'vml-drawing-relationship-target-type-mismatch',
+						relationship: packageRelationshipDetails(relationship),
+						targetPart,
+					},
+				})
+			}
 			if (
 				!isWorksheetPartPath(relationship.sourcePartPath) &&
 				!isChartSheetPartPath(relationship.sourcePartPath)
@@ -5399,6 +5481,102 @@ interface WorkbookDrawingObjectOwner {
 	readonly source: 'drawingml' | 'vml' | undefined
 	readonly drawingPartPath: string
 	readonly kind: string
+}
+
+function pushDrawingAnchorIssues(
+	issues: CheckIssue[],
+	params: {
+		readonly anchor: Workbook['sheets'][number]['imageRefs'][number]['anchor']
+		readonly ownerRef: string
+		readonly kindPrefix: 'image' | 'drawing-object'
+		readonly details: Readonly<Record<string, unknown>>
+	},
+): void {
+	if (!params.anchor) return
+	if (!drawingAnchorIsWellFormed(params.anchor)) {
+		issues.push({
+			rule: 'drawing-integrity',
+			severity: 'error',
+			message: `Drawing anchor for "${params.ownerRef}" is malformed`,
+			refs: [params.ownerRef],
+			suggestedFix: 'Repair the drawing anchor coordinates before editing drawing layout metadata.',
+			details: {
+				kind: `${params.kindPrefix}-anchor-invalid`,
+				anchor: params.anchor,
+				...params.details,
+			},
+		})
+		return
+	}
+	if (
+		params.anchor.kind === 'twoCell' &&
+		(params.anchor.to.row < params.anchor.from.row ||
+			(params.anchor.to.row === params.anchor.from.row &&
+				params.anchor.to.col < params.anchor.from.col))
+	) {
+		issues.push({
+			rule: 'drawing-integrity',
+			severity: 'warning',
+			message: `Drawing anchor for "${params.ownerRef}" ends before it starts`,
+			refs: [params.ownerRef],
+			suggestedFix:
+				'Repair the drawing anchor so the end marker is after the start marker before editing layout metadata.',
+			details: {
+				kind: `${params.kindPrefix}-anchor-reversed`,
+				anchor: params.anchor,
+				...params.details,
+			},
+		})
+	}
+}
+
+function drawingAnchorIsWellFormed(
+	anchor: Workbook['sheets'][number]['imageRefs'][number]['anchor'],
+): boolean {
+	if (!anchor) return true
+	if (anchor.kind === 'absolute') {
+		return (
+			isNonNegativeFiniteNumber(anchor.x) &&
+			isNonNegativeFiniteNumber(anchor.y) &&
+			(anchor.cx === undefined || isNonNegativeFiniteNumber(anchor.cx)) &&
+			(anchor.cy === undefined || isNonNegativeFiniteNumber(anchor.cy))
+		)
+	}
+	if (!drawingAnchorMarkerIsWellFormed(anchor.from)) return false
+	if (anchor.kind === 'oneCell') {
+		return (
+			(anchor.cx === undefined || isNonNegativeFiniteNumber(anchor.cx)) &&
+			(anchor.cy === undefined || isNonNegativeFiniteNumber(anchor.cy))
+		)
+	}
+	return drawingAnchorMarkerIsWellFormed(anchor.to)
+}
+
+function drawingAnchorMarkerIsWellFormed(
+	marker: Workbook['sheets'][number]['imageRefs'][number]['anchor'] extends infer Anchor
+		? Anchor extends { readonly from: infer Marker }
+			? Marker
+			: never
+		: never,
+): boolean {
+	return (
+		typeof marker === 'object' &&
+		marker !== null &&
+		isNonNegativeInteger((marker as { readonly row?: unknown }).row) &&
+		isNonNegativeInteger((marker as { readonly col?: unknown }).col) &&
+		((marker as { readonly rowOff?: unknown }).rowOff === undefined ||
+			isNonNegativeFiniteNumber((marker as { readonly rowOff?: unknown }).rowOff)) &&
+		((marker as { readonly colOff?: unknown }).colOff === undefined ||
+			isNonNegativeFiniteNumber((marker as { readonly colOff?: unknown }).colOff))
+	)
+}
+
+function isNonNegativeInteger(value: unknown): boolean {
+	return typeof value === 'number' && Number.isInteger(value) && value >= 0
+}
+
+function isNonNegativeFiniteNumber(value: unknown): boolean {
+	return typeof value === 'number' && Number.isFinite(value) && value >= 0
 }
 
 function pushDrawingChartRelationshipIssues(
@@ -5542,6 +5720,22 @@ function checkChartStyleColorIntegrity(packageGraph?: VerifyPackageGraph): Check
 		const targetPart = relationship.resolvedTarget
 			? graphPartByPath.get(relationship.resolvedTarget)
 			: undefined
+		if (relationship.resolvedTarget && !targetPart) {
+			issues.push({
+				rule: 'chart-package-integrity',
+				severity: 'error',
+				message: `Chart style/color relationship "${relationship.id}" resolves to missing part "${relationship.resolvedTarget}"`,
+				refs: [`${relationship.relationshipPartPath}#${relationship.id}`],
+				suggestedFix:
+					'Repair the chart style/color relationship target or restore the referenced sidecar before preserving chart formatting.',
+				details: {
+					kind: 'chart-style-color-relationship-missing-target',
+					expectedFeatureFamily: expected,
+					relationship: packageRelationshipDetails(relationship),
+				},
+			})
+			continue
+		}
 		if (targetPart && targetPart.featureFamily !== expected) {
 			issues.push({
 				rule: 'chart-package-integrity',

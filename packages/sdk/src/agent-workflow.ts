@@ -1387,6 +1387,15 @@ function buildWritePolicyReport(
 		visualWriteRisk.drawingmlVmlDrift.length > 0 ||
 		visualWriteRisk.analyticsPivotRefreshRisk.length > 0
 	if (visualPartPaths.length > 0) {
+		const copiedThroughVisualPartPaths = copiedThroughParts
+			.map((part) => part.path)
+			.filter((path) => visualPartPaths.includes(path))
+		const generatedOrReplacementVisualParts = generatedParts
+			.filter((part) => visualPartPaths.includes(part.path) || isDrawingMlVisualPath(part.path))
+			.map((part) => ({ partPath: part.path, origin: part.origin }))
+		const visualPackageGraphIssues = packageGraphAudit.issues.filter((issue) =>
+			packageGraphIssuePackagePaths(issue).some((path) => visualPartPaths.includes(path)),
+		)
 		diagnostics.push({
 			code: 'visual-sidecar-preservation-risk',
 			severity: visualHasOperationRisk ? 'warning' : 'info',
@@ -1402,6 +1411,22 @@ function buildWritePolicyReport(
 			preservationPolicy: 'preserve-exact',
 			details: {
 				operationScoped: visualHasOperationRisk,
+				packageGraphAudit: {
+					policy: packageGraphAudit.policy,
+					ok: packageGraphAudit.ok,
+					issueCount: packageGraphAudit.issues.length,
+					visualIssueCount: visualPackageGraphIssues.length,
+					issues: visualPackageGraphIssues,
+				},
+				copiedThroughVisualParts: packagePartDetails(
+					packagePartByPath,
+					copiedThroughVisualPartPaths,
+				),
+				generatedOrReplacementVisualParts,
+				chartSourceRefs: collectChartSourceRefSummary(workbook),
+				drawingModel: collectDrawingModelSummary(workbook, packageGraph.parts),
+				recommendedInspection:
+					'Inspect visualInventory before visual edits; after write, inspect postWrite.packageGraphAudit plus chart source refs, DrawingML drawing relationships/media bytes, and any separate VML legacy drawing/comment layout.',
 				relatedOperations: visualWriteRisk.relatedOperations,
 				chartSourceRefDrift: visualWriteRisk.chartSourceRefDrift,
 				drawingmlVmlDrift: visualWriteRisk.drawingmlVmlDrift,
@@ -2670,6 +2695,68 @@ function sheetVisualPartPaths(
 		.filter((part) => part.featureFamily === 'preservedVml')
 		.map((part) => part.path)
 	return uniqueStrings([...drawingPartPaths, ...mediaPartPaths, ...vmlPartPaths])
+}
+
+function collectChartSourceRefSummary(workbook: Workbook): readonly Record<string, unknown>[] {
+	return workbook.chartParts.map((chart, chartIndex) => ({
+		partPath: chart.partPath,
+		...(chart.sheetName ? { sheetName: chart.sheetName } : {}),
+		...(chart.chartType ? { chartType: chart.chartType } : {}),
+		...(chart.title ? { title: chart.title } : {}),
+		chartIndex,
+		series: chart.series.map((series, seriesIndex) => ({
+			seriesIndex,
+			sourceRefs: chartSourceRefs(series, chart.sheetName),
+		})),
+	}))
+}
+
+function collectDrawingModelSummary(
+	workbook: Workbook,
+	parts: readonly XlsxPackageGraph['parts'][number][],
+): Readonly<Record<string, unknown>> {
+	return {
+		sheets: workbook.sheets
+			.filter(
+				(sheet) =>
+					sheet.drawingRefs.hasDrawing ||
+					sheet.drawingRefs.hasLegacyDrawing ||
+					sheet.imageRefs.length > 0 ||
+					sheet.drawingObjectRefs.length > 0,
+			)
+			.map((sheet) => {
+				const drawingMlObjectRefs = sheet.drawingObjectRefs.filter(
+					(object) => object.source !== 'vml',
+				)
+				const vmlObjectRefs = sheet.drawingObjectRefs.filter((object) => object.source === 'vml')
+				return {
+					sheetName: sheet.name,
+					hasDrawingMl: sheet.drawingRefs.hasDrawing,
+					hasVml: sheet.drawingRefs.hasLegacyDrawing,
+					imageCount: sheet.imageRefs.length,
+					drawingMlObjectCount: drawingMlObjectRefs.length,
+					vmlObjectCount: vmlObjectRefs.length,
+					drawingMlPartPaths: uniqueStrings([
+						...sheet.imageRefs.map((image) => image.drawingPartPath),
+						...drawingMlObjectRefs.map((object) => object.drawingPartPath),
+					]),
+					vmlPartPaths: uniqueStrings(vmlObjectRefs.map((object) => object.drawingPartPath)),
+				}
+			}),
+		packagePartCounts: {
+			drawingMl: parts.filter((part) => part.featureFamily === 'preservedDrawing').length,
+			media: parts.filter((part) => part.featureFamily === 'preservedMedia').length,
+			chart: parts.filter((part) => part.featureFamily === 'preservedChart').length,
+			chartSidecar: parts.filter(
+				(part) =>
+					part.featureFamily === 'preservedChartStyle' ||
+					part.featureFamily === 'preservedChartColor',
+			).length,
+			vml: parts.filter((part) => part.featureFamily === 'preservedVml').length,
+		},
+		distinction:
+			'DrawingML drawings, images, and charts use drawing/chart/media relationships; VML drawings are separate legacy shape/comment layout parts.',
+	}
 }
 
 function chartSourceRefs(
@@ -4600,6 +4687,16 @@ function isVisualOrAnalyticalSidecar(featureFamily: string): boolean {
 		featureFamily === 'preservedPivot' ||
 		featureFamily === 'preservedSlicer' ||
 		featureFamily === 'preservedTimeline'
+	)
+}
+
+function isDrawingMlVisualPath(path: string): boolean {
+	return (
+		/^xl\/drawings\/[^/]+\.xml$/i.test(path) ||
+		/^xl\/drawings\/_rels\/[^/]+\.xml\.rels$/i.test(path) ||
+		/^xl\/media\/[^/]+$/i.test(path) ||
+		/^xl\/charts\/[^/]+\.xml$/i.test(path) ||
+		/^xl\/charts\/_rels\/[^/]+\.xml\.rels$/i.test(path)
 	)
 }
 

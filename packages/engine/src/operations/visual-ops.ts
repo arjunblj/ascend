@@ -92,12 +92,14 @@ export function handleInsertImage(workbook: Workbook, op: InsertImageOp): Result
 	const contentTypeResult = validateImageContentType(op.contentType)
 	if (!contentTypeResult.ok) return contentTypeResult
 
-	sheet.ensureWritable()
 	const drawingPartPath =
-		op.drawingPartPath ?? sheet.imageRefs[0]?.drawingPartPath ?? 'xl/drawings/drawing1.xml'
+		op.drawingPartPath ??
+		sheet.imageRefs[0]?.drawingPartPath ??
+		sheet.drawingObjectRefs.find((object) => object.source !== 'vml')?.drawingPartPath ??
+		'xl/drawings/drawing1.xml'
 	const targetPath =
 		op.targetPath ?? nextImageTargetPath(workbook, imageExtensionForContentType(op.contentType))
-	const relId = op.relId ?? nextImageRelId(sheet)
+	const relId = op.relId ?? nextImageRelId(sheet, drawingPartPath)
 	if (
 		workbook.sheets.some((entry) =>
 			entry.imageRefs.some((image) => image.targetPath === targetPath),
@@ -109,14 +111,15 @@ export function handleInsertImage(workbook: Workbook, op: InsertImageOp): Result
 			}),
 		)
 	}
-	if (sheet.imageRefs.some((image) => image.relId === relId)) {
+	if (drawingPartRelIds(sheet, drawingPartPath).has(relId)) {
 		return err(
-			ascendError('VALIDATION_ERROR', 'insertImage targetPath or relId already exists on sheet', {
-				suggestedFix: 'Provide a unique targetPath/relId or omit them so Ascend can allocate one.',
+			ascendError('VALIDATION_ERROR', 'insertImage relId already exists in drawing part', {
+				suggestedFix: 'Provide a unique relId or omit it so Ascend can allocate one.',
 			}),
 		)
 	}
 
+	sheet.ensureWritable()
 	sheet.imageRefs.push({
 		drawingPartPath,
 		relId,
@@ -466,11 +469,34 @@ function applySparklineGroupUpdate(
 	}
 }
 
-function nextImageRelId(sheet: Workbook['sheets'][number]): string {
-	const used = new Set(sheet.imageRefs.map((image) => image.relId))
-	let index = sheet.imageRefs.length + 1
+function nextImageRelId(sheet: Workbook['sheets'][number], drawingPartPath: string): string {
+	const used = drawingPartRelIds(sheet, drawingPartPath)
+	let index = imageCountForDrawingPart(sheet, drawingPartPath) + 1
 	while (used.has(`rIdImage${index}`)) index++
 	return `rIdImage${index}`
+}
+
+function imageCountForDrawingPart(
+	sheet: Workbook['sheets'][number],
+	drawingPartPath: string,
+): number {
+	return sheet.imageRefs.filter((image) => image.drawingPartPath === drawingPartPath).length
+}
+
+function drawingPartRelIds(
+	sheet: Workbook['sheets'][number],
+	drawingPartPath: string,
+): Set<string> {
+	const used = new Set<string>()
+	for (const image of sheet.imageRefs) {
+		if (image.drawingPartPath === drawingPartPath) used.add(image.relId)
+	}
+	for (const object of sheet.drawingObjectRefs) {
+		if (object.drawingPartPath !== drawingPartPath) continue
+		for (const relId of object.relIds ?? []) used.add(relId)
+		for (const relationship of object.relationshipRefs ?? []) used.add(relationship.id)
+	}
+	return used
 }
 
 function nextImageTargetPath(workbook: Workbook, extension: string): string {

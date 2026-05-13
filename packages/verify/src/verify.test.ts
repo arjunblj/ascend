@@ -3920,6 +3920,42 @@ describe('checker', () => {
 		})
 	})
 
+	test('detects chart parts claimed by both worksheet and chartsheet owners', () => {
+		const wb = createWorkbook()
+		wb.addSheet('Data')
+		wb.chartParts.push({
+			partPath: 'xl/charts/chart1.xml',
+			sheetName: 'Data',
+			chartType: 'lineChart',
+			series: [],
+		})
+		wb.chartSheets.push({
+			name: 'Chart 1',
+			sheetId: createSheetId(),
+			relId: 'rIdChartSheet',
+			partPath: 'xl/chartsheets/sheet1.xml',
+			state: 'visible',
+			chartPartPaths: ['xl/charts/chart1.xml'],
+		})
+
+		const result = check(wb)
+		const issue = result.issues.find(
+			(i) =>
+				i.rule === 'chart-part-ownership' &&
+				i.details?.kind === 'chart-worksheet-chartsheet-owner-ambiguity',
+		)
+
+		expect(result.passed).toBe(false)
+		expect(issue?.severity).toBe('warning')
+		expect(issue?.details).toEqual({
+			kind: 'chart-worksheet-chartsheet-owner-ambiguity',
+			partPath: 'xl/charts/chart1.xml',
+			ownerSheet: 'Data',
+			ownerChartSheet: 'Chart 1',
+			chartType: 'lineChart',
+		})
+	})
+
 	test('detects drawing chart and image package integrity issues', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')
@@ -3995,6 +4031,22 @@ describe('checker', () => {
 						resolvedTarget: 'xl/drawings/vmlDrawing1.vml',
 					},
 					{
+						sourcePartPath: 'xl/worksheets/sheet1.xml',
+						relationshipPartPath: 'xl/worksheets/_rels/sheet1.xml.rels',
+						id: 'rIdWrongDrawing',
+						type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing',
+						rawTarget: '../drawings/vmlDrawing1.vml',
+						resolvedTarget: 'xl/drawings/vmlDrawing1.vml',
+					},
+					{
+						sourcePartPath: 'xl/worksheets/sheet1.xml',
+						relationshipPartPath: 'xl/worksheets/_rels/sheet1.xml.rels',
+						id: 'rIdWrongVml',
+						type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/vmlDrawing',
+						rawTarget: '../drawings/drawing1.xml',
+						resolvedTarget: 'xl/drawings/drawing1.xml',
+					},
+					{
 						sourcePartPath: 'xl/workbook.xml',
 						relationshipPartPath: 'xl/_rels/workbook.xml.rels',
 						id: 'rIdBadOwner',
@@ -4039,6 +4091,8 @@ describe('checker', () => {
 		expect(kinds.has('orphan-drawing-part')).toBe(true)
 		expect(kinds.has('drawing-missing-worksheet-chartsheet-owner')).toBe(true)
 		expect(kinds.has('vml-drawingml-ownership-ambiguity')).toBe(true)
+		expect(kinds.has('drawing-relationship-target-type-mismatch')).toBe(true)
+		expect(kinds.has('vml-drawing-relationship-target-type-mismatch')).toBe(true)
 		expect(
 			drawingIssues.find((issue) => issue.details?.kind === 'image-media-target-mismatch')?.details,
 		).toMatchObject({
@@ -4046,6 +4100,70 @@ describe('checker', () => {
 			actualTargetPath: 'xl/media/image2.png',
 			relationshipId: 'rIdImg',
 		})
+	})
+
+	test('detects malformed and reversed drawing anchors', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.imageRefs.push(
+			{
+				drawingPartPath: 'xl/drawings/drawing1.xml',
+				relId: 'rIdBadImage',
+				targetPath: 'xl/media/image1.png',
+				anchor: {
+					kind: 'oneCell',
+					from: { row: 1, col: 0, rowOff: -1 },
+				},
+			},
+			{
+				drawingPartPath: 'xl/drawings/drawing1.xml',
+				relId: 'rIdReversedImage',
+				targetPath: 'xl/media/image2.png',
+				anchor: {
+					kind: 'twoCell',
+					from: { row: 4, col: 3 },
+					to: { row: 4, col: 2 },
+				},
+			},
+		)
+		s.drawingObjectRefs.push({
+			drawingPartPath: 'xl/drawings/drawing1.xml',
+			source: 'drawingml',
+			kind: 'shape',
+			anchor: {
+				kind: 'absolute',
+				x: 0,
+				y: -1,
+			},
+		})
+
+		const result = check(wb, {
+			packageGraph: {
+				parts: [
+					{
+						path: 'xl/drawings/drawing1.xml',
+						featureFamily: 'preservedDrawing',
+					},
+				],
+				relationships: [],
+			},
+		})
+		const anchorIssues = result.issues.filter(
+			(issue) =>
+				issue.rule === 'drawing-integrity' &&
+				typeof issue.details?.kind === 'string' &&
+				issue.details.kind.includes('anchor'),
+		)
+
+		expect(result.passed).toBe(false)
+		expect(anchorIssues.map((issue) => issue.details?.kind).sort()).toEqual([
+			'drawing-object-anchor-invalid',
+			'image-anchor-invalid',
+			'image-anchor-reversed',
+		])
+		expect(
+			anchorIssues.find((issue) => issue.details?.kind === 'image-anchor-reversed')?.severity,
+		).toBe('warning')
 	})
 
 	test('detects chart style and color sidecar orphan and mismatch issues', () => {
@@ -4060,6 +4178,7 @@ describe('checker', () => {
 					{ path: 'xl/charts/style1.xml', featureFamily: 'preservedChartStyle' },
 					{ path: 'xl/charts/style2.xml', featureFamily: 'preservedChartStyle' },
 					{ path: 'xl/charts/colors1.xml', featureFamily: 'preservedChartColor' },
+					{ path: 'xl/charts/colors2.xml', featureFamily: 'preservedChartColor' },
 				],
 				relationships: [
 					{
@@ -4086,6 +4205,14 @@ describe('checker', () => {
 						rawTarget: '../charts/style1.xml',
 						resolvedTarget: 'xl/charts/style1.xml',
 					},
+					{
+						sourcePartPath: 'xl/charts/chart1.xml',
+						relationshipPartPath: 'xl/charts/_rels/chart1.xml.rels',
+						id: 'rIdMissingColor',
+						type: 'http://schemas.microsoft.com/office/2011/relationships/chartColorStyle',
+						rawTarget: 'colors9.xml',
+						resolvedTarget: 'xl/charts/colors9.xml',
+					},
 				],
 			},
 		})
@@ -4096,6 +4223,8 @@ describe('checker', () => {
 		expect(kinds.has('chart-style-color-target-mismatch')).toBe(true)
 		expect(kinds.has('chart-style-color-owner-mismatch')).toBe(true)
 		expect(kinds.has('orphan-chart-style-part')).toBe(true)
+		expect(kinds.has('orphan-chart-color-part')).toBe(true)
+		expect(kinds.has('chart-style-color-relationship-missing-target')).toBe(true)
 		expect(issues.find((issue) => issue.details?.kind === 'orphan-chart-style-part')?.refs).toEqual(
 			['xl/charts/style2.xml'],
 		)

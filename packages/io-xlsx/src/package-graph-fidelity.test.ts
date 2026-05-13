@@ -157,6 +157,54 @@ describe('XLSX package graph fidelity audits', () => {
 		)
 	})
 
+	test('reports orphan chart sidecar relationship parts by their missing chart source parts', () => {
+		const graph = inspectXlsxPackageGraph(
+			makeXlsx({
+				'[Content_Types].xml': contentTypesXml(`
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/charts/style1.xml" ContentType="application/vnd.ms-office.chartstyle+xml"/>
+  <Override PartName="/xl/charts/colors1.xml" ContentType="application/vnd.ms-office.chartcolorstyle+xml"/>
+`),
+				'_rels/.rels': relationshipsXml(`
+  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+`),
+				'xl/workbook.xml': '<workbook/>',
+				'xl/charts/style1.xml': '<cs:chartStyle/>',
+				'xl/charts/colors1.xml': '<cs:colors/>',
+				'xl/charts/_rels/chart99.xml.rels': relationshipsXml(`
+  <Relationship Id="rIdStyle" Type="http://schemas.microsoft.com/office/2011/relationships/chartStyle" Target="style1.xml"/>
+  <Relationship Id="rIdColors" Type="http://schemas.microsoft.com/office/2011/relationships/chartColorStyle" Target="colors1.xml"/>
+`),
+			}),
+		)
+
+		const issues = auditXlsxPackageGraphReadIntegrity(graph)
+		expect(issues).toContainEqual(
+			expect.objectContaining({
+				code: 'package_relationship_source',
+				severity: 'error',
+				sourcePartPath: 'xl/charts/chart99.xml',
+				relationshipPartPath: 'xl/charts/_rels/chart99.xml.rels',
+				relationshipId: 'rIdStyle',
+				featureFamily: 'preservedChartStyle',
+				suggestedAction: expect.stringContaining('orphan relationship sidecar'),
+			}),
+		)
+		expect(issues).toContainEqual(
+			expect.objectContaining({
+				code: 'package_relationship_source',
+				severity: 'error',
+				sourcePartPath: 'xl/charts/chart99.xml',
+				relationshipPartPath: 'xl/charts/_rels/chart99.xml.rels',
+				relationshipId: 'rIdColors',
+				featureFamily: 'preservedChartColor',
+				suggestedAction: expect.stringContaining('orphan relationship sidecar'),
+			}),
+		)
+	})
+
 	test('accepts empty relationship sidecars whose source part exists', () => {
 		const graph = inspectXlsxPackageGraph(
 			makeXlsx({

@@ -922,6 +922,79 @@ describe('interactive client contract', () => {
 		fullSession.close()
 	})
 
+	test('interactive promotion invalidates pre-promotion tokens when full hydration changes viewport semantics', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 1 },
+					{ ref: 'B1', value: 2 },
+				],
+			},
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'C1', formula: 'A1+B1' },
+		])
+		wb.recalc()
+
+		const session = await AscendSession.open(wb.toBytes(), { mode: 'values' })
+		const before = session.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 4,
+		})
+		expect(before.cells.find((cell) => cell.ref === 'C1')?.formula).toBeNull()
+
+		const edit = await session.apply(
+			[{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'D1', value: 9 }] }],
+			{ recalc: false },
+		)
+		expect(edit.apply.errors).toEqual([])
+		expect(edit.load.promotedToFull).toBe(true)
+		expect(
+			session.readViewportPatch({
+				sheet: 'Sheet1',
+				topRow: 0,
+				leftCol: 0,
+				rowCount: 1,
+				colCount: 4,
+				changedSince: before.changeToken,
+			}),
+		).toBeNull()
+
+		const refreshed = session.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 4,
+			changedSince: before.changeToken,
+		})
+		expect(refreshed.patch).toBeUndefined()
+		expect(refreshed.cells.find((cell) => cell.ref === 'C1')?.formula).toBe('A1+B1')
+		expect(refreshed.cells.find((cell) => cell.ref === 'D1')?.flatValue).toBe(9)
+
+		const nextEdit = await session.apply(
+			[{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'D1', value: 10 }] }],
+			{ recalc: false },
+		)
+		expect(nextEdit.apply.errors).toEqual([])
+		const resumedPatch = session.readViewportPatch({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 4,
+			changedSince: refreshed.changeToken,
+		})
+		expect(resumedPatch?.changedCells.map((cell) => [cell.ref, cell.flatValue])).toEqual([
+			['D1', 10],
+		])
+		session.close()
+	})
+
 	test('full read model reuse keeps retained read document and source bytes immutable', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] }])

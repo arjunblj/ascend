@@ -2247,11 +2247,22 @@ const scenarios: readonly Scenario[] = [
 				changedSince: viewport.changeToken,
 			}
 			const patchStart = performance.now()
-			const patch =
-				session.readViewportPatch(patchRequest) ?? session.readViewport(patchRequest).patch
+			let patch = session.readViewportPatch(patchRequest)
+			let patchMode: 'delta' | 'fresh' = 'delta'
+			if (!patch) {
+				const fresh = session.readViewport(patchRequest)
+				patch = fresh.patch ?? null
+				if (!patch) {
+					patchMode = 'fresh'
+					const editedCell = fresh.cells.find((cell) => cell.ref === target.editRef)
+					if (editedCell?.flatValue !== 80_000) {
+						throw new Error('Dense promotion memory fresh snapshot missed edited cell')
+					}
+				}
+			}
 			const patchReadMs = performance.now() - patchStart
 			const editFrameMs = performance.now() - editStart
-			if (!patch || patch.changedCells.length !== 1) {
+			if (patchMode === 'delta' && (!patch || patch.changedCells.length !== 1)) {
 				throw new Error('Dense promotion memory patch was not delta-shaped')
 			}
 			runGc()
@@ -2274,8 +2285,8 @@ const scenarios: readonly Scenario[] = [
 					archiveLargestPartUncompressedBytes: archiveFootprint.largestPartUncompressedBytes,
 					viewportCells: viewport.cells.length,
 					viewportFlatValues: viewport.flatValues.length,
-					changedCells: patch.changedCells.length,
-					patchBytes: patch.byteLength,
+					changedCells: patch?.changedCells.length ?? 0,
+					patchBytes: patch?.byteLength ?? 0,
 					openMs,
 					initialViewportMs,
 					prepareEditsMs: prepare.timings.totalMs,
@@ -2341,7 +2352,7 @@ const scenarios: readonly Scenario[] = [
 						afterClose.arrayBuffersBytes,
 						baseline.arrayBuffersBytes,
 					),
-					patchMode: 'delta',
+					patchMode,
 				},
 			}
 		},

@@ -1318,6 +1318,37 @@ describe('interactive client contract', () => {
 		expect(journalComparableState(wb)).toEqual(before)
 	})
 
+	test('journal inverse ops restore sheet moves across adjacent renames', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{ op: 'addSheet', name: 'Data' },
+			{ op: 'addSheet', name: 'Report' },
+			{ op: 'setCells', sheet: 'Report', updates: [{ ref: 'A1', value: 'report' }] },
+		])
+		const before = journalComparableState(wb)
+
+		const changed = wb.apply(
+			[
+				{ op: 'moveSheet', sheet: 'Report', position: 0 },
+				{ op: 'renameSheet', sheet: 'Report', newName: 'Summary' },
+			],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(true)
+		expect(changed.journal?.inverseOps).toEqual([
+			{ op: 'renameSheet', sheet: 'Summary', newName: 'Report' },
+			{ op: 'moveSheet', sheet: 'Report', position: 2 },
+		])
+		expect(wb.sheets).toEqual(['Summary', 'Sheet1', 'Data'])
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(journalComparableState(wb)).toEqual(before)
+	})
+
 	test('journal inverse ops restore table renames and column metadata edits', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

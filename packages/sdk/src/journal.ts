@@ -156,6 +156,11 @@ export interface MutationJournalTableStylePreimage {
 	readonly style: TableStyleInfo | null
 }
 
+export interface MutationJournalSheetMovePreimage {
+	readonly sheet: string
+	readonly position: number | null
+}
+
 export interface MutationJournalStructuralPreimage {
 	readonly sheet: string
 	readonly axis: 'row' | 'col'
@@ -218,6 +223,7 @@ export type MutationJournalPreimage =
 	| { readonly kind: 'table-column'; readonly tableColumn: MutationJournalTableColumnPreimage }
 	| { readonly kind: 'table'; readonly table: MutationJournalTablePreimage }
 	| { readonly kind: 'table-style'; readonly tableStyle: MutationJournalTableStylePreimage }
+	| { readonly kind: 'sheet-move'; readonly sheetMove: MutationJournalSheetMovePreimage }
 	| { readonly kind: 'structural'; readonly structural: MutationJournalStructuralPreimage }
 	| {
 			readonly kind: 'workbook-properties'
@@ -426,6 +432,8 @@ function buildSupportedJournalEntry(
 				preimages: [],
 				issues: [],
 			}
+		case 'moveSheet':
+			return journalMoveSheet(workbook, op, opIndex)
 		case 'addSheet':
 			return {
 				opIndex,
@@ -436,6 +444,34 @@ function buildSupportedJournalEntry(
 			}
 		default:
 			return null
+	}
+}
+
+function journalMoveSheet(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'moveSheet' }>,
+	opIndex: number,
+): DraftJournalEntry {
+	const position = workbook.sheets.findIndex((sheet) => sheet.name === op.sheet)
+	const preimage: MutationJournalSheetMovePreimage = {
+		sheet: op.sheet,
+		position: position >= 0 ? position : null,
+	}
+	const issues: MutationJournalIssue[] =
+		position >= 0
+			? []
+			: [
+					{
+						code: 'UNSUPPORTED_VALUE',
+						message: `Cannot restore sheet move for ${op.sheet} because the sheet was not found`,
+					},
+				]
+	return {
+		opIndex,
+		op,
+		inverseOps: position >= 0 ? [{ op: 'moveSheet', sheet: op.sheet, position }] : [],
+		preimages: [{ kind: 'sheet-move', sheetMove: preimage }],
+		issues,
 	}
 }
 

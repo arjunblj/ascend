@@ -536,6 +536,55 @@ describe('Ascend API server', () => {
 		}
 	})
 
+	test('preview defers path mutation renames after dependent edits', async () => {
+		const sheetName = 'Q1.Forecast'
+		const tableName = 'Sales.Δ'
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{ op: 'renameSheet', sheet: 'Sheet1', newName: sheetName },
+			{
+				op: 'setCells',
+				sheet: sheetName,
+				updates: [
+					{ ref: 'A1', value: 'Region' },
+					{ ref: 'B1', value: 'Revenue' },
+					{ ref: 'A2', value: 'North' },
+					{ ref: 'B2', value: 10 },
+				],
+			},
+			{ op: 'createTable', sheet: sheetName, ref: 'A1:B2', name: tableName, hasHeaders: true },
+		])
+		await wb.save(TEMP_FILE)
+
+		const result = await postJson('/preview', {
+			file: TEMP_FILE,
+			mutations: [
+				{ path: `/sheets/${pointerSegment(sheetName)}/name`, value: 'Summary' },
+				{ path: `/sheets/${pointerSegment(sheetName)}/cells/C1/value`, value: 'safe order' },
+				{ path: `/tables/${pointerSegment(tableName)}/name`, value: 'SalesData' },
+				{
+					path: `/tables/${pointerSegment(tableName)}/columns/Revenue/formula`,
+					value: 'SUM([Revenue])',
+				},
+			],
+		})
+
+		expect(result.status).toBe(200)
+		expect(result.body.ok).toBe(true)
+		expect(result.body.data?.pathMutations?.replayable).toBe(true)
+		expect(result.body.data?.pathMutations?.ops).toEqual([
+			{ op: 'setCells', sheet: sheetName, updates: [{ ref: 'C1', value: 'safe order' }] },
+			{
+				op: 'setTableColumn',
+				table: tableName,
+				column: 'Revenue',
+				formula: 'SUM([Revenue])',
+			},
+			{ op: 'renameSheet', sheet: sheetName, newName: 'Summary' },
+			{ op: 'renameTable', table: tableName, newName: 'SalesData' },
+		])
+	})
+
 	test('plan reports path mutation compiler errors as structured repair details', async () => {
 		const wb = AscendWorkbook.create()
 		await wb.save(TEMP_FILE)

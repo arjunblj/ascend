@@ -117,6 +117,63 @@ describe('path-addressed mutations', () => {
 		])
 	})
 
+	test('defers sheet and table renames so replayable batches still apply', () => {
+		const sheetName = 'Q1.Forecast'
+		const tableName = 'Sales.Δ'
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{ op: 'renameSheet', sheet: 'Sheet1', newName: sheetName },
+			{
+				op: 'setCells',
+				sheet: sheetName,
+				updates: [
+					{ ref: 'A1', value: 'Region' },
+					{ ref: 'B1', value: 'Revenue' },
+					{ ref: 'A2', value: 'North' },
+					{ ref: 'B2', value: 10 },
+				],
+			},
+			{ op: 'createTable', sheet: sheetName, ref: 'A1:B2', name: tableName, hasHeaders: true },
+		])
+
+		const result = wb.compilePathMutations([
+			{ path: `/sheets/${pointerSegment(sheetName)}/name`, value: 'Summary' },
+			{ path: `/sheets/${pointerSegment(sheetName)}/cells/C1/value`, value: 'still old address' },
+			{ path: `/tables/${pointerSegment(tableName)}/name`, value: 'SalesData' },
+			{
+				path: `/tables/${pointerSegment(tableName)}/columns/Revenue/formula`,
+				value: 'SUM([Revenue])',
+			},
+		])
+
+		expect(result.replayable).toBe(true)
+		expect(result.issues).toEqual([])
+		expect(result.ops).toEqual([
+			{
+				op: 'setCells',
+				sheet: sheetName,
+				updates: [{ ref: 'C1', value: 'still old address' }],
+			},
+			{
+				op: 'setTableColumn',
+				table: tableName,
+				column: 'Revenue',
+				formula: 'SUM([Revenue])',
+			},
+			{ op: 'renameSheet', sheet: sheetName, newName: 'Summary' },
+			{ op: 'renameTable', table: tableName, newName: 'SalesData' },
+		])
+
+		const applied = wb.batch(result.ops)
+		expect(applied.errors).toEqual([])
+		expect(wb.sheets).toContain('Summary')
+		expect(wb.sheet('Summary')?.cell('C1')?.value).toEqual({
+			kind: 'string',
+			value: 'still old address',
+		})
+		expect(wb.table('SalesData')?.columns).toContain('Revenue')
+	})
+
 	test('compiles sheet metadata and table metadata paths into canonical ops', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

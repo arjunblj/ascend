@@ -75,7 +75,7 @@ export function compilePathMutations(
 
 	const replayable = issues.length === 0
 	return {
-		ops: replayable ? ops : [],
+		ops: replayable ? deferRenameOperations(ops) : [],
 		mutationCount: mutations.length,
 		issueCount: issues.length,
 		issues,
@@ -685,6 +685,19 @@ function pushOperation(ops: Operation[], op: Operation): void {
 		return
 	}
 	ops.push(op)
+}
+
+function deferRenameOperations(ops: readonly Operation[]): Operation[] {
+	const immediate: Operation[] = []
+	const deferred: Operation[] = []
+	for (const op of ops) {
+		if (op.op === 'renameSheet' || op.op === 'renameTable') {
+			deferred.push(op)
+			continue
+		}
+		pushOperation(immediate, op)
+	}
+	return [...immediate, ...deferred]
 }
 
 function parseMutationPath(path: PathMutationPath): ParsedPath {

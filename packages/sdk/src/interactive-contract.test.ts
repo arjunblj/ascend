@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { DEFAULT_STYLE_ID } from '@ascend/core'
 import { numberValue } from '@ascend/schema'
+import type { InteractiveViewportCell, InteractiveViewportPatch } from './index.ts'
 import { AscendSession, AscendWorkbook } from './index.ts'
 import { buildMutationJournal } from './journal.ts'
 
@@ -138,12 +139,13 @@ describe('interactive client contract', () => {
 			colCount: 8,
 			changedSince: viewport.changeToken,
 		})
-		expect(repeated.patch).toEqual({
+		expect(repeated.patch).toMatchObject({
 			baseToken: viewport.changeToken,
 			changedCells: [],
 			removedRefs: [],
 			byteLength: 36,
 		})
+		expect(repeated.patch?.changeToken).toBe(repeated.changeToken)
 		session.close()
 	})
 
@@ -199,6 +201,8 @@ describe('interactive client contract', () => {
 			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 5 }] },
 		])
 		expect(edit.apply.errors).toEqual([])
+		expect(edit.timings.applyMs).toBeNumber()
+		expect(edit.timings.totalMs).toBeGreaterThanOrEqual(edit.timings.applyMs)
 		expect(edit.load.read).toMatchObject({ mode: 'formula', isPartial: true })
 		expect(edit.load.write).toMatchObject({ mode: 'full', isPartial: false })
 		expect(edit.load.promotedToFull).toBe(true)
@@ -217,6 +221,159 @@ describe('interactive client contract', () => {
 		expect(after.patch?.changedCells.map((cell) => cell.ref).sort()).toEqual(['A1', 'B1'])
 		expect(after.cells.find((cell) => cell.ref === 'A1')?.flatValue).toBe(5)
 		expect(after.cells.find((cell) => cell.ref === 'B1')?.flatValue).toBe(10)
+		session.close()
+	})
+
+	test('interactive pull patches materialize to the same cells as a fresh viewport read', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 1 },
+					{ ref: 'C1', value: 3 },
+				],
+			},
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'B1', formula: 'A1*2' },
+		])
+		wb.recalc()
+
+		const session = await AscendSession.open(wb.toBytes(), { mode: 'interactive' })
+		const before = session.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 4,
+		})
+		const edit = await session.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 4 },
+					{ ref: 'D1', value: 8 },
+				],
+			},
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'B1', formula: 'A1*3' },
+			{ op: 'clearRange', sheet: 'Sheet1', range: 'C1:C1', what: 'all' },
+			{ op: 'setNumberFormat', sheet: 'Sheet1', range: 'D1:D1', format: '0.00' },
+		])
+		expect(edit.apply.errors).toEqual([])
+
+		const patch = session.readViewportPatch({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 4,
+			changedSince: before.changeToken,
+		})
+		expect(patch?.baseToken).toBe(before.changeToken)
+		expect(patch?.changeToken).toMatch(/^1:\d+$/)
+		expect(patch?.changedCells.map((cell) => cell.ref).sort()).toEqual(['A1', 'B1', 'D1'])
+		expect(patch?.removedRefs).toEqual(['C1'])
+		if (!patch) throw new Error('expected viewport patch')
+		expect(patch.byteLength).toBe(
+			JSON.stringify({ changedCells: patch.changedCells, removedRefs: patch.removedRefs }).length,
+		)
+
+		const fresh = session.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 4,
+		})
+		expect(materializeViewportPatch(before.cells, patch)).toEqual(interactiveCellMap(fresh.cells))
+		session.close()
+	})
+
+	test('interactive pull patches refuse metadata and layout edits that need fresh viewport state', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] }])
+
+		const session = await AscendSession.open(wb.toBytes(), { mode: 'interactive' })
+		const before = session.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 2,
+			colCount: 1,
+		})
+		const commentEdit = await session.apply([
+			{ op: 'setComment', sheet: 'Sheet1', ref: 'A1', text: 'needs review' },
+		])
+		expect(commentEdit.apply.errors).toEqual([])
+		expect(
+			session.readViewportPatch({
+				sheet: 'Sheet1',
+				topRow: 0,
+				leftCol: 0,
+				rowCount: 2,
+				colCount: 1,
+				changedSince: before.changeToken,
+			}),
+		).toBeNull()
+
+		const afterComment = session.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 2,
+			colCount: 1,
+			changedSince: before.changeToken,
+		})
+		expect(afterComment.comments).toHaveLength(1)
+		expect(afterComment.cells.find((cell) => cell.ref === 'A1')?.flags.comment).toBe(true)
+
+		const layoutEdit = await session.apply([
+			{ op: 'setRowHeight', sheet: 'Sheet1', row: 0, height: 28 },
+		])
+		expect(layoutEdit.apply.errors).toEqual([])
+		expect(
+			session.readViewportPatch({
+				sheet: 'Sheet1',
+				topRow: 0,
+				leftCol: 0,
+				rowCount: 2,
+				colCount: 1,
+				changedSince: afterComment.changeToken,
+			}),
+		).toBeNull()
+		session.close()
+	})
+
+	test('interactive pull patches reject tokens older than the retained change log', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] }])
+
+		const session = await AscendSession.open(wb.toBytes(), { mode: 'interactive' })
+		const before = session.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 1,
+		})
+		for (let i = 0; i < 130; i++) {
+			const edit = await session.apply([
+				{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: i + 2 }] },
+			])
+			expect(edit.apply.errors).toEqual([])
+		}
+
+		expect(
+			session.readViewportPatch({
+				sheet: 'Sheet1',
+				topRow: 0,
+				leftCol: 0,
+				rowCount: 1,
+				colCount: 1,
+				changedSince: before.changeToken,
+			}),
+		).toBeNull()
 		session.close()
 	})
 
@@ -2374,6 +2531,22 @@ describe('interactive client contract', () => {
 		expect(wb.sheet(inputSheet)?.cell('A2')?.value).toEqual({ kind: 'number', value: 5 })
 	})
 })
+
+function materializeViewportPatch(
+	cells: readonly InteractiveViewportCell[],
+	patch: InteractiveViewportPatch,
+): Map<string, InteractiveViewportCell> {
+	const next = interactiveCellMap(cells)
+	for (const ref of patch.removedRefs) next.delete(ref)
+	for (const cell of patch.changedCells) next.set(cell.ref, cell)
+	return next
+}
+
+function interactiveCellMap(
+	cells: readonly InteractiveViewportCell[],
+): Map<string, InteractiveViewportCell> {
+	return new Map(cells.map((cell) => [cell.ref, cell]))
+}
 
 function quoteSheet(sheet: string): string {
 	return `'${sheet.replace(/'/g, "''")}'`

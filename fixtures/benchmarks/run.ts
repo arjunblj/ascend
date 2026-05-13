@@ -1401,23 +1401,36 @@ const scenarios: readonly Scenario[] = [
 				recalc: false,
 			})
 			if (edit.apply.errors.length > 0) throw new Error('Patch-stream edit failed')
-			const viewport = state.session.readViewport({
+			const patchStart = performance.now()
+			const patchRequest = {
 				sheet: 'Sheet1',
 				topRow: 0,
 				leftCol: 0,
 				rowCount: 250,
 				colCount: 20,
 				changedSince: state.lastToken,
-			})
-			state.lastToken = viewport.changeToken
-			if (!viewport.patch || viewport.patch.changedCells.length !== 100) {
+			}
+			const patch =
+				state.session.readViewportPatch(patchRequest) ??
+				state.session.readViewport(patchRequest).patch
+			const patchReadMs = performance.now() - patchStart
+			if (!patch || patch.changedCells.length !== 100) {
 				throw new Error('Patch-stream benchmark returned an unexpected patch')
 			}
+			state.lastToken = patch.changeToken
 			return {
 				assertions: {
-					changedCells: viewport.patch.changedCells.length,
-					removedRefs: viewport.patch.removedRefs.length,
-					patchBytes: viewport.patch.byteLength,
+					changedCells: patch.changedCells.length,
+					removedRefs: patch.removedRefs.length,
+					patchBytes: patch.byteLength,
+					sessionApplyMs: edit.timings.totalMs,
+					ensureMutableWorkbookMs: edit.timings.ensureMutableWorkbookMs,
+					applyMs: edit.timings.applyMs,
+					recalcMs: edit.timings.recalcMs,
+					generationSnapshotMs: edit.timings.generationSnapshotMs,
+					inspectWriteMs: edit.timings.inspectWriteMs,
+					patchReadMs,
+					patchMode: 'delta',
 				},
 			}
 		},

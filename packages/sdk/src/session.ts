@@ -4,6 +4,7 @@ import { readFile, stat } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import {
 	DEFAULT_STYLE_ID,
+	parseA1Safe,
 	parseRange,
 	RangeIndex,
 	type RangeIndexEntry,
@@ -147,6 +148,7 @@ export interface InteractiveViewportLayoutEntry {
 
 export interface InteractiveViewportPatch {
 	readonly baseToken: string
+	readonly changeToken: string
 	readonly changedCells: readonly InteractiveViewportCell[]
 	readonly removedRefs: readonly string[]
 	readonly byteLength: number
@@ -187,6 +189,16 @@ export interface AscendSessionApplyOptions extends Pick<ApplyOptions, 'journal'>
 	readonly recalc?: boolean
 }
 
+export interface AscendSessionApplyTimings {
+	readonly inspectReadMs: number
+	readonly ensureMutableWorkbookMs: number
+	readonly applyMs: number
+	readonly recalcMs: number
+	readonly generationSnapshotMs: number
+	readonly inspectWriteMs: number
+	readonly totalMs: number
+}
+
 export interface AscendSessionApplyResult {
 	readonly apply: import('./types.ts').ApplyResult
 	readonly recalc: import('./types.ts').RecalcResult | null
@@ -202,6 +214,7 @@ export interface AscendSessionApplyResult {
 		readonly formulas: number
 		readonly styles: number
 	}
+	readonly timings: AscendSessionApplyTimings
 }
 
 interface SessionFileIdentity {
@@ -223,6 +236,11 @@ interface SessionCacheEntry {
 	readonly document: WorkbookDocument
 	readonly sizeBytes: number
 	accessedAt: number
+}
+
+interface InteractiveChangeEntry {
+	readonly generation: number
+	readonly refs: ReadonlySet<string> | null
 }
 
 export interface SessionCacheOptions {
@@ -767,6 +785,7 @@ export class AscendSession {
 	private mutableWorkbook: AscendWorkbook | null = null
 	private documentGeneration = 0
 	private changeVersion = 0
+	private readonly recentChanges: InteractiveChangeEntry[] = []
 	private readonly viewportSnapshots = new Map<
 		string,
 		{
@@ -813,29 +832,99 @@ export class AscendSession {
 		const previous = this.viewportSnapshots.get(snapshotKey)
 		this.viewportSnapshots.set(snapshotKey, { token: changeToken, request, cells: currentCells })
 		if (!previous || previous.token !== request.changedSince) return result
-		const patch = diffInteractiveViewportCells(previous.token, previous.cells, currentCells)
+		const patch = diffInteractiveViewportCells(
+			previous.token,
+			changeToken,
+			previous.cells,
+			currentCells,
+		)
 		return { ...result, patch }
+	}
+
+	readViewportPatch(request: InteractiveViewportRequest): InteractiveViewportPatch | null {
+		if (!request.changedSince) return null
+		const snapshotKey = interactiveViewportSnapshotKey(request)
+		const previous = this.viewportSnapshots.get(snapshotKey)
+		if (!previous || previous.token !== request.changedSince) return null
+		const baseGeneration = interactiveTokenGeneration(request.changedSince)
+		if (baseGeneration === null) return null
+		const refs = this.changedRefsSince(baseGeneration)
+		if (!refs) return null
+		if (!this.mutableWorkbook) return null
+		const context = createInteractiveViewportContext(this.mutableWorkbook, request)
+		const changeToken = `${this.documentGeneration}:${this.changeVersion++}`
+		const changedCells: InteractiveViewportCell[] = []
+		const removedRefs: string[] = []
+		const nextCells = new Map(previous.cells)
+		for (const fullRef of refs) {
+			const parsed = splitInteractiveFullRef(fullRef, context.workbook)
+			if (!parsed || parsed.sheet !== request.sheet) continue
+			if (!cellInRange(parsed.row, parsed.col, context.viewport)) continue
+			const cell = context.sheet.cells.get(parsed.row, parsed.col)
+			if (!cell) {
+				if (nextCells.delete(parsed.ref)) removedRefs.push(parsed.ref)
+				continue
+			}
+			const current = interactiveViewportCellFromContent(
+				context,
+				parsed.row,
+				parsed.col,
+				cell.value,
+				cell.formula,
+				cell.formulaInfo,
+			)
+			const before = previous.cells.get(parsed.ref)
+			nextCells.set(parsed.ref, current)
+			if (!before || JSON.stringify(before) !== JSON.stringify(current)) changedCells.push(current)
+		}
+		this.viewportSnapshots.set(snapshotKey, {
+			token: changeToken,
+			request: previous.request,
+			cells: nextCells,
+		})
+		return {
+			baseToken: request.changedSince,
+			changeToken,
+			changedCells,
+			removedRefs,
+			byteLength: JSON.stringify({ changedCells, removedRefs }).length,
+		}
 	}
 
 	async apply(
 		ops: readonly Operation[],
 		options: AscendSessionApplyOptions = {},
 	): Promise<AscendSessionApplyResult> {
+		const totalStart = performance.now()
+		const inspectReadStart = performance.now()
 		const readLoad = this.session.inspect().load
+		const inspectReadMs = performance.now() - inspectReadStart
+		const ensureStart = performance.now()
 		const workbook = await this.ensureMutableWorkbook()
+		const ensureMutableWorkbookMs = performance.now() - ensureStart
+		const applyStart = performance.now()
 		const apply = workbook.apply(ops, {
 			transaction: true,
 			...(options.journal !== undefined ? { journal: options.journal } : {}),
 		})
+		const applyMs = performance.now() - applyStart
 		let recalc: import('./types.ts').RecalcResult | null = null
+		let recalcMs = 0
 		if (apply.errors.length === 0 && apply.recalcRequired && options.recalc !== false) {
+			const recalcStart = performance.now()
 			recalc = workbook.recalc()
+			recalcMs = performance.now() - recalcStart
 		}
 		if (apply.errors.length === 0) {
 			this.documentGeneration += 1
+			this.recordInteractiveChanges(ops, apply, recalc)
 		}
+		const generationStart = performance.now()
 		const generations = workbook.readSnapshotInfo().generations
+		const generationSnapshotMs = performance.now() - generationStart
+		const inspectWriteStart = performance.now()
 		const writeLoad = workbook.inspect().load
+		const inspectWriteMs = performance.now() - inspectWriteStart
 		return {
 			apply,
 			recalc,
@@ -845,6 +934,15 @@ export class AscendSession {
 				promotedToFull: readLoad.isPartial && !writeLoad.isPartial,
 			},
 			generation: { session: this.documentGeneration, ...generations },
+			timings: {
+				inspectReadMs,
+				ensureMutableWorkbookMs,
+				applyMs,
+				recalcMs,
+				generationSnapshotMs,
+				inspectWriteMs,
+				totalMs: performance.now() - totalStart,
+			},
 		}
 	}
 
@@ -890,6 +988,31 @@ export class AscendSession {
 			})
 		}
 	}
+
+	private recordInteractiveChanges(
+		ops: readonly Operation[],
+		apply: import('./types.ts').ApplyResult,
+		recalc: import('./types.ts').RecalcResult | null,
+	): void {
+		this.recentChanges.push({
+			generation: this.documentGeneration,
+			refs: collectInteractiveChangeRefs(ops, apply, recalc),
+		})
+		if (this.recentChanges.length > 128)
+			this.recentChanges.splice(0, this.recentChanges.length - 128)
+	}
+
+	private changedRefsSince(baseGeneration: number): Set<string> | null {
+		const oldest = this.recentChanges[0]
+		if (oldest && oldest.generation > baseGeneration + 1) return null
+		const refs = new Set<string>()
+		for (const entry of this.recentChanges) {
+			if (entry.generation <= baseGeneration) continue
+			if (!entry.refs) return null
+			for (const ref of entry.refs) refs.add(ref)
+		}
+		return refs
+	}
 }
 
 function interactiveOpenOptions(options: AscendSessionOpenOptions): WorkbookLoadOptions {
@@ -914,6 +1037,69 @@ function readInteractiveViewport(
 	sessionGeneration: number,
 	changeToken: string,
 ): InteractiveViewportResult {
+	const context = createInteractiveViewportContext(view, request)
+	const cells: InteractiveViewportCell[] = []
+	const flatValues = Array.from(
+		{ length: viewportCellCount(context.viewport) },
+		() => null,
+	) as Array<number | string | boolean | null>
+	const displayText = Array.from({ length: viewportCellCount(context.viewport) }, () => '')
+	context.sheet.cells.forEachCellContentInRange(
+		context.viewport,
+		(row, col, value, formula, formulaBinding) => {
+			const cell = interactiveViewportCellFromContent(
+				context,
+				row,
+				col,
+				value,
+				formula,
+				formulaBinding,
+			)
+			const index = viewportFlatIndex(context.viewport, row, col)
+			flatValues[index] = cell.flatValue
+			displayText[index] = cell.displayText
+			cells.push(cell)
+		},
+	)
+	return {
+		sheet: request.sheet,
+		requested: context.requested,
+		viewport: context.viewport,
+		generation: {
+			session: sessionGeneration,
+			workbook: context.snapshot.generations.workbook,
+			sheetMetadata: context.snapshot.generations.sheetMetadata,
+			formulas: context.snapshot.generations.formulas,
+			styles: context.snapshot.generations.styles,
+		},
+		changeToken,
+		load: context.snapshot.load,
+		rowCount: context.viewport.end.row - context.viewport.start.row + 1,
+		colCount: context.viewport.end.col - context.viewport.start.col + 1,
+		cells,
+		flatValues,
+		displayText,
+		rowLayout: rowLayout(context.sheet, context.viewport),
+		colLayout: colLayout(context.sheet, context.viewport),
+		frozen: { rows: context.sheet.frozenRows, cols: context.sheet.frozenCols },
+		merges: context.merges,
+		comments: [...context.sheet.comments.entries()]
+			.filter(([ref]) => cellRefInRange(ref, context.viewport))
+			.map(([ref, comment]) => ({ ref, ...comment })),
+		hyperlinks: [...context.sheet.hyperlinks.entries()]
+			.filter(([ref]) => cellRefInRange(ref, context.viewport))
+			.map(([ref, hyperlink]) => ({ ref, ...hyperlink })),
+		dataValidations: context.dataValidations,
+		conditionalFormats: context.conditionalFormats,
+		tables: context.tables,
+		autoFilter: context.autoFilter,
+	}
+}
+
+function createInteractiveViewportContext(
+	view: WorkbookReadView,
+	request: InteractiveViewportRequest,
+) {
 	const snapshot = view.readSnapshotInfo()
 	const workbook = view.getWorkbookModel()
 	const sheet = workbook.getSheet(request.sheet)
@@ -933,8 +1119,6 @@ function readInteractiveViewport(
 		request.colCount + Math.max(0, request.overscanCols ?? 0) * 2,
 	)
 	const sheetIndex = workbook.sheets.findIndex((candidate) => candidate.name === request.sheet)
-	const comments = sheet.comments
-	const hyperlinks = sheet.hyperlinks
 	const mergeEntries = RangeIndex.fromRanges(sheet.merges, (merge) => merge).intersectingEntries(
 		viewport,
 	)
@@ -950,103 +1134,81 @@ function readInteractiveViewport(
 		view.inspectSheet(request.sheet)?.tables ?? [],
 		(table) => table.ref,
 	).intersectingEntries(viewport)
-	const merges = mergeEntries.map((entry) => entry.value)
-	const dataValidations = uniqueRangeIndexValues(validationEntries)
-	const conditionalFormats = uniqueRangeIndexValues(conditionalFormatEntries)
-	const tables = uniqueRangeIndexValues(tableEntries)
-	const mergeMask = rangeMaskOffsets(
-		mergeEntries.map((entry) => entry.range),
-		viewport,
-	)
-	const validationMask = rangeMaskOffsets(
-		validationEntries.map((entry) => entry.range),
-		viewport,
-	)
-	const conditionalFormatMask = rangeMaskOffsets(
-		conditionalFormatEntries.map((entry) => entry.range),
-		viewport,
-	)
-	const tableMask = rangeMaskOffsets(
-		tableEntries.map((entry) => entry.range),
-		viewport,
-	)
-	const autoFilter =
-		sheet.autoFilter && sqrefIntersects(sheet.autoFilter.ref, viewport) ? sheet.autoFilter : null
-	const cells: InteractiveViewportCell[] = []
-	const flatValues = Array.from({ length: viewportCellCount(viewport) }, () => null) as Array<
-		number | string | boolean | null
-	>
-	const displayText = Array.from({ length: viewportCellCount(viewport) }, () => '')
-	sheet.cells.forEachCellContentInRange(viewport, (row, col, value, formula, formulaBinding) => {
-		const ref = toA1({ row, col })
-		const styleId = sheet.cells.readStyleId(row, col) ?? DEFAULT_STYLE_ID
-		const formulaText =
-			sheetIndex >= 0
-				? resolveCellFormulaText(workbook, sheetIndex, row, col, {
-						formula,
-						formulaInfo: formulaBinding,
-					})
-				: formula
-		const flatValue = flattenViewportValue(value)
-		const display = formatStyledDisplayCellValue(value, workbook.styles.get(styleId), {
-			dateSystem: workbook.calcSettings.dateSystem,
-		})
-		const index = viewportFlatIndex(viewport, row, col)
-		flatValues[index] = flatValue
-		displayText[index] = display
-		cells.push({
-			row,
-			col,
-			ref,
-			value,
-			flatValue,
-			displayText: display,
-			formula: formulaText,
-			formulaBinding: formulaBinding ?? null,
-			styleId,
-			flags: {
-				formula: formulaText !== null,
-				comment: comments.has(ref),
-				hyperlink: hyperlinks.has(ref),
-				merged: mergeMask.has(index),
-				validation: validationMask.has(index),
-				conditionalFormat: conditionalFormatMask.has(index),
-				table: tableMask.has(index),
-			},
-		})
-	})
 	return {
-		sheet: request.sheet,
+		snapshot,
+		workbook,
+		sheet,
 		requested,
 		viewport,
-		generation: {
-			session: sessionGeneration,
-			workbook: snapshot.generations.workbook,
-			sheetMetadata: snapshot.generations.sheetMetadata,
-			formulas: snapshot.generations.formulas,
-			styles: snapshot.generations.styles,
+		sheetIndex,
+		comments: sheet.comments,
+		hyperlinks: sheet.hyperlinks,
+		merges: mergeEntries.map((entry) => entry.value),
+		dataValidations: uniqueRangeIndexValues(validationEntries),
+		conditionalFormats: uniqueRangeIndexValues(conditionalFormatEntries),
+		tables: uniqueRangeIndexValues(tableEntries),
+		autoFilter:
+			sheet.autoFilter && sqrefIntersects(sheet.autoFilter.ref, viewport) ? sheet.autoFilter : null,
+		mergeMask: rangeMaskOffsets(
+			mergeEntries.map((entry) => entry.range),
+			viewport,
+		),
+		validationMask: rangeMaskOffsets(
+			validationEntries.map((entry) => entry.range),
+			viewport,
+		),
+		conditionalFormatMask: rangeMaskOffsets(
+			conditionalFormatEntries.map((entry) => entry.range),
+			viewport,
+		),
+		tableMask: rangeMaskOffsets(
+			tableEntries.map((entry) => entry.range),
+			viewport,
+		),
+	}
+}
+
+function interactiveViewportCellFromContent(
+	context: ReturnType<typeof createInteractiveViewportContext>,
+	row: number,
+	col: number,
+	value: CellValue,
+	formula: string | null,
+	formulaBinding: import('@ascend/core').CellFormulaBinding | undefined,
+): InteractiveViewportCell {
+	const ref = toA1({ row, col })
+	const styleId = context.sheet.cells.readStyleId(row, col) ?? DEFAULT_STYLE_ID
+	const formulaText =
+		context.sheetIndex >= 0
+			? resolveCellFormulaText(context.workbook, context.sheetIndex, row, col, {
+					formula,
+					formulaInfo: formulaBinding,
+				})
+			: formula
+	const flatValue = flattenViewportValue(value)
+	const display = formatStyledDisplayCellValue(value, context.workbook.styles.get(styleId), {
+		dateSystem: context.workbook.calcSettings.dateSystem,
+	})
+	const index = viewportFlatIndex(context.viewport, row, col)
+	return {
+		row,
+		col,
+		ref,
+		value,
+		flatValue,
+		displayText: display,
+		formula: formulaText,
+		formulaBinding: formulaBinding ?? null,
+		styleId,
+		flags: {
+			formula: formulaText !== null,
+			comment: context.comments.has(ref),
+			hyperlink: context.hyperlinks.has(ref),
+			merged: context.mergeMask.has(index),
+			validation: context.validationMask.has(index),
+			conditionalFormat: context.conditionalFormatMask.has(index),
+			table: context.tableMask.has(index),
 		},
-		changeToken,
-		load: snapshot.load,
-		rowCount: viewport.end.row - viewport.start.row + 1,
-		colCount: viewport.end.col - viewport.start.col + 1,
-		cells,
-		flatValues,
-		displayText,
-		rowLayout: rowLayout(sheet, viewport),
-		colLayout: colLayout(sheet, viewport),
-		frozen: { rows: sheet.frozenRows, cols: sheet.frozenCols },
-		merges,
-		comments: [...sheet.comments.entries()]
-			.filter(([ref]) => cellRefInRange(ref, viewport))
-			.map(([ref, comment]) => ({ ref, ...comment })),
-		hyperlinks: [...sheet.hyperlinks.entries()]
-			.filter(([ref]) => cellRefInRange(ref, viewport))
-			.map(([ref, hyperlink]) => ({ ref, ...hyperlink })),
-		dataValidations,
-		conditionalFormats,
-		tables,
-		autoFilter,
 	}
 }
 
@@ -1180,6 +1342,7 @@ function interactiveCellMap(
 
 function diffInteractiveViewportCells(
 	baseToken: string,
+	changeToken: string,
 	previous: ReadonlyMap<string, InteractiveViewportCell>,
 	current: ReadonlyMap<string, InteractiveViewportCell>,
 ): InteractiveViewportPatch {
@@ -1194,10 +1357,65 @@ function diffInteractiveViewportCells(
 	}
 	return {
 		baseToken,
+		changeToken,
 		changedCells,
 		removedRefs,
 		byteLength: JSON.stringify({ changedCells, removedRefs }).length,
 	}
+}
+
+function interactiveTokenGeneration(token: string): number | null {
+	const sep = token.indexOf(':')
+	if (sep < 0) return null
+	const generationText = token.slice(0, sep)
+	const versionText = token.slice(sep + 1)
+	if (!/^\d+$/.test(generationText) || !/^\d+$/.test(versionText)) return null
+	const generation = Number(generationText)
+	return Number.isSafeInteger(generation) ? generation : null
+}
+
+function collectInteractiveChangeRefs(
+	ops: readonly Operation[],
+	apply: import('./types.ts').ApplyResult,
+	recalc: import('./types.ts').RecalcResult | null,
+): Set<string> | null {
+	if (ops.some((op) => !isCellLocalViewportPatchOperation(op))) return null
+	const refs = new Set<string>()
+	for (const region of apply.dirtyRegions) {
+		for (const ref of region.refs) refs.add(ref)
+	}
+	for (const region of recalc?.dirtyRegions ?? []) {
+		for (const ref of region.refs) refs.add(ref)
+	}
+	for (const ref of recalc?.changed ?? []) refs.add(ref)
+	return refs
+}
+
+function isCellLocalViewportPatchOperation(op: Operation): boolean {
+	switch (op.op) {
+		case 'setCells':
+		case 'setFormula':
+		case 'fillFormula':
+		case 'clearRange':
+		case 'setNumberFormat':
+		case 'setStyle':
+			return true
+		default:
+			return false
+	}
+}
+
+function splitInteractiveFullRef(
+	fullRef: string,
+	workbook: ReturnType<WorkbookReadView['getWorkbookModel']>,
+): { sheet: string; ref: string; row: number; col: number } | null {
+	const bang = fullRef.lastIndexOf('!')
+	const sheet = bang >= 0 ? fullRef.slice(0, bang).replace(/^'|'$/g, '') : workbook.sheets[0]?.name
+	const ref = bang >= 0 ? fullRef.slice(bang + 1) : fullRef
+	if (!sheet || !workbook.getSheet(sheet)) return null
+	const parsed = parseA1Safe(ref)
+	if (!parsed) return null
+	return { sheet, ref, row: parsed.row, col: parsed.col }
 }
 
 function parseRangeRef(range: string, defaultSheet: string): { sheetName: string; ref: string } {

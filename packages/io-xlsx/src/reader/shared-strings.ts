@@ -29,12 +29,13 @@ export function parseSharedStrings(
 	xml: string,
 	options: {
 		readonly normalize?: (value: CellValue) => CellValue
+		readonly normalizeString?: (value: string) => CellValue
 		readonly lazy?: boolean
 	} = {},
 ): SharedStringResolver {
 	xml = normalizeMainSpreadsheetNamespacePrefix(xml)
-	if (options.lazy) return createLazySharedStrings(xml, options.normalize)
-	return createEagerSharedStrings(xml, options.normalize)
+	if (options.lazy) return createLazySharedStrings(xml, options.normalize, options.normalizeString)
+	return createEagerSharedStrings(xml, options.normalize, options.normalizeString)
 }
 
 export function emptySharedStrings(): SharedStringResolver {
@@ -52,8 +53,9 @@ export function emptySharedStrings(): SharedStringResolver {
 function createEagerSharedStrings(
 	xml: string,
 	normalize?: (value: CellValue) => CellValue,
+	normalizeString?: (value: string) => CellValue,
 ): SharedStringResolver {
-	const entries = parseSharedStringEntries(xml, normalize)
+	const entries = parseSharedStringEntries(xml, normalize, normalizeString)
 	if (entries.length === 0 && xml.includes('<si')) {
 		const fallback = parseSharedStringEntriesWithDom(xml, normalize)
 		if (fallback.length > 0) {
@@ -85,6 +87,7 @@ function createEagerSharedStrings(
 function createLazySharedStrings(
 	xml: string,
 	normalize?: (value: CellValue) => CellValue,
+	normalizeString?: (value: string) => CellValue,
 ): SharedStringResolver {
 	const offsets: number[] = []
 	let cursor = 0
@@ -153,7 +156,14 @@ function createLazySharedStrings(
 				plainTextEntries[index] !== undefined &&
 				plainTextEntries[index] !== null
 			) {
-				const value = stringValue(plainTextEntries[index] ?? '')
+				const text = plainTextEntries[index] ?? ''
+				if (normalizeString) {
+					const result = normalizeString(text)
+					entries[index] = result
+					resolved[index] = 1
+					return result
+				}
+				const value = stringValue(text)
 				const result = normalize ? normalize(value) : value
 				entries[index] = result
 				resolved[index] = 1
@@ -237,6 +247,7 @@ function endsSimplePlainSharedString(xml: string, start: number): boolean {
 function parseSharedStringEntries(
 	xml: string,
 	normalize?: (value: CellValue) => CellValue,
+	normalizeString?: (value: string) => CellValue,
 ): CellValue[] {
 	const entries: CellValue[] = []
 	let cursor = 0
@@ -245,26 +256,47 @@ function parseSharedStringEntries(
 		if (open === -1) break
 		const fastPlain = parseSimplePlainSharedStringEntry(xml, open)
 		if (fastPlain !== undefined) {
-			const parsed = stringValue(fastPlain.text)
-			entries.push(normalize ? normalize(parsed) : parsed)
+			entries.push(
+				normalizeString
+					? normalizeString(fastPlain.text)
+					: normalizeCellValue(stringValue(fastPlain.text), normalize),
+			)
 			cursor = fastPlain.next
 			continue
 		}
 		const tagEnd = findTagEnd(xml, open)
 		if (tagEnd === -1) break
 		if (isSelfClosingTag(xml, open, tagEnd)) {
-			const parsed: CellValue = stringValue('')
-			entries.push(normalize ? normalize(parsed) : parsed)
+			entries.push(
+				normalizeString ? normalizeString('') : normalizeCellValue(stringValue(''), normalize),
+			)
 			cursor = tagEnd + 1
 			continue
 		}
 		const close = xml.indexOf('</si>', tagEnd + 1)
 		if (close === -1) break
 		const parsed = parseSharedStringEntry(xml, tagEnd + 1, close)
-		entries.push(normalize ? normalize(parsed) : parsed)
+		entries.push(normalizeSharedStringValue(parsed, normalize, normalizeString))
 		cursor = close + 5
 	}
 	return entries
+}
+
+function normalizeSharedStringValue(
+	value: CellValue,
+	normalize?: (value: CellValue) => CellValue,
+	normalizeString?: (value: string) => CellValue,
+): CellValue {
+	return value.kind === 'string' && normalizeString
+		? normalizeString(value.value)
+		: normalizeCellValue(value, normalize)
+}
+
+function normalizeCellValue(
+	value: CellValue,
+	normalize?: (value: CellValue) => CellValue,
+): CellValue {
+	return normalize ? normalize(value) : value
 }
 
 function parseSharedStringEntry(xml: string, start: number, end: number): CellValue {

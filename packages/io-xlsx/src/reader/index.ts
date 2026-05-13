@@ -499,7 +499,12 @@ export function readXlsx(
 				? parseSharedStrings(ssXml, {
 						...(valuesOnly || formulaOnly
 							? {}
-							: { normalize: (value) => valuePool?.internValue(value) ?? value }),
+							: {
+									normalize: (value) => valuePool?.internValue(value) ?? value,
+									...(valuePool
+										? { normalizeString: (value: string) => valuePool.internStringValue(value) }
+										: {}),
+								}),
 						lazy: valuesOnly || formulaOnly || selectedSheets !== null,
 					})
 				: emptySharedStrings()

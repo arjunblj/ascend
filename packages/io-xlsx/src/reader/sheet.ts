@@ -143,6 +143,15 @@ export class ValueInternPool {
 		return value
 	}
 
+	internStringValue(value: string): CellValue {
+		const text = this.internString(value)
+		const cached = this.stringValues.get(text)
+		if (cached) return cached
+		const interned = stringValue(text)
+		this.stringValues.set(text, interned)
+		return interned
+	}
+
 	internValue(value: CellValue): CellValue {
 		switch (value.kind) {
 			case 'empty':
@@ -170,12 +179,7 @@ export class ValueInternPool {
 				return value
 			}
 			case 'string': {
-				const text = this.internString(value.value)
-				const cached = this.stringValues.get(text)
-				if (cached) return cached
-				const interned = stringValue(text)
-				this.stringValues.set(text, interned)
-				return interned
+				return this.internStringValue(value.value)
 			}
 			case 'richText':
 				return {

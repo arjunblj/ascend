@@ -133,7 +133,7 @@ const ERROR_TYPE_MAP: Record<string, number> = {
 	'#N/A': 7,
 	'#GETTING_DATA': 8,
 	'#SPILL!': 9,
-	'#CALC!': 10,
+	'#CALC!': 14,
 }
 
 function errorType(args: EvalArg[]): CellValue {

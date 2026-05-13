@@ -9,24 +9,26 @@ const sid = 0 as StyleId
 
 function evalFormula(
 	formula: string,
-	cells: Record<string, string | number | boolean> = {},
+	cells: Record<string, string | number | boolean | CellValue> = {},
 ): CellValue {
 	const wb = createWorkbook()
 	const sheet = wb.addSheet('Sheet1')
 	for (const [a1, raw] of Object.entries(cells)) {
 		const { row, col } = parseA1(a1)
-		const value =
-			typeof raw === 'number'
-				? numberValue(raw)
-				: typeof raw === 'boolean'
-					? booleanValue(raw)
-					: stringValue(String(raw))
+		const value = cellValueInput(raw)
 		sheet.cells.set(row, col, { value, formula: null, styleId: sid })
 	}
 	const f = formula.startsWith('=') ? formula.slice(1) : formula
 	sheet.cells.set(99, 0, { value: EMPTY, formula: f, styleId: sid })
 	recalculate(wb, defaultCalcContext())
 	return sheet.cells.get(99, 0)?.value ?? EMPTY
+}
+
+function cellValueInput(raw: string | number | boolean | CellValue): CellValue {
+	if (typeof raw === 'number') return numberValue(raw)
+	if (typeof raw === 'boolean') return booleanValue(raw)
+	if (typeof raw === 'string') return stringValue(raw)
+	return raw
 }
 
 function expectNum(result: CellValue, expected: number, tolerance = 1e-6): void {
@@ -493,6 +495,11 @@ describe('Excel conformance', () => {
 			expect(evalFormula('IFNA(MATCH("z", A1:A3, 0), -1)', { A1: 'a', A2: 'b', A3: 'c' })).toEqual(
 				numberValue(-1),
 			)
+		})
+
+		test('ERROR.TYPE classifies dynamic array errors', () => {
+			expectNum(evalFormula('ERROR.TYPE(FILTER(A1:A1, A1:A1="z"))', { A1: 'x' }), 14)
+			expectNum(evalFormula('ERROR.TYPE(A1)', { A1: errorValue('#SPILL!') }), 9)
 		})
 
 		test('triple nested IF', () => {

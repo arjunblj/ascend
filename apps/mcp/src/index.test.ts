@@ -776,6 +776,82 @@ describe('MCP server', () => {
 		expect(reopened.getWorkbookModel().getSheet('Sheet1')?.colDefs).toEqual([])
 	})
 
+	test('ascend.write preserves lossy journal issue metadata while saving', async () => {
+		const wb = AscendWorkbook.create()
+		await wb.save(TEMP_FILE)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const handler = (server as any)._registeredTools['ascend.write'].handler as (args: {
+			file: string
+			ops: unknown[]
+			journal?: boolean
+		}) => Promise<{
+			structuredContent?: {
+				ok?: boolean
+				data?: {
+					journal?: {
+						supported?: boolean
+						exact?: boolean
+						inverseOps?: unknown[]
+						issues?: unknown[]
+					}
+				}
+			}
+		}>
+		const result = await handler({
+			file: TEMP_FILE,
+			journal: true,
+			ops: [
+				{ op: 'groupRows', sheet: 'Sheet1', from: 1, to: 2, collapsed: true },
+				{
+					op: 'groupCols',
+					sheet: 'Sheet1',
+					from: 0,
+					to: 1,
+					collapsed: true,
+					summaryRight: false,
+				},
+			],
+		})
+
+		expect(result.structuredContent?.ok).toBe(true)
+		expect(result.structuredContent?.data?.journal?.supported).toBe(true)
+		expect(result.structuredContent?.data?.journal?.exact).toBe(false)
+		expect(result.structuredContent?.data?.journal?.inverseOps).toEqual([])
+		expect(result.structuredContent?.data?.journal?.issues).toEqual([
+			{
+				code: 'LOSSY_INVERSE',
+				message: 'Grouped rows for Sheet1 cannot be restored with public operations',
+				refs: [
+					'Sheet1!2',
+					'Sheet1!3',
+					'Sheet1!4',
+					'sheet:Sheet1:outlinePr:summaryBelow',
+					'sheet:Sheet1:sheetFormatPr:outlineLevelRow',
+				],
+			},
+			{
+				code: 'LOSSY_INVERSE',
+				message: 'Grouped columns for Sheet1 cannot be restored with public operations',
+				refs: [
+					'Sheet1!A',
+					'Sheet1!B',
+					'sheet:Sheet1:outlinePr:summaryRight',
+					'sheet:Sheet1:sheetFormatPr:outlineLevelCol',
+				],
+			},
+		])
+
+		const reopened = await AscendWorkbook.open(TEMP_FILE)
+		const sheet = reopened.getWorkbookModel().getSheet('Sheet1')
+		expect(sheet?.rowDefs.get(1)).toEqual({ hidden: true, outlineLevel: 1 })
+		expect(sheet?.rowDefs.get(2)).toEqual({ hidden: true, outlineLevel: 1 })
+		expect(sheet?.rowDefs.get(3)).toEqual({ collapsed: true })
+		expect(sheet?.colDefs).toContainEqual({ min: 0, max: 0, hidden: true, outlineLevel: 1 })
+		expect(sheet?.colDefs).toContainEqual({ min: 1, max: 1, hidden: true, outlineLevel: 1 })
+	})
+
 	test('ascend.preview and ascend.write accept path-addressed mutations', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'old' }] }])

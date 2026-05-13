@@ -596,9 +596,10 @@ export class AscendWorkbook extends WorkbookReadView {
 		}
 		const journal = maybeBuildMutationJournal(this.wb, ops, options?.journal)
 		const dirtyFlags = this.deriveDirtyFlags(ops)
-		const nextWorkbook = cloneWorkbook(this.wb)
-		const applyFn = options?.transaction ? applyWithTransaction : applyOperations
-		const result = applyFn(nextWorkbook, ops, options)
+		const nextWorkbook = options?.transaction ? this.wb : cloneWorkbook(this.wb)
+		const result = options?.transaction
+			? applyWithTransaction(nextWorkbook, ops, options)
+			: applyOperations(nextWorkbook, ops, options)
 		if (!result.ok) {
 			const errors = 'errors' in result.error ? result.error.errors : [result.error]
 			return {
@@ -610,7 +611,7 @@ export class AscendWorkbook extends WorkbookReadView {
 				errors,
 			}
 		}
-		this.wb = nextWorkbook
+		if (!options?.transaction) this.wb = nextWorkbook
 		this.advanceApplyGenerations(ops, dirtyFlags, result.value)
 		this.markDirty()
 		for (const sheetName of result.value.sheetsModified) this.dirtySheets.add(sheetName)

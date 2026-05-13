@@ -199,6 +199,9 @@ describe('interactive client contract', () => {
 			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 5 }] },
 		])
 		expect(edit.apply.errors).toEqual([])
+		expect(edit.load.read).toMatchObject({ mode: 'formula', isPartial: true })
+		expect(edit.load.write).toMatchObject({ mode: 'full', isPartial: false })
+		expect(edit.load.promotedToFull).toBe(true)
 		expect(edit.recalc?.changed).toEqual(['Sheet1!B1'])
 		expect(edit.generation.session).toBe(1)
 
@@ -238,6 +241,9 @@ describe('interactive client contract', () => {
 			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 5 }] },
 		])
 		expect(edit.apply.errors[0]?.message).toContain('partial workbook')
+		expect(edit.load.read).toMatchObject({ mode: 'formula', isPartial: true, maxRows: 1 })
+		expect(edit.load.write).toMatchObject({ mode: 'formula', isPartial: true, maxRows: 1 })
+		expect(edit.load.promotedToFull).toBe(false)
 		expect(edit.generation.session).toBe(0)
 		session.close()
 	})

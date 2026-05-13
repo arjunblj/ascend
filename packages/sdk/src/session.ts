@@ -190,6 +190,11 @@ export interface AscendSessionApplyOptions extends Pick<ApplyOptions, 'journal'>
 export interface AscendSessionApplyResult {
 	readonly apply: import('./types.ts').ApplyResult
 	readonly recalc: import('./types.ts').RecalcResult | null
+	readonly load: {
+		readonly read: WorkbookLoadInfo
+		readonly write: WorkbookLoadInfo
+		readonly promotedToFull: boolean
+	}
 	readonly generation: {
 		readonly session: number
 		readonly workbook: number
@@ -816,6 +821,7 @@ export class AscendSession {
 		ops: readonly Operation[],
 		options: AscendSessionApplyOptions = {},
 	): Promise<AscendSessionApplyResult> {
+		const readLoad = this.session.inspect().load
 		const workbook = await this.ensureMutableWorkbook()
 		const apply = workbook.apply(ops, {
 			transaction: true,
@@ -829,9 +835,15 @@ export class AscendSession {
 			this.documentGeneration += 1
 		}
 		const generations = workbook.readSnapshotInfo().generations
+		const writeLoad = workbook.inspect().load
 		return {
 			apply,
 			recalc,
+			load: {
+				read: readLoad,
+				write: writeLoad,
+				promotedToFull: readLoad.isPartial && !writeLoad.isPartial,
+			},
 			generation: { session: this.documentGeneration, ...generations },
 		}
 	}

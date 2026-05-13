@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { AscendWorkbook } from '@ascend/sdk'
 import { createZip, encode } from '../../../packages/io-xlsx/src/writer/zip.ts'
-import { createServer } from './server.ts'
+import { createApiFetch, createServer } from './server.ts'
 
 const TEMP_FILE = join(
 	tmpdir(),
@@ -42,7 +42,11 @@ interface ApiEnvelope {
 			readonly changedCells?: unknown[]
 			readonly wouldSucceed?: boolean
 		}
-		readonly preparedPlan?: { readonly id?: string }
+		readonly preparedPlan?: {
+			readonly id?: string
+			readonly expiresAt?: string
+			readonly ttlMs?: number
+		}
 		readonly journal?: { readonly supported?: boolean; readonly inverseOps?: unknown[] }
 		readonly partPath?: string
 		readonly featureFamily?: string
@@ -109,6 +113,21 @@ async function postJson(
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify(body),
 	})
+	return { status: response.status, body: (await response.json()) as ApiEnvelope }
+}
+
+async function postApiFetch(
+	apiFetch: typeof fetch,
+	path: string,
+	body: unknown,
+): Promise<{ status: number; body: ApiEnvelope }> {
+	const response = await apiFetch(
+		new Request(`http://ascend.local${path}`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify(body),
+		}),
+	)
 	return { status: response.status, body: (await response.json()) as ApiEnvelope }
 }
 
@@ -790,6 +809,8 @@ describe('Ascend API server', () => {
 			expect(plan.status).toBe(200)
 			expect(plan.body.ok).toBe(true)
 			expect(plan.body.data?.preparedPlan?.id).toBeString()
+			expect(plan.body.data?.preparedPlan?.expiresAt).toBeString()
+			expect(plan.body.data?.preparedPlan?.ttlMs).toBeNumber()
 			expect(plan.body.data?.pathMutations?.ops).toEqual([
 				{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 123 }] },
 			])
@@ -806,9 +827,47 @@ describe('Ascend API server', () => {
 			])
 			const reopened = await AscendWorkbook.open(output)
 			expect(reopened.sheet('Sheet1')?.cell('A1')?.value).toEqual({ kind: 'number', value: 123 })
+
+			const reused = await postJson('/commit', {
+				planHandle: plan.body.data?.preparedPlan?.id,
+				output: `${output}.reuse.xlsx`,
+				approvals: [],
+			})
+			expect(reused.status).toBe(400)
+			expect(reused.body.error?.code).toBe('VALIDATION_ERROR')
 		} finally {
 			await unlink(output).catch(() => {})
+			await unlink(`${output}.reuse.xlsx`).catch(() => {})
 		}
+	})
+
+	test('prepared plan handles expire before commit', async () => {
+		const wb = AscendWorkbook.create()
+		await wb.save(TEMP_FILE)
+		let now = 1_000
+		const apiFetch = createApiFetch({
+			preparedPlanTtlMs: 10,
+			now: () => now,
+		})
+
+		const plan = await postApiFetch(apiFetch, '/plan', {
+			file: TEMP_FILE,
+			prepare: true,
+			mutations: [{ path: '/sheets/Sheet1/cells/A1/value', value: 456 }],
+		})
+		expect(plan.status).toBe(200)
+		expect(plan.body.data?.preparedPlan?.id).toBeString()
+		expect(plan.body.data?.preparedPlan?.ttlMs).toBe(10)
+
+		now += 11
+		const commit = await postApiFetch(apiFetch, '/commit', {
+			planHandle: plan.body.data?.preparedPlan?.id,
+			output: `${OUTPUT_FILE}.expired.xlsx`,
+			approvals: [],
+		})
+		expect(commit.status).toBe(400)
+		expect(commit.body.error?.code).toBe('VALIDATION_ERROR')
+		await unlink(`${OUTPUT_FILE}.expired.xlsx`).catch(() => {})
 	})
 })
 

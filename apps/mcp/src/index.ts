@@ -74,6 +74,75 @@ interface PreparedPlanHandle {
 	commit(options: AgentCommitOptions): Promise<Awaited<ReturnType<typeof commitAgentPlan>>>
 }
 
+export interface McpServerOptions {
+	readonly preparedPlanMaxHandles?: number
+	readonly preparedPlanTtlMs?: number
+	readonly now?: () => number
+}
+
+interface PreparedPlanMetadata {
+	readonly id: string
+	readonly expiresAt: string
+	readonly ttlMs: number
+}
+
+interface PreparedPlanRecord {
+	readonly handle: PreparedPlanHandle
+	readonly expiresAtMs: number
+}
+
+const DEFAULT_PREPARED_PLAN_MAX_HANDLES = 64
+const DEFAULT_PREPARED_PLAN_TTL_MS = 5 * 60 * 1000
+
+function positiveIntegerOption(value: number | undefined, fallback: number): number {
+	if (value === undefined || !Number.isFinite(value)) return fallback
+	return Math.max(1, Math.floor(value))
+}
+
+class PreparedPlanStore {
+	private readonly handles = new Map<string, PreparedPlanRecord>()
+	private readonly maxHandles: number
+	private readonly ttlMs: number
+	private readonly now: () => number
+
+	constructor(options: McpServerOptions = {}) {
+		this.maxHandles = positiveIntegerOption(
+			options.preparedPlanMaxHandles,
+			DEFAULT_PREPARED_PLAN_MAX_HANDLES,
+		)
+		this.ttlMs = positiveIntegerOption(options.preparedPlanTtlMs, DEFAULT_PREPARED_PLAN_TTL_MS)
+		this.now = options.now ?? Date.now
+	}
+
+	add(handle: PreparedPlanHandle): PreparedPlanMetadata {
+		this.pruneExpired()
+		while (this.handles.size >= this.maxHandles) {
+			const oldest = this.handles.keys().next().value
+			if (oldest === undefined) break
+			this.handles.delete(oldest)
+		}
+		const id = randomUUID()
+		const expiresAtMs = this.now() + this.ttlMs
+		this.handles.set(id, { handle, expiresAtMs })
+		return { id, expiresAt: new Date(expiresAtMs).toISOString(), ttlMs: this.ttlMs }
+	}
+
+	take(id: string): PreparedPlanHandle | null {
+		this.pruneExpired()
+		const record = this.handles.get(id)
+		if (!record) return null
+		this.handles.delete(id)
+		return record.handle
+	}
+
+	private pruneExpired(): void {
+		const now = this.now()
+		for (const [id, record] of this.handles) {
+			if (record.expiresAtMs <= now) this.handles.delete(id)
+		}
+	}
+}
+
 function resolveOperationInputForWorkbook(
 	wb: AscendWorkbook,
 	ops: readonly Record<string, unknown>[] | undefined,
@@ -167,9 +236,9 @@ function withPathMutationResult<T extends object>(
 
 function withPreparedPlanHandle<T extends object>(
 	result: T,
-	id: string | undefined,
-): T | (T & { readonly preparedPlan: { readonly id: string } }) {
-	return id ? { ...result, preparedPlan: { id } } : result
+	preparedPlan: PreparedPlanMetadata | undefined,
+): T | (T & { readonly preparedPlan: PreparedPlanMetadata }) {
+	return preparedPlan ? { ...result, preparedPlan } : result
 }
 
 function preparedPlanHandle(prepared: PreparedAgentPlan): PreparedPlanHandle {
@@ -182,12 +251,12 @@ function preparedPlanHandle(prepared: PreparedAgentPlan): PreparedPlanHandle {
 	}
 }
 
-export function createServer(): McpServer {
+export function createServer(options: McpServerOptions = {}): McpServer {
 	const server = new McpServer({
 		name: 'ascend',
 		version: '0.0.0',
 	})
-	const preparedPlans = new Map<string, PreparedPlanHandle>()
+	const preparedPlans = new PreparedPlanStore(options)
 
 	registerAgentResources(server)
 	registerAgentPrompts(server)
@@ -1158,7 +1227,7 @@ export function createServer(): McpServer {
 				let input: ResolvedOperationInput
 				let pathMutations: PathMutationResult | undefined
 				let result: Awaited<ReturnType<typeof createAgentPlan>> | null
-				let preparedPlanId: string | undefined
+				let preparedPlan: PreparedPlanMetadata | undefined
 				if ('mutations' in inputShape) {
 					const opened = await AscendWorkbook.openSourceBytes(file)
 					const inputSha256 = sha256Bytes(opened.sourceBytes)
@@ -1170,13 +1239,12 @@ export function createServer(): McpServer {
 						: null
 					if (input.ok && result && prepare === true) {
 						const preparedOps = input.ops
-						const preparedPlan = result
-						preparedPlanId = randomUUID()
-						preparedPlans.set(preparedPlanId, {
+						const plannedResult = result
+						preparedPlan = preparedPlans.add({
 							file,
 							inputSha256,
-							planDigest: preparedPlan.planDigest,
-							plan: preparedPlan,
+							planDigest: plannedResult.planDigest,
+							plan: plannedResult,
 							...(pathMutations !== undefined ? { pathMutations } : {}),
 							commit: async (options) => {
 								const current = await Bun.file(file).bytes()
@@ -1190,7 +1258,7 @@ export function createServer(): McpServer {
 												details: {
 													expected: inputSha256,
 													actual: currentSha256,
-													planDigest: preparedPlan.planDigest,
+													planDigest: plannedResult.planDigest,
 												},
 												suggestedFix: 'Re-run ascend plan and commit with the new input workbook.',
 											},
@@ -1208,8 +1276,7 @@ export function createServer(): McpServer {
 					if (prepare === true) {
 						const prepared = await createPreparedAgentPlan(file, inputShape.ops)
 						result = prepared.plan
-						preparedPlanId = randomUUID()
-						preparedPlans.set(preparedPlanId, preparedPlanHandle(prepared))
+						preparedPlan = preparedPlans.add(preparedPlanHandle(prepared))
 					} else {
 						result = await createAgentPlan(file, inputShape.ops)
 					}
@@ -1230,7 +1297,7 @@ export function createServer(): McpServer {
 						})
 					: result
 				return okResponse(
-					withPreparedPlanHandle(withPathMutationResult(payload, pathMutations), preparedPlanId),
+					withPreparedPlanHandle(withPathMutationResult(payload, pathMutations), preparedPlan),
 					`Planned ${input.ops.length} operation(s)`,
 				)
 			} catch (e) {
@@ -1296,10 +1363,9 @@ export function createServer(): McpServer {
 					...(approvals ? { approvals: parseStringListOrAll(approvals) } : {}),
 				}
 				if (planHandle) {
-					const prepared = preparedPlans.get(planHandle)
+					const prepared = preparedPlans.take(planHandle)
 					if (!prepared) return errorResponse('Prepared plan handle was not found')
 					const result = await prepared.commit(options)
-					preparedPlans.delete(planHandle)
 					return okResponse(
 						withPathMutationResult(result, prepared.pathMutations),
 						`Committed ${result.operationCount} operation(s)`,

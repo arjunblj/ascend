@@ -909,7 +909,7 @@ describe('MCP server', () => {
 				structuredContent?: {
 					ok?: boolean
 					data?: {
-						preparedPlan?: { id?: string }
+						preparedPlan?: { id?: string; expiresAt?: string; ttlMs?: number }
 						pathMutations?: { ops?: unknown[] }
 					}
 				}
@@ -932,6 +932,8 @@ describe('MCP server', () => {
 			})
 			expect(planned.structuredContent?.ok).toBe(true)
 			expect(planned.structuredContent?.data?.preparedPlan?.id).toBeString()
+			expect(planned.structuredContent?.data?.preparedPlan?.expiresAt).toBeString()
+			expect(planned.structuredContent?.data?.preparedPlan?.ttlMs).toBeNumber()
 			expect(planned.structuredContent?.data?.pathMutations?.ops).toEqual([
 				{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 321 }] },
 			])
@@ -947,8 +949,74 @@ describe('MCP server', () => {
 			])
 			const reopened = await AscendWorkbook.open(output)
 			expect(reopened.sheet('Sheet1')?.cell('A1')?.value).toEqual({ kind: 'number', value: 321 })
+
+			const reused = await commit({
+				planHandle: planned.structuredContent?.data?.preparedPlan?.id,
+				output: `${output}.reuse.xlsx`,
+				approvals: [],
+			})
+			expect(reused.structuredContent?.ok).toBe(false)
 		} finally {
 			await unlink(output).catch(() => {})
+			await unlink(`${output}.reuse.xlsx`).catch(() => {})
+		}
+	})
+
+	test('prepared MCP plan handles are bounded', async () => {
+		const wb = AscendWorkbook.create()
+		await wb.save(TEMP_FILE)
+		const output = `${TEMP_FILE}.bounded-prepared-mcp.xlsx`
+		const server = createServer({ preparedPlanMaxHandles: 1 })
+		try {
+			// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+			const plan = (server as any)._registeredTools['ascend.plan'].handler as (args: {
+				file: string
+				prepare?: boolean
+				mutations: Array<{ path: string; value?: unknown }>
+			}) => Promise<{
+				structuredContent?: {
+					ok?: boolean
+					data?: { preparedPlan?: { id?: string; ttlMs?: number } }
+				}
+			}>
+			// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+			const commit = (server as any)._registeredTools['ascend.commit'].handler as (args: {
+				planHandle?: string
+				output?: string
+				approvals?: string[]
+			}) => Promise<{ structuredContent?: { ok?: boolean } }>
+
+			const first = await plan({
+				file: TEMP_FILE,
+				prepare: true,
+				mutations: [{ path: '/sheets/Sheet1/cells/A1/value', value: 1 }],
+			})
+			const second = await plan({
+				file: TEMP_FILE,
+				prepare: true,
+				mutations: [{ path: '/sheets/Sheet1/cells/A1/value', value: 2 }],
+			})
+			expect(first.structuredContent?.data?.preparedPlan?.id).toBeString()
+			expect(second.structuredContent?.data?.preparedPlan?.id).toBeString()
+
+			const evicted = await commit({
+				planHandle: first.structuredContent?.data?.preparedPlan?.id,
+				output: `${output}.evicted.xlsx`,
+				approvals: [],
+			})
+			expect(evicted.structuredContent?.ok).toBe(false)
+
+			const committed = await commit({
+				planHandle: second.structuredContent?.data?.preparedPlan?.id,
+				output,
+				approvals: [],
+			})
+			expect(committed.structuredContent?.ok).toBe(true)
+			const reopened = await AscendWorkbook.open(output)
+			expect(reopened.sheet('Sheet1')?.cell('A1')?.value).toEqual({ kind: 'number', value: 2 })
+		} finally {
+			await unlink(output).catch(() => {})
+			await unlink(`${output}.evicted.xlsx`).catch(() => {})
 		}
 	})
 

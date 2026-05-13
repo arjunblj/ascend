@@ -118,6 +118,75 @@ interface PreparedPlanHandle {
 	commit(options: AgentCommitOptions): Promise<Awaited<ReturnType<typeof commitAgentPlan>>>
 }
 
+export interface ApiFetchOptions {
+	readonly preparedPlanMaxHandles?: number
+	readonly preparedPlanTtlMs?: number
+	readonly now?: () => number
+}
+
+interface PreparedPlanMetadata {
+	readonly id: string
+	readonly expiresAt: string
+	readonly ttlMs: number
+}
+
+interface PreparedPlanRecord {
+	readonly handle: PreparedPlanHandle
+	readonly expiresAtMs: number
+}
+
+const DEFAULT_PREPARED_PLAN_MAX_HANDLES = 64
+const DEFAULT_PREPARED_PLAN_TTL_MS = 5 * 60 * 1000
+
+function positiveIntegerOption(value: number | undefined, fallback: number): number {
+	if (value === undefined || !Number.isFinite(value)) return fallback
+	return Math.max(1, Math.floor(value))
+}
+
+class PreparedPlanStore {
+	private readonly handles = new Map<string, PreparedPlanRecord>()
+	private readonly maxHandles: number
+	private readonly ttlMs: number
+	private readonly now: () => number
+
+	constructor(options: ApiFetchOptions = {}) {
+		this.maxHandles = positiveIntegerOption(
+			options.preparedPlanMaxHandles,
+			DEFAULT_PREPARED_PLAN_MAX_HANDLES,
+		)
+		this.ttlMs = positiveIntegerOption(options.preparedPlanTtlMs, DEFAULT_PREPARED_PLAN_TTL_MS)
+		this.now = options.now ?? Date.now
+	}
+
+	add(handle: PreparedPlanHandle): PreparedPlanMetadata {
+		this.pruneExpired()
+		while (this.handles.size >= this.maxHandles) {
+			const oldest = this.handles.keys().next().value
+			if (oldest === undefined) break
+			this.handles.delete(oldest)
+		}
+		const id = randomUUID()
+		const expiresAtMs = this.now() + this.ttlMs
+		this.handles.set(id, { handle, expiresAtMs })
+		return { id, expiresAt: new Date(expiresAtMs).toISOString(), ttlMs: this.ttlMs }
+	}
+
+	take(id: string): PreparedPlanHandle | null {
+		this.pruneExpired()
+		const record = this.handles.get(id)
+		if (!record) return null
+		this.handles.delete(id)
+		return record.handle
+	}
+
+	private pruneExpired(): void {
+		const now = this.now()
+		for (const [id, record] of this.handles) {
+			if (record.expiresAtMs <= now) this.handles.delete(id)
+		}
+	}
+}
+
 function resolveOperationInputForWorkbook(
 	wb: AscendWorkbook,
 	body: Record<string, unknown> | null,
@@ -259,9 +328,9 @@ function withPathMutationResult<T extends object>(
 
 function withPreparedPlanHandle<T extends object>(
 	result: T,
-	id: string | undefined,
-): T | (T & { readonly preparedPlan: { readonly id: string } }) {
-	return id ? { ...result, preparedPlan: { id } } : result
+	preparedPlan: PreparedPlanMetadata | undefined,
+): T | (T & { readonly preparedPlan: PreparedPlanMetadata }) {
+	return preparedPlan ? { ...result, preparedPlan } : result
 }
 
 function preparedPlanHandle(prepared: PreparedAgentPlan): PreparedPlanHandle {
@@ -407,8 +476,8 @@ function withCors(res: Response): Response {
 	return res
 }
 
-export function createApiFetch() {
-	const preparedPlans = new Map<string, PreparedPlanHandle>()
+export function createApiFetch(options: ApiFetchOptions = {}) {
+	const preparedPlans = new PreparedPlanStore(options)
 	return async (req: Request) => {
 		const url = new URL(req.url)
 		const method = req.method
@@ -776,7 +845,7 @@ export function createApiFetch() {
 					let input: OperationInput
 					let pathMutations: PathMutationResult | undefined
 					let result: Awaited<ReturnType<typeof createAgentPlan>> | null
-					let preparedPlanId: string | undefined
+					let preparedPlan: PreparedPlanMetadata | undefined
 					if ('mutations' in inputShape) {
 						const opened = await AscendWorkbook.openSourceBytes(file)
 						const inputSha256 = sha256Bytes(opened.sourceBytes)
@@ -788,13 +857,12 @@ export function createApiFetch() {
 							: null
 						if (input.ok && result && body?.prepare === true) {
 							const preparedOps = input.ops
-							const preparedPlan = result
-							preparedPlanId = randomUUID()
-							preparedPlans.set(preparedPlanId, {
+							const plannedResult = result
+							preparedPlan = preparedPlans.add({
 								file,
 								inputSha256,
-								planDigest: preparedPlan.planDigest,
-								plan: preparedPlan,
+								planDigest: plannedResult.planDigest,
+								plan: plannedResult,
 								...(pathMutations !== undefined ? { pathMutations } : {}),
 								commit: async (options) => {
 									const current = await Bun.file(file).bytes()
@@ -808,7 +876,7 @@ export function createApiFetch() {
 													details: {
 														expected: inputSha256,
 														actual: currentSha256,
-														planDigest: preparedPlan.planDigest,
+														planDigest: plannedResult.planDigest,
 													},
 													suggestedFix:
 														'Re-run ascend plan and commit with the new input workbook.',
@@ -827,8 +895,7 @@ export function createApiFetch() {
 						if (body?.prepare === true) {
 							const prepared = await createPreparedAgentPlan(file, inputShape.ops)
 							result = prepared.plan
-							preparedPlanId = randomUUID()
-							preparedPlans.set(preparedPlanId, preparedPlanHandle(prepared))
+							preparedPlan = preparedPlans.add(preparedPlanHandle(prepared))
 						} else {
 							result = await createAgentPlan(file, inputShape.ops)
 						}
@@ -854,7 +921,7 @@ export function createApiFetch() {
 								})
 							: result
 					return jsonSuccess(
-						withPreparedPlanHandle(withPathMutationResult(payload, pathMutations), preparedPlanId),
+						withPreparedPlanHandle(withPathMutationResult(payload, pathMutations), preparedPlan),
 					)
 				} catch (e) {
 					return handleError(e, file ?? undefined)
@@ -889,7 +956,7 @@ export function createApiFetch() {
 						...(approvals ? { approvals } : {}),
 					}
 					if (planHandle) {
-						const prepared = preparedPlans.get(planHandle)
+						const prepared = preparedPlans.take(planHandle)
 						if (!prepared) {
 							return jsonFailureError(
 								ascendError('VALIDATION_ERROR', 'Prepared plan handle was not found', {
@@ -899,7 +966,6 @@ export function createApiFetch() {
 							)
 						}
 						const result = await prepared.commit(options)
-						preparedPlans.delete(planHandle)
 						return jsonSuccess(withPathMutationResult(result, prepared.pathMutations))
 					}
 					const inputShape = resolveOperationInputShape(body)
@@ -1150,8 +1216,8 @@ export function createApiFetch() {
 	}
 }
 
-export function createServer(opts?: { port?: number }) {
-	const fetch = createApiFetch()
+export function createServer(opts?: { port?: number } & ApiFetchOptions) {
+	const fetch = createApiFetch(opts)
 	const requestedPort = opts?.port ?? (Number(process.env.PORT) || 3000)
 	if (requestedPort !== 0) return Bun.serve({ port: requestedPort, fetch })
 

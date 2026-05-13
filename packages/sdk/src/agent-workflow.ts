@@ -1065,6 +1065,7 @@ export async function commitAgentPlanFromWorkbook(
 		outputBytes,
 		expectedPostWritePackageGraphChanges,
 		progress,
+		ops,
 	)
 	await progressFromPhase(postWritePhase(postWrite, expectedPostWritePackageGraphChanges), progress)
 	await progress('check', 'started', 'Reusing pre-write structural checks.')
@@ -1163,13 +1164,14 @@ async function verifyWrittenWorkbook(
 	outputBytes: Uint8Array,
 	expectedPackageGraphChanges: ExpectedPostWritePackageGraphChanges,
 	progress: ReturnType<typeof createProgressEmitter>,
+	ops: readonly Operation[],
 ): Promise<AgentPostWriteVerification> {
 	const reopened = await timedPostWriteStep(
 		progress,
 		'reopen',
 		'Reopening written workbook.',
 		'Written workbook reopened.',
-		() => openWorkbookFromBytes(output, outputBytes, { richMetadata: true }),
+		() => openWorkbookFromBytes(output, outputBytes, postWriteOpenOptions(sourceGraph, ops)),
 	)
 	const check = await timedPostWriteStep(
 		progress,
@@ -1234,6 +1236,29 @@ async function verifyWrittenWorkbook(
 		expectedPackageGraphIssueCount,
 		unresolvedPackageGraphIssueCount: unresolvedPackageGraphIssues.length,
 	}
+}
+
+const SIMPLE_POST_WRITE_FEATURE_FAMILIES = new Set<string>([
+	'packageContentTypes',
+	'packageRelationships',
+	'preservedDocumentProperties',
+	'preservedStyles',
+	'sharedStrings',
+	'workbook',
+	'worksheet',
+])
+
+function postWriteOpenOptions(
+	sourceGraph: XlsxPackageGraph,
+	ops: readonly Operation[],
+): { readonly richMetadata?: boolean } {
+	if (
+		ops.every((op) => op.op === 'setCells') &&
+		sourceGraph.parts.every((part) => SIMPLE_POST_WRITE_FEATURE_FAMILIES.has(part.featureFamily))
+	) {
+		return {}
+	}
+	return { richMetadata: true }
 }
 
 export function auditLossPolicy(

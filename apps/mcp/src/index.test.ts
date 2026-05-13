@@ -2327,6 +2327,45 @@ describe('MCP server', () => {
 		expect(unchanged.structuredContent?.data?.changeToken).toBeDefined()
 	})
 
+	test('ascend.read compact changedSince returns a fresh window after source changes', async () => {
+		const original = AscendWorkbook.create()
+		original.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'old' }] }])
+		await original.save(TEMP_FILE)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const handler = (server as any)._registeredTools['ascend.read'].handler as (args: {
+			file: string
+			range: string
+			format: 'compact'
+			changedSince?: string
+		}) => Promise<{
+			structuredContent?: {
+				ok?: boolean
+				data?: { cells?: unknown[]; changeToken?: string }
+			}
+		}>
+
+		const first = await handler({ file: TEMP_FILE, range: 'A1:A1', format: 'compact' })
+		expect(first.structuredContent?.ok).toBe(true)
+		expect(first.structuredContent?.data?.cells).toEqual([[0, 0, 'old']])
+		expect(first.structuredContent?.data?.changeToken).toBeDefined()
+
+		const changed = AscendWorkbook.create()
+		changed.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'new' }] }])
+		await changed.save(TEMP_FILE)
+
+		const afterChange = await handler({
+			file: TEMP_FILE,
+			range: 'A1:A1',
+			format: 'compact',
+			changedSince: first.structuredContent?.data?.changeToken,
+		})
+		expect(afterChange.structuredContent?.ok).toBe(true)
+		expect(afterChange.structuredContent?.data?.cells).toEqual([[0, 0, 'new']])
+		expect(afterChange.structuredContent?.data?.changeToken).toBeDefined()
+	})
+
 	test('ascend.read returns compact first-window data with partial load metadata', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

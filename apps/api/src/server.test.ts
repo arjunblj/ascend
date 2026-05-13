@@ -502,6 +502,36 @@ describe('Ascend API server', () => {
 		expect(unchanged.body.data?.changeToken).toBeDefined()
 	})
 
+	test('compact changedSince reads return a fresh window after source changes', async () => {
+		const original = AscendWorkbook.create()
+		original.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'old' }] }])
+		await original.save(TEMP_FILE)
+
+		const first = await postJson('/read', {
+			file: TEMP_FILE,
+			range: 'A1:A1',
+			format: 'compact',
+		})
+		expect(first.status).toBe(200)
+		expect(first.body.data?.cells).toEqual([[0, 0, 'old']])
+		expect(first.body.data?.changeToken).toBeDefined()
+
+		const changed = AscendWorkbook.create()
+		changed.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'new' }] }])
+		await changed.save(TEMP_FILE)
+
+		const afterChange = await postJson('/read', {
+			file: TEMP_FILE,
+			range: 'A1:A1',
+			format: 'compact',
+			changedSince: first.body.data?.changeToken,
+		})
+		expect(afterChange.status).toBe(200)
+		expect(afterChange.body.ok).toBe(true)
+		expect(afterChange.body.data?.cells).toEqual([[0, 0, 'new']])
+		expect(afterChange.body.data?.changeToken).toBeDefined()
+	})
+
 	test('read preview defaults compact reads to a bounded first window', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

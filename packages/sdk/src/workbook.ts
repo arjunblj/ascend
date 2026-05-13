@@ -187,6 +187,16 @@ function applySetCellsTransactionInPlace(
 	return result
 }
 
+function isApplyPatchNoOp(ops: readonly Operation[], result: PatchResult): boolean {
+	return (
+		ops.every((op) => op.op === 'setCells') &&
+		result.affectedCells.length === 0 &&
+		result.sheetsModified.length === 0 &&
+		!result.recalcRequired &&
+		(!result.warnings || result.warnings.length === 0)
+	)
+}
+
 function stringMatches(
 	haystack: string,
 	needle: string,
@@ -682,6 +692,16 @@ export class AscendWorkbook extends WorkbookReadView {
 				dirtyRegions: [],
 				generations: this.currentGenerations(),
 				errors,
+			}
+		}
+		if (isApplyPatchNoOp(ops, result.value)) {
+			return {
+				affectedCells: [],
+				sheetsModified: [],
+				recalcRequired: false,
+				dirtyRegions: [],
+				generations: this.currentGenerations(),
+				errors: [],
 			}
 		}
 		if (!options?.transaction) this.wb = nextWorkbook

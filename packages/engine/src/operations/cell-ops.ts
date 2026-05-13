@@ -2,7 +2,7 @@ import type { Workbook } from '@ascend/core'
 import { parseA1, toA1 } from '@ascend/core'
 import { cachedParseFormula, normalizeFormulaInput } from '@ascend/formulas'
 import type { Operation, Result } from '@ascend/schema'
-import { ascendError, EMPTY, err, ok, richTextValue } from '@ascend/schema'
+import { ascendError, EMPTY, err, isEmpty, ok, richTextValue, valuesEqual } from '@ascend/schema'
 import { validateCellValue } from '../data-validation.ts'
 import type { PatchResult } from './helpers.ts'
 import {
@@ -40,23 +40,33 @@ export function handleSetCells(
 		const blocked = legacyArrayIndex.findCell(ref.row, ref.col)
 		if (blocked) return err(legacyArrayFormulaEditError(update.ref, blocked.ref))
 		const value = inputToCellValue(update.value, workbook.calcSettings.dateSystem)
-		const validation = validateCellValue(sheet, ref.row, ref.col, value, workbook)
-		if (!validation.valid && validation.message) {
-			warnings.push(ascendError('VALIDATION_ERROR', validation.message, { refs: [update.ref] }))
-		}
 		prepared.push({ ref, update, value })
 	}
 
 	for (const { ref, update, value } of prepared) {
+		const existing = sheet.cells.get(ref.row, ref.col)
+		if (!existing && isEmpty(value)) continue
+		if (existing && existing.formula === null && valuesEqual(existing.value, value)) continue
+		const validation = validateCellValue(sheet, ref.row, ref.col, value, workbook)
+		if (!validation.valid && validation.message) {
+			warnings.push(ascendError('VALIDATION_ERROR', validation.message, { refs: [update.ref] }))
+		}
 		sheet.cells.set(
 			ref.row,
 			ref.col,
-			cellWithExisting(value, null, sheet.cells.readStyleId(ref.row, ref.col) ?? DEFAULT_SID),
+			cellWithExisting(value, null, existing?.styleId ?? DEFAULT_SID),
 		)
 		affected.push(update.ref)
 	}
 
-	return ok(patch(affected, [op.sheet], true, warnings.length > 0 ? warnings : undefined))
+	return ok(
+		patch(
+			affected,
+			affected.length > 0 ? [op.sheet] : [],
+			affected.length > 0,
+			warnings.length > 0 ? warnings : undefined,
+		),
+	)
 }
 
 export function handleSetFormula(

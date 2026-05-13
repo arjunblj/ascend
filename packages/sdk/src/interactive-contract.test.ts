@@ -1393,6 +1393,83 @@ describe('interactive client contract', () => {
 		expect(failed.generations).toEqual(initial)
 		expect(wb.readSnapshotInfo().generations).toEqual(initial)
 
+		const changed = wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 5 },
+					{ ref: 'D1', value: null },
+				],
+			},
+		])
+		expect(changed.errors).toEqual([])
+		expect(changed.affectedCells).toEqual(['A1'])
+		const afterChanged = wb.readSnapshotInfo().generations
+		const semanticNoOp = wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 5 },
+					{ ref: 'D1', value: null },
+				],
+			},
+		])
+		expect(semanticNoOp).toMatchObject({
+			affectedCells: [],
+			sheetsModified: [],
+			recalcRequired: false,
+			dirtyRegions: [],
+			generations: afterChanged,
+			errors: [],
+		})
+		expect(wb.readSnapshotInfo().generations).toEqual(afterChanged)
+
+		const fullSession = await AscendSession.open(wb.toBytes(), { mode: 'interactive' })
+		const fullViewport = fullSession.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 4,
+		})
+		const sessionNoOp = await fullSession.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 5 },
+					{ ref: 'D1', value: null },
+				],
+			},
+		])
+		expect(sessionNoOp.apply).toMatchObject({
+			affectedCells: [],
+			sheetsModified: [],
+			recalcRequired: false,
+			dirtyRegions: [],
+			errors: [],
+		})
+		expect(sessionNoOp.generation.session).toBe(fullViewport.generation.session)
+		const afterSessionNoOp = fullSession.readViewport({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 4,
+			changedSince: fullViewport.changeToken,
+		})
+		expect(afterSessionNoOp.patch).toMatchObject({
+			baseToken: fullViewport.changeToken,
+			changedCells: [],
+			removedRefs: [],
+			byteLength: 36,
+		})
+		expect(afterSessionNoOp.generation).toEqual(fullViewport.generation)
+		expect(afterSessionNoOp.cells).toEqual(fullViewport.cells)
+		fullSession.close()
+
 		const session = await AscendSession.open(wb.toBytes(), { mode: 'interactive', maxRows: 1 })
 		const viewport = session.readViewport({
 			sheet: 'Sheet1',

@@ -1120,7 +1120,7 @@ export class AscendSession {
 			recalc = workbook.recalc()
 			recalcMs = performance.now() - recalcStart
 		}
-		if (apply.errors.length === 0) {
+		if (apply.errors.length === 0 && sessionApplyChanged(apply, recalc)) {
 			this.documentGeneration += 1
 			this.recordInteractiveChanges(ops, apply, recalc)
 		}
@@ -1308,6 +1308,19 @@ function interactiveInitialOpenOptions(options: AscendSessionOpenOptions): Workb
 function stripPrepareEditsOption(options: AscendSessionOpenOptions): AscendSessionOpenOptions {
 	const { prepareEdits: _prepareEdits, ...loadOptions } = options
 	return loadOptions
+}
+
+function sessionApplyChanged(
+	apply: import('./types.ts').ApplyResult,
+	recalc: import('./types.ts').RecalcResult | null,
+): boolean {
+	return (
+		apply.affectedCells.length > 0 ||
+		apply.sheetsModified.length > 0 ||
+		apply.dirtyRegions.length > 0 ||
+		apply.recalcRequired ||
+		(recalc?.changed.length ?? 0) > 0
+	)
 }
 
 function writableOpenOptions(options: AscendSessionOpenOptions): WorkbookLoadOptions {

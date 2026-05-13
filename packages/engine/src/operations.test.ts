@@ -283,6 +283,35 @@ describe('applyOperation', () => {
 		expect(s.cells.get(0, 2)?.value).toEqual(stringValue('new'))
 	})
 
+	test('setCells skips literal no-ops without dirtying the patch', () => {
+		const wb = setup()
+		expectOk(
+			applyOperation(wb, {
+				op: 'setDataValidation',
+				sheet: 'Sheet1',
+				range: 'A1:A1',
+				rule: { type: 'whole', formula1: '1', formula2: '5', operator: 'between' },
+			}),
+		)
+		const result = applyOperation(wb, {
+			op: 'setCells',
+			sheet: 'Sheet1',
+			updates: [
+				{ ref: 'A1', value: 10 },
+				{ ref: 'D1', value: null },
+			],
+		})
+		expectOk(result)
+
+		expect(result.value).toEqual({
+			affectedCells: [],
+			sheetsModified: [],
+			recalcRequired: false,
+		})
+		expect(wb.getSheet('Sheet1')?.cells.get(0, 0)?.value).toEqual(numberValue(10))
+		expect(wb.getSheet('Sheet1')?.cells.get(0, 3)).toBeUndefined()
+	})
+
 	test('setCells serializes Date inputs using workbook date system', () => {
 		const wb = setup()
 		wb.calcSettings = { ...wb.calcSettings, dateSystem: '1904' }

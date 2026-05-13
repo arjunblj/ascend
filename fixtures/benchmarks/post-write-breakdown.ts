@@ -23,6 +23,12 @@ interface Args {
 interface Sample {
 	readonly commitMs: number
 	readonly commitPostWriteMs: number
+	readonly commitPostWriteReopenMs: number
+	readonly commitPostWriteCheckMs: number
+	readonly commitPostWriteLintMs: number
+	readonly commitPostWritePreservationMs: number
+	readonly commitPostWritePackageGraphMs: number
+	readonly commitPostWritePackageGraphAuditMs: number
 	readonly sourceOpenMs: number
 	readonly sourceReadBytesMs: number
 	readonly outputReadBytesMs: number
@@ -116,23 +122,47 @@ function buildSetCellsOperation(count: number, rows: number, cols: number): Oper
 async function timedCommit(inputPath: string, outputPath: string, ops: readonly Operation[]) {
 	let postWriteStarted: number | undefined
 	let postWriteMs = 0
+	const postWriteTimings: Record<string, number> = {}
 	const commit = await timed(() =>
 		commitAgentPlan(inputPath, ops, {
 			output: outputPath,
 			approvals: [],
 			onProgress: (event: AgentWorkflowProgressEvent) => {
-				if (event.phase !== 'post-write') return
-				if (event.status === 'started') {
+				if (event.phase === 'post-write' && event.status === 'started') {
 					postWriteStarted = performance.now()
 					return
 				}
-				if (postWriteStarted !== undefined) {
+				if (event.phase === 'post-write' && postWriteStarted !== undefined) {
 					postWriteMs = performance.now() - postWriteStarted
+					return
+				}
+				if (!event.phase.startsWith('post-write:') || event.status === 'started') return
+				const duration = durationMsFromDetails(event.details)
+				if (duration !== undefined) {
+					postWriteTimings[event.phase.slice('post-write:'.length)] = duration
 				}
 			},
 		}),
 	)
-	return { commitMs: commit.ms, postWriteMs, valid: commit.value.postWrite.valid }
+	const timings = commit.value.postWrite.timings
+	return {
+		commitMs: commit.ms,
+		postWriteMs,
+		reopenMs: postWriteTimings.reopen ?? timings?.reopenMs ?? 0,
+		checkMs: postWriteTimings.check ?? timings?.checkMs ?? 0,
+		lintMs: postWriteTimings.lint ?? timings?.lintMs ?? 0,
+		preservationMs: postWriteTimings.preservation ?? timings?.preservationMs ?? 0,
+		packageGraphMs: postWriteTimings['package-graph'] ?? timings?.packageGraphMs ?? 0,
+		packageGraphAuditMs:
+			postWriteTimings['package-graph-audit'] ?? timings?.packageGraphAuditMs ?? 0,
+		valid: commit.value.postWrite.valid,
+	}
+}
+
+function durationMsFromDetails(details: unknown): number | undefined {
+	if (details === null || typeof details !== 'object') return undefined
+	const duration = (details as { durationMs?: unknown }).durationMs
+	return typeof duration === 'number' && Number.isFinite(duration) ? duration : undefined
 }
 
 async function verifyBreakdown(inputPath: string, outputPath: string) {
@@ -202,6 +232,12 @@ async function runSample(
 	return {
 		commitMs: commit.commitMs,
 		commitPostWriteMs: commit.postWriteMs,
+		commitPostWriteReopenMs: commit.reopenMs,
+		commitPostWriteCheckMs: commit.checkMs,
+		commitPostWriteLintMs: commit.lintMs,
+		commitPostWritePreservationMs: commit.preservationMs,
+		commitPostWritePackageGraphMs: commit.packageGraphMs,
+		commitPostWritePackageGraphAuditMs: commit.packageGraphAuditMs,
 		...breakdown,
 		valid: commit.valid && breakdown.checkIssues === 0 && breakdown.packageGraphIssues === 0,
 	}
@@ -211,6 +247,18 @@ function summarize(samples: readonly Sample[]) {
 	return {
 		commitMedianMs: median(samples.map((sample) => sample.commitMs)),
 		commitPostWriteMedianMs: median(samples.map((sample) => sample.commitPostWriteMs)),
+		commitPostWriteReopenMedianMs: median(samples.map((sample) => sample.commitPostWriteReopenMs)),
+		commitPostWriteCheckMedianMs: median(samples.map((sample) => sample.commitPostWriteCheckMs)),
+		commitPostWriteLintMedianMs: median(samples.map((sample) => sample.commitPostWriteLintMs)),
+		commitPostWritePreservationMedianMs: median(
+			samples.map((sample) => sample.commitPostWritePreservationMs),
+		),
+		commitPostWritePackageGraphMedianMs: median(
+			samples.map((sample) => sample.commitPostWritePackageGraphMs),
+		),
+		commitPostWritePackageGraphAuditMedianMs: median(
+			samples.map((sample) => sample.commitPostWritePackageGraphAuditMs),
+		),
 		sourceOpenMedianMs: median(samples.map((sample) => sample.sourceOpenMs)),
 		sourceReadBytesMedianMs: median(samples.map((sample) => sample.sourceReadBytesMs)),
 		outputReadBytesMedianMs: median(samples.map((sample) => sample.outputReadBytesMs)),

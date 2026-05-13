@@ -32,6 +32,12 @@ describe('post-write breakdown benchmark', () => {
 		const payload = JSON.parse(stdout) as {
 			readonly summary?: {
 				readonly commitPostWriteMedianMs?: number
+				readonly commitPostWriteReopenMedianMs?: number
+				readonly commitPostWriteCheckMedianMs?: number
+				readonly commitPostWriteLintMedianMs?: number
+				readonly commitPostWritePreservationMedianMs?: number
+				readonly commitPostWritePackageGraphMedianMs?: number
+				readonly commitPostWritePackageGraphAuditMedianMs?: number
 				readonly reopenOutputMedianMs?: number
 				readonly checkMedianMs?: number
 				readonly lintMedianMs?: number
@@ -45,6 +51,12 @@ describe('post-write breakdown benchmark', () => {
 			}
 		}
 		expect(payload.summary?.commitPostWriteMedianMs).toBeNumber()
+		expect(payload.summary?.commitPostWriteReopenMedianMs).toBeNumber()
+		expect(payload.summary?.commitPostWriteCheckMedianMs).toBeNumber()
+		expect(payload.summary?.commitPostWriteLintMedianMs).toBeNumber()
+		expect(payload.summary?.commitPostWritePreservationMedianMs).toBeNumber()
+		expect(payload.summary?.commitPostWritePackageGraphMedianMs).toBeNumber()
+		expect(payload.summary?.commitPostWritePackageGraphAuditMedianMs).toBeNumber()
 		expect(payload.summary?.reopenOutputMedianMs).toBeNumber()
 		expect(payload.summary?.checkMedianMs).toBeNumber()
 		expect(payload.summary?.lintMedianMs).toBeNumber()

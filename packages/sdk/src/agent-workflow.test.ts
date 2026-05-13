@@ -2427,6 +2427,10 @@ describe('agent workflow loss audit', () => {
 		expect(planEvents.at(-1)).toContain('finalize:ok')
 		expect(commitEvents[0]).toBe('1:hash-input:started')
 		expect(commitEvents.some((event) => event.includes('apply:ok'))).toBe(true)
+		expect(commitEvents.some((event) => event.includes('post-write:reopen:ok'))).toBe(true)
+		expect(commitEvents.some((event) => event.includes('post-write:package-graph-audit:ok'))).toBe(
+			true,
+		)
 		expect(commitEvents.some((event) => event.includes('post-write:ok'))).toBe(true)
 		expect(commitEvents.at(-1)).toContain('finalize:ok')
 	})

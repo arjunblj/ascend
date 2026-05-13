@@ -115,10 +115,20 @@ export interface AgentPostWriteVerification {
 	readonly output: string
 	readonly outputSha256: string
 	readonly reopened: true
+	readonly timings?: AgentPostWriteVerificationTimings
 	readonly check: ReturnType<AscendWorkbook['check']>
 	readonly lint: ReturnType<AscendWorkbook['lint']>
 	readonly preservation: ReturnType<AscendWorkbook['writePlanSummary']>
 	readonly packageGraphAudit: PackageGraphAudit
+}
+
+export interface AgentPostWriteVerificationTimings {
+	readonly reopenMs: number
+	readonly checkMs: number
+	readonly lintMs: number
+	readonly preservationMs: number
+	readonly packageGraphMs: number
+	readonly packageGraphAuditMs: number
 }
 
 export interface LossAudit {
@@ -718,6 +728,7 @@ export async function commitAgentPlanFromWorkbook(
 		packageGraph,
 		sourceBytes,
 		outputBytes,
+		progress,
 	)
 	await progressFromPhase(postWritePhase(postWrite, expectedPostWritePackageGraphChanges), progress)
 	await progress('check', 'started', 'Running structural checks.')
@@ -813,26 +824,67 @@ async function verifyWrittenWorkbook(
 	sourceGraph: XlsxPackageGraph,
 	sourceBytes: Uint8Array,
 	outputBytes: Uint8Array,
+	progress: ReturnType<typeof createProgressEmitter>,
 ): Promise<AgentPostWriteVerification> {
-	const reopened = await openWorkbookFromBytes(output, outputBytes, { richMetadata: true })
-	const check = reopened.check()
-	const lint = reopened.lint()
-	const preservation = reopened.writePlanSummary()
-	const packageGraphAudit = auditPackageGraphRoundtrip(
-		sourceGraph,
-		sourceBytes,
-		reopened.packageGraph(),
-		outputBytes,
+	const reopened = await timedPostWriteStep(
+		progress,
+		'reopen',
+		'Reopening written workbook.',
+		'Written workbook reopened.',
+		() => openWorkbookFromBytes(output, outputBytes, { richMetadata: true }),
+	)
+	const check = await timedPostWriteStep(
+		progress,
+		'check',
+		'Running post-write structural checks.',
+		'Post-write structural checks completed.',
+		() => reopened.value.check(),
+	)
+	const lint = await timedPostWriteStep(
+		progress,
+		'lint',
+		'Running post-write formula lint.',
+		'Post-write formula lint completed.',
+		() => reopened.value.lint(),
+	)
+	const preservation = await timedPostWriteStep(
+		progress,
+		'preservation',
+		'Summarizing post-write preservation.',
+		'Post-write preservation summary completed.',
+		() => reopened.value.writePlanSummary(),
+	)
+	const outputGraph = await timedPostWriteStep(
+		progress,
+		'package-graph',
+		'Reading post-write package graph.',
+		'Post-write package graph read completed.',
+		() => reopened.value.packageGraph(),
+	)
+	const packageGraphAudit = await timedPostWriteStep(
+		progress,
+		'package-graph-audit',
+		'Auditing post-write package graph roundtrip.',
+		'Post-write package graph roundtrip audit completed.',
+		() => auditPackageGraphRoundtrip(sourceGraph, sourceBytes, outputGraph.value, outputBytes),
 	)
 	return {
-		valid: check.valid,
+		valid: check.value.valid,
 		output,
 		outputSha256,
 		reopened: true,
-		check,
-		lint,
-		preservation,
-		packageGraphAudit,
+		timings: {
+			reopenMs: reopened.ms,
+			checkMs: check.ms,
+			lintMs: lint.ms,
+			preservationMs: preservation.ms,
+			packageGraphMs: outputGraph.ms,
+			packageGraphAuditMs: packageGraphAudit.ms,
+		},
+		check: check.value,
+		lint: lint.value,
+		preservation: preservation.value,
+		packageGraphAudit: packageGraphAudit.value,
 	}
 }
 
@@ -1075,6 +1127,28 @@ async function progressFromPhase(
 		...(phase.refs ? { refs: phase.refs } : {}),
 		...(phase.details !== undefined ? { details: phase.details } : {}),
 	})
+}
+
+async function timedPostWriteStep<T>(
+	emit: ReturnType<typeof createProgressEmitter>,
+	name: string,
+	startedSummary: string,
+	okSummary: string,
+	fn: () => T | Promise<T>,
+): Promise<{ readonly value: T; readonly ms: number }> {
+	const phase = `post-write:${name}`
+	await emit(phase, 'started', startedSummary)
+	const start = performance.now()
+	try {
+		const value = await fn()
+		const ms = performance.now() - start
+		await emit(phase, 'ok', okSummary, { details: { durationMs: ms } })
+		return { value, ms }
+	} catch (error) {
+		const ms = performance.now() - start
+		await emit(phase, 'failed', `${startedSummary} failed.`, { details: { durationMs: ms } })
+		throw error
+	}
 }
 
 function definedProgressExtras(

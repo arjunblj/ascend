@@ -4033,6 +4033,17 @@ describe('readXlsx', () => {
 		expect(sheet?.cells.get(0, 4)?.styleId).toBe(1)
 		expect(sheet?.rowHeights.get(0)).toBe(18)
 		expect(sheet?.rowDefs.get(0)).toEqual({ customHeight: true })
+
+		const formulaModeSheet = parseSheetFullScalarBytes('Sheet1', new TextEncoder().encode(xml), {
+			sharedStrings,
+			styleIds: [S0, 1 as StyleId],
+			isDateFormat: [false, true],
+			hasDateStyles: true,
+			formulaOnly: true,
+			richMetadata: true,
+		})
+		expect(formulaModeSheet?.cells.get(0, 1)?.value).toEqual(stringValue('Shared & full'))
+		expect(formulaModeSheet?.cells.get(0, 4)?.styleId).toBe(1)
 	})
 
 	it('full scalar byte parser rejects formulas and sheet metadata for XML fallback', () => {

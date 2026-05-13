@@ -344,7 +344,7 @@ export function parseSheetFullScalarBytes(
 	ctx: SheetParseContext,
 	sheetId?: Sheet['id'],
 ): Sheet | null {
-	if (ctx.valuesOnly || ctx.formulaOnly) return null
+	if (ctx.valuesOnly || (ctx.formulaOnly && !ctx.richMetadata)) return null
 	const sheetDataStart = locateSheetDataStartBytes(bytes)
 	if (!sheetDataStart) return null
 	const sheet = new Sheet(name, sheetId)
@@ -1065,7 +1065,7 @@ function parseSimpleFullScalarRowBytes(
 ): boolean {
 	if (
 		ctx.valuesOnly ||
-		ctx.formulaOnly ||
+		(ctx.formulaOnly && !ctx.richMetadata) ||
 		hasElementOpenBytes(bytes, BYTES_F_OPEN, bodyStart, bodyEnd)
 	) {
 		return false

@@ -298,6 +298,7 @@ describe('operation schema agent DX', () => {
 			newName: 'Line Total',
 		})
 		expect(schema?.recoveryActions.join('\n')).toContain('rewrite structured references')
+		expect(schema?.recoveryActions.join('\n')).toContain('queryTableFieldId bindings')
 
 		const parsed = parseOperations([
 			{

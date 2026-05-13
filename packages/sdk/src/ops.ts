@@ -1405,6 +1405,7 @@ function operationRecoveryActions(op: string): readonly string[] {
 		case 'setTableColumn':
 			return [
 				'Use a table column name or 0-based column index; set newName to rename the column and rewrite structured references.',
+				'QueryTable-backed columns with queryTableFieldId bindings cannot be renamed unless the queryTable sidecar is rebuilt with matching field bindings.',
 				'Set formula to null to clear calculated-column formulas.',
 				'Use totalsRowFunction, totalsRowFormula, or totalsRowLabel to edit totals metadata.',
 				...common,

@@ -3372,6 +3372,56 @@ describe('applyOperation', () => {
 		expect(wb.connectionParts).toHaveLength(1)
 	})
 
+	test('setTableColumn rejects renaming queryTable-backed columns', () => {
+		const { wb, sheet } = setupQueryTableBackedSalesTable()
+		sheet.cells.set(0, 1, { value: stringValue('Rep'), formula: null, styleId: sid })
+
+		const result = applyOperation(wb, {
+			op: 'setTableColumn',
+			table: 'Sales',
+			column: 'Rep',
+			newName: 'Representative',
+		})
+
+		expectErr(result)
+		expect(result.error.message).toContain('Cannot rename queryTable-backed column "Rep"')
+		expect(result.error.details).toMatchObject({
+			kind: 'query-table-column-rename',
+			tableName: 'Sales',
+			columnName: 'Rep',
+			queryTableFieldId: 2,
+			queryTablePartPath: 'xl/queryTables/queryTable1.xml',
+		})
+		expect(sheet.tables[0]?.columns.map((column) => column.name)).toEqual([
+			'Region',
+			'Rep',
+			'Amount',
+		])
+		expect(sheet.tables[0]?.columns.map((column) => column.queryTableFieldId)).toEqual([1, 2, 3])
+		expect(sheet.cells.get(0, 1)?.value).toEqual(stringValue('Rep'))
+		expect(wb.connectionParts).toHaveLength(1)
+	})
+
+	test('setTableColumn keeps formula-only edits available on queryTable-backed columns', () => {
+		const { wb, sheet } = setupQueryTableBackedSalesTable()
+
+		expectOk(
+			applyOperation(wb, {
+				op: 'setTableColumn',
+				table: 'Sales',
+				column: 'Amount',
+				formula: '=[@Region]&[@Rep]',
+			}),
+		)
+
+		expect(sheet.tables[0]?.columns[2]).toMatchObject({
+			name: 'Amount',
+			queryTableFieldId: 3,
+			formula: '[@Region]&[@Rep]',
+		})
+		expect(wb.connectionParts).toHaveLength(1)
+	})
+
 	test('insertRows rewrites formulas', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')

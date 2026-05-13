@@ -442,6 +442,28 @@ function queryTableColumnResizeError(table: Table, ref: string): ReturnType<type
 	)
 }
 
+function queryTableColumnRenameError(
+	table: Table,
+	column: Table['columns'][number],
+): ReturnType<typeof ascendError> {
+	return ascendError(
+		'VALIDATION_ERROR',
+		`Cannot rename queryTable-backed column "${column.name}" in table "${table.name}" because the queryTable field binding cannot be rewritten safely`,
+		{
+			refs: [rangeToA1(table.ref), table.queryTable?.partPath ?? table.name],
+			details: {
+				kind: 'query-table-column-rename',
+				tableName: table.name,
+				columnName: column.name,
+				queryTableFieldId: column.queryTableFieldId,
+				queryTablePartPath: table.queryTable?.partPath,
+			},
+			suggestedFix:
+				'Edit calculated-column or totals metadata only, or rebuild the queryTable sidecar with matching field bindings before renaming query-backed table columns.',
+		},
+	)
+}
+
 function tableAppendTotalsShiftError(
 	table: Table,
 	shiftedTable: Table,
@@ -570,6 +592,9 @@ export function handleSetTableColumn(
 
 	const column = table.columns[columnIndex]
 	if (!column) return err(ascendError('NAME_NOT_FOUND', `Column "${String(op.column)}" not found`))
+	if (op.newName !== undefined && table.queryTable) {
+		return err(queryTableColumnRenameError(table, column))
+	}
 	const newNameLower = op.newName?.toLowerCase()
 	if (
 		newNameLower !== undefined &&

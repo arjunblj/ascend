@@ -2363,6 +2363,165 @@ const scenarios: readonly Scenario[] = [
 		},
 	},
 	{
+		name: 'real-dense-prepared-open-memory',
+		category: 'workflow',
+		build() {
+			const target = realInteractivePatchCorpusTarget('stress-dense-100k')
+			return {
+				rows: target.rowCount,
+				cols: target.colCount,
+				cells: target.rowCount * target.colCount,
+				byteCount: realInteractivePatchCorpusTargetBytes(target).byteLength,
+			}
+		},
+		async run() {
+			const target = realInteractivePatchCorpusTarget('stress-dense-100k')
+			const bytes = realInteractivePatchCorpusTargetBytes(target)
+			WorkbookDocument.clearCache()
+			runGc()
+			const baseline = phaseMemorySnapshot()
+
+			const openStart = performance.now()
+			const session = await AscendSession.open(bytes, {
+				mode: 'interactive',
+				prepareEdits: true,
+			})
+			const preparedOpenMs = performance.now() - openStart
+			const readiness = session.editReadiness()
+			if (!readiness.ready) throw new Error('Dense prepared-open session was not edit-ready')
+			runGc()
+			const afterPreparedOpen = phaseMemorySnapshot()
+
+			const viewportStart = performance.now()
+			const viewport = session.readViewport({
+				sheet: target.sheet,
+				topRow: target.topRow,
+				leftCol: target.leftCol,
+				rowCount: target.rowCount,
+				colCount: target.colCount,
+			})
+			const viewportMs = performance.now() - viewportStart
+			runGc()
+			const afterViewport = phaseMemorySnapshot()
+
+			const editStart = performance.now()
+			const edit = await session.apply(
+				[
+					{
+						op: 'setCells',
+						sheet: target.sheet,
+						updates: [{ ref: target.editRef, value: 81_000 }],
+					},
+				],
+				{ recalc: false },
+			)
+			if (edit.apply.errors.length > 0) throw new Error('Dense prepared-open edit failed')
+			const patchStart = performance.now()
+			const patch =
+				session.readViewportPatch({
+					sheet: target.sheet,
+					topRow: target.topRow,
+					leftCol: target.leftCol,
+					rowCount: target.rowCount,
+					colCount: target.colCount,
+					changedSince: viewport.changeToken,
+				}) ??
+				session.readViewport({
+					sheet: target.sheet,
+					topRow: target.topRow,
+					leftCol: target.leftCol,
+					rowCount: target.rowCount,
+					colCount: target.colCount,
+					changedSince: viewport.changeToken,
+				}).patch
+			const patchReadMs = performance.now() - patchStart
+			const editFrameMs = performance.now() - editStart
+			if (!patch || patch.changedCells.length !== 1) {
+				throw new Error('Dense prepared-open patch was not delta-shaped')
+			}
+			runGc()
+			const afterPatch = phaseMemorySnapshot()
+
+			session.close()
+			WorkbookDocument.clearCache()
+			runGc()
+			const afterClose = phaseMemorySnapshot()
+
+			return {
+				assertions: {
+					bytes: bytes.byteLength,
+					viewportCells: viewport.cells.length,
+					viewportFlatValues: viewport.flatValues.length,
+					changedCells: patch.changedCells.length,
+					patchBytes: patch.byteLength,
+					preparedOpenMs,
+					readinessReady: readiness.ready,
+					readinessReusedReadModel: readiness.timings?.mutableWorkbookReusedReadModel ?? false,
+					readinessMutableWorkbookOpenMs: readiness.timings?.mutableWorkbookOpenMs ?? null,
+					viewportMs,
+					editFrameMs,
+					sessionApplyMs: edit.timings.totalMs,
+					applyMs: edit.timings.applyMs,
+					patchReadMs,
+					baselineRssBytes: baseline.rssBytes,
+					afterPreparedOpenRssDeltaBytes: memoryDelta(
+						afterPreparedOpen.rssBytes,
+						baseline.rssBytes,
+					),
+					afterViewportRssDeltaBytes: memoryDelta(afterViewport.rssBytes, baseline.rssBytes),
+					afterPatchRssDeltaBytes: memoryDelta(afterPatch.rssBytes, baseline.rssBytes),
+					afterCloseRssDeltaBytes: memoryDelta(afterClose.rssBytes, baseline.rssBytes),
+					baselineHeapUsedBytes: baseline.heapUsedBytes,
+					afterPreparedOpenHeapDeltaBytes: memoryDelta(
+						afterPreparedOpen.heapUsedBytes,
+						baseline.heapUsedBytes,
+					),
+					afterViewportHeapDeltaBytes: memoryDelta(
+						afterViewport.heapUsedBytes,
+						baseline.heapUsedBytes,
+					),
+					afterPatchHeapDeltaBytes: memoryDelta(afterPatch.heapUsedBytes, baseline.heapUsedBytes),
+					afterCloseHeapDeltaBytes: memoryDelta(afterClose.heapUsedBytes, baseline.heapUsedBytes),
+					baselineExternalBytes: baseline.externalBytes,
+					afterPreparedOpenExternalDeltaBytes: memoryDelta(
+						afterPreparedOpen.externalBytes,
+						baseline.externalBytes,
+					),
+					afterViewportExternalDeltaBytes: memoryDelta(
+						afterViewport.externalBytes,
+						baseline.externalBytes,
+					),
+					afterPatchExternalDeltaBytes: memoryDelta(
+						afterPatch.externalBytes,
+						baseline.externalBytes,
+					),
+					afterCloseExternalDeltaBytes: memoryDelta(
+						afterClose.externalBytes,
+						baseline.externalBytes,
+					),
+					baselineArrayBuffersBytes: baseline.arrayBuffersBytes,
+					afterPreparedOpenArrayBuffersDeltaBytes: memoryDelta(
+						afterPreparedOpen.arrayBuffersBytes,
+						baseline.arrayBuffersBytes,
+					),
+					afterViewportArrayBuffersDeltaBytes: memoryDelta(
+						afterViewport.arrayBuffersBytes,
+						baseline.arrayBuffersBytes,
+					),
+					afterPatchArrayBuffersDeltaBytes: memoryDelta(
+						afterPatch.arrayBuffersBytes,
+						baseline.arrayBuffersBytes,
+					),
+					afterCloseArrayBuffersDeltaBytes: memoryDelta(
+						afterClose.arrayBuffersBytes,
+						baseline.arrayBuffersBytes,
+					),
+					patchMode: 'delta',
+				},
+			}
+		},
+	},
+	{
 		name: 'workflow-reopen-values-window',
 		category: 'workflow',
 		build() {
@@ -3181,7 +3340,7 @@ const scenarioSets = {
 	],
 	'ui-real-corpus': ['patch-stream-real-corpus-prepared-first-edit'],
 	'real-open': ['real-corpus-open-phases'],
-	'real-memory': ['real-dense-promotion-memory'],
+	'real-memory': ['real-dense-promotion-memory', 'real-dense-prepared-open-memory'],
 	'real-readiness': ['real-dense-progressive-readiness'],
 } as const
 

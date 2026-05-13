@@ -25,7 +25,7 @@ import {
 	sdkCheckIssueFromVerify,
 } from './check-issues.ts'
 import { formatStyledDisplayCellValue } from './format-helpers.ts'
-import { openWorkbookSource } from './load.ts'
+import { type LoadedWorkbookSource, openWorkbookSource } from './load.ts'
 import { inspectRawPackagePart } from './raw-package.ts'
 import { WorkbookReadView } from './read-view.ts'
 import type { CellSelector } from './ref-selectors.ts'
@@ -195,6 +195,7 @@ export interface AscendSessionApplyTimings {
 	readonly inspectReadMs: number
 	readonly ensureMutableWorkbookMs: number
 	readonly mutableWorkbookCached?: boolean
+	readonly mutableWorkbookReusedReadModel?: boolean
 	readonly mutableWorkbookOpenMs?: number
 	readonly rebaseViewportSnapshotsMs?: number
 	readonly applyMs: number
@@ -231,6 +232,7 @@ export interface AscendSessionPrepareEditsResult {
 	readonly timings: {
 		readonly ensureMutableWorkbookMs: number
 		readonly mutableWorkbookCached?: boolean
+		readonly mutableWorkbookReusedReadModel?: boolean
 		readonly mutableWorkbookOpenMs?: number
 		readonly rebaseViewportSnapshotsMs?: number
 		readonly inspectWriteMs: number
@@ -247,6 +249,7 @@ export interface AscendSessionEditReadiness {
 	readonly promotedToFull: boolean
 	readonly timings: {
 		readonly mutableWorkbookCached: boolean
+		readonly mutableWorkbookReusedReadModel: boolean
 		readonly mutableWorkbookOpenMs: number
 		readonly rebaseViewportSnapshotsMs: number
 	} | null
@@ -280,6 +283,7 @@ interface InteractiveChangeEntry {
 
 interface MutableWorkbookEnsureTimings {
 	readonly cached: boolean
+	readonly reusedReadModel: boolean
 	readonly openMs: number
 	readonly rebaseViewportSnapshotsMs: number
 }
@@ -338,6 +342,8 @@ export class WorkbookDocument {
 	private readonly source: string | Uint8Array
 	private readonly options: WorkbookLoadOptions
 	private readonly view: WorkbookReadView
+	private readonly capsules: LoadedWorkbookSource['capsules']
+	private readonly originalBytes: Uint8Array | null
 
 	private constructor(
 		cacheKey: string,
@@ -345,12 +351,16 @@ export class WorkbookDocument {
 		identity: SessionIdentity,
 		options: WorkbookLoadOptions,
 		view: WorkbookReadView,
+		capsules: LoadedWorkbookSource['capsules'],
+		originalBytes: Uint8Array | null,
 	) {
 		this.cacheKey = cacheKey
 		this.source = source
 		this.identity = identity
 		this.options = options
 		this.view = view
+		this.capsules = capsules
+		this.originalBytes = originalBytes
 	}
 
 	static async open(
@@ -377,6 +387,8 @@ export class WorkbookDocument {
 			identity,
 			normalizeOptions(options),
 			new WorkbookReadView(loaded.workbook, loaded.report, loaded.loadInfo),
+			loaded.capsules,
+			loaded.originalBytes,
 		)
 		document.refreshCacheFootprint('base')
 		return document
@@ -438,6 +450,18 @@ export class WorkbookDocument {
 		return this.withLoad({
 			...(options?.mode ? { mode: options.mode } : {}),
 			sheets: sheetNames,
+		})
+	}
+
+	toMutableWorkbook(): AscendWorkbook | null {
+		const load = this.inspect().load
+		if (load.isPartial) return null
+		return AscendWorkbook.fromLoadedSource({
+			workbook: this.view.getWorkbookModel().clone(),
+			capsules: this.capsules,
+			report: this.report,
+			loadInfo: load,
+			originalBytes: this.originalBytes,
 		})
 	}
 
@@ -976,6 +1000,7 @@ export class AscendSession {
 			timings: {
 				ensureMutableWorkbookMs,
 				mutableWorkbookCached: ensured.timings.cached,
+				mutableWorkbookReusedReadModel: ensured.timings.reusedReadModel,
 				mutableWorkbookOpenMs: ensured.timings.openMs,
 				rebaseViewportSnapshotsMs: ensured.timings.rebaseViewportSnapshotsMs,
 				inspectWriteMs,
@@ -998,6 +1023,7 @@ export class AscendSession {
 			timings: timings
 				? {
 						mutableWorkbookCached: timings.cached,
+						mutableWorkbookReusedReadModel: timings.reusedReadModel,
 						mutableWorkbookOpenMs: timings.openMs,
 						rebaseViewportSnapshotsMs: timings.rebaseViewportSnapshotsMs,
 					}
@@ -1113,6 +1139,7 @@ export class AscendSession {
 				inspectReadMs,
 				ensureMutableWorkbookMs,
 				mutableWorkbookCached: ensured.timings.cached,
+				mutableWorkbookReusedReadModel: ensured.timings.reusedReadModel,
 				mutableWorkbookOpenMs: ensured.timings.openMs,
 				rebaseViewportSnapshotsMs: ensured.timings.rebaseViewportSnapshotsMs,
 				applyMs,
@@ -1156,13 +1183,24 @@ export class AscendSession {
 		if (this.mutableWorkbook) {
 			return {
 				workbook: this.mutableWorkbook,
-				timings: { cached: true, openMs: 0, rebaseViewportSnapshotsMs: 0 },
+				timings: {
+					cached: true,
+					reusedReadModel: false,
+					openMs: 0,
+					rebaseViewportSnapshotsMs: 0,
+				},
 			}
 		}
 		if (!this.mutableWorkbookPromise) {
 			this.mutableWorkbookPromise = (async () => {
 				const openStart = performance.now()
-				const workbook = await AscendWorkbook.open(this.source, writableOpenOptions(this.options))
+				let reusedReadModel = false
+				let workbook = this.session.workbook().toMutableWorkbook()
+				if (workbook) {
+					reusedReadModel = true
+				} else {
+					workbook = await AscendWorkbook.open(this.source, writableOpenOptions(this.options))
+				}
 				const openMs = performance.now() - openStart
 				const rebaseStart = performance.now()
 				this.rebaseViewportSnapshots(workbook)
@@ -1170,6 +1208,7 @@ export class AscendSession {
 				this.mutableWorkbook = workbook
 				this.mutableWorkbookReadyTimings = {
 					cached: false,
+					reusedReadModel,
 					openMs,
 					rebaseViewportSnapshotsMs,
 				}
@@ -1185,6 +1224,7 @@ export class AscendSession {
 			workbook,
 			timings: this.mutableWorkbookReadyTimings ?? {
 				cached: false,
+				reusedReadModel: false,
 				openMs: 0,
 				rebaseViewportSnapshotsMs: 0,
 			},

@@ -577,6 +577,7 @@ describe('interactive client contract', () => {
 			promotedToFull: true,
 			timings: {
 				mutableWorkbookCached: false,
+				mutableWorkbookReusedReadModel: false,
 				mutableWorkbookOpenMs: prepared.timings.mutableWorkbookOpenMs,
 				rebaseViewportSnapshotsMs: prepared.timings.rebaseViewportSnapshotsMs,
 			},
@@ -602,6 +603,25 @@ describe('interactive client contract', () => {
 				?.changedCells.map((cell) => [cell.ref, cell.flatValue]),
 		).toEqual([['A1', 10]])
 		session.close()
+
+		const fullSession = await AscendSession.open(wb.toBytes(), {
+			mode: 'full',
+			richMetadata: true,
+		})
+		const fullReadDocument = fullSession.workbook()
+		const fullPrepared = await fullSession.prepareEdits()
+		expect(fullPrepared.load.promotedToFull).toBe(false)
+		expect(fullPrepared.timings.mutableWorkbookReusedReadModel).toBe(true)
+		const fullEdit = await fullSession.apply([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 20 }] },
+		])
+		expect(fullEdit.apply.errors).toEqual([])
+		expect(fullEdit.timings.mutableWorkbookCached).toBe(true)
+		expect(fullReadDocument.sheet('Sheet1')?.cell('A1')?.value).toEqual({
+			kind: 'number',
+			value: 1,
+		})
+		fullSession.close()
 	})
 
 	test('interactive viewport tokens from other sessions refreshes and retained-log gaps force fresh reads', async () => {

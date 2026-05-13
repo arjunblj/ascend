@@ -441,7 +441,7 @@ export class AscendWorkbook extends WorkbookReadView {
 		return { workbook: AscendWorkbook.fromLoadedSource(loaded), sourceBytes }
 	}
 
-	private static fromLoadedSource(loaded: LoadedWorkbookSource): AscendWorkbook {
+	static fromLoadedSource(loaded: LoadedWorkbookSource): AscendWorkbook {
 		return new AscendWorkbook(
 			loaded.workbook,
 			[...loaded.capsules],

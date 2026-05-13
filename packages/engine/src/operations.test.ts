@@ -6107,6 +6107,42 @@ describe('applyOperation', () => {
 		expect(sheet.tables[0]?.name).toBe('SALES')
 	})
 
+	test('renameTable rewrites case-insensitive structured references', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.tables.push({
+			id: createTableId(),
+			name: 'Sales',
+			sheetId: sheet.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 2, col: 1 } },
+			columns: [
+				{ id: 1, name: 'Region' },
+				{ id: 2, name: 'Amount' },
+			],
+			hasHeaders: true,
+			hasTotals: false,
+		})
+		sheet.cells.set(4, 0, { value: EMPTY, formula: 'SUM(sales[Amount])', styleId: sid })
+		wb.definedNames.set('SalesAmount', 'SUM(SALES[Amount])')
+		sheet.dataValidations.push({
+			sqref: 'C2:C3',
+			type: 'custom',
+			formula1: 'SUM(Sales[Amount])>0',
+		})
+
+		const renamed = applyOperation(wb, {
+			op: 'renameTable',
+			table: 'Sales',
+			newName: 'Revenue',
+		})
+
+		expectOk(renamed)
+		expect(sheet.tables[0]?.name).toBe('Revenue')
+		expect(sheet.cells.get(4, 0)?.formula).toBe('SUM(Revenue[Amount])')
+		expect(wb.definedNames.get('SalesAmount')).toBe('SUM(Revenue[Amount])')
+		expect(sheet.dataValidations[0]?.formula1).toBe('SUM(Revenue[Amount])>0')
+	})
+
 	test('renameTable preserves absent table name attribute state', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

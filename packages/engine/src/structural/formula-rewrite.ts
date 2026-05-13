@@ -1968,7 +1968,7 @@ function rewriteSheetName(node: FormulaNode, oldName: string, newName: string): 
 function rewriteTableName(node: FormulaNode, oldName: string, newName: string): FormulaNode {
 	switch (node.type) {
 		case 'structuredRef':
-			return node.table === oldName ? { ...node, table: newName } : node
+			return node.table.toLowerCase() === oldName.toLowerCase() ? { ...node, table: newName } : node
 		case 'binary':
 			return {
 				type: 'binary',

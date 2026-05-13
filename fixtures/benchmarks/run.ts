@@ -161,6 +161,16 @@ function buildDenseWorkbook(rows: number, cols: number): Workbook {
 	return workbook
 }
 
+function buildPlainNumericWorkbook(rows: number, cols: number): Workbook {
+	const workbook = createWorkbook()
+	const sheet = workbook.addSheet('Sheet1')
+	const values = Array.from({ length: cols }, (_, col) => col + 1)
+	for (let row = 0; row < rows; row++) {
+		sheet.cells.setPlainNumberSpan(row, 0, values)
+	}
+	return workbook
+}
+
 function buildStringDenseWorkbook(rows: number, cols: number): Workbook {
 	const workbook = createWorkbook()
 	workbook.addSheet('Sheet1')
@@ -1022,6 +1032,49 @@ const scenarios: readonly Scenario[] = [
 		},
 		run(input) {
 			mustWrite(requireWorkbook(input))
+		},
+	},
+	{
+		name: 'grid-storage-width-sweep',
+		category: 'workflow',
+		build() {
+			const rows = 20_000
+			const maxCols = 50
+			return { rows, cols: maxCols, cells: rows * maxCols }
+		},
+		run(input) {
+			const rows = input.rows
+			const widths = [5, 10, 20, 50] as const
+			const assertions: Record<string, number> = {}
+			for (const width of widths) {
+				runGc()
+				const baseline = phaseMemorySnapshot()
+				const buildStart = performance.now()
+				const workbook = buildPlainNumericWorkbook(rows, width)
+				const buildMs = performance.now() - buildStart
+				runGc()
+				const afterBuild = phaseMemorySnapshot()
+				const prefix = `width${width}`
+				assertions[`${prefix}.cells`] = rows * width
+				assertions[`${prefix}.buildMs`] = buildMs
+				assertions[`${prefix}.heapDeltaBytes`] = memoryDelta(
+					afterBuild.heapUsedBytes,
+					baseline.heapUsedBytes,
+				)
+				assertions[`${prefix}.externalDeltaBytes`] = memoryDelta(
+					afterBuild.externalBytes,
+					baseline.externalBytes,
+				)
+				assertions[`${prefix}.arrayBuffersDeltaBytes`] = memoryDelta(
+					afterBuild.arrayBuffersBytes,
+					baseline.arrayBuffersBytes,
+				)
+				const storage = workbookGridStorageAssertions(workbook)
+				for (const [key, value] of Object.entries(storage)) {
+					assertions[`${prefix}.${key}`] = value
+				}
+			}
+			return { assertions }
 		},
 	},
 	{
@@ -3627,7 +3680,13 @@ const scenarioSets = {
 		'structural-insert-rows-recalc',
 		'read-csv-large',
 	],
-	memory: ['memory-1k-cells', 'memory-10k-cells', 'memory-100k-cells', 'memory-1m-cells'],
+	memory: [
+		'memory-1k-cells',
+		'memory-10k-cells',
+		'memory-100k-cells',
+		'memory-1m-cells',
+		'grid-storage-width-sweep',
+	],
 	'large-read': [
 		'read-large-200k',
 		'read-style-heavy',

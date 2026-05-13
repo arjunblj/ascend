@@ -23,7 +23,9 @@ import {
 	type SheetDrawingObjectRef,
 	type SheetHyperlink,
 	type SheetImageAnchor,
+	type SheetProtection,
 	type SheetState,
+	type SheetTabColor,
 	type SheetThreadedComment,
 	type Table,
 	type TableColumn,
@@ -180,6 +182,16 @@ export interface MutationJournalSheetLayoutPreimage {
 	readonly value: number | null
 }
 
+export interface MutationJournalSheetTabColorPreimage {
+	readonly sheet: string
+	readonly tabColor: SheetTabColor | null
+}
+
+export interface MutationJournalSheetProtectionPreimage {
+	readonly sheet: string
+	readonly protection: SheetProtection | null
+}
+
 export interface MutationJournalSheetVisibilityPreimage {
 	readonly sheet: string
 	readonly state: SheetState | null
@@ -266,6 +278,14 @@ export type MutationJournalPreimage =
 	| { readonly kind: 'sheet-move'; readonly sheetMove: MutationJournalSheetMovePreimage }
 	| { readonly kind: 'sheet-delete'; readonly sheetDelete: MutationJournalSheetDeletePreimage }
 	| { readonly kind: 'sheet-layout'; readonly sheetLayout: MutationJournalSheetLayoutPreimage }
+	| {
+			readonly kind: 'sheet-tab-color'
+			readonly sheetTabColor: MutationJournalSheetTabColorPreimage
+	  }
+	| {
+			readonly kind: 'sheet-protection'
+			readonly sheetProtection: MutationJournalSheetProtectionPreimage
+	  }
 	| {
 			readonly kind: 'sheet-visibility'
 			readonly sheetVisibility: MutationJournalSheetVisibilityPreimage
@@ -504,6 +524,10 @@ function buildSupportedJournalEntry(
 			return journalSetSheetLayout(workbook, op, opIndex, 'row')
 		case 'setColWidth':
 			return journalSetSheetLayout(workbook, op, opIndex, 'col')
+		case 'setTabColor':
+			return journalSetTabColor(workbook, op, opIndex)
+		case 'setSheetProtection':
+			return journalSetSheetProtection(workbook, op, opIndex)
 		case 'hideSheet':
 			return journalHideSheet(workbook, op, opIndex)
 		case 'hideRows':
@@ -512,6 +536,106 @@ function buildSupportedJournalEntry(
 			return journalHideCols(workbook, op, opIndex)
 		default:
 			return null
+	}
+}
+
+function journalSetTabColor(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'setTabColor' }>,
+	opIndex: number,
+): DraftJournalEntry {
+	const sheet = workbook.getSheet(op.sheet)
+	const tabColor = sheet?.tabColor ? cloneSheetTabColor(sheet.tabColor) : null
+	const preimage: MutationJournalSheetTabColorPreimage = {
+		sheet: op.sheet,
+		tabColor,
+	}
+	if (!sheet) {
+		return {
+			opIndex,
+			op,
+			inverseOps: [],
+			preimages: [{ kind: 'sheet-tab-color', sheetTabColor: preimage }],
+			issues: [
+				{
+					code: 'UNSUPPORTED_VALUE',
+					message: `Cannot restore tab color for ${op.sheet} because the sheet was not found`,
+					refs: [`sheet:${op.sheet}`],
+				},
+			],
+		}
+	}
+	const inverseOps: Operation[] = tabColor?.rgb
+		? [{ op: 'setTabColor', sheet: op.sheet, color: tabColor.rgb }]
+		: []
+	const issues = tabColorIsPublicRgb(tabColor)
+		? []
+		: [
+				{
+					code: 'LOSSY_INVERSE',
+					message: tabColor
+						? `Sheet tab color for ${op.sheet} uses unsupported color metadata and cannot be fully restored with public operations`
+						: `Sheet tab color absence for ${op.sheet} cannot be restored with public operations`,
+					refs: [`sheet:${op.sheet}:tabColor`],
+				} satisfies MutationJournalIssue,
+			]
+	return {
+		opIndex,
+		op,
+		inverseOps,
+		preimages: [{ kind: 'sheet-tab-color', sheetTabColor: preimage }],
+		issues,
+	}
+}
+
+function journalSetSheetProtection(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'setSheetProtection' }>,
+	opIndex: number,
+): DraftJournalEntry {
+	const sheet = workbook.getSheet(op.sheet)
+	const protection = sheet?.protection ? cloneSheetProtection(sheet.protection) : null
+	const preimage: MutationJournalSheetProtectionPreimage = {
+		sheet: op.sheet,
+		protection,
+	}
+	if (!sheet) {
+		return {
+			opIndex,
+			op,
+			inverseOps: [],
+			preimages: [{ kind: 'sheet-protection', sheetProtection: preimage }],
+			issues: [
+				{
+					code: 'UNSUPPORTED_VALUE',
+					message: `Cannot restore sheet protection for ${op.sheet} because the sheet was not found`,
+					refs: [`sheet:${op.sheet}`],
+				},
+			],
+		}
+	}
+	const inverseOp = protection ? sheetProtectionInverseOp(op.sheet, protection) : null
+	const unsupportedKeys = protection ? unsupportedSheetProtectionKeys(protection) : []
+	const issues: MutationJournalIssue[] = []
+	if (!protection) {
+		issues.push({
+			code: 'LOSSY_INVERSE',
+			message: `Sheet protection absence for ${op.sheet} cannot be restored with public operations`,
+			refs: [`sheet:${op.sheet}:protection`],
+		})
+	} else if (protection.sheet !== true || unsupportedKeys.length > 0) {
+		issues.push({
+			code: 'LOSSY_INVERSE',
+			message: `Sheet protection for ${op.sheet} contains metadata that cannot be fully restored with public operations`,
+			refs: unsupportedKeys.map((key) => `sheet:${op.sheet}:protection:${key}`),
+		})
+	}
+	return {
+		opIndex,
+		op,
+		inverseOps: inverseOp ? [inverseOp] : [],
+		preimages: [{ kind: 'sheet-protection', sheetProtection: preimage }],
+		issues,
 	}
 }
 
@@ -814,6 +938,60 @@ function journalHideCols(
 
 function cloneSheetColDef(def: SheetColDef): SheetColDef {
 	return { ...def }
+}
+
+function cloneSheetTabColor(tabColor: SheetTabColor): SheetTabColor {
+	return { ...tabColor }
+}
+
+function cloneSheetProtection(protection: SheetProtection): SheetProtection {
+	return { ...protection }
+}
+
+function tabColorIsPublicRgb(tabColor: SheetTabColor | null): boolean {
+	if (!tabColor?.rgb) return false
+	return (
+		tabColor.theme === undefined && tabColor.tint === undefined && tabColor.indexed === undefined
+	)
+}
+
+function sheetProtectionInverseOp(
+	sheet: string,
+	protection: SheetProtection,
+): Extract<Operation, { op: 'setSheetProtection' }> {
+	type SheetProtectionInverseOptions = {
+		-readonly [Key in keyof NonNullable<
+			Extract<Operation, { op: 'setSheetProtection' }>['options']
+		>]?: boolean
+	}
+	const options: SheetProtectionInverseOptions = {}
+	for (const key of SHEET_PROTECTION_OPTION_KEYS) {
+		const value = protection[key]
+		if (value !== undefined) options[key] = value
+	}
+	return {
+		op: 'setSheetProtection',
+		sheet,
+		...(protection.password ? { password: protection.password } : {}),
+		...(Object.keys(options).length > 0 ? { options } : {}),
+	}
+}
+
+const SHEET_PROTECTION_OPTION_KEYS = [
+	'formatCells',
+	'formatColumns',
+	'formatRows',
+	'insertColumns',
+	'insertRows',
+	'deleteColumns',
+	'deleteRows',
+	'sort',
+	'autoFilter',
+] as const satisfies readonly (keyof SheetProtection)[]
+
+function unsupportedSheetProtectionKeys(protection: SheetProtection): string[] {
+	const supported = new Set<string>(['sheet', 'password', ...SHEET_PROTECTION_OPTION_KEYS])
+	return Object.keys(protection).filter((key) => !supported.has(key))
 }
 
 function layoutRef(sheet: string, axis: 'row' | 'col', index: number): string {

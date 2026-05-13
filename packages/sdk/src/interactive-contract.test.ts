@@ -4099,6 +4099,115 @@ describe('interactive client contract', () => {
 		])
 	})
 
+	test('journal inverse ops restore representable sheet tab color and protection metadata', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{ op: 'setTabColor', sheet: 'Sheet1', color: 'FF0000' },
+			{
+				op: 'setSheetProtection',
+				sheet: 'Sheet1',
+				password: 'ABCD',
+				options: { formatCells: false, autoFilter: true },
+			},
+		])
+		const before = journalComparableState(wb)
+
+		const changed = wb.apply(
+			[
+				{ op: 'setTabColor', sheet: 'Sheet1', color: '00FF00' },
+				{
+					op: 'setSheetProtection',
+					sheet: 'Sheet1',
+					password: 'DCBA',
+					options: { insertRows: true, deleteRows: false },
+				},
+			],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(true)
+		expect(changed.journal?.inverseOps).toEqual([
+			{
+				op: 'setSheetProtection',
+				sheet: 'Sheet1',
+				password: 'ABCD',
+				options: { formatCells: false, autoFilter: true },
+			},
+			{ op: 'setTabColor', sheet: 'Sheet1', color: 'FF0000' },
+		])
+		expect(journalComparableState(wb)).not.toEqual(before)
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(journalComparableState(wb)).toEqual(before)
+	})
+
+	test('journal classifies un-restorable sheet tab color and protection metadata as lossy', () => {
+		const wb = AscendWorkbook.create()
+		const modelSheet = wb.getWorkbookModel().getSheet('Sheet1')
+		if (modelSheet) {
+			modelSheet.tabColor = { theme: 2, tint: -0.25 }
+			modelSheet.protection = { sheet: true, objects: true, algorithmName: 'SHA-512' }
+		}
+
+		const changed = wb.preview(
+			[
+				{ op: 'setTabColor', sheet: 'Sheet1', color: '00FF00' },
+				{ op: 'setSheetProtection', sheet: 'Sheet1', options: { insertRows: true } },
+			],
+			{ journal: true },
+		)
+
+		expect(changed.wouldSucceed).toBe(true)
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(false)
+		expect(changed.journal?.inverseOps).toEqual([{ op: 'setSheetProtection', sheet: 'Sheet1' }])
+		expect(changed.journal?.issues).toEqual([
+			{
+				code: 'LOSSY_INVERSE',
+				message:
+					'Sheet tab color for Sheet1 uses unsupported color metadata and cannot be fully restored with public operations',
+				refs: ['sheet:Sheet1:tabColor'],
+			},
+			{
+				code: 'LOSSY_INVERSE',
+				message:
+					'Sheet protection for Sheet1 contains metadata that cannot be fully restored with public operations',
+				refs: ['sheet:Sheet1:protection:objects', 'sheet:Sheet1:protection:algorithmName'],
+			},
+		])
+	})
+
+	test('journal marks newly-created tab color and sheet protection as lossy', () => {
+		const wb = AscendWorkbook.create()
+		const changed = wb.preview(
+			[
+				{ op: 'setTabColor', sheet: 'Sheet1', color: '00FF00' },
+				{ op: 'setSheetProtection', sheet: 'Sheet1', options: { sort: true } },
+			],
+			{ journal: true },
+		)
+
+		expect(changed.wouldSucceed).toBe(true)
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(false)
+		expect(changed.journal?.inverseOps).toEqual([])
+		expect(changed.journal?.issues).toEqual([
+			{
+				code: 'LOSSY_INVERSE',
+				message: 'Sheet tab color absence for Sheet1 cannot be restored with public operations',
+				refs: ['sheet:Sheet1:tabColor'],
+			},
+			{
+				code: 'LOSSY_INVERSE',
+				message: 'Sheet protection absence for Sheet1 cannot be restored with public operations',
+				refs: ['sheet:Sheet1:protection'],
+			},
+		])
+	})
+
 	test('journal inverse ops restore sheet and existing row/column visibility metadata', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([
@@ -5335,6 +5444,8 @@ function journalComparableState(wb: AscendWorkbook): object {
 				hyperlinks: sheet?.getHyperlinks(),
 				autoFilter: sheet?.autoFilter,
 				tables: modelSheet?.tables,
+				tabColor: modelSheet?.tabColor,
+				protection: modelSheet?.protection,
 				state: modelSheet?.state,
 				rowHeights: modelSheet ? [...modelSheet.rowHeights.entries()] : undefined,
 				colWidths: modelSheet ? [...modelSheet.colWidths.entries()] : undefined,

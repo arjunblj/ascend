@@ -54,6 +54,7 @@ export async function openWorkbookWithProgress(
 	options?: {
 		mode?: 'full' | 'metadata-only' | 'values' | 'formula'
 		sheets?: readonly string[]
+		maxRows?: number
 		richMetadata?: boolean
 	},
 ): Promise<{ workbook: AscendWorkbook; durationMs: number }> {
@@ -67,6 +68,7 @@ export async function openWorkbookDocumentWithProgress(
 	options?: {
 		mode?: 'full' | 'metadata-only' | 'values' | 'formula'
 		sheets?: readonly string[]
+		maxRows?: number
 		richMetadata?: boolean
 	},
 ): Promise<{ document: WorkbookDocument; durationMs: number }> {

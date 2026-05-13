@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 const runnerPath = fileURLToPath(new URL('./agent-first-window.ts', import.meta.url))
 
 describe('agent first-window benchmark', () => {
-	test('reports full, capped, API, and MCP first-window timings with partial load metadata', async () => {
+	test('reports full, capped, CLI, API, and MCP first-window timings with partial load metadata', async () => {
 		const proc = Bun.spawn(
 			[
 				Bun.argv[0],
@@ -37,6 +37,8 @@ describe('agent first-window benchmark', () => {
 				readonly cappedWarmOpenWindowMedianMs?: number
 				readonly apiFirstWindowMedianMs?: number
 				readonly apiWarmFirstWindowMedianMs?: number
+				readonly cliReadFirstWindowMedianMs?: number
+				readonly cliWarmReadFirstWindowMedianMs?: number
 				readonly mcpFirstWindowMedianMs?: number
 				readonly mcpWarmFirstWindowMedianMs?: number
 				readonly tuiFirstPaintMedianMs?: number
@@ -80,6 +82,12 @@ describe('agent first-window benchmark', () => {
 				readonly apiWarmHydratedOpenCountMedian?: number
 				readonly apiDocumentCacheHitsMedian?: number
 				readonly apiWarmDocumentCacheHitsMedian?: number
+				readonly cliOpenCallsMedian?: number
+				readonly cliWarmOpenCallsMedian?: number
+				readonly cliHydratedOpenCountMedian?: number
+				readonly cliWarmHydratedOpenCountMedian?: number
+				readonly cliDocumentCacheHitsMedian?: number
+				readonly cliWarmDocumentCacheHitsMedian?: number
 				readonly mcpOpenCallsMedian?: number
 				readonly mcpWarmOpenCallsMedian?: number
 				readonly mcpHydratedOpenCountMedian?: number
@@ -93,6 +101,7 @@ describe('agent first-window benchmark', () => {
 				readonly tuiDocumentCacheHitsMedian?: number
 				readonly tuiWarmDocumentCacheHitsMedian?: number
 				readonly apiPartial?: boolean
+				readonly cliPartial?: boolean
 				readonly mcpPartial?: boolean
 				readonly tuiPartial?: boolean
 				readonly mcpPayloadBytesMedian?: number
@@ -105,6 +114,8 @@ describe('agent first-window benchmark', () => {
 		expect(payload.summary?.cappedWarmOpenWindowMedianMs).toBeNumber()
 		expect(payload.summary?.apiFirstWindowMedianMs).toBeNumber()
 		expect(payload.summary?.apiWarmFirstWindowMedianMs).toBeNumber()
+		expect(payload.summary?.cliReadFirstWindowMedianMs).toBeNumber()
+		expect(payload.summary?.cliWarmReadFirstWindowMedianMs).toBeNumber()
 		expect(payload.summary?.mcpFirstWindowMedianMs).toBeNumber()
 		expect(payload.summary?.mcpWarmFirstWindowMedianMs).toBeNumber()
 		expect(payload.summary?.tuiFirstPaintMedianMs).toBeNumber()
@@ -148,6 +159,12 @@ describe('agent first-window benchmark', () => {
 		expect(payload.summary?.apiWarmHydratedOpenCountMedian).toBe(0)
 		expect(payload.summary?.apiDocumentCacheHitsMedian).toBe(0)
 		expect(payload.summary?.apiWarmDocumentCacheHitsMedian).toBe(1)
+		expect(payload.summary?.cliOpenCallsMedian).toBe(1)
+		expect(payload.summary?.cliWarmOpenCallsMedian).toBe(1)
+		expect(payload.summary?.cliHydratedOpenCountMedian).toBe(1)
+		expect(payload.summary?.cliWarmHydratedOpenCountMedian).toBe(0)
+		expect(payload.summary?.cliDocumentCacheHitsMedian).toBe(0)
+		expect(payload.summary?.cliWarmDocumentCacheHitsMedian).toBe(1)
 		expect(payload.summary?.mcpOpenCallsMedian).toBe(1)
 		expect(payload.summary?.mcpWarmOpenCallsMedian).toBe(1)
 		expect(payload.summary?.mcpHydratedOpenCountMedian).toBe(1)
@@ -161,6 +178,7 @@ describe('agent first-window benchmark', () => {
 		expect(payload.summary?.tuiDocumentCacheHitsMedian).toBe(0)
 		expect(payload.summary?.tuiWarmDocumentCacheHitsMedian).toBe(1)
 		expect(payload.summary?.apiPartial).toBe(true)
+		expect(payload.summary?.cliPartial).toBe(true)
 		expect(payload.summary?.mcpPartial).toBe(true)
 		expect(payload.summary?.tuiPartial).toBe(true)
 		expect(payload.summary?.mcpPayloadBytesMedian).toBeGreaterThan(0)
@@ -196,12 +214,14 @@ describe('agent first-window benchmark', () => {
 			readonly input?: {
 				readonly xlsxPath?: string
 				readonly range?: string
+				readonly sheet?: string
 				readonly cleanup?: boolean
 				readonly source?: string
 			}
 			readonly summary?: {
 				readonly cellsMedian?: number
 				readonly apiPartial?: boolean
+				readonly cliPartial?: boolean
 				readonly mcpPartial?: boolean
 				readonly tuiPartial?: boolean
 				readonly fullRetainedRssDeltaMbMedian?: number
@@ -210,11 +230,13 @@ describe('agent first-window benchmark', () => {
 		expect(payload.input).toEqual({
 			xlsxPath: 'fixtures/xlsx/poi/SampleSS.xlsx',
 			range: 'A1:D10',
+			sheet: 'First Sheet',
 			cleanup: false,
 			source: 'input-file',
 		})
 		expect(payload.summary?.cellsMedian).toBeGreaterThan(0)
 		expect(payload.summary?.apiPartial).toBe(true)
+		expect(payload.summary?.cliPartial).toBe(true)
 		expect(payload.summary?.mcpPartial).toBe(true)
 		expect(payload.summary?.tuiPartial).toBe(true)
 		expect(payload.summary?.fullRetainedRssDeltaMbMedian).toBeNumber()

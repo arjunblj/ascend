@@ -34,12 +34,6 @@ export async function readCommand(args: string[], flags: Map<string, string>): P
 		cliError('Invalid --mode. Use one of: values, full', flags)
 		return 1
 	}
-	const selector = parseSelector(selectorArg, requestedSheet)
-	const { document: wb } = await openWorkbookDocumentWithProgress(
-		file,
-		inferOpenOptions(selector, explicitMode ?? 'values'),
-	)
-
 	const rowOffset = parseOptionalInt(flags.get('row-offset'))
 	if (flags.has('row-offset') && rowOffset == null) {
 		cliError('Invalid --row-offset. Use a non-negative integer.', flags)
@@ -54,6 +48,11 @@ export async function readCommand(args: string[], flags: Map<string, string>): P
 	const prettyDefaultLimit = 1000
 	const validatedRowLimit = rowLimit ?? (flags.has('json') ? undefined : prettyDefaultLimit)
 	const display = flags.has('display')
+	const selector = parseSelector(selectorArg, requestedSheet)
+	const { document: wb } = await openWorkbookDocumentWithProgress(
+		file,
+		inferOpenOptions(selector, explicitMode ?? 'values', validatedRowOffset, validatedRowLimit),
+	)
 
 	switch (selector.kind) {
 		case 'table': {
@@ -163,17 +162,28 @@ export async function readCommand(args: string[], flags: Map<string, string>): P
 function inferOpenOptions(
 	selector: ReadSelector,
 	mode: 'values' | 'full',
-): { mode: 'values' | 'full'; sheets?: readonly string[]; richMetadata?: boolean } {
+	rowOffset?: number,
+	rowLimit?: number,
+): {
+	mode: 'values' | 'full'
+	sheets?: readonly string[]
+	maxRows?: number
+	richMetadata?: boolean
+} {
+	const maxRows =
+		mode === 'values' && selector.kind === 'range' && rowLimit !== undefined
+			? Math.max(0, rowOffset ?? 0) + rowLimit
+			: undefined
 	if (selector.kind === 'table') {
 		return mode === 'full' ? { mode } : { mode, richMetadata: true }
 	}
 	if (selector.kind === 'range' && selector.sheet) {
-		return { mode, sheets: [selector.sheet] }
+		return { mode, sheets: [selector.sheet], ...(maxRows !== undefined ? { maxRows } : {}) }
 	}
 	if (selector.kind === 'name' && selector.sheetName) {
 		return { mode, sheets: [selector.sheetName] }
 	}
-	return { mode }
+	return { mode, ...(maxRows !== undefined ? { maxRows } : {}) }
 }
 
 function readRangeLike(
@@ -207,7 +217,8 @@ function readRangeLike(
 			...(rowOffset !== undefined ? { rowOffset } : {}),
 			...(rowLimit !== undefined ? { rowLimit } : {}),
 		})
-		console.log(jsonOut(info))
+		const load = wb.inspect().load
+		console.log(jsonOut(load.isPartial ? { ...info, load } : info))
 		return 0
 	}
 

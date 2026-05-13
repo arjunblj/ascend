@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { rm } from 'node:fs/promises'
 import { createApiFetch } from '../../apps/api/src/server.ts'
+import { runCli } from '../../apps/cli/src/index.ts'
 import { createServer } from '../../apps/mcp/src/index.ts'
 import { WorkbookTuiEngine } from '../../apps/tui/src/runtime/engine.ts'
 import { indexToColumn } from '../../packages/core/src/index.ts'
@@ -35,6 +36,8 @@ interface Sample {
 	readonly cappedWarmOpenWindowMs?: number
 	readonly apiFirstWindowMs?: number
 	readonly apiWarmFirstWindowMs?: number
+	readonly cliReadFirstWindowMs?: number
+	readonly cliWarmReadFirstWindowMs?: number
 	readonly mcpFirstWindowMs?: number
 	readonly mcpWarmFirstWindowMs?: number
 	readonly tuiFirstPaintMs?: number
@@ -63,6 +66,7 @@ interface Sample {
 	readonly cappedHydratedCells?: number | null
 	readonly tuiHydratedCells?: number | null
 	readonly apiPartial?: boolean
+	readonly cliPartial?: boolean
 	readonly mcpPartial?: boolean
 	readonly tuiPartial?: boolean
 	readonly fullOpenCalls?: number
@@ -83,6 +87,12 @@ interface Sample {
 	readonly apiWarmHydratedOpenCount?: number
 	readonly apiDocumentCacheHits?: number
 	readonly apiWarmDocumentCacheHits?: number
+	readonly cliOpenCalls?: number
+	readonly cliWarmOpenCalls?: number
+	readonly cliHydratedOpenCount?: number
+	readonly cliWarmHydratedOpenCount?: number
+	readonly cliDocumentCacheHits?: number
+	readonly cliWarmDocumentCacheHits?: number
 	readonly mcpOpenCalls?: number
 	readonly mcpWarmOpenCalls?: number
 	readonly mcpHydratedOpenCount?: number
@@ -405,6 +415,59 @@ interface ApiEnvelope {
 	}
 }
 
+async function runCliCapture(args: readonly string[]): Promise<string> {
+	const originalLog = console.log
+	const originalError = console.error
+	const stdout: string[] = []
+	const stderr: string[] = []
+	console.log = (...values: unknown[]) => stdout.push(values.map(String).join(' '))
+	console.error = (...values: unknown[]) => stderr.push(values.map(String).join(' '))
+	try {
+		const exitCode = await runCli([...args])
+		if (exitCode !== 0) throw new Error(stderr.join('\n') || `CLI exited ${exitCode}`)
+		return stdout.join('\n')
+	} finally {
+		console.log = originalLog
+		console.error = originalError
+	}
+}
+
+async function runCliReadFirstWindow(
+	path: string,
+	sheet: string | undefined,
+	range: string,
+	rowLimit: number,
+	clearCache = true,
+): Promise<
+	Pick<
+		Sample,
+		| 'cliReadFirstWindowMs'
+		| 'cells'
+		| 'cliPartial'
+		| 'cliOpenCalls'
+		| 'cliHydratedOpenCount'
+		| 'cliDocumentCacheHits'
+	>
+> {
+	if (clearCache) WorkbookDocument.clearCache()
+	runGc()
+	const beforeOpenStats = snapshotOpenStats()
+	const selector = sheet === undefined ? range : `${sheet}!${range}`
+	const measured = await time(() =>
+		runCliCapture(['read', path, selector, '--json', '--row-limit', String(rowLimit)]),
+	)
+	const openStats = diffOpenStats(snapshotOpenStats(), beforeOpenStats)
+	const payload = JSON.parse(measured.result) as ApiEnvelope
+	return {
+		cliReadFirstWindowMs: measured.ms,
+		cells: payload.data?.cells?.length ?? 0,
+		cliPartial: payload.data?.load?.isPartial ?? false,
+		cliOpenCalls: openStats.documentOpenCalls,
+		cliHydratedOpenCount: openStats.documentHydrations,
+		cliDocumentCacheHits: openStats.documentCacheHits,
+	}
+}
+
 interface McpReadResult {
 	readonly structuredContent?: {
 		readonly ok?: boolean
@@ -558,6 +621,20 @@ async function resolveBenchmarkInput(args: Args): Promise<BenchmarkInput> {
 		}
 	}
 	if (args.range !== undefined) {
+		if (args.sheet === undefined && !args.range.includes('!')) {
+			const document = await WorkbookDocument.open(args.inputFile, { mode: 'metadata-only' })
+			const info = document.inspect()
+			const sheetName = info.sheets[0]?.name
+			WorkbookDocument.clearCache()
+			if (!sheetName) throw new Error(`No sheets found in ${args.inputFile}`)
+			return {
+				xlsxPath: args.inputFile,
+				range: args.range,
+				sheet: sheetName,
+				cleanup: false,
+				source: 'input-file',
+			}
+		}
 		return {
 			xlsxPath: args.inputFile,
 			range: args.range,
@@ -603,6 +680,12 @@ function summarize(samples: readonly Sample[]) {
 	const apiWarmFirstWindowMedianMs = medianOptional(
 		samples.map((sample) => sample.apiWarmFirstWindowMs),
 	)
+	const cliReadFirstWindowMedianMs = medianOptional(
+		samples.map((sample) => sample.cliReadFirstWindowMs),
+	)
+	const cliWarmReadFirstWindowMedianMs = medianOptional(
+		samples.map((sample) => sample.cliWarmReadFirstWindowMs),
+	)
 	const mcpFirstWindowMedianMs = medianOptional(samples.map((sample) => sample.mcpFirstWindowMs))
 	const mcpWarmFirstWindowMedianMs = medianOptional(
 		samples.map((sample) => sample.mcpWarmFirstWindowMs),
@@ -618,6 +701,8 @@ function summarize(samples: readonly Sample[]) {
 		cappedWarmOpenWindowMedianMs,
 		apiFirstWindowMedianMs,
 		apiWarmFirstWindowMedianMs,
+		cliReadFirstWindowMedianMs,
+		cliWarmReadFirstWindowMedianMs,
 		mcpFirstWindowMedianMs,
 		mcpWarmFirstWindowMedianMs,
 		tuiFirstPaintMedianMs,
@@ -660,6 +745,9 @@ function summarize(samples: readonly Sample[]) {
 		...(apiFirstWindowMedianMs !== undefined && apiWarmFirstWindowMedianMs !== undefined
 			? { apiWarmSpeedupVsCold: apiFirstWindowMedianMs / apiWarmFirstWindowMedianMs }
 			: {}),
+		...(cliReadFirstWindowMedianMs !== undefined && cliWarmReadFirstWindowMedianMs !== undefined
+			? { cliWarmSpeedupVsCold: cliReadFirstWindowMedianMs / cliWarmReadFirstWindowMedianMs }
+			: {}),
 		...(mcpFirstWindowMedianMs !== undefined && mcpWarmFirstWindowMedianMs !== undefined
 			? { mcpWarmSpeedupVsCold: mcpFirstWindowMedianMs / mcpWarmFirstWindowMedianMs }
 			: {}),
@@ -668,6 +756,9 @@ function summarize(samples: readonly Sample[]) {
 			: {}),
 		...(fullOpenWindowMedianMs !== undefined && apiFirstWindowMedianMs !== undefined
 			? { apiSpeedupVsFull: fullOpenWindowMedianMs / apiFirstWindowMedianMs }
+			: {}),
+		...(fullOpenWindowMedianMs !== undefined && cliReadFirstWindowMedianMs !== undefined
+			? { cliSpeedupVsFull: fullOpenWindowMedianMs / cliReadFirstWindowMedianMs }
 			: {}),
 		...(fullOpenWindowMedianMs !== undefined && mcpFirstWindowMedianMs !== undefined
 			? { mcpSpeedupVsFull: fullOpenWindowMedianMs / mcpFirstWindowMedianMs }
@@ -724,6 +815,20 @@ function summarize(samples: readonly Sample[]) {
 		apiWarmDocumentCacheHitsMedian: medianOptional(
 			samples.map((sample) => sample.apiWarmDocumentCacheHits),
 		),
+		cliOpenCallsMedian: medianOptional(samples.map((sample) => sample.cliOpenCalls)),
+		cliWarmOpenCallsMedian: medianOptional(samples.map((sample) => sample.cliWarmOpenCalls)),
+		cliHydratedOpenCountMedian: medianOptional(
+			samples.map((sample) => sample.cliHydratedOpenCount),
+		),
+		cliWarmHydratedOpenCountMedian: medianOptional(
+			samples.map((sample) => sample.cliWarmHydratedOpenCount),
+		),
+		cliDocumentCacheHitsMedian: medianOptional(
+			samples.map((sample) => sample.cliDocumentCacheHits),
+		),
+		cliWarmDocumentCacheHitsMedian: medianOptional(
+			samples.map((sample) => sample.cliWarmDocumentCacheHits),
+		),
 		mcpOpenCallsMedian: medianOptional(samples.map((sample) => sample.mcpOpenCalls)),
 		mcpWarmOpenCallsMedian: medianOptional(samples.map((sample) => sample.mcpWarmOpenCalls)),
 		mcpHydratedOpenCountMedian: medianOptional(
@@ -753,6 +858,7 @@ function summarize(samples: readonly Sample[]) {
 			samples.map((sample) => sample.tuiWarmDocumentCacheHits),
 		),
 		apiPartial: samples.some((sample) => sample.apiPartial === true),
+		cliPartial: samples.some((sample) => sample.cliPartial === true),
 		mcpPartial: samples.some((sample) => sample.mcpPartial === true),
 		tuiPartial: samples.some((sample) => sample.tuiPartial === true),
 	}
@@ -770,6 +876,8 @@ async function run() {
 			await runCappedOpenWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit, false)
 			await runApiFirstWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit)
 			await runApiFirstWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit, false)
+			await runCliReadFirstWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit)
+			await runCliReadFirstWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit, false)
 			await runMcpFirstWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit)
 			await runMcpFirstWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit, false)
 			await runTuiFirstPaint(data.xlsxPath, data.sheet, args.rowLimit)
@@ -804,6 +912,15 @@ async function run() {
 				false,
 			)
 			runGc()
+			const cli = await runCliReadFirstWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit)
+			const cliWarm = await runCliReadFirstWindow(
+				data.xlsxPath,
+				data.sheet,
+				data.range,
+				args.rowLimit,
+				false,
+			)
+			runGc()
 			const mcp = await runMcpFirstWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit)
 			const mcpWarm = await runMcpFirstWindow(
 				data.xlsxPath,
@@ -820,6 +937,7 @@ async function run() {
 				...full,
 				...capped,
 				...api,
+				...cli,
 				...mcp,
 				...tui,
 				fullWarmOpenWindowMs: fullWarm.fullOpenWindowMs,
@@ -834,6 +952,10 @@ async function run() {
 				apiWarmOpenCalls: apiWarm.apiOpenCalls,
 				apiWarmHydratedOpenCount: apiWarm.apiHydratedOpenCount,
 				apiWarmDocumentCacheHits: apiWarm.apiDocumentCacheHits,
+				cliWarmReadFirstWindowMs: cliWarm.cliReadFirstWindowMs,
+				cliWarmOpenCalls: cliWarm.cliOpenCalls,
+				cliWarmHydratedOpenCount: cliWarm.cliHydratedOpenCount,
+				cliWarmDocumentCacheHits: cliWarm.cliDocumentCacheHits,
 				mcpWarmFirstWindowMs: mcpWarm.mcpFirstWindowMs,
 				mcpWarmOpenCalls: mcpWarm.mcpOpenCalls,
 				mcpWarmHydratedOpenCount: mcpWarm.mcpHydratedOpenCount,

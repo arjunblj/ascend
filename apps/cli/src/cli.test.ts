@@ -961,6 +961,38 @@ describe('ascend cli', () => {
 		expect(parsed.data.cells[0].ref).toBe('A1')
 	})
 
+	test('read --json row-limit opens a capped partial view', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: Array.from({ length: 5 }, (_, index) => ({
+					ref: `A${index + 1}`,
+					value: index + 1,
+				})),
+			},
+		])
+		await wb.save(`${import.meta.dir}/${TEST_FILE}`)
+
+		const { exitCode, stdout } = await run(
+			'read',
+			TEST_FILE,
+			'Sheet1!A1:A5',
+			'--json',
+			'--row-limit',
+			'2',
+		)
+		expect(exitCode).toBe(0)
+		const parsed = JSON.parse(stdout)
+		expect(parsed.data.cells).toHaveLength(2)
+		expect(parsed.data.load.isPartial).toBe(true)
+		expect(parsed.data.load.maxRows).toBe(2)
+		expect(parsed.data.load.partialReasons).toContain(
+			'only the first 2 row(s) are hydrated per loaded sheet',
+		)
+	})
+
 	test('read accepts --display and rejects invalid pagination integers', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

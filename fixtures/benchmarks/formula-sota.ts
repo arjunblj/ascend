@@ -25,6 +25,11 @@ type PrefixAggregate = 'SUM' | 'COUNT' | 'AVERAGE' | 'MIN' | 'MAX'
 type PrefixAggregateSelection = PrefixAggregate | 'ALL'
 
 const PREFIX_AGGREGATES: readonly PrefixAggregate[] = ['SUM', 'COUNT', 'AVERAGE', 'MIN', 'MAX']
+const HYPERFORMULA_EXCEL_LIMITS = {
+	licenseKey: 'gpl-v3',
+	maxRows: 1_048_576,
+	maxColumns: 16_384,
+} as const
 
 interface Args {
 	readonly profile: ProfileSelection
@@ -394,11 +399,14 @@ function runAscendPrefixRangeSum(args: ResolvedArgs): EngineRun {
 function runHyperFormulaPrefixRangeSum(args: ResolvedArgs): EngineRun {
 	const setupStart = performance.now()
 	const rows = Math.max(args.rows, args.formulas)
-	const data: (number | string)[][] = []
+	const data: (number | string | null)[][] = []
 	for (let row = 0; row < rows; row++) {
-		data.push([row + 1, `=${args.aggregate}(A$1:A${row + 1})`])
+		data.push([
+			row < args.rows ? row + 1 : null,
+			row < args.formulas ? `=${args.aggregate}(A$1:A${row + 1})` : null,
+		])
 	}
-	const hf = HyperFormula.buildEmpty({ licenseKey: 'gpl-v3' })
+	const hf = HyperFormula.buildEmpty(HYPERFORMULA_EXCEL_LIMITS)
 	hf.addSheet('Sheet1')
 	hf.suspendEvaluation()
 	hf.setCellContents({ sheet: 0, row: 0, col: 0 }, data)
@@ -475,11 +483,14 @@ function runAscendPrefixRangeDirty(args: ResolvedArgs, position: 'head' | 'tail'
 function runHyperFormulaPrefixRangeDirty(args: ResolvedArgs, position: 'head' | 'tail'): EngineRun {
 	const setupStart = performance.now()
 	const rows = Math.max(args.rows, args.formulas)
-	const data: (number | string)[][] = []
+	const data: (number | string | null)[][] = []
 	for (let row = 0; row < rows; row++) {
-		data.push([row + 1, `=${args.aggregate}(A$1:A${row + 1})`])
+		data.push([
+			row < args.rows ? row + 1 : null,
+			row < args.formulas ? `=${args.aggregate}(A$1:A${row + 1})` : null,
+		])
 	}
-	const hf = HyperFormula.buildEmpty({ licenseKey: 'gpl-v3' })
+	const hf = HyperFormula.buildEmpty(HYPERFORMULA_EXCEL_LIMITS)
 	hf.addSheet('Sheet1')
 	hf.suspendEvaluation()
 	hf.setCellContents({ sheet: 0, row: 0, col: 0 }, data)
@@ -641,7 +652,7 @@ function runHyperFormulaIndexedVlookup(args: ResolvedArgs): EngineRun {
 		target[4] = lookupKey(keyIndex)
 		target[5] = `=INDEX(C$1:C$${args.rows},MATCH(E${row + 1},A$1:A$${args.rows},0))`
 	}
-	const hf = HyperFormula.buildEmpty({ licenseKey: 'gpl-v3', useColumnIndex: true })
+	const hf = HyperFormula.buildEmpty({ ...HYPERFORMULA_EXCEL_LIMITS, useColumnIndex: true })
 	hf.addSheet('Sheet1')
 	hf.suspendEvaluation()
 	hf.setCellContents({ sheet: 0, row: 0, col: 0 }, data)
@@ -679,7 +690,7 @@ function runHyperFormulaIndexedVlookupDirty(
 		target[4] = lookupKey(keyIndex)
 		target[5] = `=INDEX(C$1:C$${args.rows},MATCH(E${row + 1},A$1:A$${args.rows},0))`
 	}
-	const hf = HyperFormula.buildEmpty({ licenseKey: 'gpl-v3', useColumnIndex: true })
+	const hf = HyperFormula.buildEmpty({ ...HYPERFORMULA_EXCEL_LIMITS, useColumnIndex: true })
 	hf.addSheet('Sheet1')
 	hf.suspendEvaluation()
 	hf.setCellContents({ sheet: 0, row: 0, col: 0 }, data)

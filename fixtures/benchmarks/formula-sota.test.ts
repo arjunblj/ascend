@@ -242,6 +242,44 @@ describe('formula SOTA public profile smoke', () => {
 		)
 	})
 
+	test(
+		'prefix profiles support Excel-sized row counts without inflating formula count',
+		() => {
+			const proc = Bun.spawnSync({
+				cmd: [
+					Bun.argv[0],
+					runnerPath,
+					'--profile',
+					'hf-prefix-range-dirty-tail',
+					'--aggregate',
+					'SUM',
+					'--rows',
+					'40001',
+					'--formulas',
+					'1',
+					'--repeat',
+					'1',
+					'--warmup',
+					'0',
+					'--assert-correctness',
+					'--json',
+				],
+				stdout: 'pipe',
+				stderr: 'pipe',
+			})
+			const stderr = new TextDecoder().decode(proc.stderr)
+			expect(proc.exitCode, stderr).toBe(0)
+
+			const payload = JSON.parse(new TextDecoder().decode(proc.stdout)) as FormulaSotaPayload
+			const ascend = payload.cases.find((entry) => entry.engine === 'ascend')
+			const hyperformula = payload.cases.find((entry) => entry.engine === 'hyperformula')
+			expect(ascend?.correctness.initialChanged).toBe(1)
+			expect(hyperformula?.correctness.changed).toBe(2)
+			expect(hyperformula?.correctness.probeValueMatches).toBe(true)
+		},
+		{ timeout: 30_000 },
+	)
+
 	for (const profile of profiles) {
 		const aggregateCases = 'aggregates' in profile ? profile.aggregates : [undefined]
 		for (const aggregate of aggregateCases) {

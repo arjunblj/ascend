@@ -2834,6 +2834,24 @@ describe('MCP server', () => {
 				}
 			}
 		}>
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const plan = (server as any)._registeredTools['ascend.plan'].handler as (args: {
+			file: string
+			ops?: unknown[]
+		}) => Promise<{
+			structuredContent?: { ok?: boolean; data?: { preparedPlan?: { id?: string } } }
+		}>
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const commit = (server as any)._registeredTools['ascend.commit'].handler as (args: {
+			planHandle?: string
+			output?: string
+			compact?: boolean
+		}) => Promise<{
+			structuredContent?: {
+				ok?: boolean
+				data?: { postWrite?: { valid?: boolean; auditsPassed?: boolean } }
+			}
+		}>
 
 		const result = await handler({ file: TEMP_FILE, sheet: 'Sheet1' })
 		expect(result.structuredContent?.ok).toBe(true)
@@ -2850,6 +2868,38 @@ describe('MCP server', () => {
 			},
 			{ op: 'setFormula', sheet: 'Sheet1', ref: 'B2', formula: 'A1*2' },
 		])
+
+		const replayInput = `${TEMP_FILE}.dump-replay-input.xlsx`
+		const replayOutput = `${TEMP_FILE}.dump-replay-output.xlsx`
+		try {
+			await AscendWorkbook.create().save(replayInput)
+			const planned = await plan({ file: replayInput, ops: result.structuredContent?.data?.ops })
+			expect(planned.structuredContent?.ok).toBe(true)
+			expect(planned.structuredContent?.data?.preparedPlan?.id).toBeString()
+
+			const committed = await commit({
+				planHandle: planned.structuredContent?.data?.preparedPlan?.id,
+				output: replayOutput,
+				compact: true,
+			})
+			expect(committed.structuredContent?.ok).toBe(true)
+			expect(committed.structuredContent?.data?.postWrite?.valid).toBe(true)
+			expect(committed.structuredContent?.data?.postWrite?.auditsPassed).toBe(true)
+
+			const replayed = await AscendWorkbook.open(replayOutput)
+			expect(replayed.sheet('Sheet1')?.cell('A1')?.value).toEqual({
+				kind: 'number',
+				value: 10,
+			})
+			expect(replayed.sheet('Sheet1')?.cell('B1')?.value).toEqual({
+				kind: 'string',
+				value: 'label',
+			})
+			expect(replayed.sheet('Sheet1')?.cell('B2')?.formula).toBe('A1*2')
+		} finally {
+			await unlink(replayInput).catch(() => {})
+			await unlink(replayOutput).catch(() => {})
+		}
 	})
 
 	test('ascend.template_merge emits replayable operation batches and unresolved placeholders', async () => {
@@ -2883,6 +2933,24 @@ describe('MCP server', () => {
 				}
 			}
 		}>
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const plan = (server as any)._registeredTools['ascend.plan'].handler as (args: {
+			file: string
+			ops?: unknown[]
+		}) => Promise<{
+			structuredContent?: { ok?: boolean; data?: { preparedPlan?: { id?: string } } }
+		}>
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const commit = (server as any)._registeredTools['ascend.commit'].handler as (args: {
+			planHandle?: string
+			output?: string
+			compact?: boolean
+		}) => Promise<{
+			structuredContent?: {
+				ok?: boolean
+				data?: { postWrite?: { valid?: boolean; auditsPassed?: boolean } }
+			}
+		}>
 
 		const result = await handler({
 			file: TEMP_FILE,
@@ -2908,6 +2976,41 @@ describe('MCP server', () => {
 			},
 			{ op: 'setFormula', sheet: 'Sheet1', ref: 'B1', formula: 'A1+2' },
 		])
+
+		const replayable = await handler({
+			file: TEMP_FILE,
+			sheet: 'Sheet1',
+			data: { amount: 10, tax: 2, client: 'Acme' },
+		})
+		expect(replayable.structuredContent?.ok).toBe(true)
+		expect(replayable.structuredContent?.data?.replayable).toBe(true)
+		expect(replayable.structuredContent?.data?.unresolved).toEqual([])
+
+		const replayOutput = `${TEMP_FILE}.template-replay-output.xlsx`
+		try {
+			const planned = await plan({ file: TEMP_FILE, ops: replayable.structuredContent?.data?.ops })
+			expect(planned.structuredContent?.ok).toBe(true)
+			expect(planned.structuredContent?.data?.preparedPlan?.id).toBeString()
+
+			const committed = await commit({
+				planHandle: planned.structuredContent?.data?.preparedPlan?.id,
+				output: replayOutput,
+				compact: true,
+			})
+			expect(committed.structuredContent?.ok).toBe(true)
+			expect(committed.structuredContent?.data?.postWrite?.valid).toBe(true)
+			expect(committed.structuredContent?.data?.postWrite?.auditsPassed).toBe(true)
+
+			const merged = await AscendWorkbook.open(replayOutput)
+			expect(merged.sheet('Sheet1')?.cell('A1')?.value).toEqual({ kind: 'number', value: 10 })
+			expect(merged.sheet('Sheet1')?.cell('A2')?.value).toEqual({
+				kind: 'string',
+				value: 'Missing Acme',
+			})
+			expect(merged.sheet('Sheet1')?.cell('B1')?.formula).toBe('A1+2')
+		} finally {
+			await unlink(replayOutput).catch(() => {})
+		}
 	})
 
 	test('ascend.eval evaluates formulas without writing scratch cells', async () => {

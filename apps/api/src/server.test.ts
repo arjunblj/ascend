@@ -246,6 +246,40 @@ describe('Ascend API server', () => {
 			},
 			{ op: 'setFormula', sheet: 'Sheet1', ref: 'B2', formula: 'A1*2' },
 		])
+
+		const replayInput = `${TEMP_FILE}.dump-replay-input.xlsx`
+		const replayOutput = `${OUTPUT_FILE}.dump-replay-output.xlsx`
+		try {
+			await AscendWorkbook.create().save(replayInput)
+			const plan = await postJson('/plan', { file: replayInput, ops: result.body.data?.ops })
+			expect(plan.status).toBe(200)
+			expect(plan.body.ok).toBe(true)
+			expect(plan.body.data?.preparedPlan?.id).toBeString()
+
+			const commit = await postJson('/commit', {
+				planHandle: plan.body.data?.preparedPlan?.id,
+				output: replayOutput,
+				compact: true,
+			})
+			expect(commit.status).toBe(200)
+			expect(commit.body.ok).toBe(true)
+			expect(commit.body.data?.postWrite?.valid).toBe(true)
+			expect(commit.body.data?.postWrite?.auditsPassed).toBe(true)
+
+			const replayed = await AscendWorkbook.open(replayOutput)
+			expect(replayed.sheet('Sheet1')?.cell('A1')?.value).toEqual({
+				kind: 'number',
+				value: 10,
+			})
+			expect(replayed.sheet('Sheet1')?.cell('B1')?.value).toEqual({
+				kind: 'string',
+				value: 'label',
+			})
+			expect(replayed.sheet('Sheet1')?.cell('B2')?.formula).toBe('A1*2')
+		} finally {
+			await unlink(replayInput).catch(() => {})
+			await unlink(replayOutput).catch(() => {})
+		}
 	})
 
 	test('template-merge emits replayable operation batches and unresolved placeholders', async () => {
@@ -288,6 +322,44 @@ describe('Ascend API server', () => {
 			},
 			{ op: 'setFormula', sheet: 'Sheet1', ref: 'B1', formula: 'A1+2' },
 		])
+
+		const replayable = await postJson('/template-merge', {
+			file: TEMP_FILE,
+			sheet: 'Sheet1',
+			data: { amount: 10, tax: 2, client: 'Acme' },
+		})
+		expect(replayable.status).toBe(200)
+		expect(replayable.body.ok).toBe(true)
+		expect(replayable.body.data?.replayable).toBe(true)
+		expect(replayable.body.data?.unresolved).toEqual([])
+
+		const replayOutput = `${OUTPUT_FILE}.template-replay-output.xlsx`
+		try {
+			const plan = await postJson('/plan', { file: TEMP_FILE, ops: replayable.body.data?.ops })
+			expect(plan.status).toBe(200)
+			expect(plan.body.ok).toBe(true)
+			expect(plan.body.data?.preparedPlan?.id).toBeString()
+
+			const commit = await postJson('/commit', {
+				planHandle: plan.body.data?.preparedPlan?.id,
+				output: replayOutput,
+				compact: true,
+			})
+			expect(commit.status).toBe(200)
+			expect(commit.body.ok).toBe(true)
+			expect(commit.body.data?.postWrite?.valid).toBe(true)
+			expect(commit.body.data?.postWrite?.auditsPassed).toBe(true)
+
+			const merged = await AscendWorkbook.open(replayOutput)
+			expect(merged.sheet('Sheet1')?.cell('A1')?.value).toEqual({ kind: 'number', value: 10 })
+			expect(merged.sheet('Sheet1')?.cell('A2')?.value).toEqual({
+				kind: 'string',
+				value: 'Missing Acme',
+			})
+			expect(merged.sheet('Sheet1')?.cell('B1')?.formula).toBe('A1+2')
+		} finally {
+			await unlink(replayOutput).catch(() => {})
+		}
 	})
 
 	test('raw-part returns bounded package text and metadata', async () => {

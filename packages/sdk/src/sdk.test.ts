@@ -2805,6 +2805,28 @@ describe('AscendWorkbook', () => {
 		expect(metadataOnly.base64).toBeUndefined()
 		expect(metadataOnly.sha256).toBe(binary.sha256)
 
+		const fractionalLimit = wb.rawPackagePart({
+			partPath: 'xl/media/image1.png',
+			encoding: 'base64',
+			maxBytes: 2.9,
+		})
+		expect(fractionalLimit.previewByteLength).toBe(2)
+		expect(fractionalLimit.maxBytes).toBe(2)
+		expect(fractionalLimit.truncated).toBe(true)
+		expect(fractionalLimit.base64).toBe(Buffer.from(binaryBytes.subarray(0, 2)).toString('base64'))
+		expect(fractionalLimit.sha256).toBe(binary.sha256)
+
+		const nonFiniteLimit = wb.rawPackagePart({
+			partPath: 'xl/media/image1.png',
+			encoding: 'base64',
+			maxBytes: Number.NaN,
+		})
+		expect(nonFiniteLimit.previewByteLength).toBe(0)
+		expect(nonFiniteLimit.maxBytes).toBe(0)
+		expect(nonFiniteLimit.truncated).toBe(true)
+		expect(nonFiniteLimit.base64).toBe('')
+		expect(nonFiniteLimit.sha256).toBe(binary.sha256)
+
 		const missing = wb.rawPackagePart({ partPath: 'xl/missing.xml' })
 		expect(missing.found).toBe(false)
 		expect(missing.validPath).toBe(true)

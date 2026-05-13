@@ -55,7 +55,7 @@ export function inspectRawPackagePart(
 	}
 	const graph = inspectXlsxPackageGraph(bytes)
 	const part = graph.parts.find((entry) => entry.path === partPath)
-	const maxBytes = Math.max(0, options.maxBytes ?? DEFAULT_MAX_RAW_PART_BYTES)
+	const maxBytes = normalizeMaxBytes(options.maxBytes)
 	const encoding = options.encoding ?? 'text'
 	const previewByteLength = encoding === 'none' ? 0 : Math.min(maxBytes, partBytes.byteLength)
 	const truncated = encoding !== 'none' && partBytes.byteLength > previewByteLength
@@ -133,6 +133,12 @@ function findCaseInsensitiveMatches(
 		if (entry.path.toLowerCase() === lower) matches.push(entry.path)
 	}
 	return matches
+}
+
+function normalizeMaxBytes(value: number | undefined): number {
+	if (value === undefined) return DEFAULT_MAX_RAW_PART_BYTES
+	if (!Number.isFinite(value)) return 0
+	return Math.max(0, Math.trunc(value))
 }
 
 function looksBinary(bytes: Uint8Array): boolean {

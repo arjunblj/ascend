@@ -16,6 +16,7 @@ interface Args {
 	readonly rowLimit: number
 	readonly mutations: number
 	readonly surface: Surface
+	readonly approvals?: readonly string[] | 'all'
 	readonly inputFile?: string
 	readonly sheet?: string
 	readonly range?: string
@@ -274,12 +275,14 @@ function parseArgs(): Args {
 	const inputFile = readOption(process.argv, '--input-file')
 	const sheet = readOption(process.argv, '--sheet')
 	const range = readOption(process.argv, '--range')
+	const approvals = parseApprovals(readOption(process.argv, '--approval'))
 	return {
 		rows: positiveInt(readOption(process.argv, '--rows'), 65_536),
 		cols: positiveInt(readOption(process.argv, '--cols'), 10),
 		rowLimit: positiveInt(readOption(process.argv, '--row-limit'), 500),
 		mutations: positiveInt(readOption(process.argv, '--mutations'), 1),
 		surface,
+		...(approvals !== undefined ? { approvals } : {}),
 		...(inputFile !== undefined ? { inputFile } : {}),
 		...(sheet !== undefined ? { sheet } : {}),
 		...(range !== undefined ? { range } : {}),
@@ -288,6 +291,16 @@ function parseArgs(): Args {
 		warmup: nonNegativeInt(readOption(process.argv, '--warmup'), 1),
 		json: hasFlag(process.argv, '--json'),
 	}
+}
+
+function parseApprovals(raw: string | undefined): readonly string[] | 'all' | undefined {
+	if (raw === undefined) return undefined
+	const entries = raw
+		.split(',')
+		.map((entry) => entry.trim())
+		.filter((entry) => entry.length > 0)
+	if (entries.length === 0) return undefined
+	return entries.some((entry) => entry.toLowerCase() === 'all') ? 'all' : entries
 }
 
 function median(values: readonly number[]): number {
@@ -454,6 +467,7 @@ async function runMcpWorkflow(
 	range: string,
 	rowLimit: number,
 	mutations: readonly ReturnType<typeof buildCellMutations>[number][],
+	approvals: readonly string[] | 'all',
 ): Promise<Partial<WorkflowSample>> {
 	const preparedOutputPath = `${outputPath}.prepared.xlsx`
 	await rm(outputPath, { force: true })
@@ -485,13 +499,13 @@ async function runMcpWorkflow(
 		file: inputPath,
 		output: outputPath,
 		mutations,
-		approvals: [],
+		approvals,
 		compact: true,
 	})
 	const preparedCommit = await mcpClient.commit({
 		planHandle,
 		output: preparedOutputPath,
-		approvals: [],
+		approvals,
 		compact: true,
 	})
 	const verify = await mcpClient.check({ file: outputPath })
@@ -576,6 +590,7 @@ async function runWorkflow(
 	mutationCount: number,
 	rows: number,
 	cols: number,
+	approvals: readonly string[] | 'all' = [],
 ): Promise<WorkflowSample> {
 	await rm(outputPath, { force: true })
 	const preparedOutputPath = `${outputPath}.prepared.xlsx`
@@ -612,13 +627,13 @@ async function runWorkflow(
 		file: inputPath,
 		output: outputPath,
 		mutations,
-		approvals: [],
+		approvals,
 		compact: true,
 	})
 	const preparedCommit = await post(apiFetch, '/commit', {
 		planHandle,
 		output: preparedOutputPath,
-		approvals: [],
+		approvals,
 		compact: true,
 	})
 	const verify = await post(apiFetch, '/check', { file: outputPath })
@@ -634,6 +649,7 @@ async function runWorkflow(
 				range,
 				rowLimit,
 				mutations,
+				approvals,
 			)
 		: {}
 	const rssAfter = rssMb()
@@ -1069,6 +1085,7 @@ async function run() {
 				args.mutations,
 				data.rows,
 				data.cols,
+				args.approvals ?? [],
 			)
 			runGc()
 		}
@@ -1085,6 +1102,7 @@ async function run() {
 					args.mutations,
 					data.rows,
 					data.cols,
+					args.approvals ?? [],
 				),
 			)
 			runGc()

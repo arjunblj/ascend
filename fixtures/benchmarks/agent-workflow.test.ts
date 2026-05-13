@@ -191,11 +191,13 @@ describe('agent workflow benchmark', () => {
 				Bun.argv[0],
 				runnerPath,
 				'--input-file',
-				'fixtures/xlsx/poi/SampleSS.xlsx',
+				'fixtures/xlsx/poi/WithVariousData.xlsx',
 				'--row-limit',
 				'5',
 				'--mutations',
 				'1',
+				'--approval',
+				'all',
 				'--repeat',
 				'1',
 				'--warmup',
@@ -230,11 +232,11 @@ describe('agent workflow benchmark', () => {
 			}
 		}
 		expect(payload.input).toEqual({
-			xlsxPath: 'fixtures/xlsx/poi/SampleSS.xlsx',
-			range: 'A1:B65536',
-			sheet: 'First Sheet',
+			xlsxPath: 'fixtures/xlsx/poi/WithVariousData.xlsx',
+			range: 'A1:C65536',
+			sheet: 'Sheet1',
 			rows: 65_536,
-			cols: 2,
+			cols: 3,
 			cleanup: false,
 			source: 'input-file',
 		})

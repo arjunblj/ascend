@@ -32,6 +32,11 @@ interface ApiEnvelope {
 		readonly replayable?: boolean
 		readonly formulaCount?: number
 		readonly ops?: unknown[]
+		readonly pathMutations?: {
+			readonly replayable?: boolean
+			readonly ops?: unknown[]
+		}
+		readonly journal?: { readonly supported?: boolean; readonly inverseOps?: unknown[] }
 	}
 	readonly error?: {
 		readonly message?: string
@@ -142,6 +147,57 @@ describe('Ascend API server', () => {
 				updates: [{ ref: 'A1', value: 10 }],
 			},
 			{ op: 'setFormula', sheet: 'Sheet1', ref: 'B1', formula: 'A1+2' },
+		])
+	})
+
+	test('preview accepts path-addressed mutations without saving', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'old' }] }])
+		await wb.save(TEMP_FILE)
+
+		const result = await postJson('/preview', {
+			file: TEMP_FILE,
+			journal: true,
+			mutations: [{ path: '/sheets/Sheet1/cells/A1/value', value: 'new' }],
+		})
+
+		expect(result.status).toBe(200)
+		expect(result.body.ok).toBe(true)
+		expect(result.body.data?.pathMutations?.replayable).toBe(true)
+		expect(result.body.data?.pathMutations?.ops).toEqual([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'new' }] },
+		])
+		expect(result.body.data?.journal?.supported).toBe(true)
+		expect(result.body.data?.journal?.inverseOps).toEqual([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'old' }] },
+		])
+
+		const reopened = await AscendWorkbook.open(TEMP_FILE)
+		expect(reopened.sheet('Sheet1')?.cell('A1')?.value).toEqual({
+			kind: 'string',
+			value: 'old',
+		})
+	})
+
+	test('plan reports path mutation compiler errors as structured repair details', async () => {
+		const wb = AscendWorkbook.create()
+		await wb.save(TEMP_FILE)
+
+		const result = await postJson('/plan', {
+			file: TEMP_FILE,
+			mutations: [{ path: '/sheets/Missing/cells/A1/value', value: 1 }],
+		})
+
+		expect(result.status).toBe(400)
+		expect(result.body.ok).toBe(false)
+		expect(result.body.error?.code).toBe('VALIDATION_ERROR')
+		expect(result.body.error?.details?.issueCount).toBe(1)
+		expect(result.body.error?.details?.issues).toEqual(['Sheet "Missing" not found.'])
+		expect(result.body.error?.details?.issueDetails).toEqual([
+			expect.objectContaining({
+				code: 'sheet_not_found',
+				path: '/sheets/Missing/cells/A1/value',
+			}),
 		])
 	})
 

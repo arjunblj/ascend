@@ -1,4 +1,10 @@
-import { type AscendError, AscendException, ascendError, type CellValue } from '@ascend/schema'
+import {
+	type AscendError,
+	AscendException,
+	ascendError,
+	type CellValue,
+	type Operation,
+} from '@ascend/schema'
 import {
 	type AgentCommitOptions,
 	AscendWorkbook,
@@ -14,6 +20,8 @@ import {
 	listOperations,
 	normalizeExportFormat,
 	operationValidationDetails,
+	type PathMutation,
+	type PathMutationResult,
 	type PivotOutputMaterializeMode,
 	type PivotOutputMaterializeOptions,
 	parseOperations,
@@ -47,6 +55,160 @@ function requireOptionalNumber(obj: unknown, key: string): number | undefined {
 	if (obj === null || typeof obj !== 'object') return undefined
 	const v = (obj as Record<string, unknown>)[key]
 	return typeof v === 'number' && Number.isFinite(v) ? v : undefined
+}
+
+type OperationInput =
+	| {
+			readonly ok: true
+			readonly ops: readonly Operation[]
+			readonly pathMutations?: PathMutationResult
+	  }
+	| { readonly ok: false; readonly error: AscendError }
+
+async function resolveOperationInput(
+	file: string,
+	body: Record<string, unknown> | null,
+): Promise<OperationInput> {
+	const shape = resolveOperationInputShape(body)
+	if (!shape.ok || !('mutations' in shape)) return shape
+	const wb = await AscendWorkbook.open(file)
+	return compilePathMutationInput(wb, shape.mutations)
+}
+
+function resolveOperationInputForWorkbook(
+	wb: AscendWorkbook,
+	body: Record<string, unknown> | null,
+): OperationInput {
+	const shape = resolveOperationInputShape(body)
+	if (!shape.ok || !('mutations' in shape)) return shape
+	return compilePathMutationInput(wb, shape.mutations)
+}
+
+type OperationInputShape =
+	| { readonly ok: true; readonly ops: readonly Operation[] }
+	| { readonly ok: true; readonly mutations: readonly PathMutation[] }
+	| { readonly ok: false; readonly error: AscendError }
+
+function resolveOperationInputShape(body: Record<string, unknown> | null): OperationInputShape {
+	const opsArr = body ? requireArray(body, 'ops') : null
+	const mutationArr = body ? requireArray(body, 'mutations') : null
+	const hasOps = opsArr !== null && opsArr.length > 0
+	const hasMutations = mutationArr !== null && mutationArr.length > 0
+	if (hasOps && hasMutations) {
+		return {
+			ok: false,
+			error: ascendError('VALIDATION_ERROR', 'Provide either ops or mutations, not both', {
+				retryStrategy: 'modified',
+				suggestedFix: 'Send canonical operations in ops or path-addressed mutations in mutations.',
+			}),
+		}
+	}
+	if (!hasOps && !hasMutations) {
+		return {
+			ok: false,
+			error: ascendError('VALIDATION_ERROR', 'Missing or invalid ops or mutations', {
+				retryStrategy: 'modified',
+				suggestedFix:
+					'Send non-empty ops, or send mutations like {"path":"/sheets/Sheet1/cells/A1/value","value":123}.',
+			}),
+		}
+	}
+	if (hasOps) {
+		const parsed = parseOperations(opsArr)
+		if (!parsed.ok) {
+			return {
+				ok: false,
+				error: ascendError('VALIDATION_ERROR', parsed.error, {
+					details: operationValidationDetails(parsed),
+					retryStrategy: 'modified',
+					suggestedFix: 'Call /operations for canonical operation schemas and examples.',
+				}),
+			}
+		}
+		return { ok: true, ops: parsed.value }
+	}
+
+	const parsedMutations = parsePathMutationBody(mutationArr ?? [])
+	if (!parsedMutations.ok) return parsedMutations
+	return { ok: true, mutations: parsedMutations.mutations }
+}
+
+function compilePathMutationInput(
+	wb: AscendWorkbook,
+	mutations: readonly PathMutation[],
+): OperationInput {
+	const compiled = wb.compilePathMutations(mutations)
+	if (!compiled.replayable) {
+		return { ok: false, error: pathMutationCompileError(compiled) }
+	}
+	return { ok: true, ops: compiled.ops, pathMutations: compiled }
+}
+
+function parsePathMutationBody(
+	value: readonly unknown[],
+):
+	| { readonly ok: true; readonly mutations: readonly PathMutation[] }
+	| { readonly ok: false; readonly error: AscendError } {
+	const mutations: PathMutation[] = []
+	for (const [index, entry] of value.entries()) {
+		if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
+			return {
+				ok: false,
+				error: pathMutationShapeError(index, 'Mutation must be an object with path and value.'),
+			}
+		}
+		const path = (entry as Record<string, unknown>).path
+		if (
+			typeof path !== 'string' &&
+			(!Array.isArray(path) || !path.every((segment) => typeof segment === 'string'))
+		) {
+			return {
+				ok: false,
+				error: pathMutationShapeError(index, 'Mutation path must be a string or string array.'),
+			}
+		}
+		mutations.push({
+			path,
+			...(Object.hasOwn(entry, 'value') ? { value: (entry as Record<string, unknown>).value } : {}),
+		})
+	}
+	return { ok: true, mutations }
+}
+
+function pathMutationShapeError(index: number, message: string): AscendError {
+	return ascendError('VALIDATION_ERROR', message, {
+		details: {
+			issueCount: 1,
+			issues: [`mutations[${index}]: ${message}`],
+			issueDetails: [
+				{ code: 'invalid_path_mutation', mutationIndex: index, path: `mutations[${index}]` },
+			],
+		},
+		retryStrategy: 'modified',
+		suggestedFix: 'Use mutations shaped like {"path":"/sheets/Sheet1/cells/A1/value","value":123}.',
+	})
+}
+
+function pathMutationCompileError(result: PathMutationResult): AscendError {
+	return ascendError('VALIDATION_ERROR', 'Path mutation compilation failed', {
+		details: {
+			mutationCount: result.mutationCount,
+			issueCount: result.issueCount,
+			issues: result.issues.map((issue) => issue.message),
+			issueDetails: result.issues,
+			compiledOps: result.ops,
+		},
+		retryStrategy: 'modified',
+		suggestedFix:
+			'Use supported paths such as /sheets/{sheet}/cells/{A1}/value, /sheets/{sheet}/cells/{A1}/formula, /sheets/{sheet}/ranges/{A1:B2}/clear, /tables/{table}/rows/append, or /names/{name}/ref.',
+	})
+}
+
+function withPathMutationResult<T extends object>(
+	result: T,
+	compiled: PathMutationResult | undefined,
+): T | (T & { readonly pathMutations: PathMutationResult }) {
+	return compiled ? { ...result, pathMutations: compiled } : result
 }
 
 function parsePivotOutputMaterializeOptions(
@@ -476,23 +638,13 @@ export function createApiFetch() {
 			}
 
 			if (method === 'POST' && path === '/plan') {
-				const body = await parseJson<{ file?: string; ops?: unknown[] }>(req)
+				const body = await parseJson<Record<string, unknown>>(req)
 				const file = body ? requireString(body, 'file') : null
-				const opsArr = body ? requireArray(body, 'ops') : null
 				if (!file) return jsonFailure('Missing or invalid file', 400)
-				if (!opsArr || opsArr.length === 0) return jsonFailure('Missing or invalid ops', 400)
-				const parsed = parseOperations(opsArr)
-				if (!parsed.ok) {
-					return jsonFailureError(
-						ascendError('VALIDATION_ERROR', parsed.error, {
-							details: operationValidationDetails(parsed),
-							suggestedFix: 'Call /operations for canonical operation schemas and examples.',
-						}),
-						400,
-					)
-				}
 				try {
-					const result = await createAgentPlan(file, parsed.value)
+					const input = await resolveOperationInput(file, body)
+					if (!input.ok) return jsonFailureError(input.error, 400)
+					const result = await createAgentPlan(file, input.ops)
 					if (result.preview.errors.length > 0) {
 						const first = result.preview.errors[0]
 						return jsonFailureError(
@@ -502,38 +654,19 @@ export function createApiFetch() {
 							400,
 						)
 					}
-					return jsonSuccess(result)
+					return jsonSuccess(withPathMutationResult(result, input.pathMutations))
 				} catch (e) {
 					return handleError(e, file)
 				}
 			}
 
 			if (method === 'POST' && path === '/commit') {
-				const body = await parseJson<{
-					file?: string
-					ops?: unknown[]
-					output?: string
-					inPlace?: boolean
-					backup?: string
-					expectSha256?: string
-					allowLoss?: string | string[]
-					approvals?: string | string[]
-				}>(req)
+				const body = await parseJson<Record<string, unknown>>(req)
 				const file = body ? requireString(body, 'file') : null
-				const opsArr = body ? requireArray(body, 'ops') : null
 				if (!file) return jsonFailure('Missing or invalid file', 400)
-				if (!opsArr || opsArr.length === 0) return jsonFailure('Missing or invalid ops', 400)
-				const parsed = parseOperations(opsArr)
-				if (!parsed.ok) {
-					return jsonFailureError(
-						ascendError('VALIDATION_ERROR', parsed.error, {
-							details: operationValidationDetails(parsed),
-							suggestedFix: 'Call /operations for canonical operation schemas and examples.',
-						}),
-						400,
-					)
-				}
 				try {
+					const input = await resolveOperationInput(file, body)
+					if (!input.ok) return jsonFailureError(input.error, 400)
 					const output = body ? requireString(body, 'output') : null
 					const backup = body ? requireString(body, 'backup') : null
 					const expectSha256 = body ? requireString(body, 'expectSha256') : null
@@ -555,8 +688,8 @@ export function createApiFetch() {
 						...(allowLoss ? { allowLoss } : {}),
 						...(approvals ? { approvals } : {}),
 					}
-					const result = await commitAgentPlan(file, parsed.value, options)
-					return jsonSuccess(result)
+					const result = await commitAgentPlan(file, input.ops, options)
+					return jsonSuccess(withPathMutationResult(result, input.pathMutations))
 				} catch (e) {
 					return handleError(e, file)
 				}
@@ -574,25 +707,15 @@ export function createApiFetch() {
 			}
 
 			if (method === 'POST' && path === '/write') {
-				const body = await parseJson<{ file?: string; ops?: unknown[]; journal?: unknown }>(req)
+				const body = await parseJson<Record<string, unknown>>(req)
 				const file = body ? requireString(body, 'file') : null
-				const opsArr = body ? requireArray(body, 'ops') : null
 				const journal = body?.journal === true
 				if (!file) return jsonFailure('Missing or invalid file', 400)
-				if (!opsArr || opsArr.length === 0) return jsonFailure('Missing or invalid ops', 400)
-				const parsed = parseOperations(opsArr)
-				if (!parsed.ok) {
-					return jsonFailureError(
-						ascendError('VALIDATION_ERROR', parsed.error, {
-							details: operationValidationDetails(parsed),
-							suggestedFix: 'Call /operations for canonical operation schemas and examples.',
-						}),
-						400,
-					)
-				}
 				try {
 					const wb = await AscendWorkbook.open(file)
-					const result = wb.apply(parsed.value, { journal })
+					const input = resolveOperationInputForWorkbook(wb, body)
+					if (!input.ok) return jsonFailureError(input.error, 400)
+					const result = wb.apply(input.ops, { journal })
 					if (result.errors.length > 0) {
 						const first = result.errors[0]
 						return jsonFailureError(
@@ -616,32 +739,22 @@ export function createApiFetch() {
 						}
 					}
 					await wb.save(file)
-					return jsonSuccess(result)
+					return jsonSuccess(withPathMutationResult(result, input.pathMutations))
 				} catch (e) {
 					return handleError(e, file)
 				}
 			}
 
 			if (method === 'POST' && path === '/preview') {
-				const body = await parseJson<{ file?: string; ops?: unknown[]; journal?: unknown }>(req)
+				const body = await parseJson<Record<string, unknown>>(req)
 				const file = body ? requireString(body, 'file') : null
-				const opsArr = body ? requireArray(body, 'ops') : null
 				const journal = body?.journal === true
 				if (!file) return jsonFailure('Missing or invalid file', 400)
-				if (!opsArr || opsArr.length === 0) return jsonFailure('Missing or invalid ops', 400)
-				const parsed = parseOperations(opsArr)
-				if (!parsed.ok) {
-					return jsonFailureError(
-						ascendError('VALIDATION_ERROR', parsed.error, {
-							details: operationValidationDetails(parsed),
-							suggestedFix: 'Call /operations for canonical operation schemas and examples.',
-						}),
-						400,
-					)
-				}
 				try {
 					const wb = await AscendWorkbook.open(file)
-					const result = wb.preview(parsed.value, { journal })
+					const input = resolveOperationInputForWorkbook(wb, body)
+					if (!input.ok) return jsonFailureError(input.error, 400)
+					const result = wb.preview(input.ops, { journal })
 					if (result.errors.length > 0) {
 						const first = result.errors[0]
 						return jsonFailureError(
@@ -656,7 +769,7 @@ export function createApiFetch() {
 							400,
 						)
 					}
-					return jsonSuccess(result)
+					return jsonSuccess(withPathMutationResult(result, input.pathMutations))
 				} catch (e) {
 					return handleError(e, file)
 				}

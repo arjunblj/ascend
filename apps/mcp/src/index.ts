@@ -1,4 +1,11 @@
-import { AscendException, ascendError, type CellValue, EMPTY } from '@ascend/schema'
+import {
+	type AscendError,
+	AscendException,
+	ascendError,
+	type CellValue,
+	EMPTY,
+	type Operation,
+} from '@ascend/schema'
 import {
 	type AgentCommitOptions,
 	Ascend,
@@ -16,6 +23,8 @@ import {
 	listCapabilities,
 	normalizeExportFormat,
 	operationValidationDetails,
+	type PathMutation,
+	type PathMutationResult,
 	type PivotOutputMaterializeMode,
 	parseA1,
 	parseOperations,
@@ -32,6 +41,118 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 import { errorResponse, okResponse } from './response.ts'
+
+const pathMutationSchema = z.object({
+	path: z.union([z.string(), z.array(z.string())]),
+	value: z.unknown().optional(),
+})
+
+type ResolvedOperationInput =
+	| {
+			readonly ok: true
+			readonly ops: readonly Operation[]
+			readonly pathMutations?: PathMutationResult
+	  }
+	| { readonly ok: false; readonly error: AscendError }
+
+async function resolveOperationInput(
+	file: string,
+	ops: readonly Record<string, unknown>[] | undefined,
+	mutations: readonly PathMutation[] | undefined,
+): Promise<ResolvedOperationInput> {
+	const shape = resolveOperationInputShape(ops, mutations)
+	if (!shape.ok || !('mutations' in shape)) return shape
+	const wb = await Ascend.open(file)
+	return compilePathMutationInput(wb, shape.mutations)
+}
+
+function resolveOperationInputForWorkbook(
+	wb: AscendWorkbook,
+	ops: readonly Record<string, unknown>[] | undefined,
+	mutations: readonly PathMutation[] | undefined,
+): ResolvedOperationInput {
+	const shape = resolveOperationInputShape(ops, mutations)
+	if (!shape.ok || !('mutations' in shape)) return shape
+	return compilePathMutationInput(wb, shape.mutations)
+}
+
+type OperationInputShape =
+	| { readonly ok: true; readonly ops: readonly Operation[] }
+	| { readonly ok: true; readonly mutations: readonly PathMutation[] }
+	| { readonly ok: false; readonly error: AscendError }
+
+function resolveOperationInputShape(
+	ops: readonly Record<string, unknown>[] | undefined,
+	mutations: readonly PathMutation[] | undefined,
+): OperationInputShape {
+	const hasOps = ops !== undefined && ops.length > 0
+	const hasMutations = mutations !== undefined && mutations.length > 0
+	if (hasOps && hasMutations) {
+		return {
+			ok: false,
+			error: ascendError('VALIDATION_ERROR', 'Provide either ops or mutations, not both', {
+				retryStrategy: 'modified',
+				suggestedFix: 'Send canonical operations in ops or path-addressed mutations in mutations.',
+			}),
+		}
+	}
+	if (!hasOps && !hasMutations) {
+		return {
+			ok: false,
+			error: ascendError('VALIDATION_ERROR', 'Missing or invalid ops or mutations', {
+				retryStrategy: 'modified',
+				suggestedFix:
+					'Send non-empty ops, or send mutations like {"path":"/sheets/Sheet1/cells/A1/value","value":123}.',
+			}),
+		}
+	}
+	if (hasOps) {
+		const parsed = parseOperations(ops ?? [])
+		if (!parsed.ok) {
+			return {
+				ok: false,
+				error: ascendError('VALIDATION_ERROR', parsed.error, {
+					details: operationValidationDetails(parsed),
+					retryStrategy: 'modified',
+					suggestedFix: 'Use ascend.list_operations for canonical operation schemas and examples.',
+				}),
+			}
+		}
+		return { ok: true, ops: parsed.value }
+	}
+	return { ok: true, mutations: mutations ?? [] }
+}
+
+function compilePathMutationInput(
+	wb: AscendWorkbook,
+	mutations: readonly PathMutation[],
+): ResolvedOperationInput {
+	const compiled = wb.compilePathMutations(mutations)
+	if (!compiled.replayable) return { ok: false, error: pathMutationCompileError(compiled) }
+	return { ok: true, ops: compiled.ops, pathMutations: compiled }
+}
+
+function pathMutationCompileError(result: PathMutationResult): AscendError {
+	return ascendError('VALIDATION_ERROR', 'Path mutation compilation failed', {
+		details: {
+			mutationCount: result.mutationCount,
+			issueCount: result.issueCount,
+			issues: result.issues.map((issue) => issue.message),
+			issueDetails: result.issues,
+			compiledOps: result.ops,
+		},
+		retryStrategy: 'modified',
+		suggestedFix:
+			'Use supported paths such as /sheets/{sheet}/cells/{A1}/value, /sheets/{sheet}/cells/{A1}/formula, /sheets/{sheet}/ranges/{A1:B2}/clear, /tables/{table}/rows/append, or /names/{name}/ref.',
+	})
+}
+
+function withPathMutationResult<T extends object>(
+	result: T,
+	compiled: PathMutationResult | undefined,
+): T | (T & { readonly pathMutations: PathMutationResult }) {
+	return compiled ? { ...result, pathMutations: compiled } : result
+}
 
 export function createServer(): McpServer {
 	const server = new McpServer({
@@ -681,30 +802,28 @@ export function createServer(): McpServer {
 
 	server.tool(
 		'ascend.preview',
-		'Preview operations without saving the workbook',
+		'Preview canonical operations or path-addressed mutations without saving the workbook',
 		{
 			file: z.string().describe('Path to workbook file'),
-			ops: z.array(z.record(z.string(), z.unknown())).describe('Operations to preview'),
+			ops: z
+				.array(z.record(z.string(), z.unknown()))
+				.optional()
+				.describe('Canonical operations to preview'),
+			mutations: z
+				.array(pathMutationSchema)
+				.optional()
+				.describe('Path-addressed mutations to compile and preview'),
 			journal: z
 				.boolean()
 				.optional()
 				.describe('Include reversible mutation journal metadata for supported operations'),
 		},
-		async ({ file, ops, journal }) => {
-			const parsed = parseOperations(ops)
-			if (!parsed.ok) {
-				return errorResponse(
-					ascendError('VALIDATION_ERROR', parsed.error, {
-						details: operationValidationDetails(parsed),
-						retryStrategy: 'modified',
-						suggestedFix:
-							'Use ascend.list_operations for canonical operation schemas and examples.',
-					}),
-				)
-			}
+		async ({ file, ops, mutations, journal }) => {
 			try {
 				const wb = await Ascend.open(file)
-				const result = wb.preview(parsed.value, journal ? { journal: true } : undefined)
+				const input = resolveOperationInputForWorkbook(wb, ops, mutations)
+				if (!input.ok) return errorResponse(input.error)
+				const result = wb.preview(input.ops, journal ? { journal: true } : undefined)
 				if (result.errors.length > 0) {
 					const first = result.errors[0]
 					return errorResponse(
@@ -716,7 +835,10 @@ export function createServer(): McpServer {
 							: ascendError('VALIDATION_ERROR', 'Preview failed', { details: { preview: result } }),
 					)
 				}
-				return okResponse(result, `Previewed ${ops.length} operation(s)`)
+				return okResponse(
+					withPathMutationResult(result, input.pathMutations),
+					`Previewed ${input.ops.length} operation(s)`,
+				)
 			} catch (e) {
 				return errorResponse(
 					e instanceof AscendException ? e.ascendError : String(e instanceof Error ? e.message : e),
@@ -727,30 +849,28 @@ export function createServer(): McpServer {
 
 	server.tool(
 		'ascend.write',
-		'Apply operations to a workbook',
+		'Apply canonical operations or path-addressed mutations to a workbook',
 		{
 			file: z.string().describe('Path to workbook file'),
-			ops: z.array(z.record(z.string(), z.unknown())).describe('Operations to apply'),
+			ops: z
+				.array(z.record(z.string(), z.unknown()))
+				.optional()
+				.describe('Canonical operations to apply'),
+			mutations: z
+				.array(pathMutationSchema)
+				.optional()
+				.describe('Path-addressed mutations to compile and apply'),
 			journal: z
 				.boolean()
 				.optional()
 				.describe('Include reversible mutation journal metadata for supported operations'),
 		},
-		async ({ file, ops, journal }) => {
-			const parsed = parseOperations(ops)
-			if (!parsed.ok) {
-				return errorResponse(
-					ascendError('VALIDATION_ERROR', parsed.error, {
-						details: operationValidationDetails(parsed),
-						retryStrategy: 'modified',
-						suggestedFix:
-							'Use ascend.list_operations for canonical operation schemas and examples.',
-					}),
-				)
-			}
+		async ({ file, ops, mutations, journal }) => {
 			try {
 				const wb = await Ascend.open(file)
-				const result = wb.apply(parsed.value, journal ? { journal: true } : undefined)
+				const input = resolveOperationInputForWorkbook(wb, ops, mutations)
+				if (!input.ok) return errorResponse(input.error)
+				const result = wb.apply(input.ops, journal ? { journal: true } : undefined)
 				if (result.errors.length > 0) {
 					const first = result.errors[0]
 					return errorResponse(
@@ -772,7 +892,10 @@ export function createServer(): McpServer {
 					}
 				}
 				await wb.save(file)
-				return okResponse(result, `Applied ${ops.length} operation(s)`)
+				return okResponse(
+					withPathMutationResult(result, input.pathMutations),
+					`Applied ${input.ops.length} operation(s)`,
+				)
 			} catch (e) {
 				return errorResponse(
 					e instanceof AscendException ? e.ascendError : String(e instanceof Error ? e.message : e),
@@ -889,25 +1012,23 @@ export function createServer(): McpServer {
 
 	server.tool(
 		'ascend.plan',
-		'Agent-safe edit planning: validate, preview, recalc-audit, package-graph-audit, and preservation-audit operations without saving',
+		'Agent-safe edit planning: validate, preview, recalc-audit, package-graph-audit, and preservation-audit operations or path mutations without saving',
 		{
 			file: z.string().describe('Path to workbook file'),
-			ops: z.array(z.record(z.string(), z.unknown())).describe('Operations to plan'),
+			ops: z
+				.array(z.record(z.string(), z.unknown()))
+				.optional()
+				.describe('Canonical operations to plan'),
+			mutations: z
+				.array(pathMutationSchema)
+				.optional()
+				.describe('Path-addressed mutations to compile and plan'),
 		},
-		async ({ file, ops }) => {
-			const parsed = parseOperations(ops)
-			if (!parsed.ok) {
-				return errorResponse(
-					ascendError('VALIDATION_ERROR', parsed.error, {
-						details: operationValidationDetails(parsed),
-						retryStrategy: 'modified',
-						suggestedFix:
-							'Use ascend.list_operations for canonical operation schemas and examples.',
-					}),
-				)
-			}
+		async ({ file, ops, mutations }) => {
 			try {
-				const result = await createAgentPlan(file, parsed.value)
+				const input = await resolveOperationInput(file, ops, mutations)
+				if (!input.ok) return errorResponse(input.error)
+				const result = await createAgentPlan(file, input.ops)
 				if (result.preview.errors.length > 0) {
 					const first = result.preview.errors[0]
 					return errorResponse(
@@ -916,7 +1037,10 @@ export function createServer(): McpServer {
 							: ascendError('VALIDATION_ERROR', 'Plan failed', { details: { plan: result } }),
 					)
 				}
-				return okResponse(result, `Planned ${ops.length} operation(s)`)
+				return okResponse(
+					withPathMutationResult(result, input.pathMutations),
+					`Planned ${input.ops.length} operation(s)`,
+				)
 			} catch (e) {
 				return errorResponse(
 					e instanceof AscendException ? e.ascendError : String(e instanceof Error ? e.message : e),
@@ -930,7 +1054,14 @@ export function createServer(): McpServer {
 		'Commit an agent edit plan atomically with optional input hash guard',
 		{
 			file: z.string().describe('Path to workbook file'),
-			ops: z.array(z.record(z.string(), z.unknown())).describe('Operations to commit'),
+			ops: z
+				.array(z.record(z.string(), z.unknown()))
+				.optional()
+				.describe('Canonical operations to commit'),
+			mutations: z
+				.array(pathMutationSchema)
+				.optional()
+				.describe('Path-addressed mutations to compile and commit'),
 			output: z.string().optional().describe('Non-destructive output path'),
 			inPlace: z.boolean().optional().describe('Replace the input file atomically'),
 			backup: z.string().optional().describe('Backup path for in-place commits'),
@@ -947,19 +1078,20 @@ export function createServer(): McpServer {
 				.optional()
 				.describe('Approve explicit plan approval ids or "all"'),
 		},
-		async ({ file, ops, output, inPlace, backup, expectSha256, allowLoss, approvals }) => {
-			const parsed = parseOperations(ops)
-			if (!parsed.ok) {
-				return errorResponse(
-					ascendError('VALIDATION_ERROR', parsed.error, {
-						details: operationValidationDetails(parsed),
-						retryStrategy: 'modified',
-						suggestedFix:
-							'Use ascend.list_operations for canonical operation schemas and examples.',
-					}),
-				)
-			}
+		async ({
+			file,
+			ops,
+			mutations,
+			output,
+			inPlace,
+			backup,
+			expectSha256,
+			allowLoss,
+			approvals,
+		}) => {
 			try {
+				const input = await resolveOperationInput(file, ops, mutations)
+				if (!input.ok) return errorResponse(input.error)
 				const options: AgentCommitOptions = {
 					...(output ? { output } : {}),
 					...(inPlace ? { inPlace: true } : {}),
@@ -968,8 +1100,11 @@ export function createServer(): McpServer {
 					...(allowLoss ? { allowLoss: parseAllowLoss(allowLoss) } : {}),
 					...(approvals ? { approvals: parseStringListOrAll(approvals) } : {}),
 				}
-				const result = await commitAgentPlan(file, parsed.value, options)
-				return okResponse(result, `Committed ${ops.length} operation(s)`)
+				const result = await commitAgentPlan(file, input.ops, options)
+				return okResponse(
+					withPathMutationResult(result, input.pathMutations),
+					`Committed ${input.ops.length} operation(s)`,
+				)
 			} catch (e) {
 				return errorResponse(
 					e instanceof AscendException ? e.ascendError : String(e instanceof Error ? e.message : e),

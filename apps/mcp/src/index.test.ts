@@ -428,6 +428,102 @@ describe('MCP server', () => {
 		expect(reopened.sheet('Sheet1')?.cell('A1')?.value).toEqual({ kind: 'string', value: 'old' })
 	})
 
+	test('ascend.preview and ascend.write accept path-addressed mutations', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'old' }] }])
+		await wb.save(TEMP_FILE)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const preview = (server as any)._registeredTools['ascend.preview'].handler as (args: {
+			file: string
+			mutations: Array<{ path: string; value?: unknown }>
+			journal?: boolean
+		}) => Promise<{
+			structuredContent?: {
+				ok?: boolean
+				data?: {
+					pathMutations?: { replayable?: boolean; ops?: unknown[] }
+					journal?: { supported?: boolean; inverseOps?: unknown[] }
+				}
+			}
+		}>
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const write = (server as any)._registeredTools['ascend.write'].handler as (args: {
+			file: string
+			mutations: Array<{ path: string; value?: unknown }>
+		}) => Promise<{
+			structuredContent?: { ok?: boolean; data?: { pathMutations?: { ops?: unknown[] } } }
+		}>
+
+		const previewResult = await preview({
+			file: TEMP_FILE,
+			journal: true,
+			mutations: [{ path: '/sheets/Sheet1/cells/A1/value', value: 'new' }],
+		})
+		expect(previewResult.structuredContent?.ok).toBe(true)
+		expect(previewResult.structuredContent?.data?.pathMutations?.replayable).toBe(true)
+		expect(previewResult.structuredContent?.data?.pathMutations?.ops).toEqual([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'new' }] },
+		])
+		expect(previewResult.structuredContent?.data?.journal?.inverseOps).toEqual([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'old' }] },
+		])
+
+		const writeResult = await write({
+			file: TEMP_FILE,
+			mutations: [{ path: '/sheets/Sheet1/cells/B1/formula', value: 'A1&"-ok"' }],
+		})
+		expect(writeResult.structuredContent?.ok).toBe(true)
+		expect(writeResult.structuredContent?.data?.pathMutations?.ops).toEqual([
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'B1', formula: 'A1&"-ok"' },
+		])
+
+		const reopened = await AscendWorkbook.open(TEMP_FILE)
+		expect(reopened.sheet('Sheet1')?.cell('A1')?.value).toEqual({ kind: 'string', value: 'old' })
+		expect(reopened.sheet('Sheet1')?.cell('B1')?.formula).toBe('A1&"-ok"')
+	})
+
+	test('ascend.plan reports path mutation compiler errors as structured repair details', async () => {
+		const wb = AscendWorkbook.create()
+		await wb.save(TEMP_FILE)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const handler = (server as any)._registeredTools['ascend.plan'].handler as (args: {
+			file: string
+			mutations: Array<{ path: string; value?: unknown }>
+		}) => Promise<{
+			isError?: boolean
+			structuredContent?: {
+				ok?: boolean
+				error?: {
+					code?: string
+					details?: {
+						issueCount?: number
+						issueDetails?: readonly { code?: string; path?: string }[]
+					}
+				}
+			}
+		}>
+
+		const result = await handler({
+			file: TEMP_FILE,
+			mutations: [{ path: '/sheets/Missing/cells/A1/value', value: 1 }],
+		})
+
+		expect(result.isError).toBe(true)
+		expect(result.structuredContent?.ok).toBe(false)
+		expect(result.structuredContent?.error?.code).toBe('VALIDATION_ERROR')
+		expect(result.structuredContent?.error?.details?.issueCount).toBe(1)
+		expect(result.structuredContent?.error?.details?.issueDetails).toEqual([
+			expect.objectContaining({
+				code: 'sheet_not_found',
+				path: '/sheets/Missing/cells/A1/value',
+			}),
+		])
+	})
+
 	test('ascend.export writes JSON/TSV and rejects unsupported formats', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

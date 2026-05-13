@@ -4221,6 +4221,46 @@ describe('checker', () => {
 		})
 	})
 
+	test('detects chart series references to missing structured table columns', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Data')
+		s.tables.push({
+			id: createTableId(),
+			name: 'Sales',
+			sheetId: s.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 2, col: 1 } },
+			columns: [{ name: 'Month' }, { name: 'Amount' }],
+			hasHeaders: true,
+			hasTotals: false,
+		})
+		wb.chartParts.push({
+			partPath: 'xl/charts/chart1.xml',
+			sheetName: 'Data',
+			chartType: 'lineChart',
+			series: [{ categoryRef: 'Sales[Month]', valueRef: 'Sales[MissingAmount]' }],
+		})
+
+		const result = check(wb)
+		const issue = result.issues.find(
+			(i) =>
+				i.rule === 'chart-series-integrity' &&
+				i.details?.kind === 'chart-series-missing-table-column-reference',
+		)
+
+		expect(result.passed).toBe(false)
+		expect(issue?.severity).toBe('warning')
+		expect(issue?.refs).toEqual(['xl/charts/chart1.xml#series0'])
+		expect(issue?.details).toMatchObject({
+			partPath: 'xl/charts/chart1.xml',
+			seriesIndex: 0,
+			field: 'valueRef',
+			tableName: 'Sales',
+			column: 'MissingAmount',
+			missingColumns: ['MissingAmount'],
+			ownerSheet: 'Data',
+		})
+	})
+
 	test('detects external refs in table, validation, and conditional metadata', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')

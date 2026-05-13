@@ -303,9 +303,14 @@ function externalTargetFromSheetName(sheetName: string): string {
 function checkChartSeriesReferences(wb: Workbook, sheetNames: readonly string[]): CheckIssue[] {
 	const issues: CheckIssue[] = []
 	const sheetNameSet = new Set(sheetNames.map((name) => name.toLowerCase()))
-	const tableNames = new Set(
-		wb.sheets.flatMap((sheet) => sheet.tables.map((table) => table.name.toLowerCase())),
-	)
+	const tablesByName = new Map<
+		string,
+		readonly { readonly name: string; readonly columns: readonly { readonly name: string }[] }[]
+	>()
+	for (const table of wb.sheets.flatMap((sheet) => sheet.tables)) {
+		const normalized = table.name.toLowerCase()
+		tablesByName.set(normalized, [...(tablesByName.get(normalized) ?? []), table])
+	}
 	for (const chart of wb.chartParts) {
 		for (let seriesIndex = 0; seriesIndex < chart.series.length; seriesIndex++) {
 			const series = chart.series[seriesIndex]
@@ -358,22 +363,48 @@ function checkChartSeriesReferences(wb: Workbook, sheetNames: readonly string[])
 					})
 					continue
 				}
-				const tableName = chartStructuredTableReferenceName(entry.reference)
-				if (tableName && !tableNames.has(tableName.toLowerCase())) {
+				for (const structuredRef of chartStructuredReferences(entry.reference)) {
+					const tableMatches = tablesByName.get(structuredRef.tableName.toLowerCase()) ?? []
+					if (tableMatches.length === 0) {
+						issues.push({
+							rule: 'chart-series-integrity',
+							severity: 'warning',
+							message: `Chart series ${entry.field} in "${chart.partPath}" references non-existent table "${structuredRef.tableName}"`,
+							refs: [`${chart.partPath}#series${seriesIndex}`],
+							suggestedFix:
+								'Repair the chart source table reference before editing chart data ranges.',
+							details: {
+								kind: 'chart-series-missing-table-reference',
+								partPath: chart.partPath,
+								seriesIndex,
+								field: entry.field,
+								reference: entry.reference,
+								tableName: structuredRef.tableName,
+								...(chart.sheetName ? { ownerSheet: chart.sheetName } : {}),
+								...(chart.chartType ? { chartType: chart.chartType } : {}),
+							},
+						})
+						continue
+					}
+					const missingColumns = missingChartStructuredReferenceColumns(structuredRef, tableMatches)
+					if (missingColumns.length === 0) continue
 					issues.push({
 						rule: 'chart-series-integrity',
 						severity: 'warning',
-						message: `Chart series ${entry.field} in "${chart.partPath}" references non-existent table "${tableName}"`,
+						message: `Chart series ${entry.field} in "${chart.partPath}" references missing table column(s) ${missingColumns.map((column) => `"${column}"`).join(', ')} in "${structuredRef.tableName}"`,
 						refs: [`${chart.partPath}#series${seriesIndex}`],
 						suggestedFix:
-							'Repair the chart source table reference before editing chart data ranges.',
+							'Repair the chart source structured reference before editing chart data ranges.',
 						details: {
-							kind: 'chart-series-missing-table-reference',
+							kind: 'chart-series-missing-table-column-reference',
 							partPath: chart.partPath,
 							seriesIndex,
 							field: entry.field,
 							reference: entry.reference,
-							tableName,
+							tableName: structuredRef.tableName,
+							missingColumns,
+							...(structuredRef.column ? { column: structuredRef.column } : {}),
+							...(structuredRef.endColumn ? { endColumn: structuredRef.endColumn } : {}),
 							...(chart.sheetName ? { ownerSheet: chart.sheetName } : {}),
 							...(chart.chartType ? { chartType: chart.chartType } : {}),
 						},
@@ -385,10 +416,44 @@ function checkChartSeriesReferences(wb: Workbook, sheetNames: readonly string[])
 	return issues
 }
 
-function chartStructuredTableReferenceName(reference: string): string | null {
+interface ChartStructuredReference {
+	readonly tableName: string
+	readonly column?: string
+	readonly endColumn?: string
+}
+
+function chartStructuredReferences(reference: string): ChartStructuredReference[] {
+	const parsed = parseFormulaText(reference)
+	if (parsed.ok) {
+		return structuredReferencesForFormula(parsed.value).flatMap((structuredRef) =>
+			structuredRef.table
+				? [
+						{
+							tableName: structuredRef.table,
+							...(structuredRef.column ? { column: structuredRef.column } : {}),
+							...(structuredRef.endColumn ? { endColumn: structuredRef.endColumn } : {}),
+						},
+					]
+				: [],
+		)
+	}
 	const local = reference.trim().replace(/^=/, '').split('!').pop()?.trim() ?? ''
 	const match = /^'?([A-Za-z_\\][\w.]*)'?\s*\[/.exec(local)
-	return match?.[1] ?? null
+	return match?.[1] ? [{ tableName: match[1] }] : []
+}
+
+function missingChartStructuredReferenceColumns(
+	reference: ChartStructuredReference,
+	tableMatches: readonly { readonly columns: readonly { readonly name: string }[] }[],
+): string[] {
+	const referencedColumns = [reference.column, reference.endColumn].filter(
+		(column): column is string => column !== undefined && column.length > 0,
+	)
+	if (referencedColumns.length === 0) return []
+	const availableColumns = new Set(
+		tableMatches.flatMap((table) => table.columns.map((column) => column.name.toLowerCase())),
+	)
+	return referencedColumns.filter((column) => !availableColumns.has(column.toLowerCase()))
 }
 
 function checkChartPartOwnership(

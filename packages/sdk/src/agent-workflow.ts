@@ -3633,8 +3633,7 @@ function isRoutedPackageGraphIssue(issue: XlsxPackageGraphFidelityIssue): boolea
 	return (
 		isTableFeatureFamily(issue.featureFamily) ||
 		isLegacyCommentFeatureFamily(issue.featureFamily) ||
-		isThreadedCommentFeatureFamily(issue.featureFamily) ||
-		issue.featureFamily === 'preservedExternalLink'
+		isThreadedCommentFeatureFamily(issue.featureFamily)
 	)
 }
 

@@ -442,6 +442,41 @@ describe('agent workflow loss audit', () => {
 		)
 	})
 
+	test('keeps unresolved external-link package graph failures visible to agents', async () => {
+		const input = join(TEMP_DIR, 'external-link-missing-target.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		await Bun.write(input, makeMissingExternalLinkTargetXlsx())
+
+		const plan = await createAgentPlan(input, [
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'ok' }] },
+		])
+
+		expect(plan.packageGraphAudit.issues).toContainEqual(
+			expect.objectContaining({
+				code: 'package_relationship_target',
+				relationshipPartPath: 'xl/_rels/workbook.xml.rels',
+				relationshipId: 'rIdExternal',
+				featureFamily: 'preservedExternalLink',
+			}),
+		)
+		expect(plan.writePolicy.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: 'package-graph-audit-issue',
+				severity: 'warning',
+				partPaths: expect.arrayContaining(['xl/externalLinks/missing.xml']),
+				details: expect.objectContaining({
+					packageGraphIssues: expect.arrayContaining([
+						expect.objectContaining({
+							code: 'package_relationship_target',
+							relationshipId: 'rIdExternal',
+							featureFamily: 'preservedExternalLink',
+						}),
+					]),
+				}),
+			}),
+		)
+	})
+
 	test('plans report preserved active content without implying execution support', async () => {
 		const input = join(TEMP_DIR, 'macro.xlsm')
 		mkdirSync(TEMP_DIR, { recursive: true })
@@ -2196,6 +2231,39 @@ function makeExternalLinkMissingBindingXlsx(): Uint8Array {
 <externalLink xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
   <externalBook r:id="rIdMissing"/>
 </externalLink>`),
+			}),
+		),
+	)
+}
+
+function makeMissingExternalLinkTargetXlsx(): Uint8Array {
+	return createZip(
+		new Map(
+			Object.entries({
+				'[Content_Types].xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`),
+				'_rels/.rels': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`),
+				'xl/_rels/workbook.xml.rels':
+					encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSheet1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rIdExternal" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLink" Target="externalLinks/missing.xml"/>
+</Relationships>`),
+				'xl/workbook.xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Sheet1" sheetId="1" r:id="rIdSheet1"/></sheets>
+  <externalReferences><externalReference r:id="rIdExternal"/></externalReferences>
+</workbook>`),
+				'xl/worksheets/sheet1.xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`),
 			}),
 		),
 	)

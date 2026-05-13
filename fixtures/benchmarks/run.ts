@@ -171,6 +171,25 @@ function buildPlainNumericWorkbook(rows: number, cols: number): Workbook {
 	return workbook
 }
 
+function buildMixedPlainWorkbook(rows: number, cols: number): Workbook {
+	const workbook = createWorkbook()
+	const sheet = workbook.addSheet('Sheet1')
+	for (let row = 0; row < rows; row++) {
+		for (let col = 0; col < cols; col++) {
+			if ((col & 1) === 0) {
+				sheet.cells.setPlainNumber(row, col, row * cols + col + 1)
+			} else {
+				sheet.cells.set(row, col, {
+					value: stringValue(`label-${col % 8}`),
+					formula: null,
+					styleId: SID,
+				})
+			}
+		}
+	}
+	return workbook
+}
+
 function buildStringDenseWorkbook(rows: number, cols: number): Workbook {
 	const workbook = createWorkbook()
 	workbook.addSheet('Sheet1')
@@ -841,6 +860,26 @@ function buildGridStorageWidthAssertions(rows: number, width: number): Record<st
 	}
 }
 
+function buildMixedGridStorageAssertions(rows: number, width: number): Record<string, number> {
+	runGc()
+	const baseline = phaseMemorySnapshot()
+	const buildStart = performance.now()
+	const workbook = buildMixedPlainWorkbook(rows, width)
+	const buildMs = performance.now() - buildStart
+	runGc()
+	const afterBuild = phaseMemorySnapshot()
+	return {
+		rows,
+		width,
+		cells: rows * width,
+		buildMs,
+		heapDeltaBytes: memoryDelta(afterBuild.heapUsedBytes, baseline.heapUsedBytes),
+		externalDeltaBytes: memoryDelta(afterBuild.externalBytes, baseline.externalBytes),
+		arrayBuffersDeltaBytes: memoryDelta(afterBuild.arrayBuffersBytes, baseline.arrayBuffersBytes),
+		...workbookGridStorageAssertions(workbook),
+	}
+}
+
 function prefixAssertions(
 	prefix: string,
 	assertions: Record<string, number>,
@@ -1096,6 +1135,19 @@ const scenarios: readonly Scenario[] = [
 			},
 			run(input) {
 				return { assertions: buildGridStorageWidthAssertions(input.rows, width) }
+			},
+		}),
+	),
+	...([10, 20] as const).map(
+		(width): Scenario => ({
+			name: `grid-storage-mixed-width-${width}`,
+			category: 'workflow',
+			build() {
+				const rows = 20_000
+				return { rows, cols: width, cells: rows * width }
+			},
+			run(input) {
+				return { assertions: buildMixedGridStorageAssertions(input.rows, width) }
 			},
 		}),
 	),
@@ -3712,6 +3764,8 @@ const scenarioSets = {
 		'grid-storage-width-10',
 		'grid-storage-width-20',
 		'grid-storage-width-50',
+		'grid-storage-mixed-width-10',
+		'grid-storage-mixed-width-20',
 	],
 	'large-read': [
 		'read-large-200k',

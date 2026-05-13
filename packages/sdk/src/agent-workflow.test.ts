@@ -2617,6 +2617,44 @@ describe('agent workflow loss audit', () => {
 		expect(details?.actualSha256).not.toBe(prepared.inputSha256)
 	})
 
+	test('direct agent commits preserve in-place backup and post-write truth', async () => {
+		const input = join(TEMP_DIR, 'direct-in-place.xlsx')
+		const backup = join(TEMP_DIR, 'direct-in-place-backup.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'original' }] }])
+		await wb.save(input)
+
+		const committed = await commitAgentPlan(
+			input,
+			[{ op: 'setCells' as const, sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'updated' }] }],
+			{ inPlace: true, backup },
+		)
+
+		expect(committed.output).toBe(input)
+		expect(committed.backup).toBe(backup)
+		expect(committed.outputSha256).toMatch(/^[a-f0-9]{64}$/)
+		expect(committed.postWrite.valid).toBe(true)
+		expect(committed.postWrite.auditsPassed).toBe(true)
+		expect(committed.postWrite.reopened).toBe(true)
+		expect(committed.postWrite.outputSha256).toBe(committed.outputSha256)
+		expect(committed.postWrite.check.valid).toBe(true)
+		expect(committed.postWrite.packageGraphAudit.ok).toBe(true)
+		expect(committed.modelOutput.blocked).toBe(false)
+		expect(committed.trace.phases.find((phase) => phase.phase === 'post-write')?.status).toBe('ok')
+
+		const reopenedInput = await AscendWorkbook.open(input)
+		expect(reopenedInput.sheet('Sheet1')?.cell('A1')?.value).toEqual({
+			kind: 'string',
+			value: 'updated',
+		})
+		const reopenedBackup = await AscendWorkbook.open(backup)
+		expect(reopenedBackup.sheet('Sheet1')?.cell('A1')?.value).toEqual({
+			kind: 'string',
+			value: 'original',
+		})
+	})
+
 	test('prepared agent plans preserve in-place backup and remain one-shot', async () => {
 		const input = join(TEMP_DIR, 'prepared-in-place.xlsx')
 		const backup = join(TEMP_DIR, 'prepared-in-place-backup.xlsx')

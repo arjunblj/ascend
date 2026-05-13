@@ -4099,6 +4099,79 @@ describe('interactive client contract', () => {
 		])
 	})
 
+	test('journal inverse ops restore sheet and existing row/column visibility metadata', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{ op: 'hideSheet', sheet: 'Sheet1', hidden: true },
+			{ op: 'setRowHeight', sheet: 'Sheet1', row: 2, height: 24 },
+			{ op: 'hideCols', sheet: 'Sheet1', at: 1, count: 1, hidden: true },
+		])
+		const before = journalComparableState(wb)
+
+		const changed = wb.apply(
+			[
+				{ op: 'hideSheet', sheet: 'Sheet1', hidden: false },
+				{ op: 'hideRows', sheet: 'Sheet1', at: 2, count: 1, hidden: true },
+				{ op: 'hideCols', sheet: 'Sheet1', at: 1, count: 1, hidden: false },
+			],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(true)
+		expect(changed.journal?.inverseOps).toEqual([
+			{ op: 'hideCols', sheet: 'Sheet1', at: 1, count: 1, hidden: true },
+			{ op: 'setRowHeight', sheet: 'Sheet1', row: 2, height: 24 },
+			{ op: 'hideSheet', sheet: 'Sheet1', hidden: true },
+		])
+		expect(journalComparableState(wb)).not.toEqual(before)
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(journalComparableState(wb)).toEqual(before)
+	})
+
+	test('journal classifies un-restorable visibility metadata as lossy', () => {
+		const wb = AscendWorkbook.create()
+		const modelSheet = wb.getWorkbookModel().getSheet('Sheet1')
+		if (modelSheet) modelSheet.state = 'veryHidden'
+
+		const changed = wb.preview(
+			[
+				{ op: 'hideSheet', sheet: 'Sheet1', hidden: false },
+				{ op: 'hideRows', sheet: 'Sheet1', at: 2, count: 1, hidden: true },
+				{ op: 'hideCols', sheet: 'Sheet1', at: 1, count: 1, hidden: true },
+			],
+			{ journal: true },
+		)
+
+		expect(changed.wouldSucceed).toBe(true)
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(false)
+		expect(changed.journal?.inverseOps).toEqual([
+			{ op: 'hideSheet', sheet: 'Sheet1', hidden: true },
+		])
+		expect(changed.journal?.issues).toEqual([
+			{
+				code: 'LOSSY_INVERSE',
+				message:
+					'Sheet visibility for Sheet1 was veryHidden and cannot be restored with public operations',
+				refs: ['sheet:Sheet1:state:veryHidden'],
+			},
+			{
+				code: 'LOSSY_INVERSE',
+				message: 'Created row hide metadata cannot be cleared with public operations',
+				refs: ['Sheet1!3'],
+			},
+			{
+				code: 'LOSSY_INVERSE',
+				message: 'Created or unkeyed column hide metadata cannot be cleared with public operations',
+				refs: ['Sheet1!B'],
+			},
+		])
+	})
+
 	test('journal inverse ops restore table renames and column metadata edits', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([
@@ -5262,8 +5335,11 @@ function journalComparableState(wb: AscendWorkbook): object {
 				hyperlinks: sheet?.getHyperlinks(),
 				autoFilter: sheet?.autoFilter,
 				tables: modelSheet?.tables,
+				state: modelSheet?.state,
 				rowHeights: modelSheet ? [...modelSheet.rowHeights.entries()] : undefined,
 				colWidths: modelSheet ? [...modelSheet.colWidths.entries()] : undefined,
+				rowDefs: modelSheet ? [...modelSheet.rowDefs.entries()] : undefined,
+				colDefs: modelSheet?.colDefs,
 			}
 		}),
 		chartParts: wb.getWorkbookModel().chartParts,

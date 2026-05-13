@@ -14,6 +14,7 @@ import {
 	parseRange,
 	type RangeRef,
 	type Sheet,
+	type SheetColDef,
 	type SheetComment,
 	type SheetConditionalFormat,
 	type SheetConditionalFormatRule,
@@ -22,6 +23,7 @@ import {
 	type SheetDrawingObjectRef,
 	type SheetHyperlink,
 	type SheetImageAnchor,
+	type SheetState,
 	type SheetThreadedComment,
 	type Table,
 	type TableColumn,
@@ -178,6 +180,27 @@ export interface MutationJournalSheetLayoutPreimage {
 	readonly value: number | null
 }
 
+export interface MutationJournalSheetVisibilityPreimage {
+	readonly sheet: string
+	readonly state: SheetState | null
+}
+
+export interface MutationJournalRowsHiddenPreimage {
+	readonly sheet: string
+	readonly rows: readonly {
+		readonly row: number
+		readonly height: number | null
+	}[]
+}
+
+export interface MutationJournalColsHiddenPreimage {
+	readonly sheet: string
+	readonly cols: readonly {
+		readonly col: number
+		readonly colDef: SheetColDef | null
+	}[]
+}
+
 export interface MutationJournalStructuralPreimage {
 	readonly sheet: string
 	readonly axis: 'row' | 'col'
@@ -243,6 +266,12 @@ export type MutationJournalPreimage =
 	| { readonly kind: 'sheet-move'; readonly sheetMove: MutationJournalSheetMovePreimage }
 	| { readonly kind: 'sheet-delete'; readonly sheetDelete: MutationJournalSheetDeletePreimage }
 	| { readonly kind: 'sheet-layout'; readonly sheetLayout: MutationJournalSheetLayoutPreimage }
+	| {
+			readonly kind: 'sheet-visibility'
+			readonly sheetVisibility: MutationJournalSheetVisibilityPreimage
+	  }
+	| { readonly kind: 'rows-hidden'; readonly rowsHidden: MutationJournalRowsHiddenPreimage }
+	| { readonly kind: 'cols-hidden'; readonly colsHidden: MutationJournalColsHiddenPreimage }
 	| { readonly kind: 'structural'; readonly structural: MutationJournalStructuralPreimage }
 	| {
 			readonly kind: 'workbook-properties'
@@ -475,6 +504,12 @@ function buildSupportedJournalEntry(
 			return journalSetSheetLayout(workbook, op, opIndex, 'row')
 		case 'setColWidth':
 			return journalSetSheetLayout(workbook, op, opIndex, 'col')
+		case 'hideSheet':
+			return journalHideSheet(workbook, op, opIndex)
+		case 'hideRows':
+			return journalHideRows(workbook, op, opIndex)
+		case 'hideCols':
+			return journalHideCols(workbook, op, opIndex)
 		default:
 			return null
 	}
@@ -616,6 +651,169 @@ function journalSetSheetLayout(
 		preimages: [{ kind: 'sheet-layout', sheetLayout: preimage }],
 		issues: [],
 	}
+}
+
+function journalHideSheet(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'hideSheet' }>,
+	opIndex: number,
+): DraftJournalEntry {
+	const sheet = workbook.getSheet(op.sheet)
+	const preimage: MutationJournalSheetVisibilityPreimage = {
+		sheet: op.sheet,
+		state: sheet?.state ?? null,
+	}
+	if (!sheet) {
+		return {
+			opIndex,
+			op,
+			inverseOps: [],
+			preimages: [{ kind: 'sheet-visibility', sheetVisibility: preimage }],
+			issues: [
+				{
+					code: 'UNSUPPORTED_VALUE',
+					message: `Cannot restore sheet visibility for ${op.sheet} because the sheet was not found`,
+					refs: [`sheet:${op.sheet}`],
+				},
+			],
+		}
+	}
+	const issues: MutationJournalIssue[] =
+		sheet.state === 'veryHidden'
+			? [
+					{
+						code: 'LOSSY_INVERSE',
+						message: `Sheet visibility for ${op.sheet} was veryHidden and cannot be restored with public operations`,
+						refs: [`sheet:${op.sheet}:state:veryHidden`],
+					},
+				]
+			: []
+	return {
+		opIndex,
+		op,
+		inverseOps: [{ op: 'hideSheet', sheet: op.sheet, hidden: sheet.state !== 'visible' }],
+		preimages: [{ kind: 'sheet-visibility', sheetVisibility: preimage }],
+		issues,
+	}
+}
+
+function journalHideRows(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'hideRows' }>,
+	opIndex: number,
+): DraftJournalEntry {
+	const sheet = workbook.getSheet(op.sheet)
+	const rows = Array.from({ length: op.count }, (_, offset) => {
+		const row = op.at + offset
+		const height = sheet?.rowHeights.get(row)
+		return { row, height: height ?? null }
+	})
+	const preimage: MutationJournalRowsHiddenPreimage = { sheet: op.sheet, rows }
+	if (!sheet) {
+		return {
+			opIndex,
+			op,
+			inverseOps: [],
+			preimages: [{ kind: 'rows-hidden', rowsHidden: preimage }],
+			issues: [
+				{
+					code: 'UNSUPPORTED_VALUE',
+					message: `Cannot restore row visibility for ${op.sheet} because the sheet was not found`,
+					refs: [`sheet:${op.sheet}`],
+				},
+			],
+		}
+	}
+	if (op.hidden === false) {
+		return {
+			opIndex,
+			op,
+			inverseOps: [],
+			preimages: [{ kind: 'rows-hidden', rowsHidden: preimage }],
+			issues: [],
+		}
+	}
+	const inverseOps = rows.flatMap((row): Operation[] =>
+		row.height === null
+			? []
+			: [{ op: 'setRowHeight', sheet: op.sheet, row: row.row, height: row.height }],
+	)
+	const refs = rows
+		.filter((row) => row.height === null)
+		.map((row) => layoutRef(op.sheet, 'row', row.row))
+	return {
+		opIndex,
+		op,
+		inverseOps,
+		preimages: [{ kind: 'rows-hidden', rowsHidden: preimage }],
+		issues:
+			refs.length === 0
+				? []
+				: [
+						{
+							code: 'LOSSY_INVERSE',
+							message: `Created row hide metadata cannot be cleared with public operations`,
+							refs,
+						},
+					],
+	}
+}
+
+function journalHideCols(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'hideCols' }>,
+	opIndex: number,
+): DraftJournalEntry {
+	const sheet = workbook.getSheet(op.sheet)
+	const cols = Array.from({ length: op.count }, (_, offset) => {
+		const col = op.at + offset
+		const colDef = sheet?.colDefs.find((def) => def.min === col + 1 && def.max === col + 1)
+		return { col, colDef: colDef ? cloneSheetColDef(colDef) : null }
+	})
+	const preimage: MutationJournalColsHiddenPreimage = { sheet: op.sheet, cols }
+	if (!sheet) {
+		return {
+			opIndex,
+			op,
+			inverseOps: [],
+			preimages: [{ kind: 'cols-hidden', colsHidden: preimage }],
+			issues: [
+				{
+					code: 'UNSUPPORTED_VALUE',
+					message: `Cannot restore column visibility for ${op.sheet} because the sheet was not found`,
+					refs: [`sheet:${op.sheet}`],
+				},
+			],
+		}
+	}
+	const inverseOps = cols.flatMap((col): Operation[] =>
+		col.colDef?.hidden === undefined
+			? []
+			: [{ op: 'hideCols', sheet: op.sheet, at: col.col, count: 1, hidden: col.colDef.hidden }],
+	)
+	const refs = cols
+		.filter((col) => col.colDef?.hidden === undefined)
+		.map((col) => layoutRef(op.sheet, 'col', col.col))
+	return {
+		opIndex,
+		op,
+		inverseOps,
+		preimages: [{ kind: 'cols-hidden', colsHidden: preimage }],
+		issues:
+			refs.length === 0
+				? []
+				: [
+						{
+							code: 'LOSSY_INVERSE',
+							message: `Created or unkeyed column hide metadata cannot be cleared with public operations`,
+							refs,
+						},
+					],
+	}
+}
+
+function cloneSheetColDef(def: SheetColDef): SheetColDef {
+	return { ...def }
 }
 
 function layoutRef(sheet: string, axis: 'row' | 'col', index: number): string {

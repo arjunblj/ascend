@@ -6773,6 +6773,71 @@ describe('writeXlsx', () => {
 		)
 	})
 
+	it('patches threaded comment text without changing thread identity or persons sidecar', () => {
+		const source = commentsAndThreadedCommentsWorkbook()
+		const sourceEntries = unzipSync(source)
+		const opened = readXlsx(source)
+		expectOk(opened)
+
+		const applied = applyOperations(opened.value.workbook, [
+			{
+				op: 'setThreadedComment',
+				sheet: 'Sheet1',
+				threadedCommentId: '{reply-thread}',
+				text: 'Thread reply & approved',
+			},
+		])
+		expectOk(applied)
+
+		const written = writeXlsx(opened.value.workbook, opened.value.capsules, {
+			dirtySheetNames: applied.value.sheetsModified,
+		})
+		expectOk(written)
+
+		const entries = unzipSync(written.value)
+		expect(entries['xl/comments1.xml']).toEqual(sourceEntries['xl/comments1.xml'])
+		expect(entries['xl/drawings/vmlDrawing1.vml']).toEqual(
+			sourceEntries['xl/drawings/vmlDrawing1.vml'],
+		)
+		expect(entries['xl/persons/person.xml']).toEqual(sourceEntries['xl/persons/person.xml'])
+
+		const threadedXml = decodeTestXml(entries['xl/threadedComments/threadedComment1.xml'])
+		expect(threadedXml).toContain('<text>Thread root</text>')
+		expect(threadedXml).toContain('<text>Thread reply &amp; approved</text>')
+		expect(threadedXml).not.toContain('<text>Thread reply</text>')
+		expect(threadedXml).toContain(
+			'<threadedComment ref="D4" personId="{person-ada}" id="{root-thread}" dT="2024-03-01T10:11:12.000Z">',
+		)
+		expect(threadedXml).toContain(
+			'<threadedComment ref="D4" personId="{person-grace}" id="{reply-thread}" parentId="{root-thread}" dT="2024-03-02T10:11:12.000Z" done="1">',
+		)
+		expect(threadedXml).toContain(
+			'<mentions><mention mentionpersonId="{person-grace}" startIndex="0" length="6"/></mentions>',
+		)
+		expect(threadedXml).toContain(
+			'<extLst><ext uri="{reply-ext}"><futureThreadMetadata preserved="1"/></ext></extLst>',
+		)
+
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+		expect(reopened.value.workbook.getSheet('Sheet1')?.threadedComments).toEqual([
+			expect.objectContaining({
+				id: '{root-thread}',
+				personId: '{person-ada}',
+				dateTime: '2024-03-01T10:11:12.000Z',
+				text: 'Thread root',
+			}),
+			expect.objectContaining({
+				id: '{reply-thread}',
+				parentId: '{root-thread}',
+				personId: '{person-grace}',
+				dateTime: '2024-03-02T10:11:12.000Z',
+				done: true,
+				text: 'Thread reply & approved',
+			}),
+		])
+	})
+
 	it('writes shifted threaded comment refs from the current model', () => {
 		const source = commentsAndThreadedCommentsWorkbook()
 		const opened = readXlsx(source)

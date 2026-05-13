@@ -3877,6 +3877,28 @@ function checkThreadedCommentIntegrity(
 			},
 		})
 	}
+	if (threadedCommentCount > 0 && threadedCommentsWithPersonIds === 0) {
+		for (const part of personParts) {
+			issues.push({
+				rule: 'threaded-comment-integrity',
+				severity: 'warning',
+				message: `Threaded comment persons package part "${part.path}" is not referenced by any threaded comments`,
+				refs: [part.path],
+				suggestedFix:
+					'Remove the unclaimed persons sidecar or restore threaded comment personId bindings before writing.',
+				details: {
+					kind: 'orphan-threaded-comment-persons-part',
+					partPath: part.path,
+					ownerScope: part.ownerScope,
+					contentType: part.contentType,
+					threadedCommentsWithPersonIds,
+					incomingRelationships: (graphRelationshipsByTarget.get(part.path) ?? []).map(
+						queryTableRelationshipDetails,
+					),
+				},
+			})
+		}
+	}
 	if (threadedCommentCount === 0) {
 		for (const part of personParts) {
 			issues.push({

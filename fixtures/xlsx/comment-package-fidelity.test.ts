@@ -98,6 +98,74 @@ describe('comment package graph fidelity', () => {
 		})
 	}
 
+	test('LibreOffice legacy comment text edits preserve VML layout and package identity', () => {
+		const fixture = legacyCommentFixtures[1]
+		const sourceBytes = readFileSync(fixture.path)
+		const beforeGraph = inspectXlsxPackageGraph(sourceBytes)
+		expectNoPackageGraphIssues(auditXlsxPackageGraphReadIntegrity(beforeGraph))
+		const beforeCommentParts = featurePartIdentities(beforeGraph, 'preservedComments')
+		const beforeVmlParts = featurePartIdentities(beforeGraph, 'preservedVml')
+		const beforeRelationships = commentRelationshipIdentities(beforeGraph)
+		const beforeOverrides = featureContentTypeOverrides(beforeGraph, [
+			'preservedComments',
+			'preservedVml',
+		])
+		const commentPartPath = singleFeaturePartPath(beforeGraph, 'preservedComments')
+		const vmlPartPath = singleFeaturePartPath(beforeGraph, 'preservedVml')
+		const sourceCommentXml = decodeZipPart(sourceBytes, commentPartPath)
+		const sourceVmlBytes = readZipPart(sourceBytes, vmlPartPath)
+
+		const opened = readXlsx(sourceBytes)
+		expectOk(opened)
+		const sheet = opened.value.workbook.sheets.find((entry) => entry.name === fixture.sheetName)
+		expect(sheet).toBeDefined()
+		if (!sheet) return
+		const original = sheet.comments.get('C9')
+		expect(original).toMatchObject({
+			text: 'visible comment',
+			author: 'LO',
+			legacyDrawing: expect.objectContaining({
+				shapeId: '_x0000_s1025',
+				row: 8,
+				column: 2,
+			}),
+		})
+		if (!original) return
+		sheet.comments.set('C9', {
+			...original,
+			text: 'Visible comment updated by Ascend',
+		})
+
+		const written = writeXlsx(opened.value.workbook, opened.value.capsules, {
+			dirtySheetNames: [sheet.name],
+		})
+		expectOk(written)
+
+		const writtenCommentXml = decodeZipPart(written.value, commentPartPath)
+		expect(writtenCommentXml).toContain('Visible comment updated by Ascend')
+		expect(writtenCommentXml).not.toEqual(sourceCommentXml)
+		expect(readZipPart(written.value, vmlPartPath)).toEqual(sourceVmlBytes)
+
+		const afterGraph = inspectXlsxPackageGraph(written.value)
+		expectNoPackageGraphIssues(auditXlsxPackageGraphReadIntegrity(afterGraph))
+		expectNoPackageGraphIssues(auditXlsxPackageGraphSafeEditIntegrity(beforeGraph, afterGraph))
+		expect(featurePartIdentities(afterGraph, 'preservedComments')).toEqual(beforeCommentParts)
+		expect(featurePartIdentities(afterGraph, 'preservedVml')).toEqual(beforeVmlParts)
+		expect(commentRelationshipIdentities(afterGraph)).toEqual(beforeRelationships)
+		expect(featureContentTypeOverrides(afterGraph, ['preservedComments', 'preservedVml'])).toEqual(
+			beforeOverrides,
+		)
+
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+		const reopenedComment = reopened.value.workbook.getSheet(fixture.sheetName)?.comments.get('C9')
+		expect(reopenedComment).toMatchObject({
+			text: 'Visible comment updated by Ascend',
+			author: 'LO',
+			legacyDrawing: original.legacyDrawing,
+		})
+	})
+
 	test('synthetic threaded comments preserve thread and person sidecars after safe dirty edit', () => {
 		const sourceBytes = threadedCommentWorkbook()
 		const sourceEntries = unzipSync(sourceBytes)
@@ -319,6 +387,20 @@ function expectFeatureBytesPreserved(
 		expect(part.preservationPolicy).toBe('preserve-exact')
 		expect(part.bytePreservationExpected).toBe(true)
 	}
+}
+
+function singleFeaturePartPath(graph: XlsxPackageGraph, featureFamily: string): string {
+	const paths = graph.parts
+		.filter((entry) => entry.featureFamily === featureFamily)
+		.map((entry) => entry.path)
+	expect(paths).toHaveLength(1)
+	const [path] = paths
+	if (!path) throw new Error(`Missing ${featureFamily} package part`)
+	return path
+}
+
+function decodeZipPart(bytes: Uint8Array, path: string): string {
+	return new TextDecoder().decode(readZipPart(bytes, path))
 }
 
 function readZipPart(bytes: Uint8Array, path: string): Uint8Array {

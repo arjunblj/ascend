@@ -1552,20 +1552,35 @@ function buildWritePolicyReport(
 	}
 	const commentIntegrityIssues = collectCommentIntegrityIssues(checkIssues)
 	const legacyCommentLocations = collectLegacyCommentLocations(workbook)
+	const legacyCommentPackageIssuePartPaths = packageGraphAudit.issues.flatMap((issue) =>
+		isLegacyCommentPackageGraphIssue(issue) ? packageGraphIssuePackagePaths(issue) : [],
+	)
 	const legacyCommentPartPaths = collectLegacyCommentPartPaths(
 		packageGraph.parts,
 		legacyCommentLocations,
 		commentIntegrityIssues.legacy,
+		legacyCommentPackageIssuePartPaths,
 	)
-	if (legacyCommentLocations.length > 0 || commentIntegrityIssues.legacy.length > 0) {
+	const legacyCommentPackageGraphIssues = packageGraphIssuesForParts(
+		packageGraphAudit,
+		legacyCommentPartPaths,
+		['preservedComments', 'preservedVml'],
+	)
+	if (
+		legacyCommentLocations.length > 0 ||
+		commentIntegrityIssues.legacy.length > 0 ||
+		legacyCommentPackageGraphIssues.length > 0
+	) {
 		const relatedOperations = collectLegacyCommentRelatedOperations(operations)
 		diagnostics.push({
 			code: 'legacy-comment-preservation-risk',
 			severity: 'warning',
 			message:
-				legacyCommentLocations.length > 0
-					? `${legacyCommentLocations.length} legacy comment location(s) depend on comments XML${legacyCommentPartPaths.some((path) => path.includes('/drawings/')) ? ' and VML drawing' : ''} package preservation.`
-					: `${commentIntegrityIssues.legacy.length} legacy comment verify issue(s) require inspection before write.`,
+				legacyCommentPackageGraphIssues.length > 0 || commentIntegrityIssues.legacy.length > 0
+					? `${legacyCommentPackageGraphIssues.length + commentIntegrityIssues.legacy.length} legacy comment package or verify issue(s) require inspection before write.`
+					: legacyCommentLocations.length > 0
+						? `${legacyCommentLocations.length} legacy comment location(s) depend on comments XML${legacyCommentPartPaths.some((path) => path.includes('/drawings/')) ? ' and VML drawing' : ''} package preservation.`
+						: `${commentIntegrityIssues.legacy.length} legacy comment verify issue(s) require inspection before write.`,
 			suggestedAction:
 				'For text-only edits, prefer setComment on the existing sheet/ref. Inspect inspectSheet(sheet).comments legacyDrawing/VML metadata before layout changes, then verify postWrite.check and postWrite.packageGraphAudit.',
 			locations: legacyCommentLocations.map((entry) => entry.location),
@@ -1578,30 +1593,42 @@ function buildWritePolicyReport(
 			details: {
 				comments: legacyCommentLocations,
 				relatedOperations,
-				packageGraphIssues: packageGraphIssuesForParts(packageGraphAudit, legacyCommentPartPaths, [
-					'preservedComments',
-					'preservedVml',
-				]),
+				packageGraphIssues: legacyCommentPackageGraphIssues,
 				verifyIssues: commentIntegrityIssues.legacy,
 				safeTextEdit: 'setComment',
 			},
 		})
 	}
 	const threadedCommentLocations = collectThreadedCommentLocations(workbook)
+	const threadedCommentPackageIssuePartPaths = packageGraphAudit.issues.flatMap((issue) =>
+		isThreadedCommentPackageGraphIssue(issue) ? packageGraphIssuePackagePaths(issue) : [],
+	)
 	const threadedCommentPartPaths = collectThreadedCommentPartPaths(
 		packageGraph.parts,
 		threadedCommentLocations,
 		commentIntegrityIssues.threaded,
+		threadedCommentPackageIssuePartPaths,
 	)
-	if (threadedCommentLocations.length > 0 || commentIntegrityIssues.threaded.length > 0) {
+	const threadedCommentPackageGraphIssues = packageGraphIssuesForParts(
+		packageGraphAudit,
+		threadedCommentPartPaths,
+		['preservedThreadedComments'],
+	)
+	if (
+		threadedCommentLocations.length > 0 ||
+		commentIntegrityIssues.threaded.length > 0 ||
+		threadedCommentPackageGraphIssues.length > 0
+	) {
 		const relatedOperations = collectThreadedCommentRelatedOperations(operations)
 		diagnostics.push({
 			code: 'threaded-comment-preservation-risk',
 			severity: 'warning',
 			message:
-				threadedCommentLocations.length > 0
-					? `${threadedCommentLocations.length} threaded comment location(s) depend on threaded comment ids, parent ids, person ids, and persons sidecar preservation.`
-					: `${commentIntegrityIssues.threaded.length} threaded comment verify issue(s) require inspection before write.`,
+				threadedCommentPackageGraphIssues.length > 0 || commentIntegrityIssues.threaded.length > 0
+					? `${threadedCommentPackageGraphIssues.length + commentIntegrityIssues.threaded.length} threaded comment package or verify issue(s) require inspection before write.`
+					: threadedCommentLocations.length > 0
+						? `${threadedCommentLocations.length} threaded comment location(s) depend on threaded comment ids, parent ids, person ids, and persons sidecar preservation.`
+						: `${commentIntegrityIssues.threaded.length} threaded comment verify issue(s) require inspection before write.`,
 			suggestedAction:
 				'For text-only edits, use setThreadedComment with partPath and threadedCommentId from inspectSheet(sheet).threadedComments. Preserve parentId/personId/persons metadata and verify postWrite.check plus postWrite.packageGraphAudit.',
 			locations: threadedCommentLocations.map((entry) => entry.location),
@@ -1614,11 +1641,7 @@ function buildWritePolicyReport(
 			details: {
 				threadedComments: threadedCommentLocations,
 				relatedOperations,
-				packageGraphIssues: packageGraphIssuesForParts(
-					packageGraphAudit,
-					threadedCommentPartPaths,
-					['preservedThreadedComments'],
-				),
+				packageGraphIssues: threadedCommentPackageGraphIssues,
 				verifyIssues: commentIntegrityIssues.threaded,
 				safeTextEdit: 'setThreadedComment',
 			},
@@ -3572,6 +3595,7 @@ function collectLegacyCommentPartPaths(
 	parts: readonly XlsxPackageGraph['parts'][number][],
 	locations: readonly LegacyCommentLocation[],
 	issues: readonly CheckIssue[] = [],
+	packageIssuePartPaths: readonly string[] = [],
 ): string[] {
 	const hasVmlLayout = locations.some((location) => location.hasLegacyDrawing)
 	return uniqueStrings([
@@ -3585,6 +3609,7 @@ function collectLegacyCommentPartPaths(
 		...issues.flatMap((issue) =>
 			checkIssuePackagePartPaths(issue).filter(isLegacyCommentPackagePartPath),
 		),
+		...packageIssuePartPaths.filter(isLegacyCommentPackagePartPath),
 	])
 }
 
@@ -3592,6 +3617,7 @@ function collectThreadedCommentPartPaths(
 	parts: readonly XlsxPackageGraph['parts'][number][],
 	locations: readonly ThreadedCommentLocation[],
 	issues: readonly CheckIssue[] = [],
+	packageIssuePartPaths: readonly string[] = [],
 ): string[] {
 	return uniqueStrings([
 		...parts
@@ -3601,6 +3627,7 @@ function collectThreadedCommentPartPaths(
 		...issues.flatMap((issue) =>
 			checkIssuePackagePartPaths(issue).filter(isThreadedCommentPackagePartPath),
 		),
+		...packageIssuePartPaths.filter(isThreadedCommentPackagePartPath),
 	])
 }
 
@@ -3714,13 +3741,29 @@ function isExternalLinkPackageGraphIssue(issue: XlsxPackageGraphFidelityIssue): 
 	return packageGraphIssuePackagePaths(issue).some(isExternalLinkPackagePartPath)
 }
 
+function isLegacyCommentPackageGraphIssue(issue: XlsxPackageGraphFidelityIssue): boolean {
+	if (issue.featureFamily && isLegacyCommentFeatureFamily(issue.featureFamily)) return true
+	return (
+		packageGraphIssuePackagePaths(issue).some(isLegacyCommentPackagePartPath) ||
+		packageGraphIssueContentTypes(issue).some(isLegacyCommentContentType)
+	)
+}
+
+function isThreadedCommentPackageGraphIssue(issue: XlsxPackageGraphFidelityIssue): boolean {
+	if (issue.featureFamily && isThreadedCommentFeatureFamily(issue.featureFamily)) return true
+	return (
+		packageGraphIssuePackagePaths(issue).some(isThreadedCommentPackagePartPath) ||
+		packageGraphIssueContentTypes(issue).some(isThreadedCommentContentType)
+	)
+}
+
 function isRoutedPackageGraphIssue(issue: XlsxPackageGraphFidelityIssue): boolean {
+	if (isLegacyCommentPackageGraphIssue(issue) || isThreadedCommentPackageGraphIssue(issue)) {
+		return true
+	}
 	if (!issue.featureFamily) return false
 	return (
-		isTableFeatureFamily(issue.featureFamily) ||
-		isExternalLinkFeatureFamily(issue.featureFamily) ||
-		isLegacyCommentFeatureFamily(issue.featureFamily) ||
-		isThreadedCommentFeatureFamily(issue.featureFamily)
+		isTableFeatureFamily(issue.featureFamily) || isExternalLinkFeatureFamily(issue.featureFamily)
 	)
 }
 
@@ -3747,6 +3790,13 @@ function packageGraphIssuePackagePaths(issue: XlsxPackageGraphFidelityIssue): st
 		typeof issue.expected === 'string' ? issue.expected : undefined,
 	].filter((value): value is string => value !== undefined && isPackagePartPath(value))
 	return uniqueStrings(values)
+}
+
+function packageGraphIssueContentTypes(issue: XlsxPackageGraphFidelityIssue): string[] {
+	return [
+		issue.contentType,
+		typeof issue.expected === 'string' ? issue.expected : undefined,
+	].filter((value): value is string => typeof value === 'string' && value.includes('/'))
 }
 
 function packageGraphIssuesForParts(

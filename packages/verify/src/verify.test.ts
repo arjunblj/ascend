@@ -3030,6 +3030,59 @@ describe('checker', () => {
 		})
 	})
 
+	test('detects threaded comment persons package parts when no comments use person ids', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.threadedComments.push({
+			ref: 'A1',
+			text: 'Root',
+			id: '{thread-1}',
+			author: 'Ada',
+			partPath: 'xl/threadedComments/threadedComment1.xml',
+		})
+
+		const result = check(wb, {
+			packageGraph: {
+				parts: [
+					{
+						path: 'xl/threadedComments/threadedComment1.xml',
+						featureFamily: 'preservedThreadedComments',
+						ownerScope: 'worksheet',
+						contentType: 'application/vnd.ms-excel.threadedcomments+xml',
+					},
+					{
+						path: 'xl/persons/person.xml',
+						featureFamily: 'preservedThreadedComments',
+						ownerScope: 'workbook',
+						contentType: 'application/vnd.ms-excel.person+xml',
+					},
+				],
+				relationships: [
+					{
+						sourcePartPath: 'xl/worksheets/sheet1.xml',
+						relationshipPartPath: 'xl/worksheets/_rels/sheet1.xml.rels',
+						id: 'rIdThreaded',
+						type: 'http://schemas.microsoft.com/office/2017/10/relationships/threadedComment',
+						rawTarget: '../threadedComments/threadedComment1.xml',
+						resolvedTarget: 'xl/threadedComments/threadedComment1.xml',
+					},
+				],
+			},
+		})
+		const issue = result.issues.find(
+			(i) =>
+				i.rule === 'threaded-comment-integrity' &&
+				i.details?.kind === 'orphan-threaded-comment-persons-part',
+		)
+
+		expect(result.passed).toBe(false)
+		expect(issue?.refs).toEqual(['xl/persons/person.xml'])
+		expect(issue?.details).toMatchObject({
+			partPath: 'xl/persons/person.xml',
+			threadedCommentsWithPersonIds: 0,
+		})
+	})
+
 	test('detects ambiguous threaded comment persons package parts when comments use person ids', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')

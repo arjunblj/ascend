@@ -1174,6 +1174,86 @@ describe('agent workflow loss audit', () => {
 		)
 	})
 
+	test('plans group orphan legacy comment relationship sidecars by comment source path', async () => {
+		const input = join(TEMP_DIR, 'legacy-comment-orphan-sidecar.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		await Bun.write(input, makeOrphanCommentRelationshipSidecarXlsx('legacy'))
+
+		const plan = await createAgentPlan(input, [
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'ok' }] },
+		])
+
+		expect(plan.packageGraphAudit.issues).toContainEqual(
+			expect.objectContaining({
+				code: 'package_relationship_source',
+				sourcePartPath: 'xl/comments1.xml',
+				relationshipPartPath: 'xl/_rels/comments1.xml.rels',
+			}),
+		)
+		expect(plan.writePolicy.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: 'legacy-comment-preservation-risk',
+				severity: 'warning',
+				partPaths: expect.arrayContaining(['xl/comments1.xml']),
+				details: expect.objectContaining({
+					packageGraphIssues: expect.arrayContaining([
+						expect.objectContaining({
+							code: 'package_relationship_source',
+							sourcePartPath: 'xl/comments1.xml',
+						}),
+					]),
+				}),
+			}),
+		)
+		expect(
+			plan.writePolicy.diagnostics.some(
+				(diagnostic) =>
+					diagnostic.code === 'package-graph-audit-issue' &&
+					diagnostic.partPaths?.includes('xl/comments1.xml'),
+			),
+		).toBe(false)
+	})
+
+	test('plans group orphan threaded comment relationship sidecars by threaded source path', async () => {
+		const input = join(TEMP_DIR, 'threaded-comment-orphan-sidecar.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		await Bun.write(input, makeOrphanCommentRelationshipSidecarXlsx('threaded'))
+
+		const plan = await createAgentPlan(input, [
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'ok' }] },
+		])
+
+		expect(plan.packageGraphAudit.issues).toContainEqual(
+			expect.objectContaining({
+				code: 'package_relationship_source',
+				sourcePartPath: 'xl/threadedComments/threadedComment1.xml',
+				relationshipPartPath: 'xl/threadedComments/_rels/threadedComment1.xml.rels',
+			}),
+		)
+		expect(plan.writePolicy.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: 'threaded-comment-preservation-risk',
+				severity: 'warning',
+				partPaths: ['xl/threadedComments/threadedComment1.xml'],
+				details: expect.objectContaining({
+					packageGraphIssues: expect.arrayContaining([
+						expect.objectContaining({
+							code: 'package_relationship_source',
+							sourcePartPath: 'xl/threadedComments/threadedComment1.xml',
+						}),
+					]),
+				}),
+			}),
+		)
+		expect(
+			plan.writePolicy.diagnostics.some(
+				(diagnostic) =>
+					diagnostic.code === 'package-graph-audit-issue' &&
+					diagnostic.partPaths?.includes('xl/threadedComments/threadedComment1.xml'),
+			),
+		).toBe(false)
+	})
+
 	test('plans attach table package graph relationship failures to table risk', async () => {
 		const input = join(TEMP_DIR, 'table-missing-target.xlsx')
 		mkdirSync(TEMP_DIR, { recursive: true })
@@ -2077,6 +2157,51 @@ function makeMissingThreadedCommentsTargetXlsx(): Uint8Array {
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rIdThreaded" Type="http://schemas.microsoft.com/office/2017/10/relationships/threadedComment" Target="../threadedComments/missing.xml"/>
 </Relationships>`),
+			}),
+		),
+	)
+}
+
+function makeOrphanCommentRelationshipSidecarXlsx(kind: 'legacy' | 'threaded'): Uint8Array {
+	const sidecarPath =
+		kind === 'legacy'
+			? 'xl/_rels/comments1.xml.rels'
+			: 'xl/threadedComments/_rels/threadedComment1.xml.rels'
+	const sidecarXml =
+		kind === 'legacy'
+			? `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdCommentVml" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/vmlDrawing" Target="drawings/vmlDrawing1.vml"/>
+</Relationships>`
+			: `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdThreadedMeta" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/metadata/core-properties" Target="../metadata.xml"/>
+</Relationships>`
+	return createZip(
+		new Map(
+			Object.entries({
+				'[Content_Types].xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`),
+				'_rels/.rels': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`),
+				'xl/_rels/workbook.xml.rels':
+					encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSheet" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`),
+				'xl/workbook.xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Sheet1" sheetId="1" r:id="rIdSheet"/></sheets>
+</workbook>`),
+				'xl/worksheets/sheet1.xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`),
+				[sidecarPath]: encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+${sidecarXml}`),
 			}),
 		),
 	)

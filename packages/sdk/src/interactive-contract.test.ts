@@ -523,4 +523,112 @@ describe('interactive client contract', () => {
 		expect(wb.table('Sales')?.columnDefs[1]?.formula).toBe('1+1')
 		expect(wb.table('Sales')?.styleInfo).toEqual({ name: 'TableStyleMedium2' })
 	})
+
+	test('journal inverse ops restore structural row and column edits', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'top' },
+					{ ref: 'A2', value: 'deleted-row' },
+					{ ref: 'B2', value: 4 },
+					{ ref: 'A3', value: 'bottom' },
+				],
+			},
+			{ op: 'setStyle', sheet: 'Sheet1', range: 'B2:B2', style: { numberFormat: '0.00' } },
+		])
+
+		const inserted = wb.apply([{ op: 'insertRows', sheet: 'Sheet1', at: 1, count: 1 }], {
+			journal: true,
+		})
+		expect(inserted.journal?.exact).toBe(true)
+		expect(inserted.journal?.inverseOps).toEqual([
+			{ op: 'deleteRows', sheet: 'Sheet1', at: 1, count: 1 },
+		])
+		const undoInsert = wb.apply(inserted.journal?.inverseOps ?? [], { transaction: true })
+		expect(undoInsert.errors).toEqual([])
+		expect(wb.sheet('Sheet1')?.cell('A2')?.value).toEqual({
+			kind: 'string',
+			value: 'deleted-row',
+		})
+
+		const deletedRow = wb.apply([{ op: 'deleteRows', sheet: 'Sheet1', at: 1, count: 1 }], {
+			journal: true,
+		})
+		expect(deletedRow.journal?.exact).toBe(true)
+		expect(deletedRow.journal?.inverseOps).toEqual([
+			{ op: 'insertRows', sheet: 'Sheet1', at: 1, count: 1 },
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A2', value: 'deleted-row' },
+					{ ref: 'B2', value: 4 },
+				],
+			},
+			{ op: 'setStyle', sheet: 'Sheet1', range: 'A2', style: {} },
+			{ op: 'setStyle', sheet: 'Sheet1', range: 'B2', style: { numberFormat: '0.00' } },
+		])
+		const undoDeleteRow = wb.apply(deletedRow.journal?.inverseOps ?? [], { transaction: true })
+		expect(undoDeleteRow.errors).toEqual([])
+		expect(wb.sheet('Sheet1')?.cell('A2')?.value).toEqual({
+			kind: 'string',
+			value: 'deleted-row',
+		})
+		expect(wb.cellStyle('Sheet1!B2')?.numberFormat).toBe('0.00')
+
+		const deletedCol = wb.apply([{ op: 'deleteCols', sheet: 'Sheet1', at: 1, count: 1 }], {
+			journal: true,
+		})
+		expect(deletedCol.journal?.exact).toBe(true)
+		expect(deletedCol.journal?.inverseOps[0]).toEqual({
+			op: 'insertCols',
+			sheet: 'Sheet1',
+			at: 1,
+			count: 1,
+		})
+		const undoDeleteCol = wb.apply(deletedCol.journal?.inverseOps ?? [], { transaction: true })
+		expect(undoDeleteCol.errors).toEqual([])
+		expect(wb.sheet('Sheet1')?.cell('B2')?.value).toEqual({ kind: 'number', value: 4 })
+	})
+
+	test('structural delete journals mark metadata intersections as lossy', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'header' }] },
+			{ op: 'mergeCells', sheet: 'Sheet1', range: 'C2:D2' },
+			{
+				op: 'setDataValidation',
+				sheet: 'Sheet1',
+				range: 'F2:F2',
+				rule: { type: 'list', formula1: '"yes,no"' },
+			},
+		])
+
+		const deletedRow = wb.preview([{ op: 'deleteRows', sheet: 'Sheet1', at: 1, count: 1 }], {
+			journal: true,
+		})
+
+		expect(deletedRow.wouldSucceed).toBe(true)
+		expect(deletedRow.journal?.supported).toBe(true)
+		expect(deletedRow.journal?.exact).toBe(false)
+		expect(deletedRow.journal?.issues).toEqual([
+			{
+				code: 'LOSSY_INVERSE',
+				message: 'Deleted row metadata on Sheet1 cannot be fully restored with public operations',
+				refs: ['Sheet1!2'],
+			},
+		])
+		expect(deletedRow.journal?.inverseOps[0]).toEqual({
+			op: 'insertRows',
+			sheet: 'Sheet1',
+			at: 1,
+			count: 1,
+		})
+		expect(wb.sheet('Sheet1')?.merges).toEqual([
+			{ start: { row: 1, col: 2 }, end: { row: 1, col: 3 } },
+		])
+	})
 })

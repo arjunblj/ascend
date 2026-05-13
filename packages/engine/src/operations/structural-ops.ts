@@ -90,6 +90,7 @@ function applyAxisShift(
 		delta,
 	)
 
+	sheet.ensureWritable()
 	if (axis === 'row') {
 		delta > 0 ? sheet.cells.insertRows(at, count) : sheet.cells.deleteRows(at, count)
 	} else {

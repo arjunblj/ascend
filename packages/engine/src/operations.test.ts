@@ -2512,6 +2512,26 @@ describe('applyOperation', () => {
 		expect(s.cells.get(2, 0)).toBeUndefined()
 	})
 
+	test('structural row and column edits on a cloned workbook do not mutate source metadata', () => {
+		const wb = setup()
+		const sheet = wb.getSheet('Sheet1')
+		expect(sheet).toBeDefined()
+		if (!sheet) return
+		sheet.merges.push({ start: { row: 1, col: 2 }, end: { row: 1, col: 3 } })
+		sheet.dataValidations.push({ sqref: 'F2:F2', type: 'list', formula1: '"yes,no"' })
+
+		const clone = wb.clone()
+		expectOk(applyOperation(clone, { op: 'deleteRows', sheet: 'Sheet1', at: 1, count: 1 }))
+		expectOk(applyOperation(clone, { op: 'insertCols', sheet: 'Sheet1', at: 0, count: 1 }))
+
+		expect(wb.getSheet('Sheet1')?.merges).toEqual([
+			{ start: { row: 1, col: 2 }, end: { row: 1, col: 3 } },
+		])
+		expect(wb.getSheet('Sheet1')?.dataValidations).toEqual([
+			{ sqref: 'F2:F2', type: 'list', formula1: '"yes,no"' },
+		])
+	})
+
 	test('deleteRows shrinks overlapping table, filter, and validation ranges', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')

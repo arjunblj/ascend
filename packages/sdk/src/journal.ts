@@ -119,6 +119,14 @@ export interface MutationJournalTableStylePreimage {
 	readonly style: TableStyleInfo | null
 }
 
+export interface MutationJournalStructuralPreimage {
+	readonly sheet: string
+	readonly axis: 'row' | 'col'
+	readonly at: number
+	readonly count: number
+	readonly deletedCells: readonly MutationJournalCellPreimage[]
+}
+
 export type MutationJournalPreimage =
 	| { readonly kind: 'cells'; readonly cells: readonly MutationJournalCellPreimage[] }
 	| { readonly kind: 'comment'; readonly comment: MutationJournalCommentPreimage }
@@ -139,6 +147,7 @@ export type MutationJournalPreimage =
 	| { readonly kind: 'table-column'; readonly tableColumn: MutationJournalTableColumnPreimage }
 	| { readonly kind: 'table'; readonly table: MutationJournalTablePreimage }
 	| { readonly kind: 'table-style'; readonly tableStyle: MutationJournalTableStylePreimage }
+	| { readonly kind: 'structural'; readonly structural: MutationJournalStructuralPreimage }
 
 export interface MutationJournalEntry {
 	readonly opIndex: number
@@ -231,6 +240,14 @@ function buildSupportedJournalEntry(
 			return journalSetFormula(workbook, op, opIndex)
 		case 'clearRange':
 			return journalClearRange(workbook, op, opIndex)
+		case 'insertRows':
+			return journalInsertAxis(op, opIndex, 'row')
+		case 'insertCols':
+			return journalInsertAxis(op, opIndex, 'col')
+		case 'deleteRows':
+			return journalDeleteAxis(workbook, op, opIndex, 'row')
+		case 'deleteCols':
+			return journalDeleteAxis(workbook, op, opIndex, 'col')
 		case 'setNumberFormat':
 		case 'setStyle':
 			return journalStyleRange(workbook, op, opIndex)
@@ -373,6 +390,51 @@ function journalStyleRange(
 		inverseOps: styleInverseOps(cells),
 		preimages: [{ kind: 'cells', cells }],
 		issues: [],
+	}
+}
+
+function journalInsertAxis(
+	op: Extract<Operation, { op: 'insertRows' | 'insertCols' }>,
+	opIndex: number,
+	axis: 'row' | 'col',
+): DraftJournalEntry {
+	const inverseOps: Operation[] =
+		axis === 'row'
+			? [{ op: 'deleteRows', sheet: op.sheet, at: op.at, count: op.count }]
+			: [{ op: 'deleteCols', sheet: op.sheet, at: op.at, count: op.count }]
+	return {
+		opIndex,
+		op,
+		inverseOps,
+		preimages: [
+			{
+				kind: 'structural',
+				structural: { sheet: op.sheet, axis, at: op.at, count: op.count, deletedCells: [] },
+			},
+		],
+		issues: [],
+	}
+}
+
+function journalDeleteAxis(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'deleteRows' | 'deleteCols' }>,
+	opIndex: number,
+	axis: 'row' | 'col',
+): DraftJournalEntry {
+	const preimage = structuralDeletePreimage(workbook, op.sheet, axis, op.at, op.count)
+	const { inverseOps: cellInverseOps, issues: cellIssues } = inverseCellOps(preimage.deletedCells)
+	const inverseOps: Operation[] =
+		axis === 'row'
+			? [{ op: 'insertRows', sheet: op.sheet, at: op.at, count: op.count }]
+			: [{ op: 'insertCols', sheet: op.sheet, at: op.at, count: op.count }]
+	inverseOps.push(...cellInverseOps, ...styleInverseOps(preimage.deletedCells))
+	return {
+		opIndex,
+		op,
+		inverseOps,
+		preimages: [{ kind: 'structural', structural: preimage }],
+		issues: [...cellIssues, ...structuralDeleteIssues(workbook, preimage)],
 	}
 }
 
@@ -1410,6 +1472,151 @@ function missingTableIssues(table: string): readonly MutationJournalIssue[] {
 			message: `Cannot restore table ${table} because it was not found before the edit`,
 		},
 	]
+}
+
+function structuralDeletePreimage(
+	workbook: Workbook,
+	sheetName: string,
+	axis: 'row' | 'col',
+	at: number,
+	count: number,
+): MutationJournalStructuralPreimage {
+	const refs = structuralDeletedCellRefs(workbook.getSheet(sheetName), axis, at, count)
+	return {
+		sheet: sheetName,
+		axis,
+		at,
+		count,
+		deletedCells: cellPreimages(workbook, sheetName, refs),
+	}
+}
+
+function structuralDeletedCellRefs(
+	sheet: Sheet | undefined,
+	axis: 'row' | 'col',
+	at: number,
+	count: number,
+): string[] {
+	const usedRange = sheet?.cells.usedRange()
+	if (!sheet || !usedRange) return []
+	const deleted =
+		axis === 'row'
+			? {
+					start: { row: at, col: usedRange.start.col },
+					end: { row: at + count - 1, col: usedRange.end.col },
+				}
+			: {
+					start: { row: usedRange.start.row, col: at },
+					end: { row: usedRange.end.row, col: at + count - 1 },
+				}
+	const refs: string[] = []
+	for (const [row, col] of sheet.cells.getRange(deleted)) {
+		refs.push(toA1({ row, col }))
+	}
+	return refs
+}
+
+function structuralDeleteIssues(
+	workbook: Workbook,
+	preimage: MutationJournalStructuralPreimage,
+): readonly MutationJournalIssue[] {
+	const sheet = workbook.getSheet(preimage.sheet)
+	if (!sheet) return []
+	const refs = [
+		`${preimage.sheet}!${preimage.axis === 'row' ? preimage.at + 1 : toA1({ row: 0, col: preimage.at }).replace(/\d+$/, '')}`,
+	]
+	const issues: MutationJournalIssue[] = []
+	const affected = structuralAffectedRange(preimage.axis, preimage.at, preimage.count)
+	if (
+		hasDeletedAxisDimensions(sheet, preimage.axis, preimage.at, preimage.count) ||
+		hasMapRefInRange(sheet.comments, affected) ||
+		hasMapRefInRange(sheet.hyperlinks, affected) ||
+		sheet.threadedComments.some((comment) => refInRange(comment.ref, affected)) ||
+		sheet.merges.some((merge) => rangesOverlap(merge, affected)) ||
+		sheet.dataValidations.some((validation) => sqrefOverlaps(validation.sqref, affected)) ||
+		sheet.conditionalFormats.some((format) => sqrefOverlaps(format.sqref, affected)) ||
+		sheet.tables.some((table) => rangesOverlap(table.ref, affected)) ||
+		(sheet.autoFilter?.ref ? sqrefOverlaps(sheet.autoFilter.ref, affected) : false)
+	) {
+		issues.push({
+			code: 'LOSSY_INVERSE',
+			message: `Deleted ${preimage.axis === 'row' ? 'row' : 'column'} metadata on ${preimage.sheet} cannot be fully restored with public operations`,
+			refs,
+		})
+	}
+	return issues
+}
+
+function structuralAffectedRange(axis: 'row' | 'col', at: number, count: number): RangeRef {
+	const maxSpreadsheetIndex = Number.MAX_SAFE_INTEGER
+	return axis === 'row'
+		? {
+				start: { row: at, col: 0 },
+				end: { row: at + count - 1, col: maxSpreadsheetIndex },
+			}
+		: {
+				start: { row: 0, col: at },
+				end: { row: maxSpreadsheetIndex, col: at + count - 1 },
+			}
+}
+
+function hasDeletedAxisDimensions(
+	sheet: Sheet,
+	axis: 'row' | 'col',
+	at: number,
+	count: number,
+): boolean {
+	const end = at + count
+	if (axis === 'row') {
+		for (const row of sheet.rowHeights.keys()) if (row >= at && row < end) return true
+		for (const row of sheet.rowDefs.keys()) if (row >= at && row < end) return true
+		return false
+	}
+	for (const col of sheet.colWidths.keys()) if (col >= at && col < end) return true
+	return sheet.colDefs.some((def) => def.max >= at && def.min < end)
+}
+
+function hasMapRefInRange<T>(map: ReadonlyMap<string, T>, range: RangeRef): boolean {
+	for (const ref of map.keys()) {
+		if (refInRange(ref, range)) return true
+	}
+	return false
+}
+
+function refInRange(ref: string, range: RangeRef): boolean {
+	try {
+		const parsed = parseA1(ref)
+		return (
+			parsed.row >= range.start.row &&
+			parsed.row <= range.end.row &&
+			parsed.col >= range.start.col &&
+			parsed.col <= range.end.col
+		)
+	} catch {
+		return false
+	}
+}
+
+function sqrefOverlaps(sqref: string, range: RangeRef): boolean {
+	return sqref
+		.split(/\s+/)
+		.filter(Boolean)
+		.some((part) => {
+			try {
+				return rangesOverlap(parseRange(part), range)
+			} catch {
+				return false
+			}
+		})
+}
+
+function rangesOverlap(a: RangeRef, b: RangeRef): boolean {
+	return (
+		a.start.row <= b.end.row &&
+		a.end.row >= b.start.row &&
+		a.start.col <= b.end.col &&
+		a.end.col >= b.start.col
+	)
 }
 
 function cellPreimages(

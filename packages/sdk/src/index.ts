@@ -96,6 +96,7 @@ export type {
 	MutationJournalMergePreimage,
 	MutationJournalPanePreimage,
 	MutationJournalPreimage,
+	MutationJournalStructuralPreimage,
 	MutationJournalTableColumnPreimage,
 	MutationJournalTablePreimage,
 	MutationJournalTableRenamePreimage,

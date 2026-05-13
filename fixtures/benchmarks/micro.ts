@@ -135,6 +135,112 @@ const benchmarks: readonly MicroBenchmark[] = [
 		},
 	},
 	{
+		name: 'SparseGrid.forEachCellInRange sparse-wide scan',
+		targetOpsPerSec: 750_000,
+		run() {
+			const grid = new SparseGrid()
+			const rows = 8192
+			const cols = 512
+			let populated = 0
+			for (let row = 0; row < rows; row++) {
+				grid.setResolved(row, 0, numberValue(row), null, SID)
+				grid.setResolved(row, cols - 1, stringValue(`edge-${row}-${cols}`), null, SID)
+				populated += 2
+				for (let col = 1; col < cols - 1; col++) {
+					if ((row * 31 + col * 17) % 97 !== 0) continue
+					grid.setResolved(row, col, numberValue(row * cols + col), null, SID)
+					populated++
+				}
+			}
+			let visited = 0
+			let checksum = 0
+			grid.forEachCellInRange(
+				{ start: { row: 0, col: 0 }, end: { row: rows - 1, col: cols - 1 } },
+				(_row, _col, cell) => {
+					visited++
+					if (cell.value.kind === 'number') checksum += cell.value.value
+					else if (cell.value.kind === 'string') checksum += cell.value.value.length
+				},
+			)
+			if (visited !== populated) {
+				throw new Error(`Sparse-wide cell scan visited ${visited} cells; expected ${populated}`)
+			}
+			void checksum
+			return populated
+		},
+	},
+	{
+		name: 'SparseGrid.forEachCellContentInRange sparse-wide scan',
+		targetOpsPerSec: 1_000_000,
+		run() {
+			const grid = new SparseGrid()
+			const rows = 8192
+			const cols = 512
+			let populated = 0
+			for (let row = 0; row < rows; row++) {
+				grid.setResolved(row, 0, numberValue(row), null, SID)
+				grid.setResolved(row, cols - 1, stringValue(`edge-${row}-${cols}`), null, SID)
+				populated += 2
+				for (let col = 1; col < cols - 1; col++) {
+					if ((row * 31 + col * 17) % 97 !== 0) continue
+					grid.setResolved(row, col, numberValue(row * cols + col), null, SID)
+					populated++
+				}
+			}
+			let visited = 0
+			let checksum = 0
+			grid.forEachCellContentInRange(
+				{ start: { row: 0, col: 0 }, end: { row: rows - 1, col: cols - 1 } },
+				(_row, _col, value, formula, binding) => {
+					visited++
+					if (value.kind === 'number') checksum += value.value
+					else if (value.kind === 'string') checksum += value.value.length
+					if (formula) checksum += formula.length
+					if (binding) checksum += 1
+				},
+			)
+			if (visited !== populated) {
+				throw new Error(
+					`Sparse-wide cell content scan visited ${visited} cells; expected ${populated}`,
+				)
+			}
+			void checksum
+			return populated
+		},
+	},
+	{
+		name: 'SparseGrid.forEachCellContentInRange dense viewport scan',
+		targetOpsPerSec: 2_000_000,
+		run() {
+			const grid = new SparseGrid()
+			grid.setExpectedDensity('dense')
+			const rows = 250
+			const cols = 20
+			for (let row = 0; row < rows; row++) {
+				for (let col = 0; col < cols; col++) {
+					grid.setResolved(row, col, numberValue(row * cols + col), null, SID)
+				}
+			}
+			let visited = 0
+			let checksum = 0
+			grid.forEachCellContentInRange(
+				{ start: { row: 0, col: 0 }, end: { row: rows - 1, col: cols - 1 } },
+				(_row, _col, value) => {
+					visited++
+					if (value.kind === 'number') checksum += value.value
+				},
+			)
+			const expected = rows * cols
+			if (visited !== expected) {
+				throw new Error(
+					`Dense viewport content scan visited ${visited} cells; expected ${expected}`,
+				)
+			}
+			void checksum
+			return expected
+		},
+	},
+	{
 		name: 'SparseGrid.forEachValueInRangeUnordered sparse-wide scan',
 		targetOpsPerSec: 1_000_000,
 		run() {

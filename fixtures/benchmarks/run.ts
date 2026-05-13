@@ -607,6 +607,13 @@ const REAL_INTERACTIVE_PATCH_CORPUS: readonly RealInteractivePatchTarget[] = [
 		colCount: 20,
 	},
 ]
+const DENSE_READINESS_THINK_DELAYS_MS = [0, 50, 150, 300] as const
+
+function realInteractivePatchCorpusTarget(label: string): RealInteractivePatchTarget {
+	const target = REAL_INTERACTIVE_PATCH_CORPUS.find((candidate) => candidate.label === label)
+	if (!target) throw new Error(`Missing real interactive patch corpus target: ${label}`)
+	return target
+}
 
 function cachedDenseViewportWorkbookBytes(): Uint8Array {
 	cachedDenseViewportBytes ??= mustWrite(buildDenseWorkbook(5000, 20))
@@ -2020,10 +2027,7 @@ const scenarios: readonly Scenario[] = [
 		name: 'real-dense-promotion-memory',
 		category: 'workflow',
 		build() {
-			const target = REAL_INTERACTIVE_PATCH_CORPUS.find(
-				(candidate) => candidate.label === 'stress-dense-100k',
-			)
-			if (!target) throw new Error('Missing dense stress corpus target')
+			const target = realInteractivePatchCorpusTarget('stress-dense-100k')
 			return {
 				rows: target.rowCount,
 				cols: target.colCount,
@@ -2032,10 +2036,7 @@ const scenarios: readonly Scenario[] = [
 			}
 		},
 		async run() {
-			const target = REAL_INTERACTIVE_PATCH_CORPUS.find(
-				(candidate) => candidate.label === 'stress-dense-100k',
-			)
-			if (!target) throw new Error('Missing dense stress corpus target')
+			const target = realInteractivePatchCorpusTarget('stress-dense-100k')
 			const bytes = realInteractivePatchCorpusTargetBytes(target)
 			WorkbookDocument.clearCache()
 			runGc()
@@ -2180,10 +2181,7 @@ const scenarios: readonly Scenario[] = [
 		name: 'real-dense-progressive-readiness',
 		category: 'workflow',
 		build() {
-			const target = REAL_INTERACTIVE_PATCH_CORPUS.find(
-				(candidate) => candidate.label === 'stress-dense-100k',
-			)
-			if (!target) throw new Error('Missing dense stress corpus target')
+			const target = realInteractivePatchCorpusTarget('stress-dense-100k')
 			return {
 				rows: target.rowCount,
 				cols: target.colCount,
@@ -2192,10 +2190,7 @@ const scenarios: readonly Scenario[] = [
 			}
 		},
 		async run() {
-			const target = REAL_INTERACTIVE_PATCH_CORPUS.find(
-				(candidate) => candidate.label === 'stress-dense-100k',
-			)
-			if (!target) throw new Error('Missing dense stress corpus target')
+			const target = realInteractivePatchCorpusTarget('stress-dense-100k')
 			const bytes = realInteractivePatchCorpusTargetBytes(target)
 
 			WorkbookDocument.clearCache()
@@ -2232,7 +2227,62 @@ const scenarios: readonly Scenario[] = [
 			const backgroundOpenMs = performance.now() - backgroundPrepareStart
 			const backgroundPrepare = await backgroundSession.prepareEdits()
 			const backgroundPrepareTotalMs = performance.now() - backgroundPrepareStart
+			const backgroundViewportStart = performance.now()
+			const backgroundViewport = backgroundSession.readViewport({
+				sheet: target.sheet,
+				topRow: target.topRow,
+				leftCol: target.leftCol,
+				rowCount: target.rowCount,
+				colCount: target.colCount,
+			})
+			const backgroundViewportMs = performance.now() - backgroundViewportStart
+			const backgroundEditStart = performance.now()
+			const backgroundEdit = await backgroundSession.apply(
+				[
+					{
+						op: 'setCells',
+						sheet: target.sheet,
+						updates: [{ ref: target.editRef, value: 90_000 }],
+					},
+				],
+				{ recalc: false },
+			)
+			if (backgroundEdit.apply.errors.length > 0) {
+				throw new Error('Dense progressive readiness prepared edit failed')
+			}
+			const backgroundPatchStart = performance.now()
+			const backgroundPatch =
+				backgroundSession.readViewportPatch({
+					sheet: target.sheet,
+					topRow: target.topRow,
+					leftCol: target.leftCol,
+					rowCount: target.rowCount,
+					colCount: target.colCount,
+					changedSince: backgroundViewport.changeToken,
+				}) ??
+				backgroundSession.readViewport({
+					sheet: target.sheet,
+					topRow: target.topRow,
+					leftCol: target.leftCol,
+					rowCount: target.rowCount,
+					colCount: target.colCount,
+					changedSince: backgroundViewport.changeToken,
+				}).patch
+			const backgroundPatchReadMs = performance.now() - backgroundPatchStart
+			const backgroundEditFrameMs = performance.now() - backgroundEditStart
 			backgroundSession.close()
+			if (!backgroundPatch || backgroundPatch.changedCells.length !== 1) {
+				throw new Error('Dense progressive readiness patch was not delta-shaped')
+			}
+
+			const progressiveTimeToEditReadyMs = progressiveFirstWindowMs + backgroundPrepareTotalMs
+			const waitBudgetAssertions: Record<string, number> = {}
+			for (const delayMs of DENSE_READINESS_THINK_DELAYS_MS) {
+				waitBudgetAssertions[`remainingWaitAfterFirstPaintAt${delayMs}Ms`] = Math.max(
+					0,
+					backgroundPrepareTotalMs - delayMs,
+				)
+			}
 
 			return {
 				assertions: {
@@ -2249,13 +2299,28 @@ const scenarios: readonly Scenario[] = [
 					progressiveWindowCells: firstWindow.window.cells.length,
 					progressiveWindowFlatValues: firstWindow.window.cells.length,
 					progressiveHasMore: firstWindow.window.hasMore,
+					progressiveLoadIsPartial: firstWindow.load.isPartial,
+					progressivePartialReasons: firstWindow.load.partialReasons.length,
 					backgroundOpenMs,
 					backgroundPrepareEditsMs: backgroundPrepare.timings.totalMs,
 					backgroundPrepareEnsureMutableWorkbookMs:
 						backgroundPrepare.timings.ensureMutableWorkbookMs,
 					backgroundPrepareTotalMs,
+					progressiveTimeToEditReadyMs,
+					progressiveEditReadyDeltaVsCurrentMs:
+						progressiveTimeToEditReadyMs -
+						(currentOpenMs + currentInitialViewportMs + currentPrepare.timings.totalMs),
+					backgroundViewportMs,
+					backgroundViewportCells: backgroundViewport.cells.length,
+					backgroundEditFrameMs,
+					backgroundSessionApplyMs: backgroundEdit.timings.totalMs,
+					backgroundApplyMs: backgroundEdit.timings.applyMs,
+					backgroundPatchReadMs,
+					backgroundPatchBytes: backgroundPatch.byteLength,
+					backgroundPatchChangedCells: backgroundPatch.changedCells.length,
 					firstPaintSpeedupVsCurrent:
 						(currentOpenMs + currentInitialViewportMs) / progressiveFirstWindowMs,
+					...waitBudgetAssertions,
 				},
 			}
 		},

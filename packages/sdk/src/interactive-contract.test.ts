@@ -4118,6 +4118,89 @@ describe('interactive client contract', () => {
 		expect(journalComparableState(wb)).toEqual(before)
 	})
 
+	test('copyRange format journals restore standard conditional formats exactly', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 1 },
+					{ ref: 'D1', value: 4 },
+				],
+			},
+			{
+				op: 'setConditionalFormat',
+				sheet: 'Sheet1',
+				range: 'A1:A1',
+				rule: { type: 'expression', formula: 'A1>0', priority: 1 },
+			},
+		])
+		const before = JSON.parse(JSON.stringify(journalComparableState(wb)))
+
+		const changed = wb.apply(
+			[{ op: 'copyRange', sheet: 'Sheet1', source: 'A1', target: 'D1', mode: 'formats' }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(true)
+		expect(changed.journal?.issues).toEqual([])
+		expect(wb.sheet('Sheet1')?.conditionalFormats).toEqual([
+			expect.objectContaining({ sqref: 'A1:A1' }),
+			expect.objectContaining({
+				sqref: 'D1',
+				rules: [expect.objectContaining({ formulas: ['D1>0'], priority: 1 })],
+			}),
+		])
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(journalComparableState(wb)).toEqual(before)
+	})
+
+	test('copyRange conditional format journals mark target collisions lossy', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 1 },
+					{ ref: 'D1', value: 4 },
+				],
+			},
+			{
+				op: 'setConditionalFormat',
+				sheet: 'Sheet1',
+				range: 'A1:A1',
+				rule: { type: 'expression', formula: 'A1>0', priority: 1 },
+			},
+			{
+				op: 'setConditionalFormat',
+				sheet: 'Sheet1',
+				range: 'D1',
+				rule: { type: 'expression', formula: 'D1<10', priority: 2 },
+			},
+		])
+
+		const changed = wb.apply(
+			[{ op: 'copyRange', sheet: 'Sheet1', source: 'A1', target: 'D1', mode: 'formats' }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(false)
+		expect(changed.journal?.issues).toContainEqual({
+			code: 'LOSSY_INVERSE',
+			message:
+				'Copied conditional format at Sheet1!D1 collides with existing conditional format metadata',
+			refs: ['Sheet1!A1:A1', 'Sheet1!D1'],
+		})
+	})
+
 	test('copyRange validation journals restore appended target validations exactly', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([
@@ -4505,10 +4588,53 @@ describe('interactive client contract', () => {
 		expect(changed.journal?.issues).toContainEqual({
 			code: 'LOSSY_INVERSE',
 			message:
-				'moveRange metadata transfer for Sheet1!A1 cannot be fully restored with public operations',
-			refs: ['Sheet1!A1', 'Sheet1!D1'],
+				'Transferred x14 conditional format metadata on Sheet1!A1 cannot be restored with public operations',
+			refs: ['Sheet1!x14ConditionalFormat:A1:A1:0'],
 		})
 		expect(wb.getWorkbookModel().getSheet('Sheet1')?.x14ConditionalFormats[0]?.sqref).toBe('D1')
+	})
+
+	test('moveRange format journals restore standard conditional formats exactly', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 5 },
+					{ ref: 'D1', value: 9 },
+				],
+			},
+			{ op: 'setStyle', sheet: 'Sheet1', range: 'A1:A1', style: { numberFormat: '$0' } },
+			{ op: 'setStyle', sheet: 'Sheet1', range: 'D1:D1', style: { numberFormat: '0.0%' } },
+			{
+				op: 'setConditionalFormat',
+				sheet: 'Sheet1',
+				range: 'A1:A1',
+				rule: { type: 'expression', formula: 'A1>0', priority: 1 },
+			},
+		])
+		const before = JSON.parse(JSON.stringify(journalComparableState(wb)))
+
+		const changed = wb.apply(
+			[{ op: 'moveRange', sheet: 'Sheet1', source: 'A1', target: 'D1', mode: 'formats' }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(true)
+		expect(changed.journal?.issues).toEqual([])
+		expect(wb.sheet('Sheet1')?.conditionalFormats).toEqual([
+			expect.objectContaining({
+				sqref: 'D1',
+				rules: [expect.objectContaining({ formulas: ['D1>0'], priority: 1 })],
+			}),
+		])
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(journalComparableState(wb)).toEqual(before)
 	})
 
 	test('moveRange validation journals restore source and target validations exactly', () => {

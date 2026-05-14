@@ -1898,14 +1898,33 @@ function journalCopyRange(
 					targetRange,
 				)
 			: EMPTY_METADATA_RESTORATION
+	const conditionalFormats = copyRangeTransfersConditionalFormats(mode)
+		? conditionalFormatTransferRestoration(
+				workbook,
+				op.sheet,
+				parseRange(op.source),
+				targetSheet,
+				targetRange,
+				false,
+			)
+		: EMPTY_METADATA_RESTORATION
 	return {
 		opIndex,
 		op,
-		inverseOps: [...cellInverseOps, ...metadataRestoration.inverseOps],
-		preimages: [{ kind: 'cells', cells }, ...metadataRestoration.preimages],
+		inverseOps: [
+			...cellInverseOps,
+			...metadataRestoration.inverseOps,
+			...conditionalFormats.inverseOps,
+		],
+		preimages: [
+			{ kind: 'cells', cells },
+			...metadataRestoration.preimages,
+			...conditionalFormats.preimages,
+		],
 		issues: [
 			...cellIssues,
 			...metadataRestoration.issues,
+			...conditionalFormats.issues,
 			...copyRangeMetadataIssues(workbook, op, targetRange),
 		],
 	}
@@ -2001,16 +2020,36 @@ function journalMoveRange(
 		mode === 'all'
 			? moveRangeAllMetadataRestoration(workbook, op.sheet, sourceRange, targetSheet, targetRange)
 			: EMPTY_METADATA_RESTORATION
+	const conditionalFormats = copyRangeTransfersConditionalFormats(mode)
+		? conditionalFormatTransferRestoration(
+				workbook,
+				op.sheet,
+				sourceRange,
+				targetSheet,
+				targetRange,
+				true,
+			)
+		: EMPTY_METADATA_RESTORATION
 	const cells = uniqueCellPreimages([...targetCells, ...sourceCells])
 	return {
 		opIndex,
 		op,
-		inverseOps: [...targetInverseOps, ...sourceInverseOps, ...metadataRestoration.inverseOps],
-		preimages: [{ kind: 'cells', cells }, ...metadataRestoration.preimages],
+		inverseOps: [
+			...targetInverseOps,
+			...sourceInverseOps,
+			...metadataRestoration.inverseOps,
+			...conditionalFormats.inverseOps,
+		],
+		preimages: [
+			{ kind: 'cells', cells },
+			...metadataRestoration.preimages,
+			...conditionalFormats.preimages,
+		],
 		issues: [
 			...targetIssues,
 			...sourceIssues,
 			...metadataRestoration.issues,
+			...conditionalFormats.issues,
 			...moveRangeOverlapIssues(op, sourceRange, targetRange),
 			...moveRangeMetadataIssues(workbook, op, sourceRange, targetRange),
 			...(copyRangeOverwritesFormulas(mode)
@@ -2586,6 +2625,15 @@ interface DataValidationTransfer {
 	readonly retainedCollision: boolean
 }
 
+interface ConditionalFormatTransfer {
+	readonly sourceIndex: number
+	readonly source: SheetConditionalFormat
+	readonly target: MutationJournalConditionalFormatPreimage
+	readonly retainedSourceRange: string | null
+	readonly targetCollision: boolean
+	readonly retainedCollision: boolean
+}
+
 function validationTransferRestoration(
 	workbook: Workbook,
 	sourceSheetName: string,
@@ -2812,6 +2860,247 @@ function dedupeDataValidationInverseOps(ops: readonly Operation[]): Operation[] 
 	for (const op of ops) {
 		const key =
 			op.op === 'deleteDataValidation' ? `${op.op}:${op.sheet}:${op.range}` : JSON.stringify(op)
+		if (seen.has(key)) continue
+		seen.add(key)
+		deduped.push(op)
+	}
+	return deduped
+}
+
+function conditionalFormatTransferRestoration(
+	workbook: Workbook,
+	sourceSheetName: string,
+	sourceRange: RangeRef,
+	targetSheetName: string,
+	targetRange: RangeRef,
+	move: boolean,
+): {
+	readonly inverseOps: readonly Operation[]
+	readonly preimages: readonly MutationJournalPreimage[]
+	readonly issues: readonly MutationJournalIssue[]
+} {
+	const sourceSheet = workbook.getSheet(sourceSheetName)
+	const targetSheet = workbook.getSheet(targetSheetName)
+	if (!sourceSheet || !targetSheet) {
+		return { inverseOps: [], preimages: [], issues: [] }
+	}
+	const rowDelta = targetRange.start.row - sourceRange.start.row
+	const colDelta = targetRange.start.col - sourceRange.start.col
+	const transfers = conditionalFormatTransfers(
+		workbook,
+		sourceSheet,
+		sourceRange,
+		targetSheet,
+		rowDelta,
+		colDelta,
+		move,
+	)
+	const issues: MutationJournalIssue[] = [
+		...conditionalFormatTransferCollisionIssues(sourceSheet.name, transfers, move),
+		...x14ConditionalFormatTransferIssues(sourceSheet, sourceRange),
+	]
+	const inverseOps: Operation[] = []
+	for (const transfer of transfers) {
+		const targetRange = transfer.target.range
+		if (!transfer.targetCollision && targetRange !== undefined) {
+			inverseOps.push({
+				op: 'deleteConditionalFormat',
+				sheet: transfer.target.sheet,
+				range: targetRange,
+			})
+		}
+	}
+	if (move) {
+		for (const transfer of transfers) {
+			if (transfer.retainedSourceRange && !transfer.retainedCollision) {
+				inverseOps.push({
+					op: 'deleteConditionalFormat',
+					sheet: sourceSheet.name,
+					range: transfer.retainedSourceRange,
+				})
+			}
+		}
+		const restored = restoreConditionalFormatOps(
+			sourceSheet.name,
+			transfers.map((transfer) => transfer.source),
+		)
+		inverseOps.push(...restored.inverseOps)
+		issues.push(...restored.issues)
+		issues.push(...conditionalFormatMoveOrderIssues(sourceSheet, sourceRange, transfers))
+	}
+
+	return {
+		inverseOps: dedupeConditionalFormatInverseOps(inverseOps),
+		preimages: conditionalFormatTransferPreimages(sourceSheet.name, transfers, move),
+		issues,
+	}
+}
+
+function conditionalFormatTransfers(
+	workbook: Workbook,
+	sourceSheet: Sheet,
+	sourceRange: RangeRef,
+	targetSheet: Sheet,
+	rowDelta: number,
+	colDelta: number,
+	move: boolean,
+): ConditionalFormatTransfer[] {
+	const transfers: ConditionalFormatTransfer[] = []
+	for (let index = 0; index < sourceSheet.conditionalFormats.length; index++) {
+		const format = sourceSheet.conditionalFormats[index]
+		if (!format) continue
+		const ranges = parseSqrefRanges(format.sqref)
+		if (ranges.length === 0) continue
+		const copiedRanges = ranges.filter((range) => rangeContainsRange(sourceRange, range))
+		if (copiedRanges.length === 0) continue
+		const targetSqref = rangesToSqref(
+			copiedRanges.map((range) => shiftRange(range, rowDelta, colDelta)),
+		)
+		const keptRanges = ranges.filter((range) => !rangeContainsRange(sourceRange, range))
+		const retainedSourceRange = move && keptRanges.length > 0 ? rangesToSqref(keptRanges) : null
+		transfers.push({
+			sourceIndex: index,
+			source: cloneConditionalFormat(format),
+			target: conditionalFormatPreimage(workbook, targetSheet.name, targetSqref),
+			retainedSourceRange,
+			targetCollision: conditionalFormatTargetCollision(
+				sourceSheet,
+				targetSheet,
+				format,
+				targetSqref,
+				move,
+			),
+			retainedCollision: retainedSourceRange
+				? conditionalFormatSqrefCount(sourceSheet, retainedSourceRange) > 0 ||
+					transfers.some((transfer) => transfer.retainedSourceRange === retainedSourceRange)
+				: false,
+		})
+	}
+	return transfers
+}
+
+function conditionalFormatTargetCollision(
+	sourceSheet: Sheet,
+	targetSheet: Sheet,
+	format: SheetConditionalFormat,
+	targetSqref: string,
+	move: boolean,
+): boolean {
+	const count = conditionalFormatSqrefCount(targetSheet, targetSqref)
+	if (count === 0) return false
+	if (!move || sourceSheet !== targetSheet || format.sqref !== targetSqref) return true
+	return count > 1
+}
+
+function conditionalFormatSqrefCount(sheet: Sheet, sqref: string): number {
+	return sheet.conditionalFormats.filter((format) => format.sqref === sqref).length
+}
+
+function conditionalFormatTransferCollisionIssues(
+	sourceSheetName: string,
+	transfers: readonly ConditionalFormatTransfer[],
+	move: boolean,
+): readonly MutationJournalIssue[] {
+	const issues: MutationJournalIssue[] = []
+	for (const transfer of transfers) {
+		if (transfer.targetCollision) {
+			issues.push({
+				code: 'LOSSY_INVERSE',
+				message: `Copied conditional format at ${transfer.target.sheet}!${transfer.target.range} collides with existing conditional format metadata`,
+				refs: [
+					`${sourceSheetName}!${transfer.source.sqref}`,
+					`${transfer.target.sheet}!${transfer.target.range}`,
+				],
+			})
+		}
+		if (move && transfer.retainedCollision && transfer.retainedSourceRange) {
+			issues.push({
+				code: 'LOSSY_INVERSE',
+				message: `Retained conditional format at ${sourceSheetName}!${transfer.retainedSourceRange} cannot be removed without touching unrelated conditional format metadata`,
+				refs: [
+					`${sourceSheetName}!${transfer.source.sqref}`,
+					`${sourceSheetName}!${transfer.retainedSourceRange}`,
+				],
+			})
+		}
+	}
+	return issues
+}
+
+function x14ConditionalFormatTransferIssues(
+	sourceSheet: Sheet,
+	sourceRange: RangeRef,
+): readonly MutationJournalIssue[] {
+	const refs: string[] = []
+	for (const format of sourceSheet.x14ConditionalFormats) {
+		if (format.deleted) continue
+		const ranges = parseSqrefRanges(format.sqref)
+		if (ranges.some((range) => rangeContainsRange(sourceRange, range))) {
+			refs.push(`${sourceSheet.name}!x14ConditionalFormat:${format.sqref}:${format.index}`)
+		}
+	}
+	if (refs.length === 0) return []
+	return [
+		{
+			code: 'LOSSY_INVERSE',
+			message: `Transferred x14 conditional format metadata on ${sourceSheet.name}!${rangeToA1(sourceRange)} cannot be restored with public operations`,
+			refs,
+		},
+	]
+}
+
+function conditionalFormatMoveOrderIssues(
+	sourceSheet: Sheet,
+	sourceRange: RangeRef,
+	transfers: readonly ConditionalFormatTransfer[],
+): readonly MutationJournalIssue[] {
+	if (transfers.length === 0) return []
+	const moved = new Set(transfers.map((transfer) => transfer.sourceIndex))
+	const firstMoved = Math.min(...moved)
+	for (let index = firstMoved; index < sourceSheet.conditionalFormats.length; index++) {
+		if (!moved.has(index)) {
+			return [
+				{
+					code: 'LOSSY_INVERSE',
+					message: `Moved conditional format order on ${sourceSheet.name}!${rangeToA1(sourceRange)} cannot be restored exactly with public operations`,
+					refs: [`${sourceSheet.name}!${rangeToA1(sourceRange)}`],
+				},
+			]
+		}
+	}
+	return []
+}
+
+function conditionalFormatTransferPreimages(
+	sourceSheetName: string,
+	transfers: readonly ConditionalFormatTransfer[],
+	move: boolean,
+): MutationJournalPreimage[] {
+	if (transfers.length === 0) return []
+	const preimages = new Map<string, MutationJournalConditionalFormatPreimage>()
+	for (const transfer of transfers) {
+		preimages.set(`${transfer.target.sheet}!${transfer.target.range}`, transfer.target)
+	}
+	if (move) {
+		preimages.set(`${sourceSheetName}!<source>`, {
+			sheet: sourceSheetName,
+			formats: transfers.map((transfer) => cloneConditionalFormat(transfer.source)),
+		})
+	}
+	return [...preimages.values()].map((conditionalFormats) => ({
+		kind: 'conditional-formats' as const,
+		conditionalFormats,
+	}))
+}
+
+function dedupeConditionalFormatInverseOps(ops: readonly Operation[]): Operation[] {
+	const seen = new Set<string>()
+	const deduped: Operation[] = []
+	for (const op of ops) {
+		const key =
+			op.op === 'deleteConditionalFormat'
+				? `${op.op}:${op.sheet}:${op.range ?? ''}:${op.priority ?? ''}:${op.ruleIndex ?? ''}`
+				: JSON.stringify(op)
 		if (seen.has(key)) continue
 		seen.add(key)
 		deduped.push(op)
@@ -4624,6 +4913,10 @@ function copyRangeOverwritesFormulas(mode: string): boolean {
 	return mode === 'all' || mode === 'values' || mode === 'formulas'
 }
 
+function copyRangeTransfersConditionalFormats(mode: string): boolean {
+	return mode === 'all' || mode === 'formats' || mode === 'styles'
+}
+
 function copyRangeRestoration(
 	cells: readonly MutationJournalCellPreimage[],
 	mode: string,
@@ -5139,18 +5432,10 @@ function copyRangeModeTouchesUnrestorableMetadata(
 	mode: string,
 ): boolean {
 	if (mode === 'formats' || mode === 'styles') {
-		return (
-			sheet.merges.some((merge) => rangesOverlap(merge, range)) ||
-			sheet.conditionalFormats.some((format) => sqrefOverlaps(format.sqref, range)) ||
-			sheet.x14ConditionalFormats.some((format) => sqrefOverlaps(format.sqref, range))
-		)
+		return sheet.merges.some((merge) => rangesOverlap(merge, range))
 	}
 	if (mode !== 'all') return false
-	return (
-		sheet.merges.some((merge) => rangesOverlap(merge, range)) ||
-		sheet.conditionalFormats.some((format) => sqrefOverlaps(format.sqref, range)) ||
-		sheet.x14ConditionalFormats.some((format) => sqrefOverlaps(format.sqref, range))
-	)
+	return sheet.merges.some((merge) => rangesOverlap(merge, range))
 }
 
 function transferTargetRange(sourceRangeText: string, targetRef: string): RangeRef {

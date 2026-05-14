@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import type { Sheet, StyleId, Workbook } from '@ascend/core'
 import { createTableId, createWorkbook } from '@ascend/core'
-import { EMPTY, numberValue, stringValue } from '@ascend/schema'
+import { EMPTY, errorValue, numberValue, stringValue } from '@ascend/schema'
 import { analyzeWorkbook } from './analysis.ts'
 import { recalculate } from './calc.ts'
 import { defaultCalcContext } from './calc-context.ts'
@@ -96,6 +96,21 @@ function addDynamicArrayAnchor(sheet: Sheet, row = 0, col = 0) {
 		styleId: sid,
 		formulaInfo: { kind: 'dynamicArray', metadataIndex: 1, collapsed: false },
 	})
+}
+
+function addBlockedSpillFormula(sheet: Sheet) {
+	sheet.cells.set(0, 0, {
+		value: errorValue('#SPILL!'),
+		formula: 'SEQUENCE(3)',
+		styleId: sid,
+		formulaInfo: {
+			kind: 'blockedSpill',
+			anchorRef: 'Sheet1!A1',
+			ref: 'A1:A3',
+			blockingRefs: ['A2'],
+		},
+	})
+	sheet.cells.set(1, 0, { value: stringValue('blocker'), formula: null, styleId: sid })
 }
 
 function addDataTableFormula(sheet: Sheet) {
@@ -605,6 +620,24 @@ describe('applyOperation', () => {
 		expect(sheet.cells.get(2, 0)?.formulaInfo).toBeUndefined()
 	})
 
+	test('setCells detaches blocked-spill metadata when replacing a blocker', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		addBlockedSpillFormula(sheet)
+
+		const result = applyOperation(wb, {
+			op: 'setCells',
+			sheet: 'Sheet1',
+			updates: [{ ref: 'A2', value: null }],
+		})
+		expectOk(result)
+
+		expect(result.value.affectedCells).toEqual(['A1', 'A2'])
+		expect(sheet.cells.get(0, 0)?.formula).toBe('SEQUENCE(3)')
+		expect(sheet.cells.get(0, 0)?.formulaInfo).toBeUndefined()
+		expect(sheet.cells.get(1, 0)?.value).toEqual(EMPTY)
+	})
+
 	test('setCells detaches data-table metadata when replacing a data-table member', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')
@@ -693,6 +726,39 @@ describe('applyOperation', () => {
 		expect(values.value.affectedCells).toEqual(['C3', 'C4'])
 		expect(sheet.cells.get(2, 2)?.formulaInfo).toBeUndefined()
 		expect(sheet.cells.get(3, 2)?.value).toEqual(EMPTY)
+	})
+
+	test('clearRange values detaches blocked-spill metadata when clearing a blocker but style clears preserve it', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		addBlockedSpillFormula(sheet)
+
+		const styles = applyOperation(wb, {
+			op: 'clearRange',
+			sheet: 'Sheet1',
+			range: 'A2',
+			what: 'styles',
+		})
+		expectOk(styles)
+		expect(styles.value.affectedCells).toEqual(['A2'])
+		expect(sheet.cells.get(0, 0)?.formulaInfo).toEqual({
+			kind: 'blockedSpill',
+			anchorRef: 'Sheet1!A1',
+			ref: 'A1:A3',
+			blockingRefs: ['A2'],
+		})
+
+		const values = applyOperation(wb, {
+			op: 'clearRange',
+			sheet: 'Sheet1',
+			range: 'A2',
+			what: 'values',
+		})
+		expectOk(values)
+		expect(values.value.affectedCells).toEqual(['A1', 'A2'])
+		expect(sheet.cells.get(0, 0)?.formula).toBe('SEQUENCE(3)')
+		expect(sheet.cells.get(0, 0)?.formulaInfo).toBeUndefined()
+		expect(sheet.cells.get(1, 0)?.value).toEqual(EMPTY)
 	})
 
 	test('setRichText materializes spill groups before replacing a spill member', () => {

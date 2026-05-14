@@ -247,6 +247,9 @@ export function materializeFormulaBindingGroupsForRefs(
 	for (const entry of materializeDataTableFormulaGroupsForRefs(sheet, refList)) {
 		affected.add(entry)
 	}
+	for (const entry of materializeBlockedSpillFormulaGroupsForRefs(sheet, refList)) {
+		affected.add(entry)
+	}
 	return affected
 }
 
@@ -271,6 +274,17 @@ export function materializeDataTableFormulaGroupsForRangeEdit(
 		for (let col = range.start.col; col <= range.end.col; col++) refs.push({ row, col })
 	}
 	return materializeDataTableFormulaGroupsForRefs(sheet, refs)
+}
+
+export function materializeBlockedSpillFormulaGroupsForRangeEdit(
+	sheet: Sheet,
+	range: RangeRef,
+): Set<string> {
+	const refs: Array<{ readonly row: number; readonly col: number }> = []
+	for (let row = range.start.row; row <= range.end.row; row++) {
+		for (let col = range.start.col; col <= range.end.col; col++) refs.push({ row, col })
+	}
+	return materializeBlockedSpillFormulaGroupsForRefs(sheet, refs)
 }
 
 function materializeSharedFormulaGroup(
@@ -344,6 +358,50 @@ function materializeDataTableFormulaGroupsForRefs(
 		affected.add(toA1({ row, col }))
 	}
 	return affected
+}
+
+function materializeBlockedSpillFormulaGroupsForRefs(
+	sheet: Sheet,
+	refs: readonly { readonly row: number; readonly col: number }[],
+): Set<string> {
+	const affected = new Set<string>()
+	if (refs.length === 0 || sheet.cells.formulaInfoCellCount() === 0) return affected
+	for (const [row, col, cell] of sheet.cells.iterate()) {
+		const binding = cell.formulaInfo
+		if (binding?.kind !== 'blockedSpill') continue
+		if (
+			!refs.some(
+				(ref) =>
+					formulaBindingRangeContainsCell(binding.ref, sheet.name, ref) ||
+					binding.blockingRefs.some((blockingRef) =>
+						formulaBindingRangeContainsCell(blockingRef, sheet.name, ref),
+					),
+			)
+		) {
+			continue
+		}
+		sheet.cells.set(
+			row,
+			col,
+			cellWithExisting(cell.value, cell.formula, cell.styleId ?? DEFAULT_SID),
+		)
+		affected.add(toA1({ row, col }))
+	}
+	return affected
+}
+
+function formulaBindingRangeContainsCell(
+	refText: string,
+	sheetName: string,
+	ref: { readonly row: number; readonly col: number },
+): boolean {
+	try {
+		const range = parseRange(refText)
+		if (range.sheet !== undefined && range.sheet !== sheetName) return false
+		return rangeContainsCell(range, ref)
+	} catch {
+		return false
+	}
 }
 
 function dataTableBindingRange(

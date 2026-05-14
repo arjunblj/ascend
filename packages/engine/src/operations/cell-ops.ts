@@ -14,6 +14,7 @@ import {
 	getSheet,
 	inputToCellValue,
 	legacyArrayFormulaEditError,
+	materializeBlockedSpillFormulaGroupsForRangeEdit,
 	materializeDataTableFormulaGroupsForRangeEdit,
 	materializeFormulaBindingGroupsForRangeEdit,
 	materializeFormulaBindingGroupsForRefs,
@@ -195,7 +196,10 @@ export function handleClearRange(
 		op.what === 'styles'
 			? new Set<string>()
 			: op.what === 'values'
-				? materializeDataTableFormulaGroupsForRangeEdit(sheet, range)
+				? new Set([
+						...materializeDataTableFormulaGroupsForRangeEdit(sheet, range),
+						...materializeBlockedSpillFormulaGroupsForRangeEdit(sheet, range),
+					])
 				: materializeFormulaBindingGroupsForRangeEdit(workbook, sheet, range)
 	for (let r = range.start.row; r <= range.end.row; r++) {
 		for (let c = range.start.col; c <= range.end.col; c++) {

@@ -907,9 +907,14 @@ export class WorkbookSession {
 		if (this.source?.bytes || !this.fileIdentity) return false
 		try {
 			const info = statSync(this.fileIdentity.path)
-			if (info.size !== this.fileIdentity.size || info.mtimeMs !== this.fileIdentity.mtimeMs) {
+			if (
+				info.size !== this.fileIdentity.size ||
+				info.mtimeMs !== this.fileIdentity.mtimeMs ||
+				info.ctimeMs !== this.fileIdentity.ctimeMs
+			) {
 				return true
 			}
+			if (!this.fileIdentity.sha256) return false
 			const sha256 = createHash('sha256')
 				.update(new Uint8Array(readFileSync(this.fileIdentity.path)))
 				.digest('hex')
@@ -2228,15 +2233,19 @@ function strongerPivotCacheRecordMaterializeLimit(
 	return next
 }
 
-async function readIdentity(file: string): Promise<SessionFileIdentity> {
+async function readIdentity(file: string, hashContent = true): Promise<SessionFileIdentity> {
 	const path = resolve(file)
-	const [info, bytes] = await Promise.all([stat(path), readPathBytes(path)])
+	const info = await stat(path)
 	return {
 		path,
 		size: info.size,
 		mtimeMs: info.mtimeMs,
 		ctimeMs: info.ctimeMs,
-		sha256: createHash('sha256').update(bytes).digest('hex'),
+		sha256: hashContent
+			? createHash('sha256')
+					.update(await readPathBytes(path))
+					.digest('hex')
+			: '',
 	}
 }
 
@@ -2314,17 +2323,18 @@ async function openStablePathDocument(
 	path: string,
 	options: WorkbookLoadOptions,
 ): Promise<{ document: WorkbookDocument; identity: SessionFileIdentity }> {
+	const hashContent = shouldHashPathSnapshot(options)
 	let lastMismatch: {
 		readonly before: SessionFileIdentity
 		readonly after: SessionFileIdentity
 		readonly snapshotSha256: string
 	} | null = null
 	for (let attempt = 0; attempt < 3; attempt++) {
-		const before = await readIdentity(path)
+		const before = await readIdentity(path, hashContent)
 		const bytes = new Uint8Array(await readFile(path))
-		const after = await readIdentity(path)
-		const snapshotSha256 = createHash('sha256').update(bytes).digest('hex')
-		if (isIdentityEqual(before, after) && snapshotSha256 === after.sha256) {
+		const after = await readIdentity(path, hashContent)
+		const snapshotSha256 = hashContent ? createHash('sha256').update(bytes).digest('hex') : ''
+		if (isIdentityEqual(before, after) && (!hashContent || snapshotSha256 === after.sha256)) {
 			const document = await WorkbookDocument.openPathSnapshot(path, bytes, after, options)
 			return { document, identity: after }
 		}

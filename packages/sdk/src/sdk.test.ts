@@ -4299,6 +4299,46 @@ describe('WorkbookSession', () => {
 		preview.session.close()
 		WorkbookDocument.clearCache()
 	})
+
+	test('path session first-window snapshots use stat identity for staleness', async () => {
+		WorkbookDocument.clearCache()
+		const path = join(
+			tmpdir(),
+			`ascend-session-window-${Date.now()}-${Math.random().toString(16).slice(2)}.xlsx`,
+		)
+		try {
+			const wb = AscendWorkbook.create()
+			wb.apply([
+				{
+					op: 'setCells',
+					sheet: 'Sheet1',
+					updates: [{ ref: 'A1', value: 'first' }],
+				},
+			])
+			await wb.save(path)
+			const preview = await WorkbookSession.openFirstWindow(path, {
+				range: 'Sheet1!A1:A1',
+				rowLimit: 1,
+			})
+			expect(preview.session.isStale()).toBe(false)
+
+			await Bun.sleep(20)
+			const updated = AscendWorkbook.create()
+			updated.apply([
+				{
+					op: 'setCells',
+					sheet: 'Sheet1',
+					updates: [{ ref: 'A1', value: 'second' }],
+				},
+			])
+			await updated.save(path)
+			expect(preview.session.isStale()).toBe(true)
+			preview.session.close()
+		} finally {
+			WorkbookDocument.clearCache()
+			await unlink(path).catch(() => {})
+		}
+	})
 })
 
 describe('ops.listOperations', () => {

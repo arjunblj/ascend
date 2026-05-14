@@ -15,7 +15,7 @@ import type { Operation, Result } from '@ascend/schema'
 import { ascendError, err, ok } from '@ascend/schema'
 import type { PatchResult } from './helpers.ts'
 import {
-	cellWithExisting,
+	cellPreservingFormulaInfo,
 	DEFAULT_SID,
 	getSheet,
 	patch,
@@ -59,7 +59,7 @@ export function handleSetNumberFormat(
 			sheet.cells.set(
 				row,
 				col,
-				cellWithExisting(
+				cellPreservingFormulaInfo(
 					sheet.cells.readValue(row, col),
 					sheet.cells.readFormula(row, col) ?? null,
 					styleId,

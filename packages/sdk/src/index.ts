@@ -157,6 +157,19 @@ export {
 	SUPPORTED_PATH_MUTATION_ROOTS,
 	SUPPORTED_PATH_MUTATION_SHAPES,
 } from './path-mutations.ts'
+export type {
+	PreparedPlanHandle,
+	PreparedPlanMetadata,
+	PreparedPlanStoreOptions,
+	PreparedPlanTakeResult,
+	PreparedPlanUnavailableReason,
+} from './prepared-plan-store.ts'
+export {
+	PreparedPlanStore,
+	preparedPlanHandle,
+	preparedPlanUnavailableError,
+	withPreparedPlanHandle,
+} from './prepared-plan-store.ts'
 export { inspectRawPackagePart } from './raw-package.ts'
 /** Base class for read-only workbook views (inspect, read, formula, check, lint, trace, diff). */
 export { WorkbookReadView } from './read-view.ts'

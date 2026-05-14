@@ -58,13 +58,16 @@ paths:
                 file: { type: string }
                 sheet: { type: string }
                 range: { type: string }
-                format: { enum: [cells, rows, objects] }
+                format: { enum: [cells, rows, objects, compact] }
                 display: { type: boolean }
                 headers: { type: array, items: { type: string } }
                 rowOffset: { type: integer }
                 rowLimit: { type: integer }
+                maxRows: { type: integer }
+                preview: { type: boolean }
+                changedSince: { type: string, description: Compact-read change token from a prior response }
       responses:
-        '200': { description: Range payload }
+        '200': { description: Range payload. Compact responses include changeToken and may include changeInvalidation when the requested patch cannot be applied. }
   /agent-view:
     post:
       summary: Read a compact semantic summary for an agent workflow
@@ -86,32 +89,40 @@ paths:
         '200': { description: Agent-oriented range profile }
   /write:
     post:
-      summary: Apply operations and save (implementation-specific)
+      summary: Apply operations or path-addressed mutations and save (implementation-specific)
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [file, ops]
+              required: [file]
+              oneOf:
+                - required: [ops]
+                - required: [mutations]
               properties:
                 file: { type: string }
                 ops: { type: array }
+                mutations: { type: array, description: Path-addressed mutations; mutually exclusive with ops }
       responses:
         '200': { description: Success envelope }
   /preview:
     post:
-      summary: Preview operations without saving
+      summary: Preview operations or path-addressed mutations without saving
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [file, ops]
+              required: [file]
+              oneOf:
+                - required: [ops]
+                - required: [mutations]
               properties:
                 file: { type: string }
                 ops: { type: array }
+                mutations: { type: array, description: Path-addressed mutations; mutually exclusive with ops }
       responses:
         '200': { description: Diff, warnings, and recalc scope preview }
   /plan:
@@ -123,12 +134,19 @@ paths:
           application/json:
             schema:
               type: object
-              required: [file, ops]
+              required: [file]
+              oneOf:
+                - required: [ops]
+                - required: [mutations]
               properties:
                 file: { type: string }
                 ops: { type: array }
+                mutations: { type: array, description: Path-addressed mutations; mutually exclusive with ops }
+                compact: { type: boolean }
+                prepare: { type: boolean, description: Defaults to true and returns a preparedPlan handle }
+                maxChangedCells: { type: integer, description: Compact response emitted changed-cell cap; total counts are still reported }
       responses:
-        '200': { description: Agent plan with input hash, digest, preview, check, lint, and preservation summary }
+        '200': { description: Agent plan with input hash, digest, preview, check, lint, preservation summary, and optional preparedPlan metadata }
   /commit:
     post:
       summary: Commit operations atomically with optional input hash guard
@@ -138,14 +156,31 @@ paths:
           application/json:
             schema:
               type: object
-              required: [file, ops]
+              oneOf:
+                - required: [planHandle]
+                - required: [file, ops]
+                - required: [file, mutations]
               properties:
+                planHandle: { type: string, description: One-shot prepared plan handle returned by /plan }
                 file: { type: string }
                 ops: { type: array }
+                mutations: { type: array, description: Path-addressed mutations; mutually exclusive with ops }
                 output: { type: string }
                 inPlace: { type: boolean }
                 backup: { type: string }
                 expectSha256: { type: string }
+                allowLoss:
+                  oneOf:
+                    - { type: string }
+                    - { type: array, items: { type: string } }
+                  description: Feature keys, feature:tier keys, generated loss approval IDs, comma-separated string, string array, or "all" after explicit user approval
+                approvals:
+                  oneOf:
+                    - { type: string }
+                    - { type: array, items: { type: string } }
+                  description: Exact approval IDs from plan, comma-separated string, array, or "all"
+                compact: { type: boolean }
+                maxAffectedCells: { type: integer, description: Compact response emitted affected-cell cap; total counts are still reported }
       responses:
         '200': { description: Commit result with input/output hashes and plan digest }
   /repair-plan:

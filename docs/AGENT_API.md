@@ -45,14 +45,14 @@ Use these workbook tools for normal work:
 
 - `ascend.inspect({ file, sheet? })`
 - `ascend.list_sheets({ file })`
-- `ascend.read({ file, sheet?, range, format?, rowOffset?, rowLimit?, display?, headers? })`
+- `ascend.read({ file, sheet?, range, format?, rowOffset?, rowLimit?, maxRows?, preview?, display?, headers?, cols?, changedSince? })` where `format` is `cells`, `rows`, `objects`, `compact`, or MCP-only `tsv`
 - `ascend.read_table({ file, table, rowOffset?, rowLimit?, display? })`
 - `ascend.find({ file, query, sheet?, in?, caseSensitive?, limit? })`
 - `ascend.visuals({ file })`
 - `ascend.pivots({ file, pivotTable?, partPath?, mode? })`
 - `ascend.agent_view({ file, sheet?, range, rowChunkSize?, sampleRowLimit?, sampleValueLimit? })`
-- `ascend.plan({ file, ops })`
-- `ascend.commit({ file, ops, output?, inPlace?, backup?, expectSha256?, allowLoss?, approvals? })`
+- `ascend.plan({ file, ops? | mutations?, compact?, prepare?, maxChangedCells? })`
+- `ascend.commit({ planHandle?, file?, ops? | mutations?, output?, inPlace?, backup?, expectSha256?, allowLoss?, approvals?, compact?, maxAffectedCells? })`
 - `ascend.repair_plan({ file })`
 - `ascend.check({ file })`, `ascend.lint({ file })`, `ascend.trace({ file, cell })`, `ascend.diff({ fileA, fileB })`, `ascend.export({ file, output, format? })`
 
@@ -60,10 +60,14 @@ Use these workbook tools for normal work:
 
 - Prefer non-destructive output paths over in-place edits.
 - Use `inputSha256` from plan as `expectSha256` during commit.
-- Pass only approval IDs emitted by plan.
+- API/MCP plans default to `prepare: true` and return `preparedPlan` metadata. Prefer `commit({ planHandle })`; handles are in-memory, one-shot, and expire, so re-plan before retrying a failed commit.
+- Pass only approval IDs emitted by plan in `approvals`; it accepts comma-separated strings, string arrays, or `"all"` after explicit user approval.
+- Pass `allowLoss` only for user-approved feature keys, `feature:tier` keys, generated loss approval IDs, or `"all"` after explicit user approval.
 - Inspect both `lossAudit.blockedFeatures` and `lossAudit.blockedPackageParts` before approving a lossy write.
-- Pass `allowLoss` only when the user explicitly accepts the exact feature/tier and package-part loss.
+- Use exact feature/tier and package-part loss details from the plan when asking for that approval.
 - Treat macros, signatures, ActiveX, form controls, Power Query, data models, pivots, slicers, chartsheets, and other preserve-first features as high-risk unless plan says the write is safe.
+- For compact reads with `changedSince`, if `changeInvalidation` appears, consume the returned full window and store the new `changeToken`.
+- Compact plan and commit cap emitted cell details with `maxChangedCells` and `maxAffectedCells` (defaults are 50); use total counts for decisioning.
 
 ## Operation Pattern
 

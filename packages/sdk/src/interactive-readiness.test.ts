@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'bun:test'
+import { createHash } from 'node:crypto'
 import { readFile, stat, unlink, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { AscendSession, AscendWorkbook } from './index.ts'
+import { join, resolve } from 'node:path'
+import { AscendSession, AscendWorkbook, WorkbookDocument } from './index.ts'
 
 describe('interactive edit readiness', () => {
 	test('open can return a fully prepared edit-ready session', async () => {
@@ -147,6 +148,54 @@ describe('interactive edit readiness', () => {
 			})
 		} finally {
 			session.close()
+			await unlink(input).catch(() => {})
+		}
+	})
+
+	test('path sessions keep parsed documents paired with the path identity', async () => {
+		const input = join(tmpdir(), `ascend-path-identity-${Date.now()}-${process.pid}.xlsx`)
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'opened' }] }])
+		await wb.save(input)
+		WorkbookDocument.clearCache()
+
+		const poisoned = AscendWorkbook.create()
+		poisoned.apply([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'poisoned' }] },
+		])
+		const bytes = new Uint8Array(await readFile(input))
+		const info = await stat(input)
+		await WorkbookDocument.openPathSnapshot(
+			input,
+			poisoned.toBytes(),
+			{
+				path: resolve(input),
+				size: info.size,
+				mtimeMs: info.mtimeMs,
+				sha256: createHash('sha256').update(bytes).digest('hex'),
+			},
+			{ mode: 'full', richMetadata: true },
+		)
+
+		const session = await AscendSession.open(input, {
+			mode: 'interactive',
+			prepareEdits: true,
+		})
+		try {
+			expect(session.workbook().file).toBe(resolve(input))
+			expect(
+				session.readViewport({
+					sheet: 'Sheet1',
+					topRow: 0,
+					leftCol: 0,
+					rowCount: 1,
+					colCount: 1,
+				}).cells[0]?.flatValue,
+			).toBe('opened')
+			expect(session.isStale()).toBe(false)
+		} finally {
+			session.close()
+			WorkbookDocument.clearCache()
 			await unlink(input).catch(() => {})
 		}
 	})

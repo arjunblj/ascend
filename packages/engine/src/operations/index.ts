@@ -15,12 +15,7 @@ import { invalidateSheetIndexCache } from '../evaluator.ts'
 import * as cellOps from './cell-ops.ts'
 import * as connectionOps from './connection-ops.ts'
 import * as formatOps from './format-ops.ts'
-import {
-	operationAffectsFormulas,
-	patch,
-	resolveAffectedCellKeys,
-	resolvePatchResultCellKeys,
-} from './helpers.ts'
+import { operationAffectsFormulas, patch, resolvePatchResultCellKeys } from './helpers.ts'
 import * as pivotOps from './pivot-ops.ts'
 import * as sheetOps from './sheet-ops.ts'
 import * as slicerOps from './slicer-ops.ts'
@@ -170,7 +165,12 @@ export function applyOperation(
 			}
 			case 'setFormula':
 			case 'fillFormula': {
-				const changedKeys = resolveAffectedCellKeys(workbook, op)
+				const changedKeys = resolvePatchResultCellKeys(
+					workbook,
+					op.sheet,
+					result.value.affectedCells,
+					warnings,
+				)
 				if (changedKeys.length > 0) patchWorkbookAnalysis(workbook, changedKeys)
 				break
 			}

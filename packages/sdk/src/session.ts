@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { readFileSync, statSync } from 'node:fs'
 import { readFile, stat } from 'node:fs/promises'
-import { resolve } from 'node:path'
+import { extname, resolve } from 'node:path'
 import {
 	DEFAULT_STYLE_ID,
 	parseA1Safe,
@@ -406,6 +406,33 @@ export class WorkbookDocument {
 		const document = new WorkbookDocument(
 			key,
 			source,
+			identity,
+			normalizeOptions(options),
+			new WorkbookReadView(loaded.workbook, loaded.report, loaded.loadInfo),
+			loaded.capsules,
+			loaded.originalBytes,
+		)
+		document.refreshCacheFootprint('base')
+		return document
+	}
+
+	static async openPathSnapshot(
+		file: string,
+		bytes: Uint8Array,
+		identity: SessionFileIdentity,
+		options: WorkbookLoadOptions = {},
+	): Promise<WorkbookDocument> {
+		const key = makeSessionKey(identity, options)
+		sessionCache.delete(key)
+
+		const sourceExtension = extname(file).replace(/^\./, '').toLowerCase()
+		const loaded = await openWorkbookSource(bytes, {
+			...options,
+			...(sourceExtension ? { sourceExtension } : {}),
+		})
+		const document = new WorkbookDocument(
+			key,
+			identity.path,
 			identity,
 			normalizeOptions(options),
 			new WorkbookReadView(loaded.workbook, loaded.report, loaded.loadInfo),
@@ -2185,22 +2212,57 @@ async function openStablePathDocument(
 	path: string,
 	options: WorkbookLoadOptions,
 ): Promise<{ document: WorkbookDocument; identity: SessionFileIdentity }> {
-	let lastDocument: WorkbookDocument | null = null
-	for (let attempt = 0; attempt < 2; attempt++) {
+	let lastMismatch: {
+		readonly before: SessionFileIdentity
+		readonly after: SessionFileIdentity
+		readonly snapshotSha256: string
+	} | null = null
+	for (let attempt = 0; attempt < 3; attempt++) {
 		const before = await readIdentity(path)
-		const document = await WorkbookDocument.open(path, options)
+		const bytes = new Uint8Array(await readFile(path))
 		const after = await readIdentity(path)
-		if (isIdentityEqual(before, after)) return { document, identity: after }
-		lastDocument = document
+		const snapshotSha256 = createHash('sha256').update(bytes).digest('hex')
+		if (isIdentityEqual(before, after) && snapshotSha256 === after.sha256) {
+			const document = await WorkbookDocument.openPathSnapshot(path, bytes, after, options)
+			return { document, identity: after }
+		}
+		lastMismatch = { before, after, snapshotSha256 }
 		WorkbookDocument.drop(path, options)
 	}
-	if (!lastDocument) {
-		return {
-			document: await WorkbookDocument.open(path, options),
-			identity: await readIdentity(path),
-		}
+	throw new AscendException(unstablePathDocumentError(path, lastMismatch))
+}
+
+function unstablePathDocumentError(
+	path: string,
+	mismatch: {
+		readonly before: SessionFileIdentity
+		readonly after: SessionFileIdentity
+		readonly snapshotSha256: string
+	} | null,
+) {
+	return ascendError('VALIDATION_ERROR', 'Workbook file changed while opening session', {
+		details: {
+			rule: 'unstable-workbook-open',
+			path: resolve(path),
+			...(mismatch
+				? {
+						before: fileIdentityDetails(mismatch.before),
+						after: fileIdentityDetails(mismatch.after),
+						snapshotSha256: mismatch.snapshotSha256,
+					}
+				: {}),
+		},
+		suggestedFix: 'Retry after the file writer has finished and the workbook path is stable.',
+	})
+}
+
+function fileIdentityDetails(identity: SessionFileIdentity): Record<string, string | number> {
+	return {
+		path: identity.path,
+		size: identity.size,
+		mtimeMs: identity.mtimeMs,
+		sha256: identity.sha256,
 	}
-	return { document: lastDocument, identity: await readIdentity(path) }
 }
 
 function readBytesIdentity(bytes: Uint8Array): SessionBytesIdentity {

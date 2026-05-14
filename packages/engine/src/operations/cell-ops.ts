@@ -1,19 +1,21 @@
-import type { CellFormulaBinding, Workbook } from '@ascend/core'
+import type { Workbook } from '@ascend/core'
 import { parseA1, toA1 } from '@ascend/core'
 import { cachedParseFormula, normalizeFormulaInput } from '@ascend/formulas'
 import type { Operation, Result } from '@ascend/schema'
 import { ascendError, EMPTY, err, isEmpty, ok, richTextValue, valuesEqual } from '@ascend/schema'
-import { resolveCellFormulaText } from '../analysis.ts'
 import { validateCellValue } from '../data-validation.ts'
 import type { PatchResult } from './helpers.ts'
 import {
 	cell,
+	cellPreservingFormulaInfo,
 	cellWithExisting,
 	createLegacyArrayFormulaIndex,
 	DEFAULT_SID,
 	getSheet,
 	inputToCellValue,
 	legacyArrayFormulaEditError,
+	materializeFormulaBindingGroupsForRangeEdit,
+	materializeFormulaBindingGroupsForRefs,
 	mergeStyleInput,
 	patch,
 	safeParseRange,
@@ -28,7 +30,6 @@ export function handleSetCells(
 	if (!result.ok) return result
 	const sheet = result.value
 
-	const affected: string[] = []
 	const warnings: ReturnType<typeof ascendError>[] = []
 	const legacyArrayIndex = createLegacyArrayFormulaIndex(sheet)
 	const prepared: Array<{
@@ -44,10 +45,22 @@ export function handleSetCells(
 		prepared.push({ ref, update, value })
 	}
 
+	const affected = materializeFormulaBindingGroupsForRefs(
+		workbook,
+		sheet,
+		prepared.map(({ ref }) => ref),
+	)
 	for (const { ref, update, value } of prepared) {
 		const existing = sheet.cells.get(ref.row, ref.col)
 		if (!existing && isEmpty(value)) continue
-		if (existing && existing.formula === null && valuesEqual(existing.value, value)) continue
+		if (
+			existing &&
+			existing.formula === null &&
+			existing.formulaInfo === undefined &&
+			valuesEqual(existing.value, value)
+		) {
+			continue
+		}
 		const validation = validateCellValue(sheet, ref.row, ref.col, value, workbook)
 		if (!validation.valid && validation.message) {
 			warnings.push(ascendError('VALIDATION_ERROR', validation.message, { refs: [update.ref] }))
@@ -57,14 +70,14 @@ export function handleSetCells(
 			ref.col,
 			cellWithExisting(value, null, existing?.styleId ?? DEFAULT_SID),
 		)
-		affected.push(update.ref)
+		affected.add(update.ref)
 	}
 
 	return ok(
 		patch(
-			affected,
-			affected.length > 0 ? [op.sheet] : [],
-			affected.length > 0,
+			[...affected],
+			affected.size > 0 ? [op.sheet] : [],
+			affected.size > 0,
 			warnings.length > 0 ? warnings : undefined,
 		),
 	)
@@ -81,7 +94,7 @@ export function handleSetFormula(
 	const ref = parseA1(op.ref)
 	const blocked = createLegacyArrayFormulaIndex(sheet).findCell(ref.row, ref.col)
 	if (blocked) return err(legacyArrayFormulaEditError(op.ref, blocked.ref))
-	const affected = materializeFormulaBindingGroupForEdit(workbook, sheet, ref.row, ref.col)
+	const affected = materializeFormulaBindingGroupsForRefs(workbook, sheet, [ref])
 	sheet.cells.set(
 		ref.row,
 		ref.col,
@@ -94,96 +107,6 @@ export function handleSetFormula(
 	affected.add(op.ref)
 
 	return ok(patch([...affected], [op.sheet], true))
-}
-
-function materializeFormulaBindingGroupForEdit(
-	workbook: Workbook,
-	sheet: Workbook['sheets'][number],
-	row: number,
-	col: number,
-): Set<string> {
-	const existing = sheet.cells.get(row, col)
-	const binding = existing?.formulaInfo
-	if (!binding) return new Set()
-	if (binding.kind === 'shared') return materializeSharedFormulaGroup(workbook, sheet, binding)
-	if (isSpillGroupBinding(binding)) return materializeSpillFormulaGroup(sheet, binding)
-	return new Set()
-}
-
-function materializeSharedFormulaGroup(
-	workbook: Workbook,
-	sheet: Workbook['sheets'][number],
-	binding: Extract<CellFormulaBinding, { kind: 'shared' }>,
-): Set<string> {
-	const affected = new Set<string>()
-	const sheetIndex = workbook.sheets.indexOf(sheet)
-	if (sheetIndex < 0) return affected
-	const materialized: Array<{
-		readonly row: number
-		readonly col: number
-		readonly formula: string | null
-	}> = []
-	for (const [row, col, cell] of sheet.cells.iterate()) {
-		if (!sameSharedFormulaGroup(binding, cell.formulaInfo)) continue
-		materialized.push({
-			row,
-			col,
-			formula: resolveCellFormulaText(workbook, sheetIndex, row, col, cell),
-		})
-	}
-	for (const entry of materialized) {
-		const current = sheet.cells.get(entry.row, entry.col)
-		if (!current) continue
-		sheet.cells.set(
-			entry.row,
-			entry.col,
-			cellWithExisting(current.value, entry.formula, current.styleId ?? DEFAULT_SID),
-		)
-		affected.add(toA1({ row: entry.row, col: entry.col }))
-	}
-	return affected
-}
-
-function sameSharedFormulaGroup(
-	binding: Extract<CellFormulaBinding, { kind: 'shared' }>,
-	candidate: CellFormulaBinding | undefined,
-): candidate is Extract<CellFormulaBinding, { kind: 'shared' }> {
-	if (candidate?.kind !== 'shared') return false
-	if (binding.sharedIndex !== undefined) return candidate.sharedIndex === binding.sharedIndex
-	return candidate.masterRef === binding.masterRef
-}
-
-function materializeSpillFormulaGroup(
-	sheet: Workbook['sheets'][number],
-	binding: Extract<CellFormulaBinding, { kind: 'dynamicArray' | 'spill' | 'blockedSpill' }>,
-): Set<string> {
-	const affected = new Set<string>()
-	for (const [row, col, cell] of sheet.cells.iterate()) {
-		if (!sameSpillFormulaGroup(binding, cell.formulaInfo)) continue
-		sheet.cells.set(row, col, cellWithExisting(cell.value, null, cell.styleId ?? DEFAULT_SID))
-		affected.add(toA1({ row, col }))
-	}
-	return affected
-}
-
-function isSpillGroupBinding(
-	binding: CellFormulaBinding,
-): binding is Extract<CellFormulaBinding, { kind: 'dynamicArray' | 'spill' | 'blockedSpill' }> {
-	return (
-		binding.kind === 'dynamicArray' || binding.kind === 'spill' || binding.kind === 'blockedSpill'
-	)
-}
-
-function sameSpillFormulaGroup(
-	binding: Extract<CellFormulaBinding, { kind: 'dynamicArray' | 'spill' | 'blockedSpill' }>,
-	candidate: CellFormulaBinding | undefined,
-): boolean {
-	if (!candidate) return false
-	if (binding.kind === 'dynamicArray') {
-		return candidate.kind === 'dynamicArray' && candidate.metadataIndex === binding.metadataIndex
-	}
-	if (candidate.kind !== 'spill' && candidate.kind !== 'blockedSpill') return false
-	return candidate.anchorRef === binding.anchorRef
 }
 
 export function handleFillFormula(
@@ -203,9 +126,9 @@ export function handleFillFormula(
 	}
 	const range = rangeResult.value
 	const anchor = range.start
-	const affected: string[] = []
 	const blocked = createLegacyArrayFormulaIndex(sheet).findIntersection(range)
 	if (blocked) return err(legacyArrayFormulaEditError(blocked.targetRef, blocked.ref))
+	const affected = materializeFormulaBindingGroupsForRangeEdit(workbook, sheet, range)
 
 	for (let row = range.start.row; row <= range.end.row; row++) {
 		for (let col = range.start.col; col <= range.end.col; col++) {
@@ -219,11 +142,11 @@ export function handleFillFormula(
 					sheet.cells.readStyleId(row, col) ?? DEFAULT_SID,
 				),
 			)
-			affected.push(toA1({ row, col }))
+			affected.add(toA1({ row, col }))
 		}
 	}
 
-	return ok(patch(affected, [op.sheet], true))
+	return ok(patch([...affected], [op.sheet], true))
 }
 
 export function handleSetRichText(
@@ -237,8 +160,14 @@ export function handleSetRichText(
 	const pos = parseA1(op.ref)
 	const blocked = createLegacyArrayFormulaIndex(sheet).findCell(pos.row, pos.col)
 	if (blocked) return err(legacyArrayFormulaEditError(op.ref, blocked.ref))
+	const affected = new Set(
+		[...materializeFormulaBindingGroupsForRefs(workbook, sheet, [pos])].map(
+			(ref) => `${op.sheet}!${ref}`,
+		),
+	)
 	sheet.cells.setResolved(pos.row, pos.col, richTextValue(op.runs), null, DEFAULT_SID)
-	return ok(patch([`${op.sheet}!${op.ref}`], [op.sheet], true))
+	affected.add(`${op.sheet}!${op.ref}`)
+	return ok(patch([...affected], [op.sheet], true))
 }
 
 export function handleClearRange(
@@ -253,16 +182,19 @@ export function handleClearRange(
 	if (!rangeResult.ok) return rangeResult
 	const range = rangeResult.value
 
-	const affected: string[] = []
 	const blocked = createLegacyArrayFormulaIndex(sheet).findIntersection(range)
 	if (blocked) return err(legacyArrayFormulaEditError(blocked.targetRef, blocked.ref))
+	const affected =
+		op.what === 'styles' || op.what === 'values'
+			? new Set<string>()
+			: materializeFormulaBindingGroupsForRangeEdit(workbook, sheet, range)
 	for (let r = range.start.row; r <= range.end.row; r++) {
 		for (let c = range.start.col; c <= range.end.col; c++) {
 			const existing = sheet.cells.get(r, c)
 			if (!existing) continue
 
 			const ref = toA1({ row: r, col: c })
-			affected.push(ref)
+			affected.add(ref)
 
 			switch (op.what) {
 				case 'all':
@@ -272,20 +204,34 @@ export function handleClearRange(
 					sheet.cells.set(
 						r,
 						c,
-						cellWithExisting(EMPTY, existing.formula, existing.styleId, existing.formulaInfo),
+						cellPreservingFormulaInfo(
+							EMPTY,
+							existing.formula,
+							existing.styleId,
+							existing.formulaInfo,
+						),
 					)
 					break
 				case 'formulas':
 					sheet.cells.set(r, c, cell(existing.value, null, existing.styleId))
 					break
 				case 'styles':
-					sheet.cells.set(r, c, cell(existing.value, existing.formula, DEFAULT_SID))
+					sheet.cells.set(
+						r,
+						c,
+						cellPreservingFormulaInfo(
+							existing.value,
+							existing.formula,
+							DEFAULT_SID,
+							existing.formulaInfo,
+						),
+					)
 					break
 			}
 		}
 	}
 
-	return ok(patch(affected, [op.sheet], op.what !== 'styles'))
+	return ok(patch([...affected], [op.sheet], op.what !== 'styles'))
 }
 
 export function handleSetStyle(
@@ -308,14 +254,15 @@ export function handleSetStyle(
 			const merged = mergeStyleInput(currentStyle, op.style)
 			const styleId = workbook.styles.register(merged)
 			if (styleId === existingStyleId) continue
+			const formulaInfo = sheet.cells.readFormulaInfo(row, col)
 			sheet.cells.set(
 				row,
 				col,
-				cellWithExisting(
+				cellPreservingFormulaInfo(
 					sheet.cells.readValue(row, col),
 					sheet.cells.readFormula(row, col) ?? null,
 					styleId,
-					sheet.cells.readFormulaInfo(row, col),
+					formulaInfo,
 				),
 			)
 			affected.push(toA1({ row, col }))

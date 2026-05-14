@@ -1,4 +1,12 @@
-import type { Cell, CellStyle, RangeRef, Sheet, StyleId, Workbook } from '@ascend/core'
+import type {
+	Cell,
+	CellFormulaBinding,
+	CellStyle,
+	RangeRef,
+	Sheet,
+	StyleId,
+	Workbook,
+} from '@ascend/core'
 import { DEFAULT_STYLE_ID, parseA1, parseA1Safe, parseRange, toA1 } from '@ascend/core'
 import type { FormulaNode } from '@ascend/formulas'
 import { dateToSerial, printFormulaWithOffset } from '@ascend/formulas'
@@ -11,6 +19,7 @@ import type {
 	StyleInput,
 } from '@ascend/schema'
 import { ascendError, booleanValue, EMPTY, err, numberValue, ok, stringValue } from '@ascend/schema'
+import { resolveCellFormulaText } from '../analysis.ts'
 import { type CellKey, cellKey } from '../dep-graph.ts'
 
 export interface PatchResult {
@@ -81,6 +90,20 @@ export function cellWithExisting(
 		formula,
 		styleId,
 		...(formula !== null && existingFormulaInfo ? { formulaInfo: existingFormulaInfo } : {}),
+	}
+}
+
+export function cellPreservingFormulaInfo(
+	value: CellValue | undefined,
+	formula: string | null,
+	styleId: StyleId,
+	formulaInfo?: Cell['formulaInfo'],
+): Cell {
+	return {
+		value: value ?? EMPTY,
+		formula,
+		styleId,
+		...(formulaInfo ? { formulaInfo } : {}),
 	}
 }
 
@@ -200,6 +223,115 @@ export function collectRangeCells(
 		}
 	}
 	return cells
+}
+
+export function materializeFormulaBindingGroupsForRefs(
+	workbook: Workbook,
+	sheet: Sheet,
+	refs: Iterable<{ readonly row: number; readonly col: number }>,
+): Set<string> {
+	const affected = new Set<string>()
+	for (const ref of refs) {
+		const existing = sheet.cells.get(ref.row, ref.col)
+		const binding = existing?.formulaInfo
+		if (!binding) continue
+		const materialized =
+			binding.kind === 'shared'
+				? materializeSharedFormulaGroup(workbook, sheet, binding)
+				: isSpillGroupBinding(binding)
+					? materializeSpillFormulaGroup(sheet, binding)
+					: new Set<string>()
+		for (const entry of materialized) affected.add(entry)
+	}
+	return affected
+}
+
+export function materializeFormulaBindingGroupsForRangeEdit(
+	workbook: Workbook,
+	sheet: Sheet,
+	range: RangeRef,
+): Set<string> {
+	const refs: Array<{ readonly row: number; readonly col: number }> = []
+	for (let row = range.start.row; row <= range.end.row; row++) {
+		for (let col = range.start.col; col <= range.end.col; col++) refs.push({ row, col })
+	}
+	return materializeFormulaBindingGroupsForRefs(workbook, sheet, refs)
+}
+
+function materializeSharedFormulaGroup(
+	workbook: Workbook,
+	sheet: Sheet,
+	binding: Extract<CellFormulaBinding, { kind: 'shared' }>,
+): Set<string> {
+	const affected = new Set<string>()
+	const sheetIndex = workbook.sheets.indexOf(sheet)
+	if (sheetIndex < 0) return affected
+	const materialized: Array<{
+		readonly row: number
+		readonly col: number
+		readonly formula: string | null
+	}> = []
+	for (const [row, col, cell] of sheet.cells.iterate()) {
+		if (!sameSharedFormulaGroup(binding, cell.formulaInfo)) continue
+		materialized.push({
+			row,
+			col,
+			formula: resolveCellFormulaText(workbook, sheetIndex, row, col, cell),
+		})
+	}
+	for (const entry of materialized) {
+		const current = sheet.cells.get(entry.row, entry.col)
+		if (!current) continue
+		sheet.cells.set(
+			entry.row,
+			entry.col,
+			cellWithExisting(current.value, entry.formula, current.styleId ?? DEFAULT_SID),
+		)
+		affected.add(toA1({ row: entry.row, col: entry.col }))
+	}
+	return affected
+}
+
+function sameSharedFormulaGroup(
+	binding: Extract<CellFormulaBinding, { kind: 'shared' }>,
+	candidate: CellFormulaBinding | undefined,
+): candidate is Extract<CellFormulaBinding, { kind: 'shared' }> {
+	if (candidate?.kind !== 'shared') return false
+	if (binding.sharedIndex !== undefined) return candidate.sharedIndex === binding.sharedIndex
+	return candidate.masterRef === binding.masterRef
+}
+
+function materializeSpillFormulaGroup(
+	sheet: Sheet,
+	binding: Extract<CellFormulaBinding, { kind: 'dynamicArray' | 'spill' | 'blockedSpill' }>,
+): Set<string> {
+	const affected = new Set<string>()
+	for (const [row, col, cell] of sheet.cells.iterate()) {
+		if (!sameSpillFormulaGroup(binding, cell.formulaInfo)) continue
+		sheet.cells.set(row, col, cellWithExisting(cell.value, null, cell.styleId ?? DEFAULT_SID))
+		affected.add(toA1({ row, col }))
+	}
+	return affected
+}
+
+function isSpillGroupBinding(
+	binding: CellFormulaBinding,
+): binding is Extract<CellFormulaBinding, { kind: 'dynamicArray' | 'spill' | 'blockedSpill' }> {
+	return (
+		binding.kind === 'dynamicArray' || binding.kind === 'spill' || binding.kind === 'blockedSpill'
+	)
+}
+
+function sameSpillFormulaGroup(
+	binding: Extract<CellFormulaBinding, { kind: 'dynamicArray' | 'spill' | 'blockedSpill' }>,
+	candidate: CellFormulaBinding | undefined,
+): boolean {
+	if (!candidate) return false
+	if (binding.kind === 'dynamicArray') {
+		return candidate.kind === 'dynamicArray' && candidate.metadataIndex === binding.metadataIndex
+	}
+	if (candidate.kind !== 'spill' && candidate.kind !== 'blockedSpill') return false
+	return candidate.anchorRef === binding.anchorRef
 }
 
 export function shiftMerges(
@@ -334,9 +466,6 @@ export function operationAffectsFormulas(op: Operation): boolean {
 		case 'insertImage':
 		case 'deleteImage':
 			return false
-		case 'setCells':
-		case 'setRichText':
-			return false
 		case 'setWorkbookProtection':
 			return false
 		case 'createTable':
@@ -345,7 +474,7 @@ export function operationAffectsFormulas(op: Operation): boolean {
 		case 'resizeTable':
 			return true
 		case 'clearRange':
-			return op.what === 'all' || op.what === 'formulas'
+			return op.what !== 'styles'
 		default:
 			return true
 	}

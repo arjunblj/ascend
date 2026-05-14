@@ -37,6 +37,7 @@ import {
 } from '../table-topology.ts'
 import type { PatchResult } from './helpers.ts'
 import {
+	cellPreservingFormulaInfo,
 	cellWithExisting,
 	clearFormulaMetadata,
 	collectRangeCells,
@@ -44,6 +45,7 @@ import {
 	DEFAULT_SID,
 	getSheet,
 	legacyArrayFormulaEditError,
+	materializeFormulaBindingGroupsForRangeEdit,
 	patch,
 	safeParseRange,
 	shiftMerges,
@@ -157,7 +159,7 @@ export function handleTransferRange(
 	const rowDelta = targetStart.row - source.start.row
 	const colDelta = targetStart.col - source.start.col
 	const mode = op.mode ?? 'all'
-	const affected: string[] = []
+	const affected = new Set<string>()
 
 	if (pasteCells(mode)) {
 		const targetLegacyArrayIndex = createLegacyArrayFormulaIndex(targetSheet)
@@ -206,6 +208,24 @@ export function handleTransferRange(
 	const snapshot = collectRangeCells(sourceSheet, source)
 
 	if (pasteCells(mode)) {
+		if (overwritesTargetFormulas(mode)) {
+			for (const ref of materializeFormulaBindingGroupsForRangeEdit(
+				workbook,
+				targetSheet,
+				mergePlan.value.targetRange,
+			)) {
+				affected.add(affectedRef(targetSheet, ref, crossSheet))
+			}
+		}
+		if (op.op === 'moveRange') {
+			for (const ref of materializeFormulaBindingGroupsForRangeEdit(
+				workbook,
+				sourceSheet,
+				source,
+			)) {
+				affected.add(affectedRef(sourceSheet, ref, crossSheet))
+			}
+		}
 		for (const entry of snapshot) {
 			const targetRow = entry.row + rowDelta
 			const targetCol = entry.col + colDelta
@@ -214,7 +234,7 @@ export function handleTransferRange(
 
 			if (!entry.cell && mode === 'all') {
 				targetSheet.cells.delete(targetRow, targetCol)
-				affected.push(affectedRef(targetSheet, ref, crossSheet))
+				affected.add(affectedRef(targetSheet, ref, crossSheet))
 				continue
 			}
 
@@ -242,11 +262,11 @@ export function handleTransferRange(
 				targetSheet.cells.set(
 					targetRow,
 					targetCol,
-					cellWithExisting(
+					cellPreservingFormulaInfo(
 						targetValue,
 						targetFormula,
 						entry.cell?.styleId ?? DEFAULT_SID,
-						targetFormula !== null ? existingTarget?.formulaInfo : undefined,
+						existingTarget?.formulaInfo,
 					),
 				)
 			} else if (entry.cell) {
@@ -258,7 +278,7 @@ export function handleTransferRange(
 			} else {
 				targetSheet.cells.delete(targetRow, targetCol)
 			}
-			affected.push(affectedRef(targetSheet, ref, crossSheet))
+			affected.add(affectedRef(targetSheet, ref, crossSheet))
 		}
 	}
 
@@ -277,9 +297,7 @@ export function handleTransferRange(
 		for (const entry of snapshot) {
 			if (pasteCells(mode)) sourceSheet.cells.delete(entry.row, entry.col)
 			if (pasteCells(mode)) {
-				affected.push(
-					affectedRef(sourceSheet, toA1({ row: entry.row, col: entry.col }), crossSheet),
-				)
+				affected.add(affectedRef(sourceSheet, toA1({ row: entry.row, col: entry.col }), crossSheet))
 			}
 		}
 		if (pasteCells(mode)) {
@@ -307,7 +325,7 @@ export function handleTransferRange(
 		}
 	}
 
-	return ok(patch(affected, [sourceSheet.name, targetSheet.name], pasteRequiresRecalc(mode)))
+	return ok(patch([...affected], [sourceSheet.name, targetSheet.name], pasteRequiresRecalc(mode)))
 }
 
 function affectedRef(sheet: Sheet, ref: string, qualify: boolean): string {

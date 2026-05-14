@@ -10,12 +10,15 @@ Use this workflow for headless spreadsheet edits:
 6. Verify: `ascend check`, `ascend lint`, `ascend diff`, `ascend trace`, or `ascend export`
 7. Recover: `ascend repair-plan <file> --json`
 
+For API/MCP, prefer the default `prepare: true` response and pass its `planHandle` to the write step. Prepared handles are in-memory, one-shot, and expire; if the write fails or the handle is unavailable, create a fresh plan before retrying.
+
 Safety defaults:
 
 - Prefer `--output` over `--in-place`.
 - Use the plan `inputSha256` as `--expect-sha256`.
 - Use only approval ids emitted by plan.
 - Use `--allow-loss` only for explicit user-approved feature loss.
+- Use compact read `changeToken` values only as hints; when `changeInvalidation` appears, consume the returned full window and store the new token.
 - Keep stdout machine-readable and consume `--progress jsonl` from stderr.
 
 MCP resources:

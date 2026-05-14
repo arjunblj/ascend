@@ -2,8 +2,10 @@ import { describe, expect, test } from 'bun:test'
 import type { Sheet, StyleId, Workbook } from '@ascend/core'
 import { createTableId, createWorkbook } from '@ascend/core'
 import { EMPTY, numberValue, stringValue } from '@ascend/schema'
+import { analyzeWorkbook } from './analysis.ts'
 import { recalculate } from './calc.ts'
 import { defaultCalcContext } from './calc-context.ts'
+import { cellKey } from './dep-graph.ts'
 import { applyOperation, applyOperations, applyWithTransaction } from './operations.ts'
 
 const sid = 0 as StyleId
@@ -37,6 +39,63 @@ function setup() {
 	sheet.cells.set(2, 0, cell(numberValue(30)))
 	sheet.cells.set(0, 1, cell(stringValue('hello')))
 	return wb
+}
+
+function addSharedFormulaGroup(sheet: Sheet, startRow = 0, col = 0) {
+	const masterRef = `${String.fromCharCode(65 + col)}${startRow + 1}`
+	sheet.cells.set(startRow, col, {
+		value: numberValue(20),
+		formula: 'B1*2',
+		styleId: sid,
+		formulaInfo: {
+			kind: 'shared',
+			sharedIndex: '0',
+			isMaster: true,
+			masterRef,
+			ref: `${masterRef}:${String.fromCharCode(65 + col)}${startRow + 2}`,
+		},
+	})
+	sheet.cells.set(startRow + 1, col, {
+		value: numberValue(40),
+		formula: null,
+		styleId: sid,
+		formulaInfo: { kind: 'shared', sharedIndex: '0', isMaster: false, masterRef },
+	})
+}
+
+function addSpillGroup(sheet: Sheet, startRow = 0, col = 0) {
+	const column = String.fromCharCode(65 + col)
+	const anchorRef = `Sheet1!${column}${startRow + 1}`
+	const ref = `${column}${startRow + 1}:${column}${startRow + 3}`
+	const anchorInfo = { kind: 'spill' as const, anchorRef, ref, isAnchor: true }
+	const memberInfo = { kind: 'spill' as const, anchorRef, ref, isAnchor: false }
+	sheet.cells.set(startRow, col, {
+		value: numberValue(1),
+		formula: 'SEQUENCE(3)',
+		styleId: sid,
+		formulaInfo: anchorInfo,
+	})
+	sheet.cells.set(startRow + 1, col, {
+		value: numberValue(2),
+		formula: null,
+		styleId: sid,
+		formulaInfo: memberInfo,
+	})
+	sheet.cells.set(startRow + 2, col, {
+		value: numberValue(3),
+		formula: null,
+		styleId: sid,
+		formulaInfo: memberInfo,
+	})
+}
+
+function addDynamicArrayAnchor(sheet: Sheet, row = 0, col = 0) {
+	sheet.cells.set(row, col, {
+		value: numberValue(1),
+		formula: 'SEQUENCE(3)',
+		styleId: sid,
+		formulaInfo: { kind: 'dynamicArray', metadataIndex: 1, collapsed: false },
+	})
 }
 
 function setupSalesRepTable() {
@@ -487,6 +546,229 @@ describe('applyOperation', () => {
 		const c = wb.getSheet('Sheet1')?.cells.get(0, 0)
 		expect(c?.value).toEqual(numberValue(42))
 		expect(c?.formula).toBeNull()
+	})
+
+	test('setCells materializes imported shared formula groups before literal replacement', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		addSharedFormulaGroup(sheet)
+
+		const result = applyOperation(wb, {
+			op: 'setCells',
+			sheet: 'Sheet1',
+			updates: [{ ref: 'A2', value: 9 }],
+		})
+		expectOk(result)
+
+		expect(result.value.affectedCells).toEqual(['A1', 'A2'])
+		expect(sheet.cells.get(0, 0)?.formula).toBe('B1*2')
+		expect(sheet.cells.get(0, 0)?.formulaInfo).toBeUndefined()
+		expect(sheet.cells.get(1, 0)?.value).toEqual(numberValue(9))
+		expect(sheet.cells.get(1, 0)?.formula).toBeNull()
+		expect(sheet.cells.get(1, 0)?.formulaInfo).toBeUndefined()
+	})
+
+	test('setCells materializes spill groups before literal replacement', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		addSpillGroup(sheet)
+
+		const result = applyOperation(wb, {
+			op: 'setCells',
+			sheet: 'Sheet1',
+			updates: [{ ref: 'A2', value: 9 }],
+		})
+		expectOk(result)
+
+		expect(result.value.affectedCells).toEqual(['A1', 'A2', 'A3'])
+		expect(sheet.cells.get(0, 0)?.formula).toBeNull()
+		expect(sheet.cells.get(0, 0)?.formulaInfo).toBeUndefined()
+		expect(sheet.cells.get(1, 0)?.value).toEqual(numberValue(9))
+		expect(sheet.cells.get(1, 0)?.formulaInfo).toBeUndefined()
+		expect(sheet.cells.get(2, 0)?.formulaInfo).toBeUndefined()
+	})
+
+	test('fillFormula materializes imported shared formula groups before replacement', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		addSharedFormulaGroup(sheet)
+
+		const result = applyOperation(wb, {
+			op: 'fillFormula',
+			sheet: 'Sheet1',
+			range: 'A2:A2',
+			formula: 'B2*3',
+		})
+		expectOk(result)
+
+		expect(result.value.affectedCells).toEqual(['A1', 'A2'])
+		expect(sheet.cells.get(0, 0)?.formula).toBe('B1*2')
+		expect(sheet.cells.get(0, 0)?.formulaInfo).toBeUndefined()
+		expect(sheet.cells.get(1, 0)?.formula).toBe('B2*3')
+		expect(sheet.cells.get(1, 0)?.formulaInfo).toBeUndefined()
+	})
+
+	test('fillFormula materializes dynamic-array metadata before replacement', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		addDynamicArrayAnchor(sheet)
+
+		const result = applyOperation(wb, {
+			op: 'fillFormula',
+			sheet: 'Sheet1',
+			range: 'A1',
+			formula: '1+1',
+		})
+		expectOk(result)
+
+		expect(result.value.affectedCells).toEqual(['A1'])
+		expect(sheet.cells.get(0, 0)?.formula).toBe('1+1')
+		expect(sheet.cells.get(0, 0)?.formulaInfo).toBeUndefined()
+	})
+
+	test('setRichText materializes spill groups before replacing a spill member', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		addSpillGroup(sheet)
+
+		const result = applyOperation(wb, {
+			op: 'setRichText',
+			sheet: 'Sheet1',
+			ref: 'A2',
+			runs: [{ text: 'manual', bold: true }],
+		})
+		expectOk(result)
+
+		expect(result.value.affectedCells).toEqual(['Sheet1!A1', 'Sheet1!A2', 'Sheet1!A3'])
+		expect(sheet.cells.get(0, 0)?.formula).toBeNull()
+		expect(sheet.cells.get(0, 0)?.formulaInfo).toBeUndefined()
+		expect(sheet.cells.get(1, 0)?.value).toEqual({
+			kind: 'richText',
+			runs: [{ text: 'manual', bold: true }],
+		})
+		expect(sheet.cells.get(1, 0)?.formulaInfo).toBeUndefined()
+		expect(sheet.cells.get(2, 0)?.formulaInfo).toBeUndefined()
+	})
+
+	test('clearRange materializes spill groups before deleting a member', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		addSpillGroup(sheet)
+
+		const result = applyOperation(wb, {
+			op: 'clearRange',
+			sheet: 'Sheet1',
+			range: 'A2',
+			what: 'all',
+		})
+		expectOk(result)
+
+		expect(result.value.affectedCells).toEqual(['A1', 'A2', 'A3'])
+		expect(sheet.cells.get(0, 0)?.formula).toBeNull()
+		expect(sheet.cells.get(0, 0)?.formulaInfo).toBeUndefined()
+		expect(sheet.cells.get(1, 0)).toBeUndefined()
+		expect(sheet.cells.get(2, 0)?.formulaInfo).toBeUndefined()
+	})
+
+	test('clearRange materializes formula bindings for formula clears but preserves them for value and style clears', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		addSharedFormulaGroup(sheet)
+		addSpillGroup(sheet, 0, 2)
+
+		const styles = applyOperation(wb, {
+			op: 'clearRange',
+			sheet: 'Sheet1',
+			range: 'C2',
+			what: 'styles',
+		})
+		expectOk(styles)
+		expect(sheet.cells.get(1, 2)?.formulaInfo).toEqual({
+			kind: 'spill',
+			anchorRef: 'Sheet1!C1',
+			ref: 'C1:C3',
+			isAnchor: false,
+		})
+
+		const values = applyOperation(wb, {
+			op: 'clearRange',
+			sheet: 'Sheet1',
+			range: 'A2',
+			what: 'values',
+		})
+		expectOk(values)
+		expect(values.value.affectedCells).toEqual(['A2'])
+		expect(sheet.cells.get(1, 0)?.value).toEqual(EMPTY)
+		expect(sheet.cells.get(1, 0)?.formula).toBeNull()
+		expect(sheet.cells.get(1, 0)?.formulaInfo).toEqual({
+			kind: 'shared',
+			sharedIndex: '0',
+			isMaster: false,
+			masterRef: 'A1',
+		})
+
+		const formulas = applyOperation(wb, {
+			op: 'clearRange',
+			sheet: 'Sheet1',
+			range: 'A2',
+			what: 'formulas',
+		})
+		expectOk(formulas)
+		expect(formulas.value.affectedCells).toEqual(['A1', 'A2'])
+		expect(sheet.cells.get(0, 0)?.formula).toBe('B1*2')
+		expect(sheet.cells.get(1, 0)?.formula).toBeNull()
+		expect(sheet.cells.get(0, 0)?.formulaInfo).toBeUndefined()
+		expect(sheet.cells.get(1, 0)?.formulaInfo).toBeUndefined()
+	})
+
+	test('clearRange values preserves spill formulas and metadata', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		addSpillGroup(sheet)
+
+		const result = applyOperation(wb, {
+			op: 'clearRange',
+			sheet: 'Sheet1',
+			range: 'A1',
+			what: 'values',
+		})
+		expectOk(result)
+
+		expect(result.value.affectedCells).toEqual(['A1'])
+		expect(sheet.cells.get(0, 0)?.value).toEqual(EMPTY)
+		expect(sheet.cells.get(0, 0)?.formula).toBe('SEQUENCE(3)')
+		expect(sheet.cells.get(0, 0)?.formulaInfo).toEqual({
+			kind: 'spill',
+			anchorRef: 'Sheet1!A1',
+			ref: 'A1:A3',
+			isAnchor: true,
+		})
+		expect(sheet.cells.get(1, 0)?.formulaInfo).toEqual({
+			kind: 'spill',
+			anchorRef: 'Sheet1!A1',
+			ref: 'A1:A3',
+			isAnchor: false,
+		})
+	})
+
+	test('fillFormula patches materialized formula bindings in cached analysis', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		addSpillGroup(sheet)
+		expect(analyzeWorkbook(wb).formulas.get(cellKey(0, 0, 0))?.formula).toBe('SEQUENCE(3)')
+
+		const result = applyOperation(wb, {
+			op: 'fillFormula',
+			sheet: 'Sheet1',
+			range: 'A2',
+			formula: 'B2*3',
+		})
+		expectOk(result)
+
+		const analysis = analyzeWorkbook(wb)
+		expect(analysis.formulas.get(cellKey(0, 0, 0))).toBeUndefined()
+		expect(analysis.formulas.get(cellKey(0, 1, 0))?.formula).toBe('B2*3')
+		expect(analysis.formulas.get(cellKey(0, 2, 0))).toBeUndefined()
 	})
 
 	test('cell edits reject partial legacy array formula ranges', () => {
@@ -1709,6 +1991,36 @@ describe('applyOperation', () => {
 		expect(sheet.conditionalFormats.at(-1)).toEqual({
 			sqref: 'C3',
 			rules: [{ type: 'expression', formulas: ['C3>0'] }],
+		})
+		expect(result.value.recalcRequired).toBe(false)
+	})
+
+	test('copyRange format-only paste preserves formula binding metadata on target members', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		const sourceStyle = wb.styles.register({ numberFormat: '$#,##0.00' })
+		sheet.cells.set(0, 1, { value: numberValue(12), formula: null, styleId: sourceStyle })
+		addSpillGroup(sheet)
+
+		const result = applyOperation(wb, {
+			op: 'copyRange',
+			sheet: 'Sheet1',
+			source: 'B1',
+			target: 'A2',
+			mode: 'formats',
+		})
+		expectOk(result)
+
+		expect(sheet.cells.get(1, 0)).toEqual({
+			value: numberValue(2),
+			formula: null,
+			styleId: sourceStyle,
+			formulaInfo: {
+				kind: 'spill',
+				anchorRef: 'Sheet1!A1',
+				ref: 'A1:A3',
+				isAnchor: false,
+			},
 		})
 		expect(result.value.recalcRequired).toBe(false)
 	})

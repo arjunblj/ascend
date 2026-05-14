@@ -3305,6 +3305,51 @@ describe('AscendWorkbook', () => {
 		])
 	})
 
+	test('formula metadata exposes workbook-qualified 3D refs as external sheet spans', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setFormula',
+				sheet: 'Sheet1',
+				ref: 'A1',
+				formula: '=SUM([Book.xlsx]Sheet1:Sheet3!A1)',
+			},
+		])
+		expect(wb.formula('Sheet1!A1')?.references).toEqual([
+			{
+				kind: 'cell',
+				text: '[Book.xlsx]Sheet1:Sheet3!A1',
+				scope: {
+					kind: 'externalSheetSpan',
+					workbook: 'Book.xlsx',
+					startSheet: 'Sheet1',
+					endSheet: 'Sheet3',
+				},
+			},
+		])
+
+		wb.apply([
+			{
+				op: 'setFormula',
+				sheet: 'Sheet1',
+				ref: 'A2',
+				formula: "=SUM('C:/tmp/[Book.xlsx]Sheet1:Sheet3'!A1:B2)",
+			},
+		])
+		expect(wb.formula('Sheet1!A2')?.references).toEqual([
+			{
+				kind: 'range',
+				text: "'C:/tmp/[Book.xlsx]Sheet1:Sheet3'!A1:B2",
+				scope: {
+					kind: 'externalSheetSpan',
+					workbook: 'C:/tmp/Book.xlsx',
+					startSheet: 'Sheet1',
+					endSheet: 'Sheet3',
+				},
+			},
+		])
+	})
+
 	test('formula and cell inspection expose formula binding metadata', async () => {
 		const bytes = makeSyntheticXlsx({
 			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

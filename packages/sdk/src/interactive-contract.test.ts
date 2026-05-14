@@ -10,7 +10,7 @@ import {
 	sqrefIntersects,
 } from '@ascend/core'
 import { dateToSerial } from '@ascend/formulas'
-import { dateValue, errorValue, numberValue } from '@ascend/schema'
+import { dateValue, errorValue, numberValue, richTextValue } from '@ascend/schema'
 import type {
 	InteractiveViewportCell,
 	InteractiveViewportPatch,
@@ -2907,6 +2907,40 @@ describe('interactive client contract', () => {
 		expect(wb.sheet('Sheet1')?.cell('A1')?.value).toEqual(dateValue(serial))
 	})
 
+	test('journal inverse ops restore supported rich-text formula caches exactly', () => {
+		const wb = AscendWorkbook.create()
+		const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+		if (!sheet) throw new Error('missing sheet')
+		sheet.cells.set(0, 0, {
+			value: richTextValue([
+				{ text: 'Hello ', bold: true },
+				{ text: 'world', italic: true, color: 'FF0000' },
+			]),
+			formula: '"Hello world"',
+			styleId: DEFAULT_STYLE_ID,
+		})
+
+		const changed = wb.apply(
+			[{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'plain' }] }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(true)
+		expect(changed.journal?.issues).toEqual([])
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(wb.sheet('Sheet1')?.cell('A1')?.formula).toBe('"Hello world"')
+		expect(wb.sheet('Sheet1')?.cell('A1')?.value).toEqual(
+			richTextValue([
+				{ text: 'Hello ', bold: true },
+				{ text: 'world', italic: true, color: 'FF0000' },
+			]),
+		)
+	})
+
 	test('journals mark unsupported formula cache values lossy', () => {
 		const wb = AscendWorkbook.create()
 		const sheet = wb.getWorkbookModel().getSheet('Sheet1')
@@ -2932,6 +2966,34 @@ describe('interactive client contract', () => {
 		})
 		expect(changed.journal?.inverseOps).toEqual([
 			{ op: 'setFormula', sheet: 'Sheet1', ref: 'A1', formula: '1/0' },
+		])
+	})
+
+	test('journals keep unsupported rich-text formula caches lossy', () => {
+		const wb = AscendWorkbook.create()
+		const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+		if (!sheet) throw new Error('missing sheet')
+		sheet.cells.set(0, 0, {
+			value: richTextValue([{ text: 'Imported', fontName: 'Aptos', fontSize: 11 }]),
+			formula: '"Imported"',
+			styleId: DEFAULT_STYLE_ID,
+		})
+
+		const changed = wb.apply(
+			[{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'plain' }] }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(false)
+		expect(changed.journal?.issues).toContainEqual({
+			code: 'LOSSY_INVERSE',
+			message: 'Formula cache for Sheet1!A1 cannot be restored with public operations',
+			refs: ['Sheet1!A1'],
+		})
+		expect(changed.journal?.inverseOps).toEqual([
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'A1', formula: '"Imported"' },
 		])
 	})
 

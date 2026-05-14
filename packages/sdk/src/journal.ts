@@ -4140,20 +4140,9 @@ function inverseCellOps(cells: readonly MutationJournalCellPreimage[]): {
 			continue
 		}
 		if (cell.formula) {
-			const input = cellValueToInput(cell.value, cell.dateSystem ?? '1900')
-			if (input.supported) {
-				inverseOps.push({
-					op: 'setCells',
-					sheet: cell.sheet,
-					updates: [{ ref: cell.ref, value: input.value }],
-				})
-			} else {
-				issues.push({
-					code: 'LOSSY_INVERSE',
-					message: `Formula cache for ${cell.sheet}!${cell.ref} cannot be restored with public operations`,
-					refs: [`${cell.sheet}!${cell.ref}`],
-				})
-			}
+			const cacheRestore = formulaCacheRestoreOps(cell)
+			inverseOps.push(...cacheRestore.inverseOps)
+			issues.push(...cacheRestore.issues)
 			inverseOps.push({
 				op: 'setFormula',
 				sheet: cell.sheet,
@@ -4192,6 +4181,44 @@ function inverseCellOps(cells: readonly MutationJournalCellPreimage[]): {
 		inverseOps.push({ op: 'setCells', sheet, updates })
 	}
 	return { inverseOps, issues }
+}
+
+function formulaCacheRestoreOps(cell: MutationJournalCellPreimage): {
+	readonly inverseOps: readonly Operation[]
+	readonly issues: readonly MutationJournalIssue[]
+} {
+	const input = cellValueToInput(cell.value, cell.dateSystem ?? '1900')
+	if (input.supported) {
+		return {
+			inverseOps: [
+				{
+					op: 'setCells',
+					sheet: cell.sheet,
+					updates: [{ ref: cell.ref, value: input.value }],
+				},
+			],
+			issues: [],
+		}
+	}
+	if (cell.value.kind === 'richText') {
+		const runs = richTextRunsToOperationRuns(cell.value.runs)
+		if (runs.supported) {
+			return {
+				inverseOps: [{ op: 'setRichText', sheet: cell.sheet, ref: cell.ref, runs: runs.runs }],
+				issues: [],
+			}
+		}
+	}
+	return {
+		inverseOps: [],
+		issues: [
+			{
+				code: 'LOSSY_INVERSE',
+				message: `Formula cache for ${cell.sheet}!${cell.ref} cannot be restored with public operations`,
+				refs: [`${cell.sheet}!${cell.ref}`],
+			},
+		],
+	}
 }
 
 function richTextRunsToOperationRuns(runs: Extract<CellValue, { kind: 'richText' }>['runs']):

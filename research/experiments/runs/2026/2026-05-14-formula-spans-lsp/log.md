@@ -33,11 +33,20 @@ Inspected local implementation:
 
 Updated the ignored probe `research/experiments/runs/2026/2026-05-14-formula-spans-lsp/probes/formula-token-spans.ts`. It evaluates formulas with structured refs, nested `IF`, sheet spans, external workbook sheet spans, `XLOOKUP`, `LET`, and malformed structured refs. For each case it records parse status, token spans, reference-at-cursor results, signature help, completions, diagnostics, and F4-cycle behavior.
 
+Cycle 13 folded the first production piece into `packages/sdk/src/formula-edit.ts`:
+
+- Added `formulaHover(formula, cursor)` for diagnostic, reference, function, and token hover payloads.
+- Added `formulaCodeActions(formula, cursor, options)` for reference cycling and reference insertion/replacement edits.
+- Extended `formulaAssist` with `hover` and `codeActions`, so API/MCP callers that already use formula assist receive LSP-style primitives without a new endpoint.
+- Exported the new helpers and types from `packages/sdk/src/index.ts`.
+
 Validation commands:
 
 ```bash
 bun run research/experiments/runs/2026/2026-05-14-formula-spans-lsp/probes/formula-token-spans.ts
 bun test packages/sdk/src/formula-edit.test.ts
+bunx biome check packages/sdk/src/formula-edit.ts packages/sdk/src/formula-edit.test.ts packages/sdk/src/index.ts
+bunx tsc --build
 ```
 
 ## Results
@@ -62,7 +71,8 @@ Probe details:
 - `=LET(total,SUM(A2:A10),total/COUNT(A2:A10))` showed LET and nested function signature help, but `total` remained a plain `Name` token with no binding role.
 - `='[Budget.xlsx]Jan:Mar'!$B$2:$C$9` parsed as a `sheetSpanRef`, and the SDK could select the full workbook-qualified 3D range.
 - `=SUM(Table1[[#Totals],[Amount])` produced a structured-reference diagnostic at the bracketed span plus a parse error at EOF.
-- Targeted validation passed: `bun test packages/sdk/src/formula-edit.test.ts` ran 15 tests with 0 failures.
+- Initial targeted validation passed: `bun test packages/sdk/src/formula-edit.test.ts` ran 15 tests with 0 failures.
+- Cycle 13 production validation passed: `bun test packages/sdk/src/formula-edit.test.ts` ran 17 tests with 0 failures, Biome passed for touched files, and `bunx tsc --build` passed.
 
 ## Confidence
 
@@ -70,7 +80,7 @@ High for promoting current SDK formula-edit helpers as product/DX language-servi
 
 ## Fold-in decision
 
-Promote to the product/DX loop now: expose formula language-service primitives in CLI/API/MCP for agents and UI.
+Promote to the product/DX loop now. Cycle 13 folded hover and code-action primitives into the SDK and into the existing `formulaAssist` payload used by API/MCP callers.
 
 Promote to the correctness loop for a scoped AST span design: add source ranges and binding-role tests before implementing rename/code actions.
 

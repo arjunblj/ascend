@@ -2,10 +2,12 @@ import { describe, expect, test } from 'bun:test'
 import {
 	cycleFormulaReferenceMode,
 	formulaAssist,
+	formulaCodeActions,
 	formulaDiagnostics,
 	formulaFunctionCompletions,
 	formulaFunctionSignature,
 	formulaFunctionSignatureHelp,
+	formulaHover,
 	formulaTokenRanges,
 	insertFormulaReference,
 	referenceAtCursor,
@@ -25,11 +27,61 @@ describe('formula editing utilities', () => {
 
 		expect(result.diagnostics.parseOk).toBe(false)
 		expect(result.activeReference).toMatchObject({ text: 'A1:B2', kind: 'range' })
+		expect(result.hover).toMatchObject({ kind: 'reference', label: 'A1:B2' })
 		expect(result.completions.some((completion) => completion.name === 'SUM')).toBe(true)
 		expect(result.signature?.name).toBe('SUM')
 		expect(result.signatureHelp?.signature.name).toBe('SUM')
+		expect(result.codeActions).toContainEqual(
+			expect.objectContaining({
+				title: 'Cycle reference absolute/relative mode',
+				kind: 'refactor.rewrite',
+			}),
+		)
+		expect(result.codeActions).toContainEqual(
+			expect.objectContaining({
+				title: 'Replace reference with C1',
+				kind: 'quickfix',
+			}),
+		)
 		expect(result.cycle).toMatchObject({ formula: '=SUM(A1:$B$2', changed: true })
 		expect(result.insertion).toMatchObject({ formula: '=SUM(C1', replaced: { text: 'A1:B2' } })
+	})
+
+	test('returns formula hover and code actions for LSP-style consumers', () => {
+		expect(formulaHover('=SUM(A1:B2)', 2)).toMatchObject({
+			kind: 'function',
+			label: 'SUM',
+			signature: { name: 'SUM' },
+			start: 1,
+			end: 4,
+		})
+		expect(formulaHover('=SUM(A1:B2)', 7)).toMatchObject({
+			kind: 'reference',
+			label: 'A1:B2',
+			reference: { kind: 'range' },
+		})
+		expect(formulaHover('=SUM(Table1[[#Totals],[Amount])', 11)).toMatchObject({
+			kind: 'diagnostic',
+			label: 'formula-structured-reference-error',
+		})
+
+		const actions = formulaCodeActions('=SUM(A1:B2)', 9, {
+			reference: 'C1:D2',
+			replaceReferenceAtCursor: true,
+			cycleReference: true,
+		})
+		expect(actions).toContainEqual(
+			expect.objectContaining({
+				title: 'Cycle reference absolute/relative mode',
+				edit: { formula: '=SUM(A1:$B$2)', cursor: 12 },
+			}),
+		)
+		expect(actions).toContainEqual(
+			expect.objectContaining({
+				title: 'Replace reference with C1:D2',
+				edit: { formula: '=SUM(C1:D2)', cursor: 10 },
+			}),
+		)
 	})
 
 	test('finds cell, range, sheet-qualified, structured, and spill references at the cursor', () => {

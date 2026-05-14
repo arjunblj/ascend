@@ -118,11 +118,46 @@ export interface FormulaAssistResult {
 	readonly diagnostics: FormulaDiagnosticsResult
 	readonly tokens: readonly FormulaTokenRange[]
 	readonly activeReference: FormulaReferenceRange | null
+	readonly hover: FormulaHoverInfo | null
 	readonly completions: readonly FormulaFunctionCompletion[]
 	readonly signature: FormulaFunctionSignature | null
 	readonly signatureHelp: FormulaFunctionSignatureHelp | null
+	readonly codeActions: readonly FormulaCodeAction[]
 	readonly cycle: CycleReferenceResult | null
 	readonly insertion: InsertFormulaReferenceResult | null
+}
+
+export type FormulaHoverKind = 'diagnostic' | 'reference' | 'function' | 'token'
+
+export interface FormulaHoverInfo {
+	readonly kind: FormulaHoverKind
+	readonly label: string
+	readonly contents: readonly string[]
+	readonly start: number
+	readonly end: number
+	readonly reference?: FormulaReferenceRange
+	readonly signature?: FormulaFunctionSignature
+	readonly diagnostic?: FormulaDiagnostic
+	readonly token?: FormulaTokenRange
+}
+
+export interface FormulaCodeActionOptions {
+	readonly reference?: string
+	readonly replaceReferenceAtCursor?: boolean
+	readonly cycleReference?: boolean
+}
+
+export interface FormulaCodeAction {
+	readonly title: string
+	readonly kind: 'quickfix' | 'refactor.rewrite' | 'source.insert'
+	readonly start: number
+	readonly end: number
+	readonly edit: {
+		readonly formula: string
+		readonly cursor: number
+	}
+	readonly reference?: FormulaReferenceRange
+	readonly diagnosticCodes?: readonly FormulaDiagnostic['code'][]
 }
 
 export interface FormulaFunctionSignatureHelp {
@@ -264,6 +299,7 @@ export function formulaAssist(
 		diagnostics: formulaDiagnostics(formula),
 		tokens: formulaTokenRanges(formula),
 		activeReference: cursor === null ? null : referenceAtCursor(formula, cursor),
+		hover: cursor === null ? null : formulaHover(formula, cursor),
 		completions:
 			options.prefix === undefined
 				? []
@@ -272,6 +308,14 @@ export function formulaAssist(
 					}),
 		signature: options.functionName ? formulaFunctionSignature(options.functionName) : null,
 		signatureHelp: cursor === null ? null : formulaFunctionSignatureHelp(formula, cursor),
+		codeActions:
+			cursor === null
+				? []
+				: formulaCodeActions(formula, cursor, {
+						...(options.reference ? { reference: options.reference } : {}),
+						replaceReferenceAtCursor: options.replaceReferenceAtCursor === true,
+						cycleReference: options.cycleReference === true,
+					}),
 		cycle:
 			cursor !== null && options.cycleReference === true
 				? cycleFormulaReferenceMode(formula, cursor)
@@ -283,6 +327,105 @@ export function formulaAssist(
 					})
 				: null,
 	}
+}
+
+export function formulaHover(formula: string, cursor: number): FormulaHoverInfo | null {
+	const clampedCursor = Math.max(0, Math.min(formula.length, cursor))
+	const diagnostic = formulaDiagnostics(formula).diagnostics.find(
+		(entry) => clampedCursor >= entry.start && clampedCursor <= entry.end,
+	)
+	if (diagnostic) {
+		return {
+			kind: 'diagnostic',
+			label: diagnostic.code,
+			contents: [diagnostic.message],
+			start: diagnostic.start,
+			end: diagnostic.end,
+			diagnostic,
+		}
+	}
+	const reference = referenceAtCursor(formula, clampedCursor)
+	if (reference) {
+		return {
+			kind: 'reference',
+			label: reference.text,
+			contents: [`${reference.kind} reference`, `Range: ${reference.start}-${reference.end}`],
+			start: reference.start,
+			end: reference.end,
+			reference,
+		}
+	}
+	const signatureHelp = formulaFunctionSignatureHelp(formula, clampedCursor)
+	if (signatureHelp) {
+		const parameter = signatureHelp.signature.parameters[signatureHelp.activeParameter]
+		return {
+			kind: 'function',
+			label: signatureHelp.signature.name,
+			contents: [
+				signatureHelp.signature.label,
+				parameter ? `Active parameter: ${parameter.label}` : 'Active parameter: variadic',
+			],
+			start: signatureHelp.callStart,
+			end: signatureHelp.callEnd,
+			signature: signatureHelp.signature,
+		}
+	}
+	const token = formulaTokenRanges(formula).find(
+		(entry) => clampedCursor >= entry.start && clampedCursor <= entry.end,
+	)
+	if (!token || token.className === 'whitespace') return null
+	const signature =
+		token.type === TokenType.Function || token.className === 'function'
+			? formulaFunctionSignature(token.text)
+			: null
+	return {
+		kind: signature ? 'function' : 'token',
+		label: token.text,
+		contents: signature ? [signature.label] : [`${token.className} token`],
+		start: token.start,
+		end: token.end,
+		token,
+		...(signature ? { signature } : {}),
+	}
+}
+
+export function formulaCodeActions(
+	formula: string,
+	cursor: number,
+	options: FormulaCodeActionOptions = {},
+): FormulaCodeAction[] {
+	const clampedCursor = Math.max(0, Math.min(formula.length, cursor))
+	const actions: FormulaCodeAction[] = []
+	const activeReference = referenceAtCursor(formula, clampedCursor)
+	if (options.cycleReference === true) {
+		const cycled = cycleFormulaReferenceMode(formula, clampedCursor)
+		if (cycled.changed) {
+			actions.push({
+				title: 'Cycle reference absolute/relative mode',
+				kind: 'refactor.rewrite',
+				start: activeReference?.start ?? clampedCursor,
+				end: activeReference?.end ?? clampedCursor,
+				edit: { formula: cycled.formula, cursor: cycled.cursor },
+				...(cycled.reference ? { reference: cycled.reference } : {}),
+			})
+		}
+	}
+	if (options.reference) {
+		const inserted = insertFormulaReference(formula, clampedCursor, options.reference, {
+			replaceReferenceAtCursor: options.replaceReferenceAtCursor === true,
+		})
+		actions.push({
+			title: inserted.replaced
+				? `Replace reference with ${options.reference}`
+				: `Insert reference ${options.reference}`,
+			kind: inserted.replaced ? 'quickfix' : 'source.insert',
+			start: inserted.replaced?.start ?? clampedCursor,
+			end: inserted.replaced?.end ?? clampedCursor,
+			edit: { formula: inserted.formula, cursor: inserted.cursor },
+			...(inserted.replaced ? { reference: inserted.replaced } : {}),
+		})
+	}
+	return actions
 }
 
 export function formulaFunctionSignature(name: string): FormulaFunctionSignature | null {

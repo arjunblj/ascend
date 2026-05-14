@@ -568,6 +568,7 @@ const BYTES_IS_CLOSE = bytesLiteral('</is>')
 const BYTES_CANONICAL_INLINE_STRING_PREFIX = bytesLiteral('" t="inlineStr"><is><t>')
 const BYTES_CANONICAL_INLINE_STRING_SUFFIX = bytesLiteral('</t></is></c>')
 const EMPTY_BYTES = new Uint8Array(0)
+const MIN_FULL_SCALAR_NUMBER_SPAN_ROW_BYTES = 512
 
 const VALUES_MODE_ALLOWED_OUTER_TAGS = new Set(['worksheet', 'dimension', 'sheetData'])
 
@@ -1073,6 +1074,11 @@ function parseSimpleFullScalarRowBytes(
 	let cursor = bodyStart
 	let nextCol = 0
 	const rowNumber = row + 1
+	const enablePlainNumberSpan = bodyEnd - bodyStart >= MIN_FULL_SCALAR_NUMBER_SPAN_ROW_BYTES
+	let pendingNumberCol = -1
+	let pendingNumberValue = 0
+	let numberSpanStartCol = -1
+	let numberSpanValues: number[] | undefined
 	const out: SimpleValuesCellOut = {
 		row,
 		col: 0,
@@ -1084,9 +1090,69 @@ function parseSimpleFullScalarRowBytes(
 		stringHasEntity: false,
 		styleIdx: 0,
 	}
+	const flushNumberSpan = () => {
+		if (numberSpanValues && numberSpanValues.length > 0) {
+			sheet.cells.setPlainNumberSpan(row, numberSpanStartCol, numberSpanValues)
+			numberSpanValues.length = 0
+			numberSpanStartCol = -1
+			pendingNumberCol = -1
+			return
+		}
+		if (pendingNumberCol >= 0) {
+			sheet.cells.setPlainNumber(row, pendingNumberCol, pendingNumberValue)
+			pendingNumberCol = -1
+		}
+	}
+	const appendPlainNumber = (
+		cellRow: number,
+		cellCol: number,
+		value: number,
+		styleIdx: number,
+	): boolean => {
+		if (
+			!enablePlainNumberSpan ||
+			cellRow !== row ||
+			ctx.isDateFormat[styleIdx] ||
+			(ctx.styleIds[styleIdx] ?? DEFAULT_STYLE_ID) !== DEFAULT_STYLE_ID
+		) {
+			return false
+		}
+		if (numberSpanValues && numberSpanValues.length > 0) {
+			if (cellCol === numberSpanStartCol + numberSpanValues.length) {
+				numberSpanValues.push(value)
+				return true
+			}
+			flushNumberSpan()
+		}
+		if (pendingNumberCol >= 0) {
+			if (cellCol === pendingNumberCol + 1) {
+				numberSpanStartCol = pendingNumberCol
+				numberSpanValues = [pendingNumberValue, value]
+				pendingNumberCol = -1
+				return true
+			}
+			flushNumberSpan()
+		}
+		pendingNumberCol = cellCol
+		pendingNumberValue = value
+		return true
+	}
+	const setOrBufferFullScalarCell = (): boolean => {
+		if (
+			out.numberValue !== undefined &&
+			appendPlainNumber(out.row, out.col, out.numberValue, out.styleIdx)
+		) {
+			return true
+		}
+		flushNumberSpan()
+		return setFullScalarCellBytes(sheet, ctx, bytes, out)
+	}
 	while (true) {
 		cursor = skipXmlWhitespaceBytes(bytes, cursor, bodyEnd)
-		if (cursor >= bodyEnd) return true
+		if (cursor >= bodyEnd) {
+			flushNumberSpan()
+			return true
+		}
 		const plainValueNext = parseCanonicalPlainValueCellBytes(
 			bytes,
 			cursor,
@@ -1098,7 +1164,7 @@ function parseSimpleFullScalarRowBytes(
 			rowIndexAttr,
 		)
 		if (plainValueNext !== -1) {
-			if (!setFullScalarCellBytes(sheet, ctx, bytes, out)) return false
+			if (!setOrBufferFullScalarCell()) return false
 			nextCol = out.col + 1
 			cursor = plainValueNext
 			continue
@@ -1112,7 +1178,7 @@ function parseSimpleFullScalarRowBytes(
 			out,
 		)
 		if (omittedRefNext !== -1) {
-			if (!setFullScalarCellBytes(sheet, ctx, bytes, out)) return false
+			if (!setOrBufferFullScalarCell()) return false
 			nextCol = out.col + 1
 			cursor = omittedRefNext
 			continue
@@ -1127,7 +1193,7 @@ function parseSimpleFullScalarRowBytes(
 			out,
 		)
 		if (canonicalNext !== -1) {
-			if (!setFullScalarCellBytes(sheet, ctx, bytes, out)) return false
+			if (!setOrBufferFullScalarCell()) return false
 			nextCol = out.col + 1
 			cursor = canonicalNext
 			continue

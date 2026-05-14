@@ -1873,12 +1873,26 @@ function journalCopyRange(
 		? cellEditPreimages(workbook, targetSheet, targetRefs)
 		: cellPreimages(workbook, targetSheet, targetRefs)
 	const { inverseOps: cellInverseOps, issues: cellIssues } = copyRangeRestoration(cells, mode)
+	const metadataRestoration =
+		mode === 'all'
+			? copyRangeAllMetadataRestoration(
+					workbook,
+					op.sheet,
+					parseRange(op.source),
+					targetSheet,
+					targetRange,
+				)
+			: EMPTY_METADATA_RESTORATION
 	return {
 		opIndex,
 		op,
-		inverseOps: cellInverseOps,
-		preimages: [{ kind: 'cells', cells }],
-		issues: [...cellIssues, ...copyRangeMetadataIssues(workbook, op, targetRange)],
+		inverseOps: [...cellInverseOps, ...metadataRestoration.inverseOps],
+		preimages: [{ kind: 'cells', cells }, ...metadataRestoration.preimages],
+		issues: [
+			...cellIssues,
+			...metadataRestoration.issues,
+			...copyRangeMetadataIssues(workbook, op, targetRange),
+		],
 	}
 }
 
@@ -1971,15 +1985,20 @@ function journalMoveRange(
 		targetCells,
 		mode,
 	)
+	const metadataRestoration =
+		mode === 'all'
+			? moveRangeAllMetadataRestoration(workbook, op.sheet, sourceRange, targetSheet, targetRange)
+			: EMPTY_METADATA_RESTORATION
 	const cells = uniqueCellPreimages([...targetCells, ...sourceCells])
 	return {
 		opIndex,
 		op,
-		inverseOps: [...targetInverseOps, ...sourceInverseOps],
-		preimages: [{ kind: 'cells', cells }],
+		inverseOps: [...targetInverseOps, ...sourceInverseOps, ...metadataRestoration.inverseOps],
+		preimages: [{ kind: 'cells', cells }, ...metadataRestoration.preimages],
 		issues: [
 			...targetIssues,
 			...sourceIssues,
+			...metadataRestoration.issues,
 			...moveRangeOverlapIssues(op, sourceRange, targetRange),
 			...moveRangeMetadataIssues(workbook, op, sourceRange, targetRange),
 			...(copyRangeOverwritesFormulas(mode)
@@ -4330,6 +4349,81 @@ function moveRangeSourceRestoration(
 	}
 }
 
+const EMPTY_METADATA_RESTORATION: {
+	readonly inverseOps: readonly Operation[]
+	readonly preimages: readonly MutationJournalPreimage[]
+	readonly issues: readonly MutationJournalIssue[]
+} = { inverseOps: [], preimages: [], issues: [] }
+
+function copyRangeAllMetadataRestoration(
+	workbook: Workbook,
+	sourceSheetName: string,
+	sourceRange: RangeRef,
+	targetSheetName: string,
+	targetRange: RangeRef,
+): {
+	readonly inverseOps: readonly Operation[]
+	readonly preimages: readonly MutationJournalPreimage[]
+	readonly issues: readonly MutationJournalIssue[]
+} {
+	const targetRefs = refsInParsedRange(targetRange)
+	const targetHyperlinks = hyperlinkPreimages(workbook, targetSheetName, targetRefs)
+	const validations = validationTransferRestoration(
+		workbook,
+		sourceSheetName,
+		sourceRange,
+		targetSheetName,
+		targetRange,
+		false,
+	)
+	return {
+		inverseOps: [...restoreHyperlinkOps(targetHyperlinks), ...validations.inverseOps],
+		preimages: [
+			...targetHyperlinks.map((hyperlink) => ({ kind: 'hyperlink' as const, hyperlink })),
+			...validations.preimages,
+		],
+		issues: validations.issues,
+	}
+}
+
+function moveRangeAllMetadataRestoration(
+	workbook: Workbook,
+	sourceSheetName: string,
+	sourceRange: RangeRef,
+	targetSheetName: string,
+	targetRange: RangeRef,
+): {
+	readonly inverseOps: readonly Operation[]
+	readonly preimages: readonly MutationJournalPreimage[]
+	readonly issues: readonly MutationJournalIssue[]
+} {
+	const sourceRefs = refsInParsedRange(sourceRange)
+	const targetRefs = refsInParsedRange(targetRange)
+	const sourceHyperlinks = hyperlinkPreimages(workbook, sourceSheetName, sourceRefs)
+	const targetHyperlinks = hyperlinkPreimages(workbook, targetSheetName, targetRefs)
+	const validations = validationTransferRestoration(
+		workbook,
+		sourceSheetName,
+		sourceRange,
+		targetSheetName,
+		targetRange,
+		true,
+	)
+	return {
+		inverseOps: [
+			...restoreHyperlinkOps(targetHyperlinks),
+			...restoreHyperlinkOps(sourceHyperlinks),
+			...validations.inverseOps,
+		],
+		preimages: [
+			...targetHyperlinks.map((hyperlink) => ({ kind: 'hyperlink' as const, hyperlink })),
+			...sourceHyperlinks.map((hyperlink) => ({ kind: 'hyperlink' as const, hyperlink })),
+			...validations.preimages,
+		],
+		issues: validations.issues,
+	}
+}
+
 function copyRangeMetadataIssues(
 	workbook: Workbook,
 	op: Extract<Operation, { op: 'copyRange' }>,
@@ -4341,8 +4435,8 @@ function copyRangeMetadataIssues(
 	const targetSheet = workbook.getSheet(op.targetSheet ?? op.sheet)
 	if (!sourceSheet || !targetSheet) return []
 	const sourceRange = parseRange(op.source)
-	const sourceHasMetadata = copyRangeModeTouchesMetadata(sourceSheet, sourceRange, mode)
-	const targetHasMetadata = copyRangeModeTouchesMetadata(targetSheet, targetRange, mode)
+	const sourceHasMetadata = copyRangeModeTouchesUnrestorableMetadata(sourceSheet, sourceRange, mode)
+	const targetHasMetadata = copyRangeModeTouchesUnrestorableMetadata(targetSheet, targetRange, mode)
 	if (!sourceHasMetadata && !targetHasMetadata) return []
 	return [
 		{
@@ -4380,8 +4474,8 @@ function moveRangeMetadataIssues(
 	const sourceSheet = workbook.getSheet(op.sheet)
 	const targetSheet = workbook.getSheet(op.targetSheet ?? op.sheet)
 	if (!sourceSheet || !targetSheet) return []
-	const sourceHasMetadata = copyRangeModeTouchesMetadata(sourceSheet, sourceRange, mode)
-	const targetHasMetadata = copyRangeModeTouchesMetadata(targetSheet, targetRange, mode)
+	const sourceHasMetadata = copyRangeModeTouchesUnrestorableMetadata(sourceSheet, sourceRange, mode)
+	const targetHasMetadata = copyRangeModeTouchesUnrestorableMetadata(targetSheet, targetRange, mode)
 	if (!sourceHasMetadata && !targetHasMetadata) return []
 	return [
 		{
@@ -4701,7 +4795,11 @@ function formulaRefReferencesMovedRange(
 	}
 }
 
-function copyRangeModeTouchesMetadata(sheet: Sheet, range: RangeRef, mode: string): boolean {
+function copyRangeModeTouchesUnrestorableMetadata(
+	sheet: Sheet,
+	range: RangeRef,
+	mode: string,
+): boolean {
 	if (mode === 'formats' || mode === 'styles') {
 		return (
 			sheet.merges.some((merge) => rangesOverlap(merge, range)) ||
@@ -4709,13 +4807,11 @@ function copyRangeModeTouchesMetadata(sheet: Sheet, range: RangeRef, mode: strin
 			sheet.x14ConditionalFormats.some((format) => sqrefOverlaps(format.sqref, range))
 		)
 	}
+	if (mode !== 'all') return false
 	return (
 		hasMapRefInRange(sheet.comments, range) ||
-		hasMapRefInRange(sheet.hyperlinks, range) ||
 		sheet.threadedComments.some((comment) => refInRange(comment.ref, range)) ||
 		sheet.merges.some((merge) => rangesOverlap(merge, range)) ||
-		sheet.dataValidations.some((validation) => sqrefOverlaps(validation.sqref, range)) ||
-		sheet.x14DataValidations.some((validation) => sqrefOverlaps(validation.sqref, range)) ||
 		sheet.conditionalFormats.some((format) => sqrefOverlaps(format.sqref, range)) ||
 		sheet.x14ConditionalFormats.some((format) => sqrefOverlaps(format.sqref, range))
 	)

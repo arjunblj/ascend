@@ -3829,8 +3829,8 @@ describe('interactive client contract', () => {
 		expect(changed.journal?.issues).toContainEqual({
 			code: 'LOSSY_INVERSE',
 			message:
-				'copyRange metadata transfer for Sheet1!A1 cannot be fully restored with public operations',
-			refs: ['Sheet1!A1', 'Sheet1!D1'],
+				'Transferred x14 data validation metadata on Sheet1!A1 cannot be restored with public operations',
+			refs: ['Sheet1!x14Validation:A1:A1:0'],
 		})
 		expect(
 			wb
@@ -3838,6 +3838,64 @@ describe('interactive client contract', () => {
 				.getSheet('Sheet1')
 				?.x14DataValidations.some((validation) => validation.sqref === 'D1'),
 		).toBe(true)
+	})
+
+	test('copyRange all journals restore simple hyperlinks and validations exactly', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'Source' },
+					{ ref: 'D1', value: 'Target' },
+				],
+			},
+			{
+				op: 'setHyperlink',
+				sheet: 'Sheet1',
+				ref: 'A1',
+				url: 'https://source.example',
+				display: 'Source',
+			},
+			{
+				op: 'setDataValidation',
+				sheet: 'Sheet1',
+				range: 'A1:A1',
+				rule: {
+					type: 'whole',
+					operator: 'between',
+					formula1: '1',
+					formula2: '10',
+					allowBlank: true,
+					showErrorMessage: true,
+				},
+			},
+		])
+		const before = journalComparableState(wb)
+
+		const changed = wb.apply(
+			[{ op: 'copyRange', sheet: 'Sheet1', source: 'A1', target: 'D1', mode: 'all' }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(true)
+		expect(changed.journal?.issues).toEqual([])
+		expect(wb.sheet('Sheet1')?.getHyperlinks()).toContainEqual({
+			ref: 'D1',
+			target: 'https://source.example',
+			display: 'Source',
+		})
+		expect(wb.sheet('Sheet1')?.dataValidations).toEqual([
+			expect.objectContaining({ sqref: 'A1:A1', type: 'whole' }),
+			expect.objectContaining({ sqref: 'D1', type: 'whole' }),
+		])
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(journalComparableState(wb)).toEqual(before)
 	})
 
 	test('copyRange validation journals restore appended target validations exactly', () => {
@@ -4381,6 +4439,65 @@ describe('interactive client contract', () => {
 			tooltip: 'target tip',
 		})
 		expect(wb.sheet('Sheet1')?.cell('G1')?.formula).toBe('A1+D1')
+	})
+
+	test('moveRange all journals restore simple hyperlinks and validations exactly', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'Source' },
+					{ ref: 'D1', value: 'Target' },
+				],
+			},
+			{
+				op: 'setHyperlink',
+				sheet: 'Sheet1',
+				ref: 'A1',
+				url: 'https://source.example',
+				display: 'Source',
+			},
+			{
+				op: 'setDataValidation',
+				sheet: 'Sheet1',
+				range: 'A1:A1',
+				rule: {
+					type: 'whole',
+					operator: 'between',
+					formula1: '1',
+					formula2: '10',
+					allowBlank: true,
+					showErrorMessage: true,
+				},
+			},
+		])
+		const before = journalComparableState(wb)
+
+		const changed = wb.apply(
+			[{ op: 'moveRange', sheet: 'Sheet1', source: 'A1', target: 'D1', mode: 'all' }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(true)
+		expect(changed.journal?.issues).toEqual([])
+		expect(wb.sheet('Sheet1')?.getHyperlinks()).toEqual([
+			{
+				ref: 'D1',
+				target: 'https://source.example',
+				display: 'Source',
+			},
+		])
+		expect(wb.sheet('Sheet1')?.dataValidations).toEqual([
+			expect.objectContaining({ sqref: 'D1', type: 'whole' }),
+		])
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(journalComparableState(wb)).toEqual(before)
 	})
 
 	test('moveRange journals mark formula reference rewrites lossy', () => {

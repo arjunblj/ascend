@@ -3409,6 +3409,66 @@ describe('interactive client contract', () => {
 		expect(wb.sheet('Sheet1')?.cell('B3')?.value).toEqual({ kind: 'number', value: 10 })
 	})
 
+	test('sortRange journals stay exact with formula bindings outside sorted rows', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 2 },
+					{ ref: 'A2', value: 1 },
+				],
+			},
+		])
+		const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+		if (!sheet) throw new Error('missing sheet')
+		const masterInfo = {
+			kind: 'shared' as const,
+			sharedIndex: 'sort-outside',
+			isMaster: true,
+			masterRef: 'D1',
+			ref: 'D1:D2',
+		}
+		const memberInfo = {
+			kind: 'shared' as const,
+			sharedIndex: 'sort-outside',
+			isMaster: false,
+			masterRef: 'D1',
+		}
+		sheet.cells.set(0, 3, {
+			value: numberValue(20),
+			formula: 'B1*2',
+			styleId: DEFAULT_STYLE_ID,
+			formulaInfo: masterInfo,
+		})
+		sheet.cells.set(1, 3, {
+			value: numberValue(40),
+			formula: null,
+			styleId: DEFAULT_STYLE_ID,
+			formulaInfo: memberInfo,
+		})
+
+		const changed = wb.apply(
+			[{ op: 'sortRange', sheet: 'Sheet1', range: 'A1:A2', by: [{ column: 'A' }] }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(true)
+		expect(changed.journal?.issues).toEqual([])
+		expect(sheet.cells.get(0, 3)?.formulaInfo).toEqual(masterInfo)
+		expect(sheet.cells.get(1, 3)?.formulaInfo).toEqual(memberInfo)
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(wb.sheet('Sheet1')?.cell('A1')?.value).toEqual({ kind: 'number', value: 2 })
+		expect(wb.sheet('Sheet1')?.cell('A2')?.value).toEqual({ kind: 'number', value: 1 })
+		expect(sheet.cells.get(0, 3)?.formulaInfo).toEqual(masterInfo)
+		expect(sheet.cells.get(1, 3)?.formulaInfo).toEqual(memberInfo)
+	})
+
 	test('journal inverse ops restore simple copyRange target cells and styles', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

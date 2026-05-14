@@ -5804,14 +5804,14 @@ describe('applyOperation', () => {
 	test('sortRange materializes imported shared formulas before sorting', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')
-		sheet.cells.set(0, 0, { value: stringValue('b'), formula: null, styleId: sid })
-		sheet.cells.set(1, 0, { value: stringValue('a'), formula: null, styleId: sid })
+		sheet.cells.set(0, 0, { value: stringValue('a'), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: stringValue('b'), formula: null, styleId: sid })
 		addSharedFormulaGroup(sheet, 0, 3)
 
 		const result = applyOperation(wb, {
 			op: 'sortRange',
 			sheet: 'Sheet1',
-			range: 'A1:A2',
+			range: 'A1:D2',
 			by: [{ column: 'A' }],
 		})
 		expectOk(result)
@@ -5824,12 +5824,13 @@ describe('applyOperation', () => {
 		expect(sheet.cells.get(1, 3)?.formulaInfo).toBeUndefined()
 	})
 
-	test('sortRange only clears formula metadata on the affected sheet', () => {
+	test('sortRange preserves formula metadata outside the sorted rows', () => {
 		const wb = createWorkbook()
 		const source = wb.addSheet('Source')
 		const other = wb.addSheet('Other')
 		source.cells.set(0, 0, { value: stringValue('b'), formula: null, styleId: sid })
 		source.cells.set(1, 0, { value: stringValue('a'), formula: null, styleId: sid })
+		addSharedFormulaGroup(source, 0, 3)
 		other.cells.set(0, 0, {
 			value: numberValue(3),
 			formula: 'SUM(B1:B2)',
@@ -5844,6 +5845,19 @@ describe('applyOperation', () => {
 			by: [{ column: 'A' }],
 		})
 		expect(result.ok).toBe(true)
+		expect(source.cells.get(0, 3)?.formulaInfo).toEqual({
+			kind: 'shared',
+			sharedIndex: '0',
+			isMaster: true,
+			masterRef: 'D1',
+			ref: 'D1:D2',
+		})
+		expect(source.cells.get(1, 3)?.formulaInfo).toEqual({
+			kind: 'shared',
+			sharedIndex: '0',
+			isMaster: false,
+			masterRef: 'D1',
+		})
 		expect(other.cells.get(0, 0)?.formulaInfo).toEqual({ kind: 'array', ref: 'A1:A2' })
 	})
 

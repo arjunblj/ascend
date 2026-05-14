@@ -212,7 +212,16 @@ export function handleSortRange(
 	}
 	const affected = new Set<string>()
 	const sheetsModified = new Set([sheet.name])
-	materializeSheetFormulaBindings(workbook, sheet, sheet.name, affected, sheetsModified)
+	const sortedDataRange = sortRangeDataRange(sheet, range, op.by)
+	if (sortedDataRange) {
+		for (const ref of materializeFormulaBindingGroupsForRangeEdit(
+			workbook,
+			sheet,
+			sortedDataRange,
+		)) {
+			affected.add(ref)
+		}
+	}
 	const sortedAffectedCells = sortRangeAffectedCells(sheet, range, op.by)
 	const sorted = sortSheetRange(workbook, sheet, range, op.by)
 	if (!sorted.ok) return sorted
@@ -617,17 +626,30 @@ function sortRangeAffectedCells(
 	range: RangeRef,
 	specs: Extract<Operation, { op: 'sortRange' }>['by'],
 ): string[] {
-	const startRow = sortRangeHasHeaderRow(sheet, range, specs)
-		? range.start.row + 1
-		: range.start.row
+	const dataRange = sortRangeDataRange(sheet, range, specs)
 	const refs: string[] = []
-	if (startRow > range.end.row) return refs
-	for (let row = startRow; row <= range.end.row; row++) {
-		for (let col = range.start.col; col <= range.end.col; col++) {
+	if (!dataRange) return refs
+	for (let row = dataRange.start.row; row <= dataRange.end.row; row++) {
+		for (let col = dataRange.start.col; col <= dataRange.end.col; col++) {
 			refs.push(toA1({ row, col }))
 		}
 	}
 	return refs
+}
+
+function sortRangeDataRange(
+	sheet: Sheet,
+	range: RangeRef,
+	specs: Extract<Operation, { op: 'sortRange' }>['by'],
+): RangeRef | null {
+	const startRow = sortRangeHasHeaderRow(sheet, range, specs)
+		? range.start.row + 1
+		: range.start.row
+	if (startRow > range.end.row) return null
+	return {
+		start: { row: startRow, col: range.start.col },
+		end: { ...range.end },
+	}
 }
 
 function sortRangeHasHeaderRow(

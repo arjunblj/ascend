@@ -1729,8 +1729,11 @@ function journalSortRange(
 	op: Extract<Operation, { op: 'sortRange' }>,
 	opIndex: number,
 ): DraftJournalEntry {
-	const rangeCells = cellPreimages(workbook, op.sheet, refsInRange(op.range))
-	const formulaBindings = sheetFormulaBindingCellPreimages(workbook, op.sheet)
+	const sheet = workbook.getSheet(op.sheet)
+	const dataRange = sheet ? sortRangeDataRange(sheet, op.range, op.by) : null
+	const refs = dataRange ? refsInParsedRange(dataRange) : []
+	const rangeCells = cellPreimages(workbook, op.sheet, refs)
+	const formulaBindings = formulaBindingOnlyPreimages(workbook, op.sheet, refs)
 	const cells = uniqueCellPreimages([...rangeCells, ...formulaBindings])
 	const { inverseOps: cellInverseOps, issues: cellIssues } = inverseCellOps(cells)
 	return {
@@ -3980,19 +3983,6 @@ function workbookFormulaBindingCellPreimages(workbook: Workbook): MutationJourna
 		cells.push(...cellPreimages(workbook, sheet.name, refs))
 	}
 	return cells
-}
-
-function sheetFormulaBindingCellPreimages(
-	workbook: Workbook,
-	sheetName: string,
-): MutationJournalCellPreimage[] {
-	const sheet = workbook.getSheet(sheetName)
-	if (!sheet || sheet.cells.formulaInfoCellCount() === 0) return []
-	const refs: string[] = []
-	for (const [row, col, cell] of sheet.cells.iterate()) {
-		if (isMaterializedFormulaBindingInfo(cell.formulaInfo)) refs.push(toA1({ row, col }))
-	}
-	return cellPreimages(workbook, sheet.name, refs)
 }
 
 function uniqueCellPreimages(

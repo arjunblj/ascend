@@ -4581,6 +4581,63 @@ describe('interactive client contract', () => {
 		])
 	})
 
+	test('data validation journals mark absent default attributes lossy', () => {
+		const wb = AscendWorkbook.create()
+		const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+		if (!sheet) throw new Error('Sheet1 missing')
+		sheet.dataValidations.push({
+			sqref: 'A1:A1',
+			type: 'list',
+			formula1: '"Open,Closed"',
+		})
+		const before = journalComparableState(wb)
+
+		const changed = wb.apply(
+			[
+				{
+					op: 'setDataValidation',
+					sheet: 'Sheet1',
+					range: 'A1:A1',
+					rule: { type: 'list', formula1: '"Yes,No"' },
+				},
+			],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(false)
+		expect(changed.journal?.issues).toEqual([
+			{
+				code: 'LOSSY_INVERSE',
+				message:
+					'Data validation default attributes allowBlank, showErrorMessage at Sheet1!A1:A1 cannot be restored exactly with public operations',
+				refs: ['Sheet1!A1:A1'],
+			},
+		])
+		expect(changed.journal?.inverseOps).toEqual([
+			{
+				op: 'setDataValidation',
+				sheet: 'Sheet1',
+				range: 'A1:A1',
+				rule: { type: 'list', formula1: '"Open,Closed"' },
+			},
+		])
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(journalComparableState(wb)).not.toEqual(before)
+		expect(wb.sheet('Sheet1')?.dataValidations).toEqual([
+			{
+				sqref: 'A1:A1',
+				type: 'list',
+				allowBlank: true,
+				showErrorMessage: true,
+				formula1: '"Open,Closed"',
+			},
+		])
+	})
+
 	test('journal inverse ops restore simple worksheet auto filters', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

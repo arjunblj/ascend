@@ -2755,6 +2755,17 @@ function dataValidationRuleFromSheet(validation: MutationJournalDataValidationPr
 			refs: [`${validation.sheet}!${validation.range}`],
 		})
 	}
+	const materializedDefaultFields = [
+		source.allowBlank === undefined ? 'allowBlank' : null,
+		source.showErrorMessage === undefined ? 'showErrorMessage' : null,
+	].filter((field): field is string => field !== null)
+	if (materializedDefaultFields.length > 0 && source.source !== 'x14' && source.uid === undefined) {
+		issues.push({
+			code: 'LOSSY_INVERSE',
+			message: `Data validation default attributes ${materializedDefaultFields.join(', ')} at ${validation.sheet}!${validation.range} cannot be restored exactly with public operations`,
+			refs: [`${validation.sheet}!${validation.range}`],
+		})
+	}
 	return {
 		rule: {
 			type: source.type,

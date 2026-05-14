@@ -25,6 +25,7 @@ import {
 	sdkCheckIssueFromVerify,
 } from './check-issues.ts'
 import { formatStyledDisplayCellValue } from './format-helpers.ts'
+import { emptyMutationJournal } from './journal.ts'
 import { type LoadedWorkbookSource, openWorkbookSource } from './load.ts'
 import { inspectRawPackagePart } from './raw-package.ts'
 import { WorkbookReadView } from './read-view.ts'
@@ -1217,6 +1218,7 @@ export class AscendSession {
 		if (ops.length === 0 && options.recalc !== true) {
 			const generations = (this.mutableWorkbook ?? this.session.workbook()).readSnapshotInfo()
 				.generations
+			const journal = options.journal ? emptyMutationJournal() : undefined
 			return {
 				apply: {
 					affectedCells: [],
@@ -1225,6 +1227,7 @@ export class AscendSession {
 					dirtyRegions: [],
 					generations,
 					errors: [],
+					...(journal ? { journal } : {}),
 				},
 				recalc: null,
 				load: {

@@ -388,7 +388,7 @@ export function buildMutationJournal(
 	return mutationJournalFromEntries(entries)
 }
 
-function emptyMutationJournal(): MutationJournal {
+export function emptyMutationJournal(): MutationJournal {
 	return {
 		entries: [],
 		inverseOps: [],

@@ -672,6 +672,7 @@ export class AscendWorkbook extends WorkbookReadView {
 	 */
 	apply(ops: readonly Operation[], options?: ApplyOptions): ApplyResult {
 		if (ops.length === 0) {
+			const journal = maybeBuildMutationJournal(this.wb, ops, options?.journal)
 			return {
 				affectedCells: [],
 				sheetsModified: [],
@@ -679,6 +680,7 @@ export class AscendWorkbook extends WorkbookReadView {
 				dirtyRegions: [],
 				generations: this.currentGenerations(),
 				errors: [],
+				...(journal ? { journal } : {}),
 			}
 		}
 		if (this.loadInfo.isPartial) {
@@ -717,6 +719,7 @@ export class AscendWorkbook extends WorkbookReadView {
 				dirtyRegions: [],
 				generations: this.currentGenerations(),
 				errors: [],
+				...(journal ? { journal } : {}),
 			}
 		}
 		if (!options?.transaction) this.wb = nextWorkbook

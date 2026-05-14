@@ -2763,6 +2763,50 @@ describe('interactive client contract', () => {
 		expect(wb.sheet('Sheet1')?.comment('B2')).toBeUndefined()
 	})
 
+	test('journal requests return exact journals for empty and semantic no-op applies', async () => {
+		const wb = AscendWorkbook.create()
+
+		const empty = wb.apply([], { journal: true })
+		expect(empty.errors).toEqual([])
+		expect(empty.journal).toEqual({
+			entries: [],
+			inverseOps: [],
+			supported: true,
+			exact: true,
+			issues: [],
+		})
+
+		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] }])
+		const beforeNoOp = wb.readSnapshotInfo().generations
+		const noOp = wb.apply(
+			[{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] }],
+			{ journal: true },
+		)
+		expect(noOp).toMatchObject({
+			affectedCells: [],
+			sheetsModified: [],
+			recalcRequired: false,
+			dirtyRegions: [],
+			generations: beforeNoOp,
+			errors: [],
+		})
+		expect(noOp.journal?.supported).toBe(true)
+		expect(noOp.journal?.exact).toBe(true)
+		expect(noOp.journal?.inverseOps).toEqual([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] },
+		])
+
+		const undo = wb.apply(noOp.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(wb.sheet('Sheet1')?.cell('A1')?.value).toEqual({ kind: 'number', value: 1 })
+
+		const session = await AscendSession.open(wb.toBytes(), { mode: 'interactive' })
+		const sessionEmpty = await session.apply([], { journal: true })
+		expect(sessionEmpty.apply.errors).toEqual([])
+		expect(sessionEmpty.apply.journal).toEqual(empty.journal)
+		session.close()
+	})
+
 	test('preview journals restore scalar formula caches without mutating the workbook', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

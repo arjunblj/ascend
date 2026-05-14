@@ -3789,6 +3789,8 @@ describe('interactive client contract', () => {
 		)
 
 		expect(changed.errors).toEqual([])
+		expect(changed.affectedCells).toEqual([])
+		expect(changed.recalcRequired).toBe(false)
 		expect(changed.journal?.supported).toBe(true)
 		expect(changed.journal?.exact).toBe(true)
 		expect(changed.journal?.issues).toEqual([])

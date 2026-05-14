@@ -210,11 +210,11 @@ export function handleClearRange(
 			if (!existing) continue
 
 			const ref = toA1({ row: r, col: c })
-			affected.add(ref)
 
 			switch (op.what) {
 				case 'all':
 					sheet.cells.delete(r, c)
+					affected.add(ref)
 					break
 				case 'values':
 					sheet.cells.set(
@@ -227,9 +227,12 @@ export function handleClearRange(
 							existing.formulaInfo,
 						),
 					)
+					affected.add(ref)
 					break
 				case 'formulas':
+					if (existing.formula === null && existing.formulaInfo === undefined) continue
 					sheet.cells.set(r, c, cell(existing.value, null, existing.styleId))
+					affected.add(ref)
 					break
 				case 'styles':
 					sheet.cells.set(
@@ -242,12 +245,19 @@ export function handleClearRange(
 							existing.formulaInfo,
 						),
 					)
+					affected.add(ref)
 					break
 			}
 		}
 	}
 
-	return ok(patch([...affected], [op.sheet], op.what !== 'styles'))
+	return ok(
+		patch(
+			[...affected],
+			affected.size > 0 ? [op.sheet] : [],
+			op.what !== 'styles' && affected.size > 0,
+		),
+	)
 }
 
 export function handleSetStyle(

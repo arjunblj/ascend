@@ -755,7 +755,11 @@ describe('applyOperation', () => {
 			what: 'formulas',
 		})
 		expectOk(formulas)
-		expect(formulas.value.affectedCells).toEqual(['A2'])
+		expect(formulas.value).toEqual({
+			affectedCells: [],
+			sheetsModified: [],
+			recalcRequired: false,
+		})
 		expect(sheet.cells.get(0, 0)?.formulaInfo).toEqual({
 			kind: 'blockedSpill',
 			anchorRef: 'Sheet1!A1',

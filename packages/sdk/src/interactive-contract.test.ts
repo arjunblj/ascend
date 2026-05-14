@@ -3684,6 +3684,49 @@ describe('interactive client contract', () => {
 		})
 	})
 
+	test('copyRange all journals mark x14 metadata transfer lossy', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'Source' },
+					{ ref: 'D1', value: 'Target' },
+				],
+			},
+		])
+		const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+		if (!sheet) throw new Error('missing sheet')
+		sheet.x14DataValidations.push({
+			index: 0,
+			sqref: 'A1:A1',
+			type: 'list',
+			formula1: '"A,B"',
+		})
+
+		const changed = wb.apply(
+			[{ op: 'copyRange', sheet: 'Sheet1', source: 'A1', target: 'D1', mode: 'all' }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(false)
+		expect(changed.journal?.issues).toContainEqual({
+			code: 'LOSSY_INVERSE',
+			message:
+				'copyRange metadata transfer for Sheet1!A1 cannot be fully restored with public operations',
+			refs: ['Sheet1!A1', 'Sheet1!D1'],
+		})
+		expect(
+			wb
+				.getWorkbookModel()
+				.getSheet('Sheet1')
+				?.x14DataValidations.some((validation) => validation.sqref === 'D1'),
+		).toBe(true)
+	})
+
 	test('copyRange validation journals restore appended target validations exactly', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([
@@ -4000,6 +4043,47 @@ describe('interactive client contract', () => {
 		expect(wb.sheet('Sheet1')?.cell('D1')?.formula).toBe('A1+4')
 		expect(wb.cellStyle('Sheet1!D1')?.numberFormat).toBe('0.0%')
 		expect(wb.sheet('Sheet1')?.cell('G1')?.formula).toBe('SUM(A1:A1)')
+	})
+
+	test('moveRange format journals mark x14 conditional formats lossy', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 5 },
+					{ ref: 'D1', value: 9 },
+				],
+			},
+			{ op: 'setStyle', sheet: 'Sheet1', range: 'A1:A1', style: { numberFormat: '$0' } },
+		])
+		const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+		if (!sheet) throw new Error('missing sheet')
+		sheet.x14ConditionalFormats.push({
+			index: 0,
+			sqref: 'A1:A1',
+			type: 'dataBar',
+			priority: 1,
+			formulas: [],
+			dataBar: { cfvo: [{ type: 'formula', value: 'A1' }] },
+		})
+
+		const changed = wb.apply(
+			[{ op: 'moveRange', sheet: 'Sheet1', source: 'A1', target: 'D1', mode: 'formats' }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(false)
+		expect(changed.journal?.issues).toContainEqual({
+			code: 'LOSSY_INVERSE',
+			message:
+				'moveRange metadata transfer for Sheet1!A1 cannot be fully restored with public operations',
+			refs: ['Sheet1!A1', 'Sheet1!D1'],
+		})
+		expect(wb.getWorkbookModel().getSheet('Sheet1')?.x14ConditionalFormats[0]?.sqref).toBe('D1')
 	})
 
 	test('moveRange validation journals restore source and target validations exactly', () => {

@@ -4373,7 +4373,8 @@ function copyRangeModeTouchesMetadata(sheet: Sheet, range: RangeRef, mode: strin
 	if (mode === 'formats' || mode === 'styles') {
 		return (
 			sheet.merges.some((merge) => rangesOverlap(merge, range)) ||
-			sheet.conditionalFormats.some((format) => sqrefOverlaps(format.sqref, range))
+			sheet.conditionalFormats.some((format) => sqrefOverlaps(format.sqref, range)) ||
+			sheet.x14ConditionalFormats.some((format) => sqrefOverlaps(format.sqref, range))
 		)
 	}
 	return (
@@ -4382,7 +4383,9 @@ function copyRangeModeTouchesMetadata(sheet: Sheet, range: RangeRef, mode: strin
 		sheet.threadedComments.some((comment) => refInRange(comment.ref, range)) ||
 		sheet.merges.some((merge) => rangesOverlap(merge, range)) ||
 		sheet.dataValidations.some((validation) => sqrefOverlaps(validation.sqref, range)) ||
-		sheet.conditionalFormats.some((format) => sqrefOverlaps(format.sqref, range))
+		sheet.x14DataValidations.some((validation) => sqrefOverlaps(validation.sqref, range)) ||
+		sheet.conditionalFormats.some((format) => sqrefOverlaps(format.sqref, range)) ||
+		sheet.x14ConditionalFormats.some((format) => sqrefOverlaps(format.sqref, range))
 	)
 }
 

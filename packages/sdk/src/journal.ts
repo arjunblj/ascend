@@ -1792,6 +1792,10 @@ function journalSortRange(
 		sheet && dataRange
 			? sortRangeDataValidationRestoration(sheet, op, dataRange)
 			: EMPTY_METADATA_RESTORATION
+	const conditionalFormats =
+		sheet && dataRange
+			? sortRangeConditionalFormatRestoration(sheet, op, dataRange)
+			: EMPTY_METADATA_RESTORATION
 	return {
 		opIndex,
 		op,
@@ -1801,16 +1805,19 @@ function journalSortRange(
 			...restoreCommentOps(comments),
 			...restoreHyperlinkOps(hyperlinks),
 			...validations.inverseOps,
+			...conditionalFormats.inverseOps,
 		],
 		preimages: [
 			{ kind: 'cells', cells },
 			...comments.map((comment) => ({ kind: 'comment' as const, comment })),
 			...hyperlinks.map((hyperlink) => ({ kind: 'hyperlink' as const, hyperlink })),
 			...validations.preimages,
+			...conditionalFormats.preimages,
 		],
 		issues: [
 			...cellIssues,
 			...validations.issues,
+			...conditionalFormats.issues,
 			...sortRangeMetadataIssues(workbook, op),
 			...commentRestoreIssues(comments),
 		],
@@ -4237,6 +4244,12 @@ interface SortRangeDataValidationMove {
 	readonly targetRange: string
 }
 
+interface SortRangeConditionalFormatMove {
+	readonly sourceIndex: number
+	readonly source: SheetConditionalFormat
+	readonly targetRange: string
+}
+
 function sortRangeDataValidationRestoration(
 	sheet: Sheet,
 	op: Extract<Operation, { op: 'sortRange' }>,
@@ -4411,6 +4424,105 @@ function sortRangeDataValidationDuplicateIssues(
 	]
 }
 
+function sortRangeConditionalFormatRestoration(
+	sheet: Sheet,
+	op: Extract<Operation, { op: 'sortRange' }>,
+	dataRange: RangeRef,
+): {
+	readonly inverseOps: readonly Operation[]
+	readonly preimages: readonly MutationJournalPreimage[]
+	readonly issues: readonly MutationJournalIssue[]
+} {
+	const moves = sortRangeConditionalFormatMoves(sheet, op, dataRange)
+	if (moves.length === 0) return EMPTY_METADATA_RESTORATION
+	const inverseOps: Operation[] = []
+	for (const range of uniqueStrings(moves.map((move) => move.targetRange))) {
+		inverseOps.push({ op: 'deleteConditionalFormat', sheet: sheet.name, range })
+	}
+	const restored = restoreConditionalFormatOps(
+		sheet.name,
+		moves.map((move) => move.source),
+	)
+	return {
+		inverseOps: [...inverseOps, ...restored.inverseOps],
+		preimages: [
+			{
+				kind: 'conditional-formats',
+				conditionalFormats: {
+					sheet: sheet.name,
+					formats: moves.map((move) => cloneConditionalFormat(move.source)),
+				},
+			},
+		],
+		issues: [
+			...sortRangeConditionalFormatOrderIssues(sheet, op.range, moves),
+			...sortRangeConditionalFormatDuplicateIssues(sheet.name, op.range, moves),
+			...restored.issues,
+		],
+	}
+}
+
+function sortRangeConditionalFormatMoves(
+	sheet: Sheet,
+	op: Extract<Operation, { op: 'sortRange' }>,
+	dataRange: RangeRef,
+): SortRangeConditionalFormatMove[] {
+	const rowTargets = sortRangeRowTargets(sheet, op, dataRange)
+	const moves: SortRangeConditionalFormatMove[] = []
+	for (let index = 0; index < sheet.conditionalFormats.length; index++) {
+		const format = sheet.conditionalFormats[index]
+		if (!format) continue
+		const parsed = parseSortRowScopedSqref(format.sqref, dataRange)
+		if (!parsed) continue
+		const targetRow = rowTargets.get(parsed.row)
+		if (targetRow === undefined) continue
+		moves.push({
+			sourceIndex: index,
+			source: cloneConditionalFormat(format),
+			targetRange: rowScopedSqref(parsed, targetRow),
+		})
+	}
+	return moves
+}
+
+function sortRangeConditionalFormatOrderIssues(
+	sheet: Sheet,
+	range: string,
+	moves: readonly SortRangeConditionalFormatMove[],
+): readonly MutationJournalIssue[] {
+	if (moves.length === 0) return []
+	const moved = new Set(moves.map((move) => move.sourceIndex))
+	const firstMoved = Math.min(...moved)
+	for (let index = firstMoved; index < sheet.conditionalFormats.length; index++) {
+		if (moved.has(index)) continue
+		return [
+			{
+				code: 'LOSSY_INVERSE',
+				message: `Sorted conditional format order on ${sheet.name}!${range} cannot be restored exactly with public operations`,
+				refs: [`${sheet.name}!${range}`],
+			},
+		]
+	}
+	return []
+}
+
+function sortRangeConditionalFormatDuplicateIssues(
+	sheetName: string,
+	range: string,
+	moves: readonly SortRangeConditionalFormatMove[],
+): readonly MutationJournalIssue[] {
+	const sourceDuplicates = duplicateStrings(moves.map((move) => move.source.sqref))
+	const targetDuplicates = duplicateStrings(moves.map((move) => move.targetRange))
+	if (sourceDuplicates.length === 0 && targetDuplicates.length === 0) return []
+	return [
+		{
+			code: 'LOSSY_INVERSE',
+			message: `Sorted duplicate conditional formats on ${sheetName}!${range} cannot be restored exactly with public operations`,
+			refs: [`${sheetName}!${range}`],
+		},
+	]
+}
+
 function uniqueStrings(values: readonly string[]): string[] {
 	return [...new Set(values)]
 }
@@ -4446,7 +4558,6 @@ function sortRangeMetadataIssues(
 		sheet.x14DataValidations.some(
 			(validation) => !validation.deleted && sqrefOverlaps(validation.sqref, dataRange),
 		) ||
-		sheet.conditionalFormats.some((format) => sqrefOverlaps(format.sqref, dataRange)) ||
 		sheet.x14ConditionalFormats.some(
 			(format) => !format.deleted && sqrefOverlaps(format.sqref, dataRange),
 		) ||

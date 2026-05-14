@@ -1023,6 +1023,7 @@ export interface AgentViewOptions {
 	readonly rowChunkSize?: number
 	readonly sampleRowLimit?: number
 	readonly sampleValueLimit?: number
+	readonly maxApproxTokens?: number
 }
 
 export interface AgentFormulaPatternInfo {
@@ -1045,6 +1046,16 @@ export interface AgentSampleRow {
 	readonly cells: readonly CompactCellInfo[]
 }
 
+export interface AgentViewBudgetInfo {
+	readonly requestedApproxTokens: number
+	readonly estimatedApproxTokens: number
+	readonly estimator: 'json-bytes-div-4'
+	readonly truncated: boolean
+	readonly omittedSampleRows: number
+	readonly omittedColumnSampleValues: number
+	readonly omittedFormulaPatterns: number
+}
+
 export interface AgentViewResult {
 	readonly sheet: string
 	readonly range: RangeRef
@@ -1057,6 +1068,7 @@ export interface AgentViewResult {
 	readonly columns: readonly AgentColumnSummary[]
 	readonly samples: readonly AgentSampleRow[]
 	readonly notes: readonly string[]
+	readonly budget?: AgentViewBudgetInfo
 }
 
 export interface RangeInfo {

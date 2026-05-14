@@ -738,6 +738,48 @@ describe('AscendWorkbook', () => {
 		expect(view?.samples[0]?.cells[0]?.value).toEqual({ kind: 'string', value: 'Name' })
 	})
 
+	test('agentView applies approximate token budgets without losing shape facts', () => {
+		const wb = AscendWorkbook.create()
+		const updates = []
+		for (let row = 1; row <= 30; row++) {
+			for (let col = 0; col < 6; col++) {
+				const ref = `${String.fromCharCode(65 + col)}${row}`
+				updates.push({
+					ref,
+					value: row === 1 ? `Header ${col + 1}` : `r${row}-c${col + 1}`,
+				})
+			}
+		}
+		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates }])
+
+		const full = wb.agentView('Sheet1', 'A1:F30', {
+			sampleRowLimit: 8,
+			sampleValueLimit: 4,
+		})
+		expect(full).toBeDefined()
+		if (!full) return
+		const fullApproxTokens = Math.ceil(JSON.stringify(full).length / 4)
+		const target = Math.max(128, Math.floor(fullApproxTokens * 0.55))
+		const budgeted = wb.agentView('Sheet1', 'A1:F30', {
+			sampleRowLimit: 8,
+			sampleValueLimit: 4,
+			maxApproxTokens: target,
+		})
+
+		expect(budgeted?.budget).toBeDefined()
+		expect(budgeted?.budget?.requestedApproxTokens).toBe(target)
+		expect(budgeted?.budget?.estimatedApproxTokens).toBeLessThan(fullApproxTokens)
+		expect(budgeted?.budget?.truncated).toBe(true)
+		expect(budgeted?.rowCount).toBe(full.rowCount)
+		expect(budgeted?.colCount).toBe(full.colCount)
+		expect(budgeted?.nonEmptyCount).toBe(full.nonEmptyCount)
+		expect(budgeted?.columns).toHaveLength(full.columns.length)
+		expect(
+			(budgeted?.budget?.omittedSampleRows ?? 0) +
+				(budgeted?.budget?.omittedColumnSampleValues ?? 0),
+		).toBeGreaterThan(0)
+	})
+
 	test('sheet handle returns range info', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

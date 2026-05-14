@@ -10,7 +10,7 @@ Updated: 2026-05-14
 | [Package action proof](runs/2026/2026-05-14-package-action-proof/log.md) | cycle 2 complete, promote | correctness loop, product/DX loop, performance loop |
 | [Formula spans LSP](runs/2026/2026-05-14-formula-spans-lsp/log.md) | cycle 3 complete, promote | product/DX loop, correctness loop |
 | [Formula sqllogictest conformance](runs/2026/2026-05-14-formula-sqllogictest-conformance/log.md) | promote | correctness loop |
-| [Compact agent-view token budget](runs/2026/2026-05-14-compact-agent-view-token-budget/log.md) | promote | product/DX loop |
+| [Compact agent-view token budget](runs/2026/2026-05-14-compact-agent-view-token-budget/log.md) | cycle 12 complete, folded in SDK budget option | product/DX loop |
 | [Journal inverse property laws](runs/2026/2026-05-14-journal-inverse-property-laws/log.md) | cycle 4 complete, folded in fix | correctness loop |
 | [Oracle routing mismatch class](runs/2026/2026-05-14-oracle-routing-mismatch-class/log.md) | cycle 5 complete, promote | correctness loop |
 | [Columnar sidecar range scans](runs/2026/2026-05-14-columnar-sidecar-range-scans/log.md) | cycle 6 complete, promote | performance loop |

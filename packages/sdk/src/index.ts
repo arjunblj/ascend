@@ -254,6 +254,7 @@ export type {
 	AgentFormulaPatternInfo,
 	AgentReadOptions,
 	AgentSampleRow,
+	AgentViewBudgetInfo,
 	AgentViewOptions,
 	AgentViewResult,
 	ApplyAndRecalcResult,

@@ -688,7 +688,7 @@ export class WorkbookReadView {
 			notes.push(`Most common formula pattern repeats ${topPattern[1]} times.`)
 		}
 
-		return {
+		const result: AgentViewResult = {
 			sheet: sheetName,
 			range: requestedRef,
 			rowCount,
@@ -704,6 +704,7 @@ export class WorkbookReadView {
 			samples,
 			notes,
 		}
+		return opts?.maxApproxTokens ? budgetAgentViewResult(result, opts.maxApproxTokens) : result
 	}
 
 	*streamRange(
@@ -5201,6 +5202,101 @@ function connectionRefreshRecommendedOps(
 			saveData: false,
 		},
 	]
+}
+
+function budgetAgentViewResult(
+	result: AgentViewResult,
+	requestedApproxTokens: number,
+): AgentViewResult {
+	const budget = Math.max(64, Math.floor(requestedApproxTokens))
+	const baseColumnSampleValues = countAgentViewColumnSampleValues(result.columns)
+	let sampleRowLimit = result.samples.length
+	let columnSampleValueLimit = result.columns.reduce(
+		(max, column) => Math.max(max, column.sampleValues.length),
+		0,
+	)
+	let formulaPatternLimit = result.formulaPatterns.length
+	let candidate = buildBudgetedAgentViewResult(
+		result,
+		budget,
+		sampleRowLimit,
+		columnSampleValueLimit,
+		formulaPatternLimit,
+		baseColumnSampleValues,
+	)
+
+	while (
+		candidate.budget &&
+		candidate.budget.estimatedApproxTokens > budget &&
+		(sampleRowLimit > 0 || columnSampleValueLimit > 0 || formulaPatternLimit > 0)
+	) {
+		if (sampleRowLimit > 2) sampleRowLimit--
+		else if (columnSampleValueLimit > 2) columnSampleValueLimit--
+		else if (formulaPatternLimit > 6) formulaPatternLimit--
+		else if (sampleRowLimit > 0) sampleRowLimit--
+		else if (columnSampleValueLimit > 0) columnSampleValueLimit--
+		else formulaPatternLimit--
+		candidate = buildBudgetedAgentViewResult(
+			result,
+			budget,
+			sampleRowLimit,
+			columnSampleValueLimit,
+			formulaPatternLimit,
+			baseColumnSampleValues,
+		)
+	}
+
+	return candidate
+}
+
+function buildBudgetedAgentViewResult(
+	result: AgentViewResult,
+	requestedApproxTokens: number,
+	sampleRowLimit: number,
+	columnSampleValueLimit: number,
+	formulaPatternLimit: number,
+	baseColumnSampleValues: number,
+): AgentViewResult {
+	const columns = result.columns.map((column) =>
+		column.sampleValues.length > columnSampleValueLimit
+			? { ...column, sampleValues: column.sampleValues.slice(0, columnSampleValueLimit) }
+			: column,
+	)
+	const budgeted = {
+		...result,
+		formulaPatterns: result.formulaPatterns.slice(0, formulaPatternLimit),
+		columns,
+		samples: result.samples.slice(0, sampleRowLimit),
+	}
+	const omittedSampleRows = result.samples.length - budgeted.samples.length
+	const omittedColumnSampleValues =
+		baseColumnSampleValues - countAgentViewColumnSampleValues(columns)
+	const omittedFormulaPatterns = result.formulaPatterns.length - budgeted.formulaPatterns.length
+	const budget = {
+		requestedApproxTokens,
+		estimatedApproxTokens: 0,
+		estimator: 'json-bytes-div-4' as const,
+		truncated: omittedSampleRows > 0 || omittedColumnSampleValues > 0 || omittedFormulaPatterns > 0,
+		omittedSampleRows,
+		omittedColumnSampleValues,
+		omittedFormulaPatterns,
+	}
+	const withBudget = { ...budgeted, budget }
+	return {
+		...withBudget,
+		budget: {
+			...budget,
+			estimatedApproxTokens: estimateAgentViewApproxTokens(withBudget),
+		},
+	}
+}
+
+function countAgentViewColumnSampleValues(columns: readonly AgentColumnSummary[]): number {
+	return columns.reduce((total, column) => total + column.sampleValues.length, 0)
+}
+
+function estimateAgentViewApproxTokens(value: unknown): number {
+	return Math.ceil(JSON.stringify(value).length / 4)
 }
 
 function flattenForAgent(value: import('@ascend/schema').CellValue): FlatCellValue {

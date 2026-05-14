@@ -514,7 +514,7 @@ export function readXlsx(
 								? { normalizeString: (value: string) => valuePool.internStringValue(value) }
 								: {}),
 						}),
-				lazy: valuesOnly || formulaOnly || selectedSheets !== null,
+				lazy: valuesOnly || formulaOnly || mode === 'full' || selectedSheets !== null,
 			}
 			const canStreamSharedStrings =
 				ssPath !== undefined &&

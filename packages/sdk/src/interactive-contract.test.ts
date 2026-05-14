@@ -10,7 +10,7 @@ import {
 	sqrefIntersects,
 } from '@ascend/core'
 import { dateToSerial } from '@ascend/formulas'
-import { dateValue, errorValue, numberValue, richTextValue } from '@ascend/schema'
+import { dateValue, errorValue, numberValue, richTextValue, stringValue } from '@ascend/schema'
 import type {
 	InteractiveViewportCell,
 	InteractiveViewportPatch,
@@ -3678,6 +3678,47 @@ describe('interactive client contract', () => {
 		})
 		expect(
 			dataTableWb.getWorkbookModel().getSheet('Sheet1')?.cells.get(2, 2)?.formulaInfo,
+		).toBeUndefined()
+
+		const blockedSpillWb = AscendWorkbook.create()
+		const blockedSpillSheet = blockedSpillWb.getWorkbookModel().getSheet('Sheet1')
+		if (!blockedSpillSheet) throw new Error('missing sheet')
+		blockedSpillSheet.cells.set(0, 0, {
+			value: errorValue('#SPILL!'),
+			formula: 'SEQUENCE(3)',
+			styleId: DEFAULT_STYLE_ID,
+			formulaInfo: {
+				kind: 'blockedSpill',
+				anchorRef: 'Sheet1!A1',
+				ref: 'A1:A3',
+				blockingRefs: ['A2'],
+			},
+		})
+		blockedSpillSheet.cells.set(1, 0, {
+			value: stringValue('blocker'),
+			formula: null,
+			styleId: DEFAULT_STYLE_ID,
+		})
+
+		const blockedSpillChanged = blockedSpillWb.apply(
+			[{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A2', value: null }] }],
+			{ journal: true },
+		)
+
+		expect(blockedSpillChanged.errors).toEqual([])
+		expect(blockedSpillChanged.journal?.supported).toBe(true)
+		expect(blockedSpillChanged.journal?.exact).toBe(false)
+		expect(blockedSpillChanged.journal?.issues).toContainEqual({
+			code: 'LOSSY_INVERSE',
+			message: 'Formula binding metadata for Sheet1!A1 cannot be restored with public operations',
+			refs: ['Sheet1!A1'],
+		})
+		const blockedSpillPreimage = blockedSpillChanged.journal?.entries[0]?.preimages[0]
+		expect(blockedSpillPreimage?.kind).toBe('cells')
+		if (blockedSpillPreimage?.kind !== 'cells') throw new Error('missing cells preimage')
+		expect(blockedSpillPreimage.cells.map((cell) => cell.ref).sort()).toEqual(['A1', 'A2'])
+		expect(
+			blockedSpillWb.getWorkbookModel().getSheet('Sheet1')?.cells.get(0, 0)?.formulaInfo,
 		).toBeUndefined()
 	})
 

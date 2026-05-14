@@ -4050,6 +4050,21 @@ function formulaBindingEditRefs(
 		const tableRange = dataTableFormulaRange(binding, row, col)
 		if (parsedRefs.some((ref) => rangeContainsCell(tableRange, ref))) push(row, col)
 	}
+	for (const [row, col, cell] of sheet.cells.iterate()) {
+		const binding = cell.formulaInfo
+		if (binding?.kind !== 'blockedSpill') continue
+		if (
+			parsedRefs.some(
+				(ref) =>
+					formulaBindingRangeContainsCell(binding.ref, sheet.name, ref) ||
+					binding.blockingRefs.some((blockingRef) =>
+						formulaBindingRangeContainsCell(blockingRef, sheet.name, ref),
+					),
+			)
+		) {
+			push(row, col)
+		}
+	}
 	return [...expanded.keys()]
 }
 
@@ -4101,6 +4116,20 @@ function dataTableFormulaRange(
 		}
 	}
 	return { start: { row, col }, end: { row, col } }
+}
+
+function formulaBindingRangeContainsCell(
+	refText: string,
+	sheetName: string,
+	ref: { readonly row: number; readonly col: number },
+): boolean {
+	try {
+		const range = parseRange(refText)
+		if (range.sheet !== undefined && range.sheet !== sheetName) return false
+		return rangeContainsCell(range, ref)
+	} catch {
+		return false
+	}
 }
 
 function rangeContainsCell(

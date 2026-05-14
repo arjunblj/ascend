@@ -676,6 +676,50 @@ if (poiFixtures.length > 0) {
 			expect(target?.formulaInfo).toBeUndefined()
 		})
 
+		it('materializes real POI shared formula siblings when editing an imported member', () => {
+			const result = readXlsx(loadFixture('shared_formulas.xlsx'))
+			expectOk(result)
+			const sheet = result.value.workbook.sheets[0]
+			expect(sheet).toBeDefined()
+			if (!sheet) return
+			const member = [...sheet.cells.iterate()].find(
+				([, , cell]) => cell.formulaInfo?.kind === 'shared' && !cell.formulaInfo?.isMaster,
+			)
+			expect(member).toBeDefined()
+			if (!member) return
+			const [, , memberCell] = member
+			const binding = memberCell.formulaInfo
+			if (binding?.kind !== 'shared') throw new Error('expected shared binding')
+			const group = [...sheet.cells.iterate()].filter(([, , cell]) => {
+				const candidate = cell.formulaInfo
+				if (candidate?.kind !== 'shared') return false
+				return binding.sharedIndex !== undefined
+					? candidate.sharedIndex === binding.sharedIndex
+					: candidate.masterRef === binding.masterRef
+			})
+			expect(group.length).toBeGreaterThan(1)
+			const groupRefs = group.map(([row, col]) => toA1({ row, col }))
+			const groupPositions = new Map(group.map(([row, col]) => [toA1({ row, col }), { row, col }]))
+			const editRef = toA1({ row: member[0], col: member[1] })
+
+			const edit = applyOperation(result.value.workbook, {
+				op: 'setCells',
+				sheet: sheet.name,
+				updates: [{ ref: editRef, value: 99 }],
+			})
+			expectOk(edit)
+
+			for (const ref of groupRefs) {
+				expect(edit.value.affectedCells).toContain(ref)
+				const position = groupPositions.get(ref)
+				expect(position).toBeDefined()
+				if (!position) continue
+				const { row, col } = position
+				expect(sheet.cells.get(row, col)?.formulaInfo).toBeUndefined()
+			}
+			expect(sheet.cells.get(member[0], member[1])?.formula).toBeNull()
+		})
+
 		it('rejects structural edits that would drop real POI shared formula bindings', () => {
 			const result = readXlsx(loadFixture('shared_formulas.xlsx'))
 			expectOk(result)

@@ -229,6 +229,7 @@ export function materializeFormulaBindingGroupsForRefs(
 	workbook: Workbook,
 	sheet: Sheet,
 	refs: Iterable<{ readonly row: number; readonly col: number }>,
+	options: { readonly blockedSpillBlockers?: boolean } = {},
 ): Set<string> {
 	const affected = new Set<string>()
 	const refList = [...refs]
@@ -247,8 +248,10 @@ export function materializeFormulaBindingGroupsForRefs(
 	for (const entry of materializeDataTableFormulaGroupsForRefs(sheet, refList)) {
 		affected.add(entry)
 	}
-	for (const entry of materializeBlockedSpillFormulaGroupsForRefs(sheet, refList)) {
-		affected.add(entry)
+	if (options.blockedSpillBlockers !== false) {
+		for (const entry of materializeBlockedSpillFormulaGroupsForRefs(sheet, refList)) {
+			affected.add(entry)
+		}
 	}
 	return affected
 }
@@ -263,6 +266,20 @@ export function materializeFormulaBindingGroupsForRangeEdit(
 		for (let col = range.start.col; col <= range.end.col; col++) refs.push({ row, col })
 	}
 	return materializeFormulaBindingGroupsForRefs(workbook, sheet, refs)
+}
+
+export function materializeFormulaBindingGroupsForFormulaClear(
+	workbook: Workbook,
+	sheet: Sheet,
+	range: RangeRef,
+): Set<string> {
+	const refs: Array<{ readonly row: number; readonly col: number }> = []
+	for (let row = range.start.row; row <= range.end.row; row++) {
+		for (let col = range.start.col; col <= range.end.col; col++) refs.push({ row, col })
+	}
+	return materializeFormulaBindingGroupsForRefs(workbook, sheet, refs, {
+		blockedSpillBlockers: false,
+	})
 }
 
 export function materializeDataTableFormulaGroupsForRangeEdit(

@@ -748,6 +748,22 @@ describe('applyOperation', () => {
 			blockingRefs: ['A2'],
 		})
 
+		const formulas = applyOperation(wb, {
+			op: 'clearRange',
+			sheet: 'Sheet1',
+			range: 'A2',
+			what: 'formulas',
+		})
+		expectOk(formulas)
+		expect(formulas.value.affectedCells).toEqual(['A2'])
+		expect(sheet.cells.get(0, 0)?.formulaInfo).toEqual({
+			kind: 'blockedSpill',
+			anchorRef: 'Sheet1!A1',
+			ref: 'A1:A3',
+			blockingRefs: ['A2'],
+		})
+		expect(sheet.cells.get(1, 0)?.value).toEqual(stringValue('blocker'))
+
 		const values = applyOperation(wb, {
 			op: 'clearRange',
 			sheet: 'Sheet1',
@@ -759,6 +775,25 @@ describe('applyOperation', () => {
 		expect(sheet.cells.get(0, 0)?.formula).toBe('SEQUENCE(3)')
 		expect(sheet.cells.get(0, 0)?.formulaInfo).toBeUndefined()
 		expect(sheet.cells.get(1, 0)?.value).toEqual(EMPTY)
+	})
+
+	test('clearRange formulas detaches blocked-spill metadata when clearing the anchor', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		addBlockedSpillFormula(sheet)
+
+		const result = applyOperation(wb, {
+			op: 'clearRange',
+			sheet: 'Sheet1',
+			range: 'A1',
+			what: 'formulas',
+		})
+		expectOk(result)
+
+		expect(result.value.affectedCells).toEqual(['A1'])
+		expect(sheet.cells.get(0, 0)?.formula).toBeNull()
+		expect(sheet.cells.get(0, 0)?.formulaInfo).toBeUndefined()
+		expect(sheet.cells.get(1, 0)?.value).toEqual(stringValue('blocker'))
 	})
 
 	test('setRichText materializes spill groups before replacing a spill member', () => {

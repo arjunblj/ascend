@@ -16,6 +16,7 @@ import {
 	legacyArrayFormulaEditError,
 	materializeBlockedSpillFormulaGroupsForRangeEdit,
 	materializeDataTableFormulaGroupsForRangeEdit,
+	materializeFormulaBindingGroupsForFormulaClear,
 	materializeFormulaBindingGroupsForRangeEdit,
 	materializeFormulaBindingGroupsForRefs,
 	mergeStyleInput,
@@ -200,7 +201,9 @@ export function handleClearRange(
 						...materializeDataTableFormulaGroupsForRangeEdit(sheet, range),
 						...materializeBlockedSpillFormulaGroupsForRangeEdit(sheet, range),
 					])
-				: materializeFormulaBindingGroupsForRangeEdit(workbook, sheet, range)
+				: op.what === 'formulas'
+					? materializeFormulaBindingGroupsForFormulaClear(workbook, sheet, range)
+					: materializeFormulaBindingGroupsForRangeEdit(workbook, sheet, range)
 	for (let r = range.start.row; r <= range.end.row; r++) {
 		for (let c = range.start.col; c <= range.end.col; c++) {
 			const existing = sheet.cells.get(r, c)

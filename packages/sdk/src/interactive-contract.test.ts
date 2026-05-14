@@ -10,7 +10,11 @@ import {
 	sqrefIntersects,
 } from '@ascend/core'
 import { numberValue } from '@ascend/schema'
-import type { InteractiveViewportCell, InteractiveViewportPatch } from './index.ts'
+import type {
+	InteractiveViewportCell,
+	InteractiveViewportPatch,
+	InteractiveViewportRequest,
+} from './index.ts'
 import { AscendSession, AscendWorkbook } from './index.ts'
 import { buildMutationJournal } from './journal.ts'
 
@@ -115,7 +119,7 @@ describe('interactive client contract', () => {
 			colCount: 8,
 		})
 
-		expect(viewport.load.mode).toBe('formula')
+		expect(viewport.load.mode).toBe('full')
 		expect(viewport.load.richSheetMetadataHydrated).toBe(true)
 		expect(viewport.rowCount).toBe(5)
 		expect(viewport.colCount).toBe(8)
@@ -376,9 +380,9 @@ describe('interactive client contract', () => {
 		expect(edit.apply.errors).toEqual([])
 		expect(edit.timings.applyMs).toBeNumber()
 		expect(edit.timings.totalMs).toBeGreaterThanOrEqual(edit.timings.applyMs)
-		expect(edit.load.read).toMatchObject({ mode: 'formula', isPartial: true })
+		expect(edit.load.read).toMatchObject({ mode: 'full', isPartial: false })
 		expect(edit.load.write).toMatchObject({ mode: 'full', isPartial: false })
-		expect(edit.load.promotedToFull).toBe(true)
+		expect(edit.load.promotedToFull).toBe(false)
 		expect(edit.recalc?.changed).toEqual(['Sheet1!B1'])
 		expect(edit.generation.session).toBe(1)
 
@@ -828,7 +832,7 @@ describe('interactive client contract', () => {
 
 		const session = await AscendSession.open(wb.toBytes(), { mode: 'interactive' })
 		const prepared = await session.prepareEdits()
-		expect(prepared.load.promotedToFull).toBe(true)
+		expect(prepared.load.promotedToFull).toBe(false)
 		const base = session.readViewport({
 			sheet: 'Sheet1',
 			topRow: 0,
@@ -1463,7 +1467,7 @@ describe('interactive client contract', () => {
 			colCount: 1,
 		})
 		const prepared = await session.prepareEdits()
-		expect(prepared.load.promotedToFull).toBe(true)
+		expect(prepared.load.promotedToFull).toBe(false)
 		expect(prepared.timings.mutableWorkbookCached).toBe(false)
 		expect(prepared.timings.mutableWorkbookOpenMs).toBeGreaterThanOrEqual(0)
 		expect(prepared.timings.rebaseViewportSnapshotsMs).toBeGreaterThanOrEqual(0)
@@ -1474,10 +1478,10 @@ describe('interactive client contract', () => {
 			ready: true,
 			preparing: false,
 			generation: before.generation.session,
-			promotedToFull: true,
+			promotedToFull: false,
 			timings: {
 				mutableWorkbookCached: false,
-				mutableWorkbookReusedReadModel: false,
+				mutableWorkbookReusedReadModel: true,
 				mutableWorkbookOpenMs: prepared.timings.mutableWorkbookOpenMs,
 				rebaseViewportSnapshotsMs: prepared.timings.rebaseViewportSnapshotsMs,
 			},
@@ -1487,7 +1491,7 @@ describe('interactive client contract', () => {
 			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 10 }] },
 		])
 		expect(edit.apply.errors).toEqual([])
-		expect(edit.load.promotedToFull).toBe(true)
+		expect(edit.load.promotedToFull).toBe(false)
 		expect(edit.generation.session).toBe(before.generation.session + 1)
 		expect(edit.timings.mutableWorkbookCached).toBe(true)
 		expect(edit.timings.ensureMutableWorkbookMs).toBeLessThan(1)
@@ -1788,7 +1792,7 @@ describe('interactive client contract', () => {
 					colCount: 1,
 					changedSince: base.changeToken,
 				}),
-			).toBeNull()
+			)?.toMatchObject({ changedCells: [], removedRefs: [] })
 		} finally {
 			other.close()
 		}
@@ -1870,6 +1874,152 @@ describe('interactive client contract', () => {
 			})
 		} finally {
 			expiring.close()
+		}
+	})
+
+	test('interactive viewport patch results expose invalidation reasons without silent nulls', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] }])
+		const bytes = wb.toBytes()
+
+		const session = await AscendSession.open(bytes, { mode: 'interactive' })
+		try {
+			const base = session.readViewport({
+				sheet: 'Sheet1',
+				topRow: 0,
+				leftCol: 0,
+				rowCount: 1,
+				colCount: 1,
+			})
+			const edit = await session.apply([
+				{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 2 }] },
+			])
+			expect(edit.apply.errors).toEqual([])
+			const exact = session.readViewportPatchResult({
+				sheet: 'Sheet1',
+				topRow: 0,
+				leftCol: 0,
+				rowCount: 1,
+				colCount: 1,
+				changedSince: base.changeToken,
+			})
+			expect(exact.patchInvalidation).toBeUndefined()
+			expect(exact.patch?.changedCells.map((cell) => [cell.ref, cell.flatValue])).toEqual([
+				['A1', 2],
+			])
+			expect(
+				session.readViewportPatch({ ...baseViewportRequest(), changedSince: base.changeToken }),
+			).toBeNull()
+
+			const stale = session.readViewportPatchResult({
+				...baseViewportRequest(),
+				changedSince: base.changeToken,
+			})
+			expect(stale.patch).toBeNull()
+			expect(stale.patchInvalidation).toEqual({
+				baseToken: base.changeToken,
+				changeToken: stale.patchInvalidation?.changeToken,
+				reason: 'base-token-stale',
+				requiredAction: 'use-returned-snapshot',
+			})
+			const invalid = session.readViewportPatchResult({
+				...baseViewportRequest(),
+				changedSince: 'not-a-token',
+			})
+			expect(invalid.patch).toBeNull()
+			expect(invalid.patchInvalidation).toEqual({
+				baseToken: 'not-a-token',
+				changeToken: invalid.patchInvalidation?.changeToken,
+				reason: 'base-token-invalid',
+				requiredAction: 'use-returned-snapshot',
+			})
+		} finally {
+			session.close()
+		}
+
+		const other = await AscendSession.open(bytes, { mode: 'interactive' })
+		try {
+			const invalidWithoutSnapshot = other.readViewportPatchResult({
+				...baseViewportRequest(),
+				changedSince: 'not-a-token',
+			})
+			expect(invalidWithoutSnapshot.patch).toBeNull()
+			expect(invalidWithoutSnapshot.patchInvalidation).toEqual({
+				baseToken: 'not-a-token',
+				changeToken: invalidWithoutSnapshot.patchInvalidation?.changeToken,
+				reason: 'base-token-invalid',
+				requiredAction: 'use-returned-snapshot',
+			})
+			const missing = other.readViewportPatchResult({
+				...baseViewportRequest(),
+				changedSince: '0:0',
+			})
+			expect(missing.patch).toBeNull()
+			expect(missing.patchInvalidation).toEqual({
+				baseToken: '0:0',
+				changeToken: missing.patchInvalidation?.changeToken,
+				reason: 'base-snapshot-missing',
+				requiredAction: 'use-returned-snapshot',
+			})
+			const invalidViewportRead = other.readViewport({
+				...baseViewportRequest(),
+				changedSince: 'still-not-a-token',
+			})
+			expect(invalidViewportRead.patch).toBeUndefined()
+			expect(invalidViewportRead.patchInvalidation).toEqual({
+				baseToken: 'still-not-a-token',
+				changeToken: invalidViewportRead.changeToken,
+				reason: 'base-token-invalid',
+				requiredAction: 'use-returned-snapshot',
+			})
+		} finally {
+			other.close()
+		}
+
+		const expiring = await AscendSession.open(bytes, { mode: 'interactive' })
+		try {
+			const base = expiring.readViewport(baseViewportRequest())
+			for (let i = 0; i < 130; i++) {
+				const edit = await expiring.apply([
+					{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: i + 2 }] },
+				])
+				expect(edit.apply.errors).toEqual([])
+			}
+			const expired = expiring.readViewportPatchResult({
+				...baseViewportRequest(),
+				changedSince: base.changeToken,
+			})
+			expect(expired.patch).toBeNull()
+			expect(expired.patchInvalidation).toEqual({
+				baseToken: base.changeToken,
+				changeToken: expired.patchInvalidation?.changeToken,
+				reason: 'base-token-expired',
+				requiredAction: 'use-returned-snapshot',
+			})
+		} finally {
+			expiring.close()
+		}
+
+		const invalidating = await AscendSession.open(bytes, { mode: 'interactive' })
+		try {
+			const base = invalidating.readViewport(baseViewportRequest())
+			const metadata = await invalidating.apply([
+				{ op: 'setComment', sheet: 'Sheet1', ref: 'A1', text: 'review' },
+			])
+			expect(metadata.apply.errors).toEqual([])
+			const invalidated = invalidating.readViewportPatchResult({
+				...baseViewportRequest(),
+				changedSince: base.changeToken,
+			})
+			expect(invalidated.patch).toBeNull()
+			expect(invalidated.patchInvalidation).toEqual({
+				baseToken: base.changeToken,
+				changeToken: invalidated.patchInvalidation?.changeToken,
+				reason: 'viewport-invalidated',
+				requiredAction: 'use-returned-snapshot',
+			})
+		} finally {
+			invalidating.close()
 		}
 	})
 
@@ -5491,6 +5641,16 @@ function materializeViewportPatch(
 	for (const ref of patch.removedRefs) next.delete(ref)
 	for (const cell of patch.changedCells) next.set(cell.ref, cell)
 	return next
+}
+
+function baseViewportRequest(): InteractiveViewportRequest {
+	return {
+		sheet: 'Sheet1',
+		topRow: 0,
+		leftCol: 0,
+		rowCount: 1,
+		colCount: 1,
+	}
 }
 
 function interactiveCellMap(

@@ -157,6 +157,11 @@ export interface InteractiveViewportPatch {
 	readonly byteLength: number
 }
 
+export interface InteractiveViewportPatchResult {
+	readonly patch: InteractiveViewportPatch | null
+	readonly patchInvalidation?: InteractiveViewportPatchInvalidation
+}
+
 export type InteractiveViewportPatchInvalidationReason =
 	| 'base-snapshot-missing'
 	| 'base-token-stale'
@@ -941,6 +946,17 @@ export class AscendSession {
 		const previous = this.viewportSnapshots.get(snapshotKey)
 		this.viewportSnapshots.set(snapshotKey, { token: changeToken, request, cells: currentCells })
 		if (!request.changedSince) return result
+		const baseGeneration = interactiveTokenGeneration(request.changedSince)
+		if (baseGeneration === null) {
+			return {
+				...result,
+				patchInvalidation: interactivePatchInvalidation(
+					request.changedSince,
+					changeToken,
+					'base-token-invalid',
+				),
+			}
+		}
 		if (!previous) {
 			return {
 				...result,
@@ -958,17 +974,6 @@ export class AscendSession {
 					request.changedSince,
 					changeToken,
 					'base-token-stale',
-				),
-			}
-		}
-		const baseGeneration = interactiveTokenGeneration(request.changedSince)
-		if (baseGeneration === null) {
-			return {
-				...result,
-				patchInvalidation: interactivePatchInvalidation(
-					request.changedSince,
-					changeToken,
-					'base-token-invalid',
 				),
 			}
 		}
@@ -993,41 +998,93 @@ export class AscendSession {
 	}
 
 	readViewportPatch(request: InteractiveViewportRequest): InteractiveViewportPatch | null {
-		if (!request.changedSince) return null
+		return this.readViewportPatchResult(request).patch
+	}
+
+	readViewportPatchResult(request: InteractiveViewportRequest): InteractiveViewportPatchResult {
+		if (!request.changedSince) return { patch: null }
 		const snapshotKey = interactiveViewportSnapshotKey(request)
 		const previous = this.viewportSnapshots.get(snapshotKey)
-		if (!previous || previous.token !== request.changedSince) return null
 		const baseGeneration = interactiveTokenGeneration(request.changedSince)
-		if (baseGeneration === null) return null
+		if (baseGeneration === null) {
+			return {
+				patch: null,
+				patchInvalidation: interactivePatchInvalidation(
+					request.changedSince,
+					`${this.documentGeneration}:${this.changeVersion++}`,
+					'base-token-invalid',
+				),
+			}
+		}
+		if (!previous) {
+			return {
+				patch: null,
+				patchInvalidation: interactivePatchInvalidation(
+					request.changedSince,
+					`${this.documentGeneration}:${this.changeVersion++}`,
+					'base-snapshot-missing',
+				),
+			}
+		}
+		if (previous.token !== request.changedSince) {
+			return {
+				patch: null,
+				patchInvalidation: interactivePatchInvalidation(
+					request.changedSince,
+					`${this.documentGeneration}:${this.changeVersion++}`,
+					'base-token-stale',
+				),
+			}
+		}
 		const changes = this.changedRefsSince(baseGeneration)
-		if (changes.kind !== 'refs') return null
+		if (changes.kind !== 'refs') {
+			return {
+				patch: null,
+				patchInvalidation: interactivePatchInvalidation(
+					request.changedSince,
+					`${this.documentGeneration}:${this.changeVersion++}`,
+					changes.kind === 'expired' ? 'base-token-expired' : 'viewport-invalidated',
+				),
+			}
+		}
 		const refs = changes.refs
-		if (!this.mutableWorkbook) return null
-		const context = createInteractiveViewportContext(this.mutableWorkbook, request)
 		const changeToken = `${this.documentGeneration}:${this.changeVersion++}`
+		if (!this.mutableWorkbook && refs.size > 0) {
+			return {
+				patch: null,
+				patchInvalidation: interactivePatchInvalidation(
+					request.changedSince,
+					changeToken,
+					'viewport-invalidated',
+				),
+			}
+		}
 		const changedCells: InteractiveViewportCell[] = []
 		const removedRefs: string[] = []
 		const nextCells = new Map(previous.cells)
-		for (const fullRef of refs) {
-			const parsed = splitInteractiveFullRef(fullRef, context.workbook)
-			if (!parsed || parsed.sheet !== request.sheet) continue
-			if (!cellInRange(parsed.row, parsed.col, context.viewport)) continue
-			const cell = context.sheet.cells.get(parsed.row, parsed.col)
-			if (!cell) {
-				if (nextCells.delete(parsed.ref)) removedRefs.push(parsed.ref)
-				continue
+		if (this.mutableWorkbook) {
+			const context = createInteractiveViewportContext(this.mutableWorkbook, request)
+			for (const fullRef of refs) {
+				const parsed = splitInteractiveFullRef(fullRef, context.workbook)
+				if (!parsed || parsed.sheet !== request.sheet) continue
+				if (!cellInRange(parsed.row, parsed.col, context.viewport)) continue
+				const cell = context.sheet.cells.get(parsed.row, parsed.col)
+				if (!cell) {
+					if (nextCells.delete(parsed.ref)) removedRefs.push(parsed.ref)
+					continue
+				}
+				const current = interactiveViewportCellFromContent(
+					context,
+					parsed.row,
+					parsed.col,
+					cell.value,
+					cell.formula,
+					cell.formulaInfo,
+				)
+				const before = previous.cells.get(parsed.ref)
+				nextCells.set(parsed.ref, current)
+				if (!before || !interactiveViewportCellsEqual(before, current)) changedCells.push(current)
 			}
-			const current = interactiveViewportCellFromContent(
-				context,
-				parsed.row,
-				parsed.col,
-				cell.value,
-				cell.formula,
-				cell.formulaInfo,
-			)
-			const before = previous.cells.get(parsed.ref)
-			nextCells.set(parsed.ref, current)
-			if (!before || !interactiveViewportCellsEqual(before, current)) changedCells.push(current)
 		}
 		this.viewportSnapshots.set(snapshotKey, {
 			token: changeToken,
@@ -1035,11 +1092,13 @@ export class AscendSession {
 			cells: nextCells,
 		})
 		return {
-			baseToken: request.changedSince,
-			changeToken,
-			changedCells,
-			removedRefs,
-			byteLength: JSON.stringify({ changedCells, removedRefs }).length,
+			patch: {
+				baseToken: request.changedSince,
+				changeToken,
+				changedCells,
+				removedRefs,
+				byteLength: JSON.stringify({ changedCells, removedRefs }).length,
+			},
 		}
 	}
 
@@ -1358,6 +1417,9 @@ function interactiveOpenOptions(options: AscendSessionOpenOptions): WorkbookLoad
 	const loadOptions = stripPrepareEditsOption(options)
 	const { mode, ...rest } = loadOptions
 	if (mode === 'interactive' || mode === undefined) {
+		if (rest.maxRows === undefined && rest.sheets === undefined) {
+			return normalizeOptions({ ...rest, mode: 'full', richMetadata: true })
+		}
 		return normalizeOptions({ ...rest, mode: 'formula', richMetadata: true })
 	}
 	return normalizeOptions({ ...rest, mode })

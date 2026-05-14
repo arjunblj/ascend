@@ -858,6 +858,56 @@ describe('AscendWorkbook', () => {
 			reason: 'base-token-stale',
 			requiredAction: 'use-returned-window',
 		})
+
+		const invalidBase = handle?.readWindowCompact('A1:A2', {
+			includeRefs: false,
+			flatValues: true,
+			changedSince: 'not-a-token',
+		})
+		expect(invalidBase?.cells.map((cell) => cell.value)).toEqual([1, 2])
+		expect(invalidBase?.changeInvalidation).toEqual({
+			baseToken: 'not-a-token',
+			changeToken: invalidBase?.changeToken,
+			reason: 'base-token-invalid',
+			requiredAction: 'use-returned-window',
+		})
+	})
+
+	test('sheet handle compact changedSince invalidates when the requested window changes', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 1 },
+					{ ref: 'A2', value: 2 },
+				],
+			},
+		])
+		const handle = wb.sheet('Sheet1')
+		const first = handle?.readWindowCompact('A1:A2', {
+			rowLimit: 1,
+			includeRefs: false,
+			flatValues: true,
+			changedSince: '',
+		})
+		expect(first?.cells.map((cell) => cell.value)).toEqual([1])
+		expect(first?.changeToken).toBeDefined()
+
+		const widened = handle?.readWindowCompact('A1:A2', {
+			rowLimit: 2,
+			includeRefs: false,
+			flatValues: true,
+			changedSince: first?.changeToken,
+		})
+		expect(widened?.cells.map((cell) => cell.value)).toEqual([1, 2])
+		expect(widened?.changeInvalidation).toEqual({
+			baseToken: first?.changeToken,
+			changeToken: widened?.changeToken,
+			reason: 'base-snapshot-missing',
+			requiredAction: 'use-returned-window',
+		})
 	})
 
 	test('sheet handle usedRange', () => {

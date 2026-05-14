@@ -211,7 +211,10 @@ export class SheetHandle {
 		}
 		const consumedRows = Math.max(0, endRow - requestedRef.start.row + 1)
 		const hasMore = requestedRef.start.row + rowOffset + rowLimit - 1 < requestedRef.end.row
-		const snapshotKey = opts?.changedSince !== undefined ? `${this.sheetName}:${rangeRef}` : null
+		const snapshotKey =
+			opts?.changedSince !== undefined
+				? compactChangeSnapshotKey(this.sheetName, windowRef, opts)
+				: null
 		let changeToken: string | undefined
 		let changeInvalidation: CompactRangeChangeInvalidation | undefined
 		if (snapshotKey) {
@@ -219,7 +222,18 @@ export class SheetHandle {
 			changeToken = `${version}`
 			const baseToken = opts?.changedSince
 			const previous = this._changeSnapshots.get(snapshotKey)
-			if (previous && baseToken === previous.token) {
+			if (baseToken && !isCompactChangeToken(baseToken)) {
+				changeInvalidation = {
+					baseToken,
+					changeToken,
+					reason: 'base-token-invalid',
+					requiredAction: 'use-returned-window',
+				}
+				this._changeSnapshots.set(snapshotKey, {
+					token: changeToken,
+					cells: buildCellMap(cells),
+				})
+			} else if (previous && baseToken === previous.token) {
 				const currentMap = buildCellMap(cells)
 				const changed = diffCellMaps(previous.cells, currentMap)
 				this._changeSnapshots.set(snapshotKey, { token: changeToken, cells: currentMap })
@@ -816,6 +830,25 @@ function buildCellMap(cells: readonly CompactCellInfo[]): Map<string, CompactCel
 		map.set(`${cell.row},${cell.col}`, cell)
 	}
 	return map
+}
+
+function compactChangeSnapshotKey(
+	sheetName: string,
+	windowRef: RangeRef,
+	opts: AgentReadOptions,
+): string {
+	return JSON.stringify({
+		sheetName,
+		ref: toRangeString(windowRef),
+		includeRefs: opts.includeRefs !== false,
+		omitEmpty: opts.omitEmpty === true,
+		flatValues: opts.flatValues === true,
+		projection: opts.changeProjectionKey ?? '',
+	})
+}
+
+function isCompactChangeToken(token: string): boolean {
+	return /^\d+$/.test(token)
 }
 
 function refInRange(ref: string, range: RangeRef): boolean {

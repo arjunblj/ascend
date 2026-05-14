@@ -2907,6 +2907,98 @@ describe('interactive client contract', () => {
 		expect(changed.journal?.inverseOps).toEqual([])
 	})
 
+	test('journal inverse ops restore page setup and print area metadata', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setPageSetup',
+				sheet: 'Sheet1',
+				setup: {
+					orientation: 'portrait',
+					paperSize: 1,
+					scale: 95,
+					margins: { left: 0.5, right: 0.5, top: 0.75, bottom: 0.75 },
+				},
+			},
+			{ op: 'setPrintArea', sheet: 'Sheet1', range: 'A1:B2' },
+		])
+		const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+		if (!sheet) throw new Error('missing sheet')
+
+		const changed = wb.apply(
+			[
+				{
+					op: 'setPageSetup',
+					sheet: 'Sheet1',
+					setup: {
+						orientation: 'landscape',
+						fitToWidth: 1,
+						fitToHeight: 2,
+						margins: { left: 0.25, right: 0.25 },
+					},
+				},
+				{ op: 'setPrintArea', sheet: 'Sheet1', range: 'C1:D4' },
+			],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(true)
+		expect(changed.journal?.inverseOps).toEqual([
+			{
+				op: 'setDefinedName',
+				name: '_xlnm.Print_Area',
+				ref: "'Sheet1'!A1:B2",
+				scope: 'Sheet1',
+			},
+			{
+				op: 'setPageSetup',
+				sheet: 'Sheet1',
+				setup: {
+					orientation: 'portrait',
+					paperSize: 1,
+					scale: 95,
+					margins: { left: 0.5, right: 0.5, top: 0.75, bottom: 0.75 },
+				},
+			},
+		])
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(sheet.pageSetup).toEqual({ orientation: 'portrait', paperSize: 1, scale: 95 })
+		expect(sheet.pageMargins).toEqual({ left: 0.5, right: 0.5, top: 0.75, bottom: 0.75 })
+		expect(
+			wb.getWorkbookModel().definedNames.get('_xlnm.Print_Area', {
+				kind: 'sheet',
+				sheetId: sheet.id,
+			}),
+		).toBe("'Sheet1'!A1:B2")
+	})
+
+	test('page setup journals mark unsupported package metadata lossy', () => {
+		const wb = AscendWorkbook.create()
+		const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+		if (!sheet) throw new Error('missing sheet')
+		sheet.pageSetup = { orientation: 'portrait', firstPageNumber: 3 }
+
+		const changed = wb.apply(
+			[{ op: 'setPageSetup', sheet: 'Sheet1', setup: { orientation: 'landscape' } }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(false)
+		expect(changed.journal?.issues).toContainEqual({
+			code: 'LOSSY_INVERSE',
+			message:
+				'Page setup for Sheet1 contains metadata that cannot be restored with public operations',
+			refs: ['Sheet1'],
+		})
+		expect(changed.journal?.inverseOps).toEqual([])
+	})
+
 	test('journals expose lossy imported formula-binding metadata preimages', () => {
 		const wb = AscendWorkbook.create()
 		const sheet = wb.getWorkbookModel().getSheet('Sheet1')

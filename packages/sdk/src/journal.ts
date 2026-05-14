@@ -26,6 +26,8 @@ import {
 	type SheetHyperlink,
 	type SheetImageAnchor,
 	type SheetOutlinePr,
+	type SheetPageMargins,
+	type SheetPageSetup,
 	type SheetProtection,
 	type SheetRowDef,
 	type SheetState,
@@ -144,6 +146,12 @@ export interface MutationJournalDefinedNamePreimage {
 	readonly name: string
 	readonly scope?: string
 	readonly definedName: DefinedName | null
+}
+
+export interface MutationJournalPageSetupPreimage {
+	readonly sheet: string
+	readonly pageSetup: SheetPageSetup | null
+	readonly pageMargins: SheetPageMargins | null
 }
 
 export interface MutationJournalTableRenamePreimage {
@@ -292,6 +300,7 @@ export type MutationJournalPreimage =
 			readonly kind: 'conditional-formats'
 			readonly conditionalFormats: MutationJournalConditionalFormatPreimage
 	  }
+	| { readonly kind: 'page-setup'; readonly pageSetup: MutationJournalPageSetupPreimage }
 	| { readonly kind: 'defined-name'; readonly definedName: MutationJournalDefinedNamePreimage }
 	| { readonly kind: 'table-rename'; readonly tableRename: MutationJournalTableRenamePreimage }
 	| { readonly kind: 'table-column'; readonly tableColumn: MutationJournalTableColumnPreimage }
@@ -473,6 +482,10 @@ function buildSupportedJournalEntry(
 			return journalSetConditionalFormat(workbook, op, opIndex)
 		case 'deleteConditionalFormat':
 			return journalDeleteConditionalFormat(workbook, op, opIndex)
+		case 'setPageSetup':
+			return journalSetPageSetup(workbook, op, opIndex)
+		case 'setPrintArea':
+			return journalSetPrintArea(workbook, op, opIndex)
 		case 'setDefinedName':
 			return journalSetDefinedName(workbook, op, opIndex)
 		case 'deleteDefinedName':
@@ -1537,6 +1550,38 @@ function journalDeleteConditionalFormat(
 	}
 }
 
+function journalSetPageSetup(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'setPageSetup' }>,
+	opIndex: number,
+): DraftJournalEntry {
+	const preimage = pageSetupPreimage(workbook, op.sheet)
+	const { inverseOps, issues } = restorePageSetupOps(preimage, op.setup.margins !== undefined)
+	return {
+		opIndex,
+		op,
+		inverseOps,
+		preimages: [{ kind: 'page-setup', pageSetup: preimage }],
+		issues,
+	}
+}
+
+function journalSetPrintArea(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'setPrintArea' }>,
+	opIndex: number,
+): DraftJournalEntry {
+	const preimage = definedNamePreimage(workbook, '_xlnm.Print_Area', op.sheet)
+	const { inverseOps, issues } = restoreDefinedNameOps(workbook, preimage)
+	return {
+		opIndex,
+		op,
+		inverseOps,
+		preimages: [{ kind: 'defined-name', definedName: preimage }],
+		issues,
+	}
+}
+
 function journalSetDefinedName(
 	workbook: Workbook,
 	op: Extract<Operation, { op: 'setDefinedName' }>,
@@ -2414,6 +2459,98 @@ function definedNamePreimage(
 		name,
 		...(scopeSheetName !== undefined ? { scope: scopeSheetName } : {}),
 		definedName: definedName ? cloneDefinedName(definedName) : null,
+	}
+}
+
+function pageSetupPreimage(
+	workbook: Workbook,
+	sheetName: string,
+): MutationJournalPageSetupPreimage {
+	const sheet = workbook.getSheet(sheetName)
+	return {
+		sheet: sheetName,
+		pageSetup: sheet?.pageSetup ? clonePageSetup(sheet.pageSetup) : null,
+		pageMargins: sheet?.pageMargins ? { ...sheet.pageMargins } : null,
+	}
+}
+
+function restorePageSetupOps(
+	preimage: MutationJournalPageSetupPreimage,
+	marginsTouched: boolean,
+): {
+	readonly inverseOps: readonly Operation[]
+	readonly issues: readonly MutationJournalIssue[]
+} {
+	const issues: MutationJournalIssue[] = []
+	const setup = preimage.pageSetup ? pageSetupToInput(preimage.pageSetup) : null
+	if (preimage.pageSetup && !setup) {
+		issues.push({
+			code: 'LOSSY_INVERSE',
+			message: `Page setup for ${preimage.sheet} contains metadata that cannot be restored with public operations`,
+			refs: [preimage.sheet],
+		})
+	}
+	if (!preimage.pageSetup) {
+		issues.push({
+			code: 'LOSSY_INVERSE',
+			message: `Page setup for ${preimage.sheet} cannot be removed with public operations`,
+			refs: [preimage.sheet],
+		})
+	}
+	if (marginsTouched && !preimage.pageMargins) {
+		issues.push({
+			code: 'LOSSY_INVERSE',
+			message: `Page margins for ${preimage.sheet} cannot be removed with public operations`,
+			refs: [preimage.sheet],
+		})
+	}
+	if (!setup) return { inverseOps: [], issues }
+	return {
+		inverseOps: [
+			{
+				op: 'setPageSetup',
+				sheet: preimage.sheet,
+				setup: {
+					...setup,
+					...(preimage.pageMargins ? { margins: { ...preimage.pageMargins } } : {}),
+				},
+			},
+		],
+		issues,
+	}
+}
+
+function pageSetupToInput(
+	setup: SheetPageSetup,
+): Omit<Extract<Operation, { op: 'setPageSetup' }>['setup'], 'margins'> | null {
+	const unsupported = [
+		setup.firstPageNumber,
+		setup.copies,
+		setup.horizontalDpi,
+		setup.verticalDpi,
+		setup.pageOrder,
+		setup.cellComments,
+		setup.errors,
+		setup.blackAndWhite,
+		setup.draft,
+		setup.useFirstPageNumber,
+		setup.usePrinterDefaults,
+		setup.printerSettingsRelId,
+	]
+	if (unsupported.some((value) => value !== undefined)) return null
+	if (
+		setup.orientation !== undefined &&
+		setup.orientation !== 'portrait' &&
+		setup.orientation !== 'landscape'
+	) {
+		return null
+	}
+	return {
+		...(setup.orientation !== undefined ? { orientation: setup.orientation } : {}),
+		...(setup.paperSize !== undefined ? { paperSize: setup.paperSize } : {}),
+		...(setup.scale !== undefined ? { scale: setup.scale } : {}),
+		...(setup.fitToWidth !== undefined ? { fitToWidth: setup.fitToWidth } : {}),
+		...(setup.fitToHeight !== undefined ? { fitToHeight: setup.fitToHeight } : {}),
 	}
 }
 
@@ -4161,6 +4298,10 @@ function cloneDefinedName(definedName: DefinedName): DefinedName {
 			? { extraAttributes: definedName.extraAttributes.map((attribute) => ({ ...attribute })) }
 			: {}),
 	}
+}
+
+function clonePageSetup(setup: SheetPageSetup): SheetPageSetup {
+	return { ...setup }
 }
 
 function cloneTableColumn(column: TableColumn): TableColumn {

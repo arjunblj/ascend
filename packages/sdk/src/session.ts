@@ -1396,7 +1396,7 @@ export class AscendSession {
 				}
 				const openMs = performance.now() - openStart
 				const rebaseStart = performance.now()
-				this.rebaseViewportSnapshots(workbook)
+				if (!reusedReadModel) this.rebaseViewportSnapshots(workbook)
 				const rebaseViewportSnapshotsMs = performance.now() - rebaseStart
 				this.mutableWorkbook = workbook
 				this.mutableWorkbookReadyTimings = {

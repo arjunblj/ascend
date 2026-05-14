@@ -35,6 +35,9 @@ describe('xlsx-read-phase CLI', () => {
 			expect(stderr).toBe('')
 			expect(exitCode).toBe(0)
 			const result = JSON.parse(stdout) as {
+				readonly inputCacheFile?: string
+				readonly reproCommand?: string
+				readonly profileCommand?: string
 				readonly summary?: {
 					readonly zipOpenMedianMs?: number
 					readonly worksheetInflateMedianMs?: number
@@ -46,6 +49,12 @@ describe('xlsx-read-phase CLI', () => {
 			expect(result.summary?.worksheetInflateMedianMs).toBeNumber()
 			expect(result.summary?.worksheetDecodeMedianMs).toBeNumber()
 			expect(result.summary?.dominantPhase).toBeString()
+			expect(result.inputCacheFile).toBeString()
+			expect(await Bun.file(result.inputCacheFile ?? '').exists()).toBe(true)
+			expect(result.reproCommand).toContain('bun run fixtures/benchmarks/xlsx-read-phase.ts')
+			expect(result.profileCommand).toContain('bun run fixtures/benchmarks/profile-bun.ts')
+			expect(result.profileCommand).toContain('--mode all-md')
+			expect(result.profileCommand).toContain(`--input-file ${result.inputCacheFile}`)
 		},
 		{ timeout: 30_000 },
 	)

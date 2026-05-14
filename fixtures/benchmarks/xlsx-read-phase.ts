@@ -1,4 +1,7 @@
 #!/usr/bin/env bun
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import {
 	createWorkbook,
 	DEFAULT_STYLE_ID,
@@ -134,6 +137,8 @@ const WORKLOADS = new Set<string>([
 	'metadata-only',
 	'warm-workflow',
 ])
+const READ_PHASE_SCRIPT = 'fixtures/benchmarks/xlsx-read-phase.ts'
+const PROFILE_SCRIPT = 'fixtures/benchmarks/profile-bun.ts'
 
 function readOption(args: readonly string[], name: string): string | undefined {
 	const index = args.indexOf(name)
@@ -809,6 +814,7 @@ const args = applyInputFileShape(parsedArgs, inputFileContext?.shape, {
 	colsExplicit,
 })
 let input = await loadInput(args, inputFileContext)
+const inputCacheFile = args.inputFile ? undefined : materializeGeneratedInputCache(input, args)
 const worksheetXml =
 	args.phase === 'all' || args.phase === 'xml' ? loadFirstWorksheetXml(input.xlsxBytes) : undefined
 if (
@@ -839,6 +845,8 @@ for (let i = 0; i < args.repeat; i++) {
 const payload = {
 	tool: 'xlsx-read-phase',
 	args,
+	...benchmarkCommands(args, inputCacheFile ?? args.inputFile),
+	...(inputCacheFile ? { inputCacheFile } : {}),
 	...(inputFileContext?.shape ? { inputFileShape: inputFileContext.shape } : {}),
 	summary: summarize(samples),
 	samples,
@@ -853,6 +861,91 @@ if (args.json) {
 function runGc(): void {
 	const maybeBun = globalThis as typeof globalThis & { Bun?: { gc?: (force?: boolean) => void } }
 	maybeBun.Bun?.gc?.(true)
+}
+
+function benchmarkCommands(
+	args: Args,
+	profileInputFile: string | undefined,
+): { readonly reproCommand: string; readonly profileCommand: string } {
+	const reproArgs = readPhaseCommandArgs(args, args.inputFile)
+	const profileArgs = readPhaseCommandArgs(args, profileInputFile)
+	const label = safeCommandName(
+		`xlsx-read-${args.profile ?? `${args.workload}-${args.rows}x${args.cols}`}`,
+	)
+	return {
+		reproCommand: commandString(reproArgs),
+		profileCommand: commandString([
+			'bun',
+			'run',
+			PROFILE_SCRIPT,
+			'--mode',
+			'all-md',
+			'--label',
+			`${label}-${args.phase}`,
+			'--',
+			...profileArgs,
+		]),
+	}
+}
+
+function readPhaseCommandArgs(args: Args, inputFile: string | undefined): string[] {
+	return [
+		'bun',
+		'run',
+		READ_PHASE_SCRIPT,
+		...(args.profile ? ['--profile', args.profile] : []),
+		...(inputFile ? ['--input-file', inputFile] : []),
+		'--rows',
+		String(args.rows),
+		'--cols',
+		String(args.cols),
+		'--workload',
+		args.workload,
+		'--read-source',
+		args.readSource,
+		'--phase',
+		args.phase,
+		'--repeat',
+		String(args.repeat),
+		'--warmup',
+		String(args.warmup),
+		'--validation-mode',
+		args.validationMode,
+		...(args.gcBetweenSamples ? ['--gc-between-samples'] : []),
+		'--json',
+	]
+}
+
+function materializeGeneratedInputCache(input: CompetitiveDataSet, args: Args): string | undefined {
+	if (args.inputFile) return undefined
+	const dir = join(tmpdir(), 'ascend-benchmark-inputs')
+	mkdirSync(dir, { recursive: true })
+	const hash = xlsxBytesHash(input.xlsxBytes).slice(0, 16)
+	const name = safeCommandName(
+		args.profile ?? `${input.workloadName}-${input.readSource}-${input.rows}x${input.cols}`,
+	)
+	const path = join(dir, `xlsx-read-phase-${name}-${hash}.xlsx`)
+	writeFileSync(path, input.xlsxBytes)
+	return path
+}
+
+function xlsxBytesHash(bytes: Uint8Array): string {
+	const hash = new Bun.CryptoHasher('sha256')
+	hash.update(bytes)
+	return hash.digest('hex')
+}
+
+function commandString(args: readonly string[]): string {
+	return args.map(shellQuote).join(' ')
+}
+
+function shellQuote(value: string): string {
+	return /^[A-Za-z0-9_./:=@+-]+$/.test(value) ? value : `'${value.replaceAll("'", "'\\''")}'`
+}
+
+function safeCommandName(value: string): string {
+	const safe = value.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '')
+	return safe || 'xlsx-read-phase'
 }
 
 function loadFirstWorksheetXml(bytes: Uint8Array): WorksheetXmlPart {

@@ -1908,6 +1908,16 @@ function journalCopyRange(
 				false,
 			)
 		: EMPTY_METADATA_RESTORATION
+	const merges = copyRangeTransfersMerges(mode)
+		? mergeTransferRestoration(
+				workbook,
+				op.sheet,
+				parseRange(op.source),
+				targetSheet,
+				targetRange,
+				false,
+			)
+		: EMPTY_METADATA_RESTORATION
 	return {
 		opIndex,
 		op,
@@ -1915,17 +1925,19 @@ function journalCopyRange(
 			...cellInverseOps,
 			...metadataRestoration.inverseOps,
 			...conditionalFormats.inverseOps,
+			...merges.inverseOps,
 		],
 		preimages: [
 			{ kind: 'cells', cells },
 			...metadataRestoration.preimages,
 			...conditionalFormats.preimages,
+			...merges.preimages,
 		],
 		issues: [
 			...cellIssues,
 			...metadataRestoration.issues,
 			...conditionalFormats.issues,
-			...copyRangeMetadataIssues(workbook, op, targetRange),
+			...merges.issues,
 		],
 	}
 }
@@ -2030,6 +2042,9 @@ function journalMoveRange(
 				true,
 			)
 		: EMPTY_METADATA_RESTORATION
+	const merges = copyRangeTransfersMerges(mode)
+		? mergeTransferRestoration(workbook, op.sheet, sourceRange, targetSheet, targetRange, true)
+		: EMPTY_METADATA_RESTORATION
 	const cells = uniqueCellPreimages([...targetCells, ...sourceCells])
 	return {
 		opIndex,
@@ -2039,19 +2054,21 @@ function journalMoveRange(
 			...sourceInverseOps,
 			...metadataRestoration.inverseOps,
 			...conditionalFormats.inverseOps,
+			...merges.inverseOps,
 		],
 		preimages: [
 			{ kind: 'cells', cells },
 			...metadataRestoration.preimages,
 			...conditionalFormats.preimages,
+			...merges.preimages,
 		],
 		issues: [
 			...targetIssues,
 			...sourceIssues,
 			...metadataRestoration.issues,
 			...conditionalFormats.issues,
+			...merges.issues,
 			...moveRangeOverlapIssues(op, sourceRange, targetRange),
-			...moveRangeMetadataIssues(workbook, op, sourceRange, targetRange),
 			...(copyRangeOverwritesFormulas(mode)
 				? moveRangeFormulaSurfaceIssues(workbook, op, sourceRange, targetRange)
 				: []),
@@ -4917,6 +4934,10 @@ function copyRangeTransfersConditionalFormats(mode: string): boolean {
 	return mode === 'all' || mode === 'formats' || mode === 'styles'
 }
 
+function copyRangeTransfersMerges(mode: string): boolean {
+	return mode === 'all' || mode === 'formats' || mode === 'styles'
+}
+
 function copyRangeRestoration(
 	cells: readonly MutationJournalCellPreimage[],
 	mode: string,
@@ -4956,6 +4977,267 @@ const EMPTY_METADATA_RESTORATION: {
 	readonly preimages: readonly MutationJournalPreimage[]
 	readonly issues: readonly MutationJournalIssue[]
 } = { inverseOps: [], preimages: [], issues: [] }
+
+function mergeTransferRestoration(
+	workbook: Workbook,
+	sourceSheetName: string,
+	sourceRange: RangeRef,
+	targetSheetName: string,
+	targetRange: RangeRef,
+	move: boolean,
+): {
+	readonly inverseOps: readonly Operation[]
+	readonly preimages: readonly MutationJournalPreimage[]
+	readonly issues: readonly MutationJournalIssue[]
+} {
+	const sourceSheet = workbook.getSheet(sourceSheetName)
+	const targetSheet = workbook.getSheet(targetSheetName)
+	if (!sourceSheet || !targetSheet) return EMPTY_METADATA_RESTORATION
+	const rowDelta = targetRange.start.row - sourceRange.start.row
+	const colDelta = targetRange.start.col - sourceRange.start.col
+	const sourceMerges = sourceSheet.merges.filter((merge) => rangesOverlap(merge, sourceRange))
+	const targetMerges = sourceMerges.map((merge) => shiftRange(merge, rowDelta, colDelta))
+	const targetReplacedMerges = targetSheet.merges.filter((merge) =>
+		rangesOverlap(merge, targetRange),
+	)
+	const validationIssues = mergeTransferValidationIssues(
+		sourceSheetName,
+		sourceRange,
+		targetSheetName,
+		targetRange,
+		sourceMerges,
+		targetReplacedMerges,
+		move,
+		sourceSheet === targetSheet,
+	)
+	const hasMergeEffect = sourceMerges.length > 0 || targetReplacedMerges.length > 0
+	if (!hasMergeEffect && validationIssues.length === 0) return EMPTY_METADATA_RESTORATION
+	if (validationIssues.length > 0) {
+		return {
+			inverseOps: [],
+			preimages: mergeTransferPreimages(
+				workbook,
+				sourceSheetName,
+				sourceMerges,
+				targetSheetName,
+				targetReplacedMerges,
+				targetMerges,
+			),
+			issues: validationIssues,
+		}
+	}
+
+	const inverseOps: Operation[] = []
+	for (const merge of uniqueRanges(targetMerges)) {
+		inverseOps.push({ op: 'unmergeCells', sheet: targetSheetName, range: rangeToA1(merge) })
+	}
+	const issues: MutationJournalIssue[] = [
+		...mergeTransferDuplicateIssues(sourceSheetName, sourceRange, sourceMerges),
+		...mergeTransferDuplicateIssues(targetSheetName, targetRange, targetReplacedMerges),
+		...mergeTransferDuplicateIssues(targetSheetName, targetRange, targetMerges),
+	]
+	if (move && sourceSheet === targetSheet) {
+		const removed = mergeRangesInOriginalOrder(sourceSheet.merges, [
+			...sourceMerges,
+			...targetReplacedMerges,
+		])
+		issues.push(
+			...mergeTransferOrderIssues(
+				sourceSheetName,
+				sourceRange,
+				sourceSheet.merges,
+				removed,
+				'Moved merge order',
+			),
+		)
+		for (const merge of uniqueRanges(removed)) {
+			inverseOps.push({ op: 'mergeCells', sheet: sourceSheetName, range: rangeToA1(merge) })
+		}
+	} else {
+		issues.push(
+			...mergeTransferOrderIssues(
+				targetSheetName,
+				targetRange,
+				targetSheet.merges,
+				targetReplacedMerges,
+				'Replaced target merge order',
+			),
+		)
+		for (const merge of uniqueRanges(targetReplacedMerges)) {
+			inverseOps.push({ op: 'mergeCells', sheet: targetSheetName, range: rangeToA1(merge) })
+		}
+		if (move) {
+			issues.push(
+				...mergeTransferOrderIssues(
+					sourceSheetName,
+					sourceRange,
+					sourceSheet.merges,
+					sourceMerges,
+					'Moved merge order',
+				),
+			)
+			for (const merge of uniqueRanges(sourceMerges)) {
+				inverseOps.push({ op: 'mergeCells', sheet: sourceSheetName, range: rangeToA1(merge) })
+			}
+		}
+	}
+
+	return {
+		inverseOps,
+		preimages: mergeTransferPreimages(
+			workbook,
+			sourceSheetName,
+			sourceMerges,
+			targetSheetName,
+			targetReplacedMerges,
+			targetMerges,
+		),
+		issues,
+	}
+}
+
+function mergeTransferValidationIssues(
+	sourceSheetName: string,
+	sourceRange: RangeRef,
+	targetSheetName: string,
+	targetRange: RangeRef,
+	sourceMerges: readonly RangeRef[],
+	targetReplacedMerges: readonly RangeRef[],
+	move: boolean,
+	sameSheet: boolean,
+): readonly MutationJournalIssue[] {
+	const issues: MutationJournalIssue[] = []
+	for (const merge of sourceMerges) {
+		if (!rangeContainsRange(sourceRange, merge)) {
+			issues.push({
+				code: 'UNSUPPORTED_OPERATION',
+				message: `Cannot journal ${move ? 'moveRange' : 'copyRange'} merge transfer because ${sourceSheetName}!${rangeToA1(sourceRange)} partially overlaps merged range ${sourceSheetName}!${rangeToA1(merge)}`,
+				refs: [
+					`${sourceSheetName}!${rangeToA1(sourceRange)}`,
+					`${sourceSheetName}!${rangeToA1(merge)}`,
+				],
+			})
+		}
+	}
+	if (
+		sourceMerges.length > 0 &&
+		sameSheet &&
+		!sameRange(sourceRange, targetRange) &&
+		rangesOverlap(sourceRange, targetRange)
+	) {
+		issues.push({
+			code: 'UNSUPPORTED_OPERATION',
+			message: `Cannot journal ${move ? 'moveRange' : 'copyRange'} merge transfer onto overlapping target ${targetSheetName}!${rangeToA1(targetRange)}`,
+			refs: [
+				`${sourceSheetName}!${rangeToA1(sourceRange)}`,
+				`${targetSheetName}!${rangeToA1(targetRange)}`,
+			],
+		})
+	}
+	for (const merge of targetReplacedMerges) {
+		if (!rangeContainsRange(targetRange, merge)) {
+			issues.push({
+				code: 'UNSUPPORTED_OPERATION',
+				message: `Cannot journal ${move ? 'moveRange' : 'copyRange'} merge transfer because ${targetSheetName}!${rangeToA1(targetRange)} partially overlaps merged range ${targetSheetName}!${rangeToA1(merge)}`,
+				refs: [
+					`${targetSheetName}!${rangeToA1(targetRange)}`,
+					`${targetSheetName}!${rangeToA1(merge)}`,
+				],
+			})
+		}
+	}
+	return issues
+}
+
+function mergeTransferPreimages(
+	workbook: Workbook,
+	sourceSheetName: string,
+	sourceMerges: readonly RangeRef[],
+	targetSheetName: string,
+	targetReplacedMerges: readonly RangeRef[],
+	targetMerges: readonly RangeRef[],
+): MutationJournalPreimage[] {
+	const preimages = new Map<string, MutationJournalPreimage>()
+	const add = (sheet: string, merge: RangeRef) => {
+		const range = rangeToA1(merge)
+		preimages.set(`${sheet}!${range}`, {
+			kind: 'merge',
+			merge: mergePreimage(workbook, sheet, range),
+		})
+	}
+	for (const merge of sourceMerges) add(sourceSheetName, merge)
+	for (const merge of targetReplacedMerges) add(targetSheetName, merge)
+	for (const merge of targetMerges) add(targetSheetName, merge)
+	return [...preimages.values()]
+}
+
+function mergeTransferOrderIssues(
+	sheetName: string,
+	contextRange: RangeRef,
+	originalMerges: readonly RangeRef[],
+	removedMerges: readonly RangeRef[],
+	label: string,
+): readonly MutationJournalIssue[] {
+	if (removedMerges.length === 0) return []
+	const removed = new Set(removedMerges.map(rangeCoordinateKey))
+	const firstRemoved = originalMerges.findIndex((merge) => removed.has(rangeCoordinateKey(merge)))
+	if (firstRemoved < 0) return []
+	for (let index = firstRemoved; index < originalMerges.length; index++) {
+		const merge = originalMerges[index]
+		if (merge && removed.has(rangeCoordinateKey(merge))) continue
+		return [
+			{
+				code: 'LOSSY_INVERSE',
+				message: `${label} on ${sheetName}!${rangeToA1(contextRange)} cannot be restored exactly with public operations`,
+				refs: [`${sheetName}!${rangeToA1(contextRange)}`],
+			},
+		]
+	}
+	return []
+}
+
+function mergeTransferDuplicateIssues(
+	sheetName: string,
+	contextRange: RangeRef,
+	merges: readonly RangeRef[],
+): readonly MutationJournalIssue[] {
+	if (duplicateStrings(merges.map(rangeCoordinateKey)).length === 0) return []
+	return [
+		{
+			code: 'LOSSY_INVERSE',
+			message: `Duplicate merge metadata on ${sheetName}!${rangeToA1(contextRange)} cannot be restored exactly with public operations`,
+			refs: [`${sheetName}!${rangeToA1(contextRange)}`],
+		},
+	]
+}
+
+function mergeRangesInOriginalOrder(
+	originalMerges: readonly RangeRef[],
+	removedMerges: readonly RangeRef[],
+): RangeRef[] {
+	const removed = new Set(removedMerges.map(rangeCoordinateKey))
+	return originalMerges.filter((merge) => removed.has(rangeCoordinateKey(merge))).map(cloneRange)
+}
+
+function uniqueRanges(ranges: readonly RangeRef[]): RangeRef[] {
+	const seen = new Set<string>()
+	const unique: RangeRef[] = []
+	for (const range of ranges) {
+		const key = rangeCoordinateKey(range)
+		if (seen.has(key)) continue
+		seen.add(key)
+		unique.push(cloneRange(range))
+	}
+	return unique
+}
+
+function cloneRange(range: RangeRef): RangeRef {
+	return { start: { ...range.start }, end: { ...range.end } }
+}
+
+function rangeCoordinateKey(range: RangeRef): string {
+	return `${range.start.row}:${range.start.col}:${range.end.row}:${range.end.col}`
+}
 
 function copyRangeAllMetadataRestoration(
 	workbook: Workbook,
@@ -5055,29 +5337,6 @@ function moveRangeAllMetadataRestoration(
 	}
 }
 
-function copyRangeMetadataIssues(
-	workbook: Workbook,
-	op: Extract<Operation, { op: 'copyRange' }>,
-	targetRange: RangeRef,
-): readonly MutationJournalIssue[] {
-	const mode = op.mode ?? 'all'
-	if (mode !== 'all' && mode !== 'formats' && mode !== 'styles') return []
-	const sourceSheet = workbook.getSheet(op.sheet)
-	const targetSheet = workbook.getSheet(op.targetSheet ?? op.sheet)
-	if (!sourceSheet || !targetSheet) return []
-	const sourceRange = parseRange(op.source)
-	const sourceHasMetadata = copyRangeModeTouchesUnrestorableMetadata(sourceSheet, sourceRange, mode)
-	const targetHasMetadata = copyRangeModeTouchesUnrestorableMetadata(targetSheet, targetRange, mode)
-	if (!sourceHasMetadata && !targetHasMetadata) return []
-	return [
-		{
-			code: 'LOSSY_INVERSE',
-			message: `copyRange metadata transfer for ${op.sheet}!${op.source} cannot be fully restored with public operations`,
-			refs: [`${op.sheet}!${op.source}`, `${op.targetSheet ?? op.sheet}!${rangeToA1(targetRange)}`],
-		},
-	]
-}
-
 function moveRangeOverlapIssues(
 	op: Extract<Operation, { op: 'moveRange' }>,
 	sourceRange: RangeRef,
@@ -5090,29 +5349,6 @@ function moveRangeOverlapIssues(
 			code: 'LOSSY_INVERSE',
 			message: `Overlapping moveRange ${op.sheet}!${op.source} to ${op.target} cannot be fully restored with public operations`,
 			refs: [`${op.sheet}!${op.source}`, `${op.sheet}!${rangeToA1(targetRange)}`],
-		},
-	]
-}
-
-function moveRangeMetadataIssues(
-	workbook: Workbook,
-	op: Extract<Operation, { op: 'moveRange' }>,
-	sourceRange: RangeRef,
-	targetRange: RangeRef,
-): readonly MutationJournalIssue[] {
-	const mode = op.mode ?? 'all'
-	if (mode !== 'all' && mode !== 'formats' && mode !== 'styles') return []
-	const sourceSheet = workbook.getSheet(op.sheet)
-	const targetSheet = workbook.getSheet(op.targetSheet ?? op.sheet)
-	if (!sourceSheet || !targetSheet) return []
-	const sourceHasMetadata = copyRangeModeTouchesUnrestorableMetadata(sourceSheet, sourceRange, mode)
-	const targetHasMetadata = copyRangeModeTouchesUnrestorableMetadata(targetSheet, targetRange, mode)
-	if (!sourceHasMetadata && !targetHasMetadata) return []
-	return [
-		{
-			code: 'LOSSY_INVERSE',
-			message: `moveRange metadata transfer for ${op.sheet}!${op.source} cannot be fully restored with public operations`,
-			refs: [`${op.sheet}!${op.source}`, `${op.targetSheet ?? op.sheet}!${rangeToA1(targetRange)}`],
 		},
 	]
 }
@@ -5424,18 +5660,6 @@ function formulaRefReferencesMovedRange(
 		default:
 			return false
 	}
-}
-
-function copyRangeModeTouchesUnrestorableMetadata(
-	sheet: Sheet,
-	range: RangeRef,
-	mode: string,
-): boolean {
-	if (mode === 'formats' || mode === 'styles') {
-		return sheet.merges.some((merge) => rangesOverlap(merge, range))
-	}
-	if (mode !== 'all') return false
-	return sheet.merges.some((merge) => rangesOverlap(merge, range))
 }
 
 function transferTargetRange(sourceRangeText: string, targetRef: string): RangeRef {

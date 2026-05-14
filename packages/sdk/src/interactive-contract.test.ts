@@ -4160,6 +4160,30 @@ describe('interactive client contract', () => {
 		expect(journalComparableState(wb)).toEqual(before)
 	})
 
+	test('copyRange format journals restore merged-cell transfer exactly', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'mergeCells', sheet: 'Sheet1', range: 'A1:B1' }])
+		const before = JSON.parse(JSON.stringify(journalComparableState(wb)))
+
+		const changed = wb.apply(
+			[{ op: 'copyRange', sheet: 'Sheet1', source: 'A1:B1', target: 'D1', mode: 'formats' }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(true)
+		expect(changed.journal?.issues).toEqual([])
+		expect(wb.sheet('Sheet1')?.merges).toEqual([
+			{ start: { row: 0, col: 0 }, end: { row: 0, col: 1 } },
+			{ start: { row: 0, col: 3 }, end: { row: 0, col: 4 } },
+		])
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(journalComparableState(wb)).toEqual(before)
+	})
+
 	test('copyRange conditional format journals mark target collisions lossy', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([
@@ -4635,6 +4659,52 @@ describe('interactive client contract', () => {
 		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
 		expect(undo.errors).toEqual([])
 		expect(journalComparableState(wb)).toEqual(before)
+	})
+
+	test('moveRange format journals restore merged-cell transfer exactly', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'mergeCells', sheet: 'Sheet1', range: 'A1:B1' }])
+		const before = JSON.parse(JSON.stringify(journalComparableState(wb)))
+
+		const changed = wb.apply(
+			[{ op: 'moveRange', sheet: 'Sheet1', source: 'A1:B1', target: 'D1', mode: 'formats' }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(true)
+		expect(changed.journal?.issues).toEqual([])
+		expect(wb.sheet('Sheet1')?.merges).toEqual([
+			{ start: { row: 0, col: 3 }, end: { row: 0, col: 4 } },
+		])
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(journalComparableState(wb)).toEqual(before)
+	})
+
+	test('moveRange merge journals mark non-suffix order lossy', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{ op: 'mergeCells', sheet: 'Sheet1', range: 'A1:B1' },
+			{ op: 'mergeCells', sheet: 'Sheet1', range: 'Z1:AA1' },
+		])
+
+		const changed = wb.apply(
+			[{ op: 'moveRange', sheet: 'Sheet1', source: 'A1:B1', target: 'D1', mode: 'formats' }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(false)
+		expect(changed.journal?.issues).toContainEqual({
+			code: 'LOSSY_INVERSE',
+			message:
+				'Moved merge order on Sheet1!A1:B1 cannot be restored exactly with public operations',
+			refs: ['Sheet1!A1:B1'],
+		})
 	})
 
 	test('moveRange validation journals restore source and target validations exactly', () => {

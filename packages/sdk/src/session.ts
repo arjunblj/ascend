@@ -2382,7 +2382,7 @@ function sessionSizeBytes(
 	usage: 'base' | 'verify',
 ): number {
 	const workbook = view.inspect()
-	const sourceBytes = identity.size
+	const sourceBytes = workbook.load.isPartial ? 0 : identity.size
 	const loadedSheets = workbook.loadedSheetCount
 	const cells = workbook.cellCount ?? 0
 	const metadataUnits =

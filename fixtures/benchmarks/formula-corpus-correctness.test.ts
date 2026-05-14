@@ -294,6 +294,11 @@ describe('formula corpus correctness runner', () => {
 			formula: 'COMPLEX(3.32192809488737,-8.11707666704866E-15,"j")',
 			styleId: SID,
 		})
+		sheet.cells.set(4, 0, {
+			value: numberValue(99),
+			formula: 'DATE(2020,1,1)',
+			styleId: SID,
+		})
 		const written = writeXlsx(workbook)
 		if (!written.ok) throw new Error(written.error.message)
 		await writeFile(join(root, 'classified.xlsx'), written.value)
@@ -311,19 +316,32 @@ describe('formula corpus correctness runner', () => {
 
 		expect(payload.summary).toMatchObject({
 			volatileOracleSkipCount: 1,
-			mismatchCount: 3,
+			mismatchCount: 4,
 			acceptedMismatchCount: 2,
-			unacceptedMismatchCount: 1,
-			semanticMismatchCount: 1,
+			unacceptedMismatchCount: 2,
+			semanticMismatchCount: 2,
 			numericDriftMismatchCount: 2,
 			semanticPerfectWorkbookCount: 0,
+			oracleRouteCounts: {
+				'accepted-mismatch': 3,
+				'hyperformula-compat': 1,
+				'excel-full-rebuild': 1,
+			},
 		})
 		expect(payload.results[0]?.mismatches.map((mismatch) => mismatch.classification)).toEqual([
 			'numeric-drift',
 			'semantic',
 			'numeric-drift',
+			'semantic',
+		])
+		expect(payload.results[0]?.mismatches.map((mismatch) => mismatch.oracleRoute)).toEqual([
+			'accepted-mismatch',
+			'hyperformula-compat',
+			'accepted-mismatch',
+			'excel-full-rebuild',
 		])
 		expect(payload.results[0]?.volatileOracleSkips.map((skip) => skip.ref)).toEqual(['Sheet1!A3'])
+		expect(payload.results[0]?.volatileOracleSkips[0]?.oracleRoute).toBe('accepted-mismatch')
 	})
 
 	test('classifies formulas downstream of volatile precedents as oracle skips', async () => {

@@ -63,6 +63,7 @@ interface WorkbookFormulaResult {
 	readonly semanticMismatchCount: number
 	readonly numericDriftMismatchCount: number
 	readonly staleOracleMismatchCount: number
+	readonly oracleRouteCounts: FormulaOracleRouteCounts
 	readonly errorCount: number
 	readonly beforeHash: string
 	readonly afterHash: string
@@ -79,6 +80,9 @@ interface FormulaMismatch {
 	readonly calculated: string
 	readonly classification: FormulaMismatchClassification
 	readonly reason: string
+	readonly oracleRoute: FormulaOracleRoute
+	readonly oracleReason: string
+	readonly oracleArtifact: string
 }
 
 interface FormulaOracleSkip {
@@ -87,6 +91,9 @@ interface FormulaOracleSkip {
 	readonly cached: string
 	readonly calculated: string
 	readonly reason: string
+	readonly oracleRoute: FormulaOracleRoute
+	readonly oracleReason: string
+	readonly oracleArtifact: string
 }
 
 interface FormulaComparison {
@@ -95,6 +102,32 @@ interface FormulaComparison {
 }
 
 type FormulaMismatchClassification = 'semantic' | 'numeric-drift' | 'stale-oracle'
+
+type FormulaOracleRoute =
+	| 'accepted-mismatch'
+	| 'cached-values'
+	| 'excel-full-rebuild'
+	| 'hyperformula-compat'
+	| 'libreoffice-hard-recalc'
+	| 'manual-triage'
+
+type FormulaOracleRouteCounts = Record<FormulaOracleRoute, number>
+
+type FormulaMismatchCandidate = Omit<
+	FormulaMismatch,
+	'oracleRoute' | 'oracleReason' | 'oracleArtifact'
+>
+
+type FormulaOracleSkipCandidate = Omit<
+	FormulaOracleSkip,
+	'oracleRoute' | 'oracleReason' | 'oracleArtifact'
+>
+
+interface FormulaOracleRouting {
+	readonly oracleRoute: FormulaOracleRoute
+	readonly oracleReason: string
+	readonly oracleArtifact: string
+}
 
 interface SuitePayload {
 	readonly formatVersion: 1
@@ -124,6 +157,7 @@ interface SuitePayload {
 		readonly semanticMismatchCount: number
 		readonly numericDriftMismatchCount: number
 		readonly staleOracleMismatchCount: number
+		readonly oracleRouteCounts: FormulaOracleRouteCounts
 		readonly errorCount: number
 		readonly perfectWorkbookCount: number
 		readonly semanticPerfectWorkbookCount: number
@@ -134,6 +168,12 @@ const NUMERIC_DRIFT_ABS_TOLERANCE = 1e-12
 const NUMERIC_DRIFT_REL_TOLERANCE = 2e-8
 const NON_DETERMINISTIC_FUNCTION_RE =
 	/(?:^|[^A-Z0-9_.])(?:NOW|TODAY|RAND|RANDBETWEEN|RANDARRAY)\s*\(/i
+const EXTERNAL_WORKBOOK_REFERENCE_RE = /\[[^\]]+\]/
+const STRUCTURED_REFERENCE_RE = /\b[A-Za-z_][A-Za-z0-9_.]*\[[^\]]+\]/
+const EXCEL_SPECIFIC_FUNCTION_RE =
+	/(?:^|[^A-Z0-9_.])(?:BYCOL|BYROW|CHOOSECOLS|CHOOSEROWS|DROP|EXPAND|FILTER|GROUPBY|HSTACK|LAMBDA|LET|MAKEARRAY|MAP|PIVOTBY|RANDARRAY|REDUCE|SCAN|SEQUENCE|SORT|SORTBY|TAKE|TOCOL|TOROW|UNIQUE|VSTACK|WRAPCOLS|WRAPROWS|XLOOKUP|XMATCH)\s*\(/i
+const DATE_SYSTEM_SENSITIVE_FUNCTION_RE =
+	/(?:^|[^A-Z0-9_.])(?:DATE|DATEDIF|DATEVALUE|DAYS|DAYS360|EDATE|EOMONTH|NETWORKDAYS|TEXT|WEEKDAY|WEEKNUM|WORKDAY|YEARFRAC)\s*\(/i
 const KNOWN_STALE_ORACLE_MISMATCHES = new Map<string, string>([
 	[
 		staleOracleKey({
@@ -317,8 +357,8 @@ function compareSnapshots(
 	after: readonly FormulaSnapshot[],
 ): FormulaComparison {
 	const afterByRef = new Map(after.map((entry) => [entry.ref, entry]))
-	const mismatches: FormulaMismatch[] = []
-	const volatileOracleSkips: FormulaOracleSkip[] = []
+	const mismatches: FormulaMismatchCandidate[] = []
+	const volatileOracleSkips: FormulaOracleSkipCandidate[] = []
 	for (const entry of before) {
 		if (entry.cached === 'empty') continue
 		const calculated = afterByRef.get(entry.ref)
@@ -348,7 +388,17 @@ function compareSnapshots(
 			})
 		}
 	}
-	return classifyDownstreamComparisons(mismatches, volatileOracleSkips)
+	const classified = classifyDownstreamComparisons(mismatches, volatileOracleSkips)
+	return {
+		mismatches: classified.mismatches.map((mismatch) => ({
+			...mismatch,
+			...oracleRouteForMismatch(workbookEntry, mismatch),
+		})),
+		volatileOracleSkips: classified.volatileOracleSkips.map((skip) => ({
+			...skip,
+			...oracleRouteForVolatileSkip(skip),
+		})),
+	}
 }
 
 function classifyMismatch(
@@ -412,10 +462,81 @@ function classifyMismatch(
 	}
 }
 
+function oracleRouteForMismatch(
+	workbookEntry: NormalizedCorpusManifestEntry,
+	mismatch: FormulaMismatchCandidate,
+): FormulaOracleRouting {
+	if (mismatch.classification === 'numeric-drift') {
+		return {
+			oracleRoute: 'accepted-mismatch',
+			oracleReason: 'numeric drift is within configured cached-value tolerance',
+			oracleArtifact: 'accepted mismatch record with cached/calculated hashes',
+		}
+	}
+	if (mismatch.classification === 'stale-oracle') {
+		return {
+			oracleRoute: 'accepted-mismatch',
+			oracleReason: 'known stale cached oracle value is documented',
+			oracleArtifact: 'known stale-oracle record with source, ref, formula, cache, and reason',
+		}
+	}
+	if (EXTERNAL_WORKBOOK_REFERENCE_RE.test(mismatch.formula)) {
+		return {
+			oracleRoute: 'excel-full-rebuild',
+			oracleReason: 'formula references an external workbook',
+			oracleArtifact: 'Excel full-rebuild workbook bundle with linked workbook inputs',
+		}
+	}
+	if (STRUCTURED_REFERENCE_RE.test(mismatch.formula)) {
+		return {
+			oracleRoute: 'excel-full-rebuild',
+			oracleReason: 'formula uses table structured references',
+			oracleArtifact: 'Excel table-aware cache diff',
+		}
+	}
+	if (EXCEL_SPECIFIC_FUNCTION_RE.test(mismatch.formula)) {
+		return {
+			oracleRoute: 'excel-full-rebuild',
+			oracleReason: 'formula uses Excel-specific or dynamic-array calculation semantics',
+			oracleArtifact: 'Excel full-rebuild cache diff with calculation engine metadata',
+		}
+	}
+	if (DATE_SYSTEM_SENSITIVE_FUNCTION_RE.test(mismatch.formula)) {
+		return {
+			oracleRoute: 'excel-full-rebuild',
+			oracleReason: 'formula may depend on Excel date-system or culture-sensitive semantics',
+			oracleArtifact: 'Excel cache diff with date system and culture metadata',
+		}
+	}
+	if (workbookEntry.source?.toLowerCase().includes('libreoffice')) {
+		return {
+			oracleRoute: 'libreoffice-hard-recalc',
+			oracleReason: 'LibreOffice-origin workbook should be checked against LibreOffice hard recalc',
+			oracleArtifact: 'LibreOffice hard-recalc cache diff',
+		}
+	}
+	return {
+		oracleRoute: 'hyperformula-compat',
+		oracleReason: 'semantic scalar mismatch can be cross-checked with a compatible formula engine',
+		oracleArtifact: 'HyperFormula-compatible formula transcript',
+	}
+}
+
+function oracleRouteForVolatileSkip(_skip: FormulaOracleSkipCandidate): FormulaOracleRouting {
+	return {
+		oracleRoute: 'accepted-mismatch',
+		oracleReason: 'volatile formula cache is not reproducible as a historical oracle',
+		oracleArtifact: 'volatile oracle skip record with downstream propagation reason',
+	}
+}
+
 function classifyDownstreamComparisons(
-	mismatches: readonly FormulaMismatch[],
-	volatileOracleSkips: readonly FormulaOracleSkip[],
-): FormulaComparison {
+	mismatches: readonly FormulaMismatchCandidate[],
+	volatileOracleSkips: readonly FormulaOracleSkipCandidate[],
+): {
+	readonly mismatches: readonly FormulaMismatchCandidate[]
+	readonly volatileOracleSkips: readonly FormulaOracleSkipCandidate[]
+} {
 	let current = [...mismatches]
 	const volatile = [...volatileOracleSkips]
 	let changed = true
@@ -423,13 +544,13 @@ function classifyDownstreamComparisons(
 		changed = false
 		const byRef = new Map(current.map((mismatch) => [mismatch.ref, mismatch]))
 		const volatileRefs = new Set(volatile.map((skip) => skip.ref))
-		const next: FormulaMismatch[] = []
+		const next: FormulaMismatchCandidate[] = []
 		for (const mismatch of current) {
 			if (mismatch.classification !== 'semantic') {
 				next.push(mismatch)
 				continue
 			}
-			let replacement: FormulaMismatch | null = null
+			let replacement: FormulaMismatchCandidate | null = null
 			let movedToVolatile = false
 			for (const ref of extractFormulaReferences(mismatch.formula, mismatch.ref)) {
 				if (volatileRefs.has(ref)) {
@@ -557,6 +678,7 @@ async function runWorkbook(
 			semanticMismatchCount: 0,
 			numericDriftMismatchCount: 0,
 			staleOracleMismatchCount: 0,
+			oracleRouteCounts: zeroOracleRouteCounts(),
 			errorCount: 1,
 			beforeHash: hashLines([]),
 			afterHash: hashLines([]),
@@ -586,6 +708,7 @@ async function runWorkbook(
 	const numericDriftMismatchCount = countMismatches(mismatches, 'numeric-drift')
 	const staleOracleMismatchCount = countMismatches(mismatches, 'stale-oracle')
 	const acceptedMismatchCount = numericDriftMismatchCount + staleOracleMismatchCount
+	const oracleRouteCounts = countOracleRoutes(mismatches, volatileOracleSkips)
 	return {
 		file: entry.file,
 		...(entry.source ? { source: entry.source } : {}),
@@ -601,6 +724,7 @@ async function runWorkbook(
 		semanticMismatchCount,
 		numericDriftMismatchCount,
 		staleOracleMismatchCount,
+		oracleRouteCounts,
 		errorCount: recalc.errors.length,
 		beforeHash: hashLines(
 			comparableBefore.map((entry) => `${entry.ref}\t${entry.formula}\t${entry.cached}`),
@@ -616,10 +740,43 @@ async function runWorkbook(
 }
 
 function countMismatches(
-	mismatches: readonly FormulaMismatch[],
+	mismatches: readonly FormulaMismatchCandidate[],
 	classification: FormulaMismatchClassification,
 ): number {
 	return mismatches.filter((mismatch) => mismatch.classification === classification).length
+}
+
+function zeroOracleRouteCounts(): FormulaOracleRouteCounts {
+	return {
+		'accepted-mismatch': 0,
+		'cached-values': 0,
+		'excel-full-rebuild': 0,
+		'hyperformula-compat': 0,
+		'libreoffice-hard-recalc': 0,
+		'manual-triage': 0,
+	}
+}
+
+function countOracleRoutes(
+	mismatches: readonly FormulaMismatch[],
+	volatileOracleSkips: readonly FormulaOracleSkip[],
+): FormulaOracleRouteCounts {
+	const counts = zeroOracleRouteCounts()
+	for (const entry of mismatches) counts[entry.oracleRoute]++
+	for (const entry of volatileOracleSkips) counts[entry.oracleRoute]++
+	return counts
+}
+
+function mergeOracleRouteCounts(
+	results: readonly WorkbookFormulaResult[],
+): FormulaOracleRouteCounts {
+	const counts = zeroOracleRouteCounts()
+	for (const result of results) {
+		for (const route of Object.keys(counts) as FormulaOracleRoute[]) {
+			counts[route] += result.oracleRouteCounts[route]
+		}
+	}
+	return counts
 }
 
 function summarize(results: readonly WorkbookFormulaResult[]): SuitePayload['summary'] {
@@ -647,6 +804,7 @@ function summarize(results: readonly WorkbookFormulaResult[]): SuitePayload['sum
 			(sum, result) => sum + result.staleOracleMismatchCount,
 			0,
 		),
+		oracleRouteCounts: mergeOracleRouteCounts(results),
 		errorCount: results.reduce((sum, result) => sum + result.errorCount, 0),
 		perfectWorkbookCount: results.filter(
 			(result) => result.mismatchCount === 0 && result.errorCount === 0,
@@ -783,13 +941,20 @@ export function formulaCorpusCorrectnessAssertionFailures(
 
 function render(payload: SuitePayload): void {
 	console.log(
-		`formula corpus correctness: workbooks=${payload.summary.workbookCount} formulas=${payload.summary.formulaCount} compared=${payload.summary.comparedCount} noCached=${payload.summary.noCachedFormulaCount} volatileOracleSkips=${payload.summary.volatileOracleSkipCount} mismatches=${payload.summary.mismatchCount} accepted=${payload.summary.acceptedMismatchCount} unaccepted=${payload.summary.unacceptedMismatchCount} semantic=${payload.summary.semanticMismatchCount} numericDrift=${payload.summary.numericDriftMismatchCount} staleOracle=${payload.summary.staleOracleMismatchCount} errors=${payload.summary.errorCount}`,
+		`formula corpus correctness: workbooks=${payload.summary.workbookCount} formulas=${payload.summary.formulaCount} compared=${payload.summary.comparedCount} noCached=${payload.summary.noCachedFormulaCount} volatileOracleSkips=${payload.summary.volatileOracleSkipCount} mismatches=${payload.summary.mismatchCount} accepted=${payload.summary.acceptedMismatchCount} unaccepted=${payload.summary.unacceptedMismatchCount} semantic=${payload.summary.semanticMismatchCount} numericDrift=${payload.summary.numericDriftMismatchCount} staleOracle=${payload.summary.staleOracleMismatchCount} oracleRoutes=${formatOracleRouteCounts(payload.summary.oracleRouteCounts)} errors=${payload.summary.errorCount}`,
 	)
 	for (const result of payload.results) {
 		console.log(
-			`${result.file}: formulas=${result.formulaCount} compared=${result.comparedCount} noCached=${result.noCachedFormulaCount} volatileOracleSkips=${result.volatileOracleSkipCount} mismatches=${result.mismatchCount} accepted=${result.acceptedMismatchCount} unaccepted=${result.unacceptedMismatchCount} semantic=${result.semanticMismatchCount} numericDrift=${result.numericDriftMismatchCount} staleOracle=${result.staleOracleMismatchCount} errors=${result.errorCount} read=${result.readMs.toFixed(2)}ms recalc=${result.recalcMs.toFixed(2)}ms`,
+			`${result.file}: formulas=${result.formulaCount} compared=${result.comparedCount} noCached=${result.noCachedFormulaCount} volatileOracleSkips=${result.volatileOracleSkipCount} mismatches=${result.mismatchCount} accepted=${result.acceptedMismatchCount} unaccepted=${result.unacceptedMismatchCount} semantic=${result.semanticMismatchCount} numericDrift=${result.numericDriftMismatchCount} staleOracle=${result.staleOracleMismatchCount} oracleRoutes=${formatOracleRouteCounts(result.oracleRouteCounts)} errors=${result.errorCount} read=${result.readMs.toFixed(2)}ms recalc=${result.recalcMs.toFixed(2)}ms`,
 		)
 	}
+}
+
+function formatOracleRouteCounts(counts: FormulaOracleRouteCounts): string {
+	return (Object.keys(counts) as FormulaOracleRoute[])
+		.filter((route) => counts[route] > 0)
+		.map((route) => `${route}:${counts[route]}`)
+		.join(',')
 }
 
 if (import.meta.main) {

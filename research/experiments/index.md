@@ -15,6 +15,7 @@ Updated: 2026-05-14
 | [Oracle routing mismatch class](runs/2026/2026-05-14-oracle-routing-mismatch-class/log.md) | cycle 5 complete, promote | correctness loop |
 | [Columnar sidecar range scans](runs/2026/2026-05-14-columnar-sidecar-range-scans/log.md) | cycle 6 complete, promote | performance loop |
 | [MVCC viewport patch stream](runs/2026/2026-05-14-mvcc-viewport-patch-stream/log.md) | cycle 7 complete, promote | product/DX loop, performance loop |
+| [Release proof bundle](runs/2026/2026-05-14-release-proof-bundle/log.md) | cycle 8 complete, promote | product/DX loop, correctness loop |
 
 ## Syntheses
 

@@ -298,6 +298,12 @@ interface SessionCacheEntry {
 	accessedAt: number
 }
 
+interface PathSnapshot {
+	readonly identity: SessionFileIdentity
+	readonly bytes: Uint8Array
+	readonly sourceExtension?: string
+}
+
 interface InteractiveChangeEntry {
 	readonly generation: number
 	readonly refs: ReadonlySet<string> | null
@@ -389,8 +395,8 @@ export class WorkbookDocument {
 		source: string | Uint8Array,
 		options: WorkbookLoadOptions = {},
 	): Promise<WorkbookDocument> {
-		const identity =
-			typeof source === 'string' ? await readIdentity(source) : readBytesIdentity(source)
+		const pathSnapshot = typeof source === 'string' ? await readPathSnapshot(source) : undefined
+		const identity = pathSnapshot?.identity ?? readBytesIdentity(source as Uint8Array)
 		const key = makeSessionKey(identity, options)
 		const cached = sessionCache.get(key)
 		if (cached && isIdentityEqual(cached.identity, identity)) {
@@ -402,10 +408,15 @@ export class WorkbookDocument {
 			}
 		}
 
-		const loaded = await openWorkbookSource(source, options)
+		const loaded = await openWorkbookSource(
+			pathSnapshot?.bytes ?? source,
+			pathSnapshot?.sourceExtension
+				? { ...options, sourceExtension: pathSnapshot.sourceExtension }
+				: options,
+		)
 		const document = new WorkbookDocument(
 			key,
-			source,
+			pathSnapshot?.identity.path ?? source,
 			identity,
 			normalizeOptions(options),
 			new WorkbookReadView(loaded.workbook, loaded.report, loaded.loadInfo),
@@ -2199,13 +2210,40 @@ function strongerPivotCacheRecordMaterializeLimit(
 
 async function readIdentity(file: string): Promise<SessionFileIdentity> {
 	const path = resolve(file)
-	const [info, bytes] = await Promise.all([stat(path), readFile(path)])
+	const [info, bytes] = await Promise.all([stat(path), readPathBytes(path)])
 	return {
 		path,
 		size: info.size,
 		mtimeMs: info.mtimeMs,
-		sha256: createHash('sha256').update(new Uint8Array(bytes)).digest('hex'),
+		sha256: createHash('sha256').update(bytes).digest('hex'),
 	}
+}
+
+async function readPathSnapshot(file: string): Promise<PathSnapshot> {
+	const path = resolve(file)
+	for (let attempt = 0; attempt < 3; attempt++) {
+		const before = await stat(path)
+		const bytes = await readPathBytes(path)
+		const after = await stat(path)
+		if (before.size !== after.size || before.mtimeMs !== after.mtimeMs) continue
+		return {
+			identity: {
+				path,
+				size: after.size,
+				mtimeMs: after.mtimeMs,
+				sha256: createHash('sha256').update(bytes).digest('hex'),
+			},
+			bytes,
+			sourceExtension: extname(path).replace(/^\./, '').toLowerCase(),
+		}
+	}
+	throw new AscendException(unstablePathDocumentError(path, null))
+}
+
+async function readPathBytes(path: string): Promise<Uint8Array> {
+	if (typeof Bun !== 'undefined') return Bun.file(path).bytes()
+	const bytes = await readFile(path)
+	return new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength)
 }
 
 async function openStablePathDocument(

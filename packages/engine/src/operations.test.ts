@@ -869,6 +869,64 @@ describe('applyOperation', () => {
 		expect(sheet.cells.get(2, 0)?.formulaInfo).toBeUndefined()
 	})
 
+	test('setRichText detaches non-spill formula metadata before replacement', () => {
+		const sharedWb = createWorkbook()
+		const shared = sharedWb.addSheet('Sheet1')
+		addSharedFormulaGroup(shared)
+
+		const sharedResult = applyOperation(sharedWb, {
+			op: 'setRichText',
+			sheet: 'Sheet1',
+			ref: 'A2',
+			runs: [{ text: 'manual shared member' }],
+		})
+		expectOk(sharedResult)
+		expect(sharedResult.value.affectedCells).toEqual(['Sheet1!A1', 'Sheet1!A2'])
+		expect(shared.cells.get(0, 0)?.formula).toBe('B1*2')
+		expect(shared.cells.get(0, 0)?.formulaInfo).toBeUndefined()
+		expect(shared.cells.get(1, 0)?.value).toEqual({
+			kind: 'richText',
+			runs: [{ text: 'manual shared member' }],
+		})
+		expect(shared.cells.get(1, 0)?.formulaInfo).toBeUndefined()
+
+		const blockedWb = createWorkbook()
+		const blocked = blockedWb.addSheet('Sheet1')
+		addBlockedSpillFormula(blocked)
+		const blockedResult = applyOperation(blockedWb, {
+			op: 'setRichText',
+			sheet: 'Sheet1',
+			ref: 'A2',
+			runs: [{ text: 'manual blocker' }],
+		})
+		expectOk(blockedResult)
+		expect(blockedResult.value.affectedCells).toEqual(['Sheet1!A1', 'Sheet1!A2'])
+		expect(blocked.cells.get(0, 0)?.formula).toBe('SEQUENCE(3)')
+		expect(blocked.cells.get(0, 0)?.formulaInfo).toBeUndefined()
+		expect(blocked.cells.get(1, 0)?.value).toEqual({
+			kind: 'richText',
+			runs: [{ text: 'manual blocker' }],
+		})
+
+		const tableWb = createWorkbook()
+		const tableSheet = tableWb.addSheet('Sheet1')
+		addDataTableFormula(tableSheet)
+		const tableResult = applyOperation(tableWb, {
+			op: 'setRichText',
+			sheet: 'Sheet1',
+			ref: 'C4',
+			runs: [{ text: 'manual table member' }],
+		})
+		expectOk(tableResult)
+		expect(tableResult.value.affectedCells).toEqual(['Sheet1!C3', 'Sheet1!C4'])
+		expect(tableSheet.cells.get(2, 2)?.formulaInfo).toBeUndefined()
+		expect(tableSheet.cells.get(3, 2)?.value).toEqual({
+			kind: 'richText',
+			runs: [{ text: 'manual table member' }],
+		})
+		expect(tableSheet.cells.get(3, 2)?.formulaInfo).toBeUndefined()
+	})
+
 	test('clearRange materializes spill groups before deleting a member', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

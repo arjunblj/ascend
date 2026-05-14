@@ -1,7 +1,15 @@
 import { randomUUID } from 'node:crypto'
-import { type AscendError, ascendError } from '@ascend/schema'
-import type { AgentCommitOptions, AgentCommitResult, PreparedAgentPlan } from './agent-workflow.ts'
+import { readFile } from 'node:fs/promises'
+import { type AscendError, AscendException, ascendError, type Operation } from '@ascend/schema'
+import {
+	type AgentCommitOptions,
+	type AgentCommitResult,
+	commitAgentPlanFromWorkbook,
+	type PreparedAgentPlan,
+	sha256Bytes,
+} from './agent-workflow.ts'
 import type { PathMutationResult } from './types.ts'
+import type { AscendWorkbook } from './workbook.ts'
 
 export interface PreparedPlanHandle {
 	readonly file: string
@@ -9,13 +17,24 @@ export interface PreparedPlanHandle {
 	readonly planDigest: string
 	readonly operationCount: number
 	readonly pathMutations?: PathMutationResult
-	commit(options: AgentCommitOptions): Promise<AgentCommitResult>
+	commit(options?: AgentCommitOptions): Promise<AgentCommitResult>
 }
 
 export interface PreparedPlanStoreOptions {
 	readonly preparedPlanMaxHandles?: number
 	readonly preparedPlanTtlMs?: number
 	readonly now?: () => number
+}
+
+export interface PreparedPathMutationPlanHandleOptions {
+	readonly file: string
+	readonly inputSha256: string
+	readonly planDigest: string
+	readonly operationCount: number
+	readonly workbook: AscendWorkbook
+	readonly ops: readonly Operation[]
+	readonly sourceBytes: Uint8Array
+	readonly pathMutations?: PathMutationResult
 }
 
 export interface PreparedPlanMetadata {
@@ -151,11 +170,65 @@ export function preparedPlanHandle(prepared: PreparedAgentPlan): PreparedPlanHan
 	}
 }
 
+export function preparedPathMutationPlanHandle(
+	prepared: PreparedPathMutationPlanHandleOptions,
+): PreparedPlanHandle {
+	let committed = false
+	return {
+		file: prepared.file,
+		inputSha256: prepared.inputSha256,
+		planDigest: prepared.planDigest,
+		operationCount: prepared.operationCount,
+		...(prepared.pathMutations !== undefined ? { pathMutations: prepared.pathMutations } : {}),
+		commit: async (options = {}) => {
+			if (committed) {
+				throw new AscendException(
+					ascendError('VALIDATION_ERROR', 'Prepared agent plan has already been committed', {
+						suggestedFix: 'Create a fresh prepared plan before committing another output.',
+					}),
+				)
+			}
+			const current = await readWorkbookFileBytes(prepared.file)
+			const currentSha256 = sha256Bytes(current)
+			if (currentSha256 !== prepared.inputSha256) {
+				throw new AscendException(
+					ascendError('VALIDATION_ERROR', 'Input workbook changed after agent plan was prepared', {
+						details: {
+							expected: prepared.inputSha256,
+							actual: currentSha256,
+							planDigest: prepared.planDigest,
+						},
+						suggestedFix: 'Re-run ascend plan and commit with the new input workbook.',
+					}),
+				)
+			}
+			const result = await commitAgentPlanFromWorkbook(
+				prepared.file,
+				prepared.inputSha256,
+				prepared.workbook,
+				prepared.ops,
+				{
+					...options,
+					expectSha256: options.expectSha256 ?? prepared.inputSha256,
+				},
+				{ sourceBytes: prepared.sourceBytes },
+			)
+			committed = true
+			return result
+		},
+	}
+}
+
 export function withPreparedPlanHandle<T extends object>(
 	result: T,
 	preparedPlan: PreparedPlanMetadata | undefined,
 ): T | (T & { readonly preparedPlan: PreparedPlanMetadata }) {
 	return preparedPlan ? { ...result, preparedPlan } : result
+}
+
+async function readWorkbookFileBytes(file: string): Promise<Uint8Array> {
+	if (typeof Bun !== 'undefined') return Bun.file(file).bytes()
+	return new Uint8Array(await readFile(file))
 }
 
 function positiveIntegerOption(value: number | undefined, fallback: number): number {

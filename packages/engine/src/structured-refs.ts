@@ -102,16 +102,6 @@ export function createStructuredRefResolver(workbook: Workbook): StructuredRefRe
 	}
 }
 
-export function resolveStructuredRefRange(
-	workbook: Workbook,
-	node: Extract<FormulaNode, { type: 'structuredRef' }>,
-	sheetIndex: number,
-	row: number,
-	col: number,
-): StructuredRefRange | null {
-	return createStructuredRefResolver(workbook).resolve(node, sheetIndex, row, col)
-}
-
 function resolveStructuredRefRangeWithResolver(
 	node: Extract<FormulaNode, { type: 'structuredRef' }>,
 	sheetIndex: number,

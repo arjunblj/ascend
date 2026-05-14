@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { numberValue, stringValue } from '@ascend/schema'
 import { AscendWorkbook } from './index.ts'
 
@@ -7,6 +7,7 @@ const MS_EXCEL_PIVOT_FIXTURE = new URL(
 	'../../../research/excel-corpus/ms-excel-formulas-and-pivot-tables.xlsx',
 	import.meta.url,
 )
+const HAS_MS_EXCEL_PIVOT_FIXTURE = existsSync(MS_EXCEL_PIVOT_FIXTURE)
 
 describe('GETPIVOTDATA metadata queries', () => {
 	test('resolves matching pivot metadata and reports output limitations', () => {
@@ -179,23 +180,26 @@ describe('GETPIVOTDATA metadata queries', () => {
 		expect(hidden.matches[0]?.output).toBeUndefined()
 	})
 
-	test('resolves real Excel saved pivot grand totals', async () => {
-		const wb = await AscendWorkbook.open(readFileSync(MS_EXCEL_PIVOT_FIXTURE), {
-			pivotCacheRecordMaterializeLimit: 'all',
-		})
+	test.skipIf(!HAS_MS_EXCEL_PIVOT_FIXTURE)(
+		'resolves real Excel saved pivot grand totals',
+		async () => {
+			const wb = await AscendWorkbook.open(readFileSync(MS_EXCEL_PIVOT_FIXTURE), {
+				pivotCacheRecordMaterializeLimit: 'all',
+			})
 
-		const result = wb.getPivotData({
-			pivotTable: 'PivotTable1',
-			dataField: 'Count of outcome',
-		})
+			const result = wb.getPivotData({
+				pivotTable: 'PivotTable1',
+				dataField: 'Count of outcome',
+			})
 
-		expect(result.canResolveOutput).toBe(true)
-		expect(result.matches[0]?.output).toEqual({
-			sheetName: 'Pivot 1',
-			ref: 'F14',
-			value: numberValue(4114),
-		})
-	})
+			expect(result.canResolveOutput).toBe(true)
+			expect(result.matches[0]?.output).toEqual({
+				sheetName: 'Pivot 1',
+				ref: 'F14',
+				value: numberValue(4114),
+			})
+		},
+	)
 })
 
 function workbookWithSavedPivotOutput(): AscendWorkbook {

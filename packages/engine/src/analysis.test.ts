@@ -277,6 +277,132 @@ describe('analyzeWorkbook', () => {
 		expect(analysis.cycleKeys.has(cellKey(0, 0, 1))).toBe(true)
 	})
 
+	test('incremental formula patches refresh cached cycle metadata', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: EMPTY, formula: 'A1+1', styleId: sid })
+
+		const cachedFull = analyzeWorkbook(wb)
+		const cachedDeps = analyzeWorkbookDependencies(wb)
+		expect(cachedFull.cycles).toHaveLength(0)
+		expect(cachedDeps.cycles).toHaveLength(0)
+
+		const createCycle = applyOperation(wb, {
+			op: 'setFormula',
+			sheet: 'Sheet1',
+			ref: 'A1',
+			formula: 'B1+1',
+		})
+		expect(createCycle.ok).toBe(true)
+
+		const afterCreate = analyzeWorkbook(wb)
+		const depsAfterCreate = analyzeWorkbookDependencies(wb)
+		expect(afterCreate).toBe(cachedFull)
+		expect(depsAfterCreate).toBe(cachedDeps)
+		expect(afterCreate.cycles).toHaveLength(1)
+		expect(depsAfterCreate.cycles).toHaveLength(1)
+		expect(afterCreate.cycleKeys.has(cellKey(0, 0, 0))).toBe(true)
+		expect(afterCreate.cycleKeys.has(cellKey(0, 0, 1))).toBe(true)
+		expect(depsAfterCreate.cycleKeys.has(cellKey(0, 0, 0))).toBe(true)
+		expect(depsAfterCreate.cycleKeys.has(cellKey(0, 0, 1))).toBe(true)
+
+		const breakCycle = applyOperation(wb, {
+			op: 'setCells',
+			sheet: 'Sheet1',
+			updates: [{ ref: 'A1', value: 1 }],
+		})
+		expect(breakCycle.ok).toBe(true)
+
+		const afterBreak = analyzeWorkbook(wb)
+		const depsAfterBreak = analyzeWorkbookDependencies(wb)
+		expect(afterBreak.cycles).toHaveLength(0)
+		expect(afterBreak.cycleKeys.has(cellKey(0, 0, 0))).toBe(false)
+		expect(afterBreak.cycleKeys.has(cellKey(0, 0, 1))).toBe(false)
+		expect(depsAfterBreak.cycles).toHaveLength(0)
+		expect(depsAfterBreak.cycleKeys.has(cellKey(0, 0, 0))).toBe(false)
+		expect(depsAfterBreak.cycleKeys.has(cellKey(0, 0, 1))).toBe(false)
+
+		invalidateWorkbookAnalysis(wb)
+		const fresh = analyzeWorkbook(wb)
+		expect([...afterBreak.formulas]).toEqual([...fresh.formulas])
+		expect([...afterBreak.cycleKeys]).toEqual([...fresh.cycleKeys])
+	})
+
+	test('incremental formula rewrites refresh cached shared-formula groups', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, {
+			value: EMPTY,
+			formula: 'B1+1',
+			styleId: sid,
+			formulaInfo: {
+				kind: 'shared',
+				sharedIndex: '0',
+				isMaster: true,
+				masterRef: 'A1',
+				ref: 'A1:A2',
+			},
+		})
+		sheet.cells.set(1, 0, {
+			value: EMPTY,
+			formula: null,
+			styleId: sid,
+			formulaInfo: { kind: 'shared', sharedIndex: '0', isMaster: false, masterRef: 'A1' },
+		})
+
+		const cached = analyzeWorkbook(wb)
+		expect(cached.sharedFormulaGroups.get('0:0')).toEqual([cellKey(0, 0, 0), cellKey(0, 1, 0)])
+
+		const result = applyOperation(wb, {
+			op: 'setFormula',
+			sheet: 'Sheet1',
+			ref: 'A2',
+			formula: 'B2+2',
+		})
+		expect(result.ok).toBe(true)
+
+		const after = analyzeWorkbook(wb)
+		expect(after).toBe(cached)
+		expect(after.formulas.get(cellKey(0, 1, 0))?.formula).toBe('B2+2')
+		expect(after.sharedFormulaGroups.get('0:0')).toBeUndefined()
+
+		const sharedGroups = [...after.sharedFormulaGroups]
+		invalidateWorkbookAnalysis(wb)
+		expect(sharedGroups).toEqual([...analyzeWorkbook(wb).sharedFormulaGroups])
+	})
+
+	test('incremental formula patches refresh cached growing aggregate metadata', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: EMPTY, formula: 'SUM(A1:A1)', styleId: sid })
+		sheet.cells.set(1, 1, { value: EMPTY, formula: 'SUM(A1:A2)', styleId: sid })
+
+		const cached = analyzeWorkbook(wb)
+		expect(cached.formulas.get(cellKey(0, 1, 1))?.growingRangeAggregate).toBeDefined()
+
+		const result = applyOperation(wb, {
+			op: 'setFormula',
+			sheet: 'Sheet1',
+			ref: 'B1',
+			formula: 'A1+1',
+		})
+		expect(result.ok).toBe(true)
+
+		const after = analyzeWorkbook(wb)
+		expect(after).toBe(cached)
+		expect(after.formulas.get(cellKey(0, 1, 1))?.growingRangeAggregate).toBeUndefined()
+		expect(after.growingAggregateAppendIndex.get(cellKey(0, 1, 0))).toBeUndefined()
+
+		const afterFormulas = [...after.formulas]
+		invalidateWorkbookAnalysis(wb)
+		const fresh = analyzeWorkbook(wb)
+		expect(afterFormulas).toEqual([...fresh.formulas])
+		expect(fresh.formulas.get(cellKey(0, 1, 1))?.growingRangeAggregate).toBeUndefined()
+	})
+
 	test('dependency analysis exposes resolved formula dependencies', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

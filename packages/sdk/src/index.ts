@@ -24,6 +24,7 @@ export type {
 	AgentWorkflowProgressHandler,
 	AgentWorkflowTrace,
 	ApprovalRequirement,
+	CompactAgentCommitOptions,
 	CompactAgentCommitResult,
 	CompactAgentPlanOptions,
 	CompactAgentPlanResult,
@@ -137,6 +138,18 @@ export type {
 	MutationJournalTableStylePreimage,
 } from './journal.ts'
 export type {
+	OperationInputShape,
+	OperationInputSource,
+	PathMutationCompiler,
+	ResolvedOperationInput,
+} from './operation-input.ts'
+export {
+	compilePathMutationInput,
+	resolveOperationInputForWorkbook,
+	resolveOperationInputShape,
+	withPathMutationResult,
+} from './operation-input.ts'
+export type {
 	OperationApprovalMetadata,
 	OperationInvalidExample,
 	OperationJsonSchema,
@@ -158,6 +171,7 @@ export {
 	SUPPORTED_PATH_MUTATION_SHAPES,
 } from './path-mutations.ts'
 export type {
+	PreparedPathMutationPlanHandleOptions,
 	PreparedPlanHandle,
 	PreparedPlanMetadata,
 	PreparedPlanStoreOptions,
@@ -166,6 +180,7 @@ export type {
 } from './prepared-plan-store.ts'
 export {
 	PreparedPlanStore,
+	preparedPathMutationPlanHandle,
 	preparedPlanHandle,
 	preparedPlanUnavailableError,
 	withPreparedPlanHandle,
@@ -184,13 +199,16 @@ export type {
 export type {
 	AscendSessionApplyOptions,
 	AscendSessionApplyResult,
+	AscendSessionApplyTimings,
 	AscendSessionEditReadiness,
 	AscendSessionOpenOptions,
+	AscendSessionPrepareEditsResult,
 	InteractiveViewportCell,
 	InteractiveViewportLayoutEntry,
 	InteractiveViewportPatch,
 	InteractiveViewportPatchInvalidation,
 	InteractiveViewportPatchInvalidationReason,
+	InteractiveViewportPatchResult,
 	InteractiveViewportRequest,
 	InteractiveViewportResult,
 	SessionCacheOptions,

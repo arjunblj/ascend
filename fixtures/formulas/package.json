@@ -6,7 +6,6 @@
 	"dependencies": {
 		"@ascend/core": "workspace:*",
 		"@ascend/engine": "workspace:*",
-		"@ascend/formulas": "workspace:*",
 		"@ascend/schema": "workspace:*"
 	},
 	"scripts": {

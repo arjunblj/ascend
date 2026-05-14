@@ -8,13 +8,7 @@ import {
 	rewriteRefs,
 } from '@ascend/formulas'
 import { ascendError } from '@ascend/schema'
-import {
-	type CellKey,
-	cellKey,
-	DependencyGraph,
-	parseCellKey,
-	type RangeDependency,
-} from './dep-graph.ts'
+import { type CellKey, cellKey, DependencyGraph, type RangeDependency } from './dep-graph.ts'
 import { resolveSheetIndexByMap } from './sheet-index.ts'
 import {
 	formulaAstReferencesSheet,
@@ -125,6 +119,11 @@ interface MutableWorkbookDependencyAnalysis {
 	resolvedFormulas: Map<CellKey, AnalyzedFormula>
 	cycles: readonly (readonly CellKey[])[]
 	cycleKeys: Set<CellKey>
+}
+
+interface MutableWorkbookFormulaAnalysis {
+	formulas: Map<CellKey, IndexedFormula>
+	sheetNameIndex: Map<string, number>
 }
 
 interface MutableWorkbookAnalysis {
@@ -324,6 +323,15 @@ export function analyzeWorkbookFormulas(
 		const cached = workbookFormulaAnalysisCache.get(workbook)
 		if (cached) return cached
 	}
+	const analysis = collectWorkbookFormulaAnalysis(workbook, options)
+	if (!options.range) workbookFormulaAnalysisCache.set(workbook, analysis)
+	return analysis
+}
+
+function collectWorkbookFormulaAnalysis(
+	workbook: Workbook,
+	options: AnalyzeWorkbookOptions = {},
+): WorkbookFormulaAnalysis {
 	const sheetNameIndex = createSheetNameIndex(workbook)
 	const formulas = new Map<CellKey, IndexedFormula>()
 	const sharedMasterCache = new Map<string, FormulaNode>()
@@ -408,9 +416,7 @@ export function analyzeWorkbookFormulas(
 		}
 	}
 
-	const analysis = { formulas, sheetNameIndex }
-	if (!options.range) workbookFormulaAnalysisCache.set(workbook, analysis)
-	return analysis
+	return { formulas, sheetNameIndex }
 }
 
 export function cellHasFormula(
@@ -610,128 +616,66 @@ export function invalidateWorkbookAnalysis(workbook: Workbook): void {
 	workbookAnalysisCache.delete(workbook)
 }
 
-export function patchWorkbookAnalysis(workbook: Workbook, changedCells: CellKey[]): void {
+export function patchWorkbookAnalysis(workbook: Workbook, _changedCells: CellKey[]): void {
 	const cachedFormulas = workbookFormulaAnalysisCache.get(workbook)
 	if (!cachedFormulas) return
 
+	const nextFormulas = collectWorkbookFormulaAnalysis(workbook)
+	const mutableFormulas = cachedFormulas as unknown as MutableWorkbookFormulaAnalysis
+	replaceMap(mutableFormulas.formulas, nextFormulas.formulas)
+	replaceMap(mutableFormulas.sheetNameIndex, nextFormulas.sheetNameIndex)
+	rebuildCachedDependencyAnalysis(
+		workbook,
+		mutableFormulas.formulas,
+		mutableFormulas.sheetNameIndex,
+	)
+}
+
+function rebuildCachedDependencyAnalysis(
+	workbook: Workbook,
+	formulas: Map<CellKey, IndexedFormula>,
+	sheetNameIndex: ReadonlyMap<string, number>,
+): void {
 	const cachedDeps = workbookDependencyAnalysisCache.get(workbook)
 	const cachedFull = workbookAnalysisCache.get(workbook)
-	const sheetNameIndex = cachedFormulas.sheetNameIndex
-	const formulas = cachedFormulas.formulas as Map<CellKey, IndexedFormula>
-	const nameResolveCache = new Map<string, FormulaRef[]>()
+	if (!cachedDeps && !cachedFull) return
 
-	for (const key of changedCells) {
-		const [sheetIndex, row, col] = parseCellKey(key)
-		const sheet = workbook.sheets[sheetIndex]
-		if (!sheet) {
-			formulas.delete(key)
-			cachedDeps?.dependencyGraph.removeFormula(key)
-			cachedFull?.dependencyGraph.removeFormula(key)
-			continue
-		}
-		const hasCell = sheet.cells.has(row, col)
-		if (!hasCell) {
-			formulas.delete(key)
-			cachedDeps?.dependencyGraph.removeFormula(key)
-			cachedFull?.dependencyGraph.removeFormula(key)
-			if (cachedDeps) {
-				;(cachedDeps.resolvedFormulas as Map<CellKey, AnalyzedFormula>).delete(key)
-			}
-			if (cachedFull) {
-				;(cachedFull.formulas as Map<CellKey, AnalyzedFormula>).delete(key)
-			}
-			continue
-		}
-		const cell = {
-			formula: sheet.cells.readFormula(row, col) ?? null,
-			formulaInfo: sheet.cells.readFormulaInfo(row, col),
-		}
-		if (!cellHasFormula(cell)) {
-			formulas.delete(key)
-			cachedDeps?.dependencyGraph.removeFormula(key)
-			cachedFull?.dependencyGraph.removeFormula(key)
-			if (cachedDeps) {
-				;(cachedDeps.resolvedFormulas as Map<CellKey, AnalyzedFormula>).delete(key)
-			}
-			if (cachedFull) {
-				;(cachedFull.formulas as Map<CellKey, AnalyzedFormula>).delete(key)
-			}
-			continue
-		}
+	const nextDependency = analyzeWorkbookDependenciesFrom(
+		workbook,
+		{ formulas, sheetNameIndex },
+		false,
+	)
 
-		const formulaText = resolveCellFormulaText(workbook, sheetIndex, row, col, cell)
-		const parsed = cachedParseFormula(formulaText ?? cell.formula ?? '')
-		if (!parsed.ok) {
-			const entry: IndexedFormula = {
-				key,
-				sheetIndex,
-				sheetName: sheet.name,
-				row,
-				col,
-				formula: formulaText ?? cell.formula ?? '',
-				refs: [],
-				volatile: false,
-				parseError: parsed.error.message,
-			}
-			formulas.set(key, entry)
-			cachedDeps?.dependencyGraph.removeFormula(key)
-			cachedFull?.dependencyGraph.removeFormula(key)
-			continue
-		}
-
-		const ast = parsed.value
-		const refs = extractRefsWithNames(
-			ast,
-			workbook,
-			sheetNameIndex,
-			sheetIndex,
-			[],
-			nameResolveCache,
-		)
-		const volatile = hasVolatileFunction(ast)
-		const indexed: IndexedFormula = {
-			key,
-			sheetIndex,
-			sheetName: sheet.name,
-			row,
-			col,
-			formula: formulaText ?? printFormula(ast),
-			ast,
-			refs,
-			volatile,
-		}
-		formulas.set(key, indexed)
-
-		const resolved = resolveFormulaDependencies(workbook, sheetNameIndex, indexed)
-		if (cachedDeps) {
-			;(cachedDeps.resolvedFormulas as Map<CellKey, AnalyzedFormula>).set(key, resolved)
-			cachedDeps.dependencyGraph.removeFormula(key)
-			if (!resolved.parseError) {
-				cachedDeps.dependencyGraph.addFormula(
-					key,
-					resolved.deps,
-					resolved.volatile,
-					resolved.rangeDeps,
-				)
-			}
-		}
-		if (cachedFull) {
-			;(cachedFull.formulas as Map<CellKey, AnalyzedFormula>).set(key, resolved)
-			cachedFull.dependencyGraph.removeFormula(key)
-			if (!resolved.parseError) {
-				cachedFull.dependencyGraph.addFormula(
-					key,
-					resolved.deps,
-					resolved.volatile,
-					resolved.rangeDeps,
-				)
-			}
-		}
+	if (cachedDeps) {
+		const mutableDeps = cachedDeps as unknown as MutableWorkbookDependencyAnalysis
+		mutableDeps.dependencyGraph = nextDependency.dependencyGraph
+		replaceMap(mutableDeps.resolvedFormulas, nextDependency.resolvedFormulas)
+		mutableDeps.cycles = nextDependency.cycles
+		replaceSet(mutableDeps.cycleKeys, nextDependency.cycleKeys)
 	}
+
 	if (cachedFull) {
-		;(cachedFull as unknown as MutableWorkbookAnalysis).growingAggregateAppendIndex =
-			getGrowingAggregateAppendIndex(cachedFull.formulas)
+		const mutableFull = cachedFull as unknown as MutableWorkbookAnalysis
+		replaceMap(mutableFull.formulas, nextDependency.resolvedFormulas)
+		mutableFull.dependencyGraph = nextDependency.dependencyGraph
+		mutableFull.cycles = nextDependency.cycles
+		replaceSet(mutableFull.cycleKeys, nextDependency.cycleKeys)
+		replaceMap(
+			mutableFull.sharedFormulaGroups,
+			getSharedFormulaGroups(workbook, mutableFull.formulas),
+		)
+		mutableFull.growingAggregateAppendIndex = getGrowingAggregateAppendIndex(mutableFull.formulas)
 	}
+}
+
+function replaceMap<K, V>(target: Map<K, V>, source: ReadonlyMap<K, V>): void {
+	target.clear()
+	for (const [key, value] of source) target.set(key, value)
+}
+
+function replaceSet<T>(target: Set<T>, source: ReadonlySet<T>): void {
+	target.clear()
+	for (const value of source) target.add(value)
 }
 
 export function shiftWorkbookAnalysisForAxis(
@@ -823,34 +767,10 @@ export function shiftWorkbookAnalysisForAxis(
 	formulas.clear()
 	for (const [key, formula] of nextFormulas) formulas.set(key, formula)
 
-	const nextDependency = analyzeWorkbookDependenciesFrom(
-		workbook,
-		{ formulas, sheetNameIndex: cachedFormulas.sheetNameIndex },
-		false,
-	)
-
-	const cachedDeps = workbookDependencyAnalysisCache.get(workbook)
-	if (cachedDeps) {
-		const mutableDeps = cachedDeps as unknown as MutableWorkbookDependencyAnalysis
-		mutableDeps.dependencyGraph = nextDependency.dependencyGraph
-		mutableDeps.resolvedFormulas = nextDependency.resolvedFormulas as Map<CellKey, AnalyzedFormula>
-		mutableDeps.cycles = nextDependency.cycles
-		mutableDeps.cycleKeys = nextDependency.cycleKeys as Set<CellKey>
-	}
-
-	const cachedFull = workbookAnalysisCache.get(workbook)
-	if (cachedFull) {
-		const mutableFull = cachedFull as unknown as MutableWorkbookAnalysis
-		mutableFull.formulas = nextDependency.resolvedFormulas as Map<CellKey, AnalyzedFormula>
-		mutableFull.dependencyGraph = nextDependency.dependencyGraph
-		mutableFull.cycles = nextDependency.cycles
-		mutableFull.cycleKeys = nextDependency.cycleKeys as Set<CellKey>
-		mutableFull.sharedFormulaGroups = getSharedFormulaGroups(workbook, mutableFull.formulas)
-		mutableFull.growingAggregateAppendIndex = getGrowingAggregateAppendIndex(mutableFull.formulas)
-	}
+	rebuildCachedDependencyAnalysis(workbook, formulas, cachedFormulas.sheetNameIndex)
 }
 
-export function getGrowingAggregateAppendIndex(
+function getGrowingAggregateAppendIndex(
 	formulas: ReadonlyMap<CellKey, AnalyzedFormula>,
 ): GrowingAggregateAppendIndex {
 	const appendKeys: CellKey[] = []
@@ -937,7 +857,7 @@ class SortedGrowingAggregateAppendIndex implements GrowingAggregateAppendIndex {
 	}
 }
 
-export function getSharedFormulaGroups(
+function getSharedFormulaGroups(
 	workbook: Workbook,
 	formulas: ReadonlyMap<CellKey, AnalyzedFormula>,
 ): Map<string, CellKey[]> {

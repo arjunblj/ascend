@@ -4,7 +4,6 @@ import {
 	ascendError,
 	type CellValue,
 	EMPTY,
-	type Operation,
 } from '@ascend/schema'
 import {
 	type AgentCommitOptions,
@@ -16,6 +15,7 @@ import {
 	commitAgentPlanFromWorkbook,
 	compactAgentCommitResult,
 	compactAgentPlanResult,
+	compilePathMutationInput,
 	createAgentPlan,
 	createAgentPlanFromWorkbook,
 	createPreparedAgentPlan,
@@ -27,25 +27,26 @@ import {
 	inferExportFormat,
 	listCapabilities,
 	normalizeExportFormat,
-	operationValidationDetails,
-	type PathMutation,
 	type PathMutationResult,
 	type PivotOutputMaterializeMode,
 	type PreparedPlanMetadata,
 	PreparedPlanStore,
 	parseA1,
-	parseOperations,
+	preparedPathMutationPlanHandle,
 	preparedPlanHandle,
 	type RangeObjectsInfo,
 	type RangeRowsInfo,
 	type RangeWindowInfo,
+	type ResolvedOperationInput,
 	readAgentDoc,
-	SUPPORTED_PATH_MUTATION_SHAPES,
+	resolveOperationInputShape,
+	resolveOperationInputForWorkbook as resolveWorkbookOperationInput,
 	searchAgentDocs,
 	sha256Bytes,
 	summarizeCapabilities,
 	toA1Ref,
 	WorkbookDocument,
+	withPathMutationResult,
 	withPreparedPlanHandle,
 } from '@ascend/sdk'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
@@ -62,14 +63,6 @@ const pathMutationSchema = z
 	.describe(
 		'Path-addressed mutation object with path as a string or string array and optional value',
 	)
-
-type ResolvedOperationInput =
-	| {
-			readonly ok: true
-			readonly ops: readonly Operation[]
-			readonly pathMutations?: PathMutationResult
-	  }
-	| { readonly ok: false; readonly error: AscendError }
 
 export interface McpServerOptions {
 	readonly preparedPlanMaxHandles?: number
@@ -112,137 +105,21 @@ function resolveOperationInputForWorkbook(
 	ops: readonly Record<string, unknown>[] | undefined,
 	mutations: readonly unknown[] | undefined,
 ): ResolvedOperationInput {
-	const shape = resolveOperationInputShape(ops, mutations)
-	if (!shape.ok || !('mutations' in shape)) return shape
-	return compilePathMutationInput(wb, shape.mutations)
+	return resolveWorkbookOperationInput(wb, operationInputSourceFromArgs(ops, mutations))
 }
 
-type OperationInputShape =
-	| { readonly ok: true; readonly ops: readonly Operation[] }
-	| { readonly ok: true; readonly mutations: readonly PathMutation[] }
-	| { readonly ok: false; readonly error: AscendError }
-
-function resolveOperationInputShape(
+function operationInputSourceFromArgs(
 	ops: readonly Record<string, unknown>[] | undefined,
 	mutations: readonly unknown[] | undefined,
-): OperationInputShape {
-	const hasOpsKey = ops !== undefined
-	const hasMutationsKey = mutations !== undefined
-	if (hasOpsKey && hasMutationsKey) {
-		return {
-			ok: false,
-			error: ascendError('VALIDATION_ERROR', 'Provide either ops or mutations, not both', {
-				retryStrategy: 'modified',
-				suggestedFix: 'Send canonical operations in ops or path-addressed mutations in mutations.',
-			}),
-		}
+) {
+	return {
+		hasOpsKey: ops !== undefined,
+		ops: ops ?? null,
+		hasMutationsKey: mutations !== undefined,
+		mutations: mutations ?? null,
+		operationSchemaSuggestedFix:
+			'Use ascend.list_operations for canonical operation schemas and examples.',
 	}
-	const hasOps = ops !== undefined && ops.length > 0
-	const hasMutations = mutations !== undefined && mutations.length > 0
-	if (!hasOps && !hasMutations) {
-		return {
-			ok: false,
-			error: ascendError('VALIDATION_ERROR', 'Missing or invalid ops or mutations', {
-				retryStrategy: 'modified',
-				suggestedFix:
-					'Send non-empty ops, or send mutations like {"path":"/sheets/Sheet1/cells/A1/value","value":123}.',
-			}),
-		}
-	}
-	if (hasOps) {
-		const parsed = parseOperations(ops ?? [])
-		if (!parsed.ok) {
-			return {
-				ok: false,
-				error: ascendError('VALIDATION_ERROR', parsed.error, {
-					details: operationValidationDetails(parsed),
-					retryStrategy: 'modified',
-					suggestedFix: 'Use ascend.list_operations for canonical operation schemas and examples.',
-				}),
-			}
-		}
-		return { ok: true, ops: parsed.value }
-	}
-	const parsedMutations = parsePathMutationBody(mutations ?? [])
-	if (!parsedMutations.ok) return parsedMutations
-	return { ok: true, mutations: parsedMutations.mutations }
-}
-
-function parsePathMutationBody(
-	value: readonly unknown[],
-):
-	| { readonly ok: true; readonly mutations: readonly PathMutation[] }
-	| { readonly ok: false; readonly error: AscendError } {
-	const mutations: PathMutation[] = []
-	for (const [index, entry] of value.entries()) {
-		if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
-			return {
-				ok: false,
-				error: pathMutationShapeError(index, 'Mutation must be an object with path and value.'),
-			}
-		}
-		const path = (entry as Record<string, unknown>).path
-		if (
-			typeof path !== 'string' &&
-			(!Array.isArray(path) || !path.every((segment) => typeof segment === 'string'))
-		) {
-			return {
-				ok: false,
-				error: pathMutationShapeError(index, 'Mutation path must be a string or string array.'),
-			}
-		}
-		mutations.push({
-			path,
-			...(Object.hasOwn(entry, 'value') ? { value: (entry as Record<string, unknown>).value } : {}),
-		})
-	}
-	return { ok: true, mutations }
-}
-
-function pathMutationShapeError(index: number, message: string): AscendError {
-	return ascendError('VALIDATION_ERROR', message, {
-		details: {
-			issueCount: 1,
-			issues: [`mutations[${index}]: ${message}`],
-			issueDetails: [
-				{ code: 'invalid_path_mutation', mutationIndex: index, path: `mutations[${index}]` },
-			],
-		},
-		retryStrategy: 'modified',
-		suggestedFix: 'Use mutations shaped like {"path":"/sheets/Sheet1/cells/A1/value","value":123}.',
-	})
-}
-
-function compilePathMutationInput(
-	wb: AscendWorkbook,
-	mutations: readonly PathMutation[],
-): ResolvedOperationInput {
-	const compiled = wb.compilePathMutations(mutations)
-	if (!compiled.replayable) return { ok: false, error: pathMutationCompileError(compiled) }
-	return { ok: true, ops: compiled.ops, pathMutations: compiled }
-}
-
-function pathMutationCompileError(result: PathMutationResult): AscendError {
-	return ascendError('VALIDATION_ERROR', 'Path mutation compilation failed', {
-		details: {
-			mutationCount: result.mutationCount,
-			issueCount: result.issueCount,
-			issues: result.issues.map((issue) => issue.message),
-			issueDetails: result.issues,
-			compiledOps: result.ops,
-			supportedPathShapes: SUPPORTED_PATH_MUTATION_SHAPES,
-		},
-		retryStrategy: 'modified',
-		suggestedFix:
-			'Use supported paths such as /sheets/{sheet}/cells/{A1}/value, /sheets/{sheet}/cells/{A1}/formula, /sheets/{sheet}/ranges/{A1:B2}/clear, /tables/{table}/rows/append, or /names/{name}/ref.',
-	})
-}
-
-function withPathMutationResult<T extends object>(
-	result: T,
-	compiled: PathMutationResult | undefined,
-): T | (T & { readonly pathMutations: PathMutationResult }) {
-	return compiled ? { ...result, pathMutations: compiled } : result
 }
 
 export function createServer(options: McpServerOptions = {}): McpServer {
@@ -1303,7 +1180,7 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 		async ({ file, ops, mutations, compact, prepare, maxChangedCells, maxRows }) => {
 			try {
 				if (maxRows !== undefined) return errorResponse(agentPlanLoadOptionsError(['maxRows']))
-				const inputShape = resolveOperationInputShape(ops, mutations)
+				const inputShape = resolveOperationInputShape(operationInputSourceFromArgs(ops, mutations))
 				if (!inputShape.ok) return errorResponse(inputShape.error)
 				let input: ResolvedOperationInput
 				let pathMutations: PathMutationResult | undefined
@@ -1320,38 +1197,18 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 						? await createAgentPlanFromWorkbook(file, inputSha256, wb, input.ops)
 						: null
 					if (input.ok && result && shouldPrepare) {
-						const preparedOps = input.ops
-						const planDigest = result.planDigest
-						preparedPlan = preparedPlans.add({
-							file,
-							inputSha256,
-							planDigest,
-							operationCount: result.operationCount,
-							...(pathMutations !== undefined ? { pathMutations } : {}),
-							commit: async (options) => {
-								const current = await Bun.file(file).bytes()
-								const currentSha256 = sha256Bytes(current)
-								if (currentSha256 !== inputSha256) {
-									throw new AscendException(
-										ascendError(
-											'VALIDATION_ERROR',
-											'Input workbook changed after agent plan was prepared',
-											{
-												details: {
-													expected: inputSha256,
-													actual: currentSha256,
-													planDigest,
-												},
-												suggestedFix: 'Re-run ascend plan and commit with the new input workbook.',
-											},
-										),
-									)
-								}
-								return commitAgentPlanFromWorkbook(file, inputSha256, wb, preparedOps, options, {
-									sourceBytes: opened.sourceBytes,
-								})
-							},
-						})
+						preparedPlan = preparedPlans.add(
+							preparedPathMutationPlanHandle({
+								file,
+								inputSha256,
+								planDigest: result.planDigest,
+								operationCount: result.operationCount,
+								workbook: wb,
+								ops: input.ops,
+								sourceBytes: opened.sourceBytes,
+								...(pathMutations !== undefined ? { pathMutations } : {}),
+							}),
+						)
 					}
 				} else {
 					input = inputShape
@@ -1481,7 +1338,7 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 					)
 				}
 				if (!file) return errorResponse('Missing file')
-				const inputShape = resolveOperationInputShape(ops, mutations)
+				const inputShape = resolveOperationInputShape(operationInputSourceFromArgs(ops, mutations))
 				if (!inputShape.ok) return errorResponse(inputShape.error)
 				let input: ResolvedOperationInput
 				let pathMutations: PathMutationResult | undefined

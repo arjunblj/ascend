@@ -10,15 +10,11 @@
 		"@ascend/schema": "workspace:*",
 		"@ascend/sdk": "workspace:*",
 		"@opentui/core": "^0.2.6",
-		"ansi-escapes": "^7.3.0",
-		"ansi-regex": "^6.2.2",
 		"clipboardy": "^5.3.1",
 		"fuzzysort": "^3.1.0",
-		"numfmt": "^3.2.6",
 		"slice-ansi": "^9.0.0",
 		"string-width": "^8.2.1",
-		"strip-ansi": "^7.2.0",
-		"wrap-ansi": "^10.0.0"
+		"strip-ansi": "^7.2.0"
 	},
 	"scripts": {
 		"test": "bun test"

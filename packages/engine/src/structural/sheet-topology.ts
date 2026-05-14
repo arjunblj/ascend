@@ -11,7 +11,6 @@ import type {
 import { parseA1Safe, parseRange } from '@ascend/core'
 import { rewriteSheetMetadataFormulasForShift } from './formula-rewrite.ts'
 import {
-	expandSqrefRows,
 	shiftA1RangeOrCell,
 	shiftA1Ref,
 	shiftIndex,
@@ -478,8 +477,4 @@ function shiftSortState(
 		.filter((condition): condition is SortState['conditions'][number] => condition !== null)
 	if (conditions.length === 0) return undefined
 	return { ...sortState, ref, conditions }
-}
-
-export function expandTableRefRows(ref: string, count: number): string {
-	return expandSqrefRows(ref, count)
 }

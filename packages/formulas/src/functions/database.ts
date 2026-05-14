@@ -108,7 +108,7 @@ export interface DatabaseFilterResult {
 	error?: CellValue
 }
 
-export function databaseFilter(args: EvalArg[]): DatabaseFilterResult {
+function databaseFilter(args: EvalArg[]): DatabaseFilterResult {
 	const directError = firstScalarError(args)
 	if (directError) return { values: [], error: directError }
 	const dbRange = iterAreaRows(args[0])

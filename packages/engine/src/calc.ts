@@ -34,7 +34,12 @@ import {
 	invalidateWorkbookAnalysis,
 } from './analysis.ts'
 import type { CalcContext } from './calc-context.ts'
-import { type CodegenFn, codegenFormula, codegenSharedFormula } from './codegen.ts'
+import {
+	type CodegenFn,
+	clearCodegenCache,
+	codegenFormula,
+	codegenSharedFormula,
+} from './codegen.ts'
 import { type CompiledFormula, compileFormula, evaluateCompiled } from './compiled-eval.ts'
 import {
 	type CellCoords,
@@ -841,8 +846,7 @@ function isExternalSheetToken(sheet: string | undefined): boolean {
 }
 
 export function clearCompiledFormulaCache(): void {
-	// WeakMap entries are reclaimed automatically; this is a no-op placeholder
-	// kept for API symmetry with clearFormulaParseCache.
+	clearCodegenCache()
 }
 
 function evalFormula(

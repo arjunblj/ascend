@@ -40,7 +40,7 @@ const PROJECTS: readonly Project[] = [
 		deps: ['schema', 'core', 'formulas', 'engine', 'io-xlsx', 'io-csv', 'verify'],
 	},
 	{ name: 'tui', dir: 'apps/tui', deps: ['schema', 'core', 'sdk'] },
-	{ name: 'cli', dir: 'apps/cli', deps: ['schema', 'core', 'sdk', 'tui'] },
+	{ name: 'cli', dir: 'apps/cli', deps: ['schema', 'sdk', 'tui'] },
 	{ name: 'api', dir: 'apps/api', deps: ['schema', 'sdk'] },
 	{ name: 'mcp', dir: 'apps/mcp', deps: ['schema', 'sdk'] },
 	{ name: 'fixtures-corpus', dir: 'fixtures/corpus', deps: ['schema', 'io-xlsx', 'sdk'] },
@@ -52,7 +52,7 @@ const PROJECTS: readonly Project[] = [
 	{
 		name: 'fixtures-formulas',
 		dir: 'fixtures/formulas',
-		deps: ['schema', 'core', 'formulas', 'engine'],
+		deps: ['schema', 'core', 'engine'],
 	},
 	{
 		name: 'fixtures-xlsx',

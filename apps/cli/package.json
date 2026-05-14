@@ -9,7 +9,6 @@
 		"ascend": "src/index.ts"
 	},
 	"dependencies": {
-		"@ascend/core": "workspace:*",
 		"@ascend/schema": "workspace:*",
 		"@ascend/sdk": "workspace:*",
 		"@ascend/tui": "workspace:*"

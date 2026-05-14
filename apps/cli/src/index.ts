@@ -41,7 +41,7 @@ Commands:
   create <file>                 Create a new empty .xlsx workbook
   inspect <file> [sheet]        Show workbook/sheet structure
   list <file>                   List sheets and tables
-  read <file> <range>           Read cell values from a range
+  read <file> <selector>        Read cells from a range, table, or name
   dump <file>                   Dump a replayable operation batch
   template-merge <file>         Compile template placeholders into operations
   find <file> <query>           Search for cells matching a value

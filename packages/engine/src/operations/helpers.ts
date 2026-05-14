@@ -7,7 +7,7 @@ import type {
 	StyleId,
 	Workbook,
 } from '@ascend/core'
-import { DEFAULT_STYLE_ID, parseA1, parseA1Safe, parseRange, toA1 } from '@ascend/core'
+import { DEFAULT_STYLE_ID, parseA1Safe, parseRange, toA1 } from '@ascend/core'
 import type { FormulaNode } from '@ascend/formulas'
 import { dateToSerial, printFormulaWithOffset } from '@ascend/formulas'
 import type {
@@ -398,30 +398,6 @@ export function mergeStyleInput(current: CellStyle, input: StyleInput): CellStyl
 	}
 }
 
-export function resolveAffectedCellKeys(
-	workbook: Workbook,
-	op: Extract<Operation, { op: 'setFormula' | 'fillFormula' }>,
-): CellKey[] {
-	const sheet = workbook.getSheet(op.sheet)
-	if (!sheet) return []
-	const sheetIndex = workbook.sheets.indexOf(sheet)
-	if (sheetIndex < 0) return []
-	if (op.op === 'setFormula') {
-		const ref = parseA1(op.ref)
-		return [cellKey(sheetIndex, ref.row, ref.col)]
-	}
-	const rangeResult = safeParseRange(op.range)
-	if (!rangeResult.ok) return []
-	const range = rangeResult.value
-	const keys: CellKey[] = []
-	for (let row = range.start.row; row <= range.end.row; row++) {
-		for (let col = range.start.col; col <= range.end.col; col++) {
-			keys.push(cellKey(sheetIndex, row, col))
-		}
-	}
-	return keys
-}
-
 export function resolvePatchResultCellKeys(
 	workbook: Workbook,
 	sheetName: string,
@@ -516,16 +492,4 @@ export function buildTableColumns(
 		columns.push({ name: candidate })
 	}
 	return columns
-}
-
-export function findTable(
-	workbook: Workbook,
-	name: string,
-): { table: Sheet['tables'][number]; sheet: Sheet } | null {
-	for (const sheet of workbook.sheets) {
-		for (const table of sheet.tables) {
-			if (table.name === name) return { table, sheet }
-		}
-	}
-	return null
 }

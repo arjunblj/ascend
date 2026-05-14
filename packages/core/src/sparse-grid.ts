@@ -1592,7 +1592,8 @@ export class SparseGrid {
 		let chunk = this._writableChunkDirect(chunkRow, chunkCol)
 		const cols = this._lastWriteCols as Map<number, GridChunk>
 		chunk = this.ensureChunkWritable(chunkRow, chunkCol, cols, chunk)
-		const previousArray = arrayCellFromSlot(chunk.getSlot(localIndex))
+		const oldSlot = chunk.getSlot(localIndex)
+		const previousArray = arrayCellFromSlot(oldSlot)
 		if (chunk instanceof DenseChunk) {
 			const write = chunk.writePlainString(localIndex, value, this.stringTable)
 			this._rememberWriteChunk(chunkRow, chunkCol, cols, chunk)
@@ -1608,11 +1609,10 @@ export class SparseGrid {
 			this._trackBounds(row, col)
 			return
 		}
-		const existed = chunk.has(localIndex)
+		const existed = oldSlot !== undefined
 		let hadFormula = false
 		let hadFormulaInfo = false
 		if (existed) {
-			const oldSlot = chunk.getSlot(localIndex)
 			hadFormula = slotHasFormula(oldSlot)
 			hadFormulaInfo = oldSlot?.formulaInfo !== undefined
 			this.updateSharedStringCounts(sharedStringKindFromSlot(oldSlot), 'string')
@@ -1686,7 +1686,8 @@ export class SparseGrid {
 		let chunk = this._writableChunkDirect(chunkRow, chunkCol)
 		const cols = this._lastWriteCols as Map<number, GridChunk>
 		chunk = this.ensureChunkWritable(chunkRow, chunkCol, cols, chunk)
-		const previousArray = arrayCellFromSlot(chunk.getSlot(localIndex))
+		const oldSlot = chunk.getSlot(localIndex)
+		const previousArray = arrayCellFromSlot(oldSlot)
 		if (chunk instanceof DenseChunk) {
 			const write = chunk.writePlainNumber(localIndex, value)
 			this._rememberWriteChunk(chunkRow, chunkCol, cols, chunk)
@@ -1702,11 +1703,10 @@ export class SparseGrid {
 			this._trackBounds(row, col)
 			return
 		}
-		const existed = chunk.has(localIndex)
+		const existed = oldSlot !== undefined
 		let hadFormula = false
 		let hadFormulaInfo = false
 		if (existed) {
-			const oldSlot = chunk.getSlot(localIndex)
 			hadFormula = slotHasFormula(oldSlot)
 			hadFormulaInfo = oldSlot?.formulaInfo !== undefined
 			this.updateSharedStringCounts(sharedStringKindFromSlot(oldSlot), undefined)

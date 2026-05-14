@@ -2207,6 +2207,27 @@ describe('applyOperation', () => {
 		expect(sheet.cells.get(3, 2)?.value).toEqual(numberValue(7))
 	})
 
+	test('copyRange value paste detaches blocked-spill metadata on overwritten blockers', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		addBlockedSpillFormula(sheet)
+		sheet.cells.set(0, 1, { value: numberValue(99), formula: null, styleId: sid })
+
+		const result = applyOperation(wb, {
+			op: 'copyRange',
+			sheet: 'Sheet1',
+			source: 'B1',
+			target: 'A2',
+			mode: 'values',
+		})
+		expectOk(result)
+
+		expect(result.value.affectedCells).toEqual(['A1', 'A2'])
+		expect(sheet.cells.get(0, 0)?.formula).toBe('SEQUENCE(3)')
+		expect(sheet.cells.get(0, 0)?.formulaInfo).toBeUndefined()
+		expect(sheet.cells.get(1, 0)?.value).toEqual(numberValue(99))
+	})
+
 	test('copyRange exposes comments, hyperlinks, and validation paste modes', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')
@@ -2327,6 +2348,29 @@ describe('applyOperation', () => {
 		expect(sheet.cells.get(1, 2)?.value).toEqual(numberValue(20))
 		expect(sheet.cells.get(0, 0)).toBeUndefined()
 		expect(sheet.cells.get(1, 0)).toBeUndefined()
+	})
+
+	test('moveRange detaches blocked-spill metadata when moving a blocker', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		addBlockedSpillFormula(sheet)
+
+		const result = applyOperation(wb, {
+			op: 'moveRange',
+			sheet: 'Sheet1',
+			source: 'A2',
+			target: 'C1',
+			mode: 'values',
+		})
+		expectOk(result)
+
+		expect(result.value.affectedCells).toContain('A1')
+		expect(result.value.affectedCells).toContain('A2')
+		expect(result.value.affectedCells).toContain('C1')
+		expect(sheet.cells.get(0, 0)?.formula).toBe('SEQUENCE(3)')
+		expect(sheet.cells.get(0, 0)?.formulaInfo).toBeUndefined()
+		expect(sheet.cells.get(1, 0)).toBeUndefined()
+		expect(sheet.cells.get(0, 2)?.value).toEqual(stringValue('blocker'))
 	})
 
 	test('moveRange rewrites formulas and names that reference the moved range', () => {

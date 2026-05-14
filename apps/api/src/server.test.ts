@@ -1799,22 +1799,50 @@ describe('Ascend API server', () => {
 		if (!inverse.ok) throw new Error('Expected exact chart journal inverse ops to parse')
 
 		const changed = await AscendWorkbook.open(TEMP_FILE)
-		expect(changed.getWorkbookModel().chartParts[0]?.series[0]).toMatchObject({
+		const changedChart = changed.getWorkbookModel().chartParts[0]
+		expect(changedChart).toMatchObject({
+			partPath: 'xl/charts/chart1.xml',
+			sheetName: 'Chart1',
+			chartType: 'barChart',
+			title: 'Wildlife Population',
+		})
+		expect(changedChart?.series).toHaveLength(3)
+		expect(changedChart?.series[0]).toMatchObject({
 			nameRef: 'Sheet1!$B$1',
 			nameText: 'Bears',
 			categoryRef: 'Sheet1!$A$2:$A$6',
 			valueRef: 'Sheet1!$B$2:$B$6',
+		})
+		expect(changedChart?.series[1]).toMatchObject({
+			nameRef: 'Sheet1!$C$1',
+			nameText: 'Dolphins',
+			categoryRef: 'Sheet1!$A$2:$A$7',
+			valueRef: 'Sheet1!$C$2:$C$7',
 		})
 
 		const rollback = changed.apply(inverse.value)
 		expect(rollback.errors).toEqual([])
 		await changed.save(TEMP_FILE)
 		const restored = await AscendWorkbook.open(TEMP_FILE)
-		expect(restored.getWorkbookModel().chartParts[0]?.series[0]).toMatchObject({
+		const restoredChart = restored.getWorkbookModel().chartParts[0]
+		expect(restoredChart).toMatchObject({
+			partPath: 'xl/charts/chart1.xml',
+			sheetName: 'Chart1',
+			chartType: 'barChart',
+			title: 'Wildlife Population',
+		})
+		expect(restoredChart?.series).toHaveLength(3)
+		expect(restoredChart?.series[0]).toMatchObject({
 			nameRef: 'Sheet1!$B$1',
 			nameText: 'Bears',
 			categoryRef: 'Sheet1!$A$2:$A$7',
 			valueRef: 'Sheet1!$B$2:$B$7',
+		})
+		expect(restoredChart?.series[1]).toMatchObject({
+			nameRef: 'Sheet1!$C$1',
+			nameText: 'Dolphins',
+			categoryRef: 'Sheet1!$A$2:$A$7',
+			valueRef: 'Sheet1!$C$2:$C$7',
 		})
 		expect(restored.check().valid).toBe(true)
 	})
@@ -1845,19 +1873,33 @@ describe('Ascend API server', () => {
 		if (!inverse.ok) throw new Error('Expected exact pivot journal inverse ops to parse')
 
 		const changed = await AscendWorkbook.open(TEMP_FILE)
-		expect(changed.getWorkbookModel().pivotCaches[0]).toMatchObject({
+		const changedCache = changed.getWorkbookModel().pivotCaches[0]
+		expect(changedCache).toMatchObject({
+			cacheId: 37,
+			partPath: 'xl/pivotCache/pivotCacheDefinition1.xml',
+			recordsPartPath: 'xl/pivotCache/pivotCacheRecords1.xml',
+			recordCount: 4,
 			sourceSheet: 'Sheet1',
 			sourceRef: 'A1:K4',
 		})
+		expect(changedCache?.fields).toHaveLength(11)
+		expect(changedCache?.records?.parsedCount).toBe(4)
 
 		const rollback = changed.apply(inverse.value)
 		expect(rollback.errors).toEqual([])
 		await changed.save(TEMP_FILE)
 		const restored = await AscendWorkbook.open(TEMP_FILE)
-		expect(restored.getWorkbookModel().pivotCaches[0]).toMatchObject({
+		const restoredCache = restored.getWorkbookModel().pivotCaches[0]
+		expect(restoredCache).toMatchObject({
+			cacheId: 37,
+			partPath: 'xl/pivotCache/pivotCacheDefinition1.xml',
+			recordsPartPath: 'xl/pivotCache/pivotCacheRecords1.xml',
+			recordCount: 4,
 			sourceSheet: 'Sheet1',
 			sourceRef: 'A1:K5',
 		})
+		expect(restoredCache?.fields).toHaveLength(11)
+		expect(restoredCache?.records?.parsedCount).toBe(4)
 		expect(restored.check().valid).toBe(true)
 	})
 

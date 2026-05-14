@@ -3472,6 +3472,116 @@ describe('interactive client contract', () => {
 		expect(sheet.rowDefs.get(2)).toEqual({ hidden: true, outlineLevel: 1 })
 	})
 
+	test('sortRange exact journals restore row-scoped data validations', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'Region' },
+					{ ref: 'B1', value: 'Qty' },
+					{ ref: 'A2', value: 'West' },
+					{ ref: 'B2', value: 2 },
+					{ ref: 'A3', value: 'East' },
+					{ ref: 'B3', value: 1 },
+				],
+			},
+			{
+				op: 'setDataValidation',
+				sheet: 'Sheet1',
+				range: 'A2:A2',
+				rule: {
+					type: 'whole',
+					formula1: 'B2',
+					allowBlank: true,
+					showErrorMessage: true,
+				},
+			},
+			{
+				op: 'setDataValidation',
+				sheet: 'Sheet1',
+				range: 'A3:A3',
+				rule: {
+					type: 'whole',
+					formula1: 'B3',
+					allowBlank: true,
+					showErrorMessage: true,
+				},
+			},
+		])
+		const before = JSON.parse(JSON.stringify(journalComparableState(wb)))
+
+		const changed = wb.apply(
+			[{ op: 'sortRange', sheet: 'Sheet1', range: 'A1:B3', by: [{ column: 'Qty' }] }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(true)
+		expect(changed.journal?.issues).toEqual([])
+		expect(wb.sheet('Sheet1')?.dataValidations).toEqual([
+			expect.objectContaining({ sqref: 'A2', formula1: 'B2' }),
+			expect.objectContaining({ sqref: 'A3', formula1: 'B3' }),
+		])
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(journalComparableState(wb)).toEqual(before)
+	})
+
+	test('sortRange data validation journals mark non-suffix order lossy', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'Region' },
+					{ ref: 'B1', value: 'Qty' },
+					{ ref: 'A2', value: 'West' },
+					{ ref: 'B2', value: 2 },
+					{ ref: 'A3', value: 'East' },
+					{ ref: 'B3', value: 1 },
+				],
+			},
+			{
+				op: 'setDataValidation',
+				sheet: 'Sheet1',
+				range: 'A2:A2',
+				rule: { type: 'whole', formula1: '1', allowBlank: true, showErrorMessage: true },
+			},
+			{
+				op: 'setDataValidation',
+				sheet: 'Sheet1',
+				range: 'Z1:Z1',
+				rule: { type: 'whole', formula1: '2', allowBlank: true, showErrorMessage: true },
+			},
+			{
+				op: 'setDataValidation',
+				sheet: 'Sheet1',
+				range: 'A3:A3',
+				rule: { type: 'whole', formula1: '3', allowBlank: true, showErrorMessage: true },
+			},
+		])
+
+		const changed = wb.apply(
+			[{ op: 'sortRange', sheet: 'Sheet1', range: 'A1:B3', by: [{ column: 'Qty' }] }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(false)
+		expect(changed.journal?.issues).toContainEqual({
+			code: 'LOSSY_INVERSE',
+			message:
+				'Sorted data validation order on Sheet1!A1:B3 cannot be restored exactly with public operations',
+			refs: ['Sheet1!A1:B3'],
+		})
+	})
+
 	test('sortRange journals mark x14 row metadata lossy', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

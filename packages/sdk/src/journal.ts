@@ -49,6 +49,7 @@ import {
 import { applyOperation } from '@ascend/engine'
 import {
 	cachedParseFormula,
+	compareValues,
 	dateToSerial,
 	extractRefs,
 	type FormulaRef,
@@ -1787,6 +1788,10 @@ function journalSortRange(
 		sheet && dataRange && hasMapRefInRange(sheet.hyperlinks, dataRange)
 			? hyperlinkPreimages(workbook, op.sheet, refs)
 			: []
+	const validations =
+		sheet && dataRange
+			? sortRangeDataValidationRestoration(sheet, op, dataRange)
+			: EMPTY_METADATA_RESTORATION
 	return {
 		opIndex,
 		op,
@@ -1795,14 +1800,17 @@ function journalSortRange(
 			...styleInverseOps(rangeCells),
 			...restoreCommentOps(comments),
 			...restoreHyperlinkOps(hyperlinks),
+			...validations.inverseOps,
 		],
 		preimages: [
 			{ kind: 'cells', cells },
 			...comments.map((comment) => ({ kind: 'comment' as const, comment })),
 			...hyperlinks.map((hyperlink) => ({ kind: 'hyperlink' as const, hyperlink })),
+			...validations.preimages,
 		],
 		issues: [
 			...cellIssues,
+			...validations.issues,
 			...sortRangeMetadataIssues(workbook, op),
 			...commentRestoreIssues(comments),
 		],
@@ -4223,6 +4231,200 @@ function rangesOverlap(a: RangeRef, b: RangeRef): boolean {
 	)
 }
 
+interface SortRangeDataValidationMove {
+	readonly sourceIndex: number
+	readonly source: MutationJournalDataValidationPreimage
+	readonly targetRange: string
+}
+
+function sortRangeDataValidationRestoration(
+	sheet: Sheet,
+	op: Extract<Operation, { op: 'sortRange' }>,
+	dataRange: RangeRef,
+): {
+	readonly inverseOps: readonly Operation[]
+	readonly preimages: readonly MutationJournalPreimage[]
+	readonly issues: readonly MutationJournalIssue[]
+} {
+	const moves = sortRangeDataValidationMoves(sheet, op, dataRange)
+	if (moves.length === 0) return EMPTY_METADATA_RESTORATION
+	const inverseOps: Operation[] = []
+	for (const range of uniqueStrings(moves.map((move) => move.targetRange))) {
+		inverseOps.push({ op: 'deleteDataValidation', sheet: sheet.name, range })
+	}
+	const issues: MutationJournalIssue[] = [
+		...sortRangeDataValidationOrderIssues(sheet, op.range, moves),
+		...sortRangeDataValidationDuplicateIssues(sheet.name, op.range, moves),
+	]
+	for (const move of moves) {
+		const restored = restoreDataValidationOps(move.source)
+		inverseOps.push(...restored.inverseOps)
+		issues.push(...restored.issues)
+	}
+	return {
+		inverseOps,
+		preimages: [{ kind: 'data-validations', validations: moves.map((move) => move.source) }],
+		issues,
+	}
+}
+
+function sortRangeDataValidationMoves(
+	sheet: Sheet,
+	op: Extract<Operation, { op: 'sortRange' }>,
+	dataRange: RangeRef,
+): SortRangeDataValidationMove[] {
+	const rowTargets = sortRangeRowTargets(sheet, op, dataRange)
+	const moves: SortRangeDataValidationMove[] = []
+	for (let index = 0; index < sheet.dataValidations.length; index++) {
+		const validation = sheet.dataValidations[index]
+		if (!validation) continue
+		const parsed = parseSortRowScopedSqref(validation.sqref, dataRange)
+		if (!parsed) continue
+		const targetRow = rowTargets.get(parsed.row)
+		if (targetRow === undefined) continue
+		const source: MutationJournalDataValidationPreimage = {
+			sheet: sheet.name,
+			range: validation.sqref,
+			validation: { ...validation },
+		}
+		moves.push({
+			sourceIndex: index,
+			source,
+			targetRange: rowScopedSqref(parsed, targetRow),
+		})
+	}
+	return moves
+}
+
+function sortRangeRowTargets(
+	sheet: Sheet,
+	op: Extract<Operation, { op: 'sortRange' }>,
+	dataRange: RangeRef,
+): Map<number, number> {
+	const range = parseRange(op.range)
+	const columns = sortRangeResolvedColumns(sheet, range, op.by)
+	const rows = Array.from({ length: dataRange.end.row - dataRange.start.row + 1 }, (_, offset) => ({
+		originalRow: dataRange.start.row + offset,
+		originalIndex: offset,
+	}))
+	rows.sort((left, right) => {
+		for (const column of columns) {
+			const leftValue = sheet.cells.readValue(left.originalRow, column.col) ?? EMPTY
+			const rightValue = sheet.cells.readValue(right.originalRow, column.col) ?? EMPTY
+			const result = compareValues(leftValue, rightValue)
+			if (result !== 0) return column.descending ? -result : result
+		}
+		return left.originalIndex - right.originalIndex
+	})
+	return new Map(rows.map((row, index) => [row.originalRow, dataRange.start.row + index]))
+}
+
+function sortRangeResolvedColumns(
+	sheet: Sheet,
+	range: RangeRef,
+	specs: Extract<Operation, { op: 'sortRange' }>['by'],
+): Array<{ readonly col: number; readonly descending: boolean }> {
+	const headerMap = new Map<string, number>()
+	for (let col = range.start.col; col <= range.end.col; col++) {
+		const value = sheet.cells.readValue(range.start.row, col)
+		if (value?.kind === 'string' && value.value.trim() !== '') {
+			headerMap.set(value.value.trim().toLowerCase(), col)
+		}
+	}
+	return specs.map((spec) => {
+		if (typeof spec.column === 'number') {
+			return {
+				col: range.start.col + Math.trunc(spec.column) - 1,
+				descending: spec.descending ?? false,
+			}
+		}
+		const trimmed = spec.column.trim()
+		const headerCol = headerMap.get(trimmed.toLowerCase())
+		if (headerCol !== undefined) return { col: headerCol, descending: spec.descending ?? false }
+		return {
+			col: parseA1(`${trimmed.toUpperCase()}1`).col,
+			descending: spec.descending ?? false,
+		}
+	})
+}
+
+function parseSortRowScopedSqref(
+	sqref: string,
+	range: RangeRef,
+): { readonly row: number; readonly startCol: number; readonly endCol: number } | null {
+	if (sqref.includes(' ')) return null
+	try {
+		const parsed = parseRange(sqref)
+		if (parsed.start.row !== parsed.end.row) return null
+		if (parsed.start.row < range.start.row || parsed.start.row > range.end.row) return null
+		if (parsed.start.col < range.start.col || parsed.end.col > range.end.col) return null
+		return { row: parsed.start.row, startCol: parsed.start.col, endCol: parsed.end.col }
+	} catch {
+		return null
+	}
+}
+
+function rowScopedSqref(
+	parsed: { readonly startCol: number; readonly endCol: number },
+	targetRow: number,
+): string {
+	const start = toA1({ row: targetRow, col: parsed.startCol })
+	const end = toA1({ row: targetRow, col: parsed.endCol })
+	return start === end ? start : `${start}:${end}`
+}
+
+function sortRangeDataValidationOrderIssues(
+	sheet: Sheet,
+	range: string,
+	moves: readonly SortRangeDataValidationMove[],
+): readonly MutationJournalIssue[] {
+	if (moves.length === 0) return []
+	const moved = new Set(moves.map((move) => move.sourceIndex))
+	const firstMoved = Math.min(...moved)
+	for (let index = firstMoved; index < sheet.dataValidations.length; index++) {
+		if (moved.has(index)) continue
+		return [
+			{
+				code: 'LOSSY_INVERSE',
+				message: `Sorted data validation order on ${sheet.name}!${range} cannot be restored exactly with public operations`,
+				refs: [`${sheet.name}!${range}`],
+			},
+		]
+	}
+	return []
+}
+
+function sortRangeDataValidationDuplicateIssues(
+	sheetName: string,
+	range: string,
+	moves: readonly SortRangeDataValidationMove[],
+): readonly MutationJournalIssue[] {
+	const sourceDuplicates = duplicateStrings(moves.map((move) => move.source.range))
+	const targetDuplicates = duplicateStrings(moves.map((move) => move.targetRange))
+	if (sourceDuplicates.length === 0 && targetDuplicates.length === 0) return []
+	return [
+		{
+			code: 'LOSSY_INVERSE',
+			message: `Sorted duplicate data validations on ${sheetName}!${range} cannot be restored exactly with public operations`,
+			refs: [`${sheetName}!${range}`],
+		},
+	]
+}
+
+function uniqueStrings(values: readonly string[]): string[] {
+	return [...new Set(values)]
+}
+
+function duplicateStrings(values: readonly string[]): string[] {
+	const seen = new Set<string>()
+	const duplicates = new Set<string>()
+	for (const value of values) {
+		if (seen.has(value)) duplicates.add(value)
+		else seen.add(value)
+	}
+	return [...duplicates]
+}
+
 function sortRangeMetadataIssues(
 	workbook: Workbook,
 	op: Extract<Operation, { op: 'sortRange' }>,
@@ -4241,7 +4443,6 @@ function sortRangeMetadataIssues(
 		hasRowHeights ||
 		hasRowDefs ||
 		sheet.threadedComments.some((comment) => refInRange(comment.ref, dataRange)) ||
-		sheet.dataValidations.some((validation) => sqrefOverlaps(validation.sqref, dataRange)) ||
 		sheet.x14DataValidations.some(
 			(validation) => !validation.deleted && sqrefOverlaps(validation.sqref, dataRange),
 		) ||

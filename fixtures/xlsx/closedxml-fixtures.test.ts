@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import type { Workbook } from '@ascend/core'
-import { defaultCalcContext, recalculate } from '../../packages/engine/src/index.ts'
+import { applyOperation, defaultCalcContext, recalculate } from '../../packages/engine/src/index.ts'
 import { writeXlsx } from '../../packages/io-xlsx/src/index.ts'
 import { readXlsx } from '../../packages/io-xlsx/src/reader/index.ts'
 import { AscendWorkbook } from '../../packages/sdk/src/index.ts'
@@ -670,5 +670,31 @@ describe('ClosedXML XLSX fixture corpus', () => {
 		expectOk(arrayFormula)
 		recalculate(arrayFormula.value.workbook, defaultCalcContext())
 		expectNumberCell(arrayFormula.value.workbook, 'Sheet1', 0, 0, 3)
+	})
+
+	test('editing inside a real Excel data table formula range detaches imported metadata', () => {
+		const result = readXlsx(loadFixture('Other_Formulas_DataTableFormula-Excel-Input.xlsx'))
+		expectOk(result)
+		const sheet = result.value.workbook.sheets.find((entry) => entry.name === '1D Row')
+		expect(sheet).toBeDefined()
+		expect(sheet?.cells.get(3, 2)?.formulaInfo).toEqual({
+			kind: 'dataTable',
+			ref: 'C4:C8',
+			dt2D: false,
+			dtr: false,
+			r1: 'A1',
+		})
+
+		const edit = applyOperation(result.value.workbook, {
+			op: 'setCells',
+			sheet: '1D Row',
+			updates: [{ ref: 'C5', value: 99 }],
+		})
+		expectOk(edit)
+
+		expect(edit.value.affectedCells).toContain('C4')
+		expect(edit.value.affectedCells).toContain('C5')
+		expect(sheet?.cells.get(3, 2)?.formulaInfo).toBeUndefined()
+		expect(sheet?.cells.get(4, 2)?.value).toEqual({ kind: 'number', value: 99 })
 	})
 })

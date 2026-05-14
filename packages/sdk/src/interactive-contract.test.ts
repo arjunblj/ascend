@@ -4933,7 +4933,7 @@ describe('interactive client contract', () => {
 		expect(journalComparableState(wb)).toEqual(before)
 	})
 
-	test('moveRange journals mark formula reference rewrites lossy', () => {
+	test('moveRange journals restore cell and defined-name formula rewrites exactly', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([
 			{
@@ -4945,7 +4945,9 @@ describe('interactive client contract', () => {
 				],
 			},
 			{ op: 'setFormula', sheet: 'Sheet1', ref: 'G1', formula: 'A1*2' },
+			{ op: 'setDefinedName', name: 'MovedInput', ref: 'Sheet1!A1' },
 		])
+		const before = journalComparableState(wb)
 
 		const changed = wb.apply(
 			[{ op: 'moveRange', sheet: 'Sheet1', source: 'A1', target: 'D1', mode: 'all' }],
@@ -4954,13 +4956,14 @@ describe('interactive client contract', () => {
 
 		expect(changed.errors).toEqual([])
 		expect(changed.journal?.supported).toBe(true)
-		expect(changed.journal?.exact).toBe(false)
-		expect(changed.journal?.issues).toContainEqual({
-			code: 'LOSSY_INVERSE',
-			message:
-				'moveRange formula reference rewrites for Sheet1!A1 cannot be fully restored with public operations',
-			refs: ['Sheet1!G1'],
-		})
+		expect(changed.journal?.exact).toBe(true)
+		expect(changed.journal?.issues).toEqual([])
+		expect(wb.sheet('Sheet1')?.cell('G1')?.formula).toBe('D1*2')
+		expect(wb.getWorkbookModel().definedNames.get('MovedInput')).toBe('Sheet1!D1')
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(journalComparableState(wb)).toEqual(before)
 	})
 
 	test('moveRange journals mark worksheet metadata formula rewrites lossy', () => {

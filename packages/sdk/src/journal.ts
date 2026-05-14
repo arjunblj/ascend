@@ -2045,6 +2045,9 @@ function journalMoveRange(
 	const merges = copyRangeTransfersMerges(mode)
 		? mergeTransferRestoration(workbook, op.sheet, sourceRange, targetSheet, targetRange, true)
 		: EMPTY_METADATA_RESTORATION
+	const formulaSurfaces = copyRangeOverwritesFormulas(mode)
+		? moveRangeFormulaSurfaceRestoration(workbook, op, sourceRange, targetRange)
+		: EMPTY_METADATA_RESTORATION
 	const cells = uniqueCellPreimages([...targetCells, ...sourceCells])
 	return {
 		opIndex,
@@ -2055,12 +2058,14 @@ function journalMoveRange(
 			...metadataRestoration.inverseOps,
 			...conditionalFormats.inverseOps,
 			...merges.inverseOps,
+			...formulaSurfaces.inverseOps,
 		],
 		preimages: [
 			{ kind: 'cells', cells },
 			...metadataRestoration.preimages,
 			...conditionalFormats.preimages,
 			...merges.preimages,
+			...formulaSurfaces.preimages,
 		],
 		issues: [
 			...targetIssues,
@@ -2069,9 +2074,7 @@ function journalMoveRange(
 			...conditionalFormats.issues,
 			...merges.issues,
 			...moveRangeOverlapIssues(op, sourceRange, targetRange),
-			...(copyRangeOverwritesFormulas(mode)
-				? moveRangeFormulaSurfaceIssues(workbook, op, sourceRange, targetRange)
-				: []),
+			...formulaSurfaces.issues,
 		],
 	}
 }
@@ -5353,37 +5356,20 @@ function moveRangeOverlapIssues(
 	]
 }
 
-function moveRangeFormulaSurfaceIssues(
+function moveRangeFormulaSurfaceRestoration(
 	workbook: Workbook,
 	op: Extract<Operation, { op: 'moveRange' }>,
 	sourceRange: RangeRef,
 	targetRange: RangeRef,
-): readonly MutationJournalIssue[] {
-	const refs = workbookFormulaSurfaceRefsOutsideRanges(
-		workbook,
-		op.sheet,
-		sourceRange,
-		op.targetSheet ?? op.sheet,
-		targetRange,
-	)
-	if (refs.length === 0) return []
-	return [
-		{
-			code: 'LOSSY_INVERSE',
-			message: `moveRange formula reference rewrites for ${op.sheet}!${op.source} cannot be fully restored with public operations`,
-			refs,
-		},
-	]
-}
-
-function workbookFormulaSurfaceRefsOutsideRanges(
-	workbook: Workbook,
-	sourceSheetName: string,
-	sourceRange: RangeRef,
-	targetSheetName: string,
-	targetRange: RangeRef,
-): string[] {
-	const refs: string[] = []
+): {
+	readonly inverseOps: readonly Operation[]
+	readonly preimages: readonly MutationJournalPreimage[]
+	readonly issues: readonly MutationJournalIssue[]
+} {
+	const sourceSheetName = op.sheet
+	const targetSheetName = op.targetSheet ?? op.sheet
+	const cellRefsBySheet = new Map<string, string[]>()
+	const metadataRefs: string[] = []
 	for (const sheet of workbook.sheets) {
 		for (const [row, col, cell] of sheet.cells.iterate()) {
 			if (!cell.formula) continue
@@ -5398,11 +5384,12 @@ function workbookFormulaSurfaceRefsOutsideRanges(
 					sourceRange,
 				)
 			) {
-				refs.push(`${sheet.name}!${toA1({ row, col })}`)
+				pushSheetRef(cellRefsBySheet, sheet.name, toA1({ row, col }))
 			}
 		}
-		pushMovedRangeMetadataFormulaRefs(refs, workbook, sheet, sourceSheetName, sourceRange)
+		pushMovedRangeMetadataFormulaRefs(metadataRefs, workbook, sheet, sourceSheetName, sourceRange)
 	}
+	const definedNames: MutationJournalDefinedNamePreimage[] = []
 	for (const name of workbook.definedNames.list()) {
 		const scopeSheet =
 			name.scope.kind === 'sheet' ? sheetNameForId(workbook, name.scope.sheetId) : undefined
@@ -5415,10 +5402,65 @@ function workbookFormulaSurfaceRefsOutsideRanges(
 				sourceRange,
 			)
 		) {
-			refs.push(definedNameJournalKey(workbook, name))
+			definedNames.push(definedNamePreimageFromEntry(workbook, name))
 		}
 	}
-	return refs
+	const cells = uniqueCellPreimages(
+		[...cellRefsBySheet].flatMap(([sheet, refs]) => cellPreimages(workbook, sheet, refs)),
+	)
+	const { inverseOps: cellInverseOps, issues: cellIssues } = inverseCellOps(cells)
+	const definedNameRestorations = definedNames.map((preimage) =>
+		restoreDefinedNameOps(workbook, preimage),
+	)
+	const metadataIssues: readonly MutationJournalIssue[] =
+		metadataRefs.length > 0
+			? [
+					{
+						code: 'LOSSY_INVERSE',
+						message: `moveRange formula reference rewrites for ${op.sheet}!${op.source} cannot be fully restored with public operations`,
+						refs: metadataRefs,
+					},
+				]
+			: []
+	const preimages: MutationJournalPreimage[] = [
+		...(cells.length > 0 ? [{ kind: 'cells' as const, cells }] : []),
+		...definedNames.map((definedName) => ({ kind: 'defined-name' as const, definedName })),
+	]
+	if (preimages.length === 0 && metadataIssues.length === 0) return EMPTY_METADATA_RESTORATION
+	return {
+		inverseOps: [
+			...cellInverseOps,
+			...definedNameRestorations.flatMap((restoration) => restoration.inverseOps),
+		],
+		preimages,
+		issues: [
+			...cellIssues,
+			...definedNameRestorations.flatMap((restoration) => restoration.issues),
+			...metadataIssues,
+		],
+	}
+}
+
+function pushSheetRef(refsBySheet: Map<string, string[]>, sheet: string, ref: string): void {
+	const refs = refsBySheet.get(sheet)
+	if (refs) {
+		refs.push(ref)
+		return
+	}
+	refsBySheet.set(sheet, [ref])
+}
+
+function definedNamePreimageFromEntry(
+	workbook: Workbook,
+	entry: DefinedName,
+): MutationJournalDefinedNamePreimage {
+	const scope =
+		entry.scope.kind === 'sheet' ? sheetNameForId(workbook, entry.scope.sheetId) : undefined
+	return {
+		name: entry.name,
+		...(scope !== undefined ? { scope } : {}),
+		definedName: cloneDefinedName(entry),
+	}
 }
 
 function pushMovedRangeMetadataFormulaRefs(

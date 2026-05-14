@@ -5928,10 +5928,13 @@ describe('applyOperation', () => {
 		const sheet = wb.addSheet('Sheet1')
 		sheet.cells.set(0, 0, { value: stringValue('Name'), formula: null, styleId: sid })
 		sheet.cells.set(0, 1, { value: stringValue('Score'), formula: null, styleId: sid })
+		sheet.cells.set(0, 2, { value: stringValue('Calc'), formula: null, styleId: sid })
 		sheet.cells.set(1, 0, { value: stringValue('B'), formula: null, styleId: sid })
 		sheet.cells.set(1, 1, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(1, 2, { value: numberValue(20), formula: 'B2*10', styleId: sid })
 		sheet.cells.set(2, 0, { value: stringValue('A'), formula: null, styleId: sid })
 		sheet.cells.set(2, 1, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(2, 2, { value: numberValue(10), formula: 'B3*10', styleId: sid })
 		sheet.hyperlinks.set('A2', { target: 'https://example.com/b' })
 		sheet.comments.set('B3', {
 			text: 'lowest',
@@ -5977,16 +5980,20 @@ describe('applyOperation', () => {
 		const result = applyOperation(wb, {
 			op: 'sortRange',
 			sheet: 'Sheet1',
-			range: 'A1:B3',
+			range: 'A1:C3',
 			by: [{ column: 'Score' }],
 		})
 		expectOk(result)
 
-		expect(result.value.affectedCells).toEqual(['A2', 'B2', 'A3', 'B3'])
+		expect(result.value.affectedCells).toEqual(['A2', 'B2', 'C2', 'A3', 'B3', 'C3'])
 		expect(sheet.cells.get(1, 0)?.value).toEqual(stringValue('A'))
 		expect(sheet.cells.get(1, 1)?.value).toEqual(numberValue(1))
+		expect(sheet.cells.get(1, 2)?.value).toEqual(numberValue(10))
+		expect(sheet.cells.get(1, 2)?.formula).toBe('B2*10')
 		expect(sheet.cells.get(2, 0)?.value).toEqual(stringValue('B'))
 		expect(sheet.cells.get(2, 1)?.value).toEqual(numberValue(2))
+		expect(sheet.cells.get(2, 2)?.value).toEqual(numberValue(20))
+		expect(sheet.cells.get(2, 2)?.formula).toBe('B3*10')
 		expect(sheet.hyperlinks.get('A3')).toEqual({ target: 'https://example.com/b' })
 		expect(sheet.comments.get('B2')).toEqual({
 			text: 'lowest',

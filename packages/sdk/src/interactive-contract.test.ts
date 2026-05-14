@@ -3628,6 +3628,10 @@ describe('interactive client contract', () => {
 		expect(changed.errors).toEqual([])
 		expect(changed.journal?.supported).toBe(true)
 		expect(changed.journal?.exact).toBe(true)
+		expect(wb.sheet('Sheet1')?.cell('B2')?.formula).toBe('A2*10')
+		expect(wb.sheet('Sheet1')?.cell('B2')?.value).toEqual({ kind: 'number', value: 10 })
+		expect(wb.sheet('Sheet1')?.cell('B3')?.formula).toBe('A3*10')
+		expect(wb.sheet('Sheet1')?.cell('B3')?.value).toEqual({ kind: 'number', value: 20 })
 
 		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
 		expect(undo.errors).toEqual([])

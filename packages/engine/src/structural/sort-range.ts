@@ -258,8 +258,13 @@ function rewriteSortedRows(
 
 	rows.forEach((rowData, index) => {
 		const targetRow = startRow + index
+		const rowDelta = targetRow - (startRow + rowData.originalIndex)
 		for (const entry of rowData.cells) {
-			sheet.cells.set(targetRow, range.start.col + entry.colOffset, entry.cell)
+			sheet.cells.set(
+				targetRow,
+				range.start.col + entry.colOffset,
+				rewriteSortedCell(entry.cell, rowDelta, 0),
+			)
 		}
 		for (const entry of rowData.comments) {
 			const target = { row: targetRow, col: range.start.col + entry.colOffset }
@@ -311,6 +316,14 @@ function rewriteSortedRows(
 			sheet.rowDefs.set(targetRow, rowData.rowDef)
 		}
 	})
+}
+
+function rewriteSortedCell(cell: Cell, rowDelta: number, colDelta: number): Cell {
+	if (!cell.formula || (rowDelta === 0 && colDelta === 0)) return cell
+	return {
+		...cell,
+		formula: translateMetadataFormula(cell.formula, rowDelta, colDelta),
+	}
 }
 
 function captureRowScopedSqrefEntries<T extends { sqref: string }>(

@@ -3478,7 +3478,6 @@ const scenarios: readonly Scenario[] = [
 		build() {
 			const target = realInteractivePatchCorpusTarget('stress-dense-100k')
 			const bytes = realInteractivePatchCorpusTargetBytes(target)
-			xlsxSharedStringUsage(bytes)
 			return {
 				rows: target.rowCount,
 				cols: target.colCount,

@@ -273,15 +273,27 @@ export function handleHideCols(
 	sheet.ensureWritable()
 	const hidden = op.hidden ?? true
 	for (let c = op.at; c < op.at + op.count; c++) {
-		const idx = sheet.colDefs.findIndex((d) => d.min === c + 1 && d.max === c + 1)
-		if (idx >= 0) {
-			const existing = sheet.colDefs[idx]
-			if (existing) sheet.colDefs[idx] = { ...existing, hidden }
-		} else {
-			sheet.colDefs.push({ min: c + 1, max: c + 1, hidden })
-		}
+		setColHidden(sheet, c, hidden)
 	}
 	return ok(patch([], [op.sheet]))
+}
+
+function setColHidden(sheet: Sheet, col: number, hidden: boolean): void {
+	const idx = sheet.colDefs.findIndex((def) => def.min === col + 1 && def.max === col + 1)
+	const existing = idx >= 0 ? sheet.colDefs[idx] : undefined
+	if (hidden) {
+		if (existing) sheet.colDefs[idx] = { ...existing, hidden: true }
+		else sheet.colDefs.push({ min: col + 1, max: col + 1, hidden: true })
+		return
+	}
+	if (!existing) return
+	const { hidden: _hidden, ...next } = existing
+	if (isEmptyColDef(next)) sheet.colDefs.splice(idx, 1)
+	else sheet.colDefs[idx] = next
+}
+
+function isEmptyColDef(def: Sheet['colDefs'][number]): boolean {
+	return Object.keys(def).every((key) => key === 'min' || key === 'max')
 }
 
 export function handleSetWorkbookProtection(

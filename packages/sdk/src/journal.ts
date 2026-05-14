@@ -1000,13 +1000,19 @@ function journalHideCols(
 			],
 		}
 	}
-	const inverseOps = cols.flatMap((col): Operation[] =>
-		col.colDef?.hidden === undefined
-			? []
-			: [{ op: 'hideCols', sheet: op.sheet, at: col.col, count: 1, hidden: col.colDef.hidden }],
-	)
+	const hidden = op.hidden ?? true
+	const inverseOps = cols.flatMap((col): Operation[] => {
+		if (hidden) {
+			return col.colDef?.hidden === true
+				? []
+				: [{ op: 'hideCols', sheet: op.sheet, at: col.col, count: 1, hidden: false }]
+		}
+		return col.colDef?.hidden === true
+			? [{ op: 'hideCols', sheet: op.sheet, at: col.col, count: 1, hidden: true }]
+			: []
+	})
 	const refs = cols
-		.filter((col) => col.colDef?.hidden === undefined)
+		.filter((col) => col.colDef?.hidden === false)
 		.map((col) => layoutRef(op.sheet, 'col', col.col))
 	return {
 		opIndex,
@@ -1019,7 +1025,7 @@ function journalHideCols(
 				: [
 						{
 							code: 'LOSSY_INVERSE',
-							message: `Created or unkeyed column hide metadata cannot be cleared with public operations`,
+							message: `Explicit column hidden=false metadata cannot be restored exactly with public operations`,
 							refs,
 						},
 					],

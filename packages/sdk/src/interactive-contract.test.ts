@@ -6435,6 +6435,7 @@ describe('interactive client contract', () => {
 		if (modelSheet) {
 			modelSheet.state = 'veryHidden'
 			modelSheet.rowDefs.set(2, { hidden: false })
+			modelSheet.colDefs.push({ min: 2, max: 2, hidden: false })
 		}
 
 		const changed = wb.preview(
@@ -6450,6 +6451,7 @@ describe('interactive client contract', () => {
 		expect(changed.journal?.supported).toBe(true)
 		expect(changed.journal?.exact).toBe(false)
 		expect(changed.journal?.inverseOps).toEqual([
+			{ op: 'hideCols', sheet: 'Sheet1', at: 1, count: 1, hidden: false },
 			{ op: 'hideRows', sheet: 'Sheet1', at: 2, count: 1, hidden: false },
 			{ op: 'hideSheet', sheet: 'Sheet1', hidden: true },
 		])
@@ -6468,7 +6470,8 @@ describe('interactive client contract', () => {
 			},
 			{
 				code: 'LOSSY_INVERSE',
-				message: 'Created or unkeyed column hide metadata cannot be cleared with public operations',
+				message:
+					'Explicit column hidden=false metadata cannot be restored exactly with public operations',
 				refs: ['Sheet1!B'],
 			},
 		])

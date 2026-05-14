@@ -3267,6 +3267,16 @@ describe('applyOperation', () => {
 			hidden: true,
 		})
 		expectOk(result2)
+		expect(wb.getSheet('Sheet1')?.colDefs).toContainEqual({ min: 2, max: 2, hidden: true })
+
+		const result2b = applyOperation(wb, {
+			op: 'hideCols',
+			sheet: 'Sheet1',
+			at: 1,
+			count: 1,
+			hidden: false,
+		})
+		expectOk(result2b)
 
 		const result3 = applyOperation(wb, {
 			op: 'hideRows',
@@ -3290,7 +3300,7 @@ describe('applyOperation', () => {
 
 		const sheet = wb.getSheet('Sheet1')
 		expect(sheet?.state).toBe('hidden')
-		expect(sheet?.colDefs).toContainEqual({ min: 2, max: 2, hidden: true })
+		expect(sheet?.colDefs.find((def) => def.min === 2 && def.max === 2)).toBeUndefined()
 		expect(sheet?.rowHeights.get(2)).toBeUndefined()
 		expect(sheet?.rowDefs.get(2)).toBeUndefined()
 	})

@@ -2056,6 +2056,7 @@ function journalDeleteComment(
 	opIndex: number,
 ): DraftJournalEntry {
 	const comment = commentPreimage(workbook, op.sheet, op.ref)
+	const threadedComments = threadedCommentPreimagesAtRef(workbook, op.sheet, op.ref)
 	const inverseOps: Operation[] = comment.comment
 		? [
 				{
@@ -2071,8 +2072,17 @@ function journalDeleteComment(
 		opIndex,
 		op,
 		inverseOps,
-		preimages: [{ kind: 'comment', comment }],
-		issues: [],
+		preimages: [
+			{ kind: 'comment', comment },
+			...threadedComments.map((threadedComment) => ({
+				kind: 'threaded-comment' as const,
+				threadedComment,
+			})),
+		],
+		issues: [
+			...commentRestoreIssues([comment]),
+			...deleteCommentThreadedCommentIssues(op.sheet, op.ref, threadedComments),
+		],
 	}
 }
 
@@ -5030,6 +5040,44 @@ function threadedCommentPreimage(
 		commentIndex: match?.index ?? null,
 		threadedComment: match ? cloneThreadedComment(match.comment) : null,
 	}
+}
+
+function threadedCommentPreimagesAtRef(
+	workbook: Workbook,
+	sheetName: string,
+	refText: string,
+): MutationJournalThreadedCommentPreimage[] {
+	const sheet = workbook.getSheet(sheetName)
+	if (!sheet) return []
+	const ref = refText.toUpperCase()
+	return sheet.threadedComments
+		.map((comment, index) => ({ comment, index }))
+		.filter(({ comment }) => comment.ref.toUpperCase() === ref)
+		.map(({ comment, index }) => ({
+			sheet: sheetName,
+			commentIndex: index,
+			threadedComment: cloneThreadedComment(comment),
+		}))
+}
+
+function deleteCommentThreadedCommentIssues(
+	sheetName: string,
+	refText: string,
+	threadedComments: readonly MutationJournalThreadedCommentPreimage[],
+): readonly MutationJournalIssue[] {
+	if (threadedComments.length === 0) return []
+	return [
+		{
+			code: 'LOSSY_INVERSE',
+			message: `Threaded comments deleted at ${sheetName}!${refText.toUpperCase()} cannot be recreated with public operations`,
+			refs: threadedComments.map((preimage) => {
+				const id = preimage.threadedComment?.id
+				return id
+					? `${sheetName}!threadedComment:${id}`
+					: `${sheetName}!threadedComment:${preimage.commentIndex ?? 'unknown'}`
+			}),
+		},
+	]
 }
 
 function threadedCommentStableSelector(

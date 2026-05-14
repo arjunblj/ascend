@@ -5789,6 +5789,63 @@ describe('interactive client contract', () => {
 		expect(journalComparableState(wb)).toEqual(before)
 	})
 
+	test('deleteComment journals mark legacy drawings and threaded comments lossy', () => {
+		const wb = AscendWorkbook.create()
+		const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+		if (!sheet) throw new Error('missing sheet')
+		sheet.comments.set('B2', {
+			text: 'review',
+			author: 'analyst',
+			legacyDrawing: { shapeId: '_x0000_s1025', row: 1, column: 1 },
+		})
+		sheet.threadedComments.push(
+			{ ref: 'B2', text: 'root', id: 'tc-1', personId: 'person-1' },
+			{ ref: 'B2', text: 'reply', id: 'tc-2', parentId: 'tc-1', personId: 'person-2' },
+		)
+
+		const changed = wb.apply([{ op: 'deleteComment', sheet: 'Sheet1', ref: 'B2' }], {
+			journal: true,
+		})
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(false)
+		expect(changed.journal?.inverseOps).toEqual([
+			{ op: 'setComment', sheet: 'Sheet1', ref: 'B2', text: 'review', author: 'analyst' },
+		])
+		expect(changed.journal?.issues).toEqual([
+			{
+				code: 'LOSSY_INVERSE',
+				message:
+					'Legacy comment drawing metadata for Sheet1!B2 cannot be restored with public operations',
+				refs: ['Sheet1!B2'],
+			},
+			{
+				code: 'LOSSY_INVERSE',
+				message:
+					'Threaded comments deleted at Sheet1!B2 cannot be recreated with public operations',
+				refs: ['Sheet1!threadedComment:tc-1', 'Sheet1!threadedComment:tc-2'],
+			},
+		])
+		expect(changed.journal?.entries[0]?.preimages).toContainEqual({
+			kind: 'threaded-comment',
+			threadedComment: {
+				sheet: 'Sheet1',
+				commentIndex: 0,
+				threadedComment: { ref: 'B2', text: 'root', id: 'tc-1', personId: 'person-1' },
+			},
+		})
+		const afterDelete = wb.getWorkbookModel().getSheet('Sheet1')
+		expect(afterDelete?.comments.get('B2')).toBeUndefined()
+		expect(afterDelete?.threadedComments).toEqual([])
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		const afterUndo = wb.getWorkbookModel().getSheet('Sheet1')
+		expect(afterUndo?.comments.get('B2')).toEqual({ text: 'review', author: 'analyst' })
+		expect(afterUndo?.threadedComments).toEqual([])
+	})
+
 	test('journal inverse ops restore sheet moves across adjacent renames', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

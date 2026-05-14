@@ -88,7 +88,7 @@ import {
 } from './threaded-comments.ts'
 import { updateTimelineCacheDefinitionXml } from './timeline-cache.ts'
 import { buildWorkbookXml } from './workbook.ts'
-import { createZip, encode, StreamingZipBuilder } from './zip.ts'
+import { createZip, encode, StreamingZipBuilder, type ZipCompressionProfile } from './zip.ts'
 
 const REL_OFFICE_DOC =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument'
@@ -175,6 +175,8 @@ export interface WriteXlsxOptions {
 	readonly usePlainStrings?: boolean
 	/** Omit cell ref attributes on dense contiguous default-style scalar rows. */
 	readonly omitDenseCellRefs?: boolean
+	/** ZIP compression policy: fast optimizes wall time; compact optimizes file size; store skips deflate. */
+	readonly compressionProfile?: ZipCompressionProfile
 	readonly streaming?: boolean
 }
 
@@ -296,7 +298,11 @@ export function writeXlsx(
 	try {
 		const plan = planWriteXlsx(workbook, capsules, options)
 		if (!plan.ok) return plan
-		return ok(createZip(plan.value.parts))
+		return ok(
+			createZip(plan.value.parts, {
+				...(options.compressionProfile ? { compressionProfile: options.compressionProfile } : {}),
+			}),
+		)
 	} catch (e) {
 		return err(
 			ascendError(
@@ -315,7 +321,7 @@ export async function writeXlsxStreaming(
 	try {
 		const plan = planWriteXlsx(workbook, capsules, { ...options, streaming: true })
 		if (!plan.ok) return plan
-		const zip = await createZipStreaming(plan.value)
+		const zip = await createZipStreaming(plan.value, options.compressionProfile)
 		return ok(zip)
 	} catch (e) {
 		return err(
@@ -327,8 +333,13 @@ export async function writeXlsxStreaming(
 	}
 }
 
-async function createZipStreaming(plan: import('./plan.ts').WritePlanResult): Promise<Uint8Array> {
-	const builder = new StreamingZipBuilder()
+async function createZipStreaming(
+	plan: import('./plan.ts').WritePlanResult,
+	compressionProfile?: ZipCompressionProfile,
+): Promise<Uint8Array> {
+	const builder = new StreamingZipBuilder({
+		...(compressionProfile ? { compressionProfile } : {}),
+	})
 	for (const descriptor of plan.descriptors) {
 		if (descriptor.streamingBuild) {
 			builder.addStreamingEntry(descriptor.path)

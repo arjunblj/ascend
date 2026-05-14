@@ -124,6 +124,7 @@ export interface ReadXlsxResult {
 	readonly report: CompatibilityReport
 	readonly capsules: PreservationCapsule[]
 	readonly loadInfo: ReadXlsxLoadInfo
+	readonly sourceArchive?: ZipArchive
 }
 
 export interface ReadXlsxOptions {
@@ -804,7 +805,7 @@ export function readXlsx(
 			return ok({ workbook, report, capsules: [], loadInfo })
 		}
 
-		return ok({ workbook, report, capsules, loadInfo })
+		return ok({ workbook, report, capsules, loadInfo, sourceArchive: archive })
 	} catch (e) {
 		if (e instanceof TypeError || e instanceof ReferenceError) throw e
 		return err(

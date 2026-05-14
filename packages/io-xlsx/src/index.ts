@@ -42,3 +42,4 @@ export {
 	writeXlsxStreaming,
 } from './writer/index.ts'
 export type { WritePlanResult, WritePlanSummary } from './writer/plan.ts'
+export type { ZipCompressionProfile } from './writer/zip.ts'

@@ -14,7 +14,7 @@ const nativeCrc32 =
 		: undefined
 const HUGE_WORKSHEET_XML_BYTES = 256 * 1024 * 1024
 
-export type ZipCompressionProfile = 'fast' | 'compact'
+export type ZipCompressionProfile = 'fast' | 'compact' | 'store'
 
 interface DeflateOptions {
 	readonly level: number
@@ -50,6 +50,7 @@ function normalizeCompressionProfile(
 ): ZipCompressionProfile {
 	if (profile === undefined || profile === 'fast') return 'fast'
 	if (profile === 'compact') return 'compact'
+	if (profile === 'store') return 'store'
 	throw new Error(`Unsupported ZIP compression profile "${profile}"`)
 }
 
@@ -165,7 +166,7 @@ export function createZip(
 	for (const [path, raw] of parts) {
 		const nameBytes = textEncoder.encode(path)
 		const crc = crc32(raw)
-		if (shouldStoreWithoutDeflate(raw.byteLength)) {
+		if (compressionProfile === 'store' || shouldStoreWithoutDeflate(raw.byteLength)) {
 			entries.push({
 				nameBytes,
 				data: raw,
@@ -211,6 +212,7 @@ export class StreamingZipBuilder {
 	private streamingCrc = 0
 	private streamingUncompressedSize = 0
 	private streamingCompressedChunks: Uint8Array[] = []
+	private streamingStoredChunks: Uint8Array[] | null = null
 	private deflateStream: ReturnType<typeof createDeflateRaw> | null = null
 
 	constructor(options: ZipOptions = {}) {
@@ -218,12 +220,12 @@ export class StreamingZipBuilder {
 	}
 
 	addEntry(path: string, data: Uint8Array): void {
-		if (this.deflateStream) {
+		if (this.isStreamingEntryOpen()) {
 			throw new Error('Cannot addEntry while streaming entry is open; call closeEntry first')
 		}
 		const nameBytes = textEncoder.encode(path)
 		const crc = crc32(data)
-		if (shouldStoreWithoutDeflate(data.byteLength)) {
+		if (this.compressionProfile === 'store' || shouldStoreWithoutDeflate(data.byteLength)) {
 			this.entries.push({
 				nameBytes,
 				data,
@@ -251,13 +253,17 @@ export class StreamingZipBuilder {
 	}
 
 	addStreamingEntry(path: string, estimatedUncompressedSize = 1_000_000): void {
-		if (this.deflateStream) {
+		if (this.isStreamingEntryOpen()) {
 			throw new Error('Streaming entry already open; call closeEntry first')
 		}
 		this.streamingNameBytes = textEncoder.encode(path)
 		this.streamingCrc = 0
 		this.streamingUncompressedSize = 0
 		this.streamingCompressedChunks = []
+		if (this.compressionProfile === 'store') {
+			this.streamingStoredChunks = []
+			return
+		}
 		this.deflateStream = createDeflateRaw(
 			deflateOptionsForPart(path, estimatedUncompressedSize, this.compressionProfile),
 		)
@@ -267,22 +273,33 @@ export class StreamingZipBuilder {
 	}
 
 	writeChunk(data: Uint8Array): void {
-		if (!this.deflateStream) {
+		if (!this.isStreamingEntryOpen()) {
 			throw new Error('No streaming entry open; call addStreamingEntry first')
 		}
 		this.streamingCrc = updateCrc32(this.streamingCrc, data)
 		this.streamingUncompressedSize += data.byteLength
-		this.deflateStream.write(data)
+		if (this.streamingStoredChunks) {
+			this.streamingStoredChunks.push(data)
+			return
+		}
+		const stream = this.deflateStream
+		if (!stream) throw new Error('No streaming entry open; call addStreamingEntry first')
+		stream.write(data)
 	}
 
 	async writeChunkAsync(data: Uint8Array): Promise<void> {
-		if (!this.deflateStream) {
+		if (!this.isStreamingEntryOpen()) {
 			throw new Error('No streaming entry open; call addStreamingEntry first')
 		}
 		this.streamingCrc = updateCrc32(this.streamingCrc, data)
 		this.streamingUncompressedSize += data.byteLength
-		if (this.deflateStream.write(data)) return
 		const stream = this.deflateStream
+		if (this.streamingStoredChunks) {
+			this.streamingStoredChunks.push(data)
+			return
+		}
+		if (!stream) throw new Error('No streaming entry open; call addStreamingEntry first')
+		if (stream.write(data)) return
 		await new Promise<void>((resolve, reject) => {
 			const handleDrain = () => {
 				stream.removeListener('error', handleError)
@@ -298,11 +315,25 @@ export class StreamingZipBuilder {
 	}
 
 	closeEntry(): Promise<void> {
-		if (!this.deflateStream || !this.streamingNameBytes) {
+		if (!this.isStreamingEntryOpen() || !this.streamingNameBytes) {
 			throw new Error('No streaming entry open')
 		}
 		const nameBytes = this.streamingNameBytes
 		const stream = this.deflateStream
+		if (this.streamingStoredChunks) {
+			const dataChunks = this.streamingStoredChunks
+			this.entries.push({
+				nameBytes,
+				dataChunks,
+				uncompressedSize: this.streamingUncompressedSize,
+				compressedSize: this.streamingUncompressedSize,
+				method: 0,
+				crc: this.streamingCrc,
+			})
+			this.streamingNameBytes = null
+			this.streamingStoredChunks = null
+			return Promise.resolve()
+		}
 		if (!nameBytes || !stream) throw new Error('No streaming entry open')
 		return new Promise((resolve, reject) => {
 			const handleError = (error: Error) => {
@@ -336,10 +367,14 @@ export class StreamingZipBuilder {
 	}
 
 	finalize(): Uint8Array {
-		if (this.deflateStream) {
+		if (this.isStreamingEntryOpen()) {
 			throw new Error('Streaming entry still open; call closeEntry first')
 		}
 		return buildZip(this.entries)
+	}
+
+	private isStreamingEntryOpen(): boolean {
+		return this.deflateStream !== null || this.streamingStoredChunks !== null
 	}
 }
 

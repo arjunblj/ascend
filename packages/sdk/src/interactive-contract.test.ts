@@ -3232,8 +3232,6 @@ describe('interactive client contract', () => {
 					sheet: 'Sheet1',
 					setup: {
 						orientation: 'landscape',
-						fitToWidth: 1,
-						fitToHeight: 2,
 						margins: { left: 0.25, right: 0.25 },
 					},
 				},
@@ -3257,17 +3255,21 @@ describe('interactive client contract', () => {
 				sheet: 'Sheet1',
 				setup: {
 					orientation: 'portrait',
-					paperSize: 1,
-					scale: 95,
-					margins: { left: 0.5, right: 0.5, top: 0.75, bottom: 0.75 },
+					margins: { left: 0.5, right: 0.5 },
 				},
 			},
 		])
 
 		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
 		expect(undo.errors).toEqual([])
-		expect(sheet.pageSetup).toEqual({ orientation: 'portrait', paperSize: 1, scale: 95 })
-		expect(sheet.pageMargins).toEqual({ left: 0.5, right: 0.5, top: 0.75, bottom: 0.75 })
+		const restoredSheet = wb.getWorkbookModel().getSheet('Sheet1')
+		expect(restoredSheet?.pageSetup).toEqual({ orientation: 'portrait', paperSize: 1, scale: 95 })
+		expect(restoredSheet?.pageMargins).toEqual({
+			left: 0.5,
+			right: 0.5,
+			top: 0.75,
+			bottom: 0.75,
+		})
 		expect(
 			wb.getWorkbookModel().definedNames.get('_xlnm.Print_Area', {
 				kind: 'sheet',
@@ -3276,11 +3278,67 @@ describe('interactive client contract', () => {
 		).toBe("'Sheet1'!A1:B2")
 	})
 
-	test('page setup journals mark unsupported package metadata lossy', () => {
+	test('page setup journals preserve untouched imported metadata exactly', () => {
 		const wb = AscendWorkbook.create()
 		const sheet = wb.getWorkbookModel().getSheet('Sheet1')
 		if (!sheet) throw new Error('missing sheet')
-		sheet.pageSetup = { orientation: 'portrait', firstPageNumber: 3 }
+		sheet.pageSetup = { orientation: 'portrait', paperSize: 1, firstPageNumber: 3 }
+		sheet.pageMargins = { left: 0.5, right: 0.5, top: 0.75, bottom: 0.75 }
+
+		const changed = wb.apply(
+			[
+				{
+					op: 'setPageSetup',
+					sheet: 'Sheet1',
+					setup: { orientation: 'landscape', margins: { left: 0.25 } },
+				},
+			],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(true)
+		expect(changed.journal?.issues).toEqual([])
+		expect(changed.journal?.inverseOps).toEqual([
+			{
+				op: 'setPageSetup',
+				sheet: 'Sheet1',
+				setup: { orientation: 'portrait', margins: { left: 0.5 } },
+			},
+		])
+		expect(wb.getWorkbookModel().getSheet('Sheet1')?.pageSetup).toEqual({
+			orientation: 'landscape',
+			paperSize: 1,
+			firstPageNumber: 3,
+		})
+		expect(wb.getWorkbookModel().getSheet('Sheet1')?.pageMargins).toEqual({
+			left: 0.25,
+			right: 0.5,
+			top: 0.75,
+			bottom: 0.75,
+		})
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(wb.getWorkbookModel().getSheet('Sheet1')?.pageSetup).toEqual({
+			orientation: 'portrait',
+			paperSize: 1,
+			firstPageNumber: 3,
+		})
+		expect(wb.getWorkbookModel().getSheet('Sheet1')?.pageMargins).toEqual({
+			left: 0.5,
+			right: 0.5,
+			top: 0.75,
+			bottom: 0.75,
+		})
+	})
+
+	test('page setup journals mark unrepresentable touched metadata lossy', () => {
+		const wb = AscendWorkbook.create()
+		const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+		if (!sheet) throw new Error('missing sheet')
+		sheet.pageSetup = { orientation: 'custom', firstPageNumber: 3 }
 
 		const changed = wb.apply(
 			[{ op: 'setPageSetup', sheet: 'Sheet1', setup: { orientation: 'landscape' } }],

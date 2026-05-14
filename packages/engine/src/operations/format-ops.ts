@@ -304,7 +304,8 @@ export function handleSetPageSetup(
 	const sheet = sheetResult.value
 	sheet.ensureWritable()
 	const setup: SheetPageSetup = {
-		...(op.setup.orientation ? { orientation: op.setup.orientation } : {}),
+		...(sheet.pageSetup ?? {}),
+		...(op.setup.orientation !== undefined ? { orientation: op.setup.orientation } : {}),
 		...(op.setup.paperSize !== undefined ? { paperSize: op.setup.paperSize } : {}),
 		...(op.setup.scale !== undefined ? { scale: op.setup.scale } : {}),
 		...(op.setup.fitToWidth !== undefined ? { fitToWidth: op.setup.fitToWidth } : {}),
@@ -312,7 +313,7 @@ export function handleSetPageSetup(
 	}
 	sheet.pageSetup = setup
 	if (op.setup.margins) {
-		sheet.pageMargins = { ...op.setup.margins }
+		sheet.pageMargins = { ...(sheet.pageMargins ?? {}), ...op.setup.margins }
 	}
 	return ok(patch([], [op.sheet]))
 }

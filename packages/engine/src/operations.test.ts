@@ -2125,6 +2125,31 @@ describe('applyOperation', () => {
 		)
 	})
 
+	test('setPageSetup preserves imported print metadata on partial updates', () => {
+		const wb = setup()
+		const sheet = wb.getSheet('Sheet1')
+		if (!sheet) throw new Error('missing sheet')
+		sheet.pageSetup = { orientation: 'portrait', paperSize: 1, firstPageNumber: 3 }
+		sheet.pageMargins = { left: 0.5, right: 0.5, top: 0.75, bottom: 0.75 }
+
+		const result = applyOperation(wb, {
+			op: 'setPageSetup',
+			sheet: 'Sheet1',
+			setup: {
+				orientation: 'landscape',
+				margins: { left: 0.25 },
+			},
+		})
+		expectOk(result)
+
+		expect(sheet.pageSetup).toEqual({
+			orientation: 'landscape',
+			paperSize: 1,
+			firstPageNumber: 3,
+		})
+		expect(sheet.pageMargins).toEqual({ left: 0.25, right: 0.5, top: 0.75, bottom: 0.75 })
+	})
+
 	test('setDataValidation stores validation metadata', () => {
 		const wb = setup()
 		const result = applyOperation(wb, {

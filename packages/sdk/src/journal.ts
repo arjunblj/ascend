@@ -1654,7 +1654,7 @@ function journalSetPageSetup(
 	opIndex: number,
 ): DraftJournalEntry {
 	const preimage = pageSetupPreimage(workbook, op.sheet)
-	const { inverseOps, issues } = restorePageSetupOps(preimage, op.setup.margins !== undefined)
+	const { inverseOps, issues } = restorePageSetupOps(preimage, op.setup)
 	return {
 		opIndex,
 		op,
@@ -3071,20 +3071,12 @@ function pageSetupPreimage(
 
 function restorePageSetupOps(
 	preimage: MutationJournalPageSetupPreimage,
-	marginsTouched: boolean,
+	touched: Extract<Operation, { op: 'setPageSetup' }>['setup'],
 ): {
 	readonly inverseOps: readonly Operation[]
 	readonly issues: readonly MutationJournalIssue[]
 } {
 	const issues: MutationJournalIssue[] = []
-	const setup = preimage.pageSetup ? pageSetupToInput(preimage.pageSetup) : null
-	if (preimage.pageSetup && !setup) {
-		issues.push({
-			code: 'LOSSY_INVERSE',
-			message: `Page setup for ${preimage.sheet} contains metadata that cannot be restored with public operations`,
-			refs: [preimage.sheet],
-		})
-	}
 	if (!preimage.pageSetup) {
 		issues.push({
 			code: 'LOSSY_INVERSE',
@@ -3092,22 +3084,26 @@ function restorePageSetupOps(
 			refs: [preimage.sheet],
 		})
 	}
-	if (marginsTouched && !preimage.pageMargins) {
+	const setup = preimage.pageSetup ? touchedPageSetupToInput(preimage, touched, issues) : null
+	const margins = touched.margins
+		? touchedPageMarginsToInput(preimage, touched.margins, issues)
+		: undefined
+	if (touched.margins && !preimage.pageMargins) {
 		issues.push({
 			code: 'LOSSY_INVERSE',
 			message: `Page margins for ${preimage.sheet} cannot be removed with public operations`,
 			refs: [preimage.sheet],
 		})
 	}
-	if (!setup) return { inverseOps: [], issues }
+	if (!setup && !margins) return { inverseOps: [], issues }
 	return {
 		inverseOps: [
 			{
 				op: 'setPageSetup',
 				sheet: preimage.sheet,
 				setup: {
-					...setup,
-					...(preimage.pageMargins ? { margins: { ...preimage.pageMargins } } : {}),
+					...(setup ?? {}),
+					...(margins ? { margins } : {}),
 				},
 			},
 		],
@@ -3115,38 +3111,104 @@ function restorePageSetupOps(
 	}
 }
 
-function pageSetupToInput(
-	setup: SheetPageSetup,
+function touchedPageSetupToInput(
+	preimage: MutationJournalPageSetupPreimage,
+	touched: Extract<Operation, { op: 'setPageSetup' }>['setup'],
+	issues: MutationJournalIssue[],
 ): Omit<Extract<Operation, { op: 'setPageSetup' }>['setup'], 'margins'> | null {
-	const unsupported = [
-		setup.firstPageNumber,
-		setup.copies,
-		setup.horizontalDpi,
-		setup.verticalDpi,
-		setup.pageOrder,
-		setup.cellComments,
-		setup.errors,
-		setup.blackAndWhite,
-		setup.draft,
-		setup.useFirstPageNumber,
-		setup.usePrinterDefaults,
-		setup.printerSettingsRelId,
-	]
-	if (unsupported.some((value) => value !== undefined)) return null
-	if (
-		setup.orientation !== undefined &&
-		setup.orientation !== 'portrait' &&
-		setup.orientation !== 'landscape'
-	) {
-		return null
+	const setup = preimage.pageSetup
+	if (!setup) return null
+	const input: {
+		orientation?: 'portrait' | 'landscape'
+		paperSize?: number
+		scale?: number
+		fitToWidth?: number
+		fitToHeight?: number
+	} = {}
+	if (touched.orientation !== undefined) {
+		if (setup.orientation === 'portrait' || setup.orientation === 'landscape') {
+			input.orientation = setup.orientation
+		} else {
+			addPageSetupLossyIssue(preimage.sheet, issues)
+		}
 	}
-	return {
-		...(setup.orientation !== undefined ? { orientation: setup.orientation } : {}),
-		...(setup.paperSize !== undefined ? { paperSize: setup.paperSize } : {}),
-		...(setup.scale !== undefined ? { scale: setup.scale } : {}),
-		...(setup.fitToWidth !== undefined ? { fitToWidth: setup.fitToWidth } : {}),
-		...(setup.fitToHeight !== undefined ? { fitToHeight: setup.fitToHeight } : {}),
+	if (touched.paperSize !== undefined) {
+		if (setup.paperSize !== undefined) input.paperSize = setup.paperSize
+		else addPageSetupLossyIssue(preimage.sheet, issues)
 	}
+	if (touched.scale !== undefined) {
+		if (setup.scale !== undefined) input.scale = setup.scale
+		else addPageSetupLossyIssue(preimage.sheet, issues)
+	}
+	if (touched.fitToWidth !== undefined) {
+		if (setup.fitToWidth !== undefined) input.fitToWidth = setup.fitToWidth
+		else addPageSetupLossyIssue(preimage.sheet, issues)
+	}
+	if (touched.fitToHeight !== undefined) {
+		if (setup.fitToHeight !== undefined) input.fitToHeight = setup.fitToHeight
+		else addPageSetupLossyIssue(preimage.sheet, issues)
+	}
+	return Object.keys(input).length > 0 ? input : null
+}
+
+function touchedPageMarginsToInput(
+	preimage: MutationJournalPageSetupPreimage,
+	touched: NonNullable<Extract<Operation, { op: 'setPageSetup' }>['setup']['margins']>,
+	issues: MutationJournalIssue[],
+): NonNullable<Extract<Operation, { op: 'setPageSetup' }>['setup']['margins']> | null {
+	const margins = preimage.pageMargins
+	if (!margins) return null
+	const input: {
+		left?: number
+		right?: number
+		top?: number
+		bottom?: number
+		header?: number
+		footer?: number
+	} = {}
+	if (touched.left !== undefined) {
+		if (margins.left !== undefined) input.left = margins.left
+		else addPageMarginsLossyIssue(preimage.sheet, issues)
+	}
+	if (touched.right !== undefined) {
+		if (margins.right !== undefined) input.right = margins.right
+		else addPageMarginsLossyIssue(preimage.sheet, issues)
+	}
+	if (touched.top !== undefined) {
+		if (margins.top !== undefined) input.top = margins.top
+		else addPageMarginsLossyIssue(preimage.sheet, issues)
+	}
+	if (touched.bottom !== undefined) {
+		if (margins.bottom !== undefined) input.bottom = margins.bottom
+		else addPageMarginsLossyIssue(preimage.sheet, issues)
+	}
+	if (touched.header !== undefined) {
+		if (margins.header !== undefined) input.header = margins.header
+		else addPageMarginsLossyIssue(preimage.sheet, issues)
+	}
+	if (touched.footer !== undefined) {
+		if (margins.footer !== undefined) input.footer = margins.footer
+		else addPageMarginsLossyIssue(preimage.sheet, issues)
+	}
+	return Object.keys(input).length > 0 ? input : null
+}
+
+function addPageSetupLossyIssue(sheet: string, issues: MutationJournalIssue[]): void {
+	if (issues.some((issue) => issue.message.startsWith(`Page setup for ${sheet} contains`))) return
+	issues.push({
+		code: 'LOSSY_INVERSE',
+		message: `Page setup for ${sheet} contains metadata that cannot be restored with public operations`,
+		refs: [sheet],
+	})
+}
+
+function addPageMarginsLossyIssue(sheet: string, issues: MutationJournalIssue[]): void {
+	if (issues.some((issue) => issue.message.startsWith(`Page margins for ${sheet} cannot`))) return
+	issues.push({
+		code: 'LOSSY_INVERSE',
+		message: `Page margins for ${sheet} cannot be removed with public operations`,
+		refs: [sheet],
+	})
 }
 
 function restoreDefinedNameOps(

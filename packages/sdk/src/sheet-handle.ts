@@ -199,11 +199,14 @@ export class SheetHandle {
 				row: Math.max(Math.min(endRow, requestedRef.end.row), requestedRef.start.row),
 			},
 		}
-		let cells = collectCellsCompact(sheet, windowRef, this.resolveFormula, opts)
-		if (opts?.omitEmpty) {
+		let cells =
+			opts?.includeRefs === false && opts.flatValues
+				? collectFlatCellsCompact(sheet, windowRef, this.resolveFormula, opts)
+				: collectCellsCompact(sheet, windowRef, this.resolveFormula, opts)
+		if (opts?.omitEmpty && !(opts.includeRefs === false && opts.flatValues)) {
 			cells = cells.filter((c) => c.value.kind !== 'empty')
 		}
-		if (opts?.flatValues) {
+		if (opts?.flatValues && !(opts.includeRefs === false && opts.flatValues)) {
 			cells = cells.map((c) => ({
 				...c,
 				value: flattenCellValue(c.value) as unknown as CellValue,
@@ -704,6 +707,28 @@ function collectCellsCompact(
 		cells.push({
 			value,
 			formula: resolvedFormula,
+			formulaBinding: formulaInfo ?? null,
+			row,
+			col,
+		})
+	})
+	return cells
+}
+
+function collectFlatCellsCompact(
+	sheet: Sheet,
+	range: RangeRef,
+	resolveFormula: (row: number, col: number, cell: CellFormulaSource) => string | null,
+	opts?: { omitEmpty?: boolean },
+): CompactCellInfo[] {
+	const cells: CompactCellInfo[] = []
+	const omitEmpty = opts?.omitEmpty === true
+	sheet.cells.forEachCellContentInRange(range, (row, col, value, formula, formulaInfo) => {
+		if (omitEmpty && value.kind === 'empty') return
+		const formulaSource = { formula, formulaInfo }
+		cells.push({
+			value: flattenCellValue(value) as unknown as CellValue,
+			formula: resolveFormula(row, col, formulaSource),
 			formulaBinding: formulaInfo ?? null,
 			row,
 			col,

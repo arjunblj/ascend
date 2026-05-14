@@ -6216,6 +6216,35 @@ describe('interactive client contract', () => {
 		expect(journalComparableState(wb)).toEqual(before)
 	})
 
+	test('row height journals mark customHeight=false metadata lossy', () => {
+		const wb = AscendWorkbook.create()
+		const modelSheet = wb.getWorkbookModel().getSheet('Sheet1')
+		if (!modelSheet) throw new Error('missing sheet')
+		modelSheet.rowHeights.set(2, 18)
+		modelSheet.rowDefs.set(2, { hidden: true, customHeight: false })
+
+		const changed = wb.apply([{ op: 'setRowHeight', sheet: 'Sheet1', row: 2, height: 24 }], {
+			journal: true,
+		})
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(false)
+		expect(changed.journal?.inverseOps).toEqual([
+			{ op: 'setRowHeight', sheet: 'Sheet1', row: 2, height: 18 },
+		])
+		expect(changed.journal?.issues).toContainEqual({
+			code: 'LOSSY_INVERSE',
+			message:
+				'Row height metadata at Sheet1!3 has customHeight=false and cannot be restored exactly with public operations',
+			refs: ['Sheet1!3'],
+		})
+		expect(wb.getWorkbookModel().getSheet('Sheet1')?.rowDefs.get(2)).toEqual({
+			hidden: true,
+			customHeight: true,
+		})
+	})
+
 	test('journal marks newly-created row and column layout as lossy', () => {
 		const wb = AscendWorkbook.create()
 		const changed = wb.preview(

@@ -3369,6 +3369,23 @@ describe('applyOperation', () => {
 		expect(sheet.colDefs).toEqual([{ min: 0, max: 2, width: 18, customWidth: true }])
 	})
 
+	test('setRowHeight marks imported row height metadata as custom', () => {
+		const wb = setup()
+		const sheet = wb.getSheet('Sheet1')
+		if (!sheet) throw new Error('missing sheet')
+		sheet.rowDefs.set(2, { hidden: true, customHeight: false })
+
+		const resized = applyOperation(wb, {
+			op: 'setRowHeight',
+			sheet: 'Sheet1',
+			row: 2,
+			height: 24,
+		})
+		expectOk(resized)
+		expect(sheet.rowHeights.get(2)).toBe(24)
+		expect(sheet.rowDefs.get(2)).toEqual({ hidden: true, customHeight: true })
+	})
+
 	test('groupRows assigns outline metadata and collapsed boundary row', () => {
 		const wb = setup()
 		const result = applyOperation(wb, {

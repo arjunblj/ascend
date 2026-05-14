@@ -234,7 +234,12 @@ export function handleSetRowHeight(
 ): Result<PatchResult> {
 	const result = getSheet(workbook, op.sheet)
 	if (!result.ok) return result
-	result.value.rowHeights.set(op.row, op.height)
+	const sheet = result.value
+	sheet.rowHeights.set(op.row, op.height)
+	const rowDef = sheet.rowDefs.get(op.row)
+	if (rowDef?.customHeight === false) {
+		sheet.rowDefs.set(op.row, { ...rowDef, customHeight: true })
+	}
 	return ok(patch([], [op.sheet]))
 }
 

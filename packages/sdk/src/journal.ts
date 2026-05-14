@@ -814,6 +814,7 @@ function journalSetSheetLayout(
 	const sheet = workbook.getSheet(op.sheet)
 	const index =
 		axis === 'row' && op.op === 'setRowHeight' ? op.row : op.op === 'setColWidth' ? op.col : -1
+	const rowDef = sheet && axis === 'row' ? sheet.rowDefs.get(index) : undefined
 	const colDef =
 		sheet && axis === 'col'
 			? sheet.colDefs.find((def) => def.min <= index && def.max >= index)
@@ -862,6 +863,13 @@ function journalSetSheetLayout(
 		}
 	}
 	const issues: MutationJournalIssue[] = []
+	if (axis === 'row' && rowDef?.customHeight === false) {
+		issues.push({
+			code: 'LOSSY_INVERSE',
+			message: `Row height metadata at ${ref} has customHeight=false and cannot be restored exactly with public operations`,
+			refs: [ref],
+		})
+	}
 	if (
 		axis === 'col' &&
 		colWidth !== undefined &&

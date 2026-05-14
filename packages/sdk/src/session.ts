@@ -280,6 +280,7 @@ interface SessionFileIdentity {
 	readonly path: string
 	readonly size: number
 	readonly mtimeMs: number
+	readonly ctimeMs: number
 	readonly sha256: string
 }
 
@@ -395,6 +396,10 @@ export class WorkbookDocument {
 		source: string | Uint8Array,
 		options: WorkbookLoadOptions = {},
 	): Promise<WorkbookDocument> {
+		if (typeof source === 'string') {
+			const cachedPathDocument = await readCachedPathDocument(source, options)
+			if (cachedPathDocument) return cachedPathDocument
+		}
 		const pathSnapshot = typeof source === 'string' ? await readPathSnapshot(source) : undefined
 		const identity = pathSnapshot?.identity ?? readBytesIdentity(source as Uint8Array)
 		const key = makeSessionKey(identity, options)
@@ -467,7 +472,10 @@ export class WorkbookDocument {
 	}
 
 	static drop(file: string, options: WorkbookLoadOptions = {}): void {
-		const key = makeSessionKey({ path: resolve(file), size: 0, mtimeMs: 0, sha256: '' }, options)
+		const key = makeSessionKey(
+			{ path: resolve(file), size: 0, mtimeMs: 0, ctimeMs: 0, sha256: '' },
+			options,
+		)
 		sessionCache.delete(key)
 	}
 
@@ -2215,8 +2223,41 @@ async function readIdentity(file: string): Promise<SessionFileIdentity> {
 		path,
 		size: info.size,
 		mtimeMs: info.mtimeMs,
+		ctimeMs: info.ctimeMs,
 		sha256: createHash('sha256').update(bytes).digest('hex'),
 	}
+}
+
+async function readCachedPathDocument(
+	file: string,
+	options: WorkbookLoadOptions,
+): Promise<WorkbookDocument | undefined> {
+	const path = resolve(file)
+	const key = makeSessionKey({ path, size: 0, mtimeMs: 0, ctimeMs: 0, sha256: '' }, options)
+	const cached = sessionCache.get(key)
+	if (!cached || !('path' in cached.identity)) return undefined
+	if (isEntryExpired(cached)) {
+		sessionCache.delete(key)
+		return undefined
+	}
+	let info: Awaited<ReturnType<typeof stat>>
+	try {
+		info = await stat(path)
+	} catch {
+		sessionCache.delete(key)
+		return undefined
+	}
+	const identity = cached.identity
+	if (
+		info.size !== identity.size ||
+		info.mtimeMs !== identity.mtimeMs ||
+		info.ctimeMs !== identity.ctimeMs
+	) {
+		sessionCache.delete(key)
+		return undefined
+	}
+	touchCacheEntry(cached)
+	return cached.document
 }
 
 async function readPathSnapshot(file: string): Promise<PathSnapshot> {
@@ -2225,12 +2266,19 @@ async function readPathSnapshot(file: string): Promise<PathSnapshot> {
 		const before = await stat(path)
 		const bytes = await readPathBytes(path)
 		const after = await stat(path)
-		if (before.size !== after.size || before.mtimeMs !== after.mtimeMs) continue
+		if (
+			before.size !== after.size ||
+			before.mtimeMs !== after.mtimeMs ||
+			before.ctimeMs !== after.ctimeMs
+		) {
+			continue
+		}
 		return {
 			identity: {
 				path,
 				size: after.size,
 				mtimeMs: after.mtimeMs,
+				ctimeMs: after.ctimeMs,
 				sha256: createHash('sha256').update(bytes).digest('hex'),
 			},
 			bytes,
@@ -2299,6 +2347,7 @@ function fileIdentityDetails(identity: SessionFileIdentity): Record<string, stri
 		path: identity.path,
 		size: identity.size,
 		mtimeMs: identity.mtimeMs,
+		ctimeMs: identity.ctimeMs,
 		sha256: identity.sha256,
 	}
 }
@@ -2330,6 +2379,7 @@ function isIdentityEqual(left: SessionIdentity, right: SessionIdentity): boolean
 			left.path === right.path &&
 			left.size === right.size &&
 			left.mtimeMs === right.mtimeMs &&
+			left.ctimeMs === right.ctimeMs &&
 			left.sha256 === right.sha256
 		)
 	}

@@ -4408,6 +4408,27 @@ describe('checker', () => {
 		expect(result.issues.filter((i) => i.rule === 'chart-part-ownership')).toHaveLength(0)
 	})
 
+	test('accepts chartsheet-owned chart parts whose parsed owner name is the chartsheet', () => {
+		const wb = createWorkbook()
+		wb.chartParts.push({
+			partPath: 'xl/charts/chart1.xml',
+			sheetName: 'Chart 1',
+			chartType: 'barChart',
+			series: [],
+		})
+		wb.chartSheets.push({
+			name: 'Chart 1',
+			sheetId: createSheetId(),
+			relId: 'rIdChartSheet',
+			partPath: 'xl/chartsheets/sheet1.xml',
+			state: 'visible',
+			chartPartPaths: ['xl/charts/chart1.xml'],
+		})
+
+		const result = check(wb)
+		expect(result.issues.filter((i) => i.rule === 'chart-part-ownership')).toHaveLength(0)
+	})
+
 	test('detects chart parts attributed to missing worksheet owners', () => {
 		const wb = createWorkbook()
 		wb.addSheet('Summary')

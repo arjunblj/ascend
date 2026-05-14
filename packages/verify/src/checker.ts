@@ -473,6 +473,13 @@ function checkChartPartOwnership(
 	}
 	for (const chart of wb.chartParts) {
 		const chartSheetOwner = chartSheetOwnerByPartPath.get(chart.partPath)
+		if (
+			chart.sheetName &&
+			chartSheetOwner &&
+			chart.sheetName.toLowerCase() === chartSheetOwner.toLowerCase()
+		) {
+			continue
+		}
 		if (chart.sheetName && sheetNameSet.has(chart.sheetName.toLowerCase()) && chartSheetOwner) {
 			issues.push({
 				rule: 'chart-part-ownership',

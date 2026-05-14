@@ -38,6 +38,7 @@ if (!existsSync(input)) {
 }
 
 const inspected = await Ascend.open(input)
+const trustReport = inspected.trustReport({ maxFindings: 20 })
 const sheet = inspected.inspect().sheets[0]?.name ?? 'Sheet1'
 const readWindow = inspected.sheet(sheet)?.readWindow('A1:B4', { rowLimit: 4 })
 const ops = [
@@ -90,9 +91,16 @@ console.log(
 	JSON.stringify(
 		{
 			ok: true,
-			workflow: 'inspect-read-plan-prepared-commit-verify-repair',
+			workflow: 'trust-inspect-read-plan-prepared-commit-verify-repair',
 			input: {
 				file: input,
+				trust: {
+					trust: trustReport.trust,
+					posture: trustReport.posture,
+					findingCount: trustReport.summary.findingCount,
+					codes: trustReport.findings.map((finding) => finding.code),
+					nextActions: trustReport.nextActions,
+				},
 				sheet,
 				read: {
 					ref: readWindow?.ref,

@@ -2,6 +2,14 @@
 
 Use this transcript with any MCP client connected to `apps/mcp/src/index.ts`.
 
+## Trust Preflight
+
+```json
+{ "tool": "ascend.trust_report", "arguments": { "file": "model.xlsx", "maxFindings": 50 } }
+```
+
+Expected fields: `data.trust`, `data.posture`, `data.includedInAgentContext`, `data.executionPolicy`, `data.findings[].code`, `data.findings[].location`, and `data.nextActions`.
+
 ## Inspect And Read
 
 ```json

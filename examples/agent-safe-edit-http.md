@@ -6,6 +6,16 @@ Runnable transcript for coding agents using the local HTTP API. Start the server
 bun run apps/api/src/index.ts
 ```
 
+## Trust Preflight
+
+```bash
+curl -s http://localhost:3000/trust-report \
+  -H 'content-type: application/json' \
+  -d '{"file":"model.xlsx","maxFindings":50}'
+```
+
+Expected fields: `ok`, `data.trust`, `data.posture`, `data.includedInAgentContext`, `data.executionPolicy`, `data.findings[].code`, `data.findings[].location`, and `data.nextActions`.
+
 ## Inspect And Read
 
 ```bash

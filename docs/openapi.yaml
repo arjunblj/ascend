@@ -58,6 +58,34 @@ paths:
                 file: { type: string }
       responses:
         '200': { description: Active-content inventory with capability warnings }
+  /trust-report:
+    post:
+      summary: Inspect untrusted workbook posture for agent-safe context boundaries and safe next actions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string }
+                maxFindings:
+                  type: integer
+                  minimum: 0
+                  description: Maximum findings to emit; summary still reports truncation.
+            examples:
+              untrustedWorkbook:
+                value:
+                  file: vendor-model.xlsx
+                  maxFindings: 50
+      responses:
+        '200':
+          description: Workbook trust report with context defaults, execution policy, findings, and next actions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrustReportSuccessEnvelope'
   /package-graph:
     post:
       summary: Inspect XLSX/XLSM package parts, relationships, content types, and preservation policy
@@ -532,6 +560,88 @@ components:
         blockedPackageParts: { type: array, items: { type: object, additionalProperties: true } }
         approvals: { type: array, items: { $ref: '#/components/schemas/Approval' } }
       additionalProperties: true
+    TrustReportFinding:
+      type: object
+      required: [code, severity, category, message, nextAction]
+      properties:
+        code:
+          type: string
+          description: Stable machine-readable workbook trust finding code.
+          example: workbook.vbaProject
+        severity:
+          type: string
+          enum: [info, warning, blocked]
+        category:
+          type: string
+          enum:
+            - active-content
+            - agent-context
+            - csv-injection
+            - external-content
+            - hidden-content
+            - package
+            - prompt-injection
+        message:
+          type: string
+          description: Human-readable workbook concept and why it matters.
+        location:
+          type: object
+          additionalProperties: true
+          description: Sheet/ref/package relationship provenance when available.
+        nextAction:
+          type: string
+          description: Safe follow-up action for a coding agent or human reviewer.
+    TrustReportResponse:
+      type: object
+      required:
+        - formatVersion
+        - trust
+        - posture
+        - includedInAgentContext
+        - executionPolicy
+        - workbook
+        - summary
+        - findings
+        - nextActions
+        - load
+      properties:
+        formatVersion: { type: integer, enum: [1] }
+        trust:
+          type: string
+          enum: [untrusted]
+          description: Workbook content is treated as untrusted input, not instructions.
+        posture:
+          type: string
+          enum: [safe-parser-preserver]
+          description: Ascend parses and preserves workbook content without executing active content or refreshing external content.
+        includedInAgentContext:
+          type: object
+          additionalProperties: true
+          description: Which workbook content classes are included in default agent context.
+        executionPolicy:
+          type: object
+          additionalProperties: true
+          description: Execution/refresh policy for macros, ActiveX/OLE, DDE, external links, connections, and formulas.
+        workbook:
+          type: object
+          additionalProperties: true
+          description: Workbook-level counts and format facts relevant to trust review.
+        summary:
+          type: object
+          additionalProperties: true
+          description: Finding counts by severity/category plus truncation metadata.
+        findings:
+          type: array
+          items:
+            $ref: '#/components/schemas/TrustReportFinding'
+        nextActions:
+          type: array
+          items: { type: string }
+        load:
+          type: object
+          additionalProperties: true
+          description: Load mode used to inspect the workbook.
+      additionalProperties: true
     PlanRequest:
       allOf:
         - type: object
@@ -705,6 +815,13 @@ components:
           properties:
             data:
               $ref: '#/components/schemas/RepairPlanResponse'
+    TrustReportSuccessEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/MachineSuccess'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/TrustReportResponse'
     ReadSuccessEnvelope:
       allOf:
         - $ref: '#/components/schemas/MachineSuccess'

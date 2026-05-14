@@ -48,6 +48,12 @@ const DOC_SOURCES: readonly Omit<AgentDocEntry, 'text'>[] = [
 		path: 'examples/agent-safe-edit-mcp.md',
 		kind: 'example',
 	},
+	{
+		id: 'example-untrusted-workbook-report',
+		title: 'Untrusted Workbook Report',
+		path: 'examples/untrusted-workbook-report.md',
+		kind: 'example',
+	},
 	{ id: 'mcp-setup', title: 'MCP Setup Example', path: 'examples/mcp-setup.md', kind: 'example' },
 	{
 		id: 'example-create',

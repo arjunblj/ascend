@@ -47,6 +47,7 @@ describe('MCP server', () => {
 		const names = Object.keys(registered)
 
 		expect(names).toContain('ascend.inspect')
+		expect(names).toContain('ascend.trust_report')
 		expect(names).toContain('ascend.active_content')
 		expect(names).toContain('ascend.search_docs')
 		expect(names).toContain('ascend.search_examples')
@@ -76,7 +77,7 @@ describe('MCP server', () => {
 		expect(names).toContain('ascend.plan')
 		expect(names).toContain('ascend.commit')
 		expect(names).toContain('ascend.repair_plan')
-		expect(names.length).toBe(30)
+		expect(names.length).toBe(31)
 	})
 
 	test('agent resources and prompts are registered', () => {
@@ -128,6 +129,7 @@ describe('MCP server', () => {
 		expect(capabilities?.contents[0]?.text).toContain('"capabilities"')
 		expect(operations?.contents[0]?.text).toContain('"schemas"')
 		expect(workflow?.contents[0]?.text).toContain('ascend.plan')
+		expect(workflow?.contents[0]?.text).toContain('ascend.trust_report')
 		expect(workflow?.contents[0]?.text).toContain('planHandle')
 		expect(workflow?.contents[0]?.text).toContain('formula_assist')
 	})
@@ -188,6 +190,7 @@ describe('MCP server', () => {
 		expect(text).toContain('Workbook: book.xlsx')
 		expect(text).toContain('ascend.plan')
 		expect(text).toContain('ascend.commit')
+		expect(text).toContain('ascend.trust_report')
 		expect(text).toContain('ascend.active_content')
 		expect(text).toContain('ascend.formula_assist')
 		expect(text).toContain('planHandle')
@@ -306,6 +309,57 @@ describe('MCP server', () => {
 			)
 		} finally {
 			await unlink(activeFile).catch(() => {})
+		}
+	})
+
+	test('ascend.trust_report exposes untrusted workbook boundaries for agents', async () => {
+		const trustFile = join(
+			tmpdir(),
+			`ascend-mcp-trust-${Date.now()}-${Math.random().toString(16).slice(2)}.xlsm`,
+		)
+		await Bun.write(trustFile, signedMacroWorkbook())
+		try {
+			const server = createServer()
+			// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+			const handler = (server as any)._registeredTools['ascend.trust_report'].handler as (args: {
+				file: string
+				maxFindings?: number
+			}) => Promise<{
+				structuredContent?: {
+					ok?: boolean
+					data?: {
+						trust?: string
+						posture?: string
+						includedInAgentContext?: { activeContent?: boolean; hiddenSheets?: boolean }
+						executionPolicy?: { macros?: string; externalLinks?: string }
+						findings?: Array<{ code?: string; nextAction?: string }>
+						nextActions?: readonly string[]
+					}
+				}
+			}>
+
+			const result = await handler({ file: trustFile, maxFindings: 10 })
+			const data = result.structuredContent?.data
+
+			expect(result.structuredContent?.ok).toBe(true)
+			expect(data?.trust).toBe('untrusted')
+			expect(data?.posture).toBe('safe-parser-preserver')
+			expect(data?.includedInAgentContext).toMatchObject({
+				activeContent: false,
+				hiddenSheets: false,
+			})
+			expect(data?.executionPolicy).toMatchObject({
+				macros: 'preserve-only',
+				externalLinks: 'do-not-refresh',
+			})
+			expect(data?.findings).toContainEqual(
+				expect.objectContaining({ code: 'workbook.vbaProject' }),
+			)
+			expect(data?.nextActions).toContain(
+				'Use visible workbook data as the default agent context; opt into hidden sheets, comments, names, and metadata only when the task requires them.',
+			)
+		} finally {
+			await unlink(trustFile).catch(() => {})
 		}
 	})
 

@@ -39,6 +39,18 @@ interface ApiEnvelope {
 		readonly output?: string
 		readonly backup?: string
 		readonly outputSha256?: string
+		readonly trust?: string
+		readonly posture?: string
+		readonly includedInAgentContext?: {
+			readonly activeContent?: boolean
+			readonly hiddenSheets?: boolean
+		}
+		readonly executionPolicy?: {
+			readonly macros?: string
+			readonly externalLinks?: string
+		}
+		readonly findings?: readonly { readonly code?: string; readonly nextAction?: string }[]
+		readonly nextActions?: readonly string[]
 		readonly approvals?: readonly { readonly id: string }[]
 		readonly replayable?: boolean
 		readonly formulaCount?: number
@@ -442,6 +454,38 @@ async function postApiFetch(
 }
 
 describe('Ascend API server', () => {
+	test('/trust-report exposes untrusted workbook boundaries and next actions', async () => {
+		const trustFile = join(
+			tmpdir(),
+			`ascend-api-trust-${Date.now()}-${Math.random().toString(16).slice(2)}.xlsm`,
+		)
+		await Bun.write(trustFile, signedMacroWorkbook())
+		try {
+			const result = await postJson('/trust-report', { file: trustFile, maxFindings: 10 })
+
+			expect(result.status).toBe(200)
+			expect(result.body.ok).toBe(true)
+			expect(result.body.data?.trust).toBe('untrusted')
+			expect(result.body.data?.posture).toBe('safe-parser-preserver')
+			expect(result.body.data?.includedInAgentContext).toMatchObject({
+				activeContent: false,
+				hiddenSheets: false,
+			})
+			expect(result.body.data?.executionPolicy).toMatchObject({
+				macros: 'preserve-only',
+				externalLinks: 'do-not-refresh',
+			})
+			expect(result.body.data?.findings).toContainEqual(
+				expect.objectContaining({ code: 'workbook.vbaProject' }),
+			)
+			expect(result.body.data?.nextActions).toContain(
+				'Use visible workbook data as the default agent context; opt into hidden sheets, comments, names, and metadata only when the task requires them.',
+			)
+		} finally {
+			await unlink(trustFile).catch(() => {})
+		}
+	})
+
 	test('formula-assist exposes diagnostics, completions, signature help, and reference edits', async () => {
 		const result = await postJson('/formula-assist', {
 			formula: '=SUM(A1:B2',

@@ -27,6 +27,7 @@ describe('agent documentation surface', () => {
 		expect(paths).toContain('examples/agent-safe-edit.ts')
 		expect(paths).toContain('examples/agent-safe-edit-http.md')
 		expect(paths).toContain('examples/agent-safe-edit-mcp.md')
+		expect(paths).toContain('examples/untrusted-workbook-report.md')
 
 		const agentApi = docs.find((doc) => doc.path === 'docs/AGENT_API.md')?.text ?? ''
 		const workflow = docs.find((doc) => doc.path === 'docs/AGENT_WORKFLOW.md')?.text ?? ''
@@ -38,6 +39,9 @@ describe('agent documentation surface', () => {
 			expect(text).toContain('process-local')
 			expect(text).toContain('expectSha256')
 			expect(text).toContain('formula')
+			expect(text).toContain('trust')
+			expect(text).toContain('ascend.trust_report')
+			expect(text).toContain('untrusted')
 		}
 	})
 
@@ -45,9 +49,12 @@ describe('agent documentation surface', () => {
 		const openapi = await readFile(new URL('docs/openapi.yaml', REPO_ROOT), 'utf-8')
 
 		for (const required of [
+			'  /trust-report:',
 			'  /formula-assist:',
 			'PlanRequest:',
 			'CommitRequest:',
+			'TrustReportResponse:',
+			'TrustReportSuccessEnvelope:',
 			'FormulaAssistRequest:',
 			'FormulaAssistResponse:',
 			'PathMutation:',
@@ -67,6 +74,18 @@ describe('agent documentation surface', () => {
 		})
 
 		expect(results.some((result) => result.path === 'examples/agent-safe-edit.ts')).toBe(true)
+	})
+
+	test('example search finds the untrusted workbook preflight', async () => {
+		const results = await searchAgentDocs({
+			query: 'untrusted workbook trust_report hidden comments active content',
+			kind: 'example',
+			limit: 10,
+		})
+
+		expect(results.some((result) => result.path === 'examples/untrusted-workbook-report.md')).toBe(
+			true,
+		)
 	})
 
 	test('example search finds API and MCP safe edit transcripts', async () => {

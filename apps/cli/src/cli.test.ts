@@ -14,6 +14,7 @@ const MULTI_SHEET_FILE = 'test-multi.xlsx'
 const NAMED_RANGE_FILE = 'test-named.xlsx'
 const TUI_TEST_FILE = 'test-tui.xlsx'
 const ACTIVE_CONTENT_FILE = 'test-active-content.xlsm'
+const TRUST_REPORT_FILE = 'test-trust-report.xlsm'
 const PIVOT_CORPUS_FILE = '../../../research/excel-corpus/ms-excel-formulas-and-pivot-tables.xlsx'
 const SLICER_CORPUS_FILE = '../../../research/excel-corpus/excel-dashboard-v2.xlsx'
 const HAS_PIVOT_CORPUS_FILE = existsSync(`${import.meta.dir}/${PIVOT_CORPUS_FILE}`)
@@ -97,6 +98,7 @@ afterAll(() => {
 		NAMED_RANGE_FILE,
 		TUI_TEST_FILE,
 		ACTIVE_CONTENT_FILE,
+		TRUST_REPORT_FILE,
 		APPROVAL_TEST_FILE,
 		'exported.tsv',
 		'exported.json',
@@ -316,11 +318,13 @@ describe('ascend cli', () => {
 		const parsed = JSON.parse(stdout)
 		expect(parsed.ok).toBe(true)
 		expect(parsed.data.commands.docs).toContain('ascend docs')
+		expect(parsed.data.commands.trust).toContain('inspect <file> --agent --json')
 		expect(parsed.data.mcpResources).toContain('ascend://llms.txt')
 		expect(parsed.data.commands.plan).toContain('--progress jsonl')
 		expect(parsed.data.mcpResources).toContain('ascend://operations')
 		expect(parsed.data.safetyDefaults.join('\n')).toContain('--expect-sha256')
 		expect(parsed.data.safetyDefaults.join('\n')).toContain('planHandle')
+		expect(parsed.data.safetyDefaults.join('\n')).toContain('untrusted data')
 	})
 
 	test('plan and commit implement safe agent workflow', async () => {
@@ -779,6 +783,31 @@ describe('ascend cli', () => {
 				locations: ['xl/vbaProjectSignature.bin'],
 			}),
 		)
+	})
+
+	test('inspect --agent --json returns an untrusted workbook trust report', async () => {
+		await Bun.write(`${import.meta.dir}/${TRUST_REPORT_FILE}`, signedMacroWorkbook())
+
+		const { stdout, exitCode } = await run('inspect', TRUST_REPORT_FILE, '--agent', '--json')
+
+		expect(exitCode).toBe(0)
+		const parsed = JSON.parse(stdout)
+		expect(parsed.formatVersion).toBe(1)
+		expect(parsed.ok).toBe(true)
+		expect(parsed.data.trust).toBe('untrusted')
+		expect(parsed.data.posture).toBe('safe-parser-preserver')
+		expect(parsed.data.includedInAgentContext).toMatchObject({
+			activeContent: false,
+			hiddenSheets: false,
+		})
+		expect(parsed.data.executionPolicy).toMatchObject({
+			macros: 'preserve-only',
+			externalLinks: 'do-not-refresh',
+		})
+		expect(parsed.data.findings).toContainEqual(
+			expect.objectContaining({ code: 'workbook.vbaProject' }),
+		)
+		expect(parsed.data).not.toHaveProperty('riskScore')
 	})
 
 	test('unknown inspect flag suggests the closest supported flag', async () => {

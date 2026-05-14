@@ -33,7 +33,9 @@ export interface WriteDenseRowsXlsxOptions {
 
 const DEFAULT_SHEET_NAME = 'Data'
 const XML_BYTE_BATCH_TARGET = positiveEnvInt('ASCEND_DENSE_XML_BYTE_BATCH', 256 * 1024)
-const XML_ROW_BATCH_TARGET = positiveEnvInt('ASCEND_DENSE_XML_ROW_BATCH', 256)
+const XML_ROW_BATCH_TARGET_OVERRIDE = optionalPositiveEnvInt('ASCEND_DENSE_XML_ROW_BATCH')
+const XML_ROW_BATCH_TARGET = XML_ROW_BATCH_TARGET_OVERRIDE ?? 256
+const XML_SAFE_STRING_ROW_BATCH_TARGET = XML_ROW_BATCH_TARGET_OVERRIDE ?? 128
 
 interface XmlByteSink {
 	write(chunk: string): void
@@ -194,12 +196,16 @@ function createBunArrayBufferSink(): BunArrayBufferSink | undefined {
 }
 
 function positiveEnvInt(name: string, fallback: number): number {
+	return optionalPositiveEnvInt(name) ?? fallback
+}
+
+function optionalPositiveEnvInt(name: string): number | undefined {
 	const raw = (
 		globalThis as { readonly process?: { readonly env?: Record<string, string | undefined> } }
 	).process?.env?.[name]
-	if (!raw) return fallback
+	if (!raw) return undefined
 	const value = Number.parseInt(raw, 10)
-	return Number.isFinite(value) && value > 0 ? value : fallback
+	return Number.isFinite(value) && value > 0 ? value : undefined
 }
 
 function estimateDenseSheetXmlBytes(options: WriteDenseRowsXlsxOptions): number {
@@ -231,13 +237,14 @@ async function writeSheetXmlByteChunksAsync(
 	let batch = createXmlByteSink(XML_BYTE_BATCH_TARGET)
 	let batchChars = 0
 	let batchRows = 0
+	const rowBatchTarget = xmlRowBatchTarget(options)
 	for (let row = 0; row < options.rows; row++) {
 		const rowXml = buildRowXml(options, row, rowState)
 		if (rowXml.length === 0) continue
 		batch.write(rowXml)
 		batchChars += rowXml.length
 		batchRows++
-		if (batchRows >= XML_ROW_BATCH_TARGET || batchChars >= XML_BYTE_BATCH_TARGET) {
+		if (batchRows >= rowBatchTarget || batchChars >= XML_BYTE_BATCH_TARGET) {
 			await onChunk(batch.end())
 			batch = createXmlByteSink(XML_BYTE_BATCH_TARGET)
 			batchChars = 0
@@ -246,6 +253,12 @@ async function writeSheetXmlByteChunksAsync(
 	}
 	if (batchRows > 0) await onChunk(batch.end())
 	await onChunk(encode('</sheetData></worksheet>'))
+}
+
+function xmlRowBatchTarget(options: WriteDenseRowsXlsxOptions): number {
+	return options.valueType === 'string' && options.stringsAreXmlSafe === true
+		? XML_SAFE_STRING_ROW_BATCH_TARGET
+		: XML_ROW_BATCH_TARGET
 }
 
 interface RowXmlState {

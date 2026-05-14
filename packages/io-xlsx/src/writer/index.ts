@@ -682,9 +682,10 @@ export function planWriteXlsx(
 					: resolvedStylesResult.xfMap
 		const stylesXml = options.summaryOnly
 			? ''
-			: preserveStyles && (stylesResult?.xml ?? preservedStylesXml)
-				? (stylesResult?.xml ?? preservedStylesXml ?? '')
-				: (generatedStylesResult?.xml ?? '')
+			: (stylesResult?.xml ??
+				(canReusePreservedStyles && preserveStyles && preservedStylesXml
+					? preservedStylesXml
+					: (generatedStylesResult?.xml ?? (preserveStyles ? (preservedStylesXml ?? '') : ''))))
 		if (preservedStyles && !options.summaryOnly) {
 			workbook.preservedStyles = {
 				...preservedStyles,
@@ -927,7 +928,8 @@ export function planWriteXlsx(
 		const preserveWorkbookXml = options.summaryOnly
 			? hasPreservedWorkbookXml && hasPreservedWorkbookRels
 			: !!(preservedWorkbookXmlText && preservedWorkbookRelsText)
-		const preserveWorkbookCalcState = preserveWorkbookXml && !options.calcStateDirty
+		const preserveWorkbookCalcState =
+			preserveWorkbookXml && !options.calcStateDirty && !effectiveCalcChainDirty
 		const preserveWorkbookRels =
 			preserveWorkbookCalcState &&
 			(!shouldWriteDynamicArrayMetadata ||

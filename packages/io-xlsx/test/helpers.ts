@@ -9,10 +9,19 @@ export function makeXlsx(parts: Record<string, string>): Uint8Array {
 }
 
 export function makeEmbeddedChartXlsx(
-	options: { readonly sheetName?: string; readonly chartType?: string } = {},
+	options: {
+		readonly sheetName?: string
+		readonly chartType?: string
+		readonly nameRef?: string
+		readonly categoryRef?: string
+		readonly valueRef?: string
+	} = {},
 ): Uint8Array {
 	const sheetName = options.sheetName ?? 'Sheet1'
 	const chartType = options.chartType ?? 'barChart'
+	const nameRef = options.nameRef ?? 'Data!$B$1'
+	const categoryRef = options.categoryRef ?? 'Data!$A$2:$A$4'
+	const valueRef = options.valueRef ?? 'Data!$B$2:$B$4'
 	return makeXlsx({
 		'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
@@ -61,9 +70,9 @@ export function makeEmbeddedChartXlsx(
     <c:plotArea>
       <c:${chartType}>
         <c:ser>
-          <c:tx><c:strRef><c:f>Data!$B$1</c:f></c:strRef></c:tx>
-          <c:cat><c:strRef><c:f>Data!$A$2:$A$4</c:f></c:strRef></c:cat>
-          <c:val><c:numRef><c:f>Data!$B$2:$B$4</c:f></c:numRef></c:val>
+          <c:tx><c:strRef><c:f>${nameRef}</c:f></c:strRef></c:tx>
+          <c:cat><c:strRef><c:f>${categoryRef}</c:f></c:strRef></c:cat>
+          <c:val><c:numRef><c:f>${valueRef}</c:f></c:numRef></c:val>
         </c:ser>
       </c:${chartType}>
     </c:plotArea>

@@ -66,6 +66,10 @@ interface Scenario {
 	run(input: ScenarioInput): Promise<ScenarioRunResult | undefined> | ScenarioRunResult | undefined
 }
 
+interface RunScenarioOptions {
+	readonly gcBetweenSamples: boolean
+}
+
 function requireBytes(input: ScenarioInput): Uint8Array {
 	if (!input.bytes) throw new Error('Scenario bytes were not built')
 	return input.bytes
@@ -4880,7 +4884,9 @@ async function runScenario(
 	scenario: Scenario,
 	repeat: number,
 	warmup: number,
+	options: RunScenarioOptions,
 ): Promise<BenchmarkCaseResult> {
+	const { gcBetweenSamples } = options
 	const samples: Array<{
 		readonly durationMs: number
 		readonly throughputPerSec: number
@@ -4898,11 +4904,11 @@ async function runScenario(
 		firstInput ??= input
 		await scenario.run(input)
 	}
-	runGc()
+	if (gcBetweenSamples) runGc()
 	for (let i = 0; i < repeat; i++) {
 		const input = scenario.build()
 		firstInput ??= input
-		runGc()
+		if (gcBetweenSamples) runGc()
 		const rssBefore = getRssBytes()
 		const heapBefore = process.memoryUsage().heapUsed
 		const start = performance.now()
@@ -4910,9 +4916,9 @@ async function runScenario(
 		const durationMs = performance.now() - start
 		const memAfter = process.memoryUsage()
 		const rssAfter = getRssBytes()
-		runGc()
-		const rssAfterGc = getRssBytes()
-		const heapAfterGc = process.memoryUsage().heapUsed
+		if (gcBetweenSamples) runGc()
+		const rssAfterGc = gcBetweenSamples ? getRssBytes() : rssAfter
+		const heapAfterGc = gcBetweenSamples ? process.memoryUsage().heapUsed : memAfter.heapUsed
 		samples.push({
 			durationMs,
 			throughputPerSec:
@@ -4955,6 +4961,7 @@ async function runScenario(
 			String(repeat),
 			'--warmup',
 			String(warmup),
+			...(gcBetweenSamples ? [] : ['--no-sample-gc']),
 			'--json',
 		]),
 		profileCommand: commandString([
@@ -4975,6 +4982,7 @@ async function runScenario(
 			String(repeat),
 			'--warmup',
 			String(warmup),
+			...(gcBetweenSamples ? [] : ['--no-sample-gc']),
 			'--json',
 		]),
 		...(repeat > 1 ? { samples } : {}),
@@ -5015,6 +5023,7 @@ function renderHelp(): string {
 		'  --repeat N         Number of measured samples. Defaults to 1.',
 		'  --warmup N         Number of warmup samples. Defaults to 1.',
 		'  --isolate-samples  Run each measured sample in a fresh process for memory-sensitive scenarios.',
+		'  --no-sample-gc     Skip forced GC around measured samples for cleaner CPU profiles.',
 		'  --json             Emit JSON instead of a text summary.',
 		'  --ci               Emit JSON and CI-oriented target metadata.',
 		'  --profile          Run the selected set under V8 tracing when using Node.',
@@ -5033,6 +5042,7 @@ async function runScenarioIsolated(
 	repeat: number,
 	warmup: number,
 	json: boolean,
+	options: RunScenarioOptions,
 ): Promise<BenchmarkCaseResult> {
 	const proc = Bun.spawn(
 		[
@@ -5045,6 +5055,7 @@ async function runScenarioIsolated(
 			String(repeat),
 			'--warmup',
 			String(warmup),
+			...(options.gcBetweenSamples ? [] : ['--no-sample-gc']),
 			'--json',
 		],
 		{
@@ -5072,10 +5083,11 @@ async function runScenarioSamplesIsolated(
 	scenario: Scenario,
 	repeat: number,
 	warmup: number,
+	options: RunScenarioOptions,
 ): Promise<BenchmarkCaseResult> {
 	const results: BenchmarkCaseResult[] = []
 	for (let i = 0; i < repeat; i++) {
-		results.push(await runScenarioIsolated(scenario, 1, warmup, true))
+		results.push(await runScenarioIsolated(scenario, 1, warmup, true, options))
 	}
 	const first = results[0]
 	if (!first) throw new Error(`Synthetic benchmark scenario "${scenario.name}" produced no samples`)
@@ -5108,6 +5120,7 @@ async function runScenarioSamplesIsolated(
 			'--warmup',
 			String(warmup),
 			'--isolate-samples',
+			...(options.gcBetweenSamples ? [] : ['--no-sample-gc']),
 			'--json',
 		]),
 		...(repeat > 1 ? { samples } : {}),
@@ -5217,6 +5230,7 @@ async function main(): Promise<void> {
 	const repeat = Math.max(1, Number.parseInt(readFlag('--repeat') ?? '1', 10) || 1)
 	const warmup = Math.max(0, Number.parseInt(readFlag('--warmup') ?? '1', 10) || 1)
 	const isolateSamples = hasFlag('--isolate-samples')
+	const options: RunScenarioOptions = { gcBetweenSamples: !hasFlag('--no-sample-gc') }
 	const outputJson = json || ci
 	if (profile) {
 		await runWithProfile(scenarioSetName, repeat, warmup)
@@ -5226,8 +5240,8 @@ async function main(): Promise<void> {
 		const scenario = scenarios.find((entry) => entry.name === scenarioName)
 		if (!scenario) throw new Error(`Unknown synthetic benchmark scenario "${scenarioName}"`)
 		const result = isolateSamples
-			? await runScenarioSamplesIsolated(scenario, repeat, warmup)
-			: await runScenario(scenario, repeat, warmup)
+			? await runScenarioSamplesIsolated(scenario, repeat, warmup, options)
+			: await runScenario(scenario, repeat, warmup, options)
 		if (outputJson) {
 			console.log(JSON.stringify(result, null, 2))
 			return
@@ -5252,8 +5266,8 @@ async function main(): Promise<void> {
 	for (const scenario of selectedScenarios) {
 		results.push(
 			isolateSamples
-				? await runScenarioSamplesIsolated(scenario, repeat, warmup)
-				: await runScenarioIsolated(scenario, repeat, warmup, outputJson),
+				? await runScenarioSamplesIsolated(scenario, repeat, warmup, options)
+				: await runScenarioIsolated(scenario, repeat, warmup, outputJson, options),
 		)
 		if (!outputJson && isolateSamples) console.log(`completed ${scenario.name}`)
 	}
@@ -5268,6 +5282,7 @@ async function main(): Promise<void> {
 			warmup,
 			...(scenarioSetName ? { set: scenarioSetName } : {}),
 			...(isolateSamples ? { isolateSamples: true } : {}),
+			...(options.gcBetweenSamples ? {} : { noSampleGc: true }),
 		},
 	})
 	if (outputJson) {

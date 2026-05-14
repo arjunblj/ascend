@@ -1887,6 +1887,60 @@ const scenarios: readonly Scenario[] = [
 		},
 	},
 	{
+		name: 'prepared-open-string-heavy',
+		category: 'workflow',
+		build() {
+			const rows = 20_000
+			const cols = 2
+			const uniqueStrings = 10_500
+			const workbook = buildReadStringHeavyWorkbook(rows, uniqueStrings)
+			const bytes = mustWrite(workbook)
+			return { bytes, rows, cols, cells: rows * cols }
+		},
+		async run(input) {
+			const bytes = requireBytes(input)
+			WorkbookDocument.clearCache()
+
+			const openStart = performance.now()
+			const session = await AscendSession.open(bytes, {
+				mode: 'interactive',
+				prepareEdits: true,
+			})
+			const preparedOpenMs = performance.now() - openStart
+			const readiness = session.editReadiness()
+			if (!readiness.ready) throw new Error('String-heavy prepared-open session was not edit-ready')
+			const viewportStart = performance.now()
+			const viewport = session.readViewport({
+				sheet: 'Sheet1',
+				topRow: 0,
+				leftCol: 0,
+				rowCount: 50,
+				colCount: 2,
+			})
+			const viewportMs = performance.now() - viewportStart
+			const firstCell = viewport.cells.find((cell) => cell.ref === 'A1')
+			if (firstCell?.flatValue !== 'unique-string-0-x') {
+				throw new Error('String-heavy prepared-open viewport returned unexpected data')
+			}
+			session.close()
+			WorkbookDocument.clearCache()
+
+			return {
+				assertions: {
+					bytes: bytes.byteLength,
+					preparedOpenMs,
+					viewportMs,
+					viewportCells: viewport.cells.length,
+					viewportFlatValues: viewport.flatValues.length,
+					readinessReady: readiness.ready,
+					readinessReusedReadModel: readiness.timings?.mutableWorkbookReusedReadModel ?? false,
+					readinessMutableWorkbookOpenMs: readiness.timings?.mutableWorkbookOpenMs ?? null,
+					readinessRebaseViewportSnapshotsMs: readiness.timings?.rebaseViewportSnapshotsMs ?? null,
+				},
+			}
+		},
+	},
+	{
 		name: 'read-full-sparse',
 		category: 'read',
 		build() {
@@ -4732,6 +4786,7 @@ const scenarioSets = {
 	'real-readiness': ['real-dense-progressive-readiness', 'real-dense-interactive-open-modes'],
 	'real-shape': ['real-dense-worksheet-shape'],
 	'real-write': ['real-dense-dirty-write-lifecycle'],
+	'prepared-open': ['real-dense-prepared-open-cpu', 'prepared-open-string-heavy'],
 } as const
 
 function phaseMemorySnapshot(): {

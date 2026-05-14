@@ -246,9 +246,21 @@ export function handleHideRows(
 	sheet.ensureWritable()
 	const hidden = op.hidden ?? true
 	for (let r = op.at; r < op.at + op.count; r++) {
-		if (hidden) sheet.rowHeights.set(r, 0)
+		setRowHidden(sheet, r, hidden)
 	}
 	return ok(patch([], [op.sheet]))
+}
+
+function setRowHidden(sheet: Sheet, row: number, hidden: boolean): void {
+	const existing = sheet.rowDefs.get(row)
+	if (hidden) {
+		sheet.rowDefs.set(row, { ...(existing ?? {}), hidden: true })
+		return
+	}
+	if (!existing) return
+	const { hidden: _hidden, ...next } = existing
+	if (Object.keys(next).length === 0) sheet.rowDefs.delete(row)
+	else sheet.rowDefs.set(row, next)
 }
 
 export function handleHideCols(

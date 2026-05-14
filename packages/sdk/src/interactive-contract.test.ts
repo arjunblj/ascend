@@ -6419,7 +6419,7 @@ describe('interactive client contract', () => {
 		expect(changed.journal?.exact).toBe(true)
 		expect(changed.journal?.inverseOps).toEqual([
 			{ op: 'hideCols', sheet: 'Sheet1', at: 1, count: 1, hidden: true },
-			{ op: 'setRowHeight', sheet: 'Sheet1', row: 2, height: 24 },
+			{ op: 'hideRows', sheet: 'Sheet1', at: 2, count: 1, hidden: false },
 			{ op: 'hideSheet', sheet: 'Sheet1', hidden: true },
 		])
 		expect(journalComparableState(wb)).not.toEqual(before)
@@ -6432,7 +6432,10 @@ describe('interactive client contract', () => {
 	test('journal classifies un-restorable visibility metadata as lossy', () => {
 		const wb = AscendWorkbook.create()
 		const modelSheet = wb.getWorkbookModel().getSheet('Sheet1')
-		if (modelSheet) modelSheet.state = 'veryHidden'
+		if (modelSheet) {
+			modelSheet.state = 'veryHidden'
+			modelSheet.rowDefs.set(2, { hidden: false })
+		}
 
 		const changed = wb.preview(
 			[
@@ -6447,6 +6450,7 @@ describe('interactive client contract', () => {
 		expect(changed.journal?.supported).toBe(true)
 		expect(changed.journal?.exact).toBe(false)
 		expect(changed.journal?.inverseOps).toEqual([
+			{ op: 'hideRows', sheet: 'Sheet1', at: 2, count: 1, hidden: false },
 			{ op: 'hideSheet', sheet: 'Sheet1', hidden: true },
 		])
 		expect(changed.journal?.issues).toEqual([
@@ -6458,7 +6462,8 @@ describe('interactive client contract', () => {
 			},
 			{
 				code: 'LOSSY_INVERSE',
-				message: 'Created row hide metadata cannot be cleared with public operations',
+				message:
+					'Explicit row hidden=false metadata cannot be restored exactly with public operations',
 				refs: ['Sheet1!3'],
 			},
 			{

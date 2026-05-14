@@ -227,6 +227,7 @@ export interface MutationJournalRowsHiddenPreimage {
 	readonly rows: readonly {
 		readonly row: number
 		readonly height: number | null
+		readonly rowDef: SheetRowDef | null
 	}[]
 }
 
@@ -921,7 +922,8 @@ function journalHideRows(
 	const rows = Array.from({ length: op.count }, (_, offset) => {
 		const row = op.at + offset
 		const height = sheet?.rowHeights.get(row)
-		return { row, height: height ?? null }
+		const rowDef = sheet?.rowDefs.get(row)
+		return { row, height: height ?? null, rowDef: rowDef ? cloneSheetRowDef(rowDef) : null }
 	})
 	const preimage: MutationJournalRowsHiddenPreimage = { sheet: op.sheet, rows }
 	if (!sheet) {
@@ -939,22 +941,19 @@ function journalHideRows(
 			],
 		}
 	}
-	if (op.hidden === false) {
-		return {
-			opIndex,
-			op,
-			inverseOps: [],
-			preimages: [{ kind: 'rows-hidden', rowsHidden: preimage }],
-			issues: [],
+	const hidden = op.hidden ?? true
+	const inverseOps = rows.flatMap((row): Operation[] => {
+		if (hidden) {
+			return row.rowDef?.hidden === true
+				? []
+				: [{ op: 'hideRows', sheet: op.sheet, at: row.row, count: 1, hidden: false }]
 		}
-	}
-	const inverseOps = rows.flatMap((row): Operation[] =>
-		row.height === null
-			? []
-			: [{ op: 'setRowHeight', sheet: op.sheet, row: row.row, height: row.height }],
-	)
+		return row.rowDef?.hidden === true
+			? [{ op: 'hideRows', sheet: op.sheet, at: row.row, count: 1, hidden: true }]
+			: []
+	})
 	const refs = rows
-		.filter((row) => row.height === null)
+		.filter((row) => row.rowDef?.hidden === false)
 		.map((row) => layoutRef(op.sheet, 'row', row.row))
 	return {
 		opIndex,
@@ -967,7 +966,7 @@ function journalHideRows(
 				: [
 						{
 							code: 'LOSSY_INVERSE',
-							message: `Created row hide metadata cannot be cleared with public operations`,
+							message: `Explicit row hidden=false metadata cannot be restored exactly with public operations`,
 							refs,
 						},
 					],

@@ -3250,7 +3250,7 @@ describe('applyOperation', () => {
 		])
 	})
 
-	test('hideSheet and hideCols update sheet visibility metadata', () => {
+	test('hideSheet hideRows and hideCols update sheet visibility metadata', () => {
 		const wb = setup()
 		const result1 = applyOperation(wb, {
 			op: 'hideSheet',
@@ -3268,9 +3268,31 @@ describe('applyOperation', () => {
 		})
 		expectOk(result2)
 
+		const result3 = applyOperation(wb, {
+			op: 'hideRows',
+			sheet: 'Sheet1',
+			at: 2,
+			count: 1,
+			hidden: true,
+		})
+		expectOk(result3)
+		expect(wb.getSheet('Sheet1')?.rowDefs.get(2)).toEqual({ hidden: true })
+		expect(wb.getSheet('Sheet1')?.rowHeights.get(2)).toBeUndefined()
+
+		const result4 = applyOperation(wb, {
+			op: 'hideRows',
+			sheet: 'Sheet1',
+			at: 2,
+			count: 1,
+			hidden: false,
+		})
+		expectOk(result4)
+
 		const sheet = wb.getSheet('Sheet1')
 		expect(sheet?.state).toBe('hidden')
 		expect(sheet?.colDefs).toContainEqual({ min: 2, max: 2, hidden: true })
+		expect(sheet?.rowHeights.get(2)).toBeUndefined()
+		expect(sheet?.rowDefs.get(2)).toBeUndefined()
 	})
 
 	test('groupRows assigns outline metadata and collapsed boundary row', () => {

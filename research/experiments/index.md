@@ -7,6 +7,7 @@ Updated: 2026-05-14
 | Run | Status | Fold-in target |
 | --- | --- | --- |
 | [Feature fingerprint open mode](runs/2026/2026-05-14-feature-fingerprint-open-mode/log.md) | cycle 16 complete, folded in SDK open planner | performance loop, product/DX loop |
+| [Open plan CLI explain first](runs/2026/2026-05-14-open-plan-cli-explain-first/log.md) | cycle 17 complete, folded in CLI command | product/DX loop |
 | [Package action proof](runs/2026/2026-05-14-package-action-proof/log.md) | cycle 2 complete, promote | correctness loop, product/DX loop, performance loop |
 | [Formula spans LSP](runs/2026/2026-05-14-formula-spans-lsp/log.md) | cycle 13 complete, folded in SDK hover/code actions | product/DX loop, correctness loop |
 | [Formula sqllogictest conformance](runs/2026/2026-05-14-formula-sqllogictest-conformance/log.md) | cycle 14 complete, folded in converter/runner | correctness loop |

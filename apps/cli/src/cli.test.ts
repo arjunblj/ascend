@@ -15,6 +15,7 @@ const NAMED_RANGE_FILE = 'test-named.xlsx'
 const TUI_TEST_FILE = 'test-tui.xlsx'
 const ACTIVE_CONTENT_FILE = 'test-active-content.xlsm'
 const TRUST_REPORT_FILE = 'test-trust-report.xlsm'
+const OPEN_PLAN_FILE = 'test-open-plan.xlsx'
 const PIVOT_CORPUS_FILE = '../../../research/excel-corpus/ms-excel-formulas-and-pivot-tables.xlsx'
 const SLICER_CORPUS_FILE = '../../../research/excel-corpus/excel-dashboard-v2.xlsx'
 const HAS_PIVOT_CORPUS_FILE = existsSync(`${import.meta.dir}/${PIVOT_CORPUS_FILE}`)
@@ -99,6 +100,7 @@ afterAll(() => {
 		TUI_TEST_FILE,
 		ACTIVE_CONTENT_FILE,
 		TRUST_REPORT_FILE,
+		OPEN_PLAN_FILE,
 		APPROVAL_TEST_FILE,
 		'exported.tsv',
 		'exported.json',
@@ -148,6 +150,7 @@ describe('ascend cli', () => {
 		expect(exitCode).toBe(0)
 		expect(stdout).toContain('ascend')
 		expect(stdout).toContain('Commands:')
+		expect(stdout).toContain('open-plan <file>')
 		expect(stdout).toContain('Global flags:')
 	})
 
@@ -833,6 +836,41 @@ describe('ascend cli', () => {
 		expect(parsed.data.load.mode).toBe('values')
 		expect(parsed.data.load.richSheetMetadataHydrated).toBe(false)
 		expect(parsed.data.commentCount).toBeNull()
+	})
+
+	test('open-plan --json recommends values for read intent', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 42 }] }])
+		await Bun.write(`${import.meta.dir}/${OPEN_PLAN_FILE}`, wb.toBytes())
+
+		const { stdout, exitCode } = await run(
+			'open-plan',
+			OPEN_PLAN_FILE,
+			'--intent',
+			'read-values',
+			'--json',
+		)
+		expect(exitCode).toBe(0)
+		const parsed = JSON.parse(stdout)
+		expect(parsed.formatVersion).toBe(1)
+		expect(parsed.ok).toBe(true)
+		expect(parsed.data.recommendedLoadOptions).toEqual({ mode: 'values' })
+		expect(parsed.data.reviewBeforeHydration).toBe(false)
+	})
+
+	test('open-plan routes macro packages to metadata-only review', async () => {
+		await Bun.write(`${import.meta.dir}/${ACTIVE_CONTENT_FILE}`, signedMacroWorkbook())
+
+		const { stdout, exitCode } = await run('open-plan', ACTIVE_CONTENT_FILE, '--json')
+
+		expect(exitCode).toBe(0)
+		const parsed = JSON.parse(stdout)
+		expect(parsed.data.intent).toBe('edit-plan')
+		expect(parsed.data.recommendedLoadOptions).toEqual({ mode: 'metadata-only' })
+		expect(parsed.data.reviewBeforeHydration).toBe(true)
+		expect(parsed.data.riskFeatures).toContainEqual(
+			expect.objectContaining({ featureFamily: 'preservedMacro' }),
+		)
 	})
 
 	test.skipIf(!HAS_PIVOT_CORPUS_FILE)(

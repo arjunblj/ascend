@@ -19,6 +19,7 @@ import { inspectCommand, usage as inspectUsage } from './commands/inspect.ts'
 import { lintCommand, usage as lintUsage } from './commands/lint.ts'
 import { listCommand, usage as listUsage } from './commands/list.ts'
 import { openCommand, usage as openUsage } from './commands/open.ts'
+import { openPlanCommand, usage as openPlanUsage } from './commands/open-plan.ts'
 import { opsCommand, usage as opsUsage } from './commands/ops.ts'
 import { planCommand, usage as planUsage } from './commands/plan.ts'
 import { previewCommand, usage as previewUsage } from './commands/preview.ts'
@@ -64,6 +65,7 @@ Commands:
   export <file> <output>        Export workbook (csv, json, xlsx)
   tui [file]                    Interactive terminal spreadsheet
   open [file]                   Friendly terminal spreadsheet entrypoint
+  open-plan <file>              Recommend an open mode before hydration
   doctor                        Verify environment
 
 Global flags:
@@ -164,6 +166,11 @@ const COMMANDS: Record<string, Command> = {
 		run: openCommand,
 		usage: openUsage,
 		allowedFlags: ['sheet', 'preview-rows', 'renderer', 'calibrate', 'telemetry-json'],
+	},
+	'open-plan': {
+		run: openPlanCommand,
+		usage: openPlanUsage,
+		allowedFlags: ['intent', 'json'],
 	},
 	doctor: { run: doctorCommand, usage: doctorUsage },
 }

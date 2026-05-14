@@ -176,6 +176,8 @@ export type {
 	InteractiveViewportCell,
 	InteractiveViewportLayoutEntry,
 	InteractiveViewportPatch,
+	InteractiveViewportPatchInvalidation,
+	InteractiveViewportPatchInvalidationReason,
 	InteractiveViewportRequest,
 	InteractiveViewportResult,
 	SessionCacheOptions,

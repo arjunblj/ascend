@@ -884,6 +884,12 @@ describe('interactive client contract', () => {
 			changedSince: afterValue.changeToken,
 		})
 		expect(afterMetadata.patch).toBeUndefined()
+		expect(afterMetadata.patchInvalidation).toEqual({
+			baseToken: afterValue.changeToken,
+			changeToken: afterMetadata.changeToken,
+			reason: 'viewport-invalidated',
+			requiredAction: 'use-returned-snapshot',
+		})
 		expect(afterMetadata.cells.find((cell) => cell.ref === 'A1')?.flags.comment).toBe(true)
 
 		const resumedEdit = await session.apply([
@@ -1743,6 +1749,12 @@ describe('interactive client contract', () => {
 			})
 			expect(crossSession.cells[0]?.flatValue).toBe(1)
 			expect(crossSession.patch).toBeUndefined()
+			expect(crossSession.patchInvalidation).toEqual({
+				baseToken: base.changeToken,
+				changeToken: crossSession.changeToken,
+				reason: 'base-snapshot-missing',
+				requiredAction: 'use-returned-snapshot',
+			})
 			expect(
 				other.readViewportPatch({
 					sheet: 'Sheet1',
@@ -1783,6 +1795,12 @@ describe('interactive client contract', () => {
 			changedSince: changed.changeToken,
 		})
 		expect(afterRefresh.patch).toBeUndefined()
+		expect(afterRefresh.patchInvalidation).toEqual({
+			baseToken: changed.changeToken,
+			changeToken: afterRefresh.changeToken,
+			reason: 'base-snapshot-missing',
+			requiredAction: 'use-returned-snapshot',
+		})
 		session.close()
 
 		const expiring = await AscendSession.open(bytes, { mode: 'interactive' })
@@ -1820,6 +1838,12 @@ describe('interactive client contract', () => {
 			})
 			expect(afterGap.cells[0]?.flatValue).toBe(131)
 			expect(afterGap.patch).toBeUndefined()
+			expect(afterGap.patchInvalidation).toEqual({
+				baseToken: beforeGap.changeToken,
+				changeToken: afterGap.changeToken,
+				reason: 'base-token-expired',
+				requiredAction: 'use-returned-snapshot',
+			})
 		} finally {
 			expiring.close()
 		}

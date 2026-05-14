@@ -157,6 +157,20 @@ export interface InteractiveViewportPatch {
 	readonly byteLength: number
 }
 
+export type InteractiveViewportPatchInvalidationReason =
+	| 'base-snapshot-missing'
+	| 'base-token-stale'
+	| 'base-token-invalid'
+	| 'base-token-expired'
+	| 'viewport-invalidated'
+
+export interface InteractiveViewportPatchInvalidation {
+	readonly baseToken: string
+	readonly changeToken: string
+	readonly reason: InteractiveViewportPatchInvalidationReason
+	readonly requiredAction: 'use-returned-snapshot'
+}
+
 export interface InteractiveViewportResult {
 	readonly sheet: string
 	readonly requested: RangeRef
@@ -186,6 +200,7 @@ export interface InteractiveViewportResult {
 	readonly tables: readonly TableInfo[]
 	readonly autoFilter: import('@ascend/core').AutoFilter | null
 	readonly patch?: InteractiveViewportPatch
+	readonly patchInvalidation?: InteractiveViewportPatchInvalidation
 }
 
 export interface AscendSessionApplyOptions extends Pick<ApplyOptions, 'journal'> {
@@ -925,9 +940,49 @@ export class AscendSession {
 		const currentCells = interactiveCellMap(result.cells)
 		const previous = this.viewportSnapshots.get(snapshotKey)
 		this.viewportSnapshots.set(snapshotKey, { token: changeToken, request, cells: currentCells })
-		if (!previous || previous.token !== request.changedSince) return result
+		if (!request.changedSince) return result
+		if (!previous) {
+			return {
+				...result,
+				patchInvalidation: interactivePatchInvalidation(
+					request.changedSince,
+					changeToken,
+					'base-snapshot-missing',
+				),
+			}
+		}
+		if (previous.token !== request.changedSince) {
+			return {
+				...result,
+				patchInvalidation: interactivePatchInvalidation(
+					request.changedSince,
+					changeToken,
+					'base-token-stale',
+				),
+			}
+		}
 		const baseGeneration = interactiveTokenGeneration(request.changedSince)
-		if (baseGeneration === null || !this.changedRefsSince(baseGeneration)) return result
+		if (baseGeneration === null) {
+			return {
+				...result,
+				patchInvalidation: interactivePatchInvalidation(
+					request.changedSince,
+					changeToken,
+					'base-token-invalid',
+				),
+			}
+		}
+		const changes = this.changedRefsSince(baseGeneration)
+		if (changes.kind !== 'refs') {
+			return {
+				...result,
+				patchInvalidation: interactivePatchInvalidation(
+					request.changedSince,
+					changeToken,
+					changes.kind === 'expired' ? 'base-token-expired' : 'viewport-invalidated',
+				),
+			}
+		}
 		const patch = diffInteractiveViewportCells(
 			previous.token,
 			changeToken,
@@ -944,8 +999,9 @@ export class AscendSession {
 		if (!previous || previous.token !== request.changedSince) return null
 		const baseGeneration = interactiveTokenGeneration(request.changedSince)
 		if (baseGeneration === null) return null
-		const refs = this.changedRefsSince(baseGeneration)
-		if (!refs) return null
+		const changes = this.changedRefsSince(baseGeneration)
+		if (changes.kind !== 'refs') return null
+		const refs = changes.refs
 		if (!this.mutableWorkbook) return null
 		const context = createInteractiveViewportContext(this.mutableWorkbook, request)
 		const changeToken = `${this.documentGeneration}:${this.changeVersion++}`
@@ -1281,16 +1337,20 @@ export class AscendSession {
 			this.recentChanges.splice(0, this.recentChanges.length - 128)
 	}
 
-	private changedRefsSince(baseGeneration: number): Set<string> | null {
+	private changedRefsSince(
+		baseGeneration: number,
+	):
+		| { readonly kind: 'refs'; readonly refs: Set<string> }
+		| { readonly kind: 'expired' | 'invalidated' } {
 		const oldest = this.recentChanges[0]
-		if (oldest && oldest.generation > baseGeneration + 1) return null
+		if (oldest && oldest.generation > baseGeneration + 1) return { kind: 'expired' }
 		const refs = new Set<string>()
 		for (const entry of this.recentChanges) {
 			if (entry.generation <= baseGeneration) continue
-			if (!entry.refs) return null
+			if (!entry.refs) return { kind: 'invalidated' }
 			for (const ref of entry.refs) refs.add(ref)
 		}
-		return refs
+		return { kind: 'refs', refs }
 	}
 }
 
@@ -1741,6 +1801,19 @@ function diffInteractiveViewportCells(
 		changedCells,
 		removedRefs,
 		byteLength: JSON.stringify({ changedCells, removedRefs }).length,
+	}
+}
+
+function interactivePatchInvalidation(
+	baseToken: string,
+	changeToken: string,
+	reason: InteractiveViewportPatchInvalidationReason,
+): InteractiveViewportPatchInvalidation {
+	return {
+		baseToken,
+		changeToken,
+		reason,
+		requiredAction: 'use-returned-snapshot',
 	}
 }
 

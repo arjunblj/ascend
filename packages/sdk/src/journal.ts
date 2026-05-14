@@ -440,6 +440,8 @@ function buildSupportedJournalEntry(
 			return journalSetCells(workbook, op, opIndex)
 		case 'setFormula':
 			return journalSetFormula(workbook, op, opIndex)
+		case 'fillFormula':
+			return journalFillFormula(workbook, op, opIndex)
 		case 'setRichText':
 			return journalSetRichText(workbook, op, opIndex)
 		case 'clearRange':
@@ -1255,6 +1257,22 @@ function journalSetFormula(
 	opIndex: number,
 ): DraftJournalEntry {
 	const cells = cellEditPreimages(workbook, op.sheet, [op.ref])
+	const { inverseOps, issues } = inverseCellOps(cells)
+	return {
+		opIndex,
+		op,
+		inverseOps,
+		preimages: [{ kind: 'cells', cells }],
+		issues,
+	}
+}
+
+function journalFillFormula(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'fillFormula' }>,
+	opIndex: number,
+): DraftJournalEntry {
+	const cells = cellEditPreimages(workbook, op.sheet, refsInRange(op.range))
 	const { inverseOps, issues } = inverseCellOps(cells)
 	return {
 		opIndex,

@@ -2788,6 +2788,49 @@ describe('interactive client contract', () => {
 		expect(wb.sheet('Sheet1')?.cell('A1')?.formula).toBe('1+1')
 	})
 
+	test('journal inverse ops restore fillFormula edits over scalar cells exactly', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 2 },
+					{ ref: 'A2', value: 3 },
+					{ ref: 'B1', value: 20 },
+					{ ref: 'B2', value: 30 },
+				],
+			},
+			{ op: 'setStyle', sheet: 'Sheet1', range: 'B1:B2', style: { numberFormat: '0.00' } },
+		])
+
+		const changed = wb.apply(
+			[{ op: 'fillFormula', sheet: 'Sheet1', range: 'B1:B2', formula: '=A1*10' }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(true)
+		expect(changed.journal?.inverseOps).toEqual([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'B1', value: 20 },
+					{ ref: 'B2', value: 30 },
+				],
+			},
+		])
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(wb.sheet('Sheet1')?.cell('B1')?.value).toEqual({ kind: 'number', value: 20 })
+		expect(wb.sheet('Sheet1')?.cell('B2')?.value).toEqual({ kind: 'number', value: 30 })
+		expect(wb.sheet('Sheet1')?.cell('B1')?.formula).toBeNull()
+		expect(wb.cellStyle('Sheet1!B1')?.numberFormat).toBe('0.00')
+	})
+
 	test('journal inverse ops restore supported rich text edits exactly', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

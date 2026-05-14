@@ -3,9 +3,10 @@ import { Buffer } from 'node:buffer'
 import { existsSync, mkdirSync, rmSync, statSync, utimesSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { inspectXlsxPackageGraph } from '@ascend/io-xlsx'
+import { inspectXlsxPackageGraph, type XlsxPackageGraph } from '@ascend/io-xlsx'
 import { createZip, encode } from '../../io-xlsx/src/writer/zip.ts'
 import { makeEmbeddedChartXlsx, makeXlsx } from '../../io-xlsx/test/helpers.ts'
+import type { PackageGraphAudit, WritePolicyReport } from './index.ts'
 import {
 	AscendWorkbook,
 	auditLossPolicy,
@@ -16,6 +17,7 @@ import {
 	compactAgentPlanResult,
 	createAgentPlan,
 	createAgentPlanFromWorkbook,
+	createPackageActionProof,
 	createPreparedAgentPlan,
 	createReleaseProofBundle,
 } from './index.ts'
@@ -3273,6 +3275,129 @@ describe('agent workflow loss audit', () => {
 		const broken = createReleaseProofBundle(plan, { ...committed, planDigest: 'not-the-plan' })
 		expect(broken.consistency.valid).toBe(false)
 		expect(broken.consistency.issues).toContain('release proof check failed: plan-digest-linked')
+	})
+
+	test('package action proof separates additions from regenerated source parts', async () => {
+		const input = join(TEMP_DIR, 'package-action-proof.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		const wb = AscendWorkbook.create()
+		await wb.save(input)
+		const source = await AscendWorkbook.open(await Bun.file(input).bytes())
+		const plan = await createAgentPlan(input, [{ op: 'addSheet', name: 'Added' }])
+		const proof = createPackageActionProof(plan.preservation, {
+			sourcePackageGraph: source.packageGraph(),
+			writePolicy: plan.writePolicy,
+			packageGraphAudit: plan.packageGraphAudit,
+		})
+
+		expect(proof.kind).toBe('ascend-package-action-proof')
+		expect(proof.byAction.add).toBeGreaterThan(0)
+		expect(proof.byAction.regenerate).toBeGreaterThan(0)
+		expect(proof.byAction.error).toBe(0)
+		expect(proof.actions).toContainEqual(
+			expect.objectContaining({
+				action: 'add',
+				partPath: expect.stringContaining('worksheets/sheet'),
+				sourcePresent: false,
+			}),
+		)
+		expect(proof.actions).toContainEqual(
+			expect.objectContaining({
+				action: 'regenerate',
+				partPath: 'xl/workbook.xml',
+				sourcePresent: true,
+			}),
+		)
+	})
+
+	test('package action proof records passthrough, drop, and error evidence', () => {
+		const proof = createPackageActionProof(
+			{
+				totalParts: 3,
+				byOrigin: {
+					generated: 2,
+					'preserved-inline': 0,
+					'preserved-source': 1,
+					capsule: 0,
+				},
+				byOwnerKind: { package: 1, workbook: 1, sheet: 1 },
+				sheetPartCounts: { Added: 1 },
+				parts: [
+					{
+						path: 'xl/workbook.xml',
+						owner: { kind: 'workbook' },
+						origin: 'generated',
+						contentType:
+							'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml',
+						streaming: false,
+					},
+					{
+						path: 'xl/worksheets/sheet2.xml',
+						owner: { kind: 'sheet', sheetName: 'Added' },
+						origin: 'generated',
+						contentType:
+							'application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml',
+						streaming: false,
+					},
+					{
+						path: 'custom/item.xml',
+						owner: { kind: 'package' },
+						origin: 'preserved-source',
+						contentType: 'application/xml',
+						streaming: true,
+					},
+				],
+				skippedCapsules: ['xl/vbaProject.bin'],
+			},
+			{
+				sourcePackageGraph: {
+					parts: [
+						{ path: 'xl/workbook.xml' },
+						{ path: 'custom/item.xml' },
+						{ path: 'xl/vbaProject.bin' },
+					],
+				} as XlsxPackageGraph,
+				writePolicy: {
+					diagnostics: [
+						{
+							code: 'pre-write-check-error',
+							severity: 'blocker',
+							message: 'Structural check failed before write.',
+							suggestedAction: 'Fix the structural check issue before commit.',
+							partPaths: ['xl/workbook.xml'],
+						},
+					],
+				} as WritePolicyReport,
+				packageGraphAudit: {
+					ok: false,
+					policy: 'safe-edit-roundtrip',
+					issues: [
+						{
+							code: 'package_preserved_part_bytes',
+							severity: 'error',
+							message: 'Preserved bytes changed.',
+							partPath: 'custom/item.xml',
+						},
+					],
+				} as PackageGraphAudit,
+			},
+		)
+
+		expect(proof.byAction).toEqual({
+			passthrough: 1,
+			regenerate: 1,
+			add: 1,
+			drop: 1,
+			error: 2,
+		})
+		expect(proof.actions).toContainEqual(
+			expect.objectContaining({ action: 'passthrough', partPath: 'custom/item.xml' }),
+		)
+		expect(proof.actions).toContainEqual(
+			expect.objectContaining({ action: 'drop', partPath: 'xl/vbaProject.bin' }),
+		)
+		expect(proof.issues).toContain('xl/workbook.xml: Structural check failed before write.')
+		expect(proof.issues).toContain('custom/item.xml: Preserved bytes changed.')
 	})
 
 	test('prepared agent plans reuse full workflow state with staleness guards', async () => {

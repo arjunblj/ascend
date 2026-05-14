@@ -32,6 +32,9 @@ import type { MutationJournal, MutationJournalIssue } from './journal.ts'
 import type { CheckIssue, FormulaReferenceInfo } from './types.ts'
 import { AscendWorkbook } from './workbook.ts'
 
+type WorkbookWritePlanInfo = ReturnType<AscendWorkbook['writePlanSummary']>
+type WorkbookWritePlanPartInfo = WorkbookWritePlanInfo['parts'][number]
+
 export interface AgentPlanResult {
 	readonly file: string
 	readonly inputSha256: string
@@ -140,6 +143,36 @@ export interface ReleaseProofConsistencyCheck {
 	readonly check: string
 	readonly ok: boolean
 	readonly details?: unknown
+}
+
+export type PackageActionKind = 'passthrough' | 'regenerate' | 'add' | 'drop' | 'error'
+
+export interface PackageActionProofOptions {
+	readonly sourcePackageGraph?: XlsxPackageGraph
+	readonly writePolicy?: WritePolicyReport
+	readonly packageGraphAudit?: PackageGraphAudit
+}
+
+export interface PackageActionProof {
+	readonly formatVersion: 1
+	readonly kind: 'ascend-package-action-proof'
+	readonly totalActions: number
+	readonly byAction: Readonly<Record<PackageActionKind, number>>
+	readonly actions: readonly PackageActionProofEntry[]
+	readonly issues: readonly string[]
+}
+
+export interface PackageActionProofEntry {
+	readonly action: PackageActionKind
+	readonly reason: string
+	readonly partPath?: string
+	readonly sourcePresent?: boolean
+	readonly origin?: WorkbookWritePlanPartInfo['origin']
+	readonly owner?: WorkbookWritePlanPartInfo['owner']
+	readonly contentType?: string
+	readonly streaming?: boolean
+	readonly diagnosticCodes?: readonly WritePolicyDiagnostic['code'][]
+	readonly auditIssueCodes?: readonly XlsxPackageGraphFidelityIssue['code'][]
 }
 
 export interface ReleaseProofBundle {
@@ -1303,6 +1336,95 @@ export function createReleaseProofBundle(
 	}
 }
 
+export function createPackageActionProof(
+	preservation: WorkbookWritePlanInfo,
+	options: PackageActionProofOptions = {},
+): PackageActionProof {
+	const sourcePartByPath = options.sourcePackageGraph
+		? new Map(options.sourcePackageGraph.parts.map((part) => [part.path, part]))
+		: undefined
+	const plannedPaths = new Set(preservation.parts.map((part) => part.path))
+	const diagnosticsByPath = diagnosticsByPartPath(options.writePolicy?.diagnostics ?? [])
+	const auditIssuesByPath = auditIssuesByPartPath(options.packageGraphAudit?.issues ?? [])
+	const actions: PackageActionProofEntry[] = []
+
+	for (const part of preservation.parts) {
+		const sourcePresent = sourcePartByPath?.has(part.path)
+		const action = packageActionForPlannedPart(part, sourcePresent)
+		const diagnosticCodes = diagnosticsByPath.get(part.path)?.map((diagnostic) => diagnostic.code)
+		const auditIssueCodes = auditIssuesByPath.get(part.path)?.map((issue) => issue.code)
+		actions.push({
+			action,
+			reason: packageActionReason(action, part, sourcePresent),
+			partPath: part.path,
+			...(sourcePresent !== undefined ? { sourcePresent } : {}),
+			origin: part.origin,
+			owner: part.owner,
+			...(part.contentType ? { contentType: part.contentType } : {}),
+			streaming: part.streaming,
+			...(diagnosticCodes?.length ? { diagnosticCodes: Array.from(new Set(diagnosticCodes)) } : {}),
+			...(auditIssueCodes?.length ? { auditIssueCodes: Array.from(new Set(auditIssueCodes)) } : {}),
+		})
+	}
+
+	for (const partPath of preservation.skippedCapsules) {
+		if (plannedPaths.has(partPath)) continue
+		const sourcePresent = sourcePartByPath?.has(partPath)
+		const diagnosticCodes = diagnosticsByPath.get(partPath)?.map((diagnostic) => diagnostic.code)
+		const auditIssueCodes = auditIssuesByPath.get(partPath)?.map((issue) => issue.code)
+		actions.push({
+			action: 'drop',
+			reason:
+				'Preservation capsule is listed as skipped and will not be emitted by the planned write.',
+			partPath,
+			...(sourcePresent !== undefined ? { sourcePresent } : {}),
+			...(diagnosticCodes?.length ? { diagnosticCodes: Array.from(new Set(diagnosticCodes)) } : {}),
+			...(auditIssueCodes?.length ? { auditIssueCodes: Array.from(new Set(auditIssueCodes)) } : {}),
+		})
+	}
+
+	for (const diagnostic of options.writePolicy?.diagnostics ?? []) {
+		if (diagnostic.severity !== 'blocker') continue
+		const partPaths = diagnostic.partPaths?.length ? diagnostic.partPaths : [undefined]
+		for (const partPath of partPaths) {
+			actions.push({
+				action: 'error',
+				reason: diagnostic.message,
+				...(partPath ? { partPath } : {}),
+				...(partPath && sourcePartByPath ? { sourcePresent: sourcePartByPath.has(partPath) } : {}),
+				diagnosticCodes: [diagnostic.code],
+			})
+		}
+	}
+
+	for (const issue of options.packageGraphAudit?.issues ?? []) {
+		const partPaths = packageGraphIssuePackagePaths(issue)
+		for (const partPath of partPaths.length > 0 ? partPaths : [undefined]) {
+			actions.push({
+				action: 'error',
+				reason: issue.message,
+				...(partPath ? { partPath } : {}),
+				...(partPath && sourcePartByPath ? { sourcePresent: sourcePartByPath.has(partPath) } : {}),
+				auditIssueCodes: [issue.code],
+			})
+		}
+	}
+
+	const byAction = emptyPackageActionCounts()
+	for (const action of actions) byAction[action.action] += 1
+	const issues = actions
+		.filter((action) => action.action === 'error')
+		.map((action) => (action.partPath ? `${action.partPath}: ${action.reason}` : action.reason))
+	return {
+		formatVersion: 1,
+		kind: 'ascend-package-action-proof',
+		totalActions: actions.length,
+		byAction,
+		actions,
+		issues,
+	}
+}
+
 function compactTraceSummary(trace: AgentWorkflowTrace): CompactAgentTraceSummary {
 	return {
 		kind: trace.kind,
@@ -1399,6 +1521,73 @@ function releaseProofCheck(
 		ok,
 		...(details !== undefined ? { details } : {}),
 	}
+}
+
+function packageActionForPlannedPart(
+	part: WorkbookWritePlanPartInfo,
+	sourcePresent: boolean | undefined,
+): PackageActionKind {
+	if (part.origin !== 'generated') return 'passthrough'
+	return sourcePresent === false ? 'add' : 'regenerate'
+}
+
+function packageActionReason(
+	action: PackageActionKind,
+	part: WorkbookWritePlanPartInfo,
+	sourcePresent: boolean | undefined,
+): string {
+	switch (action) {
+		case 'passthrough':
+			return `${part.origin} package part will be copied through from preserved source or capsule bytes.`
+		case 'add':
+			return 'Generated package part is absent from the source package graph and will be added.'
+		case 'regenerate':
+			return sourcePresent === undefined
+				? 'Generated package part will be emitted; source graph was not provided, so add vs regenerate cannot be proven.'
+				: 'Generated package part replaces an existing source package part.'
+		case 'drop':
+			return 'Package part will not be emitted by the planned write.'
+		case 'error':
+			return 'Package action is blocked by diagnostic or package graph audit evidence.'
+	}
+}
+
+function emptyPackageActionCounts(): Record<PackageActionKind, number> {
+	return {
+		passthrough: 0,
+		regenerate: 0,
+		add: 0,
+		drop: 0,
+		error: 0,
+	}
+}
+
+function diagnosticsByPartPath(
+	diagnostics: readonly WritePolicyDiagnostic[],
+): Map<string, WritePolicyDiagnostic[]> {
+	const byPath = new Map<string, WritePolicyDiagnostic[]>()
+	for (const diagnostic of diagnostics) {
+		for (const partPath of diagnostic.partPaths ?? []) {
+			const existing = byPath.get(partPath)
+			if (existing) existing.push(diagnostic)
+			else byPath.set(partPath, [diagnostic])
+		}
+	}
+	return byPath
+}
+
+function auditIssuesByPartPath(
+	issues: readonly XlsxPackageGraphFidelityIssue[],
+): Map<string, XlsxPackageGraphFidelityIssue[]> {
+	const byPath = new Map<string, XlsxPackageGraphFidelityIssue[]>()
+	for (const issue of issues) {
+		for (const partPath of packageGraphIssuePackagePaths(issue)) {
+			const existing = byPath.get(partPath)
+			if (existing) existing.push(issue)
+			else byPath.set(partPath, [issue])
+		}
+	}
+	return byPath
 }
 
 function compactPostWriteVerification(

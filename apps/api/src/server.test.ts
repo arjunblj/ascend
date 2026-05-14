@@ -2035,6 +2035,47 @@ describe('Ascend API server', () => {
 		}
 	})
 
+	test('direct path mutation commits surface post-write audit failures as blocked output', async () => {
+		await Bun.write(TEMP_FILE, preservedCustomWorkbook())
+		const output = `${OUTPUT_FILE}.direct-preserved.xlsx`
+		const mutations = [{ path: '/sheets/Sheet1/cells/A1/value', value: 17 }]
+		const canonicalOps = [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 17 }] }]
+		try {
+			const plan = await postJson('/plan', { file: TEMP_FILE, mutations })
+			expect(plan.status).toBe(200)
+			expect(plan.body.ok).toBe(true)
+			expect(plan.body.data?.pathMutations?.ops).toEqual(canonicalOps)
+			const approvalIds = plan.body.data?.approvals?.map((approval) => approval.id) ?? []
+			expect(approvalIds).toEqual([expect.stringMatching(/^loss:preservedother:preserved:/)])
+
+			const commit = await postJson('/commit', {
+				file: TEMP_FILE,
+				mutations,
+				output,
+				approvals: approvalIds,
+				compact: true,
+			})
+			expect(commit.status).toBe(200)
+			expect(commit.body.ok).toBe(true)
+			expect(commit.body.data?.pathMutations?.ops).toEqual(canonicalOps)
+			expect(commit.body.data?.approvals?.map((approval) => approval.id)).toEqual(approvalIds)
+			expect(commit.body.data?.postWrite?.valid).toBe(true)
+			expect(commit.body.data?.postWrite?.auditsPassed).toBe(false)
+			expect(commit.body.data?.postWrite?.outputSha256).toBe(commit.body.data?.outputSha256)
+			expect(commit.body.data?.postWrite?.packageGraphAudit?.ok).toBe(false)
+			expect(commit.body.data?.postWrite?.packageGraphAudit?.issueCount).toBeGreaterThan(0)
+			expect(commit.body.data?.postWrite?.expectedPackageGraphIssueCount).toBe(0)
+			expect(commit.body.data?.postWrite?.unresolvedPackageGraphIssueCount).toBeGreaterThan(0)
+			expect(commit.body.data?.modelOutput?.blocked).toBe(true)
+			expect(commit.body.data?.modelOutput?.counts?.postWritePackageGraphIssues).toBeGreaterThan(0)
+			expect(commit.body.data?.modelOutput?.nextActions?.join('\n')).toContain(
+				'postWrite.packageGraphAudit.issues',
+			)
+		} finally {
+			await unlink(output).catch(() => {})
+		}
+	})
+
 	test('prepared commits surface post-write formula lint failures as blocked output', async () => {
 		const input = `${TEMP_FILE}.prepared-lint-source.xlsx`
 		const output = `${OUTPUT_FILE}.prepared-lint-out.xlsx`

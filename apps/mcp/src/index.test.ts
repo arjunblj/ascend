@@ -2008,6 +2008,100 @@ describe('MCP server', () => {
 		}
 	})
 
+	test('direct MCP path mutation commits surface post-write audit failures as blocked output', async () => {
+		await Bun.write(TEMP_FILE, preservedCustomWorkbook())
+		const output = `${TEMP_FILE}.direct-preserved-mcp.xlsx`
+		const mutations = [{ path: '/sheets/Sheet1/cells/A1/value', value: 17 }]
+		const canonicalOps = [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 17 }] }]
+		const server = createServer()
+		try {
+			// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+			const plan = (server as any)._registeredTools['ascend.plan'].handler as (args: {
+				file: string
+				mutations: Array<{ path: string; value?: unknown }>
+			}) => Promise<{
+				structuredContent?: {
+					data?: {
+						approvals?: Array<{ id: string }>
+						pathMutations?: { ops?: unknown[] }
+					}
+				}
+			}>
+			// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+			const commit = (server as any)._registeredTools['ascend.commit'].handler as (args: {
+				file?: string
+				mutations?: Array<{ path: string; value?: unknown }>
+				output?: string
+				approvals?: string[]
+				compact?: boolean
+			}) => Promise<{
+				isError?: boolean
+				structuredContent?: {
+					ok?: boolean
+					data?: {
+						outputSha256?: string
+						approvals?: Array<{ id: string }>
+						pathMutations?: { ops?: unknown[] }
+						postWrite?: {
+							valid?: boolean
+							outputSha256?: string
+							auditsPassed?: boolean
+							expectedPackageGraphIssueCount?: number
+							unresolvedPackageGraphIssueCount?: number
+							packageGraphAudit?: { ok?: boolean; issueCount?: number }
+						}
+						modelOutput?: {
+							blocked?: boolean
+							nextActions?: readonly string[]
+							counts?: { postWritePackageGraphIssues?: number }
+						}
+					}
+				}
+			}>
+			const planned = await plan({ file: TEMP_FILE, mutations })
+			expect(planned.structuredContent?.data?.pathMutations?.ops).toEqual(canonicalOps)
+			const approvalIds =
+				planned.structuredContent?.data?.approvals?.map((approval) => approval.id) ?? []
+			expect(approvalIds).toEqual([expect.stringMatching(/^loss:preservedother:preserved:/)])
+
+			const committed = await commit({
+				file: TEMP_FILE,
+				mutations,
+				output,
+				approvals: approvalIds,
+				compact: true,
+			})
+			expect(committed.isError).not.toBe(true)
+			expect(committed.structuredContent?.ok).toBe(true)
+			expect(committed.structuredContent?.data?.pathMutations?.ops).toEqual(canonicalOps)
+			expect(committed.structuredContent?.data?.approvals?.map((approval) => approval.id)).toEqual(
+				approvalIds,
+			)
+			expect(committed.structuredContent?.data?.postWrite?.valid).toBe(true)
+			expect(committed.structuredContent?.data?.postWrite?.auditsPassed).toBe(false)
+			expect(committed.structuredContent?.data?.postWrite?.outputSha256).toBe(
+				committed.structuredContent?.data?.outputSha256,
+			)
+			expect(committed.structuredContent?.data?.postWrite?.packageGraphAudit?.ok).toBe(false)
+			expect(
+				committed.structuredContent?.data?.postWrite?.packageGraphAudit?.issueCount,
+			).toBeGreaterThan(0)
+			expect(committed.structuredContent?.data?.postWrite?.expectedPackageGraphIssueCount).toBe(0)
+			expect(
+				committed.structuredContent?.data?.postWrite?.unresolvedPackageGraphIssueCount,
+			).toBeGreaterThan(0)
+			expect(committed.structuredContent?.data?.modelOutput?.blocked).toBe(true)
+			expect(
+				committed.structuredContent?.data?.modelOutput?.counts?.postWritePackageGraphIssues,
+			).toBeGreaterThan(0)
+			expect(committed.structuredContent?.data?.modelOutput?.nextActions?.join('\n')).toContain(
+				'postWrite.packageGraphAudit.issues',
+			)
+		} finally {
+			await unlink(output).catch(() => {})
+		}
+	})
+
 	test('prepared MCP commits surface post-write formula lint failures as blocked output', async () => {
 		const input = `${TEMP_FILE}.prepared-lint-source.xlsx`
 		const output = `${TEMP_FILE}.prepared-lint-out.xlsx`

@@ -5921,6 +5921,9 @@ describe('applyOperation', () => {
 		sheet.dataValidations.push({ sqref: 'A2:B2', type: 'list', formula1: '"A,B"' })
 		sheet.conditionalFormats.push({ sqref: 'B3', rules: [] })
 		sheet.ignoredErrors.push({ sqref: 'A2', formula: true })
+		sheet.rowHeights.set(1, 24)
+		sheet.rowDefs.set(1, { hidden: true, customHeight: true })
+		sheet.rowDefs.set(2, { outlineLevel: 2, collapsed: true })
 
 		const result = applyOperation(wb, {
 			op: 'sortRange',
@@ -5949,6 +5952,9 @@ describe('applyOperation', () => {
 		expect(sheet.dataValidations[0]?.sqref).toBe('A3:B3')
 		expect(sheet.conditionalFormats[0]?.sqref).toBe('B2')
 		expect(sheet.ignoredErrors[0]?.sqref).toBe('A3')
+		expect(sheet.rowHeights.get(2)).toBe(24)
+		expect(sheet.rowDefs.get(1)).toEqual({ outlineLevel: 2, collapsed: true })
+		expect(sheet.rowDefs.get(2)).toEqual({ hidden: true, customHeight: true })
 	})
 
 	test('sortRange reports first-row affected cells when sorting by column letter', () => {

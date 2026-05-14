@@ -4156,8 +4156,12 @@ function sortRangeMetadataIssues(
 	const hasRowHeights = [...sheet.rowHeights.keys()].some(
 		(row) => row >= dataRange.start.row && row <= dataRange.end.row,
 	)
+	const hasRowDefs = [...sheet.rowDefs.keys()].some(
+		(row) => row >= dataRange.start.row && row <= dataRange.end.row,
+	)
 	if (
 		hasRowHeights ||
+		hasRowDefs ||
 		sheet.threadedComments.some((comment) => refInRange(comment.ref, dataRange)) ||
 		sheet.dataValidations.some((validation) => sqrefOverlaps(validation.sqref, dataRange)) ||
 		sheet.conditionalFormats.some((format) => sqrefOverlaps(format.sqref, dataRange)) ||

@@ -106,7 +106,10 @@ interface SortRow {
 	readonly conditionalFormats: Array<RowScopedSqrefEntry<Sheet['conditionalFormats'][number]>>
 	readonly ignoredErrors: Array<RowScopedSqrefEntry<Sheet['ignoredErrors'][number]>>
 	readonly rowHeight: number | undefined
+	readonly rowDef: RowDef | undefined
 }
+
+type RowDef = NonNullable<ReturnType<Sheet['rowDefs']['get']>>
 
 interface RowScopedSqrefEntry<T extends { sqref: string }> {
 	readonly startColOffset: number
@@ -157,6 +160,7 @@ function captureSortedRows(sheet: Sheet, range: RangeRef, startRow: number): Sor
 			conditionalFormats: captureRowScopedSqrefEntries(sheet.conditionalFormats, range, row),
 			ignoredErrors: captureRowScopedSqrefEntries(sheet.ignoredErrors, range, row),
 			rowHeight: sheet.rowHeights.get(row),
+			rowDef: cloneRowDef(sheet.rowDefs.get(row)),
 		})
 	}
 	return rows
@@ -208,6 +212,7 @@ function rewriteSortedRows(
 			sheet.hyperlinks.delete(ref)
 		}
 		sheet.rowHeights.delete(row)
+		sheet.rowDefs.delete(row)
 	}
 	sheet.threadedComments = sheet.threadedComments.filter((comment) => {
 		const pos = parseA1(comment.ref)
@@ -255,6 +260,9 @@ function rewriteSortedRows(
 		}
 		if (rowData.rowHeight !== undefined) {
 			sheet.rowHeights.set(targetRow, rowData.rowHeight)
+		}
+		if (rowData.rowDef !== undefined) {
+			sheet.rowDefs.set(targetRow, rowData.rowDef)
 		}
 	})
 }
@@ -344,6 +352,10 @@ function rewriteRowScopedSqrefEntry<T extends { sqref: string }>(
 
 function replaceArrayContents<T>(target: T[], next: readonly T[]): void {
 	target.splice(0, target.length, ...next)
+}
+
+function cloneRowDef(def: RowDef | undefined): RowDef | undefined {
+	return def ? { ...def } : undefined
 }
 
 function rangesOverlap(a: RangeRef, b: RangeRef): boolean {

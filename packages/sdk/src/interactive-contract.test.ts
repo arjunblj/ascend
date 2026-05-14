@@ -3375,6 +3375,45 @@ describe('interactive client contract', () => {
 		})
 	})
 
+	test('sortRange journals mark imported row definitions lossy', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'Region' },
+					{ ref: 'B1', value: 'Qty' },
+					{ ref: 'A2', value: 'West' },
+					{ ref: 'B2', value: 2 },
+					{ ref: 'A3', value: 'East' },
+					{ ref: 'B3', value: 1 },
+				],
+			},
+		])
+		const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+		if (!sheet) throw new Error('missing sheet')
+		sheet.rowDefs.set(1, { hidden: true, outlineLevel: 1 })
+		sheet.rowDefs.set(2, { collapsed: true, customHeight: false })
+
+		const changed = wb.apply(
+			[{ op: 'sortRange', sheet: 'Sheet1', range: 'A1:B3', by: [{ column: 'Qty' }] }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(false)
+		expect(changed.journal?.issues).toContainEqual({
+			code: 'LOSSY_INVERSE',
+			message:
+				'Sorted row metadata on Sheet1!A1:B3 cannot be fully restored with public operations',
+			refs: ['Sheet1!A1:B3'],
+		})
+		expect(sheet.rowDefs.get(1)).toEqual({ collapsed: true, customHeight: false })
+		expect(sheet.rowDefs.get(2)).toEqual({ hidden: true, outlineLevel: 1 })
+	})
+
 	test('sortRange exact journals restore simple comments and hyperlinks', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

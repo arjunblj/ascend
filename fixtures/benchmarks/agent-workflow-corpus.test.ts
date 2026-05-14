@@ -41,6 +41,8 @@ describe('agent workflow corpus benchmark', () => {
 			readonly results?: Array<{
 				readonly name?: string
 				readonly status?: string
+				readonly reproCommand?: string
+				readonly profileCommand?: string
 				readonly approvals?: string
 				readonly summary?: {
 					readonly preparedCommitVerifiedTotalMedianMs?: number
@@ -61,6 +63,20 @@ describe('agent workflow corpus benchmark', () => {
 		expect(payload.results?.[0]?.name).toBe('poi-with-various-data-approved')
 		expect(payload.results?.[0]?.status).toBe('ok')
 		expect(payload.results?.[0]?.approvals).toBe('all')
+		expect(payload.results?.[0]?.reproCommand).toContain(
+			'bun run fixtures/benchmarks/agent-workflow.ts',
+		)
+		expect(payload.results?.[0]?.reproCommand).toContain(
+			'--input-file fixtures/xlsx/poi/WithVariousData.xlsx',
+		)
+		expect(payload.results?.[0]?.profileCommand).toContain(
+			'bun run fixtures/benchmarks/profile-bun.ts',
+		)
+		expect(payload.results?.[0]?.profileCommand).toContain('--mode all-md')
+		expect(payload.results?.[0]?.profileCommand).toContain(
+			'bun run fixtures/benchmarks/agent-workflow.ts',
+		)
+		expect(payload.results?.[0]?.profileCommand).not.toContain('agent-workflow-corpus.ts')
 		expect(payload.results?.[0]?.summary?.preparedCommitVerifiedTotalMedianMs).toBeNumber()
 		expect(payload.results?.[0]?.summary?.mcpPreparedCommitVerifiedTotalMedianMs).toBeNumber()
 		expect(

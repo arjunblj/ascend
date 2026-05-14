@@ -24,6 +24,8 @@ interface TargetResult {
 	readonly name: string
 	readonly file: string
 	readonly status: TargetStatus
+	readonly reproCommand: string
+	readonly profileCommand: string
 	readonly approvals?: readonly string[] | 'all'
 	readonly summary?: {
 		readonly totalMedianMs?: number
@@ -42,6 +44,10 @@ interface TargetResult {
 	}
 	readonly error?: string
 }
+
+const WORKFLOW_SCRIPT = 'fixtures/benchmarks/agent-workflow.ts'
+const WORKFLOW_SCRIPT_PATH = fileURLToPath(new URL('./agent-workflow.ts', import.meta.url))
+const PROFILE_SCRIPT = 'fixtures/benchmarks/profile-bun.ts'
 
 const TARGETS: readonly AgentWorkflowTarget[] = [
 	{
@@ -111,9 +117,9 @@ function approvalArgs(approvals: readonly string[] | 'all' | undefined): string[
 	return ['--approval', approvals === 'all' ? 'all' : approvals.join(',')]
 }
 
-function workflowArgs(target: AgentWorkflowTarget, args: Args): string[] {
+function workflowScriptArgs(script: string, target: AgentWorkflowTarget, args: Args): string[] {
 	return [
-		fileURLToPath(new URL('./agent-workflow.ts', import.meta.url)),
+		script,
 		'--input-file',
 		target.file,
 		'--surface',
@@ -131,11 +137,49 @@ function workflowArgs(target: AgentWorkflowTarget, args: Args): string[] {
 	]
 }
 
+function workflowArgs(target: AgentWorkflowTarget, args: Args): string[] {
+	return workflowScriptArgs(WORKFLOW_SCRIPT_PATH, target, args)
+}
+
+function workflowCommandArgs(target: AgentWorkflowTarget, args: Args): string[] {
+	return ['bun', 'run', ...workflowScriptArgs(WORKFLOW_SCRIPT, target, args)]
+}
+
+function targetCommands(
+	target: AgentWorkflowTarget,
+	args: Args,
+): Pick<TargetResult, 'reproCommand' | 'profileCommand'> {
+	const reproArgs = workflowCommandArgs(target, args)
+	return {
+		reproCommand: commandString(reproArgs),
+		profileCommand: commandString([
+			'bun',
+			'run',
+			PROFILE_SCRIPT,
+			'--mode',
+			'all-md',
+			'--label',
+			`agent-workflow-${target.name}`,
+			'--',
+			...reproArgs,
+		]),
+	}
+}
+
+function commandString(args: readonly string[]): string {
+	return args.map(shellQuote).join(' ')
+}
+
+function shellQuote(value: string): string {
+	return /^[A-Za-z0-9_./:=@+-]+$/.test(value) ? value : `'${value.replaceAll("'", "'\\''")}'`
+}
+
 function classifyFailure(stderr: string): TargetStatus {
 	return /Commit requires explicit approval|approval/i.test(stderr) ? 'approval-required' : 'failed'
 }
 
 async function runTarget(target: AgentWorkflowTarget, args: Args): Promise<TargetResult> {
+	const commands = targetCommands(target, args)
 	const proc = Bun.spawn([Bun.argv[0], ...workflowArgs(target, args)], {
 		cwd: process.cwd(),
 		stderr: 'pipe',
@@ -151,6 +195,7 @@ async function runTarget(target: AgentWorkflowTarget, args: Args): Promise<Targe
 			name: target.name,
 			file: target.file,
 			status: classifyFailure(stderr),
+			...commands,
 			...(target.approvals !== undefined ? { approvals: target.approvals } : {}),
 			error: stderr.trim().split('\n').slice(0, 6).join('\n'),
 		}
@@ -160,6 +205,7 @@ async function runTarget(target: AgentWorkflowTarget, args: Args): Promise<Targe
 		name: target.name,
 		file: target.file,
 		status: 'ok',
+		...commands,
 		...(target.approvals !== undefined ? { approvals: target.approvals } : {}),
 		summary: payload.summary,
 	}

@@ -1554,11 +1554,9 @@ function readInteractiveViewport(
 ): InteractiveViewportResult {
 	const context = createInteractiveViewportContext(view, request)
 	const cells: InteractiveViewportCell[] = []
-	const flatValues = Array.from(
-		{ length: viewportCellCount(context.viewport) },
-		() => null,
-	) as Array<number | string | boolean | null>
-	const displayText = Array.from({ length: viewportCellCount(context.viewport) }, () => '')
+	const cellCount = viewportCellCount(context.viewport)
+	const flatValues = new Array<number | string | boolean | null>(cellCount).fill(null)
+	const displayText = new Array<string>(cellCount).fill('')
 	context.sheet.cells.forEachCellContentInRange(
 		context.viewport,
 		(row, col, value, formula, formulaBinding) => {

@@ -3139,6 +3139,105 @@ describe('interactive client contract', () => {
 		})
 	})
 
+	test('journal inverse ops restore simple moveRange source and target cells', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'Moved' },
+					{ ref: 'B1', value: 10 },
+					{ ref: 'D1', value: 'Old' },
+					{ ref: 'E1', value: 1 },
+				],
+			},
+			{ op: 'setStyle', sheet: 'Sheet1', range: 'B1:B1', style: { numberFormat: '0.00' } },
+			{ op: 'setStyle', sheet: 'Sheet1', range: 'E1:E1', style: { numberFormat: '$0' } },
+		])
+
+		const changed = wb.apply(
+			[{ op: 'moveRange', sheet: 'Sheet1', source: 'A1:B1', target: 'D1', mode: 'all' }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(true)
+		expect(wb.sheet('Sheet1')?.cell('A1')).toBeUndefined()
+		expect(wb.sheet('Sheet1')?.cell('D1')?.value).toEqual({ kind: 'string', value: 'Moved' })
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(wb.sheet('Sheet1')?.cell('A1')?.value).toEqual({ kind: 'string', value: 'Moved' })
+		expect(wb.sheet('Sheet1')?.cell('B1')?.value).toEqual({ kind: 'number', value: 10 })
+		expect(wb.cellStyle('Sheet1!B1')?.numberFormat).toBe('0.00')
+		expect(wb.sheet('Sheet1')?.cell('D1')?.value).toEqual({ kind: 'string', value: 'Old' })
+		expect(wb.sheet('Sheet1')?.cell('E1')?.value).toEqual({ kind: 'number', value: 1 })
+		expect(wb.cellStyle('Sheet1!E1')?.numberFormat).toBe('$0')
+	})
+
+	test('moveRange value-mode journals restore deleted source styles', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 10 },
+					{ ref: 'D1', value: 1 },
+				],
+			},
+			{ op: 'setStyle', sheet: 'Sheet1', range: 'A1:A1', style: { numberFormat: '0.00' } },
+			{ op: 'setStyle', sheet: 'Sheet1', range: 'D1:D1', style: { numberFormat: '$0' } },
+		])
+
+		const changed = wb.apply(
+			[{ op: 'moveRange', sheet: 'Sheet1', source: 'A1', target: 'D1', mode: 'values' }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.exact).toBe(true)
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(wb.sheet('Sheet1')?.cell('A1')?.value).toEqual({ kind: 'number', value: 10 })
+		expect(wb.cellStyle('Sheet1!A1')?.numberFormat).toBe('0.00')
+		expect(wb.sheet('Sheet1')?.cell('D1')?.value).toEqual({ kind: 'number', value: 1 })
+		expect(wb.cellStyle('Sheet1!D1')?.numberFormat).toBe('$0')
+	})
+
+	test('moveRange journals mark formula reference rewrites lossy', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 1 },
+					{ ref: 'D1', value: 4 },
+				],
+			},
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'G1', formula: 'A1*2' },
+		])
+
+		const changed = wb.apply(
+			[{ op: 'moveRange', sheet: 'Sheet1', source: 'A1', target: 'D1', mode: 'all' }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(false)
+		expect(changed.journal?.issues).toContainEqual({
+			code: 'LOSSY_INVERSE',
+			message:
+				'moveRange formula reference rewrites for Sheet1!A1 cannot be fully restored with public operations',
+			refs: ['Sheet1!G1'],
+		})
+	})
+
 	test('journals expose lossy imported formula-binding metadata preimages', () => {
 		const wb = AscendWorkbook.create()
 		const sheet = wb.getWorkbookModel().getSheet('Sheet1')

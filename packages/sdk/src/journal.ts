@@ -498,6 +498,8 @@ function buildSupportedJournalEntry(
 			return journalSortRange(workbook, op, opIndex)
 		case 'copyRange':
 			return journalCopyRange(workbook, op, opIndex)
+		case 'moveRange':
+			return journalMoveRange(workbook, op, opIndex)
 		case 'deleteTable':
 			return journalDeleteTable(workbook, op, opIndex)
 		case 'resizeTable':
@@ -1724,6 +1726,57 @@ function journalCopyRange(
 		inverseOps: cellInverseOps,
 		preimages: [{ kind: 'cells', cells }],
 		issues: [...cellIssues, ...copyRangeMetadataIssues(workbook, op, targetRange)],
+	}
+}
+
+function journalMoveRange(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'moveRange' }>,
+	opIndex: number,
+): DraftJournalEntry {
+	const mode = op.mode ?? 'all'
+	if (!copyRangeCellModeSupported(mode)) {
+		return {
+			opIndex,
+			op,
+			inverseOps: [],
+			preimages: [],
+			issues: [
+				{
+					code: 'UNSUPPORTED_OPERATION',
+					message: `No reversible journal support for moveRange mode ${mode}`,
+				},
+			],
+		}
+	}
+	const sourceRange = parseRange(op.source)
+	const targetSheet = op.targetSheet ?? op.sheet
+	const targetRange = transferTargetRange(op.source, op.target)
+	const sourceRefs = refsInParsedRange(sourceRange)
+	const targetRefs = refsInParsedRange(targetRange)
+	const sourceCells = cellEditPreimages(workbook, op.sheet, sourceRefs)
+	const targetCells = copyRangeOverwritesFormulas(mode)
+		? cellEditPreimages(workbook, targetSheet, targetRefs)
+		: cellPreimages(workbook, targetSheet, targetRefs)
+	const { inverseOps: sourceInverseOps, issues: sourceIssues } =
+		moveRangeSourceRestoration(sourceCells)
+	const { inverseOps: targetInverseOps, issues: targetIssues } = copyRangeRestoration(
+		targetCells,
+		mode,
+	)
+	const cells = uniqueCellPreimages([...targetCells, ...sourceCells])
+	return {
+		opIndex,
+		op,
+		inverseOps: [...targetInverseOps, ...sourceInverseOps],
+		preimages: [{ kind: 'cells', cells }],
+		issues: [
+			...targetIssues,
+			...sourceIssues,
+			...moveRangeOverlapIssues(op, sourceRange, targetRange),
+			...moveRangeMetadataIssues(workbook, op, sourceRange, targetRange),
+			...moveRangeFormulaSurfaceIssues(workbook, op, sourceRange, targetRange),
+		],
 	}
 }
 
@@ -3670,6 +3723,17 @@ function copyRangeRestoration(
 	}
 }
 
+function moveRangeSourceRestoration(cells: readonly MutationJournalCellPreimage[]): {
+	readonly inverseOps: readonly Operation[]
+	readonly issues: readonly MutationJournalIssue[]
+} {
+	const { inverseOps, issues } = inverseCellOps(cells)
+	return {
+		inverseOps: [...inverseOps, ...styleInverseOps(cells)],
+		issues,
+	}
+}
+
 function copyRangeMetadataIssues(
 	workbook: Workbook,
 	op: Extract<Operation, { op: 'copyRange' }>,
@@ -3691,6 +3755,90 @@ function copyRangeMetadataIssues(
 			refs: [`${op.sheet}!${op.source}`, `${op.targetSheet ?? op.sheet}!${rangeToA1(targetRange)}`],
 		},
 	]
+}
+
+function moveRangeOverlapIssues(
+	op: Extract<Operation, { op: 'moveRange' }>,
+	sourceRange: RangeRef,
+	targetRange: RangeRef,
+): readonly MutationJournalIssue[] {
+	if (op.targetSheet !== undefined && op.targetSheet !== op.sheet) return []
+	if (!rangesOverlap(sourceRange, targetRange)) return []
+	return [
+		{
+			code: 'LOSSY_INVERSE',
+			message: `Overlapping moveRange ${op.sheet}!${op.source} to ${op.target} cannot be fully restored with public operations`,
+			refs: [`${op.sheet}!${op.source}`, `${op.sheet}!${rangeToA1(targetRange)}`],
+		},
+	]
+}
+
+function moveRangeMetadataIssues(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'moveRange' }>,
+	sourceRange: RangeRef,
+	targetRange: RangeRef,
+): readonly MutationJournalIssue[] {
+	const mode = op.mode ?? 'all'
+	if (mode !== 'all' && mode !== 'formats' && mode !== 'styles') return []
+	const sourceSheet = workbook.getSheet(op.sheet)
+	const targetSheet = workbook.getSheet(op.targetSheet ?? op.sheet)
+	if (!sourceSheet || !targetSheet) return []
+	const sourceHasMetadata = copyRangeModeTouchesMetadata(sourceSheet, sourceRange, mode)
+	const targetHasMetadata = copyRangeModeTouchesMetadata(targetSheet, targetRange, mode)
+	if (!sourceHasMetadata && !targetHasMetadata) return []
+	return [
+		{
+			code: 'LOSSY_INVERSE',
+			message: `moveRange metadata transfer for ${op.sheet}!${op.source} cannot be fully restored with public operations`,
+			refs: [`${op.sheet}!${op.source}`, `${op.targetSheet ?? op.sheet}!${rangeToA1(targetRange)}`],
+		},
+	]
+}
+
+function moveRangeFormulaSurfaceIssues(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'moveRange' }>,
+	sourceRange: RangeRef,
+	targetRange: RangeRef,
+): readonly MutationJournalIssue[] {
+	const refs = workbookFormulaSurfaceRefsOutsideRanges(
+		workbook,
+		op.sheet,
+		sourceRange,
+		op.targetSheet ?? op.sheet,
+		targetRange,
+	)
+	if (refs.length === 0) return []
+	return [
+		{
+			code: 'LOSSY_INVERSE',
+			message: `moveRange formula reference rewrites for ${op.sheet}!${op.source} cannot be fully restored with public operations`,
+			refs,
+		},
+	]
+}
+
+function workbookFormulaSurfaceRefsOutsideRanges(
+	workbook: Workbook,
+	sourceSheetName: string,
+	sourceRange: RangeRef,
+	targetSheetName: string,
+	targetRange: RangeRef,
+): string[] {
+	const refs: string[] = []
+	for (const sheet of workbook.sheets) {
+		for (const [row, col, cell] of sheet.cells.iterate()) {
+			if (!cell.formula) continue
+			if (sheet.name === sourceSheetName && rangeContainsCell(sourceRange, { row, col })) continue
+			if (sheet.name === targetSheetName && rangeContainsCell(targetRange, { row, col })) continue
+			refs.push(`${sheet.name}!${toA1({ row, col })}`)
+		}
+	}
+	for (const name of workbook.definedNames.list()) {
+		refs.push(definedNameJournalKey(workbook, name))
+	}
+	return refs
 }
 
 function copyRangeModeTouchesMetadata(sheet: Sheet, range: RangeRef, mode: string): boolean {

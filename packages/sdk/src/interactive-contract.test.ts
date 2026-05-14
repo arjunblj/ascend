@@ -3761,6 +3761,46 @@ describe('interactive client contract', () => {
 		).toBeUndefined()
 	})
 
+	test('formula-only clears of blocked-spill blockers keep exact journals', () => {
+		const wb = AscendWorkbook.create()
+		const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+		if (!sheet) throw new Error('missing sheet')
+		const blockedSpillInfo = {
+			kind: 'blockedSpill' as const,
+			anchorRef: 'Sheet1!A1',
+			ref: 'A1:A3',
+			blockingRefs: ['A2'],
+		}
+		sheet.cells.set(0, 0, {
+			value: errorValue('#SPILL!'),
+			formula: 'SEQUENCE(3)',
+			styleId: DEFAULT_STYLE_ID,
+			formulaInfo: blockedSpillInfo,
+		})
+		sheet.cells.set(1, 0, {
+			value: stringValue('blocker'),
+			formula: null,
+			styleId: DEFAULT_STYLE_ID,
+		})
+
+		const changed = wb.apply(
+			[{ op: 'clearRange', sheet: 'Sheet1', range: 'A2', what: 'formulas' }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(true)
+		expect(changed.journal?.issues).toEqual([])
+		const preimage = changed.journal?.entries[0]?.preimages[0]
+		expect(preimage?.kind).toBe('cells')
+		if (preimage?.kind !== 'cells') throw new Error('missing cells preimage')
+		expect(preimage.cells.map((cell) => cell.ref)).toEqual(['A2'])
+		expect(wb.getWorkbookModel().getSheet('Sheet1')?.cells.get(0, 0)?.formulaInfo).toEqual(
+			blockedSpillInfo,
+		)
+	})
+
 	test('journals mark sheet and table metadata rewrites lossy when formula bindings are materialized', () => {
 		const addSharedBinding = (wb: AscendWorkbook, col: number) => {
 			const sheet = wb.getWorkbookModel().getSheet('Sheet1')

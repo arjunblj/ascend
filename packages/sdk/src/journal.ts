@@ -1381,7 +1381,9 @@ function journalClearRange(
 			issues: [],
 		}
 	}
-	const cells = cellEditPreimages(workbook, op.sheet, refs)
+	const cells = cellEditPreimages(workbook, op.sheet, refs, {
+		blockedSpillBlockers: op.what !== 'formulas',
+	})
 	const { inverseOps: cellInverseOps, issues } = inverseCellOps(cells)
 	const inverseOps =
 		op.what === 'all' ? [...cellInverseOps, ...styleInverseOps(cells)] : cellInverseOps
@@ -3937,8 +3939,13 @@ function cellEditPreimages(
 	workbook: Workbook,
 	sheetName: string,
 	refs: readonly string[],
+	options: { readonly blockedSpillBlockers?: boolean } = {},
 ): MutationJournalCellPreimage[] {
-	return cellPreimages(workbook, sheetName, formulaBindingEditRefs(workbook, sheetName, refs))
+	return cellPreimages(
+		workbook,
+		sheetName,
+		formulaBindingEditRefs(workbook, sheetName, refs, options),
+	)
 }
 
 function formulaBindingJournalAddendum(cells: readonly MutationJournalCellPreimage[]): {
@@ -4040,6 +4047,7 @@ function formulaBindingEditRefs(
 	workbook: Workbook,
 	sheetName: string,
 	refs: readonly string[],
+	options: { readonly blockedSpillBlockers?: boolean } = {},
 ): string[] {
 	const sheet = workbook.getSheet(sheetName)
 	const parsedRefs = refs.map((ref) => parseA1(ref))
@@ -4070,19 +4078,21 @@ function formulaBindingEditRefs(
 		const tableRange = dataTableFormulaRange(binding, row, col)
 		if (parsedRefs.some((ref) => rangeContainsCell(tableRange, ref))) push(row, col)
 	}
-	for (const [row, col, cell] of sheet.cells.iterate()) {
-		const binding = cell.formulaInfo
-		if (binding?.kind !== 'blockedSpill') continue
-		if (
-			parsedRefs.some(
-				(ref) =>
-					formulaBindingRangeContainsCell(binding.ref, sheet.name, ref) ||
-					binding.blockingRefs.some((blockingRef) =>
-						formulaBindingRangeContainsCell(blockingRef, sheet.name, ref),
-					),
-			)
-		) {
-			push(row, col)
+	if (options.blockedSpillBlockers !== false) {
+		for (const [row, col, cell] of sheet.cells.iterate()) {
+			const binding = cell.formulaInfo
+			if (binding?.kind !== 'blockedSpill') continue
+			if (
+				parsedRefs.some(
+					(ref) =>
+						formulaBindingRangeContainsCell(binding.ref, sheet.name, ref) ||
+						binding.blockingRefs.some((blockingRef) =>
+							formulaBindingRangeContainsCell(blockingRef, sheet.name, ref),
+						),
+				)
+			) {
+				push(row, col)
+			}
 		}
 	}
 	return [...expanded.keys()]

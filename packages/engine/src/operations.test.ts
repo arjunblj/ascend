@@ -5617,6 +5617,7 @@ describe('applyOperation', () => {
 		})
 		expectOk(result)
 
+		expect(result.value.affectedCells).toEqual(['A2', 'B2', 'A3', 'B3'])
 		expect(sheet.cells.get(1, 0)?.value).toEqual(stringValue('A'))
 		expect(sheet.cells.get(1, 1)?.value).toEqual(numberValue(1))
 		expect(sheet.cells.get(2, 0)?.value).toEqual(stringValue('B'))
@@ -5635,6 +5636,27 @@ describe('applyOperation', () => {
 		expect(sheet.dataValidations[0]?.sqref).toBe('A3:B3')
 		expect(sheet.conditionalFormats[0]?.sqref).toBe('B2')
 		expect(sheet.ignoredErrors[0]?.sqref).toBe('A3')
+	})
+
+	test('sortRange reports first-row affected cells when sorting by column letter', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: stringValue('B'), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: stringValue('A'), formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: numberValue(1), formula: null, styleId: sid })
+
+		const result = applyOperation(wb, {
+			op: 'sortRange',
+			sheet: 'Sheet1',
+			range: 'A1:B2',
+			by: [{ column: 'A' }],
+		})
+		expectOk(result)
+
+		expect(result.value.affectedCells).toEqual(['A1', 'B1', 'A2', 'B2'])
+		expect(sheet.cells.get(0, 0)?.value).toEqual(stringValue('A'))
+		expect(sheet.cells.get(1, 0)?.value).toEqual(stringValue('B'))
 	})
 
 	test('sortRange materializes imported shared formulas before sorting', () => {

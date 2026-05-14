@@ -213,8 +213,12 @@ export function handleSortRange(
 	const affected = new Set<string>()
 	const sheetsModified = new Set([sheet.name])
 	materializeSheetFormulaBindings(workbook, sheet, sheet.name, affected, sheetsModified)
+	const sortedAffectedCells = sortRangeAffectedCells(sheet, range, op.by)
 	const sorted = sortSheetRange(workbook, sheet, range, op.by)
 	if (!sorted.ok) return sorted
+	if (sorted.value) {
+		for (const ref of sortedAffectedCells) affected.add(ref)
+	}
 	return ok(patch([...affected], [...sheetsModified], sorted.value))
 }
 
@@ -606,6 +610,41 @@ function buildResizedTableColumns(
 
 function rangeToA1(range: Table['ref']): string {
 	return `${toA1(range.start)}:${toA1(range.end)}`
+}
+
+function sortRangeAffectedCells(
+	sheet: Sheet,
+	range: RangeRef,
+	specs: Extract<Operation, { op: 'sortRange' }>['by'],
+): string[] {
+	const startRow = sortRangeHasHeaderRow(sheet, range, specs)
+		? range.start.row + 1
+		: range.start.row
+	const refs: string[] = []
+	if (startRow > range.end.row) return refs
+	for (let row = startRow; row <= range.end.row; row++) {
+		for (let col = range.start.col; col <= range.end.col; col++) {
+			refs.push(toA1({ row, col }))
+		}
+	}
+	return refs
+}
+
+function sortRangeHasHeaderRow(
+	sheet: Sheet,
+	range: RangeRef,
+	specs: Extract<Operation, { op: 'sortRange' }>['by'],
+): boolean {
+	const headerMap = new Set<string>()
+	for (let col = range.start.col; col <= range.end.col; col++) {
+		const value = sheet.cells.readValue(range.start.row, col)
+		if (value?.kind === 'string' && value.value.trim() !== '') {
+			headerMap.add(value.value.trim().toLowerCase())
+		}
+	}
+	return specs.some(
+		(spec) => typeof spec.column === 'string' && headerMap.has(spec.column.trim().toLowerCase()),
+	)
 }
 
 function materializeWorkbookFormulaBindings(

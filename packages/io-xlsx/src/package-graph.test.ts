@@ -19,6 +19,8 @@ describe('XLSX package graph', () => {
   <Override PartName="/xl/xmlMaps.xml" ContentType="application/xml"/>
   <Override PartName="/xl/customProperty1.bin" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.customProperty"/>
   <Override PartName="/xl/diagrams/data1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.diagramData+xml"/>
+  <Override PartName="/xl/model/item.data" ContentType="application/vnd.ms-excel.model"/>
+  <Override PartName="/xl/customData/item1.data" ContentType="application/vnd.ms-excel.customData"/>
   <Override PartName="/xl/revisions/revisionHeaders.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.revisionHeaders+xml"/>
 </Types>`,
 			'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -32,6 +34,8 @@ describe('XLSX package graph', () => {
   <Relationship Id="rIdXmlMaps" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/xmlMaps" Target="xmlMaps.xml"/>
   <Relationship Id="rIdCustomProperty" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/customProperty" Target="customProperty1.bin"/>
   <Relationship Id="rIdDiagramData" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/diagramData" Target="diagrams/data1.xml"/>
+  <Relationship Id="rIdDataModel" Type="http://schemas.microsoft.com/office/2011/relationships/model" Target="model/item.data"/>
+  <Relationship Id="rIdPowerQuery" Type="http://schemas.microsoft.com/office/2014/relationships/powerQueryMashup" Target="customData/item1.data"/>
   <Relationship Id="rIdRevisionHeaders" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/revisionHeaders" Target="revisions/revisionHeaders.xml"/>
 </Relationships>`,
 			'xl/worksheets/sheet1.xml': '<worksheet/>',
@@ -51,6 +55,8 @@ describe('XLSX package graph', () => {
 			'xl/xmlMaps.xml': '<xmlMaps/>',
 			'xl/customProperty1.bin': 'custom-property-bytes',
 			'xl/diagrams/data1.xml': '<dgm:dataModel/>',
+			'xl/model/item.data': 'data-model-bytes',
+			'xl/customData/item1.data': 'power-query-bytes',
 			'xl/revisions/revisionHeaders.xml': '<headers/>',
 			'xl/media/image 1.png': 'not-really-a-png',
 		})
@@ -123,12 +129,25 @@ describe('XLSX package graph', () => {
 			featureFamily: 'preservedDrawing',
 			preservationPolicy: 'preserve-exact',
 		})
+		expect(graph.parts.find((part) => part.path === 'xl/model/item.data')).toMatchObject({
+			sourceRelationshipId: 'rIdDataModel',
+			featureFamily: 'preservedDataModel',
+			preservationPolicy: 'inspect-only',
+			bytePreservationExpected: true,
+		})
+		expect(graph.parts.find((part) => part.path === 'xl/customData/item1.data')).toMatchObject({
+			sourceRelationshipId: 'rIdPowerQuery',
+			featureFamily: 'preservedPowerQuery',
+			preservationPolicy: 'inspect-only',
+			bytePreservationExpected: true,
+		})
 		expect(
 			graph.parts.find((part) => part.path === 'xl/revisions/revisionHeaders.xml'),
 		).toMatchObject({
 			sourceRelationshipId: 'rIdRevisionHeaders',
 			featureFamily: 'preservedRevision',
-			preservationPolicy: 'preserve-exact',
+			preservationPolicy: 'inspect-only',
+			bytePreservationExpected: true,
 		})
 	})
 

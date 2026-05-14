@@ -62,6 +62,14 @@ export type XlsxPackageLossPolicy =
 	| 'inspect-only'
 	| 'unknown-review-required'
 
+export type XlsxPackagePreservationMode =
+	| 'generated'
+	| 'preserve-exact'
+	| 'discarded-for-recalc'
+	| 'invalidated-on-edit'
+	| 'inspect-only'
+	| 'review-required'
+
 export interface XlsxPackageGraph {
 	readonly parts: readonly XlsxPackageGraphPart[]
 	readonly relationships: readonly XlsxPackageGraphRelationship[]
@@ -130,6 +138,7 @@ export function inspectXlsxPackageGraph(bytes: Uint8Array): XlsxPackageGraph {
 				contentType.value,
 				primaryRelationship?.type,
 			)
+			const preservationPolicy = packageFeatureLossPolicy(featureFamily)
 			return {
 				path: entry.path,
 				contentType: contentType.value,
@@ -153,8 +162,9 @@ export function inspectXlsxPackageGraph(bytes: Uint8Array): XlsxPackageGraph {
 						}
 					: {}),
 				featureFamily,
-				preservationPolicy: packageFeatureLossPolicy(featureFamily),
-				bytePreservationExpected: packageFeatureLossPolicy(featureFamily) === 'preserve-exact',
+				preservationPolicy,
+				bytePreservationExpected:
+					preservationPolicy === 'preserve-exact' || preservationPolicy === 'inspect-only',
 				...(isThreadedCommentPersonsPart(entry.path)
 					? {
 							threadedCommentPersons: parseThreadedCommentPersonEntriesXml(
@@ -448,7 +458,7 @@ function isVendorSecurityPart(lowerPath: string, lowerRelType: string): boolean 
 	return lowerPath.startsWith('ddp/') || lowerRelType.includes('schemas.dell.com/ddp/')
 }
 
-function packageFeatureLossPolicy(featureFamily: string): XlsxPackageLossPolicy {
+export function packageFeatureLossPolicy(featureFamily: string): XlsxPackageLossPolicy {
 	if (
 		featureFamily === 'packageContentTypes' ||
 		featureFamily === 'packageRelationships' ||
@@ -458,10 +468,36 @@ function packageFeatureLossPolicy(featureFamily: string): XlsxPackageLossPolicy 
 	) {
 		return 'generated'
 	}
+	if (
+		featureFamily === 'preservedDataModel' ||
+		featureFamily === 'preservedPowerQuery' ||
+		featureFamily === 'preservedRevision'
+	) {
+		return 'inspect-only'
+	}
 	if (featureFamily === 'preservedCalcChain') return 'discard-on-recalc'
 	if (featureFamily === 'preservedSignature') return 'invalidate-on-edit'
 	if (featureFamily === 'preservedOther') return 'unknown-review-required'
 	return 'preserve-exact'
+}
+
+export function xlsxPackagePreservationModeForPolicy(
+	policy: XlsxPackageLossPolicy,
+): XlsxPackagePreservationMode {
+	switch (policy) {
+		case 'generated':
+			return 'generated'
+		case 'preserve-exact':
+			return 'preserve-exact'
+		case 'discard-on-recalc':
+			return 'discarded-for-recalc'
+		case 'invalidate-on-edit':
+			return 'invalidated-on-edit'
+		case 'inspect-only':
+			return 'inspect-only'
+		case 'unknown-review-required':
+			return 'review-required'
+	}
 }
 
 function isIgnorablePackageEntry(partPath: string): boolean {

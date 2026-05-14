@@ -164,6 +164,7 @@ interface PreparedPlanHandle {
 	readonly file: string
 	readonly inputSha256: string
 	readonly planDigest: string
+	readonly operationCount: number
 	readonly pathMutations?: PathMutationResult
 	commit(options: AgentCommitOptions): Promise<Awaited<ReturnType<typeof commitAgentPlan>>>
 }
@@ -176,6 +177,10 @@ export interface ApiFetchOptions {
 
 interface PreparedPlanMetadata {
 	readonly id: string
+	readonly file: string
+	readonly inputSha256: string
+	readonly planDigest: string
+	readonly operationCount: number
 	readonly expiresAt: string
 	readonly ttlMs: number
 }
@@ -226,7 +231,15 @@ class PreparedPlanStore {
 		const id = randomUUID()
 		const expiresAtMs = this.now() + this.ttlMs
 		this.handles.set(id, { handle, expiresAtMs })
-		return { id, expiresAt: new Date(expiresAtMs).toISOString(), ttlMs: this.ttlMs }
+		return {
+			id,
+			file: handle.file,
+			inputSha256: handle.inputSha256,
+			planDigest: handle.planDigest,
+			operationCount: handle.operationCount,
+			expiresAt: new Date(expiresAtMs).toISOString(),
+			ttlMs: this.ttlMs,
+		}
 	}
 
 	take(id: string): PreparedPlanTakeResult {
@@ -441,6 +454,7 @@ function preparedPlanHandle(prepared: PreparedAgentPlan): PreparedPlanHandle {
 		file: prepared.file,
 		inputSha256: prepared.inputSha256,
 		planDigest: prepared.planDigest,
+		operationCount: prepared.operationCount,
 		commit: (options) => commit(options),
 	}
 }
@@ -897,7 +911,7 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 						typeof body === 'object' &&
 						(body as Record<string, unknown>).display === true
 					const wb = await WorkbookDocument.open(file, {
-						mode: 'values',
+						mode: format === 'cells' ? 'formula' : 'values',
 						...(sheetName ? { sheets: [sheetName] } : {}),
 						...(maxRows !== undefined ? { maxRows } : {}),
 					})
@@ -1025,6 +1039,7 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 								file,
 								inputSha256,
 								planDigest,
+								operationCount: result.operationCount,
 								...(pathMutations !== undefined ? { pathMutations } : {}),
 								commit: async (options) => {
 									const current = await Bun.file(file).bytes()
@@ -1110,6 +1125,9 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 						? parseApprovals((body as Record<string, unknown>).approvals)
 						: undefined
 					const compact = body?.compact === true
+					const maxAffectedCells = body
+						? requireOptionalNumber(body, 'maxAffectedCells')
+						: undefined
 					const inPlace =
 						body !== null &&
 						typeof body === 'object' &&
@@ -1126,7 +1144,11 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 						const prepared = preparedPlans.take(planHandle)
 						if (!prepared.ok) return jsonFailureError(prepared.error, 400)
 						const result = await prepared.handle.commit(options)
-						const payload = compact ? compactAgentCommitResult(result) : result
+						const payload = compact
+							? compactAgentCommitResult(result, {
+									...(maxAffectedCells !== undefined ? { maxAffectedCells } : {}),
+								})
+							: result
 						return jsonSuccess(withPathMutationResult(payload, prepared.handle.pathMutations))
 					}
 					const inputShape = resolveOperationInputShape(body)
@@ -1150,7 +1172,11 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 						if (!file) return jsonFailure('Missing or invalid file', 400)
 						result = await commitAgentPlan(file, input.ops, options)
 					}
-					const payload = compact ? compactAgentCommitResult(result) : result
+					const payload = compact
+						? compactAgentCommitResult(result, {
+								...(maxAffectedCells !== undefined ? { maxAffectedCells } : {}),
+							})
+						: result
 					return jsonSuccess(withPathMutationResult(payload, pathMutations))
 				} catch (e) {
 					return handleError(e, file ?? undefined)
@@ -1410,10 +1436,16 @@ export function createServer(opts?: { port?: number } & ApiFetchOptions) {
 
 function displayCells<T extends { cells: readonly { ref: string; value: CellValue }[] }>(
 	info: T,
-): Omit<T, 'cells'> & { cells: Array<{ ref: string; value: string }> } {
+): Omit<T, 'cells'> & {
+	cells: Array<Omit<T['cells'][number], 'value'> & { value: string }>
+} {
+	const cells = info.cells.map((cell) => ({
+		...cell,
+		value: formatDisplayCellValue(cell.value),
+	})) as Array<Omit<T['cells'][number], 'value'> & { value: string }>
 	return {
 		...info,
-		cells: info.cells.map((cell) => ({ ref: cell.ref, value: formatDisplayCellValue(cell.value) })),
+		cells,
 	}
 }
 

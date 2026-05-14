@@ -25,6 +25,7 @@ const PIVOT_FIXTURE = join(
 	import.meta.dir,
 	'../../../fixtures/xlsx/libreoffice/PivotTable_CachedDefinitionAndDataInSync.xlsx',
 )
+const CHARTSHEET_FIXTURE = join(import.meta.dir, '../../../fixtures/xlsx/exceljs/chart-sheet.xlsx')
 
 afterAll(async () => {
 	await unlink(TEMP_FILE).catch(() => {})
@@ -776,6 +777,63 @@ describe('MCP server', () => {
 		expect(reopened.getWorkbookModel().getSheet('Sheet1')?.colDefs).toEqual([])
 	})
 
+	test('ascend.preview exposes unsupported journal status with partial inverse ops', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'Region' },
+					{ ref: 'B1', value: 'Qty' },
+					{ ref: 'A2', value: 'West' },
+					{ ref: 'B2', value: 1 },
+				],
+			},
+			{ op: 'createTable', sheet: 'Sheet1', ref: 'A1:B2', name: 'Sales', hasHeaders: true },
+		])
+		await wb.save(TEMP_FILE)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const handler = (server as any)._registeredTools['ascend.preview'].handler as (args: {
+			file: string
+			ops: unknown[]
+			journal?: boolean
+		}) => Promise<{
+			structuredContent?: {
+				ok?: boolean
+				data?: {
+					journal?: {
+						supported?: boolean
+						exact?: boolean
+						inverseOps?: unknown[]
+						issues?: unknown[]
+					}
+				}
+			}
+		}>
+		const result = await handler({
+			file: TEMP_FILE,
+			journal: true,
+			ops: [
+				{ op: 'appendRows', table: 'Sales', rows: [['East', 2]] },
+				{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'D1', value: 'audit' }] },
+			],
+		})
+
+		expect(result.structuredContent?.ok).toBe(true)
+		expect(result.structuredContent?.data?.journal?.supported).toBe(false)
+		expect(result.structuredContent?.data?.journal?.exact).toBe(false)
+		expect(result.structuredContent?.data?.journal?.inverseOps).toEqual([
+			{ op: 'clearRange', sheet: 'Sheet1', range: 'D1', what: 'all' },
+		])
+		expect(result.structuredContent?.data?.journal?.issues).toContainEqual({
+			code: 'UNSUPPORTED_OPERATION',
+			message: 'No reversible journal support for appendRows',
+		})
+	})
+
 	test('ascend.write preserves lossy journal issue metadata while saving', async () => {
 		const wb = AscendWorkbook.create()
 		await wb.save(TEMP_FILE)
@@ -850,6 +908,549 @@ describe('MCP server', () => {
 		expect(sheet?.rowDefs.get(3)).toEqual({ collapsed: true })
 		expect(sheet?.colDefs).toContainEqual({ min: 0, max: 0, hidden: true, outlineLevel: 1 })
 		expect(sheet?.colDefs).toContainEqual({ min: 1, max: 1, hidden: true, outlineLevel: 1 })
+	})
+
+	test('ascend.write exposes unsupported journal status with partial inverse ops', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'Region' },
+					{ ref: 'B1', value: 'Qty' },
+					{ ref: 'A2', value: 'West' },
+					{ ref: 'B2', value: 1 },
+				],
+			},
+			{ op: 'createTable', sheet: 'Sheet1', ref: 'A1:B2', name: 'Sales', hasHeaders: true },
+		])
+		await wb.save(TEMP_FILE)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const handler = (server as any)._registeredTools['ascend.write'].handler as (args: {
+			file: string
+			ops: unknown[]
+			journal?: boolean
+		}) => Promise<{
+			structuredContent?: {
+				ok?: boolean
+				data?: {
+					journal?: {
+						supported?: boolean
+						exact?: boolean
+						inverseOps?: unknown[]
+						issues?: unknown[]
+					}
+				}
+			}
+		}>
+		const result = await handler({
+			file: TEMP_FILE,
+			journal: true,
+			ops: [
+				{ op: 'appendRows', table: 'Sales', rows: [['East', 2]] },
+				{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'D1', value: 'audit' }] },
+			],
+		})
+
+		expect(result.structuredContent?.ok).toBe(true)
+		expect(result.structuredContent?.data?.journal?.supported).toBe(false)
+		expect(result.structuredContent?.data?.journal?.exact).toBe(false)
+		expect(result.structuredContent?.data?.journal?.inverseOps).toEqual([
+			{ op: 'clearRange', sheet: 'Sheet1', range: 'D1', what: 'all' },
+		])
+		expect(result.structuredContent?.data?.journal?.issues).toContainEqual({
+			code: 'UNSUPPORTED_OPERATION',
+			message: 'No reversible journal support for appendRows',
+		})
+		const reopened = await AscendWorkbook.open(TEMP_FILE)
+		expect(reopened.sheet('Sheet1')?.cell('D1')?.value).toEqual({
+			kind: 'string',
+			value: 'audit',
+		})
+	})
+
+	test('ascend.preview marks new theme additions lossy with public inverse metadata', async () => {
+		const wb = AscendWorkbook.create()
+		await wb.save(TEMP_FILE)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const handler = (server as any)._registeredTools['ascend.preview'].handler as (args: {
+			file: string
+			ops: unknown[]
+			journal?: boolean
+		}) => Promise<{
+			structuredContent?: {
+				ok?: boolean
+				data?: {
+					journal?: {
+						supported?: boolean
+						exact?: boolean
+						inverseOps?: unknown[]
+						issues?: unknown[]
+					}
+				}
+			}
+		}>
+		const result = await handler({
+			file: TEMP_FILE,
+			journal: true,
+			ops: [
+				{
+					op: 'setTheme',
+					themeName: 'New Brand',
+					themeColors: [{ slot: 'accent1', rgb: '123456' }],
+				},
+			],
+		})
+
+		expect(result.structuredContent?.ok).toBe(true)
+		expect(result.structuredContent?.data?.journal?.supported).toBe(true)
+		expect(result.structuredContent?.data?.journal?.exact).toBe(false)
+		expect(result.structuredContent?.data?.journal?.inverseOps).toEqual([])
+		expect(result.structuredContent?.data?.journal?.issues).toEqual([
+			{
+				code: 'LOSSY_INVERSE',
+				message: 'Theme metadata field themeName cannot be removed with public operations',
+			},
+			{
+				code: 'LOSSY_INVERSE',
+				message: 'Theme color slot accent1 cannot be removed with public operations',
+			},
+		])
+
+		const reopened = await AscendWorkbook.open(TEMP_FILE)
+		expect(reopened.inspect().themeSummary.hasThemePart).toBe(false)
+	})
+
+	test('ascend.write exact journal inverse ops restore saved workbook truth after reopen', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'Status' },
+					{ ref: 'A2', value: 'Open' },
+					{ ref: 'A3', value: 'Closed' },
+					{ ref: 'B1', value: 2 },
+					{ ref: 'C1', value: 3.14 },
+					{ ref: 'J1', value: 'Product' },
+					{ ref: 'K1', value: 'Qty' },
+					{ ref: 'J2', value: 'Widget' },
+					{ ref: 'K2', value: 5 },
+					{ ref: 'J3', value: 'Bolt' },
+					{ ref: 'K3', value: 6 },
+				],
+			},
+			{ op: 'setStyle', sheet: 'Sheet1', range: 'B1:B1', style: { numberFormat: '0.00' } },
+			{ op: 'setNumberFormat', sheet: 'Sheet1', range: 'C1:C1', format: '0.0' },
+			{
+				op: 'setDataValidation',
+				sheet: 'Sheet1',
+				range: 'F1:F3',
+				rule: { type: 'whole', operator: 'greaterThan', formula1: '0', allowBlank: true },
+			},
+			{
+				op: 'setConditionalFormat',
+				sheet: 'Sheet1',
+				range: 'G1:G3',
+				rule: { type: 'cellIs', operator: 'greaterThan', formula: '5', priority: 1 },
+			},
+			{ op: 'createTable', sheet: 'Sheet1', ref: 'J1:K3', name: 'Sales', hasHeaders: true },
+			{ op: 'setTableStyle', table: 'Sales', styleName: 'TableStyleMedium2' },
+			{ op: 'setAutoFilter', sheet: 'Sheet1', range: 'A1:A3', column: 0, values: ['Open'] },
+			{ op: 'setComment', sheet: 'Sheet1', ref: 'D4', text: 'initial', author: 'analyst' },
+			{ op: 'setHyperlink', sheet: 'Sheet1', ref: 'E5', url: 'https://example.com' },
+			{ op: 'setDefinedName', name: 'Budget', ref: 'Sheet1!$B$1' },
+			{ op: 'setWorkbookView', index: 0, view: { activeTab: 0, firstSheet: 0, tabRatio: 600 } },
+			{
+				op: 'setWorkbookProtection',
+				protection: { lockStructure: true, workbookPassword: 'ABCD' },
+			},
+			{
+				op: 'setSheetProtection',
+				sheet: 'Sheet1',
+				password: 'ABCD',
+				options: { formatCells: false, autoFilter: true },
+			},
+			{ op: 'setTabColor', sheet: 'Sheet1', color: 'FF0000' },
+			{ op: 'freezePane', sheet: 'Sheet1', row: 1, col: 1 },
+			{
+				op: 'setDocumentProperties',
+				mode: 'replace',
+				properties: {
+					core: { title: 'Before' },
+					app: { company: 'Ascend' },
+					custom: [{ name: 'Reviewed', value: false, type: 'bool' }],
+				},
+			},
+		])
+		await wb.save(TEMP_FILE)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const handler = (server as any)._registeredTools['ascend.write'].handler as (args: {
+			file: string
+			ops: unknown[]
+			journal?: boolean
+		}) => Promise<{
+			structuredContent?: {
+				ok?: boolean
+				data?: {
+					journal?: {
+						supported?: boolean
+						exact?: boolean
+						inverseOps?: unknown[]
+					}
+				}
+			}
+		}>
+		const result = await handler({
+			file: TEMP_FILE,
+			journal: true,
+			ops: [
+				{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'B1', value: 7 }] },
+				{ op: 'setStyle', sheet: 'Sheet1', range: 'B1:B1', style: { numberFormat: '$0.00' } },
+				{ op: 'setNumberFormat', sheet: 'Sheet1', range: 'C1:C1', format: '0.000' },
+				{
+					op: 'setDataValidation',
+					sheet: 'Sheet1',
+					range: 'F1:F3',
+					rule: { type: 'whole', operator: 'greaterThan', formula1: '10' },
+				},
+				{
+					op: 'setConditionalFormat',
+					sheet: 'Sheet1',
+					range: 'G1:G3',
+					rule: { type: 'cellIs', operator: 'greaterThan', formula: '7', priority: 1 },
+				},
+				{ op: 'setAutoFilter', sheet: 'Sheet1', range: 'A1:A3', column: 0, values: ['Closed'] },
+				{ op: 'renameTable', table: 'Sales', newName: 'Revenue' },
+				{ op: 'setTableColumn', table: 'Revenue', column: 'Qty', newName: 'Units' },
+				{ op: 'setTableStyle', table: 'Revenue', styleName: null },
+				{ op: 'setComment', sheet: 'Sheet1', ref: 'D4', text: 'changed', author: 'agent' },
+				{ op: 'setHyperlink', sheet: 'Sheet1', ref: 'E5', url: 'https://changed.example' },
+				{ op: 'setDefinedName', name: 'Budget', ref: 'Sheet1!$C$1' },
+				{
+					op: 'setWorkbookView',
+					index: 0,
+					mode: 'replace',
+					view: { activeTab: 0, firstSheet: 0, tabRatio: 720 },
+				},
+				{
+					op: 'setWorkbookProtection',
+					protection: { lockWindows: true, workbookPassword: 'DCBA' },
+				},
+				{
+					op: 'setSheetProtection',
+					sheet: 'Sheet1',
+					password: 'DCBA',
+					options: { insertRows: true, deleteRows: false },
+				},
+				{ op: 'setTabColor', sheet: 'Sheet1', color: '00FF00' },
+				{ op: 'freezePane', sheet: 'Sheet1', row: 2, col: 0 },
+				{
+					op: 'setDocumentProperties',
+					mode: 'replace',
+					properties: {
+						core: { title: 'After' },
+						app: { company: 'Changed' },
+						custom: [{ name: 'Reviewed', value: true, type: 'bool' }],
+					},
+				},
+			],
+		})
+
+		expect(result.structuredContent?.ok).toBe(true)
+		expect(result.structuredContent?.data?.journal?.supported).toBe(true)
+		expect(result.structuredContent?.data?.journal?.exact).toBe(true)
+		const inverse = parseOperations(result.structuredContent?.data?.journal?.inverseOps)
+		expect(inverse.ok).toBe(true)
+		if (!inverse.ok) throw new Error('Expected exact journal inverse ops to parse')
+
+		const changed = await AscendWorkbook.open(TEMP_FILE)
+		expect(changed.sheet('Sheet1')?.cell('B1')?.value).toEqual({ kind: 'number', value: 7 })
+		expect(changed.cellStyle('Sheet1!B1')?.numberFormat).toBe('$0.00')
+		expect(changed.cellStyle('Sheet1!C1')?.numberFormat).toBe('0.000')
+		expect(changed.sheet('Sheet1')?.dataValidations[0]).toMatchObject({
+			sqref: 'F1:F3',
+			formula1: '10',
+		})
+		expect(changed.sheet('Sheet1')?.conditionalFormats[0]?.rules[0]?.formulas).toEqual(['7'])
+		expect(changed.sheet('Sheet1')?.autoFilter).toMatchObject({
+			ref: 'A1:A3',
+			columns: [{ colId: 0, kind: 'filters', values: ['Closed'] }],
+		})
+		expect(changed.table('Sales')).toBeUndefined()
+		expect(changed.table('Revenue')?.columns).toEqual(['Product', 'Units'])
+		expect(changed.table('Revenue')?.columnDefs[1]?.formula).toBeUndefined()
+		expect(changed.table('Revenue')?.styleInfo).toBeUndefined()
+		expect(changed.inspectSheet('Sheet1')?.comments?.[0]).toMatchObject({
+			ref: 'D4',
+			text: 'changed',
+			author: 'agent',
+		})
+		expect(changed.inspectSheet('Sheet1')?.hyperlinks?.[0]?.target).toBe('https://changed.example')
+		expect(changed.definedName('Budget')?.formula).toBe('Sheet1!$C$1')
+		expect(changed.workbookViews()[0]).toMatchObject({ activeTab: 0, firstSheet: 0, tabRatio: 720 })
+		expect(changed.getWorkbookModel().workbookProtection).toMatchObject({
+			lockWindows: true,
+			workbookPassword: 'DCBA',
+		})
+		expect(changed.sheet('Sheet1')?.protection).toMatchObject({
+			password: 'DCBA',
+			insertRows: true,
+			deleteRows: false,
+		})
+		expect(changed.sheet('Sheet1')?.tabColor).toEqual({ rgb: '00FF00' })
+		expect(changed.sheet('Sheet1')?.frozenRows).toBe(2)
+		expect(changed.sheet('Sheet1')?.frozenCols).toBe(0)
+		expect(changed.inspect().documentProperties).toMatchObject({
+			core: { title: 'After' },
+			app: { company: 'Changed' },
+			custom: [{ name: 'Reviewed', value: true, type: 'bool' }],
+		})
+
+		const rollback = changed.apply(inverse.value)
+		expect(rollback.errors).toEqual([])
+		await changed.save(TEMP_FILE)
+		const restored = await AscendWorkbook.open(TEMP_FILE)
+		expect(restored.sheet('Sheet1')?.cell('B1')?.value).toEqual({ kind: 'number', value: 2 })
+		expect(restored.cellStyle('Sheet1!B1')?.numberFormat).toBe('0.00')
+		expect(restored.cellStyle('Sheet1!C1')?.numberFormat).toBe('0.0')
+		expect(restored.sheet('Sheet1')?.dataValidations[0]).toMatchObject({
+			sqref: 'F1:F3',
+			formula1: '0',
+			allowBlank: true,
+		})
+		expect(restored.sheet('Sheet1')?.conditionalFormats[0]?.rules[0]?.formulas).toEqual(['5'])
+		expect(restored.sheet('Sheet1')?.autoFilter).toMatchObject({
+			ref: 'A1:A3',
+			columns: [{ colId: 0, kind: 'filters', values: ['Open'] }],
+		})
+		expect(restored.table('Revenue')).toBeUndefined()
+		expect(restored.table('Sales')?.columns).toEqual(['Product', 'Qty'])
+		expect(restored.table('Sales')?.columnDefs[1]?.formula).toBeUndefined()
+		expect(restored.table('Sales')?.styleInfo).toEqual({ name: 'TableStyleMedium2' })
+		expect(restored.inspectSheet('Sheet1')?.comments?.[0]).toMatchObject({
+			ref: 'D4',
+			text: 'initial',
+			author: 'analyst',
+		})
+		expect(restored.inspectSheet('Sheet1')?.hyperlinks?.[0]?.target).toBe('https://example.com')
+		expect(restored.definedName('Budget')?.formula).toBe('Sheet1!$B$1')
+		expect(restored.workbookViews()[0]).toMatchObject({
+			activeTab: 0,
+			firstSheet: 0,
+			tabRatio: 600,
+		})
+		expect(restored.getWorkbookModel().workbookProtection).toMatchObject({
+			lockStructure: true,
+			workbookPassword: 'ABCD',
+		})
+		expect(restored.sheet('Sheet1')?.protection).toMatchObject({
+			password: 'ABCD',
+			formatCells: false,
+			autoFilter: true,
+		})
+		expect(restored.sheet('Sheet1')?.tabColor).toEqual({ rgb: 'FF0000' })
+		expect(restored.sheet('Sheet1')?.frozenRows).toBe(1)
+		expect(restored.sheet('Sheet1')?.frozenCols).toBe(1)
+		expect(restored.inspect().documentProperties).toMatchObject({
+			core: { title: 'Before' },
+			app: { company: 'Ascend' },
+			custom: [{ name: 'Reviewed', value: false, type: 'bool' }],
+		})
+		expect(restored.check().valid).toBe(true)
+	})
+
+	test('ascend.write exact theme journal inverse ops restore saved theme truth after reopen', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setTheme',
+				themeName: 'Office',
+				colorSchemeName: 'Office Colors',
+				majorFontLatin: 'Aptos Display',
+				minorFontLatin: 'Aptos',
+				themeColors: [
+					{ slot: 'accent1', rgb: '4F81BD' },
+					{ slot: 'lt1', systemColor: 'window', lastColor: 'FFFFFF' },
+				],
+			},
+		])
+		await wb.save(TEMP_FILE)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const handler = (server as any)._registeredTools['ascend.write'].handler as (args: {
+			file: string
+			ops: unknown[]
+			journal?: boolean
+		}) => Promise<{
+			structuredContent?: {
+				ok?: boolean
+				data?: {
+					journal?: {
+						supported?: boolean
+						exact?: boolean
+						inverseOps?: unknown[]
+						issues?: unknown[]
+					}
+				}
+			}
+		}>
+		const result = await handler({
+			file: TEMP_FILE,
+			journal: true,
+			ops: [
+				{
+					op: 'setTheme',
+					themeName: 'Brand',
+					colorSchemeName: 'Brand Colors',
+					majorFontLatin: 'Inter Display',
+					minorFontLatin: 'Inter',
+					themeColors: [
+						{ slot: 'accent1', rgb: '0F6CBD' },
+						{ slot: 'lt1', systemColor: 'windowText', lastColor: '000000' },
+					],
+				},
+			],
+		})
+
+		expect(result.structuredContent?.ok).toBe(true)
+		expect(result.structuredContent?.data?.journal?.supported).toBe(true)
+		expect(result.structuredContent?.data?.journal?.exact).toBe(true)
+		expect(result.structuredContent?.data?.journal?.issues).toEqual([])
+		const inverse = parseOperations(result.structuredContent?.data?.journal?.inverseOps)
+		expect(inverse.ok).toBe(true)
+		if (!inverse.ok) throw new Error('Expected exact theme journal inverse ops to parse')
+
+		const changed = await AscendWorkbook.open(TEMP_FILE)
+		expect(changed.inspect().themeSummary).toMatchObject({
+			hasThemePart: true,
+			name: 'Brand',
+			colorSchemeName: 'Brand Colors',
+			majorFontLatin: 'Inter Display',
+			minorFontLatin: 'Inter',
+		})
+		expect(changed.inspect().themeSummary.colors.find((color) => color.slot === 'accent1')).toEqual(
+			{
+				slot: 'accent1',
+				rgb: '0F6CBD',
+			},
+		)
+		expect(changed.inspect().themeSummary.colors.find((color) => color.slot === 'lt1')).toEqual({
+			slot: 'lt1',
+			systemColor: 'windowText',
+			lastColor: '000000',
+		})
+
+		const rollback = changed.apply(inverse.value)
+		expect(rollback.errors).toEqual([])
+		await changed.save(TEMP_FILE)
+		const restored = await AscendWorkbook.open(TEMP_FILE)
+		expect(restored.inspect().themeSummary).toMatchObject({
+			hasThemePart: true,
+			name: 'Office',
+			colorSchemeName: 'Office Colors',
+			majorFontLatin: 'Aptos Display',
+			minorFontLatin: 'Aptos',
+		})
+		expect(
+			restored.inspect().themeSummary.colors.find((color) => color.slot === 'accent1'),
+		).toEqual({
+			slot: 'accent1',
+			rgb: '4F81BD',
+		})
+		expect(restored.inspect().themeSummary.colors.find((color) => color.slot === 'lt1')).toEqual({
+			slot: 'lt1',
+			systemColor: 'window',
+			lastColor: 'FFFFFF',
+		})
+		expect(restored.check().valid).toBe(true)
+	})
+
+	test('ascend.write exact journal inverse ops restore recalculated workbook truth after reopen', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 2 },
+					{ ref: 'D1', value: 'Item' },
+					{ ref: 'E1', value: 'Qty' },
+					{ ref: 'F1', value: 'Calc' },
+					{ ref: 'D2', value: 'A' },
+					{ ref: 'E2', value: 5 },
+					{ ref: 'D3', value: 'B' },
+					{ ref: 'E3', value: 6 },
+				],
+			},
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'B1', formula: 'A1*3' },
+			{ op: 'createTable', sheet: 'Sheet1', ref: 'D1:F3', name: 'CalcTable', hasHeaders: true },
+			{ op: 'setTableColumn', table: 'CalcTable', column: 'Calc', formula: '[@Qty]*2' },
+		])
+		expect(wb.recalc().errors).toEqual([])
+		await wb.save(TEMP_FILE)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const handler = (server as any)._registeredTools['ascend.write'].handler as (args: {
+			file: string
+			ops: unknown[]
+			journal?: boolean
+		}) => Promise<{
+			structuredContent?: {
+				ok?: boolean
+				data?: {
+					journal?: {
+						supported?: boolean
+						exact?: boolean
+						inverseOps?: unknown[]
+					}
+				}
+			}
+		}>
+		const result = await handler({
+			file: TEMP_FILE,
+			journal: true,
+			ops: [
+				{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 5 }] },
+				{ op: 'setTableColumn', table: 'CalcTable', column: 'Calc', formula: '[@Qty]*3' },
+			],
+		})
+
+		expect(result.structuredContent?.ok).toBe(true)
+		expect(result.structuredContent?.data?.journal?.supported).toBe(true)
+		expect(result.structuredContent?.data?.journal?.exact).toBe(true)
+		const inverse = parseOperations(result.structuredContent?.data?.journal?.inverseOps)
+		expect(inverse.ok).toBe(true)
+		if (!inverse.ok) throw new Error('Expected exact journal inverse ops to parse')
+
+		const changed = await AscendWorkbook.open(TEMP_FILE)
+		expect(changed.sheet('Sheet1')?.cell('A1')?.value).toEqual({ kind: 'number', value: 5 })
+		expect(changed.sheet('Sheet1')?.cell('B1')?.value).toEqual({ kind: 'number', value: 15 })
+		expect(changed.table('CalcTable')?.columnDefs[2]?.formula).toBe('[@Qty]*3')
+		expect(changed.sheet('Sheet1')?.cell('F2')?.value).toEqual({ kind: 'number', value: 15 })
+		expect(changed.sheet('Sheet1')?.cell('F3')?.value).toEqual({ kind: 'number', value: 18 })
+
+		const rollback = changed.apply(inverse.value)
+		expect(rollback.errors).toEqual([])
+		expect(changed.recalc().errors).toEqual([])
+		await changed.save(TEMP_FILE)
+		const restored = await AscendWorkbook.open(TEMP_FILE)
+		expect(restored.sheet('Sheet1')?.cell('A1')?.value).toEqual({ kind: 'number', value: 2 })
+		expect(restored.sheet('Sheet1')?.cell('B1')?.value).toEqual({ kind: 'number', value: 6 })
+		expect(restored.table('CalcTable')?.columnDefs[2]?.formula).toBe('[@Qty]*2')
+		expect(restored.sheet('Sheet1')?.cell('F2')?.value).toEqual({ kind: 'number', value: 10 })
+		expect(restored.sheet('Sheet1')?.cell('F3')?.value).toEqual({ kind: 'number', value: 12 })
+		expect(restored.check().valid).toBe(true)
 	})
 
 	test('ascend.preview and ascend.write accept path-addressed mutations', async () => {
@@ -1332,6 +1933,7 @@ describe('MCP server', () => {
 						changedCellCount?: number
 						emittedChangedCellCount?: number
 						changedCells?: unknown[]
+						changedRanges?: readonly { readonly sheet?: string; readonly range?: string }[]
 						wouldSucceed?: boolean
 						journalSummary?: {
 							supported?: boolean
@@ -1367,6 +1969,9 @@ describe('MCP server', () => {
 		expect(result.structuredContent?.data?.preview?.changedCellCount).toBe(3)
 		expect(result.structuredContent?.data?.preview?.emittedChangedCellCount).toBe(1)
 		expect(result.structuredContent?.data?.preview?.changedCells).toHaveLength(1)
+		expect(result.structuredContent?.data?.preview?.changedRanges).toEqual([
+			{ sheet: 'Sheet1', range: 'A1:A3' },
+		])
 	})
 
 	test('compact prepared MCP plan and commit expose journal safety summaries', async () => {
@@ -1465,6 +2070,1856 @@ describe('MCP server', () => {
 		}
 	})
 
+	test('compact MCP commits expose bounded affected refs and ranges', async () => {
+		const wb = AscendWorkbook.create()
+		await wb.save(TEMP_FILE)
+		const output = `${TEMP_FILE}.compact-affected-mcp.xlsx`
+		const server = createServer()
+		try {
+			// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+			const commit = (server as any)._registeredTools['ascend.commit'].handler as (args: {
+				file: string
+				output?: string
+				compact?: boolean
+				maxAffectedCells?: number
+				ops: readonly Record<string, unknown>[]
+			}) => Promise<{
+				structuredContent?: {
+					ok?: boolean
+					data?: {
+						apply?: {
+							affectedCellCount?: number
+							emittedAffectedCellCount?: number
+							affectedCellRefs?: readonly string[]
+							affectedRanges?: readonly { readonly sheet?: string; readonly range?: string }[]
+						}
+						postWrite?: { auditsPassed?: boolean }
+					}
+				}
+			}>
+
+			const committed = await commit({
+				file: TEMP_FILE,
+				output,
+				compact: true,
+				maxAffectedCells: 2,
+				ops: [
+					{
+						op: 'setCells',
+						sheet: 'Sheet1',
+						updates: [
+							{ ref: 'A1', value: 1 },
+							{ ref: 'A2', value: 2 },
+							{ ref: 'A3', value: 3 },
+						],
+					},
+				],
+			})
+
+			expect(committed.structuredContent?.ok).toBe(true)
+			expect(committed.structuredContent?.data?.apply?.affectedCellCount).toBe(3)
+			expect(committed.structuredContent?.data?.apply?.emittedAffectedCellCount).toBe(2)
+			expect(committed.structuredContent?.data?.apply?.affectedCellRefs).toEqual(['A1', 'A2'])
+			expect(committed.structuredContent?.data?.apply?.affectedRanges).toEqual([
+				{ sheet: 'Sheet1', range: 'A1:A3' },
+			])
+			expect(committed.structuredContent?.data?.postWrite?.auditsPassed).toBe(true)
+		} finally {
+			await unlink(output).catch(() => {})
+		}
+	})
+
+	test('compact MCP plan and commit expose preservation mode summaries', async () => {
+		await Bun.write(TEMP_FILE, preservedCustomWorkbook())
+		const output = `${TEMP_FILE}.compact-preservation-modes-mcp.xlsx`
+		const server = createServer()
+		try {
+			// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+			const plan = (server as any)._registeredTools['ascend.plan'].handler as (args: {
+				file: string
+				compact?: boolean
+				ops: readonly Record<string, unknown>[]
+			}) => Promise<{
+				structuredContent?: {
+					ok?: boolean
+					data?: {
+						preparedPlan?: { id?: string }
+						approvals?: readonly { readonly id: string }[]
+						writePolicy?: {
+							summary?: {
+								preservationModes?: {
+									generatedWithOpaquePayloads?: number
+									reviewRequiredParts?: number
+									lossyApprovalRequiredFeatures?: number
+								}
+							}
+						}
+					}
+				}
+			}>
+			// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+			const commit = (server as any)._registeredTools['ascend.commit'].handler as (args: {
+				planHandle?: string
+				output?: string
+				approvals?: readonly string[]
+				compact?: boolean
+			}) => Promise<{
+				structuredContent?: {
+					ok?: boolean
+					data?: {
+						postWrite?: {
+							auditsPassed?: boolean
+							opaquePayloads?: {
+								generatedWithOpaquePayloads?: number
+								x14ConditionalFormatExtensionPayloads?: number
+								x14DataValidationExtensionPayloads?: number
+								worksheetParts?: readonly string[]
+								preservationMode?: string
+								verification?: string
+							}
+						}
+						writePolicy?: {
+							summary?: {
+								preservationModes?: {
+									generatedWithOpaquePayloads?: number
+									reviewRequiredParts?: number
+									lossyApprovalRequiredFeatures?: number
+								}
+							}
+						}
+					}
+				}
+			}>
+
+			const planned = await plan({
+				file: TEMP_FILE,
+				compact: true,
+				ops: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 11 }] }],
+			})
+			expect(planned.structuredContent?.ok).toBe(true)
+			expect(
+				planned.structuredContent?.data?.writePolicy?.summary?.preservationModes,
+			).toMatchObject({
+				reviewRequiredParts: 1,
+				lossyApprovalRequiredFeatures: 1,
+			})
+			const approvalIds =
+				planned.structuredContent?.data?.approvals?.map((approval) => approval.id) ?? []
+			expect(approvalIds).toEqual([expect.stringMatching(/^loss:preservedother:preserved:/)])
+
+			const committed = await commit({
+				planHandle: planned.structuredContent?.data?.preparedPlan?.id,
+				output,
+				approvals: approvalIds,
+				compact: true,
+			})
+			expect(committed.structuredContent?.ok).toBe(true)
+			expect(
+				committed.structuredContent?.data?.writePolicy?.summary?.preservationModes,
+			).toMatchObject({
+				reviewRequiredParts: 1,
+				lossyApprovalRequiredFeatures: 1,
+			})
+			expect(committed.structuredContent?.data?.postWrite?.auditsPassed).toBe(false)
+		} finally {
+			await unlink(output).catch(() => {})
+		}
+	})
+
+	test('compact MCP plan and commit expose generated opaque preservation mode summaries', async () => {
+		const input = `${TEMP_FILE}.compact-opaque-preservation-modes-input.xlsx`
+		await writeOpaqueX14Workbook(input)
+		const output = `${TEMP_FILE}.compact-opaque-preservation-modes-mcp.xlsx`
+		const server = createServer()
+		try {
+			// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+			const plan = (server as any)._registeredTools['ascend.plan'].handler as (args: {
+				file: string
+				compact?: boolean
+				ops: readonly Record<string, unknown>[]
+			}) => Promise<{
+				structuredContent?: {
+					ok?: boolean
+					data?: {
+						preparedPlan?: { id?: string }
+						writePolicy?: {
+							summary?: {
+								preservationModes?: {
+									generatedWithOpaquePayloads?: number
+									reviewRequiredParts?: number
+									lossyApprovalRequiredFeatures?: number
+								}
+							}
+						}
+					}
+				}
+			}>
+			// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+			const commit = (server as any)._registeredTools['ascend.commit'].handler as (args: {
+				planHandle?: string
+				output?: string
+				compact?: boolean
+			}) => Promise<{
+				structuredContent?: {
+					ok?: boolean
+					data?: {
+						postWrite?: { auditsPassed?: boolean }
+						writePolicy?: {
+							summary?: {
+								preservationModes?: {
+									generatedWithOpaquePayloads?: number
+									reviewRequiredParts?: number
+									lossyApprovalRequiredFeatures?: number
+								}
+							}
+						}
+					}
+				}
+			}>
+
+			const planned = await plan({
+				file: input,
+				compact: true,
+				ops: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'B1', value: 11 }] }],
+			})
+			expect(planned.structuredContent?.ok).toBe(true)
+			expect(
+				planned.structuredContent?.data?.writePolicy?.summary?.preservationModes,
+			).toMatchObject({
+				generatedWithOpaquePayloads: 2,
+				reviewRequiredParts: 0,
+				lossyApprovalRequiredFeatures: 0,
+			})
+
+			const committed = await commit({
+				planHandle: planned.structuredContent?.data?.preparedPlan?.id,
+				output,
+				compact: true,
+			})
+			expect(committed.structuredContent?.ok).toBe(true)
+			expect(
+				committed.structuredContent?.data?.writePolicy?.summary?.preservationModes,
+			).toMatchObject({
+				generatedWithOpaquePayloads: 2,
+				reviewRequiredParts: 0,
+				lossyApprovalRequiredFeatures: 0,
+			})
+			expect(committed.structuredContent?.data?.postWrite?.auditsPassed).toBe(true)
+			expect(committed.structuredContent?.data?.postWrite?.opaquePayloads).toMatchObject({
+				generatedWithOpaquePayloads: 2,
+				x14ConditionalFormatExtensionPayloads: 1,
+				x14DataValidationExtensionPayloads: 1,
+				worksheetParts: ['xl/worksheets/sheet1.xml'],
+				preservationMode: 'generated-with-opaque-payload',
+				verification: 'reopened-output',
+			})
+		} finally {
+			await unlink(input).catch(() => {})
+			await unlink(output).catch(() => {})
+		}
+	})
+
+	test('compact MCP plan and commit expose inspect-only preservation mode summaries', async () => {
+		const input = `${TEMP_FILE}.compact-inspect-only-preservation-modes-input.xlsx`
+		await Bun.write(input, inspectOnlyWorkbook())
+		const output = `${TEMP_FILE}.compact-inspect-only-preservation-modes-mcp.xlsx`
+		const server = createServer()
+		try {
+			// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+			const plan = (server as any)._registeredTools['ascend.plan'].handler as (args: {
+				file: string
+				compact?: boolean
+				ops: readonly Record<string, unknown>[]
+			}) => Promise<{
+				structuredContent?: {
+					ok?: boolean
+					data?: {
+						preparedPlan?: { id?: string }
+						approvals?: readonly { readonly id: string }[]
+						writePolicy?: {
+							diagnostics?: readonly {
+								readonly code?: string
+								readonly featureFamily?: string
+								readonly preservationMode?: string
+								readonly packageParts?: readonly {
+									readonly partPath?: string
+									readonly preservationPolicy?: string
+									readonly preservationMode?: string
+								}[]
+							}[]
+							summary?: {
+								preservationModes?: {
+									inspectOnlyParts?: number
+									lossyApprovalRequiredFeatures?: number
+								}
+							}
+						}
+					}
+				}
+			}>
+			// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+			const commit = (server as any)._registeredTools['ascend.commit'].handler as (args: {
+				planHandle?: string
+				output?: string
+				approvals?: readonly string[]
+				compact?: boolean
+			}) => Promise<{
+				structuredContent?: {
+					ok?: boolean
+					data?: {
+						postWrite?: { auditsPassed?: boolean }
+						writePolicy?: {
+							summary?: {
+								preservationModes?: {
+									inspectOnlyParts?: number
+									lossyApprovalRequiredFeatures?: number
+								}
+							}
+						}
+					}
+				}
+			}>
+
+			const planned = await plan({
+				file: input,
+				compact: true,
+				ops: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 11 }] }],
+			})
+			expect(planned.structuredContent?.ok).toBe(true)
+			expect(
+				planned.structuredContent?.data?.writePolicy?.summary?.preservationModes,
+			).toMatchObject({
+				inspectOnlyParts: 1,
+				lossyApprovalRequiredFeatures: 1,
+			})
+			expect(planned.structuredContent?.data?.writePolicy?.diagnostics).toContainEqual(
+				expect.objectContaining({
+					code: 'approval-required-feature',
+					featureFamily: 'preservedPowerQuery',
+					preservationMode: 'inspect-only',
+					packageParts: [
+						expect.objectContaining({
+							partPath: 'xl/customData/item1.data',
+							preservationPolicy: 'inspect-only',
+							preservationMode: 'inspect-only',
+						}),
+					],
+				}),
+			)
+			const approvalIds =
+				planned.structuredContent?.data?.approvals?.map((approval) => approval.id) ?? []
+			expect(approvalIds).toEqual([expect.stringMatching(/^loss:preservedpowerquery:preserved:/)])
+
+			const committed = await commit({
+				planHandle: planned.structuredContent?.data?.preparedPlan?.id,
+				output,
+				approvals: approvalIds,
+				compact: true,
+			})
+			expect(committed.structuredContent?.ok).toBe(true)
+			expect(
+				committed.structuredContent?.data?.writePolicy?.summary?.preservationModes,
+			).toMatchObject({
+				inspectOnlyParts: 1,
+				lossyApprovalRequiredFeatures: 1,
+			})
+			expect(committed.structuredContent?.data?.postWrite?.auditsPassed).toBe(true)
+		} finally {
+			await unlink(input).catch(() => {})
+			await unlink(output).catch(() => {})
+		}
+	})
+
+	test('compact MCP commit exposes reopened legacy comment summary', async () => {
+		const input = `${TEMP_FILE}.compact-comment-summary-input.xlsx`
+		const output = `${TEMP_FILE}.compact-comment-summary-mcp.xlsx`
+		const workbook = AscendWorkbook.create()
+		workbook.getWorkbookModel().sheets[0]?.comments.set('B2', {
+			text: 'Review this',
+			author: 'Ada',
+		})
+		await workbook.save(input)
+		const server = createServer()
+		try {
+			// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+			const plan = (server as any)._registeredTools['ascend.plan'].handler as (args: {
+				file: string
+				compact?: boolean
+				ops: readonly Record<string, unknown>[]
+			}) => Promise<{
+				structuredContent?: {
+					ok?: boolean
+					data?: {
+						preparedPlan?: { id?: string }
+						approvals?: Array<{ id: string }>
+					}
+				}
+			}>
+			// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+			const commit = (server as any)._registeredTools['ascend.commit'].handler as (args: {
+				planHandle?: string
+				output?: string
+				approvals?: readonly string[]
+				compact?: boolean
+			}) => Promise<{
+				structuredContent?: {
+					ok?: boolean
+					data?: {
+						postWrite?: {
+							auditsPassed?: boolean
+							comments?: {
+								legacyCommentLocations?: number
+								threadedCommentLocations?: number
+								legacyDrawingLocations?: number
+								locations?: readonly string[]
+								threadedCommentPartPaths?: readonly string[]
+								verification?: string
+							}
+						}
+					}
+				}
+			}>
+
+			const planned = await plan({
+				file: input,
+				compact: true,
+				ops: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 11 }] }],
+			})
+			expect(planned.structuredContent?.ok).toBe(true)
+			const approvalIds =
+				planned.structuredContent?.data?.approvals?.map((approval) => approval.id) ?? []
+
+			const committed = await commit({
+				planHandle: planned.structuredContent?.data?.preparedPlan?.id,
+				output,
+				approvals: approvalIds,
+				compact: true,
+			})
+			expect(committed.structuredContent?.ok).toBe(true)
+			expect(committed.structuredContent?.data?.postWrite?.auditsPassed).toBe(true)
+			expect(committed.structuredContent?.data?.postWrite?.comments).toMatchObject({
+				legacyCommentLocations: 1,
+				threadedCommentLocations: 0,
+				legacyDrawingLocations: 1,
+				locations: ['Sheet1!B2'],
+				threadedCommentPartPaths: [],
+				verification: 'reopened-output',
+			})
+		} finally {
+			await unlink(input).catch(() => {})
+			await unlink(output).catch(() => {})
+		}
+	})
+
+	test('compact MCP commit exposes reopened table summary', async () => {
+		const input = `${TEMP_FILE}.compact-table-summary-input.xlsx`
+		const output = `${TEMP_FILE}.compact-table-summary-mcp.xlsx`
+		const workbook = AscendWorkbook.create()
+		expect(
+			workbook.apply([
+				{
+					op: 'setCells',
+					sheet: 'Sheet1',
+					updates: [
+						{ ref: 'A1', value: 'Qty' },
+						{ ref: 'B1', value: 'Price' },
+						{ ref: 'A2', value: 2 },
+						{ ref: 'B2', value: 5 },
+						{ ref: 'A3', value: 3 },
+						{ ref: 'B3', value: 7 },
+					],
+				},
+				{ op: 'createTable', sheet: 'Sheet1', ref: 'A1:B3', name: 'Sales', hasHeaders: true },
+			]).errors,
+		).toHaveLength(0)
+		await workbook.save(input)
+		const server = createServer()
+		try {
+			// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+			const plan = (server as any)._registeredTools['ascend.plan'].handler as (args: {
+				file: string
+				compact?: boolean
+				ops: readonly Record<string, unknown>[]
+			}) => Promise<{
+				structuredContent?: {
+					ok?: boolean
+					data?: {
+						preparedPlan?: { id?: string }
+						approvals?: Array<{ id: string }>
+					}
+				}
+			}>
+			// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+			const commit = (server as any)._registeredTools['ascend.commit'].handler as (args: {
+				planHandle?: string
+				output?: string
+				approvals?: readonly string[]
+				compact?: boolean
+			}) => Promise<{
+				structuredContent?: {
+					ok?: boolean
+					data?: {
+						postWrite?: {
+							auditsPassed?: boolean
+							tables?: {
+								tableLocations?: number
+								queryTableLocations?: number
+								tableAutoFilterLocations?: number
+								tableNames?: readonly string[]
+								locations?: readonly string[]
+								tablePartPaths?: readonly string[]
+								queryTablePartPaths?: readonly string[]
+								preservationMode?: string
+								verification?: string
+							}
+						}
+					}
+				}
+			}>
+
+			const planned = await plan({
+				file: input,
+				compact: true,
+				ops: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'D1', value: 11 }] }],
+			})
+			expect(planned.structuredContent?.ok).toBe(true)
+			const approvalIds =
+				planned.structuredContent?.data?.approvals?.map((approval) => approval.id) ?? []
+
+			const committed = await commit({
+				planHandle: planned.structuredContent?.data?.preparedPlan?.id,
+				output,
+				approvals: approvalIds,
+				compact: true,
+			})
+			expect(committed.structuredContent?.ok).toBe(true)
+			expect(committed.structuredContent?.data?.postWrite?.auditsPassed).toBe(true)
+			expect(committed.structuredContent?.data?.postWrite?.tables).toMatchObject({
+				tableLocations: 1,
+				queryTableLocations: 0,
+				tableAutoFilterLocations: 1,
+				tableNames: ['Sales'],
+				locations: ['Sheet1!A1:B3'],
+				tablePartPaths: ['xl/tables/table1.xml'],
+				queryTablePartPaths: [],
+				preservationMode: 'preserve-exact',
+				verification: 'reopened-output',
+			})
+		} finally {
+			await unlink(input).catch(() => {})
+			await unlink(output).catch(() => {})
+		}
+	})
+
+	test('compact MCP commit exposes reopened defined name summary', async () => {
+		const input = `${TEMP_FILE}.compact-defined-name-summary-input.xlsx`
+		const output = `${TEMP_FILE}.compact-defined-name-summary-mcp.xlsx`
+		const workbook = AscendWorkbook.create()
+		const sheet = workbook.getWorkbookModel().sheets[0]
+		workbook.getWorkbookModel().definedNames.set('GlobalRate', 'Sheet1!$A$1')
+		if (sheet) {
+			workbook
+				.getWorkbookModel()
+				.definedNames.set(
+					'LocalRate',
+					'Sheet1!$B$1',
+					{ kind: 'sheet', sheetId: sheet.id },
+					{ hidden: true },
+				)
+		}
+		await workbook.save(input)
+		const server = createServer()
+		try {
+			// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+			const plan = (server as any)._registeredTools['ascend.plan'].handler as (args: {
+				file: string
+				compact?: boolean
+				ops: readonly Record<string, unknown>[]
+			}) => Promise<{
+				structuredContent?: { ok?: boolean; data?: { preparedPlan?: { id?: string } } }
+			}>
+			// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+			const commit = (server as any)._registeredTools['ascend.commit'].handler as (args: {
+				planHandle?: string
+				output?: string
+				compact?: boolean
+			}) => Promise<{
+				structuredContent?: {
+					ok?: boolean
+					data?: {
+						postWrite?: {
+							auditsPassed?: boolean
+							definedNames?: {
+								total?: number
+								workbookScoped?: number
+								sheetScoped?: number
+								hidden?: number
+								names?: Array<{
+									name?: string
+									formula?: string
+									scope?: string
+									sheet?: string
+									hidden?: boolean
+								}>
+								verification?: string
+							}
+						}
+					}
+				}
+			}>
+
+			const planned = await plan({
+				file: input,
+				compact: true,
+				ops: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'C1', value: 11 }] }],
+			})
+			expect(planned.structuredContent?.ok).toBe(true)
+
+			const committed = await commit({
+				planHandle: planned.structuredContent?.data?.preparedPlan?.id,
+				output,
+				compact: true,
+			})
+			expect(committed.structuredContent?.ok).toBe(true)
+			expect(committed.structuredContent?.data?.postWrite?.auditsPassed).toBe(true)
+			expect(committed.structuredContent?.data?.postWrite?.definedNames).toMatchObject({
+				total: 2,
+				workbookScoped: 1,
+				sheetScoped: 1,
+				hidden: 1,
+				names: [
+					{ name: 'GlobalRate', formula: 'Sheet1!$A$1', scope: 'workbook' },
+					{
+						name: 'LocalRate',
+						formula: 'Sheet1!$B$1',
+						scope: 'sheet',
+						sheet: 'Sheet1',
+						hidden: true,
+					},
+				],
+				verification: 'reopened-output',
+			})
+		} finally {
+			await unlink(input).catch(() => {})
+			await unlink(output).catch(() => {})
+		}
+	})
+
+	test('compact MCP commit exposes reopened workbook and sheet security summary', async () => {
+		const input = `${TEMP_FILE}.compact-security-summary-input.xlsx`
+		const output = `${TEMP_FILE}.compact-security-summary-mcp.xlsx`
+		const workbook = AscendWorkbook.create()
+		const model = workbook.getWorkbookModel()
+		model.workbookProtection = {
+			lockStructure: true,
+			lockWindows: true,
+			workbookPassword: 'ABCD',
+		}
+		const sheet = model.getSheet('Sheet1')
+		if (!sheet) throw new Error('Expected Sheet1')
+		sheet.protection = {
+			sheet: true,
+			password: 'DCBA',
+			autoFilter: true,
+			sort: true,
+		}
+		sheet.protectedRanges = [{ name: 'Editable', sqref: 'C:C', password: '1234' }]
+		await workbook.save(input)
+		const server = createServer()
+		try {
+			// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+			const plan = (server as any)._registeredTools['ascend.plan'].handler as (args: {
+				file: string
+				compact?: boolean
+				ops: readonly Record<string, unknown>[]
+			}) => Promise<{
+				structuredContent?: {
+					ok?: boolean
+					data?: {
+						preparedPlan?: { id?: string }
+					}
+				}
+			}>
+			// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+			const commit = (server as any)._registeredTools['ascend.commit'].handler as (args: {
+				planHandle?: string
+				output?: string
+				compact?: boolean
+			}) => Promise<{
+				structuredContent?: {
+					ok?: boolean
+					data?: {
+						postWrite?: {
+							auditsPassed?: boolean
+							security?: {
+								workbookProtected?: boolean
+								workbookLocks?: readonly string[]
+								workbookPasswordProtected?: boolean
+								workbookRevisionPasswordProtected?: boolean
+								protectedSheets?: number
+								protectedSheetNames?: readonly string[]
+								sheetPasswordProtected?: number
+								sheetStrongHashProtected?: number
+								protectedRanges?: number
+								protectedRangeLocations?: readonly string[]
+								passwordHashVerification?: string
+								preservationMode?: string
+								verification?: string
+								sheets?: Array<{
+									sheetName?: string
+									protected?: boolean
+									passwordProtected?: boolean
+									allowedActions?: readonly string[]
+									protectedRanges?: number
+									protectedRangeLocations?: readonly string[]
+								}>
+							}
+						}
+					}
+				}
+			}>
+
+			const planned = await plan({
+				file: input,
+				compact: true,
+				ops: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 11 }] }],
+			})
+			expect(planned.structuredContent?.ok).toBe(true)
+
+			const committed = await commit({
+				planHandle: planned.structuredContent?.data?.preparedPlan?.id,
+				output,
+				compact: true,
+			})
+
+			expect(committed.structuredContent?.ok).toBe(true)
+			expect(committed.structuredContent?.data?.postWrite?.auditsPassed).toBe(true)
+			expect(committed.structuredContent?.data?.postWrite?.security).toMatchObject({
+				workbookProtected: true,
+				workbookLocks: ['lockStructure', 'lockWindows'],
+				workbookPasswordProtected: true,
+				workbookRevisionPasswordProtected: false,
+				protectedSheets: 1,
+				protectedSheetNames: ['Sheet1'],
+				sheetPasswordProtected: 1,
+				sheetStrongHashProtected: 0,
+				protectedRanges: 1,
+				protectedRangeLocations: ['Sheet1!C:C'],
+				passwordHashVerification: 'reported-not-validated',
+				preservationMode: 'generated',
+				verification: 'reopened-output',
+				sheets: [
+					expect.objectContaining({
+						sheetName: 'Sheet1',
+						protected: true,
+						passwordProtected: true,
+						allowedActions: ['sort', 'autoFilter'],
+						protectedRanges: 1,
+						protectedRangeLocations: ['Sheet1!C:C'],
+					}),
+				],
+			})
+		} finally {
+			await unlink(input).catch(() => {})
+			await unlink(output).catch(() => {})
+		}
+	})
+
+	test('compact MCP commit exposes reopened external reference binding summary', async () => {
+		const input = `${TEMP_FILE}.compact-external-reference-summary-input.xlsx`
+		const output = `${TEMP_FILE}.compact-external-reference-summary-mcp.xlsx`
+		await Bun.write(input, externalLinkBoundWorkbook())
+		const server = createServer()
+		try {
+			// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+			const plan = (server as any)._registeredTools['ascend.plan'].handler as (args: {
+				file: string
+				compact?: boolean
+				ops: readonly Record<string, unknown>[]
+			}) => Promise<{
+				structuredContent?: {
+					ok?: boolean
+					data?: {
+						preparedPlan?: { id?: string }
+						approvals?: Array<{ id: string }>
+					}
+				}
+			}>
+			// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+			const commit = (server as any)._registeredTools['ascend.commit'].handler as (args: {
+				planHandle?: string
+				output?: string
+				approvals?: readonly string[]
+				compact?: boolean
+			}) => Promise<{
+				structuredContent?: {
+					ok?: boolean
+					data?: {
+						postWrite?: {
+							auditsPassed?: boolean
+							externalReferences?: {
+								total?: number
+								boundByExternalBookRelId?: number
+								fallbackPathRelationships?: number
+								missingPathRelationships?: number
+								partPaths?: readonly string[]
+								targets?: readonly string[]
+								parts?: Array<{
+									partPath?: string
+									relId?: string
+									externalBookRelId?: string
+									linkRelId?: string
+									linkBindingStatus?: string
+									target?: string
+									targetMode?: string
+								}>
+								preservationMode?: string
+								verification?: string
+							}
+						}
+					}
+				}
+			}>
+
+			const planned = await plan({
+				file: input,
+				compact: true,
+				ops: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 11 }] }],
+			})
+			expect(planned.structuredContent?.ok).toBe(true)
+			const approvalIds =
+				planned.structuredContent?.data?.approvals?.map((approval) => approval.id) ?? []
+
+			const committed = await commit({
+				planHandle: planned.structuredContent?.data?.preparedPlan?.id,
+				output,
+				approvals: approvalIds,
+				compact: true,
+			})
+			expect(committed.structuredContent?.ok).toBe(true)
+			expect(committed.structuredContent?.data?.postWrite?.auditsPassed).toBe(true)
+			expect(committed.structuredContent?.data?.postWrite?.externalReferences).toMatchObject({
+				total: 1,
+				boundByExternalBookRelId: 1,
+				fallbackPathRelationships: 0,
+				missingPathRelationships: 0,
+				partPaths: ['xl/externalLinks/externalLink1.xml'],
+				targets: ['../sources/source.xlsx'],
+				preservationMode: 'preserve-exact',
+				verification: 'reopened-output',
+				parts: [
+					expect.objectContaining({
+						partPath: 'xl/externalLinks/externalLink1.xml',
+						relId: 'rIdExternal',
+						externalBookRelId: 'rIdExt',
+						linkRelId: 'rIdExt',
+						linkBindingStatus: 'externalBookRelId',
+						target: '../sources/source.xlsx',
+						targetMode: 'External',
+					}),
+				],
+			})
+		} finally {
+			await unlink(input).catch(() => {})
+			await unlink(output).catch(() => {})
+		}
+	})
+
+	test('compact MCP plan exposes workbook-qualified 3D external references as sheet-span risk', async () => {
+		const input = `${TEMP_FILE}.compact-external-3d-plan-input.xlsx`
+		await Bun.write(input, externalLinkBoundWorkbook())
+		const server = createServer()
+		try {
+			// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+			const plan = (server as any)._registeredTools['ascend.plan'].handler as (args: {
+				file: string
+				compact?: boolean
+				ops: readonly Record<string, unknown>[]
+			}) => Promise<{
+				structuredContent?: {
+					ok?: boolean
+					data?: {
+						writePolicy?: {
+							diagnostics?: readonly {
+								code?: string
+								details?: {
+									relatedOperations?: readonly unknown[]
+									externalLinks?: readonly unknown[]
+								}
+							}[]
+						}
+					}
+				}
+			}>
+
+			const planned = await plan({
+				file: input,
+				compact: true,
+				ops: [
+					{
+						op: 'setFormula',
+						sheet: 'Sheet1',
+						ref: 'B2',
+						formula: '=SUM([1]FY26:FY28!B2:B10)',
+					},
+				],
+			})
+
+			expect(planned.structuredContent?.ok).toBe(true)
+			const dependency = planned.structuredContent?.data?.writePolicy?.diagnostics?.find(
+				(diagnostic) => diagnostic.code === 'external-link-dependency',
+			)
+			expect(dependency?.details?.relatedOperations).toEqual(
+				expect.arrayContaining([
+					expect.objectContaining({
+						operationIndex: 0,
+						op: 'setFormula',
+						sourceKind: 'cellFormula',
+						sourceRef: 'Sheet1!B2',
+						formula: '=SUM([1]FY26:FY28!B2:B10)',
+						workbook: '1',
+						sheetSpan: { startSheet: 'FY26', endSheet: 'FY28' },
+						references: ["'[1]FY26:FY28'!B2:B10"],
+					}),
+				]),
+			)
+			expect(dependency?.details?.externalLinks).toEqual(
+				expect.arrayContaining([
+					expect.objectContaining({
+						workbook: '1',
+						sheetSpans: [{ startSheet: 'FY26', endSheet: 'FY28' }],
+					}),
+				]),
+			)
+		} finally {
+			await unlink(input).catch(() => {})
+		}
+	})
+
+	test('compact MCP commit exposes reopened analytics refresh summary', async () => {
+		const input = `${TEMP_FILE}.compact-analytics-summary-input.xlsx`
+		const output = `${TEMP_FILE}.compact-analytics-summary-mcp.xlsx`
+		await Bun.write(input, analyticsRefreshWorkbook())
+		const server = createServer()
+		try {
+			// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+			const plan = (server as any)._registeredTools['ascend.plan'].handler as (args: {
+				file: string
+				compact?: boolean
+				ops: readonly Record<string, unknown>[]
+			}) => Promise<{
+				structuredContent?: {
+					ok?: boolean
+					data?: {
+						preparedPlan?: { id?: string }
+						approvals?: Array<{ id: string }>
+					}
+				}
+			}>
+			// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+			const commit = (server as any)._registeredTools['ascend.commit'].handler as (args: {
+				planHandle?: string
+				output?: string
+				approvals?: readonly string[]
+				compact?: boolean
+			}) => Promise<{
+				structuredContent?: {
+					ok?: boolean
+					data?: {
+						postWrite?: {
+							auditsPassed?: boolean
+							unresolvedPackageGraphIssueCount?: number
+							analytics?: {
+								pivotCaches?: number
+								pivotTables?: number
+								slicerCaches?: number
+								slicers?: number
+								timelineCaches?: number
+								timelines?: number
+								partPaths?: readonly string[]
+								requiresExternalRefresh?: boolean
+								preservationMode?: string
+								verification?: string
+								pivotCacheDetails?: Array<{
+									partPath?: string
+									cacheId?: number
+									sourceSheet?: string
+									sourceRef?: string
+									outputState?: string
+									requiresExternalRefresh?: boolean
+								}>
+							}
+						}
+					}
+				}
+			}>
+
+			const planned = await plan({
+				file: input,
+				compact: true,
+				ops: [{ op: 'setCells', sheet: 'PivotSheet', updates: [{ ref: 'A1', value: 'ok' }] }],
+			})
+			expect(planned.structuredContent?.ok).toBe(true)
+			const approvalIds =
+				planned.structuredContent?.data?.approvals?.map((approval) => approval.id) ?? []
+
+			const committed = await commit({
+				planHandle: planned.structuredContent?.data?.preparedPlan?.id,
+				output,
+				approvals: approvalIds,
+				compact: true,
+			})
+			expect(committed.structuredContent?.ok).toBe(true)
+			expect(committed.structuredContent?.data?.postWrite?.auditsPassed).toBe(false)
+			expect(committed.structuredContent?.data?.postWrite?.unresolvedPackageGraphIssueCount).toBe(0)
+			expect(committed.structuredContent?.data?.postWrite?.analytics).toMatchObject({
+				pivotCaches: 1,
+				pivotTables: 1,
+				slicerCaches: 1,
+				slicers: 1,
+				timelineCaches: 1,
+				timelines: 1,
+				partPaths: expect.arrayContaining([
+					'xl/pivotCache/pivotCacheDefinition1.xml',
+					'xl/pivotTables/pivotTable1.xml',
+					'xl/slicerCaches/slicerCache1.xml',
+					'xl/timelineCaches/timelineCache1.xml',
+				]),
+				requiresExternalRefresh: true,
+				preservationMode: 'preserve-exact',
+				verification: 'reopened-output',
+				pivotCacheDetails: [
+					expect.objectContaining({
+						partPath: 'xl/pivotCache/pivotCacheDefinition1.xml',
+						cacheId: 34,
+						sourceSheet: 'Raw',
+						sourceRef: 'A1:B3',
+						outputState: 'refresh-on-open',
+						requiresExternalRefresh: true,
+					}),
+				],
+			})
+		} finally {
+			await unlink(input).catch(() => {})
+			await unlink(output).catch(() => {})
+		}
+	})
+
+	test('compact MCP commit exposes reopened active content summary', async () => {
+		const input = `${TEMP_FILE}.compact-active-content-input.xlsm`
+		const output = `${TEMP_FILE}.compact-active-content-mcp.xlsm`
+		await Bun.write(input, signedMacroWorkbook())
+		const server = createServer()
+		try {
+			// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+			const plan = (server as any)._registeredTools['ascend.plan'].handler as (args: {
+				file: string
+				compact?: boolean
+				ops: readonly Record<string, unknown>[]
+			}) => Promise<{
+				structuredContent?: {
+					ok?: boolean
+					data?: {
+						preparedPlan?: { id?: string }
+						approvals?: Array<{ id: string }>
+					}
+				}
+			}>
+			// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+			const commit = (server as any)._registeredTools['ascend.commit'].handler as (args: {
+				planHandle?: string
+				output?: string
+				approvals?: readonly string[]
+				compact?: boolean
+			}) => Promise<{
+				structuredContent?: {
+					ok?: boolean
+					data?: {
+						postWrite?: {
+							auditsPassed?: boolean
+							activeContent?: {
+								total?: number
+								vbaProjects?: number
+								activeXControls?: number
+								formControls?: number
+								macroSheets?: number
+								vbaSignatures?: number
+								digitalSignatures?: number
+								customUi?: number
+								unknownActiveContent?: number
+								partPaths?: readonly string[]
+								executionPolicy?: string
+								preservationMode?: string
+								verification?: string
+								entries?: Array<{
+									kind?: string
+									partPath?: string
+									contentType?: string
+									anchor?: string
+									opaque?: boolean
+									executionPolicy?: string
+								}>
+							}
+						}
+					}
+				}
+			}>
+
+			const planned = await plan({
+				file: input,
+				compact: true,
+				ops: [{ op: 'setCells', sheet: 'Data', updates: [{ ref: 'A1', value: 11 }] }],
+			})
+			expect(planned.structuredContent?.ok).toBe(true)
+			const approvalIds =
+				planned.structuredContent?.data?.approvals?.map((approval) => approval.id) ?? []
+
+			const committed = await commit({
+				planHandle: planned.structuredContent?.data?.preparedPlan?.id,
+				output,
+				approvals: approvalIds,
+				compact: true,
+			})
+			expect(committed.structuredContent?.ok).toBe(true)
+			expect(committed.structuredContent?.data?.postWrite?.auditsPassed).toBe(false)
+			expect(committed.structuredContent?.data?.postWrite?.activeContent).toMatchObject({
+				total: 2,
+				vbaProjects: 1,
+				activeXControls: 0,
+				vbaSignatures: 1,
+				digitalSignatures: 0,
+				partPaths: ['xl/vbaProject.bin', 'xl/vbaProjectSignature.bin'],
+				executionPolicy: 'blocked',
+				preservationMode: 'preserve-exact',
+				verification: 'reopened-output',
+				entries: expect.arrayContaining([
+					expect.objectContaining({
+						kind: 'vbaProject',
+						partPath: 'xl/vbaProject.bin',
+						contentType: 'application/vnd.ms-office.vbaProject',
+						anchor: 'workbook',
+						opaque: true,
+						executionPolicy: 'blocked',
+					}),
+					expect.objectContaining({
+						kind: 'vbaSignature',
+						partPath: 'xl/vbaProjectSignature.bin',
+						invalidationPolicy: 'invalidatedByPackageEdit',
+						resigningPolicy: 'notSupported',
+					}),
+				]),
+			})
+		} finally {
+			await unlink(input).catch(() => {})
+			await unlink(output).catch(() => {})
+		}
+	})
+
+	test('compact MCP commit exposes reopened control active content summary', async () => {
+		const input = `${TEMP_FILE}.compact-control-active-content-input.xlsx`
+		const output = `${TEMP_FILE}.compact-control-active-content-mcp.xlsx`
+		await Bun.write(input, controlWorkbook())
+		const server = createServer()
+		try {
+			// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+			const plan = (server as any)._registeredTools['ascend.plan'].handler as (args: {
+				file: string
+				compact?: boolean
+				ops: readonly Record<string, unknown>[]
+			}) => Promise<{
+				structuredContent?: {
+					ok?: boolean
+					data?: {
+						preparedPlan?: { id?: string }
+						approvals?: Array<{ id: string }>
+					}
+				}
+			}>
+			// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+			const commit = (server as any)._registeredTools['ascend.commit'].handler as (args: {
+				planHandle?: string
+				output?: string
+				approvals?: readonly string[]
+				compact?: boolean
+			}) => Promise<{
+				structuredContent?: {
+					ok?: boolean
+					data?: {
+						postWrite?: {
+							activeContent?: {
+								total?: number
+								vbaProjects?: number
+								activeXControls?: number
+								formControls?: number
+								macroSheets?: number
+								vbaSignatures?: number
+								digitalSignatures?: number
+								partPaths?: readonly string[]
+								executionPolicy?: string
+								preservationMode?: string
+								verification?: string
+								entries?: Array<{
+									kind?: string
+									partPath?: string
+									contentType?: string
+									anchor?: string
+									sheetName?: string
+									sourceRelationshipId?: string
+									relType?: string
+								}>
+							}
+						}
+					}
+				}
+			}>
+
+			const planned = await plan({
+				file: input,
+				compact: true,
+				ops: [{ op: 'setCells', sheet: 'Data', updates: [{ ref: 'A1', value: 11 }] }],
+			})
+			expect(planned.structuredContent?.ok).toBe(true)
+			const approvalIds =
+				planned.structuredContent?.data?.approvals?.map((approval) => approval.id) ?? []
+
+			const committed = await commit({
+				planHandle: planned.structuredContent?.data?.preparedPlan?.id,
+				output,
+				approvals: approvalIds,
+				compact: true,
+			})
+			expect(committed.structuredContent?.ok).toBe(true)
+			expect(committed.structuredContent?.data?.postWrite?.activeContent).toMatchObject({
+				total: 3,
+				vbaProjects: 0,
+				activeXControls: 1,
+				formControls: 1,
+				macroSheets: 0,
+				vbaSignatures: 0,
+				digitalSignatures: 0,
+				partPaths: [
+					'xl/activeX/activeX1.xml',
+					'xl/activeX/activeX1.bin',
+					'xl/ctrlProps/ctrlProp1.xml',
+				],
+				executionPolicy: 'blocked',
+				preservationMode: 'preserve-exact',
+				verification: 'reopened-output',
+				entries: expect.arrayContaining([
+					expect.objectContaining({
+						kind: 'activeX',
+						partPath: 'xl/activeX/activeX1.xml',
+						contentType: 'application/vnd.ms-office.activeX+xml',
+						anchor: 'sheet',
+						sheetName: 'Data',
+						sourceRelationshipId: 'rIdActiveX',
+						relType: 'http://schemas.microsoft.com/office/2006/relationships/activeXControl',
+					}),
+					expect.objectContaining({
+						kind: 'activeX',
+						partPath: 'xl/activeX/activeX1.bin',
+						contentType: 'application/vnd.ms-office.activeX',
+						sourcePartPath: 'xl/activeX/activeX1.xml',
+						sourceRelationshipId: 'rId1',
+						relType: 'http://schemas.microsoft.com/office/2006/relationships/activeXControlBinary',
+					}),
+					expect.objectContaining({
+						kind: 'formControl',
+						partPath: 'xl/ctrlProps/ctrlProp1.xml',
+						contentType: 'application/vnd.ms-excel.controlproperties+xml',
+						anchor: 'sheet',
+						sheetName: 'Data',
+						sourceRelationshipId: 'rIdCtrl',
+						relType: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/ctrlProp',
+					}),
+				]),
+			})
+		} finally {
+			await unlink(input).catch(() => {})
+			await unlink(output).catch(() => {})
+		}
+	})
+
+	test('compact MCP commit exposes reopened macro sheet active content summary', async () => {
+		const input = `${TEMP_FILE}.compact-macro-sheet-input.xlsm`
+		const output = `${TEMP_FILE}.compact-macro-sheet-mcp.xlsm`
+		await Bun.write(input, macroSheetWorkbook())
+		const server = createServer()
+		try {
+			// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+			const plan = (server as any)._registeredTools['ascend.plan'].handler as (args: {
+				file: string
+				compact?: boolean
+				ops: readonly Record<string, unknown>[]
+			}) => Promise<{
+				structuredContent?: {
+					ok?: boolean
+					data?: {
+						preparedPlan?: { id?: string }
+						approvals?: Array<{ id: string }>
+					}
+				}
+			}>
+			// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+			const commit = (server as any)._registeredTools['ascend.commit'].handler as (args: {
+				planHandle?: string
+				output?: string
+				approvals?: readonly string[]
+				compact?: boolean
+			}) => Promise<{
+				structuredContent?: {
+					ok?: boolean
+					data?: {
+						postWrite?: {
+							activeContent?: {
+								total?: number
+								vbaProjects?: number
+								activeXControls?: number
+								formControls?: number
+								macroSheets?: number
+								vbaSignatures?: number
+								digitalSignatures?: number
+								partPaths?: readonly string[]
+								executionPolicy?: string
+								preservationMode?: string
+								verification?: string
+								entries?: Array<{
+									kind?: string
+									partPath?: string
+									contentType?: string
+									anchor?: string
+									sheetName?: string
+									sourceRelationshipId?: string
+									relType?: string
+									opaque?: boolean
+									executionPolicy?: string
+								}>
+							}
+						}
+					}
+				}
+			}>
+
+			const planned = await plan({
+				file: input,
+				compact: true,
+				ops: [{ op: 'setCells', sheet: 'Data', updates: [{ ref: 'A1', value: 11 }] }],
+			})
+			expect(planned.structuredContent?.ok).toBe(true)
+			const approvalIds =
+				planned.structuredContent?.data?.approvals?.map((approval) => approval.id) ?? []
+
+			const committed = await commit({
+				planHandle: planned.structuredContent?.data?.preparedPlan?.id,
+				output,
+				approvals: approvalIds,
+				compact: true,
+			})
+			expect(committed.structuredContent?.ok).toBe(true)
+			expect(committed.structuredContent?.data?.postWrite?.activeContent).toMatchObject({
+				total: 1,
+				vbaProjects: 0,
+				activeXControls: 0,
+				formControls: 0,
+				macroSheets: 1,
+				vbaSignatures: 0,
+				digitalSignatures: 0,
+				partPaths: ['xl/macrosheets/sheet1.xml'],
+				executionPolicy: 'blocked',
+				preservationMode: 'preserve-exact',
+				verification: 'reopened-output',
+				entries: [
+					expect.objectContaining({
+						kind: 'macroSheet',
+						partPath: 'xl/macrosheets/sheet1.xml',
+						contentType: 'application/vnd.ms-excel.macrosheet+xml',
+						anchor: 'sheet',
+						sheetName: 'Macro1',
+						sourceRelationshipId: 'rIdMacro',
+						relType: 'http://schemas.microsoft.com/office/2006/relationships/xlMacrosheet',
+						opaque: true,
+						executionPolicy: 'blocked',
+					}),
+				],
+			})
+		} finally {
+			await unlink(input).catch(() => {})
+			await unlink(output).catch(() => {})
+		}
+	})
+
+	test('compact MCP commit exposes reopened custom UI active content summary', async () => {
+		const input = `${TEMP_FILE}.compact-custom-ui-input.xlsm`
+		const output = `${TEMP_FILE}.compact-custom-ui-mcp.xlsm`
+		await Bun.write(input, customUiWorkbook())
+		const server = createServer()
+		try {
+			// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+			const plan = (server as any)._registeredTools['ascend.plan'].handler as (args: {
+				file: string
+				compact?: boolean
+				ops: readonly Record<string, unknown>[]
+			}) => Promise<{
+				structuredContent?: {
+					ok?: boolean
+					data?: {
+						preparedPlan?: { id?: string }
+						approvals?: Array<{ id: string }>
+					}
+				}
+			}>
+			// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+			const commit = (server as any)._registeredTools['ascend.commit'].handler as (args: {
+				planHandle?: string
+				output?: string
+				approvals?: readonly string[]
+				compact?: boolean
+			}) => Promise<{
+				structuredContent?: {
+					ok?: boolean
+					data?: {
+						postWrite?: {
+							auditsPassed?: boolean
+							activeContent?: {
+								total?: number
+								vbaProjects?: number
+								activeXControls?: number
+								formControls?: number
+								macroSheets?: number
+								vbaSignatures?: number
+								digitalSignatures?: number
+								customUi?: number
+								unknownActiveContent?: number
+								partPaths?: readonly string[]
+								executionPolicy?: string
+								preservationMode?: string
+								verification?: string
+								entries?: Array<{
+									kind?: string
+									partPath?: string
+									contentType?: string
+									anchor?: string
+									executionPolicy?: string
+								}>
+							}
+						}
+					}
+				}
+			}>
+
+			const planned = await plan({
+				file: input,
+				compact: true,
+				ops: [{ op: 'setCells', sheet: 'Data', updates: [{ ref: 'A1', value: 11 }] }],
+			})
+			expect(planned.structuredContent?.ok).toBe(true)
+			const approvalIds =
+				planned.structuredContent?.data?.approvals?.map((approval) => approval.id) ?? []
+
+			const committed = await commit({
+				planHandle: planned.structuredContent?.data?.preparedPlan?.id,
+				output,
+				approvals: approvalIds,
+				compact: true,
+			})
+			expect(committed.structuredContent?.ok).toBe(true)
+			expect(committed.structuredContent?.data?.postWrite?.auditsPassed).toBe(true)
+			expect(committed.structuredContent?.data?.postWrite?.activeContent).toMatchObject({
+				total: 1,
+				vbaProjects: 0,
+				activeXControls: 0,
+				formControls: 0,
+				macroSheets: 0,
+				vbaSignatures: 0,
+				digitalSignatures: 0,
+				customUi: 1,
+				unknownActiveContent: 0,
+				partPaths: ['customUI/customUI2.xml'],
+				executionPolicy: 'blocked',
+				preservationMode: 'preserve-exact',
+				verification: 'reopened-output',
+				entries: [
+					expect.objectContaining({
+						kind: 'customUi',
+						partPath: 'customUI/customUI2.xml',
+						contentType: 'application/vnd.ms-office.customUI+xml',
+						anchor: 'workbook',
+						executionPolicy: 'blocked',
+					}),
+				],
+			})
+		} finally {
+			await unlink(input).catch(() => {})
+			await unlink(output).catch(() => {})
+		}
+	})
+
+	test('compact MCP commit exposes reopened visual summary', async () => {
+		const input = `${TEMP_FILE}.compact-visual-summary-input.xlsx`
+		const output = `${TEMP_FILE}.compact-visual-summary-mcp.xlsx`
+		await Bun.write(input, visualWorkbook())
+		const server = createServer()
+		try {
+			// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+			const plan = (server as any)._registeredTools['ascend.plan'].handler as (args: {
+				file: string
+				compact?: boolean
+				ops: readonly Record<string, unknown>[]
+			}) => Promise<{
+				structuredContent?: {
+					ok?: boolean
+					data?: {
+						preparedPlan?: { id?: string }
+						approvals?: Array<{ id: string }>
+					}
+				}
+			}>
+			// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+			const commit = (server as any)._registeredTools['ascend.commit'].handler as (args: {
+				planHandle?: string
+				output?: string
+				approvals?: readonly string[]
+				compact?: boolean
+			}) => Promise<{
+				structuredContent?: {
+					ok?: boolean
+					data?: {
+						postWrite?: {
+							auditsPassed?: boolean
+							visuals?: {
+								sheetsWithVisuals?: number
+								images?: number
+								drawingObjects?: number
+								drawingMlObjects?: number
+								vmlObjects?: number
+								chartParts?: number
+								chartSheets?: number
+								drawingPartPaths?: readonly string[]
+								mediaPartPaths?: readonly string[]
+								chartPartPaths?: readonly string[]
+								vmlPartPaths?: readonly string[]
+								preservationMode?: string
+								verification?: string
+								sheets?: Array<{
+									sheetName?: string
+									hasDrawingMl?: boolean
+									hasVml?: boolean
+									imageCount?: number
+									drawingPartPaths?: readonly string[]
+									mediaPartPaths?: readonly string[]
+								}>
+							}
+						}
+					}
+				}
+			}>
+
+			const planned = await plan({
+				file: input,
+				compact: true,
+				ops: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 11 }] }],
+			})
+			expect(planned.structuredContent?.ok).toBe(true)
+			const approvalIds =
+				planned.structuredContent?.data?.approvals?.map((approval) => approval.id) ?? []
+
+			const committed = await commit({
+				planHandle: planned.structuredContent?.data?.preparedPlan?.id,
+				output,
+				approvals: approvalIds,
+				compact: true,
+			})
+			expect(committed.structuredContent?.ok).toBe(true)
+			expect(committed.structuredContent?.data?.postWrite?.auditsPassed).toBe(true)
+			expect(committed.structuredContent?.data?.postWrite?.visuals).toMatchObject({
+				sheetsWithVisuals: 1,
+				images: 1,
+				drawingObjects: 0,
+				drawingMlObjects: 0,
+				vmlObjects: 0,
+				chartParts: 0,
+				chartSheets: 0,
+				drawingPartPaths: ['xl/drawings/drawing1.xml'],
+				mediaPartPaths: ['xl/media/image1.png'],
+				chartPartPaths: [],
+				vmlPartPaths: [],
+				preservationMode: 'preserve-exact',
+				verification: 'reopened-output',
+				sheets: [
+					expect.objectContaining({
+						sheetName: 'Sheet1',
+						hasDrawingMl: true,
+						hasVml: false,
+						imageCount: 1,
+						drawingPartPaths: ['xl/drawings/drawing1.xml'],
+						mediaPartPaths: ['xl/media/image1.png'],
+					}),
+				],
+			})
+		} finally {
+			await unlink(input).catch(() => {})
+			await unlink(output).catch(() => {})
+		}
+	})
+
+	test('compact MCP commit exposes reopened chartsheet visual summary', async () => {
+		const input = CHARTSHEET_FIXTURE
+		const output = `${TEMP_FILE}.compact-chartsheet-summary-mcp.xlsx`
+		const server = createServer()
+		try {
+			// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+			const plan = (server as any)._registeredTools['ascend.plan'].handler as (args: {
+				file: string
+				compact?: boolean
+				ops: readonly Record<string, unknown>[]
+			}) => Promise<{
+				structuredContent?: {
+					ok?: boolean
+					data?: {
+						preparedPlan?: { id?: string }
+						approvals?: Array<{ id: string }>
+					}
+				}
+			}>
+			// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+			const commit = (server as any)._registeredTools['ascend.commit'].handler as (args: {
+				planHandle?: string
+				output?: string
+				approvals?: readonly string[]
+				compact?: boolean
+			}) => Promise<{
+				structuredContent?: {
+					ok?: boolean
+					data?: {
+						postWrite?: {
+							auditsPassed?: boolean
+							visuals?: {
+								sheetsWithVisuals?: number
+								images?: number
+								chartParts?: number
+								chartSheets?: number
+								drawingPartPaths?: readonly string[]
+								mediaPartPaths?: readonly string[]
+								chartPartPaths?: readonly string[]
+								vmlPartPaths?: readonly string[]
+								preservationMode?: string
+								verification?: string
+							}
+						}
+					}
+				}
+			}>
+
+			const planned = await plan({
+				file: input,
+				compact: true,
+				ops: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 11 }] }],
+			})
+			expect(planned.structuredContent?.ok).toBe(true)
+			const approvalIds =
+				planned.structuredContent?.data?.approvals?.map((approval) => approval.id) ?? []
+
+			const committed = await commit({
+				planHandle: planned.structuredContent?.data?.preparedPlan?.id,
+				output,
+				approvals: approvalIds,
+				compact: true,
+			})
+			expect(committed.structuredContent?.ok).toBe(true)
+			expect(committed.structuredContent?.data?.postWrite?.auditsPassed).toBe(true)
+			expect(committed.structuredContent?.data?.postWrite?.visuals).toMatchObject({
+				sheetsWithVisuals: 0,
+				images: 0,
+				chartParts: 1,
+				chartSheets: 1,
+				drawingPartPaths: [],
+				mediaPartPaths: [],
+				chartPartPaths: ['xl/charts/chart1.xml'],
+				vmlPartPaths: [],
+				preservationMode: 'preserve-exact',
+				verification: 'reopened-output',
+			})
+		} finally {
+			await unlink(output).catch(() => {})
+		}
+	})
+
+	test('compact MCP plan and commit expose invalidated signature preservation mode summaries', async () => {
+		const input = `${TEMP_FILE}.compact-signature-invalidation-input.xlsx`
+		await Bun.write(input, signedPackageWorkbook())
+		const output = `${TEMP_FILE}.compact-signature-invalidation-mcp.xlsx`
+		const server = createServer()
+		try {
+			// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+			const plan = (server as any)._registeredTools['ascend.plan'].handler as (args: {
+				file: string
+				compact?: boolean
+				ops: readonly Record<string, unknown>[]
+			}) => Promise<{
+				structuredContent?: {
+					ok?: boolean
+					data?: {
+						preparedPlan?: { id?: string }
+						approvals?: readonly { readonly id: string }[]
+						writePolicy?: {
+							summary?: {
+								preservationModes?: {
+									invalidatedOnEditParts?: number
+									lossyApprovalRequiredFeatures?: number
+								}
+							}
+						}
+					}
+				}
+			}>
+			// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+			const commit = (server as any)._registeredTools['ascend.commit'].handler as (args: {
+				planHandle?: string
+				output?: string
+				approvals?: readonly string[]
+				compact?: boolean
+			}) => Promise<{
+				structuredContent?: {
+					ok?: boolean
+					data?: {
+						postWrite?: { auditsPassed?: boolean }
+						writePolicy?: {
+							summary?: {
+								preservationModes?: {
+									invalidatedOnEditParts?: number
+									lossyApprovalRequiredFeatures?: number
+								}
+							}
+						}
+					}
+				}
+			}>
+
+			const planned = await plan({
+				file: input,
+				compact: true,
+				ops: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 11 }] }],
+			})
+			expect(planned.structuredContent?.ok).toBe(true)
+			expect(
+				planned.structuredContent?.data?.writePolicy?.summary?.preservationModes,
+			).toMatchObject({
+				invalidatedOnEditParts: 2,
+				lossyApprovalRequiredFeatures: 1,
+			})
+			const approvalIds =
+				planned.structuredContent?.data?.approvals?.map((approval) => approval.id) ?? []
+			expect(approvalIds).toEqual([expect.stringMatching(/^loss:preservedsignature:preserved:/)])
+
+			const committed = await commit({
+				planHandle: planned.structuredContent?.data?.preparedPlan?.id,
+				output,
+				approvals: approvalIds,
+				compact: true,
+			})
+			expect(committed.structuredContent?.ok).toBe(true)
+			expect(
+				committed.structuredContent?.data?.writePolicy?.summary?.preservationModes,
+			).toMatchObject({
+				invalidatedOnEditParts: 2,
+				lossyApprovalRequiredFeatures: 1,
+			})
+			expect(committed.structuredContent?.data?.postWrite?.auditsPassed).toBe(true)
+		} finally {
+			await unlink(input).catch(() => {})
+			await unlink(output).catch(() => {})
+		}
+	})
+
+	test('compact MCP plan and commit expose discarded calc-chain preservation mode summaries', async () => {
+		const input = `${TEMP_FILE}.compact-calc-chain-discard-input.xlsx`
+		await Bun.write(input, calcChainWorkbook())
+		const output = `${TEMP_FILE}.compact-calc-chain-discard-mcp.xlsx`
+		const server = createServer()
+		try {
+			// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+			const plan = (server as any)._registeredTools['ascend.plan'].handler as (args: {
+				file: string
+				compact?: boolean
+				ops: readonly Record<string, unknown>[]
+			}) => Promise<{
+				structuredContent?: {
+					ok?: boolean
+					data?: {
+						preparedPlan?: { id?: string }
+						writePolicy?: {
+							summary?: {
+								calcChainPolicy?: string
+								preservationModes?: {
+									discardedForRecalcParts?: number
+									lossyApprovalRequiredFeatures?: number
+								}
+							}
+						}
+					}
+				}
+			}>
+			// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+			const commit = (server as any)._registeredTools['ascend.commit'].handler as (args: {
+				planHandle?: string
+				output?: string
+				compact?: boolean
+			}) => Promise<{
+				structuredContent?: {
+					ok?: boolean
+					data?: {
+						postWrite?: { auditsPassed?: boolean }
+						writePolicy?: {
+							summary?: {
+								calcChainPolicy?: string
+								preservationModes?: {
+									discardedForRecalcParts?: number
+									lossyApprovalRequiredFeatures?: number
+								}
+							}
+						}
+					}
+				}
+			}>
+
+			const planned = await plan({
+				file: input,
+				compact: true,
+				ops: [{ op: 'setFormula', sheet: 'Sheet1', ref: 'B1', formula: '=A1+A1' }],
+			})
+			expect(planned.structuredContent?.ok).toBe(true)
+			expect(planned.structuredContent?.data?.writePolicy?.summary?.calcChainPolicy).toBe(
+				'discarded-for-formula-topology',
+			)
+			expect(
+				planned.structuredContent?.data?.writePolicy?.summary?.preservationModes,
+			).toMatchObject({
+				discardedForRecalcParts: 1,
+				lossyApprovalRequiredFeatures: 0,
+			})
+
+			const committed = await commit({
+				planHandle: planned.structuredContent?.data?.preparedPlan?.id,
+				output,
+				compact: true,
+			})
+			expect(committed.structuredContent?.ok).toBe(true)
+			expect(committed.structuredContent?.data?.writePolicy?.summary?.calcChainPolicy).toBe(
+				'discarded-for-formula-topology',
+			)
+			expect(
+				committed.structuredContent?.data?.writePolicy?.summary?.preservationModes,
+			).toMatchObject({
+				discardedForRecalcParts: 1,
+				lossyApprovalRequiredFeatures: 0,
+			})
+			expect(committed.structuredContent?.data?.postWrite?.auditsPassed).toBe(true)
+		} finally {
+			await unlink(input).catch(() => {})
+			await unlink(output).catch(() => {})
+		}
+	})
+
 	test('ascend.commit accepts prepared plan handles', async () => {
 		const wb = AscendWorkbook.create()
 		await wb.save(TEMP_FILE)
@@ -1480,7 +3935,18 @@ describe('MCP server', () => {
 				structuredContent?: {
 					ok?: boolean
 					data?: {
-						preparedPlan?: { id?: string; expiresAt?: string; ttlMs?: number }
+						inputSha256?: string
+						planDigest?: string
+						operationCount?: number
+						preparedPlan?: {
+							id?: string
+							file?: string
+							inputSha256?: string
+							planDigest?: string
+							operationCount?: number
+							expiresAt?: string
+							ttlMs?: number
+						}
 						pathMutations?: { ops?: unknown[] }
 					}
 				}
@@ -1528,6 +3994,16 @@ describe('MCP server', () => {
 			})
 			expect(planned.structuredContent?.ok).toBe(true)
 			expect(planned.structuredContent?.data?.preparedPlan?.id).toBeString()
+			expect(planned.structuredContent?.data?.preparedPlan?.file).toBe(TEMP_FILE)
+			expect(planned.structuredContent?.data?.preparedPlan?.inputSha256).toBe(
+				planned.structuredContent?.data?.inputSha256,
+			)
+			expect(planned.structuredContent?.data?.preparedPlan?.planDigest).toBe(
+				planned.structuredContent?.data?.planDigest,
+			)
+			expect(planned.structuredContent?.data?.preparedPlan?.operationCount).toBe(
+				planned.structuredContent?.data?.operationCount,
+			)
 			expect(planned.structuredContent?.data?.preparedPlan?.expiresAt).toBeString()
 			expect(planned.structuredContent?.data?.preparedPlan?.ttlMs).toBeNumber()
 			expect(planned.structuredContent?.data?.pathMutations?.ops).toEqual([
@@ -1938,7 +4414,17 @@ describe('MCP server', () => {
 							auditsPassed?: boolean
 							expectedPackageGraphIssueCount?: number
 							unresolvedPackageGraphIssueCount?: number
-							packageGraphAudit?: { ok?: boolean; issueCount?: number }
+							packageGraphAudit?: {
+								ok?: boolean
+								issueCount?: number
+								emittedIssueCount?: number
+								issues?: Array<{
+									code?: string
+									partPath?: string
+									preservationPolicy?: string
+									preservationMode?: string
+								}>
+							}
 						}
 						modelOutput?: {
 							blocked?: boolean
@@ -1992,6 +4478,19 @@ describe('MCP server', () => {
 			expect(
 				exactCommit.structuredContent?.data?.postWrite?.packageGraphAudit?.issueCount,
 			).toBeGreaterThan(0)
+			expect(
+				exactCommit.structuredContent?.data?.postWrite?.packageGraphAudit?.emittedIssueCount,
+			).toBeGreaterThan(0)
+			expect(exactCommit.structuredContent?.data?.postWrite?.packageGraphAudit?.issues).toEqual(
+				expect.arrayContaining([
+					expect.objectContaining({
+						code: 'package_feature_classification',
+						partPath: 'xl/custom/custom1.xml',
+						preservationPolicy: 'unknown-review-required',
+						preservationMode: 'review-required',
+					}),
+				]),
+			)
 			expect(exactCommit.structuredContent?.data?.postWrite?.expectedPackageGraphIssueCount).toBe(0)
 			expect(
 				exactCommit.structuredContent?.data?.postWrite?.unresolvedPackageGraphIssueCount,
@@ -2069,7 +4568,6 @@ describe('MCP server', () => {
 				mutations,
 				output,
 				approvals: approvalIds,
-				compact: true,
 			})
 			expect(committed.isError).not.toBe(true)
 			expect(committed.structuredContent?.ok).toBe(true)
@@ -2083,9 +4581,16 @@ describe('MCP server', () => {
 				committed.structuredContent?.data?.outputSha256,
 			)
 			expect(committed.structuredContent?.data?.postWrite?.packageGraphAudit?.ok).toBe(false)
-			expect(
-				committed.structuredContent?.data?.postWrite?.packageGraphAudit?.issueCount,
-			).toBeGreaterThan(0)
+			expect(committed.structuredContent?.data?.postWrite?.packageGraphAudit?.issues).toEqual(
+				expect.arrayContaining([
+					expect.objectContaining({
+						code: 'package_feature_classification',
+						partPath: 'xl/custom/custom1.xml',
+						preservationPolicy: 'unknown-review-required',
+						preservationMode: 'review-required',
+					}),
+				]),
+			)
 			expect(committed.structuredContent?.data?.postWrite?.expectedPackageGraphIssueCount).toBe(0)
 			expect(
 				committed.structuredContent?.data?.postWrite?.unresolvedPackageGraphIssueCount,
@@ -2745,6 +5250,230 @@ describe('MCP server', () => {
 		expect(result.structuredContent?.data?.tsv).toBe('Name\tScore\nAlice\t10')
 	})
 
+	test('ascend.read exposes array and shared formula binding metadata', async () => {
+		await Bun.write(TEMP_FILE, sharedFormulaWorkbook())
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const handler = (server as any)._registeredTools['ascend.read'].handler as (args: {
+			file: string
+			sheet?: string
+			range: string
+			format: 'cells'
+		}) => Promise<{
+			structuredContent?: {
+				ok?: boolean
+				data?: {
+					cells?: Array<{
+						readonly ref?: string
+						readonly formula?: string
+						readonly formulaBinding?: unknown
+					}>
+				}
+			}
+		}>
+
+		const result = await handler({
+			file: TEMP_FILE,
+			sheet: 'Calc',
+			range: 'A1:D2',
+			format: 'cells',
+		})
+		expect(result.structuredContent?.ok).toBe(true)
+		expect(
+			result.structuredContent?.data?.cells?.map((cell) => [
+				cell.ref,
+				cell.formula,
+				cell.formulaBinding ?? null,
+			]),
+		).toEqual([
+			['A1', 'SUM(B1:B2)', { kind: 'array', ref: 'A1:A2' }],
+			['B1', 'A1*2', { kind: 'shared', sharedIndex: '0', isMaster: true, masterRef: 'B1' }],
+			['C1', 'SUM(Sales[[Revenue]:[Quantity]])', null],
+			['D1', 'BudgetTotal*2', null],
+			['B2', 'A2*2', { kind: 'shared', sharedIndex: '0', isMaster: false, masterRef: 'B1' }],
+		])
+
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const inspectHandler = (server as any)._registeredTools['ascend.inspect'].handler as (args: {
+			file: string
+		}) => Promise<{
+			structuredContent?: {
+				ok?: boolean
+				data?: {
+					definedNameDetails?: readonly {
+						readonly name?: string
+						readonly formula?: string
+						readonly normalizedFormula?: string
+						readonly scope?: string
+						readonly refs?: readonly string[]
+					}[]
+				}
+			}
+		}>
+		const inspect = await inspectHandler({ file: TEMP_FILE })
+		expect(inspect.structuredContent?.ok).toBe(true)
+		expect(inspect.structuredContent?.data?.definedNameDetails).toContainEqual({
+			name: 'BudgetTotal',
+			formula: 'Calc!$A$1:$A$2',
+			normalizedFormula: 'Calc!$A$1:$A$2',
+			scope: 'workbook',
+			references: [
+				{ kind: 'range', text: 'Calc!$A$1:$A$2', scope: { kind: 'sheet', sheet: 'Calc' } },
+			],
+			refs: ['Calc!$A$1:$A$2'],
+			functions: [],
+			volatile: false,
+		})
+	})
+
+	test('ascend.read exposes dynamic-array formulas and binding metadata', async () => {
+		await Bun.write(TEMP_FILE, dynamicArrayWorkbook())
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const handler = (server as any)._registeredTools['ascend.read'].handler as (args: {
+			file: string
+			sheet?: string
+			range: string
+			format: 'cells'
+			display?: boolean
+		}) => Promise<{
+			structuredContent?: {
+				ok?: boolean
+				data?: {
+					cells?: Array<{
+						readonly ref?: string
+						readonly value?: string
+						readonly formula?: string
+						readonly formulaBinding?: unknown
+					}>
+				}
+			}
+		}>
+
+		const result = await handler({
+			file: TEMP_FILE,
+			sheet: 'Calc',
+			range: 'A1:C1',
+			format: 'cells',
+			display: true,
+		})
+		expect(result.structuredContent?.ok).toBe(true)
+		expect(
+			result.structuredContent?.data?.cells?.map((cell) => [
+				cell.ref,
+				cell.value,
+				cell.formula,
+				cell.formulaBinding ?? null,
+			]),
+		).toEqual([
+			['A1', '1', 'SEQUENCE(3)', { kind: 'dynamicArray', metadataIndex: 1, collapsed: false }],
+			['B1', '6', 'SUM(A1#)', null],
+			['C1', '1', '@A1', null],
+		])
+	})
+
+	test('ascend.write blocks structural edits against imported formula bindings without changing read truth', async () => {
+		await Bun.write(TEMP_FILE, sharedOnlyFormulaWorkbook())
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const write = (server as any)._registeredTools['ascend.write'].handler as (args: {
+			file: string
+			ops: readonly Record<string, unknown>[]
+		}) => Promise<{
+			isError?: boolean
+			structuredContent?: {
+				error?: {
+					code?: string
+					message?: string
+					refs?: readonly string[]
+					suggestedFix?: string
+				}
+			}
+		}>
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const read = (server as any)._registeredTools['ascend.read'].handler as (args: {
+			file: string
+			sheet?: string
+			range: string
+			format: 'cells'
+			display?: boolean
+		}) => Promise<{
+			structuredContent?: {
+				data?: {
+					cells?: Array<{
+						readonly ref?: string
+						readonly value?: string
+						readonly formula?: string
+						readonly formulaBinding?: unknown
+					}>
+				}
+			}
+		}>
+
+		const sharedWrite = await write({
+			file: TEMP_FILE,
+			ops: [{ op: 'insertRows', sheet: 'Calc', at: 0, count: 1 }],
+		})
+		expect(sharedWrite.isError).toBe(true)
+		expect(sharedWrite.structuredContent?.error?.code).toBe('VALIDATION_ERROR')
+		expect(sharedWrite.structuredContent?.error?.message).toContain(
+			'Calc!B1 contains imported shared formula metadata',
+		)
+		expect(sharedWrite.structuredContent?.error?.refs).toEqual(['Calc!B1'])
+		expect(sharedWrite.structuredContent?.error?.suggestedFix).toContain('Materialize or rewrite')
+		const sharedRead = await read({
+			file: TEMP_FILE,
+			sheet: 'Calc',
+			range: 'B1:B2',
+			format: 'cells',
+		})
+		expect(
+			sharedRead.structuredContent?.data?.cells?.map((cell) => [
+				cell.ref,
+				cell.formula,
+				cell.formulaBinding ?? null,
+			]),
+		).toEqual([
+			['B1', 'A1*2', { kind: 'shared', sharedIndex: '0', isMaster: true, masterRef: 'B1' }],
+			['B2', 'A2*2', { kind: 'shared', sharedIndex: '0', isMaster: false, masterRef: 'B1' }],
+		])
+
+		await Bun.write(TEMP_FILE, dynamicArrayWorkbook())
+		const dynamicWrite = await write({
+			file: TEMP_FILE,
+			ops: [{ op: 'insertCols', sheet: 'Calc', at: 0, count: 1 }],
+		})
+		expect(dynamicWrite.isError).toBe(true)
+		expect(dynamicWrite.structuredContent?.error?.code).toBe('VALIDATION_ERROR')
+		expect(dynamicWrite.structuredContent?.error?.message).toContain(
+			'Calc!A1 contains imported dynamicArray formula metadata',
+		)
+		expect(dynamicWrite.structuredContent?.error?.refs).toEqual(['Calc!A1'])
+		expect(dynamicWrite.structuredContent?.error?.suggestedFix).toContain('Materialize or rewrite')
+		const dynamicRead = await read({
+			file: TEMP_FILE,
+			sheet: 'Calc',
+			range: 'A1:C1',
+			format: 'cells',
+			display: true,
+		})
+		expect(
+			dynamicRead.structuredContent?.data?.cells?.map((cell) => [
+				cell.ref,
+				cell.value,
+				cell.formula,
+				cell.formulaBinding ?? null,
+			]),
+		).toEqual([
+			['A1', '1', 'SEQUENCE(3)', { kind: 'dynamicArray', metadataIndex: 1, collapsed: false }],
+			['B1', '6', 'SUM(A1#)', null],
+			['C1', '1', '@A1', null],
+		])
+	})
+
 	test('ascend.read prunes TSV columns by letter and range position', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([
@@ -2883,6 +5612,145 @@ describe('MCP server', () => {
 		expect(unchanged.structuredContent?.ok).toBe(true)
 		expect(unchanged.structuredContent?.data?.cells).toEqual([])
 		expect(unchanged.structuredContent?.data?.changeToken).toBeDefined()
+	})
+
+	test('ascend.read compact changedSince invalidates when the requested window changes', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 1 },
+					{ ref: 'A2', value: 2 },
+				],
+			},
+		])
+		await wb.save(TEMP_FILE)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const handler = (server as any)._registeredTools['ascend.read'].handler as (args: {
+			file: string
+			range: string
+			format: 'compact'
+			rowLimit?: number
+			changedSince?: string
+		}) => Promise<{
+			structuredContent?: {
+				ok?: boolean
+				data?: { cells?: unknown[]; changeToken?: string; changeInvalidation?: unknown }
+			}
+		}>
+
+		const first = await handler({
+			file: TEMP_FILE,
+			range: 'A1:A2',
+			format: 'compact',
+			rowLimit: 1,
+		})
+		expect(first.structuredContent?.ok).toBe(true)
+		expect(first.structuredContent?.data?.cells).toEqual([[0, 0, 1]])
+		expect(first.structuredContent?.data?.changeToken).toBeDefined()
+
+		const widened = await handler({
+			file: TEMP_FILE,
+			range: 'A1:A2',
+			format: 'compact',
+			rowLimit: 2,
+			changedSince: first.structuredContent?.data?.changeToken,
+		})
+		expect(widened.structuredContent?.ok).toBe(true)
+		expect(widened.structuredContent?.data?.cells).toEqual([
+			[0, 0, 1],
+			[1, 0, 2],
+		])
+		expect(widened.structuredContent?.data?.changeInvalidation).toEqual({
+			baseToken: first.structuredContent?.data?.changeToken,
+			changeToken: widened.structuredContent?.data?.changeToken,
+			reason: 'base-snapshot-missing',
+			requiredAction: 'use-returned-window',
+		})
+
+		const invalid = await handler({
+			file: TEMP_FILE,
+			range: 'A1:A2',
+			format: 'compact',
+			rowLimit: 2,
+			changedSince: 'not-a-token',
+		})
+		expect(invalid.structuredContent?.ok).toBe(true)
+		expect(invalid.structuredContent?.data?.cells).toEqual([
+			[0, 0, 1],
+			[1, 0, 2],
+		])
+		expect(invalid.structuredContent?.data?.changeInvalidation).toEqual({
+			baseToken: 'not-a-token',
+			changeToken: invalid.structuredContent?.data?.changeToken,
+			reason: 'base-token-invalid',
+			requiredAction: 'use-returned-window',
+		})
+	})
+
+	test('ascend.read compact changedSince invalidates when selected columns change', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'left' },
+					{ ref: 'C1', value: 'right' },
+				],
+			},
+		])
+		await wb.save(TEMP_FILE)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const handler = (server as any)._registeredTools['ascend.read'].handler as (args: {
+			file: string
+			range: string
+			format: 'compact'
+			cols?: string[]
+			changedSince?: string
+		}) => Promise<{
+			structuredContent?: {
+				ok?: boolean
+				data?: {
+					cells?: unknown[]
+					changeToken?: string
+					changeInvalidation?: unknown
+					selectedColumns?: readonly unknown[]
+				}
+			}
+		}>
+
+		const first = await handler({
+			file: TEMP_FILE,
+			range: 'A1:C1',
+			format: 'compact',
+			cols: ['A'],
+		})
+		expect(first.structuredContent?.ok).toBe(true)
+		expect(first.structuredContent?.data?.cells).toEqual([[0, 0, 'left']])
+		expect(first.structuredContent?.data?.changeToken).toBeDefined()
+
+		const changedProjection = await handler({
+			file: TEMP_FILE,
+			range: 'A1:C1',
+			format: 'compact',
+			cols: ['C'],
+			changedSince: first.structuredContent?.data?.changeToken,
+		})
+		expect(changedProjection.structuredContent?.ok).toBe(true)
+		expect(changedProjection.structuredContent?.data?.cells).toEqual([[0, 2, 'right']])
+		expect(changedProjection.structuredContent?.data?.changeInvalidation).toEqual({
+			baseToken: first.structuredContent?.data?.changeToken,
+			changeToken: changedProjection.structuredContent?.data?.changeToken,
+			reason: 'base-snapshot-missing',
+			requiredAction: 'use-returned-window',
+		})
 	})
 
 	test('ascend.read compact changedSince returns a fresh window after source changes', async () => {
@@ -4063,6 +6931,118 @@ describe('MCP server', () => {
 		expect(issue?.suggestedFix).toContain('persons part')
 	})
 
+	test('ascend.check exposes blocked spill diagnostics for public agent repair', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'A1', formula: '=SEQUENCE(3)' },
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A2', value: 'blocker' }] },
+		])
+		wb.recalc()
+		await wb.save(TEMP_FILE)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: accessing internals for test
+		const handler = (server as any)._registeredTools['ascend.check'].handler as (args: {
+			file: string
+		}) => Promise<{
+			isError?: boolean
+			structuredContent?: {
+				error?: {
+					details?: {
+						check?: {
+							issues?: Array<{
+								rule?: string
+								ref?: string
+								refs?: string[]
+								details?: unknown
+							}>
+						}
+					}
+				}
+			}
+		}>
+
+		const result = await handler({ file: TEMP_FILE })
+		expect(result.isError).toBe(true)
+		const issue = result.structuredContent?.error?.details?.check?.issues?.find(
+			(entry) => entry.rule === 'spill-diagnostics',
+		)
+		expect(issue?.ref).toBe('Sheet1!A1')
+		expect(issue?.refs).toEqual(['Sheet1!A1', 'Sheet1!A2'])
+		expect(issue?.details).toEqual({
+			error: '#SPILL!',
+			cause: 'occupied-cell',
+			spillRange: 'Sheet1!A1:A3',
+			blockingRefs: ['Sheet1!A2'],
+		})
+	})
+
+	test('ascend.check refreshes stale imported spill caches for public agent repair', async () => {
+		await Bun.write(TEMP_FILE, staleSpillCacheWorkbook())
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const readHandler = (server as any)._registeredTools['ascend.read'].handler as (args: {
+			file: string
+			range: string
+			format: 'cells'
+		}) => Promise<{
+			structuredContent?: {
+				data?: {
+					cells?: Array<{
+						readonly ref?: string
+						readonly formula?: string
+						readonly formulaBinding?: unknown
+					}>
+				}
+			}
+		}>
+		const read = await readHandler({ file: TEMP_FILE, range: 'A1:A2', format: 'cells' })
+		expect(
+			read.structuredContent?.data?.cells?.map((cell) => [
+				cell.ref,
+				cell.formula ?? null,
+				cell.formulaBinding ?? null,
+			]),
+		).toEqual([
+			['A1', 'SEQUENCE(3)', null],
+			['A2', null, null],
+		])
+
+		// biome-ignore lint/suspicious/noExplicitAny: accessing internals for test
+		const checkHandler = (server as any)._registeredTools['ascend.check'].handler as (args: {
+			file: string
+		}) => Promise<{
+			isError?: boolean
+			structuredContent?: {
+				error?: {
+					details?: {
+						check?: {
+							issues?: Array<{
+								rule?: string
+								refs?: string[]
+								details?: unknown
+							}>
+						}
+					}
+				}
+			}
+		}>
+
+		const result = await checkHandler({ file: TEMP_FILE })
+		expect(result.isError).toBe(true)
+		const issue = result.structuredContent?.error?.details?.check?.issues?.find(
+			(entry) => entry.rule === 'spill-diagnostics',
+		)
+		expect(issue?.refs).toEqual(['Sheet1!A1', 'Sheet1!A2'])
+		expect(issue?.details).toEqual({
+			error: '#SPILL!',
+			cause: 'occupied-cell',
+			spillRange: 'Sheet1!A1:A3',
+			blockingRefs: ['Sheet1!A2'],
+		})
+	})
+
 	test('ascend.lint returns result', async () => {
 		const wb = AscendWorkbook.create()
 		await wb.save(TEMP_FILE)
@@ -4264,7 +7244,20 @@ describe('MCP server', () => {
 		const planHandler = (server as any)._registeredTools['ascend.plan'].handler as (args: {
 			file: string
 			ops: unknown[]
-		}) => Promise<{ structuredContent?: { data?: { approvals?: Array<{ id: string }> } } }>
+		}) => Promise<{
+			structuredContent?: {
+				data?: {
+					approvals?: Array<{ id: string }>
+					writePolicy?: {
+						diagnostics?: Array<{
+							code?: string
+							featureFamily?: string
+							preservationMode?: string
+						}>
+					}
+				}
+			}
+		}>
 		// biome-ignore lint/suspicious/noExplicitAny: accessing internals for test
 		const commitHandler = (server as any)._registeredTools['ascend.commit'].handler as (args: {
 			file: string
@@ -4282,6 +7275,20 @@ describe('MCP server', () => {
 			expect.arrayContaining([
 				expect.stringMatching(/^loss:preservedmacro:preserved:/),
 				expect.stringMatching(/^loss:preservedsignature:preserved:/),
+			]),
+		)
+		expect(planned.structuredContent?.data?.writePolicy?.diagnostics).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					code: 'active-content-preserved',
+					featureFamily: 'preservedMacro',
+					preservationMode: 'preserve-exact',
+				}),
+				expect.objectContaining({
+					code: 'approval-required-feature',
+					featureFamily: 'preservedSignature',
+					preservationMode: 'invalidated-on-edit',
+				}),
 			]),
 		)
 
@@ -4303,6 +7310,56 @@ describe('MCP server', () => {
 		expect(committed.structuredContent?.data?.approvals?.map((approval) => approval.id)).toEqual(
 			approvalIds,
 		)
+	})
+
+	test('ascend.plan warns for embedded object and vendor security sidecars', async () => {
+		const input = `${TEMP_FILE}.embedding-vendor-security.xlsx`
+		await Bun.write(input, embeddingVendorSecurityWorkbook())
+		const server = createServer()
+		try {
+			// biome-ignore lint/suspicious/noExplicitAny: accessing internals for test
+			const planHandler = (server as any)._registeredTools['ascend.plan'].handler as (args: {
+				file: string
+				compact?: boolean
+				ops: unknown[]
+			}) => Promise<{
+				structuredContent?: {
+					ok?: boolean
+					data?: {
+						writePolicy?: {
+							diagnostics?: Array<{
+								code?: string
+								featureFamily?: string
+								preservationMode?: string
+							}>
+						}
+					}
+				}
+			}>
+
+			const planned = await planHandler({
+				file: input,
+				compact: true,
+				ops: [{ op: 'setCells', sheet: 'Data', updates: [{ ref: 'A1', value: 7 }] }],
+			})
+			expect(planned.structuredContent?.ok).toBe(true)
+			expect(planned.structuredContent?.data?.writePolicy?.diagnostics).toEqual(
+				expect.arrayContaining([
+					expect.objectContaining({
+						code: 'active-content-preserved',
+						featureFamily: 'preservedEmbedding',
+						preservationMode: 'preserve-exact',
+					}),
+					expect.objectContaining({
+						code: 'active-content-preserved',
+						featureFamily: 'preservedVendorSecurity',
+						preservationMode: 'preserve-exact',
+					}),
+				]),
+			)
+		} finally {
+			await unlink(input).catch(() => {})
+		}
 	})
 
 	test('ascend.commit preserves path mutation canonical ops and exact approval ids', async () => {
@@ -4426,6 +7483,323 @@ function signedMacroWorkbook(): Uint8Array {
 	})
 }
 
+function sharedFormulaWorkbook(): Uint8Array {
+	return makeXlsx({
+		'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`,
+		'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+		'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSheet" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`,
+		'xl/workbook.xml': `<?xml version="1.0"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Calc" sheetId="1" r:id="rIdSheet"/></sheets>
+  <definedNames><definedName name="BudgetTotal">Calc!$A$1:$A$2</definedName></definedNames>
+</workbook>`,
+		'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    <row r="1">
+      <c r="A1"><f t="array" ref="A1:A2">SUM(B1:B2)</f><v>3</v></c>
+      <c r="B1"><f t="shared" si="0">A1*2</f><v>6</v></c>
+      <c r="C1"><f>SUM(Sales[[Revenue]:[Quantity]])</f><v>14</v></c>
+      <c r="D1"><f>BudgetTotal*2</f><v>6</v></c>
+    </row>
+    <row r="2">
+      <c r="B2"><f t="shared" si="0"/><v>8</v></c>
+    </row>
+  </sheetData>
+</worksheet>`,
+	})
+}
+
+function sharedOnlyFormulaWorkbook(): Uint8Array {
+	return makeXlsx({
+		'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`,
+		'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+		'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSheet" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`,
+		'xl/workbook.xml': `<?xml version="1.0"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Calc" sheetId="1" r:id="rIdSheet"/></sheets>
+</workbook>`,
+		'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    <row r="1"><c r="B1"><f t="shared" si="0">A1*2</f><v>6</v></c></row>
+    <row r="2"><c r="B2"><f t="shared" si="0"/><v>8</v></c></row>
+  </sheetData>
+</worksheet>`,
+	})
+}
+
+function dynamicArrayWorkbook(): Uint8Array {
+	return makeXlsx({
+		'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/metadata.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheetMetadata+xml"/>
+</Types>`,
+		'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+		'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSheet" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rIdMetadata" Type="http://purl.oclc.org/ooxml/officeDocument/relationships/sheetMetadata" Target="metadata.xml"/>
+</Relationships>`,
+		'xl/workbook.xml': `<?xml version="1.0"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Calc" sheetId="1" r:id="rIdSheet"/></sheets>
+</workbook>`,
+		'xl/metadata.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<metadata xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:xda="http://schemas.microsoft.com/office/spreadsheetml/2017/dynamicarray">
+  <metadataTypes count="1">
+    <metadataType name="XLDAPR" minSupportedVersion="120000" copy="1" pasteAll="1" pasteValues="1" merge="1" splitFirst="1" rowColShift="1" clearFormats="1" clearComments="1" assign="1" coerce="1" cellMeta="1"/>
+  </metadataTypes>
+  <futureMetadata name="XLDAPR" count="1">
+    <bk><extLst><ext uri="{bdbb8cdc-fa1e-496e-a857-3c3f30c029c3}"><xda:dynamicArrayProperties fDynamic="1" fCollapsed="0"/></ext></extLst></bk>
+  </futureMetadata>
+  <cellMetadata count="1">
+    <bk><rc t="1" v="0"/></bk>
+  </cellMetadata>
+</metadata>`,
+		'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    <row r="1">
+      <c r="A1" cm="1"><f>_xlfn.SEQUENCE(3)</f><v>1</v></c>
+      <c r="B1"><f>SUM(_xlfn.ANCHORARRAY(A1))</f><v>6</v></c>
+      <c r="C1"><f>_xlfn.SINGLE(A1)</f><v>1</v></c>
+    </row>
+  </sheetData>
+</worksheet>`,
+	})
+}
+
+function staleSpillCacheWorkbook(): Uint8Array {
+	return makeXlsx({
+		'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`,
+		'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+		'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSheet" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`,
+		'xl/workbook.xml': `<?xml version="1.0"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Sheet1" sheetId="1" r:id="rIdSheet"/></sheets>
+</workbook>`,
+		'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    <row r="1"><c r="A1" t="e"><f>_xlfn.SEQUENCE(3)</f><v>#SPILL!</v></c></row>
+    <row r="2"><c r="A2" t="inlineStr"><is><t>blocker</t></is></c></row>
+  </sheetData>
+</worksheet>`,
+	})
+}
+
+function controlWorkbook(): Uint8Array {
+	return makeXlsx({
+		'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Default Extension="bin" ContentType="application/vnd.ms-office.activeX"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/activeX/activeX1.xml" ContentType="application/vnd.ms-office.activeX+xml"/>
+  <Override PartName="/xl/ctrlProps/ctrlProp1.xml" ContentType="application/vnd.ms-excel.controlproperties+xml"/>
+</Types>`,
+		'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+		'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSheet" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`,
+		'xl/workbook.xml': `<?xml version="1.0"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Data" sheetId="1" r:id="rIdSheet"/></sheets>
+</workbook>`,
+		'xl/worksheets/sheet1.xml': `<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`,
+		'xl/worksheets/_rels/sheet1.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdActiveX" Type="http://schemas.microsoft.com/office/2006/relationships/activeXControl" Target="../activeX/activeX1.xml"/>
+  <Relationship Id="rIdCtrl" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/ctrlProp" Target="../ctrlProps/ctrlProp1.xml"/>
+</Relationships>`,
+		'xl/activeX/activeX1.xml': `<?xml version="1.0"?><ax:ocx ax:classid="{8BD21D40-EC42-11CE-9E0D-00AA006002F3}" ax:persistence="persistStreamInit" r:id="rId1" xmlns:ax="http://schemas.microsoft.com/office/2006/activeX" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"/>`,
+		'xl/activeX/_rels/activeX1.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.microsoft.com/office/2006/relationships/activeXControlBinary" Target="activeX1.bin"/>
+</Relationships>`,
+		'xl/activeX/activeX1.bin': 'active-binary',
+		'xl/ctrlProps/ctrlProp1.xml': `<?xml version="1.0"?><formControlPr macro="Module1.Run" fmlaLink="$A$1" fmlaRange="$A$2:$A$4"/>`,
+	})
+}
+
+function macroSheetWorkbook(): Uint8Array {
+	return makeXlsx({
+		'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.ms-excel.sheet.macroEnabled.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/macrosheets/sheet1.xml" ContentType="application/vnd.ms-excel.macrosheet+xml"/>
+</Types>`,
+		'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+		'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdData" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rIdMacro" Type="http://schemas.microsoft.com/office/2006/relationships/xlMacrosheet" Target="macrosheets/sheet1.xml"/>
+</Relationships>`,
+		'xl/workbook.xml': `<?xml version="1.0"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets>
+    <sheet name="Data" sheetId="1" r:id="rIdData"/>
+    <sheet name="Macro1" sheetId="2" r:id="rIdMacro" state="hidden"/>
+  </sheets>
+</workbook>`,
+		'xl/worksheets/sheet1.xml': `<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`,
+		'xl/macrosheets/sheet1.xml': `<?xml version="1.0"?>
+<xm:macrosheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:xm="http://schemas.microsoft.com/office/excel/2006/main">
+  <dimension ref="A1"/>
+  <sheetData><row r="1"><c r="A1"><f>RUN("Task")</f><v>0</v></c></row></sheetData>
+</xm:macrosheet>`,
+		'xl/macrosheets/_rels/sheet1.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"/>`,
+	})
+}
+
+function embeddingVendorSecurityWorkbook(): Uint8Array {
+	return makeXlsx({
+		'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Default Extension="bin" ContentType="application/vnd.openxmlformats-officedocument.oleObject"/>
+  <Default Extension="xen" ContentType="application/octet-stream"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`,
+		'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+  <Relationship Id="rDellEncryptedDoc" Type="http://schemas.dell.com/ddp/2016/relationships/xenFile" Target="ddp/ddpfile.xen"/>
+</Relationships>`,
+		'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSheet" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`,
+		'xl/workbook.xml': `<?xml version="1.0"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Data" sheetId="1" r:id="rIdSheet"/></sheets>
+</workbook>`,
+		'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheetData/>
+  <oleObjects><oleObject progId="Package" r:id="rIdOle" shapeId="1025"/></oleObjects>
+</worksheet>`,
+		'xl/worksheets/_rels/sheet1.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdOle" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObject" Target="../embeddings/oleObject1.bin"/>
+</Relationships>`,
+		'xl/embeddings/oleObject1.bin': 'embedded-payload',
+		'ddp/ddpfile.xen': 'opaque-vendor-security',
+	})
+}
+
+function customUiWorkbook(): Uint8Array {
+	return makeXlsx({
+		'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Default Extension="png" ContentType="image/png"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.ms-excel.sheet.macroEnabled.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/customUI/customUI2.xml" ContentType="application/vnd.ms-office.customUI+xml"/>
+</Types>`,
+		'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+  <Relationship Id="rIdCustomUi" Type="http://schemas.microsoft.com/office/2007/relationships/ui/extensibility" Target="/customUI/customUI2.xml"/>
+</Relationships>`,
+		'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSheet" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`,
+		'xl/workbook.xml': `<?xml version="1.0"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Data" sheetId="1" r:id="rIdSheet"/></sheets>
+</workbook>`,
+		'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`,
+		'customUI/customUI2.xml': `<?xml version="1.0"?>
+<customUI xmlns="http://schemas.microsoft.com/office/2009/07/customui" onLoad="Ribbon.OnLoad" loadImage="Ribbon.LoadImage">
+  <ribbon><tabs><tab id="tabAscend" label="Ascend">
+    <group id="grpActions" label="Actions">
+      <button id="runReport" label="Run" onAction="Module1.RunReport" getEnabled="Ribbon.CanRun"/>
+    </group>
+  </tab></tabs></ribbon>
+</customUI>`,
+		'customUI/_rels/customUI2.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdImage" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../xl/media/image1.png"/>
+</Relationships>`,
+		'xl/media/image1.png': 'image-bytes',
+	})
+}
+
 function preservedCustomWorkbook(): Uint8Array {
 	return makeXlsx({
 		'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -4452,6 +7826,281 @@ function preservedCustomWorkbook(): Uint8Array {
 		'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`,
 		'xl/custom/custom1.xml': '<custom>preserve me</custom>',
+	})
+}
+
+function inspectOnlyWorkbook(): Uint8Array {
+	return makeXlsx({
+		'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/customData/item1.data" ContentType="application/vnd.ms-excel.customData"/>
+</Types>`,
+		'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+		'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSheet" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rIdPowerQuery" Type="http://schemas.microsoft.com/office/2014/relationships/powerQueryMashup" Target="customData/item1.data"/>
+</Relationships>`,
+		'xl/workbook.xml': `<?xml version="1.0"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Sheet1" sheetId="1" r:id="rIdSheet"/></sheets>
+</workbook>`,
+		'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`,
+		'xl/customData/item1.data': 'power-query-mashup-bytes',
+	})
+}
+
+async function writeOpaqueX14Workbook(path: string): Promise<void> {
+	const wb = AscendWorkbook.create()
+	const sheet = wb.getWorkbookModel().sheets[0]
+	if (!sheet) throw new Error('expected default sheet')
+	sheet.x14ConditionalFormats.push({
+		index: 0,
+		sqref: 'A1:A5',
+		type: 'dataBar',
+		priority: 4,
+		formulas: [],
+		preservedRuleAttributes: { 'xr:uid': '{CF-UID}' },
+		preservedRuleChildXml: [
+			'<x14:extLst><x14:ext uri="{cf-extension}"><x14ac:metadata flag="1"/></x14:ext></x14:extLst>',
+		],
+	})
+	sheet.x14DataValidations.push({
+		index: 0,
+		sqref: 'C2:C5',
+		type: 'list',
+		operator: 'between',
+		formula1: '$A$1:$A$4',
+		preservedAttributes: { 'xr:uid': '{DV-UID}' },
+		preservedChildXml: ['<x14ac:metadata flag="1"><x14ac:item val="keep"/></x14ac:metadata>'],
+	})
+	await wb.save(path)
+}
+
+function signedPackageWorkbook(): Uint8Array {
+	return makeXlsx({
+		'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/_xmlsignatures/origin.sigs" ContentType="application/vnd.openxmlformats-package.digital-signature-origin"/>
+  <Override PartName="/_xmlsignatures/sig1.xml" ContentType="application/vnd.openxmlformats-package.digital-signature-xmlsignature+xml"/>
+</Types>`,
+		'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+  <Relationship Id="rIdSignatureOrigin" Type="http://schemas.openxmlformats.org/package/2006/relationships/digital-signature/origin" Target="_xmlsignatures/origin.sigs"/>
+</Relationships>`,
+		'_xmlsignatures/_rels/origin.sigs.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSignature" Type="http://schemas.openxmlformats.org/package/2006/relationships/digital-signature/signature" Target="sig1.xml"/>
+</Relationships>`,
+		'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSheet" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`,
+		'xl/workbook.xml': `<?xml version="1.0"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Sheet1" sheetId="1" r:id="rIdSheet"/></sheets>
+</workbook>`,
+		'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`,
+		'_xmlsignatures/origin.sigs': '',
+		'_xmlsignatures/sig1.xml':
+			'<?xml version="1.0"?><Signature xmlns="http://www.w3.org/2000/09/xmldsig#"/>',
+	})
+}
+
+function calcChainWorkbook(): Uint8Array {
+	return makeXlsx({
+		'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/calcChain.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.calcChain+xml"/>
+</Types>`,
+		'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+		'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSheet" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rIdCalcChain" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/calcChain" Target="calcChain.xml"/>
+</Relationships>`,
+		'xl/workbook.xml': `<?xml version="1.0"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Sheet1" sheetId="1" r:id="rIdSheet"/></sheets>
+</workbook>`,
+		'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    <row r="1"><c r="A1"><v>1</v></c><c r="B1"><f>A1*2</f><v>2</v></c></row>
+  </sheetData>
+</worksheet>`,
+		'xl/calcChain.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<calcChain xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <c r="B1" i="1"/>
+</calcChain>`,
+	})
+}
+
+function externalLinkBoundWorkbook(): Uint8Array {
+	return makeXlsx({
+		'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/externalLinks/externalLink1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.externalLink+xml"/>
+</Types>`,
+		'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+		'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSheet1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rIdExternal" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLink" Target="externalLinks/externalLink1.xml"/>
+</Relationships>`,
+		'xl/workbook.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Sheet1" sheetId="1" r:id="rIdSheet1"/></sheets>
+  <externalReferences><externalReference r:id="rIdExternal"/></externalReferences>
+</workbook>`,
+		'xl/worksheets/sheet1.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`,
+		'xl/externalLinks/externalLink1.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<externalLink xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <externalBook r:id="rIdExt"/>
+</externalLink>`,
+		'xl/externalLinks/_rels/externalLink1.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdExt" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLinkPath" Target="../sources/source.xlsx" TargetMode="External"/>
+</Relationships>`,
+	})
+}
+
+function analyticsRefreshWorkbook(): Uint8Array {
+	return makeXlsx({
+		'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/pivotTables/pivotTable1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.pivotTable+xml"/>
+  <Override PartName="/xl/pivotCache/pivotCacheDefinition1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.pivotCacheDefinition+xml"/>
+  <Override PartName="/xl/pivotCache/pivotCacheRecords1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.pivotCacheRecords+xml"/>
+  <Override PartName="/xl/slicerCaches/slicerCache1.xml" ContentType="application/vnd.ms-excel.slicerCache+xml"/>
+  <Override PartName="/xl/slicers/slicer1.xml" ContentType="application/vnd.ms-excel.slicer+xml"/>
+  <Override PartName="/xl/timelineCaches/timelineCache1.xml" ContentType="application/vnd.ms-excel.timelineCache+xml"/>
+  <Override PartName="/xl/timelines/timeline1.xml" ContentType="application/vnd.ms-excel.timeline+xml"/>
+</Types>`,
+		'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+		'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSheet1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rIdSheet2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>
+  <Relationship Id="rIdPivotCache" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotCacheDefinition" Target="pivotCache/pivotCacheDefinition1.xml"/>
+  <Relationship Id="rIdSlicerCache" Type="http://schemas.microsoft.com/office/2007/relationships/slicerCache" Target="slicerCaches/slicerCache1.xml"/>
+  <Relationship Id="rIdTimelineCache" Type="http://schemas.microsoft.com/office/2011/relationships/timelineCache" Target="timelineCaches/timelineCache1.xml"/>
+</Relationships>`,
+		'xl/workbook.xml': `<?xml version="1.0"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <pivotCaches><pivotCache cacheId="34" r:id="rIdPivotCache"/></pivotCaches>
+  <sheets>
+    <sheet name="PivotSheet" sheetId="1" r:id="rIdSheet1"/>
+    <sheet name="Raw" sheetId="2" r:id="rIdSheet2"/>
+  </sheets>
+</workbook>`,
+		'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`,
+		'xl/worksheets/sheet2.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    <row r="1"><c r="A1" t="inlineStr"><is><t>Region</t></is></c><c r="B1" t="inlineStr"><is><t>Sales</t></is></c></row>
+    <row r="2"><c r="A2" t="inlineStr"><is><t>West</t></is></c><c r="B2"><v>10</v></c></row>
+    <row r="3"><c r="A3" t="inlineStr"><is><t>East</t></is></c><c r="B3"><v>20</v></c></row>
+  </sheetData>
+</worksheet>`,
+		'xl/worksheets/_rels/sheet1.xml.rels': `<?xml version="1.0"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdPivotTable" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotTable" Target="../pivotTables/pivotTable1.xml"/>
+  <Relationship Id="rIdSlicer" Type="http://schemas.microsoft.com/office/2007/relationships/slicer" Target="../slicers/slicer1.xml"/>
+  <Relationship Id="rIdTimeline" Type="http://schemas.microsoft.com/office/2011/relationships/timeline" Target="../timelines/timeline1.xml"/>
+</Relationships>`,
+		'xl/pivotTables/pivotTable1.xml': `<?xml version="1.0"?>
+<pivotTableDefinition xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" name="PivotTable1" cacheId="34">
+  <location ref="A3:C8" firstHeaderRow="0" firstDataRow="1" firstDataCol="1"/>
+  <pivotFields count="1"><pivotField axis="axisPage" multipleItemSelectionAllowed="1" showAll="0"><items count="2"><item x="0"/><item x="1"/></items></pivotField></pivotFields>
+  <pageFields count="1"><pageField fld="0" item="0" name="Region"/></pageFields>
+</pivotTableDefinition>`,
+		'xl/pivotCache/pivotCacheDefinition1.xml': `<?xml version="1.0"?>
+<pivotCacheDefinition xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+  r:id="rIdRecords" recordCount="2" refreshOnLoad="1" enableRefresh="1">
+  <cacheSource type="worksheet"><worksheetSource ref="A1:B3" sheet="Raw"/></cacheSource>
+  <cacheFields count="2">
+    <cacheField name="Region" databaseField="1"><sharedItems count="2"><s v="West"/><s v="East"/></sharedItems></cacheField>
+    <cacheField name="Sales" databaseField="1"><sharedItems containsNumber="1" count="2"><n v="10"/><n v="20"/></sharedItems></cacheField>
+  </cacheFields>
+</pivotCacheDefinition>`,
+		'xl/pivotCache/_rels/pivotCacheDefinition1.xml.rels': `<?xml version="1.0"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdRecords" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotCacheRecords" Target="pivotCacheRecords1.xml"/>
+</Relationships>`,
+		'xl/pivotCache/pivotCacheRecords1.xml': `<?xml version="1.0"?>
+<pivotCacheRecords xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="2">
+  <r><x v="0"/><n v="10"/></r>
+  <r><x v="1"/><n v="20"/></r>
+</pivotCacheRecords>`,
+		'xl/slicerCaches/slicerCache1.xml': `<?xml version="1.0"?>
+<slicerCacheDefinition xmlns="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main" name="Slicer_Region" sourceName="Region">
+  <pivotTables><pivotTable name="PivotTable1"/></pivotTables>
+  <data><tabular pivotCacheId="34"><items count="2"><i x="0" s="1"/><i x="1"/></items></tabular></data>
+</slicerCacheDefinition>`,
+		'xl/slicerCaches/_rels/slicerCache1.xml.rels': `<?xml version="1.0"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSlicerUi" Type="http://schemas.microsoft.com/office/2007/relationships/slicer" Target="../slicers/slicer1.xml"/>
+</Relationships>`,
+		'xl/slicers/slicer1.xml': `<?xml version="1.0"?>
+<slicers xmlns="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main"><slicer name="Region" cache="Slicer_Region" caption="Region"/></slicers>`,
+		'xl/timelineCaches/timelineCache1.xml': `<?xml version="1.0"?>
+<timelineCacheDefinition xmlns="http://schemas.microsoft.com/office/spreadsheetml/2010/11/main" name="Timeline_Order_Date" sourceName="Order Date">
+  <data><tabular pivotCacheId="34"/></data>
+  <pivotTables><pivotTable name="PivotTable1"/></pivotTables>
+  <state filterId="7" filterPivotName="PivotTable1" filterType="dateRange" filterTabId="2" pivotCacheId="34" singleRangeFilterState="1">
+    <selection startDate="2023-01-01T00:00:00" endDate="2023-12-31T00:00:00"/>
+  </state>
+</timelineCacheDefinition>`,
+		'xl/timelineCaches/_rels/timelineCache1.xml.rels': `<?xml version="1.0"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdTimelineUi" Type="http://schemas.microsoft.com/office/2011/relationships/timeline" Target="../timelines/timeline1.xml"/>
+</Relationships>`,
+		'xl/timelines/timeline1.xml': `<?xml version="1.0"?>
+<timelines xmlns="http://schemas.microsoft.com/office/spreadsheetml/2010/11/main"><timeline name="Order_Date" cache="Timeline_Order_Date" caption="Order Date"/></timelines>`,
 	})
 }
 
@@ -4493,6 +8142,57 @@ function binaryRawPartWorkbook(binaryBytes: Uint8Array): Uint8Array {
 				'xl/media/image1.png': binaryBytes,
 				'xl/media/case.png': new Uint8Array([1]),
 				'XL/MEDIA/CASE.PNG': new Uint8Array([2]),
+			}),
+		),
+	)
+}
+
+function visualWorkbook(): Uint8Array {
+	return createZip(
+		new Map(
+			Object.entries({
+				'[Content_Types].xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Default Extension="png" ContentType="image/png"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/drawings/drawing1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>
+</Types>`),
+				'_rels/.rels': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`),
+				'xl/_rels/workbook.xml.rels':
+					encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSheet1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`),
+				'xl/worksheets/_rels/sheet1.xml.rels':
+					encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdDrawing1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/>
+</Relationships>`),
+				'xl/drawings/_rels/drawing1.xml.rels':
+					encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdImage1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image1.png"/>
+</Relationships>`),
+				'xl/workbook.xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Sheet1" sheetId="1" r:id="rIdSheet1"/></sheets>
+</workbook>`),
+				'xl/worksheets/sheet1.xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheetData/>
+  <drawing r:id="rIdDrawing1"/>
+</worksheet>`),
+				'xl/drawings/drawing1.xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <xdr:oneCellAnchor><xdr:from><xdr:col>0</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>0</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from><xdr:ext cx="1" cy="1"/><xdr:pic><xdr:nvPicPr><xdr:cNvPr id="1" name="Picture 1"/><xdr:cNvPicPr/></xdr:nvPicPr><xdr:blipFill><a:blip r:embed="rIdImage1"/></xdr:blipFill><xdr:spPr/></xdr:pic><xdr:clientData/></xdr:oneCellAnchor>
+</xdr:wsDr>`),
+				'xl/media/image1.png': encode('png-bytes'),
 			}),
 		),
 	)

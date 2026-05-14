@@ -73,6 +73,7 @@ interface PreparedPlanHandle {
 	readonly file: string
 	readonly inputSha256: string
 	readonly planDigest: string
+	readonly operationCount: number
 	readonly pathMutations?: PathMutationResult
 	commit(options: AgentCommitOptions): Promise<Awaited<ReturnType<typeof commitAgentPlan>>>
 }
@@ -85,6 +86,10 @@ export interface McpServerOptions {
 
 interface PreparedPlanMetadata {
 	readonly id: string
+	readonly file: string
+	readonly inputSha256: string
+	readonly planDigest: string
+	readonly operationCount: number
 	readonly expiresAt: string
 	readonly ttlMs: number
 }
@@ -165,7 +170,15 @@ class PreparedPlanStore {
 		const id = randomUUID()
 		const expiresAtMs = this.now() + this.ttlMs
 		this.handles.set(id, { handle, expiresAtMs })
-		return { id, expiresAt: new Date(expiresAtMs).toISOString(), ttlMs: this.ttlMs }
+		return {
+			id,
+			file: handle.file,
+			inputSha256: handle.inputSha256,
+			planDigest: handle.planDigest,
+			operationCount: handle.operationCount,
+			expiresAt: new Date(expiresAtMs).toISOString(),
+			ttlMs: this.ttlMs,
+		}
 	}
 
 	take(id: string): PreparedPlanTakeResult {
@@ -379,6 +392,7 @@ function preparedPlanHandle(prepared: PreparedAgentPlan): PreparedPlanHandle {
 		file: prepared.file,
 		inputSha256: prepared.inputSha256,
 		planDigest: prepared.planDigest,
+		operationCount: prepared.operationCount,
 		commit: (options) => commit(options),
 	}
 }
@@ -793,7 +807,7 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 				const firstWindow = preview === true || mode === 'compact'
 				const effectiveRowLimit = firstWindowRowLimit(rowLimit, firstWindow)
 				const wb = await WorkbookDocument.open(file, {
-					mode: 'values',
+					mode: mode === 'cells' ? 'formula' : 'values',
 					...(sheet ? { sheets: [sheet] } : {}),
 					...readPreviewLoadOptions(maxRows, rowOffset, rowLimit, firstWindow),
 				})
@@ -821,6 +835,9 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 										omitEmpty: true,
 										flatValues: true,
 										changedSince: changedSince ?? '',
+										...(cols && cols.length > 0
+											? { changeProjectionKey: JSON.stringify({ cols }) }
+											: {}),
 									}),
 									cols,
 								),
@@ -1461,6 +1478,7 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 							file,
 							inputSha256,
 							planDigest,
+							operationCount: result.operationCount,
 							...(pathMutations !== undefined ? { pathMutations } : {}),
 							commit: async (options) => {
 								const current = await Bun.file(file).bytes()
@@ -1560,6 +1578,12 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 				.boolean()
 				.optional()
 				.describe('Return compact commit verification counts instead of full trace artifacts'),
+			maxAffectedCells: z
+				.number()
+				.int()
+				.nonnegative()
+				.optional()
+				.describe('Maximum affected cell refs to include when compact is true'),
 			maxRows: z
 				.number()
 				.int()
@@ -1581,6 +1605,7 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 			allowLoss,
 			approvals,
 			compact,
+			maxAffectedCells,
 			maxRows,
 		}) => {
 			try {
@@ -1597,7 +1622,11 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 					const prepared = preparedPlans.take(planHandle)
 					if (!prepared.ok) return errorResponse(prepared.error)
 					const result = await prepared.handle.commit(options)
-					const payload = compact ? compactAgentCommitResult(result) : result
+					const payload = compact
+						? compactAgentCommitResult(result, {
+								...(maxAffectedCells !== undefined ? { maxAffectedCells } : {}),
+							})
+						: result
 					return okResponse(
 						withPathMutationResult(payload, prepared.handle.pathMutations),
 						`Committed ${result.operationCount} operation(s)`,
@@ -1623,7 +1652,11 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 					input = inputShape
 					result = await commitAgentPlan(file, input.ops, options)
 				}
-				const payload = compact ? compactAgentCommitResult(result) : result
+				const payload = compact
+					? compactAgentCommitResult(result, {
+							...(maxAffectedCells !== undefined ? { maxAffectedCells } : {}),
+						})
+					: result
 				return okResponse(
 					withPathMutationResult(payload, pathMutations),
 					`Committed ${input.ops.length} operation(s)`,

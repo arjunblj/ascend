@@ -102,6 +102,7 @@ describe('agent workflow loss audit', () => {
 				partPath: 'xl/custom/custom1.xml',
 				featureFamily: 'preservedOther',
 				preservationPolicy: 'unknown-review-required',
+				preservationMode: 'review-required',
 				ownerScope: 'unknown',
 				bytePreservationExpected: false,
 			}),
@@ -114,6 +115,8 @@ describe('agent workflow loss audit', () => {
 			expect.objectContaining({
 				code: 'package_feature_classification',
 				partPath: 'xl/custom/custom1.xml',
+				preservationPolicy: 'unknown-review-required',
+				preservationMode: 'review-required',
 			}),
 		)
 	})
@@ -133,6 +136,8 @@ describe('agent workflow loss audit', () => {
 			expect.objectContaining({
 				code: 'package_feature_classification',
 				partPath: 'xl/custom/custom1.xml',
+				preservationPolicy: 'unknown-review-required',
+				preservationMode: 'review-required',
 			}),
 		)
 		expect(plan.lossAudit.blockedPackageParts).toEqual([
@@ -140,6 +145,7 @@ describe('agent workflow loss audit', () => {
 				partPath: 'xl/custom/custom1.xml',
 				featureFamily: 'preservedOther',
 				preservationPolicy: 'unknown-review-required',
+				preservationMode: 'review-required',
 				reason: expect.stringContaining('cannot classify'),
 			}),
 		])
@@ -156,6 +162,7 @@ describe('agent workflow loss audit', () => {
 				expect.objectContaining({
 					partPath: 'xl/custom/custom1.xml',
 					preservationPolicy: 'unknown-review-required',
+					preservationMode: 'review-required',
 				}),
 			],
 		})
@@ -164,6 +171,11 @@ describe('agent workflow loss audit', () => {
 		expect(plan.modelOutput.blocked).toBe(true)
 		expect(plan.modelOutput.counts.packageGraphIssues).toBe(1)
 		expect(plan.modelOutput.nextActions.join('\n')).toContain('approval')
+		expect(plan.writePolicy.summary.preservationModes).toMatchObject({
+			reviewRequiredParts: 1,
+			unsupportedFeatures: 0,
+			lossyApprovalRequiredFeatures: 1,
+		})
 
 		await expect(commitAgentPlan(input, ops, { output })).rejects.toThrow(
 			'Commit requires explicit approval',
@@ -232,6 +244,7 @@ describe('agent workflow loss audit', () => {
 					partPath: '_xmlsignatures/origin.sigs',
 					featureFamily: 'preservedSignature',
 					preservationPolicy: 'invalidate-on-edit',
+					preservationMode: 'invalidated-on-edit',
 					sourceRelationshipPart: '_rels/.rels',
 					sourceRelationshipId: 'rIdSignatureOrigin',
 					reason: expect.stringContaining('invalidate'),
@@ -240,6 +253,7 @@ describe('agent workflow loss audit', () => {
 					partPath: '_xmlsignatures/sig1.xml',
 					featureFamily: 'preservedSignature',
 					preservationPolicy: 'invalidate-on-edit',
+					preservationMode: 'invalidated-on-edit',
 					sourceRelationshipPart: '_xmlsignatures/_rels/origin.sigs.rels',
 					sourceRelationshipId: 'rIdSignature',
 				}),
@@ -249,10 +263,12 @@ describe('agent workflow loss audit', () => {
 			expect.arrayContaining(['_xmlsignatures/origin.sigs', '_xmlsignatures/sig1.xml']),
 		)
 		expect(plan.writePolicy.summary.invalidatedSignatures).toBe(2)
+		expect(plan.writePolicy.summary.preservationModes.invalidatedOnEditParts).toBe(2)
 		expect(plan.writePolicy.diagnostics).toContainEqual(
 			expect.objectContaining({
 				code: 'signature-invalidation',
 				severity: 'warning',
+				preservationMode: 'invalidated-on-edit',
 				partPaths: expect.arrayContaining([
 					'_xmlsignatures/origin.sigs',
 					'_xmlsignatures/sig1.xml',
@@ -261,6 +277,46 @@ describe('agent workflow loss audit', () => {
 		)
 		expect(plan.trace.phases.find((phase) => phase.phase === 'write-policy')?.status).toBe(
 			'warning',
+		)
+	})
+
+	test('plans expose inspect-only package preservation mode', async () => {
+		const input = join(TEMP_DIR, 'inspect-only.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		await Bun.write(input, makeInspectOnlyXlsx())
+
+		const plan = await createAgentPlan(input, [
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] },
+		])
+
+		expect(plan.lossAudit.ok).toBe(false)
+		expect(plan.lossAudit.blockedPackageParts).toContainEqual(
+			expect.objectContaining({
+				partPath: 'xl/customData/item1.data',
+				featureFamily: 'preservedPowerQuery',
+				preservationPolicy: 'inspect-only',
+				preservationMode: 'inspect-only',
+				bytePreservationExpected: true,
+				reason: expect.stringContaining('inspect-only'),
+			}),
+		)
+		expect(plan.writePolicy.summary.preservationModes).toMatchObject({
+			inspectOnlyParts: 1,
+			lossyApprovalRequiredFeatures: 1,
+		})
+		expect(plan.writePolicy.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: 'approval-required-feature',
+				featureFamily: 'preservedPowerQuery',
+				preservationMode: 'inspect-only',
+				partPaths: ['xl/customData/item1.data'],
+				packageParts: [
+					expect.objectContaining({
+						partPath: 'xl/customData/item1.data',
+						preservationMode: 'inspect-only',
+					}),
+				],
+			}),
 		)
 	})
 
@@ -334,6 +390,9 @@ describe('agent workflow loss audit', () => {
 		expect(compact.trace.traceDigest).toBe(committed.trace.traceDigest)
 		expect(compact.trace.artifactCount).toBe(committed.trace.artifacts.length)
 		expect(compact.apply.affectedCellCount).toBe(1)
+		expect(compact.apply.emittedAffectedCellCount).toBe(1)
+		expect(compact.apply.affectedCellRefs).toEqual(['A1'])
+		expect(compact.apply.affectedRanges).toEqual([{ sheet: 'Sheet1', range: 'A1:A1' }])
 		expect(compact.check.valid).toBe(true)
 		expect(compact.postWrite.valid).toBe(true)
 		expect(compact.postWrite.reopened).toBe(true)
@@ -346,6 +405,131 @@ describe('agent workflow loss audit', () => {
 		expect(compact.packageGraphAudit.ok).toBe(true)
 		expect('artifacts' in compact.trace).toBe(false)
 		expect('affectedCells' in compact.apply).toBe(false)
+	})
+
+	test('compact commits report reopened workbook and sheet security metadata', async () => {
+		const input = join(TEMP_DIR, 'compact-security-commit.xlsx')
+		const output = join(TEMP_DIR, 'compact-security-commit-out.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		const wb = AscendWorkbook.create()
+		const model = wb.getWorkbookModel()
+		model.workbookProtection = {
+			lockStructure: true,
+			lockWindows: true,
+			workbookPassword: 'ABCD',
+		}
+		const sheet = model.getSheet('Sheet1')
+		if (!sheet) throw new Error('Expected Sheet1')
+		sheet.protection = {
+			sheet: true,
+			password: 'DCBA',
+			autoFilter: true,
+			sort: true,
+		}
+		sheet.protectedRanges = [{ name: 'Editable', sqref: 'C:C', password: '1234' }]
+		await wb.save(input)
+
+		const committed = await commitAgentPlan(
+			input,
+			[{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'audit' }] }],
+			{ output },
+		)
+
+		expect(committed.postWrite.auditsPassed).toBe(true)
+		expect(committed.postWrite.security).toMatchObject({
+			workbookProtected: true,
+			workbookLocks: ['lockStructure', 'lockWindows'],
+			workbookPasswordProtected: true,
+			workbookRevisionPasswordProtected: false,
+			protectedSheets: 1,
+			protectedSheetNames: ['Sheet1'],
+			sheetPasswordProtected: 1,
+			sheetStrongHashProtected: 0,
+			protectedRanges: 1,
+			protectedRangeLocations: ['Sheet1!C:C'],
+			passwordHashVerification: 'reported-not-validated',
+			preservationMode: 'generated',
+			verification: 'reopened-output',
+		})
+		expect(compactAgentCommitResult(committed).postWrite.security).toMatchObject({
+			workbookProtected: true,
+			protectedSheets: 1,
+			protectedRangeLocations: ['Sheet1!C:C'],
+			sheets: [
+				{
+					sheetName: 'Sheet1',
+					protected: true,
+					passwordProtected: true,
+					allowedActions: ['sort', 'autoFilter'],
+					protectedRanges: 1,
+				},
+			],
+		})
+	})
+
+	test('compact plan result preserves changed ranges when changed cells are capped', async () => {
+		const input = join(TEMP_DIR, 'compact-plan-ranges.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 1 },
+					{ ref: 'A2', value: 2 },
+					{ ref: 'A3', value: 3 },
+				],
+			},
+		])
+		await wb.save(input)
+
+		const plan = await createAgentPlan(input, [
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 10 },
+					{ ref: 'A2', value: 20 },
+					{ ref: 'A3', value: 30 },
+				],
+			},
+		])
+		const compact = compactAgentPlanResult(plan, { maxChangedCells: 1 })
+		expect(compact.preview.changedCellCount).toBe(3)
+		expect(compact.preview.emittedChangedCellCount).toBe(1)
+		expect(compact.preview.changedCells).toHaveLength(1)
+		expect(compact.preview.changedRanges).toEqual([{ sheet: 'Sheet1', range: 'A1:A3' }])
+	})
+
+	test('compact commit result bounds affected refs while preserving affected ranges', async () => {
+		const input = join(TEMP_DIR, 'compact-affected-refs.xlsx')
+		const output = join(TEMP_DIR, 'compact-affected-refs-out.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		const wb = AscendWorkbook.create()
+		await wb.save(input)
+
+		const committed = await commitAgentPlan(
+			input,
+			[
+				{
+					op: 'setCells',
+					sheet: 'Sheet1',
+					updates: [
+						{ ref: 'A1', value: 1 },
+						{ ref: 'A2', value: 2 },
+						{ ref: 'A3', value: 3 },
+					],
+				},
+			],
+			{ output },
+		)
+
+		const compact = compactAgentCommitResult(committed, { maxAffectedCells: 2 })
+		expect(compact.apply.affectedCellCount).toBe(3)
+		expect(compact.apply.emittedAffectedCellCount).toBe(2)
+		expect(compact.apply.affectedCellRefs).toEqual(['A1', 'A2'])
+		expect(compact.apply.affectedRanges).toEqual([{ sheet: 'Sheet1', range: 'A1:A3' }])
 	})
 
 	test('commit stops before write when write policy has structural blockers', async () => {
@@ -394,6 +578,7 @@ describe('agent workflow loss audit', () => {
 			expect.objectContaining({
 				code: 'calc-chain-preserved',
 				severity: 'info',
+				preservationMode: 'preserve-exact',
 				partPaths: ['xl/calcChain.xml'],
 			}),
 		)
@@ -408,6 +593,7 @@ describe('agent workflow loss audit', () => {
 				code: 'calc-chain-discarded',
 				severity: 'warning',
 				preservationPolicy: 'discard-on-recalc',
+				preservationMode: 'discarded-for-recalc',
 			}),
 		)
 	})
@@ -444,6 +630,12 @@ describe('agent workflow loss audit', () => {
 					formula: '=SUM([1]FY26!D2:D20)>0',
 					dataBar: { cfvo: [{ type: 'formula', value: '[1]FY26!$D$1' }] },
 				},
+			},
+			{
+				op: 'setFormula',
+				sheet: 'Sheet1',
+				ref: 'A2',
+				formula: '=SUM([1]FY26:FY28!B2:B10)',
 			},
 		])
 
@@ -509,6 +701,15 @@ describe('agent workflow loss audit', () => {
 							range: 'D2:D20',
 							formula: '[1]FY26!$D$1',
 							references: ['[1]FY26!$D$1'],
+						}),
+						expect.objectContaining({
+							operationIndex: 4,
+							op: 'setFormula',
+							sourceKind: 'cellFormula',
+							sourceRef: 'Sheet1!A2',
+							formula: '=SUM([1]FY26:FY28!B2:B10)',
+							sheetSpan: { startSheet: 'FY26', endSheet: 'FY28' },
+							references: ["'[1]FY26:FY28'!B2:B10"],
 						}),
 					]),
 				}),
@@ -623,6 +824,49 @@ describe('agent workflow loss audit', () => {
 				partPaths: ['xl/vbaProject.bin'],
 			}),
 		)
+	})
+
+	test('commits report reopened active content without execution support', async () => {
+		const input = join(TEMP_DIR, 'macro-post-write.xlsm')
+		const output = join(TEMP_DIR, 'macro-post-write-out.xlsm')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		await Bun.write(input, makeMacroXlsx())
+
+		const ops = [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] }] as const
+		const plan = await createAgentPlan(input, ops)
+		const committed = await commitAgentPlan(input, ops, {
+			output,
+			approvals: plan.approvals.map((approval) => approval.id),
+		})
+
+		expect(committed.postWrite.auditsPassed).toBe(true)
+		expect(committed.postWrite.activeContent).toMatchObject({
+			total: 1,
+			vbaProjects: 1,
+			activeXControls: 0,
+			vbaSignatures: 0,
+			digitalSignatures: 0,
+			partPaths: ['xl/vbaProject.bin'],
+			executionPolicy: 'blocked',
+			preservationMode: 'preserve-exact',
+			verification: 'reopened-output',
+			entries: [
+				expect.objectContaining({
+					kind: 'vbaProject',
+					partPath: 'xl/vbaProject.bin',
+					contentType: 'application/vnd.ms-office.vbaProject',
+					anchor: 'workbook',
+					opaque: true,
+					executionPolicy: 'blocked',
+				}),
+			],
+		})
+		expect(compactAgentCommitResult(committed).postWrite.activeContent).toMatchObject({
+			total: 1,
+			vbaProjects: 1,
+			executionPolicy: 'blocked',
+			preservationMode: 'preserve-exact',
+		})
 	})
 
 	test('dirty cell edits preserve visual sidecars without visual-edit noise', async () => {
@@ -756,6 +1000,39 @@ describe('agent workflow loss audit', () => {
 			},
 		)
 		expect(committed.postWrite.packageGraphAudit.ok).toBe(true)
+		expect(committed.postWrite.visuals).toMatchObject({
+			sheetsWithVisuals: 1,
+			images: 1,
+			drawingObjects: 0,
+			drawingMlObjects: 0,
+			vmlObjects: 0,
+			chartParts: 0,
+			chartSheets: 0,
+			drawingPartPaths: ['xl/drawings/drawing1.xml'],
+			mediaPartPaths: ['xl/media/image1.png'],
+			chartPartPaths: [],
+			vmlPartPaths: [],
+			preservationMode: 'preserve-exact',
+			verification: 'reopened-output',
+			sheets: [
+				expect.objectContaining({
+					sheetName: 'Sheet1',
+					hasDrawingMl: true,
+					hasVml: false,
+					imageCount: 1,
+					drawingPartPaths: ['xl/drawings/drawing1.xml'],
+					mediaPartPaths: ['xl/media/image1.png'],
+				}),
+			],
+		})
+		expect(compactAgentCommitResult(committed).postWrite.visuals).toMatchObject({
+			sheetsWithVisuals: 1,
+			images: 1,
+			drawingPartPaths: ['xl/drawings/drawing1.xml'],
+			mediaPartPaths: ['xl/media/image1.png'],
+			preservationMode: 'preserve-exact',
+			verification: 'reopened-output',
+		})
 		const outputGraph = inspectXlsxPackageGraph(await Bun.file(output).bytes())
 		expect(outputGraph.parts.map((part) => part.path)).toEqual(
 			expect.arrayContaining([
@@ -1008,6 +1285,103 @@ describe('agent workflow loss audit', () => {
 				}),
 			}),
 		)
+	})
+
+	test('commits report reopened analytics preservation summary after write', async () => {
+		const input = join(TEMP_DIR, 'analytics-post-write.xlsx')
+		const output = join(TEMP_DIR, 'analytics-post-write-out.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		await Bun.write(input, makeAnalyticsRefreshXlsx())
+
+		const ops = [
+			{ op: 'setCells', sheet: 'PivotSheet', updates: [{ ref: 'A1', value: 'ok' }] },
+		] as const
+		const plan = await createAgentPlan(input, ops)
+		const committed = await commitAgentPlan(input, ops, {
+			output,
+			approvals: plan.approvals.map((approval) => approval.id),
+		})
+
+		expect(committed.postWrite.auditsPassed).toBe(false)
+		expect(committed.postWrite.unresolvedPackageGraphIssueCount).toBe(0)
+		expect(committed.postWrite.check.issues).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					rule: 'pivot-refresh-integrity',
+					severity: 'warning',
+					details: expect.objectContaining({ kind: 'pivot-headless-refresh-unsupported' }),
+				}),
+			]),
+		)
+		expect(committed.postWrite.analytics).toMatchObject({
+			pivotCaches: 1,
+			pivotTables: 1,
+			slicerCaches: 1,
+			slicers: 1,
+			timelineCaches: 1,
+			timelines: 1,
+			partPaths: expect.arrayContaining([
+				'xl/pivotCache/pivotCacheDefinition1.xml',
+				'xl/pivotCache/pivotCacheRecords1.xml',
+				'xl/pivotTables/pivotTable1.xml',
+				'xl/slicerCaches/slicerCache1.xml',
+				'xl/slicers/slicer1.xml',
+				'xl/timelineCaches/timelineCache1.xml',
+				'xl/timelines/timeline1.xml',
+			]),
+			requiresExternalRefresh: true,
+			preservationMode: 'preserve-exact',
+			verification: 'reopened-output',
+			pivotCacheDetails: [
+				expect.objectContaining({
+					partPath: 'xl/pivotCache/pivotCacheDefinition1.xml',
+					cacheId: 34,
+					sourceSheet: 'Raw',
+					sourceRef: 'A1:B3',
+					recordsPartPath: 'xl/pivotCache/pivotCacheRecords1.xml',
+					outputState: 'refresh-on-open',
+					requiresExternalRefresh: true,
+					linkedPivotTableNames: ['PivotTable1'],
+				}),
+			],
+			pivotTableDetails: [
+				expect.objectContaining({
+					partPath: 'xl/pivotTables/pivotTable1.xml',
+					name: 'PivotTable1',
+					sheetName: 'PivotSheet',
+					cacheId: 34,
+					locationRef: 'A3:C8',
+				}),
+			],
+			slicerCacheDetails: [
+				expect.objectContaining({
+					partPath: 'xl/slicerCaches/slicerCache1.xml',
+					name: 'Slicer_Region',
+					pivotCacheId: 34,
+					pivotTableNames: ['PivotTable1'],
+					slicerPartPaths: ['xl/slicers/slicer1.xml'],
+				}),
+			],
+			timelineCacheDetails: [
+				expect.objectContaining({
+					partPath: 'xl/timelineCaches/timelineCache1.xml',
+					name: 'Timeline_Order_Date',
+					pivotCacheId: 34,
+					pivotTableNames: ['PivotTable1'],
+					timelinePartPaths: ['xl/timelines/timeline1.xml'],
+					selection: {
+						startDate: '2023-01-01T00:00:00',
+						endDate: '2023-12-31T00:00:00',
+					},
+				}),
+			],
+		})
+		expect(compactAgentCommitResult(committed).postWrite.analytics).toMatchObject({
+			pivotCaches: 1,
+			pivotTables: 1,
+			requiresExternalRefresh: true,
+			preservationMode: 'preserve-exact',
+		})
 	})
 
 	test('plans pivot cache source edits with generated analytics parts and headless refresh notes', async () => {
@@ -1271,6 +1645,70 @@ describe('agent workflow loss audit', () => {
 								chartIndex: 0,
 								seriesIndex: 0,
 							}),
+						}),
+					],
+				}),
+			}),
+		)
+	})
+
+	test('does not treat external 3D chart source refs as local structural drift', async () => {
+		const input = join(TEMP_DIR, 'external-3d-chart-source.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		await Bun.write(
+			input,
+			makeEmbeddedChartXlsx({
+				sheetName: 'Data',
+				nameRef: "'[Budget.xlsx]FY26:FY28'!$B$1",
+				categoryRef: "'[Budget.xlsx]FY26:FY28'!$A$2:$A$4",
+				valueRef: "'[Budget.xlsx]FY26:FY28'!$B$2:$B$4",
+			}),
+		)
+
+		const plan = await createAgentPlan(input, [
+			{ op: 'insertRows', sheet: 'Data', at: 2, count: 1 },
+		])
+
+		expect(plan.writePolicy.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: 'chart-source-ref-drift-risk',
+				details: expect.objectContaining({
+					chartSourceRefDrift: [],
+					verifyIssues: expect.arrayContaining([
+						expect.objectContaining({
+							rule: 'chart-series-integrity',
+							details: expect.objectContaining({
+								kind: 'chart-series-external-reference',
+								externalSheet: '[Budget.xlsx]FY26:FY28',
+							}),
+						}),
+					]),
+				}),
+			}),
+		)
+		expect(plan.writePolicy.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: 'visual-sidecar-preservation-risk',
+				details: expect.objectContaining({
+					chartSourceRefs: [
+						expect.objectContaining({
+							partPath: 'xl/charts/chart1.xml',
+							series: [
+								expect.objectContaining({
+									sourceRefs: expect.arrayContaining([
+										expect.objectContaining({
+											sourceKind: 'categoryRef',
+											ref: "'[Budget.xlsx]FY26:FY28'!$A$2:$A$4",
+											referencedSheets: [],
+										}),
+										expect.objectContaining({
+											sourceKind: 'valueRef',
+											ref: "'[Budget.xlsx]FY26:FY28'!$B$2:$B$4",
+											referencedSheets: [],
+										}),
+									]),
+								}),
+							],
 						}),
 					],
 				}),
@@ -1613,6 +2051,164 @@ describe('agent workflow loss audit', () => {
 				}),
 			}),
 		)
+	})
+
+	test('commits report reopened legacy comments after write', async () => {
+		const input = join(TEMP_DIR, 'legacy-comment-commit.xlsx')
+		const output = join(TEMP_DIR, 'legacy-comment-commit-out.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		const wb = AscendWorkbook.create()
+		wb.getWorkbookModel().sheets[0]?.comments.set('B2', {
+			text: 'Review this',
+			author: 'Ada',
+		})
+		await wb.save(input)
+		const ops = [{ op: 'setCells' as const, sheet: 'Sheet1', updates: [{ ref: 'A1', value: 7 }] }]
+		const plan = await createAgentPlan(input, ops)
+
+		const committed = await commitAgentPlan(input, ops, {
+			output,
+			approvals: plan.approvals.map((approval) => approval.id),
+		})
+
+		expect(committed.postWrite.auditsPassed).toBe(true)
+		expect(committed.postWrite.comments).toMatchObject({
+			legacyCommentLocations: 1,
+			threadedCommentLocations: 0,
+			legacyDrawingLocations: 1,
+			locations: ['Sheet1!B2'],
+			threadedCommentPartPaths: [],
+			verification: 'reopened-output',
+		})
+		expect(compactAgentCommitResult(committed).postWrite.comments).toMatchObject({
+			legacyCommentLocations: 1,
+			legacyDrawingLocations: 1,
+			locations: ['Sheet1!B2'],
+		})
+	})
+
+	test('commits report reopened threaded comments after write', async () => {
+		const input = join(TEMP_DIR, 'threaded-comment-commit.xlsx')
+		const output = join(TEMP_DIR, 'threaded-comment-commit-out.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		await Bun.write(input, makeThreadedCommentXlsx())
+		const ops = [{ op: 'setCells' as const, sheet: 'Sheet1', updates: [{ ref: 'B1', value: 7 }] }]
+		const plan = await createAgentPlan(input, ops)
+
+		const committed = await commitAgentPlan(input, ops, {
+			output,
+			approvals: plan.approvals.map((approval) => approval.id),
+		})
+
+		expect(committed.postWrite.auditsPassed).toBe(true)
+		expect(committed.postWrite.comments).toMatchObject({
+			legacyCommentLocations: 0,
+			threadedCommentLocations: 2,
+			legacyDrawingLocations: 0,
+			locations: ['Sheet1!A1'],
+			threadedCommentPartPaths: ['xl/threadedComments/threadedComment1.xml'],
+			verification: 'reopened-output',
+		})
+		expect(compactAgentCommitResult(committed).postWrite.comments).toMatchObject({
+			threadedCommentLocations: 2,
+			threadedCommentPartPaths: ['xl/threadedComments/threadedComment1.xml'],
+		})
+	})
+
+	test('commits report reopened table and filter sidecars after write', async () => {
+		const input = join(TEMP_DIR, 'table-commit.xlsx')
+		const output = join(TEMP_DIR, 'table-commit-out.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		const wb = AscendWorkbook.create()
+		expect(
+			wb.apply([
+				{
+					op: 'setCells',
+					sheet: 'Sheet1',
+					updates: [
+						{ ref: 'A1', value: 'Qty' },
+						{ ref: 'B1', value: 'Price' },
+						{ ref: 'A2', value: 2 },
+						{ ref: 'B2', value: 5 },
+						{ ref: 'A3', value: 3 },
+						{ ref: 'B3', value: 7 },
+					],
+				},
+				{ op: 'createTable', sheet: 'Sheet1', ref: 'A1:B3', name: 'Sales', hasHeaders: true },
+			]).errors,
+		).toHaveLength(0)
+		await wb.save(input)
+		const ops = [{ op: 'setCells' as const, sheet: 'Sheet1', updates: [{ ref: 'D1', value: 7 }] }]
+		const plan = await createAgentPlan(input, ops)
+
+		const committed = await commitAgentPlan(input, ops, {
+			output,
+			approvals: plan.approvals.map((approval) => approval.id),
+		})
+
+		expect(committed.postWrite.auditsPassed).toBe(true)
+		expect(committed.postWrite.tables).toMatchObject({
+			tableLocations: 1,
+			queryTableLocations: 0,
+			tableAutoFilterLocations: 1,
+			tableNames: ['Sales'],
+			locations: ['Sheet1!A1:B3'],
+			tablePartPaths: ['xl/tables/table1.xml'],
+			queryTablePartPaths: [],
+			preservationMode: 'preserve-exact',
+			verification: 'reopened-output',
+		})
+		expect(compactAgentCommitResult(committed).postWrite.tables).toMatchObject({
+			tableLocations: 1,
+			tableNames: ['Sales'],
+			tableAutoFilterLocations: 1,
+		})
+	})
+
+	test('commits report reopened defined names after write', async () => {
+		const input = join(TEMP_DIR, 'defined-name-commit.xlsx')
+		const output = join(TEMP_DIR, 'defined-name-commit-out.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		const wb = AscendWorkbook.create()
+		const sheet = wb.getWorkbookModel().sheets[0]
+		wb.getWorkbookModel().definedNames.set('GlobalRate', 'Sheet1!$A$1')
+		if (sheet) {
+			wb.getWorkbookModel().definedNames.set(
+				'LocalRate',
+				'Sheet1!$B$1',
+				{ kind: 'sheet', sheetId: sheet.id },
+				{ hidden: true },
+			)
+		}
+		await wb.save(input)
+		const ops = [{ op: 'setCells' as const, sheet: 'Sheet1', updates: [{ ref: 'C1', value: 7 }] }]
+
+		const committed = await commitAgentPlan(input, ops, { output })
+
+		expect(committed.postWrite.auditsPassed).toBe(true)
+		expect(committed.postWrite.definedNames).toMatchObject({
+			total: 2,
+			workbookScoped: 1,
+			sheetScoped: 1,
+			hidden: 1,
+			names: [
+				{ name: 'GlobalRate', formula: 'Sheet1!$A$1', scope: 'workbook' },
+				{
+					name: 'LocalRate',
+					formula: 'Sheet1!$B$1',
+					scope: 'sheet',
+					sheet: 'Sheet1',
+					hidden: true,
+				},
+			],
+			verification: 'reopened-output',
+		})
+		expect(compactAgentCommitResult(committed).postWrite.definedNames).toMatchObject({
+			total: 2,
+			workbookScoped: 1,
+			sheetScoped: 1,
+			hidden: 1,
+		})
 	})
 
 	test('plans flag structural edits that can shift threaded comment anchors', async () => {
@@ -2048,6 +2644,7 @@ describe('agent workflow loss audit', () => {
 		])
 
 		expect(plan.writePolicy.summary.x14ConditionalFormatExtensionPayloads).toBe(1)
+		expect(plan.writePolicy.summary.preservationModes.generatedWithOpaquePayloads).toBe(1)
 		expect(plan.writePolicy.diagnostics).toContainEqual(
 			expect.objectContaining({
 				code: 'conditional-format-extension-preservation',
@@ -2055,6 +2652,7 @@ describe('agent workflow loss audit', () => {
 				partPaths: ['xl/worksheets/sheet1.xml'],
 				featureFamily: 'x14ConditionalFormatting',
 				preservationPolicy: 'generated',
+				preservationMode: 'generated-with-opaque-payload',
 				details: {
 					provenance: 'worksheet-extLst',
 					preservationMode: 'opaque-payload-preserved-in-generated-worksheet-xml',
@@ -2148,6 +2746,7 @@ describe('agent workflow loss audit', () => {
 		expect(plan.modelOutput.blocked).toBe(false)
 		expect(plan.modelOutput.counts.checkIssues).toBe(0)
 		expect(plan.writePolicy.summary.x14DataValidationExtensionPayloads).toBe(1)
+		expect(plan.writePolicy.summary.preservationModes.generatedWithOpaquePayloads).toBe(1)
 		expect(plan.writePolicy.diagnostics).toContainEqual(
 			expect.objectContaining({
 				code: 'data-validation-extension-preservation',
@@ -2155,6 +2754,7 @@ describe('agent workflow loss audit', () => {
 				partPaths: ['xl/worksheets/sheet1.xml'],
 				featureFamily: 'x14DataValidation',
 				preservationPolicy: 'generated',
+				preservationMode: 'generated-with-opaque-payload',
 				details: {
 					provenance: 'worksheet-extLst',
 					preservationMode: 'opaque-payload-preserved-in-generated-worksheet-xml',
@@ -2228,6 +2828,97 @@ describe('agent workflow loss audit', () => {
 		expect(semanticEdit.modelOutput.nextActions.join('\n')).toContain(
 			'Inspect writePolicy.diagnostics',
 		)
+	})
+
+	test('commits report reopened generated opaque x14 payloads after write', async () => {
+		const input = join(TEMP_DIR, 'x14-opaque-commit.xlsx')
+		const output = join(TEMP_DIR, 'x14-opaque-commit-out.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		const wb = AscendWorkbook.create()
+		const sheet = wb.getWorkbookModel().sheets[0]
+		sheet?.x14ConditionalFormats.push({
+			index: 0,
+			sqref: 'A1:A5',
+			type: 'dataBar',
+			priority: 4,
+			formulas: [],
+			preservedRuleAttributes: { 'xr:uid': '{CF-UID}' },
+			preservedRuleChildXml: [
+				'<x14:extLst><x14:ext uri="{cf-extension}"><x14ac:metadata flag="1"/></x14:ext></x14:extLst>',
+			],
+		})
+		sheet?.x14DataValidations.push({
+			index: 0,
+			sqref: 'C2:C5',
+			type: 'list',
+			formula1: '$A$1:$A$4',
+			preservedAttributes: { 'xr:uid': '{DV-UID}' },
+			preservedChildXml: ['<x14ac:metadata flag="1"><x14ac:item val="keep"/></x14ac:metadata>'],
+		})
+		await wb.save(input)
+
+		const committed = await commitAgentPlan(
+			input,
+			[{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'B1', value: 7 }] }],
+			{ output },
+		)
+
+		expect(committed.postWrite.auditsPassed).toBe(true)
+		expect(committed.postWrite.opaquePayloads).toMatchObject({
+			generatedWithOpaquePayloads: 2,
+			x14ConditionalFormatExtensionPayloads: 1,
+			x14DataValidationExtensionPayloads: 1,
+			worksheetParts: ['xl/worksheets/sheet1.xml'],
+			preservationMode: 'generated-with-opaque-payload',
+			verification: 'reopened-output',
+		})
+		expect(compactAgentCommitResult(committed).postWrite.opaquePayloads).toMatchObject({
+			generatedWithOpaquePayloads: 2,
+			preservationMode: 'generated-with-opaque-payload',
+		})
+	})
+
+	test('commits report reopened external reference bindings after write', async () => {
+		const input = join(TEMP_DIR, 'external-link-bound-commit.xlsx')
+		const output = join(TEMP_DIR, 'external-link-bound-commit-out.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		await Bun.write(input, makeExternalLinkBoundXlsx())
+
+		const ops = [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 9 }] }] as const
+		const plan = await createAgentPlan(input, ops)
+		const committed = await commitAgentPlan(input, ops, {
+			output,
+			approvals: plan.approvals.map((approval) => approval.id),
+		})
+
+		expect(committed.postWrite.auditsPassed).toBe(true)
+		expect(committed.postWrite.externalReferences).toMatchObject({
+			total: 1,
+			boundByExternalBookRelId: 1,
+			fallbackPathRelationships: 0,
+			missingPathRelationships: 0,
+			partPaths: ['xl/externalLinks/externalLink1.xml'],
+			targets: ['../sources/source.xlsx'],
+			preservationMode: 'preserve-exact',
+			verification: 'reopened-output',
+			parts: [
+				expect.objectContaining({
+					partPath: 'xl/externalLinks/externalLink1.xml',
+					relId: 'rIdExternal',
+					externalBookRelId: 'rIdExt',
+					linkRelId: 'rIdExt',
+					linkBindingStatus: 'externalBookRelId',
+					target: '../sources/source.xlsx',
+					targetMode: 'External',
+				}),
+			],
+		})
+		expect(compactAgentCommitResult(committed).postWrite.externalReferences).toMatchObject({
+			total: 1,
+			boundByExternalBookRelId: 1,
+			targets: ['../sources/source.xlsx'],
+			preservationMode: 'preserve-exact',
+		})
 	})
 
 	test('plans warn when row or column topology edits shift preserved x14 sqref metadata', async () => {
@@ -2642,6 +3333,55 @@ describe('agent workflow loss audit', () => {
 		expect(sheet?.rowDefs.get(1)).toEqual({ hidden: true, outlineLevel: 1 })
 		expect(sheet?.rowDefs.get(2)).toEqual({ hidden: true, outlineLevel: 1 })
 		expect(sheet?.rowDefs.get(3)).toEqual({ collapsed: true })
+	})
+
+	test('prepared exact rollback journal restores audit-clean committed output after recalc', async () => {
+		const input = join(TEMP_DIR, 'prepared-exact-rollback.xlsx')
+		const output = join(TEMP_DIR, 'prepared-exact-rollback-out.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 2 }] },
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'B1', formula: 'A1+A1' },
+		])
+		expect(wb.recalc().errors).toEqual([])
+		await wb.save(input)
+
+		const prepared = await createPreparedAgentPlan(input, [
+			{ op: 'setCells' as const, sheet: 'Sheet1', updates: [{ ref: 'A1', value: 5 }] },
+		])
+		expect(prepared.plan.preview.journal?.supported).toBe(true)
+		expect(prepared.plan.preview.journal?.exact).toBe(true)
+		expect(prepared.plan.preview.journal?.issues).toEqual([])
+
+		const committed = await prepared.commit({ output })
+		expect(committed.apply.journal?.supported).toBe(true)
+		expect(committed.apply.journal?.exact).toBe(true)
+		expect(committed.apply.journal?.issues).toEqual([])
+		expect(committed.apply.journal?.inverseOps.length).toBeGreaterThan(0)
+		expect(committed.postWrite.valid).toBe(true)
+		expect(committed.postWrite.auditsPassed).toBe(true)
+		const compact = compactAgentCommitResult(committed)
+		expect(compact.apply.journalSummary).toEqual({
+			supported: true,
+			exact: true,
+			inverseOpCount: committed.apply.journal?.inverseOps.length ?? 0,
+			issueCount: 0,
+			issues: [],
+		})
+		expect(compact.apply.affectedCellRefs).toEqual(['A1'])
+		expect(compact.apply.affectedRanges).toEqual([{ sheet: 'Sheet1', range: 'A1:A1' }])
+		expect(compact.postWrite.auditsPassed).toBe(true)
+
+		const edited = await AscendWorkbook.open(output)
+		expect(edited.sheet('Sheet1')?.cell('A1')?.value).toEqual({ kind: 'number', value: 5 })
+		expect(edited.sheet('Sheet1')?.cell('B1')?.value).toEqual({ kind: 'number', value: 10 })
+
+		const undo = edited.apply(committed.apply.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(edited.recalc().errors).toEqual([])
+		expect(edited.sheet('Sheet1')?.cell('A1')?.value).toEqual({ kind: 'number', value: 2 })
+		expect(edited.sheet('Sheet1')?.cell('B1')?.value).toEqual({ kind: 'number', value: 4 })
 	})
 
 	test('prepared agent commits surface post-write audit failures as blocking model output', async () => {
@@ -3265,6 +4005,35 @@ function makeSignedXlsx(): Uint8Array {
 	)
 }
 
+function makeInspectOnlyXlsx(): Uint8Array {
+	return makeXlsx({
+		'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/customData/item1.data" ContentType="application/vnd.ms-excel.customData"/>
+</Types>`,
+		'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+		'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSheet" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rIdPowerQuery" Type="http://schemas.microsoft.com/office/2014/relationships/powerQueryMashup" Target="customData/item1.data"/>
+</Relationships>`,
+		'xl/workbook.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Sheet1" sheetId="1" r:id="rIdSheet"/></sheets>
+</workbook>`,
+		'xl/worksheets/sheet1.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`,
+		'xl/customData/item1.data': 'power-query-mashup-bytes',
+	})
+}
+
 function makeCalcChainXlsx(): Uint8Array {
 	return createZip(
 		new Map(
@@ -3301,6 +4070,50 @@ function makeCalcChainXlsx(): Uint8Array {
 <calcChain xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
   <c r="B1" i="1"/>
 </calcChain>`),
+			}),
+		),
+	)
+}
+
+function makeExternalLinkBoundXlsx(): Uint8Array {
+	return createZip(
+		new Map(
+			Object.entries({
+				'[Content_Types].xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/externalLinks/externalLink1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.externalLink+xml"/>
+</Types>`),
+				'_rels/.rels': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`),
+				'xl/_rels/workbook.xml.rels':
+					encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSheet1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rIdExternal" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLink" Target="externalLinks/externalLink1.xml"/>
+</Relationships>`),
+				'xl/workbook.xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Sheet1" sheetId="1" r:id="rIdSheet1"/></sheets>
+  <externalReferences><externalReference r:id="rIdExternal"/></externalReferences>
+</workbook>`),
+				'xl/worksheets/sheet1.xml': encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`),
+				'xl/externalLinks/externalLink1.xml':
+					encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<externalLink xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <externalBook r:id="rIdExt"/>
+</externalLink>`),
+				'xl/externalLinks/_rels/externalLink1.xml.rels':
+					encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdExt" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLinkPath" Target="../sources/source.xlsx" TargetMode="External"/>
+</Relationships>`),
 			}),
 		),
 	)
@@ -3420,6 +4233,7 @@ function makeAnalyticsRefreshXlsx(): Uint8Array {
   <Default Extension="xml" ContentType="application/xml"/>
   <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
   <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
   <Override PartName="/xl/pivotTables/pivotTable1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.pivotTable+xml"/>
   <Override PartName="/xl/pivotCache/pivotCacheDefinition1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.pivotCacheDefinition+xml"/>
   <Override PartName="/xl/pivotCache/pivotCacheRecords1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.pivotCacheRecords+xml"/>
@@ -3435,20 +4249,35 @@ function makeAnalyticsRefreshXlsx(): Uint8Array {
 		'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rIdSheet1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rIdSheet2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>
   <Relationship Id="rIdPivotCache" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotCacheDefinition" Target="pivotCache/pivotCacheDefinition1.xml"/>
   <Relationship Id="rIdSlicerCache" Type="http://schemas.microsoft.com/office/2007/relationships/slicerCache" Target="slicerCaches/slicerCache1.xml"/>
+  <Relationship Id="rIdTimelineCache" Type="http://schemas.microsoft.com/office/2011/relationships/timelineCache" Target="timelineCaches/timelineCache1.xml"/>
 </Relationships>`,
 		'xl/workbook.xml': `<?xml version="1.0"?>
 <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
   xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
   <pivotCaches><pivotCache cacheId="34" r:id="rIdPivotCache"/></pivotCaches>
-  <sheets><sheet name="PivotSheet" sheetId="1" r:id="rIdSheet1"/></sheets>
+  <sheets>
+    <sheet name="PivotSheet" sheetId="1" r:id="rIdSheet1"/>
+    <sheet name="Raw" sheetId="2" r:id="rIdSheet2"/>
+  </sheets>
 </workbook>`,
 		'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`,
+		'xl/worksheets/sheet2.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData>
+    <row r="1"><c r="A1" t="inlineStr"><is><t>Region</t></is></c><c r="B1" t="inlineStr"><is><t>Sales</t></is></c></row>
+    <row r="2"><c r="A2" t="inlineStr"><is><t>West</t></is></c><c r="B2"><v>10</v></c></row>
+    <row r="3"><c r="A3" t="inlineStr"><is><t>East</t></is></c><c r="B3"><v>20</v></c></row>
+  </sheetData>
+</worksheet>`,
 		'xl/worksheets/_rels/sheet1.xml.rels': `<?xml version="1.0"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rIdPivotTable" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotTable" Target="../pivotTables/pivotTable1.xml"/>
+  <Relationship Id="rIdSlicer" Type="http://schemas.microsoft.com/office/2007/relationships/slicer" Target="../slicers/slicer1.xml"/>
+  <Relationship Id="rIdTimeline" Type="http://schemas.microsoft.com/office/2011/relationships/timeline" Target="../timelines/timeline1.xml"/>
 </Relationships>`,
 		'xl/pivotTables/pivotTable1.xml': `<?xml version="1.0"?>
 <pivotTableDefinition xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" name="PivotTable1" cacheId="34">
@@ -3470,9 +4299,12 @@ function makeAnalyticsRefreshXlsx(): Uint8Array {
   <cacheSource type="worksheet">
     <worksheetSource ref="A1:B3" sheet="Raw"/>
   </cacheSource>
-  <cacheFields count="1">
+  <cacheFields count="2">
     <cacheField name="Region" databaseField="1">
       <sharedItems count="2"><s v="West"/><s v="East"/></sharedItems>
+    </cacheField>
+    <cacheField name="Sales" databaseField="1">
+      <sharedItems containsNumber="1" count="2"><n v="10"/><n v="20"/></sharedItems>
     </cacheField>
   </cacheFields>
 </pivotCacheDefinition>`,
@@ -3480,13 +4312,20 @@ function makeAnalyticsRefreshXlsx(): Uint8Array {
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rIdRecords" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotCacheRecords" Target="pivotCacheRecords1.xml"/>
 </Relationships>`,
-		'xl/pivotCache/pivotCacheRecords1.xml':
-			'<pivotCacheRecords xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="0"/>',
+		'xl/pivotCache/pivotCacheRecords1.xml': `<?xml version="1.0"?>
+<pivotCacheRecords xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="2">
+  <r><x v="0"/><n v="10"/></r>
+  <r><x v="1"/><n v="20"/></r>
+</pivotCacheRecords>`,
 		'xl/slicerCaches/slicerCache1.xml': `<?xml version="1.0"?>
 <slicerCacheDefinition xmlns="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main" name="Slicer_Region" sourceName="Region">
   <pivotTables><pivotTable name="PivotTable1"/></pivotTables>
   <data><tabular pivotCacheId="34"><items count="2"><i x="0" s="1"/><i x="1"/></items></tabular></data>
 </slicerCacheDefinition>`,
+		'xl/slicerCaches/_rels/slicerCache1.xml.rels': `<?xml version="1.0"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSlicerUi" Type="http://schemas.microsoft.com/office/2007/relationships/slicer" Target="../slicers/slicer1.xml"/>
+</Relationships>`,
 		'xl/slicers/slicer1.xml': `<?xml version="1.0"?>
 <slicers xmlns="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main">
   <slicer name="Region" cache="Slicer_Region" caption="Region"/>
@@ -3499,6 +4338,10 @@ function makeAnalyticsRefreshXlsx(): Uint8Array {
     <selection startDate="2023-01-01T00:00:00" endDate="2023-12-31T00:00:00"/>
   </state>
 </timelineCacheDefinition>`,
+		'xl/timelineCaches/_rels/timelineCache1.xml.rels': `<?xml version="1.0"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdTimelineUi" Type="http://schemas.microsoft.com/office/2011/relationships/timeline" Target="../timelines/timeline1.xml"/>
+</Relationships>`,
 		'xl/timelines/timeline1.xml': `<?xml version="1.0"?>
 <timelines xmlns="http://schemas.microsoft.com/office/spreadsheetml/2010/11/main">
   <timeline name="Order_Date" cache="Timeline_Order_Date" caption="Order Date"/>

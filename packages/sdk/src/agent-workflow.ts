@@ -2,9 +2,11 @@ import { createHash } from 'node:crypto'
 import { copyFile, readFile, rename, stat, writeFile } from 'node:fs/promises'
 import { dirname, extname, join } from 'node:path'
 import {
+	type ActiveContentInfo,
 	type ChartPartInfo,
 	type ExternalReferenceInfo,
 	indexToColumn,
+	parseA1Safe,
 	parseRange,
 	type RangeRef,
 	type SheetDrawingObjectRef,
@@ -54,11 +56,16 @@ export interface CompactAgentPlanOptions {
 	readonly maxChangedCells?: number
 }
 
+export interface CompactAgentCommitOptions {
+	readonly maxAffectedCells?: number
+}
+
 export interface CompactAgentPreview {
 	readonly wouldSucceed: boolean
 	readonly changedCellCount: number
 	readonly emittedChangedCellCount: number
 	readonly changedCells: ReturnType<AscendWorkbook['preview']>['changedCells']
+	readonly changedRanges: readonly CompactAffectedRange[]
 	readonly recalcScope: number
 	readonly warningCount: number
 	readonly errorCount: number
@@ -157,10 +164,18 @@ export interface CompactAgentTraceSummary {
 export interface CompactApplySummary {
 	readonly applied: boolean
 	readonly affectedCellCount: number
+	readonly emittedAffectedCellCount: number
+	readonly affectedCellRefs: readonly string[]
+	readonly affectedRanges: readonly CompactAffectedRange[]
 	readonly recalcRequired: boolean
 	readonly warningCount: number
 	readonly errorCount: number
 	readonly journalSummary?: CompactJournalSummary
+}
+
+export interface CompactAffectedRange {
+	readonly sheet: string
+	readonly range: string
 }
 
 export interface CompactJournalSummary {
@@ -217,6 +232,15 @@ export interface CompactAgentPostWriteVerification {
 	readonly check: CompactCheckSummary
 	readonly lint: CompactLintSummary
 	readonly preservation: CompactWritePlanSummary
+	readonly opaquePayloads: PostWriteOpaquePayloadSummary
+	readonly comments: PostWriteCommentSummary
+	readonly tables: PostWriteTableSummary
+	readonly definedNames: PostWriteDefinedNameSummary
+	readonly externalReferences: PostWriteExternalReferenceSummary
+	readonly analytics: PostWriteAnalyticsSummary
+	readonly activeContent: PostWriteActiveContentSummary
+	readonly visuals: PostWriteVisualSummary
+	readonly security: PostWriteSecuritySummary
 	readonly packageGraphAudit: CompactPackageGraphAuditSummary
 	readonly expectedPackageGraphIssueCount: number
 	readonly unresolvedPackageGraphIssueCount: number
@@ -233,6 +257,8 @@ export interface CompactLossAuditSummary {
 export interface CompactPackageGraphAuditSummary {
 	readonly ok: boolean
 	readonly issueCount: number
+	readonly emittedIssueCount: number
+	readonly issues: readonly XlsxPackageGraphFidelityIssue[]
 	readonly policy: PackageGraphAudit['policy']
 }
 
@@ -246,9 +272,249 @@ export interface AgentPostWriteVerification {
 	readonly check: ReturnType<AscendWorkbook['check']>
 	readonly lint: ReturnType<AscendWorkbook['lint']>
 	readonly preservation: ReturnType<AscendWorkbook['writePlanSummary']>
+	readonly opaquePayloads: PostWriteOpaquePayloadSummary
+	readonly comments: PostWriteCommentSummary
+	readonly tables: PostWriteTableSummary
+	readonly definedNames: PostWriteDefinedNameSummary
+	readonly externalReferences: PostWriteExternalReferenceSummary
+	readonly analytics: PostWriteAnalyticsSummary
+	readonly activeContent: PostWriteActiveContentSummary
+	readonly visuals: PostWriteVisualSummary
+	readonly security: PostWriteSecuritySummary
 	readonly packageGraphAudit: PackageGraphAudit
 	readonly expectedPackageGraphIssueCount: number
 	readonly unresolvedPackageGraphIssueCount: number
+}
+
+export interface PostWriteOpaquePayloadSummary {
+	readonly generatedWithOpaquePayloads: number
+	readonly x14ConditionalFormatExtensionPayloads: number
+	readonly x14DataValidationExtensionPayloads: number
+	readonly worksheetParts: readonly string[]
+	readonly preservationMode: 'generated-with-opaque-payload' | 'none'
+	readonly verification: 'reopened-output'
+}
+
+export interface PostWriteCommentSummary {
+	readonly legacyCommentLocations: number
+	readonly threadedCommentLocations: number
+	readonly legacyDrawingLocations: number
+	readonly locations: readonly string[]
+	readonly threadedCommentPartPaths: readonly string[]
+	readonly verification: 'reopened-output'
+}
+
+export interface PostWriteTableSummary {
+	readonly tableLocations: number
+	readonly queryTableLocations: number
+	readonly tableAutoFilterLocations: number
+	readonly tableNames: readonly string[]
+	readonly locations: readonly string[]
+	readonly tablePartPaths: readonly string[]
+	readonly queryTablePartPaths: readonly string[]
+	readonly preservationMode: 'preserve-exact' | 'none'
+	readonly verification: 'reopened-output'
+}
+
+export interface PostWriteDefinedNameSummary {
+	readonly total: number
+	readonly workbookScoped: number
+	readonly sheetScoped: number
+	readonly hidden: number
+	readonly names: readonly PostWriteDefinedNameEntry[]
+	readonly verification: 'reopened-output'
+}
+
+export interface PostWriteDefinedNameEntry {
+	readonly name: string
+	readonly formula: string
+	readonly scope: 'workbook' | 'sheet'
+	readonly sheet?: string
+	readonly hidden?: boolean
+}
+
+export interface PostWriteExternalReferenceSummary {
+	readonly total: number
+	readonly boundByExternalBookRelId: number
+	readonly fallbackPathRelationships: number
+	readonly missingPathRelationships: number
+	readonly partPaths: readonly string[]
+	readonly targets: readonly string[]
+	readonly parts: readonly PostWriteExternalReferenceEntry[]
+	readonly preservationMode: 'preserve-exact' | 'none'
+	readonly verification: 'reopened-output'
+}
+
+export interface PostWriteExternalReferenceEntry {
+	readonly partPath: string
+	readonly relId?: string
+	readonly externalBookRelId?: string
+	readonly linkRelId?: string
+	readonly linkBindingStatus?: ExternalReferenceInfo['linkBindingStatus']
+	readonly linkRelationshipKind?: ExternalReferenceInfo['linkRelationshipKind']
+	readonly target?: string
+	readonly targetMode?: string
+}
+
+export interface PostWriteAnalyticsSummary {
+	readonly pivotCaches: number
+	readonly pivotTables: number
+	readonly slicerCaches: number
+	readonly slicers: number
+	readonly timelineCaches: number
+	readonly timelines: number
+	readonly partPaths: readonly string[]
+	readonly pivotCacheDetails: readonly PostWritePivotCacheEntry[]
+	readonly pivotTableDetails: readonly PostWritePivotTableEntry[]
+	readonly slicerCacheDetails: readonly PostWriteSlicerCacheEntry[]
+	readonly timelineCacheDetails: readonly PostWriteTimelineCacheEntry[]
+	readonly requiresExternalRefresh: boolean
+	readonly preservationMode: 'preserve-exact' | 'none'
+	readonly verification: 'reopened-output'
+}
+
+export interface PostWritePivotCacheEntry {
+	readonly partPath: string
+	readonly cacheId?: number
+	readonly sourceType?: string
+	readonly sourceSheet?: string
+	readonly sourceRef?: string
+	readonly sourceName?: string
+	readonly refreshOnLoad?: boolean
+	readonly invalid?: boolean
+	readonly saveData?: boolean
+	readonly recordCount?: number
+	readonly recordsPartPath?: string
+	readonly outputState: 'cached' | 'stale' | 'refresh-on-open' | 'not-saved' | 'unknown'
+	readonly requiresExternalRefresh: boolean
+	readonly linkedPivotTableNames: readonly string[]
+}
+
+export interface PostWritePivotTableEntry {
+	readonly partPath: string
+	readonly name?: string
+	readonly sheetName: string
+	readonly cacheId?: number
+	readonly locationRef?: string
+}
+
+export interface PostWriteSlicerCacheEntry {
+	readonly partPath: string
+	readonly name?: string
+	readonly sourceName?: string
+	readonly pivotCacheId?: number
+	readonly pivotTableNames: readonly string[]
+	readonly slicerPartPaths: readonly string[]
+}
+
+export interface PostWriteTimelineCacheEntry {
+	readonly partPath: string
+	readonly name?: string
+	readonly sourceName?: string
+	readonly pivotCacheId?: number
+	readonly pivotTableNames: readonly string[]
+	readonly timelinePartPaths: readonly string[]
+	readonly selection?: { readonly startDate: string; readonly endDate: string }
+}
+
+export interface PostWriteActiveContentSummary {
+	readonly total: number
+	readonly vbaProjects: number
+	readonly activeXControls: number
+	readonly formControls: number
+	readonly macroSheets: number
+	readonly vbaSignatures: number
+	readonly digitalSignatures: number
+	readonly customUi: number
+	readonly unknownActiveContent: number
+	readonly partPaths: readonly string[]
+	readonly entries: readonly PostWriteActiveContentEntry[]
+	readonly executionPolicy: 'blocked' | 'none'
+	readonly preservationMode: 'preserve-exact' | 'none'
+	readonly verification: 'reopened-output'
+}
+
+export interface PostWriteActiveContentEntry {
+	readonly kind: ActiveContentInfo['kind']
+	readonly partPath: string
+	readonly contentType: string
+	readonly anchor: ActiveContentInfo['anchor']
+	readonly sheetName?: string
+	readonly sourcePartPath?: string
+	readonly relType?: string
+	readonly sourceRelationshipId?: string
+	readonly relationshipCount: number
+	readonly byteSize?: number
+	readonly opaque?: boolean
+	readonly executionPolicy?: ActiveContentInfo['executionPolicy']
+	readonly invalidationPolicy?: ActiveContentInfo['invalidationPolicy']
+	readonly resigningPolicy?: ActiveContentInfo['resigningPolicy']
+}
+
+export interface PostWriteSecuritySummary {
+	readonly workbookProtected: boolean
+	readonly workbookLocks: readonly string[]
+	readonly workbookPasswordProtected: boolean
+	readonly workbookRevisionPasswordProtected: boolean
+	readonly protectedSheets: number
+	readonly protectedSheetNames: readonly string[]
+	readonly sheetPasswordProtected: number
+	readonly sheetStrongHashProtected: number
+	readonly protectedRanges: number
+	readonly protectedRangeLocations: readonly string[]
+	readonly sheets: readonly PostWriteSheetSecurityEntry[]
+	readonly passwordHashVerification: 'reported-not-validated' | 'none'
+	readonly preservationMode: 'generated' | 'none'
+	readonly verification: 'reopened-output'
+}
+
+export interface PostWriteSheetSecurityEntry {
+	readonly sheetName: string
+	readonly protected: boolean
+	readonly passwordProtected: boolean
+	readonly strongHashProtected: boolean
+	readonly allowedActions: readonly string[]
+	readonly protectedRanges: number
+	readonly protectedRangeLocations: readonly string[]
+}
+
+export interface PostWriteVisualSummary {
+	readonly sheetsWithVisuals: number
+	readonly images: number
+	readonly drawingObjects: number
+	readonly drawingMlObjects: number
+	readonly vmlObjects: number
+	readonly chartParts: number
+	readonly chartSheets: number
+	readonly drawingPartPaths: readonly string[]
+	readonly mediaPartPaths: readonly string[]
+	readonly chartPartPaths: readonly string[]
+	readonly vmlPartPaths: readonly string[]
+	readonly sheets: readonly PostWriteSheetVisualEntry[]
+	readonly charts: readonly PostWriteChartEntry[]
+	readonly preservationMode: 'preserve-exact' | 'none'
+	readonly verification: 'reopened-output'
+}
+
+export interface PostWriteSheetVisualEntry {
+	readonly sheetName: string
+	readonly hasDrawingMl: boolean
+	readonly hasVml: boolean
+	readonly imageCount: number
+	readonly drawingObjectCount: number
+	readonly drawingMlObjectCount: number
+	readonly vmlObjectCount: number
+	readonly drawingPartPaths: readonly string[]
+	readonly mediaPartPaths: readonly string[]
+	readonly vmlPartPaths: readonly string[]
+}
+
+export interface PostWriteChartEntry {
+	readonly partPath: string
+	readonly sheetName?: string
+	readonly chartType?: string
+	readonly title?: string
+	readonly seriesCount: number
 }
 
 export interface AgentPostWriteVerificationTimings {
@@ -289,6 +555,7 @@ export interface LossAuditPackagePart {
 	readonly partPath: string
 	readonly featureFamily: string
 	readonly preservationPolicy: XlsxPackageLossPolicy
+	readonly preservationMode: WritePolicyPreservationMode
 	readonly ownerScope: XlsxPackageOwnerScope
 	readonly bytePreservationExpected: boolean
 	readonly contentType: string
@@ -327,8 +594,32 @@ export interface WritePolicyReport {
 		readonly x14ConditionalFormatExtensionPayloads: number
 		readonly x14DataValidationExtensionPayloads: number
 		readonly calcChainPolicy: 'not-present' | 'preserved' | 'discarded-for-formula-topology'
+		readonly preservationModes: WritePolicyPreservationModeSummary
 	}
 }
+
+export interface WritePolicyPreservationModeSummary {
+	readonly preserveExactParts: number
+	readonly generatedParts: number
+	readonly generatedWithOpaquePayloads: number
+	readonly invalidatedOnEditParts: number
+	readonly discardedForRecalcParts: number
+	readonly inspectOnlyParts: number
+	readonly reviewRequiredParts: number
+	readonly unsupportedFeatures: number
+	readonly lossyApprovalRequiredFeatures: number
+}
+
+export type WritePolicyPreservationMode =
+	| 'preserve-exact'
+	| 'generated'
+	| 'generated-with-opaque-payload'
+	| 'invalidated-on-edit'
+	| 'discarded-for-recalc'
+	| 'inspect-only'
+	| 'review-required'
+	| 'unsupported'
+	| 'lossy-approval-required'
 
 export interface WritePolicyDiagnostic {
 	readonly code:
@@ -365,6 +656,7 @@ export interface WritePolicyDiagnostic {
 	readonly featureFamily?: string
 	readonly ownerScope?: XlsxPackageOwnerScope
 	readonly preservationPolicy?: XlsxPackageLossPolicy
+	readonly preservationMode?: WritePolicyPreservationMode
 	readonly details?: unknown
 }
 
@@ -372,6 +664,7 @@ export interface WritePolicyPackagePart {
 	readonly partPath: string
 	readonly featureFamily: string
 	readonly preservationPolicy: XlsxPackageLossPolicy
+	readonly preservationMode: WritePolicyPreservationMode
 	readonly ownerScope: XlsxPackageOwnerScope
 	readonly bytePreservationExpected: boolean
 	readonly contentType: string
@@ -701,6 +994,7 @@ export function compactAgentPlanResult(
 			changedCellCount: result.preview.changedCells.length,
 			emittedChangedCellCount: changedCells.length,
 			changedCells,
+			changedRanges: compactRangesFromRefs(result.preview.changedCells.map((cell) => cell.ref)),
 			recalcScope: result.preview.recalcScope,
 			warningCount: result.preview.warnings.length,
 			errorCount: result.preview.errors.length,
@@ -713,7 +1007,12 @@ export function compactAgentPlanResult(
 	}
 }
 
-export function compactAgentCommitResult(result: AgentCommitResult): CompactAgentCommitResult {
+export function compactAgentCommitResult(
+	result: AgentCommitResult,
+	options: CompactAgentCommitOptions = {},
+): CompactAgentCommitResult {
+	const maxAffectedCells = Math.max(0, Math.floor(options.maxAffectedCells ?? 50))
+	const affectedCellRefs = result.apply.affectedCells.slice(0, maxAffectedCells)
 	return {
 		file: result.file,
 		output: result.output,
@@ -729,6 +1028,9 @@ export function compactAgentCommitResult(result: AgentCommitResult): CompactAgen
 		apply: {
 			applied: result.apply.errors.length === 0,
 			affectedCellCount: result.apply.affectedCells.length,
+			emittedAffectedCellCount: affectedCellRefs.length,
+			affectedCellRefs,
+			affectedRanges: compactRangesFromDirtyRegions(result.apply.dirtyRegions),
 			recalcRequired: result.apply.recalcRequired,
 			warningCount: result.apply.warnings?.length ?? 0,
 			errorCount: result.apply.errors.length,
@@ -750,6 +1052,46 @@ export function compactAgentCommitResult(result: AgentCommitResult): CompactAgen
 		lossAudit: compactLossAuditSummary(result.lossAudit),
 		packageGraphAudit: compactPackageGraphAuditSummary(result.packageGraphAudit),
 	}
+}
+
+function compactRangesFromDirtyRegions(
+	dirtyRegions: ReturnType<AscendWorkbook['apply']>['dirtyRegions'],
+): readonly CompactAffectedRange[] {
+	return dirtyRegions.map(({ sheet, range }) => ({ sheet, range }))
+}
+
+function compactRangesFromRefs(refs: readonly string[]): readonly CompactAffectedRange[] {
+	const bySheet = new Map<
+		string,
+		{ minRow: number; minCol: number; maxRow: number; maxCol: number }
+	>()
+	for (const fullRef of refs) {
+		const bang = fullRef.lastIndexOf('!')
+		const sheet = bang === -1 ? '' : fullRef.slice(0, bang).replace(/^'|'$/g, '')
+		const ref = bang === -1 ? fullRef : fullRef.slice(bang + 1)
+		if (!sheet || !ref) continue
+		try {
+			const range = parseRange(ref)
+			const current = bySheet.get(sheet)
+			if (current) {
+				current.minRow = Math.min(current.minRow, range.start.row)
+				current.minCol = Math.min(current.minCol, range.start.col)
+				current.maxRow = Math.max(current.maxRow, range.end.row)
+				current.maxCol = Math.max(current.maxCol, range.end.col)
+			} else {
+				bySheet.set(sheet, {
+					minRow: range.start.row,
+					minCol: range.start.col,
+					maxRow: range.end.row,
+					maxCol: range.end.col,
+				})
+			}
+		} catch {}
+	}
+	return [...bySheet.entries()].map(([sheet, range]) => ({
+		sheet,
+		range: `${indexToColumn(range.minCol)}${range.minRow + 1}:${indexToColumn(range.maxCol)}${range.maxRow + 1}`,
+	}))
 }
 
 function compactJournalSummary(journal: MutationJournal): CompactJournalSummary {
@@ -839,6 +1181,15 @@ function compactPostWriteVerification(
 		check: compactCheckSummary(postWrite.check),
 		lint: compactLintSummary(postWrite.lint),
 		preservation: compactWritePlanSummary(postWrite.preservation),
+		opaquePayloads: postWrite.opaquePayloads,
+		comments: postWrite.comments,
+		tables: postWrite.tables,
+		definedNames: postWrite.definedNames,
+		externalReferences: postWrite.externalReferences,
+		analytics: postWrite.analytics,
+		activeContent: postWrite.activeContent,
+		visuals: postWrite.visuals,
+		security: postWrite.security,
 		packageGraphAudit: compactPackageGraphAuditSummary(postWrite.packageGraphAudit),
 		expectedPackageGraphIssueCount: postWrite.expectedPackageGraphIssueCount,
 		unresolvedPackageGraphIssueCount: postWrite.unresolvedPackageGraphIssueCount,
@@ -858,7 +1209,14 @@ function compactLossAuditSummary(lossAudit: LossAudit): CompactLossAuditSummary 
 function compactPackageGraphAuditSummary(
 	audit: PackageGraphAudit,
 ): CompactPackageGraphAuditSummary {
-	return { ok: audit.ok, issueCount: audit.issues.length, policy: audit.policy }
+	const issues = audit.issues.slice(0, 20)
+	return {
+		ok: audit.ok,
+		issueCount: audit.issues.length,
+		emittedIssueCount: issues.length,
+		issues,
+		policy: audit.policy,
+	}
 }
 
 async function resolveCommitOutputTarget(
@@ -1050,6 +1408,7 @@ export async function commitAgentPlanFromWorkbook(
 	const expectedPostWritePackageGraphChanges = expectedPackageGraphChangesForOperations(
 		writePolicyWorkbook,
 		ops,
+		packageGraph,
 	)
 	await progressFromPhase(writePolicyPhase(writePolicy), progress)
 	if (writePolicy.diagnostics.some((diagnostic) => diagnostic.severity === 'blocker')) {
@@ -1223,6 +1582,15 @@ async function verifyWrittenWorkbook(
 		'Post-write preservation summary completed.',
 		() => reopened.value.writePlanSummary(),
 	)
+	const opaquePayloads = postWriteOpaquePayloadSummary(reopened.value.getWorkbookModel())
+	const comments = postWriteCommentSummary(reopened.value.getWorkbookModel())
+	const tables = postWriteTableSummary(reopened.value.getWorkbookModel())
+	const definedNames = postWriteDefinedNameSummary(reopened.value.getWorkbookModel())
+	const externalReferences = postWriteExternalReferenceSummary(reopened.value.getWorkbookModel())
+	const analytics = postWriteAnalyticsSummary(reopened.value.getWorkbookModel())
+	const activeContent = postWriteActiveContentSummary(reopened.value.getWorkbookModel())
+	const visuals = postWriteVisualSummary(reopened.value.getWorkbookModel())
+	const security = postWriteSecuritySummary(reopened.value.getWorkbookModel())
 	const outputGraph = await timedPostWriteStep(
 		progress,
 		'package-graph',
@@ -1261,9 +1629,418 @@ async function verifyWrittenWorkbook(
 		check: check.value,
 		lint: lint.value,
 		preservation: preservation.value,
+		opaquePayloads,
+		comments,
+		tables,
+		definedNames,
+		externalReferences,
+		analytics,
+		activeContent,
+		visuals,
+		security,
 		packageGraphAudit: packageGraphAudit.value,
 		expectedPackageGraphIssueCount,
 		unresolvedPackageGraphIssueCount: unresolvedPackageGraphIssues.length,
+	}
+}
+
+function postWriteCommentSummary(workbook: Workbook): PostWriteCommentSummary {
+	const legacyComments = collectLegacyCommentLocations(workbook)
+	const threadedComments = collectThreadedCommentLocations(workbook)
+	return {
+		legacyCommentLocations: legacyComments.length,
+		threadedCommentLocations: threadedComments.length,
+		legacyDrawingLocations: legacyComments.filter((comment) => comment.hasLegacyDrawing).length,
+		locations: uniqueStrings([
+			...legacyComments.map((comment) => comment.location),
+			...threadedComments.map((comment) => comment.location),
+		]),
+		threadedCommentPartPaths: uniqueStrings(
+			threadedComments.flatMap((comment) => (comment.partPath ? [comment.partPath] : [])),
+		),
+		verification: 'reopened-output',
+	}
+}
+
+function postWriteTableSummary(workbook: Workbook): PostWriteTableSummary {
+	const tables = workbook.sheets.flatMap((sheet) =>
+		sheet.tables.map((table) => ({
+			sheetName: sheet.name,
+			tableName: table.name,
+			location: `${sheet.name}!${rangeRefToA1(table.ref)}`,
+			...(table.partPath ? { partPath: table.partPath } : {}),
+			hasAutoFilter: table.autoFilter != null,
+			...(table.queryTable?.partPath ? { queryTablePartPath: table.queryTable.partPath } : {}),
+		})),
+	)
+	return {
+		tableLocations: tables.length,
+		queryTableLocations: tables.filter((table) => table.queryTablePartPath !== undefined).length,
+		tableAutoFilterLocations: tables.filter((table) => table.hasAutoFilter).length,
+		tableNames: tables.map((table) => table.tableName),
+		locations: tables.map((table) => table.location),
+		tablePartPaths: uniqueStrings(
+			tables.flatMap((table) => (table.partPath ? [table.partPath] : [])),
+		),
+		queryTablePartPaths: uniqueStrings(
+			tables.flatMap((table) => (table.queryTablePartPath ? [table.queryTablePartPath] : [])),
+		),
+		preservationMode: tables.length > 0 ? 'preserve-exact' : 'none',
+		verification: 'reopened-output',
+	}
+}
+
+function postWriteDefinedNameSummary(workbook: Workbook): PostWriteDefinedNameSummary {
+	const names = workbook.definedNames.list().map((entry) => {
+		let sheet: string | undefined
+		if (entry.scope.kind === 'sheet') {
+			const scope = entry.scope as Extract<typeof entry.scope, { readonly kind: 'sheet' }>
+			sheet = workbook.sheets.find((candidate) => candidate.id === scope.sheetId)?.name
+		}
+		return {
+			name: entry.name,
+			formula: entry.formula,
+			scope: entry.scope.kind,
+			...(sheet ? { sheet } : {}),
+			...(entry.hidden ? { hidden: true } : {}),
+		}
+	})
+	return {
+		total: names.length,
+		workbookScoped: names.filter((entry) => entry.scope === 'workbook').length,
+		sheetScoped: names.filter((entry) => entry.scope === 'sheet').length,
+		hidden: names.filter((entry) => entry.hidden === true).length,
+		names,
+		verification: 'reopened-output',
+	}
+}
+
+function postWriteExternalReferenceSummary(workbook: Workbook): PostWriteExternalReferenceSummary {
+	const parts = workbook.externalReferenceDetails.map((entry) => ({
+		partPath: entry.partPath,
+		...(entry.relId ? { relId: entry.relId } : {}),
+		...(entry.externalBookRelId ? { externalBookRelId: entry.externalBookRelId } : {}),
+		...(entry.linkRelId ? { linkRelId: entry.linkRelId } : {}),
+		...(entry.linkBindingStatus ? { linkBindingStatus: entry.linkBindingStatus } : {}),
+		...(entry.linkRelationshipKind ? { linkRelationshipKind: entry.linkRelationshipKind } : {}),
+		...(entry.target ? { target: entry.target } : {}),
+		...(entry.targetMode ? { targetMode: entry.targetMode } : {}),
+	}))
+	return {
+		total: parts.length,
+		boundByExternalBookRelId: parts.filter(
+			(entry) => entry.linkBindingStatus === 'externalBookRelId',
+		).length,
+		fallbackPathRelationships: parts.filter(
+			(entry) => entry.linkBindingStatus === 'fallbackPathRelationship',
+		).length,
+		missingPathRelationships: parts.filter(
+			(entry) => entry.linkBindingStatus === 'missingPathRelationship',
+		).length,
+		partPaths: uniqueStrings(parts.map((entry) => entry.partPath)),
+		targets: uniqueStrings(parts.flatMap((entry) => (entry.target ? [entry.target] : []))),
+		parts,
+		preservationMode: parts.length > 0 ? 'preserve-exact' : 'none',
+		verification: 'reopened-output',
+	}
+}
+
+function postWriteAnalyticsSummary(workbook: Workbook): PostWriteAnalyticsSummary {
+	const pivotTableDetails = workbook.pivotTables.map((pivot) => ({
+		partPath: pivot.partPath,
+		...(pivot.name ? { name: pivot.name } : {}),
+		sheetName: pivot.sheetName,
+		...(pivot.cacheId !== undefined ? { cacheId: pivot.cacheId } : {}),
+		...(pivot.locationRef ? { locationRef: pivot.locationRef } : {}),
+	}))
+	const pivotCacheDetails = workbook.pivotCaches.map((cache) => {
+		const linkedPivots = workbook.pivotTables.filter(
+			(pivot) => cache.cacheId !== undefined && pivot.cacheId === cache.cacheId,
+		)
+		const outputState = pivotCacheOutputState(workbook, cache, linkedPivots)
+		return {
+			partPath: cache.partPath,
+			...(cache.cacheId !== undefined ? { cacheId: cache.cacheId } : {}),
+			...(cache.sourceType ? { sourceType: cache.sourceType } : {}),
+			...(cache.sourceSheet ? { sourceSheet: cache.sourceSheet } : {}),
+			...(cache.sourceRef ? { sourceRef: cache.sourceRef } : {}),
+			...(cache.sourceName ? { sourceName: cache.sourceName } : {}),
+			...(cache.refreshOnLoad !== undefined ? { refreshOnLoad: cache.refreshOnLoad } : {}),
+			...(cache.invalid !== undefined ? { invalid: cache.invalid } : {}),
+			...(cache.saveData !== undefined ? { saveData: cache.saveData } : {}),
+			...(cache.recordCount !== undefined ? { recordCount: cache.recordCount } : {}),
+			...(cache.recordsPartPath ? { recordsPartPath: cache.recordsPartPath } : {}),
+			outputState,
+			requiresExternalRefresh: outputState !== 'cached',
+			linkedPivotTableNames: linkedPivotNames(linkedPivots, []),
+		}
+	})
+	const slicerCacheDetails = workbook.slicerCaches.map((cache) => ({
+		partPath: cache.partPath,
+		...(cache.name ? { name: cache.name } : {}),
+		...(cache.sourceName ? { sourceName: cache.sourceName } : {}),
+		...(cache.pivotCacheId !== undefined ? { pivotCacheId: cache.pivotCacheId } : {}),
+		pivotTableNames: cache.pivotTableNames,
+		slicerPartPaths: workbook.slicers
+			.filter((slicer) => slicer.cacheName === cache.name)
+			.map((slicer) => slicer.partPath),
+	}))
+	const timelineCacheDetails = workbook.timelineCaches.map((cache) => ({
+		partPath: cache.partPath,
+		...(cache.name ? { name: cache.name } : {}),
+		...(cache.sourceName ? { sourceName: cache.sourceName } : {}),
+		...(cache.pivotCacheId !== undefined ? { pivotCacheId: cache.pivotCacheId } : {}),
+		pivotTableNames: cache.pivotTableNames,
+		timelinePartPaths: workbook.timelines
+			.filter((timeline) => timeline.cacheName === cache.name)
+			.map((timeline) => timeline.partPath),
+		...(cache.state?.selection ? { selection: cache.state.selection } : {}),
+	}))
+	const partPaths = uniqueStrings([
+		...pivotCacheDetails.flatMap((entry) => [
+			entry.partPath,
+			...(entry.recordsPartPath ? [entry.recordsPartPath] : []),
+		]),
+		...pivotTableDetails.map((entry) => entry.partPath),
+		...slicerCacheDetails.flatMap((entry) => [entry.partPath, ...entry.slicerPartPaths]),
+		...timelineCacheDetails.flatMap((entry) => [entry.partPath, ...entry.timelinePartPaths]),
+	])
+	const analyticsPartCount =
+		workbook.pivotCaches.length +
+		workbook.pivotTables.length +
+		workbook.slicerCaches.length +
+		workbook.slicers.length +
+		workbook.timelineCaches.length +
+		workbook.timelines.length
+	return {
+		pivotCaches: workbook.pivotCaches.length,
+		pivotTables: workbook.pivotTables.length,
+		slicerCaches: workbook.slicerCaches.length,
+		slicers: workbook.slicers.length,
+		timelineCaches: workbook.timelineCaches.length,
+		timelines: workbook.timelines.length,
+		partPaths,
+		pivotCacheDetails,
+		pivotTableDetails,
+		slicerCacheDetails,
+		timelineCacheDetails,
+		requiresExternalRefresh: pivotCacheDetails.some((entry) => entry.requiresExternalRefresh),
+		preservationMode: analyticsPartCount > 0 ? 'preserve-exact' : 'none',
+		verification: 'reopened-output',
+	}
+}
+
+function postWriteActiveContentSummary(workbook: Workbook): PostWriteActiveContentSummary {
+	const entries = workbook.activeContent.map((entry) => ({
+		kind: entry.kind,
+		partPath: entry.partPath,
+		contentType: entry.contentType,
+		anchor: entry.anchor,
+		...(entry.sheetName ? { sheetName: entry.sheetName } : {}),
+		...(entry.sourcePartPath ? { sourcePartPath: entry.sourcePartPath } : {}),
+		...(entry.relType ? { relType: entry.relType } : {}),
+		...(entry.sourceRelationshipId ? { sourceRelationshipId: entry.sourceRelationshipId } : {}),
+		relationshipCount: entry.relationshipCount,
+		...(entry.byteSize !== undefined ? { byteSize: entry.byteSize } : {}),
+		...(entry.opaque !== undefined ? { opaque: entry.opaque } : {}),
+		...(entry.executionPolicy ? { executionPolicy: entry.executionPolicy } : {}),
+		...(entry.invalidationPolicy ? { invalidationPolicy: entry.invalidationPolicy } : {}),
+		...(entry.resigningPolicy ? { resigningPolicy: entry.resigningPolicy } : {}),
+	}))
+	return {
+		total: entries.length,
+		vbaProjects: entries.filter((entry) => entry.kind === 'vbaProject').length,
+		activeXControls: entries.filter(
+			(entry) =>
+				entry.kind === 'activeX' &&
+				entry.relType !==
+					'http://schemas.microsoft.com/office/2006/relationships/activeXControlBinary',
+		).length,
+		formControls: entries.filter((entry) => entry.kind === 'formControl').length,
+		macroSheets: entries.filter((entry) => entry.kind === 'macroSheet').length,
+		vbaSignatures: entries.filter((entry) => entry.kind === 'vbaSignature').length,
+		digitalSignatures: entries.filter((entry) => entry.kind === 'digitalSignature').length,
+		customUi: entries.filter((entry) => entry.kind === 'customUi').length,
+		unknownActiveContent: entries.filter((entry) => entry.kind === 'unknownActiveContent').length,
+		partPaths: uniqueStrings(entries.map((entry) => entry.partPath)),
+		entries,
+		executionPolicy: entries.length > 0 ? 'blocked' : 'none',
+		preservationMode: entries.length > 0 ? 'preserve-exact' : 'none',
+		verification: 'reopened-output',
+	}
+}
+
+function postWriteSecuritySummary(workbook: Workbook): PostWriteSecuritySummary {
+	const workbookProtection = workbook.workbookProtection
+	const workbookLocks = workbookProtection
+		? (['lockStructure', 'lockWindows', 'lockRevision'] as const).filter(
+				(key) => workbookProtection[key] === true,
+			)
+		: []
+	const workbookPasswordProtected = Boolean(
+		workbookProtection?.workbookPassword ||
+			workbookProtection?.workbookHashValue ||
+			workbookProtection?.workbookAlgorithmName ||
+			workbookProtection?.workbookSaltValue ||
+			workbookProtection?.workbookSpinCount,
+	)
+	const workbookRevisionPasswordProtected = Boolean(
+		workbookProtection?.revisionsPassword ||
+			workbookProtection?.revisionsHashValue ||
+			workbookProtection?.revisionsAlgorithmName ||
+			workbookProtection?.revisionsSaltValue ||
+			workbookProtection?.revisionsSpinCount,
+	)
+	const sheets = workbook.sheets
+		.map((sheet) => {
+			const protection = sheet.protection
+			const protectedRangeLocations = sheet.protectedRanges.map(
+				(range) => `${sheet.name}!${range.sqref}`,
+			)
+			const passwordProtected = Boolean(protection?.password)
+			const strongHashProtected = Boolean(
+				protection?.algorithmName ||
+					protection?.hashValue ||
+					protection?.saltValue ||
+					protection?.spinCount,
+			)
+			return {
+				sheetName: sheet.name,
+				protected: protection !== null,
+				passwordProtected,
+				strongHashProtected,
+				allowedActions: protection ? sheetProtectionAllowedActions(protection) : [],
+				protectedRanges: sheet.protectedRanges.length,
+				protectedRangeLocations,
+			}
+		})
+		.filter((sheet) => sheet.protected || sheet.protectedRanges > 0)
+	const protectedRangeLocations = uniqueStrings(
+		sheets.flatMap((sheet) => sheet.protectedRangeLocations),
+	)
+	const hasPasswordOrHash =
+		workbookPasswordProtected ||
+		workbookRevisionPasswordProtected ||
+		sheets.some((sheet) => sheet.passwordProtected || sheet.strongHashProtected)
+	const hasSecurity =
+		workbookProtection !== null || sheets.length > 0 || protectedRangeLocations.length > 0
+	return {
+		workbookProtected: workbookProtection !== null,
+		workbookLocks,
+		workbookPasswordProtected,
+		workbookRevisionPasswordProtected,
+		protectedSheets: sheets.filter((sheet) => sheet.protected).length,
+		protectedSheetNames: sheets.filter((sheet) => sheet.protected).map((sheet) => sheet.sheetName),
+		sheetPasswordProtected: sheets.filter((sheet) => sheet.passwordProtected).length,
+		sheetStrongHashProtected: sheets.filter((sheet) => sheet.strongHashProtected).length,
+		protectedRanges: protectedRangeLocations.length,
+		protectedRangeLocations,
+		sheets,
+		passwordHashVerification: hasPasswordOrHash ? 'reported-not-validated' : 'none',
+		preservationMode: hasSecurity ? 'generated' : 'none',
+		verification: 'reopened-output',
+	}
+}
+
+function sheetProtectionAllowedActions(
+	protection: NonNullable<Workbook['sheets'][number]['protection']>,
+): string[] {
+	return [
+		'formatCells',
+		'formatColumns',
+		'formatRows',
+		'insertColumns',
+		'insertRows',
+		'insertHyperlinks',
+		'deleteColumns',
+		'deleteRows',
+		'selectLockedCells',
+		'sort',
+		'autoFilter',
+		'pivotTables',
+		'selectUnlockedCells',
+	].filter((key) => protection[key as keyof typeof protection] === true)
+}
+
+function postWriteVisualSummary(workbook: Workbook): PostWriteVisualSummary {
+	const sheets = workbook.sheets
+		.map((sheet) => {
+			const drawingMlObjectRefs = sheet.drawingObjectRefs.filter(
+				(object) => object.source !== 'vml',
+			)
+			const vmlObjectRefs = sheet.drawingObjectRefs.filter((object) => object.source === 'vml')
+			return {
+				sheetName: sheet.name,
+				hasDrawingMl: sheet.drawingRefs.hasDrawing,
+				hasVml: sheet.drawingRefs.hasLegacyDrawing,
+				imageCount: sheet.imageRefs.length,
+				drawingObjectCount: sheet.drawingObjectRefs.length,
+				drawingMlObjectCount: drawingMlObjectRefs.length,
+				vmlObjectCount: vmlObjectRefs.length,
+				drawingPartPaths: uniqueStrings([
+					...sheet.imageRefs.map((image) => image.drawingPartPath),
+					...drawingMlObjectRefs.map((object) => object.drawingPartPath),
+				]),
+				mediaPartPaths: uniqueStrings(sheet.imageRefs.map((image) => image.targetPath)),
+				vmlPartPaths: uniqueStrings(vmlObjectRefs.map((object) => object.drawingPartPath)),
+			}
+		})
+		.filter(
+			(sheet) =>
+				sheet.hasDrawingMl || sheet.hasVml || sheet.imageCount > 0 || sheet.drawingObjectCount > 0,
+		)
+	const charts = workbook.chartParts.map((chart) => ({
+		partPath: chart.partPath,
+		...(chart.sheetName ? { sheetName: chart.sheetName } : {}),
+		...(chart.chartType ? { chartType: chart.chartType } : {}),
+		...(chart.title ? { title: chart.title } : {}),
+		seriesCount: chart.series.length,
+	}))
+	const chartSheetPartPaths = workbook.chartSheets.flatMap(
+		(chartSheet) => chartSheet.chartPartPaths,
+	)
+	const visualCount =
+		sheets.length +
+		workbook.chartParts.length +
+		workbook.chartSheets.length +
+		chartSheetPartPaths.length
+	return {
+		sheetsWithVisuals: sheets.length,
+		images: sheets.reduce((total, sheet) => total + sheet.imageCount, 0),
+		drawingObjects: sheets.reduce((total, sheet) => total + sheet.drawingObjectCount, 0),
+		drawingMlObjects: sheets.reduce((total, sheet) => total + sheet.drawingMlObjectCount, 0),
+		vmlObjects: sheets.reduce((total, sheet) => total + sheet.vmlObjectCount, 0),
+		chartParts: workbook.chartParts.length,
+		chartSheets: workbook.chartSheets.length,
+		drawingPartPaths: uniqueStrings(sheets.flatMap((sheet) => sheet.drawingPartPaths)),
+		mediaPartPaths: uniqueStrings(sheets.flatMap((sheet) => sheet.mediaPartPaths)),
+		chartPartPaths: uniqueStrings([
+			...charts.map((chart) => chart.partPath),
+			...chartSheetPartPaths,
+		]),
+		vmlPartPaths: uniqueStrings(sheets.flatMap((sheet) => sheet.vmlPartPaths)),
+		sheets,
+		charts,
+		preservationMode: visualCount > 0 ? 'preserve-exact' : 'none',
+		verification: 'reopened-output',
+	}
+}
+
+function postWriteOpaquePayloadSummary(workbook: Workbook): PostWriteOpaquePayloadSummary {
+	const conditionalFormats = collectX14ConditionalFormatExtensionPayloads(workbook)
+	const dataValidations = collectX14DataValidationExtensionPayloads(workbook)
+	const generatedWithOpaquePayloads = conditionalFormats.length + dataValidations.length
+	const worksheetParts = uniqueStrings([
+		...conditionalFormats.flatMap((entry) => (entry.sheetPartPath ? [entry.sheetPartPath] : [])),
+		...dataValidations.flatMap((entry) => (entry.sheetPartPath ? [entry.sheetPartPath] : [])),
+	])
+	return {
+		generatedWithOpaquePayloads,
+		x14ConditionalFormatExtensionPayloads: conditionalFormats.length,
+		x14DataValidationExtensionPayloads: dataValidations.length,
+		worksheetParts,
+		preservationMode: generatedWithOpaquePayloads > 0 ? 'generated-with-opaque-payload' : 'none',
+		verification: 'reopened-output',
 	}
 }
 
@@ -2021,6 +2798,7 @@ function postWriteLintFailures(
 function expectedPackageGraphChangesForOperations(
 	workbook: Workbook,
 	ops: readonly Operation[],
+	sourceGraph: XlsxPackageGraph,
 ): ExpectedPostWritePackageGraphChanges {
 	const removedPartPaths = new Set<string>()
 	for (const op of ops) {
@@ -2028,6 +2806,11 @@ function expectedPackageGraphChangesForOperations(
 		const sheet = workbook.getSheet(op.sheet)
 		const partPath = sheet?.preservedXml?.partPath
 		if (partPath) removedPartPaths.add(partPath)
+	}
+	if (ops.some((op) => operationInvalidatesCalcChain(workbook, op))) {
+		for (const part of sourceGraph.parts) {
+			if (part.featureFamily === 'preservedCalcChain') removedPartPaths.add(part.path)
+		}
 	}
 	return { removedPartPaths }
 }
@@ -2040,8 +2823,100 @@ function isExpectedPostWritePackageGraphIssue(
 	if (!targetPath || !expected.removedPartPaths.has(targetPath)) return false
 	return (
 		issue.code === 'package_content_type_override' ||
+		(issue.featureFamily === 'preservedCalcChain' &&
+			issue.code === 'package_preserved_relationship') ||
 		(issue.code === 'package_preserved_relationship' && issue.featureFamily === 'worksheet')
 	)
+}
+
+function operationInvalidatesCalcChain(workbook: Workbook, op: Operation): boolean {
+	switch (op.op) {
+		case 'addSheet':
+		case 'deleteSheet':
+		case 'renameSheet':
+		case 'moveSheet':
+		case 'setDefinedName':
+		case 'deleteDefinedName':
+		case 'setPivotCache':
+		case 'setPivotFieldItem':
+		case 'setConnectionRefresh':
+		case 'setTimelineRange':
+		case 'rewriteExternalLink':
+		case 'setFormula':
+		case 'fillFormula':
+		case 'insertRows':
+		case 'deleteRows':
+		case 'insertCols':
+		case 'deleteCols':
+		case 'createTable':
+		case 'appendRows':
+		case 'sortRange':
+		case 'copySheet':
+		case 'copyRange':
+		case 'moveRange':
+		case 'deleteTable':
+		case 'renameTable':
+		case 'resizeTable':
+		case 'setTableColumn':
+		case 'setSlicerCacheItem':
+			return true
+		case 'clearRange':
+			return op.what === 'formulas' || op.what === 'all'
+		case 'setCells': {
+			const sheet = workbook.getSheet(op.sheet)
+			if (!sheet) return false
+			return op.updates.some((update) => {
+				const ref = parseA1Safe(update.ref)
+				if (!ref) return false
+				return (
+					sheet.cells.readFormula(ref.row, ref.col) !== undefined ||
+					sheet.cells.readFormulaInfo(ref.row, ref.col) !== undefined
+				)
+			})
+		}
+		case 'setRichText':
+		case 'setNumberFormat':
+		case 'setStyle':
+		case 'setDocumentProperties':
+		case 'setWorkbookProperties':
+		case 'setWorkbookView':
+		case 'setCalcSettings':
+		case 'setTheme':
+		case 'setWorkbookProtection':
+		case 'setRowHeight':
+		case 'setColWidth':
+		case 'freezePane':
+		case 'mergeCells':
+		case 'unmergeCells':
+		case 'deleteComment':
+		case 'deleteHyperlink':
+		case 'deleteDataValidation':
+		case 'setAutoFilter':
+		case 'clearAutoFilter':
+		case 'setSheetProtection':
+		case 'setTabColor':
+		case 'hideSheet':
+		case 'hideRows':
+		case 'hideCols':
+		case 'deleteConditionalFormat':
+		case 'setPageSetup':
+		case 'setPrintArea':
+		case 'setTableStyle':
+		case 'setConditionalFormat':
+		case 'setDataValidation':
+		case 'setHyperlink':
+		case 'setComment':
+		case 'setThreadedComment':
+		case 'replaceImage':
+		case 'insertImage':
+		case 'deleteImage':
+		case 'setDrawingText':
+		case 'setChartSeriesSource':
+		case 'setSparklineGroup':
+		case 'setAdvancedFilter':
+			return false
+	}
+	return false
 }
 
 function packageGraphIssueTargetPath(issue: XlsxPackageGraphFidelityIssue): string | undefined {
@@ -2100,7 +2975,40 @@ function buildWritePolicyReport(
 	const generatedParts = preservation.parts.filter((part) => part.origin === 'generated')
 	const skipped = preservation.skippedCapsules
 	const packagePartByPath = new Map(packageGraph.parts.map((part) => [part.path, part]))
-	const checkErrors = checkIssues.filter((issue) => issue.severity === 'error')
+	const packageGraphPartByPath = packagePartByPath
+	const signatureParts = packageGraph.parts.filter(
+		(part) => part.featureFamily === 'preservedSignature',
+	)
+	const skippedSignatureParts = signatureParts.filter((part) => skipped.includes(part.path))
+	if (skippedSignatureParts.length > 0) {
+		diagnostics.push({
+			code: 'signature-invalidation',
+			severity: 'warning',
+			message: `${skippedSignatureParts.length} digital signature package part(s) will be omitted because generated edits invalidate signed package content.`,
+			suggestedAction:
+				'Commit only with explicit approval and re-sign the workbook outside Ascend if a trusted signature is required.',
+			partPaths: skippedSignatureParts.map((part) => part.path),
+			packageParts: packagePartDetailsFromParts(skippedSignatureParts),
+			featureFamily: 'preservedSignature',
+			preservationPolicy: 'invalidate-on-edit',
+			preservationMode: 'invalidated-on-edit',
+		})
+	}
+	const calcChainParts = packageGraph.parts.filter(
+		(part) => part.featureFamily === 'preservedCalcChain',
+	)
+	const skippedCalcChainParts = calcChainParts.filter((part) => skipped.includes(part.path))
+	const calcChainPolicy =
+		calcChainParts.length === 0
+			? 'not-present'
+			: skippedCalcChainParts.length > 0
+				? 'discarded-for-formula-topology'
+				: 'preserved'
+	const checkErrors = checkIssues.filter(
+		(issue) =>
+			issue.severity === 'error' &&
+			!isExpectedDiscardedCalcChainCheckIssue(issue, skippedCalcChainParts),
+	)
 	if (checkErrors.length > 0) {
 		diagnostics.push({
 			code: 'pre-write-check-error',
@@ -2119,6 +3027,7 @@ function buildWritePolicyReport(
 			suggestedAction:
 				'Inspect preservation.parts where origin is generated when auditing replacement package XML.',
 			partPaths: generatedParts.map((part) => part.path),
+			preservationMode: 'generated',
 		})
 	}
 	if (copiedThroughParts.length > 0) {
@@ -2134,35 +3043,11 @@ function buildWritePolicyReport(
 				'Expect byte-preservation audit coverage for copied-through package parts after write.',
 			partPaths: copiedThroughParts.map((part) => part.path),
 			...(packageParts.length > 0 ? { packageParts } : {}),
+			...(packageParts[0]?.preservationMode
+				? { preservationMode: packageParts[0].preservationMode }
+				: {}),
 		})
 	}
-	const signatureParts = packageGraph.parts.filter(
-		(part) => part.featureFamily === 'preservedSignature',
-	)
-	const skippedSignatureParts = signatureParts.filter((part) => skipped.includes(part.path))
-	if (skippedSignatureParts.length > 0) {
-		diagnostics.push({
-			code: 'signature-invalidation',
-			severity: 'warning',
-			message: `${skippedSignatureParts.length} digital signature package part(s) will be omitted because generated edits invalidate signed package content.`,
-			suggestedAction:
-				'Commit only with explicit approval and re-sign the workbook outside Ascend if a trusted signature is required.',
-			partPaths: skippedSignatureParts.map((part) => part.path),
-			packageParts: packagePartDetailsFromParts(skippedSignatureParts),
-			featureFamily: 'preservedSignature',
-			preservationPolicy: 'invalidate-on-edit',
-		})
-	}
-	const calcChainParts = packageGraph.parts.filter(
-		(part) => part.featureFamily === 'preservedCalcChain',
-	)
-	const skippedCalcChainParts = calcChainParts.filter((part) => skipped.includes(part.path))
-	const calcChainPolicy =
-		calcChainParts.length === 0
-			? 'not-present'
-			: skippedCalcChainParts.length > 0
-				? 'discarded-for-formula-topology'
-				: 'preserved'
 	if (skippedCalcChainParts.length > 0) {
 		diagnostics.push({
 			code: 'calc-chain-discarded',
@@ -2175,6 +3060,7 @@ function buildWritePolicyReport(
 			packageParts: packagePartDetailsFromParts(skippedCalcChainParts),
 			featureFamily: 'preservedCalcChain',
 			preservationPolicy: 'discard-on-recalc',
+			preservationMode: 'discarded-for-recalc',
 		})
 	} else if (calcChainParts.length > 0) {
 		diagnostics.push({
@@ -2188,6 +3074,7 @@ function buildWritePolicyReport(
 			packageParts: packagePartDetailsFromParts(calcChainParts),
 			featureFamily: 'preservedCalcChain',
 			preservationPolicy: 'discard-on-recalc',
+			preservationMode: 'preserve-exact',
 		})
 	}
 	const skippedNonSignatureCalc = skipped.filter(
@@ -2206,6 +3093,9 @@ function buildWritePolicyReport(
 				'Inspect skippedCapsules and confirm each skipped part is intentionally regenerated or no longer package-reachable.',
 			partPaths: skippedNonSignatureCalc,
 			...(packageParts.length > 0 ? { packageParts } : {}),
+			...(packageParts[0]?.preservationMode
+				? { preservationMode: packageParts[0].preservationMode }
+				: {}),
 		})
 	}
 	for (const part of packageGraph.parts.filter((part) =>
@@ -2222,6 +3112,7 @@ function buildWritePolicyReport(
 			featureFamily: part.featureFamily,
 			ownerScope: part.ownerScope,
 			preservationPolicy: part.preservationPolicy,
+			preservationMode: preservationModeForPackagePolicy(part.preservationPolicy),
 		})
 	}
 	const visualFamilies = new Set<string>()
@@ -2300,6 +3191,7 @@ function buildWritePolicyReport(
 				: {}),
 			featureFamily: [...visualFamilies].sort().join(','),
 			preservationPolicy: 'preserve-exact',
+			preservationMode: 'preserve-exact',
 			details: {
 				operationScoped: visualHasOperationRisk,
 				packageGraphAudit: {
@@ -2364,6 +3256,7 @@ function buildWritePolicyReport(
 				: {}),
 			featureFamily: 'preservedPivot,preservedSlicer,preservedTimeline',
 			preservationPolicy: 'preserve-exact',
+			preservationMode: 'preserve-exact',
 			details: {
 				operationScoped,
 				copiedThroughAnalyticsParts: packagePartDetails(
@@ -2411,6 +3304,7 @@ function buildWritePolicyReport(
 				? { packageParts: packagePartDetails(packagePartByPath, relatedPartPaths) }
 				: {}),
 			preservationPolicy: 'preserve-exact',
+			preservationMode: 'preserve-exact',
 			details: {
 				relatedOperations: visualWriteRisk.relatedOperations,
 			},
@@ -2432,6 +3326,7 @@ function buildWritePolicyReport(
 				: {}),
 			featureFamily: 'preservedDrawing,preservedVml',
 			preservationPolicy: 'preserve-exact',
+			preservationMode: 'preserve-exact',
 			details: {
 				drift: visualWriteRisk.drawingmlVmlDrift,
 			},
@@ -2459,6 +3354,7 @@ function buildWritePolicyReport(
 				: {}),
 			featureFamily: 'preservedChart',
 			preservationPolicy: 'preserve-exact',
+			preservationMode: 'preserve-exact',
 			details: {
 				chartSourceRefDrift: visualWriteRisk.chartSourceRefDrift,
 				verifyIssues: chartIntegrityIssues,
@@ -2482,6 +3378,7 @@ function buildWritePolicyReport(
 				: {}),
 			featureFamily: 'preservedPivot,preservedSlicer,preservedTimeline',
 			preservationPolicy: 'preserve-exact',
+			preservationMode: 'preserve-exact',
 			details: {
 				operationScoped: true,
 				analyticsPivotRefreshRisk: visualWriteRisk.analyticsPivotRefreshRisk,
@@ -2538,6 +3435,7 @@ function buildWritePolicyReport(
 				: {}),
 			featureFamily: 'preservedTable,preservedQueryTable',
 			preservationPolicy: 'preserve-exact',
+			preservationMode: 'preserve-exact',
 			details: {
 				tables: tableLocations,
 				relatedOperations,
@@ -2595,6 +3493,7 @@ function buildWritePolicyReport(
 				: {}),
 			featureFamily: 'preservedComments,preservedVml',
 			preservationPolicy: 'preserve-exact',
+			preservationMode: 'preserve-exact',
 			details: {
 				comments: legacyCommentLocations,
 				relatedOperations,
@@ -2648,6 +3547,7 @@ function buildWritePolicyReport(
 				: {}),
 			featureFamily: 'preservedThreadedComments',
 			preservationPolicy: 'preserve-exact',
+			preservationMode: 'preserve-exact',
 			details: {
 				threadedComments: threadedCommentLocations,
 				relatedOperations,
@@ -2686,6 +3586,7 @@ function buildWritePolicyReport(
 			...(partPaths.length > 0 ? { partPaths } : {}),
 			featureFamily: 'x14ConditionalFormatting',
 			preservationPolicy: 'generated',
+			preservationMode: 'generated-with-opaque-payload',
 			details: {
 				provenance: 'worksheet-extLst',
 				preservationMode: 'opaque-payload-preserved-in-generated-worksheet-xml',
@@ -2721,6 +3622,7 @@ function buildWritePolicyReport(
 			...(partPaths.length > 0 ? { partPaths } : {}),
 			featureFamily: 'x14DataValidation',
 			preservationPolicy: 'generated',
+			preservationMode: 'generated-with-opaque-payload',
 			details: {
 				provenance: 'worksheet-extLst',
 				preservationMode: 'opaque-payload-preserved-in-generated-worksheet-xml',
@@ -2768,6 +3670,7 @@ function buildWritePolicyReport(
 			packageParts: packagePartDetails(packagePartByPath, externalReferencePartPaths),
 			featureFamily: 'preservedExternalLink',
 			preservationPolicy: 'preserve-exact',
+			preservationMode: 'preserve-exact',
 			details: {
 				externalLinks: externalLinkRisk.linkGroups.filter(
 					(group) => group.externalReference !== undefined,
@@ -2786,6 +3689,7 @@ function buildWritePolicyReport(
 				'Keep the formula or defined name text symbolic, inspect externalReferenceUsages after apply, and add external-link package metadata before relying on workbook path rebinding.',
 			featureFamily: 'preservedExternalLink',
 			preservationPolicy: 'preserve-exact',
+			preservationMode: 'preserve-exact',
 			details: {
 				externalLinks: externalLinkRisk.linkGroups,
 				relatedOperations: externalLinkRisk.relatedOperations,
@@ -2827,6 +3731,7 @@ function buildWritePolicyReport(
 			packageParts: packagePartDetails(packagePartByPath, issuePartPaths),
 			featureFamily: 'preservedExternalLink',
 			preservationPolicy: 'preserve-exact',
+			preservationMode: 'preserve-exact',
 			details: {
 				bindingIssueCounts: { fallback: fallbackCount, missing: missingCount },
 				externalLinks: bindingIssueGroups,
@@ -2851,6 +3756,7 @@ function buildWritePolicyReport(
 				: {}),
 			featureFamily: 'preservedExternalLink',
 			preservationPolicy: 'preserve-exact',
+			preservationMode: 'preserve-exact',
 			details: {
 				externalLinks: externalLinkRisk.linkGroups,
 				packageGraphIssues: externalLinkPackageGraphIssues,
@@ -2884,6 +3790,10 @@ function buildWritePolicyReport(
 		if (feature.tier !== 'preserved' && feature.tier !== 'unsupported') continue
 		if (isSafePackagePreservationFeature(feature)) continue
 		const packageParts = packagePartDetails(packagePartByPath, feature.locations)
+		const preservationMode =
+			feature.tier === 'unsupported'
+				? 'unsupported'
+				: (packageParts[0]?.preservationMode ?? 'lossy-approval-required')
 		diagnostics.push({
 			code: 'approval-required-feature',
 			severity: 'warning',
@@ -2893,9 +3803,13 @@ function buildWritePolicyReport(
 			partPaths: feature.locations,
 			...(packageParts.length > 0 ? { packageParts } : {}),
 			featureFamily: feature.feature,
+			preservationMode,
 		})
 	}
 	const warningsOrBlockers = diagnostics.some((diagnostic) => diagnostic.severity !== 'info')
+	const lossyApprovalRequiredFeatures = diagnostics.filter(
+		(diagnostic) => diagnostic.code === 'approval-required-feature',
+	).length
 	return {
 		ok: !warningsOrBlockers,
 		diagnostics,
@@ -2918,6 +3832,24 @@ function buildWritePolicyReport(
 			x14ConditionalFormatExtensionPayloads: x14ConditionalFormatExtensionPayloads.length,
 			x14DataValidationExtensionPayloads: x14DataValidationExtensionPayloads.length,
 			calcChainPolicy,
+			preservationModes: {
+				preserveExactParts: copiedThroughParts.filter(
+					(part) => packageGraphPartByPath.get(part.path)?.preservationPolicy === 'preserve-exact',
+				).length,
+				generatedParts: generatedParts.length,
+				generatedWithOpaquePayloads:
+					x14ConditionalFormatExtensionPayloads.length + x14DataValidationExtensionPayloads.length,
+				invalidatedOnEditParts: skippedSignatureParts.length,
+				discardedForRecalcParts: skippedCalcChainParts.length,
+				inspectOnlyParts: packageGraph.parts.filter(
+					(part) => part.preservationPolicy === 'inspect-only',
+				).length,
+				reviewRequiredParts: packageGraph.parts.filter(
+					(part) => part.preservationPolicy === 'unknown-review-required',
+				).length,
+				unsupportedFeatures: features.filter((feature) => feature.tier === 'unsupported').length,
+				lossyApprovalRequiredFeatures,
+			},
 		},
 	}
 }
@@ -4010,20 +4942,24 @@ function chartSourceReferencedSheets(
 ): string[] {
 	const parsed = parseFormula(normalizeFormulaInput(ref))
 	if (parsed.ok) {
-		const sheets = flattenFormulaReferences(collectFormulaReferences(parsed.value)).flatMap(
-			(reference) => {
-				if (reference.kind === 'structured') {
-					return chartStructuredReferenceSheetNames(workbook, reference, defaultSheetName)
-				}
-				if (reference.scope?.kind === 'sheet') return [reference.scope.sheet]
-				if (reference.scope?.kind === 'sheetSpan') {
-					return [reference.scope.startSheet, reference.scope.endSheet]
-				}
-				if (reference.scope?.kind === 'local' && defaultSheetName) return [defaultSheetName]
-				return []
-			},
+		const references = flattenFormulaReferences(collectFormulaReferences(parsed.value))
+		const hasExternalReference = references.some(
+			(reference) =>
+				reference.scope?.kind === 'external' || reference.scope?.kind === 'externalSheetSpan',
 		)
+		const sheets = references.flatMap((reference) => {
+			if (reference.kind === 'structured') {
+				return chartStructuredReferenceSheetNames(workbook, reference, defaultSheetName)
+			}
+			if (reference.scope?.kind === 'sheet') return [reference.scope.sheet]
+			if (reference.scope?.kind === 'sheetSpan') {
+				return [reference.scope.startSheet, reference.scope.endSheet]
+			}
+			if (reference.scope?.kind === 'local' && defaultSheetName) return [defaultSheetName]
+			return []
+		})
 		if (sheets.length > 0) return uniqueStrings(sheets)
+		if (hasExternalReference) return []
 	}
 	const regexMatch = /^'([^']|'')+'!|^([^'!:]+)!/.exec(ref)
 	if (regexMatch?.[0]) {
@@ -4137,6 +5073,7 @@ interface ExternalLinkRiskGroup {
 	readonly key: string
 	readonly workbook?: string | undefined
 	readonly sheet?: string | undefined
+	readonly sheetSpans?: readonly { readonly startSheet: string; readonly endSheet: string }[]
 	readonly references: readonly string[]
 	readonly externalReference?: ExternalReferenceInfo | undefined
 	readonly bindingRisk?: ExternalLinkBindingRisk | undefined
@@ -4179,6 +5116,7 @@ interface ExternalLinkRelatedOperation {
 	readonly formula?: string | undefined
 	readonly workbook?: string | undefined
 	readonly sheet?: string | undefined
+	readonly sheetSpan?: { readonly startSheet: string; readonly endSheet: string } | undefined
 	readonly references?: readonly string[] | undefined
 	readonly externalReference?: ExternalReferenceInfo | undefined
 	readonly selector?: ExternalLinkRewriteSelector | undefined
@@ -4196,6 +5134,7 @@ interface ExternalLinkRewriteSelector {
 interface ExternalFormulaReferenceGroup {
 	readonly workbook: string
 	readonly sheet?: string | undefined
+	readonly sheetSpan?: { readonly startSheet: string; readonly endSheet: string } | undefined
 	readonly references: readonly string[]
 	readonly externalReference?: ExternalReferenceInfo | undefined
 }
@@ -4231,6 +5170,10 @@ function buildExternalLinkRisk(
 			...(existing?.references ?? []),
 			...(operation.references ?? []),
 		])
+		const sheetSpans = uniqueSheetSpans([
+			...(existing?.sheetSpans ?? []),
+			...(operation.sheetSpan ? [operation.sheetSpan] : []),
+		])
 		groupByKey.set(key, {
 			key,
 			...((operation.workbook ?? existing?.workbook)
@@ -4239,6 +5182,7 @@ function buildExternalLinkRisk(
 			...((operation.sheet ?? existing?.sheet)
 				? { sheet: operation.sheet ?? existing?.sheet }
 				: {}),
+			...(sheetSpans.length > 0 ? { sheetSpans } : {}),
 			references,
 			...((operation.externalReference ?? existing?.externalReference)
 				? {
@@ -4475,6 +5419,7 @@ function pushExternalLinkFormulaOperations(
 				...source,
 				workbook: group.workbook,
 				...(group.sheet ? { sheet: group.sheet } : {}),
+				...(group.sheetSpan ? { sheetSpan: group.sheetSpan } : {}),
 				references: group.references,
 				...(group.externalReference
 					? { externalReference: copyExternalReferenceInfo(group.externalReference) }
@@ -4525,13 +5470,25 @@ function externalFormulaReferenceGroups(
 	if (!parsed.ok) return []
 	const groups = new Map<string, ExternalFormulaReferenceGroup>()
 	for (const reference of flattenFormulaReferences(collectFormulaReferences(parsed.value))) {
-		if (reference.scope?.kind !== 'external') continue
-		const key = `${reference.scope.workbook}\u0000${reference.scope.sheet}`
+		if (reference.scope?.kind !== 'external' && reference.scope?.kind !== 'externalSheetSpan') {
+			continue
+		}
+		const key =
+			reference.scope.kind === 'external'
+				? `${reference.scope.workbook}\u0000${reference.scope.sheet}`
+				: `${reference.scope.workbook}\u0000${reference.scope.startSheet}\u0000${reference.scope.endSheet}`
 		const existing = groups.get(key)
 		const references = uniqueStrings([...(existing?.references ?? []), reference.text])
 		groups.set(key, {
 			workbook: reference.scope.workbook,
-			sheet: reference.scope.sheet,
+			...(reference.scope.kind === 'external'
+				? { sheet: reference.scope.sheet }
+				: {
+						sheetSpan: {
+							startSheet: reference.scope.startSheet,
+							endSheet: reference.scope.endSheet,
+						},
+					}),
 			references,
 			...(existing?.externalReference
 				? { externalReference: existing.externalReference }
@@ -4576,6 +5533,20 @@ function resolveExternalReference(
 		return entry.target !== undefined && externalReferenceBasename(entry.target) === tokenName
 	})
 	return matches.length === 1 ? copyExternalReferenceInfo(matches[0]) : undefined
+}
+
+function uniqueSheetSpans(
+	sheetSpans: readonly { readonly startSheet: string; readonly endSheet: string }[],
+): readonly { readonly startSheet: string; readonly endSheet: string }[] {
+	const seen = new Set<string>()
+	const result: { readonly startSheet: string; readonly endSheet: string }[] = []
+	for (const span of sheetSpans) {
+		const key = `${span.startSheet}\u0000${span.endSheet}`
+		if (seen.has(key)) continue
+		seen.add(key)
+		result.push(span)
+	}
+	return result
 }
 
 function parseExternalReferenceIndex(workbookToken: string): number | undefined {
@@ -5947,6 +6918,7 @@ function packagePartDetailsFromParts(
 		partPath: part.path,
 		featureFamily: part.featureFamily,
 		preservationPolicy: part.preservationPolicy,
+		preservationMode: preservationModeForPackagePolicy(part.preservationPolicy),
 		ownerScope: part.ownerScope,
 		bytePreservationExpected: part.bytePreservationExpected,
 		contentType: part.contentType,
@@ -5969,6 +6941,37 @@ function packagePartDetailsFromParts(
 	}))
 }
 
+function preservationModeForPackagePolicy(
+	policy: XlsxPackageLossPolicy,
+): WritePolicyPreservationMode {
+	switch (policy) {
+		case 'generated':
+			return 'generated'
+		case 'preserve-exact':
+			return 'preserve-exact'
+		case 'discard-on-recalc':
+			return 'discarded-for-recalc'
+		case 'invalidate-on-edit':
+			return 'invalidated-on-edit'
+		case 'inspect-only':
+			return 'inspect-only'
+		case 'unknown-review-required':
+			return 'review-required'
+	}
+}
+
+function isExpectedDiscardedCalcChainCheckIssue(
+	issue: CheckIssue,
+	skippedCalcChainParts: readonly XlsxPackageGraph['parts'][number][],
+): boolean {
+	if (issue.rule !== 'package-graph-integrity') return false
+	if (issue.details?.code !== 'package_relationship_target') return false
+	if (issue.details.featureFamily !== 'preservedCalcChain') return false
+	const actual = typeof issue.details.actual === 'string' ? issue.details.actual : undefined
+	if (!actual) return false
+	return skippedCalcChainParts.some((part) => part.path === actual)
+}
+
 function uniqueStrings(values: readonly string[]): string[] {
 	return [...new Set(values)]
 }
@@ -5983,6 +6986,7 @@ function isActiveContentFeature(featureFamily: string): boolean {
 		featureFamily === 'preservedActiveX' ||
 		featureFamily === 'preservedControl' ||
 		featureFamily === 'preservedCustomUi' ||
+		featureFamily === 'preservedEmbedding' ||
 		featureFamily === 'preservedVendorSecurity'
 	)
 }
@@ -6033,6 +7037,7 @@ function buildBlockedPackageParts(
 			partPath: part.path,
 			featureFamily: part.featureFamily,
 			preservationPolicy: part.preservationPolicy,
+			preservationMode: preservationModeForPackagePolicy(part.preservationPolicy),
 			ownerScope: part.ownerScope,
 			bytePreservationExpected: part.bytePreservationExpected,
 			contentType: part.contentType,

@@ -1,4 +1,11 @@
-import type { XlsxPackageGraph, XlsxPackageGraphRelationship } from './package-graph.ts'
+import {
+	packageFeatureLossPolicy,
+	type XlsxPackageGraph,
+	type XlsxPackageGraphRelationship,
+	type XlsxPackageLossPolicy,
+	type XlsxPackagePreservationMode,
+	xlsxPackagePreservationModeForPolicy,
+} from './package-graph.ts'
 import { extractZip } from './reader/zip.ts'
 
 export type XlsxPackageGraphFidelityIssueCode =
@@ -29,6 +36,8 @@ export interface XlsxPackageGraphFidelityIssue {
 	readonly relationshipId?: string
 	readonly contentType?: string
 	readonly featureFamily?: string
+	readonly preservationPolicy?: XlsxPackageLossPolicy
+	readonly preservationMode?: XlsxPackagePreservationMode
 	readonly ownerScope?: string
 	readonly suggestedAction?: string
 	readonly expected?: unknown
@@ -66,6 +75,7 @@ export function auditXlsxPackageGraphReadIntegrity(
 			relationshipPartPath: first.relationshipPartPath,
 			relationshipId: first.id,
 			featureFamily: first.featureFamily,
+			...preservationFieldsForFeatureFamily(first.featureFamily),
 			suggestedAction:
 				'Repair duplicate OPC relationship ids before resolving or writing the package; relationship ids must be unique within each .rels part.',
 			expected: 'unique relationship id within the relationship part',
@@ -86,6 +96,7 @@ export function auditXlsxPackageGraphReadIntegrity(
 			partPath: part.path,
 			ownerScope: part.ownerScope,
 			featureFamily: part.featureFamily,
+			...preservationFieldsForPart(part),
 			suggestedAction:
 				'Classify this OOXML part family or add a narrow fixture-backed allowlist entry before treating the package as fully audited.',
 		})
@@ -100,6 +111,7 @@ export function auditXlsxPackageGraphReadIntegrity(
 				relationshipPartPath: relationship.relationshipPartPath,
 				relationshipId: relationship.id,
 				featureFamily: relationship.featureFamily,
+				...preservationFieldsForFeatureFamily(relationship.featureFamily),
 				suggestedAction:
 					'Remove the orphan relationship sidecar or restore the source package part before writing.',
 				expected: relationship.sourcePartPath,
@@ -119,6 +131,7 @@ export function auditXlsxPackageGraphReadIntegrity(
 			relationshipPartPath: relationship.relationshipPartPath,
 			relationshipId: relationship.id,
 			featureFamily: relationship.featureFamily,
+			...preservationFieldsForFeatureFamily(relationship.featureFamily),
 			suggestedAction:
 				'Inspect the relationship target and preserve or repair the referenced package part before writing.',
 			expected: relationship.rawTarget,
@@ -138,6 +151,7 @@ export function auditXlsxPackageGraphReadIntegrity(
 			relationshipPartPath: part.path,
 			featureFamily: part.featureFamily,
 			ownerScope: part.ownerScope,
+			...preservationFieldsForPart(part),
 			suggestedAction:
 				'Remove the orphan relationship sidecar or restore the source package part before writing.',
 			expected: sourcePartPath,
@@ -168,6 +182,7 @@ export function auditXlsxPackageGraphReadIntegrity(
 				partPath: override.partPath,
 				featureFamily: part.featureFamily,
 				ownerScope: part.ownerScope,
+				...preservationFieldsForPart(part),
 				suggestedAction:
 					'Make the content type override agree with the resolved package part type before writing.',
 				expected: override.contentType,
@@ -200,6 +215,27 @@ function sourcePartFromRelationshipPartPath(path: string): string | null {
 	return match[1] ? `${match[1]}/${fileName}` : fileName
 }
 
+function preservationFieldsForPart(part: XlsxPackageGraph['parts'][number]): {
+	readonly preservationPolicy: XlsxPackageLossPolicy
+	readonly preservationMode: XlsxPackagePreservationMode
+} {
+	return {
+		preservationPolicy: part.preservationPolicy,
+		preservationMode: xlsxPackagePreservationModeForPolicy(part.preservationPolicy),
+	}
+}
+
+function preservationFieldsForFeatureFamily(featureFamily: string): {
+	readonly preservationPolicy: XlsxPackageLossPolicy
+	readonly preservationMode: XlsxPackagePreservationMode
+} {
+	const preservationPolicy = packageFeatureLossPolicy(featureFamily)
+	return {
+		preservationPolicy,
+		preservationMode: xlsxPackagePreservationModeForPolicy(preservationPolicy),
+	}
+}
+
 export function auditXlsxPackageGraphSafeEditIntegrity(
 	before: XlsxPackageGraph,
 	after: XlsxPackageGraph,
@@ -214,6 +250,7 @@ export function auditXlsxPackageGraphSafeEditIntegrity(
 			partPath: '[Content_Types].xml',
 			ownerScope: 'package',
 			featureFamily: 'packageContentTypes',
+			...preservationFieldsForFeatureFamily('packageContentTypes'),
 			suggestedAction:
 				'Preserve the package-level default content type table unless an explicit generated-part rewrite owns the change.',
 			expected: before.contentTypeDefaults,
@@ -243,6 +280,7 @@ export function auditXlsxPackageGraphSafeEditIntegrity(
 			partPath: override.partPath,
 			...(beforePart?.ownerScope ? { ownerScope: beforePart.ownerScope } : {}),
 			...(beforePart?.featureFamily ? { featureFamily: beforePart.featureFamily } : {}),
+			...(beforePart ? preservationFieldsForPart(beforePart) : {}),
 			suggestedAction:
 				'Preserve the exact override for this package part or prove that the generated replacement owns the content type change.',
 			expected: override,
@@ -261,6 +299,7 @@ export function auditXlsxPackageGraphSafeEditIntegrity(
 			partPath: override.partPath,
 			ownerScope: afterPart.ownerScope,
 			featureFamily: afterPart.featureFamily,
+			...preservationFieldsForPart(afterPart),
 			suggestedAction:
 				'Inspect why a preserved package part gained a new explicit content type override after a safe edit.',
 			expected: undefined,
@@ -282,6 +321,7 @@ export function auditXlsxPackageGraphSafeEditIntegrity(
 				partPath: beforePart.path,
 				ownerScope: beforePart.ownerScope,
 				featureFamily: beforePart.featureFamily,
+				...preservationFieldsForPart(beforePart),
 				suggestedAction:
 					'Drop invalidated package signatures after dirty writes or block the write until signature handling is explicit.',
 				expected: undefined,
@@ -298,6 +338,7 @@ export function auditXlsxPackageGraphSafeEditIntegrity(
 				partPath: beforePart.path,
 				ownerScope: beforePart.ownerScope,
 				featureFamily: beforePart.featureFamily,
+				...preservationFieldsForPart(beforePart),
 				suggestedAction:
 					'Copy this preserved package part through the write path or classify an intentional loss policy.',
 				expected: packagePartIdentity(beforePart),
@@ -314,6 +355,7 @@ export function auditXlsxPackageGraphSafeEditIntegrity(
 			partPath: beforePart.path,
 			ownerScope: beforePart.ownerScope,
 			featureFamily: beforePart.featureFamily,
+			...preservationFieldsForPart(beforePart),
 			suggestedAction:
 				'Preserve content type, owner scope, relationship provenance, feature family, and loss policy for this copied-through part.',
 			expected: beforeIdentity,
@@ -339,6 +381,7 @@ export function auditXlsxPackageGraphSafeEditIntegrity(
 				relationshipPartPath: beforeRel.relationshipPartPath,
 				relationshipId: beforeRel.id,
 				featureFamily: beforeRel.featureFamily,
+				...preservationFieldsForFeatureFamily(beforeRel.featureFamily),
 				suggestedAction:
 					'Preserve this relationship id, source relationship part, type dialect, target, and target mode across safe edits.',
 				expected: packageRelationshipIdentity(beforeRel),
@@ -356,6 +399,7 @@ export function auditXlsxPackageGraphSafeEditIntegrity(
 			relationshipPartPath: beforeRel.relationshipPartPath,
 			relationshipId: beforeRel.id,
 			featureFamily: beforeRel.featureFamily,
+			...preservationFieldsForFeatureFamily(beforeRel.featureFamily),
 			suggestedAction:
 				'Preserve relationship id, source part, relationship part path, raw type, normalized type, raw target, resolved target, and target mode.',
 			expected: beforeIdentity,
@@ -385,6 +429,7 @@ export function auditXlsxPackageGraphBytePreservation(
 				partPath: part.path,
 				ownerScope: part.ownerScope,
 				featureFamily: part.featureFamily,
+				...preservationFieldsForPart(part),
 				suggestedAction:
 					'Keep exact bytes available for copied-through OOXML sidecars during safe-edit writes.',
 				expected: beforePartBytes?.byteLength,
@@ -400,6 +445,7 @@ export function auditXlsxPackageGraphBytePreservation(
 			partPath: part.path,
 			ownerScope: part.ownerScope,
 			featureFamily: part.featureFamily,
+			...preservationFieldsForPart(part),
 			suggestedAction:
 				'Copy preserve-exact sidecars byte-for-byte unless the feature has a semantic writer with its own fidelity tests.',
 			expected: beforePartBytes.byteLength,

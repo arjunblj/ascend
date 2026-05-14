@@ -37,6 +37,8 @@ describe('XLSX package graph fidelity audits', () => {
 			relationshipPartPath: 'xl/_rels/workbook.xml.rels',
 			relationshipId: 'rIdMissing',
 			featureFamily: 'worksheet',
+			preservationPolicy: 'generated',
+			preservationMode: 'generated',
 			suggestedAction: expect.stringContaining('relationship target'),
 		})
 		expect(issues.find((issue) => issue.code === 'package_feature_classification')).toMatchObject({
@@ -44,6 +46,8 @@ describe('XLSX package graph fidelity audits', () => {
 			partPath: 'odd/package.bin',
 			ownerScope: 'unknown',
 			featureFamily: 'preservedOther',
+			preservationPolicy: 'unknown-review-required',
+			preservationMode: 'review-required',
 		})
 	})
 
@@ -75,6 +79,8 @@ describe('XLSX package graph fidelity audits', () => {
 				relationshipPartPath: 'xl/drawings/_rels/missingDrawing.xml.rels',
 				relationshipId: 'rIdImage',
 				featureFamily: 'preservedMedia',
+				preservationPolicy: 'preserve-exact',
+				preservationMode: 'preserve-exact',
 				suggestedAction: expect.stringContaining('orphan relationship sidecar'),
 			}),
 		)
@@ -112,6 +118,8 @@ describe('XLSX package graph fidelity audits', () => {
 				relationshipPartPath: 'xl/_rels/workbook.xml.rels',
 				relationshipId: 'rIdSheet',
 				featureFamily: 'worksheet',
+				preservationPolicy: 'generated',
+				preservationMode: 'generated',
 				actual: [
 					expect.objectContaining({ target: 'worksheets/sheet1.xml' }),
 					expect.objectContaining({ target: 'worksheets/sheet2.xml' }),
@@ -570,6 +578,8 @@ describe('XLSX package graph fidelity audits', () => {
 				code: 'package_content_type_override',
 				partPath: 'xl/charts/style1.xml',
 				featureFamily: 'preservedChartStyle',
+				preservationPolicy: 'preserve-exact',
+				preservationMode: 'preserve-exact',
 				expected: {
 					partPath: 'xl/charts/style1.xml',
 					contentType: 'application/xml',
@@ -595,6 +605,48 @@ describe('XLSX package graph fidelity audits', () => {
 			expect.objectContaining({
 				code: 'package_preserved_part_bytes',
 				partPath: 'xl/charts/chart1.xml',
+				featureFamily: 'preservedChart',
+				preservationPolicy: 'preserve-exact',
+				preservationMode: 'preserve-exact',
+			}),
+		)
+	})
+
+	test('detects byte drift for inspect-only sidecars', () => {
+		const beforeBytes = makeXlsx({
+			...baseWorkbookParts({
+				extraContentTypes: `
+  <Override PartName="/xl/customData/item1.data" ContentType="application/vnd.ms-excel.customData"/>
+`,
+			}),
+			'xl/_rels/workbook.xml.rels': relationshipsXml(`
+  <Relationship Id="rIdSheet" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rIdPowerQuery" Type="http://schemas.microsoft.com/office/2014/relationships/powerQueryMashup" Target="customData/item1.data"/>
+`),
+			'xl/customData/item1.data': 'power-query-bytes',
+		})
+		const afterBytes = makeXlsx({
+			...baseWorkbookParts({
+				extraContentTypes: `
+  <Override PartName="/xl/customData/item1.data" ContentType="application/vnd.ms-excel.customData"/>
+`,
+			}),
+			'xl/_rels/workbook.xml.rels': relationshipsXml(`
+  <Relationship Id="rIdSheet" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rIdPowerQuery" Type="http://schemas.microsoft.com/office/2014/relationships/powerQueryMashup" Target="customData/item1.data"/>
+`),
+			'xl/customData/item1.data': 'changed-power-query-bytes',
+		})
+		const before = inspectXlsxPackageGraph(beforeBytes)
+
+		const issues = auditXlsxPackageGraphBytePreservation(before, beforeBytes, afterBytes)
+		expect(issues).toContainEqual(
+			expect.objectContaining({
+				code: 'package_preserved_part_bytes',
+				partPath: 'xl/customData/item1.data',
+				featureFamily: 'preservedPowerQuery',
+				preservationPolicy: 'inspect-only',
+				preservationMode: 'inspect-only',
 			}),
 		)
 	})

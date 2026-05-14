@@ -6429,13 +6429,41 @@ describe('interactive client contract', () => {
 		expect(journalComparableState(wb)).toEqual(before)
 	})
 
+	test('journal inverse ops restore imported column range visibility exactly', () => {
+		const wb = AscendWorkbook.create()
+		const modelSheet = wb.getWorkbookModel().getSheet('Sheet1')
+		if (!modelSheet) throw new Error('missing sheet')
+		modelSheet.colDefs.push({ min: 0, max: 2, width: 18, customWidth: true })
+		const before = journalComparableState(wb)
+
+		const changed = wb.apply([{ op: 'hideCols', sheet: 'Sheet1', at: 1, count: 1, hidden: true }], {
+			journal: true,
+		})
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(true)
+		expect(changed.journal?.inverseOps).toEqual([
+			{ op: 'hideCols', sheet: 'Sheet1', at: 1, count: 1, hidden: false },
+		])
+		expect(wb.getWorkbookModel().getSheet('Sheet1')?.colDefs).toEqual([
+			{ min: 0, max: 0, width: 18, customWidth: true },
+			{ min: 1, max: 1, width: 18, customWidth: true, hidden: true },
+			{ min: 2, max: 2, width: 18, customWidth: true },
+		])
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(journalComparableState(wb)).toEqual(before)
+	})
+
 	test('journal classifies un-restorable visibility metadata as lossy', () => {
 		const wb = AscendWorkbook.create()
 		const modelSheet = wb.getWorkbookModel().getSheet('Sheet1')
 		if (modelSheet) {
 			modelSheet.state = 'veryHidden'
 			modelSheet.rowDefs.set(2, { hidden: false })
-			modelSheet.colDefs.push({ min: 2, max: 2, hidden: false })
+			modelSheet.colDefs.push({ min: 1, max: 1, hidden: false })
 		}
 
 		const changed = wb.preview(

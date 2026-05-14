@@ -3267,7 +3267,7 @@ describe('applyOperation', () => {
 			hidden: true,
 		})
 		expectOk(result2)
-		expect(wb.getSheet('Sheet1')?.colDefs).toContainEqual({ min: 2, max: 2, hidden: true })
+		expect(wb.getSheet('Sheet1')?.colDefs).toContainEqual({ min: 1, max: 1, hidden: true })
 
 		const result2b = applyOperation(wb, {
 			op: 'hideCols',
@@ -3300,9 +3300,40 @@ describe('applyOperation', () => {
 
 		const sheet = wb.getSheet('Sheet1')
 		expect(sheet?.state).toBe('hidden')
-		expect(sheet?.colDefs.find((def) => def.min === 2 && def.max === 2)).toBeUndefined()
+		expect(sheet?.colDefs.find((def) => def.min === 1 && def.max === 1)).toBeUndefined()
 		expect(sheet?.rowHeights.get(2)).toBeUndefined()
 		expect(sheet?.rowDefs.get(2)).toBeUndefined()
+	})
+
+	test('hideCols splits and rejoins imported column definition ranges', () => {
+		const wb = setup()
+		const sheet = wb.getSheet('Sheet1')
+		if (!sheet) throw new Error('missing sheet')
+		sheet.colDefs.push({ min: 0, max: 2, width: 18, customWidth: true })
+
+		const hidden = applyOperation(wb, {
+			op: 'hideCols',
+			sheet: 'Sheet1',
+			at: 1,
+			count: 1,
+			hidden: true,
+		})
+		expectOk(hidden)
+		expect(sheet.colDefs).toEqual([
+			{ min: 0, max: 0, width: 18, customWidth: true },
+			{ min: 1, max: 1, width: 18, customWidth: true, hidden: true },
+			{ min: 2, max: 2, width: 18, customWidth: true },
+		])
+
+		const unhidden = applyOperation(wb, {
+			op: 'hideCols',
+			sheet: 'Sheet1',
+			at: 1,
+			count: 1,
+			hidden: false,
+		})
+		expectOk(unhidden)
+		expect(sheet.colDefs).toEqual([{ min: 0, max: 2, width: 18, customWidth: true }])
 	})
 
 	test('groupRows assigns outline metadata and collapsed boundary row', () => {

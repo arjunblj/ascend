@@ -279,17 +279,60 @@ export function handleHideCols(
 }
 
 function setColHidden(sheet: Sheet, col: number, hidden: boolean): void {
-	const idx = sheet.colDefs.findIndex((def) => def.min === col + 1 && def.max === col + 1)
+	const idx = findColDefIndex(sheet, col)
 	const existing = idx >= 0 ? sheet.colDefs[idx] : undefined
-	if (hidden) {
-		if (existing) sheet.colDefs[idx] = { ...existing, hidden: true }
-		else sheet.colDefs.push({ min: col + 1, max: col + 1, hidden: true })
+	if (existing?.hidden === hidden) return
+	if (!hidden && existing?.hidden === undefined) return
+	if (!existing) {
+		if (hidden) insertColDef(sheet, { min: col, max: col, hidden: true })
 		return
 	}
-	if (!existing) return
-	const { hidden: _hidden, ...next } = existing
-	if (isEmptyColDef(next)) sheet.colDefs.splice(idx, 1)
-	else sheet.colDefs[idx] = next
+
+	const replacements: Sheet['colDefs'] = []
+	if (existing.min < col) replacements.push({ ...existing, max: col - 1 })
+	const target = { ...existing, min: col, max: col }
+	if (hidden) {
+		replacements.push({ ...target, hidden: true })
+	} else {
+		const { hidden: _hidden, ...next } = target
+		if (!isEmptyColDef(next)) replacements.push(next)
+	}
+	if (col < existing.max) replacements.push({ ...existing, min: col + 1 })
+	sheet.colDefs.splice(idx, 1, ...replacements)
+	mergeAdjacentColDefs(sheet)
+}
+
+function findColDefIndex(sheet: Sheet, col: number): number {
+	const exact = sheet.colDefs.findIndex((def) => def.min === col && def.max === col)
+	if (exact >= 0) return exact
+	return sheet.colDefs.findIndex((def) => def.min <= col && def.max >= col)
+}
+
+function insertColDef(sheet: Sheet, def: Sheet['colDefs'][number]): void {
+	const idx = sheet.colDefs.findIndex((existing) => existing.min > def.min)
+	if (idx >= 0) sheet.colDefs.splice(idx, 0, def)
+	else sheet.colDefs.push(def)
+	mergeAdjacentColDefs(sheet)
+}
+
+function mergeAdjacentColDefs(sheet: Sheet): void {
+	for (let i = 1; i < sheet.colDefs.length; i++) {
+		const previous = sheet.colDefs[i - 1]
+		const current = sheet.colDefs[i]
+		if (!previous || !current) continue
+		if (previous.max + 1 !== current.min || !sameColDefMetadata(previous, current)) continue
+		sheet.colDefs.splice(i - 1, 2, { ...previous, max: current.max })
+		i--
+	}
+}
+
+function sameColDefMetadata(
+	left: Sheet['colDefs'][number],
+	right: Sheet['colDefs'][number],
+): boolean {
+	const { min: _leftMin, max: _leftMax, ...leftMetadata } = left
+	const { min: _rightMin, max: _rightMax, ...rightMetadata } = right
+	return JSON.stringify(leftMetadata) === JSON.stringify(rightMetadata)
 }
 
 function isEmptyColDef(def: Sheet['colDefs'][number]): boolean {

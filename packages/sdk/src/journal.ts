@@ -981,7 +981,7 @@ function journalHideCols(
 	const sheet = workbook.getSheet(op.sheet)
 	const cols = Array.from({ length: op.count }, (_, offset) => {
 		const col = op.at + offset
-		const colDef = sheet?.colDefs.find((def) => def.min === col + 1 && def.max === col + 1)
+		const colDef = sheet?.colDefs.find((def) => def.min <= col && def.max >= col)
 		return { col, colDef: colDef ? cloneSheetColDef(colDef) : null }
 	})
 	const preimage: MutationJournalColsHiddenPreimage = { sheet: op.sheet, cols }

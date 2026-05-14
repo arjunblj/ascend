@@ -308,6 +308,18 @@ describe('formula editing utilities', () => {
 			parseOk: true,
 			diagnostics: [],
 		})
+		expect(formulaDiagnostics('=[Book.xlsx')).toEqual({
+			parseOk: false,
+			diagnostics: [
+				{
+					code: 'formula-reference-qualifier-error',
+					severity: 'error',
+					message: 'Unterminated external workbook or bracketed reference',
+					start: 1,
+					end: 11,
+				},
+			],
+		})
 		expect(formulaDiagnostics("='Q1 Plan!A1")).toEqual({
 			parseOk: false,
 			diagnostics: [

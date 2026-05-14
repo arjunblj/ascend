@@ -246,6 +246,16 @@ function formulaLexicalDiagnostics(formula: string): FormulaDiagnostic[] {
 	for (let index = 0; index < spans.length; index++) {
 		const span = spans[index]
 		if (!span || span.token.type !== TokenType.Name) continue
+		if (span.text.startsWith('[') && bracketBalance(span.text) > 0) {
+			diagnostics.push({
+				code: 'formula-reference-qualifier-error',
+				severity: 'error',
+				message: 'Unterminated external workbook or bracketed reference',
+				start: span.start,
+				end: span.end,
+			})
+			continue
+		}
 		if (span.text.startsWith("'") && !quotedNameClosed(span.text)) {
 			diagnostics.push({
 				code: 'formula-reference-qualifier-error',

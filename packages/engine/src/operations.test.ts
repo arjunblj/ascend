@@ -3336,6 +3336,39 @@ describe('applyOperation', () => {
 		expect(sheet.colDefs).toEqual([{ min: 0, max: 2, width: 18, customWidth: true }])
 	})
 
+	test('setColWidth updates imported column definition ranges used by the writer', () => {
+		const wb = setup()
+		const sheet = wb.getSheet('Sheet1')
+		if (!sheet) throw new Error('missing sheet')
+		sheet.colDefs.push({ min: 0, max: 2, width: 18, customWidth: true })
+		sheet.colWidths.set(0, 18)
+		sheet.colWidths.set(1, 18)
+		sheet.colWidths.set(2, 18)
+
+		const resized = applyOperation(wb, {
+			op: 'setColWidth',
+			sheet: 'Sheet1',
+			col: 1,
+			width: 20,
+		})
+		expectOk(resized)
+		expect(sheet.colWidths.get(1)).toBe(20)
+		expect(sheet.colDefs).toEqual([
+			{ min: 0, max: 0, width: 18, customWidth: true },
+			{ min: 1, max: 1, width: 20, customWidth: true },
+			{ min: 2, max: 2, width: 18, customWidth: true },
+		])
+
+		const restored = applyOperation(wb, {
+			op: 'setColWidth',
+			sheet: 'Sheet1',
+			col: 1,
+			width: 18,
+		})
+		expectOk(restored)
+		expect(sheet.colDefs).toEqual([{ min: 0, max: 2, width: 18, customWidth: true }])
+	})
+
 	test('groupRows assigns outline metadata and collapsed boundary row', () => {
 		const wb = setup()
 		const result = applyOperation(wb, {

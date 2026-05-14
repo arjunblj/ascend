@@ -814,10 +814,15 @@ function journalSetSheetLayout(
 	const sheet = workbook.getSheet(op.sheet)
 	const index =
 		axis === 'row' && op.op === 'setRowHeight' ? op.row : op.op === 'setColWidth' ? op.col : -1
+	const colDef =
+		sheet && axis === 'col'
+			? sheet.colDefs.find((def) => def.min <= index && def.max >= index)
+			: undefined
+	const colWidth = sheet && axis === 'col' ? sheet.colWidths.get(index) : undefined
 	const value = sheet
 		? axis === 'row'
 			? sheet.rowHeights.get(index)
-			: sheet.colWidths.get(index)
+			: (colWidth ?? colDef?.width)
 		: undefined
 	const preimage: MutationJournalSheetLayoutPreimage = {
 		sheet: op.sheet,
@@ -856,6 +861,31 @@ function journalSetSheetLayout(
 			],
 		}
 	}
+	const issues: MutationJournalIssue[] = []
+	if (
+		axis === 'col' &&
+		colWidth !== undefined &&
+		colDef?.width !== undefined &&
+		colWidth !== colDef.width
+	) {
+		issues.push({
+			code: 'LOSSY_INVERSE',
+			message: `Column width map and column metadata disagree at ${ref} and cannot be restored exactly with public operations`,
+			refs: [ref],
+		})
+	}
+	if (
+		axis === 'col' &&
+		colWidth === undefined &&
+		colDef?.width !== undefined &&
+		colDef.customWidth !== true
+	) {
+		issues.push({
+			code: 'LOSSY_INVERSE',
+			message: `Column width metadata at ${ref} has customWidth=${String(colDef.customWidth)} and cannot be restored exactly with public operations`,
+			refs: [ref],
+		})
+	}
 	const inverseOps: Operation[] =
 		axis === 'row'
 			? [{ op: 'setRowHeight', sheet: op.sheet, row: index, height: value }]
@@ -865,7 +895,7 @@ function journalSetSheetLayout(
 		op,
 		inverseOps,
 		preimages: [{ kind: 'sheet-layout', sheetLayout: preimage }],
-		issues: [],
+		issues,
 	}
 }
 

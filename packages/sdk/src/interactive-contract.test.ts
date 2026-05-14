@@ -6185,6 +6185,37 @@ describe('interactive client contract', () => {
 		expect(journalComparableState(wb)).toEqual(before)
 	})
 
+	test('journal inverse ops restore imported column range width edits exactly', () => {
+		const wb = AscendWorkbook.create()
+		const modelSheet = wb.getWorkbookModel().getSheet('Sheet1')
+		if (!modelSheet) throw new Error('missing sheet')
+		modelSheet.colDefs.push({ min: 0, max: 2, width: 18, customWidth: true })
+		modelSheet.colWidths.set(0, 18)
+		modelSheet.colWidths.set(1, 18)
+		modelSheet.colWidths.set(2, 18)
+		const before = journalComparableState(wb)
+
+		const changed = wb.apply([{ op: 'setColWidth', sheet: 'Sheet1', col: 1, width: 20 }], {
+			journal: true,
+		})
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(true)
+		expect(changed.journal?.inverseOps).toEqual([
+			{ op: 'setColWidth', sheet: 'Sheet1', col: 1, width: 18 },
+		])
+		expect(wb.getWorkbookModel().getSheet('Sheet1')?.colDefs).toEqual([
+			{ min: 0, max: 0, width: 18, customWidth: true },
+			{ min: 1, max: 1, width: 20, customWidth: true },
+			{ min: 2, max: 2, width: 18, customWidth: true },
+		])
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(journalComparableState(wb)).toEqual(before)
+	})
+
 	test('journal marks newly-created row and column layout as lossy', () => {
 		const wb = AscendWorkbook.create()
 		const changed = wb.preview(

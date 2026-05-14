@@ -222,7 +222,9 @@ export function handleSetColWidth(
 ): Result<PatchResult> {
 	const result = getSheet(workbook, op.sheet)
 	if (!result.ok) return result
-	result.value.colWidths.set(op.col, op.width)
+	const sheet = result.value
+	sheet.colWidths.set(op.col, op.width)
+	setColDefWidth(sheet, op.col, op.width)
 	return ok(patch([], [op.sheet]))
 }
 
@@ -297,6 +299,30 @@ function setColHidden(sheet: Sheet, col: number, hidden: boolean): void {
 		const { hidden: _hidden, ...next } = target
 		if (!isEmptyColDef(next)) replacements.push(next)
 	}
+	if (col < existing.max) replacements.push({ ...existing, min: col + 1 })
+	sheet.colDefs.splice(idx, 1, ...replacements)
+	mergeAdjacentColDefs(sheet)
+}
+
+function setColDefWidth(sheet: Sheet, col: number, width: number): void {
+	if (sheet.colDefs.length === 0) return
+	const idx = findColDefIndex(sheet, col)
+	const existing = idx >= 0 ? sheet.colDefs[idx] : undefined
+	if (!existing) {
+		insertColDef(sheet, { min: col, max: col, width, customWidth: true })
+		return
+	}
+	if (
+		existing.min === col &&
+		existing.max === col &&
+		existing.width === width &&
+		existing.customWidth === true
+	) {
+		return
+	}
+	const replacements: Sheet['colDefs'] = []
+	if (existing.min < col) replacements.push({ ...existing, max: col - 1 })
+	replacements.push({ ...existing, min: col, max: col, width, customWidth: true })
 	if (col < existing.max) replacements.push({ ...existing, min: col + 1 })
 	sheet.colDefs.splice(idx, 1, ...replacements)
 	mergeAdjacentColDefs(sheet)

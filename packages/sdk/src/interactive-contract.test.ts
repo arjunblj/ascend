@@ -5526,6 +5526,66 @@ describe('interactive client contract', () => {
 		expect(journalComparableState(wb)).toEqual(before)
 	})
 
+	test('calc settings journals clear absent optional fields exactly', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCalcSettings',
+				settings: {
+					calcCompleted: null,
+					calcOnSave: null,
+					forceFullCalc: null,
+					calcId: null,
+				},
+			},
+		])
+		const before = journalComparableState(wb)
+
+		const changed = wb.apply(
+			[
+				{
+					op: 'setCalcSettings',
+					settings: {
+						calcCompleted: true,
+						calcOnSave: false,
+						forceFullCalc: true,
+						calcId: 987654,
+					},
+				},
+			],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(true)
+		expect(changed.journal?.issues).toEqual([])
+		expect(changed.journal?.inverseOps).toEqual([
+			{
+				op: 'setCalcSettings',
+				settings: {
+					calcMode: 'auto',
+					fullCalcOnLoad: false,
+					calcCompleted: null,
+					calcOnSave: null,
+					forceFullCalc: null,
+					calcId: null,
+					dateSystem: '1900',
+					iterativeCalc: { enabled: false, maxIterations: 100, maxChange: 0.001 },
+				},
+			},
+			{
+				op: 'setWorkbookProperties',
+				properties: {},
+				mode: 'replace',
+			},
+		])
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(journalComparableState(wb)).toEqual(before)
+	})
+
 	test('journal inverse ops restore workbook protection when public ops can be exact', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

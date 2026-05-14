@@ -2321,11 +2321,26 @@ function journalSetCalcSettings(
 		opIndex,
 		op,
 		inverseOps: [
-			{ op: 'setCalcSettings', settings: preimage.settings },
+			{ op: 'setCalcSettings', settings: calcSettingsInverseInput(preimage.settings) },
 			{ op: 'setWorkbookProperties', properties: preimage.workbookProperties, mode: 'replace' },
 		],
 		preimages: [{ kind: 'calc-settings', calcSettings: preimage }],
 		issues: [],
+	}
+}
+
+function calcSettingsInverseInput(
+	settings: CalcSettings,
+): Extract<Operation, { op: 'setCalcSettings' }>['settings'] {
+	return {
+		calcMode: settings.calcMode,
+		fullCalcOnLoad: settings.fullCalcOnLoad,
+		calcCompleted: settings.calcCompleted ?? null,
+		calcOnSave: settings.calcOnSave ?? null,
+		forceFullCalc: settings.forceFullCalc ?? null,
+		calcId: settings.calcId ?? null,
+		dateSystem: settings.dateSystem,
+		iterativeCalc: { ...settings.iterativeCalc },
 	}
 }
 

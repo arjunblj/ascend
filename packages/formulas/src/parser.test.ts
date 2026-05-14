@@ -424,6 +424,34 @@ describe('parse', () => {
 				ref: { row: 0, col: 0, rowAbsolute: false, colAbsolute: false },
 			},
 		})
+		expect(p('[Book.xlsx]Sheet1:Sheet3!A1:B2')).toEqual({
+			type: 'sheetSpanRef',
+			startSheet: '[Book.xlsx]Sheet1',
+			endSheet: 'Sheet3',
+			target: {
+				type: 'rangeRef',
+				start: { row: 0, col: 0, rowAbsolute: false, colAbsolute: false },
+				end: { row: 1, col: 1, rowAbsolute: false, colAbsolute: false },
+			},
+		})
+		expect(p("'[Book.xlsx]Q1:Q3'!A1")).toEqual({
+			type: 'sheetSpanRef',
+			startSheet: '[Book.xlsx]Q1',
+			endSheet: 'Q3',
+			target: {
+				type: 'cellRef',
+				ref: { row: 0, col: 0, rowAbsolute: false, colAbsolute: false },
+			},
+		})
+		expect(p("'C:/tmp/[Book.xlsx]Sheet1:Sheet3'!A1")).toEqual({
+			type: 'sheetSpanRef',
+			startSheet: 'C:/tmp/[Book.xlsx]Sheet1',
+			endSheet: 'Sheet3',
+			target: {
+				type: 'cellRef',
+				ref: { row: 0, col: 0, rowAbsolute: false, colAbsolute: false },
+			},
+		})
 	})
 
 	it('parses parenthesized expressions', () => {
@@ -528,6 +556,11 @@ describe('printFormula', () => {
 		expect(printFormula(p('Sheet1!Budget'))).toBe('Sheet1!Budget')
 		expect(printFormula(p('[Book.xlsx]Sheet1!A1'))).toBe('[Book.xlsx]Sheet1!A1')
 		expect(printFormula(p('Sheet1:Sheet3!A1'))).toBe('Sheet1:Sheet3!A1')
+		expect(printFormula(p('[Book.xlsx]Sheet1:Sheet3!A1:B2'))).toBe('[Book.xlsx]Sheet1:Sheet3!A1:B2')
+		expect(printFormula(p("'[Book.xlsx]Q1:Q3'!A1"))).toBe("'[Book.xlsx]Q1:Q3'!A1")
+		expect(printFormula(p("'C:/tmp/[Book.xlsx]Sheet1:Sheet3'!A1"))).toBe(
+			"'C:/tmp/[Book.xlsx]Sheet1:Sheet3'!A1",
+		)
 	})
 
 	it('preserves parentheses where needed', () => {

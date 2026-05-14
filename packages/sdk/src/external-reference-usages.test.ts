@@ -39,6 +39,42 @@ describe('external reference usages', () => {
 		expect(wb.externalReferenceUsages()).toEqual(wb.inspect().externalReferenceUsages)
 	})
 
+	test('inspect maps workbook-qualified 3D references as external sheet spans', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setFormula',
+				sheet: 'Sheet1',
+				ref: 'A1',
+				formula: '=SUM([Budget.xlsx]FY26:FY28!B2:B10)',
+			},
+			{
+				op: 'setDefinedName',
+				name: 'BudgetSource3D',
+				ref: "'C:/models/[Budget.xlsx]FY26:FY28'!A1:D10",
+			},
+		])
+
+		expect(wb.externalReferenceUsages()).toEqual([
+			{
+				workbook: 'Budget.xlsx',
+				sheetSpan: { startSheet: 'FY26', endSheet: 'FY28' },
+				sourceKind: 'cellFormula',
+				sourceRef: 'Sheet1!A1',
+				formula: 'SUM([Budget.xlsx]FY26:FY28!B2:B10)',
+				references: ["'[Budget.xlsx]FY26:FY28'!B2:B10"],
+			},
+			{
+				workbook: 'C:/models/Budget.xlsx',
+				sheetSpan: { startSheet: 'FY26', endSheet: 'FY28' },
+				sourceKind: 'definedName',
+				name: 'BudgetSource3D',
+				formula: "'C:/models/[Budget.xlsx]FY26:FY28'!A1:D10",
+				references: ["'C:/models/[Budget.xlsx]FY26:FY28'!A1:D10"],
+			},
+		])
+	})
+
 	test('inspect maps external workbook references in sheet metadata formulas', () => {
 		const wb = AscendWorkbook.create()
 		const internal = wb as unknown as {

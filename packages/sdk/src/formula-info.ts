@@ -195,10 +195,18 @@ function toFormulaReferenceInfo(node: FormulaNode): FormulaReferenceInfo | undef
 		case 'sheetSpanRef': {
 			const target = toFormulaReferenceInfo(node.target)
 			if (!target) return undefined
+			const external = externalSheetToken(node.startSheet)
 			return {
 				...target,
 				text: printFormula(node),
-				scope: { kind: 'sheetSpan', startSheet: node.startSheet, endSheet: node.endSheet },
+				scope: external
+					? {
+							kind: 'externalSheetSpan',
+							workbook: external.workbook,
+							startSheet: external.sheet,
+							endSheet: node.endSheet,
+						}
+					: { kind: 'sheetSpan', startSheet: node.startSheet, endSheet: node.endSheet },
 			}
 		}
 		case 'unary':
@@ -246,14 +254,22 @@ function structuredFormulaReferenceInfo(node: StructuredRefNode): FormulaReferen
 
 function formulaReferenceScope(sheet: string | undefined): FormulaReferenceScope {
 	if (sheet) {
-		const external = /^\[([^\]]+)\](.+)$/.exec(sheet)
+		const external = externalSheetToken(sheet)
 		if (external) {
-			const workbook = external[1]
-			const externalSheet = external[2]
-			if (workbook && externalSheet) {
-				return { kind: 'external', workbook, sheet: externalSheet }
-			}
+			return { kind: 'external', workbook: external.workbook, sheet: external.sheet }
 		}
 	}
 	return sheet ? { kind: 'sheet', sheet } : { kind: 'local' }
+}
+
+function externalSheetToken(
+	sheet: string,
+): { readonly workbook: string; readonly sheet: string } | null {
+	const open = sheet.indexOf('[')
+	const close = open >= 0 ? sheet.indexOf(']', open + 1) : -1
+	if (open < 0 || close <= open) return null
+	const workbook = `${sheet.slice(0, open)}${sheet.slice(open + 1, close)}`
+	const externalSheet = sheet.slice(close + 1)
+	if (!workbook || !externalSheet) return null
+	return { workbook, sheet: externalSheet }
 }

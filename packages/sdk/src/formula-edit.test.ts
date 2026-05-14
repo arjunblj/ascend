@@ -66,6 +66,36 @@ describe('formula editing utilities', () => {
 			end: 26,
 			kind: 'structured',
 		})
+		expect(referenceAtCursor('=SUM(Sheet1:Sheet3!A1)', 12)).toEqual({
+			text: 'Sheet1:Sheet3!A1',
+			start: 5,
+			end: 21,
+			kind: 'sheet-3d-cell',
+		})
+		expect(referenceAtCursor("=SUM('Q1 Plan':'Q3 Plan'!A1:B2)", 18)).toEqual({
+			text: "'Q1 Plan':'Q3 Plan'!A1:B2",
+			start: 5,
+			end: 30,
+			kind: 'sheet-3d-range',
+		})
+		expect(referenceAtCursor('=SUM([Book.xlsx]Sheet1:Sheet3!A1:B2)', 18)).toEqual({
+			text: '[Book.xlsx]Sheet1:Sheet3!A1:B2',
+			start: 5,
+			end: 35,
+			kind: 'sheet-3d-range',
+		})
+		expect(referenceAtCursor("=SUM('[Book.xlsx]Q1:Q3'!A1)", 18)).toEqual({
+			text: "'[Book.xlsx]Q1:Q3'!A1",
+			start: 5,
+			end: 26,
+			kind: 'sheet-3d-cell',
+		})
+		expect(referenceAtCursor("=SUM('C:/tmp/[Book.xlsx]Sheet1:Sheet3'!A1:B2)", 24)).toEqual({
+			text: "'C:/tmp/[Book.xlsx]Sheet1:Sheet3'!A1:B2",
+			start: 5,
+			end: 44,
+			kind: 'sheet-3d-range',
+		})
 	})
 
 	test('does not treat earlier references as active in empty formula edit slots', () => {
@@ -116,6 +146,50 @@ describe('formula editing utilities', () => {
 			formula: "'Q1 Plan'!$A$1:B2",
 			cursor: 14,
 			changed: true,
+		})
+		expect(cycleFormulaReferenceMode('Sheet1:Sheet3!A1', 4)).toMatchObject({
+			formula: 'Sheet1:Sheet3!$A$1',
+			cursor: 18,
+			changed: true,
+			reference: {
+				text: 'Sheet1:Sheet3!$A$1',
+				start: 0,
+				end: 18,
+				kind: 'sheet-3d-cell',
+			},
+		})
+		expect(cycleFormulaReferenceMode("'Q1 Plan':'Q3 Plan'!A1:B2", 10)).toMatchObject({
+			formula: "'Q1 Plan':'Q3 Plan'!$A$1:B2",
+			cursor: 24,
+			changed: true,
+			reference: {
+				text: "'Q1 Plan':'Q3 Plan'!$A$1:B2",
+				start: 0,
+				end: 27,
+				kind: 'sheet-3d-range',
+			},
+		})
+		expect(cycleFormulaReferenceMode('=[Book.xlsx]Sheet1:Sheet3!A1', 9)).toMatchObject({
+			formula: '=[Book.xlsx]Sheet1:Sheet3!$A$1',
+			cursor: 30,
+			changed: true,
+			reference: {
+				text: '[Book.xlsx]Sheet1:Sheet3!$A$1',
+				start: 1,
+				end: 30,
+				kind: 'sheet-3d-cell',
+			},
+		})
+		expect(cycleFormulaReferenceMode("='[Book.xlsx]Q1:Q3'!A1", 8)).toMatchObject({
+			formula: "='[Book.xlsx]Q1:Q3'!$A$1",
+			cursor: 24,
+			changed: true,
+			reference: {
+				text: "'[Book.xlsx]Q1:Q3'!$A$1",
+				start: 1,
+				end: 24,
+				kind: 'sheet-3d-cell',
+			},
 		})
 	})
 
@@ -189,6 +263,21 @@ describe('formula editing utilities', () => {
 				start: 1,
 				end: 21,
 				kind: 'sheet-cell',
+			},
+		})
+		expect(
+			insertFormulaReference('=SUM(Sheet1:Sheet3!A1)', 14, 'Sheet2!C3', {
+				replaceReferenceAtCursor: true,
+			}),
+		).toEqual({
+			formula: '=SUM(Sheet2!C3)',
+			cursor: 14,
+			inserted: 'Sheet2!C3',
+			replaced: {
+				text: 'Sheet1:Sheet3!A1',
+				start: 5,
+				end: 21,
+				kind: 'sheet-3d-cell',
 			},
 		})
 	})

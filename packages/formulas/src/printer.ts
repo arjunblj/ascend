@@ -36,10 +36,30 @@ function formatSheet(sheet: string): string {
 }
 
 function formatSheetSpan(startSheet: string, endSheet: string): string {
+	const workbookSpan = splitWorkbookQualifiedSpan(startSheet)
+	if (
+		workbookSpan &&
+		!needsQuoting(workbookSpan.startSheet) &&
+		!needsQuoting(endSheet) &&
+		!workbookSpan.workbook.includes(' ')
+	) {
+		return `${startSheet}:${endSheet}!`
+	}
 	if (needsQuoting(startSheet) || needsQuoting(endSheet)) {
 		return `'${startSheet.replace(/'/g, "''")}:${endSheet.replace(/'/g, "''")}'!`
 	}
 	return `${startSheet}:${endSheet}!`
+}
+
+function splitWorkbookQualifiedSpan(
+	startSheet: string,
+): { readonly workbook: string; readonly startSheet: string } | null {
+	if (!startSheet.startsWith('[')) return null
+	const close = startSheet.indexOf(']')
+	if (close < 0) return null
+	const sheet = startSheet.slice(close + 1)
+	if (sheet.length === 0) return null
+	return { workbook: startSheet.slice(0, close + 1), startSheet: sheet }
 }
 
 function formatCellRef(ref: FormulaCellRef): string {

@@ -287,12 +287,12 @@ function getCellValue(wb: Workbook, sheetIndex: number, row: number, col: number
 function externalReferenceTarget(
 	sheet: string | undefined,
 ): { workbook: string; sheet: string } | null {
-	if (!sheet?.startsWith('[')) return null
-	const close = sheet.indexOf(']')
-	if (close <= 1) return null
-	const workbook = sheet.slice(1, close)
+	const open = sheet?.indexOf('[') ?? -1
+	const close = open >= 0 && sheet ? sheet.indexOf(']', open + 1) : -1
+	if (!sheet || open < 0 || close <= open) return null
+	const workbook = `${sheet.slice(0, open)}${sheet.slice(open + 1, close)}`
 	const sheetName = sheet.slice(close + 1)
-	if (sheetName.length === 0) return null
+	if (workbook.length === 0 || sheetName.length === 0) return null
 	return { workbook, sheet: sheetName }
 }
 

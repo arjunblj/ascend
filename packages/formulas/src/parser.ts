@@ -348,17 +348,39 @@ class FormulaParser {
 		if (token.type === TokenType.Name) {
 			if (token.value.startsWith('[')) {
 				if (
-					this.lookahead(1, true).type === TokenType.Name &&
+					isSheetNameSegmentToken(this.lookahead(1, true)) &&
+					this.lookahead(2, true).type === TokenType.Colon &&
+					isSheetNameSegmentToken(this.lookahead(3, true)) &&
+					this.lookahead(4, true).type === TokenType.Bang
+				) {
+					const workbookToken = this.advance(true).value
+					const startSheet = this.advance(true).value
+					this.expect(TokenType.Colon)
+					const endSheet = this.advance(true).value
+					this.expect(TokenType.Bang)
+					return this.parseSheetSpanQualifiedReference(`${workbookToken}${startSheet}`, endSheet)
+				}
+				if (
+					isSheetNameSegmentToken(this.lookahead(1, true)) &&
 					this.lookahead(2, true).type === TokenType.Bang
 				) {
 					const workbookToken = this.advance(true).value
-					const sheetToken = this.expect(TokenType.Name).value
+					const sheetToken = this.advance(true).value
 					this.expect(TokenType.Bang)
 					return this.parseSheetQualifiedReference(`${workbookToken}${sheetToken}`)
 				}
 				if (this.lookahead(1, true).type === TokenType.Bang) {
 					const workbookToken = this.advance(true).value
 					this.expect(TokenType.Bang)
+					const spanToken = splitSheetSpanToken(workbookToken)
+					if (spanToken) {
+						if (!spanToken.startSheet || !spanToken.endSheet) {
+							throw new Error(
+								`Invalid 3D sheet span "${workbookToken}" at position ${token.position}`,
+							)
+						}
+						return this.parseSheetSpanQualifiedReference(spanToken.startSheet, spanToken.endSheet)
+					}
 					return this.parseSheetQualifiedReference(workbookToken)
 				}
 				this.advance(true)
@@ -452,17 +474,13 @@ class FormulaParser {
 
 	private parseNameOrSheetRef(): FormulaNode {
 		const token = this.advance(true)
-		if (
-			token.value.includes(':') &&
-			!isWorkbookQualifiedSheetToken(token.value) &&
-			this.peek(true).type === TokenType.Bang
-		) {
-			const [startSheet, endSheet] = token.value.split(':')
-			if (!startSheet || !endSheet) {
+		const spanToken = splitSheetSpanToken(token.value)
+		if (spanToken && this.peek(true).type === TokenType.Bang) {
+			if (!spanToken.startSheet || !spanToken.endSheet) {
 				throw new Error(`Invalid 3D sheet span "${token.value}" at position ${token.position}`)
 			}
 			this.expect(TokenType.Bang)
-			return this.parseSheetSpanQualifiedReference(startSheet, endSheet)
+			return this.parseSheetSpanQualifiedReference(spanToken.startSheet, spanToken.endSheet)
 		}
 
 		if (
@@ -746,10 +764,27 @@ function isReferenceFunctionName(name: string): boolean {
 	}
 }
 
-function isWorkbookQualifiedSheetToken(token: string): boolean {
+function isSheetNameSegmentToken(token: Token): boolean {
+	return token.type === TokenType.Name || token.type === TokenType.CellRef
+}
+
+function splitSheetSpanToken(
+	token: string,
+): { readonly startSheet: string; readonly endSheet: string } | null {
+	const colon = sheetSpanColonIndex(token)
+	if (colon < 0) return null
+	return {
+		startSheet: token.slice(0, colon),
+		endSheet: token.slice(colon + 1),
+	}
+}
+
+function sheetSpanColonIndex(token: string): number {
 	const open = token.indexOf('[')
+	if (open < 0) return token.indexOf(':')
 	const close = token.indexOf(']', open + 1)
-	return open >= 0 && close > open
+	if (close < 0) return -1
+	return token.indexOf(':', close + 1)
 }
 
 function makeRangeFromEndpoints(left: FormulaNode, right: FormulaNode): FormulaNode {

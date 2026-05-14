@@ -811,9 +811,9 @@ function hasExternalWorkbookReference(node: FormulaNode): boolean {
 		case 'wholeColumnRange':
 		case 'wholeRowRange':
 		case 'name':
-			return node.sheet?.startsWith('[') ?? false
+			return isExternalSheetToken(node.sheet)
 		case 'sheetSpanRef':
-			return node.startSheet.startsWith('[') || node.endSheet.startsWith('[')
+			return isExternalSheetToken(node.startSheet) || isExternalSheetToken(node.endSheet)
 		case 'spillRef':
 			return hasExternalWorkbookReference(node.target)
 		case 'dynamicRangeRef':
@@ -829,6 +829,15 @@ function hasExternalWorkbookReference(node: FormulaNode): boolean {
 		default:
 			return false
 	}
+}
+
+function isExternalSheetToken(sheet: string | undefined): boolean {
+	const open = sheet?.indexOf('[') ?? -1
+	const close = open >= 0 && sheet ? sheet.indexOf(']', open + 1) : -1
+	if (!sheet || open < 0 || close <= open) return false
+	const workbook = `${sheet.slice(0, open)}${sheet.slice(open + 1, close)}`
+	const sheetName = sheet.slice(close + 1)
+	return workbook.length > 0 && sheetName.length > 0
 }
 
 export function clearCompiledFormulaCache(): void {

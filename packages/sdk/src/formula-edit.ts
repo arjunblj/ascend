@@ -29,7 +29,15 @@ export interface FormulaReferenceRange {
 	readonly text: string
 	readonly start: number
 	readonly end: number
-	readonly kind: 'cell' | 'range' | 'sheet-cell' | 'sheet-range' | 'structured' | 'spill'
+	readonly kind:
+		| 'cell'
+		| 'range'
+		| 'sheet-cell'
+		| 'sheet-range'
+		| 'sheet-3d-cell'
+		| 'sheet-3d-range'
+		| 'structured'
+		| 'spill'
 }
 
 export interface CycleReferenceResult {
@@ -178,7 +186,10 @@ function cycleTargetCellSpan(
 	)
 	if (
 		!activeReference ||
-		(activeReference.kind !== 'sheet-cell' && activeReference.kind !== 'sheet-range')
+		(activeReference.kind !== 'sheet-cell' &&
+			activeReference.kind !== 'sheet-range' &&
+			activeReference.kind !== 'sheet-3d-cell' &&
+			activeReference.kind !== 'sheet-3d-range')
 	) {
 		return undefined
 	}
@@ -407,6 +418,48 @@ function collectFormulaReferenceRanges(
 		if (span.token.type !== TokenType.Name) continue
 		const next = nextNonWhitespace(spans, i + 1)
 		if (span.text.startsWith('[') && next?.span.token.type === TokenType.Name) {
+			const separator = nextNonWhitespace(spans, next.index + 1)
+			const toSheet = separator ? nextNonWhitespace(spans, separator.index + 1) : undefined
+			const bang = toSheet ? nextNonWhitespace(spans, toSheet.index + 1) : undefined
+			const cell = bang ? nextNonWhitespace(spans, bang.index + 1) : undefined
+			if (
+				separator?.span.token.type === TokenType.Colon &&
+				toSheet?.span.token.type === TokenType.Name &&
+				bang?.span.token.type === TokenType.Bang &&
+				cell?.span.token.type === TokenType.CellRef
+			) {
+				const local = collectCellReferenceRange(formula, spans, cell.index)
+				references.push({
+					text: formula.slice(span.start, local.end),
+					start: span.start,
+					end: local.end,
+					kind: local.kind === 'range' ? 'sheet-3d-range' : 'sheet-3d-cell',
+				})
+				i = cell.index
+				continue
+			}
+		}
+		if (next?.span.token.type === TokenType.Colon) {
+			const toSheet = nextNonWhitespace(spans, next.index + 1)
+			const bang = toSheet ? nextNonWhitespace(spans, toSheet.index + 1) : undefined
+			const cell = bang ? nextNonWhitespace(spans, bang.index + 1) : undefined
+			if (
+				toSheet?.span.token.type === TokenType.Name &&
+				bang?.span.token.type === TokenType.Bang &&
+				cell?.span.token.type === TokenType.CellRef
+			) {
+				const local = collectCellReferenceRange(formula, spans, cell.index)
+				references.push({
+					text: formula.slice(span.start, local.end),
+					start: span.start,
+					end: local.end,
+					kind: local.kind === 'range' ? 'sheet-3d-range' : 'sheet-3d-cell',
+				})
+				i = cell.index
+				continue
+			}
+		}
+		if (span.text.startsWith('[') && next?.span.token.type === TokenType.Name) {
 			const bang = nextNonWhitespace(spans, next.index + 1)
 			if (bang?.span.token.type === TokenType.Bang) {
 				const cell = nextNonWhitespace(spans, bang.index + 1)
@@ -437,11 +490,12 @@ function collectFormulaReferenceRanges(
 			const cell = nextNonWhitespace(spans, next.index + 1)
 			if (cell?.span.token.type === TokenType.CellRef) {
 				const local = collectCellReferenceRange(formula, spans, cell.index)
+				const sheetSpanKind = sheetSpanReferenceKind(span.text, local.kind)
 				references.push({
 					text: formula.slice(span.start, local.end),
 					start: span.start,
 					end: local.end,
-					kind: local.kind === 'range' ? 'sheet-range' : 'sheet-cell',
+					kind: sheetSpanKind ?? (local.kind === 'range' ? 'sheet-range' : 'sheet-cell'),
 				})
 				i = cell.index
 			}
@@ -482,6 +536,31 @@ function collectCellReferenceRange(
 		end,
 		kind,
 	}
+}
+
+function sheetSpanReferenceKind(
+	qualifierText: string,
+	localKind: FormulaReferenceRange['kind'],
+): FormulaReferenceRange['kind'] | null {
+	return sheetSpanColonIndex(unquoteSheetQualifierText(qualifierText)) >= 0
+		? localKind === 'range'
+			? 'sheet-3d-range'
+			: 'sheet-3d-cell'
+		: null
+}
+
+function unquoteSheetQualifierText(text: string): string {
+	return text.startsWith("'") && text.endsWith("'") && text.length >= 2
+		? text.slice(1, -1).replace(/''/g, "'")
+		: text
+}
+
+function sheetSpanColonIndex(text: string): number {
+	const workbookOpen = text.indexOf('[')
+	if (workbookOpen < 0) return text.indexOf(':')
+	const workbookClose = text.indexOf(']', workbookOpen + 1)
+	if (workbookClose < 0) return -1
+	return text.indexOf(':', workbookClose + 1)
 }
 
 function nextNonWhitespace(

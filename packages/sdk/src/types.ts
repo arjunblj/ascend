@@ -279,6 +279,10 @@ export interface ExternalReferenceInfo {
 export interface ExternalReferenceUsageInfo {
 	readonly workbook: string
 	readonly sheet?: string
+	readonly sheetSpan?: {
+		readonly startSheet: string
+		readonly endSheet: string
+	}
 	readonly sourceKind:
 		| 'cellFormula'
 		| 'definedName'
@@ -1012,6 +1016,7 @@ export interface AgentReadOptions {
 	readonly omitEmpty?: boolean
 	readonly flatValues?: boolean
 	readonly changedSince?: string
+	readonly changeProjectionKey?: string
 }
 
 export interface AgentViewOptions {
@@ -1088,7 +1093,10 @@ export interface CompactRangeWindowInfo extends CompactRangeInfo {
 	readonly changeInvalidation?: CompactRangeChangeInvalidation
 }
 
-export type CompactRangeChangeInvalidationReason = 'base-snapshot-missing' | 'base-token-stale'
+export type CompactRangeChangeInvalidationReason =
+	| 'base-snapshot-missing'
+	| 'base-token-stale'
+	| 'base-token-invalid'
 
 export interface CompactRangeChangeInvalidation {
 	readonly baseToken: string
@@ -1497,6 +1505,12 @@ export type FormulaReferenceScope =
 	| { readonly kind: 'local' }
 	| { readonly kind: 'sheet'; readonly sheet: string }
 	| { readonly kind: 'sheetSpan'; readonly startSheet: string; readonly endSheet: string }
+	| {
+			readonly kind: 'externalSheetSpan'
+			readonly workbook: string
+			readonly startSheet: string
+			readonly endSheet: string
+	  }
 	| { readonly kind: 'external'; readonly workbook: string; readonly sheet: string }
 
 interface FormulaReferenceBase {

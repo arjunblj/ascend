@@ -106,6 +106,39 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(1, 0)?.value).toEqual(numberValue(6))
 	})
 
+	test('path-qualified external workbook references resolve through calculation hook', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, {
+			value: EMPTY,
+			formula: "'C:/tmp/[Budget.xlsx]Inputs'!B2",
+			styleId: sid,
+		})
+		sheet.cells.set(1, 0, {
+			value: EMPTY,
+			formula: "SUM('C:/tmp/[Budget.xlsx]Inputs'!A1:A3)",
+			styleId: sid,
+		})
+
+		const result = recalculate(
+			wb,
+			makeCtx({
+				externalReferences: {
+					resolveCell: ({ workbook, sheet: sheetName, row, col }) => {
+						if (workbook !== 'C:/tmp/Budget.xlsx' || sheetName !== 'Inputs') return undefined
+						if (row === 1 && col === 1) return numberValue(42)
+						if (col === 0) return numberValue(row + 1)
+						return undefined
+					},
+				},
+			}),
+		)
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(0, 0)?.value).toEqual(numberValue(42))
+		expect(sheet.cells.get(1, 0)?.value).toEqual(numberValue(6))
+	})
+
 	test('external workbook references remain #REF! without a resolver', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')
@@ -3285,6 +3318,26 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(0, 2)?.value).toEqual(errorValue('#N/A'))
 	})
 
+	test('path-qualified external workbook references preserve imported cached values', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, {
+			value: numberValue(42),
+			formula: "'C:/tmp/[Book.xlsx]Sheet1'!A1",
+			styleId: sid,
+		})
+		sheet.cells.set(0, 1, {
+			value: stringValue('cached'),
+			formula: 'IF(TRUE,\'C:/tmp/[Book.xlsx]Sheet1\'!B1,"fallback")',
+			styleId: sid,
+		})
+
+		const result = recalculate(wb, makeCtx())
+		expect(result.changed).toEqual([])
+		expect(sheet.cells.get(0, 0)?.value).toEqual(numberValue(42))
+		expect(sheet.cells.get(0, 1)?.value).toEqual(stringValue('cached'))
+	})
+
 	test('3D sheet-span references aggregate across contiguous sheets', () => {
 		const wb = createWorkbook()
 		const s1 = wb.addSheet('Sheet1')
@@ -4388,6 +4441,20 @@ describe('iterative calculation', () => {
 		expect(sheet.cells.get(0, 1)?.value).toEqual(errorValue('#REF!'))
 		const circErrors = result.errors.filter((e) => e.error.code === 'CIRCULAR_REF')
 		expect(circErrors.length).toBeGreaterThan(0)
+	})
+
+	test('external workbook-qualified 3D ranges do not self-cycle against local cells', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(1, 1, {
+			value: EMPTY,
+			formula: 'SUM([1]FY26:FY28!B2:B10)',
+			styleId: sid,
+		})
+
+		const result = recalculate(wb, makeCtx())
+		const circErrors = result.errors.filter((e) => e.error.code === 'CIRCULAR_REF')
+		expect(circErrors).toEqual([])
 	})
 })
 

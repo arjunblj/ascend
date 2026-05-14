@@ -4749,6 +4749,7 @@ function pushExternalReferenceUsages(
 		usages.push({
 			workbook: group.workbook,
 			...(group.sheet ? { sheet: group.sheet } : {}),
+			...(group.sheetSpan ? { sheetSpan: group.sheetSpan } : {}),
 			...source,
 			references: group.references,
 			...(externalReference ? { externalReference } : {}),
@@ -4816,23 +4817,51 @@ function copyExternalReferenceInfo(
 	return reference ? { ...reference } : undefined
 }
 
-function externalReferenceGroups(
-	references: readonly FormulaReferenceInfo[],
-): Array<{ workbook: string; sheet?: string; references: string[] }> {
-	const groups = new Map<string, { workbook: string; sheet?: string; references: string[] }>()
+function externalReferenceGroups(references: readonly FormulaReferenceInfo[]): Array<{
+	workbook: string
+	sheet?: string
+	sheetSpan?: { readonly startSheet: string; readonly endSheet: string }
+	references: string[]
+}> {
+	const groups = new Map<
+		string,
+		{
+			workbook: string
+			sheet?: string
+			sheetSpan?: { readonly startSheet: string; readonly endSheet: string }
+			references: string[]
+		}
+	>()
 	for (const reference of flattenFormulaReferences(references)) {
-		if (reference.scope?.kind !== 'external') continue
-		const key = `${reference.scope.workbook}\u0000${reference.scope.sheet}`
+		if (reference.scope?.kind !== 'external' && reference.scope?.kind !== 'externalSheetSpan') {
+			continue
+		}
+		const key =
+			reference.scope.kind === 'external'
+				? `${reference.scope.workbook}\u0000${reference.scope.sheet}`
+				: `${reference.scope.workbook}\u0000${reference.scope.startSheet}\u0000${reference.scope.endSheet}`
 		const existing = groups.get(key)
 		if (existing) {
 			existing.references.push(reference.text)
 			continue
 		}
-		groups.set(key, {
-			workbook: reference.scope.workbook,
-			sheet: reference.scope.sheet,
-			references: [reference.text],
-		})
+		groups.set(
+			key,
+			reference.scope.kind === 'external'
+				? {
+						workbook: reference.scope.workbook,
+						sheet: reference.scope.sheet,
+						references: [reference.text],
+					}
+				: {
+						workbook: reference.scope.workbook,
+						sheetSpan: {
+							startSheet: reference.scope.startSheet,
+							endSheet: reference.scope.endSheet,
+						},
+						references: [reference.text],
+					},
+		)
 	}
 	return [...groups.values()].map((group) => ({
 		...group,

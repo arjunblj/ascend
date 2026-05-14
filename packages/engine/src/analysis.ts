@@ -1150,8 +1150,13 @@ function formulaHasValueDependentSelfRange(
 			)
 		case 'spillRef':
 			return formulaHasValueDependentSelfRange(ctx, node.target, currentSheetIndex, inValueContext)
-		case 'sheetSpanRef':
-			return formulaHasValueDependentSelfRange(ctx, node.target, currentSheetIndex, inValueContext)
+		case 'sheetSpanRef': {
+			const span = resolveSheetSpan(ctx.sheetNameIndex, node.startSheet, node.endSheet)
+			if (!span) return false
+			return span.some((sheetIndex) =>
+				formulaHasValueDependentSelfRange(ctx, node.target, sheetIndex, inValueContext),
+			)
+		}
 		default:
 			return false
 	}
@@ -1277,7 +1282,7 @@ function resolveSelfCycleRange(
 		case 'unary':
 			return node.op === '@' ? resolveSelfCycleRange(ctx, node.operand, currentSheetIndex) : null
 		case 'sheetSpanRef':
-			return resolveSelfCycleRange(ctx, node.target, currentSheetIndex)
+			return null
 		default:
 			return null
 	}

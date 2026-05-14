@@ -750,7 +750,9 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 			changedSince: z
 				.string()
 				.optional()
-				.describe('For compact reads, return only cells changed since this prior changeToken'),
+				.describe(
+					'For compact reads, request cells changed since this prior changeToken; if the base token cannot produce a delta, the response includes changeInvalidation and a full fresh window',
+				),
 			format: z
 				.enum(['cells', 'rows', 'objects', 'tsv', 'compact'])
 				.optional()

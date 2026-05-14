@@ -1076,6 +1076,12 @@ describe('interactive client contract', () => {
 			changedSince: base.changeToken,
 		})
 		expect(afterRowDelete.patch).toBeUndefined()
+		expect(afterRowDelete.patchInvalidation).toEqual({
+			baseToken: base.changeToken,
+			changeToken: afterRowDelete.changeToken,
+			reason: 'viewport-invalidated',
+			requiredAction: 'use-returned-snapshot',
+		})
 		expect(new Map(afterRowDelete.cells.map((cell) => [cell.ref, cell.flatValue]))).toEqual(
 			new Map([
 				['A1', 'r2-a'],
@@ -1106,6 +1112,12 @@ describe('interactive client contract', () => {
 			changedSince: afterRowDelete.changeToken,
 		})
 		expect(afterColDelete.patch).toBeUndefined()
+		expect(afterColDelete.patchInvalidation).toEqual({
+			baseToken: afterRowDelete.changeToken,
+			changeToken: afterColDelete.changeToken,
+			reason: 'viewport-invalidated',
+			requiredAction: 'use-returned-snapshot',
+		})
 		expect(new Map(afterColDelete.cells.map((cell) => [cell.ref, cell.flatValue]))).toEqual(
 			new Map([
 				['A1', 'r2-b'],
@@ -1564,6 +1576,12 @@ describe('interactive client contract', () => {
 			changedSince: before.changeToken,
 		})
 		expect(refreshed.patch).toBeUndefined()
+		expect(refreshed.patchInvalidation).toEqual({
+			baseToken: before.changeToken,
+			changeToken: refreshed.changeToken,
+			reason: 'viewport-invalidated',
+			requiredAction: 'use-returned-snapshot',
+		})
 		expect(refreshed.cells.find((cell) => cell.ref === 'C1')?.formula).toBe('A1+B1')
 		expect(refreshed.cells.find((cell) => cell.ref === 'D1')?.flatValue).toBe(9)
 
@@ -1645,6 +1663,12 @@ describe('interactive client contract', () => {
 			changedSince: before.changeToken,
 		})
 		expect(refreshed.patch).toBeUndefined()
+		expect(refreshed.patchInvalidation).toEqual({
+			baseToken: before.changeToken,
+			changeToken: refreshed.changeToken,
+			reason: 'viewport-invalidated',
+			requiredAction: 'use-returned-snapshot',
+		})
 		expect(refreshed.generation.session).toBe(1)
 		expect(refreshed.cells.find((cell) => cell.ref === 'C1')?.flatValue).toBe(3)
 		expect(refreshed.cells.find((cell) => cell.ref === 'C1')?.formula).toBe('A1+B1')

@@ -440,6 +440,8 @@ function buildSupportedJournalEntry(
 			return journalSetCells(workbook, op, opIndex)
 		case 'setFormula':
 			return journalSetFormula(workbook, op, opIndex)
+		case 'setRichText':
+			return journalSetRichText(workbook, op, opIndex)
 		case 'clearRange':
 			return journalClearRange(workbook, op, opIndex)
 		case 'insertRows':
@@ -1250,6 +1252,22 @@ function journalSetCells(
 function journalSetFormula(
 	workbook: Workbook,
 	op: Extract<Operation, { op: 'setFormula' }>,
+	opIndex: number,
+): DraftJournalEntry {
+	const cells = cellEditPreimages(workbook, op.sheet, [op.ref])
+	const { inverseOps, issues } = inverseCellOps(cells)
+	return {
+		opIndex,
+		op,
+		inverseOps,
+		preimages: [{ kind: 'cells', cells }],
+		issues,
+	}
+}
+
+function journalSetRichText(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'setRichText' }>,
 	opIndex: number,
 ): DraftJournalEntry {
 	const cells = cellEditPreimages(workbook, op.sheet, [op.ref])
@@ -3582,6 +3600,19 @@ function inverseCellOps(cells: readonly MutationJournalCellPreimage[]): {
 			})
 			continue
 		}
+		if (cell.value.kind === 'richText') {
+			const runs = richTextRunsToOperationRuns(cell.value.runs)
+			if (runs.supported) {
+				inverseOps.push({ op: 'setRichText', sheet: cell.sheet, ref: cell.ref, runs: runs.runs })
+				continue
+			}
+			issues.push({
+				code: 'UNSUPPORTED_VALUE',
+				message: `Cannot restore richText at ${cell.sheet}!${cell.ref} with setRichText`,
+				refs: [`${cell.sheet}!${cell.ref}`],
+			})
+			continue
+		}
 		const input = cellValueToInput(cell.value)
 		if (input.supported) {
 			const updates = scalarUpdatesBySheet.get(cell.sheet) ?? []
@@ -3599,6 +3630,33 @@ function inverseCellOps(cells: readonly MutationJournalCellPreimage[]): {
 		inverseOps.push({ op: 'setCells', sheet, updates })
 	}
 	return { inverseOps, issues }
+}
+
+function richTextRunsToOperationRuns(runs: Extract<CellValue, { kind: 'richText' }>['runs']):
+	| {
+			readonly supported: true
+			readonly runs: Extract<Operation, { op: 'setRichText' }>['runs']
+	  }
+	| { readonly supported: false } {
+	const operationRuns: Array<Extract<Operation, { op: 'setRichText' }>['runs'][number]> = []
+	for (const run of runs) {
+		if (
+			run.strikethrough !== undefined ||
+			run.fontName !== undefined ||
+			run.fontSize !== undefined ||
+			(run.color !== undefined && typeof run.color !== 'string')
+		) {
+			return { supported: false }
+		}
+		operationRuns.push({
+			text: run.text,
+			...(run.bold !== undefined ? { bold: run.bold } : {}),
+			...(run.italic !== undefined ? { italic: run.italic } : {}),
+			...(run.underline !== undefined ? { underline: run.underline } : {}),
+			...(run.color !== undefined ? { color: run.color } : {}),
+		})
+	}
+	return { supported: true, runs: operationRuns }
 }
 
 function styleInverseOps(cells: readonly MutationJournalCellPreimage[]): Operation[] {

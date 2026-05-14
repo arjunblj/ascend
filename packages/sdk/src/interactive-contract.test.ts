@@ -2788,6 +2788,82 @@ describe('interactive client contract', () => {
 		expect(wb.sheet('Sheet1')?.cell('A1')?.formula).toBe('1+1')
 	})
 
+	test('journal inverse ops restore supported rich text edits exactly', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setRichText',
+				sheet: 'Sheet1',
+				ref: 'A1',
+				runs: [
+					{ text: 'Hello', bold: true },
+					{ text: ' world', italic: true, color: 'FF0000' },
+				],
+			},
+			{ op: 'setStyle', sheet: 'Sheet1', range: 'A1:A1', style: { numberFormat: '@' } },
+		])
+
+		const changed = wb.apply(
+			[{ op: 'setRichText', sheet: 'Sheet1', ref: 'A1', runs: [{ text: 'Changed' }] }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(true)
+		expect(changed.journal?.inverseOps).toEqual([
+			{
+				op: 'setRichText',
+				sheet: 'Sheet1',
+				ref: 'A1',
+				runs: [
+					{ text: 'Hello', bold: true },
+					{ text: ' world', italic: true, color: 'FF0000' },
+				],
+			},
+		])
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(wb.sheet('Sheet1')?.cell('A1')?.value).toEqual({
+			kind: 'richText',
+			runs: [
+				{ text: 'Hello', bold: true },
+				{ text: ' world', italic: true, color: 'FF0000' },
+			],
+		})
+		expect(wb.cellStyle('Sheet1!A1')?.numberFormat).toBe('@')
+	})
+
+	test('setRichText journals flag imported rich text runs outside public inverse support', () => {
+		const wb = AscendWorkbook.create()
+		const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+		if (!sheet) throw new Error('missing sheet')
+		sheet.cells.set(0, 0, {
+			value: {
+				kind: 'richText',
+				runs: [{ text: 'Imported', fontName: 'Aptos', fontSize: 11 }],
+			},
+			formula: null,
+			styleId: DEFAULT_STYLE_ID,
+		})
+
+		const changed = wb.apply(
+			[{ op: 'setRichText', sheet: 'Sheet1', ref: 'A1', runs: [{ text: 'Changed' }] }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(false)
+		expect(changed.journal?.issues).toContainEqual({
+			code: 'UNSUPPORTED_VALUE',
+			message: 'Cannot restore richText at Sheet1!A1 with setRichText',
+			refs: ['Sheet1!A1'],
+		})
+		expect(changed.journal?.inverseOps).toEqual([])
+	})
+
 	test('journals expose lossy imported formula-binding metadata preimages', () => {
 		const wb = AscendWorkbook.create()
 		const sheet = wb.getWorkbookModel().getSheet('Sheet1')

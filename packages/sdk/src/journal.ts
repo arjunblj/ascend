@@ -4132,16 +4132,25 @@ function inverseCellOps(cells: readonly MutationJournalCellPreimage[]): {
 			continue
 		}
 		if (cell.formula) {
+			const input = cellValueToInput(cell.value)
+			if (input.supported) {
+				inverseOps.push({
+					op: 'setCells',
+					sheet: cell.sheet,
+					updates: [{ ref: cell.ref, value: input.value }],
+				})
+			} else {
+				issues.push({
+					code: 'LOSSY_INVERSE',
+					message: `Formula cache for ${cell.sheet}!${cell.ref} cannot be restored with public operations`,
+					refs: [`${cell.sheet}!${cell.ref}`],
+				})
+			}
 			inverseOps.push({
 				op: 'setFormula',
 				sheet: cell.sheet,
 				ref: cell.ref,
 				formula: cell.formula,
-			})
-			issues.push({
-				code: 'LOSSY_INVERSE',
-				message: `Formula cache for ${cell.sheet}!${cell.ref} cannot be restored with public operations`,
-				refs: [`${cell.sheet}!${cell.ref}`],
 			})
 			continue
 		}

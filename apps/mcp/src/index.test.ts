@@ -127,6 +127,7 @@ describe('MCP server', () => {
 		expect(capabilities?.contents[0]?.text).toContain('"capabilities"')
 		expect(operations?.contents[0]?.text).toContain('"schemas"')
 		expect(workflow?.contents[0]?.text).toContain('ascend.plan')
+		expect(workflow?.contents[0]?.text).toContain('planHandle')
 	})
 
 	test('documentation search tools return local docs and examples', async () => {
@@ -186,6 +187,7 @@ describe('MCP server', () => {
 		expect(text).toContain('ascend.plan')
 		expect(text).toContain('ascend.commit')
 		expect(text).toContain('ascend.active_content')
+		expect(text).toContain('planHandle')
 		expect(text).toContain('allowLoss')
 	})
 

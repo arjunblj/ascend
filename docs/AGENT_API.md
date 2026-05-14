@@ -13,7 +13,7 @@ Core commands:
 - `ascend capabilities --json` returns Excel feature coverage, priorities, OSS baseline notes, tests, gap reasons, and next milestones.
 - `ascend inspect <file> --json --verbose` opens workbook metadata and compatibility context.
 - `ascend inspect <file> --detail pivots --json` returns PivotTable inventory, saved-output audits, refresh plans, and supported output materialization `setCells` ops for safe plan/commit.
-- `ascend read <file> <selector> --json` reads ranges, tables, named ranges, cells, rows, objects, compact cells, or TSV depending on flags.
+- `ascend read <file> <selector> --json` reads ranges, tables (`table:Name`), or defined names (`name:Name`). CLI JSON returns bounded range/table/name payloads; compact/TSV/object read formats are API/MCP-only.
 - `ascend find <file> <query> --json` searches values and formulas.
 - `ascend plan <file> --ops ops.json --progress jsonl --json` validates operations, previews diffs, audits recalc, approvals, and preservation risk.
 - `ascend commit <file> --ops ops.json --output out.xlsx --expect-sha256 <hash> --progress jsonl --json` writes safely.
@@ -22,6 +22,22 @@ Core commands:
 - `ascend check <file> --json`, `ascend lint <file> --json`, `ascend trace <file> <ref> --json`, and `ascend diff <a> <b> --json` verify work.
 
 JSON stdout is wrapped in a versioned machine envelope. Long-running safe workflows can emit JSONL progress to stderr with `--progress jsonl`.
+
+## HTTP API Contract
+
+The reference server accepts JSON POST bodies with local workbook paths on the server host. See `docs/openapi.yaml` for request schemas.
+
+Agent workflow endpoints:
+
+- `POST /inspect`, `/active-content`, `/package-graph`, `/raw-part`, `/visuals`, `/pivots`
+- `POST /read` with `format: "cells" | "rows" | "objects" | "compact"`; compact responses include `changeToken` and may include `changeInvalidation`
+- `POST /agent-view`
+- `GET /operations`, `GET /capabilities`
+- `POST /plan` with `ops` or `mutations`, optional `compact`, `prepare`, and `maxChangedCells`
+- `POST /commit` with `planHandle` or fresh `file` plus `ops`/`mutations`, optional `allowLoss`, `approvals`, `compact`, and `maxAffectedCells`
+- `POST /check`, `/lint`, `/trace`, `/diff`, `/export`, `/repair-plan`
+
+Compatibility endpoints `/preview` and `/write` remain available for direct replay flows, but agent writes should use `/plan` then `/commit`.
 
 ## MCP Contract
 
@@ -44,6 +60,9 @@ Use these discovery tools when stuck:
 Use these workbook tools for normal work:
 
 - `ascend.inspect({ file, sheet? })`
+- `ascend.active_content({ file })`
+- `ascend.package_graph({ file })`
+- `ascend.raw_part({ file, partPath, encoding?, maxBytes?, caseInsensitiveFallback? })`
 - `ascend.list_sheets({ file })`
 - `ascend.read({ file, sheet?, range, format?, rowOffset?, rowLimit?, maxRows?, preview?, display?, headers?, cols?, changedSince? })` where `format` is `cells`, `rows`, `objects`, `compact`, or MCP-only `tsv`
 - `ascend.read_table({ file, table, rowOffset?, rowLimit?, display? })`
@@ -60,7 +79,7 @@ Use these workbook tools for normal work:
 
 - Prefer non-destructive output paths over in-place edits.
 - Use `inputSha256` from plan as `expectSha256` during commit.
-- API/MCP plans default to `prepare: true` and return `preparedPlan` metadata. Prefer `commit({ planHandle })`; handles are in-memory, one-shot, and expire, so re-plan before retrying a failed commit.
+- API/MCP plans default to `prepare: true` and return `preparedPlan` metadata. Prefer `commit({ planHandle })`; handles are in-memory, one-shot, process-local, and expire, so re-plan before retrying a failed commit. CLI does not persist prepared handles between commands; use the same `ops.json` plus `--expect-sha256`.
 - Pass only approval IDs emitted by plan in `approvals`; it accepts comma-separated strings, string arrays, or `"all"` after explicit user approval.
 - Pass `allowLoss` only for user-approved feature keys, `feature:tier` keys, generated loss approval IDs, or `"all"` after explicit user approval.
 - Inspect both `lossAudit.blockedFeatures` and `lossAudit.blockedPackageParts` before approving a lossy write.
@@ -90,6 +109,45 @@ ascend plan model.xlsx --ops ops.json --progress jsonl --json
 ascend commit model.xlsx --ops ops.json --output model.updated.xlsx --expect-sha256 <inputSha256> --progress jsonl --json
 ascend check model.updated.xlsx --json
 ```
+
+## Golden Path For Coding Agents
+
+1. Inspect and locate:
+
+```bash
+ascend inspect model.xlsx --json --verbose
+ascend read model.xlsx A1:H50 --sheet Revenue --row-limit 50 --json
+ascend docs setFormula --json
+```
+
+Expected JSON fields: `ok`, `data.sheets`, `data.compatibility`, `data.load`, `data.cells`, `data.snapshot`, and doc `data.results[].path`.
+
+2. Build and plan `ops.json`:
+
+```json
+[
+  { "op": "setFormula", "sheet": "Revenue", "ref": "H2", "formula": "=SUM(B2:G2)" }
+]
+```
+
+```bash
+ascend plan model.xlsx --ops ops.json --progress jsonl --json
+```
+
+Expected JSON fields: `data.inputSha256`, `data.planDigest`, `data.preview.wouldSucceed`, `data.preview.cellChanges`, `data.writePolicy.diagnostics`, `data.approvals`, and `data.modelOutput.nextActions`.
+
+3. Commit and verify:
+
+```bash
+ascend commit model.xlsx --ops ops.json --output model.updated.xlsx --expect-sha256 <inputSha256> --progress jsonl --json
+ascend check model.updated.xlsx --json
+ascend lint model.updated.xlsx --json
+ascend diff model.xlsx model.updated.xlsx --json
+```
+
+Expected JSON fields: `data.output`, `data.outputSha256`, `data.postWrite.valid`, `data.postWrite.auditsPassed`, `data.postWrite.check.valid`, lint `data.clean`, and diff `data.changes`.
+
+API/MCP equivalent: call `plan` with `prepare` omitted or `true`, then call `commit` with `planHandle: preparedPlan.id`. If the handle is unavailable, expired, or already used, re-run `plan`; do not reuse stale handles.
 
 ## Example Recovery Prompts
 

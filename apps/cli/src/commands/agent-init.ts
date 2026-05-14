@@ -54,6 +54,7 @@ const AGENT_INIT: AgentInitInfo = {
 	safetyDefaults: [
 		'Prefer non-destructive --output writes over --in-place.',
 		'Use --expect-sha256 from plan output to reject stale inputs.',
+		'CLI plan/commit do not persist prepared handles; API/MCP planHandle values are one-shot and process-local.',
 		'Pass --approval only for approval ids emitted by plan.',
 		'Pass --allow-loss only for feature loss explicitly accepted by the user.',
 		'Keep stdout machine-readable and read --progress jsonl from stderr for long workflows.',

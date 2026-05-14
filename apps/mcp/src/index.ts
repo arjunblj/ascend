@@ -1699,8 +1699,8 @@ function buildAgentWorkflowGuide(): string {
 		'4. Locate data with ascend.find, ascend.read, ascend.read_table, ascend.visuals, and ascend.pivots for PivotTable inventory/audits/materialization ops.',
 		'5. Use ascend.search_docs or ascend.search_examples when you need command, schema, workflow, or example recovery context.',
 		'6. Fetch operation schemas from ascend.list_operations or ascend://operations.',
-		'7. Preview edits with ascend.plan before writing.',
-		'8. Commit with ascend.commit using output paths, input hash guards, approvals, and allow-loss only when explicit.',
+		'7. Preview edits with ascend.plan before writing; plan prepares a process-local one-shot planHandle by default.',
+		'8. Commit with ascend.commit using planHandle when available, output paths, input hash guards, approvals, and allow-loss only when explicit.',
 		'9. Verify with ascend.check, ascend.lint, ascend.trace, ascend.diff, and ascend.export as needed.',
 		'10. Use ascend.repair_plan when checks, lints, approvals, or unsupported-feature audits need recovery actions.',
 	].join('\n')
@@ -1720,8 +1720,9 @@ function buildAgentWorkflowPrompt(file?: string, task?: string): string {
 		'Start with ascend.inspect or ascend.list_sheets; call ascend.package_graph when package sidecars, relationship identity, or preservation policy matter; call ascend.active_content before editing macro-enabled, signed, ActiveX, Custom UI, or Excel 4 macro-sheet workbooks.',
 		'Then use ascend.read, ascend.read_table, ascend.find, ascend.visuals, and ascend.pivots to gather only the necessary workbook context.',
 		'Before modifying anything, read ascend://operations or call ascend.list_operations and build operations that match the published schemas.',
-		'Always run ascend.plan and inspect approvals, unsupported features, preview diffs, recalc status, and modelOutput before commit.',
-		'Use ascend.commit with a non-destructive output path by default, pass expectSha256 when available, and only pass approvals or allowLoss values emitted by the plan.',
+		'Always run ascend.plan and inspect approvals, unsupported features, preview diffs, recalc status, preparedPlan, and modelOutput before commit.',
+		'Use ascend.commit with planHandle when available and a non-destructive output path by default; pass expectSha256 when available, and only pass approvals or allowLoss values emitted by the plan.',
+		'If a planHandle is unavailable, expired, or already used, re-run ascend.plan before committing.',
 		'After commit, verify with ascend.check, ascend.lint, ascend.diff, or ascend.export depending on the task.',
 	].join('\n')
 }

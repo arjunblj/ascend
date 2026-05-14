@@ -30,6 +30,12 @@ const DOC_SOURCES: readonly Omit<AgentDocEntry, 'text'>[] = [
 	{ id: 'versioning', title: 'Versioning', path: 'docs/VERSIONING.md', kind: 'docs' },
 	{ id: 'openapi', title: 'OpenAPI Schema', path: 'docs/openapi.yaml', kind: 'reference' },
 	{ id: 'examples-readme', title: 'Examples README', path: 'examples/README.md', kind: 'example' },
+	{
+		id: 'example-agent-safe-edit',
+		title: 'Agent Safe Edit Golden Path',
+		path: 'examples/agent-safe-edit.ts',
+		kind: 'example',
+	},
 	{ id: 'mcp-setup', title: 'MCP Setup Example', path: 'examples/mcp-setup.md', kind: 'example' },
 	{
 		id: 'example-create',

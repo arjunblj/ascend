@@ -86,8 +86,9 @@ Commands support machine-readable output where it helps automation.
 ## Agent Surfaces
 
 - HTTP API: start `apps/api/src/index.ts`; OpenAPI lives at [docs/openapi.yaml](docs/openapi.yaml).
-- MCP server: run `apps/mcp/src/index.ts` for `ascend.inspect`, `ascend.read`, `ascend.write`, `ascend.calc`, `ascend.check`, `ascend.trace`, and related tools.
+- MCP server: run `apps/mcp/src/index.ts` for inspect/read/plan/commit/verify tools, active-content and package-graph audits, and local docs search.
 - Operation schemas: `ascend ops --json` exposes typed operations and recovery hints.
+- Safe agent workflow: inspect/read -> build `ops` or `mutations` -> `plan` -> `commit` -> `check`/`lint`/`diff`/`trace` -> `repair-plan`. API/MCP can commit with one-shot prepared `planHandle` values; CLI uses the same `ops.json` plus `--expect-sha256`.
 
 ## Benchmarks
 

@@ -97,6 +97,8 @@ Workbook tools:
 
 Never use destructive in-place writes unless the user asked for them. Never pass `allowLoss` unless the user accepts the specific preservation or unsupported feature risk.
 
+For API/MCP, `plan` prepares a process-local one-shot handle by default. Prefer `commit({ planHandle })`, and re-run `plan` if the handle expires, is unavailable, or has already been consumed. CLI `plan` and `commit` run in separate processes; they do not share prepared handles, so commit with the same operation batch and `expectSha256` from plan.
+
 ## Common Operation Examples
 
 Set values:

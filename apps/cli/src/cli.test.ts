@@ -320,6 +320,7 @@ describe('ascend cli', () => {
 		expect(parsed.data.commands.plan).toContain('--progress jsonl')
 		expect(parsed.data.mcpResources).toContain('ascend://operations')
 		expect(parsed.data.safetyDefaults.join('\n')).toContain('--expect-sha256')
+		expect(parsed.data.safetyDefaults.join('\n')).toContain('planHandle')
 	})
 
 	test('plan and commit implement safe agent workflow', async () => {

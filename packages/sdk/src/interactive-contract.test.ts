@@ -4077,6 +4077,40 @@ describe('interactive client contract', () => {
 		expect(wb.sheet('Sheet1')?.cell('D1')?.value).toEqual({ kind: 'number', value: 9 })
 	})
 
+	test('moveRange journals stay exact with unrelated formulas and names', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 1 },
+					{ ref: 'B1', value: 2 },
+					{ ref: 'D1', value: 4 },
+				],
+			},
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'G1', formula: 'B1*2' },
+			{ op: 'setDefinedName', name: 'OtherInput', ref: 'Sheet1!B1' },
+		])
+		const before = journalComparableState(wb)
+
+		const changed = wb.apply(
+			[{ op: 'moveRange', sheet: 'Sheet1', source: 'A1', target: 'D1', mode: 'all' }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(true)
+		expect(changed.journal?.issues).toEqual([])
+		expect(wb.sheet('Sheet1')?.cell('G1')?.formula).toBe('B1*2')
+		expect(wb.getWorkbookModel().definedNames.get('OtherInput')).toBe('Sheet1!B1')
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(journalComparableState(wb)).toEqual(before)
+	})
+
 	test('moveRange value-mode journals restore deleted source styles', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([
@@ -4377,6 +4411,43 @@ describe('interactive client contract', () => {
 				'moveRange formula reference rewrites for Sheet1!A1 cannot be fully restored with public operations',
 			refs: ['Sheet1!G1'],
 		})
+	})
+
+	test('moveRange journals mark worksheet metadata formula rewrites lossy', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 1 },
+					{ ref: 'D1', value: 4 },
+				],
+			},
+		])
+		const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+		if (!sheet) throw new Error('missing sheet')
+		sheet.dataValidations.push({
+			sqref: 'G1:G1',
+			type: 'whole',
+			formula1: 'A1',
+		})
+
+		const changed = wb.apply(
+			[{ op: 'moveRange', sheet: 'Sheet1', source: 'A1', target: 'D1', mode: 'all' }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(false)
+		expect(changed.journal?.issues).toContainEqual({
+			code: 'LOSSY_INVERSE',
+			message:
+				'moveRange formula reference rewrites for Sheet1!A1 cannot be fully restored with public operations',
+			refs: ['Sheet1!validation:G1:G1:formula1'],
+		})
+		expect(wb.getWorkbookModel().getSheet('Sheet1')?.dataValidations[0]?.formula1).toBe('D1')
 	})
 
 	test('journals expose lossy imported formula-binding metadata preimages', () => {

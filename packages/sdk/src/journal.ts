@@ -4428,13 +4428,277 @@ function workbookFormulaSurfaceRefsOutsideRanges(
 			if (!cell.formula) continue
 			if (sheet.name === sourceSheetName && rangeContainsCell(sourceRange, { row, col })) continue
 			if (sheet.name === targetSheetName && rangeContainsCell(targetRange, { row, col })) continue
-			refs.push(`${sheet.name}!${toA1({ row, col })}`)
+			if (
+				formulaReferencesMovedRange(
+					workbook,
+					cell.formula,
+					sheet.name,
+					sourceSheetName,
+					sourceRange,
+				)
+			) {
+				refs.push(`${sheet.name}!${toA1({ row, col })}`)
+			}
 		}
+		pushMovedRangeMetadataFormulaRefs(refs, workbook, sheet, sourceSheetName, sourceRange)
 	}
 	for (const name of workbook.definedNames.list()) {
-		refs.push(definedNameJournalKey(workbook, name))
+		const scopeSheet =
+			name.scope.kind === 'sheet' ? sheetNameForId(workbook, name.scope.sheetId) : undefined
+		if (
+			formulaReferencesMovedRange(
+				workbook,
+				name.formula,
+				scopeSheet ?? sourceSheetName,
+				sourceSheetName,
+				sourceRange,
+			)
+		) {
+			refs.push(definedNameJournalKey(workbook, name))
+		}
 	}
 	return refs
+}
+
+function pushMovedRangeMetadataFormulaRefs(
+	refs: string[],
+	workbook: Workbook,
+	sheet: Sheet,
+	sourceSheetName: string,
+	sourceRange: RangeRef,
+): void {
+	for (const validation of sheet.dataValidations) {
+		pushMovedRangeFormulaRef(
+			refs,
+			workbook,
+			validation.formula1,
+			sheet.name,
+			sourceSheetName,
+			sourceRange,
+			`${sheet.name}!validation:${validation.sqref}:formula1`,
+		)
+		pushMovedRangeFormulaRef(
+			refs,
+			workbook,
+			validation.formula2,
+			sheet.name,
+			sourceSheetName,
+			sourceRange,
+			`${sheet.name}!validation:${validation.sqref}:formula2`,
+		)
+	}
+	for (const validation of sheet.x14DataValidations) {
+		if (validation.deleted) continue
+		pushMovedRangeFormulaRef(
+			refs,
+			workbook,
+			validation.formula1,
+			sheet.name,
+			sourceSheetName,
+			sourceRange,
+			`${sheet.name}!x14Validation:${validation.sqref}:formula1`,
+		)
+		pushMovedRangeFormulaRef(
+			refs,
+			workbook,
+			validation.formula2,
+			sheet.name,
+			sourceSheetName,
+			sourceRange,
+			`${sheet.name}!x14Validation:${validation.sqref}:formula2`,
+		)
+	}
+	sheet.conditionalFormats.forEach((format, formatIndex) => {
+		format.rules.forEach((rule, ruleIndex) => {
+			rule.formulas.forEach((formula, formulaIndex) => {
+				pushMovedRangeFormulaRef(
+					refs,
+					workbook,
+					formula,
+					sheet.name,
+					sourceSheetName,
+					sourceRange,
+					`${sheet.name}!conditionalFormat:${format.sqref}:${formatIndex}:${ruleIndex}:${formulaIndex}`,
+				)
+			})
+			pushMovedRangeValueObjectFormulaRefs(
+				refs,
+				workbook,
+				rule.colorScale?.cfvo,
+				sheet.name,
+				sourceSheetName,
+				sourceRange,
+				`${sheet.name}!conditionalFormat:${format.sqref}:${formatIndex}:${ruleIndex}:colorScale.cfvo`,
+			)
+			pushMovedRangeValueObjectFormulaRefs(
+				refs,
+				workbook,
+				rule.dataBar?.cfvo,
+				sheet.name,
+				sourceSheetName,
+				sourceRange,
+				`${sheet.name}!conditionalFormat:${format.sqref}:${formatIndex}:${ruleIndex}:dataBar.cfvo`,
+			)
+			pushMovedRangeValueObjectFormulaRefs(
+				refs,
+				workbook,
+				rule.iconSet?.cfvo,
+				sheet.name,
+				sourceSheetName,
+				sourceRange,
+				`${sheet.name}!conditionalFormat:${format.sqref}:${formatIndex}:${ruleIndex}:iconSet.cfvo`,
+			)
+		})
+	})
+	sheet.x14ConditionalFormats.forEach((format) => {
+		if (format.deleted) return
+		format.formulas.forEach((formula, formulaIndex) => {
+			pushMovedRangeFormulaRef(
+				refs,
+				workbook,
+				formula,
+				sheet.name,
+				sourceSheetName,
+				sourceRange,
+				`${sheet.name}!x14ConditionalFormat:${format.sqref}:${format.index}:${formulaIndex}`,
+			)
+		})
+		pushMovedRangeValueObjectFormulaRefs(
+			refs,
+			workbook,
+			format.colorScale?.cfvo,
+			sheet.name,
+			sourceSheetName,
+			sourceRange,
+			`${sheet.name}!x14ConditionalFormat:${format.sqref}:${format.index}:colorScale.cfvo`,
+		)
+		pushMovedRangeValueObjectFormulaRefs(
+			refs,
+			workbook,
+			format.dataBar?.cfvo,
+			sheet.name,
+			sourceSheetName,
+			sourceRange,
+			`${sheet.name}!x14ConditionalFormat:${format.sqref}:${format.index}:dataBar.cfvo`,
+		)
+		pushMovedRangeValueObjectFormulaRefs(
+			refs,
+			workbook,
+			format.iconSet?.cfvo,
+			sheet.name,
+			sourceSheetName,
+			sourceRange,
+			`${sheet.name}!x14ConditionalFormat:${format.sqref}:${format.index}:iconSet.cfvo`,
+		)
+	})
+	for (const table of sheet.tables) {
+		for (const column of table.columns) {
+			pushMovedRangeFormulaRef(
+				refs,
+				workbook,
+				column.formula,
+				sheet.name,
+				sourceSheetName,
+				sourceRange,
+				`${sheet.name}!table:${table.name}:${column.name}:formula`,
+			)
+			pushMovedRangeFormulaRef(
+				refs,
+				workbook,
+				column.totalsRowFormula,
+				sheet.name,
+				sourceSheetName,
+				sourceRange,
+				`${sheet.name}!table:${table.name}:${column.name}:totalsRowFormula`,
+			)
+		}
+	}
+}
+
+function pushMovedRangeValueObjectFormulaRefs(
+	refs: string[],
+	workbook: Workbook,
+	entries: readonly SheetConditionalFormatValueObject[] | undefined,
+	ownerSheet: string,
+	sourceSheetName: string,
+	sourceRange: RangeRef,
+	location: string,
+): void {
+	entries?.forEach((entry, index) => {
+		pushMovedRangeFormulaRef(
+			refs,
+			workbook,
+			entry.value,
+			ownerSheet,
+			sourceSheetName,
+			sourceRange,
+			`${location}:${index}`,
+		)
+	})
+}
+
+function pushMovedRangeFormulaRef(
+	refs: string[],
+	workbook: Workbook,
+	formula: string | undefined,
+	ownerSheet: string,
+	sourceSheetName: string,
+	sourceRange: RangeRef,
+	location: string,
+): void {
+	if (formula === undefined) return
+	if (formulaReferencesMovedRange(workbook, formula, ownerSheet, sourceSheetName, sourceRange)) {
+		refs.push(location)
+	}
+}
+
+function formulaReferencesMovedRange(
+	workbook: Workbook,
+	formula: string,
+	ownerSheet: string,
+	sourceSheetName: string,
+	sourceRange: RangeRef,
+): boolean {
+	const parsed = cachedParseFormula(formula)
+	if (!parsed.ok) return false
+	return extractRefs(parsed.value).some((ref) =>
+		formulaRefReferencesMovedRange(workbook, ref, ownerSheet, sourceSheetName, sourceRange),
+	)
+}
+
+function formulaRefReferencesMovedRange(
+	workbook: Workbook,
+	ref: FormulaRef,
+	ownerSheet: string,
+	sourceSheetName: string,
+	sourceRange: RangeRef,
+): boolean {
+	if (ref.kind === 'sheetSpan') {
+		return (
+			sheetSpanIncludes(workbook, ref.startSheet, ref.endSheet, sourceSheetName) &&
+			formulaRefReferencesMovedRange(
+				workbook,
+				ref.target,
+				sourceSheetName,
+				sourceSheetName,
+				sourceRange,
+			)
+		)
+	}
+	const sheet = 'sheet' in ref && ref.sheet !== undefined ? ref.sheet : ownerSheet
+	if (sheet !== sourceSheetName) return false
+	switch (ref.kind) {
+		case 'cell':
+			return rangeContainsCell(sourceRange, ref.ref)
+		case 'range':
+			return rangeContainsRange(sourceRange, { start: ref.start, end: ref.end })
+		case 'wholeRowRange':
+			return ref.startRow >= sourceRange.start.row && ref.endRow <= sourceRange.end.row
+		case 'wholeColumnRange':
+			return ref.startCol >= sourceRange.start.col && ref.endCol <= sourceRange.end.col
+		default:
+			return false
+	}
 }
 
 function copyRangeModeTouchesMetadata(sheet: Sheet, range: RangeRef, mode: string): boolean {

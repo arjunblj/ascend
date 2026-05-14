@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { statSync } from 'node:fs'
+import { readFileSync, statSync } from 'node:fs'
 import { readFile, stat } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import {
@@ -280,6 +280,7 @@ interface SessionFileIdentity {
 	readonly path: string
 	readonly size: number
 	readonly mtimeMs: number
+	readonly sha256: string
 }
 
 interface SessionBytesIdentity {
@@ -428,7 +429,7 @@ export class WorkbookDocument {
 	}
 
 	static drop(file: string, options: WorkbookLoadOptions = {}): void {
-		const key = makeSessionKey({ path: resolve(file), size: 0, mtimeMs: 0 }, options)
+		const key = makeSessionKey({ path: resolve(file), size: 0, mtimeMs: 0, sha256: '' }, options)
 		sessionCache.delete(key)
 	}
 
@@ -848,7 +849,13 @@ export class WorkbookSession {
 		if (this.source?.bytes || !this.fileIdentity) return false
 		try {
 			const info = statSync(this.fileIdentity.path)
-			return info.size !== this.fileIdentity.size || info.mtimeMs !== this.fileIdentity.mtimeMs
+			if (info.size !== this.fileIdentity.size || info.mtimeMs !== this.fileIdentity.mtimeMs) {
+				return true
+			}
+			const sha256 = createHash('sha256')
+				.update(new Uint8Array(readFileSync(this.fileIdentity.path)))
+				.digest('hex')
+			return sha256 !== this.fileIdentity.sha256
 		} catch {
 			return true
 		}
@@ -2160,11 +2167,12 @@ function strongerPivotCacheRecordMaterializeLimit(
 
 async function readIdentity(file: string): Promise<SessionFileIdentity> {
 	const path = resolve(file)
-	const info = await stat(path)
+	const [info, bytes] = await Promise.all([stat(path), readFile(path)])
 	return {
 		path,
 		size: info.size,
 		mtimeMs: info.mtimeMs,
+		sha256: createHash('sha256').update(new Uint8Array(bytes)).digest('hex'),
 	}
 }
 
@@ -2213,7 +2221,12 @@ function makeSessionKey(identity: SessionIdentity, options: WorkbookLoadOptions)
 
 function isIdentityEqual(left: SessionIdentity, right: SessionIdentity): boolean {
 	if ('path' in left && 'path' in right) {
-		return left.path === right.path && left.size === right.size && left.mtimeMs === right.mtimeMs
+		return (
+			left.path === right.path &&
+			left.size === right.size &&
+			left.mtimeMs === right.mtimeMs &&
+			left.sha256 === right.sha256
+		)
 	}
 	if (!('path' in left) && !('path' in right)) {
 		return left.key === right.key && left.size === right.size

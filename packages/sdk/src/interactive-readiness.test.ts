@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { unlink } from 'node:fs/promises'
+import { readFile, stat, unlink, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { AscendSession, AscendWorkbook } from './index.ts'
@@ -120,6 +120,46 @@ describe('interactive edit readiness', () => {
 			expect(reopened.sheet('Sheet1')?.cell('A1')?.value).toEqual({
 				kind: 'string',
 				value: 'changed elsewhere',
+			})
+		} finally {
+			session.close()
+			await unlink(input).catch(() => {})
+		}
+	})
+
+	test('edit-ready path sessions reject same-size same-mtime source rewrites', async () => {
+		const input = join(tmpdir(), `ascend-edit-ready-hash-stale-${Date.now()}-${process.pid}.xlsx`)
+		const stableTime = new Date('2026-05-14T00:00:00.000Z')
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'original' }] }])
+		await wb.save(input)
+		await utimes(input, stableTime, stableTime)
+
+		const session = await AscendSession.open(input, {
+			mode: 'interactive',
+			prepareEdits: true,
+		})
+		try {
+			const before = await stat(input)
+			const bytes = new Uint8Array(await readFile(input))
+			bytes[bytes.byteLength - 1] ^= 1
+			await writeFile(input, bytes)
+			await utimes(input, stableTime, stableTime)
+			const after = await stat(input)
+			expect(after.size).toBe(before.size)
+			expect(after.mtimeMs).toBe(before.mtimeMs)
+			expect(session.isStale()).toBe(true)
+
+			const edit = await session.apply([
+				{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'agent edit' }] },
+			])
+			expect(edit.apply.errors[0]).toMatchObject({
+				code: 'VALIDATION_ERROR',
+				details: {
+					rule: 'stale-interactive-session',
+					staleSession: true,
+					requiredAction: 'refresh',
+				},
 			})
 		} finally {
 			session.close()

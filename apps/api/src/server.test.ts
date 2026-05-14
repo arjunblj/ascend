@@ -1072,6 +1072,41 @@ describe('Ascend API server', () => {
 		])
 	})
 
+	test('write reports materialized shared formula group when rewriting one member', async () => {
+		await Bun.write(TEMP_FILE, sharedOnlyFormulaWorkbook())
+
+		const write = await postJson('/write', {
+			file: TEMP_FILE,
+			ops: [{ op: 'setFormula', sheet: 'Calc', ref: 'B2', formula: '2+2' }],
+		})
+
+		expect(write.status).toBe(200)
+		expect(write.body.ok).toBe(true)
+		expect(
+			(write.body.data as { affectedCells?: readonly string[] } | undefined)?.affectedCells,
+		).toEqual(['B1', 'B2'])
+		const read = await postJson('/read', {
+			file: TEMP_FILE,
+			sheet: 'Calc',
+			range: 'B1:B2',
+			format: 'cells',
+		})
+		expect(
+			(
+				read.body.data?.cells as
+					| Array<{
+							readonly ref?: string
+							readonly formula?: string
+							readonly formulaBinding?: unknown
+					  }>
+					| undefined
+			)?.map((cell) => [cell.ref, cell.formula, cell.formulaBinding ?? null]),
+		).toEqual([
+			['B1', 'A1*2', null],
+			['B2', '2+2', null],
+		])
+	})
+
 	test('read returns compact first-window data with partial load metadata', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

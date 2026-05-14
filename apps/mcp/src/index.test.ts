@@ -5775,6 +5775,65 @@ describe('MCP server', () => {
 		])
 	})
 
+	test('ascend.write reports materialized shared formula group when rewriting one member', async () => {
+		await Bun.write(TEMP_FILE, sharedOnlyFormulaWorkbook())
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const write = (server as any)._registeredTools['ascend.write'].handler as (args: {
+			file: string
+			ops: readonly Record<string, unknown>[]
+		}) => Promise<{
+			structuredContent?: {
+				ok?: boolean
+				data?: {
+					affectedCells?: readonly string[]
+				}
+			}
+		}>
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const read = (server as any)._registeredTools['ascend.read'].handler as (args: {
+			file: string
+			sheet?: string
+			range: string
+			format: 'cells'
+		}) => Promise<{
+			structuredContent?: {
+				data?: {
+					cells?: Array<{
+						readonly ref?: string
+						readonly formula?: string
+						readonly formulaBinding?: unknown
+					}>
+				}
+			}
+		}>
+
+		const writeResult = await write({
+			file: TEMP_FILE,
+			ops: [{ op: 'setFormula', sheet: 'Calc', ref: 'B2', formula: '2+2' }],
+		})
+		expect(writeResult.structuredContent?.ok).toBe(true)
+		expect(writeResult.structuredContent?.data?.affectedCells).toEqual(['B1', 'B2'])
+
+		const readResult = await read({
+			file: TEMP_FILE,
+			sheet: 'Calc',
+			range: 'B1:B2',
+			format: 'cells',
+		})
+		expect(
+			readResult.structuredContent?.data?.cells?.map((cell) => [
+				cell.ref,
+				cell.formula,
+				cell.formulaBinding ?? null,
+			]),
+		).toEqual([
+			['B1', 'A1*2', null],
+			['B2', '2+2', null],
+		])
+	})
+
 	test('ascend.read prunes TSV columns by letter and range position', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

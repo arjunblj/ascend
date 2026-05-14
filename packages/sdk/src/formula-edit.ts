@@ -300,6 +300,23 @@ function collectFormulaReferenceRanges(
 		}
 		if (span.token.type !== TokenType.Name) continue
 		const next = nextNonWhitespace(spans, i + 1)
+		if (span.text.startsWith('[') && next?.span.token.type === TokenType.Name) {
+			const bang = nextNonWhitespace(spans, next.index + 1)
+			if (bang?.span.token.type === TokenType.Bang) {
+				const cell = nextNonWhitespace(spans, bang.index + 1)
+				if (cell?.span.token.type === TokenType.CellRef) {
+					const local = collectCellReferenceRange(formula, spans, cell.index)
+					references.push({
+						text: formula.slice(span.start, local.end),
+						start: span.start,
+						end: local.end,
+						kind: local.kind === 'range' ? 'sheet-range' : 'sheet-cell',
+					})
+					i = cell.index
+					continue
+				}
+			}
+		}
 		if (next?.span.token.type === TokenType.Name && next.span.text.startsWith('[')) {
 			references.push({
 				text: formula.slice(span.start, next.span.end),

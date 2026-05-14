@@ -47,6 +47,18 @@ describe('formula editing utilities', () => {
 			end: 26,
 			kind: 'sheet-cell',
 		})
+		expect(referenceAtCursor('=[Book.xlsx]Sheet1!A1', 5)).toEqual({
+			text: '[Book.xlsx]Sheet1!A1',
+			start: 1,
+			end: 21,
+			kind: 'sheet-cell',
+		})
+		expect(referenceAtCursor('=[Book.xlsx]Sheet1!A1:B2', 17)).toEqual({
+			text: '[Book.xlsx]Sheet1!A1:B2',
+			start: 1,
+			end: 24,
+			kind: 'sheet-range',
+		})
 		expect(referenceAtCursor('Table1[[#Totals],[Amount]]', 14)).toEqual({
 			text: 'Table1[[#Totals],[Amount]]',
 			start: 0,
@@ -92,6 +104,11 @@ describe('formula editing utilities', () => {
 		expect(cycleFormulaReferenceMode("='[Book.xlsx]Q1 Plan'!A1", 8)).toMatchObject({
 			formula: "='[Book.xlsx]Q1 Plan'!$A$1",
 			cursor: 26,
+			changed: true,
+		})
+		expect(cycleFormulaReferenceMode('=[Book.xlsx]Sheet1!A1', 5)).toMatchObject({
+			formula: '=[Book.xlsx]Sheet1!$A$1',
+			cursor: 23,
 			changed: true,
 		})
 		expect(cycleFormulaReferenceMode("'Q1 Plan'!A1:B2", 4)).toMatchObject({
@@ -155,6 +172,22 @@ describe('formula editing utilities', () => {
 				start: 9,
 				end: 23,
 				kind: 'structured',
+			},
+		})
+
+		expect(
+			insertFormulaReference('=[Book.xlsx]Sheet1!A1+1', 6, 'B2', {
+				replaceReferenceAtCursor: true,
+			}),
+		).toEqual({
+			formula: '=B2+1',
+			cursor: 3,
+			inserted: 'B2',
+			replaced: {
+				text: '[Book.xlsx]Sheet1!A1',
+				start: 1,
+				end: 21,
+				kind: 'sheet-cell',
 			},
 		})
 	})

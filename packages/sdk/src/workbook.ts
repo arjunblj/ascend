@@ -210,7 +210,8 @@ function isApplyPatchNoOp(ops: readonly Operation[], result: PatchResult): boole
 				op.op === 'setComment' ||
 				op.op === 'setHyperlink' ||
 				op.op === 'setNumberFormat' ||
-				op.op === 'setStyle',
+				op.op === 'setStyle' ||
+				op.op === 'clearRange',
 		) &&
 		result.affectedCells.length === 0 &&
 		result.sheetsModified.length === 0 &&

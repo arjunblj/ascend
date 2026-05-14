@@ -3782,6 +3782,7 @@ describe('interactive client contract', () => {
 			formula: null,
 			styleId: DEFAULT_STYLE_ID,
 		})
+		const beforeGenerations = wb.readSnapshotInfo().generations
 
 		const changed = wb.apply(
 			[{ op: 'clearRange', sheet: 'Sheet1', range: 'A2', what: 'formulas' }],
@@ -3791,6 +3792,7 @@ describe('interactive client contract', () => {
 		expect(changed.errors).toEqual([])
 		expect(changed.affectedCells).toEqual([])
 		expect(changed.recalcRequired).toBe(false)
+		expect(changed.generations).toEqual(beforeGenerations)
 		expect(changed.journal?.supported).toBe(true)
 		expect(changed.journal?.exact).toBe(true)
 		expect(changed.journal?.issues).toEqual([])

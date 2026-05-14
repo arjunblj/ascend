@@ -1927,7 +1927,7 @@ function journalMoveRange(
 		return {
 			opIndex,
 			op,
-			inverseOps: [...restoreCommentOps(targetComments), ...restoreCommentOps(sourceComments)],
+			inverseOps: moveRangeCommentRestoreOps(sourceComments, targetComments),
 			preimages: [...targetComments, ...sourceComments].map((comment) => ({
 				kind: 'comment',
 				comment,
@@ -5371,6 +5371,20 @@ function restoreCommentOps(comments: readonly MutationJournalCommentPreimage[]):
 				}
 			: { op: 'deleteComment', sheet: comment.sheet, ref: comment.ref },
 	)
+}
+
+function moveRangeCommentRestoreOps(
+	sourceComments: readonly MutationJournalCommentPreimage[],
+	targetComments: readonly MutationJournalCommentPreimage[],
+): Operation[] {
+	const targetCleanupOps = targetComments
+		.filter((_, index) => sourceComments[index]?.comment)
+		.map((comment) => ({ op: 'deleteComment' as const, sheet: comment.sheet, ref: comment.ref }))
+	return [
+		...targetCleanupOps,
+		...restoreCommentOps(sourceComments),
+		...restoreCommentOps(targetComments),
+	]
 }
 
 function restoreSetCommentOps(

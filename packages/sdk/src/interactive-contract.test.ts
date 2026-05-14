@@ -4360,6 +4360,7 @@ describe('interactive client contract', () => {
 			{ op: 'setComment', sheet: 'Sheet1', ref: 'A1', text: 'source note', author: 'Ada' },
 			{ op: 'setComment', sheet: 'Sheet1', ref: 'D1', text: 'target note', author: 'Grace' },
 		])
+		const before = journalComparableState(wb)
 
 		const changed = wb.apply(
 			[{ op: 'moveRange', sheet: 'Sheet1', source: 'A1', target: 'D1', mode: 'comments' }],
@@ -4378,6 +4379,7 @@ describe('interactive client contract', () => {
 		expect(undo.errors).toEqual([])
 		expect(sheet?.comments.get('A1')).toEqual({ text: 'source note', author: 'Ada' })
 		expect(sheet?.comments.get('D1')).toEqual({ text: 'target note', author: 'Grace' })
+		expect(journalComparableState(wb)).toEqual(before)
 	})
 
 	test('moveRange hyperlink journals restore source and target hyperlink metadata exactly', () => {

@@ -37,6 +37,7 @@ interface Args {
 	readonly repeat: number
 	readonly warmup: number
 	readonly phase: PhaseMode
+	readonly validationMode: ValidationMode
 	readonly gcBetweenSamples: boolean
 	readonly json: boolean
 }
@@ -115,6 +116,8 @@ type PhaseMode =
 	| 'capped-agent-window'
 	| 'grid-fill'
 
+type ValidationMode = 'sample' | 'none'
+
 const WORKLOADS = new Set<string>([
 	'dense-values',
 	'mixed-10pct-text',
@@ -182,6 +185,7 @@ function parseArgs(argv = process.argv.slice(2)): Args {
 		repeat: positiveInt(readOption(argv, '--repeat'), 5),
 		warmup: nonNegativeInt(readOption(argv, '--warmup'), 1),
 		phase: parsePhase(readOption(argv, '--phase')),
+		validationMode: parseValidationMode(readOption(argv, '--validation-mode')),
 		gcBetweenSamples: hasFlag(argv, '--gc-between-samples'),
 		json: hasFlag(argv, '--json'),
 	}
@@ -209,6 +213,12 @@ function parsePhase(raw: string | undefined): PhaseMode {
 	throw new Error(
 		'--phase must be all, zip, direct, rows, rows-chunked, rows-window, xml, read, full-read, hydrate, agent-window, capped-agent-window, or grid-fill',
 	)
+}
+
+function parseValidationMode(raw: string | undefined): ValidationMode {
+	if (raw === undefined || raw === 'sample') return 'sample'
+	if (raw === 'none') return 'none'
+	throw new Error('--validation-mode must be sample or none')
 }
 
 function memory() {
@@ -748,7 +758,7 @@ async function runSample(
 		const read = readXlsx(input.xlsxBytes)
 		const fullReadXlsxMs = performance.now() - fullReadStart
 		if (!read.ok) throw new Error(read.error.message)
-		assertReadPhaseWorkbook(read.value.workbook, input)
+		if (args.validationMode === 'sample') assertReadPhaseWorkbook(read.value.workbook, input)
 		sample.fullReadXlsxMs = fullReadXlsxMs
 		sample.fullReadXlsxCellsPerSecond = input.cells / (fullReadXlsxMs / 1000)
 	}

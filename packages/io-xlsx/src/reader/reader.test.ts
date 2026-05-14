@@ -839,6 +839,36 @@ describe('readXlsx', () => {
 		expect(readSheet?.cells.getChunkKindAt(0, 0)).toBe('dense')
 	})
 
+	it('keeps parsed narrow dense sheets in dense chunks', () => {
+		const rows: string[] = []
+		for (let r = 1; r <= 160; r++) {
+			const cells: string[] = []
+			for (let c = 0; c < 5; c++) {
+				const ref = `${indexToColumn(c)}${r}`
+				cells.push(`<c r="${ref}"><v>${r * 5 + c}</v></c>`)
+			}
+			rows.push(`<row r="${r}">${cells.join('')}</row>`)
+		}
+		const bytes = makeXlsx({
+			'[Content_Types].xml': CONTENT_TYPES,
+			'_rels/.rels': ROOT_RELS,
+			'xl/_rels/workbook.xml.rels': WORKBOOK_RELS,
+			'xl/workbook.xml': WORKBOOK_XML,
+			'xl/sharedStrings.xml': SHARED_STRINGS,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <dimension ref="A1:E160"/>
+  <sheetData>${rows.join('')}</sheetData>
+</worksheet>`,
+		})
+
+		const result = readXlsx(bytes)
+		expectOk(result)
+		const readSheet = result.value.workbook.sheets[0]
+		expect(readSheet?.cells.get(159, 4)?.value).toEqual({ kind: 'number', value: 804 })
+		expect(readSheet?.cells.getChunkKindAt(0, 0)).toBe('dense')
+	})
+
 	it('does not densify sparse sheets from a stale large dimension', () => {
 		const bytes = makeXlsx({
 			'[Content_Types].xml': CONTENT_TYPES,

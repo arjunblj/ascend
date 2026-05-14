@@ -239,7 +239,7 @@ function applyDensityHintFromDimension(sheet: Sheet, xml: string): void {
 		const numChunks =
 			Math.ceil(rows / SPARSE_GRID_CHUNK_SIZE) * Math.ceil(cols / SPARSE_GRID_CHUNK_SIZE)
 		const cellsPerChunk = (rows * cols) / numChunks
-		if (cellsPerChunk >= SPARSE_TO_DENSE_THRESHOLD) {
+		if (shouldUseDenseDimensionHint(cols, cellsPerChunk)) {
 			sheet.cells.setExpectedDensity('dense')
 		}
 	} catch {
@@ -4177,7 +4177,7 @@ function applyDensityHintFromDimensionRef(sheet: Sheet, ref: string | null): voi
 		const numChunks =
 			Math.ceil(rows / SPARSE_GRID_CHUNK_SIZE) * Math.ceil(cols / SPARSE_GRID_CHUNK_SIZE)
 		const cellsPerChunk = (rows * cols) / numChunks
-		if (cellsPerChunk >= SPARSE_TO_DENSE_THRESHOLD) {
+		if (shouldUseDenseDimensionHint(cols, cellsPerChunk)) {
 			sheet.cells.setExpectedDensity('dense')
 		}
 	} catch {
@@ -4192,6 +4192,14 @@ function parseDimensionRefBytes(bytes: Uint8Array): string | null {
 	if (tagEnd === -1) return null
 	const ref = rawAttrDecodedBytes(bytes, open + BYTES_DIMENSION_OPEN.length, tagEnd, 'ref')
 	return ref ?? null
+}
+
+function shouldUseDenseDimensionHint(cols: number, cellsPerChunk: number): boolean {
+	return (
+		cellsPerChunk >= SPARSE_TO_DENSE_THRESHOLD ||
+		(cols <= 5 && cellsPerChunk >= 80) ||
+		(cols > SPARSE_GRID_CHUNK_SIZE && cellsPerChunk >= 192)
+	)
 }
 
 function hasUnsupportedValuesOnlyOuterTagsInRangeBytes(

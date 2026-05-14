@@ -12,6 +12,7 @@ Updated: 2026-05-14
 | [Formula sqllogictest conformance](runs/2026/2026-05-14-formula-sqllogictest-conformance/log.md) | promote | correctness loop |
 | [Compact agent-view token budget](runs/2026/2026-05-14-compact-agent-view-token-budget/log.md) | promote | product/DX loop |
 | [Journal inverse property laws](runs/2026/2026-05-14-journal-inverse-property-laws/log.md) | cycle 4 complete, folded in fix | correctness loop |
+| [Oracle routing mismatch class](runs/2026/2026-05-14-oracle-routing-mismatch-class/log.md) | cycle 5 complete, promote | correctness loop |
 
 ## Syntheses
 

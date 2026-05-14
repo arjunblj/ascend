@@ -5789,6 +5789,65 @@ describe('interactive client contract', () => {
 		expect(journalComparableState(wb)).toEqual(before)
 	})
 
+	test('setComment journals remove newly-added authors for simple comments exactly', () => {
+		const wb = AscendWorkbook.create()
+		const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+		if (!sheet) throw new Error('missing sheet')
+		sheet.comments.set('B2', { text: 'review' })
+		const before = journalComparableState(wb)
+
+		const changed = wb.apply(
+			[{ op: 'setComment', sheet: 'Sheet1', ref: 'B2', text: 'reviewed', author: 'agent' }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(true)
+		expect(changed.journal?.inverseOps).toEqual([
+			{ op: 'deleteComment', sheet: 'Sheet1', ref: 'B2' },
+			{ op: 'setComment', sheet: 'Sheet1', ref: 'B2', text: 'review' },
+		])
+		expect(wb.getWorkbookModel().getSheet('Sheet1')?.comments.get('B2')).toEqual({
+			text: 'reviewed',
+			author: 'agent',
+		})
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(journalComparableState(wb)).toEqual(before)
+	})
+
+	test('setComment journals mark threaded-comment-safe deletion inverses lossy', () => {
+		const wb = AscendWorkbook.create()
+		const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+		if (!sheet) throw new Error('missing sheet')
+		sheet.threadedComments.push({ ref: 'B2', text: 'thread', id: 'tc-1' })
+
+		const changed = wb.apply(
+			[{ op: 'setComment', sheet: 'Sheet1', ref: 'B2', text: 'legacy note' }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(false)
+		expect(changed.journal?.inverseOps).toEqual([
+			{ op: 'deleteComment', sheet: 'Sheet1', ref: 'B2' },
+		])
+		expect(changed.journal?.issues).toEqual([
+			{
+				code: 'LOSSY_INVERSE',
+				message:
+					'Created legacy comment at Sheet1!B2 cannot be removed without deleting threaded comments with public operations',
+				refs: ['Sheet1!threadedComment:tc-1'],
+			},
+		])
+		expect(wb.getWorkbookModel().getSheet('Sheet1')?.threadedComments).toEqual([
+			{ ref: 'B2', text: 'thread', id: 'tc-1' },
+		])
+	})
+
 	test('deleteComment journals mark legacy drawings and threaded comments lossy', () => {
 		const wb = AscendWorkbook.create()
 		const sheet = wb.getWorkbookModel().getSheet('Sheet1')

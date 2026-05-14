@@ -2030,23 +2030,20 @@ function journalSetComment(
 	opIndex: number,
 ): DraftJournalEntry {
 	const comment = commentPreimage(workbook, op.sheet, op.ref)
-	const inverseOps: Operation[] = comment.comment
-		? [
-				{
-					op: 'setComment',
-					sheet: op.sheet,
-					ref: comment.ref,
-					text: comment.comment.text,
-					...(comment.comment.author !== undefined ? { author: comment.comment.author } : {}),
-				},
-			]
-		: [{ op: 'deleteComment', sheet: op.sheet, ref: comment.ref }]
+	const threadedComments = threadedCommentPreimagesAtRef(workbook, op.sheet, op.ref)
+	const { inverseOps, issues } = restoreSetCommentOps(op, comment, threadedComments)
 	return {
 		opIndex,
 		op,
 		inverseOps,
-		preimages: [{ kind: 'comment', comment }],
-		issues: [],
+		preimages: [
+			{ kind: 'comment', comment },
+			...threadedComments.map((threadedComment) => ({
+				kind: 'threaded-comment' as const,
+				threadedComment,
+			})),
+		],
+		issues,
 	}
 }
 
@@ -4876,6 +4873,70 @@ function restoreCommentOps(comments: readonly MutationJournalCommentPreimage[]):
 	)
 }
 
+function restoreSetCommentOps(
+	op: Extract<Operation, { op: 'setComment' }>,
+	comment: MutationJournalCommentPreimage,
+	threadedComments: readonly MutationJournalThreadedCommentPreimage[],
+): {
+	readonly inverseOps: readonly Operation[]
+	readonly issues: readonly MutationJournalIssue[]
+} {
+	if (!comment.comment) {
+		return {
+			inverseOps: [{ op: 'deleteComment', sheet: op.sheet, ref: comment.ref }],
+			issues:
+				threadedComments.length > 0
+					? [
+							{
+								code: 'LOSSY_INVERSE',
+								message: `Created legacy comment at ${op.sheet}!${comment.ref} cannot be removed without deleting threaded comments with public operations`,
+								refs: threadedCommentIssueRefs(op.sheet, threadedComments),
+							},
+						]
+					: [],
+		}
+	}
+	if (comment.comment.author === undefined && op.author !== undefined) {
+		const baseInverse: Operation = {
+			op: 'setComment',
+			sheet: op.sheet,
+			ref: comment.ref,
+			text: comment.comment.text,
+		}
+		if (!comment.comment.legacyDrawing && threadedComments.length === 0) {
+			return {
+				inverseOps: [{ op: 'deleteComment', sheet: op.sheet, ref: comment.ref }, baseInverse],
+				issues: [],
+			}
+		}
+		return {
+			inverseOps: [baseInverse],
+			issues: [
+				{
+					code: 'LOSSY_INVERSE',
+					message: `Comment author at ${op.sheet}!${comment.ref} cannot be removed exactly with public operations`,
+					refs: [
+						`${op.sheet}!${comment.ref}`,
+						...threadedCommentIssueRefs(op.sheet, threadedComments),
+					],
+				},
+			],
+		}
+	}
+	return {
+		inverseOps: [
+			{
+				op: 'setComment',
+				sheet: op.sheet,
+				ref: comment.ref,
+				text: comment.comment.text,
+				...(comment.comment.author !== undefined ? { author: comment.comment.author } : {}),
+			},
+		],
+		issues: [],
+	}
+}
+
 function commentRestoreIssues(
 	comments: readonly MutationJournalCommentPreimage[],
 ): readonly MutationJournalIssue[] {
@@ -5070,14 +5131,21 @@ function deleteCommentThreadedCommentIssues(
 		{
 			code: 'LOSSY_INVERSE',
 			message: `Threaded comments deleted at ${sheetName}!${refText.toUpperCase()} cannot be recreated with public operations`,
-			refs: threadedComments.map((preimage) => {
-				const id = preimage.threadedComment?.id
-				return id
-					? `${sheetName}!threadedComment:${id}`
-					: `${sheetName}!threadedComment:${preimage.commentIndex ?? 'unknown'}`
-			}),
+			refs: threadedCommentIssueRefs(sheetName, threadedComments),
 		},
 	]
+}
+
+function threadedCommentIssueRefs(
+	sheetName: string,
+	threadedComments: readonly MutationJournalThreadedCommentPreimage[],
+): string[] {
+	return threadedComments.map((preimage) => {
+		const id = preimage.threadedComment?.id
+		return id
+			? `${sheetName}!threadedComment:${id}`
+			: `${sheetName}!threadedComment:${preimage.commentIndex ?? 'unknown'}`
+	})
 }
 
 function threadedCommentStableSelector(

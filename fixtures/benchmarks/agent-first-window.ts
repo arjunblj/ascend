@@ -8,6 +8,17 @@ import { indexToColumn } from '../../packages/core/src/index.ts'
 import { AscendWorkbook, WorkbookDocument } from '../../packages/sdk/src/index.ts'
 import { buildRawReadWorkloadDataSet, type WorkloadName } from './competitive-io.ts'
 
+type FirstWindowCase =
+	| 'all'
+	| 'full'
+	| 'capped'
+	| 'api'
+	| 'api-compact'
+	| 'cli'
+	| 'mcp'
+	| 'mcp-compact'
+	| 'tui'
+
 interface Args {
 	readonly rows: number
 	readonly cols: number
@@ -18,6 +29,7 @@ interface Args {
 	readonly workload: WorkloadName
 	readonly repeat: number
 	readonly warmup: number
+	readonly only: FirstWindowCase
 	readonly json: boolean
 }
 
@@ -192,6 +204,18 @@ const WORKLOADS = new Set<string>([
 	'sparse-wide',
 ])
 
+const FIRST_WINDOW_CASES = new Set<string>([
+	'all',
+	'full',
+	'capped',
+	'api',
+	'api-compact',
+	'cli',
+	'mcp',
+	'mcp-compact',
+	'tui',
+])
+
 function readOption(args: readonly string[], name: string): string | undefined {
 	const index = args.indexOf(name)
 	return index >= 0 ? args[index + 1] : undefined
@@ -217,6 +241,12 @@ function parseArgs(): Args {
 	const inputFile = readOption(process.argv, '--input-file')
 	const sheet = readOption(process.argv, '--sheet')
 	const range = readOption(process.argv, '--range')
+	const only = readOption(process.argv, '--only') ?? 'all'
+	if (!FIRST_WINDOW_CASES.has(only)) {
+		throw new Error(
+			`Unsupported --only "${only}". Expected one of: ${[...FIRST_WINDOW_CASES].join(', ')}`,
+		)
+	}
 	return {
 		rows: positiveInt(readOption(process.argv, '--rows'), 65_536),
 		cols: positiveInt(readOption(process.argv, '--cols'), 10),
@@ -227,8 +257,13 @@ function parseArgs(): Args {
 		workload: workload as WorkloadName,
 		repeat: positiveInt(readOption(process.argv, '--repeat'), 5),
 		warmup: nonNegativeInt(readOption(process.argv, '--warmup'), 1),
+		only: only as FirstWindowCase,
 		json: hasFlag(process.argv, '--json'),
 	}
+}
+
+function shouldRunCase(args: Args, name: Exclude<FirstWindowCase, 'all'>): boolean {
+	return args.only === 'all' || args.only === name
 }
 
 function median(values: readonly number[]): number {
@@ -1014,127 +1049,176 @@ async function run() {
 	const samples: Sample[] = []
 	try {
 		for (let i = 0; i < args.warmup; i++) {
-			await runFullOpenWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit)
-			await runFullOpenWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit, false)
-			await runCappedOpenWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit)
-			await runCappedOpenWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit, false)
-			await runApiFirstWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit)
-			await runApiFirstWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit, false)
-			await runApiCompactDefault(data.xlsxPath, data.sheet, data.range)
-			await runApiCompactDefault(data.xlsxPath, data.sheet, data.range, false)
-			await runCliReadFirstWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit)
-			await runCliReadFirstWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit, false)
-			await runMcpFirstWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit)
-			await runMcpFirstWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit, false)
-			await runMcpCompactDefault(data.xlsxPath, data.sheet, data.range)
-			await runMcpCompactDefault(data.xlsxPath, data.sheet, data.range, false)
-			await runTuiFirstPaint(data.xlsxPath, data.sheet, args.rowLimit)
-			await runTuiFirstPaint(data.xlsxPath, data.sheet, args.rowLimit, false)
+			if (shouldRunCase(args, 'full')) {
+				await runFullOpenWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit)
+				await runFullOpenWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit, false)
+			}
+			if (shouldRunCase(args, 'capped')) {
+				await runCappedOpenWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit)
+				await runCappedOpenWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit, false)
+			}
+			if (shouldRunCase(args, 'api')) {
+				await runApiFirstWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit)
+				await runApiFirstWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit, false)
+			}
+			if (shouldRunCase(args, 'api-compact')) {
+				await runApiCompactDefault(data.xlsxPath, data.sheet, data.range)
+				await runApiCompactDefault(data.xlsxPath, data.sheet, data.range, false)
+			}
+			if (shouldRunCase(args, 'cli')) {
+				await runCliReadFirstWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit)
+				await runCliReadFirstWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit, false)
+			}
+			if (shouldRunCase(args, 'mcp')) {
+				await runMcpFirstWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit)
+				await runMcpFirstWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit, false)
+			}
+			if (shouldRunCase(args, 'mcp-compact')) {
+				await runMcpCompactDefault(data.xlsxPath, data.sheet, data.range)
+				await runMcpCompactDefault(data.xlsxPath, data.sheet, data.range, false)
+			}
+			if (shouldRunCase(args, 'tui')) {
+				await runTuiFirstPaint(data.xlsxPath, data.sheet, args.rowLimit)
+				await runTuiFirstPaint(data.xlsxPath, data.sheet, args.rowLimit, false)
+			}
 			runGc()
 		}
 		for (let i = 0; i < args.repeat; i++) {
-			const full = await runFullOpenWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit)
-			const fullWarm = await runFullOpenWindow(
-				data.xlsxPath,
-				data.sheet,
-				data.range,
-				args.rowLimit,
-				false,
-			)
-			runGc()
-			const capped = await runCappedOpenWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit)
-			const cappedWarm = await runCappedOpenWindow(
-				data.xlsxPath,
-				data.sheet,
-				data.range,
-				args.rowLimit,
-				false,
-			)
-			runGc()
-			const api = await runApiFirstWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit)
-			const apiWarm = await runApiFirstWindow(
-				data.xlsxPath,
-				data.sheet,
-				data.range,
-				args.rowLimit,
-				false,
-			)
-			const apiCompactDefault = await runApiCompactDefault(data.xlsxPath, data.sheet, data.range)
-			const apiCompactDefaultWarm = await runApiCompactDefault(
-				data.xlsxPath,
-				data.sheet,
-				data.range,
-				false,
-			)
-			runGc()
-			const cli = await runCliReadFirstWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit)
-			const cliWarm = await runCliReadFirstWindow(
-				data.xlsxPath,
-				data.sheet,
-				data.range,
-				args.rowLimit,
-				false,
-			)
-			runGc()
-			const mcp = await runMcpFirstWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit)
-			const mcpWarm = await runMcpFirstWindow(
-				data.xlsxPath,
-				data.sheet,
-				data.range,
-				args.rowLimit,
-				false,
-			)
-			const mcpCompactDefault = await runMcpCompactDefault(data.xlsxPath, data.sheet, data.range)
-			const mcpCompactDefaultWarm = await runMcpCompactDefault(
-				data.xlsxPath,
-				data.sheet,
-				data.range,
-				false,
-			)
-			runGc()
-			const tui = await runTuiFirstPaint(data.xlsxPath, data.sheet, args.rowLimit)
-			const tuiWarm = await runTuiFirstPaint(data.xlsxPath, data.sheet, args.rowLimit, false)
-			runGc()
-			samples.push({
-				...full,
-				...capped,
-				...api,
-				...apiCompactDefault,
-				...cli,
-				...mcp,
-				...mcpCompactDefault,
-				...tui,
-				fullWarmOpenWindowMs: fullWarm.fullOpenWindowMs,
-				fullWarmOpenCalls: fullWarm.fullOpenCalls,
-				fullWarmHydratedOpenCount: fullWarm.fullHydratedOpenCount,
-				fullWarmDocumentCacheHits: fullWarm.fullDocumentCacheHits,
-				cappedWarmOpenWindowMs: cappedWarm.cappedOpenWindowMs,
-				cappedWarmOpenCalls: cappedWarm.cappedOpenCalls,
-				cappedWarmHydratedOpenCount: cappedWarm.cappedHydratedOpenCount,
-				cappedWarmDocumentCacheHits: cappedWarm.cappedDocumentCacheHits,
-				apiWarmFirstWindowMs: apiWarm.apiFirstWindowMs,
-				apiWarmCompactDefaultMs: apiCompactDefaultWarm.apiCompactDefaultMs,
-				apiWarmOpenCalls: apiWarm.apiOpenCalls,
-				apiWarmHydratedOpenCount: apiWarm.apiHydratedOpenCount,
-				apiWarmDocumentCacheHits: apiWarm.apiDocumentCacheHits,
-				cliWarmReadFirstWindowMs: cliWarm.cliReadFirstWindowMs,
-				cliWarmOpenCalls: cliWarm.cliOpenCalls,
-				cliWarmHydratedOpenCount: cliWarm.cliHydratedOpenCount,
-				cliWarmDocumentCacheHits: cliWarm.cliDocumentCacheHits,
-				mcpWarmFirstWindowMs: mcpWarm.mcpFirstWindowMs,
-				mcpWarmCompactDefaultMs: mcpCompactDefaultWarm.mcpCompactDefaultMs,
-				mcpWarmOpenCalls: mcpWarm.mcpOpenCalls,
-				mcpWarmHydratedOpenCount: mcpWarm.mcpHydratedOpenCount,
-				mcpWarmDocumentCacheHits: mcpWarm.mcpDocumentCacheHits,
-				tuiWarmFirstPaintMs: tuiWarm.tuiFirstPaintMs,
-				tuiWarmOpenMs: tuiWarm.tuiOpenMs,
-				tuiWarmRenderMs: tuiWarm.tuiRenderMs,
-				tuiWarmHydrateMs: tuiWarm.tuiHydrateMs,
-				tuiWarmOpenCalls: tuiWarm.tuiOpenCalls,
-				tuiWarmHydratedOpenCount: tuiWarm.tuiHydratedOpenCount,
-				tuiWarmDocumentCacheHits: tuiWarm.tuiDocumentCacheHits,
-				cells: mcp.cells,
-			})
+			const sample: Sample = { cells: 0 }
+			if (shouldRunCase(args, 'full')) {
+				const full = await runFullOpenWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit)
+				const fullWarm = await runFullOpenWindow(
+					data.xlsxPath,
+					data.sheet,
+					data.range,
+					args.rowLimit,
+					false,
+				)
+				Object.assign(sample, full, {
+					fullWarmOpenWindowMs: fullWarm.fullOpenWindowMs,
+					fullWarmOpenCalls: fullWarm.fullOpenCalls,
+					fullWarmHydratedOpenCount: fullWarm.fullHydratedOpenCount,
+					fullWarmDocumentCacheHits: fullWarm.fullDocumentCacheHits,
+				})
+				runGc()
+			}
+			if (shouldRunCase(args, 'capped')) {
+				const capped = await runCappedOpenWindow(
+					data.xlsxPath,
+					data.sheet,
+					data.range,
+					args.rowLimit,
+				)
+				const cappedWarm = await runCappedOpenWindow(
+					data.xlsxPath,
+					data.sheet,
+					data.range,
+					args.rowLimit,
+					false,
+				)
+				Object.assign(sample, capped, {
+					cappedWarmOpenWindowMs: cappedWarm.cappedOpenWindowMs,
+					cappedWarmOpenCalls: cappedWarm.cappedOpenCalls,
+					cappedWarmHydratedOpenCount: cappedWarm.cappedHydratedOpenCount,
+					cappedWarmDocumentCacheHits: cappedWarm.cappedDocumentCacheHits,
+				})
+				runGc()
+			}
+			if (shouldRunCase(args, 'api')) {
+				const api = await runApiFirstWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit)
+				const apiWarm = await runApiFirstWindow(
+					data.xlsxPath,
+					data.sheet,
+					data.range,
+					args.rowLimit,
+					false,
+				)
+				Object.assign(sample, api, {
+					apiWarmFirstWindowMs: apiWarm.apiFirstWindowMs,
+					apiWarmOpenCalls: apiWarm.apiOpenCalls,
+					apiWarmHydratedOpenCount: apiWarm.apiHydratedOpenCount,
+					apiWarmDocumentCacheHits: apiWarm.apiDocumentCacheHits,
+				})
+			}
+			if (shouldRunCase(args, 'api-compact')) {
+				const apiCompactDefault = await runApiCompactDefault(data.xlsxPath, data.sheet, data.range)
+				const apiCompactDefaultWarm = await runApiCompactDefault(
+					data.xlsxPath,
+					data.sheet,
+					data.range,
+					false,
+				)
+				Object.assign(sample, apiCompactDefault, {
+					apiWarmCompactDefaultMs: apiCompactDefaultWarm.apiCompactDefaultMs,
+				})
+				runGc()
+			}
+			if (shouldRunCase(args, 'cli')) {
+				const cli = await runCliReadFirstWindow(
+					data.xlsxPath,
+					data.sheet,
+					data.range,
+					args.rowLimit,
+				)
+				const cliWarm = await runCliReadFirstWindow(
+					data.xlsxPath,
+					data.sheet,
+					data.range,
+					args.rowLimit,
+					false,
+				)
+				Object.assign(sample, cli, {
+					cliWarmReadFirstWindowMs: cliWarm.cliReadFirstWindowMs,
+					cliWarmOpenCalls: cliWarm.cliOpenCalls,
+					cliWarmHydratedOpenCount: cliWarm.cliHydratedOpenCount,
+					cliWarmDocumentCacheHits: cliWarm.cliDocumentCacheHits,
+				})
+				runGc()
+			}
+			if (shouldRunCase(args, 'mcp')) {
+				const mcp = await runMcpFirstWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit)
+				const mcpWarm = await runMcpFirstWindow(
+					data.xlsxPath,
+					data.sheet,
+					data.range,
+					args.rowLimit,
+					false,
+				)
+				Object.assign(sample, mcp, {
+					mcpWarmFirstWindowMs: mcpWarm.mcpFirstWindowMs,
+					mcpWarmOpenCalls: mcpWarm.mcpOpenCalls,
+					mcpWarmHydratedOpenCount: mcpWarm.mcpHydratedOpenCount,
+					mcpWarmDocumentCacheHits: mcpWarm.mcpDocumentCacheHits,
+				})
+			}
+			if (shouldRunCase(args, 'mcp-compact')) {
+				const mcpCompactDefault = await runMcpCompactDefault(data.xlsxPath, data.sheet, data.range)
+				const mcpCompactDefaultWarm = await runMcpCompactDefault(
+					data.xlsxPath,
+					data.sheet,
+					data.range,
+					false,
+				)
+				Object.assign(sample, mcpCompactDefault, {
+					mcpWarmCompactDefaultMs: mcpCompactDefaultWarm.mcpCompactDefaultMs,
+				})
+				runGc()
+			}
+			if (shouldRunCase(args, 'tui')) {
+				const tui = await runTuiFirstPaint(data.xlsxPath, data.sheet, args.rowLimit)
+				const tuiWarm = await runTuiFirstPaint(data.xlsxPath, data.sheet, args.rowLimit, false)
+				Object.assign(sample, tui, {
+					tuiWarmFirstPaintMs: tuiWarm.tuiFirstPaintMs,
+					tuiWarmOpenMs: tuiWarm.tuiOpenMs,
+					tuiWarmRenderMs: tuiWarm.tuiRenderMs,
+					tuiWarmHydrateMs: tuiWarm.tuiHydrateMs,
+					tuiWarmOpenCalls: tuiWarm.tuiOpenCalls,
+					tuiWarmHydratedOpenCount: tuiWarm.tuiHydratedOpenCount,
+					tuiWarmDocumentCacheHits: tuiWarm.tuiDocumentCacheHits,
+				})
+				runGc()
+			}
+			samples.push(sample)
 		}
 		const payload = {
 			tool: 'agent-first-window',

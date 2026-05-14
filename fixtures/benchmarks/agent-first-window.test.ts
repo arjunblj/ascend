@@ -205,6 +205,57 @@ describe('agent first-window benchmark', () => {
 		expect(payload.summary?.tuiFrameBytesMedian).toBeGreaterThan(0)
 	})
 
+	test('can isolate one first-window case for profiling', async () => {
+		const proc = Bun.spawn(
+			[
+				Bun.argv[0],
+				runnerPath,
+				'--rows',
+				'800',
+				'--cols',
+				'8',
+				'--row-limit',
+				'500',
+				'--repeat',
+				'1',
+				'--warmup',
+				'0',
+				'--only',
+				'capped',
+				'--json',
+			],
+			{ cwd: process.cwd(), stderr: 'pipe', stdout: 'pipe' },
+		)
+		const [stdout, stderr, exitCode] = await Promise.all([
+			new Response(proc.stdout).text(),
+			new Response(proc.stderr).text(),
+			proc.exited,
+		])
+		expect(exitCode, stderr).toBe(0)
+		const payload = JSON.parse(stdout) as {
+			readonly args?: { readonly only?: string }
+			readonly summary?: {
+				readonly fullOpenWindowMedianMs?: number
+				readonly cappedOpenWindowMedianMs?: number
+				readonly cappedWarmOpenWindowMedianMs?: number
+				readonly cappedHydratedCellsMedian?: number
+				readonly apiFirstWindowMedianMs?: number
+				readonly mcpFirstWindowMedianMs?: number
+				readonly tuiFirstPaintMedianMs?: number
+				readonly cellsMedian?: number
+			}
+		}
+		expect(payload.args?.only).toBe('capped')
+		expect(payload.summary?.cappedOpenWindowMedianMs).toBeNumber()
+		expect(payload.summary?.cappedWarmOpenWindowMedianMs).toBeNumber()
+		expect(payload.summary?.cappedHydratedCellsMedian).toBe(500 * 8)
+		expect(payload.summary?.cellsMedian).toBe(500 * 8)
+		expect(payload.summary?.fullOpenWindowMedianMs).toBeUndefined()
+		expect(payload.summary?.apiFirstWindowMedianMs).toBeUndefined()
+		expect(payload.summary?.mcpFirstWindowMedianMs).toBeUndefined()
+		expect(payload.summary?.tuiFirstPaintMedianMs).toBeUndefined()
+	})
+
 	test('runs against an existing input workbook without deleting it', async () => {
 		const proc = Bun.spawn(
 			[

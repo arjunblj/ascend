@@ -247,6 +247,20 @@ function applyDensityHintFromDimension(sheet: Sheet, xml: string): void {
 	}
 }
 
+function isFullWorksheetDimensionRef(ref: string): boolean {
+	try {
+		const range = parseRange(ref)
+		return (
+			range.start.row === 0 &&
+			range.start.col === 0 &&
+			range.end.row >= 1_048_575 &&
+			range.end.col >= 16_383
+		)
+	} catch {
+		return false
+	}
+}
+
 export function parseSheet(
 	name: string,
 	xml: string,
@@ -350,6 +364,8 @@ export function parseSheetFullScalarBytes(
 	const sheet = new Sheet(name, sheetId)
 	const dimensionRef = parseDimensionRefBytes(bytes)
 	sheet.preservedDimensionRef = dimensionRef
+	if (!dimensionRef || isFullWorksheetDimensionRef(dimensionRef))
+		sheet.cells.setExpectedDensity('auto')
 	applyDensityHintFromDimensionRef(sheet, dimensionRef)
 	if (sheetDataStart.selfClosing) {
 		if (
@@ -568,7 +584,7 @@ const BYTES_IS_CLOSE = bytesLiteral('</is>')
 const BYTES_CANONICAL_INLINE_STRING_PREFIX = bytesLiteral('" t="inlineStr"><is><t>')
 const BYTES_CANONICAL_INLINE_STRING_SUFFIX = bytesLiteral('</t></is></c>')
 const EMPTY_BYTES = new Uint8Array(0)
-const MIN_FULL_SCALAR_NUMBER_SPAN_ROW_BYTES = 512
+const MIN_FULL_SCALAR_NUMBER_SPAN_ROW_BYTES = 192
 
 const VALUES_MODE_ALLOWED_OUTER_TAGS = new Set(['worksheet', 'dimension', 'sheetData'])
 

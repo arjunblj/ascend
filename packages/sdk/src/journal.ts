@@ -1736,12 +1736,33 @@ function journalSortRange(
 	const formulaBindings = formulaBindingOnlyPreimages(workbook, op.sheet, refs)
 	const cells = uniqueCellPreimages([...rangeCells, ...formulaBindings])
 	const { inverseOps: cellInverseOps, issues: cellIssues } = inverseCellOps(cells)
+	const comments =
+		sheet && dataRange && hasMapRefInRange(sheet.comments, dataRange)
+			? commentPreimages(workbook, op.sheet, refs)
+			: []
+	const hyperlinks =
+		sheet && dataRange && hasMapRefInRange(sheet.hyperlinks, dataRange)
+			? hyperlinkPreimages(workbook, op.sheet, refs)
+			: []
 	return {
 		opIndex,
 		op,
-		inverseOps: [...cellInverseOps, ...styleInverseOps(rangeCells)],
-		preimages: [{ kind: 'cells', cells }],
-		issues: [...cellIssues, ...sortRangeMetadataIssues(workbook, op)],
+		inverseOps: [
+			...cellInverseOps,
+			...styleInverseOps(rangeCells),
+			...restoreCommentOps(comments),
+			...restoreHyperlinkOps(hyperlinks),
+		],
+		preimages: [
+			{ kind: 'cells', cells },
+			...comments.map((comment) => ({ kind: 'comment' as const, comment })),
+			...hyperlinks.map((hyperlink) => ({ kind: 'hyperlink' as const, hyperlink })),
+		],
+		issues: [
+			...cellIssues,
+			...sortRangeMetadataIssues(workbook, op),
+			...commentRestoreIssues(comments),
+		],
 	}
 }
 
@@ -4061,8 +4082,6 @@ function sortRangeMetadataIssues(
 	)
 	if (
 		hasRowHeights ||
-		hasMapRefInRange(sheet.comments, dataRange) ||
-		hasMapRefInRange(sheet.hyperlinks, dataRange) ||
 		sheet.threadedComments.some((comment) => refInRange(comment.ref, dataRange)) ||
 		sheet.dataValidations.some((validation) => sqrefOverlaps(validation.sqref, dataRange)) ||
 		sheet.conditionalFormats.some((format) => sqrefOverlaps(format.sqref, dataRange)) ||
@@ -4845,6 +4864,18 @@ function restoreCommentOps(comments: readonly MutationJournalCommentPreimage[]):
 				}
 			: { op: 'deleteComment', sheet: comment.sheet, ref: comment.ref },
 	)
+}
+
+function commentRestoreIssues(
+	comments: readonly MutationJournalCommentPreimage[],
+): readonly MutationJournalIssue[] {
+	return comments
+		.filter((preimage) => preimage.comment?.legacyDrawing)
+		.map((preimage) => ({
+			code: 'LOSSY_INVERSE' as const,
+			message: `Legacy comment drawing metadata for ${preimage.sheet}!${preimage.ref} cannot be restored with public operations`,
+			refs: [`${preimage.sheet}!${preimage.ref}`],
+		}))
 }
 
 function commentTransferIssues(

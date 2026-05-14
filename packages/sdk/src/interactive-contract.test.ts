@@ -3339,7 +3339,7 @@ describe('interactive client contract', () => {
 		expect(wb.cellStyle('Sheet1!B2')?.numberFormat).toBe('0.00')
 	})
 
-	test('sortRange journals mark moved row metadata lossy', () => {
+	test('sortRange journals mark moved row layout metadata lossy', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([
 			{
@@ -3354,8 +3354,10 @@ describe('interactive client contract', () => {
 					{ ref: 'B3', value: 1 },
 				],
 			},
-			{ op: 'setComment', sheet: 'Sheet1', ref: 'A2', text: 'check', author: 'agent' },
 		])
+		const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+		if (!sheet) throw new Error('missing sheet')
+		sheet.rowHeights.set(1, 24)
 
 		const changed = wb.apply(
 			[{ op: 'sortRange', sheet: 'Sheet1', range: 'A1:B3', by: [{ column: 'Qty' }] }],
@@ -3370,6 +3372,84 @@ describe('interactive client contract', () => {
 			message:
 				'Sorted row metadata on Sheet1!A1:B3 cannot be fully restored with public operations',
 			refs: ['Sheet1!A1:B3'],
+		})
+	})
+
+	test('sortRange exact journals restore simple comments and hyperlinks', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'Region' },
+					{ ref: 'B1', value: 'Qty' },
+					{ ref: 'A2', value: 'West' },
+					{ ref: 'B2', value: 2 },
+					{ ref: 'A3', value: 'East' },
+					{ ref: 'B3', value: 1 },
+				],
+			},
+			{ op: 'setComment', sheet: 'Sheet1', ref: 'A2', text: 'west note', author: 'agent' },
+			{ op: 'setHyperlink', sheet: 'Sheet1', ref: 'A3', url: 'https://east.example' },
+		])
+		const before = journalComparableState(wb)
+
+		const changed = wb.apply(
+			[{ op: 'sortRange', sheet: 'Sheet1', range: 'A1:B3', by: [{ column: 'Qty' }] }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(true)
+		expect(changed.journal?.issues).toEqual([])
+		const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+		expect(sheet?.comments.get('A3')).toEqual({ text: 'west note', author: 'agent' })
+		expect(sheet?.hyperlinks.get('A2')).toEqual({ target: 'https://east.example' })
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(journalComparableState(wb)).toEqual(before)
+	})
+
+	test('sortRange journals mark legacy comment drawings lossy', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'Region' },
+					{ ref: 'B1', value: 'Qty' },
+					{ ref: 'A2', value: 'West' },
+					{ ref: 'B2', value: 2 },
+					{ ref: 'A3', value: 'East' },
+					{ ref: 'B3', value: 1 },
+				],
+			},
+		])
+		const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+		if (!sheet) throw new Error('missing sheet')
+		sheet.comments.set('A2', {
+			text: 'west note',
+			author: 'agent',
+			legacyDrawing: { shapeId: '_x0000_s1025', row: 1, column: 0 },
+		})
+
+		const changed = wb.apply(
+			[{ op: 'sortRange', sheet: 'Sheet1', range: 'A1:B3', by: [{ column: 'Qty' }] }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(false)
+		expect(changed.journal?.issues).toContainEqual({
+			code: 'LOSSY_INVERSE',
+			message:
+				'Legacy comment drawing metadata for Sheet1!A2 cannot be restored with public operations',
+			refs: ['Sheet1!A2'],
 		})
 	})
 

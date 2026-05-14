@@ -494,6 +494,8 @@ function buildSupportedJournalEntry(
 			return journalRenameTable(workbook, op, opIndex)
 		case 'createTable':
 			return journalCreateTable(op, opIndex)
+		case 'sortRange':
+			return journalSortRange(workbook, op, opIndex)
 		case 'deleteTable':
 			return journalDeleteTable(workbook, op, opIndex)
 		case 'resizeTable':
@@ -1666,6 +1668,24 @@ function journalCreateTable(
 			},
 		],
 		issues: [],
+	}
+}
+
+function journalSortRange(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'sortRange' }>,
+	opIndex: number,
+): DraftJournalEntry {
+	const rangeCells = cellPreimages(workbook, op.sheet, refsInRange(op.range))
+	const formulaBindings = sheetFormulaBindingCellPreimages(workbook, op.sheet)
+	const cells = uniqueCellPreimages([...rangeCells, ...formulaBindings])
+	const { inverseOps: cellInverseOps, issues: cellIssues } = inverseCellOps(cells)
+	return {
+		opIndex,
+		op,
+		inverseOps: [...cellInverseOps, ...styleInverseOps(rangeCells)],
+		preimages: [{ kind: 'cells', cells }],
+		issues: [...cellIssues, ...sortRangeMetadataIssues(workbook, op)],
 	}
 }
 
@@ -3517,6 +3537,70 @@ function rangesOverlap(a: RangeRef, b: RangeRef): boolean {
 	)
 }
 
+function sortRangeMetadataIssues(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'sortRange' }>,
+): readonly MutationJournalIssue[] {
+	const sheet = workbook.getSheet(op.sheet)
+	if (!sheet) return []
+	const dataRange = sortRangeDataRange(sheet, op.range, op.by)
+	if (!dataRange) return []
+	const hasRowHeights = [...sheet.rowHeights.keys()].some(
+		(row) => row >= dataRange.start.row && row <= dataRange.end.row,
+	)
+	if (
+		hasRowHeights ||
+		hasMapRefInRange(sheet.comments, dataRange) ||
+		hasMapRefInRange(sheet.hyperlinks, dataRange) ||
+		sheet.threadedComments.some((comment) => refInRange(comment.ref, dataRange)) ||
+		sheet.dataValidations.some((validation) => sqrefOverlaps(validation.sqref, dataRange)) ||
+		sheet.conditionalFormats.some((format) => sqrefOverlaps(format.sqref, dataRange)) ||
+		sheet.ignoredErrors.some((entry) => sqrefOverlaps(entry.sqref, dataRange))
+	) {
+		return [
+			{
+				code: 'LOSSY_INVERSE',
+				message: `Sorted row metadata on ${op.sheet}!${op.range} cannot be fully restored with public operations`,
+				refs: [`${op.sheet}!${op.range}`],
+			},
+		]
+	}
+	return []
+}
+
+function sortRangeDataRange(
+	sheet: Sheet,
+	rangeText: string,
+	specs: Extract<Operation, { op: 'sortRange' }>['by'],
+): RangeRef | null {
+	const range = parseRange(rangeText)
+	const startRow = sortRangeHasHeaderRow(sheet, range, specs)
+		? range.start.row + 1
+		: range.start.row
+	if (startRow > range.end.row) return null
+	return {
+		start: { row: startRow, col: range.start.col },
+		end: { ...range.end },
+	}
+}
+
+function sortRangeHasHeaderRow(
+	sheet: Sheet,
+	range: RangeRef,
+	specs: Extract<Operation, { op: 'sortRange' }>['by'],
+): boolean {
+	const headerMap = new Set<string>()
+	for (let col = range.start.col; col <= range.end.col; col++) {
+		const value = sheet.cells.readValue(range.start.row, col)
+		if (value?.kind === 'string' && value.value.trim() !== '') {
+			headerMap.add(value.value.trim().toLowerCase())
+		}
+	}
+	return specs.some(
+		(spec) => typeof spec.column === 'string' && headerMap.has(spec.column.trim().toLowerCase()),
+	)
+}
+
 function cellEditPreimages(
 	workbook: Workbook,
 	sheetName: string,
@@ -3545,6 +3629,27 @@ function workbookFormulaBindingCellPreimages(workbook: Workbook): MutationJourna
 		cells.push(...cellPreimages(workbook, sheet.name, refs))
 	}
 	return cells
+}
+
+function sheetFormulaBindingCellPreimages(
+	workbook: Workbook,
+	sheetName: string,
+): MutationJournalCellPreimage[] {
+	const sheet = workbook.getSheet(sheetName)
+	if (!sheet || sheet.cells.formulaInfoCellCount() === 0) return []
+	const refs: string[] = []
+	for (const [row, col, cell] of sheet.cells.iterate()) {
+		if (isMaterializedFormulaBindingInfo(cell.formulaInfo)) refs.push(toA1({ row, col }))
+	}
+	return cellPreimages(workbook, sheet.name, refs)
+}
+
+function uniqueCellPreimages(
+	cells: readonly MutationJournalCellPreimage[],
+): MutationJournalCellPreimage[] {
+	const unique = new Map<string, MutationJournalCellPreimage>()
+	for (const cell of cells) unique.set(`${cell.sheet}!${cell.ref}`, cell)
+	return [...unique.values()]
 }
 
 function tableColumnFormulaBindingCellPreimages(

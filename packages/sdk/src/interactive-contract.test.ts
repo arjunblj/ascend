@@ -2999,6 +2999,80 @@ describe('interactive client contract', () => {
 		expect(changed.journal?.inverseOps).toEqual([])
 	})
 
+	test('journal inverse ops restore simple sortRange cell and style state', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'Region' },
+					{ ref: 'B1', value: 'Qty' },
+					{ ref: 'A2', value: 'West' },
+					{ ref: 'B2', value: 3 },
+					{ ref: 'A3', value: 'East' },
+					{ ref: 'B3', value: 1 },
+					{ ref: 'A4', value: 'North' },
+					{ ref: 'B4', value: 2 },
+				],
+			},
+			{ op: 'setStyle', sheet: 'Sheet1', range: 'B2:B4', style: { numberFormat: '0.00' } },
+		])
+
+		const changed = wb.apply(
+			[{ op: 'sortRange', sheet: 'Sheet1', range: 'A1:B4', by: [{ column: 'Qty' }] }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(true)
+		expect(wb.sheet('Sheet1')?.cell('A2')?.value).toEqual({ kind: 'string', value: 'East' })
+		expect(wb.sheet('Sheet1')?.cell('A4')?.value).toEqual({ kind: 'string', value: 'West' })
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(wb.sheet('Sheet1')?.cell('A2')?.value).toEqual({ kind: 'string', value: 'West' })
+		expect(wb.sheet('Sheet1')?.cell('B2')?.value).toEqual({ kind: 'number', value: 3 })
+		expect(wb.sheet('Sheet1')?.cell('A3')?.value).toEqual({ kind: 'string', value: 'East' })
+		expect(wb.sheet('Sheet1')?.cell('B3')?.value).toEqual({ kind: 'number', value: 1 })
+		expect(wb.cellStyle('Sheet1!B2')?.numberFormat).toBe('0.00')
+	})
+
+	test('sortRange journals mark moved row metadata lossy', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'Region' },
+					{ ref: 'B1', value: 'Qty' },
+					{ ref: 'A2', value: 'West' },
+					{ ref: 'B2', value: 2 },
+					{ ref: 'A3', value: 'East' },
+					{ ref: 'B3', value: 1 },
+				],
+			},
+			{ op: 'setComment', sheet: 'Sheet1', ref: 'A2', text: 'check', author: 'agent' },
+		])
+
+		const changed = wb.apply(
+			[{ op: 'sortRange', sheet: 'Sheet1', range: 'A1:B3', by: [{ column: 'Qty' }] }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(false)
+		expect(changed.journal?.issues).toContainEqual({
+			code: 'LOSSY_INVERSE',
+			message:
+				'Sorted row metadata on Sheet1!A1:B3 cannot be fully restored with public operations',
+			refs: ['Sheet1!A1:B3'],
+		})
+	})
+
 	test('journals expose lossy imported formula-binding metadata preimages', () => {
 		const wb = AscendWorkbook.create()
 		const sheet = wb.getWorkbookModel().getSheet('Sheet1')

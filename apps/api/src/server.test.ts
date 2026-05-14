@@ -1000,6 +1000,78 @@ describe('Ascend API server', () => {
 		])
 	})
 
+	test('write can explicitly rewrite imported formula bindings without stale metadata', async () => {
+		await Bun.write(TEMP_FILE, sharedOnlyFormulaWorkbook())
+		const sharedWrite = await postJson('/write', {
+			file: TEMP_FILE,
+			ops: [
+				{ op: 'setFormula', sheet: 'Calc', ref: 'B1', formula: '1+1' },
+				{ op: 'setFormula', sheet: 'Calc', ref: 'B2', formula: '2+2' },
+			],
+		})
+
+		expect(sharedWrite.status).toBe(200)
+		expect(sharedWrite.body.ok).toBe(true)
+		const sharedRead = await postJson('/read', {
+			file: TEMP_FILE,
+			sheet: 'Calc',
+			range: 'B1:B2',
+			format: 'cells',
+			display: true,
+		})
+		expect(
+			(
+				sharedRead.body.data?.cells as
+					| Array<{
+							readonly ref?: string
+							readonly value?: string
+							readonly formula?: string
+							readonly formulaBinding?: unknown
+					  }>
+					| undefined
+			)?.map((cell) => [cell.ref, cell.value, cell.formula, cell.formulaBinding ?? null]),
+		).toEqual([
+			['B1', '2', '1+1', null],
+			['B2', '4', '2+2', null],
+		])
+
+		await Bun.write(TEMP_FILE, dynamicArrayWorkbook())
+		const dynamicWrite = await postJson('/write', {
+			file: TEMP_FILE,
+			ops: [
+				{ op: 'setFormula', sheet: 'Calc', ref: 'A1', formula: '1+1' },
+				{ op: 'setFormula', sheet: 'Calc', ref: 'B1', formula: 'A1+1' },
+				{ op: 'setFormula', sheet: 'Calc', ref: 'C1', formula: 'A1+2' },
+			],
+		})
+
+		expect(dynamicWrite.status).toBe(200)
+		expect(dynamicWrite.body.ok).toBe(true)
+		const dynamicRead = await postJson('/read', {
+			file: TEMP_FILE,
+			sheet: 'Calc',
+			range: 'A1:C1',
+			format: 'cells',
+			display: true,
+		})
+		expect(
+			(
+				dynamicRead.body.data?.cells as
+					| Array<{
+							readonly ref?: string
+							readonly value?: string
+							readonly formula?: string
+							readonly formulaBinding?: unknown
+					  }>
+					| undefined
+			)?.map((cell) => [cell.ref, cell.value, cell.formula, cell.formulaBinding ?? null]),
+		).toEqual([
+			['A1', '2', '1+1', null],
+			['B1', '3', 'A1+1', null],
+			['C1', '4', 'A1+2', null],
+		])
+	})
+
 	test('read returns compact first-window data with partial load metadata', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

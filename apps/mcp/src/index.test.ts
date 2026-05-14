@@ -5684,6 +5684,97 @@ describe('MCP server', () => {
 		])
 	})
 
+	test('ascend.write can explicitly rewrite imported formula bindings without stale metadata', async () => {
+		await Bun.write(TEMP_FILE, sharedOnlyFormulaWorkbook())
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const write = (server as any)._registeredTools['ascend.write'].handler as (args: {
+			file: string
+			ops: readonly Record<string, unknown>[]
+		}) => Promise<{
+			structuredContent?: {
+				ok?: boolean
+			}
+		}>
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const read = (server as any)._registeredTools['ascend.read'].handler as (args: {
+			file: string
+			sheet?: string
+			range: string
+			format: 'cells'
+			display?: boolean
+		}) => Promise<{
+			structuredContent?: {
+				data?: {
+					cells?: Array<{
+						readonly ref?: string
+						readonly value?: string
+						readonly formula?: string
+						readonly formulaBinding?: unknown
+					}>
+				}
+			}
+		}>
+
+		const sharedWrite = await write({
+			file: TEMP_FILE,
+			ops: [
+				{ op: 'setFormula', sheet: 'Calc', ref: 'B1', formula: '1+1' },
+				{ op: 'setFormula', sheet: 'Calc', ref: 'B2', formula: '2+2' },
+			],
+		})
+		expect(sharedWrite.structuredContent?.ok).toBe(true)
+		const sharedRead = await read({
+			file: TEMP_FILE,
+			sheet: 'Calc',
+			range: 'B1:B2',
+			format: 'cells',
+			display: true,
+		})
+		expect(
+			sharedRead.structuredContent?.data?.cells?.map((cell) => [
+				cell.ref,
+				cell.value,
+				cell.formula,
+				cell.formulaBinding ?? null,
+			]),
+		).toEqual([
+			['B1', '2', '1+1', null],
+			['B2', '4', '2+2', null],
+		])
+
+		await Bun.write(TEMP_FILE, dynamicArrayWorkbook())
+		const dynamicWrite = await write({
+			file: TEMP_FILE,
+			ops: [
+				{ op: 'setFormula', sheet: 'Calc', ref: 'A1', formula: '1+1' },
+				{ op: 'setFormula', sheet: 'Calc', ref: 'B1', formula: 'A1+1' },
+				{ op: 'setFormula', sheet: 'Calc', ref: 'C1', formula: 'A1+2' },
+			],
+		})
+		expect(dynamicWrite.structuredContent?.ok).toBe(true)
+		const dynamicRead = await read({
+			file: TEMP_FILE,
+			sheet: 'Calc',
+			range: 'A1:C1',
+			format: 'cells',
+			display: true,
+		})
+		expect(
+			dynamicRead.structuredContent?.data?.cells?.map((cell) => [
+				cell.ref,
+				cell.value,
+				cell.formula,
+				cell.formulaBinding ?? null,
+			]),
+		).toEqual([
+			['A1', '2', '1+1', null],
+			['B1', '3', 'A1+1', null],
+			['C1', '4', 'A1+2', null],
+		])
+	})
+
 	test('ascend.read prunes TSV columns by letter and range position', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

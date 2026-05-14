@@ -1152,7 +1152,11 @@ function formulaCellXml(
 		: ''
 	const sAttr = xfIdx !== 0 ? ` s="${xfIdx}"` : ''
 	const dynamicArrayMetadataIndex = dynamicArrayCellMetadataIndex(cell.formulaInfo)
-	const metadataAttrs = formulaCellMetadataAttrs(dynamicArrayMetadataIndex, preservedCellMetadata)
+	const metadataAttrs = formulaCellMetadataAttrs(
+		dynamicArrayMetadataIndex,
+		preservedCellMetadata,
+		cell.formulaInfo !== undefined,
+	)
 	const { typeAttr, valueStr } = formulaValueAttrs(cell.value)
 	const tAttr = typeAttr ? ` t="${typeAttr}"` : ''
 	const vPart = valueStr !== undefined ? `<v>${valueStr}</v>` : ''
@@ -1185,15 +1189,17 @@ function formulaCellXml(
 function formulaCellMetadataAttrs(
 	generatedCm: number | undefined,
 	preserved: SheetCellMetadataAttrs | undefined,
+	preserveCellMetadata: boolean,
 ): string {
 	const attrs: string[] = []
 	if (generatedCm !== undefined) {
 		attrs.push(`cm="${generatedCm}"`)
-	} else if (preserved?.cm !== undefined) {
+	} else if (preserveCellMetadata && preserved?.cm !== undefined) {
 		attrs.push(`cm="${preserved.cm}"`)
 	}
-	if (preserved?.vm !== undefined) attrs.push(`vm="${preserved.vm}"`)
-	if (preserved?.ph !== undefined) attrs.push(`ph="${preserved.ph ? '1' : '0'}"`)
+	if (preserveCellMetadata && preserved?.vm !== undefined) attrs.push(`vm="${preserved.vm}"`)
+	if (preserveCellMetadata && preserved?.ph !== undefined)
+		attrs.push(`ph="${preserved.ph ? '1' : '0'}"`)
 	return attrs.length > 0 ? ` ${attrs.join(' ')}` : ''
 }
 

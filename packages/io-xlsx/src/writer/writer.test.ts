@@ -1363,6 +1363,74 @@ describe('writeXlsx', () => {
 		expect(xml).toContain('<c r="B1"><v>5</v></c>')
 	})
 
+	it('drops preserved dynamic-array metadata attrs when a formula cell is rewritten ordinary', () => {
+		const source = makeXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/metadata.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheetMetadata+xml"/>
+</Types>`,
+			'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rId2" Type="http://purl.oclc.org/ooxml/officeDocument/relationships/sheetMetadata" Target="metadata.xml"/>
+</Relationships>`,
+			'xl/workbook.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Dynamic" sheetId="1" r:id="rId1"/></sheets>
+</workbook>`,
+			'xl/metadata.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<metadata xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:xda="http://schemas.microsoft.com/office/spreadsheetml/2017/dynamicarray">
+  <metadataTypes count="1">
+    <metadataType name="XLDAPR" minSupportedVersion="120000" cellMeta="1"/>
+  </metadataTypes>
+  <futureMetadata name="XLDAPR" count="1">
+    <bk><extLst><ext uri="{bdbb8cdc-fa1e-496e-a857-3c3f30c029c3}"><xda:dynamicArrayProperties fDynamic="1" fCollapsed="0"/></ext></extLst></bk>
+  </futureMetadata>
+  <cellMetadata count="1">
+    <bk><rc t="1" v="0"/></bk>
+  </cellMetadata>
+</metadata>`,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData><row r="1"><c r="A1" cm="1"><f>_xlfn.SEQUENCE(2)</f><v>1</v></c></row></sheetData>
+</worksheet>`,
+		})
+		const read = readXlsx(source)
+		expectOk(read)
+		const sheet = read.value.workbook.sheets[0]
+		expect(sheet?.cells.get(0, 0)?.formulaInfo).toEqual({
+			kind: 'dynamicArray',
+			metadataIndex: 1,
+			collapsed: false,
+		})
+		sheet?.cells.set(0, 0, { value: numberValue(2), formula: '1+1', styleId: S0 })
+
+		const written = writeXlsx(read.value.workbook, read.value.capsules, {
+			dirtySheetNames: ['Dynamic'],
+		})
+		expectOk(written)
+		const zip = unzipSync(written.value)
+		const sheetXml = new TextDecoder().decode(zip['xl/worksheets/sheet1.xml'] ?? new Uint8Array())
+
+		expect(sheetXml).toContain('<c r="A1"><f>1+1</f><v>2</v></c>')
+		expect(sheetXml).not.toContain('<c r="A1" cm=')
+
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+		expect(reopened.value.workbook.sheets[0]?.cells.get(0, 0)?.formula).toBe('1+1')
+		expect(reopened.value.workbook.sheets[0]?.cells.get(0, 0)?.formulaInfo).toBeUndefined()
+	})
+
 	it('round-trips shared formula bindings', () => {
 		const wb = new Workbook()
 		const sheet = wb.addSheet('Shared')

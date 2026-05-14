@@ -3579,6 +3579,8 @@ const scenarios: readonly Scenario[] = [
 						'readMutableGridSharing',
 						workbookGridSharingAssertions(readModel, mutableModel),
 					),
+					...prefixAssertions('readGridStorage', workbookGridStorageAssertions(readModel)),
+					...prefixAssertions('mutableGridStorage', workbookGridStorageAssertions(mutableModel)),
 				},
 			}
 		},

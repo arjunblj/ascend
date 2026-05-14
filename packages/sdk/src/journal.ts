@@ -1,5 +1,6 @@
 import {
 	type AutoFilter,
+	type Cell,
 	type CellStyle,
 	type ChartPartInfo,
 	type ChartSeriesInfo,
@@ -69,6 +70,7 @@ export interface MutationJournalCellPreimage {
 	readonly existed: boolean
 	readonly value: CellValue
 	readonly formula: string | null
+	readonly formulaInfo?: Cell['formulaInfo']
 	readonly styleId: number
 	readonly style: CellStyle
 }
@@ -472,7 +474,7 @@ function buildSupportedJournalEntry(
 		case 'deleteDefinedName':
 			return journalDeleteDefinedName(workbook, op, opIndex)
 		case 'renameTable':
-			return journalRenameTable(op, opIndex)
+			return journalRenameTable(workbook, op, opIndex)
 		case 'createTable':
 			return journalCreateTable(op, opIndex)
 		case 'deleteTable':
@@ -514,13 +516,7 @@ function buildSupportedJournalEntry(
 		case 'setTheme':
 			return journalSetTheme(workbook, op, opIndex)
 		case 'renameSheet':
-			return {
-				opIndex,
-				op,
-				inverseOps: [{ op: 'renameSheet', sheet: op.newName, newName: op.sheet }],
-				preimages: [],
-				issues: [],
-			}
+			return journalRenameSheet(workbook, op, opIndex)
 		case 'moveSheet':
 			return journalMoveSheet(workbook, op, opIndex)
 		case 'addSheet':
@@ -1236,7 +1232,7 @@ function journalSetCells(
 	op: Extract<Operation, { op: 'setCells' }>,
 	opIndex: number,
 ): DraftJournalEntry {
-	const cells = cellPreimages(
+	const cells = cellEditPreimages(
 		workbook,
 		op.sheet,
 		op.updates.map((update) => update.ref),
@@ -1256,7 +1252,7 @@ function journalSetFormula(
 	op: Extract<Operation, { op: 'setFormula' }>,
 	opIndex: number,
 ): DraftJournalEntry {
-	const cells = cellPreimages(workbook, op.sheet, [op.ref])
+	const cells = cellEditPreimages(workbook, op.sheet, [op.ref])
 	const { inverseOps, issues } = inverseCellOps(cells)
 	return {
 		opIndex,
@@ -1273,8 +1269,8 @@ function journalClearRange(
 	opIndex: number,
 ): DraftJournalEntry {
 	const refs = refsInRange(op.range)
-	const cells = cellPreimages(workbook, op.sheet, refs)
 	if (op.what === 'styles') {
+		const cells = cellPreimages(workbook, op.sheet, refs)
 		return {
 			opIndex,
 			op,
@@ -1283,6 +1279,7 @@ function journalClearRange(
 			issues: [],
 		}
 	}
+	const cells = cellEditPreimages(workbook, op.sheet, refs)
 	const { inverseOps: cellInverseOps, issues } = inverseCellOps(cells)
 	const inverseOps =
 		op.what === 'all' ? [...cellInverseOps, ...styleInverseOps(cells)] : cellInverseOps
@@ -1538,17 +1535,38 @@ function journalDeleteDefinedName(
 	}
 }
 
+function journalRenameSheet(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'renameSheet' }>,
+	opIndex: number,
+): DraftJournalEntry {
+	const formulaBindings = formulaBindingJournalAddendum(
+		workbookFormulaBindingCellPreimages(workbook),
+	)
+	return {
+		opIndex,
+		op,
+		inverseOps: [{ op: 'renameSheet', sheet: op.newName, newName: op.sheet }],
+		preimages: formulaBindings.preimages,
+		issues: formulaBindings.issues,
+	}
+}
+
 function journalRenameTable(
+	workbook: Workbook,
 	op: Extract<Operation, { op: 'renameTable' }>,
 	opIndex: number,
 ): DraftJournalEntry {
 	const tableRename = { table: op.table, existed: true }
+	const formulaBindings = formulaBindingJournalAddendum(
+		workbookFormulaBindingCellPreimages(workbook),
+	)
 	return {
 		opIndex,
 		op,
 		inverseOps: [{ op: 'renameTable', table: op.newName, newName: op.table }],
-		preimages: [{ kind: 'table-rename', tableRename }],
-		issues: [],
+		preimages: [{ kind: 'table-rename', tableRename }, ...formulaBindings.preimages],
+		issues: formulaBindings.issues,
 	}
 }
 
@@ -1577,12 +1595,15 @@ function journalDeleteTable(
 ): DraftJournalEntry {
 	const preimage = tablePreimage(workbook, op.table)
 	const { inverseOps, issues } = restoreTableOps(preimage)
+	const formulaBindings = formulaBindingJournalAddendum(
+		workbookFormulaBindingCellPreimages(workbook),
+	)
 	return {
 		opIndex,
 		op,
 		inverseOps,
-		preimages: [{ kind: 'table', table: preimage }],
-		issues,
+		preimages: [{ kind: 'table', table: preimage }, ...formulaBindings.preimages],
+		issues: [...issues, ...formulaBindings.issues],
 	}
 }
 
@@ -1598,12 +1619,15 @@ function journalResizeTable(
 				tableName: op.table,
 			})
 		: { inverseOps: [], issues: missingTableIssues(op.table) }
+	const formulaBindings = formulaBindingJournalAddendum(
+		workbookFormulaBindingCellPreimages(workbook),
+	)
 	return {
 		opIndex,
 		op,
 		inverseOps,
-		preimages: [{ kind: 'table', table: preimage }],
-		issues,
+		preimages: [{ kind: 'table', table: preimage }, ...formulaBindings.preimages],
+		issues: [...issues, ...formulaBindings.issues],
 	}
 }
 
@@ -1614,12 +1638,15 @@ function journalSetTableColumn(
 ): DraftJournalEntry {
 	const preimage = tableColumnPreimage(workbook, op.table, op.column)
 	const { inverseOps, issues } = restoreTableColumnOps(op, preimage)
+	const formulaBindings = formulaBindingJournalAddendum(
+		tableColumnFormulaBindingCellPreimages(workbook, op),
+	)
 	return {
 		opIndex,
 		op,
 		inverseOps,
-		preimages: [{ kind: 'table-column', tableColumn: preimage }],
-		issues,
+		preimages: [{ kind: 'table-column', tableColumn: preimage }, ...formulaBindings.preimages],
+		issues: [...issues, ...formulaBindings.issues],
 	}
 }
 
@@ -3317,6 +3344,187 @@ function rangesOverlap(a: RangeRef, b: RangeRef): boolean {
 	)
 }
 
+function cellEditPreimages(
+	workbook: Workbook,
+	sheetName: string,
+	refs: readonly string[],
+): MutationJournalCellPreimage[] {
+	return cellPreimages(workbook, sheetName, formulaBindingEditRefs(workbook, sheetName, refs))
+}
+
+function formulaBindingJournalAddendum(cells: readonly MutationJournalCellPreimage[]): {
+	readonly preimages: readonly MutationJournalPreimage[]
+	readonly issues: readonly MutationJournalIssue[]
+} {
+	if (cells.length === 0) return { preimages: [], issues: [] }
+	const { issues } = inverseCellOps(cells)
+	return { preimages: [{ kind: 'cells', cells }], issues }
+}
+
+function workbookFormulaBindingCellPreimages(workbook: Workbook): MutationJournalCellPreimage[] {
+	const cells: MutationJournalCellPreimage[] = []
+	for (const sheet of workbook.sheets) {
+		if (sheet.cells.formulaInfoCellCount() === 0) continue
+		const refs: string[] = []
+		for (const [row, col, cell] of sheet.cells.iterate()) {
+			if (isMaterializedFormulaBindingInfo(cell.formulaInfo)) refs.push(toA1({ row, col }))
+		}
+		cells.push(...cellPreimages(workbook, sheet.name, refs))
+	}
+	return cells
+}
+
+function tableColumnFormulaBindingCellPreimages(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'setTableColumn' }>,
+): MutationJournalCellPreimage[] {
+	if (op.newName !== undefined) return workbookFormulaBindingCellPreimages(workbook)
+	const located = findTable(workbook, op.table)
+	if (!located) return []
+	const columnIndex = tableColumnIndex(located.table, op.column)
+	if (columnIndex < 0) return []
+	const col = located.table.ref.start.col + columnIndex
+	const refs = new Set<string>()
+	if (op.formula !== undefined) {
+		const bodyStart = located.table.ref.start.row + (located.table.hasHeaders ? 1 : 0)
+		const bodyEnd = located.table.ref.end.row - (located.table.hasTotals ? 1 : 0)
+		for (let row = bodyStart; row <= bodyEnd; row++) refs.add(toA1({ row, col }))
+	}
+	if (
+		located.table.hasTotals &&
+		(op.totalsRowFunction !== undefined ||
+			op.totalsRowFormula !== undefined ||
+			op.totalsRowLabel !== undefined)
+	) {
+		refs.add(toA1({ row: located.table.ref.end.row, col }))
+	}
+	if (refs.size === 0) return []
+	return formulaBindingOnlyPreimages(workbook, located.sheet.name, [...refs])
+}
+
+function tableColumnIndex(table: Table, columnSelector: string | number): number {
+	return typeof columnSelector === 'number'
+		? columnSelector
+		: table.columns.findIndex(
+				(column) => column.name.toLowerCase() === columnSelector.toLowerCase(),
+			)
+}
+
+function formulaBindingOnlyPreimages(
+	workbook: Workbook,
+	sheetName: string,
+	refs: readonly string[],
+): MutationJournalCellPreimage[] {
+	return cellEditPreimages(workbook, sheetName, refs).filter((cell) =>
+		isMaterializedFormulaBindingInfo(cell.formulaInfo),
+	)
+}
+
+function isMaterializedFormulaBindingInfo(
+	formulaInfo: Cell['formulaInfo'],
+): formulaInfo is Exclude<NonNullable<Cell['formulaInfo']>, { kind: 'array' }> {
+	return formulaInfo !== undefined && formulaInfo.kind !== 'array'
+}
+
+function formulaBindingEditRefs(
+	workbook: Workbook,
+	sheetName: string,
+	refs: readonly string[],
+): string[] {
+	const sheet = workbook.getSheet(sheetName)
+	const parsedRefs = refs.map((ref) => parseA1(ref))
+	const expanded = new Map<string, { readonly row: number; readonly col: number }>()
+	const push = (row: number, col: number) => expanded.set(toA1({ row, col }), { row, col })
+	for (const ref of parsedRefs) push(ref.row, ref.col)
+	if (!sheet || sheet.cells.formulaInfoCellCount() === 0) return [...expanded.keys()]
+
+	for (const ref of parsedRefs) {
+		const binding = sheet.cells.get(ref.row, ref.col)?.formulaInfo
+		if (!binding) continue
+		if (binding.kind === 'shared') {
+			for (const [row, col, cell] of sheet.cells.iterate()) {
+				if (sameSharedFormulaBinding(binding, cell.formulaInfo)) push(row, col)
+			}
+			continue
+		}
+		if (isSpillFormulaBinding(binding)) {
+			for (const [row, col, cell] of sheet.cells.iterate()) {
+				if (sameSpillFormulaBinding(binding, cell.formulaInfo)) push(row, col)
+			}
+		}
+	}
+
+	for (const [row, col, cell] of sheet.cells.iterate()) {
+		const binding = cell.formulaInfo
+		if (binding?.kind !== 'dataTable') continue
+		const tableRange = dataTableFormulaRange(binding, row, col)
+		if (parsedRefs.some((ref) => rangeContainsCell(tableRange, ref))) push(row, col)
+	}
+	return [...expanded.keys()]
+}
+
+function sameSharedFormulaBinding(
+	binding: Extract<NonNullable<Cell['formulaInfo']>, { kind: 'shared' }>,
+	candidate: Cell['formulaInfo'],
+): boolean {
+	if (candidate?.kind !== 'shared') return false
+	if (binding.sharedIndex !== undefined) return candidate.sharedIndex === binding.sharedIndex
+	return candidate.masterRef === binding.masterRef
+}
+
+function isSpillFormulaBinding(
+	binding: NonNullable<Cell['formulaInfo']>,
+): binding is Extract<
+	NonNullable<Cell['formulaInfo']>,
+	{ kind: 'dynamicArray' | 'spill' | 'blockedSpill' }
+> {
+	return (
+		binding.kind === 'dynamicArray' || binding.kind === 'spill' || binding.kind === 'blockedSpill'
+	)
+}
+
+function sameSpillFormulaBinding(
+	binding: Extract<
+		NonNullable<Cell['formulaInfo']>,
+		{ kind: 'dynamicArray' | 'spill' | 'blockedSpill' }
+	>,
+	candidate: Cell['formulaInfo'],
+): boolean {
+	if (!candidate) return false
+	if (binding.kind === 'dynamicArray') {
+		return candidate.kind === 'dynamicArray' && candidate.metadataIndex === binding.metadataIndex
+	}
+	if (candidate.kind !== 'spill' && candidate.kind !== 'blockedSpill') return false
+	return candidate.anchorRef === binding.anchorRef
+}
+
+function dataTableFormulaRange(
+	binding: Extract<NonNullable<Cell['formulaInfo']>, { kind: 'dataTable' }>,
+	row: number,
+	col: number,
+): RangeRef {
+	if (binding.ref) {
+		try {
+			return parseRange(binding.ref)
+		} catch {
+			// Fall back to the formula cell when imported metadata carries a malformed range.
+		}
+	}
+	return { start: { row, col }, end: { row, col } }
+}
+
+function rangeContainsCell(
+	range: RangeRef,
+	ref: { readonly row: number; readonly col: number },
+): boolean {
+	return (
+		ref.row >= range.start.row &&
+		ref.row <= range.end.row &&
+		ref.col >= range.start.col &&
+		ref.col <= range.end.col
+	)
+}
+
 function cellPreimages(
 	workbook: Workbook,
 	sheetName: string,
@@ -3334,6 +3542,7 @@ function cellPreimages(
 			existed: existing !== undefined,
 			value: cloneCellValue(existing?.value ?? EMPTY),
 			formula: existing?.formula ?? null,
+			...(existing?.formulaInfo ? { formulaInfo: cloneFormulaInfo(existing.formulaInfo) } : {}),
 			styleId,
 			style,
 		}
@@ -3348,6 +3557,13 @@ function inverseCellOps(cells: readonly MutationJournalCellPreimage[]): {
 	const issues: MutationJournalIssue[] = []
 	const scalarUpdatesBySheet = new Map<string, Array<{ ref: string; value: InputValue }>>()
 	for (const cell of cells) {
+		if (cell.formulaInfo) {
+			issues.push({
+				code: 'LOSSY_INVERSE',
+				message: `Formula binding metadata for ${cell.sheet}!${cell.ref} cannot be restored with public operations`,
+				refs: [`${cell.sheet}!${cell.ref}`],
+			})
+		}
 		if (!cell.existed) {
 			inverseOps.push({ op: 'clearRange', sheet: cell.sheet, range: cell.ref, what: 'all' })
 			continue
@@ -3834,6 +4050,13 @@ function setHyperlinkInverse(
 		...(hyperlink.display !== undefined ? { display: hyperlink.display } : {}),
 		...(hyperlink.tooltip !== undefined ? { tooltip: hyperlink.tooltip } : {}),
 	}
+}
+
+function cloneFormulaInfo(formulaInfo: NonNullable<Cell['formulaInfo']>): Cell['formulaInfo'] {
+	if (formulaInfo.kind === 'blockedSpill') {
+		return { ...formulaInfo, blockingRefs: [...formulaInfo.blockingRefs] }
+	}
+	return { ...formulaInfo }
 }
 
 function cloneCellValue(value: CellValue): CellValue {

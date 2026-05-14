@@ -33,13 +33,13 @@ import type { PatchResult } from './helpers.ts'
 import {
 	buildTableColumns,
 	cellWithExisting,
-	clearFormulaMetadata,
-	clearFormulaMetadataForSheet,
 	createLegacyArrayFormulaIndex,
 	DEFAULT_SID,
 	getSheet,
 	inputToCellValue,
 	legacyArrayFormulaEditError,
+	materializeFormulaBindingGroupsForRangeEdit,
+	materializeFormulaBindingGroupsForRefs,
 	patch,
 	safeParseRange,
 } from './helpers.ts'
@@ -100,7 +100,17 @@ export function handleAppendRows(
 	if (op.rows.length === 0) return ok(patch([], [sheet.name], false))
 
 	const width = table.columns.length
-	const affected: string[] = []
+	for (const row of op.rows) {
+		if (row.length > width) {
+			return err(
+				ascendError(
+					'VALIDATION_ERROR',
+					`Appended row has ${row.length} values but table "${table.name}" expects ${width}`,
+				),
+			)
+		}
+	}
+	const affected = new Set<string>()
 	const originalEndRow = table.ref.end.row
 	const rowDelta = op.rows.length
 	const nextTableRef = {
@@ -117,19 +127,23 @@ export function handleAppendRows(
 		const shiftedTable = findTableShiftedByTotalsAppend(sheet, table, originalEndRow)
 		if (shiftedTable) return err(tableAppendTotalsShiftError(table, shiftedTable))
 	}
+	const appendStartRow = table.hasTotals ? originalEndRow : originalEndRow + 1
+	const appendRange = {
+		start: { row: appendStartRow, col: table.ref.start.col },
+		end: { row: appendStartRow + op.rows.length - 1, col: table.ref.end.col },
+	}
+	const legacyArrayImpact = createLegacyArrayFormulaIndex(sheet).findIntersection(appendRange)
+	if (legacyArrayImpact) {
+		return err(legacyArrayFormulaEditError(legacyArrayImpact.targetRef, legacyArrayImpact.ref))
+	}
 	if (table.hasTotals) {
 		sheet.cells.insertRows(originalEndRow, op.rows.length)
 	}
-	let nextRow = table.hasTotals ? originalEndRow : originalEndRow + 1
+	for (const ref of materializeFormulaBindingGroupsForRangeEdit(workbook, sheet, appendRange)) {
+		affected.add(ref)
+	}
+	let nextRow = appendStartRow
 	for (const row of op.rows) {
-		if (row.length > width) {
-			return err(
-				ascendError(
-					'VALIDATION_ERROR',
-					`Appended row has ${row.length} values but table "${table.name}" expects ${width}`,
-				),
-			)
-		}
 		for (let colOffset = 0; colOffset < width; colOffset++) {
 			const col = table.ref.start.col + colOffset
 			const ref = toA1({ row: nextRow, col })
@@ -141,9 +155,8 @@ export function handleAppendRows(
 					col,
 					cellWithExisting(
 						inputToCellValue(provided, workbook.calcSettings.dateSystem),
-						existing?.formula ?? null,
+						null,
 						existing?.styleId ?? DEFAULT_SID,
-						existing?.formulaInfo,
 					),
 				)
 			} else {
@@ -158,7 +171,7 @@ export function handleAppendRows(
 					),
 				)
 			}
-			affected.push(ref)
+			affected.add(ref)
 		}
 		nextRow++
 	}
@@ -180,7 +193,7 @@ export function handleAppendRows(
 			...(sortState ? { sortState } : {}),
 		})
 	}
-	return ok(patch(affected, [sheet.name], true))
+	return ok(patch([...affected], [sheet.name], true))
 }
 
 export function handleSortRange(
@@ -197,10 +210,12 @@ export function handleSortRange(
 	if (legacyArrayImpact) {
 		return err(legacyArrayFormulaEditError(legacyArrayImpact.targetRef, legacyArrayImpact.ref))
 	}
-	clearFormulaMetadataForSheet(sheet)
+	const affected = new Set<string>()
+	const sheetsModified = new Set([sheet.name])
+	materializeSheetFormulaBindings(workbook, sheet, sheet.name, affected, sheetsModified)
 	const sorted = sortSheetRange(workbook, sheet, range, op.by)
 	if (!sorted.ok) return sorted
-	return ok(patch([], [op.sheet], sorted.value))
+	return ok(patch([...affected], [...sheetsModified], sorted.value))
 }
 
 export function handleDeleteTable(
@@ -218,6 +233,9 @@ export function handleDeleteTable(
 	if (deletedColumnBlocker) {
 		return err(tableDeleteReferenceError(deletedColumnBlocker))
 	}
+	const affected = new Set<string>()
+	const sheetsModified = new Set([sheet.name])
+	materializeWorkbookFormulaBindings(workbook, sheet.name, affected, sheetsModified)
 	const idx = sheet.tables.findIndex((t) => t.id === table.id)
 	sheet.ensureWritable()
 	if (idx >= 0) sheet.tables.splice(idx, 1)
@@ -241,8 +259,7 @@ export function handleDeleteTable(
 			sheet.autoFilter = null
 		}
 	}
-	clearFormulaMetadata(workbook)
-	return ok(patch([], [sheet.name], true))
+	return ok(patch([...affected], [...sheetsModified], true))
 }
 
 export function handleRenameTable(
@@ -262,6 +279,9 @@ export function handleRenameTable(
 			}),
 		)
 	}
+	const affected = new Set<string>()
+	const sheetsModified = new Set([sheet.name])
+	materializeWorkbookFormulaBindings(workbook, sheet.name, affected, sheetsModified)
 	const idx = sheet.tables.findIndex((t) => t.id === table.id)
 	if (idx >= 0) {
 		sheet.ensureWritable()
@@ -273,10 +293,9 @@ export function handleRenameTable(
 				: {}),
 		}
 	}
-	clearFormulaMetadata(workbook)
 	rewriteTableNameInFormulas(workbook, table.name, op.newName)
 	rewriteTableNameInDefinedNames(workbook, table.name, op.newName)
-	return ok(patch([], [sheet.name], true))
+	return ok(patch([...affected], [...sheetsModified], true))
 }
 
 export function handleResizeTable(
@@ -304,6 +323,9 @@ export function handleResizeTable(
 	if (droppedColumnBlocker) {
 		return err(tableResizeDroppedColumnReferenceError(droppedColumnBlocker))
 	}
+	const affected = new Set<string>()
+	const sheetsModified = new Set([sheet.name])
+	materializeWorkbookFormulaBindings(workbook, sheet.name, affected, sheetsModified)
 	const columns = buildResizedTableColumns(sheet, table, ref)
 	const autoFilter = table.autoFilter
 		? resizeTableAutoFilter(table.autoFilter, table.ref, ref)
@@ -321,8 +343,7 @@ export function handleResizeTable(
 			...(sortState ? { sortState } : {}),
 		}
 	}
-	clearFormulaMetadata(workbook)
-	return ok(patch([], [sheet.name], true))
+	return ok(patch([...affected], [...sheetsModified], true))
 }
 
 function tableColumnsChanged(before: RangeRef, after: RangeRef): boolean {
@@ -587,6 +608,41 @@ function rangeToA1(range: Table['ref']): string {
 	return `${toA1(range.start)}:${toA1(range.end)}`
 }
 
+function materializeWorkbookFormulaBindings(
+	workbook: Workbook,
+	primarySheetName: string,
+	affected: Set<string>,
+	sheetsModified: Set<string>,
+): void {
+	for (const formulaSheet of workbook.sheets) {
+		materializeSheetFormulaBindings(
+			workbook,
+			formulaSheet,
+			primarySheetName,
+			affected,
+			sheetsModified,
+		)
+	}
+}
+
+function materializeSheetFormulaBindings(
+	workbook: Workbook,
+	formulaSheet: Sheet,
+	primarySheetName: string,
+	affected: Set<string>,
+	sheetsModified: Set<string>,
+): void {
+	if (formulaSheet.cells.formulaInfoCellCount() === 0) return
+	const refs: Array<{ readonly row: number; readonly col: number }> = []
+	for (const [row, col, cell] of formulaSheet.cells.iterate()) {
+		if (cell.formulaInfo) refs.push({ row, col })
+	}
+	for (const ref of materializeFormulaBindingGroupsForRefs(workbook, formulaSheet, refs)) {
+		affected.add(formulaSheet.name === primarySheetName ? ref : `${formulaSheet.name}!${ref}`)
+		sheetsModified.add(formulaSheet.name)
+	}
+}
+
 function nextUniqueTableColumnName(base: string, usedNames: Set<string>): string {
 	let candidate = base
 	let suffix = 2
@@ -635,6 +691,39 @@ export function handleSetTableColumn(
 		)
 	}
 	const nextColumn = updateTableColumn(column, op)
+	const formulaTargetRange =
+		op.formula === undefined ? null : tableBodyColumnRange(table, columnIndex)
+	if (formulaTargetRange) {
+		const legacyArrayImpact =
+			createLegacyArrayFormulaIndex(sheet).findIntersection(formulaTargetRange)
+		if (legacyArrayImpact) {
+			return err(legacyArrayFormulaEditError(legacyArrayImpact.targetRef, legacyArrayImpact.ref))
+		}
+	}
+	const affected = new Set<string>()
+	const sheetsModified = new Set([sheet.name])
+	if (op.newName !== undefined) {
+		materializeWorkbookFormulaBindings(workbook, sheet.name, affected, sheetsModified)
+	}
+	const totalsTarget =
+		table.hasTotals &&
+		(op.totalsRowFunction !== undefined ||
+			op.totalsRowFormula !== undefined ||
+			op.totalsRowLabel !== undefined)
+			? { row: table.ref.end.row, col: table.ref.start.col + columnIndex }
+			: null
+	if (totalsTarget) {
+		const blocked = createLegacyArrayFormulaIndex(sheet).findCell(
+			totalsTarget.row,
+			totalsTarget.col,
+		)
+		if (blocked) {
+			return err(legacyArrayFormulaEditError(toA1(totalsTarget), blocked.ref))
+		}
+		for (const ref of materializeFormulaBindingGroupsForRefs(workbook, sheet, [totalsTarget])) {
+			affected.add(ref)
+		}
+	}
 	const tableIndex = sheet.tables.findIndex((candidate) => candidate.id === table.id)
 	if (tableIndex >= 0) {
 		sheet.ensureWritable()
@@ -645,8 +734,6 @@ export function handleSetTableColumn(
 			),
 		}
 	}
-
-	const affected: string[] = []
 	let recalcRequired = op.formula !== undefined || op.newName !== undefined
 	if (op.newName !== undefined) {
 		if (table.hasHeaders) {
@@ -656,15 +743,14 @@ export function handleSetTableColumn(
 				formula: null,
 				styleId: headerCell?.styleId ?? DEFAULT_SID,
 			})
-			affected.push(toA1({ row: table.ref.start.row, col: table.ref.start.col + columnIndex }))
+			affected.add(toA1({ row: table.ref.start.row, col: table.ref.start.col + columnIndex }))
 		}
-		clearFormulaMetadata(workbook)
 		rewriteTableColumnInFormulas(workbook, table, column.name, op.newName)
 		rewriteTableColumnInDefinedNames(workbook, table.name, column.name, op.newName)
 	}
-	const totalsResult = materializeTotalsRowCell(workbook, sheet, table, columnIndex, nextColumn, op)
+	const totalsResult = materializeTotalsRowCell(sheet, table, columnIndex, nextColumn, op)
 	if (totalsResult) {
-		affected.push(totalsResult.ref)
+		affected.add(totalsResult.ref)
 		recalcRequired ||= totalsResult.recalcRequired
 	}
 	if (op.formula !== undefined) {
@@ -679,6 +765,15 @@ export function handleSetTableColumn(
 					true,
 				) ?? formula
 		}
+		if (formulaTargetRange) {
+			for (const ref of materializeFormulaBindingGroupsForRangeEdit(
+				workbook,
+				sheet,
+				formulaTargetRange,
+			)) {
+				affected.add(ref)
+			}
+		}
 		const col = table.ref.start.col + columnIndex
 		const startRow = table.ref.start.row + (table.hasHeaders ? 1 : 0)
 		const endRow = table.ref.end.row - (table.hasTotals ? 1 : 0)
@@ -689,12 +784,11 @@ export function handleSetTableColumn(
 				col,
 				cellWithExisting(existing?.value ?? EMPTY, formula, existing?.styleId ?? DEFAULT_SID),
 			)
-			affected.push(toA1({ row, col }))
+			affected.add(toA1({ row, col }))
 		}
-		clearFormulaMetadata(workbook)
 	}
 
-	return ok(patch(affected, [sheet.name], recalcRequired))
+	return ok(patch([...affected], [...sheetsModified], recalcRequired))
 }
 
 export function handleSetTableStyle(
@@ -768,7 +862,6 @@ function updateTableColumn(
 }
 
 function materializeTotalsRowCell(
-	workbook: Workbook,
 	sheet: Sheet,
 	table: Table,
 	columnIndex: number,
@@ -792,7 +885,6 @@ function materializeTotalsRowCell(
 			formula: column.totalsRowFormula,
 			styleId: existing?.styleId ?? DEFAULT_SID,
 		})
-		clearFormulaMetadata(workbook)
 		return { ref, recalcRequired: true }
 	}
 	const subtotalFormula = subtotalFormulaFor(column.totalsRowFunction, table.name, column.name)
@@ -802,7 +894,6 @@ function materializeTotalsRowCell(
 			formula: subtotalFormula,
 			styleId: existing?.styleId ?? DEFAULT_SID,
 		})
-		clearFormulaMetadata(workbook)
 		return { ref, recalcRequired: true }
 	}
 	if (column.totalsRowLabel) {
@@ -825,6 +916,14 @@ function subtotalFormulaFor(
 	const code = TOTALS_ROW_SUBTOTAL_CODES.get(totalsRowFunction?.toLowerCase() ?? '')
 	if (code === undefined) return null
 	return `SUBTOTAL(${code},${tableName}[${escapeStructuredRefColumn(columnName)}])`
+}
+
+function tableBodyColumnRange(table: Table, columnIndex: number): RangeRef | null {
+	const startRow = table.ref.start.row + (table.hasHeaders ? 1 : 0)
+	const endRow = table.ref.end.row - (table.hasTotals ? 1 : 0)
+	if (startRow > endRow) return null
+	const col = table.ref.start.col + columnIndex
+	return { start: { row: startRow, col }, end: { row: endRow, col } }
 }
 
 const TOTALS_ROW_SUBTOTAL_CODES = new Map([

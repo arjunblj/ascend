@@ -14,6 +14,7 @@ import {
 	getSheet,
 	inputToCellValue,
 	legacyArrayFormulaEditError,
+	materializeDataTableFormulaGroupsForRangeEdit,
 	materializeFormulaBindingGroupsForRangeEdit,
 	materializeFormulaBindingGroupsForRefs,
 	mergeStyleInput,
@@ -185,9 +186,11 @@ export function handleClearRange(
 	const blocked = createLegacyArrayFormulaIndex(sheet).findIntersection(range)
 	if (blocked) return err(legacyArrayFormulaEditError(blocked.targetRef, blocked.ref))
 	const affected =
-		op.what === 'styles' || op.what === 'values'
+		op.what === 'styles'
 			? new Set<string>()
-			: materializeFormulaBindingGroupsForRangeEdit(workbook, sheet, range)
+			: op.what === 'values'
+				? materializeDataTableFormulaGroupsForRangeEdit(sheet, range)
+				: materializeFormulaBindingGroupsForRangeEdit(workbook, sheet, range)
 	for (let r = range.start.row; r <= range.end.row; r++) {
 		for (let c = range.start.col; c <= range.end.col; c++) {
 			const existing = sheet.cells.get(r, c)

@@ -1,4 +1,4 @@
-import type { Workbook } from '@ascend/core'
+import type { CellFormulaBinding, Sheet, Workbook } from '@ascend/core'
 import type { Operation, Result } from '@ascend/schema'
 import { ascendError, err, ok, validateExcelWorksheetName } from '@ascend/schema'
 import { invalidateSheetIndexCache } from '../evaluator.ts'
@@ -10,7 +10,7 @@ import {
 } from '../structural/formula-rewrite.ts'
 import { renameHyperlinkLocation } from '../structural/sheet-topology.ts'
 import type { PatchResult } from './helpers.ts'
-import { clearFormulaMetadata, getSheet, patch } from './helpers.ts'
+import { getSheet, materializeFormulaBindingGroupsForRefs, patch } from './helpers.ts'
 
 export function handleAddSheet(
 	workbook: Workbook,
@@ -78,9 +78,11 @@ export function handleRenameSheet(
 	}
 
 	const oldName = sheet.name
+	const affected = new Set<string>()
+	const sheetsModified = new Set<string>([op.newName])
+	materializeWorkbookFormulaBindingsForRename(workbook, sheet, op.newName, affected, sheetsModified)
 	sheet.name = op.newName
 	workbook.invalidateSheetCache()
-	clearFormulaMetadata(workbook)
 	rewriteSheetNameInFormulas(workbook, oldName, op.newName)
 	rewriteSheetNameInDefinedNames(workbook, oldName, op.newName)
 	rewriteChartSheetReferencesForRename(workbook, oldName, op.newName)
@@ -96,7 +98,7 @@ export function handleRenameSheet(
 		}
 	}
 
-	return ok(patch([], [op.newName]))
+	return ok(patch([...affected], [...sheetsModified]))
 }
 
 export function handleMoveSheet(
@@ -135,6 +137,7 @@ export function handleCopySheet(
 	const newSheet = source.clone()
 	newSheet.name = op.newName
 	newSheet.ensureWritable()
+	retargetCopiedSheetFormulaBindings(newSheet, source.name, op.newName)
 	retargetCopiedSheetDrawingParts(workbook, newSheet)
 	retargetCopiedSheetImageTargets(workbook, newSheet)
 	const chartPartPaths = cloneChartsForCopiedSheet(workbook, source.name, op.newName)
@@ -330,6 +333,55 @@ function removeChartsForDeletedSheet(workbook: Workbook, sheetName: string): voi
 			workbook.chartParts.splice(index, 1)
 		}
 	}
+}
+
+function materializeWorkbookFormulaBindingsForRename(
+	workbook: Workbook,
+	renamedSheet: Sheet,
+	newSheetName: string,
+	affected: Set<string>,
+	sheetsModified: Set<string>,
+): void {
+	for (const formulaSheet of workbook.sheets) {
+		if (formulaSheet.cells.formulaInfoCellCount() === 0) continue
+		const refs: Array<{ readonly row: number; readonly col: number }> = []
+		for (const [row, col, cell] of formulaSheet.cells.iterate()) {
+			if (cell.formulaInfo) refs.push({ row, col })
+		}
+		const sheetName = formulaSheet === renamedSheet ? newSheetName : formulaSheet.name
+		for (const ref of materializeFormulaBindingGroupsForRefs(workbook, formulaSheet, refs)) {
+			affected.add(`${sheetName}!${ref}`)
+			sheetsModified.add(sheetName)
+		}
+	}
+}
+
+function retargetCopiedSheetFormulaBindings(
+	sheet: Sheet,
+	sourceSheetName: string,
+	newSheetName: string,
+): void {
+	for (const [row, col, cell] of sheet.cells.iterate()) {
+		const formulaInfo = retargetCopiedFormulaBinding(
+			cell.formulaInfo,
+			sourceSheetName,
+			newSheetName,
+		)
+		if (formulaInfo === cell.formulaInfo) continue
+		sheet.cells.set(row, col, { ...cell, formulaInfo })
+	}
+}
+
+function retargetCopiedFormulaBinding(
+	binding: CellFormulaBinding | undefined,
+	sourceSheetName: string,
+	newSheetName: string,
+): CellFormulaBinding | undefined {
+	if (binding?.kind !== 'spill' && binding?.kind !== 'blockedSpill') return binding
+	const anchorRef =
+		rewriteFormulaTextForRename(binding.anchorRef, sourceSheetName, newSheetName) ??
+		binding.anchorRef
+	return anchorRef === binding.anchorRef ? binding : { ...binding, anchorRef }
 }
 
 function rewriteChartSheetReferencesForRename(

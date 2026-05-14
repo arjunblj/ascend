@@ -2788,6 +2788,177 @@ describe('interactive client contract', () => {
 		expect(wb.sheet('Sheet1')?.cell('A1')?.formula).toBe('1+1')
 	})
 
+	test('journals expose lossy imported formula-binding metadata preimages', () => {
+		const wb = AscendWorkbook.create()
+		const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+		if (!sheet) throw new Error('missing sheet')
+		sheet.cells.set(0, 0, {
+			value: numberValue(20),
+			formula: 'B1*2',
+			styleId: DEFAULT_STYLE_ID,
+			formulaInfo: {
+				kind: 'shared',
+				sharedIndex: '0',
+				isMaster: true,
+				masterRef: 'A1',
+				ref: 'A1:A2',
+			},
+		})
+		sheet.cells.set(1, 0, {
+			value: numberValue(40),
+			formula: null,
+			styleId: DEFAULT_STYLE_ID,
+			formulaInfo: { kind: 'shared', sharedIndex: '0', isMaster: false, masterRef: 'A1' },
+		})
+
+		const changed = wb.apply(
+			[{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A2', value: 9 }] }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(false)
+		expect(changed.journal?.issues).toContainEqual({
+			code: 'LOSSY_INVERSE',
+			message: 'Formula binding metadata for Sheet1!A1 cannot be restored with public operations',
+			refs: ['Sheet1!A1'],
+		})
+		expect(changed.journal?.issues).toContainEqual({
+			code: 'LOSSY_INVERSE',
+			message: 'Formula binding metadata for Sheet1!A2 cannot be restored with public operations',
+			refs: ['Sheet1!A2'],
+		})
+		const changedSheet = wb.getWorkbookModel().getSheet('Sheet1')
+		expect(changedSheet?.cells.get(0, 0)?.formulaInfo).toBeUndefined()
+		expect(changedSheet?.cells.get(1, 0)?.formulaInfo).toBeUndefined()
+
+		const dataTableWb = AscendWorkbook.create()
+		const dataTableSheet = dataTableWb.getWorkbookModel().getSheet('Sheet1')
+		if (!dataTableSheet) throw new Error('missing sheet')
+		dataTableSheet.cells.set(2, 2, {
+			value: numberValue(10),
+			formula: null,
+			styleId: DEFAULT_STYLE_ID,
+			formulaInfo: {
+				kind: 'dataTable',
+				ref: 'C3:C5',
+				dt2D: false,
+				dtr: true,
+				r1: 'A1',
+			},
+		})
+		dataTableSheet.cells.set(3, 2, {
+			value: numberValue(20),
+			formula: null,
+			styleId: DEFAULT_STYLE_ID,
+		})
+
+		const dataTableChanged = dataTableWb.apply(
+			[{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'C4', value: 99 }] }],
+			{ journal: true },
+		)
+
+		expect(dataTableChanged.errors).toEqual([])
+		expect(dataTableChanged.journal?.supported).toBe(true)
+		expect(dataTableChanged.journal?.exact).toBe(false)
+		expect(dataTableChanged.journal?.issues).toContainEqual({
+			code: 'LOSSY_INVERSE',
+			message: 'Formula binding metadata for Sheet1!C3 cannot be restored with public operations',
+			refs: ['Sheet1!C3'],
+		})
+		expect(
+			dataTableWb.getWorkbookModel().getSheet('Sheet1')?.cells.get(2, 2)?.formulaInfo,
+		).toBeUndefined()
+	})
+
+	test('journals mark sheet and table metadata rewrites lossy when formula bindings are materialized', () => {
+		const addSharedBinding = (wb: AscendWorkbook, col: number) => {
+			const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+			if (!sheet) throw new Error('missing sheet')
+			const column = String.fromCharCode(65 + col)
+			sheet.cells.set(0, col, {
+				value: numberValue(20),
+				formula: 'B1*2',
+				styleId: DEFAULT_STYLE_ID,
+				formulaInfo: {
+					kind: 'shared',
+					sharedIndex: `journal-${column}`,
+					isMaster: true,
+					masterRef: `${column}1`,
+					ref: `${column}1:${column}2`,
+				},
+			})
+			sheet.cells.set(1, col, {
+				value: numberValue(40),
+				formula: null,
+				styleId: DEFAULT_STYLE_ID,
+				formulaInfo: {
+					kind: 'shared',
+					sharedIndex: `journal-${column}`,
+					isMaster: false,
+					masterRef: `${column}1`,
+				},
+			})
+		}
+		const expectFormulaBindingLoss = (
+			journal: ReturnType<AscendWorkbook['apply']>['journal'],
+			refs: readonly string[],
+		) => {
+			expect(journal).toBeDefined()
+			if (!journal) throw new Error('missing journal')
+			expect(journal.supported).toBe(true)
+			expect(journal.exact).toBe(false)
+			for (const ref of refs) {
+				expect(journal.issues).toContainEqual({
+					code: 'LOSSY_INVERSE',
+					message: `Formula binding metadata for ${ref} cannot be restored with public operations`,
+					refs: [ref],
+				})
+			}
+		}
+
+		const sheetRenameWb = AscendWorkbook.create()
+		addSharedBinding(sheetRenameWb, 0)
+		const sheetRename = sheetRenameWb.apply(
+			[{ op: 'renameSheet', sheet: 'Sheet1', newName: 'Data' }],
+			{ journal: true },
+		)
+		expect(sheetRename.errors).toEqual([])
+		expectFormulaBindingLoss(sheetRename.journal, ['Sheet1!A1', 'Sheet1!A2'])
+
+		const tableOps = [
+			{ op: 'renameTable' as const, table: 'Sales', newName: 'Revenue' },
+			{ op: 'resizeTable' as const, table: 'Sales', ref: 'A1:B2' },
+			{ op: 'deleteTable' as const, table: 'Sales' },
+			{ op: 'setTableColumn' as const, table: 'Sales', column: 'Qty', newName: 'Amount' },
+		]
+		for (const op of tableOps) {
+			const wb = AscendWorkbook.create()
+			wb.apply([
+				{
+					op: 'setCells',
+					sheet: 'Sheet1',
+					updates: [
+						{ ref: 'A1', value: 'Region' },
+						{ ref: 'B1', value: 'Qty' },
+						{ ref: 'A2', value: 'West' },
+						{ ref: 'B2', value: 2 },
+						{ ref: 'A3', value: 'East' },
+						{ ref: 'B3', value: 3 },
+					],
+				},
+				{ op: 'createTable', sheet: 'Sheet1', ref: 'A1:B3', name: 'Sales', hasHeaders: true },
+			])
+			addSharedBinding(wb, 3)
+
+			const changed = wb.apply([op], { journal: true })
+
+			expect(changed.errors).toEqual([])
+			expectFormulaBindingLoss(changed.journal, ['Sheet1!D1', 'Sheet1!D2'])
+		}
+	})
+
 	test('journals do not claim exact rollback for supported mutations without inverse coverage', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

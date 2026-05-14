@@ -98,6 +98,23 @@ function addDynamicArrayAnchor(sheet: Sheet, row = 0, col = 0) {
 	})
 }
 
+function addDataTableFormula(sheet: Sheet) {
+	sheet.cells.set(2, 2, {
+		value: numberValue(10),
+		formula: null,
+		styleId: sid,
+		formulaInfo: {
+			kind: 'dataTable',
+			ref: 'C3:C5',
+			dt2D: false,
+			dtr: true,
+			r1: 'A1',
+		},
+	})
+	sheet.cells.set(3, 2, cell(numberValue(20)))
+	sheet.cells.set(4, 2, cell(numberValue(30)))
+}
+
 function setupSalesRepTable() {
 	const wb = createWorkbook()
 	const sheet = wb.addSheet('Sheet1')
@@ -588,6 +605,25 @@ describe('applyOperation', () => {
 		expect(sheet.cells.get(2, 0)?.formulaInfo).toBeUndefined()
 	})
 
+	test('setCells detaches data-table metadata when replacing a data-table member', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		addDataTableFormula(sheet)
+
+		const result = applyOperation(wb, {
+			op: 'setCells',
+			sheet: 'Sheet1',
+			updates: [{ ref: 'C4', value: 99 }],
+		})
+		expectOk(result)
+
+		expect(result.value.affectedCells).toEqual(['C3', 'C4'])
+		expect(sheet.cells.get(2, 2)?.formulaInfo).toBeUndefined()
+		expect(sheet.cells.get(2, 2)?.value).toEqual(numberValue(10))
+		expect(sheet.cells.get(3, 2)?.value).toEqual(numberValue(99))
+		expect(sheet.cells.get(4, 2)?.value).toEqual(numberValue(30))
+	})
+
 	test('fillFormula materializes imported shared formula groups before replacement', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')
@@ -624,6 +660,39 @@ describe('applyOperation', () => {
 		expect(result.value.affectedCells).toEqual(['A1'])
 		expect(sheet.cells.get(0, 0)?.formula).toBe('1+1')
 		expect(sheet.cells.get(0, 0)?.formulaInfo).toBeUndefined()
+	})
+
+	test('clearRange values detaches data-table metadata but style-only edits preserve it', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		addDataTableFormula(sheet)
+
+		const styles = applyOperation(wb, {
+			op: 'clearRange',
+			sheet: 'Sheet1',
+			range: 'C4',
+			what: 'styles',
+		})
+		expectOk(styles)
+		expect(styles.value.affectedCells).toEqual(['C4'])
+		expect(sheet.cells.get(2, 2)?.formulaInfo).toEqual({
+			kind: 'dataTable',
+			ref: 'C3:C5',
+			dt2D: false,
+			dtr: true,
+			r1: 'A1',
+		})
+
+		const values = applyOperation(wb, {
+			op: 'clearRange',
+			sheet: 'Sheet1',
+			range: 'C4',
+			what: 'values',
+		})
+		expectOk(values)
+		expect(values.value.affectedCells).toEqual(['C3', 'C4'])
+		expect(sheet.cells.get(2, 2)?.formulaInfo).toBeUndefined()
+		expect(sheet.cells.get(3, 2)?.value).toEqual(EMPTY)
 	})
 
 	test('setRichText materializes spill groups before replacing a spill member', () => {
@@ -2023,6 +2092,45 @@ describe('applyOperation', () => {
 			},
 		})
 		expect(result.value.recalcRequired).toBe(false)
+	})
+
+	test('copyRange value paste detaches data-table metadata on overwritten target members', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		const sourceStyle = wb.styles.register({ numberFormat: '$#,##0.00' })
+		sheet.cells.set(0, 0, cell(numberValue(7)))
+		sheet.cells.set(0, 1, { value: numberValue(12), formula: null, styleId: sourceStyle })
+		addDataTableFormula(sheet)
+
+		const formats = applyOperation(wb, {
+			op: 'copyRange',
+			sheet: 'Sheet1',
+			source: 'B1',
+			target: 'C4',
+			mode: 'formats',
+		})
+		expectOk(formats)
+		expect(sheet.cells.get(2, 2)?.formulaInfo).toEqual({
+			kind: 'dataTable',
+			ref: 'C3:C5',
+			dt2D: false,
+			dtr: true,
+			r1: 'A1',
+		})
+
+		const values = applyOperation(wb, {
+			op: 'copyRange',
+			sheet: 'Sheet1',
+			source: 'A1',
+			target: 'C4',
+			mode: 'values',
+		})
+		expectOk(values)
+
+		expect(values.value.affectedCells).toEqual(['C3', 'C4'])
+		expect(values.value.recalcRequired).toBe(true)
+		expect(sheet.cells.get(2, 2)?.formulaInfo).toBeUndefined()
+		expect(sheet.cells.get(3, 2)?.value).toEqual(numberValue(7))
 	})
 
 	test('copyRange exposes comments, hyperlinks, and validation paste modes', () => {
@@ -4425,32 +4533,69 @@ describe('applyOperation', () => {
 		expect(other.cells.get(9, 0)?.value).toEqual(numberValue(10))
 	})
 
-	test('row and column shifts reject imported shared formula bindings', () => {
-		const wb = createWorkbook()
-		const source = wb.addSheet('Shared')
-		const other = wb.addSheet('Other')
-		source.cells.set(0, 0, {
-			value: numberValue(20),
-			formula: 'B1*2',
-			styleId: sid,
-			formulaInfo: { kind: 'shared', sharedIndex: '0', isMaster: true, masterRef: 'A1' },
-		})
-		source.cells.set(1, 0, {
-			value: numberValue(40),
-			formula: null,
-			styleId: sid,
-			formulaInfo: { kind: 'shared', sharedIndex: '0', isMaster: false, masterRef: 'A1' },
-		})
-		other.cells.set(4, 4, cell(numberValue(5)))
+	test('row and column shifts reject imported formula bindings before mutation', () => {
+		const formulaBindings = [
+			{
+				formula: 'B1*2',
+				formulaInfo: { kind: 'shared' as const, sharedIndex: '0', isMaster: true, masterRef: 'A1' },
+			},
+			{
+				formula: 'SEQUENCE(2)',
+				formulaInfo: {
+					kind: 'spill' as const,
+					anchorRef: 'Shared!A1',
+					ref: 'A1:A2',
+					isAnchor: true,
+				},
+			},
+			{
+				formula: 'SEQUENCE(2)',
+				formulaInfo: { kind: 'dynamicArray' as const, metadataIndex: 1, collapsed: false },
+			},
+			{
+				formula: 'SEQUENCE(2)',
+				formulaInfo: {
+					kind: 'blockedSpill' as const,
+					anchorRef: 'Shared!A1',
+					ref: 'A1:A2',
+					blockingRefs: ['A2'],
+				},
+			},
+			{
+				formula: null,
+				formulaInfo: { kind: 'dataTable' as const, ref: 'A1:A2', dtr: true, r1: 'B1' },
+			},
+		]
+		const operations = [
+			{ op: 'insertRows' as const, sheet: 'Other', at: 10, count: 1 },
+			{ op: 'deleteRows' as const, sheet: 'Other', at: 10, count: 1 },
+			{ op: 'insertCols' as const, sheet: 'Other', at: 10, count: 1 },
+			{ op: 'deleteCols' as const, sheet: 'Other', at: 10, count: 1 },
+		]
 
-		expectErr(applyOperation(wb, { op: 'insertRows', sheet: 'Other', at: 10, count: 1 }))
-		expect(source.cells.get(1, 0)?.formulaInfo).toEqual({
-			kind: 'shared',
-			sharedIndex: '0',
-			isMaster: false,
-			masterRef: 'A1',
-		})
-		expect(other.cells.get(4, 4)?.value).toEqual(numberValue(5))
+		for (const binding of formulaBindings) {
+			for (const operation of operations) {
+				const wb = createWorkbook()
+				const source = wb.addSheet('Shared')
+				const other = wb.addSheet('Other')
+				source.cells.set(0, 0, {
+					value: numberValue(20),
+					formula: binding.formula,
+					styleId: sid,
+					formulaInfo: binding.formulaInfo,
+				})
+				other.cells.set(4, 4, cell(numberValue(5)))
+
+				const result = applyOperation(wb, operation)
+
+				expectErr(result)
+				expect(result.error.message).toContain(
+					`imported ${binding.formulaInfo.kind} formula metadata`,
+				)
+				expect(source.cells.get(0, 0)?.formulaInfo).toEqual(binding.formulaInfo)
+				expect(other.cells.get(4, 4)?.value).toEqual(numberValue(5))
+			}
+		}
 	})
 
 	test('insertRows within formula range expands range end', () => {
@@ -4582,6 +4727,75 @@ describe('applyOperation', () => {
 		expect(wb.getSheet('Data')).toBeDefined()
 		expect(wb.getSheet('Sheet1')).toBeUndefined()
 		expect(wb.definedNames.get('Budget')).toBe('Data!A1')
+	})
+
+	test('renameSheet materializes imported formula bindings before sheet-reference rewrites', () => {
+		const wb = createWorkbook()
+		const renamed = wb.addSheet('Sheet1')
+		const other = wb.addSheet('Other')
+		renamed.cells.set(0, 0, {
+			value: numberValue(1),
+			formula: 'Other!A1',
+			styleId: sid,
+			formulaInfo: {
+				kind: 'shared',
+				sharedIndex: 'rename-local',
+				isMaster: true,
+				masterRef: 'A1',
+				ref: 'A1:A2',
+			},
+		})
+		renamed.cells.set(1, 0, {
+			value: numberValue(2),
+			formula: null,
+			styleId: sid,
+			formulaInfo: {
+				kind: 'shared',
+				sharedIndex: 'rename-local',
+				isMaster: false,
+				masterRef: 'A1',
+			},
+		})
+		other.cells.set(0, 2, {
+			value: numberValue(3),
+			formula: 'Sheet1!A1*2',
+			styleId: sid,
+			formulaInfo: {
+				kind: 'shared',
+				sharedIndex: 'rename-remote',
+				isMaster: true,
+				masterRef: 'C1',
+				ref: 'C1:C2',
+			},
+		})
+		other.cells.set(1, 2, {
+			value: numberValue(4),
+			formula: null,
+			styleId: sid,
+			formulaInfo: {
+				kind: 'shared',
+				sharedIndex: 'rename-remote',
+				isMaster: false,
+				masterRef: 'C1',
+			},
+		})
+
+		const result = applyOperation(wb, { op: 'renameSheet', sheet: 'Sheet1', newName: 'Data' })
+		expectOk(result)
+
+		expect(result.value.affectedCells).toContain('Data!A1')
+		expect(result.value.affectedCells).toContain('Data!A2')
+		expect(result.value.affectedCells).toContain('Other!C1')
+		expect(result.value.affectedCells).toContain('Other!C2')
+		expect(result.value.sheetsModified).toEqual(['Data', 'Other'])
+		expect(renamed.cells.get(0, 0)?.formula).toBe('Other!A1')
+		expect(renamed.cells.get(1, 0)?.formula).toBe('Other!A2')
+		expect(other.cells.get(0, 2)?.formula).toBe('Data!A1*2')
+		expect(other.cells.get(1, 2)?.formula).toBe('Data!A2*2')
+		expect(renamed.cells.get(0, 0)?.formulaInfo).toBeUndefined()
+		expect(renamed.cells.get(1, 0)?.formulaInfo).toBeUndefined()
+		expect(other.cells.get(0, 2)?.formulaInfo).toBeUndefined()
+		expect(other.cells.get(1, 2)?.formulaInfo).toBeUndefined()
 	})
 
 	test('renameSheet rejects Excel-invalid target names before mutating workbook', () => {
@@ -4787,6 +5001,72 @@ describe('applyOperation', () => {
 		)
 		expect(Array.from(source.imageRefs[0]?.content ?? [])).toEqual([1, 2, 3])
 		expect(Array.from(copy.imageRefs[0]?.content ?? [])).toEqual([4, 5, 6])
+	})
+
+	test('copySheet retargets copied spill formula binding anchors to the new sheet', () => {
+		const wb = createWorkbook()
+		const source = wb.addSheet('Sheet1')
+		source.cells.set(0, 0, {
+			value: numberValue(1),
+			formula: 'SEQUENCE(2)',
+			styleId: sid,
+			formulaInfo: {
+				kind: 'spill',
+				anchorRef: 'Sheet1!A1',
+				ref: 'A1:A2',
+				isAnchor: true,
+			},
+		})
+		source.cells.set(1, 0, {
+			value: numberValue(2),
+			formula: null,
+			styleId: sid,
+			formulaInfo: {
+				kind: 'spill',
+				anchorRef: 'Sheet1!A1',
+				ref: 'A1:A2',
+				isAnchor: false,
+			},
+		})
+		source.cells.set(2, 0, {
+			value: { kind: 'error', value: '#SPILL!' },
+			formula: 'SEQUENCE(2)',
+			styleId: sid,
+			formulaInfo: {
+				kind: 'blockedSpill',
+				anchorRef: 'Sheet1!A3',
+				ref: 'A3:A4',
+				blockingRefs: ['A4'],
+			},
+		})
+
+		expectOk(applyOperation(wb, { op: 'copySheet', sheet: 'Sheet1', newName: 'Copy' }))
+
+		const copy = wb.getSheet('Copy')
+		expect(copy?.cells.get(0, 0)?.formulaInfo).toEqual({
+			kind: 'spill',
+			anchorRef: 'Copy!A1',
+			ref: 'A1:A2',
+			isAnchor: true,
+		})
+		expect(copy?.cells.get(1, 0)?.formulaInfo).toEqual({
+			kind: 'spill',
+			anchorRef: 'Copy!A1',
+			ref: 'A1:A2',
+			isAnchor: false,
+		})
+		expect(copy?.cells.get(2, 0)?.formulaInfo).toEqual({
+			kind: 'blockedSpill',
+			anchorRef: 'Copy!A3',
+			ref: 'A3:A4',
+			blockingRefs: ['A4'],
+		})
+		expect(source.cells.get(0, 0)?.formulaInfo).toEqual({
+			kind: 'spill',
+			anchorRef: 'Sheet1!A1',
+			ref: 'A1:A2',
+			isAnchor: true,
+		})
 	})
 
 	test('copySheet rejects duplicate and Excel-invalid target names before mutating workbook', () => {
@@ -5239,6 +5519,29 @@ describe('applyOperation', () => {
 		expect(sheet.ignoredErrors[0]?.sqref).toBe('A3')
 	})
 
+	test('sortRange materializes imported shared formulas before sorting', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: stringValue('b'), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: stringValue('a'), formula: null, styleId: sid })
+		addSharedFormulaGroup(sheet, 0, 3)
+
+		const result = applyOperation(wb, {
+			op: 'sortRange',
+			sheet: 'Sheet1',
+			range: 'A1:A2',
+			by: [{ column: 'A' }],
+		})
+		expectOk(result)
+
+		expect(result.value.affectedCells).toContain('D1')
+		expect(result.value.affectedCells).toContain('D2')
+		expect(sheet.cells.get(0, 3)?.formula).toBe('B1*2')
+		expect(sheet.cells.get(1, 3)?.formula).toBe('B2*2')
+		expect(sheet.cells.get(0, 3)?.formulaInfo).toBeUndefined()
+		expect(sheet.cells.get(1, 3)?.formulaInfo).toBeUndefined()
+	})
+
 	test('sortRange only clears formula metadata on the affected sheet', () => {
 		const wb = createWorkbook()
 		const source = wb.addSheet('Source')
@@ -5487,6 +5790,34 @@ describe('applyOperation', () => {
 		})
 	})
 
+	test('appendRows detaches imported formula bindings under expanded table rows', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: stringValue('Value'), formula: null, styleId: sid })
+		applyOperation(wb, {
+			op: 'createTable',
+			sheet: 'Sheet1',
+			ref: 'A1:A1',
+			name: 'Values',
+			hasHeaders: true,
+		})
+		addSharedFormulaGroup(sheet, 1, 0)
+
+		const result = applyOperation(wb, {
+			op: 'appendRows',
+			table: 'Values',
+			rows: [[9]],
+		})
+		expectOk(result)
+
+		expect(result.value.affectedCells).toEqual(['A2', 'A3'])
+		expect(sheet.cells.get(1, 0)?.value).toEqual(numberValue(9))
+		expect(sheet.cells.get(1, 0)?.formula).toBeNull()
+		expect(sheet.cells.get(1, 0)?.formulaInfo).toBeUndefined()
+		expect(sheet.cells.get(2, 0)?.formula).toBe('B2*2')
+		expect(sheet.cells.get(2, 0)?.formulaInfo).toBeUndefined()
+	})
+
 	test('appendRows inserts before totals row when hasTotals', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')
@@ -5512,6 +5843,34 @@ describe('applyOperation', () => {
 		expect(sheet.tables[0]?.ref.end.row).toBe(2)
 		expect(sheet.cells.get(1, 0)?.value).toEqual(stringValue('Debt'))
 		expect(sheet.cells.get(2, 0)?.value).toEqual(stringValue('Cash'))
+	})
+
+	test('appendRows validates row width before shifting totals rows', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: stringValue('Name'), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: stringValue('Cash'), formula: null, styleId: sid })
+		applyOperation(wb, {
+			op: 'createTable',
+			sheet: 'Sheet1',
+			ref: 'A1:A2',
+			name: 'BalanceTable',
+			hasHeaders: true,
+		})
+		const table = sheet.tables[0]
+		if (!table) throw new Error('expected table')
+		sheet.tables[0] = { ...table, hasTotals: true }
+
+		const result = applyOperation(wb, {
+			op: 'appendRows',
+			table: 'BalanceTable',
+			rows: [['Debt', 20]],
+		})
+		expectErr(result)
+
+		expect(sheet.tables[0]?.ref.end.row).toBe(1)
+		expect(sheet.cells.get(1, 0)?.value).toEqual(stringValue('Cash'))
+		expect(sheet.cells.get(2, 0)).toBeUndefined()
 	})
 
 	test('appendRows rejects expansion into another table range', () => {
@@ -5651,6 +6010,123 @@ describe('applyOperation', () => {
 		})
 		expectOk(appended)
 		expect(sheet.cells.get(3, 2)?.formula).toBe('[@Qty]*[@Price]')
+	})
+
+	test('setTableColumn formula materializes imported formula bindings under the body column', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: stringValue('Amount'), formula: null, styleId: sid })
+		applyOperation(wb, {
+			op: 'createTable',
+			sheet: 'Sheet1',
+			ref: 'A1:A2',
+			name: 'Sales',
+			hasHeaders: true,
+		})
+		addSharedFormulaGroup(sheet, 1, 0)
+
+		const result = applyOperation(wb, {
+			op: 'setTableColumn',
+			table: 'Sales',
+			column: 'Amount',
+			formula: '=1+1',
+		})
+		expectOk(result)
+
+		expect(result.value.affectedCells).toEqual(['A2', 'A3'])
+		expect(sheet.cells.get(1, 0)?.formula).toBe('1+1')
+		expect(sheet.cells.get(1, 0)?.formulaInfo).toBeUndefined()
+		expect(sheet.cells.get(2, 0)?.formula).toBe('B2*2')
+		expect(sheet.cells.get(2, 0)?.formulaInfo).toBeUndefined()
+	})
+
+	test('setTableColumn rejects legacy array intersections before mutating table metadata', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: stringValue('Amount'), formula: null, styleId: sid })
+		applyOperation(wb, {
+			op: 'createTable',
+			sheet: 'Sheet1',
+			ref: 'A1:A2',
+			name: 'Sales',
+			hasHeaders: true,
+		})
+		const formulaInfo = { kind: 'array' as const, ref: 'A2:A3' }
+		sheet.cells.set(1, 0, {
+			value: numberValue(2),
+			formula: 'SEQUENCE(2)',
+			styleId: sid,
+			formulaInfo,
+		})
+		sheet.cells.set(2, 0, { value: numberValue(3), formula: null, styleId: sid, formulaInfo })
+
+		const result = applyOperation(wb, {
+			op: 'setTableColumn',
+			table: 'Sales',
+			column: 'Amount',
+			formula: '=1+1',
+		})
+		expectErr(result)
+
+		expect(sheet.tables[0]?.columns[0]?.formula).toBeUndefined()
+		expect(sheet.cells.get(1, 0)?.formula).toBe('SEQUENCE(2)')
+		expect(sheet.cells.get(1, 0)?.formulaInfo).toEqual(formulaInfo)
+		expect(sheet.cells.get(2, 0)?.formulaInfo).toEqual(formulaInfo)
+	})
+
+	test('setTableColumn rename materializes imported shared formulas before structured ref rewrites', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: stringValue('Qty'), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: stringValue('Total'), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: numberValue(20), formula: null, styleId: sid })
+		applyOperation(wb, {
+			op: 'createTable',
+			sheet: 'Sheet1',
+			ref: 'A1:B2',
+			name: 'Sales',
+			hasHeaders: true,
+		})
+		sheet.cells.set(4, 0, {
+			value: numberValue(2),
+			formula: 'SUM(Sales[Qty])',
+			styleId: sid,
+			formulaInfo: {
+				kind: 'shared',
+				sharedIndex: 'rename-shared',
+				isMaster: true,
+				masterRef: 'A5',
+				ref: 'A5:A6',
+			},
+		})
+		sheet.cells.set(5, 0, {
+			value: numberValue(2),
+			formula: null,
+			styleId: sid,
+			formulaInfo: {
+				kind: 'shared',
+				sharedIndex: 'rename-shared',
+				isMaster: false,
+				masterRef: 'A5',
+			},
+		})
+
+		const result = applyOperation(wb, {
+			op: 'setTableColumn',
+			table: 'Sales',
+			column: 'Qty',
+			newName: 'Units',
+		})
+		expectOk(result)
+
+		expect(result.value.affectedCells).toContain('A1')
+		expect(result.value.affectedCells).toContain('A5')
+		expect(result.value.affectedCells).toContain('A6')
+		expect(sheet.cells.get(4, 0)?.formula).toBe('SUM(Sales[Units])')
+		expect(sheet.cells.get(5, 0)?.formula).toBe('SUM(Sales[Units])')
+		expect(sheet.cells.get(4, 0)?.formulaInfo).toBeUndefined()
+		expect(sheet.cells.get(5, 0)?.formulaInfo).toBeUndefined()
 	})
 
 	test('setTableColumn renames columns and rewrites structured references', () => {
@@ -6643,6 +7119,57 @@ describe('applyOperation', () => {
 		expect(deleted.value.recalcRequired).toBe(true)
 		expect(sheet.tables.map((table) => table.name)).toEqual(['Revenue'])
 		expect(sheet.cells.get(1, 1)?.value).toEqual(numberValue(10))
+	})
+
+	test('renameTable materializes imported shared formulas before table name rewrites', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: stringValue('Qty'), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(2), formula: null, styleId: sid })
+		applyOperation(wb, {
+			op: 'createTable',
+			sheet: 'Sheet1',
+			ref: 'A1:A2',
+			name: 'Sales',
+			hasHeaders: true,
+		})
+		sheet.cells.set(4, 0, {
+			value: numberValue(2),
+			formula: 'SUM(Sales[Qty])',
+			styleId: sid,
+			formulaInfo: {
+				kind: 'shared',
+				sharedIndex: 'table-rename-shared',
+				isMaster: true,
+				masterRef: 'A5',
+				ref: 'A5:A6',
+			},
+		})
+		sheet.cells.set(5, 0, {
+			value: numberValue(2),
+			formula: null,
+			styleId: sid,
+			formulaInfo: {
+				kind: 'shared',
+				sharedIndex: 'table-rename-shared',
+				isMaster: false,
+				masterRef: 'A5',
+			},
+		})
+
+		const result = applyOperation(wb, {
+			op: 'renameTable',
+			table: 'Sales',
+			newName: 'Revenue',
+		})
+		expectOk(result)
+
+		expect(result.value.affectedCells).toContain('A5')
+		expect(result.value.affectedCells).toContain('A6')
+		expect(sheet.cells.get(4, 0)?.formula).toBe('SUM(Revenue[Qty])')
+		expect(sheet.cells.get(5, 0)?.formula).toBe('SUM(Revenue[Qty])')
+		expect(sheet.cells.get(4, 0)?.formulaInfo).toBeUndefined()
+		expect(sheet.cells.get(5, 0)?.formulaInfo).toBeUndefined()
 	})
 
 	test('renameTable rejects workbook-scoped case-insensitive duplicate table names', () => {

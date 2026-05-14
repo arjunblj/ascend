@@ -231,7 +231,8 @@ export function materializeFormulaBindingGroupsForRefs(
 	refs: Iterable<{ readonly row: number; readonly col: number }>,
 ): Set<string> {
 	const affected = new Set<string>()
-	for (const ref of refs) {
+	const refList = [...refs]
+	for (const ref of refList) {
 		const existing = sheet.cells.get(ref.row, ref.col)
 		const binding = existing?.formulaInfo
 		if (!binding) continue
@@ -242,6 +243,9 @@ export function materializeFormulaBindingGroupsForRefs(
 					? materializeSpillFormulaGroup(sheet, binding)
 					: new Set<string>()
 		for (const entry of materialized) affected.add(entry)
+	}
+	for (const entry of materializeDataTableFormulaGroupsForRefs(sheet, refList)) {
+		affected.add(entry)
 	}
 	return affected
 }
@@ -256,6 +260,17 @@ export function materializeFormulaBindingGroupsForRangeEdit(
 		for (let col = range.start.col; col <= range.end.col; col++) refs.push({ row, col })
 	}
 	return materializeFormulaBindingGroupsForRefs(workbook, sheet, refs)
+}
+
+export function materializeDataTableFormulaGroupsForRangeEdit(
+	sheet: Sheet,
+	range: RangeRef,
+): Set<string> {
+	const refs: Array<{ readonly row: number; readonly col: number }> = []
+	for (let row = range.start.row; row <= range.end.row; row++) {
+		for (let col = range.start.col; col <= range.end.col; col++) refs.push({ row, col })
+	}
+	return materializeDataTableFormulaGroupsForRefs(sheet, refs)
 }
 
 function materializeSharedFormulaGroup(
@@ -312,6 +327,50 @@ function materializeSpillFormulaGroup(
 		affected.add(toA1({ row, col }))
 	}
 	return affected
+}
+
+function materializeDataTableFormulaGroupsForRefs(
+	sheet: Sheet,
+	refs: readonly { readonly row: number; readonly col: number }[],
+): Set<string> {
+	const affected = new Set<string>()
+	if (refs.length === 0 || sheet.cells.formulaInfoCellCount() === 0) return affected
+	for (const [row, col, cell] of sheet.cells.iterate()) {
+		const binding = cell.formulaInfo
+		if (binding?.kind !== 'dataTable') continue
+		const tableRange = dataTableBindingRange(binding, row, col)
+		if (!refs.some((ref) => rangeContainsCell(tableRange, ref))) continue
+		sheet.cells.set(row, col, cellWithExisting(cell.value, null, cell.styleId ?? DEFAULT_SID))
+		affected.add(toA1({ row, col }))
+	}
+	return affected
+}
+
+function dataTableBindingRange(
+	binding: Extract<CellFormulaBinding, { kind: 'dataTable' }>,
+	row: number,
+	col: number,
+): RangeRef {
+	if (binding.ref) {
+		try {
+			return parseRange(binding.ref)
+		} catch {
+			// Fall through to the anchor cell when imported metadata has an invalid ref.
+		}
+	}
+	return { start: { row, col }, end: { row, col } }
+}
+
+function rangeContainsCell(
+	range: RangeRef,
+	ref: { readonly row: number; readonly col: number },
+): boolean {
+	return (
+		ref.row >= range.start.row &&
+		ref.row <= range.end.row &&
+		ref.col >= range.start.col &&
+		ref.col <= range.end.col
+	)
 }
 
 function isSpillGroupBinding(

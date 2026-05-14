@@ -72,6 +72,7 @@ import type {
 	WorkbookVisualInventoryInfo,
 } from './types.ts'
 import { type ApplyOptions, AscendWorkbook, type WorkbookBytesOptions } from './workbook.ts'
+import type { WorkbookTrustReport, WorkbookTrustReportOptions } from './workbook-trust.ts'
 
 export interface WorkbookLoadOptions {
 	readonly mode?: 'full' | 'metadata-only' | 'values' | 'formula'
@@ -536,6 +537,13 @@ export class WorkbookDocument {
 
 	inspect(): WorkbookInfo {
 		return this.view.inspect()
+	}
+
+	async trustReport(options: WorkbookTrustReportOptions = {}): Promise<WorkbookTrustReport> {
+		const info = this.inspect()
+		const packageGraph =
+			options.packageGraph ?? (info.sourceFormat === 'xlsx' ? await this.packageGraph() : undefined)
+		return this.view.trustReport({ ...options, ...(packageGraph ? { packageGraph } : {}) })
 	}
 
 	visualInventory(): WorkbookVisualInventoryInfo {

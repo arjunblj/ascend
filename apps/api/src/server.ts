@@ -376,6 +376,23 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 				}
 			}
 
+			if (method === 'POST' && path === '/trust-report') {
+				const body = await parseJson<{ file?: string; maxFindings?: number }>(req)
+				const file = body ? requireString(body, 'file') : null
+				const maxFindings = body ? requireOptionalNumber(body, 'maxFindings') : undefined
+				if (!file) return jsonFailure('Missing or invalid file', 400)
+				try {
+					const wb = await WorkbookDocument.open(file, { mode: 'full' })
+					return jsonSuccess(
+						await wb.trustReport({
+							...(maxFindings !== undefined ? { maxFindings } : {}),
+						}),
+					)
+				} catch (e) {
+					return handleError(e, file)
+				}
+			}
+
 			if (method === 'POST' && path === '/package-graph') {
 				const body = await parseJson<{ file?: string }>(req)
 				const file = body ? requireString(body, 'file') : null

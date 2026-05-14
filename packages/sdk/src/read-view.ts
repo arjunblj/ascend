@@ -116,6 +116,11 @@ import type {
 	WorkbookRefreshMetadataInfo,
 	WorkbookVisualInventoryInfo,
 } from './types.ts'
+import {
+	buildWorkbookTrustReport,
+	type WorkbookTrustReport,
+	type WorkbookTrustReportOptions,
+} from './workbook-trust.ts'
 
 /**
  * Read-only view over a workbook. Caching strategy:
@@ -309,6 +314,10 @@ export class WorkbookReadView {
 		}
 		this.workbookInfoCache = info
 		return info
+	}
+
+	trustReport(options?: WorkbookTrustReportOptions): WorkbookTrustReport {
+		return buildWorkbookTrustReport(this.wb, this.inspect(), options)
 	}
 
 	visualInventory(): WorkbookVisualInventoryInfo {

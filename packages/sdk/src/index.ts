@@ -41,6 +41,10 @@ export type {
 	CompactWritePolicySummary,
 	LossAudit,
 	LossAuditPackagePart,
+	PackageActionKind,
+	PackageActionProof,
+	PackageActionProofEntry,
+	PackageActionProofOptions,
 	PackageGraphAudit,
 	PreparedAgentPlan,
 	ReleaseProofArtifactDigest,
@@ -64,6 +68,7 @@ export {
 	compactAgentPlanResult,
 	createAgentPlan,
 	createAgentPlanFromWorkbook,
+	createPackageActionProof,
 	createPreparedAgentPlan,
 	createReleaseProofBundle,
 	createRepairPlan,
@@ -389,3 +394,14 @@ export type {
  */
 export type { ApplyOptions, PreviewOptions, WorkbookBytesOptions } from './workbook.ts'
 export { Ascend, AscendWorkbook, BatchBuilder } from './workbook.ts'
+export type {
+	WorkbookAgentContextPolicy,
+	WorkbookTrustExecutionPolicy,
+	WorkbookTrustFinding,
+	WorkbookTrustFindingLocation,
+	WorkbookTrustFindingSeverity,
+	WorkbookTrustLevel,
+	WorkbookTrustReport,
+	WorkbookTrustReportOptions,
+} from './workbook-trust.ts'
+export { buildWorkbookTrustReport } from './workbook-trust.ts'

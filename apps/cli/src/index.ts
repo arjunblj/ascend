@@ -94,7 +94,7 @@ const COMMANDS: Record<string, Command> = {
 	inspect: {
 		run: inspectCommand,
 		usage: inspectUsage,
-		allowedFlags: ['sheet', 'detail', 'mode', 'json', 'verbose'],
+		allowedFlags: ['sheet', 'detail', 'mode', 'agent', 'json', 'verbose'],
 	},
 	list: { run: listCommand, usage: listUsage, allowedFlags: ['json'] },
 	read: {
@@ -176,6 +176,7 @@ const BOOLEAN_FLAGS = new Set([
 	'v',
 	'json',
 	'verbose',
+	'agent',
 	'in-place',
 	'examples',
 	'list',

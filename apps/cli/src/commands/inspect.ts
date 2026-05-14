@@ -15,6 +15,7 @@ Flags:
   --sheet <name>  Sheet name (alternative to positional argument)
   --detail <type> Show detail for: cf, dv, hyperlinks, tables, comments, drawings, images, compatibility, package-graph, active-content, visuals, pivots, slicers, names, external-refs, views
   --mode <mode>   Load mode: metadata, values, or full
+  --agent         Show an untrusted-workbook trust report for agent use
   --json          Output as JSON
   --verbose       Show compatibility report and timing
 `
@@ -29,6 +30,7 @@ export async function inspectCommand(args: string[], flags: Map<string, string>)
 	const sheetArg = args[1] ?? flags.get('sheet')
 	const detail = flags.get('detail')
 	const verbose = flags.has('verbose')
+	const agentTrustReport = flags.has('agent')
 	const workbookDetail = detail === 'compatibility'
 	const activeContentDetail = detail === 'active-content'
 	const workbookStructureDetail =
@@ -43,6 +45,17 @@ export async function inspectCommand(args: string[], flags: Map<string, string>)
 		cliError('Invalid --mode. Use one of: metadata, values, full', flags)
 		return 1
 	}
+	if (agentTrustReport && detail) {
+		cliError(
+			'Use --agent without --detail; the trust report includes agent-facing findings.',
+			flags,
+		)
+		return 1
+	}
+	if (agentTrustReport && sheetArg) {
+		cliError('Use --agent without a sheet name; trust reports are workbook-level.', flags)
+		return 1
+	}
 	const explicitMode = parsedMode ?? undefined
 	if (detail && sheetArg && explicitMode && explicitMode !== 'full') {
 		cliError('Sheet detail views require --mode full', flags)
@@ -55,23 +68,29 @@ export async function inspectCommand(args: string[], flags: Map<string, string>)
 					mode: explicitMode,
 					...(sheetArg ? { sheets: [sheetArg] } : {}),
 				}
-			: detail === 'pivots'
-				? { mode: 'full' as const, pivotCacheRecordMaterializeLimit: 'all' as const }
-				: workbookDetail
-					? { mode: 'full' as const }
-					: activeContentDetail
-						? { mode: 'metadata-only' as const }
-						: workbookStructureDetail
-							? { mode: 'full' as const }
-							: detail && sheetArg
-								? { sheets: [sheetArg] }
-								: sheetArg
-									? { mode: 'values' as const, sheets: [sheetArg] }
-									: { mode: 'metadata-only' as const }
+			: agentTrustReport
+				? { mode: 'full' as const }
+				: detail === 'pivots'
+					? { mode: 'full' as const, pivotCacheRecordMaterializeLimit: 'all' as const }
+					: workbookDetail
+						? { mode: 'full' as const }
+						: activeContentDetail
+							? { mode: 'metadata-only' as const }
+							: workbookStructureDetail
+								? { mode: 'full' as const }
+								: detail && sheetArg
+									? { sheets: [sheetArg] }
+									: sheetArg
+										? { mode: 'values' as const, sheets: [sheetArg] }
+										: { mode: 'metadata-only' as const }
 	const { document: wb, durationMs: openMs } = await openWorkbookDocumentWithProgress(
 		file,
 		openOptions,
 	)
+
+	if (agentTrustReport) {
+		return printTrustReportDetail(wb, flags.has('json'))
+	}
 
 	if (detail === 'compatibility') {
 		return printCompatibilityDetail(wb, flags.has('json'))
@@ -603,6 +622,73 @@ function printActiveContentDetail(wb: WorkbookDocument, json: boolean): number {
 		}
 	}
 	return 0
+}
+
+async function printTrustReportDetail(wb: WorkbookDocument, json: boolean): Promise<number> {
+	const report = await wb.trustReport()
+	if (json) {
+		console.log(jsonOut(report))
+		return 0
+	}
+	console.log(heading('Workbook Trust Report'))
+	console.log(bullet('Trust', report.trust))
+	console.log(bullet('Posture', report.posture))
+	console.log(bullet('Findings', String(report.summary.findingCount)))
+	console.log(bullet('Hidden sheets', String(report.workbook.hiddenSheetCount)))
+	console.log(bullet('Very hidden sheets', String(report.workbook.veryHiddenSheetCount)))
+	console.log(bullet('Comments', formatCount(report.workbook.commentCount)))
+	console.log(bullet('Defined names', String(report.workbook.definedNameCount)))
+	console.log(bullet('External references', String(report.workbook.externalReferenceCount)))
+	console.log(bullet('Active content', String(report.workbook.activeContentCount)))
+	console.log('')
+	console.log(heading('Agent Context Defaults'))
+	console.log(bullet('Visible sheets', 'included'))
+	console.log(bullet('Hidden sheets', 'excluded'))
+	console.log(bullet('Comments', 'excluded'))
+	console.log(bullet('Defined names', 'excluded'))
+	console.log(bullet('External content', 'excluded'))
+	console.log(bullet('Active content', 'excluded'))
+	if (report.findings.length > 0) {
+		console.log('')
+		console.log(heading('Findings'))
+		for (const finding of report.findings) {
+			console.log(
+				bullet(
+					`${finding.code} (${finding.severity})`,
+					[finding.message, formatTrustLocation(finding.location), `next=${finding.nextAction}`]
+						.filter(Boolean)
+						.join(' | '),
+				),
+			)
+		}
+		if (report.summary.truncatedFindingCount > 0) {
+			console.log(bullet('Truncated findings', String(report.summary.truncatedFindingCount)))
+		}
+	}
+	if (report.nextActions.length > 0) {
+		console.log('')
+		console.log(heading('Next Actions'))
+		for (const action of report.nextActions) console.log(bullet('-', action))
+	}
+	return 0
+}
+
+function formatTrustLocation(
+	location: Awaited<ReturnType<WorkbookDocument['trustReport']>>['findings'][number]['location'],
+): string | undefined {
+	if (!location) return undefined
+	const parts = [
+		location.sheet && location.ref ? `${location.sheet}!${location.ref}` : location.sheet,
+		location.partPath,
+		location.relationshipPartPath,
+		location.relationshipId ? `rel=${location.relationshipId}` : undefined,
+		location.target ? `target=${location.target}` : undefined,
+		location.hiddenState ? `state=${location.hiddenState}` : undefined,
+		location.source ? `source=${location.source}` : undefined,
+	]
+		.filter(Boolean)
+		.join(' | ')
+	return parts.length > 0 ? parts : undefined
 }
 
 function printVisualInventoryDetail(wb: WorkbookDocument, json: boolean): number {

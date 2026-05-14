@@ -293,6 +293,36 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 	)
 
 	server.tool(
+		'ascend.trust_report',
+		'Inspect an untrusted workbook for agent-safe context boundaries, hidden content, active content, external targets, prompt-injection hints, and safe next actions',
+		{
+			file: z.string().describe('Path to workbook file'),
+			maxFindings: z
+				.number()
+				.int()
+				.nonnegative()
+				.optional()
+				.describe('Maximum findings to emit; summary still reports truncation'),
+		},
+		async ({ file, maxFindings }) => {
+			try {
+				const wb = await WorkbookDocument.open(file, { mode: 'full' })
+				const report = await wb.trustReport({
+					...(maxFindings !== undefined ? { maxFindings } : {}),
+				})
+				return okResponse(
+					report,
+					`Inspected untrusted workbook posture for "${file}" with ${report.summary.findingCount} finding(s)`,
+				)
+			} catch (e) {
+				return errorResponse(
+					e instanceof AscendException ? e.ascendError : String(e instanceof Error ? e.message : e),
+				)
+			}
+		},
+	)
+
+	server.tool(
 		'ascend.package_graph',
 		'Inspect XLSX OPC package parts, content types, relationship ids, raw/resolved targets, ownership, feature families, and preservation policy',
 		{

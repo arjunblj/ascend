@@ -103,6 +103,7 @@ import type {
 	WorkbookLoadInfo,
 	WritePlanInfo,
 } from './types.ts'
+import type { WorkbookTrustReport, WorkbookTrustReportOptions } from './workbook-trust.ts'
 
 export interface PreviewOptions {
 	readonly journal?: boolean
@@ -1464,6 +1465,13 @@ export class AscendWorkbook extends WorkbookReadView {
 		const graph = inspectXlsxPackageGraph(bytes)
 		this.packageGraphCache = { bytes, graph }
 		return graph
+	}
+
+	override trustReport(options: WorkbookTrustReportOptions = {}): WorkbookTrustReport {
+		const info = this.inspect()
+		const packageGraph =
+			options.packageGraph ?? (info.sourceFormat === 'xlsx' ? this.packageGraph() : undefined)
+		return super.trustReport({ ...options, ...(packageGraph ? { packageGraph } : {}) })
 	}
 
 	rawPackagePart(options: RawPackagePartOptions): RawPackagePartInfo {

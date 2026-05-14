@@ -14,6 +14,7 @@ Updated: 2026-05-14
 | [Journal inverse property laws](runs/2026/2026-05-14-journal-inverse-property-laws/log.md) | cycle 4 complete, folded in fix | correctness loop |
 | [Oracle routing mismatch class](runs/2026/2026-05-14-oracle-routing-mismatch-class/log.md) | cycle 5 complete, promote | correctness loop |
 | [Columnar sidecar range scans](runs/2026/2026-05-14-columnar-sidecar-range-scans/log.md) | cycle 6 complete, promote | performance loop |
+| [MVCC viewport patch stream](runs/2026/2026-05-14-mvcc-viewport-patch-stream/log.md) | cycle 7 complete, promote | product/DX loop, performance loop |
 
 ## Syntheses
 

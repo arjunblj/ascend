@@ -2835,6 +2835,45 @@ describe('interactive client contract', () => {
 		expect(preview.journal).toEqual(changed.journal)
 	})
 
+	test('journal requests on partial workbooks return explicit unavailable journals', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 1 },
+					{ ref: 'A2', value: 2 },
+				],
+			},
+		])
+		const partial = await AscendWorkbook.open(wb.toBytes(), { mode: 'values', maxRows: 1 })
+		const ops = [{ op: 'setCells' as const, sheet: 'Sheet1', updates: [{ ref: 'A1', value: 5 }] }]
+
+		const changed = partial.apply(ops, { journal: true })
+
+		expect(changed.errors[0]?.message).toContain('partial workbook')
+		expect(changed.journal).toEqual({
+			entries: [],
+			inverseOps: [],
+			supported: false,
+			exact: false,
+			issues: [
+				{
+					code: 'JOURNAL_UNAVAILABLE',
+					message:
+						'Mutation journal is unavailable because the workbook is partially loaded in values mode. Reopen the workbook with a full load before applying edits.',
+				},
+			],
+		})
+
+		const preview = partial.preview(ops, { journal: true })
+
+		expect(preview.wouldSucceed).toBe(false)
+		expect(preview.errors[0]?.message).toContain('partial workbook')
+		expect(preview.journal).toEqual(changed.journal)
+	})
+
 	test('preview journals restore scalar formula caches without mutating the workbook', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

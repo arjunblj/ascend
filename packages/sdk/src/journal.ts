@@ -71,6 +71,7 @@ export interface MutationJournalIssue {
 		| 'UNSUPPORTED_OPERATION'
 		| 'LOSSY_INVERSE'
 		| 'UNSUPPORTED_VALUE'
+		| 'JOURNAL_UNAVAILABLE'
 		| 'JOURNAL_BUILD_FAILED'
 	readonly message: string
 	readonly refs?: readonly string[]
@@ -420,6 +421,25 @@ export function failedMutationJournal(error: unknown): MutationJournal {
 			{
 				code: 'JOURNAL_BUILD_FAILED',
 				message: `Mutation journal build failed${detail}`,
+			},
+		],
+	}
+}
+
+export function unavailableMutationJournal(
+	message: string,
+	refs?: readonly string[],
+): MutationJournal {
+	return {
+		entries: [],
+		inverseOps: [],
+		supported: false,
+		exact: false,
+		issues: [
+			{
+				code: 'JOURNAL_UNAVAILABLE',
+				message,
+				...(refs && refs.length > 0 ? { refs } : {}),
 			},
 		],
 	}

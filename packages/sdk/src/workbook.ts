@@ -52,7 +52,11 @@ import {
 	partialDependencyLintWarning,
 	sdkCheckIssueFromVerify,
 } from './check-issues.ts'
-import { buildMutationJournal, failedMutationJournal } from './journal.ts'
+import {
+	buildMutationJournal,
+	failedMutationJournal,
+	unavailableMutationJournal,
+} from './journal.ts'
 import {
 	buildWorkbookLoadInfo,
 	type LoadedWorkbookSource,
@@ -129,6 +133,12 @@ function maybeBuildMutationJournal(
 	} catch (error) {
 		return failedMutationJournal(error)
 	}
+}
+
+function partialWorkbookMutationJournal(loadInfo: WorkbookLoadInfo) {
+	return unavailableMutationJournal(
+		`Mutation journal is unavailable because the workbook is partially loaded in ${loadInfo.mode} mode. Reopen the workbook with a full load before applying edits.`,
+	)
 }
 
 interface CellRollbackSnapshot {
@@ -532,6 +542,7 @@ export class AscendWorkbook extends WorkbookReadView {
 
 	preview(ops: readonly Operation[], options?: PreviewOptions): import('./types.ts').PreviewResult {
 		if (this.loadInfo.isPartial) {
+			const journal = options?.journal ? partialWorkbookMutationJournal(this.loadInfo) : undefined
 			return {
 				diff: {
 					sheets: [],
@@ -548,6 +559,7 @@ export class AscendWorkbook extends WorkbookReadView {
 				warnings: [],
 				wouldSucceed: false,
 				errors: [partialWorkbookEditError(this.loadInfo)],
+				...(journal ? { journal } : {}),
 			}
 		}
 		const journal = maybeBuildMutationJournal(this.wb, ops, options?.journal)
@@ -685,6 +697,7 @@ export class AscendWorkbook extends WorkbookReadView {
 			}
 		}
 		if (this.loadInfo.isPartial) {
+			const journal = options?.journal ? partialWorkbookMutationJournal(this.loadInfo) : undefined
 			return {
 				affectedCells: [],
 				sheetsModified: [],
@@ -692,6 +705,7 @@ export class AscendWorkbook extends WorkbookReadView {
 				dirtyRegions: [],
 				generations: this.currentGenerations(),
 				errors: [partialWorkbookEditError(this.loadInfo)],
+				...(journal ? { journal } : {}),
 			}
 		}
 		const journal = maybeBuildMutationJournal(this.wb, ops, options?.journal)

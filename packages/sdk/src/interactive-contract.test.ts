@@ -3767,7 +3767,7 @@ describe('interactive client contract', () => {
 		expect(wb.sheet('Sheet1')?.cell('D1')?.value).toEqual({ kind: 'number', value: 20 })
 	})
 
-	test('copyRange journals mark metadata transfer lossy', () => {
+	test('copyRange all journals restore simple comments exactly', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([
 			{
@@ -3780,6 +3780,7 @@ describe('interactive client contract', () => {
 			},
 			{ op: 'setComment', sheet: 'Sheet1', ref: 'A1', text: 'source note', author: 'agent' },
 		])
+		const before = journalComparableState(wb)
 
 		const changed = wb.apply(
 			[{ op: 'copyRange', sheet: 'Sheet1', source: 'A1', target: 'D1', mode: 'all' }],
@@ -3788,13 +3789,16 @@ describe('interactive client contract', () => {
 
 		expect(changed.errors).toEqual([])
 		expect(changed.journal?.supported).toBe(true)
-		expect(changed.journal?.exact).toBe(false)
-		expect(changed.journal?.issues).toContainEqual({
-			code: 'LOSSY_INVERSE',
-			message:
-				'copyRange metadata transfer for Sheet1!A1 cannot be fully restored with public operations',
-			refs: ['Sheet1!A1', 'Sheet1!D1'],
+		expect(changed.journal?.exact).toBe(true)
+		expect(changed.journal?.issues).toEqual([])
+		expect(wb.getWorkbookModel().getSheet('Sheet1')?.comments.get('D1')).toEqual({
+			text: 'source note',
+			author: 'agent',
 		})
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(journalComparableState(wb)).toEqual(before)
 	})
 
 	test('copyRange all journals mark x14 metadata transfer lossy', () => {
@@ -4470,6 +4474,8 @@ describe('interactive client contract', () => {
 				url: 'https://target.example',
 				display: 'Target',
 			},
+			{ op: 'setComment', sheet: 'Sheet1', ref: 'A1', text: 'source note', author: 'Ada' },
+			{ op: 'setComment', sheet: 'Sheet1', ref: 'D1', text: 'target note', author: 'Grace' },
 			{
 				op: 'setDataValidation',
 				sheet: 'Sheet1',
@@ -4505,6 +4511,10 @@ describe('interactive client contract', () => {
 		expect(wb.sheet('Sheet1')?.dataValidations).toEqual([
 			expect.objectContaining({ sqref: 'D1', type: 'whole' }),
 		])
+		expect(wb.getWorkbookModel().getSheet('Sheet1')?.comments.get('D1')).toEqual({
+			text: 'source note',
+			author: 'Ada',
+		})
 
 		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
 		expect(undo.errors).toEqual([])

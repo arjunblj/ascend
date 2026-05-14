@@ -4364,6 +4364,7 @@ function copyRangeAllMetadataRestoration(
 	readonly issues: readonly MutationJournalIssue[]
 } {
 	const targetRefs = refsInParsedRange(targetRange)
+	const targetComments = commentPreimages(workbook, targetSheetName, targetRefs)
 	const targetHyperlinks = hyperlinkPreimages(workbook, targetSheetName, targetRefs)
 	const validations = validationTransferRestoration(
 		workbook,
@@ -4374,12 +4375,26 @@ function copyRangeAllMetadataRestoration(
 		false,
 	)
 	return {
-		inverseOps: [...restoreHyperlinkOps(targetHyperlinks), ...validations.inverseOps],
+		inverseOps: [
+			...restoreCommentOps(targetComments),
+			...restoreHyperlinkOps(targetHyperlinks),
+			...validations.inverseOps,
+		],
 		preimages: [
+			...targetComments.map((comment) => ({ kind: 'comment' as const, comment })),
 			...targetHyperlinks.map((hyperlink) => ({ kind: 'hyperlink' as const, hyperlink })),
 			...validations.preimages,
 		],
-		issues: validations.issues,
+		issues: [
+			...commentTransferIssues(
+				workbook,
+				sourceSheetName,
+				rangeToA1(sourceRange),
+				targetSheetName,
+				targetRange,
+			),
+			...validations.issues,
+		],
 	}
 }
 
@@ -4396,6 +4411,8 @@ function moveRangeAllMetadataRestoration(
 } {
 	const sourceRefs = refsInParsedRange(sourceRange)
 	const targetRefs = refsInParsedRange(targetRange)
+	const sourceComments = commentPreimages(workbook, sourceSheetName, sourceRefs)
+	const targetComments = commentPreimages(workbook, targetSheetName, targetRefs)
 	const sourceHyperlinks = hyperlinkPreimages(workbook, sourceSheetName, sourceRefs)
 	const targetHyperlinks = hyperlinkPreimages(workbook, targetSheetName, targetRefs)
 	const validations = validationTransferRestoration(
@@ -4408,15 +4425,28 @@ function moveRangeAllMetadataRestoration(
 	)
 	return {
 		inverseOps: [
+			...moveRangeCommentRestoreOps(sourceComments, targetComments),
 			...moveRangeHyperlinkRestoreOps(sourceHyperlinks, targetHyperlinks),
 			...validations.inverseOps,
 		],
 		preimages: [
+			...targetComments.map((comment) => ({ kind: 'comment' as const, comment })),
+			...sourceComments.map((comment) => ({ kind: 'comment' as const, comment })),
 			...targetHyperlinks.map((hyperlink) => ({ kind: 'hyperlink' as const, hyperlink })),
 			...sourceHyperlinks.map((hyperlink) => ({ kind: 'hyperlink' as const, hyperlink })),
 			...validations.preimages,
 		],
-		issues: validations.issues,
+		issues: [
+			...commentTransferIssues(
+				workbook,
+				sourceSheetName,
+				rangeToA1(sourceRange),
+				targetSheetName,
+				targetRange,
+				{ move: true },
+			),
+			...validations.issues,
+		],
 	}
 }
 
@@ -4805,8 +4835,6 @@ function copyRangeModeTouchesUnrestorableMetadata(
 	}
 	if (mode !== 'all') return false
 	return (
-		hasMapRefInRange(sheet.comments, range) ||
-		sheet.threadedComments.some((comment) => refInRange(comment.ref, range)) ||
 		sheet.merges.some((merge) => rangesOverlap(merge, range)) ||
 		sheet.conditionalFormats.some((format) => sqrefOverlaps(format.sqref, range)) ||
 		sheet.x14ConditionalFormats.some((format) => sqrefOverlaps(format.sqref, range))

@@ -23,6 +23,7 @@ import {
 	ensureOutputExtension,
 	escapeDelimitedCell,
 	formatDisplayCellValue,
+	formulaAssist,
 	indexToColumn,
 	inferExportFormat,
 	listCapabilities,
@@ -1093,6 +1094,63 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 	)
 
 	server.tool(
+		'ascend.formula_assist',
+		'Formula IDE helpers for agents: diagnostics, token ranges, active reference, completions, signature help, reference insertion, and F4-style reference cycling',
+		{
+			formula: z.string().describe('Formula text, with or without a leading ='),
+			cursor: z
+				.number()
+				.int()
+				.nonnegative()
+				.optional()
+				.describe('Zero-based cursor offset for active reference and signature help'),
+			prefix: z
+				.string()
+				.optional()
+				.describe('Function completion prefix, e.g. "SU" for SUM/SUMIF suggestions'),
+			completionLimit: z
+				.number()
+				.int()
+				.nonnegative()
+				.max(100)
+				.optional()
+				.describe('Maximum function completions to return'),
+			functionName: z.string().optional().describe('Function name for signature lookup'),
+			reference: z.string().optional().describe('Reference text to insert at cursor'),
+			replaceReferenceAtCursor: z
+				.boolean()
+				.optional()
+				.describe('Replace the active reference instead of inserting at the cursor'),
+			cycleReference: z
+				.boolean()
+				.optional()
+				.describe('Return Excel F4-style absolute/relative reference cycling result'),
+		},
+		async ({
+			formula,
+			cursor,
+			prefix,
+			completionLimit,
+			functionName,
+			reference,
+			replaceReferenceAtCursor,
+			cycleReference,
+		}) =>
+			okResponse(
+				formulaAssist(formula, {
+					...(cursor !== undefined ? { cursor } : {}),
+					...(prefix !== undefined ? { prefix } : {}),
+					...(completionLimit !== undefined ? { completionLimit } : {}),
+					...(functionName !== undefined ? { functionName } : {}),
+					...(reference !== undefined ? { reference } : {}),
+					replaceReferenceAtCursor: replaceReferenceAtCursor === true,
+					cycleReference: cycleReference === true,
+				}),
+				'Prepared formula edit assistance',
+			),
+	)
+
+	server.tool(
 		'ascend.list_operations',
 		'List all available spreadsheet operations with their parameters and JSON Schema for LLM tool use',
 		{},
@@ -1698,11 +1756,12 @@ function buildAgentWorkflowGuide(): string {
 		'3. Audit high-risk workbook content with ascend.active_content before editing macro-enabled, signed, ActiveX, Custom UI, or Excel 4 macro-sheet files.',
 		'4. Locate data with ascend.find, ascend.read, ascend.read_table, ascend.visuals, and ascend.pivots for PivotTable inventory/audits/materialization ops.',
 		'5. Use ascend.search_docs or ascend.search_examples when you need command, schema, workflow, or example recovery context.',
-		'6. Fetch operation schemas from ascend.list_operations or ascend://operations.',
-		'7. Preview edits with ascend.plan before writing; plan prepares a process-local one-shot planHandle by default.',
-		'8. Commit with ascend.commit using planHandle when available, output paths, input hash guards, approvals, and allow-loss only when explicit.',
-		'9. Verify with ascend.check, ascend.lint, ascend.trace, ascend.diff, and ascend.export as needed.',
-		'10. Use ascend.repair_plan when checks, lints, approvals, or unsupported-feature audits need recovery actions.',
+		'6. Use ascend.formula_assist before formula edits when diagnostics, token ranges, completions, signature help, insertion previews, or reference cycling would reduce risk.',
+		'7. Fetch operation schemas from ascend.list_operations or ascend://operations.',
+		'8. Preview edits with ascend.plan before writing; plan prepares a process-local one-shot planHandle by default.',
+		'9. Commit with ascend.commit using planHandle when available, output paths, input hash guards, approvals, and allow-loss only when explicit.',
+		'10. Verify with ascend.check, ascend.lint, ascend.trace, ascend.diff, and ascend.export as needed.',
+		'11. Use ascend.repair_plan when checks, lints, approvals, or unsupported-feature audits need recovery actions.',
 	].join('\n')
 }
 
@@ -1719,6 +1778,7 @@ function buildAgentWorkflowPrompt(file?: string, task?: string): string {
 		'If you need recovery context, call ascend.search_docs or ascend.search_examples before guessing.',
 		'Start with ascend.inspect or ascend.list_sheets; call ascend.package_graph when package sidecars, relationship identity, or preservation policy matter; call ascend.active_content before editing macro-enabled, signed, ActiveX, Custom UI, or Excel 4 macro-sheet workbooks.',
 		'Then use ascend.read, ascend.read_table, ascend.find, ascend.visuals, and ascend.pivots to gather only the necessary workbook context.',
+		'For formula edits, call ascend.formula_assist before planning when syntax, references, completions, signatures, insertion, or F4-style reference cycling are uncertain.',
 		'Before modifying anything, read ascend://operations or call ascend.list_operations and build operations that match the published schemas.',
 		'Always run ascend.plan and inspect approvals, unsupported features, preview diffs, recalc status, preparedPlan, and modelOutput before commit.',
 		'Use ascend.commit with planHandle when available and a non-destructive output path by default; pass expectSha256 when available, and only pass approvals or allowLoss values emitted by the plan.',

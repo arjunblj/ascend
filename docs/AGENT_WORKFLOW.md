@@ -12,6 +12,12 @@ Use this workflow for headless spreadsheet edits:
 
 For API/MCP, prefer the default `prepare: true` response and pass its `planHandle` to the write step. Prepared handles are in-memory, process-local, one-shot, and expire; if the write fails or the handle is unavailable, create a fresh plan before retrying. CLI plan/commit is process-per-command and does not persist prepared handles; reuse `ops.json` with the plan `inputSha256` as API `expectSha256` or CLI `--expect-sha256`.
 
+Formula editing helpers are read-only and safe to call before planning:
+
+- API: `POST /formula-assist`
+- MCP: `ascend.formula_assist({ formula, cursor?, prefix?, completionLimit?, functionName?, reference?, replaceReferenceAtCursor?, cycleReference? })`
+- SDK: `formulaAssist`, plus the lower-level diagnostics, token, completion, signature, insertion, and reference-cycling helpers.
+
 Safety defaults:
 
 - Prefer `--output` over `--in-place`.
@@ -36,3 +42,17 @@ Recovery search:
 - `ascend docs --examples <query> --json` for runnable examples from the CLI.
 - `ascend.search_docs` for commands, workflow guidance, schemas, and safety policy.
 - `ascend.search_examples` for runnable SDK examples and MCP setup snippets.
+
+## Recovery Matrix
+
+| Signal or code | Meaning | Next action |
+| --- | --- | --- |
+| `SHEET_NOT_FOUND` | The sheet name is missing or ambiguous. | Call `list_sheets`, then retry `read`, `plan`, or `trace` with an exact sheet name. |
+| `VALIDATION_ERROR` from `plan` | Operation shape, path mutation, or workbook constraint failed before preview. | Call `ops`/`list_operations`, inspect returned `details`, fix the batch, and re-plan. |
+| `preparedPlan.unavailable`, expired, evicted, or already used | The process-local plan handle cannot be committed. | Re-run `plan`; never reuse stale `planHandle` values. |
+| `STALE_INPUT` or input hash mismatch | Workbook bytes changed after planning. | Re-read the affected ranges, rebuild the operation batch if needed, and re-plan with the new `inputSha256`. |
+| Approval required | The plan found a destructive edit or preservation risk. | Ask the user with the exact approval id and reason, then pass only emitted ids in `approvals`. |
+| Loss blocked or `allowLoss` required | A preserved/unsupported workbook feature may be lost. | Inspect `active_content` and `package_graph`, ask for explicit approval, then pass exact feature keys or loss approval ids. |
+| `FORMULA_EVAL_ERROR` | Recalc failed after an edit. | Call `formula-assist` for syntax/token help, then `lint`, `trace`, and `repair-plan` before changing formulas again. |
+| `changeInvalidation` on compact read | The previous compact window token cannot be patched. | Consume the returned full window and store the new `changeToken`. |
+| Check or lint failures after commit | The output workbook is structurally or semantically unsafe. | Run `repair-plan`, inspect `postWrite`, then plan a corrective edit against the output file. |

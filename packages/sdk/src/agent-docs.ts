@@ -36,6 +36,18 @@ const DOC_SOURCES: readonly Omit<AgentDocEntry, 'text'>[] = [
 		path: 'examples/agent-safe-edit.ts',
 		kind: 'example',
 	},
+	{
+		id: 'example-agent-safe-edit-http',
+		title: 'Agent Safe Edit HTTP Transcript',
+		path: 'examples/agent-safe-edit-http.md',
+		kind: 'example',
+	},
+	{
+		id: 'example-agent-safe-edit-mcp',
+		title: 'Agent Safe Edit MCP Transcript',
+		path: 'examples/agent-safe-edit-mcp.md',
+		kind: 'example',
+	},
 	{ id: 'mcp-setup', title: 'MCP Setup Example', path: 'examples/mcp-setup.md', kind: 'example' },
 	{
 		id: 'example-create',

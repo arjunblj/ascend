@@ -442,6 +442,45 @@ async function postApiFetch(
 }
 
 describe('Ascend API server', () => {
+	test('formula-assist exposes diagnostics, completions, signature help, and reference edits', async () => {
+		const result = await postJson('/formula-assist', {
+			formula: '=SUM(A1:B2',
+			cursor: 8,
+			prefix: 'SU',
+			completionLimit: 3,
+			functionName: 'SUM',
+			reference: 'C1',
+			replaceReferenceAtCursor: true,
+			cycleReference: true,
+		})
+		const data = result.body.data as {
+			diagnostics?: { parseOk?: boolean; diagnostics?: Array<{ code?: string }> }
+			tokens?: Array<{ text?: string; className?: string }>
+			activeReference?: { text?: string; kind?: string }
+			completions?: Array<{ name?: string }>
+			signature?: { name?: string }
+			signatureHelp?: { signature?: { name?: string }; activeParameter?: number }
+			cycle?: { formula?: string; changed?: boolean }
+			insertion?: { formula?: string; replaced?: { text?: string } }
+		}
+
+		expect(result.status).toBe(200)
+		expect(result.body.ok).toBe(true)
+		expect(data.diagnostics?.parseOk).toBe(false)
+		expect(
+			data.diagnostics?.diagnostics?.some((issue) => issue.code === 'formula-parse-error'),
+		).toBe(true)
+		expect(
+			data.tokens?.some((token) => token.text === 'SUM' && token.className === 'function'),
+		).toBe(true)
+		expect(data.activeReference).toMatchObject({ text: 'A1:B2', kind: 'range' })
+		expect(data.completions?.some((completion) => completion.name === 'SUM')).toBe(true)
+		expect(data.signature?.name).toBe('SUM')
+		expect(data.signatureHelp?.signature?.name).toBe('SUM')
+		expect(data.cycle).toMatchObject({ formula: '=SUM(A1:$B$2', changed: true })
+		expect(data.insertion).toMatchObject({ formula: '=SUM(C1', replaced: { text: 'A1:B2' } })
+	})
+
 	test('dump emits replayable operation batches', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

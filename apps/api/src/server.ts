@@ -16,6 +16,7 @@ import {
 	createPreparedAgentPlan,
 	createRepairPlan,
 	formatDisplayCellValue,
+	formulaAssist,
 	getOperationsSchema,
 	listCapabilities,
 	listOperations,
@@ -721,6 +722,28 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 				} catch (e) {
 					return handleError(e, file)
 				}
+			}
+
+			if (method === 'POST' && path === '/formula-assist') {
+				const body = await parseJson<Record<string, unknown>>(req)
+				const formula = body ? requireString(body, 'formula') : null
+				if (!formula) return jsonFailure('Missing or invalid formula', 400)
+				const cursor = body ? requireOptionalNumber(body, 'cursor') : undefined
+				const completionLimit = body ? requireOptionalNumber(body, 'completionLimit') : undefined
+				const prefix = body ? requireString(body, 'prefix') : null
+				const functionName = body ? requireString(body, 'functionName') : null
+				const reference = body ? requireString(body, 'reference') : null
+				return jsonSuccess(
+					formulaAssist(formula, {
+						...(cursor !== undefined ? { cursor } : {}),
+						...(prefix !== null ? { prefix } : {}),
+						...(completionLimit !== undefined ? { completionLimit } : {}),
+						...(functionName !== null ? { functionName } : {}),
+						...(reference !== null ? { reference } : {}),
+						replaceReferenceAtCursor: body?.replaceReferenceAtCursor === true,
+						cycleReference: body?.cycleReference === true,
+					}),
+				)
 			}
 
 			if (method === 'POST' && path === '/plan') {

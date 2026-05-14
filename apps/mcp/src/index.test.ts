@@ -60,6 +60,7 @@ describe('MCP server', () => {
 		expect(names).toContain('ascend.write')
 		expect(names).toContain('ascend.calc')
 		expect(names).toContain('ascend.eval')
+		expect(names).toContain('ascend.formula_assist')
 		expect(names).toContain('ascend.check')
 		expect(names).toContain('ascend.list_operations')
 		expect(names).toContain('ascend.lint')
@@ -75,7 +76,7 @@ describe('MCP server', () => {
 		expect(names).toContain('ascend.plan')
 		expect(names).toContain('ascend.commit')
 		expect(names).toContain('ascend.repair_plan')
-		expect(names.length).toBe(29)
+		expect(names.length).toBe(30)
 	})
 
 	test('agent resources and prompts are registered', () => {
@@ -128,6 +129,7 @@ describe('MCP server', () => {
 		expect(operations?.contents[0]?.text).toContain('"schemas"')
 		expect(workflow?.contents[0]?.text).toContain('ascend.plan')
 		expect(workflow?.contents[0]?.text).toContain('planHandle')
+		expect(workflow?.contents[0]?.text).toContain('formula_assist')
 	})
 
 	test('documentation search tools return local docs and examples', async () => {
@@ -148,7 +150,7 @@ describe('MCP server', () => {
 			}
 		}>
 
-		const docs = await docsHandler({ query: 'plan commit allowLoss', limit: 3 })
+		const docs = await docsHandler({ query: 'llms plan commit allowLoss', limit: 3 })
 		expect(docs.structuredContent?.ok).toBe(true)
 		expect(
 			docs.structuredContent?.data?.results?.some((result) => result.path?.includes('llms')),
@@ -187,8 +189,58 @@ describe('MCP server', () => {
 		expect(text).toContain('ascend.plan')
 		expect(text).toContain('ascend.commit')
 		expect(text).toContain('ascend.active_content')
+		expect(text).toContain('ascend.formula_assist')
 		expect(text).toContain('planHandle')
 		expect(text).toContain('allowLoss')
+	})
+
+	test('ascend.formula_assist exposes formula IDE helpers for agents', async () => {
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const handler = (server as any)._registeredTools['ascend.formula_assist'].handler as (args: {
+			formula: string
+			cursor?: number
+			prefix?: string
+			completionLimit?: number
+			functionName?: string
+			reference?: string
+			replaceReferenceAtCursor?: boolean
+			cycleReference?: boolean
+		}) => Promise<{
+			structuredContent?: {
+				ok?: boolean
+				data?: {
+					diagnostics?: { parseOk?: boolean }
+					activeReference?: { text?: string; kind?: string }
+					completions?: Array<{ name?: string }>
+					signature?: { name?: string }
+					signatureHelp?: { signature?: { name?: string } }
+					cycle?: { formula?: string; changed?: boolean }
+					insertion?: { formula?: string; replaced?: { text?: string } }
+				}
+			}
+		}>
+
+		const result = await handler({
+			formula: '=SUM(A1:B2',
+			cursor: 8,
+			prefix: 'SU',
+			completionLimit: 3,
+			functionName: 'SUM',
+			reference: 'C1',
+			replaceReferenceAtCursor: true,
+			cycleReference: true,
+		})
+		const data = result.structuredContent?.data
+
+		expect(result.structuredContent?.ok).toBe(true)
+		expect(data?.diagnostics?.parseOk).toBe(false)
+		expect(data?.activeReference).toMatchObject({ text: 'A1:B2', kind: 'range' })
+		expect(data?.completions?.some((completion) => completion.name === 'SUM')).toBe(true)
+		expect(data?.signature?.name).toBe('SUM')
+		expect(data?.signatureHelp?.signature?.name).toBe('SUM')
+		expect(data?.cycle).toMatchObject({ formula: '=SUM(A1:$B$2', changed: true })
+		expect(data?.insertion).toMatchObject({ formula: '=SUM(C1', replaced: { text: 'A1:B2' } })
 	})
 
 	test('ascend.active_content exposes focused active-content provenance for agents', async () => {

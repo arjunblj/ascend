@@ -12,5 +12,6 @@ bun run examples/agent-safe-edit.ts ./path/to/file.xlsx ./path/to/file.agent.xls
 ```
 
 `agent-safe-edit.ts` is the golden path for coding agents: inspect, prepare a safe plan, commit with the prepared handle, verify, and print expected JSON fields.
+`agent-safe-edit-http.md` and `agent-safe-edit-mcp.md` show the same workflow through API and MCP, including formula assistance and path-addressed mutations.
 
 `mcp-setup.md` documents MCP configuration (also summarized in the root README).

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
 	cycleFormulaReferenceMode,
+	formulaAssist,
 	formulaDiagnostics,
 	formulaFunctionCompletions,
 	formulaFunctionSignature,
@@ -11,6 +12,26 @@ import {
 } from './index.ts'
 
 describe('formula editing utilities', () => {
+	test('bundles formula IDE assistance for API and MCP surfaces', () => {
+		const result = formulaAssist('=SUM(A1:B2', {
+			cursor: 8,
+			prefix: 'SU',
+			completionLimit: 3,
+			functionName: 'SUM',
+			reference: 'C1',
+			replaceReferenceAtCursor: true,
+			cycleReference: true,
+		})
+
+		expect(result.diagnostics.parseOk).toBe(false)
+		expect(result.activeReference).toMatchObject({ text: 'A1:B2', kind: 'range' })
+		expect(result.completions.some((completion) => completion.name === 'SUM')).toBe(true)
+		expect(result.signature?.name).toBe('SUM')
+		expect(result.signatureHelp?.signature.name).toBe('SUM')
+		expect(result.cycle).toMatchObject({ formula: '=SUM(A1:$B$2', changed: true })
+		expect(result.insertion).toMatchObject({ formula: '=SUM(C1', replaced: { text: 'A1:B2' } })
+	})
+
 	test('finds cell, range, sheet-qualified, structured, and spill references at the cursor', () => {
 		expect(referenceAtCursor('SUM(A1:B2)', 6)).toEqual({
 			text: 'A1:B2',

@@ -6,7 +6,7 @@ Ascend is an agent-native spreadsheet engine for headless Excel, XLSM, CSV, and 
 
 - CLI: `ascend agent-init --json`, `ascend docs <query> --json`, `ascend ops --json`, `ascend capabilities --json`, `ascend plan <file> --ops ops.json --json`, `ascend commit <file> --ops ops.json --output out.xlsx --json`
 - MCP resources: `ascend://llms.txt`, `ascend://llms-full.txt`, `ascend://docs/agent-api.md`, `ascend://operations`, `ascend://capabilities`, `ascend://agent-workflow`
-- MCP tools: `ascend.search_docs`, `ascend.search_examples`, `ascend.inspect`, `ascend.active_content`, `ascend.package_graph`, `ascend.raw_part`, `ascend.read`, `ascend.read_table`, `ascend.find`, `ascend.visuals`, `ascend.pivots`, `ascend.list_operations`, `ascend.capabilities`, `ascend.plan`, `ascend.commit`, `ascend.repair_plan`
+- MCP tools: `ascend.search_docs`, `ascend.search_examples`, `ascend.inspect`, `ascend.active_content`, `ascend.package_graph`, `ascend.raw_part`, `ascend.read`, `ascend.read_table`, `ascend.find`, `ascend.formula_assist`, `ascend.visuals`, `ascend.pivots`, `ascend.list_operations`, `ascend.capabilities`, `ascend.plan`, `ascend.commit`, `ascend.repair_plan`
 - SDK: `AscendWorkbook`, `WorkbookDocument`, operation helpers, schema discovery, safe plan/commit workflow
 
 ## Recommended Workflow
@@ -20,6 +20,8 @@ Ascend is an agent-native spreadsheet engine for headless Excel, XLSM, CSV, and 
 7. Use `repair-plan` when validation, formulas, or preservation audits fail.
 
 API/MCP plan responses return one-shot process-local prepared handles by default; commit with `planHandle` when available, then re-plan if the handle expires or is already used. CLI commands do not persist prepared handles; use the plan hash as API `expectSha256` or CLI `--expect-sha256`.
+
+Use API `POST /formula-assist`, MCP `ascend.formula_assist`, or SDK `formulaAssist` before formula edits when you need diagnostics, token ranges, completions, signature help, reference insertion preview, or F4-style reference cycling.
 
 ## Machine-Readable References
 

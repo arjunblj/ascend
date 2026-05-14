@@ -92,6 +92,8 @@ export {
 } from './format-helpers.ts'
 export type {
 	CycleReferenceResult,
+	FormulaAssistOptions,
+	FormulaAssistResult,
 	FormulaDiagnostic,
 	FormulaDiagnosticsResult,
 	FormulaFunctionCompletion,
@@ -107,6 +109,7 @@ export type {
 } from './formula-edit.ts'
 export {
 	cycleFormulaReferenceMode,
+	formulaAssist,
 	formulaDiagnostics,
 	formulaFunctionCompletions,
 	formulaFunctionSignature,

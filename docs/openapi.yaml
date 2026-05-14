@@ -181,7 +181,12 @@ paths:
                 preview: { type: boolean }
                 changedSince: { type: string, description: Compact-read change token from a prior response }
       responses:
-        '200': { description: Range payload. Compact responses include changeToken and may include changeInvalidation when the requested patch cannot be applied. }
+        '200':
+          description: Range payload. Compact responses include changeToken and may include changeInvalidation when the requested patch cannot be applied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadSuccessEnvelope'
   /agent-view:
     post:
       summary: Read a compact semantic summary for an agent workflow
@@ -201,6 +206,31 @@ paths:
                 sampleValueLimit: { type: integer }
       responses:
         '200': { description: Agent-oriented range profile }
+  /formula-assist:
+    post:
+      summary: Formula IDE assistance without writing a workbook
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FormulaAssistRequest'
+            examples:
+              repairFormula:
+                value:
+                  formula: '=SUM(A1:B2'
+                  cursor: 8
+                  prefix: SU
+                  completionLimit: 5
+                  functionName: SUM
+                  cycleReference: true
+      responses:
+        '200':
+          description: Formula diagnostics, token ranges, completions, signature help, and optional reference edit previews
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FormulaAssistSuccessEnvelope'
   /write:
     post:
       summary: Apply operations or path-addressed mutations and save (implementation-specific)
@@ -247,20 +277,31 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              required: [file]
-              oneOf:
-                - required: [ops]
-                - required: [mutations]
-              properties:
-                file: { type: string }
-                ops: { type: array }
-                mutations: { type: array, description: Path-addressed mutations; mutually exclusive with ops }
-                compact: { type: boolean }
-                prepare: { type: boolean, description: Defaults to true and returns a preparedPlan handle }
-                maxChangedCells: { type: integer, description: Compact response emitted changed-cell cap; total counts are still reported }
+              $ref: '#/components/schemas/PlanRequest'
+            examples:
+              operationPlan:
+                value:
+                  file: model.xlsx
+                  ops:
+                    - op: setFormula
+                      sheet: Revenue
+                      ref: H2
+                      formula: '=SUM(B2:G2)'
+                  compact: true
+              pathMutationPlan:
+                value:
+                  file: model.xlsx
+                  mutations:
+                    - path: /sheets/Revenue/cells/H2/formula
+                      value: '=SUM(B2:G2)'
+                  compact: true
       responses:
-        '200': { description: Agent plan with input hash, digest, preview, check, lint, preservation summary, and optional preparedPlan metadata }
+        '200':
+          description: Agent plan with input hash, digest, preview, check, lint, preservation summary, and optional preparedPlan metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlanSuccessEnvelope'
   /commit:
     post:
       summary: Commit operations atomically with optional input hash guard
@@ -269,34 +310,30 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              oneOf:
-                - required: [planHandle]
-                - required: [file, ops]
-                - required: [file, mutations]
-              properties:
-                planHandle: { type: string, description: One-shot prepared plan handle returned by /plan }
-                file: { type: string }
-                ops: { type: array }
-                mutations: { type: array, description: Path-addressed mutations; mutually exclusive with ops }
-                output: { type: string }
-                inPlace: { type: boolean }
-                backup: { type: string }
-                expectSha256: { type: string }
-                allowLoss:
-                  oneOf:
-                    - { type: string }
-                    - { type: array, items: { type: string } }
-                  description: Feature keys, feature:tier keys, generated loss approval IDs, comma-separated string, string array, or "all" after explicit user approval
-                approvals:
-                  oneOf:
-                    - { type: string }
-                    - { type: array, items: { type: string } }
-                  description: Exact approval IDs from plan, comma-separated string, array, or "all"
-                compact: { type: boolean }
-                maxAffectedCells: { type: integer, description: Compact response emitted affected-cell cap; total counts are still reported }
+              $ref: '#/components/schemas/CommitRequest'
+            examples:
+              preparedCommit:
+                value:
+                  planHandle: plan_abc123
+                  output: model.updated.xlsx
+                  compact: true
+              guardedDirectCommit:
+                value:
+                  file: model.xlsx
+                  ops:
+                    - op: setFormula
+                      sheet: Revenue
+                      ref: H2
+                      formula: '=SUM(B2:G2)'
+                  output: model.updated.xlsx
+                  expectSha256: 614cf9e96dc353cac45028ce4cc02e7722056b7c02fbf5920566c7572f53900d
       responses:
-        '200': { description: Commit result with input/output hashes and plan digest }
+        '200':
+          description: Commit result with input/output hashes and plan digest
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommitSuccessEnvelope'
   /repair-plan:
     post:
       summary: Suggest safe next actions when check, lint, or unsupported-feature audits need attention
@@ -310,7 +347,12 @@ paths:
               properties:
                 file: { type: string }
       responses:
-        '200': { description: Repair action list }
+        '200':
+          description: Repair action list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RepairPlanSuccessEnvelope'
   /calc:
     post:
       summary: Recalculate workbook
@@ -396,3 +438,286 @@ paths:
                 format: { type: string }
       responses:
         '200': { description: Binary or JSON depending on format }
+components:
+  schemas:
+    MachineSuccess:
+      type: object
+      required: [ok, version, data]
+      properties:
+        ok: { type: boolean, enum: [true] }
+        version: { type: string }
+        data: { type: object, additionalProperties: true }
+    MachineFailure:
+      type: object
+      required: [ok, version, error]
+      properties:
+        ok: { type: boolean, enum: [false] }
+        version: { type: string }
+        error:
+          oneOf:
+            - { type: string }
+            - $ref: '#/components/schemas/AscendError'
+    AscendError:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string, description: Machine-readable error code }
+        message: { type: string, description: Human-readable workbook concept and failure reason }
+        refs: { type: array, items: { type: string } }
+        details: { type: object, additionalProperties: true }
+        retry: { type: string, description: Retry strategy when known }
+        suggestedFix: { type: string, description: Next action for agents or humans }
+    Operation:
+      type: object
+      required: [op]
+      properties:
+        op: { type: string }
+      additionalProperties: true
+      description: Canonical operation from GET /operations.
+    PathMutation:
+      type: object
+      required: [path]
+      properties:
+        path:
+          oneOf:
+            - { type: string, example: /sheets/Revenue/cells/H2/formula }
+            - { type: array, items: { type: string }, example: [sheets, Revenue, cells, H2, formula] }
+        value:
+          description: New value for path-addressed set/replace operations.
+        op:
+          type: string
+          description: Optional JSON Patch-style verb when supported by a path shape.
+      additionalProperties: true
+    AgentEditInput:
+      type: object
+      oneOf:
+        - required: [ops]
+        - required: [mutations]
+      properties:
+        ops:
+          type: array
+          items:
+            $ref: '#/components/schemas/Operation'
+          description: Canonical operations; mutually exclusive with mutations.
+        mutations:
+          type: array
+          items:
+            $ref: '#/components/schemas/PathMutation'
+          description: Path-addressed mutations compiled against the workbook; mutually exclusive with ops.
+    Approval:
+      type: object
+      required: [id, code, message]
+      properties:
+        id: { type: string }
+        code: { type: string }
+        message: { type: string }
+        refs: { type: array, items: { type: string } }
+        details: { type: object, additionalProperties: true }
+    PreparedPlan:
+      type: object
+      required: [id, file, inputSha256, planDigest, operationCount, expiresAt, ttlMs]
+      properties:
+        id: { type: string, description: Process-local one-shot plan handle }
+        file: { type: string }
+        inputSha256: { type: string }
+        planDigest: { type: string }
+        operationCount: { type: integer }
+        expiresAt: { type: string, format: date-time }
+        ttlMs: { type: integer }
+    LossAudit:
+      type: object
+      properties:
+        ok: { type: boolean }
+        blockedFeatures: { type: array, items: { type: object, additionalProperties: true } }
+        blockedPackageParts: { type: array, items: { type: object, additionalProperties: true } }
+        approvals: { type: array, items: { $ref: '#/components/schemas/Approval' } }
+      additionalProperties: true
+    PlanRequest:
+      allOf:
+        - type: object
+          required: [file]
+          properties:
+            file: { type: string }
+            compact: { type: boolean }
+            prepare: { type: boolean, description: Defaults to true and returns a preparedPlan handle }
+            maxChangedCells:
+              type: integer
+              description: Compact response emitted changed-cell cap; total counts are still reported.
+        - $ref: '#/components/schemas/AgentEditInput'
+    CommitRequest:
+      type: object
+      oneOf:
+        - required: [planHandle]
+        - required: [file, ops]
+        - required: [file, mutations]
+      properties:
+        planHandle: { type: string, description: One-shot prepared plan handle returned by /plan }
+        file: { type: string }
+        ops:
+          type: array
+          items:
+            $ref: '#/components/schemas/Operation'
+        mutations:
+          type: array
+          items:
+            $ref: '#/components/schemas/PathMutation'
+        output: { type: string, description: Non-destructive output path }
+        inPlace: { type: boolean, description: Replace the input file atomically }
+        backup: { type: string, description: Backup path for in-place commits }
+        expectSha256: { type: string, description: Reject stale input bytes }
+        allowLoss:
+          oneOf:
+            - { type: string }
+            - { type: array, items: { type: string } }
+          description: Feature keys, feature:tier keys, generated loss approval IDs, comma-separated string, string array, or "all" after explicit user approval.
+        approvals:
+          oneOf:
+            - { type: string }
+            - { type: array, items: { type: string } }
+          description: Exact approval IDs from plan, comma-separated string, array, or "all".
+        compact: { type: boolean }
+        maxAffectedCells:
+          type: integer
+          description: Compact response emitted affected-cell cap; total counts are still reported.
+    PlanResponse:
+      type: object
+      required: [inputSha256, planDigest, operationCount, preview, check, lint, approvals, modelOutput]
+      properties:
+        inputSha256: { type: string }
+        planDigest: { type: string }
+        operationCount: { type: integer }
+        preview:
+          type: object
+          required: [wouldSucceed]
+          properties:
+            wouldSucceed: { type: boolean }
+            cellChanges: { type: array, items: { type: object, additionalProperties: true } }
+            errors: { type: array, items: { $ref: '#/components/schemas/AscendError' } }
+          additionalProperties: true
+        check: { type: object, additionalProperties: true }
+        lint: { type: object, additionalProperties: true }
+        lossAudit: { $ref: '#/components/schemas/LossAudit' }
+        approvals: { type: array, items: { $ref: '#/components/schemas/Approval' } }
+        preparedPlan: { $ref: '#/components/schemas/PreparedPlan' }
+        pathMutations: { type: object, additionalProperties: true }
+        modelOutput:
+          type: object
+          properties:
+            nextActions: { type: array, items: { type: string } }
+          additionalProperties: true
+      additionalProperties: true
+    CommitResponse:
+      type: object
+      required: [inputSha256, outputSha256, planDigest, operationCount, postWrite]
+      properties:
+        inputSha256: { type: string }
+        outputSha256: { type: string }
+        output: { type: string }
+        backup: { type: string }
+        planDigest: { type: string }
+        operationCount: { type: integer }
+        postWrite:
+          type: object
+          properties:
+            valid: { type: boolean }
+            auditsPassed: { type: boolean }
+            check: { type: object, additionalProperties: true }
+            lint: { type: object, additionalProperties: true }
+          additionalProperties: true
+        pathMutations: { type: object, additionalProperties: true }
+      additionalProperties: true
+    RepairPlanResponse:
+      type: object
+      required: [actions]
+      properties:
+        actions:
+          type: array
+          items:
+            type: object
+            properties:
+              code: { type: string }
+              title: { type: string }
+              reason: { type: string }
+              command: { type: string }
+            additionalProperties: true
+      additionalProperties: true
+    CompactReadResponse:
+      type: object
+      required: [changeToken, cells]
+      properties:
+        changeToken: { type: string }
+        cells: { type: array, items: { type: object, additionalProperties: true } }
+        changeInvalidation:
+          type: object
+          properties:
+            code: { type: string }
+            reason: { type: string }
+          additionalProperties: true
+      additionalProperties: true
+    FormulaAssistRequest:
+      type: object
+      required: [formula]
+      properties:
+        formula: { type: string, description: Formula text with or without a leading "=" }
+        cursor: { type: integer, minimum: 0, description: Zero-based cursor offset }
+        prefix: { type: string, description: Function completion prefix }
+        completionLimit: { type: integer, minimum: 0, maximum: 100 }
+        functionName: { type: string, description: Function name for signature lookup }
+        reference: { type: string, description: Reference text to insert at cursor }
+        replaceReferenceAtCursor: { type: boolean }
+        cycleReference: { type: boolean, description: Return F4-style reference cycling result }
+    FormulaAssistResponse:
+      type: object
+      required: [formula, cursor, diagnostics, tokens, activeReference, completions, signature, signatureHelp, cycle, insertion]
+      properties:
+        formula: { type: string }
+        cursor: { type: integer, nullable: true }
+        diagnostics:
+          type: object
+          properties:
+            parseOk: { type: boolean }
+            diagnostics: { type: array, items: { type: object, additionalProperties: true } }
+        tokens: { type: array, items: { type: object, additionalProperties: true } }
+        activeReference: { type: object, nullable: true, additionalProperties: true }
+        completions: { type: array, items: { type: object, additionalProperties: true } }
+        signature: { type: object, nullable: true, additionalProperties: true }
+        signatureHelp: { type: object, nullable: true, additionalProperties: true }
+        cycle: { type: object, nullable: true, additionalProperties: true }
+        insertion: { type: object, nullable: true, additionalProperties: true }
+    PlanSuccessEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/MachineSuccess'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/PlanResponse'
+    CommitSuccessEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/MachineSuccess'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/CommitResponse'
+    RepairPlanSuccessEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/MachineSuccess'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/RepairPlanResponse'
+    ReadSuccessEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/MachineSuccess'
+        - type: object
+          properties:
+            data:
+              oneOf:
+                - $ref: '#/components/schemas/CompactReadResponse'
+                - { type: object, additionalProperties: true }
+    FormulaAssistSuccessEnvelope:
+      allOf:
+        - $ref: '#/components/schemas/MachineSuccess'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/FormulaAssistResponse'

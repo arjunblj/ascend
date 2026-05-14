@@ -102,6 +102,29 @@ export interface FormulaFunctionCompletionOptions {
 	readonly limit?: number
 }
 
+export interface FormulaAssistOptions {
+	readonly cursor?: number
+	readonly prefix?: string
+	readonly completionLimit?: number
+	readonly functionName?: string
+	readonly reference?: string
+	readonly replaceReferenceAtCursor?: boolean
+	readonly cycleReference?: boolean
+}
+
+export interface FormulaAssistResult {
+	readonly formula: string
+	readonly cursor: number | null
+	readonly diagnostics: FormulaDiagnosticsResult
+	readonly tokens: readonly FormulaTokenRange[]
+	readonly activeReference: FormulaReferenceRange | null
+	readonly completions: readonly FormulaFunctionCompletion[]
+	readonly signature: FormulaFunctionSignature | null
+	readonly signatureHelp: FormulaFunctionSignatureHelp | null
+	readonly cycle: CycleReferenceResult | null
+	readonly insertion: InsertFormulaReferenceResult | null
+}
+
 export interface FormulaFunctionSignatureHelp {
 	readonly signature: FormulaFunctionSignature
 	readonly activeParameter: number
@@ -220,6 +243,45 @@ export function insertFormulaReference(
 		cursor: start + reference.length,
 		inserted: reference,
 		...(replaced ? { replaced } : {}),
+	}
+}
+
+export function formulaAssist(
+	formula: string,
+	options: FormulaAssistOptions = {},
+): FormulaAssistResult {
+	const cursor =
+		typeof options.cursor === 'number' && Number.isFinite(options.cursor)
+			? Math.max(0, Math.min(formula.length, Math.floor(options.cursor)))
+			: null
+	const completionLimit =
+		typeof options.completionLimit === 'number' && Number.isFinite(options.completionLimit)
+			? Math.max(0, Math.floor(options.completionLimit))
+			: undefined
+	return {
+		formula,
+		cursor,
+		diagnostics: formulaDiagnostics(formula),
+		tokens: formulaTokenRanges(formula),
+		activeReference: cursor === null ? null : referenceAtCursor(formula, cursor),
+		completions:
+			options.prefix === undefined
+				? []
+				: formulaFunctionCompletions(options.prefix, {
+						...(completionLimit !== undefined ? { limit: completionLimit } : {}),
+					}),
+		signature: options.functionName ? formulaFunctionSignature(options.functionName) : null,
+		signatureHelp: cursor === null ? null : formulaFunctionSignatureHelp(formula, cursor),
+		cycle:
+			cursor !== null && options.cycleReference === true
+				? cycleFormulaReferenceMode(formula, cursor)
+				: null,
+		insertion:
+			cursor !== null && options.reference
+				? insertFormulaReference(formula, cursor, options.reference, {
+						replaceReferenceAtCursor: options.replaceReferenceAtCursor === true,
+					})
+				: null,
 	}
 }
 

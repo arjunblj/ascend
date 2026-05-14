@@ -32,6 +32,7 @@ Agent workflow endpoints:
 - `POST /inspect`, `/active-content`, `/package-graph`, `/raw-part`, `/visuals`, `/pivots`
 - `POST /read` with `format: "cells" | "rows" | "objects" | "compact"`; compact responses include `changeToken` and may include `changeInvalidation`
 - `POST /agent-view`
+- `POST /formula-assist` for read-only formula diagnostics, token ranges, completions, signature help, reference insertion preview, and F4-style reference cycling
 - `GET /operations`, `GET /capabilities`
 - `POST /plan` with `ops` or `mutations`, optional `compact`, `prepare`, and `maxChangedCells`
 - `POST /commit` with `planHandle` or fresh `file` plus `ops`/`mutations`, optional `allowLoss`, `approvals`, `compact`, and `maxAffectedCells`
@@ -67,6 +68,7 @@ Use these workbook tools for normal work:
 - `ascend.read({ file, sheet?, range, format?, rowOffset?, rowLimit?, maxRows?, preview?, display?, headers?, cols?, changedSince? })` where `format` is `cells`, `rows`, `objects`, `compact`, or MCP-only `tsv`
 - `ascend.read_table({ file, table, rowOffset?, rowLimit?, display? })`
 - `ascend.find({ file, query, sheet?, in?, caseSensitive?, limit? })`
+- `ascend.formula_assist({ formula, cursor?, prefix?, completionLimit?, functionName?, reference?, replaceReferenceAtCursor?, cycleReference? })`
 - `ascend.visuals({ file })`
 - `ascend.pivots({ file, pivotTable?, partPath?, mode? })`
 - `ascend.agent_view({ file, sheet?, range, rowChunkSize?, sampleRowLimit?, sampleValueLimit? })`
@@ -110,6 +112,17 @@ ascend commit model.xlsx --ops ops.json --output model.updated.xlsx --expect-sha
 ascend check model.updated.xlsx --json
 ```
 
+Path-addressed mutations are also supported by API/MCP `plan`, `commit`, `preview`, and `write`:
+
+```json
+[
+  { "path": "/sheets/Revenue/cells/H2/formula", "value": "=SUM(B2:G2)" },
+  { "path": ["tables", "Sales", "columns", "Forecast", "formula"], "value": "SUM([Revenue])" }
+]
+```
+
+Use `ops` when you already know the operation schema. Use `mutations` when an agent is editing workbook concepts by stable paths and wants Ascend to compile the replayable operations.
+
 ## Golden Path For Coding Agents
 
 1. Inspect and locate:
@@ -149,9 +162,12 @@ Expected JSON fields: `data.output`, `data.outputSha256`, `data.postWrite.valid`
 
 API/MCP equivalent: call `plan` with `prepare` omitted or `true`, then call `commit` with `planHandle: preparedPlan.id`. If the handle is unavailable, expired, or already used, re-run `plan`; do not reuse stale handles.
 
+HTTP and MCP runnable transcripts live in `examples/agent-safe-edit-http.md` and `examples/agent-safe-edit-mcp.md`.
+
 ## Example Recovery Prompts
 
 - Search operation schema: `ascend.search_docs({ "query": "setChartSeriesSource chart series source" })`
 - Find example code: `ascend.search_examples({ "query": "read modify save workbook" })`
 - Understand safety gates: `ascend.search_docs({ "query": "allowLoss approvals preservation audit" })`
 - Read compactly: `ascend.search_docs({ "query": "compact read formats MCP" })`
+- Repair a formula: `ascend.formula_assist({ "formula": "=SUM(A1:B2", "cursor": 8, "prefix": "SU", "cycleReference": true })`

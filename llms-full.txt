@@ -69,6 +69,7 @@ Workbook tools:
 - `ascend.read`
 - `ascend.read_table`
 - `ascend.find`
+- `ascend.formula_assist`
 - `ascend.visuals`
 - `ascend.pivots`
 - `ascend.agent_view`
@@ -98,6 +99,8 @@ Workbook tools:
 Never use destructive in-place writes unless the user asked for them. Never pass `allowLoss` unless the user accepts the specific preservation or unsupported feature risk.
 
 For API/MCP, `plan` prepares a process-local one-shot handle by default. Prefer `commit({ planHandle })`, and re-run `plan` if the handle expires, is unavailable, or has already been consumed. CLI `plan` and `commit` run in separate processes; they do not share prepared handles, so commit with the same operation batch and `expectSha256` from plan.
+
+For formula edits, call `formula-assist` / `ascend.formula_assist` before planning when syntax or references are uncertain. It is read-only and returns diagnostics, token ranges, active reference, function completions, signature help, insertion previews, and F4-style reference cycling.
 
 ## Common Operation Examples
 

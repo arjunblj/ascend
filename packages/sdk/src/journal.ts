@@ -5369,6 +5369,7 @@ function moveRangeFormulaSurfaceRestoration(
 	const sourceSheetName = op.sheet
 	const targetSheetName = op.targetSheet ?? op.sheet
 	const cellRefsBySheet = new Map<string, string[]>()
+	const dataValidationPreimages = new Map<string, MutationJournalDataValidationPreimage>()
 	const metadataRefs: string[] = []
 	for (const sheet of workbook.sheets) {
 		for (const [row, col, cell] of sheet.cells.iterate()) {
@@ -5387,6 +5388,14 @@ function moveRangeFormulaSurfaceRestoration(
 				pushSheetRef(cellRefsBySheet, sheet.name, toA1({ row, col }))
 			}
 		}
+		collectMovedRangeDataValidationFormulaRestorations(
+			dataValidationPreimages,
+			metadataRefs,
+			workbook,
+			sheet,
+			sourceSheetName,
+			sourceRange,
+		)
 		pushMovedRangeMetadataFormulaRefs(metadataRefs, workbook, sheet, sourceSheetName, sourceRange)
 	}
 	const definedNames: MutationJournalDefinedNamePreimage[] = []
@@ -5412,6 +5421,9 @@ function moveRangeFormulaSurfaceRestoration(
 	const definedNameRestorations = definedNames.map((preimage) =>
 		restoreDefinedNameOps(workbook, preimage),
 	)
+	const dataValidationRestorations = [...dataValidationPreimages.values()].map((preimage) =>
+		restoreDataValidationOps(preimage),
+	)
 	const metadataIssues: readonly MutationJournalIssue[] =
 		metadataRefs.length > 0
 			? [
@@ -5425,17 +5437,27 @@ function moveRangeFormulaSurfaceRestoration(
 	const preimages: MutationJournalPreimage[] = [
 		...(cells.length > 0 ? [{ kind: 'cells' as const, cells }] : []),
 		...definedNames.map((definedName) => ({ kind: 'defined-name' as const, definedName })),
+		...(dataValidationPreimages.size > 0
+			? [
+					{
+						kind: 'data-validations' as const,
+						validations: [...dataValidationPreimages.values()],
+					},
+				]
+			: []),
 	]
 	if (preimages.length === 0 && metadataIssues.length === 0) return EMPTY_METADATA_RESTORATION
 	return {
 		inverseOps: [
 			...cellInverseOps,
 			...definedNameRestorations.flatMap((restoration) => restoration.inverseOps),
+			...dataValidationRestorations.flatMap((restoration) => restoration.inverseOps),
 		],
 		preimages,
 		issues: [
 			...cellIssues,
 			...definedNameRestorations.flatMap((restoration) => restoration.issues),
+			...dataValidationRestorations.flatMap((restoration) => restoration.issues),
 			...metadataIssues,
 		],
 	}
@@ -5463,6 +5485,53 @@ function definedNamePreimageFromEntry(
 	}
 }
 
+function collectMovedRangeDataValidationFormulaRestorations(
+	preimages: Map<string, MutationJournalDataValidationPreimage>,
+	lossyRefs: string[],
+	workbook: Workbook,
+	sheet: Sheet,
+	sourceSheetName: string,
+	sourceRange: RangeRef,
+): void {
+	for (const validation of sheet.dataValidations) {
+		const refs: string[] = []
+		if (
+			validation.formula1 !== undefined &&
+			formulaReferencesMovedRange(
+				workbook,
+				validation.formula1,
+				sheet.name,
+				sourceSheetName,
+				sourceRange,
+			)
+		) {
+			refs.push(`${sheet.name}!validation:${validation.sqref}:formula1`)
+		}
+		if (
+			validation.formula2 !== undefined &&
+			formulaReferencesMovedRange(
+				workbook,
+				validation.formula2,
+				sheet.name,
+				sourceSheetName,
+				sourceRange,
+			)
+		) {
+			refs.push(`${sheet.name}!validation:${validation.sqref}:formula2`)
+		}
+		if (refs.length === 0) continue
+		if (dataValidationSqrefCount(sheet, validation.sqref) !== 1) {
+			lossyRefs.push(...refs)
+			continue
+		}
+		preimages.set(`${sheet.name}!${validation.sqref}`, {
+			sheet: sheet.name,
+			range: validation.sqref,
+			validation: { ...validation },
+		})
+	}
+}
+
 function pushMovedRangeMetadataFormulaRefs(
 	refs: string[],
 	workbook: Workbook,
@@ -5470,26 +5539,6 @@ function pushMovedRangeMetadataFormulaRefs(
 	sourceSheetName: string,
 	sourceRange: RangeRef,
 ): void {
-	for (const validation of sheet.dataValidations) {
-		pushMovedRangeFormulaRef(
-			refs,
-			workbook,
-			validation.formula1,
-			sheet.name,
-			sourceSheetName,
-			sourceRange,
-			`${sheet.name}!validation:${validation.sqref}:formula1`,
-		)
-		pushMovedRangeFormulaRef(
-			refs,
-			workbook,
-			validation.formula2,
-			sheet.name,
-			sourceSheetName,
-			sourceRange,
-			`${sheet.name}!validation:${validation.sqref}:formula2`,
-		)
-	}
 	for (const validation of sheet.x14DataValidations) {
 		if (validation.deleted) continue
 		pushMovedRangeFormulaRef(

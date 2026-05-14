@@ -4966,7 +4966,48 @@ describe('interactive client contract', () => {
 		expect(journalComparableState(wb)).toEqual(before)
 	})
 
-	test('moveRange journals mark worksheet metadata formula rewrites lossy', () => {
+	test('moveRange journals restore standard validation formula rewrites exactly', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 1 },
+					{ ref: 'D1', value: 4 },
+				],
+			},
+			{
+				op: 'setDataValidation',
+				sheet: 'Sheet1',
+				range: 'G1:G1',
+				rule: {
+					type: 'whole',
+					formula1: 'A1',
+					allowBlank: true,
+					showErrorMessage: true,
+				},
+			},
+		])
+		const before = journalComparableState(wb)
+
+		const changed = wb.apply(
+			[{ op: 'moveRange', sheet: 'Sheet1', source: 'A1', target: 'D1', mode: 'all' }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(true)
+		expect(changed.journal?.issues).toEqual([])
+		expect(wb.getWorkbookModel().getSheet('Sheet1')?.dataValidations[0]?.formula1).toBe('D1')
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(journalComparableState(wb)).toEqual(before)
+	})
+
+	test('moveRange journals mark x14 metadata formula rewrites lossy', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([
 			{
@@ -4980,7 +5021,8 @@ describe('interactive client contract', () => {
 		])
 		const sheet = wb.getWorkbookModel().getSheet('Sheet1')
 		if (!sheet) throw new Error('missing sheet')
-		sheet.dataValidations.push({
+		sheet.x14DataValidations.push({
+			index: 0,
 			sqref: 'G1:G1',
 			type: 'whole',
 			formula1: 'A1',
@@ -4998,9 +5040,9 @@ describe('interactive client contract', () => {
 			code: 'LOSSY_INVERSE',
 			message:
 				'moveRange formula reference rewrites for Sheet1!A1 cannot be fully restored with public operations',
-			refs: ['Sheet1!validation:G1:G1:formula1'],
+			refs: ['Sheet1!x14Validation:G1:G1:formula1'],
 		})
-		expect(wb.getWorkbookModel().getSheet('Sheet1')?.dataValidations[0]?.formula1).toBe('D1')
+		expect(wb.getWorkbookModel().getSheet('Sheet1')?.x14DataValidations[0]?.formula1).toBe('D1')
 	})
 
 	test('journals expose lossy imported formula-binding metadata preimages', () => {

@@ -1,8 +1,9 @@
-import type { Workbook } from '@ascend/core'
+import type { CellFormulaBinding, Workbook } from '@ascend/core'
 import { parseA1, toA1 } from '@ascend/core'
 import { cachedParseFormula, normalizeFormulaInput } from '@ascend/formulas'
 import type { Operation, Result } from '@ascend/schema'
 import { ascendError, EMPTY, err, isEmpty, ok, richTextValue, valuesEqual } from '@ascend/schema'
+import { resolveCellFormulaText } from '../analysis.ts'
 import { validateCellValue } from '../data-validation.ts'
 import type { PatchResult } from './helpers.ts'
 import {
@@ -80,6 +81,7 @@ export function handleSetFormula(
 	const ref = parseA1(op.ref)
 	const blocked = createLegacyArrayFormulaIndex(sheet).findCell(ref.row, ref.col)
 	if (blocked) return err(legacyArrayFormulaEditError(op.ref, blocked.ref))
+	const affected = materializeFormulaBindingGroupForEdit(workbook, sheet, ref.row, ref.col)
 	sheet.cells.set(
 		ref.row,
 		ref.col,
@@ -89,8 +91,99 @@ export function handleSetFormula(
 			sheet.cells.readStyleId(ref.row, ref.col) ?? DEFAULT_SID,
 		),
 	)
+	affected.add(op.ref)
 
-	return ok(patch([op.ref], [op.sheet], true))
+	return ok(patch([...affected], [op.sheet], true))
+}
+
+function materializeFormulaBindingGroupForEdit(
+	workbook: Workbook,
+	sheet: Workbook['sheets'][number],
+	row: number,
+	col: number,
+): Set<string> {
+	const existing = sheet.cells.get(row, col)
+	const binding = existing?.formulaInfo
+	if (!binding) return new Set()
+	if (binding.kind === 'shared') return materializeSharedFormulaGroup(workbook, sheet, binding)
+	if (isSpillGroupBinding(binding)) return materializeSpillFormulaGroup(sheet, binding)
+	return new Set()
+}
+
+function materializeSharedFormulaGroup(
+	workbook: Workbook,
+	sheet: Workbook['sheets'][number],
+	binding: Extract<CellFormulaBinding, { kind: 'shared' }>,
+): Set<string> {
+	const affected = new Set<string>()
+	const sheetIndex = workbook.sheets.indexOf(sheet)
+	if (sheetIndex < 0) return affected
+	const materialized: Array<{
+		readonly row: number
+		readonly col: number
+		readonly formula: string | null
+	}> = []
+	for (const [row, col, cell] of sheet.cells.iterate()) {
+		if (!sameSharedFormulaGroup(binding, cell.formulaInfo)) continue
+		materialized.push({
+			row,
+			col,
+			formula: resolveCellFormulaText(workbook, sheetIndex, row, col, cell),
+		})
+	}
+	for (const entry of materialized) {
+		const current = sheet.cells.get(entry.row, entry.col)
+		if (!current) continue
+		sheet.cells.set(
+			entry.row,
+			entry.col,
+			cellWithExisting(current.value, entry.formula, current.styleId ?? DEFAULT_SID),
+		)
+		affected.add(toA1({ row: entry.row, col: entry.col }))
+	}
+	return affected
+}
+
+function sameSharedFormulaGroup(
+	binding: Extract<CellFormulaBinding, { kind: 'shared' }>,
+	candidate: CellFormulaBinding | undefined,
+): candidate is Extract<CellFormulaBinding, { kind: 'shared' }> {
+	if (candidate?.kind !== 'shared') return false
+	if (binding.sharedIndex !== undefined) return candidate.sharedIndex === binding.sharedIndex
+	return candidate.masterRef === binding.masterRef
+}
+
+function materializeSpillFormulaGroup(
+	sheet: Workbook['sheets'][number],
+	binding: Extract<CellFormulaBinding, { kind: 'dynamicArray' | 'spill' | 'blockedSpill' }>,
+): Set<string> {
+	const affected = new Set<string>()
+	for (const [row, col, cell] of sheet.cells.iterate()) {
+		if (!sameSpillFormulaGroup(binding, cell.formulaInfo)) continue
+		sheet.cells.set(row, col, cellWithExisting(cell.value, null, cell.styleId ?? DEFAULT_SID))
+		affected.add(toA1({ row, col }))
+	}
+	return affected
+}
+
+function isSpillGroupBinding(
+	binding: CellFormulaBinding,
+): binding is Extract<CellFormulaBinding, { kind: 'dynamicArray' | 'spill' | 'blockedSpill' }> {
+	return (
+		binding.kind === 'dynamicArray' || binding.kind === 'spill' || binding.kind === 'blockedSpill'
+	)
+}
+
+function sameSpillFormulaGroup(
+	binding: Extract<CellFormulaBinding, { kind: 'dynamicArray' | 'spill' | 'blockedSpill' }>,
+	candidate: CellFormulaBinding | undefined,
+): boolean {
+	if (!candidate) return false
+	if (binding.kind === 'dynamicArray') {
+		return candidate.kind === 'dynamicArray' && candidate.metadataIndex === binding.metadataIndex
+	}
+	if (candidate.kind !== 'spill' && candidate.kind !== 'blockedSpill') return false
+	return candidate.anchorRef === binding.anchorRef
 }
 
 export function handleFillFormula(

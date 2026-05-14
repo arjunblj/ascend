@@ -344,6 +344,102 @@ describe('applyOperation', () => {
 		expect(c?.value).toEqual(numberValue(10))
 	})
 
+	test('setFormula materializes imported shared formula groups before rewriting a member', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, {
+			value: numberValue(20),
+			formula: 'B1*2',
+			styleId: sid,
+			formulaInfo: {
+				kind: 'shared',
+				sharedIndex: '0',
+				isMaster: true,
+				masterRef: 'A1',
+				ref: 'A1:A2',
+			},
+		})
+		sheet.cells.set(1, 0, {
+			value: numberValue(40),
+			formula: null,
+			styleId: sid,
+			formulaInfo: { kind: 'shared', sharedIndex: '0', isMaster: false, masterRef: 'A1' },
+		})
+
+		const result = applyOperation(wb, {
+			op: 'setFormula',
+			sheet: 'Sheet1',
+			ref: 'A2',
+			formula: 'B2*3',
+		})
+		expectOk(result)
+
+		expect(result.value.affectedCells).toEqual(['A1', 'A2'])
+		expect(sheet.cells.get(0, 0)?.formula).toBe('B1*2')
+		expect(sheet.cells.get(0, 0)?.formulaInfo).toBeUndefined()
+		expect(sheet.cells.get(1, 0)?.formula).toBe('B2*3')
+		expect(sheet.cells.get(1, 0)?.formulaInfo).toBeUndefined()
+	})
+
+	test('setFormula materializes spill groups before rewriting a member', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		const anchorInfo = {
+			kind: 'spill' as const,
+			anchorRef: 'Sheet1!A1',
+			ref: 'A1:A3',
+			isAnchor: true,
+		}
+		const memberInfo = {
+			kind: 'spill' as const,
+			anchorRef: 'Sheet1!A1',
+			ref: 'A1:A3',
+			isAnchor: false,
+		}
+		sheet.cells.set(0, 0, {
+			value: numberValue(1),
+			formula: 'SEQUENCE(3)',
+			styleId: sid,
+			formulaInfo: anchorInfo,
+		})
+		sheet.cells.set(1, 0, {
+			value: numberValue(2),
+			formula: null,
+			styleId: sid,
+			formulaInfo: memberInfo,
+		})
+		sheet.cells.set(2, 0, {
+			value: numberValue(3),
+			formula: null,
+			styleId: sid,
+			formulaInfo: memberInfo,
+		})
+
+		const result = applyOperation(wb, {
+			op: 'setFormula',
+			sheet: 'Sheet1',
+			ref: 'A2',
+			formula: '10+1',
+		})
+		expectOk(result)
+
+		expect(result.value.affectedCells).toEqual(['A1', 'A2', 'A3'])
+		expect(sheet.cells.get(0, 0)?.formula).toBeNull()
+		expect(sheet.cells.get(0, 0)?.formulaInfo).toBeUndefined()
+		expect(sheet.cells.get(1, 0)?.formula).toBe('10+1')
+		expect(sheet.cells.get(1, 0)?.formulaInfo).toBeUndefined()
+		expect(sheet.cells.get(2, 0)?.formula).toBeNull()
+		expect(sheet.cells.get(2, 0)?.formulaInfo).toBeUndefined()
+
+		expect(recalculate(wb, defaultCalcContext()).errors).toEqual([])
+		expect(sheet.cells.get(0, 0)?.value).toEqual(numberValue(1))
+		expect(sheet.cells.get(1, 0)?.value).toEqual(numberValue(11))
+		expect(sheet.cells.get(2, 0)?.value).toEqual(numberValue(3))
+		expect(sheet.cells.get(0, 0)?.formulaInfo).toBeUndefined()
+		expect(sheet.cells.get(1, 0)?.formulaInfo).toBeUndefined()
+		expect(sheet.cells.get(2, 0)?.formulaInfo).toBeUndefined()
+	})
+
 	test('setCells replaces formula content with a literal value', () => {
 		const wb = setup()
 		expectOk(

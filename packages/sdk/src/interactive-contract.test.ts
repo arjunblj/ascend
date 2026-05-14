@@ -9,7 +9,8 @@ import {
 	rangeIntersects,
 	sqrefIntersects,
 } from '@ascend/core'
-import { errorValue, numberValue } from '@ascend/schema'
+import { dateToSerial } from '@ascend/formulas'
+import { dateValue, errorValue, numberValue } from '@ascend/schema'
 import type {
 	InteractiveViewportCell,
 	InteractiveViewportPatch,
@@ -2852,6 +2853,60 @@ describe('interactive client contract', () => {
 		expect(wb.sheet('Sheet1')?.cell('A1')?.value).toEqual({ kind: 'number', value: 2 })
 	})
 
+	test('journal inverse ops restore date formula caches exactly when serials round-trip', () => {
+		const wb = AscendWorkbook.create()
+		const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+		if (!sheet) throw new Error('missing sheet')
+		const serial = dateToSerial(2026, 3, 15)
+		sheet.cells.set(0, 0, {
+			value: dateValue(serial),
+			formula: 'DATE(2026,3,15)',
+			styleId: DEFAULT_STYLE_ID,
+		})
+
+		const changed = wb.apply(
+			[{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 7 }] }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(true)
+		expect(changed.journal?.issues).toEqual([])
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(wb.sheet('Sheet1')?.cell('A1')?.formula).toBe('DATE(2026,3,15)')
+		expect(wb.sheet('Sheet1')?.cell('A1')?.value).toEqual(dateValue(serial))
+	})
+
+	test('date formula cache journals respect the workbook date system', () => {
+		const wb = AscendWorkbook.create()
+		const model = wb.getWorkbookModel()
+		model.calcSettings = { ...model.calcSettings, dateSystem: '1904' }
+		const sheet = model.getSheet('Sheet1')
+		if (!sheet) throw new Error('missing sheet')
+		const serial = dateToSerial(2026, 3, 15, '1904')
+		sheet.cells.set(0, 0, {
+			value: dateValue(serial),
+			formula: 'DATE(2026,3,15)',
+			styleId: DEFAULT_STYLE_ID,
+		})
+
+		const changed = wb.apply(
+			[{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 7 }] }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.exact).toBe(true)
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(wb.sheet('Sheet1')?.cell('A1')?.formula).toBe('DATE(2026,3,15)')
+		expect(wb.sheet('Sheet1')?.cell('A1')?.value).toEqual(dateValue(serial))
+	})
+
 	test('journals mark unsupported formula cache values lossy', () => {
 		const wb = AscendWorkbook.create()
 		const sheet = wb.getWorkbookModel().getSheet('Sheet1')
@@ -2878,6 +2933,31 @@ describe('interactive client contract', () => {
 		expect(changed.journal?.inverseOps).toEqual([
 			{ op: 'setFormula', sheet: 'Sheet1', ref: 'A1', formula: '1/0' },
 		])
+	})
+
+	test('journals keep non-round-trippable date formula caches lossy', () => {
+		const wb = AscendWorkbook.create()
+		const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+		if (!sheet) throw new Error('missing sheet')
+		sheet.cells.set(0, 0, {
+			value: dateValue(60),
+			formula: 'DATE(1900,2,29)',
+			styleId: DEFAULT_STYLE_ID,
+		})
+
+		const changed = wb.apply(
+			[{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 7 }] }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(false)
+		expect(changed.journal?.issues).toContainEqual({
+			code: 'LOSSY_INVERSE',
+			message: 'Formula cache for Sheet1!A1 cannot be restored with public operations',
+			refs: ['Sheet1!A1'],
+		})
 	})
 
 	test('journal inverse ops restore fillFormula edits over scalar cells exactly', () => {

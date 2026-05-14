@@ -47,7 +47,13 @@ import {
 	type WorkbookView,
 } from '@ascend/core'
 import { applyOperation } from '@ascend/engine'
-import { cachedParseFormula, extractRefs, type FormulaRef } from '@ascend/formulas'
+import {
+	cachedParseFormula,
+	dateToSerial,
+	extractRefs,
+	type FormulaRef,
+	serialToDate,
+} from '@ascend/formulas'
 import type {
 	CalcSettings,
 	CellValue,
@@ -69,6 +75,7 @@ export interface MutationJournalIssue {
 export interface MutationJournalCellPreimage {
 	readonly sheet: string
 	readonly ref: string
+	readonly dateSystem?: '1900' | '1904'
 	readonly existed: boolean
 	readonly value: CellValue
 	readonly formula: string | null
@@ -4102,6 +4109,7 @@ function cellPreimages(
 		return {
 			sheet: sheetName,
 			ref: toA1(parsed),
+			dateSystem: workbook.calcSettings.dateSystem,
 			existed: existing !== undefined,
 			value: cloneCellValue(existing?.value ?? EMPTY),
 			formula: existing?.formula ?? null,
@@ -4132,7 +4140,7 @@ function inverseCellOps(cells: readonly MutationJournalCellPreimage[]): {
 			continue
 		}
 		if (cell.formula) {
-			const input = cellValueToInput(cell.value)
+			const input = cellValueToInput(cell.value, cell.dateSystem ?? '1900')
 			if (input.supported) {
 				inverseOps.push({
 					op: 'setCells',
@@ -4167,7 +4175,7 @@ function inverseCellOps(cells: readonly MutationJournalCellPreimage[]): {
 			})
 			continue
 		}
-		const input = cellValueToInput(cell.value)
+		const input = cellValueToInput(cell.value, cell.dateSystem ?? '1900')
 		if (input.supported) {
 			const updates = scalarUpdatesBySheet.get(cell.sheet) ?? []
 			updates.push({ ref: cell.ref, value: input.value })
@@ -4235,6 +4243,7 @@ function styleInverseOps(cells: readonly MutationJournalCellPreimage[]): Operati
 
 function cellValueToInput(
 	value: CellValue,
+	dateSystem: '1900' | '1904' = '1900',
 ): { readonly supported: true; readonly value: InputValue } | { readonly supported: false } {
 	switch (value.kind) {
 		case 'empty':
@@ -4243,9 +4252,29 @@ function cellValueToInput(
 		case 'string':
 		case 'boolean':
 			return { supported: true, value: value.value }
+		case 'date':
+			return dateCellValueToInput(value.serial, dateSystem)
 		default:
 			return { supported: false }
 	}
+}
+
+function dateCellValueToInput(
+	serial: number,
+	dateSystem: '1900' | '1904',
+): { readonly supported: true; readonly value: Date } | { readonly supported: false } {
+	if (!Number.isInteger(serial)) return { supported: false }
+	const parts = serialToDate(serial, dateSystem)
+	if (!parts) return { supported: false }
+	const date = new Date(0)
+	date.setFullYear(parts.year, parts.month - 1, parts.day)
+	date.setHours(0, 0, 0, 0)
+	if (
+		dateToSerial(date.getFullYear(), date.getMonth() + 1, date.getDate(), dateSystem) !== serial
+	) {
+		return { supported: false }
+	}
+	return { supported: true, value: date }
 }
 
 function refsInRange(rangeText: string): string[] {

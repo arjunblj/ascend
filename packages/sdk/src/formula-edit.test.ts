@@ -4,6 +4,7 @@ import {
 	formulaDiagnostics,
 	formulaFunctionCompletions,
 	formulaFunctionSignature,
+	formulaFunctionSignatureHelp,
 	formulaTokenRanges,
 	insertFormulaReference,
 	referenceAtCursor,
@@ -396,6 +397,58 @@ describe('formula editing utilities', () => {
 			expect.objectContaining({ name: 'SUM' }),
 			expect.objectContaining({ name: 'SUMIF' }),
 		])
+	})
+
+	test('resolves cursor-aware function signature help without client-side reparsing', () => {
+		expect(formulaFunctionSignatureHelp('=SUM(A1, B2)', 5)).toMatchObject({
+			signature: { name: 'SUM' },
+			activeParameter: 0,
+			callStart: 1,
+			callEnd: 12,
+			argumentListStart: 4,
+			argumentListEnd: 12,
+		})
+		expect(formulaFunctionSignatureHelp('=SUM(A1, B2)', 9)).toMatchObject({
+			signature: { name: 'SUM' },
+			activeParameter: 1,
+		})
+		expect(formulaFunctionSignatureHelp('=SUM(A1)+B1', 10)).toBeNull()
+		expect(formulaFunctionSignatureHelp('=NOT_REGISTERED(A1)', 16)).toBeNull()
+	})
+
+	test('keeps signature help scoped through nested, incomplete, and string arguments', () => {
+		expect(formulaFunctionSignatureHelp('=IF(A1, SUM(B1, C1), 0)', 17)).toMatchObject({
+			signature: { name: 'SUM' },
+			activeParameter: 1,
+		})
+		expect(formulaFunctionSignatureHelp('=IF(A1, SUM(B1, C1), 0)', 21)).toMatchObject({
+			signature: { name: 'IF' },
+			activeParameter: 2,
+		})
+		expect(formulaFunctionSignatureHelp('=SUM(A1, ', 9)).toMatchObject({
+			signature: { name: 'SUM' },
+			activeParameter: 1,
+			callStart: 1,
+			callEnd: 9,
+			argumentListStart: 4,
+			argumentListEnd: 9,
+		})
+		expect(formulaFunctionSignatureHelp('=SUM("a,b", A1)', 13)).toMatchObject({
+			signature: { name: 'SUM' },
+			activeParameter: 1,
+		})
+		expect(formulaFunctionSignatureHelp('=SUM((A1,B1), C1)', 10)).toMatchObject({
+			signature: { name: 'SUM' },
+			activeParameter: 0,
+		})
+		expect(formulaFunctionSignatureHelp('=SUM((A1,B1), C1)', 15)).toMatchObject({
+			signature: { name: 'SUM' },
+			activeParameter: 1,
+		})
+		expect(formulaFunctionSignatureHelp('=SUM({1,2;3,4}, A1)', 18)).toMatchObject({
+			signature: { name: 'SUM' },
+			activeParameter: 1,
+		})
 	})
 
 	test('exposes token ranges with syntax classes for highlighting', () => {

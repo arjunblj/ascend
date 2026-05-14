@@ -94,12 +94,34 @@ export interface FormulaFunctionCompletionOptions {
 	readonly limit?: number
 }
 
+export interface FormulaFunctionSignatureHelp {
+	readonly signature: FormulaFunctionSignature
+	readonly activeParameter: number
+	readonly callStart: number
+	readonly callEnd: number
+	readonly argumentListStart: number
+	readonly argumentListEnd: number
+}
+
 interface TokenSpan {
 	readonly token: Token
 	readonly start: number
 	readonly end: number
 	readonly text: string
 }
+
+interface FunctionCallFrame {
+	readonly signature: FormulaFunctionSignature
+	readonly callStart: number
+	readonly openStart: number
+	readonly separatorEnds: number[]
+	closeStart?: number
+	closeEnd?: number
+}
+
+type NestingFrame =
+	| { readonly kind: 'function'; readonly call: FunctionCallFrame }
+	| { readonly kind: 'paren' | 'brace' }
 
 export function formulaTokenRanges(formula: string): FormulaTokenRange[] {
 	const spans = tokenSpans(formula)
@@ -193,6 +215,80 @@ export function insertFormulaReference(
 export function formulaFunctionSignature(name: string): FormulaFunctionSignature | null {
 	const def = functionRegistry.get(name.toUpperCase())
 	return def ? buildFormulaFunctionSignature(def) : null
+}
+
+export function formulaFunctionSignatureHelp(
+	formula: string,
+	cursor: number,
+): FormulaFunctionSignatureHelp | null {
+	const spans = tokenSpans(formula)
+	const clampedCursor = Math.max(0, Math.min(formula.length, cursor))
+	const calls: FunctionCallFrame[] = []
+	const stack: NestingFrame[] = []
+
+	for (let index = 0; index < spans.length; index++) {
+		const span = spans[index]
+		if (!span || span.token.type === TokenType.EOF) continue
+		switch (span.token.type) {
+			case TokenType.OpenParen: {
+				const previous = previousNonWhitespace(spans, index - 1)
+				if (previous?.span.token.type === TokenType.Function) {
+					const signature = formulaFunctionSignature(previous.span.text)
+					if (signature) {
+						const call: FunctionCallFrame = {
+							signature,
+							callStart: previous.span.start,
+							openStart: span.start,
+							separatorEnds: [],
+						}
+						calls.push(call)
+						stack.push({ kind: 'function', call })
+						break
+					}
+				}
+				stack.push({ kind: 'paren' })
+				break
+			}
+			case TokenType.OpenBrace:
+				stack.push({ kind: 'brace' })
+				break
+			case TokenType.CloseBrace:
+				popNesting(stack, 'brace')
+				break
+			case TokenType.CloseParen: {
+				const frame = popNesting(stack, 'function', 'paren')
+				if (frame?.kind === 'function') {
+					frame.call.closeStart = span.start
+					frame.call.closeEnd = span.end
+				}
+				break
+			}
+			case TokenType.Comma:
+			case TokenType.Semicolon: {
+				const frame = stack[stack.length - 1]
+				if (frame?.kind === 'function') frame.call.separatorEnds.push(span.end)
+				break
+			}
+		}
+	}
+
+	let active: FunctionCallFrame | null = null
+	for (const call of calls) {
+		const contentStart = call.openStart + 1
+		const contentEnd = call.closeStart ?? formula.length
+		if (clampedCursor < contentStart || clampedCursor > contentEnd) continue
+		if (!active || call.openStart >= active.openStart) active = call
+	}
+	if (!active) return null
+	const activeParameter = active.separatorEnds.filter((end) => end <= clampedCursor).length
+	return {
+		signature: active.signature,
+		activeParameter,
+		callStart: active.callStart,
+		callEnd: active.closeEnd ?? formula.length,
+		argumentListStart: active.openStart,
+		argumentListEnd: active.closeEnd ?? formula.length,
+	}
 }
 
 export function formulaFunctionCompletions(
@@ -398,6 +494,26 @@ function nextNonWhitespace(
 		if (span.token.type !== TokenType.Whitespace) return { span, index }
 	}
 	return undefined
+}
+
+function previousNonWhitespace(
+	spans: readonly TokenSpan[],
+	start: number,
+): { readonly span: TokenSpan; readonly index: number } | undefined {
+	for (let index = start; index >= 0; index--) {
+		const span = spans[index]
+		if (!span) return undefined
+		if (span.token.type !== TokenType.Whitespace) return { span, index }
+	}
+	return undefined
+}
+
+function popNesting(
+	stack: NestingFrame[],
+	...kinds: readonly NestingFrame['kind'][]
+): NestingFrame | undefined {
+	const frame = stack[stack.length - 1]
+	return frame && kinds.includes(frame.kind) ? stack.pop() : undefined
 }
 
 function classifyFormulaToken(token: Token): FormulaTokenClass {

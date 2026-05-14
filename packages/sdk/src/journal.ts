@@ -496,6 +496,8 @@ function buildSupportedJournalEntry(
 			return journalCreateTable(op, opIndex)
 		case 'sortRange':
 			return journalSortRange(workbook, op, opIndex)
+		case 'copyRange':
+			return journalCopyRange(workbook, op, opIndex)
 		case 'deleteTable':
 			return journalDeleteTable(workbook, op, opIndex)
 		case 'resizeTable':
@@ -1686,6 +1688,42 @@ function journalSortRange(
 		inverseOps: [...cellInverseOps, ...styleInverseOps(rangeCells)],
 		preimages: [{ kind: 'cells', cells }],
 		issues: [...cellIssues, ...sortRangeMetadataIssues(workbook, op)],
+	}
+}
+
+function journalCopyRange(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'copyRange' }>,
+	opIndex: number,
+): DraftJournalEntry {
+	const mode = op.mode ?? 'all'
+	if (!copyRangeCellModeSupported(mode)) {
+		return {
+			opIndex,
+			op,
+			inverseOps: [],
+			preimages: [],
+			issues: [
+				{
+					code: 'UNSUPPORTED_OPERATION',
+					message: `No reversible journal support for copyRange mode ${mode}`,
+				},
+			],
+		}
+	}
+	const targetSheet = op.targetSheet ?? op.sheet
+	const targetRange = transferTargetRange(op.source, op.target)
+	const targetRefs = refsInParsedRange(targetRange)
+	const cells = copyRangeOverwritesFormulas(mode)
+		? cellEditPreimages(workbook, targetSheet, targetRefs)
+		: cellPreimages(workbook, targetSheet, targetRefs)
+	const { inverseOps: cellInverseOps, issues: cellIssues } = copyRangeRestoration(cells, mode)
+	return {
+		opIndex,
+		op,
+		inverseOps: cellInverseOps,
+		preimages: [{ kind: 'cells', cells }],
+		issues: [...cellIssues, ...copyRangeMetadataIssues(workbook, op, targetRange)],
 	}
 }
 
@@ -3599,6 +3637,105 @@ function sortRangeHasHeaderRow(
 	return specs.some(
 		(spec) => typeof spec.column === 'string' && headerMap.has(spec.column.trim().toLowerCase()),
 	)
+}
+
+function copyRangeCellModeSupported(mode: string): boolean {
+	return (
+		mode === 'all' ||
+		mode === 'values' ||
+		mode === 'formulas' ||
+		mode === 'formats' ||
+		mode === 'styles'
+	)
+}
+
+function copyRangeOverwritesFormulas(mode: string): boolean {
+	return mode === 'all' || mode === 'values' || mode === 'formulas'
+}
+
+function copyRangeRestoration(
+	cells: readonly MutationJournalCellPreimage[],
+	mode: string,
+): {
+	readonly inverseOps: readonly Operation[]
+	readonly issues: readonly MutationJournalIssue[]
+} {
+	if (mode === 'formats' || mode === 'styles') {
+		return { inverseOps: styleInverseOps(cells), issues: [] }
+	}
+	const { inverseOps, issues } = inverseCellOps(cells)
+	return {
+		inverseOps: mode === 'all' ? [...inverseOps, ...styleInverseOps(cells)] : inverseOps,
+		issues,
+	}
+}
+
+function copyRangeMetadataIssues(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'copyRange' }>,
+	targetRange: RangeRef,
+): readonly MutationJournalIssue[] {
+	const mode = op.mode ?? 'all'
+	if (mode !== 'all' && mode !== 'formats' && mode !== 'styles') return []
+	const sourceSheet = workbook.getSheet(op.sheet)
+	const targetSheet = workbook.getSheet(op.targetSheet ?? op.sheet)
+	if (!sourceSheet || !targetSheet) return []
+	const sourceRange = parseRange(op.source)
+	const sourceHasMetadata = copyRangeModeTouchesMetadata(sourceSheet, sourceRange, mode)
+	const targetHasMetadata = copyRangeModeTouchesMetadata(targetSheet, targetRange, mode)
+	if (!sourceHasMetadata && !targetHasMetadata) return []
+	return [
+		{
+			code: 'LOSSY_INVERSE',
+			message: `copyRange metadata transfer for ${op.sheet}!${op.source} cannot be fully restored with public operations`,
+			refs: [`${op.sheet}!${op.source}`, `${op.targetSheet ?? op.sheet}!${rangeToA1(targetRange)}`],
+		},
+	]
+}
+
+function copyRangeModeTouchesMetadata(sheet: Sheet, range: RangeRef, mode: string): boolean {
+	if (mode === 'formats' || mode === 'styles') {
+		return (
+			sheet.merges.some((merge) => rangesOverlap(merge, range)) ||
+			sheet.conditionalFormats.some((format) => sqrefOverlaps(format.sqref, range))
+		)
+	}
+	return (
+		hasMapRefInRange(sheet.comments, range) ||
+		hasMapRefInRange(sheet.hyperlinks, range) ||
+		sheet.threadedComments.some((comment) => refInRange(comment.ref, range)) ||
+		sheet.merges.some((merge) => rangesOverlap(merge, range)) ||
+		sheet.dataValidations.some((validation) => sqrefOverlaps(validation.sqref, range)) ||
+		sheet.conditionalFormats.some((format) => sqrefOverlaps(format.sqref, range))
+	)
+}
+
+function transferTargetRange(sourceRangeText: string, targetRef: string): RangeRef {
+	const source = parseRange(sourceRangeText)
+	const target = parseA1(targetRef)
+	return {
+		start: target,
+		end: {
+			row: target.row + source.end.row - source.start.row,
+			col: target.col + source.end.col - source.start.col,
+		},
+	}
+}
+
+function refsInParsedRange(range: RangeRef): string[] {
+	const refs: string[] = []
+	for (let row = range.start.row; row <= range.end.row; row++) {
+		for (let col = range.start.col; col <= range.end.col; col++) {
+			refs.push(toA1({ row, col }))
+		}
+	}
+	return refs
+}
+
+function rangeToA1(range: RangeRef): string {
+	const start = toA1(range.start)
+	const end = toA1(range.end)
+	return start === end ? start : `${start}:${end}`
 }
 
 function cellEditPreimages(

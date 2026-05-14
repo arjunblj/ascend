@@ -3073,6 +3073,72 @@ describe('interactive client contract', () => {
 		})
 	})
 
+	test('journal inverse ops restore simple copyRange target cells and styles', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'New' },
+					{ ref: 'B1', value: 10 },
+					{ ref: 'D1', value: 'Old' },
+					{ ref: 'E1', value: 1 },
+				],
+			},
+			{ op: 'setStyle', sheet: 'Sheet1', range: 'B1:B1', style: { numberFormat: '0.00' } },
+			{ op: 'setStyle', sheet: 'Sheet1', range: 'E1:E1', style: { numberFormat: '$0' } },
+		])
+
+		const changed = wb.apply(
+			[{ op: 'copyRange', sheet: 'Sheet1', source: 'A1:B1', target: 'D1', mode: 'all' }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(true)
+		expect(wb.sheet('Sheet1')?.cell('D1')?.value).toEqual({ kind: 'string', value: 'New' })
+		expect(wb.sheet('Sheet1')?.cell('E1')?.value).toEqual({ kind: 'number', value: 10 })
+		expect(wb.cellStyle('Sheet1!E1')?.numberFormat).toBe('0.00')
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(wb.sheet('Sheet1')?.cell('D1')?.value).toEqual({ kind: 'string', value: 'Old' })
+		expect(wb.sheet('Sheet1')?.cell('E1')?.value).toEqual({ kind: 'number', value: 1 })
+		expect(wb.cellStyle('Sheet1!E1')?.numberFormat).toBe('$0')
+	})
+
+	test('copyRange journals mark metadata transfer lossy', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'Source' },
+					{ ref: 'D1', value: 'Target' },
+				],
+			},
+			{ op: 'setComment', sheet: 'Sheet1', ref: 'A1', text: 'source note', author: 'agent' },
+		])
+
+		const changed = wb.apply(
+			[{ op: 'copyRange', sheet: 'Sheet1', source: 'A1', target: 'D1', mode: 'all' }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(false)
+		expect(changed.journal?.issues).toContainEqual({
+			code: 'LOSSY_INVERSE',
+			message:
+				'copyRange metadata transfer for Sheet1!A1 cannot be fully restored with public operations',
+			refs: ['Sheet1!A1', 'Sheet1!D1'],
+		})
+	})
+
 	test('journals expose lossy imported formula-binding metadata preimages', () => {
 		const wb = AscendWorkbook.create()
 		const sheet = wb.getWorkbookModel().getSheet('Sheet1')

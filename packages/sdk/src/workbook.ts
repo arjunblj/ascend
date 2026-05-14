@@ -31,6 +31,7 @@ import {
 	writeXlsx,
 	type XlsxPackageGraph,
 	type ZipArchive,
+	type ZipCompressionProfile,
 } from '@ascend/io-xlsx'
 import {
 	AscendException,
@@ -107,6 +108,10 @@ export interface ApplyOptions {
 	readonly collectAllErrors?: boolean
 	readonly transaction?: boolean
 	readonly journal?: boolean
+}
+
+export interface WorkbookBytesOptions {
+	readonly compressionProfile?: ZipCompressionProfile
 }
 
 function cloneWorkbook(source: Workbook): Workbook {
@@ -423,10 +428,12 @@ export class AscendWorkbook extends WorkbookReadView {
 		report: CompatibilityReport,
 		loadInfo: import('./types.ts').WorkbookLoadInfo,
 		originalBytes: Uint8Array | null,
+		sourceArchive?: ZipArchive,
 	) {
 		super(workbook, report, loadInfo)
 		this.caps = capsules
 		this.originalBytes = originalBytes
+		this.sourceArchive = sourceArchive
 		this.dirty = false
 	}
 
@@ -465,6 +472,7 @@ export class AscendWorkbook extends WorkbookReadView {
 			loaded.report,
 			loaded.loadInfo,
 			loaded.originalBytes,
+			loaded.sourceArchive,
 		)
 	}
 
@@ -1366,9 +1374,9 @@ export class AscendWorkbook extends WorkbookReadView {
 	 * @example
 	 * const bytes = wb.toBytes()
 	 */
-	toBytes(): Uint8Array {
+	toBytes(options: WorkbookBytesOptions = {}): Uint8Array {
 		this.assertWritable()
-		if (this.originalBytes && !this.dirty) return this.originalBytes
+		if (this.originalBytes && !this.dirty && !options.compressionProfile) return this.originalBytes
 		const sourceArchive = this.getSourceArchive()
 		const dirtyCellPatches = this.dirtyCellPatchOptions()
 		const writeOptions: import('@ascend/io-xlsx').WriteXlsxOptions = {
@@ -1380,6 +1388,7 @@ export class AscendWorkbook extends WorkbookReadView {
 			calcChainDirty: this.calcChainDirty,
 			sharedStringsDirty: this.sharedStringsDirty,
 			stylesDirty: this.stylesDirty,
+			...(options.compressionProfile ? { compressionProfile: options.compressionProfile } : {}),
 			...(sourceArchive ? { sourceArchive } : {}),
 		}
 		const result = writeXlsx(this.wb, this.caps.length > 0 ? this.caps : undefined, writeOptions)
@@ -1706,8 +1715,8 @@ export class AscendWorkbook extends WorkbookReadView {
 
 	private getSourceArchive(cache = true): ZipArchive | undefined {
 		if (!this.wb.sourceArchiveBytes) return undefined
-		if (!cache) return extractZip(this.wb.sourceArchiveBytes)
 		if (this.sourceArchive) return this.sourceArchive
+		if (!cache) return extractZip(this.wb.sourceArchiveBytes)
 		this.sourceArchive = extractZip(this.wb.sourceArchiveBytes)
 		return this.sourceArchive
 	}

@@ -36,6 +36,24 @@ describe('AscendWorkbook', () => {
 		expect(csv.sheet('Sheet1')?.cell('B2')?.value).toEqual({ kind: 'number', value: 2 })
 	})
 
+	test('toBytes can request stored ZIP parts for fastest local artifacts', async () => {
+		const wb = Ascend.create()
+		const updates = Array.from({ length: 200 }, (_, row) => ({
+			ref: `A${row + 1}`,
+			value: `text-${row}`,
+		}))
+		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates }])
+		const fast = wb.toBytes()
+		const stored = wb.toBytes({ compressionProfile: 'store' })
+		expect(stored.byteLength).toBeGreaterThan(fast.byteLength)
+
+		const reopened = await Ascend.open(stored)
+		expect(reopened.sheet('Sheet1')?.cell('A200')?.value).toEqual({
+			kind: 'string',
+			value: 'text-199',
+		})
+	})
+
 	test('opens encrypted XLSX fixtures with a password through the SDK', async () => {
 		const encrypted = readFileSync('fixtures/xlsx/calamine/pass_protected.xlsx')
 		const wb = await Ascend.open(new Uint8Array(encrypted), { password: '123' })
@@ -2653,7 +2671,7 @@ describe('AscendWorkbook', () => {
 		expect(stylesXml).toContain('<tableStyle name="TableStyleMedium2"/>')
 	})
 
-	test('preview and writePlanSummary do not retain a cached source archive', async () => {
+	test('preview and writePlanSummary reuse the source archive opened by the reader', async () => {
 		const sourceBytes = makeSyntheticXlsx({
 			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
@@ -2679,14 +2697,15 @@ describe('AscendWorkbook', () => {
 		})
 		const wb = await AscendWorkbook.open(sourceBytes)
 		const internal = wb as unknown as { sourceArchive?: unknown }
+		const openedArchive = internal.sourceArchive
 
-		expect(internal.sourceArchive).toBeUndefined()
+		expect(openedArchive).toBeDefined()
 		wb.preview([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'preview' }] }])
-		expect(internal.sourceArchive).toBeUndefined()
+		expect(internal.sourceArchive).toBe(openedArchive)
 		wb.writePlanSummary()
-		expect(internal.sourceArchive).toBeUndefined()
+		expect(internal.sourceArchive).toBe(openedArchive)
 		wb.toBytes()
-		expect(internal.sourceArchive).toBeUndefined()
+		expect(internal.sourceArchive).toBe(openedArchive)
 	})
 
 	test('check returns clean for valid workbook', () => {

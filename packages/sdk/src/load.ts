@@ -1,7 +1,12 @@
 import { readFile } from 'node:fs/promises'
 import type { Workbook } from '@ascend/core'
 import { readCsv } from '@ascend/io-csv'
-import { type PreservationCapsule, type ReadXlsxLoadInfo, readXlsx } from '@ascend/io-xlsx'
+import {
+	type PreservationCapsule,
+	type ReadXlsxLoadInfo,
+	readXlsx,
+	type ZipArchive,
+} from '@ascend/io-xlsx'
 import {
 	AscendException,
 	type CompatibilityReport,
@@ -19,6 +24,7 @@ export interface LoadedWorkbookSource {
 	readonly report: CompatibilityReport
 	readonly loadInfo: WorkbookLoadInfo
 	readonly originalBytes: Uint8Array | null
+	readonly sourceArchive?: ZipArchive
 }
 
 export interface OpenWorkbookSourceOptions {
@@ -86,6 +92,9 @@ export async function openWorkbookSource(
 			originalBytes: loadInfo.isPartial
 				? null
 				: (result.value.workbook.sourceArchiveBytes ?? bytes),
+			...(loadInfo.isPartial || !result.value.sourceArchive
+				? {}
+				: { sourceArchive: result.value.sourceArchive }),
 		}
 	}
 

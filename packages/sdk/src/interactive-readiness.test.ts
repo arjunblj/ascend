@@ -84,6 +84,30 @@ describe('interactive edit readiness', () => {
 		}
 	})
 
+	test('sessions can serialize applied edits for grid clients', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] }])
+		const session = await AscendSession.open(wb.toBytes(), {
+			mode: 'interactive',
+			prepareEdits: true,
+		})
+		try {
+			const edit = await session.apply([
+				{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 42 }] },
+			])
+			expect(edit.apply.errors).toEqual([])
+
+			const bytes = await session.toBytes({ compressionProfile: 'store' })
+			const reopened = await AscendWorkbook.open(bytes)
+			expect(reopened.sheet('Sheet1')?.cell('A1')?.value).toEqual({
+				kind: 'number',
+				value: 42,
+			})
+		} finally {
+			session.close()
+		}
+	})
+
 	test('edit-ready path sessions reject stale source writes', async () => {
 		const input = join(tmpdir(), `ascend-edit-ready-stale-${Date.now()}-${process.pid}.xlsx`)
 		const wb = AscendWorkbook.create()

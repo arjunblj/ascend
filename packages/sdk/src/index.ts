@@ -347,5 +347,5 @@ export type {
  *
  * `BatchBuilder` — fluent builder for batching cell/formula/structural operations.
  */
-export type { ApplyOptions, PreviewOptions } from './workbook.ts'
+export type { ApplyOptions, PreviewOptions, WorkbookBytesOptions } from './workbook.ts'
 export { Ascend, AscendWorkbook, BatchBuilder } from './workbook.ts'

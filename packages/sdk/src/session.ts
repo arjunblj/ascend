@@ -70,7 +70,7 @@ import type {
 	WorkbookRefreshMetadataInfo,
 	WorkbookVisualInventoryInfo,
 } from './types.ts'
-import { type ApplyOptions, AscendWorkbook } from './workbook.ts'
+import { type ApplyOptions, AscendWorkbook, type WorkbookBytesOptions } from './workbook.ts'
 
 export interface WorkbookLoadOptions {
 	readonly mode?: 'full' | 'metadata-only' | 'values' | 'formula'
@@ -1285,6 +1285,11 @@ export class AscendSession {
 				totalMs: performance.now() - totalStart,
 			},
 		}
+	}
+
+	async toBytes(options: WorkbookBytesOptions = {}): Promise<Uint8Array> {
+		const ensured = await this.ensureMutableWorkbook()
+		return ensured.workbook.toBytes(options)
 	}
 
 	isStale(): boolean {

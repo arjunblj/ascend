@@ -465,6 +465,58 @@ describe('analyzeWorkbook', () => {
 		expect(copied?.deps).toEqual([cellKey(0, 1, 0), cellKey(0, 1, 1)])
 	})
 
+	test('copyRange patches cached analysis for materialized shared formula targets', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 1, { value: numberValue(10), formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: numberValue(20), formula: null, styleId: sid })
+		sheet.cells.set(0, 2, { value: numberValue(9), formula: null, styleId: sid })
+		sheet.cells.set(0, 0, {
+			value: numberValue(20),
+			formula: 'B1*2',
+			styleId: sid,
+			formulaInfo: {
+				kind: 'shared',
+				sharedIndex: '0',
+				isMaster: true,
+				masterRef: 'A1',
+				ref: 'A1:A2',
+			},
+		})
+		sheet.cells.set(1, 0, {
+			value: numberValue(40),
+			formula: null,
+			styleId: sid,
+			formulaInfo: { kind: 'shared', sharedIndex: '0', isMaster: false, masterRef: 'A1' },
+		})
+
+		const cached = analyzeWorkbook(wb)
+		expect(cached.formulas.get(cellKey(0, 1, 0))?.formula).toBe('B2*2')
+
+		const result = applyOperation(wb, {
+			op: 'copyRange',
+			sheet: 'Sheet1',
+			source: 'C1',
+			target: 'A2',
+		})
+		expect(result.ok).toBe(true)
+		if (!result.ok) throw new Error('copyRange failed')
+		expect(result.value.affectedCells).toEqual(['A1', 'A2'])
+
+		const after = analyzeWorkbook(wb)
+		expect(after).toBe(cached)
+		expect(after.formulas.get(cellKey(0, 0, 0))?.formula).toBe('B1*2')
+		expect(after.formulas.has(cellKey(0, 1, 0))).toBe(false)
+		expect(after.sharedFormulaGroups.get('0:0')).toBeUndefined()
+
+		const patchedFormulas = [...after.formulas]
+		const patchedSharedGroups = [...after.sharedFormulaGroups]
+		invalidateWorkbookAnalysis(wb)
+		const fresh = analyzeWorkbook(wb)
+		expect([...fresh.formulas]).toEqual(patchedFormulas)
+		expect([...fresh.sharedFormulaGroups]).toEqual(patchedSharedGroups)
+	})
+
 	test('analyzeWorkbook returns cached result on second call (formulas parsed once, shared across tools)', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

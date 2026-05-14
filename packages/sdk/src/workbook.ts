@@ -2213,6 +2213,10 @@ function deriveDirtyRefsFromOps(ops: readonly Operation[]): string[] | null {
 			case 'renameSheet':
 			case 'moveSheet':
 			case 'createTable':
+			case 'deleteTable':
+			case 'renameTable':
+			case 'resizeTable':
+			case 'setTableColumn':
 			case 'sortRange':
 			case 'mergeCells':
 			case 'unmergeCells':

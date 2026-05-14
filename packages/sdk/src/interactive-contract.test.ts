@@ -4438,6 +4438,38 @@ describe('interactive client contract', () => {
 		expect(journalComparableState(wb)).toEqual(before)
 	})
 
+	test('journal inverse ops clear styles created on empty cells', () => {
+		const wb = AscendWorkbook.create()
+
+		const changed = wb.apply(
+			[
+				{
+					op: 'setStyle',
+					sheet: 'Sheet1',
+					range: 'E9',
+					style: { font: { bold: true }, numberFormat: '0.0' },
+				},
+			],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(true)
+		expect(changed.journal?.inverseOps).toEqual([
+			{ op: 'clearRange', sheet: 'Sheet1', range: 'E9', what: 'all' },
+		])
+		expect(wb.cellStyle('Sheet1!E9')).toMatchObject({
+			font: { bold: true },
+			numberFormat: '0.0',
+		})
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(wb.sheet('Sheet1')?.cell('E9')).toBeUndefined()
+		expect(wb.cellStyle('Sheet1!E9')).toBeUndefined()
+	})
+
 	test('journal exact inverse restores deleted metadata surfaces', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

@@ -3817,7 +3817,10 @@ function richTextRunsToOperationRuns(runs: Extract<CellValue, { kind: 'richText'
 function styleInverseOps(cells: readonly MutationJournalCellPreimage[]): Operation[] {
 	const inverseOps: Operation[] = []
 	for (const cell of cells) {
-		if (!cell.existed) continue
+		if (!cell.existed) {
+			inverseOps.push({ op: 'clearRange', sheet: cell.sheet, range: cell.ref, what: 'all' })
+			continue
+		}
 		inverseOps.push({ op: 'clearRange', sheet: cell.sheet, range: cell.ref, what: 'styles' })
 		if (Object.keys(cell.style).length > 0) {
 			inverseOps.push({

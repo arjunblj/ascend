@@ -402,7 +402,10 @@ export class WorkbookDocument {
 			const cachedPathDocument = await readCachedPathDocument(source, options)
 			if (cachedPathDocument) return cachedPathDocument
 		}
-		const pathSnapshot = typeof source === 'string' ? await readPathSnapshot(source) : undefined
+		const pathSnapshot =
+			typeof source === 'string'
+				? await readPathSnapshot(source, shouldHashPathSnapshot(options))
+				: undefined
 		const identity = pathSnapshot?.identity ?? readBytesIdentity(source as Uint8Array)
 		const key = makeSessionKey(identity, options)
 		const cached = sessionCache.get(key)
@@ -2269,7 +2272,11 @@ async function readCachedPathDocument(
 	return cached.document
 }
 
-async function readPathSnapshot(file: string): Promise<PathSnapshot> {
+function shouldHashPathSnapshot(options: WorkbookLoadOptions): boolean {
+	return options.maxRows === undefined
+}
+
+async function readPathSnapshot(file: string, hashContent = true): Promise<PathSnapshot> {
 	const path = resolve(file)
 	for (let attempt = 0; attempt < 3; attempt++) {
 		const before = await stat(path)
@@ -2288,7 +2295,7 @@ async function readPathSnapshot(file: string): Promise<PathSnapshot> {
 				size: after.size,
 				mtimeMs: after.mtimeMs,
 				ctimeMs: after.ctimeMs,
-				sha256: createHash('sha256').update(bytes).digest('hex'),
+				sha256: hashContent ? createHash('sha256').update(bytes).digest('hex') : '',
 			},
 			bytes,
 			sourceExtension: extname(path).replace(/^\./, '').toLowerCase(),

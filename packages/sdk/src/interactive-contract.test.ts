@@ -3606,6 +3606,46 @@ describe('interactive client contract', () => {
 		expect(wb.cellStyle('Sheet1!D1')?.numberFormat).toBe('$0')
 	})
 
+	test('moveRange format-only journals preserve source formulas and restore styles exactly', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 5 },
+					{ ref: 'D1', value: 9 },
+				],
+			},
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'A1', formula: '2+3' },
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'D1', formula: 'A1+4' },
+			{ op: 'setStyle', sheet: 'Sheet1', range: 'A1:A1', style: { numberFormat: '$0' } },
+			{ op: 'setStyle', sheet: 'Sheet1', range: 'D1:D1', style: { numberFormat: '0.0%' } },
+		])
+
+		const changed = wb.apply(
+			[{ op: 'moveRange', sheet: 'Sheet1', source: 'A1', target: 'D1', mode: 'formats' }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(true)
+		expect(wb.sheet('Sheet1')?.cell('A1')?.formula).toBe('2+3')
+		expect(wb.sheet('Sheet1')?.cell('A1')?.value).toEqual({ kind: 'number', value: 5 })
+		expect(wb.cellStyle('Sheet1!A1')).toEqual({})
+		expect(wb.sheet('Sheet1')?.cell('D1')?.formula).toBe('A1+4')
+		expect(wb.cellStyle('Sheet1!D1')?.numberFormat).toBe('$0')
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(wb.sheet('Sheet1')?.cell('A1')?.formula).toBe('2+3')
+		expect(wb.sheet('Sheet1')?.cell('A1')?.value).toEqual({ kind: 'number', value: 5 })
+		expect(wb.cellStyle('Sheet1!A1')?.numberFormat).toBe('$0')
+		expect(wb.sheet('Sheet1')?.cell('D1')?.formula).toBe('A1+4')
+		expect(wb.cellStyle('Sheet1!D1')?.numberFormat).toBe('0.0%')
+	})
+
 	test('moveRange journals mark formula reference rewrites lossy', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

@@ -2389,6 +2389,58 @@ describe('applyOperation', () => {
 		expect(sheet.cells.get(1, 0)).toBeUndefined()
 	})
 
+	test('moveRange format-only moves styles without deleting source formulas or bindings', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		const sourceStyle = wb.styles.register({ numberFormat: '$#,##0.00' })
+		const targetStyle = wb.styles.register({ numberFormat: '0.0%' })
+		addSpillGroup(sheet)
+		for (const row of [0, 1, 2]) {
+			const existing = sheet.cells.get(row, 0)
+			if (!existing) throw new Error('missing spill source')
+			sheet.cells.set(row, 0, { ...existing, styleId: sourceStyle })
+			sheet.cells.set(row, 2, {
+				value: numberValue(99 + row),
+				formula: row === 0 ? 'A1+1' : null,
+				styleId: targetStyle,
+			})
+		}
+
+		const result = applyOperation(wb, {
+			op: 'moveRange',
+			sheet: 'Sheet1',
+			source: 'A1:A3',
+			target: 'C1',
+			mode: 'formats',
+		})
+		expectOk(result)
+
+		expect(result.value.recalcRequired).toBe(false)
+		expect([...result.value.affectedCells].sort()).toEqual(['A1', 'A2', 'A3', 'C1', 'C2', 'C3'])
+		expect(sheet.cells.get(0, 0)).toEqual({
+			value: numberValue(1),
+			formula: 'SEQUENCE(3)',
+			styleId: sid,
+			formulaInfo: {
+				kind: 'spill',
+				anchorRef: 'Sheet1!A1',
+				ref: 'A1:A3',
+				isAnchor: true,
+			},
+		})
+		expect(sheet.cells.get(1, 0)?.formulaInfo).toEqual({
+			kind: 'spill',
+			anchorRef: 'Sheet1!A1',
+			ref: 'A1:A3',
+			isAnchor: false,
+		})
+		expect(sheet.cells.get(0, 2)).toEqual({
+			value: numberValue(99),
+			formula: 'A1+1',
+			styleId: sourceStyle,
+		})
+	})
+
 	test('moveRange detaches blocked-spill metadata when moving a blocker', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

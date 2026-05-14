@@ -295,12 +295,25 @@ export function handleTransferRange(
 
 	if (op.op === 'moveRange') {
 		for (const entry of snapshot) {
-			if (pasteCells(mode)) sourceSheet.cells.delete(entry.row, entry.col)
 			if (pasteCells(mode)) {
+				if (clearsSourceCellContent(mode)) {
+					sourceSheet.cells.delete(entry.row, entry.col)
+				} else if (entry.cell && (mode === 'formats' || mode === 'styles')) {
+					sourceSheet.cells.set(
+						entry.row,
+						entry.col,
+						cellPreservingFormulaInfo(
+							entry.cell.value,
+							entry.cell.formula,
+							DEFAULT_SID,
+							entry.cell.formulaInfo,
+						),
+					)
+				}
 				affected.add(affectedRef(sourceSheet, toA1({ row: entry.row, col: entry.col }), crossSheet))
 			}
 		}
-		if (pasteCells(mode)) {
+		if (clearsSourceCellContent(mode)) {
 			rewriteWorkbookFormulasForMove(
 				workbook,
 				sourceSheet.name,
@@ -347,6 +360,10 @@ function pasteMerges(mode: PasteMode): boolean {
 }
 
 function pasteRequiresRecalc(mode: PasteMode): boolean {
+	return mode === 'all' || mode === 'values' || mode === 'formulas'
+}
+
+function clearsSourceCellContent(mode: PasteMode): boolean {
 	return mode === 'all' || mode === 'values' || mode === 'formulas'
 }
 

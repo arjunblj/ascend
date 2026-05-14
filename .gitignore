@@ -21,6 +21,8 @@ benchmark-results.json
 bench-current.json
 bench-results.json
 comparison.json
+release-proof-results/
+libreoffice-proof-results/
 
 research/
 .autoopt/

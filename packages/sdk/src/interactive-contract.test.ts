@@ -3565,6 +3565,72 @@ describe('interactive client contract', () => {
 		})
 	})
 
+	test('copyRange validation journals restore appended target validations exactly', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setDataValidation',
+				sheet: 'Sheet1',
+				range: 'A1:B1',
+				rule: { type: 'whole', operator: 'greaterThan', formula1: 'A1' },
+			},
+			{
+				op: 'setDataValidation',
+				sheet: 'Sheet1',
+				range: 'F1:F1',
+				rule: { type: 'list', formula1: '"yes,no"' },
+			},
+		])
+		const before = journalComparableState(wb)
+
+		const changed = wb.apply(
+			[{ op: 'copyRange', sheet: 'Sheet1', source: 'A1:B1', target: 'D1', mode: 'validations' }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(true)
+		expect(changed.journal?.issues).toEqual([])
+		expect(wb.sheet('Sheet1')?.dataValidations.at(-1)).toMatchObject({
+			sqref: 'D1:E1',
+			type: 'whole',
+			formula1: 'D1',
+		})
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(journalComparableState(wb)).toEqual(before)
+	})
+
+	test('copyRange validation journals mark x14 transfers lossy', () => {
+		const wb = AscendWorkbook.create()
+		const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+		if (!sheet) throw new Error('missing sheet')
+		sheet.x14DataValidations.push({
+			index: 0,
+			sqref: 'A1:A1',
+			type: 'list',
+			formula1: '"A,B"',
+		})
+
+		const changed = wb.apply(
+			[{ op: 'copyRange', sheet: 'Sheet1', source: 'A1:A1', target: 'D1', mode: 'validations' }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(false)
+		expect(changed.journal?.issues).toContainEqual({
+			code: 'LOSSY_INVERSE',
+			message:
+				'Transferred x14 data validation metadata on Sheet1!A1 cannot be restored with public operations',
+			refs: ['Sheet1!x14Validation:A1:A1:0'],
+		})
+		expect(changed.journal?.inverseOps).toEqual([])
+	})
+
 	test('copyRange comment journals restore simple target comments exactly', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([
@@ -3815,6 +3881,69 @@ describe('interactive client contract', () => {
 		expect(wb.sheet('Sheet1')?.cell('D1')?.formula).toBe('A1+4')
 		expect(wb.cellStyle('Sheet1!D1')?.numberFormat).toBe('0.0%')
 		expect(wb.sheet('Sheet1')?.cell('G1')?.formula).toBe('SUM(A1:A1)')
+	})
+
+	test('moveRange validation journals restore source and target validations exactly', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setDataValidation',
+				sheet: 'Sheet1',
+				range: 'A1:B1',
+				rule: { type: 'whole', operator: 'between', formula1: '1', formula2: '10' },
+			},
+		])
+		const before = journalComparableState(wb)
+
+		const changed = wb.apply(
+			[{ op: 'moveRange', sheet: 'Sheet1', source: 'A1:B1', target: 'D1', mode: 'validations' }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(true)
+		expect(changed.journal?.issues).toEqual([])
+		expect(wb.sheet('Sheet1')?.dataValidations).toEqual([
+			expect.objectContaining({ sqref: 'D1:E1', type: 'whole' }),
+		])
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(journalComparableState(wb)).toEqual(before)
+	})
+
+	test('moveRange validation journals mark non-suffix source order lossy', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setDataValidation',
+				sheet: 'Sheet1',
+				range: 'A1:A1',
+				rule: { type: 'whole', formula1: '1' },
+			},
+			{
+				op: 'setDataValidation',
+				sheet: 'Sheet1',
+				range: 'Z1:Z1',
+				rule: { type: 'whole', formula1: '2' },
+			},
+		])
+
+		const changed = wb.apply(
+			[{ op: 'moveRange', sheet: 'Sheet1', source: 'A1:A1', target: 'D1', mode: 'validations' }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(false)
+		expect(changed.journal?.issues).toContainEqual({
+			code: 'LOSSY_INVERSE',
+			message:
+				'Moved data validation order on Sheet1!A1 cannot be restored exactly with public operations',
+			refs: ['Sheet1!A1'],
+		})
 	})
 
 	test('moveRange comment journals restore simple source and target comments exactly', () => {

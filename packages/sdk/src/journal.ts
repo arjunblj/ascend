@@ -1787,6 +1787,23 @@ function journalCopyRange(
 			issues: [],
 		}
 	}
+	if (mode === 'validations') {
+		const { inverseOps, preimages, issues } = validationTransferRestoration(
+			workbook,
+			op.sheet,
+			parseRange(op.source),
+			targetSheet,
+			targetRange,
+			false,
+		)
+		return {
+			opIndex,
+			op,
+			inverseOps,
+			preimages,
+			issues,
+		}
+	}
 	const targetRefs = refsInParsedRange(targetRange)
 	const cells = copyRangeOverwritesFormulas(mode)
 		? cellEditPreimages(workbook, targetSheet, targetRefs)
@@ -1857,6 +1874,23 @@ function journalMoveRange(
 				hyperlink,
 			})),
 			issues: [],
+		}
+	}
+	if (mode === 'validations') {
+		const { inverseOps, preimages, issues } = validationTransferRestoration(
+			workbook,
+			op.sheet,
+			sourceRange,
+			targetSheet,
+			targetRange,
+			true,
+		)
+		return {
+			opIndex,
+			op,
+			inverseOps,
+			preimages,
+			issues,
 		}
 	}
 	const sourceCells = copyRangeOverwritesFormulas(mode)
@@ -2424,6 +2458,248 @@ function restoreDataValidationOps(validation: MutationJournalDataValidationPreim
 			: [],
 		issues,
 	}
+}
+
+interface DataValidationTransfer {
+	readonly sourceIndex: number
+	readonly source: MutationJournalDataValidationPreimage
+	readonly target: MutationJournalDataValidationPreimage
+	readonly retainedSourceRange: string | null
+	readonly targetCollision: boolean
+	readonly retainedCollision: boolean
+}
+
+function validationTransferRestoration(
+	workbook: Workbook,
+	sourceSheetName: string,
+	sourceRange: RangeRef,
+	targetSheetName: string,
+	targetRange: RangeRef,
+	move: boolean,
+): {
+	readonly inverseOps: readonly Operation[]
+	readonly preimages: readonly MutationJournalPreimage[]
+	readonly issues: readonly MutationJournalIssue[]
+} {
+	const sourceSheet = workbook.getSheet(sourceSheetName)
+	const targetSheet = workbook.getSheet(targetSheetName)
+	if (!sourceSheet || !targetSheet) {
+		return { inverseOps: [], preimages: [], issues: [] }
+	}
+	const rowDelta = targetRange.start.row - sourceRange.start.row
+	const colDelta = targetRange.start.col - sourceRange.start.col
+	const transfers = dataValidationTransfers(
+		workbook,
+		sourceSheet,
+		sourceRange,
+		targetSheet,
+		rowDelta,
+		colDelta,
+		move,
+	)
+	const preimageMap = new Map<string, MutationJournalDataValidationPreimage>()
+	for (const transfer of transfers) {
+		preimageMap.set(`${transfer.target.sheet}!${transfer.target.range}`, transfer.target)
+		if (move) {
+			preimageMap.set(`${transfer.source.sheet}!${transfer.source.range}`, transfer.source)
+		}
+	}
+
+	const issues: MutationJournalIssue[] = [
+		...dataValidationTransferCollisionIssues(transfers, move),
+		...x14DataValidationTransferIssues(sourceSheet, sourceRange),
+	]
+	const inverseOps: Operation[] = []
+	for (const transfer of transfers) {
+		if (!transfer.targetCollision) {
+			inverseOps.push({
+				op: 'deleteDataValidation',
+				sheet: transfer.target.sheet,
+				range: transfer.target.range,
+			})
+		}
+	}
+	if (move) {
+		for (const transfer of transfers) {
+			if (transfer.retainedSourceRange && !transfer.retainedCollision) {
+				inverseOps.push({
+					op: 'deleteDataValidation',
+					sheet: transfer.source.sheet,
+					range: transfer.retainedSourceRange,
+				})
+			}
+		}
+		for (const transfer of transfers) {
+			const restored = restoreDataValidationOps(transfer.source)
+			inverseOps.push(...restored.inverseOps)
+			issues.push(...restored.issues)
+		}
+		issues.push(...dataValidationMoveOrderIssues(sourceSheet, sourceRange, transfers))
+	}
+
+	return {
+		inverseOps: dedupeDataValidationInverseOps(inverseOps),
+		preimages: [
+			{
+				kind: 'data-validations',
+				validations: [...preimageMap.values()],
+			},
+		],
+		issues,
+	}
+}
+
+function dataValidationTransfers(
+	workbook: Workbook,
+	sourceSheet: Sheet,
+	sourceRange: RangeRef,
+	targetSheet: Sheet,
+	rowDelta: number,
+	colDelta: number,
+	move: boolean,
+): DataValidationTransfer[] {
+	const transfers: DataValidationTransfer[] = []
+	for (let index = 0; index < sourceSheet.dataValidations.length; index++) {
+		const validation = sourceSheet.dataValidations[index]
+		if (!validation) continue
+		const ranges = parseSqrefRanges(validation.sqref)
+		if (ranges.length === 0) continue
+		const copiedRanges = ranges.filter((range) => rangeContainsRange(sourceRange, range))
+		if (copiedRanges.length === 0) continue
+		const targetSqref = rangesToSqref(
+			copiedRanges.map((range) => shiftRange(range, rowDelta, colDelta)),
+		)
+		const keptRanges = ranges.filter((range) => !rangeContainsRange(sourceRange, range))
+		const retainedSourceRange = move && keptRanges.length > 0 ? rangesToSqref(keptRanges) : null
+		const source: MutationJournalDataValidationPreimage = {
+			sheet: sourceSheet.name,
+			range: validation.sqref,
+			validation: { ...validation },
+		}
+		const target = dataValidationPreimage(workbook, targetSheet.name, targetSqref)
+		transfers.push({
+			sourceIndex: index,
+			source,
+			target,
+			retainedSourceRange,
+			targetCollision: dataValidationTargetCollision(
+				sourceSheet,
+				targetSheet,
+				validation,
+				targetSqref,
+				move,
+			),
+			retainedCollision: retainedSourceRange
+				? dataValidationSqrefCount(sourceSheet, retainedSourceRange) > 0 ||
+					transfers.some((transfer) => transfer.retainedSourceRange === retainedSourceRange)
+				: false,
+		})
+	}
+	return transfers
+}
+
+function dataValidationTargetCollision(
+	sourceSheet: Sheet,
+	targetSheet: Sheet,
+	validation: SheetDataValidation,
+	targetSqref: string,
+	move: boolean,
+): boolean {
+	const count = dataValidationSqrefCount(targetSheet, targetSqref)
+	if (count === 0) return false
+	if (!move || sourceSheet !== targetSheet || validation.sqref !== targetSqref) return true
+	return count > 1
+}
+
+function dataValidationSqrefCount(sheet: Sheet, sqref: string): number {
+	return sheet.dataValidations.filter((validation) => validation.sqref === sqref).length
+}
+
+function dataValidationTransferCollisionIssues(
+	transfers: readonly DataValidationTransfer[],
+	move: boolean,
+): readonly MutationJournalIssue[] {
+	const issues: MutationJournalIssue[] = []
+	for (const transfer of transfers) {
+		if (transfer.targetCollision) {
+			issues.push({
+				code: 'LOSSY_INVERSE',
+				message: `Copied data validation at ${transfer.target.sheet}!${transfer.target.range} collides with existing validation metadata`,
+				refs: [
+					`${transfer.source.sheet}!${transfer.source.range}`,
+					`${transfer.target.sheet}!${transfer.target.range}`,
+				],
+			})
+		}
+		if (move && transfer.retainedCollision && transfer.retainedSourceRange) {
+			issues.push({
+				code: 'LOSSY_INVERSE',
+				message: `Retained data validation at ${transfer.source.sheet}!${transfer.retainedSourceRange} cannot be removed without touching unrelated validation metadata`,
+				refs: [
+					`${transfer.source.sheet}!${transfer.source.range}`,
+					`${transfer.source.sheet}!${transfer.retainedSourceRange}`,
+				],
+			})
+		}
+	}
+	return issues
+}
+
+function x14DataValidationTransferIssues(
+	sourceSheet: Sheet,
+	sourceRange: RangeRef,
+): readonly MutationJournalIssue[] {
+	const refs: string[] = []
+	for (const validation of sourceSheet.x14DataValidations) {
+		if (validation.deleted) continue
+		const ranges = parseSqrefRanges(validation.sqref)
+		if (ranges.some((range) => rangeContainsRange(sourceRange, range))) {
+			refs.push(`${sourceSheet.name}!x14Validation:${validation.sqref}:${validation.index}`)
+		}
+	}
+	if (refs.length === 0) return []
+	return [
+		{
+			code: 'LOSSY_INVERSE',
+			message: `Transferred x14 data validation metadata on ${sourceSheet.name}!${rangeToA1(sourceRange)} cannot be restored with public operations`,
+			refs,
+		},
+	]
+}
+
+function dataValidationMoveOrderIssues(
+	sourceSheet: Sheet,
+	sourceRange: RangeRef,
+	transfers: readonly DataValidationTransfer[],
+): readonly MutationJournalIssue[] {
+	if (transfers.length === 0) return []
+	const moved = new Set(transfers.map((transfer) => transfer.sourceIndex))
+	const firstMoved = Math.min(...moved)
+	for (let index = firstMoved; index < sourceSheet.dataValidations.length; index++) {
+		if (!moved.has(index)) {
+			return [
+				{
+					code: 'LOSSY_INVERSE',
+					message: `Moved data validation order on ${sourceSheet.name}!${rangeToA1(sourceRange)} cannot be restored exactly with public operations`,
+					refs: [`${sourceSheet.name}!${rangeToA1(sourceRange)}`],
+				},
+			]
+		}
+	}
+	return []
+}
+
+function dedupeDataValidationInverseOps(ops: readonly Operation[]): Operation[] {
+	const seen = new Set<string>()
+	const deduped: Operation[] = []
+	for (const op of ops) {
+		const key =
+			op.op === 'deleteDataValidation' ? `${op.op}:${op.sheet}:${op.range}` : JSON.stringify(op)
+		if (seen.has(key)) continue
+		seen.add(key)
+		deduped.push(op)
+	}
+	return deduped
 }
 
 function dataValidationRuleFromSheet(validation: MutationJournalDataValidationPreimage): {
@@ -3730,6 +4006,39 @@ function sqrefOverlaps(sqref: string, range: RangeRef): boolean {
 		})
 }
 
+function parseSqrefRanges(sqref: string): RangeRef[] {
+	const ranges: RangeRef[] = []
+	for (const token of sqref.trim().split(/\s+/)) {
+		if (!token) continue
+		try {
+			ranges.push(parseRange(token))
+		} catch {
+			return []
+		}
+	}
+	return ranges
+}
+
+function rangeContainsRange(outer: RangeRef, inner: RangeRef): boolean {
+	return (
+		inner.start.row >= outer.start.row &&
+		inner.end.row <= outer.end.row &&
+		inner.start.col >= outer.start.col &&
+		inner.end.col <= outer.end.col
+	)
+}
+
+function shiftRange(range: RangeRef, rowDelta: number, colDelta: number): RangeRef {
+	return {
+		start: { row: range.start.row + rowDelta, col: range.start.col + colDelta },
+		end: { row: range.end.row + rowDelta, col: range.end.col + colDelta },
+	}
+}
+
+function rangesToSqref(ranges: readonly RangeRef[]): string {
+	return ranges.map(rangeToA1).join(' ')
+}
+
 function rangesOverlap(a: RangeRef, b: RangeRef): boolean {
 	return (
 		a.start.row <= b.end.row &&
@@ -3810,6 +4119,7 @@ function copyRangeCellModeSupported(mode: string): boolean {
 		mode === 'formulas' ||
 		mode === 'formats' ||
 		mode === 'styles' ||
+		mode === 'validations' ||
 		mode === 'comments' ||
 		mode === 'hyperlinks'
 	)

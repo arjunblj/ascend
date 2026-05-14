@@ -4409,6 +4409,7 @@ describe('interactive client contract', () => {
 				tooltip: 'target tip',
 			},
 		])
+		const before = journalComparableState(wb)
 
 		const changed = wb.apply(
 			[{ op: 'moveRange', sheet: 'Sheet1', source: 'A1', target: 'D1', mode: 'hyperlinks' }],
@@ -4439,6 +4440,7 @@ describe('interactive client contract', () => {
 			tooltip: 'target tip',
 		})
 		expect(wb.sheet('Sheet1')?.cell('G1')?.formula).toBe('A1+D1')
+		expect(journalComparableState(wb)).toEqual(before)
 	})
 
 	test('moveRange all journals restore simple hyperlinks and validations exactly', () => {
@@ -4458,6 +4460,13 @@ describe('interactive client contract', () => {
 				ref: 'A1',
 				url: 'https://source.example',
 				display: 'Source',
+			},
+			{
+				op: 'setHyperlink',
+				sheet: 'Sheet1',
+				ref: 'D1',
+				url: 'https://target.example',
+				display: 'Target',
 			},
 			{
 				op: 'setDataValidation',

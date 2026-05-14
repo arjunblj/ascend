@@ -1943,10 +1943,7 @@ function journalMoveRange(
 		return {
 			opIndex,
 			op,
-			inverseOps: [
-				...restoreHyperlinkOps(targetHyperlinks),
-				...restoreHyperlinkOps(sourceHyperlinks),
-			],
+			inverseOps: moveRangeHyperlinkRestoreOps(sourceHyperlinks, targetHyperlinks),
 			preimages: [...targetHyperlinks, ...sourceHyperlinks].map((hyperlink) => ({
 				kind: 'hyperlink',
 				hyperlink,
@@ -4411,8 +4408,7 @@ function moveRangeAllMetadataRestoration(
 	)
 	return {
 		inverseOps: [
-			...restoreHyperlinkOps(targetHyperlinks),
-			...restoreHyperlinkOps(sourceHyperlinks),
+			...moveRangeHyperlinkRestoreOps(sourceHyperlinks, targetHyperlinks),
 			...validations.inverseOps,
 		],
 		preimages: [
@@ -5569,6 +5565,24 @@ function restoreHyperlinkOps(hyperlinks: readonly MutationJournalHyperlinkPreima
 			? setHyperlinkInverse(hyperlink.sheet, hyperlink.ref, hyperlink.hyperlink)
 			: { op: 'deleteHyperlink', sheet: hyperlink.sheet, ref: hyperlink.ref },
 	)
+}
+
+function moveRangeHyperlinkRestoreOps(
+	sourceHyperlinks: readonly MutationJournalHyperlinkPreimage[],
+	targetHyperlinks: readonly MutationJournalHyperlinkPreimage[],
+): Operation[] {
+	const targetCleanupOps = targetHyperlinks
+		.filter((_, index) => sourceHyperlinks[index]?.hyperlink)
+		.map((hyperlink) => ({
+			op: 'deleteHyperlink' as const,
+			sheet: hyperlink.sheet,
+			ref: hyperlink.ref,
+		}))
+	return [
+		...targetCleanupOps,
+		...restoreHyperlinkOps(sourceHyperlinks),
+		...restoreHyperlinkOps(targetHyperlinks),
+	]
 }
 
 function findHyperlink(sheet: Sheet | undefined, ref: string): SheetHyperlink | null {

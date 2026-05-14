@@ -2190,6 +2190,9 @@ function buildCompactReadResult(sourceInfo: CompactRangeWindowInfo, cols?: reado
 		hasMore: info.hasMore,
 		...(info.nextRowOffset !== undefined ? { nextRowOffset: info.nextRowOffset } : {}),
 		...(info.changeToken !== undefined ? { changeToken: info.changeToken } : {}),
+		...(info.changeInvalidation !== undefined
+			? { changeInvalidation: info.changeInvalidation }
+			: {}),
 		...('selectedColumns' in info ? { selectedColumns: info.selectedColumns } : {}),
 		format: 'compact' as const,
 		cells: info.cells.map((cell) => [

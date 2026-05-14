@@ -27,6 +27,7 @@ import type {
 	CellInfo,
 	CommentSummary,
 	CompactCellInfo,
+	CompactRangeChangeInvalidation,
 	CompactRangeInfo,
 	CompactRangeWindowInfo,
 	ConditionalFormatRuleSummary,
@@ -212,16 +213,26 @@ export class SheetHandle {
 		const hasMore = requestedRef.start.row + rowOffset + rowLimit - 1 < requestedRef.end.row
 		const snapshotKey = opts?.changedSince !== undefined ? `${this.sheetName}:${rangeRef}` : null
 		let changeToken: string | undefined
+		let changeInvalidation: CompactRangeChangeInvalidation | undefined
 		if (snapshotKey) {
 			const version = this._changeVersion++
 			changeToken = `${version}`
+			const baseToken = opts?.changedSince
 			const previous = this._changeSnapshots.get(snapshotKey)
-			if (previous && opts?.changedSince === previous.token) {
+			if (previous && baseToken === previous.token) {
 				const currentMap = buildCellMap(cells)
 				const changed = diffCellMaps(previous.cells, currentMap)
 				this._changeSnapshots.set(snapshotKey, { token: changeToken, cells: currentMap })
 				cells = changed
 			} else {
+				if (baseToken) {
+					changeInvalidation = {
+						baseToken,
+						changeToken,
+						reason: previous ? 'base-token-stale' : 'base-snapshot-missing',
+						requiredAction: 'use-returned-window',
+					}
+				}
 				this._changeSnapshots.set(snapshotKey, {
 					token: changeToken,
 					cells: buildCellMap(cells),
@@ -240,6 +251,7 @@ export class SheetHandle {
 			hasMore,
 			...(hasMore ? { nextRowOffset: consumedRows } : {}),
 			...(changeToken !== undefined ? { changeToken } : {}),
+			...(changeInvalidation !== undefined ? { changeInvalidation } : {}),
 		}
 	}
 

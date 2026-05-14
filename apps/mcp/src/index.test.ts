@@ -2806,7 +2806,7 @@ describe('MCP server', () => {
 		}) => Promise<{
 			structuredContent?: {
 				ok?: boolean
-				data?: { cells?: unknown[]; changeToken?: string }
+				data?: { cells?: unknown[]; changeToken?: string; changeInvalidation?: unknown }
 			}
 		}>
 
@@ -2828,6 +2828,12 @@ describe('MCP server', () => {
 		expect(afterChange.structuredContent?.ok).toBe(true)
 		expect(afterChange.structuredContent?.data?.cells).toEqual([[0, 0, 'new']])
 		expect(afterChange.structuredContent?.data?.changeToken).toBeDefined()
+		expect(afterChange.structuredContent?.data?.changeInvalidation).toEqual({
+			baseToken: first.structuredContent?.data?.changeToken,
+			changeToken: afterChange.structuredContent?.data?.changeToken,
+			reason: 'base-snapshot-missing',
+			requiredAction: 'use-returned-window',
+		})
 	})
 
 	test('ascend.read returns compact first-window data with partial load metadata', async () => {

@@ -1454,6 +1454,9 @@ function buildCompactReadResult(info: CompactRangeWindowInfo) {
 		hasMore: info.hasMore,
 		...(info.nextRowOffset !== undefined ? { nextRowOffset: info.nextRowOffset } : {}),
 		...(info.changeToken !== undefined ? { changeToken: info.changeToken } : {}),
+		...(info.changeInvalidation !== undefined
+			? { changeInvalidation: info.changeInvalidation }
+			: {}),
 		format: 'compact' as const,
 		cells: info.cells.map((cell) => [
 			cell.row - info.ref.start.row,

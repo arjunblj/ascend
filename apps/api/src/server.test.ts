@@ -738,6 +738,12 @@ describe('Ascend API server', () => {
 		expect(afterChange.body.ok).toBe(true)
 		expect(afterChange.body.data?.cells).toEqual([[0, 0, 'new']])
 		expect(afterChange.body.data?.changeToken).toBeDefined()
+		expect(afterChange.body.data?.changeInvalidation).toEqual({
+			baseToken: first.body.data?.changeToken,
+			changeToken: afterChange.body.data?.changeToken,
+			reason: 'base-snapshot-missing',
+			requiredAction: 'use-returned-window',
+		})
 	})
 
 	test('read preview defaults compact reads to a bounded first window', async () => {

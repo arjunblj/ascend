@@ -1085,6 +1085,16 @@ export interface CompactRangeWindowInfo extends CompactRangeInfo {
 	readonly hasMore: boolean
 	readonly nextRowOffset?: number
 	readonly changeToken?: string
+	readonly changeInvalidation?: CompactRangeChangeInvalidation
+}
+
+export type CompactRangeChangeInvalidationReason = 'base-snapshot-missing' | 'base-token-stale'
+
+export interface CompactRangeChangeInvalidation {
+	readonly baseToken: string
+	readonly changeToken: string
+	readonly reason: CompactRangeChangeInvalidationReason
+	readonly requiredAction: 'use-returned-window'
 }
 
 export interface RangeRowsInfo {

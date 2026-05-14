@@ -801,6 +801,65 @@ describe('AscendWorkbook', () => {
 		expect(window?.cells.map((cell) => cell.formulaBinding)).toEqual([null, null])
 	})
 
+	test('sheet handle compact changedSince reads expose fresh-window invalidations', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 1 },
+					{ ref: 'A2', value: 2 },
+				],
+			},
+		])
+		const handle = wb.sheet('Sheet1')
+		const first = handle?.readWindowCompact('A1:A2', {
+			includeRefs: false,
+			flatValues: true,
+			changedSince: '',
+		})
+		expect(first?.cells.map((cell) => cell.value)).toEqual([1, 2])
+		expect(first?.changeToken).toBeDefined()
+		expect(first?.changeInvalidation).toBeUndefined()
+
+		const unchanged = handle?.readWindowCompact('A1:A2', {
+			includeRefs: false,
+			flatValues: true,
+			changedSince: first?.changeToken,
+		})
+		expect(unchanged?.cells).toEqual([])
+		expect(unchanged?.changeInvalidation).toBeUndefined()
+
+		const reopened = await AscendWorkbook.open(wb.toBytes())
+		const otherHandle = reopened.sheet('Sheet1')
+		const missingBase = otherHandle?.readWindowCompact('A1:A2', {
+			includeRefs: false,
+			flatValues: true,
+			changedSince: first?.changeToken,
+		})
+		expect(missingBase?.cells.map((cell) => cell.value)).toEqual([1, 2])
+		expect(missingBase?.changeInvalidation).toEqual({
+			baseToken: first?.changeToken,
+			changeToken: missingBase?.changeToken,
+			reason: 'base-snapshot-missing',
+			requiredAction: 'use-returned-window',
+		})
+
+		const staleBase = handle?.readWindowCompact('A1:A2', {
+			includeRefs: false,
+			flatValues: true,
+			changedSince: first?.changeToken,
+		})
+		expect(staleBase?.cells.map((cell) => cell.value)).toEqual([1, 2])
+		expect(staleBase?.changeInvalidation).toEqual({
+			baseToken: first?.changeToken,
+			changeToken: staleBase?.changeToken,
+			reason: 'base-token-stale',
+			requiredAction: 'use-returned-window',
+		})
+	})
+
 	test('sheet handle usedRange', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

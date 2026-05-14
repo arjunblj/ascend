@@ -221,6 +221,8 @@ export type {
 	CheckResult,
 	CommentSummary,
 	CompactCellInfo,
+	CompactRangeChangeInvalidation,
+	CompactRangeChangeInvalidationReason,
 	CompactRangeInfo,
 	CompactRangeWindowInfo,
 	CompoundFormulaReferenceInfo,

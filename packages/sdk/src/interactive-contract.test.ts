@@ -3565,6 +3565,58 @@ describe('interactive client contract', () => {
 		})
 	})
 
+	test('copyRange comment journals restore simple target comments exactly', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{ op: 'setComment', sheet: 'Sheet1', ref: 'A1', text: 'source note', author: 'Ada' },
+			{ op: 'setComment', sheet: 'Sheet1', ref: 'D1', text: 'target note', author: 'Grace' },
+		])
+
+		const changed = wb.apply(
+			[{ op: 'copyRange', sheet: 'Sheet1', source: 'A1', target: 'D1', mode: 'comments' }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(true)
+		expect(changed.journal?.issues).toEqual([])
+		const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+		expect(sheet?.comments.get('D1')).toEqual({ text: 'source note', author: 'Ada' })
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(sheet?.comments.get('A1')).toEqual({ text: 'source note', author: 'Ada' })
+		expect(sheet?.comments.get('D1')).toEqual({ text: 'target note', author: 'Grace' })
+	})
+
+	test('copyRange comment journals mark legacy drawing transfers lossy', () => {
+		const wb = AscendWorkbook.create()
+		const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+		if (!sheet) throw new Error('missing sheet')
+		sheet.comments.set('A1', {
+			text: 'source note',
+			author: 'Ada',
+			legacyDrawing: { shapeId: '_x0000_s1025', row: 0, column: 0 },
+		})
+		sheet.comments.set('D1', { text: 'target note', author: 'Grace' })
+
+		const changed = wb.apply(
+			[{ op: 'copyRange', sheet: 'Sheet1', source: 'A1', target: 'D1', mode: 'comments' }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(false)
+		expect(changed.journal?.issues).toContainEqual({
+			code: 'LOSSY_INVERSE',
+			message:
+				'Copied legacy comment drawing metadata for Sheet1!D1 cannot be removed with public operations',
+			refs: ['Sheet1!A1', 'Sheet1!D1'],
+		})
+	})
+
 	test('copyRange hyperlink journals restore target hyperlink metadata exactly', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([
@@ -3763,6 +3815,32 @@ describe('interactive client contract', () => {
 		expect(wb.sheet('Sheet1')?.cell('D1')?.formula).toBe('A1+4')
 		expect(wb.cellStyle('Sheet1!D1')?.numberFormat).toBe('0.0%')
 		expect(wb.sheet('Sheet1')?.cell('G1')?.formula).toBe('SUM(A1:A1)')
+	})
+
+	test('moveRange comment journals restore simple source and target comments exactly', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{ op: 'setComment', sheet: 'Sheet1', ref: 'A1', text: 'source note', author: 'Ada' },
+			{ op: 'setComment', sheet: 'Sheet1', ref: 'D1', text: 'target note', author: 'Grace' },
+		])
+
+		const changed = wb.apply(
+			[{ op: 'moveRange', sheet: 'Sheet1', source: 'A1', target: 'D1', mode: 'comments' }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(true)
+		expect(changed.journal?.issues).toEqual([])
+		const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+		expect(sheet?.comments.get('A1')).toBeUndefined()
+		expect(sheet?.comments.get('D1')).toEqual({ text: 'source note', author: 'Ada' })
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(sheet?.comments.get('A1')).toEqual({ text: 'source note', author: 'Ada' })
+		expect(sheet?.comments.get('D1')).toEqual({ text: 'target note', author: 'Grace' })
 	})
 
 	test('moveRange hyperlink journals restore source and target hyperlink metadata exactly', () => {

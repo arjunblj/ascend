@@ -1767,6 +1767,16 @@ function journalCopyRange(
 	}
 	const targetSheet = op.targetSheet ?? op.sheet
 	const targetRange = transferTargetRange(op.source, op.target)
+	if (mode === 'comments') {
+		const targetComments = commentPreimages(workbook, targetSheet, refsInParsedRange(targetRange))
+		return {
+			opIndex,
+			op,
+			inverseOps: restoreCommentOps(targetComments),
+			preimages: targetComments.map((comment) => ({ kind: 'comment', comment })),
+			issues: commentTransferIssues(workbook, op.sheet, op.source, targetSheet, targetRange),
+		}
+	}
 	if (mode === 'hyperlinks') {
 		const hyperlinks = hyperlinkPreimages(workbook, targetSheet, refsInParsedRange(targetRange))
 		return {
@@ -1816,6 +1826,22 @@ function journalMoveRange(
 	const targetRange = transferTargetRange(op.source, op.target)
 	const sourceRefs = refsInParsedRange(sourceRange)
 	const targetRefs = refsInParsedRange(targetRange)
+	if (mode === 'comments') {
+		const targetComments = commentPreimages(workbook, targetSheet, targetRefs)
+		const sourceComments = commentPreimages(workbook, op.sheet, sourceRefs)
+		return {
+			opIndex,
+			op,
+			inverseOps: [...restoreCommentOps(targetComments), ...restoreCommentOps(sourceComments)],
+			preimages: [...targetComments, ...sourceComments].map((comment) => ({
+				kind: 'comment',
+				comment,
+			})),
+			issues: commentTransferIssues(workbook, op.sheet, op.source, targetSheet, targetRange, {
+				move: true,
+			}),
+		}
+	}
 	if (mode === 'hyperlinks') {
 		const targetHyperlinks = hyperlinkPreimages(workbook, targetSheet, targetRefs)
 		const sourceHyperlinks = hyperlinkPreimages(workbook, op.sheet, sourceRefs)
@@ -3784,6 +3810,7 @@ function copyRangeCellModeSupported(mode: string): boolean {
 		mode === 'formulas' ||
 		mode === 'formats' ||
 		mode === 'styles' ||
+		mode === 'comments' ||
 		mode === 'hyperlinks'
 	)
 }
@@ -4486,6 +4513,108 @@ function commentPreimage(
 		ref,
 		comment: comment ? { ...comment } : null,
 	}
+}
+
+function commentPreimages(
+	workbook: Workbook,
+	sheetName: string,
+	refs: readonly string[],
+): MutationJournalCommentPreimage[] {
+	return refs.map((ref) => commentPreimage(workbook, sheetName, ref))
+}
+
+function restoreCommentOps(comments: readonly MutationJournalCommentPreimage[]): Operation[] {
+	return comments.map((comment) =>
+		comment.comment
+			? {
+					op: 'setComment',
+					sheet: comment.sheet,
+					ref: comment.ref,
+					text: comment.comment.text,
+					...(comment.comment.author !== undefined ? { author: comment.comment.author } : {}),
+				}
+			: { op: 'deleteComment', sheet: comment.sheet, ref: comment.ref },
+	)
+}
+
+function commentTransferIssues(
+	workbook: Workbook,
+	sourceSheetName: string,
+	sourceRangeText: string,
+	targetSheetName: string,
+	targetRange: RangeRef,
+	options: { readonly move?: boolean } = {},
+): MutationJournalIssue[] {
+	const sourceSheet = workbook.getSheet(sourceSheetName)
+	const targetSheet = workbook.getSheet(targetSheetName)
+	const sourceRange = parseRange(sourceRangeText)
+	const refs = new Set<string>()
+	const issues: MutationJournalIssue[] = []
+
+	if (threadedCommentsOverlap(sourceSheet, sourceRange))
+		refs.add(`${sourceSheetName}!${sourceRangeText}`)
+	if (threadedCommentsOverlap(targetSheet, targetRange)) {
+		refs.add(`${targetSheetName}!${rangeToA1(targetRange)}`)
+	}
+	if (refs.size > 0) {
+		issues.push({
+			code: 'LOSSY_INVERSE',
+			message: 'Threaded comment range transfers cannot be fully restored with public operations',
+			refs: [...refs],
+		})
+	}
+
+	for (const preimage of commentPreimages(
+		workbook,
+		targetSheetName,
+		refsInParsedRange(targetRange),
+	)) {
+		if (preimage.comment?.legacyDrawing) {
+			issues.push({
+				code: 'LOSSY_INVERSE',
+				message: `Legacy comment drawing metadata for ${preimage.sheet}!${preimage.ref} cannot be restored with public operations`,
+				refs: [`${preimage.sheet}!${preimage.ref}`],
+			})
+		}
+	}
+	if (options.move) {
+		for (const preimage of commentPreimages(
+			workbook,
+			sourceSheetName,
+			refsInParsedRange(sourceRange),
+		)) {
+			if (preimage.comment?.legacyDrawing) {
+				issues.push({
+					code: 'LOSSY_INVERSE',
+					message: `Legacy comment drawing metadata for ${preimage.sheet}!${preimage.ref} cannot be restored with public operations`,
+					refs: [`${preimage.sheet}!${preimage.ref}`],
+				})
+			}
+		}
+	}
+
+	if (sourceSheet && targetSheet) {
+		const rowDelta = targetRange.start.row - sourceRange.start.row
+		const colDelta = targetRange.start.col - sourceRange.start.col
+		for (const [ref, comment] of sourceSheet.comments) {
+			const sourceRef = parseA1(ref)
+			if (!rangeContainsCell(sourceRange, sourceRef) || !comment.legacyDrawing) continue
+			const targetRef = toA1({ row: sourceRef.row + rowDelta, col: sourceRef.col + colDelta })
+			const targetComment = findComment(targetSheet, targetRef)
+			if (!targetComment) continue
+			issues.push({
+				code: 'LOSSY_INVERSE',
+				message: `Copied legacy comment drawing metadata for ${targetSheetName}!${targetRef} cannot be removed with public operations`,
+				refs: [`${sourceSheetName}!${toA1(sourceRef)}`, `${targetSheetName}!${targetRef}`],
+			})
+		}
+	}
+	return issues
+}
+
+function threadedCommentsOverlap(sheet: Sheet | undefined, range: RangeRef): boolean {
+	if (!sheet) return false
+	return sheet.threadedComments.some((comment) => rangeContainsCell(range, parseA1(comment.ref)))
 }
 
 function findComment(sheet: Sheet | undefined, ref: string): SheetComment | null {

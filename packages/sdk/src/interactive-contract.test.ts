@@ -3165,6 +3165,42 @@ describe('interactive client contract', () => {
 		})
 	})
 
+	test('sortRange exact journals restore scalar formula caches', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'Key' },
+					{ ref: 'B1', value: 'Calc' },
+					{ ref: 'A2', value: 2 },
+					{ ref: 'B2', value: 20 },
+					{ ref: 'A3', value: 1 },
+					{ ref: 'B3', value: 10 },
+				],
+			},
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'B2', formula: 'A2*10' },
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'B3', formula: 'A3*10' },
+		])
+
+		const changed = wb.apply(
+			[{ op: 'sortRange', sheet: 'Sheet1', range: 'A1:B3', by: [{ column: 'Key' }] }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(true)
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(wb.sheet('Sheet1')?.cell('B2')?.formula).toBe('A2*10')
+		expect(wb.sheet('Sheet1')?.cell('B2')?.value).toEqual({ kind: 'number', value: 20 })
+		expect(wb.sheet('Sheet1')?.cell('B3')?.formula).toBe('A3*10')
+		expect(wb.sheet('Sheet1')?.cell('B3')?.value).toEqual({ kind: 'number', value: 10 })
+	})
+
 	test('journal inverse ops restore simple copyRange target cells and styles', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([
@@ -3199,6 +3235,36 @@ describe('interactive client contract', () => {
 		expect(wb.sheet('Sheet1')?.cell('D1')?.value).toEqual({ kind: 'string', value: 'Old' })
 		expect(wb.sheet('Sheet1')?.cell('E1')?.value).toEqual({ kind: 'number', value: 1 })
 		expect(wb.cellStyle('Sheet1!E1')?.numberFormat).toBe('$0')
+	})
+
+	test('copyRange exact journals restore overwritten scalar formula caches', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 5 },
+					{ ref: 'D1', value: 20 },
+				],
+			},
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'D1', formula: 'A1*4' },
+		])
+
+		const changed = wb.apply(
+			[{ op: 'copyRange', sheet: 'Sheet1', source: 'A1', target: 'D1', mode: 'all' }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(true)
+		expect(wb.sheet('Sheet1')?.cell('D1')?.formula).toBeNull()
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(wb.sheet('Sheet1')?.cell('D1')?.formula).toBe('A1*4')
+		expect(wb.sheet('Sheet1')?.cell('D1')?.value).toEqual({ kind: 'number', value: 20 })
 	})
 
 	test('copyRange journals mark metadata transfer lossy', () => {
@@ -3267,6 +3333,38 @@ describe('interactive client contract', () => {
 		expect(wb.sheet('Sheet1')?.cell('D1')?.value).toEqual({ kind: 'string', value: 'Old' })
 		expect(wb.sheet('Sheet1')?.cell('E1')?.value).toEqual({ kind: 'number', value: 1 })
 		expect(wb.cellStyle('Sheet1!E1')?.numberFormat).toBe('$0')
+	})
+
+	test('moveRange exact journals restore moved scalar formula caches', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 2 },
+					{ ref: 'D1', value: 9 },
+				],
+			},
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'A1', formula: '1+1' },
+		])
+
+		const changed = wb.apply(
+			[{ op: 'moveRange', sheet: 'Sheet1', source: 'A1', target: 'D1', mode: 'all' }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(true)
+		expect(wb.sheet('Sheet1')?.cell('A1')).toBeUndefined()
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(wb.sheet('Sheet1')?.cell('A1')?.formula).toBe('1+1')
+		expect(wb.sheet('Sheet1')?.cell('A1')?.value).toEqual({ kind: 'number', value: 2 })
+		expect(wb.sheet('Sheet1')?.cell('D1')?.formula).toBeNull()
+		expect(wb.sheet('Sheet1')?.cell('D1')?.value).toEqual({ kind: 'number', value: 9 })
 	})
 
 	test('moveRange value-mode journals restore deleted source styles', () => {

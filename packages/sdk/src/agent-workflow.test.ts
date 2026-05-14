@@ -3255,6 +3255,9 @@ describe('agent workflow loss audit', () => {
 		expect(proof.subject.outputSha256).toBe(committed.outputSha256)
 		expect(proof.operations.digestsMatch).toBe(true)
 		expect(proof.plan.packageGraphAuditOk).toBe(true)
+		expect(proof.packageActions.issueCount).toBe(0)
+		expect(proof.packageActions.plan.byAction.regenerate).toBeGreaterThan(0)
+		expect(proof.packageActions.commit.byAction.regenerate).toBeGreaterThan(0)
 		expect(proof.reopen).toMatchObject({
 			valid: true,
 			reopened: true,

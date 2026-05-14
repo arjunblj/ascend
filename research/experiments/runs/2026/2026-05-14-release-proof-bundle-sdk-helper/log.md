@@ -14,6 +14,8 @@ Yes. The prior release proof probe showed that `createAgentPlan` and `commitAgen
 - [SLSA attestation model](https://slsa.dev/spec/v1.0/attestation-model): metadata should be explicit; a signature by itself does not define the claim.
 - [GitHub artifact attestations](https://docs.github.com/actions/security-guides/using-artifact-attestations-to-establish-provenance-for-builds): signed artifact provenance can be verified separately from the artifact, but that requires a real attestation workflow.
 - [in-toto attestation framework](https://github.com/in-toto/attestation): attestation statements bind subjects to typed predicates and metadata.
+- [GitHub artifact attestations current guide](https://docs.github.com/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations): build provenance is attached to artifact subjects and verified separately from the artifact bytes.
+- [in-toto attestation spec](https://github.com/in-toto/attestation/blob/main/spec/README.md): statement subjects and typed predicates are the core shape for portable proof evidence.
 
 ## Why this matters to Ascend
 
@@ -33,6 +35,12 @@ Folded in a scoped production implementation:
 - Added `createReleaseProofBundle(plan, commit, options)` in `packages/sdk/src/agent-workflow.ts`.
 - Exported the helper and types from `packages/sdk/src/index.ts`.
 - Added a fixture-backed test that creates a workbook, plans an edit, commits with `expectSha256`, reopens the output, diffs before/after, builds a release proof bundle, and verifies consistency checks.
+
+Cycle 15 extended the helper with package action evidence:
+
+- `createReleaseProofBundle()` now embeds `packageActions.plan` and `packageActions.commit` from `createPackageActionProof()`.
+- The bundle records package action counts and package-action issue totals.
+- Consistency checks now require clean plan and commit package-action proofs while treating plan-vs-commit action count differences as evidence rather than a hard failure. Counts may differ because commit evidence is created from the post-write/output context.
 
 The helper is deliberately conservative:
 
@@ -70,6 +78,7 @@ The new helper creates a bundle with:
 - commit: trace digest, output hash, phases, artifact digests, check/lint/audit/write-policy booleans;
 - reopen: post-write validity, reopen status, output hash, check/lint/package graph audit status;
 - diff: optional sheet diff evidence;
+- packageActions: plan/commit package action proofs, count comparison evidence, issue count;
 - consistency: named checks and issues;
 - claim boundaries: local evidence, not signed provenance.
 

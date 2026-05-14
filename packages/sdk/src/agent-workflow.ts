@@ -229,6 +229,12 @@ export interface ReleaseProofBundle {
 		readonly sheetDiffCount?: number
 		readonly changedSheets?: readonly string[]
 	}
+	readonly packageActions: {
+		readonly plan: PackageActionProof
+		readonly commit: PackageActionProof
+		readonly countsMatch: boolean
+		readonly issueCount: number
+	}
 	readonly consistency: {
 		readonly valid: boolean
 		readonly checks: readonly ReleaseProofConsistencyCheck[]
@@ -1228,6 +1234,14 @@ export function createReleaseProofBundle(
 ): ReleaseProofBundle {
 	const planOpsArtifact = traceArtifactByName(plan.trace, 'ops')
 	const commitOpsArtifact = traceArtifactByName(commit.trace, 'ops')
+	const planPackageActions = createPackageActionProof(plan.preservation, {
+		writePolicy: plan.writePolicy,
+		packageGraphAudit: plan.packageGraphAudit,
+	})
+	const commitPackageActions = createPackageActionProof(commit.preservation, {
+		writePolicy: commit.writePolicy,
+		packageGraphAudit: commit.packageGraphAudit,
+	})
 	const checks: ReleaseProofConsistencyCheck[] = [
 		releaseProofCheck('input-hash-linked', plan.inputSha256 === commit.inputSha256, {
 			planInputSha256: plan.inputSha256,
@@ -1267,6 +1281,14 @@ export function createReleaseProofBundle(
 		releaseProofCheck('commit-package-graph-audit-ok', commit.postWrite.packageGraphAudit.ok, {
 			issueCount: commit.postWrite.packageGraphAudit.issues.length,
 		}),
+		releaseProofCheck('plan-package-action-proof-clean', planPackageActions.issues.length === 0, {
+			issueCount: planPackageActions.issues.length,
+		}),
+		releaseProofCheck(
+			'commit-package-action-proof-clean',
+			commitPackageActions.issues.length === 0,
+			{ issueCount: commitPackageActions.issues.length },
+		),
 	]
 	const issues = checks
 		.filter((check) => !check.ok)
@@ -1327,6 +1349,15 @@ export function createReleaseProofBundle(
 					...(options.diff.changedSheets ? { changedSheets: options.diff.changedSheets } : {}),
 				}
 			: { included: false },
+		packageActions: {
+			plan: planPackageActions,
+			commit: commitPackageActions,
+			countsMatch: packageActionCountsEqual(
+				planPackageActions.byAction,
+				commitPackageActions.byAction,
+			),
+			issueCount: planPackageActions.issues.length + commitPackageActions.issues.length,
+		},
 		consistency: {
 			valid: issues.length === 0,
 			checks,
@@ -1560,6 +1591,16 @@ function emptyPackageActionCounts(): Record<PackageActionKind, number> {
 		drop: 0,
 		error: 0,
 	}
+}
+
+function packageActionCountsEqual(
+	left: Readonly<Record<PackageActionKind, number>>,
+	right: Readonly<Record<PackageActionKind, number>>,
+): boolean {
+	for (const action of Object.keys(left) as PackageActionKind[]) {
+		if (left[action] !== right[action]) return false
+	}
+	return true
 }
 
 function diagnosticsByPartPath(

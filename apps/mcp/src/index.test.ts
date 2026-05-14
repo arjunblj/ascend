@@ -1375,6 +1375,174 @@ describe('MCP server', () => {
 		expect(restored.check().valid).toBe(true)
 	})
 
+	test('ascend.write exact chart journal inverse ops restore saved chart truth after reopen', async () => {
+		await Bun.write(TEMP_FILE, Bun.file(CHARTSHEET_FIXTURE))
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const handler = (server as any)._registeredTools['ascend.write'].handler as (args: {
+			file: string
+			ops: unknown[]
+			journal?: boolean
+		}) => Promise<{
+			structuredContent?: {
+				ok?: boolean
+				data?: {
+					journal?: {
+						supported?: boolean
+						exact?: boolean
+						inverseOps?: unknown[]
+						issues?: unknown[]
+					}
+				}
+			}
+		}>
+		const result = await handler({
+			file: TEMP_FILE,
+			journal: true,
+			ops: [
+				{
+					op: 'setChartSeriesSource',
+					partPath: 'xl/charts/chart1.xml',
+					seriesIndex: 0,
+					nameRef: 'Sheet1!$B$1',
+					categoryRef: 'Sheet1!$A$2:$A$6',
+					valueRef: 'Sheet1!$B$2:$B$6',
+				},
+			],
+		})
+
+		expect(result.structuredContent?.ok).toBe(true)
+		expect(result.structuredContent?.data?.journal?.supported).toBe(true)
+		expect(result.structuredContent?.data?.journal?.exact).toBe(true)
+		expect(result.structuredContent?.data?.journal?.issues).toEqual([])
+		const inverse = parseOperations(result.structuredContent?.data?.journal?.inverseOps)
+		expect(inverse.ok).toBe(true)
+		if (!inverse.ok) throw new Error('Expected exact chart journal inverse ops to parse')
+
+		const changed = await AscendWorkbook.open(TEMP_FILE)
+		expect(changed.getWorkbookModel().chartParts[0]?.series[0]).toMatchObject({
+			nameRef: 'Sheet1!$B$1',
+			nameText: 'Bears',
+			categoryRef: 'Sheet1!$A$2:$A$6',
+			valueRef: 'Sheet1!$B$2:$B$6',
+		})
+
+		const rollback = changed.apply(inverse.value)
+		expect(rollback.errors).toEqual([])
+		await changed.save(TEMP_FILE)
+		const restored = await AscendWorkbook.open(TEMP_FILE)
+		expect(restored.getWorkbookModel().chartParts[0]?.series[0]).toMatchObject({
+			nameRef: 'Sheet1!$B$1',
+			nameText: 'Bears',
+			categoryRef: 'Sheet1!$A$2:$A$7',
+			valueRef: 'Sheet1!$B$2:$B$7',
+		})
+		expect(restored.check().valid).toBe(true)
+	})
+
+	test('ascend.write exact pivot journal inverse ops restore saved pivot cache truth after reopen', async () => {
+		await Bun.write(TEMP_FILE, Bun.file(PIVOT_FIXTURE))
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const handler = (server as any)._registeredTools['ascend.write'].handler as (args: {
+			file: string
+			ops: unknown[]
+			journal?: boolean
+		}) => Promise<{
+			structuredContent?: {
+				ok?: boolean
+				data?: {
+					journal?: {
+						supported?: boolean
+						exact?: boolean
+						inverseOps?: unknown[]
+						issues?: unknown[]
+					}
+				}
+			}
+		}>
+		const result = await handler({
+			file: TEMP_FILE,
+			journal: true,
+			ops: [
+				{
+					op: 'setPivotCache',
+					pivotTable: 'PivotTable1',
+					sourceSheet: 'Sheet1',
+					sourceRef: 'A1:K4',
+				},
+			],
+		})
+
+		expect(result.structuredContent?.ok).toBe(true)
+		expect(result.structuredContent?.data?.journal?.supported).toBe(true)
+		expect(result.structuredContent?.data?.journal?.exact).toBe(true)
+		expect(result.structuredContent?.data?.journal?.issues).toEqual([])
+		const inverse = parseOperations(result.structuredContent?.data?.journal?.inverseOps)
+		expect(inverse.ok).toBe(true)
+		if (!inverse.ok) throw new Error('Expected exact pivot journal inverse ops to parse')
+
+		const changed = await AscendWorkbook.open(TEMP_FILE)
+		expect(changed.getWorkbookModel().pivotCaches[0]).toMatchObject({
+			sourceSheet: 'Sheet1',
+			sourceRef: 'A1:K4',
+		})
+
+		const rollback = changed.apply(inverse.value)
+		expect(rollback.errors).toEqual([])
+		await changed.save(TEMP_FILE)
+		const restored = await AscendWorkbook.open(TEMP_FILE)
+		expect(restored.getWorkbookModel().pivotCaches[0]).toMatchObject({
+			sourceSheet: 'Sheet1',
+			sourceRef: 'A1:K5',
+		})
+		expect(restored.check().valid).toBe(true)
+	})
+
+	test('ascend.preview marks pivot cache public rollback gaps as lossy', async () => {
+		await Bun.write(TEMP_FILE, Bun.file(PIVOT_FIXTURE))
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const handler = (server as any)._registeredTools['ascend.preview'].handler as (args: {
+			file: string
+			ops: unknown[]
+			journal?: boolean
+		}) => Promise<{
+			structuredContent?: {
+				ok?: boolean
+				data?: {
+					journal?: {
+						supported?: boolean
+						exact?: boolean
+						inverseOps?: unknown[]
+						issues?: unknown[]
+					}
+				}
+			}
+		}>
+		const result = await handler({
+			file: TEMP_FILE,
+			journal: true,
+			ops: [{ op: 'setPivotCache', pivotTable: 'PivotTable1', refreshOnLoad: true }],
+		})
+
+		expect(result.structuredContent?.ok).toBe(true)
+		expect(result.structuredContent?.data?.journal?.supported).toBe(true)
+		expect(result.structuredContent?.data?.journal?.exact).toBe(false)
+		expect(result.structuredContent?.data?.journal?.inverseOps).toEqual([])
+		expect(result.structuredContent?.data?.journal?.issues).toEqual([
+			{
+				code: 'LOSSY_INVERSE',
+				message: 'Pivot cache selector cannot be restored exactly',
+			},
+		])
+		const reopened = await AscendWorkbook.open(TEMP_FILE)
+		expect(reopened.getWorkbookModel().pivotCaches[0]?.refreshOnLoad).toBeUndefined()
+	})
+
 	test('ascend.write exact journal inverse ops restore recalculated workbook truth after reopen', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

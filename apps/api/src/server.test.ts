@@ -18,6 +18,10 @@ const OUTPUT_FILE = join(
 	`ascend-api-out-${Date.now()}-${Math.random().toString(16).slice(2)}.xlsx`,
 )
 const CHARTSHEET_FIXTURE = join(import.meta.dir, '../../../fixtures/xlsx/exceljs/chart-sheet.xlsx')
+const PIVOT_FIXTURE = join(
+	import.meta.dir,
+	'../../../fixtures/xlsx/libreoffice/PivotTable_CachedDefinitionAndDataInSync.xlsx',
+)
 const MACRO_FILE = join(
 	tmpdir(),
 	`ascend-api-macro-${Date.now()}-${Math.random().toString(16).slice(2)}.xlsm`,
@@ -1765,6 +1769,120 @@ describe('Ascend API server', () => {
 			lastColor: 'FFFFFF',
 		})
 		expect(restored.check().valid).toBe(true)
+	})
+
+	test('write exact chart journal inverse ops restore saved chart truth after reopen', async () => {
+		await Bun.write(TEMP_FILE, Bun.file(CHARTSHEET_FIXTURE))
+
+		const result = await postJson('/write', {
+			file: TEMP_FILE,
+			journal: true,
+			ops: [
+				{
+					op: 'setChartSeriesSource',
+					partPath: 'xl/charts/chart1.xml',
+					seriesIndex: 0,
+					nameRef: 'Sheet1!$B$1',
+					categoryRef: 'Sheet1!$A$2:$A$6',
+					valueRef: 'Sheet1!$B$2:$B$6',
+				},
+			],
+		})
+
+		expect(result.status).toBe(200)
+		expect(result.body.ok).toBe(true)
+		expect(result.body.data?.journal?.supported).toBe(true)
+		expect(result.body.data?.journal?.exact).toBe(true)
+		expect(result.body.data?.journal?.issues).toEqual([])
+		const inverse = parseOperations(result.body.data?.journal?.inverseOps)
+		expect(inverse.ok).toBe(true)
+		if (!inverse.ok) throw new Error('Expected exact chart journal inverse ops to parse')
+
+		const changed = await AscendWorkbook.open(TEMP_FILE)
+		expect(changed.getWorkbookModel().chartParts[0]?.series[0]).toMatchObject({
+			nameRef: 'Sheet1!$B$1',
+			nameText: 'Bears',
+			categoryRef: 'Sheet1!$A$2:$A$6',
+			valueRef: 'Sheet1!$B$2:$B$6',
+		})
+
+		const rollback = changed.apply(inverse.value)
+		expect(rollback.errors).toEqual([])
+		await changed.save(TEMP_FILE)
+		const restored = await AscendWorkbook.open(TEMP_FILE)
+		expect(restored.getWorkbookModel().chartParts[0]?.series[0]).toMatchObject({
+			nameRef: 'Sheet1!$B$1',
+			nameText: 'Bears',
+			categoryRef: 'Sheet1!$A$2:$A$7',
+			valueRef: 'Sheet1!$B$2:$B$7',
+		})
+		expect(restored.check().valid).toBe(true)
+	})
+
+	test('write exact pivot journal inverse ops restore saved pivot cache truth after reopen', async () => {
+		await Bun.write(TEMP_FILE, Bun.file(PIVOT_FIXTURE))
+
+		const result = await postJson('/write', {
+			file: TEMP_FILE,
+			journal: true,
+			ops: [
+				{
+					op: 'setPivotCache',
+					pivotTable: 'PivotTable1',
+					sourceSheet: 'Sheet1',
+					sourceRef: 'A1:K4',
+				},
+			],
+		})
+
+		expect(result.status).toBe(200)
+		expect(result.body.ok).toBe(true)
+		expect(result.body.data?.journal?.supported).toBe(true)
+		expect(result.body.data?.journal?.exact).toBe(true)
+		expect(result.body.data?.journal?.issues).toEqual([])
+		const inverse = parseOperations(result.body.data?.journal?.inverseOps)
+		expect(inverse.ok).toBe(true)
+		if (!inverse.ok) throw new Error('Expected exact pivot journal inverse ops to parse')
+
+		const changed = await AscendWorkbook.open(TEMP_FILE)
+		expect(changed.getWorkbookModel().pivotCaches[0]).toMatchObject({
+			sourceSheet: 'Sheet1',
+			sourceRef: 'A1:K4',
+		})
+
+		const rollback = changed.apply(inverse.value)
+		expect(rollback.errors).toEqual([])
+		await changed.save(TEMP_FILE)
+		const restored = await AscendWorkbook.open(TEMP_FILE)
+		expect(restored.getWorkbookModel().pivotCaches[0]).toMatchObject({
+			sourceSheet: 'Sheet1',
+			sourceRef: 'A1:K5',
+		})
+		expect(restored.check().valid).toBe(true)
+	})
+
+	test('preview marks pivot cache public rollback gaps as lossy', async () => {
+		await Bun.write(TEMP_FILE, Bun.file(PIVOT_FIXTURE))
+
+		const result = await postJson('/preview', {
+			file: TEMP_FILE,
+			journal: true,
+			ops: [{ op: 'setPivotCache', pivotTable: 'PivotTable1', refreshOnLoad: true }],
+		})
+
+		expect(result.status).toBe(200)
+		expect(result.body.ok).toBe(true)
+		expect(result.body.data?.journal?.supported).toBe(true)
+		expect(result.body.data?.journal?.exact).toBe(false)
+		expect(result.body.data?.journal?.inverseOps).toEqual([])
+		expect(result.body.data?.journal?.issues).toEqual([
+			{
+				code: 'LOSSY_INVERSE',
+				message: 'Pivot cache selector cannot be restored exactly',
+			},
+		])
+		const reopened = await AscendWorkbook.open(TEMP_FILE)
+		expect(reopened.getWorkbookModel().pivotCaches[0]?.refreshOnLoad).toBeUndefined()
 	})
 
 	test('write exact journal inverse ops restore saved workbook truth after reopen', async () => {

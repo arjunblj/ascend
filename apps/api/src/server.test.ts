@@ -54,6 +54,13 @@ interface ApiEnvelope {
 			readonly emittedChangedCellCount?: number
 			readonly changedCells?: unknown[]
 			readonly wouldSucceed?: boolean
+			readonly journalSummary?: {
+				readonly supported?: boolean
+				readonly exact?: boolean
+				readonly inverseOpCount?: number
+				readonly issueCount?: number
+				readonly issues?: unknown[]
+			}
 		}
 		readonly preparedPlan?: {
 			readonly id?: string
@@ -62,6 +69,13 @@ interface ApiEnvelope {
 		}
 		readonly apply?: {
 			readonly affectedCellCount?: number
+			readonly journalSummary?: {
+				readonly supported?: boolean
+				readonly exact?: boolean
+				readonly inverseOpCount?: number
+				readonly issueCount?: number
+				readonly issues?: unknown[]
+			}
 		}
 		readonly timings?: {
 			readonly applyMs?: number
@@ -1642,6 +1656,59 @@ describe('Ascend API server', () => {
 		expect(result.body.data?.preview?.changedCellCount).toBe(3)
 		expect(result.body.data?.preview?.emittedChangedCellCount).toBe(1)
 		expect(result.body.data?.preview?.changedCells).toHaveLength(1)
+	})
+
+	test('compact prepared plan and commit expose journal safety summaries', async () => {
+		const wb = AscendWorkbook.create()
+		await wb.save(TEMP_FILE)
+		const output = `${OUTPUT_FILE}.compact-journal.xlsx`
+		const expectedIssue = {
+			code: 'LOSSY_INVERSE',
+			message: 'Grouped rows for Sheet1 cannot be restored with public operations',
+			refs: [
+				'Sheet1!2',
+				'Sheet1!3',
+				'Sheet1!4',
+				'sheet:Sheet1:outlinePr:summaryBelow',
+				'sheet:Sheet1:sheetFormatPr:outlineLevelRow',
+			],
+		}
+		try {
+			const plan = await postJson('/plan', {
+				file: TEMP_FILE,
+				compact: true,
+				ops: [{ op: 'groupRows', sheet: 'Sheet1', from: 1, to: 2, collapsed: true }],
+			})
+
+			expect(plan.status).toBe(200)
+			expect(plan.body.ok).toBe(true)
+			expect(plan.body.data?.preparedPlan?.id).toBeString()
+			expect(plan.body.data?.preview?.journalSummary).toEqual({
+				supported: true,
+				exact: false,
+				inverseOpCount: 0,
+				issueCount: 1,
+				issues: [expectedIssue],
+			})
+
+			const commit = await postJson('/commit', {
+				planHandle: plan.body.data?.preparedPlan?.id,
+				output,
+				compact: true,
+			})
+
+			expect(commit.status).toBe(200)
+			expect(commit.body.ok).toBe(true)
+			expect(commit.body.data?.apply?.journalSummary).toEqual({
+				supported: true,
+				exact: false,
+				inverseOpCount: 0,
+				issueCount: 1,
+				issues: [expectedIssue],
+			})
+		} finally {
+			await unlink(output).catch(() => {})
+		}
 	})
 
 	test('prepared plan handles commit without reopening operation input', async () => {

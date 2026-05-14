@@ -1327,11 +1327,19 @@ describe('MCP server', () => {
 			structuredContent?: {
 				ok?: boolean
 				data?: {
+					preparedPlan?: { id?: string }
 					preview?: {
 						changedCellCount?: number
 						emittedChangedCellCount?: number
 						changedCells?: unknown[]
 						wouldSucceed?: boolean
+						journalSummary?: {
+							supported?: boolean
+							exact?: boolean
+							inverseOpCount?: number
+							issueCount?: number
+							issues?: unknown[]
+						}
 					}
 				}
 			}
@@ -1359,6 +1367,102 @@ describe('MCP server', () => {
 		expect(result.structuredContent?.data?.preview?.changedCellCount).toBe(3)
 		expect(result.structuredContent?.data?.preview?.emittedChangedCellCount).toBe(1)
 		expect(result.structuredContent?.data?.preview?.changedCells).toHaveLength(1)
+	})
+
+	test('compact prepared MCP plan and commit expose journal safety summaries', async () => {
+		const wb = AscendWorkbook.create()
+		await wb.save(TEMP_FILE)
+		const output = `${TEMP_FILE}.compact-journal-mcp.xlsx`
+		const expectedIssue = {
+			code: 'LOSSY_INVERSE',
+			message: 'Grouped rows for Sheet1 cannot be restored with public operations',
+			refs: [
+				'Sheet1!2',
+				'Sheet1!3',
+				'Sheet1!4',
+				'sheet:Sheet1:outlinePr:summaryBelow',
+				'sheet:Sheet1:sheetFormatPr:outlineLevelRow',
+			],
+		}
+		const server = createServer()
+		try {
+			// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+			const plan = (server as any)._registeredTools['ascend.plan'].handler as (args: {
+				file: string
+				compact?: boolean
+				ops: readonly Record<string, unknown>[]
+			}) => Promise<{
+				structuredContent?: {
+					ok?: boolean
+					data?: {
+						preparedPlan?: { id?: string }
+						preview?: {
+							journalSummary?: {
+								supported?: boolean
+								exact?: boolean
+								inverseOpCount?: number
+								issueCount?: number
+								issues?: unknown[]
+							}
+						}
+					}
+				}
+			}>
+			// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+			const commit = (server as any)._registeredTools['ascend.commit'].handler as (args: {
+				planHandle?: string
+				output?: string
+				compact?: boolean
+			}) => Promise<{
+				structuredContent?: {
+					ok?: boolean
+					data?: {
+						apply?: {
+							journalSummary?: {
+								supported?: boolean
+								exact?: boolean
+								inverseOpCount?: number
+								issueCount?: number
+								issues?: unknown[]
+							}
+						}
+					}
+				}
+			}>
+
+			const planned = await plan({
+				file: TEMP_FILE,
+				compact: true,
+				ops: [{ op: 'groupRows', sheet: 'Sheet1', from: 1, to: 2, collapsed: true }],
+			})
+
+			expect(planned.structuredContent?.ok).toBe(true)
+			expect(planned.structuredContent?.data?.preparedPlan?.id).toBeString()
+			expect(planned.structuredContent?.data?.preview?.journalSummary).toEqual({
+				supported: true,
+				exact: false,
+				inverseOpCount: 0,
+				issueCount: 1,
+				issues: [expectedIssue],
+			})
+
+			const committed = await commit({
+				planHandle: planned.structuredContent?.data?.preparedPlan?.id,
+				output,
+				compact: true,
+			})
+
+			expect(committed.structuredContent?.ok).toBe(true)
+			expect(committed.structuredContent?.data?.apply?.journalSummary).toEqual({
+				supported: true,
+				exact: false,
+				inverseOpCount: 0,
+				issueCount: 1,
+				issues: [expectedIssue],
+			})
+		} finally {
+			await unlink(output).catch(() => {})
+		}
 	})
 
 	test('ascend.commit accepts prepared plan handles', async () => {

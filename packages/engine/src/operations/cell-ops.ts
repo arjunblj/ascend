@@ -166,7 +166,13 @@ export function handleSetRichText(
 			(ref) => `${op.sheet}!${ref}`,
 		),
 	)
-	sheet.cells.setResolved(pos.row, pos.col, richTextValue(op.runs), null, DEFAULT_SID)
+	sheet.cells.setResolved(
+		pos.row,
+		pos.col,
+		richTextValue(op.runs),
+		null,
+		sheet.cells.readStyleId(pos.row, pos.col) ?? DEFAULT_SID,
+	)
 	affected.add(`${op.sheet}!${op.ref}`)
 	return ok(patch([...affected], [op.sheet], true))
 }

@@ -914,6 +914,12 @@ describe('applyOperation', () => {
 
 	test('setRichText writes rich text runs to a cell', () => {
 		const wb = setup()
+		const sheet = wb.getSheet('Sheet1')
+		expect(sheet).toBeDefined()
+		if (!sheet) throw new Error('expected sheet')
+		const styleId = wb.styles.register({ numberFormat: '@' })
+		sheet.cells.set(1, 1, { value: stringValue('plain'), formula: null, styleId })
+
 		const result = applyOperation(wb, {
 			op: 'setRichText',
 			sheet: 'Sheet1',
@@ -925,13 +931,15 @@ describe('applyOperation', () => {
 		})
 		expectOk(result)
 
-		expect(wb.getSheet('Sheet1')?.cells.get(1, 1)?.value).toEqual({
+		const cell = sheet.cells.get(1, 1)
+		expect(cell?.value).toEqual({
 			kind: 'richText',
 			runs: [
 				{ text: 'Hello', bold: true },
 				{ text: ' World', italic: true },
 			],
 		})
+		expect(cell?.styleId).toBe(styleId)
 	})
 
 	test('replaceImage swaps media bytes while preserving anchor metadata', () => {

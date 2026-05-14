@@ -67,7 +67,11 @@ import type {
 import { EMPTY } from '@ascend/schema'
 
 export interface MutationJournalIssue {
-	readonly code: 'UNSUPPORTED_OPERATION' | 'LOSSY_INVERSE' | 'UNSUPPORTED_VALUE'
+	readonly code:
+		| 'UNSUPPORTED_OPERATION'
+		| 'LOSSY_INVERSE'
+		| 'UNSUPPORTED_VALUE'
+		| 'JOURNAL_BUILD_FAILED'
 	readonly message: string
 	readonly refs?: readonly string[]
 }
@@ -402,6 +406,22 @@ export function emptyMutationJournal(): MutationJournal {
 		supported: true,
 		exact: true,
 		issues: [],
+	}
+}
+
+export function failedMutationJournal(error: unknown): MutationJournal {
+	const detail = error instanceof Error && error.message ? `: ${error.message}` : ''
+	return {
+		entries: [],
+		inverseOps: [],
+		supported: false,
+		exact: false,
+		issues: [
+			{
+				code: 'JOURNAL_BUILD_FAILED',
+				message: `Mutation journal build failed${detail}`,
+			},
+		],
 	}
 }
 

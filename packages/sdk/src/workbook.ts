@@ -52,7 +52,7 @@ import {
 	partialDependencyLintWarning,
 	sdkCheckIssueFromVerify,
 } from './check-issues.ts'
-import { buildMutationJournal } from './journal.ts'
+import { buildMutationJournal, failedMutationJournal } from './journal.ts'
 import {
 	buildWorkbookLoadInfo,
 	type LoadedWorkbookSource,
@@ -126,8 +126,8 @@ function maybeBuildMutationJournal(
 	if (!enabled) return undefined
 	try {
 		return buildMutationJournal(workbook, ops)
-	} catch {
-		return undefined
+	} catch (error) {
+		return failedMutationJournal(error)
 	}
 }
 
@@ -573,6 +573,7 @@ export class AscendWorkbook extends WorkbookReadView {
 				warnings: [],
 				wouldSucceed: false,
 				errors,
+				...(journal ? { journal } : {}),
 			}
 		}
 
@@ -709,6 +710,7 @@ export class AscendWorkbook extends WorkbookReadView {
 				dirtyRegions: [],
 				generations: this.currentGenerations(),
 				errors,
+				...(journal ? { journal } : {}),
 			}
 		}
 		if (isApplyPatchNoOp(ops, result.value)) {

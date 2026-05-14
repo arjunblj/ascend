@@ -2808,6 +2808,33 @@ describe('interactive client contract', () => {
 		session.close()
 	})
 
+	test('journal requests return structured build failures instead of missing journals', () => {
+		const wb = AscendWorkbook.create()
+		const ops = [{ op: 'clearRange' as const, sheet: 'Sheet1', range: 'A1:', what: 'all' as const }]
+
+		const changed = wb.apply(ops, { journal: true })
+
+		expect(changed.errors.length).toBeGreaterThan(0)
+		expect(changed.journal).toEqual({
+			entries: [],
+			inverseOps: [],
+			supported: false,
+			exact: false,
+			issues: [
+				{
+					code: 'JOURNAL_BUILD_FAILED',
+					message: 'Mutation journal build failed: Invalid range reference: A1:',
+				},
+			],
+		})
+
+		const preview = wb.preview(ops, { journal: true })
+
+		expect(preview.wouldSucceed).toBe(false)
+		expect(preview.errors.length).toBeGreaterThan(0)
+		expect(preview.journal).toEqual(changed.journal)
+	})
+
 	test('preview journals restore scalar formula caches without mutating the workbook', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

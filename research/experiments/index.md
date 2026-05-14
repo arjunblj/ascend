@@ -16,6 +16,7 @@ Updated: 2026-05-14
 | [Columnar sidecar range scans](runs/2026/2026-05-14-columnar-sidecar-range-scans/log.md) | cycle 6 complete, promote | performance loop |
 | [MVCC viewport patch stream](runs/2026/2026-05-14-mvcc-viewport-patch-stream/log.md) | cycle 7 complete, promote | product/DX loop, performance loop |
 | [Release proof bundle](runs/2026/2026-05-14-release-proof-bundle/log.md) | cycle 8 complete, promote | product/DX loop, correctness loop |
+| [Release proof bundle SDK helper](runs/2026/2026-05-14-release-proof-bundle-sdk-helper/log.md) | cycle 9 complete, folded in SDK helper | product/DX loop, correctness loop |
 
 ## Syntheses
 

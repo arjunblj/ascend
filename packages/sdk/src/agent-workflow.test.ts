@@ -17,6 +17,7 @@ import {
 	createAgentPlan,
 	createAgentPlanFromWorkbook,
 	createPreparedAgentPlan,
+	createReleaseProofBundle,
 } from './index.ts'
 
 const TEMP_DIR = join(tmpdir(), `ascend-agent-workflow-${process.pid}`)
@@ -3224,6 +3225,54 @@ describe('agent workflow loss audit', () => {
 		)
 		expect(commitEvents.some((event) => event.includes('post-write:ok'))).toBe(true)
 		expect(commitEvents.at(-1)).toContain('finalize:ok')
+	})
+
+	test('release proof bundle links plan, commit, reopen, diff, and audit evidence', async () => {
+		const input = join(TEMP_DIR, 'release-proof.xlsx')
+		const output = join(TEMP_DIR, 'release-proof-out.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		const wb = AscendWorkbook.create()
+		await wb.save(input)
+		const ops = [{ op: 'setCells' as const, sheet: 'Sheet1', updates: [{ ref: 'A1', value: 42 }] }]
+
+		const before = await AscendWorkbook.open(await Bun.file(input).bytes())
+		const plan = await createAgentPlan(input, ops)
+		const committed = await commitAgentPlan(input, ops, { output, expectSha256: plan.inputSha256 })
+		const after = await AscendWorkbook.open(await Bun.file(output).bytes())
+		const diff = before.diff(after)
+		const proof = createReleaseProofBundle(plan, committed, {
+			diff: {
+				sheetDiffCount: diff.sheets.length,
+				changedSheets: diff.sheets.map((sheet) => sheet.name),
+			},
+		})
+
+		expect(proof.kind).toBe('ascend-release-proof-bundle')
+		expect(proof.proofKind).toBe('local-evidence')
+		expect(proof.subject.inputSha256).toBe(plan.inputSha256)
+		expect(proof.subject.outputSha256).toBe(committed.outputSha256)
+		expect(proof.operations.digestsMatch).toBe(true)
+		expect(proof.plan.packageGraphAuditOk).toBe(true)
+		expect(proof.reopen).toMatchObject({
+			valid: true,
+			reopened: true,
+			auditsPassed: true,
+			outputSha256: committed.outputSha256,
+			checkValid: true,
+			packageGraphAuditOk: true,
+		})
+		expect(proof.diff).toMatchObject({
+			included: true,
+			sheetDiffCount: 1,
+			changedSheets: ['Sheet1'],
+		})
+		expect(proof.consistency.valid).toBe(true)
+		expect(proof.consistency.issues).toEqual([])
+		expect(proof.claimBoundaries.join('\n')).toContain('not a signed SLSA')
+
+		const broken = createReleaseProofBundle(plan, { ...committed, planDigest: 'not-the-plan' })
+		expect(broken.consistency.valid).toBe(false)
+		expect(broken.consistency.issues).toContain('release proof check failed: plan-digest-linked')
 	})
 
 	test('prepared agent plans reuse full workflow state with staleness guards', async () => {

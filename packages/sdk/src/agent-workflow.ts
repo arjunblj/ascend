@@ -120,6 +120,90 @@ export interface AgentCommitResult {
 	readonly packageGraphAudit: PackageGraphAudit
 }
 
+export interface ReleaseProofDiffEvidence {
+	readonly sheetDiffCount: number
+	readonly changedSheets?: readonly string[]
+}
+
+export interface ReleaseProofBundleOptions {
+	readonly diff?: ReleaseProofDiffEvidence
+	readonly claimBoundaries?: readonly string[]
+}
+
+export interface ReleaseProofArtifactDigest {
+	readonly name: string
+	readonly digest: string
+	readonly summary: string
+}
+
+export interface ReleaseProofConsistencyCheck {
+	readonly check: string
+	readonly ok: boolean
+	readonly details?: unknown
+}
+
+export interface ReleaseProofBundle {
+	readonly formatVersion: 1
+	readonly kind: 'ascend-release-proof-bundle'
+	readonly proofKind: 'local-evidence'
+	readonly subject: {
+		readonly file: string
+		readonly output: string
+		readonly inputSha256: string
+		readonly outputSha256: string
+		readonly planDigest: string
+	}
+	readonly operations: {
+		readonly count: number
+		readonly planArtifactDigest?: string
+		readonly commitArtifactDigest?: string
+		readonly digestsMatch: boolean
+	}
+	readonly plan: {
+		readonly traceDigest: string
+		readonly needsApproval: boolean
+		readonly checkValid: boolean
+		readonly lintClean: boolean
+		readonly lossAuditOk: boolean
+		readonly packageGraphAuditOk: boolean
+		readonly writePolicyOk: boolean
+		readonly phases: readonly AgentTracePhase[]
+		readonly artifacts: readonly ReleaseProofArtifactDigest[]
+	}
+	readonly commit: {
+		readonly traceDigest: string
+		readonly outputSha256: string
+		readonly checkValid: boolean
+		readonly lintClean: boolean
+		readonly lossAuditOk: boolean
+		readonly packageGraphAuditOk: boolean
+		readonly writePolicyOk: boolean
+		readonly phases: readonly AgentTracePhase[]
+		readonly artifacts: readonly ReleaseProofArtifactDigest[]
+	}
+	readonly reopen: {
+		readonly valid: boolean
+		readonly reopened: true
+		readonly auditsPassed: boolean
+		readonly outputSha256: string
+		readonly checkValid: boolean
+		readonly lintClean: boolean
+		readonly packageGraphAuditOk: boolean
+		readonly unresolvedPackageGraphIssueCount: number
+	}
+	readonly diff: {
+		readonly included: boolean
+		readonly sheetDiffCount?: number
+		readonly changedSheets?: readonly string[]
+	}
+	readonly consistency: {
+		readonly valid: boolean
+		readonly checks: readonly ReleaseProofConsistencyCheck[]
+		readonly issues: readonly string[]
+	}
+	readonly claimBoundaries: readonly string[]
+}
+
 export interface CompactAgentCommitResult
 	extends Pick<
 		AgentCommitResult,
@@ -1104,6 +1188,121 @@ function compactJournalSummary(journal: MutationJournal): CompactJournalSummary 
 	}
 }
 
+export function createReleaseProofBundle(
+	plan: AgentPlanResult,
+	commit: AgentCommitResult,
+	options: ReleaseProofBundleOptions = {},
+): ReleaseProofBundle {
+	const planOpsArtifact = traceArtifactByName(plan.trace, 'ops')
+	const commitOpsArtifact = traceArtifactByName(commit.trace, 'ops')
+	const checks: ReleaseProofConsistencyCheck[] = [
+		releaseProofCheck('input-hash-linked', plan.inputSha256 === commit.inputSha256, {
+			planInputSha256: plan.inputSha256,
+			commitInputSha256: commit.inputSha256,
+		}),
+		releaseProofCheck('plan-digest-linked', plan.planDigest === commit.planDigest, {
+			planDigest: plan.planDigest,
+			commitPlanDigest: commit.planDigest,
+		}),
+		releaseProofCheck('operation-count-linked', plan.operationCount === commit.operationCount, {
+			planOperationCount: plan.operationCount,
+			commitOperationCount: commit.operationCount,
+		}),
+		releaseProofCheck(
+			'operation-artifact-linked',
+			planOpsArtifact?.digest === commitOpsArtifact?.digest,
+			{
+				planOpsDigest: planOpsArtifact?.digest ?? null,
+				commitOpsDigest: commitOpsArtifact?.digest ?? null,
+			},
+		),
+		releaseProofCheck(
+			'post-write-output-hash-linked',
+			commit.outputSha256 === commit.postWrite.outputSha256,
+			{
+				outputSha256: commit.outputSha256,
+				postWriteOutputSha256: commit.postWrite.outputSha256,
+			},
+		),
+		releaseProofCheck('post-write-reopened', commit.postWrite.valid && commit.postWrite.reopened),
+		releaseProofCheck('post-write-audits-passed', commit.postWrite.auditsPassed, {
+			unresolvedPackageGraphIssueCount: commit.postWrite.unresolvedPackageGraphIssueCount,
+		}),
+		releaseProofCheck('plan-package-graph-audit-ok', plan.packageGraphAudit.ok, {
+			issueCount: plan.packageGraphAudit.issues.length,
+		}),
+		releaseProofCheck('commit-package-graph-audit-ok', commit.postWrite.packageGraphAudit.ok, {
+			issueCount: commit.postWrite.packageGraphAudit.issues.length,
+		}),
+	]
+	const issues = checks
+		.filter((check) => !check.ok)
+		.map((check) => `release proof check failed: ${check.check}`)
+	return {
+		formatVersion: 1,
+		kind: 'ascend-release-proof-bundle',
+		proofKind: 'local-evidence',
+		subject: {
+			file: plan.file,
+			output: commit.output,
+			inputSha256: plan.inputSha256,
+			outputSha256: commit.outputSha256,
+			planDigest: plan.planDigest,
+		},
+		operations: {
+			count: plan.operationCount,
+			...(planOpsArtifact ? { planArtifactDigest: planOpsArtifact.digest } : {}),
+			...(commitOpsArtifact ? { commitArtifactDigest: commitOpsArtifact.digest } : {}),
+			digestsMatch: planOpsArtifact?.digest === commitOpsArtifact?.digest,
+		},
+		plan: {
+			traceDigest: plan.trace.traceDigest,
+			needsApproval: plan.needsApproval,
+			checkValid: plan.check.valid,
+			lintClean: plan.lint.clean,
+			lossAuditOk: plan.lossAudit.ok,
+			packageGraphAuditOk: plan.packageGraphAudit.ok,
+			writePolicyOk: plan.writePolicy.ok,
+			phases: plan.trace.phases,
+			artifacts: plan.trace.artifacts.map(releaseProofArtifactDigest),
+		},
+		commit: {
+			traceDigest: commit.trace.traceDigest,
+			outputSha256: commit.outputSha256,
+			checkValid: commit.check.valid,
+			lintClean: commit.lint.clean,
+			lossAuditOk: commit.lossAudit.ok,
+			packageGraphAuditOk: commit.packageGraphAudit.ok,
+			writePolicyOk: commit.writePolicy.ok,
+			phases: commit.trace.phases,
+			artifacts: commit.trace.artifacts.map(releaseProofArtifactDigest),
+		},
+		reopen: {
+			valid: commit.postWrite.valid,
+			reopened: commit.postWrite.reopened,
+			auditsPassed: commit.postWrite.auditsPassed,
+			outputSha256: commit.postWrite.outputSha256,
+			checkValid: commit.postWrite.check.valid,
+			lintClean: commit.postWrite.lint.clean,
+			packageGraphAuditOk: commit.postWrite.packageGraphAudit.ok,
+			unresolvedPackageGraphIssueCount: commit.postWrite.unresolvedPackageGraphIssueCount,
+		},
+		diff: options.diff
+			? {
+					included: true,
+					sheetDiffCount: options.diff.sheetDiffCount,
+					...(options.diff.changedSheets ? { changedSheets: options.diff.changedSheets } : {}),
+				}
+			: { included: false },
+		consistency: {
+			valid: issues.length === 0,
+			checks,
+			issues,
+		},
+		claimBoundaries: options.claimBoundaries ?? DEFAULT_RELEASE_PROOF_CLAIM_BOUNDARIES,
+	}
+}
+
 function compactTraceSummary(trace: AgentWorkflowTrace): CompactAgentTraceSummary {
 	return {
 		kind: trace.kind,
@@ -1165,6 +1364,40 @@ function compactWritePolicySummary(writePolicy: WritePolicyReport): CompactWrite
 		warningCount: writePolicy.diagnostics.filter((diagnostic) => diagnostic.severity === 'warning')
 			.length,
 		summary: writePolicy.summary,
+	}
+}
+
+const DEFAULT_RELEASE_PROOF_CLAIM_BOUNDARIES = [
+	'This bundle is local workbook evidence, not a signed SLSA or GitHub artifact attestation.',
+	'The bundle reports Ascend plan, commit, reopen, diff, and audit results; it does not claim Excel recalculation equivalence.',
+	'Private workbook data should not be embedded unless the caller explicitly chooses to persist full artifacts.',
+	'Signed provenance claims require an external attestation envelope and verifier roots.',
+] as const
+
+function traceArtifactByName(
+	trace: AgentWorkflowTrace,
+	name: string,
+): AgentTraceArtifact | undefined {
+	return trace.artifacts.find((artifact) => artifact.name === name)
+}
+
+function releaseProofArtifactDigest(artifact: AgentTraceArtifact): ReleaseProofArtifactDigest {
+	return {
+		name: artifact.name,
+		digest: artifact.digest,
+		summary: artifact.summary,
+	}
+}
+
+function releaseProofCheck(
+	check: string,
+	ok: boolean,
+	details?: unknown,
+): ReleaseProofConsistencyCheck {
+	return {
+		check,
+		ok,
+		...(details !== undefined ? { details } : {}),
 	}
 }
 

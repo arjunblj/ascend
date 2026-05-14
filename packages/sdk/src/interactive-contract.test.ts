@@ -3619,9 +3619,15 @@ describe('interactive client contract', () => {
 			},
 			{ op: 'setFormula', sheet: 'Sheet1', ref: 'A1', formula: '2+3' },
 			{ op: 'setFormula', sheet: 'Sheet1', ref: 'D1', formula: 'A1+4' },
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'G1', formula: 'SUM(A1:A1)' },
 			{ op: 'setStyle', sheet: 'Sheet1', range: 'A1:A1', style: { numberFormat: '$0' } },
 			{ op: 'setStyle', sheet: 'Sheet1', range: 'D1:D1', style: { numberFormat: '0.0%' } },
 		])
+		const formulaInfo = { kind: 'dynamicArray' as const, metadataIndex: 1, collapsed: false }
+		const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+		const source = sheet?.cells.get(0, 0)
+		if (!sheet || !source) throw new Error('missing source cell')
+		sheet.cells.set(0, 0, { ...source, formulaInfo })
 
 		const changed = wb.apply(
 			[{ op: 'moveRange', sheet: 'Sheet1', source: 'A1', target: 'D1', mode: 'formats' }],
@@ -3633,17 +3639,21 @@ describe('interactive client contract', () => {
 		expect(changed.journal?.exact).toBe(true)
 		expect(wb.sheet('Sheet1')?.cell('A1')?.formula).toBe('2+3')
 		expect(wb.sheet('Sheet1')?.cell('A1')?.value).toEqual({ kind: 'number', value: 5 })
+		expect(sheet.cells.get(0, 0)?.formulaInfo).toEqual(formulaInfo)
 		expect(wb.cellStyle('Sheet1!A1')).toEqual({})
 		expect(wb.sheet('Sheet1')?.cell('D1')?.formula).toBe('A1+4')
 		expect(wb.cellStyle('Sheet1!D1')?.numberFormat).toBe('$0')
+		expect(wb.sheet('Sheet1')?.cell('G1')?.formula).toBe('SUM(A1:A1)')
 
 		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
 		expect(undo.errors).toEqual([])
 		expect(wb.sheet('Sheet1')?.cell('A1')?.formula).toBe('2+3')
 		expect(wb.sheet('Sheet1')?.cell('A1')?.value).toEqual({ kind: 'number', value: 5 })
+		expect(sheet.cells.get(0, 0)?.formulaInfo).toEqual(formulaInfo)
 		expect(wb.cellStyle('Sheet1!A1')?.numberFormat).toBe('$0')
 		expect(wb.sheet('Sheet1')?.cell('D1')?.formula).toBe('A1+4')
 		expect(wb.cellStyle('Sheet1!D1')?.numberFormat).toBe('0.0%')
+		expect(wb.sheet('Sheet1')?.cell('G1')?.formula).toBe('SUM(A1:A1)')
 	})
 
 	test('moveRange journals mark formula reference rewrites lossy', () => {
@@ -3843,6 +3853,46 @@ describe('interactive client contract', () => {
 		expect(wb.getWorkbookModel().getSheet('Sheet1')?.cells.get(0, 0)?.formulaInfo).toEqual(
 			blockedSpillInfo,
 		)
+	})
+
+	test('style-only clears over legacy array formulas keep exact journals', () => {
+		const wb = AscendWorkbook.create()
+		const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+		if (!sheet) throw new Error('missing sheet')
+		const formulaInfo = { kind: 'array' as const, ref: 'A1:A2' }
+		const styleId = wb.getWorkbookModel().styles.register({ numberFormat: '$0' })
+		sheet.cells.set(0, 0, {
+			value: numberValue(2),
+			formula: 'B1:B2*2',
+			styleId,
+			formulaInfo,
+		})
+		sheet.cells.set(1, 0, {
+			value: numberValue(4),
+			formula: null,
+			styleId,
+			formulaInfo,
+		})
+
+		const changed = wb.apply(
+			[{ op: 'clearRange', sheet: 'Sheet1', range: 'A1:A2', what: 'styles' }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(true)
+		expect(changed.journal?.issues).toEqual([])
+		expect(sheet.cells.get(0, 0)?.formulaInfo).toEqual(formulaInfo)
+		expect(sheet.cells.get(1, 0)?.formulaInfo).toEqual(formulaInfo)
+		expect(wb.cellStyle('Sheet1!A1')).toEqual({})
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(sheet.cells.get(0, 0)?.formulaInfo).toEqual(formulaInfo)
+		expect(sheet.cells.get(1, 0)?.formulaInfo).toEqual(formulaInfo)
+		expect(wb.cellStyle('Sheet1!A1')?.numberFormat).toBe('$0')
+		expect(wb.cellStyle('Sheet1!A2')?.numberFormat).toBe('$0')
 	})
 
 	test('journals mark sheet and table metadata rewrites lossy when formula bindings are materialized', () => {

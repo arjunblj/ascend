@@ -1803,12 +1803,16 @@ function journalMoveRange(
 	const targetRange = transferTargetRange(op.source, op.target)
 	const sourceRefs = refsInParsedRange(sourceRange)
 	const targetRefs = refsInParsedRange(targetRange)
-	const sourceCells = cellEditPreimages(workbook, op.sheet, sourceRefs)
+	const sourceCells = copyRangeOverwritesFormulas(mode)
+		? cellEditPreimages(workbook, op.sheet, sourceRefs)
+		: cellPreimages(workbook, op.sheet, sourceRefs)
 	const targetCells = copyRangeOverwritesFormulas(mode)
 		? cellEditPreimages(workbook, targetSheet, targetRefs)
 		: cellPreimages(workbook, targetSheet, targetRefs)
-	const { inverseOps: sourceInverseOps, issues: sourceIssues } =
-		moveRangeSourceRestoration(sourceCells)
+	const { inverseOps: sourceInverseOps, issues: sourceIssues } = moveRangeSourceRestoration(
+		sourceCells,
+		mode,
+	)
 	const { inverseOps: targetInverseOps, issues: targetIssues } = copyRangeRestoration(
 		targetCells,
 		mode,
@@ -1824,7 +1828,9 @@ function journalMoveRange(
 			...sourceIssues,
 			...moveRangeOverlapIssues(op, sourceRange, targetRange),
 			...moveRangeMetadataIssues(workbook, op, sourceRange, targetRange),
-			...moveRangeFormulaSurfaceIssues(workbook, op, sourceRange, targetRange),
+			...(copyRangeOverwritesFormulas(mode)
+				? moveRangeFormulaSurfaceIssues(workbook, op, sourceRange, targetRange)
+				: []),
 		],
 	}
 }
@@ -3772,10 +3778,16 @@ function copyRangeRestoration(
 	}
 }
 
-function moveRangeSourceRestoration(cells: readonly MutationJournalCellPreimage[]): {
+function moveRangeSourceRestoration(
+	cells: readonly MutationJournalCellPreimage[],
+	mode: string,
+): {
 	readonly inverseOps: readonly Operation[]
 	readonly issues: readonly MutationJournalIssue[]
 } {
+	if (mode === 'formats' || mode === 'styles') {
+		return { inverseOps: styleInverseOps(cells), issues: [] }
+	}
 	const { inverseOps, issues } = inverseCellOps(cells)
 	return {
 		inverseOps: [...inverseOps, ...styleInverseOps(cells)],

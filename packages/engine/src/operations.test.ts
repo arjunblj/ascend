@@ -800,6 +800,51 @@ describe('applyOperation', () => {
 		expect(sheet.cells.get(1, 0)?.value).toEqual(stringValue('blocker'))
 	})
 
+	test('clearRange styles preserves legacy array formula metadata', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		const sourceStyle = wb.styles.register({ numberFormat: '$#,##0.00' })
+		const formulaInfo = { kind: 'array' as const, ref: 'A1:A2' }
+		sheet.cells.set(0, 0, {
+			value: numberValue(10),
+			formula: 'B1:B2*2',
+			styleId: sourceStyle,
+			formulaInfo,
+		})
+		sheet.cells.set(1, 0, {
+			value: numberValue(20),
+			formula: null,
+			styleId: sourceStyle,
+			formulaInfo,
+		})
+
+		const result = applyOperation(wb, {
+			op: 'clearRange',
+			sheet: 'Sheet1',
+			range: 'A1:A2',
+			what: 'styles',
+		})
+		expectOk(result)
+
+		expect(result.value).toEqual({
+			affectedCells: ['A1', 'A2'],
+			sheetsModified: ['Sheet1'],
+			recalcRequired: false,
+		})
+		expect(sheet.cells.get(0, 0)).toEqual({
+			value: numberValue(10),
+			formula: 'B1:B2*2',
+			styleId: sid,
+			formulaInfo,
+		})
+		expect(sheet.cells.get(1, 0)).toEqual({
+			value: numberValue(20),
+			formula: null,
+			styleId: sid,
+			formulaInfo,
+		})
+	})
+
 	test('setRichText materializes spill groups before replacing a spill member', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')
@@ -2405,6 +2450,11 @@ describe('applyOperation', () => {
 				styleId: targetStyle,
 			})
 		}
+		sheet.cells.set(5, 5, {
+			value: numberValue(3),
+			formula: 'SUM(A1:A2)',
+			styleId: sid,
+		})
 
 		const result = applyOperation(wb, {
 			op: 'moveRange',
@@ -2439,6 +2489,7 @@ describe('applyOperation', () => {
 			formula: 'A1+1',
 			styleId: sourceStyle,
 		})
+		expect(sheet.cells.get(5, 5)?.formula).toBe('SUM(A1:A2)')
 	})
 
 	test('moveRange detaches blocked-spill metadata when moving a blocker', () => {

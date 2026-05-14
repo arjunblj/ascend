@@ -161,14 +161,16 @@ export function handleTransferRange(
 	const mode = op.mode ?? 'all'
 	const affected = new Set<string>()
 
-	if (pasteCells(mode)) {
+	if (overwritesTargetFormulas(mode) || (op.op === 'moveRange' && clearsSourceCellContent(mode))) {
 		const targetLegacyArrayIndex = createLegacyArrayFormulaIndex(targetSheet)
 		const targetRange = shiftRange(source, rowDelta, colDelta)
-		const blockedTarget = targetLegacyArrayIndex.findIntersection(targetRange)
-		if (blockedTarget) {
-			return err(legacyArrayFormulaEditError(blockedTarget.targetRef, blockedTarget.ref))
+		if (overwritesTargetFormulas(mode)) {
+			const blockedTarget = targetLegacyArrayIndex.findIntersection(targetRange)
+			if (blockedTarget) {
+				return err(legacyArrayFormulaEditError(blockedTarget.targetRef, blockedTarget.ref))
+			}
 		}
-		if (op.op === 'moveRange') {
+		if (op.op === 'moveRange' && clearsSourceCellContent(mode)) {
 			const sourceLegacyArrayIndex = crossSheet
 				? createLegacyArrayFormulaIndex(sourceSheet)
 				: targetLegacyArrayIndex
@@ -189,7 +191,7 @@ export function handleTransferRange(
 			})
 	if (!mergePlan.ok) return mergePlan
 
-	if (op.op === 'moveRange' && pasteCells(mode)) {
+	if (op.op === 'moveRange' && clearsSourceCellContent(mode)) {
 		const skipCells = [{ sheetName: sourceSheet.name, range: source }]
 		if (overwritesTargetFormulas(mode)) {
 			skipCells.push({ sheetName: targetSheet.name, range: mergePlan.value.targetRange })

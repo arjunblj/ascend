@@ -191,7 +191,8 @@ export function handleClearRange(
 	if (!rangeResult.ok) return rangeResult
 	const range = rangeResult.value
 
-	const blocked = createLegacyArrayFormulaIndex(sheet).findIntersection(range)
+	const blocked =
+		op.what === 'styles' ? null : createLegacyArrayFormulaIndex(sheet).findIntersection(range)
 	if (blocked) return err(legacyArrayFormulaEditError(blocked.targetRef, blocked.ref))
 	const affected =
 		op.what === 'styles'

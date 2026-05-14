@@ -158,6 +158,15 @@ export type {
 	MutationJournalTableStylePreimage,
 } from './journal.ts'
 export type {
+	InspectWorkbookOpenPlanOptions,
+	WorkbookOpenCostClass,
+	WorkbookOpenFeatureCategory,
+	WorkbookOpenFeatureSignal,
+	WorkbookOpenIntent,
+	WorkbookOpenPlan,
+} from './open-plan.ts'
+export { inspectWorkbookOpenPlan, planWorkbookOpen } from './open-plan.ts'
+export type {
 	OperationInputShape,
 	OperationInputSource,
 	PathMutationCompiler,

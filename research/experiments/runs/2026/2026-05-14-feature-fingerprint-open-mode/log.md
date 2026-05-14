@@ -17,6 +17,7 @@ Yes. A package-level fingerprint can cheaply identify enough workbook risk and w
 - openpyxl optimized modes for large read-only workbooks: https://openpyxl.pages.heptapod.net/openpyxl/optimized.html
 - calamine Reader trait and metadata-oriented API surface: https://docs.rs/calamine/latest/calamine/trait.Reader.html
 - ExcelJS README/npm read options, including `ignoreNodes` and streaming reader: https://www.npmjs.com/package/exceljs
+- ExcelJS source repository and workbook-manager scope: https://github.com/exceljs/exceljs
 
 ## Why this matters to Ascend
 
@@ -30,6 +31,16 @@ Inspected local implementation:
 - `packages/io-xlsx/src/package-graph.ts` already classifies package parts into feature families and preservation policies.
 - `packages/sdk/src/load.ts` strips source archives for partial loads, correctly preventing partial workbooks from pretending to be write-ready.
 - API/MCP routes already use mode choices manually, for example `metadata-only` for package/feature inventory and `formula` for agent views.
+
+Fold-in implementation:
+
+- Added `packages/sdk/src/open-plan.ts`.
+- Exported `inspectWorkbookOpenPlan(bytes, options)` and `planWorkbookOpen(packageGraph, options)` from `@ascend/sdk`.
+- The planner returns `recommendedMode`, `recommendedLoadOptions`, `richMetadataRecommended`, `reviewBeforeHydration`, feature/risk signals, part/worksheet/relationship counts, cost class, formula signal, and human-readable reasons.
+- Added focused tests in `packages/sdk/src/open-plan.test.ts` for:
+  - simple value reads -> `values`
+  - macro packages -> `metadata-only` review before edit planning
+  - dashboard packages with calc chain, pivot, and chart parts -> `formula` with `richMetadata: true`
 
 Ignored probes:
 
@@ -61,14 +72,21 @@ Competitor contrast:
 - ExcelJS exposes ignored XML nodes and streaming reader options, but not a package-risk open planner.
 - calamine is read-focused and exposes metadata methods, but not edit-preservation planning.
 
+Production validation:
+
+- `bun test packages/sdk/src/open-plan.test.ts` passed.
+- `bunx biome check packages/sdk/src/open-plan.ts packages/sdk/src/open-plan.test.ts packages/sdk/src/index.ts` passed after formatting.
+- `bunx tsc --build` passed.
+- `bun run test:changed` ran the full suite and passed: 4948 pass, 1 skip, 0 fail.
+
 ## Confidence
 
-High that this is worth folding into product/DX and performance planning. Medium on exact thresholds because the probe used local files and in-process warm timings, not benchmark-isolated measurements.
+High that this is worth folding into product/DX and performance planning. Medium on exact cost thresholds because the probe used local files and in-process warm timings, not benchmark-isolated measurements, and the production cost class is intentionally package-shape based rather than cell-count based.
 
 ## Fold-in decision
 
-Promote to product/DX and performance loops. Do not fold directly into production from this cycle. The next implementation slice should be an internal `inspectOpenPlan(bytes, intent)` or SDK method that returns recommended mode, reasons, risk features, and estimated cost class, with tests over small fixture bytes.
+Folded into production as a small SDK helper. Keep future reader changes separate: this planner should remain explainable and side-effect free, while future loops can wire it into CLI/MCP/API defaults after collecting UX evidence.
 
 ## Next question
 
-Can a production-safe open planner be implemented from the existing package graph without inflating worksheet bodies, and can it recommend `metadata-only` for active-content workbooks while recommending `formula + richMetadata` for formula/pivot dashboards?
+Can CLI/MCP/API open flows safely expose the open planner as an explain-first recommendation without silently changing existing read behavior?

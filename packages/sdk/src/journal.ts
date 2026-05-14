@@ -1767,6 +1767,16 @@ function journalCopyRange(
 	}
 	const targetSheet = op.targetSheet ?? op.sheet
 	const targetRange = transferTargetRange(op.source, op.target)
+	if (mode === 'hyperlinks') {
+		const hyperlinks = hyperlinkPreimages(workbook, targetSheet, refsInParsedRange(targetRange))
+		return {
+			opIndex,
+			op,
+			inverseOps: restoreHyperlinkOps(hyperlinks),
+			preimages: hyperlinks.map((hyperlink) => ({ kind: 'hyperlink', hyperlink })),
+			issues: [],
+		}
+	}
 	const targetRefs = refsInParsedRange(targetRange)
 	const cells = copyRangeOverwritesFormulas(mode)
 		? cellEditPreimages(workbook, targetSheet, targetRefs)
@@ -1806,6 +1816,23 @@ function journalMoveRange(
 	const targetRange = transferTargetRange(op.source, op.target)
 	const sourceRefs = refsInParsedRange(sourceRange)
 	const targetRefs = refsInParsedRange(targetRange)
+	if (mode === 'hyperlinks') {
+		const targetHyperlinks = hyperlinkPreimages(workbook, targetSheet, targetRefs)
+		const sourceHyperlinks = hyperlinkPreimages(workbook, op.sheet, sourceRefs)
+		return {
+			opIndex,
+			op,
+			inverseOps: [
+				...restoreHyperlinkOps(targetHyperlinks),
+				...restoreHyperlinkOps(sourceHyperlinks),
+			],
+			preimages: [...targetHyperlinks, ...sourceHyperlinks].map((hyperlink) => ({
+				kind: 'hyperlink',
+				hyperlink,
+			})),
+			issues: [],
+		}
+	}
 	const sourceCells = copyRangeOverwritesFormulas(mode)
 		? cellEditPreimages(workbook, op.sheet, sourceRefs)
 		: cellPreimages(workbook, op.sheet, sourceRefs)
@@ -3756,7 +3783,8 @@ function copyRangeCellModeSupported(mode: string): boolean {
 		mode === 'values' ||
 		mode === 'formulas' ||
 		mode === 'formats' ||
-		mode === 'styles'
+		mode === 'styles' ||
+		mode === 'hyperlinks'
 	)
 }
 
@@ -4480,6 +4508,22 @@ function hyperlinkPreimage(
 		ref,
 		hyperlink: hyperlink ? { ...hyperlink } : null,
 	}
+}
+
+function hyperlinkPreimages(
+	workbook: Workbook,
+	sheetName: string,
+	refs: readonly string[],
+): MutationJournalHyperlinkPreimage[] {
+	return refs.map((ref) => hyperlinkPreimage(workbook, sheetName, ref))
+}
+
+function restoreHyperlinkOps(hyperlinks: readonly MutationJournalHyperlinkPreimage[]): Operation[] {
+	return hyperlinks.map((hyperlink) =>
+		hyperlink.hyperlink
+			? setHyperlinkInverse(hyperlink.sheet, hyperlink.ref, hyperlink.hyperlink)
+			: { op: 'deleteHyperlink', sheet: hyperlink.sheet, ref: hyperlink.ref },
+	)
 }
 
 function findHyperlink(sheet: Sheet | undefined, ref: string): SheetHyperlink | null {

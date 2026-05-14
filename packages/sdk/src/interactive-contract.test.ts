@@ -3565,6 +3565,55 @@ describe('interactive client contract', () => {
 		})
 	})
 
+	test('copyRange hyperlink journals restore target hyperlink metadata exactly', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setHyperlink',
+				sheet: 'Sheet1',
+				ref: 'A1',
+				url: 'https://source.example',
+				display: 'Source',
+				tooltip: 'source tip',
+			},
+			{
+				op: 'setHyperlink',
+				sheet: 'Sheet1',
+				ref: 'D1',
+				url: 'https://target.example',
+				display: 'Target',
+			},
+		])
+
+		const changed = wb.apply(
+			[{ op: 'copyRange', sheet: 'Sheet1', source: 'A1', target: 'D1', mode: 'hyperlinks' }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(true)
+		expect(changed.journal?.issues).toEqual([])
+		const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+		expect(sheet?.hyperlinks.get('D1')).toEqual({
+			target: 'https://source.example',
+			display: 'Source',
+			tooltip: 'source tip',
+		})
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(sheet?.hyperlinks.get('A1')).toEqual({
+			target: 'https://source.example',
+			display: 'Source',
+			tooltip: 'source tip',
+		})
+		expect(sheet?.hyperlinks.get('D1')).toEqual({
+			target: 'https://target.example',
+			display: 'Target',
+		})
+	})
+
 	test('journal inverse ops restore simple moveRange source and target cells', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([
@@ -3714,6 +3763,67 @@ describe('interactive client contract', () => {
 		expect(wb.sheet('Sheet1')?.cell('D1')?.formula).toBe('A1+4')
 		expect(wb.cellStyle('Sheet1!D1')?.numberFormat).toBe('0.0%')
 		expect(wb.sheet('Sheet1')?.cell('G1')?.formula).toBe('SUM(A1:A1)')
+	})
+
+	test('moveRange hyperlink journals restore source and target hyperlink metadata exactly', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 1 },
+					{ ref: 'D1', value: 4 },
+					{ ref: 'G1', value: 5 },
+				],
+			},
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'G1', formula: 'A1+D1' },
+			{
+				op: 'setHyperlink',
+				sheet: 'Sheet1',
+				ref: 'A1',
+				url: 'https://source.example',
+				display: 'Source',
+			},
+			{
+				op: 'setHyperlink',
+				sheet: 'Sheet1',
+				ref: 'D1',
+				location: 'Sheet1!A1',
+				display: 'Target',
+				tooltip: 'target tip',
+			},
+		])
+
+		const changed = wb.apply(
+			[{ op: 'moveRange', sheet: 'Sheet1', source: 'A1', target: 'D1', mode: 'hyperlinks' }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(true)
+		expect(changed.journal?.issues).toEqual([])
+		const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+		expect(sheet?.hyperlinks.get('A1')).toBeUndefined()
+		expect(sheet?.hyperlinks.get('D1')).toEqual({
+			target: 'https://source.example',
+			display: 'Source',
+		})
+		expect(wb.sheet('Sheet1')?.cell('G1')?.formula).toBe('A1+D1')
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(sheet?.hyperlinks.get('A1')).toEqual({
+			target: 'https://source.example',
+			display: 'Source',
+		})
+		expect(sheet?.hyperlinks.get('D1')).toEqual({
+			location: 'Sheet1!A1',
+			display: 'Target',
+			tooltip: 'target tip',
+		})
+		expect(wb.sheet('Sheet1')?.cell('G1')?.formula).toBe('A1+D1')
 	})
 
 	test('moveRange journals mark formula reference rewrites lossy', () => {

@@ -5943,8 +5943,32 @@ describe('applyOperation', () => {
 			},
 		})
 		sheet.threadedComments.push({ ref: 'B3', text: 'lowest thread', id: 'tc-lowest' })
-		sheet.dataValidations.push({ sqref: 'A2:B2', type: 'list', formula1: '"A,B"' })
-		sheet.conditionalFormats.push({ sqref: 'B3', rules: [] })
+		sheet.dataValidations.push({ sqref: 'A2:B2', type: 'whole', formula1: 'A2' })
+		sheet.conditionalFormats.push({
+			sqref: 'B3',
+			rules: [
+				{
+					type: 'expression',
+					formulas: ['A3>0'],
+					dataBar: { cfvo: [{ type: 'formula', value: 'A3' }] },
+					iconSet: { cfvo: [{ type: 'formula', value: 'B3' }] },
+				},
+			],
+		})
+		sheet.x14DataValidations.push({
+			index: 0,
+			sqref: 'A2:B2',
+			type: 'whole',
+			formula1: 'A2',
+			formula2: 'B2',
+		})
+		sheet.x14ConditionalFormats.push({
+			index: 0,
+			sqref: 'B3',
+			formulas: ['A3>0'],
+			dataBar: { cfvo: [{ type: 'formula', value: 'A3' }] },
+			iconSet: { cfvo: [{ type: 'formula', value: 'B3' }] },
+		})
 		sheet.ignoredErrors.push({ sqref: 'A2', formula: true })
 		sheet.rowHeights.set(1, 24)
 		sheet.rowDefs.set(1, { hidden: true, customHeight: true })
@@ -5974,8 +5998,21 @@ describe('applyOperation', () => {
 			},
 		})
 		expect(sheet.threadedComments).toEqual([{ ref: 'B2', text: 'lowest thread', id: 'tc-lowest' }])
-		expect(sheet.dataValidations[0]?.sqref).toBe('A3:B3')
+		expect(sheet.dataValidations[0]).toMatchObject({ sqref: 'A3:B3', formula1: 'A3' })
 		expect(sheet.conditionalFormats[0]?.sqref).toBe('B2')
+		expect(sheet.conditionalFormats[0]?.rules[0]?.formulas).toEqual(['A2>0'])
+		expect(sheet.conditionalFormats[0]?.rules[0]?.dataBar?.cfvo[0]?.value).toBe('A2')
+		expect(sheet.conditionalFormats[0]?.rules[0]?.iconSet?.cfvo[0]?.value).toBe('B2')
+		expect(sheet.x14DataValidations[0]).toMatchObject({
+			index: 0,
+			sqref: 'A3:B3',
+			formula1: 'A3',
+			formula2: 'B3',
+		})
+		expect(sheet.x14ConditionalFormats[0]?.sqref).toBe('B2')
+		expect(sheet.x14ConditionalFormats[0]?.formulas).toEqual(['A2>0'])
+		expect(sheet.x14ConditionalFormats[0]?.dataBar?.cfvo[0]?.value).toBe('A2')
+		expect(sheet.x14ConditionalFormats[0]?.iconSet?.cfvo[0]?.value).toBe('B2')
 		expect(sheet.ignoredErrors[0]?.sqref).toBe('A3')
 		expect(sheet.rowHeights.get(2)).toBe(24)
 		expect(sheet.rowDefs.get(1)).toEqual({ outlineLevel: 2, collapsed: true })

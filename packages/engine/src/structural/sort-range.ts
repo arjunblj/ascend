@@ -1,6 +1,13 @@
-import type { Cell, RangeRef, Sheet, SheetComment, Workbook } from '@ascend/core'
+import type {
+	Cell,
+	RangeRef,
+	Sheet,
+	SheetComment,
+	SheetConditionalFormatValueObject,
+	Workbook,
+} from '@ascend/core'
 import { columnToIndex, parseA1, parseRange, toA1 } from '@ascend/core'
-import { compareValues } from '@ascend/formulas'
+import { cachedParseFormula, compareValues, printFormulaWithOffset } from '@ascend/formulas'
 import type { CellValue, Result, SortSpec } from '@ascend/schema'
 import { ascendError, EMPTY, err, ok } from '@ascend/schema'
 
@@ -104,6 +111,8 @@ interface SortRow {
 	}>
 	readonly dataValidations: Array<RowScopedSqrefEntry<Sheet['dataValidations'][number]>>
 	readonly conditionalFormats: Array<RowScopedSqrefEntry<Sheet['conditionalFormats'][number]>>
+	readonly x14DataValidations: Array<RowScopedSqrefEntry<Sheet['x14DataValidations'][number]>>
+	readonly x14ConditionalFormats: Array<RowScopedSqrefEntry<Sheet['x14ConditionalFormats'][number]>>
 	readonly ignoredErrors: Array<RowScopedSqrefEntry<Sheet['ignoredErrors'][number]>>
 	readonly rowHeight: number | undefined
 	readonly rowDef: RowDef | undefined
@@ -112,6 +121,7 @@ interface SortRow {
 type RowDef = NonNullable<ReturnType<Sheet['rowDefs']['get']>>
 
 interface RowScopedSqrefEntry<T extends { sqref: string }> {
+	readonly row: number
 	readonly startColOffset: number
 	readonly endColOffset: number
 	readonly entry: T
@@ -158,6 +168,16 @@ function captureSortedRows(sheet: Sheet, range: RangeRef, startRow: number): Sor
 			hyperlinks,
 			dataValidations: captureRowScopedSqrefEntries(sheet.dataValidations, range, row),
 			conditionalFormats: captureRowScopedSqrefEntries(sheet.conditionalFormats, range, row),
+			x14DataValidations: captureRowScopedSqrefEntries(
+				sheet.x14DataValidations.filter((entry) => !entry.deleted),
+				range,
+				row,
+			),
+			x14ConditionalFormats: captureRowScopedSqrefEntries(
+				sheet.x14ConditionalFormats.filter((entry) => !entry.deleted),
+				range,
+				row,
+			),
 			ignoredErrors: captureRowScopedSqrefEntries(sheet.ignoredErrors, range, row),
 			rowHeight: sheet.rowHeights.get(row),
 			rowDef: cloneRowDef(sheet.rowDefs.get(row)),
@@ -203,6 +223,18 @@ function rewriteSortedRows(
 	replaceArrayContents(
 		sheet.ignoredErrors,
 		sheet.ignoredErrors.filter((entry) => !isSortableRowScopedSqrefEntry(entry, range)),
+	)
+	replaceArrayContents(
+		sheet.x14DataValidations,
+		sheet.x14DataValidations.filter(
+			(entry) => entry.deleted || !isSortableRowScopedSqrefEntry(entry, range),
+		),
+	)
+	replaceArrayContents(
+		sheet.x14ConditionalFormats,
+		sheet.x14ConditionalFormats.filter(
+			(entry) => entry.deleted || !isSortableRowScopedSqrefEntry(entry, range),
+		),
 	)
 	for (let row = startRow; row <= range.end.row; row++) {
 		for (let col = range.start.col; col <= range.end.col; col++) {
@@ -250,10 +282,24 @@ function rewriteSortedRows(
 			)
 		}
 		for (const entry of rowData.dataValidations) {
-			sheet.dataValidations.push(rewriteRowScopedSqrefEntry(entry, targetRow, range.start.col))
+			sheet.dataValidations.push(
+				rewriteRowScopedDataValidationEntry(entry, targetRow, range.start.col),
+			)
 		}
 		for (const entry of rowData.conditionalFormats) {
-			sheet.conditionalFormats.push(rewriteRowScopedSqrefEntry(entry, targetRow, range.start.col))
+			sheet.conditionalFormats.push(
+				rewriteRowScopedConditionalFormatEntry(entry, targetRow, range.start.col),
+			)
+		}
+		for (const entry of rowData.x14DataValidations) {
+			sheet.x14DataValidations.push(
+				rewriteRowScopedDataValidationEntry(entry, targetRow, range.start.col),
+			)
+		}
+		for (const entry of rowData.x14ConditionalFormats) {
+			sheet.x14ConditionalFormats.push(
+				rewriteRowScopedX14ConditionalFormatEntry(entry, targetRow, range.start.col),
+			)
 		}
 		for (const entry of rowData.ignoredErrors) {
 			sheet.ignoredErrors.push(rewriteRowScopedSqrefEntry(entry, targetRow, range.start.col))
@@ -277,6 +323,7 @@ function captureRowScopedSqrefEntries<T extends { sqref: string }>(
 		const parsed = parseRowScopedSqref(entry.sqref, range)
 		if (!parsed || parsed.row !== row) continue
 		captured.push({
+			row: parsed.row,
 			startColOffset: parsed.startCol - range.start.col,
 			endColOffset: parsed.endCol - range.start.col,
 			entry,
@@ -348,6 +395,149 @@ function rewriteRowScopedSqrefEntry<T extends { sqref: string }>(
 		...entry.entry,
 		sqref: start === end ? start : `${start}:${end}`,
 	}
+}
+
+function rewriteRowScopedDataValidationEntry<
+	T extends { sqref: string; formula1?: string; formula2?: string },
+>(entry: RowScopedSqrefEntry<T>, targetRow: number, startCol: number): T {
+	const rewritten = rewriteRowScopedSqrefEntry(entry, targetRow, startCol)
+	const rowDelta = targetRow - entry.row
+	return {
+		...rewritten,
+		...(rewritten.formula1 !== undefined
+			? { formula1: translateMetadataFormula(rewritten.formula1, rowDelta, 0) }
+			: {}),
+		...(rewritten.formula2 !== undefined
+			? { formula2: translateMetadataFormula(rewritten.formula2, rowDelta, 0) }
+			: {}),
+	}
+}
+
+function rewriteRowScopedConditionalFormatEntry(
+	entry: RowScopedSqrefEntry<Sheet['conditionalFormats'][number]>,
+	targetRow: number,
+	startCol: number,
+): Sheet['conditionalFormats'][number] {
+	const rewritten = rewriteRowScopedSqrefEntry(entry, targetRow, startCol)
+	const rowDelta = targetRow - entry.row
+	return {
+		...rewritten,
+		rules: rewritten.rules.map((rule) => ({
+			...rule,
+			formulas: rule.formulas.map((formula) => translateMetadataFormula(formula, rowDelta, 0)),
+			...(rule.colorScale
+				? {
+						colorScale: {
+							...rule.colorScale,
+							cfvo: rule.colorScale.cfvo.map((value) =>
+								translateConditionalFormatValueObject(value, rowDelta, 0),
+							),
+							colors: rule.colorScale.colors.map((color) => ({ ...color })),
+						},
+					}
+				: {}),
+			...(rule.dataBar
+				? {
+						dataBar: {
+							...rule.dataBar,
+							cfvo: rule.dataBar.cfvo.map((value) =>
+								translateConditionalFormatValueObject(value, rowDelta, 0),
+							),
+							...(rule.dataBar.color ? { color: { ...rule.dataBar.color } } : {}),
+						},
+					}
+				: {}),
+			...(rule.iconSet
+				? {
+						iconSet: {
+							...rule.iconSet,
+							cfvo: rule.iconSet.cfvo.map((value) =>
+								translateConditionalFormatValueObject(value, rowDelta, 0),
+							),
+						},
+					}
+				: {}),
+		})),
+	}
+}
+
+function rewriteRowScopedX14ConditionalFormatEntry(
+	entry: RowScopedSqrefEntry<Sheet['x14ConditionalFormats'][number]>,
+	targetRow: number,
+	startCol: number,
+): Sheet['x14ConditionalFormats'][number] {
+	const rewritten = rewriteRowScopedSqrefEntry(entry, targetRow, startCol)
+	const rowDelta = targetRow - entry.row
+	return {
+		...rewritten,
+		formulas: rewritten.formulas.map((formula) => translateMetadataFormula(formula, rowDelta, 0)),
+		...(rewritten.colorScale
+			? {
+					colorScale: {
+						...rewritten.colorScale,
+						cfvo: rewritten.colorScale.cfvo.map((value) =>
+							translateConditionalFormatValueObject(value, rowDelta, 0),
+						),
+						colors: rewritten.colorScale.colors.map((color) => ({ ...color })),
+					},
+				}
+			: {}),
+		...(rewritten.dataBar
+			? {
+					dataBar: {
+						...rewritten.dataBar,
+						cfvo: rewritten.dataBar.cfvo.map((value) =>
+							translateConditionalFormatValueObject(value, rowDelta, 0),
+						),
+						...(rewritten.dataBar.fillColor
+							? { fillColor: { ...rewritten.dataBar.fillColor } }
+							: {}),
+						...(rewritten.dataBar.borderColor
+							? { borderColor: { ...rewritten.dataBar.borderColor } }
+							: {}),
+						...(rewritten.dataBar.negativeFillColor
+							? { negativeFillColor: { ...rewritten.dataBar.negativeFillColor } }
+							: {}),
+						...(rewritten.dataBar.negativeBorderColor
+							? { negativeBorderColor: { ...rewritten.dataBar.negativeBorderColor } }
+							: {}),
+						...(rewritten.dataBar.axisColor
+							? { axisColor: { ...rewritten.dataBar.axisColor } }
+							: {}),
+					},
+				}
+			: {}),
+		...(rewritten.iconSet
+			? {
+					iconSet: {
+						...rewritten.iconSet,
+						cfvo: rewritten.iconSet.cfvo.map((value) =>
+							translateConditionalFormatValueObject(value, rowDelta, 0),
+						),
+						...(rewritten.iconSet.icons
+							? { icons: rewritten.iconSet.icons.map((icon) => ({ ...icon })) }
+							: {}),
+					},
+				}
+			: {}),
+	}
+}
+
+function translateConditionalFormatValueObject<T extends SheetConditionalFormatValueObject>(
+	entry: T,
+	rowDelta: number,
+	colDelta: number,
+): T {
+	if (entry.value === undefined) return entry
+	return {
+		...entry,
+		value: translateMetadataFormula(entry.value, rowDelta, colDelta),
+	}
+}
+
+function translateMetadataFormula(formula: string, rowDelta: number, colDelta: number): string {
+	const parsed = cachedParseFormula(formula)
+	return parsed.ok ? printFormulaWithOffset(parsed.value, rowDelta, colDelta) : formula
 }
 
 function replaceArrayContents<T>(target: T[], next: readonly T[]): void {

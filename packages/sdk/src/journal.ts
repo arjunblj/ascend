@@ -4226,7 +4226,13 @@ function sortRangeMetadataIssues(
 		hasRowDefs ||
 		sheet.threadedComments.some((comment) => refInRange(comment.ref, dataRange)) ||
 		sheet.dataValidations.some((validation) => sqrefOverlaps(validation.sqref, dataRange)) ||
+		sheet.x14DataValidations.some(
+			(validation) => !validation.deleted && sqrefOverlaps(validation.sqref, dataRange),
+		) ||
 		sheet.conditionalFormats.some((format) => sqrefOverlaps(format.sqref, dataRange)) ||
+		sheet.x14ConditionalFormats.some(
+			(format) => !format.deleted && sqrefOverlaps(format.sqref, dataRange),
+		) ||
 		sheet.ignoredErrors.some((entry) => sqrefOverlaps(entry.sqref, dataRange))
 	) {
 		return [

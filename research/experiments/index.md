@@ -6,6 +6,7 @@ Updated: 2026-05-15
 
 | Run | Status | Fold-in target |
 | --- | --- | --- |
+| [Full scalar formula scan hoist](runs/2026/2026-05-15-full-scalar-formula-scan-hoist/log.md) | folded in formula-free full-scalar worksheet parser scan hoist with focused fallback tests and diagnostic dense read probe | performance loop |
 | [Table creation validation boundary](runs/2026/2026-05-15-table-creation-validation-boundary/log.md) | folded in rejection-first validation for invalid table creation metadata plus journal unsupported-value classification | correctness loop |
 | [Table column validation boundary](runs/2026/2026-05-15-table-column-validation-boundary/log.md) | folded in rejection-first validation for invalid table column selectors/names/formulas/totals metadata plus journal unsupported-value classification | correctness loop |
 | [Table style validation boundary](runs/2026/2026-05-15-table-style-validation-boundary/log.md) | folded in rejection-first validation for invalid table style names/flags plus journal unsupported-value classification | correctness loop |

@@ -410,10 +410,21 @@ export function parseSheetFullScalarBytes(
 	if (hasUnsupportedValuesOnlyOuterTagsInRangeBytes(bytes, 0, sheetDataStart.tagStart)) {
 		return null
 	}
+	const sheetDataClose = indexOfBytes(
+		bytes,
+		BYTES_SHEET_DATA_CLOSE,
+		sheetDataStart.contentStart,
+		bytes.length,
+	)
+	if (sheetDataClose === -1) return null
+	if (hasElementOpenBytes(bytes, BYTES_F_OPEN, sheetDataStart.contentStart, sheetDataClose)) {
+		return null
+	}
 
 	const closeEnd = parseFullScalarSheetDataBytesToClose(
 		bytes,
 		sheetDataStart.contentStart,
+		sheetDataClose,
 		sheet,
 		ctx,
 	)
@@ -741,14 +752,16 @@ function parseSheetDataRowsBytes(
 function parseFullScalarSheetDataBytesToClose(
 	bytes: Uint8Array,
 	contentStart: number,
+	sheetDataClose: number,
 	sheet: Sheet,
 	ctx: SheetParseContext,
 ): number | false {
 	let rowCursor = contentStart
 	let currentRow = -1
+	const sheetDataEnd = sheetDataClose + BYTES_SHEET_DATA_CLOSE.length
 
 	while (true) {
-		const rowOpen = nextXmlElementOpenBytes(bytes, rowCursor, bytes.length)
+		const rowOpen = nextXmlElementOpenBytes(bytes, rowCursor, sheetDataEnd)
 		if (rowOpen === -1) return false
 		if (
 			indexOfBytes(
@@ -773,8 +786,7 @@ function parseFullScalarSheetDataBytesToClose(
 		const row = explicitRowIndex ? explicitRowIndex.value - 1 : currentRow + 1
 		currentRow = row
 		if (ctx.maxRows !== undefined && row >= ctx.maxRows) {
-			const close = indexOfBytes(bytes, BYTES_SHEET_DATA_CLOSE, rowOpen, bytes.length)
-			return close === -1 ? false : close + BYTES_SHEET_DATA_CLOSE.length
+			return sheetDataEnd
 		}
 		if (
 			!explicitRowIndex?.onlyAttr &&
@@ -798,6 +810,7 @@ function parseFullScalarSheetDataBytesToClose(
 				ctx,
 				sheet,
 				explicitRowIndex,
+				true,
 			)
 		) {
 			return false
@@ -1110,11 +1123,12 @@ function parseSimpleFullScalarRowBytes(
 	ctx: SheetParseContext,
 	sheet: Sheet,
 	rowIndexAttr?: RowIndexAttrBytes,
+	formulasKnownAbsent = false,
 ): boolean {
 	if (
 		ctx.valuesOnly ||
 		(ctx.formulaOnly && !ctx.richMetadata) ||
-		hasElementOpenBytes(bytes, BYTES_F_OPEN, bodyStart, bodyEnd)
+		(!formulasKnownAbsent && hasElementOpenBytes(bytes, BYTES_F_OPEN, bodyStart, bodyEnd))
 	) {
 		return false
 	}

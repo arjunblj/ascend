@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from 'bun:test'
-import { existsSync, unlinkSync } from 'node:fs'
+import { existsSync, readFileSync, unlinkSync } from 'node:fs'
 import { inspect as inspectValue } from 'node:util'
 import { AscendWorkbook } from '@ascend/sdk'
 import { makeXlsx } from '../../../packages/io-xlsx/test/helpers.ts'
@@ -17,10 +17,25 @@ const ACTIVE_CONTENT_FILE = 'test-active-content.xlsm'
 const TRUST_REPORT_FILE = 'test-trust-report.xlsm'
 const OPEN_PLAN_FILE = 'test-open-plan.xlsx'
 const AGENT_VIEW_FILE = 'test-agent-view.xlsx'
+const JOURNAL_V1_OPS_FILE = 'journal-v1-ops.json'
 const PIVOT_CORPUS_FILE = '../../../research/excel-corpus/ms-excel-formulas-and-pivot-tables.xlsx'
 const SLICER_CORPUS_FILE = '../../../research/excel-corpus/excel-dashboard-v2.xlsx'
 const HAS_PIVOT_CORPUS_FILE = existsSync(`${import.meta.dir}/${PIVOT_CORPUS_FILE}`)
 const HAS_SLICER_CORPUS_FILE = existsSync(`${import.meta.dir}/${SLICER_CORPUS_FILE}`)
+const JOURNAL_V1_FIXTURE = JSON.parse(
+	readFileSync(`${import.meta.dir}/../../../fixtures/journal/mutation-journal-v1.json`, 'utf-8'),
+) as {
+	readonly scenario: {
+		readonly ops: readonly Record<string, unknown>[]
+		readonly journal: {
+			readonly supported: boolean
+			readonly exact: boolean
+			readonly inverseOpCount: number
+			readonly issueCount: number
+			readonly issues: readonly unknown[]
+		}
+	}
+}
 
 interface CliRunResult {
 	stdout: string
@@ -91,6 +106,21 @@ function formatConsole(values: readonly unknown[]): string {
 		.join(' ')
 }
 
+function compactJournal(journal: {
+	readonly supported: boolean
+	readonly exact: boolean
+	readonly inverseOps: readonly unknown[]
+	readonly issues: readonly unknown[]
+}) {
+	return {
+		supported: journal.supported,
+		exact: journal.exact,
+		inverseOpCount: journal.inverseOps.length,
+		issueCount: journal.issues.length,
+		issues: journal.issues,
+	}
+}
+
 afterAll(() => {
 	for (const f of [
 		TEST_FILE,
@@ -104,6 +134,7 @@ afterAll(() => {
 		OPEN_PLAN_FILE,
 		AGENT_VIEW_FILE,
 		APPROVAL_TEST_FILE,
+		JOURNAL_V1_OPS_FILE,
 		'exported.tsv',
 		'exported.json',
 		'plan-ops.json',
@@ -466,6 +497,22 @@ describe('ascend cli', () => {
 		)
 		expect(prettyCommit.exitCode).toBe(0)
 		expect(prettyCommit.stdout).toContain('Post-write package graph issues: 0')
+	})
+
+	test('plan JSON preserves journal v1 issue compatibility', async () => {
+		const wb = AscendWorkbook.create()
+		await wb.save(`${import.meta.dir}/${TEST_FILE}`)
+		await Bun.write(
+			`${import.meta.dir}/${JOURNAL_V1_OPS_FILE}`,
+			JSON.stringify(JOURNAL_V1_FIXTURE.scenario.ops),
+		)
+
+		const planned = await run('plan', TEST_FILE, '--ops', JOURNAL_V1_OPS_FILE, '--json')
+
+		expect(planned.exitCode).toBe(0)
+		const parsed = JSON.parse(planned.stdout)
+		expect(parsed.ok).toBe(true)
+		expect(compactJournal(parsed.data.preview.journal)).toEqual(JOURNAL_V1_FIXTURE.scenario.journal)
 	})
 
 	test('plan invalid ops return structured batch repair details', async () => {

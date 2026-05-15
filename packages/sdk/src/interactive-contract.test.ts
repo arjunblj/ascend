@@ -3474,7 +3474,9 @@ describe('interactive client contract', () => {
 			code: 'LOSSY_INVERSE',
 			message:
 				'Page setup for Sheet1 contains metadata that cannot be restored with public operations',
+			reason: 'page-setup-unsettable',
 			refs: ['Sheet1'],
+			surface: 'page-setup',
 		})
 		expect(changed.journal?.inverseOps).toEqual([])
 	})
@@ -3551,7 +3553,9 @@ describe('interactive client contract', () => {
 			code: 'LOSSY_INVERSE',
 			message:
 				'Sorted row metadata on Sheet1!A1:B3 cannot be fully restored with public operations',
+			reason: 'row-layout-created',
 			refs: ['Sheet1!A1:B3'],
+			surface: 'row-layout',
 		})
 	})
 
@@ -3588,7 +3592,9 @@ describe('interactive client contract', () => {
 			code: 'LOSSY_INVERSE',
 			message:
 				'Sorted row metadata on Sheet1!A1:B3 cannot be fully restored with public operations',
+			reason: 'row-layout-created',
 			refs: ['Sheet1!A1:B3'],
+			surface: 'row-layout',
 		})
 		expect(sheet.rowDefs.get(1)).toEqual({ collapsed: true, customHeight: false })
 		expect(sheet.rowDefs.get(2)).toEqual({ hidden: true, outlineLevel: 1 })
@@ -3700,7 +3706,9 @@ describe('interactive client contract', () => {
 			code: 'LOSSY_INVERSE',
 			message:
 				'Sorted data validation order on Sheet1!A1:B3 cannot be restored exactly with public operations',
+			reason: 'metadata-order',
 			refs: ['Sheet1!A1:B3'],
+			surface: 'data-validations',
 		})
 	})
 
@@ -3806,7 +3814,9 @@ describe('interactive client contract', () => {
 			code: 'LOSSY_INVERSE',
 			message:
 				'Sorted conditional format order on Sheet1!A1:B3 cannot be restored exactly with public operations',
+			reason: 'metadata-order',
 			refs: ['Sheet1!A1:B3'],
+			surface: 'conditional-formats',
 		})
 	})
 
@@ -3852,8 +3862,10 @@ describe('interactive client contract', () => {
 		expect(changed.journal?.issues).toContainEqual({
 			code: 'LOSSY_INVERSE',
 			message:
-				'Sorted row metadata on Sheet1!A1:B3 cannot be fully restored with public operations',
+				'Sorted x14 row metadata on Sheet1!A1:B3 cannot be fully restored with public operations',
+			reason: 'x14-metadata',
 			refs: ['Sheet1!A1:B3'],
+			surface: 'x14-metadata',
 		})
 		expect(sheet.x14DataValidations[0]).toMatchObject({ sqref: 'A3:B3', formula1: 'A3' })
 		expect(sheet.x14ConditionalFormats[0]?.sqref).toBe('B2')
@@ -3935,7 +3947,9 @@ describe('interactive client contract', () => {
 			code: 'LOSSY_INVERSE',
 			message:
 				'Legacy comment drawing metadata for Sheet1!A2 cannot be restored with public operations',
+			reason: 'legacy-comment-drawing',
 			refs: ['Sheet1!A2'],
+			surface: 'comments',
 		})
 	})
 
@@ -4172,7 +4186,9 @@ describe('interactive client contract', () => {
 			code: 'LOSSY_INVERSE',
 			message:
 				'Transferred x14 data validation metadata on Sheet1!A1 cannot be restored with public operations',
+			reason: 'x14-metadata',
 			refs: ['Sheet1!x14Validation:A1:A1:0'],
+			surface: 'x14-metadata',
 		})
 		expect(
 			wb
@@ -4343,7 +4359,9 @@ describe('interactive client contract', () => {
 			code: 'LOSSY_INVERSE',
 			message:
 				'Copied conditional format at Sheet1!D1 collides with existing conditional format metadata',
+			reason: 'metadata-collision',
 			refs: ['Sheet1!A1:A1', 'Sheet1!D1'],
+			surface: 'conditional-formats',
 		})
 	})
 
@@ -4408,7 +4426,9 @@ describe('interactive client contract', () => {
 			code: 'LOSSY_INVERSE',
 			message:
 				'Transferred x14 data validation metadata on Sheet1!A1 cannot be restored with public operations',
+			reason: 'x14-metadata',
 			refs: ['Sheet1!x14Validation:A1:A1:0'],
+			surface: 'x14-metadata',
 		})
 		expect(changed.journal?.inverseOps).toEqual([])
 	})
@@ -4461,7 +4481,9 @@ describe('interactive client contract', () => {
 			code: 'LOSSY_INVERSE',
 			message:
 				'Copied legacy comment drawing metadata for Sheet1!D1 cannot be removed with public operations',
+			reason: 'legacy-comment-drawing',
 			refs: ['Sheet1!A1', 'Sheet1!D1'],
+			surface: 'comments',
 		})
 	})
 
@@ -4735,7 +4757,9 @@ describe('interactive client contract', () => {
 			code: 'LOSSY_INVERSE',
 			message:
 				'Transferred x14 conditional format metadata on Sheet1!A1 cannot be restored with public operations',
+			reason: 'x14-metadata',
 			refs: ['Sheet1!x14ConditionalFormat:A1:A1:0'],
+			surface: 'x14-metadata',
 		})
 		expect(wb.getWorkbookModel().getSheet('Sheet1')?.x14ConditionalFormats[0]?.sqref).toBe('D1')
 	})
@@ -4825,7 +4849,9 @@ describe('interactive client contract', () => {
 			code: 'LOSSY_INVERSE',
 			message:
 				'Moved merge order on Sheet1!A1:B1 cannot be restored exactly with public operations',
+			reason: 'metadata-order',
 			refs: ['Sheet1!A1:B1'],
+			surface: 'merged-cells',
 		})
 	})
 
@@ -4888,7 +4914,9 @@ describe('interactive client contract', () => {
 			code: 'LOSSY_INVERSE',
 			message:
 				'Moved data validation order on Sheet1!A1 cannot be restored exactly with public operations',
+			reason: 'metadata-order',
 			refs: ['Sheet1!A1'],
+			surface: 'data-validations',
 		})
 	})
 
@@ -5238,7 +5266,9 @@ describe('interactive client contract', () => {
 			code: 'LOSSY_INVERSE',
 			message:
 				'moveRange formula reference rewrites for Sheet1!A1 cannot be fully restored with public operations',
+			reason: 'formula-reference-rewrite',
 			refs: ['Sheet1!conditionalFormat:G1:G1:0:0:0', 'Sheet1!conditionalFormat:G1:G1:1:0:0'],
+			surface: 'formulas',
 		})
 	})
 
@@ -5275,7 +5305,9 @@ describe('interactive client contract', () => {
 			code: 'LOSSY_INVERSE',
 			message:
 				'moveRange formula reference rewrites for Sheet1!A1 cannot be fully restored with public operations',
+			reason: 'x14-metadata',
 			refs: ['Sheet1!x14Validation:G1:G1:formula1'],
+			surface: 'x14-metadata',
 		})
 		expect(wb.getWorkbookModel().getSheet('Sheet1')?.x14DataValidations[0]?.formula1).toBe('D1')
 	})
@@ -5871,7 +5903,9 @@ describe('interactive client contract', () => {
 				code: 'LOSSY_INVERSE',
 				message:
 					'Data validation default attributes allowBlank, showErrorMessage at Sheet1!A1:A1 cannot be restored exactly with public operations',
+				reason: 'data-validation-default-attributes',
 				refs: ['Sheet1!A1:A1'],
+				surface: 'data-validations',
 			},
 		])
 		expect(changed.journal?.inverseOps).toEqual([
@@ -6091,6 +6125,8 @@ describe('interactive client contract', () => {
 			{
 				code: 'LOSSY_INVERSE',
 				message: 'Threaded comment selector on Sheet1 cannot be resolved exactly',
+				reason: 'threaded-comment-selector',
+				surface: 'comments',
 			},
 		])
 		expect(journal.inverseOps).toEqual([])
@@ -6211,6 +6247,8 @@ describe('interactive client contract', () => {
 			{
 				code: 'LOSSY_INVERSE',
 				message: 'Drawing object selector on Sheet1 cannot be resolved to editable text exactly',
+				reason: 'drawing-text-selector',
+				surface: 'drawings',
 			},
 		])
 		expect(ambiguous.inverseOps).toEqual([])
@@ -6337,6 +6375,8 @@ describe('interactive client contract', () => {
 			{
 				code: 'LOSSY_INVERSE',
 				message: 'Chart series selector cannot be restored exactly for series 0',
+				reason: 'chart-series-unsettable',
+				surface: 'charts',
 			},
 		])
 		expect(journal.inverseOps).toEqual([
@@ -6458,7 +6498,12 @@ describe('interactive client contract', () => {
 		expect(journal.supported).toBe(true)
 		expect(journal.exact).toBe(false)
 		expect(journal.issues).toEqual([
-			{ code: 'LOSSY_INVERSE', message: 'Pivot cache selector cannot be restored exactly' },
+			{
+				code: 'LOSSY_INVERSE',
+				message: 'Pivot cache selector cannot be restored exactly',
+				reason: 'pivot-cache-unsettable',
+				surface: 'pivot-caches',
+			},
 		])
 		expect(journal.inverseOps).toEqual([
 			{
@@ -6566,25 +6611,33 @@ describe('interactive client contract', () => {
 				code: 'LOSSY_INVERSE',
 				message:
 					'Data validation extension metadata at Sheet1!A1:A3 cannot be restored with public operations',
+				reason: 'x14-metadata',
 				refs: ['Sheet1!A1:A3'],
+				surface: 'x14-metadata',
 			},
 			{
 				code: 'LOSSY_INVERSE',
 				message:
 					'AutoFilter column 0 on Sheet1!A1:B10 cannot be fully restored with public operations',
+				reason: 'auto-filter-column-metadata',
 				refs: ['Sheet1!A1:B10'],
+				surface: 'auto-filters',
 			},
 			{
 				code: 'LOSSY_INVERSE',
 				message:
 					'AutoFilter extension metadata on Sheet1!A1:B10 cannot be restored with public operations',
+				reason: 'auto-filter-extension-metadata',
 				refs: ['Sheet1!A1:B10'],
+				surface: 'auto-filters',
 			},
 			{
 				code: 'LOSSY_INVERSE',
 				message:
 					'AutoFilter sort metadata on Sheet1!A1:B10 cannot be fully restored with public operations',
+				reason: 'auto-filter-sort-metadata',
 				refs: ['Sheet1!A1:B10'],
+				surface: 'auto-filters',
 			},
 		])
 		expect(changed.journal?.inverseOps).toEqual([
@@ -6899,6 +6952,8 @@ describe('interactive client contract', () => {
 			{
 				code: 'LOSSY_INVERSE',
 				message: 'Workbook protection absence cannot be restored exactly with public operations',
+				reason: 'workbook-protection-absence',
+				surface: 'workbook-metadata',
 			},
 		])
 		expect(lossy.journal?.inverseOps).toEqual([{ op: 'setWorkbookProtection', protection: {} }])
@@ -6977,10 +7032,14 @@ describe('interactive client contract', () => {
 			{
 				code: 'LOSSY_INVERSE',
 				message: 'Theme metadata field themeName cannot be removed with public operations',
+				reason: 'package-part-preservation',
+				surface: 'package-parts',
 			},
 			{
 				code: 'LOSSY_INVERSE',
 				message: 'Theme color slot accent1 cannot be removed with public operations',
+				reason: 'package-part-preservation',
+				surface: 'package-parts',
 			},
 		])
 		expect(lossy.journal?.inverseOps).toEqual([])
@@ -7216,7 +7275,9 @@ describe('interactive client contract', () => {
 				code: 'LOSSY_INVERSE',
 				message:
 					'Created legacy comment at Sheet1!B2 cannot be removed without deleting threaded comments with public operations',
+				reason: 'threaded-comment-selector',
 				refs: ['Sheet1!threadedComment:tc-1'],
+				surface: 'comments',
 			},
 		])
 		expect(wb.getWorkbookModel().getSheet('Sheet1')?.threadedComments).toEqual([
@@ -7253,13 +7314,17 @@ describe('interactive client contract', () => {
 				code: 'LOSSY_INVERSE',
 				message:
 					'Legacy comment drawing metadata for Sheet1!B2 cannot be restored with public operations',
+				reason: 'legacy-comment-drawing',
 				refs: ['Sheet1!B2'],
+				surface: 'comments',
 			},
 			{
 				code: 'LOSSY_INVERSE',
 				message:
 					'Threaded comments deleted at Sheet1!B2 cannot be recreated with public operations',
+				reason: 'threaded-comment-selector',
 				refs: ['Sheet1!threadedComment:tc-1', 'Sheet1!threadedComment:tc-2'],
+				surface: 'comments',
 			},
 		])
 		expect(changed.journal?.entries[0]?.preimages).toContainEqual({
@@ -7403,6 +7468,7 @@ describe('interactive client contract', () => {
 			{
 				code: 'LOSSY_INVERSE',
 				message: 'Deleted sheet Data cannot be fully restored with public operations',
+				reason: 'sheet-topology',
 				refs: [
 					'Data!cells:4',
 					'Data!comments:1',
@@ -7410,6 +7476,7 @@ describe('interactive client contract', () => {
 					'Sheet1!A1',
 					'chart:xl/charts/chart1.xml:series:0:valueRef',
 				],
+				surface: 'comments',
 			},
 		])
 	})
@@ -7496,7 +7563,9 @@ describe('interactive client contract', () => {
 			code: 'LOSSY_INVERSE',
 			message:
 				'Row height metadata at Sheet1!3 has customHeight=false and cannot be restored exactly with public operations',
+			reason: 'row-layout-custom-height',
 			refs: ['Sheet1!3'],
+			surface: 'row-layout',
 		})
 		expect(wb.getWorkbookModel().getSheet('Sheet1')?.rowDefs.get(2)).toEqual({
 			hidden: true,
@@ -7522,12 +7591,16 @@ describe('interactive client contract', () => {
 			{
 				code: 'LOSSY_INVERSE',
 				message: 'Created row layout at Sheet1!3 cannot be cleared with public operations',
+				reason: 'row-layout-created',
 				refs: ['Sheet1!3'],
+				surface: 'row-layout',
 			},
 			{
 				code: 'LOSSY_INVERSE',
 				message: 'Created col layout at Sheet1!B cannot be cleared with public operations',
+				reason: 'column-layout-created',
 				refs: ['Sheet1!B'],
+				surface: 'column-layout',
 			},
 		])
 	})
@@ -7602,13 +7675,17 @@ describe('interactive client contract', () => {
 				code: 'LOSSY_INVERSE',
 				message:
 					'Sheet tab color for Sheet1 uses unsupported color metadata and cannot be fully restored with public operations',
+				reason: 'sheet-topology',
 				refs: ['sheet:Sheet1:tabColor'],
+				surface: 'sheet-layout',
 			},
 			{
 				code: 'LOSSY_INVERSE',
 				message:
 					'Sheet protection for Sheet1 contains metadata that cannot be fully restored with public operations',
+				reason: 'workbook-protection-absence',
 				refs: ['sheet:Sheet1:protection:objects', 'sheet:Sheet1:protection:algorithmName'],
+				surface: 'sheet-layout',
 			},
 		])
 	})
@@ -7631,12 +7708,16 @@ describe('interactive client contract', () => {
 			{
 				code: 'LOSSY_INVERSE',
 				message: 'Sheet tab color absence for Sheet1 cannot be restored with public operations',
+				reason: 'sheet-topology',
 				refs: ['sheet:Sheet1:tabColor'],
+				surface: 'sheet-layout',
 			},
 			{
 				code: 'LOSSY_INVERSE',
 				message: 'Sheet protection absence for Sheet1 cannot be restored with public operations',
+				reason: 'workbook-protection-absence',
 				refs: ['sheet:Sheet1:protection'],
+				surface: 'sheet-layout',
 			},
 		])
 	})
@@ -7675,6 +7756,7 @@ describe('interactive client contract', () => {
 			{
 				code: 'LOSSY_INVERSE',
 				message: 'Grouped rows for Sheet1 cannot be restored with public operations',
+				reason: 'row-layout-created',
 				refs: [
 					'Sheet1!2',
 					'Sheet1!3',
@@ -7682,16 +7764,19 @@ describe('interactive client contract', () => {
 					'sheet:Sheet1:outlinePr:summaryBelow',
 					'sheet:Sheet1:sheetFormatPr:outlineLevelRow',
 				],
+				surface: 'row-layout',
 			},
 			{
 				code: 'LOSSY_INVERSE',
 				message: 'Grouped columns for Sheet1 cannot be restored with public operations',
+				reason: 'column-layout-created',
 				refs: [
 					'Sheet1!A',
 					'Sheet1!B',
 					'sheet:Sheet1:outlinePr:summaryRight',
 					'sheet:Sheet1:sheetFormatPr:outlineLevelCol',
 				],
+				surface: 'column-layout',
 			},
 		])
 		expect(changed.journal?.entries[0]?.preimages).toEqual([
@@ -7807,19 +7892,25 @@ describe('interactive client contract', () => {
 				code: 'LOSSY_INVERSE',
 				message:
 					'Sheet visibility for Sheet1 was veryHidden and cannot be restored with public operations',
+				reason: 'sheet-topology',
 				refs: ['sheet:Sheet1:state:veryHidden'],
+				surface: 'sheet-layout',
 			},
 			{
 				code: 'LOSSY_INVERSE',
 				message:
 					'Explicit row hidden=false metadata cannot be restored exactly with public operations',
+				reason: 'row-layout-created',
 				refs: ['Sheet1!3'],
+				surface: 'row-layout',
 			},
 			{
 				code: 'LOSSY_INVERSE',
 				message:
 					'Explicit column hidden=false metadata cannot be restored exactly with public operations',
+				reason: 'column-layout-created',
 				refs: ['Sheet1!B'],
+				surface: 'column-layout',
 			},
 		])
 	})
@@ -8196,7 +8287,9 @@ describe('interactive client contract', () => {
 			{
 				code: 'LOSSY_INVERSE',
 				message: 'Deleted row metadata on Sheet1 cannot be fully restored with public operations',
+				reason: 'row-layout-created',
 				refs: ['Sheet1!2'],
+				surface: 'row-layout',
 			},
 		])
 		expect(deletedRow.journal?.inverseOps[0]).toEqual({
@@ -8253,7 +8346,9 @@ describe('interactive client contract', () => {
 		expect(deletedCol.journal?.issues).toContainEqual({
 			code: 'LOSSY_INVERSE',
 			message: 'Deleted column metadata on Sheet1 cannot be fully restored with public operations',
+			reason: 'column-layout-created',
 			refs: ['Sheet1!B'],
+			surface: 'column-layout',
 		})
 		expect(deletedCol.journal?.issues).toContainEqual({
 			code: 'LOSSY_INVERSE',

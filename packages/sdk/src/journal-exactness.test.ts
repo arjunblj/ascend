@@ -233,6 +233,24 @@ describe('mutation journal exactness model', () => {
 			expect(journal.supported).toBe(true)
 			expect(journal.exact).toBe(false)
 			expect(journal.issues.length).toBeGreaterThan(0)
+			for (const entry of journal.entries) {
+				for (const issue of entry.issues) {
+					expect(issue.surface).toBeDefined()
+					expect(issue.reason).toBeDefined()
+					expect(classifyMutationJournalIssue(issue)).toMatchObject({
+						surface: issue.surface,
+						reason: issue.reason,
+					})
+				}
+			}
+			for (const issue of journal.issues) {
+				expect(issue.surface).toBeDefined()
+				expect(issue.reason).toBeDefined()
+				expect(classifyMutationJournalIssue(issue)).toMatchObject({
+					surface: issue.surface,
+					reason: issue.reason,
+				})
+			}
 			for (const classification of classifyMutationJournalIssues(journal.issues)) {
 				const rule = classifyMutationJournalSurface(classification.surface)
 				expect(rule.lossReasons).toContain(classification.reason)

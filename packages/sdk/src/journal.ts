@@ -99,6 +99,8 @@ export type MutationJournalExactness = 'exact' | 'conditional' | 'lossy'
 
 export type MutationJournalPublicInverse = 'exact' | 'conditional' | 'none'
 
+export const MUTATION_JOURNAL_ISSUE_SCHEMA_VERSION = 1
+
 export type MutationJournalReasonCode =
 	| 'operation-unsupported'
 	| 'value-unsupported'
@@ -542,6 +544,37 @@ const MUTATION_JOURNAL_EXACTNESS_BY_SURFACE = new Map(
 	MUTATION_JOURNAL_EXACTNESS_MATRIX.map((rule) => [rule.surface, rule]),
 )
 
+export const MUTATION_JOURNAL_SURFACES: readonly MutationJournalSurface[] =
+	MUTATION_JOURNAL_EXACTNESS_MATRIX.map((rule) => rule.surface)
+
+export const MUTATION_JOURNAL_REASON_CODES = Object.keys(
+	MUTATION_JOURNAL_REASON_DESCRIPTIONS,
+) as readonly MutationJournalReasonCode[]
+
+export const MUTATION_JOURNAL_ISSUE_CODES = [
+	'UNSUPPORTED_OPERATION',
+	'LOSSY_INVERSE',
+	'UNSUPPORTED_VALUE',
+	'JOURNAL_UNAVAILABLE',
+	'JOURNAL_BUILD_FAILED',
+] as const
+
+export const MUTATION_JOURNAL_ISSUE_SCHEMA = {
+	$schema: 'https://json-schema.org/draft/2020-12/schema',
+	$id: 'https://ascend.dev/schemas/mutation-journal-issue-v1.json',
+	title: 'Ascend mutation journal issue v1',
+	type: 'object',
+	additionalProperties: false,
+	required: ['code', 'message', 'surface', 'reason'],
+	properties: {
+		code: { type: 'string', enum: MUTATION_JOURNAL_ISSUE_CODES },
+		message: { type: 'string' },
+		surface: { type: 'string', enum: MUTATION_JOURNAL_SURFACES },
+		reason: { type: 'string', enum: MUTATION_JOURNAL_REASON_CODES },
+		refs: { type: 'array', items: { type: 'string' } },
+	},
+} as const
+
 export const MUTATION_JOURNAL_OPERATION_SURFACE_RULES = {
 	setCells: {
 		primarySurface: 'cells',
@@ -963,6 +996,11 @@ export interface MutationJournalIssue {
 	readonly refs?: readonly string[]
 }
 
+export type MutationJournalStructuredIssue = MutationJournalIssue & {
+	readonly surface: MutationJournalSurface
+	readonly reason: MutationJournalReasonCode
+}
+
 export interface MutationJournalIssueClassification {
 	readonly surface: MutationJournalSurface
 	readonly reason: MutationJournalReasonCode
@@ -990,6 +1028,17 @@ export function classifyMutationJournalIssues(
 	return issues.map((issue) => classifyMutationJournalIssue(issue))
 }
 
+export function structureMutationJournalIssue(
+	issue: MutationJournalIssue,
+): MutationJournalStructuredIssue {
+	const classification = classifyMutationJournalIssue(issue)
+	return {
+		...issue,
+		surface: classification.surface,
+		reason: classification.reason,
+	}
+}
+
 function inferMutationJournalIssueSurface(issue: MutationJournalIssue): MutationJournalSurface {
 	if (issue.code === 'JOURNAL_BUILD_FAILED' || issue.code === 'JOURNAL_UNAVAILABLE') {
 		return 'package-parts'
@@ -1012,12 +1061,21 @@ function inferMutationJournalIssueSurface(issue: MutationJournalIssue): Mutation
 	}
 	if (text.includes('autofilter') || text.includes('auto filter')) return 'auto-filters'
 	if (text.includes('merge')) return 'merged-cells'
-	if (text.includes('row layout') || text.includes('row height') || text.includes(' rows')) {
+	if (
+		text.includes('row layout') ||
+		text.includes('row height') ||
+		text.includes('row metadata') ||
+		text.includes('row hidden') ||
+		text.includes(' rows')
+	) {
 		return 'row-layout'
 	}
 	if (
 		text.includes('column layout') ||
 		text.includes('column width') ||
+		text.includes('column metadata') ||
+		text.includes('column hidden') ||
+		text.includes(' columns') ||
 		text.includes(' col layout') ||
 		text.includes(' cols')
 	) {
@@ -1069,8 +1127,22 @@ function inferMutationJournalIssueReason(
 	if (text.includes('page setup')) return 'page-setup-unsettable'
 	if (text.includes('page margins')) return 'page-margins-unsettable'
 	if (text.includes('created row layout')) return 'row-layout-created'
+	if (
+		text.includes('row metadata') ||
+		text.includes('row hidden') ||
+		text.includes('grouped rows')
+	) {
+		return 'row-layout-created'
+	}
 	if (text.includes('customheight=false')) return 'row-layout-custom-height'
 	if (text.includes('created col layout') || text.includes('created column layout')) {
+		return 'column-layout-created'
+	}
+	if (
+		text.includes('column metadata') ||
+		text.includes('column hidden') ||
+		text.includes('grouped columns')
+	) {
 		return 'column-layout-created'
 	}
 	if (text.includes('column width')) return 'column-layout-width-metadata'
@@ -1440,7 +1512,7 @@ export interface MutationJournalEntry {
 	readonly exact: boolean
 	readonly inverseOps: readonly Operation[]
 	readonly preimages: readonly MutationJournalPreimage[]
-	readonly issues: readonly MutationJournalIssue[]
+	readonly issues: readonly MutationJournalStructuredIssue[]
 }
 
 export interface MutationJournal {
@@ -1448,7 +1520,7 @@ export interface MutationJournal {
 	readonly inverseOps: readonly Operation[]
 	readonly supported: boolean
 	readonly exact: boolean
-	readonly issues: readonly MutationJournalIssue[]
+	readonly issues: readonly MutationJournalStructuredIssue[]
 }
 
 export interface MutationJournalClassifiedIssue extends MutationJournalIssueClassification {
@@ -1619,6 +1691,14 @@ function buildJournalEntry(
 ): MutationJournalEntry {
 	const draft = buildSupportedJournalEntry(workbook, op, opIndex)
 	if (!draft) {
+		const issues: MutationJournalStructuredIssue[] = [
+			{
+				code: 'UNSUPPORTED_OPERATION',
+				message: `No reversible journal support for ${op.op}`,
+				surface: classifyMutationJournalOperationPrimarySurface(op),
+				reason: 'operation-unsupported',
+			},
+		]
 		return {
 			opIndex,
 			op,
@@ -1626,20 +1706,15 @@ function buildJournalEntry(
 			exact: false,
 			inverseOps: [],
 			preimages: [],
-			issues: [
-				{
-					code: 'UNSUPPORTED_OPERATION',
-					message: `No reversible journal support for ${op.op}`,
-					surface: classifyMutationJournalOperationPrimarySurface(op),
-					reason: 'operation-unsupported',
-				},
-			],
+			issues,
 		}
 	}
+	const issues = draft.issues.map(structureMutationJournalIssue)
 	return {
 		...draft,
-		supported: draft.issues.every((issue) => issue.code !== 'UNSUPPORTED_OPERATION'),
-		exact: draft.issues.length === 0,
+		issues,
+		supported: issues.every((issue) => issue.code !== 'UNSUPPORTED_OPERATION'),
+		exact: issues.length === 0,
 	}
 }
 
@@ -4309,6 +4384,8 @@ function dataValidationRuleFromSheet(validation: MutationJournalDataValidationPr
 		issues.push({
 			code: 'LOSSY_INVERSE',
 			message: `Data validation extension metadata at ${validation.sheet}!${validation.range} cannot be restored with public operations`,
+			surface: 'x14-metadata',
+			reason: 'x14-metadata',
 			refs: [`${validation.sheet}!${validation.range}`],
 		})
 	}
@@ -6025,10 +6102,26 @@ function sortRangeMetadataIssues(
 	const hasRowDefs = [...sheet.rowDefs.keys()].some(
 		(row) => row >= dataRange.start.row && row <= dataRange.end.row,
 	)
+	const issues: MutationJournalIssue[] = []
+	if (hasRowHeights || hasRowDefs) {
+		issues.push({
+			code: 'LOSSY_INVERSE',
+			message: `Sorted row metadata on ${op.sheet}!${op.range} cannot be fully restored with public operations`,
+			surface: 'row-layout',
+			reason: 'row-layout-created',
+			refs: [`${op.sheet}!${op.range}`],
+		})
+	}
+	if (sheet.threadedComments.some((comment) => refInRange(comment.ref, dataRange))) {
+		issues.push({
+			code: 'LOSSY_INVERSE',
+			message: `Sorted threaded comment metadata on ${op.sheet}!${op.range} cannot be fully restored with public operations`,
+			surface: 'comments',
+			reason: 'threaded-comment-selector',
+			refs: [`${op.sheet}!${op.range}`],
+		})
+	}
 	if (
-		hasRowHeights ||
-		hasRowDefs ||
-		sheet.threadedComments.some((comment) => refInRange(comment.ref, dataRange)) ||
 		sheet.x14DataValidations.some(
 			(validation) => !validation.deleted && sqrefOverlaps(validation.sqref, dataRange),
 		) ||
@@ -6037,15 +6130,15 @@ function sortRangeMetadataIssues(
 		) ||
 		sheet.ignoredErrors.some((entry) => sqrefOverlaps(entry.sqref, dataRange))
 	) {
-		return [
-			{
-				code: 'LOSSY_INVERSE',
-				message: `Sorted row metadata on ${op.sheet}!${op.range} cannot be fully restored with public operations`,
-				refs: [`${op.sheet}!${op.range}`],
-			},
-		]
+		issues.push({
+			code: 'LOSSY_INVERSE',
+			message: `Sorted x14 row metadata on ${op.sheet}!${op.range} cannot be fully restored with public operations`,
+			surface: 'x14-metadata',
+			reason: 'x14-metadata',
+			refs: [`${op.sheet}!${op.range}`],
+		})
 	}
-	return []
+	return issues
 }
 
 function sortRangeDataRange(

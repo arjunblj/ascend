@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, test } from 'bun:test'
 import { Buffer } from 'node:buffer'
 import { createHash } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 import { unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -30,6 +31,23 @@ const MACRO_OUTPUT_FILE = join(
 	tmpdir(),
 	`ascend-api-macro-out-${Date.now()}-${Math.random().toString(16).slice(2)}.xlsm`,
 )
+const JOURNAL_V1_FIXTURE = JSON.parse(
+	readFileSync(
+		join(import.meta.dir, '../../../fixtures/journal/mutation-journal-v1.json'),
+		'utf-8',
+	),
+) as {
+	readonly scenario: {
+		readonly ops: readonly Record<string, unknown>[]
+		readonly journal: {
+			readonly supported: boolean
+			readonly exact: boolean
+			readonly inverseOpCount: number
+			readonly issueCount: number
+			readonly issues: readonly unknown[]
+		}
+	}
+}
 
 let server: ReturnType<typeof createServer> | undefined
 
@@ -1702,6 +1720,8 @@ describe('Ascend API server', () => {
 			{
 				code: 'LOSSY_INVERSE',
 				message: 'Grouped rows for Sheet1 cannot be restored with public operations',
+				surface: 'row-layout',
+				reason: 'row-layout-created',
 				refs: [
 					'Sheet1!2',
 					'Sheet1!3',
@@ -1713,6 +1733,8 @@ describe('Ascend API server', () => {
 			{
 				code: 'LOSSY_INVERSE',
 				message: 'Grouped columns for Sheet1 cannot be restored with public operations',
+				surface: 'column-layout',
+				reason: 'column-layout-created',
 				refs: [
 					'Sheet1!A',
 					'Sheet1!B',
@@ -1752,10 +1774,14 @@ describe('Ascend API server', () => {
 			{
 				code: 'LOSSY_INVERSE',
 				message: 'Theme metadata field themeName cannot be removed with public operations',
+				surface: 'package-parts',
+				reason: 'package-part-preservation',
 			},
 			{
 				code: 'LOSSY_INVERSE',
 				message: 'Theme color slot accent1 cannot be removed with public operations',
+				surface: 'package-parts',
+				reason: 'package-part-preservation',
 			},
 		])
 
@@ -1833,6 +1859,8 @@ describe('Ascend API server', () => {
 			{
 				code: 'LOSSY_INVERSE',
 				message: 'Grouped rows for Sheet1 cannot be restored with public operations',
+				surface: 'row-layout',
+				reason: 'row-layout-created',
 				refs: [
 					'Sheet1!2',
 					'Sheet1!3',
@@ -1844,6 +1872,8 @@ describe('Ascend API server', () => {
 			{
 				code: 'LOSSY_INVERSE',
 				message: 'Grouped columns for Sheet1 cannot be restored with public operations',
+				surface: 'column-layout',
+				reason: 'column-layout-created',
 				refs: [
 					'Sheet1!A',
 					'Sheet1!B',
@@ -2147,6 +2177,8 @@ describe('Ascend API server', () => {
 			{
 				code: 'LOSSY_INVERSE',
 				message: 'Pivot cache selector cannot be restored exactly',
+				surface: 'pivot-caches',
+				reason: 'pivot-cache-unsettable',
 			},
 		])
 		const reopened = await AscendWorkbook.open(TEMP_FILE)
@@ -3097,38 +3129,21 @@ describe('Ascend API server', () => {
 		expect(result.body.data?.preview?.changedRanges).toEqual([{ sheet: 'Sheet1', range: 'A1:A3' }])
 	})
 
-	test('compact prepared plan and commit expose journal safety summaries', async () => {
+	test('compact prepared plan and commit preserve journal v1 issue compatibility', async () => {
 		const wb = AscendWorkbook.create()
 		await wb.save(TEMP_FILE)
 		const output = `${OUTPUT_FILE}.compact-journal.xlsx`
-		const expectedIssue = {
-			code: 'LOSSY_INVERSE',
-			message: 'Grouped rows for Sheet1 cannot be restored with public operations',
-			refs: [
-				'Sheet1!2',
-				'Sheet1!3',
-				'Sheet1!4',
-				'sheet:Sheet1:outlinePr:summaryBelow',
-				'sheet:Sheet1:sheetFormatPr:outlineLevelRow',
-			],
-		}
 		try {
 			const plan = await postJson('/plan', {
 				file: TEMP_FILE,
 				compact: true,
-				ops: [{ op: 'groupRows', sheet: 'Sheet1', from: 1, to: 2, collapsed: true }],
+				ops: JOURNAL_V1_FIXTURE.scenario.ops,
 			})
 
 			expect(plan.status).toBe(200)
 			expect(plan.body.ok).toBe(true)
 			expect(plan.body.data?.preparedPlan?.id).toBeString()
-			expect(plan.body.data?.preview?.journalSummary).toEqual({
-				supported: true,
-				exact: false,
-				inverseOpCount: 0,
-				issueCount: 1,
-				issues: [expectedIssue],
-			})
+			expect(plan.body.data?.preview?.journalSummary).toEqual(JOURNAL_V1_FIXTURE.scenario.journal)
 
 			const commit = await postJson('/commit', {
 				planHandle: plan.body.data?.preparedPlan?.id,
@@ -3138,13 +3153,7 @@ describe('Ascend API server', () => {
 
 			expect(commit.status).toBe(200)
 			expect(commit.body.ok).toBe(true)
-			expect(commit.body.data?.apply?.journalSummary).toEqual({
-				supported: true,
-				exact: false,
-				inverseOpCount: 0,
-				issueCount: 1,
-				issues: [expectedIssue],
-			})
+			expect(commit.body.data?.apply?.journalSummary).toEqual(JOURNAL_V1_FIXTURE.scenario.journal)
 		} finally {
 			await unlink(output).catch(() => {})
 		}

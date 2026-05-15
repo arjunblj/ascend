@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, test } from 'bun:test'
 import { Buffer } from 'node:buffer'
 import { createHash } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 import { unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -30,6 +31,23 @@ const PIVOT_FIXTURE = join(
 	'../../../fixtures/xlsx/libreoffice/PivotTable_CachedDefinitionAndDataInSync.xlsx',
 )
 const CHARTSHEET_FIXTURE = join(import.meta.dir, '../../../fixtures/xlsx/exceljs/chart-sheet.xlsx')
+const JOURNAL_V1_FIXTURE = JSON.parse(
+	readFileSync(
+		join(import.meta.dir, '../../../fixtures/journal/mutation-journal-v1.json'),
+		'utf-8',
+	),
+) as {
+	readonly scenario: {
+		readonly ops: readonly Record<string, unknown>[]
+		readonly journal: {
+			readonly supported: boolean
+			readonly exact: boolean
+			readonly inverseOpCount: number
+			readonly issueCount: number
+			readonly issues: readonly unknown[]
+		}
+	}
+}
 
 afterAll(async () => {
 	await unlink(TEMP_FILE).catch(() => {})
@@ -978,6 +996,8 @@ describe('MCP server', () => {
 			{
 				code: 'LOSSY_INVERSE',
 				message: 'Grouped rows for Sheet1 cannot be restored with public operations',
+				surface: 'row-layout',
+				reason: 'row-layout-created',
 				refs: [
 					'Sheet1!2',
 					'Sheet1!3',
@@ -989,6 +1009,8 @@ describe('MCP server', () => {
 			{
 				code: 'LOSSY_INVERSE',
 				message: 'Grouped columns for Sheet1 cannot be restored with public operations',
+				surface: 'column-layout',
+				reason: 'column-layout-created',
 				refs: [
 					'Sheet1!A',
 					'Sheet1!B',
@@ -1109,6 +1131,8 @@ describe('MCP server', () => {
 			{
 				code: 'LOSSY_INVERSE',
 				message: 'Grouped rows for Sheet1 cannot be restored with public operations',
+				surface: 'row-layout',
+				reason: 'row-layout-created',
 				refs: [
 					'Sheet1!2',
 					'Sheet1!3',
@@ -1120,6 +1144,8 @@ describe('MCP server', () => {
 			{
 				code: 'LOSSY_INVERSE',
 				message: 'Grouped columns for Sheet1 cannot be restored with public operations',
+				surface: 'column-layout',
+				reason: 'column-layout-created',
 				refs: [
 					'Sheet1!A',
 					'Sheet1!B',
@@ -1245,10 +1271,14 @@ describe('MCP server', () => {
 			{
 				code: 'LOSSY_INVERSE',
 				message: 'Theme metadata field themeName cannot be removed with public operations',
+				surface: 'package-parts',
+				reason: 'package-part-preservation',
 			},
 			{
 				code: 'LOSSY_INVERSE',
 				message: 'Theme color slot accent1 cannot be removed with public operations',
+				surface: 'package-parts',
+				reason: 'package-part-preservation',
 			},
 		])
 
@@ -1809,6 +1839,8 @@ describe('MCP server', () => {
 			{
 				code: 'LOSSY_INVERSE',
 				message: 'Pivot cache selector cannot be restored exactly',
+				surface: 'pivot-caches',
+				reason: 'pivot-cache-unsettable',
 			},
 		])
 		const reopened = await AscendWorkbook.open(TEMP_FILE)
@@ -2414,21 +2446,10 @@ describe('MCP server', () => {
 		])
 	})
 
-	test('compact prepared MCP plan and commit expose journal safety summaries', async () => {
+	test('compact prepared MCP plan and commit preserve journal v1 issue compatibility', async () => {
 		const wb = AscendWorkbook.create()
 		await wb.save(TEMP_FILE)
 		const output = `${TEMP_FILE}.compact-journal-mcp.xlsx`
-		const expectedIssue = {
-			code: 'LOSSY_INVERSE',
-			message: 'Grouped rows for Sheet1 cannot be restored with public operations',
-			refs: [
-				'Sheet1!2',
-				'Sheet1!3',
-				'Sheet1!4',
-				'sheet:Sheet1:outlinePr:summaryBelow',
-				'sheet:Sheet1:sheetFormatPr:outlineLevelRow',
-			],
-		}
 		const server = createServer()
 		try {
 			// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
@@ -2478,18 +2499,14 @@ describe('MCP server', () => {
 			const planned = await plan({
 				file: TEMP_FILE,
 				compact: true,
-				ops: [{ op: 'groupRows', sheet: 'Sheet1', from: 1, to: 2, collapsed: true }],
+				ops: JOURNAL_V1_FIXTURE.scenario.ops,
 			})
 
 			expect(planned.structuredContent?.ok).toBe(true)
 			expect(planned.structuredContent?.data?.preparedPlan?.id).toBeString()
-			expect(planned.structuredContent?.data?.preview?.journalSummary).toEqual({
-				supported: true,
-				exact: false,
-				inverseOpCount: 0,
-				issueCount: 1,
-				issues: [expectedIssue],
-			})
+			expect(planned.structuredContent?.data?.preview?.journalSummary).toEqual(
+				JOURNAL_V1_FIXTURE.scenario.journal,
+			)
 
 			const committed = await commit({
 				planHandle: planned.structuredContent?.data?.preparedPlan?.id,
@@ -2498,13 +2515,9 @@ describe('MCP server', () => {
 			})
 
 			expect(committed.structuredContent?.ok).toBe(true)
-			expect(committed.structuredContent?.data?.apply?.journalSummary).toEqual({
-				supported: true,
-				exact: false,
-				inverseOpCount: 0,
-				issueCount: 1,
-				issues: [expectedIssue],
-			})
+			expect(committed.structuredContent?.data?.apply?.journalSummary).toEqual(
+				JOURNAL_V1_FIXTURE.scenario.journal,
+			)
 		} finally {
 			await unlink(output).catch(() => {})
 		}

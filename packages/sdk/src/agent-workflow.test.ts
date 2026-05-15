@@ -3605,6 +3605,7 @@ describe('agent workflow loss audit', () => {
 		const expectedIssue = {
 			code: 'LOSSY_INVERSE',
 			message: 'Grouped rows for Sheet1 cannot be restored with public operations',
+			reason: 'row-layout-created',
 			refs: [
 				'Sheet1!2',
 				'Sheet1!3',
@@ -3612,6 +3613,7 @@ describe('agent workflow loss audit', () => {
 				'sheet:Sheet1:outlinePr:summaryBelow',
 				'sheet:Sheet1:sheetFormatPr:outlineLevelRow',
 			],
+			surface: 'row-layout',
 		}
 
 		const prepared = await createPreparedAgentPlan(input, ops)

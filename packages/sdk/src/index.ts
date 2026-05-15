@@ -162,11 +162,23 @@ export type {
 	MutationJournalMergePreimage,
 	MutationJournalPanePreimage,
 	MutationJournalPreimage,
+	MutationJournalReasonCode,
 	MutationJournalStructuralPreimage,
+	MutationJournalStructuredIssue,
+	MutationJournalSurface,
 	MutationJournalTableColumnPreimage,
 	MutationJournalTablePreimage,
 	MutationJournalTableRenamePreimage,
 	MutationJournalTableStylePreimage,
+} from './journal.ts'
+export {
+	MUTATION_JOURNAL_ISSUE_CODES,
+	MUTATION_JOURNAL_ISSUE_SCHEMA,
+	MUTATION_JOURNAL_ISSUE_SCHEMA_VERSION,
+	MUTATION_JOURNAL_REASON_CODES,
+	MUTATION_JOURNAL_REASON_DESCRIPTIONS,
+	MUTATION_JOURNAL_SURFACES,
+	structureMutationJournalIssue,
 } from './journal.ts'
 export type {
 	InspectWorkbookOpenPlanOptions,

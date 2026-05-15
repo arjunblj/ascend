@@ -109,7 +109,7 @@ Rank the product-shaped claims Ascend can prove, nearly prove, or should keep in
 
 ### Credibly claim today
 
-- Safe unknown workbook opening, phrased as "Ascend recommends a load mode and trust-review step from package features before full workbook hydration."
+- Safe unknown workbook opening, phrased as "Ascend recommends a load mode and review step from package features before full workbook hydration." Do not say trust, malware, sandboxing, or active-content safety.
 - Token-bounded agent view, phrased as "Ascend emits deterministic workbook summaries with requested budget metadata and omission counters."
 - Retained viewport patch history, phrased as "Ascend can patch from bounded retained tokens and returns explicit invalidation reasons when it cannot."
 
@@ -118,6 +118,8 @@ Rank the product-shaped claims Ascend can prove, nearly prove, or should keep in
 - Formula language-service primitives: add workbook-context symbol resolution before safe edits.
 - Release proof bundle: package ranks 1 and 2 into a stable artifact after their schemas are settled.
 - Formula conformance/oracle routing: make completed artifacts runnable and audited.
+- Practical latency phase profile: keep as performance-owner diagnostic evidence until public-input, tracked-clean release timing thresholds are approved.
+- Sheet/reference casing hardening: treat the latest journal, verifier, chart, pivot, hyperlink, and connection fixes as correctness hygiene under existing claims, not new product wording.
 
 ### Still speculative
 

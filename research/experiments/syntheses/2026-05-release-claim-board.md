@@ -8,6 +8,15 @@ Freeze the next release claims into proof-shaped language. This board is deliber
 
 Current stewardship rule: hand off only the top one or two product claims to implementation loops. Everything else stays as proof packaging, validation, or "do not promote yet" until the missing evidence is explicit.
 
+Latest proof refresh, 2026-05-15:
+
+- `release-proof-index --no-timings` still reports `headlineClaimsAllowed=false`, release gate `blocked-by-publication-policy`, and 9 missing requirements across product, correctness, performance, and release owners.
+- Safe-open compact proof still covers 9 cases with 4 review-before-hydration routes and malformed rejection, but signed and unknown-part evidence remain generated structural packages.
+- Package-action compact proof still covers all five action classes with 8 cases, but generated edge-package policy, unsupported-feature boundaries, provenance wording, and streaming-matrix wording remain owner gates.
+- Formula-assist proof remains rejection-first only: 1685 public formulas sampled, 2322 reference spans, 25 binding roles, 3 LET-local prepare-rename OK targets, and 1692 prepare-rename refusals. No edit-producing rename is allowed.
+- Practical latency phase profiles are useful performance diagnostics and stay excluded from release proof artifacts until a tracked-clean release-environment run over approved public inputs exists.
+- A cluster of tiny casing fixes landed for journals, verifier checks, chart/pivot/connection selectors, hyperlink locations, and chart/pivot ownership. Treat these as correctness hygiene under the auditable mutation claim, not as new release surfaces.
+
 ## External References
 
 - Microsoft Protected View frames unsafe file opening as read-only review with active-content restrictions: https://support.microsoft.com/en-us/office/what-is-protected-view-d6f09ac7-e6b9-4495-8e43-2bbcdbcb6653

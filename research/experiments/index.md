@@ -141,6 +141,17 @@ Updated: 2026-05-15
 | [Formula sheet rewrite casing](runs/2026/2026-05-15-formula-sheet-rewrite-casing/log.md) | folded in case-insensitive sheet-reference rewrite behavior for operation-owned formula rewrites | correctness loop |
 | [Full scalar number span scratch](runs/2026/2026-05-15-full-scalar-number-span-scratch/log.md) | folded in tiny XLSX reader allocation hygiene for dense numeric full-scalar spans; no performance claim promoted | performance loop |
 | [SDK sheet ref classification casing](runs/2026/2026-05-15-sdk-sheet-ref-classification-casing/log.md) | folded in case-insensitive sheet-ref classification for SDK journal and structural shift paths | correctness loop |
+| [Practical latency phase profile step](runs/2026/2026-05-15-practical-latency-phase-profile-step/log.md) | folded in edit-verify phase-profile benchmark step while keeping local/private runs diagnostic-only | performance loop, product loop |
+| [SDK metadata ref casing](runs/2026/2026-05-15-sdk-metadata-ref-casing/log.md) | folded in case-insensitive chart and pivot metadata ref matching for structural delete journals | correctness loop |
+| [Engine hyperlink location casing](runs/2026/2026-05-15-engine-hyperlink-location-casing/log.md) | folded in case-insensitive internal hyperlink shift and rename behavior | correctness loop |
+| [Verify pivot sheet ref casing](runs/2026/2026-05-15-verify-pivot-sheet-ref-casing/log.md) | folded in verifier false-positive fix for pivot sheet/table metadata casing drift | correctness loop |
+| [Engine chart pivot sheet ownership casing](runs/2026/2026-05-15-engine-chart-pivot-sheet-ownership-casing/log.md) | folded in case-insensitive chart/pivot ownership in sheet operations | correctness loop |
+| [Claim portfolio proof stewardship refresh](runs/2026/2026-05-15-claim-portfolio-proof-stewardship-refresh/log.md) | current proof artifacts keep top-two handoffs unchanged and formula rename frozen | product loop, correctness loop, performance loop, release loop |
+| [SDK delete sheet loss ref casing](runs/2026/2026-05-15-sdk-delete-sheet-loss-ref-casing/log.md) | folded in case-insensitive delete-sheet journal refs for defined-name/chart/pivot metadata | correctness loop |
+| [Engine chart selector casing](runs/2026/2026-05-15-engine-chart-selector-casing/log.md) | folded in case-insensitive chart sheet selection and exact inverse journal evidence | correctness loop |
+| [Engine pivot selector casing](runs/2026/2026-05-15-engine-pivot-selector-casing/log.md) | folded in case-insensitive pivot sheet selection for existing item-state operation | correctness loop |
+| [Practical latency max win report](runs/2026/2026-05-15-practical-latency-max-win-report/log.md) | folded in clamped max-plausible-win reporting while keeping practical latency diagnostic-only | performance loop |
+| [Engine connection selector casing](runs/2026/2026-05-15-engine-connection-selector-casing/log.md) | folded in case-insensitive connection refresh sheet selection for query-table metadata | correctness loop |
 | [Package action proof](runs/2026/2026-05-14-package-action-proof/log.md) | cycle 2 complete, promote | correctness loop, product/DX loop, performance loop |
 | [Formula spans LSP](runs/2026/2026-05-14-formula-spans-lsp/log.md) | cycle 13 complete, folded in SDK hover/code actions | product/DX loop, correctness loop |
 | [Formula sqllogictest conformance](runs/2026/2026-05-14-formula-sqllogictest-conformance/log.md) | cycle 14 complete, folded in converter/runner | correctness loop |

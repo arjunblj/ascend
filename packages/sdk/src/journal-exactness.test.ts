@@ -716,6 +716,40 @@ describe('mutation journal exactness model', () => {
 		})
 	})
 
+	test('classifies selectorless drawing text journals as drawing selector loss', () => {
+		const wb = AscendWorkbook.create()
+		const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+		if (!sheet) throw new Error('missing sheet')
+		sheet.drawingObjectRefs.push({
+			drawingPartPath: 'xl/drawings/drawing1.xml',
+			kind: 'textBox',
+			id: 1,
+			name: 'Only Shape',
+			text: 'Before',
+		})
+
+		const analysis = analyzeMutationJournalExactness(
+			buildMutationJournal(wb.getWorkbookModel(), [
+				{ op: 'setDrawingText', sheet: 'Sheet1', text: 'After' },
+			]),
+		)
+
+		expect(analysis).toMatchObject({
+			supported: true,
+			exact: false,
+			issueCount: 1,
+			surfaces: ['drawings'],
+			reasons: ['drawing-text-selector'],
+			hasMatrixViolation: false,
+		})
+		expect(analysis.issues[0]).toMatchObject({
+			code: 'LOSSY_INVERSE',
+			surface: 'drawings',
+			reason: 'drawing-text-selector',
+			allowedByMatrix: true,
+		})
+	})
+
 	test('classifies setComment legacy drawing loss without changing the v1 vocabulary', () => {
 		const classified = classifyMutationJournalIssues(lossySetCommentLegacyDrawingJournal().issues)
 		expect(classified).toContainEqual({

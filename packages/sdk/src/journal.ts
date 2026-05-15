@@ -9087,6 +9087,10 @@ function drawingTextPreimage(
 	const sheet = workbook.getSheet(op.sheet)
 	if (
 		!sheet ||
+		(op.drawingPartPath === undefined &&
+			op.id === undefined &&
+			op.name === undefined &&
+			op.drawingObjectIndex === undefined) ||
 		(op.drawingObjectIndex !== undefined &&
 			(op.drawingObjectIndex < 0 || !Number.isInteger(op.drawingObjectIndex)))
 	) {

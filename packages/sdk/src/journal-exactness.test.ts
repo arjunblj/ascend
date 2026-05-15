@@ -1094,6 +1094,64 @@ describe('mutation journal exactness model', () => {
 		}
 	})
 
+	test('range operation journals mark imported formula-binding detachments lossy', () => {
+		const cases: readonly {
+			readonly name: string
+			readonly setup: (workbook: AscendWorkbook) => void
+			readonly ops: readonly Operation[]
+			readonly refs: readonly string[]
+		}[] = [
+			{
+				name: 'copyRange target shared formula',
+				setup: (wb) => {
+					const sheet = seedSharedFormulaPair(wb, 0, 0)
+					sheet.cells.set(0, 3, { value: numberValue(9), formula: null, styleId: DEFAULT_STYLE_ID })
+				},
+				ops: [{ op: 'copyRange', sheet: 'Sheet1', source: 'D1', target: 'A2', mode: 'values' }],
+				refs: ['Sheet1!A1', 'Sheet1!A2'],
+			},
+			{
+				name: 'moveRange target shared formula',
+				setup: (wb) => {
+					const sheet = seedSharedFormulaPair(wb, 0, 0)
+					sheet.cells.set(0, 3, { value: numberValue(9), formula: null, styleId: DEFAULT_STYLE_ID })
+				},
+				ops: [{ op: 'moveRange', sheet: 'Sheet1', source: 'D1', target: 'A2', mode: 'all' }],
+				refs: ['Sheet1!A1', 'Sheet1!A2'],
+			},
+			{
+				name: 'sortRange shared formula',
+				setup: (wb) => {
+					const sheet = seedSharedFormulaPair(wb, 0, 3)
+					sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: DEFAULT_STYLE_ID })
+					sheet.cells.set(1, 0, { value: numberValue(2), formula: null, styleId: DEFAULT_STYLE_ID })
+				},
+				ops: [{ op: 'sortRange', sheet: 'Sheet1', range: 'A1:D2', by: [{ column: 'A' }] }],
+				refs: ['Sheet1!D1', 'Sheet1!D2'],
+			},
+		]
+
+		for (const entry of cases) {
+			const wb = AscendWorkbook.create()
+			entry.setup(wb)
+
+			const journal = applyJournal(wb, entry.ops)
+
+			expect(journal.supported, entry.name).toBe(true)
+			expect(journal.exact, entry.name).toBe(false)
+			for (const ref of entry.refs) {
+				expect(journal.issues, `${entry.name} ${ref}`).toContainEqual(
+					expect.objectContaining({
+						code: 'LOSSY_INVERSE',
+						surface: 'shared-formulas',
+						reason: 'formula-binding-metadata',
+						refs: [ref],
+					}),
+				)
+			}
+		}
+	})
+
 	test('representative exact journals restore full workbook evidence after inverse apply', () => {
 		const cases: readonly {
 			readonly name: string
@@ -2181,6 +2239,49 @@ function lossyDeletedSheetJournal(): MutationJournal {
 		styleId: DEFAULT_STYLE_ID,
 	})
 	return applyJournal(wb, [{ op: 'deleteSheet', sheet: 'Data' }])
+}
+
+function seedSharedFormulaPair(workbook: AscendWorkbook, row: number, col: number) {
+	const sheet = workbook.getWorkbookModel().getSheet('Sheet1')
+	if (!sheet) throw new Error('missing sheet')
+	const column = String.fromCharCode(65 + col)
+	const nextColumn = String.fromCharCode(66 + col)
+	const topRef = `${column}${row + 1}`
+	const bottomRef = `${column}${row + 2}`
+	sheet.cells.set(row, col + 1, {
+		value: numberValue(10),
+		formula: null,
+		styleId: DEFAULT_STYLE_ID,
+	})
+	sheet.cells.set(row + 1, col + 1, {
+		value: numberValue(20),
+		formula: null,
+		styleId: DEFAULT_STYLE_ID,
+	})
+	sheet.cells.set(row, col, {
+		value: numberValue(20),
+		formula: `${nextColumn}${row + 1}*2`,
+		styleId: DEFAULT_STYLE_ID,
+		formulaInfo: {
+			kind: 'shared',
+			sharedIndex: `journal-range-${topRef}`,
+			isMaster: true,
+			masterRef: topRef,
+			ref: `${topRef}:${bottomRef}`,
+		},
+	})
+	sheet.cells.set(row + 1, col, {
+		value: numberValue(40),
+		formula: null,
+		styleId: DEFAULT_STYLE_ID,
+		formulaInfo: {
+			kind: 'shared',
+			sharedIndex: `journal-range-${topRef}`,
+			isMaster: false,
+			masterRef: topRef,
+		},
+	})
+	return sheet
 }
 
 function journalEvidence(wb: AscendWorkbook): object {

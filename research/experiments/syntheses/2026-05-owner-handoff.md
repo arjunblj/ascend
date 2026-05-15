@@ -46,7 +46,7 @@ Latest compact proof refresh:
 | Artifact | Stable shape | Headline allowed | Key coverage |
 | --- | --- | --- | --- |
 | `safe-open-proof` | `6aa54a651309b3c45ce7ce93ff7034e7b31e47c7cbc458c58ee6a6f23e0c6178` | false | cases=9, rejected=1, reviewBeforeHydration=4, public=6, synthetic=2, malformed=1 |
-| `package-action-proof` | `9abebf576651551f58e00ccf8469d099b2c06dacd48391fe581a24e51a1e0afd` | false | cases=8, passthrough=27, regenerate=38, add=3, drop=3, error=1, streamingProofCases=1 |
+| `package-action-proof` | `b4cf0755f2fd40ff577ab87b6600ee14a58bbd69608796c903759e7e8b4d29e8` | false | cases=8, passthrough=32, regenerate=40, add=3, drop=3, error=1, streamingProofCases=1 |
 
 ## Owner Board
 
@@ -86,11 +86,11 @@ Current proof input:
 | Field | Value |
 | --- | --- |
 | Proof cases | 8 |
-| Public fixture cases | 2 |
+| Public fixture cases | 4 |
 | Generated workbook cases | 2 |
-| Generated edge-package cases | 4 |
-| Generated/disclosed cases | `docprops-passthrough`, `regenerate-existing-sheet`, `add-sheet-part`, `calc-chain-drop`, `signature-invalidation-drop`, `unknown-part-error` |
-| Action classes | `passthrough=27`, `regenerate=38`, `add=3`, `drop=3`, `error=1` |
+| Generated edge-package cases | 2 |
+| Generated/disclosed cases | `regenerate-existing-sheet`, `add-sheet-part`, `signature-invalidation-drop`, `unknown-part-error` |
+| Action classes | `passthrough=32`, `regenerate=40`, `add=3`, `drop=3`, `error=1` |
 | Source graph evidence everywhere | true |
 | Journal package issues everywhere | true |
 | Post-write audit failures | `unknown-part-error` |

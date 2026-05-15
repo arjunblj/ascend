@@ -8,17 +8,17 @@ Research is no longer a broad sweep. Each direction below must earn its place by
 
 ## Latest Claim Steward Refresh
 
-Proof timestamp: 2026-05-15T10:15:42Z.
+Proof timestamp: 2026-05-15T17:38:11Z.
 
 The portfolio ranking still holds after the current proof run. The top two implementation handoffs remain safe unknown workbook opening and auditable package-part mutation. The release gate remains fail-closed, so the next step is owner approval or fixture replacement, not a new SDK/CLI/API/MCP surface.
 
 | Artifact | Current proof | Blocking owner gates | Handoff decision |
 | --- | --- | --- | --- |
 | Safe unknown workbook opening | 9 cases: 6 public fixtures, 2 generated edge packages, 1 malformed package; 8 OK, 1 rejected, 4 review-before-hydration routes. Stable shape SHA-256: `6aa54a651309b3c45ce7ce93ff7034e7b31e47c7cbc458c58ee6a6f23e0c6178`. | `public-edge-fixtures`, `release-latency-run`, `publication-boundary`, `compact-report-publication-policy`. | Hand off to product/performance/release for proof packaging and boundary approval only. |
-| Auditable package-part mutation | 8 cases: 3 public fixtures, 2 generated workbooks, 3 generated edge packages; action totals `passthrough=32`, `regenerate=39`, `add=3`, `drop=3`, `error=1`; source graph evidence everywhere; one representative streaming proof. Stable shape SHA-256: `0f9eb22498bc528a63adc40e59a6acbbe07022fde6b2414fcbee73b8b3a56e41`. | `edge-fixture-policy`, `provenance-boundary`, `unsupported-feature-boundary`, `streaming-matrix-boundary`, `compact-report-publication-policy`. | Hand off to correctness/product/performance/release for proof packaging and boundary approval only. |
+| Auditable package-part mutation | 8 cases: 4 public fixtures, 2 generated workbooks, 2 generated edge packages; action totals `passthrough=32`, `regenerate=40`, `add=3`, `drop=3`, `error=1`; source graph evidence everywhere; one representative streaming proof. Stable shape SHA-256: `b4cf0755f2fd40ff577ab87b6600ee14a58bbd69608796c903759e7e8b4d29e8`. | `edge-fixture-policy`, `provenance-boundary`, `unsupported-feature-boundary`, `streaming-matrix-boundary`, `compact-report-publication-policy`. | Hand off to correctness/product/performance/release for proof packaging and boundary approval only. |
 | Release proof index | `headlineClaimsAllowed=false`, `implementationSurfacePromotionAllowed=false`, `missingRequirementCount=9`, `signed=false`, `attestation=false`. | Product 2, correctness 1, performance 2, release 4. | Do not promote formula rename, agent view, viewport history, columnar sidecars, oracle routing, or agent traces into release scope this block. |
 
-Owner-action refinement: `release-proof-index --owner-handoffs-json` now emits the top claim `nextOwnerActions` with `acceptanceEvidence` and `forbiddenShortcut`, so owner loops can see exactly what approval or replacement is required and what wording remains prohibited.
+Owner-action refinement: `release-proof-index --owner-handoffs-json` now emits the top claim `nextOwnerActions` with `acceptanceEvidence` and `forbiddenShortcut`, plus fixture, performance, and correctness policy checklists. Owner loops can see exactly what approval or replacement is required and what wording remains prohibited.
 
 Fresh proof commands:
 
@@ -59,7 +59,7 @@ External fixture note: a constrained public-candidate probe found `node-projects
 
 ## Current Proof Refresh
 
-Timestamp: 2026-05-15T10:15:42Z local proof run.
+Timestamp: 2026-05-15T17:38:11Z local proof run.
 
 This refresh answers the latest portfolio question directly: the top one or two highest-leverage unknowns are still the two release-claim candidates, not another formula rename or sidecar surface.
 
@@ -98,11 +98,11 @@ Current proof:
 | Metric | Value |
 | --- | ---: |
 | Cases | 8 |
-| Public fixture cases | 3 |
+| Public fixture cases | 4 |
 | Generated workbook cases | 2 |
-| Generated edge-package cases | 3 |
+| Generated edge-package cases | 2 |
 | Passthrough actions | 32 |
-| Regenerate actions | 39 |
+| Regenerate actions | 40 |
 | Add actions | 3 |
 | Drop actions | 3 |
 | Error actions | 1 |
@@ -117,7 +117,7 @@ Decision: hand off to correctness/product only. The proof supports local per-par
 | Rank | Claim | Proof produced | Decision |
 | ---: | --- | --- | --- |
 | 1 | Safe unknown workbook opening | 9 proof cases; 6 public fixtures; 2 generated edge packages; 1 malformed package; 8 OK; 1 rejected; 4 review-before-hydration routes; stable shape `6aa54a651309b3c45ce7ce93ff7034e7b31e47c7cbc458c58ee6a6f23e0c6178`. | Hand off to product/performance/release for proof packaging and owner approval only. |
-| 2 | Auditable package-part mutation | 8 proof cases; 3 public fixtures; 2 generated workbooks; 3 generated edge packages; action totals `passthrough=32`, `regenerate=39`, `add=3`, `drop=3`, `error=1`; stable shape `0f9eb22498bc528a63adc40e59a6acbbe07022fde6b2414fcbee73b8b3a56e41`. | Hand off to correctness/product/performance/release for proof packaging and owner approval only. |
+| 2 | Auditable package-part mutation | 8 proof cases; 4 public fixtures; 2 generated workbooks; 2 generated edge packages; action totals `passthrough=32`, `regenerate=40`, `add=3`, `drop=3`, `error=1`; stable shape `b4cf0755f2fd40ff577ab87b6600ee14a58bbd69608796c903759e7e8b4d29e8`. | Hand off to correctness/product/performance/release for proof packaging and owner approval only. |
 
 Everything else is deliberately withheld from implementation handoff. Formula intelligence remains rank 3 as a rejection-first primitives claim, not a rename project.
 

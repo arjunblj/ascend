@@ -107,7 +107,7 @@ describe('package action proof harness', () => {
 			packageJournalIssuesEverywhere: true,
 			postWriteAuditFailures: ['unknown-part-error'],
 			proofIssueCases: ['unknown-part-error'],
-			streamingProofCases: 1,
+			streamingProofCases: 2,
 			streamingRegenerateParts: 1,
 		})
 		expect(compact.sourceCaseCounts).toEqual({

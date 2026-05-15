@@ -62,7 +62,7 @@ Latest compact proof refresh:
 | Artifact | Stable shape | Headline allowed | Key coverage |
 | --- | --- | --- | --- |
 | `safe-open-proof` | `6aa54a651309b3c45ce7ce93ff7034e7b31e47c7cbc458c58ee6a6f23e0c6178` | false | cases=9, rejected=1, reviewBeforeHydration=4, public=6, synthetic=2, malformed=1 |
-| `package-action-proof` | `b4cf0755f2fd40ff577ab87b6600ee14a58bbd69608796c903759e7e8b4d29e8` | false | cases=8, passthrough=32, regenerate=40, add=3, drop=3, error=1, streamingProofCases=1 |
+| `package-action-proof` | `b4cf0755f2fd40ff577ab87b6600ee14a58bbd69608796c903759e7e8b4d29e8` | false | cases=8, passthrough=32, regenerate=40, add=3, drop=3, error=1, streamingProofCases=2 |
 
 ## Owner Board
 
@@ -70,7 +70,7 @@ Latest compact proof refresh:
 | --- | --- | --- | --- |
 | Product/performance | Safe unknown workbook opening | Accept or replace generated signed/unknown fixtures; run release-environment open-plan latency on public inputs; approve wording that excludes malware scanning, trust, active-content safety, signed provenance, and release threshold claims. | Claim copy may say pre-hydration package-feature routing and review recommendation across existing surfaces. |
 | Correctness/product | Auditable package-part mutation | Accept disclosed generated edge-package evidence or replace it; approve unsupported-feature matrix for signatures, calc chain, chart/drawing sidecars, macros/ActiveX, unknown parts, and streaming; preserve journal/package issue compatibility. | Claim copy may say local per-part `passthrough`/`regenerate`/`add`/`drop`/`error` evidence with journal-linked package issues. |
-| Performance | Package-action streaming boundary | Accept one representative streaming proof as sufficient for narrow wording or expand the matrix before broader wording. | Release copy may mention one representative streaming dirty-sheet proof only; no full streaming parity. |
+| Performance | Package-action streaming boundary | Accept representative streaming proofs covering passthrough/regenerate/add as sufficient for narrow wording or expand the matrix before broader wording. | Release copy may mention representative streaming package-action proofs only; no full streaming parity, drop/error, macro, or chart streaming claims. |
 | Release | Provenance and compact report policy | Approve local-proof wording; define artifact storage, retention/privacy filtering, canonicalization, and verification expectations. | Compact commands remain pointers until this exists; no SLSA, in-toto, Sigstore, GitHub attestation, or signed provenance wording. |
 
 ## Safe-Open Acceptance Checkboxes
@@ -117,7 +117,7 @@ Owner acceptance checklist:
 - [ ] Product accepts disclosed generated edge packages for docProps passthrough, calc-chain drop, signature invalidation drop, and unknown-part error, or replaces them with public binary fixtures.
 - [ ] Correctness approves unsupported-feature boundaries: signatures are detected/reported but not verified or re-signed; calc-chain decisions are package accounting, not Excel recalc equivalence; chart/drawing sidecars are accounted separately, not semantic chart support; macros/ActiveX are package evidence, not safety; unknown parts fail closed.
 - [ ] Correctness keeps journal/package issue compatibility as part of the claim: every case must include a package-preservation journal issue.
-- [ ] Performance accepts one representative streaming dirty-sheet proof as sufficient for narrow wording, or expands streaming variants before any broader streaming claim.
+- [ ] Performance accepts representative streaming proofs covering passthrough/regenerate/add as sufficient for narrow wording, or expands streaming variants before any broader streaming claim.
 - [ ] Release approves local-proof wording that excludes SLSA, in-toto, signed provenance, third-party attestation, and tamper-evident storage.
 - [ ] Release keeps compact report digests unpublished until storage, privacy filtering, canonicalization, and verification expectations exist.
 

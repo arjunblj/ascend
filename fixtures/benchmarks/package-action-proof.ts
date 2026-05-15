@@ -160,7 +160,7 @@ const COMPACT_RELEASE_READY_WHEN: readonly PackageActionCompactReadyWhen[] = [
 		status: 'missing',
 		ownerLoop: 'performance',
 		requirement:
-			'approve one representative streaming writer proof as sufficient for release wording, or expand package-action proof to streaming variants for every package-action scenario before claiming streaming parity',
+			'approve representative streaming writer proofs as sufficient for release wording, or expand package-action proof to streaming variants for every package-action scenario before claiming streaming parity',
 	},
 ]
 
@@ -203,6 +203,7 @@ export function defaultPackageActionProofCases(): PackageActionProofCase[] {
 			sourceKind: 'generated-workbook',
 			fixture: 'new Ascend workbook',
 			ops: [{ op: 'addSheet', name: 'Added' }],
+			streamingProbe: true,
 			prepareInput: writeNewWorkbook,
 			expectedCommitActions: [{ action: 'add', partPathIncludes: 'xl/worksheets/sheet' }],
 		},

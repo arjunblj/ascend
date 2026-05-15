@@ -702,11 +702,11 @@ const PERFORMANCE_POLICY: ReleaseProofPerformancePolicy = {
 			ownerLoop: 'performance',
 			status: 'pending-owner-decision',
 			decisionNeeded:
-				'Accept one representative dirty-sheet streaming proof for narrow wording, or require a broader streaming matrix before any parity claim.',
+				'Accept representative streaming proofs covering passthrough/regenerate/add for narrow wording, or require a broader streaming matrix before any parity claim.',
 			acceptanceEvidence:
-				'Package-action proof reports one streaming proof case with regenerated dirty worksheet and passthrough-byte equality, and release wording says representative proof only.',
+				'Package-action proof reports two streaming proof cases covering passthrough/regenerate/add with passthrough-byte equality, and release wording says representative proofs only.',
 			rejectIf:
-				'Copy says full streaming parity, covers add/drop/error streaming behavior, or implies macro/chart streaming preservation without a broader matrix.',
+				'Copy says full streaming parity, covers drop/error streaming behavior, or implies macro/chart streaming preservation without a broader matrix.',
 			validationCommand: 'bun run fixtures/benchmarks/package-action-proof.ts --no-timings --json',
 		},
 	],
@@ -1704,8 +1704,9 @@ function packageActionArtifact(
 				status: 'missing',
 				ownerLoop: 'performance',
 				requirement:
-					'approve that one representative streaming writer proof is sufficient for release wording, or expand package-action proof to streaming variants for every package-action scenario before claiming streaming parity',
-				evidence: 'current proof reports one streamingProofCase and one streamingRegeneratePart',
+					'approve that representative streaming writer proofs are sufficient for release wording, or expand package-action proof to streaming variants for every package-action scenario before claiming streaming parity',
+				evidence:
+					'current proof reports two streamingProofCases covering passthrough/regenerate/add and one streamingRegeneratePart',
 			},
 			{
 				id: 'compact-report-publication-policy',
@@ -1953,7 +1954,7 @@ function streamingMatrixEvidence(
 			.filter((entry) => (entry.streamingProof?.issueCount ?? 0) > 0)
 			.map((entry) => entry.name),
 		boundary:
-			'Streaming matrix evidence proves one representative dirty-sheet streaming package-action case only. It does not prove full streaming parity, add/drop/error streaming behavior, or streaming coverage for public macro/chart fixtures.',
+			'Streaming matrix evidence proves representative streaming package-action cases covering passthrough/regenerate/add only. It does not prove full streaming parity, drop/error streaming behavior, or streaming coverage for public macro/chart fixtures.',
 	}
 }
 
@@ -2391,11 +2392,11 @@ function rankMissingRequirement(input: {
 				priority: 'claim-boundary',
 				nextStepKind: 'owner-decision-or-harness-expansion',
 				rationale:
-					'Streaming wording must stay limited to one representative proof unless a broader matrix is approved.',
+					'Streaming wording must stay limited to representative proof cases unless a broader matrix is approved.',
 				acceptanceEvidence:
-					'Performance accepts one representative dirty-sheet streaming proof for narrow wording, or expands the matrix to add/drop/error and public macro/chart cases.',
+					'Performance accepts representative streaming proofs covering passthrough/regenerate/add for narrow wording, or expands the matrix to drop/error and public macro/chart cases.',
 				forbiddenShortcut:
-					'Do not call one representative streaming case full streaming parity or imply streaming coverage for every package-action scenario.',
+					'Do not call representative streaming cases full streaming parity or imply streaming coverage for every package-action scenario.',
 			}
 		case 'publication-boundary':
 		case 'provenance-boundary':

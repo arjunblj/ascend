@@ -1534,6 +1534,8 @@ export interface MutationJournalEntry {
 }
 
 export interface MutationJournal {
+	readonly schemaVersion: number
+	readonly schemaId: string
 	readonly entries: readonly MutationJournalEntry[]
 	readonly inverseOps: readonly Operation[]
 	readonly supported: boolean
@@ -1918,8 +1920,12 @@ function mutationJournalFromEntries(entries: readonly MutationJournalEntry[]): M
 	})
 }
 
-function withUndoPolicy(journal: Omit<MutationJournal, 'undoPolicy'>): MutationJournal {
+function withUndoPolicy(
+	journal: Omit<MutationJournal, 'schemaVersion' | 'schemaId' | 'undoPolicy'>,
+): MutationJournal {
 	return {
+		schemaVersion: MUTATION_JOURNAL_ISSUE_SCHEMA_VERSION,
+		schemaId: MUTATION_JOURNAL_ISSUE_SCHEMA.$id,
 		...journal,
 		undoPolicy: summarizeMutationJournalUndoPolicy(journal),
 	}

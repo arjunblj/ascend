@@ -1,11 +1,7 @@
 import { afterAll, describe, expect, test } from 'bun:test'
 import { existsSync, readFileSync, unlinkSync } from 'node:fs'
 import { inspect as inspectValue } from 'node:util'
-import {
-	AscendWorkbook,
-	MUTATION_JOURNAL_ISSUE_SCHEMA,
-	MUTATION_JOURNAL_ISSUE_SCHEMA_VERSION,
-} from '@ascend/sdk'
+import { AscendWorkbook } from '@ascend/sdk'
 import { makeXlsx } from '../../../packages/io-xlsx/test/helpers.ts'
 import { runCli } from './index.ts'
 
@@ -114,14 +110,16 @@ function formatConsole(values: readonly unknown[]): string {
 }
 
 function compactJournal(journal: {
+	readonly schemaVersion: number
+	readonly schemaId: string
 	readonly supported: boolean
 	readonly exact: boolean
 	readonly inverseOps: readonly unknown[]
 	readonly issues: readonly unknown[]
 }) {
 	return {
-		schemaVersion: MUTATION_JOURNAL_ISSUE_SCHEMA_VERSION,
-		schemaId: MUTATION_JOURNAL_ISSUE_SCHEMA.$id,
+		schemaVersion: journal.schemaVersion,
+		schemaId: journal.schemaId,
 		supported: journal.supported,
 		exact: journal.exact,
 		inverseOpCount: journal.inverseOps.length,

@@ -22,7 +22,11 @@ import {
 	interactiveViewportSnapshotKey,
 	mergeInteractiveViewportPatch,
 } from './index.ts'
-import { buildMutationJournal } from './journal.ts'
+import {
+	buildMutationJournal,
+	MUTATION_JOURNAL_ISSUE_SCHEMA,
+	MUTATION_JOURNAL_ISSUE_SCHEMA_VERSION,
+} from './journal.ts'
 
 describe('interactive client contract', () => {
 	test('viewport reads carry generation and load snapshot tokens', () => {
@@ -2890,6 +2894,8 @@ describe('interactive client contract', () => {
 		const empty = wb.apply([], { journal: true })
 		expect(empty.errors).toEqual([])
 		expect(empty.journal).toEqual({
+			schemaVersion: MUTATION_JOURNAL_ISSUE_SCHEMA_VERSION,
+			schemaId: MUTATION_JOURNAL_ISSUE_SCHEMA.$id,
 			entries: [],
 			inverseOps: [],
 			supported: true,
@@ -2943,6 +2949,8 @@ describe('interactive client contract', () => {
 
 		expect(changed.errors.length).toBeGreaterThan(0)
 		expect(changed.journal).toEqual({
+			schemaVersion: MUTATION_JOURNAL_ISSUE_SCHEMA_VERSION,
+			schemaId: MUTATION_JOURNAL_ISSUE_SCHEMA.$id,
 			entries: [],
 			inverseOps: [],
 			supported: false,
@@ -2979,6 +2987,8 @@ describe('interactive client contract', () => {
 			{ op: 'deleteSheet' as const, sheet: 'Missing' },
 		]
 		const expectedJournal = {
+			schemaVersion: MUTATION_JOURNAL_ISSUE_SCHEMA_VERSION,
+			schemaId: MUTATION_JOURNAL_ISSUE_SCHEMA.$id,
 			entries: [],
 			inverseOps: [],
 			supported: false,
@@ -3033,6 +3043,8 @@ describe('interactive client contract', () => {
 
 		expect(changed.errors[0]?.message).toContain('partial workbook')
 		expect(changed.journal).toEqual({
+			schemaVersion: MUTATION_JOURNAL_ISSUE_SCHEMA_VERSION,
+			schemaId: MUTATION_JOURNAL_ISSUE_SCHEMA.$id,
 			entries: [],
 			inverseOps: [],
 			supported: false,

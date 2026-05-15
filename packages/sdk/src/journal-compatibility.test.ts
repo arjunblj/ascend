@@ -61,8 +61,8 @@ describe('mutation journal v1 compatibility', () => {
 
 export function journalSummary(journal: MutationJournal): typeof FIXTURE.scenario.journal {
 	return {
-		schemaVersion: MUTATION_JOURNAL_ISSUE_SCHEMA_VERSION,
-		schemaId: MUTATION_JOURNAL_ISSUE_SCHEMA.$id,
+		schemaVersion: journal.schemaVersion,
+		schemaId: journal.schemaId,
 		supported: journal.supported,
 		exact: journal.exact,
 		inverseOpCount: journal.inverseOps.length,

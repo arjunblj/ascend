@@ -486,9 +486,23 @@ export async function writeXlsxStreaming(
 	options: WriteXlsxOptions = {},
 ): Promise<Result<Uint8Array, AscendError>> {
 	try {
-		const plan = planWriteXlsx(workbook, capsules, { ...options, streaming: true })
+		const sourceArchive =
+			options.sourceArchive ??
+			(workbook.sourceArchiveBytes ? extractZip(workbook.sourceArchiveBytes) : undefined)
+		const plan = planWriteXlsx(workbook, capsules, {
+			...options,
+			streaming: true,
+			...(sourceArchive ? { sourceArchive } : {}),
+		})
 		if (!plan.ok) return plan
-		const zip = await createZipStreaming(plan.value, options.compressionProfile)
+		const passthroughPaths = sourceArchive
+			? preservedSourcePartPaths(plan.value.descriptors)
+			: undefined
+		const zip = await createZipStreaming(plan.value, {
+			...(options.compressionProfile ? { compressionProfile: options.compressionProfile } : {}),
+			...(sourceArchive ? { sourceArchive } : {}),
+			...(passthroughPaths && passthroughPaths.size > 0 ? { passthroughPaths } : {}),
+		})
 		return ok(zip)
 	} catch (e) {
 		return err(
@@ -502,11 +516,9 @@ export async function writeXlsxStreaming(
 
 async function createZipStreaming(
 	plan: import('./plan.ts').WritePlanResult,
-	compressionProfile?: ZipCompressionProfile,
+	options: NonNullable<ConstructorParameters<typeof StreamingZipBuilder>[0]> = {},
 ): Promise<Uint8Array> {
-	const builder = new StreamingZipBuilder({
-		...(compressionProfile ? { compressionProfile } : {}),
-	})
+	const builder = new StreamingZipBuilder(options)
 	for (const descriptor of plan.descriptors) {
 		if (descriptor.streamingBuild) {
 			builder.addStreamingEntry(descriptor.path)

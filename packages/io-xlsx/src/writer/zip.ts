@@ -267,6 +267,8 @@ interface ZipEntry {
 export class StreamingZipBuilder {
 	private readonly entries: ZipEntry[] = []
 	private readonly compressionProfile: ZipCompressionProfile
+	private readonly sourceArchive: ZipPassthroughArchive | undefined
+	private readonly passthroughPaths: ReadonlySet<string> | undefined
 	private streamingNameBytes: Uint8Array | null = null
 	private streamingCrc = 0
 	private streamingUncompressedSize = 0
@@ -276,6 +278,8 @@ export class StreamingZipBuilder {
 
 	constructor(options: ZipOptions = {}) {
 		this.compressionProfile = normalizeCompressionProfile(options.compressionProfile)
+		this.sourceArchive = options.sourceArchive
+		this.passthroughPaths = options.passthroughPaths
 	}
 
 	addEntry(path: string, data: Uint8Array): void {
@@ -283,6 +287,21 @@ export class StreamingZipBuilder {
 			throw new Error('Cannot addEntry while streaming entry is open; call closeEntry first')
 		}
 		const nameBytes = textEncoder.encode(path)
+		const passthrough = preservedCompressedEntry(path, data.byteLength, {
+			...(this.sourceArchive ? { sourceArchive: this.sourceArchive } : {}),
+			...(this.passthroughPaths ? { passthroughPaths: this.passthroughPaths } : {}),
+		})
+		if (passthrough) {
+			this.entries.push({
+				nameBytes,
+				data: passthrough.data,
+				uncompressedSize: passthrough.uncompressedSize,
+				compressedSize: passthrough.compressedSize,
+				method: passthrough.method,
+				crc: passthrough.crc,
+			})
+			return
+		}
 		const crc = crc32(data)
 		if (this.compressionProfile === 'store' || shouldStoreWithoutDeflate(data.byteLength)) {
 			this.entries.push({

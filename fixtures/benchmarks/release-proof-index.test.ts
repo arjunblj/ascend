@@ -25,6 +25,32 @@ describe('release proof evidence index', () => {
 			},
 			boundary: expect.stringContaining('not approval to publish generated fixtures'),
 		})
+		expect(index.fixturePolicy.approvalChecklist).toHaveLength(4)
+		expect(index.fixturePolicy.approvalChecklist.map((item) => item.gateId)).toEqual([
+			'public-edge-fixtures',
+			'edge-fixture-policy',
+			'publication-boundary',
+			'provenance-boundary',
+		])
+		expect(index.fixturePolicy.approvalChecklist.map((item) => item.status)).toEqual([
+			'pending-owner-decision',
+			'pending-owner-decision',
+			'pending-owner-decision',
+			'pending-owner-decision',
+		])
+		expect(index.fixturePolicy.approvalChecklist[0]).toMatchObject({
+			artifact: 'safe-open-proof',
+			ownerLoop: 'product',
+			validationCommand: 'bun run fixtures/benchmarks/safe-open-fixture-scan.ts --json',
+			rejectIf: expect.stringContaining('Generated fixtures are hidden'),
+		})
+		expect(index.fixturePolicy.approvalChecklist[3]).toMatchObject({
+			artifact: 'package-action-proof',
+			ownerLoop: 'release',
+			validationCommand:
+				'bun run fixtures/benchmarks/release-proof-index.ts --no-timings --owner-handoffs-json',
+			rejectIf: expect.stringContaining('signed provenance'),
+		})
 		expect(index.fixturePolicy.generatedStructuralFixturesAllowedWhen).toEqual([
 			expect.stringContaining('package-topology-only'),
 			expect.stringContaining('tracked harness code'),
@@ -395,6 +421,12 @@ describe('release proof evidence index', () => {
 				'package-action-proof': ['signature-invalidation-drop', 'unknown-part-error'],
 			},
 		})
+		expect(handoff.fixturePolicy.approvalChecklist.map((item) => item.ownerLoop)).toEqual([
+			'product',
+			'product',
+			'release',
+			'release',
+		])
 		expect(JSON.stringify(handoff.fixturePolicy)).toContain('package-action-fixture-scan')
 		expect(handoff.nextOwnerActions[0]).toMatchObject({
 			requirementId: 'edge-fixture-policy',
@@ -481,6 +513,13 @@ describe('release proof evidence index', () => {
 		)
 		expect(markdown).toContain('edge case is package-topology-only')
 		expect(markdown).toContain('Public binary fixtures are required when:')
+		expect(markdown).toContain('Approval checklist:')
+		expect(markdown).toContain(
+			'| Artifact | Gate | Owner | Status | Decision needed | Acceptance evidence | Reject if | Validation command |',
+		)
+		expect(markdown).toContain('| safe-open-proof | public-edge-fixtures | product')
+		expect(markdown).toContain('| package-action-proof | provenance-boundary | release')
+		expect(markdown).toContain('pending-owner-decision')
 		expect(markdown).toContain('OpenSSF Scorecard binary artifacts')
 		expect(markdown).toContain(
 			'| Rank | Artifact | Gate | Owner loop | Priority | Next step | Acceptance evidence | Forbidden shortcut |',

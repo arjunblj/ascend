@@ -42,6 +42,7 @@ Latest proof refresh, 2026-05-15T10:15:42Z:
 - Package-action `docprops-passthrough` now uses checked-in public `fixtures/xlsx/calamine/date_1904.xlsx` instead of a generated edge package. Package-action proof source counts are now 4 public fixtures, 2 generated workbooks, and 2 generated edge packages; the remaining generated edge packages are signature invalidation and unknown-part error, so the fixture-policy gate stays missing.
 - `package-action-fixture-scan --json` now scans the tracked git XLSX/XLSM corpus for package-action replacement candidates. Current result: 223 fixtures scanned, 1 rejected, `docPropsCore=191`, `docPropsCustom=16`, `calcChain=52`, `customXml=4`, `macro=2`, `chartOrDrawing=46`, `signaturePackage=0`, and `syntheticUnknownPathFamily=0`.
 - `release-proof-index --owner-handoffs-json` now includes `fixturePolicy`: generated structural fixture acceptance criteria, public-binary-required criteria, tracked fixture scan commands, current generated structural cases, and external policy/provenance references. The policy is an owner-decision aid only; it does not satisfy `public-edge-fixtures` or `edge-fixture-policy`.
+- `fixturePolicy.approvalChecklist` now lists four pending product/release decisions with validation commands, acceptance evidence, and rejection conditions. All checklist items remain `pending-owner-decision`; no release gate is satisfied by the checklist itself.
 
 ## External References
 
@@ -235,7 +236,7 @@ Public binary fixtures are required before stronger headline copy when any of th
 - The proof would otherwise imply trust, malware scanning, signed provenance, or third-party attestation.
 - The generated fixture would hide licensing, privacy, or provenance uncertainty.
 
-Machine-readable handoff: `releaseProofOwnerHandoffIndex.fixturePolicy` now carries the same policy for product/release owners. Current generated structural cases are `safe-open-proof=signed,unknown-part,malformed` and `package-action-proof=signature-invalidation-drop,unknown-part-error`. Current decision remains `owner-approval-required`.
+Machine-readable handoff: `releaseProofOwnerHandoffIndex.fixturePolicy` now carries the same policy for product/release owners. Current generated structural cases are `safe-open-proof=signed,unknown-part,malformed` and `package-action-proof=signature-invalidation-drop,unknown-part-error`. Current decision remains `owner-approval-required`. Its approval checklist has four pending items: `safe-open-proof/public-edge-fixtures`, `package-action-proof/edge-fixture-policy`, `safe-open-proof/publication-boundary`, and `package-action-proof/provenance-boundary`.
 
 Current application: the safe-open signed and unknown-part cases can remain generated local proof because they exercise OPC package topology and are disclosed as synthetic. They should still block stronger release copy until accepted or replaced; `fixtures/benchmarks/safe-open-fixture-scan.ts` currently finds no tracked public binary replacement.
 

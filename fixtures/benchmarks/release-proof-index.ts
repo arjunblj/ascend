@@ -178,12 +178,24 @@ export interface ReleaseProofFixturePolicy {
 	readonly currentDecision: 'owner-approval-required'
 	readonly generatedStructuralFixturesAllowedWhen: readonly string[]
 	readonly publicBinaryFixturesRequiredWhen: readonly string[]
+	readonly approvalChecklist: readonly ReleaseProofFixturePolicyApprovalItem[]
 	readonly trackedFixtureScanCommands: Readonly<Record<ReleaseProofIndexArtifactName, string>>
 	readonly currentGeneratedStructuralCases: Readonly<
 		Record<ReleaseProofIndexArtifactName, readonly string[]>
 	>
 	readonly sourceReferences: readonly ReleaseProofSourceReference[]
 	readonly boundary: string
+}
+
+export interface ReleaseProofFixturePolicyApprovalItem {
+	readonly artifact: ReleaseProofIndexArtifactName
+	readonly gateId: string
+	readonly ownerLoop: 'product' | 'release'
+	readonly status: 'pending-owner-decision'
+	readonly decisionNeeded: string
+	readonly acceptanceEvidence: string
+	readonly rejectIf: string
+	readonly validationCommand: string
 }
 
 export interface ReleaseProofSourceReference {
@@ -204,6 +216,62 @@ const FIXTURE_POLICY: ReleaseProofFixturePolicy = {
 		'claim depends on real-world authoring behavior, vendor repair behavior, UI behavior, or workbook semantics',
 		'claim would imply user trust, malware scanning, active-content safety, signed provenance, or attestation',
 		'generated fixture would hide licensing, privacy, provenance, or large/private workbook uncertainty',
+	],
+	approvalChecklist: [
+		{
+			artifact: 'safe-open-proof',
+			gateId: 'public-edge-fixtures',
+			ownerLoop: 'product',
+			status: 'pending-owner-decision',
+			decisionNeeded:
+				'Accept disclosed generated signed/unknown structural packages for guarded safe-open topology proof, or require public binary replacements.',
+			acceptanceEvidence:
+				'Safe-open proof labels generated signed and unknown-part cases, tracked scan finds no replacement, and claim wording excludes trust, malware scanning, active-content safety, and signed provenance.',
+			rejectIf:
+				'Generated fixtures are hidden, treated as public binaries, used for trust/safety wording, or replaceable by approved tracked public binaries.',
+			validationCommand: 'bun run fixtures/benchmarks/safe-open-fixture-scan.ts --json',
+		},
+		{
+			artifact: 'package-action-proof',
+			gateId: 'edge-fixture-policy',
+			ownerLoop: 'product',
+			status: 'pending-owner-decision',
+			decisionNeeded:
+				'Accept disclosed generated signature/unknown structural packages for guarded package-action proof, or require public binary replacements.',
+			acceptanceEvidence:
+				'Package-action proof labels generated signature-invalidation and unknown-part error cases, tracked scan finds no replacement, and claim wording stays limited to package action accounting.',
+			rejectIf:
+				'Generated fixtures are hidden, treated as public binaries, used for provenance/trust wording, or replaceable by approved tracked public binaries.',
+			validationCommand: 'bun run fixtures/benchmarks/package-action-fixture-scan.ts --json',
+		},
+		{
+			artifact: 'safe-open-proof',
+			gateId: 'publication-boundary',
+			ownerLoop: 'release',
+			status: 'pending-owner-decision',
+			decisionNeeded:
+				'Approve safe-open publication wording below malware scanning, sandboxing, file trust, active-content safety, signed provenance, and malformed-package recovery.',
+			acceptanceEvidence:
+				'Release wording states pre-hydration package-feature routing only and keeps generated structural fixtures disclosed.',
+			rejectIf:
+				'Copy implies Protected View equivalence, malware safety, trust certification, signed provenance, or recovery of arbitrary malformed packages.',
+			validationCommand:
+				'bun run fixtures/benchmarks/release-proof-index.ts --no-timings --owner-handoffs-json',
+		},
+		{
+			artifact: 'package-action-proof',
+			gateId: 'provenance-boundary',
+			ownerLoop: 'release',
+			status: 'pending-owner-decision',
+			decisionNeeded:
+				'Approve package-action publication wording below SLSA, in-toto, Sigstore, GitHub artifact attestation, and signed-provenance thresholds.',
+			acceptanceEvidence:
+				'Release wording says local package-part evidence and does not claim signer identity, transparency-log inclusion, tamper-evident storage, or build provenance.',
+			rejectIf:
+				'Copy calls local digests signed provenance, attestation, tamper-evident storage, malware safety, or active-content trust.',
+			validationCommand:
+				'bun run fixtures/benchmarks/release-proof-index.ts --no-timings --owner-handoffs-json',
+		},
 	],
 	trackedFixtureScanCommands: {
 		'safe-open-proof': 'bun run fixtures/benchmarks/safe-open-fixture-scan.ts --json',
@@ -312,6 +380,12 @@ export function releaseProofIndexMarkdown(result: ReleaseProofIndexResult): stri
 		'',
 		'Public binary fixtures are required when:',
 		...result.fixturePolicy.publicBinaryFixturesRequiredWhen.map((entry) => `- ${entry}`),
+		'',
+		'Approval checklist:',
+		'',
+		'| Artifact | Gate | Owner | Status | Decision needed | Acceptance evidence | Reject if | Validation command |',
+		'| --- | --- | --- | --- | --- | --- | --- | --- |',
+		...result.fixturePolicy.approvalChecklist.map(fixturePolicyApprovalMarkdownRow),
 		'',
 		'Source references:',
 		...result.fixturePolicy.sourceReferences.map(
@@ -1074,6 +1148,7 @@ function cloneFixturePolicy(): ReleaseProofFixturePolicy {
 			...FIXTURE_POLICY.generatedStructuralFixturesAllowedWhen,
 		],
 		publicBinaryFixturesRequiredWhen: [...FIXTURE_POLICY.publicBinaryFixturesRequiredWhen],
+		approvalChecklist: FIXTURE_POLICY.approvalChecklist.map((item) => ({ ...item })),
 		trackedFixtureScanCommands: { ...FIXTURE_POLICY.trackedFixtureScanCommands },
 		currentGeneratedStructuralCases: Object.fromEntries(
 			Object.entries(FIXTURE_POLICY.currentGeneratedStructuralCases).map(([artifact, cases]) => [
@@ -1083,6 +1158,23 @@ function cloneFixturePolicy(): ReleaseProofFixturePolicy {
 		) as ReleaseProofFixturePolicy['currentGeneratedStructuralCases'],
 		sourceReferences: FIXTURE_POLICY.sourceReferences.map((reference) => ({ ...reference })),
 	}
+}
+
+function fixturePolicyApprovalMarkdownRow(row: ReleaseProofFixturePolicyApprovalItem): string {
+	return [
+		row.artifact,
+		row.gateId,
+		row.ownerLoop,
+		row.status,
+		row.decisionNeeded,
+		row.acceptanceEvidence,
+		row.rejectIf,
+		`\`${row.validationCommand}\``,
+	]
+		.map((cell) => ` ${cell} `)
+		.join('|')
+		.replace(/^/, '|')
+		.replace(/$/, '|')
 }
 
 function formatFixturePolicyCommands(

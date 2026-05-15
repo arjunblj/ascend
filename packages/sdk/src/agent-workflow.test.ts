@@ -863,6 +863,126 @@ describe('agent workflow loss audit', () => {
 		}
 	})
 
+	test('quality moat matrix proves release-critical formula trust paths', async () => {
+		const cases = [
+			{
+				name: 'fail-closed-shared-formula-corruption',
+				risk: 'pre-write shared formula metadata corruption would hide a different saved formula',
+				proof: async () => {
+					const wb = AscendWorkbook.create()
+					const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+					if (!sheet) throw new Error('missing sheet')
+					sheet.cells.set(0, 0, {
+						value: numberValue(2),
+						formula: 'B1*2',
+						styleId: DEFAULT_STYLE_ID,
+						formulaInfo: {
+							kind: 'shared',
+							sharedIndex: 'quality-moat',
+							isMaster: true,
+							masterRef: 'A1',
+							ref: 'A1:A2',
+						},
+					})
+					sheet.cells.set(1, 0, {
+						value: numberValue(198),
+						formula: 'B2*99',
+						styleId: DEFAULT_STYLE_ID,
+						formulaInfo: {
+							kind: 'shared',
+							sharedIndex: 'quality-moat',
+							isMaster: false,
+							masterRef: 'A1',
+						},
+					})
+					const ops = [
+						{ op: 'setCells' as const, sheet: 'Sheet1', updates: [{ ref: 'C1', value: 1 }] },
+					]
+
+					const plan = await createAgentPlanFromWorkbook(
+						'quality-moat-shared-formula.xlsx',
+						'1'.repeat(64),
+						wb,
+						ops,
+					)
+					expect(plan.writePolicy.ok).toBe(false)
+					expect(compactAgentPlanResult(plan).check.issues).toContainEqual(
+						expect.objectContaining({
+							rule: 'formula-binding-integrity',
+							severity: 'error',
+							details: expect.objectContaining({
+								kind: 'shared-formula-member-formula-text-mismatch',
+							}),
+						}),
+					)
+
+					const output = join(TEMP_DIR, 'quality-moat-shared-formula-out.xlsx')
+					await expect(
+						commitAgentPlanFromWorkbook(
+							'quality-moat-shared-formula.xlsx',
+							'1'.repeat(64),
+							wb,
+							ops,
+							{ output },
+							{ sourceBytes: wb.toBytes() },
+						),
+					).rejects.toThrow('Commit blocked by write policy')
+					expect(existsSync(output)).toBe(false)
+				},
+			},
+			{
+				name: 'copy-sheet-metadata-reopens-retargeted',
+				risk: 'copySheet could reopen with stale worksheet metadata formulas pointing at the source sheet',
+				proof: async () => {
+					const input = join(TEMP_DIR, 'quality-moat-copy-sheet.xlsx')
+					const output = join(TEMP_DIR, 'quality-moat-copy-sheet-out.xlsx')
+					mkdirSync(TEMP_DIR, { recursive: true })
+					const wb = AscendWorkbook.create()
+					const model = wb.getWorkbookModel()
+					const sheet = model.getSheet('Sheet1')
+					if (!sheet) throw new Error('missing Sheet1')
+					sheet.name = 'Data'
+					model.invalidateSheetCache()
+					sheet.dataValidations.push({
+						sqref: 'A1',
+						type: 'list',
+						formula1: 'data!B1:B3',
+					})
+					sheet.conditionalFormats.push({
+						sqref: 'A1:A3',
+						rules: [{ type: 'expression', formulas: ['data!B1>0'] }],
+					})
+					await wb.save(input)
+
+					const prepared = await createPreparedAgentPlan(input, [
+						{ op: 'copySheet' as const, sheet: 'Data', newName: 'Copy' },
+					])
+					expect(prepared.plan.preview.journal?.issues).toContainEqual(
+						expect.objectContaining({
+							surface: 'package-parts',
+							reason: 'package-part-preservation',
+							refs: ['sheet:Data', 'sheet:Copy'],
+						}),
+					)
+					const committed = await prepared.commit({ output })
+					expect(committed.postWrite.valid).toBe(true)
+					expect(committed.postWrite.auditsPassed).toBe(true)
+
+					const reopened = await AscendWorkbook.open(output)
+					expect(reopened.check().valid).toBe(true)
+					const copy = reopened.getWorkbookModel().getSheet('Copy')
+					expect(copy?.dataValidations[0]?.formula1).toBe('Copy!B1:B3')
+					expect(copy?.conditionalFormats[0]?.rules[0]?.formulas).toEqual(['Copy!B1>0'])
+				},
+			},
+		] as const
+
+		for (const entry of cases) {
+			expect(entry.risk.length).toBeGreaterThan(0)
+			await entry.proof()
+		}
+	})
+
 	test('plans explain calc chain preservation versus formula-topology invalidation', async () => {
 		const input = join(TEMP_DIR, 'calc-chain.xlsx')
 		mkdirSync(TEMP_DIR, { recursive: true })

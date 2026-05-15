@@ -975,6 +975,70 @@ describe('agent workflow loss audit', () => {
 					expect(copy?.conditionalFormats[0]?.rules[0]?.formulas).toEqual(['Copy!B1>0'])
 				},
 			},
+			{
+				name: 'fail-closed-blocked-spill-footprint-corruption',
+				risk: 'blocked spill metadata on a non-anchor cell would preserve a stale spill footprint',
+				proof: async () => {
+					const wb = AscendWorkbook.create()
+					const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+					if (!sheet) throw new Error('missing sheet')
+					sheet.cells.set(0, 0, {
+						value: { kind: 'error', value: '#SPILL!' },
+						formula: 'SEQUENCE(3)',
+						styleId: DEFAULT_STYLE_ID,
+						formulaInfo: {
+							kind: 'blockedSpill',
+							anchorRef: 'Sheet1!A1',
+							ref: 'A1:A3',
+							blockingRefs: ['A2'],
+						},
+					})
+					sheet.cells.set(1, 0, {
+						value: { kind: 'string', value: 'blocker' },
+						formula: null,
+						styleId: DEFAULT_STYLE_ID,
+						formulaInfo: {
+							kind: 'blockedSpill',
+							anchorRef: 'Sheet1!A1',
+							ref: 'A1:A3',
+							blockingRefs: ['A2'],
+						},
+					})
+					const ops = [
+						{ op: 'setCells' as const, sheet: 'Sheet1', updates: [{ ref: 'C1', value: 1 }] },
+					]
+
+					const plan = await createAgentPlanFromWorkbook(
+						'quality-moat-blocked-spill.xlsx',
+						'2'.repeat(64),
+						wb,
+						ops,
+					)
+					expect(plan.writePolicy.ok).toBe(false)
+					expect(compactAgentPlanResult(plan).check.issues).toContainEqual(
+						expect.objectContaining({
+							rule: 'formula-binding-integrity',
+							severity: 'error',
+							details: expect.objectContaining({
+								kind: 'blockedSpill-non-anchor-metadata',
+							}),
+						}),
+					)
+
+					const output = join(TEMP_DIR, 'quality-moat-blocked-spill-out.xlsx')
+					await expect(
+						commitAgentPlanFromWorkbook(
+							'quality-moat-blocked-spill.xlsx',
+							'2'.repeat(64),
+							wb,
+							ops,
+							{ output },
+							{ sourceBytes: wb.toBytes() },
+						),
+					).rejects.toThrow('Commit blocked by write policy')
+					expect(existsSync(output)).toBe(false)
+				},
+			},
 		] as const
 
 		for (const entry of cases) {

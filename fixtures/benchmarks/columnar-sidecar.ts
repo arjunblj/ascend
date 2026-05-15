@@ -47,6 +47,11 @@ export interface ColumnarSidecarClaimReport {
 	readonly proofStatus: 'passed' | 'needs-more-evidence'
 	readonly boundary: string
 	readonly benchmark: ColumnarSidecarBenchmarkResult
+	readonly generationInvalidation: {
+		readonly sidecarGeneration: number
+		readonly matchingGenerationValid: boolean
+		readonly nextGenerationValid: boolean
+	}
 	readonly killCriterion: string
 	readonly doNotPromoteYet: readonly string[]
 	readonly nextProof: string
@@ -118,6 +123,11 @@ export function columnarSidecarClaimReport(
 		boundary:
 			'This is a synthetic benchmark over numeric/date-like values, not a production cache, Arrow ABI implementation, DuckDB integration, mixed-type table engine, or mutation invalidation system.',
 		benchmark: result,
+		generationInvalidation: {
+			sidecarGeneration: result.generation,
+			matchingGenerationValid: isColumnarSidecarCurrent(result, result.generation),
+			nextGenerationValid: isColumnarSidecarCurrent(result, result.generation + 1),
+		},
 		killCriterion:
 			'Do not promote if real workbook tables fail checksum parity, sidecar build plus scan is not faster than grid scans for repeated workloads, or generation-aware invalidation cannot be made explicit.',
 		doNotPromoteYet: [
@@ -154,6 +164,8 @@ export function columnarSidecarClaimReportMarkdown(report: ColumnarSidecarClaimR
 		`Generation: ${result.generation}`,
 		`Numeric count: ${result.numericCount}`,
 		`Estimated sidecar payload bytes: ${result.estimatedSidecarPayloadBytes}`,
+		`Matching generation valid: ${report.generationInvalidation.matchingGenerationValid}`,
+		`Next generation valid: ${report.generationInvalidation.nextGenerationValid}`,
 		`Grid repeated scan ms: ${result.gridRepeatedScanMs}`,
 		`Sidecar build ms: ${result.sidecarBuildMs}`,
 		`Sidecar repeated scan ms: ${result.sidecarRepeatedScanMs}`,
@@ -219,6 +231,15 @@ export function buildNumericColumnSidecar(
 		values,
 		validity,
 	}
+}
+
+export function isColumnarSidecarCurrent(
+	sidecar:
+		| Pick<NumericColumnSidecar, 'generation'>
+		| Pick<ColumnarSidecarBenchmarkResult, 'generation'>,
+	currentGeneration: number,
+): boolean {
+	return Number.isInteger(currentGeneration) && currentGeneration === sidecar.generation
 }
 
 export function sumSidecarColumn(sidecar: NumericColumnSidecar, colOffset: number): number {

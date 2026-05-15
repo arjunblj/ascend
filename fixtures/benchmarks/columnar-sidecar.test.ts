@@ -4,6 +4,7 @@ import {
 	buildNumericColumnSidecar,
 	columnarSidecarClaimReport,
 	columnarSidecarClaimReportMarkdown,
+	isColumnarSidecarCurrent,
 	runColumnarSidecarBenchmark,
 	sumSidecarColumn,
 } from './columnar-sidecar.ts'
@@ -35,6 +36,8 @@ describe('columnar sidecar benchmark harness', () => {
 		expect(sidecar.populatedCount).toBe(4)
 		expect(sidecar.numericCount).toBe(3)
 		expect(sidecar.checksum).toBe(6)
+		expect(isColumnarSidecarCurrent(sidecar, 7)).toBe(true)
+		expect(isColumnarSidecarCurrent(sidecar, 8)).toBe(false)
 		expect(sumSidecarColumn(sidecar, 0)).toBe(4)
 		expect(sumSidecarColumn(sidecar, 1)).toBe(2)
 	})
@@ -46,8 +49,11 @@ describe('columnar sidecar benchmark harness', () => {
 
 		expect(report.allowedClaim).toContain('disposable numeric columnar sidecar')
 		expect(report.boundary).toContain('not a production cache')
+		expect(report.generationInvalidation.matchingGenerationValid).toBe(true)
+		expect(report.generationInvalidation.nextGenerationValid).toBe(false)
 		expect(report.killCriterion).toContain('real workbook tables')
 		expect(markdown).toContain('Do not promote yet')
+		expect(markdown).toContain('Next generation valid: false')
 		expect(markdown).toContain('Estimated sidecar payload bytes')
 	})
 })

@@ -82,6 +82,7 @@ Updated: 2026-05-15
 | [Agent view product proof rerun](runs/2026/2026-05-15-agent-view-product-proof-rerun/log.md) | product-proof backed, no new surfaces | product/DX loop |
 | [Agent view product example gate](runs/2026/2026-05-15-agent-view-product-example-gate/log.md) | product-example ready, still held out of release proof index | product/DX loop |
 | [Columnar sidecar claim report](runs/2026/2026-05-15-columnar-sidecar-claim-report/log.md) | folded in synthetic claim-safe report with payload/build cost; still not product-promoted | performance loop |
+| [Columnar sidecar generation invalidation](runs/2026/2026-05-15-columnar-sidecar-generation-invalidation/log.md) | folded in generation validity predicate for sidecar proof reports | performance loop |
 | [Package action proof](runs/2026/2026-05-14-package-action-proof/log.md) | cycle 2 complete, promote | correctness loop, product/DX loop, performance loop |
 | [Formula spans LSP](runs/2026/2026-05-14-formula-spans-lsp/log.md) | cycle 13 complete, folded in SDK hover/code actions | product/DX loop, correctness loop |
 | [Formula sqllogictest conformance](runs/2026/2026-05-14-formula-sqllogictest-conformance/log.md) | cycle 14 complete, folded in converter/runner | correctness loop |

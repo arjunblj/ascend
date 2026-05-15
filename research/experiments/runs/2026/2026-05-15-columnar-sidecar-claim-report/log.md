@@ -27,6 +27,7 @@ Folded a claim-report mode into `fixtures/benchmarks/columnar-sidecar.ts`:
 
 - records estimated sidecar payload bytes from `Float64Array` values plus validity bitmaps;
 - emits structured and Markdown claim reports via `--claim-report` and `--claim-report --json`;
+- reports matching-generation validity and next-generation invalidity;
 - includes allowed wording, proof status, boundary, kill criterion, and "do not promote yet" list;
 - adds test coverage in `fixtures/benchmarks/columnar-sidecar.test.ts`.
 
@@ -46,6 +47,8 @@ Observed from the Markdown run:
 - Cells: 160,000.
 - Repeats: 20.
 - Estimated sidecar payload bytes: 1,440,000.
+- Matching generation valid: true.
+- Next generation valid: false.
 - Grid repeated scan: 25.414 ms.
 - Sidecar build: 7.7 ms.
 - Sidecar repeated scan: 3.907 ms.

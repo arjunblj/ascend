@@ -429,6 +429,8 @@ describe('mutation journal exactness model', () => {
 			{ op: 'groupCols', sheet: 'Missing', from: 0, to: 1 },
 			{ op: 'setPageSetup', sheet: 'Missing', setup: { orientation: 'landscape' } },
 			{ op: 'setPrintArea', sheet: 'Missing', range: 'A1:B2' },
+			{ op: 'setDefinedName', name: 'LocalBudget', ref: 'A1', scope: 'Missing' },
+			{ op: 'deleteDefinedName', name: 'LocalBudget', scope: 'Missing' },
 		]
 
 		for (const op of ops) {

@@ -3399,6 +3399,20 @@ function journalSetDefinedName(
 	op: Extract<Operation, { op: 'setDefinedName' }>,
 	opIndex: number,
 ): DraftJournalEntry {
+	if (op.scope !== undefined && !workbook.getSheet(op.scope)) {
+		return {
+			opIndex,
+			op,
+			inverseOps: [],
+			preimages: [],
+			issues: [
+				missingSheetTopologyIssue(
+					op.scope,
+					`Cannot restore defined name ${op.name} because sheet scope ${op.scope} was not found`,
+				),
+			],
+		}
+	}
 	const preimage = definedNamePreimage(workbook, op.name, op.scope)
 	const { inverseOps, issues } = restoreDefinedNameOps(workbook, preimage)
 	const allIssues = [
@@ -3419,6 +3433,20 @@ function journalDeleteDefinedName(
 	op: Extract<Operation, { op: 'deleteDefinedName' }>,
 	opIndex: number,
 ): DraftJournalEntry {
+	if (op.scope !== undefined && !workbook.getSheet(op.scope)) {
+		return {
+			opIndex,
+			op,
+			inverseOps: [],
+			preimages: [],
+			issues: [
+				missingSheetTopologyIssue(
+					op.scope,
+					`Cannot restore defined name ${op.name} because sheet scope ${op.scope} was not found`,
+				),
+			],
+		}
+	}
 	const preimage = definedNamePreimage(workbook, op.name, op.scope)
 	const { inverseOps, issues } = preimage.definedName
 		? restoreDefinedNameOps(workbook, preimage)

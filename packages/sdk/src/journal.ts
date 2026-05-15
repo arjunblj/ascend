@@ -2263,6 +2263,8 @@ function journalDeleteSheet(
 					{
 						code: 'LOSSY_INVERSE',
 						message: `Deleted sheet ${op.sheet} cannot be fully restored with public operations`,
+						surface: 'sheet-layout',
+						reason: 'sheet-topology',
 						refs,
 					},
 				]

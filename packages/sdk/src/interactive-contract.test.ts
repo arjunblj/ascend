@@ -7913,7 +7913,7 @@ describe('interactive client contract', () => {
 					'Sheet1!A1',
 					'chart:xl/charts/chart1.xml:series:0:valueRef',
 				],
-				surface: 'comments',
+				surface: 'sheet-layout',
 			},
 		])
 	})

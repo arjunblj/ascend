@@ -8,6 +8,12 @@ Research is no longer a broad sweep. Each direction below must earn its place by
 
 ## Latest Claim Steward Refresh
 
+Proof timestamp: 2026-05-15T19:04:51Z.
+
+Release packageability moved one step from prose to proof without creating a new product surface. `build:js` now emits CLI/API/MCP app JS artifacts and dist manifests with `ascend`, `ascend-api`, and `ascend-mcp` bin entries; CLI/API/MCP entrypoint imports are side-effect free under a direct-run guard; SDK agent docs are bundled into the SDK dist package; the SDK tarball smoke still passes. This partially advances the release proof bundle row, but app tarball consumer install, artifact publication policy, and provenance remain release-owner blockers.
+
+Formula correctness also gained a small proof under the auditable mutation claim: verifier checks now reject occupied cells detached inside a legacy array formula range as `legacy-array-range-member-mismatch`, and the SDK quality moat includes that case. This is correctness hygiene only. Formula rename remains frozen, and formula intelligence stays rank 3 as rejection-first primitives.
+
 Proof timestamp: 2026-05-15T18:43:31Z.
 
 The ranked portfolio is now machine-readable in the release proof artifact. `release-proof-index --owner-handoffs-json` emits `claimPortfolio` with 10 product-shaped directions, each carrying a North Star link, evidence needed, kill criterion, likely handoff owner, handoff decision, optional proof command, and honest boundary. Only `safe-open-proof` and `package-action-proof` are `top-implementation-handoff`; formula primitives, token-bounded agent view, retained viewport patch history, and release proof bundle are proof-packaging-only; oracle routing, property journal laws, columnar sidecars, and agent observability remain do-not-promote-yet. `implementationSurfacePromotionAllowed=false`.

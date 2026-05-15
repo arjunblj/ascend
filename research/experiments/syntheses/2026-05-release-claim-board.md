@@ -56,6 +56,8 @@ Latest proof refresh, 2026-05-15T10:15:42Z:
 - Shared-formula journal coverage was tightened for structural formula rewrites: `moveRange` formula-surface restoration now uses edit preimages so every rewritten shared-formula member is reported in journal issues. Treat this as correctness hygiene under auditable package-part mutation, not a new claim.
 - Practical latency target selection now carries p95/CV and stability fields for key first-view, edit-verify, and repeated-inspection phases. This helps performance owners reject noisy median targets before production work, but remains diagnostic routing and does not satisfy release latency gates.
 - `release:sdk:smoke` now proves a narrow SDK-only temp external install from a built tarball without consumer overrides. It verifies create/open/plan/commit/reopen/check/recalc from `@ascend/sdk`; it does not close CLI/API/MCP packaging, bundled docs, publication policy, provenance, or signed artifact claims.
+- CLI/API/MCP packageability now has a narrow implementation proof: app entrypoints can be imported without auto-running, `build:js` emits app JS artifacts, app dist manifests include `ascend`, `ascend-api`, and `ascend-mcp` bin entries, and SDK agent docs are copied into the SDK release artifact. This does not yet prove app tarball installation from an external consumer.
+- Legacy array formula integrity now rejects occupied detached cells inside an array formula range as `legacy-array-range-member-mismatch`. Treat this as correctness hygiene under auditable mutation. It does not change the formula-intelligence board, and it does not authorize rename.
 
 ## External References
 

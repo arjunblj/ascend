@@ -5321,6 +5321,8 @@ function restoreDefinedNameOps(
 		issues.push({
 			code: 'LOSSY_INVERSE',
 			message: `Defined name ${refs[0]} has metadata that cannot be restored with public operations`,
+			surface: 'defined-names',
+			reason: 'defined-name-metadata',
 			refs,
 		})
 	}
@@ -5332,6 +5334,8 @@ function restoreDefinedNameOps(
 				{
 					code: 'UNSUPPORTED_VALUE',
 					message: `Cannot restore sheet-scoped defined name ${definedName.name} because its sheet scope is missing`,
+					surface: 'defined-names',
+					reason: 'operation-unsupported',
 				},
 			],
 		}
@@ -5520,6 +5524,8 @@ function tableStyleRestoreIssues(
 				{
 					code: 'LOSSY_INVERSE',
 					message: `Table style flags for ${op.table} cannot be cleared with public operations`,
+					surface: 'tables',
+					reason: 'table-metadata',
 				},
 			]
 		: []
@@ -5586,6 +5592,8 @@ function tableRestoreIssues(
 		issues.push({
 			code: 'LOSSY_INVERSE',
 			message: `Table ${table.name} has metadata that cannot be restored with public operations`,
+			surface: 'tables',
+			reason: 'table-metadata',
 			refs,
 		})
 	}
@@ -5593,6 +5601,8 @@ function tableRestoreIssues(
 		issues.push({
 			code: 'LOSSY_INVERSE',
 			message: `Table ${table.name} totals-row state cannot be recreated with public operations`,
+			surface: 'tables',
+			reason: 'table-metadata',
 			refs,
 		})
 	}
@@ -5612,6 +5622,8 @@ function tableRestoreIssues(
 			issues.push({
 				code: 'LOSSY_INVERSE',
 				message: `Table column ${table.name}[${column.name}] has metadata that cannot be restored with public operations`,
+				surface: 'tables',
+				reason: 'table-metadata',
 				refs,
 			})
 		}
@@ -5624,6 +5636,8 @@ function missingTableIssues(table: string): readonly MutationJournalIssue[] {
 		{
 			code: 'UNSUPPORTED_VALUE',
 			message: `Cannot restore table ${table} because it was not found before the edit`,
+			surface: 'tables',
+			reason: 'operation-unsupported',
 		},
 	]
 }
@@ -5695,6 +5709,8 @@ function structuralDeleteIssues(
 		issues.push({
 			code: 'LOSSY_INVERSE',
 			message: `Deleted ${preimage.axis === 'row' ? 'row' : 'column'} metadata on ${preimage.sheet} cannot be fully restored with public operations`,
+			surface: preimage.axis === 'row' ? 'row-layout' : 'column-layout',
+			reason: preimage.axis === 'row' ? 'row-layout-created' : 'column-layout-created',
 			refs,
 		})
 	}
@@ -6455,6 +6471,8 @@ function sortRangeDataValidationOrderIssues(
 			{
 				code: 'LOSSY_INVERSE',
 				message: `Sorted data validation order on ${sheet.name}!${range} cannot be restored exactly with public operations`,
+				surface: 'data-validations',
+				reason: 'metadata-order',
 				refs: [`${sheet.name}!${range}`],
 			},
 		]
@@ -6474,6 +6492,8 @@ function sortRangeDataValidationDuplicateIssues(
 		{
 			code: 'LOSSY_INVERSE',
 			message: `Sorted duplicate data validations on ${sheetName}!${range} cannot be restored exactly with public operations`,
+			surface: 'data-validations',
+			reason: 'metadata-duplicate',
 			refs: [`${sheetName}!${range}`],
 		},
 	]
@@ -6554,6 +6574,8 @@ function sortRangeConditionalFormatOrderIssues(
 			{
 				code: 'LOSSY_INVERSE',
 				message: `Sorted conditional format order on ${sheet.name}!${range} cannot be restored exactly with public operations`,
+				surface: 'conditional-formats',
+				reason: 'metadata-order',
 				refs: [`${sheet.name}!${range}`],
 			},
 		]
@@ -6573,6 +6595,8 @@ function sortRangeConditionalFormatDuplicateIssues(
 		{
 			code: 'LOSSY_INVERSE',
 			message: `Sorted duplicate conditional formats on ${sheetName}!${range} cannot be restored exactly with public operations`,
+			surface: 'conditional-formats',
+			reason: 'metadata-duplicate',
 			refs: [`${sheetName}!${range}`],
 		},
 	]

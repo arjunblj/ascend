@@ -58,6 +58,8 @@ interface EnvelopeDecision {
 	readonly envelopeMedianMs: number
 	readonly largestPhase: string
 	readonly phaseMedianMs: number
+	readonly phaseP95Ms?: number
+	readonly phaseCv?: number
 	readonly maxPlausibleWinMs: number
 	readonly maxPlausibleWinPct: number
 	readonly profileCommand: string
@@ -74,6 +76,8 @@ interface DiagnosticCeiling {
 interface PhaseCandidate {
 	readonly name: string
 	readonly medianMs: number
+	readonly p95Ms?: number
+	readonly cv?: number
 	readonly profileCommand: string
 }
 
@@ -557,6 +561,31 @@ function numericNestedMetric(summary: unknown, objectKey: string, key: string): 
 	return typeof value === 'number' && Number.isFinite(value) ? value : undefined
 }
 
+function statsMetric(summary: unknown, objectKey: string, key: string): number | undefined {
+	return numericNestedMetric(summary, objectKey, key)
+}
+
+function phaseTailLabel(decision: EnvelopeDecision): string {
+	const parts: string[] = []
+	if (decision.phaseP95Ms !== undefined) {
+		parts.push(`p95 ${decision.phaseP95Ms.toFixed(decision.phaseP95Ms >= 100 ? 1 : 3)}ms`)
+	}
+	if (decision.phaseCv !== undefined) parts.push(`CV ${decision.phaseCv.toFixed(2)}`)
+	return parts.join(', ')
+}
+
+function phaseCandidateStats(
+	summary: unknown,
+	statsKey: string,
+): Pick<PhaseCandidate, 'p95Ms' | 'cv'> {
+	const p95Ms = statsMetric(summary, statsKey, 'p95')
+	const cv = statsMetric(summary, statsKey, 'cv')
+	return {
+		...(p95Ms !== undefined ? { p95Ms } : {}),
+		...(cv !== undefined ? { cv } : {}),
+	}
+}
+
 function buildMarkdown(
 	args: Args,
 	results: readonly StepResult[],
@@ -805,11 +834,11 @@ function productionTarget(results: readonly StepResult[]): string {
 
 function decisionMatrix(results: readonly StepResult[]): string {
 	const rows = envelopeDecisions(results).map((decision) => {
-		return `| ${decision.envelope} | ${decision.envelopeMedianMs.toFixed(3)} | ${decision.largestPhase} | ${decision.phaseMedianMs.toFixed(3)} | ${decision.maxPlausibleWinMs.toFixed(3)} | ${decision.maxPlausibleWinPct.toFixed(1)}% | \`${decision.profileCommand}\` | ${decision.guardrail} |`
+		return `| ${decision.envelope} | ${decision.envelopeMedianMs.toFixed(3)} | ${decision.largestPhase} | ${decision.phaseMedianMs.toFixed(3)} | ${phaseTailLabel(decision)} | ${decision.maxPlausibleWinMs.toFixed(3)} | ${decision.maxPlausibleWinPct.toFixed(1)}% | \`${decision.profileCommand}\` | ${decision.guardrail} |`
 	})
 	return [
-		'| Envelope | Envelope median ms | Largest user-wait phase | Phase median ms | Max plausible win ms | Max plausible win % | Required profile command | Guardrail |',
-		'|---|---:|---|---:|---:|---:|---|---|',
+		'| Envelope | Envelope median ms | Largest user-wait phase | Phase median ms | Phase tail/variance | Max plausible win ms | Max plausible win % | Required profile command | Guardrail |',
+		'|---|---:|---|---:|---|---:|---:|---|---|',
 		...rows,
 	].join('\n')
 }
@@ -881,6 +910,8 @@ function envelopeDecisions(results: readonly StepResult[]): EnvelopeDecision[] {
 			envelopeMedianMs: Math.max(firstViewEnvelope, largest.medianMs),
 			largestPhase: largest.name,
 			phaseMedianMs: largest.medianMs,
+			...(largest.p95Ms !== undefined ? { phaseP95Ms: largest.p95Ms } : {}),
+			...(largest.cv !== undefined ? { phaseCv: largest.cv } : {}),
 			...maxPlausibleWin(Math.max(firstViewEnvelope, largest.medianMs), largest.medianMs),
 			profileCommand: largest.profileCommand,
 			guardrail: 'must improve the first-view command, not only the full worksheet XML diagnostic',
@@ -923,6 +954,7 @@ function envelopeDecisions(results: readonly StepResult[]): EnvelopeDecision[] {
 			{
 				name: 'Prepared plan/open',
 				medianMs: numericMetric(workflow?.summary, 'preparedPlanMedianMs') ?? 0,
+				...phaseCandidateStats(workflow?.summary, 'preparedPlanStats'),
 				profileCommand: workflowProfile,
 			},
 			{
@@ -957,6 +989,7 @@ function envelopeDecisions(results: readonly StepResult[]): EnvelopeDecision[] {
 					numericMetric(workflow?.summary, 'preparedCommitPostWriteReopenMedianMs') ??
 					numericMetric(postWrite?.summary, 'commitPostWriteReopenMedianMs') ??
 					0,
+				...phaseCandidateStats(workflow?.summary, 'preparedCommitPostWriteReopenStats'),
 				profileCommand: workflowProfile || postWriteProfile,
 			},
 			{
@@ -998,6 +1031,8 @@ function envelopeDecisions(results: readonly StepResult[]): EnvelopeDecision[] {
 			envelopeMedianMs: editEnvelope,
 			largestPhase: largest.name,
 			phaseMedianMs: largest.medianMs,
+			...(largest.p95Ms !== undefined ? { phaseP95Ms: largest.p95Ms } : {}),
+			...(largest.cv !== undefined ? { phaseCv: largest.cv } : {}),
 			...maxPlausibleWin(editEnvelope, largest.medianMs),
 			profileCommand: largest.profileCommand,
 			guardrail: 'must preserve write, reopen, structural check, lint, and package verification',
@@ -1029,6 +1064,8 @@ function envelopeDecisions(results: readonly StepResult[]): EnvelopeDecision[] {
 			envelopeMedianMs: repeatedLargest.medianMs,
 			largestPhase: repeatedLargest.name,
 			phaseMedianMs: repeatedLargest.medianMs,
+			...(repeatedLargest.p95Ms !== undefined ? { phaseP95Ms: repeatedLargest.p95Ms } : {}),
+			...(repeatedLargest.cv !== undefined ? { phaseCv: repeatedLargest.cv } : {}),
 			...maxPlausibleWin(repeatedLargest.medianMs, repeatedLargest.medianMs),
 			profileCommand: repeatedLargest.profileCommand,
 			guardrail: 'must name the hot-cache assumption and include cold-open context separately',

@@ -523,6 +523,7 @@ describe('analyzeWorkbook', () => {
 			readonly seed: (sheet: Sheet) => void
 			readonly op: Parameters<typeof applyOperation>[1]
 			readonly affectedCells: readonly string[]
+			readonly reusesCache: boolean
 		}[] = [
 			{
 				name: 'dynamic spill member',
@@ -559,6 +560,7 @@ describe('analyzeWorkbook', () => {
 				},
 				op: { op: 'copyRange', sheet: 'Sheet1', source: 'C1', target: 'A2', mode: 'values' },
 				affectedCells: ['A1', 'A2', 'A3'],
+				reusesCache: true,
 			},
 			{
 				name: 'blocked spill blocker',
@@ -579,6 +581,7 @@ describe('analyzeWorkbook', () => {
 				},
 				op: { op: 'copyRange', sheet: 'Sheet1', source: 'C1', target: 'A2', mode: 'values' },
 				affectedCells: ['A1', 'A2'],
+				reusesCache: true,
 			},
 			{
 				name: 'data table member',
@@ -594,6 +597,52 @@ describe('analyzeWorkbook', () => {
 				},
 				op: { op: 'copyRange', sheet: 'Sheet1', source: 'F1', target: 'C4', mode: 'values' },
 				affectedCells: ['C3', 'C4'],
+				reusesCache: true,
+			},
+			{
+				name: 'moveRange target shared formula member',
+				seed: (sheet) => {
+					sheet.cells.set(0, 1, { value: numberValue(10), formula: null, styleId: sid })
+					sheet.cells.set(1, 1, { value: numberValue(20), formula: null, styleId: sid })
+					sheet.cells.set(0, 3, { value: numberValue(9), formula: null, styleId: sid })
+					sheet.cells.set(0, 0, {
+						value: numberValue(20),
+						formula: 'B1*2',
+						styleId: sid,
+						formulaInfo: {
+							kind: 'shared',
+							sharedIndex: '0',
+							isMaster: true,
+							masterRef: 'A1',
+							ref: 'A1:A2',
+						},
+					})
+					sheet.cells.set(1, 0, {
+						value: numberValue(40),
+						formula: null,
+						styleId: sid,
+						formulaInfo: { kind: 'shared', sharedIndex: '0', isMaster: false, masterRef: 'A1' },
+					})
+				},
+				op: { op: 'moveRange', sheet: 'Sheet1', source: 'D1', target: 'A2', mode: 'all' },
+				affectedCells: ['A1', 'A2', 'D1'],
+				reusesCache: false,
+			},
+			{
+				name: 'moveRange target data table member',
+				seed: (sheet) => {
+					sheet.cells.set(2, 2, {
+						value: numberValue(10),
+						formula: null,
+						styleId: sid,
+						formulaInfo: { kind: 'dataTable', ref: 'C3:C5', dtr: true, r1: 'A1' },
+					})
+					sheet.cells.set(3, 2, { value: numberValue(20), formula: null, styleId: sid })
+					sheet.cells.set(0, 5, { value: numberValue(9), formula: null, styleId: sid })
+				},
+				op: { op: 'moveRange', sheet: 'Sheet1', source: 'F1', target: 'C4', mode: 'all' },
+				affectedCells: ['C3', 'C4', 'F1'],
+				reusesCache: false,
 			},
 		]
 
@@ -609,7 +658,11 @@ describe('analyzeWorkbook', () => {
 			expect(result.value.affectedCells, entry.name).toEqual(entry.affectedCells)
 
 			const after = analyzeWorkbook(wb)
-			expect(after, entry.name).toBe(cached)
+			if (entry.reusesCache) {
+				expect(after, entry.name).toBe(cached)
+			} else {
+				expect(after, entry.name).not.toBe(cached)
+			}
 			const patchedFormulas = [...after.formulas]
 			const patchedSharedGroups = [...after.sharedFormulaGroups]
 			invalidateWorkbookAnalysis(wb)

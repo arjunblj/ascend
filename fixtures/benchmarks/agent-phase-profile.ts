@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { rm } from 'node:fs/promises'
+import { rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import type { Operation } from '@ascend/schema'
@@ -60,6 +60,8 @@ interface Sample {
 	readonly commitPayloadBytes: number
 	readonly sharedPlanPayloadBytes: number
 	readonly sharedCommitPayloadBytes: number
+	readonly commitOutputBytes: number
+	readonly sharedCommitOutputBytes: number
 	readonly commitTimingMs: AgentCommitTimings
 	readonly sharedCommitTimingMs: AgentCommitTimings
 	readonly planPhaseMs: Record<string, number>
@@ -203,13 +205,17 @@ async function runSample(
 	const sharedPlan = await timedWorkflow((onProgress) =>
 		createPreparedAgentPlan(inputPath, ops, { onProgress }),
 	)
-	const sharedCommit = await timedWorkflow(async (onProgress) => {
-		try {
-			return await sharedPlan.value.commit({ output: sharedOutputPath, approvals: [], onProgress })
-		} finally {
-			await rm(sharedOutputPath, { force: true })
-		}
-	})
+	const outputBytes = (await stat(outputPath)).size
+	let sharedCommit: TimedRun<Awaited<ReturnType<typeof sharedPlan.value.commit>>>
+	let sharedOutputBytes = 0
+	try {
+		sharedCommit = await timedWorkflow((onProgress) =>
+			sharedPlan.value.commit({ output: sharedOutputPath, approvals: [], onProgress }),
+		)
+		sharedOutputBytes = (await stat(sharedOutputPath)).size
+	} finally {
+		await rm(sharedOutputPath, { force: true })
+	}
 	return {
 		planMs: plan.ms,
 		commitMs: commit.ms,
@@ -221,6 +227,8 @@ async function runSample(
 		commitPayloadBytes: payloadBytes(commit.value),
 		sharedPlanPayloadBytes: payloadBytes(sharedPlan.value.plan),
 		sharedCommitPayloadBytes: payloadBytes(sharedCommit.value),
+		commitOutputBytes: outputBytes,
+		sharedCommitOutputBytes: sharedOutputBytes,
 		commitTimingMs: commit.value.timings,
 		sharedCommitTimingMs: sharedCommit.value.timings,
 		planPhaseMs: phaseMap(plan.phases),
@@ -285,6 +293,8 @@ function summarize(samples: readonly Sample[]) {
 		sharedCommitPayloadBytesMedian: median(
 			samples.map((sample) => sample.sharedCommitPayloadBytes),
 		),
+		commitOutputBytesMedian: median(samples.map((sample) => sample.commitOutputBytes)),
+		sharedCommitOutputBytesMedian: median(samples.map((sample) => sample.sharedCommitOutputBytes)),
 		operationCountMedian: median(samples.map((sample) => sample.operationCount)),
 		updateCountMedian: median(samples.map((sample) => sample.updateCount)),
 		changedCellsMedian: median(samples.map((sample) => sample.changedCells)),

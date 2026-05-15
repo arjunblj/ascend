@@ -1038,7 +1038,14 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 					if (result.errors.length > 0) {
 						const first = result.errors[0]
 						return jsonFailureError(
-							first ?? ascendError('VALIDATION_ERROR', 'Failed to apply operations'),
+							first
+								? {
+										...first,
+										details: { ...(first.details ?? {}), apply: result },
+									}
+								: ascendError('VALIDATION_ERROR', 'Failed to apply operations', {
+										details: { apply: result },
+									}),
 							400,
 						)
 					}

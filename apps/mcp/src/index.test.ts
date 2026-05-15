@@ -7360,6 +7360,62 @@ describe('MCP server', () => {
 		}
 	})
 
+	test('ascend.write errors preserve structured journal build failures', async () => {
+		const wb = AscendWorkbook.create()
+		await wb.save(TEMP_FILE)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const handler = (server as any)._registeredTools['ascend.write'].handler as (args: {
+			file: string
+			ops: unknown[]
+			journal?: boolean
+		}) => Promise<{
+			isError?: boolean
+			structuredContent?: {
+				error?: {
+					code?: string
+					details?: {
+						apply?: {
+							journal?: {
+								supported?: boolean
+								exact?: boolean
+								inverseOps?: unknown[]
+								issues?: unknown[]
+								undoPolicy?: { reason?: string; riskLevel?: string }
+							}
+						}
+					}
+				}
+			}
+		}>
+
+		const result = await handler({
+			file: TEMP_FILE,
+			journal: true,
+			ops: [{ op: 'clearRange', sheet: 'Sheet1', range: 'A1:', what: 'all' }],
+		})
+
+		expect(result.isError).toBe(true)
+		expect(result.structuredContent?.error?.code).toBe('INVALID_RANGE')
+		expect(result.structuredContent?.error?.details?.apply?.journal).toMatchObject({
+			supported: false,
+			exact: false,
+			inverseOps: [],
+			issues: [
+				{
+					code: 'JOURNAL_BUILD_FAILED',
+					surface: 'package-parts',
+					reason: 'journal-build-failed',
+				},
+			],
+			undoPolicy: {
+				reason: 'build-failed',
+				riskLevel: 'high',
+			},
+		})
+	})
+
 	test('ascend.plan invalid ops return structured batch repair details', async () => {
 		const server = createServer()
 		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing

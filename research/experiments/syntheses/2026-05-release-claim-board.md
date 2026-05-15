@@ -35,6 +35,7 @@ Latest proof refresh, 2026-05-15:
 - Safe-open local latency rerun with `--repeat 5 --warmup 2` produced public-fixture open-plan medians from 0.063 ms to 0.403 ms and full/open-plan ratios from 6.13x to 34.30x. Keep `release-latency-run` missing until performance approves the release environment, input set, repeat policy, and non-threshold wording.
 - Blocked agent commits now restore the caller's in-memory workbook when post-apply write-policy checks throw; the real shared-formula trust moat asserts no speculative `Label!C1` edit remains after the blocked commit. Treat this as correctness hygiene under auditable mutation, not a new claim.
 - Package-action streaming boundary rerun still shows `streamingProofCases=1` and `streamingRegenerateParts=1`; allowed wording remains one representative streaming dirty-sheet proof, not full streaming parity across add/drop/error or macro/chart cases.
+- API and MCP write errors now preserve structured failed-apply journal evidence in error details, including `JOURNAL_BUILD_FAILED`, surface `package-parts`, reason `journal-build-failed`, and undo policy `build-failed`.
 
 ## External References
 

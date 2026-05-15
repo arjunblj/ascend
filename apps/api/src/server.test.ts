@@ -1988,6 +1988,38 @@ describe('Ascend API server', () => {
 		})
 	})
 
+	test('write errors preserve structured journal build failures for agents', async () => {
+		const wb = AscendWorkbook.create()
+		await wb.save(TEMP_FILE)
+
+		const result = await postJson('/write', {
+			file: TEMP_FILE,
+			journal: true,
+			ops: [{ op: 'clearRange', sheet: 'Sheet1', range: 'A1:', what: 'all' }],
+		})
+
+		expect(result.status).toBe(400)
+		expect(result.body.ok).toBe(false)
+		expect(result.body.error?.details?.apply?.journal).toMatchObject({
+			supported: false,
+			exact: false,
+			inverseOps: [],
+			issues: [
+				{
+					code: 'JOURNAL_BUILD_FAILED',
+					surface: 'package-parts',
+					reason: 'journal-build-failed',
+				},
+			],
+			undoPolicy: {
+				undoable: false,
+				exact: false,
+				reason: 'build-failed',
+				riskLevel: 'high',
+			},
+		})
+	})
+
 	test('write exact theme journal inverse ops restore saved theme truth after reopen', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

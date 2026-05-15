@@ -1084,7 +1084,14 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 				if (result.errors.length > 0) {
 					const first = result.errors[0]
 					return errorResponse(
-						first ?? ascendError('VALIDATION_ERROR', 'Failed to apply operations'),
+						first
+							? {
+									...first,
+									details: { ...(first.details ?? {}), apply: result },
+								}
+							: ascendError('VALIDATION_ERROR', 'Failed to apply operations', {
+									details: { apply: result },
+								}),
 					)
 				}
 				if (result.recalcRequired) {

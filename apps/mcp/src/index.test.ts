@@ -1327,7 +1327,6 @@ describe('MCP server', () => {
 			{ op: 'createTable', sheet: 'Sheet1', ref: 'J1:K3', name: 'Sales', hasHeaders: true },
 			{ op: 'setTableStyle', table: 'Sales', styleName: 'TableStyleMedium2' },
 			{ op: 'setAutoFilter', sheet: 'Sheet1', range: 'A1:A3', column: 0, values: ['Open'] },
-			{ op: 'setComment', sheet: 'Sheet1', ref: 'D4', text: 'initial', author: 'analyst' },
 			{ op: 'setHyperlink', sheet: 'Sheet1', ref: 'E5', url: 'https://example.com' },
 			{ op: 'setDefinedName', name: 'Budget', ref: 'Sheet1!$B$1' },
 			{ op: 'setWorkbookView', index: 0, view: { activeTab: 0, firstSheet: 0, tabRatio: 600 } },
@@ -1396,7 +1395,6 @@ describe('MCP server', () => {
 				{ op: 'renameTable', table: 'Sales', newName: 'Revenue' },
 				{ op: 'setTableColumn', table: 'Revenue', column: 'Qty', newName: 'Units' },
 				{ op: 'setTableStyle', table: 'Revenue', styleName: null },
-				{ op: 'setComment', sheet: 'Sheet1', ref: 'D4', text: 'changed', author: 'agent' },
 				{ op: 'setHyperlink', sheet: 'Sheet1', ref: 'E5', url: 'https://changed.example' },
 				{ op: 'setDefinedName', name: 'Budget', ref: 'Sheet1!$C$1' },
 				{
@@ -1453,11 +1451,6 @@ describe('MCP server', () => {
 		expect(changed.table('Revenue')?.columns).toEqual(['Product', 'Units'])
 		expect(changed.table('Revenue')?.columnDefs[1]?.formula).toBeUndefined()
 		expect(changed.table('Revenue')?.styleInfo).toBeUndefined()
-		expect(changed.inspectSheet('Sheet1')?.comments?.[0]).toMatchObject({
-			ref: 'D4',
-			text: 'changed',
-			author: 'agent',
-		})
 		expect(changed.inspectSheet('Sheet1')?.hyperlinks?.[0]?.target).toBe('https://changed.example')
 		expect(changed.definedName('Budget')?.formula).toBe('Sheet1!$C$1')
 		expect(changed.workbookViews()[0]).toMatchObject({ activeTab: 0, firstSheet: 0, tabRatio: 720 })
@@ -1500,11 +1493,6 @@ describe('MCP server', () => {
 		expect(restored.table('Sales')?.columns).toEqual(['Product', 'Qty'])
 		expect(restored.table('Sales')?.columnDefs[1]?.formula).toBeUndefined()
 		expect(restored.table('Sales')?.styleInfo).toEqual({ name: 'TableStyleMedium2' })
-		expect(restored.inspectSheet('Sheet1')?.comments?.[0]).toMatchObject({
-			ref: 'D4',
-			text: 'initial',
-			author: 'analyst',
-		})
 		expect(restored.inspectSheet('Sheet1')?.hyperlinks?.[0]?.target).toBe('https://example.com')
 		expect(restored.definedName('Budget')?.formula).toBe('Sheet1!$B$1')
 		expect(restored.workbookViews()[0]).toMatchObject({

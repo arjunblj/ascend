@@ -3455,7 +3455,7 @@ function journalSetComment(
 				threadedComment,
 			})),
 		],
-		issues,
+		issues: [...issues, ...commentRestoreIssues([comment])],
 	}
 }
 

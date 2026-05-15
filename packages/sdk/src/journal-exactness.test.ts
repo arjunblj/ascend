@@ -218,6 +218,7 @@ describe('mutation journal exactness model', () => {
 		const journals = [
 			lossyDataValidationDefaultJournal(),
 			lossyLegacyCommentDrawingJournal(),
+			lossySetCommentLegacyDrawingJournal(),
 			lossyCreatedLayoutJournal(),
 			lossyThreadedCommentSelectorJournal(),
 			lossyDrawingSelectorJournal(),
@@ -268,6 +269,16 @@ describe('mutation journal exactness model', () => {
 			'auto-filter-extension-metadata',
 			'auto-filter-sort-metadata',
 		])
+	})
+
+	test('classifies setComment legacy drawing loss without changing the v1 vocabulary', () => {
+		const classified = classifyMutationJournalIssues(lossySetCommentLegacyDrawingJournal().issues)
+		expect(classified).toContainEqual({
+			surface: 'comments',
+			reason: 'legacy-comment-drawing',
+			exactness: 'conditional',
+			publicInverse: 'conditional',
+		})
 	})
 
 	test('analyzes journal exactness into agent-readable surfaces and reasons', () => {
@@ -1096,6 +1107,17 @@ function lossyLegacyCommentDrawingJournal(): MutationJournal {
 		legacyDrawing: { shapeId: '_x0000_s1025' },
 	})
 	return applyJournal(wb, [{ op: 'deleteComment', sheet: 'Sheet1', ref: 'A1' }])
+}
+
+function lossySetCommentLegacyDrawingJournal(): MutationJournal {
+	const wb = AscendWorkbook.create()
+	const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+	if (!sheet) throw new Error('missing sheet')
+	sheet.comments.set('A1', {
+		text: 'legacy note',
+		legacyDrawing: { shapeId: '_x0000_s1025' },
+	})
+	return applyJournal(wb, [{ op: 'setComment', sheet: 'Sheet1', ref: 'A1', text: 'updated' }])
 }
 
 function lossyCreatedLayoutJournal(): MutationJournal {

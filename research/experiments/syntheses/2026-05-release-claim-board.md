@@ -60,6 +60,18 @@ Rank order is intentional. The first two claims are the only implementation-loop
 
 This is a spec for refusal, not an implementation request. Do not add edit-producing rename in this block.
 
+Latest no-rename surface audit:
+
+```bash
+rg -n "prepareRename|renameTarget|formulaAssist|formula[-_ ]assist|rename target|occurrenceRanges|apply.*rename|WorkspaceEdit|TextEdit" packages apps fixtures research/experiments/syntheses -g '*.ts' -g '*.md'
+bun test packages/sdk/src/formula-edit.test.ts fixtures/benchmarks/formula-assist-proof.test.ts
+bun test apps/cli/src/cli.test.ts -t "formula assist"
+bun test apps/api/src/server.test.ts -t "formula-assist"
+bun test apps/mcp/src/index.test.ts -t "formula_assist"
+```
+
+Result: the current surfaces expose `renameTarget` metadata and formula-local LET prepare evidence only. They do not expose a formula rename command, workbook-wide edit plan, LSP `WorkspaceEdit`, or operation-owned rename application path. Existing workbook operations such as sheet/table rename are separate workbook mutation operations, not formula-assist rename.
+
 ### Binding Roles
 
 Formula intelligence may classify stateless formula-local symbols into:

@@ -389,6 +389,7 @@ export interface ReleaseProofGeneratedFixtureDecisionCase {
 	readonly generatedKind: 'generated-edge-package' | 'generated-malformed-package'
 	readonly replacementEvidence: string
 	readonly ownerDecisionNeeded: string
+	readonly recommendedOwnerAction: string
 	readonly allowedUse: string
 	readonly forbiddenUse: string
 }
@@ -984,8 +985,8 @@ export function releaseProofIndexMarkdown(result: ReleaseProofIndexResult): stri
 		`Owner approval required: ${result.generatedFixtureDecisionEvidence.ownerApprovalRequired}`,
 		result.generatedFixtureDecisionEvidence.boundary,
 		'',
-		'| Artifact | Gate | Case | Kind | Replacement evidence | Owner decision needed | Allowed use | Forbidden use |',
-		'| --- | --- | --- | --- | --- | --- | --- | --- |',
+		'| Artifact | Gate | Case | Kind | Replacement evidence | Owner decision needed | Recommended owner action | Allowed use | Forbidden use |',
+		'| --- | --- | --- | --- | --- | --- | --- | --- | --- |',
 		...result.generatedFixtureDecisionEvidence.cases.map(
 			generatedFixtureDecisionEvidenceMarkdownRow,
 		),
@@ -2806,6 +2807,8 @@ function generatedFixtureDecisionEvidence(
 			replacementEvidence: `tracked safe-open scan found signatureOrUnknownMatches=${fixtureEvidence.safeOpen.signatureOrUnknownMatches} across ${fixtureEvidence.safeOpen.scanned} fixtures`,
 			ownerDecisionNeeded:
 				'Accept disclosed generated signature package topology as safe-open routing proof, or provide an approved public signed workbook fixture.',
+			recommendedOwnerAction:
+				'Accept disclosed generated topology for local safe-open package-feature routing only, while keeping the release gate missing until product and release approve the wording.',
 			allowedUse:
 				'Pre-hydration package-feature routing evidence that detects signature-related package parts.',
 			forbiddenUse:
@@ -2819,6 +2822,8 @@ function generatedFixtureDecisionEvidence(
 			replacementEvidence: `tracked safe-open scan found signatureOrUnknownMatches=${fixtureEvidence.safeOpen.signatureOrUnknownMatches} across ${fixtureEvidence.safeOpen.scanned} fixtures`,
 			ownerDecisionNeeded:
 				'Accept disclosed generated unknown-part topology as safe-open routing proof, or provide an approved public unknown-part workbook fixture.',
+			recommendedOwnerAction:
+				'Accept disclosed generated topology for local unknown-part routing proof only, while keeping the release gate missing until product and release approve the wording.',
 			allowedUse:
 				'Pre-hydration package-feature routing evidence that unknown package features require review before hydration.',
 			forbiddenUse:
@@ -2832,6 +2837,8 @@ function generatedFixtureDecisionEvidence(
 			replacementEvidence: `tracked safe-open scan rejected ${fixtureEvidence.safeOpen.rejected} fixture(s); malformed proof input remains generated structural bytes`,
 			ownerDecisionNeeded:
 				'Accept disclosed generated malformed-package bytes as rejection-path proof, or provide an approved public malformed workbook fixture.',
+			recommendedOwnerAction:
+				'Accept disclosed generated malformed bytes for fail-closed rejection-path proof only, while rejecting any recovery or vendor-repair wording.',
 			allowedUse: 'Fail-closed malformed-package rejection evidence for the safe-open harness.',
 			forbiddenUse:
 				'Do not claim recovery of arbitrary malformed files, vendor repair equivalence, malware safety, or file trust.',
@@ -2844,6 +2851,8 @@ function generatedFixtureDecisionEvidence(
 			replacementEvidence: `tracked package-action scan found signaturePackage=${fixtureEvidence.packageAction.featureCounts.signaturePackage} across ${fixtureEvidence.packageAction.scanned} fixtures`,
 			ownerDecisionNeeded:
 				'Accept disclosed generated signature package topology as package-action invalidation proof, or provide an approved public signed workbook fixture.',
+			recommendedOwnerAction:
+				'Accept disclosed generated topology for local signature-part drop/invalidation accounting only, while keeping provenance and trust wording forbidden.',
 			allowedUse:
 				'Local package-action accounting evidence that signature package parts are dropped or invalidated after mutation.',
 			forbiddenUse:
@@ -2857,6 +2866,8 @@ function generatedFixtureDecisionEvidence(
 			replacementEvidence: `tracked package-action scan found syntheticUnknownPathFamily=${fixtureEvidence.packageAction.featureCounts.syntheticUnknownPathFamily} across ${fixtureEvidence.packageAction.scanned} fixtures`,
 			ownerDecisionNeeded:
 				'Accept disclosed generated unknown-part topology as fail-closed package-action proof, or provide an approved public unknown-part workbook fixture.',
+			recommendedOwnerAction:
+				'Accept disclosed generated topology for local fail-closed unknown-part package-action proof only, while keeping arbitrary preservation and trust wording forbidden.',
 			allowedUse:
 				'Local package-action accounting evidence that an unsupported unknown package part can fail closed with an explicit error action.',
 			forbiddenUse:
@@ -2889,6 +2900,7 @@ function generatedFixtureDecisionEvidenceMarkdownRow(
 		row.generatedKind,
 		row.replacementEvidence,
 		row.ownerDecisionNeeded,
+		row.recommendedOwnerAction,
 		row.allowedUse,
 		row.forbiddenUse,
 	]

@@ -192,11 +192,13 @@ describe('release proof evidence index', () => {
 			gateId: 'public-edge-fixtures',
 			generatedKind: 'generated-edge-package',
 			replacementEvidence: expect.stringContaining('signatureOrUnknownMatches=0'),
+			recommendedOwnerAction: expect.stringContaining('local safe-open package-feature routing'),
 			forbiddenUse: expect.stringContaining('signature verification'),
 		})
 		expect(index.generatedFixtureDecisionEvidence.cases[2]).toMatchObject({
 			caseName: 'malformed',
 			generatedKind: 'generated-malformed-package',
+			recommendedOwnerAction: expect.stringContaining('fail-closed rejection-path proof'),
 			allowedUse: expect.stringContaining('malformed-package rejection'),
 			forbiddenUse: expect.stringContaining('arbitrary malformed files'),
 		})
@@ -204,10 +206,12 @@ describe('release proof evidence index', () => {
 			artifact: 'package-action-proof',
 			gateId: 'edge-fixture-policy',
 			replacementEvidence: expect.stringContaining('signaturePackage=0'),
+			recommendedOwnerAction: expect.stringContaining('local signature-part drop'),
 			forbiddenUse: expect.stringContaining('SLSA'),
 		})
 		expect(index.generatedFixtureDecisionEvidence.cases[4]).toMatchObject({
 			replacementEvidence: expect.stringContaining('syntheticUnknownPathFamily=0'),
+			recommendedOwnerAction: expect.stringContaining('fail-closed unknown-part'),
 			allowedUse: expect.stringContaining('explicit error action'),
 		})
 		expect(index.performancePolicy).toMatchObject({

@@ -23,6 +23,8 @@ Machine-readable handoff note: the release index now emits `readiness.implementa
 
 Generated fixture decision note: the release index now emits `generatedFixtureDecisionEvidence` for the product-owned fixture gates. It lists each generated structural case, the tracked replacement evidence, the owner decision needed, allowed use, and forbidden use. This makes fixture acceptance reviewable without marking `public-edge-fixtures` or `edge-fixture-policy` satisfied.
 
+Generated fixture owner-action note: each generated fixture decision row now also includes `recommendedOwnerAction`. The recommendation is intentionally narrow: accept disclosed generated topology/rejection proof only for local proof wording, keep public fixture gates missing until owner approval, and keep trust, malware, signed-provenance, vendor-repair, and arbitrary-preservation wording forbidden.
+
 Streaming proof note: the release index now emits `streamingMatrixEvidence` for the package-action performance gate. Current proof covers one streaming case, `docprops-passthrough`, and action kinds `passthrough` and `regenerate`; it explicitly leaves `add`, `drop`, `error`, public macro, and public chart cases unproven for streaming. The gate remains owner-approval required.
 
 Compact publication note: `compactReportPublicationEvidence.policyDecisions` now breaks the release-owned compact-report blocker into four pending decisions: artifact storage path, retention/privacy filtering, canonicalization subject, and offline verification expectations. This keeps compact reports usable as local owner-review summaries while preventing digest publication, signed-provenance wording, or attestation claims.

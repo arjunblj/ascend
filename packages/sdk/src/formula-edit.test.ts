@@ -184,7 +184,14 @@ describe('formula editing utilities', () => {
 	test('classifies formula binding roles without promoting safe rename', () => {
 		expect(formulaBindingRoles('=LET(total,SUM(A1:A3),total/3)+Budget')).toEqual([
 			{ role: 'let-binding-declaration', text: 'total', start: 5, end: 10 },
-			{ role: 'let-binding-use', text: 'total', start: 22, end: 27 },
+			{
+				role: 'let-binding-use',
+				text: 'total',
+				start: 22,
+				end: 27,
+				bindingStart: 5,
+				bindingEnd: 10,
+			},
 			{ role: 'unresolved-name', text: 'Budget', start: 31, end: 37 },
 		])
 
@@ -208,6 +215,36 @@ describe('formula editing utilities', () => {
 				end: 44,
 			}),
 		)
+
+		expect(formulaBindingRoles('=LET(x,1,LET(x,2,x)+x)')).toEqual([
+			{ role: 'let-binding-declaration', text: 'x', start: 5, end: 6 },
+			{ role: 'let-binding-declaration', text: 'x', start: 13, end: 14 },
+			{
+				role: 'let-binding-use',
+				text: 'x',
+				start: 17,
+				end: 18,
+				bindingStart: 13,
+				bindingEnd: 14,
+			},
+			{
+				role: 'let-binding-use',
+				text: 'x',
+				start: 20,
+				end: 21,
+				bindingStart: 5,
+				bindingEnd: 6,
+			},
+		])
+
+		expect(formulaBindingRoles('=LET(x,1,LET(y,x,y)+x)')).toContainEqual({
+			role: 'let-binding-use',
+			text: 'x',
+			start: 15,
+			end: 16,
+			bindingStart: 5,
+			bindingEnd: 6,
+		})
 	})
 
 	test('does not treat earlier references as active in empty formula edit slots', () => {

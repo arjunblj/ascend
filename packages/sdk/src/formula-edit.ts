@@ -52,6 +52,8 @@ export interface FormulaBindingRole {
 	readonly text: string
 	readonly start: number
 	readonly end: number
+	readonly bindingStart?: number
+	readonly bindingEnd?: number
 	readonly reference?: FormulaReferenceRange
 }
 
@@ -829,44 +831,72 @@ function structuredReferenceBindingRoles(
 	return roles
 }
 
+interface LetBindingDeclaration {
+	readonly name: string
+	readonly span: TokenSpan
+}
+
 function letBindingRoles(spans: readonly TokenSpan[]): FormulaBindingRole[] {
 	const roles: FormulaBindingRole[] = []
-	for (let i = 0; i < spans.length; i++) {
+	collectLetBindingRoles(spans, 0, spans.length, [], roles)
+	return roles
+}
+
+function collectLetBindingRoles(
+	spans: readonly TokenSpan[],
+	start: number,
+	end: number,
+	env: readonly LetBindingDeclaration[],
+	roles: FormulaBindingRole[],
+): void {
+	for (let i = start; i < end; i++) {
 		const span = spans[i]
-		if (!span || span.token.type !== TokenType.Function || span.text.toUpperCase() !== 'LET') {
+		if (!span || span.token.type === TokenType.EOF) break
+		if (span.token.type !== TokenType.Function || span.text.toUpperCase() !== 'LET') {
+			if (span.token.type === TokenType.Name) {
+				const binding = env.find((declaration) => namesEqual(declaration.name, span.text))
+				if (binding) {
+					roles.push({
+						role: 'let-binding-use',
+						text: span.text,
+						start: span.start,
+						end: span.end,
+						bindingStart: binding.span.start,
+						bindingEnd: binding.span.end,
+					})
+				}
+			}
 			continue
 		}
 		const open = nextNonWhitespace(spans, i + 1)
 		if (open?.span.token.type !== TokenType.OpenParen) continue
 		const args = functionArgumentRanges(spans, open.index)
 		if (args.length < 3) continue
-		const declarations: TokenSpan[] = []
+		const closeIndex = matchingCloseParenIndex(spans, open.index)
+		let scopedEnv = env
 		for (let argIndex = 0; argIndex < args.length - 1; argIndex += 2) {
 			const declaration = singleNameArgument(spans, args[argIndex])
-			if (!declaration) continue
-			declarations.push(declaration)
-			roles.push({
-				role: 'let-binding-declaration',
-				text: declaration.text,
-				start: declaration.start,
-				end: declaration.end,
-			})
-		}
-		for (let argIndex = 1; argIndex < args.length; argIndex++) {
-			for (const use of nameSpansInRange(spans, args[argIndex] ?? null)) {
-				if (!declarations.some((declaration) => namesEqual(declaration.text, use.text))) {
-					continue
-				}
+			if (declaration) {
 				roles.push({
-					role: 'let-binding-use',
-					text: use.text,
-					start: use.start,
-					end: use.end,
+					role: 'let-binding-declaration',
+					text: declaration.text,
+					start: declaration.start,
+					end: declaration.end,
 				})
 			}
+			collectLetBindingRoles(
+				spans,
+				args[argIndex + 1]?.start ?? 0,
+				args[argIndex + 1]?.end ?? 0,
+				scopedEnv,
+				roles,
+			)
+			if (declaration) scopedEnv = [{ name: declaration.text, span: declaration }, ...scopedEnv]
 		}
+		const finalArg = args[args.length - 1]
+		if (finalArg) collectLetBindingRoles(spans, finalArg.start, finalArg.end, scopedEnv, roles)
+		if (closeIndex !== undefined) i = closeIndex
 	}
-	return roles
 }
 
 function functionArgumentRanges(
@@ -897,6 +927,26 @@ function functionArgumentRanges(
 		}
 	}
 	return ranges
+}
+
+function matchingCloseParenIndex(
+	spans: readonly TokenSpan[],
+	openIndex: number,
+): number | undefined {
+	let depth = 0
+	for (let i = openIndex + 1; i < spans.length; i++) {
+		const span = spans[i]
+		if (!span || span.token.type === TokenType.EOF) return undefined
+		if (span.token.type === TokenType.OpenParen) {
+			depth++
+			continue
+		}
+		if (span.token.type === TokenType.CloseParen) {
+			if (depth === 0) return i
+			depth--
+		}
+	}
+	return undefined
 }
 
 function singleNameArgument(

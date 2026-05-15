@@ -7511,8 +7511,11 @@ function sameSharedFormulaBinding(
 	candidate: Cell['formulaInfo'],
 ): boolean {
 	if (candidate?.kind !== 'shared') return false
-	if (binding.sharedIndex !== undefined) return candidate.sharedIndex === binding.sharedIndex
-	return candidate.masterRef === binding.masterRef
+	if (binding.sharedIndex !== candidate.sharedIndex) return false
+	if (binding.masterRef !== undefined && candidate.masterRef !== undefined) {
+		return sameFormulaCellRef(binding.masterRef, candidate.masterRef)
+	}
+	return true
 }
 
 function isSpillFormulaBinding(

@@ -1813,6 +1813,47 @@ describe('interactive client contract', () => {
 		expect(changed.patch?.changedCells.map((cell) => [cell.ref, cell.flatValue])).toEqual([
 			['A1', 2],
 		])
+		const retainedPatch = session.readViewportPatchResult({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 1,
+			changedSince: base.changeToken,
+		})
+		expect(retainedPatch.patchInvalidation).toBeUndefined()
+		expect(retainedPatch.patch?.changedCells.map((cell) => [cell.ref, cell.flatValue])).toEqual([
+			['A1', 2],
+		])
+		let latestToken = retainedPatch.patch?.changeToken
+		if (!latestToken) throw new Error('missing retained patch token')
+		for (let i = 0; i < 8; i++) {
+			const retainedRead = session.readViewport({
+				sheet: 'Sheet1',
+				topRow: 0,
+				leftCol: 0,
+				rowCount: 1,
+				colCount: 1,
+				changedSince: latestToken,
+			})
+			expect(retainedRead.patchInvalidation).toBeUndefined()
+			latestToken = retainedRead.changeToken
+		}
+		const expiredByLedger = session.readViewportPatchResult({
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 1,
+			colCount: 1,
+			changedSince: base.changeToken,
+		})
+		expect(expiredByLedger.patch).toBeNull()
+		expect(expiredByLedger.patchInvalidation).toEqual({
+			baseToken: base.changeToken,
+			changeToken: expiredByLedger.patchInvalidation?.changeToken,
+			reason: 'base-token-expired',
+			requiredAction: 'use-returned-snapshot',
+		})
 
 		await session.refresh()
 		const afterRefresh = session.readViewport({
@@ -1909,16 +1950,18 @@ describe('interactive client contract', () => {
 				['A1', 2],
 			])
 			expect(
-				session.readViewportPatch({ ...baseViewportRequest(), changedSince: base.changeToken }),
-			).toBeNull()
+				session
+					.readViewportPatch({ ...baseViewportRequest(), changedSince: base.changeToken })
+					?.changedCells.map((cell) => [cell.ref, cell.flatValue]),
+			).toEqual([['A1', 2]])
 
 			const stale = session.readViewportPatchResult({
 				...baseViewportRequest(),
-				changedSince: base.changeToken,
+				changedSince: '0:999',
 			})
 			expect(stale.patch).toBeNull()
 			expect(stale.patchInvalidation).toEqual({
-				baseToken: base.changeToken,
+				baseToken: '0:999',
 				changeToken: stale.patchInvalidation?.changeToken,
 				reason: 'base-token-stale',
 				requiredAction: 'use-returned-snapshot',

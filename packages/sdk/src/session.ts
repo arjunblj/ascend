@@ -312,6 +312,16 @@ interface InteractiveChangeEntry {
 	readonly refs: ReadonlySet<string> | null
 }
 
+interface InteractiveViewportSnapshot {
+	readonly token: string
+	readonly request: InteractiveViewportRequest
+	readonly cells: Map<string, InteractiveViewportCell>
+}
+
+interface InteractiveViewportSnapshotLedger {
+	readonly snapshots: InteractiveViewportSnapshot[]
+}
+
 interface MutableWorkbookEnsureTimings {
 	readonly cached: boolean
 	readonly reusedReadModel: boolean
@@ -348,6 +358,7 @@ const cacheConfig = {
 }
 
 const DEFAULT_FIRST_WINDOW_ROWS = 500
+const INTERACTIVE_VIEWPORT_SNAPSHOT_RETENTION = 8
 
 const sessionCache = new Map<string, SessionCacheEntry>()
 
@@ -967,14 +978,7 @@ export class AscendSession {
 	private documentGeneration = 0
 	private changeVersion = 0
 	private readonly recentChanges: InteractiveChangeEntry[] = []
-	private readonly viewportSnapshots = new Map<
-		string,
-		{
-			readonly token: string
-			readonly request: InteractiveViewportRequest
-			readonly cells: Map<string, InteractiveViewportCell>
-		}
-	>()
+	private readonly viewportSnapshots = new Map<string, InteractiveViewportSnapshotLedger>()
 
 	private constructor(
 		session: WorkbookSession,
@@ -1013,11 +1017,22 @@ export class AscendSession {
 		}
 		const snapshotKey = interactiveViewportSnapshotKey(request)
 		const currentCells = interactiveCellMap(result.cells)
-		const previous = this.viewportSnapshots.get(snapshotKey)
-		this.viewportSnapshots.set(snapshotKey, { token: changeToken, request, cells: currentCells })
-		if (!request.changedSince) return result
+		const ledger = this.viewportSnapshots.get(snapshotKey)
+		if (!request.changedSince) {
+			this.rememberViewportSnapshot(snapshotKey, {
+				token: changeToken,
+				request,
+				cells: currentCells,
+			})
+			return result
+		}
 		const baseGeneration = interactiveTokenGeneration(request.changedSince)
 		if (baseGeneration === null) {
+			this.rememberViewportSnapshot(snapshotKey, {
+				token: changeToken,
+				request,
+				cells: currentCells,
+			})
 			return {
 				...result,
 				patchInvalidation: interactivePatchInvalidation(
@@ -1027,7 +1042,12 @@ export class AscendSession {
 				),
 			}
 		}
-		if (!previous) {
+		if (!ledger) {
+			this.rememberViewportSnapshot(snapshotKey, {
+				token: changeToken,
+				request,
+				cells: currentCells,
+			})
 			return {
 				...result,
 				patchInvalidation: interactivePatchInvalidation(
@@ -1037,18 +1057,29 @@ export class AscendSession {
 				),
 			}
 		}
-		if (previous.token !== request.changedSince) {
+		const previous = findInteractiveViewportSnapshot(ledger, request.changedSince)
+		if (!previous) {
+			this.rememberViewportSnapshot(snapshotKey, {
+				token: changeToken,
+				request,
+				cells: currentCells,
+			})
 			return {
 				...result,
 				patchInvalidation: interactivePatchInvalidation(
 					request.changedSince,
 					changeToken,
-					'base-token-stale',
+					interactiveViewportSnapshotInvalidationReason(request.changedSince, ledger),
 				),
 			}
 		}
 		const changes = this.changedRefsSince(baseGeneration)
 		if (changes.kind !== 'refs') {
+			this.rememberViewportSnapshot(snapshotKey, {
+				token: changeToken,
+				request,
+				cells: currentCells,
+			})
 			return {
 				...result,
 				patchInvalidation: interactivePatchInvalidation(
@@ -1064,6 +1095,7 @@ export class AscendSession {
 			previous.cells,
 			currentCells,
 		)
+		this.rememberViewportSnapshot(snapshotKey, { token: changeToken, request, cells: currentCells })
 		return { ...result, patch }
 	}
 
@@ -1074,7 +1106,7 @@ export class AscendSession {
 	readViewportPatchResult(request: InteractiveViewportRequest): InteractiveViewportPatchResult {
 		if (!request.changedSince) return { patch: null }
 		const snapshotKey = interactiveViewportSnapshotKey(request)
-		const previous = this.viewportSnapshots.get(snapshotKey)
+		const ledger = this.viewportSnapshots.get(snapshotKey)
 		const baseGeneration = interactiveTokenGeneration(request.changedSince)
 		if (baseGeneration === null) {
 			return {
@@ -1086,7 +1118,7 @@ export class AscendSession {
 				),
 			}
 		}
-		if (!previous) {
+		if (!ledger) {
 			return {
 				patch: null,
 				patchInvalidation: interactivePatchInvalidation(
@@ -1096,13 +1128,14 @@ export class AscendSession {
 				),
 			}
 		}
-		if (previous.token !== request.changedSince) {
+		const previous = findInteractiveViewportSnapshot(ledger, request.changedSince)
+		if (!previous) {
 			return {
 				patch: null,
 				patchInvalidation: interactivePatchInvalidation(
 					request.changedSince,
 					`${this.documentGeneration}:${this.changeVersion++}`,
-					'base-token-stale',
+					interactiveViewportSnapshotInvalidationReason(request.changedSince, ledger),
 				),
 			}
 		}
@@ -1156,7 +1189,7 @@ export class AscendSession {
 				if (!before || !interactiveViewportCellsEqual(before, current)) changedCells.push(current)
 			}
 		}
-		this.viewportSnapshots.set(snapshotKey, {
+		this.rememberViewportSnapshot(snapshotKey, {
 			token: changeToken,
 			request: previous.request,
 			cells: nextCells,
@@ -1383,6 +1416,18 @@ export class AscendSession {
 		this.viewportSnapshots.clear()
 	}
 
+	private rememberViewportSnapshot(
+		snapshotKey: string,
+		snapshot: InteractiveViewportSnapshot,
+	): void {
+		const ledger = this.viewportSnapshots.get(snapshotKey) ?? { snapshots: [] }
+		ledger.snapshots.push(snapshot)
+		while (ledger.snapshots.length > INTERACTIVE_VIEWPORT_SNAPSHOT_RETENTION) {
+			ledger.snapshots.shift()
+		}
+		this.viewportSnapshots.set(snapshotKey, ledger)
+	}
+
 	private async ensureMutableWorkbook(): Promise<{
 		readonly workbook: AscendWorkbook
 		readonly timings: MutableWorkbookEnsureTimings
@@ -1442,15 +1487,17 @@ export class AscendSession {
 
 	private rebaseViewportSnapshots(workbook: AscendWorkbook): void {
 		const rebaseRefs = new Set<string>()
-		for (const snapshot of this.viewportSnapshots.values()) {
-			const rebased = readInteractiveViewport(
-				workbook,
-				snapshot.request,
-				this.documentGeneration,
-				snapshot.token,
-			)
-			const cells = interactiveCellMap(rebased.cells)
-			collectInteractiveCellMapDiffRefs(snapshot.request.sheet, snapshot.cells, cells, rebaseRefs)
+		for (const ledger of this.viewportSnapshots.values()) {
+			for (const snapshot of ledger.snapshots) {
+				const rebased = readInteractiveViewport(
+					workbook,
+					snapshot.request,
+					this.documentGeneration,
+					snapshot.token,
+				)
+				const cells = interactiveCellMap(rebased.cells)
+				collectInteractiveCellMapDiffRefs(snapshot.request.sheet, snapshot.cells, cells, rebaseRefs)
+			}
 		}
 		if (rebaseRefs.size > 0) {
 			this.documentGeneration += 1
@@ -2007,13 +2054,43 @@ function interactiveFormulaBindingsEqual(
 }
 
 function interactiveTokenGeneration(token: string): number | null {
+	return interactiveTokenParts(token)?.generation ?? null
+}
+
+function interactiveTokenParts(token: string): { generation: number; version: number } | null {
 	const sep = token.indexOf(':')
 	if (sep < 0) return null
 	const generationText = token.slice(0, sep)
 	const versionText = token.slice(sep + 1)
 	if (!/^\d+$/.test(generationText) || !/^\d+$/.test(versionText)) return null
 	const generation = Number(generationText)
-	return Number.isSafeInteger(generation) ? generation : null
+	const version = Number(versionText)
+	if (!Number.isSafeInteger(generation) || !Number.isSafeInteger(version)) return null
+	return { generation, version }
+}
+
+function findInteractiveViewportSnapshot(
+	ledger: InteractiveViewportSnapshotLedger,
+	token: string,
+): InteractiveViewportSnapshot | undefined {
+	return ledger.snapshots.find((snapshot) => snapshot.token === token)
+}
+
+function interactiveViewportSnapshotInvalidationReason(
+	baseToken: string,
+	ledger: InteractiveViewportSnapshotLedger,
+): InteractiveViewportPatchInvalidationReason {
+	const base = interactiveTokenParts(baseToken)
+	const oldest = ledger.snapshots[0] ? interactiveTokenParts(ledger.snapshots[0].token) : null
+	if (
+		base &&
+		oldest &&
+		(base.generation < oldest.generation ||
+			(base.generation === oldest.generation && base.version < oldest.version))
+	) {
+		return 'base-token-expired'
+	}
+	return 'base-token-stale'
 }
 
 function collectInteractiveChangeRefs(

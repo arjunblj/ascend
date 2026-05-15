@@ -200,6 +200,7 @@ Release-index enforcement: `fixtures/benchmarks/release-proof-index.ts` marks bo
 - Columnar sidecars as a product feature.
 - Release proof bundle as signed provenance.
 - Compact proof-report digests in the release index before artifact storage, privacy filtering, and stable canonicalization are owner-approved for both top claims.
+- A shared compact-report canonicalization helper before release owners define the artifact subject, storage location, and verification expectations.
 - Universal Excel formula compatibility.
 - Collaborative/CRDT claims from retained viewport patches.
 - Claims backed only by private workbook corpora.

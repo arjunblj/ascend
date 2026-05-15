@@ -174,6 +174,7 @@ Updated: 2026-05-15
 | [Blocked commit rollback proof](runs/2026/2026-05-15-blocked-commit-rollback-proof/log.md) | folded in rollback snapshot fix so write-policy-blocked commits do not leave speculative workbook edits in memory | correctness loop |
 | [Package action streaming boundary rerun](runs/2026/2026-05-15-package-action-streaming-boundary-rerun/log.md) | reran compact package-action proof and kept streaming wording limited to one representative dirty-sheet case | performance loop, correctness loop |
 | [Write error structured journal proof](runs/2026/2026-05-15-write-error-structured-journal-proof/log.md) | folded API/MCP failed-write details through to structured journal build-failure evidence | product loop, correctness loop |
+| [Ranked claim portfolio proof refresh](runs/2026/2026-05-15-ranked-claim-portfolio-proof-refresh/log.md) | portfolio refreshed from current top-two proof artifacts; no new surfaces promoted | product loop, correctness loop, performance loop, release loop |
 | [Package action proof](runs/2026/2026-05-14-package-action-proof/log.md) | cycle 2 complete, promote | correctness loop, product/DX loop, performance loop |
 | [Formula spans LSP](runs/2026/2026-05-14-formula-spans-lsp/log.md) | cycle 13 complete, folded in SDK hover/code actions | product/DX loop, correctness loop |
 | [Formula sqllogictest conformance](runs/2026/2026-05-14-formula-sqllogictest-conformance/log.md) | cycle 14 complete, folded in converter/runner | correctness loop |

@@ -6,6 +6,26 @@ Date: 2026-05-15
 
 Research is no longer a broad sweep. Each direction below must earn its place by proving a product-shaped claim, naming the evidence gap, and accepting a kill criterion. The top unknowns for this block are the two release-claim candidates: safe unknown workbook opening and auditable package-part mutation. Formula and viewport work stays in proof-backed stewardship, but it is not the next implementation handoff.
 
+## Latest Claim Steward Refresh
+
+Proof timestamp: 2026-05-15T09:37:13Z.
+
+The portfolio ranking still holds after the current proof run. The top two implementation handoffs remain safe unknown workbook opening and auditable package-part mutation. The release gate remains fail-closed, so the next step is owner approval or fixture replacement, not a new SDK/CLI/API/MCP surface.
+
+| Artifact | Current proof | Blocking owner gates | Handoff decision |
+| --- | --- | --- | --- |
+| Safe unknown workbook opening | 9 cases: 6 public fixtures, 2 generated edge packages, 1 malformed package; 8 OK, 1 rejected, 4 review-before-hydration routes. Stable shape SHA-256: `6aa54a651309b3c45ce7ce93ff7034e7b31e47c7cbc458c58ee6a6f23e0c6178`. | `public-edge-fixtures`, `release-latency-run`, `publication-boundary`, `compact-report-publication-policy`. | Hand off to product/performance/release for proof packaging and boundary approval only. |
+| Auditable package-part mutation | 8 cases: 2 public fixtures, 2 generated workbooks, 4 generated edge packages; action totals `passthrough=27`, `regenerate=38`, `add=3`, `drop=3`, `error=1`; source graph evidence everywhere; one representative streaming proof. Stable shape SHA-256: `9abebf576651551f58e00ccf8469d099b2c06dacd48391fe581a24e51a1e0afd`. | `edge-fixture-policy`, `provenance-boundary`, `unsupported-feature-boundary`, `streaming-matrix-boundary`, `compact-report-publication-policy`. | Hand off to correctness/product/performance/release for proof packaging and boundary approval only. |
+| Release proof index | `headlineClaimsAllowed=false`, `implementationSurfacePromotionAllowed=false`, `missingRequirementCount=9`, `signed=false`, `attestation=false`. | Product 2, correctness 1, performance 2, release 4. | Do not promote formula rename, agent view, viewport history, columnar sidecars, oracle routing, or agent traces into release scope this block. |
+
+Fresh proof commands:
+
+```bash
+bun run fixtures/benchmarks/safe-open-proof.ts --no-timings --json
+bun run fixtures/benchmarks/package-action-proof.ts --no-timings --json
+bun run fixtures/benchmarks/release-proof-index.ts --no-timings --json
+```
+
 ## External Anchors
 
 - [Microsoft Protected View](https://support.microsoft.com/en-us/office/what-is-protected-view-d6f09ac7-e6b9-4495-8e43-2bbcdbcb6653) and [Open Packaging Conventions](https://learn.microsoft.com/en-us/previous-versions/windows/desktop/opc/open-packaging-conventions-overview) frame the safe-open/package proof boundary.

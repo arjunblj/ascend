@@ -4967,6 +4967,31 @@ describe('interactive client contract', () => {
 		})
 	})
 
+	test('moveRange merge journals mark duplicate imported merge metadata lossy', () => {
+		const wb = AscendWorkbook.create()
+		const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+		if (!sheet) throw new Error('missing sheet')
+		const duplicateMerge = { start: { row: 0, col: 0 }, end: { row: 0, col: 1 } }
+		sheet.merges.push(duplicateMerge, duplicateMerge)
+
+		const changed = wb.apply(
+			[{ op: 'moveRange', sheet: 'Sheet1', source: 'A1:B1', target: 'D1', mode: 'formats' }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(false)
+		expect(changed.journal?.issues).toContainEqual({
+			code: 'LOSSY_INVERSE',
+			message:
+				'Duplicate merge metadata on Sheet1!A1:B1 cannot be restored exactly with public operations',
+			reason: 'metadata-duplicate',
+			refs: ['Sheet1!A1:B1'],
+			surface: 'merged-cells',
+		})
+	})
+
 	test('moveRange validation journals restore source and target validations exactly', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

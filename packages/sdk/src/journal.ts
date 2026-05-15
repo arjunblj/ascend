@@ -6908,6 +6908,8 @@ function mergeTransferOrderIssues(
 			{
 				code: 'LOSSY_INVERSE',
 				message: `${label} on ${sheetName}!${rangeToA1(contextRange)} cannot be restored exactly with public operations`,
+				surface: 'merged-cells',
+				reason: 'metadata-order',
 				refs: [`${sheetName}!${rangeToA1(contextRange)}`],
 			},
 		]
@@ -6925,6 +6927,8 @@ function mergeTransferDuplicateIssues(
 		{
 			code: 'LOSSY_INVERSE',
 			message: `Duplicate merge metadata on ${sheetName}!${rangeToA1(contextRange)} cannot be restored exactly with public operations`,
+			surface: 'merged-cells',
+			reason: 'metadata-duplicate',
 			refs: [`${sheetName}!${rangeToA1(contextRange)}`],
 		},
 	]

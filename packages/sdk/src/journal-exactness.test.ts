@@ -232,6 +232,7 @@ describe('mutation journal exactness model', () => {
 			lossyConditionalFormatDeleteOrderJournal(),
 			lossyConditionalFormatDuplicateDeleteJournal(),
 			lossyConditionalFormatDuplicateMoveJournal(),
+			lossyMergeDuplicateMoveJournal(),
 			lossyAutoFilterJournal(),
 			lossyPageSetupJournal(),
 			lossyX14TransferJournal(),
@@ -2074,6 +2075,17 @@ function conditionalFormatDuplicateWorkbook(): AscendWorkbook {
 		{ sqref: 'A1:A1', rules: [{ type: 'expression', formulas: ['A1<0'] }] },
 	)
 	return wb
+}
+
+function lossyMergeDuplicateMoveJournal(): MutationJournal {
+	const wb = AscendWorkbook.create()
+	const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+	if (!sheet) throw new Error('missing sheet')
+	const duplicateMerge = { start: { row: 0, col: 0 }, end: { row: 0, col: 1 } }
+	sheet.merges.push(duplicateMerge, duplicateMerge)
+	return buildMutationJournal(wb.getWorkbookModel(), [
+		{ op: 'moveRange', sheet: 'Sheet1', source: 'A1:B1', target: 'D1', mode: 'formats' },
+	])
 }
 
 function lossyAutoFilterJournal(): MutationJournal {

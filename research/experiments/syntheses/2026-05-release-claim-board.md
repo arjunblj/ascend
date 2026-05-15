@@ -32,6 +32,8 @@ Latest proof refresh, 2026-05-15:
 - Compact safe-open and package-action reports omit workbook bytes, input/output byte fields, per-part digest fields, and generated artifacts. Treat them as owner-review pointers until release approves storage, privacy filtering, and canonicalization policy.
 - Worksheet reader metadata extraction now uses markup-compatibility-stripped XML for custom sheet views, raw extension lists, and controls; the SDK trust moat also uses a real imported shared-formula fixture for corruption blocking. Treat this as correctness hygiene under preservation-first/auditable mutation, not as claim promotion.
 - Compact agent plan checks and blocking write-policy diagnostics now have regression coverage for exact imported shared-formula refs (`Label!A3`, `Label!A2`) in the real shared-formula trust fixture.
+- Safe-open local latency rerun with `--repeat 5 --warmup 2` produced public-fixture open-plan medians from 0.063 ms to 0.403 ms and full/open-plan ratios from 6.13x to 34.30x. Keep `release-latency-run` missing until performance approves the release environment, input set, repeat policy, and non-threshold wording.
+- Blocked agent commits now restore the caller's in-memory workbook when post-apply write-policy checks throw; the real shared-formula trust moat asserts no speculative `Label!C1` edit remains after the blocked commit. Treat this as correctness hygiene under auditable mutation, not a new claim.
 
 ## External References
 

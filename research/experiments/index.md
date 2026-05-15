@@ -170,6 +170,8 @@ Updated: 2026-05-15
 | [Compact report publication policy proof](runs/2026/2026-05-15-compact-report-publication-policy-proof/log.md) | proved compact reports omit workbook bytes/digests and should remain owner-review pointers until release policy exists | release loop, product loop |
 | [Worksheet MC stripped metadata proof](runs/2026/2026-05-15-worksheet-mc-stripped-metadata-proof/log.md) | folded in stripped worksheet XML metadata extraction and real-fixture shared-formula trust moat validation | correctness loop |
 | [Shared formula diagnostic refs proof](runs/2026/2026-05-15-shared-formula-diagnostic-refs-proof/log.md) | folded in compact check/write-policy diagnostic ref assertions for imported shared-formula corruption | correctness loop, product loop |
+| [Safe open local latency rerun](runs/2026/2026-05-15-safe-open-local-latency-rerun/log.md) | reran timed safe-open proof locally; useful diagnostic evidence, release-latency gate still owner-owned | performance loop, product loop |
+| [Blocked commit rollback proof](runs/2026/2026-05-15-blocked-commit-rollback-proof/log.md) | folded in rollback snapshot fix so write-policy-blocked commits do not leave speculative workbook edits in memory | correctness loop |
 | [Package action proof](runs/2026/2026-05-14-package-action-proof/log.md) | cycle 2 complete, promote | correctness loop, product/DX loop, performance loop |
 | [Formula spans LSP](runs/2026/2026-05-14-formula-spans-lsp/log.md) | cycle 13 complete, folded in SDK hover/code actions | product/DX loop, correctness loop |
 | [Formula sqllogictest conformance](runs/2026/2026-05-14-formula-sqllogictest-conformance/log.md) | cycle 14 complete, folded in converter/runner | correctness loop |

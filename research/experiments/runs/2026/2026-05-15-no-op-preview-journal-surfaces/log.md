@@ -2,11 +2,11 @@
 
 ## Question
 
-Should API and MCP preview/write accept explicit empty operation lists and return exact empty journals when agents request journal evidence?
+Should API, CLI, and MCP preview/write/plan/commit accept explicit empty operation or path-mutation lists and return exact empty journals when agents request journal evidence?
 
 ## Hypothesis
 
-Yes. An explicit `ops: []` is an intentional no-op batch, not malformed input. If `journal: true` is set, the result should carry the same exact empty journal shape as SDK no-op apply/preview, so agents can audit "nothing changed" without special-casing transport errors.
+Yes. Explicit `ops: []` and `mutations: []` are intentional no-op batches, not malformed input. If `journal: true` is set, the result should carry the same exact empty journal shape as SDK no-op apply/preview, so agents can audit "nothing changed" without special-casing transport errors.
 
 ## External sources checked
 
@@ -23,7 +23,10 @@ Auditable package-part mutation is not only about changed workbooks. Agents also
 Finished the in-flight API/MCP tests and fixed the SDK preview path:
 
 - `AscendWorkbook.preview([],{ journal: true })` now returns a successful empty preview with the exact empty mutation journal instead of calling the operation engine with no ops.
+- operation-input helpers preserve explicit empty `ops` and compile explicit empty `mutations` into a replayable no-op path-mutation result.
+- CLI plan and compact commit tests assert no-op ops preserve exact journal summaries.
 - API `/preview` and `/write` tests assert explicit `ops: []` plus `journal: true` returns the full exact empty journal shape.
+- API and MCP tests also assert explicit `mutations: []` returns the same exact journal plus replayable empty path-mutation metadata.
 - MCP `ascend.preview` and `ascend.write` tests assert the same shape through structured tool responses.
 
 ## Results
@@ -33,10 +36,12 @@ Focused validation passed:
 ```bash
 bun test apps/api/src/server.test.ts -t "preview and write return exact empty journals for no-op requests"
 bun test apps/mcp/src/index.test.ts -t "ascend.preview and ascend.write return exact empty journals for no-op requests"
+bun test packages/sdk/src/operation-input.test.ts apps/cli/src/cli.test.ts -t "empty ops|no-op ops|explicit empty ops"
 bun test packages/sdk/src/interactive-contract.test.ts -t "journal"
+bun run test:changed
 ```
 
-The SDK journal-focused slice passed 140 tests with 1081 assertions.
+The SDK journal-focused slice passed 140 tests with 1081 assertions. The changed-test gate passed 5141 tests with 1 skip and 0 failures.
 
 ## Confidence
 

@@ -299,6 +299,24 @@ describe('checker', () => {
 	test('accepts case-insensitive sheet-qualified formula binding refs', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Data')
+		s.cells.set(0, 4, {
+			value: numberValue(2),
+			formula: 'F1*2',
+			styleId: SID,
+			formulaInfo: {
+				kind: 'shared',
+				sharedIndex: '0',
+				isMaster: true,
+				masterRef: 'Data!E1',
+				ref: 'E1:E2',
+			},
+		})
+		s.cells.set(1, 4, {
+			value: numberValue(4),
+			formula: null,
+			styleId: SID,
+			formulaInfo: { kind: 'shared', sharedIndex: '0', isMaster: false, masterRef: 'data!$E$1' },
+		})
 		s.cells.set(0, 0, {
 			value: numberValue(1),
 			formula: 'SEQUENCE(2)',

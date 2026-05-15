@@ -814,7 +814,7 @@ function sameSharedFormulaBinding(
 		return (
 			leftMaster !== null &&
 			rightMaster !== null &&
-			leftMaster.sheet === rightMaster.sheet &&
+			sameSheetName(leftMaster.sheet, rightMaster.sheet) &&
 			leftMaster.row === rightMaster.row &&
 			leftMaster.col === rightMaster.col
 		)

@@ -453,6 +453,8 @@ export function handleSetPrintArea(
 ): Result<PatchResult> {
 	const sheetResult = getSheet(workbook, op.sheet)
 	if (!sheetResult.ok) return sheetResult
+	const rangeResult = safeParseRange(op.range)
+	if (!rangeResult.ok) return rangeResult
 	workbook.definedNames.set(
 		'_xlnm.Print_Area',
 		`${quoteSheetNameForFormula(op.sheet)}!${op.range}`,

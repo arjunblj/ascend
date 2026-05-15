@@ -3722,14 +3722,34 @@ function journalSetPrintArea(
 			],
 		}
 	}
+	const rangeIssues = printAreaRangeIssues(op)
 	const preimage = definedNamePreimage(workbook, '_xlnm.Print_Area', op.sheet)
 	const { inverseOps, issues } = restoreDefinedNameOps(workbook, preimage)
 	return {
 		opIndex,
 		op,
-		inverseOps,
+		inverseOps: rangeIssues.length === 0 ? inverseOps : [],
 		preimages: [{ kind: 'defined-name', definedName: preimage }],
-		issues,
+		issues: [...rangeIssues, ...issues],
+	}
+}
+
+function printAreaRangeIssues(
+	op: Extract<Operation, { op: 'setPrintArea' }>,
+): MutationJournalIssue[] {
+	try {
+		parseRange(op.range)
+		return []
+	} catch {
+		return [
+			{
+				code: 'UNSUPPORTED_VALUE',
+				message: `Cannot build exact rollback journal for setPrintArea because ${op.range} is not a valid range`,
+				surface: 'defined-names',
+				reason: 'value-unsupported',
+				refs: [`${op.sheet}!${op.range}`],
+			},
+		]
 	}
 }
 

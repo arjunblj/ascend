@@ -2653,6 +2653,20 @@ describe('applyOperation', () => {
 		)
 	})
 
+	test('setPrintArea rejects invalid range metadata', () => {
+		const wb = setup()
+
+		const result = applyOperation(wb, {
+			op: 'setPrintArea',
+			sheet: 'Sheet1',
+			range: 'not a range',
+		})
+
+		expectErr(result)
+		expect(result.error.code).toBe('INVALID_RANGE')
+		expect(wb.definedNames.has('_xlnm.Print_Area')).toBe(false)
+	})
+
 	test('setPageSetup preserves imported print metadata on partial updates', () => {
 		const wb = setup()
 		const sheet = wb.getSheet('Sheet1')

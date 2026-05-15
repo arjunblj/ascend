@@ -538,6 +538,31 @@ describe('mutation journal exactness model', () => {
 		}
 	})
 
+	test('classifies invalid print area ranges as unsupported defined-name values', () => {
+		const wb = AscendWorkbook.create()
+		const journal = buildMutationJournal(wb.getWorkbookModel(), [
+			{ op: 'setPrintArea', sheet: 'Sheet1', range: 'not a range' },
+		])
+		const analysis = analyzeMutationJournalExactness(journal)
+
+		expect(journal.inverseOps).toEqual([])
+		expect(analysis).toMatchObject({
+			supported: true,
+			exact: false,
+			issueCount: 1,
+			surfaces: ['defined-names'],
+			reasons: ['value-unsupported'],
+			hasMatrixViolation: false,
+		})
+		expect(analysis.issues[0]).toMatchObject({
+			code: 'UNSUPPORTED_VALUE',
+			surface: 'defined-names',
+			reason: 'value-unsupported',
+			refs: ['Sheet1!not a range'],
+			allowedByMatrix: true,
+		})
+	})
+
 	test('classifies table selector journal preimage failures as table topology', () => {
 		const missingOps: readonly Operation[] = [
 			{ op: 'deleteTable', table: 'MissingTable' },

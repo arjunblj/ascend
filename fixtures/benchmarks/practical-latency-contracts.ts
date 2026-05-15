@@ -162,7 +162,7 @@ function optionalPositiveInt(
 }
 
 function parseArgs(): Args {
-	const inputPreset = parseInputPreset(readOption('--input-preset'))
+	const inputPreset = parseInputPreset(readOption('--input-preset') ?? readOption('--preset'))
 	const preset =
 		inputPreset === 'public-tracked'
 			? {

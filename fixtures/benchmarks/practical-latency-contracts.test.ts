@@ -34,6 +34,7 @@ describe('practical latency contracts benchmark', () => {
 				readonly inputFile?: string
 				readonly tableInputFile?: string
 				readonly editInputFile?: string
+				readonly generatedEditInputLabel?: string
 			}
 			readonly inputs?: readonly {
 				readonly role?: string
@@ -45,7 +46,8 @@ describe('practical latency contracts benchmark', () => {
 		expect(payload.args?.inputPreset).toBe('public-tracked')
 		expect(payload.args?.inputFile).toBe('fixtures/xlsx/calamine/issue_174.xlsx')
 		expect(payload.args?.tableInputFile).toBe('fixtures/xlsx/calamine/table-multiple.xlsx')
-		expect(payload.args?.editInputFile).toBeUndefined()
+		expect(payload.args?.editInputFile).toContain('generated-edit-mixed-10pct-text-65536x10.xlsx')
+		expect(payload.args?.generatedEditInputLabel).toContain('generated:mixed-10pct-text:65536x10')
 		expect(payload.inputs?.find((input) => input.role === 'first-view')).toMatchObject({
 			kind: 'tracked-file',
 			releaseClaimable: true,
@@ -60,7 +62,8 @@ describe('practical latency contracts benchmark', () => {
 		})
 		for (const result of payload.results ?? []) {
 			if (result.id === 'workflow-commit' || result.id === 'post-write-breakdown') {
-				expect(result.command).not.toContain('--input-file')
+				expect(result.command).toContain('--input-file')
+				expect(result.command).toContain('generated-edit-mixed-10pct-text-65536x10.xlsx')
 			}
 		}
 	})

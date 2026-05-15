@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
+import { buildRawReadWorkloadDataSet, type WorkloadName } from './competitive-io.ts'
 
 type ContractName = 'first-view' | 'edit-verify' | 'repeated-inspection'
 type InputPreset = 'private-nyc311' | 'public-tracked'
@@ -12,6 +13,7 @@ interface Args {
 	readonly sheet: string
 	readonly range: string
 	readonly editInputFile?: string
+	readonly generatedEditInputLabel?: string
 	readonly tableInputFile: string
 	readonly readRows?: number
 	readonly readCols?: number
@@ -101,6 +103,9 @@ const DEFAULT_TABLE_INPUT = 'fixtures/xlsx/calamine/table-multiple.xlsx'
 const PUBLIC_TRACKED_INPUT = 'fixtures/xlsx/calamine/issue_174.xlsx'
 const PUBLIC_TRACKED_SHEET = 'Sheet1'
 const PUBLIC_TRACKED_RANGE = 'A1:K65536'
+const GENERATED_EDIT_WORKLOAD: WorkloadName = 'mixed-10pct-text'
+const GENERATED_EDIT_ROWS = 65_536
+const GENERATED_EDIT_COLS = 10
 const DEFAULT_OUT_DIR = join('/private/tmp', `ascend-practical-contracts-${Date.now()}`)
 const PROFILE_SCRIPT = 'fixtures/benchmarks/profile-bun.ts'
 
@@ -564,7 +569,7 @@ function buildMarkdown(
 		`Generated: ${new Date().toISOString()}`,
 		`Input preset: \`${args.inputPreset}\``,
 		`Input workbook: \`${args.inputFile}\``,
-		`Edit workbook: \`${args.editInputFile ?? generatedEditInputLabel(args)}\``,
+		`Edit workbook: \`${args.generatedEditInputLabel ?? args.editInputFile}\``,
 		`Table inspection workbook: \`${args.tableInputFile}\``,
 		`Input provenance: ${inputProvenanceSummary(inputs)}`,
 		`Timeout: ${args.timeoutMs}ms per step`,
@@ -1113,15 +1118,16 @@ function memoryPayloadTable(results: readonly StepResult[]): string {
 }
 
 async function run() {
-	const args = parseArgs()
+	const parsedArgs = parseArgs()
+	const args = await resolveGeneratedInputs(parsedArgs)
 	mkdirSync(args.outDir, { recursive: true })
 	mkdirSync(join(args.outDir, 'profiles'), { recursive: true })
 	const worktree = readWorktreeState()
 	const inputs = [
 		inputProvenance('first-view', args.inputFile),
-		args.editInputFile
-			? inputProvenance('edit', args.editInputFile)
-			: generatedInputProvenance('edit', generatedEditInputLabel(args)),
+		args.generatedEditInputLabel
+			? generatedInputProvenance('edit', args.generatedEditInputLabel, args.editInputFile)
+			: inputProvenance('edit', args.editInputFile ?? ''),
 		inputProvenance('table-inspection', args.tableInputFile),
 	]
 	const steps = buildSteps(args)
@@ -1201,9 +1207,34 @@ function inputProvenance(role: string, path: string): InputProvenance {
 	}
 }
 
-function generatedInputProvenance(role: string, path: string): InputProvenance {
+async function resolveGeneratedInputs(args: Args): Promise<Args> {
+	if (args.editInputFile !== undefined) return args
+	mkdirSync(args.outDir, { recursive: true })
+	const data = await buildRawReadWorkloadDataSet(
+		GENERATED_EDIT_WORKLOAD,
+		GENERATED_EDIT_ROWS,
+		GENERATED_EDIT_COLS,
+	)
+	const generatedPath = join(
+		args.outDir,
+		`generated-edit-${GENERATED_EDIT_WORKLOAD}-${GENERATED_EDIT_ROWS}x${GENERATED_EDIT_COLS}.xlsx`,
+	)
+	writeFileSync(generatedPath, data.xlsxBytes)
+	rmSync(data.xlsxPath, { force: true })
 	return {
-		path,
+		...args,
+		editInputFile: generatedPath,
+		generatedEditInputLabel: generatedEditInputLabel(),
+	}
+}
+
+function generatedInputProvenance(
+	role: string,
+	path: string,
+	generatedPath: string | undefined,
+): InputProvenance {
+	return {
+		path: generatedPath === undefined ? path : `${path} -> ${generatedPath}`,
 		tracked: true,
 		exists: true,
 		releaseClaimable: true,
@@ -1212,8 +1243,8 @@ function generatedInputProvenance(role: string, path: string): InputProvenance {
 	}
 }
 
-function generatedEditInputLabel(args: Args): string {
-	return `generated:${args.inputPreset}:mixed-10pct-text:65536x10`
+function generatedEditInputLabel(): string {
+	return `generated:${GENERATED_EDIT_WORKLOAD}:${GENERATED_EDIT_ROWS}x${GENERATED_EDIT_COLS}`
 }
 
 function isGitTracked(path: string): boolean {

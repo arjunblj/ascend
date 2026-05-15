@@ -38,18 +38,18 @@ Probe command:
 bun run fixtures/benchmarks/package-action-proof.ts
 ```
 
-Latest rerun: 2026-05-15T04:10:16.184Z.
+Latest rerun: 2026-05-15T04:42:55.220Z.
 
 | Case | Fixture | Input bytes | Output bytes | Commit actions | Source graph | Digest pairs | Journal package issues | Proof issues | Proof JSON bytes | Proof ms | Expected action present | Post-write audits | Examples |
 | --- | --- | ---: | ---: | --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- | --- |
-| docprops-passthrough | `synthetic docProps package` | 2286 | 3485 | passthrough=4, regenerate=4, add=0, drop=0, error=0 | true | 8 | 1 | 0 | 5155 | 0.162 | true | passed | passthrough:xl/workbook.xml; regenerate:xl/worksheets/sheet1.xml |
-| regenerate-existing-sheet | `new Ascend workbook` | 4624 | 4707 | passthrough=3, regenerate=5, add=0, drop=0, error=0 | true | 8 | 1 | 0 | 5132 | 0.075 | true | passed | passthrough:xl/workbook.xml; regenerate:xl/styles.xml |
-| add-sheet-part | `new Ascend workbook` | 4624 | 4512 | passthrough=3, regenerate=5, add=1, drop=0, error=0 | true | 8 | 1 | 0 | 5610 | 0.077 | true | passed | passthrough:xl/worksheets/sheet1.xml; regenerate:xl/workbook.xml; add:xl/worksheets/sheet2.xml |
-| calc-chain-drop | `synthetic calcChain package` | 1776 | 2365 | passthrough=0, regenerate=5, add=0, drop=1, error=0 | true | 5 | 1 | 0 | 3760 | 0.088 | true | passed | regenerate:xl/workbook.xml; drop:xl/calcChain.xml |
-| signature-invalidation-drop | `synthetic digital-signature package` | 2253 | 2058 | passthrough=1, regenerate=4, add=0, drop=2, error=0 | true | 5 | 1 | 0 | 4165 | 0.091 | true | passed | passthrough:xl/workbook.xml; regenerate:xl/worksheets/sheet1.xml; drop:_xmlsignatures/origin.sigs |
-| macro-passthrough | `fixtures/xlsx/calamine/vba.xlsm` | 12752 | 12175 | passthrough=6, regenerate=5, add=1, drop=0, error=0 | true | 11 | 1 | 0 | 7359 | 0.211 | true | passed | passthrough:xl/workbook.xml; regenerate:xl/styles.xml; add:xl/sharedStrings.xml |
-| chart-sidecar-accounting | `fixtures/xlsx/poi/WithChart.xlsx` | 10138 | 10899 | passthrough=8, regenerate=6, add=1, drop=0, error=0 | true | 14 | 1 | 0 | 9067 | 0.183 | true | passed | passthrough:xl/workbook.xml; regenerate:xl/styles.xml; add:xl/sharedStrings.xml |
-| unknown-part-error | `synthetic unknown package part` | 1692 | 2315 | passthrough=2, regenerate=4, add=0, drop=0, error=1 | true | 7 | 1 | 1 | 4629 | 0.090 | true | needs review | passthrough:xl/workbook.xml; regenerate:xl/worksheets/sheet1.xml; error:xl/custom/custom1.xml |
+| docprops-passthrough | `synthetic docProps package` | 2286 | 3485 | passthrough=4, regenerate=4, add=0, drop=0, error=0 | true | 8 | 1 | 0 | 5155 | 0.152 | true | passed | passthrough:xl/workbook.xml; regenerate:xl/worksheets/sheet1.xml |
+| regenerate-existing-sheet | `new Ascend workbook` | 4624 | 4707 | passthrough=3, regenerate=5, add=0, drop=0, error=0 | true | 8 | 1 | 0 | 5132 | 0.079 | true | passed | passthrough:xl/workbook.xml; regenerate:xl/styles.xml |
+| add-sheet-part | `new Ascend workbook` | 4624 | 4512 | passthrough=3, regenerate=5, add=1, drop=0, error=0 | true | 8 | 1 | 0 | 5610 | 0.071 | true | passed | passthrough:xl/worksheets/sheet1.xml; regenerate:xl/workbook.xml; add:xl/worksheets/sheet2.xml |
+| calc-chain-drop | `synthetic calcChain package` | 1776 | 2365 | passthrough=0, regenerate=5, add=0, drop=1, error=0 | true | 5 | 1 | 0 | 3760 | 0.079 | true | passed | regenerate:xl/workbook.xml; drop:xl/calcChain.xml |
+| signature-invalidation-drop | `synthetic digital-signature package` | 2253 | 2058 | passthrough=1, regenerate=4, add=0, drop=2, error=0 | true | 5 | 1 | 0 | 4165 | 0.089 | true | passed | passthrough:xl/workbook.xml; regenerate:xl/worksheets/sheet1.xml; drop:_xmlsignatures/origin.sigs |
+| macro-passthrough | `fixtures/xlsx/calamine/vba.xlsm` | 12752 | 12175 | passthrough=6, regenerate=5, add=1, drop=0, error=0 | true | 11 | 1 | 0 | 7359 | 0.204 | true | passed | passthrough:xl/workbook.xml; regenerate:xl/styles.xml; add:xl/sharedStrings.xml |
+| chart-sidecar-accounting | `fixtures/xlsx/poi/WithChart.xlsx` | 10138 | 10899 | passthrough=8, regenerate=6, add=1, drop=0, error=0 | true | 14 | 1 | 0 | 9067 | 0.174 | true | passed | passthrough:xl/workbook.xml; regenerate:xl/styles.xml; add:xl/sharedStrings.xml |
+| unknown-part-error | `synthetic unknown package part` | 1692 | 2315 | passthrough=2, regenerate=4, add=0, drop=0, error=1 | true | 7 | 1 | 1 | 4629 | 0.078 | true | needs review | passthrough:xl/workbook.xml; regenerate:xl/worksheets/sheet1.xml; error:xl/custom/custom1.xml |
 
 Validation commands:
 
@@ -80,5 +80,7 @@ Latest validation rerun passed on 2026-05-15:
 ## Fold-In Recommendation
 
 Promote as the second release-proof artifact beside safe-open. Do not add a new mutation surface. The next product step is publication packaging: decide where the Markdown/JSON report lives and whether synthetic edge cases need public binary fixtures.
+
+Release proof index status: `fixtures/benchmarks/release-proof-index.ts` now lists the exact reproduction command and publication blockers for this artifact. The package-action artifact remains `needs-release-packaging` because synthetic edge packages must stay disclosed unless replaced by public binary fixtures, and this proof is local evidence rather than signed provenance or third-party attestation. The current no-timings stable shape digest is `b9758496346c97920c80ba08b6632315708a6d6cc770927695337e729554dbb0`.
 
 Do not track generated compact JSON yet. A local probe measured `7854` bytes for full generated JSON and `1896` bytes for a compact summary, but the current artifact shape includes generated metadata and duplicates harness assertions. Keep JSON as generated output until release-proof publication and privacy rules are explicit.

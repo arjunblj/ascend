@@ -977,6 +977,18 @@ function checkFormulaBindingIntegrity(wb: Workbook): CheckIssue[] {
 			if (binding.kind === 'array' || binding.kind === 'dataTable') {
 				const bindingRef = binding.ref
 				const range = parseBindingRange(bindingRef, sheet.name)
+				if (binding.kind === 'dataTable' && cell.formula) {
+					issues.push(
+						formulaBindingIntegrityIssue(
+							`Data table formula metadata at ${cellRef} has formula text that would be hidden when saved`,
+							[cellRef],
+							{
+								kind: 'data-table-formula-text-mismatch',
+								range: binding.ref,
+							},
+						),
+					)
+				}
 				if (!range || !rangeContainsCell(range, sheet.name, row, col)) {
 					issues.push(
 						formulaBindingIntegrityIssue(

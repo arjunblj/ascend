@@ -698,6 +698,31 @@ describe('checker', () => {
 		])
 	})
 
+	test('detects data table metadata with hidden formula text', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.cells.set(0, 0, {
+			value: numberValue(3),
+			formula: 'B1*2',
+			styleId: SID,
+			formulaInfo: { kind: 'dataTable', ref: 'A1:A2', dtr: true, r1: 'B1' },
+		})
+
+		const result = check(wb)
+		const issue = result.issues.find(
+			(entry) => entry.details?.kind === 'data-table-formula-text-mismatch',
+		)
+		expect(result.passed).toBe(false)
+		expect(issue).toMatchObject({
+			rule: 'formula-binding-integrity',
+			severity: 'error',
+			message:
+				'Data table formula metadata at Sheet1!A1 has formula text that would be hidden when saved',
+			refs: ['Sheet1!A1'],
+			details: { kind: 'data-table-formula-text-mismatch', range: 'A1:A2' },
+		})
+	})
+
 	test('detects overlapping legacy array and data table range drift', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')

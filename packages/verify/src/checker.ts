@@ -778,9 +778,22 @@ function rangesEqual(left: RangeRef, right: RangeRef): boolean {
 	)
 }
 
+function rangeKey(range: RangeRef): string {
+	return `${range.sheet ?? ''}!${range.start.row}:${range.start.col}:${range.end.row}:${range.end.col}`
+}
+
+interface SpillBindingGroupEntry {
+	readonly kind: 'spill' | 'blockedSpill'
+	readonly cellRef: string
+	readonly anchorRef: string
+	readonly ref: string
+	readonly range: RangeRef
+}
+
 function checkFormulaBindingIntegrity(wb: Workbook): CheckIssue[] {
 	const issues: CheckIssue[] = []
 	const sheetsByName = new Map(wb.sheets.map((sheet) => [sheet.name.toLowerCase(), sheet]))
+	const spillBindingGroups = new Map<string, SpillBindingGroupEntry[]>()
 
 	for (const sheet of wb.sheets) {
 		if (sheet.cells.formulaInfoCellCount() === 0) continue
@@ -947,6 +960,17 @@ function checkFormulaBindingIntegrity(wb: Workbook): CheckIssue[] {
 					)
 					continue
 				}
+				const groupKey = `${anchor.sheet.toLowerCase()}!${anchor.row}:${anchor.col}`
+				const group = spillBindingGroups.get(groupKey)
+				const entry = {
+					kind: binding.kind,
+					cellRef,
+					anchorRef: binding.anchorRef,
+					ref: binding.ref,
+					range: spillRange,
+				}
+				if (group) group.push(entry)
+				else spillBindingGroups.set(groupKey, [entry])
 				const anchorSheet = sheetsByName.get(anchor.sheet.toLowerCase())
 				const anchorCell = anchorSheet?.cells.get(anchor.row, anchor.col)
 				const anchorBinding = anchorCell?.formulaInfo
@@ -1031,6 +1055,31 @@ function checkFormulaBindingIntegrity(wb: Workbook): CheckIssue[] {
 				}
 			}
 		}
+	}
+	for (const group of spillBindingGroups.values()) {
+		if (group.length < 2) continue
+		const rangeKeys = new Set(group.map((entry) => rangeKey(entry.range)))
+		if (rangeKeys.size <= 1) continue
+		const kinds = new Set(group.map((entry) => entry.kind))
+		const sortedRefs = [...group].map((entry) => entry.cellRef).sort()
+		issues.push(
+			formulaBindingIntegrityIssue(
+				`Spill metadata for ${group[0]?.anchorRef ?? sortedRefs[0]} has inconsistent sibling ranges`,
+				sortedRefs,
+				{
+					kind:
+						kinds.size === 1 && group[0]?.kind === 'blockedSpill'
+							? 'blockedSpill-sibling-range-mismatch'
+							: 'spill-sibling-range-mismatch',
+					anchorRef: group[0]?.anchorRef,
+					ranges: group.map((entry) => ({
+						ref: entry.cellRef,
+						kind: entry.kind,
+						range: entry.ref,
+					})),
+				},
+			),
+		)
 	}
 
 	return issues

@@ -31,6 +31,8 @@ interface Args {
 	readonly warmup: number
 	readonly only: FirstWindowCase
 	readonly gcBetweenSamples: boolean
+	readonly timeoutMs?: number
+	readonly progress: boolean
 	readonly json: boolean
 }
 
@@ -254,6 +256,7 @@ function parseArgs(): Args {
 	const sheet = readOption(process.argv, '--sheet')
 	const range = readOption(process.argv, '--range')
 	const only = readOption(process.argv, '--only') ?? 'all'
+	const timeoutMs = readOption(process.argv, '--timeout-ms')
 	if (!FIRST_WINDOW_CASES.has(only)) {
 		throw new Error(
 			`Unsupported --only "${only}". Expected one of: ${[...FIRST_WINDOW_CASES].join(', ')}`,
@@ -271,6 +274,8 @@ function parseArgs(): Args {
 		warmup: nonNegativeInt(readOption(process.argv, '--warmup'), 1),
 		only: only as FirstWindowCase,
 		gcBetweenSamples: !hasFlag(process.argv, '--no-gc-between-samples'),
+		...(timeoutMs !== undefined ? { timeoutMs: positiveInt(timeoutMs, 300_000) } : {}),
+		progress: hasFlag(process.argv, '--progress'),
 		json: hasFlag(process.argv, '--json'),
 	}
 }
@@ -327,6 +332,32 @@ async function time<T>(fn: () => Promise<T>): Promise<{ readonly ms: number; rea
 function runGc(): void {
 	if (hasFlag(process.argv, '--no-gc-between-samples')) return
 	;(Bun as unknown as { gc?: (force?: boolean) => void }).gc?.(true)
+}
+
+function logProgress(
+	args: Args,
+	startedAt: number,
+	event: string,
+	details: Record<string, unknown> = {},
+): void {
+	if (!args.progress) return
+	console.error(
+		JSON.stringify({
+			tool: 'agent-first-window',
+			event,
+			elapsedMs: Math.round(performance.now() - startedAt),
+			...details,
+		}),
+	)
+}
+
+function checkTimeout(args: Args, startedAt: number, phase: string): void {
+	if (args.timeoutMs === undefined) return
+	const elapsedMs = performance.now() - startedAt
+	if (elapsedMs <= args.timeoutMs) return
+	throw new Error(
+		`agent-first-window timed out after ${Math.round(elapsedMs)}ms during ${phase} (timeout ${args.timeoutMs}ms)`,
+	)
 }
 
 function rssMb(): number {
@@ -1093,47 +1124,86 @@ function summarize(samples: readonly Sample[]) {
 
 async function run() {
 	const args = parseArgs()
+	const startedAt = performance.now()
+	const heartbeat = args.progress
+		? setInterval(() => {
+				logProgress(args, startedAt, 'heartbeat')
+			}, 30_000)
+		: undefined
 	const data = await resolveBenchmarkInput(args)
 	const samples: Sample[] = []
 	try {
+		logProgress(args, startedAt, 'input-ready', {
+			source: data.source,
+			file: data.xlsxPath,
+			only: args.only,
+			repeat: args.repeat,
+			warmup: args.warmup,
+		})
 		for (let i = 0; i < args.warmup; i++) {
+			checkTimeout(args, startedAt, `warmup ${i + 1}`)
+			logProgress(args, startedAt, 'warmup-start', { index: i + 1, total: args.warmup })
 			if (shouldRunCase(args, 'full')) {
+				logProgress(args, startedAt, 'case-start', { phase: 'warmup', case: 'full', index: i + 1 })
 				await runFullOpenWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit)
 				await runFullOpenWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit, false)
 			}
 			if (shouldRunCase(args, 'capped')) {
+				logProgress(args, startedAt, 'case-start', {
+					phase: 'warmup',
+					case: 'capped',
+					index: i + 1,
+				})
 				await runCappedOpenWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit)
 				await runCappedOpenWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit, false)
 			}
 			if (shouldRunCase(args, 'api')) {
+				logProgress(args, startedAt, 'case-start', { phase: 'warmup', case: 'api', index: i + 1 })
 				await runApiFirstWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit)
 				await runApiFirstWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit, false)
 			}
 			if (shouldRunCase(args, 'api-compact')) {
+				logProgress(args, startedAt, 'case-start', {
+					phase: 'warmup',
+					case: 'api-compact',
+					index: i + 1,
+				})
 				await runApiCompactDefault(data.xlsxPath, data.sheet, data.range)
 				await runApiCompactDefault(data.xlsxPath, data.sheet, data.range, false)
 			}
 			if (shouldRunCase(args, 'cli')) {
+				logProgress(args, startedAt, 'case-start', { phase: 'warmup', case: 'cli', index: i + 1 })
 				await runCliReadFirstWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit)
 				await runCliReadFirstWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit, false)
 			}
 			if (shouldRunCase(args, 'mcp')) {
+				logProgress(args, startedAt, 'case-start', { phase: 'warmup', case: 'mcp', index: i + 1 })
 				await runMcpFirstWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit)
 				await runMcpFirstWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit, false)
 			}
 			if (shouldRunCase(args, 'mcp-compact')) {
+				logProgress(args, startedAt, 'case-start', {
+					phase: 'warmup',
+					case: 'mcp-compact',
+					index: i + 1,
+				})
 				await runMcpCompactDefault(data.xlsxPath, data.sheet, data.range)
 				await runMcpCompactDefault(data.xlsxPath, data.sheet, data.range, false)
 			}
 			if (shouldRunCase(args, 'tui')) {
+				logProgress(args, startedAt, 'case-start', { phase: 'warmup', case: 'tui', index: i + 1 })
 				await runTuiFirstPaint(data.xlsxPath, data.sheet, args.rowLimit)
 				await runTuiFirstPaint(data.xlsxPath, data.sheet, args.rowLimit, false)
 			}
 			runGc()
+			logProgress(args, startedAt, 'warmup-complete', { index: i + 1, total: args.warmup })
 		}
 		for (let i = 0; i < args.repeat; i++) {
+			checkTimeout(args, startedAt, `sample ${i + 1}`)
+			logProgress(args, startedAt, 'sample-start', { index: i + 1, total: args.repeat })
 			const sample: Sample = { cells: 0 }
 			if (shouldRunCase(args, 'full')) {
+				logProgress(args, startedAt, 'case-start', { phase: 'sample', case: 'full', index: i + 1 })
 				const full = await runFullOpenWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit)
 				const fullWarm = await runFullOpenWindow(
 					data.xlsxPath,
@@ -1151,6 +1221,11 @@ async function run() {
 				runGc()
 			}
 			if (shouldRunCase(args, 'capped')) {
+				logProgress(args, startedAt, 'case-start', {
+					phase: 'sample',
+					case: 'capped',
+					index: i + 1,
+				})
 				const capped = await runCappedOpenWindow(
 					data.xlsxPath,
 					data.sheet,
@@ -1173,6 +1248,7 @@ async function run() {
 				runGc()
 			}
 			if (shouldRunCase(args, 'api')) {
+				logProgress(args, startedAt, 'case-start', { phase: 'sample', case: 'api', index: i + 1 })
 				const api = await runApiFirstWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit)
 				const apiWarm = await runApiFirstWindow(
 					data.xlsxPath,
@@ -1189,6 +1265,11 @@ async function run() {
 				})
 			}
 			if (shouldRunCase(args, 'api-compact')) {
+				logProgress(args, startedAt, 'case-start', {
+					phase: 'sample',
+					case: 'api-compact',
+					index: i + 1,
+				})
 				const apiCompactDefault = await runApiCompactDefault(data.xlsxPath, data.sheet, data.range)
 				const apiCompactDefaultWarm = await runApiCompactDefault(
 					data.xlsxPath,
@@ -1202,6 +1283,7 @@ async function run() {
 				runGc()
 			}
 			if (shouldRunCase(args, 'cli')) {
+				logProgress(args, startedAt, 'case-start', { phase: 'sample', case: 'cli', index: i + 1 })
 				const cli = await runCliReadFirstWindow(
 					data.xlsxPath,
 					data.sheet,
@@ -1224,6 +1306,7 @@ async function run() {
 				runGc()
 			}
 			if (shouldRunCase(args, 'mcp')) {
+				logProgress(args, startedAt, 'case-start', { phase: 'sample', case: 'mcp', index: i + 1 })
 				const mcp = await runMcpFirstWindow(data.xlsxPath, data.sheet, data.range, args.rowLimit)
 				const mcpWarm = await runMcpFirstWindow(
 					data.xlsxPath,
@@ -1240,6 +1323,11 @@ async function run() {
 				})
 			}
 			if (shouldRunCase(args, 'mcp-compact')) {
+				logProgress(args, startedAt, 'case-start', {
+					phase: 'sample',
+					case: 'mcp-compact',
+					index: i + 1,
+				})
 				const mcpCompactDefault = await runMcpCompactDefault(data.xlsxPath, data.sheet, data.range)
 				const mcpCompactDefaultWarm = await runMcpCompactDefault(
 					data.xlsxPath,
@@ -1253,6 +1341,7 @@ async function run() {
 				runGc()
 			}
 			if (shouldRunCase(args, 'tui')) {
+				logProgress(args, startedAt, 'case-start', { phase: 'sample', case: 'tui', index: i + 1 })
 				const tui = await runTuiFirstPaint(data.xlsxPath, data.sheet, args.rowLimit)
 				const tuiWarm = await runTuiFirstPaint(data.xlsxPath, data.sheet, args.rowLimit, false)
 				Object.assign(sample, tui, {
@@ -1267,6 +1356,7 @@ async function run() {
 				runGc()
 			}
 			samples.push(sample)
+			logProgress(args, startedAt, 'sample-complete', { index: i + 1, total: args.repeat })
 		}
 		const payload = {
 			tool: 'agent-first-window',
@@ -1278,6 +1368,7 @@ async function run() {
 		if (args.json) console.log(JSON.stringify(payload, null, 2))
 		else console.log(payload.summary)
 	} finally {
+		if (heartbeat !== undefined) clearInterval(heartbeat)
 		if (data.cleanup) await rm(data.xlsxPath, { force: true })
 	}
 }

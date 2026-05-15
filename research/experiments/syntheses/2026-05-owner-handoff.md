@@ -17,6 +17,8 @@ Latency diagnostic note: `practical-latency-contracts` now reports input provena
 
 Fixture-search note: the targeted checked-in fixture scan still finds no public binary replacement for safe-open signed or unknown-part structural cases. Latest scan: 351 fixtures scanned, 2 protected fixtures rejected, 0 signature/unknown matches. Product must accept disclosed generated structural fixtures or provide public binaries.
 
+Compact privacy note: field-level inventory of the two compact reports finds no workbook bytes or proof digest artifact fields. The compact reports still include command strings and public fixture paths, so they remain local proof summaries until release owners define publication storage, privacy filtering, canonicalization, and verification expectations.
+
 ## Proof Snapshot
 
 Current local proof gate:

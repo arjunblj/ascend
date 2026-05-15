@@ -130,6 +130,7 @@ Updated: 2026-05-15
 | [Research promotion throttle](runs/2026/2026-05-15-research-promotion-throttle/log.md) | release gate still has 9 owner blockers, so new claim promotion is held | product loop, correctness loop, performance loop, release loop |
 | [Latency input provenance validation](runs/2026/2026-05-15-latency-input-provenance-validation/log.md) | diagnostic dry run proves local/private benchmark inputs stay non-release-claimable despite tracked-clean code | performance loop, product loop |
 | [Public fixture search constrained rerun](runs/2026/2026-05-15-public-fixture-search-constrained-rerun/log.md) | targeted fixture scan still finds no public signed/unknown replacement in checked-in corpus | product loop, release loop |
+| [Compact report field privacy inventory](runs/2026/2026-05-15-compact-report-field-privacy-inventory/log.md) | compact reports omit workbook bytes and artifact digests but still need release publication policy | release loop, product loop |
 | [Package action proof](runs/2026/2026-05-14-package-action-proof/log.md) | cycle 2 complete, promote | correctness loop, product/DX loop, performance loop |
 | [Formula spans LSP](runs/2026/2026-05-14-formula-spans-lsp/log.md) | cycle 13 complete, folded in SDK hover/code actions | product/DX loop, correctness loop |
 | [Formula sqllogictest conformance](runs/2026/2026-05-14-formula-sqllogictest-conformance/log.md) | cycle 14 complete, folded in converter/runner | correctness loop |

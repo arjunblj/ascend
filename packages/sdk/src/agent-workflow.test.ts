@@ -606,6 +606,9 @@ describe('agent workflow loss audit', () => {
 
 		const plan = await createAgentPlan(input, ops)
 		expect(plan.writePolicy.ok).toBe(false)
+		expect(plan.check.valid).toBe(false)
+		expect(plan.modelOutput.blocked).toBe(true)
+		expect(plan.modelOutput.counts.checkIssues).toBe(1)
 		expect(plan.writePolicy.diagnostics).toContainEqual(
 			expect.objectContaining({
 				code: 'pre-write-check-error',
@@ -616,6 +619,30 @@ describe('agent workflow loss audit', () => {
 							rule: 'formula-binding-integrity',
 							severity: 'error',
 							message: 'Shared formula metadata at Sheet1!A3 is outside its master range',
+						}),
+					]),
+				}),
+			}),
+		)
+		const compact = compactAgentPlanResult(plan)
+		expect(compact.check.valid).toBe(false)
+		expect(compact.check.issues).toContainEqual(
+			expect.objectContaining({
+				rule: 'formula-binding-integrity',
+				severity: 'error',
+				message: 'Shared formula metadata at Sheet1!A3 is outside its master range',
+			}),
+		)
+		expect(compact.writePolicy.ok).toBe(false)
+		expect(compact.writePolicy.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: 'pre-write-check-error',
+				severity: 'blocker',
+				details: expect.objectContaining({
+					checkIssues: expect.arrayContaining([
+						expect.objectContaining({
+							rule: 'formula-binding-integrity',
+							severity: 'error',
 						}),
 					]),
 				}),

@@ -15,6 +15,7 @@ import {
 	commitAgentPlanFromWorkbook,
 	compactAgentCommitResult,
 	compactAgentPlanResult,
+	createAgentCommitPackageActionProof,
 	createAgentPlan,
 	createAgentPlanFromWorkbook,
 	createPackageActionProof,
@@ -3514,6 +3515,28 @@ describe('agent workflow loss audit', () => {
 			partPath: 'custom/item.xml',
 			bytesEqual: false,
 		})
+	})
+
+	test('commit package action proof uses commit-local byte evidence', async () => {
+		const input = join(TEMP_DIR, 'commit-package-actions.xlsx')
+		const output = join(TEMP_DIR, 'commit-package-actions-out.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		const wb = AscendWorkbook.create()
+		await wb.save(input)
+
+		const committed = await commitAgentPlan(
+			input,
+			[{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'digest-proof' }] }],
+			{ output },
+		)
+		const proof = createAgentCommitPackageActionProof(committed)
+
+		expect(proof.coverage.sourceByteDigestCount).toBeGreaterThan(0)
+		expect(proof.coverage.outputByteDigestCount).toBeGreaterThan(0)
+		expect(
+			proof.coverage.matchingByteDigestCount + proof.coverage.mismatchedByteDigestCount,
+		).toBeGreaterThan(0)
+		expect(proof.actions.some((action) => action.outputSha256 !== undefined)).toBe(true)
 	})
 
 	test('prepared agent plans reuse full workflow state with staleness guards', async () => {

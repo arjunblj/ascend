@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { type AscendError, AscendException, ascendError, type CellValue } from '@ascend/schema'
 import {
 	type AgentCommitOptions,
+	type AgentCommitResult,
 	AscendWorkbook,
 	type CapabilityFilters,
 	type CapabilityPriority,
@@ -12,6 +13,7 @@ import {
 	compactAgentCommitResult,
 	compactAgentPlanResult,
 	compilePathMutationInput,
+	createAgentCommitPackageActionProof,
 	createAgentPlan,
 	createAgentPlanFromWorkbook,
 	createPackageActionProof,
@@ -109,11 +111,17 @@ function withPackageActions<T, R extends PackageActionEvidence>(
 	if (!includePackageActions) return payload
 	return {
 		...payload,
-		packageActions: createPackageActionProof(result.preservation, {
-			writePolicy: result.writePolicy,
-			packageGraphAudit: result.packageGraphAudit,
-		}),
+		packageActions: isCommitPackageActionEvidence(result)
+			? createAgentCommitPackageActionProof(result)
+			: createPackageActionProof(result.preservation, {
+					writePolicy: result.writePolicy,
+					packageGraphAudit: result.packageGraphAudit,
+				}),
 	}
+}
+
+function isCommitPackageActionEvidence(result: PackageActionEvidence): result is AgentCommitResult {
+	return 'outputSha256' in result && 'postWrite' in result
 }
 
 function rawPartEncoding(

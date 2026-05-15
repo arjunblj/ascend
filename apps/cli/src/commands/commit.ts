@@ -4,7 +4,7 @@ import {
 	type AgentCommitOptions,
 	commitAgentPlan,
 	compactAgentCommitResult,
-	createPackageActionProof,
+	createAgentCommitPackageActionProof,
 	operationValidationDetails,
 	parseOperations,
 } from '@ascend/sdk'
@@ -84,14 +84,11 @@ function withPackageActions<T>(
 	payload: T,
 	result: Awaited<ReturnType<typeof commitAgentPlan>>,
 	flags: Map<string, string>,
-): T | (T & { readonly packageActions: ReturnType<typeof createPackageActionProof> }) {
+): T | (T & { readonly packageActions: ReturnType<typeof createAgentCommitPackageActionProof> }) {
 	if (!flags.has('package-actions')) return payload
 	return {
 		...payload,
-		packageActions: createPackageActionProof(result.preservation, {
-			writePolicy: result.writePolicy,
-			packageGraphAudit: result.packageGraphAudit,
-		}),
+		packageActions: createAgentCommitPackageActionProof(result),
 	}
 }
 

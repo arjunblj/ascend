@@ -286,10 +286,27 @@ describe('MCP server', () => {
 		})
 		expect(commit?.structuredContent?.ok).toBe(true)
 		const packageActions = commit?.structuredContent?.data?.packageActions as
-			| { kind?: string; byAction?: { regenerate?: number } }
+			| {
+					kind?: string
+					byAction?: { regenerate?: number }
+					coverage?: {
+						sourceByteDigestCount?: number
+						outputByteDigestCount?: number
+						matchingByteDigestCount?: number
+						mismatchedByteDigestCount?: number
+					}
+					actions?: { outputSha256?: string }[]
+			  }
 			| undefined
 		expect(packageActions?.kind).toBe('ascend-package-action-proof')
 		expect(packageActions?.byAction?.regenerate).toBeGreaterThan(0)
+		expect(packageActions?.coverage?.sourceByteDigestCount).toBeGreaterThan(0)
+		expect(packageActions?.coverage?.outputByteDigestCount).toBeGreaterThan(0)
+		expect(
+			(packageActions?.coverage?.matchingByteDigestCount ?? 0) +
+				(packageActions?.coverage?.mismatchedByteDigestCount ?? 0),
+		).toBeGreaterThan(0)
+		expect(packageActions?.actions?.some((action) => action.outputSha256 !== undefined)).toBe(true)
 	})
 
 	test('ascend.active_content exposes focused active-content provenance for agents', async () => {

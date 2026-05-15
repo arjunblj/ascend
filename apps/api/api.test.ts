@@ -93,6 +93,17 @@ describe('API', () => {
 		expect(commitBody.data.outputSha256).toMatch(/^[a-f0-9]{64}$/)
 		expect(commitBody.data.packageActions.kind).toBe('ascend-package-action-proof')
 		expect(commitBody.data.packageActions.byAction.regenerate).toBeGreaterThan(0)
+		expect(commitBody.data.packageActions.coverage.sourceByteDigestCount).toBeGreaterThan(0)
+		expect(commitBody.data.packageActions.coverage.outputByteDigestCount).toBeGreaterThan(0)
+		expect(
+			commitBody.data.packageActions.coverage.matchingByteDigestCount +
+				commitBody.data.packageActions.coverage.mismatchedByteDigestCount,
+		).toBeGreaterThan(0)
+		expect(
+			commitBody.data.packageActions.actions.some(
+				(action: { outputSha256?: string }) => action.outputSha256 !== undefined,
+			),
+		).toBe(true)
 	})
 
 	test('plan endpoint rejects malformed operation field types', async () => {

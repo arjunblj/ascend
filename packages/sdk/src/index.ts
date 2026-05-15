@@ -14,6 +14,7 @@ export type { AgentDocEntry, AgentDocKind, AgentDocSearchResult } from './agent-
 export { loadAgentDocs, readAgentDoc, searchAgentDocs } from './agent-docs.ts'
 export type {
 	AgentCommitOptions,
+	AgentCommitPackageActionProofOptions,
 	AgentCommitResult,
 	AgentModelOutput,
 	AgentPlanResult,
@@ -67,6 +68,7 @@ export {
 	commitAgentPlanFromWorkbook,
 	compactAgentCommitResult,
 	compactAgentPlanResult,
+	createAgentCommitPackageActionProof,
 	createAgentPlan,
 	createAgentPlanFromWorkbook,
 	createPackageActionProof,

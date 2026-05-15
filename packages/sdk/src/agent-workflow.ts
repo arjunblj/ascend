@@ -160,6 +160,11 @@ export interface PackageActionProofOptions {
 	readonly claimBoundaries?: readonly string[]
 }
 
+export type AgentCommitPackageActionProofOptions = Omit<
+	PackageActionProofOptions,
+	'sourceBytes' | 'outputBytes' | 'writePolicy' | 'packageGraphAudit'
+>
+
 export interface PackageActionProof {
 	readonly formatVersion: 1
 	readonly kind: 'ascend-package-action-proof'
@@ -1515,6 +1520,19 @@ export function createPackageActionProof(
 	}
 }
 
+export function createAgentCommitPackageActionProof(
+	result: AgentCommitResult,
+	options: AgentCommitPackageActionProofOptions = {},
+): PackageActionProof {
+	const bytes = COMMIT_PACKAGE_ACTION_PROOF_BYTES.get(result)
+	return createPackageActionProof(result.preservation, {
+		...options,
+		...(bytes ? { sourceBytes: bytes.sourceBytes, outputBytes: bytes.outputBytes } : {}),
+		writePolicy: result.writePolicy,
+		packageGraphAudit: result.packageGraphAudit,
+	})
+}
+
 function compactTraceSummary(trace: AgentWorkflowTrace): CompactAgentTraceSummary {
 	return {
 		kind: trace.kind,
@@ -1592,6 +1610,11 @@ const DEFAULT_PACKAGE_ACTION_PROOF_CLAIM_BOUNDARIES = [
 	'Passthrough byte equality is proven only when source and output byte digests are present and bytesEqual is true.',
 	'Drop and error actions require caller review before claiming workbook feature preservation.',
 ] as const
+
+const COMMIT_PACKAGE_ACTION_PROOF_BYTES = new WeakMap<
+	AgentCommitResult,
+	{ readonly sourceBytes: Uint8Array; readonly outputBytes: Uint8Array }
+>()
 
 function traceArtifactByName(
 	trace: AgentWorkflowTrace,
@@ -2108,6 +2131,7 @@ export async function commitAgentPlanFromWorkbook(
 		lossAudit,
 		packageGraphAudit,
 	}
+	COMMIT_PACKAGE_ACTION_PROOF_BYTES.set(result, { sourceBytes, outputBytes })
 	return result
 }
 

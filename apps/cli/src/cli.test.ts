@@ -414,6 +414,17 @@ describe('ascend cli', () => {
 		expect(committed.data.outputSha256).toMatch(/^[a-f0-9]{64}$/)
 		expect(committed.data.packageActions.kind).toBe('ascend-package-action-proof')
 		expect(committed.data.packageActions.byAction.regenerate).toBeGreaterThan(0)
+		expect(committed.data.packageActions.coverage.sourceByteDigestCount).toBeGreaterThan(0)
+		expect(committed.data.packageActions.coverage.outputByteDigestCount).toBeGreaterThan(0)
+		expect(
+			committed.data.packageActions.coverage.matchingByteDigestCount +
+				committed.data.packageActions.coverage.mismatchedByteDigestCount,
+		).toBeGreaterThan(0)
+		expect(
+			committed.data.packageActions.actions.some(
+				(action: { outputSha256?: string }) => action.outputSha256 !== undefined,
+			),
+		).toBe(true)
 		expect(existsSync(`${import.meta.dir}/commit-output.xlsx`)).toBe(true)
 
 		const compactCommit = await run(

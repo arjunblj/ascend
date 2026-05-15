@@ -31,6 +31,7 @@ Updated: 2026-05-15
 | [Product claim map](runs/2026/2026-05-15-product-claim-map/log.md) | synthesis complete, handoff only | product loop, correctness loop, performance loop |
 | [Safe open proof bundle](runs/2026/2026-05-15-safe-open-proof-bundle/log.md) | proof bundle complete, handoff only | product loop, performance loop |
 | [Package action proof claim boundaries](runs/2026/2026-05-15-package-action-proof-claim-boundaries/log.md) | folded in proof boundary field | correctness loop, product loop |
+| [Package action proof surface digests](runs/2026/2026-05-15-package-action-proof-surface-digests/log.md) | folded in opt-in commit digest evidence | correctness loop, product loop |
 | [Package action proof](runs/2026/2026-05-14-package-action-proof/log.md) | cycle 2 complete, promote | correctness loop, product/DX loop, performance loop |
 | [Formula spans LSP](runs/2026/2026-05-14-formula-spans-lsp/log.md) | cycle 13 complete, folded in SDK hover/code actions | product/DX loop, correctness loop |
 | [Formula sqllogictest conformance](runs/2026/2026-05-14-formula-sqllogictest-conformance/log.md) | cycle 14 complete, folded in converter/runner | correctness loop |

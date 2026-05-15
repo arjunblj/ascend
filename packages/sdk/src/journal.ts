@@ -381,9 +381,10 @@ export const MUTATION_JOURNAL_EXACTNESS_MATRIX: readonly MutationJournalExactnes
 		constraints: [
 			'plain workbook and sheet scoped names restore with setDefinedName/deleteDefinedName',
 			'print areas use the same defined-name inverse path',
+			'deleteDefinedName requires a public name that exists in the requested scope',
 			'extra imported defined-name metadata is not publicly settable',
 		],
-		lossReasons: ['defined-name-metadata'],
+		lossReasons: ['defined-name-metadata', 'value-unsupported'],
 		representativeOps: ['setDefinedName', 'deleteDefinedName', 'setPrintArea'],
 	},
 	{
@@ -3746,7 +3747,18 @@ function journalDeleteDefinedName(
 	const preimage = definedNamePreimage(workbook, op.name, op.scope)
 	const { inverseOps, issues } = preimage.definedName
 		? restoreDefinedNameOps(workbook, preimage)
-		: { inverseOps: [], issues: [] }
+		: {
+				inverseOps: [],
+				issues: [
+					{
+						code: 'UNSUPPORTED_VALUE',
+						message: `Cannot build exact rollback journal for deleteDefinedName because ${op.name} does not exist`,
+						surface: 'defined-names',
+						reason: 'value-unsupported',
+						refs: [op.scope ? `${op.scope}!${op.name}` : op.name],
+					} satisfies MutationJournalIssue,
+				],
+			}
 	const allIssues = preimage.definedName
 		? [...issues, ...savedSourceDefinedNamePackageStateIssues(workbook, op.op, op.name)]
 		: issues

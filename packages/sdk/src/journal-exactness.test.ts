@@ -977,6 +977,31 @@ describe('mutation journal exactness model', () => {
 		}
 	})
 
+	test('classifies missing defined-name delete journals as unsupported values', () => {
+		const wb = AscendWorkbook.create()
+		const analysis = analyzeMutationJournalExactness(
+			buildMutationJournal(wb.getWorkbookModel(), [
+				{ op: 'deleteDefinedName', name: 'MissingBudget' },
+			]),
+		)
+
+		expect(analysis).toMatchObject({
+			supported: true,
+			exact: false,
+			issueCount: 1,
+			surfaces: ['defined-names'],
+			reasons: ['value-unsupported'],
+			hasMatrixViolation: false,
+		})
+		expect(analysis.issues[0]).toMatchObject({
+			code: 'UNSUPPORTED_VALUE',
+			surface: 'defined-names',
+			reason: 'value-unsupported',
+			refs: ['MissingBudget'],
+			allowedByMatrix: true,
+		})
+	})
+
 	test('classifies setComment legacy drawing loss without changing the v1 vocabulary', () => {
 		const classified = classifyMutationJournalIssues(lossySetCommentLegacyDrawingJournal().issues)
 		expect(classified).toContainEqual({

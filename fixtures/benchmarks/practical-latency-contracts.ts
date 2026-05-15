@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 
 type ContractName = 'first-view' | 'edit-verify' | 'repeated-inspection'
@@ -68,6 +68,13 @@ interface WorktreeState {
 	readonly trackedDirtyFiles: readonly string[]
 	readonly untrackedCount: number
 	readonly status: readonly string[]
+}
+
+interface InputProvenance {
+	readonly path: string
+	readonly tracked: boolean
+	readonly exists: boolean
+	readonly releaseClaimable: boolean
 }
 
 const DEFAULT_INPUT = 'research/excel-corpus/NYC_311_SR_2010-2020-sample-1M.xlsx'
@@ -448,6 +455,7 @@ function buildMarkdown(
 	args: Args,
 	results: readonly StepResult[],
 	worktree: WorktreeState,
+	inputs: readonly InputProvenance[],
 ): string {
 	const lines = [
 		'# Ascend Practical Latency Contracts',
@@ -455,8 +463,9 @@ function buildMarkdown(
 		`Generated: ${new Date().toISOString()}`,
 		`Input workbook: \`${args.inputFile}\``,
 		`Edit workbook: \`${args.editInputFile}\``,
+		`Input provenance: ${inputProvenanceSummary(inputs)}`,
 		`Timeout: ${args.timeoutMs}ms per step`,
-		`Worktree: ${worktree.trackedDirty ? 'tracked dirty; not release-claimable' : 'tracked clean'} (${worktree.branchLine}; untracked entries ${worktree.untrackedCount})`,
+		`Worktree: ${claimabilityLabel(worktree, inputs)} (${worktree.branchLine}; untracked entries ${worktree.untrackedCount})`,
 		'',
 		'## Contract Phase Map',
 		'',
@@ -470,7 +479,7 @@ function buildMarkdown(
 		'',
 		'## Worktree Guardrail',
 		'',
-		worktreeGuardrail(worktree),
+		worktreeGuardrail(worktree, inputs),
 		'',
 		'## Decision Matrix',
 		'',
@@ -526,17 +535,19 @@ function buildProfileMarkdown(
 	args: Args,
 	results: readonly StepResult[],
 	worktree: WorktreeState,
+	inputs: readonly InputProvenance[],
 ): string {
 	const lines = [
 		'# Ascend Practical Contract Profile Summary',
 		'',
 		`Generated: ${new Date().toISOString()}`,
 		`Output directory: \`${args.outDir}\``,
-		`Worktree: ${worktree.trackedDirty ? 'tracked dirty; not release-claimable' : 'tracked clean'} (${worktree.branchLine}; untracked entries ${worktree.untrackedCount})`,
+		`Input provenance: ${inputProvenanceSummary(inputs)}`,
+		`Worktree: ${claimabilityLabel(worktree, inputs)} (${worktree.branchLine}; untracked entries ${worktree.untrackedCount})`,
 		'',
 		'## Worktree Guardrail',
 		'',
-		worktreeGuardrail(worktree),
+		worktreeGuardrail(worktree, inputs),
 		'',
 		'## User-Visible Envelope Decisions',
 		'',
@@ -568,15 +579,40 @@ function buildProfileMarkdown(
 	return `${lines.join('\n')}\n`
 }
 
-function worktreeGuardrail(worktree: WorktreeState): string {
-	if (!worktree.trackedDirty) {
-		return `Tracked files were clean when this report was generated, so benchmark deltas can be compared against the recorded commit state. Untracked entries are recorded separately (${worktree.untrackedCount}) and must be treated as input/artifact context, not code changes.`
+function claimabilityLabel(worktree: WorktreeState, inputs: readonly InputProvenance[]): string {
+	if (worktree.trackedDirty) return 'tracked dirty; not release-claimable'
+	return inputs.every((input) => input.releaseClaimable)
+		? 'tracked clean with tracked inputs'
+		: 'tracked clean with local/private inputs; diagnostic only'
+}
+
+function inputProvenanceSummary(inputs: readonly InputProvenance[]): string {
+	return inputs
+		.map((input) => {
+			const status = input.releaseClaimable
+				? 'tracked'
+				: input.exists
+					? input.tracked
+						? 'tracked'
+						: 'local/private'
+					: 'missing'
+			return `\`${input.path}\` (${status})`
+		})
+		.join(', ')
+}
+
+function worktreeGuardrail(worktree: WorktreeState, inputs: readonly InputProvenance[]): string {
+	const localInputs = inputs.filter((input) => !input.releaseClaimable)
+	if (!worktree.trackedDirty && localInputs.length === 0) {
+		return `Tracked files and benchmark inputs were clean when this report was generated, so benchmark deltas can be compared against the recorded commit state. Untracked entries are recorded separately (${worktree.untrackedCount}) and must be treated as artifact context, not code changes.`
 	}
 	const tracked =
 		worktree.trackedDirtyFiles.length > 0
 			? worktree.trackedDirtyFiles.map((file) => `\`${file}\``).join(', ')
 			: 'none'
-	return `The worktree was dirty when this report was generated. Treat numbers as diagnostic only until rerun from a clean or explicitly documented comparison state. Tracked dirty files: ${tracked}. Untracked entries: ${worktree.untrackedCount}.`
+	const inputsText =
+		localInputs.length > 0 ? localInputs.map((input) => `\`${input.path}\``).join(', ') : 'none'
+	return `Treat numbers as diagnostic only until rerun from a tracked-clean code state with tracked benchmark inputs, or until local inputs are explicitly documented as private diagnostics. Tracked dirty files: ${tracked}. Local/private or missing inputs: ${inputsText}. Untracked entries: ${worktree.untrackedCount}.`
 }
 
 function firstViewTable(results: readonly StepResult[]): string {
@@ -925,18 +961,19 @@ async function run() {
 	mkdirSync(args.outDir, { recursive: true })
 	mkdirSync(join(args.outDir, 'profiles'), { recursive: true })
 	const worktree = readWorktreeState()
+	const inputs = [inputProvenance(args.inputFile), inputProvenance(args.editInputFile)]
 	const steps = buildSteps(args)
 	const results: StepResult[] = []
 	for (const step of steps) {
 		results.push(await runStep(step, args.outDir, args.dryRun))
 	}
-	const payload = { tool: 'practical-latency-contracts', args, worktree, results }
+	const payload = { tool: 'practical-latency-contracts', args, worktree, inputs, results }
 	const jsonPath = join(args.outDir, 'summary.json')
 	const markdownPath = join(args.outDir, 'summary.md')
 	const profileMarkdownPath = join(args.outDir, 'profile-summary.md')
 	writeFileSync(jsonPath, JSON.stringify(payload, null, 2))
-	writeFileSync(markdownPath, buildMarkdown(args, results, worktree))
-	writeFileSync(profileMarkdownPath, buildProfileMarkdown(args, results, worktree))
+	writeFileSync(markdownPath, buildMarkdown(args, results, worktree, inputs))
+	writeFileSync(profileMarkdownPath, buildProfileMarkdown(args, results, worktree, inputs))
 	const output = {
 		...payload,
 		summaryJson: jsonPath,
@@ -979,6 +1016,26 @@ function readWorktreeState(): WorktreeState {
 		untrackedCount,
 		status: entries,
 	}
+}
+
+function inputProvenance(path: string): InputProvenance {
+	const exists = existsSync(path)
+	const tracked = isGitTracked(path)
+	return {
+		path,
+		tracked,
+		exists,
+		releaseClaimable: exists && tracked,
+	}
+}
+
+function isGitTracked(path: string): boolean {
+	const result = Bun.spawnSync(['git', 'ls-files', '--error-unmatch', path], {
+		cwd: process.cwd(),
+		stdout: 'ignore',
+		stderr: 'ignore',
+	})
+	return result.exitCode === 0
 }
 
 await run()

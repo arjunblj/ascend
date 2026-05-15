@@ -367,6 +367,49 @@ function medianOptional(values: readonly (number | null | undefined)[]): number 
 	return defined.length > 0 ? median(defined) : undefined
 }
 
+function percentile(values: readonly number[], p: number): number {
+	const sorted = [...values].sort((a, b) => a - b)
+	if (sorted.length === 0) return 0
+	const index = Math.ceil(sorted.length * p) - 1
+	return sorted[Math.min(Math.max(index, 0), sorted.length - 1)] ?? 0
+}
+
+function mean(values: readonly number[]): number {
+	return values.reduce((sum, value) => sum + value, 0) / values.length
+}
+
+function standardDeviation(values: readonly number[]): number {
+	if (values.length < 2) return 0
+	const avg = mean(values)
+	const variance =
+		values.reduce((sum, value) => {
+			const delta = value - avg
+			return sum + delta * delta
+		}, 0) /
+		(values.length - 1)
+	return Math.sqrt(variance)
+}
+
+function seriesStats(values: readonly number[]) {
+	const avg = mean(values)
+	const stddev = standardDeviation(values)
+	return {
+		sampleCount: values.length,
+		min: Math.min(...values),
+		median: median(values),
+		mean: avg,
+		p95: percentile(values, 0.95),
+		max: Math.max(...values),
+		stddev,
+		cv: avg === 0 ? 0 : stddev / avg,
+	}
+}
+
+function optionalSeriesStats(values: readonly (number | null | undefined)[]) {
+	const defined = values.filter((value): value is number => typeof value === 'number')
+	return defined.length > 0 ? seriesStats(defined) : undefined
+}
+
 async function post(apiFetch: typeof fetch, path: string, body: unknown) {
 	const beforeOpenStats = snapshotOpenStats()
 	const start = performance.now()
@@ -949,12 +992,16 @@ function summarize(samples: readonly WorkflowSample[]) {
 		preparedCommitVerifiedTotalMedianMs: median(
 			samples.map((sample) => sample.preparedCommitVerifiedTotalMs),
 		),
+		preparedCommitVerifiedTotalStats: seriesStats(
+			samples.map((sample) => sample.preparedCommitVerifiedTotalMs),
+		),
 		measuredSampleMedianMs: median(samples.map((sample) => sample.measuredSampleMs)),
 		inspectMedianMs: median(samples.map((sample) => sample.inspectMs)),
 		readMedianMs: median(samples.map((sample) => sample.readMs)),
 		planMedianMs: median(samples.map((sample) => sample.planMs)),
 		fullPlanMedianMs: median(samples.map((sample) => sample.fullPlanMs)),
 		preparedPlanMedianMs: median(samples.map((sample) => sample.preparedPlanMs)),
+		preparedPlanStats: seriesStats(samples.map((sample) => sample.preparedPlanMs)),
 		commitMedianMs: median(samples.map((sample) => sample.commitMs)),
 		preparedCommitMedianMs: median(samples.map((sample) => sample.preparedCommitMs)),
 		commitWritePolicySnapshotMedianMs: medianOptional(
@@ -1036,6 +1083,9 @@ function summarize(samples: readonly WorkflowSample[]) {
 		preparedCommitPostWriteReopenMedianMs: medianOptional(
 			samples.map((sample) => sample.preparedCommitPostWriteReopenMs),
 		),
+		preparedCommitPostWriteReopenStats: optionalSeriesStats(
+			samples.map((sample) => sample.preparedCommitPostWriteReopenMs),
+		),
 		preparedCommitPostWriteCheckMedianMs: medianOptional(
 			samples.map((sample) => sample.preparedCommitPostWriteCheckMs),
 		),
@@ -1053,6 +1103,7 @@ function summarize(samples: readonly WorkflowSample[]) {
 		),
 		verifyMedianMs: median(samples.map((sample) => sample.verifyMs)),
 		preparedVerifyMedianMs: median(samples.map((sample) => sample.preparedVerifyMs)),
+		preparedVerifyStats: seriesStats(samples.map((sample) => sample.preparedVerifyMs)),
 		payloadBytesMedian: median(samples.map((sample) => sample.payloadBytes)),
 		fullPayloadBytesMedian: median(samples.map((sample) => sample.fullPayloadBytes)),
 		preparedPayloadBytesMedian: median(samples.map((sample) => sample.preparedPayloadBytes)),
@@ -1240,6 +1291,7 @@ function summarize(samples: readonly WorkflowSample[]) {
 		documentCacheHitCountMedian: median(samples.map((sample) => sample.documentCacheHitCount)),
 		mutationCountMedian: median(samples.map((sample) => sample.mutationCount)),
 		rssDeltaMbMedian: median(samples.map((sample) => sample.rssDeltaMb)),
+		rssDeltaMbStats: seriesStats(samples.map((sample) => sample.rssDeltaMb)),
 		readPartial: samples.every((sample) => sample.readPartial),
 		valid: samples.every((sample) => sample.valid),
 		preparedValid: samples.every((sample) => sample.preparedValid),

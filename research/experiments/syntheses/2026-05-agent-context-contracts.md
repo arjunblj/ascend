@@ -2,6 +2,12 @@
 
 Date: 2026-05-14
 
+## External References
+
+- [Model Context Protocol specification](https://modelcontextprotocol.io/specification/2024-11-05/index) frames tools, resources, and prompts as protocol primitives for connecting LLM applications to external data. Ascend's agent view should stay a bounded evidence result, not an unbounded workbook dump.
+- [Univer MCP guide](https://docs.univer.ai/guides/sheets/getting-started/mcp) shows spreadsheet operations exposed to agents through MCP. Ascend's differentiation is local, deterministic budget metadata and recovery locators.
+- [Microsoft Graph Excel workbook APIs](https://learn.microsoft.com/en-us/graph/api/resources/excel?view=graph-rest-1.0) expose range-level workbook access. Ascend should make its range summaries recoverable through narrower follow-up reads when evidence is omitted.
+
 ## Product Claims
 
 | Claim | Status | Proof now | Boundary |
@@ -21,7 +27,7 @@ Date: 2026-05-14
 
 ## Token-Bounded Agent View Proof Rerun
 
-Latest rerun: 2026-05-15T03:29:07Z.
+Latest rerun: 2026-05-15T03:43:00Z.
 
 Commands:
 
@@ -57,6 +63,25 @@ Recovery proof:
 
 Decision: token-bounded agent view is now product-proof backed for deterministic summaries, omission metadata, locator recovery, and cross-surface budget metadata. Keep exact-token language out of release copy; wide sparse ranges can exceed very small requested budgets because column summaries are a structural floor.
 
+## Product Example Gate
+
+Token-bounded agent view is strong enough for a product example, but not for promotion into the top-two release proof index.
+
+Allowed product example:
+
+1. Request an agent view with a token budget.
+2. Show `requestedApproxTokens`, `estimatedApproxTokens`, `unbudgetedApproxTokens`, `truncated`, and omission counters.
+3. Use `budget.omittedEvidence.sampleRows` or `columnSamples` to choose a narrower follow-up range.
+4. For formula omissions, use the formula-pattern example ref as representative recovery evidence.
+5. State that same-range unbudgeted agent view is the exact fallback when locators are too broad.
+
+Do not claim:
+
+- exact token adherence;
+- automatic recovery of every omitted formula occurrence;
+- release-index parity with safe-open and package-action proof artifacts;
+- that agent view replaces package inspection, raw reads, or mutation proof bundles.
+
 ## Next Product Prompt
 
 ```text
@@ -69,3 +94,4 @@ Decision: token-bounded agent view is now product-proof backed for deterministic
 - Retention tuning knobs: wait for telemetry before expanding configuration.
 - Collaborative editing language: this is patch history for one client workflow, not multi-user convergence.
 - Exact token guarantees: the estimator is JSON bytes divided by four.
+- Agent-view release proof index membership: keep the digest index limited to safe-open and package-action until product commits a persisted artifact policy for context-contract examples.

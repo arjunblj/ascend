@@ -1462,6 +1462,56 @@ describe('mutation journal exactness model', () => {
 		expect(cellFormulas(reopened, 'Sheet1', ['A1', 'B2'])).toEqual({ A1: '1+2', B2: undefined })
 	})
 
+	test('real XLSX legacy array style edits preserve bindings through save reopen', async () => {
+		const wb = await AscendWorkbook.open(
+			readFileSync(
+				new URL(
+					'../../../fixtures/xlsx/closedxml/Other_Formulas_ArrayFormula.xlsx',
+					import.meta.url,
+				),
+			),
+		)
+		expect(wb.check().valid).toBe(true)
+		expect(collectFormulaInfoRefs(wb, 'Sheet1')).toEqual(['Sheet1!A1'])
+
+		const changed = wb.apply(
+			[
+				{
+					op: 'setStyle',
+					sheet: 'Sheet1',
+					range: 'A1:A1',
+					style: { numberFormat: '0.0' },
+				},
+			],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.affectedCells).toEqual(['A1'])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(false)
+		expect(changed.journal?.issues).toEqual([
+			expect.objectContaining({
+				surface: 'package-parts',
+				reason: 'package-part-preservation',
+				refs: ['Sheet1!A1'],
+			}),
+		])
+		expect(journalIssueRefs(changed.journal, 'legacy-arrays')).toEqual([])
+		expect(wb.check().valid).toBe(true)
+		expect(collectFormulaInfoRefs(wb, 'Sheet1')).toEqual(['Sheet1!A1'])
+		expect(cellFormulas(wb, 'Sheet1', ['A1'])).toEqual({ A1: '1+2' })
+
+		const reopened = await AscendWorkbook.open(wb.toBytes())
+		expect(reopened.check().valid).toBe(true)
+		expect(collectFormulaInfoRefs(reopened, 'Sheet1')).toEqual(['Sheet1!A1'])
+		expect(cellFormulas(reopened, 'Sheet1', ['A1'])).toEqual({ A1: '1+2' })
+		expect(reopened.sheet('Sheet1')?.cell('A1')?.formulaBinding).toEqual({
+			kind: 'array',
+			ref: 'A1:B2',
+		})
+	})
+
 	test('real XLSX multi-axis shared formula edits materialize sibling formulas', async () => {
 		const wb = await AscendWorkbook.open(
 			readFileSync(

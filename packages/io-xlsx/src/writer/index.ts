@@ -440,11 +440,22 @@ export function writeXlsx(
 	options: WriteXlsxOptions = {},
 ): Result<Uint8Array, AscendError> {
 	try {
-		const plan = planWriteXlsx(workbook, capsules, options)
+		const sourceArchive =
+			options.sourceArchive ??
+			(workbook.sourceArchiveBytes ? extractZip(workbook.sourceArchiveBytes) : undefined)
+		const plan = planWriteXlsx(workbook, capsules, {
+			...options,
+			...(sourceArchive ? { sourceArchive } : {}),
+		})
 		if (!plan.ok) return plan
+		const passthroughPaths = sourceArchive
+			? preservedSourcePartPaths(plan.value.descriptors)
+			: undefined
 		return ok(
 			createZip(plan.value.parts, {
 				...(options.compressionProfile ? { compressionProfile: options.compressionProfile } : {}),
+				...(sourceArchive ? { sourceArchive } : {}),
+				...(passthroughPaths && passthroughPaths.size > 0 ? { passthroughPaths } : {}),
 			}),
 		)
 	} catch (e) {
@@ -455,6 +466,18 @@ export function writeXlsx(
 			),
 		)
 	}
+}
+
+function preservedSourcePartPaths(
+	descriptors: readonly import('./plan.ts').WritePartDescriptor[],
+): ReadonlySet<string> {
+	const paths = new Set<string>()
+	for (const descriptor of descriptors) {
+		if (descriptor.origin === 'preserved-source' && descriptor.streamingBuild === undefined) {
+			paths.add(descriptor.path)
+		}
+	}
+	return paths
 }
 
 export async function writeXlsxStreaming(

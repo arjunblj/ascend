@@ -43,6 +43,20 @@ function deflateOptionsForPart(
 
 interface ZipOptions {
 	readonly compressionProfile?: ZipCompressionProfile
+	readonly sourceArchive?: ZipPassthroughArchive
+	readonly passthroughPaths?: ReadonlySet<string>
+}
+
+interface ZipPassthroughEntry {
+	readonly compressionMethod: number
+	readonly crc: number
+	readonly compressedSize: number
+	readonly uncompressedSize: number
+}
+
+interface ZipPassthroughArchive {
+	get(path: string): ZipPassthroughEntry | undefined
+	readCompressedBytes(path: string): Uint8Array | undefined
 }
 
 function normalizeCompressionProfile(
@@ -165,6 +179,18 @@ export function createZip(
 
 	for (const [path, raw] of parts) {
 		const nameBytes = textEncoder.encode(path)
+		const passthrough = preservedCompressedEntry(path, raw.byteLength, options)
+		if (passthrough) {
+			entries.push({
+				nameBytes,
+				data: passthrough.data,
+				uncompressedSize: passthrough.uncompressedSize,
+				compressedSize: passthrough.compressedSize,
+				method: passthrough.method,
+				crc: passthrough.crc,
+			})
+			continue
+		}
 		const crc = crc32(raw)
 		if (compressionProfile === 'store' || shouldStoreWithoutDeflate(raw.byteLength)) {
 			entries.push({
@@ -193,6 +219,39 @@ export function createZip(
 		})
 	}
 	return buildZip(entries)
+}
+
+function preservedCompressedEntry(
+	path: string,
+	uncompressedSize: number,
+	options: ZipOptions,
+):
+	| {
+			readonly data: Uint8Array
+			readonly uncompressedSize: number
+			readonly compressedSize: number
+			readonly method: number
+			readonly crc: number
+	  }
+	| undefined {
+	if (!options.passthroughPaths?.has(path)) return undefined
+	const entry = options.sourceArchive?.get(path)
+	if (
+		!entry ||
+		entry.uncompressedSize !== uncompressedSize ||
+		(entry.compressionMethod !== 0 && entry.compressionMethod !== 8)
+	) {
+		return undefined
+	}
+	const data = options.sourceArchive?.readCompressedBytes(path)
+	if (!data || data.byteLength !== entry.compressedSize) return undefined
+	return {
+		data,
+		uncompressedSize: entry.uncompressedSize,
+		compressedSize: entry.compressedSize,
+		method: entry.compressionMethod,
+		crc: entry.crc,
+	}
 }
 
 interface ZipEntry {

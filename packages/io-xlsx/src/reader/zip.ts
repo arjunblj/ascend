@@ -21,6 +21,7 @@ const bunInflateRawSync = getBunInflateRawSync()
 export interface ZipEntry {
 	readonly path: string
 	readonly compressionMethod: number
+	readonly crc: number
 	readonly compressedSize: number
 	readonly uncompressedSize: number
 	readonly localHeaderOffset: number
@@ -79,6 +80,12 @@ export class ZipArchive {
 			this.bytesCache.set(path, bytes)
 		}
 		return bytes
+	}
+
+	readCompressedBytes(path: string): Uint8Array | undefined {
+		const entry = this.entriesByPath.get(path)
+		if (!entry) return undefined
+		return this.bytes.subarray(entry.dataOffset, entry.dataOffset + entry.compressedSize)
 	}
 
 	readText(path: string): string | undefined {
@@ -369,6 +376,7 @@ function parseEntries(bytes: Uint8Array, decoder: TextDecoder): Map<string, ZipE
 		}
 
 		const compressionMethod = view.getUint16(offset + 10, true)
+		const crc = view.getUint32(offset + 16, true)
 		let compressedSize = view.getUint32(offset + 20, true)
 		let uncompressedSize = view.getUint32(offset + 24, true)
 		const fileNameLength = view.getUint16(offset + 28, true)
@@ -399,6 +407,7 @@ function parseEntries(bytes: Uint8Array, decoder: TextDecoder): Map<string, ZipE
 		entries.set(path, {
 			path,
 			compressionMethod,
+			crc,
 			compressedSize,
 			uncompressedSize,
 			localHeaderOffset,

@@ -55,6 +55,7 @@ Updated: 2026-05-15
 | [Viewport cross-surface proof rerun](runs/2026/2026-05-15-viewport-cross-surface-proof-rerun/log.md) | synthesis complete, SDK/API/MCP proof rerun with CLI gap | product/DX loop, performance loop |
 | [Viewport patch product proof rerun](runs/2026/2026-05-15-viewport-patch-product-proof-rerun/log.md) | product-proof backed with CLI excluded, no new surfaces | product/DX loop, performance loop |
 | [Release claim board stewardship refresh](runs/2026/2026-05-15-release-claim-board-stewardship-refresh/log.md) | synthesis complete, no new surfaces, top two handoffs only | product loop, correctness loop, performance loop |
+| [Release claim board no-promotion refresh](runs/2026/2026-05-15-release-claim-board-no-promotion-refresh/log.md) | synthesis refreshed after in-flight spill fix, formula held to rejection-first proof-only | product loop, correctness loop, performance loop |
 | [Release claim evidence cut](runs/2026/2026-05-15-release-claim-evidence-cut/log.md) | synthesis complete, top claims proof-backed locally | product loop, correctness loop, performance loop |
 | [Release proof index digests](runs/2026/2026-05-15-release-proof-index-digests/log.md) | folded in benchmark-only digest index | product loop |
 | [Agent view index promotion gate](runs/2026/2026-05-15-agent-view-index-promotion-gate/log.md) | handoff only, hold out of release proof index | product/DX loop |

@@ -1792,6 +1792,38 @@ describe('Ascend API server', () => {
 		expect(reopened.inspect().themeSummary.hasThemePart).toBe(false)
 	})
 
+	test('preview marks saved defined-name edits lossy for package-part proof', async () => {
+		const wb = AscendWorkbook.create()
+		await wb.save(TEMP_FILE)
+
+		const result = await postJson('/preview', {
+			file: TEMP_FILE,
+			journal: true,
+			ops: [{ op: 'setDefinedName', name: 'Budget', ref: 'Sheet1!$B$1' }],
+		})
+
+		expect(result.status).toBe(200)
+		expect(result.body.ok).toBe(true)
+		expect(result.body.data?.journal?.supported).toBe(true)
+		expect(result.body.data?.journal?.exact).toBe(false)
+		expect(result.body.data?.journal?.inverseOps).toEqual([
+			{ op: 'deleteDefinedName', name: 'Budget' },
+		])
+		expect(result.body.data?.journal?.issues).toEqual([
+			{
+				code: 'LOSSY_INVERSE',
+				message:
+					'setDefinedName changes saved package state that public inverse operations cannot restore byte-for-byte',
+				surface: 'package-parts',
+				reason: 'package-part-preservation',
+				refs: ['name:Budget'],
+			},
+		])
+
+		const reopened = await AscendWorkbook.open(TEMP_FILE)
+		expect(reopened.definedName('Budget')).toBeUndefined()
+	})
+
 	test('preview exposes unsupported journal status with partial inverse ops', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([
@@ -2230,7 +2262,6 @@ describe('Ascend API server', () => {
 			{ op: 'setTableStyle', table: 'Sales', styleName: 'TableStyleMedium2' },
 			{ op: 'setAutoFilter', sheet: 'Sheet1', range: 'A1:A3', column: 0, values: ['Open'] },
 			{ op: 'setHyperlink', sheet: 'Sheet1', ref: 'E5', url: 'https://example.com' },
-			{ op: 'setDefinedName', name: 'Budget', ref: 'Sheet1!$B$1' },
 			{ op: 'setWorkbookView', index: 0, view: { activeTab: 0, firstSheet: 0, tabRatio: 600 } },
 			{
 				op: 'setWorkbookProtection',
@@ -2280,7 +2311,6 @@ describe('Ascend API server', () => {
 				{ op: 'setTableColumn', table: 'Revenue', column: 'Qty', newName: 'Units' },
 				{ op: 'setTableStyle', table: 'Revenue', styleName: null },
 				{ op: 'setHyperlink', sheet: 'Sheet1', ref: 'E5', url: 'https://changed.example' },
-				{ op: 'setDefinedName', name: 'Budget', ref: 'Sheet1!$C$1' },
 				{
 					op: 'setWorkbookView',
 					index: 0,
@@ -2328,7 +2358,6 @@ describe('Ascend API server', () => {
 		expect(changed.table('Revenue')?.columnDefs[1]?.formula).toBeUndefined()
 		expect(changed.table('Revenue')?.styleInfo).toBeUndefined()
 		expect(changed.inspectSheet('Sheet1')?.hyperlinks?.[0]?.target).toBe('https://changed.example')
-		expect(changed.definedName('Budget')?.formula).toBe('Sheet1!$C$1')
 		expect(changed.workbookViews()[0]).toMatchObject({ activeTab: 0, firstSheet: 0, tabRatio: 720 })
 		expect(changed.getWorkbookModel().workbookProtection).toMatchObject({
 			lockWindows: true,
@@ -2370,7 +2399,6 @@ describe('Ascend API server', () => {
 		expect(restored.table('Sales')?.columnDefs[1]?.formula).toBeUndefined()
 		expect(restored.table('Sales')?.styleInfo).toEqual({ name: 'TableStyleMedium2' })
 		expect(restored.inspectSheet('Sheet1')?.hyperlinks?.[0]?.target).toBe('https://example.com')
-		expect(restored.definedName('Budget')?.formula).toBe('Sheet1!$B$1')
 		expect(restored.workbookViews()[0]).toMatchObject({
 			activeTab: 0,
 			firstSheet: 0,

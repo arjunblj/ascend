@@ -796,8 +796,14 @@ export const MUTATION_JOURNAL_OPERATION_SURFACE_RULES = {
 	setComment: { primarySurface: 'comments', surfaces: ['comments'] },
 	setHyperlink: { primarySurface: 'hyperlinks', surfaces: ['hyperlinks'] },
 	setNumberFormat: { primarySurface: 'cells', surfaces: ['cells'] },
-	setDefinedName: { primarySurface: 'defined-names', surfaces: ['defined-names'] },
-	deleteDefinedName: { primarySurface: 'defined-names', surfaces: ['defined-names'] },
+	setDefinedName: {
+		primarySurface: 'defined-names',
+		surfaces: ['defined-names', 'package-parts'],
+	},
+	deleteDefinedName: {
+		primarySurface: 'defined-names',
+		surfaces: ['defined-names', 'package-parts'],
+	},
 	setStyle: { primarySurface: 'cells', surfaces: ['cells'] },
 	freezePane: { primarySurface: 'sheet-layout', surfaces: ['sheet-layout'] },
 	deleteComment: { primarySurface: 'comments', surfaces: ['comments'] },
@@ -1986,6 +1992,15 @@ function savedSourcePackageStateIssues(
 	]
 }
 
+function savedSourceDefinedNamePackageStateIssues(
+	workbook: Workbook,
+	opName: Extract<Operation, { op: 'setDefinedName' | 'deleteDefinedName' }>['op'],
+	name: string,
+): MutationJournalIssue[] {
+	if (name === '_xlnm.Print_Area') return []
+	return savedSourcePackageStateIssues(workbook, opName, [`name:${name}`])
+}
+
 function journalDeleteSheet(
 	workbook: Workbook,
 	op: Extract<Operation, { op: 'deleteSheet' }>,
@@ -2989,12 +3004,16 @@ function journalSetDefinedName(
 ): DraftJournalEntry {
 	const preimage = definedNamePreimage(workbook, op.name, op.scope)
 	const { inverseOps, issues } = restoreDefinedNameOps(workbook, preimage)
+	const allIssues = [
+		...issues,
+		...savedSourceDefinedNamePackageStateIssues(workbook, op.op, op.name),
+	]
 	return {
 		opIndex,
 		op,
 		inverseOps,
 		preimages: [{ kind: 'defined-name', definedName: preimage }],
-		issues,
+		issues: allIssues,
 	}
 }
 
@@ -3007,12 +3026,15 @@ function journalDeleteDefinedName(
 	const { inverseOps, issues } = preimage.definedName
 		? restoreDefinedNameOps(workbook, preimage)
 		: { inverseOps: [], issues: [] }
+	const allIssues = preimage.definedName
+		? [...issues, ...savedSourceDefinedNamePackageStateIssues(workbook, op.op, op.name)]
+		: issues
 	return {
 		opIndex,
 		op,
 		inverseOps,
 		preimages: [{ kind: 'defined-name', definedName: preimage }],
-		issues,
+		issues: allIssues,
 	}
 }
 

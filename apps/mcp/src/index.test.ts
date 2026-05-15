@@ -1286,6 +1286,56 @@ describe('MCP server', () => {
 		expect(reopened.inspect().themeSummary.hasThemePart).toBe(false)
 	})
 
+	test('ascend.preview marks saved defined-name edits lossy for package-part proof', async () => {
+		const wb = AscendWorkbook.create()
+		await wb.save(TEMP_FILE)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const handler = (server as any)._registeredTools['ascend.preview'].handler as (args: {
+			file: string
+			ops: unknown[]
+			journal?: boolean
+		}) => Promise<{
+			structuredContent?: {
+				ok?: boolean
+				data?: {
+					journal?: {
+						supported?: boolean
+						exact?: boolean
+						inverseOps?: unknown[]
+						issues?: unknown[]
+					}
+				}
+			}
+		}>
+		const result = await handler({
+			file: TEMP_FILE,
+			journal: true,
+			ops: [{ op: 'setDefinedName', name: 'Budget', ref: 'Sheet1!$B$1' }],
+		})
+
+		expect(result.structuredContent?.ok).toBe(true)
+		expect(result.structuredContent?.data?.journal?.supported).toBe(true)
+		expect(result.structuredContent?.data?.journal?.exact).toBe(false)
+		expect(result.structuredContent?.data?.journal?.inverseOps).toEqual([
+			{ op: 'deleteDefinedName', name: 'Budget' },
+		])
+		expect(result.structuredContent?.data?.journal?.issues).toEqual([
+			{
+				code: 'LOSSY_INVERSE',
+				message:
+					'setDefinedName changes saved package state that public inverse operations cannot restore byte-for-byte',
+				surface: 'package-parts',
+				reason: 'package-part-preservation',
+				refs: ['name:Budget'],
+			},
+		])
+
+		const reopened = await AscendWorkbook.open(TEMP_FILE)
+		expect(reopened.definedName('Budget')).toBeUndefined()
+	})
+
 	test('ascend.write exact journal inverse ops restore saved workbook truth after reopen', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([
@@ -1328,7 +1378,6 @@ describe('MCP server', () => {
 			{ op: 'setTableStyle', table: 'Sales', styleName: 'TableStyleMedium2' },
 			{ op: 'setAutoFilter', sheet: 'Sheet1', range: 'A1:A3', column: 0, values: ['Open'] },
 			{ op: 'setHyperlink', sheet: 'Sheet1', ref: 'E5', url: 'https://example.com' },
-			{ op: 'setDefinedName', name: 'Budget', ref: 'Sheet1!$B$1' },
 			{ op: 'setWorkbookView', index: 0, view: { activeTab: 0, firstSheet: 0, tabRatio: 600 } },
 			{
 				op: 'setWorkbookProtection',
@@ -1396,7 +1445,6 @@ describe('MCP server', () => {
 				{ op: 'setTableColumn', table: 'Revenue', column: 'Qty', newName: 'Units' },
 				{ op: 'setTableStyle', table: 'Revenue', styleName: null },
 				{ op: 'setHyperlink', sheet: 'Sheet1', ref: 'E5', url: 'https://changed.example' },
-				{ op: 'setDefinedName', name: 'Budget', ref: 'Sheet1!$C$1' },
 				{
 					op: 'setWorkbookView',
 					index: 0,
@@ -1443,7 +1491,6 @@ describe('MCP server', () => {
 		expect(changed.table('Revenue')?.columnDefs[1]?.formula).toBeUndefined()
 		expect(changed.table('Revenue')?.styleInfo).toBeUndefined()
 		expect(changed.inspectSheet('Sheet1')?.hyperlinks?.[0]?.target).toBe('https://changed.example')
-		expect(changed.definedName('Budget')?.formula).toBe('Sheet1!$C$1')
 		expect(changed.workbookViews()[0]).toMatchObject({ activeTab: 0, firstSheet: 0, tabRatio: 720 })
 		expect(changed.getWorkbookModel().workbookProtection).toMatchObject({
 			lockWindows: true,
@@ -1485,7 +1532,6 @@ describe('MCP server', () => {
 		expect(restored.table('Sales')?.columnDefs[1]?.formula).toBeUndefined()
 		expect(restored.table('Sales')?.styleInfo).toEqual({ name: 'TableStyleMedium2' })
 		expect(restored.inspectSheet('Sheet1')?.hyperlinks?.[0]?.target).toBe('https://example.com')
-		expect(restored.definedName('Budget')?.formula).toBe('Sheet1!$B$1')
 		expect(restored.workbookViews()[0]).toMatchObject({
 			activeTab: 0,
 			firstSheet: 0,

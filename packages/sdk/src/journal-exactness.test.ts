@@ -1234,6 +1234,22 @@ describe('mutation journal exactness model', () => {
 				opName: 'setDocumentProperties',
 				refs: ['workbook:documentProperties'],
 			},
+			{
+				name: 'setDefinedName',
+				seedOps: [{ op: 'setDefinedName', name: 'Budget', ref: 'Sheet1!$A$1' }],
+				ops: [{ op: 'setDefinedName', name: 'Budget', ref: 'Sheet1!$B$1' }],
+				cleanCalcState: true,
+				opName: 'setDefinedName',
+				refs: ['name:Budget'],
+			},
+			{
+				name: 'deleteDefinedName',
+				seedOps: [{ op: 'setDefinedName', name: 'Budget', ref: 'Sheet1!$A$1' }],
+				ops: [{ op: 'deleteDefinedName', name: 'Budget' }],
+				cleanCalcState: true,
+				opName: 'deleteDefinedName',
+				refs: ['name:Budget'],
+			},
 		]
 
 		for (const entry of cases) {

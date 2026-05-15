@@ -114,6 +114,7 @@ Updated: 2026-05-15
 | [Compact report publication readyWhen](runs/2026/2026-05-15-compact-report-publication-readywhen/log.md) | folded compact-report publication policy into release readiness gates for both top claims | release loop, product loop |
 | [Compact report canonicalization deferral](runs/2026/2026-05-15-compact-report-canonicalization-deferral/log.md) | archived shared canonicalization helper until release owners define artifact subject and storage policy | release loop |
 | [Release readiness owner action priority](runs/2026/2026-05-15-release-readiness-owner-action-priority/log.md) | folded in prioritized owner-action queue; fixture and claim-boundary gates rank before compact report publication | product loop, correctness loop, performance loop, release loop |
+| [Product fixture gate resolution](runs/2026/2026-05-15-product-fixture-gate-resolution/log.md) | synthesis: accept disclosed generated topology fixtures for guarded local proof; require public binaries for stronger trust/real-world wording | product loop, release loop |
 | [Package action proof](runs/2026/2026-05-14-package-action-proof/log.md) | cycle 2 complete, promote | correctness loop, product/DX loop, performance loop |
 | [Formula spans LSP](runs/2026/2026-05-14-formula-spans-lsp/log.md) | cycle 13 complete, folded in SDK hover/code actions | product/DX loop, correctness loop |
 | [Formula sqllogictest conformance](runs/2026/2026-05-14-formula-sqllogictest-conformance/log.md) | cycle 14 complete, folded in converter/runner | correctness loop |

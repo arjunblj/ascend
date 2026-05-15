@@ -3263,23 +3263,7 @@ function journalSetFormula(
 	opIndex: number,
 ): DraftJournalEntry {
 	const cells = cellEditPreimages(workbook, op.sheet, [op.ref])
-	const { inverseOps, issues } = inverseCellOps(cells)
-	return {
-		opIndex,
-		op,
-		inverseOps,
-		preimages: [{ kind: 'cells', cells }],
-		issues,
-	}
-}
-
-function journalFillFormula(
-	workbook: Workbook,
-	op: Extract<Operation, { op: 'fillFormula' }>,
-	opIndex: number,
-): DraftJournalEntry {
-	const cells = cellEditPreimages(workbook, op.sheet, refsInRange(op.range))
-	const formulaIssues = fillFormulaParseIssues(op)
+	const formulaIssues = formulaParseIssues(op.op, op.sheet, op.ref, op.formula)
 	const { inverseOps, issues } = inverseCellOps(cells)
 	return {
 		opIndex,
@@ -3290,18 +3274,38 @@ function journalFillFormula(
 	}
 }
 
-function fillFormulaParseIssues(
+function journalFillFormula(
+	workbook: Workbook,
 	op: Extract<Operation, { op: 'fillFormula' }>,
+	opIndex: number,
+): DraftJournalEntry {
+	const cells = cellEditPreimages(workbook, op.sheet, refsInRange(op.range))
+	const formulaIssues = formulaParseIssues(op.op, op.sheet, op.range, op.formula)
+	const { inverseOps, issues } = inverseCellOps(cells)
+	return {
+		opIndex,
+		op,
+		inverseOps: formulaIssues.length === 0 ? inverseOps : [],
+		preimages: [{ kind: 'cells', cells }],
+		issues: [...formulaIssues, ...issues],
+	}
+}
+
+function formulaParseIssues(
+	opName: string,
+	sheetName: string,
+	ref: string,
+	formula: string,
 ): MutationJournalIssue[] {
-	const parsed = cachedParseFormula(normalizeFormulaInput(op.formula))
+	const parsed = cachedParseFormula(normalizeFormulaInput(formula))
 	if (parsed.ok) return []
 	return [
 		{
 			code: 'UNSUPPORTED_VALUE',
-			message: `Cannot build exact rollback journal for fillFormula because ${op.formula} is not a valid formula`,
+			message: `Cannot build exact rollback journal for ${opName} because ${formula} is not a valid formula`,
 			surface: 'formulas',
 			reason: 'value-unsupported',
-			refs: [`${op.sheet}!${op.range}`],
+			refs: [`${sheetName}!${ref}`],
 		},
 	]
 }

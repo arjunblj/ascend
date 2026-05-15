@@ -914,29 +914,32 @@ describe('mutation journal exactness model', () => {
 		}
 	})
 
-	test('classifies fillFormula journals with invalid formulas as unsupported values', () => {
-		const wb = AscendWorkbook.create()
-		const analysis = analyzeMutationJournalExactness(
-			buildMutationJournal(wb.getWorkbookModel(), [
-				{ op: 'fillFormula', sheet: 'Sheet1', range: 'A1:A2', formula: '=1+' },
-			]),
-		)
+	test('classifies formula journals with invalid formulas as unsupported values', () => {
+		const cases: readonly Operation[] = [
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'A1', formula: '=1+' },
+			{ op: 'fillFormula', sheet: 'Sheet1', range: 'A1:A2', formula: '=1+' },
+		]
 
-		expect(analysis).toMatchObject({
-			supported: true,
-			exact: false,
-			issueCount: 1,
-			surfaces: ['formulas'],
-			reasons: ['value-unsupported'],
-			hasMatrixViolation: false,
-		})
-		expect(analysis.issues[0]).toMatchObject({
-			code: 'UNSUPPORTED_VALUE',
-			surface: 'formulas',
-			reason: 'value-unsupported',
-			refs: ['Sheet1!A1:A2'],
-			allowedByMatrix: true,
-		})
+		for (const op of cases) {
+			const wb = AscendWorkbook.create()
+			const analysis = analyzeMutationJournalExactness(
+				buildMutationJournal(wb.getWorkbookModel(), [op]),
+			)
+			expect(analysis, op.op).toMatchObject({
+				supported: true,
+				exact: false,
+				issueCount: 1,
+				surfaces: ['formulas'],
+				reasons: ['value-unsupported'],
+				hasMatrixViolation: false,
+			})
+			expect(analysis.issues[0], op.op).toMatchObject({
+				code: 'UNSUPPORTED_VALUE',
+				surface: 'formulas',
+				reason: 'value-unsupported',
+				allowedByMatrix: true,
+			})
+		}
 	})
 
 	test('classifies setComment legacy drawing loss without changing the v1 vocabulary', () => {

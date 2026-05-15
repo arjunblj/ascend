@@ -6,6 +6,7 @@ Updated: 2026-05-15
 
 | Run | Status | Fold-in target |
 | --- | --- | --- |
+| [Release packaging owner audit](runs/2026/2026-05-15-release-packaging-owner-audit/log.md) | converted untracked packaging audit into owner-routed proof gaps; no package surfaces promoted | product loop, release loop |
 | [Machine-readable claim portfolio](runs/2026/2026-05-15-machine-readable-claim-portfolio/log.md) | folded a tested 10-claim portfolio into release proof owner-handoff JSON; top two handoffs only | product loop, correctness loop, performance loop, release loop |
 | [Feature fingerprint open mode](runs/2026/2026-05-14-feature-fingerprint-open-mode/log.md) | cycle 16 complete, folded in SDK open planner | performance loop, product/DX loop |
 | [Open plan CLI explain first](runs/2026/2026-05-14-open-plan-cli-explain-first/log.md) | cycle 17 complete, folded in CLI command | product/DX loop |

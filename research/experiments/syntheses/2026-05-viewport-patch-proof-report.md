@@ -36,6 +36,8 @@ Probe command:
 bun run fixtures/benchmarks/viewport-patch-proof.ts
 ```
 
+Latest rerun: 2026-05-15T03:31:15.594Z.
+
 | Case | Expected | Observed | Passed | Patch bytes | Boundary |
 | --- | --- | --- | --- | ---: | --- |
 | retained-patch | `patch:A1` | `patch:A1` | true | 315 | SDK interactive retained token |
@@ -50,6 +52,7 @@ Cross-surface validation:
 
 ```bash
 bun test fixtures/benchmarks/viewport-patch-proof.test.ts
+bun test packages/sdk/src/interactive-contract.test.ts -t "retained|viewport patch results expose invalidation|tokens from other sessions"
 bun test apps/api/src/server.test.ts -t "compact changedSince"
 bun test apps/mcp/src/index.test.ts -t "compact changedSince"
 ```
@@ -58,9 +61,9 @@ bun test apps/mcp/src/index.test.ts -t "compact changedSince"
 
 - The SDK interactive claim is strong: retained tokens can produce compact patches, and invalid tokens or invalidated views return explicit refresh instructions.
 - API and MCP compact reads support `changedSince` recovery with fresh windows and explicit invalidation metadata, but they are not the same retained interactive patch stream.
-- CLI is the missing surface. Do not claim SDK/CLI/API/MCP parity unless a future product loop intentionally adds or rejects a CLI contract.
+- CLI is explicitly excluded. Do not claim SDK/CLI/API/MCP parity unless a future product loop intentionally adds a CLI contract.
 - Projection changes currently use `base-snapshot-missing`, not a dedicated projection-specific reason.
 
 ## Fold-In Recommendation
 
-Promote to product/performance claim packaging only as a guarded claim: "SDK retained viewport patches, plus API/MCP compact read invalidation recovery." Do not promote to a release headline until the owner loop decides whether CLI needs a surface or the claim wording should exclude CLI.
+Promote to product/performance proof packaging with explicit surface wording: "SDK retained viewport patches, plus API/MCP compact read invalidation recovery; CLI excluded." Do not add CLI `changedSince` in this loop.

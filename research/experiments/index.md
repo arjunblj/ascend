@@ -53,6 +53,7 @@ Updated: 2026-05-15
 | [Agent view budget harness](runs/2026/2026-05-15-agent-view-budget-harness/log.md) | folded in tracked proof harness | product/DX loop |
 | [Viewport patch proof harness](runs/2026/2026-05-15-viewport-patch-proof-harness/log.md) | folded in tracked proof harness | product/DX loop, performance loop |
 | [Viewport cross-surface proof rerun](runs/2026/2026-05-15-viewport-cross-surface-proof-rerun/log.md) | synthesis complete, SDK/API/MCP proof rerun with CLI gap | product/DX loop, performance loop |
+| [Viewport patch product proof rerun](runs/2026/2026-05-15-viewport-patch-product-proof-rerun/log.md) | product-proof backed with CLI excluded, no new surfaces | product/DX loop, performance loop |
 | [Release claim board stewardship refresh](runs/2026/2026-05-15-release-claim-board-stewardship-refresh/log.md) | synthesis complete, no new surfaces, top two handoffs only | product loop, correctness loop, performance loop |
 | [Release claim evidence cut](runs/2026/2026-05-15-release-claim-evidence-cut/log.md) | synthesis complete, top claims proof-backed locally | product loop, correctness loop, performance loop |
 | [Release proof index digests](runs/2026/2026-05-15-release-proof-index-digests/log.md) | folded in benchmark-only digest index | product loop |

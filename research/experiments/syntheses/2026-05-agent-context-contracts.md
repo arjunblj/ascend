@@ -7,7 +7,7 @@ Date: 2026-05-14
 | Claim | Status | Proof now | Boundary |
 | --- | --- | --- | --- |
 | Token-bounded agent view | Product-proof backed | SDK/CLI/API/MCP accept token budgets and return estimated tokens, omission counters, compact omitted-evidence locators, and formula-pattern example refs | Estimates are approximate; omitted evidence is absent by design and must be recovered through narrower reads or unbudgeted views |
-| Retained viewport patch history | Credible, docs-ready | SDK/API/MCP compact reads and SDK interactive viewports return patches or explicit invalidation reasons | Bounded per-window/per-viewport history, not CRDT collaboration or unbounded event sourcing |
+| Retained viewport patch history | Product-proof backed with CLI excluded | SDK interactive viewports return retained patches or explicit invalidation reasons; API/MCP compact reads return `changedSince` recovery windows and invalidation metadata | Bounded per-window/per-viewport history, not CRDT collaboration, multi-writer sync, or unbounded event sourcing |
 
 ## Required Examples
 

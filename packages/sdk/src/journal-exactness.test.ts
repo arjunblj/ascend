@@ -188,6 +188,67 @@ describe('mutation journal exactness model', () => {
 		})
 	})
 
+	test('classifies unsupported operation journals by workbook surface', () => {
+		const cases: readonly {
+			readonly op: Operation
+			readonly surface: MutationJournalSurface
+		}[] = [
+			{ op: { op: 'appendRows', table: 'Sales', rows: [['East']] }, surface: 'tables' },
+			{
+				op: {
+					op: 'replaceImage',
+					sheet: 'Sheet1',
+					contentBase64: 'AA==',
+					contentType: 'image/png',
+					imageIndex: 0,
+				},
+				surface: 'drawings',
+			},
+			{
+				op: {
+					op: 'setAdvancedFilter',
+					sheet: 'Sheet1',
+					filterIndex: 0,
+					range: 'A1:B10',
+				},
+				surface: 'auto-filters',
+			},
+			{
+				op: {
+					op: 'setPivotFieldItem',
+					fieldIndex: 0,
+					itemIndex: 0,
+					hidden: true,
+				},
+				surface: 'pivot-caches',
+			},
+			{
+				op: {
+					op: 'rewriteExternalLink',
+					relId: 'rId1',
+					newTarget: '../external.xlsx',
+				},
+				surface: 'package-parts',
+			},
+		]
+
+		for (const entry of cases) {
+			const wb = AscendWorkbook.create()
+			const analysis = analyzeMutationJournalExactness(
+				buildMutationJournal(wb.getWorkbookModel(), [entry.op]),
+			)
+			expect(analysis).toMatchObject({
+				supported: false,
+				exact: false,
+				issueCount: 1,
+				surfaces: [entry.surface],
+				reasons: ['operation-unsupported'],
+				hasUnsupportedOperation: true,
+				hasMatrixViolation: false,
+			})
+		}
+	})
+
 	test('representative edit operations obey the exactness taxonomy', () => {
 		const cases: readonly {
 			readonly surface: MutationJournalSurface

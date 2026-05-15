@@ -264,7 +264,7 @@ export const MUTATION_JOURNAL_EXACTNESS_MATRIX: readonly MutationJournalExactnes
 			'table lifecycle and editable table fields restore when public operations can address the original table',
 			'unsupported table metadata or missing selectors make rollback lossy',
 		],
-		lossReasons: ['table-metadata', 'value-unsupported'],
+		lossReasons: ['operation-unsupported', 'table-metadata', 'value-unsupported'],
 		representativeOps: [
 			'createTable',
 			'deleteTable',
@@ -359,6 +359,7 @@ export const MUTATION_JOURNAL_EXACTNESS_MATRIX: readonly MutationJournalExactnes
 			'advanced filter columns, extension metadata, and advanced sort metadata are lossy',
 		],
 		lossReasons: [
+			'operation-unsupported',
 			'auto-filter-column-metadata',
 			'auto-filter-extension-metadata',
 			'auto-filter-sort-metadata',
@@ -445,7 +446,7 @@ export const MUTATION_JOURNAL_EXACTNESS_MATRIX: readonly MutationJournalExactnes
 			'drawing text restores when the public selector uniquely identifies an editable text-bearing drawing object',
 			'other drawing payloads remain package-preserved metadata',
 		],
-		lossReasons: ['drawing-text-selector', 'package-part-preservation'],
+		lossReasons: ['operation-unsupported', 'drawing-text-selector', 'package-part-preservation'],
 		representativeOps: ['setDrawingText', 'insertImage', 'replaceImage', 'deleteImage'],
 	},
 	{
@@ -467,7 +468,7 @@ export const MUTATION_JOURNAL_EXACTNESS_MATRIX: readonly MutationJournalExactnes
 			'pivot cache source and refresh fields restore when every touched field had a prior public value',
 			'unsetting fields and pivot cache records remain package-preserved metadata',
 		],
-		lossReasons: ['pivot-cache-unsettable', 'package-part-preservation'],
+		lossReasons: ['operation-unsupported', 'pivot-cache-unsettable', 'package-part-preservation'],
 		representativeOps: ['setPivotCache'],
 	},
 	{
@@ -561,7 +562,9 @@ function inferMutationJournalIssueSurface(issue: MutationJournalIssue): Mutation
 	if (issue.code === 'JOURNAL_BUILD_FAILED' || issue.code === 'JOURNAL_UNAVAILABLE') {
 		return 'package-parts'
 	}
-	if (issue.code === 'UNSUPPORTED_OPERATION') return 'package-parts'
+	if (issue.code === 'UNSUPPORTED_OPERATION') {
+		return unsupportedOperationSurface(issue) ?? 'package-parts'
+	}
 	const text = journalIssueSearchText(issue)
 	if (text.includes('x14')) return 'x14-metadata'
 	if (text.includes('formula binding') || text.includes('formulainfo')) return 'formula-bindings'
@@ -703,6 +706,26 @@ function surfaceDefaultLossReason(surface: MutationJournalSurface): MutationJour
 
 function journalIssueSearchText(issue: MutationJournalIssue): string {
 	return `${issue.message} ${(issue.refs ?? []).join(' ')}`.toLowerCase()
+}
+
+const UNSUPPORTED_OPERATION_SURFACES: Readonly<Record<string, MutationJournalSurface>> = {
+	appendRows: 'tables',
+	replaceImage: 'drawings',
+	insertImage: 'drawings',
+	deleteImage: 'drawings',
+	setSparklineGroup: 'drawings',
+	setAdvancedFilter: 'auto-filters',
+	setPivotFieldItem: 'pivot-caches',
+	setSlicerCacheItem: 'pivot-caches',
+	setTimelineRange: 'pivot-caches',
+	setConnectionRefresh: 'package-parts',
+	rewriteExternalLink: 'package-parts',
+}
+
+function unsupportedOperationSurface(issue: MutationJournalIssue): MutationJournalSurface | null {
+	const match = /^No reversible journal support for ([A-Za-z0-9]+)(?:\b|$)/.exec(issue.message)
+	if (!match) return null
+	return UNSUPPORTED_OPERATION_SURFACES[match[1] ?? ''] ?? null
 }
 
 export interface MutationJournalCellPreimage {

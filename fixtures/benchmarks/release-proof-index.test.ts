@@ -971,12 +971,24 @@ describe('release proof evidence index', () => {
 				recommendedMode: 'metadata-only',
 			}),
 		])
+		expect(handoff.fixturePolicyEvidence.packageAction.externalCandidateEvidence).toEqual([
+			expect.objectContaining({
+				candidateId: 'excelforge-book1-unknown-part-mutation',
+				status: 'external-candidate-owner-review-required',
+				gateEffect: 'does-not-satisfy-edge-fixture-policy',
+				postWriteAuditsPassed: false,
+				unknownPartPath: 'docMetadata/LabelInfo.xml',
+			}),
+		])
 		expect(handoff.fixturePolicyEvidence.safeOpen.signatureOrUnknownMatches).toBe(0)
 		expect(JSON.stringify(handoff.generatedFixtureDecisionEvidence)).toContain(
 			'generated-malformed-package',
 		)
 		expect(JSON.stringify(handoff.generatedFixtureDecisionEvidence)).toContain(
 			'external candidate excelforge-book1-unknown-part awaits owner review',
+		)
+		expect(JSON.stringify(handoff.generatedFixtureDecisionEvidence)).toContain(
+			'external candidate excelforge-book1-unknown-part-mutation awaits owner review',
 		)
 		expect(JSON.stringify(handoff.performancePolicy)).toContain('safe-open-proof.ts --repeat 3')
 		expect(JSON.stringify(handoff.safeOpenLatencyValidationEvidence)).toContain(
@@ -1176,6 +1188,8 @@ describe('release proof evidence index', () => {
 		expect(markdown).toContain('External fixture candidates:')
 		expect(markdown).toContain('excelforge-book1-unknown-part')
 		expect(markdown).toContain('does-not-satisfy-public-edge-fixtures')
+		expect(markdown).toContain('excelforge-book1-unknown-part-mutation')
+		expect(markdown).toContain('does-not-satisfy-edge-fixture-policy')
 		expect(markdown).toContain('| package-action-proof | edge-fixture-policy')
 		expect(markdown).toContain(
 			'missingReplacementFeatures=signaturePackage,syntheticUnknownPathFamily',

@@ -8,6 +8,12 @@ Research is no longer a broad sweep. Each direction below must earn its place by
 
 ## Latest Claim Steward Refresh
 
+Proof timestamp: 2026-05-15T21:34:51Z.
+
+The package-action owner-review evidence is now more concrete without promoting a new surface. `release-proof-index --owner-handoffs-json` exposes `fixturePolicyEvidence.packageAction.externalCandidateEvidence` for `excelforge-book1-unknown-part-mutation`: MIT manifest evidence, workbook SHA-256 `9c5426fa71ff68cc7e40e19e02b5992daf91da5754ef643d2db2f89bd70bb122`, mutation `setCells Projekt 1!A1 = "probe"`, action counts `passthrough=42`, `regenerate=6`, `add=0`, `drop=0`, `error=1`, fail-closed unknown part `docMetadata/LabelInfo.xml`, and `gateEffect=does-not-satisfy-edge-fixture-policy`.
+
+Portfolio decision is unchanged: safe-open and package-action remain the only implementation handoffs, and both remain owner-blocked. This candidate is evidence for a public fixture decision, not a tracked fixture replacement and not authorization for stronger package-action wording.
+
 Proof timestamp: 2026-05-15T20:59:04Z.
 
 Fresh proof rerun keeps the portfolio stable and blocks new surface promotion. `release-proof-index --owner-handoffs-json` reports `releaseGate=blocked-by-publication-policy`, `headlineClaimsAllowed=false`, `implementationSurfacePromotionAllowed=false`, and `missingRequirementCount=9`. The top two proof artifacts still answer the user's "produce proof, not prose" requirement from existing harnesses:

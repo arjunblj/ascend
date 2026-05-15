@@ -8,6 +8,12 @@ Freeze the next release claims into proof-shaped language. This board is deliber
 
 Current stewardship rule: hand off only the top one or two product claims to implementation loops. Everything else stays as proof packaging, validation, or "do not promote yet" until the missing evidence is explicit.
 
+Latest proof refresh, 2026-05-15T21:34:51Z:
+
+- `release-proof-index --no-timings --owner-handoffs-json` still reports `releaseGate=blocked-by-publication-policy`, `headlineClaimsAllowed=false`, `implementationSurfacePromotionAllowed=false`, and `missingRequirementCount=9`.
+- `fixturePolicyEvidence.packageAction.externalCandidateEvidence` now exposes the ExcelForge unknown-part mutation candidate as owner-review evidence with `candidateId=excelforge-book1-unknown-part-mutation`, workbook SHA-256 `9c5426fa71ff68cc7e40e19e02b5992daf91da5754ef643d2db2f89bd70bb122`, operation `setCells Projekt 1!A1 = "probe"`, action counts `passthrough=42`, `regenerate=6`, `add=0`, `drop=0`, `error=1`, unknown part `docMetadata/LabelInfo.xml`, and `gateEffect=does-not-satisfy-edge-fixture-policy`.
+- This strengthens the auditable package-part mutation owner handoff, but it does not close `edge-fixture-policy`: the workbook is not vendored, the probe is not part of the tracked package-action harness, and product/release owners still need an explicit public fixture decision.
+
 Latest proof refresh, 2026-05-15T21:12:54Z:
 
 - `release-proof-index --no-timings --owner-handoffs-json` still reports `releaseGate=blocked-by-publication-policy`, `headlineClaimsAllowed=false`, `implementationSurfacePromotionAllowed=false`, and `missingRequirementCount=9`.

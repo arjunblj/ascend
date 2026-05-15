@@ -443,6 +443,32 @@ export interface ReleaseProofPackageActionFixturePolicyEvidence {
 	readonly featureCounts: PackageActionFixtureScanResult['featureCounts']
 	readonly currentGeneratedStructuralCases: readonly string[]
 	readonly missingReplacementFeatures: readonly string[]
+	readonly externalCandidateEvidence: readonly ReleaseProofPackageActionExternalFixtureCandidateEvidence[]
+	readonly boundary: string
+}
+
+export interface ReleaseProofPackageActionExternalFixtureCandidateEvidence {
+	readonly artifact: 'package-action-proof'
+	readonly gateId: 'edge-fixture-policy'
+	readonly caseName: 'unknown-part-error'
+	readonly status: 'external-candidate-owner-review-required'
+	readonly candidateId: string
+	readonly sourceUrl: string
+	readonly licenseEvidenceUrl: string
+	readonly license: string
+	readonly inputSha256: string
+	readonly operationSummary: string
+	readonly planWritePolicyOk: boolean
+	readonly commitWritePolicyOk: boolean
+	readonly postWriteAuditsPassed: boolean
+	readonly actionCounts: Readonly<Record<ReleaseProofPackageActionKind, number>>
+	readonly unknownPartPath: string
+	readonly unknownPartContentType: string
+	readonly unknownPartErrorAction: true
+	readonly passthroughBytesEqual: true
+	readonly issueCount: number
+	readonly packageIssueRefs: readonly string[]
+	readonly gateEffect: 'does-not-satisfy-edge-fixture-policy'
 	readonly boundary: string
 }
 
@@ -730,6 +756,37 @@ const SAFE_OPEN_EXTERNAL_FIXTURE_CANDIDATES: readonly ReleaseProofExternalFixtur
 			gateEffect: 'does-not-satisfy-public-edge-fixtures',
 			boundary:
 				'External candidate evidence is a pointer for owner review only. The workbook is not vendored, attribution policy is not approved, and this does not address the signed-workbook fixture gap.',
+		},
+	]
+
+const PACKAGE_ACTION_EXTERNAL_FIXTURE_CANDIDATES: readonly ReleaseProofPackageActionExternalFixtureCandidateEvidence[] =
+	[
+		{
+			artifact: 'package-action-proof',
+			gateId: 'edge-fixture-policy',
+			caseName: 'unknown-part-error',
+			status: 'external-candidate-owner-review-required',
+			candidateId: 'excelforge-book1-unknown-part-mutation',
+			sourceUrl:
+				'https://raw.githubusercontent.com/node-projects/excelForge/master/src/test/Book%201.xlsx',
+			licenseEvidenceUrl:
+				'https://raw.githubusercontent.com/node-projects/excelForge/master/package.json',
+			license: 'MIT',
+			inputSha256: '9c5426fa71ff68cc7e40e19e02b5992daf91da5754ef643d2db2f89bd70bb122',
+			operationSummary: 'setCells Projekt 1!A1 = "probe"',
+			planWritePolicyOk: false,
+			commitWritePolicyOk: false,
+			postWriteAuditsPassed: false,
+			actionCounts: { passthrough: 42, regenerate: 6, add: 0, drop: 0, error: 1 },
+			unknownPartPath: 'docMetadata/LabelInfo.xml',
+			unknownPartContentType: 'application/vnd.ms-office.classificationlabels+xml',
+			unknownPartErrorAction: true,
+			passthroughBytesEqual: true,
+			issueCount: 1,
+			packageIssueRefs: ['Projekt 1!A1'],
+			gateEffect: 'does-not-satisfy-edge-fixture-policy',
+			boundary:
+				'External mutation candidate evidence is a local probe summary only. The workbook is not vendored, the probe is not part of the tracked package-action harness, and owner policy still must decide whether this can replace generated unknown-part topology evidence.',
 		},
 	]
 
@@ -1037,6 +1094,9 @@ export function releaseProofIndexMarkdown(result: ReleaseProofIndexResult): stri
 		'| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
 		...result.fixturePolicyEvidence.safeOpen.externalCandidateEvidence.map(
 			externalFixtureCandidateEvidenceMarkdownRow,
+		),
+		...result.fixturePolicyEvidence.packageAction.externalCandidateEvidence.map(
+			packageActionExternalCandidateEvidenceMarkdownRow,
 		),
 		'',
 		'Generated fixture decision evidence:',
@@ -2802,6 +2862,11 @@ function fixturePolicyEvidence(
 			...FIXTURE_POLICY.currentGeneratedStructuralCases['package-action-proof'],
 		],
 		missingReplacementFeatures: packageActionMissingReplacementFeatures,
+		externalCandidateEvidence: PACKAGE_ACTION_EXTERNAL_FIXTURE_CANDIDATES.map((entry) => ({
+			...entry,
+			actionCounts: { ...entry.actionCounts },
+			packageIssueRefs: [...entry.packageIssueRefs],
+		})),
 		boundary: packageAction.boundary,
 	}
 	return {
@@ -2866,6 +2931,27 @@ function externalFixtureCandidateEvidenceMarkdownRow(
 		.replace(/$/, '|')
 }
 
+function packageActionExternalCandidateEvidenceMarkdownRow(
+	row: ReleaseProofPackageActionExternalFixtureCandidateEvidence,
+): string {
+	return [
+		row.artifact,
+		row.gateId,
+		row.caseName,
+		row.status,
+		`${row.candidateId} (${row.sourceUrl})`,
+		`${row.license} (${row.licenseEvidenceUrl})`,
+		row.inputSha256,
+		`error=${row.actionCounts.error}; auditsPassed=${row.postWriteAuditsPassed}; part=${row.unknownPartPath}; contentType=${row.unknownPartContentType}; refs=${row.packageIssueRefs.join(',')}`,
+		row.gateEffect,
+		row.boundary,
+	]
+		.map((cell) => ` ${cell} `)
+		.join('|')
+		.replace(/^/, '|')
+		.replace(/$/, '|')
+}
+
 function cloneFixturePolicyEvidence(
 	evidence: ReleaseProofFixturePolicyEvidence,
 ): ReleaseProofFixturePolicyEvidence {
@@ -2884,6 +2970,11 @@ function cloneFixturePolicyEvidence(
 			featureCounts: { ...evidence.packageAction.featureCounts },
 			currentGeneratedStructuralCases: [...evidence.packageAction.currentGeneratedStructuralCases],
 			missingReplacementFeatures: [...evidence.packageAction.missingReplacementFeatures],
+			externalCandidateEvidence: evidence.packageAction.externalCandidateEvidence.map((entry) => ({
+				...entry,
+				actionCounts: { ...entry.actionCounts },
+				packageIssueRefs: [...entry.packageIssueRefs],
+			})),
 		},
 	}
 }
@@ -2956,7 +3047,7 @@ function generatedFixtureDecisionEvidence(
 			gateId: 'edge-fixture-policy',
 			caseName: 'unknown-part-error',
 			generatedKind: 'generated-edge-package',
-			replacementEvidence: `tracked package-action scan found syntheticUnknownPathFamily=${fixtureEvidence.packageAction.featureCounts.syntheticUnknownPathFamily} across ${fixtureEvidence.packageAction.scanned} fixtures`,
+			replacementEvidence: `tracked package-action scan found syntheticUnknownPathFamily=${fixtureEvidence.packageAction.featureCounts.syntheticUnknownPathFamily} across ${fixtureEvidence.packageAction.scanned} fixtures; external candidate excelforge-book1-unknown-part-mutation awaits owner review and is not vendored`,
 			ownerDecisionNeeded:
 				'Accept disclosed generated unknown-part topology as fail-closed package-action proof, or provide an approved public unknown-part workbook fixture.',
 			recommendedOwnerAction:

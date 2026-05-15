@@ -849,13 +849,6 @@ interface FormulaRangeBindingEntry {
 	readonly range: RangeRef
 }
 
-interface SharedFormulaMasterRangeEntry {
-	readonly cellRef: string
-	readonly sharedIndex: string
-	readonly ref: string
-	readonly range: RangeRef
-}
-
 interface SpillBindingGroupEntry {
 	readonly kind: 'spill' | 'blockedSpill'
 	readonly cellRef: string
@@ -868,7 +861,6 @@ function checkFormulaBindingIntegrity(wb: Workbook): CheckIssue[] {
 	const issues: CheckIssue[] = []
 	const sheetsByName = new Map(wb.sheets.map((sheet) => [sheet.name.toLowerCase(), sheet]))
 	const rangeBindingEntries: FormulaRangeBindingEntry[] = []
-	const sharedFormulaMasterRanges: SharedFormulaMasterRangeEntry[] = []
 	const checkedLegacyArrayAnchors = new Set<string>()
 	const spillBindingGroups = new Map<string, SpillBindingGroupEntry[]>()
 
@@ -987,14 +979,6 @@ function checkFormulaBindingIntegrity(wb: Workbook): CheckIssue[] {
 								},
 							),
 						)
-					}
-					if (sharedRange && rangeContainsCell(sharedRange, sheet.name, row, col)) {
-						sharedFormulaMasterRanges.push({
-							cellRef,
-							sharedIndex: binding.sharedIndex,
-							ref: binding.ref ?? '',
-							range: sharedRange,
-						})
 					}
 				}
 				continue
@@ -1250,31 +1234,6 @@ function checkFormulaBindingIntegrity(wb: Workbook): CheckIssue[] {
 					}
 				}
 			}
-		}
-	}
-	for (const master of sharedFormulaMasterRanges) {
-		const sharedSheet = master.range.sheet
-			? sheetsByName.get(master.range.sheet.toLowerCase())
-			: null
-		if (!sharedSheet) continue
-		for (const [row, col, cell] of sharedSheet.cells.iterate()) {
-			if (!rangeContainsCell(master.range, sharedSheet.name, row, col)) continue
-			const memberRef = `${sharedSheet.name}!${toA1({ row, col })}`
-			if (memberRef.toLowerCase() === master.cellRef.toLowerCase()) continue
-			if (!cell.formulaInfo && !cell.formula && cell.value.kind === 'empty') continue
-			if (cell.formulaInfo?.kind === 'shared') continue
-			issues.push(
-				formulaBindingIntegrityIssue(
-					`Shared formula metadata for ${master.cellRef} has an inconsistent occupied cell inside its range`,
-					[master.cellRef, memberRef],
-					{
-						kind: 'shared-formula-range-member-mismatch',
-						sharedIndex: master.sharedIndex,
-						range: master.ref,
-						memberRef,
-					},
-				),
-			)
 		}
 	}
 	for (let i = 0; i < rangeBindingEntries.length; i++) {

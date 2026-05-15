@@ -863,6 +863,28 @@ describe('agent workflow loss audit', () => {
 		}
 	})
 
+	test('commit from workbook rolls back formula eval failures before writing', async () => {
+		const wb = AscendWorkbook.create()
+		const output = join(TEMP_DIR, 'commit-from-workbook-recalc-rollback.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		rmSync(output, { force: true })
+
+		await expect(
+			commitAgentPlanFromWorkbook(
+				'commit-from-workbook-recalc-rollback-input.xlsx',
+				'1'.repeat(64),
+				wb,
+				[{ op: 'setFormula', sheet: 'Sheet1', ref: 'A1', formula: 'A1+1' }],
+				{ output },
+				{ sourceBytes: wb.toBytes() },
+			),
+		).rejects.toThrow('Circular reference detected')
+
+		expect(existsSync(output)).toBe(false)
+		expect(wb.sheet('Sheet1')?.cell('A1')).toBeUndefined()
+		expect(wb.check().valid).toBe(true)
+	})
+
 	test('quality moat matrix proves release-critical formula trust paths', async () => {
 		const cases = [
 			{

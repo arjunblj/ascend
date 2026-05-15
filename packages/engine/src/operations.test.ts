@@ -2931,6 +2931,37 @@ describe('applyOperation', () => {
 		}
 	})
 
+	test('moveRange formula paste modes materialize target formula bindings before overwriting a member', () => {
+		for (const mode of ['values', 'formulas'] as const) {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			addSharedFormulaGroup(sheet)
+			sheet.cells.set(0, 1, cell(numberValue(10)))
+			sheet.cells.set(1, 1, cell(numberValue(20)))
+			sheet.cells.set(0, 3, {
+				value: numberValue(11),
+				formula: '10+1',
+				styleId: sid,
+			})
+
+			const result = applyOperation(wb, {
+				op: 'moveRange',
+				sheet: 'Sheet1',
+				source: 'D1',
+				target: 'A2',
+				mode,
+			})
+			expectOk(result)
+
+			expect(result.value.affectedCells, mode).toEqual(['A1', 'A2', 'D1'])
+			expect(sheet.cells.get(0, 0)?.formula).toBe('B1*2')
+			expect(sheet.cells.get(0, 0)?.formulaInfo).toBeUndefined()
+			expect(sheet.cells.get(1, 0)?.formula).toBe(mode === 'formulas' ? '10+1' : null)
+			expect(sheet.cells.get(1, 0)?.formulaInfo).toBeUndefined()
+			expect(sheet.cells.get(0, 3)).toBeUndefined()
+		}
+	})
+
 	test('copyRange exposes comments, hyperlinks, and validation paste modes', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

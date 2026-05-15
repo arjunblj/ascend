@@ -1668,6 +1668,57 @@ describe('mutation journal exactness model', () => {
 		})
 	})
 
+	test('copySheet preserves imported shared formula text and bindings across save reopen', async () => {
+		const wb = await AscendWorkbook.open(
+			readFileSync(new URL('../../../fixtures/xlsx/poi/shared_formulas.xlsx', import.meta.url)),
+		)
+		expect(wb.check().valid).toBe(true)
+		expect(collectFormulaInfoRefs(wb, 'Label')).toEqual(
+			Array.from({ length: 40 }, (_, index) => `Label!A${index + 2}`),
+		)
+
+		const changed = wb.apply([{ op: 'copySheet', sheet: 'Label', newName: 'Label_Copy' }], {
+			journal: true,
+		})
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal).toEqual(
+			expect.objectContaining({
+				supported: true,
+				exact: false,
+				issues: [
+					expect.objectContaining({
+						surface: 'package-parts',
+						reason: 'package-part-preservation',
+						refs: ['sheet:Label', 'sheet:Label_Copy'],
+					}),
+				],
+			}),
+		)
+		expect(wb.check().valid).toBe(true)
+
+		const reopened = await AscendWorkbook.open(wb.toBytes())
+		expect(reopened.check().valid).toBe(true)
+		expect(collectFormulaInfoRefs(reopened, 'Label_Copy')).toEqual(
+			Array.from({ length: 40 }, (_, index) => `Label_Copy!A${index + 2}`),
+		)
+		expect(reopened.formula('Label_Copy!A2')?.normalizedFormula).toBe('B2')
+		expect(reopened.formula('Label_Copy!A3')?.normalizedFormula).toBe('B3')
+		expect(reopened.sheet('Label_Copy')?.cell('A2')?.formulaBinding).toEqual({
+			kind: 'shared',
+			sharedIndex: '0',
+			isMaster: true,
+			masterRef: 'A2',
+			ref: 'A2:A41',
+		})
+		expect(reopened.sheet('Label_Copy')?.cell('A3')?.formulaBinding).toEqual({
+			kind: 'shared',
+			sharedIndex: '0',
+			isMaster: false,
+			masterRef: 'A2',
+		})
+	})
+
 	test('representative exact journals restore full workbook evidence after inverse apply', () => {
 		const cases: readonly {
 			readonly name: string

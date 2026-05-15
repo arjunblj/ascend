@@ -4284,6 +4284,53 @@ function hasJournalHyperlinkDestination(value: string | undefined): boolean {
 	return typeof value === 'string' && value.trim().length > 0
 }
 
+function workbookMetadataUnsupportedValueIssue(
+	opName: string,
+	field: string,
+	refs: readonly string[],
+): MutationJournalIssue {
+	return {
+		code: 'UNSUPPORTED_VALUE',
+		message: `Cannot build exact rollback journal for ${opName} because ${field} is not supported by workbook metadata validation`,
+		surface: 'workbook-metadata',
+		reason: 'value-unsupported',
+		refs,
+	}
+}
+
+function isJournalMode(mode: unknown): boolean {
+	return mode === undefined || mode === 'merge' || mode === 'replace'
+}
+
+function isPlainJournalObject(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function hasInvalidWorkbookViewValue(view: unknown): boolean {
+	if (!isPlainJournalObject(view)) return true
+	for (const key of ['activeTab', 'firstSheet', 'tabRatio'] as const) {
+		const value = view[key]
+		if (value === undefined || value === null) continue
+		if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) return true
+	}
+	return false
+}
+
+const JOURNAL_THEME_COLOR_SLOTS = new Set([
+	'dk1',
+	'lt1',
+	'dk2',
+	'lt2',
+	'accent1',
+	'accent2',
+	'accent3',
+	'accent4',
+	'accent5',
+	'accent6',
+	'hlink',
+	'folHlink',
+])
+
 function journalDeleteHyperlink(
 	workbook: Workbook,
 	op: Extract<Operation, { op: 'deleteHyperlink' }>,
@@ -4452,12 +4499,16 @@ function journalSetWorkbookProperties(
 	opIndex: number,
 ): DraftJournalEntry {
 	const preimage = { properties: { ...workbook.workbookProperties } }
+	const issues = workbookPropertiesValueIssues(op)
 	return {
 		opIndex,
 		op,
-		inverseOps: [{ op: 'setWorkbookProperties', properties: preimage.properties, mode: 'replace' }],
+		inverseOps:
+			issues.length === 0
+				? [{ op: 'setWorkbookProperties', properties: preimage.properties, mode: 'replace' }]
+				: [],
 		preimages: [{ kind: 'workbook-properties', workbookProperties: preimage }],
-		issues: [],
+		issues,
 	}
 }
 
@@ -4469,13 +4520,89 @@ function journalSetDocumentProperties(
 	const preimage = {
 		properties: clonePlain(workbook.documentProperties) as WorkbookDocumentProperties,
 	}
+	const issues = documentPropertiesValueIssues(op)
 	return {
 		opIndex,
 		op,
-		inverseOps: [{ op: 'setDocumentProperties', properties: preimage.properties, mode: 'replace' }],
+		inverseOps:
+			issues.length === 0
+				? [{ op: 'setDocumentProperties', properties: preimage.properties, mode: 'replace' }]
+				: [],
 		preimages: [{ kind: 'document-properties', documentProperties: preimage }],
-		issues: savedSourcePackageStateIssues(workbook, op.op, ['workbook:documentProperties']),
+		issues:
+			issues.length > 0
+				? issues
+				: savedSourcePackageStateIssues(workbook, op.op, ['workbook:documentProperties']),
 	}
+}
+
+function workbookPropertiesValueIssues(
+	op: Extract<Operation, { op: 'setWorkbookProperties' }>,
+): MutationJournalIssue[] {
+	const issues: MutationJournalIssue[] = []
+	if (!isJournalMode(op.mode)) {
+		issues.push(workbookMetadataUnsupportedValueIssue(op.op, 'mode', ['workbook:properties']))
+	}
+	const properties = (op as { readonly properties?: unknown }).properties
+	if (!isPlainJournalObject(properties)) {
+		issues.push(workbookMetadataUnsupportedValueIssue(op.op, 'properties', ['workbook:properties']))
+		return issues
+	}
+	const codeName = (properties as { readonly codeName?: unknown }).codeName
+	if (typeof codeName === 'string' && codeName.trim() === '') {
+		issues.push(workbookMetadataUnsupportedValueIssue(op.op, 'codeName', ['workbook:properties']))
+	}
+	const defaultThemeVersion = (properties as { readonly defaultThemeVersion?: unknown })
+		.defaultThemeVersion
+	if (
+		defaultThemeVersion !== undefined &&
+		defaultThemeVersion !== null &&
+		(typeof defaultThemeVersion !== 'number' ||
+			!Number.isInteger(defaultThemeVersion) ||
+			defaultThemeVersion < 0)
+	) {
+		issues.push(
+			workbookMetadataUnsupportedValueIssue(op.op, 'defaultThemeVersion', ['workbook:properties']),
+		)
+	}
+	return issues
+}
+
+function documentPropertiesValueIssues(
+	op: Extract<Operation, { op: 'setDocumentProperties' }>,
+): MutationJournalIssue[] {
+	const issues: MutationJournalIssue[] = []
+	if (!isJournalMode(op.mode)) {
+		issues.push(
+			workbookMetadataUnsupportedValueIssue(op.op, 'mode', ['workbook:documentProperties']),
+		)
+	}
+	const properties = (op as { readonly properties?: unknown }).properties
+	if (!isPlainJournalObject(properties)) {
+		issues.push(
+			workbookMetadataUnsupportedValueIssue(op.op, 'properties', ['workbook:documentProperties']),
+		)
+		return issues
+	}
+	const core = (properties as { readonly core?: unknown }).core
+	if (core !== undefined && core !== null && !isPlainJournalObject(core)) {
+		issues.push(
+			workbookMetadataUnsupportedValueIssue(op.op, 'core', ['workbook:documentProperties']),
+		)
+	}
+	const app = (properties as { readonly app?: unknown }).app
+	if (app !== undefined && app !== null && !isPlainJournalObject(app)) {
+		issues.push(
+			workbookMetadataUnsupportedValueIssue(op.op, 'app', ['workbook:documentProperties']),
+		)
+	}
+	const custom = (properties as { readonly custom?: unknown }).custom
+	if (custom !== undefined && custom !== null && !Array.isArray(custom)) {
+		issues.push(
+			workbookMetadataUnsupportedValueIssue(op.op, 'custom', ['workbook:documentProperties']),
+		)
+	}
+	return issues
 }
 
 function journalSetWorkbookView(
@@ -4488,8 +4615,11 @@ function journalSetWorkbookView(
 	const preimage = { index, view: view ? { ...view } : null }
 	const invalidIndex = !Number.isInteger(index) || index < 0
 	const deletesMissingView = op.view === null && view === undefined
+	const skipsViewSlot = op.view !== null && index > workbook.workbookViews.length
+	const invalidMode = op.view !== null && !isJournalMode(op.mode)
+	const invalidViewValue = op.view !== null && hasInvalidWorkbookViewValue(op.view)
 	const issues: MutationJournalIssue[] =
-		invalidIndex || deletesMissingView
+		invalidIndex || deletesMissingView || skipsViewSlot || invalidMode || invalidViewValue
 			? [
 					{
 						code: 'UNSUPPORTED_VALUE',
@@ -4525,16 +4655,65 @@ function journalSetCalcSettings(
 		settings: clonePlain(workbook.calcSettings) as CalcSettings,
 		workbookProperties: { ...workbook.workbookProperties },
 	}
+	const issues = calcSettingsValueIssues(op)
 	return {
 		opIndex,
 		op,
-		inverseOps: [
-			{ op: 'setCalcSettings', settings: calcSettingsInverseInput(preimage.settings) },
-			{ op: 'setWorkbookProperties', properties: preimage.workbookProperties, mode: 'replace' },
-		],
+		inverseOps:
+			issues.length === 0
+				? [
+						{ op: 'setCalcSettings', settings: calcSettingsInverseInput(preimage.settings) },
+						{
+							op: 'setWorkbookProperties',
+							properties: preimage.workbookProperties,
+							mode: 'replace',
+						},
+					]
+				: [],
 		preimages: [{ kind: 'calc-settings', calcSettings: preimage }],
-		issues: [],
+		issues,
 	}
+}
+
+function calcSettingsValueIssues(
+	op: Extract<Operation, { op: 'setCalcSettings' }>,
+): MutationJournalIssue[] {
+	const settings = (op as { readonly settings?: unknown }).settings
+	if (!isPlainJournalObject(settings)) {
+		return [workbookMetadataUnsupportedValueIssue(op.op, 'settings', ['workbook:calcSettings'])]
+	}
+	const issues: MutationJournalIssue[] = []
+	const calcId = (settings as { readonly calcId?: unknown }).calcId
+	if (
+		calcId !== undefined &&
+		calcId !== null &&
+		(typeof calcId !== 'number' || !Number.isInteger(calcId) || calcId < 0)
+	) {
+		issues.push(workbookMetadataUnsupportedValueIssue(op.op, 'calcId', ['workbook:calcSettings']))
+	}
+	const iterative = (settings as { readonly iterativeCalc?: unknown }).iterativeCalc
+	if (isPlainJournalObject(iterative)) {
+		const maxIterations = (iterative as { readonly maxIterations?: unknown }).maxIterations
+		if (
+			maxIterations !== undefined &&
+			(typeof maxIterations !== 'number' || !Number.isInteger(maxIterations) || maxIterations < 1)
+		) {
+			issues.push(
+				workbookMetadataUnsupportedValueIssue(op.op, 'iterativeCalc.maxIterations', [
+					'workbook:calcSettings',
+				]),
+			)
+		}
+		const maxChange = (iterative as { readonly maxChange?: unknown }).maxChange
+		if (maxChange !== undefined && (typeof maxChange !== 'number' || maxChange < 0)) {
+			issues.push(
+				workbookMetadataUnsupportedValueIssue(op.op, 'iterativeCalc.maxChange', [
+					'workbook:calcSettings',
+				]),
+			)
+		}
+	}
+	return issues
 }
 
 function calcSettingsInverseInput(
@@ -4589,23 +4768,9 @@ function journalSetTheme(
 		colors: workbook.themeColors.map((color) => ({ ...color })),
 	}
 	const inverse = themeInverseOperation(op, preimage)
+	const valueIssues = themeValueIssues(op)
 	const issues: readonly MutationJournalIssue[] =
-		op.themeName === undefined &&
-		op.colorSchemeName === undefined &&
-		op.majorFontLatin === undefined &&
-		op.minorFontLatin === undefined &&
-		op.themeColors === undefined
-			? [
-					{
-						code: 'UNSUPPORTED_VALUE',
-						message:
-							'Cannot build exact rollback journal for setTheme because no theme field was provided',
-						surface: 'workbook-metadata',
-						reason: 'value-unsupported',
-						refs: ['workbook:theme'],
-					},
-				]
-			: inverse.issues
+		valueIssues.length > 0 ? valueIssues : inverse.issues
 	return {
 		opIndex,
 		op,
@@ -4613,6 +4778,55 @@ function journalSetTheme(
 		preimages: [{ kind: 'theme', theme: preimage }],
 		issues,
 	}
+}
+
+function themeValueIssues(op: Extract<Operation, { op: 'setTheme' }>): MutationJournalIssue[] {
+	const issues: MutationJournalIssue[] = []
+	if (
+		op.themeName === undefined &&
+		op.colorSchemeName === undefined &&
+		op.majorFontLatin === undefined &&
+		op.minorFontLatin === undefined &&
+		op.themeColors === undefined
+	) {
+		issues.push(workbookMetadataUnsupportedValueIssue(op.op, 'theme', ['workbook:theme']))
+	}
+	for (const [field, value] of [
+		['themeName', op.themeName],
+		['colorSchemeName', op.colorSchemeName],
+		['majorFontLatin', op.majorFontLatin],
+		['minorFontLatin', op.minorFontLatin],
+	] as const) {
+		if (typeof value === 'string' && value.trim() === '') {
+			issues.push(workbookMetadataUnsupportedValueIssue(op.op, field, ['workbook:theme']))
+		}
+	}
+	if (op.themeColors === undefined) return issues
+	if (op.themeColors.length === 0) {
+		issues.push(workbookMetadataUnsupportedValueIssue(op.op, 'themeColors', ['workbook:theme']))
+		return issues
+	}
+	const seen = new Set<string>()
+	for (const color of op.themeColors) {
+		const refs = [`workbook:themeColor:${color.slot}`]
+		if (!JOURNAL_THEME_COLOR_SLOTS.has(color.slot)) {
+			issues.push(workbookMetadataUnsupportedValueIssue(op.op, 'themeColors.slot', refs))
+		}
+		if (seen.has(color.slot)) {
+			issues.push(workbookMetadataUnsupportedValueIssue(op.op, 'themeColors.slot', refs))
+		}
+		seen.add(color.slot)
+		if (color.rgb === undefined && color.systemColor === undefined) {
+			issues.push(workbookMetadataUnsupportedValueIssue(op.op, 'themeColors.color', refs))
+		}
+		if (color.rgb !== undefined && !/^[0-9A-Fa-f]{6}$/.test(color.rgb)) {
+			issues.push(workbookMetadataUnsupportedValueIssue(op.op, 'themeColors.rgb', refs))
+		}
+		if (color.lastColor !== undefined && !/^[0-9A-Fa-f]{6}$/.test(color.lastColor)) {
+			issues.push(workbookMetadataUnsupportedValueIssue(op.op, 'themeColors.lastColor', refs))
+		}
+	}
+	return issues
 }
 
 type SetThemeOperation = Extract<Operation, { op: 'setTheme' }>

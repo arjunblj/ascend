@@ -819,6 +819,43 @@ describe('mutation journal exactness model', () => {
 		}
 	})
 
+	test('classifies rejected workbook metadata journals as unsupported values', () => {
+		const cases: readonly Operation[] = [
+			{ op: 'setWorkbookProperties', properties: { codeName: '  ' } },
+			{ op: 'setWorkbookProperties', properties: { defaultThemeVersion: -1 } },
+			{ op: 'setDocumentProperties', properties: { custom: {} } } as unknown as Operation,
+			{ op: 'setWorkbookView', view: { activeTab: 0 }, index: 2 },
+			{ op: 'setWorkbookView', view: { activeTab: -1 } },
+			{ op: 'setCalcSettings', settings: { calcId: -1 } },
+			{ op: 'setCalcSettings', settings: { iterativeCalc: { maxIterations: 0 } } },
+			{ op: 'setTheme', themeName: '  ' },
+			{ op: 'setTheme', themeColors: [] },
+			{ op: 'setTheme', themeColors: [{ slot: 'unknown', rgb: '123456' }] },
+			{ op: 'setTheme', themeColors: [{ slot: 'accent1' }] },
+			{ op: 'setTheme', themeColors: [{ slot: 'accent1', rgb: '#fff' }] },
+		]
+
+		for (const op of cases) {
+			const wb = AscendWorkbook.create()
+			const analysis = analyzeMutationJournalExactness(
+				buildMutationJournal(wb.getWorkbookModel(), [op]),
+			)
+			expect(analysis, JSON.stringify(op)).toMatchObject({
+				supported: true,
+				exact: false,
+				surfaces: ['workbook-metadata'],
+				reasons: ['value-unsupported'],
+				hasMatrixViolation: false,
+			})
+			expect(analysis.issues[0], JSON.stringify(op)).toMatchObject({
+				code: 'UNSUPPORTED_VALUE',
+				surface: 'workbook-metadata',
+				reason: 'value-unsupported',
+				allowedByMatrix: true,
+			})
+		}
+	})
+
 	test('classifies selectorless threaded comment journals as comment selector loss', () => {
 		const wb = AscendWorkbook.create()
 		const sheet = wb.getWorkbookModel().getSheet('Sheet1')

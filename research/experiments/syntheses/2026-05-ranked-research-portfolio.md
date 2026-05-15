@@ -14,6 +14,8 @@ The ranked portfolio is now machine-readable in the release proof artifact. `rel
 
 Release packaging audit: the release proof bundle row remains `needs-one-more-fold-in`. Local manifest inspection confirms clean external adoption is still blocked by private/workspace source manifests, library dist dependency resolution that requires a proper artifact set, app declaration-only builds, placeholder CLI/API/MCP dist JS, CLI source bin plus hard TUI dependency, missing API/MCP publish manifests/bins, and repo-layout-dependent SDK docs. This is owner-routed proof only; no package surfaces should be promoted from research.
 
+Performance target routing now includes tail/variance evidence. `agent-first-window` and `agent-phase-profile` emit p95/CV stats for key first-view, edit-verify, and repeated-inspection phases, and `practical-latency-contracts` propagates those fields into target decisions as `phaseP95Ms`, `phaseCv`, `stability`, and `nextAction`. A one-sample public-tracked probe showed the shape is present, but this remains measurement routing only, not a release latency claim.
+
 Proof timestamp: 2026-05-15T18:34:10Z.
 
 Safe-open latency is now an explicit performance-owner gate in JSON. `safeOpenLatencyValidationEvidence` reports that the default owner handoff is untimed (`timed-evidence-absent-owner-run-required`), keeps `releaseClaimAllowed=false` and `thresholdClaimAllowed=false`, and names the missing release policy requirements: tracked-clean release environment, standardized public input set, approved repeat/warmup policy, and non-threshold wording. A local `--repeat 3 --warmup 1` diagnostic was rerun, but remains diagnostic-only.

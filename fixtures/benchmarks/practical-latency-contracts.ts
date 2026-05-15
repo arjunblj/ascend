@@ -254,6 +254,23 @@ function postWriteArgs(args: Args): string[] {
 	]
 }
 
+function phaseProfileArgs(args: Args): string[] {
+	return [
+		'bun',
+		'run',
+		'fixtures/benchmarks/agent-phase-profile.ts',
+		'--input-file',
+		args.editInputFile,
+		'--updates',
+		String(args.mutations),
+		'--repeat',
+		String(args.repeat),
+		'--warmup',
+		String(args.warmup),
+		'--json',
+	]
+}
+
 function tableInspectionArgs(args: Args): string[] {
 	return [
 		'bun',
@@ -333,6 +350,19 @@ function buildSteps(args: Args): StepSpec[] {
 			profileCommand: profileCommand(
 				'contract-edit-verify-post-write',
 				postWriteArgs(args),
+				profileDir,
+			),
+			required: true,
+		},
+		{
+			contract: 'edit-verify',
+			id: 'agent-phase-profile',
+			label: 'Plan and commit workflow phase split',
+			command: phaseProfileArgs(args),
+			timeoutMs: args.timeoutMs,
+			profileCommand: profileCommand(
+				'contract-edit-verify-phase-profile',
+				phaseProfileArgs(args),
 				profileDir,
 			),
 			required: true,
@@ -454,9 +484,22 @@ function metric(summary: unknown, key: string): string {
 	return value === undefined ? '' : value.toFixed(value >= 100 ? 1 : 3)
 }
 
+function nestedMetric(summary: unknown, objectKey: string, key: string): string {
+	const value = numericNestedMetric(summary, objectKey, key)
+	return value === undefined ? '' : value.toFixed(value >= 100 ? 1 : 3)
+}
+
 function numericMetric(summary: unknown, key: string): number | undefined {
 	if (!summary || typeof summary !== 'object') return undefined
 	const value = (summary as Record<string, unknown>)[key]
+	return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
+function numericNestedMetric(summary: unknown, objectKey: string, key: string): number | undefined {
+	if (!summary || typeof summary !== 'object') return undefined
+	const object = (summary as Record<string, unknown>)[objectKey]
+	if (!object || typeof object !== 'object') return undefined
+	const value = (object as Record<string, unknown>)[key]
 	return typeof value === 'number' && Number.isFinite(value) ? value : undefined
 }
 
@@ -643,16 +686,22 @@ function firstViewTable(results: readonly StepResult[]): string {
 function editVerifyTable(results: readonly StepResult[]): string {
 	const workflow = results.find((entry) => entry.id === 'workflow-commit')
 	const postWrite = results.find((entry) => entry.id === 'post-write-breakdown')
+	const phase = results.find((entry) => entry.id === 'agent-phase-profile')
 	return [
 		'| Phase | Median ms | Payload/bytes | Evidence |',
 		'|---|---:|---:|---|',
 		`| Plan | ${metric(workflow?.summary, 'planMedianMs')} | ${metric(workflow?.summary, 'planPayloadBytesMedian')} bytes | ${statusLink(workflow)} |`,
 		`| Prepared plan | ${metric(workflow?.summary, 'preparedPlanMedianMs')} | ${metric(workflow?.summary, 'preparedPlanPayloadBytesMedian')} bytes | ${statusLink(workflow)} |`,
+		`| Phase profile: shared plan load-workbook | ${nestedMetric(phase?.summary, 'sharedPlanPhaseMedianMs', 'load-workbook')} | diagnostic split | ${statusLink(phase)} |`,
+		`| Phase profile: shared plan preview | ${nestedMetric(phase?.summary, 'sharedPlanPhaseMedianMs', 'preview')} | diagnostic split | ${statusLink(phase)} |`,
+		`| Phase profile: shared plan preservation | ${nestedMetric(phase?.summary, 'sharedPlanPhaseMedianMs', 'preservation-audit')} | diagnostic split | ${statusLink(phase)} |`,
 		`| Commit verified total | ${metric(workflow?.summary, 'commitVerifiedTotalMedianMs')} | ${metric(workflow?.summary, 'commitVerifiedPayloadBytesMedian')} bytes | ${statusLink(workflow)} |`,
 		`| Prepared commit verified total | ${metric(workflow?.summary, 'preparedCommitVerifiedTotalMedianMs')} | ${metric(workflow?.summary, 'preparedCommitVerifiedPayloadBytesMedian')} bytes | ${statusLink(workflow)} |`,
 		`| Prepared write-policy snapshot | ${metric(workflow?.summary, 'preparedCommitWritePolicySnapshotMedianMs')} | | ${statusLink(workflow)} |`,
 		`| Prepared write-policy check | ${metric(workflow?.summary, 'preparedCommitWritePolicyCheckMedianMs')} | | ${statusLink(workflow)} |`,
 		`| Prepared reopen output | ${metric(workflow?.summary, 'preparedCommitPostWriteReopenMedianMs')} | | ${statusLink(workflow)} |`,
+		`| Phase profile: shared commit dirty write | ${nestedMetric(phase?.summary, 'sharedCommitPhaseMedianMs', 'write')} | diagnostic split | ${statusLink(phase)} |`,
+		`| Phase profile: shared commit reopen output | ${nestedMetric(phase?.summary, 'sharedCommitPhaseMedianMs', 'post-write:reopen')} | diagnostic split | ${statusLink(phase)} |`,
 		`| Commit write-policy snapshot | ${metric(postWrite?.summary, 'commitWritePolicySnapshotMedianMs')} | | ${statusLink(postWrite)} |`,
 		`| Commit package graph | ${metric(postWrite?.summary, 'commitPackageGraphMedianMs')} | | ${statusLink(postWrite)} |`,
 		`| Commit write-plan summary | ${metric(postWrite?.summary, 'commitWritePlanSummaryMedianMs')} | | ${statusLink(postWrite)} |`,
@@ -752,6 +801,7 @@ function envelopeDecisions(results: readonly StepResult[]): EnvelopeDecision[] {
 	const api = results.find((entry) => entry.id === 'api-first-view')
 	const workflow = results.find((entry) => entry.id === 'workflow-commit')
 	const postWrite = results.find((entry) => entry.id === 'post-write-breakdown')
+	const phase = results.find((entry) => entry.id === 'agent-phase-profile')
 	const cached = results.find((entry) => entry.id === 'cached-agent-window')
 	const tui = results.find((entry) => entry.id === 'tui-first-paint-cache')
 	const table = results.find((entry) => entry.id === 'table-inspection-cache')
@@ -789,6 +839,7 @@ function envelopeDecisions(results: readonly StepResult[]): EnvelopeDecision[] {
 	if (editEnvelope !== undefined) {
 		const workflowProfile = workflow?.profileCommand ?? ''
 		const postWriteProfile = postWrite?.profileCommand ?? workflowProfile
+		const phaseProfile = phase?.profileCommand ?? workflowProfile
 		const preparedDirtyWrite =
 			(numericMetric(workflow?.summary, 'preparedCommitToBytesMedianMs') ??
 				numericMetric(postWrite?.summary, 'commitToBytesMedianMs') ??
@@ -797,6 +848,23 @@ function envelopeDecisions(results: readonly StepResult[]): EnvelopeDecision[] {
 				numericMetric(postWrite?.summary, 'commitWriteFileMedianMs') ??
 				0)
 		const largest = largestPhase([
+			{
+				name: 'Shared plan load-workbook/open',
+				medianMs:
+					numericNestedMetric(phase?.summary, 'sharedPlanPhaseMedianMs', 'load-workbook') ?? 0,
+				profileCommand: phaseProfile,
+			},
+			{
+				name: 'Shared plan preview/window shaping',
+				medianMs: numericNestedMetric(phase?.summary, 'sharedPlanPhaseMedianMs', 'preview') ?? 0,
+				profileCommand: phaseProfile,
+			},
+			{
+				name: 'Shared plan preservation audit',
+				medianMs:
+					numericNestedMetric(phase?.summary, 'sharedPlanPhaseMedianMs', 'preservation-audit') ?? 0,
+				profileCommand: phaseProfile,
+			},
 			{
 				name: 'Prepared plan/open',
 				medianMs: numericMetric(workflow?.summary, 'preparedPlanMedianMs') ?? 0,
@@ -824,12 +892,24 @@ function envelopeDecisions(results: readonly StepResult[]): EnvelopeDecision[] {
 				profileCommand: workflowProfile,
 			},
 			{
+				name: 'Shared commit dirty write',
+				medianMs: numericNestedMetric(phase?.summary, 'sharedCommitPhaseMedianMs', 'write') ?? 0,
+				profileCommand: phaseProfile,
+			},
+			{
 				name: 'Prepared reopen written output',
 				medianMs:
 					numericMetric(workflow?.summary, 'preparedCommitPostWriteReopenMedianMs') ??
 					numericMetric(postWrite?.summary, 'commitPostWriteReopenMedianMs') ??
 					0,
 				profileCommand: workflowProfile || postWriteProfile,
+			},
+			{
+				name: 'Shared commit reopen written output',
+				medianMs:
+					numericNestedMetric(phase?.summary, 'sharedCommitPhaseMedianMs', 'post-write:reopen') ??
+					0,
+				profileCommand: phaseProfile,
 			},
 			{
 				name: 'Prepared structural check after reopen',

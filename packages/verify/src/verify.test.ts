@@ -221,6 +221,81 @@ describe('checker', () => {
 		})
 	})
 
+	test('accepts canonical imported formula binding metadata', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.cells.set(0, 0, {
+			value: numberValue(2),
+			formula: 'B1*2',
+			styleId: SID,
+			formulaInfo: {
+				kind: 'shared',
+				sharedIndex: '0',
+				isMaster: true,
+				masterRef: 'A1',
+				ref: 'A1:A2',
+			},
+		})
+		s.cells.set(1, 0, {
+			value: numberValue(4),
+			formula: null,
+			styleId: SID,
+			formulaInfo: { kind: 'shared', sharedIndex: '0', isMaster: false, masterRef: 'A1' },
+		})
+		const legacyArrayInfo = { kind: 'array' as const, ref: 'C1:C2' }
+		s.cells.set(0, 2, {
+			value: numberValue(1),
+			formula: 'SEQUENCE(2)',
+			styleId: SID,
+			formulaInfo: legacyArrayInfo,
+		})
+		s.cells.set(1, 2, {
+			value: numberValue(2),
+			formula: null,
+			styleId: SID,
+			formulaInfo: legacyArrayInfo,
+		})
+		s.cells.set(0, 4, {
+			value: numberValue(1),
+			formula: 'SEQUENCE(3)',
+			styleId: SID,
+			formulaInfo: { kind: 'dynamicArray', metadataIndex: 1, collapsed: false },
+		})
+		s.cells.set(1, 4, {
+			value: numberValue(2),
+			formula: null,
+			styleId: SID,
+			formulaInfo: { kind: 'spill', anchorRef: 'Sheet1!E1', ref: 'E1:E3', isAnchor: false },
+		})
+		s.cells.set(2, 4, {
+			value: numberValue(3),
+			formula: null,
+			styleId: SID,
+			formulaInfo: { kind: 'spill', anchorRef: 'Sheet1!E1', ref: 'E1:E3', isAnchor: false },
+		})
+		s.cells.set(0, 6, {
+			value: numberValue(10),
+			formula: null,
+			styleId: SID,
+			formulaInfo: { kind: 'dataTable', ref: 'G1:G2', dtr: true, r1: 'H1' },
+		})
+		s.cells.set(9, 0, {
+			value: errorValue('#SPILL!'),
+			formula: 'SEQUENCE(2)',
+			styleId: SID,
+			formulaInfo: {
+				kind: 'blockedSpill',
+				anchorRef: 'Sheet1!A10',
+				ref: 'A10:A11',
+				blockingRefs: ['A11'],
+			},
+		})
+		s.cells.set(10, 0, { value: stringValue('blocker'), formula: null, styleId: SID })
+
+		const result = check(wb)
+		expect(result.issues.filter((entry) => entry.rule === 'formula-binding-integrity')).toEqual([])
+	})
+
 	test('detects shared formula members outside the master range', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')

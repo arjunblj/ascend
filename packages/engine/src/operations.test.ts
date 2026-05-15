@@ -732,6 +732,7 @@ describe('applyOperation', () => {
 			readonly name: string
 			readonly op: Parameters<typeof applyOperation>[1]
 			readonly seed?: (sheet: Sheet) => void
+			readonly affected?: readonly string[]
 		}[] = [
 			{
 				name: 'setCells',
@@ -754,6 +755,11 @@ describe('applyOperation', () => {
 				op: { op: 'copyRange', sheet: 'Sheet1', source: 'C1', target: 'A2', mode: 'values' },
 				seed: (sheet) => sheet.cells.set(0, 2, cell(numberValue(9))),
 			},
+			{
+				name: 'moveRange',
+				op: { op: 'moveRange', sheet: 'Sheet1', source: 'A2', target: 'C1', mode: 'all' },
+				affected: ['A1', 'A2', 'A3', 'C1'],
+			},
 		]
 
 		for (const entry of cases) {
@@ -765,11 +771,9 @@ describe('applyOperation', () => {
 			const result = applyOperation(wb, entry.op)
 			expectOk(result)
 
-			expect(normalizeSheet1Affected(result.value.affectedCells), entry.name).toEqual([
-				'A1',
-				'A2',
-				'A3',
-			])
+			expect(normalizeSheet1Affected(result.value.affectedCells), entry.name).toEqual(
+				entry.affected ?? ['A1', 'A2', 'A3'],
+			)
 			expect(sheet.cells.get(0, 0)?.formulaInfo, entry.name).toBeUndefined()
 			expect(sheet.cells.get(1, 0)?.formulaInfo, entry.name).toBeUndefined()
 			expect(sheet.cells.get(2, 0)?.formulaInfo, entry.name).toBeUndefined()

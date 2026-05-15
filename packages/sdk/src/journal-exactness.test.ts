@@ -1567,9 +1567,29 @@ describe('mutation journal exactness model', () => {
 		})
 		expect(changed.journal).toBeDefined()
 		if (!changed.journal) throw new Error('missing journal')
+		expect(changed.journal.exact).toBe(false)
 		expect(journalIssueRefs(changed.journal, 'shared-formulas')).toEqual(
 			groupRefs.map((ref) => `Sheet1!${ref}`).sort(),
 		)
+		expect(
+			changed.journal.issues
+				.filter((issue) => issue.surface === 'shared-formulas')
+				.every((issue) => issue.reason === 'formula-binding-metadata'),
+		).toBe(true)
+
+		const reopened = await AscendWorkbook.open(wb.toBytes())
+		expect(
+			reopened.check().issues.filter((issue) => issue.rule === 'formula-binding-integrity'),
+		).toEqual([])
+		expect(formulaInfoRefsIn(reopened, 'Sheet1', groupRefs)).toEqual([])
+		expect(cellFormulas(reopened, 'Sheet1', groupRefs)).toEqual({
+			B1: 'B1',
+			C1: 'C1',
+			D1: 'D1',
+			B2: 'B2',
+			C2: null,
+			D2: 'D2',
+		})
 	})
 
 	test('copySheet exact journals preserve retargeted formula binding evidence', () => {

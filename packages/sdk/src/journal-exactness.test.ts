@@ -225,6 +225,7 @@ describe('mutation journal exactness model', () => {
 			lossyChartSeriesUnsetJournal(),
 			lossyPivotCacheUnsetJournal(),
 			lossyConditionalFormatOrderJournal(),
+			lossyConditionalFormatReplacementOrderJournal(),
 			lossyAutoFilterJournal(),
 			lossyPageSetupJournal(),
 			lossyX14TransferJournal(),
@@ -270,6 +271,19 @@ describe('mutation journal exactness model', () => {
 			'auto-filter-extension-metadata',
 			'auto-filter-sort-metadata',
 		])
+	})
+
+	test('classifies conditional format replacement order as metadata order', () => {
+		const journal = lossyConditionalFormatReplacementOrderJournal()
+		expect(journal.exact).toBe(false)
+		expect(journal.issues).toContainEqual({
+			code: 'LOSSY_INVERSE',
+			message:
+				'Conditional-format order on Sheet1 cannot be restored exactly with public operations',
+			surface: 'conditional-formats',
+			reason: 'metadata-order',
+			refs: ['Sheet1!A1:A2'],
+		})
 	})
 
 	test('classifies overlapping moveRange cell inverse loss without matrix violation', () => {
@@ -1242,6 +1256,148 @@ describe('mutation journal exactness model', () => {
 				ops: [{ op: 'setPrintArea', sheet: 'Sheet1', range: 'B1:B1' }],
 			},
 			{
+				name: 'tab color replacement',
+				seedOps: [{ op: 'setTabColor', sheet: 'Sheet1', color: 'FF0000' }],
+				ops: [{ op: 'setTabColor', sheet: 'Sheet1', color: '00FF00' }],
+			},
+			{
+				name: 'sheet protection replacement',
+				seedOps: [
+					{
+						op: 'setSheetProtection',
+						sheet: 'Sheet1',
+						password: 'before',
+						options: { selectLockedCells: false },
+					},
+				],
+				ops: [
+					{
+						op: 'setSheetProtection',
+						sheet: 'Sheet1',
+						password: 'after',
+						options: { selectUnlockedCells: false },
+					},
+				],
+			},
+			{
+				name: 'freeze pane replacement',
+				seedOps: [{ op: 'freezePane', sheet: 'Sheet1', row: 1, col: 1 }],
+				ops: [{ op: 'freezePane', sheet: 'Sheet1', row: 2, col: 0 }],
+			},
+			{
+				name: 'existing row and column layout',
+				seedOps: [
+					{ op: 'setRowHeight', sheet: 'Sheet1', row: 1, height: 20 },
+					{ op: 'setColWidth', sheet: 'Sheet1', col: 1, width: 12 },
+					{ op: 'hideRows', sheet: 'Sheet1', at: 1, count: 1, hidden: true },
+					{ op: 'hideCols', sheet: 'Sheet1', at: 1, count: 1, hidden: true },
+				],
+				ops: [
+					{ op: 'setRowHeight', sheet: 'Sheet1', row: 1, height: 25 },
+					{ op: 'setColWidth', sheet: 'Sheet1', col: 1, width: 18 },
+					{ op: 'hideRows', sheet: 'Sheet1', at: 1, count: 1, hidden: false },
+					{ op: 'hideCols', sheet: 'Sheet1', at: 1, count: 1, hidden: false },
+				],
+			},
+			{
+				name: 'data validation replacement and deletion',
+				seedOps: [
+					{
+						op: 'setDataValidation',
+						sheet: 'Sheet1',
+						range: 'A1:A2',
+						rule: { type: 'whole', operator: 'between', formula1: '1', formula2: '9' },
+					},
+					{
+						op: 'setDataValidation',
+						sheet: 'Sheet1',
+						range: 'B1:B2',
+						rule: { type: 'list', formula1: '"A,B"' },
+					},
+				],
+				ops: [
+					{
+						op: 'setDataValidation',
+						sheet: 'Sheet1',
+						range: 'A1:A2',
+						rule: {
+							type: 'whole',
+							operator: 'greaterThan',
+							formula1: '3',
+							allowBlank: true,
+							showErrorMessage: true,
+						},
+					},
+					{ op: 'deleteDataValidation', sheet: 'Sheet1', range: 'B1:B2' },
+				],
+			},
+			{
+				name: 'conditional format tail replacement',
+				seedOps: [
+					{
+						op: 'setConditionalFormat',
+						sheet: 'Sheet1',
+						range: 'A1:A2',
+						rule: { type: 'expression', formula: 'A1>0', priority: 1 },
+					},
+				],
+				ops: [
+					{
+						op: 'setConditionalFormat',
+						sheet: 'Sheet1',
+						range: 'A1:A2',
+						rule: { type: 'expression', formula: 'A1>5', priority: 1 },
+					},
+				],
+			},
+			{
+				name: 'auto filter criteria and clear',
+				seedOps: [
+					{ op: 'setAutoFilter', sheet: 'Sheet1', range: 'A1:B10' },
+					{
+						op: 'setAutoFilter',
+						sheet: 'Sheet1',
+						range: 'A1:B10',
+						column: 0,
+						values: ['Open'],
+					},
+				],
+				ops: [
+					{
+						op: 'setAutoFilter',
+						sheet: 'Sheet1',
+						range: 'A1:B10',
+						column: 0,
+						values: ['Closed'],
+					},
+					{ op: 'clearAutoFilter', sheet: 'Sheet1' },
+				],
+			},
+			{
+				name: 'workbook view replacement',
+				seedOps: [
+					{
+						op: 'setWorkbookView',
+						view: { activeTab: 0, firstSheet: 0 },
+						index: 0,
+						mode: 'replace',
+					},
+				],
+				ops: [
+					{
+						op: 'setWorkbookView',
+						view: { activeTab: 0, firstSheet: 0, showSheetTabs: false },
+						index: 0,
+						mode: 'replace',
+					},
+				],
+			},
+			{
+				name: 'calc settings replacement',
+				seedOps: [{ op: 'setCalcSettings', settings: { mode: 'auto' } }],
+				ops: [{ op: 'setCalcSettings', settings: { mode: 'manual', fullCalcOnLoad: true } }],
+			},
+			{
 				name: 'semantic no-op cell edit',
 				seedOps: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] }],
 				ops: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] }],
@@ -1673,6 +1829,32 @@ function lossyConditionalFormatOrderJournal(): MutationJournal {
 	])
 	return buildMutationJournal(wb.getWorkbookModel(), [
 		{ op: 'deleteConditionalFormat', sheet: 'Sheet1' },
+	])
+}
+
+function lossyConditionalFormatReplacementOrderJournal(): MutationJournal {
+	const wb = AscendWorkbook.create()
+	applyExact(wb, [
+		{
+			op: 'setConditionalFormat',
+			sheet: 'Sheet1',
+			range: 'A1:A2',
+			rule: { type: 'expression', formula: 'A1>0', priority: 1 },
+		},
+		{
+			op: 'setConditionalFormat',
+			sheet: 'Sheet1',
+			range: 'B1:B2',
+			rule: { type: 'expression', formula: 'B1>0', priority: 2 },
+		},
+	])
+	return buildMutationJournal(wb.getWorkbookModel(), [
+		{
+			op: 'setConditionalFormat',
+			sheet: 'Sheet1',
+			range: 'A1:A2',
+			rule: { type: 'expression', formula: 'A1>5', priority: 1 },
+		},
 	])
 }
 

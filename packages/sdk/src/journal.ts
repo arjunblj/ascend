@@ -3073,7 +3073,10 @@ function journalSetConditionalFormat(
 		op,
 		inverseOps,
 		preimages: [{ kind: 'conditional-formats', conditionalFormats: preimage }],
-		issues,
+		issues: [
+			...issues,
+			...conditionalFormatRestoreOrderIssues(workbook, op.sheet, preimage.formats),
+		],
 	}
 }
 
@@ -3091,6 +3094,9 @@ function journalDeleteConditionalFormat(
 		preimages: [{ kind: 'conditional-formats', conditionalFormats: preimage }],
 		issues: [
 			...issues,
+			...(op.range === undefined
+				? []
+				: conditionalFormatRestoreOrderIssues(workbook, op.sheet, preimage.formats)),
 			...(op.range === undefined
 				? [
 						{
@@ -4794,6 +4800,33 @@ function restoreConditionalFormatOps(
 		})
 	}
 	return { inverseOps, issues }
+}
+
+function conditionalFormatRestoreOrderIssues(
+	workbook: Workbook,
+	sheetName: string,
+	formats: readonly SheetConditionalFormat[],
+): readonly MutationJournalIssue[] {
+	if (formats.length === 0) return []
+	const sheet = workbook.getSheet(sheetName)
+	if (!sheet) return []
+	const ranges = new Set(formats.map((format) => format.sqref))
+	const indexes = sheet.conditionalFormats
+		.map((format, index) => (ranges.has(format.sqref) ? index : -1))
+		.filter((index) => index >= 0)
+	if (indexes.length !== formats.length) return []
+	const suffixStart = sheet.conditionalFormats.length - indexes.length
+	const restoresSuffix = indexes.every((index, offset) => index === suffixStart + offset)
+	if (restoresSuffix) return []
+	return [
+		{
+			code: 'LOSSY_INVERSE',
+			message: `Conditional-format order on ${sheetName} cannot be restored exactly with public operations`,
+			surface: 'conditional-formats',
+			reason: 'metadata-order',
+			refs: formats.map((format) => `${sheetName}!${format.sqref}`),
+		},
+	]
 }
 
 function conditionalFormatRuleFromSheet(

@@ -136,6 +136,8 @@ Updated: 2026-05-15
 | [Formula no-rename surface audit](runs/2026/2026-05-15-formula-no-rename-surface-audit/log.md) | proved current SDK/CLI/API/MCP formula-assist surfaces expose prepare/refusal metadata only, not edit-producing rename | product/DX loop, correctness loop |
 | [Shared formula master ref casing](runs/2026/2026-05-15-shared-formula-master-ref-casing/log.md) | folded in regression coverage for case-insensitive sheet-qualified shared-formula master refs in engine mutation and SDK journals | correctness loop |
 | [Binding range casing detach](runs/2026/2026-05-15-binding-range-casing-detach/log.md) | folded in case-insensitive sheet-qualified range matching for blocked-spill/data-table detachment and SDK journal evidence | correctness loop |
+| [Verify shared master casing](runs/2026/2026-05-15-verify-shared-master-casing/log.md) | folded in verifier shared-formula master equality fix for sheet-qualified refs with casing drift | correctness loop |
+| [Safe open dirty timing rerun](runs/2026/2026-05-15-safe-open-dirty-timing-rerun/log.md) | archived timed safe-open rerun as diagnostic-only because tracked verify files were dirty before the run | performance loop, product loop |
 | [Package action proof](runs/2026/2026-05-14-package-action-proof/log.md) | cycle 2 complete, promote | correctness loop, product/DX loop, performance loop |
 | [Formula spans LSP](runs/2026/2026-05-14-formula-spans-lsp/log.md) | cycle 13 complete, folded in SDK hover/code actions | product/DX loop, correctness loop |
 | [Formula sqllogictest conformance](runs/2026/2026-05-14-formula-sqllogictest-conformance/log.md) | cycle 14 complete, folded in converter/runner | correctness loop |

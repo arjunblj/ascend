@@ -6,6 +6,7 @@ Updated: 2026-05-15
 
 | Run | Status | Fold-in target |
 | --- | --- | --- |
+| [Style edit formula binding preservation](runs/2026/2026-05-15-style-edit-formula-binding-preservation/log.md) | folded in regression coverage proving style-only edits preserve representative shared, spill, data-table, and legacy-array formula binding metadata | correctness loop |
 | [Sparkline group validation boundary](runs/2026/2026-05-15-sparkline-group-validation-boundary/log.md) | folded in rejection-first validation for invalid sparkline ranges, empty types, and non-boolean display flags before x14 metadata mutation | correctness loop |
 | [Safe open external candidate owner evidence](runs/2026/2026-05-15-safe-open-external-candidate-owner-evidence/log.md) | folded ExcelForge unknown-part candidate into release-proof-index owner handoff JSON/Markdown with explicit does-not-satisfy-public-edge-fixtures gate effect | product loop, release loop |
 | [Document properties finite value boundary](runs/2026/2026-05-15-document-properties-finite-value-boundary/log.md) | folded in finite-number validation for document property app/custom metadata plus journal exactness coverage for non-representable numeric values | correctness loop |

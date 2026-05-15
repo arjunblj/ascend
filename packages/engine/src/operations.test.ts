@@ -6909,6 +6909,17 @@ describe('applyOperation', () => {
 					expect(sheet.cells.get(4, 2)?.value).toEqual(numberValue(30))
 				},
 			},
+			{
+				name: 'blocked spill anchor',
+				setup: addBlockedSpillFormula,
+				range: 'A1:A2',
+				affectedCells: ['A1', 'A2'],
+				assert: (sheet) => {
+					expect(sheet.cells.get(0, 0)?.value).toEqual(stringValue('blocker'))
+					expect(sheet.cells.get(1, 0)?.formula).toBe('SEQUENCE(3)')
+					expect(sheet.cells.get(1, 0)?.formulaInfo).toBeUndefined()
+				},
+			},
 		]
 
 		for (const entry of cases) {

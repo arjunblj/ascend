@@ -363,7 +363,8 @@ function materializeSpillFormulaGroup(
 	for (const [row, col, cell] of sheet.cells.iterate()) {
 		const candidateRef = `${formatSheetNameForFormula(sheet.name)}!${toA1({ row, col })}`
 		if (!sameSpillFormulaGroup(binding, cell.formulaInfo, dynamicAnchorRef, candidateRef)) continue
-		sheet.cells.set(row, col, cellWithExisting(cell.value, null, cell.styleId ?? DEFAULT_SID))
+		const formula = binding.kind === 'blockedSpill' ? cell.formula : null
+		sheet.cells.set(row, col, cellWithExisting(cell.value, formula, cell.styleId ?? DEFAULT_SID))
 		affected.add(toA1({ row, col }))
 	}
 	return affected

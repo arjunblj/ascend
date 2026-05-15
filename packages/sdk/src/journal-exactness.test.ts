@@ -219,6 +219,7 @@ describe('mutation journal exactness model', () => {
 			lossyDataValidationDefaultJournal(),
 			lossyDataValidationDeleteOrderJournal(),
 			lossyDataValidationDuplicateDeleteJournal(),
+			lossyDataValidationDuplicateMoveJournal(),
 			lossyLegacyCommentDrawingJournal(),
 			lossySetCommentLegacyDrawingJournal(),
 			lossyCreatedLayoutJournal(),
@@ -230,6 +231,7 @@ describe('mutation journal exactness model', () => {
 			lossyConditionalFormatReplacementOrderJournal(),
 			lossyConditionalFormatDeleteOrderJournal(),
 			lossyConditionalFormatDuplicateDeleteJournal(),
+			lossyConditionalFormatDuplicateMoveJournal(),
 			lossyAutoFilterJournal(),
 			lossyPageSetupJournal(),
 			lossyX14TransferJournal(),
@@ -302,6 +304,19 @@ describe('mutation journal exactness model', () => {
 		})
 	})
 
+	test('classifies duplicate data validation moves as metadata duplicate', () => {
+		const journal = lossyDataValidationDuplicateMoveJournal()
+		expect(journal.exact).toBe(false)
+		expect(journal.issues).toContainEqual({
+			code: 'LOSSY_INVERSE',
+			message:
+				'Moved duplicate data validations on Sheet1!A1 cannot be restored exactly with public operations',
+			surface: 'data-validations',
+			reason: 'metadata-duplicate',
+			refs: ['Sheet1!A1:A1'],
+		})
+	})
+
 	test('classifies conditional format replacement order as metadata order', () => {
 		const journal = lossyConditionalFormatReplacementOrderJournal()
 		expect(journal.exact).toBe(false)
@@ -335,6 +350,19 @@ describe('mutation journal exactness model', () => {
 			code: 'LOSSY_INVERSE',
 			message:
 				'Duplicate conditional format metadata on Sheet1 cannot be restored exactly with public operations',
+			surface: 'conditional-formats',
+			reason: 'metadata-duplicate',
+			refs: ['Sheet1!A1:A1'],
+		})
+	})
+
+	test('classifies duplicate conditional format moves as metadata duplicate', () => {
+		const journal = lossyConditionalFormatDuplicateMoveJournal()
+		expect(journal.exact).toBe(false)
+		expect(journal.issues).toContainEqual({
+			code: 'LOSSY_INVERSE',
+			message:
+				'Moved duplicate conditional formats on Sheet1!A1 cannot be restored exactly with public operations',
 			surface: 'conditional-formats',
 			reason: 'metadata-duplicate',
 			refs: ['Sheet1!A1:A1'],
@@ -1839,6 +1867,24 @@ function lossyDataValidationDuplicateDeleteJournal(): MutationJournal {
 	])
 }
 
+function lossyDataValidationDuplicateMoveJournal(): MutationJournal {
+	const wb = dataValidationDuplicateWorkbook()
+	return buildMutationJournal(wb.getWorkbookModel(), [
+		{ op: 'moveRange', sheet: 'Sheet1', source: 'A1:A1', target: 'D1', mode: 'validations' },
+	])
+}
+
+function dataValidationDuplicateWorkbook(): AscendWorkbook {
+	const wb = AscendWorkbook.create()
+	const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+	if (!sheet) throw new Error('missing sheet')
+	sheet.dataValidations.push(
+		{ sqref: 'A1:A1', type: 'whole', formula1: '1', allowBlank: true, showErrorMessage: true },
+		{ sqref: 'A1:A1', type: 'whole', formula1: '2', allowBlank: true, showErrorMessage: true },
+	)
+	return wb
+}
+
 function lossyLegacyCommentDrawingJournal(): MutationJournal {
 	const wb = AscendWorkbook.create()
 	const sheet = wb.getWorkbookModel().getSheet('Sheet1')
@@ -2006,6 +2052,20 @@ function lossyConditionalFormatDeleteOrderJournal(): MutationJournal {
 }
 
 function lossyConditionalFormatDuplicateDeleteJournal(): MutationJournal {
+	const wb = conditionalFormatDuplicateWorkbook()
+	return buildMutationJournal(wb.getWorkbookModel(), [
+		{ op: 'deleteConditionalFormat', sheet: 'Sheet1', range: 'A1:A1' },
+	])
+}
+
+function lossyConditionalFormatDuplicateMoveJournal(): MutationJournal {
+	const wb = conditionalFormatDuplicateWorkbook()
+	return buildMutationJournal(wb.getWorkbookModel(), [
+		{ op: 'moveRange', sheet: 'Sheet1', source: 'A1:A1', target: 'D1', mode: 'formats' },
+	])
+}
+
+function conditionalFormatDuplicateWorkbook(): AscendWorkbook {
 	const wb = AscendWorkbook.create()
 	const sheet = wb.getWorkbookModel().getSheet('Sheet1')
 	if (!sheet) throw new Error('missing sheet')
@@ -2013,9 +2073,7 @@ function lossyConditionalFormatDuplicateDeleteJournal(): MutationJournal {
 		{ sqref: 'A1:A1', rules: [{ type: 'expression', formulas: ['A1>0'] }] },
 		{ sqref: 'A1:A1', rules: [{ type: 'expression', formulas: ['A1<0'] }] },
 	)
-	return buildMutationJournal(wb.getWorkbookModel(), [
-		{ op: 'deleteConditionalFormat', sheet: 'Sheet1', range: 'A1:A1' },
-	])
+	return wb
 }
 
 function lossyAutoFilterJournal(): MutationJournal {

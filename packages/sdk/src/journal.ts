@@ -4214,6 +4214,9 @@ function validationTransferRestoration(
 
 	const issues: MutationJournalIssue[] = [
 		...dataValidationTransferCollisionIssues(transfers, move),
+		...(move
+			? dataValidationTransferDuplicateIssues(sourceSheet.name, sourceRange, transfers)
+			: []),
 		...x14DataValidationTransferIssues(sourceSheet, sourceRange),
 	]
 	const inverseOps: Operation[] = []
@@ -4352,6 +4355,24 @@ function dataValidationTransferCollisionIssues(
 	return issues
 }
 
+function dataValidationTransferDuplicateIssues(
+	sourceSheetName: string,
+	sourceRange: RangeRef,
+	transfers: readonly DataValidationTransfer[],
+): readonly MutationJournalIssue[] {
+	const duplicates = duplicateStrings(transfers.map((transfer) => transfer.source.range))
+	if (duplicates.length === 0) return []
+	return [
+		{
+			code: 'LOSSY_INVERSE',
+			message: `Moved duplicate data validations on ${sourceSheetName}!${rangeToA1(sourceRange)} cannot be restored exactly with public operations`,
+			surface: 'data-validations',
+			reason: 'metadata-duplicate',
+			refs: duplicates.map((range) => `${sourceSheetName}!${range}`),
+		},
+	]
+}
+
 function x14DataValidationTransferIssues(
 	sourceSheet: Sheet,
 	sourceRange: RangeRef,
@@ -4439,6 +4460,9 @@ function conditionalFormatTransferRestoration(
 	)
 	const issues: MutationJournalIssue[] = [
 		...conditionalFormatTransferCollisionIssues(sourceSheet.name, transfers, move),
+		...(move
+			? conditionalFormatTransferDuplicateIssues(sourceSheet.name, sourceRange, transfers)
+			: []),
 		...x14ConditionalFormatTransferIssues(sourceSheet, sourceRange),
 	]
 	const inverseOps: Operation[] = []
@@ -4567,6 +4591,24 @@ function conditionalFormatTransferCollisionIssues(
 		}
 	}
 	return issues
+}
+
+function conditionalFormatTransferDuplicateIssues(
+	sourceSheetName: string,
+	sourceRange: RangeRef,
+	transfers: readonly ConditionalFormatTransfer[],
+): readonly MutationJournalIssue[] {
+	const duplicates = duplicateStrings(transfers.map((transfer) => transfer.source.sqref))
+	if (duplicates.length === 0) return []
+	return [
+		{
+			code: 'LOSSY_INVERSE',
+			message: `Moved duplicate conditional formats on ${sourceSheetName}!${rangeToA1(sourceRange)} cannot be restored exactly with public operations`,
+			surface: 'conditional-formats',
+			reason: 'metadata-duplicate',
+			refs: duplicates.map((range) => `${sourceSheetName}!${range}`),
+		},
+	]
 }
 
 function x14ConditionalFormatTransferIssues(

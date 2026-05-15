@@ -2842,6 +2842,65 @@ describe('applyOperation', () => {
 		}
 	})
 
+	test('moveRange materializes target formula bindings before overwriting a member', () => {
+		const cases: readonly {
+			readonly name: string
+			readonly setup: (sheet: Sheet) => void
+			readonly affectedCells: readonly string[]
+			readonly assert: (sheet: Sheet) => void
+		}[] = [
+			{
+				name: 'shared formula member',
+				setup: (sheet) => {
+					addSharedFormulaGroup(sheet)
+					sheet.cells.set(0, 1, cell(numberValue(10)))
+					sheet.cells.set(1, 1, cell(numberValue(20)))
+				},
+				affectedCells: ['A1', 'A2', 'D1'],
+				assert: (sheet) => {
+					expect(sheet.cells.get(0, 0)?.formula).toBe('B1*2')
+					expect(sheet.cells.get(0, 0)?.formulaInfo).toBeUndefined()
+					expect(sheet.cells.get(1, 0)?.value).toEqual(numberValue(99))
+					expect(sheet.cells.get(1, 0)?.formula).toBeNull()
+					expect(sheet.cells.get(1, 0)?.formulaInfo).toBeUndefined()
+					expect(sheet.cells.get(0, 3)).toBeUndefined()
+				},
+			},
+			{
+				name: 'dynamic spill member',
+				setup: addDynamicArrayAnchorWithStaleSpillFootprint,
+				affectedCells: ['A1', 'A2', 'A3', 'D1'],
+				assert: (sheet) => {
+					expect(sheet.cells.get(0, 0)?.value).toEqual(numberValue(1))
+					expect(sheet.cells.get(0, 0)?.formulaInfo).toBeUndefined()
+					expect(sheet.cells.get(1, 0)?.value).toEqual(numberValue(99))
+					expect(sheet.cells.get(1, 0)?.formulaInfo).toBeUndefined()
+					expect(sheet.cells.get(2, 0)?.formulaInfo).toBeUndefined()
+					expect(sheet.cells.get(0, 3)).toBeUndefined()
+				},
+			},
+		]
+
+		for (const entry of cases) {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			entry.setup(sheet)
+			sheet.cells.set(0, 3, cell(numberValue(99)))
+
+			const result = applyOperation(wb, {
+				op: 'moveRange',
+				sheet: 'Sheet1',
+				source: 'D1',
+				target: 'A2',
+				mode: 'all',
+			})
+			expectOk(result)
+
+			expect(result.value.affectedCells, entry.name).toEqual(entry.affectedCells)
+			entry.assert(sheet)
+		}
+	})
+
 	test('copyRange exposes comments, hyperlinks, and validation paste modes', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

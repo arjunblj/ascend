@@ -225,6 +225,27 @@ Current gate:
 
 Decision: keep release proof index at rank 6 and keep `provenance-boundary` missing. The top package-action claim can use local evidence wording only. Do not promote SLSA, in-toto, GitHub artifact attestation, Sigstore, signed provenance, or transparency-log language without a release/security owner implementing a real attestation pipeline.
 
+### Streaming Matrix Boundary Audit
+
+Proof command:
+
+```bash
+bun run fixtures/benchmarks/package-action-proof.ts --no-timings --json
+```
+
+Current gate:
+
+| Field | Value |
+| --- | --- |
+| Total package-action cases | 8 |
+| Cases with streaming proof | 1 |
+| Streaming proof case | `docprops-passthrough` |
+| Package-action classes covered overall | `passthrough`, `regenerate`, `add`, `drop`, `error` |
+| Package-action classes covered by streaming proof | `passthrough`, `regenerate` |
+| Non-streaming public fixtures | `macro-passthrough`, `chart-sidecar-accounting` |
+
+Decision: keep `streaming-matrix-boundary` missing. The package-action claim can say one representative streaming dirty-sheet proof exists, but it cannot say streaming parity covers add/drop/error, public macro/chart fixtures, or every package-action scenario.
+
 ## Next Proof Moves
 
 1. Product/performance handoff: publish the safe unknown workbook opening proof bundle from existing surfaces and public fixtures.

@@ -102,6 +102,7 @@ Updated: 2026-05-15
 | [Release fixture provenance summary](runs/2026/2026-05-15-release-fixture-provenance-summary/log.md) | folded in public/generated fixture provenance counts for top release proof artifacts | release loop, product loop |
 | [Generated fixture digest boundary](runs/2026/2026-05-15-generated-fixture-digest-boundary/log.md) | folded in deterministic generated edge-package input digests while holding generated workbook digests out of stable proof shape | release loop, product loop |
 | [Release proof readyWhen checklists](runs/2026/2026-05-15-release-readywhen-checklists/log.md) | folded in machine-readable owner-loop readiness gates for the top two release proof artifacts | release loop, product loop, correctness loop, performance loop |
+| [Release readiness fail-closed summary](runs/2026/2026-05-15-release-readiness-fail-closed-summary/log.md) | folded in aggregate fail-closed readiness summary for top claim owner loops | release loop, product loop, correctness loop, performance loop |
 | [Package action proof](runs/2026/2026-05-14-package-action-proof/log.md) | cycle 2 complete, promote | correctness loop, product/DX loop, performance loop |
 | [Formula spans LSP](runs/2026/2026-05-14-formula-spans-lsp/log.md) | cycle 13 complete, folded in SDK hover/code actions | product/DX loop, correctness loop |
 | [Formula sqllogictest conformance](runs/2026/2026-05-14-formula-sqllogictest-conformance/log.md) | cycle 14 complete, folded in converter/runner | correctness loop |

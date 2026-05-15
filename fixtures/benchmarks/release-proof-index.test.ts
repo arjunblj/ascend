@@ -19,6 +19,27 @@ describe('release proof evidence index', () => {
 				eligibilityRule: expect.stringContaining('tracked-clean'),
 			}),
 		])
+		expect(index.readiness).toMatchObject({
+			releaseGate: 'blocked-by-publication-policy',
+			headlineClaimsAllowed: false,
+			totalRequirementCount: 6,
+			missingRequirementCount: 6,
+			satisfiedRequirementCount: 0,
+			missingByOwnerLoop: {
+				correctness: 1,
+				performance: 1,
+				product: 2,
+				release: 2,
+			},
+			missingByArtifact: {
+				'safe-open-proof': ['public-edge-fixtures', 'release-latency-run', 'publication-boundary'],
+				'package-action-proof': [
+					'edge-fixture-policy',
+					'provenance-boundary',
+					'unsupported-feature-boundary',
+				],
+			},
+		})
 		for (const artifact of index.artifacts) {
 			expect(artifact.sha256).toMatch(/^[a-f0-9]{64}$/)
 			expect(artifact.stableShapeSha256).toMatch(/^[a-f0-9]{64}$/)
@@ -134,6 +155,14 @@ describe('release proof evidence index', () => {
 		expect(markdown).toContain('not signed provenance')
 		expect(markdown).toContain('Publication blockers')
 		expect(markdown).toContain('Ready when')
+		expect(markdown).toContain('Release Readiness Gate')
+		expect(markdown).toContain('ReadyWhen requirements: total=6, missing=6, satisfied=0')
+		expect(markdown).toContain(
+			'Missing by owner loop: correctness=1, performance=1, product=2, release=2',
+		)
+		expect(markdown).toContain(
+			'Missing by artifact: safe-open-proof=public-edge-fixtures,release-latency-run,publication-boundary',
+		)
 		expect(markdown).toContain('Headline claim allowed')
 		expect(markdown).toContain('blocked-by-publication-policy')
 		expect(markdown).toContain('public-edge-fixtures(missing,product)')

@@ -116,7 +116,7 @@ bun run fixtures/benchmarks/release-proof-index.ts --no-timings
 | safe-open-proof | `6aa54a651309b3c45ce7ce93ff7034e7b31e47c7cbc458c58ee6a6f23e0c6178` | cases=9, ok=8, rejected=1, reviewBeforeHydration=4, malformedRejected=true |
 | package-action-proof | `60da8baa4a897e7edbd3f02fcb1a7026643bc68de1f5dedec082e71d29f03213` | cases=8, passthrough=27, regenerate=38, add=3, drop=3, error=1 |
 
-Readiness gates now fail closed for the top two artifacts:
+Readiness gates now fail closed for the top two artifacts. The JSON index includes `readiness.releaseGate=blocked-by-publication-policy`, `readiness.headlineClaimsAllowed=false`, `totalRequirementCount=6`, `missingRequirementCount=6`, and `satisfiedRequirementCount=0`.
 
 | Artifact | Missing readyWhen gates |
 | --- | --- |

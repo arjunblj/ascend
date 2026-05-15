@@ -190,7 +190,7 @@ Public binary fixtures are required before stronger headline copy when any of th
 
 Current application: the safe-open signed and unknown-part cases can remain generated local proof because they exercise OPC package topology and are disclosed as synthetic. They should still block stronger release copy until accepted or replaced; `fixtures/benchmarks/safe-open-fixture-scan.ts` currently finds no checked-in public binary replacement.
 
-Release-index enforcement: `fixtures/benchmarks/release-proof-index.ts` marks both current top artifacts as `headlineClaimAllowed: false` with `releaseGate: blocked-by-publication-policy`. It now also exposes `readyWhen` requirements by owner loop so publication blockers stay actionable and machine-readable. This keeps local proof usable while making stronger headline copy a deliberate product decision rather than an accidental interpretation of a digest.
+Release-index enforcement: `fixtures/benchmarks/release-proof-index.ts` marks both current top artifacts as `headlineClaimAllowed: false` with `releaseGate: blocked-by-publication-policy`. It exposes per-artifact `readyWhen` requirements by owner loop and an aggregate `readiness` summary with `headlineClaimsAllowed=false`, `missingRequirementCount=6`, and missing requirements grouped by owner/artifact. This keeps local proof usable while making stronger headline copy a deliberate product decision rather than an accidental interpretation of a digest.
 
 ## Do Not Promote Yet
 

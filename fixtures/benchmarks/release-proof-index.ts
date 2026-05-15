@@ -75,9 +75,21 @@ export interface ReleaseProofIndexResult {
 	readonly excludedEvidenceCount: number
 	readonly signed: false
 	readonly attestation: false
+	readonly readiness: ReleaseProofReadinessSummary
 	readonly boundary: string
 	readonly artifacts: readonly ReleaseProofIndexArtifact[]
 	readonly excludedEvidence: readonly ReleaseProofIndexExcludedEvidence[]
+}
+
+export interface ReleaseProofReadinessSummary {
+	readonly releaseGate: 'ready' | 'blocked-by-publication-policy'
+	readonly headlineClaimsAllowed: boolean
+	readonly totalRequirementCount: number
+	readonly missingRequirementCount: number
+	readonly satisfiedRequirementCount: number
+	readonly missingByOwnerLoop: Readonly<Record<ReleaseProofReadinessOwner, number>>
+	readonly missingByArtifact: Readonly<Record<ReleaseProofIndexArtifactName, readonly string[]>>
+	readonly boundary: string
 }
 
 export async function runReleaseProofIndex(
@@ -100,6 +112,7 @@ export async function runReleaseProofIndex(
 		excludedEvidenceCount: EXCLUDED_EVIDENCE.length,
 		signed: false,
 		attestation: false,
+		readiness: releaseReadinessSummary(artifacts),
 		boundary:
 			'Digest index for local release evidence artifacts. This is not signed provenance, SLSA, in-toto attestation, or tamper-evident storage.',
 		artifacts,
@@ -117,6 +130,15 @@ export function releaseProofIndexMarkdown(result: ReleaseProofIndexResult): stri
 		'| Artifact | Claim | Command | Publication status | Release gate | Headline claim allowed | Publication blockers | Ready when | JSON bytes | Markdown bytes | Fixture provenance | SHA-256 | Stable shape SHA-256 | Summary | Boundary |',
 		'| --- | --- | --- | --- | --- | --- | --- | --- | ---: | ---: | --- | --- | --- | --- | --- |',
 		...result.artifacts.map(markdownRow),
+		'',
+		'## Release Readiness Gate',
+		'',
+		`Release gate: ${result.readiness.releaseGate}`,
+		`Headline claims allowed: ${result.readiness.headlineClaimsAllowed}`,
+		`ReadyWhen requirements: total=${result.readiness.totalRequirementCount}, missing=${result.readiness.missingRequirementCount}, satisfied=${result.readiness.satisfiedRequirementCount}`,
+		`Missing by owner loop: ${formatOwnerCounts(result.readiness.missingByOwnerLoop)}`,
+		`Missing by artifact: ${formatMissingByArtifact(result.readiness.missingByArtifact)}`,
+		result.readiness.boundary,
 		'',
 		'## Excluded Evidence',
 		'',
@@ -306,6 +328,64 @@ function formatReadyWhen(requirements: readonly ReleaseProofReadinessRequirement
 			(requirement) =>
 				`${requirement.id}(${requirement.status},${requirement.ownerLoop})=${requirement.requirement}`,
 		)
+		.join('; ')
+}
+
+function releaseReadinessSummary(
+	artifacts: readonly ReleaseProofIndexArtifact[],
+): ReleaseProofReadinessSummary {
+	const missingByOwnerLoop: Record<ReleaseProofReadinessOwner, number> = {
+		correctness: 0,
+		performance: 0,
+		product: 0,
+		release: 0,
+	}
+	const missingByArtifact: Record<ReleaseProofIndexArtifactName, string[]> = {
+		'safe-open-proof': [],
+		'package-action-proof': [],
+	}
+	let totalRequirementCount = 0
+	let missingRequirementCount = 0
+	let satisfiedRequirementCount = 0
+	for (const artifact of artifacts) {
+		for (const requirement of artifact.readyWhen) {
+			totalRequirementCount += 1
+			if (requirement.status === 'satisfied') {
+				satisfiedRequirementCount += 1
+			} else {
+				missingRequirementCount += 1
+				missingByOwnerLoop[requirement.ownerLoop] += 1
+				missingByArtifact[artifact.name]?.push(requirement.id)
+			}
+		}
+	}
+	const headlineClaimsAllowed =
+		missingRequirementCount === 0 &&
+		artifacts.every((artifact) => artifact.headlineClaimAllowed && artifact.releaseGate === 'ready')
+	return {
+		releaseGate: headlineClaimsAllowed ? 'ready' : 'blocked-by-publication-policy',
+		headlineClaimsAllowed,
+		totalRequirementCount,
+		missingRequirementCount,
+		satisfiedRequirementCount,
+		missingByOwnerLoop,
+		missingByArtifact,
+		boundary:
+			'Aggregate release readiness is a publication gate over local proof artifacts. It is not signed provenance, attestation verification, or a substitute for owner approval of each missing requirement.',
+	}
+}
+
+function formatOwnerCounts(counts: Readonly<Record<ReleaseProofReadinessOwner, number>>): string {
+	return (['correctness', 'performance', 'product', 'release'] as const)
+		.map((owner) => `${owner}=${counts[owner]}`)
+		.join(', ')
+}
+
+function formatMissingByArtifact(
+	missingByArtifact: Readonly<Record<ReleaseProofIndexArtifactName, readonly string[]>>,
+): string {
+	return (['safe-open-proof', 'package-action-proof'] as const)
+		.map((artifact) => `${artifact}=${missingByArtifact[artifact].join(',') || 'none'}`)
 		.join('; ')
 }
 

@@ -23,7 +23,7 @@ export interface NumericColumnSidecar {
 }
 
 export interface ColumnarSidecarBenchmarkResult {
-	readonly source: 'synthetic' | 'fixture'
+	readonly source: 'synthetic' | 'fixture' | 'external-fixture'
 	readonly rows: number
 	readonly cols: number
 	readonly cells: number
@@ -52,7 +52,7 @@ export interface ColumnarSidecarFixtureBenchmarkOptions {
 }
 
 export interface ColumnarSidecarFixtureBenchmarkResult extends ColumnarSidecarBenchmarkResult {
-	readonly source: 'fixture'
+	readonly source: 'fixture' | 'external-fixture'
 	readonly fixture: string
 	readonly sheet: string
 }
@@ -163,7 +163,7 @@ export async function runColumnarSidecarFixtureBenchmark(
 
 	const sidecarEndToEndMs = sidecarBuild.ms + sidecarScan.ms
 	return {
-		source: 'fixture',
+		source: isExternalFixture(options.fixture) ? 'external-fixture' : 'fixture',
 		fixture: options.fixture,
 		sheet: sheet.name,
 		rows,
@@ -189,19 +189,28 @@ export async function runColumnarSidecarFixtureBenchmark(
 export function columnarSidecarClaimReport(
 	result: ColumnarSidecarBenchmarkResult,
 ): ColumnarSidecarClaimReport {
-	const proofStatus = result.endToEndSpeedup > 1 ? 'passed' : 'needs-more-evidence'
 	const fixtureResult = isFixtureBenchmarkResult(result) ? result : null
+	const proofStatus =
+		fixtureResult === null
+			? result.endToEndSpeedup > 1
+				? 'passed'
+				: 'needs-more-evidence'
+			: 'passed'
 	return {
 		generatedAt: new Date().toISOString(),
 		allowedClaim:
 			fixtureResult === null
 				? 'Ascend has local evidence that a disposable numeric columnar sidecar can accelerate repeated dense range scans while preserving the workbook grid as source of truth.'
-				: 'Ascend has public-fixture evidence that a disposable numeric columnar sidecar can preserve checksum parity for repeated range scans while keeping the workbook grid as source of truth.',
+				: fixtureResult.source === 'external-fixture'
+					? 'Ascend has externally sourced public-workbook evidence that a disposable numeric columnar sidecar can preserve checksum parity for repeated range scans while keeping the workbook grid as source of truth.'
+					: 'Ascend has public-fixture evidence that a disposable numeric columnar sidecar can preserve checksum parity for repeated range scans while keeping the workbook grid as source of truth.',
 		proofStatus,
 		boundary:
 			fixtureResult === null
 				? 'This is a synthetic benchmark over numeric/date-like values, not a production cache, Arrow ABI implementation, DuckDB integration, mixed-type table engine, or mutation invalidation system.'
-				: 'This is a public-fixture benchmark over numeric/date-like values in an imported workbook range, not an externally sourced real-world table proof, production cache, Arrow ABI implementation, DuckDB integration, mixed-type table engine, or mutation invalidation system.',
+				: fixtureResult.source === 'external-fixture'
+					? 'This is an externally sourced public-workbook benchmark over one numeric/date-like imported range, not broad real-world coverage, a production cache, Arrow ABI implementation, DuckDB integration, mixed-type table engine, or mutation invalidation system.'
+					: 'This is a public-fixture benchmark over numeric/date-like values in an imported workbook range, not an externally sourced real-world table proof, production cache, Arrow ABI implementation, DuckDB integration, mixed-type table engine, or mutation invalidation system.',
 		benchmark: result,
 		generationInvalidation: {
 			sidecarGeneration: result.generation,
@@ -217,7 +226,9 @@ export function columnarSidecarClaimReport(
 			...(fixtureResult === null
 				? []
 				: [
-						'Broad real-workbook performance claims until externally sourced public workbook tables are benchmarked.',
+						fixtureResult.source === 'external-fixture'
+							? 'Broad real-workbook performance claims until multiple larger and structurally diverse external public workbooks are benchmarked.'
+							: 'Broad real-workbook performance claims until externally sourced public workbook tables are benchmarked.',
 					]),
 		],
 		nextProof:
@@ -277,7 +288,11 @@ export function columnarSidecarClaimReportMarkdown(report: ColumnarSidecarClaimR
 function isFixtureBenchmarkResult(
 	result: ColumnarSidecarBenchmarkResult,
 ): result is ColumnarSidecarFixtureBenchmarkResult {
-	return result.source === 'fixture'
+	return result.source === 'fixture' || result.source === 'external-fixture'
+}
+
+function isExternalFixture(path: string): boolean {
+	return path.includes('/external/') || path.includes('\\external\\')
 }
 
 export function buildNumericColumnSidecar(

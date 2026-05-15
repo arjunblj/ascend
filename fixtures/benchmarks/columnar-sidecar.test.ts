@@ -80,4 +80,24 @@ describe('columnar sidecar benchmark harness', () => {
 		expect(markdown).toContain('Fixture: fixtures/xlsx/poi/Tables.xlsx')
 		expect(markdown).toContain('Broad real-workbook performance claims')
 	})
+
+	test('checks externally sourced public workbook range parity', async () => {
+		const result = await runColumnarSidecarFixtureBenchmark({
+			fixture: 'fixtures/xlsx/external/sec-mmf-statistics-2022-02.xlsx',
+			sheet: 'Table 9',
+			repeats: 8,
+		})
+
+		expect(result.source).toBe('external-fixture')
+		expect(result.sheet).toBe('Table 9')
+		expect(result.populatedCount).toBeGreaterThan(1000)
+		expect(result.numericCount).toBeGreaterThan(1000)
+		expect(result.checksum).toBeGreaterThan(0)
+		expect(result.estimatedSidecarPayloadBytes).toBe(result.cells * 9)
+
+		const report = columnarSidecarClaimReport(result)
+		expect(report.allowedClaim).toContain('externally sourced public-workbook evidence')
+		expect(report.boundary).toContain('one numeric/date-like imported range')
+		expect(report.doNotPromoteYet.join('\n')).toContain('structurally diverse external')
+	})
 })

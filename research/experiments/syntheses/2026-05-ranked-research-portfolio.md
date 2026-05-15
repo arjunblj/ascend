@@ -15,7 +15,7 @@ The portfolio ranking still holds after the current proof run. The top two imple
 | Artifact | Current proof | Blocking owner gates | Handoff decision |
 | --- | --- | --- | --- |
 | Safe unknown workbook opening | 9 cases: 6 public fixtures, 2 generated edge packages, 1 malformed package; 8 OK, 1 rejected, 4 review-before-hydration routes. Stable shape SHA-256: `6aa54a651309b3c45ce7ce93ff7034e7b31e47c7cbc458c58ee6a6f23e0c6178`. | `public-edge-fixtures`, `release-latency-run`, `publication-boundary`, `compact-report-publication-policy`. | Hand off to product/performance/release for proof packaging and boundary approval only. |
-| Auditable package-part mutation | 8 cases: 2 public fixtures, 2 generated workbooks, 4 generated edge packages; action totals `passthrough=27`, `regenerate=38`, `add=3`, `drop=3`, `error=1`; source graph evidence everywhere; one representative streaming proof. Stable shape SHA-256: `9abebf576651551f58e00ccf8469d099b2c06dacd48391fe581a24e51a1e0afd`. | `edge-fixture-policy`, `provenance-boundary`, `unsupported-feature-boundary`, `streaming-matrix-boundary`, `compact-report-publication-policy`. | Hand off to correctness/product/performance/release for proof packaging and boundary approval only. |
+| Auditable package-part mutation | 8 cases: 3 public fixtures, 2 generated workbooks, 3 generated edge packages; action totals `passthrough=32`, `regenerate=39`, `add=3`, `drop=3`, `error=1`; source graph evidence everywhere; one representative streaming proof. Stable shape SHA-256: `0f9eb22498bc528a63adc40e59a6acbbe07022fde6b2414fcbee73b8b3a56e41`. | `edge-fixture-policy`, `provenance-boundary`, `unsupported-feature-boundary`, `streaming-matrix-boundary`, `compact-report-publication-policy`. | Hand off to correctness/product/performance/release for proof packaging and boundary approval only. |
 | Release proof index | `headlineClaimsAllowed=false`, `implementationSurfacePromotionAllowed=false`, `missingRequirementCount=9`, `signed=false`, `attestation=false`. | Product 2, correctness 1, performance 2, release 4. | Do not promote formula rename, agent view, viewport history, columnar sidecars, oracle routing, or agent traces into release scope this block. |
 
 Fresh proof commands:
@@ -139,7 +139,7 @@ bun run fixtures/benchmarks/release-proof-index.ts --no-timings
 | Artifact | Stable shape SHA-256 | Summary |
 | --- | --- | --- |
 | safe-open-proof | `6aa54a651309b3c45ce7ce93ff7034e7b31e47c7cbc458c58ee6a6f23e0c6178` | cases=9, ok=8, rejected=1, reviewBeforeHydration=4, malformedRejected=true |
-| package-action-proof | `9abebf576651551f58e00ccf8469d099b2c06dacd48391fe581a24e51a1e0afd` | cases=8, passthrough=27, regenerate=38, add=3, drop=3, error=1, streamingProofCases=1 |
+| package-action-proof | `0f9eb22498bc528a63adc40e59a6acbbe07022fde6b2414fcbee73b8b3a56e41` | cases=8, passthrough=32, regenerate=39, add=3, drop=3, error=1, streamingProofCases=1 |
 
 Readiness gates now fail closed for the top two artifacts. The JSON index includes `readiness.releaseGate=blocked-by-publication-policy`, `readiness.headlineClaimsAllowed=false`, `totalRequirementCount=9`, `missingRequirementCount=9`, and `satisfiedRequirementCount=0`. It also points to compact report commands for each top artifact without indexing compact report digests.
 

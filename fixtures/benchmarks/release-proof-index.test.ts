@@ -265,21 +265,19 @@ describe('release proof evidence index', () => {
 				}),
 			],
 			fixtureProvenance: {
-				publicFixtureCases: 2,
+				publicFixtureCases: 3,
 				generatedWorkbookCases: 2,
-				generatedEdgePackageCases: 4,
+				generatedEdgePackageCases: 3,
 				malformedCases: 0,
 				generatedCaseNames: [
 					'docprops-passthrough',
 					'regenerate-existing-sheet',
 					'add-sheet-part',
-					'calc-chain-drop',
 					'signature-invalidation-drop',
 					'unknown-part-error',
 				],
 				deterministicGeneratedCaseNames: [
 					'docprops-passthrough',
-					'calc-chain-drop',
 					'signature-invalidation-drop',
 					'unknown-part-error',
 				],

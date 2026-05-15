@@ -467,7 +467,7 @@ function packageActionArtifact(
 				requirement:
 					'accept disclosed generated edge packages as release proof or replace them with public binary fixtures',
 				evidence:
-					'current proof uses generated calc-chain, signature-invalidation, unknown-part, and docProps edge packages',
+					'current proof uses public calc-chain, macro, and chart fixtures, plus generated docProps, signature-invalidation, and unknown-part edge packages',
 			},
 			{
 				id: 'provenance-boundary',
@@ -680,7 +680,7 @@ function claimProofRequired(
 		case 'package-action-proof':
 			return {
 				fixture:
-					'Public and generated package cases covering docProps passthrough, worksheet regeneration, sheet add, calc-chain drop, signature invalidation, macro/sidecar accounting, chart sidecar accounting, and unknown-part error.',
+					'Public and generated package cases covering docProps passthrough, worksheet regeneration, sheet add, public calc-chain drop, signature invalidation, macro/sidecar accounting, chart sidecar accounting, and unknown-part error.',
 				benchmark:
 					'Package-proof overhead in bytes and milliseconds for plan/commit evidence, including compact versus expanded report paths and the representative streaming writer proof.',
 				surface:

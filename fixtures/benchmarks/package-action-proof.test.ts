@@ -20,9 +20,9 @@ describe('package action proof harness', () => {
 			'chart-sidecar-accounting',
 			'unknown-part-error',
 		])
-		expect(cases.filter((entry) => entry.sourceKind === 'public-fixture')).toHaveLength(2)
+		expect(cases.filter((entry) => entry.sourceKind === 'public-fixture')).toHaveLength(3)
 		expect(cases.filter((entry) => entry.sourceKind === 'generated-workbook')).toHaveLength(2)
-		expect(cases.filter((entry) => entry.sourceKind === 'generated-edge-package')).toHaveLength(4)
+		expect(cases.filter((entry) => entry.sourceKind === 'generated-edge-package')).toHaveLength(3)
 	})
 
 	test('proves all package action kinds without relying on timing thresholds', async () => {
@@ -40,10 +40,16 @@ describe('package action proof harness', () => {
 		expect(proof.cases.every((entry) => entry.commitJournalExact === false)).toBe(true)
 		expect(proof.cases.every((entry) => entry.commitJournalPackageIssueCount > 0)).toBe(true)
 		expect(proof.cases.every((entry) => entry.commitJournalPackageIssueRefs.length > 0)).toBe(true)
-		expect(proof.cases.filter((entry) => entry.sourceKind === 'public-fixture')).toHaveLength(2)
+		expect(proof.cases.filter((entry) => entry.sourceKind === 'public-fixture')).toHaveLength(3)
 		expect(
 			proof.cases.filter((entry) => entry.sourceKind === 'generated-edge-package'),
-		).toHaveLength(4)
+		).toHaveLength(3)
+		expect(proof.cases.find((entry) => entry.name === 'calc-chain-drop')).toMatchObject({
+			sourceKind: 'public-fixture',
+			fixture: 'fixtures/xlsx/poi/Booleans.xlsx',
+			postWriteAuditsPassed: true,
+			issueCount: 0,
+		})
 		expect(proof.cases.find((entry) => entry.name === 'unknown-part-error')).toMatchObject({
 			postWriteAuditsPassed: false,
 			issueCount: 1,
@@ -101,9 +107,9 @@ describe('package action proof harness', () => {
 			streamingRegenerateParts: 1,
 		})
 		expect(compact.sourceCaseCounts).toEqual({
-			'public-fixture': 2,
+			'public-fixture': 3,
 			'generated-workbook': 2,
-			'generated-edge-package': 4,
+			'generated-edge-package': 3,
 		})
 		expect(compactJson.length).toBeLessThan(fullJson.length)
 		expect(compactJson).not.toContain('inputSha256')

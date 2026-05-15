@@ -208,10 +208,10 @@ export function defaultPackageActionProofCases(): PackageActionProofCase[] {
 		},
 		{
 			name: 'calc-chain-drop',
-			sourceKind: 'generated-edge-package',
-			fixture: 'synthetic calcChain package',
+			sourceKind: 'public-fixture',
+			fixture: 'fixtures/xlsx/poi/Booleans.xlsx',
 			ops: [{ op: 'setFormula', sheet: 'Sheet1', ref: 'B1', formula: '=A1+A1' }],
-			prepareInput: writeBytes(calcChainWorkbook),
+			prepareInput: writeFixture('fixtures/xlsx/poi/Booleans.xlsx'),
 			expectedCommitActions: [{ action: 'drop', partPathIncludes: 'xl/calcChain.xml' }],
 		},
 		{
@@ -492,26 +492,6 @@ function docPropsWorkbook(): Uint8Array {
 			'<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>Ascend Fixture</Application></Properties>',
 		'docProps/custom.xml':
 			'<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/custom-properties"/>',
-	})
-}
-
-function calcChainWorkbook(): Uint8Array {
-	return makeXlsx({
-		'[Content_Types].xml': contentTypes(`
-  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
-  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
-  <Override PartName="/xl/calcChain.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.calcChain+xml"/>
-`),
-		'_rels/.rels': rootRels(),
-		'xl/_rels/workbook.xml.rels': workbookRels(`
-  <Relationship Id="rIdCalcChain" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/calcChain" Target="calcChain.xml"/>
-`),
-		'xl/workbook.xml': workbookXml(),
-		'xl/worksheets/sheet1.xml': worksheetXml(
-			'<row r="1"><c r="A1"><v>1</v></c><c r="B1"><f>A1</f><v>1</v></c></row>',
-		),
-		'xl/calcChain.xml':
-			'<calcChain xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><c r="B1" i="1"/></calcChain>',
 	})
 }
 

@@ -1031,6 +1031,36 @@ describe('checker', () => {
 		])
 	})
 
+	test('detects occupied cells detached inside a legacy array range', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.cells.set(0, 0, {
+			value: numberValue(2),
+			formula: 'B1:B2*2',
+			styleId: SID,
+			formulaInfo: { kind: 'array', ref: 'A1:A2' },
+		})
+		s.cells.set(1, 0, { value: numberValue(99), formula: null, styleId: SID })
+
+		const result = check(wb)
+		const issue = result.issues.find(
+			(entry) => entry.details?.kind === 'legacy-array-range-member-mismatch',
+		)
+		expect(result.passed).toBe(false)
+		expect(issue).toMatchObject({
+			rule: 'formula-binding-integrity',
+			severity: 'error',
+			message:
+				'Legacy array formula metadata at Sheet1!A1 has an inconsistent occupied cell inside its range',
+			refs: ['Sheet1!A1', 'Sheet1!A2'],
+			details: {
+				kind: 'legacy-array-range-member-mismatch',
+				range: 'A1:A2',
+				memberRef: 'Sheet1!A2',
+			},
+		})
+	})
+
 	test('detects overlapping legacy array and data table range drift', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')

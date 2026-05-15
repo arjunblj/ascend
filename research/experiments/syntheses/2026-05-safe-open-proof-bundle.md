@@ -13,6 +13,8 @@ Ascend recommends a load mode and trust-review branch from XLSX package features
 ## External Contrast
 
 - [Microsoft Protected View](https://support.microsoft.com/en-us/office/what-is-protected-view-d6f09ac7-e6b9-4495-8e43-2bbcdbcb6653) opens potentially unsafe files read-only or in Protected View. Ascend's OSS claim is narrower: package-feature routing before choosing hydration mode.
+- [Open Packaging Conventions](https://learn.microsoft.com/en-us/previous-versions/windows/desktop/opc/open-packaging-conventions-overview) frame XLSX-style documents as package parts and relationships. Ascend's open plan is a package graph decision before workbook hydration.
+- [Microsoft Trusted Documents](https://support.microsoft.com/en-gb/office/trusted-documents-cf872bd8-47ec-4c02-baa5-1fdba1a11b53) ties active content to an explicit trust decision. Ascend should surface active-content package families for review, not decide trust.
 - [Microsoft Safe Documents](https://support.microsoft.com/en-us/office/safe-documents-e2071599-fb31-442b-a30c-198c25e2aacd) uses Microsoft Defender scanning for documents opened in Protected View. Ascend must not imply equivalent threat detection.
 - [Microsoft Excel digital signatures](https://learn.microsoft.com/en-us/troubleshoot/microsoft-365-apps/excel/digital-signatures-code-signing) help prove a workbook has not changed since signing, and saving after modification invalidates that signature. Ascend should route signature material to review before edit planning.
 - [openpyxl](https://openpyxl.readthedocs.io/en/stable/tutorial.html) documents `keep_vba`, but warns that not all Excel items are read and unsupported shapes can be lost on save. Ascend should contrast with explicit preservation/risk routing, not broad compatibility.
@@ -39,18 +41,18 @@ bun run fixtures/benchmarks/safe-open-proof.ts --repeat 5 --warmup 1
 
 The proof harness is tracked and intentionally not a new product surface. It generates durable synthetic signed, unknown-part, and malformed cases in code, and uses public workbook fixtures for real-workbook cases.
 
-Latest rerun: 2026-05-15T03:24:15.235Z.
+Latest rerun: 2026-05-15T03:37:56.288Z.
 
 | Case | Fixture | Bytes | Status | Mode | Review before hydration | Risk families | Parts | Worksheets | Relationships | Median open-plan ms | Median full-open ms | Full/open-plan ratio | Boundary |
 | --- | --- | ---: | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
-| clean | `fixtures/xlsx/poi/SampleSS.xlsx` | 9112 | ok | formula | false | none | 13 | 3 | 10 | 0.191 | 1.741 | 9.14x | ok |
-| formula-heavy | `fixtures/xlsx/poi/formula_stress_test.xlsx` | 64769 | ok | formula | false | none | 27 | 10 | 22 | 0.178 | 5.674 | 31.85x | ok |
-| macro | `fixtures/xlsx/calamine/vba.xlsm` | 12752 | ok | metadata-only | true | preservedMacro | 12 | 3 | 9 | 0.117 | 1.438 | 12.27x | ok |
-| pivot | `fixtures/xlsx/poi/ExcelPivotTableSample.xlsx` | 19460 | ok | formula | false | none | 27 | 3 | 19 | 0.145 | 2.226 | 15.39x | ok |
-| ActiveX | `fixtures/xlsx/libreoffice/activex_checkbox.xlsx` | 12433 | ok | metadata-only | true | preservedActiveX | 17 | 1 | 12 | 0.090 | 1.703 | 19.00x | ok |
-| chart | `fixtures/xlsx/poi/WithChart.xlsx` | 10138 | ok | formula | false | none | 15 | 3 | 10 | 0.086 | 1.264 | 14.76x | ok |
-| signed | synthetic digital-signature package | 2254 | ok | metadata-only | true | preservedSignature | 8 | 1 | 4 | 0.055 | 0.100 | 1.84x | ok |
-| unknown part | synthetic unknown package part | 1697 | ok | metadata-only | true | preservedOther | 6 | 1 | 3 | 0.038 | 0.085 | 2.26x | ok |
+| clean | `fixtures/xlsx/poi/SampleSS.xlsx` | 9112 | ok | formula | false | none | 13 | 3 | 10 | 0.214 | 1.856 | 8.67x | ok |
+| formula-heavy | `fixtures/xlsx/poi/formula_stress_test.xlsx` | 64769 | ok | formula | false | none | 27 | 10 | 22 | 0.183 | 6.299 | 34.45x | ok |
+| macro | `fixtures/xlsx/calamine/vba.xlsm` | 12752 | ok | metadata-only | true | preservedMacro | 12 | 3 | 9 | 0.084 | 1.928 | 22.82x | ok |
+| pivot | `fixtures/xlsx/poi/ExcelPivotTableSample.xlsx` | 19460 | ok | formula | false | none | 27 | 3 | 19 | 0.142 | 3.909 | 27.56x | ok |
+| ActiveX | `fixtures/xlsx/libreoffice/activex_checkbox.xlsx` | 12433 | ok | metadata-only | true | preservedActiveX | 17 | 1 | 12 | 0.107 | 1.485 | 13.89x | ok |
+| chart | `fixtures/xlsx/poi/WithChart.xlsx` | 10138 | ok | formula | false | none | 15 | 3 | 10 | 0.095 | 1.235 | 13.05x | ok |
+| signed | synthetic digital-signature package | 2254 | ok | metadata-only | true | preservedSignature | 8 | 1 | 4 | 0.052 | 0.090 | 1.74x | ok |
+| unknown part | synthetic unknown package part | 1697 | ok | metadata-only | true | preservedOther | 6 | 1 | 3 | 0.035 | 0.078 | 2.27x | ok |
 | malformed | synthetic malformed bytes | 9 | rejected | n/a | n/a | none | n/a | n/a | n/a | n/a | n/a | n/a | open-plan rejected: Missing end of central directory record |
 
 Validation commands:
@@ -62,9 +64,16 @@ bun test apps/api/api.test.ts -t "open-plan"
 bun test apps/mcp/src/index.test.ts -t "open_plan|open-plan"
 ```
 
+Latest validation rerun passed on 2026-05-15:
+
+- `bun test fixtures/benchmarks/safe-open-proof.test.ts packages/sdk/src/open-plan.test.ts`
+- `bun test apps/cli/src/cli.test.ts -t "open-plan"`
+- `bun test apps/api/api.test.ts -t "open-plan"`
+- `bun test apps/mcp/src/index.test.ts -t "open_plan|open-plan"`
+
 ## Interpretation
 
-- Public workbook cases show open-plan as a cheap pre-hydration routing step: 10.42x to 32.01x faster than full hydration in this local probe.
+- Public workbook cases show open-plan as a cheap pre-hydration routing step: 8.67x to 34.45x faster than full hydration in this local probe.
 - Active content and security-sensitive package material route to `metadata-only` with `reviewBeforeHydration: true`.
 - Unknown package material routes to `metadata-only` review instead of pretending the workbook is fully understood.
 - Malformed bytes do not get a recommendation. They reject at package inspection, which should be presented as a boundary in any proof bundle.

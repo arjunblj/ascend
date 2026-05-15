@@ -1055,6 +1055,72 @@ describe('agent workflow loss audit', () => {
 				},
 			},
 			{
+				name: 'real-shared-formula-member-edit-detaches-and-reopens-clean',
+				risk: 'editing one imported shared-formula member could leave stale sibling formula metadata in the saved workbook',
+				proof: async () => {
+					const input = join(TEMP_DIR, 'quality-moat-shared-formula-edit.xlsx')
+					const output = join(TEMP_DIR, 'quality-moat-shared-formula-edit-out.xlsx')
+					mkdirSync(TEMP_DIR, { recursive: true })
+					await Bun.write(
+						input,
+						readFileSync(
+							new URL('../../../fixtures/xlsx/poi/shared_formulas.xlsx', import.meta.url),
+						),
+					)
+
+					const prepared = await createPreparedAgentPlan(input, [
+						{ op: 'setCells' as const, sheet: 'Label', updates: [{ ref: 'A3', value: 99 }] },
+					])
+					const sharedRefs = Array.from({ length: 40 }, (_, index) => `Label!A${index + 2}`)
+					expect(
+						prepared.plan.preview.journal?.issues
+							.filter((issue) => issue.surface === 'shared-formulas')
+							.map((issue) => issue.refs?.[0])
+							.sort(),
+					).toEqual([...sharedRefs].sort())
+					expect(
+						prepared.plan.preview.journal?.issues
+							.filter((issue) => issue.surface === 'shared-formulas')
+							.every((issue) => issue.reason === 'formula-binding-metadata'),
+					).toBe(true)
+					expect(prepared.plan.preview.journal?.issues).toContainEqual(
+						expect.objectContaining({
+							surface: 'package-parts',
+							reason: 'package-part-preservation',
+							refs: ['Label!A3'],
+						}),
+					)
+					expect(prepared.plan.approvals.length).toBeGreaterThan(0)
+
+					const committed = await prepared.commit({
+						output,
+						approvals: prepared.plan.approvals.map((approval) => approval.id),
+					})
+					expect(committed.postWrite.valid).toBe(true)
+					expect(committed.postWrite.auditsPassed).toBe(true)
+					expect(committed.postWrite.unresolvedPackageGraphIssueCount).toBe(0)
+					expect(
+						committed.postWrite.check.issues.filter(
+							(issue) => issue.rule === 'formula-binding-integrity',
+						),
+					).toEqual([])
+
+					const reopened = await AscendWorkbook.open(output)
+					expect(
+						reopened.check().issues.filter((issue) => issue.rule === 'formula-binding-integrity'),
+					).toEqual([])
+					expect(reopened.sheet('Label')?.cell('A2')?.formulaBinding).toBeUndefined()
+					expect(reopened.sheet('Label')?.cell('A3')?.formulaBinding).toBeUndefined()
+					expect(reopened.formula('Label!A2')?.normalizedFormula).toBe('B2')
+					expect(reopened.formula('Label!A3')).toBeUndefined()
+					expect(reopened.formula('Label!A4')?.normalizedFormula).toBe('B4')
+					expect(reopened.sheet('Label')?.cell('A3')?.value).toEqual({
+						kind: 'number',
+						value: 99,
+					})
+				},
+			},
+			{
 				name: 'real-data-table-edit-detaches-and-reopens-clean',
 				risk: 'editing an imported data-table member could leave stale table formula metadata in the saved workbook',
 				proof: async () => {

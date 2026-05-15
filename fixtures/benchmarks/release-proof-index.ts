@@ -33,6 +33,19 @@ export type ReleaseProofDeferredClaimName =
 	| 'columnar-scan-sidecars'
 	| 'formula-oracle-routing'
 	| 'agent-workflow-observability'
+export type ReleaseProofPortfolioClaimName =
+	| ReleaseProofIndexArtifactName
+	| ReleaseProofDeferredClaimName
+	| 'release-proof-bundle'
+	| 'property-journal-laws'
+export type ReleaseProofPortfolioClaimStatus =
+	| 'claim-wording-allowed-today'
+	| 'needs-one-more-fold-in'
+	| 'speculative-do-not-promote'
+export type ReleaseProofPortfolioHandoffDecision =
+	| 'top-implementation-handoff'
+	| 'proof-packaging-only'
+	| 'do-not-promote-yet'
 
 export interface ReleaseProofIndexOptions {
 	readonly includeTimings?: boolean
@@ -162,6 +175,7 @@ export interface ReleaseProofIndexResult {
 	readonly compactReportPublicationEvidence: ReleaseProofCompactReportPublicationEvidence
 	readonly readiness: ReleaseProofReadinessSummary
 	readonly boundary: string
+	readonly claimPortfolio: readonly ReleaseProofPortfolioClaim[]
 	readonly artifacts: readonly ReleaseProofIndexArtifact[]
 	readonly excludedEvidence: readonly ReleaseProofIndexExcludedEvidence[]
 	readonly deferredClaims: readonly ReleaseProofDeferredClaim[]
@@ -185,6 +199,7 @@ export interface ReleaseProofOwnerHandoffIndex {
 	readonly nextOwnerActions: readonly ReleaseProofNextOwnerAction[]
 	readonly claimBlockerBoard: readonly ReleaseProofClaimBlockerBoardRow[]
 	readonly implementationHandoffs: readonly ReleaseProofImplementationHandoff[]
+	readonly claimPortfolio: readonly ReleaseProofPortfolioClaim[]
 	readonly deferredClaims: readonly ReleaseProofDeferredClaim[]
 	readonly excludedEvidence: readonly ReleaseProofIndexExcludedEvidence[]
 	readonly boundary: string
@@ -259,6 +274,20 @@ export interface ReleaseProofClaimProofRequired {
 	readonly competitorContrast: string
 	readonly honestBoundary: string
 	readonly killCriterion: string
+}
+
+export interface ReleaseProofPortfolioClaim {
+	readonly rank: number
+	readonly name: ReleaseProofPortfolioClaimName
+	readonly claim: string
+	readonly northStarLink: string
+	readonly status: ReleaseProofPortfolioClaimStatus
+	readonly evidenceNeeded: ReleaseProofClaimProofRequired
+	readonly killCriterion: string
+	readonly likelyHandoffOwner: readonly ReleaseProofReadinessOwner[]
+	readonly handoffDecision: ReleaseProofPortfolioHandoffDecision
+	readonly proofCommand?: string
+	readonly boundary: string
 }
 
 export interface ReleaseProofDeferredClaim {
@@ -738,6 +767,7 @@ export async function runReleaseProofIndex(
 		readiness: releaseReadinessSummary(artifacts),
 		boundary:
 			'Digest index for local release evidence artifacts. This is not signed provenance, SLSA, in-toto attestation, or tamper-evident storage.',
+		claimPortfolio: CLAIM_PORTFOLIO.map(clonePortfolioClaim),
 		artifacts,
 		excludedEvidence: EXCLUDED_EVIDENCE,
 		deferredClaims: DEFERRED_CLAIMS.map(cloneDeferredClaim),
@@ -945,6 +975,12 @@ export function releaseProofIndexMarkdown(result: ReleaseProofIndexResult): stri
 		'| --- | --- | --- | --- | --- | --- |',
 		...result.excludedEvidence.map(excludedEvidenceMarkdownRow),
 		'',
+		'## Ranked Claim Portfolio',
+		'',
+		'| Rank | Claim | Status | North Star link | Owner loops | Handoff decision | Proof command | Kill criterion | Boundary |',
+		'| ---: | --- | --- | --- | --- | --- | --- | --- | --- |',
+		...result.claimPortfolio.map(portfolioClaimMarkdownRow),
+		'',
 		'## Deferred Claims',
 		'',
 		'| Claim | Status | Owner loops | Reason | Proof needed | Kill criterion | Boundary |',
@@ -985,6 +1021,7 @@ export function releaseProofOwnerHandoffIndex(
 		nextOwnerActions: result.readiness.nextOwnerActions,
 		claimBlockerBoard: result.readiness.claimBlockerBoard,
 		implementationHandoffs: result.readiness.implementationHandoffs,
+		claimPortfolio: result.claimPortfolio.map(clonePortfolioClaim),
 		deferredClaims: result.deferredClaims,
 		excludedEvidence: result.excludedEvidence,
 		boundary:
@@ -1004,6 +1041,239 @@ const EXCLUDED_EVIDENCE: readonly ReleaseProofIndexExcludedEvidence[] = [
 		boundary:
 			'No local timing report in this index is a release performance threshold, signed provenance, or headline product claim.',
 	},
+]
+
+const CLAIM_PORTFOLIO: readonly ReleaseProofPortfolioClaim[] = [
+	portfolioClaim({
+		rank: 1,
+		name: 'safe-open-proof',
+		claim: 'safe unknown workbook opening',
+		northStarLink: 'Preservation-first XLSX and trustworthy agent workflows.',
+		status: 'claim-wording-allowed-today',
+		evidenceNeeded: claimProofRequired('safe-open-proof'),
+		likelyHandoffOwner: ['product', 'performance', 'release'],
+		handoffDecision: 'top-implementation-handoff',
+		proofCommand: 'bun run fixtures/benchmarks/safe-open-proof.ts --no-timings --json',
+		boundary:
+			'Hand off proof packaging and owner decisions only; do not add opener surfaces while release blockers remain.',
+	}),
+	portfolioClaim({
+		rank: 2,
+		name: 'package-action-proof',
+		claim: 'auditable package-part mutation',
+		northStarLink: 'Trustworthy mutation planning and preservation-first writes.',
+		status: 'claim-wording-allowed-today',
+		evidenceNeeded: claimProofRequired('package-action-proof'),
+		likelyHandoffOwner: ['correctness', 'product', 'performance', 'release'],
+		handoffDecision: 'top-implementation-handoff',
+		proofCommand: 'bun run fixtures/benchmarks/package-action-proof.ts --no-timings --json',
+		boundary:
+			'Hand off package-accounting proof and owner boundary decisions only; do not add mutation surfaces while release blockers remain.',
+	}),
+	portfolioClaim({
+		rank: 3,
+		name: 'formula-language-service-primitives',
+		claim: 'formula language-service primitives',
+		northStarLink: 'Formula intelligence without unsafe workbook mutation.',
+		status: 'needs-one-more-fold-in',
+		evidenceNeeded: claimEvidenceNeeded({
+			fixture:
+				'Public formula corpus plus explicit LET, defined-name, table, external-ref, sheet/range, and parse-failure refusal snapshots.',
+			benchmark:
+				'Formula-assist proof over public formulas with sampled reference spans, binding roles, refusal counts, and owner-approved latency wording only after a timed run.',
+			surface:
+				'Existing SDK/CLI/API/MCP formula-assist surfaces; no edit-producing rename surface.',
+			validationGate:
+				'Run formula-assist proof, parser/span/binding tests, cross-surface formula-assist tests, and typecheck/Biome when code changes.',
+			competitorContrast:
+				'LSP prepareRename allows refusal before rename; HyperFormula is a formula engine baseline, while Ascend should claim workbook-preserving formula assistance.',
+			honestBoundary:
+				'No edit-producing rename, defined-name rename, table-column rename, sheet/range rename, or external-ref rename.',
+			killCriterion:
+				'Do not promote rename until workbook-context symbol ownership and operation-owned edit plans exist.',
+		}),
+		likelyHandoffOwner: ['product', 'correctness'],
+		handoffDecision: 'proof-packaging-only',
+		proofCommand:
+			'bun run fixtures/benchmarks/formula-assist-proof.ts --sample 250 --no-timings --json',
+		boundary: 'Rejection-first proof only; rename remains frozen.',
+	}),
+	portfolioClaim({
+		rank: 4,
+		name: 'token-bounded-agent-view',
+		claim: 'token-bounded agent view',
+		northStarLink: 'World-class agent DX under strict context budgets.',
+		status: 'needs-one-more-fold-in',
+		evidenceNeeded: claimEvidenceNeeded({
+			fixture:
+				'Dense table, wide sparse, formula-heavy, metadata-heavy, and public workbook examples with omission locators.',
+			benchmark:
+				'Full versus budgeted estimate, compression ratio, omitted counters, recovery-locator coverage, and structural floor reporting.',
+			surface: 'Existing SDK, CLI, API, and MCP agent-view/read surfaces only.',
+			validationGate:
+				'Deterministic truncation, cross-surface JSON shape, omitted-evidence recovery, and no hidden summarization without counters.',
+			competitorContrast:
+				'Univer exposes agent spreadsheet operations; Ascend claim is deterministic local evidence under token budgets.',
+			honestBoundary: 'Token counts are approximate and omitted evidence is absent by design.',
+			killCriterion:
+				'Do not publish exact-token wording when structural floors exceed tiny budgets or omitted evidence is not recoverable by locator.',
+		}),
+		likelyHandoffOwner: ['product'],
+		handoffDecision: 'proof-packaging-only',
+		boundary: 'Needs a product-shaped example, not another surface.',
+	}),
+	portfolioClaim({
+		rank: 5,
+		name: 'retained-viewport-patch-history',
+		claim: 'retained viewport patch history',
+		northStarLink: 'Real-world performance and UI/agent efficiency.',
+		status: 'needs-one-more-fold-in',
+		evidenceNeeded: claimEvidenceNeeded({
+			fixture:
+				'Retained patch, skipped token, invalid token, expired history, projection change, metadata invalidation, and changed-source cases.',
+			benchmark:
+				'Patch bytes, retained history size, invalidation rates, and generation-token retention caps.',
+			surface: 'SDK interactive patch stream plus API/MCP compact recovery; CLI excluded.',
+			validationGate:
+				'Viewport proof harness, SDK interactive contract tests, API/MCP compact changedSince tests, and retention cap assertions.',
+			competitorContrast:
+				'Database MVCC retains readable versions, but this claim is bounded patch history, not transaction isolation or CRDT collaboration.',
+			honestBoundary:
+				'Bounded per-window history only, not unlimited history or multi-writer sync.',
+			killCriterion:
+				'Do not promote collaboration, sync, CRDT, or unlimited-history wording without multi-writer convergence and storage retention proof.',
+		}),
+		likelyHandoffOwner: ['product', 'performance'],
+		handoffDecision: 'proof-packaging-only',
+		boundary: 'Product proof is bounded and CLI remains excluded.',
+	}),
+	portfolioClaim({
+		rank: 6,
+		name: 'release-proof-bundle',
+		claim: 'release proof bundle',
+		northStarLink: 'Trustworthy releases and auditability without fake attestations.',
+		status: 'needs-one-more-fold-in',
+		evidenceNeeded: claimEvidenceNeeded({
+			fixture:
+				'One real public workbook workflow per top claim with inspect, plan, commit, reopen, diff, audit, and digest evidence.',
+			benchmark:
+				'Bundle generation overhead, output size, canonical report bytes, and compact versus expanded report cost.',
+			surface:
+				'Stable SDK report schema first; CLI/API/MCP references only after artifact storage and privacy semantics stabilize.',
+			validationGate:
+				'Golden proof fixtures, digest checks, reopen/diff/audit checks, package graph audit checks, and failure cases.',
+			competitorContrast:
+				'Generic spreadsheet libraries read and write files; Ascend should explain the decision trail.',
+			honestBoundary:
+				'Not signed, tamper-evident, SLSA, in-toto, certified provenance, or third-party attestation.',
+			killCriterion:
+				'Do not publish bundle wording until storage, retention/privacy filtering, canonicalization subject, and offline verification policy are approved.',
+		}),
+		likelyHandoffOwner: ['product', 'release'],
+		handoffDecision: 'proof-packaging-only',
+		boundary:
+			'Proof bundle work follows the top two claims and must stay below attestation language.',
+	}),
+	portfolioClaim({
+		rank: 7,
+		name: 'formula-oracle-routing',
+		claim: 'formula oracle routing',
+		northStarLink: 'Correctness credibility for real formula behavior.',
+		status: 'speculative-do-not-promote',
+		evidenceNeeded: claimEvidenceNeeded({
+			fixture:
+				'Runnable public corpus artifacts by mismatch class: cached-only, volatile, numeric drift, unsupported function, external refs, dynamic arrays, structured refs, and date systems.',
+			benchmark:
+				'Per-oracle route overhead, corpus completion time, skip counters, and divergence counters.',
+			surface: 'Completed JSON artifacts and CLI report only; no MCP/API promotion.',
+			validationGate:
+				'Converter tests, artifact verifier, skipped/divergence counters, and no threshold changes without evidence.',
+			competitorContrast:
+				'HyperFormula is the strongest OSS formula baseline; Excel and LibreOffice are behavior oracles with automation limits.',
+			honestBoundary: 'No blanket Excel-compatible formula claim.',
+			killCriterion:
+				'Do not publish compatibility claims while private corpora, cached values, or unsupported oracle classes are required.',
+		}),
+		likelyHandoffOwner: ['correctness'],
+		handoffDecision: 'do-not-promote-yet',
+		boundary:
+			'Correctness research only until mismatch classes are reproducible from public artifacts.',
+	}),
+	portfolioClaim({
+		rank: 8,
+		name: 'property-journal-laws',
+		claim: 'property-style journal laws',
+		northStarLink: 'Trustworthy mutation planning with generated inverse-law evidence.',
+		status: 'speculative-do-not-promote',
+		evidenceNeeded: claimEvidenceNeeded({
+			fixture:
+				'Generated operation sequences covering cells, rows, columns, sheets, formulas, styles, tables, and explicit lossy boundaries.',
+			benchmark:
+				'Shrink time, failing-case minimization size, seed stability, and changed-test integration cost.',
+			surface: 'Test harness only until laws and exclusions stabilize.',
+			validationGate:
+				'fast-check shrinking, deterministic seeds, explicit exclusions, and journal compatibility assertions.',
+			competitorContrast:
+				'Property-based tests prove invariants over operation spaces instead of adding hand-written fixture examples.',
+			honestBoundary:
+				'Generated laws are scoped to covered operations and excluded lossy metadata/style boundaries.',
+			killCriterion:
+				'Do not promote broad inverse-law claims until generated coverage is shrinkable and lossy boundaries are explicit.',
+		}),
+		likelyHandoffOwner: ['correctness'],
+		handoffDecision: 'do-not-promote-yet',
+		boundary: 'Testing strategy, not a release product claim.',
+	}),
+	portfolioClaim({
+		rank: 9,
+		name: 'columnar-scan-sidecars',
+		claim: 'columnar scan sidecars',
+		northStarLink: 'Real-world performance without replacing workbook truth.',
+		status: 'speculative-do-not-promote',
+		evidenceNeeded: claimEvidenceNeeded({
+			fixture:
+				'Real workbook tables and ranges with numbers, dates, blanks, strings, formulas, filters, hidden rows, and styles.',
+			benchmark:
+				'Repeated scans, sidecar build cost, invalidation cost, memory overhead, and checksum parity against canonical workbook reads.',
+			surface: 'Benchmark harness only; no SDK, CLI, API, or MCP product surface.',
+			validationGate:
+				'Generation-key invalidation, checksum parity, memory caps, and benchmark guard before production.',
+			competitorContrast:
+				'DuckDB reads XLSX ranges into typed SQL tables; Arrow supplies the columnar scan substrate.',
+			honestBoundary:
+				'Not a storage engine, workbook rewrite, or guaranteed faster path for sparse or single-pass reads.',
+			killCriterion:
+				'Do not promote if build plus invalidation erases repeated-scan gains, parity fails, or memory overhead is not bounded.',
+		}),
+		likelyHandoffOwner: ['performance'],
+		handoffDecision: 'do-not-promote-yet',
+		boundary: 'Performance research only.',
+	}),
+	portfolioClaim({
+		rank: 10,
+		name: 'agent-workflow-observability',
+		claim: 'agent workflow observability',
+		northStarLink: 'World-class agent DX and recoverable workflow audits.',
+		status: 'speculative-do-not-promote',
+		evidenceNeeded: claimEvidenceNeeded({
+			fixture:
+				'Public inspect, plan, commit, reopen, diff, and audit workflow traces with failure taxonomy and recovery prompts.',
+			benchmark:
+				'Trace payload size, redaction overhead, failure-class coverage, and repair/recovery decision improvement.',
+			surface: 'Existing trace artifacts only until proof shows concrete repair or audit value.',
+			validationGate:
+				'Trace golden tests, redaction checks, failure taxonomy snapshots, and recovery prompt validation.',
+			competitorContrast:
+				'Agent logs explain what happened; Ascend should prove traces improve workbook repair and audit decisions.',
+			honestBoundary:
+				'No autonomous correctness, signed audit trail, or complete observability claim.',
+			killCriterion:
+				'Do not promote if traces are only verbose logs or do not improve a concrete repair, audit, or recovery workflow.',
+		}),
+		likelyHandoffOwner: ['product'],
+		handoffDecision: 'do-not-promote-yet',
+		boundary: 'Observability must prove recovery value before promotion.',
+	}),
 ]
 
 const DEFERRED_CLAIMS: readonly ReleaseProofDeferredClaim[] = [
@@ -1105,6 +1375,30 @@ function cloneDeferredClaim(claim: ReleaseProofDeferredClaim): ReleaseProofDefer
 	return {
 		...claim,
 		ownerLoops: [...claim.ownerLoops],
+	}
+}
+
+function portfolioClaim(
+	claim: Omit<ReleaseProofPortfolioClaim, 'killCriterion'>,
+): ReleaseProofPortfolioClaim {
+	return {
+		...claim,
+		killCriterion: claim.evidenceNeeded.killCriterion,
+		likelyHandoffOwner: [...claim.likelyHandoffOwner],
+	}
+}
+
+function claimEvidenceNeeded(
+	evidenceNeeded: ReleaseProofClaimProofRequired,
+): ReleaseProofClaimProofRequired {
+	return evidenceNeeded
+}
+
+function clonePortfolioClaim(claim: ReleaseProofPortfolioClaim): ReleaseProofPortfolioClaim {
+	return {
+		...claim,
+		evidenceNeeded: { ...claim.evidenceNeeded },
+		likelyHandoffOwner: [...claim.likelyHandoffOwner],
 	}
 }
 
@@ -2668,6 +2962,24 @@ function deferredClaimMarkdownRow(row: ReleaseProofDeferredClaim): string {
 		row.ownerLoops.join('+'),
 		row.reason,
 		row.proofNeeded,
+		row.killCriterion,
+		row.boundary,
+	]
+		.map((cell) => ` ${cell} `)
+		.join('|')
+		.replace(/^/, '|')
+		.replace(/$/, '|')
+}
+
+function portfolioClaimMarkdownRow(row: ReleaseProofPortfolioClaim): string {
+	return [
+		String(row.rank),
+		row.claim,
+		row.status,
+		row.northStarLink,
+		row.likelyHandoffOwner.join('+'),
+		row.handoffDecision,
+		row.proofCommand ?? 'none',
 		row.killCriterion,
 		row.boundary,
 	]

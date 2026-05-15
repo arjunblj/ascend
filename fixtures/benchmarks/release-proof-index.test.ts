@@ -434,6 +434,42 @@ describe('release proof evidence index', () => {
 			ownerLoops: ['performance'],
 			boundary: expect.stringContaining('not a storage engine'),
 		})
+		expect(index.claimPortfolio.map((claim) => `${claim.rank}:${claim.name}`)).toEqual([
+			'1:safe-open-proof',
+			'2:package-action-proof',
+			'3:formula-language-service-primitives',
+			'4:token-bounded-agent-view',
+			'5:retained-viewport-patch-history',
+			'6:release-proof-bundle',
+			'7:formula-oracle-routing',
+			'8:property-journal-laws',
+			'9:columnar-scan-sidecars',
+			'10:agent-workflow-observability',
+		])
+		expect(index.claimPortfolio[0]).toMatchObject({
+			claim: 'safe unknown workbook opening',
+			status: 'claim-wording-allowed-today',
+			handoffDecision: 'top-implementation-handoff',
+			likelyHandoffOwner: ['product', 'performance', 'release'],
+			evidenceNeeded: {
+				fixture: expect.stringContaining('Public clean'),
+				killCriterion: expect.stringContaining('Do not publish headline wording'),
+			},
+		})
+		expect(index.claimPortfolio[2]).toMatchObject({
+			name: 'formula-language-service-primitives',
+			status: 'needs-one-more-fold-in',
+			handoffDecision: 'proof-packaging-only',
+			evidenceNeeded: {
+				honestBoundary: expect.stringContaining('No edit-producing rename'),
+			},
+		})
+		expect(index.claimPortfolio[8]).toMatchObject({
+			name: 'columnar-scan-sidecars',
+			status: 'speculative-do-not-promote',
+			handoffDecision: 'do-not-promote-yet',
+			likelyHandoffOwner: ['performance'],
+		})
 		expect(index.readiness).toMatchObject({
 			releaseGate: 'blocked-by-publication-policy',
 			headlineClaimsAllowed: false,
@@ -963,6 +999,19 @@ describe('release proof evidence index', () => {
 			],
 		})
 		expect(handoff.implementationHandoffs[1].blockingActions).toHaveLength(5)
+		expect(handoff.claimPortfolio).toHaveLength(10)
+		expect(handoff.claimPortfolio[0]).toMatchObject({
+			name: 'safe-open-proof',
+			handoffDecision: 'top-implementation-handoff',
+			evidenceNeeded: {
+				competitorContrast: expect.stringContaining('Microsoft Protected View'),
+			},
+		})
+		expect(handoff.claimPortfolio[7]).toMatchObject({
+			name: 'property-journal-laws',
+			status: 'speculative-do-not-promote',
+			killCriterion: expect.stringContaining('Do not promote broad inverse-law claims'),
+		})
 		expect(handoff.deferredClaims.map((entry) => entry.status)).toContain('do-not-promote-yet')
 		expect(handoff.excludedEvidence.map((entry) => entry.name)).toEqual([
 			'practical-latency-contracts',
@@ -1162,6 +1211,19 @@ describe('release proof evidence index', () => {
 		expect(markdown).toContain('Excluded Evidence')
 		expect(markdown).toContain('practical-latency-contracts')
 		expect(markdown).toContain('tracked-clean run')
+		expect(markdown).toContain('Ranked Claim Portfolio')
+		expect(markdown).toContain(
+			'| Rank | Claim | Status | North Star link | Owner loops | Handoff decision | Proof command | Kill criterion | Boundary |',
+		)
+		expect(markdown).toContain('| 1 | safe unknown workbook opening | claim-wording-allowed-today')
+		expect(markdown).toContain(
+			'| 2 | auditable package-part mutation | claim-wording-allowed-today',
+		)
+		expect(markdown).toContain('| 6 | release proof bundle | needs-one-more-fold-in')
+		expect(markdown).toContain('| 8 | property-style journal laws | speculative-do-not-promote')
+		expect(markdown).toContain('top-implementation-handoff')
+		expect(markdown).toContain('proof-packaging-only')
+		expect(markdown).toContain('do-not-promote-yet')
 		expect(markdown).toContain('Deferred Claims')
 		expect(markdown).toContain('formula language-service primitives')
 		expect(markdown).toContain('edit-producing rename is frozen')

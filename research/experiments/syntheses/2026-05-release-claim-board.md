@@ -51,6 +51,7 @@ Latest proof refresh, 2026-05-15T10:15:42Z:
 - `correctnessBoundaryEvidence` now reports `missingFeatureNames` and `ownerEscalationRequired` so unsupported-feature proof regressions become explicit owner blockers, not just a failed broad boolean.
 - `readiness.claimBlockerBoard` now groups release blockers by product-shaped claim and owner loop. It is derived from missing `readyWhen` gates, so it is a routing view, not a second source of truth.
 - `safeOpenLatencyValidationEvidence` now records the release-latency gate as performance-owner evidence. The default owner handoff is untimed and explicitly forbids release or threshold claims until performance approves a tracked timed run, input set, repeat/warmup policy, and non-threshold wording.
+- `claimPortfolio` now records the ranked 10-direction portfolio in owner-handoff JSON. It marks only safe unknown workbook opening and auditable package-part mutation as top implementation handoffs; formula primitives, token-bounded agent view, retained viewport patch history, and release proof bundle are proof-packaging-only; formula oracle routing, property journal laws, columnar scan sidecars, and agent workflow observability are do-not-promote-yet.
 
 ## External References
 

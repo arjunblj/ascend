@@ -33,6 +33,8 @@ Claim blocker board note: `readiness.claimBlockerBoard` now groups missing gates
 
 Safe-open latency note: `safeOpenLatencyValidationEvidence` now keeps the `release-latency-run` gate explicit in owner-handoff JSON. The default no-timings index reports `timed-evidence-absent-owner-run-required`, `releaseClaimAllowed=false`, and `thresholdClaimAllowed=false`; performance must run the tracked command and approve environment/input/repeat wording before any latency claim.
 
+Portfolio note: `releaseProofOwnerHandoffIndex` now emits `claimPortfolio`, a tested 10-row portfolio with rank, product-shaped claim, North Star link, evidence needed, kill criterion, likely owner, handoff decision, proof command, and boundary. Only ranks 1 and 2 are implementation handoffs; ranks 3 through 6 are proof-packaging-only; ranks 7 through 10 remain do-not-promote-yet.
+
 ## Proof Snapshot
 
 Current local proof gate:

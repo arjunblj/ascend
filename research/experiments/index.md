@@ -6,6 +6,7 @@ Updated: 2026-05-15
 
 | Run | Status | Fold-in target |
 | --- | --- | --- |
+| [Machine-readable claim portfolio](runs/2026/2026-05-15-machine-readable-claim-portfolio/log.md) | folded a tested 10-claim portfolio into release proof owner-handoff JSON; top two handoffs only | product loop, correctness loop, performance loop, release loop |
 | [Feature fingerprint open mode](runs/2026/2026-05-14-feature-fingerprint-open-mode/log.md) | cycle 16 complete, folded in SDK open planner | performance loop, product/DX loop |
 | [Open plan CLI explain first](runs/2026/2026-05-14-open-plan-cli-explain-first/log.md) | cycle 17 complete, folded in CLI command | product/DX loop |
 | [Open plan MCP tool](runs/2026/2026-05-14-open-plan-mcp-tool/log.md) | cycle 18 complete, folded in MCP tool | product/DX loop |

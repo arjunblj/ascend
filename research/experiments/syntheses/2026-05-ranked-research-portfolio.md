@@ -8,6 +8,10 @@ Research is no longer a broad sweep. Each direction below must earn its place by
 
 ## Latest Claim Steward Refresh
 
+Proof timestamp: 2026-05-15T18:43:31Z.
+
+The ranked portfolio is now machine-readable in the release proof artifact. `release-proof-index --owner-handoffs-json` emits `claimPortfolio` with 10 product-shaped directions, each carrying a North Star link, evidence needed, kill criterion, likely handoff owner, handoff decision, optional proof command, and honest boundary. Only `safe-open-proof` and `package-action-proof` are `top-implementation-handoff`; formula primitives, token-bounded agent view, retained viewport patch history, and release proof bundle are proof-packaging-only; oracle routing, property journal laws, columnar sidecars, and agent observability remain do-not-promote-yet. `implementationSurfacePromotionAllowed=false`.
+
 Proof timestamp: 2026-05-15T18:34:10Z.
 
 Safe-open latency is now an explicit performance-owner gate in JSON. `safeOpenLatencyValidationEvidence` reports that the default owner handoff is untimed (`timed-evidence-absent-owner-run-required`), keeps `releaseClaimAllowed=false` and `thresholdClaimAllowed=false`, and names the missing release policy requirements: tracked-clean release environment, standardized public input set, approved repeat/warmup policy, and non-threshold wording. A local `--repeat 3 --warmup 1` diagnostic was rerun, but remains diagnostic-only.

@@ -152,6 +152,7 @@ Updated: 2026-05-15
 | [Engine pivot selector casing](runs/2026/2026-05-15-engine-pivot-selector-casing/log.md) | folded in case-insensitive pivot sheet selection for existing item-state operation | correctness loop |
 | [Practical latency max win report](runs/2026/2026-05-15-practical-latency-max-win-report/log.md) | folded in clamped max-plausible-win reporting while keeping practical latency diagnostic-only | performance loop |
 | [Engine connection selector casing](runs/2026/2026-05-15-engine-connection-selector-casing/log.md) | folded in case-insensitive connection refresh sheet selection for query-table metadata | correctness loop |
+| [Release owner action kind gate](runs/2026/2026-05-15-release-owner-action-kind-gate/log.md) | folded in machine-readable owner action kinds so top blockers distinguish decisions, validation, expansion, and publication policy | release loop, product loop, correctness loop, performance loop |
 | [Package action proof](runs/2026/2026-05-14-package-action-proof/log.md) | cycle 2 complete, promote | correctness loop, product/DX loop, performance loop |
 | [Formula spans LSP](runs/2026/2026-05-14-formula-spans-lsp/log.md) | cycle 13 complete, folded in SDK hover/code actions | product/DX loop, correctness loop |
 | [Formula sqllogictest conformance](runs/2026/2026-05-14-formula-sqllogictest-conformance/log.md) | cycle 14 complete, folded in converter/runner | correctness loop |

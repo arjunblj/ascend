@@ -100,6 +100,12 @@ export interface ReleaseProofNextOwnerAction {
 	readonly requirementId: string
 	readonly ownerLoop: ReleaseProofReadinessOwner
 	readonly priority: 'claim-evidence' | 'claim-boundary' | 'publication-policy'
+	readonly nextStepKind:
+		| 'owner-decision-or-fixture-replacement'
+		| 'owner-boundary-approval'
+		| 'validation-run'
+		| 'owner-decision-or-harness-expansion'
+		| 'publication-policy'
 	readonly rationale: string
 }
 
@@ -446,6 +452,7 @@ function rankMissingRequirement(input: {
 				requirementId: requirement.id,
 				ownerLoop: requirement.ownerLoop,
 				priority: 'claim-evidence',
+				nextStepKind: 'owner-decision-or-fixture-replacement',
 				rationale:
 					'Fixture disclosure or replacement decides whether the proof evidence can support release wording without private or hidden generated inputs.',
 			}
@@ -456,6 +463,7 @@ function rankMissingRequirement(input: {
 				requirementId: requirement.id,
 				ownerLoop: requirement.ownerLoop,
 				priority: 'claim-boundary',
+				nextStepKind: 'owner-boundary-approval',
 				rationale:
 					'Correctness must approve unsupported-feature boundaries before package-action wording can stay honest.',
 			}
@@ -466,6 +474,7 @@ function rankMissingRequirement(input: {
 				requirementId: requirement.id,
 				ownerLoop: requirement.ownerLoop,
 				priority: 'claim-evidence',
+				nextStepKind: 'validation-run',
 				rationale:
 					'Performance evidence is needed before any release wording implies a latency threshold or speed claim.',
 			}
@@ -476,6 +485,7 @@ function rankMissingRequirement(input: {
 				requirementId: requirement.id,
 				ownerLoop: requirement.ownerLoop,
 				priority: 'claim-boundary',
+				nextStepKind: 'owner-decision-or-harness-expansion',
 				rationale:
 					'Streaming wording must stay limited to one representative proof unless a broader matrix is approved.',
 			}
@@ -487,6 +497,7 @@ function rankMissingRequirement(input: {
 				requirementId: requirement.id,
 				ownerLoop: requirement.ownerLoop,
 				priority: 'publication-policy',
+				nextStepKind: 'publication-policy',
 				rationale:
 					'Release wording must avoid trust, active-content safety, signed provenance, and attestation implications.',
 			}
@@ -497,6 +508,7 @@ function rankMissingRequirement(input: {
 				requirementId: requirement.id,
 				ownerLoop: requirement.ownerLoop,
 				priority: 'publication-policy',
+				nextStepKind: 'publication-policy',
 				rationale:
 					'Compact report storage and canonicalization are needed before digest publication, but not before using generated local proof reports.',
 			}
@@ -507,6 +519,7 @@ function rankMissingRequirement(input: {
 				requirementId: requirement.id,
 				ownerLoop: requirement.ownerLoop,
 				priority: 'publication-policy',
+				nextStepKind: 'publication-policy',
 				rationale: 'Unclassified missing release-readiness requirement.',
 			}
 	}
@@ -530,7 +543,7 @@ function formatNextOwnerActions(actions: readonly ReleaseProofNextOwnerAction[])
 	return actions
 		.map(
 			(action) =>
-				`${action.rank}:${action.artifact}/${action.requirementId}(${action.ownerLoop},${action.priority})`,
+				`${action.rank}:${action.artifact}/${action.requirementId}(${action.ownerLoop},${action.priority},${action.nextStepKind})`,
 		)
 		.join('; ')
 }

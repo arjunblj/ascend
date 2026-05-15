@@ -6,6 +6,7 @@ Updated: 2026-05-15
 
 | Run | Status | Fold-in target |
 | --- | --- | --- |
+| [Release RC gate index evidence](runs/2026/2026-05-15-release-rc-gate-index-evidence/log.md) | folded unified `release:rc:gate` command into release-proof-index packageability evidence while keeping publication/provenance blockers missing | release loop |
 | [Copy sheet table retargeting](runs/2026/2026-05-15-copy-sheet-table-retargeting/log.md) | folded in copied table identity retargeting, structured reference rewrites, queryTable fail-closed copySheet boundary, and reopened XLSX table-part collision proof | correctness loop |
 | [Release RC gate](runs/2026/2026-05-15-release-rc-gate/log.md) | folded in local tarball RC gate for SDK/CLI/API/MCP install and workbook proof; release-proof-index wiring still pending | release loop, product loop |
 | [Full scalar formula scan hoist](runs/2026/2026-05-15-full-scalar-formula-scan-hoist/log.md) | folded in formula-free full-scalar worksheet parser scan hoist with focused fallback tests and diagnostic dense read probe | performance loop |

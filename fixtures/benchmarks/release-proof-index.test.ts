@@ -17,11 +17,13 @@ describe('release proof evidence index', () => {
 			ownerApprovalRequired: true,
 			sdkSmokeCommand: 'bun run release:sdk:smoke',
 			appSmokeCommand: 'bun run release:apps:smoke',
+			rcGateCommand: 'bun run release:rc:gate',
 			boundary: expect.stringContaining('local tarball install'),
 		})
 		expect(index.releasePackageabilityEvidence.coveredEvidence).toEqual([
 			expect.stringContaining('SDK tarball installs'),
 			expect.stringContaining('CLI/API/MCP app tarballs install'),
+			expect.stringContaining('Unified RC gate builds JS artifacts'),
 			expect.stringContaining('Installed CLI bin reports version, completes'),
 			expect.stringContaining(
 				'Installed API createApiFetch handles write/inspect/plan/commit/check/read',
@@ -1035,6 +1037,7 @@ describe('release proof evidence index', () => {
 			status: 'local-tarball-smokes-present-publication-policy-required',
 			sdkSmokeCommand: 'bun run release:sdk:smoke',
 			appSmokeCommand: 'bun run release:apps:smoke',
+			rcGateCommand: 'bun run release:rc:gate',
 		})
 		expect(JSON.stringify(handoff.releasePackageabilityEvidence)).toContain(
 			'full MCP protocol compatibility',
@@ -1159,6 +1162,7 @@ describe('release proof evidence index', () => {
 		expect(markdown).toContain('Release Readiness Gate')
 		expect(markdown).toContain('Release Packageability Evidence')
 		expect(markdown).toContain('bun run release:apps:smoke')
+		expect(markdown).toContain('bun run release:rc:gate')
 		expect(markdown).toContain('local tarball install')
 		expect(markdown).toContain('Implementation surface promotion allowed: false')
 		expect(markdown).toContain('do not authorize new SDK, CLI, API, or MCP surfaces')

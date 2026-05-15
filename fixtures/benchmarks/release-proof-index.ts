@@ -215,6 +215,7 @@ export interface ReleaseProofPackageabilityEvidence {
 	readonly ownerApprovalRequired: true
 	readonly sdkSmokeCommand: string
 	readonly appSmokeCommand: string
+	readonly rcGateCommand: string
 	readonly coveredEvidence: readonly string[]
 	readonly missingPolicyRequirements: readonly string[]
 	readonly forbiddenClaims: readonly string[]
@@ -1038,6 +1039,7 @@ export function releaseProofIndexMarkdown(result: ReleaseProofIndexResult): stri
 		`Status: ${result.releasePackageabilityEvidence.status}`,
 		`SDK smoke command: \`${result.releasePackageabilityEvidence.sdkSmokeCommand}\``,
 		`App smoke command: \`${result.releasePackageabilityEvidence.appSmokeCommand}\``,
+		`RC gate command: \`${result.releasePackageabilityEvidence.rcGateCommand}\``,
 		`Owner approval required: ${result.releasePackageabilityEvidence.ownerApprovalRequired}`,
 		result.releasePackageabilityEvidence.boundary,
 		'',
@@ -1342,9 +1344,11 @@ function releasePackageabilityEvidence(): ReleaseProofPackageabilityEvidence {
 		ownerApprovalRequired: true,
 		sdkSmokeCommand: 'bun run release:sdk:smoke',
 		appSmokeCommand: 'bun run release:apps:smoke',
+		rcGateCommand: 'bun run release:rc:gate',
 		coveredEvidence: [
 			'SDK tarball installs into a temp consumer and verifies create/open/plan/commit/reopen/check/recalc plus bundled agent docs.',
 			'CLI/API/MCP app tarballs install into a temp consumer without workspace dependencies.',
+			'Unified RC gate builds JS artifacts, packs SDK/CLI/API/MCP tarballs, installs only those tarballs into an isolated consumer app, rejects workspace/file dependency leakage, and runs SDK/CLI/API/MCP workbook proof.',
 			'Installed CLI bin reports version, completes create/write/inspect/plan/commit/check/read over a temp workbook, and searches bundled docs.',
 			'Installed API createApiFetch handles write/inspect/plan/commit/check/read plus /capabilities over a temp workbook.',
 			'Installed MCP package registers tool/resource callbacks and completes write/inspect/plan/commit/check/read plus docs search and capabilities over a temp workbook.',

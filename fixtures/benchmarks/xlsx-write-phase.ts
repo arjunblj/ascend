@@ -19,6 +19,7 @@ import { writeHeapSnapshotFromEnv } from './heap-snapshot-on-exit.ts'
 import { UPSTREAM_PROFILES } from './upstream-profiles.ts'
 
 type StringMode = 'runner-default' | 'inline' | 'plain' | 'shared'
+type ValueSource = 'generated' | 'materialized'
 type WriterPath = 'dense-streaming' | 'workbook-streaming' | 'workbook-buffered'
 
 interface Args {
@@ -29,6 +30,8 @@ interface Args {
 	readonly repeat: number
 	readonly warmup: number
 	readonly stringMode: StringMode
+	readonly valueSource: ValueSource
+	readonly gcBetweenSamples: boolean
 	readonly streaming: boolean
 	readonly validate: boolean
 	readonly json: boolean
@@ -107,6 +110,10 @@ function parseArgs(): Args {
 	) {
 		throw new Error('--string-mode must be runner-default, inline, plain, or shared')
 	}
+	const valueSource = readOption(argv, '--value-source') ?? 'generated'
+	if (valueSource !== 'generated' && valueSource !== 'materialized') {
+		throw new Error('--value-source must be generated or materialized')
+	}
 	return {
 		...(profile ? { profile: profile.name } : {}),
 		rows: positiveInt(readOption(argv, '--rows'), profile?.rows ?? 2000),
@@ -115,6 +122,8 @@ function parseArgs(): Args {
 		repeat: positiveInt(readOption(argv, '--repeat'), 5),
 		warmup: nonNegativeInt(readOption(argv, '--warmup'), 1),
 		stringMode,
+		valueSource,
+		gcBetweenSamples: hasFlag(argv, '--gc-between-samples'),
 		streaming: hasFlag(argv, '--streaming'),
 		validate: hasFlag(argv, '--validate') || readOption(argv, '--validate') === 'true',
 		json: hasFlag(argv, '--json'),
@@ -207,10 +216,22 @@ function memory() {
 	}
 }
 
+function runGc(): void {
+	try {
+		;(Bun as unknown as { gc?: (force?: boolean) => void }).gc?.(true)
+	} catch {
+		/* best effort */
+	}
+}
+
 async function runSample(args: Args): Promise<PhaseSample> {
 	const totalStart = performance.now()
 	const buildStart = performance.now()
 	const useDirectDenseStreaming = shouldUseDirectDenseStreaming(args)
+	const materializedValues =
+		useDirectDenseStreaming && args.valueSource === 'materialized'
+			? buildWorkloadValues(args.workload, args.rows, args.cols)
+			: undefined
 	const workbook = useDirectDenseStreaming ? undefined : createWorkbook()
 	if (workbook) setCoreCellGenerated(workbook, args.rows, args.cols, args.workload)
 	const buildMs = performance.now() - buildStart
@@ -228,7 +249,9 @@ async function runSample(args: Args): Promise<PhaseSample> {
 				valueType: denseValueType(args.workload),
 				valueTypes: denseValueTypes(args.workload, args.cols),
 				allCellsPresent: true,
-				valueAt: (row, col) => workloadValue(args.workload, row, col, args.cols),
+				valueAt: materializedValues
+					? (row, col) => materializedValues[row]?.[col] ?? null
+					: (row, col) => workloadValue(args.workload, row, col, args.cols),
 			})
 		: await writeWorkbookBytes(workbook, args)
 	const writeMs = performance.now() - writeStart
@@ -325,9 +348,15 @@ function summarize(samples: readonly PhaseSample[]) {
 }
 
 const args = parseArgs()
-for (let i = 0; i < args.warmup; i++) await runSample(args)
+for (let i = 0; i < args.warmup; i++) {
+	await runSample(args)
+	if (args.gcBetweenSamples) runGc()
+}
 const samples: PhaseSample[] = []
-for (let i = 0; i < args.repeat; i++) samples.push(await runSample(args))
+for (let i = 0; i < args.repeat; i++) {
+	samples.push(await runSample(args))
+	if (args.gcBetweenSamples) runGc()
+}
 const payload = {
 	tool: 'xlsx-write-phase',
 	args,

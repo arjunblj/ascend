@@ -943,6 +943,30 @@ describe('agent workflow loss audit', () => {
 					if (!sheet) throw new Error('missing Sheet1')
 					sheet.name = 'Data'
 					model.invalidateSheetCache()
+					sheet.cells.set(3, 0, {
+						value: numberValue(2),
+						formula: 'data!B4*2',
+						styleId: DEFAULT_STYLE_ID,
+						formulaInfo: {
+							kind: 'shared',
+							sharedIndex: 'quality-moat-copy-shared',
+							isMaster: true,
+							masterRef: 'data!A4',
+							ref: 'data!A4:A5',
+						},
+					})
+					sheet.cells.set(4, 0, {
+						value: numberValue(4),
+						formula: null,
+						styleId: DEFAULT_STYLE_ID,
+						formulaInfo: {
+							kind: 'shared',
+							sharedIndex: 'quality-moat-copy-shared',
+							isMaster: false,
+							masterRef: 'data!A4',
+							ref: 'data!A4:A5',
+						},
+					})
 					sheet.dataValidations.push({
 						sqref: 'A1',
 						type: 'list',
@@ -971,6 +995,8 @@ describe('agent workflow loss audit', () => {
 					const reopened = await AscendWorkbook.open(output)
 					expect(reopened.check().valid).toBe(true)
 					const copy = reopened.getWorkbookModel().getSheet('Copy')
+					expect(reopened.formula('Copy!A4')?.normalizedFormula).toBe('Copy!B4*2')
+					expect(reopened.formula('Copy!A5')?.normalizedFormula).toBe('Copy!B5*2')
 					expect(copy?.dataValidations[0]?.formula1).toBe('Copy!B1:B3')
 					expect(copy?.conditionalFormats[0]?.rules[0]?.formulas).toEqual(['Copy!B1>0'])
 				},

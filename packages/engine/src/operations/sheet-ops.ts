@@ -1,6 +1,7 @@
 import {
 	type CellFormulaBinding,
 	createSheetId,
+	parseA1,
 	type Sheet,
 	toA1,
 	type Workbook,
@@ -16,7 +17,12 @@ import {
 } from '../structural/formula-rewrite.ts'
 import { renameHyperlinkLocation } from '../structural/sheet-topology.ts'
 import type { PatchResult } from './helpers.ts'
-import { getSheet, materializeFormulaBindingGroupsForRefs, patch } from './helpers.ts'
+import {
+	collectFormulaBindingGroupRefsForRefs,
+	getSheet,
+	materializeFormulaBindingGroupsForRefs,
+	patch,
+} from './helpers.ts'
 
 export function handleAddSheet(
 	workbook: Workbook,
@@ -91,6 +97,14 @@ export function handleRenameSheet(
 	workbook.invalidateSheetCache()
 	for (const rewritten of rewriteSheetNameInFormulas(workbook, oldName, op.newName)) {
 		affected.add(`${rewritten.sheetName}!${rewritten.ref}`)
+		const rewrittenSheet = workbook.getSheet(rewritten.sheetName)
+		if (rewrittenSheet) {
+			for (const groupRef of collectFormulaBindingGroupRefsForRefs(workbook, rewrittenSheet, [
+				parseA1(rewritten.ref),
+			])) {
+				affected.add(`${rewritten.sheetName}!${groupRef}`)
+			}
+		}
 		sheetsModified.add(rewritten.sheetName)
 	}
 	rewriteSheetNameInDefinedNames(workbook, oldName, op.newName)

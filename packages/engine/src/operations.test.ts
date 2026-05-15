@@ -6366,7 +6366,7 @@ describe('applyOperation', () => {
 		const result = applyOperation(wb, { op: 'renameSheet', sheet: 'Sheet1', newName: 'Data' })
 		expectOk(result)
 
-		expect(result.value.affectedCells).toEqual(['Data!A2', 'Other!A1'])
+		expect(result.value.affectedCells).toEqual(['Data!A2', 'Other!A1', 'Other!A2'])
 		expect(renamed.cells.get(0, 0)?.formula).toBe('SEQUENCE(2)')
 		expect(renamed.cells.get(0, 0)?.formulaInfo).toEqual({
 			kind: 'dynamicArray',

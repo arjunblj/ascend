@@ -8,6 +8,20 @@ Research is no longer a broad sweep. Each direction below must earn its place by
 
 ## Latest Claim Steward Refresh
 
+Proof timestamp: 2026-05-15T19:20:27Z.
+
+The latest proof rerun keeps the portfolio narrow and proof-shaped. `release-proof-index --owner-handoffs-json` still reports `releaseGate=blocked-by-publication-policy`, `headlineClaimsAllowed=false`, `implementationSurfacePromotionAllowed=false`, and `missingRequirementCount=9`. The only top implementation handoffs are `safe-open-proof` and `package-action-proof`; formula primitives, token-bounded agent view, retained viewport patch history, and release proof bundle stay proof-packaging-only; oracle routing, property journal laws, columnar sidecars, and agent workflow observability remain do-not-promote-yet.
+
+Top proof facts:
+
+| Claim | Current proof | Decision |
+| --- | --- | --- |
+| Safe unknown workbook opening | 9 cases, 6 public fixtures, 2 generated edge packages, 1 malformed package, 8 OK, 1 rejected, 4 review-before-hydration routes, stable shape `6aa54a651309b3c45ce7ce93ff7034e7b31e47c7cbc458c58ee6a6f23e0c6178`. | Hand off to product/performance/release for fixture policy, latency policy, and publication-boundary approval only. |
+| Auditable package-part mutation | 8 cases, 4 public fixtures, 2 generated workbooks, 2 generated edge packages, action totals `passthrough=32`, `regenerate=40`, `add=3`, `drop=3`, `error=1`, stable shape `b4cf0755f2fd40ff577ab87b6600ee14a58bbd69608796c903759e7e8b4d29e8`. | Hand off to correctness/product/performance/release for edge fixture, unsupported-feature, streaming, provenance, and publication-boundary approval only. |
+| Formula language-service primitives | 1685 public formulas sampled, 2322 reference spans, 25 binding roles, 3 LET-local prepare-rename OK targets, and 1692 prepare-rename refusals. | Keep rejection-first. Do not implement rename. |
+
+Release packageability remains owner-routing evidence, not a product claim: SDK and app tarball smokes exist, but publication workflow, artifact storage, signed-provenance or explicit non-provenance wording, API listener lifecycle, stdio MCP protocol-session proof, and retention/privacy filtering remain release-owned blockers.
+
 Proof timestamp: 2026-05-15T19:17:18Z.
 
 The release proof index now exposes `releasePackageabilityEvidence` in both full JSON and owner-handoff JSON. It records `release:sdk:smoke`, `release:apps:smoke`, covered local tarball install/runtime evidence, missing publication/protocol policy requirements, forbidden provenance claims, and the boundary below registry publication or signed attestation. The top two handoffs remain safe-open and package-action proof; packageability evidence is release-owner routing only.

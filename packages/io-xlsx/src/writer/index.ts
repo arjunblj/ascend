@@ -196,6 +196,15 @@ interface PatchCellPayload {
 	readonly valueXml: string
 }
 
+const XML_DECODER = new TextDecoder('utf-8')
+const BYTES_CELL_OPEN = encode('<c')
+const BYTES_CELL_CLOSE = encode('</c>')
+const BYTE_SLASH = 47
+const BYTE_EQUALS = 61
+const BYTE_SINGLE_QUOTE = 39
+const BYTE_DOUBLE_QUOTE = 34
+const BYTE_R = 114
+
 function patchPreservedSheetXmlCells(
 	sheet: Workbook['sheets'][number],
 	xml: string,
@@ -246,6 +255,141 @@ function patchPreservedSheetXmlCells(
 		cursor = match.end
 	}
 	out += xml.slice(cursor)
+	return out
+}
+
+function patchPreservedSheetXmlCellBytes(
+	sheet: Workbook['sheets'][number],
+	xml: Uint8Array,
+	refs: readonly string[],
+): Uint8Array | undefined {
+	if (refs.length === 0) return undefined
+	const replacements = new Map<string, PatchCellPayload>()
+	for (const rawRef of refs) {
+		const parsed = parseA1Safe(rawRef)
+		if (!parsed) return undefined
+		const ref = `${indexToColumn(parsed.col)}${parsed.row + 1}`
+		const cell = sheet.cells.get(parsed.row, parsed.col)
+		if (!cell || cell.formula || cell.formulaInfo || cell.value.kind === 'array') return undefined
+		const payload = scalarPatchValueXml(cell.value)
+		if (!payload) return undefined
+		replacements.set(ref, payload)
+	}
+	if (replacements.size === 0) return undefined
+
+	const matches: Array<{ start: number; end: number; replacement: Uint8Array }> = []
+	const found = new Set<string>()
+	let cursor = 0
+	while (found.size < replacements.size) {
+		const cellStart = indexOfBytes(xml, BYTES_CELL_OPEN, cursor)
+		if (cellStart === -1) break
+		const tagEnd = findByte(xml, 62, cellStart + BYTES_CELL_OPEN.length)
+		if (tagEnd === -1) return undefined
+		const ref = cellRefAttrInBytes(xml, cellStart + BYTES_CELL_OPEN.length, tagEnd)
+		const selfClosing = tagEnd > cellStart && xml[tagEnd - 1] === BYTE_SLASH
+		const cellEnd = selfClosing
+			? tagEnd + 1
+			: indexOfBytes(xml, BYTES_CELL_CLOSE, tagEnd + 1) + BYTES_CELL_CLOSE.length
+		if (cellEnd < BYTES_CELL_CLOSE.length) return undefined
+		if (!ref || !replacements.has(ref)) {
+			cursor = cellEnd
+			continue
+		}
+		if (found.has(ref) || indexOfFormulaOpenBytes(xml, cellStart, cellEnd) !== -1) {
+			return undefined
+		}
+		const payload = replacements.get(ref)
+		if (!payload) return undefined
+		const startTag = XML_DECODER.decode(xml.subarray(cellStart, tagEnd + 1))
+		const attrs = patchedCellAttrs(startTag, ref, payload.typeAttr)
+		if (!attrs) return undefined
+		matches.push({
+			start: cellStart,
+			end: cellEnd,
+			replacement: encode(`<c${attrs}>${payload.valueXml}</c>`),
+		})
+		found.add(ref)
+		cursor = cellEnd
+	}
+	if (found.size !== replacements.size) return undefined
+	return replaceByteRanges(xml, matches)
+}
+
+function indexOfBytes(bytes: Uint8Array, needle: Uint8Array, from: number): number {
+	if (needle.length === 0) return from
+	const first = needle[0]
+	for (let index = from; index <= bytes.length - needle.length; index++) {
+		if (bytes[index] !== first) continue
+		let matched = true
+		for (let offset = 1; offset < needle.length; offset++) {
+			if (bytes[index + offset] !== needle[offset]) {
+				matched = false
+				break
+			}
+		}
+		if (matched) return index
+	}
+	return -1
+}
+
+function findByte(bytes: Uint8Array, value: number, from: number): number {
+	for (let index = from; index < bytes.length; index++) {
+		if (bytes[index] === value) return index
+	}
+	return -1
+}
+
+function cellRefAttrInBytes(bytes: Uint8Array, start: number, end: number): string | undefined {
+	for (let index = start; index + 3 < end; index++) {
+		if (
+			bytes[index] !== BYTE_R ||
+			bytes[index + 1] !== BYTE_EQUALS ||
+			!isXmlWhitespaceByte(bytes[index - 1])
+		) {
+			continue
+		}
+		const quote = bytes[index + 2]
+		if (quote !== BYTE_DOUBLE_QUOTE && quote !== BYTE_SINGLE_QUOTE) continue
+		const valueStart = index + 3
+		const valueEnd = findByte(bytes, quote, valueStart)
+		if (valueEnd === -1 || valueEnd > end) return undefined
+		return XML_DECODER.decode(bytes.subarray(valueStart, valueEnd))
+	}
+	return undefined
+}
+
+function isXmlWhitespaceByte(byte: number | undefined): boolean {
+	return byte === 32 || byte === 9 || byte === 10 || byte === 13
+}
+
+function indexOfFormulaOpenBytes(bytes: Uint8Array, start: number, end: number): number {
+	for (let index = start; index + 1 < end; index++) {
+		if (bytes[index] === 60 && bytes[index + 1] === 102) return index
+	}
+	return -1
+}
+
+function replaceByteRanges(
+	bytes: Uint8Array,
+	matches: readonly {
+		readonly start: number
+		readonly end: number
+		readonly replacement: Uint8Array
+	}[],
+): Uint8Array {
+	let length = bytes.length
+	for (const match of matches) length += match.replacement.length - (match.end - match.start)
+	const out = new Uint8Array(length)
+	let sourceCursor = 0
+	let outCursor = 0
+	for (const match of matches) {
+		out.set(bytes.subarray(sourceCursor, match.start), outCursor)
+		outCursor += match.start - sourceCursor
+		out.set(match.replacement, outCursor)
+		outCursor += match.replacement.length
+		sourceCursor = match.end
+	}
+	out.set(bytes.subarray(sourceCursor), outCursor)
 	return out
 }
 
@@ -1096,14 +1240,20 @@ export function planWriteXlsx(
 				preservedSheetXml?.relsXml,
 				preservedSheetXml?.relsPath,
 			)
-			const preservedSheetXmlText =
-				!options.summaryOnly && hasPreservedSheetXml
-					? resolvePreservedText(sourceArchive, preservedSheetXml?.xml, preservedSheetXml?.partPath)
-					: undefined
 			const preservedSheetXmlBytes = resolvePreservedBytes(
 				sourceArchive,
 				preservedSheetXml?.partPath,
 			)
+			let preservedSheetXmlText: string | undefined
+			const getPreservedSheetXmlText = (): string | undefined => {
+				if (options.summaryOnly || !hasPreservedSheetXml) return undefined
+				preservedSheetXmlText ??= resolvePreservedText(
+					sourceArchive,
+					preservedSheetXml?.xml,
+					preservedSheetXml?.partPath,
+				)
+				return preservedSheetXmlText
+			}
 			const preservedSheetRelsText =
 				!options.summaryOnly && hasPreservedSheetRels
 					? resolvePreservedText(
@@ -1189,16 +1339,18 @@ export function planWriteXlsx(
 			}
 			const preserveSheetXml =
 				!(options.dirtySheetNames ?? []).includes(sheet.name) &&
-				(options.summaryOnly ? hasPreservedSheetXml : !!preservedSheetXmlText)
-			const patchedSheetXmlText =
-				!preserveSheetXml && preservedSheetXmlText
-					? patchPreservedSheetXmlCells(
-							sheet,
-							preservedSheetXmlText,
-							dirtyCellPatchesBySheet.get(sheet.name) ?? [],
-						)
+				(options.summaryOnly ? hasPreservedSheetXml : hasPreservedSheetXml)
+			const dirtyPatchRefs = dirtyCellPatchesBySheet.get(sheet.name) ?? []
+			const patchedSheetXmlBytes =
+				!preserveSheetXml && preservedSheetXmlBytes
+					? patchPreservedSheetXmlCellBytes(sheet, preservedSheetXmlBytes, dirtyPatchRefs)
 					: undefined
-			const preserveOrPatchSheetXml = preserveSheetXml || patchedSheetXmlText !== undefined
+			const patchedSheetXmlText =
+				!preserveSheetXml && patchedSheetXmlBytes === undefined
+					? patchPreservedSheetXmlCells(sheet, getPreservedSheetXmlText() ?? '', dirtyPatchRefs)
+					: undefined
+			const preserveOrPatchSheetXml =
+				preserveSheetXml || patchedSheetXmlBytes !== undefined || patchedSheetXmlText !== undefined
 			if (!preserveOrPatchSheetXml) {
 				if (sheet.comments.size > 0) {
 					const existingVmlCapsule = sheetCapsules.find(
@@ -1438,6 +1590,17 @@ export function planWriteXlsx(
 					},
 					() => preservedSheetXmlBytes,
 				)
+			} else if (patchedSheetXmlBytes !== undefined) {
+				recordBytes(
+					sheetPartPath,
+					{
+						owner: { kind: 'sheet', sheetName: sheet.name },
+						origin: 'generated',
+						contentType:
+							'application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml',
+					},
+					() => patchedSheetXmlBytes,
+				)
 			} else if (patchedSheetXmlText !== undefined) {
 				recordXml(
 					sheetPartPath,
@@ -1488,7 +1651,7 @@ export function planWriteXlsx(
 					() => {
 						const cfOverrides = cfDxfIdOverridesBySheet.get(sheet.name)
 						return preserveSheetXml
-							? (preservedSheetXmlText ?? '')
+							? (getPreservedSheetXmlText() ?? '')
 							: buildSheetXml(sheet, ssTable, xfMap, {
 									tableRelIds,
 									...((sheet.drawingRefs.hasDrawing || hasGeneratedDrawing) && drawingRelId

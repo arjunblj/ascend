@@ -4383,6 +4383,76 @@ describe('Ascend API server', () => {
 		}
 	})
 
+	test('path mutation plans reuse a guarded open until a prepared handle owns it', async () => {
+		const input = join(
+			tmpdir(),
+			`ascend-api-plan-cache-${Date.now()}-${Math.random().toString(16).slice(2)}.xlsx`,
+		)
+		const output = `${input}.prepared.xlsx`
+		const wb = AscendWorkbook.create()
+		await wb.save(input)
+		const apiFetch = createApiFetch()
+		const originalOpenSourceBytes = AscendWorkbook.openSourceBytes.bind(AscendWorkbook)
+		let openSourceBytesCalls = 0
+		Object.defineProperty(AscendWorkbook, 'openSourceBytes', {
+			configurable: true,
+			value: (async (...args: Parameters<typeof AscendWorkbook.openSourceBytes>) => {
+				openSourceBytesCalls += 1
+				return originalOpenSourceBytes(...args)
+			}) satisfies typeof AscendWorkbook.openSourceBytes,
+		})
+		try {
+			const first = await postApiFetch(apiFetch, '/plan', {
+				file: input,
+				prepare: false,
+				mutations: [{ path: '/sheets/Sheet1/cells/A1/value', value: 1 }],
+			})
+			expect(first.status).toBe(200)
+			const second = await postApiFetch(apiFetch, '/plan', {
+				file: input,
+				prepare: false,
+				compact: true,
+				mutations: [{ path: '/sheets/Sheet1/cells/A1/value', value: 2 }],
+			})
+			expect(second.status).toBe(200)
+			expect(openSourceBytesCalls).toBe(1)
+
+			const prepared = await postApiFetch(apiFetch, '/plan', {
+				file: input,
+				compact: true,
+				mutations: [{ path: '/sheets/Sheet1/cells/A1/value', value: 3 }],
+			})
+			expect(prepared.status).toBe(200)
+			expect(prepared.body.data?.preparedPlan?.id).toBeString()
+			expect(openSourceBytesCalls).toBe(1)
+
+			const committed = await postApiFetch(apiFetch, '/commit', {
+				planHandle: prepared.body.data?.preparedPlan?.id,
+				output,
+				approvals: [],
+				compact: true,
+			})
+			expect(committed.status).toBe(200)
+			expect(committed.body.data?.postWrite?.valid).toBe(true)
+			expect(openSourceBytesCalls).toBe(1)
+
+			const afterPrepared = await postApiFetch(apiFetch, '/plan', {
+				file: input,
+				prepare: false,
+				mutations: [{ path: '/sheets/Sheet1/cells/A1/value', value: 4 }],
+			})
+			expect(afterPrepared.status).toBe(200)
+			expect(openSourceBytesCalls).toBe(2)
+		} finally {
+			Object.defineProperty(AscendWorkbook, 'openSourceBytes', {
+				configurable: true,
+				value: originalOpenSourceBytes,
+			})
+			await unlink(input).catch(() => {})
+			await unlink(output).catch(() => {})
+		}
+	})
+
 	test('direct path mutation commits preserve in-place backups and post-write truth', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'original' }] }])

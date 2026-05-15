@@ -71,11 +71,7 @@ export class WritePlanBuilder {
 		descriptor: Omit<WritePartDescriptor, 'path'>,
 		build: (onChunk: (chunk: string) => void) => void,
 	): void {
-		if (this.includeParts) {
-			this.descriptors.push({ path, ...descriptor, streamingBuild: build })
-		} else {
-			this.record(path, descriptor)
-		}
+		this.descriptors.push({ path, ...descriptor, streamingBuild: build })
 	}
 
 	addOverride(partPath: string, contentType: string): void {

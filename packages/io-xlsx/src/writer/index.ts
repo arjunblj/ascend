@@ -629,10 +629,6 @@ export function planWriteXlsx(
 			descriptor: Omit<import('./plan.ts').WritePartDescriptor, 'path'>,
 			build: (onChunk: (chunk: string) => void) => void,
 		): void => {
-			if (options.summaryOnly) {
-				plan.recordOnly(path, descriptor)
-				return
-			}
 			plan.putStreamingSheet(path, descriptor, build)
 		}
 		const recordBytes = (

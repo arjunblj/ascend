@@ -104,6 +104,7 @@ Updated: 2026-05-15
 | [Release proof readyWhen checklists](runs/2026/2026-05-15-release-readywhen-checklists/log.md) | folded in machine-readable owner-loop readiness gates for the top two release proof artifacts | release loop, product loop, correctness loop, performance loop |
 | [Release readiness fail-closed summary](runs/2026/2026-05-15-release-readiness-fail-closed-summary/log.md) | folded in aggregate fail-closed readiness summary for top claim owner loops | release loop, product loop, correctness loop, performance loop |
 | [Streaming ZIP passthrough validation](runs/2026/2026-05-15-streaming-zip-passthrough-validation/log.md) | folded in streaming writer compressed-passthrough parity for dirty-sheet edits | performance loop, correctness loop |
+| [Package action streaming proof variant](runs/2026/2026-05-15-package-action-streaming-proof-variant/log.md) | folded in representative streaming writer package-action proof and fixed summary-only streaming markers | correctness loop, performance loop |
 | [Package action proof](runs/2026/2026-05-14-package-action-proof/log.md) | cycle 2 complete, promote | correctness loop, product/DX loop, performance loop |
 | [Formula spans LSP](runs/2026/2026-05-14-formula-spans-lsp/log.md) | cycle 13 complete, folded in SDK hover/code actions | product/DX loop, correctness loop |
 | [Formula sqllogictest conformance](runs/2026/2026-05-14-formula-sqllogictest-conformance/log.md) | cycle 14 complete, folded in converter/runner | correctness loop |

@@ -292,6 +292,12 @@ function packageActionArtifact(
 			sourceGraphEverywhere: result.cases.every(
 				(entry) => entry.commitCoverage.sourceGraphIncluded,
 			),
+			streamingProofCases: result.cases.filter((entry) => entry.streamingProof !== undefined)
+				.length,
+			streamingRegenerateParts: result.cases.reduce(
+				(count, entry) => count + (entry.streamingProof?.streamingRegeneratePartPaths.length ?? 0),
+				0,
+			),
 		},
 		boundary:
 			'Local package-part evidence only; not signed provenance, Excel recalculation equivalence, or semantic understanding of every unsupported feature.',

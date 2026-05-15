@@ -3,6 +3,12 @@ import { existsSync, readFileSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { applyOperations } from '../../packages/engine/src/index.ts'
+import {
+	readXlsx,
+	summarizePlannedWrite,
+	writeXlsxStreaming,
+} from '../../packages/io-xlsx/src/index.ts'
 import { makeXlsx } from '../../packages/io-xlsx/test/helpers.ts'
 import {
 	AscendWorkbook,
@@ -21,6 +27,7 @@ export interface PackageActionProofCase {
 	readonly fixture: string
 	readonly ops: readonly Operation[]
 	readonly allowLoss?: readonly string[] | 'all'
+	readonly streamingProbe?: boolean
 	readonly prepareInput: (path: string) => Promise<Uint8Array>
 	readonly expectedCommitActions: readonly ExpectedPackageAction[]
 }
@@ -58,12 +65,23 @@ export interface PackageActionProofCaseResult {
 	readonly postWriteAuditsPassed: boolean
 	readonly issueCount: number
 	readonly exampleActions: readonly string[]
+	readonly streamingProof?: PackageActionStreamingProofResult
 }
 
 export interface PackageActionProofResult {
 	readonly generatedAt: string
 	readonly cases: readonly PackageActionProofCaseResult[]
 	readonly combinedCommitActionCounts: Readonly<Record<PackageActionKind, number>>
+}
+
+export interface PackageActionStreamingProofResult {
+	readonly outputBytes: number
+	readonly actionCounts: Readonly<Record<PackageActionKind, number>>
+	readonly expectedActionsPresent: boolean
+	readonly streamingRegeneratePartPaths: readonly string[]
+	readonly passthroughBytesEqualCount: number
+	readonly outputByteDigestCount: number
+	readonly issueCount: number
 }
 
 const ACTIONS: readonly PackageActionKind[] = ['passthrough', 'regenerate', 'add', 'drop', 'error']
@@ -88,6 +106,7 @@ export function defaultPackageActionProofCases(): PackageActionProofCase[] {
 			sourceKind: 'generated-edge-package',
 			fixture: 'synthetic docProps package',
 			ops: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'docprops' }] }],
+			streamingProbe: true,
 			prepareInput: writeBytes(docPropsWorkbook),
 			expectedCommitActions: [{ action: 'passthrough', partPathIncludes: 'docProps/core.xml' }],
 		},
@@ -165,8 +184,8 @@ export function packageActionProofMarkdown(result: PackageActionProofResult): st
 		`Generated: ${result.generatedAt}`,
 		'Boundary: this is local package-part action evidence. It is not signed provenance, Excel recalculation equivalence, or a guarantee that unsupported package features are semantically understood.',
 		'',
-		'| Case | Fixture | Input bytes | Output bytes | Commit actions | Source graph | Digest pairs | Journal package issues | Proof issues | Proof JSON bytes | Proof ms | Expected action present | Post-write audits | Examples |',
-		'| --- | --- | ---: | ---: | --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- | --- |',
+		'| Case | Fixture | Input bytes | Output bytes | Commit actions | Source graph | Digest pairs | Journal package issues | Proof issues | Proof JSON bytes | Proof ms | Expected action present | Post-write audits | Streaming proof | Examples |',
+		'| --- | --- | ---: | ---: | --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- | --- | --- |',
 		...result.cases.map(markdownRow),
 		'',
 		`Combined commit actions: ${formatCounts(result.combinedCommitActionCounts)}`,
@@ -196,6 +215,9 @@ async function runPackageActionProofCase(
 		const outputBytes = readFileSync(output)
 		const measured = measureProof(() => createAgentCommitPackageActionProof(committed), options)
 		const commitProof = measured.value
+		const streamingProof = proofCase.streamingProbe
+			? await runStreamingPackageActionProof(proofCase, inputBytes)
+			: undefined
 		const journalPackageIssues = (committed.apply.journal?.issues ?? []).filter(
 			(issue) => issue.surface === 'package-parts' && issue.reason === 'package-part-preservation',
 		)
@@ -221,9 +243,53 @@ async function runPackageActionProofCase(
 			postWriteAuditsPassed: committed.postWrite.auditsPassed,
 			issueCount: commitProof.issues.length,
 			exampleActions: exampleActions(commitProof),
+			...(streamingProof ? { streamingProof } : {}),
 		}
 	} finally {
 		await rm(dir, { recursive: true, force: true })
+	}
+}
+
+async function runStreamingPackageActionProof(
+	proofCase: PackageActionProofCase,
+	inputBytes: Uint8Array,
+): Promise<PackageActionStreamingProofResult> {
+	const read = readXlsx(inputBytes)
+	if (!read.ok) throw new Error(`${proofCase.name} streaming read failed: ${read.error.message}`)
+	const applied = applyOperations(read.value.workbook, proofCase.ops)
+	if (!applied.ok) {
+		throw new Error(`${proofCase.name} streaming apply failed`)
+	}
+	const writeOptions = {
+		streaming: true,
+		dirtySheetNames: applied.value.sheetsModified,
+		sourceArchive: read.value.sourceArchive,
+	} as const
+	const summary = summarizePlannedWrite(read.value.workbook, read.value.capsules, writeOptions)
+	if (!summary.ok) {
+		throw new Error(`${proofCase.name} streaming summary failed: ${summary.error.message}`)
+	}
+	const written = await writeXlsxStreaming(read.value.workbook, read.value.capsules, writeOptions)
+	if (!written.ok) {
+		throw new Error(`${proofCase.name} streaming write failed: ${written.error.message}`)
+	}
+	const proof = createPackageActionProof(summary.value, {
+		sourceBytes: inputBytes,
+		outputBytes: written.value,
+	})
+	assertExpectedActions(proofCase, proof)
+	return {
+		outputBytes: written.value.byteLength,
+		actionCounts: proof.byAction,
+		expectedActionsPresent: true,
+		streamingRegeneratePartPaths: proof.actions
+			.filter((action) => action.streaming === true && action.action === 'regenerate')
+			.flatMap((action) => (action.partPath ? [action.partPath] : [])),
+		passthroughBytesEqualCount: proof.actions.filter(
+			(action) => action.action === 'passthrough' && action.bytesEqual === true,
+		).length,
+		outputByteDigestCount: proof.coverage.outputByteDigestCount,
+		issueCount: proof.issues.length,
 	}
 }
 
@@ -463,6 +529,9 @@ function markdownRow(row: PackageActionProofCaseResult): string {
 		row.proofMedianMs?.toFixed(3) ?? 'n/a',
 		String(row.expectedActionsPresent),
 		row.postWriteAuditsPassed ? 'passed' : 'needs review',
+		row.streamingProof
+			? `streaming regenerate=${row.streamingProof.streamingRegeneratePartPaths.join(',') || 'none'}, passthroughBytesEqual=${row.streamingProof.passthroughBytesEqualCount}`
+			: 'n/a',
 		row.exampleActions.join('; '),
 	]
 		.map((cell) => ` ${cell} `)

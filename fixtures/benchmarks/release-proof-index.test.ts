@@ -132,7 +132,13 @@ describe('release proof evidence index', () => {
 					'unknown-part-error': expect.stringMatching(/^[a-f0-9]{64}$/),
 				}),
 			},
-			summary: { cases: 8, allActionsCovered: true, sourceGraphEverywhere: true },
+			summary: {
+				cases: 8,
+				allActionsCovered: true,
+				sourceGraphEverywhere: true,
+				streamingProofCases: 1,
+				streamingRegenerateParts: 1,
+			},
 		})
 		expect(index.artifacts.every((artifact) => artifact.headlineClaimAllowed === false)).toBe(true)
 	})
@@ -178,6 +184,7 @@ describe('release proof evidence index', () => {
 		expect(markdown).toContain('Attestation: false')
 		expect(markdown).toContain('safe unknown workbook opening')
 		expect(markdown).toContain('auditable package-part mutation')
+		expect(markdown).toContain('streamingProofCases=1')
 		expect(markdown).toContain('Excluded Evidence')
 		expect(markdown).toContain('practical-latency-contracts')
 		expect(markdown).toContain('tracked-clean run')

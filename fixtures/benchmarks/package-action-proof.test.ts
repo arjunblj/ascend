@@ -47,6 +47,22 @@ describe('package action proof harness', () => {
 			postWriteAuditsPassed: false,
 			issueCount: 1,
 		})
+		expect(proof.cases.find((entry) => entry.name === 'docprops-passthrough')).toMatchObject({
+			streamingProof: {
+				expectedActionsPresent: true,
+				streamingRegeneratePartPaths: ['xl/worksheets/sheet1.xml'],
+				passthroughBytesEqualCount: expect.any(Number),
+				issueCount: 0,
+			},
+		})
+		expect(
+			proof.cases.find((entry) => entry.name === 'docprops-passthrough')?.streamingProof
+				?.actionCounts.passthrough,
+		).toBeGreaterThan(0)
+		expect(
+			proof.cases.find((entry) => entry.name === 'docprops-passthrough')?.streamingProof
+				?.outputByteDigestCount,
+		).toBeGreaterThan(0)
 	})
 
 	test('renders claim-safe markdown report boundaries', async () => {
@@ -58,6 +74,8 @@ describe('package action proof harness', () => {
 		expect(markdown).toContain('Excel recalculation equivalence')
 		expect(markdown).toContain('Journal package issues')
 		expect(markdown).toContain('Combined commit actions:')
+		expect(markdown).toContain('Streaming proof')
+		expect(markdown).toContain('streaming regenerate=xl/worksheets/sheet1.xml')
 		expect(markdown).toContain('unknown-part-error')
 	})
 })

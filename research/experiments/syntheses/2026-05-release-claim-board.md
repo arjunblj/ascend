@@ -169,7 +169,7 @@ The owner loops above are done only when the release artifact can answer these c
 | Owner | Required evidence | Blocking exit condition |
 | --- | --- | --- |
 | Safe unknown workbook opening | `safe-open-proof` command, stable shape digest `6aa54a651309b3c45ce7ce93ff7034e7b31e47c7cbc458c58ee6a6f23e0c6178`, public fixture table, explicit review branches, malformed rejection, validation commands, and accepted or resolved `readyWhen` gates | Do not publish headline copy if signed/unknown package evidence remains undisclosed or if timing language reads as a threshold |
-| Auditable package-part mutation | `package-action-proof` command, stable shape digest `60da8baa4a897e7edbd3f02fcb1a7026643bc68de1f5dedec082e71d29f03213`, all five action classes, journal issue refs, post-write audit status, validation commands, and accepted or resolved `readyWhen` gates | Do not publish headline copy if synthetic edge packages are hidden, if chart XML is called byte-passthrough, or if the proof implies SLSA/in-toto/signed provenance |
+| Auditable package-part mutation | `package-action-proof` command, stable shape digest `9abebf576651551f58e00ccf8469d099b2c06dacd48391fe581a24e51a1e0afd`, all five action classes, one representative streaming writer proof, journal issue refs, post-write audit status, validation commands, and accepted or resolved `readyWhen` gates | Do not publish headline copy if synthetic edge packages are hidden, if chart XML is called byte-passthrough, if one streaming proof is described as full streaming matrix coverage, or if the proof implies SLSA/in-toto/signed provenance |
 
 ### Public Fixture Policy
 

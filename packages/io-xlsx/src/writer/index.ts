@@ -1240,10 +1240,10 @@ export function planWriteXlsx(
 				preservedSheetXml?.relsXml,
 				preservedSheetXml?.relsPath,
 			)
-			const preservedSheetXmlBytes = resolvePreservedBytes(
-				sourceArchive,
-				preservedSheetXml?.partPath,
-			)
+			const preservedSheetXmlBytes =
+				!options.summaryOnly && hasPreservedSheetXml
+					? resolvePreservedBytes(sourceArchive, preservedSheetXml?.partPath)
+					: undefined
 			let preservedSheetXmlText: string | undefined
 			const getPreservedSheetXmlText = (): string | undefined => {
 				if (options.summaryOnly || !hasPreservedSheetXml) return undefined
@@ -1265,10 +1265,10 @@ export function planWriteXlsx(
 			const sheetRelTarget = (type: string, partPath: string, fallback: string): string =>
 				preservedRelationshipTarget(preservedSheetRelsText, sheetPartPath, type, partPath) ??
 				fallback
-			const preservedSheetRelsBytes = resolvePreservedBytes(
-				sourceArchive,
-				preservedSheetXml?.relsPath,
-			)
+			const preservedSheetRelsBytes =
+				!options.summaryOnly && hasPreservedSheetRels
+					? resolvePreservedBytes(sourceArchive, preservedSheetXml?.relsPath)
+					: undefined
 			const hyperlinkEntries: Array<{
 				ref: string
 				relId?: string
@@ -1341,6 +1341,11 @@ export function planWriteXlsx(
 				!(options.dirtySheetNames ?? []).includes(sheet.name) &&
 				(options.summaryOnly ? hasPreservedSheetXml : hasPreservedSheetXml)
 			const dirtyPatchRefs = dirtyCellPatchesBySheet.get(sheet.name) ?? []
+			const patchSheetXmlInSummary =
+				options.summaryOnly &&
+				!preserveSheetXml &&
+				hasPreservedSheetXml &&
+				dirtyPatchRefs.length > 0
 			const patchedSheetXmlBytes =
 				!preserveSheetXml && preservedSheetXmlBytes
 					? patchPreservedSheetXmlCellBytes(sheet, preservedSheetXmlBytes, dirtyPatchRefs)
@@ -1589,6 +1594,17 @@ export function planWriteXlsx(
 							'application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml',
 					},
 					() => preservedSheetXmlBytes,
+				)
+			} else if (patchSheetXmlInSummary) {
+				recordBytes(
+					sheetPartPath,
+					{
+						owner: { kind: 'sheet', sheetName: sheet.name },
+						origin: 'generated',
+						contentType:
+							'application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml',
+					},
+					() => new Uint8Array(0),
 				)
 			} else if (patchedSheetXmlBytes !== undefined) {
 				recordBytes(

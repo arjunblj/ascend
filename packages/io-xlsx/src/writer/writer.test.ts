@@ -2554,6 +2554,17 @@ describe('writeXlsx', () => {
 		expect(stylesPart?.origin).toBe('generated')
 		expect(themePart?.origin).toBe('preserved-source')
 		expect(sheetPart?.origin).toBe('generated')
+
+		const summaryOnlyPlan = planWriteXlsx(source.value.workbook, source.value.capsules, {
+			dirtySheetNames: ['Sheet1'],
+			summaryOnly: true,
+		})
+		expectOk(summaryOnlyPlan)
+		const summarySheetPart = summaryOnlyPlan.value.descriptors.find(
+			(entry) => entry.path === 'xl/worksheets/sheet1.xml',
+		)
+		expect(summaryOnlyPlan.value.parts.size).toBe(0)
+		expect(summarySheetPart?.origin).toBe('generated')
 	})
 
 	it('dirty-part patching: only regenerates modified sheet when dirtySheetNames provided', () => {

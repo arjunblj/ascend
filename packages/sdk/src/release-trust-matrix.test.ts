@@ -14,6 +14,14 @@ const EXPECTED_FAILURE_CLASSES = [
 	'Real workbook formula metadata preservation',
 ]
 
+const EXPECTED_BOUNDARY_CLASSES = [
+	'Broad formula function coverage',
+	'Product/DX orchestration such as progressive open or viewport merge helpers',
+	'Reader/writer performance and benchmark tuning',
+	'More malformed-field enumeration',
+	'New unknown Excel feature implementation',
+]
+
 describe('release trust matrix', () => {
 	test('cites live proof tests and fixtures for every release trust class', () => {
 		const markdown = readRepoFile(TRUST_MATRIX_PATH)
@@ -37,11 +45,30 @@ describe('release trust matrix', () => {
 			}
 		}
 	})
+
+	test('pins explicit out-of-scope boundaries for release completeness', () => {
+		const markdown = readRepoFile(TRUST_MATRIX_PATH)
+		const rows = completenessBoundaryRows(markdown)
+		expect(rows.map((row) => row.outOfScopeClass)).toEqual(EXPECTED_BOUNDARY_CLASSES)
+
+		for (const row of rows) {
+			expect(row.boundaryReason).toMatch(/unless|only when|not required/)
+			expect(row.evidence).toMatch(
+				/(Formula-binding rows|journal\/schema compatibility|Package graph|Invalid refs\/ranges)/,
+			)
+		}
+	})
 })
 
 interface TrustMatrixRow {
 	readonly failureClass: string
 	readonly proof: string
+}
+
+interface CompletenessBoundaryRow {
+	readonly outOfScopeClass: string
+	readonly boundaryReason: string
+	readonly evidence: string
 }
 
 interface ProofReference {
@@ -50,7 +77,9 @@ interface ProofReference {
 }
 
 function trustMatrixRows(markdown: string): TrustMatrixRow[] {
-	return markdown
+	const section = markdown.split('## Matrix')[1]?.split('## Completeness Boundary')[0]
+	if (!section) return []
+	return section
 		.split('\n')
 		.filter((line) => line.startsWith('| ') && !line.includes(' --- '))
 		.slice(1)
@@ -59,6 +88,23 @@ function trustMatrixRows(markdown: string): TrustMatrixRow[] {
 			return {
 				failureClass: cells[1],
 				proof: cells[4],
+			}
+		})
+}
+
+function completenessBoundaryRows(markdown: string): CompletenessBoundaryRow[] {
+	const section = markdown.split('## Completeness Boundary')[1]?.split('## Release Discipline')[0]
+	if (!section) return []
+	return section
+		.split('\n')
+		.filter((line) => line.startsWith('| ') && !line.includes(' --- '))
+		.slice(1)
+		.map((line) => {
+			const cells = line.split('|').map((cell) => cell.trim())
+			return {
+				outOfScopeClass: cells[1],
+				boundaryReason: cells[2],
+				evidence: cells[3],
 			}
 		})
 }

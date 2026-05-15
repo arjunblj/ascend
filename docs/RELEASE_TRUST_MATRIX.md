@@ -14,6 +14,12 @@ Correctness/trust is release-ready for these classes when:
 - journal/verifier issues use stable machine-readable surfaces and reasons;
 - package graph drift is either expected by operation semantics or remains unresolved and blocking.
 
+The matrix is complete enough for the correctness/trust slice of release wording when the
+public edit-surface taxonomy and the rows below are both green. It does not close product,
+performance, fixture-policy, provenance, or publication gates. A new correctness item
+belongs in this release only if it can name one of these release claims and show a silent
+corruption, exact-journal, or post-write drift path not already covered.
+
 ## Matrix
 
 | Failure class | Trust risk | Required signal | Proof |
@@ -25,6 +31,20 @@ Correctness/trust is release-ready for these classes when:
 | Table and copy-sheet binding risks | Copying sheets/tables can collide table ids, names, part paths, structured refs, local names, print areas, or copied formula bindings. | Copied workbook state uses unique table identities and retargeted formulas/names; unsupported queryTable copy fails closed; saved output reopens cleanly. | `packages/engine/src/operations.test.ts`: `copySheet assigns workbook-unique copied table identities and rewrites copied structured refs`, `copySheet retargets copied sheet-qualified formula binding refs`, `copySheet retargets copied worksheet metadata formulas`, `copySheet rejects queryTable-backed tables before mutating workbook`. `packages/sdk/src/agent-workflow.test.ts`: `prepared copySheet commits reopen retargeted worksheet metadata formulas`, `prepared copySheet commits reopen workbook-unique table identities and copied structured refs`. |
 | Package graph and post-write drift | Writer output can drop preserved package parts, add expected parts without audit context, or silently bless unresolved relationship/content-type drift. | Post-write reopen/check/package graph audit is attached to the commit trace; expected operation-driven drift is counted separately; unresolved drift keeps `auditsPassed` false. | `packages/sdk/src/agent-workflow.test.ts`: `keeps unresolved external-link package graph failures visible to agents`, `keeps unresolved visual package graph failures visible to agents`, `prepared copySheet commits reopen workbook-unique table identities and copied structured refs`, `prepared agent commits surface post-write audit failures as blocking model output`, `release proof bundle links plan, commit, reopen, diff, and audit evidence`. `packages/verify/src/verify.test.ts`: `surfaces package graph relationship target issues as check diagnostics`, `surfaces package graph relationship source issues as check diagnostics`, `surfaces stale content type overrides as package graph diagnostics`, `surfaces content type override mismatches as package graph diagnostics`. |
 | Real workbook formula metadata preservation | Synthetic model tests can miss writer/reader drift for imported shared formulas, legacy arrays, data tables, and realistic copied formula bindings. | Real or realistic XLSX bytes are edited, saved, reopened, and verified for matching formula text plus binding metadata. | `packages/sdk/src/journal-exactness.test.ts`: `real XLSX shared formula member edits journal every detached imported peer`, `real XLSX shared formula precedent moves journal every rewritten imported member`, `real XLSX data table member edits journal detached table metadata`, `real XLSX legacy array destructive edits fail without dropping metadata`, `real XLSX legacy array style edits preserve bindings through save reopen`, `copySheet saved workbooks reopen with formula text and binding metadata retargeted together`, `copySheet retargets imported case-insensitive shared formula text and bindings across save reopen`, `copySheet preserves imported shared formula text and bindings across save reopen`. `packages/sdk/src/agent-workflow.test.ts`: `quality moat matrix proves release-critical formula trust paths`. |
+
+## Completeness Boundary
+
+These areas are deliberately outside the current release trust claim unless a concrete bug
+proves they can silently corrupt a supported edit, exact journal, or post-write verifier
+result.
+
+| Out-of-scope class | Boundary reason | Evidence |
+| --- | --- | --- |
+| Broad formula function coverage | Function semantics matter, but new function breadth does not strengthen the edit-trust claim unless a supported edit writes stale formula bindings, stale analysis, or a wrong cached result. | Formula-binding rows above cover edit metadata, cached analysis parity, and real workbook save/reopen proof. Use `packages/engine/src/calc.test.ts` for calc regressions rather than expanding this matrix. |
+| Product/DX orchestration such as progressive open or viewport merge helpers | These improve client ergonomics, not the fail-closed edit contract, unless they hide journal/verifier/package drift from agents. | Downstream journal/schema compatibility is already pinned through SDK, CLI, API, and MCP fixture tests in the range-operation journal row. |
+| Reader/writer performance and benchmark tuning | Throughput work is release-relevant only when it preserves the same commit/reopen/verify contract or exposes a correctness drift. | Package graph and real workbook rows cover preservation and reopen verification; performance claims must stay in benchmark-owned proof. |
+| More malformed-field enumeration | Additional validators are release work only when the malformed field can mutate the wrong surface, corrupt an exact inverse, or be silently blessed after write. | Invalid refs/ranges and public metadata rows cover the current release blockers with pre-mutation rejection or stable structured issues. |
+| New unknown Excel feature implementation | Unsupported feature breadth is not required for this release if unknown package state is preserved or reported honestly. | Package graph and journal rows require unresolved drift to remain blocking and unknown package-part rollback gaps to be machine-readable. |
 
 ## Release Discipline
 

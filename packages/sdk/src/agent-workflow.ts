@@ -1054,7 +1054,10 @@ export async function createAgentPlanFromWorkbook(
 			),
 		)
 	}
-	const writePolicyWorkbook = snapshotWritePolicyWorkbook(wb.getWorkbookModel())
+	const workbookModel = wb.getWorkbookModel()
+	const writePolicyWorkbook = canUseLiveWritePolicyWorkbook(workbookModel, ops)
+		? workbookModel
+		: snapshotWritePolicyWorkbook(workbookModel)
 	await progress('preview', 'started', 'Previewing operations.', { count: ops.length })
 	const preview = wb.preview(ops, { journal: true })
 	await progressFromPhase(previewPhase(preview), progress)
@@ -1922,11 +1925,13 @@ export async function commitAgentPlanFromWorkbook(
 	}
 	const output =
 		internal.output ?? (await resolveCommitOutputTarget(file, inputSha256, options, progress))
+	const workbookModel = wb.getWorkbookModel()
 	const packageGraphResult = await timedCommitStep(() => wb.packageGraph())
 	const packageGraph = packageGraphResult.value
-	const writePolicySnapshotResult = await timedCommitStep(() =>
-		snapshotWritePolicyWorkbook(wb.getWorkbookModel()),
-	)
+	const useLiveWritePolicyWorkbook = canUseLiveWritePolicyWorkbook(workbookModel, ops)
+	const writePolicySnapshotResult = useLiveWritePolicyWorkbook
+		? { value: workbookModel, ms: 0 }
+		: await timedCommitStep(() => snapshotWritePolicyWorkbook(workbookModel))
 	const writePolicyWorkbook = writePolicySnapshotResult.value
 	const expectedPostWritePackageGraphChanges = expectedPackageGraphChangesForOperations(
 		writePolicyWorkbook,
@@ -3708,6 +3713,13 @@ function snapshotWritePolicyWorkbook(workbook: Workbook): Workbook {
 	const snapshot = workbook.clone()
 	for (const sheet of snapshot.sheets) sheet.ensureWritable()
 	return snapshot
+}
+
+function canUseLiveWritePolicyWorkbook(
+	workbook: Workbook,
+	operations: readonly Operation[],
+): boolean {
+	return canReusePreparedCommitCheck(workbook, operations)
 }
 
 function canReusePreparedCommitCheck(

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { DEFAULT_STYLE_ID, indexToColumn, parseA1 } from '@ascend/core'
-import { numberValue, type Operation } from '@ascend/schema'
+import { errorValue, numberValue, type Operation, stringValue } from '@ascend/schema'
 import {
 	analyzeMutationJournalExactness,
 	buildMutationJournal,
@@ -1140,6 +1140,15 @@ describe('mutation journal exactness model', () => {
 				issues: [{ ref: 'Sheet1!C3', surface: 'data-tables' }],
 			},
 			{
+				name: 'copyRange target blocked spill',
+				setup: (wb) => {
+					const sheet = seedBlockedSpill(wb)
+					sheet.cells.set(0, 3, { value: numberValue(9), formula: null, styleId: DEFAULT_STYLE_ID })
+				},
+				ops: [{ op: 'copyRange', sheet: 'Sheet1', source: 'D1', target: 'A2', mode: 'values' }],
+				issues: [{ ref: 'Sheet1!A1', surface: 'spills' }],
+			},
+			{
 				name: 'moveRange target shared formula',
 				setup: (wb) => {
 					const sheet = seedSharedFormulaPair(wb, 0, 0)
@@ -1174,6 +1183,15 @@ describe('mutation journal exactness model', () => {
 				issues: [{ ref: 'Sheet1!C3', surface: 'data-tables' }],
 			},
 			{
+				name: 'moveRange target blocked spill',
+				setup: (wb) => {
+					const sheet = seedBlockedSpill(wb)
+					sheet.cells.set(0, 3, { value: numberValue(9), formula: null, styleId: DEFAULT_STYLE_ID })
+				},
+				ops: [{ op: 'moveRange', sheet: 'Sheet1', source: 'D1', target: 'A2', mode: 'all' }],
+				issues: [{ ref: 'Sheet1!A1', surface: 'spills' }],
+			},
+			{
 				name: 'sortRange shared formula',
 				setup: (wb) => {
 					const sheet = seedSharedFormulaPair(wb, 0, 3)
@@ -1206,6 +1224,12 @@ describe('mutation journal exactness model', () => {
 				setup: seedDataTableFormula,
 				ops: [{ op: 'sortRange', sheet: 'Sheet1', range: 'A1:C5', by: [{ column: 'A' }] }],
 				issues: [{ ref: 'Sheet1!C3', surface: 'data-tables' }],
+			},
+			{
+				name: 'sortRange blocked spill',
+				setup: seedBlockedSpill,
+				ops: [{ op: 'sortRange', sheet: 'Sheet1', range: 'A1:A2', by: [{ column: 'A' }] }],
+				issues: [{ ref: 'Sheet1!A1', surface: 'spills' }],
 			},
 		]
 
@@ -2500,6 +2524,28 @@ function seedDataTableFormula(workbook: AscendWorkbook) {
 	})
 	sheet.cells.set(3, 2, { value: numberValue(20), formula: null, styleId: DEFAULT_STYLE_ID })
 	sheet.cells.set(4, 2, { value: numberValue(30), formula: null, styleId: DEFAULT_STYLE_ID })
+	return sheet
+}
+
+function seedBlockedSpill(workbook: AscendWorkbook) {
+	const sheet = workbook.getWorkbookModel().getSheet('Sheet1')
+	if (!sheet) throw new Error('missing sheet')
+	sheet.cells.set(0, 0, {
+		value: errorValue('#SPILL!'),
+		formula: 'SEQUENCE(3)',
+		styleId: DEFAULT_STYLE_ID,
+		formulaInfo: {
+			kind: 'blockedSpill',
+			anchorRef: 'Sheet1!A1',
+			ref: 'A1:A3',
+			blockingRefs: ['A2'],
+		},
+	})
+	sheet.cells.set(1, 0, {
+		value: stringValue('blocker'),
+		formula: null,
+		styleId: DEFAULT_STYLE_ID,
+	})
 	return sheet
 }
 

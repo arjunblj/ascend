@@ -689,6 +689,33 @@ describe('mutation journal exactness model', () => {
 		})
 	})
 
+	test('classifies duplicate table column rename journals as table topology', () => {
+		const wb = AscendWorkbook.create()
+		seedSimpleTable(wb)
+
+		const analysis = analyzeMutationJournalExactness(
+			buildMutationJournal(wb.getWorkbookModel(), [
+				{ op: 'setTableColumn', table: 'Sales', column: 'Qty', newName: 'Region' },
+			]),
+		)
+
+		expect(analysis).toMatchObject({
+			supported: true,
+			exact: false,
+			issueCount: 1,
+			surfaces: ['tables'],
+			reasons: ['operation-unsupported'],
+			hasMatrixViolation: false,
+		})
+		expect(analysis.issues[0]).toMatchObject({
+			code: 'UNSUPPORTED_VALUE',
+			surface: 'tables',
+			reason: 'operation-unsupported',
+			refs: ['table:Sales'],
+			allowedByMatrix: true,
+		})
+	})
+
 	test('classifies setComment legacy drawing loss without changing the v1 vocabulary', () => {
 		const classified = classifyMutationJournalIssues(lossySetCommentLegacyDrawingJournal().issues)
 		expect(classified).toContainEqual({

@@ -2230,14 +2230,27 @@ function journalOperationTableMetadataIssue(
 ): MutationJournalIssue | null {
 	if (op.op !== 'setTableColumn' || op.newName === undefined) return null
 	const table = findTableMatches(workbook, op.table)[0]?.table
-	if (!table?.queryTable) return null
-	return {
-		code: 'UNSUPPORTED_VALUE',
-		message: `Cannot build exact rollback journal for ${op.op} because queryTable-backed table ${op.table} cannot safely rename columns`,
-		surface: 'tables',
-		reason: 'table-metadata',
-		refs: [`table:${op.table}`],
+	if (!table) return null
+	const sourceIndex = tableColumnIndex(table, op.column)
+	const targetIndex = table.columns.findIndex(
+		(column) => column.name.toLowerCase() === op.newName?.toLowerCase(),
+	)
+	if (sourceIndex >= 0 && targetIndex >= 0 && targetIndex !== sourceIndex) {
+		return tableTopologyJournalIssue(
+			op.table,
+			`Cannot build exact rollback journal for ${op.op} because target column ${op.newName} already exists in table ${op.table}`,
+		)
 	}
+	if (table.queryTable) {
+		return {
+			code: 'UNSUPPORTED_VALUE',
+			message: `Cannot build exact rollback journal for ${op.op} because queryTable-backed table ${op.table} cannot safely rename columns`,
+			surface: 'tables',
+			reason: 'table-metadata',
+			refs: [`table:${op.table}`],
+		}
+	}
+	return null
 }
 
 function journalOperationTableRangeCollisionIssue(

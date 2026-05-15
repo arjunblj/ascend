@@ -13,6 +13,8 @@ Everything else remains do-not-promote for this block. Formula intelligence stay
 
 Promotion throttle: current `release-proof-index` still reports `headlineClaimsAllowed=false` with 9 missing owner requirements. Until those owner gates move, research may run diagnostic probes and record dead ends, but it should not promote new product claims or new public surfaces beyond the two handoffs below.
 
+Latency diagnostic note: `practical-latency-contracts` now reports input provenance separately from tracked-code cleanliness. A tracked-clean dry run with the current large local/private workbooks reports "tracked clean with local/private inputs; diagnostic only." This helps performance owners avoid turning private-corpus latency numbers into release claims.
+
 ## Proof Snapshot
 
 Current local proof gate:

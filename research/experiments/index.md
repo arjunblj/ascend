@@ -128,6 +128,7 @@ Updated: 2026-05-15
 | [Top proof owner status refresh](runs/2026/2026-05-15-top-proof-owner-status-refresh/log.md) | refreshed top two compact proof statuses and stable shape digests for owner-loop handoff | product loop, correctness loop, performance loop, release loop |
 | [Formula intelligence freeze status](runs/2026/2026-05-15-formula-intelligence-freeze-status/log.md) | formula-assist proof refreshed as rejection-first only; edit-producing rename remains frozen | product/DX loop, correctness loop |
 | [Research promotion throttle](runs/2026/2026-05-15-research-promotion-throttle/log.md) | release gate still has 9 owner blockers, so new claim promotion is held | product loop, correctness loop, performance loop, release loop |
+| [Latency input provenance validation](runs/2026/2026-05-15-latency-input-provenance-validation/log.md) | diagnostic dry run proves local/private benchmark inputs stay non-release-claimable despite tracked-clean code | performance loop, product loop |
 | [Package action proof](runs/2026/2026-05-14-package-action-proof/log.md) | cycle 2 complete, promote | correctness loop, product/DX loop, performance loop |
 | [Formula spans LSP](runs/2026/2026-05-14-formula-spans-lsp/log.md) | cycle 13 complete, folded in SDK hover/code actions | product/DX loop, correctness loop |
 | [Formula sqllogictest conformance](runs/2026/2026-05-14-formula-sqllogictest-conformance/log.md) | cycle 14 complete, folded in converter/runner | correctness loop |

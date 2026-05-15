@@ -1592,6 +1592,51 @@ describe('mutation journal exactness model', () => {
 		})
 	})
 
+	test('real XLSX absolute shared formula edits preserve materialized formula text', async () => {
+		const wb = await AscendWorkbook.open(
+			readFileSync(
+				new URL('../../../fixtures/xlsx/calamine/issue_567_absolute_shared.xlsx', import.meta.url),
+			),
+		)
+		const editedGroupRefs = ['B1', 'C1', 'D1', 'E1', 'B2', 'C2', 'D2', 'E2', 'B3', 'C3', 'D3', 'E3']
+		expect(formulaInfoRefsIn(wb, 'Sheet1', editedGroupRefs)).toEqual(
+			editedGroupRefs.map((ref) => `Sheet1!${ref}`),
+		)
+		expect(formulaInfoRefsIn(wb, 'Sheet1', ['A2', 'A3'])).toEqual(['Sheet1!A2', 'Sheet1!A3'])
+
+		const changed = wb.apply(
+			[{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'C2', value: 99 }] }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.affectedCells).toEqual(editedGroupRefs)
+		expect(changed.journal).toBeDefined()
+		if (!changed.journal) throw new Error('missing journal')
+		expect(changed.journal.exact).toBe(false)
+		expect(journalIssueRefs(changed.journal, 'shared-formulas')).toEqual(
+			editedGroupRefs.map((ref) => `Sheet1!${ref}`).sort(),
+		)
+
+		const reopened = await AscendWorkbook.open(wb.toBytes())
+		expect(
+			reopened.check().issues.filter((issue) => issue.rule === 'formula-binding-integrity'),
+		).toEqual([])
+		expect(formulaInfoRefsIn(reopened, 'Sheet1', editedGroupRefs)).toEqual([])
+		expect(formulaInfoRefsIn(reopened, 'Sheet1', ['A2', 'A3'])).toEqual(['Sheet1!A2', 'Sheet1!A3'])
+		expect(cellFormulas(reopened, 'Sheet1', ['B1', 'C1', 'B2', 'C2', 'E3'])).toEqual({
+			B1: 'B$1',
+			C1: 'C$1',
+			B2: 'B$1',
+			C2: null,
+			E3: 'E$1',
+		})
+		expect(reopened.sheet('Sheet1')?.cell('C2')?.value).toEqual({
+			kind: 'number',
+			value: 99,
+		})
+	})
+
 	test('copySheet exact journals preserve retargeted formula binding evidence', () => {
 		const wb = AscendWorkbook.create()
 		const source = wb.getWorkbookModel().getSheet('Sheet1')

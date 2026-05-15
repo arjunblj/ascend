@@ -18,6 +18,7 @@ Latest proof refresh, 2026-05-15:
 - A cluster of tiny casing fixes landed for journals, verifier checks, chart/pivot/connection selectors, hyperlink locations, and chart/pivot ownership. Treat these as correctness hygiene under the auditable mutation claim, not as new release surfaces.
 - `release-proof-index` now tags each next owner action with a `nextStepKind`, so top blockers are visibly owner decisions, validation runs, optional harness expansion, or publication policy rather than implicit permission for research to add new surfaces.
 - `release-proof-index` now also reports `implementationSurfacePromotionAllowed=false` while these blockers remain, with boundary text that unresolved proof requirements do not authorize new SDK, CLI, API, or MCP surfaces.
+- `release-proof-index` now emits `implementationHandoffs` for exactly the top two product-shaped claims, carrying owner loops, proof commands, blocker IDs, next-step kinds, and the same fail-closed surface-promotion flag.
 
 ## External References
 

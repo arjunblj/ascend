@@ -89,6 +89,49 @@ describe('release proof evidence index', () => {
 			priority: 'publication-policy',
 			nextStepKind: 'publication-policy',
 		})
+		expect(index.readiness.implementationHandoffs).toEqual([
+			expect.objectContaining({
+				rank: 1,
+				artifact: 'safe-open-proof',
+				claim: 'safe unknown workbook opening',
+				ownerLoops: ['performance', 'product', 'release'],
+				implementationSurfacePromotionAllowed: false,
+				blockingRequirementIds: [
+					'public-edge-fixtures',
+					'release-latency-run',
+					'publication-boundary',
+					'compact-report-publication-policy',
+				],
+				nextStepKinds: [
+					'owner-decision-or-fixture-replacement',
+					'validation-run',
+					'publication-policy',
+				],
+				boundary: expect.stringContaining(
+					'not permission to add new SDK, CLI, API, or MCP surfaces',
+				),
+			}),
+			expect.objectContaining({
+				rank: 2,
+				artifact: 'package-action-proof',
+				claim: 'auditable package-part mutation',
+				ownerLoops: ['correctness', 'performance', 'product', 'release'],
+				implementationSurfacePromotionAllowed: false,
+				blockingRequirementIds: [
+					'edge-fixture-policy',
+					'provenance-boundary',
+					'unsupported-feature-boundary',
+					'streaming-matrix-boundary',
+					'compact-report-publication-policy',
+				],
+				nextStepKinds: [
+					'owner-decision-or-fixture-replacement',
+					'owner-boundary-approval',
+					'owner-decision-or-harness-expansion',
+					'publication-policy',
+				],
+			}),
+		])
 		for (const artifact of index.artifacts) {
 			expect(artifact.sha256).toMatch(/^[a-f0-9]{64}$/)
 			expect(artifact.stableShapeSha256).toMatch(/^[a-f0-9]{64}$/)
@@ -238,6 +281,9 @@ describe('release proof evidence index', () => {
 			'Missing by artifact: safe-open-proof=public-edge-fixtures,release-latency-run,publication-boundary',
 		)
 		expect(markdown).toContain('Next owner actions: 10:package-action-proof/edge-fixture-policy')
+		expect(markdown).toContain('Implementation handoffs: 1:safe-open-proof')
+		expect(markdown).toContain('promotion=false;blockers=public-edge-fixtures')
+		expect(markdown).toContain('2:package-action-proof')
 		expect(markdown).toContain(
 			'60:safe-open-proof/compact-report-publication-policy(release,publication-policy,publication-policy)',
 		)

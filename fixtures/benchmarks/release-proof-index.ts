@@ -93,6 +93,7 @@ export interface ReleaseProofReadinessSummary {
 	readonly missingByOwnerLoop: Readonly<Record<ReleaseProofReadinessOwner, number>>
 	readonly missingByArtifact: Readonly<Record<ReleaseProofIndexArtifactName, readonly string[]>>
 	readonly nextOwnerActions: readonly ReleaseProofNextOwnerAction[]
+	readonly implementationHandoffs: readonly ReleaseProofImplementationHandoff[]
 	readonly boundary: string
 }
 
@@ -109,6 +110,19 @@ export interface ReleaseProofNextOwnerAction {
 		| 'owner-decision-or-harness-expansion'
 		| 'publication-policy'
 	readonly rationale: string
+}
+
+export interface ReleaseProofImplementationHandoff {
+	readonly rank: number
+	readonly artifact: ReleaseProofIndexArtifactName
+	readonly claim: string
+	readonly ownerLoops: readonly ReleaseProofReadinessOwner[]
+	readonly proofCommand: string
+	readonly compactReportCommand?: string
+	readonly implementationSurfacePromotionAllowed: boolean
+	readonly blockingRequirementIds: readonly string[]
+	readonly nextStepKinds: readonly ReleaseProofNextOwnerAction['nextStepKind'][]
+	readonly boundary: string
 }
 
 export async function runReleaseProofIndex(
@@ -160,6 +174,7 @@ export function releaseProofIndexMarkdown(result: ReleaseProofIndexResult): stri
 		`Missing by owner loop: ${formatOwnerCounts(result.readiness.missingByOwnerLoop)}`,
 		`Missing by artifact: ${formatMissingByArtifact(result.readiness.missingByArtifact)}`,
 		`Next owner actions: ${formatNextOwnerActions(result.readiness.nextOwnerActions)}`,
+		`Implementation handoffs: ${formatImplementationHandoffs(result.readiness.implementationHandoffs)}`,
 		result.readiness.boundary,
 		'',
 		'## Excluded Evidence',
@@ -423,6 +438,13 @@ function releaseReadinessSummary(
 		missingRequirementCount === 0 &&
 		artifacts.every((artifact) => artifact.headlineClaimAllowed && artifact.releaseGate === 'ready')
 	const implementationSurfacePromotionAllowed = headlineClaimsAllowed
+	const nextOwnerActions = missingRequirements.map(rankMissingRequirement).sort((left, right) => {
+		const byRank = left.rank - right.rank
+		if (byRank !== 0) return byRank
+		return `${left.artifact}:${left.requirementId}`.localeCompare(
+			`${right.artifact}:${right.requirementId}`,
+		)
+	})
 	return {
 		releaseGate: headlineClaimsAllowed ? 'ready' : 'blocked-by-publication-policy',
 		headlineClaimsAllowed,
@@ -435,16 +457,40 @@ function releaseReadinessSummary(
 		satisfiedRequirementCount,
 		missingByOwnerLoop,
 		missingByArtifact,
-		nextOwnerActions: missingRequirements.map(rankMissingRequirement).sort((left, right) => {
-			const byRank = left.rank - right.rank
-			if (byRank !== 0) return byRank
-			return `${left.artifact}:${left.requirementId}`.localeCompare(
-				`${right.artifact}:${right.requirementId}`,
-			)
-		}),
+		nextOwnerActions,
+		implementationHandoffs: buildImplementationHandoffs(
+			artifacts,
+			nextOwnerActions,
+			implementationSurfacePromotionAllowed,
+		),
 		boundary:
 			'Aggregate release readiness is a publication gate over local proof artifacts. It is not signed provenance, attestation verification, or a substitute for owner approval of each missing requirement.',
 	}
+}
+
+function buildImplementationHandoffs(
+	artifacts: readonly ReleaseProofIndexArtifact[],
+	nextOwnerActions: readonly ReleaseProofNextOwnerAction[],
+	implementationSurfacePromotionAllowed: boolean,
+): readonly ReleaseProofImplementationHandoff[] {
+	return artifacts.map((artifact, index) => {
+		const artifactActions = nextOwnerActions.filter((action) => action.artifact === artifact.name)
+		return {
+			rank: index + 1,
+			artifact: artifact.name,
+			claim: artifact.claim,
+			ownerLoops: uniqueOwnerLoops(artifact.readyWhen.map((requirement) => requirement.ownerLoop)),
+			proofCommand: artifact.command,
+			compactReportCommand: artifact.compactReportCommand,
+			implementationSurfacePromotionAllowed,
+			blockingRequirementIds: artifact.readyWhen
+				.filter((requirement) => requirement.status === 'missing')
+				.map((requirement) => requirement.id),
+			nextStepKinds: uniqueNextStepKinds(artifactActions.map((action) => action.nextStepKind)),
+			boundary:
+				'Owner handoff for proof, validation, boundary approval, and publication policy only; it is not permission to add new SDK, CLI, API, or MCP surfaces.',
+		}
+	})
 }
 
 function rankMissingRequirement(input: {
@@ -555,6 +601,43 @@ function formatNextOwnerActions(actions: readonly ReleaseProofNextOwnerAction[])
 				`${action.rank}:${action.artifact}/${action.requirementId}(${action.ownerLoop},${action.priority},${action.nextStepKind})`,
 		)
 		.join('; ')
+}
+
+function formatImplementationHandoffs(
+	handoffs: readonly ReleaseProofImplementationHandoff[],
+): string {
+	return handoffs
+		.map(
+			(handoff) =>
+				`${handoff.rank}:${handoff.artifact}(${handoff.ownerLoops.join('+')};promotion=${handoff.implementationSurfacePromotionAllowed};blockers=${handoff.blockingRequirementIds.join(',') || 'none'})`,
+		)
+		.join('; ')
+}
+
+function uniqueOwnerLoops(
+	ownerLoops: readonly ReleaseProofReadinessOwner[],
+): readonly ReleaseProofReadinessOwner[] {
+	const order: readonly ReleaseProofReadinessOwner[] = [
+		'correctness',
+		'performance',
+		'product',
+		'release',
+	]
+	const seen = new Set(ownerLoops)
+	return order.filter((owner) => seen.has(owner))
+}
+
+function uniqueNextStepKinds(
+	nextStepKinds: readonly ReleaseProofNextOwnerAction['nextStepKind'][],
+): readonly ReleaseProofNextOwnerAction['nextStepKind'][] {
+	const seen = new Set(nextStepKinds)
+	return [
+		'owner-decision-or-fixture-replacement',
+		'owner-boundary-approval',
+		'validation-run',
+		'owner-decision-or-harness-expansion',
+		'publication-policy',
+	].filter((kind) => seen.has(kind))
 }
 
 function safeOpenFixtureProvenance(

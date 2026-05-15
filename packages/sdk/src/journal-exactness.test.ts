@@ -1314,6 +1314,32 @@ describe('mutation journal exactness model', () => {
 					{ ref: 'Sheet1!D3', surface: 'spills' },
 				],
 			},
+			{
+				name: 'resizeTable dynamic spill',
+				setup: (wb) => {
+					seedSimpleTable(wb)
+					seedDynamicArrayFootprint(wb, 3)
+				},
+				ops: [{ op: 'resizeTable', table: 'Sales', ref: 'A1:B2' }],
+				issues: [
+					{ ref: 'Sheet1!D1', surface: 'dynamic-arrays' },
+					{ ref: 'Sheet1!D2', surface: 'spills' },
+					{ ref: 'Sheet1!D3', surface: 'spills' },
+				],
+			},
+			{
+				name: 'deleteTable dynamic spill',
+				setup: (wb) => {
+					seedSimpleTable(wb)
+					seedDynamicArrayFootprint(wb, 3)
+				},
+				ops: [{ op: 'deleteTable', table: 'Sales' }],
+				issues: [
+					{ ref: 'Sheet1!D1', surface: 'dynamic-arrays' },
+					{ ref: 'Sheet1!D2', surface: 'spills' },
+					{ ref: 'Sheet1!D3', surface: 'spills' },
+				],
+			},
 		]
 
 		for (const entry of cases) {

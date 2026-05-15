@@ -2101,7 +2101,7 @@ function checkPivotSlicerTimelineIntegrity(
 	packageGraph?: VerifyPackageGraph,
 ): CheckIssue[] {
 	const issues: CheckIssue[] = []
-	const sheetNames = new Set(wb.sheets.map((sheet) => sheet.name))
+	const sheetNames = new Set(wb.sheets.map((sheet) => sheet.name.toLowerCase()))
 	const pivotCachesById = new Map<number, Workbook['pivotCaches'][number]>()
 	const duplicateCacheIds = new Map<number, Workbook['pivotCaches'][number][]>()
 	for (const cache of wb.pivotCaches) {
@@ -2142,7 +2142,7 @@ function checkPivotSlicerTimelineIntegrity(
 	}
 
 	for (const pivot of wb.pivotTables) {
-		if (!sheetNames.has(pivot.sheetName)) {
+		if (!sheetNames.has(pivot.sheetName.toLowerCase())) {
 			issues.push({
 				rule: 'pivot-integrity',
 				severity: 'error',
@@ -2210,7 +2210,11 @@ function checkPivotCacheSourceIntegrity(
 	sheetNames: ReadonlySet<string>,
 ): CheckIssue[] {
 	const issues: CheckIssue[] = []
-	if (cache.sourceType === 'worksheet' && cache.sourceSheet && !sheetNames.has(cache.sourceSheet)) {
+	if (
+		cache.sourceType === 'worksheet' &&
+		cache.sourceSheet &&
+		!sheetNames.has(cache.sourceSheet.toLowerCase())
+	) {
 		issues.push({
 			rule: 'pivot-source-integrity',
 			severity: 'error',
@@ -2236,10 +2240,11 @@ function checkPivotCacheSourceIntegrity(
 			})
 		}
 	}
-	if (!cache.sourceName) return issues
+	const sourceName = cache.sourceName
+	if (!sourceName) return issues
 	const tableMatches = wb.sheets.flatMap((sheet) =>
 		sheet.tables
-			.filter((table) => table.name === cache.sourceName)
+			.filter((table) => table.name.toLowerCase() === sourceName.toLowerCase())
 			.map((table) => ({
 				sheetName: sheet.name,
 				tableName: table.name,
@@ -2258,7 +2263,8 @@ function checkPivotCacheSourceIntegrity(
 			details: { kind: 'pivot-cache-source-table-missing', cache: pivotCacheSummary(cache) },
 		})
 	}
-	if (cache.sourceSheet && tableMatches.some((table) => table.sheetName !== cache.sourceSheet)) {
+	const sourceSheet = cache.sourceSheet
+	if (sourceSheet && tableMatches.some((table) => !sameSheetName(table.sheetName, sourceSheet))) {
 		issues.push({
 			rule: 'pivot-source-integrity',
 			severity: 'warning',

@@ -2137,6 +2137,46 @@ describe('checker', () => {
 		expect(kinds).toContain('pivot-cache-source-table-sheet-mismatch')
 	})
 
+	test('accepts pivot sheet and source metadata case-insensitively', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.tables.push({
+			id: createTableId(),
+			name: 'SalesTable',
+			sheetId: sheet.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 2, col: 1 } },
+			columns: [{ name: 'Region' }, { name: 'Amount' }],
+			hasHeaders: true,
+			hasTotals: false,
+		})
+		wb.pivotCaches.push({
+			partPath: 'xl/pivotCache/pivotCacheDefinition1.xml',
+			cacheId: 1,
+			sourceType: 'worksheet',
+			sourceSheet: 'sheet1',
+			sourceName: 'salestable',
+			fields: [],
+		})
+		wb.pivotTables.push({
+			partPath: 'xl/pivotTables/pivotTable1.xml',
+			sheetName: 'sheet1',
+			name: 'PivotTable1',
+			cacheId: 1,
+			fields: [],
+			rowFields: [],
+			columnFields: [],
+			pageFields: [],
+			dataFields: [],
+		})
+
+		const result = check(wb)
+		expect(
+			result.issues.filter(
+				(issue) => issue.rule === 'pivot-integrity' || issue.rule === 'pivot-source-integrity',
+			),
+		).toEqual([])
+	})
+
 	test('detects slicer cache relationship and pivot binding mismatches', () => {
 		const wb = createWorkbook()
 		wb.addSheet('Sheet1')

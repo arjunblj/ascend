@@ -475,8 +475,58 @@ export function handleSetWorkbookProtection(
 	workbook: Workbook,
 	op: Extract<Operation, { op: 'setWorkbookProtection' }>,
 ): Result<PatchResult> {
+	const validation = validateWorkbookProtectionInput(op.protection)
+	if (validation) return err(validation)
 	workbook.workbookProtection = { ...op.protection }
 	return ok(patch([], []))
+}
+
+function validateWorkbookProtectionInput(
+	protection: Extract<Operation, { op: 'setWorkbookProtection' }>['protection'],
+) {
+	if (!protection || typeof protection !== 'object' || Array.isArray(protection)) {
+		return ascendError('VALIDATION_ERROR', 'setWorkbookProtection requires a protection object', {
+			suggestedFix: 'Provide workbook protection metadata such as { "lockStructure": true }.',
+		})
+	}
+	for (const field of ['lockStructure', 'lockWindows', 'lockRevision'] as const) {
+		const value = protection[field]
+		if (value !== undefined && typeof value !== 'boolean') {
+			return ascendError('VALIDATION_ERROR', `workbook protection ${field} must be boolean`, {
+				suggestedFix: `Set ${field}=true or ${field}=false.`,
+			})
+		}
+	}
+	for (const field of [
+		'workbookPassword',
+		'revisionsPassword',
+		'workbookAlgorithmName',
+		'workbookHashValue',
+		'workbookSaltValue',
+		'revisionsAlgorithmName',
+		'revisionsHashValue',
+		'revisionsSaltValue',
+	] as const) {
+		const value = protection[field]
+		if (value !== undefined && typeof value !== 'string') {
+			return ascendError('VALIDATION_ERROR', `workbook protection ${field} must be a string`, {
+				suggestedFix: `Use a string value for ${field}.`,
+			})
+		}
+	}
+	for (const field of ['workbookSpinCount', 'revisionsSpinCount'] as const) {
+		const value = protection[field]
+		if (value !== undefined && (!Number.isInteger(value) || value < 0)) {
+			return ascendError(
+				'VALIDATION_ERROR',
+				`workbook protection ${field} must be a non-negative integer`,
+				{
+					suggestedFix: `Use a non-negative integer value for ${field}.`,
+				},
+			)
+		}
+	}
+	return null
 }
 
 function removeSheetScopedDefinedNames(workbook: Workbook, sheetId: string): void {

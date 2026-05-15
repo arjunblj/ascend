@@ -9781,6 +9781,27 @@ describe('applyOperation', () => {
 		})
 	})
 
+	test('setWorkbookProtection rejects invalid protection scalars without mutation', () => {
+		const cases: readonly Operation[] = [
+			{ op: 'setWorkbookProtection', protection: null as never },
+			{ op: 'setWorkbookProtection', protection: [] as never },
+			{ op: 'setWorkbookProtection', protection: { lockStructure: 'yes' } as never },
+			{ op: 'setWorkbookProtection', protection: { workbookPassword: 123 } as never },
+			{ op: 'setWorkbookProtection', protection: { workbookSpinCount: -1 } },
+			{ op: 'setWorkbookProtection', protection: { revisionsSpinCount: 1.5 } },
+		]
+
+		for (const op of cases) {
+			const wb = createWorkbook()
+			wb.workbookProtection = { lockStructure: true, workbookSpinCount: 100000 }
+			const before = JSON.stringify(wb.workbookProtection)
+			const result = applyOperation(wb, op)
+			expectErr(result)
+			expect(result.error.code, JSON.stringify(op)).toBe('VALIDATION_ERROR')
+			expect(JSON.stringify(wb.workbookProtection), JSON.stringify(op)).toBe(before)
+		}
+	})
+
 	test('setPivotCache updates source and refresh metadata by pivot table', () => {
 		const wb = setup()
 		wb.pivotTables.push({

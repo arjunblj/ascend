@@ -5526,23 +5526,72 @@ function journalSetWorkbookProtection(
 	const preimage = {
 		protection: workbook.workbookProtection ? { ...workbook.workbookProtection } : null,
 	}
-	const issues: MutationJournalIssue[] = preimage.protection
-		? []
-		: [
-				{
-					code: 'LOSSY_INVERSE',
-					message: 'Workbook protection absence cannot be restored exactly with public operations',
-					surface: 'workbook-metadata',
-					reason: 'workbook-protection-absence',
-				},
-			]
+	const valueIssues = workbookProtectionValueIssues(op)
+	const issues: MutationJournalIssue[] =
+		valueIssues.length > 0
+			? valueIssues
+			: preimage.protection
+				? []
+				: [
+						{
+							code: 'LOSSY_INVERSE',
+							message:
+								'Workbook protection absence cannot be restored exactly with public operations',
+							surface: 'workbook-metadata',
+							reason: 'workbook-protection-absence',
+						},
+					]
 	return {
 		opIndex,
 		op,
-		inverseOps: [{ op: 'setWorkbookProtection', protection: preimage.protection ?? {} }],
+		inverseOps:
+			valueIssues.length > 0
+				? []
+				: [{ op: 'setWorkbookProtection', protection: preimage.protection ?? {} }],
 		preimages: [{ kind: 'workbook-protection', workbookProtection: preimage }],
 		issues,
 	}
+}
+
+function workbookProtectionValueIssues(
+	op: Extract<Operation, { op: 'setWorkbookProtection' }>,
+): MutationJournalIssue[] {
+	const protection = op.protection as unknown
+	if (!isPlainJournalObject(protection)) {
+		return [workbookMetadataUnsupportedValueIssue(op.op, 'protection', ['workbook:protection'])]
+	}
+	const issues: MutationJournalIssue[] = []
+	for (const field of ['lockStructure', 'lockWindows', 'lockRevision'] as const) {
+		const value = protection[field]
+		if (value !== undefined && typeof value !== 'boolean') {
+			issues.push(workbookMetadataUnsupportedValueIssue(op.op, field, ['workbook:protection']))
+		}
+	}
+	for (const field of [
+		'workbookPassword',
+		'revisionsPassword',
+		'workbookAlgorithmName',
+		'workbookHashValue',
+		'workbookSaltValue',
+		'revisionsAlgorithmName',
+		'revisionsHashValue',
+		'revisionsSaltValue',
+	] as const) {
+		const value = protection[field]
+		if (value !== undefined && typeof value !== 'string') {
+			issues.push(workbookMetadataUnsupportedValueIssue(op.op, field, ['workbook:protection']))
+		}
+	}
+	for (const field of ['workbookSpinCount', 'revisionsSpinCount'] as const) {
+		const value = protection[field]
+		if (
+			value !== undefined &&
+			(typeof value !== 'number' || !Number.isInteger(value) || value < 0)
+		) {
+			issues.push(workbookMetadataUnsupportedValueIssue(op.op, field, ['workbook:protection']))
+		}
+	}
+	return issues
 }
 
 function journalSetTheme(

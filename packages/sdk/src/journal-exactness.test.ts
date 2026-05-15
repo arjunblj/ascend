@@ -636,6 +636,35 @@ describe('mutation journal exactness model', () => {
 		}
 	})
 
+	test('classifies invalid target table names as unsupported values', () => {
+		const cases: readonly Operation[] = [
+			{ op: 'createTable', sheet: 'Sheet1', ref: 'A1:B2', name: 'A1', hasHeaders: true },
+			{ op: 'renameTable', table: 'Sales', newName: 'A1' },
+		]
+
+		for (const op of cases) {
+			const wb = AscendWorkbook.create()
+			seedSimpleTable(wb)
+			const analysis = analyzeMutationJournalExactness(
+				buildMutationJournal(wb.getWorkbookModel(), [op]),
+			)
+			expect(analysis, op.op).toMatchObject({
+				supported: true,
+				exact: false,
+				issueCount: 1,
+				surfaces: ['tables'],
+				reasons: ['value-unsupported'],
+				hasMatrixViolation: false,
+			})
+			expect(analysis.issues[0], op.op).toMatchObject({
+				code: 'UNSUPPORTED_VALUE',
+				surface: 'tables',
+				reason: 'value-unsupported',
+				allowedByMatrix: true,
+			})
+		}
+	})
+
 	test('classifies table range collision journals as table topology', () => {
 		const cases: readonly Operation[] = [
 			{ op: 'createTable', sheet: 'Sheet1', ref: 'B1:C2', name: 'Inventory', hasHeaders: true },

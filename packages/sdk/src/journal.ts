@@ -66,7 +66,7 @@ import type {
 	ScalarCellValue,
 	StyleInput,
 } from '@ascend/schema'
-import { EMPTY, validateExcelWorksheetName } from '@ascend/schema'
+import { EMPTY, validateExcelTableName, validateExcelWorksheetName } from '@ascend/schema'
 
 export type MutationJournalSurface =
 	| 'cells'
@@ -2219,6 +2219,12 @@ function journalOperationTableTopologyIssue(
 	if (metadataIssue) return metadataIssue
 	const createdTable = journalOperationCreatedTable(op)
 	if (createdTable !== null) {
+		if (validateExcelTableName(createdTable)) {
+			return tableUnsupportedValueIssue(
+				createdTable,
+				`Cannot build exact rollback journal for ${op.op} because target table name ${createdTable} is invalid`,
+			)
+		}
 		const sourceTable =
 			op.op === 'renameTable' ? findTableMatches(workbook, op.table)[0]?.table : undefined
 		const collision = findTableMatches(workbook, createdTable).some(
@@ -2634,6 +2640,16 @@ function tableTopologyJournalIssue(table: string, message: string): MutationJour
 		message,
 		surface: 'tables',
 		reason: 'operation-unsupported',
+		refs: [`table:${table}`],
+	}
+}
+
+function tableUnsupportedValueIssue(table: string, message: string): MutationJournalIssue {
+	return {
+		code: 'UNSUPPORTED_VALUE',
+		message,
+		surface: 'tables',
+		reason: 'value-unsupported',
 		refs: [`table:${table}`],
 	}
 }

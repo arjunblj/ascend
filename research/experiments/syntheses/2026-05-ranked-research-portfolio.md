@@ -8,6 +8,17 @@ Research is no longer a broad sweep. Each direction below must earn its place by
 
 ## Latest Claim Steward Refresh
 
+Proof timestamp: 2026-05-15T20:11:24Z.
+
+Fresh proof rerun keeps the portfolio stable and blocks new surface promotion. `release-proof-index --owner-handoffs-json` reports `releaseGate=blocked-by-publication-policy`, `headlineClaimsAllowed=false`, `implementationSurfacePromotionAllowed=false`, and `missingRequirementCount=9`. The top two proof artifacts still answer the user's "produce proof, not prose" requirement from existing harnesses:
+
+| Claim | Proof produced | Missing owner proof |
+| --- | --- | --- |
+| Safe unknown workbook opening | Compact proof: 9 cases, 8 OK, 1 malformed rejection, 6 public fixtures, 2 generated edge packages, 1 malformed package, 4 review-before-hydration routes, risk families `preservedActiveX`, `preservedMacro`, `preservedOther`, `preservedSignature`. | Product must accept or replace generated signed/unknown/malformed fixtures; performance must run approved release-latency evidence; release must approve non-security/non-provenance wording. |
+| Auditable package-part mutation | Compact proof: 8 cases, 4 public fixtures, 2 generated workbooks, 2 generated edge packages, action totals `passthrough=32`, `regenerate=40`, `add=3`, `drop=3`, `error=1`, source graph evidence everywhere, package journal issues everywhere, 1 representative streaming proof. | Product must approve generated edge policy; correctness must approve unsupported-feature boundaries; performance must keep streaming wording to one representative proof; release must approve local-proof/non-attestation wording. |
+
+Portfolio decision: safe-open and package-action remain the only implementation handoffs. Ranks 3 through 6 stay proof-packaging-only, and ranks 7 through 10 remain do-not-promote-yet. Formula intelligence remains rejection-first; do not implement edit-producing rename.
+
 Proof timestamp: 2026-05-15T19:37:18Z.
 
 Fresh top-claim proof rerun keeps the ranked portfolio at 10 directions and preserves the no-new-surface decision. `release-proof-index --owner-handoffs-json` still reports `releaseGate=blocked-by-publication-policy`, `headlineClaimsAllowed=false`, `implementationSurfacePromotionAllowed=false`, and `missingRequirementCount=9`. The only implementation handoffs are still `safe-open-proof` and `package-action-proof`; formula language-service primitives, token-bounded agent view, retained viewport patch history, and release proof bundle stay proof-packaging-only; formula oracle routing, property journal laws, columnar scan sidecars, and agent workflow observability stay do-not-promote-yet.

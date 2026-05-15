@@ -6,6 +6,7 @@ Updated: 2026-05-15
 
 | Run | Status | Fold-in target |
 | --- | --- | --- |
+| [Top claim proof evidence refresh](runs/2026/2026-05-15-top-claim-proof-evidence-refresh/log.md) | refreshed rank-1/rank-2 proof from current compact harnesses and preserved the no-new-surface promotion throttle | product loop, correctness loop, performance loop, release loop |
 | [Agent first-window progress timeout](runs/2026/2026-05-15-agent-first-window-progress-timeout/log.md) | folded progress JSONL and timeout guard into first-window benchmark harness without changing JSON stdout | performance loop |
 | [Package action generated fixture acceptance matrix](runs/2026/2026-05-15-package-action-generated-fixture-acceptance-matrix/log.md) | folded package-action generated edge fixture acceptance rows into release proof owner handoff JSON while keeping edge-fixture-policy missing | product loop, release loop |
 | [Safe open generated fixture acceptance matrix](runs/2026/2026-05-15-safe-open-generated-fixture-acceptance-matrix/log.md) | folded a case-level safe-open generated-fixture acceptance matrix into release proof owner handoff JSON | product loop, release loop |

@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 
+import { pathToFileURL } from 'node:url'
 import { AscendException, ascendError, levenshtein } from '@ascend/schema'
 import { agentInitCommand, usage as agentInitUsage } from './commands/agent-init.ts'
 import { agentViewCommand, usage as agentViewUsage } from './commands/agent-view.ts'
@@ -340,9 +341,13 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
 	}
 }
 
-if (import.meta.main) {
+if (isDirectRun()) {
 	const code = await runCli()
 	process.exit(code)
+}
+
+function isDirectRun(): boolean {
+	return process.argv[1] ? import.meta.url === pathToFileURL(process.argv[1]).href : false
 }
 
 function suggestClosest(input: string, candidates: readonly string[]): string | undefined {

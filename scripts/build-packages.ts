@@ -3,6 +3,12 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const packageNames = ['schema', 'core', 'formulas', 'engine', 'io-xlsx', 'io-csv', 'verify', 'sdk']
+const appNames = ['cli', 'api', 'mcp']
+const appBins: Record<string, Record<string, string>> = {
+	cli: { ascend: './index.js' },
+	api: { 'ascend-api': './index.js' },
+	mcp: { 'ascend-mcp': './index.js' },
+}
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 const packageVersions = new Map<string, string>()
 
@@ -12,6 +18,7 @@ type PackageJson = {
 	private?: boolean
 	type?: string
 	main?: string
+	bin?: Record<string, string>
 	dependencies?: Record<string, string>
 	devDependencies?: Record<string, string>
 }
@@ -35,7 +42,11 @@ function rewriteInternalDeps(
 	return next
 }
 
-async function writePublishManifest(packageRoot: string, distDir: string): Promise<void> {
+async function writePublishManifest(
+	packageRoot: string,
+	distDir: string,
+	bin?: Record<string, string>,
+): Promise<void> {
 	const source = JSON.parse(
 		await readFile(join(packageRoot, 'package.json'), 'utf8'),
 	) as PackageJson & Record<string, unknown>
@@ -57,6 +68,7 @@ async function writePublishManifest(packageRoot: string, distDir: string): Promi
 		...(rewriteInternalDeps(source.dependencies)
 			? { dependencies: rewriteInternalDeps(source.dependencies) }
 			: {}),
+		...(bin ? { bin } : {}),
 	}
 
 	await writeFile(join(distDir, 'package.json'), `${JSON.stringify(publishManifest, null, '\t')}\n`)
@@ -86,7 +98,36 @@ async function buildPackage(name: string): Promise<void> {
 	await writePublishManifest(packageRoot, distDir)
 }
 
+async function buildApp(name: string): Promise<void> {
+	const appRoot = join(repoRoot, 'apps', name)
+	const distDir = join(appRoot, 'dist')
+	await mkdir(distDir, { recursive: true })
+	await rm(join(distDir, 'index.js'), { force: true }).catch(() => {})
+	await rm(join(distDir, 'index.js.map'), { force: true }).catch(() => {})
+
+	const result = await Bun.build({
+		entrypoints: [join(appRoot, 'src', 'index.ts')],
+		outdir: distDir,
+		format: 'esm',
+		target: 'node',
+		sourcemap: 'external',
+		packages: 'external',
+	})
+
+	if (!result.success) {
+		for (const log of result.logs) console.error(log)
+		throw new Error(`build failed for ${name}`)
+	}
+
+	await writePublishManifest(appRoot, distDir, appBins[name])
+}
+
 for (const name of packageNames) {
 	console.log(`building @ascend/${name}`)
 	await buildPackage(name)
+}
+
+for (const name of appNames) {
+	console.log(`building @ascend/${name}`)
+	await buildApp(name)
 }

@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs'
+import { pathToFileURL } from 'node:url'
 import {
 	type AscendError,
 	AscendException,
@@ -2200,11 +2201,15 @@ function parseStringListOrAll(value: string | string[]): readonly string[] | 'al
 	return entries
 }
 
-if (import.meta.main) {
+if (isDirectRun()) {
 	const server = createServer()
 	const transport = new StdioServerTransport()
 	server.connect(transport).catch((err) => {
 		process.stderr.write(`${err}\n`)
 		process.exit(1)
 	})
+}
+
+function isDirectRun(): boolean {
+	return process.argv[1] ? import.meta.url === pathToFileURL(process.argv[1]).href : false
 }

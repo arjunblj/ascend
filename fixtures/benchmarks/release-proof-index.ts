@@ -146,6 +146,7 @@ export interface ReleaseProofImplementationHandoff {
 	readonly compactReportCommand?: string
 	readonly implementationSurfacePromotionAllowed: boolean
 	readonly blockingRequirementIds: readonly string[]
+	readonly blockingActions: readonly ReleaseProofNextOwnerAction[]
 	readonly nextStepKinds: readonly ReleaseProofNextOwnerAction['nextStepKind'][]
 	readonly boundary: string
 }
@@ -659,11 +660,16 @@ function buildImplementationHandoffs(
 			blockingRequirementIds: artifact.readyWhen
 				.filter((requirement) => requirement.status === 'missing')
 				.map((requirement) => requirement.id),
+			blockingActions: artifactActions.map(cloneNextOwnerAction),
 			nextStepKinds: uniqueNextStepKinds(artifactActions.map((action) => action.nextStepKind)),
 			boundary:
 				'Owner handoff for proof, validation, boundary approval, and publication policy only; it is not permission to add new SDK, CLI, API, or MCP surfaces.',
 		}
 	})
+}
+
+function cloneNextOwnerAction(action: ReleaseProofNextOwnerAction): ReleaseProofNextOwnerAction {
+	return { ...action }
 }
 
 function claimProofRequired(

@@ -38,6 +38,7 @@ Latest proof refresh, 2026-05-15T10:15:42Z:
 - API and MCP write errors now preserve structured failed-apply journal evidence in error details, including `JOURNAL_BUILD_FAILED`, surface `package-parts`, reason `journal-build-failed`, and undo policy `build-failed`.
 - `release-proof-index --owner-handoffs-json` now includes `nextOwnerActions` with `acceptanceEvidence` and `forbiddenShortcut` for every missing top-claim gate. This makes owner approval actionable without changing SDK, CLI, API, or MCP surfaces.
 - The human-readable release proof index now renders those owner actions as a Markdown table. Compact safe-open and package-action reports remain unchanged; the table is release-index reporting only.
+- Each top `implementationHandoff` now carries its own cloned `blockingActions`, so safe-open and package-action owners can consume a self-contained handoff without cross-referencing the global owner-action list.
 
 ## External References
 
@@ -297,6 +298,8 @@ Release-index enforcement: `fixtures/benchmarks/release-proof-index.ts` marks bo
 Owner-action acceptance evidence: each missing gate now has a machine-readable acceptance target and forbidden shortcut. Product fixture gates must accept disclosed generated structural packages or replace them with approved public binaries. Performance gates must use tracked-clean release-environment inputs and cannot use private or dirty local timing. Correctness gates must approve allowed/forbidden unsupported-feature wording and cannot imply chart byte passthrough, signature verification, Excel-fresh cached formulas, or unknown-part understanding. Release gates must keep local proof below SLSA, in-toto, Sigstore, GitHub artifact attestation, signed-provenance, and tamper-evident storage thresholds unless a real attestation pipeline is implemented.
 
 Markdown handoff: `releaseProofIndexMarkdown` now includes a `Next Owner Actions` table with rank, artifact, gate, owner loop, priority, next step, acceptance evidence, and forbidden shortcut. This is for human release review only and does not make compact reports publishable.
+
+Per-claim handoff data: `releaseProofOwnerHandoffIndex` now includes both the global `nextOwnerActions` queue and per-handoff `blockingActions`. The per-handoff actions are cloned, not shared references, so downstream consumers can inspect or transform one handoff without mutating the global queue.
 
 Owner-action priority: `readiness.nextOwnerActions` ranks fixture disclosure/replacement first, correctness boundaries second, performance evidence third, streaming wording fourth, publication wording fifth, and compact report publication policy last. Compact report policy still blocks digest publication, but public/generated fixture policy and claim-boundary approval decide whether the top claims are credible.
 

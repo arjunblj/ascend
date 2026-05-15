@@ -125,69 +125,105 @@ describe('release proof evidence index', () => {
 			acceptanceEvidence: expect.stringContaining('artifact storage path'),
 			forbiddenShortcut: expect.stringContaining('Do not index or publish compact report digests'),
 		})
-		expect(index.readiness.implementationHandoffs).toEqual([
-			expect.objectContaining({
-				rank: 1,
-				artifact: 'safe-open-proof',
-				claim: 'safe unknown workbook opening',
-				proofRequired: {
-					fixture: expect.stringContaining('generated signed and unknown-part cases'),
-					benchmark: expect.stringContaining('Release-environment open-plan latency'),
-					surface: expect.stringContaining('no new opener surface'),
-					validationGate: expect.stringContaining('safe-open proof harness'),
-					competitorContrast: expect.stringContaining('Microsoft Protected View'),
-					honestBoundary: expect.stringContaining('Not malware scanning'),
-					killCriterion: expect.stringContaining(
-						'Do not publish headline wording if generated signed/unknown packages are hidden',
-					),
-				},
-				ownerLoops: ['performance', 'product', 'release'],
-				implementationSurfacePromotionAllowed: false,
-				blockingRequirementIds: [
-					'public-edge-fixtures',
-					'release-latency-run',
-					'publication-boundary',
-					'compact-report-publication-policy',
-				],
-				nextStepKinds: [
-					'owner-decision-or-fixture-replacement',
-					'validation-run',
-					'publication-policy',
-				],
-				boundary: expect.stringContaining(
-					'not permission to add new SDK, CLI, API, or MCP surfaces',
-				),
-			}),
-			expect.objectContaining({
-				rank: 2,
-				artifact: 'package-action-proof',
-				claim: 'auditable package-part mutation',
-				proofRequired: {
-					fixture: expect.stringContaining('docProps passthrough'),
-					benchmark: expect.stringContaining('Package-proof overhead'),
-					surface: expect.stringContaining('no new mutation surface'),
-					validationGate: expect.stringContaining('package-action proof harness'),
-					competitorContrast: expect.stringContaining('openpyxl and SheetJS'),
-					honestBoundary: expect.stringContaining('Not signed provenance'),
-					killCriterion: expect.stringContaining('local digests imply attestation'),
-				},
-				ownerLoops: ['correctness', 'performance', 'product', 'release'],
-				implementationSurfacePromotionAllowed: false,
-				blockingRequirementIds: [
-					'edge-fixture-policy',
-					'provenance-boundary',
-					'unsupported-feature-boundary',
-					'streaming-matrix-boundary',
-					'compact-report-publication-policy',
-				],
-				nextStepKinds: [
-					'owner-decision-or-fixture-replacement',
-					'owner-boundary-approval',
-					'owner-decision-or-harness-expansion',
-					'publication-policy',
-				],
-			}),
+		expect(index.readiness.implementationHandoffs).toHaveLength(2)
+		const safeOpenHandoff = index.readiness.implementationHandoffs[0]
+		expect(safeOpenHandoff.rank).toBe(1)
+		expect(safeOpenHandoff.artifact).toBe('safe-open-proof')
+		expect(safeOpenHandoff.claim).toBe('safe unknown workbook opening')
+		expect(safeOpenHandoff.ownerLoops).toEqual(['performance', 'product', 'release'])
+		expect(safeOpenHandoff.implementationSurfacePromotionAllowed).toBe(false)
+		expect(safeOpenHandoff.proofRequired.fixture).toContain(
+			'generated signed and unknown-part cases',
+		)
+		expect(safeOpenHandoff.proofRequired.benchmark).toContain(
+			'Release-environment open-plan latency',
+		)
+		expect(safeOpenHandoff.proofRequired.surface).toContain('no new opener surface')
+		expect(safeOpenHandoff.proofRequired.validationGate).toContain('safe-open proof harness')
+		expect(safeOpenHandoff.proofRequired.competitorContrast).toContain('Microsoft Protected View')
+		expect(safeOpenHandoff.proofRequired.honestBoundary).toContain('Not malware scanning')
+		expect(safeOpenHandoff.proofRequired.killCriterion).toContain(
+			'Do not publish headline wording if generated signed/unknown packages are hidden',
+		)
+		expect(safeOpenHandoff.blockingRequirementIds).toEqual([
+			'public-edge-fixtures',
+			'release-latency-run',
+			'publication-boundary',
+			'compact-report-publication-policy',
 		])
+		expect(safeOpenHandoff.nextStepKinds).toEqual([
+			'owner-decision-or-fixture-replacement',
+			'validation-run',
+			'publication-policy',
+		])
+		expect(safeOpenHandoff.boundary).toContain(
+			'not permission to add new SDK, CLI, API, or MCP surfaces',
+		)
+		expect(safeOpenHandoff.blockingActions.map((action) => action.requirementId)).toEqual([
+			'public-edge-fixtures',
+			'release-latency-run',
+			'publication-boundary',
+			'compact-report-publication-policy',
+		])
+		expect(safeOpenHandoff.blockingActions[0].acceptanceEvidence).toContain(
+			'generated signed/unknown',
+		)
+		expect(safeOpenHandoff.blockingActions[1].forbiddenShortcut).toContain('private-corpus')
+		expect(safeOpenHandoff.blockingActions[2].forbiddenShortcut).toContain('signed provenance')
+		expect(safeOpenHandoff.blockingActions[3].acceptanceEvidence).toContain('artifact storage path')
+		const packageActionHandoff = index.readiness.implementationHandoffs[1]
+		expect(packageActionHandoff.rank).toBe(2)
+		expect(packageActionHandoff.artifact).toBe('package-action-proof')
+		expect(packageActionHandoff.claim).toBe('auditable package-part mutation')
+		expect(packageActionHandoff.ownerLoops).toEqual([
+			'correctness',
+			'performance',
+			'product',
+			'release',
+		])
+		expect(packageActionHandoff.implementationSurfacePromotionAllowed).toBe(false)
+		expect(packageActionHandoff.proofRequired.fixture).toContain('docProps passthrough')
+		expect(packageActionHandoff.proofRequired.benchmark).toContain('Package-proof overhead')
+		expect(packageActionHandoff.proofRequired.surface).toContain('no new mutation surface')
+		expect(packageActionHandoff.proofRequired.validationGate).toContain(
+			'package-action proof harness',
+		)
+		expect(packageActionHandoff.proofRequired.competitorContrast).toContain('openpyxl and SheetJS')
+		expect(packageActionHandoff.proofRequired.honestBoundary).toContain('Not signed provenance')
+		expect(packageActionHandoff.proofRequired.killCriterion).toContain(
+			'local digests imply attestation',
+		)
+		expect(packageActionHandoff.blockingRequirementIds).toEqual([
+			'edge-fixture-policy',
+			'provenance-boundary',
+			'unsupported-feature-boundary',
+			'streaming-matrix-boundary',
+			'compact-report-publication-policy',
+		])
+		expect(packageActionHandoff.nextStepKinds).toEqual([
+			'owner-decision-or-fixture-replacement',
+			'owner-boundary-approval',
+			'owner-decision-or-harness-expansion',
+			'publication-policy',
+		])
+		expect(packageActionHandoff.blockingActions.map((action) => action.requirementId)).toEqual([
+			'edge-fixture-policy',
+			'unsupported-feature-boundary',
+			'streaming-matrix-boundary',
+			'provenance-boundary',
+			'compact-report-publication-policy',
+		])
+		expect(packageActionHandoff.blockingActions[0].acceptanceEvidence).toContain(
+			'generated docProps',
+		)
+		expect(packageActionHandoff.blockingActions[1].forbiddenShortcut).toContain('chart XML')
+		expect(packageActionHandoff.blockingActions[2].forbiddenShortcut).toContain(
+			'full streaming parity',
+		)
+		expect(packageActionHandoff.blockingActions[3].acceptanceEvidence).toContain('Sigstore')
+		expect(packageActionHandoff.blockingActions[4].forbiddenShortcut).toContain(
+			'compact report digests',
+		)
 		for (const artifact of index.artifacts) {
 			expect(artifact.sha256).toMatch(/^[a-f0-9]{64}$/)
 			expect(artifact.stableShapeSha256).toMatch(/^[a-f0-9]{64}$/)
@@ -347,7 +383,25 @@ describe('release proof evidence index', () => {
 				surface: expect.stringContaining('no new opener surface'),
 				killCriterion: expect.stringContaining('Do not publish headline wording'),
 			},
+			blockingActions: [
+				expect.objectContaining({
+					requirementId: 'public-edge-fixtures',
+					forbiddenShortcut: expect.stringContaining('generated fixture provenance'),
+				}),
+				expect.objectContaining({
+					requirementId: 'release-latency-run',
+					acceptanceEvidence: expect.stringContaining('release-environment'),
+				}),
+				expect.objectContaining({
+					requirementId: 'publication-boundary',
+					acceptanceEvidence: expect.stringContaining('safe-open boundary'),
+				}),
+				expect.objectContaining({
+					requirementId: 'compact-report-publication-policy',
+				}),
+			],
 		})
+		expect(handoff.implementationHandoffs[1].blockingActions).toHaveLength(5)
 		expect(handoff.deferredClaims.map((entry) => entry.status)).toContain('do-not-promote-yet')
 		expect(handoff.excludedEvidence.map((entry) => entry.name)).toEqual([
 			'practical-latency-contracts',

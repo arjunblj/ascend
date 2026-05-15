@@ -130,6 +130,17 @@ interface Sample {
 	readonly tuiWarmDocumentCacheHits?: number
 }
 
+interface SampleStats {
+	readonly sampleCount: number
+	readonly min: number
+	readonly median: number
+	readonly mean: number
+	readonly p95: number
+	readonly max: number
+	readonly stddev: number
+	readonly cv: number
+}
+
 interface OpenStats {
 	readonly workbookOpenCalls: number
 	readonly workbookHydrations: number
@@ -275,9 +286,36 @@ function median(values: readonly number[]): number {
 	return sorted.length % 2 === 1 ? upper : ((sorted[middle - 1] ?? upper) + upper) / 2
 }
 
+function percentileSorted(sorted: readonly number[], percentile: number): number {
+	if (sorted.length === 0) return 0
+	const index = Math.min(sorted.length - 1, Math.ceil(sorted.length * percentile) - 1)
+	return sorted[index] ?? 0
+}
+
 function medianOptional(values: readonly (number | undefined | null)[]): number | undefined {
 	const defined = values.filter((value): value is number => typeof value === 'number')
 	return defined.length > 0 ? median(defined) : undefined
+}
+
+function statsOptional(values: readonly (number | undefined | null)[]): SampleStats | undefined {
+	const defined = values
+		.filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
+		.sort((a, b) => a - b)
+	if (defined.length === 0) return undefined
+	const mean = defined.reduce((sum, value) => sum + value, 0) / defined.length
+	const variance =
+		defined.reduce((sum, value) => sum + (value - mean) ** 2, 0) / Math.max(defined.length - 1, 1)
+	const stddev = Math.sqrt(variance)
+	return {
+		sampleCount: defined.length,
+		min: defined[0] ?? 0,
+		median: median(defined),
+		mean,
+		p95: percentileSorted(defined, 0.95),
+		max: defined[defined.length - 1] ?? 0,
+		stddev,
+		cv: mean === 0 ? 0 : stddev / mean,
+	}
 }
 
 async function time<T>(fn: () => Promise<T>): Promise<{ readonly ms: number; readonly result: T }> {
@@ -847,6 +885,8 @@ function summarize(samples: readonly Sample[]) {
 		cappedWarmOpenWindowMedianMs,
 		apiFirstWindowMedianMs,
 		apiWarmFirstWindowMedianMs,
+		apiFirstWindowStats: statsOptional(samples.map((sample) => sample.apiFirstWindowMs)),
+		apiWarmFirstWindowStats: statsOptional(samples.map((sample) => sample.apiWarmFirstWindowMs)),
 		apiCompactDefaultMedianMs,
 		apiWarmCompactDefaultMedianMs,
 		cliReadFirstWindowMedianMs,
@@ -857,6 +897,11 @@ function summarize(samples: readonly Sample[]) {
 		mcpWarmCompactDefaultMedianMs,
 		tuiFirstPaintMedianMs,
 		tuiWarmFirstPaintMedianMs,
+		cappedWarmOpenWindowStats: statsOptional(
+			samples.map((sample) => sample.cappedWarmOpenWindowMs),
+		),
+		tuiFirstPaintStats: statsOptional(samples.map((sample) => sample.tuiFirstPaintMs)),
+		tuiWarmFirstPaintStats: statsOptional(samples.map((sample) => sample.tuiWarmFirstPaintMs)),
 		tuiOpenMedianMs: medianOptional(samples.map((sample) => sample.tuiOpenMs)),
 		tuiWarmOpenMedianMs: medianOptional(samples.map((sample) => sample.tuiWarmOpenMs)),
 		tuiRenderMedianMs: medianOptional(samples.map((sample) => sample.tuiRenderMs)),

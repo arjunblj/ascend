@@ -7300,7 +7300,7 @@ function moveRangeFormulaSurfaceRestoration(
 		}
 	}
 	const cells = uniqueCellPreimages(
-		[...cellRefsBySheet].flatMap(([sheet, refs]) => cellPreimages(workbook, sheet, refs)),
+		[...cellRefsBySheet].flatMap(([sheet, refs]) => cellEditPreimages(workbook, sheet, refs)),
 	)
 	const { inverseOps: cellInverseOps, issues: cellIssues } = inverseCellOps(cells)
 	const definedNameRestorations = definedNames.map((preimage) =>

@@ -1484,6 +1484,13 @@ describe('agent workflow loss audit', () => {
 					)
 					expect(prepared.plan.preview.journal?.issues).toContainEqual(
 						expect.objectContaining({
+							surface: 'shared-formulas',
+							reason: 'formula-binding-metadata',
+							refs: ['Data!B2'],
+						}),
+					)
+					expect(prepared.plan.preview.journal?.issues).toContainEqual(
+						expect.objectContaining({
 							surface: 'package-parts',
 							reason: 'package-part-preservation',
 							refs: ['Data!A1:A2', 'Data!C1:C2'],

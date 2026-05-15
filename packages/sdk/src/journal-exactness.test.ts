@@ -1411,6 +1411,25 @@ describe('mutation journal exactness model', () => {
 		})
 	})
 
+	test('moveRange formula rewrites journal every shared formula member in the rewritten group', () => {
+		const wb = AscendWorkbook.create()
+		seedSharedFormulaPair(wb, 0, 0)
+
+		const changed = wb.apply(
+			[{ op: 'moveRange', sheet: 'Sheet1', source: 'B1:B2', target: 'C1', mode: 'all' }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.affectedCells).toEqual(['C1', 'C2', 'B1', 'B2', 'A1', 'A2'])
+		expect(changed.journal).toBeDefined()
+		if (!changed.journal) throw new Error('missing journal')
+		expect(changed.journal.exact).toBe(false)
+		expect(journalIssueRefs(changed.journal, 'shared-formulas')).toEqual(['Sheet1!A1', 'Sheet1!A2'])
+		expect(wb.formula('Sheet1!A1')?.normalizedFormula).toBe('C1*2')
+		expect(wb.formula('Sheet1!A2')?.normalizedFormula).toBe('C2*2')
+	})
+
 	test('real XLSX data table member edits journal detached table metadata', async () => {
 		const wb = await AscendWorkbook.open(
 			readFileSync(

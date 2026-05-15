@@ -922,6 +922,7 @@ function envelopeDecisions(results: readonly StepResult[]): EnvelopeDecision[] {
 			{
 				name: 'API first-view payload/open',
 				medianMs: firstViewEnvelope,
+				...phaseCandidateStats(api?.summary, 'apiFirstWindowStats'),
 				profileCommand: api?.profileCommand ?? '',
 			},
 			{
@@ -1071,11 +1072,13 @@ function envelopeDecisions(results: readonly StepResult[]): EnvelopeDecision[] {
 		{
 			name: 'Warm cached agent window',
 			medianMs: numericMetric(cached?.summary, 'cappedWarmOpenWindowMedianMs') ?? 0,
+			...phaseCandidateStats(cached?.summary, 'cappedWarmOpenWindowStats'),
 			profileCommand: cached?.profileCommand ?? '',
 		},
 		{
 			name: 'Warm TUI first paint',
 			medianMs: numericMetric(tui?.summary, 'tuiWarmFirstPaintMedianMs') ?? 0,
+			...phaseCandidateStats(tui?.summary, 'tuiWarmFirstPaintStats'),
 			profileCommand: tui?.profileCommand ?? '',
 		},
 		{

@@ -584,6 +584,101 @@ describe('analyzeWorkbook', () => {
 				reusesCache: true,
 			},
 			{
+				name: 'rich text shared formula member',
+				seed: (sheet) => {
+					sheet.cells.set(0, 1, { value: numberValue(10), formula: null, styleId: sid })
+					sheet.cells.set(1, 1, { value: numberValue(20), formula: null, styleId: sid })
+					sheet.cells.set(0, 0, {
+						value: numberValue(20),
+						formula: 'B1*2',
+						styleId: sid,
+						formulaInfo: {
+							kind: 'shared',
+							sharedIndex: '0',
+							isMaster: true,
+							masterRef: 'A1',
+							ref: 'A1:A2',
+						},
+					})
+					sheet.cells.set(1, 0, {
+						value: numberValue(40),
+						formula: null,
+						styleId: sid,
+						formulaInfo: { kind: 'shared', sharedIndex: '0', isMaster: false, masterRef: 'A1' },
+					})
+				},
+				op: {
+					op: 'setRichText',
+					sheet: 'Sheet1',
+					ref: 'A2',
+					runs: [{ text: 'manual shared member' }],
+				},
+				affectedCells: ['Sheet1!A1', 'Sheet1!A2'],
+				reusesCache: false,
+			},
+			{
+				name: 'rich text dynamic spill member',
+				seed: (sheet) => {
+					sheet.cells.set(0, 0, {
+						value: numberValue(1),
+						formula: 'SEQUENCE(3)',
+						styleId: sid,
+						formulaInfo: { kind: 'dynamicArray', metadataIndex: 1, collapsed: false },
+					})
+					sheet.cells.set(1, 0, {
+						value: numberValue(2),
+						formula: null,
+						styleId: sid,
+						formulaInfo: {
+							kind: 'spill',
+							anchorRef: 'Sheet1!A1',
+							ref: 'A1:A3',
+							isAnchor: false,
+						},
+					})
+					sheet.cells.set(2, 0, {
+						value: numberValue(3),
+						formula: null,
+						styleId: sid,
+						formulaInfo: {
+							kind: 'spill',
+							anchorRef: 'Sheet1!A1',
+							ref: 'A1:A3',
+							isAnchor: false,
+						},
+					})
+				},
+				op: {
+					op: 'setRichText',
+					sheet: 'Sheet1',
+					ref: 'A2',
+					runs: [{ text: 'manual spill member' }],
+				},
+				affectedCells: ['Sheet1!A1', 'Sheet1!A2', 'Sheet1!A3'],
+				reusesCache: false,
+			},
+			{
+				name: 'rich text data table member',
+				seed: (sheet) => {
+					sheet.cells.set(2, 2, {
+						value: numberValue(10),
+						formula: null,
+						styleId: sid,
+						formulaInfo: { kind: 'dataTable', ref: 'C3:C5', dtr: true, r1: 'A1' },
+					})
+					sheet.cells.set(3, 2, { value: numberValue(20), formula: null, styleId: sid })
+					sheet.cells.set(4, 2, { value: numberValue(30), formula: null, styleId: sid })
+				},
+				op: {
+					op: 'setRichText',
+					sheet: 'Sheet1',
+					ref: 'C4',
+					runs: [{ text: 'manual data table member' }],
+				},
+				affectedCells: ['Sheet1!C3', 'Sheet1!C4'],
+				reusesCache: false,
+			},
+			{
 				name: 'data table member',
 				seed: (sheet) => {
 					sheet.cells.set(2, 2, {

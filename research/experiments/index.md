@@ -16,6 +16,7 @@ Updated: 2026-05-14
 | [Package action proof surfaces](runs/2026/2026-05-14-package-action-proof-surfaces/log.md) | cycle 23 complete, folded in CLI/API/MCP opt-in evidence | correctness loop, product/DX loop |
 | [Columnar sidecar benchmark harness](runs/2026/2026-05-14-columnar-sidecar-benchmark-harness/log.md) | cycle 24 complete, folded in reusable benchmark harness | performance loop |
 | [MVCC generation snapshot audit](runs/2026/2026-05-14-mvcc-generation-snapshot-audit/log.md) | cycle 25 complete, held for cross-surface design | product/DX loop, performance loop |
+| [Compact read retained token history](runs/2026/2026-05-14-compact-read-retained-token-history/log.md) | cycle 26 complete, folded in compact read ledger | product/DX loop, performance loop |
 | [Package action proof](runs/2026/2026-05-14-package-action-proof/log.md) | cycle 2 complete, promote | correctness loop, product/DX loop, performance loop |
 | [Formula spans LSP](runs/2026/2026-05-14-formula-spans-lsp/log.md) | cycle 13 complete, folded in SDK hover/code actions | product/DX loop, correctness loop |
 | [Formula sqllogictest conformance](runs/2026/2026-05-14-formula-sqllogictest-conformance/log.md) | cycle 14 complete, folded in converter/runner | correctness loop |

@@ -28,6 +28,7 @@ import type {
 	CommentSummary,
 	CompactCellInfo,
 	CompactRangeChangeInvalidation,
+	CompactRangeChangeInvalidationReason,
 	CompactRangeInfo,
 	CompactRangeWindowInfo,
 	ConditionalFormatRuleSummary,
@@ -50,6 +51,17 @@ export interface SheetMetadataQueryOptions {
 	readonly range?: RangeSelector
 }
 
+const COMPACT_CHANGE_SNAPSHOT_RETENTION = 8
+
+interface CompactChangeSnapshot {
+	readonly token: string
+	readonly cells: Map<string, CompactCellInfo>
+}
+
+interface CompactChangeSnapshotLedger {
+	readonly snapshots: CompactChangeSnapshot[]
+}
+
 export class SheetHandle {
 	private readonly sheetName: string
 	private readonly resolveSheet: () => Sheet | undefined
@@ -66,10 +78,7 @@ export class SheetHandle {
 	) => string
 	private readonly resolveSnapshot: () => WorkbookReadSnapshotInfo
 	private _changeVersion = 0
-	private readonly _changeSnapshots = new Map<
-		string,
-		{ token: string; cells: Map<string, CompactCellInfo> }
-	>()
+	private readonly _changeSnapshots = new Map<string, CompactChangeSnapshotLedger>()
 
 	constructor(
 		sheetName: string,
@@ -224,7 +233,8 @@ export class SheetHandle {
 			const version = this._changeVersion++
 			changeToken = `${version}`
 			const baseToken = opts?.changedSince
-			const previous = this._changeSnapshots.get(snapshotKey)
+			const ledger = this._changeSnapshots.get(snapshotKey)
+			const currentMap = buildCellMap(cells)
 			if (baseToken && !isCompactChangeToken(baseToken)) {
 				changeInvalidation = {
 					baseToken,
@@ -232,28 +242,30 @@ export class SheetHandle {
 					reason: 'base-token-invalid',
 					requiredAction: 'use-returned-window',
 				}
-				this._changeSnapshots.set(snapshotKey, {
-					token: changeToken,
-					cells: buildCellMap(cells),
-				})
-			} else if (previous && baseToken === previous.token) {
-				const currentMap = buildCellMap(cells)
-				const changed = diffCellMaps(previous.cells, currentMap)
-				this._changeSnapshots.set(snapshotKey, { token: changeToken, cells: currentMap })
-				cells = changed
+				this.rememberCompactChangeSnapshot(snapshotKey, changeToken, currentMap)
+			} else if (baseToken && ledger) {
+				const previous = findCompactChangeSnapshot(ledger, baseToken)
+				if (previous) {
+					cells = diffCellMaps(previous.cells, currentMap)
+				} else {
+					changeInvalidation = {
+						baseToken,
+						changeToken,
+						reason: compactChangeInvalidationReason(baseToken, ledger),
+						requiredAction: 'use-returned-window',
+					}
+				}
+				this.rememberCompactChangeSnapshot(snapshotKey, changeToken, currentMap)
 			} else {
 				if (baseToken) {
 					changeInvalidation = {
 						baseToken,
 						changeToken,
-						reason: previous ? 'base-token-stale' : 'base-snapshot-missing',
+						reason: 'base-snapshot-missing',
 						requiredAction: 'use-returned-window',
 					}
 				}
-				this._changeSnapshots.set(snapshotKey, {
-					token: changeToken,
-					cells: buildCellMap(cells),
-				})
+				this.rememberCompactChangeSnapshot(snapshotKey, changeToken, currentMap)
 			}
 		}
 		return {
@@ -270,6 +282,19 @@ export class SheetHandle {
 			...(changeToken !== undefined ? { changeToken } : {}),
 			...(changeInvalidation !== undefined ? { changeInvalidation } : {}),
 		}
+	}
+
+	private rememberCompactChangeSnapshot(
+		snapshotKey: string,
+		token: string,
+		cells: Map<string, CompactCellInfo>,
+	): void {
+		const ledger = this._changeSnapshots.get(snapshotKey) ?? { snapshots: [] }
+		ledger.snapshots.push({ token, cells })
+		while (ledger.snapshots.length > COMPACT_CHANGE_SNAPSHOT_RETENTION) {
+			ledger.snapshots.shift()
+		}
+		this._changeSnapshots.set(snapshotKey, ledger)
 	}
 
 	readRows(rangeRef: string, opts?: { rowOffset?: number; rowLimit?: number }): RangeRowsInfo {
@@ -874,6 +899,30 @@ function compactChangeSnapshotKey(
 
 function isCompactChangeToken(token: string): boolean {
 	return /^\d+$/.test(token)
+}
+
+function findCompactChangeSnapshot(
+	ledger: CompactChangeSnapshotLedger,
+	token: string,
+): CompactChangeSnapshot | undefined {
+	return ledger.snapshots.find((snapshot) => snapshot.token === token)
+}
+
+function compactChangeInvalidationReason(
+	baseToken: string,
+	ledger: CompactChangeSnapshotLedger,
+): CompactRangeChangeInvalidationReason {
+	const baseVersion = Number(baseToken)
+	const oldest = ledger.snapshots[0]
+	const oldestVersion = oldest ? Number(oldest.token) : Number.NaN
+	if (
+		Number.isFinite(baseVersion) &&
+		Number.isFinite(oldestVersion) &&
+		baseVersion < oldestVersion
+	) {
+		return 'base-token-expired'
+	}
+	return 'base-token-stale'
 }
 
 function refInRange(ref: string, range: RangeRef): boolean {

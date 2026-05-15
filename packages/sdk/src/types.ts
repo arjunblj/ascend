@@ -1108,6 +1108,7 @@ export interface CompactRangeWindowInfo extends CompactRangeInfo {
 export type CompactRangeChangeInvalidationReason =
 	| 'base-snapshot-missing'
 	| 'base-token-stale'
+	| 'base-token-expired'
 	| 'base-token-invalid'
 
 export interface CompactRangeChangeInvalidation {

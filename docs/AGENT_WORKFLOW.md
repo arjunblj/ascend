@@ -34,7 +34,7 @@ Safety defaults:
 - Use the plan `inputSha256` as `--expect-sha256`.
 - Use only approval ids emitted by plan.
 - Use `--allow-loss` only for explicit user-approved feature loss.
-- Use compact read `changeToken` values only as hints; when `changeInvalidation` appears, consume the returned full window and store the new token.
+- Use compact read `changeToken` values only as hints. Ascend can patch from a bounded retained token history, but when `changeInvalidation` appears, consume the returned full window and store the new token.
 - Keep stdout machine-readable and consume `--progress jsonl` from stderr.
 
 MCP resources:
@@ -66,5 +66,5 @@ Recovery search:
 | Approval required | The plan found a destructive edit or preservation risk. | Ask the user with the exact approval id and reason, then pass only emitted ids in `approvals`. |
 | Loss blocked or `allowLoss` required | A preserved/unsupported workbook feature may be lost. | Inspect `active_content` and `package_graph`, ask for explicit approval, then pass exact feature keys or loss approval ids. |
 | `FORMULA_EVAL_ERROR` | Recalc failed after an edit. | Call `formula-assist` for syntax/token help, then `lint`, `trace`, and `repair-plan` before changing formulas again. |
-| `changeInvalidation` on compact read | The previous compact window token cannot be patched. | Consume the returned full window and store the new `changeToken`. |
+| `changeInvalidation` on compact read | The compact window token is invalid, expired, from a missing snapshot, or outside the retained patch history. | Consume the returned full window and store the new `changeToken`. |
 | Check or lint failures after commit | The output workbook is structurally or semantically unsafe. | Run `repair-plan`, inspect `postWrite`, then plan a corrective edit against the output file. |

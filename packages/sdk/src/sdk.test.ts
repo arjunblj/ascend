@@ -906,16 +906,32 @@ describe('AscendWorkbook', () => {
 			requiredAction: 'use-returned-window',
 		})
 
-		const staleBase = handle?.readWindowCompact('A1:A2', {
+		const retainedBase = handle?.readWindowCompact('A1:A2', {
 			includeRefs: false,
 			flatValues: true,
 			changedSince: first?.changeToken,
 		})
-		expect(staleBase?.cells.map((cell) => cell.value)).toEqual([1, 2])
-		expect(staleBase?.changeInvalidation).toEqual({
+		expect(retainedBase?.cells).toEqual([])
+		expect(retainedBase?.changeInvalidation).toBeUndefined()
+
+		let latestToken = retainedBase?.changeToken
+		for (let i = 0; i < 8; i++) {
+			latestToken = handle?.readWindowCompact('A1:A2', {
+				includeRefs: false,
+				flatValues: true,
+				changedSince: latestToken,
+			})?.changeToken
+		}
+		const expiredBase = handle?.readWindowCompact('A1:A2', {
+			includeRefs: false,
+			flatValues: true,
+			changedSince: first?.changeToken,
+		})
+		expect(expiredBase?.cells.map((cell) => cell.value)).toEqual([1, 2])
+		expect(expiredBase?.changeInvalidation).toEqual({
 			baseToken: first?.changeToken,
-			changeToken: staleBase?.changeToken,
-			reason: 'base-token-stale',
+			changeToken: expiredBase?.changeToken,
+			reason: 'base-token-expired',
 			requiredAction: 'use-returned-window',
 		})
 

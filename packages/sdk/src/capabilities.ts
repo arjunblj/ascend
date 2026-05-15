@@ -803,7 +803,7 @@ export const EXCEL_CAPABILITIES: readonly ExcelCapability[] = [
 		'editable',
 		'P0',
 		'Add larger-session cache telemetry and table-aware changedSince polling.',
-		'MCP and SDK expose row-windowed cells, objects, TSV, compact sparse reads, MCP column pruning/header selection, and compact changedSince/changeToken polling with explicit changeInvalidation metadata.',
+		'MCP and SDK expose row-windowed cells, objects, TSV, compact sparse reads, MCP column pruning/header selection, and compact changedSince/changeToken polling with bounded retained token history plus explicit changeInvalidation metadata.',
 		['apps/mcp/src/index.test.ts', 'packages/sdk/src/sdk.test.ts'],
 	),
 	cap(

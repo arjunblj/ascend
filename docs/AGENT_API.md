@@ -101,7 +101,7 @@ Use these workbook tools for normal work:
 - Inspect both `lossAudit.blockedFeatures` and `lossAudit.blockedPackageParts` before approving a lossy write.
 - Use exact feature/tier and package-part loss details from the plan when asking for that approval.
 - Treat macros, signatures, ActiveX, form controls, Power Query, data models, pivots, slicers, chartsheets, and other preserve-first features as high-risk unless plan says the write is safe.
-- For compact reads with `changedSince`, if `changeInvalidation` appears, consume the returned full window and store the new `changeToken`.
+- For compact reads with `changedSince`, Ascend can patch from a bounded retained token history; if `changeInvalidation` appears, consume the returned full window and store the new `changeToken`.
 - Compact plan and commit cap emitted cell details with `maxChangedCells` and `maxAffectedCells` (defaults are 50); use total counts for decisioning.
 
 ## Operation Pattern

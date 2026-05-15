@@ -225,6 +225,12 @@ export function releaseProofIndexMarkdown(result: ReleaseProofIndexResult): stri
 		`Implementation handoffs: ${formatImplementationHandoffs(result.readiness.implementationHandoffs)}`,
 		result.readiness.boundary,
 		'',
+		'## Next Owner Actions',
+		'',
+		'| Rank | Artifact | Gate | Owner loop | Priority | Next step | Acceptance evidence | Forbidden shortcut |',
+		'| ---: | --- | --- | --- | --- | --- | --- | --- |',
+		...result.readiness.nextOwnerActions.map(nextOwnerActionMarkdownRow),
+		'',
 		'## Excluded Evidence',
 		'',
 		'| Evidence | Command | Reason | Eligibility rule | Owner loop | Boundary |',
@@ -840,6 +846,23 @@ function formatNextOwnerActions(actions: readonly ReleaseProofNextOwnerAction[])
 				`${action.rank}:${action.artifact}/${action.requirementId}(${action.ownerLoop},${action.priority},${action.nextStepKind};accept=${action.acceptanceEvidence};forbid=${action.forbiddenShortcut})`,
 		)
 		.join('; ')
+}
+
+function nextOwnerActionMarkdownRow(action: ReleaseProofNextOwnerAction): string {
+	return [
+		String(action.rank),
+		action.artifact,
+		action.requirementId,
+		action.ownerLoop,
+		action.priority,
+		action.nextStepKind,
+		action.acceptanceEvidence,
+		action.forbiddenShortcut,
+	]
+		.map((cell) => ` ${cell} `)
+		.join('|')
+		.replace(/^/, '|')
+		.replace(/$/, '|')
 }
 
 function formatImplementationHandoffs(

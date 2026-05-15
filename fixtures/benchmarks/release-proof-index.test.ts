@@ -377,6 +377,16 @@ describe('release proof evidence index', () => {
 			'Missing by artifact: safe-open-proof=public-edge-fixtures,release-latency-run,publication-boundary',
 		)
 		expect(markdown).toContain('Next owner actions: 10:package-action-proof/edge-fixture-policy')
+		expect(markdown).toContain('## Next Owner Actions')
+		expect(markdown).toContain(
+			'| Rank | Artifact | Gate | Owner loop | Priority | Next step | Acceptance evidence | Forbidden shortcut |',
+		)
+		expect(markdown).toContain(
+			'| 10 | package-action-proof | edge-fixture-policy | product | claim-evidence | owner-decision-or-fixture-replacement | Product accepts disclosed generated',
+		)
+		expect(markdown).toContain(
+			'| 50 | package-action-proof | provenance-boundary | release | publication-policy | publication-policy | Release approves local package-action proof wording below SLSA',
+		)
 		expect(markdown).toContain('accept=Product accepts disclosed generated')
 		expect(markdown).toContain('forbid=Do not hide generated fixture provenance')
 		expect(markdown).toContain('tracked-clean release-environment')

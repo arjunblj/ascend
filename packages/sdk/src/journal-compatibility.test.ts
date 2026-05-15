@@ -73,6 +73,12 @@ export function journalSummary(journal: MutationJournal): typeof FIXTURE.scenari
 
 export function expectStructuredIssues(issues: readonly MutationJournalStructuredIssue[]): void {
 	for (const issue of issues) {
+		expect(Object.keys(issue).sort()).toEqual(
+			(issue.refs
+				? ['code', 'message', 'reason', 'refs', 'surface']
+				: ['code', 'message', 'reason', 'surface']
+			).sort(),
+		)
 		expect(MUTATION_JOURNAL_ISSUE_CODES).toContain(issue.code)
 		expect(MUTATION_JOURNAL_SURFACES).toContain(issue.surface)
 		expect(MUTATION_JOURNAL_REASON_CODES).toContain(issue.reason)

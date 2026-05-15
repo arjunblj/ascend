@@ -2100,6 +2100,32 @@ function buildJournalEntry(
 			issues,
 		}
 	}
+	const commentIssue = journalOperationCommentValueIssue(op)
+	if (commentIssue) {
+		const issues = [structureMutationJournalIssue(commentIssue)]
+		return {
+			opIndex,
+			op,
+			supported: true,
+			exact: false,
+			inverseOps: [],
+			preimages: [],
+			issues,
+		}
+	}
+	const hyperlinkIssue = journalOperationHyperlinkValueIssue(op)
+	if (hyperlinkIssue) {
+		const issues = [structureMutationJournalIssue(hyperlinkIssue)]
+		return {
+			opIndex,
+			op,
+			supported: true,
+			exact: false,
+			inverseOps: [],
+			preimages: [],
+			issues,
+		}
+	}
 	const axisIssue = journalOperationAxisValueIssue(op)
 	if (axisIssue) {
 		const issues = [structureMutationJournalIssue(axisIssue)]
@@ -2386,6 +2412,57 @@ function journalOperationCellRefTarget(op: Operation): {
 		default:
 			return null
 	}
+}
+
+function journalOperationCommentValueIssue(op: Operation): MutationJournalIssue | null {
+	if (op.op === 'setComment') {
+		if (typeof op.text !== 'string') return commentUnsupportedValueIssue(op.sheet, op.ref, 'text')
+		if (op.author !== undefined && typeof op.author !== 'string') {
+			return commentUnsupportedValueIssue(op.sheet, op.ref, 'author')
+		}
+	}
+	if (op.op === 'setThreadedComment') {
+		const ref = op.ref ?? 'selector'
+		if (typeof op.text !== 'string') return commentUnsupportedValueIssue(op.sheet, ref, 'text')
+		if (op.partPath !== undefined && typeof op.partPath !== 'string') {
+			return commentUnsupportedValueIssue(op.sheet, ref, 'partPath')
+		}
+		if (op.threadedCommentId !== undefined && typeof op.threadedCommentId !== 'string') {
+			return commentUnsupportedValueIssue(op.sheet, ref, 'threadedCommentId')
+		}
+	}
+	return null
+}
+
+function commentUnsupportedValueIssue(
+	sheet: string,
+	ref: string,
+	field: string,
+): MutationJournalIssue {
+	return {
+		code: 'UNSUPPORTED_VALUE',
+		message: `Cannot build exact rollback journal for comment metadata because ${field} is invalid`,
+		surface: 'comments',
+		reason: 'value-unsupported',
+		refs: [`${sheet}!${ref}`],
+	}
+}
+
+function journalOperationHyperlinkValueIssue(op: Operation): MutationJournalIssue | null {
+	if (op.op !== 'setHyperlink') return null
+	for (const field of ['url', 'location', 'display', 'tooltip'] as const) {
+		const value = op[field]
+		if (value !== undefined && typeof value !== 'string') {
+			return {
+				code: 'UNSUPPORTED_VALUE',
+				message: `Cannot build exact rollback journal for setHyperlink because ${field} is invalid`,
+				surface: 'hyperlinks',
+				reason: 'value-unsupported',
+				refs: [`${op.sheet}!${op.ref}`],
+			}
+		}
+	}
+	return null
 }
 
 function journalOperationAxisValueIssue(op: Operation): MutationJournalIssue | null {

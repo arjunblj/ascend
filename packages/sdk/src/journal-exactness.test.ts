@@ -1592,11 +1592,54 @@ describe('mutation journal exactness model', () => {
 		})
 	})
 
+	test('classifies invalid comment metadata journals as unsupported values', () => {
+		const cases: readonly Operation[] = [
+			{ op: 'setComment', sheet: 'Sheet1', ref: 'A1', text: 123 as never },
+			{ op: 'setComment', sheet: 'Sheet1', ref: 'A1', text: 'note', author: 123 as never },
+			{ op: 'setThreadedComment', sheet: 'Sheet1', threadedCommentId: 'tc1', text: 123 as never },
+			{
+				op: 'setThreadedComment',
+				sheet: 'Sheet1',
+				threadedCommentId: 123 as never,
+				text: 'note',
+			},
+		]
+
+		for (const op of cases) {
+			const wb = AscendWorkbook.create()
+			const analysis = analyzeMutationJournalExactness(
+				buildMutationJournal(wb.getWorkbookModel(), [op]),
+			)
+			expect(analysis, JSON.stringify(op)).toMatchObject({
+				supported: true,
+				exact: false,
+				issueCount: 1,
+				surfaces: ['comments'],
+				reasons: ['value-unsupported'],
+				hasMatrixViolation: false,
+			})
+			expect(analysis.issues[0], JSON.stringify(op)).toMatchObject({
+				code: 'UNSUPPORTED_VALUE',
+				surface: 'comments',
+				reason: 'value-unsupported',
+				allowedByMatrix: true,
+			})
+		}
+	})
+
 	test('classifies hyperlink journals without destinations as unsupported values', () => {
 		const cases: readonly Operation[] = [
 			{ op: 'setHyperlink', sheet: 'Sheet1', ref: 'A1' },
 			{ op: 'setHyperlink', sheet: 'Sheet1', ref: 'A1', url: '  ' },
 			{ op: 'setHyperlink', sheet: 'Sheet1', ref: 'A1', location: '' },
+			{ op: 'setHyperlink', sheet: 'Sheet1', ref: 'A1', url: 123 as never },
+			{
+				op: 'setHyperlink',
+				sheet: 'Sheet1',
+				ref: 'A1',
+				location: 'Sheet1!B2',
+				display: 123 as never,
+			},
 		]
 
 		for (const op of cases) {

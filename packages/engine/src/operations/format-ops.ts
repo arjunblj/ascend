@@ -540,6 +540,12 @@ export function handleSetComment(
 
 	const refError = cellRefError('setComment', op.ref)
 	if (refError) return err(refError)
+	if (typeof op.text !== 'string') {
+		return err(ascendError('VALIDATION_ERROR', 'setComment text must be a string'))
+	}
+	if (op.author !== undefined && typeof op.author !== 'string') {
+		return err(ascendError('VALIDATION_ERROR', 'setComment author must be a string'))
+	}
 	const ref = op.ref.toUpperCase()
 	const existing = findCommentEntry(result.value.comments, ref)
 	const comment =
@@ -589,6 +595,17 @@ export function handleSetThreadedComment(
 	if (op.ref !== undefined) {
 		const refError = cellRefError('setThreadedComment', op.ref)
 		if (refError) return err(refError)
+	}
+	if (typeof op.text !== 'string') {
+		return err(ascendError('VALIDATION_ERROR', 'setThreadedComment text must be a string'))
+	}
+	if (op.partPath !== undefined && typeof op.partPath !== 'string') {
+		return err(ascendError('VALIDATION_ERROR', 'setThreadedComment partPath must be a string'))
+	}
+	if (op.threadedCommentId !== undefined && typeof op.threadedCommentId !== 'string') {
+		return err(
+			ascendError('VALIDATION_ERROR', 'setThreadedComment threadedCommentId must be a string'),
+		)
 	}
 
 	const matches = sheet.threadedComments
@@ -673,6 +690,8 @@ export function handleSetHyperlink(
 	if (!result.ok) return result
 	const refError = cellRefError('setHyperlink', op.ref)
 	if (refError) return err(refError)
+	const valueError = hyperlinkValueError(op)
+	if (valueError) return err(valueError)
 	if (!hasLinkDestination(op.url) && !hasLinkDestination(op.location)) {
 		return err(
 			ascendError('VALIDATION_ERROR', 'setHyperlink requires url or location', {
@@ -724,6 +743,16 @@ function hyperlinksEqual(
 
 function hasLinkDestination(value: string | undefined): boolean {
 	return typeof value === 'string' && value.trim().length > 0
+}
+
+function hyperlinkValueError(op: Extract<Operation, { op: 'setHyperlink' }>) {
+	for (const field of ['url', 'location', 'display', 'tooltip'] as const) {
+		const value = op[field]
+		if (value !== undefined && typeof value !== 'string') {
+			return ascendError('VALIDATION_ERROR', `setHyperlink ${field} must be a string`)
+		}
+	}
+	return null
 }
 
 function cellRefError(opName: string, ref: unknown) {

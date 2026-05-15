@@ -2044,6 +2044,36 @@ describe('applyOperation', () => {
 		}
 	})
 
+	test('comment operations reject invalid public metadata without mutation', () => {
+		const cases: readonly Operation[] = [
+			{ op: 'setComment', sheet: 'Sheet1', ref: 'A1', text: 123 as never },
+			{ op: 'setComment', sheet: 'Sheet1', ref: 'A1', text: 'Bad', author: 123 as never },
+			{ op: 'setThreadedComment', sheet: 'Sheet1', threadedCommentId: 'tc1', text: 123 as never },
+			{
+				op: 'setThreadedComment',
+				sheet: 'Sheet1',
+				threadedCommentId: 123 as never,
+				text: 'Bad',
+			},
+			{ op: 'setThreadedComment', sheet: 'Sheet1', partPath: 123 as never, text: 'Bad' },
+		]
+
+		for (const op of cases) {
+			const wb = setup()
+			const sheet = wb.getSheet('Sheet1')
+			if (!sheet) throw new Error('expected sheet')
+			sheet.comments.set('B1', { text: 'Legacy' })
+			sheet.threadedComments.push({ ref: 'B1', text: 'Thread', id: 'tc1' })
+			const result = applyOperation(wb, op)
+			expectErr(result)
+			expect(result.error.code, JSON.stringify(op)).toBe('VALIDATION_ERROR')
+			expect(sheet.comments).toEqual(new Map([['B1', { text: 'Legacy' }]]))
+			expect(sheet.threadedComments, JSON.stringify(op)).toEqual([
+				{ ref: 'B1', text: 'Thread', id: 'tc1' },
+			])
+		}
+	})
+
 	test('insertImage allocates image identity and anchor metadata', () => {
 		const wb = setup()
 		const result = applyOperation(wb, {
@@ -7535,6 +7565,37 @@ describe('applyOperation', () => {
 			{ op: 'setHyperlink', sheet: 'Sheet1', ref: 123 as never, url: 'https://example.com' },
 			{ op: 'deleteHyperlink', sheet: 'Sheet1', ref: 'A1:' },
 			{ op: 'deleteHyperlink', sheet: 'Sheet1', ref: 123 as never },
+		]
+
+		for (const op of cases) {
+			const wb = setup()
+			const sheet = wb.getSheet('Sheet1')
+			if (!sheet) throw new Error('expected sheet')
+			sheet.hyperlinks.set('B1', { target: 'https://existing.example' })
+			const result = applyOperation(wb, op)
+			expectErr(result)
+			expect(result.error.code, JSON.stringify(op)).toBe('VALIDATION_ERROR')
+			expect(sheet.hyperlinks).toEqual(new Map([['B1', { target: 'https://existing.example' }]]))
+		}
+	})
+
+	test('setHyperlink rejects invalid public metadata without mutation', () => {
+		const cases: readonly Operation[] = [
+			{ op: 'setHyperlink', sheet: 'Sheet1', ref: 'A1', url: 123 as never },
+			{
+				op: 'setHyperlink',
+				sheet: 'Sheet1',
+				ref: 'A1',
+				location: 'Sheet1!A1',
+				display: 123 as never,
+			},
+			{
+				op: 'setHyperlink',
+				sheet: 'Sheet1',
+				ref: 'A1',
+				url: 'https://example.com',
+				tooltip: 123 as never,
+			},
 		]
 
 		for (const op of cases) {

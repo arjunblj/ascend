@@ -129,6 +129,7 @@ export function runJournalLawProof(options: JournalLawProofOptions = {}): Journa
 	const sequenceLength = positiveInteger(options.sequenceLength, DEFAULT_SEQUENCE_LENGTH)
 	const cases = [
 		...generatedExactCases(seed, exactCaseCount, sequenceLength),
+		...metadataExactCases(),
 		...metadataBoundaryCases(),
 	]
 	const operationFamilies: Record<string, number> = {}
@@ -162,7 +163,8 @@ export function journalLawProofMarkdown(result: JournalLawProofResult): string {
 		'',
 		`Generated: ${result.generatedAt}`,
 		`Seed: ${result.seed}`,
-		`Exact generated cases: ${result.exactChecked}`,
+		`Generated exact budget: ${result.exactCaseCount} x ${result.sequenceLength}`,
+		`Exact law cases: ${result.exactChecked}`,
 		`Lossy boundary cases: ${result.lossyChecked}`,
 		`Failures: ${result.failureCount}`,
 		'',
@@ -332,6 +334,91 @@ function metadataBoundaryCases(): JournalLawCase[] {
 			},
 			ops: [{ op: 'deleteConditionalFormat', sheet: 'Sheet1', range: 'A1:A1' }],
 			expectedIssue: [{ surface: 'conditional-formats', reason: 'metadata-duplicate' }],
+		},
+	]
+}
+
+function metadataExactCases(): JournalLawCase[] {
+	return [
+		{
+			name: 'existing-row-layout-replacement',
+			kind: 'exact-sequence',
+			setup: (wb) => {
+				applyOrThrow(wb, [
+					{ op: 'setRowHeight', sheet: 'Sheet1', row: 1, height: 20 },
+					{ op: 'hideRows', sheet: 'Sheet1', at: 1, count: 1, hidden: true },
+				])
+			},
+			ops: [
+				{ op: 'setRowHeight', sheet: 'Sheet1', row: 1, height: 25 },
+				{ op: 'hideRows', sheet: 'Sheet1', at: 1, count: 1, hidden: false },
+			],
+		},
+		{
+			name: 'existing-column-layout-replacement',
+			kind: 'exact-sequence',
+			setup: (wb) => {
+				applyOrThrow(wb, [
+					{ op: 'setColWidth', sheet: 'Sheet1', col: 1, width: 12 },
+					{ op: 'hideCols', sheet: 'Sheet1', at: 1, count: 1, hidden: true },
+				])
+			},
+			ops: [
+				{ op: 'setColWidth', sheet: 'Sheet1', col: 1, width: 18 },
+				{ op: 'hideCols', sheet: 'Sheet1', at: 1, count: 1, hidden: false },
+			],
+		},
+		{
+			name: 'sheet-protection-replacement',
+			kind: 'exact-sequence',
+			setup: (wb) => {
+				applyOrThrow(wb, [
+					{
+						op: 'setSheetProtection',
+						sheet: 'Sheet1',
+						password: 'before',
+						options: { selectLockedCells: false },
+					},
+				])
+			},
+			ops: [
+				{
+					op: 'setSheetProtection',
+					sheet: 'Sheet1',
+					password: 'after',
+					options: { selectUnlockedCells: false },
+				},
+			],
+		},
+		{
+			name: 'tab-color-replacement',
+			kind: 'exact-sequence',
+			setup: (wb) => {
+				applyOrThrow(wb, [{ op: 'setTabColor', sheet: 'Sheet1', color: 'FF0000' }])
+			},
+			ops: [{ op: 'setTabColor', sheet: 'Sheet1', color: '00FF00' }],
+		},
+		{
+			name: 'page-setup-print-area-replacement',
+			kind: 'exact-sequence',
+			setup: (wb) => {
+				applyOrThrow(wb, [
+					{
+						op: 'setPageSetup',
+						sheet: 'Sheet1',
+						setup: { orientation: 'portrait', paperSize: 9 },
+					},
+					{ op: 'setPrintArea', sheet: 'Sheet1', range: 'A1:B2' },
+				])
+			},
+			ops: [
+				{
+					op: 'setPageSetup',
+					sheet: 'Sheet1',
+					setup: { orientation: 'landscape', paperSize: 9 },
+				},
+				{ op: 'setPrintArea', sheet: 'Sheet1', range: 'C1:D2' },
+			],
 		},
 	]
 }

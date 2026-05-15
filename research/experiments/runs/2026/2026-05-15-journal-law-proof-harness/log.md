@@ -28,6 +28,7 @@ Folded in a tracked proof harness:
 - Added `fixtures/benchmarks/journal-law-proof.ts`.
 - Added `fixtures/benchmarks/journal-law-proof.test.ts`.
 - The harness generates deterministic exact operation sequences over cells, formulas, comments, hyperlinks, freeze panes, data validations, and conditional formats.
+- The harness also seeds existing row layout, column layout, sheet protection, tab color, page setup, and print-area metadata before proving their replacement inverses are exact.
 - For exact generated sequences, it applies operations with `journal: true`, applies `journal.inverseOps` transactionally, and compares stable workbook evidence before and after.
 - It separately probes lossy metadata boundaries:
   - non-suffix data-validation delete;
@@ -48,8 +49,8 @@ bun run fixtures/benchmarks/journal-law-proof.ts
 
 Observed:
 
-- 53 total cases.
-- 48 generated exact cases.
+- 58 total cases.
+- 53 exact law cases: 48 generated exact sequences plus 5 pre-seeded metadata replacement cases.
 - 5 lossy boundary cases.
 - 0 failures.
 - Exact operation counts included:
@@ -60,6 +61,14 @@ Observed:
   - `freezePane=34`
   - `setDataValidation=34`
   - `setConditionalFormat=36`
+  - `setRowHeight=1`
+  - `hideRows=1`
+  - `setColWidth=1`
+  - `hideCols=1`
+  - `setSheetProtection=1`
+  - `setTabColor=1`
+  - `setPageSetup=1`
+  - `setPrintArea=1`
 - Lossy issue counts included:
   - `data-validations:metadata-order=1`
   - `data-validations:metadata-duplicate=1`
@@ -77,7 +86,7 @@ bunx tsc --build
 
 ## Confidence
 
-Medium-high for the covered exact operation families and metadata lossy boundaries. Medium overall because the generator is deterministic and not shrinkable. It proves a stronger subset than hand fixtures, but it is not yet a full fast-check model-based test.
+Medium-high for the covered exact operation families, the pre-seeded row/column/page/protection/tab metadata replacement families, and metadata lossy boundaries. Medium overall because the generator is deterministic and not shrinkable. It proves a stronger subset than hand fixtures, but it is not yet a full fast-check model-based test.
 
 ## Fold-in decision
 
@@ -85,4 +94,4 @@ Promote to correctness proof harness and commit. Keep it out of release proof in
 
 ## Next question
 
-Should the next correctness loop add `fast-check` and convert this deterministic proof into a shrinkable model-based `bun test`, or should it first broaden exact generated families by pre-seeding row/column/page/protection metadata so their public inverses can be tested as exact laws?
+Should the next correctness loop add `fast-check` and convert this deterministic proof into a shrinkable model-based `bun test`, or should it first broaden exact families into package-state and style-related operations without collapsing known creation-loss boundaries into exact cases?

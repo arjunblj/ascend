@@ -1314,6 +1314,46 @@ describe('mutation journal exactness model', () => {
 		expect(cellFormulas(reopened, '1D Row', ['C4', 'C6'])).toEqual({ C4: null, C6: null })
 	})
 
+	test('real XLSX legacy array destructive edits fail without dropping metadata', async () => {
+		const source = readFileSync(
+			new URL('../../../fixtures/xlsx/closedxml/Other_Formulas_ArrayFormula.xlsx', import.meta.url),
+		)
+		const wb = await AscendWorkbook.open(source)
+		expect(collectFormulaInfoRefs(wb, 'Sheet1')).toEqual(['Sheet1!A1'])
+
+		const changed = wb.apply(
+			[{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'B2', value: 99 }] }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([
+			expect.objectContaining({
+				code: 'VALIDATION_ERROR',
+				refs: ['B2', 'A1:B2'],
+			}),
+		])
+		expect(changed.affectedCells).toEqual([])
+		expect(changed.journal).toEqual(
+			expect.objectContaining({
+				supported: false,
+				exact: false,
+				issues: [
+					expect.objectContaining({
+						code: 'JOURNAL_UNAVAILABLE',
+						surface: 'package-parts',
+						reason: 'journal-unavailable',
+					}),
+				],
+			}),
+		)
+		expect(collectFormulaInfoRefs(wb, 'Sheet1')).toEqual(['Sheet1!A1'])
+		expect(cellFormulas(wb, 'Sheet1', ['A1', 'B2'])).toEqual({ A1: '1+2', B2: undefined })
+
+		const reopened = await AscendWorkbook.open(wb.toBytes())
+		expect(collectFormulaInfoRefs(reopened, 'Sheet1')).toEqual(['Sheet1!A1'])
+		expect(cellFormulas(reopened, 'Sheet1', ['A1', 'B2'])).toEqual({ A1: '1+2', B2: undefined })
+	})
+
 	test('real XLSX multi-axis shared formula edits materialize sibling formulas', async () => {
 		const wb = await AscendWorkbook.open(
 			readFileSync(

@@ -869,38 +869,26 @@ describe('agent workflow loss audit', () => {
 				name: 'fail-closed-shared-formula-corruption',
 				risk: 'pre-write shared formula metadata corruption would hide a different saved formula',
 				proof: async () => {
-					const wb = AscendWorkbook.create()
-					const sheet = wb.getWorkbookModel().getSheet('Sheet1')
-					if (!sheet) throw new Error('missing sheet')
-					sheet.cells.set(0, 0, {
-						value: numberValue(2),
-						formula: 'B1*2',
-						styleId: DEFAULT_STYLE_ID,
-						formulaInfo: {
-							kind: 'shared',
-							sharedIndex: 'quality-moat',
-							isMaster: true,
-							masterRef: 'A1',
-							ref: 'A1:A2',
-						},
-					})
-					sheet.cells.set(1, 0, {
-						value: numberValue(198),
-						formula: 'B2*99',
-						styleId: DEFAULT_STYLE_ID,
-						formulaInfo: {
-							kind: 'shared',
-							sharedIndex: 'quality-moat',
-							isMaster: false,
-							masterRef: 'A1',
-						},
+					const wb = await AscendWorkbook.open(
+						readFileSync(
+							new URL('../../../fixtures/xlsx/poi/shared_formulas.xlsx', import.meta.url),
+						),
+					)
+					expect(wb.check().valid).toBe(true)
+					const sheet = wb.getWorkbookModel().getSheet('Label')
+					if (!sheet) throw new Error('missing Label sheet')
+					const importedMember = sheet.cells.get(2, 0)
+					if (!importedMember?.formulaInfo) throw new Error('missing imported shared member')
+					sheet.cells.set(2, 0, {
+						...importedMember,
+						formula: 'B3*99',
 					})
 					const ops = [
-						{ op: 'setCells' as const, sheet: 'Sheet1', updates: [{ ref: 'C1', value: 1 }] },
+						{ op: 'setCells' as const, sheet: 'Label', updates: [{ ref: 'C1', value: 1 }] },
 					]
 
 					const plan = await createAgentPlanFromWorkbook(
-						'quality-moat-shared-formula.xlsx',
+						'quality-moat-shared-formula-real.xlsx',
 						'1'.repeat(64),
 						wb,
 						ops,
@@ -919,11 +907,11 @@ describe('agent workflow loss audit', () => {
 					const output = join(TEMP_DIR, 'quality-moat-shared-formula-out.xlsx')
 					await expect(
 						commitAgentPlanFromWorkbook(
-							'quality-moat-shared-formula.xlsx',
+							'quality-moat-shared-formula-real.xlsx',
 							'1'.repeat(64),
 							wb,
 							ops,
-							{ output },
+							{ output, approvals: plan.approvals.map((approval) => approval.id) },
 							{ sourceBytes: wb.toBytes() },
 						),
 					).rejects.toThrow('Commit blocked by write policy')

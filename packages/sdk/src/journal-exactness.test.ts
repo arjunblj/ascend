@@ -942,6 +942,41 @@ describe('mutation journal exactness model', () => {
 		}
 	})
 
+	test('classifies rejected pivot cache journals as unsupported values', () => {
+		const cases: readonly Operation[] = [
+			{ op: 'setPivotCache', sourceRef: 'A1:B2' },
+			{ op: 'setPivotCache', cacheId: 1 },
+			{ op: 'setPivotCache', cacheId: 1, sourceRef: 'A1:B2:C3' },
+		]
+
+		for (const op of cases) {
+			const wb = AscendWorkbook.create()
+			wb.getWorkbookModel().pivotCaches.push({
+				partPath: 'xl/pivotCache/pivotCacheDefinition1.xml',
+				cacheId: 1,
+				sourceRef: 'A1:D10',
+				fields: [],
+			})
+			const analysis = analyzeMutationJournalExactness(
+				buildMutationJournal(wb.getWorkbookModel(), [op]),
+			)
+			expect(analysis, JSON.stringify(op)).toMatchObject({
+				supported: true,
+				exact: false,
+				issueCount: 1,
+				surfaces: ['pivot-caches'],
+				reasons: ['value-unsupported'],
+				hasMatrixViolation: false,
+			})
+			expect(analysis.issues[0], JSON.stringify(op)).toMatchObject({
+				code: 'UNSUPPORTED_VALUE',
+				surface: 'pivot-caches',
+				reason: 'value-unsupported',
+				allowedByMatrix: true,
+			})
+		}
+	})
+
 	test('classifies setComment legacy drawing loss without changing the v1 vocabulary', () => {
 		const classified = classifyMutationJournalIssues(lossySetCommentLegacyDrawingJournal().issues)
 		expect(classified).toContainEqual({

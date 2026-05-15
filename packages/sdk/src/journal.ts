@@ -577,9 +577,15 @@ export const MUTATION_JOURNAL_EXACTNESS_MATRIX: readonly MutationJournalExactnes
 		publicInverse: 'conditional',
 		constraints: [
 			'pivot cache source and refresh fields restore when every touched field had a prior public value',
+			'pivot cache edits require a public selector, at least one editable field, and valid source refs',
 			'unsetting fields and pivot cache records remain package-preserved metadata',
 		],
-		lossReasons: ['operation-unsupported', 'pivot-cache-unsettable', 'package-part-preservation'],
+		lossReasons: [
+			'operation-unsupported',
+			'pivot-cache-unsettable',
+			'package-part-preservation',
+			'value-unsupported',
+		],
 		representativeOps: ['setPivotCache'],
 	},
 	{
@@ -4481,22 +4487,62 @@ function journalSetPivotCache(
 ): DraftJournalEntry {
 	const preimage = pivotCachePreimage(workbook, op)
 	const inverse = pivotCacheInverseOperation(op, preimage)
-	const issues: MutationJournalIssue[] = inverse.exact
-		? []
-		: [
-				{
-					code: 'LOSSY_INVERSE',
-					message: 'Pivot cache selector cannot be restored exactly',
-					surface: 'pivot-caches',
-					reason: 'pivot-cache-unsettable',
-				},
-			]
+	const valueIssues = pivotCacheValueIssues(op)
+	const issues: MutationJournalIssue[] =
+		valueIssues.length > 0
+			? valueIssues
+			: inverse.exact
+				? []
+				: [
+						{
+							code: 'LOSSY_INVERSE',
+							message: 'Pivot cache selector cannot be restored exactly',
+							surface: 'pivot-caches',
+							reason: 'pivot-cache-unsettable',
+						},
+					]
 	return {
 		opIndex,
 		op,
-		inverseOps: inverse.op ? [inverse.op] : [],
+		inverseOps: valueIssues.length === 0 && inverse.op ? [inverse.op] : [],
 		preimages: [{ kind: 'pivot-cache', pivotCache: preimage }],
 		issues,
+	}
+}
+
+function pivotCacheValueIssues(
+	op: Extract<Operation, { op: 'setPivotCache' }>,
+): MutationJournalIssue[] {
+	if (op.cacheId === undefined && op.partPath === undefined && op.pivotTable === undefined) {
+		return [pivotCacheUnsupportedValueIssue('selector')]
+	}
+	if (!hasPivotCacheUpdate(op)) {
+		return [pivotCacheUnsupportedValueIssue('update')]
+	}
+	if (op.sourceRef !== undefined && !isValidJournalPivotSourceRef(op.sourceRef)) {
+		return [pivotCacheUnsupportedValueIssue('sourceRef')]
+	}
+	return []
+}
+
+function pivotCacheUnsupportedValueIssue(field: string): MutationJournalIssue {
+	return {
+		code: 'UNSUPPORTED_VALUE',
+		message: `Cannot build exact rollback journal for setPivotCache because ${field} is not supported by pivot cache validation`,
+		surface: 'pivot-caches',
+		reason: 'value-unsupported',
+		refs: ['pivot-cache'],
+	}
+}
+
+function isValidJournalPivotSourceRef(sourceRef: string): boolean {
+	try {
+		const body = sourceRef.includes('!') ? sourceRef.slice(sourceRef.indexOf('!') + 1) : sourceRef
+		if (body.split(':').length > 2) return false
+		parseRange(sourceRef)
+		return true
+	} catch {
+		return false
 	}
 }
 

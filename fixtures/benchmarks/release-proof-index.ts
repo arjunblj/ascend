@@ -273,6 +273,14 @@ function packageActionArtifact(
 				requirement:
 					'approve boundaries for signatures, chart byte passthrough, Excel recalculation equivalence, and unsupported feature semantics',
 			},
+			{
+				id: 'streaming-matrix-boundary',
+				status: 'missing',
+				ownerLoop: 'performance',
+				requirement:
+					'approve that one representative streaming writer proof is sufficient for release wording, or expand package-action proof to streaming variants for every package-action scenario before claiming streaming parity',
+				evidence: 'current proof reports one streamingProofCase and one streamingRegeneratePart',
+			},
 		],
 		headlineClaimAllowed: false,
 		releaseGate: 'blocked-by-publication-policy',

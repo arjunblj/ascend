@@ -22,12 +22,12 @@ describe('release proof evidence index', () => {
 		expect(index.readiness).toMatchObject({
 			releaseGate: 'blocked-by-publication-policy',
 			headlineClaimsAllowed: false,
-			totalRequirementCount: 6,
-			missingRequirementCount: 6,
+			totalRequirementCount: 7,
+			missingRequirementCount: 7,
 			satisfiedRequirementCount: 0,
 			missingByOwnerLoop: {
 				correctness: 1,
-				performance: 1,
+				performance: 2,
 				product: 2,
 				release: 2,
 			},
@@ -37,6 +37,7 @@ describe('release proof evidence index', () => {
 					'edge-fixture-policy',
 					'provenance-boundary',
 					'unsupported-feature-boundary',
+					'streaming-matrix-boundary',
 				],
 			},
 		})
@@ -107,6 +108,10 @@ describe('release proof evidence index', () => {
 					id: 'unsupported-feature-boundary',
 					ownerLoop: 'correctness',
 				}),
+				expect.objectContaining({
+					id: 'streaming-matrix-boundary',
+					ownerLoop: 'performance',
+				}),
 			],
 			fixtureProvenance: {
 				publicFixtureCases: 2,
@@ -162,9 +167,9 @@ describe('release proof evidence index', () => {
 		expect(markdown).toContain('Publication blockers')
 		expect(markdown).toContain('Ready when')
 		expect(markdown).toContain('Release Readiness Gate')
-		expect(markdown).toContain('ReadyWhen requirements: total=6, missing=6, satisfied=0')
+		expect(markdown).toContain('ReadyWhen requirements: total=7, missing=7, satisfied=0')
 		expect(markdown).toContain(
-			'Missing by owner loop: correctness=1, performance=1, product=2, release=2',
+			'Missing by owner loop: correctness=1, performance=2, product=2, release=2',
 		)
 		expect(markdown).toContain(
 			'Missing by artifact: safe-open-proof=public-edge-fixtures,release-latency-run,publication-boundary',
@@ -175,6 +180,7 @@ describe('release proof evidence index', () => {
 		expect(markdown).toContain('release-latency-run(missing,performance)')
 		expect(markdown).toContain('edge-fixture-policy(missing,product)')
 		expect(markdown).toContain('provenance-boundary(missing,release)')
+		expect(markdown).toContain('streaming-matrix-boundary(missing,performance)')
 		expect(markdown).toContain('Fixture provenance')
 		expect(markdown).toContain('generatedCases=signed,unknown-part,malformed')
 		expect(markdown).toContain('deterministicGenerated=signed,unknown-part,malformed')

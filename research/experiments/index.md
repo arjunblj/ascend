@@ -66,6 +66,7 @@ Updated: 2026-05-15
 | [Top proof owner prompts](runs/2026/2026-05-15-top-proof-owner-prompts/log.md) | tightened top-two owner prompts with release-index commands, blockers, and exit criteria | product loop, correctness loop |
 | [Safe open public fixture replacement scan](runs/2026/2026-05-15-safe-open-public-fixture-replacement-scan/log.md) | folded in fixture scan harness; no checked-in public signed/unknown replacement found | product loop, performance loop |
 | [Release public fixture proof policy](runs/2026/2026-05-15-release-public-fixture-proof-policy/log.md) | defined when generated edge packages are acceptable proof versus when public binaries are required | product loop, correctness loop |
+| [Release proof headline gate](runs/2026/2026-05-15-release-proof-headline-gate/log.md) | folded in machine-readable headline gate for top release proof artifacts with unresolved blockers | product loop, correctness loop |
 | [Release proof index digests](runs/2026/2026-05-15-release-proof-index-digests/log.md) | folded in benchmark-only digest index | product loop |
 | [Release proof index refresh](runs/2026/2026-05-15-release-proof-index-refresh/log.md) | digest index rerun for top two proof artifacts, no attestation claim | product loop |
 | [Agent view index promotion gate](runs/2026/2026-05-15-agent-view-index-promotion-gate/log.md) | handoff only, hold out of release proof index | product/DX loop |

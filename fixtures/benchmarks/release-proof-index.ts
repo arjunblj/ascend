@@ -23,6 +23,8 @@ export interface ReleaseProofIndexArtifact {
 	readonly claim: string
 	readonly publicationStatus: 'local-proof-ready' | 'needs-release-packaging'
 	readonly publicationBlockers: readonly string[]
+	readonly headlineClaimAllowed: boolean
+	readonly releaseGate: 'ready' | 'blocked-by-publication-policy'
 	readonly sha256: string
 	readonly stableShapeSha256: string
 	readonly jsonBytes: number
@@ -72,8 +74,8 @@ export function releaseProofIndexMarkdown(result: ReleaseProofIndexResult): stri
 		`Generated: ${result.generatedAt}`,
 		result.boundary,
 		'',
-		'| Artifact | Claim | Command | Publication status | Publication blockers | JSON bytes | Markdown bytes | SHA-256 | Stable shape SHA-256 | Summary | Boundary |',
-		'| --- | --- | --- | --- | --- | ---: | ---: | --- | --- | --- | --- |',
+		'| Artifact | Claim | Command | Publication status | Release gate | Headline claim allowed | Publication blockers | JSON bytes | Markdown bytes | SHA-256 | Stable shape SHA-256 | Summary | Boundary |',
+		'| --- | --- | --- | --- | --- | --- | --- | ---: | ---: | --- | --- | --- | --- |',
 		...result.artifacts.map(markdownRow),
 		'',
 		`Signed: ${result.signed}`,
@@ -102,6 +104,8 @@ function safeOpenArtifact(
 			'signed and unknown-part cases are durable code-generated packages, not public binary fixtures',
 			'local timing evidence is proof-run data, not a release performance threshold',
 		],
+		headlineClaimAllowed: false,
+		releaseGate: 'blocked-by-publication-policy',
 		sha256: sha256(json),
 		stableShapeSha256: sha256(stableJson(stripRunNoise(result))),
 		jsonBytes: utf8Bytes(json),
@@ -138,6 +142,8 @@ function packageActionArtifact(
 			'synthetic edge packages must stay disclosed unless replaced by public binary fixtures',
 			'proof is local evidence, not signed provenance or third-party attestation',
 		],
+		headlineClaimAllowed: false,
+		releaseGate: 'blocked-by-publication-policy',
 		sha256: sha256(json),
 		stableShapeSha256: sha256(stableJson(stripRunNoise(result))),
 		jsonBytes: utf8Bytes(json),
@@ -165,6 +171,8 @@ function markdownRow(row: ReleaseProofIndexArtifact): string {
 		row.claim,
 		`\`${row.command}\``,
 		row.publicationStatus,
+		row.releaseGate,
+		String(row.headlineClaimAllowed),
 		row.publicationBlockers.join('; '),
 		String(row.jsonBytes),
 		String(row.markdownBytes),

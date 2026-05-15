@@ -20,6 +20,8 @@ describe('release proof evidence index', () => {
 		expect(index.artifacts.find((artifact) => artifact.name === 'safe-open-proof')).toMatchObject({
 			command: 'bun run fixtures/benchmarks/safe-open-proof.ts --no-timings --json',
 			publicationStatus: 'needs-release-packaging',
+			headlineClaimAllowed: false,
+			releaseGate: 'blocked-by-publication-policy',
 			summary: { cases: 9, rejected: 1, malformedRejected: true },
 		})
 		expect(
@@ -32,8 +34,11 @@ describe('release proof evidence index', () => {
 		).toMatchObject({
 			command: 'bun run fixtures/benchmarks/package-action-proof.ts --no-timings --json',
 			publicationStatus: 'needs-release-packaging',
+			headlineClaimAllowed: false,
+			releaseGate: 'blocked-by-publication-policy',
 			summary: { cases: 8, allActionsCovered: true, sourceGraphEverywhere: true },
 		})
+		expect(index.artifacts.every((artifact) => artifact.headlineClaimAllowed === false)).toBe(true)
 	})
 
 	test('keeps stable shape digests deterministic in no-timings mode', async () => {
@@ -53,6 +58,8 @@ describe('release proof evidence index', () => {
 		expect(markdown).toContain('Release Proof Evidence Index')
 		expect(markdown).toContain('not signed provenance')
 		expect(markdown).toContain('Publication blockers')
+		expect(markdown).toContain('Headline claim allowed')
+		expect(markdown).toContain('blocked-by-publication-policy')
 		expect(markdown).toContain('safe-open-proof.ts --no-timings --json')
 		expect(markdown).toContain('SLSA')
 		expect(markdown).toContain('Attestation: false')

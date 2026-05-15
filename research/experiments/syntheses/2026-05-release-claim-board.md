@@ -190,6 +190,8 @@ Public binary fixtures are required before stronger headline copy when any of th
 
 Current application: the safe-open signed and unknown-part cases can remain generated local proof because they exercise OPC package topology and are disclosed as synthetic. They should still block stronger release copy until accepted or replaced; `fixtures/benchmarks/safe-open-fixture-scan.ts` currently finds no checked-in public binary replacement.
 
+Release-index enforcement: `fixtures/benchmarks/release-proof-index.ts` marks both current top artifacts as `headlineClaimAllowed: false` with `releaseGate: blocked-by-publication-policy`. This keeps local proof usable while making stronger headline copy a deliberate product decision rather than an accidental interpretation of a digest.
+
 ## Do Not Promote Yet
 
 - Formula safe rename or edit-producing rename.

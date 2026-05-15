@@ -83,7 +83,7 @@ export function renameHyperlinkLocation(
 ): string | undefined {
 	if (!location) return location
 	const split = splitSheetQualifiedRef(location)
-	if (!split || split.sheet !== oldName) return location
+	if (!split || !sameSheetName(split.sheet, oldName)) return location
 	return `${formatSheetNameForFormula(newName)}!${split.ref}`
 }
 
@@ -109,9 +109,13 @@ function shiftHyperlinkLocation(
 ): string | undefined {
 	if (!location) return location
 	const split = splitSheetQualifiedRef(location)
-	if (!split || split.sheet !== sheetName) return location
+	if (!split || !sameSheetName(split.sheet, sheetName)) return location
 	const shifted = shiftA1RangeOrCell(split.ref, axis, at, delta)
 	return shifted ? `${formatSheetNameForFormula(split.sheet)}!${shifted}` : location
+}
+
+function sameSheetName(left: string, right: string): boolean {
+	return left.toLowerCase() === right.toLowerCase()
 }
 
 function splitSheetQualifiedRef(input: string): { sheet: string; ref: string } | null {

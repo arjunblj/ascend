@@ -5457,7 +5457,7 @@ describe('applyOperation', () => {
 			personId: '0',
 			author: 'Ada',
 		})
-		s.hyperlinks.set('B2', { target: 'https://example.com', location: 'Sheet1!A2' })
+		s.hyperlinks.set('B2', { target: 'https://example.com', location: 'sheet1!A2' })
 		s.dataValidations.push({ sqref: 'A2:B2', type: 'list', formula1: 'A2' })
 		s.conditionalFormats.push({
 			sqref: 'A2',
@@ -5515,7 +5515,7 @@ describe('applyOperation', () => {
 		])
 		expect(s.hyperlinks.get('B4')).toEqual({
 			target: 'https://example.com',
-			location: 'Sheet1!A4',
+			location: 'sheet1!A4',
 		})
 		expect(s.dataValidations[0]?.sqref).toBe('A4:B4')
 		expect(s.dataValidations[0]?.formula1).toBe('A4')
@@ -6209,7 +6209,7 @@ describe('applyOperation', () => {
 			sqref: 'A1',
 			rules: [{ type: 'expression', formulas: ['SUM(Sheet1!A:A)>0'] }],
 		})
-		s.hyperlinks.set('A1', { location: 'Sheet1!A1', display: 'jump' })
+		s.hyperlinks.set('A1', { location: 'sheet1!A1', display: 'jump' })
 		s.tables.push({
 			id: createTableId(),
 			name: 'BalanceTable',

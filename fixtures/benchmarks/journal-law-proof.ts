@@ -11,6 +11,7 @@ export interface JournalLawProofCaseResult {
 	readonly name: string
 	readonly kind: 'exact-sequence' | 'lossy-boundary'
 	readonly operationCount: number
+	readonly operationNames: readonly Operation['op'][]
 	readonly journalExact: boolean | null
 	readonly inverseRestored: boolean | null
 	readonly issueReasons: readonly string[]
@@ -30,6 +31,19 @@ export interface JournalLawProofResult {
 	readonly issueReasons: Readonly<Record<string, number>>
 	readonly cases: readonly JournalLawProofCaseResult[]
 	readonly passed: boolean
+}
+
+export interface JournalLawClaimReport {
+	readonly generatedAt: string
+	readonly allowedClaim: string
+	readonly boundary: string
+	readonly proofStatus: 'passed' | 'failed'
+	readonly exactCases: number
+	readonly lossyBoundaries: number
+	readonly exactOperationFamilies: readonly string[]
+	readonly lossyIssueReasons: Readonly<Record<string, number>>
+	readonly doNotPromoteYet: readonly string[]
+	readonly nextProof: string
 }
 
 interface JournalLawCase {
@@ -181,6 +195,64 @@ export function journalLawProofMarkdown(result: JournalLawProofResult): string {
 	].join('\n')
 }
 
+export function journalLawClaimReport(result: JournalLawProofResult): JournalLawClaimReport {
+	const exactCases = result.cases.filter((entry) => entry.kind === 'exact-sequence')
+	const exactOperationFamilies = Array.from(
+		new Set(exactCases.flatMap((entry) => entry.operationNames)),
+	).sort((left, right) => left.localeCompare(right))
+	return {
+		generatedAt: result.generatedAt,
+		allowedClaim:
+			'Ascend can run a local deterministic journal-law proof that shows selected inverse journals restore workbook evidence, while known metadata/style/table gaps are reported as lossy boundaries.',
+		boundary:
+			'This is not shrinkable property-based testing, full undo coverage for every operation, style/table-style exactness, or signed release attestation.',
+		proofStatus: result.passed ? 'passed' : 'failed',
+		exactCases: result.exactChecked,
+		lossyBoundaries: result.lossyChecked,
+		exactOperationFamilies,
+		lossyIssueReasons: result.issueReasons,
+		doNotPromoteYet: [
+			'Full property-based journal-law claim until generated failures are shrinkable and replayable.',
+			'Style and table-style exactness until public inverse operations restore package/table metadata exactly.',
+			'Release-proof-index inclusion until the correctness owner accepts deterministic proof artifacts beside the top two product claims.',
+		],
+		nextProof:
+			'Add fast-check model-based generation with replayPath output, or keep deterministic proof as a correctness-only claim report.',
+	}
+}
+
+export function journalLawClaimReportMarkdown(report: JournalLawClaimReport): string {
+	return [
+		'# Journal Law Claim Report',
+		'',
+		`Generated: ${report.generatedAt}`,
+		`Proof status: ${report.proofStatus}`,
+		'',
+		'## Claim wording allowed today',
+		'',
+		report.allowedClaim,
+		'',
+		'## Honest boundary',
+		'',
+		report.boundary,
+		'',
+		'## Proof summary',
+		'',
+		`Exact law cases: ${report.exactCases}`,
+		`Lossy boundaries: ${report.lossyBoundaries}`,
+		`Exact operation families: ${report.exactOperationFamilies.join(', ')}`,
+		`Lossy issue reasons: ${formatCounts(report.lossyIssueReasons)}`,
+		'',
+		'## Do not promote yet',
+		'',
+		...report.doNotPromoteYet.map((entry) => `- ${entry}`),
+		'',
+		'## Next proof',
+		'',
+		report.nextProof,
+	].join('\n')
+}
+
 function runJournalLawCase(entry: JournalLawCase): JournalLawProofCaseResult {
 	const wb = AscendWorkbook.create()
 	entry.setup?.(wb)
@@ -202,6 +274,7 @@ function runJournalLawCase(entry: JournalLawCase): JournalLawProofCaseResult {
 			name: entry.name,
 			kind: entry.kind,
 			operationCount: entry.ops.length,
+			operationNames: entry.ops.map((op) => op.op),
 			journalExact: journal.exact,
 			inverseRestored: null,
 			issueReasons,
@@ -230,6 +303,7 @@ function runJournalLawCase(entry: JournalLawCase): JournalLawProofCaseResult {
 		name: entry.name,
 		kind: entry.kind,
 		operationCount: entry.ops.length,
+		operationNames: entry.ops.map((op) => op.op),
 		journalExact: journal.exact,
 		inverseRestored,
 		issueReasons,
@@ -248,6 +322,7 @@ function failedCase(
 		name: entry.name,
 		kind: entry.kind,
 		operationCount: entry.ops.length,
+		operationNames: entry.ops.map((op) => op.op),
 		journalExact,
 		inverseRestored: null,
 		issueReasons,
@@ -757,7 +832,14 @@ if (import.meta.main) {
 		exactCaseCount: readNumberFlag('--exact-cases'),
 		sequenceLength: readNumberFlag('--sequence-length'),
 	})
-	if (process.argv.includes('--json')) {
+	if (process.argv.includes('--claim-report')) {
+		const report = journalLawClaimReport(result)
+		console.log(
+			process.argv.includes('--json')
+				? JSON.stringify(report, null, 2)
+				: journalLawClaimReportMarkdown(report),
+		)
+	} else if (process.argv.includes('--json')) {
 		console.log(JSON.stringify(result, null, 2))
 	} else {
 		console.log(journalLawProofMarkdown(result))

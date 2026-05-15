@@ -75,6 +75,7 @@ Updated: 2026-05-15
 | [Journal law proof harness](runs/2026/2026-05-15-journal-law-proof-harness/log.md) | folded in deterministic generated journal-law proof harness | correctness loop |
 | [Journal law preseeded metadata](runs/2026/2026-05-15-journal-law-preseeded-metadata/log.md) | folded in pre-seeded row/column/page/protection metadata exact laws | correctness loop |
 | [Journal law package state style boundary](runs/2026/2026-05-15-journal-law-package-state-style-boundary/log.md) | folded in package-state exact laws and style/table-style lossy boundaries | correctness loop |
+| [Journal law claim report](runs/2026/2026-05-15-journal-law-claim-report/log.md) | folded in claim-safe Markdown/JSON report mode, still held out of release proof index | correctness loop, product loop |
 | [Agent view omitted evidence recovery](runs/2026/2026-05-15-agent-view-omitted-evidence-recovery/log.md) | folded in recovery proof harness, locator metadata needed | product/DX loop |
 | [Agent view omitted locator metadata](runs/2026/2026-05-15-agent-view-omitted-locator-metadata/log.md) | folded in compact omitted-evidence locators | product/DX loop |
 | [Agent view formula pattern provenance](runs/2026/2026-05-15-agent-view-formula-pattern-provenance/log.md) | folded in formula-pattern example refs | product/DX loop |

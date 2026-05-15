@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test'
-import { journalLawProofMarkdown, runJournalLawProof } from './journal-law-proof.ts'
+import {
+	journalLawClaimReport,
+	journalLawClaimReportMarkdown,
+	journalLawProofMarkdown,
+	runJournalLawProof,
+} from './journal-law-proof.ts'
 
 describe('journal law proof harness', () => {
 	test('covers generated exact inverse laws and lossy metadata boundaries', () => {
@@ -18,6 +23,9 @@ describe('journal law proof harness', () => {
 		expect(result.operationFamilies.setDocumentProperties ?? 0).toBeGreaterThan(0)
 		expect(result.operationFamilies.setTheme ?? 0).toBeGreaterThan(0)
 		expect(result.operationFamilies.setTableStyle ?? 0).toBeGreaterThan(0)
+		expect(
+			result.cases.find((entry) => entry.name === 'theme-replacement')?.operationNames,
+		).toEqual(['setTheme'])
 		expect(result.issueReasons['package-parts:package-part-preservation']).toBeGreaterThan(0)
 		expect(result.issueReasons['tables:table-metadata']).toBe(1)
 		expect(result.issueReasons['data-validations:metadata-order']).toBe(1)
@@ -36,5 +44,19 @@ describe('journal law proof harness', () => {
 		expect(markdown).toContain('not shrinkable property testing')
 		expect(markdown).toContain('data-validations:metadata-order')
 		expect(markdown).toContain('conditional-formats:metadata-duplicate')
+	})
+
+	test('renders release-facing claim wording without promoting lossy boundaries', () => {
+		const report = journalLawClaimReport(
+			runJournalLawProof({ exactCaseCount: 4, sequenceLength: 3 }),
+		)
+		const markdown = journalLawClaimReportMarkdown(report)
+
+		expect(report.proofStatus).toBe('passed')
+		expect(report.exactOperationFamilies).toContain('setTheme')
+		expect(report.lossyIssueReasons['package-parts:package-part-preservation']).toBeGreaterThan(0)
+		expect(markdown).toContain('Claim wording allowed today')
+		expect(markdown).toContain('not shrinkable property-based testing')
+		expect(markdown).toContain('Style and table-style exactness')
 	})
 })

@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import { releaseProofIndexMarkdown, runReleaseProofIndex } from './release-proof-index.ts'
+import {
+	releaseProofIndexMarkdown,
+	releaseProofOwnerHandoffIndex,
+	runReleaseProofIndex,
+} from './release-proof-index.ts'
 
 describe('release proof evidence index', () => {
 	test('references top claim proof artifacts by digest without embedding artifacts', async () => {
@@ -302,6 +306,36 @@ describe('release proof evidence index', () => {
 		expect(first.artifacts.map((artifact) => artifact.stableShapeSha256)).toEqual(
 			second.artifacts.map((artifact) => artifact.stableShapeSha256),
 		)
+	})
+
+	test('emits compact owner handoff JSON without embedding full artifacts', async () => {
+		const index = await runReleaseProofIndex({ includeTimings: false })
+		const handoff = releaseProofOwnerHandoffIndex(index)
+
+		expect(handoff).toMatchObject({
+			releaseGate: 'blocked-by-publication-policy',
+			headlineClaimsAllowed: false,
+			implementationSurfacePromotionAllowed: false,
+			missingRequirementCount: 9,
+			boundary: expect.stringContaining('not a release artifact bundle'),
+		})
+		expect(handoff.implementationHandoffs.map((entry) => entry.artifact)).toEqual([
+			'safe-open-proof',
+			'package-action-proof',
+		])
+		expect(handoff.implementationHandoffs[0]).toMatchObject({
+			claim: 'safe unknown workbook opening',
+			proofCommand: 'bun run fixtures/benchmarks/safe-open-proof.ts --no-timings --json',
+			proofRequired: {
+				surface: expect.stringContaining('no new opener surface'),
+				killCriterion: expect.stringContaining('Do not publish headline wording'),
+			},
+		})
+		expect(handoff.deferredClaims.map((entry) => entry.status)).toContain('do-not-promote-yet')
+		expect(handoff.excludedEvidence.map((entry) => entry.name)).toEqual([
+			'practical-latency-contracts',
+		])
+		expect(JSON.stringify(handoff)).not.toContain('"artifacts"')
 	})
 
 	test('renders honest non-attestation boundaries', async () => {

@@ -119,6 +119,14 @@ Owner loops should consume these JSON fields first:
 | `deferredClaims` | Machine-readable do-not-promote/proof-backed-hold list for non-top directions. |
 | `excludedEvidence` | Evidence that exists but must not become release proof yet, currently practical latency contracts. |
 
+Owner-loop shortcut:
+
+```bash
+bun run fixtures/benchmarks/release-proof-index.ts --no-timings --owner-handoffs-json
+```
+
+This emits the routing fields above without embedding full proof artifacts.
+
 ## Do Not Promote
 
 | Direction | Freeze reason |

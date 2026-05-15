@@ -91,6 +91,18 @@ export interface ReleaseProofIndexResult {
 	readonly deferredClaims: readonly ReleaseProofDeferredClaim[]
 }
 
+export interface ReleaseProofOwnerHandoffIndex {
+	readonly generatedAt: string
+	readonly releaseGate: ReleaseProofReadinessSummary['releaseGate']
+	readonly headlineClaimsAllowed: boolean
+	readonly implementationSurfacePromotionAllowed: boolean
+	readonly missingRequirementCount: number
+	readonly implementationHandoffs: readonly ReleaseProofImplementationHandoff[]
+	readonly deferredClaims: readonly ReleaseProofDeferredClaim[]
+	readonly excludedEvidence: readonly ReleaseProofIndexExcludedEvidence[]
+	readonly boundary: string
+}
+
 export interface ReleaseProofReadinessSummary {
 	readonly releaseGate: 'ready' | 'blocked-by-publication-policy'
 	readonly headlineClaimsAllowed: boolean
@@ -225,6 +237,23 @@ export function releaseProofIndexMarkdown(result: ReleaseProofIndexResult): stri
 		`Signed: ${result.signed}`,
 		`Attestation: ${result.attestation}`,
 	].join('\n')
+}
+
+export function releaseProofOwnerHandoffIndex(
+	result: ReleaseProofIndexResult,
+): ReleaseProofOwnerHandoffIndex {
+	return {
+		generatedAt: result.generatedAt,
+		releaseGate: result.readiness.releaseGate,
+		headlineClaimsAllowed: result.readiness.headlineClaimsAllowed,
+		implementationSurfacePromotionAllowed: result.readiness.implementationSurfacePromotionAllowed,
+		missingRequirementCount: result.readiness.missingRequirementCount,
+		implementationHandoffs: result.readiness.implementationHandoffs,
+		deferredClaims: result.deferredClaims,
+		excludedEvidence: result.excludedEvidence,
+		boundary:
+			'Compact owner handoff index for release proof routing. It is not a release artifact bundle, signed attestation, or product surface.',
+	}
 }
 
 const EXCLUDED_EVIDENCE: readonly ReleaseProofIndexExcludedEvidence[] = [
@@ -965,12 +994,21 @@ function utf8Bytes(value: string): number {
 
 if (import.meta.main) {
 	const json = process.argv.includes('--json')
+	const ownerHandoffsJson = process.argv.includes('--owner-handoffs-json')
 	const result = await runReleaseProofIndex({
 		includeTimings: !process.argv.includes('--no-timings'),
 	})
-	console.log(json ? JSON.stringify(result, null, 2) : releaseProofIndexMarkdown(result))
-	if (!json) {
+	console.log(
+		ownerHandoffsJson
+			? JSON.stringify(releaseProofOwnerHandoffIndex(result), null, 2)
+			: json
+				? JSON.stringify(result, null, 2)
+				: releaseProofIndexMarkdown(result),
+	)
+	if (!json && !ownerHandoffsJson) {
 		console.error(`Indexed ${result.artifactCount} release proof evidence artifacts.`)
-		console.error(`Run with --json for machine-readable output from ${basename(import.meta.path)}.`)
+		console.error(
+			`Run with --json or --owner-handoffs-json for machine-readable output from ${basename(import.meta.path)}.`,
+		)
 	}
 }

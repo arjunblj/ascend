@@ -214,14 +214,9 @@ if (poiFixtures.length > 0) {
 			])
 		})
 
-		it('accepts real shared and array formula metadata without binding-integrity drift', async () => {
-			const fixtures = [
-				'GeneralFormatTests.xlsx',
-				'MatrixFormulaEvalTestData.xlsx',
-				'testSharedFormulasSetBlank.xlsx',
-			]
-			for (const fixture of fixtures) {
-				const wb = await AscendWorkbook.open(loadFixture(fixture))
+		it('accepts real POI formula binding metadata without verifier drift', async () => {
+			for (const fixture of poiFixtures) {
+				const wb = await AscendWorkbook.open(loadFixture(fixture), poiReadOptions(fixture))
 				expect(
 					wb.check().issues.filter((issue) => issue.rule === 'formula-binding-integrity'),
 					fixture,

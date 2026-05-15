@@ -71,6 +71,14 @@ Proof command:
 bun run fixtures/benchmarks/safe-open-proof.ts --no-timings --json
 ```
 
+Timed diagnostic rerun:
+
+```bash
+bun run fixtures/benchmarks/safe-open-proof.ts --repeat 3 --warmup 1 --json
+```
+
+Public fixture timing summary from the diagnostic rerun: open-plan medians ranged from 0.133 ms to 2.514 ms, and full/open-plan ratios ranged from 12.35x to 88.98x. This supports performance investigation only; it does not satisfy `release-latency-run` until performance approves the environment, repeat/warmup policy, public input set, and non-threshold wording.
+
 Current proof:
 
 | Metric | Value |

@@ -3240,13 +3240,17 @@ describe('agent workflow loss audit', () => {
 		const before = await AscendWorkbook.open(await Bun.file(input).bytes())
 		const plan = await createAgentPlan(input, ops)
 		const committed = await commitAgentPlan(input, ops, { output, expectSha256: plan.inputSha256 })
-		const after = await AscendWorkbook.open(await Bun.file(output).bytes())
+		const sourceBytes = await Bun.file(input).bytes()
+		const outputBytes = await Bun.file(output).bytes()
+		const after = await AscendWorkbook.open(outputBytes)
 		const diff = before.diff(after)
 		const proof = createReleaseProofBundle(plan, committed, {
 			diff: {
 				sheetDiffCount: diff.sheets.length,
 				changedSheets: diff.sheets.map((sheet) => sheet.name),
 			},
+			sourceBytes,
+			outputBytes,
 		})
 
 		expect(proof.kind).toBe('ascend-release-proof-bundle')
@@ -3258,6 +3262,16 @@ describe('agent workflow loss audit', () => {
 		expect(proof.packageActions.issueCount).toBe(0)
 		expect(proof.packageActions.plan.byAction.regenerate).toBeGreaterThan(0)
 		expect(proof.packageActions.commit.byAction.regenerate).toBeGreaterThan(0)
+		expect(proof.packageActions.plan.coverage.sourceByteDigestCount).toBeGreaterThan(0)
+		expect(proof.packageActions.commit.coverage.sourceByteDigestCount).toBeGreaterThan(0)
+		expect(proof.packageActions.commit.coverage.outputByteDigestCount).toBeGreaterThan(0)
+		expect(
+			proof.packageActions.commit.coverage.matchingByteDigestCount +
+				proof.packageActions.commit.coverage.mismatchedByteDigestCount,
+		).toBeGreaterThan(0)
+		expect(
+			proof.packageActions.commit.actions.some((action) => action.outputSha256 !== undefined),
+		).toBe(true)
 		expect(proof.reopen).toMatchObject({
 			valid: true,
 			reopened: true,

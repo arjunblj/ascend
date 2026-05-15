@@ -132,6 +132,8 @@ export interface ReleaseProofDiffEvidence {
 
 export interface ReleaseProofBundleOptions {
 	readonly diff?: ReleaseProofDiffEvidence
+	readonly sourceBytes?: Uint8Array
+	readonly outputBytes?: Uint8Array
 	readonly claimBoundaries?: readonly string[]
 }
 
@@ -1258,10 +1260,13 @@ export function createReleaseProofBundle(
 	const planOpsArtifact = traceArtifactByName(plan.trace, 'ops')
 	const commitOpsArtifact = traceArtifactByName(commit.trace, 'ops')
 	const planPackageActions = createPackageActionProof(plan.preservation, {
+		...(options.sourceBytes ? { sourceBytes: options.sourceBytes } : {}),
 		writePolicy: plan.writePolicy,
 		packageGraphAudit: plan.packageGraphAudit,
 	})
 	const commitPackageActions = createPackageActionProof(commit.preservation, {
+		...(options.sourceBytes ? { sourceBytes: options.sourceBytes } : {}),
+		...(options.outputBytes ? { outputBytes: options.outputBytes } : {}),
 		writePolicy: commit.writePolicy,
 		packageGraphAudit: commit.packageGraphAudit,
 	})

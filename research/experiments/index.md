@@ -60,6 +60,7 @@ Updated: 2026-05-15
 | [Release claim board no-promotion refresh](runs/2026/2026-05-15-release-claim-board-no-promotion-refresh/log.md) | synthesis refreshed after in-flight spill fix, formula held to rejection-first proof-only | product loop, correctness loop, performance loop |
 | [Release claim evidence cut](runs/2026/2026-05-15-release-claim-evidence-cut/log.md) | synthesis complete, top claims proof-backed locally | product loop, correctness loop, performance loop |
 | [Release proof index digests](runs/2026/2026-05-15-release-proof-index-digests/log.md) | folded in benchmark-only digest index | product loop |
+| [Release proof index refresh](runs/2026/2026-05-15-release-proof-index-refresh/log.md) | digest index rerun for top two proof artifacts, no attestation claim | product loop |
 | [Agent view index promotion gate](runs/2026/2026-05-15-agent-view-index-promotion-gate/log.md) | handoff only, hold out of release proof index | product/DX loop |
 | [Agent view omitted evidence recovery](runs/2026/2026-05-15-agent-view-omitted-evidence-recovery/log.md) | folded in recovery proof harness, locator metadata needed | product/DX loop |
 | [Agent view omitted locator metadata](runs/2026/2026-05-15-agent-view-omitted-locator-metadata/log.md) | folded in compact omitted-evidence locators | product/DX loop |

@@ -594,6 +594,7 @@ export class WorkbookReadView {
 		let formulaCount = 0
 		const distinctFunctions = new Set<string>()
 		const formulaPatterns = new Map<string, number>()
+		const formulaPatternExamples = new Map<string, string[]>()
 		const columnKinds = new Map<number, Set<AgentColumnSummary['kind']>>()
 		const columnNonEmpty = new Map<number, number>()
 		const columnFormulaCount = new Map<number, number>()
@@ -627,6 +628,13 @@ export class WorkbookReadView {
 					for (const fn of extractFormulaFunctions(cell.formula)) distinctFunctions.add(fn)
 					const pattern = normalizeFormulaPattern(cell.formula)
 					formulaPatterns.set(pattern, (formulaPatterns.get(pattern) ?? 0) + 1)
+					const examples = formulaPatternExamples.get(pattern)
+					const ref = cell.ref ?? `${indexToColumn(cell.col)}${cell.row + 1}`
+					if (examples) {
+						if (examples.length < 3) examples.push(ref)
+					} else {
+						formulaPatternExamples.set(pattern, [ref])
+					}
 				}
 				const kind: AgentColumnSummary['kind'] =
 					cell.formula !== null
@@ -699,7 +707,11 @@ export class WorkbookReadView {
 			formulaPatterns: [...formulaPatterns.entries()]
 				.sort((a, b) => b[1] - a[1])
 				.slice(0, 12)
-				.map(([pattern, count]) => ({ pattern, count })),
+				.map(([pattern, count]) => ({
+					pattern,
+					count,
+					examples: formulaPatternExamples.get(pattern) ?? [],
+				})),
 			columns,
 			samples,
 			notes,
@@ -5355,6 +5367,9 @@ function buildAgentViewOmittedEvidence(
 					formulaPatterns: {
 						count: omittedFormulaPatterns,
 						firstOmittedIndex: formulaPatternLimit,
+						...(omittedPatterns[0]?.examples[0]
+							? { nextExampleRef: omittedPatterns[0].examples[0] }
+							: {}),
 					},
 				}
 			: {}),

@@ -14,6 +14,7 @@ describe('agent view omitted evidence recovery proof', () => {
 		expect(proof.allSampleRowLocatorsExact).toBe(true)
 		expect(proof.allColumnSampleLocatorsExact).toBe(true)
 		expect(proof.allNarrowSampleRowRecoveriesExact).toBe(true)
+		expect(proof.allFormulaPatternExampleRecoveriesExact).toBe(true)
 		expect(proof.cases.some((entry) => !entry.withinBudget)).toBe(true)
 		expect(
 			proof.cases.every(
@@ -33,5 +34,6 @@ describe('agent view omitted evidence recovery proof', () => {
 		expect(markdown).toContain('Same-range unbudgeted recovery is exact')
 		expect(markdown).toContain('All budget metadata has locators: true')
 		expect(markdown).toContain('All narrow sample-row recoveries exact: true')
+		expect(markdown).toContain('All formula-pattern example recoveries exact: true')
 	})
 })

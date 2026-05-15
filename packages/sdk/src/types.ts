@@ -1029,6 +1029,7 @@ export interface AgentViewOptions {
 export interface AgentFormulaPatternInfo {
 	readonly pattern: string
 	readonly count: number
+	readonly examples: readonly string[]
 }
 
 export interface AgentColumnSummary {
@@ -1068,8 +1069,7 @@ export interface AgentViewOmittedColumnSampleValuesInfo {
 export interface AgentViewOmittedFormulaPatternsInfo {
 	readonly count: number
 	readonly firstOmittedIndex: number
-	readonly nextPattern?: string
-	readonly nextPatternCount?: number
+	readonly nextExampleRef?: string
 }
 
 export interface AgentViewOmittedEvidenceInfo {

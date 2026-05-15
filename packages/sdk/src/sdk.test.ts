@@ -736,6 +736,10 @@ describe('AscendWorkbook', () => {
 		expect(view?.columns[0]?.header).toBe('Name')
 		expect(view?.columns[1]?.kind).toBe('mixed')
 		expect(view?.samples[0]?.cells[0]?.value).toEqual({ kind: 'string', value: 'Name' })
+		expect(view?.formulaPatterns[0]).toMatchObject({
+			count: 1,
+			examples: ['B3'],
+		})
 	})
 
 	test('agentView applies approximate token budgets without losing shape facts', () => {

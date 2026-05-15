@@ -21,6 +21,8 @@ export interface AgentViewRecoveryProofCaseResult {
 	readonly columnSampleLocatorExact: boolean
 	readonly narrowSampleRowsRecovered: boolean
 	readonly narrowSampleRange?: string
+	readonly nextFormulaPatternExampleRef?: string
+	readonly nextFormulaPatternRecovered: boolean
 	readonly unbudgetedSameRangeRecovered: boolean
 	readonly recoveredSampleRows: number
 	readonly recoveredColumnSampleValues: number
@@ -36,6 +38,7 @@ export interface AgentViewRecoveryProofResult {
 	readonly allSampleRowLocatorsExact: boolean
 	readonly allColumnSampleLocatorsExact: boolean
 	readonly allNarrowSampleRowRecoveriesExact: boolean
+	readonly allFormulaPatternExampleRecoveriesExact: boolean
 }
 
 interface AgentViewShape {
@@ -57,6 +60,9 @@ export async function runAgentViewRecoveryProof(): Promise<AgentViewRecoveryProo
 		allSampleRowLocatorsExact: results.every((entry) => entry.sampleRowLocatorExact),
 		allColumnSampleLocatorsExact: results.every((entry) => entry.columnSampleLocatorExact),
 		allNarrowSampleRowRecoveriesExact: results.every((entry) => entry.narrowSampleRowsRecovered),
+		allFormulaPatternExampleRecoveriesExact: results.every(
+			(entry) => entry.nextFormulaPatternRecovered,
+		),
 	}
 }
 
@@ -65,10 +71,10 @@ export function agentViewRecoveryProofMarkdown(result: AgentViewRecoveryProofRes
 		'# Agent View Omitted Evidence Recovery Proof',
 		'',
 		`Generated: ${result.generatedAt}`,
-		'Boundary: budget metadata carries compact omitted sample-row and column-sample locators plus formula-pattern continuation hints. Same-range unbudgeted recovery is exact; sample-row locators can drive narrower follow-up reads, while formula-pattern recovery still needs richer provenance.',
+		'Boundary: budget metadata carries compact omitted sample-row and column-sample locators plus formula-pattern example refs. Same-range unbudgeted recovery is exact; sample-row locators and formula-pattern examples can drive narrower follow-up reads, while full omitted-occurrence recovery still needs richer provenance.',
 		'',
-		'| Case | Fixture | Range | Requested | Budgeted tokens | Unbudgeted tokens | Within budget | Truncated | Omitted rows | Omitted values | Omitted formulas | Has locations | Row locators exact | Column locators exact | Narrow sample range | Narrow rows recovered | Same-range recovered | Recovered rows | Recovered values | Recovered formulas | Recovery action |',
-		'| --- | --- | --- | ---: | ---: | ---: | --- | --- | ---: | ---: | ---: | --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | --- |',
+		'| Case | Fixture | Range | Requested | Budgeted tokens | Unbudgeted tokens | Within budget | Truncated | Omitted rows | Omitted values | Omitted formulas | Has locations | Row locators exact | Column locators exact | Narrow sample range | Narrow rows recovered | Formula example | Formula recovered | Same-range recovered | Recovered rows | Recovered values | Recovered formulas | Recovery action |',
+		'| --- | --- | --- | ---: | ---: | ---: | --- | --- | ---: | ---: | ---: | --- | --- | --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | --- |',
 		...result.cases.map(markdownRow),
 		'',
 		`All same-range unbudgeted recoveries exact: ${result.allUnbudgetedRecoveriesExact}`,
@@ -76,6 +82,7 @@ export function agentViewRecoveryProofMarkdown(result: AgentViewRecoveryProofRes
 		`All sample-row locators exact: ${result.allSampleRowLocatorsExact}`,
 		`All column-sample locators exact: ${result.allColumnSampleLocatorsExact}`,
 		`All narrow sample-row recoveries exact: ${result.allNarrowSampleRowRecoveriesExact}`,
+		`All formula-pattern example recoveries exact: ${result.allFormulaPatternExampleRecoveriesExact}`,
 	].join('\n')
 }
 
@@ -103,6 +110,10 @@ async function runAgentViewRecoveryProofCase(
 	const narrowSampleView = narrowSampleRange
 		? requireAgentView(wb.agentView(proofCase.sheet, narrowSampleRange), proofCase.name)
 		: undefined
+	const nextFormulaPatternExampleRef = omittedEvidence?.formulaPatterns?.nextExampleRef
+	const nextFormulaPatternView = nextFormulaPatternExampleRef
+		? requireAgentView(wb.agentView(proofCase.sheet, nextFormulaPatternExampleRef), proofCase.name)
+		: undefined
 	return {
 		name: proofCase.name,
 		fixture: proofCase.fixture,
@@ -123,6 +134,9 @@ async function runAgentViewRecoveryProofCase(
 		narrowSampleRowsRecovered:
 			omittedSampleRows === 0 || narrowSampleView?.samples.length === omittedSampleRows,
 		...(narrowSampleRange ? { narrowSampleRange } : {}),
+		...(nextFormulaPatternExampleRef ? { nextFormulaPatternExampleRef } : {}),
+		nextFormulaPatternRecovered:
+			omittedFormulaPatterns === 0 || (nextFormulaPatternView?.formulaPatterns.length ?? 0) > 0,
 		unbudgetedSameRangeRecovered: stableJson(full) === stableJson(recovered),
 		recoveredSampleRows: recoveredShape.sampleRows - budgetedShape.sampleRows,
 		recoveredColumnSampleValues:
@@ -201,6 +215,8 @@ function markdownRow(row: AgentViewRecoveryProofCaseResult): string {
 		String(row.columnSampleLocatorExact),
 		row.narrowSampleRange ?? 'n/a',
 		String(row.narrowSampleRowsRecovered),
+		row.nextFormulaPatternExampleRef ?? 'n/a',
+		String(row.nextFormulaPatternRecovered),
 		String(row.unbudgetedSameRangeRecovered),
 		String(row.recoveredSampleRows),
 		String(row.recoveredColumnSampleValues),

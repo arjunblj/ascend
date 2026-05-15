@@ -204,6 +204,27 @@ Current gate:
 
 Decision: the portfolio should hand off the top two claims to owner loops for proof packaging and boundary approval. Research should not promote formula rename, columnar sidecars, or another release surface during this block.
 
+### Provenance Boundary Audit
+
+Proof commands:
+
+```bash
+bun run fixtures/benchmarks/release-proof-index.ts --no-timings --json
+bun run fixtures/benchmarks/package-action-proof.ts --no-timings --compact-json
+```
+
+Current gate:
+
+| Field | Value |
+| --- | --- |
+| Release index signed | `false` |
+| Release index attestation | `false` |
+| Package provenance gate | `provenance-boundary(missing,release)` |
+| Compact package boundary | not signed provenance, SLSA, in-toto, or third-party attestation |
+| Compact report embeds proof digests/artifact bytes | `false` |
+
+Decision: keep release proof index at rank 6 and keep `provenance-boundary` missing. The top package-action claim can use local evidence wording only. Do not promote SLSA, in-toto, GitHub artifact attestation, Sigstore, signed provenance, or transparency-log language without a release/security owner implementing a real attestation pipeline.
+
 ## Next Proof Moves
 
 1. Product/performance handoff: publish the safe unknown workbook opening proof bundle from existing surfaces and public fixtures.

@@ -1088,6 +1088,36 @@ function checkFormulaBindingIntegrity(wb: Workbook): CheckIssue[] {
 					)
 					continue
 				}
+				const isAnchorCell = anchor.sheet === sheet.name && anchor.row === row && anchor.col === col
+				if (binding.kind === 'spill') {
+					if (binding.isAnchor !== isAnchorCell) {
+						issues.push(
+							formulaBindingIntegrityIssue(
+								`Spill metadata at ${cellRef} has an anchor flag that disagrees with its anchor reference`,
+								[cellRef, `${anchor.sheet}!${toA1({ row: anchor.row, col: anchor.col })}`],
+								{
+									kind: 'spill-anchor-flag-mismatch',
+									anchorRef: binding.anchorRef,
+									range: binding.ref,
+									isAnchor: binding.isAnchor,
+								},
+							),
+						)
+					}
+					if (!isAnchorCell && cell.formula) {
+						issues.push(
+							formulaBindingIntegrityIssue(
+								`Spill member at ${cellRef} has formula text outside the spill anchor`,
+								[cellRef, `${anchor.sheet}!${toA1({ row: anchor.row, col: anchor.col })}`],
+								{
+									kind: 'spill-member-formula-text-mismatch',
+									anchorRef: binding.anchorRef,
+									range: binding.ref,
+								},
+							),
+						)
+					}
+				}
 				const groupKey = `${anchor.sheet.toLowerCase()}!${anchor.row}:${anchor.col}`
 				const group = spillBindingGroups.get(groupKey)
 				const entry = {

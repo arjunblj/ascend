@@ -768,6 +768,37 @@ describe('agent workflow loss audit', () => {
 				},
 				expectedKind: 'legacy-array-member-formula-text-mismatch',
 			},
+			{
+				name: 'hidden-spill-member-formula',
+				output: join(TEMP_DIR, 'hidden-spill-member-formula-out.xlsx'),
+				setup: (wb: AscendWorkbook) => {
+					const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+					if (!sheet) throw new Error('missing sheet')
+					sheet.cells.set(0, 0, {
+						value: numberValue(1),
+						formula: 'SEQUENCE(2)',
+						styleId: DEFAULT_STYLE_ID,
+						formulaInfo: {
+							kind: 'spill',
+							anchorRef: 'Sheet1!A1',
+							ref: 'A1:A2',
+							isAnchor: true,
+						},
+					})
+					sheet.cells.set(1, 0, {
+						value: numberValue(198),
+						formula: 'B2*99',
+						styleId: DEFAULT_STYLE_ID,
+						formulaInfo: {
+							kind: 'spill',
+							anchorRef: 'Sheet1!A1',
+							ref: 'A1:A2',
+							isAnchor: false,
+						},
+					})
+				},
+				expectedKind: 'spill-member-formula-text-mismatch',
+			},
 		] as const
 
 		for (const entry of cases) {

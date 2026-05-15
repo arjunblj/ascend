@@ -476,6 +476,51 @@ describe('checker', () => {
 		})
 	})
 
+	test('detects spill members with formula text and stale anchor flags', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.cells.set(0, 0, {
+			value: numberValue(1),
+			formula: 'SEQUENCE(2)',
+			styleId: SID,
+			formulaInfo: { kind: 'spill', anchorRef: 'Sheet1!A1', ref: 'A1:A2', isAnchor: false },
+		})
+		s.cells.set(1, 0, {
+			value: numberValue(198),
+			formula: 'B2*99',
+			styleId: SID,
+			formulaInfo: { kind: 'spill', anchorRef: 'Sheet1!A1', ref: 'A1:A2', isAnchor: false },
+		})
+
+		const result = check(wb)
+		const issues = result.issues.filter((entry) => entry.rule === 'formula-binding-integrity')
+		expect(result.passed).toBe(false)
+		expect(issues).toContainEqual(
+			expect.objectContaining({
+				message:
+					'Spill metadata at Sheet1!A1 has an anchor flag that disagrees with its anchor reference',
+				refs: ['Sheet1!A1', 'Sheet1!A1'],
+				details: {
+					kind: 'spill-anchor-flag-mismatch',
+					anchorRef: 'Sheet1!A1',
+					range: 'A1:A2',
+					isAnchor: false,
+				},
+			}),
+		)
+		expect(issues).toContainEqual(
+			expect.objectContaining({
+				message: 'Spill member at Sheet1!A2 has formula text outside the spill anchor',
+				refs: ['Sheet1!A2', 'Sheet1!A1'],
+				details: {
+					kind: 'spill-member-formula-text-mismatch',
+					anchorRef: 'Sheet1!A1',
+					range: 'A1:A2',
+				},
+			}),
+		)
+	})
+
 	test('detects dynamic array metadata without formula text', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')

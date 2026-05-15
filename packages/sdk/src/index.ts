@@ -1,6 +1,6 @@
 /** Convert a zero-based column index to an Excel column letter (`0 → "A"`, `25 → "Z"`, `26 → "AA"`). */
 
-export type { RangeRef } from '@ascend/core'
+export type { CellStyle, RangeRef } from '@ascend/core'
 export { indexToColumn, parseA1, parseRange, toA1 } from '@ascend/core'
 export type {
 	XlsxPackageContentTypeDefault,

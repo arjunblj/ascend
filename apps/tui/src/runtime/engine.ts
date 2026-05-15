@@ -1,14 +1,21 @@
 import { writeFile } from 'node:fs/promises'
-import { type CellStyle, parseRange, toA1 } from '@ascend/core'
 import type { CellValue, InputValue, Operation, StyleInput } from '@ascend/schema'
 import { topLeftScalar } from '@ascend/schema'
 import type {
 	AscendWorkbook,
+	CellStyle,
 	WorkbookInfo,
 	WorkbookLoadOptions,
 	TraceResult as WorkbookTraceResult,
 } from '@ascend/sdk'
-import { indexToColumn, inferExportFormat, normalizeExportFormat, parseA1 } from '@ascend/sdk'
+import {
+	indexToColumn,
+	inferExportFormat,
+	normalizeExportFormat,
+	parseA1,
+	parseRange,
+	toA1,
+} from '@ascend/sdk'
 import { commandsForGroup, findCommand, listCommands } from '../commands/registry.ts'
 import type { DialogId, FindReplaceInput } from '../dialogs/index.ts'
 import { buildDialogOperations, findDialog } from '../dialogs/index.ts'

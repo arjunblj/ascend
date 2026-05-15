@@ -1,6 +1,5 @@
-import { parseRange, type RangeRef } from '@ascend/core'
-import type { SheetInspectInfo } from '@ascend/sdk'
-import { indexToColumn } from '@ascend/sdk'
+import type { RangeRef, SheetInspectInfo } from '@ascend/sdk'
+import { indexToColumn, parseRange } from '@ascend/sdk'
 import type {
 	GridSemanticCell,
 	GridSemanticFlag,

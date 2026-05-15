@@ -1,6 +1,5 @@
-import { parseA1, parseRange } from '@ascend/core'
 import type { Operation, StyleInput } from '@ascend/schema'
-import { indexToColumn } from '@ascend/sdk'
+import { indexToColumn, parseA1, parseRange } from '@ascend/sdk'
 import { selectionRef } from '../model/selection.ts'
 import type { CommandContext } from '../runtime/types.ts'
 

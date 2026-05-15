@@ -6,7 +6,6 @@
 	"type": "module",
 	"main": "src/index.ts",
 	"dependencies": {
-		"@ascend/core": "workspace:*",
 		"@ascend/schema": "workspace:*",
 		"@ascend/sdk": "workspace:*",
 		"@opentui/core": "^0.2.6",

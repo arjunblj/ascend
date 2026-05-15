@@ -51,6 +51,8 @@ interface EnvelopeDecision {
 	readonly envelopeMedianMs: number
 	readonly largestPhase: string
 	readonly phaseMedianMs: number
+	readonly maxPlausibleWinMs: number
+	readonly maxPlausibleWinPct: number
 	readonly profileCommand: string
 	readonly guardrail: string
 }
@@ -740,22 +742,16 @@ function productionTarget(results: readonly StepResult[]): string {
 	if (!selected) {
 		return 'No optimization selected yet: one or more required measurements failed or timed out.'
 	}
-	const share =
-		selected.envelopeMedianMs > 0 ? (selected.phaseMedianMs / selected.envelopeMedianMs) * 100 : 100
-	return `Choose exactly one production target: \`${selected.largestPhase}\` in \`${selected.contract}\`. It belongs to the largest true user-visible envelope (${selected.envelopeMedianMs.toFixed(1)}ms median), and users wait on ${selected.phaseMedianMs.toFixed(1)}ms inside it (${share.toFixed(1)}% max plausible win). Required profile before code changes: \`${selected.profileCommand}\`. Guardrail: ${selected.guardrail}`
+	return `Choose exactly one production target: \`${selected.largestPhase}\` in \`${selected.contract}\`. It belongs to the largest true user-visible envelope (${selected.envelopeMedianMs.toFixed(1)}ms median), and users wait on ${selected.phaseMedianMs.toFixed(1)}ms inside it (max plausible win ${selected.maxPlausibleWinMs.toFixed(1)}ms / ${selected.maxPlausibleWinPct.toFixed(1)}%). Required profile before code changes: \`${selected.profileCommand}\`. Guardrail: ${selected.guardrail}`
 }
 
 function decisionMatrix(results: readonly StepResult[]): string {
 	const rows = envelopeDecisions(results).map((decision) => {
-		const share =
-			decision.envelopeMedianMs > 0
-				? `${((decision.phaseMedianMs / decision.envelopeMedianMs) * 100).toFixed(1)}%`
-				: ''
-		return `| ${decision.envelope} | ${decision.envelopeMedianMs.toFixed(3)} | ${decision.largestPhase} | ${decision.phaseMedianMs.toFixed(3)} | ${share} | \`${decision.profileCommand}\` | ${decision.guardrail} |`
+		return `| ${decision.envelope} | ${decision.envelopeMedianMs.toFixed(3)} | ${decision.largestPhase} | ${decision.phaseMedianMs.toFixed(3)} | ${decision.maxPlausibleWinMs.toFixed(3)} | ${decision.maxPlausibleWinPct.toFixed(1)}% | \`${decision.profileCommand}\` | ${decision.guardrail} |`
 	})
 	return [
-		'| Envelope | Envelope median ms | Largest user-wait phase | Phase median ms | Max plausible win | Required profile command | Guardrail |',
-		'|---|---:|---|---:|---:|---|---|',
+		'| Envelope | Envelope median ms | Largest user-wait phase | Phase median ms | Max plausible win ms | Max plausible win % | Required profile command | Guardrail |',
+		'|---|---:|---|---:|---:|---:|---|---|',
 		...rows,
 	].join('\n')
 }
@@ -827,6 +823,7 @@ function envelopeDecisions(results: readonly StepResult[]): EnvelopeDecision[] {
 			envelopeMedianMs: Math.max(firstViewEnvelope, largest.medianMs),
 			largestPhase: largest.name,
 			phaseMedianMs: largest.medianMs,
+			...maxPlausibleWin(Math.max(firstViewEnvelope, largest.medianMs), largest.medianMs),
 			profileCommand: largest.profileCommand,
 			guardrail: 'must improve the first-view command, not only the full worksheet XML diagnostic',
 		})
@@ -943,6 +940,7 @@ function envelopeDecisions(results: readonly StepResult[]): EnvelopeDecision[] {
 			envelopeMedianMs: editEnvelope,
 			largestPhase: largest.name,
 			phaseMedianMs: largest.medianMs,
+			...maxPlausibleWin(editEnvelope, largest.medianMs),
 			profileCommand: largest.profileCommand,
 			guardrail: 'must preserve write, reopen, structural check, lint, and package verification',
 		})
@@ -973,12 +971,24 @@ function envelopeDecisions(results: readonly StepResult[]): EnvelopeDecision[] {
 			envelopeMedianMs: repeatedLargest.medianMs,
 			largestPhase: repeatedLargest.name,
 			phaseMedianMs: repeatedLargest.medianMs,
+			...maxPlausibleWin(repeatedLargest.medianMs, repeatedLargest.medianMs),
 			profileCommand: repeatedLargest.profileCommand,
 			guardrail: 'must name the hot-cache assumption and include cold-open context separately',
 		})
 	}
 
 	return decisions
+}
+
+function maxPlausibleWin(
+	envelopeMedianMs: number,
+	phaseMedianMs: number,
+): Pick<EnvelopeDecision, 'maxPlausibleWinMs' | 'maxPlausibleWinPct'> {
+	const maxPlausibleWinMs = Math.min(Math.max(phaseMedianMs, 0), Math.max(envelopeMedianMs, 0))
+	return {
+		maxPlausibleWinMs,
+		maxPlausibleWinPct: envelopeMedianMs > 0 ? (maxPlausibleWinMs / envelopeMedianMs) * 100 : 0,
+	}
 }
 
 function preparedCommitUnassignedMs(summary: unknown): number {

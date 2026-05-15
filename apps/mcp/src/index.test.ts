@@ -1057,6 +1057,8 @@ describe('MCP server', () => {
 		expect(result.structuredContent?.data?.journal?.issues).toContainEqual({
 			code: 'UNSUPPORTED_OPERATION',
 			message: 'No reversible journal support for appendRows',
+			reason: 'operation-unsupported',
+			surface: 'tables',
 		})
 	})
 
@@ -1190,6 +1192,8 @@ describe('MCP server', () => {
 		expect(result.structuredContent?.data?.journal?.issues).toContainEqual({
 			code: 'UNSUPPORTED_OPERATION',
 			message: 'No reversible journal support for appendRows',
+			reason: 'operation-unsupported',
+			surface: 'tables',
 		})
 		const reopened = await AscendWorkbook.open(TEMP_FILE)
 		expect(reopened.sheet('Sheet1')?.cell('D1')?.value).toEqual({

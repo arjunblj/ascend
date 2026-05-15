@@ -1336,7 +1336,7 @@ describe('MCP server', () => {
 		expect(reopened.definedName('Budget')).toBeUndefined()
 	})
 
-	test('ascend.write exact journal inverse ops restore saved workbook truth after reopen', async () => {
+	test('ascend.write lossy journal inverse ops restore saved workbook truth after reopen', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([
 			{
@@ -1468,7 +1468,7 @@ describe('MCP server', () => {
 
 		expect(result.structuredContent?.ok).toBe(true)
 		expect(result.structuredContent?.data?.journal?.supported).toBe(true)
-		expect(result.structuredContent?.data?.journal?.exact).toBe(true)
+		expect(result.structuredContent?.data?.journal?.exact).toBe(false)
 		const inverse = parseOperations(result.structuredContent?.data?.journal?.inverseOps)
 		expect(inverse.ok).toBe(true)
 		if (!inverse.ok) throw new Error('Expected exact journal inverse ops to parse')
@@ -1876,7 +1876,7 @@ describe('MCP server', () => {
 		expect(reopened.getWorkbookModel().pivotCaches[0]?.refreshOnLoad).toBeUndefined()
 	})
 
-	test('ascend.write exact journal inverse ops restore recalculated workbook truth after reopen', async () => {
+	test('ascend.write lossy journal inverse ops restore recalculated workbook truth after reopen', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([
 			{
@@ -1929,7 +1929,7 @@ describe('MCP server', () => {
 
 		expect(result.structuredContent?.ok).toBe(true)
 		expect(result.structuredContent?.data?.journal?.supported).toBe(true)
-		expect(result.structuredContent?.data?.journal?.exact).toBe(true)
+		expect(result.structuredContent?.data?.journal?.exact).toBe(false)
 		const inverse = parseOperations(result.structuredContent?.data?.journal?.inverseOps)
 		expect(inverse.ok).toBe(true)
 		if (!inverse.ok) throw new Error('Expected exact journal inverse ops to parse')

@@ -1138,6 +1138,11 @@ describe('mutation journal exactness model', () => {
 				],
 				ops: [{ op: 'setPrintArea', sheet: 'Sheet1', range: 'B1:B1' }],
 			},
+			{
+				name: 'semantic no-op cell edit',
+				seedOps: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] }],
+				ops: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] }],
+			},
 		]
 
 		for (const entry of cases) {
@@ -1233,6 +1238,150 @@ describe('mutation journal exactness model', () => {
 				],
 				opName: 'setDocumentProperties',
 				refs: ['workbook:documentProperties'],
+			},
+			{
+				name: 'setCells',
+				seedOps: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] }],
+				ops: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 2 }] }],
+				cleanCalcState: true,
+				opName: 'setCells',
+				refs: ['Sheet1!A1'],
+			},
+			{
+				name: 'setFormula',
+				seedOps: [
+					{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] },
+					{ op: 'setFormula', sheet: 'Sheet1', ref: 'B1', formula: 'A1*2' },
+				],
+				ops: [{ op: 'setFormula', sheet: 'Sheet1', ref: 'B1', formula: 'A1*3' }],
+				cleanCalcState: true,
+				opName: 'setFormula',
+				refs: ['Sheet1!B1'],
+			},
+			{
+				name: 'fillFormula',
+				seedOps: [
+					{
+						op: 'setCells',
+						sheet: 'Sheet1',
+						updates: [
+							{ ref: 'A1', value: 1 },
+							{ ref: 'A2', value: 2 },
+						],
+					},
+					{ op: 'setFormula', sheet: 'Sheet1', ref: 'B1', formula: 'A1*2' },
+				],
+				ops: [{ op: 'fillFormula', sheet: 'Sheet1', range: 'B1:B2', formula: 'A1*2' }],
+				cleanCalcState: true,
+				opName: 'fillFormula',
+				refs: ['Sheet1!B1:B2'],
+			},
+			{
+				name: 'clearRange',
+				seedOps: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] }],
+				ops: [{ op: 'clearRange', sheet: 'Sheet1', range: 'A1', what: 'all' }],
+				cleanCalcState: true,
+				opName: 'clearRange',
+				refs: ['Sheet1!A1'],
+			},
+			{
+				name: 'setRichText',
+				seedOps: [{ op: 'setRichText', sheet: 'Sheet1', ref: 'A1', runs: [{ text: 'one' }] }],
+				ops: [{ op: 'setRichText', sheet: 'Sheet1', ref: 'A1', runs: [{ text: 'two' }] }],
+				cleanCalcState: true,
+				opName: 'setRichText',
+				refs: ['Sheet1!A1'],
+			},
+			{
+				name: 'copyRange',
+				seedOps: [
+					{
+						op: 'setCells',
+						sheet: 'Sheet1',
+						updates: [
+							{ ref: 'A1', value: 1 },
+							{ ref: 'D1', value: 9 },
+						],
+					},
+				],
+				ops: [{ op: 'copyRange', sheet: 'Sheet1', source: 'A1', target: 'D1', mode: 'all' }],
+				cleanCalcState: true,
+				opName: 'copyRange',
+				refs: ['Sheet1!A1', 'Sheet1!D1'],
+			},
+			{
+				name: 'moveRange',
+				seedOps: [
+					{
+						op: 'setCells',
+						sheet: 'Sheet1',
+						updates: [
+							{ ref: 'A1', value: 1 },
+							{ ref: 'D1', value: 9 },
+						],
+					},
+				],
+				ops: [{ op: 'moveRange', sheet: 'Sheet1', source: 'A1', target: 'D1', mode: 'all' }],
+				cleanCalcState: true,
+				opName: 'moveRange',
+				refs: ['Sheet1!A1', 'Sheet1!D1'],
+			},
+			{
+				name: 'sortRange',
+				seedOps: [
+					{
+						op: 'setCells',
+						sheet: 'Sheet1',
+						updates: [
+							{ ref: 'A1', value: 'Key' },
+							{ ref: 'B1', value: 'Qty' },
+							{ ref: 'A2', value: 'b' },
+							{ ref: 'B2', value: 2 },
+							{ ref: 'A3', value: 'a' },
+							{ ref: 'B3', value: 1 },
+						],
+					},
+				],
+				ops: [{ op: 'sortRange', sheet: 'Sheet1', range: 'A1:B3', by: [{ column: 'Qty' }] }],
+				cleanCalcState: true,
+				opName: 'sortRange',
+				refs: ['Sheet1!A1:B3'],
+			},
+			{
+				name: 'renameTable',
+				seedOps: [
+					{
+						op: 'setCells',
+						sheet: 'Sheet1',
+						updates: [
+							{ ref: 'A1', value: 'Qty' },
+							{ ref: 'A2', value: 1 },
+						],
+					},
+					{ op: 'createTable', sheet: 'Sheet1', ref: 'A1:A2', name: 'Sales', hasHeaders: true },
+				],
+				ops: [{ op: 'renameTable', table: 'Sales', newName: 'Revenue' }],
+				cleanCalcState: true,
+				opName: 'renameTable',
+				refs: ['table:Sales', 'table:Revenue'],
+			},
+			{
+				name: 'setTableColumn',
+				seedOps: [
+					{
+						op: 'setCells',
+						sheet: 'Sheet1',
+						updates: [
+							{ ref: 'A1', value: 'Qty' },
+							{ ref: 'A2', value: 1 },
+						],
+					},
+					{ op: 'createTable', sheet: 'Sheet1', ref: 'A1:A2', name: 'Sales', hasHeaders: true },
+				],
+				ops: [{ op: 'setTableColumn', table: 'Sales', column: 'Qty', newName: 'Units' }],
+				cleanCalcState: true,
+				opName: 'setTableColumn',
+				refs: ['table:Sales'],
 			},
 			{
 				name: 'setDefinedName',

@@ -3659,7 +3659,7 @@ describe('agent workflow loss audit', () => {
 		expect(sheet?.rowDefs.get(3)).toEqual({ collapsed: true })
 	})
 
-	test('prepared exact rollback journal restores audit-clean committed output after recalc', async () => {
+	test('prepared lossy rollback journal restores audit-clean committed output after recalc', async () => {
 		const input = join(TEMP_DIR, 'prepared-exact-rollback.xlsx')
 		const output = join(TEMP_DIR, 'prepared-exact-rollback-out.xlsx')
 		mkdirSync(TEMP_DIR, { recursive: true })
@@ -3675,23 +3675,38 @@ describe('agent workflow loss audit', () => {
 			{ op: 'setCells' as const, sheet: 'Sheet1', updates: [{ ref: 'A1', value: 5 }] },
 		])
 		expect(prepared.plan.preview.journal?.supported).toBe(true)
-		expect(prepared.plan.preview.journal?.exact).toBe(true)
-		expect(prepared.plan.preview.journal?.issues).toEqual([])
+		expect(prepared.plan.preview.journal?.exact).toBe(false)
+		expect(prepared.plan.preview.journal?.issues).toContainEqual(
+			expect.objectContaining({
+				surface: 'package-parts',
+				reason: 'package-part-preservation',
+			}),
+		)
 
 		const committed = await prepared.commit({ output })
 		expect(committed.apply.journal?.supported).toBe(true)
-		expect(committed.apply.journal?.exact).toBe(true)
-		expect(committed.apply.journal?.issues).toEqual([])
+		expect(committed.apply.journal?.exact).toBe(false)
+		expect(committed.apply.journal?.issues).toContainEqual(
+			expect.objectContaining({
+				surface: 'package-parts',
+				reason: 'package-part-preservation',
+			}),
+		)
 		expect(committed.apply.journal?.inverseOps.length).toBeGreaterThan(0)
 		expect(committed.postWrite.valid).toBe(true)
 		expect(committed.postWrite.auditsPassed).toBe(true)
 		const compact = compactAgentCommitResult(committed)
 		expect(compact.apply.journalSummary).toEqual({
 			supported: true,
-			exact: true,
+			exact: false,
 			inverseOpCount: committed.apply.journal?.inverseOps.length ?? 0,
-			issueCount: 0,
-			issues: [],
+			issueCount: 1,
+			issues: [
+				expect.objectContaining({
+					surface: 'package-parts',
+					reason: 'package-part-preservation',
+				}),
+			],
 		})
 		expect(compact.apply.affectedCellRefs).toEqual(['A1'])
 		expect(compact.apply.affectedRanges).toEqual([{ sheet: 'Sheet1', range: 'A1:A1' }])

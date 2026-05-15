@@ -1619,7 +1619,9 @@ export function buildMutationJournal(
 	if (ops.length === 1) {
 		const op = ops[0]
 		if (!op) return emptyMutationJournal()
-		return mutationJournalFromEntries([buildJournalEntry(workbook, op, 0)])
+		return mutationJournalFromEntries(
+			savedSourceRecalcPackageStateEntries(workbook, [buildJournalEntry(workbook, op, 0)]),
+		)
 	}
 	const journalWorkbook = workbook.clone()
 	const entries: MutationJournalEntry[] = []
@@ -1630,7 +1632,139 @@ export function buildMutationJournal(
 		const result = applyOperation(journalWorkbook, op)
 		if (!result.ok) break
 	}
-	return mutationJournalFromEntries(entries)
+	return mutationJournalFromEntries(savedSourceRecalcPackageStateEntries(workbook, entries))
+}
+
+function savedSourceRecalcPackageStateEntries(
+	workbook: Workbook,
+	entries: readonly MutationJournalEntry[],
+): readonly MutationJournalEntry[] {
+	if (!workbook.sourceArchiveBytes || entries.length === 0) return entries
+	const journalWorkbook = workbook.clone()
+	let changed = false
+	const updated: MutationJournalEntry[] = []
+	for (const entry of entries) {
+		const result = applyOperation(journalWorkbook, entry.op)
+		const additions =
+			result.ok && result.value.recalcRequired
+				? savedSourcePackageStateIssues(
+						workbook,
+						entry.op.op,
+						savedSourcePackageStateRefsForOp(entry.op),
+					).map(structureMutationJournalIssue)
+				: []
+		if (additions.length === 0) {
+			updated.push(entry)
+			if (!result.ok) break
+			continue
+		}
+		const issues = appendMutationJournalIssues(entry.issues, additions)
+		changed ||= issues.length !== entry.issues.length
+		updated.push({
+			...entry,
+			issues,
+			supported: issues.every((issue) => issue.code !== 'UNSUPPORTED_OPERATION'),
+			exact: issues.length === 0,
+		})
+		if (!result.ok) break
+	}
+	return changed ? updated : entries
+}
+
+function appendMutationJournalIssues(
+	issues: readonly MutationJournalStructuredIssue[],
+	additions: readonly MutationJournalStructuredIssue[],
+): readonly MutationJournalStructuredIssue[] {
+	const seen = new Set(issues.map(mutationJournalIssueKey))
+	const next = [...issues]
+	for (const issue of additions) {
+		const key = mutationJournalIssueKey(issue)
+		if (seen.has(key)) continue
+		seen.add(key)
+		next.push(issue)
+	}
+	return next
+}
+
+function mutationJournalIssueKey(issue: MutationJournalIssue): string {
+	return JSON.stringify([
+		issue.code,
+		issue.message,
+		issue.surface ?? null,
+		issue.reason ?? null,
+		issue.refs ?? [],
+	])
+}
+
+function savedSourcePackageStateRefsForOp(op: Operation): readonly string[] {
+	try {
+		switch (op.op) {
+			case 'setCells':
+				return op.updates.map((update) => sheetRef(op.sheet, update.ref))
+			case 'setFormula':
+			case 'setRichText':
+				return [sheetRef(op.sheet, op.ref)]
+			case 'fillFormula':
+			case 'clearRange':
+			case 'sortRange':
+			case 'setNumberFormat':
+			case 'setStyle':
+				return [sheetRef(op.sheet, op.range)]
+			case 'insertRows':
+			case 'deleteRows':
+				return [`${op.sheet}!${op.at + 1}:${op.at + op.count}`]
+			case 'hideRows':
+				return [`${op.sheet}!${op.at + 1}:${op.at + op.count}`]
+			case 'groupRows':
+				return [`${op.sheet}!${op.from + 1}:${op.to + 1}`]
+			case 'insertCols':
+			case 'deleteCols':
+				return [`${op.sheet}!${indexToColumn(op.at)}:${indexToColumn(op.at + op.count - 1)}`]
+			case 'hideCols':
+				return [`${op.sheet}!${indexToColumn(op.at)}:${indexToColumn(op.at + op.count - 1)}`]
+			case 'groupCols':
+				return [`${op.sheet}!${indexToColumn(op.from)}:${indexToColumn(op.to)}`]
+			case 'copyRange':
+			case 'moveRange': {
+				const targetSheet = op.targetSheet ?? op.sheet
+				return [
+					sheetRef(op.sheet, op.source),
+					sheetRef(targetSheet, rangeToA1(transferTargetRange(op.source, op.target))),
+				]
+			}
+			case 'createTable':
+				return [`table:${op.name}`, sheetRef(op.sheet, op.ref)]
+			case 'appendRows':
+				return [`table:${op.table}`]
+			case 'copySheet':
+				return [`sheet:${op.sheet}`, `sheet:${op.newName}`]
+			case 'renameTable':
+				return [`table:${op.table}`, `table:${op.newName}`]
+			case 'deleteTable':
+			case 'resizeTable':
+			case 'setTableColumn':
+			case 'setTableStyle':
+				return [`table:${op.table}`]
+			case 'setPivotCache':
+				return [`pivot:${op.pivotTable}`]
+			case 'setPivotFieldItem':
+				return [`pivot-field:${op.fieldIndex}`, `pivot-item:${op.itemIndex}`]
+			case 'setTimelineRange':
+				return [`timeline:${op.timelineCache ?? op.partPath ?? 'unknown'}`]
+			case 'setConnectionRefresh':
+				return [`connection:${op.connectionId}`]
+			case 'rewriteExternalLink':
+				return [`external-link:${op.relId}`]
+			default:
+				return []
+		}
+	} catch {
+		return []
+	}
+}
+
+function sheetRef(sheet: string, ref: string): string {
+	return `${sheet}!${ref}`
 }
 
 export function emptyMutationJournal(): MutationJournal {

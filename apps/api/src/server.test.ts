@@ -2220,7 +2220,7 @@ describe('Ascend API server', () => {
 		expect(reopened.getWorkbookModel().pivotCaches[0]?.refreshOnLoad).toBeUndefined()
 	})
 
-	test('write exact journal inverse ops restore saved workbook truth after reopen', async () => {
+	test('write lossy journal inverse ops restore saved workbook truth after reopen', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([
 			{
@@ -2335,7 +2335,7 @@ describe('Ascend API server', () => {
 		expect(result.status).toBe(200)
 		expect(result.body.ok).toBe(true)
 		expect(result.body.data?.journal?.supported).toBe(true)
-		expect(result.body.data?.journal?.exact).toBe(true)
+		expect(result.body.data?.journal?.exact).toBe(false)
 		const inverse = parseOperations(result.body.data?.journal?.inverseOps)
 		expect(inverse.ok).toBe(true)
 		if (!inverse.ok) throw new Error('Expected exact journal inverse ops to parse')
@@ -2424,7 +2424,7 @@ describe('Ascend API server', () => {
 		expect(restored.check().valid).toBe(true)
 	})
 
-	test('write exact journal inverse ops restore recalculated workbook truth after reopen', async () => {
+	test('write lossy journal inverse ops restore recalculated workbook truth after reopen', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([
 			{
@@ -2460,7 +2460,7 @@ describe('Ascend API server', () => {
 		expect(result.status).toBe(200)
 		expect(result.body.ok).toBe(true)
 		expect(result.body.data?.journal?.supported).toBe(true)
-		expect(result.body.data?.journal?.exact).toBe(true)
+		expect(result.body.data?.journal?.exact).toBe(false)
 		const inverse = parseOperations(result.body.data?.journal?.inverseOps)
 		expect(inverse.ok).toBe(true)
 		if (!inverse.ok) throw new Error('Expected exact journal inverse ops to parse')

@@ -1172,7 +1172,13 @@ describe('interactive client contract', () => {
 			{ journal: true },
 		)
 		expect(edit.apply.errors).toEqual([])
-		expect(edit.apply.journal?.exact).toBe(true)
+		expect(edit.apply.journal?.exact).toBe(false)
+		expect(edit.apply.journal?.issues).toContainEqual(
+			expect.objectContaining({
+				surface: 'package-parts',
+				reason: 'package-part-preservation',
+			}),
+		)
 
 		const editPatch = session.readViewportPatch({
 			sheet: 'Sheet1',
@@ -1250,7 +1256,13 @@ describe('interactive client contract', () => {
 			{ journal: true },
 		)
 		expect(edit.apply.errors).toEqual([])
-		expect(edit.apply.journal?.exact).toBe(true)
+		expect(edit.apply.journal?.exact).toBe(false)
+		expect(edit.apply.journal?.issues).toContainEqual(
+			expect.objectContaining({
+				surface: 'package-parts',
+				reason: 'package-part-preservation',
+			}),
+		)
 		const edited = session.readViewport({
 			sheet: 'Sheet1',
 			topRow: 0,
@@ -1345,7 +1357,13 @@ describe('interactive client contract', () => {
 		expect(edit.apply.errors).toEqual([])
 		expect(edit.apply.recalcRequired).toBe(true)
 		expect(edit.recalc).toBeNull()
-		expect(edit.apply.journal?.exact).toBe(true)
+		expect(edit.apply.journal?.exact).toBe(false)
+		expect(edit.apply.journal?.issues).toContainEqual(
+			expect.objectContaining({
+				surface: 'package-parts',
+				reason: 'package-part-preservation',
+			}),
+		)
 		const editPatch = session.readViewportPatch({
 			sheet: 'Sheet1',
 			topRow: 0,

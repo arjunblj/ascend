@@ -33,6 +33,8 @@ Correctness boundary note: `correctnessBoundaryEvidence` now includes `missingFe
 
 Claim blocker board note: `readiness.claimBlockerBoard` now groups missing gates by claim and owner loop. Owner loops can read `safe-open-proof/product`, `safe-open-proof/performance`, `safe-open-proof/release`, `package-action-proof/product`, `package-action-proof/correctness`, `package-action-proof/performance`, and `package-action-proof/release` rows directly instead of reconstructing ownership from global action lists.
 
+Next-loop prompt routing note: a grouped owner-handoff probe still reports `releaseGate=blocked-by-publication-policy`, `headlineClaimsAllowed=false`, `implementationSurfacePromotionAllowed=false`, and `missingRequirementCount=9`. The split is now clear: product owns two fixture decisions, correctness owns one boundary approval, performance owns one validation run and one streaming-boundary decision, and release owns four publication-policy decisions. Use the prompts below; do not hand lower-ranked research directions to implementation while these remain open.
+
 Safe-open latency note: `safeOpenLatencyValidationEvidence` now keeps the `release-latency-run` gate explicit in owner-handoff JSON. The default no-timings index reports `timed-evidence-absent-owner-run-required`, `releaseClaimAllowed=false`, and `thresholdClaimAllowed=false`; performance must run the tracked command and approve environment/input/repeat wording before any latency claim.
 
 Portfolio note: `releaseProofOwnerHandoffIndex` now emits `claimPortfolio`, a tested 10-row portfolio with rank, product-shaped claim, North Star link, evidence needed, kill criterion, likely owner, handoff decision, proof command, and boundary. Only ranks 1 and 2 are implementation handoffs; ranks 3 through 6 are proof-packaging-only; ranks 7 through 10 remain do-not-promote-yet.
@@ -72,6 +74,24 @@ Latest compact proof refresh:
 | Correctness/product | Auditable package-part mutation | Accept disclosed generated edge-package evidence or replace it; approve unsupported-feature matrix for signatures, calc chain, chart/drawing sidecars, macros/ActiveX, unknown parts, and streaming; preserve journal/package issue compatibility. | Claim copy may say local per-part `passthrough`/`regenerate`/`add`/`drop`/`error` evidence with journal-linked package issues. |
 | Performance | Package-action streaming boundary | Accept representative streaming proofs covering passthrough/regenerate/add/drop as sufficient for narrow wording or expand the matrix before broader wording. | Release copy may mention representative streaming package-action proofs only; no full streaming parity, error, macro, or chart streaming claims. |
 | Release | Provenance and compact report policy | Approve local-proof wording; define artifact storage, retention/privacy filtering, canonicalization, and verification expectations. | Compact commands remain pointers until this exists; no SLSA, in-toto, Sigstore, GitHub attestation, or signed provenance wording. |
+
+## Next-Loop Prompts
+
+### Product
+
+Run the product fixture decision loop for Ascend's top two release claims. Use `bun run fixtures/benchmarks/release-proof-index.ts --no-timings --owner-handoffs-json` as the source of truth. Decide whether to accept disclosed generated signature/unknown structural packages for guarded topology proof, vendor the ExcelForge unknown-part candidate under approved attribution, or require different public binary fixtures. Keep `public-edge-fixtures` and `edge-fixture-policy` missing unless the decision is explicitly recorded in the release proof index. Do not imply trust behavior, malware safety, arbitrary preservation, or real-world vendor behavior from structural topology alone.
+
+### Correctness
+
+Run the unsupported-feature boundary approval loop for auditable package-part mutation. Review `correctnessBoundaryEvidence`, `generatedFixtureDecisionEvidence`, and `streamingMatrixEvidence` from the owner handoff. Approve or revise allowed/forbidden wording for signatures, calc chains, chart/drawing sidecars, macros/ActiveX, unknown parts, and streaming scope. Do not describe chart XML as byte-passthrough, signatures as preserved or verified, cached formulas as Excel-fresh, or unknown parts as understood.
+
+### Performance
+
+Run exactly two performance tasks. First, produce tracked-clean release-environment open-plan latency evidence over standardized public inputs for safe-open wording; do not use private corpora, dirty-worktree timings, one-off local ratios, or machine-specific numbers as release claims. Second, decide whether representative streaming proofs covering passthrough/regenerate/add/drop are enough for narrow package-action wording, or expand the matrix to error plus public macro/chart cases before broader wording.
+
+### Release
+
+Run the publication policy loop. Approve local proof wording below SLSA, in-toto, Sigstore, GitHub artifact attestation, malware safety, active-content trust, and signed-provenance thresholds. Define compact report artifact storage, retention/privacy filtering, canonicalization subject, and offline verification expectations before any digest publication. Local digests and compact report hashes are not attestations.
 
 ## Safe-Open Acceptance Checkboxes
 

@@ -6,6 +6,7 @@ Updated: 2026-05-15
 
 | Run | Status | Fold-in target |
 | --- | --- | --- |
+| [Owner loop prompt routing](runs/2026/2026-05-15-owner-loop-prompt-routing/log.md) | grouped release-proof owner blockers into product, correctness, performance, and release next-loop prompts without changing production surfaces | topic synthesis, release loop |
 | [Sheet protection validation boundary](runs/2026/2026-05-15-sheet-protection-validation-boundary/log.md) | folded in rejection-first validation for invalid sheet protection password/options metadata plus journal unsupported-value classification | correctness loop |
 | [Fixture acquisition owner ranking](runs/2026/2026-05-15-fixture-acquisition-owner-ranking/log.md) | folded ranked public-fixture acquisition tasks into release-proof-index owner handoff JSON/Markdown while keeping fixture gates blocked | product loop, release loop |
 | [Package action external candidate owner evidence](runs/2026/2026-05-15-package-action-external-candidate-owner-evidence/log.md) | folded ExcelForge unknown-part mutation probe into release-proof-index owner handoff JSON/Markdown with explicit does-not-satisfy-edge-fixture-policy gate effect | product loop, correctness loop, release loop |

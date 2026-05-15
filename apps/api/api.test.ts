@@ -275,6 +275,61 @@ describe('API', () => {
 		)
 	})
 
+	test('open-plan endpoint recommends a load mode without hydrating workbook cells', async () => {
+		const tempFile = join(tempDir, 'api-open-plan.xlsx')
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 42 }] }])
+		await wb.save(tempFile)
+
+		const res = await api(`/open-plan`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ file: tempFile, intent: 'read-values' }),
+		})
+		expect(res.status).toBe(200)
+		const body = await res.json()
+		expect(body.ok).toBe(true)
+		expect(body.data.intent).toBe('read-values')
+		expect(body.data.recommendedLoadOptions).toEqual({ mode: 'values' })
+		expect(body.data.reviewBeforeHydration).toBe(false)
+	})
+
+	test('open-plan endpoint routes macro workbooks to metadata review', async () => {
+		const tempFile = join(tempDir, 'api-open-plan-macro.xlsm')
+		await Bun.write(tempFile, signedMacroWorkbook())
+
+		const res = await api(`/open-plan`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ file: tempFile }),
+		})
+		expect(res.status).toBe(200)
+		const body = await res.json()
+		expect(body.ok).toBe(true)
+		expect(body.data.recommendedLoadOptions).toEqual({ mode: 'metadata-only' })
+		expect(body.data.reviewBeforeHydration).toBe(true)
+		expect(body.data.riskFeatures).toContainEqual(
+			expect.objectContaining({ featureFamily: 'preservedMacro' }),
+		)
+	})
+
+	test('open-plan endpoint rejects invalid intents', async () => {
+		const tempFile = join(tempDir, 'api-open-plan-invalid.xlsx')
+		const wb = AscendWorkbook.create()
+		await wb.save(tempFile)
+
+		const res = await api(`/open-plan`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ file: tempFile, intent: 'fast' }),
+		})
+		expect(res.status).toBe(400)
+		const body = await res.json()
+		expect(body.ok).toBe(false)
+		expect(body.error.code).toBe('VALIDATION_ERROR')
+		expect(body.error.details.allowedIntents).toContain('edit-plan')
+	})
+
 	test('pivots endpoint exposes output audits and materialization ops for agents', async () => {
 		const res = await api(`/pivots`, {
 			method: 'POST',

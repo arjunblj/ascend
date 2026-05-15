@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { type AscendError, AscendException, ascendError, type CellValue } from '@ascend/schema'
 import {
 	type AgentCommitOptions,
@@ -18,6 +19,7 @@ import {
 	formatDisplayCellValue,
 	formulaAssist,
 	getOperationsSchema,
+	inspectWorkbookOpenPlan,
 	listCapabilities,
 	listOperations,
 	normalizeExportFormat,
@@ -34,6 +36,7 @@ import {
 	sha256Bytes,
 	summarizeCapabilities,
 	WorkbookDocument,
+	type WorkbookOpenIntent,
 	withPathMutationResult,
 	withPreparedPlanHandle,
 } from '@ascend/sdk'
@@ -114,6 +117,18 @@ function rawPartMaxBytes(
 		return { ok: false, rule: `at most ${MAX_API_RAW_PART_MAX_BYTES} bytes` }
 	}
 	return { ok: true, maxBytes: value }
+}
+
+function openPlanIntent(
+	value: unknown,
+): { readonly ok: true; readonly intent?: WorkbookOpenIntent } | { readonly ok: false } {
+	if (value === undefined) return { ok: true }
+	return value === 'risk-inventory' ||
+		value === 'read-values' ||
+		value === 'formula-analysis' ||
+		value === 'edit-plan'
+		? { ok: true, intent: value }
+		: { ok: false }
 }
 
 function unsupportedAgentPlanLoadOptions(body: Record<string, unknown> | null): readonly string[] {
@@ -359,6 +374,36 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 					const sheet = wb.inspectSheet(sheetName)
 					if (!sheet) return sheetNotFoundResponse(sheetName, wb)
 					return jsonSuccess(sheet)
+				} catch (e) {
+					return handleError(e, file)
+				}
+			}
+
+			if (method === 'POST' && path === '/open-plan') {
+				const body = await parseJson<Record<string, unknown>>(req)
+				const file = body ? requireString(body, 'file') : null
+				if (!file) return jsonFailure('Missing or invalid file', 400)
+				const intent = openPlanIntent(body?.intent)
+				if (!intent.ok) {
+					return jsonFailureError(
+						ascendError('VALIDATION_ERROR', 'Invalid open-plan intent', {
+							details: {
+								allowedIntents: ['risk-inventory', 'read-values', 'formula-analysis', 'edit-plan'],
+								receivedIntent: body?.intent,
+							},
+							suggestedFix:
+								'Use intent risk-inventory, read-values, formula-analysis, or edit-plan.',
+						}),
+						400,
+					)
+				}
+				try {
+					return jsonSuccess(
+						inspectWorkbookOpenPlan(
+							new Uint8Array(readFileSync(file)),
+							intent.intent ? { intent: intent.intent } : {},
+						),
+					)
 				} catch (e) {
 					return handleError(e, file)
 				}

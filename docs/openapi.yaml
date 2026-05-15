@@ -44,6 +44,23 @@ paths:
                 sheet: { type: string }
       responses:
         '200': { description: Workbook or sheet inspect payload }
+  /open-plan:
+    post:
+      summary: Recommend a safe XLSX/XLSM open mode before workbook hydration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string }
+                intent:
+                  enum: [risk-inventory, read-values, formula-analysis, edit-plan]
+                  description: Caller intent for the next step; defaults to edit-plan.
+      responses:
+        '200': { description: Open-plan recommendation with reasons, risk features, and recommended load options }
   /active-content:
     post:
       summary: Inspect macros, signatures, ActiveX/form controls, Custom UI callbacks, and related preserve-first risks

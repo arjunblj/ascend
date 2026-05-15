@@ -11,6 +11,25 @@ describe('release proof evidence index', () => {
 
 		expect(index.signed).toBe(false)
 		expect(index.attestation).toBe(false)
+		expect(index.releasePackageabilityEvidence).toMatchObject({
+			ownerLoop: 'release',
+			status: 'local-tarball-smokes-present-publication-policy-required',
+			ownerApprovalRequired: true,
+			sdkSmokeCommand: 'bun run release:sdk:smoke',
+			appSmokeCommand: 'bun run release:apps:smoke',
+			boundary: expect.stringContaining('local tarball install'),
+		})
+		expect(index.releasePackageabilityEvidence.coveredEvidence).toEqual([
+			expect.stringContaining('SDK tarball installs'),
+			expect.stringContaining('CLI/API/MCP app tarballs install'),
+			expect.stringContaining('Installed CLI bin reports version'),
+			expect.stringContaining('Installed API createApiFetch handles /capabilities'),
+			expect.stringContaining('Installed MCP package registers capabilities'),
+		])
+		expect(index.releasePackageabilityEvidence.missingPolicyRequirements).toContain(
+			'registry publication workflow',
+		)
+		expect(index.releasePackageabilityEvidence.forbiddenClaims).toContain('signed provenance')
 		expect(index.excludedEvidenceCount).toBe(1)
 		expect(index.deferredClaimCount).toBe(6)
 		expect(index.fixturePolicy).toMatchObject({
@@ -914,6 +933,14 @@ describe('release proof evidence index', () => {
 		)
 		expect(JSON.stringify(handoff.correctnessPolicy)).toContain('signature preservation')
 		expect(JSON.stringify(handoff.correctnessBoundaryEvidence)).toContain('safe-open-proof/activex')
+		expect(handoff.releasePackageabilityEvidence).toMatchObject({
+			status: 'local-tarball-smokes-present-publication-policy-required',
+			sdkSmokeCommand: 'bun run release:sdk:smoke',
+			appSmokeCommand: 'bun run release:apps:smoke',
+		})
+		expect(JSON.stringify(handoff.releasePackageabilityEvidence)).toContain(
+			'full MCP protocol compatibility',
+		)
 		expect(handoff.compactReportPublicationEvidence).toMatchObject({
 			status: 'local-summary-present-publication-policy-required',
 			compactReportDigestsIndexed: false,
@@ -1032,6 +1059,9 @@ describe('release proof evidence index', () => {
 		expect(markdown).toContain('Compact report command')
 		expect(markdown).toContain('Ready when')
 		expect(markdown).toContain('Release Readiness Gate')
+		expect(markdown).toContain('Release Packageability Evidence')
+		expect(markdown).toContain('bun run release:apps:smoke')
+		expect(markdown).toContain('local tarball install')
 		expect(markdown).toContain('Implementation surface promotion allowed: false')
 		expect(markdown).toContain('do not authorize new SDK, CLI, API, or MCP surfaces')
 		expect(markdown).toContain('ReadyWhen requirements: total=9, missing=9, satisfied=0')

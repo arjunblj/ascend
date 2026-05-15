@@ -171,6 +171,7 @@ export interface ReleaseProofIndexResult {
 	readonly safeOpenLatencyValidationEvidence: ReleaseProofSafeOpenLatencyValidationEvidence
 	readonly correctnessPolicy: ReleaseProofCorrectnessPolicy
 	readonly correctnessBoundaryEvidence: ReleaseProofCorrectnessBoundaryEvidence
+	readonly releasePackageabilityEvidence: ReleaseProofPackageabilityEvidence
 	readonly streamingMatrixEvidence: ReleaseProofStreamingMatrixEvidence
 	readonly compactReportPublicationEvidence: ReleaseProofCompactReportPublicationEvidence
 	readonly readiness: ReleaseProofReadinessSummary
@@ -194,6 +195,7 @@ export interface ReleaseProofOwnerHandoffIndex {
 	readonly safeOpenLatencyValidationEvidence: ReleaseProofSafeOpenLatencyValidationEvidence
 	readonly correctnessPolicy: ReleaseProofCorrectnessPolicy
 	readonly correctnessBoundaryEvidence: ReleaseProofCorrectnessBoundaryEvidence
+	readonly releasePackageabilityEvidence: ReleaseProofPackageabilityEvidence
 	readonly streamingMatrixEvidence: ReleaseProofStreamingMatrixEvidence
 	readonly compactReportPublicationEvidence: ReleaseProofCompactReportPublicationEvidence
 	readonly nextOwnerActions: readonly ReleaseProofNextOwnerAction[]
@@ -202,6 +204,18 @@ export interface ReleaseProofOwnerHandoffIndex {
 	readonly claimPortfolio: readonly ReleaseProofPortfolioClaim[]
 	readonly deferredClaims: readonly ReleaseProofDeferredClaim[]
 	readonly excludedEvidence: readonly ReleaseProofIndexExcludedEvidence[]
+	readonly boundary: string
+}
+
+export interface ReleaseProofPackageabilityEvidence {
+	readonly ownerLoop: 'release'
+	readonly status: 'local-tarball-smokes-present-publication-policy-required'
+	readonly ownerApprovalRequired: true
+	readonly sdkSmokeCommand: string
+	readonly appSmokeCommand: string
+	readonly coveredEvidence: readonly string[]
+	readonly missingPolicyRequirements: readonly string[]
+	readonly forbiddenClaims: readonly string[]
 	readonly boundary: string
 }
 
@@ -758,6 +772,7 @@ export async function runReleaseProofIndex(
 		safeOpenLatencyValidationEvidence: safeOpenLatencyValidationEvidence(safeOpen),
 		correctnessPolicy: cloneCorrectnessPolicy(),
 		correctnessBoundaryEvidence: correctnessBoundaryEvidence(safeOpen, packageAction),
+		releasePackageabilityEvidence: releasePackageabilityEvidence(),
 		streamingMatrixEvidence: streamingMatrixEvidence(packageAction),
 		compactReportPublicationEvidence: compactReportPublicationEvidence(
 			safeOpenCompact,
@@ -798,6 +813,23 @@ export function releaseProofIndexMarkdown(result: ReleaseProofIndexResult): stri
 		`Claim blocker board: ${formatClaimBlockerBoard(result.readiness.claimBlockerBoard)}`,
 		`Implementation handoffs: ${formatImplementationHandoffs(result.readiness.implementationHandoffs)}`,
 		result.readiness.boundary,
+		'',
+		'## Release Packageability Evidence',
+		'',
+		`Status: ${result.releasePackageabilityEvidence.status}`,
+		`SDK smoke command: \`${result.releasePackageabilityEvidence.sdkSmokeCommand}\``,
+		`App smoke command: \`${result.releasePackageabilityEvidence.appSmokeCommand}\``,
+		`Owner approval required: ${result.releasePackageabilityEvidence.ownerApprovalRequired}`,
+		result.releasePackageabilityEvidence.boundary,
+		'',
+		'Covered packageability evidence:',
+		...result.releasePackageabilityEvidence.coveredEvidence.map((entry) => `- ${entry}`),
+		'',
+		'Missing packageability policy requirements:',
+		...result.releasePackageabilityEvidence.missingPolicyRequirements.map((entry) => `- ${entry}`),
+		'',
+		'Forbidden packageability claims:',
+		...result.releasePackageabilityEvidence.forbiddenClaims.map((entry) => `- ${entry}`),
 		'',
 		'## Claim Blocker Board',
 		'',
@@ -1014,6 +1046,9 @@ export function releaseProofOwnerHandoffIndex(
 		correctnessBoundaryEvidence: cloneCorrectnessBoundaryEvidence(
 			result.correctnessBoundaryEvidence,
 		),
+		releasePackageabilityEvidence: cloneReleasePackageabilityEvidence(
+			result.releasePackageabilityEvidence,
+		),
 		compactReportPublicationEvidence: cloneCompactReportPublicationEvidence(
 			result.compactReportPublicationEvidence,
 		),
@@ -1042,6 +1077,51 @@ const EXCLUDED_EVIDENCE: readonly ReleaseProofIndexExcludedEvidence[] = [
 			'No local timing report in this index is a release performance threshold, signed provenance, or headline product claim.',
 	},
 ]
+
+function releasePackageabilityEvidence(): ReleaseProofPackageabilityEvidence {
+	return {
+		ownerLoop: 'release',
+		status: 'local-tarball-smokes-present-publication-policy-required',
+		ownerApprovalRequired: true,
+		sdkSmokeCommand: 'bun run release:sdk:smoke',
+		appSmokeCommand: 'bun run release:apps:smoke',
+		coveredEvidence: [
+			'SDK tarball installs into a temp consumer and verifies create/open/plan/commit/reopen/check/recalc plus bundled agent docs.',
+			'CLI/API/MCP app tarballs install into a temp consumer without workspace dependencies.',
+			'Installed CLI bin reports version from node_modules/.bin/ascend.',
+			'Installed API createApiFetch handles /capabilities and returns capability data.',
+			'Installed MCP package registers capabilities tool/resource callbacks and returns capability data.',
+		],
+		missingPolicyRequirements: [
+			'artifact storage path',
+			'registry publication workflow',
+			'signed provenance or explicit non-provenance wording',
+			'API listener lifecycle smoke',
+			'stdio MCP protocol-session smoke',
+			'retention and privacy filtering for release smoke output',
+		],
+		forbiddenClaims: [
+			'published registry artifacts',
+			'signed provenance',
+			'SLSA, in-toto, Sigstore, or GitHub artifact attestation',
+			'production API lifecycle readiness',
+			'full MCP protocol compatibility',
+		],
+		boundary:
+			'Packageability evidence proves local tarball install and basic runtime smoke only. It is not registry publication, signed provenance, artifact retention policy, production server lifecycle proof, or a real MCP protocol session.',
+	}
+}
+
+function cloneReleasePackageabilityEvidence(
+	evidence: ReleaseProofPackageabilityEvidence,
+): ReleaseProofPackageabilityEvidence {
+	return {
+		...evidence,
+		coveredEvidence: [...evidence.coveredEvidence],
+		missingPolicyRequirements: [...evidence.missingPolicyRequirements],
+		forbiddenClaims: [...evidence.forbiddenClaims],
+	}
+}
 
 const CLAIM_PORTFOLIO: readonly ReleaseProofPortfolioClaim[] = [
 	portfolioClaim({

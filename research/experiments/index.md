@@ -6,6 +6,7 @@ Updated: 2026-05-15
 
 | Run | Status | Fold-in target |
 | --- | --- | --- |
+| [Release packageability index evidence](runs/2026/2026-05-15-release-packageability-index-evidence/log.md) | folded SDK/app tarball smoke evidence into release proof index and owner handoff JSON with fail-closed boundaries | product loop, release loop |
 | [Practical latency plan phase attribution](runs/2026/2026-05-15-practical-latency-plan-phase-attribution/log.md) | folded in benchmark decision attribution for shared plan sub-phases versus aggregate prepared plan timing | performance loop |
 | [Release app tarball smoke](runs/2026/2026-05-15-release-app-tarball-smoke/log.md) | folded in CLI/API/MCP temp external tarball install smoke with API capabilities and MCP capabilities callbacks; publication/provenance/protocol depth remain open | product loop, release loop |
 | [Release app package bin proof](runs/2026/2026-05-15-release-app-package-bin-proof/log.md) | folded in app JS build/bin manifests and import-safe entrypoint guards for CLI/API/MCP; app tarball consumer smoke still open | product loop, release loop |

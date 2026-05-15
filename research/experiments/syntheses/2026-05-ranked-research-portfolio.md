@@ -8,6 +8,10 @@ Research is no longer a broad sweep. Each direction below must earn its place by
 
 ## Latest Claim Steward Refresh
 
+Proof timestamp: 2026-05-15T19:17:18Z.
+
+The release proof index now exposes `releasePackageabilityEvidence` in both full JSON and owner-handoff JSON. It records `release:sdk:smoke`, `release:apps:smoke`, covered local tarball install/runtime evidence, missing publication/protocol policy requirements, forbidden provenance claims, and the boundary below registry publication or signed attestation. The top two handoffs remain safe-open and package-action proof; packageability evidence is release-owner routing only.
+
 Proof timestamp: 2026-05-15T19:13:37Z.
 
 Practical latency routing is tighter but still diagnostic-only. `practical-latency-contracts` now ranks measured shared plan sub-phases ahead of aggregate prepared-plan timing and reports the leftover aggregate as unassigned endpoint overhead. A public-tracked edit/verify dry run selected prepared-output reopen at 72.247 ms as the largest phase; because the run used one sample, generated edit input, and a dirty benchmark harness, it is performance-owner routing evidence only, not a release latency claim.

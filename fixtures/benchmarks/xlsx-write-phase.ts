@@ -325,7 +325,7 @@ function median(values: readonly number[]): number {
 	return sorted.length % 2 === 1 ? upper : ((sorted[middle - 1] ?? upper) + upper) / 2
 }
 
-function summarize(samples: readonly PhaseSample[]) {
+function summarize(samples: readonly PhaseSample[], args: Args) {
 	const buildMedianMs = median(samples.map((sample) => sample.buildMs))
 	const writeMedianMs = median(samples.map((sample) => sample.writeMs))
 	const validateMedianMs = samples.some((sample) => sample.validateMs !== undefined)
@@ -348,6 +348,13 @@ function summarize(samples: readonly PhaseSample[]) {
 		totalMedianMs,
 		dominantPhase,
 		writerPath: samples[0]?.writerPath ?? 'workbook-buffered',
+		valueSource: args.valueSource,
+		generatedValueCostIncludedInWrite:
+			shouldUseDirectDenseStreaming(args) && args.valueSource === 'generated',
+		writeMeasurementGuardrail:
+			shouldUseDirectDenseStreaming(args) && args.valueSource === 'generated'
+				? 'writeMs includes generated valueAt() cost; compare with --value-source cached-materialized to isolate writer/ZIP cost'
+				: 'writeMs excludes per-cell workload generation cost',
 		cellsPerSecondMedian: median(samples.map((sample) => sample.cellsPerSecond)),
 		writeNsPerCellMedian: median(samples.map((sample) => sample.writeNsPerCell)),
 		bytesMedian: median(samples.map((sample) => sample.bytes)),
@@ -376,7 +383,7 @@ const payload = {
 	tool: 'xlsx-write-phase',
 	args,
 	...(cachedValues ? { cacheBuildMs, cachedValueRows: cachedValues.length } : {}),
-	summary: summarize(samples),
+	summary: summarize(samples, args),
 	samples,
 }
 

@@ -6290,7 +6290,35 @@ describe('applyOperation', () => {
 		s.dataValidations.push({ sqref: 'A1', type: 'list', formula1: 'Sheet1!A:A' })
 		s.conditionalFormats.push({
 			sqref: 'A1',
-			rules: [{ type: 'expression', formulas: ['SUM(Sheet1!A:A)>0'] }],
+			rules: [
+				{
+					type: 'expression',
+					formulas: ['SUM(Sheet1!A:A)>0'],
+					colorScale: {
+						cfvo: [{ type: 'formula', value: 'Sheet1!B:B' }],
+						colors: [{ rgb: 'FFFF0000' }],
+					},
+					dataBar: { cfvo: [{ type: 'formula', value: 'Sheet1!C:C' }] },
+					iconSet: { cfvo: [{ type: 'formula', value: 'Sheet1!D:D' }] },
+				},
+			],
+		})
+		s.x14DataValidations.push({
+			index: 0,
+			sqref: 'A2',
+			type: 'list',
+			formula1: 'Sheet1!A:A',
+		})
+		s.x14ConditionalFormats.push({
+			index: 0,
+			sqref: 'A2',
+			formulas: ['SUM(Sheet1!A:A)>0'],
+			colorScale: {
+				cfvo: [{ type: 'formula', value: 'Sheet1!B:B' }],
+				colors: [{ rgb: 'FF63BE7B' }],
+			},
+			dataBar: { cfvo: [{ type: 'formula', value: 'Sheet1!C:C' }] },
+			iconSet: { cfvo: [{ type: 'formula', value: 'Sheet1!D:D' }] },
 		})
 		s.hyperlinks.set('A1', { location: 'sheet1!A1', display: 'jump' })
 		s.tables.push({
@@ -6310,6 +6338,14 @@ describe('applyOperation', () => {
 
 		expect(s.dataValidations[0]?.formula1).toBe('Data!A:A')
 		expect(s.conditionalFormats[0]?.rules[0]?.formulas[0]).toBe('SUM(Data!A:A)>0')
+		expect(s.conditionalFormats[0]?.rules[0]?.colorScale?.cfvo[0]?.value).toBe('Data!B:B')
+		expect(s.conditionalFormats[0]?.rules[0]?.dataBar?.cfvo[0]?.value).toBe('Data!C:C')
+		expect(s.conditionalFormats[0]?.rules[0]?.iconSet?.cfvo[0]?.value).toBe('Data!D:D')
+		expect(s.x14DataValidations[0]?.formula1).toBe('Data!A:A')
+		expect(s.x14ConditionalFormats[0]?.formulas[0]).toBe('SUM(Data!A:A)>0')
+		expect(s.x14ConditionalFormats[0]?.colorScale?.cfvo[0]?.value).toBe('Data!B:B')
+		expect(s.x14ConditionalFormats[0]?.dataBar?.cfvo[0]?.value).toBe('Data!C:C')
+		expect(s.x14ConditionalFormats[0]?.iconSet?.cfvo[0]?.value).toBe('Data!D:D')
 		expect(s.hyperlinks.get('A1')?.location).toBe('Data!A1')
 		expect(s.tables[0]?.columns[0]?.formula).toBe('Data!A:A')
 		expect(s.tables[0]?.columns[0]?.totalsRowFormula).toBe('SUM(Data!A:A)')

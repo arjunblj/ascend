@@ -35,6 +35,7 @@ Updated: 2026-05-15
 | [Safe open release proof rerun](runs/2026/2026-05-15-safe-open-release-proof-rerun/log.md) | current proof report refreshed, no new surface | product loop, performance loop |
 | [Package action proof source graph](runs/2026/2026-05-15-package-action-proof-source-graph/log.md) | folded in commit-local add/regenerate evidence | correctness loop, product loop |
 | [Package action proof harness](runs/2026/2026-05-15-package-action-proof-harness/log.md) | folded in tracked proof harness | correctness loop, product loop |
+| [Package action release proof dirty writer blocker](runs/2026/2026-05-15-package-action-release-proof-dirty-writer-blocker/log.md) | blocked by unrelated dirty writer edit | correctness loop, product loop |
 | [Release proof harness artifact boundary](runs/2026/2026-05-15-release-proof-harness-artifact-boundary/log.md) | handoff only, hold embedding harness artifacts | product loop |
 | [Package action proof claim boundaries](runs/2026/2026-05-15-package-action-proof-claim-boundaries/log.md) | folded in proof boundary field | correctness loop, product loop |
 | [Package action proof surface digests](runs/2026/2026-05-15-package-action-proof-surface-digests/log.md) | folded in opt-in commit digest evidence | correctness loop, product loop |

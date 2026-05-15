@@ -564,7 +564,11 @@ function editVerifyTable(results: readonly StepResult[]): string {
 		'| Phase | Median ms | Payload/bytes | Evidence |',
 		'|---|---:|---:|---|',
 		`| Plan | ${metric(workflow?.summary, 'planMedianMs')} | ${metric(workflow?.summary, 'planPayloadBytesMedian')} bytes | ${statusLink(workflow)} |`,
+		`| Prepared plan | ${metric(workflow?.summary, 'preparedPlanMedianMs')} | ${metric(workflow?.summary, 'preparedPlanPayloadBytesMedian')} bytes | ${statusLink(workflow)} |`,
 		`| Commit verified total | ${metric(workflow?.summary, 'commitVerifiedTotalMedianMs')} | ${metric(workflow?.summary, 'commitVerifiedPayloadBytesMedian')} bytes | ${statusLink(workflow)} |`,
+		`| Prepared commit verified total | ${metric(workflow?.summary, 'preparedCommitVerifiedTotalMedianMs')} | ${metric(workflow?.summary, 'preparedCommitVerifiedPayloadBytesMedian')} bytes | ${statusLink(workflow)} |`,
+		`| Prepared write-policy check | ${metric(workflow?.summary, 'preparedCommitWritePolicyCheckMedianMs')} | | ${statusLink(workflow)} |`,
+		`| Prepared reopen output | ${metric(workflow?.summary, 'preparedCommitPostWriteReopenMedianMs')} | | ${statusLink(workflow)} |`,
 		`| Write | ${metric(postWrite?.summary, 'commitWriteMedianMs')} | output ${metric(postWrite?.summary, 'outputBytesMedian')} bytes | ${statusLink(postWrite)} |`,
 		`| Reopen output | ${metric(postWrite?.summary, 'commitPostWriteReopenMedianMs')} | | ${statusLink(postWrite)} |`,
 		`| Check | ${metric(postWrite?.summary, 'commitPostWriteCheckMedianMs')} | | ${statusLink(postWrite)} |`,
@@ -687,44 +691,58 @@ function envelopeDecisions(results: readonly StepResult[]): EnvelopeDecision[] {
 	}
 
 	const editEnvelope =
-		numericMetric(workflow?.summary, 'totalMedianMs') ??
-		numericMetric(workflow?.summary, 'commitVerifiedTotalMedianMs')
+		numericMetric(workflow?.summary, 'preparedCommitVerifiedTotalMedianMs') ??
+		numericMetric(workflow?.summary, 'commitVerifiedTotalMedianMs') ??
+		numericMetric(workflow?.summary, 'totalMedianMs')
 	if (editEnvelope !== undefined) {
 		const workflowProfile = workflow?.profileCommand ?? ''
 		const postWriteProfile = postWrite?.profileCommand ?? workflowProfile
+		const preparedDirtyWrite =
+			(numericMetric(workflow?.summary, 'preparedCommitToBytesMedianMs') ?? 0) +
+			(numericMetric(workflow?.summary, 'preparedCommitWriteFileMedianMs') ?? 0)
 		const largest = largestPhase([
 			{
-				name: 'Edit plan payload',
-				medianMs: numericMetric(workflow?.summary, 'planMedianMs') ?? 0,
+				name: 'Prepared plan/open',
+				medianMs: numericMetric(workflow?.summary, 'preparedPlanMedianMs') ?? 0,
 				profileCommand: workflowProfile,
 			},
 			{
-				name: 'Commit write-policy check',
-				medianMs: numericMetric(workflow?.summary, 'commitWritePolicyCheckMedianMs') ?? 0,
+				name: 'Prepared commit write-policy check',
+				medianMs: numericMetric(workflow?.summary, 'preparedCommitWritePolicyCheckMedianMs') ?? 0,
 				profileCommand: workflowProfile,
 			},
 			{
-				name: 'Dirty write bytes',
-				medianMs: numericMetric(postWrite?.summary, 'commitWriteMedianMs') ?? 0,
-				profileCommand: postWriteProfile,
+				name: 'Prepared dirty write bytes',
+				medianMs: preparedDirtyWrite,
+				profileCommand: workflowProfile,
 			},
 			{
-				name: 'Reopen written output',
-				medianMs: numericMetric(postWrite?.summary, 'commitPostWriteReopenMedianMs') ?? 0,
-				profileCommand: postWriteProfile,
+				name: 'Prepared reopen written output',
+				medianMs:
+					numericMetric(workflow?.summary, 'preparedCommitPostWriteReopenMedianMs') ??
+					numericMetric(postWrite?.summary, 'commitPostWriteReopenMedianMs') ??
+					0,
+				profileCommand: workflowProfile || postWriteProfile,
 			},
 			{
-				name: 'Structural check after reopen',
-				medianMs: numericMetric(postWrite?.summary, 'commitPostWriteCheckMedianMs') ?? 0,
-				profileCommand: postWriteProfile,
+				name: 'Prepared structural check after reopen',
+				medianMs:
+					numericMetric(workflow?.summary, 'preparedCommitPostWriteCheckMedianMs') ??
+					numericMetric(postWrite?.summary, 'commitPostWriteCheckMedianMs') ??
+					0,
+				profileCommand: workflowProfile || postWriteProfile,
 			},
 			{
-				name: 'Preservation/package verification',
+				name: 'Prepared preservation/package verification',
 				medianMs: Math.max(
-					numericMetric(postWrite?.summary, 'commitPostWritePreservationMedianMs') ?? 0,
-					numericMetric(postWrite?.summary, 'commitPostWritePackageGraphAuditMedianMs') ?? 0,
+					numericMetric(workflow?.summary, 'preparedCommitPostWritePreservationMedianMs') ??
+						numericMetric(postWrite?.summary, 'commitPostWritePreservationMedianMs') ??
+						0,
+					numericMetric(workflow?.summary, 'preparedCommitPostWritePackageGraphAuditMedianMs') ??
+						numericMetric(postWrite?.summary, 'commitPostWritePackageGraphAuditMedianMs') ??
+						0,
 				),
-				profileCommand: postWriteProfile,
+				profileCommand: workflowProfile || postWriteProfile,
 			},
 		])
 		decisions.push({

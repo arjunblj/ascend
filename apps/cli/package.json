@@ -10,8 +10,7 @@
 	},
 	"dependencies": {
 		"@ascend/schema": "workspace:*",
-		"@ascend/sdk": "workspace:*",
-		"@ascend/tui": "workspace:*"
+		"@ascend/sdk": "workspace:*"
 	},
 	"scripts": {
 		"test": "bun test"

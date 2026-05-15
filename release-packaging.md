@@ -29,13 +29,31 @@ SDK artifact: /private/tmp/ascend-sdk-local-release/artifacts/ascend-sdk-0.0.0.t
 
 The SDK tarball currently bundles Ascend internal packages inside the local SDK artifact so the temp app does not need repo-local package graph knowledge. Public runtime dependencies remain normal package dependencies.
 
+## Headless CLI Split Update
+
+The CLI no longer hard-depends on the current TUI package at startup.
+
+Changed shape:
+
+- `apps/cli/package.json` no longer declares `@ascend/tui`.
+- `apps/cli/tsconfig.json` no longer references `apps/tui`.
+- `ascend tui` and `ascend open` now lazy-load `@ascend/tui` only when those commands are invoked.
+- Headless commands such as `inspect`, `plan`, `commit`, and `check` can load the CLI without resolving TUI dependencies.
+
+Validation:
+
+```bash
+bun test apps/cli/src/cli.test.ts
+bun run build
+```
+
 ## Verdict
 
 Ascend is no longer blocked on the first SDK external install smoke. The broader release remains blocked until CLI, API, MCP, and installed-package docs are handled.
 
-The SDK workflow now works from a temp external app with a single local `@ascend/sdk` tarball and no consumer overrides. CLI, API, and MCP workflows still work only through source-package installs/deep imports or the current TUI dependency. That is not a complete external adoption path.
+The SDK workflow now works from a temp external app with a single local `@ascend/sdk` tarball and no consumer overrides. CLI is no longer blocked by current-TUI startup coupling, but it still needs real dist JS, publish manifest, and bin packaging. API and MCP workflows still work only through source-package installs/deep imports. That is not a complete external adoption path.
 
-Previous audit stop condition was reached; current implementation sequence moves next to the headless CLI/TUI split.
+Previous audit stop condition was reached; current implementation sequence moves next to real CLI/API/MCP dist JS plus publish manifests and bins.
 
 ## Manifest, Export, Bin, And Build Audit
 
@@ -156,7 +174,7 @@ Exact blocker: no packageable MCP `dist` manifest, no bin, and app JS build outp
 | --- | --- | --- | --- | --- |
 | SDK/package build | `scripts/release-sdk-smoke.ts`, `package.json` | Done for local SDK smoke: produce a single local SDK tarball with bundled internal packages and verify a fresh consumer install without overrides. Next step is deciding whether this bundled shape or a registry/tarball-set shape is the final publish design. | `bun run release:sdk:smoke` | First SDK external install smoke passes; final publish design still needs release decision. |
 | Package manifests | `packages/*/package.json` | Decide source manifests vs generated publish manifests; source manifests should not remain the only package truth with `private: true`, `main: src/index.ts`, no `exports`, and `workspace:*`. | `bun run build` plus manifest audit showing publishable manifests for every public package. | Blocks publish readiness and consumer trust. |
-| CLI/headless | `apps/cli/package.json`, `apps/cli/src/index.ts` | Remove hard runtime dependency on current `@ascend/tui`; make TUI optional/dynamic or move it to a separate package. Ship headless CLI commands without requiring TUI. | Temp app install `@ascend/cli`; run `ascend --version`, `inspect`, `plan`, `commit`, `check` with no `@ascend/tui` dependency. | Blocks headless agent workflow release. |
+| CLI/headless | `apps/cli/package.json`, `apps/cli/src/commands/tui.ts`, `apps/cli/src/commands/open.ts`, `apps/cli/tsconfig.json` | Done for source startup: CLI no longer depends on or project-references current TUI; `tui` and `open` lazy-load `@ascend/tui` only when invoked. Still needs external packaged CLI smoke after real dist/bin exists. | `bun test apps/cli/src/cli.test.ts`; `bun run build` | Removes current TUI as a headless CLI startup blocker. |
 | CLI build/bin | `apps/cli/tsconfig.json`, `apps/cli/package.json`, build script | Produce real `dist` JS and a publish manifest with `bin.ascend` pointing at built JS, not `src/index.ts`. | `node_modules/.bin/ascend --version` from installed artifact, without source files. | Blocks CLI packageability. |
 | API build/startup | `apps/api/tsconfig.json`, `apps/api/package.json`, `apps/api/src/index.ts` | Produce real `dist` JS, publish manifest, explicit exports for `createApiFetch/createServer`, and a server bin such as `ascend-api`. | Temp app install `@ascend/api`; import package root and run server/bin smoke for `/health`, `/plan`, `/commit`, `/check`. | Blocks HTTP API release. |
 | MCP build/startup | `apps/mcp/tsconfig.json`, `apps/mcp/package.json`, `apps/mcp/src/index.ts` | Produce real `dist` JS, publish manifest, root export for `createServer`, and MCP server bin for stdio startup. | Temp app install `@ascend/mcp`; run MCP stdio/server smoke for `ascend.inspect`, `ascend.plan`, `ascend.commit`, `ascend.check`. | Blocks MCP release. |
@@ -167,6 +185,5 @@ Exact blocker: no packageable MCP `dist` manifest, no bin, and app JS build outp
 
 Implement packageability in this order:
 
-1. Split current TUI out of the CLI runtime path for this release.
-2. Produce real CLI/API/MCP `dist` JS plus publish manifests and bins.
-3. Package docs/examples with SDK/API/MCP so agents do not need the repo checkout.
+1. Produce real CLI/API/MCP `dist` JS plus publish manifests and bins.
+2. Package docs/examples with SDK/API/MCP so agents do not need the repo checkout.

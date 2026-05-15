@@ -199,6 +199,7 @@ Release-index enforcement: `fixtures/benchmarks/release-proof-index.ts` marks bo
 - Formula language-service release copy beyond corpus-backed rejection-first primitives.
 - Columnar sidecars as a product feature.
 - Release proof bundle as signed provenance.
+- Compact proof-report digests in the release index before artifact storage, privacy filtering, and stable canonicalization are owner-approved.
 - Universal Excel formula compatibility.
 - Collaborative/CRDT claims from retained viewport patches.
 - Claims backed only by private workbook corpora.

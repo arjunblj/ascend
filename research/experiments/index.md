@@ -107,6 +107,7 @@ Updated: 2026-05-15
 | [Package action streaming proof variant](runs/2026/2026-05-15-package-action-streaming-proof-variant/log.md) | folded in representative streaming writer package-action proof and fixed summary-only streaming markers | correctness loop, performance loop |
 | [Package action streaming readiness boundary](runs/2026/2026-05-15-package-action-streaming-readiness-boundary/log.md) | folded in fail-closed streaming-matrix readiness gate for package-action release wording | performance loop, correctness loop, release loop |
 | [Package action compact release report](runs/2026/2026-05-15-package-action-compact-release-report/log.md) | folded in compact claim-safe package-action report mode without full proof payloads | release loop, product loop, correctness loop |
+| [Compact report digest policy](runs/2026/2026-05-15-compact-report-digest-policy/log.md) | policy proof: keep compact reports generated on demand until storage/privacy/canonicalization semantics exist | release loop, product loop |
 | [Package action proof](runs/2026/2026-05-14-package-action-proof/log.md) | cycle 2 complete, promote | correctness loop, product/DX loop, performance loop |
 | [Formula spans LSP](runs/2026/2026-05-14-formula-spans-lsp/log.md) | cycle 13 complete, folded in SDK hover/code actions | product/DX loop, correctness loop |
 | [Formula sqllogictest conformance](runs/2026/2026-05-14-formula-sqllogictest-conformance/log.md) | cycle 14 complete, folded in converter/runner | correctness loop |

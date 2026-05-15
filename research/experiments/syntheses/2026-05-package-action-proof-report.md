@@ -92,4 +92,6 @@ bun run fixtures/benchmarks/package-action-proof.ts --no-timings --compact-json
 
 Use the compact report for release handoff review when owners need the claim, action counts, issue cases, and readiness gates without full proof rows. Do not treat it as artifact storage, signed provenance, or a privacy policy.
 
+Digest policy: do not add compact report digests to the release proof index yet. A local probe showed raw compact JSON digests change because `generatedAt` is included, while a stable-shape digest after deleting `generatedAt` is reproducible (`55410ea37d67391bd97dd431cfa53fe3fe7ffab7bda8e1f8b53d5f01314b30c7`). Index stable compact-report digests only after release owners define artifact storage, privacy filtering, and canonicalization rules.
+
 Do not track generated compact JSON yet. Keep it as generated output until release-proof publication and privacy rules decide where claim reports live and how their digests are retained.

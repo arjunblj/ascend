@@ -6,10 +6,14 @@ import {
 	buildMutationJournal,
 	classifyMutationJournalIssue,
 	classifyMutationJournalIssues,
+	classifyMutationJournalOperationPrimarySurface,
+	classifyMutationJournalOperationSurfaces,
 	classifyMutationJournalSurface,
 	MUTATION_JOURNAL_EXACTNESS_MATRIX,
+	MUTATION_JOURNAL_OPERATION_SURFACE_RULES,
 	MUTATION_JOURNAL_REASON_DESCRIPTIONS,
 	type MutationJournal,
+	type MutationJournalOperationName,
 	type MutationJournalReasonCode,
 	type MutationJournalSurface,
 	unavailableMutationJournal,
@@ -22,6 +26,8 @@ const REQUIRED_JOURNAL_SURFACES: readonly MutationJournalSurface[] = [
 	'formula-bindings',
 	'shared-formulas',
 	'dynamic-arrays',
+	'legacy-arrays',
+	'data-tables',
 	'spills',
 	'tables',
 	'defined-names',
@@ -36,8 +42,88 @@ const REQUIRED_JOURNAL_SURFACES: readonly MutationJournalSurface[] = [
 	'page-setup',
 	'x14-metadata',
 	'drawings',
+	'charts',
+	'pivot-caches',
+	'workbook-metadata',
 	'package-parts',
 ]
+
+const REQUIRED_JOURNAL_OPERATIONS: readonly MutationJournalOperationName[] = [
+	'setCells',
+	'setFormula',
+	'fillFormula',
+	'clearRange',
+	'insertRows',
+	'deleteRows',
+	'insertCols',
+	'deleteCols',
+	'addSheet',
+	'deleteSheet',
+	'renameSheet',
+	'moveSheet',
+	'createTable',
+	'appendRows',
+	'sortRange',
+	'mergeCells',
+	'unmergeCells',
+	'setColWidth',
+	'setRowHeight',
+	'setComment',
+	'setHyperlink',
+	'setNumberFormat',
+	'setDefinedName',
+	'deleteDefinedName',
+	'setStyle',
+	'freezePane',
+	'deleteComment',
+	'deleteHyperlink',
+	'setDataValidation',
+	'deleteDataValidation',
+	'setAutoFilter',
+	'clearAutoFilter',
+	'setSheetProtection',
+	'setTabColor',
+	'hideSheet',
+	'hideRows',
+	'hideCols',
+	'copySheet',
+	'setConditionalFormat',
+	'deleteConditionalFormat',
+	'setPageSetup',
+	'setPrintArea',
+	'copyRange',
+	'moveRange',
+	'groupRows',
+	'groupCols',
+	'setRichText',
+	'setWorkbookProperties',
+	'setDocumentProperties',
+	'setWorkbookView',
+	'setCalcSettings',
+	'setTheme',
+	'setWorkbookProtection',
+	'deleteTable',
+	'renameTable',
+	'resizeTable',
+	'setTableColumn',
+	'setTableStyle',
+	'replaceImage',
+	'insertImage',
+	'deleteImage',
+	'setDrawingText',
+	'setThreadedComment',
+	'setChartSeriesSource',
+	'setPivotCache',
+	'setPivotFieldItem',
+	'setSlicerCacheItem',
+	'setTimelineRange',
+	'setSparklineGroup',
+	'setAdvancedFilter',
+	'setConnectionRefresh',
+	'rewriteExternalLink',
+]
+
+const SYNTHETIC_REPRESENTATIVE_OPS = new Set(['unsupported', 'preserved-package-part'])
 
 describe('mutation journal exactness model', () => {
 	test('taxonomy covers every workbook edit surface with stable reason codes', () => {
@@ -55,6 +141,32 @@ describe('mutation journal exactness model', () => {
 			if (rule.exactness === 'exact') expect(rule.lossReasons).toEqual([])
 			else expect(rule.lossReasons.length).toBeGreaterThan(0)
 			for (const reason of rule.lossReasons) expect(reasonCodes.has(reason)).toBe(true)
+		}
+	})
+
+	test('operation surface taxonomy covers every public operation and matrix representative', () => {
+		const operationNames = Object.keys(
+			MUTATION_JOURNAL_OPERATION_SURFACE_RULES,
+		) as MutationJournalOperationName[]
+		expect([...operationNames].sort()).toEqual([...REQUIRED_JOURNAL_OPERATIONS].sort())
+
+		const matrixSurfaces = new Set(MUTATION_JOURNAL_EXACTNESS_MATRIX.map((rule) => rule.surface))
+		for (const op of operationNames) {
+			const rule = MUTATION_JOURNAL_OPERATION_SURFACE_RULES[op]
+			expect(rule.surfaces).toContain(rule.primarySurface)
+			expect(new Set(rule.surfaces).size).toBe(rule.surfaces.length)
+			expect(classifyMutationJournalOperationPrimarySurface(op)).toBe(rule.primarySurface)
+			expect(classifyMutationJournalOperationSurfaces(op)).toEqual(rule.surfaces)
+			for (const surface of rule.surfaces) expect(matrixSurfaces.has(surface)).toBe(true)
+		}
+
+		for (const rule of MUTATION_JOURNAL_EXACTNESS_MATRIX) {
+			for (const op of rule.representativeOps) {
+				if (SYNTHETIC_REPRESENTATIVE_OPS.has(op)) continue
+				const operationRule =
+					MUTATION_JOURNAL_OPERATION_SURFACE_RULES[op as MutationJournalOperationName]
+				expect(operationRule.surfaces).toContain(rule.surface)
+			}
 		}
 	})
 
@@ -224,6 +336,15 @@ describe('mutation journal exactness model', () => {
 			},
 			{
 				op: {
+					op: 'setSparklineGroup',
+					sheet: 'Sheet1',
+					groupIndex: 0,
+					range: 'A1:A5',
+				},
+				surface: 'x14-metadata',
+			},
+			{
+				op: {
 					op: 'rewriteExternalLink',
 					relId: 'rId1',
 					newTarget: '../external.xlsx',
@@ -285,9 +406,9 @@ describe('mutation journal exactness model', () => {
 				},
 			},
 			{
-				surface: 'formula-bindings',
+				surface: 'shared-formulas',
 				exact: false,
-				issue: { surface: 'formula-bindings', reason: 'formula-binding-metadata' },
+				issue: { surface: 'shared-formulas', reason: 'formula-binding-metadata' },
 				run: () => {
 					const wb = AscendWorkbook.create()
 					const sheet = wb.getWorkbookModel().getSheet('Sheet1')
@@ -306,6 +427,87 @@ describe('mutation journal exactness model', () => {
 					})
 					return applyJournal(wb, [
 						{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 7 }] },
+					])
+				},
+			},
+			{
+				surface: 'dynamic-arrays',
+				exact: false,
+				issue: { surface: 'dynamic-arrays', reason: 'formula-binding-metadata' },
+				run: () => {
+					const wb = AscendWorkbook.create()
+					const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+					if (!sheet) throw new Error('missing sheet')
+					sheet.cells.set(0, 0, {
+						value: numberValue(1),
+						formula: 'SEQUENCE(2)',
+						styleId: DEFAULT_STYLE_ID,
+						formulaInfo: { kind: 'dynamicArray', metadataIndex: 1 },
+					})
+					return applyJournal(wb, [
+						{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 7 }] },
+					])
+				},
+			},
+			{
+				surface: 'legacy-arrays',
+				exact: false,
+				issue: { surface: 'legacy-arrays', reason: 'formula-binding-metadata' },
+				run: () => {
+					const wb = AscendWorkbook.create()
+					const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+					if (!sheet) throw new Error('missing sheet')
+					sheet.cells.set(0, 0, {
+						value: numberValue(1),
+						formula: 'A1:A2*2',
+						styleId: DEFAULT_STYLE_ID,
+						formulaInfo: { kind: 'array', ref: 'A1:A2' },
+					})
+					return buildMutationJournal(wb.getWorkbookModel(), [
+						{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 7 }] },
+					])
+				},
+			},
+			{
+				surface: 'data-tables',
+				exact: false,
+				issue: { surface: 'data-tables', reason: 'formula-binding-metadata' },
+				run: () => {
+					const wb = AscendWorkbook.create()
+					const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+					if (!sheet) throw new Error('missing sheet')
+					sheet.cells.set(2, 2, {
+						value: numberValue(10),
+						formula: null,
+						styleId: DEFAULT_STYLE_ID,
+						formulaInfo: { kind: 'dataTable', ref: 'C3:C5', dtr: true, r1: 'A1' },
+					})
+					return applyJournal(wb, [
+						{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'C3', value: 7 }] },
+					])
+				},
+			},
+			{
+				surface: 'spills',
+				exact: false,
+				issue: { surface: 'spills', reason: 'formula-binding-metadata' },
+				run: () => {
+					const wb = AscendWorkbook.create()
+					const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+					if (!sheet) throw new Error('missing sheet')
+					sheet.cells.set(1, 0, {
+						value: numberValue(2),
+						formula: null,
+						styleId: DEFAULT_STYLE_ID,
+						formulaInfo: {
+							kind: 'spill',
+							anchorRef: 'Sheet1!A1',
+							ref: 'A1:A3',
+							isAnchor: false,
+						},
+					})
+					return applyJournal(wb, [
+						{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A2', value: 7 }] },
 					])
 				},
 			},
@@ -618,7 +820,11 @@ describe('mutation journal exactness model', () => {
 		for (const surface of [
 			'cells',
 			'formulas',
-			'formula-bindings',
+			'shared-formulas',
+			'dynamic-arrays',
+			'legacy-arrays',
+			'data-tables',
+			'spills',
 			'tables',
 			'defined-names',
 			'comments',

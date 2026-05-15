@@ -73,6 +73,8 @@ export type MutationJournalSurface =
 	| 'formula-bindings'
 	| 'shared-formulas'
 	| 'dynamic-arrays'
+	| 'legacy-arrays'
+	| 'data-tables'
 	| 'spills'
 	| 'tables'
 	| 'defined-names'
@@ -191,6 +193,13 @@ export interface MutationJournalExactnessRule {
 	readonly representativeOps: readonly string[]
 }
 
+export type MutationJournalOperationName = Operation['op']
+
+export interface MutationJournalOperationSurfaceRule {
+	readonly primarySurface: MutationJournalSurface
+	readonly surfaces: readonly MutationJournalSurface[]
+}
+
 export const MUTATION_JOURNAL_EXACTNESS_MATRIX: readonly MutationJournalExactnessRule[] = [
 	{
 		surface: 'cells',
@@ -245,6 +254,22 @@ export const MUTATION_JOURNAL_EXACTNESS_MATRIX: readonly MutationJournalExactnes
 		exactness: 'lossy',
 		publicInverse: 'none',
 		constraints: ['dynamic array metadata is formula binding metadata'],
+		lossReasons: ['formula-binding-metadata'],
+		representativeOps: ['setCells', 'clearRange', 'copyRange', 'moveRange'],
+	},
+	{
+		surface: 'legacy-arrays',
+		exactness: 'lossy',
+		publicInverse: 'none',
+		constraints: ['legacy array formula metadata is formula binding metadata'],
+		lossReasons: ['formula-binding-metadata'],
+		representativeOps: ['setCells', 'clearRange', 'copyRange', 'moveRange'],
+	},
+	{
+		surface: 'data-tables',
+		exactness: 'lossy',
+		publicInverse: 'none',
+		constraints: ['data-table formula metadata is formula binding metadata'],
 		lossReasons: ['formula-binding-metadata'],
 		representativeOps: ['setCells', 'clearRange', 'copyRange', 'moveRange'],
 	},
@@ -433,10 +458,17 @@ export const MUTATION_JOURNAL_EXACTNESS_MATRIX: readonly MutationJournalExactnes
 		exactness: 'lossy',
 		publicInverse: 'none',
 		constraints: [
-			'x14 conditional-format and data-validation extension payloads are preserved package metadata with no public inverse operation',
+			'x14 conditional-format, data-validation, and sparkline extension payloads are preserved package metadata with no public inverse operation',
 		],
-		lossReasons: ['x14-metadata'],
-		representativeOps: ['copyRange', 'moveRange', 'sortRange', 'insertRows', 'deleteRows'],
+		lossReasons: ['operation-unsupported', 'x14-metadata'],
+		representativeOps: [
+			'copyRange',
+			'moveRange',
+			'sortRange',
+			'insertRows',
+			'deleteRows',
+			'setSparklineGroup',
+		],
 	},
 	{
 		surface: 'drawings',
@@ -510,6 +542,406 @@ const MUTATION_JOURNAL_EXACTNESS_BY_SURFACE = new Map(
 	MUTATION_JOURNAL_EXACTNESS_MATRIX.map((rule) => [rule.surface, rule]),
 )
 
+export const MUTATION_JOURNAL_OPERATION_SURFACE_RULES = {
+	setCells: {
+		primarySurface: 'cells',
+		surfaces: [
+			'cells',
+			'formulas',
+			'formula-bindings',
+			'shared-formulas',
+			'dynamic-arrays',
+			'legacy-arrays',
+			'data-tables',
+			'spills',
+		],
+	},
+	setFormula: {
+		primarySurface: 'formulas',
+		surfaces: [
+			'formulas',
+			'formula-bindings',
+			'shared-formulas',
+			'dynamic-arrays',
+			'legacy-arrays',
+			'data-tables',
+			'spills',
+		],
+	},
+	fillFormula: {
+		primarySurface: 'formulas',
+		surfaces: [
+			'formulas',
+			'formula-bindings',
+			'shared-formulas',
+			'dynamic-arrays',
+			'legacy-arrays',
+			'data-tables',
+			'spills',
+		],
+	},
+	clearRange: {
+		primarySurface: 'cells',
+		surfaces: [
+			'cells',
+			'formulas',
+			'formula-bindings',
+			'shared-formulas',
+			'dynamic-arrays',
+			'legacy-arrays',
+			'data-tables',
+			'spills',
+		],
+	},
+	insertRows: {
+		primarySurface: 'row-layout',
+		surfaces: [
+			'row-layout',
+			'cells',
+			'formulas',
+			'formula-bindings',
+			'shared-formulas',
+			'dynamic-arrays',
+			'legacy-arrays',
+			'data-tables',
+			'spills',
+			'tables',
+			'defined-names',
+			'data-validations',
+			'conditional-formats',
+			'auto-filters',
+			'merged-cells',
+			'x14-metadata',
+			'drawings',
+			'charts',
+		],
+	},
+	deleteRows: {
+		primarySurface: 'row-layout',
+		surfaces: [
+			'row-layout',
+			'cells',
+			'formulas',
+			'formula-bindings',
+			'shared-formulas',
+			'dynamic-arrays',
+			'legacy-arrays',
+			'data-tables',
+			'spills',
+			'tables',
+			'defined-names',
+			'data-validations',
+			'conditional-formats',
+			'auto-filters',
+			'merged-cells',
+			'x14-metadata',
+			'drawings',
+			'charts',
+		],
+	},
+	insertCols: {
+		primarySurface: 'column-layout',
+		surfaces: [
+			'column-layout',
+			'cells',
+			'formulas',
+			'formula-bindings',
+			'shared-formulas',
+			'dynamic-arrays',
+			'legacy-arrays',
+			'data-tables',
+			'spills',
+			'tables',
+			'defined-names',
+			'data-validations',
+			'conditional-formats',
+			'auto-filters',
+			'merged-cells',
+			'x14-metadata',
+			'drawings',
+			'charts',
+		],
+	},
+	deleteCols: {
+		primarySurface: 'column-layout',
+		surfaces: [
+			'column-layout',
+			'cells',
+			'formulas',
+			'formula-bindings',
+			'shared-formulas',
+			'dynamic-arrays',
+			'legacy-arrays',
+			'data-tables',
+			'spills',
+			'tables',
+			'defined-names',
+			'data-validations',
+			'conditional-formats',
+			'auto-filters',
+			'merged-cells',
+			'x14-metadata',
+			'drawings',
+			'charts',
+		],
+	},
+	addSheet: { primarySurface: 'sheet-layout', surfaces: ['sheet-layout'] },
+	deleteSheet: {
+		primarySurface: 'sheet-layout',
+		surfaces: [
+			'sheet-layout',
+			'cells',
+			'formulas',
+			'formula-bindings',
+			'shared-formulas',
+			'dynamic-arrays',
+			'legacy-arrays',
+			'data-tables',
+			'spills',
+			'tables',
+			'defined-names',
+			'comments',
+			'hyperlinks',
+			'data-validations',
+			'conditional-formats',
+			'auto-filters',
+			'merged-cells',
+			'row-layout',
+			'column-layout',
+			'page-setup',
+			'x14-metadata',
+			'drawings',
+			'charts',
+			'pivot-caches',
+			'package-parts',
+		],
+	},
+	renameSheet: {
+		primarySurface: 'sheet-layout',
+		surfaces: [
+			'sheet-layout',
+			'formulas',
+			'formula-bindings',
+			'shared-formulas',
+			'dynamic-arrays',
+			'legacy-arrays',
+			'data-tables',
+			'spills',
+			'defined-names',
+			'data-validations',
+			'conditional-formats',
+			'charts',
+		],
+	},
+	moveSheet: { primarySurface: 'sheet-layout', surfaces: ['sheet-layout'] },
+	createTable: { primarySurface: 'tables', surfaces: ['tables'] },
+	appendRows: { primarySurface: 'tables', surfaces: ['tables', 'cells', 'formulas'] },
+	sortRange: {
+		primarySurface: 'cells',
+		surfaces: [
+			'cells',
+			'formulas',
+			'formula-bindings',
+			'shared-formulas',
+			'dynamic-arrays',
+			'legacy-arrays',
+			'data-tables',
+			'spills',
+			'comments',
+			'hyperlinks',
+			'data-validations',
+			'conditional-formats',
+			'row-layout',
+			'x14-metadata',
+		],
+	},
+	mergeCells: { primarySurface: 'merged-cells', surfaces: ['merged-cells'] },
+	unmergeCells: { primarySurface: 'merged-cells', surfaces: ['merged-cells'] },
+	setColWidth: { primarySurface: 'column-layout', surfaces: ['column-layout'] },
+	setRowHeight: { primarySurface: 'row-layout', surfaces: ['row-layout'] },
+	setComment: { primarySurface: 'comments', surfaces: ['comments'] },
+	setHyperlink: { primarySurface: 'hyperlinks', surfaces: ['hyperlinks'] },
+	setNumberFormat: { primarySurface: 'cells', surfaces: ['cells'] },
+	setDefinedName: { primarySurface: 'defined-names', surfaces: ['defined-names'] },
+	deleteDefinedName: { primarySurface: 'defined-names', surfaces: ['defined-names'] },
+	setStyle: { primarySurface: 'cells', surfaces: ['cells'] },
+	freezePane: { primarySurface: 'sheet-layout', surfaces: ['sheet-layout'] },
+	deleteComment: { primarySurface: 'comments', surfaces: ['comments'] },
+	deleteHyperlink: { primarySurface: 'hyperlinks', surfaces: ['hyperlinks'] },
+	setDataValidation: { primarySurface: 'data-validations', surfaces: ['data-validations'] },
+	deleteDataValidation: { primarySurface: 'data-validations', surfaces: ['data-validations'] },
+	setAutoFilter: { primarySurface: 'auto-filters', surfaces: ['auto-filters'] },
+	clearAutoFilter: { primarySurface: 'auto-filters', surfaces: ['auto-filters'] },
+	setSheetProtection: { primarySurface: 'sheet-layout', surfaces: ['sheet-layout'] },
+	setTabColor: { primarySurface: 'sheet-layout', surfaces: ['sheet-layout'] },
+	hideSheet: { primarySurface: 'sheet-layout', surfaces: ['sheet-layout'] },
+	hideRows: { primarySurface: 'row-layout', surfaces: ['row-layout'] },
+	hideCols: { primarySurface: 'column-layout', surfaces: ['column-layout'] },
+	copySheet: {
+		primarySurface: 'sheet-layout',
+		surfaces: [
+			'sheet-layout',
+			'cells',
+			'formulas',
+			'formula-bindings',
+			'shared-formulas',
+			'dynamic-arrays',
+			'legacy-arrays',
+			'data-tables',
+			'spills',
+			'tables',
+			'defined-names',
+			'comments',
+			'hyperlinks',
+			'data-validations',
+			'conditional-formats',
+			'auto-filters',
+			'merged-cells',
+			'row-layout',
+			'column-layout',
+			'page-setup',
+			'x14-metadata',
+			'drawings',
+			'charts',
+			'package-parts',
+		],
+	},
+	setConditionalFormat: {
+		primarySurface: 'conditional-formats',
+		surfaces: ['conditional-formats'],
+	},
+	deleteConditionalFormat: {
+		primarySurface: 'conditional-formats',
+		surfaces: ['conditional-formats'],
+	},
+	setPageSetup: { primarySurface: 'page-setup', surfaces: ['page-setup'] },
+	setPrintArea: { primarySurface: 'defined-names', surfaces: ['defined-names', 'page-setup'] },
+	copyRange: {
+		primarySurface: 'cells',
+		surfaces: [
+			'cells',
+			'formulas',
+			'formula-bindings',
+			'shared-formulas',
+			'dynamic-arrays',
+			'legacy-arrays',
+			'data-tables',
+			'spills',
+			'comments',
+			'hyperlinks',
+			'data-validations',
+			'conditional-formats',
+			'merged-cells',
+			'x14-metadata',
+		],
+	},
+	moveRange: {
+		primarySurface: 'cells',
+		surfaces: [
+			'cells',
+			'formulas',
+			'formula-bindings',
+			'shared-formulas',
+			'dynamic-arrays',
+			'legacy-arrays',
+			'data-tables',
+			'spills',
+			'defined-names',
+			'comments',
+			'hyperlinks',
+			'data-validations',
+			'conditional-formats',
+			'merged-cells',
+			'x14-metadata',
+		],
+	},
+	groupRows: { primarySurface: 'row-layout', surfaces: ['row-layout'] },
+	groupCols: { primarySurface: 'column-layout', surfaces: ['column-layout'] },
+	setRichText: {
+		primarySurface: 'cells',
+		surfaces: [
+			'cells',
+			'formulas',
+			'formula-bindings',
+			'shared-formulas',
+			'dynamic-arrays',
+			'legacy-arrays',
+			'data-tables',
+			'spills',
+		],
+	},
+	setWorkbookProperties: { primarySurface: 'workbook-metadata', surfaces: ['workbook-metadata'] },
+	setDocumentProperties: { primarySurface: 'workbook-metadata', surfaces: ['workbook-metadata'] },
+	setWorkbookView: { primarySurface: 'workbook-metadata', surfaces: ['workbook-metadata'] },
+	setCalcSettings: { primarySurface: 'workbook-metadata', surfaces: ['workbook-metadata'] },
+	setTheme: { primarySurface: 'workbook-metadata', surfaces: ['workbook-metadata'] },
+	setWorkbookProtection: { primarySurface: 'workbook-metadata', surfaces: ['workbook-metadata'] },
+	deleteTable: {
+		primarySurface: 'tables',
+		surfaces: [
+			'tables',
+			'formulas',
+			'formula-bindings',
+			'shared-formulas',
+			'dynamic-arrays',
+			'legacy-arrays',
+			'data-tables',
+			'spills',
+			'defined-names',
+		],
+	},
+	renameTable: {
+		primarySurface: 'tables',
+		surfaces: [
+			'tables',
+			'formulas',
+			'formula-bindings',
+			'shared-formulas',
+			'dynamic-arrays',
+			'legacy-arrays',
+			'data-tables',
+			'spills',
+			'defined-names',
+		],
+	},
+	resizeTable: {
+		primarySurface: 'tables',
+		surfaces: ['tables', 'cells', 'formulas', 'data-validations', 'conditional-formats'],
+	},
+	setTableColumn: { primarySurface: 'tables', surfaces: ['tables', 'formulas'] },
+	setTableStyle: { primarySurface: 'tables', surfaces: ['tables'] },
+	replaceImage: { primarySurface: 'drawings', surfaces: ['drawings', 'package-parts'] },
+	insertImage: { primarySurface: 'drawings', surfaces: ['drawings', 'package-parts'] },
+	deleteImage: { primarySurface: 'drawings', surfaces: ['drawings', 'package-parts'] },
+	setDrawingText: { primarySurface: 'drawings', surfaces: ['drawings'] },
+	setThreadedComment: { primarySurface: 'comments', surfaces: ['comments'] },
+	setChartSeriesSource: { primarySurface: 'charts', surfaces: ['charts'] },
+	setPivotCache: { primarySurface: 'pivot-caches', surfaces: ['pivot-caches'] },
+	setPivotFieldItem: { primarySurface: 'pivot-caches', surfaces: ['pivot-caches'] },
+	setSlicerCacheItem: { primarySurface: 'pivot-caches', surfaces: ['pivot-caches'] },
+	setTimelineRange: { primarySurface: 'pivot-caches', surfaces: ['pivot-caches'] },
+	setSparklineGroup: { primarySurface: 'x14-metadata', surfaces: ['x14-metadata'] },
+	setAdvancedFilter: { primarySurface: 'auto-filters', surfaces: ['auto-filters'] },
+	setConnectionRefresh: { primarySurface: 'package-parts', surfaces: ['package-parts'] },
+	rewriteExternalLink: { primarySurface: 'package-parts', surfaces: ['package-parts', 'formulas'] },
+} as const satisfies Readonly<
+	Record<MutationJournalOperationName, MutationJournalOperationSurfaceRule>
+>
+
+export function classifyMutationJournalOperationPrimarySurface(
+	op: Operation | MutationJournalOperationName,
+): MutationJournalSurface {
+	const opName = typeof op === 'string' ? op : op.op
+	return MUTATION_JOURNAL_OPERATION_SURFACE_RULES[opName].primarySurface
+}
+
+export function classifyMutationJournalOperationSurfaces(
+	op: Operation | MutationJournalOperationName,
+): readonly MutationJournalSurface[] {
+	const opName = typeof op === 'string' ? op : op.op
+	return MUTATION_JOURNAL_OPERATION_SURFACE_RULES[opName].surfaces
+}
+
 export function classifyMutationJournalSurface(
 	surface: MutationJournalSurface,
 ): MutationJournalExactnessRule {
@@ -567,10 +999,12 @@ function inferMutationJournalIssueSurface(issue: MutationJournalIssue): Mutation
 	}
 	const text = journalIssueSearchText(issue)
 	if (text.includes('x14')) return 'x14-metadata'
-	if (text.includes('formula binding') || text.includes('formulainfo')) return 'formula-bindings'
 	if (text.includes('shared formula')) return 'shared-formulas'
 	if (text.includes('dynamic array')) return 'dynamic-arrays'
+	if (text.includes('legacy array')) return 'legacy-arrays'
+	if (text.includes('data table')) return 'data-tables'
 	if (text.includes('spill')) return 'spills'
+	if (text.includes('formula binding') || text.includes('formulainfo')) return 'formula-bindings'
 	if (text.includes('formula')) return 'formulas'
 	if (text.includes('data validation') || text.includes('validation')) return 'data-validations'
 	if (text.includes('conditional format') || text.includes('conditional-format')) {
@@ -664,6 +1098,8 @@ function surfaceDefaultLossReason(surface: MutationJournalSurface): MutationJour
 		case 'formula-bindings':
 		case 'shared-formulas':
 		case 'dynamic-arrays':
+		case 'legacy-arrays':
+		case 'data-tables':
 		case 'spills':
 			return 'formula-binding-metadata'
 		case 'tables':
@@ -708,24 +1144,16 @@ function journalIssueSearchText(issue: MutationJournalIssue): string {
 	return `${issue.message} ${(issue.refs ?? []).join(' ')}`.toLowerCase()
 }
 
-const UNSUPPORTED_OPERATION_SURFACES: Readonly<Record<string, MutationJournalSurface>> = {
-	appendRows: 'tables',
-	replaceImage: 'drawings',
-	insertImage: 'drawings',
-	deleteImage: 'drawings',
-	setSparklineGroup: 'drawings',
-	setAdvancedFilter: 'auto-filters',
-	setPivotFieldItem: 'pivot-caches',
-	setSlicerCacheItem: 'pivot-caches',
-	setTimelineRange: 'pivot-caches',
-	setConnectionRefresh: 'package-parts',
-	rewriteExternalLink: 'package-parts',
-}
-
 function unsupportedOperationSurface(issue: MutationJournalIssue): MutationJournalSurface | null {
 	const match = /^No reversible journal support for ([A-Za-z0-9]+)(?:\b|$)/.exec(issue.message)
 	if (!match) return null
-	return UNSUPPORTED_OPERATION_SURFACES[match[1] ?? ''] ?? null
+	const opName = match[1]
+	if (!opName || !isMutationJournalOperationName(opName)) return null
+	return classifyMutationJournalOperationPrimarySurface(opName)
+}
+
+function isMutationJournalOperationName(name: string): name is MutationJournalOperationName {
+	return Object.hasOwn(MUTATION_JOURNAL_OPERATION_SURFACE_RULES, name)
 }
 
 export interface MutationJournalCellPreimage {
@@ -6819,6 +7247,24 @@ function cellPreimages(
 	})
 }
 
+function formulaBindingIssueSurface(
+	formulaInfo: NonNullable<Cell['formulaInfo']>,
+): MutationJournalSurface {
+	switch (formulaInfo.kind) {
+		case 'shared':
+			return 'shared-formulas'
+		case 'array':
+			return 'legacy-arrays'
+		case 'dynamicArray':
+			return 'dynamic-arrays'
+		case 'dataTable':
+			return 'data-tables'
+		case 'spill':
+		case 'blockedSpill':
+			return 'spills'
+	}
+}
+
 function inverseCellOps(cells: readonly MutationJournalCellPreimage[]): {
 	readonly inverseOps: readonly Operation[]
 	readonly issues: readonly MutationJournalIssue[]
@@ -6831,6 +7277,8 @@ function inverseCellOps(cells: readonly MutationJournalCellPreimage[]): {
 			issues.push({
 				code: 'LOSSY_INVERSE',
 				message: `Formula binding metadata for ${cell.sheet}!${cell.ref} cannot be restored with public operations`,
+				surface: formulaBindingIssueSurface(cell.formulaInfo),
+				reason: 'formula-binding-metadata',
 				refs: [`${cell.sheet}!${cell.ref}`],
 			})
 		}

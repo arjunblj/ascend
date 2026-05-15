@@ -5300,11 +5300,15 @@ describe('interactive client contract', () => {
 		expect(changed.journal?.issues).toContainEqual({
 			code: 'LOSSY_INVERSE',
 			message: 'Formula binding metadata for Sheet1!A1 cannot be restored with public operations',
+			surface: 'shared-formulas',
+			reason: 'formula-binding-metadata',
 			refs: ['Sheet1!A1'],
 		})
 		expect(changed.journal?.issues).toContainEqual({
 			code: 'LOSSY_INVERSE',
 			message: 'Formula binding metadata for Sheet1!A2 cannot be restored with public operations',
+			surface: 'shared-formulas',
+			reason: 'formula-binding-metadata',
 			refs: ['Sheet1!A2'],
 		})
 		const changedSheet = wb.getWorkbookModel().getSheet('Sheet1')
@@ -5354,6 +5358,8 @@ describe('interactive client contract', () => {
 		expect(dynamicArrayChanged.journal?.issues).toContainEqual({
 			code: 'LOSSY_INVERSE',
 			message: 'Formula binding metadata for Sheet1!A2 cannot be restored with public operations',
+			surface: 'spills',
+			reason: 'formula-binding-metadata',
 			refs: ['Sheet1!A2'],
 		})
 		const dynamicArrayPreimage = dynamicArrayChanged.journal?.entries[0]?.preimages[0]
@@ -5396,6 +5402,8 @@ describe('interactive client contract', () => {
 		expect(dataTableChanged.journal?.issues).toContainEqual({
 			code: 'LOSSY_INVERSE',
 			message: 'Formula binding metadata for Sheet1!C3 cannot be restored with public operations',
+			surface: 'data-tables',
+			reason: 'formula-binding-metadata',
 			refs: ['Sheet1!C3'],
 		})
 		expect(
@@ -5433,6 +5441,8 @@ describe('interactive client contract', () => {
 		expect(blockedSpillChanged.journal?.issues).toContainEqual({
 			code: 'LOSSY_INVERSE',
 			message: 'Formula binding metadata for Sheet1!A1 cannot be restored with public operations',
+			surface: 'spills',
+			reason: 'formula-binding-metadata',
 			refs: ['Sheet1!A1'],
 		})
 		const blockedSpillPreimage = blockedSpillChanged.journal?.entries[0]?.preimages[0]
@@ -5479,10 +5489,17 @@ describe('interactive client contract', () => {
 		expect(preimage?.kind).toBe('cells')
 		if (preimage?.kind !== 'cells') throw new Error('missing cells preimage')
 		expect(preimage.cells.map((cell) => cell.ref)).toEqual(['A1', 'A2', 'A3'])
-		for (const ref of ['A1', 'A2', 'A3']) {
+		const expectedSurfaces = new Map([
+			['A1', 'dynamic-arrays'],
+			['A2', 'spills'],
+			['A3', 'spills'],
+		] as const)
+		for (const ref of ['A1', 'A2', 'A3'] as const) {
 			expect(changed.journal?.issues).toContainEqual({
 				code: 'LOSSY_INVERSE',
 				message: `Formula binding metadata for Bob's Budget!${ref} cannot be restored with public operations`,
+				surface: expectedSurfaces.get(ref),
+				reason: 'formula-binding-metadata',
 				refs: [`Bob's Budget!${ref}`],
 			})
 		}
@@ -5617,6 +5634,8 @@ describe('interactive client contract', () => {
 				expect(journal.issues).toContainEqual({
 					code: 'LOSSY_INVERSE',
 					message: `Formula binding metadata for ${ref} cannot be restored with public operations`,
+					surface: 'shared-formulas',
+					reason: 'formula-binding-metadata',
 					refs: [ref],
 				})
 			}

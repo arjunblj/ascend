@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { Buffer } from 'node:buffer'
-import { existsSync, mkdirSync, rmSync, statSync, utimesSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, utimesSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DEFAULT_STYLE_ID } from '@ascend/core'
@@ -652,6 +652,67 @@ describe('agent workflow loss audit', () => {
 		await expect(commitAgentPlan(input, ops, { output })).rejects.toThrow(
 			'Commit blocked by write policy',
 		)
+		expect(existsSync(output)).toBe(false)
+	})
+
+	test('commit blocks imported shared formula member range drift', async () => {
+		const output = join(TEMP_DIR, 'imported-shared-range-drift-out.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		const wb = await AscendWorkbook.open(
+			readFileSync(new URL('../../../fixtures/xlsx/poi/shared_formulas.xlsx', import.meta.url)),
+		)
+		expect(wb.check().valid).toBe(true)
+		const sheet = wb.getWorkbookModel().getSheet('Label')
+		const member = sheet?.cells.get(2, 0)
+		if (!sheet || !member?.formulaInfo || member.formulaInfo.kind !== 'shared') {
+			throw new Error('missing imported shared formula member')
+		}
+		sheet.cells.set(2, 0, {
+			...member,
+			formulaInfo: { ...member.formulaInfo, ref: 'A2:A3' },
+		})
+		const ops = [{ op: 'setCells' as const, sheet: 'Label', updates: [{ ref: 'C1', value: 1 }] }]
+
+		const plan = await createAgentPlanFromWorkbook(
+			'imported-shared-range-drift.xlsx',
+			'sha',
+			wb,
+			ops,
+		)
+
+		expect(plan.writePolicy.ok).toBe(false)
+		expect(plan.check.valid).toBe(false)
+		expect(plan.modelOutput.blocked).toBe(true)
+		expect(plan.writePolicy.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: 'pre-write-check-error',
+				severity: 'blocker',
+				details: expect.objectContaining({
+					checkIssues: expect.arrayContaining([
+						expect.objectContaining({
+							rule: 'formula-binding-integrity',
+							severity: 'error',
+							message:
+								'Shared formula metadata at Label!A3 has a member range that disagrees with its master range',
+							refs: ['Label!A3', 'Label!A2'],
+							details: expect.objectContaining({
+								kind: 'shared-formula-member-range-mismatch',
+								memberRange: 'A2:A3',
+								masterRange: 'A2:A41',
+							}),
+						}),
+					]),
+				}),
+			}),
+		)
+
+		await expect(
+			commitAgentPlanFromWorkbook('imported-shared-range-drift.xlsx', 'sha', wb, ops, {
+				output,
+				allowLoss: 'all',
+				approvals: 'all',
+			}),
+		).rejects.toThrow('Commit blocked by write policy')
 		expect(existsSync(output)).toBe(false)
 	})
 

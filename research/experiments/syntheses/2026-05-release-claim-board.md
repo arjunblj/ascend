@@ -171,6 +171,25 @@ The owner loops above are done only when the release artifact can answer these c
 | Safe unknown workbook opening | `safe-open-proof` command, stable shape digest `6aa54a651309b3c45ce7ce93ff7034e7b31e47c7cbc458c58ee6a6f23e0c6178`, public fixture table, explicit review branches, malformed rejection, validation commands, and accepted or resolved publication blockers | Do not publish headline copy if signed/unknown package evidence remains undisclosed or if timing language reads as a threshold |
 | Auditable package-part mutation | `package-action-proof` command, stable shape digest `b9758496346c97920c80ba08b6632315708a6d6cc770927695337e729554dbb0`, all five action classes, journal issue refs, post-write audit status, validation commands, and accepted or resolved publication blockers | Do not publish headline copy if synthetic edge packages are hidden, if chart XML is called byte-passthrough, or if the proof implies SLSA/in-toto/signed provenance |
 
+### Public Fixture Policy
+
+Generated edge packages are acceptable release proof only when all of these are true:
+
+- The edge case is structural and package-level, not dependent on private workbook content.
+- The generated package is built by tracked code in a proof harness.
+- The report labels the case as synthetic or generated.
+- The release proof index carries a publication blocker until product explicitly accepts generated proof.
+- A fixture scan has checked the public corpus for a binary replacement.
+
+Public binary fixtures are required before stronger headline copy when any of these are true:
+
+- The claim depends on real-world workbook authoring behavior rather than package topology.
+- The edge case involves vendor-specific semantics, UI behavior, or Excel repair behavior.
+- The proof would otherwise imply trust, malware scanning, signed provenance, or third-party attestation.
+- The generated fixture would hide licensing, privacy, or provenance uncertainty.
+
+Current application: the safe-open signed and unknown-part cases can remain generated local proof because they exercise OPC package topology and are disclosed as synthetic. They should still block stronger release copy until accepted or replaced; `fixtures/benchmarks/safe-open-fixture-scan.ts` currently finds no checked-in public binary replacement.
+
 ## Do Not Promote Yet
 
 - Formula safe rename or edit-producing rename.

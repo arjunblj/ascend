@@ -238,6 +238,7 @@ describe('mutation journal exactness model', () => {
 			lossyX14TransferJournal(),
 			lossyOverlappingMoveRangeJournal(),
 			lossyStyleRegistryJournal(),
+			lossyDeletedSheetJournal(),
 		]
 
 		for (const journal of journals) {
@@ -2154,6 +2155,19 @@ function lossyStyleRegistryJournal(): MutationJournal {
 			style: { font: { bold: true } },
 		},
 	])
+}
+
+function lossyDeletedSheetJournal(): MutationJournal {
+	const wb = AscendWorkbook.create()
+	applyExact(wb, [{ op: 'addSheet', name: 'Data' }])
+	const sheet = wb.getWorkbookModel().getSheet('Data')
+	if (!sheet) throw new Error('missing sheet')
+	sheet.cells.set(0, 0, {
+		value: numberValue(1),
+		formula: null,
+		styleId: DEFAULT_STYLE_ID,
+	})
+	return applyJournal(wb, [{ op: 'deleteSheet', sheet: 'Data' }])
 }
 
 function journalEvidence(wb: AscendWorkbook): object {

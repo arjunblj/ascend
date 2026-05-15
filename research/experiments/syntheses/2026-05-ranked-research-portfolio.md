@@ -8,6 +8,17 @@ Research is no longer a broad sweep. Each direction below must earn its place by
 
 ## Latest Claim Steward Refresh
 
+Proof timestamp: 2026-05-15T19:37:18Z.
+
+Fresh top-claim proof rerun keeps the ranked portfolio at 10 directions and preserves the no-new-surface decision. `release-proof-index --owner-handoffs-json` still reports `releaseGate=blocked-by-publication-policy`, `headlineClaimsAllowed=false`, `implementationSurfacePromotionAllowed=false`, and `missingRequirementCount=9`. The only implementation handoffs are still `safe-open-proof` and `package-action-proof`; formula language-service primitives, token-bounded agent view, retained viewport patch history, and release proof bundle stay proof-packaging-only; formula oracle routing, property journal laws, columnar scan sidecars, and agent workflow observability stay do-not-promote-yet.
+
+Fresh proof facts:
+
+| Claim | Current proof | Decision |
+| --- | --- | --- |
+| Safe unknown workbook opening | 9 cases, 8 OK, 1 malformed rejection, 6 public fixtures, 2 synthetic edge packages, 1 malformed package, and 4 review-before-hydration routes across macro, ActiveX, signature, and unknown-part risk families. | Hand off to product/performance/release for generated-fixture policy, release-latency policy, and publication-boundary approval only. |
+| Auditable package-part mutation | 8 cases, 4 public fixtures, 2 generated workbooks, 2 generated edge packages, action totals `passthrough=32`, `regenerate=40`, `add=3`, `drop=3`, `error=1`, 8 source-graph evidence cases, 8 package-preservation journal issue cases, and 1 representative streaming proof case. | Hand off to correctness/product/performance/release for edge-fixture, unsupported-feature, streaming, provenance, and publication-boundary approval only. |
+
 Proof timestamp: 2026-05-15T19:20:27Z.
 
 The latest proof rerun keeps the portfolio narrow and proof-shaped. `release-proof-index --owner-handoffs-json` still reports `releaseGate=blocked-by-publication-policy`, `headlineClaimsAllowed=false`, `implementationSurfacePromotionAllowed=false`, and `missingRequirementCount=9`. The only top implementation handoffs are `safe-open-proof` and `package-action-proof`; formula primitives, token-bounded agent view, retained viewport patch history, and release proof bundle stay proof-packaging-only; oracle routing, property journal laws, columnar sidecars, and agent workflow observability remain do-not-promote-yet.

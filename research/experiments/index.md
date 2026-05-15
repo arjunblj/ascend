@@ -6,6 +6,7 @@ Updated: 2026-05-15
 
 | Run | Status | Fold-in target |
 | --- | --- | --- |
+| [Ranked portfolio claim proof rerun](runs/2026/2026-05-15-ranked-portfolio-claim-proof-rerun/log.md) | refreshed the 10-direction claim portfolio from proof harnesses; only safe-open and package-action remain implementation handoffs | product loop, correctness loop, performance loop, release loop |
 | [Practical latency tuning floor](runs/2026/2026-05-15-practical-latency-tuning-floor/log.md) | folded in a 5 ms production-target floor so tiny/noisy hot-cache phases stay guardrails | performance loop |
 | [No-op preview journal surfaces](runs/2026/2026-05-15-no-op-preview-journal-surfaces/log.md) | folded in SDK/API/MCP exact empty journal behavior for explicit no-op preview/write requests | correctness loop |
 | [Case-insensitive copy-sheet binding proof](runs/2026/2026-05-15-case-insensitive-copy-sheet-binding-proof/log.md) | folded in SDK quality-moat regression for copied shared-formula bindings with sheet-ref casing drift | correctness loop |

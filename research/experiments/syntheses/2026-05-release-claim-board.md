@@ -8,6 +8,14 @@ Freeze the next release claims into proof-shaped language. This board is deliber
 
 Current stewardship rule: hand off only the top one or two product claims to implementation loops. Everything else stays as proof packaging, validation, or "do not promote yet" until the missing evidence is explicit.
 
+Latest proof refresh, 2026-05-15T19:37:18Z:
+
+- `release-proof-index --no-timings --owner-handoffs-json` still reports `releaseGate=blocked-by-publication-policy`, `headlineClaimsAllowed=false`, `implementationSurfacePromotionAllowed=false`, and `missingRequirementCount=9`.
+- The ranked 10-direction portfolio remains stable: ranks 1 and 2 are implementation handoffs only for proof-owner loops; ranks 3 through 6 are proof-packaging-only; ranks 7 through 10 remain do-not-promote-yet.
+- Safe-open proof covers 9 cases with 8 OK, 1 malformed rejection, 6 public fixtures, 2 synthetic edge packages, 1 malformed package, and 4 review-before-hydration routes across macro, ActiveX, signature, and unknown-part risk families.
+- Package-action proof covers 8 cases with 4 public fixtures, 2 generated workbooks, 2 generated edge packages, action totals `passthrough=32`, `regenerate=40`, `add=3`, `drop=3`, `error=1`, 8 source-graph evidence cases, 8 package-preservation journal issue cases, and 1 representative streaming proof case.
+- Formula rename remains frozen; formula intelligence stays rejection-first and proof-packaging-only.
+
 Latest proof refresh, 2026-05-15T19:20:27Z:
 
 - `release-proof-index --no-timings --owner-handoffs-json` reports `releaseGate=blocked-by-publication-policy`, `headlineClaimsAllowed=false`, `implementationSurfacePromotionAllowed=false`, and `missingRequirementCount=9`.

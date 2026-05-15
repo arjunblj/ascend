@@ -399,10 +399,13 @@ export const MUTATION_JOURNAL_EXACTNESS_MATRIX: readonly MutationJournalExactnes
 	},
 	{
 		surface: 'hyperlinks',
-		exactness: 'exact',
-		publicInverse: 'exact',
-		constraints: ['public hyperlink fields restore with setHyperlink/deleteHyperlink'],
-		lossReasons: [],
+		exactness: 'conditional',
+		publicInverse: 'conditional',
+		constraints: [
+			'public hyperlink fields restore with setHyperlink/deleteHyperlink',
+			'invalid hyperlink updates without a public destination cannot be journaled exactly',
+		],
+		lossReasons: ['value-unsupported'],
 		representativeOps: ['setHyperlink', 'deleteHyperlink', 'copyRange', 'moveRange'],
 	},
 	{
@@ -4253,16 +4256,32 @@ function journalSetHyperlink(
 	opIndex: number,
 ): DraftJournalEntry {
 	const hyperlink = hyperlinkPreimage(workbook, op.sheet, op.ref)
+	const issues: MutationJournalIssue[] =
+		hasJournalHyperlinkDestination(op.url) || hasJournalHyperlinkDestination(op.location)
+			? []
+			: [
+					{
+						code: 'UNSUPPORTED_VALUE',
+						message: `Cannot build exact rollback journal for setHyperlink because ${op.sheet}!${op.ref} has no hyperlink destination`,
+						surface: 'hyperlinks',
+						reason: 'value-unsupported',
+						refs: [`${op.sheet}!${op.ref}`],
+					},
+				]
 	const inverseOps: Operation[] = hyperlink.hyperlink
 		? [setHyperlinkInverse(op.sheet, hyperlink.ref, hyperlink.hyperlink)]
 		: [{ op: 'deleteHyperlink', sheet: op.sheet, ref: hyperlink.ref }]
 	return {
 		opIndex,
 		op,
-		inverseOps,
+		inverseOps: issues.length === 0 ? inverseOps : [],
 		preimages: [{ kind: 'hyperlink', hyperlink }],
-		issues: [],
+		issues,
 	}
+}
+
+function hasJournalHyperlinkDestination(value: string | undefined): boolean {
+	return typeof value === 'string' && value.trim().length > 0
 }
 
 function journalDeleteHyperlink(

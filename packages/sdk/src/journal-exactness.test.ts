@@ -847,6 +847,36 @@ describe('mutation journal exactness model', () => {
 		})
 	})
 
+	test('classifies hyperlink journals without destinations as unsupported values', () => {
+		const cases: readonly Operation[] = [
+			{ op: 'setHyperlink', sheet: 'Sheet1', ref: 'A1' },
+			{ op: 'setHyperlink', sheet: 'Sheet1', ref: 'A1', url: '  ' },
+			{ op: 'setHyperlink', sheet: 'Sheet1', ref: 'A1', location: '' },
+		]
+
+		for (const op of cases) {
+			const wb = AscendWorkbook.create()
+			const analysis = analyzeMutationJournalExactness(
+				buildMutationJournal(wb.getWorkbookModel(), [op]),
+			)
+			expect(analysis, JSON.stringify(op)).toMatchObject({
+				supported: true,
+				exact: false,
+				issueCount: 1,
+				surfaces: ['hyperlinks'],
+				reasons: ['value-unsupported'],
+				hasMatrixViolation: false,
+			})
+			expect(analysis.issues[0], JSON.stringify(op)).toMatchObject({
+				code: 'UNSUPPORTED_VALUE',
+				surface: 'hyperlinks',
+				reason: 'value-unsupported',
+				refs: ['Sheet1!A1'],
+				allowedByMatrix: true,
+			})
+		}
+	})
+
 	test('classifies setComment legacy drawing loss without changing the v1 vocabulary', () => {
 		const classified = classifyMutationJournalIssues(lossySetCommentLegacyDrawingJournal().issues)
 		expect(classified).toContainEqual({

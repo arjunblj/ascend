@@ -40,6 +40,7 @@ const REQUIRED_JOURNAL_SURFACES: readonly MutationJournalSurface[] = [
 	'row-layout',
 	'column-layout',
 	'page-setup',
+	'sheet-layout',
 	'x14-metadata',
 	'drawings',
 	'charts',
@@ -129,10 +130,13 @@ describe('mutation journal exactness model', () => {
 	test('taxonomy covers every workbook edit surface with stable reason codes', () => {
 		const surfaces = new Set(MUTATION_JOURNAL_EXACTNESS_MATRIX.map((rule) => rule.surface))
 		expect(surfaces.size).toBe(MUTATION_JOURNAL_EXACTNESS_MATRIX.length)
-		for (const surface of REQUIRED_JOURNAL_SURFACES) expect(surfaces.has(surface)).toBe(true)
+		expect([...surfaces].sort()).toEqual([...REQUIRED_JOURNAL_SURFACES].sort())
 
 		const reasonCodes = new Set(
 			Object.keys(MUTATION_JOURNAL_REASON_DESCRIPTIONS) as MutationJournalReasonCode[],
+		)
+		const matrixReasonCodes = new Set(
+			MUTATION_JOURNAL_EXACTNESS_MATRIX.flatMap((rule) => rule.lossReasons),
 		)
 		for (const rule of MUTATION_JOURNAL_EXACTNESS_MATRIX) {
 			expect(classifyMutationJournalSurface(rule.surface)).toBe(rule)
@@ -142,12 +146,14 @@ describe('mutation journal exactness model', () => {
 			else expect(rule.lossReasons.length).toBeGreaterThan(0)
 			for (const reason of rule.lossReasons) expect(reasonCodes.has(reason)).toBe(true)
 		}
+		for (const reason of reasonCodes) expect(matrixReasonCodes.has(reason)).toBe(true)
 	})
 
 	test('operation surface taxonomy covers every public operation and matrix representative', () => {
 		const operationNames = Object.keys(
 			MUTATION_JOURNAL_OPERATION_SURFACE_RULES,
 		) as MutationJournalOperationName[]
+		expect(new Set(REQUIRED_JOURNAL_OPERATIONS).size).toBe(REQUIRED_JOURNAL_OPERATIONS.length)
 		expect([...operationNames].sort()).toEqual([...REQUIRED_JOURNAL_OPERATIONS].sort())
 
 		const matrixSurfaces = new Set(MUTATION_JOURNAL_EXACTNESS_MATRIX.map((rule) => rule.surface))

@@ -586,6 +586,9 @@ export interface ReleaseProofSafeOpenLatencyValidationEvidence {
 	readonly releaseClaimAllowed: false
 	readonly thresholdClaimAllowed: false
 	readonly validationCommand: string
+	readonly runProfile: ReleaseProofSafeOpenLatencyRunProfile
+	readonly runProfileSatisfied: boolean
+	readonly runProfileFailures: readonly string[]
 	readonly repeat: number
 	readonly warmup: number
 	readonly timingEnvironmentCaptured: boolean
@@ -602,6 +605,31 @@ export interface ReleaseProofSafeOpenLatencyValidationEvidence {
 	readonly publicFullOpenCv: Readonly<Record<string, number>>
 	readonly publicFullOpenRatio: Readonly<Record<string, number>>
 	readonly missingPolicyRequirements: readonly string[]
+	readonly boundary: string
+}
+
+export interface ReleaseProofSafeOpenLatencyRunProfile {
+	readonly profileId: 'safe-open-release-latency-owner-review'
+	readonly artifact: 'safe-open-proof'
+	readonly gateId: 'release-latency-run'
+	readonly ownerLoop: 'performance'
+	readonly command: string
+	readonly minimumRepeat: number
+	readonly minimumWarmup: number
+	readonly requiredCaseKind: 'file'
+	readonly requiredPublicCaseNames: readonly string[]
+	readonly requireTimingEnvironment: true
+	readonly requiredMetrics: readonly string[]
+	readonly cvGuard: ReleaseProofSafeOpenLatencyCvGuard
+	readonly forbiddenUses: readonly string[]
+	readonly sourceReferences: readonly ReleaseProofSourceReference[]
+	readonly boundary: string
+}
+
+export interface ReleaseProofSafeOpenLatencyCvGuard {
+	readonly metric: 'publicOpenPlanCv'
+	readonly maxRecommendedCv: number
+	readonly onExceed: 'diagnostic-only-rerun-or-owner-review'
 	readonly boundary: string
 }
 
@@ -888,11 +916,11 @@ const PERFORMANCE_POLICY: ReleaseProofPerformancePolicy = {
 			decisionNeeded:
 				'Approve a tracked-clean release-environment safe-open latency run over standardized public inputs and non-threshold wording.',
 			acceptanceEvidence:
-				'Timed safe-open proof uses approved public inputs, repeat/warmup policy, environment notes, and wording that reports observations without a release threshold.',
+				'Timed safe-open proof satisfies the machine-readable owner-review profile: approved public inputs, repeat/warmup policy, timing environment, required metrics, CV guard, and wording that reports observations without a release threshold.',
 			rejectIf:
 				'Run uses private corpora, dirty worktree state, one-off local timing, machine-specific ratios, or copy that implies a latency SLA.',
 			validationCommand:
-				'bun run fixtures/benchmarks/safe-open-proof.ts --repeat 3 --warmup 1 --json',
+				'bun run fixtures/benchmarks/safe-open-proof.ts --repeat 10 --warmup 3 --json',
 		},
 		{
 			artifact: 'package-action-proof',
@@ -928,6 +956,57 @@ const PERFORMANCE_POLICY: ReleaseProofPerformancePolicy = {
 	],
 	boundary:
 		'Performance policy is an owner-decision aid for local benchmark evidence. It is not a release performance threshold, SLA, streaming parity claim, or production optimization mandate.',
+}
+
+const SAFE_OPEN_LATENCY_RUN_PROFILE: ReleaseProofSafeOpenLatencyRunProfile = {
+	profileId: 'safe-open-release-latency-owner-review',
+	artifact: 'safe-open-proof',
+	gateId: 'release-latency-run',
+	ownerLoop: 'performance',
+	command: 'bun run fixtures/benchmarks/safe-open-proof.ts --repeat 10 --warmup 3 --json',
+	minimumRepeat: 10,
+	minimumWarmup: 3,
+	requiredCaseKind: 'file',
+	requiredPublicCaseNames: ['clean', 'formula-heavy', 'macro', 'pivot', 'activex', 'chart'],
+	requireTimingEnvironment: true,
+	requiredMetrics: [
+		'openPlanSampleCount',
+		'openPlanMedianMs',
+		'openPlanP95Ms',
+		'openPlanCv',
+		'fullOpenSampleCount',
+		'fullOpenMedianMs',
+		'fullOpenP95Ms',
+		'fullOpenCv',
+		'fullOpenRatio',
+	],
+	cvGuard: {
+		metric: 'publicOpenPlanCv',
+		maxRecommendedCv: 0.25,
+		onExceed: 'diagnostic-only-rerun-or-owner-review',
+		boundary:
+			'CV is an owner-review guardrail for noisy local timing. Exceeding it keeps the result diagnostic unless performance explicitly accepts the variance or reruns under cleaner conditions.',
+	},
+	forbiddenUses: [
+		'release threshold',
+		'SLA',
+		'QSS performance comparison',
+		'hardware-normalized benchmark',
+		'private-corpus evidence',
+		'generated-only input evidence',
+	],
+	sourceReferences: [
+		{
+			label: 'hyperfine warmup and run counts',
+			url: 'https://man.archlinux.org/man/hyperfine.1.en',
+		},
+		{
+			label: 'Google Benchmark repeated statistics and CV',
+			url: 'https://github.com/google/benchmark/blob/main/docs/user_guide.md',
+		},
+	],
+	boundary:
+		'Owner-review profile only. Satisfying it can make local timing evidence reviewable, but it still does not authorize a release speed claim without performance and release approval.',
 }
 
 const CORRECTNESS_POLICY: ReleaseProofCorrectnessPolicy = {
@@ -1264,6 +1343,13 @@ export function releaseProofIndexMarkdown(result: ReleaseProofIndexResult): stri
 		'Safe-open latency validation evidence:',
 		'',
 		`Status: ${result.safeOpenLatencyValidationEvidence.status}`,
+		`Run profile: ${result.safeOpenLatencyValidationEvidence.runProfile.profileId}`,
+		`Run profile command: \`${result.safeOpenLatencyValidationEvidence.runProfile.command}\``,
+		`Run profile satisfied: ${result.safeOpenLatencyValidationEvidence.runProfileSatisfied}`,
+		`Run profile failures: ${result.safeOpenLatencyValidationEvidence.runProfileFailures.join('; ') || 'none'}`,
+		`Run profile minimums: repeat ${result.safeOpenLatencyValidationEvidence.runProfile.minimumRepeat}, warmup ${result.safeOpenLatencyValidationEvidence.runProfile.minimumWarmup}`,
+		`Run profile public cases: ${result.safeOpenLatencyValidationEvidence.runProfile.requiredPublicCaseNames.join(',')}`,
+		`Run profile CV guard: ${result.safeOpenLatencyValidationEvidence.runProfile.cvGuard.metric} <= ${result.safeOpenLatencyValidationEvidence.runProfile.cvGuard.maxRecommendedCv}`,
 		`Timed case count: ${result.safeOpenLatencyValidationEvidence.timedCaseCount}`,
 		`Timing environment captured: ${result.safeOpenLatencyValidationEvidence.timingEnvironmentCaptured}`,
 		`Public timed cases: ${result.safeOpenLatencyValidationEvidence.publicTimedCaseNames.join(',') || 'none'}`,
@@ -3759,6 +3845,22 @@ function safeOpenLatencyValidationEvidence(
 	const timedCases = result.cases.filter((entry) => entry.openPlanMedianMs !== undefined)
 	const publicTimedCases = timedCases.filter((entry) => entry.kind === 'file')
 	const generatedTimedCases = timedCases.filter((entry) => entry.kind !== 'file')
+	const publicOpenPlanMedianMs = numericCaseMetricByName(publicTimedCases, 'openPlanMedianMs')
+	const publicOpenPlanP95Ms = numericCaseMetricByName(publicTimedCases, 'openPlanP95Ms')
+	const publicOpenPlanCv = numericCaseMetricByName(publicTimedCases, 'openPlanCv')
+	const publicFullOpenMedianMs = numericCaseMetricByName(publicTimedCases, 'fullOpenMedianMs')
+	const publicFullOpenP95Ms = numericCaseMetricByName(publicTimedCases, 'fullOpenP95Ms')
+	const publicFullOpenCv = numericCaseMetricByName(publicTimedCases, 'fullOpenCv')
+	const publicFullOpenRatio = numericCaseMetricByName(publicTimedCases, 'fullOpenRatio')
+	const runProfileFailures = safeOpenLatencyRunProfileFailures(result, publicTimedCases, {
+		publicOpenPlanMedianMs,
+		publicOpenPlanP95Ms,
+		publicOpenPlanCv,
+		publicFullOpenMedianMs,
+		publicFullOpenP95Ms,
+		publicFullOpenCv,
+		publicFullOpenRatio,
+	})
 	return {
 		artifact: 'safe-open-proof',
 		gateId: 'release-latency-run',
@@ -3771,7 +3873,10 @@ function safeOpenLatencyValidationEvidence(
 		releaseClaimAllowed: false,
 		thresholdClaimAllowed: false,
 		validationCommand:
-			'bun run fixtures/benchmarks/safe-open-proof.ts --repeat 3 --warmup 1 --json',
+			'bun run fixtures/benchmarks/safe-open-proof.ts --repeat 10 --warmup 3 --json',
+		runProfile: cloneSafeOpenLatencyRunProfile(SAFE_OPEN_LATENCY_RUN_PROFILE),
+		runProfileSatisfied: runProfileFailures.length === 0,
+		runProfileFailures,
 		repeat: result.repeat,
 		warmup: result.warmup,
 		timingEnvironmentCaptured: result.timingEnvironment !== undefined,
@@ -3782,22 +3887,82 @@ function safeOpenLatencyValidationEvidence(
 		malformedRejected: result.cases.some(
 			(entry) => entry.name === 'malformed' && entry.status === 'rejected',
 		),
-		publicOpenPlanMedianMs: numericCaseMetricByName(publicTimedCases, 'openPlanMedianMs'),
-		publicOpenPlanP95Ms: numericCaseMetricByName(publicTimedCases, 'openPlanP95Ms'),
-		publicOpenPlanCv: numericCaseMetricByName(publicTimedCases, 'openPlanCv'),
-		publicFullOpenMedianMs: numericCaseMetricByName(publicTimedCases, 'fullOpenMedianMs'),
-		publicFullOpenP95Ms: numericCaseMetricByName(publicTimedCases, 'fullOpenP95Ms'),
-		publicFullOpenCv: numericCaseMetricByName(publicTimedCases, 'fullOpenCv'),
-		publicFullOpenRatio: numericCaseMetricByName(publicTimedCases, 'fullOpenRatio'),
+		publicOpenPlanMedianMs,
+		publicOpenPlanP95Ms,
+		publicOpenPlanCv,
+		publicFullOpenMedianMs,
+		publicFullOpenP95Ms,
+		publicFullOpenCv,
+		publicFullOpenRatio,
 		missingPolicyRequirements: [
 			'tracked-clean release environment',
 			'standardized public input set',
-			'approved repeat and warmup policy',
+			'performance-owner approval of the safe-open release-latency owner-review profile',
 			'non-threshold release wording',
 		],
 		boundary:
 			'Safe-open latency validation evidence is performance-owner routing data. It is not a release threshold, SLA, speed claim, or approval to use machine-specific local timing in public wording.',
 	}
+}
+
+function safeOpenLatencyRunProfileFailures(
+	result: SafeOpenProofResult,
+	publicTimedCases: readonly SafeOpenProofCaseResult[],
+	metrics: {
+		readonly publicOpenPlanMedianMs: Readonly<Record<string, number>>
+		readonly publicOpenPlanP95Ms: Readonly<Record<string, number>>
+		readonly publicOpenPlanCv: Readonly<Record<string, number>>
+		readonly publicFullOpenMedianMs: Readonly<Record<string, number>>
+		readonly publicFullOpenP95Ms: Readonly<Record<string, number>>
+		readonly publicFullOpenCv: Readonly<Record<string, number>>
+		readonly publicFullOpenRatio: Readonly<Record<string, number>>
+	},
+): readonly string[] {
+	const failures: string[] = []
+	const profile = SAFE_OPEN_LATENCY_RUN_PROFILE
+	if (result.repeat < profile.minimumRepeat) {
+		failures.push(`repeat ${result.repeat} below profile minimum ${profile.minimumRepeat}`)
+	}
+	if (result.warmup < profile.minimumWarmup) {
+		failures.push(`warmup ${result.warmup} below profile minimum ${profile.minimumWarmup}`)
+	}
+	if (!result.timingEnvironment) {
+		failures.push('timing environment metadata missing')
+	}
+	const publicTimedNames = new Set(publicTimedCases.map((entry) => entry.name))
+	for (const name of profile.requiredPublicCaseNames) {
+		if (!publicTimedNames.has(name)) {
+			failures.push(`required public case ${name} missing timed evidence`)
+			continue
+		}
+		if (metrics.publicOpenPlanMedianMs[name] === undefined) {
+			failures.push(`required metric openPlanMedianMs missing for ${name}`)
+		}
+		if (metrics.publicOpenPlanP95Ms[name] === undefined) {
+			failures.push(`required metric openPlanP95Ms missing for ${name}`)
+		}
+		if (metrics.publicFullOpenRatio[name] === undefined) {
+			failures.push(`required metric fullOpenRatio missing for ${name}`)
+		}
+		if (metrics.publicFullOpenMedianMs[name] === undefined) {
+			failures.push(`required metric fullOpenMedianMs missing for ${name}`)
+		}
+		if (metrics.publicFullOpenP95Ms[name] === undefined) {
+			failures.push(`required metric fullOpenP95Ms missing for ${name}`)
+		}
+		if (metrics.publicFullOpenCv[name] === undefined) {
+			failures.push(`required metric fullOpenCv missing for ${name}`)
+		}
+		const cv = metrics.publicOpenPlanCv[name]
+		if (cv === undefined) {
+			failures.push(`required metric openPlanCv missing for ${name}`)
+		} else if (cv > profile.cvGuard.maxRecommendedCv) {
+			failures.push(
+				`public open-plan CV ${cv} for ${name} exceeds owner-review guard ${profile.cvGuard.maxRecommendedCv}`,
+			)
+		}
+	}
+	return failures
 }
 
 function numericCaseMetricByName(
@@ -3823,11 +3988,32 @@ function cloneSafeOpenLatencyValidationEvidence(
 ): ReleaseProofSafeOpenLatencyValidationEvidence {
 	return {
 		...evidence,
+		runProfile: cloneSafeOpenLatencyRunProfile(evidence.runProfile),
+		runProfileFailures: [...evidence.runProfileFailures],
+		...(evidence.timingEnvironment ? { timingEnvironment: { ...evidence.timingEnvironment } } : {}),
 		publicTimedCaseNames: [...evidence.publicTimedCaseNames],
 		generatedTimedCaseNames: [...evidence.generatedTimedCaseNames],
 		publicOpenPlanMedianMs: { ...evidence.publicOpenPlanMedianMs },
+		publicOpenPlanP95Ms: { ...evidence.publicOpenPlanP95Ms },
+		publicOpenPlanCv: { ...evidence.publicOpenPlanCv },
+		publicFullOpenMedianMs: { ...evidence.publicFullOpenMedianMs },
+		publicFullOpenP95Ms: { ...evidence.publicFullOpenP95Ms },
+		publicFullOpenCv: { ...evidence.publicFullOpenCv },
 		publicFullOpenRatio: { ...evidence.publicFullOpenRatio },
 		missingPolicyRequirements: [...evidence.missingPolicyRequirements],
+	}
+}
+
+function cloneSafeOpenLatencyRunProfile(
+	profile: ReleaseProofSafeOpenLatencyRunProfile,
+): ReleaseProofSafeOpenLatencyRunProfile {
+	return {
+		...profile,
+		requiredPublicCaseNames: [...profile.requiredPublicCaseNames],
+		requiredMetrics: [...profile.requiredMetrics],
+		cvGuard: { ...profile.cvGuard },
+		forbiddenUses: [...profile.forbiddenUses],
+		sourceReferences: profile.sourceReferences.map((reference) => ({ ...reference })),
 	}
 }
 

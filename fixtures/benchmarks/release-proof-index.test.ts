@@ -253,7 +253,7 @@ describe('release proof evidence index', () => {
 			ownerLoop: 'performance',
 			status: 'pending-owner-decision',
 			validationCommand:
-				'bun run fixtures/benchmarks/safe-open-proof.ts --repeat 3 --warmup 1 --json',
+				'bun run fixtures/benchmarks/safe-open-proof.ts --repeat 10 --warmup 3 --json',
 			rejectIf: expect.stringContaining('latency SLA'),
 		})
 		expect(index.performancePolicy.approvalChecklist[1]).toMatchObject({
@@ -278,7 +278,27 @@ describe('release proof evidence index', () => {
 			releaseClaimAllowed: false,
 			thresholdClaimAllowed: false,
 			validationCommand:
-				'bun run fixtures/benchmarks/safe-open-proof.ts --repeat 3 --warmup 1 --json',
+				'bun run fixtures/benchmarks/safe-open-proof.ts --repeat 10 --warmup 3 --json',
+			runProfile: expect.objectContaining({
+				profileId: 'safe-open-release-latency-owner-review',
+				command: 'bun run fixtures/benchmarks/safe-open-proof.ts --repeat 10 --warmup 3 --json',
+				minimumRepeat: 10,
+				minimumWarmup: 3,
+				requiredPublicCaseNames: ['clean', 'formula-heavy', 'macro', 'pivot', 'activex', 'chart'],
+				requireTimingEnvironment: true,
+				cvGuard: expect.objectContaining({
+					metric: 'publicOpenPlanCv',
+					maxRecommendedCv: 0.25,
+				}),
+				forbiddenUses: expect.arrayContaining(['release threshold', 'QSS performance comparison']),
+			}),
+			runProfileSatisfied: false,
+			runProfileFailures: expect.arrayContaining([
+				'repeat 1 below profile minimum 10',
+				'warmup 2 below profile minimum 3',
+				'timing environment metadata missing',
+				'required public case clean missing timed evidence',
+			]),
 			repeat: 1,
 			warmup: 2,
 			timingEnvironmentCaptured: false,
@@ -296,7 +316,7 @@ describe('release proof evidence index', () => {
 			missingPolicyRequirements: [
 				'tracked-clean release environment',
 				'standardized public input set',
-				'approved repeat and warmup policy',
+				'performance-owner approval of the safe-open release-latency owner-review profile',
 				'non-threshold release wording',
 			],
 			boundary: expect.stringContaining('not a release threshold'),
@@ -1107,7 +1127,7 @@ describe('release proof evidence index', () => {
 		expect(JSON.stringify(handoff.generatedFixtureDecisionEvidence)).toContain(
 			'external candidate excelforge-book1-unknown-part-mutation awaits owner review',
 		)
-		expect(JSON.stringify(handoff.performancePolicy)).toContain('safe-open-proof.ts --repeat 3')
+		expect(JSON.stringify(handoff.performancePolicy)).toContain('safe-open-proof.ts --repeat 10')
 		expect(JSON.stringify(handoff.safeOpenLatencyValidationEvidence)).toContain(
 			'tracked-clean release environment',
 		)
@@ -1370,6 +1390,17 @@ describe('release proof evidence index', () => {
 		expect(markdown).toContain('Bun benchmarking')
 		expect(markdown).toContain('Safe-open latency validation evidence:')
 		expect(markdown).toContain('Status: timed-evidence-absent-owner-run-required')
+		expect(markdown).toContain('Run profile: safe-open-release-latency-owner-review')
+		expect(markdown).toContain(
+			'Run profile command: `bun run fixtures/benchmarks/safe-open-proof.ts --repeat 10 --warmup 3 --json`',
+		)
+		expect(markdown).toContain('Run profile satisfied: false')
+		expect(markdown).toContain('repeat 1 below profile minimum 10')
+		expect(markdown).toContain('Run profile minimums: repeat 10, warmup 3')
+		expect(markdown).toContain(
+			'Run profile public cases: clean,formula-heavy,macro,pivot,activex,chart',
+		)
+		expect(markdown).toContain('Run profile CV guard: publicOpenPlanCv <= 0.25')
 		expect(markdown).toContain('Timed case count: 0')
 		expect(markdown).toContain('Timing environment captured: false')
 		expect(markdown).toContain('Public open-plan p95 ms: {}')

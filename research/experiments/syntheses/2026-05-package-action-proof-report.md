@@ -60,3 +60,5 @@ bun run fixtures/benchmarks/package-action-proof.ts
 ## Fold-In Recommendation
 
 Promote as the second release-proof artifact beside safe-open. Do not add a new mutation surface. The next product step is publication packaging: decide where the Markdown/JSON report lives and whether synthetic edge cases need public binary fixtures.
+
+Do not track generated compact JSON yet. A local probe measured `7854` bytes for full generated JSON and `1896` bytes for a compact summary, but the current artifact shape includes generated metadata and duplicates harness assertions. Keep JSON as generated output until release-proof publication and privacy rules are explicit.

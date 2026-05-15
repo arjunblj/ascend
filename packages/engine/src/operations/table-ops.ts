@@ -306,7 +306,14 @@ export function handleRenameTable(
 				: {}),
 		}
 	}
-	rewriteTableNameInFormulas(workbook, table.name, op.newName)
+	for (const rewritten of rewriteTableNameInFormulas(workbook, table.name, op.newName)) {
+		affected.add(
+			rewritten.sheetName === sheet.name
+				? rewritten.ref
+				: `${rewritten.sheetName}!${rewritten.ref}`,
+		)
+		sheetsModified.add(rewritten.sheetName)
+	}
 	rewriteTableNameInDefinedNames(workbook, table.name, op.newName)
 	return ok(patch([...affected], [...sheetsModified], true))
 }
@@ -696,7 +703,7 @@ function materializeSheetFormulaBindings(
 	if (formulaSheet.cells.formulaInfoCellCount() === 0) return
 	const refs: Array<{ readonly row: number; readonly col: number }> = []
 	for (const [row, col, cell] of formulaSheet.cells.iterate()) {
-		if (cell.formulaInfo) refs.push({ row, col })
+		if (cell.formulaInfo?.kind === 'shared') refs.push({ row, col })
 	}
 	for (const ref of materializeFormulaBindingGroupsForRefs(workbook, formulaSheet, refs)) {
 		affected.add(formulaSheet.name === primarySheetName ? ref : `${formulaSheet.name}!${ref}`)

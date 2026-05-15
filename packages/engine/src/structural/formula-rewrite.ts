@@ -59,6 +59,7 @@ export function rewriteWorkbookFormulasForShift(
 					value: existing.value,
 					formula: nextFormula,
 					styleId: existing.styleId,
+					formulaInfo: existing.formulaInfo,
 				},
 			])
 		}
@@ -130,6 +131,7 @@ export function rewriteWorkbookFormulasForMove(
 					value: existing.value,
 					formula: rewrittenFormula,
 					styleId: existing.styleId,
+					formulaInfo: existing.formulaInfo,
 				},
 			])
 		}
@@ -390,6 +392,7 @@ export function rewriteSheetNameInFormulas(
 					value: existing.value,
 					formula: nextFormula,
 					styleId: existing.styleId,
+					formulaInfo: existing.formulaInfo,
 				},
 			])
 		}
@@ -421,7 +424,8 @@ export function rewriteTableNameInFormulas(
 	workbook: Workbook,
 	oldName: string,
 	newName: string,
-): void {
+): FormulaRewriteCell[] {
+	const rewrittenCells: FormulaRewriteCell[] = []
 	for (const sheet of workbook.sheets) {
 		const updates: [number, number, Cell][] = []
 		for (const [row, col, existing] of sheet.cells.iterate()) {
@@ -436,14 +440,17 @@ export function rewriteTableNameInFormulas(
 					value: existing.value,
 					formula: rewrittenFormula,
 					styleId: existing.styleId,
+					formulaInfo: existing.formulaInfo,
 				},
 			])
 		}
 		for (const [row, col, updated] of updates) {
 			sheet.cells.set(row, col, updated)
+			rewrittenCells.push({ sheetName: sheet.name, ref: toA1({ row, col }) })
 		}
 		rewriteSheetMetadataFormulasForTableRename(sheet, oldName, newName)
 	}
+	return rewrittenCells
 }
 
 export function rewriteTableNameInDefinedNames(
@@ -488,6 +495,7 @@ export function rewriteTableColumnInFormulas(
 					value: existing.value,
 					formula: rewrittenFormula,
 					styleId: existing.styleId,
+					formulaInfo: existing.formulaInfo,
 				},
 			])
 		}

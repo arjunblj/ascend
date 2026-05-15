@@ -6234,6 +6234,77 @@ describe('applyOperation', () => {
 		expect(other.cells.get(1, 2)?.formulaInfo).toBeUndefined()
 	})
 
+	test('renameSheet retargets dynamic spill metadata without dropping the anchor formula', () => {
+		const wb = createWorkbook()
+		const renamed = wb.addSheet('Sheet1')
+		const other = wb.addSheet('Other')
+		renamed.cells.set(0, 0, {
+			value: numberValue(1),
+			formula: 'SEQUENCE(2)',
+			styleId: sid,
+			formulaInfo: { kind: 'dynamicArray', metadataIndex: 1, collapsed: false },
+		})
+		renamed.cells.set(1, 0, {
+			value: numberValue(2),
+			formula: null,
+			styleId: sid,
+			formulaInfo: {
+				kind: 'spill',
+				anchorRef: 'Sheet1!A1',
+				ref: 'Sheet1!A1:A2',
+				isAnchor: false,
+			},
+		})
+		other.cells.set(0, 0, {
+			value: numberValue(2),
+			formula: 'Sheet1!A1*2',
+			styleId: sid,
+			formulaInfo: { kind: 'dynamicArray', metadataIndex: 2, collapsed: false },
+		})
+		other.cells.set(1, 0, {
+			value: numberValue(4),
+			formula: null,
+			styleId: sid,
+			formulaInfo: {
+				kind: 'spill',
+				anchorRef: 'Other!A1',
+				ref: 'Other!A1:A2',
+				isAnchor: false,
+			},
+		})
+
+		const result = applyOperation(wb, { op: 'renameSheet', sheet: 'Sheet1', newName: 'Data' })
+		expectOk(result)
+
+		expect(result.value.affectedCells).toEqual(['Data!A2', 'Other!A1'])
+		expect(renamed.cells.get(0, 0)?.formula).toBe('SEQUENCE(2)')
+		expect(renamed.cells.get(0, 0)?.formulaInfo).toEqual({
+			kind: 'dynamicArray',
+			metadataIndex: 1,
+			collapsed: false,
+		})
+		expect(renamed.cells.get(1, 0)?.formula).toBeNull()
+		expect(renamed.cells.get(1, 0)?.formulaInfo).toEqual({
+			kind: 'spill',
+			anchorRef: 'Data!A1',
+			ref: 'Data!A1:A2',
+			isAnchor: false,
+		})
+		expect(other.cells.get(0, 0)?.formula).toBe('Data!A1*2')
+		expect(other.cells.get(0, 0)?.formulaInfo).toEqual({
+			kind: 'dynamicArray',
+			metadataIndex: 2,
+			collapsed: false,
+		})
+		expect(other.cells.get(1, 0)?.formulaInfo).toEqual({
+			kind: 'spill',
+			anchorRef: 'Other!A1',
+			ref: 'Other!A1:A2',
+			isAnchor: false,
+		})
+		expectCachedFormulaAnalysisMatchesFullRecompute(wb)
+	})
+
 	test('renameSheet rejects Excel-invalid target names before mutating workbook', () => {
 		const wb = setup()
 		const result = applyOperation(wb, {
@@ -8980,6 +9051,60 @@ describe('applyOperation', () => {
 		expect(sheet.cells.get(5, 0)?.formula).toBe('SUM(Revenue[Qty])')
 		expect(sheet.cells.get(4, 0)?.formulaInfo).toBeUndefined()
 		expect(sheet.cells.get(5, 0)?.formulaInfo).toBeUndefined()
+	})
+
+	test('renameTable preserves dynamic spill metadata while rewriting the anchor formula', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: stringValue('Qty'), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(2), formula: null, styleId: sid })
+		applyOperation(wb, {
+			op: 'createTable',
+			sheet: 'Sheet1',
+			ref: 'A1:A2',
+			name: 'Sales',
+			hasHeaders: true,
+		})
+		sheet.cells.set(0, 3, {
+			value: numberValue(2),
+			formula: 'FILTER(Sales[Qty],Sales[Qty]>0)',
+			styleId: sid,
+			formulaInfo: { kind: 'dynamicArray', metadataIndex: 1, collapsed: false },
+		})
+		sheet.cells.set(1, 3, {
+			value: numberValue(2),
+			formula: null,
+			styleId: sid,
+			formulaInfo: {
+				kind: 'spill',
+				anchorRef: 'Sheet1!D1',
+				ref: 'D1:D2',
+				isAnchor: false,
+			},
+		})
+
+		const result = applyOperation(wb, {
+			op: 'renameTable',
+			table: 'Sales',
+			newName: 'Revenue',
+		})
+		expectOk(result)
+
+		expect(result.value.affectedCells).toEqual(['D1'])
+		expect(sheet.cells.get(0, 3)?.formula).toBe('FILTER(Revenue[Qty],Revenue[Qty]>0)')
+		expect(sheet.cells.get(0, 3)?.formulaInfo).toEqual({
+			kind: 'dynamicArray',
+			metadataIndex: 1,
+			collapsed: false,
+		})
+		expect(sheet.cells.get(1, 3)?.formula).toBeNull()
+		expect(sheet.cells.get(1, 3)?.formulaInfo).toEqual({
+			kind: 'spill',
+			anchorRef: 'Sheet1!D1',
+			ref: 'D1:D2',
+			isAnchor: false,
+		})
+		expectCachedFormulaAnalysisMatchesFullRecompute(wb)
 	})
 
 	test('renameTable rejects workbook-scoped case-insensitive duplicate table names', () => {

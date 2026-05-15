@@ -1,4 +1,10 @@
-import { type CellFormulaBinding, createSheetId, type Sheet, type Workbook } from '@ascend/core'
+import {
+	type CellFormulaBinding,
+	createSheetId,
+	type Sheet,
+	toA1,
+	type Workbook,
+} from '@ascend/core'
 import type { Operation, Result } from '@ascend/schema'
 import { ascendError, err, ok, validateExcelWorksheetName } from '@ascend/schema'
 import { invalidateSheetIndexCache } from '../evaluator.ts'
@@ -470,13 +476,36 @@ function materializeWorkbookFormulaBindingsForRename(
 		if (formulaSheet.cells.formulaInfoCellCount() === 0) continue
 		const refs: Array<{ readonly row: number; readonly col: number }> = []
 		for (const [row, col, cell] of formulaSheet.cells.iterate()) {
-			if (cell.formulaInfo) refs.push({ row, col })
+			if (cell.formulaInfo?.kind === 'shared') refs.push({ row, col })
 		}
 		const sheetName = formulaSheet === renamedSheet ? newSheetName : formulaSheet.name
 		for (const ref of materializeFormulaBindingGroupsForRefs(workbook, formulaSheet, refs)) {
 			affected.add(`${sheetName}!${ref}`)
 			sheetsModified.add(sheetName)
 		}
+		retargetFormulaBindingsForRename(
+			formulaSheet,
+			renamedSheet.name,
+			newSheetName,
+			sheetName,
+			affected,
+		)
+	}
+}
+
+function retargetFormulaBindingsForRename(
+	sheet: Sheet,
+	oldSheetName: string,
+	newSheetName: string,
+	affectedSheetName: string,
+	affected: Set<string>,
+): void {
+	for (const [row, col, cell] of sheet.cells.iterate()) {
+		if (!cell.formulaInfo) continue
+		const formulaInfo = retargetCopiedFormulaBinding(cell.formulaInfo, oldSheetName, newSheetName)
+		if (formulaInfo === cell.formulaInfo) continue
+		sheet.cells.set(row, col, { ...cell, formulaInfo })
+		affected.add(`${affectedSheetName}!${toA1({ row, col })}`)
 	}
 }
 

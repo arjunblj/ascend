@@ -10,6 +10,7 @@ import {
 	formulaFunctionSignatureHelp,
 	formulaHover,
 	formulaPrepareRename,
+	formulaReferenceBounds,
 	formulaReferenceRanges,
 	formulaTokenRanges,
 	insertFormulaReference,
@@ -100,6 +101,34 @@ describe('formula editing utilities', () => {
 			{ text: 'Sales[Amount]', start: 16, end: 29, kind: 'structured' },
 			{ text: 'A1#', start: 30, end: 33, kind: 'spill' },
 		])
+		expect(
+			formulaReferenceRanges("=SUM($A$1:B2,'Q2'!C3,Sales[Amount],A1#)", {
+				includeBounds: true,
+			}),
+		).toEqual([
+			{
+				text: '$A$1:B2',
+				start: 5,
+				end: 12,
+				kind: 'range',
+				bounds: { start: { row: 0, col: 0 }, end: { row: 1, col: 1 } },
+			},
+			{
+				text: "'Q2'!C3",
+				start: 13,
+				end: 20,
+				kind: 'sheet-cell',
+				bounds: { sheet: 'Q2', start: { row: 2, col: 2 }, end: { row: 2, col: 2 } },
+			},
+			{ text: 'Sales[Amount]', start: 21, end: 34, kind: 'structured' },
+			{ text: 'A1#', start: 35, end: 38, kind: 'spill' },
+		])
+		expect(formulaReferenceBounds("'Q2'!C3")).toEqual({
+			sheet: 'Q2',
+			start: { row: 2, col: 2 },
+			end: { row: 2, col: 2 },
+		})
+		expect(formulaReferenceBounds('Sales[Amount]')).toBeNull()
 		expect(referenceAtCursor('SUM(A1:B2)', 6)).toEqual({
 			text: 'A1:B2',
 			start: 4,
@@ -531,6 +560,7 @@ describe('formula editing utilities', () => {
 			formula: '=SUM($C$3)+Table1[Amount]',
 			cursor: 9,
 			inserted: '$C$3',
+			replacedSpan: { start: 5, end: 7 },
 			replaced: {
 				text: 'A1',
 				start: 5,
@@ -547,6 +577,7 @@ describe('formula editing utilities', () => {
 			formula: '=SUM(A1)+Sales[Total]',
 			cursor: 21,
 			inserted: 'Sales[Total]',
+			replacedSpan: { start: 9, end: 23 },
 			replaced: {
 				text: 'Table1[Amount]',
 				start: 9,
@@ -563,6 +594,7 @@ describe('formula editing utilities', () => {
 			formula: '=B2+1',
 			cursor: 3,
 			inserted: 'B2',
+			replacedSpan: { start: 1, end: 21 },
 			replaced: {
 				text: '[Book.xlsx]Sheet1!A1',
 				start: 1,
@@ -578,12 +610,49 @@ describe('formula editing utilities', () => {
 			formula: '=SUM(Sheet2!C3)',
 			cursor: 14,
 			inserted: 'Sheet2!C3',
+			replacedSpan: { start: 5, end: 21 },
 			replaced: {
 				text: 'Sheet1:Sheet3!A1',
 				start: 5,
 				end: 21,
 				kind: 'sheet-3d-cell',
 			},
+		})
+	})
+
+	test('inserts pointed references with explicit live replace spans', () => {
+		expect(
+			insertFormulaReference('=SUM(A1)+B2', 4, 'C3:D4', {
+				replaceSpan: { start: 5, end: 7 },
+			}),
+		).toEqual({
+			formula: '=SUM(C3:D4)+B2',
+			cursor: 10,
+			inserted: 'C3:D4',
+			replacedSpan: { start: 5, end: 7 },
+			replaced: {
+				text: 'A1',
+				start: 5,
+				end: 7,
+				kind: 'cell',
+			},
+		})
+
+		const assist = formulaAssist('=SUM(A1)+B2', {
+			cursor: 4,
+			reference: 'Sheet2!C3',
+			replaceSpan: { start: 9, end: 11 },
+		})
+		expect(assist.insertion).toMatchObject({
+			formula: '=SUM(A1)+Sheet2!C3',
+			cursor: 18,
+			inserted: 'Sheet2!C3',
+			replacedSpan: { start: 9, end: 11 },
+		})
+		expect(assist.codeActions[0]).toMatchObject({
+			start: 9,
+			end: 11,
+			edit: { formula: '=SUM(A1)+Sheet2!C3', cursor: 18 },
 		})
 	})
 

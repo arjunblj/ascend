@@ -3838,6 +3838,8 @@ function journalSetThreadedComment(
 				{
 					code: 'LOSSY_INVERSE',
 					message: `Threaded comment selector on ${op.sheet} cannot be resolved exactly`,
+					surface: 'comments',
+					reason: 'threaded-comment-selector',
 				},
 			]
 	return {
@@ -3873,6 +3875,8 @@ function journalSetDrawingText(
 					{
 						code: 'LOSSY_INVERSE',
 						message: `Drawing object selector on ${op.sheet} cannot be resolved to editable text exactly`,
+						surface: 'drawings',
+						reason: 'drawing-text-selector',
 					},
 				]
 	return {
@@ -3897,6 +3901,8 @@ function journalSetChartSeriesSource(
 				{
 					code: 'LOSSY_INVERSE',
 					message: `Chart series selector cannot be restored exactly for series ${op.seriesIndex}`,
+					surface: 'charts',
+					reason: 'chart-series-unsettable',
 				},
 			]
 	return {
@@ -8200,6 +8206,8 @@ function restoreSetCommentOps(
 							{
 								code: 'LOSSY_INVERSE',
 								message: `Created legacy comment at ${op.sheet}!${comment.ref} cannot be removed without deleting threaded comments with public operations`,
+								surface: 'comments',
+								reason: 'threaded-comment-selector',
 								refs: threadedCommentIssueRefs(op.sheet, threadedComments),
 							},
 						]
@@ -8225,6 +8233,8 @@ function restoreSetCommentOps(
 				{
 					code: 'LOSSY_INVERSE',
 					message: `Comment author at ${op.sheet}!${comment.ref} cannot be removed exactly with public operations`,
+					surface: 'comments',
+					reason: 'comment-author-removal',
 					refs: [
 						`${op.sheet}!${comment.ref}`,
 						...threadedCommentIssueRefs(op.sheet, threadedComments),
@@ -8255,6 +8265,8 @@ function commentRestoreIssues(
 		.map((preimage) => ({
 			code: 'LOSSY_INVERSE' as const,
 			message: `Legacy comment drawing metadata for ${preimage.sheet}!${preimage.ref} cannot be restored with public operations`,
+			surface: 'comments' as const,
+			reason: 'legacy-comment-drawing' as const,
 			refs: [`${preimage.sheet}!${preimage.ref}`],
 		}))
 }
@@ -8282,6 +8294,8 @@ function commentTransferIssues(
 		issues.push({
 			code: 'LOSSY_INVERSE',
 			message: 'Threaded comment range transfers cannot be fully restored with public operations',
+			surface: 'comments',
+			reason: 'threaded-comment-selector',
 			refs: [...refs],
 		})
 	}
@@ -8295,6 +8309,8 @@ function commentTransferIssues(
 			issues.push({
 				code: 'LOSSY_INVERSE',
 				message: `Legacy comment drawing metadata for ${preimage.sheet}!${preimage.ref} cannot be restored with public operations`,
+				surface: 'comments',
+				reason: 'legacy-comment-drawing',
 				refs: [`${preimage.sheet}!${preimage.ref}`],
 			})
 		}
@@ -8309,6 +8325,8 @@ function commentTransferIssues(
 				issues.push({
 					code: 'LOSSY_INVERSE',
 					message: `Legacy comment drawing metadata for ${preimage.sheet}!${preimage.ref} cannot be restored with public operations`,
+					surface: 'comments',
+					reason: 'legacy-comment-drawing',
 					refs: [`${preimage.sheet}!${preimage.ref}`],
 				})
 			}
@@ -8327,6 +8345,8 @@ function commentTransferIssues(
 			issues.push({
 				code: 'LOSSY_INVERSE',
 				message: `Copied legacy comment drawing metadata for ${targetSheetName}!${targetRef} cannot be removed with public operations`,
+				surface: 'comments',
+				reason: 'legacy-comment-drawing',
 				refs: [`${sourceSheetName}!${toA1(sourceRef)}`, `${targetSheetName}!${targetRef}`],
 			})
 		}

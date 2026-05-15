@@ -1,3 +1,4 @@
+import { parseRange, type RangeRef } from '@ascend/core'
 import {
 	type FunctionDef,
 	functionRegistry,
@@ -38,6 +39,11 @@ export interface FormulaReferenceRange {
 		| 'sheet-3d-range'
 		| 'structured'
 		| 'spill'
+	readonly bounds?: RangeRef
+}
+
+export interface FormulaReferenceRangeOptions {
+	readonly includeBounds?: boolean
 }
 
 export type FormulaBindingRoleKind =
@@ -64,14 +70,21 @@ export interface CycleReferenceResult {
 	readonly reference?: FormulaReferenceRange
 }
 
+export interface FormulaTextSpan {
+	readonly start: number
+	readonly end: number
+}
+
 export interface InsertFormulaReferenceOptions {
 	readonly replaceReferenceAtCursor?: boolean
+	readonly replaceSpan?: FormulaTextSpan
 }
 
 export interface InsertFormulaReferenceResult {
 	readonly formula: string
 	readonly cursor: number
 	readonly inserted: string
+	readonly replacedSpan?: FormulaTextSpan
 	readonly replaced?: FormulaReferenceRange
 }
 
@@ -126,7 +139,9 @@ export interface FormulaAssistOptions {
 	readonly functionName?: string
 	readonly reference?: string
 	readonly replaceReferenceAtCursor?: boolean
+	readonly replaceSpan?: FormulaTextSpan
 	readonly cycleReference?: boolean
+	readonly includeReferenceBounds?: boolean
 }
 
 export interface FormulaAssistResult {
@@ -164,6 +179,7 @@ export interface FormulaHoverInfo {
 export interface FormulaCodeActionOptions {
 	readonly reference?: string
 	readonly replaceReferenceAtCursor?: boolean
+	readonly replaceSpan?: FormulaTextSpan
 	readonly cycleReference?: boolean
 }
 
@@ -252,8 +268,44 @@ export function referenceAtCursor(formula: string, cursor: number): FormulaRefer
 	return null
 }
 
-export function formulaReferenceRanges(formula: string): FormulaReferenceRange[] {
-	return collectFormulaReferenceRanges(formula, tokenSpans(formula))
+export function formulaReferenceRanges(
+	formula: string,
+	options: FormulaReferenceRangeOptions = {},
+): FormulaReferenceRange[] {
+	const references = collectFormulaReferenceRanges(formula, tokenSpans(formula))
+	return options.includeBounds
+		? references.map((reference) => attachFormulaReferenceBounds(reference))
+		: references
+}
+
+export function formulaReferenceBounds(reference: FormulaReferenceRange | string): RangeRef | null {
+	const text = typeof reference === 'string' ? reference : reference.text
+	const kind = typeof reference === 'string' ? inferFormulaReferenceKind(text) : reference.kind
+	if (kind !== 'cell' && kind !== 'range' && kind !== 'sheet-cell' && kind !== 'sheet-range') {
+		return null
+	}
+	try {
+		return parseRange(text)
+	} catch {
+		try {
+			return parseRange(text.replace(/\$/g, ''))
+		} catch {
+			return null
+		}
+	}
+}
+
+function attachFormulaReferenceBounds(reference: FormulaReferenceRange): FormulaReferenceRange {
+	const bounds = formulaReferenceBounds(reference)
+	return bounds ? { ...reference, bounds } : reference
+}
+
+function inferFormulaReferenceKind(text: string): FormulaReferenceRange['kind'] {
+	if (text.endsWith('#')) return 'spill'
+	if (text.includes('[') && text.includes(']')) return 'structured'
+	const local = text.includes('!') ? text.slice(text.lastIndexOf('!') + 1) : text
+	if (text.includes('!')) return local.includes(':') ? 'sheet-range' : 'sheet-cell'
+	return local.includes(':') ? 'range' : 'cell'
 }
 
 export function formulaBindingRoles(formula: string): FormulaBindingRole[] {
@@ -421,17 +473,35 @@ export function insertFormulaReference(
 	options: InsertFormulaReferenceOptions = {},
 ): InsertFormulaReferenceResult {
 	const clampedCursor = Math.max(0, Math.min(formula.length, cursor))
-	const replaced = options.replaceReferenceAtCursor
-		? referenceAtCursor(formula, clampedCursor)
-		: null
-	const start = replaced?.start ?? clampedCursor
-	const end = replaced?.end ?? clampedCursor
+	const replaceSpan = normalizeFormulaReplaceSpan(formula, options.replaceSpan)
+	const replaced = replaceSpan
+		? referenceAtCursor(formula, replaceSpan.start)
+		: options.replaceReferenceAtCursor
+			? referenceAtCursor(formula, clampedCursor)
+			: null
+	const start = replaceSpan?.start ?? replaced?.start ?? clampedCursor
+	const end = replaceSpan?.end ?? replaced?.end ?? clampedCursor
 	return {
 		formula: `${formula.slice(0, start)}${reference}${formula.slice(end)}`,
 		cursor: start + reference.length,
 		inserted: reference,
+		...(replaceSpan || start !== end ? { replacedSpan: { start, end } } : {}),
 		...(replaced ? { replaced } : {}),
 	}
+}
+
+function normalizeFormulaReplaceSpan(
+	formula: string,
+	span: FormulaTextSpan | undefined,
+): FormulaTextSpan | null {
+	if (!span) return null
+	const start = Number.isFinite(span.start)
+		? Math.max(0, Math.min(formula.length, Math.floor(span.start)))
+		: 0
+	const end = Number.isFinite(span.end)
+		? Math.max(0, Math.min(formula.length, Math.floor(span.end)))
+		: start
+	return start <= end ? { start, end } : { start: end, end: start }
 }
 
 export function formulaAssist(
@@ -451,7 +521,9 @@ export function formulaAssist(
 		cursor,
 		diagnostics: formulaDiagnostics(formula),
 		tokens: formulaTokenRanges(formula),
-		references: formulaReferenceRanges(formula),
+		references: formulaReferenceRanges(formula, {
+			includeBounds: options.includeReferenceBounds === true,
+		}),
 		bindings: formulaBindingRoles(formula),
 		activeReference: cursor === null ? null : referenceAtCursor(formula, cursor),
 		hover: cursor === null ? null : formulaHover(formula, cursor),
@@ -470,6 +542,7 @@ export function formulaAssist(
 				: formulaCodeActions(formula, cursor, {
 						...(options.reference ? { reference: options.reference } : {}),
 						replaceReferenceAtCursor: options.replaceReferenceAtCursor === true,
+						...(options.replaceSpan ? { replaceSpan: options.replaceSpan } : {}),
 						cycleReference: options.cycleReference === true,
 					}),
 		cycle:
@@ -480,6 +553,7 @@ export function formulaAssist(
 			cursor !== null && options.reference
 				? insertFormulaReference(formula, cursor, options.reference, {
 						replaceReferenceAtCursor: options.replaceReferenceAtCursor === true,
+						...(options.replaceSpan ? { replaceSpan: options.replaceSpan } : {}),
 					})
 				: null,
 	}
@@ -569,14 +643,15 @@ export function formulaCodeActions(
 	if (options.reference) {
 		const inserted = insertFormulaReference(formula, clampedCursor, options.reference, {
 			replaceReferenceAtCursor: options.replaceReferenceAtCursor === true,
+			...(options.replaceSpan ? { replaceSpan: options.replaceSpan } : {}),
 		})
 		actions.push({
 			title: inserted.replaced
 				? `Replace reference with ${options.reference}`
 				: `Insert reference ${options.reference}`,
 			kind: inserted.replaced ? 'quickfix' : 'source.insert',
-			start: inserted.replaced?.start ?? clampedCursor,
-			end: inserted.replaced?.end ?? clampedCursor,
+			start: inserted.replacedSpan?.start ?? clampedCursor,
+			end: inserted.replacedSpan?.end ?? clampedCursor,
 			edit: { formula: inserted.formula, cursor: inserted.cursor },
 			...(inserted.replaced ? { reference: inserted.replaced } : {}),
 		})

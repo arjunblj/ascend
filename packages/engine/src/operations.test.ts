@@ -4519,12 +4519,14 @@ describe('applyOperation', () => {
 	test('deleteRows rewrites deleted formula refs to #REF! across formula surfaces', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')
+		const summary = wb.addSheet('Summary')
 		s.cells.set(0, 0, cell(numberValue(1)))
 		s.cells.set(1, 0, cell(numberValue(2)))
 		s.cells.set(2, 0, cell(numberValue(3)))
 		s.cells.set(0, 3, cell(EMPTY, 'A2'))
 		s.cells.set(0, 4, cell(EMPTY, 'SUM(A2)'))
 		s.cells.set(0, 5, cell(EMPTY, 'SUM(A1:A3)'))
+		summary.cells.set(0, 0, cell(EMPTY, 'sheet1!A2'))
 		wb.definedNames.set('DeletedInput', 'Sheet1!A2')
 		s.dataValidations.push({ sqref: 'G1', type: 'list', formula1: 'A2' })
 		s.conditionalFormats.push({
@@ -4567,6 +4569,7 @@ describe('applyOperation', () => {
 		expect(s.cells.get(0, 3)?.formula).toBe('#REF!')
 		expect(s.cells.get(0, 4)?.formula).toBe('SUM(#REF!)')
 		expect(s.cells.get(0, 5)?.formula).toBe('SUM(A1:A2)')
+		expect(summary.cells.get(0, 0)?.formula).toBe('#REF!')
 		expect(wb.definedNames.get('DeletedInput')).toBe('#REF!')
 		expect(s.dataValidations[0]?.formula1).toBe('#REF!')
 		expect(s.conditionalFormats[0]?.rules[0]?.formulas).toEqual(['#REF!>0'])

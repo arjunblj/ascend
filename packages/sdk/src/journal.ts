@@ -2861,7 +2861,7 @@ function formulaRefReferencesSheet(
 		)
 	}
 	const refSheet = 'sheet' in ref && ref.sheet !== undefined ? ref.sheet : ownerSheet
-	return refSheet === sheetName
+	return sameSheetName(refSheet, sheetName)
 }
 
 function journalSetCells(
@@ -6205,7 +6205,7 @@ function formulaRefOverlapsDeletedAxis(
 		)
 	}
 	const sheet = 'sheet' in ref && ref.sheet !== undefined ? ref.sheet : ownerSheet
-	if (sheet !== preimage.sheet) return false
+	if (!sameSheetName(sheet, preimage.sheet)) return false
 	const end = preimage.at + preimage.count - 1
 	switch (ref.kind) {
 		case 'cell':
@@ -7658,7 +7658,7 @@ function formulaRefReferencesMovedRange(
 		)
 	}
 	const sheet = 'sheet' in ref && ref.sheet !== undefined ? ref.sheet : ownerSheet
-	if (sheet !== sourceSheetName) return false
+	if (!sameSheetName(sheet, sourceSheetName)) return false
 	switch (ref.kind) {
 		case 'cell':
 			return rangeContainsCell(sourceRange, ref.ref)
@@ -7935,6 +7935,10 @@ function sameFormulaCellRef(left: string, right: string): boolean {
 
 function sameOptionalSheetName(left: string | undefined, right: string | undefined): boolean {
 	if (left === undefined || right === undefined) return left === right
+	return left.toLowerCase() === right.toLowerCase()
+}
+
+function sameSheetName(left: string, right: string): boolean {
 	return left.toLowerCase() === right.toLowerCase()
 }
 

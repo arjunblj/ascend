@@ -1455,7 +1455,8 @@ export function rewriteFormulaAstForShift(
 	at: number,
 	delta: number,
 ): FormulaNode {
-	const onTarget = (refSheet: string | undefined) => (refSheet ?? formulaSheet) === targetSheet
+	const onTarget = (refSheet: string | undefined) =>
+		sameSheetName(refSheet ?? formulaSheet, targetSheet)
 
 	const shiftRef = (ref: FormulaCellRef, isOnTarget: boolean): FormulaCellRef | null => {
 		if (!isOnTarget) return ref

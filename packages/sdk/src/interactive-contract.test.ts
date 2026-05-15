@@ -5222,6 +5222,7 @@ describe('interactive client contract', () => {
 
 	test('moveRange journals restore cell and defined-name formula rewrites exactly', () => {
 		const wb = AscendWorkbook.create()
+		wb.addSheet('Summary')
 		wb.apply([
 			{
 				op: 'setCells',
@@ -5232,6 +5233,7 @@ describe('interactive client contract', () => {
 				],
 			},
 			{ op: 'setFormula', sheet: 'Sheet1', ref: 'G1', formula: 'A1*2' },
+			{ op: 'setFormula', sheet: 'Summary', ref: 'A1', formula: 'sheet1!A1*2' },
 			{ op: 'setDefinedName', name: 'MovedInput', ref: 'Sheet1!A1' },
 		])
 		const before = journalComparableState(wb)
@@ -5246,6 +5248,7 @@ describe('interactive client contract', () => {
 		expect(changed.journal?.exact).toBe(true)
 		expect(changed.journal?.issues).toEqual([])
 		expect(wb.sheet('Sheet1')?.cell('G1')?.formula).toBe('D1*2')
+		expect(wb.sheet('Summary')?.cell('A1')?.formula).toBe('Sheet1!D1*2')
 		expect(wb.getWorkbookModel().definedNames.get('MovedInput')).toBe('Sheet1!D1')
 
 		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
@@ -9318,9 +9321,11 @@ describe('interactive client contract', () => {
 
 	test('structural delete journals mark broken external formula references as lossy', () => {
 		const wb = AscendWorkbook.create()
+		wb.addSheet('Report')
 		wb.apply([
 			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A2', value: 5 }] },
 			{ op: 'setFormula', sheet: 'Sheet1', ref: 'B1', formula: 'A2' },
+			{ op: 'setFormula', sheet: 'Report', ref: 'A1', formula: 'sheet1!A2' },
 			{ op: 'setDefinedName', name: 'DeletedInput', ref: 'Sheet1!A2' },
 		])
 
@@ -9336,14 +9341,16 @@ describe('interactive client contract', () => {
 			message: 'Deleted row formula references on Sheet1 cannot be restored with public operations',
 			surface: 'formulas',
 			reason: 'formula-reference-rewrite',
-			refs: ['Sheet1!B1', 'name:DeletedInput'],
+			refs: ['Sheet1!B1', 'Report!A1', 'name:DeletedInput'],
 		})
 		expect(wb.sheet('Sheet1')?.cell('B1')?.formula).toBe('#REF!')
+		expect(wb.sheet('Report')?.cell('A1')?.formula).toBe('#REF!')
 
 		const undo = wb.apply(deletedRow.journal?.inverseOps ?? [], { transaction: true })
 		expect(undo.errors).toEqual([])
 		expect(wb.sheet('Sheet1')?.cell('A2')?.value).toEqual({ kind: 'number', value: 5 })
 		expect(wb.sheet('Sheet1')?.cell('B1')?.formula).toBe('#REF!')
+		expect(wb.sheet('Report')?.cell('A1')?.formula).toBe('#REF!')
 	})
 
 	test('structural delete journals mark broken metadata formula references as lossy', () => {

@@ -11,8 +11,11 @@ import {
 	classifyMutationJournalOperationSurfaces,
 	classifyMutationJournalSurface,
 	MUTATION_JOURNAL_EXACTNESS_MATRIX,
+	MUTATION_JOURNAL_ISSUE_CODES,
 	MUTATION_JOURNAL_OPERATION_SURFACE_RULES,
+	MUTATION_JOURNAL_REASON_CODES,
 	MUTATION_JOURNAL_REASON_DESCRIPTIONS,
+	MUTATION_JOURNAL_SURFACES,
 	type MutationJournal,
 	type MutationJournalOperationName,
 	type MutationJournalReasonCode,
@@ -261,6 +264,9 @@ describe('mutation journal exactness model', () => {
 			expect(journal.issues.length).toBeGreaterThan(0)
 			for (const entry of journal.entries) {
 				for (const issue of entry.issues) {
+					expect(MUTATION_JOURNAL_ISSUE_CODES).toContain(issue.code)
+					expect(MUTATION_JOURNAL_SURFACES).toContain(issue.surface)
+					expect(MUTATION_JOURNAL_REASON_CODES).toContain(issue.reason)
 					expect(issue.surface).toBeDefined()
 					expect(issue.reason).toBeDefined()
 					expect(classifyMutationJournalIssue(issue)).toMatchObject({
@@ -270,6 +276,9 @@ describe('mutation journal exactness model', () => {
 				}
 			}
 			for (const issue of journal.issues) {
+				expect(MUTATION_JOURNAL_ISSUE_CODES).toContain(issue.code)
+				expect(MUTATION_JOURNAL_SURFACES).toContain(issue.surface)
+				expect(MUTATION_JOURNAL_REASON_CODES).toContain(issue.reason)
 				expect(issue.surface).toBeDefined()
 				expect(issue.reason).toBeDefined()
 				expect(classifyMutationJournalIssue(issue)).toMatchObject({

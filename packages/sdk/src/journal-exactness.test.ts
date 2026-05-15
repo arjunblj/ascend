@@ -1254,6 +1254,65 @@ describe('mutation journal exactness model', () => {
 		}
 	})
 
+	test('destructive cell journals mark formula-binding detachments lossy', () => {
+		const cases: readonly {
+			readonly name: string
+			readonly ops: readonly Operation[]
+		}[] = [
+			{
+				name: 'literal write',
+				ops: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A2', value: 7 }] }],
+			},
+			{
+				name: 'formula write',
+				ops: [{ op: 'setFormula', sheet: 'Sheet1', ref: 'A2', formula: 'B2*3' }],
+			},
+			{
+				name: 'fill formula',
+				ops: [{ op: 'fillFormula', sheet: 'Sheet1', range: 'A2', formula: 'B2*3' }],
+			},
+			{
+				name: 'formula clear',
+				ops: [{ op: 'clearRange', sheet: 'Sheet1', range: 'A2', what: 'formulas' }],
+			},
+			{
+				name: 'full clear',
+				ops: [{ op: 'clearRange', sheet: 'Sheet1', range: 'A2', what: 'all' }],
+			},
+			{
+				name: 'rich text write',
+				ops: [{ op: 'setRichText', sheet: 'Sheet1', ref: 'A2', runs: [{ text: 'manual' }] }],
+			},
+		]
+
+		for (const entry of cases) {
+			const wb = AscendWorkbook.create()
+			seedSharedFormulaPair(wb, 0, 0)
+
+			const changed = wb.apply(entry.ops, { journal: true })
+
+			expect(changed.errors, entry.name).toEqual([])
+			expect(
+				changed.affectedCells.map((ref) => ref.replace(/^Sheet1!/, '')),
+				entry.name,
+			).toEqual(['A1', 'A2'])
+			expect(changed.journal?.supported, entry.name).toBe(true)
+			expect(changed.journal?.exact, entry.name).toBe(false)
+			expect(changed.journal, entry.name).toBeDefined()
+			if (!changed.journal) throw new Error(`missing journal for ${entry.name}`)
+			expect(journalIssueRefs(changed.journal, 'shared-formulas')).toEqual([
+				'Sheet1!A1',
+				'Sheet1!A2',
+			])
+			expect(
+				(changed.journal?.issues ?? [])
+					.filter((issue) => issue.surface === 'shared-formulas')
+					.every((issue) => issue.reason === 'formula-binding-metadata'),
+				entry.name,
+			).toBe(true)
+		}
+	})
+
 	test('real XLSX shared formula member edits journal every detached imported peer', async () => {
 		const wb = await AscendWorkbook.open(
 			readFileSync(new URL('../../../fixtures/xlsx/poi/shared_formulas.xlsx', import.meta.url)),

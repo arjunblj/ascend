@@ -684,18 +684,20 @@ describe('checker', () => {
 		const result = check(wb)
 		const issues = result.issues.filter((entry) => entry.rule === 'formula-binding-integrity')
 		expect(result.passed).toBe(false)
-		expect(issues).toEqual([
+		expect(issues).toContainEqual(
 			expect.objectContaining({
 				message: 'Legacy array formula metadata at Sheet1!A1 has an invalid range',
 				refs: ['Sheet1!A1'],
 				details: { kind: 'legacy-array-invalid-range', range: 'B1:B2' },
 			}),
+		)
+		expect(issues).toContainEqual(
 			expect.objectContaining({
 				message: 'Data table formula metadata at Sheet1!C3 has an invalid range',
 				refs: ['Sheet1!C3'],
 				details: { kind: 'data-table-invalid-range', range: 'D3:D5' },
 			}),
-		])
+		)
 	})
 
 	test('detects data table metadata with hidden formula text', () => {
@@ -721,6 +723,41 @@ describe('checker', () => {
 			refs: ['Sheet1!A1'],
 			details: { kind: 'data-table-formula-text-mismatch', range: 'A1:A2' },
 		})
+	})
+
+	test('detects legacy array metadata without a single formula anchor', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		const formulaInfo = { kind: 'array' as const, ref: 'A1:A2' }
+		s.cells.set(0, 0, {
+			value: numberValue(2),
+			formula: null,
+			styleId: SID,
+			formulaInfo,
+		})
+		s.cells.set(1, 0, {
+			value: numberValue(198),
+			formula: 'B2*99',
+			styleId: SID,
+			formulaInfo,
+		})
+
+		const result = check(wb)
+		const issues = result.issues.filter((entry) => entry.rule === 'formula-binding-integrity')
+		expect(result.passed).toBe(false)
+		expect(issues).toEqual([
+			expect.objectContaining({
+				message: 'Legacy array formula metadata at Sheet1!A1 has no anchor formula text',
+				refs: ['Sheet1!A1'],
+				details: { kind: 'legacy-array-anchor-missing-formula', range: 'A1:A2' },
+			}),
+			expect.objectContaining({
+				message:
+					'Legacy array formula member at Sheet1!A2 has formula text outside the array anchor',
+				refs: ['Sheet1!A2', 'Sheet1!A1'],
+				details: { kind: 'legacy-array-member-formula-text-mismatch', range: 'A1:A2' },
+			}),
+		])
 	})
 
 	test('detects overlapping legacy array and data table range drift', () => {

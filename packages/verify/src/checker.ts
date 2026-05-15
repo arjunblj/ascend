@@ -832,6 +832,7 @@ function checkFormulaBindingIntegrity(wb: Workbook): CheckIssue[] {
 	const issues: CheckIssue[] = []
 	const sheetsByName = new Map(wb.sheets.map((sheet) => [sheet.name.toLowerCase(), sheet]))
 	const rangeBindingEntries: FormulaRangeBindingEntry[] = []
+	const checkedLegacyArrayAnchors = new Set<string>()
 	const spillBindingGroups = new Map<string, SpillBindingGroupEntry[]>()
 
 	for (const sheet of wb.sheets) {
@@ -977,6 +978,40 @@ function checkFormulaBindingIntegrity(wb: Workbook): CheckIssue[] {
 			if (binding.kind === 'array' || binding.kind === 'dataTable') {
 				const bindingRef = binding.ref
 				const range = parseBindingRange(bindingRef, sheet.name)
+				if (binding.kind === 'array' && range) {
+					const anchorSheetName = range.sheet ?? sheet.name
+					const anchorRef = `${anchorSheetName}!${toA1(range.start)}`
+					const anchorCheckKey = `${anchorSheetName.toLowerCase()}!${range.start.row}:${range.start.col}:${range.end.row}:${range.end.col}`
+					if (!checkedLegacyArrayAnchors.has(anchorCheckKey)) {
+						checkedLegacyArrayAnchors.add(anchorCheckKey)
+						const anchorSheet = sheetsByName.get(anchorSheetName.toLowerCase())
+						const anchorCell = anchorSheet?.cells.get(range.start.row, range.start.col)
+						if (!anchorCell?.formula) {
+							issues.push(
+								formulaBindingIntegrityIssue(
+									`Legacy array formula metadata at ${anchorRef} has no anchor formula text`,
+									[anchorRef],
+									{
+										kind: 'legacy-array-anchor-missing-formula',
+										range: binding.ref,
+									},
+								),
+							)
+						}
+					}
+					if ((row !== range.start.row || col !== range.start.col) && cell.formula) {
+						issues.push(
+							formulaBindingIntegrityIssue(
+								`Legacy array formula member at ${cellRef} has formula text outside the array anchor`,
+								[cellRef, anchorRef],
+								{
+									kind: 'legacy-array-member-formula-text-mismatch',
+									range: binding.ref,
+								},
+							),
+						)
+					}
+				}
 				if (binding.kind === 'dataTable' && cell.formula) {
 					issues.push(
 						formulaBindingIntegrityIssue(

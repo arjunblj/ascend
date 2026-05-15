@@ -746,6 +746,28 @@ describe('agent workflow loss audit', () => {
 				},
 				expectedKind: 'data-table-formula-text-mismatch',
 			},
+			{
+				name: 'hidden-legacy-array-member-formula',
+				output: join(TEMP_DIR, 'hidden-legacy-array-member-formula-out.xlsx'),
+				setup: (wb: AscendWorkbook) => {
+					const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+					if (!sheet) throw new Error('missing sheet')
+					const formulaInfo = { kind: 'array' as const, ref: 'A1:A2' }
+					sheet.cells.set(0, 0, {
+						value: numberValue(2),
+						formula: 'B1*2',
+						styleId: DEFAULT_STYLE_ID,
+						formulaInfo,
+					})
+					sheet.cells.set(1, 0, {
+						value: numberValue(198),
+						formula: 'B2*99',
+						styleId: DEFAULT_STYLE_ID,
+						formulaInfo,
+					})
+				},
+				expectedKind: 'legacy-array-member-formula-text-mismatch',
+			},
 		] as const
 
 		for (const entry of cases) {

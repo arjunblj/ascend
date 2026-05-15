@@ -914,6 +914,10 @@ describe('mutation journal exactness model', () => {
 				op: { op: 'freezePane', sheet: 'Sheet1', row: 0, col: -1 },
 				ref: 'Sheet1!freeze-column:-1',
 			},
+			{
+				op: { op: 'setTabColor', sheet: 'Sheet1', color: 'not-a-color' },
+				ref: 'sheet:Sheet1:tabColor:not-a-color',
+			},
 		]
 
 		for (const entry of cases) {
@@ -932,6 +936,60 @@ describe('mutation journal exactness model', () => {
 			expect(analysis.issues[0], entry.op.op).toMatchObject({
 				code: 'UNSUPPORTED_VALUE',
 				surface: 'sheet-layout',
+				reason: 'value-unsupported',
+				refs: [entry.ref],
+				allowedByMatrix: true,
+			})
+		}
+	})
+
+	test('classifies invalid page setup journals as unsupported values', () => {
+		const cases: readonly {
+			readonly op: Operation
+			readonly ref: string
+		}[] = [
+			{
+				op: {
+					op: 'setPageSetup',
+					sheet: 'Sheet1',
+					setup: { orientation: 'sideways' },
+				} as unknown as Operation,
+				ref: 'Sheet1!pageSetup:orientation',
+			},
+			{
+				op: { op: 'setPageSetup', sheet: 'Sheet1', setup: { paperSize: -1 } },
+				ref: 'Sheet1!pageSetup:paperSize',
+			},
+			{
+				op: { op: 'setPageSetup', sheet: 'Sheet1', setup: { scale: 0 } },
+				ref: 'Sheet1!pageSetup:scale',
+			},
+			{
+				op: { op: 'setPageSetup', sheet: 'Sheet1', setup: { fitToWidth: 1.5 } },
+				ref: 'Sheet1!pageSetup:fitToWidth',
+			},
+			{
+				op: { op: 'setPageSetup', sheet: 'Sheet1', setup: { margins: { left: -0.1 } } },
+				ref: 'Sheet1!pageMargins:left',
+			},
+		]
+
+		for (const entry of cases) {
+			const wb = AscendWorkbook.create()
+			const journal = buildMutationJournal(wb.getWorkbookModel(), [entry.op])
+			const analysis = analyzeMutationJournalExactness(journal)
+			expect(journal.inverseOps, entry.ref).toEqual([])
+			expect(analysis, entry.ref).toMatchObject({
+				supported: true,
+				exact: false,
+				issueCount: 1,
+				surfaces: ['page-setup'],
+				reasons: ['value-unsupported'],
+				hasMatrixViolation: false,
+			})
+			expect(analysis.issues[0], entry.ref).toMatchObject({
+				code: 'UNSUPPORTED_VALUE',
+				surface: 'page-setup',
 				reason: 'value-unsupported',
 				refs: [entry.ref],
 				allowedByMatrix: true,

@@ -215,6 +215,9 @@ export function handleSetTabColor(
 	workbook: Workbook,
 	op: Extract<Operation, { op: 'setTabColor' }>,
 ): Result<PatchResult> {
+	if (!/^(?:[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$/.test(op.color)) {
+		return err(ascendError('VALIDATION_ERROR', 'tab color must be a 6 or 8 digit RGB hex value'))
+	}
 	const sheetResult = getSheet(workbook, op.sheet)
 	if (!sheetResult.ok) return sheetResult
 	const sheet = sheetResult.value

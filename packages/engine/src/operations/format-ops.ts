@@ -311,6 +311,8 @@ export function handleSetPageSetup(
 	workbook: Workbook,
 	op: Extract<Operation, { op: 'setPageSetup' }>,
 ): Result<PatchResult> {
+	const validationError = validatePageSetupInput(op.setup)
+	if (validationError) return err(validationError)
 	const sheetResult = getSheet(workbook, op.sheet)
 	if (!sheetResult.ok) return sheetResult
 	const sheet = sheetResult.value
@@ -328,6 +330,38 @@ export function handleSetPageSetup(
 		sheet.pageMargins = { ...(sheet.pageMargins ?? {}), ...op.setup.margins }
 	}
 	return ok(patch([], [op.sheet]))
+}
+
+function validatePageSetupInput(
+	setup: Extract<Operation, { op: 'setPageSetup' }>['setup'],
+): ReturnType<typeof ascendError> | null {
+	if (
+		setup.orientation !== undefined &&
+		setup.orientation !== 'portrait' &&
+		setup.orientation !== 'landscape'
+	) {
+		return ascendError('VALIDATION_ERROR', 'page setup orientation must be portrait or landscape')
+	}
+	for (const [field, value] of [
+		['paperSize', setup.paperSize],
+		['fitToWidth', setup.fitToWidth],
+		['fitToHeight', setup.fitToHeight],
+	] as const) {
+		if (value !== undefined && (!Number.isInteger(value) || value < 0)) {
+			return ascendError('VALIDATION_ERROR', `page setup ${field} must be a non-negative integer`)
+		}
+	}
+	if (setup.scale !== undefined && (!Number.isInteger(setup.scale) || setup.scale <= 0)) {
+		return ascendError('VALIDATION_ERROR', 'page setup scale must be a positive integer')
+	}
+	if (setup.margins) {
+		for (const [field, value] of Object.entries(setup.margins)) {
+			if (value !== undefined && (!Number.isFinite(value) || value < 0)) {
+				return ascendError('VALIDATION_ERROR', `page margin ${field} must be non-negative`)
+			}
+		}
+	}
+	return null
 }
 
 type SetAdvancedFilterOp = Extract<Operation, { op: 'setAdvancedFilter' }>

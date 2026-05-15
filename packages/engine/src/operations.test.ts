@@ -2637,6 +2637,30 @@ describe('applyOperation', () => {
 		)
 	})
 
+	test('setPageSetup rejects invalid public metadata before mutation', () => {
+		const cases: readonly Operation[] = [
+			{
+				op: 'setPageSetup',
+				sheet: 'Sheet1',
+				setup: { orientation: 'sideways' },
+			} as unknown as Operation,
+			{ op: 'setPageSetup', sheet: 'Sheet1', setup: { paperSize: -1 } },
+			{ op: 'setPageSetup', sheet: 'Sheet1', setup: { scale: 0 } },
+			{ op: 'setPageSetup', sheet: 'Sheet1', setup: { fitToWidth: 1.5 } },
+			{ op: 'setPageSetup', sheet: 'Sheet1', setup: { margins: { left: -0.1 } } },
+		]
+
+		for (const op of cases) {
+			const wb = setup()
+			const result = applyOperation(wb, op)
+			expectErr(result)
+			expect(result.error.code, JSON.stringify(op)).toBe('VALIDATION_ERROR')
+			const sheet = wb.getSheet('Sheet1')
+			expect(sheet?.pageSetup, JSON.stringify(op)).toBeNull()
+			expect(sheet?.pageMargins, JSON.stringify(op)).toBeNull()
+		}
+	})
+
 	test('setPrintArea escapes quoted sheet names in defined-name metadata', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet("Bob's Budget")
@@ -4591,6 +4615,8 @@ describe('applyOperation', () => {
 			{ op: 'addSheet', name: 'Sheet2', position: -1 },
 			{ op: 'copySheet', sheet: 'Sheet1', newName: 'Copy', position: -1 },
 			{ op: 'moveSheet', sheet: 'Sheet1', position: -1 },
+			{ op: 'setTabColor', sheet: 'Sheet1', color: 'not-a-color' },
+			{ op: 'setTabColor', sheet: 'Sheet1', color: '#FF0000' },
 			{ op: 'freezePane', sheet: 'Sheet1', row: -1, col: 0 },
 			{ op: 'freezePane', sheet: 'Sheet1', row: 0.5, col: 0 },
 			{ op: 'freezePane', sheet: 'Sheet1', row: 0, col: -1 },
@@ -4609,6 +4635,7 @@ describe('applyOperation', () => {
 			const sheet = wb.getSheet('Sheet1')
 			expect(sheet?.frozenRows, op.op).toBe(0)
 			expect(sheet?.frozenCols, op.op).toBe(0)
+			expect(sheet?.tabColor, op.op).toBeNull()
 		}
 	})
 

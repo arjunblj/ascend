@@ -537,7 +537,7 @@ export const MUTATION_JOURNAL_EXACTNESS_MATRIX: readonly MutationJournalExactnes
 			'representable page setup and margin fields restore with setPageSetup',
 			'absence and imported-only page metadata cannot be restored exactly',
 		],
-		lossReasons: ['page-setup-unsettable', 'page-margins-unsettable'],
+		lossReasons: ['value-unsupported', 'page-setup-unsettable', 'page-margins-unsettable'],
 		representativeOps: ['setPageSetup', 'setPrintArea'],
 	},
 	{
@@ -2179,6 +2179,19 @@ function buildJournalEntry(
 			issues,
 		}
 	}
+	const pageSetupIssue = journalOperationPageSetupValueIssue(op)
+	if (pageSetupIssue) {
+		const issues = [structureMutationJournalIssue(pageSetupIssue)]
+		return {
+			opIndex,
+			op,
+			supported: true,
+			exact: false,
+			inverseOps: [],
+			preimages: [],
+			issues,
+		}
+	}
 	const draft = buildSupportedJournalEntry(workbook, op, opIndex)
 	if (!draft) {
 		const issues: MutationJournalStructuredIssue[] = [
@@ -2515,7 +2528,7 @@ function journalOperationSheetLayoutTarget(
 	| {
 			readonly valid: false
 			readonly label: string
-			readonly value: number
+			readonly value: number | string
 			readonly ref: string
 	  }
 	| null {
@@ -2532,6 +2545,15 @@ function journalOperationSheetLayoutTarget(
 			return journalSheetPositionTarget('sheet-position', op.position, workbook.sheets.length - 1)
 		case 'freezePane':
 			return journalFreezePaneTarget(op)
+		case 'setTabColor':
+			return /^(?:[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$/.test(op.color)
+				? { valid: true as const }
+				: {
+						valid: false as const,
+						label: 'tab color',
+						value: op.color,
+						ref: `sheet:${op.sheet}:tabColor:${op.color}`,
+					}
 		default:
 			return null
 	}
@@ -2567,6 +2589,50 @@ function journalFreezePaneTarget(op: Extract<Operation, { op: 'freezePane' }>) {
 		}
 	}
 	return { valid: true as const }
+}
+
+function journalOperationPageSetupValueIssue(op: Operation): MutationJournalIssue | null {
+	if (op.op !== 'setPageSetup') return null
+	const issue = journalPageSetupValueTarget(op)
+	if (!issue) return null
+	return {
+		code: 'UNSUPPORTED_VALUE',
+		message: `Cannot build exact rollback journal for setPageSetup because ${issue.label} is invalid`,
+		surface: 'page-setup',
+		reason: 'value-unsupported',
+		refs: [issue.ref],
+	}
+}
+
+function journalPageSetupValueTarget(op: Extract<Operation, { op: 'setPageSetup' }>) {
+	const setup = op.setup
+	if (
+		setup.orientation !== undefined &&
+		setup.orientation !== 'portrait' &&
+		setup.orientation !== 'landscape'
+	) {
+		return { label: 'orientation', ref: `${op.sheet}!pageSetup:orientation` }
+	}
+	for (const [field, value] of [
+		['paperSize', setup.paperSize],
+		['fitToWidth', setup.fitToWidth],
+		['fitToHeight', setup.fitToHeight],
+	] as const) {
+		if (value !== undefined && (!Number.isInteger(value) || value < 0)) {
+			return { label: field, ref: `${op.sheet}!pageSetup:${field}` }
+		}
+	}
+	if (setup.scale !== undefined && (!Number.isInteger(setup.scale) || setup.scale <= 0)) {
+		return { label: 'scale', ref: `${op.sheet}!pageSetup:scale` }
+	}
+	if (setup.margins) {
+		for (const [field, value] of Object.entries(setup.margins)) {
+			if (value !== undefined && (!Number.isFinite(value) || value < 0)) {
+				return { label: `margin ${field}`, ref: `${op.sheet}!pageMargins:${field}` }
+			}
+		}
+	}
+	return null
 }
 
 function journalOperationTableTopologyIssue(

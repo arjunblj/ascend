@@ -239,6 +239,7 @@ describe('mutation journal exactness model', () => {
 			lossyDataValidationDuplicateMoveJournal(),
 			lossyLegacyCommentDrawingJournal(),
 			lossySetCommentLegacyDrawingJournal(),
+			lossyFormulaCacheJournal(),
 			lossyCreatedLayoutJournal(),
 			lossyThreadedCommentSelectorJournal(),
 			lossyDrawingSelectorJournal(),
@@ -3047,6 +3048,18 @@ function lossySetCommentLegacyDrawingJournal(): MutationJournal {
 		legacyDrawing: { shapeId: '_x0000_s1025' },
 	})
 	return applyJournal(wb, [{ op: 'setComment', sheet: 'Sheet1', ref: 'A1', text: 'updated' }])
+}
+
+function lossyFormulaCacheJournal(): MutationJournal {
+	const wb = AscendWorkbook.create()
+	const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+	if (!sheet) throw new Error('missing sheet')
+	sheet.cells.set(0, 0, {
+		value: errorValue('#DIV/0!'),
+		formula: '1/0',
+		styleId: DEFAULT_STYLE_ID,
+	})
+	return applyJournal(wb, [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 7 }] }])
 }
 
 function lossyCreatedLayoutJournal(): MutationJournal {

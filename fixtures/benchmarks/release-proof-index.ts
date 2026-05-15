@@ -478,7 +478,7 @@ function packageActionArtifact(
 				requirement:
 					'accept disclosed generated edge packages as release proof or replace them with public binary fixtures',
 				evidence:
-					'current proof uses public calc-chain, macro, and chart fixtures, plus generated docProps, signature-invalidation, and unknown-part edge packages',
+					'current proof uses public docProps, calc-chain, macro, and chart fixtures, plus generated signature-invalidation and unknown-part edge packages',
 			},
 			{
 				id: 'provenance-boundary',
@@ -696,7 +696,7 @@ function claimProofRequired(
 		case 'package-action-proof':
 			return {
 				fixture:
-					'Public and generated package cases covering docProps passthrough, worksheet regeneration, sheet add, public calc-chain drop, signature invalidation, macro/sidecar accounting, chart sidecar accounting, and unknown-part error.',
+					'Public and generated package cases covering public docProps passthrough, worksheet regeneration, sheet add, public calc-chain drop, signature invalidation, macro/sidecar accounting, chart sidecar accounting, and unknown-part error.',
 				benchmark:
 					'Package-proof overhead in bytes and milliseconds for plan/commit evidence, including compact versus expanded report paths and the representative streaming writer proof.',
 				surface:
@@ -733,7 +733,7 @@ function rankMissingRequirement(input: {
 				acceptanceEvidence:
 					artifact === 'safe-open-proof'
 						? 'Product accepts disclosed generated signed/unknown structural packages for guarded topology proof, or replaces them with approved public binary fixtures.'
-						: 'Product accepts disclosed generated docProps/signature/unknown structural packages for guarded package-action proof, or replaces them with approved public binary fixtures.',
+						: 'Product accepts disclosed generated signature/unknown structural packages for guarded package-action proof, or replaces them with approved public binary fixtures.',
 				forbiddenShortcut:
 					'Do not hide generated fixture provenance, vendor license-unclear binaries, or imply real-world trust behavior from structural package topology alone.',
 			}

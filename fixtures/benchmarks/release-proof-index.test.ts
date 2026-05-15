@@ -214,7 +214,7 @@ describe('release proof evidence index', () => {
 			'compact-report-publication-policy',
 		])
 		expect(packageActionHandoff.blockingActions[0].acceptanceEvidence).toContain(
-			'generated docProps',
+			'generated signature/unknown',
 		)
 		expect(packageActionHandoff.blockingActions[1].forbiddenShortcut).toContain('chart XML')
 		expect(packageActionHandoff.blockingActions[2].forbiddenShortcut).toContain(
@@ -309,24 +309,19 @@ describe('release proof evidence index', () => {
 				}),
 			],
 			fixtureProvenance: {
-				publicFixtureCases: 3,
+				publicFixtureCases: 4,
 				generatedWorkbookCases: 2,
-				generatedEdgePackageCases: 3,
+				generatedEdgePackageCases: 2,
 				malformedCases: 0,
 				generatedCaseNames: [
-					'docprops-passthrough',
 					'regenerate-existing-sheet',
 					'add-sheet-part',
 					'signature-invalidation-drop',
 					'unknown-part-error',
 				],
-				deterministicGeneratedCaseNames: [
-					'docprops-passthrough',
-					'signature-invalidation-drop',
-					'unknown-part-error',
-				],
+				deterministicGeneratedCaseNames: ['signature-invalidation-drop', 'unknown-part-error'],
 				generatedCaseSha256: expect.objectContaining({
-					'docprops-passthrough': expect.stringMatching(/^[a-f0-9]{64}$/),
+					'signature-invalidation-drop': expect.stringMatching(/^[a-f0-9]{64}$/),
 					'unknown-part-error': expect.stringMatching(/^[a-f0-9]{64}$/),
 				}),
 			},

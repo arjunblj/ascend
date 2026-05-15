@@ -181,11 +181,11 @@ export function defaultPackageActionProofCases(): PackageActionProofCase[] {
 	return [
 		{
 			name: 'docprops-passthrough',
-			sourceKind: 'generated-edge-package',
-			fixture: 'synthetic docProps package',
+			sourceKind: 'public-fixture',
+			fixture: 'fixtures/xlsx/calamine/date_1904.xlsx',
 			ops: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'docprops' }] }],
 			streamingProbe: true,
-			prepareInput: writeBytes(docPropsWorkbook),
+			prepareInput: writeFixture('fixtures/xlsx/calamine/date_1904.xlsx'),
 			expectedCommitActions: [{ action: 'passthrough', partPathIncludes: 'docProps/core.xml' }],
 		},
 		{
@@ -464,35 +464,6 @@ function writeFixture(fixture: string): (path: string) => Promise<Uint8Array> {
 		await Bun.write(path, bytes)
 		return bytes
 	}
-}
-
-function docPropsWorkbook(): Uint8Array {
-	return makeXlsx({
-		'[Content_Types].xml': contentTypes(`
-  <Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>
-  <Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>
-  <Override PartName="/docProps/custom.xml" ContentType="application/vnd.openxmlformats-officedocument.custom-properties+xml"/>
-  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
-  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
-`),
-		'_rels/.rels': relationships(`
-  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
-  <Relationship Id="rIdCore" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>
-  <Relationship Id="rIdApp" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/>
-  <Relationship Id="rIdCustom" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/custom-properties" Target="docProps/custom.xml"/>
-`),
-		'xl/_rels/workbook.xml.rels': workbookRels(''),
-		'xl/workbook.xml': workbookXml(),
-		'xl/worksheets/sheet1.xml': worksheetXml(
-			'<row r="1"><c r="A1" t="inlineStr"><is><t>source</t></is></c></row>',
-		),
-		'docProps/core.xml':
-			'<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties"/>',
-		'docProps/app.xml':
-			'<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>Ascend Fixture</Application></Properties>',
-		'docProps/custom.xml':
-			'<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/custom-properties"/>',
-	})
 }
 
 function signedWorkbook(): Uint8Array {

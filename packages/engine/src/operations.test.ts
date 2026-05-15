@@ -6325,7 +6325,7 @@ describe('applyOperation', () => {
 		const source = wb.addSheet('Sheet1')
 		source.cells.set(0, 0, {
 			value: numberValue(1),
-			formula: 'B1*2',
+			formula: 'Sheet1!B1*2',
 			styleId: sid,
 			formulaInfo: {
 				kind: 'shared',
@@ -6349,7 +6349,7 @@ describe('applyOperation', () => {
 		})
 		source.cells.set(3, 0, {
 			value: numberValue(4),
-			formula: 'Sheet1!A4:Sheet1!B5',
+			formula: 'SUM(Sheet1!C4:Sheet1!D5)',
 			styleId: sid,
 			formulaInfo: { kind: 'array', ref: 'Sheet1!A4:B5' },
 		})
@@ -6369,6 +6369,7 @@ describe('applyOperation', () => {
 		expectOk(applyOperation(wb, { op: 'copySheet', sheet: 'Sheet1', newName: 'Copy' }))
 
 		const copy = wb.getSheet('Copy')
+		expect(copy?.cells.get(0, 0)?.formula).toBe('Copy!B1*2')
 		expect(copy?.cells.get(0, 0)?.formulaInfo).toEqual({
 			kind: 'shared',
 			sharedIndex: 'copy-shared',
@@ -6383,6 +6384,7 @@ describe('applyOperation', () => {
 			masterRef: 'Copy!A1',
 			ref: 'Copy!A1:A2',
 		})
+		expect(copy?.cells.get(3, 0)?.formula).toBe('SUM(Copy!C4:D5)')
 		expect(copy?.cells.get(3, 0)?.formulaInfo).toEqual({ kind: 'array', ref: 'Copy!A4:B5' })
 		expect(copy?.cells.get(6, 0)?.formulaInfo).toEqual({
 			kind: 'dataTable',
@@ -6398,6 +6400,8 @@ describe('applyOperation', () => {
 			masterRef: 'Sheet1!A1',
 			ref: 'Sheet1!A1:A2',
 		})
+		expect(source.cells.get(0, 0)?.formula).toBe('Sheet1!B1*2')
+		expect(source.cells.get(3, 0)?.formula).toBe('SUM(Sheet1!C4:Sheet1!D5)')
 	})
 
 	test('copySheet rejects duplicate and Excel-invalid target names before mutating workbook', () => {

@@ -1584,6 +1584,90 @@ describe('mutation journal exactness model', () => {
 		expect(journalEvidence(wb)).toEqual(before)
 	})
 
+	test('copySheet saved workbooks reopen with formula text and binding metadata retargeted together', async () => {
+		const wb = AscendWorkbook.create()
+		const source = wb.getWorkbookModel().getSheet('Sheet1')
+		if (!source) throw new Error('missing Sheet1')
+		source.cells.set(0, 0, {
+			value: numberValue(2),
+			formula: 'Sheet1!B1*2',
+			styleId: DEFAULT_STYLE_ID,
+			formulaInfo: {
+				kind: 'shared',
+				sharedIndex: 'journal-copy-shared',
+				isMaster: true,
+				masterRef: 'Sheet1!A1',
+				ref: 'Sheet1!A1:A2',
+			},
+		})
+		source.cells.set(1, 0, {
+			value: numberValue(4),
+			formula: null,
+			styleId: DEFAULT_STYLE_ID,
+			formulaInfo: {
+				kind: 'shared',
+				sharedIndex: 'journal-copy-shared',
+				isMaster: false,
+				masterRef: 'Sheet1!A1',
+				ref: 'Sheet1!A1:A2',
+			},
+		})
+		source.cells.set(3, 0, {
+			value: numberValue(4),
+			formula: 'SUM(Sheet1!C4:Sheet1!D5)',
+			styleId: DEFAULT_STYLE_ID,
+			formulaInfo: { kind: 'array', ref: 'Sheet1!A4:B5' },
+		})
+		source.cells.set(6, 0, {
+			value: numberValue(7),
+			formula: null,
+			styleId: DEFAULT_STYLE_ID,
+			formulaInfo: {
+				kind: 'dataTable',
+				ref: 'Sheet1!A7:B8',
+				dtr: true,
+				r1: 'Sheet1!C1',
+				r2: 'Sheet1!D1',
+			},
+		})
+
+		const changed = wb.apply([{ op: 'copySheet', sheet: 'Sheet1', newName: 'Copy' }], {
+			journal: true,
+		})
+		expect(changed.errors).toEqual([])
+		expect(wb.check().valid).toBe(true)
+
+		const reopened = await AscendWorkbook.open(wb.toBytes())
+		expect(reopened.check().valid).toBe(true)
+		expect(reopened.formula('Copy!A1')?.normalizedFormula).toBe('Copy!B1*2')
+		expect(reopened.formula('Copy!A2')?.normalizedFormula).toBe('Copy!B2*2')
+		expect(reopened.formula('Copy!A4')?.normalizedFormula).toBe('SUM(Copy!C4:D5)')
+		expect(reopened.sheet('Copy')?.cell('A1')?.formulaBinding).toEqual({
+			kind: 'shared',
+			sharedIndex: 'journal-copy-shared',
+			isMaster: true,
+			masterRef: 'A1',
+			ref: 'Copy!A1:A2',
+		})
+		expect(reopened.sheet('Copy')?.cell('A2')?.formulaBinding).toEqual({
+			kind: 'shared',
+			sharedIndex: 'journal-copy-shared',
+			isMaster: false,
+			masterRef: 'A1',
+		})
+		expect(reopened.sheet('Copy')?.cell('A4')?.formulaBinding).toEqual({
+			kind: 'array',
+			ref: 'Copy!A4:B5',
+		})
+		expect(reopened.sheet('Copy')?.cell('A7')?.formulaBinding).toEqual({
+			kind: 'dataTable',
+			ref: 'Copy!A7:B8',
+			dtr: true,
+			r1: 'Copy!C1',
+			r2: 'Copy!D1',
+		})
+	})
+
 	test('representative exact journals restore full workbook evidence after inverse apply', () => {
 		const cases: readonly {
 			readonly name: string

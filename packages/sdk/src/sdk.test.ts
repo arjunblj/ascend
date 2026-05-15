@@ -43,7 +43,7 @@ describe('AscendWorkbook', () => {
 			value: `text-${row}`,
 		}))
 		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates }])
-		const fast = wb.toBytes()
+		const fast = wb.toBytes({ compressionProfile: 'fast' })
 		const stored = wb.toBytes({ compressionProfile: 'store' })
 		expect(stored.byteLength).toBeGreaterThan(fast.byteLength)
 

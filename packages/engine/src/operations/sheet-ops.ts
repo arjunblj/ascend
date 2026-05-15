@@ -480,13 +480,17 @@ function retargetCopiedSheetFormulaBindings(
 	newSheetName: string,
 ): void {
 	for (const [row, col, cell] of sheet.cells.iterate()) {
+		const formula =
+			cell.formula === null
+				? null
+				: (rewriteFormulaTextForRename(cell.formula, sourceSheetName, newSheetName) ?? cell.formula)
 		const formulaInfo = retargetCopiedFormulaBinding(
 			cell.formulaInfo,
 			sourceSheetName,
 			newSheetName,
 		)
-		if (formulaInfo === cell.formulaInfo) continue
-		sheet.cells.set(row, col, { ...cell, formulaInfo })
+		if (formula === cell.formula && formulaInfo === cell.formulaInfo) continue
+		sheet.cells.set(row, col, { ...cell, formula, formulaInfo })
 	}
 }
 

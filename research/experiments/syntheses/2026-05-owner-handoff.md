@@ -29,6 +29,8 @@ Compact publication note: `compactReportPublicationEvidence.policyDecisions` now
 
 Correctness boundary note: `correctnessBoundaryEvidence` now includes `missingFeatureNames` and `ownerEscalationRequired`. Current proof reports no missing feature names, but if any unsupported-feature row regresses, correctness owners will get the exact failed feature list in the owner-handoff JSON.
 
+Claim blocker board note: `readiness.claimBlockerBoard` now groups missing gates by claim and owner loop. Owner loops can read `safe-open-proof/product`, `safe-open-proof/performance`, `safe-open-proof/release`, `package-action-proof/product`, `package-action-proof/correctness`, `package-action-proof/performance`, and `package-action-proof/release` rows directly instead of reconstructing ownership from global action lists.
+
 ## Proof Snapshot
 
 Current local proof gate:
@@ -123,6 +125,7 @@ Owner loops should consume these JSON fields first:
 | --- | --- |
 | `readiness.implementationSurfacePromotionAllowed` | Fail-closed guard for new SDK/CLI/API/MCP surfaces. Currently `false`. |
 | `readiness.implementationHandoffs` | Canonical top-two handoffs with owner loops, proof commands, blocker IDs, next-step kinds, and proof requirements. |
+| `readiness.claimBlockerBoard` | Claim/owner rows derived from missing `readyWhen` gates, with blocker IDs, action ranks, next-step kinds, acceptance evidence, and forbidden shortcuts. |
 | `readiness.implementationHandoffs[].proofRequired` | Product-shaped proof ladder: fixture, benchmark, surface, validation gate, competitor contrast, honest boundary, and kill criterion. |
 | `fixturePolicyEvidence` | Summarizes tracked safe-open and package-action fixture scans for product gate decisions while keeping public replacement gaps explicit. |
 | `generatedFixtureDecisionEvidence` | Lists every disclosed generated structural case with tracked replacement evidence, owner decision needed, allowed use, and forbidden use. |

@@ -486,6 +486,39 @@ describe('release proof evidence index', () => {
 			acceptanceEvidence: expect.stringContaining('artifact storage path'),
 			forbiddenShortcut: expect.stringContaining('Do not index or publish compact report digests'),
 		})
+		expect(
+			index.readiness.claimBlockerBoard.map((row) => `${row.artifact}/${row.ownerLoop}`),
+		).toEqual([
+			'safe-open-proof/performance',
+			'safe-open-proof/product',
+			'safe-open-proof/release',
+			'package-action-proof/correctness',
+			'package-action-proof/performance',
+			'package-action-proof/product',
+			'package-action-proof/release',
+		])
+		expect(index.readiness.claimBlockerBoard[0]).toMatchObject({
+			artifact: 'safe-open-proof',
+			claim: 'safe unknown workbook opening',
+			ownerLoop: 'performance',
+			blockerCount: 1,
+			requirementIds: ['release-latency-run'],
+			nextStepKinds: ['validation-run'],
+			boundary: expect.stringContaining('routing evidence only'),
+		})
+		expect(
+			index.readiness.claimBlockerBoard.find(
+				(row) => row.artifact === 'package-action-proof' && row.ownerLoop === 'release',
+			),
+		).toMatchObject({
+			blockerCount: 2,
+			requirementIds: ['provenance-boundary', 'compact-report-publication-policy'],
+			nextStepKinds: ['publication-policy'],
+			forbiddenShortcuts: expect.arrayContaining([
+				expect.stringContaining('signed provenance'),
+				expect.stringContaining('compact report digests'),
+			]),
+		})
 		expect(index.readiness.implementationHandoffs).toHaveLength(2)
 		const safeOpenHandoff = index.readiness.implementationHandoffs[0]
 		expect(safeOpenHandoff.rank).toBe(1)
@@ -841,6 +874,23 @@ describe('release proof evidence index', () => {
 			acceptanceEvidence: expect.stringContaining('accepts disclosed generated'),
 			forbiddenShortcut: expect.stringContaining('Do not hide generated fixture provenance'),
 		})
+		expect(handoff.claimBlockerBoard.map((row) => `${row.artifact}/${row.ownerLoop}`)).toEqual([
+			'safe-open-proof/performance',
+			'safe-open-proof/product',
+			'safe-open-proof/release',
+			'package-action-proof/correctness',
+			'package-action-proof/performance',
+			'package-action-proof/product',
+			'package-action-proof/release',
+		])
+		expect(
+			handoff.claimBlockerBoard.find(
+				(row) => row.artifact === 'safe-open-proof' && row.ownerLoop === 'release',
+			),
+		).toMatchObject({
+			requirementIds: ['publication-boundary', 'compact-report-publication-policy'],
+			nextStepKinds: ['publication-policy'],
+		})
 		expect(
 			handoff.nextOwnerActions.find((action) => action.requirementId === 'provenance-boundary'),
 		).toMatchObject({
@@ -882,6 +932,7 @@ describe('release proof evidence index', () => {
 			'practical-latency-contracts',
 		])
 		expect(JSON.stringify(handoff)).not.toContain('"artifacts"')
+		expect(JSON.stringify(handoff)).toContain('"claimBlockerBoard"')
 		expect(JSON.stringify(handoff)).toContain('"nextOwnerActions"')
 	})
 
@@ -906,6 +957,18 @@ describe('release proof evidence index', () => {
 			'Missing by artifact: safe-open-proof=public-edge-fixtures,release-latency-run,publication-boundary',
 		)
 		expect(markdown).toContain('Next owner actions: 10:package-action-proof/edge-fixture-policy')
+		expect(markdown).toContain(
+			'Claim blocker board: safe-open-proof/performance=release-latency-run',
+		)
+		expect(markdown).toContain(
+			'package-action-proof/release=provenance-boundary,compact-report-publication-policy',
+		)
+		expect(markdown).toContain('## Claim Blocker Board')
+		expect(markdown).toContain(
+			'| Artifact | Claim | Owner loop | Blockers | Next steps | Acceptance evidence | Forbidden shortcuts | Boundary |',
+		)
+		expect(markdown).toContain('| safe-open-proof | safe unknown workbook opening | product')
+		expect(markdown).toContain('| package-action-proof | auditable package-part mutation | release')
 		expect(markdown).toContain('## Next Owner Actions')
 		expect(markdown).toContain('## Fixture Policy')
 		expect(markdown).toContain('Current decision: owner-approval-required')

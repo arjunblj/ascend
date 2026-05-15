@@ -8,6 +8,10 @@ Research is no longer a broad sweep. Each direction below must earn its place by
 
 ## Latest Claim Steward Refresh
 
+Proof timestamp: 2026-05-15T18:26:50Z.
+
+Top-claim blocker routing is now explicit. `readiness.claimBlockerBoard` groups each missing `readyWhen` gate by claim and owner loop, carrying blocker IDs, action ranks, next-step kinds, acceptance evidence, and forbidden shortcuts. This gives the two handoff loops a direct claim/owner board without reading every policy object.
+
 Proof timestamp: 2026-05-15T18:20:44Z.
 
 Correctness-boundary regression handling is now explicit. `correctnessBoundaryEvidence` reports `missingFeatureNames` and `ownerEscalationRequired` in addition to `allCurrentEvidencePresent`, so future regressions in signatures, calc-chain, chart/drawing, macro/ActiveX, unknown-part, or streaming evidence become machine-readable owner blockers instead of a vague boolean failure.

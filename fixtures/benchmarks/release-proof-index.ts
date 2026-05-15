@@ -181,6 +181,7 @@ export interface ReleaseProofOwnerHandoffIndex {
 	readonly streamingMatrixEvidence: ReleaseProofStreamingMatrixEvidence
 	readonly compactReportPublicationEvidence: ReleaseProofCompactReportPublicationEvidence
 	readonly nextOwnerActions: readonly ReleaseProofNextOwnerAction[]
+	readonly claimBlockerBoard: readonly ReleaseProofClaimBlockerBoardRow[]
 	readonly implementationHandoffs: readonly ReleaseProofImplementationHandoff[]
 	readonly deferredClaims: readonly ReleaseProofDeferredClaim[]
 	readonly excludedEvidence: readonly ReleaseProofIndexExcludedEvidence[]
@@ -198,7 +199,21 @@ export interface ReleaseProofReadinessSummary {
 	readonly missingByOwnerLoop: Readonly<Record<ReleaseProofReadinessOwner, number>>
 	readonly missingByArtifact: Readonly<Record<ReleaseProofIndexArtifactName, readonly string[]>>
 	readonly nextOwnerActions: readonly ReleaseProofNextOwnerAction[]
+	readonly claimBlockerBoard: readonly ReleaseProofClaimBlockerBoardRow[]
 	readonly implementationHandoffs: readonly ReleaseProofImplementationHandoff[]
+	readonly boundary: string
+}
+
+export interface ReleaseProofClaimBlockerBoardRow {
+	readonly artifact: ReleaseProofIndexArtifactName
+	readonly claim: string
+	readonly ownerLoop: ReleaseProofReadinessOwner
+	readonly blockerCount: number
+	readonly requirementIds: readonly string[]
+	readonly actionRanks: readonly number[]
+	readonly nextStepKinds: readonly ReleaseProofNextOwnerAction['nextStepKind'][]
+	readonly acceptanceEvidence: readonly string[]
+	readonly forbiddenShortcuts: readonly string[]
 	readonly boundary: string
 }
 
@@ -724,8 +739,15 @@ export function releaseProofIndexMarkdown(result: ReleaseProofIndexResult): stri
 		`Missing by owner loop: ${formatOwnerCounts(result.readiness.missingByOwnerLoop)}`,
 		`Missing by artifact: ${formatMissingByArtifact(result.readiness.missingByArtifact)}`,
 		`Next owner actions: ${formatNextOwnerActions(result.readiness.nextOwnerActions)}`,
+		`Claim blocker board: ${formatClaimBlockerBoard(result.readiness.claimBlockerBoard)}`,
 		`Implementation handoffs: ${formatImplementationHandoffs(result.readiness.implementationHandoffs)}`,
 		result.readiness.boundary,
+		'',
+		'## Claim Blocker Board',
+		'',
+		'| Artifact | Claim | Owner loop | Blockers | Next steps | Acceptance evidence | Forbidden shortcuts | Boundary |',
+		'| --- | --- | --- | --- | --- | --- | --- | --- |',
+		...result.readiness.claimBlockerBoard.map(claimBlockerBoardMarkdownRow),
 		'',
 		'## Next Owner Actions',
 		'',
@@ -916,6 +938,7 @@ export function releaseProofOwnerHandoffIndex(
 		),
 		streamingMatrixEvidence: cloneStreamingMatrixEvidence(result.streamingMatrixEvidence),
 		nextOwnerActions: result.readiness.nextOwnerActions,
+		claimBlockerBoard: result.readiness.claimBlockerBoard,
 		implementationHandoffs: result.readiness.implementationHandoffs,
 		deferredClaims: result.deferredClaims,
 		excludedEvidence: result.excludedEvidence,
@@ -1655,6 +1678,7 @@ function releaseReadinessSummary(
 			`${right.artifact}:${right.requirementId}`,
 		)
 	})
+	const claimBlockerBoard = buildClaimBlockerBoard(artifacts, nextOwnerActions)
 	return {
 		releaseGate: headlineClaimsAllowed ? 'ready' : 'blocked-by-publication-policy',
 		headlineClaimsAllowed,
@@ -1668,6 +1692,7 @@ function releaseReadinessSummary(
 		missingByOwnerLoop,
 		missingByArtifact,
 		nextOwnerActions,
+		claimBlockerBoard,
 		implementationHandoffs: buildImplementationHandoffs(
 			artifacts,
 			nextOwnerActions,
@@ -1702,6 +1727,43 @@ function buildImplementationHandoffs(
 			boundary:
 				'Owner handoff for proof, validation, boundary approval, and publication policy only; it is not permission to add new SDK, CLI, API, or MCP surfaces.',
 		}
+	})
+}
+
+function buildClaimBlockerBoard(
+	artifacts: readonly ReleaseProofIndexArtifact[],
+	nextOwnerActions: readonly ReleaseProofNextOwnerAction[],
+): readonly ReleaseProofClaimBlockerBoardRow[] {
+	const rows: ReleaseProofClaimBlockerBoardRow[] = []
+	for (const artifact of artifacts) {
+		for (const ownerLoop of uniqueOwnerLoops(
+			artifact.readyWhen.map((requirement) => requirement.ownerLoop),
+		)) {
+			const actions = nextOwnerActions.filter(
+				(action) => action.artifact === artifact.name && action.ownerLoop === ownerLoop,
+			)
+			if (actions.length === 0) continue
+			rows.push({
+				artifact: artifact.name,
+				claim: artifact.claim,
+				ownerLoop,
+				blockerCount: actions.length,
+				requirementIds: actions.map((action) => action.requirementId),
+				actionRanks: actions.map((action) => action.rank),
+				nextStepKinds: uniqueNextStepKinds(actions.map((action) => action.nextStepKind)),
+				acceptanceEvidence: actions.map((action) => action.acceptanceEvidence),
+				forbiddenShortcuts: actions.map((action) => action.forbiddenShortcut),
+				boundary:
+					'Claim blocker board row is derived from missing readyWhen gates and owner actions. It is routing evidence only, not gate satisfaction or permission to add product surfaces.',
+			})
+		}
+	}
+	return rows.sort((left, right) => {
+		const artifactOrder =
+			artifacts.findIndex((artifact) => artifact.name === left.artifact) -
+			artifacts.findIndex((artifact) => artifact.name === right.artifact)
+		if (artifactOrder !== 0) return artifactOrder
+		return ownerLoopRank(left.ownerLoop) - ownerLoopRank(right.ownerLoop)
 	})
 }
 
@@ -1919,6 +1981,32 @@ function formatImplementationHandoffs(
 		.join('; ')
 }
 
+function formatClaimBlockerBoard(rows: readonly ReleaseProofClaimBlockerBoardRow[]): string {
+	return rows
+		.map(
+			(row) =>
+				`${row.artifact}/${row.ownerLoop}=${row.requirementIds.join(',')}:${row.nextStepKinds.join('+')}`,
+		)
+		.join('; ')
+}
+
+function claimBlockerBoardMarkdownRow(row: ReleaseProofClaimBlockerBoardRow): string {
+	return [
+		row.artifact,
+		row.claim,
+		row.ownerLoop,
+		row.requirementIds.join(','),
+		row.nextStepKinds.join(','),
+		row.acceptanceEvidence.join('; '),
+		row.forbiddenShortcuts.join('; '),
+		row.boundary,
+	]
+		.map((cell) => ` ${cell} `)
+		.join('|')
+		.replace(/^/, '|')
+		.replace(/$/, '|')
+}
+
 function uniqueOwnerLoops(
 	ownerLoops: readonly ReleaseProofReadinessOwner[],
 ): readonly ReleaseProofReadinessOwner[] {
@@ -1930,6 +2018,10 @@ function uniqueOwnerLoops(
 	]
 	const seen = new Set(ownerLoops)
 	return order.filter((owner) => seen.has(owner))
+}
+
+function ownerLoopRank(ownerLoop: ReleaseProofReadinessOwner): number {
+	return (['correctness', 'performance', 'product', 'release'] as const).indexOf(ownerLoop)
 }
 
 function uniqueNextStepKinds(

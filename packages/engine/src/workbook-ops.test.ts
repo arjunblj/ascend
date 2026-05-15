@@ -118,6 +118,32 @@ describe('workbook metadata operations', () => {
 		expect(wb.documentProperties).toEqual({ core: { creator: 'Finance' } })
 	})
 
+	test('setDocumentProperties rejects invalid scalar metadata before mutation', () => {
+		const cases: readonly Operation[] = [
+			{ op: 'setDocumentProperties', properties: { core: { title: 123 } } } as unknown as Operation,
+			{ op: 'setDocumentProperties', properties: { app: { Pages: Number.NaN } } },
+			{
+				op: 'setDocumentProperties',
+				properties: { app: { HeadingPairs: ['Worksheets', Infinity] } },
+			},
+			{
+				op: 'setDocumentProperties',
+				properties: { custom: [{ name: 'Bad', value: Infinity }] },
+			},
+			{ op: 'setDocumentProperties', properties: { custom: [{ name: '  ', value: true }] } },
+		]
+
+		for (const op of cases) {
+			const wb = createWorkbook()
+			wb.documentProperties = { core: { title: 'Before' }, app: { Pages: 1 } }
+			const before = JSON.stringify(wb.documentProperties)
+			const result = applyOperation(wb, op)
+			expectErr(result)
+			expect(result.error.code, JSON.stringify(op)).toBe('VALIDATION_ERROR')
+			expect(JSON.stringify(wb.documentProperties), JSON.stringify(op)).toBe(before)
+		}
+	})
+
 	test('setWorkbookView merges, appends, and deletes view metadata', () => {
 		const wb = createWorkbook()
 		wb.workbookViews.push({ activeTab: 0, firstSheet: 0, visibility: 'visible' })

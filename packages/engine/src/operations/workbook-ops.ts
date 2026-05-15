@@ -483,13 +483,7 @@ function validateDocumentProperties(
 			)
 		}
 		for (const [key, value] of Object.entries(properties.app)) {
-			if (
-				value !== null &&
-				typeof value !== 'string' &&
-				typeof value !== 'number' &&
-				typeof value !== 'boolean' &&
-				!isScalarArray(value)
-			) {
+			if (value !== null && !isDocumentPropertyAppValue(value)) {
 				return err(
 					ascendError(
 						'VALIDATION_ERROR',
@@ -518,8 +512,8 @@ function validateDocumentProperties(
 			}
 			if (
 				typeof property.value !== 'string' &&
-				typeof property.value !== 'number' &&
-				typeof property.value !== 'boolean'
+				typeof property.value !== 'boolean' &&
+				!(typeof property.value === 'number' && Number.isFinite(property.value))
 			) {
 				return err(
 					ascendError(
@@ -531,6 +525,15 @@ function validateDocumentProperties(
 		}
 	}
 	return ok(undefined)
+}
+
+function isDocumentPropertyAppValue(value: unknown): boolean {
+	return (
+		typeof value === 'string' ||
+		typeof value === 'boolean' ||
+		(typeof value === 'number' && Number.isFinite(value)) ||
+		isScalarArray(value)
+	)
 }
 
 function validateWorkbookView(view: NonNullable<SetWorkbookViewOp['view']>): Result<undefined> {
@@ -576,7 +579,9 @@ function isScalarArray(value: unknown): value is readonly (string | number | boo
 		Array.isArray(value) &&
 		value.every(
 			(entry) =>
-				typeof entry === 'string' || typeof entry === 'number' || typeof entry === 'boolean',
+				typeof entry === 'string' ||
+				typeof entry === 'boolean' ||
+				(typeof entry === 'number' && Number.isFinite(entry)),
 		)
 	)
 }

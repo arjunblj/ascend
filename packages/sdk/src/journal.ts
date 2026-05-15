@@ -5209,20 +5209,92 @@ function documentPropertiesValueIssues(
 		issues.push(
 			workbookMetadataUnsupportedValueIssue(op.op, 'core', ['workbook:documentProperties']),
 		)
+	} else if (isPlainJournalObject(core)) {
+		for (const [key, value] of Object.entries(core)) {
+			if (value !== null && value !== undefined && typeof value !== 'string') {
+				issues.push(
+					workbookMetadataUnsupportedValueIssue(op.op, `core.${key}`, [
+						'workbook:documentProperties',
+					]),
+				)
+			}
+		}
 	}
 	const app = (properties as { readonly app?: unknown }).app
 	if (app !== undefined && app !== null && !isPlainJournalObject(app)) {
 		issues.push(
 			workbookMetadataUnsupportedValueIssue(op.op, 'app', ['workbook:documentProperties']),
 		)
+	} else if (isPlainJournalObject(app)) {
+		for (const [key, value] of Object.entries(app)) {
+			if (value !== null && !isJournalDocumentPropertyAppValue(value)) {
+				issues.push(
+					workbookMetadataUnsupportedValueIssue(op.op, `app.${key}`, [
+						'workbook:documentProperties',
+					]),
+				)
+			}
+		}
 	}
 	const custom = (properties as { readonly custom?: unknown }).custom
 	if (custom !== undefined && custom !== null && !Array.isArray(custom)) {
 		issues.push(
 			workbookMetadataUnsupportedValueIssue(op.op, 'custom', ['workbook:documentProperties']),
 		)
+	} else if (Array.isArray(custom)) {
+		for (const [index, property] of custom.entries()) {
+			if (!isPlainJournalObject(property)) {
+				issues.push(
+					workbookMetadataUnsupportedValueIssue(op.op, `custom.${index}`, [
+						'workbook:documentProperties',
+					]),
+				)
+				continue
+			}
+			const name = (property as { readonly name?: unknown }).name
+			if (typeof name !== 'string' || name.trim() === '') {
+				issues.push(
+					workbookMetadataUnsupportedValueIssue(op.op, `custom.${index}.name`, [
+						'workbook:documentProperties',
+					]),
+				)
+			}
+			const value = (property as { readonly value?: unknown }).value
+			if (
+				typeof value !== 'string' &&
+				typeof value !== 'boolean' &&
+				!(typeof value === 'number' && Number.isFinite(value))
+			) {
+				issues.push(
+					workbookMetadataUnsupportedValueIssue(op.op, `custom.${index}.value`, [
+						'workbook:documentProperties',
+					]),
+				)
+			}
+		}
 	}
 	return issues
+}
+
+function isJournalDocumentPropertyAppValue(value: unknown): boolean {
+	return (
+		typeof value === 'string' ||
+		typeof value === 'boolean' ||
+		(typeof value === 'number' && Number.isFinite(value)) ||
+		isJournalScalarArray(value)
+	)
+}
+
+function isJournalScalarArray(value: unknown): boolean {
+	return (
+		Array.isArray(value) &&
+		value.every(
+			(entry) =>
+				typeof entry === 'string' ||
+				typeof entry === 'boolean' ||
+				(typeof entry === 'number' && Number.isFinite(entry)),
+		)
+	)
 }
 
 function journalSetWorkbookView(

@@ -1375,7 +1375,15 @@ describe('mutation journal exactness model', () => {
 		const cases: readonly Operation[] = [
 			{ op: 'setWorkbookProperties', properties: { codeName: '  ' } },
 			{ op: 'setWorkbookProperties', properties: { defaultThemeVersion: -1 } },
+			{ op: 'setDocumentProperties', properties: { core: { title: 123 } } } as unknown as Operation,
+			{ op: 'setDocumentProperties', properties: { app: { Pages: Number.NaN } } },
+			{
+				op: 'setDocumentProperties',
+				properties: { app: { HeadingPairs: ['Worksheets', Infinity] } },
+			},
 			{ op: 'setDocumentProperties', properties: { custom: {} } } as unknown as Operation,
+			{ op: 'setDocumentProperties', properties: { custom: [{ name: 'Bad', value: Infinity }] } },
+			{ op: 'setDocumentProperties', properties: { custom: [{ name: '  ', value: true }] } },
 			{ op: 'setWorkbookView', view: { activeTab: 0 }, index: 2 },
 			{ op: 'setWorkbookView', view: { activeTab: -1 } },
 			{ op: 'setCalcSettings', settings: { calcMode: 'bad' } } as unknown as Operation,

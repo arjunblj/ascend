@@ -813,10 +813,16 @@ const args = applyInputFileShape(parsedArgs, inputFileContext?.shape, {
 	rowsExplicit,
 	colsExplicit,
 })
+const inputLoadStart = performance.now()
 let input = await loadInput(args, inputFileContext)
+const inputLoadMs = performance.now() - inputLoadStart
+const inputCacheStart = performance.now()
 const inputCacheFile = args.inputFile ? undefined : materializeGeneratedInputCache(input, args)
+const inputCacheWriteMs = performance.now() - inputCacheStart
+const worksheetXmlLoadStart = performance.now()
 const worksheetXml =
 	args.phase === 'all' || args.phase === 'xml' ? loadFirstWorksheetXml(input.xlsxBytes) : undefined
+const worksheetXmlLoadMs = performance.now() - worksheetXmlLoadStart
 if (
 	args.phase === 'read' ||
 	args.phase === 'direct' ||
@@ -848,6 +854,13 @@ const payload = {
 	...benchmarkCommands(args, inputCacheFile ?? args.inputFile),
 	...(inputCacheFile ? { inputCacheFile } : {}),
 	...(inputFileContext?.shape ? { inputFileShape: inputFileContext.shape } : {}),
+	diagnosticCeilingPhases: {
+		inputLoadMs,
+		inputCacheWriteMs,
+		worksheetXmlLoadMs,
+		measurementGuardrail:
+			'Diagnostic setup phases are excluded from sample medians; use --input-file from profileCommand when profiling user-visible read phases.',
+	},
 	summary: summarize(samples),
 	samples,
 }

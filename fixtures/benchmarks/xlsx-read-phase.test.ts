@@ -36,6 +36,12 @@ describe('xlsx-read-phase CLI', () => {
 			expect(exitCode).toBe(0)
 			const result = JSON.parse(stdout) as {
 				readonly inputCacheFile?: string
+				readonly diagnosticCeilingPhases?: {
+					readonly inputLoadMs?: number
+					readonly inputCacheWriteMs?: number
+					readonly worksheetXmlLoadMs?: number
+					readonly measurementGuardrail?: string
+				}
 				readonly reproCommand?: string
 				readonly profileCommand?: string
 				readonly summary?: {
@@ -49,6 +55,12 @@ describe('xlsx-read-phase CLI', () => {
 			expect(result.summary?.worksheetInflateMedianMs).toBeNumber()
 			expect(result.summary?.worksheetDecodeMedianMs).toBeNumber()
 			expect(result.summary?.dominantPhase).toBeString()
+			expect(result.diagnosticCeilingPhases?.inputLoadMs).toBeNumber()
+			expect(result.diagnosticCeilingPhases?.inputCacheWriteMs).toBeNumber()
+			expect(result.diagnosticCeilingPhases?.worksheetXmlLoadMs).toBeNumber()
+			expect(result.diagnosticCeilingPhases?.measurementGuardrail).toContain(
+				'excluded from sample medians',
+			)
 			expect(result.inputCacheFile).toBeString()
 			expect(await Bun.file(result.inputCacheFile ?? '').exists()).toBe(true)
 			expect(result.reproCommand).toContain('bun run fixtures/benchmarks/xlsx-read-phase.ts')

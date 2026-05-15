@@ -5209,6 +5209,7 @@ function budgetAgentViewResult(
 	requestedApproxTokens: number,
 ): AgentViewResult {
 	const budget = Math.max(64, Math.floor(requestedApproxTokens))
+	const unbudgetedApproxTokens = estimateAgentViewApproxTokens(result)
 	const baseColumnSampleValues = countAgentViewColumnSampleValues(result.columns)
 	let sampleRowLimit = result.samples.length
 	let columnSampleValueLimit = result.columns.reduce(
@@ -5223,6 +5224,7 @@ function budgetAgentViewResult(
 		columnSampleValueLimit,
 		formulaPatternLimit,
 		baseColumnSampleValues,
+		unbudgetedApproxTokens,
 	)
 
 	while (
@@ -5243,6 +5245,7 @@ function budgetAgentViewResult(
 			columnSampleValueLimit,
 			formulaPatternLimit,
 			baseColumnSampleValues,
+			unbudgetedApproxTokens,
 		)
 	}
 
@@ -5256,6 +5259,7 @@ function buildBudgetedAgentViewResult(
 	columnSampleValueLimit: number,
 	formulaPatternLimit: number,
 	baseColumnSampleValues: number,
+	unbudgetedApproxTokens: number,
 ): AgentViewResult {
 	const columns = result.columns.map((column) =>
 		column.sampleValues.length > columnSampleValueLimit
@@ -5275,6 +5279,7 @@ function buildBudgetedAgentViewResult(
 	const budget = {
 		requestedApproxTokens,
 		estimatedApproxTokens: 0,
+		unbudgetedApproxTokens,
 		estimator: 'json-bytes-div-4' as const,
 		truncated: omittedSampleRows > 0 || omittedColumnSampleValues > 0 || omittedFormulaPatterns > 0,
 		omittedSampleRows,

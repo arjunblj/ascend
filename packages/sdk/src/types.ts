@@ -1049,6 +1049,7 @@ export interface AgentSampleRow {
 export interface AgentViewBudgetInfo {
 	readonly requestedApproxTokens: number
 	readonly estimatedApproxTokens: number
+	readonly unbudgetedApproxTokens: number
 	readonly estimator: 'json-bytes-div-4'
 	readonly truncated: boolean
 	readonly omittedSampleRows: number

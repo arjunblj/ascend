@@ -768,6 +768,7 @@ describe('AscendWorkbook', () => {
 
 		expect(budgeted?.budget).toBeDefined()
 		expect(budgeted?.budget?.requestedApproxTokens).toBe(target)
+		expect(budgeted?.budget?.unbudgetedApproxTokens).toBe(fullApproxTokens)
 		expect(budgeted?.budget?.estimatedApproxTokens).toBeLessThan(fullApproxTokens)
 		expect(budgeted?.budget?.truncated).toBe(true)
 		expect(budgeted?.rowCount).toBe(full.rowCount)

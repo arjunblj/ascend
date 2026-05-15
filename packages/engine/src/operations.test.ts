@@ -6712,6 +6712,72 @@ describe('applyOperation', () => {
 		expect(sheet.cells.get(1, 3)?.formulaInfo).toBeUndefined()
 	})
 
+	test('sortRange materializes non-shared formula metadata before sorting', () => {
+		const cases: readonly {
+			readonly name: string
+			readonly setup: (sheet: Sheet) => void
+			readonly range: string
+			readonly affectedCells: readonly string[]
+			readonly assert: (sheet: Sheet) => void
+		}[] = [
+			{
+				name: 'dynamic spill range',
+				setup: (sheet) => {
+					sheet.cells.set(0, 0, { value: stringValue('a'), formula: null, styleId: sid })
+					sheet.cells.set(1, 0, { value: stringValue('b'), formula: null, styleId: sid })
+					sheet.cells.set(2, 0, { value: stringValue('c'), formula: null, styleId: sid })
+					addDynamicArrayAnchorWithStaleSpillFootprint(sheet, 'Sheet1!D1')
+				},
+				range: 'A1:D3',
+				affectedCells: ['D1', 'D2', 'D3'],
+				assert: (sheet) => {
+					expect(sheet.cells.get(0, 3)?.formulaInfo).toBeUndefined()
+					expect(sheet.cells.get(1, 3)?.formulaInfo).toBeUndefined()
+					expect(sheet.cells.get(2, 3)?.formulaInfo).toBeUndefined()
+				},
+			},
+			{
+				name: 'data-table range',
+				setup: (sheet) => {
+					for (let row = 0; row < 5; row++) {
+						sheet.cells.set(row, 0, {
+							value: stringValue(String.fromCharCode(97 + row)),
+							formula: null,
+							styleId: sid,
+						})
+					}
+					addDataTableFormula(sheet)
+				},
+				range: 'A1:C5',
+				affectedCells: ['C3'],
+				assert: (sheet) => {
+					expect(sheet.cells.get(2, 2)?.formulaInfo).toBeUndefined()
+					expect(sheet.cells.get(3, 2)?.value).toEqual(numberValue(20))
+					expect(sheet.cells.get(4, 2)?.value).toEqual(numberValue(30))
+				},
+			},
+		]
+
+		for (const entry of cases) {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			entry.setup(sheet)
+
+			const result = applyOperation(wb, {
+				op: 'sortRange',
+				sheet: 'Sheet1',
+				range: entry.range,
+				by: [{ column: 'A' }],
+			})
+			expectOk(result)
+
+			for (const ref of entry.affectedCells) {
+				expect(result.value.affectedCells, entry.name).toContain(ref)
+			}
+			entry.assert(sheet)
+		}
+	})
+
 	test('sortRange preserves formula metadata outside the sorted rows', () => {
 		const wb = createWorkbook()
 		const source = wb.addSheet('Source')

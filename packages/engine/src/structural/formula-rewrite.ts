@@ -330,7 +330,8 @@ export function rewriteSheetNameInFormulas(
 	workbook: Workbook,
 	oldName: string,
 	newName: string,
-): void {
+): FormulaRewriteCell[] {
+	const rewrittenCells: FormulaRewriteCell[] = []
 	for (const sheet of workbook.sheets) {
 		const updates: [number, number, Cell][] = []
 		for (const [row, col, existing] of sheet.cells.iterate()) {
@@ -352,8 +353,10 @@ export function rewriteSheetNameInFormulas(
 		}
 		for (const [row, col, updated] of updates) {
 			sheet.cells.set(row, col, updated)
+			rewrittenCells.push({ sheetName: sheet.name, ref: toA1({ row, col }) })
 		}
 	}
+	return rewrittenCells
 }
 
 export function rewriteSheetNameInDefinedNames(

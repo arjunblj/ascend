@@ -5275,13 +5275,20 @@ describe('applyOperation', () => {
 	test('renameSheet updates whole-column references in formulas and defined names', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')
+		const other = wb.addSheet('Other')
 		s.cells.set(0, 0, cell(EMPTY, 'SUM(Sheet1!A:A)'))
+		other.cells.set(0, 0, cell(EMPTY, 'Sheet1!A1*2'))
 		wb.definedNames.set('AllA', 'Sheet1!A:A')
 
-		applyOperation(wb, { op: 'renameSheet', sheet: 'Sheet1', newName: 'Data' })
+		const result = applyOperation(wb, { op: 'renameSheet', sheet: 'Sheet1', newName: 'Data' })
+		expectOk(result)
 
 		expect(s.cells.get(0, 0)?.formula).toBe('SUM(Data!A:A)')
+		expect(other.cells.get(0, 0)?.formula).toBe('Data!A1*2')
 		expect(wb.definedNames.get('AllA')).toBe('Data!A:A')
+		expect(result.value.affectedCells).toContain('Data!A1')
+		expect(result.value.affectedCells).toContain('Other!A1')
+		expect(result.value.sheetsModified).toEqual(['Data', 'Other'])
 	})
 
 	test('renameSheet updates 3D sheet-span endpoints in formulas', () => {

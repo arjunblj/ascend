@@ -83,7 +83,10 @@ export function handleRenameSheet(
 	materializeWorkbookFormulaBindingsForRename(workbook, sheet, op.newName, affected, sheetsModified)
 	sheet.name = op.newName
 	workbook.invalidateSheetCache()
-	rewriteSheetNameInFormulas(workbook, oldName, op.newName)
+	for (const rewritten of rewriteSheetNameInFormulas(workbook, oldName, op.newName)) {
+		affected.add(`${rewritten.sheetName}!${rewritten.ref}`)
+		sheetsModified.add(rewritten.sheetName)
+	}
 	rewriteSheetNameInDefinedNames(workbook, oldName, op.newName)
 	rewriteChartSheetReferencesForRename(workbook, oldName, op.newName)
 	for (const workbookSheet of workbook.sheets) {

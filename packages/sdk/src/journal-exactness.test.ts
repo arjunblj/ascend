@@ -292,6 +292,42 @@ describe('mutation journal exactness model', () => {
 		})
 	})
 
+	test('classifies missing-sheet journal preimage failures as sheet topology', () => {
+		const ops: readonly Operation[] = [
+			{ op: 'setTabColor', sheet: 'Missing', color: 'FF0000' },
+			{ op: 'setSheetProtection', sheet: 'Missing', options: { sort: true } },
+			{ op: 'moveSheet', sheet: 'Missing', position: 0 },
+			{ op: 'setRowHeight', sheet: 'Missing', row: 1, height: 24 },
+			{ op: 'setColWidth', sheet: 'Missing', col: 1, width: 16 },
+			{ op: 'hideSheet', sheet: 'Missing', hidden: true },
+			{ op: 'hideRows', sheet: 'Missing', at: 0, count: 1, hidden: true },
+			{ op: 'hideCols', sheet: 'Missing', at: 0, count: 1, hidden: true },
+			{ op: 'groupRows', sheet: 'Missing', from: 0, to: 1 },
+			{ op: 'groupCols', sheet: 'Missing', from: 0, to: 1 },
+		]
+
+		for (const op of ops) {
+			const wb = AscendWorkbook.create()
+			const analysis = analyzeMutationJournalExactness(
+				buildMutationJournal(wb.getWorkbookModel(), [op]),
+			)
+			expect(analysis, op.op).toMatchObject({
+				supported: true,
+				exact: false,
+				issueCount: 1,
+				surfaces: ['sheet-layout'],
+				reasons: ['sheet-topology'],
+				hasMatrixViolation: false,
+			})
+			expect(analysis.issues[0], op.op).toMatchObject({
+				code: 'UNSUPPORTED_VALUE',
+				surface: 'sheet-layout',
+				reason: 'sheet-topology',
+				allowedByMatrix: true,
+			})
+		}
+	})
+
 	test('classifies setComment legacy drawing loss without changing the v1 vocabulary', () => {
 		const classified = classifyMutationJournalIssues(lossySetCommentLegacyDrawingJournal().issues)
 		expect(classified).toContainEqual({

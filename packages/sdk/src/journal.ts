@@ -2029,11 +2029,10 @@ function journalSetTabColor(
 			inverseOps: [],
 			preimages: [{ kind: 'sheet-tab-color', sheetTabColor: preimage }],
 			issues: [
-				{
-					code: 'UNSUPPORTED_VALUE',
-					message: `Cannot restore tab color for ${op.sheet} because the sheet was not found`,
-					refs: [`sheet:${op.sheet}`],
-				},
+				missingSheetTopologyIssue(
+					op.sheet,
+					`Cannot restore tab color for ${op.sheet} because the sheet was not found`,
+				),
 			],
 		}
 	}
@@ -2078,11 +2077,10 @@ function journalSetSheetProtection(
 			inverseOps: [],
 			preimages: [{ kind: 'sheet-protection', sheetProtection: preimage }],
 			issues: [
-				{
-					code: 'UNSUPPORTED_VALUE',
-					message: `Cannot restore sheet protection for ${op.sheet} because the sheet was not found`,
-					refs: [`sheet:${op.sheet}`],
-				},
+				missingSheetTopologyIssue(
+					op.sheet,
+					`Cannot restore sheet protection for ${op.sheet} because the sheet was not found`,
+				),
 			],
 		}
 	}
@@ -2135,6 +2133,16 @@ function savedSourceDefinedNamePackageStateIssues(
 ): MutationJournalIssue[] {
 	if (name === '_xlnm.Print_Area') return []
 	return savedSourcePackageStateIssues(workbook, opName, [`name:${name}`])
+}
+
+function missingSheetTopologyIssue(sheet: string, message: string): MutationJournalIssue {
+	return {
+		code: 'UNSUPPORTED_VALUE',
+		message,
+		surface: 'sheet-layout',
+		reason: 'sheet-topology',
+		refs: [`sheet:${sheet}`],
+	}
 }
 
 function journalDeleteSheet(
@@ -2199,10 +2207,10 @@ function journalMoveSheet(
 		position >= 0
 			? [...savedSourcePackageStateIssues(workbook, op.op, [`sheet:${op.sheet}`])]
 			: [
-					{
-						code: 'UNSUPPORTED_VALUE',
-						message: `Cannot restore sheet move for ${op.sheet} because the sheet was not found`,
-					},
+					missingSheetTopologyIssue(
+						op.sheet,
+						`Cannot restore sheet move for ${op.sheet} because the sheet was not found`,
+					),
 				]
 	return {
 		opIndex,
@@ -2247,11 +2255,10 @@ function journalSetSheetLayout(
 			inverseOps: [],
 			preimages: [{ kind: 'sheet-layout', sheetLayout: preimage }],
 			issues: [
-				{
-					code: 'UNSUPPORTED_VALUE',
-					message: `Cannot restore ${axis} layout at ${ref} because the sheet was not found`,
-					refs: [ref],
-				},
+				missingSheetTopologyIssue(
+					op.sheet,
+					`Cannot restore ${axis} layout at ${ref} because the sheet was not found`,
+				),
 			],
 		}
 	}
@@ -2332,11 +2339,10 @@ function journalHideSheet(
 			inverseOps: [],
 			preimages: [{ kind: 'sheet-visibility', sheetVisibility: preimage }],
 			issues: [
-				{
-					code: 'UNSUPPORTED_VALUE',
-					message: `Cannot restore sheet visibility for ${op.sheet} because the sheet was not found`,
-					refs: [`sheet:${op.sheet}`],
-				},
+				missingSheetTopologyIssue(
+					op.sheet,
+					`Cannot restore sheet visibility for ${op.sheet} because the sheet was not found`,
+				),
 			],
 		}
 	}
@@ -2379,11 +2385,10 @@ function journalHideRows(
 			inverseOps: [],
 			preimages: [{ kind: 'rows-hidden', rowsHidden: preimage }],
 			issues: [
-				{
-					code: 'UNSUPPORTED_VALUE',
-					message: `Cannot restore row visibility for ${op.sheet} because the sheet was not found`,
-					refs: [`sheet:${op.sheet}`],
-				},
+				missingSheetTopologyIssue(
+					op.sheet,
+					`Cannot restore row visibility for ${op.sheet} because the sheet was not found`,
+				),
 			],
 		}
 	}
@@ -2438,11 +2443,10 @@ function journalHideCols(
 			inverseOps: [],
 			preimages: [{ kind: 'cols-hidden', colsHidden: preimage }],
 			issues: [
-				{
-					code: 'UNSUPPORTED_VALUE',
-					message: `Cannot restore column visibility for ${op.sheet} because the sheet was not found`,
-					refs: [`sheet:${op.sheet}`],
-				},
+				missingSheetTopologyIssue(
+					op.sheet,
+					`Cannot restore column visibility for ${op.sheet} because the sheet was not found`,
+				),
 			],
 		}
 	}
@@ -2516,11 +2520,10 @@ function journalGroupOutline(
 			inverseOps: [],
 			preimages: [{ kind: 'outline', outline: preimage }],
 			issues: [
-				{
-					code: 'UNSUPPORTED_VALUE',
-					message: `Cannot restore ${axis} outline grouping for ${op.sheet} because the sheet was not found`,
-					refs: [`sheet:${op.sheet}`],
-				},
+				missingSheetTopologyIssue(
+					op.sheet,
+					`Cannot restore ${axis} outline grouping for ${op.sheet} because the sheet was not found`,
+				),
 			],
 		}
 	}

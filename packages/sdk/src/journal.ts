@@ -1531,6 +1531,25 @@ export interface MutationJournal {
 	readonly supported: boolean
 	readonly exact: boolean
 	readonly issues: readonly MutationJournalStructuredIssue[]
+	readonly undoPolicy: MutationJournalUndoPolicy
+}
+
+export type MutationJournalUndoRiskLevel = 'none' | 'low' | 'medium' | 'high'
+
+export type MutationJournalUndoPolicyReason =
+	| 'exact'
+	| 'lossy'
+	| 'lossy-without-inverse'
+	| 'unsupported'
+	| 'unavailable'
+	| 'build-failed'
+
+export interface MutationJournalUndoPolicy {
+	readonly undoable: boolean
+	readonly exact: boolean
+	readonly reason: MutationJournalUndoPolicyReason
+	readonly userMessage: string
+	readonly riskLevel: MutationJournalUndoRiskLevel
 }
 
 export interface MutationJournalClassifiedIssue extends MutationJournalIssueClassification {
@@ -1582,6 +1601,63 @@ export function analyzeMutationJournalExactness(
 		hasUnavailableJournal: issues.some((issue) => issue.code === 'JOURNAL_UNAVAILABLE'),
 		hasJournalBuildFailure: issues.some((issue) => issue.code === 'JOURNAL_BUILD_FAILED'),
 		hasMatrixViolation: issues.some((issue) => !issue.allowedByMatrix),
+	}
+}
+
+export function summarizeMutationJournalUndoPolicy(
+	journal: Pick<MutationJournal, 'supported' | 'exact' | 'inverseOps' | 'issues'>,
+): MutationJournalUndoPolicy {
+	if (journal.supported && journal.exact) {
+		return {
+			undoable: true,
+			exact: true,
+			reason: 'exact',
+			userMessage: 'Undo available.',
+			riskLevel: 'none',
+		}
+	}
+	if (journal.issues.some((issue) => issue.code === 'JOURNAL_BUILD_FAILED')) {
+		return {
+			undoable: false,
+			exact: false,
+			reason: 'build-failed',
+			userMessage: 'Undo is unavailable because Ascend could not build a journal for this edit.',
+			riskLevel: 'high',
+		}
+	}
+	if (journal.issues.some((issue) => issue.code === 'JOURNAL_UNAVAILABLE')) {
+		return {
+			undoable: false,
+			exact: false,
+			reason: 'unavailable',
+			userMessage: 'Undo is unavailable for this edit.',
+			riskLevel: 'high',
+		}
+	}
+	if (!journal.supported) {
+		return {
+			undoable: false,
+			exact: false,
+			reason: 'unsupported',
+			userMessage: 'Undo is unavailable because this edit has no supported inverse operation.',
+			riskLevel: 'high',
+		}
+	}
+	if (journal.inverseOps.length === 0) {
+		return {
+			undoable: false,
+			exact: false,
+			reason: 'lossy-without-inverse',
+			userMessage: 'Undo is unavailable because no public inverse operations were produced.',
+			riskLevel: 'high',
+		}
+	}
+	return {
+		undoable: true,
+		exact: false,
+		reason: 'lossy',
+		userMessage: 'Undo available, but it may not restore every workbook detail exactly.',
+		riskLevel: 'medium',
 	}
 }
 
@@ -1770,18 +1846,18 @@ function sheetRef(sheet: string, ref: string): string {
 }
 
 export function emptyMutationJournal(): MutationJournal {
-	return {
+	return withUndoPolicy({
 		entries: [],
 		inverseOps: [],
 		supported: true,
 		exact: true,
 		issues: [],
-	}
+	})
 }
 
 export function failedMutationJournal(error: unknown): MutationJournal {
 	const detail = error instanceof Error && error.message ? `: ${error.message}` : ''
-	return {
+	return withUndoPolicy({
 		entries: [],
 		inverseOps: [],
 		supported: false,
@@ -1794,14 +1870,14 @@ export function failedMutationJournal(error: unknown): MutationJournal {
 				reason: 'journal-build-failed',
 			},
 		],
-	}
+	})
 }
 
 export function unavailableMutationJournal(
 	message: string,
 	refs?: readonly string[],
 ): MutationJournal {
-	return {
+	return withUndoPolicy({
 		entries: [],
 		inverseOps: [],
 		supported: false,
@@ -1815,18 +1891,25 @@ export function unavailableMutationJournal(
 				...(refs && refs.length > 0 ? { refs } : {}),
 			},
 		],
-	}
+	})
 }
 
 function mutationJournalFromEntries(entries: readonly MutationJournalEntry[]): MutationJournal {
 	const inverseOps = [...entries].reverse().flatMap((entry) => entry.inverseOps)
 	const issues = entries.flatMap((entry) => entry.issues)
-	return {
+	return withUndoPolicy({
 		entries,
 		inverseOps,
 		supported: entries.every((entry) => entry.supported),
 		exact: entries.every((entry) => entry.exact),
 		issues,
+	})
+}
+
+function withUndoPolicy(journal: Omit<MutationJournal, 'undoPolicy'>): MutationJournal {
+	return {
+		...journal,
+		undoPolicy: summarizeMutationJournalUndoPolicy(journal),
 	}
 }
 

@@ -172,6 +172,9 @@ export type {
 	MutationJournalTablePreimage,
 	MutationJournalTableRenamePreimage,
 	MutationJournalTableStylePreimage,
+	MutationJournalUndoPolicy,
+	MutationJournalUndoPolicyReason,
+	MutationJournalUndoRiskLevel,
 } from './journal.ts'
 export {
 	MUTATION_JOURNAL_ISSUE_CODES,
@@ -181,6 +184,7 @@ export {
 	MUTATION_JOURNAL_REASON_DESCRIPTIONS,
 	MUTATION_JOURNAL_SURFACES,
 	structureMutationJournalIssue,
+	summarizeMutationJournalUndoPolicy,
 } from './journal.ts'
 export type {
 	InspectWorkbookOpenPlanOptions,

@@ -2895,6 +2895,13 @@ describe('interactive client contract', () => {
 			supported: true,
 			exact: true,
 			issues: [],
+			undoPolicy: {
+				undoable: true,
+				exact: true,
+				reason: 'exact',
+				userMessage: 'Undo available.',
+				riskLevel: 'none',
+			},
 		})
 
 		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] }])
@@ -2948,6 +2955,13 @@ describe('interactive client contract', () => {
 					reason: 'journal-build-failed',
 				},
 			],
+			undoPolicy: {
+				undoable: false,
+				exact: false,
+				reason: 'build-failed',
+				userMessage: 'Undo is unavailable because Ascend could not build a journal for this edit.',
+				riskLevel: 'high',
+			},
 		})
 
 		const preview = wb.preview(ops, { journal: true })
@@ -2978,6 +2992,13 @@ describe('interactive client contract', () => {
 					reason: 'journal-unavailable',
 				},
 			],
+			undoPolicy: {
+				undoable: false,
+				exact: false,
+				reason: 'unavailable',
+				userMessage: 'Undo is unavailable for this edit.',
+				riskLevel: 'high',
+			},
 		}
 
 		const changed = wb.apply(ops, { journal: true, transaction: true })
@@ -3025,6 +3046,13 @@ describe('interactive client contract', () => {
 					reason: 'journal-unavailable',
 				},
 			],
+			undoPolicy: {
+				undoable: false,
+				exact: false,
+				reason: 'unavailable',
+				userMessage: 'Undo is unavailable for this edit.',
+				riskLevel: 'high',
+			},
 		})
 
 		const preview = partial.preview(ops, { journal: true })
@@ -3195,6 +3223,13 @@ describe('interactive client contract', () => {
 		expect(changed.journal?.inverseOps).toEqual([
 			{ op: 'setFormula', sheet: 'Sheet1', ref: 'A1', formula: '1/0' },
 		])
+		expect(changed.journal?.undoPolicy).toEqual({
+			undoable: true,
+			exact: false,
+			reason: 'lossy',
+			userMessage: 'Undo available, but it may not restore every workbook detail exactly.',
+			riskLevel: 'medium',
+		})
 	})
 
 	test('journals keep unsupported rich-text formula caches lossy', () => {

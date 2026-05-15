@@ -31,7 +31,7 @@ import {
 	sdkCheckIssueFromVerify,
 } from './check-issues.ts'
 import { formatStyledDisplayCellValue } from './format-helpers.ts'
-import { emptyMutationJournal } from './journal.ts'
+import { emptyMutationJournal, unavailableMutationJournal } from './journal.ts'
 import { type LoadedWorkbookSource, openWorkbookSource } from './load.ts'
 import { inspectRawPackagePart } from './raw-package.ts'
 import { WorkbookReadView } from './read-view.ts'
@@ -1361,6 +1361,11 @@ export class AscendSession {
 		if (this.session.isStale()) {
 			const generations = (this.mutableWorkbook ?? this.session.workbook()).readSnapshotInfo()
 				.generations
+			const journal = options.journal
+				? unavailableMutationJournal(
+						'Mutation journal is unavailable because the interactive session is stale. Refresh the session and reread before applying edits.',
+					)
+				: undefined
 			return {
 				apply: {
 					affectedCells: [],
@@ -1369,6 +1374,7 @@ export class AscendSession {
 					dirtyRegions: [],
 					generations,
 					errors: [staleInteractiveSessionError()],
+					...(journal ? { journal } : {}),
 				},
 				recalc: null,
 				load: {

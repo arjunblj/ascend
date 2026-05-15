@@ -2415,15 +2415,34 @@ describe('interactive client contract', () => {
 				'Cannot promote a stale interactive session',
 			)
 
-			const edit = await session.apply([
-				{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'agent edit' }] },
-			])
+			const edit = await session.apply(
+				[{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'agent edit' }] }],
+				{ journal: true },
+			)
 			expect(edit.apply.errors[0]).toMatchObject({
 				code: 'VALIDATION_ERROR',
 				details: {
 					rule: 'stale-interactive-session',
 					staleSession: true,
 					requiredAction: 'refresh',
+				},
+			})
+			expect(edit.apply.journal).toMatchObject({
+				supported: false,
+				exact: false,
+				inverseOps: [],
+				issues: [
+					{
+						code: 'JOURNAL_UNAVAILABLE',
+						surface: 'package-parts',
+						reason: 'journal-unavailable',
+					},
+				],
+				undoPolicy: {
+					undoable: false,
+					exact: false,
+					reason: 'unavailable',
+					riskLevel: 'high',
 				},
 			})
 			expect(edit.load.promotedToFull).toBe(false)

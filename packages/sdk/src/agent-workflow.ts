@@ -915,6 +915,7 @@ export interface AgentModelOutput {
 
 interface ExpectedPostWritePackageGraphChanges {
 	readonly removedPartPaths: ReadonlySet<string>
+	readonly addedPartPaths: ReadonlySet<string>
 }
 
 export interface ApprovalRequirement {
@@ -2699,15 +2700,24 @@ function postWriteOpenOptions(
 	sourceGraph: XlsxPackageGraph,
 	ops: readonly Operation[],
 	sourceWorkbook: Workbook,
-): Pick<WorkbookLoadOptions, 'mode' | 'richMetadata'> {
+): Pick<WorkbookLoadOptions, 'mode' | 'richMetadata' | 'formulaModeHydrateValues'> {
 	if (
 		ops.every((op) => op.op === 'setCells') &&
 		sourceGraph.parts.every((part) => SIMPLE_POST_WRITE_FEATURE_FAMILIES.has(part.featureFamily)) &&
 		!needsRichPostWriteReopen(sourceWorkbook)
 	) {
-		return { mode: 'formula' }
+		return {
+			mode: 'formula',
+			formulaModeHydrateValues: workbookHasFormulaCells(sourceWorkbook),
+		}
 	}
 	return { mode: 'full', richMetadata: true }
+}
+
+function workbookHasFormulaCells(workbook: Workbook): boolean {
+	return workbook.sheets.some(
+		(sheet) => sheet.cells.formulaCellCount() > 0 || sheet.cells.formulaInfoCellCount() > 0,
+	)
 }
 
 function needsRichPostWriteReopen(workbook: Workbook): boolean {
@@ -3284,6 +3294,7 @@ function postWritePhase(
 	postWrite: AgentPostWriteVerification,
 	expectedPackageGraphChanges: ExpectedPostWritePackageGraphChanges = {
 		removedPartPaths: new Set(),
+		addedPartPaths: new Set(),
 	},
 ): AgentTracePhase {
 	const checkErrors = postWrite.check.issues.filter((issue) => issue.severity === 'error')
@@ -3331,6 +3342,7 @@ function postWritePhase(
 					packageGraphAudit: postWrite.packageGraphAudit,
 					expectedPackageGraphChanges: {
 						removedPartPaths: [...expectedPackageGraphChanges.removedPartPaths],
+						addedPartPaths: [...expectedPackageGraphChanges.addedPartPaths],
 					},
 				},
 			)
@@ -3504,18 +3516,31 @@ function expectedPackageGraphChangesForOperations(
 	sourceGraph: XlsxPackageGraph,
 ): ExpectedPostWritePackageGraphChanges {
 	const removedPartPaths = new Set<string>()
+	const addedPartPaths = new Set<string>()
+	let nextTableNumber = nextGeneratedTablePartNumber(workbook, sourceGraph)
 	for (const op of ops) {
-		if (op.op !== 'deleteSheet') continue
-		const sheet = workbook.getSheet(op.sheet)
-		const partPath = sheet?.preservedXml?.partPath
-		if (partPath) removedPartPaths.add(partPath)
+		if (op.op === 'deleteSheet') {
+			const sheet = workbook.getSheet(op.sheet)
+			const partPath = sheet?.preservedXml?.partPath
+			if (partPath) removedPartPaths.add(partPath)
+		}
+		if (op.op === 'copySheet') {
+			const sheet = workbook.getSheet(op.sheet)
+			if (sheet) {
+				for (const table of sheet.tables) {
+					if (table.tableType === 'queryTable' || table.queryTable) continue
+					addedPartPaths.add(`xl/tables/table${nextTableNumber}.xml`)
+					nextTableNumber++
+				}
+			}
+		}
 	}
 	if (ops.some((op) => operationInvalidatesCalcChain(workbook, op))) {
 		for (const part of sourceGraph.parts) {
 			if (part.featureFamily === 'preservedCalcChain') removedPartPaths.add(part.path)
 		}
 	}
-	return { removedPartPaths }
+	return { removedPartPaths, addedPartPaths }
 }
 
 function isExpectedPostWritePackageGraphIssue(
@@ -3523,13 +3548,35 @@ function isExpectedPostWritePackageGraphIssue(
 	expected: ExpectedPostWritePackageGraphChanges,
 ): boolean {
 	const targetPath = packageGraphIssueTargetPath(issue)
-	if (!targetPath || !expected.removedPartPaths.has(targetPath)) return false
+	if (!targetPath) return false
+	if (
+		expected.addedPartPaths.has(targetPath) &&
+		issue.code === 'package_content_type_override' &&
+		issue.featureFamily === 'preservedTable'
+	) {
+		return true
+	}
+	if (!expected.removedPartPaths.has(targetPath)) return false
 	return (
 		issue.code === 'package_content_type_override' ||
 		(issue.featureFamily === 'preservedCalcChain' &&
 			issue.code === 'package_preserved_relationship') ||
 		(issue.code === 'package_preserved_relationship' && issue.featureFamily === 'worksheet')
 	)
+}
+
+function nextGeneratedTablePartNumber(workbook: Workbook, sourceGraph: XlsxPackageGraph): number {
+	let next = 1
+	const visit = (partPath: string | undefined) => {
+		const match = /^xl\/tables\/table(\d+)\.xml$/i.exec(partPath ?? '')
+		if (!match) return
+		next = Math.max(next, Number(match[1]) + 1)
+	}
+	for (const part of sourceGraph.parts) visit(part.path)
+	for (const sheet of workbook.sheets) {
+		for (const table of sheet.tables) visit(table.partPath)
+	}
+	return next
 }
 
 function operationInvalidatesCalcChain(workbook: Workbook, op: Operation): boolean {

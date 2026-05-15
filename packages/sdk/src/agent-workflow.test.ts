@@ -5544,7 +5544,7 @@ describe('agent workflow loss audit', () => {
 		})
 		expect(committed.postWrite.valid).toBe(true)
 		expect(committed.postWrite.check.valid).toBe(true)
-		expect(committed.postWrite.auditsPassed).toBe(false)
+		expect(committed.postWrite.auditsPassed).toBe(true)
 		expect(committed.postWrite.packageGraphAudit.issues).toContainEqual(
 			expect.objectContaining({
 				code: 'package_content_type_override',
@@ -5552,6 +5552,15 @@ describe('agent workflow loss audit', () => {
 				featureFamily: 'preservedTable',
 			}),
 		)
+		expect(committed.postWrite.expectedPackageGraphIssueCount).toBe(1)
+		expect(committed.postWrite.unresolvedPackageGraphIssueCount).toBe(0)
+		const postWritePhase = committed.trace.phases.find((phase) => phase.phase === 'post-write')
+		expect(postWritePhase?.status).toBe('warning')
+		expect(postWritePhase?.details).toMatchObject({
+			expectedPackageGraphChanges: {
+				addedPartPaths: ['xl/tables/table2.xml'],
+			},
+		})
 
 		const reopened = await AscendWorkbook.open(output)
 		expect(reopened.check().valid).toBe(true)

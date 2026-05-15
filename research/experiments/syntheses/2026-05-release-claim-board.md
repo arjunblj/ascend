@@ -10,6 +10,7 @@ Current stewardship rule: hand off only the top one or two product claims to imp
 
 Latest correctness hygiene, 2026-05-15:
 
+- Layout public metadata now rejects invalid visibility, hide, and outline booleans before mutation, and journal exactness classifies the same cases as unsupported values. Treat this as auditable mutation hygiene only.
 - Sheet protection public metadata now follows the same rejection-first boundary as recent workbook/sheet metadata fixes: invalid password/options inputs are rejected before mutation, and journal exactness classifies them as unsupported values.
 - Treat this as auditable mutation hygiene only. It does not promote any new protection/security claim.
 

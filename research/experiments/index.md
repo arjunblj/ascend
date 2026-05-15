@@ -6,6 +6,7 @@ Updated: 2026-05-15
 
 | Run | Status | Fold-in target |
 | --- | --- | --- |
+| [Table style validation boundary](runs/2026/2026-05-15-table-style-validation-boundary/log.md) | folded in rejection-first validation for invalid table style names/flags plus journal unsupported-value classification | correctness loop |
 | [Layout boolean validation boundary](runs/2026/2026-05-15-layout-boolean-validation-boundary/log.md) | folded in rejection-first validation for invalid visibility, hide, and outline booleans plus journal unsupported-value classification | correctness loop |
 | [Owner loop prompt routing](runs/2026/2026-05-15-owner-loop-prompt-routing/log.md) | grouped release-proof owner blockers into product, correctness, performance, and release next-loop prompts without changing production surfaces | topic synthesis, release loop |
 | [Sheet protection validation boundary](runs/2026/2026-05-15-sheet-protection-validation-boundary/log.md) | folded in rejection-first validation for invalid sheet protection password/options metadata plus journal unsupported-value classification | correctness loop |

@@ -19,6 +19,7 @@ const OPEN_PLAN_FILE = 'test-open-plan.xlsx'
 const AGENT_VIEW_FILE = 'test-agent-view.xlsx'
 const JOURNAL_V1_OPS_FILE = 'journal-v1-ops.json'
 const JOURNAL_V1_OUTPUT_FILE = 'journal-v1-output.xlsx'
+const JOURNAL_BUILD_FAILURE_OPS_FILE = 'journal-build-failure-ops.json'
 const PIVOT_CORPUS_FILE = '../../../research/excel-corpus/ms-excel-formulas-and-pivot-tables.xlsx'
 const SLICER_CORPUS_FILE = '../../../research/excel-corpus/excel-dashboard-v2.xlsx'
 const HAS_PIVOT_CORPUS_FILE = existsSync(`${import.meta.dir}/${PIVOT_CORPUS_FILE}`)
@@ -143,6 +144,7 @@ afterAll(() => {
 		APPROVAL_TEST_FILE,
 		JOURNAL_V1_OPS_FILE,
 		JOURNAL_V1_OUTPUT_FILE,
+		JOURNAL_BUILD_FAILURE_OPS_FILE,
 		'exported.tsv',
 		'exported.json',
 		'plan-ops.json',
@@ -537,6 +539,41 @@ describe('ascend cli', () => {
 		const committedParsed = JSON.parse(committed.stdout)
 		expect(committedParsed.ok).toBe(true)
 		expect(committedParsed.data.apply.journalSummary).toEqual(JOURNAL_V1_FIXTURE.scenario.journal)
+	})
+
+	test('plan JSON preserves structured journal build failures for agents', async () => {
+		const wb = AscendWorkbook.create()
+		await wb.save(`${import.meta.dir}/${TEST_FILE}`)
+		await Bun.write(
+			`${import.meta.dir}/${JOURNAL_BUILD_FAILURE_OPS_FILE}`,
+			JSON.stringify([{ op: 'clearRange', sheet: 'Sheet1', range: 'A1:', what: 'all' }]),
+		)
+
+		const planned = await run('plan', TEST_FILE, '--ops', JOURNAL_BUILD_FAILURE_OPS_FILE, '--json')
+
+		expect(planned.exitCode).toBe(1)
+		const parsed = JSON.parse(planned.stdout)
+		expect(parsed.ok).toBe(false)
+		expect(parsed.error.details.plan.preview.journal).toMatchObject({
+			schemaVersion: JOURNAL_V1_FIXTURE.scenario.journal.schemaVersion,
+			schemaId: JOURNAL_V1_FIXTURE.scenario.journal.schemaId,
+			supported: false,
+			exact: false,
+			inverseOps: [],
+			issues: [
+				{
+					code: 'JOURNAL_BUILD_FAILED',
+					surface: 'package-parts',
+					reason: 'journal-build-failed',
+				},
+			],
+			undoPolicy: {
+				undoable: false,
+				exact: false,
+				reason: 'build-failed',
+				riskLevel: 'high',
+			},
+		})
 	})
 
 	test('plan invalid ops return structured batch repair details', async () => {

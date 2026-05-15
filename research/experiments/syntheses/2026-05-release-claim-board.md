@@ -10,6 +10,7 @@ Current stewardship rule: hand off only the top one or two product claims to imp
 
 Latest correctness hygiene, 2026-05-15:
 
+- Table creation public metadata now rejects invalid inputs before table insertion, with matching journal unsupported-value classification. Treat this as auditable mutation hygiene only.
 - Table column public metadata now rejects invalid selectors, names, formulas, and totals metadata before mutating table columns or cells, with matching journal unsupported-value classification. Treat this as auditable mutation hygiene only.
 - Table style public metadata now rejects invalid style names and non-boolean style flags before mutation, with matching journal unsupported-value classification. Treat this as auditable mutation hygiene only.
 - Layout public metadata now rejects invalid visibility, hide, and outline booleans before mutation, and journal exactness classifies the same cases as unsupported values. Treat this as auditable mutation hygiene only.

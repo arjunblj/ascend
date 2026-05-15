@@ -36,7 +36,7 @@ import {
 	type MutationJournal,
 	type MutationJournalIssue,
 } from './journal.ts'
-import { WorkbookDocument } from './session.ts'
+import { WorkbookDocument, type WorkbookLoadOptions } from './session.ts'
 import type { CheckIssue, FormulaReferenceInfo } from './types.ts'
 import { AscendWorkbook } from './workbook.ts'
 
@@ -2085,6 +2085,7 @@ export async function commitAgentPlanFromWorkbook(
 		expectedPostWritePackageGraphChanges,
 		progress,
 		ops,
+		wb.getWorkbookModel(),
 	)
 	await progressFromPhase(postWritePhase(postWrite, expectedPostWritePackageGraphChanges), progress)
 	await progress('check', 'started', 'Reusing pre-write structural checks.')
@@ -2185,6 +2186,7 @@ async function verifyWrittenWorkbook(
 	expectedPackageGraphChanges: ExpectedPostWritePackageGraphChanges,
 	progress: ReturnType<typeof createProgressEmitter>,
 	ops: readonly Operation[],
+	sourceWorkbook: Workbook,
 ): Promise<AgentPostWriteVerification> {
 	const reopened = await timedPostWriteStep(
 		progress,
@@ -2196,7 +2198,7 @@ async function verifyWrittenWorkbook(
 				output,
 				outputSha256,
 				outputBytes,
-				postWriteOpenOptions(sourceGraph, ops),
+				postWriteOpenOptions(sourceGraph, ops, sourceWorkbook),
 			),
 	)
 	const check = await timedPostWriteStep(
@@ -2696,14 +2698,14 @@ const SIMPLE_POST_WRITE_FEATURE_FAMILIES = new Set<string>([
 function postWriteOpenOptions(
 	sourceGraph: XlsxPackageGraph,
 	ops: readonly Operation[],
-): { readonly richMetadata?: boolean } {
+): Pick<WorkbookLoadOptions, 'mode' | 'richMetadata'> {
 	if (
 		ops.every((op) => op.op === 'setCells') &&
 		sourceGraph.parts.every((part) => SIMPLE_POST_WRITE_FEATURE_FAMILIES.has(part.featureFamily))
 	) {
-		return {}
+		return { mode: 'full' }
 	}
-	return { richMetadata: true }
+	return { mode: 'full', richMetadata: true }
 }
 
 export function auditLossPolicy(

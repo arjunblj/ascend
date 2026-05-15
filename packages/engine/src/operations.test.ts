@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import type { Sheet, StyleId, Workbook } from '@ascend/core'
 import { createTableId, createWorkbook } from '@ascend/core'
-import { EMPTY, errorValue, numberValue, stringValue } from '@ascend/schema'
+import { EMPTY, errorValue, numberValue, type Operation, stringValue } from '@ascend/schema'
 import { analyzeWorkbook } from './analysis.ts'
 import { recalculate } from './calc.ts'
 import { defaultCalcContext } from './calc-context.ts'
@@ -2715,6 +2715,71 @@ describe('applyOperation', () => {
 		expect(sheet.cells.get(0, 0)?.formula).toBe('SEQUENCE(3)')
 		expect(sheet.cells.get(0, 0)?.formulaInfo).toBeUndefined()
 		expect(sheet.cells.get(1, 0)?.value).toEqual(numberValue(99))
+	})
+
+	test('moveRange materializes imported formula bindings before moving one member', () => {
+		const cases: readonly {
+			readonly name: string
+			readonly setup: (sheet: Sheet) => void
+			readonly op: Extract<Operation, { op: 'moveRange' }>
+			readonly affectedCells: readonly string[]
+			readonly assert: (sheet: Sheet) => void
+		}[] = [
+			{
+				name: 'shared formula member',
+				setup: (sheet) => {
+					addSharedFormulaGroup(sheet)
+					sheet.cells.set(0, 1, cell(numberValue(10)))
+					sheet.cells.set(1, 1, cell(numberValue(20)))
+				},
+				op: { op: 'moveRange', sheet: 'Sheet1', source: 'A2', target: 'C2', mode: 'all' },
+				affectedCells: ['A1', 'A2', 'C2'],
+				assert: (sheet) => {
+					expect(sheet.cells.get(0, 0)?.formula).toBe('B1*2')
+					expect(sheet.cells.get(0, 0)?.formulaInfo).toBeUndefined()
+					expect(sheet.cells.get(1, 0)).toBeUndefined()
+					expect(sheet.cells.get(1, 2)?.formula).toBe('D2*2')
+					expect(sheet.cells.get(1, 2)?.formulaInfo).toBeUndefined()
+				},
+			},
+			{
+				name: 'dynamic spill member',
+				setup: addDynamicArrayAnchorWithStaleSpillFootprint,
+				op: { op: 'moveRange', sheet: 'Sheet1', source: 'A2', target: 'C2', mode: 'all' },
+				affectedCells: ['A1', 'A2', 'A3', 'C2'],
+				assert: (sheet) => {
+					expect(sheet.cells.get(0, 0)?.formulaInfo).toBeUndefined()
+					expect(sheet.cells.get(1, 0)).toBeUndefined()
+					expect(sheet.cells.get(2, 0)?.formulaInfo).toBeUndefined()
+					expect(sheet.cells.get(1, 2)?.value).toEqual(numberValue(2))
+					expect(sheet.cells.get(1, 2)?.formulaInfo).toBeUndefined()
+				},
+			},
+			{
+				name: 'data-table member',
+				setup: addDataTableFormula,
+				op: { op: 'moveRange', sheet: 'Sheet1', source: 'C4', target: 'E4', mode: 'all' },
+				affectedCells: ['C3', 'E4', 'C4'],
+				assert: (sheet) => {
+					expect(sheet.cells.get(2, 2)?.formulaInfo).toBeUndefined()
+					expect(sheet.cells.get(3, 2)).toBeUndefined()
+					expect(sheet.cells.get(3, 4)?.value).toEqual(numberValue(20))
+					expect(sheet.cells.get(4, 2)?.value).toEqual(numberValue(30))
+				},
+			},
+		]
+
+		for (const entry of cases) {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			entry.setup(sheet)
+
+			const result = applyOperation(wb, entry.op)
+			expectOk(result)
+
+			expect(result.value.affectedCells, entry.name).toEqual(entry.affectedCells)
+			entry.assert(sheet)
+		}
 	})
 
 	test('copyRange exposes comments, hyperlinks, and validation paste modes', () => {

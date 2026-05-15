@@ -2328,9 +2328,12 @@ describe('mutation journal exactness model', () => {
 
 			const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
 			expect(undo.errors, entry.name).toEqual([])
-			expect(Buffer.compare(Buffer.from(wb.toBytes()), Buffer.from(beforeBytes)), entry.name).toBe(
+			const restoredBytes = wb.toBytes()
+			expect(Buffer.compare(Buffer.from(restoredBytes), Buffer.from(beforeBytes)), entry.name).toBe(
 				0,
 			)
+			const reopened = await AscendWorkbook.open(restoredBytes)
+			expect(reopened.check().valid, entry.name).toBe(true)
 		}
 	})
 

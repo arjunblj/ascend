@@ -17,6 +17,7 @@ coverage/
 .coverage/
 *.log
 profiles/
+private/
 benchmark-results.json
 bench-current.json
 bench-results.json
@@ -71,3 +72,9 @@ fixtures/benchmarks/runners/**/__pycache__/
 fixtures/benchmarks/runners/**/bin/
 fixtures/benchmarks/runners/**/obj/
 fixtures/benchmarks/runners/**/target/
+
+# CLI test byproducts
+apps/cli/src/*-ops.json
+apps/cli/src/*-output.xlsx
+apps/cli/src/*-out.xlsx
+apps/cli/src/test-*.xlsx

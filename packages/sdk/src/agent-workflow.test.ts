@@ -1105,6 +1105,56 @@ describe('agent workflow loss audit', () => {
 				},
 			},
 			{
+				name: 'real-legacy-array-member-edit-fails-before-mutation',
+				risk: 'editing one imported legacy-array member could partially destroy fixed array metadata',
+				proof: async () => {
+					const input = join(TEMP_DIR, 'quality-moat-legacy-array.xlsx')
+					const output = join(TEMP_DIR, 'quality-moat-legacy-array-out.xlsx')
+					mkdirSync(TEMP_DIR, { recursive: true })
+					await Bun.write(
+						input,
+						readFileSync(
+							new URL(
+								'../../../fixtures/xlsx/closedxml/Other_Formulas_ArrayFormula.xlsx',
+								import.meta.url,
+							),
+						),
+					)
+
+					const prepared = await createPreparedAgentPlan(input, [
+						{ op: 'setCells' as const, sheet: 'Sheet1', updates: [{ ref: 'B2', value: 99 }] },
+					])
+					expect(prepared.plan.preview.wouldSucceed).toBe(false)
+					expect(prepared.plan.preview.errors).toContainEqual(
+						expect.objectContaining({
+							code: 'VALIDATION_ERROR',
+							refs: ['B2', 'A1:B2'],
+						}),
+					)
+					expect(prepared.plan.preview.journal).toMatchObject({
+						supported: false,
+						exact: false,
+						issues: [
+							expect.objectContaining({
+								surface: 'package-parts',
+								reason: 'journal-unavailable',
+							}),
+						],
+					})
+
+					await expect(prepared.commit({ output, approvals: 'all' })).rejects.toThrow(
+						'Cannot edit B2 because it is part of legacy array formula A1:B2',
+					)
+					expect(existsSync(output)).toBe(false)
+					const reopened = await AscendWorkbook.open(input)
+					expect(reopened.sheet('Sheet1')?.cell('A1')?.formulaBinding).toEqual({
+						kind: 'array',
+						ref: 'A1:B2',
+					})
+					expect(reopened.sheet('Sheet1')?.cell('B2')?.value).toBeUndefined()
+				},
+			},
+			{
 				name: 'fail-closed-blocked-spill-footprint-corruption',
 				risk: 'blocked spill metadata on a non-anchor cell would preserve a stale spill footprint',
 				proof: async () => {

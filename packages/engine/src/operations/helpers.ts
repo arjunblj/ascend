@@ -241,7 +241,7 @@ export function materializeFormulaBindingGroupsForRefs(
 			binding.kind === 'shared'
 				? materializeSharedFormulaGroup(workbook, sheet, binding)
 				: isSpillGroupBinding(binding)
-					? materializeSpillFormulaGroup(sheet, binding)
+					? materializeSpillFormulaGroup(sheet, binding, ref)
 					: new Set<string>()
 		for (const entry of materialized) affected.add(entry)
 	}
@@ -350,10 +350,13 @@ function sameSharedFormulaGroup(
 function materializeSpillFormulaGroup(
 	sheet: Sheet,
 	binding: Extract<CellFormulaBinding, { kind: 'dynamicArray' | 'spill' | 'blockedSpill' }>,
+	anchor: { readonly row: number; readonly col: number },
 ): Set<string> {
 	const affected = new Set<string>()
+	const dynamicAnchorRef =
+		binding.kind === 'dynamicArray' ? `${sheet.name}!${toA1(anchor)}` : undefined
 	for (const [row, col, cell] of sheet.cells.iterate()) {
-		if (!sameSpillFormulaGroup(binding, cell.formulaInfo)) continue
+		if (!sameSpillFormulaGroup(binding, cell.formulaInfo, dynamicAnchorRef)) continue
 		sheet.cells.set(row, col, cellWithExisting(cell.value, null, cell.styleId ?? DEFAULT_SID))
 		affected.add(toA1({ row, col }))
 	}
@@ -459,10 +462,16 @@ function isSpillGroupBinding(
 function sameSpillFormulaGroup(
 	binding: Extract<CellFormulaBinding, { kind: 'dynamicArray' | 'spill' | 'blockedSpill' }>,
 	candidate: CellFormulaBinding | undefined,
+	dynamicAnchorRef?: string,
 ): boolean {
 	if (!candidate) return false
 	if (binding.kind === 'dynamicArray') {
-		return candidate.kind === 'dynamicArray' && candidate.metadataIndex === binding.metadataIndex
+		if (candidate.kind === 'dynamicArray') return candidate.metadataIndex === binding.metadataIndex
+		return (
+			dynamicAnchorRef !== undefined &&
+			(candidate.kind === 'spill' || candidate.kind === 'blockedSpill') &&
+			candidate.anchorRef === dynamicAnchorRef
+		)
 	}
 	if (candidate.kind !== 'spill' && candidate.kind !== 'blockedSpill') return false
 	return candidate.anchorRef === binding.anchorRef

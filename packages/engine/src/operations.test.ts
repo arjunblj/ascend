@@ -98,6 +98,24 @@ function addDynamicArrayAnchor(sheet: Sheet, row = 0, col = 0) {
 	})
 }
 
+function addDynamicArrayAnchorWithStaleSpillFootprint(sheet: Sheet) {
+	const anchorRef = 'Sheet1!A1'
+	const spillRef = 'A1:A3'
+	addDynamicArrayAnchor(sheet)
+	sheet.cells.set(1, 0, {
+		value: numberValue(2),
+		formula: null,
+		styleId: sid,
+		formulaInfo: { kind: 'spill', anchorRef, ref: spillRef, isAnchor: false },
+	})
+	sheet.cells.set(2, 0, {
+		value: numberValue(3),
+		formula: null,
+		styleId: sid,
+		formulaInfo: { kind: 'spill', anchorRef, ref: spillRef, isAnchor: false },
+	})
+}
+
 function addBlockedSpillFormula(sheet: Sheet) {
 	sheet.cells.set(0, 0, {
 		value: errorValue('#SPILL!'),
@@ -616,6 +634,26 @@ describe('applyOperation', () => {
 		expect(sheet.cells.get(0, 0)?.formula).toBeNull()
 		expect(sheet.cells.get(0, 0)?.formulaInfo).toBeUndefined()
 		expect(sheet.cells.get(1, 0)?.value).toEqual(numberValue(9))
+		expect(sheet.cells.get(1, 0)?.formulaInfo).toBeUndefined()
+		expect(sheet.cells.get(2, 0)?.formulaInfo).toBeUndefined()
+	})
+
+	test('setCells detaches stale dynamic-array spill footprints before replacing the anchor', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		addDynamicArrayAnchorWithStaleSpillFootprint(sheet)
+
+		const result = applyOperation(wb, {
+			op: 'setCells',
+			sheet: 'Sheet1',
+			updates: [{ ref: 'A1', value: 9 }],
+		})
+		expectOk(result)
+
+		expect(result.value.affectedCells).toEqual(['A1', 'A2', 'A3'])
+		expect(sheet.cells.get(0, 0)?.value).toEqual(numberValue(9))
+		expect(sheet.cells.get(0, 0)?.formula).toBeNull()
+		expect(sheet.cells.get(0, 0)?.formulaInfo).toBeUndefined()
 		expect(sheet.cells.get(1, 0)?.formulaInfo).toBeUndefined()
 		expect(sheet.cells.get(2, 0)?.formulaInfo).toBeUndefined()
 	})

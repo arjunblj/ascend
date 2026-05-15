@@ -5937,8 +5937,10 @@ function formulaBindingEditRefs(
 			continue
 		}
 		if (isSpillFormulaBinding(binding)) {
+			const dynamicAnchorRef =
+				binding.kind === 'dynamicArray' ? `${sheet.name}!${toA1(ref)}` : undefined
 			for (const [row, col, cell] of sheet.cells.iterate()) {
-				if (sameSpillFormulaBinding(binding, cell.formulaInfo)) push(row, col)
+				if (sameSpillFormulaBinding(binding, cell.formulaInfo, dynamicAnchorRef)) push(row, col)
 			}
 		}
 	}
@@ -5995,10 +5997,16 @@ function sameSpillFormulaBinding(
 		{ kind: 'dynamicArray' | 'spill' | 'blockedSpill' }
 	>,
 	candidate: Cell['formulaInfo'],
+	dynamicAnchorRef?: string,
 ): boolean {
 	if (!candidate) return false
 	if (binding.kind === 'dynamicArray') {
-		return candidate.kind === 'dynamicArray' && candidate.metadataIndex === binding.metadataIndex
+		if (candidate.kind === 'dynamicArray') return candidate.metadataIndex === binding.metadataIndex
+		return (
+			dynamicAnchorRef !== undefined &&
+			(candidate.kind === 'spill' || candidate.kind === 'blockedSpill') &&
+			candidate.anchorRef === dynamicAnchorRef
+		)
 	}
 	if (candidate.kind !== 'spill' && candidate.kind !== 'blockedSpill') return false
 	return candidate.anchorRef === binding.anchorRef

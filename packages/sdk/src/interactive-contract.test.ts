@@ -5197,6 +5197,59 @@ describe('interactive client contract', () => {
 		expect(changedSheet?.cells.get(0, 0)?.formulaInfo).toBeUndefined()
 		expect(changedSheet?.cells.get(1, 0)?.formulaInfo).toBeUndefined()
 
+		const dynamicArrayWb = AscendWorkbook.create()
+		const dynamicArraySheet = dynamicArrayWb.getWorkbookModel().getSheet('Sheet1')
+		if (!dynamicArraySheet) throw new Error('missing sheet')
+		dynamicArraySheet.cells.set(0, 0, {
+			value: numberValue(1),
+			formula: 'SEQUENCE(3)',
+			styleId: DEFAULT_STYLE_ID,
+			formulaInfo: { kind: 'dynamicArray', metadataIndex: 1, collapsed: false },
+		})
+		dynamicArraySheet.cells.set(1, 0, {
+			value: numberValue(2),
+			formula: null,
+			styleId: DEFAULT_STYLE_ID,
+			formulaInfo: {
+				kind: 'spill',
+				anchorRef: 'Sheet1!A1',
+				ref: 'A1:A3',
+				isAnchor: false,
+			},
+		})
+		dynamicArraySheet.cells.set(2, 0, {
+			value: numberValue(3),
+			formula: null,
+			styleId: DEFAULT_STYLE_ID,
+			formulaInfo: {
+				kind: 'spill',
+				anchorRef: 'Sheet1!A1',
+				ref: 'A1:A3',
+				isAnchor: false,
+			},
+		})
+
+		const dynamicArrayChanged = dynamicArrayWb.apply(
+			[{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 9 }] }],
+			{ journal: true },
+		)
+
+		expect(dynamicArrayChanged.errors).toEqual([])
+		expect(dynamicArrayChanged.journal?.supported).toBe(true)
+		expect(dynamicArrayChanged.journal?.exact).toBe(false)
+		expect(dynamicArrayChanged.journal?.issues).toContainEqual({
+			code: 'LOSSY_INVERSE',
+			message: 'Formula binding metadata for Sheet1!A2 cannot be restored with public operations',
+			refs: ['Sheet1!A2'],
+		})
+		const dynamicArrayPreimage = dynamicArrayChanged.journal?.entries[0]?.preimages[0]
+		expect(dynamicArrayPreimage?.kind).toBe('cells')
+		if (dynamicArrayPreimage?.kind !== 'cells') throw new Error('missing cells preimage')
+		expect(dynamicArrayPreimage.cells.map((cell) => cell.ref).sort()).toEqual(['A1', 'A2', 'A3'])
+		const changedDynamicArraySheet = dynamicArrayWb.getWorkbookModel().getSheet('Sheet1')
+		expect(changedDynamicArraySheet?.cells.get(1, 0)?.formulaInfo).toBeUndefined()
+		expect(changedDynamicArraySheet?.cells.get(2, 0)?.formulaInfo).toBeUndefined()
+
 		const dataTableWb = AscendWorkbook.create()
 		const dataTableSheet = dataTableWb.getWorkbookModel().getSheet('Sheet1')
 		if (!dataTableSheet) throw new Error('missing sheet')

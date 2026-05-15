@@ -86,6 +86,10 @@ Owner acceptance checklist:
 - [ ] Release approves local-proof wording that excludes SLSA, in-toto, signed provenance, third-party attestation, and tamper-evident storage.
 - [ ] Release keeps compact report digests unpublished until storage, privacy filtering, canonicalization, and verification expectations exist.
 
+## Source Of Truth
+
+`fixtures/benchmarks/release-proof-index.ts` remains the machine source of truth for release gates. This handoff is a human approval checklist. Do not add a second machine-checked Markdown acceptance table here: the current handoff intentionally has 11 owner checkboxes split from 9 canonical `readyWhen` gates, so treating the Markdown as canonical would duplicate and drift from the release index.
+
 ## Do Not Promote
 
 | Direction | Freeze reason |

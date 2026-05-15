@@ -10,6 +10,7 @@ Current stewardship rule: hand off only the top one or two product claims to imp
 
 Latest correctness hygiene, 2026-05-15:
 
+- `copySheet` now gives copied tables workbook-unique identities/names, retargets copied structured references, and rejects queryTable-backed tables before mutation. Treat this as auditable mutation/formula-reference hygiene only; formula rename remains frozen.
 - Table creation public metadata now rejects invalid inputs before table insertion, with matching journal unsupported-value classification. Treat this as auditable mutation hygiene only.
 - Table column public metadata now rejects invalid selectors, names, formulas, and totals metadata before mutating table columns or cells, with matching journal unsupported-value classification. Treat this as auditable mutation hygiene only.
 - Table style public metadata now rejects invalid style names and non-boolean style flags before mutation, with matching journal unsupported-value classification. Treat this as auditable mutation hygiene only.

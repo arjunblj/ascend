@@ -108,6 +108,46 @@ describe('release proof evidence index', () => {
 		expect(index.fixturePolicyEvidence.packageAction.featureCounts.chartOrDrawing).toBeGreaterThan(
 			0,
 		)
+		expect(index.generatedFixtureDecisionEvidence).toMatchObject({
+			ownerLoop: 'product',
+			status: 'generated-structural-cases-disclosed-owner-approval-required',
+			ownerApprovalRequired: true,
+			allGeneratedStructuralCasesDisclosed: true,
+			publicReplacementGapsRemain: true,
+			validationCommand:
+				'bun run fixtures/benchmarks/release-proof-index.ts --no-timings --owner-handoffs-json',
+			boundary: expect.stringContaining('does not approve generated fixtures'),
+		})
+		expect(index.generatedFixtureDecisionEvidence.cases.map((entry) => entry.caseName)).toEqual([
+			'signed',
+			'unknown-part',
+			'malformed',
+			'signature-invalidation-drop',
+			'unknown-part-error',
+		])
+		expect(index.generatedFixtureDecisionEvidence.cases[0]).toMatchObject({
+			artifact: 'safe-open-proof',
+			gateId: 'public-edge-fixtures',
+			generatedKind: 'generated-edge-package',
+			replacementEvidence: expect.stringContaining('signatureOrUnknownMatches=0'),
+			forbiddenUse: expect.stringContaining('signature verification'),
+		})
+		expect(index.generatedFixtureDecisionEvidence.cases[2]).toMatchObject({
+			caseName: 'malformed',
+			generatedKind: 'generated-malformed-package',
+			allowedUse: expect.stringContaining('malformed-package rejection'),
+			forbiddenUse: expect.stringContaining('arbitrary malformed files'),
+		})
+		expect(index.generatedFixtureDecisionEvidence.cases[3]).toMatchObject({
+			artifact: 'package-action-proof',
+			gateId: 'edge-fixture-policy',
+			replacementEvidence: expect.stringContaining('signaturePackage=0'),
+			forbiddenUse: expect.stringContaining('SLSA'),
+		})
+		expect(index.generatedFixtureDecisionEvidence.cases[4]).toMatchObject({
+			replacementEvidence: expect.stringContaining('syntheticUnknownPathFamily=0'),
+			allowedUse: expect.stringContaining('explicit error action'),
+		})
 		expect(index.performancePolicy).toMatchObject({
 			currentDecision: 'owner-approval-required',
 			boundary: expect.stringContaining('not a release performance threshold'),
@@ -669,6 +709,19 @@ describe('release proof evidence index', () => {
 			'signaturePackage',
 			'syntheticUnknownPathFamily',
 		])
+		expect(handoff.generatedFixtureDecisionEvidence).toMatchObject({
+			status: 'generated-structural-cases-disclosed-owner-approval-required',
+			allGeneratedStructuralCasesDisclosed: true,
+			publicReplacementGapsRemain: true,
+			ownerApprovalRequired: true,
+		})
+		expect(handoff.generatedFixtureDecisionEvidence.cases.map((entry) => entry.caseName)).toEqual([
+			'signed',
+			'unknown-part',
+			'malformed',
+			'signature-invalidation-drop',
+			'unknown-part-error',
+		])
 		expect(handoff.performancePolicy.approvalChecklist.map((item) => item.gateId)).toEqual([
 			'release-latency-run',
 			'streaming-matrix-boundary',
@@ -712,6 +765,9 @@ describe('release proof evidence index', () => {
 			'streaming-scope',
 		])
 		expect(JSON.stringify(handoff.fixturePolicy)).toContain('package-action-fixture-scan')
+		expect(JSON.stringify(handoff.generatedFixtureDecisionEvidence)).toContain(
+			'generated-malformed-package',
+		)
 		expect(JSON.stringify(handoff.performancePolicy)).toContain('safe-open-proof.ts --repeat 3')
 		expect(JSON.stringify(handoff.streamingMatrixEvidence)).toContain(
 			'"missingActionKinds":["add","drop","error"]',
@@ -835,6 +891,18 @@ describe('release proof evidence index', () => {
 		expect(markdown).toContain(
 			'missingReplacementFeatures=signaturePackage,syntheticUnknownPathFamily',
 		)
+		expect(markdown).toContain('Generated fixture decision evidence:')
+		expect(markdown).toContain(
+			'Status: generated-structural-cases-disclosed-owner-approval-required',
+		)
+		expect(markdown).toContain('All generated structural cases disclosed: true')
+		expect(markdown).toContain('| safe-open-proof | public-edge-fixtures | signed')
+		expect(markdown).toContain('| safe-open-proof | public-edge-fixtures | malformed')
+		expect(markdown).toContain(
+			'| package-action-proof | edge-fixture-policy | signature-invalidation-drop',
+		)
+		expect(markdown).toContain('tracked package-action scan found signaturePackage=0')
+		expect(markdown).toContain('Do not claim recovery of arbitrary malformed files')
 		expect(markdown).toContain('## Performance Policy')
 		expect(markdown).toContain('not a release performance threshold')
 		expect(markdown).toContain('| safe-open-proof | release-latency-run | performance')

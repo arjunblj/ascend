@@ -143,6 +143,7 @@ export interface ReleaseProofIndexResult {
 	readonly attestation: false
 	readonly fixturePolicy: ReleaseProofFixturePolicy
 	readonly fixturePolicyEvidence: ReleaseProofFixturePolicyEvidence
+	readonly generatedFixtureDecisionEvidence: ReleaseProofGeneratedFixtureDecisionEvidence
 	readonly performancePolicy: ReleaseProofPerformancePolicy
 	readonly correctnessPolicy: ReleaseProofCorrectnessPolicy
 	readonly correctnessBoundaryEvidence: ReleaseProofCorrectnessBoundaryEvidence
@@ -163,6 +164,7 @@ export interface ReleaseProofOwnerHandoffIndex {
 	readonly missingRequirementCount: number
 	readonly fixturePolicy: ReleaseProofFixturePolicy
 	readonly fixturePolicyEvidence: ReleaseProofFixturePolicyEvidence
+	readonly generatedFixtureDecisionEvidence: ReleaseProofGeneratedFixtureDecisionEvidence
 	readonly performancePolicy: ReleaseProofPerformancePolicy
 	readonly correctnessPolicy: ReleaseProofCorrectnessPolicy
 	readonly correctnessBoundaryEvidence: ReleaseProofCorrectnessBoundaryEvidence
@@ -276,6 +278,28 @@ export interface ReleaseProofFixturePolicyEvidence {
 	readonly safeOpen: ReleaseProofSafeOpenFixturePolicyEvidence
 	readonly packageAction: ReleaseProofPackageActionFixturePolicyEvidence
 	readonly boundary: string
+}
+
+export interface ReleaseProofGeneratedFixtureDecisionEvidence {
+	readonly ownerLoop: 'product'
+	readonly status: 'generated-structural-cases-disclosed-owner-approval-required'
+	readonly ownerApprovalRequired: true
+	readonly allGeneratedStructuralCasesDisclosed: boolean
+	readonly publicReplacementGapsRemain: boolean
+	readonly validationCommand: string
+	readonly cases: readonly ReleaseProofGeneratedFixtureDecisionCase[]
+	readonly boundary: string
+}
+
+export interface ReleaseProofGeneratedFixtureDecisionCase {
+	readonly artifact: ReleaseProofIndexArtifactName
+	readonly gateId: 'public-edge-fixtures' | 'edge-fixture-policy'
+	readonly caseName: string
+	readonly generatedKind: 'generated-edge-package' | 'generated-malformed-package'
+	readonly replacementEvidence: string
+	readonly ownerDecisionNeeded: string
+	readonly allowedUse: string
+	readonly forbiddenUse: string
 }
 
 export interface ReleaseProofSafeOpenFixturePolicyEvidence {
@@ -638,6 +662,7 @@ export async function runReleaseProofIndex(
 		safeOpenArtifact(safeOpen, includeTimings),
 		packageActionArtifact(packageAction, includeTimings),
 	]
+	const fixtureEvidence = fixturePolicyEvidence(safeOpenFixtureScan, packageActionFixtureScan)
 	return {
 		generatedAt: new Date().toISOString(),
 		artifactCount: artifacts.length,
@@ -646,7 +671,8 @@ export async function runReleaseProofIndex(
 		signed: false,
 		attestation: false,
 		fixturePolicy: cloneFixturePolicy(),
-		fixturePolicyEvidence: fixturePolicyEvidence(safeOpenFixtureScan, packageActionFixtureScan),
+		fixturePolicyEvidence: fixtureEvidence,
+		generatedFixtureDecisionEvidence: generatedFixtureDecisionEvidence(fixtureEvidence),
 		performancePolicy: clonePerformancePolicy(),
 		correctnessPolicy: cloneCorrectnessPolicy(),
 		correctnessBoundaryEvidence: correctnessBoundaryEvidence(safeOpen, packageAction),
@@ -731,6 +757,20 @@ export function releaseProofIndexMarkdown(result: ReleaseProofIndexResult): stri
 		'| --- | --- | --- | --- | ---: | ---: | --- | --- | --- | --- |',
 		fixturePolicyEvidenceMarkdownRow(result.fixturePolicyEvidence.safeOpen),
 		fixturePolicyEvidenceMarkdownRow(result.fixturePolicyEvidence.packageAction),
+		'',
+		'Generated fixture decision evidence:',
+		'',
+		`Status: ${result.generatedFixtureDecisionEvidence.status}`,
+		`All generated structural cases disclosed: ${result.generatedFixtureDecisionEvidence.allGeneratedStructuralCasesDisclosed}`,
+		`Public replacement gaps remain: ${result.generatedFixtureDecisionEvidence.publicReplacementGapsRemain}`,
+		`Owner approval required: ${result.generatedFixtureDecisionEvidence.ownerApprovalRequired}`,
+		result.generatedFixtureDecisionEvidence.boundary,
+		'',
+		'| Artifact | Gate | Case | Kind | Replacement evidence | Owner decision needed | Allowed use | Forbidden use |',
+		'| --- | --- | --- | --- | --- | --- | --- | --- |',
+		...result.generatedFixtureDecisionEvidence.cases.map(
+			generatedFixtureDecisionEvidenceMarkdownRow,
+		),
 		'',
 		'## Performance Policy',
 		'',
@@ -841,6 +881,9 @@ export function releaseProofOwnerHandoffIndex(
 		missingRequirementCount: result.readiness.missingRequirementCount,
 		fixturePolicy: cloneFixturePolicy(),
 		fixturePolicyEvidence: cloneFixturePolicyEvidence(result.fixturePolicyEvidence),
+		generatedFixtureDecisionEvidence: cloneGeneratedFixtureDecisionEvidence(
+			result.generatedFixtureDecisionEvidence,
+		),
 		performancePolicy: clonePerformancePolicy(),
 		correctnessPolicy: cloneCorrectnessPolicy(),
 		correctnessBoundaryEvidence: cloneCorrectnessBoundaryEvidence(
@@ -2031,6 +2074,119 @@ function cloneFixturePolicyEvidence(
 			currentGeneratedStructuralCases: [...evidence.packageAction.currentGeneratedStructuralCases],
 			missingReplacementFeatures: [...evidence.packageAction.missingReplacementFeatures],
 		},
+	}
+}
+
+function generatedFixtureDecisionEvidence(
+	fixtureEvidence: ReleaseProofFixturePolicyEvidence,
+): ReleaseProofGeneratedFixtureDecisionEvidence {
+	const cases: ReleaseProofGeneratedFixtureDecisionCase[] = [
+		{
+			artifact: 'safe-open-proof',
+			gateId: 'public-edge-fixtures',
+			caseName: 'signed',
+			generatedKind: 'generated-edge-package',
+			replacementEvidence: `tracked safe-open scan found signatureOrUnknownMatches=${fixtureEvidence.safeOpen.signatureOrUnknownMatches} across ${fixtureEvidence.safeOpen.scanned} fixtures`,
+			ownerDecisionNeeded:
+				'Accept disclosed generated signature package topology as safe-open routing proof, or provide an approved public signed workbook fixture.',
+			allowedUse:
+				'Pre-hydration package-feature routing evidence that detects signature-related package parts.',
+			forbiddenUse:
+				'Do not claim signature verification, signature preservation, trust, malware scanning, signed provenance, or real-world vendor behavior.',
+		},
+		{
+			artifact: 'safe-open-proof',
+			gateId: 'public-edge-fixtures',
+			caseName: 'unknown-part',
+			generatedKind: 'generated-edge-package',
+			replacementEvidence: `tracked safe-open scan found signatureOrUnknownMatches=${fixtureEvidence.safeOpen.signatureOrUnknownMatches} across ${fixtureEvidence.safeOpen.scanned} fixtures`,
+			ownerDecisionNeeded:
+				'Accept disclosed generated unknown-part topology as safe-open routing proof, or provide an approved public unknown-part workbook fixture.',
+			allowedUse:
+				'Pre-hydration package-feature routing evidence that unknown package features require review before hydration.',
+			forbiddenUse:
+				'Do not claim arbitrary unknown-part preservation, understanding, recovery, trust, malware scanning, or signed provenance.',
+		},
+		{
+			artifact: 'safe-open-proof',
+			gateId: 'public-edge-fixtures',
+			caseName: 'malformed',
+			generatedKind: 'generated-malformed-package',
+			replacementEvidence: `tracked safe-open scan rejected ${fixtureEvidence.safeOpen.rejected} fixture(s); malformed proof input remains generated structural bytes`,
+			ownerDecisionNeeded:
+				'Accept disclosed generated malformed-package bytes as rejection-path proof, or provide an approved public malformed workbook fixture.',
+			allowedUse: 'Fail-closed malformed-package rejection evidence for the safe-open harness.',
+			forbiddenUse:
+				'Do not claim recovery of arbitrary malformed files, vendor repair equivalence, malware safety, or file trust.',
+		},
+		{
+			artifact: 'package-action-proof',
+			gateId: 'edge-fixture-policy',
+			caseName: 'signature-invalidation-drop',
+			generatedKind: 'generated-edge-package',
+			replacementEvidence: `tracked package-action scan found signaturePackage=${fixtureEvidence.packageAction.featureCounts.signaturePackage} across ${fixtureEvidence.packageAction.scanned} fixtures`,
+			ownerDecisionNeeded:
+				'Accept disclosed generated signature package topology as package-action invalidation proof, or provide an approved public signed workbook fixture.',
+			allowedUse:
+				'Local package-action accounting evidence that signature package parts are dropped or invalidated after mutation.',
+			forbiddenUse:
+				'Do not claim signature preservation, re-signing, verification, attestation, SLSA, in-toto, or signed provenance.',
+		},
+		{
+			artifact: 'package-action-proof',
+			gateId: 'edge-fixture-policy',
+			caseName: 'unknown-part-error',
+			generatedKind: 'generated-edge-package',
+			replacementEvidence: `tracked package-action scan found syntheticUnknownPathFamily=${fixtureEvidence.packageAction.featureCounts.syntheticUnknownPathFamily} across ${fixtureEvidence.packageAction.scanned} fixtures`,
+			ownerDecisionNeeded:
+				'Accept disclosed generated unknown-part topology as fail-closed package-action proof, or provide an approved public unknown-part workbook fixture.',
+			allowedUse:
+				'Local package-action accounting evidence that an unsupported unknown package part can fail closed with an explicit error action.',
+			forbiddenUse:
+				'Do not claim arbitrary unknown-part preservation, understanding, safe recovery, trust, or signed provenance.',
+		},
+	]
+	return {
+		ownerLoop: 'product',
+		status: 'generated-structural-cases-disclosed-owner-approval-required',
+		ownerApprovalRequired: true,
+		allGeneratedStructuralCasesDisclosed: cases.every((entry) =>
+			FIXTURE_POLICY.currentGeneratedStructuralCases[entry.artifact].includes(entry.caseName),
+		),
+		publicReplacementGapsRemain: fixtureEvidence.publicReplacementGapsRemain,
+		validationCommand:
+			'bun run fixtures/benchmarks/release-proof-index.ts --no-timings --owner-handoffs-json',
+		cases,
+		boundary:
+			'Generated fixture decision evidence is a product-owner input. It does not approve generated fixtures as public binaries, satisfy fixture gates, prove license clearance, or support trust, safety, or signed-provenance claims.',
+	}
+}
+
+function generatedFixtureDecisionEvidenceMarkdownRow(
+	row: ReleaseProofGeneratedFixtureDecisionCase,
+): string {
+	return [
+		row.artifact,
+		row.gateId,
+		row.caseName,
+		row.generatedKind,
+		row.replacementEvidence,
+		row.ownerDecisionNeeded,
+		row.allowedUse,
+		row.forbiddenUse,
+	]
+		.map((cell) => ` ${cell} `)
+		.join('|')
+		.replace(/^/, '|')
+		.replace(/$/, '|')
+}
+
+function cloneGeneratedFixtureDecisionEvidence(
+	evidence: ReleaseProofGeneratedFixtureDecisionEvidence,
+): ReleaseProofGeneratedFixtureDecisionEvidence {
+	return {
+		...evidence,
+		cases: evidence.cases.map((entry) => ({ ...entry })),
 	}
 }
 

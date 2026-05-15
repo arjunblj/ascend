@@ -8,6 +8,10 @@ Research is no longer a broad sweep. Each direction below must earn its place by
 
 ## Latest Claim Steward Refresh
 
+Proof timestamp: 2026-05-15T18:11:28Z.
+
+The top product blocker is now machine-readable as generated fixture decision evidence. `release-proof-index --owner-handoffs-json` emits `generatedFixtureDecisionEvidence` for five disclosed structural cases: safe-open `signed`, `unknown-part`, and `malformed`, plus package-action `signature-invalidation-drop` and `unknown-part-error`. Each row records tracked replacement evidence, owner decision needed, allowed use, and forbidden use while keeping `public-edge-fixtures` and `edge-fixture-policy` missing.
+
 Proof timestamp: 2026-05-15T18:04:42Z.
 
 The portfolio now treats the package-action streaming gap as machine-readable evidence, not prose. `release-proof-index --owner-handoffs-json` emits `streamingMatrixEvidence` with one covered case (`docprops-passthrough`), covered action kinds `passthrough` and `regenerate`, missing action kinds `add`, `drop`, and `error`, and public non-streaming cases `calc-chain-drop`, `macro-passthrough`, and `chart-sidecar-accounting`. This strengthens the rank-2 handoff by proving the boundary while keeping `streaming-matrix-boundary` missing.

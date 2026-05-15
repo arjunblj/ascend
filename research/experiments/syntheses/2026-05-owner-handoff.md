@@ -21,6 +21,8 @@ Compact privacy note: field-level inventory of the two compact reports finds no 
 
 Machine-readable handoff note: the release index now emits `readiness.implementationHandoffs` for the top two claims, and each handoff includes `proofRequired` with fixture, benchmark, existing-surface boundary, validation gate, competitor contrast, honest boundary, and kill criterion. The same JSON result also emits `deferredClaims` for lower-ranked directions that should not promote in this block.
 
+Generated fixture decision note: the release index now emits `generatedFixtureDecisionEvidence` for the product-owned fixture gates. It lists each generated structural case, the tracked replacement evidence, the owner decision needed, allowed use, and forbidden use. This makes fixture acceptance reviewable without marking `public-edge-fixtures` or `edge-fixture-policy` satisfied.
+
 Streaming proof note: the release index now emits `streamingMatrixEvidence` for the package-action performance gate. Current proof covers one streaming case, `docprops-passthrough`, and action kinds `passthrough` and `regenerate`; it explicitly leaves `add`, `drop`, `error`, public macro, and public chart cases unproven for streaming. The gate remains owner-approval required.
 
 ## Proof Snapshot
@@ -119,6 +121,7 @@ Owner loops should consume these JSON fields first:
 | `readiness.implementationHandoffs` | Canonical top-two handoffs with owner loops, proof commands, blocker IDs, next-step kinds, and proof requirements. |
 | `readiness.implementationHandoffs[].proofRequired` | Product-shaped proof ladder: fixture, benchmark, surface, validation gate, competitor contrast, honest boundary, and kill criterion. |
 | `fixturePolicyEvidence` | Summarizes tracked safe-open and package-action fixture scans for product gate decisions while keeping public replacement gaps explicit. |
+| `generatedFixtureDecisionEvidence` | Lists every disclosed generated structural case with tracked replacement evidence, owner decision needed, allowed use, and forbidden use. |
 | `correctnessBoundaryEvidence` | Verifies the unsupported-feature boundary matrix against current package-action and safe-open proof cases while keeping owner approval required. |
 | `streamingMatrixEvidence` | Verifies the representative streaming proof boundary: covered action kinds, missing action kinds, covered case names, non-streaming public cases, and owner approval requirement. |
 | `compactReportPublicationEvidence` | Proves compact report commands and privacy/canonicalization blockers without indexing compact report digests. |

@@ -22,9 +22,9 @@ Ascend recommends a load mode and trust-review branch from XLSX package features
 | Required proof | Current evidence | Status |
 | --- | --- | --- |
 | Fixture mix | Public clean, formula-heavy, macro, pivot, ActiveX, and chart fixtures; synthetic digital signature, unknown package part, and malformed bytes | Covered for local proof; signed/unknown/malformed should become fixture-backed if promoted |
-| Benchmark | Fresh probe measured open-plan against full hydration with 9 repeated samples after warmup | Strong enough for product proof direction, not a CI threshold |
+| Benchmark | Tracked `fixtures/benchmarks/safe-open-proof.ts` harness measures open-plan against full hydration and renders Markdown/JSON proof output | Strong enough for product proof direction, not a CI threshold |
 | API/CLI/MCP surface | Existing SDK `inspectWorkbookOpenPlan`, CLI `ascend open-plan`, API `POST /open-plan`, MCP `ascend.open_plan` | Implemented; do not add another surface |
-| Validation gate | Focused open-plan tests and docs ordering tests already exist; this cycle ran markdown diff validation only | Needs targeted test run if code changes |
+| Validation gate | Focused open-plan tests and docs ordering tests already exist; tracked proof harness has its own routing tests | Needs full typecheck after unrelated dirty reader changes are resolved |
 | Competitor contrast | Microsoft Protected View, openpyxl, SheetJS | Covered |
 | Honest boundary | Malformed bytes reject; active/security/unknown features route to metadata-only review; no malware/sandbox claim | Covered |
 
@@ -33,30 +33,30 @@ Ascend recommends a load mode and trust-review branch from XLSX package features
 Probe command:
 
 ```bash
-bun run research/experiments/runs/2026/2026-05-15-safe-open-proof-bundle/probes/safe-open-proof.ts 9
+bun run fixtures/benchmarks/safe-open-proof.ts --repeat 5 --warmup 1
 ```
 
-The probe script is intentionally inside an ignored `probes/` directory. The tracked evidence is this synthesis and the run log.
+The proof harness is tracked and intentionally not a new product surface. It generates durable synthetic signed, unknown-part, and malformed cases in code, and uses public workbook fixtures for real-workbook cases.
 
 | Case | Fixture | Bytes | Mode | Review before hydration | Risk families | Parts | Relationships | Median open-plan ms | Median full-open ms | Full/open-plan ratio | Boundary |
 | --- | --- | ---: | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
-| clean | `fixtures/xlsx/poi/SampleSS.xlsx` | 9112 | formula | false | none | 13 | 10 | 0.114 | 1.816 | 15.87x | ok |
-| formula-heavy | `fixtures/xlsx/poi/formula_stress_test.xlsx` | 64769 | formula | false | none | 27 | 22 | 0.178 | 5.875 | 33.04x | ok |
-| macro | `fixtures/xlsx/calamine/vba.xlsm` | 12752 | metadata-only | true | preservedMacro | 12 | 9 | 0.058 | 1.209 | 20.73x | ok |
-| pivot | `fixtures/xlsx/poi/ExcelPivotTableSample.xlsx` | 19460 | formula | false | none | 27 | 19 | 0.142 | 2.027 | 14.31x | ok |
-| ActiveX | `fixtures/xlsx/libreoffice/activex_checkbox.xlsx` | 12433 | metadata-only | true | preservedActiveX | 17 | 12 | 0.091 | 1.581 | 17.41x | ok |
-| chart | `fixtures/xlsx/poi/WithChart.xlsx` | 10138 | formula | false | none | 15 | 10 | 0.068 | 1.097 | 16.09x | ok |
-| signed | synthetic digital-signature package | 2293 | metadata-only | true | preservedSignature | 8 | 4 | 0.040 | 0.090 | 2.25x | ok |
-| unknown part | synthetic unknown package part | 1767 | metadata-only | true | preservedOther | 6 | 3 | 0.037 | 0.065 | 1.75x | ok |
+| clean | `fixtures/xlsx/poi/SampleSS.xlsx` | 9112 | formula | false | none | 13 | 10 | 0.186 | 1.978 | 10.64x | ok |
+| formula-heavy | `fixtures/xlsx/poi/formula_stress_test.xlsx` | 64769 | formula | false | none | 27 | 22 | 0.197 | 6.514 | 33.05x | ok |
+| macro | `fixtures/xlsx/calamine/vba.xlsm` | 12752 | metadata-only | true | preservedMacro | 12 | 9 | 0.073 | 1.602 | 21.93x | ok |
+| pivot | `fixtures/xlsx/poi/ExcelPivotTableSample.xlsx` | 19460 | formula | false | none | 27 | 19 | 0.143 | 2.143 | 15.00x | ok |
+| ActiveX | `fixtures/xlsx/libreoffice/activex_checkbox.xlsx` | 12433 | metadata-only | true | preservedActiveX | 17 | 12 | 0.096 | 1.595 | 16.62x | ok |
+| chart | `fixtures/xlsx/poi/WithChart.xlsx` | 10138 | formula | false | none | 15 | 10 | 0.090 | 1.355 | 15.11x | ok |
+| signed | synthetic digital-signature package | 2254 | metadata-only | true | preservedSignature | 8 | 4 | 0.055 | 0.091 | 1.66x | ok |
+| unknown part | synthetic unknown package part | 1697 | metadata-only | true | preservedOther | 6 | 3 | 0.036 | 0.081 | 2.26x | ok |
 | malformed | synthetic malformed bytes | 9 | rejected | n/a | n/a | n/a | n/a | n/a | n/a | n/a | open-plan rejected: Missing end of central directory record |
 
 ## Interpretation
 
-- Public workbook cases show open-plan as a cheap pre-hydration routing step: 14.31x to 33.04x faster than full hydration in this local probe.
+- Public workbook cases show open-plan as a cheap pre-hydration routing step: 10.64x to 33.05x faster than full hydration in this local probe.
 - Active content and security-sensitive package material route to `metadata-only` with `reviewBeforeHydration: true`.
 - Unknown package material routes to `metadata-only` review instead of pretending the workbook is fully understood.
 - Malformed bytes do not get a recommendation. They reject at package inspection, which should be presented as a boundary in any proof bundle.
-- Synthetic signed and unknown cases prove routing semantics, but the public proof bundle should add durable fixture files if this becomes a product-facing report.
+- Synthetic signed and unknown cases are now durable code-generated package cases in the tracked harness, but the product loop may still choose to add binary public fixtures before publishing.
 
 ## Product Boundary
 
@@ -78,7 +78,7 @@ Do not claim:
 
 ## Fold-In Recommendation
 
-Promote to product/performance as a proof bundle over existing surfaces. Do not add another CLI/API/MCP surface. The next production-sized step should be a tracked proof report generator only if product wants this claim published from repeatable fixtures; otherwise the existing open-plan implementation is sufficient.
+Promote to product/performance as a proof bundle over existing surfaces. Do not add another CLI/API/MCP surface. The tracked harness is the repeatable report generator; the next production-sized step should only package the report output into release materials if product wants this claim published.
 
 ## Next Handoff
 

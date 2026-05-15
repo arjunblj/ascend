@@ -215,6 +215,21 @@ function postWriteArgs(args: Args): string[] {
 	]
 }
 
+function tableInspectionArgs(args: Args): string[] {
+	return [
+		'bun',
+		'run',
+		'fixtures/benchmarks/table-inspection-cache.ts',
+		'--row-limit',
+		String(args.rowLimit),
+		'--repeat',
+		String(args.repeat),
+		'--warmup',
+		String(args.warmup),
+		'--json',
+	]
+}
+
 function buildSteps(args: Args): StepSpec[] {
 	const profileDir = join(args.outDir, 'profiles')
 	const steps: StepSpec[] = [
@@ -224,6 +239,11 @@ function buildSteps(args: Args): StepSpec[] {
 			label: 'Cold package scan, ZIP inflate, worksheet decode',
 			command: readPhaseArgs(args, 'zip'),
 			timeoutMs: args.timeoutMs,
+			profileCommand: profileCommand(
+				'contract-first-view-package-scan',
+				readPhaseArgs(args, 'zip'),
+				profileDir,
+			),
 			required: true,
 		},
 		{
@@ -232,6 +252,11 @@ function buildSteps(args: Args): StepSpec[] {
 			label: 'Capped XLSX parse, workbook hydration, first agent window',
 			command: readPhaseArgs(args, 'capped-agent-window'),
 			timeoutMs: args.timeoutMs,
+			profileCommand: profileCommand(
+				'contract-first-view-capped-window',
+				readPhaseArgs(args, 'capped-agent-window'),
+				profileDir,
+			),
 			required: true,
 		},
 		{
@@ -282,6 +307,19 @@ function buildSteps(args: Args): StepSpec[] {
 			label: 'Repeated TUI open/render after cache warmup',
 			command: firstWindowArgs(args, 'tui'),
 			timeoutMs: args.timeoutMs,
+			required: true,
+		},
+		{
+			contract: 'repeated-inspection',
+			id: 'table-inspection-cache',
+			label: 'Repeated table metadata and row-window inspection after cache warmup',
+			command: tableInspectionArgs(args),
+			timeoutMs: args.timeoutMs,
+			profileCommand: profileCommand(
+				'contract-repeated-table-inspection',
+				tableInspectionArgs(args),
+				profileDir,
+			),
 			required: true,
 		},
 	]
@@ -356,9 +394,14 @@ async function runStep(step: StepSpec, outDir: string, dryRun: boolean): Promise
 }
 
 function metric(summary: unknown, key: string): string {
-	if (!summary || typeof summary !== 'object') return ''
+	const value = numericMetric(summary, key)
+	return value === undefined ? '' : value.toFixed(value >= 100 ? 1 : 3)
+}
+
+function numericMetric(summary: unknown, key: string): number | undefined {
+	if (!summary || typeof summary !== 'object') return undefined
 	const value = (summary as Record<string, unknown>)[key]
-	return typeof value === 'number' ? value.toFixed(value >= 100 ? 1 : 3) : ''
+	return typeof value === 'number' && Number.isFinite(value) ? value : undefined
 }
 
 function buildMarkdown(args: Args, results: readonly StepResult[]): string {
@@ -370,9 +413,19 @@ function buildMarkdown(args: Args, results: readonly StepResult[]): string {
 		`Edit workbook: \`${args.editInputFile}\``,
 		`Timeout: ${args.timeoutMs}ms per step`,
 		'',
+		'## Contract Phase Map',
+		'',
+		'- Unknown workbook to safe first agent view: cold package scan, ZIP open, worksheet inflate/decode, capped parse and workbook hydration, first-window shaping, API payload shaping.',
+		'- Edit plan to commit/reopen/verify: plan payload, write, output byte read/hash, reopened output hydration, structural check, formula lint, preservation summary, package graph verification.',
+		'- Repeated viewport/table inspection after first load: process-local cache hit, window shaping, TUI render bytes, table metadata lookup, table row-window materialization, payload bytes.',
+		'',
+		'## Timeout And Progress Behavior',
+		'',
+		`Each step emits \`[contracts] start ...\` and a terminal status to stderr, writes stdout to a \`${basename(args.outDir)}/<contract>-<step>.json\` artifact, and is killed after ${args.timeoutMs}ms. A timeout or failed required step remains visible in this report instead of being silently dropped.`,
+		'',
 		'## Contract 1: Unknown Workbook To Safe First Agent View',
 		'',
-		'Guardrail: report cold package/ZIP/XML work separately from cached first-window results; do not call hot-cache numbers end-to-end.',
+		'Guardrail: report cold package/ZIP/XML work separately from capped first-window results; do not call hot-cache numbers end-to-end, and do not treat the full worksheet scan diagnostic as first-view latency unless the first-view command actually performs it.',
 		'',
 		firstViewTable(results),
 		'',
@@ -398,6 +451,47 @@ function buildMarkdown(args: Args, results: readonly StepResult[]): string {
 		'',
 		nextBottleneck(results),
 		'',
+		'## Guardrails Preventing Fake Speed',
+		'',
+		'- A hot-cache result must name its cache assumption and cannot be reported as end-to-end unknown workbook latency.',
+		'- Full worksheet ZIP/XML scan measurements are diagnostic ceilings; they are not optimization targets for first view unless the capped first-view envelope moves too.',
+		'- A write result is incomplete unless output bytes are written, reopened from bytes or disk, structurally checked, linted, and package graph verified.',
+		'- Synthetic table or writer results must be labeled as generated/cached when workload generation is included or excluded.',
+		'- Any optimization below 2% is noise; 2-5% requires remeasurement; above 5% still needs a profile-backed root cause and no memory/correctness regression.',
+		'',
+	]
+	return `${lines.join('\n')}\n`
+}
+
+function buildProfileMarkdown(args: Args, results: readonly StepResult[]): string {
+	const lines = [
+		'# Ascend Practical Contract Profile Summary',
+		'',
+		`Generated: ${new Date().toISOString()}`,
+		`Output directory: \`${args.outDir}\``,
+		'',
+		'## Where Time Goes',
+		'',
+		phaseRankingTable(results),
+		'',
+		'## Memory And Payload',
+		'',
+		memoryPayloadTable(results),
+		'',
+		'## Next Bottleneck',
+		'',
+		nextBottleneck(results),
+		'',
+		'## Profile Commands To Run Before Code Changes',
+		'',
+		...results
+			.filter((result) => result.profileCommand)
+			.map((result) => `- ${result.contract}/${result.id}: \`${result.profileCommand}\``),
+		'',
+		'## Guardrail',
+		'',
+		'This artifact is a contract report, not an optimization claim. A production change must re-run the same contract subset and show a median movement in one named envelope before it is kept.',
+		'',
 	]
 	return `${lines.join('\n')}\n`
 }
@@ -410,8 +504,8 @@ function firstViewTable(results: readonly StepResult[]): string {
 		'| Phase | Median ms | Memory / payload | Evidence |',
 		'|---|---:|---:|---|',
 		`| ZIP open | ${metric(zip?.summary, 'zipOpenMedianMs')} | | ${statusLink(zip)} |`,
-		`| Worksheet inflate | ${metric(zip?.summary, 'worksheetInflateMedianMs')} | | ${statusLink(zip)} |`,
-		`| Worksheet decode | ${metric(zip?.summary, 'worksheetDecodeMedianMs')} | | ${statusLink(zip)} |`,
+		`| Full worksheet inflate diagnostic | ${metric(zip?.summary, 'worksheetInflateMedianMs')} | | ${statusLink(zip)} |`,
+		`| Full worksheet decode diagnostic | ${metric(zip?.summary, 'worksheetDecodeMedianMs')} | | ${statusLink(zip)} |`,
 		`| Capped read/hydrate | ${metric(capped?.summary, 'cappedReadWindowMedianMs')} | peak RSS ${metric(capped?.summary, 'peakRssBytes')} bytes | ${statusLink(capped)} |`,
 		`| Window shaping | ${metric(capped?.summary, 'cappedAgentWindowMedianMs')} | | ${statusLink(capped)} |`,
 		`| API payload first view | ${metric(api?.summary, 'apiFirstWindowMedianMs')} | ${metric(api?.summary, 'payloadBytesMedian')} bytes | ${statusLink(api)} |`,
@@ -437,11 +531,13 @@ function editVerifyTable(results: readonly StepResult[]): string {
 function repeatedInspectionTable(results: readonly StepResult[]): string {
 	const cached = results.find((entry) => entry.id === 'cached-agent-window')
 	const tui = results.find((entry) => entry.id === 'tui-first-paint-cache')
+	const table = results.find((entry) => entry.id === 'table-inspection-cache')
 	return [
 		'| Phase | Cold median ms | Warm median ms | Payload/render | Evidence |',
 		'|---|---:|---:|---:|---|',
 		`| Cached document first window | ${metric(cached?.summary, 'cappedOpenWindowMedianMs')} | ${metric(cached?.summary, 'cappedWarmOpenWindowMedianMs')} | cells ${metric(cached?.summary, 'cellsMedian')} | ${statusLink(cached)} |`,
 		`| TUI open/render first paint | ${metric(tui?.summary, 'tuiFirstPaintMedianMs')} | ${metric(tui?.summary, 'tuiWarmFirstPaintMedianMs')} | frame ${metric(tui?.summary, 'tuiFrameBytesMedian')} bytes | ${statusLink(tui)} |`,
+		`| Table metadata and row window | ${metric(table?.summary, 'coldOpenMedianMs')} + inspect ${metric(table?.summary, 'coldInspectMedianMs')} | ${metric(table?.summary, 'warmOpenMedianMs')} + inspect ${metric(table?.summary, 'warmInspectMedianMs')} | payload ${metric(table?.summary, 'payloadBytesMedian')} bytes, tables ${metric(table?.summary, 'tableCountMedian')} | ${statusLink(table)} |`,
 	].join('\n')
 }
 
@@ -452,26 +548,201 @@ function statusLink(result: StepResult | undefined): string {
 }
 
 function nextBottleneck(results: readonly StepResult[]): string {
-	const postWrite = results.find((entry) => entry.id === 'post-write-breakdown')
-	const capped = results.find((entry) => entry.id === 'capped-read-window')
-	const api = results.find((entry) => entry.id === 'api-first-view')
-	const write = Number(metric(postWrite?.summary, 'commitWriteMedianMs'))
-	const reopen = Number(metric(postWrite?.summary, 'commitPostWriteReopenMedianMs'))
-	const cappedRead = Number(metric(capped?.summary, 'cappedReadWindowMedianMs'))
-	const apiFirst = Number(metric(api?.summary, 'apiFirstWindowMedianMs'))
-	const candidates = [
-		['edit-verify/write', write],
-		['edit-verify/reopen', reopen],
-		['first-view/capped-read', cappedRead],
-		['first-view/api-payload', apiFirst],
-	] as const
-	const [name, value] = candidates
-		.filter(([, candidate]) => Number.isFinite(candidate) && candidate > 0)
-		.sort((a, b) => b[1] - a[1])[0] ?? ['not-measured', 0]
-	if (name === 'not-measured') {
+	const workflow = results.find((entry) => entry.id === 'workflow-commit')
+	const envelope = {
+		editVerify: numericMetric(workflow?.summary, 'totalMedianMs') ?? 0,
+	}
+	const candidates = rankedOptimizationPhases(results).filter((phase) => phase.medianMs > 0)
+	const selected = candidates[0]
+	if (!selected) {
 		return 'No optimization selected yet: one or more required measurements failed or timed out.'
 	}
-	return `Choose \`${name}\` first. It is the largest measured envelope phase in this report (${value.toFixed(1)}ms median). Max plausible win is bounded by that phase share of its named envelope; changes outside this phase are discarded unless they move the same contract.`
+	const envelopeMs =
+		selected.contract === 'edit-verify' ? envelope.editVerify : selected.envelopeMedianMs
+	const share = envelopeMs > 0 ? (selected.medianMs / envelopeMs) * 100 : 100
+	return `Choose \`${selected.name}\` first. It is the largest measured phase in this report (${selected.medianMs.toFixed(1)}ms median, ${share.toFixed(1)}% of the named envelope/subtotal). Max plausible win is bounded by that phase share; the guardrail is to re-run the same contract and discard changes that only improve an internal hotspot without moving \`${selected.contract}\`.`
+}
+
+function rankedOptimizationPhases(results: readonly StepResult[]): Array<{
+	readonly contract: ContractName
+	readonly name: string
+	readonly medianMs: number
+	readonly envelopeMedianMs: number
+}> {
+	const capped = results.find((entry) => entry.id === 'capped-read-window')
+	const api = results.find((entry) => entry.id === 'api-first-view')
+	const workflow = results.find((entry) => entry.id === 'workflow-commit')
+	const postWrite = results.find((entry) => entry.id === 'post-write-breakdown')
+	const cached = results.find((entry) => entry.id === 'cached-agent-window')
+	const tui = results.find((entry) => entry.id === 'tui-first-paint-cache')
+	const table = results.find((entry) => entry.id === 'table-inspection-cache')
+	const firstViewEnvelope = numericMetric(api?.summary, 'apiFirstWindowMedianMs') ?? 0
+	const editEnvelope = numericMetric(workflow?.summary, 'totalMedianMs') ?? 0
+	const repeatedEnvelope = Math.max(
+		numericMetric(cached?.summary, 'cappedWarmOpenWindowMedianMs') ?? 0,
+		numericMetric(tui?.summary, 'tuiWarmFirstPaintMedianMs') ?? 0,
+		numericMetric(table?.summary, 'warmInspectMedianMs') ?? 0,
+	)
+	return [
+		{
+			contract: 'first-view',
+			name: 'first-view/api-payload-and-open',
+			medianMs: numericMetric(api?.summary, 'apiFirstWindowMedianMs') ?? 0,
+			envelopeMedianMs: firstViewEnvelope,
+		},
+		{
+			contract: 'first-view',
+			name: 'first-view/capped-read-hydrate',
+			medianMs: numericMetric(capped?.summary, 'cappedReadWindowMedianMs') ?? 0,
+			envelopeMedianMs: firstViewEnvelope,
+		},
+		{
+			contract: 'edit-verify',
+			name: 'edit-verify/plan',
+			medianMs: numericMetric(workflow?.summary, 'planMedianMs') ?? 0,
+			envelopeMedianMs: editEnvelope,
+		},
+		{
+			contract: 'edit-verify',
+			name: 'edit-verify/reopen',
+			medianMs: numericMetric(postWrite?.summary, 'commitPostWriteReopenMedianMs') ?? 0,
+			envelopeMedianMs: editEnvelope,
+		},
+		{
+			contract: 'edit-verify',
+			name: 'edit-verify/write-policy-check',
+			medianMs: numericMetric(workflow?.summary, 'commitWritePolicyCheckMedianMs') ?? 0,
+			envelopeMedianMs: editEnvelope,
+		},
+		{
+			contract: 'edit-verify',
+			name: 'edit-verify/post-write-preservation',
+			medianMs: numericMetric(postWrite?.summary, 'commitPostWritePreservationMedianMs') ?? 0,
+			envelopeMedianMs: editEnvelope,
+		},
+		{
+			contract: 'edit-verify',
+			name: 'edit-verify/write',
+			medianMs: numericMetric(postWrite?.summary, 'commitWriteMedianMs') ?? 0,
+			envelopeMedianMs: editEnvelope,
+		},
+		{
+			contract: 'repeated-inspection',
+			name: 'repeated-inspection/tui-warm-first-paint',
+			medianMs: numericMetric(tui?.summary, 'tuiWarmFirstPaintMedianMs') ?? 0,
+			envelopeMedianMs: repeatedEnvelope,
+		},
+		{
+			contract: 'repeated-inspection',
+			name: 'repeated-inspection/cached-agent-window-warm',
+			medianMs: numericMetric(cached?.summary, 'cappedWarmOpenWindowMedianMs') ?? 0,
+			envelopeMedianMs: repeatedEnvelope,
+		},
+		{
+			contract: 'repeated-inspection',
+			name: 'repeated-inspection/table-warm-inspect',
+			medianMs: numericMetric(table?.summary, 'warmInspectMedianMs') ?? 0,
+			envelopeMedianMs: repeatedEnvelope,
+		},
+	].sort((a, b) => b.medianMs - a.medianMs)
+}
+
+function rankedPhases(results: readonly StepResult[]): Array<{
+	readonly contract: ContractName
+	readonly name: string
+	readonly medianMs: number
+}> {
+	const zip = results.find((entry) => entry.id === 'package-scan-zip-xml')
+	const capped = results.find((entry) => entry.id === 'capped-read-window')
+	const api = results.find((entry) => entry.id === 'api-first-view')
+	const workflow = results.find((entry) => entry.id === 'workflow-commit')
+	const postWrite = results.find((entry) => entry.id === 'post-write-breakdown')
+	const cached = results.find((entry) => entry.id === 'cached-agent-window')
+	const tui = results.find((entry) => entry.id === 'tui-first-paint-cache')
+	const table = results.find((entry) => entry.id === 'table-inspection-cache')
+	return [
+		{
+			contract: 'first-view',
+			name: 'diagnostic/full-worksheet-inflate',
+			medianMs: numericMetric(zip?.summary, 'worksheetInflateMedianMs') ?? 0,
+		},
+		{
+			contract: 'first-view',
+			name: 'diagnostic/full-worksheet-decode',
+			medianMs: numericMetric(zip?.summary, 'worksheetDecodeMedianMs') ?? 0,
+		},
+		{
+			contract: 'first-view',
+			name: 'first-view/capped-read-hydrate',
+			medianMs: numericMetric(capped?.summary, 'cappedReadWindowMedianMs') ?? 0,
+		},
+		{
+			contract: 'first-view',
+			name: 'first-view/api-payload',
+			medianMs: numericMetric(api?.summary, 'apiFirstWindowMedianMs') ?? 0,
+		},
+		{
+			contract: 'edit-verify',
+			name: 'edit-verify/plan',
+			medianMs: numericMetric(workflow?.summary, 'planMedianMs') ?? 0,
+		},
+		{
+			contract: 'edit-verify',
+			name: 'edit-verify/write',
+			medianMs: numericMetric(postWrite?.summary, 'commitWriteMedianMs') ?? 0,
+		},
+		{
+			contract: 'edit-verify',
+			name: 'edit-verify/reopen',
+			medianMs: numericMetric(postWrite?.summary, 'commitPostWriteReopenMedianMs') ?? 0,
+		},
+		{
+			contract: 'edit-verify',
+			name: 'edit-verify/check',
+			medianMs: numericMetric(postWrite?.summary, 'commitPostWriteCheckMedianMs') ?? 0,
+		},
+		{
+			contract: 'repeated-inspection',
+			name: 'repeated-inspection/cached-agent-window-cold',
+			medianMs: numericMetric(cached?.summary, 'cappedOpenWindowMedianMs') ?? 0,
+		},
+		{
+			contract: 'repeated-inspection',
+			name: 'repeated-inspection/tui-first-paint-cold',
+			medianMs: numericMetric(tui?.summary, 'tuiFirstPaintMedianMs') ?? 0,
+		},
+		{
+			contract: 'repeated-inspection',
+			name: 'repeated-inspection/table-warm-inspect',
+			medianMs: numericMetric(table?.summary, 'warmInspectMedianMs') ?? 0,
+		},
+	].sort((a, b) => b.medianMs - a.medianMs)
+}
+
+function phaseRankingTable(results: readonly StepResult[]): string {
+	const rows = rankedPhases(results)
+		.filter((phase) => phase.medianMs > 0)
+		.slice(0, 8)
+		.map((phase) => `| ${phase.name} | ${phase.contract} | ${phase.medianMs.toFixed(3)} |`)
+	return ['| Phase | Contract | Median ms |', '|---|---|---:|', ...rows].join('\n')
+}
+
+function memoryPayloadTable(results: readonly StepResult[]): string {
+	const capped = results.find((entry) => entry.id === 'capped-read-window')
+	const api = results.find((entry) => entry.id === 'api-first-view')
+	const workflow = results.find((entry) => entry.id === 'workflow-commit')
+	const postWrite = results.find((entry) => entry.id === 'post-write-breakdown')
+	const table = results.find((entry) => entry.id === 'table-inspection-cache')
+	return [
+		'| Item | Value | Guardrail |',
+		'|---|---:|---|',
+		`| First-view peak RSS | ${metric(capped?.summary, 'peakRssBytes')} bytes | cold capped read/hydrate only |`,
+		`| API first-view payload | ${metric(api?.summary, 'payloadBytesMedian')} bytes | payload shaping is separate from cold XML parse |`,
+		`| Commit payload | ${metric(workflow?.summary, 'commitVerifiedPayloadBytesMedian')} bytes | verified commit payload, not just write bytes |`,
+		`| Post-write output | ${metric(postWrite?.summary, 'outputBytesMedian')} bytes | reopened and verified output |`,
+		`| Table inspection payload | ${metric(table?.summary, 'payloadBytesMedian')} bytes | warm cache result requires cold-open context |`,
+		`| Table inspection peak RSS | ${metric(table?.summary, 'peakRssBytes')} bytes | process-local table benchmark |`,
+	].join('\n')
 }
 
 async function run() {
@@ -486,9 +757,16 @@ async function run() {
 	const payload = { tool: 'practical-latency-contracts', args, results }
 	const jsonPath = join(args.outDir, 'summary.json')
 	const markdownPath = join(args.outDir, 'summary.md')
+	const profileMarkdownPath = join(args.outDir, 'profile-summary.md')
 	writeFileSync(jsonPath, JSON.stringify(payload, null, 2))
 	writeFileSync(markdownPath, buildMarkdown(args, results))
-	const output = { ...payload, summaryJson: jsonPath, summaryMarkdown: markdownPath }
+	writeFileSync(profileMarkdownPath, buildProfileMarkdown(args, results))
+	const output = {
+		...payload,
+		summaryJson: jsonPath,
+		summaryMarkdown: markdownPath,
+		profileSummaryMarkdown: profileMarkdownPath,
+	}
 	if (args.json) console.log(JSON.stringify(output, null, 2))
 	else console.log(`summary: ${markdownPath}`)
 }

@@ -840,6 +840,29 @@ function sameSharedFormulaBinding(
 	return true
 }
 
+function sameSpillFormulaBinding(
+	left: Extract<CellFormulaBinding, { kind: 'spill' }>,
+	right: CellFormulaBinding | undefined,
+	sheetName: string,
+): boolean {
+	if (right?.kind !== 'spill') return false
+	if (left.isAnchor !== right.isAnchor) return false
+	const leftAnchor = parseBindingCellRef(left.anchorRef, sheetName)
+	const rightAnchor = parseBindingCellRef(right.anchorRef, sheetName)
+	const leftRange = parseBindingRange(left.ref, sheetName)
+	const rightRange = parseBindingRange(right.ref, sheetName)
+	return (
+		leftAnchor !== null &&
+		rightAnchor !== null &&
+		leftRange !== null &&
+		rightRange !== null &&
+		sameSheetName(leftAnchor.sheet, rightAnchor.sheet) &&
+		leftAnchor.row === rightAnchor.row &&
+		leftAnchor.col === rightAnchor.col &&
+		rangesEqual(leftRange, rightRange)
+	)
+}
+
 interface FormulaRangeBindingEntry {
 	readonly kind: 'array' | 'dataTable'
 	readonly cellRef: string
@@ -1303,6 +1326,44 @@ function checkFormulaBindingIntegrity(wb: Workbook): CheckIssue[] {
 				},
 			),
 		)
+	}
+	for (const group of spillBindingGroups.values()) {
+		if (group.length === 0 || group.some((entry) => entry.kind !== 'spill')) continue
+		const rangeKeys = new Set(group.map((entry) => rangeKey(entry.range)))
+		if (rangeKeys.size !== 1) continue
+		const first = group[0]
+		if (!first) continue
+		const anchor = parseBindingCellRef(first.anchorRef, first.range.sheet ?? '')
+		if (!anchor) continue
+		const spillSheet = sheetsByName.get((first.range.sheet ?? anchor.sheet).toLowerCase())
+		if (!spillSheet) continue
+		const firstParsed = parseBindingCellRef(first.cellRef, spillSheet.name)
+		const exemplar =
+			firstParsed && sameSheetName(firstParsed.sheet, spillSheet.name)
+				? spillSheet.cells.get(firstParsed.row, firstParsed.col)?.formulaInfo
+				: undefined
+		if (exemplar?.kind !== 'spill') continue
+		const groupedRefs = new Set(group.map((entry) => entry.cellRef.toLowerCase()))
+		for (const [row, col, cell] of spillSheet.cells.iterate()) {
+			if (!rangeContainsCell(first.range, spillSheet.name, row, col)) continue
+			if (row === anchor.row && col === anchor.col) continue
+			const memberRef = `${spillSheet.name}!${toA1({ row, col })}`
+			if (groupedRefs.has(memberRef.toLowerCase())) continue
+			if (!cell.formulaInfo && !cell.formula && cell.value.kind === 'empty') continue
+			if (sameSpillFormulaBinding(exemplar, cell.formulaInfo, spillSheet.name)) continue
+			issues.push(
+				formulaBindingIntegrityIssue(
+					`Spill metadata for ${first.anchorRef} has an inconsistent occupied cell inside its range`,
+					[`${anchor.sheet}!${toA1({ row: anchor.row, col: anchor.col })}`, memberRef],
+					{
+						kind: 'spill-range-member-mismatch',
+						anchorRef: first.anchorRef,
+						range: first.ref,
+						memberRef,
+					},
+				),
+			)
+		}
 	}
 
 	return issues

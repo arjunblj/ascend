@@ -737,6 +737,42 @@ describe('checker', () => {
 		})
 	})
 
+	test('detects occupied cells detached inside a spill range', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.cells.set(0, 0, {
+			value: numberValue(1),
+			formula: 'SEQUENCE(3)',
+			styleId: SID,
+			formulaInfo: { kind: 'dynamicArray', metadataIndex: 1, collapsed: false },
+		})
+		s.cells.set(1, 0, {
+			value: numberValue(2),
+			formula: null,
+			styleId: SID,
+			formulaInfo: { kind: 'spill', anchorRef: 'Sheet1!A1', ref: 'A1:A3', isAnchor: false },
+		})
+		s.cells.set(2, 0, { value: numberValue(99), formula: 'B3*9', styleId: SID })
+
+		const result = check(wb)
+		const issue = result.issues.find(
+			(entry) => entry.details?.kind === 'spill-range-member-mismatch',
+		)
+		expect(result.passed).toBe(false)
+		expect(issue).toMatchObject({
+			rule: 'formula-binding-integrity',
+			severity: 'error',
+			message: 'Spill metadata for Sheet1!A1 has an inconsistent occupied cell inside its range',
+			refs: ['Sheet1!A1', 'Sheet1!A3'],
+			details: {
+				kind: 'spill-range-member-mismatch',
+				anchorRef: 'Sheet1!A1',
+				range: 'A1:A3',
+				memberRef: 'Sheet1!A3',
+			},
+		})
+	})
+
 	test('detects blocked spill sibling range drift', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')

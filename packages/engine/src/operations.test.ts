@@ -4533,6 +4533,36 @@ describe('applyOperation', () => {
 		expect(sheet?.sheetFormatPr?.outlineLevelCol).toBe(1)
 	})
 
+	test('row and column layout operations reject invalid coordinates without metadata writes', () => {
+		const cases: readonly Operation[] = [
+			{ op: 'insertRows', sheet: 'Sheet1', at: -1, count: 1 },
+			{ op: 'insertRows', sheet: 'Sheet1', at: 1, count: 0 },
+			{ op: 'deleteRows', sheet: 'Sheet1', at: 1, count: 0 },
+			{ op: 'insertCols', sheet: 'Sheet1', at: -1, count: 1 },
+			{ op: 'deleteCols', sheet: 'Sheet1', at: 1, count: 0 },
+			{ op: 'hideRows', sheet: 'Sheet1', at: -1, count: 1 },
+			{ op: 'hideCols', sheet: 'Sheet1', at: -1, count: 1 },
+			{ op: 'setRowHeight', sheet: 'Sheet1', row: -1, height: 12 },
+			{ op: 'setRowHeight', sheet: 'Sheet1', row: 1, height: -1 },
+			{ op: 'setColWidth', sheet: 'Sheet1', col: -1, width: 12 },
+			{ op: 'setColWidth', sheet: 'Sheet1', col: 1, width: -1 },
+			{ op: 'groupRows', sheet: 'Sheet1', from: 0.5, to: 2 },
+			{ op: 'groupCols', sheet: 'Sheet1', from: 0, to: 1.5 },
+		]
+
+		for (const op of cases) {
+			const wb = setup()
+			const result = applyOperation(wb, op)
+			expectErr(result)
+			expect(result.error.code, op.op).toBe('VALIDATION_ERROR')
+			const sheet = wb.getSheet('Sheet1')
+			expect(sheet?.rowDefs.size, op.op).toBe(0)
+			expect(sheet?.colDefs, op.op).toEqual([])
+			expect(sheet?.rowHeights.size, op.op).toBe(0)
+			expect(sheet?.colWidths.size, op.op).toBe(0)
+		}
+	})
+
 	test('addSheet creates a new sheet', () => {
 		const wb = setup()
 		const result = applyOperation(wb, { op: 'addSheet', name: 'Sheet2' })

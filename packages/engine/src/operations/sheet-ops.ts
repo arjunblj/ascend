@@ -247,6 +247,11 @@ export function handleSetColWidth(
 	workbook: Workbook,
 	op: Extract<Operation, { op: 'setColWidth' }>,
 ): Result<PatchResult> {
+	const validation = validateAxisIndex('column', op.col)
+	if (validation) return err(validation)
+	if (!Number.isFinite(op.width) || op.width < 0) {
+		return err(ascendError('VALIDATION_ERROR', 'column width must be a non-negative finite number'))
+	}
 	const result = getSheet(workbook, op.sheet)
 	if (!result.ok) return result
 	const sheet = result.value
@@ -259,6 +264,11 @@ export function handleSetRowHeight(
 	workbook: Workbook,
 	op: Extract<Operation, { op: 'setRowHeight' }>,
 ): Result<PatchResult> {
+	const validation = validateAxisIndex('row', op.row)
+	if (validation) return err(validation)
+	if (!Number.isFinite(op.height) || op.height < 0) {
+		return err(ascendError('VALIDATION_ERROR', 'row height must be a non-negative finite number'))
+	}
 	const result = getSheet(workbook, op.sheet)
 	if (!result.ok) return result
 	const sheet = result.value
@@ -274,6 +284,8 @@ export function handleHideRows(
 	workbook: Workbook,
 	op: Extract<Operation, { op: 'hideRows' }>,
 ): Result<PatchResult> {
+	const validation = validateAxisSpan('row', op.at, op.count)
+	if (validation) return err(validation)
 	const sheetResult = getSheet(workbook, op.sheet)
 	if (!sheetResult.ok) return sheetResult
 	const sheet = sheetResult.value
@@ -301,6 +313,8 @@ export function handleHideCols(
 	workbook: Workbook,
 	op: Extract<Operation, { op: 'hideCols' }>,
 ): Result<PatchResult> {
+	const validation = validateAxisSpan('column', op.at, op.count)
+	if (validation) return err(validation)
 	const sheetResult = getSheet(workbook, op.sheet)
 	if (!sheetResult.ok) return sheetResult
 	const sheet = sheetResult.value
@@ -412,6 +426,18 @@ function sameColDefMetadata(
 
 function isEmptyColDef(def: Sheet['colDefs'][number]): boolean {
 	return Object.keys(def).every((key) => key === 'min' || key === 'max')
+}
+
+function validateAxisIndex(label: 'row' | 'column', index: number) {
+	if (Number.isInteger(index) && index >= 0) return null
+	return ascendError('VALIDATION_ERROR', `${label} index must be a non-negative integer`)
+}
+
+function validateAxisSpan(label: 'row' | 'column', at: number, count: number) {
+	const indexError = validateAxisIndex(label, at)
+	if (indexError) return indexError
+	if (Number.isInteger(count) && count > 0) return null
+	return ascendError('VALIDATION_ERROR', `${label} count must be a positive integer`)
 }
 
 export function handleSetWorkbookProtection(

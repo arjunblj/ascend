@@ -749,7 +749,7 @@ export function handleGroupRows(
 	if (!sheetResult.ok) return sheetResult
 	const sheet = sheetResult.value
 	sheet.ensureWritable()
-	if (op.from > op.to || op.from < 0) {
+	if (!Number.isInteger(op.from) || !Number.isInteger(op.to) || op.from > op.to || op.from < 0) {
 		return err(ascendError('VALIDATION_ERROR', 'Invalid row group range'))
 	}
 	const summaryBelow = op.summaryBelow ?? sheet.outlinePr?.summaryBelow ?? true
@@ -781,7 +781,7 @@ export function handleGroupCols(
 	if (!sheetResult.ok) return sheetResult
 	const sheet = sheetResult.value
 	sheet.ensureWritable()
-	if (op.from > op.to || op.from < 0) {
+	if (!Number.isInteger(op.from) || !Number.isInteger(op.to) || op.from > op.to || op.from < 0) {
 		return err(ascendError('VALIDATION_ERROR', 'Invalid column group range'))
 	}
 	const summaryRight = op.summaryRight ?? sheet.outlinePr?.summaryRight ?? true

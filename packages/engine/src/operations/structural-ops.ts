@@ -62,6 +62,8 @@ function applyAxisShift(
 	count: number,
 	delta: number,
 ): Result<PatchResult> {
+	const spanError = validateAxisSpan(axis, at, count)
+	if (spanError) return err(spanError)
 	const result = getSheet(workbook, sheetName)
 	if (!result.ok) return result
 	const sheet = result.value
@@ -115,6 +117,17 @@ function applyAxisShift(
 	removeDeletedQueryTableConnectionParts(workbook, deletedQueryTablePartPaths)
 
 	return ok(patch([...affected], [...sheetsModified], true))
+}
+
+function validateAxisSpan(axis: 'row' | 'col', at: number, count: number) {
+	const label = axis === 'row' ? 'row' : 'column'
+	if (!Number.isInteger(at) || at < 0) {
+		return ascendError('VALIDATION_ERROR', `${label} index must be a non-negative integer`)
+	}
+	if (!Number.isInteger(count) || count <= 0) {
+		return ascendError('VALIDATION_ERROR', `${label} count must be a positive integer`)
+	}
+	return null
 }
 
 export function handleInsertRows(

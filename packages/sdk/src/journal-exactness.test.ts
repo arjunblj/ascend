@@ -800,6 +800,97 @@ describe('mutation journal exactness model', () => {
 		}
 	})
 
+	test('classifies invalid row and column layout journals as unsupported values', () => {
+		const cases: readonly {
+			readonly op: Operation
+			readonly surface: string
+			readonly ref: string
+		}[] = [
+			{
+				op: { op: 'insertRows', sheet: 'Sheet1', at: -1, count: 1 },
+				surface: 'row-layout',
+				ref: 'Sheet1!row:-1',
+			},
+			{
+				op: { op: 'deleteRows', sheet: 'Sheet1', at: 1, count: 0 },
+				surface: 'row-layout',
+				ref: 'Sheet1!row-count:0',
+			},
+			{
+				op: { op: 'hideRows', sheet: 'Sheet1', at: -1, count: 1 },
+				surface: 'row-layout',
+				ref: 'Sheet1!row:-1',
+			},
+			{
+				op: { op: 'setRowHeight', sheet: 'Sheet1', row: -1, height: 12 },
+				surface: 'row-layout',
+				ref: 'Sheet1!row:-1',
+			},
+			{
+				op: { op: 'setRowHeight', sheet: 'Sheet1', row: 1, height: -1 },
+				surface: 'row-layout',
+				ref: 'Sheet1!row-height:-1',
+			},
+			{
+				op: { op: 'groupRows', sheet: 'Sheet1', from: 0.5, to: 2 },
+				surface: 'row-layout',
+				ref: 'Sheet1!row:0.5',
+			},
+			{
+				op: { op: 'insertCols', sheet: 'Sheet1', at: -1, count: 1 },
+				surface: 'column-layout',
+				ref: 'Sheet1!column:-1',
+			},
+			{
+				op: { op: 'deleteCols', sheet: 'Sheet1', at: 1, count: 0 },
+				surface: 'column-layout',
+				ref: 'Sheet1!column-count:0',
+			},
+			{
+				op: { op: 'hideCols', sheet: 'Sheet1', at: -1, count: 1 },
+				surface: 'column-layout',
+				ref: 'Sheet1!column:-1',
+			},
+			{
+				op: { op: 'setColWidth', sheet: 'Sheet1', col: -1, width: 12 },
+				surface: 'column-layout',
+				ref: 'Sheet1!column:-1',
+			},
+			{
+				op: { op: 'setColWidth', sheet: 'Sheet1', col: 1, width: -1 },
+				surface: 'column-layout',
+				ref: 'Sheet1!column-width:-1',
+			},
+			{
+				op: { op: 'groupCols', sheet: 'Sheet1', from: 0, to: 1.5 },
+				surface: 'column-layout',
+				ref: 'Sheet1!column:1.5',
+			},
+		]
+
+		for (const entry of cases) {
+			const wb = AscendWorkbook.create()
+			const journal = buildMutationJournal(wb.getWorkbookModel(), [entry.op])
+			const analysis = analyzeMutationJournalExactness(journal)
+			expect(journal.inverseOps, entry.op.op).toEqual([])
+			expect(analysis, entry.op.op).toMatchObject({
+				supported: true,
+				exact: false,
+				issueCount: 1,
+				surfaces: [entry.surface],
+				reasons: ['value-unsupported'],
+				hasMatrixViolation: false,
+			})
+			expect(analysis.issues[0], entry.op.op).toMatchObject({
+				code: 'UNSUPPORTED_VALUE',
+				surface: entry.surface,
+				reason: 'value-unsupported',
+				refs: [entry.ref],
+				allowedByMatrix: true,
+			})
+		}
+	})
+
 	test('classifies table selector journal preimage failures as table topology', () => {
 		const missingOps: readonly Operation[] = [
 			{ op: 'deleteTable', table: 'MissingTable' },

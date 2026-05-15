@@ -508,7 +508,7 @@ export const MUTATION_JOURNAL_EXACTNESS_MATRIX: readonly MutationJournalExactnes
 			'existing row height and hidden-state edits restore with public operations',
 			'created row layout and customHeight=false metadata cannot be cleared exactly',
 		],
-		lossReasons: ['row-layout-created', 'row-layout-custom-height'],
+		lossReasons: ['value-unsupported', 'row-layout-created', 'row-layout-custom-height'],
 		representativeOps: [
 			'setRowHeight',
 			'hideRows',
@@ -526,7 +526,7 @@ export const MUTATION_JOURNAL_EXACTNESS_MATRIX: readonly MutationJournalExactnes
 			'existing column width and hidden-state edits restore with public operations',
 			'created column layout and unsupported width metadata cannot be cleared exactly',
 		],
-		lossReasons: ['column-layout-created', 'column-layout-width-metadata'],
+		lossReasons: ['value-unsupported', 'column-layout-created', 'column-layout-width-metadata'],
 		representativeOps: ['setColWidth', 'hideCols', 'groupCols', 'insertCols', 'deleteCols'],
 	},
 	{
@@ -2100,6 +2100,19 @@ function buildJournalEntry(
 			issues,
 		}
 	}
+	const axisIssue = journalOperationAxisValueIssue(op)
+	if (axisIssue) {
+		const issues = [structureMutationJournalIssue(axisIssue)]
+		return {
+			opIndex,
+			op,
+			supported: true,
+			exact: false,
+			inverseOps: [],
+			preimages: [],
+			issues,
+		}
+	}
 	const tableIssue = journalOperationTableTopologyIssue(workbook, op)
 	if (tableIssue) {
 		const issues = [structureMutationJournalIssue(tableIssue)]
@@ -2347,6 +2360,120 @@ function journalOperationCellRefTarget(op: Operation): {
 		default:
 			return null
 	}
+}
+
+function journalOperationAxisValueIssue(op: Operation): MutationJournalIssue | null {
+	const target = journalOperationAxisTarget(op)
+	if (!target) return null
+	if (target.valid) return null
+	return {
+		code: 'UNSUPPORTED_VALUE',
+		message: `Cannot build exact rollback journal for ${op.op} because ${target.label} ${target.value} is invalid`,
+		surface: target.surface,
+		reason: 'value-unsupported',
+		refs: [target.ref],
+	}
+}
+
+function journalOperationAxisTarget(op: Operation):
+	| {
+			readonly valid: true
+	  }
+	| {
+			readonly valid: false
+			readonly surface: MutationJournalSurface
+			readonly label: string
+			readonly value: number
+			readonly ref: string
+	  }
+	| null {
+	switch (op.op) {
+		case 'insertRows':
+		case 'deleteRows':
+		case 'hideRows':
+			return journalAxisSpanTarget('row-layout', op.sheet, 'row', op.at, op.count)
+		case 'insertCols':
+		case 'deleteCols':
+		case 'hideCols':
+			return journalAxisSpanTarget('column-layout', op.sheet, 'column', op.at, op.count)
+		case 'setRowHeight':
+			return journalAxisScalarTarget('row-layout', op.sheet, 'row', op.row, op.height, 'height')
+		case 'setColWidth':
+			return journalAxisScalarTarget('column-layout', op.sheet, 'column', op.col, op.width, 'width')
+		case 'groupRows':
+			return journalAxisBandTarget('row-layout', op.sheet, 'row', op.from, op.to)
+		case 'groupCols':
+			return journalAxisBandTarget('column-layout', op.sheet, 'column', op.from, op.to)
+		default:
+			return null
+	}
+}
+
+function journalAxisSpanTarget(
+	surface: MutationJournalSurface,
+	sheet: string,
+	label: 'row' | 'column',
+	at: number,
+	count: number,
+) {
+	if (!Number.isInteger(at) || at < 0) {
+		return { valid: false as const, surface, label, value: at, ref: `${sheet}!${label}:${at}` }
+	}
+	if (!Number.isInteger(count) || count <= 0) {
+		return {
+			valid: false as const,
+			surface,
+			label: `${label} count`,
+			value: count,
+			ref: `${sheet}!${label}-count:${count}`,
+		}
+	}
+	return { valid: true as const }
+}
+
+function journalAxisScalarTarget(
+	surface: MutationJournalSurface,
+	sheet: string,
+	label: 'row' | 'column',
+	index: number,
+	value: number,
+	valueLabel: 'height' | 'width',
+) {
+	if (!Number.isInteger(index) || index < 0) {
+		return {
+			valid: false as const,
+			surface,
+			label,
+			value: index,
+			ref: `${sheet}!${label}:${index}`,
+		}
+	}
+	if (!Number.isFinite(value) || value < 0) {
+		return {
+			valid: false as const,
+			surface,
+			label: `${label} ${valueLabel}`,
+			value,
+			ref: `${sheet}!${label}-${valueLabel}:${value}`,
+		}
+	}
+	return { valid: true as const }
+}
+
+function journalAxisBandTarget(
+	surface: MutationJournalSurface,
+	sheet: string,
+	label: 'row' | 'column',
+	from: number,
+	to: number,
+) {
+	if (!Number.isInteger(from) || from < 0) {
+		return { valid: false as const, surface, label, value: from, ref: `${sheet}!${label}:${from}` }
+	}
+	if (!Number.isInteger(to) || to < from) {
+		return { valid: false as const, surface, label, value: to, ref: `${sheet}!${label}:${to}` }
+	}
+	return { valid: true as const }
 }
 
 function journalOperationTableTopologyIssue(

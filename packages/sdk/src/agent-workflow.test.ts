@@ -1029,6 +1029,23 @@ describe('agent workflow loss audit', () => {
 					const copy = reopened.getWorkbookModel().getSheet('Copy')
 					expect(reopened.formula('Copy!A4')?.normalizedFormula).toBe('Copy!B4*2')
 					expect(reopened.formula('Copy!A5')?.normalizedFormula).toBe('Copy!B5*2')
+					expect(copy?.cells.get(3, 0)?.formulaInfo).toMatchObject({
+						kind: 'shared',
+						isMaster: true,
+						masterRef: 'A4',
+						ref: 'Copy!A4:A5',
+					})
+					expect(copy?.cells.get(4, 0)?.formulaInfo).toMatchObject({
+						kind: 'shared',
+						isMaster: false,
+						masterRef: 'A4',
+					})
+					expect(
+						JSON.stringify([
+							copy?.cells.get(3, 0)?.formulaInfo,
+							copy?.cells.get(4, 0)?.formulaInfo,
+						]),
+					).not.toContain('data!')
 					expect(copy?.dataValidations[0]?.formula1).toBe('Copy!B1:B3')
 					expect(copy?.conditionalFormats[0]?.rules[0]?.formulas).toEqual(['Copy!B1>0'])
 				},

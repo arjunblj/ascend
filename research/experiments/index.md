@@ -138,6 +138,8 @@ Updated: 2026-05-15
 | [Binding range casing detach](runs/2026/2026-05-15-binding-range-casing-detach/log.md) | folded in case-insensitive sheet-qualified range matching for blocked-spill/data-table detachment and SDK journal evidence | correctness loop |
 | [Verify shared master casing](runs/2026/2026-05-15-verify-shared-master-casing/log.md) | folded in verifier shared-formula master equality fix for sheet-qualified refs with casing drift | correctness loop |
 | [Safe open dirty timing rerun](runs/2026/2026-05-15-safe-open-dirty-timing-rerun/log.md) | archived timed safe-open rerun as diagnostic-only because tracked verify files were dirty before the run | performance loop, product loop |
+| [Formula sheet rewrite casing](runs/2026/2026-05-15-formula-sheet-rewrite-casing/log.md) | folded in case-insensitive sheet-reference rewrite behavior for operation-owned formula rewrites | correctness loop |
+| [Full scalar number span scratch](runs/2026/2026-05-15-full-scalar-number-span-scratch/log.md) | folded in tiny XLSX reader allocation hygiene for dense numeric full-scalar spans; no performance claim promoted | performance loop |
 | [Package action proof](runs/2026/2026-05-14-package-action-proof/log.md) | cycle 2 complete, promote | correctness loop, product/DX loop, performance loop |
 | [Formula spans LSP](runs/2026/2026-05-14-formula-spans-lsp/log.md) | cycle 13 complete, folded in SDK hover/code actions | product/DX loop, correctness loop |
 | [Formula sqllogictest conformance](runs/2026/2026-05-14-formula-sqllogictest-conformance/log.md) | cycle 14 complete, folded in converter/runner | correctness loop |

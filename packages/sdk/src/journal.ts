@@ -2242,6 +2242,8 @@ function journalOperationTableTopologyIssue(
 			)
 		}
 	}
+	const rangeIssue = journalOperationTableRangeValueIssue(op)
+	if (rangeIssue) return rangeIssue
 	const rangeCollision = journalOperationTableRangeCollisionIssue(workbook, op)
 	if (rangeCollision) return rangeCollision
 	return null
@@ -2298,6 +2300,20 @@ function journalOperationTableMetadataIssue(
 		}
 	}
 	return null
+}
+
+function journalOperationTableRangeValueIssue(op: Operation): MutationJournalIssue | null {
+	if (op.op !== 'createTable' && op.op !== 'resizeTable') return null
+	try {
+		parseRange(op.ref)
+		return null
+	} catch {
+		const tableName = op.op === 'createTable' ? op.name : op.table
+		return tableUnsupportedValueIssue(
+			tableName,
+			`Cannot build exact rollback journal for ${op.op} because range ${op.ref} is invalid`,
+		)
+	}
 }
 
 function journalOperationTableRangeCollisionIssue(

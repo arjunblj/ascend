@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DEFAULT_STYLE_ID } from '@ascend/core'
 import { inspectXlsxPackageGraph, type XlsxPackageGraph } from '@ascend/io-xlsx'
-import { numberValue } from '@ascend/schema'
+import { numberValue, stringValue } from '@ascend/schema'
 import { unzipSync } from 'fflate'
 import { createZip, encode } from '../../io-xlsx/src/writer/zip.ts'
 import { makeEmbeddedChartXlsx, makeXlsx } from '../../io-xlsx/test/helpers.ts'
@@ -1118,6 +1118,103 @@ describe('agent workflow loss audit', () => {
 						kind: 'number',
 						value: 99,
 					})
+				},
+			},
+			{
+				name: 'sort-range-shared-formula-materializes-and-reopens-clean',
+				risk: 'sorting rows through imported shared-formula metadata could save stale bindings or row-shifted formula text',
+				proof: async () => {
+					const input = join(TEMP_DIR, 'quality-moat-sort-shared-formula.xlsx')
+					const output = join(TEMP_DIR, 'quality-moat-sort-shared-formula-out.xlsx')
+					mkdirSync(TEMP_DIR, { recursive: true })
+					const wb = AscendWorkbook.create()
+					const model = wb.getWorkbookModel()
+					const sheet = model.getSheet('Sheet1')
+					if (!sheet) throw new Error('missing Sheet1')
+					sheet.name = 'Data'
+					model.invalidateSheetCache()
+					sheet.cells.set(0, 0, {
+						value: stringValue('b'),
+						formula: null,
+						styleId: DEFAULT_STYLE_ID,
+					})
+					sheet.cells.set(1, 0, {
+						value: stringValue('a'),
+						formula: null,
+						styleId: DEFAULT_STYLE_ID,
+					})
+					sheet.cells.set(0, 1, {
+						value: numberValue(2),
+						formula: null,
+						styleId: DEFAULT_STYLE_ID,
+					})
+					sheet.cells.set(1, 1, {
+						value: numberValue(1),
+						formula: null,
+						styleId: DEFAULT_STYLE_ID,
+					})
+					sheet.cells.set(0, 3, {
+						value: numberValue(4),
+						formula: 'B1*2',
+						styleId: DEFAULT_STYLE_ID,
+						formulaInfo: {
+							kind: 'shared',
+							sharedIndex: 'quality-moat-sort-shared',
+							isMaster: true,
+							masterRef: 'D1',
+							ref: 'D1:D2',
+						},
+					})
+					sheet.cells.set(1, 3, {
+						value: numberValue(2),
+						formula: null,
+						styleId: DEFAULT_STYLE_ID,
+						formulaInfo: {
+							kind: 'shared',
+							sharedIndex: 'quality-moat-sort-shared',
+							isMaster: false,
+							masterRef: 'D1',
+							ref: 'D1:D2',
+						},
+					})
+					await wb.save(input)
+
+					const prepared = await createPreparedAgentPlan(input, [
+						{ op: 'sortRange' as const, sheet: 'Data', range: 'A1:D2', by: [{ column: 'A' }] },
+					])
+					expect(prepared.plan.preview.journal?.issues).toEqual(
+						expect.arrayContaining([
+							expect.objectContaining({
+								surface: 'shared-formulas',
+								reason: 'formula-binding-metadata',
+								refs: ['Data!D1'],
+							}),
+							expect.objectContaining({
+								surface: 'shared-formulas',
+								reason: 'formula-binding-metadata',
+								refs: ['Data!D2'],
+							}),
+						]),
+					)
+
+					const committed = await prepared.commit({ output })
+					expect(committed.postWrite.valid).toBe(true)
+					expect(committed.postWrite.auditsPassed).toBe(true)
+
+					const reopened = await AscendWorkbook.open(output)
+					expect(reopened.check().valid).toBe(true)
+					expect(reopened.sheet('Data')?.cell('D1')?.formulaBinding).toBeUndefined()
+					expect(reopened.sheet('Data')?.cell('D2')?.formulaBinding).toBeUndefined()
+					expect(reopened.sheet('Data')?.cell('A1')?.value).toEqual({
+						kind: 'string',
+						value: 'a',
+					})
+					expect(reopened.sheet('Data')?.cell('A2')?.value).toEqual({
+						kind: 'string',
+						value: 'b',
+					})
+					expect(reopened.formula('Data!D1')?.normalizedFormula).toBe('B1*2')
+					expect(reopened.formula('Data!D2')?.normalizedFormula).toBe('B2*2')
 				},
 			},
 			{

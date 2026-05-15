@@ -2020,6 +2020,26 @@ function buildJournalEntry(
 	op: Operation,
 	opIndex: number,
 ): MutationJournalEntry {
+	const missingSheet = missingJournalOperationSheet(workbook, op)
+	if (missingSheet) {
+		const issues = [
+			structureMutationJournalIssue(
+				missingSheetTopologyIssue(
+					missingSheet,
+					`Cannot build exact rollback journal for ${op.op} because sheet ${missingSheet} was not found`,
+				),
+			),
+		]
+		return {
+			opIndex,
+			op,
+			supported: true,
+			exact: false,
+			inverseOps: [],
+			preimages: [],
+			issues,
+		}
+	}
 	const draft = buildSupportedJournalEntry(workbook, op, opIndex)
 	if (!draft) {
 		const issues: MutationJournalStructuredIssue[] = [
@@ -2046,6 +2066,63 @@ function buildJournalEntry(
 		issues,
 		supported: issues.every((issue) => issue.code !== 'UNSUPPORTED_OPERATION'),
 		exact: issues.length === 0,
+	}
+}
+
+function missingJournalOperationSheet(workbook: Workbook, op: Operation): string | null {
+	const sheet = journalOperationRequiredSheet(op)
+	if (sheet !== null && !workbook.getSheet(sheet)) return sheet
+	const targetSheet = journalOperationRequiredTargetSheet(op)
+	if (targetSheet !== null && !workbook.getSheet(targetSheet)) return targetSheet
+	return null
+}
+
+function journalOperationRequiredSheet(op: Operation): string | null {
+	switch (op.op) {
+		case 'setCells':
+		case 'setFormula':
+		case 'fillFormula':
+		case 'setRichText':
+		case 'clearRange':
+		case 'insertRows':
+		case 'insertCols':
+		case 'deleteRows':
+		case 'deleteCols':
+		case 'setNumberFormat':
+		case 'setStyle':
+		case 'mergeCells':
+		case 'unmergeCells':
+		case 'setDataValidation':
+		case 'deleteDataValidation':
+		case 'setAutoFilter':
+		case 'clearAutoFilter':
+		case 'setConditionalFormat':
+		case 'deleteConditionalFormat':
+		case 'sortRange':
+		case 'copyRange':
+		case 'moveRange':
+		case 'createTable':
+		case 'setComment':
+		case 'deleteComment':
+		case 'setHyperlink':
+		case 'deleteHyperlink':
+		case 'setThreadedComment':
+		case 'setDrawingText':
+		case 'freezePane':
+		case 'copySheet':
+			return op.sheet
+		default:
+			return null
+	}
+}
+
+function journalOperationRequiredTargetSheet(op: Operation): string | null {
+	switch (op.op) {
+		case 'copyRange':
+		case 'moveRange':
+			return op.targetSheet ?? null
+		default:
+			return null
 	}
 }
 

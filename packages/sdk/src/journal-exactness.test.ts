@@ -417,6 +417,21 @@ describe('mutation journal exactness model', () => {
 
 	test('classifies missing-sheet journal preimage failures as sheet topology', () => {
 		const ops: readonly Operation[] = [
+			{ op: 'setCells', sheet: 'Missing', updates: [{ ref: 'A1', value: 1 }] },
+			{ op: 'setFormula', sheet: 'Missing', ref: 'A1', formula: '1+1' },
+			{ op: 'fillFormula', sheet: 'Missing', range: 'A1:A2', formula: 'ROW()' },
+			{ op: 'clearRange', sheet: 'Missing', range: 'A1:B2', what: 'all' },
+			{ op: 'insertRows', sheet: 'Missing', at: 0, count: 1 },
+			{ op: 'deleteCols', sheet: 'Missing', at: 0, count: 1 },
+			{ op: 'mergeCells', sheet: 'Missing', range: 'A1:B1' },
+			{ op: 'setDataValidation', sheet: 'Missing', range: 'A1', rule: { type: 'whole' } },
+			{ op: 'setAutoFilter', sheet: 'Missing', range: 'A1:B10' },
+			{
+				op: 'setConditionalFormat',
+				sheet: 'Missing',
+				range: 'A1',
+				rule: { type: 'expression', formula: 'TRUE' },
+			},
 			{ op: 'setTabColor', sheet: 'Missing', color: 'FF0000' },
 			{ op: 'setSheetProtection', sheet: 'Missing', options: { sort: true } },
 			{ op: 'moveSheet', sheet: 'Missing', position: 0 },
@@ -431,6 +446,16 @@ describe('mutation journal exactness model', () => {
 			{ op: 'setPrintArea', sheet: 'Missing', range: 'A1:B2' },
 			{ op: 'setDefinedName', name: 'LocalBudget', ref: 'A1', scope: 'Missing' },
 			{ op: 'deleteDefinedName', name: 'LocalBudget', scope: 'Missing' },
+			{ op: 'copyRange', sheet: 'Missing', source: 'A1', target: 'B1' },
+			{ op: 'copyRange', sheet: 'Sheet1', source: 'A1', target: 'B1', targetSheet: 'Missing' },
+			{ op: 'moveRange', sheet: 'Missing', source: 'A1', target: 'B1' },
+			{ op: 'createTable', sheet: 'Missing', ref: 'A1:B2', name: 'MissingTable', hasHeaders: true },
+			{ op: 'setComment', sheet: 'Missing', ref: 'A1', text: 'note' },
+			{ op: 'setHyperlink', sheet: 'Missing', ref: 'A1', url: 'https://example.com' },
+			{ op: 'setThreadedComment', sheet: 'Missing', ref: 'A1', text: 'thread' },
+			{ op: 'setDrawingText', sheet: 'Missing', drawingObjectIndex: 0, text: 'label' },
+			{ op: 'freezePane', sheet: 'Missing', row: 1, col: 1 },
+			{ op: 'copySheet', sheet: 'Missing', newName: 'Copy' },
 		]
 
 		for (const op of ops) {

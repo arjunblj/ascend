@@ -400,7 +400,12 @@ export const MUTATION_JOURNAL_EXACTNESS_MATRIX: readonly MutationJournalExactnes
 			'simple cell comments restore with setComment/deleteComment',
 			'threaded comment selectors and author removals are exact only when public selectors can address the original metadata',
 		],
-		lossReasons: ['legacy-comment-drawing', 'comment-author-removal', 'threaded-comment-selector'],
+		lossReasons: [
+			'value-unsupported',
+			'legacy-comment-drawing',
+			'comment-author-removal',
+			'threaded-comment-selector',
+		],
 		representativeOps: [
 			'setComment',
 			'deleteComment',
@@ -2331,6 +2336,11 @@ function journalOperationCellRefTarget(op: Operation): {
 			return { surface: 'formulas', sheet: op.sheet, refs: [op.ref] }
 		case 'setRichText':
 			return { surface: 'cells', sheet: op.sheet, refs: [op.ref] }
+		case 'setComment':
+		case 'deleteComment':
+			return { surface: 'comments', sheet: op.sheet, refs: [op.ref] }
+		case 'setThreadedComment':
+			return op.ref === undefined ? null : { surface: 'comments', sheet: op.sheet, refs: [op.ref] }
 		case 'setHyperlink':
 		case 'deleteHyperlink':
 			return { surface: 'hyperlinks', sheet: op.sheet, refs: [op.ref] }

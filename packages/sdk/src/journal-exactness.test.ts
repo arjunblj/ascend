@@ -751,6 +751,21 @@ describe('mutation journal exactness model', () => {
 				ref: 'Sheet1!A1:',
 			},
 			{
+				op: { op: 'setComment', sheet: 'Sheet1', ref: 'A1:', text: 'note' },
+				surface: 'comments',
+				ref: 'Sheet1!A1:',
+			},
+			{
+				op: { op: 'deleteComment', sheet: 'Sheet1', ref: 'A1:' },
+				surface: 'comments',
+				ref: 'Sheet1!A1:',
+			},
+			{
+				op: { op: 'setThreadedComment', sheet: 'Sheet1', ref: 'A1:', text: 'note' },
+				surface: 'comments',
+				ref: 'Sheet1!A1:',
+			},
+			{
 				op: { op: 'setHyperlink', sheet: 'Sheet1', ref: 'A1:', url: 'https://example.test' },
 				surface: 'hyperlinks',
 				ref: 'Sheet1!A1:',

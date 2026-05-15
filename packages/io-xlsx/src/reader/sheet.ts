@@ -105,6 +105,7 @@ export interface SheetParseContext {
 	readonly metadata?: ParsedMetadataPart
 	readonly maxRows?: number
 	readonly fullScalarNumberSpanScratch?: number[]
+	readonly fullScalarCellOutScratch?: SimpleValuesCellOut
 }
 
 export interface SheetFormulaFeatures {
@@ -1096,7 +1097,7 @@ function parseSimpleFullScalarRowBytes(
 	let pendingNumberValue = 0
 	let numberSpanStartCol = -1
 	let numberSpanValues: number[] | undefined
-	const out: SimpleValuesCellOut = {
+	const out = ctx.fullScalarCellOutScratch ?? {
 		row,
 		col: 0,
 		numberValue: undefined,
@@ -1107,6 +1108,15 @@ function parseSimpleFullScalarRowBytes(
 		stringHasEntity: false,
 		styleIdx: 0,
 	}
+	out.row = row
+	out.col = 0
+	out.numberValue = undefined
+	out.sharedStringIndex = -1
+	out.booleanRaw = -1
+	out.stringStart = -1
+	out.stringEnd = -1
+	out.stringHasEntity = false
+	out.styleIdx = 0
 	const flushNumberSpan = () => {
 		if (numberSpanValues && numberSpanValues.length > 0) {
 			sheet.cells.setPlainNumberSpan(row, numberSpanStartCol, numberSpanValues)

@@ -713,6 +713,49 @@ describe('analyzeWorkbook', () => {
 				affectedCells: ['D1', 'D2', 'D3', 'A2', 'B2', 'C2', 'A3', 'B3', 'C3'],
 				reusesCache: false,
 			},
+			{
+				name: 'sortRange data table member',
+				seed: (sheet) => {
+					for (let row = 0; row < 5; row++) {
+						sheet.cells.set(row, 0, {
+							value: stringValue(String.fromCharCode(97 + row)),
+							formula: null,
+							styleId: sid,
+						})
+					}
+					sheet.cells.set(2, 2, {
+						value: numberValue(10),
+						formula: null,
+						styleId: sid,
+						formulaInfo: { kind: 'dataTable', ref: 'C3:C5', dtr: true, r1: 'A1' },
+					})
+					sheet.cells.set(3, 2, { value: numberValue(20), formula: null, styleId: sid })
+					sheet.cells.set(4, 2, { value: numberValue(30), formula: null, styleId: sid })
+				},
+				op: { op: 'sortRange', sheet: 'Sheet1', range: 'A1:C5', by: [{ column: 'A' }] },
+				affectedCells: ['C3', 'A2', 'B2', 'C2', 'A3', 'B3', 'A4', 'B4', 'C4', 'A5', 'B5', 'C5'],
+				reusesCache: false,
+			},
+			{
+				name: 'sortRange blocked spill anchor',
+				seed: (sheet) => {
+					sheet.cells.set(0, 0, {
+						value: errorValue('#SPILL!'),
+						formula: 'SEQUENCE(3)',
+						styleId: sid,
+						formulaInfo: {
+							kind: 'blockedSpill',
+							anchorRef: 'Sheet1!A1',
+							ref: 'A1:A3',
+							blockingRefs: ['A2'],
+						},
+					})
+					sheet.cells.set(1, 0, { value: stringValue('blocker'), formula: null, styleId: sid })
+				},
+				op: { op: 'sortRange', sheet: 'Sheet1', range: 'A1:A2', by: [{ column: 'A' }] },
+				affectedCells: ['A1', 'A2'],
+				reusesCache: false,
+			},
 		]
 
 		for (const entry of cases) {

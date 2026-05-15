@@ -6,6 +6,7 @@ Updated: 2026-05-15
 
 | Run | Status | Fold-in target |
 | --- | --- | --- |
+| [Safe open timing environment provenance](runs/2026/2026-05-15-safe-open-timing-environment-provenance/log.md) | folded runtime/platform/CPU/memory provenance into timed safe-open proof and release-proof-index latency owner evidence while keeping release-latency-run blocked | performance loop, release loop |
 | [Safe open latency distribution evidence](runs/2026/2026-05-15-safe-open-latency-distribution-evidence/log.md) | folded p95/CV/sample-count fields into safe-open proof and release-proof-index latency evidence while keeping release-latency-run blocked | performance loop, release loop |
 | [QSS leapfrog release matrix](runs/2026/2026-05-15-qss-leapfrog-release-matrix/log.md) | folded top-two QSS release matrix into release-proof-index owner handoff with evidence links, active blockers, archived research notes, and downgrade/blocker/kill dispositions | product loop, release loop, correctness loop, performance loop |
 | [Fast ZIP filtered worksheet compression](runs/2026/2026-05-15-fast-zip-filtered-worksheet-compression/log.md) | folded tiny fast-profile worksheet XML compression strategy tweak after zlib probe showed 8.5% median deflate improvement with equal size | performance loop |

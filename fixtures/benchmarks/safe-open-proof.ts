@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
+import { arch, cpus, platform, totalmem } from 'node:os'
 import { basename } from 'node:path'
 import { makeXlsx } from '../../packages/io-xlsx/test/helpers.ts'
 import {
@@ -56,7 +57,20 @@ export interface SafeOpenProofResult {
 	readonly repeat: number
 	readonly warmup: number
 	readonly generatedAt: string
+	readonly timingEnvironment?: SafeOpenProofTimingEnvironment
 	readonly cases: readonly SafeOpenProofCaseResult[]
+}
+
+export interface SafeOpenProofTimingEnvironment {
+	readonly runtime: 'bun'
+	readonly bunVersion: string
+	readonly nodeVersion: string
+	readonly platform: string
+	readonly arch: string
+	readonly cpuModel: string
+	readonly cpuCount: number
+	readonly totalMemoryBytes: number
+	readonly boundary: string
 }
 
 export interface SafeOpenCompactReleaseReport {
@@ -150,6 +164,7 @@ export async function runSafeOpenProof(
 		repeat,
 		warmup,
 		generatedAt: new Date().toISOString(),
+		...(includeTimings ? { timingEnvironment: timingEnvironment() } : {}),
 		cases: results,
 	}
 }
@@ -218,6 +233,9 @@ export function safeOpenProofMarkdown(result: SafeOpenProofResult): string {
 		'',
 		`Generated: ${result.generatedAt}`,
 		`Samples: repeat ${result.repeat}, warmup ${result.warmup}`,
+		result.timingEnvironment
+			? `Timing environment: ${formatTimingEnvironment(result.timingEnvironment)}`
+			: 'Timing environment: not captured because timings were disabled',
 		'',
 		'Boundary: this proves pre-hydration package-feature routing, not malware scanning, sandboxing, active-content execution, or malformed-package recovery.',
 		'',
@@ -575,6 +593,34 @@ function sampleStats(
 		p95: percentile(values, 95),
 		cv: mean > 0 ? Math.sqrt(variance) / mean : 0,
 	}
+}
+
+function timingEnvironment(): SafeOpenProofTimingEnvironment {
+	const cpu = cpus()[0]
+	return {
+		runtime: 'bun',
+		bunVersion: Bun.version,
+		nodeVersion: process.version,
+		platform: platform(),
+		arch: arch(),
+		cpuModel: cpu?.model ?? 'unknown',
+		cpuCount: cpus().length,
+		totalMemoryBytes: totalmem(),
+		boundary:
+			'Local timing environment metadata for owner review only. It is not a release benchmark attestation or hardware-normalized result.',
+	}
+}
+
+function formatTimingEnvironment(environment: SafeOpenProofTimingEnvironment): string {
+	return [
+		`runtime=${environment.runtime}`,
+		`bun=${environment.bunVersion}`,
+		`node=${environment.nodeVersion}`,
+		`platform=${environment.platform}`,
+		`arch=${environment.arch}`,
+		`cpuCount=${environment.cpuCount}`,
+		`cpu=${environment.cpuModel}`,
+	].join(', ')
 }
 
 function roundMs(value: number): number {

@@ -281,6 +281,7 @@ describe('release proof evidence index', () => {
 				'bun run fixtures/benchmarks/safe-open-proof.ts --repeat 3 --warmup 1 --json',
 			repeat: 1,
 			warmup: 2,
+			timingEnvironmentCaptured: false,
 			timedCaseCount: 0,
 			publicTimedCaseNames: [],
 			generatedTimedCaseNames: [],
@@ -1370,6 +1371,7 @@ describe('release proof evidence index', () => {
 		expect(markdown).toContain('Safe-open latency validation evidence:')
 		expect(markdown).toContain('Status: timed-evidence-absent-owner-run-required')
 		expect(markdown).toContain('Timed case count: 0')
+		expect(markdown).toContain('Timing environment captured: false')
 		expect(markdown).toContain('Public open-plan p95 ms: {}')
 		expect(markdown).toContain('Public open-plan CV: {}')
 		expect(markdown).toContain('Public full-open p95 ms: {}')

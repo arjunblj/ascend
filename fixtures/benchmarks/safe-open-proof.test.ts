@@ -64,9 +64,11 @@ describe('safe open proof harness', () => {
 		const proof = await runSafeOpenProof({ repeat: 1, warmup: 0, includeTimings: false })
 		const markdown = safeOpenProofMarkdown(proof)
 
+		expect(proof.timingEnvironment).toBeUndefined()
 		expect(markdown).toContain('Safe Unknown Workbook Opening Proof')
 		expect(markdown).toContain('pre-hydration package-feature routing')
 		expect(markdown).toContain('not malware scanning')
+		expect(markdown).toContain('Timing environment: not captured')
 		expect(markdown).toContain('Allowed claim:')
 		expect(markdown).toContain('metadata-only')
 	})
@@ -80,6 +82,17 @@ describe('safe open proof harness', () => {
 			openPlanSampleCount: 2,
 			fullOpenSampleCount: 2,
 		})
+		expect(proof.timingEnvironment).toMatchObject({
+			runtime: 'bun',
+			bunVersion: expect.any(String),
+			nodeVersion: expect.stringMatching(/^v/),
+			platform: expect.any(String),
+			arch: expect.any(String),
+			cpuModel: expect.any(String),
+			cpuCount: expect.any(Number),
+			totalMemoryBytes: expect.any(Number),
+			boundary: expect.stringContaining('owner review only'),
+		})
 		expect(clean?.openPlanMedianMs).toBeGreaterThan(0)
 		expect(clean?.openPlanP95Ms).toBeGreaterThan(0)
 		expect(clean?.openPlanCv).toBeGreaterThanOrEqual(0)
@@ -88,6 +101,7 @@ describe('safe open proof harness', () => {
 		expect(clean?.fullOpenCv).toBeGreaterThanOrEqual(0)
 		expect(markdown).toContain('P95 open-plan ms')
 		expect(markdown).toContain('Open-plan CV')
+		expect(markdown).toContain('Timing environment: runtime=bun')
 		expect(markdown).toContain('not malware scanning')
 	})
 

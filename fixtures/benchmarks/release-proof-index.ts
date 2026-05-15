@@ -18,6 +18,7 @@ import {
 	type SafeOpenCompactReleaseReport,
 	type SafeOpenProofCaseResult,
 	type SafeOpenProofResult,
+	type SafeOpenProofTimingEnvironment,
 	safeOpenCompactReleaseReport,
 	safeOpenProofMarkdown,
 } from './safe-open-proof.ts'
@@ -587,6 +588,8 @@ export interface ReleaseProofSafeOpenLatencyValidationEvidence {
 	readonly validationCommand: string
 	readonly repeat: number
 	readonly warmup: number
+	readonly timingEnvironmentCaptured: boolean
+	readonly timingEnvironment?: SafeOpenProofTimingEnvironment
 	readonly timedCaseCount: number
 	readonly publicTimedCaseNames: readonly string[]
 	readonly generatedTimedCaseNames: readonly string[]
@@ -1262,6 +1265,7 @@ export function releaseProofIndexMarkdown(result: ReleaseProofIndexResult): stri
 		'',
 		`Status: ${result.safeOpenLatencyValidationEvidence.status}`,
 		`Timed case count: ${result.safeOpenLatencyValidationEvidence.timedCaseCount}`,
+		`Timing environment captured: ${result.safeOpenLatencyValidationEvidence.timingEnvironmentCaptured}`,
 		`Public timed cases: ${result.safeOpenLatencyValidationEvidence.publicTimedCaseNames.join(',') || 'none'}`,
 		`Generated timed cases: ${result.safeOpenLatencyValidationEvidence.generatedTimedCaseNames.join(',') || 'none'}`,
 		`Public open-plan median ms: ${JSON.stringify(result.safeOpenLatencyValidationEvidence.publicOpenPlanMedianMs)}`,
@@ -3770,6 +3774,8 @@ function safeOpenLatencyValidationEvidence(
 			'bun run fixtures/benchmarks/safe-open-proof.ts --repeat 3 --warmup 1 --json',
 		repeat: result.repeat,
 		warmup: result.warmup,
+		timingEnvironmentCaptured: result.timingEnvironment !== undefined,
+		...(result.timingEnvironment ? { timingEnvironment: result.timingEnvironment } : {}),
 		timedCaseCount: timedCases.length,
 		publicTimedCaseNames: publicTimedCases.map((entry) => entry.name),
 		generatedTimedCaseNames: generatedTimedCases.map((entry) => entry.name),

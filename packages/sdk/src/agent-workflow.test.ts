@@ -3,7 +3,9 @@ import { Buffer } from 'node:buffer'
 import { existsSync, mkdirSync, rmSync, statSync, utimesSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { DEFAULT_STYLE_ID } from '@ascend/core'
 import { inspectXlsxPackageGraph, type XlsxPackageGraph } from '@ascend/io-xlsx'
+import { numberValue } from '@ascend/schema'
 import { createZip, encode } from '../../io-xlsx/src/writer/zip.ts'
 import { makeEmbeddedChartXlsx, makeXlsx } from '../../io-xlsx/test/helpers.ts'
 import type { PackageGraphAudit, WritePolicyReport } from './index.ts'
@@ -557,6 +559,63 @@ describe('agent workflow loss audit', () => {
 						expect.objectContaining({
 							rule: 'conditional-format-integrity',
 							severity: 'error',
+						}),
+					]),
+				}),
+			}),
+		)
+
+		await expect(commitAgentPlan(input, ops, { output })).rejects.toThrow(
+			'Commit blocked by write policy',
+		)
+		expect(existsSync(output)).toBe(false)
+	})
+
+	test('commit stops before writing stale formula-binding metadata', async () => {
+		const input = join(TEMP_DIR, 'stale-formula-binding.xlsx')
+		const output = join(TEMP_DIR, 'stale-formula-binding-out.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		const wb = AscendWorkbook.create()
+		const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+		if (!sheet) throw new Error('missing sheet')
+		sheet.cells.set(0, 0, {
+			value: numberValue(2),
+			formula: 'B1*2',
+			styleId: DEFAULT_STYLE_ID,
+			formulaInfo: {
+				kind: 'shared',
+				sharedIndex: '0',
+				isMaster: true,
+				masterRef: 'A1',
+				ref: 'A1:A2',
+			},
+		})
+		sheet.cells.set(2, 0, {
+			value: numberValue(6),
+			formula: null,
+			styleId: DEFAULT_STYLE_ID,
+			formulaInfo: {
+				kind: 'shared',
+				sharedIndex: '0',
+				isMaster: false,
+				masterRef: 'A1',
+			},
+		})
+		await wb.save(input)
+		const ops = [{ op: 'setCells' as const, sheet: 'Sheet1', updates: [{ ref: 'C1', value: 1 }] }]
+
+		const plan = await createAgentPlan(input, ops)
+		expect(plan.writePolicy.ok).toBe(false)
+		expect(plan.writePolicy.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: 'pre-write-check-error',
+				severity: 'blocker',
+				details: expect.objectContaining({
+					checkIssues: expect.arrayContaining([
+						expect.objectContaining({
+							rule: 'formula-binding-integrity',
+							severity: 'error',
+							message: 'Shared formula metadata at Sheet1!A3 is outside its master range',
 						}),
 					]),
 				}),

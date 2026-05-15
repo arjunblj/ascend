@@ -16,12 +16,18 @@ import {
 
 export interface PackageActionProofCase {
 	readonly name: string
+	readonly sourceKind: PackageActionProofSourceKind
 	readonly fixture: string
 	readonly ops: readonly Operation[]
 	readonly allowLoss?: readonly string[] | 'all'
 	readonly prepareInput: (path: string) => Promise<Uint8Array>
 	readonly expectedCommitActions: readonly ExpectedPackageAction[]
 }
+
+export type PackageActionProofSourceKind =
+	| 'public-fixture'
+	| 'generated-workbook'
+	| 'generated-edge-package'
 
 export interface ExpectedPackageAction {
 	readonly action: PackageActionKind
@@ -34,6 +40,7 @@ export interface PackageActionProofOptions {
 
 export interface PackageActionProofCaseResult {
 	readonly name: string
+	readonly sourceKind: PackageActionProofSourceKind
 	readonly fixture: string
 	readonly inputBytes: number
 	readonly outputBytes: number
@@ -76,6 +83,7 @@ export function defaultPackageActionProofCases(): PackageActionProofCase[] {
 	return [
 		{
 			name: 'docprops-passthrough',
+			sourceKind: 'generated-edge-package',
 			fixture: 'synthetic docProps package',
 			ops: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'docprops' }] }],
 			prepareInput: writeBytes(docPropsWorkbook),
@@ -83,6 +91,7 @@ export function defaultPackageActionProofCases(): PackageActionProofCase[] {
 		},
 		{
 			name: 'regenerate-existing-sheet',
+			sourceKind: 'generated-workbook',
 			fixture: 'new Ascend workbook',
 			ops: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'regen' }] }],
 			prepareInput: writeNewWorkbook,
@@ -92,6 +101,7 @@ export function defaultPackageActionProofCases(): PackageActionProofCase[] {
 		},
 		{
 			name: 'add-sheet-part',
+			sourceKind: 'generated-workbook',
 			fixture: 'new Ascend workbook',
 			ops: [{ op: 'addSheet', name: 'Added' }],
 			prepareInput: writeNewWorkbook,
@@ -99,6 +109,7 @@ export function defaultPackageActionProofCases(): PackageActionProofCase[] {
 		},
 		{
 			name: 'calc-chain-drop',
+			sourceKind: 'generated-edge-package',
 			fixture: 'synthetic calcChain package',
 			ops: [{ op: 'setFormula', sheet: 'Sheet1', ref: 'B1', formula: '=A1+A1' }],
 			prepareInput: writeBytes(calcChainWorkbook),
@@ -106,6 +117,7 @@ export function defaultPackageActionProofCases(): PackageActionProofCase[] {
 		},
 		{
 			name: 'signature-invalidation-drop',
+			sourceKind: 'generated-edge-package',
 			fixture: 'synthetic digital-signature package',
 			ops: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'signed' }] }],
 			allowLoss: 'all',
@@ -114,6 +126,7 @@ export function defaultPackageActionProofCases(): PackageActionProofCase[] {
 		},
 		{
 			name: 'macro-passthrough',
+			sourceKind: 'public-fixture',
 			fixture: 'fixtures/xlsx/calamine/vba.xlsm',
 			ops: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'macro' }] }],
 			allowLoss: 'all',
@@ -122,6 +135,7 @@ export function defaultPackageActionProofCases(): PackageActionProofCase[] {
 		},
 		{
 			name: 'chart-sidecar-accounting',
+			sourceKind: 'public-fixture',
 			fixture: 'fixtures/xlsx/poi/WithChart.xlsx',
 			ops: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'chart' }] }],
 			prepareInput: writeFixture('fixtures/xlsx/poi/WithChart.xlsx'),
@@ -132,6 +146,7 @@ export function defaultPackageActionProofCases(): PackageActionProofCase[] {
 		},
 		{
 			name: 'unknown-part-error',
+			sourceKind: 'generated-edge-package',
 			fixture: 'synthetic unknown package part',
 			ops: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'unknown' }] }],
 			allowLoss: 'all',
@@ -185,6 +200,7 @@ async function runPackageActionProofCase(
 		assertExpectedActions(proofCase, commitProof)
 		return {
 			name: proofCase.name,
+			sourceKind: proofCase.sourceKind,
 			fixture: proofCase.fixture,
 			inputBytes: inputBytes.byteLength,
 			outputBytes: outputBytes.byteLength,

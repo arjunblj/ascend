@@ -1,12 +1,14 @@
 import { createHash } from 'node:crypto'
 import { basename } from 'node:path'
 import {
+	type PackageActionProofCaseResult,
 	type PackageActionProofResult,
 	packageActionProofMarkdown,
 	runPackageActionProof,
 } from './package-action-proof.ts'
 import {
 	runSafeOpenProof,
+	type SafeOpenProofCaseResult,
 	type SafeOpenProofResult,
 	safeOpenProofMarkdown,
 } from './safe-open-proof.ts'
@@ -30,7 +32,18 @@ export interface ReleaseProofIndexArtifact {
 	readonly stableShapeSha256: string
 	readonly jsonBytes: number
 	readonly markdownBytes: number
+	readonly fixtureProvenance: ReleaseProofFixtureProvenance
 	readonly summary: Readonly<Record<string, string | number | boolean>>
+	readonly boundary: string
+}
+
+export interface ReleaseProofFixtureProvenance {
+	readonly publicFixtureCases: number
+	readonly generatedWorkbookCases: number
+	readonly generatedEdgePackageCases: number
+	readonly malformedCases: number
+	readonly publicFixtureNames: readonly string[]
+	readonly generatedCaseNames: readonly string[]
 	readonly boundary: string
 }
 
@@ -88,8 +101,8 @@ export function releaseProofIndexMarkdown(result: ReleaseProofIndexResult): stri
 		`Generated: ${result.generatedAt}`,
 		result.boundary,
 		'',
-		'| Artifact | Claim | Command | Publication status | Release gate | Headline claim allowed | Publication blockers | JSON bytes | Markdown bytes | SHA-256 | Stable shape SHA-256 | Summary | Boundary |',
-		'| --- | --- | --- | --- | --- | --- | --- | ---: | ---: | --- | --- | --- | --- |',
+		'| Artifact | Claim | Command | Publication status | Release gate | Headline claim allowed | Publication blockers | JSON bytes | Markdown bytes | Fixture provenance | SHA-256 | Stable shape SHA-256 | Summary | Boundary |',
+		'| --- | --- | --- | --- | --- | --- | --- | ---: | ---: | --- | --- | --- | --- | --- |',
 		...result.artifacts.map(markdownRow),
 		'',
 		'## Excluded Evidence',
@@ -144,6 +157,7 @@ function safeOpenArtifact(
 		stableShapeSha256: sha256(stableJson(stripRunNoise(result))),
 		jsonBytes: utf8Bytes(json),
 		markdownBytes: utf8Bytes(markdown),
+		fixtureProvenance: safeOpenFixtureProvenance(result.cases),
 		summary: {
 			cases: result.cases.length,
 			ok: statusCounts.ok ?? 0,
@@ -182,6 +196,7 @@ function packageActionArtifact(
 		stableShapeSha256: sha256(stableJson(stripRunNoise(result))),
 		jsonBytes: utf8Bytes(json),
 		markdownBytes: utf8Bytes(markdown),
+		fixtureProvenance: packageActionFixtureProvenance(result.cases),
 		summary: {
 			cases: result.cases.length,
 			passthrough: counts.passthrough,
@@ -210,6 +225,7 @@ function markdownRow(row: ReleaseProofIndexArtifact): string {
 		row.publicationBlockers.join('; '),
 		String(row.jsonBytes),
 		String(row.markdownBytes),
+		formatFixtureProvenance(row.fixtureProvenance),
 		`\`${row.sha256}\``,
 		`\`${row.stableShapeSha256}\``,
 		formatSummary(row.summary),
@@ -219,6 +235,52 @@ function markdownRow(row: ReleaseProofIndexArtifact): string {
 		.join('|')
 		.replace(/^/, '|')
 		.replace(/$/, '|')
+}
+
+function safeOpenFixtureProvenance(
+	cases: readonly SafeOpenProofCaseResult[],
+): ReleaseProofFixtureProvenance {
+	const byKind = countBy(cases, (entry) => entry.kind)
+	return {
+		publicFixtureCases: byKind.file ?? 0,
+		generatedWorkbookCases: 0,
+		generatedEdgePackageCases: byKind.synthetic ?? 0,
+		malformedCases: byKind.malformed ?? 0,
+		publicFixtureNames: cases.filter((entry) => entry.kind === 'file').map((entry) => entry.name),
+		generatedCaseNames: cases.filter((entry) => entry.kind !== 'file').map((entry) => entry.name),
+		boundary:
+			'Public fixture cases are checked-in workbook files; generated edge and malformed cases are durable harness-generated packages, not public binary fixtures.',
+	}
+}
+
+function packageActionFixtureProvenance(
+	cases: readonly PackageActionProofCaseResult[],
+): ReleaseProofFixtureProvenance {
+	const byKind = countBy(cases, (entry) => entry.sourceKind)
+	return {
+		publicFixtureCases: byKind['public-fixture'] ?? 0,
+		generatedWorkbookCases: byKind['generated-workbook'] ?? 0,
+		generatedEdgePackageCases: byKind['generated-edge-package'] ?? 0,
+		malformedCases: 0,
+		publicFixtureNames: cases
+			.filter((entry) => entry.sourceKind === 'public-fixture')
+			.map((entry) => entry.name),
+		generatedCaseNames: cases
+			.filter((entry) => entry.sourceKind !== 'public-fixture')
+			.map((entry) => entry.name),
+		boundary:
+			'Public fixture cases are checked-in workbook files; generated workbook and generated edge package cases are local harness inputs that must stay disclosed.',
+	}
+}
+
+function formatFixtureProvenance(provenance: ReleaseProofFixtureProvenance): string {
+	return [
+		`public=${provenance.publicFixtureCases}`,
+		`generatedWorkbook=${provenance.generatedWorkbookCases}`,
+		`generatedEdge=${provenance.generatedEdgePackageCases}`,
+		`malformed=${provenance.malformedCases}`,
+		`generatedCases=${provenance.generatedCaseNames.join(',') || 'none'}`,
+	].join('; ')
 }
 
 function excludedEvidenceMarkdownRow(row: ReleaseProofIndexExcludedEvidence): string {

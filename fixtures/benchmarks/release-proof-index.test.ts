@@ -30,6 +30,13 @@ describe('release proof evidence index', () => {
 			publicationStatus: 'needs-release-packaging',
 			headlineClaimAllowed: false,
 			releaseGate: 'blocked-by-publication-policy',
+			fixtureProvenance: {
+				publicFixtureCases: 6,
+				generatedWorkbookCases: 0,
+				generatedEdgePackageCases: 2,
+				malformedCases: 1,
+				generatedCaseNames: ['signed', 'unknown-part', 'malformed'],
+			},
 			summary: { cases: 9, rejected: 1, malformedRejected: true },
 		})
 		expect(
@@ -44,6 +51,12 @@ describe('release proof evidence index', () => {
 			publicationStatus: 'needs-release-packaging',
 			headlineClaimAllowed: false,
 			releaseGate: 'blocked-by-publication-policy',
+			fixtureProvenance: {
+				publicFixtureCases: 2,
+				generatedWorkbookCases: 2,
+				generatedEdgePackageCases: 4,
+				malformedCases: 0,
+			},
 			summary: { cases: 8, allActionsCovered: true, sourceGraphEverywhere: true },
 		})
 		expect(index.artifacts.every((artifact) => artifact.headlineClaimAllowed === false)).toBe(true)
@@ -68,6 +81,8 @@ describe('release proof evidence index', () => {
 		expect(markdown).toContain('Publication blockers')
 		expect(markdown).toContain('Headline claim allowed')
 		expect(markdown).toContain('blocked-by-publication-policy')
+		expect(markdown).toContain('Fixture provenance')
+		expect(markdown).toContain('generatedCases=signed,unknown-part,malformed')
 		expect(markdown).toContain('safe-open-proof.ts --no-timings --json')
 		expect(markdown).toContain('SLSA')
 		expect(markdown).toContain('Attestation: false')

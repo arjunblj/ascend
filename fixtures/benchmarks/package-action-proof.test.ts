@@ -19,6 +19,9 @@ describe('package action proof harness', () => {
 			'chart-sidecar-accounting',
 			'unknown-part-error',
 		])
+		expect(cases.filter((entry) => entry.sourceKind === 'public-fixture')).toHaveLength(2)
+		expect(cases.filter((entry) => entry.sourceKind === 'generated-workbook')).toHaveLength(2)
+		expect(cases.filter((entry) => entry.sourceKind === 'generated-edge-package')).toHaveLength(4)
 	})
 
 	test('proves all package action kinds without relying on timing thresholds', async () => {
@@ -35,6 +38,10 @@ describe('package action proof harness', () => {
 		expect(proof.cases.every((entry) => entry.commitJournalExact === false)).toBe(true)
 		expect(proof.cases.every((entry) => entry.commitJournalPackageIssueCount > 0)).toBe(true)
 		expect(proof.cases.every((entry) => entry.commitJournalPackageIssueRefs.length > 0)).toBe(true)
+		expect(proof.cases.filter((entry) => entry.sourceKind === 'public-fixture')).toHaveLength(2)
+		expect(
+			proof.cases.filter((entry) => entry.sourceKind === 'generated-edge-package'),
+		).toHaveLength(4)
 		expect(proof.cases.find((entry) => entry.name === 'unknown-part-error')).toMatchObject({
 			postWriteAuditsPassed: false,
 			issueCount: 1,

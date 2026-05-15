@@ -9,7 +9,7 @@ import {
 	RangeIndex,
 	type RangeIndexEntry,
 	type RangeRef,
-	rangeMaskOffsets,
+	rangeIntersection,
 	type SheetConditionalFormat,
 	type SheetDataValidation,
 	sqrefIntersects,
@@ -1841,22 +1841,50 @@ function createInteractiveRangeContext(
 		tables: uniqueRangeIndexValues(tableEntries),
 		autoFilter:
 			sheet.autoFilter && sqrefIntersects(sheet.autoFilter.ref, viewport) ? sheet.autoFilter : null,
-		mergeMask: rangeMaskOffsets(
+		mergeMask: viewportRangeMask(
 			mergeEntries.map((entry) => entry.range),
 			viewport,
 		),
-		validationMask: rangeMaskOffsets(
+		validationMask: viewportRangeMask(
 			validationEntries.map((entry) => entry.range),
 			viewport,
 		),
-		conditionalFormatMask: rangeMaskOffsets(
+		conditionalFormatMask: viewportRangeMask(
 			conditionalFormatEntries.map((entry) => entry.range),
 			viewport,
 		),
-		tableMask: rangeMaskOffsets(
+		tableMask: viewportRangeMask(
 			tableEntries.map((entry) => entry.range),
 			viewport,
 		),
+	}
+}
+
+interface ViewportRangeMask {
+	has(offset: number): boolean
+}
+
+const EMPTY_VIEWPORT_RANGE_MASK: ViewportRangeMask = {
+	has: () => false,
+}
+
+function viewportRangeMask(ranges: readonly RangeRef[], viewport: RangeRef): ViewportRangeMask {
+	if (ranges.length === 0) return EMPTY_VIEWPORT_RANGE_MASK
+	const rowCount = viewport.end.row - viewport.start.row + 1
+	const colCount = viewport.end.col - viewport.start.col + 1
+	const mask = new Uint8Array(rowCount * colCount)
+	for (const range of ranges) {
+		const intersection = rangeIntersection(range, viewport)
+		if (!intersection) continue
+		for (let row = intersection.start.row; row <= intersection.end.row; row++) {
+			const rowOffset = (row - viewport.start.row) * colCount
+			for (let col = intersection.start.col; col <= intersection.end.col; col++) {
+				mask[rowOffset + col - viewport.start.col] = 1
+			}
+		}
+	}
+	return {
+		has: (offset: number) => mask[offset] === 1,
 	}
 }
 

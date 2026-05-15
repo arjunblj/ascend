@@ -453,11 +453,19 @@ export function handleSetPrintArea(
 ): Result<PatchResult> {
 	const sheetResult = getSheet(workbook, op.sheet)
 	if (!sheetResult.ok) return sheetResult
-	workbook.definedNames.set('_xlnm.Print_Area', `'${op.sheet}'!${op.range}`, {
-		kind: 'sheet',
-		sheetId: sheetResult.value.id,
-	})
+	workbook.definedNames.set(
+		'_xlnm.Print_Area',
+		`${quoteSheetNameForFormula(op.sheet)}!${op.range}`,
+		{
+			kind: 'sheet',
+			sheetId: sheetResult.value.id,
+		},
+	)
 	return ok(patch([], [op.sheet]))
+}
+
+function quoteSheetNameForFormula(sheet: string): string {
+	return `'${sheet.replace(/'/g, "''")}'`
 }
 
 export function handleSetComment(

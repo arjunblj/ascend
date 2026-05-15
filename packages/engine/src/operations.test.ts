@@ -2163,6 +2163,22 @@ describe('applyOperation', () => {
 		)
 	})
 
+	test('setPrintArea escapes quoted sheet names in defined-name metadata', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet("Bob's Budget")
+
+		const result = applyOperation(wb, {
+			op: 'setPrintArea',
+			sheet: "Bob's Budget",
+			range: 'A1:B2',
+		})
+		expectOk(result)
+
+		expect(wb.definedNames.resolve('_xlnm.Print_Area', sheet.id, sheet.id)?.formula).toBe(
+			"'Bob''s Budget'!A1:B2",
+		)
+	})
+
 	test('setPageSetup preserves imported print metadata on partial updates', () => {
 		const wb = setup()
 		const sheet = wb.getSheet('Sheet1')

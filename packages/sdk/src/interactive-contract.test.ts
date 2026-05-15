@@ -3312,6 +3312,37 @@ describe('interactive client contract', () => {
 		).toBe("'Sheet1'!A1:B2")
 	})
 
+	test('print area journals preserve escaped sheet names exactly', () => {
+		const wb = AscendWorkbook.create()
+		const sheet = wb.getWorkbookModel().addSheet("Bob's Budget")
+
+		const changed = wb.apply([{ op: 'setPrintArea', sheet: "Bob's Budget", range: 'A1:B2' }], {
+			journal: true,
+		})
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(true)
+		expect(changed.journal?.inverseOps).toEqual([
+			{ op: 'deleteDefinedName', name: '_xlnm.Print_Area', scope: "Bob's Budget" },
+		])
+		expect(
+			wb.getWorkbookModel().definedNames.get('_xlnm.Print_Area', {
+				kind: 'sheet',
+				sheetId: sheet.id,
+			}),
+		).toBe("'Bob''s Budget'!A1:B2")
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(
+			wb.getWorkbookModel().definedNames.get('_xlnm.Print_Area', {
+				kind: 'sheet',
+				sheetId: sheet.id,
+			}),
+		).toBeUndefined()
+	})
+
 	test('page setup journals preserve untouched imported metadata exactly', () => {
 		const wb = AscendWorkbook.create()
 		const sheet = wb.getWorkbookModel().getSheet('Sheet1')

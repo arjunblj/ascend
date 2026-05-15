@@ -69,6 +69,10 @@ interface Sample {
 	readonly sharedPlanMs: number
 	readonly sharedCommitMs: number
 	readonly sharedTotalMs: number
+	readonly planUnattributedMs: number
+	readonly commitUnattributedMs: number
+	readonly sharedPlanUnattributedMs: number
+	readonly sharedCommitUnattributedMs: number
 	readonly planPayloadBytes: number
 	readonly commitPayloadBytes: number
 	readonly sharedPlanPayloadBytes: number
@@ -230,6 +234,14 @@ function phaseMap(phases: readonly PhaseTiming[]): Record<string, number> {
 	return map
 }
 
+function topLevelPhaseMs(phases: readonly PhaseTiming[]): number {
+	return phases.reduce((sum, phase) => (phase.phase.includes(':') ? sum : sum + phase.ms), 0)
+}
+
+function unattributedMs(totalMs: number, phases: readonly PhaseTiming[]): number {
+	return Math.max(0, totalMs - topLevelPhaseMs(phases))
+}
+
 function payloadBytes(value: unknown): number {
 	return JSON.stringify(value).length
 }
@@ -278,6 +290,10 @@ async function runSample(
 		sharedPlanMs: sharedPlan.ms,
 		sharedCommitMs: sharedCommit.ms,
 		sharedTotalMs: sharedPlan.ms + sharedCommit.ms,
+		planUnattributedMs: unattributedMs(plan.ms, plan.phases),
+		commitUnattributedMs: unattributedMs(commit.ms, commit.phases),
+		sharedPlanUnattributedMs: unattributedMs(sharedPlan.ms, sharedPlan.phases),
+		sharedCommitUnattributedMs: unattributedMs(sharedCommit.ms, sharedCommit.phases),
 		planPayloadBytes: payloadBytes(plan.value),
 		commitPayloadBytes: payloadBytes(commit.value),
 		sharedPlanPayloadBytes: payloadBytes(sharedPlan.value.plan),
@@ -350,6 +366,14 @@ function summarize(samples: readonly Sample[]) {
 		sharedPlanMedianMs: median(samples.map((sample) => sample.sharedPlanMs)),
 		sharedCommitMedianMs: median(samples.map((sample) => sample.sharedCommitMs)),
 		sharedTotalMedianMs: median(samples.map((sample) => sample.sharedTotalMs)),
+		planUnattributedMedianMs: median(samples.map((sample) => sample.planUnattributedMs)),
+		commitUnattributedMedianMs: median(samples.map((sample) => sample.commitUnattributedMs)),
+		sharedPlanUnattributedMedianMs: median(
+			samples.map((sample) => sample.sharedPlanUnattributedMs),
+		),
+		sharedCommitUnattributedMedianMs: median(
+			samples.map((sample) => sample.sharedCommitUnattributedMs),
+		),
 		sharedWorkflowSpeedupVsCold:
 			median(samples.map((sample) => sample.totalMs)) /
 			median(samples.map((sample) => sample.sharedTotalMs)),

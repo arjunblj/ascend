@@ -429,6 +429,7 @@ export const MUTATION_JOURNAL_EXACTNESS_MATRIX: readonly MutationJournalExactnes
 			'ordering, duplicates, defaults, and x14 extension payloads can make rollback lossy',
 		],
 		lossReasons: [
+			'value-unsupported',
 			'data-validation-default-attributes',
 			'metadata-order',
 			'metadata-duplicate',
@@ -451,7 +452,13 @@ export const MUTATION_JOURNAL_EXACTNESS_MATRIX: readonly MutationJournalExactnes
 			'standard conditional formats restore with setConditionalFormat/deleteConditionalFormat',
 			'rule ordering, duplicate ranges, collisions, and x14 extension payloads can make rollback lossy',
 		],
-		lossReasons: ['metadata-order', 'metadata-duplicate', 'metadata-collision', 'x14-metadata'],
+		lossReasons: [
+			'value-unsupported',
+			'metadata-order',
+			'metadata-duplicate',
+			'metadata-collision',
+			'x14-metadata',
+		],
 		representativeOps: [
 			'setConditionalFormat',
 			'deleteConditionalFormat',
@@ -469,6 +476,7 @@ export const MUTATION_JOURNAL_EXACTNESS_MATRIX: readonly MutationJournalExactnes
 			'advanced filter columns, extension metadata, and advanced sort metadata are lossy',
 		],
 		lossReasons: [
+			'value-unsupported',
 			'operation-unsupported',
 			'auto-filter-column-metadata',
 			'auto-filter-extension-metadata',
@@ -2061,6 +2069,19 @@ function buildJournalEntry(
 			issues,
 		}
 	}
+	const metadataRangeIssue = journalOperationMetadataRangeValueIssue(op)
+	if (metadataRangeIssue) {
+		const issues = [structureMutationJournalIssue(metadataRangeIssue)]
+		return {
+			opIndex,
+			op,
+			supported: true,
+			exact: false,
+			inverseOps: [],
+			preimages: [],
+			issues,
+		}
+	}
 	const tableIssue = journalOperationTableTopologyIssue(workbook, op)
 	if (tableIssue) {
 		const issues = [structureMutationJournalIssue(tableIssue)]
@@ -2195,6 +2216,45 @@ function journalOperationRequiredTargetSheet(op: Operation): string | null {
 		case 'copyRange':
 		case 'moveRange':
 			return op.targetSheet ?? null
+		default:
+			return null
+	}
+}
+
+function journalOperationMetadataRangeValueIssue(op: Operation): MutationJournalIssue | null {
+	const range = journalOperationMetadataRange(op)
+	if (!range) return null
+	try {
+		parseRange(range.range)
+		return null
+	} catch {
+		return {
+			code: 'UNSUPPORTED_VALUE',
+			message: `Cannot build exact rollback journal for ${op.op} because range ${range.range} is invalid`,
+			surface: range.surface,
+			reason: 'value-unsupported',
+			refs: [`${range.sheet}!${range.range}`],
+		}
+	}
+}
+
+function journalOperationMetadataRange(op: Operation): {
+	readonly surface: MutationJournalSurface
+	readonly sheet: string
+	readonly range: string
+} | null {
+	switch (op.op) {
+		case 'setDataValidation':
+		case 'deleteDataValidation':
+			return { surface: 'data-validations', sheet: op.sheet, range: op.range }
+		case 'setConditionalFormat':
+			return { surface: 'conditional-formats', sheet: op.sheet, range: op.range }
+		case 'deleteConditionalFormat':
+			return op.range === undefined
+				? null
+				: { surface: 'conditional-formats', sheet: op.sheet, range: op.range }
+		case 'setAutoFilter':
+			return { surface: 'auto-filters', sheet: op.sheet, range: op.range }
 		default:
 			return null
 	}

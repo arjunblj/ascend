@@ -79,6 +79,8 @@ export function handleSetConditionalFormat(
 ): Result<PatchResult> {
 	const sheetResult = getSheet(workbook, op.sheet)
 	if (!sheetResult.ok) return sheetResult
+	const rangeResult = safeParseRange(op.range)
+	if (!rangeResult.ok) return rangeResult
 	const sheet = sheetResult.value
 	sheet.ensureWritable()
 	const existing = sheet.conditionalFormats.findIndex((cf) => cf.sqref === op.range)
@@ -101,6 +103,10 @@ export function handleDeleteConditionalFormat(
 ): Result<PatchResult> {
 	const sheetResult = getSheet(workbook, op.sheet)
 	if (!sheetResult.ok) return sheetResult
+	if (op.range !== undefined) {
+		const rangeResult = safeParseRange(op.range)
+		if (!rangeResult.ok) return rangeResult
+	}
 	const sheet = sheetResult.value
 	sheet.ensureWritable()
 	if (op.range === undefined && op.priority === undefined && op.ruleIndex === undefined) {
@@ -186,6 +192,8 @@ export function handleSetDataValidation(
 ): Result<PatchResult> {
 	const sheetResult = getSheet(workbook, op.sheet)
 	if (!sheetResult.ok) return sheetResult
+	const rangeResult = safeParseRange(op.range)
+	if (!rangeResult.ok) return rangeResult
 	const sheet = sheetResult.value
 	sheet.ensureWritable()
 	const existing = sheet.dataValidations.findIndex((dv) => dv.sqref === op.range)
@@ -219,6 +227,8 @@ export function handleDeleteDataValidation(
 ): Result<PatchResult> {
 	const sheetResult = getSheet(workbook, op.sheet)
 	if (!sheetResult.ok) return sheetResult
+	const rangeResult = safeParseRange(op.range)
+	if (!rangeResult.ok) return rangeResult
 	const sheet = sheetResult.value
 	sheet.ensureWritable()
 	sheet.dataValidations = sheet.dataValidations.filter((dv) => dv.sqref !== op.range)
@@ -228,6 +238,8 @@ export function handleDeleteDataValidation(
 export function handleSetAutoFilter(workbook: Workbook, op: SetAutoFilterOp): Result<PatchResult> {
 	const sheetResult = getSheet(workbook, op.sheet)
 	if (!sheetResult.ok) return sheetResult
+	const rangeResult = safeParseRange(op.range)
+	if (!rangeResult.ok) return rangeResult
 	const validation = validateFilterCriteriaUpdate('setAutoFilter', op)
 	if (validation) return err(validation)
 	const sheet = sheetResult.value

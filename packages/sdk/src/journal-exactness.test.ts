@@ -588,6 +588,66 @@ describe('mutation journal exactness model', () => {
 		})
 	})
 
+	test('classifies invalid sheet metadata ranges as unsupported values', () => {
+		const cases: readonly {
+			readonly op: Operation
+			readonly surface: string
+		}[] = [
+			{
+				op: {
+					op: 'setDataValidation',
+					sheet: 'Sheet1',
+					range: 'not a range',
+					rule: { type: 'whole' },
+				},
+				surface: 'data-validations',
+			},
+			{
+				op: { op: 'deleteDataValidation', sheet: 'Sheet1', range: 'not a range' },
+				surface: 'data-validations',
+			},
+			{
+				op: {
+					op: 'setConditionalFormat',
+					sheet: 'Sheet1',
+					range: 'not a range',
+					rule: { type: 'expression', formula: 'TRUE' },
+				},
+				surface: 'conditional-formats',
+			},
+			{
+				op: { op: 'deleteConditionalFormat', sheet: 'Sheet1', range: 'not a range' },
+				surface: 'conditional-formats',
+			},
+			{
+				op: { op: 'setAutoFilter', sheet: 'Sheet1', range: 'not a range' },
+				surface: 'auto-filters',
+			},
+		]
+
+		for (const entry of cases) {
+			const wb = AscendWorkbook.create()
+			const journal = buildMutationJournal(wb.getWorkbookModel(), [entry.op])
+			const analysis = analyzeMutationJournalExactness(journal)
+			expect(journal.inverseOps, entry.op.op).toEqual([])
+			expect(analysis, entry.op.op).toMatchObject({
+				supported: true,
+				exact: false,
+				issueCount: 1,
+				surfaces: [entry.surface],
+				reasons: ['value-unsupported'],
+				hasMatrixViolation: false,
+			})
+			expect(analysis.issues[0], entry.op.op).toMatchObject({
+				code: 'UNSUPPORTED_VALUE',
+				surface: entry.surface,
+				reason: 'value-unsupported',
+				refs: ['Sheet1!not a range'],
+				allowedByMatrix: true,
+			})
+		}
+	})
+
 	test('classifies table selector journal preimage failures as table topology', () => {
 		const missingOps: readonly Operation[] = [
 			{ op: 'deleteTable', table: 'MissingTable' },

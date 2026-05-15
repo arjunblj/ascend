@@ -2717,6 +2717,32 @@ describe('applyOperation', () => {
 		])
 	})
 
+	test('sheet metadata range operations reject invalid ranges before mutation', () => {
+		const cases: readonly Operation[] = [
+			{ op: 'setDataValidation', sheet: 'Sheet1', range: 'not a range', rule: { type: 'whole' } },
+			{ op: 'deleteDataValidation', sheet: 'Sheet1', range: 'not a range' },
+			{
+				op: 'setConditionalFormat',
+				sheet: 'Sheet1',
+				range: 'not a range',
+				rule: { type: 'expression', formula: 'TRUE' },
+			},
+			{ op: 'deleteConditionalFormat', sheet: 'Sheet1', range: 'not a range' },
+			{ op: 'setAutoFilter', sheet: 'Sheet1', range: 'not a range' },
+		]
+
+		for (const op of cases) {
+			const wb = setup()
+			const result = applyOperation(wb, op)
+			expectErr(result)
+			expect(result.error.code, op.op).toBe('INVALID_RANGE')
+			const sheet = wb.getSheet('Sheet1')
+			expect(sheet?.dataValidations, op.op).toEqual([])
+			expect(sheet?.conditionalFormats, op.op).toEqual([])
+			expect(sheet?.autoFilter, op.op).toBeNull()
+		}
+	})
+
 	test('setAutoFilter preserves existing criteria when updating the range', () => {
 		const wb = setup()
 		const sheet = wb.getSheet('Sheet1')

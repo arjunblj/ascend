@@ -6,6 +6,7 @@ Updated: 2026-05-15
 
 | Run | Status | Fold-in target |
 | --- | --- | --- |
+| [Formula free reopen timing probe](runs/2026/2026-05-15-formula-free-reopen-timing-probe/log.md) | local generated 100k-cell probe showed formula scan-only reopen median 4.899 ms vs 9.143 ms with scalar hydration; diagnostic only | performance loop |
 | [Post write reopen package expectations](runs/2026/2026-05-15-post-write-reopen-package-expectations/log.md) | folded formula-free post-write reopen no-value hydration and expected generated copy-sheet table part audit classification | correctness loop, performance loop |
 | [Release RC gate index evidence](runs/2026/2026-05-15-release-rc-gate-index-evidence/log.md) | folded unified `release:rc:gate` command into release-proof-index packageability evidence while keeping publication/provenance blockers missing | release loop |
 | [Copy sheet table retargeting](runs/2026/2026-05-15-copy-sheet-table-retargeting/log.md) | folded in copied table identity retargeting, structured reference rewrites, queryTable fail-closed copySheet boundary, and reopened XLSX table-part collision proof | correctness loop |

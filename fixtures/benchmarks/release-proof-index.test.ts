@@ -70,6 +70,35 @@ describe('release proof evidence index', () => {
 			'SLSA provenance',
 			'GitHub artifact attestations',
 		])
+		expect(index.performancePolicy).toMatchObject({
+			currentDecision: 'owner-approval-required',
+			boundary: expect.stringContaining('not a release performance threshold'),
+		})
+		expect(index.performancePolicy.approvalChecklist).toHaveLength(2)
+		expect(index.performancePolicy.approvalChecklist.map((item) => item.gateId)).toEqual([
+			'release-latency-run',
+			'streaming-matrix-boundary',
+		])
+		expect(index.performancePolicy.approvalChecklist[0]).toMatchObject({
+			artifact: 'safe-open-proof',
+			ownerLoop: 'performance',
+			status: 'pending-owner-decision',
+			validationCommand:
+				'bun run fixtures/benchmarks/safe-open-proof.ts --repeat 3 --warmup 1 --json',
+			rejectIf: expect.stringContaining('latency SLA'),
+		})
+		expect(index.performancePolicy.approvalChecklist[1]).toMatchObject({
+			artifact: 'package-action-proof',
+			ownerLoop: 'performance',
+			status: 'pending-owner-decision',
+			validationCommand: 'bun run fixtures/benchmarks/package-action-proof.ts --no-timings --json',
+			rejectIf: expect.stringContaining('full streaming parity'),
+		})
+		expect(index.performancePolicy.sourceReferences.map((entry) => entry.label)).toEqual([
+			'Bun benchmarking',
+			'hyperfine benchmarking',
+			'hyperfine manual',
+		])
 		expect(index.artifacts.map((artifact) => artifact.name)).toEqual([
 			'safe-open-proof',
 			'package-action-proof',
@@ -427,7 +456,12 @@ describe('release proof evidence index', () => {
 			'release',
 			'release',
 		])
+		expect(handoff.performancePolicy.approvalChecklist.map((item) => item.gateId)).toEqual([
+			'release-latency-run',
+			'streaming-matrix-boundary',
+		])
 		expect(JSON.stringify(handoff.fixturePolicy)).toContain('package-action-fixture-scan')
+		expect(JSON.stringify(handoff.performancePolicy)).toContain('safe-open-proof.ts --repeat 3')
 		expect(handoff.nextOwnerActions[0]).toMatchObject({
 			requirementId: 'edge-fixture-policy',
 			acceptanceEvidence: expect.stringContaining('accepts disclosed generated'),
@@ -521,6 +555,11 @@ describe('release proof evidence index', () => {
 		expect(markdown).toContain('| package-action-proof | provenance-boundary | release')
 		expect(markdown).toContain('pending-owner-decision')
 		expect(markdown).toContain('OpenSSF Scorecard binary artifacts')
+		expect(markdown).toContain('## Performance Policy')
+		expect(markdown).toContain('not a release performance threshold')
+		expect(markdown).toContain('| safe-open-proof | release-latency-run | performance')
+		expect(markdown).toContain('| package-action-proof | streaming-matrix-boundary | performance')
+		expect(markdown).toContain('Bun benchmarking')
 		expect(markdown).toContain(
 			'| Rank | Artifact | Gate | Owner loop | Priority | Next step | Acceptance evidence | Forbidden shortcut |',
 		)

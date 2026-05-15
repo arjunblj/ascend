@@ -85,6 +85,7 @@ export interface ReleaseProofIndexResult {
 	readonly signed: false
 	readonly attestation: false
 	readonly fixturePolicy: ReleaseProofFixturePolicy
+	readonly performancePolicy: ReleaseProofPerformancePolicy
 	readonly readiness: ReleaseProofReadinessSummary
 	readonly boundary: string
 	readonly artifacts: readonly ReleaseProofIndexArtifact[]
@@ -99,6 +100,7 @@ export interface ReleaseProofOwnerHandoffIndex {
 	readonly implementationSurfacePromotionAllowed: boolean
 	readonly missingRequirementCount: number
 	readonly fixturePolicy: ReleaseProofFixturePolicy
+	readonly performancePolicy: ReleaseProofPerformancePolicy
 	readonly nextOwnerActions: readonly ReleaseProofNextOwnerAction[]
 	readonly implementationHandoffs: readonly ReleaseProofImplementationHandoff[]
 	readonly deferredClaims: readonly ReleaseProofDeferredClaim[]
@@ -201,6 +203,24 @@ export interface ReleaseProofFixturePolicyApprovalItem {
 export interface ReleaseProofSourceReference {
 	readonly label: string
 	readonly url: string
+}
+
+export interface ReleaseProofPerformancePolicy {
+	readonly currentDecision: 'owner-approval-required'
+	readonly approvalChecklist: readonly ReleaseProofPerformancePolicyApprovalItem[]
+	readonly sourceReferences: readonly ReleaseProofSourceReference[]
+	readonly boundary: string
+}
+
+export interface ReleaseProofPerformancePolicyApprovalItem {
+	readonly artifact: ReleaseProofIndexArtifactName
+	readonly gateId: string
+	readonly ownerLoop: 'performance'
+	readonly status: 'pending-owner-decision'
+	readonly decisionNeeded: string
+	readonly acceptanceEvidence: string
+	readonly rejectIf: string
+	readonly validationCommand: string
 }
 
 const FIXTURE_POLICY: ReleaseProofFixturePolicy = {
@@ -307,6 +327,55 @@ const FIXTURE_POLICY: ReleaseProofFixturePolicy = {
 		'Fixture policy is an owner-decision aid for local proof artifacts. It is not approval to publish generated fixtures as public binaries, not signed provenance, and not a license or privacy review.',
 }
 
+const PERFORMANCE_POLICY: ReleaseProofPerformancePolicy = {
+	currentDecision: 'owner-approval-required',
+	approvalChecklist: [
+		{
+			artifact: 'safe-open-proof',
+			gateId: 'release-latency-run',
+			ownerLoop: 'performance',
+			status: 'pending-owner-decision',
+			decisionNeeded:
+				'Approve a tracked-clean release-environment safe-open latency run over standardized public inputs and non-threshold wording.',
+			acceptanceEvidence:
+				'Timed safe-open proof uses approved public inputs, repeat/warmup policy, environment notes, and wording that reports observations without a release threshold.',
+			rejectIf:
+				'Run uses private corpora, dirty worktree state, one-off local timing, machine-specific ratios, or copy that implies a latency SLA.',
+			validationCommand:
+				'bun run fixtures/benchmarks/safe-open-proof.ts --repeat 3 --warmup 1 --json',
+		},
+		{
+			artifact: 'package-action-proof',
+			gateId: 'streaming-matrix-boundary',
+			ownerLoop: 'performance',
+			status: 'pending-owner-decision',
+			decisionNeeded:
+				'Accept one representative dirty-sheet streaming proof for narrow wording, or require a broader streaming matrix before any parity claim.',
+			acceptanceEvidence:
+				'Package-action proof reports one streaming proof case with regenerated dirty worksheet and passthrough-byte equality, and release wording says representative proof only.',
+			rejectIf:
+				'Copy says full streaming parity, covers add/drop/error streaming behavior, or implies macro/chart streaming preservation without a broader matrix.',
+			validationCommand: 'bun run fixtures/benchmarks/package-action-proof.ts --no-timings --json',
+		},
+	],
+	sourceReferences: [
+		{
+			label: 'Bun benchmarking',
+			url: 'https://bun.sh/docs/project/benchmarking',
+		},
+		{
+			label: 'hyperfine benchmarking',
+			url: 'https://github.com/sharkdp/hyperfine',
+		},
+		{
+			label: 'hyperfine manual',
+			url: 'https://man.archlinux.org/man/hyperfine.1.en',
+		},
+	],
+	boundary:
+		'Performance policy is an owner-decision aid for local benchmark evidence. It is not a release performance threshold, SLA, streaming parity claim, or production optimization mandate.',
+}
+
 export async function runReleaseProofIndex(
 	options: ReleaseProofIndexOptions = {},
 ): Promise<ReleaseProofIndexResult> {
@@ -329,6 +398,7 @@ export async function runReleaseProofIndex(
 		signed: false,
 		attestation: false,
 		fixturePolicy: cloneFixturePolicy(),
+		performancePolicy: clonePerformancePolicy(),
 		readiness: releaseReadinessSummary(artifacts),
 		boundary:
 			'Digest index for local release evidence artifacts. This is not signed provenance, SLSA, in-toto attestation, or tamper-evident storage.',
@@ -392,6 +462,22 @@ export function releaseProofIndexMarkdown(result: ReleaseProofIndexResult): stri
 			(reference) => `- ${reference.label}: ${reference.url}`,
 		),
 		'',
+		'## Performance Policy',
+		'',
+		`Current decision: ${result.performancePolicy.currentDecision}`,
+		result.performancePolicy.boundary,
+		'',
+		'Approval checklist:',
+		'',
+		'| Artifact | Gate | Owner | Status | Decision needed | Acceptance evidence | Reject if | Validation command |',
+		'| --- | --- | --- | --- | --- | --- | --- | --- |',
+		...result.performancePolicy.approvalChecklist.map(performancePolicyApprovalMarkdownRow),
+		'',
+		'Source references:',
+		...result.performancePolicy.sourceReferences.map(
+			(reference) => `- ${reference.label}: ${reference.url}`,
+		),
+		'',
 		'## Excluded Evidence',
 		'',
 		'| Evidence | Command | Reason | Eligibility rule | Owner loop | Boundary |',
@@ -419,6 +505,7 @@ export function releaseProofOwnerHandoffIndex(
 		implementationSurfacePromotionAllowed: result.readiness.implementationSurfacePromotionAllowed,
 		missingRequirementCount: result.readiness.missingRequirementCount,
 		fixturePolicy: cloneFixturePolicy(),
+		performancePolicy: clonePerformancePolicy(),
 		nextOwnerActions: result.readiness.nextOwnerActions,
 		implementationHandoffs: result.readiness.implementationHandoffs,
 		deferredClaims: result.deferredClaims,
@@ -1161,6 +1248,33 @@ function cloneFixturePolicy(): ReleaseProofFixturePolicy {
 }
 
 function fixturePolicyApprovalMarkdownRow(row: ReleaseProofFixturePolicyApprovalItem): string {
+	return [
+		row.artifact,
+		row.gateId,
+		row.ownerLoop,
+		row.status,
+		row.decisionNeeded,
+		row.acceptanceEvidence,
+		row.rejectIf,
+		`\`${row.validationCommand}\``,
+	]
+		.map((cell) => ` ${cell} `)
+		.join('|')
+		.replace(/^/, '|')
+		.replace(/$/, '|')
+}
+
+function clonePerformancePolicy(): ReleaseProofPerformancePolicy {
+	return {
+		...PERFORMANCE_POLICY,
+		approvalChecklist: PERFORMANCE_POLICY.approvalChecklist.map((item) => ({ ...item })),
+		sourceReferences: PERFORMANCE_POLICY.sourceReferences.map((reference) => ({ ...reference })),
+	}
+}
+
+function performancePolicyApprovalMarkdownRow(
+	row: ReleaseProofPerformancePolicyApprovalItem,
+): string {
 	return [
 		row.artifact,
 		row.gateId,

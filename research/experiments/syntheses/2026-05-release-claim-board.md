@@ -43,6 +43,7 @@ Latest proof refresh, 2026-05-15T10:15:42Z:
 - `package-action-fixture-scan --json` now scans the tracked git XLSX/XLSM corpus for package-action replacement candidates. Current result: 223 fixtures scanned, 1 rejected, `docPropsCore=191`, `docPropsCustom=16`, `calcChain=52`, `customXml=4`, `macro=2`, `chartOrDrawing=46`, `signaturePackage=0`, and `syntheticUnknownPathFamily=0`.
 - `release-proof-index --owner-handoffs-json` now includes `fixturePolicy`: generated structural fixture acceptance criteria, public-binary-required criteria, tracked fixture scan commands, current generated structural cases, and external policy/provenance references. The policy is an owner-decision aid only; it does not satisfy `public-edge-fixtures` or `edge-fixture-policy`.
 - `fixturePolicy.approvalChecklist` now lists four pending product/release decisions with validation commands, acceptance evidence, and rejection conditions. All checklist items remain `pending-owner-decision`; no release gate is satisfied by the checklist itself.
+- `performancePolicy.approvalChecklist` now lists pending performance decisions for `safe-open-proof/release-latency-run` and `package-action-proof/streaming-matrix-boundary`. It records validation commands and rejection conditions while keeping local timing below release-threshold wording and one streaming case below parity wording.
 
 ## External References
 

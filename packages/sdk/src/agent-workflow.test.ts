@@ -935,6 +935,7 @@ describe('agent workflow loss audit', () => {
 						),
 					).rejects.toThrow('Commit blocked by write policy')
 					expect(existsSync(output)).toBe(false)
+					expect(wb.sheet('Label')?.cell('C1')).toBeUndefined()
 				},
 			},
 			{

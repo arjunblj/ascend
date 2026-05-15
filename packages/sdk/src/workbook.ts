@@ -120,6 +120,30 @@ export interface WorkbookBytesOptions {
 	readonly compressionProfile?: ZipCompressionProfile
 }
 
+interface WorkbookMutationRollbackSnapshot {
+	readonly workbook: Workbook
+	readonly originalBytes: Uint8Array | null
+	readonly sourceArchive: ZipArchive | undefined
+	readonly packageGraphCache:
+		| { readonly bytes: Uint8Array; readonly graph: XlsxPackageGraph }
+		| undefined
+	readonly dirty: boolean
+	readonly dirtySheets: readonly string[]
+	readonly pendingDirtyCellRefs: readonly (readonly [string, readonly string[]])[]
+	readonly pendingDirtyRefs: readonly string[]
+	readonly pendingFullRecalc: boolean
+	readonly workbookMetaDirty: boolean
+	readonly documentPropertiesDirty: boolean
+	readonly calcStateDirty: boolean
+	readonly calcChainDirty: boolean
+	readonly sharedStringsDirty: boolean
+	readonly stylesDirty: boolean
+	readonly workbookGeneration: number
+	readonly sheetMetadataGeneration: number
+	readonly formulaGeneration: number
+	readonly styleGeneration: number
+}
+
 function cloneWorkbook(source: Workbook): Workbook {
 	return source.clone()
 }
@@ -1771,6 +1795,69 @@ export class AscendWorkbook extends WorkbookReadView {
 		if (!this.dirty) this.originalBytes = null
 		this.packageGraphCache = undefined
 		this.dirty = true
+	}
+
+	createMutationRollbackSnapshot(): WorkbookMutationRollbackSnapshot {
+		return {
+			workbook: this.wb.clone(),
+			originalBytes: this.originalBytes ? new Uint8Array(this.originalBytes) : null,
+			sourceArchive: this.sourceArchive,
+			packageGraphCache: this.packageGraphCache
+				? {
+						bytes: new Uint8Array(this.packageGraphCache.bytes),
+						graph: this.packageGraphCache.graph,
+					}
+				: undefined,
+			dirty: this.dirty,
+			dirtySheets: [...this.dirtySheets],
+			pendingDirtyCellRefs: [...this.pendingDirtyCellRefs.entries()].map(
+				([sheet, refs]) => [sheet, [...refs]] as const,
+			),
+			pendingDirtyRefs: [...this.pendingDirtyRefs],
+			pendingFullRecalc: this.pendingFullRecalc,
+			workbookMetaDirty: this.workbookMetaDirty,
+			documentPropertiesDirty: this.documentPropertiesDirty,
+			calcStateDirty: this.calcStateDirty,
+			calcChainDirty: this.calcChainDirty,
+			sharedStringsDirty: this.sharedStringsDirty,
+			stylesDirty: this.stylesDirty,
+			workbookGeneration: this.workbookGeneration,
+			sheetMetadataGeneration: this.sheetMetadataGeneration,
+			formulaGeneration: this.formulaGeneration,
+			styleGeneration: this.styleGeneration,
+		}
+	}
+
+	restoreMutationRollbackSnapshot(snapshot: WorkbookMutationRollbackSnapshot): void {
+		this.wb = snapshot.workbook
+		this.originalBytes = snapshot.originalBytes ? new Uint8Array(snapshot.originalBytes) : null
+		this.sourceArchive = snapshot.sourceArchive
+		this.packageGraphCache = snapshot.packageGraphCache
+			? {
+					bytes: new Uint8Array(snapshot.packageGraphCache.bytes),
+					graph: snapshot.packageGraphCache.graph,
+				}
+			: undefined
+		this.dirty = snapshot.dirty
+		this.dirtySheets.clear()
+		for (const sheet of snapshot.dirtySheets) this.dirtySheets.add(sheet)
+		this.pendingDirtyCellRefs.clear()
+		for (const [sheet, refs] of snapshot.pendingDirtyCellRefs) {
+			this.pendingDirtyCellRefs.set(sheet, new Set(refs))
+		}
+		this.pendingDirtyRefs = [...snapshot.pendingDirtyRefs]
+		this.pendingFullRecalc = snapshot.pendingFullRecalc
+		this.workbookMetaDirty = snapshot.workbookMetaDirty
+		this.documentPropertiesDirty = snapshot.documentPropertiesDirty
+		this.calcStateDirty = snapshot.calcStateDirty
+		this.calcChainDirty = snapshot.calcChainDirty
+		this.sharedStringsDirty = snapshot.sharedStringsDirty
+		this.stylesDirty = snapshot.stylesDirty
+		this.workbookGeneration = snapshot.workbookGeneration
+		this.sheetMetadataGeneration = snapshot.sheetMetadataGeneration
+		this.formulaGeneration = snapshot.formulaGeneration
+		this.styleGeneration = snapshot.styleGeneration
+		this.clearReadCaches()
 	}
 
 	private captureSerializedState(bytes: Uint8Array): void {

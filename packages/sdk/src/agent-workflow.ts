@@ -1954,74 +1954,92 @@ export async function commitAgentPlanFromWorkbook(
 			}),
 		)
 	}
-	await progress('apply', 'started', 'Applying operations.', { count: ops.length })
-	const applyResult = await timedCommitStep(() =>
-		wb.apply(ops, { transaction: true, journal: true }),
-	)
-	const apply = applyResult.value
-	await progressFromPhase(applyPhase(apply), progress)
-	if (apply.errors.length > 0)
-		throw new AscendException(apply.errors[0] ?? ascendError('VALIDATION_ERROR', 'Apply failed'))
-
+	const rollbackSnapshot = wb.createMutationRollbackSnapshot()
+	let apply: ReturnType<AscendWorkbook['apply']>
 	let recalc: ReturnType<AscendWorkbook['recalc']> | null = null
 	let recalcMs = 0
-	if (apply.recalcRequired) {
-		await progress('recalc', 'started', 'Recalculating formulas.')
-		const recalcResult = await timedCommitStep(() => wb.recalc())
-		recalc = recalcResult.value
-		recalcMs = recalcResult.ms
-		await progressFromPhase(recalcPhase(recalc), progress)
-		if (recalc.errors.length > 0) {
-			const first = recalc.errors[0]
+	let preservation: ReturnType<AscendWorkbook['writePlanSummary']>
+	let writePolicy: WritePolicyReport
+	let writePolicyCheck: ReturnType<AscendWorkbook['check']>
+	let applyMs = 0
+	let preservationMs = 0
+	let writePolicyCheckMs = 0
+	let writePolicyBuildMs = 0
+	try {
+		await progress('apply', 'started', 'Applying operations.', { count: ops.length })
+		const applyResult = await timedCommitStep(() =>
+			wb.apply(ops, { transaction: true, journal: true }),
+		)
+		apply = applyResult.value
+		applyMs = applyResult.ms
+		await progressFromPhase(applyPhase(apply), progress)
+		if (apply.errors.length > 0)
+			throw new AscendException(apply.errors[0] ?? ascendError('VALIDATION_ERROR', 'Apply failed'))
+
+		if (apply.recalcRequired) {
+			await progress('recalc', 'started', 'Recalculating formulas.')
+			const recalcResult = await timedCommitStep(() => wb.recalc())
+			recalc = recalcResult.value
+			recalcMs = recalcResult.ms
+			await progressFromPhase(recalcPhase(recalc), progress)
+			if (recalc.errors.length > 0) {
+				const first = recalc.errors[0]
+				throw new AscendException(
+					first
+						? ascendError('FORMULA_EVAL_ERROR', `${first.ref}: ${first.error.message}`, {
+								refs: [first.ref],
+								details: { evalError: first.error },
+								suggestedFix:
+									'Run ascend plan to inspect the failing formula state before committing.',
+							})
+						: ascendError('FORMULA_EVAL_ERROR', 'Recalculation failed'),
+				)
+			}
+		} else {
+			await progressFromPhase(recalcPhase(recalc), progress)
+		}
+
+		await progress('preservation-audit', 'started', 'Summarizing package preservation.')
+		const preservationResult = await timedCommitStep(() => wb.writePlanSummary())
+		preservation = preservationResult.value
+		preservationMs = preservationResult.ms
+		await progressFromPhase(preservationPhase(preservation), progress)
+		await progress('write-policy', 'started', 'Explaining write preservation and loss policy.')
+		const writePolicyCheckResult =
+			internal.preparedCheck && canReusePreparedCommitCheck(writePolicyWorkbook, ops)
+				? { value: internal.preparedCheck, ms: 0 }
+				: await timedCommitStep(() => wb.check())
+		writePolicyCheck = writePolicyCheckResult.value
+		writePolicyCheckMs = writePolicyCheckResult.ms
+		const writePolicyResult = await timedCommitStep(() =>
+			buildWritePolicyReport(
+				wb.report.features,
+				packageGraph,
+				preservation,
+				packageGraphAudit,
+				writePolicyWorkbook,
+				ops,
+				wb.inspect().externalReferenceDetails,
+				writePolicyCheck.issues,
+			),
+		)
+		writePolicy = writePolicyResult.value
+		writePolicyBuildMs = writePolicyResult.ms
+		await progressFromPhase(writePolicyPhase(writePolicy), progress)
+		if (writePolicy.diagnostics.some((diagnostic) => diagnostic.severity === 'blocker')) {
 			throw new AscendException(
-				first
-					? ascendError('FORMULA_EVAL_ERROR', `${first.ref}: ${first.error.message}`, {
-							refs: [first.ref],
-							details: { evalError: first.error },
-							suggestedFix:
-								'Run ascend plan to inspect the failing formula state before committing.',
-						})
-					: ascendError('FORMULA_EVAL_ERROR', 'Recalculation failed'),
+				ascendError('VALIDATION_ERROR', 'Commit blocked by write policy', {
+					details: { writePolicy },
+					suggestedFix:
+						'Inspect writePolicy.diagnostics and repair blocker diagnostics before committing.',
+				}),
 			)
 		}
-	} else {
-		await progressFromPhase(recalcPhase(recalc), progress)
+	} catch (error) {
+		wb.restoreMutationRollbackSnapshot(rollbackSnapshot)
+		throw error
 	}
-
 	if (options.inPlace && options.backup) await copyFile(file, options.backup)
-	await progress('preservation-audit', 'started', 'Summarizing package preservation.')
-	const preservationResult = await timedCommitStep(() => wb.writePlanSummary())
-	const preservation = preservationResult.value
-	await progressFromPhase(preservationPhase(preservation), progress)
-	await progress('write-policy', 'started', 'Explaining write preservation and loss policy.')
-	const writePolicyCheckResult =
-		internal.preparedCheck && canReusePreparedCommitCheck(writePolicyWorkbook, ops)
-			? { value: internal.preparedCheck, ms: 0 }
-			: await timedCommitStep(() => wb.check())
-	const writePolicyCheck = writePolicyCheckResult.value
-	const writePolicyResult = await timedCommitStep(() =>
-		buildWritePolicyReport(
-			wb.report.features,
-			packageGraph,
-			preservation,
-			packageGraphAudit,
-			writePolicyWorkbook,
-			ops,
-			wb.inspect().externalReferenceDetails,
-			writePolicyCheck.issues,
-		),
-	)
-	const writePolicy = writePolicyResult.value
-	await progressFromPhase(writePolicyPhase(writePolicy), progress)
-	if (writePolicy.diagnostics.some((diagnostic) => diagnostic.severity === 'blocker')) {
-		throw new AscendException(
-			ascendError('VALIDATION_ERROR', 'Commit blocked by write policy', {
-				details: { writePolicy },
-				suggestedFix:
-					'Inspect writePolicy.diagnostics and repair blocker diagnostics before committing.',
-			}),
-		)
-	}
 	const sourceBytes = internal.sourceBytes ?? (await fileBytes(file))
 	await progress('write', 'started', `Writing workbook to ${output}.`)
 	const writeTimings = await writeWorkbookAtomically(wb, output)
@@ -2036,11 +2054,11 @@ export async function commitAgentPlanFromWorkbook(
 		approvalAuditMs: approvalsResult.ms,
 		lossAuditMs: lossAuditResult.ms,
 		packageGraphAuditMs: packageGraphAuditResult.ms,
-		applyMs: applyResult.ms,
+		applyMs,
 		recalcMs,
-		writePlanSummaryMs: preservationResult.ms,
-		writePolicyCheckMs: writePolicyCheckResult.ms,
-		writePolicyBuildMs: writePolicyResult.ms,
+		writePlanSummaryMs: preservationMs,
+		writePolicyCheckMs,
+		writePolicyBuildMs,
 		toBytesMs: writeTimings.toBytesMs,
 		writeFileMs: writeTimings.writeFileMs,
 		renameMs: writeTimings.renameMs,

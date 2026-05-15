@@ -367,6 +367,59 @@ describe('checker', () => {
 		expect(result.issues.filter((entry) => entry.rule === 'formula-binding-integrity')).toEqual([])
 	})
 
+	test('accepts escaped quoted sheet-qualified formula binding refs', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet("Bob's Budget")
+		s.cells.set(0, 0, {
+			value: numberValue(2),
+			formula: 'B1*2',
+			styleId: SID,
+			formulaInfo: {
+				kind: 'shared',
+				sharedIndex: '0',
+				isMaster: true,
+				masterRef: "'Bob''s Budget'!A1",
+				ref: "'Bob''s Budget'!A1:A2",
+			},
+		})
+		s.cells.set(1, 0, {
+			value: numberValue(4),
+			formula: null,
+			styleId: SID,
+			formulaInfo: {
+				kind: 'shared',
+				sharedIndex: '0',
+				isMaster: false,
+				masterRef: "'Bob''s Budget'!$A$1",
+			},
+		})
+		s.cells.set(0, 2, {
+			value: numberValue(1),
+			formula: 'SEQUENCE(2)',
+			styleId: SID,
+			formulaInfo: {
+				kind: 'spill',
+				anchorRef: "'Bob''s Budget'!C1",
+				ref: "'Bob''s Budget'!C1:C2",
+				isAnchor: true,
+			},
+		})
+		s.cells.set(1, 2, {
+			value: numberValue(2),
+			formula: null,
+			styleId: SID,
+			formulaInfo: {
+				kind: 'spill',
+				anchorRef: "'Bob''s Budget'!C1",
+				ref: "'Bob''s Budget'!C1:C2",
+				isAnchor: false,
+			},
+		})
+
+		const result = check(wb)
+		expect(result.issues.filter((entry) => entry.rule === 'formula-binding-integrity')).toEqual([])
+	})
+
 	test('detects shared formula members outside the master range', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')

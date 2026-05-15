@@ -177,6 +177,32 @@ describe('release proof evidence index', () => {
 			'hyperfine benchmarking',
 			'hyperfine manual',
 		])
+		expect(index.safeOpenLatencyValidationEvidence).toMatchObject({
+			artifact: 'safe-open-proof',
+			gateId: 'release-latency-run',
+			ownerLoop: 'performance',
+			status: 'timed-evidence-absent-owner-run-required',
+			ownerApprovalRequired: true,
+			releaseClaimAllowed: false,
+			thresholdClaimAllowed: false,
+			validationCommand:
+				'bun run fixtures/benchmarks/safe-open-proof.ts --repeat 3 --warmup 1 --json',
+			repeat: 1,
+			warmup: 2,
+			timedCaseCount: 0,
+			publicTimedCaseNames: [],
+			generatedTimedCaseNames: [],
+			publicOpenPlanMedianMs: {},
+			publicFullOpenRatio: {},
+			malformedRejected: true,
+			missingPolicyRequirements: [
+				'tracked-clean release environment',
+				'standardized public input set',
+				'approved repeat and warmup policy',
+				'non-threshold release wording',
+			],
+			boundary: expect.stringContaining('not a release threshold'),
+		})
 		expect(index.streamingMatrixEvidence).toMatchObject({
 			artifact: 'package-action-proof',
 			gateId: 'streaming-matrix-boundary',
@@ -792,6 +818,13 @@ describe('release proof evidence index', () => {
 			'release-latency-run',
 			'streaming-matrix-boundary',
 		])
+		expect(handoff.safeOpenLatencyValidationEvidence).toMatchObject({
+			status: 'timed-evidence-absent-owner-run-required',
+			timedCaseCount: 0,
+			ownerApprovalRequired: true,
+			releaseClaimAllowed: false,
+			thresholdClaimAllowed: false,
+		})
 		expect(handoff.streamingMatrixEvidence).toMatchObject({
 			status: 'representative-proof-present-owner-approval-required',
 			ownerApprovalRequired: true,
@@ -837,6 +870,9 @@ describe('release proof evidence index', () => {
 			'generated-malformed-package',
 		)
 		expect(JSON.stringify(handoff.performancePolicy)).toContain('safe-open-proof.ts --repeat 3')
+		expect(JSON.stringify(handoff.safeOpenLatencyValidationEvidence)).toContain(
+			'tracked-clean release environment',
+		)
 		expect(JSON.stringify(handoff.streamingMatrixEvidence)).toContain(
 			'"missingActionKinds":["add","drop","error"]',
 		)
@@ -1019,6 +1055,14 @@ describe('release proof evidence index', () => {
 		expect(markdown).toContain('| safe-open-proof | release-latency-run | performance')
 		expect(markdown).toContain('| package-action-proof | streaming-matrix-boundary | performance')
 		expect(markdown).toContain('Bun benchmarking')
+		expect(markdown).toContain('Safe-open latency validation evidence:')
+		expect(markdown).toContain('Status: timed-evidence-absent-owner-run-required')
+		expect(markdown).toContain('Timed case count: 0')
+		expect(markdown).toContain('Release claim allowed: false')
+		expect(markdown).toContain('Threshold claim allowed: false')
+		expect(markdown).toContain('Missing latency policy requirements:')
+		expect(markdown).toContain('tracked-clean release environment')
+		expect(markdown).toContain('non-threshold release wording')
 		expect(markdown).toContain('## Streaming Matrix Evidence')
 		expect(markdown).toContain('Status: representative-proof-present-owner-approval-required')
 		expect(markdown).toContain('Covered action kinds: passthrough,regenerate')

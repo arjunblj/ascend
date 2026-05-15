@@ -31,6 +31,8 @@ Correctness boundary note: `correctnessBoundaryEvidence` now includes `missingFe
 
 Claim blocker board note: `readiness.claimBlockerBoard` now groups missing gates by claim and owner loop. Owner loops can read `safe-open-proof/product`, `safe-open-proof/performance`, `safe-open-proof/release`, `package-action-proof/product`, `package-action-proof/correctness`, `package-action-proof/performance`, and `package-action-proof/release` rows directly instead of reconstructing ownership from global action lists.
 
+Safe-open latency note: `safeOpenLatencyValidationEvidence` now keeps the `release-latency-run` gate explicit in owner-handoff JSON. The default no-timings index reports `timed-evidence-absent-owner-run-required`, `releaseClaimAllowed=false`, and `thresholdClaimAllowed=false`; performance must run the tracked command and approve environment/input/repeat wording before any latency claim.
+
 ## Proof Snapshot
 
 Current local proof gate:
@@ -129,6 +131,7 @@ Owner loops should consume these JSON fields first:
 | `readiness.implementationHandoffs[].proofRequired` | Product-shaped proof ladder: fixture, benchmark, surface, validation gate, competitor contrast, honest boundary, and kill criterion. |
 | `fixturePolicyEvidence` | Summarizes tracked safe-open and package-action fixture scans for product gate decisions while keeping public replacement gaps explicit. |
 | `generatedFixtureDecisionEvidence` | Lists every disclosed generated structural case with tracked replacement evidence, owner decision needed, allowed use, and forbidden use. |
+| `safeOpenLatencyValidationEvidence` | Performance-owner evidence for `release-latency-run`; default handoff is untimed and blocks release/threshold wording until an approved timed run exists. |
 | `correctnessBoundaryEvidence` | Verifies the unsupported-feature boundary matrix against current package-action and safe-open proof cases while keeping owner approval required; `missingFeatureNames` and `ownerEscalationRequired` make regressions machine-visible. |
 | `streamingMatrixEvidence` | Verifies the representative streaming proof boundary: covered action kinds, missing action kinds, covered case names, non-streaming public cases, and owner approval requirement. |
 | `compactReportPublicationEvidence` | Proves compact report commands and privacy/canonicalization blockers without indexing compact report digests; `policyDecisions` turns each blocker into release-owner acceptance/rejection evidence. |

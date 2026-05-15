@@ -8,6 +8,10 @@ Research is no longer a broad sweep. Each direction below must earn its place by
 
 ## Latest Claim Steward Refresh
 
+Proof timestamp: 2026-05-15T18:34:10Z.
+
+Safe-open latency is now an explicit performance-owner gate in JSON. `safeOpenLatencyValidationEvidence` reports that the default owner handoff is untimed (`timed-evidence-absent-owner-run-required`), keeps `releaseClaimAllowed=false` and `thresholdClaimAllowed=false`, and names the missing release policy requirements: tracked-clean release environment, standardized public input set, approved repeat/warmup policy, and non-threshold wording. A local `--repeat 3 --warmup 1` diagnostic was rerun, but remains diagnostic-only.
+
 Proof timestamp: 2026-05-15T18:26:50Z.
 
 Top-claim blocker routing is now explicit. `readiness.claimBlockerBoard` groups each missing `readyWhen` gate by claim and owner loop, carrying blocker IDs, action ranks, next-step kinds, acceptance evidence, and forbidden shortcuts. This gives the two handoff loops a direct claim/owner board without reading every policy object.

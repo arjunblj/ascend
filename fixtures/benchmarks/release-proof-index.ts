@@ -155,6 +155,7 @@ export interface ReleaseProofIndexResult {
 	readonly fixturePolicyEvidence: ReleaseProofFixturePolicyEvidence
 	readonly generatedFixtureDecisionEvidence: ReleaseProofGeneratedFixtureDecisionEvidence
 	readonly performancePolicy: ReleaseProofPerformancePolicy
+	readonly safeOpenLatencyValidationEvidence: ReleaseProofSafeOpenLatencyValidationEvidence
 	readonly correctnessPolicy: ReleaseProofCorrectnessPolicy
 	readonly correctnessBoundaryEvidence: ReleaseProofCorrectnessBoundaryEvidence
 	readonly streamingMatrixEvidence: ReleaseProofStreamingMatrixEvidence
@@ -176,6 +177,7 @@ export interface ReleaseProofOwnerHandoffIndex {
 	readonly fixturePolicyEvidence: ReleaseProofFixturePolicyEvidence
 	readonly generatedFixtureDecisionEvidence: ReleaseProofGeneratedFixtureDecisionEvidence
 	readonly performancePolicy: ReleaseProofPerformancePolicy
+	readonly safeOpenLatencyValidationEvidence: ReleaseProofSafeOpenLatencyValidationEvidence
 	readonly correctnessPolicy: ReleaseProofCorrectnessPolicy
 	readonly correctnessBoundaryEvidence: ReleaseProofCorrectnessBoundaryEvidence
 	readonly streamingMatrixEvidence: ReleaseProofStreamingMatrixEvidence
@@ -375,6 +377,29 @@ export interface ReleaseProofPerformancePolicyApprovalItem {
 	readonly acceptanceEvidence: string
 	readonly rejectIf: string
 	readonly validationCommand: string
+}
+
+export interface ReleaseProofSafeOpenLatencyValidationEvidence {
+	readonly artifact: 'safe-open-proof'
+	readonly gateId: 'release-latency-run'
+	readonly ownerLoop: 'performance'
+	readonly status:
+		| 'timed-evidence-absent-owner-run-required'
+		| 'local-timed-diagnostic-owner-approval-required'
+	readonly ownerApprovalRequired: true
+	readonly releaseClaimAllowed: false
+	readonly thresholdClaimAllowed: false
+	readonly validationCommand: string
+	readonly repeat: number
+	readonly warmup: number
+	readonly timedCaseCount: number
+	readonly publicTimedCaseNames: readonly string[]
+	readonly generatedTimedCaseNames: readonly string[]
+	readonly malformedRejected: boolean
+	readonly publicOpenPlanMedianMs: Readonly<Record<string, number>>
+	readonly publicFullOpenRatio: Readonly<Record<string, number>>
+	readonly missingPolicyRequirements: readonly string[]
+	readonly boundary: string
 }
 
 export interface ReleaseProofCorrectnessPolicy {
@@ -701,6 +726,7 @@ export async function runReleaseProofIndex(
 		fixturePolicyEvidence: fixtureEvidence,
 		generatedFixtureDecisionEvidence: generatedFixtureDecisionEvidence(fixtureEvidence),
 		performancePolicy: clonePerformancePolicy(),
+		safeOpenLatencyValidationEvidence: safeOpenLatencyValidationEvidence(safeOpen),
 		correctnessPolicy: cloneCorrectnessPolicy(),
 		correctnessBoundaryEvidence: correctnessBoundaryEvidence(safeOpen, packageAction),
 		streamingMatrixEvidence: streamingMatrixEvidence(packageAction),
@@ -822,6 +848,22 @@ export function releaseProofIndexMarkdown(result: ReleaseProofIndexResult): stri
 			(reference) => `- ${reference.label}: ${reference.url}`,
 		),
 		'',
+		'Safe-open latency validation evidence:',
+		'',
+		`Status: ${result.safeOpenLatencyValidationEvidence.status}`,
+		`Timed case count: ${result.safeOpenLatencyValidationEvidence.timedCaseCount}`,
+		`Public timed cases: ${result.safeOpenLatencyValidationEvidence.publicTimedCaseNames.join(',') || 'none'}`,
+		`Generated timed cases: ${result.safeOpenLatencyValidationEvidence.generatedTimedCaseNames.join(',') || 'none'}`,
+		`Release claim allowed: ${result.safeOpenLatencyValidationEvidence.releaseClaimAllowed}`,
+		`Threshold claim allowed: ${result.safeOpenLatencyValidationEvidence.thresholdClaimAllowed}`,
+		`Owner approval required: ${result.safeOpenLatencyValidationEvidence.ownerApprovalRequired}`,
+		result.safeOpenLatencyValidationEvidence.boundary,
+		'',
+		'Missing latency policy requirements:',
+		...result.safeOpenLatencyValidationEvidence.missingPolicyRequirements.map(
+			(entry) => `- ${entry}`,
+		),
+		'',
 		'## Streaming Matrix Evidence',
 		'',
 		`Status: ${result.streamingMatrixEvidence.status}`,
@@ -929,6 +971,9 @@ export function releaseProofOwnerHandoffIndex(
 			result.generatedFixtureDecisionEvidence,
 		),
 		performancePolicy: clonePerformancePolicy(),
+		safeOpenLatencyValidationEvidence: cloneSafeOpenLatencyValidationEvidence(
+			result.safeOpenLatencyValidationEvidence,
+		),
 		correctnessPolicy: cloneCorrectnessPolicy(),
 		correctnessBoundaryEvidence: cloneCorrectnessBoundaryEvidence(
 			result.correctnessBoundaryEvidence,
@@ -2395,6 +2440,70 @@ function performancePolicyApprovalMarkdownRow(
 		.join('|')
 		.replace(/^/, '|')
 		.replace(/$/, '|')
+}
+
+function safeOpenLatencyValidationEvidence(
+	result: SafeOpenProofResult,
+): ReleaseProofSafeOpenLatencyValidationEvidence {
+	const timedCases = result.cases.filter((entry) => entry.openPlanMedianMs !== undefined)
+	const publicTimedCases = timedCases.filter((entry) => entry.kind === 'file')
+	const generatedTimedCases = timedCases.filter((entry) => entry.kind !== 'file')
+	return {
+		artifact: 'safe-open-proof',
+		gateId: 'release-latency-run',
+		ownerLoop: 'performance',
+		status:
+			timedCases.length > 0
+				? 'local-timed-diagnostic-owner-approval-required'
+				: 'timed-evidence-absent-owner-run-required',
+		ownerApprovalRequired: true,
+		releaseClaimAllowed: false,
+		thresholdClaimAllowed: false,
+		validationCommand:
+			'bun run fixtures/benchmarks/safe-open-proof.ts --repeat 3 --warmup 1 --json',
+		repeat: result.repeat,
+		warmup: result.warmup,
+		timedCaseCount: timedCases.length,
+		publicTimedCaseNames: publicTimedCases.map((entry) => entry.name),
+		generatedTimedCaseNames: generatedTimedCases.map((entry) => entry.name),
+		malformedRejected: result.cases.some(
+			(entry) => entry.name === 'malformed' && entry.status === 'rejected',
+		),
+		publicOpenPlanMedianMs: numericCaseMetricByName(publicTimedCases, 'openPlanMedianMs'),
+		publicFullOpenRatio: numericCaseMetricByName(publicTimedCases, 'fullOpenRatio'),
+		missingPolicyRequirements: [
+			'tracked-clean release environment',
+			'standardized public input set',
+			'approved repeat and warmup policy',
+			'non-threshold release wording',
+		],
+		boundary:
+			'Safe-open latency validation evidence is performance-owner routing data. It is not a release threshold, SLA, speed claim, or approval to use machine-specific local timing in public wording.',
+	}
+}
+
+function numericCaseMetricByName(
+	cases: readonly SafeOpenProofCaseResult[],
+	metric: 'openPlanMedianMs' | 'fullOpenRatio',
+): Readonly<Record<string, number>> {
+	return Object.fromEntries(
+		cases
+			.map((entry) => [entry.name, entry[metric]] as const)
+			.filter((entry): entry is readonly [string, number] => entry[1] !== undefined),
+	)
+}
+
+function cloneSafeOpenLatencyValidationEvidence(
+	evidence: ReleaseProofSafeOpenLatencyValidationEvidence,
+): ReleaseProofSafeOpenLatencyValidationEvidence {
+	return {
+		...evidence,
+		publicTimedCaseNames: [...evidence.publicTimedCaseNames],
+		generatedTimedCaseNames: [...evidence.generatedTimedCaseNames],
+		publicOpenPlanMedianMs: { ...evidence.publicOpenPlanMedianMs },
+		publicFullOpenRatio: { ...evidence.publicFullOpenRatio },
+		missingPolicyRequirements: [...evidence.missingPolicyRequirements],
+	}
 }
 
 function cloneCorrectnessPolicy(): ReleaseProofCorrectnessPolicy {

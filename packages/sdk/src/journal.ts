@@ -5303,6 +5303,25 @@ function calcSettingsValueIssues(
 		return [workbookMetadataUnsupportedValueIssue(op.op, 'settings', ['workbook:calcSettings'])]
 	}
 	const issues: MutationJournalIssue[] = []
+	const calcMode = (settings as { readonly calcMode?: unknown }).calcMode
+	if (
+		calcMode !== undefined &&
+		calcMode !== 'auto' &&
+		calcMode !== 'manual' &&
+		calcMode !== 'autoNoTable'
+	) {
+		issues.push(workbookMetadataUnsupportedValueIssue(op.op, 'calcMode', ['workbook:calcSettings']))
+	}
+	for (const [field, value] of [
+		['fullCalcOnLoad', (settings as { readonly fullCalcOnLoad?: unknown }).fullCalcOnLoad],
+		['calcCompleted', (settings as { readonly calcCompleted?: unknown }).calcCompleted],
+		['calcOnSave', (settings as { readonly calcOnSave?: unknown }).calcOnSave],
+		['forceFullCalc', (settings as { readonly forceFullCalc?: unknown }).forceFullCalc],
+	] as const) {
+		if (value !== undefined && value !== null && typeof value !== 'boolean') {
+			issues.push(workbookMetadataUnsupportedValueIssue(op.op, field, ['workbook:calcSettings']))
+		}
+	}
 	const calcId = (settings as { readonly calcId?: unknown }).calcId
 	if (
 		calcId !== undefined &&
@@ -5311,8 +5330,26 @@ function calcSettingsValueIssues(
 	) {
 		issues.push(workbookMetadataUnsupportedValueIssue(op.op, 'calcId', ['workbook:calcSettings']))
 	}
+	const dateSystem = (settings as { readonly dateSystem?: unknown }).dateSystem
+	if (dateSystem !== undefined && dateSystem !== '1900' && dateSystem !== '1904') {
+		issues.push(
+			workbookMetadataUnsupportedValueIssue(op.op, 'dateSystem', ['workbook:calcSettings']),
+		)
+	}
 	const iterative = (settings as { readonly iterativeCalc?: unknown }).iterativeCalc
-	if (isPlainJournalObject(iterative)) {
+	if (iterative !== undefined && iterative !== null && !isPlainJournalObject(iterative)) {
+		issues.push(
+			workbookMetadataUnsupportedValueIssue(op.op, 'iterativeCalc', ['workbook:calcSettings']),
+		)
+	} else if (isPlainJournalObject(iterative)) {
+		const enabled = (iterative as { readonly enabled?: unknown }).enabled
+		if (enabled !== undefined && typeof enabled !== 'boolean') {
+			issues.push(
+				workbookMetadataUnsupportedValueIssue(op.op, 'iterativeCalc.enabled', [
+					'workbook:calcSettings',
+				]),
+			)
+		}
 		const maxIterations = (iterative as { readonly maxIterations?: unknown }).maxIterations
 		if (
 			maxIterations !== undefined &&
@@ -5325,7 +5362,10 @@ function calcSettingsValueIssues(
 			)
 		}
 		const maxChange = (iterative as { readonly maxChange?: unknown }).maxChange
-		if (maxChange !== undefined && (typeof maxChange !== 'number' || maxChange < 0)) {
+		if (
+			maxChange !== undefined &&
+			(typeof maxChange !== 'number' || !Number.isFinite(maxChange) || maxChange < 0)
+		) {
 			issues.push(
 				workbookMetadataUnsupportedValueIssue(op.op, 'iterativeCalc.maxChange', [
 					'workbook:calcSettings',

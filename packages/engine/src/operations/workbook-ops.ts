@@ -594,6 +594,32 @@ function validateCalcSettings(settings: SetCalcSettingsOp['settings']): Result<u
 		)
 	}
 	if (
+		settings.calcMode !== undefined &&
+		settings.calcMode !== 'auto' &&
+		settings.calcMode !== 'manual' &&
+		settings.calcMode !== 'autoNoTable'
+	) {
+		return err(
+			ascendError('VALIDATION_ERROR', 'calcMode must be auto, manual, or autoNoTable', {
+				suggestedFix: 'Use one of Excel calc modes: auto, manual, or autoNoTable.',
+			}),
+		)
+	}
+	for (const [field, value] of [
+		['fullCalcOnLoad', settings.fullCalcOnLoad],
+		['calcCompleted', settings.calcCompleted],
+		['calcOnSave', settings.calcOnSave],
+		['forceFullCalc', settings.forceFullCalc],
+	] as const) {
+		if (value !== undefined && value !== null && typeof value !== 'boolean') {
+			return err(
+				ascendError('VALIDATION_ERROR', `${field} must be a boolean or null`, {
+					suggestedFix: `Use true, false, or null for ${field}.`,
+				}),
+			)
+		}
+	}
+	if (
 		settings.calcId !== undefined &&
 		settings.calcId !== null &&
 		(!Number.isInteger(settings.calcId) || settings.calcId < 0)
@@ -604,7 +630,36 @@ function validateCalcSettings(settings: SetCalcSettingsOp['settings']): Result<u
 			}),
 		)
 	}
+	if (
+		settings.dateSystem !== undefined &&
+		settings.dateSystem !== '1900' &&
+		settings.dateSystem !== '1904'
+	) {
+		return err(
+			ascendError('VALIDATION_ERROR', 'dateSystem must be 1900 or 1904', {
+				suggestedFix: 'Use dateSystem="1900" or dateSystem="1904".',
+			}),
+		)
+	}
 	const iterative = settings.iterativeCalc
+	if (
+		iterative !== undefined &&
+		iterative !== null &&
+		(typeof iterative !== 'object' || Array.isArray(iterative))
+	) {
+		return err(
+			ascendError('VALIDATION_ERROR', 'iterativeCalc must be an object or null', {
+				suggestedFix: 'Use null to reset iterative calculation or provide iterativeCalc fields.',
+			}),
+		)
+	}
+	if (iterative && iterative.enabled !== undefined && typeof iterative.enabled !== 'boolean') {
+		return err(
+			ascendError('VALIDATION_ERROR', 'iterativeCalc.enabled must be a boolean', {
+				suggestedFix: 'Use true or false for iterativeCalc.enabled.',
+			}),
+		)
+	}
 	if (iterative && iterative.maxIterations !== undefined) {
 		if (!Number.isInteger(iterative.maxIterations) || iterative.maxIterations < 1) {
 			return err(
@@ -614,7 +669,11 @@ function validateCalcSettings(settings: SetCalcSettingsOp['settings']): Result<u
 			)
 		}
 	}
-	if (iterative && iterative.maxChange !== undefined && iterative.maxChange < 0) {
+	if (
+		iterative &&
+		iterative.maxChange !== undefined &&
+		(!Number.isFinite(iterative.maxChange) || iterative.maxChange < 0)
+	) {
 		return err(
 			ascendError('VALIDATION_ERROR', 'iterativeCalc.maxChange must be non-negative', {
 				suggestedFix: 'Use a non-negative maxChange convergence threshold.',

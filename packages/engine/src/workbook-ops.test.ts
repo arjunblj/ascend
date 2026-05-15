@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { createWorkbook } from '@ascend/core'
+import type { Operation } from '@ascend/schema'
 import { applyOperation } from './operations.ts'
 
 function expectOk<T, E extends { message: string }>(
@@ -9,7 +10,7 @@ function expectOk<T, E extends { message: string }>(
 	if (!result.ok) throw new Error(result.error.message)
 }
 
-function expectErr<T, E>(
+function expectErr<T, E extends { code?: string }>(
 	result: { ok: true; value: T } | { ok: false; error: E },
 ): asserts result is { ok: false; error: E } {
 	expect(result.ok).toBe(false)
@@ -166,6 +167,31 @@ describe('workbook metadata operations', () => {
 		expect(wb.calcSettings.calcCompleted).toBeUndefined()
 		expect(wb.workbookProperties.date1904).toBe(true)
 		expect(result.value.recalcRequired).toBe(true)
+	})
+
+	test('setCalcSettings rejects invalid public metadata before mutation', () => {
+		const cases: readonly Operation[] = [
+			{ op: 'setCalcSettings', settings: { calcMode: 'bad' } } as unknown as Operation,
+			{ op: 'setCalcSettings', settings: { fullCalcOnLoad: 'yes' } } as unknown as Operation,
+			{ op: 'setCalcSettings', settings: { dateSystem: '1904-ish' } } as unknown as Operation,
+			{ op: 'setCalcSettings', settings: { iterativeCalc: true } } as unknown as Operation,
+			{
+				op: 'setCalcSettings',
+				settings: { iterativeCalc: { enabled: 'yes' } },
+			} as unknown as Operation,
+			{ op: 'setCalcSettings', settings: { iterativeCalc: { maxChange: Number.NaN } } },
+			{ op: 'setCalcSettings', settings: { iterativeCalc: { maxChange: Infinity } } },
+		]
+
+		for (const op of cases) {
+			const wb = createWorkbook()
+			const before = JSON.stringify(wb.calcSettings)
+			const result = applyOperation(wb, op)
+			expectErr(result)
+			expect(result.error.code, JSON.stringify(op)).toBe('VALIDATION_ERROR')
+			expect(JSON.stringify(wb.calcSettings), JSON.stringify(op)).toBe(before)
+			expect(wb.workbookProperties.date1904, JSON.stringify(op)).toBeUndefined()
+		}
 	})
 
 	test('setTheme updates names, fonts, and color slots without recalculation', () => {

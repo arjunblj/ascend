@@ -34,6 +34,7 @@ Updated: 2026-05-15
 | [Package action proof surface digests](runs/2026/2026-05-15-package-action-proof-surface-digests/log.md) | folded in opt-in commit digest evidence | correctness loop, product loop |
 | [Release proof surface promotion gate](runs/2026/2026-05-15-release-proof-surface-promotion-gate/log.md) | handoff only, hold CLI/API/MCP surface | product loop |
 | [Formula LET binding shadowing](runs/2026/2026-05-15-formula-let-binding-shadowing/log.md) | folded in stateless LET scope fix | correctness loop, product/DX loop |
+| [Formula prepare rename boundary](runs/2026/2026-05-15-formula-prepare-rename-boundary/log.md) | folded in guarded prepareRename primitive | correctness loop, product/DX loop |
 | [Package action proof](runs/2026/2026-05-14-package-action-proof/log.md) | cycle 2 complete, promote | correctness loop, product/DX loop, performance loop |
 | [Formula spans LSP](runs/2026/2026-05-14-formula-spans-lsp/log.md) | cycle 13 complete, folded in SDK hover/code actions | product/DX loop, correctness loop |
 | [Formula sqllogictest conformance](runs/2026/2026-05-14-formula-sqllogictest-conformance/log.md) | cycle 14 complete, folded in converter/runner | correctness loop |

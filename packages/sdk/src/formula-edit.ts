@@ -138,6 +138,7 @@ export interface FormulaAssistResult {
 	readonly bindings: readonly FormulaBindingRole[]
 	readonly activeReference: FormulaReferenceRange | null
 	readonly hover: FormulaHoverInfo | null
+	readonly renameTarget: FormulaPrepareRenameResult | null
 	readonly completions: readonly FormulaFunctionCompletion[]
 	readonly signature: FormulaFunctionSignature | null
 	readonly signatureHelp: FormulaFunctionSignatureHelp | null
@@ -177,6 +178,27 @@ export interface FormulaCodeAction {
 	}
 	readonly reference?: FormulaReferenceRange
 	readonly diagnosticCodes?: readonly FormulaDiagnostic['code'][]
+}
+
+export type FormulaPrepareRenameBlockReason =
+	| 'no-symbol-at-cursor'
+	| 'workbook-context-required'
+	| 'reference-target-not-renameable'
+
+export interface FormulaPrepareRenameRange {
+	readonly start: number
+	readonly end: number
+}
+
+export interface FormulaPrepareRenameResult {
+	readonly ok: boolean
+	readonly reason?: FormulaPrepareRenameBlockReason
+	readonly placeholder?: string
+	readonly range?: FormulaPrepareRenameRange
+	readonly occurrences: readonly FormulaPrepareRenameRange[]
+	readonly role?: FormulaBindingRole
+	readonly reference?: FormulaReferenceRange
+	readonly boundary: string
 }
 
 export interface FormulaFunctionSignatureHelp {
@@ -273,6 +295,66 @@ export function formulaBindingRoles(formula: string): FormulaBindingRole[] {
 	return roles.sort((left, right) => left.start - right.start || left.end - right.end)
 }
 
+export function formulaPrepareRename(formula: string, cursor: number): FormulaPrepareRenameResult {
+	const clampedCursor = Math.max(0, Math.min(formula.length, Math.floor(cursor)))
+	const bindings = formulaBindingRoles(formula)
+	const role = bindings.find(
+		(binding) => clampedCursor >= binding.start && clampedCursor <= binding.end,
+	)
+	if (!role) {
+		const reference = referenceAtCursor(formula, clampedCursor)
+		return reference
+			? {
+					ok: false,
+					reason: 'reference-target-not-renameable',
+					occurrences: [],
+					reference,
+					boundary:
+						'Cell, range, sheet, and external references require workbook operations, not formula-local rename.',
+				}
+			: {
+					ok: false,
+					reason: 'no-symbol-at-cursor',
+					occurrences: [],
+					boundary: 'No renameable formula symbol was found at the cursor.',
+				}
+	}
+	if (role.role === 'let-binding-declaration' || role.role === 'let-binding-use') {
+		const bindingStart = role.role === 'let-binding-declaration' ? role.start : role.bindingStart
+		const bindingEnd = role.role === 'let-binding-declaration' ? role.end : role.bindingEnd
+		if (bindingStart !== undefined && bindingEnd !== undefined) {
+			const occurrences = bindings
+				.filter(
+					(candidate) =>
+						(candidate.role === 'let-binding-declaration' &&
+							candidate.start === bindingStart &&
+							candidate.end === bindingEnd) ||
+						(candidate.role === 'let-binding-use' &&
+							candidate.bindingStart === bindingStart &&
+							candidate.bindingEnd === bindingEnd),
+				)
+				.map(({ start, end }) => ({ start, end }))
+			return {
+				ok: true,
+				placeholder: formula.slice(bindingStart, bindingEnd),
+				range: { start: bindingStart, end: bindingEnd },
+				occurrences,
+				role,
+				boundary:
+					'Only formula-local LET bindings are rename-ready; callers must still apply edits explicitly.',
+			}
+		}
+	}
+	return {
+		ok: false,
+		reason: 'workbook-context-required',
+		occurrences: [],
+		role,
+		boundary:
+			'Workbook names, table names, and table columns require workbook-context resolution before rename.',
+	}
+}
+
 export function cycleFormulaReferenceMode(formula: string, cursor: number): CycleReferenceResult {
 	const spans = tokenSpans(formula)
 	const clampedCursor = Math.max(0, Math.min(formula.length, cursor))
@@ -363,6 +445,7 @@ export function formulaAssist(
 		bindings: formulaBindingRoles(formula),
 		activeReference: cursor === null ? null : referenceAtCursor(formula, cursor),
 		hover: cursor === null ? null : formulaHover(formula, cursor),
+		renameTarget: cursor === null ? null : formulaPrepareRename(formula, cursor),
 		completions:
 			options.prefix === undefined
 				? []

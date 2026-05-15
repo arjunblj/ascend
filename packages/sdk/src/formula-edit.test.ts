@@ -9,6 +9,7 @@ import {
 	formulaFunctionSignature,
 	formulaFunctionSignatureHelp,
 	formulaHover,
+	formulaPrepareRename,
 	formulaReferenceRanges,
 	formulaTokenRanges,
 	insertFormulaReference,
@@ -32,6 +33,10 @@ describe('formula editing utilities', () => {
 		expect(result.bindings.map(({ role, text }) => ({ role, text }))).toEqual([])
 		expect(result.activeReference).toMatchObject({ text: 'A1:B2', kind: 'range' })
 		expect(result.hover).toMatchObject({ kind: 'reference', label: 'A1:B2' })
+		expect(result.renameTarget).toMatchObject({
+			ok: false,
+			reason: 'reference-target-not-renameable',
+		})
 		expect(result.completions.some((completion) => completion.name === 'SUM')).toBe(true)
 		expect(result.signature?.name).toBe('SUM')
 		expect(result.signatureHelp?.signature.name).toBe('SUM')
@@ -244,6 +249,43 @@ describe('formula editing utilities', () => {
 			end: 16,
 			bindingStart: 5,
 			bindingEnd: 6,
+		})
+	})
+
+	test('prepares only resolved formula-local LET renames', () => {
+		expect(formulaPrepareRename('=LET(x,1,LET(x,2,x)+x)', 17)).toEqual({
+			ok: true,
+			placeholder: 'x',
+			range: { start: 13, end: 14 },
+			occurrences: [
+				{ start: 13, end: 14 },
+				{ start: 17, end: 18 },
+			],
+			role: {
+				role: 'let-binding-use',
+				text: 'x',
+				start: 17,
+				end: 18,
+				bindingStart: 13,
+				bindingEnd: 14,
+			},
+			boundary:
+				'Only formula-local LET bindings are rename-ready; callers must still apply edits explicitly.',
+		})
+		expect(formulaPrepareRename('=Budget+Sales[Amount]', 3)).toMatchObject({
+			ok: false,
+			reason: 'workbook-context-required',
+			role: { role: 'unresolved-name', text: 'Budget' },
+		})
+		expect(formulaPrepareRename('=Budget+Sales[Amount]', 10)).toMatchObject({
+			ok: false,
+			reason: 'workbook-context-required',
+			role: { role: 'table-name-use', text: 'Sales' },
+		})
+		expect(formulaPrepareRename('=A1+B1', 2)).toMatchObject({
+			ok: false,
+			reason: 'reference-target-not-renameable',
+			reference: { text: 'A1', kind: 'cell' },
 		})
 	})
 

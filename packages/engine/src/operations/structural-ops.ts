@@ -41,6 +41,7 @@ import {
 	cellPreservingFormulaInfo,
 	cellWithExisting,
 	clearFormulaMetadata,
+	collectFormulaBindingGroupRefsForRefs,
 	collectRangeCells,
 	createLegacyArrayFormulaIndex,
 	DEFAULT_SID,
@@ -332,6 +333,17 @@ export function handleTransferRange(
 				affected.add(
 					affectedNamedRef(rewritten.sheetName, rewritten.ref, sourceSheet.name, crossSheet),
 				)
+				const rewrittenSheet = workbook.getSheet(rewritten.sheetName)
+				const rewrittenRef = parseA1(rewritten.ref)
+				if (rewrittenSheet && rewrittenRef) {
+					for (const groupRef of collectFormulaBindingGroupRefsForRefs(workbook, rewrittenSheet, [
+						rewrittenRef,
+					])) {
+						affected.add(
+							affectedNamedRef(rewritten.sheetName, groupRef, sourceSheet.name, crossSheet),
+						)
+					}
+				}
 			}
 			rewriteDefinedNameFormulasForMove(
 				workbook,

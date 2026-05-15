@@ -282,6 +282,26 @@ export function materializeFormulaBindingGroupsForFormulaClear(
 	})
 }
 
+export function collectFormulaBindingGroupRefsForRefs(
+	workbook: Workbook,
+	sheet: Sheet,
+	refs: Iterable<{ readonly row: number; readonly col: number }>,
+): Set<string> {
+	const affected = new Set<string>()
+	for (const ref of refs) {
+		const binding = sheet.cells.get(ref.row, ref.col)?.formulaInfo
+		if (!binding) continue
+		const group =
+			binding.kind === 'shared'
+				? collectSharedFormulaGroupRefs(workbook, sheet, binding)
+				: isSpillGroupBinding(binding)
+					? collectSpillFormulaGroupRefs(sheet, binding, ref)
+					: new Set<string>()
+		for (const entry of group) affected.add(entry)
+	}
+	return affected
+}
+
 export function materializeDataTableFormulaGroupsForRangeEdit(
 	sheet: Sheet,
 	range: RangeRef,
@@ -302,6 +322,20 @@ export function materializeBlockedSpillFormulaGroupsForRangeEdit(
 		for (let col = range.start.col; col <= range.end.col; col++) refs.push({ row, col })
 	}
 	return materializeBlockedSpillFormulaGroupsForRefs(sheet, refs)
+}
+
+function collectSharedFormulaGroupRefs(
+	workbook: Workbook,
+	sheet: Sheet,
+	binding: Extract<CellFormulaBinding, { kind: 'shared' }>,
+): Set<string> {
+	const affected = new Set<string>()
+	if (workbook.sheets.indexOf(sheet) < 0) return affected
+	for (const [row, col, cell] of sheet.cells.iterate()) {
+		if (!sameSharedFormulaGroup(binding, cell.formulaInfo)) continue
+		affected.add(toA1({ row, col }))
+	}
+	return affected
 }
 
 function materializeSharedFormulaGroup(
@@ -348,6 +382,24 @@ function sameSharedFormulaGroup(
 		return sameFormulaCellRef(binding.masterRef, candidate.masterRef)
 	}
 	return true
+}
+
+function collectSpillFormulaGroupRefs(
+	sheet: Sheet,
+	binding: Extract<CellFormulaBinding, { kind: 'dynamicArray' | 'spill' | 'blockedSpill' }>,
+	anchor: { readonly row: number; readonly col: number },
+): Set<string> {
+	const affected = new Set<string>()
+	const dynamicAnchorRef =
+		binding.kind === 'dynamicArray'
+			? `${formatSheetNameForFormula(sheet.name)}!${toA1(anchor)}`
+			: undefined
+	for (const [row, col, cell] of sheet.cells.iterate()) {
+		const candidateRef = `${formatSheetNameForFormula(sheet.name)}!${toA1({ row, col })}`
+		if (!sameSpillFormulaGroup(binding, cell.formulaInfo, dynamicAnchorRef, candidateRef)) continue
+		affected.add(toA1({ row, col }))
+	}
+	return affected
 }
 
 function materializeSpillFormulaGroup(

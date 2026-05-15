@@ -3534,6 +3534,40 @@ describe('applyOperation', () => {
 		expectCachedFormulaAnalysisMatchesFullRecompute(wb)
 	})
 
+	test('moveRange reports every dynamic spill member when rewriting the anchor', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, cell(numberValue(3)))
+		sheet.cells.set(0, 1, {
+			value: numberValue(1),
+			formula: 'SEQUENCE(A1)',
+			styleId: sid,
+			formulaInfo: { kind: 'dynamicArray', metadataIndex: 1, collapsed: false },
+		})
+		for (let row = 1; row <= 2; row++) {
+			sheet.cells.set(row, 1, {
+				value: numberValue(row + 1),
+				formula: null,
+				styleId: sid,
+				formulaInfo: { kind: 'spill', anchorRef: 'Sheet1!B1', ref: 'B1:B3', isAnchor: false },
+			})
+		}
+
+		const result = applyOperation(wb, {
+			op: 'moveRange',
+			sheet: 'Sheet1',
+			source: 'A1',
+			target: 'C1',
+		})
+		expectOk(result)
+
+		expect(sheet.cells.get(0, 1)?.formula).toBe('SEQUENCE(C1)')
+		expect(result.value.affectedCells).toContain('B1')
+		expect(result.value.affectedCells).toContain('B2')
+		expect(result.value.affectedCells).toContain('B3')
+		expectCachedFormulaAnalysisMatchesFullRecompute(wb)
+	})
+
 	test('moveRange rewrites cross-sheet formulas and names to the target sheet', () => {
 		const wb = createWorkbook()
 		const source = wb.addSheet('Sheet1')

@@ -1456,6 +1456,7 @@ describe('mutation journal exactness model', () => {
 		)
 
 		expect(changed.errors).toEqual([])
+		expect(changed.affectedCells).toEqual(['C1', 'B1', 'A1', 'A2', 'A3'])
 		expect(changed.journal).toBeDefined()
 		if (!changed.journal) throw new Error('missing journal')
 		expect(changed.journal.exact).toBe(false)

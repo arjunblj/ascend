@@ -4700,6 +4700,44 @@ describe('applyOperation', () => {
 		}
 	})
 
+	test('visibility and outline layout operations reject invalid booleans without mutation', () => {
+		const cases: readonly Operation[] = [
+			{ op: 'hideSheet', sheet: 'Sheet1', hidden: 'false' as never },
+			{ op: 'hideRows', sheet: 'Sheet1', at: 1, count: 1, hidden: 'false' as never },
+			{ op: 'hideCols', sheet: 'Sheet1', at: 1, count: 1, hidden: 'false' as never },
+			{ op: 'groupRows', sheet: 'Sheet1', from: 1, to: 2, collapsed: 'true' as never },
+			{ op: 'groupRows', sheet: 'Sheet1', from: 1, to: 2, summaryBelow: 'true' as never },
+			{ op: 'groupCols', sheet: 'Sheet1', from: 1, to: 2, collapsed: 'true' as never },
+			{ op: 'groupCols', sheet: 'Sheet1', from: 1, to: 2, summaryRight: 'true' as never },
+		]
+
+		for (const op of cases) {
+			const wb = setup()
+			const sheet = wb.getSheet('Sheet1')
+			if (!sheet) throw new Error('missing sheet')
+			const before = JSON.stringify({
+				state: sheet.state,
+				rowDefs: [...sheet.rowDefs],
+				colDefs: sheet.colDefs,
+				outlinePr: sheet.outlinePr,
+				sheetFormatPr: sheet.sheetFormatPr,
+			})
+			const result = applyOperation(wb, op)
+			expectErr(result)
+			expect(result.error.code, JSON.stringify(op)).toBe('VALIDATION_ERROR')
+			expect(
+				JSON.stringify({
+					state: sheet.state,
+					rowDefs: [...sheet.rowDefs],
+					colDefs: sheet.colDefs,
+					outlinePr: sheet.outlinePr,
+					sheetFormatPr: sheet.sheetFormatPr,
+				}),
+				JSON.stringify(op),
+			).toBe(before)
+		}
+	})
+
 	test('addSheet creates a new sheet', () => {
 		const wb = setup()
 		const result = applyOperation(wb, { op: 'addSheet', name: 'Sheet2' })

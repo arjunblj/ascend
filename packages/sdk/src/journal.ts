@@ -3366,6 +3366,16 @@ function journalHideSheet(
 			],
 		}
 	}
+	const valueIssue = booleanUnsupportedValueIssue(op, 'hidden', 'sheet-layout')
+	if (valueIssue) {
+		return {
+			opIndex,
+			op,
+			inverseOps: [],
+			preimages: [{ kind: 'sheet-visibility', sheetVisibility: preimage }],
+			issues: [valueIssue],
+		}
+	}
 	const issues: MutationJournalIssue[] =
 		sheet.state === 'veryHidden'
 			? [
@@ -3412,6 +3422,16 @@ function journalHideRows(
 					`Cannot restore row visibility for ${op.sheet} because the sheet was not found`,
 				),
 			],
+		}
+	}
+	const valueIssue = booleanUnsupportedValueIssue(op, 'hidden', 'row-layout')
+	if (valueIssue) {
+		return {
+			opIndex,
+			op,
+			inverseOps: [],
+			preimages: [{ kind: 'rows-hidden', rowsHidden: preimage }],
+			issues: [valueIssue],
 		}
 	}
 	const hidden = op.hidden ?? true
@@ -3472,6 +3492,16 @@ function journalHideCols(
 					`Cannot restore column visibility for ${op.sheet} because the sheet was not found`,
 				),
 			],
+		}
+	}
+	const valueIssue = booleanUnsupportedValueIssue(op, 'hidden', 'column-layout')
+	if (valueIssue) {
+		return {
+			opIndex,
+			op,
+			inverseOps: [],
+			preimages: [{ kind: 'cols-hidden', colsHidden: preimage }],
+			issues: [valueIssue],
 		}
 	}
 	const hidden = op.hidden ?? true
@@ -3553,6 +3583,16 @@ function journalGroupOutline(
 			],
 		}
 	}
+	const valueIssue = groupOutlineBooleanValueIssue(op, axis)
+	if (valueIssue) {
+		return {
+			opIndex,
+			op,
+			inverseOps: [],
+			preimages: [{ kind: 'outline', outline: preimage }],
+			issues: [valueIssue],
+		}
+	}
 	const outlineRef = axis === 'row' ? 'summaryBelow' : 'summaryRight'
 	const formatRef = axis === 'row' ? 'outlineLevelRow' : 'outlineLevelCol'
 	const refs = [
@@ -3575,6 +3615,41 @@ function journalGroupOutline(
 			},
 		],
 	}
+}
+
+function booleanUnsupportedValueIssue(
+	op: Extract<Operation, { op: 'hideSheet' | 'hideRows' | 'hideCols' }>,
+	field: 'hidden',
+	surface: MutationJournalSurface,
+): MutationJournalIssue | null {
+	const value = op[field]
+	if (value === undefined || typeof value === 'boolean') return null
+	return {
+		code: 'UNSUPPORTED_VALUE',
+		message: `Cannot build exact rollback journal for ${op.op} because ${field} is not boolean`,
+		surface,
+		reason: 'value-unsupported',
+		refs: [`${op.sheet}:${op.op}:${field}`],
+	}
+}
+
+function groupOutlineBooleanValueIssue(
+	op: Extract<Operation, { op: 'groupRows' | 'groupCols' }>,
+	axis: 'row' | 'col',
+): MutationJournalIssue | null {
+	const values = op as Record<string, unknown>
+	for (const field of ['collapsed', 'summaryBelow', 'summaryRight'] as const) {
+		const value = values[field]
+		if (value === undefined || typeof value === 'boolean') continue
+		return {
+			code: 'UNSUPPORTED_VALUE',
+			message: `Cannot build exact rollback journal for ${op.op} because ${field} is not boolean`,
+			surface: axis === 'row' ? 'row-layout' : 'column-layout',
+			reason: 'value-unsupported',
+			refs: [`${op.sheet}:${op.op}:${field}`],
+		}
+	}
+	return null
 }
 
 function cloneSheetColDef(def: SheetColDef): SheetColDef {

@@ -871,6 +871,21 @@ describe('mutation journal exactness model', () => {
 				ref: 'Sheet1!row:0.5',
 			},
 			{
+				op: { op: 'hideRows', sheet: 'Sheet1', at: 0, count: 1, hidden: 'false' as never },
+				surface: 'row-layout',
+				ref: 'Sheet1:hideRows:hidden',
+			},
+			{
+				op: { op: 'groupRows', sheet: 'Sheet1', from: 0, to: 2, collapsed: 'true' as never },
+				surface: 'row-layout',
+				ref: 'Sheet1:groupRows:collapsed',
+			},
+			{
+				op: { op: 'groupRows', sheet: 'Sheet1', from: 0, to: 2, summaryBelow: 'true' as never },
+				surface: 'row-layout',
+				ref: 'Sheet1:groupRows:summaryBelow',
+			},
+			{
 				op: { op: 'insertCols', sheet: 'Sheet1', at: -1, count: 1 },
 				surface: 'column-layout',
 				ref: 'Sheet1!column:-1',
@@ -899,6 +914,21 @@ describe('mutation journal exactness model', () => {
 				op: { op: 'groupCols', sheet: 'Sheet1', from: 0, to: 1.5 },
 				surface: 'column-layout',
 				ref: 'Sheet1!column:1.5',
+			},
+			{
+				op: { op: 'hideCols', sheet: 'Sheet1', at: 0, count: 1, hidden: 'false' as never },
+				surface: 'column-layout',
+				ref: 'Sheet1:hideCols:hidden',
+			},
+			{
+				op: { op: 'groupCols', sheet: 'Sheet1', from: 0, to: 2, collapsed: 'true' as never },
+				surface: 'column-layout',
+				ref: 'Sheet1:groupCols:collapsed',
+			},
+			{
+				op: { op: 'groupCols', sheet: 'Sheet1', from: 0, to: 2, summaryRight: 'true' as never },
+				surface: 'column-layout',
+				ref: 'Sheet1:groupCols:summaryRight',
 			},
 		]
 
@@ -947,6 +977,10 @@ describe('mutation journal exactness model', () => {
 			{
 				op: { op: 'freezePane', sheet: 'Sheet1', row: 0, col: -1 },
 				ref: 'Sheet1!freeze-column:-1',
+			},
+			{
+				op: { op: 'hideSheet', sheet: 'Sheet1', hidden: 'false' as never },
+				ref: 'Sheet1:hideSheet:hidden',
 			},
 			{
 				op: { op: 'setTabColor', sheet: 'Sheet1', color: 'not-a-color' },

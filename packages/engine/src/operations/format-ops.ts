@@ -794,13 +794,15 @@ export function handleGroupRows(
 	workbook: Workbook,
 	op: Extract<Operation, { op: 'groupRows' }>,
 ): Result<PatchResult> {
+	if (!Number.isInteger(op.from) || !Number.isInteger(op.to) || op.from > op.to || op.from < 0) {
+		return err(ascendError('VALIDATION_ERROR', 'Invalid row group range'))
+	}
+	const booleanValidation = validateGroupBooleanOptions('groupRows', op)
+	if (booleanValidation) return err(booleanValidation)
 	const sheetResult = getSheet(workbook, op.sheet)
 	if (!sheetResult.ok) return sheetResult
 	const sheet = sheetResult.value
 	sheet.ensureWritable()
-	if (!Number.isInteger(op.from) || !Number.isInteger(op.to) || op.from > op.to || op.from < 0) {
-		return err(ascendError('VALIDATION_ERROR', 'Invalid row group range'))
-	}
 	const summaryBelow = op.summaryBelow ?? sheet.outlinePr?.summaryBelow ?? true
 	sheet.outlinePr = { ...(sheet.outlinePr ?? {}), summaryBelow }
 	for (let row = op.from; row <= op.to; row++) {
@@ -826,13 +828,15 @@ export function handleGroupCols(
 	workbook: Workbook,
 	op: Extract<Operation, { op: 'groupCols' }>,
 ): Result<PatchResult> {
+	if (!Number.isInteger(op.from) || !Number.isInteger(op.to) || op.from > op.to || op.from < 0) {
+		return err(ascendError('VALIDATION_ERROR', 'Invalid column group range'))
+	}
+	const booleanValidation = validateGroupBooleanOptions('groupCols', op)
+	if (booleanValidation) return err(booleanValidation)
 	const sheetResult = getSheet(workbook, op.sheet)
 	if (!sheetResult.ok) return sheetResult
 	const sheet = sheetResult.value
 	sheet.ensureWritable()
-	if (!Number.isInteger(op.from) || !Number.isInteger(op.to) || op.from > op.to || op.from < 0) {
-		return err(ascendError('VALIDATION_ERROR', 'Invalid column group range'))
-	}
 	const summaryRight = op.summaryRight ?? sheet.outlinePr?.summaryRight ?? true
 	sheet.outlinePr = { ...(sheet.outlinePr ?? {}), summaryRight }
 	for (let col = op.from; col <= op.to; col++) {
@@ -860,4 +864,20 @@ export function handleGroupCols(
 	}
 	updateSheetOutlineLevels(sheet)
 	return ok(patch([], [op.sheet]))
+}
+
+function validateGroupBooleanOptions(
+	opName: 'groupRows' | 'groupCols',
+	op: Extract<Operation, { op: 'groupRows' | 'groupCols' }>,
+) {
+	const values = op as Record<string, unknown>
+	for (const field of ['collapsed', 'summaryBelow', 'summaryRight'] as const) {
+		const value = values[field]
+		if (value !== undefined && typeof value !== 'boolean') {
+			return ascendError('VALIDATION_ERROR', `${opName} ${field} must be boolean`, {
+				suggestedFix: `Set ${field}=true or ${field}=false.`,
+			})
+		}
+	}
+	return null
 }

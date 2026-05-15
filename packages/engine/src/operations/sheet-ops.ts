@@ -203,6 +203,8 @@ export function handleHideSheet(
 	workbook: Workbook,
 	op: Extract<Operation, { op: 'hideSheet' }>,
 ): Result<PatchResult> {
+	const hiddenValidation = validateOptionalBoolean('hideSheet hidden', op.hidden)
+	if (hiddenValidation) return err(hiddenValidation)
 	const sheetResult = getSheet(workbook, op.sheet)
 	if (!sheetResult.ok) return sheetResult
 	const sheet = sheetResult.value
@@ -348,6 +350,8 @@ export function handleHideRows(
 ): Result<PatchResult> {
 	const validation = validateAxisSpan('row', op.at, op.count)
 	if (validation) return err(validation)
+	const hiddenValidation = validateOptionalBoolean('hideRows hidden', op.hidden)
+	if (hiddenValidation) return err(hiddenValidation)
 	const sheetResult = getSheet(workbook, op.sheet)
 	if (!sheetResult.ok) return sheetResult
 	const sheet = sheetResult.value
@@ -377,6 +381,8 @@ export function handleHideCols(
 ): Result<PatchResult> {
 	const validation = validateAxisSpan('column', op.at, op.count)
 	if (validation) return err(validation)
+	const hiddenValidation = validateOptionalBoolean('hideCols hidden', op.hidden)
+	if (hiddenValidation) return err(hiddenValidation)
 	const sheetResult = getSheet(workbook, op.sheet)
 	if (!sheetResult.ok) return sheetResult
 	const sheet = sheetResult.value
@@ -500,6 +506,13 @@ function validateAxisSpan(label: 'row' | 'column', at: number, count: number) {
 	if (indexError) return indexError
 	if (Number.isInteger(count) && count > 0) return null
 	return ascendError('VALIDATION_ERROR', `${label} count must be a positive integer`)
+}
+
+function validateOptionalBoolean(label: string, value: boolean | undefined) {
+	if (value === undefined || typeof value === 'boolean') return null
+	return ascendError('VALIDATION_ERROR', `${label} must be boolean`, {
+		suggestedFix: `Set ${label}=true or ${label}=false.`,
+	})
 }
 
 function validateSheetPosition(label: string, position: number, maxInclusive: number) {

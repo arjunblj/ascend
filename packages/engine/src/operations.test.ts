@@ -7244,6 +7244,62 @@ describe('applyOperation', () => {
 		)
 	})
 
+	test('copySheet assigns workbook-unique copied table identities and rewrites copied structured refs', () => {
+		const wb = createWorkbook()
+		const source = wb.addSheet('Data')
+		source.cells.set(0, 0, { value: stringValue('Region'), formula: null, styleId: sid })
+		source.cells.set(0, 1, { value: stringValue('Amount'), formula: null, styleId: sid })
+		source.cells.set(1, 0, { value: stringValue('West'), formula: null, styleId: sid })
+		source.cells.set(1, 1, { value: numberValue(10), formula: null, styleId: sid })
+		expectOk(
+			applyOperation(wb, {
+				op: 'createTable',
+				sheet: 'Data',
+				ref: 'A1:B2',
+				name: 'Sales',
+				hasHeaders: true,
+			}),
+		)
+		source.cells.set(1, 2, {
+			value: numberValue(10),
+			formula: 'SUM(Sales[Amount])',
+			styleId: sid,
+		})
+		source.dataValidations.push({
+			sqref: 'C2',
+			type: 'custom',
+			formula1: 'SUM(Sales[Amount])>0',
+		})
+		wb.definedNames.add('LocalSales', 'SUM(Sales[Amount])', {
+			kind: 'sheet',
+			sheetId: source.id,
+		})
+		const sourceTable = source.tables[0]
+		if (!sourceTable) throw new Error('missing source table')
+
+		expectOk(applyOperation(wb, { op: 'copySheet', sheet: 'Data', newName: 'Copy' }))
+
+		const copy = wb.getSheet('Copy')
+		const copiedTable = copy?.tables[0]
+		expect(copiedTable).toMatchObject({
+			name: 'Sales_1',
+			nameAttribute: 'Sales_1',
+			sheetId: copy?.id,
+			ref: sourceTable.ref,
+		})
+		expect(copiedTable?.id).not.toBe(sourceTable.id)
+		expect(source.tables[0]?.name).toBe('Sales')
+		expect(source.cells.get(1, 2)?.formula).toBe('SUM(Sales[Amount])')
+		expect(copy?.cells.get(1, 2)?.formula).toBe('SUM(Sales_1[Amount])')
+		expect(copy?.dataValidations[0]?.formula1).toBe('SUM(Sales_1[Amount])>0')
+		expect(wb.definedNames.resolve('LocalSales', copy?.id, copy?.id)?.formula).toBe(
+			'SUM(Sales_1[Amount])',
+		)
+		expect(wb.definedNames.resolve('LocalSales', source.id, source.id)?.formula).toBe(
+			'SUM(Sales[Amount])',
+		)
+	})
+
 	test('copySheet rejects duplicate and Excel-invalid target names before mutating workbook', () => {
 		const wb = setup()
 		wb.addSheet('Existing')
@@ -7265,6 +7321,38 @@ describe('applyOperation', () => {
 		expect(invalid.error.code).toBe('VALIDATION_ERROR')
 		expect(wb.getSheet('Bad/Name')).toBeUndefined()
 		expect(wb.sheets).toHaveLength(2)
+	})
+
+	test('copySheet rejects queryTable-backed tables before mutating workbook', () => {
+		const wb = createWorkbook()
+		const source = wb.addSheet('Data')
+		source.tables.push({
+			id: createTableId(),
+			name: 'ExternalSales',
+			sheetId: source.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 1, col: 1 } },
+			columns: [{ name: 'Region' }, { name: 'Amount' }],
+			hasHeaders: true,
+			hasTotals: false,
+			tableType: 'queryTable',
+			queryTable: {
+				relationshipId: 'rIdQuery',
+				partPath: 'xl/queryTables/queryTable1.xml',
+				relationshipType:
+					'http://schemas.openxmlformats.org/officeDocument/2006/relationships/queryTable',
+				target: '../queryTables/queryTable1.xml',
+			},
+		})
+
+		const result = applyOperation(wb, { op: 'copySheet', sheet: 'Data', newName: 'Copy' })
+
+		expectErr(result)
+		expect(result.error.details).toMatchObject({
+			kind: 'unsupported-copy-sheet-query-table',
+			tableName: 'ExternalSales',
+		})
+		expect(wb.getSheet('Copy')).toBeUndefined()
+		expect(source.tables).toHaveLength(1)
 	})
 
 	test('moveSheet preserves visual metadata and chart source refs', () => {

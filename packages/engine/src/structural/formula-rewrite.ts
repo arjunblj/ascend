@@ -614,7 +614,7 @@ export function rewriteFormulaTextForRename(
 	return printFormula(rewriteSheetName(parsed.value, oldName, newName))
 }
 
-function rewriteFormulaTextForTableRename(
+export function rewriteFormulaTextForTableRename(
 	formula: string | undefined,
 	oldName: string,
 	newName: string,
@@ -1378,7 +1378,7 @@ export function rewriteSheetMetadataFormulasForRename(
 	}
 }
 
-function rewriteSheetMetadataFormulasForTableRename(
+export function rewriteSheetMetadataFormulasForTableRename(
 	sheet: Sheet,
 	oldName: string,
 	newName: string,

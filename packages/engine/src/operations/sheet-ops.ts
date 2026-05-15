@@ -1,17 +1,27 @@
 import {
 	type CellFormulaBinding,
 	createSheetId,
+	createTableId,
 	parseA1,
 	type Sheet,
+	type Table,
 	toA1,
 	type Workbook,
 } from '@ascend/core'
 import type { Operation, Result } from '@ascend/schema'
-import { ascendError, err, ok, validateExcelWorksheetName } from '@ascend/schema'
+import {
+	ascendError,
+	err,
+	ok,
+	validateExcelTableName,
+	validateExcelWorksheetName,
+} from '@ascend/schema'
 import { invalidateSheetIndexCache } from '../evaluator.ts'
 import {
 	rewriteFormulaTextForRename,
+	rewriteFormulaTextForTableRename,
 	rewriteSheetMetadataFormulasForRename,
+	rewriteSheetMetadataFormulasForTableRename,
 	rewriteSheetNameInDefinedNames,
 	rewriteSheetNameInFormulas,
 } from '../structural/formula-rewrite.ts'
@@ -173,15 +183,37 @@ export function handleCopySheet(
 	const pos = op.position ?? workbook.sheets.length
 	const positionError = validateSheetPosition('copySheet position', pos, workbook.sheets.length)
 	if (positionError) return err(positionError)
+	const unsupportedTable = source.tables.find(
+		(table) => table.tableType === 'queryTable' || table.queryTable,
+	)
+	if (unsupportedTable) {
+		return err(
+			ascendError(
+				'VALIDATION_ERROR',
+				`Cannot copy sheet "${source.name}" because table "${unsupportedTable.name}" is queryTable-backed`,
+				{
+					suggestedFix:
+						'Copy sheets with queryTable-backed tables only after converting or removing the external table binding.',
+					details: {
+						kind: 'unsupported-copy-sheet-query-table',
+						sheet: source.name,
+						tableName: unsupportedTable.name,
+					},
+				},
+			),
+		)
+	}
 	const newSheet = source.clone()
 	const mutableNewSheet = newSheet as { id: Sheet['id'] }
 	mutableNewSheet.id = createSheetId()
 	newSheet.name = op.newName
 	newSheet.ensureWritable()
 	newSheet.preservedXml = null
+	const tableRenames = retargetCopiedSheetTables(workbook, newSheet)
 	retargetCopiedSheetFormulaBindings(newSheet, source.name, op.newName)
 	rewriteSheetMetadataFormulasForRename(newSheet, source.name, op.newName)
-	duplicateCopiedSheetDefinedNames(workbook, source, newSheet)
+	rewriteCopiedSheetTableRefs(newSheet, tableRenames)
+	duplicateCopiedSheetDefinedNames(workbook, source, newSheet, tableRenames)
 	retargetCopiedSheetDrawingParts(workbook, newSheet)
 	retargetCopiedSheetImageTargets(workbook, newSheet)
 	const chartPartPaths = cloneChartsForCopiedSheet(workbook, source.name, op.newName)
@@ -192,19 +224,97 @@ export function handleCopySheet(
 	return ok(patch([], [op.newName]))
 }
 
-function duplicateCopiedSheetDefinedNames(workbook: Workbook, source: Sheet, copy: Sheet): void {
+function retargetCopiedSheetTables(
+	workbook: Workbook,
+	copy: Sheet,
+): readonly { readonly oldName: string; readonly newName: string }[] {
+	if (copy.tables.length === 0) return []
+	const usedNames = new Set<string>()
+	for (const sheet of workbook.sheets) {
+		for (const table of sheet.tables) usedNames.add(table.name.toLowerCase())
+	}
+	const renames: { oldName: string; newName: string }[] = []
+	copy.tables = copy.tables.map((table) => {
+		const newName = nextCopiedTableName(table.name, usedNames)
+		usedNames.add(newName.toLowerCase())
+		if (newName !== table.name) renames.push({ oldName: table.name, newName })
+		return copiedTableForSheet(table, copy.id, newName)
+	})
+	return renames
+}
+
+function nextCopiedTableName(baseName: string, usedNames: ReadonlySet<string>): string {
+	const base = validateExcelTableName(baseName) ? 'Table' : baseName
+	for (let suffix = 1; ; suffix++) {
+		const ending = `_${suffix}`
+		const stem = base.slice(0, Math.max(1, 255 - ending.length))
+		const candidate = `${stem}${ending}`
+		if (!usedNames.has(candidate.toLowerCase()) && !validateExcelTableName(candidate)) {
+			return candidate
+		}
+	}
+}
+
+function copiedTableForSheet(table: Table, sheetId: Sheet['id'], name: string): Table {
+	const {
+		ooxmlId: _ooxmlId,
+		partPath: _partPath,
+		contentType: _contentType,
+		contentTypeSource: _contentTypeSource,
+		sourcePartPath: _sourcePartPath,
+		sourceRelationshipPart: _sourceRelationshipPart,
+		sourceRelationshipId: _sourceRelationshipId,
+		sourceRelationshipType: _sourceRelationshipType,
+		sourceRelationshipRawType: _sourceRelationshipRawType,
+		sourceRelationshipRawTarget: _sourceRelationshipRawTarget,
+		sourceRelationshipResolvedTarget: _sourceRelationshipResolvedTarget,
+		sourceRelationshipTargetMode: _sourceRelationshipTargetMode,
+		queryTable: _queryTable,
+		...copyable
+	} = table
+	return {
+		...copyable,
+		id: createTableId(),
+		sheetId,
+		name,
+		nameAttribute: table.nameAttribute === null ? null : name,
+	}
+}
+
+function rewriteCopiedSheetTableRefs(
+	sheet: Sheet,
+	renames: readonly { readonly oldName: string; readonly newName: string }[],
+): void {
+	if (renames.length === 0) return
+	for (const rename of renames) {
+		for (const [row, col, cell] of sheet.cells.iterate()) {
+			if (cell.formula === null) continue
+			const formula = rewriteFormulaTextForTableRename(cell.formula, rename.oldName, rename.newName)
+			if (formula === undefined || formula === cell.formula) continue
+			sheet.cells.set(row, col, { ...cell, formula })
+		}
+		rewriteSheetMetadataFormulasForTableRename(sheet, rename.oldName, rename.newName)
+	}
+}
+
+function duplicateCopiedSheetDefinedNames(
+	workbook: Workbook,
+	source: Sheet,
+	copy: Sheet,
+	tableRenames: readonly { readonly oldName: string; readonly newName: string }[],
+): void {
 	const copiedScope = { kind: 'sheet' as const, sheetId: copy.id }
 	for (const entry of workbook.definedNames.list()) {
 		if (entry.scope.kind !== 'sheet' || entry.scope.sheetId !== source.id) continue
-		workbook.definedNames.add(
-			entry.name,
-			rewriteFormulaTextForRename(entry.formula, source.name, copy.name) ?? entry.formula,
-			copiedScope,
-			{
-				...(entry.hidden !== undefined ? { hidden: entry.hidden } : {}),
-				...(entry.extraAttributes ? { extraAttributes: entry.extraAttributes } : {}),
-			},
-		)
+		let formula =
+			rewriteFormulaTextForRename(entry.formula, source.name, copy.name) ?? entry.formula
+		for (const rename of tableRenames) {
+			formula = rewriteFormulaTextForTableRename(formula, rename.oldName, rename.newName) ?? formula
+		}
+		workbook.definedNames.add(entry.name, formula, copiedScope, {
+			...(entry.hidden !== undefined ? { hidden: entry.hidden } : {}),
+			...(entry.extraAttributes ? { extraAttributes: entry.extraAttributes } : {}),
+		})
 	}
 }
 

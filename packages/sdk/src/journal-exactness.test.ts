@@ -944,6 +944,52 @@ describe('mutation journal exactness model', () => {
 				ops: [{ op: 'setFormula', sheet: 'Sheet1', ref: 'B1', formula: 'A1*3' }],
 			},
 			{
+				name: 'copyRange target formula cache',
+				setup: (wb) => {
+					applyExact(wb, [
+						{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'source' }] },
+						{ op: 'setFormula', sheet: 'Sheet1', ref: 'D1', formula: '2+3' },
+					])
+					const recalc = wb.recalc()
+					expect(recalc.errors).toEqual([])
+				},
+				ops: [{ op: 'copyRange', sheet: 'Sheet1', source: 'A1', target: 'D1', mode: 'all' }],
+			},
+			{
+				name: 'moveRange source and target formula caches',
+				setup: (wb) => {
+					applyExact(wb, [
+						{ op: 'setFormula', sheet: 'Sheet1', ref: 'A1', formula: '2+3' },
+						{ op: 'setFormula', sheet: 'Sheet1', ref: 'D1', formula: '9+1' },
+					])
+					const recalc = wb.recalc()
+					expect(recalc.errors).toEqual([])
+				},
+				ops: [{ op: 'moveRange', sheet: 'Sheet1', source: 'A1', target: 'D1', mode: 'all' }],
+			},
+			{
+				name: 'sortRange formula caches',
+				setup: (wb) => {
+					applyExact(wb, [
+						{
+							op: 'setCells',
+							sheet: 'Sheet1',
+							updates: [
+								{ ref: 'A1', value: 'Key' },
+								{ ref: 'B1', value: 'Score' },
+								{ ref: 'A2', value: 'b' },
+								{ ref: 'A3', value: 'a' },
+							],
+						},
+						{ op: 'setFormula', sheet: 'Sheet1', ref: 'B2', formula: '2+1' },
+						{ op: 'setFormula', sheet: 'Sheet1', ref: 'B3', formula: '1+1' },
+					])
+					const recalc = wb.recalc()
+					expect(recalc.errors).toEqual([])
+				},
+				ops: [{ op: 'sortRange', sheet: 'Sheet1', range: 'A1:B3', by: [{ column: 'Score' }] }],
+			},
+			{
 				name: 'copyRange all metadata',
 				setup: (wb) => {
 					applyExact(wb, [

@@ -2,6 +2,8 @@ import { describe, expect, test } from 'bun:test'
 import { createWorkbook } from '../../packages/core/src/index.ts'
 import {
 	buildNumericColumnSidecar,
+	columnarSidecarClaimReport,
+	columnarSidecarClaimReportMarkdown,
 	runColumnarSidecarBenchmark,
 	sumSidecarColumn,
 } from './columnar-sidecar.ts'
@@ -14,6 +16,7 @@ describe('columnar sidecar benchmark harness', () => {
 		expect(result.cells).toBe(512)
 		expect(result.populatedCount).toBe(512)
 		expect(result.numericCount).toBe(512)
+		expect(result.estimatedSidecarPayloadBytes).toBe(512 * 9)
 		expect(result.checksum).toBeGreaterThan(0)
 		expect(result.gridRepeatedScanMs).toBeGreaterThanOrEqual(0)
 		expect(result.sidecarRepeatedScanMs).toBeGreaterThanOrEqual(0)
@@ -34,5 +37,17 @@ describe('columnar sidecar benchmark harness', () => {
 		expect(sidecar.checksum).toBe(6)
 		expect(sumSidecarColumn(sidecar, 0)).toBe(4)
 		expect(sumSidecarColumn(sidecar, 1)).toBe(2)
+	})
+
+	test('renders claim-safe sidecar proof boundaries', () => {
+		const result = runColumnarSidecarBenchmark({ rows: 512, cols: 4, repeats: 8 })
+		const report = columnarSidecarClaimReport(result)
+		const markdown = columnarSidecarClaimReportMarkdown(report)
+
+		expect(report.allowedClaim).toContain('disposable numeric columnar sidecar')
+		expect(report.boundary).toContain('not a production cache')
+		expect(report.killCriterion).toContain('real workbook tables')
+		expect(markdown).toContain('Do not promote yet')
+		expect(markdown).toContain('Estimated sidecar payload bytes')
 	})
 })

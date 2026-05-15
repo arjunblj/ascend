@@ -31,6 +31,7 @@ export interface ColumnarSidecarBenchmarkResult {
 	readonly populatedCount: number
 	readonly numericCount: number
 	readonly checksum: number
+	readonly estimatedSidecarPayloadBytes: number
 	readonly workbookBuildMs: number
 	readonly sidecarBuildMs: number
 	readonly gridRepeatedScanMs: number
@@ -38,6 +39,17 @@ export interface ColumnarSidecarBenchmarkResult {
 	readonly sidecarEndToEndMs: number
 	readonly repeatedScanSpeedup: number
 	readonly endToEndSpeedup: number
+}
+
+export interface ColumnarSidecarClaimReport {
+	readonly generatedAt: string
+	readonly allowedClaim: string
+	readonly proofStatus: 'passed' | 'needs-more-evidence'
+	readonly boundary: string
+	readonly benchmark: ColumnarSidecarBenchmarkResult
+	readonly killCriterion: string
+	readonly doNotPromoteYet: readonly string[]
+	readonly nextProof: string
 }
 
 interface Timed<T> {
@@ -83,6 +95,7 @@ export function runColumnarSidecarBenchmark(
 		populatedCount: sidecar.populatedCount,
 		numericCount: sidecar.numericCount,
 		checksum: gridScan.value,
+		estimatedSidecarPayloadBytes: estimateSidecarPayloadBytes(sidecar),
 		workbookBuildMs: roundMs(buildSheet.ms),
 		sidecarBuildMs: roundMs(sidecarBuild.ms),
 		gridRepeatedScanMs: roundMs(gridScan.ms),
@@ -91,6 +104,73 @@ export function runColumnarSidecarBenchmark(
 		repeatedScanSpeedup: roundRatio(gridScan.ms / Math.max(sidecarScan.ms, Number.EPSILON)),
 		endToEndSpeedup: roundRatio(gridScan.ms / Math.max(sidecarEndToEndMs, Number.EPSILON)),
 	}
+}
+
+export function columnarSidecarClaimReport(
+	result: ColumnarSidecarBenchmarkResult,
+): ColumnarSidecarClaimReport {
+	const proofStatus = result.endToEndSpeedup > 1 ? 'passed' : 'needs-more-evidence'
+	return {
+		generatedAt: new Date().toISOString(),
+		allowedClaim:
+			'Ascend has local evidence that a disposable numeric columnar sidecar can accelerate repeated dense range scans while preserving the workbook grid as source of truth.',
+		proofStatus,
+		boundary:
+			'This is a synthetic benchmark over numeric/date-like values, not a production cache, Arrow ABI implementation, DuckDB integration, mixed-type table engine, or mutation invalidation system.',
+		benchmark: result,
+		killCriterion:
+			'Do not promote if real workbook tables fail checksum parity, sidecar build plus scan is not faster than grid scans for repeated workloads, or generation-aware invalidation cannot be made explicit.',
+		doNotPromoteYet: [
+			'Public SDK/API/MCP surface for sidecars.',
+			'Claims about mixed values, formulas, filters, hidden rows, merged cells, table totals, or query-backed tables.',
+			'Claims that sidecars replace workbook storage or preservation semantics.',
+		],
+		nextProof:
+			'Run the benchmark against public real workbook tables and add generation invalidation probes before any performance-loop production work.',
+	}
+}
+
+export function columnarSidecarClaimReportMarkdown(report: ColumnarSidecarClaimReport): string {
+	const result = report.benchmark
+	return [
+		'# Columnar Sidecar Claim Report',
+		'',
+		`Generated: ${report.generatedAt}`,
+		`Proof status: ${report.proofStatus}`,
+		'',
+		'## Claim wording allowed today',
+		'',
+		report.allowedClaim,
+		'',
+		'## Honest boundary',
+		'',
+		report.boundary,
+		'',
+		'## Proof summary',
+		'',
+		`Range: ${result.range}`,
+		`Cells: ${result.cells}`,
+		`Repeats: ${result.repeats}`,
+		`Generation: ${result.generation}`,
+		`Numeric count: ${result.numericCount}`,
+		`Estimated sidecar payload bytes: ${result.estimatedSidecarPayloadBytes}`,
+		`Grid repeated scan ms: ${result.gridRepeatedScanMs}`,
+		`Sidecar build ms: ${result.sidecarBuildMs}`,
+		`Sidecar repeated scan ms: ${result.sidecarRepeatedScanMs}`,
+		`End-to-end speedup: ${result.endToEndSpeedup}x`,
+		'',
+		'## Kill criterion',
+		'',
+		report.killCriterion,
+		'',
+		'## Do not promote yet',
+		'',
+		...report.doNotPromoteYet.map((entry) => `- ${entry}`),
+		'',
+		'## Next proof',
+		'',
+		report.nextProof,
+	].join('\n')
 }
 
 export function buildNumericColumnSidecar(
@@ -150,6 +230,13 @@ export function sumSidecarColumn(sidecar: NumericColumnSidecar, colOffset: numbe
 		if (validity[row] === 1) sum += values[row] ?? 0
 	}
 	return sum
+}
+
+function estimateSidecarPayloadBytes(sidecar: NumericColumnSidecar): number {
+	let bytes = 0
+	for (const values of sidecar.values) bytes += values.byteLength
+	for (const validity of sidecar.validity) bytes += validity.byteLength
+	return bytes
 }
 
 function buildNumericSheet(rows: number, cols: number): Sheet {
@@ -222,5 +309,14 @@ if (import.meta.main) {
 		repeats: Number(readFlag('--repeats')) || undefined,
 		generation: Number(readFlag('--generation')) || undefined,
 	})
-	console.log(JSON.stringify(result, null, 2))
+	if (process.argv.includes('--claim-report')) {
+		const report = columnarSidecarClaimReport(result)
+		console.log(
+			process.argv.includes('--json')
+				? JSON.stringify(report, null, 2)
+				: columnarSidecarClaimReportMarkdown(report),
+		)
+	} else {
+		console.log(JSON.stringify(result, null, 2))
+	}
 }

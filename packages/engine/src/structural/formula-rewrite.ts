@@ -21,6 +21,11 @@ export interface FormulaMoveSkipRange {
 	readonly range: RangeRef
 }
 
+export interface FormulaRewriteCell {
+	readonly sheetName: string
+	readonly ref: string
+}
+
 export function rewriteWorkbookFormulasForShift(
 	workbook: Workbook,
 	targetSheet: string,
@@ -102,7 +107,8 @@ export function rewriteWorkbookFormulasForMove(
 	targetSheet: string,
 	sourceRange: RangeRef,
 	targetRange: RangeRef,
-): void {
+): FormulaRewriteCell[] {
+	const rewrittenCells: FormulaRewriteCell[] = []
 	for (const sheet of workbook.sheets) {
 		const updates: [number, number, Cell][] = []
 		for (const [row, col, existing] of sheet.cells.iterate()) {
@@ -127,8 +133,12 @@ export function rewriteWorkbookFormulasForMove(
 				},
 			])
 		}
-		for (const [row, col, updated] of updates) sheet.cells.set(row, col, updated)
+		for (const [row, col, updated] of updates) {
+			sheet.cells.set(row, col, updated)
+			rewrittenCells.push({ sheetName: sheet.name, ref: toA1({ row, col }) })
+		}
 	}
+	return rewrittenCells
 }
 
 export function rewriteDefinedNameFormulasForMove(

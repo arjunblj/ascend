@@ -316,13 +316,17 @@ export function handleTransferRange(
 			}
 		}
 		if (clearsSourceCellContent(mode)) {
-			rewriteWorkbookFormulasForMove(
+			for (const rewritten of rewriteWorkbookFormulasForMove(
 				workbook,
 				sourceSheet.name,
 				targetSheet.name,
 				source,
 				mergePlan.value.targetRange,
-			)
+			)) {
+				affected.add(
+					affectedNamedRef(rewritten.sheetName, rewritten.ref, sourceSheet.name, crossSheet),
+				)
+			}
 			rewriteDefinedNameFormulasForMove(
 				workbook,
 				sourceSheet.name,
@@ -345,6 +349,15 @@ export function handleTransferRange(
 
 function affectedRef(sheet: Sheet, ref: string, qualify: boolean): string {
 	return qualify ? `${sheet.name}!${ref}` : ref
+}
+
+function affectedNamedRef(
+	sheetName: string,
+	ref: string,
+	primarySheetName: string,
+	qualifyPrimary: boolean,
+): string {
+	return qualifyPrimary || sheetName !== primarySheetName ? `${sheetName}!${ref}` : ref
 }
 
 function pasteCells(mode: PasteMode): boolean {

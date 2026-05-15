@@ -2618,6 +2618,8 @@ describe('applyOperation', () => {
 		expect(sheet.cells.get(0, 1)?.formula).toBe('C1*2')
 		expect(sheet.cells.get(1, 1)?.formula).toBe('SUM(C1:C2)')
 		expect(wb.definedNames.get('Input')).toBe('Sheet1!C1')
+		expect(result.value.affectedCells).toContain('B1')
+		expect(result.value.affectedCells).toContain('B2')
 	})
 
 	test('moveRange rewrites cross-sheet formulas and names to the target sheet', () => {
@@ -2642,6 +2644,8 @@ describe('applyOperation', () => {
 		expect(summary.cells.get(0, 0)?.formula).toBe('Sheet2!B2+1')
 		expect(target.cells.get(4, 4)?.formula).toBe('Sheet2!B2*2')
 		expect(wb.definedNames.get('Input')).toBe('Sheet2!B2')
+		expect(result.value.affectedCells).toContain('Summary!A1')
+		expect(result.value.affectedCells).toContain('Sheet2!E5')
 	})
 
 	test('moveRange rewrites worksheet metadata formulas that reference the moved range', () => {

@@ -1713,6 +1713,105 @@ describe('agent workflow loss audit', () => {
 					expect(reopened.sheet('Copy')?.cell('A2')?.formulaBinding).toBeUndefined()
 				},
 			},
+			{
+				name: 'table-rename-dynamic-spill-reopens-preserved',
+				risk: 'table and column renames could rewrite formulas while dropping dynamic-array binding metadata or omitting rewritten formula cells from affectedCells',
+				proof: async () => {
+					const cases = [
+						{
+							name: 'renameTable',
+							op: { op: 'renameTable' as const, table: 'Sales', newName: 'Revenue' },
+							output: join(TEMP_DIR, 'quality-moat-rename-table-spill-out.xlsx'),
+							affected: ['D1'],
+							formula: 'FILTER(Revenue[Qty],Revenue[Qty]>0)',
+						},
+						{
+							name: 'setTableColumn',
+							op: {
+								op: 'setTableColumn' as const,
+								table: 'Sales',
+								column: 'Qty',
+								newName: 'Units',
+							},
+							output: join(TEMP_DIR, 'quality-moat-rename-column-spill-out.xlsx'),
+							affected: ['A1', 'D1'],
+							formula: 'FILTER(Sales[Units],Sales[Units]>0)',
+						},
+					] as const
+
+					for (const entry of cases) {
+						const input = join(TEMP_DIR, `quality-moat-${entry.name}-spill.xlsx`)
+						mkdirSync(TEMP_DIR, { recursive: true })
+						const wb = AscendWorkbook.create()
+						wb.apply([
+							{
+								op: 'setCells',
+								sheet: 'Sheet1',
+								updates: [
+									{ ref: 'A1', value: 'Qty' },
+									{ ref: 'A2', value: 2 },
+								],
+							},
+							{
+								op: 'createTable',
+								sheet: 'Sheet1',
+								ref: 'A1:A2',
+								name: 'Sales',
+								hasHeaders: true,
+							},
+						])
+						const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+						if (!sheet) throw new Error('missing Sheet1')
+						sheet.cells.set(0, 3, {
+							value: numberValue(2),
+							formula: 'FILTER(Sales[Qty],Sales[Qty]>0)',
+							styleId: DEFAULT_STYLE_ID,
+							formulaInfo: { kind: 'dynamicArray', metadataIndex: 1, collapsed: false },
+						})
+						sheet.cells.set(1, 3, {
+							value: numberValue(2),
+							formula: null,
+							styleId: DEFAULT_STYLE_ID,
+							formulaInfo: {
+								kind: 'spill',
+								anchorRef: 'Sheet1!D1',
+								ref: 'D1:D2',
+								isAnchor: false,
+							},
+						})
+						await wb.save(input)
+
+						const prepared = await createPreparedAgentPlan(input, [entry.op])
+						expect(prepared.plan.preview.journal?.exact, entry.name).toBe(false)
+						expect(prepared.plan.preview.journal?.issues, entry.name).toContainEqual(
+							expect.objectContaining({
+								surface: 'dynamic-arrays',
+								reason: 'formula-binding-metadata',
+								refs: ['Sheet1!D1'],
+							}),
+						)
+						expect(prepared.plan.approvals.length, entry.name).toBeGreaterThan(0)
+
+						const committed = await prepared.commit({
+							output: entry.output,
+							approvals: prepared.plan.approvals.map((approval) => approval.id),
+						})
+						const compact = compactAgentCommitResult(committed)
+						expect(compact.apply.affectedCellRefs, entry.name).toEqual(entry.affected)
+						expect(committed.postWrite.valid, entry.name).toBe(true)
+						expect(committed.postWrite.check.valid, entry.name).toBe(true)
+
+						const reopened = await AscendWorkbook.open(entry.output)
+						expect(reopened.check().valid, entry.name).toBe(true)
+						expect(reopened.formula('Sheet1!D1')?.normalizedFormula, entry.name).toBe(entry.formula)
+						expect(reopened.sheet('Sheet1')?.cell('D1')?.formulaBinding, entry.name).toEqual({
+							kind: 'dynamicArray',
+							metadataIndex: 1,
+							collapsed: false,
+						})
+					}
+				},
+			},
 		] as const
 
 		for (const entry of cases) {

@@ -104,6 +104,7 @@ export interface SheetParseContext {
 	readonly formulaFeatures?: SheetFormulaFeatures
 	readonly metadata?: ParsedMetadataPart
 	readonly maxRows?: number
+	readonly fullScalarNumberSpanScratch?: number[]
 }
 
 export interface SheetFormulaFeatures {
@@ -1143,7 +1144,9 @@ function parseSimpleFullScalarRowBytes(
 		if (pendingNumberCol >= 0) {
 			if (cellCol === pendingNumberCol + 1) {
 				numberSpanStartCol = pendingNumberCol
-				numberSpanValues = [pendingNumberValue, value]
+				numberSpanValues = ctx.fullScalarNumberSpanScratch ?? []
+				numberSpanValues.length = 0
+				numberSpanValues.push(pendingNumberValue, value)
 				pendingNumberCol = -1
 				return true
 			}

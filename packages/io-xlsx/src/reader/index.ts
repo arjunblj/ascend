@@ -666,6 +666,7 @@ export function readXlsx(
 					formulaOnly,
 					richMetadata: hydrateRichSheetMetadata,
 					formulaFeatures: sheetFormulaFeatures,
+					fullScalarNumberSpanScratch: [],
 					...(valuePool ? { valuePool } : {}),
 					...(metadata ? { metadata } : {}),
 					...(options.maxRows !== undefined ? { maxRows: options.maxRows } : {}),

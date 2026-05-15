@@ -8141,7 +8141,7 @@ describe('applyOperation', () => {
 		})
 		expectOk(result)
 
-		expect(result.value.affectedCells).toEqual(['A1', 'D1'])
+		expect(result.value.affectedCells).toEqual(['A1', 'D1', 'D2'])
 		expect(sheet.cells.get(0, 3)?.formula).toBe('FILTER(Sales[Units],Sales[Units]>0)')
 		expect(sheet.cells.get(0, 3)?.formulaInfo).toEqual({
 			kind: 'dynamicArray',
@@ -9236,7 +9236,7 @@ describe('applyOperation', () => {
 		})
 		expectOk(result)
 
-		expect(result.value.affectedCells).toEqual(['D1'])
+		expect(result.value.affectedCells).toEqual(['D1', 'D2'])
 		expect(sheet.cells.get(0, 3)?.formula).toBe('FILTER(Revenue[Qty],Revenue[Qty]>0)')
 		expect(sheet.cells.get(0, 3)?.formulaInfo).toEqual({
 			kind: 'dynamicArray',

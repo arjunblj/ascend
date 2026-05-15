@@ -10,7 +10,7 @@ import type {
 	TableStyleInfo,
 	Workbook,
 } from '@ascend/core'
-import { createTableId, parseRange, toA1 } from '@ascend/core'
+import { createTableId, parseA1, parseRange, toA1 } from '@ascend/core'
 import { normalizeFormulaInput } from '@ascend/formulas'
 import type { Operation, Result } from '@ascend/schema'
 import { ascendError, EMPTY, err, ok, stringValue, validateExcelTableName } from '@ascend/schema'
@@ -33,6 +33,7 @@ import type { PatchResult } from './helpers.ts'
 import {
 	buildTableColumns,
 	cellWithExisting,
+	collectFormulaBindingGroupRefsForRefs,
 	createLegacyArrayFormulaIndex,
 	DEFAULT_SID,
 	getSheet,
@@ -312,6 +313,16 @@ export function handleRenameTable(
 				? rewritten.ref
 				: `${rewritten.sheetName}!${rewritten.ref}`,
 		)
+		const rewrittenSheet = workbook.getSheet(rewritten.sheetName)
+		if (rewrittenSheet) {
+			for (const groupRef of collectFormulaBindingGroupRefsForRefs(workbook, rewrittenSheet, [
+				parseA1(rewritten.ref),
+			])) {
+				affected.add(
+					rewritten.sheetName === sheet.name ? groupRef : `${rewritten.sheetName}!${groupRef}`,
+				)
+			}
+		}
 		sheetsModified.add(rewritten.sheetName)
 	}
 	rewriteTableNameInDefinedNames(workbook, table.name, op.newName)
@@ -824,6 +835,16 @@ export function handleSetTableColumn(
 					? rewritten.ref
 					: `${rewritten.sheetName}!${rewritten.ref}`,
 			)
+			const rewrittenSheet = workbook.getSheet(rewritten.sheetName)
+			if (rewrittenSheet) {
+				for (const groupRef of collectFormulaBindingGroupRefsForRefs(workbook, rewrittenSheet, [
+					parseA1(rewritten.ref),
+				])) {
+					affected.add(
+						rewritten.sheetName === sheet.name ? groupRef : `${rewritten.sheetName}!${groupRef}`,
+					)
+				}
+			}
 			sheetsModified.add(rewritten.sheetName)
 		}
 		rewriteTableColumnInDefinedNames(workbook, table.name, column.name, op.newName)

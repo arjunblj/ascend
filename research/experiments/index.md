@@ -6,6 +6,7 @@ Updated: 2026-05-15
 
 | Run | Status | Fold-in target |
 | --- | --- | --- |
+| [Safe open generated fixture acceptance matrix](runs/2026/2026-05-15-safe-open-generated-fixture-acceptance-matrix/log.md) | folded a case-level safe-open generated-fixture acceptance matrix into release proof owner handoff JSON | product loop, release loop |
 | [Safe open risk family scan evidence](runs/2026/2026-05-15-safe-open-risk-family-scan-evidence/log.md) | folded risk-family counts into tracked safe-open fixture scans so zero signed/unknown replacements have stronger owner evidence | product loop, release loop |
 | [Ranked portfolio claim proof rerun](runs/2026/2026-05-15-ranked-portfolio-claim-proof-rerun/log.md) | refreshed the 10-direction claim portfolio from proof harnesses; only safe-open and package-action remain implementation handoffs | product loop, correctness loop, performance loop, release loop |
 | [Practical latency tuning floor](runs/2026/2026-05-15-practical-latency-tuning-floor/log.md) | folded in a 5 ms production-target floor so tiny/noisy hot-cache phases stay guardrails | performance loop |

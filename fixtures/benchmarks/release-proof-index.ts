@@ -319,6 +319,7 @@ export interface ReleaseProofFixturePolicy {
 	readonly currentDecision: 'owner-approval-required'
 	readonly generatedStructuralFixturesAllowedWhen: readonly string[]
 	readonly publicBinaryFixturesRequiredWhen: readonly string[]
+	readonly safeOpenFixtureAcceptanceChecklist: readonly ReleaseProofSafeOpenFixtureAcceptanceItem[]
 	readonly approvalChecklist: readonly ReleaseProofFixturePolicyApprovalItem[]
 	readonly trackedFixtureScanCommands: Readonly<Record<ReleaseProofIndexArtifactName, string>>
 	readonly currentGeneratedStructuralCases: Readonly<
@@ -326,6 +327,15 @@ export interface ReleaseProofFixturePolicy {
 	>
 	readonly sourceReferences: readonly ReleaseProofSourceReference[]
 	readonly boundary: string
+}
+
+export interface ReleaseProofSafeOpenFixtureAcceptanceItem {
+	readonly caseName: 'signed' | 'unknown-part' | 'malformed'
+	readonly generatedCaseKind: 'generated-edge-package' | 'generated-malformed-package'
+	readonly acceptableAsTopologyProofWhen: string
+	readonly requiresPublicBinaryWhen: string
+	readonly validationCommand: string
+	readonly gateEffect: 'keeps-public-edge-fixtures-missing-until-owner-approval'
 }
 
 export interface ReleaseProofFixturePolicyApprovalItem {
@@ -508,6 +518,38 @@ const FIXTURE_POLICY: ReleaseProofFixturePolicy = {
 		'claim depends on real-world authoring behavior, vendor repair behavior, UI behavior, or workbook semantics',
 		'claim would imply user trust, malware scanning, active-content safety, signed provenance, or attestation',
 		'generated fixture would hide licensing, privacy, provenance, or large/private workbook uncertainty',
+	],
+	safeOpenFixtureAcceptanceChecklist: [
+		{
+			caseName: 'signed',
+			generatedCaseKind: 'generated-edge-package',
+			acceptableAsTopologyProofWhen:
+				'Owner accepts package-topology evidence for signature-related parts only, with generated provenance disclosed and no signature verification or trust wording.',
+			requiresPublicBinaryWhen:
+				'Claim wording depends on real signed workbook behavior, signature validity, vendor repair UX, or user trust.',
+			validationCommand: 'bun run fixtures/benchmarks/safe-open-fixture-scan.ts --json',
+			gateEffect: 'keeps-public-edge-fixtures-missing-until-owner-approval',
+		},
+		{
+			caseName: 'unknown-part',
+			generatedCaseKind: 'generated-edge-package',
+			acceptableAsTopologyProofWhen:
+				'Owner accepts package-topology evidence that unknown package features route to review before hydration, with no preservation or understanding claim.',
+			requiresPublicBinaryWhen:
+				'Claim wording depends on arbitrary third-party unknown-part preservation, vendor behavior, or real-world workbook semantics.',
+			validationCommand: 'bun run fixtures/benchmarks/safe-open-fixture-scan.ts --json',
+			gateEffect: 'keeps-public-edge-fixtures-missing-until-owner-approval',
+		},
+		{
+			caseName: 'malformed',
+			generatedCaseKind: 'generated-malformed-package',
+			acceptableAsTopologyProofWhen:
+				'Owner accepts generated bad bytes as fail-closed rejection-path evidence only.',
+			requiresPublicBinaryWhen:
+				'Claim wording depends on vendor repair equivalence, recovery of arbitrary malformed files, or real-world corrupt workbook provenance.',
+			validationCommand: 'bun run fixtures/benchmarks/safe-open-proof.ts --no-timings --json',
+			gateEffect: 'keeps-public-edge-fixtures-missing-until-owner-approval',
+		},
 	],
 	approvalChecklist: [
 		{
@@ -856,6 +898,14 @@ export function releaseProofIndexMarkdown(result: ReleaseProofIndexResult): stri
 		'',
 		'Public binary fixtures are required when:',
 		...result.fixturePolicy.publicBinaryFixturesRequiredWhen.map((entry) => `- ${entry}`),
+		'',
+		'Safe-open generated case acceptance checklist:',
+		'',
+		'| Case | Generated kind | Acceptable as topology proof when | Requires public binary when | Validation command | Gate effect |',
+		'| --- | --- | --- | --- | --- | --- |',
+		...result.fixturePolicy.safeOpenFixtureAcceptanceChecklist.map(
+			safeOpenFixtureAcceptanceMarkdownRow,
+		),
 		'',
 		'Approval checklist:',
 		'',
@@ -2545,6 +2595,23 @@ function cloneFixturePolicy(): ReleaseProofFixturePolicy {
 		) as ReleaseProofFixturePolicy['currentGeneratedStructuralCases'],
 		sourceReferences: FIXTURE_POLICY.sourceReferences.map((reference) => ({ ...reference })),
 	}
+}
+
+function safeOpenFixtureAcceptanceMarkdownRow(
+	row: ReleaseProofSafeOpenFixtureAcceptanceItem,
+): string {
+	return [
+		row.caseName,
+		row.generatedCaseKind,
+		row.acceptableAsTopologyProofWhen,
+		row.requiresPublicBinaryWhen,
+		`\`${row.validationCommand}\``,
+		row.gateEffect,
+	]
+		.map((cell) => ` ${cell} `)
+		.join('|')
+		.replace(/^/, '|')
+		.replace(/$/, '|')
 }
 
 function fixturePolicyApprovalMarkdownRow(row: ReleaseProofFixturePolicyApprovalItem): string {

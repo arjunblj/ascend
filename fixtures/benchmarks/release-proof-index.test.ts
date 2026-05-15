@@ -84,6 +84,24 @@ describe('release proof evidence index', () => {
 			expect.stringContaining('active-content safety'),
 			expect.stringContaining('licensing, privacy, provenance'),
 		])
+		expect(index.fixturePolicy.safeOpenFixtureAcceptanceChecklist).toEqual([
+			expect.objectContaining({
+				caseName: 'signed',
+				generatedCaseKind: 'generated-edge-package',
+				gateEffect: 'keeps-public-edge-fixtures-missing-until-owner-approval',
+				requiresPublicBinaryWhen: expect.stringContaining('real signed workbook behavior'),
+			}),
+			expect.objectContaining({
+				caseName: 'unknown-part',
+				generatedCaseKind: 'generated-edge-package',
+				acceptableAsTopologyProofWhen: expect.stringContaining('unknown package features'),
+			}),
+			expect.objectContaining({
+				caseName: 'malformed',
+				generatedCaseKind: 'generated-malformed-package',
+				requiresPublicBinaryWhen: expect.stringContaining('vendor repair equivalence'),
+			}),
+		])
 		expect(index.fixturePolicy.sourceReferences.map((entry) => entry.label)).toEqual([
 			'GitHub repository limits',
 			'GitHub large files',
@@ -1110,6 +1128,9 @@ describe('release proof evidence index', () => {
 		)
 		expect(markdown).toContain('edge case is package-topology-only')
 		expect(markdown).toContain('Public binary fixtures are required when:')
+		expect(markdown).toContain('Safe-open generated case acceptance checklist:')
+		expect(markdown).toContain('| signed | generated-edge-package')
+		expect(markdown).toContain('keeps-public-edge-fixtures-missing-until-owner-approval')
 		expect(markdown).toContain('Approval checklist:')
 		expect(markdown).toContain(
 			'| Artifact | Gate | Owner | Status | Decision needed | Acceptance evidence | Reject if | Validation command |',

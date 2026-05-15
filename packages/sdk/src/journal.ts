@@ -4452,16 +4452,33 @@ function journalSetWorkbookView(
 	const index = op.index ?? 0
 	const view = workbook.workbookViews[index]
 	const preimage = { index, view: view ? { ...view } : null }
+	const invalidIndex = !Number.isInteger(index) || index < 0
+	const deletesMissingView = op.view === null && view === undefined
+	const issues: MutationJournalIssue[] =
+		invalidIndex || deletesMissingView
+			? [
+					{
+						code: 'UNSUPPORTED_VALUE',
+						message: `Cannot build exact rollback journal for setWorkbookView because workbook view index ${index} is invalid`,
+						surface: 'workbook-metadata',
+						reason: 'value-unsupported',
+						refs: [`workbook:view:${index}`],
+					},
+				]
+			: []
 	return {
 		opIndex,
 		op,
-		inverseOps: [
-			preimage.view
-				? { op: 'setWorkbookView', index, view: preimage.view, mode: 'replace' }
-				: { op: 'setWorkbookView', index, view: null },
-		],
+		inverseOps:
+			issues.length === 0
+				? [
+						preimage.view
+							? { op: 'setWorkbookView', index, view: preimage.view, mode: 'replace' }
+							: { op: 'setWorkbookView', index, view: null },
+					]
+				: [],
 		preimages: [{ kind: 'workbook-view', workbookView: preimage }],
-		issues: [],
+		issues,
 	}
 }
 

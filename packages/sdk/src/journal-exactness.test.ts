@@ -750,6 +750,34 @@ describe('mutation journal exactness model', () => {
 		})
 	})
 
+	test('classifies invalid workbook view journals as unsupported metadata values', () => {
+		const cases: readonly Operation[] = [
+			{ op: 'setWorkbookView', index: -1, view: { activeTab: 0 } },
+			{ op: 'setWorkbookView', index: 1, view: null },
+		]
+
+		for (const op of cases) {
+			const wb = AscendWorkbook.create()
+			const analysis = analyzeMutationJournalExactness(
+				buildMutationJournal(wb.getWorkbookModel(), [op]),
+			)
+			expect(analysis, `${op.index}`).toMatchObject({
+				supported: true,
+				exact: false,
+				issueCount: 1,
+				surfaces: ['workbook-metadata'],
+				reasons: ['value-unsupported'],
+				hasMatrixViolation: false,
+			})
+			expect(analysis.issues[0], `${op.index}`).toMatchObject({
+				code: 'UNSUPPORTED_VALUE',
+				surface: 'workbook-metadata',
+				reason: 'value-unsupported',
+				allowedByMatrix: true,
+			})
+		}
+	})
+
 	test('classifies setComment legacy drawing loss without changing the v1 vocabulary', () => {
 		const classified = classifyMutationJournalIssues(lossySetCommentLegacyDrawingJournal().issues)
 		expect(classified).toContainEqual({

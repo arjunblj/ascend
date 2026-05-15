@@ -5,7 +5,12 @@ import { readFileSync } from 'node:fs'
 import { unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { AscendWorkbook, parseOperations } from '@ascend/sdk'
+import {
+	AscendWorkbook,
+	MUTATION_JOURNAL_ISSUE_SCHEMA,
+	MUTATION_JOURNAL_ISSUE_SCHEMA_VERSION,
+	parseOperations,
+} from '@ascend/sdk'
 import { createZip, encode } from '../../../packages/io-xlsx/src/writer/zip.ts'
 import { makeXlsx } from '../../../packages/io-xlsx/test/helpers.ts'
 import { createServer } from './index.ts'
@@ -780,6 +785,8 @@ describe('MCP server', () => {
 				ok?: boolean
 				data?: {
 					journal?: {
+						schemaVersion?: number
+						schemaId?: string
 						supported?: boolean
 						exact?: boolean
 						inverseOps?: unknown[]
@@ -794,6 +801,12 @@ describe('MCP server', () => {
 			ops: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 5 }] }],
 		})
 		expect(result.structuredContent?.ok).toBe(true)
+		expect(result.structuredContent?.data?.journal?.schemaVersion).toBe(
+			MUTATION_JOURNAL_ISSUE_SCHEMA_VERSION,
+		)
+		expect(result.structuredContent?.data?.journal?.schemaId).toBe(
+			MUTATION_JOURNAL_ISSUE_SCHEMA.$id,
+		)
 		expect(result.structuredContent?.data?.journal?.supported).toBe(true)
 		expect(result.structuredContent?.data?.journal?.inverseOps).toEqual([
 			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 2 }] },
@@ -977,6 +990,8 @@ describe('MCP server', () => {
 				ok?: boolean
 				data?: {
 					journal?: {
+						schemaVersion?: number
+						schemaId?: string
 						supported?: boolean
 						exact?: boolean
 						inverseOps?: unknown[]
@@ -1002,6 +1017,12 @@ describe('MCP server', () => {
 		})
 
 		expect(result.structuredContent?.ok).toBe(true)
+		expect(result.structuredContent?.data?.journal?.schemaVersion).toBe(
+			MUTATION_JOURNAL_ISSUE_SCHEMA_VERSION,
+		)
+		expect(result.structuredContent?.data?.journal?.schemaId).toBe(
+			MUTATION_JOURNAL_ISSUE_SCHEMA.$id,
+		)
 		expect(result.structuredContent?.data?.journal?.supported).toBe(true)
 		expect(result.structuredContent?.data?.journal?.exact).toBe(false)
 		expect(result.structuredContent?.data?.journal?.inverseOps).toEqual([])
@@ -1066,6 +1087,8 @@ describe('MCP server', () => {
 				ok?: boolean
 				data?: {
 					journal?: {
+						schemaVersion?: number
+						schemaId?: string
 						supported?: boolean
 						exact?: boolean
 						inverseOps?: unknown[]
@@ -1137,6 +1160,12 @@ describe('MCP server', () => {
 		})
 
 		expect(result.structuredContent?.ok).toBe(true)
+		expect(result.structuredContent?.data?.journal?.schemaVersion).toBe(
+			MUTATION_JOURNAL_ISSUE_SCHEMA_VERSION,
+		)
+		expect(result.structuredContent?.data?.journal?.schemaId).toBe(
+			MUTATION_JOURNAL_ISSUE_SCHEMA.$id,
+		)
 		expect(result.structuredContent?.data?.journal?.supported).toBe(true)
 		expect(result.structuredContent?.data?.journal?.exact).toBe(false)
 		expect(result.structuredContent?.data?.journal?.inverseOps).toEqual([])

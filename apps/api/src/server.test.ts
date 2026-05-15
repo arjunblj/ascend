@@ -5,7 +5,12 @@ import { readFileSync } from 'node:fs'
 import { unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { AscendWorkbook, parseOperations } from '@ascend/sdk'
+import {
+	AscendWorkbook,
+	MUTATION_JOURNAL_ISSUE_SCHEMA,
+	MUTATION_JOURNAL_ISSUE_SCHEMA_VERSION,
+	parseOperations,
+} from '@ascend/sdk'
 import { createZip, encode } from '../../../packages/io-xlsx/src/writer/zip.ts'
 import { makeXlsx } from '../../../packages/io-xlsx/test/helpers.ts'
 import { createApiFetch, createServer } from './server.ts'
@@ -350,6 +355,8 @@ interface ApiEnvelope {
 			}
 		}
 		readonly journal?: {
+			readonly schemaVersion?: number
+			readonly schemaId?: string
 			readonly supported?: boolean
 			readonly exact?: boolean
 			readonly inverseOps?: unknown[]
@@ -1737,6 +1744,8 @@ describe('Ascend API server', () => {
 
 		expect(result.status).toBe(200)
 		expect(result.body.ok).toBe(true)
+		expect(result.body.data?.journal?.schemaVersion).toBe(MUTATION_JOURNAL_ISSUE_SCHEMA_VERSION)
+		expect(result.body.data?.journal?.schemaId).toBe(MUTATION_JOURNAL_ISSUE_SCHEMA.$id)
 		expect(result.body.data?.journal?.supported).toBe(true)
 		expect(result.body.data?.journal?.exact).toBe(false)
 		expect(result.body.data?.journal?.inverseOps).toEqual([])
@@ -1791,6 +1800,8 @@ describe('Ascend API server', () => {
 
 		expect(result.status).toBe(200)
 		expect(result.body.ok).toBe(true)
+		expect(result.body.data?.journal?.schemaVersion).toBe(MUTATION_JOURNAL_ISSUE_SCHEMA_VERSION)
+		expect(result.body.data?.journal?.schemaId).toBe(MUTATION_JOURNAL_ISSUE_SCHEMA.$id)
 		expect(result.body.data?.journal?.supported).toBe(true)
 		expect(result.body.data?.journal?.exact).toBe(false)
 		expect(result.body.data?.journal?.inverseOps).toEqual([])
@@ -1825,6 +1836,8 @@ describe('Ascend API server', () => {
 
 		expect(result.status).toBe(200)
 		expect(result.body.ok).toBe(true)
+		expect(result.body.data?.journal?.schemaVersion).toBe(MUTATION_JOURNAL_ISSUE_SCHEMA_VERSION)
+		expect(result.body.data?.journal?.schemaId).toBe(MUTATION_JOURNAL_ISSUE_SCHEMA.$id)
 		expect(result.body.data?.journal?.supported).toBe(true)
 		expect(result.body.data?.journal?.exact).toBe(false)
 		expect(result.body.data?.journal?.inverseOps).toEqual([

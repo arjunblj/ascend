@@ -1469,6 +1469,12 @@ describe('MCP server', () => {
 		expect(result.structuredContent?.ok).toBe(true)
 		expect(result.structuredContent?.data?.journal?.supported).toBe(true)
 		expect(result.structuredContent?.data?.journal?.exact).toBe(false)
+		expect(result.structuredContent?.data?.journal?.issues).toContainEqual(
+			expect.objectContaining({
+				surface: 'package-parts',
+				reason: 'package-part-preservation',
+			}),
+		)
 		const inverse = parseOperations(result.structuredContent?.data?.journal?.inverseOps)
 		expect(inverse.ok).toBe(true)
 		if (!inverse.ok) throw new Error('Expected exact journal inverse ops to parse')
@@ -1930,6 +1936,12 @@ describe('MCP server', () => {
 		expect(result.structuredContent?.ok).toBe(true)
 		expect(result.structuredContent?.data?.journal?.supported).toBe(true)
 		expect(result.structuredContent?.data?.journal?.exact).toBe(false)
+		expect(result.structuredContent?.data?.journal?.issues).toContainEqual(
+			expect.objectContaining({
+				surface: 'package-parts',
+				reason: 'package-part-preservation',
+			}),
+		)
 		const inverse = parseOperations(result.structuredContent?.data?.journal?.inverseOps)
 		expect(inverse.ok).toBe(true)
 		if (!inverse.ok) throw new Error('Expected exact journal inverse ops to parse')

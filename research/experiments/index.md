@@ -6,6 +6,7 @@ Updated: 2026-05-15
 
 | Run | Status | Fold-in target |
 | --- | --- | --- |
+| [Sparkline group validation boundary](runs/2026/2026-05-15-sparkline-group-validation-boundary/log.md) | folded in rejection-first validation for invalid sparkline ranges, empty types, and non-boolean display flags before x14 metadata mutation | correctness loop |
 | [Safe open external candidate owner evidence](runs/2026/2026-05-15-safe-open-external-candidate-owner-evidence/log.md) | folded ExcelForge unknown-part candidate into release-proof-index owner handoff JSON/Markdown with explicit does-not-satisfy-public-edge-fixtures gate effect | product loop, release loop |
 | [Document properties finite value boundary](runs/2026/2026-05-15-document-properties-finite-value-boundary/log.md) | folded in finite-number validation for document property app/custom metadata plus journal exactness coverage for non-representable numeric values | correctness loop |
 | [Calc settings validation boundary](runs/2026/2026-05-15-calc-settings-validation-boundary/log.md) | folded in calc-setting enum/boolean/date/iterative validation plus unsupported-value journal classification for rejected workbook metadata | correctness loop |

@@ -1499,6 +1499,91 @@ describe('mutation journal exactness model', () => {
 		)
 	})
 
+	test('copySheet exact journals preserve retargeted formula binding evidence', () => {
+		const wb = AscendWorkbook.create()
+		const source = wb.getWorkbookModel().getSheet('Sheet1')
+		if (!source) throw new Error('missing Sheet1')
+		source.cells.set(0, 0, {
+			value: numberValue(1),
+			formula: 'B1*2',
+			styleId: DEFAULT_STYLE_ID,
+			formulaInfo: {
+				kind: 'shared',
+				sharedIndex: 'journal-copy-shared',
+				isMaster: true,
+				masterRef: 'Sheet1!A1',
+				ref: 'Sheet1!A1:A2',
+			},
+		})
+		source.cells.set(1, 0, {
+			value: numberValue(2),
+			formula: null,
+			styleId: DEFAULT_STYLE_ID,
+			formulaInfo: {
+				kind: 'shared',
+				sharedIndex: 'journal-copy-shared',
+				isMaster: false,
+				masterRef: 'Sheet1!A1',
+				ref: 'Sheet1!A1:A2',
+			},
+		})
+		source.cells.set(3, 0, {
+			value: numberValue(4),
+			formula: 'Sheet1!A4:Sheet1!B5',
+			styleId: DEFAULT_STYLE_ID,
+			formulaInfo: { kind: 'array', ref: 'Sheet1!A4:B5' },
+		})
+		source.cells.set(6, 0, {
+			value: numberValue(7),
+			formula: null,
+			styleId: DEFAULT_STYLE_ID,
+			formulaInfo: {
+				kind: 'dataTable',
+				ref: 'Sheet1!A7:B8',
+				dtr: true,
+				r1: 'Sheet1!C1',
+				r2: 'Sheet1!D1',
+			},
+		})
+		const before = journalEvidence(wb)
+
+		const changed = wb.apply([{ op: 'copySheet', sheet: 'Sheet1', newName: 'Copy' }], {
+			journal: true,
+		})
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(true)
+		expect(changed.journal?.issues).toEqual([])
+		const copy = wb.getWorkbookModel().getSheet('Copy')
+		expect(copy?.cells.get(0, 0)?.formulaInfo).toEqual({
+			kind: 'shared',
+			sharedIndex: 'journal-copy-shared',
+			isMaster: true,
+			masterRef: 'Copy!A1',
+			ref: 'Copy!A1:A2',
+		})
+		expect(copy?.cells.get(1, 0)?.formulaInfo).toEqual({
+			kind: 'shared',
+			sharedIndex: 'journal-copy-shared',
+			isMaster: false,
+			masterRef: 'Copy!A1',
+			ref: 'Copy!A1:A2',
+		})
+		expect(copy?.cells.get(3, 0)?.formulaInfo).toEqual({ kind: 'array', ref: 'Copy!A4:B5' })
+		expect(copy?.cells.get(6, 0)?.formulaInfo).toEqual({
+			kind: 'dataTable',
+			ref: 'Copy!A7:B8',
+			dtr: true,
+			r1: 'Copy!C1',
+			r2: 'Copy!D1',
+		})
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(journalEvidence(wb)).toEqual(before)
+	})
+
 	test('representative exact journals restore full workbook evidence after inverse apply', () => {
 		const cases: readonly {
 			readonly name: string
@@ -2739,6 +2824,12 @@ function journalEvidence(wb: AscendWorkbook): object {
 			printArea: sheet.printArea,
 			frozenRows: sheet.frozenRows,
 			frozenCols: sheet.frozenCols,
+			formulaBindings: [...sheet.cells.iterate()]
+				.filter(([, , cell]) => cell.formulaInfo)
+				.map(([row, col, cell]) => ({
+					ref: `${indexToColumn(col)}${row + 1}`,
+					formulaInfo: cell.formulaInfo,
+				})),
 		})),
 		chartParts: model.chartParts,
 		chartSheets: model.chartSheets,

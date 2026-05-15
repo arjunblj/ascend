@@ -99,6 +99,48 @@ describe('release proof evidence index', () => {
 			'hyperfine benchmarking',
 			'hyperfine manual',
 		])
+		expect(index.correctnessPolicy).toMatchObject({
+			currentDecision: 'owner-approval-required',
+			boundary: expect.stringContaining('does not prove semantic support'),
+		})
+		expect(index.correctnessPolicy.approvalChecklist).toHaveLength(1)
+		expect(index.correctnessPolicy.approvalChecklist[0]).toMatchObject({
+			artifact: 'package-action-proof',
+			gateId: 'unsupported-feature-boundary',
+			ownerLoop: 'correctness',
+			status: 'pending-owner-decision',
+			validationCommand: 'bun run fixtures/benchmarks/package-action-proof.ts --no-timings --json',
+			rejectIf: expect.stringContaining('signature preservation or verification'),
+		})
+		expect(
+			index.correctnessPolicy.unsupportedFeatureBoundaries.map((item) => item.feature),
+		).toEqual([
+			'digital-signatures',
+			'calc-chain',
+			'chart-drawing-sidecars',
+			'macros-activex',
+			'unknown-parts',
+			'streaming-scope',
+		])
+		expect(index.correctnessPolicy.unsupportedFeatureBoundaries[0]).toMatchObject({
+			allowedWording: expect.stringContaining('detects signature package parts'),
+			forbiddenWording: expect.stringContaining('verifies'),
+		})
+		expect(index.correctnessPolicy.unsupportedFeatureBoundaries[2]).toMatchObject({
+			allowedWording: expect.stringContaining('accounts for chart/drawing sidecars'),
+			forbiddenWording: expect.stringContaining('byte-passthrough'),
+		})
+		expect(index.correctnessPolicy.unsupportedFeatureBoundaries[5]).toMatchObject({
+			allowedWording: expect.stringContaining('representative streaming writer'),
+			forbiddenWording: expect.stringContaining('Full streaming parity'),
+		})
+		expect(index.correctnessPolicy.sourceReferences.map((entry) => entry.label)).toEqual([
+			'OOXML calculation chain',
+			'Microsoft macro security',
+			'Microsoft ActiveX settings',
+			'SheetJS VBA blobs',
+			'OOXML digital signatures',
+		])
 		expect(index.artifacts.map((artifact) => artifact.name)).toEqual([
 			'safe-open-proof',
 			'package-action-proof',
@@ -460,8 +502,22 @@ describe('release proof evidence index', () => {
 			'release-latency-run',
 			'streaming-matrix-boundary',
 		])
+		expect(handoff.correctnessPolicy.approvalChecklist.map((item) => item.gateId)).toEqual([
+			'unsupported-feature-boundary',
+		])
+		expect(
+			handoff.correctnessPolicy.unsupportedFeatureBoundaries.map((item) => item.feature),
+		).toEqual([
+			'digital-signatures',
+			'calc-chain',
+			'chart-drawing-sidecars',
+			'macros-activex',
+			'unknown-parts',
+			'streaming-scope',
+		])
 		expect(JSON.stringify(handoff.fixturePolicy)).toContain('package-action-fixture-scan')
 		expect(JSON.stringify(handoff.performancePolicy)).toContain('safe-open-proof.ts --repeat 3')
+		expect(JSON.stringify(handoff.correctnessPolicy)).toContain('signature preservation')
 		expect(handoff.nextOwnerActions[0]).toMatchObject({
 			requirementId: 'edge-fixture-policy',
 			acceptanceEvidence: expect.stringContaining('accepts disclosed generated'),
@@ -560,6 +616,18 @@ describe('release proof evidence index', () => {
 		expect(markdown).toContain('| safe-open-proof | release-latency-run | performance')
 		expect(markdown).toContain('| package-action-proof | streaming-matrix-boundary | performance')
 		expect(markdown).toContain('Bun benchmarking')
+		expect(markdown).toContain('## Correctness Policy')
+		expect(markdown).toContain('Unsupported feature boundaries:')
+		expect(markdown).toContain(
+			'| Feature | Current evidence | Allowed wording | Forbidden wording |',
+		)
+		expect(markdown).toContain('| digital-signatures | Generated signature-invalidation')
+		expect(markdown).toContain(
+			'| package-action-proof | unsupported-feature-boundary | correctness',
+		)
+		expect(markdown).toContain('signature preservation or verification')
+		expect(markdown).toContain('Chart XML is byte-passthrough')
+		expect(markdown).toContain('OOXML digital signatures')
 		expect(markdown).toContain(
 			'| Rank | Artifact | Gate | Owner loop | Priority | Next step | Acceptance evidence | Forbidden shortcut |',
 		)

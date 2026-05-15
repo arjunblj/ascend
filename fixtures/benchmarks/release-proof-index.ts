@@ -86,6 +86,7 @@ export interface ReleaseProofIndexResult {
 	readonly attestation: false
 	readonly fixturePolicy: ReleaseProofFixturePolicy
 	readonly performancePolicy: ReleaseProofPerformancePolicy
+	readonly correctnessPolicy: ReleaseProofCorrectnessPolicy
 	readonly readiness: ReleaseProofReadinessSummary
 	readonly boundary: string
 	readonly artifacts: readonly ReleaseProofIndexArtifact[]
@@ -101,6 +102,7 @@ export interface ReleaseProofOwnerHandoffIndex {
 	readonly missingRequirementCount: number
 	readonly fixturePolicy: ReleaseProofFixturePolicy
 	readonly performancePolicy: ReleaseProofPerformancePolicy
+	readonly correctnessPolicy: ReleaseProofCorrectnessPolicy
 	readonly nextOwnerActions: readonly ReleaseProofNextOwnerAction[]
 	readonly implementationHandoffs: readonly ReleaseProofImplementationHandoff[]
 	readonly deferredClaims: readonly ReleaseProofDeferredClaim[]
@@ -221,6 +223,32 @@ export interface ReleaseProofPerformancePolicyApprovalItem {
 	readonly acceptanceEvidence: string
 	readonly rejectIf: string
 	readonly validationCommand: string
+}
+
+export interface ReleaseProofCorrectnessPolicy {
+	readonly currentDecision: 'owner-approval-required'
+	readonly approvalChecklist: readonly ReleaseProofCorrectnessPolicyApprovalItem[]
+	readonly unsupportedFeatureBoundaries: readonly ReleaseProofUnsupportedFeatureBoundary[]
+	readonly sourceReferences: readonly ReleaseProofSourceReference[]
+	readonly boundary: string
+}
+
+export interface ReleaseProofCorrectnessPolicyApprovalItem {
+	readonly artifact: 'package-action-proof'
+	readonly gateId: 'unsupported-feature-boundary'
+	readonly ownerLoop: 'correctness'
+	readonly status: 'pending-owner-decision'
+	readonly decisionNeeded: string
+	readonly acceptanceEvidence: string
+	readonly rejectIf: string
+	readonly validationCommand: string
+}
+
+export interface ReleaseProofUnsupportedFeatureBoundary {
+	readonly feature: string
+	readonly currentEvidence: string
+	readonly allowedWording: string
+	readonly forbiddenWording: string
 }
 
 const FIXTURE_POLICY: ReleaseProofFixturePolicy = {
@@ -376,6 +404,98 @@ const PERFORMANCE_POLICY: ReleaseProofPerformancePolicy = {
 		'Performance policy is an owner-decision aid for local benchmark evidence. It is not a release performance threshold, SLA, streaming parity claim, or production optimization mandate.',
 }
 
+const CORRECTNESS_POLICY: ReleaseProofCorrectnessPolicy = {
+	currentDecision: 'owner-approval-required',
+	approvalChecklist: [
+		{
+			artifact: 'package-action-proof',
+			gateId: 'unsupported-feature-boundary',
+			ownerLoop: 'correctness',
+			status: 'pending-owner-decision',
+			decisionNeeded:
+				'Approve package-action unsupported-feature wording as per-part accounting and fail-closed evidence, not semantic support for unsupported workbook features.',
+			acceptanceEvidence:
+				'Package-action proof covers signatures, calc chain, chart/drawing sidecars, macros/ActiveX, unknown parts, and representative streaming scope with allowed/forbidden wording.',
+			rejectIf:
+				'Copy claims chart XML byte passthrough, signature preservation or verification, Excel-fresh cached formulas, macro/ActiveX safety, unknown-part understanding, or full streaming parity.',
+			validationCommand: 'bun run fixtures/benchmarks/package-action-proof.ts --no-timings --json',
+		},
+	],
+	unsupportedFeatureBoundaries: [
+		{
+			feature: 'digital-signatures',
+			currentEvidence:
+				'Generated signature-invalidation case reports signature origin/signature XML as dropped after package mutation.',
+			allowedWording:
+				'Ascend detects signature package parts and reports invalidation/drop evidence when a write changes the package.',
+			forbiddenWording: 'Ascend preserves, verifies, re-signs, or attests signatures.',
+		},
+		{
+			feature: 'calc-chain',
+			currentEvidence:
+				'Public calc-chain fixture reports xl/calcChain.xml drop for formula topology edits.',
+			allowedWording:
+				'Ascend reports calc-chain drop/regeneration decisions when edits make cached calculation order unsafe.',
+			forbiddenWording:
+				'Ascend proves Excel recalculation equivalence or cached formula freshness.',
+		},
+		{
+			feature: 'chart-drawing-sidecars',
+			currentEvidence:
+				'Public chart fixture accounts for drawing sidecars separately while chart XML can regenerate.',
+			allowedWording:
+				'Ascend accounts for chart/drawing sidecars separately from regenerated workbook parts.',
+			forbiddenWording: 'Chart XML is byte-passthrough or every chart feature is understood.',
+		},
+		{
+			feature: 'macros-activex',
+			currentEvidence:
+				'Public macro fixture reports macro-bearing parts as package evidence; safe-open routes macro/ActiveX to review.',
+			allowedWording: 'Ascend records macro/ActiveX package preservation and review routing.',
+			forbiddenWording:
+				'Macros or ActiveX are safe, sandboxed, scanned, or executable through Ascend.',
+		},
+		{
+			feature: 'unknown-parts',
+			currentEvidence:
+				'Generated unknown-part case reports one error action and failed post-write audit.',
+			allowedWording: 'Ascend can fail closed with an explicit unknown-part error.',
+			forbiddenWording: 'Ascend preserves or understands arbitrary unknown parts.',
+		},
+		{
+			feature: 'streaming-scope',
+			currentEvidence:
+				'One representative streaming dirty-sheet proof reports a regenerated worksheet and passthrough-byte equality.',
+			allowedWording: 'One representative streaming writer package-action proof exists.',
+			forbiddenWording: 'Full streaming parity across all package-action scenarios.',
+		},
+	],
+	sourceReferences: [
+		{
+			label: 'OOXML calculation chain',
+			url: 'https://ooxml.info/docs/12/12.3/12.3.1/',
+		},
+		{
+			label: 'Microsoft macro security',
+			url: 'https://support.microsoft.com/en-gb/office/change-macro-security-settings-in-excel-a97c09d2-c082-46b8-b19f-e8621e8fe373',
+		},
+		{
+			label: 'Microsoft ActiveX settings',
+			url: 'https://support.microsoft.com/en-us/office/enable-or-disable-activex-settings-in-office-files-f1303e08-a3f8-41c5-a17e-b0b8898743ed',
+		},
+		{
+			label: 'SheetJS VBA blobs',
+			url: 'https://docs.sheetjs.com/docs/csf/features/vba/',
+		},
+		{
+			label: 'OOXML digital signatures',
+			url: 'https://c-rex.net/samples/ooxml/e1/Part2/OOXML_P2_Open_Packaging_Conventions_Digital_topic_ID0EHROM.html',
+		},
+	],
+	boundary:
+		'Correctness policy is an owner-decision aid for claim wording. It does not prove semantic support for unsupported workbook features, Excel recalculation equivalence, macro/ActiveX safety, signature verification, or streaming parity.',
+}
+
 export async function runReleaseProofIndex(
 	options: ReleaseProofIndexOptions = {},
 ): Promise<ReleaseProofIndexResult> {
@@ -399,6 +519,7 @@ export async function runReleaseProofIndex(
 		attestation: false,
 		fixturePolicy: cloneFixturePolicy(),
 		performancePolicy: clonePerformancePolicy(),
+		correctnessPolicy: cloneCorrectnessPolicy(),
 		readiness: releaseReadinessSummary(artifacts),
 		boundary:
 			'Digest index for local release evidence artifacts. This is not signed provenance, SLSA, in-toto attestation, or tamper-evident storage.',
@@ -478,6 +599,28 @@ export function releaseProofIndexMarkdown(result: ReleaseProofIndexResult): stri
 			(reference) => `- ${reference.label}: ${reference.url}`,
 		),
 		'',
+		'## Correctness Policy',
+		'',
+		`Current decision: ${result.correctnessPolicy.currentDecision}`,
+		result.correctnessPolicy.boundary,
+		'',
+		'Unsupported feature boundaries:',
+		'',
+		'| Feature | Current evidence | Allowed wording | Forbidden wording |',
+		'| --- | --- | --- | --- |',
+		...result.correctnessPolicy.unsupportedFeatureBoundaries.map(correctnessBoundaryMarkdownRow),
+		'',
+		'Approval checklist:',
+		'',
+		'| Artifact | Gate | Owner | Status | Decision needed | Acceptance evidence | Reject if | Validation command |',
+		'| --- | --- | --- | --- | --- | --- | --- | --- |',
+		...result.correctnessPolicy.approvalChecklist.map(correctnessPolicyApprovalMarkdownRow),
+		'',
+		'Source references:',
+		...result.correctnessPolicy.sourceReferences.map(
+			(reference) => `- ${reference.label}: ${reference.url}`,
+		),
+		'',
 		'## Excluded Evidence',
 		'',
 		'| Evidence | Command | Reason | Eligibility rule | Owner loop | Boundary |',
@@ -506,6 +649,7 @@ export function releaseProofOwnerHandoffIndex(
 		missingRequirementCount: result.readiness.missingRequirementCount,
 		fixturePolicy: cloneFixturePolicy(),
 		performancePolicy: clonePerformancePolicy(),
+		correctnessPolicy: cloneCorrectnessPolicy(),
 		nextOwnerActions: result.readiness.nextOwnerActions,
 		implementationHandoffs: result.readiness.implementationHandoffs,
 		deferredClaims: result.deferredClaims,
@@ -1274,6 +1418,46 @@ function clonePerformancePolicy(): ReleaseProofPerformancePolicy {
 
 function performancePolicyApprovalMarkdownRow(
 	row: ReleaseProofPerformancePolicyApprovalItem,
+): string {
+	return [
+		row.artifact,
+		row.gateId,
+		row.ownerLoop,
+		row.status,
+		row.decisionNeeded,
+		row.acceptanceEvidence,
+		row.rejectIf,
+		`\`${row.validationCommand}\``,
+	]
+		.map((cell) => ` ${cell} `)
+		.join('|')
+		.replace(/^/, '|')
+		.replace(/$/, '|')
+}
+
+function cloneCorrectnessPolicy(): ReleaseProofCorrectnessPolicy {
+	return {
+		...CORRECTNESS_POLICY,
+		approvalChecklist: CORRECTNESS_POLICY.approvalChecklist.map((item) => ({ ...item })),
+		unsupportedFeatureBoundaries: CORRECTNESS_POLICY.unsupportedFeatureBoundaries.map(
+			(boundary) => ({ ...boundary }),
+		),
+		sourceReferences: CORRECTNESS_POLICY.sourceReferences.map((reference) => ({
+			...reference,
+		})),
+	}
+}
+
+function correctnessBoundaryMarkdownRow(row: ReleaseProofUnsupportedFeatureBoundary): string {
+	return [row.feature, row.currentEvidence, row.allowedWording, row.forbiddenWording]
+		.map((cell) => ` ${cell} `)
+		.join('|')
+		.replace(/^/, '|')
+		.replace(/$/, '|')
+}
+
+function correctnessPolicyApprovalMarkdownRow(
+	row: ReleaseProofCorrectnessPolicyApprovalItem,
 ): string {
 	return [
 		row.artifact,

@@ -1572,6 +1572,8 @@ export function failedMutationJournal(error: unknown): MutationJournal {
 			{
 				code: 'JOURNAL_BUILD_FAILED',
 				message: `Mutation journal build failed${detail}`,
+				surface: 'package-parts',
+				reason: 'journal-build-failed',
 			},
 		],
 	}
@@ -1590,6 +1592,8 @@ export function unavailableMutationJournal(
 			{
 				code: 'JOURNAL_UNAVAILABLE',
 				message,
+				surface: 'package-parts',
+				reason: 'journal-unavailable',
 				...(refs && refs.length > 0 ? { refs } : {}),
 			},
 		],

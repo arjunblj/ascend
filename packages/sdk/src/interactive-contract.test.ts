@@ -2867,6 +2867,8 @@ describe('interactive client contract', () => {
 				{
 					code: 'JOURNAL_BUILD_FAILED',
 					message: 'Mutation journal build failed: Invalid range reference: A1:',
+					surface: 'package-parts',
+					reason: 'journal-build-failed',
 				},
 			],
 		})
@@ -2895,6 +2897,8 @@ describe('interactive client contract', () => {
 					code: 'JOURNAL_UNAVAILABLE',
 					message:
 						'Mutation journal is unavailable because the requested operations did not apply successfully. Fix the apply errors before using rollback journal.',
+					surface: 'package-parts',
+					reason: 'journal-unavailable',
 				},
 			],
 		}
@@ -2940,6 +2944,8 @@ describe('interactive client contract', () => {
 					code: 'JOURNAL_UNAVAILABLE',
 					message:
 						'Mutation journal is unavailable because the workbook is partially loaded in values mode. Reopen the workbook with a full load before applying edits.',
+					surface: 'package-parts',
+					reason: 'journal-unavailable',
 				},
 			],
 		})

@@ -475,7 +475,12 @@ function sameSpillFormulaGroup(
 ): boolean {
 	if (!candidate) return false
 	if (binding.kind === 'dynamicArray') {
-		if (candidate.kind === 'dynamicArray') return candidate.metadataIndex === binding.metadataIndex
+		if (candidate.kind === 'dynamicArray') {
+			if (candidateRef !== undefined && dynamicAnchorRef !== undefined) {
+				return sameFormulaCellRef(candidateRef, dynamicAnchorRef)
+			}
+			return candidate.metadataIndex === binding.metadataIndex
+		}
 		return (
 			dynamicAnchorRef !== undefined &&
 			(candidate.kind === 'spill' || candidate.kind === 'blockedSpill') &&

@@ -701,6 +701,52 @@ describe('applyOperation', () => {
 		expect(sheet.cells.get(2, 0)?.formulaInfo).toBeUndefined()
 	})
 
+	test('setCells detaches only the edited dynamic-array group when metadata indexes collide', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		addDynamicArrayAnchorWithStaleSpillFootprint(sheet)
+		sheet.cells.set(0, 2, {
+			value: numberValue(10),
+			formula: 'SEQUENCE(2)',
+			styleId: sid,
+			formulaInfo: { kind: 'dynamicArray', metadataIndex: 1, collapsed: false },
+		})
+		sheet.cells.set(1, 2, {
+			value: numberValue(11),
+			formula: null,
+			styleId: sid,
+			formulaInfo: {
+				kind: 'spill',
+				anchorRef: 'Sheet1!C1',
+				ref: 'C1:C2',
+				isAnchor: false,
+			},
+		})
+
+		const result = applyOperation(wb, {
+			op: 'setCells',
+			sheet: 'Sheet1',
+			updates: [{ ref: 'A1', value: 9 }],
+		})
+		expectOk(result)
+
+		expect(result.value.affectedCells).toEqual(['A1', 'A2', 'A3'])
+		expect(sheet.cells.get(0, 0)?.formulaInfo).toBeUndefined()
+		expect(sheet.cells.get(1, 0)?.formulaInfo).toBeUndefined()
+		expect(sheet.cells.get(2, 0)?.formulaInfo).toBeUndefined()
+		expect(sheet.cells.get(0, 2)?.formulaInfo).toEqual({
+			kind: 'dynamicArray',
+			metadataIndex: 1,
+			collapsed: false,
+		})
+		expect(sheet.cells.get(1, 2)?.formulaInfo).toEqual({
+			kind: 'spill',
+			anchorRef: 'Sheet1!C1',
+			ref: 'C1:C2',
+			isAnchor: false,
+		})
+	})
+
 	test('setCells detaches dynamic-array spill footprints with escaped anchor refs', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet("Bob's Budget")

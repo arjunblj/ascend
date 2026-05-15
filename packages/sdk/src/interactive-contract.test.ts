@@ -5680,6 +5680,81 @@ describe('interactive client contract', () => {
 		expect(changedSheet?.cells.get(2, 0)?.formulaInfo).toBeUndefined()
 	})
 
+	test('journals keep colliding dynamic-array metadata indexes scoped to the edited anchor', () => {
+		const wb = AscendWorkbook.create()
+		const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+		if (!sheet) throw new Error('missing sheet')
+		sheet.cells.set(0, 0, {
+			value: numberValue(1),
+			formula: 'SEQUENCE(3)',
+			styleId: DEFAULT_STYLE_ID,
+			formulaInfo: { kind: 'dynamicArray', metadataIndex: 1, collapsed: false },
+		})
+		for (const row of [1, 2]) {
+			sheet.cells.set(row, 0, {
+				value: numberValue(row + 1),
+				formula: null,
+				styleId: DEFAULT_STYLE_ID,
+				formulaInfo: {
+					kind: 'spill',
+					anchorRef: 'Sheet1!A1',
+					ref: 'A1:A3',
+					isAnchor: false,
+				},
+			})
+		}
+		sheet.cells.set(0, 2, {
+			value: numberValue(10),
+			formula: 'SEQUENCE(2)',
+			styleId: DEFAULT_STYLE_ID,
+			formulaInfo: { kind: 'dynamicArray', metadataIndex: 1, collapsed: false },
+		})
+		sheet.cells.set(1, 2, {
+			value: numberValue(11),
+			formula: null,
+			styleId: DEFAULT_STYLE_ID,
+			formulaInfo: {
+				kind: 'spill',
+				anchorRef: 'Sheet1!C1',
+				ref: 'C1:C2',
+				isAnchor: false,
+			},
+		})
+
+		const changed = wb.apply(
+			[{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 99 }] }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(false)
+		const preimage = changed.journal?.entries[0]?.preimages[0]
+		expect(preimage?.kind).toBe('cells')
+		if (preimage?.kind !== 'cells') throw new Error('missing cells preimage')
+		expect(preimage.cells.map((cell) => cell.ref).sort()).toEqual(['A1', 'A2', 'A3'])
+		expect(changed.journal?.issues.map((issue) => issue.refs?.[0]).sort()).toEqual([
+			'Sheet1!A1',
+			'Sheet1!A2',
+			'Sheet1!A3',
+		])
+		const changedSheet = wb.getWorkbookModel().getSheet('Sheet1')
+		expect(changedSheet?.cells.get(0, 0)?.formulaInfo).toBeUndefined()
+		expect(changedSheet?.cells.get(1, 0)?.formulaInfo).toBeUndefined()
+		expect(changedSheet?.cells.get(2, 0)?.formulaInfo).toBeUndefined()
+		expect(changedSheet?.cells.get(0, 2)?.formulaInfo).toEqual({
+			kind: 'dynamicArray',
+			metadataIndex: 1,
+			collapsed: false,
+		})
+		expect(changedSheet?.cells.get(1, 2)?.formulaInfo).toEqual({
+			kind: 'spill',
+			anchorRef: 'Sheet1!C1',
+			ref: 'C1:C2',
+			isAnchor: false,
+		})
+	})
+
 	test('formula-only clears of blocked-spill blockers keep exact journals', () => {
 		const wb = AscendWorkbook.create()
 		const sheet = wb.getWorkbookModel().getSheet('Sheet1')

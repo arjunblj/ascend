@@ -55,6 +55,13 @@ interface EnvelopeDecision {
 	readonly guardrail: string
 }
 
+interface DiagnosticCeiling {
+	readonly name: string
+	readonly medianMs: number
+	readonly profileCommand: string
+	readonly guardrail: string
+}
+
 interface PhaseCandidate {
 	readonly name: string
 	readonly medianMs: number
@@ -397,7 +404,9 @@ async function runStep(step: StepSpec, outDir: string, dryRun: boolean): Promise
 		stdout: 'pipe',
 		stderr: 'pipe',
 	})
+	let killedByTimeout = false
 	const timeout = setTimeout(() => {
+		killedByTimeout = true
 		proc.kill()
 	}, step.timeoutMs)
 	const [stdout, stderr, exitCode] = await Promise.all([
@@ -409,7 +418,7 @@ async function runStep(step: StepSpec, outDir: string, dryRun: boolean): Promise
 	const elapsedMs = performance.now() - start
 	writeFileSync(outputPath, stdout)
 	writeFileSync(stderrPath, stderr)
-	const timedOut = elapsedMs >= step.timeoutMs && exitCode !== 0
+	const timedOut = killedByTimeout && exitCode !== 0
 	const status: StepStatus = exitCode === 0 ? 'ok' : timedOut ? 'timeout' : 'failed'
 	console.error(
 		`[contracts] ${status} ${step.contract}/${step.id}: ${(elapsedMs / 1000).toFixed(1)}s`,
@@ -703,35 +712,39 @@ function decisionMatrix(results: readonly StepResult[]): string {
 }
 
 function diagnosticCeilingTable(results: readonly StepResult[]): string {
-	const zip = results.find((entry) => entry.id === 'package-scan-zip-xml')
-	const rows = [
-		{
-			name: 'Cold ZIP open',
-			medianMs: numericMetric(zip?.summary, 'zipOpenMedianMs') ?? 0,
-			command: zip?.profileCommand ?? '',
-			guardrail: 'diagnostic only; not an envelope target unless first-view latency moves',
-		},
-		{
-			name: 'Full worksheet XML inflate',
-			medianMs: numericMetric(zip?.summary, 'worksheetInflateMedianMs') ?? 0,
-			command: zip?.profileCommand ?? '',
-			guardrail: 'diagnostic ceiling; do not chase for first view by itself',
-		},
-		{
-			name: 'Full worksheet XML decode',
-			medianMs: numericMetric(zip?.summary, 'worksheetDecodeMedianMs') ?? 0,
-			command: zip?.profileCommand ?? '',
-			guardrail: 'diagnostic ceiling; eligible only if a user-visible envelope performs this scan',
-		},
-	]
+	const rows = diagnosticCeilings(results)
 	return [
 		'| Diagnostic phase | Median ms | Profile command | Target eligibility |',
 		'|---|---:|---|---|',
 		...rows.map(
 			(row) =>
-				`| ${row.name} | ${row.medianMs ? row.medianMs.toFixed(3) : ''} | ${row.command ? `\`${row.command}\`` : ''} | ${row.guardrail} |`,
+				`| ${row.name} | ${row.medianMs ? row.medianMs.toFixed(3) : ''} | ${row.profileCommand ? `\`${row.profileCommand}\`` : ''} | ${row.guardrail} |`,
 		),
 	].join('\n')
+}
+
+function diagnosticCeilings(results: readonly StepResult[]): DiagnosticCeiling[] {
+	const zip = results.find((entry) => entry.id === 'package-scan-zip-xml')
+	return [
+		{
+			name: 'Cold ZIP open',
+			medianMs: numericMetric(zip?.summary, 'zipOpenMedianMs') ?? 0,
+			profileCommand: zip?.profileCommand ?? '',
+			guardrail: 'diagnostic only; not an envelope target unless first-view latency moves',
+		},
+		{
+			name: 'Full worksheet XML inflate',
+			medianMs: numericMetric(zip?.summary, 'worksheetInflateMedianMs') ?? 0,
+			profileCommand: zip?.profileCommand ?? '',
+			guardrail: 'diagnostic ceiling; do not chase for first view by itself',
+		},
+		{
+			name: 'Full worksheet XML decode',
+			medianMs: numericMetric(zip?.summary, 'worksheetDecodeMedianMs') ?? 0,
+			profileCommand: zip?.profileCommand ?? '',
+			guardrail: 'diagnostic ceiling; eligible only if a user-visible envelope performs this scan',
+		},
+	]
 }
 
 function envelopeDecisions(results: readonly StepResult[]): EnvelopeDecision[] {
@@ -967,7 +980,15 @@ async function run() {
 	for (const step of steps) {
 		results.push(await runStep(step, args.outDir, args.dryRun))
 	}
-	const payload = { tool: 'practical-latency-contracts', args, worktree, inputs, results }
+	const payload = {
+		tool: 'practical-latency-contracts',
+		args,
+		worktree,
+		inputs,
+		results,
+		decisions: envelopeDecisions(results),
+		diagnosticCeilings: diagnosticCeilings(results),
+	}
 	const jsonPath = join(args.outDir, 'summary.json')
 	const markdownPath = join(args.outDir, 'summary.md')
 	const profileMarkdownPath = join(args.outDir, 'profile-summary.md')

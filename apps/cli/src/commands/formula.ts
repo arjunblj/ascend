@@ -1,4 +1,5 @@
 import { ascendError, levenshtein } from '@ascend/schema'
+import { formulaAssist } from '@ascend/sdk'
 import { cliError, jsonErr, jsonOut } from '../output/json.ts'
 import { bullet, heading } from '../output/pretty.ts'
 import {
@@ -7,17 +8,25 @@ import {
 	withProgress,
 } from '../progress.ts'
 
-export const usage = `Usage: ascend formula <subcommand> <file> <ref> [expr] [flags]
+export const usage = `Usage: ascend formula <subcommand> [args] [flags]
 
   Inspect and edit cell formulas.
 
 Subcommands:
   show <file> <ref>           Show formula at a cell reference
+  assist <expr>               Return formula diagnostics, completions, signature help, and code actions
   set <file> <ref> <expr>     Set a formula on a cell
   fill <file> <range> <expr>  Fill a formula across a range
 
 Flags:
-  --json          Output as JSON
+  --cursor <n>                    Zero-based cursor offset for assist
+  --prefix <text>                 Function completion prefix for assist
+  --completion-limit <n>          Maximum completions for assist
+  --function-name <name>          Function signature lookup for assist
+  --reference <ref>               Reference text to insert for assist
+  --replace-reference-at-cursor   Replace active reference when inserting
+  --cycle-reference               Return Excel F4-style reference cycling
+  --json                          Output as JSON
 `
 
 export async function formulaCommand(args: string[], flags: Map<string, string>): Promise<number> {
@@ -25,15 +34,17 @@ export async function formulaCommand(args: string[], flags: Map<string, string>)
 	switch (action) {
 		case 'show':
 			return showFormula(args.slice(1), flags)
+		case 'assist':
+			return assistFormula(args.slice(1), flags)
 		case 'set':
 			return setFormula(args.slice(1), flags)
 		case 'fill':
 			return fillFormula(args.slice(1), flags)
 		default: {
 			const msg = `Unknown formula subcommand: ${action ?? '(missing)'}`
-			const suggestion = suggestClosest(action ?? '', ['show', 'set', 'fill'])
+			const suggestion = suggestClosest(action ?? '', ['show', 'assist', 'set', 'fill'])
 			const hint = suggestion ? `\nDid you mean "${suggestion}"?` : ''
-			cliError(`${msg}${hint}\nUsage: ascend formula <show|set|fill> ...`, flags)
+			cliError(`${msg}${hint}\nUsage: ascend formula <show|assist|set|fill> ...`, flags)
 			return 1
 		}
 	}
@@ -77,6 +88,62 @@ async function showFormula(args: string[], flags: Map<string, string>): Promise<
 	if (info.parseError) {
 		console.log(bullet('Parse error', info.parseError))
 	}
+	return 0
+}
+
+async function assistFormula(args: string[], flags: Map<string, string>): Promise<number> {
+	const expr = args[0]
+	if (!expr) {
+		cliError("Usage: ascend formula assist '<formula>' [--cursor n] [--prefix text]", flags)
+		return 1
+	}
+
+	const cursor = optionalIntegerFlag(flags, 'cursor')
+	const completionLimit = optionalIntegerFlag(flags, 'completion-limit')
+	if (cursor === null || completionLimit === null) return 1
+
+	const result = formulaAssist(expr, {
+		...(cursor !== undefined ? { cursor } : {}),
+		...(flags.has('prefix') ? { prefix: flags.get('prefix') ?? '' } : {}),
+		...(completionLimit !== undefined ? { completionLimit } : {}),
+		...(flags.has('function-name') ? { functionName: flags.get('function-name') ?? '' } : {}),
+		...(flags.has('reference') ? { reference: flags.get('reference') ?? '' } : {}),
+		replaceReferenceAtCursor: flags.has('replace-reference-at-cursor'),
+		cycleReference: flags.has('cycle-reference'),
+	})
+
+	if (flags.has('json')) {
+		console.log(jsonOut(result))
+		return 0
+	}
+
+	console.log(heading('Formula Assist'))
+	console.log(bullet('Formula', result.formula))
+	console.log(bullet('Parse', result.diagnostics.parseOk ? 'ok' : 'error'))
+	if (result.diagnostics.diagnostics.length > 0) {
+		for (const diagnostic of result.diagnostics.diagnostics) {
+			console.log(bullet('Diagnostic', `${diagnostic.code}: ${diagnostic.message}`))
+		}
+	}
+	if (result.completions.length > 0) {
+		console.log(
+			bullet('Completions', result.completions.map((completion) => completion.name).join(', ')),
+		)
+	}
+	if (result.signature) console.log(bullet('Signature', result.signature.label))
+	if (result.signatureHelp) {
+		console.log(
+			bullet(
+				'Active signature',
+				`${result.signatureHelp.signature.label} arg ${result.signatureHelp.activeParameter + 1}`,
+			),
+		)
+	}
+	if (result.activeReference) {
+		console.log(bullet('Active reference', result.activeReference.text))
+	}
+	if (result.insertion) console.log(bullet('Insertion', result.insertion.formula))
+	if (result.cycle) console.log(bullet('Cycle', result.cycle.formula))
 	return 0
 }
 
@@ -200,6 +267,16 @@ async function fillFormula(args: string[], flags: Map<string, string>): Promise<
 		console.log(`Filled formula across ${rangeRef}`)
 	}
 	return 0
+}
+
+function optionalIntegerFlag(flags: Map<string, string>, name: string): number | undefined | null {
+	if (!flags.has(name)) return undefined
+	const value = Number(flags.get(name))
+	if (!Number.isInteger(value) || value < 0) {
+		cliError(`Invalid --${name}: expected a non-negative integer`, flags)
+		return null
+	}
+	return value
 }
 
 function suggestClosest(input: string, candidates: readonly string[]): string | undefined {

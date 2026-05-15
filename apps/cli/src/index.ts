@@ -145,7 +145,20 @@ const COMMANDS: Record<string, Command> = {
 	},
 	preview: { run: previewCommand, usage: previewUsage, allowedFlags: ['sheet', 'ops', 'json'] },
 	write: { run: writeCommand, usage: writeUsage, allowedFlags: ['sheet', 'ops', 'json'] },
-	formula: { run: formulaCommand, usage: formulaUsage, allowedFlags: ['json'] },
+	formula: {
+		run: formulaCommand,
+		usage: formulaUsage,
+		allowedFlags: [
+			'cursor',
+			'prefix',
+			'completion-limit',
+			'function-name',
+			'reference',
+			'replace-reference-at-cursor',
+			'cycle-reference',
+			'json',
+		],
+	},
 	calc: { run: calcCommand, usage: calcUsage, allowedFlags: ['json'] },
 	check: { run: checkCommand, usage: checkUsage, allowedFlags: ['progress', 'json'] },
 	lint: { run: lintCommand, usage: lintUsage, allowedFlags: ['json'] },
@@ -190,6 +203,8 @@ const BOOLEAN_FLAGS = new Set([
 	'compact',
 	'telemetry-json',
 	'calibrate',
+	'replace-reference-at-cursor',
+	'cycle-reference',
 ])
 
 function parseArgs(argv: string[]): {

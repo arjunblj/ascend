@@ -35,6 +35,7 @@ Use JSON for automation:
 - `ascend inspect <file> --detail pivots --json`
 - `ascend read <file> <selector> --json`
 - `ascend find <file> <query> --json`
+- `ascend formula assist '<formula>' --cursor <n> --json`
 - `ascend plan <file> --ops ops.json --progress jsonl --json`
 - `ascend commit <file> --ops ops.json --output out.xlsx --expect-sha256 <hash> --progress jsonl --json`
 - `ascend repair-plan <file> --json`
@@ -112,7 +113,7 @@ Never use destructive in-place writes unless the user asked for them. Never pass
 
 For API/MCP, `plan` prepares a process-local one-shot handle by default. Prefer `commit({ planHandle })`, and re-run `plan` if the handle expires, is unavailable, or has already been consumed. CLI `plan` and `commit` run in separate processes; they do not share prepared handles, so commit with the same operation batch and `expectSha256` from plan.
 
-For formula edits, call `formula-assist` / `ascend.formula_assist` before planning when syntax or references are uncertain. It is read-only and returns diagnostics, token ranges, active reference, function completions, signature help, insertion previews, and F4-style reference cycling.
+For formula edits, call CLI `ascend formula assist`, API `formula-assist`, or MCP `ascend.formula_assist` before planning when syntax or references are uncertain. It is read-only and returns diagnostics, token ranges, active reference, function completions, signature help, insertion previews, and F4-style reference cycling.
 
 ## Common Operation Examples
 

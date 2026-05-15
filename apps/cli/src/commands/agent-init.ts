@@ -38,6 +38,7 @@ const AGENT_INIT: AgentInitInfo = {
 		trust: 'ascend inspect <file> --agent --json',
 		inspect: 'ascend inspect <file> --json --verbose',
 		read: 'ascend read <file> <range> --json',
+		formulaAssist: "ascend formula assist '<formula>' --cursor <n> --json",
 		docs: 'ascend docs <query> --json',
 		operations: 'ascend ops --json',
 		capabilities: 'ascend capabilities --json',

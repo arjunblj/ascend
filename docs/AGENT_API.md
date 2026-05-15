@@ -17,6 +17,7 @@ Core commands:
 - `ascend inspect <file> --detail pivots --json` returns PivotTable inventory, saved-output audits, refresh plans, and supported output materialization `setCells` ops for safe plan/commit.
 - `ascend read <file> <selector> --json` reads ranges, tables (`table:Name`), or defined names (`name:Name`). CLI JSON returns bounded range/table/name payloads; compact/TSV/object read formats are API/MCP-only.
 - `ascend find <file> <query> --json` searches values and formulas.
+- `ascend formula assist '<formula>' --cursor <n> --json` returns read-only formula diagnostics, token ranges, completions, signature help, reference insertion preview, and F4-style reference cycling.
 - `ascend plan <file> --ops ops.json --progress jsonl --json` validates operations, previews diffs, audits recalc, approvals, and preservation risk.
 - `ascend commit <file> --ops ops.json --output out.xlsx --expect-sha256 <hash> --progress jsonl --json` writes safely.
 - `ascend repair-plan <file> --json` suggests recovery actions after failed checks, lints, or unsupported-feature audits.

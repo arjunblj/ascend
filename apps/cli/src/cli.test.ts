@@ -1381,6 +1381,39 @@ describe('ascend cli', () => {
 		expect(stdout).toContain('B1:B2')
 	})
 
+	test('formula assist returns formula IDE help without opening a workbook', async () => {
+		const { exitCode, stdout } = await run(
+			'formula',
+			'assist',
+			'=SUM(A1:B2',
+			'--cursor',
+			'5',
+			'--prefix',
+			'SU',
+			'--completion-limit',
+			'3',
+			'--function-name',
+			'SUM',
+			'--reference',
+			'C3',
+			'--replace-reference-at-cursor',
+			'--cycle-reference',
+			'--json',
+		)
+
+		expect(exitCode).toBe(0)
+		const parsed = JSON.parse(stdout)
+		expect(parsed.ok).toBe(true)
+		expect(parsed.data.diagnostics.parseOk).toBe(false)
+		expect(
+			parsed.data.completions.some((completion: { name: string }) => completion.name === 'SUM'),
+		).toBe(true)
+		expect(parsed.data.signature.name).toBe('SUM')
+		expect(parsed.data.signatureHelp.signature.name).toBe('SUM')
+		expect(parsed.data.insertion.formula).toContain('C3')
+		expect(parsed.data.cycle.changed).toBe(true)
+	})
+
 	test('formula set fails when recalculation reports errors', async () => {
 		const wb = AscendWorkbook.create()
 		await wb.save(`${import.meta.dir}/${TEST_FILE}`)

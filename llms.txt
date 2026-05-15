@@ -4,7 +4,7 @@ Ascend is an agent-native spreadsheet engine for headless Excel, XLSM, CSV, and 
 
 ## Primary Agent Entry Points
 
-- CLI: `ascend agent-init --json`, `ascend open-plan <file> --json`, `ascend inspect <file> --agent --json`, `ascend docs <query> --json`, `ascend ops --json`, `ascend capabilities --json`, `ascend plan <file> --ops ops.json --json`, `ascend commit <file> --ops ops.json --output out.xlsx --json`
+- CLI: `ascend agent-init --json`, `ascend open-plan <file> --json`, `ascend inspect <file> --agent --json`, `ascend docs <query> --json`, `ascend formula assist '<formula>' --cursor <n> --json`, `ascend ops --json`, `ascend capabilities --json`, `ascend plan <file> --ops ops.json --json`, `ascend commit <file> --ops ops.json --output out.xlsx --json`
 - MCP resources: `ascend://llms.txt`, `ascend://llms-full.txt`, `ascend://docs/agent-api.md`, `ascend://operations`, `ascend://capabilities`, `ascend://agent-workflow`
 - MCP tools: `ascend.search_docs`, `ascend.search_examples`, `ascend.open_plan`, `ascend.inspect`, `ascend.trust_report`, `ascend.active_content`, `ascend.package_graph`, `ascend.raw_part`, `ascend.read`, `ascend.read_table`, `ascend.find`, `ascend.formula_assist`, `ascend.visuals`, `ascend.pivots`, `ascend.list_operations`, `ascend.capabilities`, `ascend.plan`, `ascend.commit`, `ascend.repair_plan`
 - SDK: `AscendWorkbook`, `WorkbookDocument`, operation helpers, schema discovery, safe plan/commit workflow
@@ -27,7 +27,7 @@ Use CLI `inspect --agent`, API `POST /trust-report`, or MCP `ascend.trust_report
 
 Use CLI `open-plan`, API `POST /open-plan`, or MCP `ascend.open_plan` before hydrating unknown XLSX/XLSM files. If `reviewBeforeHydration` is true, stay in metadata/trust/package inventory before reading cells or planning edits.
 
-Use API `POST /formula-assist`, MCP `ascend.formula_assist`, or SDK `formulaAssist` before formula edits when you need diagnostics, token ranges, completions, signature help, reference insertion preview, or F4-style reference cycling.
+Use CLI `ascend formula assist`, API `POST /formula-assist`, MCP `ascend.formula_assist`, or SDK `formulaAssist` before formula edits when you need diagnostics, token ranges, completions, signature help, reference insertion preview, or F4-style reference cycling.
 
 ## Machine-Readable References
 

@@ -2793,13 +2793,15 @@ function sheetDeleteLossRefs(workbook: Workbook, sheet: Sheet): string[] {
 	for (const entry of workbook.definedNames.list()) {
 		const scopeSheet =
 			entry.scope.kind === 'sheet' ? sheetNameForId(workbook, entry.scope.sheetId) : undefined
-		if (scopeSheet === sheet.name) refs.push(definedNameJournalKey(workbook, entry))
+		if (scopeSheet !== undefined && sameSheetName(scopeSheet, sheet.name)) {
+			refs.push(definedNameJournalKey(workbook, entry))
+		}
 		if (formulaReferencesSheet(workbook, entry.formula, scopeSheet ?? sheet.name, sheet.name)) {
 			refs.push(definedNameJournalKey(workbook, entry))
 		}
 	}
 	for (const workbookSheet of workbook.sheets) {
-		if (workbookSheet.name === sheet.name) continue
+		if (sameSheetName(workbookSheet.name, sheet.name)) continue
 		for (const [row, col, cell] of workbookSheet.cells.iterate()) {
 			if (
 				cell.formula &&
@@ -2810,7 +2812,9 @@ function sheetDeleteLossRefs(workbook: Workbook, sheet: Sheet): string[] {
 		}
 	}
 	for (const chart of workbook.chartParts) {
-		if (chart.sheetName === sheet.name) refs.push(`chart:${chart.partPath}`)
+		if (chart.sheetName !== undefined && sameSheetName(chart.sheetName, sheet.name)) {
+			refs.push(`chart:${chart.partPath}`)
+		}
 		chart.series.forEach((series, seriesIndex) => {
 			for (const [field, formula] of [
 				['nameRef', series.nameRef],
@@ -2827,10 +2831,12 @@ function sheetDeleteLossRefs(workbook: Workbook, sheet: Sheet): string[] {
 		})
 	}
 	for (const pivot of workbook.pivotTables) {
-		if (pivot.sheetName === sheet.name) refs.push(`pivotTable:${pivot.partPath}`)
+		if (sameSheetName(pivot.sheetName, sheet.name)) refs.push(`pivotTable:${pivot.partPath}`)
 	}
 	for (const pivotCache of workbook.pivotCaches) {
-		if (pivotCache.sourceSheet === sheet.name) refs.push(`pivotCache:${pivotCache.partPath}`)
+		if (pivotCache.sourceSheet !== undefined && sameSheetName(pivotCache.sourceSheet, sheet.name)) {
+			refs.push(`pivotCache:${pivotCache.partPath}`)
+		}
 	}
 	return [...new Set(refs)]
 }

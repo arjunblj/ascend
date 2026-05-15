@@ -8096,6 +8096,31 @@ describe('interactive client contract', () => {
 			sheetName: 'Sheet1',
 			series: [{ valueRef: 'Data!$B$2' }],
 		})
+		wb.getWorkbookModel().chartParts.push({
+			partPath: 'xl/charts/chart2.xml',
+			sheetName: 'data',
+			series: [],
+		})
+		wb.getWorkbookModel().pivotTables.push({
+			partPath: 'xl/pivotTables/pivotTable1.xml',
+			sheetName: 'data',
+			name: 'PivotTable1',
+			cacheId: 1,
+			locationRef: 'D1:E3',
+			fields: [],
+			rowFields: [],
+			columnFields: [],
+			pageFields: [],
+			dataFields: [],
+		})
+		wb.getWorkbookModel().pivotCaches.push({
+			partPath: 'xl/pivotCache/pivotCacheDefinition1.xml',
+			cacheId: 1,
+			sourceType: 'worksheet',
+			sourceSheet: 'data',
+			sourceRef: 'A1:B2',
+			fields: [],
+		})
 
 		const deleted = wb.apply([{ op: 'deleteSheet', sheet: 'Data' }], { journal: true })
 
@@ -8114,6 +8139,9 @@ describe('interactive client contract', () => {
 					'name:DataTotal',
 					'Sheet1!A1',
 					'chart:xl/charts/chart1.xml:series:0:valueRef',
+					'chart:xl/charts/chart2.xml',
+					'pivotTable:xl/pivotTables/pivotTable1.xml',
+					'pivotCache:xl/pivotCache/pivotCacheDefinition1.xml',
 				],
 				surface: 'sheet-layout',
 			},

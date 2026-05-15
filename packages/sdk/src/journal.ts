@@ -7462,7 +7462,10 @@ function formulaBindingEditRefs(
 					? `${formatSheetNameForFormula(sheet.name)}!${toA1(ref)}`
 					: undefined
 			for (const [row, col, cell] of sheet.cells.iterate()) {
-				if (sameSpillFormulaBinding(binding, cell.formulaInfo, dynamicAnchorRef)) push(row, col)
+				const candidateRef = `${formatSheetNameForFormula(sheet.name)}!${toA1({ row, col })}`
+				if (sameSpillFormulaBinding(binding, cell.formulaInfo, dynamicAnchorRef, candidateRef)) {
+					push(row, col)
+				}
 			}
 		}
 	}
@@ -7525,6 +7528,7 @@ function sameSpillFormulaBinding(
 	>,
 	candidate: Cell['formulaInfo'],
 	dynamicAnchorRef?: string,
+	candidateRef?: string,
 ): boolean {
 	if (!candidate) return false
 	if (binding.kind === 'dynamicArray') {
@@ -7535,6 +7539,7 @@ function sameSpillFormulaBinding(
 			candidate.anchorRef === dynamicAnchorRef
 		)
 	}
+	if (candidate.kind === 'dynamicArray') return candidateRef === binding.anchorRef
 	if (candidate.kind !== 'spill' && candidate.kind !== 'blockedSpill') return false
 	return candidate.anchorRef === binding.anchorRef
 }

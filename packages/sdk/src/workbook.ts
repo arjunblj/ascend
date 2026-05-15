@@ -601,6 +601,21 @@ export class AscendWorkbook extends WorkbookReadView {
 				...(journal ? { journal } : {}),
 			}
 		}
+		if (ops.length === 0) {
+			const journal = maybeBuildMutationJournal(this.wb, ops, options?.journal)
+			const diff = diffWorkbooks(this.wb, this.wb)
+			return {
+				diff,
+				sheetDiffs: diff.sheets,
+				cellChanges: [],
+				changedCells: [],
+				recalcScope: 0,
+				warnings: [],
+				wouldSucceed: true,
+				errors: [],
+				...(journal ? { journal } : {}),
+			}
+		}
 		const journal = maybeBuildMutationJournal(this.wb, ops, options?.journal)
 		const clone = cloneWorkbook(this.wb)
 		const errors: import('@ascend/schema').AscendError[] = []

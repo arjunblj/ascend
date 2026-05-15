@@ -32,7 +32,8 @@ export function rewriteWorkbookFormulasForShift(
 	axis: 'row' | 'col',
 	at: number,
 	delta: number,
-): void {
+): FormulaRewriteCell[] {
+	const rewrittenCells: FormulaRewriteCell[] = []
 	for (const sheet of workbook.sheets) {
 		const isTarget = sheet.name === targetSheet
 		const updates: [number, number, Cell][] = []
@@ -65,8 +66,10 @@ export function rewriteWorkbookFormulasForShift(
 		}
 		for (const [row, col, updated] of updates) {
 			sheet.cells.set(row, col, updated)
+			rewrittenCells.push({ sheetName: sheet.name, ref: toA1({ row, col }) })
 		}
 	}
+	return rewrittenCells
 }
 
 export function rewriteDefinedNameFormulasForShift(

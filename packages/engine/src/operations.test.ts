@@ -5464,10 +5464,13 @@ describe('applyOperation', () => {
 		s.cells.set(1, 0, cell(numberValue(2)))
 		s.cells.set(2, 0, cell(EMPTY, 'SUM(A1:A2)'))
 
-		applyOperation(wb, { op: 'insertRows', sheet: 'Sheet1', at: 1, count: 1 })
+		const result = applyOperation(wb, { op: 'insertRows', sheet: 'Sheet1', at: 1, count: 1 })
+		expectOk(result)
 
 		const formulaCell = s.cells.get(3, 0)
 		expect(formulaCell?.formula).toBe('SUM(A1:A3)')
+		expect(result.value.affectedCells).toEqual(['A4'])
+		expectCachedFormulaAnalysisMatchesFullRecompute(wb)
 	})
 
 	test('insertRows rewrites whole-row references', () => {
@@ -5500,9 +5503,12 @@ describe('applyOperation', () => {
 		s1.cells.set(0, 0, cell(EMPTY, 'SEQUENCE(2)'))
 		s2.cells.set(0, 0, cell(EMPTY, 'SUM(Sheet1!A1#)'))
 
-		applyOperation(wb, { op: 'insertRows', sheet: 'Sheet1', at: 0, count: 1 })
+		const result = applyOperation(wb, { op: 'insertRows', sheet: 'Sheet1', at: 0, count: 1 })
+		expectOk(result)
 
 		expect(s2.cells.get(0, 0)?.formula).toBe('SUM(Sheet1!A2#)')
+		expect(result.value.affectedCells).toEqual(['Sheet2!A1'])
+		expectCachedFormulaAnalysisMatchesFullRecompute(wb)
 	})
 
 	test('insertCols rewrites spill references', () => {

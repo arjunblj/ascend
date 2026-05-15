@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { basename } from 'node:path'
 import { makeXlsx } from '../../packages/io-xlsx/test/helpers.ts'
@@ -31,6 +32,7 @@ export interface SafeOpenProofCaseResult {
 	readonly kind: SafeOpenProofCaseKind
 	readonly fixture: string
 	readonly bytes: number
+	readonly inputSha256: string
 	readonly status: 'ok' | 'rejected'
 	readonly recommendedMode?: WorkbookOpenPlan['recommendedMode']
 	readonly reviewBeforeHydration?: boolean
@@ -196,6 +198,7 @@ async function runSafeOpenProofCase(
 		kind: proofCase.kind,
 		fixture: proofCase.fixture,
 		bytes: proofCase.bytes.byteLength,
+		inputSha256: sha256Bytes(proofCase.bytes),
 		status,
 		...(plan
 			? {
@@ -398,6 +401,10 @@ function roundRatio(value: number): number {
 
 function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error)
+}
+
+function sha256Bytes(bytes: Uint8Array): string {
+	return createHash('sha256').update(bytes).digest('hex')
 }
 
 function readFlag(name: string): string | undefined {

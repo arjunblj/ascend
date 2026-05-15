@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -43,6 +44,7 @@ export interface PackageActionProofCaseResult {
 	readonly sourceKind: PackageActionProofSourceKind
 	readonly fixture: string
 	readonly inputBytes: number
+	readonly inputSha256: string
 	readonly outputBytes: number
 	readonly planActionCounts: Readonly<Record<PackageActionKind, number>>
 	readonly commitActionCounts: Readonly<Record<PackageActionKind, number>>
@@ -203,6 +205,7 @@ async function runPackageActionProofCase(
 			sourceKind: proofCase.sourceKind,
 			fixture: proofCase.fixture,
 			inputBytes: inputBytes.byteLength,
+			inputSha256: sha256Bytes(inputBytes),
 			outputBytes: outputBytes.byteLength,
 			planActionCounts: planProof.byAction,
 			commitActionCounts: commitProof.byAction,
@@ -437,6 +440,10 @@ function exampleActions(proof: PackageActionProof): string[] {
 
 function formatCounts(counts: Readonly<Record<PackageActionKind, number>>): string {
 	return ACTIONS.map((action) => `${action}=${counts[action]}`).join(', ')
+}
+
+function sha256Bytes(bytes: Uint8Array): string {
+	return createHash('sha256').update(bytes).digest('hex')
 }
 
 function markdownRow(row: PackageActionProofCaseResult): string {

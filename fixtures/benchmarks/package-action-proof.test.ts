@@ -35,6 +35,7 @@ describe('package action proof harness', () => {
 		expect(proof.cases.every((entry) => entry.expectedActionsPresent)).toBe(true)
 		expect(proof.cases.every((entry) => entry.commitCoverage.sourceGraphIncluded)).toBe(true)
 		expect(proof.cases.every((entry) => entry.commitCoverage.outputByteDigestCount > 0)).toBe(true)
+		expect(proof.cases.every((entry) => /^[a-f0-9]{64}$/.test(entry.inputSha256))).toBe(true)
 		expect(proof.cases.every((entry) => entry.commitJournalExact === false)).toBe(true)
 		expect(proof.cases.every((entry) => entry.commitJournalPackageIssueCount > 0)).toBe(true)
 		expect(proof.cases.every((entry) => entry.commitJournalPackageIssueRefs.length > 0)).toBe(true)

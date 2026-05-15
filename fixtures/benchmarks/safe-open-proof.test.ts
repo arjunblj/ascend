@@ -34,6 +34,7 @@ describe('safe open proof harness', () => {
 			recommendedMode: 'formula',
 			reviewBeforeHydration: false,
 		})
+		expect(byName.get('clean')?.inputSha256).toMatch(/^[a-f0-9]{64}$/)
 		expect(byName.get('macro')).toMatchObject({
 			status: 'ok',
 			recommendedMode: 'metadata-only',

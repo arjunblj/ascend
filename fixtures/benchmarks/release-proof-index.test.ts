@@ -36,6 +36,12 @@ describe('release proof evidence index', () => {
 				generatedEdgePackageCases: 2,
 				malformedCases: 1,
 				generatedCaseNames: ['signed', 'unknown-part', 'malformed'],
+				deterministicGeneratedCaseNames: ['signed', 'unknown-part', 'malformed'],
+				generatedCaseSha256: {
+					signed: expect.stringMatching(/^[a-f0-9]{64}$/),
+					'unknown-part': expect.stringMatching(/^[a-f0-9]{64}$/),
+					malformed: expect.stringMatching(/^[a-f0-9]{64}$/),
+				},
 			},
 			summary: { cases: 9, rejected: 1, malformedRejected: true },
 		})
@@ -56,6 +62,24 @@ describe('release proof evidence index', () => {
 				generatedWorkbookCases: 2,
 				generatedEdgePackageCases: 4,
 				malformedCases: 0,
+				generatedCaseNames: [
+					'docprops-passthrough',
+					'regenerate-existing-sheet',
+					'add-sheet-part',
+					'calc-chain-drop',
+					'signature-invalidation-drop',
+					'unknown-part-error',
+				],
+				deterministicGeneratedCaseNames: [
+					'docprops-passthrough',
+					'calc-chain-drop',
+					'signature-invalidation-drop',
+					'unknown-part-error',
+				],
+				generatedCaseSha256: expect.objectContaining({
+					'docprops-passthrough': expect.stringMatching(/^[a-f0-9]{64}$/),
+					'unknown-part-error': expect.stringMatching(/^[a-f0-9]{64}$/),
+				}),
 			},
 			summary: { cases: 8, allActionsCovered: true, sourceGraphEverywhere: true },
 		})
@@ -83,6 +107,8 @@ describe('release proof evidence index', () => {
 		expect(markdown).toContain('blocked-by-publication-policy')
 		expect(markdown).toContain('Fixture provenance')
 		expect(markdown).toContain('generatedCases=signed,unknown-part,malformed')
+		expect(markdown).toContain('deterministicGenerated=signed,unknown-part,malformed')
+		expect(markdown).toContain('generatedDigests=signed:')
 		expect(markdown).toContain('safe-open-proof.ts --no-timings --json')
 		expect(markdown).toContain('SLSA')
 		expect(markdown).toContain('Attestation: false')

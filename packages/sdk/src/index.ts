@@ -1,5 +1,7 @@
 /** Convert a zero-based column index to an Excel column letter (`0 → "A"`, `25 → "Z"`, `26 → "AA"`). */
-export { indexToColumn, parseA1 } from '@ascend/core'
+
+export type { RangeRef } from '@ascend/core'
+export { indexToColumn, parseA1, parseRange, toA1 } from '@ascend/core'
 export type {
 	XlsxPackageContentTypeDefault,
 	XlsxPackageContentTypeOverride,
@@ -255,6 +257,8 @@ export type {
 	AscendSessionEditReadiness,
 	AscendSessionOpenOptions,
 	AscendSessionPrepareEditsResult,
+	InteractiveUiRangeRequest,
+	InteractiveUiRangeResult,
 	InteractiveViewportCell,
 	InteractiveViewportLayoutEntry,
 	InteractiveViewportPatch,
@@ -274,6 +278,8 @@ export type {
 export {
 	AscendSession,
 	configureSessionCache,
+	interactiveViewportSnapshotKey,
+	mergeInteractiveViewportPatch,
 	WorkbookDocument,
 	WorkbookSession,
 } from './session.ts'

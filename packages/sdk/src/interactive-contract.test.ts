@@ -16,7 +16,12 @@ import type {
 	InteractiveViewportPatch,
 	InteractiveViewportRequest,
 } from './index.ts'
-import { AscendSession, AscendWorkbook } from './index.ts'
+import {
+	AscendSession,
+	AscendWorkbook,
+	interactiveViewportSnapshotKey,
+	mergeInteractiveViewportPatch,
+} from './index.ts'
 import { buildMutationJournal } from './journal.ts'
 
 describe('interactive client contract', () => {
@@ -160,6 +165,64 @@ describe('interactive client contract', () => {
 			byteLength: 36,
 		})
 		expect(repeated.patch?.changeToken).toBe(repeated.changeToken)
+		session.close()
+	})
+
+	test('interactive session reads UI ranges and exposes viewport patch helpers', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'Item' },
+					{ ref: 'B1', value: 'Qty' },
+					{ ref: 'A2', value: 'Pen' },
+					{ ref: 'B2', value: 4 },
+				],
+			},
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'C2', formula: 'B2*2' },
+			{ op: 'setStyle', sheet: 'Sheet1', range: 'B2:B2', style: { numberFormat: '0.00' } },
+			{ op: 'setComment', sheet: 'Sheet1', ref: 'A2', text: 'popular', author: 'agent' },
+		])
+
+		const session = await AscendSession.open(wb.toBytes(), { mode: 'interactive' })
+		const range = session.readUiRange({ sheet: 'Sheet1', range: 'A1:C2' })
+		expect(range.rowCount).toBe(2)
+		expect(range.colCount).toBe(3)
+		expect(range.cells.find((cell) => cell.ref === 'A2')).toMatchObject({
+			displayText: 'Pen',
+			flatValue: 'Pen',
+			flags: expect.objectContaining({ comment: true }),
+		})
+		expect(range.cells.find((cell) => cell.ref === 'B2')).toMatchObject({
+			flatValue: 4,
+			displayText: '4.00',
+			styleId: expect.any(Number),
+		})
+		expect(range.cells.find((cell) => cell.ref === 'C2')).toMatchObject({
+			formula: 'B2*2',
+			flags: expect.objectContaining({ formula: true }),
+		})
+		expect(range.flatValues).toEqual(['Item', 'Qty', null, 'Pen', 4, null])
+
+		const request: InteractiveViewportRequest = {
+			sheet: 'Sheet1',
+			topRow: 0,
+			leftCol: 0,
+			rowCount: 2,
+			colCount: 2,
+		}
+		expect(interactiveViewportSnapshotKey(request)).toBe('Sheet1:0:0:2:2:0:0')
+		const before = session.readViewport(request)
+		await session.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'B2', value: 5 }] }], {
+			recalc: false,
+		})
+		const patch = session.readViewportPatch({ ...request, changedSince: before.changeToken })
+		if (!patch) throw new Error('expected viewport patch')
+		expect(
+			mergeInteractiveViewportPatch(before.cells, patch).find((cell) => cell.ref === 'B2'),
+		).toMatchObject({ flatValue: 5, displayText: '5.00' })
 		session.close()
 	})
 

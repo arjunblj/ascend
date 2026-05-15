@@ -164,6 +164,30 @@ export interface InteractiveViewportPatchResult {
 	readonly patchInvalidation?: InteractiveViewportPatchInvalidation
 }
 
+export interface InteractiveUiRangeRequest {
+	readonly sheet: string
+	readonly range: string
+}
+
+export interface InteractiveUiRangeResult {
+	readonly sheet: string
+	readonly requested: RangeRef
+	readonly range: RangeRef
+	readonly generation: {
+		readonly session: number
+		readonly workbook: number
+		readonly sheetMetadata: number
+		readonly formulas: number
+		readonly styles: number
+	}
+	readonly load: WorkbookLoadInfo
+	readonly rowCount: number
+	readonly colCount: number
+	readonly cells: readonly InteractiveViewportCell[]
+	readonly flatValues: readonly (number | string | boolean | null)[]
+	readonly displayText: readonly string[]
+}
+
 export type InteractiveViewportPatchInvalidationReason =
 	| 'base-snapshot-missing'
 	| 'base-token-stale'
@@ -613,6 +637,10 @@ export class WorkbookDocument {
 
 	readViewport(request: InteractiveViewportRequest): InteractiveViewportResult {
 		return readInteractiveViewport(this.view, request, 0, '0')
+	}
+
+	readUiRange(request: InteractiveUiRangeRequest): InteractiveUiRangeResult {
+		return readInteractiveUiRange(this.view, request, 0)
 	}
 
 	readSnapshotInfo(): import('./types.ts').WorkbookReadSnapshotInfo {
@@ -1205,6 +1233,17 @@ export class AscendSession {
 		}
 	}
 
+	readUiRange(request: InteractiveUiRangeRequest): InteractiveUiRangeResult {
+		if (this.mutableWorkbook) {
+			return readInteractiveUiRange(this.mutableWorkbook, request, this.documentGeneration)
+		}
+		const base = this.session.workbook().readUiRange(request)
+		return {
+			...base,
+			generation: { ...base.generation, session: this.documentGeneration },
+		}
+	}
+
 	async prepareEdits(): Promise<AscendSessionPrepareEditsResult> {
 		const totalStart = performance.now()
 		const readLoad = this.session.inspect().load
@@ -1616,6 +1655,81 @@ function readInteractiveViewport(
 	changeToken: string,
 ): InteractiveViewportResult {
 	const context = createInteractiveViewportContext(view, request)
+	const payload = readInteractiveCellPayload(context)
+	return {
+		sheet: request.sheet,
+		requested: context.requested,
+		viewport: context.viewport,
+		generation: {
+			session: sessionGeneration,
+			workbook: context.snapshot.generations.workbook,
+			sheetMetadata: context.snapshot.generations.sheetMetadata,
+			formulas: context.snapshot.generations.formulas,
+			styles: context.snapshot.generations.styles,
+		},
+		changeToken,
+		load: context.snapshot.load,
+		rowCount: context.viewport.end.row - context.viewport.start.row + 1,
+		colCount: context.viewport.end.col - context.viewport.start.col + 1,
+		cells: payload.cells,
+		flatValues: payload.flatValues,
+		displayText: payload.displayText,
+		rowLayout: rowLayout(context.sheet, context.viewport),
+		colLayout: colLayout(context.sheet, context.viewport),
+		frozen: { rows: context.sheet.frozenRows, cols: context.sheet.frozenCols },
+		merges: context.merges,
+		comments: [...context.sheet.comments.entries()]
+			.filter(([ref]) => cellRefInRange(ref, context.viewport))
+			.map(([ref, comment]) => ({ ref, ...comment })),
+		hyperlinks: [...context.sheet.hyperlinks.entries()]
+			.filter(([ref]) => cellRefInRange(ref, context.viewport))
+			.map(([ref, hyperlink]) => ({ ref, ...hyperlink })),
+		dataValidations: context.dataValidations,
+		conditionalFormats: context.conditionalFormats,
+		tables: context.tables,
+		autoFilter: context.autoFilter,
+	}
+}
+
+function readInteractiveUiRange(
+	view: WorkbookReadView,
+	request: InteractiveUiRangeRequest,
+	sessionGeneration: number,
+): InteractiveUiRangeResult {
+	const parsed = parseRange(request.range)
+	const range: RangeRef = { ...parsed, sheet: parsed.sheet ?? request.sheet }
+	if (range.sheet !== request.sheet) {
+		throw new Error(
+			`Range sheet "${range.sheet}" does not match requested sheet "${request.sheet}"`,
+		)
+	}
+	const context = createInteractiveRangeContext(view, request.sheet, range, range)
+	const payload = readInteractiveCellPayload(context)
+	return {
+		sheet: request.sheet,
+		requested: context.requested,
+		range: context.viewport,
+		generation: {
+			session: sessionGeneration,
+			workbook: context.snapshot.generations.workbook,
+			sheetMetadata: context.snapshot.generations.sheetMetadata,
+			formulas: context.snapshot.generations.formulas,
+			styles: context.snapshot.generations.styles,
+		},
+		load: context.snapshot.load,
+		rowCount: context.viewport.end.row - context.viewport.start.row + 1,
+		colCount: context.viewport.end.col - context.viewport.start.col + 1,
+		cells: payload.cells,
+		flatValues: payload.flatValues,
+		displayText: payload.displayText,
+	}
+}
+
+function readInteractiveCellPayload(context: ReturnType<typeof createInteractiveRangeContext>): {
+	readonly cells: InteractiveViewportCell[]
+	readonly flatValues: readonly (number | string | boolean | null)[]
+	readonly displayText: readonly string[]
+} {
 	const cells: InteractiveViewportCell[] = []
 	const cellCount = viewportCellCount(context.viewport)
 	const flatValues = new Array<number | string | boolean | null>(cellCount).fill(null)
@@ -1637,49 +1751,13 @@ function readInteractiveViewport(
 			cells.push(cell)
 		},
 	)
-	return {
-		sheet: request.sheet,
-		requested: context.requested,
-		viewport: context.viewport,
-		generation: {
-			session: sessionGeneration,
-			workbook: context.snapshot.generations.workbook,
-			sheetMetadata: context.snapshot.generations.sheetMetadata,
-			formulas: context.snapshot.generations.formulas,
-			styles: context.snapshot.generations.styles,
-		},
-		changeToken,
-		load: context.snapshot.load,
-		rowCount: context.viewport.end.row - context.viewport.start.row + 1,
-		colCount: context.viewport.end.col - context.viewport.start.col + 1,
-		cells,
-		flatValues,
-		displayText,
-		rowLayout: rowLayout(context.sheet, context.viewport),
-		colLayout: colLayout(context.sheet, context.viewport),
-		frozen: { rows: context.sheet.frozenRows, cols: context.sheet.frozenCols },
-		merges: context.merges,
-		comments: [...context.sheet.comments.entries()]
-			.filter(([ref]) => cellRefInRange(ref, context.viewport))
-			.map(([ref, comment]) => ({ ref, ...comment })),
-		hyperlinks: [...context.sheet.hyperlinks.entries()]
-			.filter(([ref]) => cellRefInRange(ref, context.viewport))
-			.map(([ref, hyperlink]) => ({ ref, ...hyperlink })),
-		dataValidations: context.dataValidations,
-		conditionalFormats: context.conditionalFormats,
-		tables: context.tables,
-		autoFilter: context.autoFilter,
-	}
+	return { cells, flatValues, displayText }
 }
 
 function createInteractiveViewportContext(
 	view: WorkbookReadView,
 	request: InteractiveViewportRequest,
 ) {
-	const snapshot = view.readSnapshotInfo()
-	const workbook = view.getWorkbookModel()
-	const sheet = workbook.getSheet(request.sheet)
-	if (!sheet) throw new Error(`Sheet "${request.sheet}" not found`)
 	const requested = viewportRange(
 		request.sheet,
 		request.topRow,
@@ -1694,10 +1772,23 @@ function createInteractiveViewportContext(
 		request.rowCount + Math.max(0, request.overscanRows ?? 0) * 2,
 		request.colCount + Math.max(0, request.overscanCols ?? 0) * 2,
 	)
-	const sheetIndex = workbook.sheets.findIndex((candidate) => candidate.name === request.sheet)
+	return createInteractiveRangeContext(view, request.sheet, requested, viewport)
+}
+
+function createInteractiveRangeContext(
+	view: WorkbookReadView,
+	sheetName: string,
+	requested: RangeRef,
+	viewport: RangeRef,
+) {
+	const snapshot = view.readSnapshotInfo()
+	const workbook = view.getWorkbookModel()
+	const sheet = workbook.getSheet(sheetName)
+	if (!sheet) throw new Error(`Sheet "${sheetName}" not found`)
+	const sheetIndex = workbook.sheets.findIndex((candidate) => candidate.name === sheetName)
 	const overlayIndexes = interactiveViewportOverlayIndexes(
 		view,
-		request.sheet,
+		sheetName,
 		sheet,
 		snapshot.generations.sheetMetadata,
 	)
@@ -1931,7 +2022,7 @@ function cellRefInRange(ref: string, range: RangeRef): boolean {
 	return cellInRange(parsed.start.row, parsed.start.col, range)
 }
 
-function interactiveViewportSnapshotKey(request: InteractiveViewportRequest): string {
+export function interactiveViewportSnapshotKey(request: InteractiveViewportRequest): string {
 	return [
 		request.sheet,
 		request.topRow,
@@ -1941,6 +2032,16 @@ function interactiveViewportSnapshotKey(request: InteractiveViewportRequest): st
 		request.overscanRows ?? 0,
 		request.overscanCols ?? 0,
 	].join(':')
+}
+
+export function mergeInteractiveViewportPatch(
+	cells: readonly InteractiveViewportCell[],
+	patch: InteractiveViewportPatch,
+): InteractiveViewportCell[] {
+	const next = new Map(cells.map((cell) => [cell.ref, cell]))
+	for (const ref of patch.removedRefs) next.delete(ref)
+	for (const cell of patch.changedCells) next.set(cell.ref, cell)
+	return [...next.values()].sort((left, right) => left.row - right.row || left.col - right.col)
 }
 
 function interactiveCellMap(

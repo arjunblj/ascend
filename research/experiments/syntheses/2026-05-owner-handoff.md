@@ -110,6 +110,8 @@ Owner acceptance checklist:
 | Columnar scan sidecars | Performance research only; not a product surface. |
 | Agent workflow observability | Supporting DX evidence, not a top release claim. |
 
+Formula freeze status: latest proof command `bun run fixtures/benchmarks/formula-assist-proof.ts --sample 250 --no-timings --json` sampled 1685 public formulas, found 2322 reference spans, 25 binding roles, 3 LET-local prepare-rename OK targets, and 1692 prepare-rename refusals. This remains a product/DX proof of formula-local assist and rejection classification only. Do not implement edit-producing rename; do not promote workbook-context defined-name, table, external, 3D, spill, sheet, cell, or range rename.
+
 ## Next-Loop Prompts
 
 ### Product/Performance

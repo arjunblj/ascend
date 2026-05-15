@@ -1095,6 +1095,73 @@ describe('agent workflow loss audit', () => {
 					expect(existsSync(output)).toBe(false)
 				},
 			},
+			{
+				name: 'copy-sheet-dynamic-spill-reopens-retargeted',
+				risk: 'copySheet could reopen with copied dynamic/spill formula bindings still anchored to the source sheet',
+				proof: async () => {
+					const input = join(TEMP_DIR, 'quality-moat-copy-sheet-spill.xlsx')
+					const output = join(TEMP_DIR, 'quality-moat-copy-sheet-spill-out.xlsx')
+					mkdirSync(TEMP_DIR, { recursive: true })
+					const wb = AscendWorkbook.create()
+					const model = wb.getWorkbookModel()
+					const sheet = model.getSheet('Sheet1')
+					if (!sheet) throw new Error('missing Sheet1')
+					sheet.name = 'Data'
+					model.invalidateSheetCache()
+					sheet.cells.set(0, 1, {
+						value: numberValue(1),
+						formula: null,
+						styleId: DEFAULT_STYLE_ID,
+					})
+					sheet.cells.set(1, 1, {
+						value: numberValue(2),
+						formula: null,
+						styleId: DEFAULT_STYLE_ID,
+					})
+					sheet.cells.set(0, 0, {
+						value: numberValue(1),
+						formula: 'data!B1:B2',
+						styleId: DEFAULT_STYLE_ID,
+						formulaInfo: { kind: 'dynamicArray', metadataIndex: 1, collapsed: false },
+					})
+					sheet.cells.set(1, 0, {
+						value: numberValue(2),
+						formula: null,
+						styleId: DEFAULT_STYLE_ID,
+						formulaInfo: {
+							kind: 'spill',
+							anchorRef: 'data!A1',
+							ref: 'data!A1:A2',
+							isAnchor: false,
+						},
+					})
+					await wb.save(input)
+
+					const prepared = await createPreparedAgentPlan(input, [
+						{ op: 'copySheet' as const, sheet: 'Data', newName: 'Copy' },
+					])
+					expect(prepared.plan.preview.journal?.issues).toContainEqual(
+						expect.objectContaining({
+							surface: 'package-parts',
+							reason: 'package-part-preservation',
+							refs: ['sheet:Data', 'sheet:Copy'],
+						}),
+					)
+					const committed = await prepared.commit({ output })
+					expect(committed.postWrite.valid).toBe(true)
+					expect(committed.postWrite.auditsPassed).toBe(true)
+
+					const reopened = await AscendWorkbook.open(output)
+					expect(reopened.check().valid).toBe(true)
+					expect(reopened.formula('Copy!A1')?.normalizedFormula).toBe('Copy!B1:B2')
+					expect(reopened.sheet('Copy')?.cell('A1')?.formulaBinding).toEqual({
+						kind: 'dynamicArray',
+						metadataIndex: 1,
+						collapsed: false,
+					})
+					expect(reopened.sheet('Copy')?.cell('A2')?.formulaBinding).toBeUndefined()
+				},
+			},
 		] as const
 
 		for (const entry of cases) {

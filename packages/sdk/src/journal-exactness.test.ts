@@ -1313,6 +1313,55 @@ describe('mutation journal exactness model', () => {
 		}
 	})
 
+	test('style-only journals preserve formula bindings without binding loss issues', () => {
+		const cases: readonly {
+			readonly name: string
+			readonly ops: readonly Operation[]
+			readonly exact: boolean
+		}[] = [
+			{
+				name: 'setStyle',
+				ops: [
+					{
+						op: 'setStyle',
+						sheet: 'Sheet1',
+						range: 'A2:A2',
+						style: { font: { bold: true } },
+					},
+				],
+				exact: false,
+			},
+			{
+				name: 'style clear',
+				ops: [{ op: 'clearRange', sheet: 'Sheet1', range: 'A2', what: 'styles' }],
+				exact: true,
+			},
+			{
+				name: 'format copy',
+				ops: [{ op: 'copyRange', sheet: 'Sheet1', source: 'B1', target: 'A2', mode: 'formats' }],
+				exact: true,
+			},
+		]
+
+		for (const entry of cases) {
+			const wb = AscendWorkbook.create()
+			seedSharedFormulaPair(wb, 0, 0)
+
+			const changed = wb.apply(entry.ops, { journal: true })
+
+			expect(changed.errors, entry.name).toEqual([])
+			expect(changed.journal?.supported, entry.name).toBe(true)
+			expect(changed.journal?.exact, entry.name).toBe(entry.exact)
+			expect(changed.journal, entry.name).toBeDefined()
+			if (!changed.journal) throw new Error(`missing journal for ${entry.name}`)
+			expect(journalIssueRefs(changed.journal, 'shared-formulas'), entry.name).toEqual([])
+			expect(formulaInfoRefsIn(wb, 'Sheet1', ['A1', 'A2']), entry.name).toEqual([
+				'Sheet1!A1',
+				'Sheet1!A2',
+			])
+		}
+	})
+
 	test('real XLSX shared formula member edits journal every detached imported peer', async () => {
 		const wb = await AscendWorkbook.open(
 			readFileSync(new URL('../../../fixtures/xlsx/poi/shared_formulas.xlsx', import.meta.url)),

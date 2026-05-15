@@ -509,6 +509,35 @@ describe('mutation journal exactness model', () => {
 		}
 	})
 
+	test('classifies invalid target sheet names as sheet topology', () => {
+		const ops: readonly Operation[] = [
+			{ op: 'addSheet', name: 'Bad/Name' },
+			{ op: 'copySheet', sheet: 'Sheet1', newName: 'Bad/Name' },
+			{ op: 'renameSheet', sheet: 'Sheet1', newName: 'Bad/Name' },
+		]
+
+		for (const op of ops) {
+			const wb = AscendWorkbook.create()
+			const analysis = analyzeMutationJournalExactness(
+				buildMutationJournal(wb.getWorkbookModel(), [op]),
+			)
+			expect(analysis, op.op).toMatchObject({
+				supported: true,
+				exact: false,
+				issueCount: 1,
+				surfaces: ['sheet-layout'],
+				reasons: ['sheet-topology'],
+				hasMatrixViolation: false,
+			})
+			expect(analysis.issues[0], op.op).toMatchObject({
+				code: 'UNSUPPORTED_VALUE',
+				surface: 'sheet-layout',
+				reason: 'sheet-topology',
+				allowedByMatrix: true,
+			})
+		}
+	})
+
 	test('classifies table selector journal preimage failures as table topology', () => {
 		const missingOps: readonly Operation[] = [
 			{ op: 'deleteTable', table: 'MissingTable' },

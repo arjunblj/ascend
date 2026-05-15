@@ -66,7 +66,7 @@ import type {
 	ScalarCellValue,
 	StyleInput,
 } from '@ascend/schema'
-import { EMPTY } from '@ascend/schema'
+import { EMPTY, validateExcelWorksheetName } from '@ascend/schema'
 
 export type MutationJournalSurface =
 	| 'cells'
@@ -2089,6 +2089,26 @@ function buildJournalEntry(
 			issues,
 		}
 	}
+	const invalidSheetName = invalidJournalOperationTargetSheetName(op)
+	if (invalidSheetName) {
+		const issues = [
+			structureMutationJournalIssue(
+				sheetTopologyJournalIssue(
+					invalidSheetName,
+					`Cannot build exact rollback journal for ${op.op} because target sheet name ${invalidSheetName} is invalid`,
+				),
+			),
+		]
+		return {
+			opIndex,
+			op,
+			supported: true,
+			exact: false,
+			inverseOps: [],
+			preimages: [],
+			issues,
+		}
+	}
 	const draft = buildSupportedJournalEntry(workbook, op, opIndex)
 	if (!draft) {
 		const issues: MutationJournalStructuredIssue[] = [
@@ -2309,6 +2329,12 @@ function journalOperationCreatedSheet(op: Operation): string | null {
 		default:
 			return null
 	}
+}
+
+function invalidJournalOperationTargetSheetName(op: Operation): string | null {
+	const targetSheet = journalOperationCreatedSheet(op)
+	if (targetSheet === null) return null
+	return validateExcelWorksheetName(targetSheet) ? targetSheet : null
 }
 
 function buildSupportedJournalEntry(

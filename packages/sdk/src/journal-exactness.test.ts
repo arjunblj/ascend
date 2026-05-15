@@ -1099,7 +1099,10 @@ describe('mutation journal exactness model', () => {
 			readonly name: string
 			readonly setup: (workbook: AscendWorkbook) => void
 			readonly ops: readonly Operation[]
-			readonly refs: readonly string[]
+			readonly issues: readonly {
+				readonly ref: string
+				readonly surface: MutationJournalSurface
+			}[]
 		}[] = [
 			{
 				name: 'copyRange target shared formula',
@@ -1108,7 +1111,32 @@ describe('mutation journal exactness model', () => {
 					sheet.cells.set(0, 3, { value: numberValue(9), formula: null, styleId: DEFAULT_STYLE_ID })
 				},
 				ops: [{ op: 'copyRange', sheet: 'Sheet1', source: 'D1', target: 'A2', mode: 'values' }],
-				refs: ['Sheet1!A1', 'Sheet1!A2'],
+				issues: [
+					{ ref: 'Sheet1!A1', surface: 'shared-formulas' },
+					{ ref: 'Sheet1!A2', surface: 'shared-formulas' },
+				],
+			},
+			{
+				name: 'copyRange target dynamic array',
+				setup: (wb) => {
+					const sheet = seedDynamicArrayFootprint(wb, 0)
+					sheet.cells.set(0, 3, { value: numberValue(9), formula: null, styleId: DEFAULT_STYLE_ID })
+				},
+				ops: [{ op: 'copyRange', sheet: 'Sheet1', source: 'D1', target: 'A2', mode: 'values' }],
+				issues: [
+					{ ref: 'Sheet1!A1', surface: 'dynamic-arrays' },
+					{ ref: 'Sheet1!A2', surface: 'spills' },
+					{ ref: 'Sheet1!A3', surface: 'spills' },
+				],
+			},
+			{
+				name: 'copyRange target data table',
+				setup: (wb) => {
+					const sheet = seedDataTableFormula(wb)
+					sheet.cells.set(0, 5, { value: numberValue(9), formula: null, styleId: DEFAULT_STYLE_ID })
+				},
+				ops: [{ op: 'copyRange', sheet: 'Sheet1', source: 'F1', target: 'C4', mode: 'values' }],
+				issues: [{ ref: 'Sheet1!C3', surface: 'data-tables' }],
 			},
 			{
 				name: 'moveRange target shared formula',
@@ -1117,7 +1145,32 @@ describe('mutation journal exactness model', () => {
 					sheet.cells.set(0, 3, { value: numberValue(9), formula: null, styleId: DEFAULT_STYLE_ID })
 				},
 				ops: [{ op: 'moveRange', sheet: 'Sheet1', source: 'D1', target: 'A2', mode: 'all' }],
-				refs: ['Sheet1!A1', 'Sheet1!A2'],
+				issues: [
+					{ ref: 'Sheet1!A1', surface: 'shared-formulas' },
+					{ ref: 'Sheet1!A2', surface: 'shared-formulas' },
+				],
+			},
+			{
+				name: 'moveRange target dynamic array',
+				setup: (wb) => {
+					const sheet = seedDynamicArrayFootprint(wb, 0)
+					sheet.cells.set(0, 3, { value: numberValue(9), formula: null, styleId: DEFAULT_STYLE_ID })
+				},
+				ops: [{ op: 'moveRange', sheet: 'Sheet1', source: 'D1', target: 'A2', mode: 'all' }],
+				issues: [
+					{ ref: 'Sheet1!A1', surface: 'dynamic-arrays' },
+					{ ref: 'Sheet1!A2', surface: 'spills' },
+					{ ref: 'Sheet1!A3', surface: 'spills' },
+				],
+			},
+			{
+				name: 'moveRange target data table',
+				setup: (wb) => {
+					const sheet = seedDataTableFormula(wb)
+					sheet.cells.set(0, 5, { value: numberValue(9), formula: null, styleId: DEFAULT_STYLE_ID })
+				},
+				ops: [{ op: 'moveRange', sheet: 'Sheet1', source: 'F1', target: 'C4', mode: 'all' }],
+				issues: [{ ref: 'Sheet1!C3', surface: 'data-tables' }],
 			},
 			{
 				name: 'sortRange shared formula',
@@ -1127,7 +1180,31 @@ describe('mutation journal exactness model', () => {
 					sheet.cells.set(1, 0, { value: numberValue(2), formula: null, styleId: DEFAULT_STYLE_ID })
 				},
 				ops: [{ op: 'sortRange', sheet: 'Sheet1', range: 'A1:D2', by: [{ column: 'A' }] }],
-				refs: ['Sheet1!D1', 'Sheet1!D2'],
+				issues: [
+					{ ref: 'Sheet1!D1', surface: 'shared-formulas' },
+					{ ref: 'Sheet1!D2', surface: 'shared-formulas' },
+				],
+			},
+			{
+				name: 'sortRange dynamic array',
+				setup: (wb) => {
+					const sheet = seedDynamicArrayFootprint(wb, 3)
+					sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: DEFAULT_STYLE_ID })
+					sheet.cells.set(1, 0, { value: numberValue(2), formula: null, styleId: DEFAULT_STYLE_ID })
+					sheet.cells.set(2, 0, { value: numberValue(3), formula: null, styleId: DEFAULT_STYLE_ID })
+				},
+				ops: [{ op: 'sortRange', sheet: 'Sheet1', range: 'A1:D3', by: [{ column: 'A' }] }],
+				issues: [
+					{ ref: 'Sheet1!D1', surface: 'dynamic-arrays' },
+					{ ref: 'Sheet1!D2', surface: 'spills' },
+					{ ref: 'Sheet1!D3', surface: 'spills' },
+				],
+			},
+			{
+				name: 'sortRange data table',
+				setup: seedDataTableFormula,
+				ops: [{ op: 'sortRange', sheet: 'Sheet1', range: 'A1:C5', by: [{ column: 'A' }] }],
+				issues: [{ ref: 'Sheet1!C3', surface: 'data-tables' }],
 			},
 		]
 
@@ -1139,13 +1216,13 @@ describe('mutation journal exactness model', () => {
 
 			expect(journal.supported, entry.name).toBe(true)
 			expect(journal.exact, entry.name).toBe(false)
-			for (const ref of entry.refs) {
-				expect(journal.issues, `${entry.name} ${ref}`).toContainEqual(
+			for (const issue of entry.issues) {
+				expect(journal.issues, `${entry.name} ${issue.ref}`).toContainEqual(
 					expect.objectContaining({
 						code: 'LOSSY_INVERSE',
-						surface: 'shared-formulas',
+						surface: issue.surface,
 						reason: 'formula-binding-metadata',
-						refs: [ref],
+						refs: [issue.ref],
 					}),
 				)
 			}
@@ -2281,6 +2358,54 @@ function seedSharedFormulaPair(workbook: AscendWorkbook, row: number, col: numbe
 			masterRef: topRef,
 		},
 	})
+	return sheet
+}
+
+function seedDynamicArrayFootprint(workbook: AscendWorkbook, col: number) {
+	const sheet = workbook.getWorkbookModel().getSheet('Sheet1')
+	if (!sheet) throw new Error('missing sheet')
+	const column = String.fromCharCode(65 + col)
+	const anchorRef = `Sheet1!${column}1`
+	const ref = `${column}1:${column}3`
+	sheet.cells.set(0, col, {
+		value: numberValue(1),
+		formula: 'SEQUENCE(3)',
+		styleId: DEFAULT_STYLE_ID,
+		formulaInfo: { kind: 'dynamicArray', metadataIndex: 1, collapsed: false },
+	})
+	sheet.cells.set(1, col, {
+		value: numberValue(2),
+		formula: null,
+		styleId: DEFAULT_STYLE_ID,
+		formulaInfo: { kind: 'spill', anchorRef, ref, isAnchor: false },
+	})
+	sheet.cells.set(2, col, {
+		value: numberValue(3),
+		formula: null,
+		styleId: DEFAULT_STYLE_ID,
+		formulaInfo: { kind: 'spill', anchorRef, ref, isAnchor: false },
+	})
+	return sheet
+}
+
+function seedDataTableFormula(workbook: AscendWorkbook) {
+	const sheet = workbook.getWorkbookModel().getSheet('Sheet1')
+	if (!sheet) throw new Error('missing sheet')
+	for (let row = 0; row < 5; row++) {
+		sheet.cells.set(row, 0, {
+			value: numberValue(row + 1),
+			formula: null,
+			styleId: DEFAULT_STYLE_ID,
+		})
+	}
+	sheet.cells.set(2, 2, {
+		value: numberValue(10),
+		formula: null,
+		styleId: DEFAULT_STYLE_ID,
+		formulaInfo: { kind: 'dataTable', ref: 'C3:C5', dt2D: false, dtr: true, r1: 'A1' },
+	})
+	sheet.cells.set(3, 2, { value: numberValue(20), formula: null, styleId: DEFAULT_STYLE_ID })
+	sheet.cells.set(4, 2, { value: numberValue(30), formula: null, styleId: DEFAULT_STYLE_ID })
 	return sheet
 }
 

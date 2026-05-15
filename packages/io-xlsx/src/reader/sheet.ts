@@ -4497,42 +4497,6 @@ function indexOfBytes(bytes: Uint8Array, needle: Uint8Array, start: number, end:
 	if (needle.length === 0) return start
 	const last = end - needle.length
 	const first = needle[0]
-	if (needle.length === 4) {
-		const n1 = needle[1]
-		const n2 = needle[2]
-		const n3 = needle[3]
-		for (let index = start; index <= last; index++) {
-			if (
-				bytes[index] === first &&
-				bytes[index + 1] === n1 &&
-				bytes[index + 2] === n2 &&
-				bytes[index + 3] === n3
-			) {
-				return index
-			}
-		}
-		return -1
-	}
-	if (needle.length === 6) {
-		const n1 = needle[1]
-		const n2 = needle[2]
-		const n3 = needle[3]
-		const n4 = needle[4]
-		const n5 = needle[5]
-		for (let index = start; index <= last; index++) {
-			if (
-				bytes[index] === first &&
-				bytes[index + 1] === n1 &&
-				bytes[index + 2] === n2 &&
-				bytes[index + 3] === n3 &&
-				bytes[index + 4] === n4 &&
-				bytes[index + 5] === n5
-			) {
-				return index
-			}
-		}
-		return -1
-	}
 	for (let index = start; index <= last; index++) {
 		if (bytes[index] !== first) continue
 		let matched = true

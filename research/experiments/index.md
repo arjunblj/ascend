@@ -6,6 +6,7 @@ Updated: 2026-05-15
 
 | Run | Status | Fold-in target |
 | --- | --- | --- |
+| [Claim board current proof drift cleanup](runs/2026/2026-05-15-claim-board-current-proof-drift-cleanup/log.md) | refreshed active syntheses from current release-proof-index evidence; package-action remains fail-closed with 3 representative streaming proofs and old stale wording removed | topic synthesis, release loop |
 | [Axis layout validation boundary](runs/2026/2026-05-15-axis-layout-validation-boundary/log.md) | folded in engine validation and SDK journal classification for invalid row/column spans, dimensions, and outline endpoints before metadata mutation | correctness loop |
 | [Release gate rerun after streaming drop proof](runs/2026/2026-05-15-release-gate-rerun-after-streaming-drop/log.md) | release index still blocks headline claims and implementation surface promotion after streaming drop proof; top handoffs remain safe-open and package-action only | product loop, release loop |
 | [Range-backed journal validation](runs/2026/2026-05-15-range-backed-journal-validation/log.md) | finished in-flight invalid range-backed journal classification and content-type attribute coverage; no new surface | correctness loop |

@@ -110,11 +110,11 @@ Current proof input:
 | Source graph evidence everywhere | true |
 | Journal package issues everywhere | true |
 | Post-write audit failures | `unknown-part-error` |
-| Representative streaming proof cases | 1 |
+| Representative streaming proof cases | 3 |
 
 Owner acceptance checklist:
 
-- [ ] Product accepts disclosed generated edge packages for docProps passthrough, calc-chain drop, signature invalidation drop, and unknown-part error, or replaces them with public binary fixtures.
+- [ ] Product accepts disclosed generated edge packages for signature invalidation drop and unknown-part error, or replaces them with public binary fixtures.
 - [ ] Correctness approves unsupported-feature boundaries: signatures are detected/reported but not verified or re-signed; calc-chain decisions are package accounting, not Excel recalc equivalence; chart/drawing sidecars are accounted separately, not semantic chart support; macros/ActiveX are package evidence, not safety; unknown parts fail closed.
 - [ ] Correctness keeps journal/package issue compatibility as part of the claim: every case must include a package-preservation journal issue.
 - [ ] Performance accepts representative streaming proofs covering passthrough/regenerate/add/drop as sufficient for narrow wording, or expands streaming variants before any broader streaming claim.

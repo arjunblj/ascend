@@ -104,9 +104,13 @@ function resolveConnectionRefreshMatches(
 		if (op.partPath !== undefined && part.partPath !== op.partPath) return false
 		if (op.name !== undefined && part.name !== op.name) return false
 		if (op.connectionId !== undefined && part.connectionId !== op.connectionId) return false
-		if (op.sheet !== undefined && part.sheetName !== op.sheet) return false
+		if (op.sheet !== undefined && !sameOptionalSheetName(part.sheetName, op.sheet)) return false
 		return true
 	})
+}
+
+function sameOptionalSheetName(left: string | undefined, right: string): boolean {
+	return left !== undefined && left.toLowerCase() === right.toLowerCase()
 }
 
 function refreshWarnings(part: WorkbookConnectionPartInfo) {

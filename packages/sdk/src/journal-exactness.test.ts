@@ -480,6 +480,35 @@ describe('mutation journal exactness model', () => {
 		}
 	})
 
+	test('classifies duplicate target sheet journal preimage failures as sheet topology', () => {
+		const ops: readonly Operation[] = [
+			{ op: 'addSheet', name: 'Sheet1' },
+			{ op: 'copySheet', sheet: 'Sheet1', newName: 'Sheet1' },
+			{ op: 'renameSheet', sheet: 'Sheet1', newName: 'Sheet1' },
+		]
+
+		for (const op of ops) {
+			const wb = AscendWorkbook.create()
+			const analysis = analyzeMutationJournalExactness(
+				buildMutationJournal(wb.getWorkbookModel(), [op]),
+			)
+			expect(analysis, op.op).toMatchObject({
+				supported: true,
+				exact: false,
+				issueCount: 1,
+				surfaces: ['sheet-layout'],
+				reasons: ['sheet-topology'],
+				hasMatrixViolation: false,
+			})
+			expect(analysis.issues[0], op.op).toMatchObject({
+				code: 'UNSUPPORTED_VALUE',
+				surface: 'sheet-layout',
+				reason: 'sheet-topology',
+				allowedByMatrix: true,
+			})
+		}
+	})
+
 	test('classifies setComment legacy drawing loss without changing the v1 vocabulary', () => {
 		const classified = classifyMutationJournalIssues(lossySetCommentLegacyDrawingJournal().issues)
 		expect(classified).toContainEqual({

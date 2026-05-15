@@ -2040,6 +2040,26 @@ function buildJournalEntry(
 			issues,
 		}
 	}
+	const duplicateSheet = duplicateJournalOperationTargetSheet(workbook, op)
+	if (duplicateSheet) {
+		const issues = [
+			structureMutationJournalIssue(
+				sheetTopologyJournalIssue(
+					duplicateSheet,
+					`Cannot build exact rollback journal for ${op.op} because target sheet ${duplicateSheet} already exists`,
+				),
+			),
+		]
+		return {
+			opIndex,
+			op,
+			supported: true,
+			exact: false,
+			inverseOps: [],
+			preimages: [],
+			issues,
+		}
+	}
 	const draft = buildSupportedJournalEntry(workbook, op, opIndex)
 	if (!draft) {
 		const issues: MutationJournalStructuredIssue[] = [
@@ -2121,6 +2141,24 @@ function journalOperationRequiredTargetSheet(op: Operation): string | null {
 		case 'copyRange':
 		case 'moveRange':
 			return op.targetSheet ?? null
+		default:
+			return null
+	}
+}
+
+function duplicateJournalOperationTargetSheet(workbook: Workbook, op: Operation): string | null {
+	const targetSheet = journalOperationCreatedSheet(op)
+	if (targetSheet !== null && workbook.getSheet(targetSheet)) return targetSheet
+	return null
+}
+
+function journalOperationCreatedSheet(op: Operation): string | null {
+	switch (op.op) {
+		case 'addSheet':
+			return op.name
+		case 'copySheet':
+		case 'renameSheet':
+			return op.newName
 		default:
 			return null
 	}
@@ -2404,6 +2442,10 @@ function savedSourceDefinedNamePackageStateIssues(
 }
 
 function missingSheetTopologyIssue(sheet: string, message: string): MutationJournalIssue {
+	return sheetTopologyJournalIssue(sheet, message)
+}
+
+function sheetTopologyJournalIssue(sheet: string, message: string): MutationJournalIssue {
 	return {
 		code: 'UNSUPPORTED_VALUE',
 		message,

@@ -3517,20 +3517,29 @@ describe('agent workflow loss audit', () => {
 		})
 	})
 
-	test('commit package action proof uses commit-local byte evidence', async () => {
+	test('commit package action proof uses commit-local byte and source graph evidence', async () => {
 		const input = join(TEMP_DIR, 'commit-package-actions.xlsx')
 		const output = join(TEMP_DIR, 'commit-package-actions-out.xlsx')
 		mkdirSync(TEMP_DIR, { recursive: true })
 		const wb = AscendWorkbook.create()
 		await wb.save(input)
 
-		const committed = await commitAgentPlan(
-			input,
-			[{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'digest-proof' }] }],
-			{ output },
-		)
+		const committed = await commitAgentPlan(input, [{ op: 'addSheet', name: 'DigestProof' }], {
+			output,
+		})
 		const proof = createAgentCommitPackageActionProof(committed)
 
+		expect(proof.byAction.add).toBeGreaterThan(0)
+		expect(proof.coverage.sourceGraphIncluded).toBe(true)
+		expect(proof.coverage.sourcePartCount).toBeGreaterThan(0)
+		expect(proof.coverage.sourceRelationshipCount).toBeGreaterThan(0)
+		expect(proof.actions).toContainEqual(
+			expect.objectContaining({
+				action: 'add',
+				partPath: expect.stringContaining('worksheets/sheet'),
+				sourcePresent: false,
+			}),
+		)
 		expect(proof.coverage.sourceByteDigestCount).toBeGreaterThan(0)
 		expect(proof.coverage.outputByteDigestCount).toBeGreaterThan(0)
 		expect(

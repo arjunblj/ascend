@@ -25,6 +25,7 @@ import {
 	auditXlsxPackageGraphReadIntegrity,
 	auditXlsxPackageGraphSafeEditIntegrity,
 	extractZip,
+	inspectXlsxPackageGraph,
 } from '@ascend/io-xlsx'
 import { AscendException, ascendError, type FeatureReport, type Operation } from '@ascend/schema'
 import { listCapabilities, summarizeCapabilities } from './capabilities.ts'
@@ -1408,8 +1409,11 @@ export function createPackageActionProof(
 ): PackageActionProof {
 	const sourceArchive = packageActionProofArchive(options.sourceBytes)
 	const outputArchive = packageActionProofArchive(options.outputBytes)
-	const sourcePartByPath = options.sourcePackageGraph
-		? new Map(options.sourcePackageGraph.parts.map((part) => [part.path, part]))
+	const sourcePackageGraph =
+		options.sourcePackageGraph ??
+		(options.sourceBytes ? inspectXlsxPackageGraph(options.sourceBytes) : undefined)
+	const sourcePartByPath = sourcePackageGraph
+		? new Map(sourcePackageGraph.parts.map((part) => [part.path, part]))
 		: undefined
 	const plannedPaths = new Set(preservation.parts.map((part) => part.path))
 	const diagnosticsByPath = diagnosticsByPartPath(options.writePolicy?.diagnostics ?? [])
@@ -1497,11 +1501,11 @@ export function createPackageActionProof(
 		byAction,
 		coverage: {
 			proofScope: 'package-part-actions-with-audit-summaries',
-			sourceGraphIncluded: options.sourcePackageGraph !== undefined,
-			...(options.sourcePackageGraph
+			sourceGraphIncluded: sourcePackageGraph !== undefined,
+			...(sourcePackageGraph
 				? {
-						sourcePartCount: options.sourcePackageGraph.parts.length,
-						sourceRelationshipCount: options.sourcePackageGraph.relationships?.length ?? 0,
+						sourcePartCount: sourcePackageGraph.parts.length,
+						sourceRelationshipCount: sourcePackageGraph.relationships?.length ?? 0,
 					}
 				: {}),
 			writePolicyIncluded: options.writePolicy !== undefined,

@@ -3457,6 +3457,9 @@ describe('mutation journal exactness model', () => {
 		expect(imported.check().valid).toBe(true)
 		const reopened = await AscendWorkbook.open(imported.toBytes())
 		expect(reopened.check().issues.filter((issue) => issue.severity === 'error')).toEqual([])
+		expect(
+			reopened.check().issues.filter((issue) => issue.rule === 'formula-binding-integrity'),
+		).toEqual([])
 		expect(reopened.formula('Copy!A1')?.normalizedFormula).toBe('Copy!B1*2')
 		expect(reopened.formula('Copy!A2')?.normalizedFormula).toBe('Copy!B2*2')
 		expect(reopened.sheet('Copy')?.cell('A1')?.formulaBinding).toEqual({

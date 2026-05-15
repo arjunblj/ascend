@@ -61,6 +61,34 @@ Generated app artifacts:
 
 The API, MCP, and CLI entrypoints use an explicit direct-run check instead of relying on `import.meta.main`, so importing built app packages does not accidentally start a process.
 
+## App External Install Smoke Update
+
+The CLI/API/MCP app release-packaging target now passes from produced local app tarballs.
+
+Checked-in command:
+
+```bash
+bun run release:apps:smoke
+```
+
+What it does:
+
+1. Builds the release JS artifacts.
+2. Produces local release tarballs at `/private/tmp/ascend-apps-local-release/artifacts/ascend-{cli,api,mcp}-0.0.0.tgz`.
+3. Creates a fresh temp consumer app at `/private/tmp/ascend-apps-local-release/consumer`.
+4. Installs only `@ascend/cli`, `@ascend/api`, and `@ascend/mcp` from the produced tarballs, with no consumer overrides and no direct dependencies on internal `@ascend/*` packages.
+5. Runs the workbook workflow through the installed CLI bin, installed API exports, and installed MCP tool handlers: create/setup, inspect, plan, commit, reopen/check, and read/verify `B1 = 125` and `C1 = 250`.
+6. Verifies installed docs through `ascend docs "plan commit" --json` and `ascend.search_docs`.
+
+Validation result:
+
+```text
+App release smoke passed: /private/tmp/ascend-apps-local-release/consumer
+cli artifact: /private/tmp/ascend-apps-local-release/artifacts/ascend-cli-0.0.0.tgz
+api artifact: /private/tmp/ascend-apps-local-release/artifacts/ascend-api-0.0.0.tgz
+mcp artifact: /private/tmp/ascend-apps-local-release/artifacts/ascend-mcp-0.0.0.tgz
+```
+
 ## Installed Docs Update
 
 SDK agent docs/examples now work from the installed SDK package.
@@ -80,11 +108,11 @@ bun run release:sdk:smoke
 
 ## Verdict
 
-Ascend is no longer blocked on the first SDK external install smoke, installed SDK docs, the current-TUI startup split, or the existence of real CLI/API/MCP dist JS and bins. The broader release remains blocked until packaged CLI/API/MCP external install smokes use the same artifact standard as SDK.
+Ascend is no longer blocked on the first SDK external install smoke, installed SDK docs, the current-TUI startup split, real CLI/API/MCP dist JS and bins, or packaged CLI/API/MCP external install smokes.
 
-The SDK workflow now works from a temp external app with a single local `@ascend/sdk` tarball and no consumer overrides. The installed SDK package can also read/search bundled agent docs. CLI/API/MCP now build real app entrypoints and publish manifests, but they still need the same external packaged workflow smoke standard as SDK.
+The SDK workflow now works from a temp external app with a single local `@ascend/sdk` tarball and no consumer overrides. The installed SDK package can also read/search bundled agent docs. CLI/API/MCP now build real app entrypoints and publish manifests, and a fresh external temp app can install their produced local tarballs and run the same workbook workflow without repo-local context.
 
-Previous audit stop condition was reached; current implementation sequence moves next to external packaged CLI/API/MCP smokes.
+Previous audit stop condition was reached; the current implementation sequence has closed the SDK-first path, headless CLI split, app dist/bin artifacts, installed SDK docs, and external app package smokes. Final registry/publish topology remains intentionally deferred.
 
 ## Manifest, Export, Bin, And Build Audit
 
@@ -120,9 +148,9 @@ Implementation update: `scripts/build-packages.ts` now builds CLI/API/MCP runtim
 Missing export/bin gaps:
 
 - Library `dist` manifests export only `"."`. That is acceptable for SDK-first use, but not for documented deep surfaces unless we intentionally add subpath exports.
-- API exports `createApiFetch` and `createServer` from source, but no publish manifest exposes them from `dist`.
-- MCP exports `createServer` from source, but no publish manifest or bin exposes it from `dist`.
-- CLI bin points to `src/index.ts`, imports `./commands/tui.ts` at startup, and hard-depends on `@ascend/tui`.
+- Implementation update: API `dist` exposes `createApiFetch` and `createServer` through the generated root export.
+- Implementation update: MCP `dist` exposes `createServer` through the generated root export and `ascend-mcp` bin.
+- Implementation update: CLI `dist` exposes the `ascend` bin, and headless startup no longer resolves `@ascend/tui`.
 
 Docs/OpenAPI:
 
@@ -150,6 +178,23 @@ Current local SDK artifact shape:
 
 This is still a local release-artifact smoke, not a final npm publishing design. It does prove the SDK can be installed and used without consumer overrides or repo-local package graph knowledge.
 
+Implemented app path: `/private/tmp/ascend-apps-local-release`.
+
+Current app command:
+
+```bash
+bun run release:apps:smoke
+```
+
+Current local app artifact shape:
+
+1. Copy the built library and app `dist` outputs into `/private/tmp/ascend-apps-local-release/artifacts/packages`.
+2. Bundle internal `@ascend/*` library packages under each app artifact's own `node_modules`.
+3. Pack local CLI/API/MCP tarballs.
+4. Create a fresh consumer app whose `package.json` depends only on those three app tarballs.
+
+This proves installed app packages can run the workbook workflow without consumer overrides or repo-local package graph knowledge. It is still a local release-artifact smoke, not the final registry topology.
+
 ## Smokes
 
 SDK smoke: passed with a single local SDK tarball and no consumer overrides.
@@ -162,60 +207,48 @@ bun run release:sdk:smoke
 
 Workflow proven: create/open workbook, inspect sheets, plan a `setCells` operation, commit to output, reopen, verify structural check, and confirm formula recalculation. Result included `planWouldSucceed: true`, `reopenedValid: true`, `B1 = 125`, `C1 = 250`.
 
-CLI smoke: workflow passed only after installing `@ascend/cli` from source and explicitly installing `@ascend/tui`.
-
-Commands:
-
-```bash
-bun node_modules/.bin/ascend --version
-bun node_modules/.bin/ascend inspect input.xlsx --json
-bun node_modules/.bin/ascend plan input.xlsx --ops ops.json --json
-bun node_modules/.bin/ascend commit input.xlsx --ops ops.json --output cli-output.xlsx --json --compact
-bun node_modules/.bin/ascend check cli-output.xlsx --json
-```
-
-Result: version, inspect, plan, commit, and post-write check passed. Exact blocker: CLI is not packageable headlessly because `apps/cli/package.json` depends on `@ascend/tui`, and `apps/cli/src/index.ts` imports `./commands/tui.ts` at startup. This release should not require the current TUI.
-
-API smoke: workflow passed only through installed source package deep import.
+CLI smoke: passed from the installed `@ascend/cli` tarball with no TUI dependency.
 
 Command:
 
 ```bash
-bun run api-smoke.ts
+bun run release:apps:smoke
 ```
 
-Workflow used `createApiFetch` from `@ascend/api/src/server.ts`, then called `/health`, `/inspect`, `/plan`, `/commit`, and `/check`. Result included `health.status: ok`, `planWouldSucceed: true`, `postWrite.valid: true`, and `checkValid: true`.
+Workflow proven: installed `node_modules/.bin/ascend --version`, `create`, setup `write`, `inspect`, `plan`, `commit`, `check`, `read`, and `docs`. Result included `planWouldSucceed: true`, `B1 = 125`, `C1 = 250`, and `docHits: 5`.
 
-Exact blocker: no packageable API `dist` manifest, no bin, and app JS build output is placeholder.
-
-MCP smoke: workflow passed only through installed source package deep import/internal registered-tool access.
+API smoke: passed from the installed `@ascend/api` tarball.
 
 Command:
 
 ```bash
-bun run mcp-smoke.ts
+bun run release:apps:smoke
 ```
 
-Workflow used `createServer` from `@ascend/mcp/src/index.ts`, confirmed `32` tools, then called `ascend.inspect`, `ascend.plan`, `ascend.commit`, and `ascend.check`. Result included `planWouldSucceed: true`, `postWrite.valid: true`, and `checkValid: true`.
+Workflow proven: imported `createApiFetch` and `createServer` from installed `@ascend/api`, then called `/write` for setup and `/inspect`, `/plan`, `/commit`, `/check`, and `/read` for the workflow. Result included `planWouldSucceed: true`, `B1 = 125`, `C1 = 250`, and `apiCapabilities: 66`.
 
-Exact blocker: no packageable MCP `dist` manifest, no bin, and app JS build output is placeholder.
+MCP smoke: passed from the installed `@ascend/mcp` tarball.
+
+Command:
+
+```bash
+bun run release:apps:smoke
+```
+
+Workflow proven: imported `createServer` from installed `@ascend/mcp`, confirmed `32` tools, then called `ascend.write`, `ascend.inspect`, `ascend.plan`, `ascend.commit`, `ascend.check`, `ascend.read`, and `ascend.search_docs`. Result included `planWouldSucceed: true`, `B1 = 125`, `C1 = 250`, `docHits: 5`, and `capabilities: 66`.
 
 ## Blocker Table
 
 | Owner | File | Fix shape | Validation command | Release impact |
 | --- | --- | --- | --- | --- |
-| SDK/package build | `scripts/release-sdk-smoke.ts`, `package.json` | Done for local SDK smoke: produce a single local SDK tarball with bundled internal packages and verify a fresh consumer install without overrides. Next step is deciding whether this bundled shape or a registry/tarball-set shape is the final publish design. | `bun run release:sdk:smoke` | First SDK external install smoke passes; final publish design still needs release decision. |
-| Package manifests | `packages/*/package.json` | Decide source manifests vs generated publish manifests; source manifests should not remain the only package truth with `private: true`, `main: src/index.ts`, no `exports`, and `workspace:*`. | `bun run build` plus manifest audit showing publishable manifests for every public package. | Blocks publish readiness and consumer trust. |
-| CLI/headless | `apps/cli/package.json`, `apps/cli/src/commands/tui.ts`, `apps/cli/src/commands/open.ts`, `apps/cli/tsconfig.json` | Done for source startup: CLI no longer depends on or project-references current TUI; `tui` and `open` lazy-load `@ascend/tui` only when invoked. Still needs external packaged CLI smoke after real dist/bin exists. | `bun test apps/cli/src/cli.test.ts`; `bun run build` | Removes current TUI as a headless CLI startup blocker. |
-| CLI build/bin | `scripts/build-packages.ts`, `apps/cli/dist/package.json` | Done for built artifact shape: real `dist/index.js`, generated publish manifest, and `bin.ascend`. Still needs external install smoke using produced app artifacts. | `bun apps/cli/dist/index.js --version`; manifest audit | Removes CLI dist/bin blocker. |
-| API build/startup | `scripts/build-packages.ts`, `apps/api/src/index.ts`, `apps/api/dist/package.json` | Done for built artifact shape: real `dist/index.js`, generated publish manifest, root exports for `createApiFetch/createServer`, and `bin.ascend-api`. Still needs external install smoke. | import `apps/api/dist/index.js`; call `/health` through `createApiFetch` | Removes API dist/startup blocker. |
-| MCP build/startup | `scripts/build-packages.ts`, `apps/mcp/src/index.ts`, `apps/mcp/dist/package.json` | Done for built artifact shape: real `dist/index.js`, generated publish manifest, root export for `createServer`, and `bin.ascend-mcp`. Still needs external install smoke. | import `apps/mcp/dist/index.js`; verify `32` registered tools | Removes MCP dist/startup blocker. |
-| Bundled docs | `packages/sdk/src/agent-docs.ts`, `scripts/build-packages.ts`, `scripts/release-sdk-smoke.ts` | Done for SDK: package docs/examples into SDK dist, resolve package-local docs first, and validate installed docs in the external SDK smoke. Extend the same standard to CLI/API/MCP packages if they expose docs directly. | `bun test packages/sdk/src/agent-docs.test.ts`; `bun run release:sdk:smoke` | Removes SDK agent-doc dependency on repo-local context. |
-| App dist hygiene | `apps/*/dist/index.js`, app build config | Remove stale placeholder JS; app build must generate runtime JS or omit misleading files. | `bun run build` then inspect app `dist/index.js`; startup smokes use only built app files. | Blocks confidence in release artifacts. |
+| SDK/package build | `scripts/release-sdk-smoke.ts`, `package.json` | Done for local SDK smoke: produce a single local SDK tarball with bundled internal packages and verify a fresh consumer install without overrides. | `bun run release:sdk:smoke` | SDK external install path passes. |
+| App package smokes | `scripts/release-apps-smoke.ts`, `package.json` | Done for local CLI/API/MCP smokes: produce local app tarballs with bundled internal packages and verify a fresh consumer install without overrides. | `bun run release:apps:smoke` | CLI/API/MCP external install workflow path passes. |
+| CLI/headless | `apps/cli/package.json`, `apps/cli/src/index.ts`, `apps/cli/src/commands/tui.ts`, `apps/cli/src/commands/open.ts`, `apps/cli/tsconfig.json` | Done: CLI no longer depends on or project-references current TUI; `tui` and `open` lazy-load `@ascend/tui`; `create --json` is accepted by the central flag gate. | `bun test apps/cli/src/cli.test.ts`; `bun run release:apps:smoke` | Removes current TUI and CLI workflow flag blockers. |
+| API build/startup | `scripts/build-packages.ts`, `apps/api/src/index.ts`, `apps/api/dist/package.json` | Done: real `dist/index.js`, generated publish manifest, root exports for `createApiFetch/createServer`, and `bin.ascend-api`; installed API workflow smoke passes. | `bun run release:apps:smoke` | Removes API dist/startup/packageability blocker. |
+| MCP build/startup | `scripts/build-packages.ts`, `apps/mcp/src/index.ts`, `apps/mcp/dist/package.json` | Done: real `dist/index.js`, generated publish manifest, root export for `createServer`, and `bin.ascend-mcp`; installed MCP workflow smoke passes. | `bun run release:apps:smoke` | Removes MCP dist/startup/packageability blocker. |
+| Bundled docs | `packages/sdk/src/agent-docs.ts`, `scripts/build-packages.ts`, `scripts/release-sdk-smoke.ts`, `scripts/release-apps-smoke.ts` | Done for SDK, CLI, and MCP installed surfaces. API does not expose a docs surface today. | `bun run release:sdk:smoke`; `bun run release:apps:smoke` | Removes agent-doc dependency on repo-local context for installed public docs surfaces. |
+| Final publish topology | generated `dist/package.json` artifacts | Deferred by release owner: local artifact smokes use bundled internals; final registry/tarball-set policy is not decided in this phase. | N/A | Does not block current local external adoption proof; still required before public npm release. |
 
 ## Release Owner Next Step
 
-Implement packageability in this order:
-
-1. Add external packaged CLI/API/MCP smokes using the same artifact standard as `release:sdk:smoke`.
-2. Decide whether bundled internal packages or a local tarball-set/registry shape is the final publish design.
+Packageability implementation is now at the local external-adoption proof point. The remaining release-owner decision is whether bundled internal packages, a local tarball set, a local registry smoke, or a public npm package graph is the final publish topology.

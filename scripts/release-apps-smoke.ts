@@ -133,14 +133,151 @@ async function prepareConsumerApp(): Promise<void> {
 	)
 	await writeFile(
 		join(appRoot, 'app-smoke.ts'),
-		`import { createApiFetch, createServer as createApiServer } from '@ascend/api'
+		`import { writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { createApiFetch, createServer as createApiServer } from '@ascend/api'
 import { createServer as createMcpServer } from '@ascend/mcp'
 
 if (typeof createApiFetch !== 'function') throw new Error('missing createApiFetch export')
 if (typeof createApiServer !== 'function') throw new Error('missing createApiServer export')
 if (typeof createMcpServer !== 'function') throw new Error('missing createMcpServer export')
 
+const cwd = process.cwd()
+const ascendBin = join(cwd, 'node_modules', '.bin', 'ascend')
+const setupOps = [
+	{
+		op: 'setCells',
+		sheet: 'Sheet1',
+		updates: [
+			{ ref: 'A1', value: 'Revenue' },
+			{ ref: 'B1', value: 100 },
+		],
+	},
+	{ op: 'setFormula', sheet: 'Sheet1', ref: 'C1', formula: '=B1*2' },
+]
+const planOps = [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'B1', value: 125 }] }]
+const setupOpsPath = join(cwd, 'setup-ops.json')
+const planOpsPath = join(cwd, 'plan-ops.json')
+await writeFile(setupOpsPath, JSON.stringify(setupOps))
+await writeFile(planOpsPath, JSON.stringify(planOps))
+
+async function runCli(args) {
+	const proc = Bun.spawn([ascendBin, ...args], {
+		cwd,
+		stdout: 'pipe',
+		stderr: 'pipe',
+	})
+	const [stdout, stderr, exitCode] = await Promise.all([
+		new Response(proc.stdout).text(),
+		new Response(proc.stderr).text(),
+		proc.exited,
+	])
+	if (exitCode !== 0) {
+		throw new Error('ascend ' + args.join(' ') + ' failed with exit code ' + exitCode + '\\n' + stdout + stderr)
+	}
+	return stdout
+}
+
+async function runCliJson(args) {
+	const stdout = await runCli([...args, '--json'])
+	const parsed = JSON.parse(stdout)
+	if (!parsed.ok) throw new Error('ascend ' + args.join(' ') + ' failed: ' + JSON.stringify(parsed.error))
+	return parsed.data
+}
+
+async function apiJson(apiFetch, path, body, method = 'POST') {
+	const response = await apiFetch(
+		new Request('http://ascend.local' + path, {
+			method,
+			headers: { 'Content-Type': 'application/json' },
+			...(body === undefined ? {} : { body: JSON.stringify(body) }),
+		}),
+	)
+	const payload = await response.json()
+	if (!payload.ok) throw new Error('API ' + path + ' failed: ' + JSON.stringify(payload.error))
+	return payload.data
+}
+
+async function mcpTool(tools, name, args) {
+	const handler = tools[name]?.handler
+	if (typeof handler !== 'function') throw new Error('missing MCP tool ' + name)
+	const result = await handler(args)
+	const envelope = result.structuredContent
+	if (!envelope?.ok) throw new Error('MCP ' + name + ' failed: ' + JSON.stringify(envelope?.error))
+	return envelope.data
+}
+
+function numberAt(readResult, ref) {
+	const cell = readResult.cells?.find((entry) => entry.ref === ref)
+	const value = cell?.value
+	if (typeof value === 'number') return value
+	if (value?.kind === 'number') return value.value
+	throw new Error('missing numeric cell ' + ref + ': ' + JSON.stringify(cell))
+}
+
+function assertWorkbookResult(label, readResult, checkResult) {
+	if (checkResult.valid !== true) throw new Error(label + ' check failed: ' + JSON.stringify(checkResult))
+	const b1 = numberAt(readResult, 'B1')
+	const c1 = numberAt(readResult, 'C1')
+	if (b1 !== 125 || c1 !== 250) {
+		throw new Error(label + ' reopened values failed: ' + JSON.stringify({ b1, c1 }))
+	}
+	return { b1, c1 }
+}
+
+const cliInput = join(cwd, 'cli-input.xlsx')
+const cliOutput = join(cwd, 'cli-output.xlsx')
+await runCliJson(['create', cliInput])
+await runCliJson(['write', cliInput, '--ops', setupOpsPath])
+const cliInspect = await runCliJson(['inspect', cliInput])
+const cliPlan = await runCliJson(['plan', cliInput, '--ops', planOpsPath])
+if (cliPlan.preview?.wouldSucceed !== true) {
+	throw new Error('CLI plan failed: ' + JSON.stringify(cliPlan.preview?.errors))
+}
+const cliCommit = await runCliJson([
+	'commit',
+	cliInput,
+	'--ops',
+	planOpsPath,
+	'--output',
+	cliOutput,
+	'--expect-sha256',
+	cliPlan.inputSha256,
+	'--compact',
+])
+const cliCheck = await runCliJson(['check', cliOutput])
+const cliRead = await runCliJson(['read', cliOutput, 'Sheet1!B1:C1'])
+const cliValues = assertWorkbookResult('CLI', cliRead, cliCheck)
+const cliDocs = await runCliJson(['docs', 'plan commit'])
+if (!Array.isArray(cliDocs.results) || cliDocs.results.length === 0) {
+	throw new Error('CLI installed docs search returned no hits')
+}
+
 const apiFetch = createApiFetch()
+const apiInput = join(cwd, 'api-input.xlsx')
+const apiOutput = join(cwd, 'api-output.xlsx')
+await runCliJson(['create', apiInput])
+await apiJson(apiFetch, '/write', { file: apiInput, ops: setupOps })
+const apiInspect = await apiJson(apiFetch, '/inspect', { file: apiInput })
+const apiPlan = await apiJson(apiFetch, '/plan', { file: apiInput, ops: planOps })
+if (apiPlan.preview?.wouldSucceed !== true) {
+	throw new Error('API plan failed: ' + JSON.stringify(apiPlan.preview?.errors))
+}
+const apiCommit = await apiJson(apiFetch, '/commit', {
+	file: apiInput,
+	ops: planOps,
+	output: apiOutput,
+	expectSha256: apiPlan.inputSha256,
+	compact: true,
+})
+const apiCheck = await apiJson(apiFetch, '/check', { file: apiOutput })
+const apiRead = await apiJson(apiFetch, '/read', {
+	file: apiOutput,
+	sheet: 'Sheet1',
+	range: 'B1:C1',
+})
+const apiValues = assertWorkbookResult('API', apiRead, apiCheck)
+
 const capabilitiesResponse = await apiFetch(new Request('http://ascend.local/capabilities'))
 const capabilities = await capabilitiesResponse.json()
 if (!capabilities.ok) throw new Error('installed API capabilities request failed')
@@ -148,9 +285,37 @@ if (!Array.isArray(capabilities.data?.capabilities) || capabilities.data.capabil
 	throw new Error('installed API capabilities request returned no capabilities')
 }
 
+const mcpInput = join(cwd, 'mcp-input.xlsx')
+const mcpOutput = join(cwd, 'mcp-output.xlsx')
+await runCliJson(['create', mcpInput])
 const mcpServer = createMcpServer()
 const tools = mcpServer._registeredTools
 const resources = mcpServer._registeredResources
+await mcpTool(tools, 'ascend.write', { file: mcpInput, ops: setupOps })
+const mcpInspect = await mcpTool(tools, 'ascend.inspect', { file: mcpInput })
+const mcpPlan = await mcpTool(tools, 'ascend.plan', { file: mcpInput, ops: planOps })
+if (mcpPlan.preview?.wouldSucceed !== true) {
+	throw new Error('MCP plan failed: ' + JSON.stringify(mcpPlan.preview?.errors))
+}
+const mcpCommit = await mcpTool(tools, 'ascend.commit', {
+	file: mcpInput,
+	ops: planOps,
+	output: mcpOutput,
+	expectSha256: mcpPlan.inputSha256,
+	compact: true,
+})
+const mcpCheck = await mcpTool(tools, 'ascend.check', { file: mcpOutput })
+const mcpRead = await mcpTool(tools, 'ascend.read', {
+	file: mcpOutput,
+	sheet: 'Sheet1',
+	range: 'B1:C1',
+	format: 'cells',
+})
+const mcpValues = assertWorkbookResult('MCP', mcpRead, mcpCheck)
+const mcpDocs = await mcpTool(tools, 'ascend.search_docs', { query: 'plan commit' })
+if (!Array.isArray(mcpDocs.results) || mcpDocs.results.length === 0) {
+	throw new Error('MCP installed docs search returned no hits')
+}
 const mcpCapabilities = await tools['ascend.capabilities']?.handler({})
 if (!mcpCapabilities?.structuredContent?.ok) {
 	throw new Error('installed MCP capabilities tool failed')
@@ -163,13 +328,32 @@ if (!mcpResource?.contents?.[0]?.text?.includes('"capabilities"')) {
 }
 
 console.log(JSON.stringify({
-	apiFetchExport: typeof createApiFetch,
-	apiServerExport: typeof createApiServer,
+	cli: {
+		sheets: cliInspect.sheets?.map((sheet) => sheet.name),
+		planWouldSucceed: cliPlan.preview.wouldSucceed,
+		outputSha256: cliCommit.outputSha256,
+		values: cliValues,
+		docHits: cliDocs.results.length,
+	},
+	api: {
+		createApiFetchExport: typeof createApiFetch,
+		createServerExport: typeof createApiServer,
+		sheets: apiInspect.sheets?.map((sheet) => sheet.name),
+		planWouldSucceed: apiPlan.preview.wouldSucceed,
+		outputSha256: apiCommit.outputSha256,
+		values: apiValues,
+	},
 	apiCapabilities: capabilities.data.capabilities.length,
-	mcpServerExport: typeof createMcpServer,
-	mcpTools: Object.keys(tools).length,
-	mcpCapabilities:
-		mcpCapabilities.structuredContent.data.capabilities.length,
+	mcp: {
+		createServerExport: typeof createMcpServer,
+		sheets: mcpInspect.sheets?.map((sheet) => sheet.name),
+		planWouldSucceed: mcpPlan.preview.wouldSucceed,
+		outputSha256: mcpCommit.outputSha256,
+		values: mcpValues,
+		docHits: mcpDocs.results.length,
+		tools: Object.keys(tools).length,
+		capabilities: mcpCapabilities.structuredContent.data.capabilities.length,
+	},
 }))
 `,
 	)

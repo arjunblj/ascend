@@ -87,7 +87,7 @@ interface Command {
 }
 
 const COMMANDS: Record<string, Command> = {
-	create: { run: createCommand, usage: createUsage },
+	create: { run: createCommand, usage: createUsage, allowedFlags: ['json'] },
 	'agent-init': { run: agentInitCommand, usage: agentInitUsage, allowedFlags: ['json'] },
 	'agent-view': {
 		run: agentViewCommand,

@@ -658,6 +658,51 @@ describe('applyOperation', () => {
 		expect(sheet.cells.get(2, 0)?.formulaInfo).toBeUndefined()
 	})
 
+	test('setCells detaches dynamic-array spill footprints with escaped anchor refs', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet("Bob's Budget")
+		sheet.cells.set(0, 0, {
+			value: numberValue(1),
+			formula: 'SEQUENCE(3)',
+			styleId: sid,
+			formulaInfo: { kind: 'dynamicArray', metadataIndex: 1, collapsed: false },
+		})
+		sheet.cells.set(1, 0, {
+			value: numberValue(2),
+			formula: null,
+			styleId: sid,
+			formulaInfo: {
+				kind: 'spill',
+				anchorRef: "'Bob''s Budget'!A1",
+				ref: 'A1:A3',
+				isAnchor: false,
+			},
+		})
+		sheet.cells.set(2, 0, {
+			value: numberValue(3),
+			formula: null,
+			styleId: sid,
+			formulaInfo: {
+				kind: 'spill',
+				anchorRef: "'Bob''s Budget'!A1",
+				ref: 'A1:A3',
+				isAnchor: false,
+			},
+		})
+
+		const result = applyOperation(wb, {
+			op: 'setCells',
+			sheet: "Bob's Budget",
+			updates: [{ ref: 'A1', value: 99 }],
+		})
+		expectOk(result)
+
+		expect(result.value.affectedCells).toEqual(['A1', 'A2', 'A3'])
+		expect(sheet.cells.get(0, 0)?.formulaInfo).toBeUndefined()
+		expect(sheet.cells.get(1, 0)?.formulaInfo).toBeUndefined()
+		expect(sheet.cells.get(2, 0)?.formulaInfo).toBeUndefined()
+	})
+
 	test('setCells detaches blocked-spill metadata when replacing a blocker', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

@@ -354,13 +354,20 @@ function materializeSpillFormulaGroup(
 ): Set<string> {
 	const affected = new Set<string>()
 	const dynamicAnchorRef =
-		binding.kind === 'dynamicArray' ? `${sheet.name}!${toA1(anchor)}` : undefined
+		binding.kind === 'dynamicArray'
+			? `${formatSheetNameForFormula(sheet.name)}!${toA1(anchor)}`
+			: undefined
 	for (const [row, col, cell] of sheet.cells.iterate()) {
 		if (!sameSpillFormulaGroup(binding, cell.formulaInfo, dynamicAnchorRef)) continue
 		sheet.cells.set(row, col, cellWithExisting(cell.value, null, cell.styleId ?? DEFAULT_SID))
 		affected.add(toA1({ row, col }))
 	}
 	return affected
+}
+
+function formatSheetNameForFormula(sheet: string): string {
+	if (/^[A-Za-z_][A-Za-z0-9_.]*$/.test(sheet)) return sheet
+	return `'${sheet.replace(/'/g, "''")}'`
 }
 
 function materializeDataTableFormulaGroupsForRefs(

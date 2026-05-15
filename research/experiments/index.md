@@ -63,6 +63,7 @@ Updated: 2026-05-15
 | [Release proof index refresh](runs/2026/2026-05-15-release-proof-index-refresh/log.md) | digest index rerun for top two proof artifacts, no attestation claim | product loop |
 | [Agent view index promotion gate](runs/2026/2026-05-15-agent-view-index-promotion-gate/log.md) | handoff only, hold out of release proof index | product/DX loop |
 | [Ranked research portfolio proof](runs/2026/2026-05-15-ranked-research-portfolio-proof/log.md) | portfolio ranked, top unknowns proved with formula refusal and viewport patch evidence | product loop, correctness loop, performance loop |
+| [Formula assist corpus proof](runs/2026/2026-05-15-formula-assist-corpus-proof/log.md) | folded in corpus-backed rejection-first proof harness, no rename surface | product/DX loop, correctness loop |
 | [Agent view omitted evidence recovery](runs/2026/2026-05-15-agent-view-omitted-evidence-recovery/log.md) | folded in recovery proof harness, locator metadata needed | product/DX loop |
 | [Agent view omitted locator metadata](runs/2026/2026-05-15-agent-view-omitted-locator-metadata/log.md) | folded in compact omitted-evidence locators | product/DX loop |
 | [Agent view formula pattern provenance](runs/2026/2026-05-15-agent-view-formula-pattern-provenance/log.md) | folded in formula-pattern example refs | product/DX loop |

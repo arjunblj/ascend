@@ -52,7 +52,45 @@ bunx biome check apps/cli/src/cli.test.ts apps/api/src/server.test.ts apps/mcp/s
 
 Commit: `be666996 test(sdk): prove formula rename refusals across surfaces`.
 
-Decision: Formula intelligence moves from "missing cross-surface refusal snapshot" to "needs latency/corpus proof before stronger release copy." Rename remains killed until workbook-context ownership exists.
+Decision: Formula intelligence moved from "missing cross-surface refusal snapshot" to "needs latency/corpus proof before stronger release copy." Rename remains killed until workbook-context ownership exists.
+
+### 1b. Formula Assist Corpus/Latency Proof
+
+Unknown: after cross-surface refusal snapshots, the claim still needed a corpus-backed proof that formula assist is fast and refuses unsafe targets over realistic formulas.
+
+Proof produced:
+
+- Added `fixtures/benchmarks/formula-assist-proof.ts`.
+- Added `fixtures/benchmarks/formula-assist-proof.test.ts`.
+- The harness discovers formulas from public POI/ClosedXML formula fixtures, samples 250 formulas by default for proof runs, and combines them with explicit rejection-first cases for LET shadowing, defined names, table names, table columns, external references, 3D references, spill references, and function tokens.
+
+Latest local proof:
+
+| Metric | Value |
+| --- | ---: |
+| Public formulas discovered | 1685 |
+| Sampled formulas | 250 |
+| Static edge cases | 10 |
+| Parse OK formulas | 260 |
+| Reference spans | 506 |
+| Binding roles | 19 |
+| Prepare-rename OK targets | 3 |
+| `no-symbol-at-cursor` refusals | 40 |
+| `workbook-context-required` refusals | 3 |
+| `reference-target-not-renameable` refusals | 214 |
+| Median assist latency | 0.0252 ms |
+| P95 assist latency | 0.0531 ms |
+| Max assist latency | 2.4206 ms |
+
+Validation:
+
+```bash
+bun test fixtures/benchmarks/formula-assist-proof.test.ts
+bun run fixtures/benchmarks/formula-assist-proof.ts --public-formula-limit 250
+bunx biome check fixtures/benchmarks/formula-assist-proof.ts fixtures/benchmarks/formula-assist-proof.test.ts
+```
+
+Decision: Formula language-service primitives are now claimable as corpus-backed, rejection-first primitives. They are still not a top release implementation handoff, and rename remains killed until a correctness-owned workbook-context symbol planner exists.
 
 ### 2. Retained Viewport Patch Product Proof
 
@@ -89,6 +127,6 @@ Decision: Product example is allowed for SDK retained patches plus API/MCP compa
 
 ## Next Proof Moves
 
-1. Formula latency/corpus proof: build or reuse a tracked harness that runs formula assist over long formulas and public formula corpus cases, reporting latency and refusal counts.
-2. Viewport product example: document one SDK patch success and one API/MCP invalidation recovery as a compact example without adding CLI `changedSince`.
+1. Safe-open release proof packaging: keep using existing surfaces and public fixtures; do not add new opener surfaces.
+2. Auditable package-part mutation proof packaging: keep using existing proof/journal surfaces; do not add mutation surfaces.
 3. Property-based journal laws: rank up only if generators cover real workbook features, not just scalar cells.

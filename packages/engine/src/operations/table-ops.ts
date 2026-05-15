@@ -105,6 +105,22 @@ export function handleAppendRows(
 	const located = resolveUniqueTable(workbook, op.table, 'appendRows')
 	if (!located.ok) return located
 	const { table, sheet } = located.value
+	if (!Array.isArray(op.rows)) {
+		return err(
+			ascendError('VALIDATION_ERROR', 'appendRows rows must be an array of row arrays', {
+				suggestedFix: 'Pass rows as an array, for example rows: [[1, 2, 3]].',
+			}),
+		)
+	}
+	for (let index = 0; index < op.rows.length; index++) {
+		if (!Array.isArray(op.rows[index])) {
+			return err(
+				ascendError('VALIDATION_ERROR', `appendRows row ${index} must be an array`, {
+					suggestedFix: 'Each appended row must be an array of cell values.',
+				}),
+			)
+		}
+	}
 	if (op.rows.length === 0) return ok(patch([], [sheet.name], false))
 
 	const width = table.columns.length

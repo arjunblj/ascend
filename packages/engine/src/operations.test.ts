@@ -8245,6 +8245,37 @@ describe('applyOperation', () => {
 		expect(sheet.cells.get(2, 0)).toBeUndefined()
 	})
 
+	test('appendRows rejects invalid row payloads without mutation', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: stringValue('Name'), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: stringValue('Value'), formula: null, styleId: sid })
+		applyOperation(wb, {
+			op: 'createTable',
+			sheet: 'Sheet1',
+			ref: 'A1:B1',
+			name: 'BalanceTable',
+			hasHeaders: true,
+		})
+		const cases: readonly Operation[] = [
+			{ op: 'appendRows', table: 'BalanceTable', rows: 'bad' as never },
+			{ op: 'appendRows', table: 'BalanceTable', rows: [123] as never },
+		]
+
+		for (const op of cases) {
+			const beforeTable = JSON.stringify(sheet.tables[0])
+			const beforeCells = JSON.stringify([sheet.cells.get(0, 0), sheet.cells.get(0, 1)])
+			const result = applyOperation(wb, op)
+			expectErr(result)
+			expect(result.error.code, JSON.stringify(op)).toBe('VALIDATION_ERROR')
+			expect(JSON.stringify(sheet.tables[0]), JSON.stringify(op)).toBe(beforeTable)
+			expect(
+				JSON.stringify([sheet.cells.get(0, 0), sheet.cells.get(0, 1)]),
+				JSON.stringify(op),
+			).toBe(beforeCells)
+		}
+	})
+
 	test('appendRows rejects expansion into another table range', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

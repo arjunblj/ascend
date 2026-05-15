@@ -2083,7 +2083,7 @@ describe('Ascend API server', () => {
 		})
 	})
 
-	test('write errors preserve structured journal build failures for agents', async () => {
+	test('write errors preserve structured unavailable journals for agents', async () => {
 		const wb = AscendWorkbook.create()
 		await wb.save(TEMP_FILE)
 
@@ -2101,15 +2101,15 @@ describe('Ascend API server', () => {
 			inverseOps: [],
 			issues: [
 				{
-					code: 'JOURNAL_BUILD_FAILED',
+					code: 'JOURNAL_UNAVAILABLE',
 					surface: 'package-parts',
-					reason: 'journal-build-failed',
+					reason: 'journal-unavailable',
 				},
 			],
 			undoPolicy: {
 				undoable: false,
 				exact: false,
-				reason: 'build-failed',
+				reason: 'unavailable',
 				riskLevel: 'high',
 			},
 		})

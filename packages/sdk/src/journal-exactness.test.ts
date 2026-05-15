@@ -648,6 +648,87 @@ describe('mutation journal exactness model', () => {
 		}
 	})
 
+	test('classifies invalid range-backed journals as unsupported values', () => {
+		const cases: readonly {
+			readonly op: Operation
+			readonly surface: string
+			readonly ref: string
+		}[] = [
+			{
+				op: { op: 'fillFormula', sheet: 'Sheet1', range: 'not a range', formula: '1' },
+				surface: 'formulas',
+				ref: 'Sheet1!not a range',
+			},
+			{
+				op: { op: 'clearRange', sheet: 'Sheet1', range: 'not a range', what: 'all' },
+				surface: 'cells',
+				ref: 'Sheet1!not a range',
+			},
+			{
+				op: { op: 'setNumberFormat', sheet: 'Sheet1', range: 'not a range', format: '0' },
+				surface: 'cells',
+				ref: 'Sheet1!not a range',
+			},
+			{
+				op: {
+					op: 'setStyle',
+					sheet: 'Sheet1',
+					range: 'not a range',
+					style: { font: { bold: true } },
+				},
+				surface: 'cells',
+				ref: 'Sheet1!not a range',
+			},
+			{
+				op: { op: 'sortRange', sheet: 'Sheet1', range: 'not a range', by: [{ col: 0 }] },
+				surface: 'cells',
+				ref: 'Sheet1!not a range',
+			},
+			{
+				op: { op: 'copyRange', sheet: 'Sheet1', source: 'not a range', target: 'A1' },
+				surface: 'cells',
+				ref: 'Sheet1!not a range',
+			},
+			{
+				op: { op: 'moveRange', sheet: 'Sheet1', source: 'A1:B2', target: 'not a ref' },
+				surface: 'cells',
+				ref: 'Sheet1!not a ref',
+			},
+			{
+				op: { op: 'mergeCells', sheet: 'Sheet1', range: 'not a range' },
+				surface: 'merged-cells',
+				ref: 'Sheet1!not a range',
+			},
+			{
+				op: { op: 'unmergeCells', sheet: 'Sheet1', range: 'not a range' },
+				surface: 'merged-cells',
+				ref: 'Sheet1!not a range',
+			},
+		]
+
+		for (const entry of cases) {
+			const wb = AscendWorkbook.create()
+			const journal = buildMutationJournal(wb.getWorkbookModel(), [entry.op])
+			const analysis = analyzeMutationJournalExactness(journal)
+			expect(journal.inverseOps, entry.op.op).toEqual([])
+			expect(analysis, entry.op.op).toMatchObject({
+				supported: true,
+				exact: false,
+				issueCount: 1,
+				surfaces: [entry.surface],
+				reasons: ['value-unsupported'],
+				hasMatrixViolation: false,
+			})
+			expect(analysis.issues[0], entry.op.op).toMatchObject({
+				code: 'UNSUPPORTED_VALUE',
+				surface: entry.surface,
+				reason: 'value-unsupported',
+				refs: [entry.ref],
+				allowedByMatrix: true,
+			})
+		}
+	})
+
 	test('classifies table selector journal preimage failures as table topology', () => {
 		const missingOps: readonly Operation[] = [
 			{ op: 'deleteTable', table: 'MissingTable' },

@@ -492,7 +492,7 @@ export const MUTATION_JOURNAL_EXACTNESS_MATRIX: readonly MutationJournalExactnes
 			'whole merge add/remove operations restore exactly',
 			'partial overlaps, duplicate metadata, and target collisions are lossy or unsupported',
 		],
-		lossReasons: ['merge-overlap', 'metadata-duplicate', 'metadata-collision'],
+		lossReasons: ['value-unsupported', 'merge-overlap', 'metadata-duplicate', 'metadata-collision'],
 		representativeOps: ['mergeCells', 'unmergeCells', 'copyRange', 'moveRange'],
 	},
 	{
@@ -2069,9 +2069,9 @@ function buildJournalEntry(
 			issues,
 		}
 	}
-	const metadataRangeIssue = journalOperationMetadataRangeValueIssue(op)
-	if (metadataRangeIssue) {
-		const issues = [structureMutationJournalIssue(metadataRangeIssue)]
+	const rangeIssue = journalOperationRangeValueIssue(op)
+	if (rangeIssue) {
+		const issues = [structureMutationJournalIssue(rangeIssue)]
 		return {
 			opIndex,
 			op,
@@ -2221,11 +2221,12 @@ function journalOperationRequiredTargetSheet(op: Operation): string | null {
 	}
 }
 
-function journalOperationMetadataRangeValueIssue(op: Operation): MutationJournalIssue | null {
-	const range = journalOperationMetadataRange(op)
+function journalOperationRangeValueIssue(op: Operation): MutationJournalIssue | null {
+	const range = journalOperationRange(op)
 	if (!range) return null
 	try {
-		parseRange(range.range)
+		if (range.kind === 'a1') parseA1(range.range)
+		else parseRange(range.range)
 		return null
 	} catch {
 		return {
@@ -2238,12 +2239,36 @@ function journalOperationMetadataRangeValueIssue(op: Operation): MutationJournal
 	}
 }
 
-function journalOperationMetadataRange(op: Operation): {
+function journalOperationRange(op: Operation): {
+	readonly kind?: 'range' | 'a1'
 	readonly surface: MutationJournalSurface
 	readonly sheet: string
 	readonly range: string
 } | null {
 	switch (op.op) {
+		case 'fillFormula':
+			return { surface: 'formulas', sheet: op.sheet, range: op.range }
+		case 'clearRange':
+		case 'setNumberFormat':
+		case 'setStyle':
+		case 'sortRange':
+			return { surface: 'cells', sheet: op.sheet, range: op.range }
+		case 'copyRange':
+		case 'moveRange':
+			try {
+				parseRange(op.source)
+			} catch {
+				return { surface: 'cells', sheet: op.sheet, range: op.source }
+			}
+			return {
+				kind: 'a1',
+				surface: 'cells',
+				sheet: op.targetSheet ?? op.sheet,
+				range: op.target,
+			}
+		case 'mergeCells':
+		case 'unmergeCells':
+			return { surface: 'merged-cells', sheet: op.sheet, range: op.range }
 		case 'setDataValidation':
 		case 'deleteDataValidation':
 			return { surface: 'data-validations', sheet: op.sheet, range: op.range }

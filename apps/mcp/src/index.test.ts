@@ -7520,13 +7520,13 @@ describe('MCP server', () => {
 			inverseOps: [],
 			issues: [
 				{
-					code: 'JOURNAL_BUILD_FAILED',
+					code: 'JOURNAL_UNAVAILABLE',
 					surface: 'package-parts',
-					reason: 'journal-build-failed',
+					reason: 'journal-unavailable',
 				},
 			],
 			undoPolicy: {
-				reason: 'build-failed',
+				reason: 'unavailable',
 				riskLevel: 'high',
 			},
 		})

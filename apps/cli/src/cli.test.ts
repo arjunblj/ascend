@@ -583,7 +583,7 @@ describe('ascend cli', () => {
 		expect(committedParsed.data.apply.journalSummary).toEqual(expectedJournal)
 	})
 
-	test('plan JSON preserves structured journal build failures for agents', async () => {
+	test('plan JSON preserves structured unavailable journals for agents', async () => {
 		const wb = AscendWorkbook.create()
 		await wb.save(`${import.meta.dir}/${TEST_FILE}`)
 		await Bun.write(
@@ -604,15 +604,15 @@ describe('ascend cli', () => {
 			inverseOps: [],
 			issues: [
 				{
-					code: 'JOURNAL_BUILD_FAILED',
+					code: 'JOURNAL_UNAVAILABLE',
 					surface: 'package-parts',
-					reason: 'journal-build-failed',
+					reason: 'journal-unavailable',
 				},
 			],
 			undoPolicy: {
 				undoable: false,
 				exact: false,
-				reason: 'build-failed',
+				reason: 'unavailable',
 				riskLevel: 'high',
 			},
 		})

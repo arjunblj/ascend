@@ -2973,7 +2973,7 @@ describe('interactive client contract', () => {
 		session.close()
 	})
 
-	test('journal requests return structured build failures instead of missing journals', () => {
+	test('journal requests on invalid range applies return unavailable rollback journals', () => {
 		const wb = AscendWorkbook.create()
 		const ops = [{ op: 'clearRange' as const, sheet: 'Sheet1', range: 'A1:', what: 'all' as const }]
 
@@ -2989,17 +2989,18 @@ describe('interactive client contract', () => {
 			exact: false,
 			issues: [
 				{
-					code: 'JOURNAL_BUILD_FAILED',
-					message: 'Mutation journal build failed: Invalid range reference: A1:',
+					code: 'JOURNAL_UNAVAILABLE',
+					message:
+						'Mutation journal is unavailable because the requested operations did not apply successfully. Fix the apply errors before using rollback journal.',
 					surface: 'package-parts',
-					reason: 'journal-build-failed',
+					reason: 'journal-unavailable',
 				},
 			],
 			undoPolicy: {
 				undoable: false,
 				exact: false,
-				reason: 'build-failed',
-				userMessage: 'Undo is unavailable because Ascend could not build a journal for this edit.',
+				reason: 'unavailable',
+				userMessage: 'Undo is unavailable for this edit.',
 				riskLevel: 'high',
 			},
 		})

@@ -5007,6 +5007,79 @@ describe('interactive client contract', () => {
 		expect(journalComparableState(wb)).toEqual(before)
 	})
 
+	test('moveRange journals restore standard conditional format formula rewrites exactly', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 1 },
+					{ ref: 'D1', value: 4 },
+				],
+			},
+			{
+				op: 'setConditionalFormat',
+				sheet: 'Sheet1',
+				range: 'G1:G1',
+				rule: { type: 'expression', formula: 'A1>0', priority: 1 },
+			},
+		])
+		const before = journalComparableState(wb)
+
+		const changed = wb.apply(
+			[{ op: 'moveRange', sheet: 'Sheet1', source: 'A1', target: 'D1', mode: 'all' }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(true)
+		expect(changed.journal?.issues).toEqual([])
+		expect(
+			wb.getWorkbookModel().getSheet('Sheet1')?.conditionalFormats[0]?.rules[0]?.formulas,
+		).toEqual(['D1>0'])
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(journalComparableState(wb)).toEqual(before)
+	})
+
+	test('moveRange journals mark duplicate conditional format formula rewrites lossy', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 1 },
+					{ ref: 'D1', value: 4 },
+				],
+			},
+		])
+		const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+		if (!sheet) throw new Error('missing sheet')
+		sheet.conditionalFormats.push(
+			{ sqref: 'G1:G1', rules: [{ type: 'expression', formulas: ['A1>0'] }] },
+			{ sqref: 'G1:G1', rules: [{ type: 'expression', formulas: ['A1<10'] }] },
+		)
+
+		const changed = wb.apply(
+			[{ op: 'moveRange', sheet: 'Sheet1', source: 'A1', target: 'D1', mode: 'all' }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(false)
+		expect(changed.journal?.issues).toContainEqual({
+			code: 'LOSSY_INVERSE',
+			message:
+				'moveRange formula reference rewrites for Sheet1!A1 cannot be fully restored with public operations',
+			refs: ['Sheet1!conditionalFormat:G1:G1:0:0:0', 'Sheet1!conditionalFormat:G1:G1:1:0:0'],
+		})
+	})
+
 	test('moveRange journals mark x14 metadata formula rewrites lossy', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

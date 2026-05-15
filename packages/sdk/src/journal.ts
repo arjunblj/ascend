@@ -5370,6 +5370,7 @@ function moveRangeFormulaSurfaceRestoration(
 	const targetSheetName = op.targetSheet ?? op.sheet
 	const cellRefsBySheet = new Map<string, string[]>()
 	const dataValidationPreimages = new Map<string, MutationJournalDataValidationPreimage>()
+	const conditionalFormatPreimages = new Map<string, MutationJournalConditionalFormatPreimage>()
 	const metadataRefs: string[] = []
 	for (const sheet of workbook.sheets) {
 		for (const [row, col, cell] of sheet.cells.iterate()) {
@@ -5390,6 +5391,14 @@ function moveRangeFormulaSurfaceRestoration(
 		}
 		collectMovedRangeDataValidationFormulaRestorations(
 			dataValidationPreimages,
+			metadataRefs,
+			workbook,
+			sheet,
+			sourceSheetName,
+			sourceRange,
+		)
+		collectMovedRangeConditionalFormatFormulaRestorations(
+			conditionalFormatPreimages,
 			metadataRefs,
 			workbook,
 			sheet,
@@ -5424,6 +5433,9 @@ function moveRangeFormulaSurfaceRestoration(
 	const dataValidationRestorations = [...dataValidationPreimages.values()].map((preimage) =>
 		restoreDataValidationOps(preimage),
 	)
+	const conditionalFormatRestorations = [...conditionalFormatPreimages.values()].map((preimage) =>
+		restoreConditionalFormatOps(preimage.sheet, preimage.formats),
+	)
 	const metadataIssues: readonly MutationJournalIssue[] =
 		metadataRefs.length > 0
 			? [
@@ -5445,6 +5457,10 @@ function moveRangeFormulaSurfaceRestoration(
 					},
 				]
 			: []),
+		...conditionalFormatPreimages.values().map((conditionalFormats) => ({
+			kind: 'conditional-formats' as const,
+			conditionalFormats,
+		})),
 	]
 	if (preimages.length === 0 && metadataIssues.length === 0) return EMPTY_METADATA_RESTORATION
 	return {
@@ -5452,12 +5468,14 @@ function moveRangeFormulaSurfaceRestoration(
 			...cellInverseOps,
 			...definedNameRestorations.flatMap((restoration) => restoration.inverseOps),
 			...dataValidationRestorations.flatMap((restoration) => restoration.inverseOps),
+			...conditionalFormatRestorations.flatMap((restoration) => restoration.inverseOps),
 		],
 		preimages,
 		issues: [
 			...cellIssues,
 			...definedNameRestorations.flatMap((restoration) => restoration.issues),
 			...dataValidationRestorations.flatMap((restoration) => restoration.issues),
+			...conditionalFormatRestorations.flatMap((restoration) => restoration.issues),
 			...metadataIssues,
 		],
 	}
@@ -5532,35 +5550,16 @@ function collectMovedRangeDataValidationFormulaRestorations(
 	}
 }
 
-function pushMovedRangeMetadataFormulaRefs(
-	refs: string[],
+function collectMovedRangeConditionalFormatFormulaRestorations(
+	preimages: Map<string, MutationJournalConditionalFormatPreimage>,
+	lossyRefs: string[],
 	workbook: Workbook,
 	sheet: Sheet,
 	sourceSheetName: string,
 	sourceRange: RangeRef,
 ): void {
-	for (const validation of sheet.x14DataValidations) {
-		if (validation.deleted) continue
-		pushMovedRangeFormulaRef(
-			refs,
-			workbook,
-			validation.formula1,
-			sheet.name,
-			sourceSheetName,
-			sourceRange,
-			`${sheet.name}!x14Validation:${validation.sqref}:formula1`,
-		)
-		pushMovedRangeFormulaRef(
-			refs,
-			workbook,
-			validation.formula2,
-			sheet.name,
-			sourceSheetName,
-			sourceRange,
-			`${sheet.name}!x14Validation:${validation.sqref}:formula2`,
-		)
-	}
 	sheet.conditionalFormats.forEach((format, formatIndex) => {
+		const refs: string[] = []
 		format.rules.forEach((rule, ruleIndex) => {
 			rule.formulas.forEach((formula, formulaIndex) => {
 				pushMovedRangeFormulaRef(
@@ -5601,7 +5600,46 @@ function pushMovedRangeMetadataFormulaRefs(
 				`${sheet.name}!conditionalFormat:${format.sqref}:${formatIndex}:${ruleIndex}:iconSet.cfvo`,
 			)
 		})
+		if (refs.length === 0) return
+		if (conditionalFormatSqrefCount(sheet, format.sqref) !== 1) {
+			lossyRefs.push(...refs)
+			return
+		}
+		preimages.set(
+			`${sheet.name}!${format.sqref}`,
+			conditionalFormatPreimage(workbook, sheet.name, format.sqref),
+		)
 	})
+}
+
+function pushMovedRangeMetadataFormulaRefs(
+	refs: string[],
+	workbook: Workbook,
+	sheet: Sheet,
+	sourceSheetName: string,
+	sourceRange: RangeRef,
+): void {
+	for (const validation of sheet.x14DataValidations) {
+		if (validation.deleted) continue
+		pushMovedRangeFormulaRef(
+			refs,
+			workbook,
+			validation.formula1,
+			sheet.name,
+			sourceSheetName,
+			sourceRange,
+			`${sheet.name}!x14Validation:${validation.sqref}:formula1`,
+		)
+		pushMovedRangeFormulaRef(
+			refs,
+			workbook,
+			validation.formula2,
+			sheet.name,
+			sourceSheetName,
+			sourceRange,
+			`${sheet.name}!x14Validation:${validation.sqref}:formula2`,
+		)
+	}
 	sheet.x14ConditionalFormats.forEach((format) => {
 		if (format.deleted) return
 		format.formulas.forEach((formula, formulaIndex) => {

@@ -8917,6 +8917,33 @@ describe('applyOperation', () => {
 		])
 	})
 
+	test('resizeTable materializes imported shared formulas and reports detached cells', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: stringValue('Qty'), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: stringValue('Amount'), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: numberValue(20), formula: null, styleId: sid })
+		applyOperation(wb, {
+			op: 'createTable',
+			sheet: 'Sheet1',
+			ref: 'A1:B2',
+			name: 'Sales',
+			hasHeaders: true,
+		})
+		addSharedFormulaGroup(sheet, 0, 3)
+
+		const result = applyOperation(wb, { op: 'resizeTable', table: 'Sales', ref: 'A1:C2' })
+		expectOk(result)
+
+		expect(result.value.affectedCells).toEqual(['D1', 'D2'])
+		expect(sheet.cells.get(0, 3)?.formula).toBe('B1*2')
+		expect(sheet.cells.get(1, 3)?.formula).toBe('B2*2')
+		expect(sheet.cells.get(0, 3)?.formulaInfo).toBeUndefined()
+		expect(sheet.cells.get(1, 3)?.formulaInfo).toBeUndefined()
+		expectCachedFormulaAnalysisMatchesFullRecompute(wb)
+	})
+
 	test('deleteTable rejects structured references that would outlive the table', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')
@@ -8943,6 +8970,32 @@ describe('applyOperation', () => {
 		expect(result.error.suggestedFix).toContain('Rewrite or remove structured references')
 		expect(sheet.tables).toHaveLength(1)
 		expect(sheet.cells.get(5, 0)?.formula).toBe('COUNTA(Sales[Rep])')
+	})
+
+	test('deleteTable materializes imported shared formulas and reports detached cells', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: stringValue('Qty'), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(2), formula: null, styleId: sid })
+		applyOperation(wb, {
+			op: 'createTable',
+			sheet: 'Sheet1',
+			ref: 'A1:A2',
+			name: 'Sales',
+			hasHeaders: true,
+		})
+		addSharedFormulaGroup(sheet, 0, 3)
+
+		const result = applyOperation(wb, { op: 'deleteTable', table: 'Sales' })
+		expectOk(result)
+
+		expect(result.value.affectedCells).toEqual(['D1', 'D2'])
+		expect(sheet.tables).toEqual([])
+		expect(sheet.cells.get(0, 3)?.formula).toBe('B1*2')
+		expect(sheet.cells.get(1, 3)?.formula).toBe('B2*2')
+		expect(sheet.cells.get(0, 3)?.formulaInfo).toBeUndefined()
+		expect(sheet.cells.get(1, 3)?.formulaInfo).toBeUndefined()
+		expectCachedFormulaAnalysisMatchesFullRecompute(wb)
 	})
 
 	test('deleteTable rejects defined names and worksheet metadata structured references', () => {

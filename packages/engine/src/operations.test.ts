@@ -45,6 +45,44 @@ function setup() {
 	return wb
 }
 
+function setupFormulaAnalysisWorkbook() {
+	const wb = createWorkbook()
+	const sheet = wb.addSheet('Sheet1')
+	sheet.cells.set(0, 0, { value: numberValue(2), formula: 'B1*2', styleId: sid })
+	sheet.cells.set(0, 1, cell(numberValue(1)))
+	sheet.cells.set(0, 2, { value: numberValue(3), formula: 'A1+B1', styleId: sid })
+	sheet.cells.set(1, 0, { value: numberValue(3), formula: 'A1+1', styleId: sid })
+	sheet.cells.set(1, 1, cell(numberValue(4)))
+	sheet.cells.set(1, 2, { value: numberValue(7), formula: 'SUM(A1:B2)', styleId: sid })
+	return wb
+}
+
+function formulaAnalysisSnapshot(wb: Workbook) {
+	const analysis = analyzeWorkbook(wb)
+	return {
+		formulas: [...analysis.formulas.entries()]
+			.map(([key, formula]) => ({
+				key,
+				sheetName: formula.sheetName,
+				row: formula.row,
+				col: formula.col,
+				formula: formula.formula,
+				refs: formula.refs,
+				deps: [...formula.deps].sort(),
+				rangeDeps: formula.rangeDeps,
+				parseError: formula.parseError,
+			}))
+			.sort((a, b) => String(a.key).localeCompare(String(b.key))),
+		sharedFormulaGroups: [...analysis.sharedFormulaGroups.entries()]
+			.map(([key, members]) => ({ key, members: [...members].sort() }))
+			.sort((a, b) => a.key.localeCompare(b.key)),
+	}
+}
+
+function expectCachedFormulaAnalysisMatchesFullRecompute(wb: Workbook) {
+	expect(formulaAnalysisSnapshot(wb)).toEqual(formulaAnalysisSnapshot(wb.clone()))
+}
+
 function addSharedFormulaGroup(sheet: Sheet, startRow = 0, col = 0) {
 	const masterRef = `${String.fromCharCode(65 + col)}${startRow + 1}`
 	sheet.cells.set(startRow, col, {
@@ -1475,6 +1513,51 @@ describe('applyOperation', () => {
 		expect(analysis.formulas.get(cellKey(0, 0, 0))).toBeUndefined()
 		expect(analysis.formulas.get(cellKey(0, 1, 0))?.formula).toBe('B2*3')
 		expect(analysis.formulas.get(cellKey(0, 2, 0))).toBeUndefined()
+	})
+
+	test('incremental formula analysis patches match full recomputation for representative edits', () => {
+		const cases: readonly {
+			readonly name: string
+			readonly op: Operation
+		}[] = [
+			{
+				name: 'setFormula',
+				op: { op: 'setFormula', sheet: 'Sheet1', ref: 'C1', formula: 'B1*5' },
+			},
+			{
+				name: 'fillFormula',
+				op: { op: 'fillFormula', sheet: 'Sheet1', range: 'C1:C2', formula: 'A1+B1' },
+			},
+			{
+				name: 'same-sheet copyRange',
+				op: { op: 'copyRange', sheet: 'Sheet1', source: 'A1:C1', target: 'A3' },
+			},
+			{
+				name: 'insertRows',
+				op: { op: 'insertRows', sheet: 'Sheet1', at: 1, count: 1 },
+			},
+			{
+				name: 'deleteRows',
+				op: { op: 'deleteRows', sheet: 'Sheet1', at: 1, count: 1 },
+			},
+			{
+				name: 'insertCols',
+				op: { op: 'insertCols', sheet: 'Sheet1', at: 1, count: 1 },
+			},
+			{
+				name: 'deleteCols',
+				op: { op: 'deleteCols', sheet: 'Sheet1', at: 1, count: 1 },
+			},
+		]
+
+		for (const entry of cases) {
+			const wb = setupFormulaAnalysisWorkbook()
+			expectCachedFormulaAnalysisMatchesFullRecompute(wb)
+
+			const result = applyOperation(wb, entry.op)
+			expectOk(result)
+			expectCachedFormulaAnalysisMatchesFullRecompute(wb)
+		}
 	})
 
 	test('cell edits reject partial legacy array formula ranges', () => {

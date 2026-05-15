@@ -30,6 +30,7 @@ interface Args {
 	readonly repeat: number
 	readonly warmup: number
 	readonly only: FirstWindowCase
+	readonly gcBetweenSamples: boolean
 	readonly json: boolean
 }
 
@@ -258,6 +259,7 @@ function parseArgs(): Args {
 		repeat: positiveInt(readOption(process.argv, '--repeat'), 5),
 		warmup: nonNegativeInt(readOption(process.argv, '--warmup'), 1),
 		only: only as FirstWindowCase,
+		gcBetweenSamples: !hasFlag(process.argv, '--no-gc-between-samples'),
 		json: hasFlag(process.argv, '--json'),
 	}
 }
@@ -285,6 +287,7 @@ async function time<T>(fn: () => Promise<T>): Promise<{ readonly ms: number; rea
 }
 
 function runGc(): void {
+	if (hasFlag(process.argv, '--no-gc-between-samples')) return
 	;(Bun as unknown as { gc?: (force?: boolean) => void }).gc?.(true)
 }
 

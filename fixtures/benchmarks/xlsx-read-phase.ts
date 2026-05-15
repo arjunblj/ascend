@@ -505,10 +505,10 @@ function assertDenseWorkbookOrderedValues(workbook: Workbook, input: Competitive
 }
 
 function readAgentWindow(workbook: Workbook, input: CompetitiveDataSet): number {
-	const sheet = workbook.getSheet('Data')
-	if (!sheet) throw new Error('Missing Data sheet')
+	const sheet = workbook.getSheet('Data') ?? workbook.sheets[0]
+	if (!sheet) throw new Error('Missing worksheet for agent window')
 	const handle = new SheetHandle(
-		'Data',
+		sheet.name,
 		() => sheet,
 		(_row, _col, cell) => cell.formula,
 		(_row, _col, cell) => {
@@ -531,8 +531,8 @@ function readAgentWindow(workbook: Workbook, input: CompetitiveDataSet): number 
 				richSheetMetadataHydrated: true,
 				hasAllSheets: true,
 				partialReasons: [],
-				sourceSheets: ['Data'],
-				loadedSheets: ['Data'],
+				sourceSheets: [sheet.name],
+				loadedSheets: [sheet.name],
 			},
 		}),
 	)

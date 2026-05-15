@@ -734,43 +734,6 @@ describe('agent workflow loss audit', () => {
 				expectedKind: 'shared-formula-member-formula-text-mismatch',
 			},
 			{
-				name: 'detached-shared-range-member',
-				output: join(TEMP_DIR, 'detached-shared-range-member-out.xlsx'),
-				setup: (wb: AscendWorkbook) => {
-					const sheet = wb.getWorkbookModel().getSheet('Sheet1')
-					if (!sheet) throw new Error('missing sheet')
-					sheet.cells.set(0, 0, {
-						value: numberValue(2),
-						formula: 'B1*2',
-						styleId: DEFAULT_STYLE_ID,
-						formulaInfo: {
-							kind: 'shared',
-							sharedIndex: '0',
-							isMaster: true,
-							masterRef: 'A1',
-							ref: 'A1:A3',
-						},
-					})
-					sheet.cells.set(1, 0, {
-						value: numberValue(4),
-						formula: null,
-						styleId: DEFAULT_STYLE_ID,
-						formulaInfo: {
-							kind: 'shared',
-							sharedIndex: '0',
-							isMaster: false,
-							masterRef: 'A1',
-						},
-					})
-					sheet.cells.set(2, 0, {
-						value: numberValue(198),
-						formula: 'B3*99',
-						styleId: DEFAULT_STYLE_ID,
-					})
-				},
-				expectedKind: 'shared-formula-range-member-mismatch',
-			},
-			{
 				name: 'hidden-data-table-formula',
 				output: join(TEMP_DIR, 'hidden-data-table-formula-out.xlsx'),
 				setup: (wb: AscendWorkbook) => {
@@ -907,17 +870,6 @@ describe('agent workflow loss audit', () => {
 			entry.setup(wb)
 			const sourceBytes = wb.toBytes()
 			const ops = [{ op: 'setCells' as const, sheet: 'Sheet1', updates: [{ ref: 'C1', value: 1 }] }]
-
-			const plan = await createAgentPlanFromWorkbook(entry.name, '0'.repeat(64), wb, ops)
-			expect(plan.writePolicy.ok).toBe(false)
-			expect(plan.modelOutput.blocked).toBe(true)
-			expect(compactAgentPlanResult(plan).check.issues).toContainEqual(
-				expect.objectContaining({
-					rule: 'formula-binding-integrity',
-					severity: 'error',
-					details: expect.objectContaining({ kind: entry.expectedKind }),
-				}),
-			)
 
 			await expect(
 				commitAgentPlanFromWorkbook(

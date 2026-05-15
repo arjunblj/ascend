@@ -96,6 +96,8 @@ describe('release proof evidence index', () => {
 			ownerLoop: 'product',
 			priority: 'claim-evidence',
 			nextStepKind: 'owner-decision-or-fixture-replacement',
+			acceptanceEvidence: expect.stringContaining('accepts disclosed generated'),
+			forbiddenShortcut: expect.stringContaining('Do not hide generated fixture provenance'),
 		})
 		expect(
 			index.readiness.nextOwnerActions.find(
@@ -103,6 +105,8 @@ describe('release proof evidence index', () => {
 			),
 		).toMatchObject({
 			nextStepKind: 'validation-run',
+			acceptanceEvidence: expect.stringContaining('tracked-clean release-environment'),
+			forbiddenShortcut: expect.stringContaining('private-corpus'),
 		})
 		expect(
 			index.readiness.nextOwnerActions.find(
@@ -110,12 +114,16 @@ describe('release proof evidence index', () => {
 			),
 		).toMatchObject({
 			nextStepKind: 'owner-decision-or-harness-expansion',
+			acceptanceEvidence: expect.stringContaining('one representative dirty-sheet streaming proof'),
+			forbiddenShortcut: expect.stringContaining('full streaming parity'),
 		})
 		expect(index.readiness.nextOwnerActions.at(-1)).toMatchObject({
 			rank: 60,
 			requirementId: 'compact-report-publication-policy',
 			priority: 'publication-policy',
 			nextStepKind: 'publication-policy',
+			acceptanceEvidence: expect.stringContaining('artifact storage path'),
+			forbiddenShortcut: expect.stringContaining('Do not index or publish compact report digests'),
 		})
 		expect(index.readiness.implementationHandoffs).toEqual([
 			expect.objectContaining({
@@ -317,6 +325,17 @@ describe('release proof evidence index', () => {
 			missingRequirementCount: 9,
 			boundary: expect.stringContaining('not a release artifact bundle'),
 		})
+		expect(handoff.nextOwnerActions[0]).toMatchObject({
+			requirementId: 'edge-fixture-policy',
+			acceptanceEvidence: expect.stringContaining('accepts disclosed generated'),
+			forbiddenShortcut: expect.stringContaining('Do not hide generated fixture provenance'),
+		})
+		expect(
+			handoff.nextOwnerActions.find((action) => action.requirementId === 'provenance-boundary'),
+		).toMatchObject({
+			acceptanceEvidence: expect.stringContaining('SLSA'),
+			forbiddenShortcut: expect.stringContaining('signed provenance'),
+		})
 		expect(handoff.implementationHandoffs.map((entry) => entry.artifact)).toEqual([
 			'safe-open-proof',
 			'package-action-proof',
@@ -334,6 +353,7 @@ describe('release proof evidence index', () => {
 			'practical-latency-contracts',
 		])
 		expect(JSON.stringify(handoff)).not.toContain('"artifacts"')
+		expect(JSON.stringify(handoff)).toContain('"nextOwnerActions"')
 	})
 
 	test('renders honest non-attestation boundaries', async () => {
@@ -357,13 +377,17 @@ describe('release proof evidence index', () => {
 			'Missing by artifact: safe-open-proof=public-edge-fixtures,release-latency-run,publication-boundary',
 		)
 		expect(markdown).toContain('Next owner actions: 10:package-action-proof/edge-fixture-policy')
+		expect(markdown).toContain('accept=Product accepts disclosed generated')
+		expect(markdown).toContain('forbid=Do not hide generated fixture provenance')
+		expect(markdown).toContain('tracked-clean release-environment')
+		expect(markdown).toContain('Do not call local digests signed provenance')
 		expect(markdown).toContain('Implementation handoffs: 1:safe-open-proof')
 		expect(markdown).toContain('promotion=false;blockers=public-edge-fixtures')
 		expect(markdown).toContain('kill=Do not publish headline wording')
 		expect(markdown).toContain('kill=Do not publish stronger wording')
 		expect(markdown).toContain('2:package-action-proof')
 		expect(markdown).toContain(
-			'60:safe-open-proof/compact-report-publication-policy(release,publication-policy,publication-policy)',
+			'60:safe-open-proof/compact-report-publication-policy(release,publication-policy,publication-policy;',
 		)
 		expect(markdown).toContain('owner-decision-or-fixture-replacement')
 		expect(markdown).toContain('owner-decision-or-harness-expansion')

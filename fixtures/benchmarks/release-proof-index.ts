@@ -97,6 +97,7 @@ export interface ReleaseProofOwnerHandoffIndex {
 	readonly headlineClaimsAllowed: boolean
 	readonly implementationSurfacePromotionAllowed: boolean
 	readonly missingRequirementCount: number
+	readonly nextOwnerActions: readonly ReleaseProofNextOwnerAction[]
 	readonly implementationHandoffs: readonly ReleaseProofImplementationHandoff[]
 	readonly deferredClaims: readonly ReleaseProofDeferredClaim[]
 	readonly excludedEvidence: readonly ReleaseProofIndexExcludedEvidence[]
@@ -131,6 +132,8 @@ export interface ReleaseProofNextOwnerAction {
 		| 'owner-decision-or-harness-expansion'
 		| 'publication-policy'
 	readonly rationale: string
+	readonly acceptanceEvidence: string
+	readonly forbiddenShortcut: string
 }
 
 export interface ReleaseProofImplementationHandoff {
@@ -248,6 +251,7 @@ export function releaseProofOwnerHandoffIndex(
 		headlineClaimsAllowed: result.readiness.headlineClaimsAllowed,
 		implementationSurfacePromotionAllowed: result.readiness.implementationSurfacePromotionAllowed,
 		missingRequirementCount: result.readiness.missingRequirementCount,
+		nextOwnerActions: result.readiness.nextOwnerActions,
 		implementationHandoffs: result.readiness.implementationHandoffs,
 		deferredClaims: result.deferredClaims,
 		excludedEvidence: result.excludedEvidence,
@@ -714,6 +718,12 @@ function rankMissingRequirement(input: {
 				nextStepKind: 'owner-decision-or-fixture-replacement',
 				rationale:
 					'Fixture disclosure or replacement decides whether the proof evidence can support release wording without private or hidden generated inputs.',
+				acceptanceEvidence:
+					artifact === 'safe-open-proof'
+						? 'Product accepts disclosed generated signed/unknown structural packages for guarded topology proof, or replaces them with approved public binary fixtures.'
+						: 'Product accepts disclosed generated docProps/signature/unknown structural packages for guarded package-action proof, or replaces them with approved public binary fixtures.',
+				forbiddenShortcut:
+					'Do not hide generated fixture provenance, vendor license-unclear binaries, or imply real-world trust behavior from structural package topology alone.',
 			}
 		case 'unsupported-feature-boundary':
 			return {
@@ -725,6 +735,10 @@ function rankMissingRequirement(input: {
 				nextStepKind: 'owner-boundary-approval',
 				rationale:
 					'Correctness must approve unsupported-feature boundaries before package-action wording can stay honest.',
+				acceptanceEvidence:
+					'Correctness approves allowed/forbidden wording for signatures, calc chains, chart/drawing sidecars, macros/ActiveX, unknown parts, and streaming scope.',
+				forbiddenShortcut:
+					'Do not describe chart XML as byte-passthrough, signatures as preserved or verified, cached formulas as Excel-fresh, or unknown parts as understood.',
 			}
 		case 'release-latency-run':
 			return {
@@ -736,6 +750,10 @@ function rankMissingRequirement(input: {
 				nextStepKind: 'validation-run',
 				rationale:
 					'Performance evidence is needed before any release wording implies a latency threshold or speed claim.',
+				acceptanceEvidence:
+					'Performance reruns tracked-clean release-environment open-plan evidence over standardized public inputs and approves non-threshold wording.',
+				forbiddenShortcut:
+					'Do not use dirty-worktree, private-corpus, one-off local timing, or machine-specific ratios as release performance claims.',
 			}
 		case 'streaming-matrix-boundary':
 			return {
@@ -747,6 +765,10 @@ function rankMissingRequirement(input: {
 				nextStepKind: 'owner-decision-or-harness-expansion',
 				rationale:
 					'Streaming wording must stay limited to one representative proof unless a broader matrix is approved.',
+				acceptanceEvidence:
+					'Performance accepts one representative dirty-sheet streaming proof for narrow wording, or expands the matrix to add/drop/error and public macro/chart cases.',
+				forbiddenShortcut:
+					'Do not call one representative streaming case full streaming parity or imply streaming coverage for every package-action scenario.',
 			}
 		case 'publication-boundary':
 		case 'provenance-boundary':
@@ -759,6 +781,12 @@ function rankMissingRequirement(input: {
 				nextStepKind: 'publication-policy',
 				rationale:
 					'Release wording must avoid trust, active-content safety, signed provenance, and attestation implications.',
+				acceptanceEvidence:
+					artifact === 'safe-open-proof'
+						? 'Release approves safe-open boundary language that excludes malware scanning, sandboxing, file trust, active-content safety, signed provenance, and malformed-package recovery.'
+						: 'Release approves local package-action proof wording below SLSA, in-toto, Sigstore, GitHub artifact attestation, and signed-provenance thresholds.',
+				forbiddenShortcut:
+					'Do not call local digests signed provenance, tamper-evident storage, attestation, malware safety, or active-content trust.',
 			}
 		case 'compact-report-publication-policy':
 			return {
@@ -770,6 +798,10 @@ function rankMissingRequirement(input: {
 				nextStepKind: 'publication-policy',
 				rationale:
 					'Compact report storage and canonicalization are needed before digest publication, but not before using generated local proof reports.',
+				acceptanceEvidence:
+					'Release defines artifact storage path, retention/privacy filtering, canonicalization subject, and verification expectations for compact reports.',
+				forbiddenShortcut:
+					'Do not index or publish compact report digests before storage, privacy, canonicalization, and verification policy exists.',
 			}
 		default:
 			return {
@@ -780,6 +812,9 @@ function rankMissingRequirement(input: {
 				priority: 'publication-policy',
 				nextStepKind: 'publication-policy',
 				rationale: 'Unclassified missing release-readiness requirement.',
+				acceptanceEvidence:
+					'Owner supplies explicit acceptance evidence or replaces this requirement with a classified release-readiness gate.',
+				forbiddenShortcut: 'Do not treat an unclassified missing requirement as satisfied.',
 			}
 	}
 }
@@ -802,7 +837,7 @@ function formatNextOwnerActions(actions: readonly ReleaseProofNextOwnerAction[])
 	return actions
 		.map(
 			(action) =>
-				`${action.rank}:${action.artifact}/${action.requirementId}(${action.ownerLoop},${action.priority},${action.nextStepKind})`,
+				`${action.rank}:${action.artifact}/${action.requirementId}(${action.ownerLoop},${action.priority},${action.nextStepKind};accept=${action.acceptanceEvidence};forbid=${action.forbiddenShortcut})`,
 		)
 		.join('; ')
 }

@@ -18,6 +18,8 @@ The portfolio ranking still holds after the current proof run. The top two imple
 | Auditable package-part mutation | 8 cases: 3 public fixtures, 2 generated workbooks, 3 generated edge packages; action totals `passthrough=32`, `regenerate=39`, `add=3`, `drop=3`, `error=1`; source graph evidence everywhere; one representative streaming proof. Stable shape SHA-256: `0f9eb22498bc528a63adc40e59a6acbbe07022fde6b2414fcbee73b8b3a56e41`. | `edge-fixture-policy`, `provenance-boundary`, `unsupported-feature-boundary`, `streaming-matrix-boundary`, `compact-report-publication-policy`. | Hand off to correctness/product/performance/release for proof packaging and boundary approval only. |
 | Release proof index | `headlineClaimsAllowed=false`, `implementationSurfacePromotionAllowed=false`, `missingRequirementCount=9`, `signed=false`, `attestation=false`. | Product 2, correctness 1, performance 2, release 4. | Do not promote formula rename, agent view, viewport history, columnar sidecars, oracle routing, or agent traces into release scope this block. |
 
+Owner-action refinement: `release-proof-index --owner-handoffs-json` now emits the top claim `nextOwnerActions` with `acceptanceEvidence` and `forbiddenShortcut`, so owner loops can see exactly what approval or replacement is required and what wording remains prohibited.
+
 Fresh proof commands:
 
 ```bash

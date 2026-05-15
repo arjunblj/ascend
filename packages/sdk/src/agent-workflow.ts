@@ -2698,14 +2698,60 @@ const SIMPLE_POST_WRITE_FEATURE_FAMILIES = new Set<string>([
 function postWriteOpenOptions(
 	sourceGraph: XlsxPackageGraph,
 	ops: readonly Operation[],
+	sourceWorkbook: Workbook,
 ): Pick<WorkbookLoadOptions, 'mode' | 'richMetadata'> {
 	if (
 		ops.every((op) => op.op === 'setCells') &&
-		sourceGraph.parts.every((part) => SIMPLE_POST_WRITE_FEATURE_FAMILIES.has(part.featureFamily))
+		sourceGraph.parts.every((part) => SIMPLE_POST_WRITE_FEATURE_FAMILIES.has(part.featureFamily)) &&
+		!needsRichPostWriteReopen(sourceWorkbook)
 	) {
-		return { mode: 'full' }
+		return { mode: 'formula' }
 	}
 	return { mode: 'full', richMetadata: true }
+}
+
+function needsRichPostWriteReopen(workbook: Workbook): boolean {
+	if (
+		workbook.workbookProtection ||
+		workbook.chartParts.length > 0 ||
+		workbook.chartSheets.length > 0 ||
+		workbook.macroSheets.length > 0 ||
+		workbook.pivotCaches.length > 0 ||
+		workbook.pivotTables.length > 0 ||
+		workbook.slicerCaches.length > 0 ||
+		workbook.slicers.length > 0 ||
+		workbook.timelineCaches.length > 0 ||
+		workbook.timelines.length > 0 ||
+		workbook.connectionParts.length > 0 ||
+		workbook.dataModelParts.length > 0 ||
+		workbook.activeContent.length > 0 ||
+		workbook.externalReferenceDetails.length > 0
+	) {
+		return true
+	}
+	return workbook.sheets.some(
+		(sheet) =>
+			sheet.tables.length > 0 ||
+			sheet.comments.size > 0 ||
+			sheet.threadedComments.length > 0 ||
+			sheet.hyperlinks.size > 0 ||
+			sheet.ignoredErrors.length > 0 ||
+			sheet.dataValidations.length > 0 ||
+			sheet.conditionalFormats.length > 0 ||
+			sheet.imageRefs.length > 0 ||
+			sheet.drawingObjectRefs.length > 0 ||
+			sheet.sparklineGroups.length > 0 ||
+			sheet.x14ConditionalFormats.length > 0 ||
+			sheet.x14DataValidations.length > 0 ||
+			sheet.advancedFilters.length > 0 ||
+			sheet.autoFilter !== null ||
+			sheet.sortState !== null ||
+			sheet.protection !== null ||
+			sheet.protectedRanges.length > 0 ||
+			sheet.preservedExtLst !== null ||
+			sheet.preservedCustomSheetViews !== null ||
+			sheet.preservedControlsXml !== null,
+	)
 }
 
 export function auditLossPolicy(

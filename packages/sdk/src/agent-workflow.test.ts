@@ -1055,6 +1055,56 @@ describe('agent workflow loss audit', () => {
 				},
 			},
 			{
+				name: 'real-data-table-edit-detaches-and-reopens-clean',
+				risk: 'editing an imported data-table member could leave stale table formula metadata in the saved workbook',
+				proof: async () => {
+					const input = join(TEMP_DIR, 'quality-moat-data-table.xlsx')
+					const output = join(TEMP_DIR, 'quality-moat-data-table-out.xlsx')
+					mkdirSync(TEMP_DIR, { recursive: true })
+					await Bun.write(
+						input,
+						readFileSync(
+							new URL(
+								'../../../fixtures/xlsx/closedxml/Other_Formulas_DataTableFormula-Excel-Input.xlsx',
+								import.meta.url,
+							),
+						),
+					)
+
+					const prepared = await createPreparedAgentPlan(input, [
+						{ op: 'setCells' as const, sheet: '1D Row', updates: [{ ref: 'C6', value: 99 }] },
+					])
+					expect(prepared.plan.preview.journal?.issues).toContainEqual(
+						expect.objectContaining({
+							surface: 'data-tables',
+							reason: 'formula-binding-metadata',
+							refs: ['1D Row!C4'],
+						}),
+					)
+					expect(prepared.plan.approvals.length).toBeGreaterThan(0)
+
+					const committed = await prepared.commit({
+						output,
+						approvals: prepared.plan.approvals.map((approval) => approval.id),
+					})
+					expect(committed.postWrite.packageGraphAudit.ok).toBe(true)
+					expect(
+						committed.postWrite.check.issues.filter(
+							(issue) => issue.rule === 'formula-binding-integrity',
+						),
+					).toEqual([])
+					const reopened = await AscendWorkbook.open(output)
+					expect(
+						reopened.check().issues.filter((issue) => issue.rule === 'formula-binding-integrity'),
+					).toEqual([])
+					expect(reopened.sheet('1D Row')?.cell('C4')?.formulaBinding).toBeUndefined()
+					expect(reopened.sheet('1D Row')?.cell('C6')?.value).toEqual({
+						kind: 'number',
+						value: 99,
+					})
+				},
+			},
+			{
 				name: 'fail-closed-blocked-spill-footprint-corruption',
 				risk: 'blocked spill metadata on a non-anchor cell would preserve a stale spill footprint',
 				proof: async () => {

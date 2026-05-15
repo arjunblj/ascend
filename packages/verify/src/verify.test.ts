@@ -605,6 +605,66 @@ describe('checker', () => {
 		])
 	})
 
+	test('detects overlapping legacy array and data table range drift', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.cells.set(0, 0, {
+			value: numberValue(1),
+			formula: 'A1:A2*2',
+			styleId: SID,
+			formulaInfo: { kind: 'array', ref: 'A1:A2' },
+		})
+		s.cells.set(1, 0, {
+			value: numberValue(2),
+			formula: null,
+			styleId: SID,
+			formulaInfo: { kind: 'array', ref: 'A1:A3' },
+		})
+		s.cells.set(0, 3, {
+			value: numberValue(3),
+			formula: 'TABLE(A1,B1)',
+			styleId: SID,
+			formulaInfo: { kind: 'dataTable', ref: 'D1:D2', dtr: true, r1: 'A1' },
+		})
+		s.cells.set(1, 3, {
+			value: numberValue(4),
+			formula: null,
+			styleId: SID,
+			formulaInfo: { kind: 'dataTable', ref: 'D1:D3', dtr: true, r1: 'A1' },
+		})
+
+		const result = check(wb)
+		expect(result.passed).toBe(false)
+		expect(result.issues).toContainEqual(
+			expect.objectContaining({
+				rule: 'formula-binding-integrity',
+				message: 'Legacy array formula metadata has overlapping inconsistent ranges',
+				refs: ['Sheet1!A1', 'Sheet1!A2'],
+				details: {
+					kind: 'legacy-array-overlapping-range-mismatch',
+					ranges: [
+						{ ref: 'Sheet1!A1', range: 'A1:A2' },
+						{ ref: 'Sheet1!A2', range: 'A1:A3' },
+					],
+				},
+			}),
+		)
+		expect(result.issues).toContainEqual(
+			expect.objectContaining({
+				rule: 'formula-binding-integrity',
+				message: 'Data table formula metadata has overlapping inconsistent ranges',
+				refs: ['Sheet1!D1', 'Sheet1!D2'],
+				details: {
+					kind: 'data-table-overlapping-range-mismatch',
+					ranges: [
+						{ ref: 'Sheet1!D1', range: 'D1:D2' },
+						{ ref: 'Sheet1!D2', range: 'D1:D3' },
+					],
+				},
+			}),
+		)
+	})
+
 	test('detects circular refs', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')

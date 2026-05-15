@@ -778,8 +778,25 @@ function rangesEqual(left: RangeRef, right: RangeRef): boolean {
 	)
 }
 
+function rangesOverlap(left: RangeRef, right: RangeRef): boolean {
+	if (left.sheet !== right.sheet) return false
+	return (
+		left.start.row <= right.end.row &&
+		left.end.row >= right.start.row &&
+		left.start.col <= right.end.col &&
+		left.end.col >= right.start.col
+	)
+}
+
 function rangeKey(range: RangeRef): string {
 	return `${range.sheet ?? ''}!${range.start.row}:${range.start.col}:${range.end.row}:${range.end.col}`
+}
+
+interface FormulaRangeBindingEntry {
+	readonly kind: 'array' | 'dataTable'
+	readonly cellRef: string
+	readonly ref: string
+	readonly range: RangeRef
 }
 
 interface SpillBindingGroupEntry {
@@ -793,6 +810,7 @@ interface SpillBindingGroupEntry {
 function checkFormulaBindingIntegrity(wb: Workbook): CheckIssue[] {
 	const issues: CheckIssue[] = []
 	const sheetsByName = new Map(wb.sheets.map((sheet) => [sheet.name.toLowerCase(), sheet]))
+	const rangeBindingEntries: FormulaRangeBindingEntry[] = []
 	const spillBindingGroups = new Map<string, SpillBindingGroupEntry[]>()
 
 	for (const sheet of wb.sheets) {
@@ -918,6 +936,14 @@ function checkFormulaBindingIntegrity(wb: Workbook): CheckIssue[] {
 							},
 						),
 					)
+				}
+				if (range && binding.ref) {
+					rangeBindingEntries.push({
+						kind: binding.kind,
+						cellRef,
+						ref: binding.ref,
+						range,
+					})
 				}
 				continue
 			}
@@ -1054,6 +1080,31 @@ function checkFormulaBindingIntegrity(wb: Workbook): CheckIssue[] {
 					}
 				}
 			}
+		}
+	}
+	for (let i = 0; i < rangeBindingEntries.length; i++) {
+		const left = rangeBindingEntries[i]
+		if (!left) continue
+		for (let j = i + 1; j < rangeBindingEntries.length; j++) {
+			const right = rangeBindingEntries[j]
+			if (!right || left.kind !== right.kind) continue
+			if (!rangesOverlap(left.range, right.range) || rangesEqual(left.range, right.range)) continue
+			issues.push(
+				formulaBindingIntegrityIssue(
+					`${left.kind === 'array' ? 'Legacy array' : 'Data table'} formula metadata has overlapping inconsistent ranges`,
+					[left.cellRef, right.cellRef].sort(),
+					{
+						kind:
+							left.kind === 'array'
+								? 'legacy-array-overlapping-range-mismatch'
+								: 'data-table-overlapping-range-mismatch',
+						ranges: [
+							{ ref: left.cellRef, range: left.ref },
+							{ ref: right.cellRef, range: right.ref },
+						],
+					},
+				),
+			)
 		}
 	}
 	for (const group of spillBindingGroups.values()) {

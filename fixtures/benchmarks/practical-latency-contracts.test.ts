@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { fileURLToPath } from 'node:url'
+import { practicalLatencyContractsTestHooks } from './practical-latency-contracts.ts'
 
 const runnerPath = fileURLToPath(new URL('./practical-latency-contracts.ts', import.meta.url))
 
@@ -106,5 +107,73 @@ describe('practical latency contracts benchmark', () => {
 				expect(result.command).toContain('generated-edit-mixed-10pct-text-65536x10.xlsx')
 			}
 		}
+	})
+
+	test('ranks measured plan sub-phases ahead of aggregate prepared plan timing', () => {
+		const decisions = practicalLatencyContractsTestHooks.envelopeDecisions([
+			{
+				contract: 'edit-verify',
+				id: 'workflow-commit',
+				label: 'workflow',
+				status: 'ok',
+				command: 'workflow',
+				elapsedMs: 0,
+				profileCommand: 'profile workflow',
+				summary: {
+					preparedTotalMedianMs: 200,
+					preparedPlanMedianMs: 100,
+					preparedPlanStats: { p95: 105, cv: 0.03 },
+					preparedCommitMedianMs: 40,
+				},
+			},
+			{
+				contract: 'edit-verify',
+				id: 'agent-phase-profile',
+				label: 'phase',
+				status: 'ok',
+				command: 'phase',
+				elapsedMs: 0,
+				profileCommand: 'profile phase',
+				summary: {
+					sharedPlanPhaseMedianMs: {
+						'hash-input': 2,
+						'load-workbook': 60,
+						preview: 10,
+						'preservation-audit': 5,
+					},
+					sharedPlanPhaseStats: {
+						'load-workbook': { p95: 68, cv: 0.04 },
+					},
+				},
+			},
+		] as Parameters<typeof practicalLatencyContractsTestHooks.envelopeDecisions>[0])
+		const edit = decisions.find((decision) => decision.contract === 'edit-verify')
+		expect(edit?.largestPhase).toBe('Shared plan load-workbook/open')
+		expect(edit?.phaseMedianMs).toBe(60)
+		expect(edit?.profileCommand).toBe('profile phase')
+	})
+
+	test('falls back to aggregate prepared plan timing when phase split is unavailable', () => {
+		const decisions = practicalLatencyContractsTestHooks.envelopeDecisions([
+			{
+				contract: 'edit-verify',
+				id: 'workflow-commit',
+				label: 'workflow',
+				status: 'ok',
+				command: 'workflow',
+				elapsedMs: 0,
+				profileCommand: 'profile workflow',
+				summary: {
+					preparedTotalMedianMs: 200,
+					preparedPlanMedianMs: 100,
+					preparedPlanStats: { p95: 105, cv: 0.03 },
+					preparedCommitMedianMs: 80,
+				},
+			},
+		] as Parameters<typeof practicalLatencyContractsTestHooks.envelopeDecisions>[0])
+		const edit = decisions.find((decision) => decision.contract === 'edit-verify')
+		expect(edit?.largestPhase).toBe('Prepared plan/open')
+		expect(edit?.phaseMedianMs).toBe(100)
+		expect(edit?.profileCommand).toBe('profile workflow')
 	})
 })

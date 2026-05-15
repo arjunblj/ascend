@@ -1002,9 +1002,15 @@ function envelopeDecisions(results: readonly StepResult[]): EnvelopeDecision[] {
 				profileCommand: phaseProfile,
 			},
 			{
-				name: 'Prepared plan/open',
-				medianMs: numericMetric(workflow?.summary, 'preparedPlanMedianMs') ?? 0,
-				...phaseCandidateStats(workflow?.summary, 'preparedPlanStats'),
+				name: hasSharedPlanPhaseMetrics(phase?.summary)
+					? 'Prepared plan unassigned endpoint overhead'
+					: 'Prepared plan/open',
+				medianMs: hasSharedPlanPhaseMetrics(phase?.summary)
+					? preparedPlanUnassignedMs(workflow?.summary, phase?.summary)
+					: (numericMetric(workflow?.summary, 'preparedPlanMedianMs') ?? 0),
+				...(hasSharedPlanPhaseMetrics(phase?.summary)
+					? {}
+					: phaseCandidateStats(workflow?.summary, 'preparedPlanStats')),
 				profileCommand: workflowProfile,
 			},
 			{
@@ -1175,11 +1181,51 @@ function preparedCommitUnassignedMs(summary: unknown): number {
 	return Math.max(0, preparedCommit - known)
 }
 
+function preparedPlanUnassignedMs(workflowSummary: unknown, phaseSummary: unknown): number {
+	const preparedPlan = numericMetric(workflowSummary, 'preparedPlanMedianMs')
+	if (preparedPlan === undefined) return 0
+	const known = sumNestedMetrics(phaseSummary, 'sharedPlanPhaseMedianMs', [
+		'hash-input',
+		'load-workbook',
+		'preview',
+		'loss-audit',
+		'package-graph-audit',
+		'approval-audit',
+		'check',
+		'lint',
+		'preservation-audit',
+		'write-policy',
+		'finalize',
+	])
+	if (known === undefined) return preparedPlan
+	return Math.max(0, preparedPlan - known)
+}
+
+function hasSharedPlanPhaseMetrics(summary: unknown): boolean {
+	return numericNestedMetric(summary, 'sharedPlanPhaseMedianMs', 'load-workbook') !== undefined
+}
+
 function sumMetrics(summary: unknown, keys: readonly string[]): number | undefined {
 	let total = 0
 	let found = false
 	for (const key of keys) {
 		const value = numericMetric(summary, key)
+		if (value === undefined) continue
+		total += value
+		found = true
+	}
+	return found ? total : undefined
+}
+
+function sumNestedMetrics(
+	summary: unknown,
+	objectKey: string,
+	keys: readonly string[],
+): number | undefined {
+	let total = 0
+	let found = false
+	for (const key of keys) {
+		const value = numericNestedMetric(summary, objectKey, key)
 		if (value === undefined) continue
 		total += value
 		found = true
@@ -1197,6 +1243,10 @@ function largestPhase(candidates: readonly PhaseCandidate[]): PhaseCandidate {
 			profileCommand: '',
 		}
 	)
+}
+
+export const practicalLatencyContractsTestHooks = {
+	envelopeDecisions,
 }
 
 function memoryPayloadTable(results: readonly StepResult[]): string {
@@ -1357,4 +1407,4 @@ function isGitTracked(path: string): boolean {
 	return result.exitCode === 0
 }
 
-await run()
+if (import.meta.main) await run()

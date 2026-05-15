@@ -20,6 +20,7 @@ Updated: 2026-05-14
 | [Interactive viewport retained token history](runs/2026/2026-05-14-interactive-viewport-retained-token-history/log.md) | cycle 27 complete, folded in viewport patch ledger | product/DX loop, performance loop |
 | [Package action proof coverage boundaries](runs/2026/2026-05-14-package-action-proof-coverage-boundaries/log.md) | cycle 28 complete, folded in proof coverage metadata | correctness loop, product/DX loop |
 | [Safe unknown workbook opening proof benchmark](runs/2026/2026-05-14-safe-unknown-workbook-opening-proof-benchmark/log.md) | cycle 29 complete, benchmark evidence only | product/DX loop, performance loop |
+| [Package action proof part digests](runs/2026/2026-05-14-package-action-proof-part-digests/log.md) | cycle 30 complete, folded in optional digest evidence | correctness loop |
 | [Package action proof](runs/2026/2026-05-14-package-action-proof/log.md) | cycle 2 complete, promote | correctness loop, product/DX loop, performance loop |
 | [Formula spans LSP](runs/2026/2026-05-14-formula-spans-lsp/log.md) | cycle 13 complete, folded in SDK hover/code actions | product/DX loop, correctness loop |
 | [Formula sqllogictest conformance](runs/2026/2026-05-14-formula-sqllogictest-conformance/log.md) | cycle 14 complete, folded in converter/runner | correctness loop |

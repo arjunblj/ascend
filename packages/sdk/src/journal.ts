@@ -105,11 +105,13 @@ export type MutationJournalReasonCode =
 	| 'formula-cache-unsupported-value'
 	| 'formula-reference-rewrite'
 	| 'rich-text-unsupported-runs'
+	| 'data-validation-default-attributes'
 	| 'metadata-order'
 	| 'metadata-duplicate'
 	| 'metadata-collision'
 	| 'merge-overlap'
 	| 'x14-metadata'
+	| 'legacy-comment-drawing'
 	| 'comment-author-removal'
 	| 'threaded-comment-selector'
 	| 'drawing-text-selector'
@@ -140,11 +142,14 @@ export const MUTATION_JOURNAL_REASON_DESCRIPTIONS: Record<MutationJournalReasonC
 	'formula-reference-rewrite':
 		'Formula reference rewrites changed metadata that public operations cannot fully reverse.',
 	'rich-text-unsupported-runs': 'The rich text run preimage is not representable by setRichText.',
+	'data-validation-default-attributes':
+		'Materialized validation defaults cannot be restored exactly.',
 	'metadata-order': 'The metadata list order cannot be restored exactly.',
 	'metadata-duplicate': 'Duplicate metadata cannot be targeted exactly by public operations.',
 	'metadata-collision': 'Transferred metadata collides with existing target metadata.',
 	'merge-overlap': 'Merge metadata partially overlaps an edited range or target.',
 	'x14-metadata': 'x14 extension metadata has no public inverse operation.',
+	'legacy-comment-drawing': 'Legacy VML comment drawing metadata has no public inverse operation.',
 	'comment-author-removal': 'Comment author metadata cannot be removed exactly.',
 	'threaded-comment-selector':
 		'The threaded comment selector is not stable enough for exact inverse.',
@@ -278,7 +283,7 @@ export const MUTATION_JOURNAL_EXACTNESS_MATRIX: readonly MutationJournalExactnes
 			'simple cell comments restore with setComment/deleteComment',
 			'threaded comment selectors and author removals are exact only when public selectors can address the original metadata',
 		],
-		lossReasons: ['comment-author-removal', 'threaded-comment-selector'],
+		lossReasons: ['legacy-comment-drawing', 'comment-author-removal', 'threaded-comment-selector'],
 		representativeOps: [
 			'setComment',
 			'deleteComment',
@@ -303,7 +308,13 @@ export const MUTATION_JOURNAL_EXACTNESS_MATRIX: readonly MutationJournalExactnes
 			'standard validations restore with setDataValidation/deleteDataValidation',
 			'ordering, duplicates, defaults, and x14 extension payloads can make rollback lossy',
 		],
-		lossReasons: ['metadata-order', 'metadata-duplicate', 'metadata-collision', 'x14-metadata'],
+		lossReasons: [
+			'data-validation-default-attributes',
+			'metadata-order',
+			'metadata-duplicate',
+			'metadata-collision',
+			'x14-metadata',
+		],
 		representativeOps: [
 			'setDataValidation',
 			'deleteDataValidation',
@@ -515,6 +526,12 @@ export function classifyMutationJournalIssue(
 	}
 }
 
+export function classifyMutationJournalIssues(
+	issues: readonly MutationJournalIssue[],
+): readonly MutationJournalIssueClassification[] {
+	return issues.map((issue) => classifyMutationJournalIssue(issue))
+}
+
 function inferMutationJournalIssueSurface(issue: MutationJournalIssue): MutationJournalSurface {
 	if (issue.code === 'JOURNAL_BUILD_FAILED' || issue.code === 'JOURNAL_UNAVAILABLE') {
 		return 'package-parts'
@@ -576,6 +593,8 @@ function inferMutationJournalIssueReason(
 	}
 	if (text.includes('formula cache')) return 'formula-cache-unsupported-value'
 	if (text.includes('richtext')) return 'rich-text-unsupported-runs'
+	if (text.includes('default attributes')) return 'data-validation-default-attributes'
+	if (text.includes('legacy comment drawing')) return 'legacy-comment-drawing'
 	if (text.includes('threaded comment selector')) return 'threaded-comment-selector'
 	if (text.includes('comment author')) return 'comment-author-removal'
 	if (text.includes('drawing object selector')) return 'drawing-text-selector'

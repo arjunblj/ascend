@@ -3433,6 +3433,68 @@ describe('agent workflow loss audit', () => {
 		)
 	})
 
+	test('package action proof can attach optional per-part byte digests', () => {
+		const sourceBytes = packageProofFixture('preserved')
+		const outputBytes = packageProofFixture('preserved')
+		const changedOutputBytes = packageProofFixture('changed')
+		const sourcePackageGraph = inspectXlsxPackageGraph(sourceBytes)
+		const preservation = {
+			totalParts: 1,
+			byOrigin: {
+				generated: 0,
+				'preserved-inline': 0,
+				'preserved-source': 1,
+				capsule: 0,
+			},
+			byOwnerKind: { package: 1 },
+			sheetPartCounts: {},
+			parts: [
+				{
+					path: 'custom/item.xml',
+					owner: { kind: 'package' as const },
+					origin: 'preserved-source' as const,
+					contentType: 'application/xml',
+					streaming: true,
+				},
+			],
+			skippedCapsules: [],
+		}
+
+		const matching = createPackageActionProof(preservation, {
+			sourcePackageGraph,
+			sourceBytes,
+			outputBytes,
+		})
+		expect(matching.coverage).toMatchObject({
+			sourceByteDigestCount: 1,
+			outputByteDigestCount: 1,
+			matchingByteDigestCount: 1,
+			mismatchedByteDigestCount: 0,
+		})
+		expect(matching.actions[0]).toMatchObject({
+			partPath: 'custom/item.xml',
+			sourceSha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+			outputSha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+			bytesEqual: true,
+		})
+
+		const changed = createPackageActionProof(preservation, {
+			sourcePackageGraph,
+			sourceBytes,
+			outputBytes: changedOutputBytes,
+		})
+		expect(changed.coverage).toMatchObject({
+			sourceByteDigestCount: 1,
+			outputByteDigestCount: 1,
+			matchingByteDigestCount: 0,
+			mismatchedByteDigestCount: 1,
+		})
+		expect(changed.actions[0]).toMatchObject({
+			partPath: 'custom/item.xml',
+			bytesEqual: false,
+		})
+	})
+
 	test('prepared agent plans reuse full workflow state with staleness guards', async () => {
 		const input = join(TEMP_DIR, 'prepared.xlsx')
 		const output = join(TEMP_DIR, 'prepared-out.xlsx')
@@ -3794,6 +3856,22 @@ describe('agent workflow loss audit', () => {
 		expect(committed.modelOutput.blocked).toBe(false)
 	})
 })
+
+function packageProofFixture(customValue: string): Uint8Array {
+	return makeXlsx({
+		'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/custom/item.xml" ContentType="application/xml"/>
+</Types>`,
+		'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdCustom" Type="http://example.test/custom" Target="custom/item.xml"/>
+</Relationships>`,
+		'custom/item.xml': `<custom>${customValue}</custom>`,
+	})
+}
 
 function makePreservedCustomXlsx(): Uint8Array {
 	return createZip(

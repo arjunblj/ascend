@@ -3,7 +3,9 @@ import { DEFAULT_STYLE_ID } from '@ascend/core'
 import { numberValue, type Operation } from '@ascend/schema'
 import { AscendWorkbook } from './index.ts'
 import {
+	buildMutationJournal,
 	classifyMutationJournalIssue,
+	classifyMutationJournalIssues,
 	classifyMutationJournalSurface,
 	MUTATION_JOURNAL_EXACTNESS_MATRIX,
 	MUTATION_JOURNAL_REASON_DESCRIPTIONS,
@@ -90,6 +92,31 @@ describe('mutation journal exactness model', () => {
 			exactness: 'lossy',
 			publicInverse: 'none',
 		})
+	})
+
+	test('generated lossy journals classify every issue into an allowed surface reason', () => {
+		const journals = [
+			lossyDataValidationDefaultJournal(),
+			lossyLegacyCommentDrawingJournal(),
+			lossyCreatedLayoutJournal(),
+			lossyThreadedCommentSelectorJournal(),
+			lossyDrawingSelectorJournal(),
+			lossyChartSeriesUnsetJournal(),
+			lossyPivotCacheUnsetJournal(),
+			lossyConditionalFormatOrderJournal(),
+			lossyPageSetupJournal(),
+			lossyX14TransferJournal(),
+		]
+
+		for (const journal of journals) {
+			expect(journal.supported).toBe(true)
+			expect(journal.exact).toBe(false)
+			expect(journal.issues.length).toBeGreaterThan(0)
+			for (const classification of classifyMutationJournalIssues(journal.issues)) {
+				const rule = classifyMutationJournalSurface(classification.surface)
+				expect(rule.lossReasons).toContain(classification.reason)
+			}
+		}
 	})
 
 	test('representative edit operations obey the exactness taxonomy', () => {
@@ -471,6 +498,151 @@ describe('mutation journal exactness model', () => {
 		}
 	})
 })
+
+function lossyDataValidationDefaultJournal(): MutationJournal {
+	const wb = AscendWorkbook.create()
+	const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+	if (!sheet) throw new Error('missing sheet')
+	sheet.dataValidations.push({ sqref: 'A1:A1', type: 'whole', formula1: '1' })
+	return applyJournal(wb, [
+		{
+			op: 'setDataValidation',
+			sheet: 'Sheet1',
+			range: 'A1:A1',
+			rule: { type: 'whole', formula1: '2' },
+		},
+	])
+}
+
+function lossyLegacyCommentDrawingJournal(): MutationJournal {
+	const wb = AscendWorkbook.create()
+	const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+	if (!sheet) throw new Error('missing sheet')
+	sheet.comments.set('A1', {
+		text: 'legacy note',
+		legacyDrawing: { shapeId: '_x0000_s1025' },
+	})
+	return applyJournal(wb, [{ op: 'deleteComment', sheet: 'Sheet1', ref: 'A1' }])
+}
+
+function lossyCreatedLayoutJournal(): MutationJournal {
+	const wb = AscendWorkbook.create()
+	return applyJournal(wb, [
+		{ op: 'setRowHeight', sheet: 'Sheet1', row: 2, height: 32 },
+		{ op: 'setColWidth', sheet: 'Sheet1', col: 1, width: 20 },
+	])
+}
+
+function lossyThreadedCommentSelectorJournal(): MutationJournal {
+	const wb = AscendWorkbook.create()
+	const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+	if (!sheet) throw new Error('missing sheet')
+	sheet.threadedComments.push(
+		{ ref: 'B2', text: 'first', id: 'tc-1' },
+		{ ref: 'B2', text: 'second', id: 'tc-2' },
+	)
+	return buildMutationJournal(wb.getWorkbookModel(), [
+		{ op: 'setThreadedComment', sheet: 'Sheet1', ref: 'B2', text: 'ambiguous' },
+	])
+}
+
+function lossyDrawingSelectorJournal(): MutationJournal {
+	const wb = AscendWorkbook.create()
+	const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+	if (!sheet) throw new Error('missing sheet')
+	sheet.drawingObjectRefs.push(
+		{
+			drawingPartPath: 'xl/drawings/drawing1.xml',
+			kind: 'textBox',
+			id: 1,
+			name: 'Duplicate',
+			text: 'First',
+		},
+		{
+			drawingPartPath: 'xl/drawings/drawing1.xml',
+			kind: 'shape',
+			id: 2,
+			name: 'Duplicate',
+		},
+	)
+	return buildMutationJournal(wb.getWorkbookModel(), [
+		{ op: 'setDrawingText', sheet: 'Sheet1', name: 'Duplicate', text: 'Updated' },
+	])
+}
+
+function lossyChartSeriesUnsetJournal(): MutationJournal {
+	const wb = AscendWorkbook.create()
+	wb.getWorkbookModel().chartParts.push({
+		partPath: 'xl/charts/chart1.xml',
+		sheetName: 'Sheet1',
+		series: [{ nameText: 'Actual', valueRef: 'Sheet1!$B$2:$B$4' }],
+	})
+	return buildMutationJournal(wb.getWorkbookModel(), [
+		{
+			op: 'setChartSeriesSource',
+			partPath: 'xl/charts/chart1.xml',
+			seriesIndex: 0,
+			nameRef: 'Sheet1!$B$1',
+			valueRef: 'Sheet1!$C$2:$C$4',
+		},
+	])
+}
+
+function lossyPivotCacheUnsetJournal(): MutationJournal {
+	const wb = AscendWorkbook.create()
+	wb.getWorkbookModel().pivotCaches.push({
+		partPath: 'xl/pivotCache/pivotCacheDefinition1.xml',
+		cacheId: 34,
+		sourceRef: 'A1:D10',
+		fields: [],
+	})
+	return buildMutationJournal(wb.getWorkbookModel(), [
+		{
+			op: 'setPivotCache',
+			cacheId: 34,
+			sourceSheet: 'RawData',
+			sourceRef: 'A1:E20',
+			refreshOnLoad: true,
+		},
+	])
+}
+
+function lossyConditionalFormatOrderJournal(): MutationJournal {
+	const wb = AscendWorkbook.create()
+	applyExact(wb, [
+		{
+			op: 'setConditionalFormat',
+			sheet: 'Sheet1',
+			range: 'A1:A1',
+			rule: { type: 'expression', formula: 'A1>0', priority: 1 },
+		},
+	])
+	return buildMutationJournal(wb.getWorkbookModel(), [
+		{ op: 'deleteConditionalFormat', sheet: 'Sheet1' },
+	])
+}
+
+function lossyPageSetupJournal(): MutationJournal {
+	const wb = AscendWorkbook.create()
+	return applyJournal(wb, [
+		{ op: 'setPageSetup', sheet: 'Sheet1', setup: { orientation: 'landscape' } },
+	])
+}
+
+function lossyX14TransferJournal(): MutationJournal {
+	const wb = AscendWorkbook.create()
+	const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+	if (!sheet) throw new Error('missing sheet')
+	sheet.x14DataValidations.push({
+		index: 0,
+		sqref: 'A1:A1',
+		type: 'list',
+		formula1: '"A,B"',
+	})
+	return applyJournal(wb, [
+		{ op: 'copyRange', sheet: 'Sheet1', source: 'A1', target: 'D1', mode: 'validations' },
+	])
+}
 
 function applyExact(workbook: AscendWorkbook, ops: readonly Operation[]): void {
 	const result = workbook.apply(ops)

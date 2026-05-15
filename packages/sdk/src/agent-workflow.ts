@@ -24,6 +24,7 @@ import {
 	auditXlsxPackageGraphBytePreservation,
 	auditXlsxPackageGraphReadIntegrity,
 	auditXlsxPackageGraphSafeEditIntegrity,
+	extractZip,
 } from '@ascend/io-xlsx'
 import { AscendException, ascendError, type FeatureReport, type Operation } from '@ascend/schema'
 import { listCapabilities, summarizeCapabilities } from './capabilities.ts'
@@ -34,6 +35,7 @@ import { AscendWorkbook } from './workbook.ts'
 
 type WorkbookWritePlanInfo = ReturnType<AscendWorkbook['writePlanSummary']>
 type WorkbookWritePlanPartInfo = WorkbookWritePlanInfo['parts'][number]
+type PackageActionProofArchive = ReturnType<typeof extractZip>
 
 export interface AgentPlanResult {
 	readonly file: string
@@ -149,6 +151,8 @@ export type PackageActionKind = 'passthrough' | 'regenerate' | 'add' | 'drop' | 
 
 export interface PackageActionProofOptions {
 	readonly sourcePackageGraph?: XlsxPackageGraph
+	readonly sourceBytes?: Uint8Array
+	readonly outputBytes?: Uint8Array
 	readonly writePolicy?: WritePolicyReport
 	readonly packageGraphAudit?: PackageGraphAudit
 }
@@ -172,6 +176,10 @@ export interface PackageActionProofCoverage {
 	readonly packageGraphAuditIncluded: boolean
 	readonly relationshipAuditIssueCount: number
 	readonly bytePreservationAuditIssueCount: number
+	readonly sourceByteDigestCount: number
+	readonly outputByteDigestCount: number
+	readonly matchingByteDigestCount: number
+	readonly mismatchedByteDigestCount: number
 }
 
 export interface PackageActionProofEntry {
@@ -183,6 +191,9 @@ export interface PackageActionProofEntry {
 	readonly owner?: WorkbookWritePlanPartInfo['owner']
 	readonly contentType?: string
 	readonly streaming?: boolean
+	readonly sourceSha256?: string
+	readonly outputSha256?: string
+	readonly bytesEqual?: boolean
 	readonly diagnosticCodes?: readonly WritePolicyDiagnostic['code'][]
 	readonly auditIssueCodes?: readonly XlsxPackageGraphFidelityIssue['code'][]
 }
@@ -1383,6 +1394,8 @@ export function createPackageActionProof(
 	preservation: WorkbookWritePlanInfo,
 	options: PackageActionProofOptions = {},
 ): PackageActionProof {
+	const sourceArchive = packageActionProofArchive(options.sourceBytes)
+	const outputArchive = packageActionProofArchive(options.outputBytes)
 	const sourcePartByPath = options.sourcePackageGraph
 		? new Map(options.sourcePackageGraph.parts.map((part) => [part.path, part]))
 		: undefined
@@ -1405,6 +1418,7 @@ export function createPackageActionProof(
 			owner: part.owner,
 			...(part.contentType ? { contentType: part.contentType } : {}),
 			streaming: part.streaming,
+			...packageActionDigestEvidence(part.path, sourceArchive, outputArchive),
 			...(diagnosticCodes?.length ? { diagnosticCodes: Array.from(new Set(diagnosticCodes)) } : {}),
 			...(auditIssueCodes?.length ? { auditIssueCodes: Array.from(new Set(auditIssueCodes)) } : {}),
 		})
@@ -1421,6 +1435,7 @@ export function createPackageActionProof(
 				'Preservation capsule is listed as skipped and will not be emitted by the planned write.',
 			partPath,
 			...(sourcePresent !== undefined ? { sourcePresent } : {}),
+			...packageActionDigestEvidence(partPath, sourceArchive, outputArchive),
 			...(diagnosticCodes?.length ? { diagnosticCodes: Array.from(new Set(diagnosticCodes)) } : {}),
 			...(auditIssueCodes?.length ? { auditIssueCodes: Array.from(new Set(auditIssueCodes)) } : {}),
 		})
@@ -1435,6 +1450,7 @@ export function createPackageActionProof(
 				reason: diagnostic.message,
 				...(partPath ? { partPath } : {}),
 				...(partPath && sourcePartByPath ? { sourcePresent: sourcePartByPath.has(partPath) } : {}),
+				...packageActionDigestEvidence(partPath, sourceArchive, outputArchive),
 				diagnosticCodes: [diagnostic.code],
 			})
 		}
@@ -1448,6 +1464,7 @@ export function createPackageActionProof(
 				reason: issue.message,
 				...(partPath ? { partPath } : {}),
 				...(partPath && sourcePartByPath ? { sourcePresent: sourcePartByPath.has(partPath) } : {}),
+				...packageActionDigestEvidence(partPath, sourceArchive, outputArchive),
 				auditIssueCodes: [issue.code],
 			})
 		}
@@ -1456,6 +1473,8 @@ export function createPackageActionProof(
 	const byAction = emptyPackageActionCounts()
 	for (const action of actions) byAction[action.action] += 1
 	const auditIssues = options.packageGraphAudit?.issues ?? []
+	const sourceByteDigestCount = actions.filter((action) => action.sourceSha256 !== undefined).length
+	const outputByteDigestCount = actions.filter((action) => action.outputSha256 !== undefined).length
 	const issues = actions
 		.filter((action) => action.action === 'error')
 		.map((action) => (action.partPath ? `${action.partPath}: ${action.reason}` : action.reason))
@@ -1478,6 +1497,10 @@ export function createPackageActionProof(
 			relationshipAuditIssueCount: auditIssues.filter(isPackageRelationshipAuditIssue).length,
 			bytePreservationAuditIssueCount: auditIssues.filter(isPackageBytePreservationAuditIssue)
 				.length,
+			sourceByteDigestCount,
+			outputByteDigestCount,
+			matchingByteDigestCount: actions.filter((action) => action.bytesEqual === true).length,
+			mismatchedByteDigestCount: actions.filter((action) => action.bytesEqual === false).length,
 		},
 		actions,
 		issues,
@@ -1608,6 +1631,30 @@ function packageActionReason(
 			return 'Package part will not be emitted by the planned write.'
 		case 'error':
 			return 'Package action is blocked by diagnostic or package graph audit evidence.'
+	}
+}
+
+function packageActionProofArchive(
+	bytes: Uint8Array | undefined,
+): PackageActionProofArchive | undefined {
+	if (!bytes) return undefined
+	return extractZip(bytes)
+}
+
+function packageActionDigestEvidence(
+	partPath: string | undefined,
+	sourceArchive: PackageActionProofArchive | undefined,
+	outputArchive: PackageActionProofArchive | undefined,
+): Pick<PackageActionProofEntry, 'sourceSha256' | 'outputSha256' | 'bytesEqual'> {
+	if (!partPath) return {}
+	const sourceBytes = sourceArchive?.readBytes(partPath)
+	const outputBytes = outputArchive?.readBytes(partPath)
+	const sourceSha256 = sourceBytes ? sha256Bytes(sourceBytes) : undefined
+	const outputSha256 = outputBytes ? sha256Bytes(outputBytes) : undefined
+	return {
+		...(sourceSha256 ? { sourceSha256 } : {}),
+		...(outputSha256 ? { outputSha256 } : {}),
+		...(sourceSha256 && outputSha256 ? { bytesEqual: sourceSha256 === outputSha256 } : {}),
 	}
 }
 

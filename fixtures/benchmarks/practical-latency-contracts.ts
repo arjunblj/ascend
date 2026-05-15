@@ -45,6 +45,22 @@ interface StepResult {
 	readonly error?: string
 }
 
+interface EnvelopeDecision {
+	readonly contract: ContractName
+	readonly envelope: string
+	readonly envelopeMedianMs: number
+	readonly largestPhase: string
+	readonly phaseMedianMs: number
+	readonly profileCommand: string
+	readonly guardrail: string
+}
+
+interface PhaseCandidate {
+	readonly name: string
+	readonly medianMs: number
+	readonly profileCommand: string
+}
+
 const DEFAULT_INPUT = 'research/excel-corpus/NYC_311_SR_2010-2020-sample-1M.xlsx'
 const DEFAULT_SHEET = 'NYC_311_SR_2010-2020-sample-1M'
 const DEFAULT_RANGE = 'A1:AO1000001'
@@ -291,6 +307,11 @@ function buildSteps(args: Args): StepSpec[] {
 			label: 'Write, reopen, check, lint, preservation, package graph verify',
 			command: postWriteArgs(args),
 			timeoutMs: args.timeoutMs,
+			profileCommand: profileCommand(
+				'contract-edit-verify-post-write',
+				postWriteArgs(args),
+				profileDir,
+			),
 			required: true,
 		},
 		{
@@ -299,6 +320,11 @@ function buildSteps(args: Args): StepSpec[] {
 			label: 'Repeated first-window cache hit for agent reads',
 			command: firstWindowArgs(args, 'capped'),
 			timeoutMs: args.timeoutMs,
+			profileCommand: profileCommand(
+				'contract-repeated-agent-window',
+				firstWindowArgs(args, 'capped'),
+				profileDir,
+			),
 			required: true,
 		},
 		{
@@ -307,6 +333,11 @@ function buildSteps(args: Args): StepSpec[] {
 			label: 'Repeated TUI open/render after cache warmup',
 			command: firstWindowArgs(args, 'tui'),
 			timeoutMs: args.timeoutMs,
+			profileCommand: profileCommand(
+				'contract-repeated-tui-first-paint',
+				firstWindowArgs(args, 'tui'),
+				profileDir,
+			),
 			required: true,
 		},
 		{
@@ -423,6 +454,20 @@ function buildMarkdown(args: Args, results: readonly StepResult[]): string {
 		'',
 		`Each step emits \`[contracts] start ...\` and a terminal status to stderr, writes stdout to a \`${basename(args.outDir)}/<contract>-<step>.json\` artifact, and is killed after ${args.timeoutMs}ms. A timeout or failed required step remains visible in this report instead of being silently dropped.`,
 		'',
+		'## Decision Matrix',
+		'',
+		'Only user-visible envelope phases are eligible for the production target. Diagnostic ceilings show max parse cost, but cannot win this ranking unless the matching envelope moves.',
+		'',
+		decisionMatrix(results),
+		'',
+		'## Production Target',
+		'',
+		productionTarget(results),
+		'',
+		'## Diagnostic Ceilings',
+		'',
+		diagnosticCeilingTable(results),
+		'',
 		'## Contract 1: Unknown Workbook To Safe First Agent View',
 		'',
 		'Guardrail: report cold package/ZIP/XML work separately from capped first-window results; do not call hot-cache numbers end-to-end, and do not treat the full worksheet scan diagnostic as first-view latency unless the first-view command actually performs it.',
@@ -447,10 +492,6 @@ function buildMarkdown(args: Args, results: readonly StepResult[]): string {
 			.filter((result) => result.profileCommand)
 			.map((result) => `- ${result.contract}/${result.id}: \`${result.profileCommand}\``),
 		'',
-		'## Next Bottleneck Choice',
-		'',
-		nextBottleneck(results),
-		'',
 		'## Guardrails Preventing Fake Speed',
 		'',
 		'- A hot-cache result must name its cache assumption and cannot be reported as end-to-end unknown workbook latency.',
@@ -470,17 +511,21 @@ function buildProfileMarkdown(args: Args, results: readonly StepResult[]): strin
 		`Generated: ${new Date().toISOString()}`,
 		`Output directory: \`${args.outDir}\``,
 		'',
-		'## Where Time Goes',
+		'## User-Visible Envelope Decisions',
 		'',
-		phaseRankingTable(results),
+		decisionMatrix(results),
+		'',
+		'## Diagnostic Ceilings',
+		'',
+		diagnosticCeilingTable(results),
 		'',
 		'## Memory And Payload',
 		'',
 		memoryPayloadTable(results),
 		'',
-		'## Next Bottleneck',
+		'## Production Target',
 		'',
-		nextBottleneck(results),
+		productionTarget(results),
 		'',
 		'## Profile Commands To Run Before Code Changes',
 		'',
@@ -547,112 +592,66 @@ function statusLink(result: StepResult | undefined): string {
 	return result.status === 'ok' ? `ok (${path})` : `${result.status}: ${result.error ?? path}`
 }
 
-function nextBottleneck(results: readonly StepResult[]): string {
-	const workflow = results.find((entry) => entry.id === 'workflow-commit')
-	const envelope = {
-		editVerify: numericMetric(workflow?.summary, 'totalMedianMs') ?? 0,
-	}
-	const candidates = rankedOptimizationPhases(results).filter((phase) => phase.medianMs > 0)
-	const selected = candidates[0]
+function productionTarget(results: readonly StepResult[]): string {
+	const selected = envelopeDecisions(results)
+		.filter((decision) => decision.phaseMedianMs > 0)
+		.sort((a, b) => b.envelopeMedianMs - a.envelopeMedianMs || b.phaseMedianMs - a.phaseMedianMs)[0]
 	if (!selected) {
 		return 'No optimization selected yet: one or more required measurements failed or timed out.'
 	}
-	const envelopeMs =
-		selected.contract === 'edit-verify' ? envelope.editVerify : selected.envelopeMedianMs
-	const share = envelopeMs > 0 ? (selected.medianMs / envelopeMs) * 100 : 100
-	return `Choose \`${selected.name}\` first. It is the largest measured phase in this report (${selected.medianMs.toFixed(1)}ms median, ${share.toFixed(1)}% of the named envelope/subtotal). Max plausible win is bounded by that phase share; the guardrail is to re-run the same contract and discard changes that only improve an internal hotspot without moving \`${selected.contract}\`.`
+	const share =
+		selected.envelopeMedianMs > 0 ? (selected.phaseMedianMs / selected.envelopeMedianMs) * 100 : 100
+	return `Choose exactly one production target: \`${selected.largestPhase}\` in \`${selected.contract}\`. It belongs to the largest true user-visible envelope (${selected.envelopeMedianMs.toFixed(1)}ms median), and users wait on ${selected.phaseMedianMs.toFixed(1)}ms inside it (${share.toFixed(1)}% max plausible win). Required profile before code changes: \`${selected.profileCommand}\`. Guardrail: ${selected.guardrail}`
 }
 
-function rankedOptimizationPhases(results: readonly StepResult[]): Array<{
-	readonly contract: ContractName
-	readonly name: string
-	readonly medianMs: number
-	readonly envelopeMedianMs: number
-}> {
-	const capped = results.find((entry) => entry.id === 'capped-read-window')
-	const api = results.find((entry) => entry.id === 'api-first-view')
-	const workflow = results.find((entry) => entry.id === 'workflow-commit')
-	const postWrite = results.find((entry) => entry.id === 'post-write-breakdown')
-	const cached = results.find((entry) => entry.id === 'cached-agent-window')
-	const tui = results.find((entry) => entry.id === 'tui-first-paint-cache')
-	const table = results.find((entry) => entry.id === 'table-inspection-cache')
-	const firstViewEnvelope = numericMetric(api?.summary, 'apiFirstWindowMedianMs') ?? 0
-	const editEnvelope = numericMetric(workflow?.summary, 'totalMedianMs') ?? 0
-	const repeatedEnvelope = Math.max(
-		numericMetric(cached?.summary, 'cappedWarmOpenWindowMedianMs') ?? 0,
-		numericMetric(tui?.summary, 'tuiWarmFirstPaintMedianMs') ?? 0,
-		numericMetric(table?.summary, 'warmInspectMedianMs') ?? 0,
-	)
+function decisionMatrix(results: readonly StepResult[]): string {
+	const rows = envelopeDecisions(results).map((decision) => {
+		const share =
+			decision.envelopeMedianMs > 0
+				? `${((decision.phaseMedianMs / decision.envelopeMedianMs) * 100).toFixed(1)}%`
+				: ''
+		return `| ${decision.envelope} | ${decision.envelopeMedianMs.toFixed(3)} | ${decision.largestPhase} | ${decision.phaseMedianMs.toFixed(3)} | ${share} | \`${decision.profileCommand}\` | ${decision.guardrail} |`
+	})
 	return [
-		{
-			contract: 'first-view',
-			name: 'first-view/api-payload-and-open',
-			medianMs: numericMetric(api?.summary, 'apiFirstWindowMedianMs') ?? 0,
-			envelopeMedianMs: firstViewEnvelope,
-		},
-		{
-			contract: 'first-view',
-			name: 'first-view/capped-read-hydrate',
-			medianMs: numericMetric(capped?.summary, 'cappedReadWindowMedianMs') ?? 0,
-			envelopeMedianMs: firstViewEnvelope,
-		},
-		{
-			contract: 'edit-verify',
-			name: 'edit-verify/plan',
-			medianMs: numericMetric(workflow?.summary, 'planMedianMs') ?? 0,
-			envelopeMedianMs: editEnvelope,
-		},
-		{
-			contract: 'edit-verify',
-			name: 'edit-verify/reopen',
-			medianMs: numericMetric(postWrite?.summary, 'commitPostWriteReopenMedianMs') ?? 0,
-			envelopeMedianMs: editEnvelope,
-		},
-		{
-			contract: 'edit-verify',
-			name: 'edit-verify/write-policy-check',
-			medianMs: numericMetric(workflow?.summary, 'commitWritePolicyCheckMedianMs') ?? 0,
-			envelopeMedianMs: editEnvelope,
-		},
-		{
-			contract: 'edit-verify',
-			name: 'edit-verify/post-write-preservation',
-			medianMs: numericMetric(postWrite?.summary, 'commitPostWritePreservationMedianMs') ?? 0,
-			envelopeMedianMs: editEnvelope,
-		},
-		{
-			contract: 'edit-verify',
-			name: 'edit-verify/write',
-			medianMs: numericMetric(postWrite?.summary, 'commitWriteMedianMs') ?? 0,
-			envelopeMedianMs: editEnvelope,
-		},
-		{
-			contract: 'repeated-inspection',
-			name: 'repeated-inspection/tui-warm-first-paint',
-			medianMs: numericMetric(tui?.summary, 'tuiWarmFirstPaintMedianMs') ?? 0,
-			envelopeMedianMs: repeatedEnvelope,
-		},
-		{
-			contract: 'repeated-inspection',
-			name: 'repeated-inspection/cached-agent-window-warm',
-			medianMs: numericMetric(cached?.summary, 'cappedWarmOpenWindowMedianMs') ?? 0,
-			envelopeMedianMs: repeatedEnvelope,
-		},
-		{
-			contract: 'repeated-inspection',
-			name: 'repeated-inspection/table-warm-inspect',
-			medianMs: numericMetric(table?.summary, 'warmInspectMedianMs') ?? 0,
-			envelopeMedianMs: repeatedEnvelope,
-		},
-	].sort((a, b) => b.medianMs - a.medianMs)
+		'| Envelope | Envelope median ms | Largest user-wait phase | Phase median ms | Max plausible win | Required profile command | Guardrail |',
+		'|---|---:|---|---:|---:|---|---|',
+		...rows,
+	].join('\n')
 }
 
-function rankedPhases(results: readonly StepResult[]): Array<{
-	readonly contract: ContractName
-	readonly name: string
-	readonly medianMs: number
-}> {
+function diagnosticCeilingTable(results: readonly StepResult[]): string {
 	const zip = results.find((entry) => entry.id === 'package-scan-zip-xml')
+	const rows = [
+		{
+			name: 'Cold ZIP open',
+			medianMs: numericMetric(zip?.summary, 'zipOpenMedianMs') ?? 0,
+			command: zip?.profileCommand ?? '',
+			guardrail: 'diagnostic only; not an envelope target unless first-view latency moves',
+		},
+		{
+			name: 'Full worksheet XML inflate',
+			medianMs: numericMetric(zip?.summary, 'worksheetInflateMedianMs') ?? 0,
+			command: zip?.profileCommand ?? '',
+			guardrail: 'diagnostic ceiling; do not chase for first view by itself',
+		},
+		{
+			name: 'Full worksheet XML decode',
+			medianMs: numericMetric(zip?.summary, 'worksheetDecodeMedianMs') ?? 0,
+			command: zip?.profileCommand ?? '',
+			guardrail: 'diagnostic ceiling; eligible only if a user-visible envelope performs this scan',
+		},
+	]
+	return [
+		'| Diagnostic phase | Median ms | Profile command | Target eligibility |',
+		'|---|---:|---|---|',
+		...rows.map(
+			(row) =>
+				`| ${row.name} | ${row.medianMs ? row.medianMs.toFixed(3) : ''} | ${row.command ? `\`${row.command}\`` : ''} | ${row.guardrail} |`,
+		),
+	].join('\n')
+}
+
+function envelopeDecisions(results: readonly StepResult[]): EnvelopeDecision[] {
 	const capped = results.find((entry) => entry.id === 'capped-read-window')
 	const api = results.find((entry) => entry.id === 'api-first-view')
 	const workflow = results.find((entry) => entry.id === 'workflow-commit')
@@ -660,71 +659,128 @@ function rankedPhases(results: readonly StepResult[]): Array<{
 	const cached = results.find((entry) => entry.id === 'cached-agent-window')
 	const tui = results.find((entry) => entry.id === 'tui-first-paint-cache')
 	const table = results.find((entry) => entry.id === 'table-inspection-cache')
-	return [
-		{
+
+	const decisions: EnvelopeDecision[] = []
+	const firstViewEnvelope = numericMetric(api?.summary, 'apiFirstWindowMedianMs')
+	if (firstViewEnvelope !== undefined) {
+		const largest = largestPhase([
+			{
+				name: 'API first-view payload/open',
+				medianMs: firstViewEnvelope,
+				profileCommand: api?.profileCommand ?? '',
+			},
+			{
+				name: 'Capped read/hydrate feeding first view',
+				medianMs: numericMetric(capped?.summary, 'cappedReadWindowMedianMs') ?? 0,
+				profileCommand: capped?.profileCommand ?? api?.profileCommand ?? '',
+			},
+		])
+		decisions.push({
 			contract: 'first-view',
-			name: 'diagnostic/full-worksheet-inflate',
-			medianMs: numericMetric(zip?.summary, 'worksheetInflateMedianMs') ?? 0,
-		},
-		{
-			contract: 'first-view',
-			name: 'diagnostic/full-worksheet-decode',
-			medianMs: numericMetric(zip?.summary, 'worksheetDecodeMedianMs') ?? 0,
-		},
-		{
-			contract: 'first-view',
-			name: 'first-view/capped-read-hydrate',
-			medianMs: numericMetric(capped?.summary, 'cappedReadWindowMedianMs') ?? 0,
-		},
-		{
-			contract: 'first-view',
-			name: 'first-view/api-payload',
-			medianMs: numericMetric(api?.summary, 'apiFirstWindowMedianMs') ?? 0,
-		},
-		{
+			envelope: 'Unknown workbook to safe first agent view',
+			envelopeMedianMs: Math.max(firstViewEnvelope, largest.medianMs),
+			largestPhase: largest.name,
+			phaseMedianMs: largest.medianMs,
+			profileCommand: largest.profileCommand,
+			guardrail: 'must improve the first-view command, not only the full worksheet XML diagnostic',
+		})
+	}
+
+	const editEnvelope =
+		numericMetric(workflow?.summary, 'totalMedianMs') ??
+		numericMetric(workflow?.summary, 'commitVerifiedTotalMedianMs')
+	if (editEnvelope !== undefined) {
+		const workflowProfile = workflow?.profileCommand ?? ''
+		const postWriteProfile = postWrite?.profileCommand ?? workflowProfile
+		const largest = largestPhase([
+			{
+				name: 'Edit plan payload',
+				medianMs: numericMetric(workflow?.summary, 'planMedianMs') ?? 0,
+				profileCommand: workflowProfile,
+			},
+			{
+				name: 'Commit write-policy check',
+				medianMs: numericMetric(workflow?.summary, 'commitWritePolicyCheckMedianMs') ?? 0,
+				profileCommand: workflowProfile,
+			},
+			{
+				name: 'Dirty write bytes',
+				medianMs: numericMetric(postWrite?.summary, 'commitWriteMedianMs') ?? 0,
+				profileCommand: postWriteProfile,
+			},
+			{
+				name: 'Reopen written output',
+				medianMs: numericMetric(postWrite?.summary, 'commitPostWriteReopenMedianMs') ?? 0,
+				profileCommand: postWriteProfile,
+			},
+			{
+				name: 'Structural check after reopen',
+				medianMs: numericMetric(postWrite?.summary, 'commitPostWriteCheckMedianMs') ?? 0,
+				profileCommand: postWriteProfile,
+			},
+			{
+				name: 'Preservation/package verification',
+				medianMs: Math.max(
+					numericMetric(postWrite?.summary, 'commitPostWritePreservationMedianMs') ?? 0,
+					numericMetric(postWrite?.summary, 'commitPostWritePackageGraphAuditMedianMs') ?? 0,
+				),
+				profileCommand: postWriteProfile,
+			},
+		])
+		decisions.push({
 			contract: 'edit-verify',
-			name: 'edit-verify/plan',
-			medianMs: numericMetric(workflow?.summary, 'planMedianMs') ?? 0,
+			envelope: 'Edit plan to commit/reopen/verify',
+			envelopeMedianMs: editEnvelope,
+			largestPhase: largest.name,
+			phaseMedianMs: largest.medianMs,
+			profileCommand: largest.profileCommand,
+			guardrail: 'must preserve write, reopen, structural check, lint, and package verification',
+		})
+	}
+
+	const repeatedCandidates: PhaseCandidate[] = [
+		{
+			name: 'Warm cached agent window',
+			medianMs: numericMetric(cached?.summary, 'cappedWarmOpenWindowMedianMs') ?? 0,
+			profileCommand: cached?.profileCommand ?? '',
 		},
 		{
-			contract: 'edit-verify',
-			name: 'edit-verify/write',
-			medianMs: numericMetric(postWrite?.summary, 'commitWriteMedianMs') ?? 0,
+			name: 'Warm TUI first paint',
+			medianMs: numericMetric(tui?.summary, 'tuiWarmFirstPaintMedianMs') ?? 0,
+			profileCommand: tui?.profileCommand ?? '',
 		},
 		{
-			contract: 'edit-verify',
-			name: 'edit-verify/reopen',
-			medianMs: numericMetric(postWrite?.summary, 'commitPostWriteReopenMedianMs') ?? 0,
-		},
-		{
-			contract: 'edit-verify',
-			name: 'edit-verify/check',
-			medianMs: numericMetric(postWrite?.summary, 'commitPostWriteCheckMedianMs') ?? 0,
-		},
-		{
-			contract: 'repeated-inspection',
-			name: 'repeated-inspection/cached-agent-window-cold',
-			medianMs: numericMetric(cached?.summary, 'cappedOpenWindowMedianMs') ?? 0,
-		},
-		{
-			contract: 'repeated-inspection',
-			name: 'repeated-inspection/tui-first-paint-cold',
-			medianMs: numericMetric(tui?.summary, 'tuiFirstPaintMedianMs') ?? 0,
-		},
-		{
-			contract: 'repeated-inspection',
-			name: 'repeated-inspection/table-warm-inspect',
+			name: 'Warm table inspection',
 			medianMs: numericMetric(table?.summary, 'warmInspectMedianMs') ?? 0,
+			profileCommand: table?.profileCommand ?? '',
 		},
-	].sort((a, b) => b.medianMs - a.medianMs)
+	]
+	const repeatedLargest = largestPhase(repeatedCandidates)
+	if (repeatedLargest.medianMs > 0) {
+		decisions.push({
+			contract: 'repeated-inspection',
+			envelope: 'Repeated viewport/table inspection after first load',
+			envelopeMedianMs: repeatedLargest.medianMs,
+			largestPhase: repeatedLargest.name,
+			phaseMedianMs: repeatedLargest.medianMs,
+			profileCommand: repeatedLargest.profileCommand,
+			guardrail: 'must name the hot-cache assumption and include cold-open context separately',
+		})
+	}
+
+	return decisions
 }
 
-function phaseRankingTable(results: readonly StepResult[]): string {
-	const rows = rankedPhases(results)
-		.filter((phase) => phase.medianMs > 0)
-		.slice(0, 8)
-		.map((phase) => `| ${phase.name} | ${phase.contract} | ${phase.medianMs.toFixed(3)} |`)
-	return ['| Phase | Contract | Median ms |', '|---|---|---:|', ...rows].join('\n')
+function largestPhase(candidates: readonly PhaseCandidate[]): PhaseCandidate {
+	return (
+		candidates
+			.filter((candidate) => candidate.medianMs > 0)
+			.sort((a, b) => b.medianMs - a.medianMs)[0] ?? {
+			name: 'not measured',
+			medianMs: 0,
+			profileCommand: '',
+		}
+	)
 }
 
 function memoryPayloadTable(results: readonly StepResult[]): string {

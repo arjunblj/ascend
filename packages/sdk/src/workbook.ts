@@ -55,6 +55,7 @@ import {
 import {
 	buildMutationJournal,
 	failedMutationJournal,
+	type MutationJournal,
 	unavailableMutationJournal,
 } from './journal.ts'
 import {
@@ -139,6 +140,16 @@ function maybeBuildMutationJournal(
 function partialWorkbookMutationJournal(loadInfo: WorkbookLoadInfo) {
 	return unavailableMutationJournal(
 		`Mutation journal is unavailable because the workbook is partially loaded in ${loadInfo.mode} mode. Reopen the workbook with a full load before applying edits.`,
+	)
+}
+
+function failedApplyMutationJournal(
+	journal: MutationJournal | undefined,
+): MutationJournal | undefined {
+	if (!journal) return undefined
+	if (journal.issues.some((issue) => issue.code === 'JOURNAL_BUILD_FAILED')) return journal
+	return unavailableMutationJournal(
+		'Mutation journal is unavailable because the requested operations did not apply successfully. Fix the apply errors before using rollback journal.',
 	)
 }
 
@@ -571,6 +582,7 @@ export class AscendWorkbook extends WorkbookReadView {
 		const result = applyOperations(clone, ops)
 		if (!result.ok) {
 			errors.push(...('errors' in result.error ? result.error.errors : [result.error]))
+			const failureJournal = failedApplyMutationJournal(journal)
 			return {
 				diff: {
 					sheets: [],
@@ -587,7 +599,7 @@ export class AscendWorkbook extends WorkbookReadView {
 				warnings: [],
 				wouldSucceed: false,
 				errors,
-				...(journal ? { journal } : {}),
+				...(failureJournal ? { journal: failureJournal } : {}),
 			}
 		}
 
@@ -719,6 +731,7 @@ export class AscendWorkbook extends WorkbookReadView {
 			: applyOperations(nextWorkbook, ops, options)
 		if (!result.ok) {
 			const errors = 'errors' in result.error ? result.error.errors : [result.error]
+			const failureJournal = failedApplyMutationJournal(journal)
 			return {
 				affectedCells: [],
 				sheetsModified: [],
@@ -726,7 +739,7 @@ export class AscendWorkbook extends WorkbookReadView {
 				dirtyRegions: [],
 				generations: this.currentGenerations(),
 				errors,
-				...(journal ? { journal } : {}),
+				...(failureJournal ? { journal: failureJournal } : {}),
 			}
 		}
 		if (isApplyPatchNoOp(ops, result.value)) {

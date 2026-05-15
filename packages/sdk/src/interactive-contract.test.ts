@@ -2835,6 +2835,40 @@ describe('interactive client contract', () => {
 		expect(preview.journal).toEqual(changed.journal)
 	})
 
+	test('journal requests on failed applies return unavailable rollback journals', () => {
+		const wb = AscendWorkbook.create()
+		const before = journalComparableState(wb)
+		const ops = [
+			{ op: 'setCells' as const, sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] },
+			{ op: 'deleteSheet' as const, sheet: 'Missing' },
+		]
+		const expectedJournal = {
+			entries: [],
+			inverseOps: [],
+			supported: false,
+			exact: false,
+			issues: [
+				{
+					code: 'JOURNAL_UNAVAILABLE',
+					message:
+						'Mutation journal is unavailable because the requested operations did not apply successfully. Fix the apply errors before using rollback journal.',
+				},
+			],
+		}
+
+		const changed = wb.apply(ops, { journal: true, transaction: true })
+
+		expect(changed.errors.length).toBeGreaterThan(0)
+		expect(changed.journal).toEqual(expectedJournal)
+		expect(journalComparableState(wb)).toEqual(before)
+
+		const preview = wb.preview(ops, { journal: true })
+		expect(preview.wouldSucceed).toBe(false)
+		expect(preview.errors.length).toBeGreaterThan(0)
+		expect(preview.journal).toEqual(expectedJournal)
+		expect(journalComparableState(wb)).toEqual(before)
+	})
+
 	test('journal requests on partial workbooks return explicit unavailable journals', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

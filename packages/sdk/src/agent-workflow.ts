@@ -8049,12 +8049,36 @@ async function writeWorkbookAtomically(
 }
 
 function stableStringify(value: unknown): string {
-	if (Array.isArray(value)) return `[${value.map((item) => stableStringify(item)).join(',')}]`
+	const parts: string[] = []
+	appendStableStringify(value, parts, false)
+	return parts.join('')
+}
+
+function appendStableStringify(value: unknown, parts: string[], undefinedAsLiteral: boolean): void {
+	if (Array.isArray(value)) {
+		parts.push('[')
+		for (let index = 0; index < value.length; index++) {
+			if (index > 0) parts.push(',')
+			appendStableStringify(value[index], parts, false)
+		}
+		parts.push(']')
+		return
+	}
 	if (value && typeof value === 'object') {
 		const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) =>
 			a.localeCompare(b),
 		)
-		return `{${entries.map(([key, val]) => `${JSON.stringify(key)}:${stableStringify(val)}`).join(',')}}`
+		parts.push('{')
+		for (let index = 0; index < entries.length; index++) {
+			if (index > 0) parts.push(',')
+			const [key, val] = entries[index] as [string, unknown]
+			parts.push(JSON.stringify(key), ':')
+			appendStableStringify(val, parts, true)
+		}
+		parts.push('}')
+		return
 	}
-	return JSON.stringify(value)
+	const encoded = JSON.stringify(value)
+	if (encoded !== undefined) parts.push(encoded)
+	else if (undefinedAsLiteral) parts.push('undefined')
 }

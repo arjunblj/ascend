@@ -930,9 +930,9 @@ const PERFORMANCE_POLICY: ReleaseProofPerformancePolicy = {
 			decisionNeeded:
 				'Accept representative streaming proofs covering passthrough/regenerate/add/drop for narrow wording, or require a broader streaming matrix before any parity claim.',
 			acceptanceEvidence:
-				'Package-action proof reports three streaming proof cases covering passthrough/regenerate/add/drop with passthrough-byte equality, and release wording says representative proofs only.',
+				'Package-action proof reports five streaming proof cases covering passthrough/regenerate/add/drop plus public macro/chart package accounting with passthrough-byte equality, and release wording says representative proofs only.',
 			rejectIf:
-				'Copy says full streaming parity, covers error streaming behavior, or implies macro/chart streaming preservation without a broader matrix.',
+				'Copy says full streaming parity, covers generated edge/error streaming behavior, or implies semantic preservation for unsupported workbook features.',
 			validationCommand: 'bun run fixtures/benchmarks/package-action-proof.ts --no-timings --json',
 		},
 	],
@@ -2393,7 +2393,7 @@ function packageActionArtifact(
 				requirement:
 					'approve that representative streaming writer proofs are sufficient for release wording, or expand package-action proof to streaming variants for every package-action scenario before claiming streaming parity',
 				evidence:
-					'current proof reports three streamingProofCases covering passthrough/regenerate/add/drop and two streamingRegenerateParts; error remains non-streaming',
+					'current proof reports five streamingProofCases covering passthrough/regenerate/add/drop plus public macro/chart package accounting, with generated edge/error cases still non-streaming',
 			},
 			{
 				id: 'compact-report-publication-policy',
@@ -2520,11 +2520,14 @@ function correctnessBoundaryEvidence(
 				'package-action-proof/docprops-passthrough',
 				'package-action-proof/add-sheet-part',
 				'package-action-proof/calc-chain-drop',
+				'package-action-proof/macro-passthrough',
+				'package-action-proof/chart-sidecar-accounting',
 			],
 			proofChecks: [
 				'representative streaming proofs cover passthrough/regenerate/add/drop',
+				'public macro and chart cases have streaming package-action proof coverage',
 				'streaming proof records regenerated worksheet parts and passthrough byte equality',
-				'error and macro/chart streaming remain outside the proof boundary',
+				'generated edge error and signature streaming remain outside the proof boundary',
 			],
 		}),
 	]
@@ -2644,7 +2647,7 @@ function streamingMatrixEvidence(
 			.filter((entry) => (entry.streamingProof?.issueCount ?? 0) > 0)
 			.map((entry) => entry.name),
 		boundary:
-			'Streaming matrix evidence proves representative streaming package-action cases covering passthrough/regenerate/add/drop. It does not prove full streaming parity, error streaming behavior, or streaming coverage for public macro/chart fixtures.',
+			'Streaming matrix evidence proves representative streaming package-action cases covering passthrough/regenerate/add/drop plus public macro/chart package accounting. It does not prove full streaming parity, generated edge/error streaming behavior, or semantic preservation for unsupported workbook features.',
 	}
 }
 
@@ -3097,7 +3100,7 @@ function rankMissingRequirement(input: {
 				rationale:
 					'Streaming wording must stay limited to representative proof cases unless a broader matrix is approved.',
 				acceptanceEvidence:
-					'Performance accepts representative streaming proofs covering passthrough/regenerate/add/drop for narrow wording, or expands the matrix to error and public macro/chart cases.',
+					'Performance accepts representative streaming proofs covering passthrough/regenerate/add/drop plus public macro/chart package accounting for narrow wording, or expands the matrix to generated edge/error cases.',
 				forbiddenShortcut:
 					'Do not call representative streaming cases full streaming parity or imply streaming coverage for every package-action scenario.',
 			}

@@ -81,6 +81,23 @@ describe('package action proof harness', () => {
 				issueCount: 0,
 			},
 		})
+		expect(proof.cases.find((entry) => entry.name === 'macro-passthrough')).toMatchObject({
+			streamingProof: {
+				expectedActionsPresent: true,
+				actionCounts: expect.objectContaining({ passthrough: expect.any(Number) }),
+				issueCount: 0,
+			},
+		})
+		expect(proof.cases.find((entry) => entry.name === 'chart-sidecar-accounting')).toMatchObject({
+			streamingProof: {
+				expectedActionsPresent: true,
+				actionCounts: expect.objectContaining({
+					passthrough: expect.any(Number),
+					regenerate: expect.any(Number),
+				}),
+				issueCount: 0,
+			},
+		})
 		expect(proof.cases.find((entry) => entry.name === 'unknown-part-error')).not.toHaveProperty(
 			'streamingProof',
 		)
@@ -117,8 +134,8 @@ describe('package action proof harness', () => {
 			packageJournalIssuesEverywhere: true,
 			postWriteAuditFailures: ['unknown-part-error'],
 			proofIssueCases: ['unknown-part-error'],
-			streamingProofCases: 3,
-			streamingRegenerateParts: 2,
+			streamingProofCases: 5,
+			streamingRegenerateParts: 4,
 		})
 		expect(compact.sourceCaseCounts).toEqual({
 			'public-fixture': 4,

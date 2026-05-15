@@ -231,6 +231,7 @@ export function defaultPackageActionProofCases(): PackageActionProofCase[] {
 			fixture: 'fixtures/xlsx/calamine/vba.xlsm',
 			ops: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'macro' }] }],
 			allowLoss: 'all',
+			streamingProbe: true,
 			prepareInput: writeFixture('fixtures/xlsx/calamine/vba.xlsm'),
 			expectedCommitActions: [{ action: 'passthrough', partPathIncludes: 'vbaProject.bin' }],
 		},
@@ -239,6 +240,7 @@ export function defaultPackageActionProofCases(): PackageActionProofCase[] {
 			sourceKind: 'public-fixture',
 			fixture: 'fixtures/xlsx/poi/WithChart.xlsx',
 			ops: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'chart' }] }],
+			streamingProbe: true,
 			prepareInput: writeFixture('fixtures/xlsx/poi/WithChart.xlsx'),
 			expectedCommitActions: [
 				{ action: 'regenerate', partPathIncludes: 'charts/' },

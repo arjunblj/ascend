@@ -328,25 +328,26 @@ describe('release proof evidence index', () => {
 			status: 'representative-proof-present-owner-approval-required',
 			ownerApprovalRequired: true,
 			validationCommand: 'bun run fixtures/benchmarks/package-action-proof.ts --no-timings --json',
-			representativeProofCases: 3,
-			streamingRegenerateParts: 2,
+			representativeProofCases: 5,
+			streamingRegenerateParts: 4,
 			coveredActionKinds: ['passthrough', 'regenerate', 'add', 'drop'],
 			missingActionKinds: ['error'],
-			coveredCaseNames: ['docprops-passthrough', 'add-sheet-part', 'calc-chain-drop'],
+			coveredCaseNames: [
+				'docprops-passthrough',
+				'add-sheet-part',
+				'calc-chain-drop',
+				'macro-passthrough',
+				'chart-sidecar-accounting',
+			],
 			streamingIssueCaseNames: [],
 			boundary: expect.stringContaining('does not prove full streaming parity'),
 		})
 		expect(index.streamingMatrixEvidence.nonStreamingCaseNames).toEqual([
 			'regenerate-existing-sheet',
 			'signature-invalidation-drop',
-			'macro-passthrough',
-			'chart-sidecar-accounting',
 			'unknown-part-error',
 		])
-		expect(index.streamingMatrixEvidence.publicNonStreamingCaseNames).toEqual([
-			'macro-passthrough',
-			'chart-sidecar-accounting',
-		])
+		expect(index.streamingMatrixEvidence.publicNonStreamingCaseNames).toEqual([])
 		expect(index.streamingMatrixEvidence.generatedNonStreamingCaseNames).toEqual([
 			'regenerate-existing-sheet',
 			'signature-invalidation-drop',
@@ -978,8 +979,8 @@ describe('release proof evidence index', () => {
 				cases: 8,
 				allActionsCovered: true,
 				sourceGraphEverywhere: true,
-				streamingProofCases: 3,
-				streamingRegenerateParts: 2,
+				streamingProofCases: 5,
+				streamingRegenerateParts: 4,
 			},
 		})
 		expect(index.artifacts.every((artifact) => artifact.headlineClaimAllowed === false)).toBe(true)
@@ -1058,8 +1059,16 @@ describe('release proof evidence index', () => {
 			ownerApprovalRequired: true,
 			coveredActionKinds: ['passthrough', 'regenerate', 'add', 'drop'],
 			missingActionKinds: ['error'],
-			coveredCaseNames: ['docprops-passthrough', 'add-sheet-part', 'calc-chain-drop'],
-			publicNonStreamingCaseNames: ['macro-passthrough', 'chart-sidecar-accounting'],
+			representativeProofCases: 5,
+			streamingRegenerateParts: 4,
+			coveredCaseNames: [
+				'docprops-passthrough',
+				'add-sheet-part',
+				'calc-chain-drop',
+				'macro-passthrough',
+				'chart-sidecar-accounting',
+			],
+			publicNonStreamingCaseNames: [],
 		})
 		expect(handoff.correctnessPolicy.approvalChecklist.map((item) => item.gateId)).toEqual([
 			'unsupported-feature-boundary',
@@ -1416,11 +1425,11 @@ describe('release proof evidence index', () => {
 		expect(markdown).toContain('Status: representative-proof-present-owner-approval-required')
 		expect(markdown).toContain('Covered action kinds: passthrough,regenerate,add,drop')
 		expect(markdown).toContain('Missing action kinds: error')
-		expect(markdown).toContain('Covered cases: docprops-passthrough,add-sheet-part,calc-chain-drop')
-		expect(markdown).toContain('Non-streaming cases: regenerate-existing-sheet')
 		expect(markdown).toContain(
-			'Public non-streaming cases: macro-passthrough,chart-sidecar-accounting',
+			'Covered cases: docprops-passthrough,add-sheet-part,calc-chain-drop,macro-passthrough,chart-sidecar-accounting',
 		)
+		expect(markdown).toContain('Non-streaming cases: regenerate-existing-sheet')
+		expect(markdown).toContain('Public non-streaming cases: none')
 		expect(markdown).toContain('## Correctness Policy')
 		expect(markdown).toContain('Unsupported feature boundaries:')
 		expect(markdown).toContain(
@@ -1507,7 +1516,7 @@ describe('release proof evidence index', () => {
 		expect(markdown).toContain('Attestation: false')
 		expect(markdown).toContain('safe unknown workbook opening')
 		expect(markdown).toContain('auditable package-part mutation')
-		expect(markdown).toContain('streamingProofCases=3')
+		expect(markdown).toContain('streamingProofCases=5')
 		expect(markdown).toContain('Excluded Evidence')
 		expect(markdown).toContain('practical-latency-contracts')
 		expect(markdown).toContain('tracked-clean run')

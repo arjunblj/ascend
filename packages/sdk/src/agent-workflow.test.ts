@@ -4018,6 +4018,98 @@ describe('agent workflow loss audit', () => {
 		expect(edited.sheet('Sheet1')?.cell('B1')?.value).toEqual({ kind: 'number', value: 4 })
 	})
 
+	test('prepared copySheet commits reopen retargeted worksheet metadata formulas', async () => {
+		const input = join(TEMP_DIR, 'prepared-copy-sheet-metadata.xlsx')
+		const output = join(TEMP_DIR, 'prepared-copy-sheet-metadata-out.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		const wb = AscendWorkbook.create()
+		const model = wb.getWorkbookModel()
+		const sheet = model.getSheet('Sheet1')
+		if (!sheet) throw new Error('Expected Sheet1')
+		sheet.name = 'Data'
+		model.invalidateSheetCache()
+		sheet.dataValidations.push({
+			sqref: 'A1',
+			type: 'list',
+			formula1: 'data!B1:B3',
+			formula2: 'C1:C3',
+		})
+		sheet.conditionalFormats.push({
+			sqref: 'A1:A3',
+			rules: [
+				{
+					type: 'expression',
+					formulas: ['data!B1>0'],
+					colorScale: {
+						cfvo: [{ type: 'formula', value: 'data!C1' }],
+						colors: [{ rgb: 'FFFF0000' }],
+					},
+					dataBar: { cfvo: [{ type: 'formula', value: 'data!D1' }] },
+					iconSet: { cfvo: [{ type: 'formula', value: 'data!E1' }] },
+				},
+			],
+		})
+		sheet.x14DataValidations.push({
+			index: 0,
+			sqref: 'B1',
+			type: 'list',
+			formula1: 'data!B1:B3',
+			formula2: 'C1:C3',
+		})
+		sheet.x14ConditionalFormats.push({
+			index: 0,
+			sqref: 'B1:B3',
+			formulas: ['data!B1>0'],
+			colorScale: {
+				cfvo: [{ type: 'formula', value: 'data!C1' }],
+				colors: [{ rgb: 'FF63BE7B' }],
+			},
+			dataBar: { cfvo: [{ type: 'formula', value: 'data!D1' }] },
+			iconSet: { cfvo: [{ type: 'formula', value: 'data!E1' }] },
+		})
+		await wb.save(input)
+
+		const prepared = await createPreparedAgentPlan(input, [
+			{ op: 'copySheet' as const, sheet: 'Data', newName: 'Copy' },
+		])
+		expect(prepared.plan.preview.journal?.supported).toBe(true)
+		expect(prepared.plan.preview.journal?.exact).toBe(false)
+		expect(prepared.plan.preview.journal?.issues).toContainEqual(
+			expect.objectContaining({
+				surface: 'package-parts',
+				reason: 'package-part-preservation',
+				refs: ['sheet:Data', 'sheet:Copy'],
+			}),
+		)
+
+		const committed = await prepared.commit({ output })
+		expect(committed.apply.journal?.supported).toBe(true)
+		expect(committed.apply.journal?.exact).toBe(false)
+		expect(committed.postWrite.valid).toBe(true)
+		expect(committed.postWrite.check.valid).toBe(true)
+		expect(committed.postWrite.auditsPassed).toBe(true)
+
+		const reopened = await AscendWorkbook.open(output)
+		expect(reopened.check().valid).toBe(true)
+		const copy = reopened.getWorkbookModel().getSheet('Copy')
+		expect(copy?.dataValidations[0]).toMatchObject({
+			formula1: 'Copy!B1:B3',
+			formula2: 'C1:C3',
+		})
+		expect(copy?.conditionalFormats[0]?.rules[0]?.formulas).toEqual(['Copy!B1>0'])
+		expect(copy?.conditionalFormats[0]?.rules[0]?.colorScale?.cfvo[0]?.value).toBe('Copy!C1')
+		expect(copy?.conditionalFormats[0]?.rules[0]?.dataBar?.cfvo[0]?.value).toBe('Copy!D1')
+		expect(copy?.conditionalFormats[0]?.rules[0]?.iconSet?.cfvo[0]?.value).toBe('Copy!E1')
+		expect(copy?.x14DataValidations[0]).toMatchObject({
+			formula1: 'Copy!B1:B3',
+			formula2: 'C1:C3',
+		})
+		expect(copy?.x14ConditionalFormats[0]?.formulas).toEqual(['Copy!B1>0'])
+		expect(copy?.x14ConditionalFormats[0]?.colorScale?.cfvo[0]?.value).toBe('Copy!C1')
+		expect(copy?.x14ConditionalFormats[0]?.dataBar?.cfvo[0]?.value).toBe('Copy!D1')
+		expect(copy?.x14ConditionalFormats[0]?.iconSet?.cfvo[0]?.value).toBe('Copy!E1')
+	})
+
 	test('prepared agent commits surface post-write audit failures as blocking model output', async () => {
 		const input = join(TEMP_DIR, 'prepared-preserved.xlsx')
 		const output = join(TEMP_DIR, 'prepared-preserved-out.xlsx')

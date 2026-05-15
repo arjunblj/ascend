@@ -1398,6 +1398,17 @@ describe('mutation journal exactness model', () => {
 				.filter((issue) => issue.surface === 'shared-formulas')
 				.every((issue) => issue.reason === 'formula-binding-metadata'),
 		).toBe(true)
+
+		const reopened = await AscendWorkbook.open(wb.toBytes())
+		expect(
+			reopened.check().issues.filter((issue) => issue.rule === 'formula-binding-integrity'),
+		).toEqual([])
+		expect(collectFormulaInfoRefs(reopened, 'Label')).toEqual([])
+		expect(cellFormulas(reopened, 'Label', ['A2', 'A3', 'A4'])).toEqual({
+			A2: 'B2',
+			A3: null,
+			A4: 'B4',
+		})
 	})
 
 	test('real XLSX data table member edits journal detached table metadata', async () => {

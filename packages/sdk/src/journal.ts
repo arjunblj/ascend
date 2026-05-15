@@ -4042,14 +4042,50 @@ function journalSetAutoFilter(
 	opIndex: number,
 ): DraftJournalEntry {
 	const autoFilter = autoFilterPreimage(workbook, op.sheet)
+	const valueIssues = autoFilterValueIssues(op)
 	const { inverseOps, issues } = restoreAutoFilterOps(autoFilter)
 	return {
 		opIndex,
 		op,
-		inverseOps,
+		inverseOps: valueIssues.length > 0 ? [] : inverseOps,
 		preimages: [{ kind: 'auto-filter', autoFilter }],
-		issues,
+		issues: valueIssues.length > 0 ? valueIssues : issues,
 	}
+}
+
+function autoFilterValueIssues(
+	op: Extract<Operation, { op: 'setAutoFilter' }>,
+): MutationJournalIssue[] {
+	for (const field of ['sortRef', 'sortBy'] as const) {
+		const value = op[field]
+		if (value === undefined) continue
+		try {
+			parseRange(value)
+		} catch {
+			return [
+				{
+					code: 'UNSUPPORTED_VALUE',
+					message: `Cannot build exact rollback journal for setAutoFilter because ${field} ${value} is invalid`,
+					surface: 'auto-filters',
+					reason: 'value-unsupported',
+					refs: [`${op.sheet}!${value}`],
+				},
+			]
+		}
+	}
+	if (op.descending !== undefined && typeof op.descending !== 'boolean') {
+		return [
+			{
+				code: 'UNSUPPORTED_VALUE',
+				message:
+					'Cannot build exact rollback journal for setAutoFilter because descending is not boolean',
+				surface: 'auto-filters',
+				reason: 'value-unsupported',
+				refs: [`${op.sheet}!${op.range}`],
+			},
+		]
+	}
+	return []
 }
 
 function journalClearAutoFilter(

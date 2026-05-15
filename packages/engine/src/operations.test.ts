@@ -2545,6 +2545,37 @@ describe('applyOperation', () => {
 		).toBe(false)
 	})
 
+	test('setAdvancedFilter rejects invalid sort metadata without mutation', () => {
+		const cases: readonly Operation[] = [
+			{ op: 'setAdvancedFilter', sheet: 'Sheet1', filterIndex: 0, range: 'A1:' },
+			{ op: 'setAdvancedFilter', sheet: 'Sheet1', filterIndex: 0, sortRef: ':A2' },
+			{ op: 'setAdvancedFilter', sheet: 'Sheet1', filterIndex: 0, sortBy: 'C:' },
+			{
+				op: 'setAdvancedFilter',
+				sheet: 'Sheet1',
+				filterIndex: 0,
+				descending: 'true' as never,
+			},
+		]
+
+		for (const op of cases) {
+			const wb = setup()
+			const sheet = wb.getSheet('Sheet1')
+			if (!sheet) throw new Error('missing sheet')
+			sheet.advancedFilters.push({
+				ref: 'A1:C20',
+				filterColumnCount: 0,
+				sortConditionCount: 0,
+				autoFilter: { ref: 'A1:C20', columns: [] },
+			})
+			const before = JSON.stringify(sheet.advancedFilters)
+			const result = applyOperation(wb, op)
+			expectErr(result)
+			expect(result.error.code, JSON.stringify(op)).toBe('VALIDATION_ERROR')
+			expect(JSON.stringify(sheet.advancedFilters), JSON.stringify(op)).toBe(before)
+		}
+	})
+
 	test('setConditionalFormat stores conditional formatting rules', () => {
 		const wb = setup()
 		const result = applyOperation(wb, {
@@ -2851,6 +2882,34 @@ describe('applyOperation', () => {
 				conditions: [{ ref: 'E2:E22', descending: true }],
 			},
 		})
+	})
+
+	test('setAutoFilter rejects invalid sort metadata without mutation', () => {
+		const cases: readonly Operation[] = [
+			{ op: 'setAutoFilter', sheet: 'Sheet1', range: 'A1:E22', sortRef: ':A1' },
+			{ op: 'setAutoFilter', sheet: 'Sheet1', range: 'A1:E22', sortBy: 'E:' },
+			{
+				op: 'setAutoFilter',
+				sheet: 'Sheet1',
+				range: 'A1:E22',
+				descending: 'true' as never,
+			},
+		]
+
+		for (const op of cases) {
+			const wb = setup()
+			const sheet = wb.getSheet('Sheet1')
+			if (!sheet) throw new Error('missing sheet')
+			sheet.autoFilter = {
+				ref: 'A1:E22',
+				columns: [{ colId: 0, kind: 'filters', values: ['1'] }],
+			}
+			const before = JSON.stringify(sheet.autoFilter)
+			const result = applyOperation(wb, op)
+			expectErr(result)
+			expect(result.error.code, JSON.stringify(op)).toBe('VALIDATION_ERROR')
+			expect(JSON.stringify(sheet.autoFilter), JSON.stringify(op)).toBe(before)
+		}
 	})
 
 	test('copyRange copies values and translates relative formulas', () => {

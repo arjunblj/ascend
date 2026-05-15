@@ -382,6 +382,16 @@ function validateFilterCriteriaUpdate(
 	opName: 'setAutoFilter' | 'setAdvancedFilter',
 	op: FilterCriteriaUpdateOp,
 ) {
+	for (const field of ['range', 'sortRef', 'sortBy'] as const) {
+		const value = op[field]
+		if (value === undefined) continue
+		const rangeResult = safeParseRange(value)
+		if (!rangeResult.ok) {
+			return ascendError('VALIDATION_ERROR', `${opName} ${field} must be a valid A1 range`, {
+				suggestedFix: `Use an A1 range such as A1:C20 for ${field}.`,
+			})
+		}
+	}
 	if (op.values !== undefined && !Array.isArray(op.values)) {
 		return ascendError('VALIDATION_ERROR', `${opName} values must be an array`)
 	}
@@ -401,6 +411,11 @@ function validateFilterCriteriaUpdate(
 	if (op.column !== undefined && (!Number.isInteger(op.column) || op.column < 0)) {
 		return ascendError('VALIDATION_ERROR', `${opName} column must be non-negative`, {
 			suggestedFix: 'Use the zero-based colId from inspectSheet().autoFilter.columns.',
+		})
+	}
+	if (op.descending !== undefined && typeof op.descending !== 'boolean') {
+		return ascendError('VALIDATION_ERROR', `${opName} descending must be boolean`, {
+			suggestedFix: 'Set descending=true or descending=false.',
 		})
 	}
 	return null

@@ -648,6 +648,40 @@ describe('mutation journal exactness model', () => {
 		}
 	})
 
+	test('classifies invalid autofilter sort metadata as unsupported values', () => {
+		const cases: readonly Operation[] = [
+			{ op: 'setAutoFilter', sheet: 'Sheet1', range: 'A1:E22', sortRef: ':A1' },
+			{ op: 'setAutoFilter', sheet: 'Sheet1', range: 'A1:E22', sortBy: 'E:' },
+			{
+				op: 'setAutoFilter',
+				sheet: 'Sheet1',
+				range: 'A1:E22',
+				descending: 'true' as never,
+			},
+		]
+
+		for (const op of cases) {
+			const wb = AscendWorkbook.create()
+			const journal = buildMutationJournal(wb.getWorkbookModel(), [op])
+			const analysis = analyzeMutationJournalExactness(journal)
+			expect(journal.inverseOps, JSON.stringify(op)).toEqual([])
+			expect(analysis, JSON.stringify(op)).toMatchObject({
+				supported: true,
+				exact: false,
+				issueCount: 1,
+				surfaces: ['auto-filters'],
+				reasons: ['value-unsupported'],
+				hasMatrixViolation: false,
+			})
+			expect(analysis.issues[0], JSON.stringify(op)).toMatchObject({
+				code: 'UNSUPPORTED_VALUE',
+				surface: 'auto-filters',
+				reason: 'value-unsupported',
+				allowedByMatrix: true,
+			})
+		}
+	})
+
 	test('classifies invalid range-backed journals as unsupported values', () => {
 		const cases: readonly {
 			readonly op: Operation

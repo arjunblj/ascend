@@ -1718,6 +1718,65 @@ describe('mutation journal exactness model', () => {
 		})
 	})
 
+	test('copySheet retargets imported sheet-qualified shared formula text and bindings across save reopen', async () => {
+		const source = AscendWorkbook.create()
+		const sheet = source.getWorkbookModel().getSheet('Sheet1')
+		if (!sheet) throw new Error('missing Sheet1')
+		sheet.cells.set(0, 0, {
+			value: numberValue(2),
+			formula: 'Sheet1!B1*2',
+			styleId: DEFAULT_STYLE_ID,
+			formulaInfo: {
+				kind: 'shared',
+				sharedIndex: 'imported-copy-shared',
+				isMaster: true,
+				masterRef: 'Sheet1!A1',
+				ref: 'Sheet1!A1:A2',
+			},
+		})
+		sheet.cells.set(1, 0, {
+			value: numberValue(4),
+			formula: null,
+			styleId: DEFAULT_STYLE_ID,
+			formulaInfo: {
+				kind: 'shared',
+				sharedIndex: 'imported-copy-shared',
+				isMaster: false,
+				masterRef: 'Sheet1!A1',
+				ref: 'Sheet1!A1:A2',
+			},
+		})
+
+		const imported = await AscendWorkbook.open(source.toBytes())
+		expect(imported.check().valid).toBe(true)
+		expect(imported.formula('Sheet1!A1')?.normalizedFormula).toBe('Sheet1!B1*2')
+		expect(imported.formula('Sheet1!A2')?.normalizedFormula).toBe('Sheet1!B2*2')
+
+		const changed = imported.apply([{ op: 'copySheet', sheet: 'Sheet1', newName: 'Copy' }], {
+			journal: true,
+		})
+
+		expect(changed.errors).toEqual([])
+		expect(imported.check().valid).toBe(true)
+		const reopened = await AscendWorkbook.open(imported.toBytes())
+		expect(reopened.check().valid).toBe(true)
+		expect(reopened.formula('Copy!A1')?.normalizedFormula).toBe('Copy!B1*2')
+		expect(reopened.formula('Copy!A2')?.normalizedFormula).toBe('Copy!B2*2')
+		expect(reopened.sheet('Copy')?.cell('A1')?.formulaBinding).toEqual({
+			kind: 'shared',
+			sharedIndex: 'imported-copy-shared',
+			isMaster: true,
+			masterRef: 'A1',
+			ref: 'Copy!A1:A2',
+		})
+		expect(reopened.sheet('Copy')?.cell('A2')?.formulaBinding).toEqual({
+			kind: 'shared',
+			sharedIndex: 'imported-copy-shared',
+			isMaster: false,
+			masterRef: 'A1',
+		})
+	})
+
 	test('copySheet preserves imported shared formula text and bindings across save reopen', async () => {
 		const wb = await AscendWorkbook.open(
 			readFileSync(new URL('../../../fixtures/xlsx/poi/shared_formulas.xlsx', import.meta.url)),

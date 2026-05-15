@@ -5718,6 +5718,8 @@ describe('interactive client contract', () => {
 		expect(changed.journal?.issues).toContainEqual({
 			code: 'UNSUPPORTED_OPERATION',
 			message: 'No reversible journal support for appendRows',
+			surface: 'tables',
+			reason: 'operation-unsupported',
 		})
 		expect(changed.journal?.entries[0]).toMatchObject({
 			opIndex: 0,

@@ -210,7 +210,7 @@ export const MUTATION_JOURNAL_EXACTNESS_MATRIX: readonly MutationJournalExactnes
 			'representable rich text restores with setRichText',
 			'unsupported cached value kinds make the inverse unsupported',
 		],
-		lossReasons: ['value-unsupported', 'rich-text-unsupported-runs'],
+		lossReasons: ['operation-unsupported', 'value-unsupported', 'rich-text-unsupported-runs'],
 		representativeOps: ['setCells', 'clearRange', 'copyRange', 'moveRange', 'sortRange'],
 	},
 	{
@@ -1630,6 +1630,8 @@ function buildJournalEntry(
 				{
 					code: 'UNSUPPORTED_OPERATION',
 					message: `No reversible journal support for ${op.op}`,
+					surface: classifyMutationJournalOperationPrimarySurface(op),
+					reason: 'operation-unsupported',
 				},
 			],
 		}
@@ -2993,6 +2995,8 @@ function journalCopyRange(
 				{
 					code: 'UNSUPPORTED_OPERATION',
 					message: `No reversible journal support for copyRange mode ${mode}`,
+					surface: classifyMutationJournalOperationPrimarySurface(op),
+					reason: 'operation-unsupported',
 				},
 			],
 		}
@@ -3111,6 +3115,8 @@ function journalMoveRange(
 				{
 					code: 'UNSUPPORTED_OPERATION',
 					message: `No reversible journal support for moveRange mode ${mode}`,
+					surface: classifyMutationJournalOperationPrimarySurface(op),
+					reason: 'operation-unsupported',
 				},
 			],
 		}
@@ -6268,6 +6274,8 @@ function mergeTransferValidationIssues(
 			issues.push({
 				code: 'UNSUPPORTED_OPERATION',
 				message: `Cannot journal ${move ? 'moveRange' : 'copyRange'} merge transfer because ${sourceSheetName}!${rangeToA1(sourceRange)} partially overlaps merged range ${sourceSheetName}!${rangeToA1(merge)}`,
+				surface: 'merged-cells',
+				reason: 'merge-overlap',
 				refs: [
 					`${sourceSheetName}!${rangeToA1(sourceRange)}`,
 					`${sourceSheetName}!${rangeToA1(merge)}`,
@@ -6284,6 +6292,8 @@ function mergeTransferValidationIssues(
 		issues.push({
 			code: 'UNSUPPORTED_OPERATION',
 			message: `Cannot journal ${move ? 'moveRange' : 'copyRange'} merge transfer onto overlapping target ${targetSheetName}!${rangeToA1(targetRange)}`,
+			surface: 'merged-cells',
+			reason: 'merge-overlap',
 			refs: [
 				`${sourceSheetName}!${rangeToA1(sourceRange)}`,
 				`${targetSheetName}!${rangeToA1(targetRange)}`,
@@ -6295,6 +6305,8 @@ function mergeTransferValidationIssues(
 			issues.push({
 				code: 'UNSUPPORTED_OPERATION',
 				message: `Cannot journal ${move ? 'moveRange' : 'copyRange'} merge transfer because ${targetSheetName}!${rangeToA1(targetRange)} partially overlaps merged range ${targetSheetName}!${rangeToA1(merge)}`,
+				surface: 'merged-cells',
+				reason: 'merge-overlap',
 				refs: [
 					`${targetSheetName}!${rangeToA1(targetRange)}`,
 					`${targetSheetName}!${rangeToA1(merge)}`,

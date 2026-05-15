@@ -329,6 +329,16 @@ describe('mutation journal exactness model', () => {
 			{ op: { op: 'appendRows', table: 'Sales', rows: [['East']] }, surface: 'tables' },
 			{
 				op: {
+					op: 'copyRange',
+					sheet: 'Sheet1',
+					source: 'A1',
+					target: 'B1',
+					mode: 'transpose',
+				} as Operation,
+				surface: 'cells',
+			},
+			{
+				op: {
 					op: 'replaceImage',
 					sheet: 'Sheet1',
 					contentBase64: 'AA==',

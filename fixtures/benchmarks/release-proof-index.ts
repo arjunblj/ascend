@@ -25,6 +25,7 @@ export interface ReleaseProofIndexOptions {
 export interface ReleaseProofIndexArtifact {
 	readonly name: ReleaseProofIndexArtifactName
 	readonly command: string
+	readonly compactReportCommand?: string
 	readonly claim: string
 	readonly publicationStatus: 'local-proof-ready' | 'needs-release-packaging'
 	readonly publicationBlockers: readonly string[]
@@ -127,8 +128,8 @@ export function releaseProofIndexMarkdown(result: ReleaseProofIndexResult): stri
 		`Generated: ${result.generatedAt}`,
 		result.boundary,
 		'',
-		'| Artifact | Claim | Command | Publication status | Release gate | Headline claim allowed | Publication blockers | Ready when | JSON bytes | Markdown bytes | Fixture provenance | SHA-256 | Stable shape SHA-256 | Summary | Boundary |',
-		'| --- | --- | --- | --- | --- | --- | --- | --- | ---: | ---: | --- | --- | --- | --- | --- |',
+		'| Artifact | Claim | Command | Compact report command | Publication status | Release gate | Headline claim allowed | Publication blockers | Ready when | JSON bytes | Markdown bytes | Fixture provenance | SHA-256 | Stable shape SHA-256 | Summary | Boundary |',
+		'| --- | --- | --- | --- | --- | --- | --- | --- | --- | ---: | ---: | --- | --- | --- | --- | --- |',
 		...result.artifacts.map(markdownRow),
 		'',
 		'## Release Readiness Gate',
@@ -180,6 +181,8 @@ function safeOpenArtifact(
 		command: includeTimings
 			? 'bun run fixtures/benchmarks/safe-open-proof.ts --repeat 3 --warmup 1 --json'
 			: 'bun run fixtures/benchmarks/safe-open-proof.ts --no-timings --json',
+		compactReportCommand:
+			'bun run fixtures/benchmarks/safe-open-proof.ts --no-timings --compact-json',
 		claim: 'safe unknown workbook opening',
 		publicationStatus: 'needs-release-packaging',
 		publicationBlockers: [
@@ -243,6 +246,8 @@ function packageActionArtifact(
 		command: includeTimings
 			? 'bun run fixtures/benchmarks/package-action-proof.ts --json'
 			: 'bun run fixtures/benchmarks/package-action-proof.ts --no-timings --json',
+		compactReportCommand:
+			'bun run fixtures/benchmarks/package-action-proof.ts --no-timings --compact-json',
 		claim: 'auditable package-part mutation',
 		publicationStatus: 'needs-release-packaging',
 		publicationBlockers: [
@@ -317,6 +322,7 @@ function markdownRow(row: ReleaseProofIndexArtifact): string {
 		row.name,
 		row.claim,
 		`\`${row.command}\``,
+		row.compactReportCommand ? `\`${row.compactReportCommand}\`` : 'n/a',
 		row.publicationStatus,
 		row.releaseGate,
 		String(row.headlineClaimAllowed),

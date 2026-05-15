@@ -51,6 +51,8 @@ describe('release proof evidence index', () => {
 		}
 		expect(index.artifacts.find((artifact) => artifact.name === 'safe-open-proof')).toMatchObject({
 			command: 'bun run fixtures/benchmarks/safe-open-proof.ts --no-timings --json',
+			compactReportCommand:
+				'bun run fixtures/benchmarks/safe-open-proof.ts --no-timings --compact-json',
 			publicationStatus: 'needs-release-packaging',
 			headlineClaimAllowed: false,
 			releaseGate: 'blocked-by-publication-policy',
@@ -92,6 +94,8 @@ describe('release proof evidence index', () => {
 			index.artifacts.find((artifact) => artifact.name === 'package-action-proof'),
 		).toMatchObject({
 			command: 'bun run fixtures/benchmarks/package-action-proof.ts --no-timings --json',
+			compactReportCommand:
+				'bun run fixtures/benchmarks/package-action-proof.ts --no-timings --compact-json',
 			publicationStatus: 'needs-release-packaging',
 			headlineClaimAllowed: false,
 			releaseGate: 'blocked-by-publication-policy',
@@ -165,6 +169,7 @@ describe('release proof evidence index', () => {
 		expect(markdown).toContain('Release Proof Evidence Index')
 		expect(markdown).toContain('not signed provenance')
 		expect(markdown).toContain('Publication blockers')
+		expect(markdown).toContain('Compact report command')
 		expect(markdown).toContain('Ready when')
 		expect(markdown).toContain('Release Readiness Gate')
 		expect(markdown).toContain('ReadyWhen requirements: total=7, missing=7, satisfied=0')
@@ -186,6 +191,8 @@ describe('release proof evidence index', () => {
 		expect(markdown).toContain('deterministicGenerated=signed,unknown-part,malformed')
 		expect(markdown).toContain('generatedDigests=signed:')
 		expect(markdown).toContain('safe-open-proof.ts --no-timings --json')
+		expect(markdown).toContain('safe-open-proof.ts --no-timings --compact-json')
+		expect(markdown).toContain('package-action-proof.ts --no-timings --compact-json')
 		expect(markdown).toContain('SLSA')
 		expect(markdown).toContain('Attestation: false')
 		expect(markdown).toContain('safe unknown workbook opening')

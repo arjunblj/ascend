@@ -110,6 +110,7 @@ Updated: 2026-05-15
 | [Compact report digest policy](runs/2026/2026-05-15-compact-report-digest-policy/log.md) | policy proof: keep compact reports generated on demand until storage/privacy/canonicalization semantics exist | release loop, product loop |
 | [Safe open compact release report](runs/2026/2026-05-15-safe-open-compact-release-report/log.md) | folded in compact claim-safe safe-open report mode without workbook bytes or digests | product loop, performance loop, release loop |
 | [Safe open compact digest policy](runs/2026/2026-05-15-safe-open-compact-digest-policy/log.md) | policy proof: keep safe-open compact report digests out of release index until shared artifact semantics exist | release loop, product loop |
+| [Release index compact report commands](runs/2026/2026-05-15-release-index-compact-report-commands/log.md) | folded in compact report command pointers without compact report digest promotion | release loop, product loop |
 | [Package action proof](runs/2026/2026-05-14-package-action-proof/log.md) | cycle 2 complete, promote | correctness loop, product/DX loop, performance loop |
 | [Formula spans LSP](runs/2026/2026-05-14-formula-spans-lsp/log.md) | cycle 13 complete, folded in SDK hover/code actions | product/DX loop, correctness loop |
 | [Formula sqllogictest conformance](runs/2026/2026-05-14-formula-sqllogictest-conformance/log.md) | cycle 14 complete, folded in converter/runner | correctness loop |

@@ -829,6 +829,7 @@ function editVerifyTable(results: readonly StepResult[]): string {
 		`| Phase profile: shared plan preservation | ${nestedMetric(phase?.summary, 'sharedPlanPhaseMedianMs', 'preservation-audit')} | diagnostic split | ${statusLink(phase)} |`,
 		`| Commit verified total | ${metric(workflow?.summary, 'commitVerifiedTotalMedianMs')} | ${metric(workflow?.summary, 'commitVerifiedPayloadBytesMedian')} bytes | ${statusLink(workflow)} |`,
 		`| Prepared commit verified total | ${metric(workflow?.summary, 'preparedCommitVerifiedTotalMedianMs')} | payload ${metric(workflow?.summary, 'preparedCommitVerifiedPayloadBytesMedian')} bytes, output ${metric(workflow?.summary, 'preparedCommitOutputBytesMedian')} bytes | ${statusLink(workflow)} |`,
+		`| Prepared commit plus independent verify | ${metric(workflow?.summary, 'preparedTotalMedianMs')} | verify payload ${metric(workflow?.summary, 'preparedVerifyPayloadBytesMedian')} bytes | ${statusLink(workflow)} |`,
 		`| Prepared write-policy snapshot | ${metric(workflow?.summary, 'preparedCommitWritePolicySnapshotMedianMs')} | | ${statusLink(workflow)} |`,
 		`| Prepared write-policy check | ${metric(workflow?.summary, 'preparedCommitWritePolicyCheckMedianMs')} | | ${statusLink(workflow)} |`,
 		`| Prepared reopen output | ${metric(workflow?.summary, 'preparedCommitPostWriteReopenMedianMs')} | output ${metric(workflow?.summary, 'preparedCommitOutputBytesMedian')} bytes | ${statusLink(workflow)} |`,
@@ -964,6 +965,7 @@ function envelopeDecisions(results: readonly StepResult[]): EnvelopeDecision[] {
 	}
 
 	const editEnvelope =
+		numericMetric(workflow?.summary, 'preparedTotalMedianMs') ??
 		numericMetric(workflow?.summary, 'preparedCommitVerifiedTotalMedianMs') ??
 		numericMetric(workflow?.summary, 'commitVerifiedTotalMedianMs') ??
 		numericMetric(workflow?.summary, 'totalMedianMs')
@@ -1058,6 +1060,12 @@ function envelopeDecisions(results: readonly StepResult[]): EnvelopeDecision[] {
 				profileCommand: workflowProfile || postWriteProfile,
 			},
 			{
+				name: 'Prepared independent verify/check',
+				medianMs: numericMetric(workflow?.summary, 'preparedVerifyMedianMs') ?? 0,
+				...phaseCandidateStats(workflow?.summary, 'preparedVerifyStats'),
+				profileCommand: workflowProfile,
+			},
+			{
 				name: 'Prepared preservation/package verification',
 				medianMs: Math.max(
 					numericMetric(workflow?.summary, 'preparedCommitPostWritePreservationMedianMs') ??
@@ -1086,7 +1094,8 @@ function envelopeDecisions(results: readonly StepResult[]): EnvelopeDecision[] {
 			...decisionFields(largest.cv),
 			...maxPlausibleWin(editEnvelope, largest.medianMs),
 			profileCommand: largest.profileCommand,
-			guardrail: 'must preserve write, reopen, structural check, lint, and package verification',
+			guardrail:
+				'must preserve write, reopen, structural check, lint, package verification, and independent verify semantics',
 		})
 	}
 

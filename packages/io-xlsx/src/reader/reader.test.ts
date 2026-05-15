@@ -4059,6 +4059,15 @@ describe('readXlsx', () => {
 		expect(sheet?.cells.get(0, 1)?.value).toEqual(stringValue('Shared formula-free'))
 		expect(sheet?.cells.get(0, 1)?.formula).toBeNull()
 
+		const scanOnlySheet = parseSheetFormulaOnlyBytes(
+			'Sheet1',
+			new TextEncoder().encode(noFormulaXml),
+			{ ...ctx, formulaModeHydrateValues: false },
+		)
+		expect(scanOnlySheet).not.toBeNull()
+		expect(scanOnlySheet?.preservedDimensionRef).toBe('A1:B1')
+		expect(scanOnlySheet?.cells.get(0, 0)).toBeUndefined()
+
 		const formulaXml = `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
   <sheetData><row r="1"><c r="A1"><f>1+1</f><v>2</v></c></row></sheetData>
 </worksheet>`

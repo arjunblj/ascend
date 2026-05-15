@@ -86,6 +86,7 @@ export interface WorkbookLoadOptions {
 	readonly sheets?: readonly string[]
 	readonly maxRows?: number
 	readonly richMetadata?: boolean
+	readonly formulaModeHydrateValues?: boolean
 	readonly password?: string
 	readonly pivotCacheRecordMaterializeLimit?: number | 'all'
 }
@@ -2389,6 +2390,9 @@ function normalizeOptions(options: WorkbookLoadOptions): WorkbookLoadOptions {
 		...(options.sheets ? { sheets: [...options.sheets].sort((a, b) => a.localeCompare(b)) } : {}),
 		...(options.maxRows !== undefined ? { maxRows: options.maxRows } : {}),
 		...(options.richMetadata ? { richMetadata: true } : {}),
+		...(options.formulaModeHydrateValues !== undefined
+			? { formulaModeHydrateValues: options.formulaModeHydrateValues }
+			: {}),
 		...(options.password !== undefined ? { password: options.password } : {}),
 		...(options.pivotCacheRecordMaterializeLimit !== undefined
 			? { pivotCacheRecordMaterializeLimit: options.pivotCacheRecordMaterializeLimit }
@@ -2424,6 +2428,13 @@ function mergeOpenOptions(
 		...(mergedSheets ? { sheets: mergedSheets } : {}),
 		...(maxRows !== undefined ? { maxRows } : {}),
 		...(current.richMetadata || next.richMetadata ? { richMetadata: true } : {}),
+		...(next.formulaModeHydrateValues !== undefined ||
+		current.formulaModeHydrateValues !== undefined
+			? {
+					formulaModeHydrateValues:
+						next.formulaModeHydrateValues ?? current.formulaModeHydrateValues,
+				}
+			: {}),
 		...(next.password !== undefined || current.password !== undefined
 			? { password: next.password ?? current.password }
 			: {}),
@@ -2443,6 +2454,9 @@ function sameOpenOptions(left: WorkbookLoadOptions, right: WorkbookLoadOptions):
 		return false
 	}
 	if (normalizedLeft.password !== normalizedRight.password) return false
+	if (normalizedLeft.formulaModeHydrateValues !== normalizedRight.formulaModeHydrateValues) {
+		return false
+	}
 	const leftSheets = normalizedLeft.sheets ?? []
 	const rightSheets = normalizedRight.sheets ?? []
 	if (leftSheets.length !== rightSheets.length) return false

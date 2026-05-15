@@ -34,6 +34,7 @@ export interface OpenWorkbookSourceOptions {
 	readonly sheets?: readonly string[]
 	readonly maxRows?: number
 	readonly richMetadata?: boolean
+	readonly formulaModeHydrateValues?: boolean
 	readonly password?: string
 	readonly pivotCacheRecordMaterializeLimit?: number | 'all'
 	readonly sourceExtension?: string

@@ -133,6 +133,7 @@ export interface ReadXlsxOptions {
 	readonly sheets?: readonly (string | number)[]
 	readonly maxRows?: number
 	readonly richMetadata?: boolean
+	readonly formulaModeHydrateValues?: boolean
 	readonly parseDates?: boolean
 	readonly password?: string
 	readonly pivotCacheRecordMaterializeLimit?: number | 'all'
@@ -679,6 +680,7 @@ export function readXlsxArchive(
 					valuesOnly,
 					formulaOnly,
 					richMetadata: hydrateRichSheetMetadata,
+					formulaModeHydrateValues: options.formulaModeHydrateValues ?? true,
 					formulaFeatures: sheetFormulaFeatures,
 					fullScalarNumberSpanScratch: [],
 					fullScalarCellOutScratch: {

@@ -100,6 +100,7 @@ export interface SheetParseContext {
 	readonly valuePool?: ValueInternPool
 	readonly valuesOnly?: boolean
 	readonly formulaOnly?: boolean
+	readonly formulaModeHydrateValues?: boolean
 	readonly richMetadata?: boolean
 	readonly formulaFeatures?: SheetFormulaFeatures
 	readonly metadata?: ParsedMetadataPart
@@ -274,6 +275,15 @@ export function parseSheet(
 	sheet.preservedDimensionRef = parseDimensionRef(xml)
 	applyDensityHintFromDimension(sheet, xml)
 	const sheetDataLoc = locateSheetData(xml)
+	if (
+		ctx.formulaOnly &&
+		!ctx.richMetadata &&
+		ctx.formulaModeHydrateValues === false &&
+		sheetDataLoc &&
+		!sheetDataHasFormula(xml, sheetDataLoc)
+	) {
+		return sheet
+	}
 	if (sheetDataLoc) parseSheetDataFromLoc(xml, sheetDataLoc, sheet, ctx)
 	const richMetadata = ctx.richMetadata === true
 	if (ctx.formulaOnly && !richMetadata) return sheet
@@ -363,6 +373,10 @@ export function parseSheetFormulaOnlyBytes(
 	if (!ctx.formulaOnly || ctx.richMetadata || ctx.valuesOnly) return null
 	const sheetDataStart = locateSheetDataStartBytes(bytes)
 	if (!sheetDataStart) return null
+	const sheet = new Sheet(name, sheetId)
+	const dimensionRef = parseDimensionRefBytes(bytes)
+	sheet.preservedDimensionRef = dimensionRef
+	applyDensityHintFromDimensionRef(sheet, dimensionRef)
 	if (!sheetDataStart.selfClosing) {
 		const sheetDataClose = indexOfBytes(
 			bytes,
@@ -374,6 +388,29 @@ export function parseSheetFormulaOnlyBytes(
 		if (hasElementOpenBytes(bytes, BYTES_F_OPEN, sheetDataStart.contentStart, sheetDataClose)) {
 			return null
 		}
+		if (ctx.formulaModeHydrateValues === false) {
+			if (hasUnsupportedValuesOnlyOuterTagsInRangeBytes(bytes, 0, sheetDataStart.tagStart)) {
+				return null
+			}
+			if (
+				hasUnsupportedValuesOnlyOuterTagsInRangeBytes(
+					bytes,
+					sheetDataClose + BYTES_SHEET_DATA_CLOSE.length,
+					bytes.length,
+				)
+			) {
+				return null
+			}
+			return sheet
+		}
+	} else if (ctx.formulaModeHydrateValues === false) {
+		if (
+			hasUnsupportedValuesOnlyOuterTagsInRangeBytes(bytes, 0, sheetDataStart.tagStart) ||
+			hasUnsupportedValuesOnlyOuterTagsInRangeBytes(bytes, sheetDataStart.closeEnd, bytes.length)
+		) {
+			return null
+		}
+		return sheet
 	}
 	return parseSheetValuesOnlyBytes(
 		name,

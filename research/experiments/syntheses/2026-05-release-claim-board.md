@@ -58,6 +58,7 @@ Latest proof refresh, 2026-05-15T10:15:42Z:
 - `release:sdk:smoke` now proves a narrow SDK-only temp external install from a built tarball without consumer overrides. It verifies create/open/plan/commit/reopen/check/recalc from `@ascend/sdk`; it does not close CLI/API/MCP packaging, bundled docs, publication policy, provenance, or signed artifact claims.
 - CLI/API/MCP packageability now has a narrow implementation proof: app entrypoints can be imported without auto-running, `build:js` emits app JS artifacts, app dist manifests include `ascend`, `ascend-api`, and `ascend-mcp` bin entries, and SDK agent docs are copied into the SDK release artifact. This does not yet prove app tarball installation from an external consumer.
 - Legacy array formula integrity now rejects occupied detached cells inside an array formula range as `legacy-array-range-member-mismatch`. Treat this as correctness hygiene under auditable mutation. It does not change the formula-intelligence board, and it does not authorize rename.
+- `release:apps:smoke` now proves temp external installation of packed CLI/API/MCP tarballs. It runs the installed `ascend` bin and imports API/MCP server exports without workspace dependencies. This closes the app-tarball-install proof gap but not publication policy, signed provenance, artifact retention, API request smoke depth, or MCP protocol-session smoke.
 
 ## External References
 

@@ -8,6 +8,10 @@ Research is no longer a broad sweep. Each direction below must earn its place by
 
 ## Latest Claim Steward Refresh
 
+Proof timestamp: 2026-05-15T19:09:31Z.
+
+The release proof bundle now has a temp external app install proof. `release:apps:smoke` packs CLI/API/MCP app tarballs, installs only those tarballs into `/private/tmp/ascend-apps-local-release/consumer`, runs `node_modules/.bin/ascend --version`, and imports API/MCP server exports from the installed packages. This upgrades the release-packageability row from "app tarball consumer install missing" to "local tarball install smoke exists"; publication policy, signed provenance, artifact retention, and deeper API/MCP protocol smoke remain release/product owner gates.
+
 Proof timestamp: 2026-05-15T19:04:51Z.
 
 Release packageability moved one step from prose to proof without creating a new product surface. `build:js` now emits CLI/API/MCP app JS artifacts and dist manifests with `ascend`, `ascend-api`, and `ascend-mcp` bin entries; CLI/API/MCP entrypoint imports are side-effect free under a direct-run guard; SDK agent docs are bundled into the SDK dist package; the SDK tarball smoke still passes. This partially advances the release proof bundle row, but app tarball consumer install, artifact publication policy, and provenance remain release-owner blockers.

@@ -7449,6 +7449,86 @@ describe('applyOperation', () => {
 		})
 	})
 
+	test('style setters preserve representative formula binding metadata', () => {
+		const cases = [
+			{
+				name: 'shared formula member',
+				setup(sheet: Sheet) {
+					addSharedFormulaGroup(sheet)
+					return { ref: 'A2', row: 1, col: 0 }
+				},
+			},
+			{
+				name: 'dynamic array spill member',
+				setup(sheet: Sheet) {
+					addDynamicArrayAnchorWithStaleSpillFootprint(sheet)
+					return { ref: 'A2', row: 1, col: 0 }
+				},
+			},
+			{
+				name: 'blocked spill anchor',
+				setup(sheet: Sheet) {
+					addBlockedSpillFormula(sheet)
+					return { ref: 'A1', row: 0, col: 0 }
+				},
+			},
+			{
+				name: 'data table metadata',
+				setup(sheet: Sheet) {
+					addDataTableFormula(sheet)
+					return { ref: 'C3', row: 2, col: 2 }
+				},
+			},
+			{
+				name: 'legacy array metadata',
+				setup(sheet: Sheet) {
+					const formulaInfo = { kind: 'array' as const, ref: 'D4:D5' }
+					sheet.cells.set(3, 3, {
+						value: numberValue(1),
+						formula: 'SEQUENCE(2)',
+						styleId: sid,
+						formulaInfo,
+					})
+					sheet.cells.set(4, 3, { value: numberValue(2), formula: null, styleId: sid, formulaInfo })
+					return { ref: 'D5', row: 4, col: 3 }
+				},
+			},
+		]
+
+		for (const entry of cases) {
+			for (const op of ['setNumberFormat', 'setStyle'] as const) {
+				const wb = setup()
+				const sheet = wb.getSheet('Sheet1')
+				if (!sheet) throw new Error('missing sheet')
+				const target = entry.setup(sheet)
+				const before = sheet.cells.get(target.row, target.col)?.formulaInfo
+
+				const result = applyOperation(
+					wb,
+					op === 'setNumberFormat'
+						? {
+								op,
+								sheet: 'Sheet1',
+								range: target.ref,
+								format: '0.000',
+							}
+						: {
+								op,
+								sheet: 'Sheet1',
+								range: target.ref,
+								style: { font: { bold: true } },
+							},
+				)
+
+				expectOk(result)
+				expect(result.value.affectedCells, `${entry.name} ${op}`).toEqual([target.ref])
+				expect(sheet.cells.get(target.row, target.col)?.formulaInfo, `${entry.name} ${op}`).toEqual(
+					before,
+				)
+			}
+		}
+	})
+
 	test('sortRange sorts a block by header name and moves metadata with rows', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

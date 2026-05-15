@@ -1025,7 +1025,11 @@ describe('agent workflow loss audit', () => {
 					expect(committed.postWrite.auditsPassed).toBe(true)
 
 					const reopened = await AscendWorkbook.open(output)
-					expect(reopened.check().valid).toBe(true)
+					const reopenedCheck = reopened.check()
+					expect(reopenedCheck.valid).toBe(true)
+					expect(
+						reopenedCheck.issues.filter((issue) => issue.rule === 'formula-binding-integrity'),
+					).toEqual([])
 					const copy = reopened.getWorkbookModel().getSheet('Copy')
 					expect(reopened.formula('Copy!A4')?.normalizedFormula).toBe('Copy!B4*2')
 					expect(reopened.formula('Copy!A5')?.normalizedFormula).toBe('Copy!B5*2')
@@ -1171,7 +1175,11 @@ describe('agent workflow loss audit', () => {
 					expect(committed.postWrite.auditsPassed).toBe(true)
 
 					const reopened = await AscendWorkbook.open(output)
-					expect(reopened.check().valid).toBe(true)
+					const reopenedCheck = reopened.check()
+					expect(reopenedCheck.valid).toBe(true)
+					expect(
+						reopenedCheck.issues.filter((issue) => issue.rule === 'formula-binding-integrity'),
+					).toEqual([])
 					expect(reopened.formula('Copy!A1')?.normalizedFormula).toBe('Copy!B1:B2')
 					expect(reopened.sheet('Copy')?.cell('A1')?.formulaBinding).toEqual({
 						kind: 'dynamicArray',

@@ -41,18 +41,18 @@ bun run fixtures/benchmarks/safe-open-proof.ts --repeat 5 --warmup 1
 
 The proof harness is tracked and intentionally not a new product surface. It generates durable synthetic signed, unknown-part, and malformed cases in code, and uses public workbook fixtures for real-workbook cases.
 
-Latest rerun: 2026-05-15T03:55:56.646Z.
+Latest rerun: 2026-05-15T04:10:16.187Z.
 
 | Case | Fixture | Bytes | Status | Mode | Review before hydration | Risk families | Parts | Worksheets | Relationships | Median open-plan ms | Median full-open ms | Full/open-plan ratio | Boundary |
 | --- | --- | ---: | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
-| clean | `fixtures/xlsx/poi/SampleSS.xlsx` | 9112 | ok | formula | false | none | 13 | 3 | 10 | 0.200 | 2.297 | 11.46x | ok |
-| formula-heavy | `fixtures/xlsx/poi/formula_stress_test.xlsx` | 64769 | ok | formula | false | none | 27 | 10 | 22 | 0.191 | 6.452 | 33.75x | ok |
-| macro | `fixtures/xlsx/calamine/vba.xlsm` | 12752 | ok | metadata-only | true | preservedMacro | 12 | 3 | 9 | 0.166 | 1.460 | 8.80x | ok |
-| pivot | `fixtures/xlsx/poi/ExcelPivotTableSample.xlsx` | 19460 | ok | formula | false | none | 27 | 3 | 19 | 0.145 | 2.544 | 17.56x | ok |
-| ActiveX | `fixtures/xlsx/libreoffice/activex_checkbox.xlsx` | 12433 | ok | metadata-only | true | preservedActiveX | 17 | 1 | 12 | 0.086 | 1.612 | 18.84x | ok |
-| chart | `fixtures/xlsx/poi/WithChart.xlsx` | 10138 | ok | formula | false | none | 15 | 3 | 10 | 0.077 | 1.248 | 16.27x | ok |
-| signed | synthetic digital-signature package | 2254 | ok | metadata-only | true | preservedSignature | 8 | 1 | 4 | 0.054 | 0.088 | 1.63x | ok |
-| unknown part | synthetic unknown package part | 1697 | ok | metadata-only | true | preservedOther | 6 | 1 | 3 | 0.037 | 0.076 | 2.06x | ok |
+| clean | `fixtures/xlsx/poi/SampleSS.xlsx` | 9112 | ok | formula | false | none | 13 | 3 | 10 | 0.184 | 2.158 | 11.70x | ok |
+| formula-heavy | `fixtures/xlsx/poi/formula_stress_test.xlsx` | 64769 | ok | formula | false | none | 27 | 10 | 22 | 0.182 | 7.236 | 39.77x | ok |
+| macro | `fixtures/xlsx/calamine/vba.xlsm` | 12752 | ok | metadata-only | true | preservedMacro | 12 | 3 | 9 | 0.100 | 1.777 | 17.70x | ok |
+| pivot | `fixtures/xlsx/poi/ExcelPivotTableSample.xlsx` | 19460 | ok | formula | false | none | 27 | 3 | 19 | 0.167 | 2.495 | 14.97x | ok |
+| ActiveX | `fixtures/xlsx/libreoffice/activex_checkbox.xlsx` | 12433 | ok | metadata-only | true | preservedActiveX | 17 | 1 | 12 | 0.092 | 1.614 | 17.56x | ok |
+| chart | `fixtures/xlsx/poi/WithChart.xlsx` | 10138 | ok | formula | false | none | 15 | 3 | 10 | 0.085 | 1.295 | 15.26x | ok |
+| signed | synthetic digital-signature package | 2254 | ok | metadata-only | true | preservedSignature | 8 | 1 | 4 | 0.051 | 0.101 | 1.99x | ok |
+| unknown part | synthetic unknown package part | 1697 | ok | metadata-only | true | preservedOther | 6 | 1 | 3 | 0.040 | 0.086 | 2.17x | ok |
 | malformed | synthetic malformed bytes | 9 | rejected | n/a | n/a | none | n/a | n/a | n/a | n/a | n/a | n/a | open-plan rejected: Missing end of central directory record |
 
 Validation commands:
@@ -73,7 +73,7 @@ Latest validation rerun passed on 2026-05-15:
 
 ## Interpretation
 
-- Public workbook cases show open-plan as a cheap pre-hydration routing step: 8.80x to 33.75x faster than full hydration in this local probe.
+- Public workbook cases show open-plan as a cheap pre-hydration routing step: 11.70x to 39.77x faster than full hydration in this local probe.
 - Active content and security-sensitive package material route to `metadata-only` with `reviewBeforeHydration: true`.
 - Unknown package material routes to `metadata-only` review instead of pretending the workbook is fully understood.
 - Malformed bytes do not get a recommendation. They reject at package inspection, which should be presented as a boundary in any proof bundle.

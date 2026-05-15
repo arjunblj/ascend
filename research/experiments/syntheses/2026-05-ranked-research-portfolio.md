@@ -4,7 +4,7 @@ Date: 2026-05-15
 
 ## Portfolio Rule
 
-Research is no longer a broad sweep. Each direction below must earn its place by proving a product-shaped claim, naming the evidence gap, and accepting a kill criterion. The top unknowns for this block are formula rejection proof and retained viewport patch examples because they close known proof gaps without adding new surfaces.
+Research is no longer a broad sweep. Each direction below must earn its place by proving a product-shaped claim, naming the evidence gap, and accepting a kill criterion. The top unknowns for this block are the two release-claim candidates: safe unknown workbook opening and auditable package-part mutation. Formula and viewport work stays in proof-backed stewardship, but it is not the next implementation handoff.
 
 ## External Anchors
 
@@ -31,102 +31,75 @@ Research is no longer a broad sweep. Each direction below must earn its place by
 
 ## Top Unknowns Proven This Block
 
-### 1. Formula Rejection-First Cross-Surface Proof
+### 1. Safe Unknown Workbook Opening
 
-Unknown: the board said formula language-service primitives still needed cross-surface `renameTarget` refusal snapshots.
+Unknown: whether the top product/performance claim has current proof from existing SDK/CLI/API/MCP open-plan surfaces, without adding another opener.
 
-Proof produced:
-
-- Added CLI/API/MCP tests that call existing formula-assist surfaces with `=Budget+Sales[Amount]` at the table-name cursor.
-- Each surface now asserts `renameTarget.ok === false`, `reason === "workbook-context-required"`, and role `table-name-use`.
-- No edit-producing rename was implemented.
-
-Validation:
+Proof rerun:
 
 ```bash
-bun test apps/cli/src/cli.test.ts -t "formula assist returns formula IDE help"
-bun test apps/api/src/server.test.ts -t "formula-assist exposes diagnostics"
-bun test apps/mcp/src/index.test.ts -t "ascend.formula_assist exposes formula IDE helpers"
-bunx biome check apps/cli/src/cli.test.ts apps/api/src/server.test.ts apps/mcp/src/index.test.ts
+bun run fixtures/benchmarks/safe-open-proof.ts --repeat 5 --warmup 1
+bun test fixtures/benchmarks/safe-open-proof.test.ts packages/sdk/src/open-plan.test.ts
 ```
-
-Commit: `be666996 test(sdk): prove formula rename refusals across surfaces`.
-
-Decision: Formula intelligence moved from "missing cross-surface refusal snapshot" to "needs latency/corpus proof before stronger release copy." Rename remains killed until workbook-context ownership exists.
-
-### 1b. Formula Assist Corpus/Latency Proof
-
-Unknown: after cross-surface refusal snapshots, the claim still needed a corpus-backed proof that formula assist is fast and refuses unsafe targets over realistic formulas.
-
-Proof produced:
-
-- Added `fixtures/benchmarks/formula-assist-proof.ts`.
-- Added `fixtures/benchmarks/formula-assist-proof.test.ts`.
-- The harness discovers formulas from public POI/ClosedXML formula fixtures, samples 250 formulas by default for proof runs, and combines them with explicit rejection-first cases for LET shadowing, defined names, table names, table columns, external references, 3D references, spill references, and function tokens.
-
-Latest local proof:
-
-| Metric | Value |
-| --- | ---: |
-| Public formulas discovered | 1685 |
-| Sampled formulas | 250 |
-| Static edge cases | 10 |
-| Parse OK formulas | 260 |
-| Reference spans | 506 |
-| Binding roles | 19 |
-| Prepare-rename OK targets | 3 |
-| `no-symbol-at-cursor` refusals | 40 |
-| `workbook-context-required` refusals | 3 |
-| `reference-target-not-renameable` refusals | 214 |
-| Median assist latency | 0.0252 ms |
-| P95 assist latency | 0.0531 ms |
-| Max assist latency | 2.4206 ms |
-
-Validation:
-
-```bash
-bun test fixtures/benchmarks/formula-assist-proof.test.ts
-bun run fixtures/benchmarks/formula-assist-proof.ts --public-formula-limit 250
-bunx biome check fixtures/benchmarks/formula-assist-proof.ts fixtures/benchmarks/formula-assist-proof.test.ts
-```
-
-Decision: Formula language-service primitives are now claimable as corpus-backed, rejection-first primitives. They are still not a top release implementation handoff, and rename remains killed until a correctness-owned workbook-context symbol planner exists.
-
-### 2. Retained Viewport Patch Product Proof
-
-Unknown: whether retained viewport patch history is product-example ready without implying general sync or CRDT collaboration.
-
-Proof produced:
-
-- Reran the tracked viewport proof harness.
-- Reran SDK interactive, API compact `changedSince`, and MCP compact `changedSince` validations.
 
 Latest proof:
 
-| Case | Observed | Passed | Patch bytes | Boundary |
-| --- | --- | --- | ---: | --- |
-| retained-patch | patch:A1 | true | 315 | SDK interactive retained token |
-| skipped-token-retained | patch:A1 | true | 315 | bounded retained history |
-| invalid-token | base-token-invalid | true | 0 | caller uses returned snapshot |
-| cross-session-token | base-snapshot-missing | true | 0 | tokens are not shared history |
-| expired-history | base-token-expired | true | 0 | retention is bounded |
-| projection-change | base-snapshot-missing | true | 0 | no projection-specific code yet |
-| metadata-invalidation | viewport-invalidated | true | 0 | metadata edits force refresh |
+| Metric | Value |
+| --- | ---: |
+| Proof cases | 9 |
+| OK cases | 8 |
+| Malformed rejected | 1 |
+| Review before hydration | 4 |
+| Public fixture open-plan speedup range | 11.70x to 39.77x |
+| Synthetic signed mode | metadata-only, review |
+| Synthetic unknown-part mode | metadata-only, review |
 
-Validation:
+Decision: keep safe unknown workbook opening as the top handoff. The allowed claim is "package-feature routing and review branch before hydration." The honest boundary remains: not malware scanning, sandboxing, active-content safety, or malformed-package recovery.
+
+### 2. Auditable Package-Part Mutation
+
+Unknown: whether the second release claim still proves every package action kind and aligns package proof with rollback-journal evidence.
+
+Proof rerun:
 
 ```bash
-bun run fixtures/benchmarks/viewport-patch-proof.ts
-bun test fixtures/benchmarks/viewport-patch-proof.test.ts
-bun test packages/sdk/src/interactive-contract.test.ts -t "retained|viewport patch results expose invalidation|tokens from other sessions"
-bun test apps/api/src/server.test.ts -t "compact changedSince"
-bun test apps/mcp/src/index.test.ts -t "compact changedSince"
+bun run fixtures/benchmarks/package-action-proof.ts
+bun test fixtures/benchmarks/package-action-proof.test.ts
 ```
 
-Decision: Product example is allowed for SDK retained patches plus API/MCP compact recovery. CLI remains excluded. CRDT/collaboration language remains killed.
+Latest proof:
+
+| Metric | Value |
+| --- | ---: |
+| Proof cases | 8 |
+| Passthrough actions | 27 |
+| Regenerate actions | 38 |
+| Add actions | 3 |
+| Drop actions | 3 |
+| Error actions | 1 |
+| Cases with source graph evidence | 8 |
+| Cases with package-preservation journal issue | 8 |
+| Unknown-part proof issues | 1 |
+
+Decision: keep auditable package-part mutation as the second handoff. The allowed claim is local per-part accounting with `passthrough`, `regenerate`, `add`, `drop`, and `error`. The honest boundary remains: not signed provenance, SLSA, in-toto attestation, Excel recalc equivalence, or semantic understanding of every unsupported feature.
+
+### Release Proof Index
+
+The current digest index covers only the top two artifacts:
+
+```bash
+bun run fixtures/benchmarks/release-proof-index.ts --no-timings
+```
+
+| Artifact | Stable shape SHA-256 | Summary |
+| --- | --- | --- |
+| safe-open-proof | `6aa54a651309b3c45ce7ce93ff7034e7b31e47c7cbc458c58ee6a6f23e0c6178` | cases=9, ok=8, rejected=1, reviewBeforeHydration=4, malformedRejected=true |
+| package-action-proof | `b9758496346c97920c80ba08b6632315708a6d6cc770927695337e729554dbb0` | cases=8, passthrough=27, regenerate=38, add=3, drop=3, error=1 |
+
+Decision: formula intelligence, retained viewport patches, token-bounded agent view, property-based journal laws, and columnar sidecars stay out of the top release proof index for now.
 
 ## Next Proof Moves
 
-1. Safe-open release proof packaging: keep using existing surfaces and public fixtures; do not add new opener surfaces.
-2. Auditable package-part mutation proof packaging: keep using existing proof/journal surfaces; do not add mutation surfaces.
-3. Property-based journal laws: rank up only if generators cover real workbook features, not just scalar cells.
+1. Product/performance handoff: publish the safe unknown workbook opening proof bundle from existing surfaces and public fixtures.
+2. Correctness/product handoff: publish the auditable package-part mutation proof bundle from existing proof/journal surfaces.
+3. Research-only follow-up: property-based journal laws may rank up only if generators cover real workbook metadata, including validation/conditional-format ordering, not just scalar cells.

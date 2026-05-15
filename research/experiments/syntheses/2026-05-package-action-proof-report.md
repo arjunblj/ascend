@@ -84,6 +84,8 @@ Promote as the second release-proof artifact beside safe-open. Do not add a new 
 
 Release proof index status: `fixtures/benchmarks/release-proof-index.ts` now lists the exact reproduction command, publication blockers, owner-loop `readyWhen` gates, and one representative streaming writer proof for this artifact. It also carries a fail-closed `streaming-matrix-boundary` gate: do not describe the representative streaming proof as full streaming parity unless a performance owner approves that wording or the proof expands to streaming variants for every package-action scenario. The package-action artifact remains `needs-release-packaging` because synthetic edge packages must stay disclosed unless replaced by public binary fixtures, and this proof is local evidence rather than signed provenance or third-party attestation. The current no-timings stable shape digest is `9abebf576651551f58e00ccf8469d099b2c06dacd48391fe581a24e51a1e0afd`.
 
+Edge fixture policy status: a local ZIP-entry scan found checked-in public candidates for some generated edge shapes: 101 workbooks with `xl/calcChain.xml`, 25 with `docProps/custom.xml`, 8 with `customXml/`, 2 with `vbaProject.bin`, and 73 with chart/drawing parts. It found 0 checked-in package signatures and 0 checked-in synthetic unknown custom-path equivalents. A focused public `Booleans.xlsx` probe proved `xl/calcChain.xml` can be dropped from a public fixture while preserving post-write audits, with package-action counts `passthrough=5`, `regenerate=6`, `drop=1`, `add=0`, `error=0`. Keep the current report wording blocked until product decides whether to swap calc-chain proof to a public fixture and how to handle unreplaced signature/unknown cases.
+
 Compact report command:
 
 ```bash

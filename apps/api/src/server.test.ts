@@ -524,6 +524,7 @@ describe('Ascend API server', () => {
 			signatureHelp?: { signature?: { name?: string }; activeParameter?: number }
 			cycle?: { formula?: string; changed?: boolean }
 			insertion?: { formula?: string; replaced?: { text?: string } }
+			renameTarget?: { ok?: boolean; reason?: string; role?: { role?: string; text?: string } }
 		}
 
 		expect(result.status).toBe(200)
@@ -541,6 +542,20 @@ describe('Ascend API server', () => {
 		expect(data.signatureHelp?.signature?.name).toBe('SUM')
 		expect(data.cycle).toMatchObject({ formula: '=SUM(A1:$B$2', changed: true })
 		expect(data.insertion).toMatchObject({ formula: '=SUM(C1', replaced: { text: 'A1:B2' } })
+
+		const refusal = await postJson('/formula-assist', {
+			formula: '=Budget+Sales[Amount]',
+			cursor: 10,
+		})
+		const refusalData = refusal.body.data as {
+			renameTarget?: { ok?: boolean; reason?: string; role?: { role?: string; text?: string } }
+		}
+		expect(refusal.status).toBe(200)
+		expect(refusalData.renameTarget).toMatchObject({
+			ok: false,
+			reason: 'workbook-context-required',
+			role: { role: 'table-name-use', text: 'Sales' },
+		})
 	})
 
 	test('dump emits replayable operation batches', async () => {

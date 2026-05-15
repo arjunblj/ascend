@@ -244,6 +244,7 @@ describe('MCP server', () => {
 					signatureHelp?: { signature?: { name?: string } }
 					cycle?: { formula?: string; changed?: boolean }
 					insertion?: { formula?: string; replaced?: { text?: string } }
+					renameTarget?: { ok?: boolean; reason?: string; role?: { role?: string; text?: string } }
 				}
 			}
 		}>
@@ -268,6 +269,16 @@ describe('MCP server', () => {
 		expect(data?.signatureHelp?.signature?.name).toBe('SUM')
 		expect(data?.cycle).toMatchObject({ formula: '=SUM(A1:$B$2', changed: true })
 		expect(data?.insertion).toMatchObject({ formula: '=SUM(C1', replaced: { text: 'A1:B2' } })
+
+		const refusal = await handler({
+			formula: '=Budget+Sales[Amount]',
+			cursor: 10,
+		})
+		expect(refusal.structuredContent?.data?.renameTarget).toMatchObject({
+			ok: false,
+			reason: 'workbook-context-required',
+			role: { role: 'table-name-use', text: 'Sales' },
+		})
 	})
 
 	test('ascend.plan and ascend.commit can include package action proof evidence', async () => {

@@ -1540,6 +1540,22 @@ describe('ascend cli', () => {
 		expect(parsed.data.signatureHelp.signature.name).toBe('SUM')
 		expect(parsed.data.insertion.formula).toContain('C3')
 		expect(parsed.data.cycle.changed).toBe(true)
+
+		const refusal = await run(
+			'formula',
+			'assist',
+			'=Budget+Sales[Amount]',
+			'--cursor',
+			'10',
+			'--json',
+		)
+		expect(refusal.exitCode).toBe(0)
+		const refusalData = JSON.parse(refusal.stdout)
+		expect(refusalData.data.renameTarget).toMatchObject({
+			ok: false,
+			reason: 'workbook-context-required',
+			role: { role: 'table-name-use', text: 'Sales' },
+		})
 	})
 
 	test('formula set fails when recalculation reports errors', async () => {

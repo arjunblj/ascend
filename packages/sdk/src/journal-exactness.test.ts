@@ -607,6 +607,50 @@ describe('mutation journal exactness model', () => {
 		}
 	})
 
+	test('classifies table range collision journals as table topology', () => {
+		const cases: readonly Operation[] = [
+			{ op: 'createTable', sheet: 'Sheet1', ref: 'B1:C2', name: 'Inventory', hasHeaders: true },
+			{ op: 'resizeTable', table: 'Sales', ref: 'A1:D3' },
+		]
+
+		for (const op of cases) {
+			const wb = AscendWorkbook.create()
+			seedSimpleTable(wb)
+			applyExact(wb, [
+				{
+					op: 'setCells',
+					sheet: 'Sheet1',
+					updates: [
+						{ ref: 'D1', value: 'Region' },
+						{ ref: 'E1', value: 'Qty' },
+						{ ref: 'D2', value: 'North' },
+						{ ref: 'E2', value: 4 },
+					],
+				},
+				{ op: 'createTable', sheet: 'Sheet1', ref: 'D1:E2', name: 'Revenue', hasHeaders: true },
+			])
+
+			const analysis = analyzeMutationJournalExactness(
+				buildMutationJournal(wb.getWorkbookModel(), [op]),
+			)
+
+			expect(analysis, op.op).toMatchObject({
+				supported: true,
+				exact: false,
+				issueCount: 1,
+				surfaces: ['tables'],
+				reasons: ['operation-unsupported'],
+				hasMatrixViolation: false,
+			})
+			expect(analysis.issues[0], op.op).toMatchObject({
+				code: 'UNSUPPORTED_VALUE',
+				surface: 'tables',
+				reason: 'operation-unsupported',
+				allowedByMatrix: true,
+			})
+		}
+	})
+
 	test('classifies setComment legacy drawing loss without changing the v1 vocabulary', () => {
 		const classified = classifyMutationJournalIssues(lossySetCommentLegacyDrawingJournal().issues)
 		expect(classified).toContainEqual({

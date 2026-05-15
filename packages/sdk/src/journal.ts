@@ -2193,6 +2193,8 @@ function journalOperationTableTopologyIssue(
 			)
 		}
 	}
+	const rangeCollision = journalOperationTableRangeCollisionIssue(workbook, op)
+	if (rangeCollision) return rangeCollision
 	return null
 }
 
@@ -2218,6 +2220,30 @@ function journalOperationCreatedTable(op: Operation): string | null {
 		default:
 			return null
 	}
+}
+
+function journalOperationTableRangeCollisionIssue(
+	workbook: Workbook,
+	op: Operation,
+): MutationJournalIssue | null {
+	if (op.op !== 'createTable' && op.op !== 'resizeTable') return null
+	const sheet =
+		op.op === 'createTable'
+			? workbook.getSheet(op.sheet)
+			: findTableMatches(workbook, op.table)[0]?.sheet
+	if (!sheet) return null
+	const sourceTable =
+		op.op === 'resizeTable' ? findTableMatches(workbook, op.table)[0]?.table : null
+	const targetRange = parseRange(op.ref)
+	const overlappingTable = sheet.tables.find(
+		(table) => table.id !== sourceTable?.id && rangesOverlap(table.ref, targetRange),
+	)
+	if (!overlappingTable) return null
+	const tableName = op.op === 'createTable' ? op.name : op.table
+	return tableTopologyJournalIssue(
+		tableName,
+		`Cannot build exact rollback journal for ${op.op} because range ${sheet.name}!${op.ref} overlaps table ${overlappingTable.name}`,
+	)
 }
 
 function duplicateJournalOperationTargetSheet(workbook: Workbook, op: Operation): string | null {

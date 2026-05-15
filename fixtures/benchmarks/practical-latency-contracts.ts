@@ -3,13 +3,18 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 
 type ContractName = 'first-view' | 'edit-verify' | 'repeated-inspection'
+type InputPreset = 'private-nyc311' | 'public-tracked'
 type StepStatus = 'ok' | 'timeout' | 'failed' | 'skipped'
 
 interface Args {
+	readonly inputPreset: InputPreset
 	readonly inputFile: string
 	readonly sheet: string
 	readonly range: string
-	readonly editInputFile: string
+	readonly editInputFile?: string
+	readonly tableInputFile: string
+	readonly readRows?: number
+	readonly readCols?: number
 	readonly rowLimit: number
 	readonly mutations: number
 	readonly repeat: number
@@ -84,12 +89,18 @@ interface InputProvenance {
 	readonly tracked: boolean
 	readonly exists: boolean
 	readonly releaseClaimable: boolean
+	readonly role: string
+	readonly kind: 'tracked-file' | 'local-file' | 'generated' | 'missing'
 }
 
 const DEFAULT_INPUT = 'research/excel-corpus/NYC_311_SR_2010-2020-sample-1M.xlsx'
 const DEFAULT_SHEET = 'NYC_311_SR_2010-2020-sample-1M'
 const DEFAULT_RANGE = 'A1:AO1000001'
 const DEFAULT_EDIT_INPUT = 'fixtures/xlsx/stress/dense-100k.xlsx'
+const DEFAULT_TABLE_INPUT = 'fixtures/xlsx/calamine/table-multiple.xlsx'
+const PUBLIC_TRACKED_INPUT = 'fixtures/xlsx/calamine/issue_174.xlsx'
+const PUBLIC_TRACKED_SHEET = 'Sheet1'
+const PUBLIC_TRACKED_RANGE = 'A1:K65536'
 const DEFAULT_OUT_DIR = join('/private/tmp', `ascend-practical-contracts-${Date.now()}`)
 const PROFILE_SCRIPT = 'fixtures/benchmarks/profile-bun.ts'
 
@@ -125,12 +136,51 @@ function parseContract(raw: string | undefined): Args['contract'] {
 	throw new Error('--contract must be all, first-view, edit-verify, or repeated-inspection')
 }
 
+function parseInputPreset(raw: string | undefined): InputPreset {
+	if (raw === undefined || raw === 'private-nyc311' || raw === 'public-tracked') {
+		return raw ?? 'private-nyc311'
+	}
+	throw new Error('--input-preset must be private-nyc311 or public-tracked')
+}
+
+function optionalPositiveInt(
+	raw: string | undefined,
+	fallback: number | undefined,
+): number | undefined {
+	if (raw === undefined) return fallback
+	const value = Number.parseInt(raw, 10)
+	return Number.isFinite(value) && value > 0 ? value : fallback
+}
+
 function parseArgs(): Args {
+	const inputPreset = parseInputPreset(readOption('--input-preset'))
+	const preset =
+		inputPreset === 'public-tracked'
+			? {
+					inputFile: PUBLIC_TRACKED_INPUT,
+					sheet: PUBLIC_TRACKED_SHEET,
+					range: PUBLIC_TRACKED_RANGE,
+					editInputFile: undefined,
+					readRows: undefined,
+					readCols: undefined,
+				}
+			: {
+					inputFile: DEFAULT_INPUT,
+					sheet: DEFAULT_SHEET,
+					range: DEFAULT_RANGE,
+					editInputFile: DEFAULT_EDIT_INPUT,
+					readRows: 1_000_001,
+					readCols: 41,
+				}
 	return {
-		inputFile: readOption('--input-file') ?? DEFAULT_INPUT,
-		sheet: readOption('--sheet') ?? DEFAULT_SHEET,
-		range: readOption('--range') ?? DEFAULT_RANGE,
-		editInputFile: readOption('--edit-input-file') ?? DEFAULT_EDIT_INPUT,
+		inputPreset,
+		inputFile: readOption('--input-file') ?? preset.inputFile,
+		sheet: readOption('--sheet') ?? preset.sheet,
+		range: readOption('--range') ?? preset.range,
+		editInputFile: readOption('--edit-input-file') ?? preset.editInputFile,
+		tableInputFile: readOption('--table-input-file') ?? DEFAULT_TABLE_INPUT,
+		readRows: optionalPositiveInt(readOption('--read-rows'), preset.readRows),
+		readCols: optionalPositiveInt(readOption('--read-cols'), preset.readCols),
 		rowLimit: positiveInt(readOption('--row-limit'), 500),
 		mutations: positiveInt(readOption('--mutations'), 25),
 		repeat: positiveInt(readOption('--repeat'), 3),
@@ -174,10 +224,8 @@ function readPhaseArgs(args: Args, phase: string): string[] {
 		'fixtures/benchmarks/xlsx-read-phase.ts',
 		'--input-file',
 		args.inputFile,
-		'--rows',
-		'1000001',
-		'--cols',
-		'41',
+		...(args.readRows === undefined ? [] : ['--rows', String(args.readRows)]),
+		...(args.readCols === undefined ? [] : ['--cols', String(args.readCols)]),
 		'--workload',
 		'dense-values',
 		'--read-source',
@@ -223,8 +271,7 @@ function workflowArgs(args: Args): string[] {
 		'bun',
 		'run',
 		'fixtures/benchmarks/agent-workflow.ts',
-		'--input-file',
-		args.editInputFile,
+		...(args.editInputFile ? ['--input-file', args.editInputFile] : []),
 		'--surface',
 		'api',
 		'--row-limit',
@@ -244,8 +291,7 @@ function postWriteArgs(args: Args): string[] {
 		'bun',
 		'run',
 		'fixtures/benchmarks/post-write-breakdown.ts',
-		'--input-file',
-		args.editInputFile,
+		...(args.editInputFile ? ['--input-file', args.editInputFile] : []),
 		'--updates',
 		String(args.mutations),
 		'--repeat',
@@ -261,8 +307,7 @@ function phaseProfileArgs(args: Args): string[] {
 		'bun',
 		'run',
 		'fixtures/benchmarks/agent-phase-profile.ts',
-		'--input-file',
-		args.editInputFile,
+		...(args.editInputFile ? ['--input-file', args.editInputFile] : []),
 		'--updates',
 		String(args.mutations),
 		'--repeat',
@@ -278,6 +323,8 @@ function tableInspectionArgs(args: Args): string[] {
 		'bun',
 		'run',
 		'fixtures/benchmarks/table-inspection-cache.ts',
+		'--input-file',
+		args.tableInputFile,
 		'--row-limit',
 		String(args.rowLimit),
 		'--repeat',
@@ -515,8 +562,10 @@ function buildMarkdown(
 		'# Ascend Practical Latency Contracts',
 		'',
 		`Generated: ${new Date().toISOString()}`,
+		`Input preset: \`${args.inputPreset}\``,
 		`Input workbook: \`${args.inputFile}\``,
-		`Edit workbook: \`${args.editInputFile}\``,
+		`Edit workbook: \`${args.editInputFile ?? generatedEditInputLabel(args)}\``,
+		`Table inspection workbook: \`${args.tableInputFile}\``,
 		`Input provenance: ${inputProvenanceSummary(inputs)}`,
 		`Timeout: ${args.timeoutMs}ms per step`,
 		`Worktree: ${claimabilityLabel(worktree, inputs)} (${worktree.branchLine}; untracked entries ${worktree.untrackedCount})`,
@@ -596,6 +645,7 @@ function buildProfileMarkdown(
 		'',
 		`Generated: ${new Date().toISOString()}`,
 		`Output directory: \`${args.outDir}\``,
+		`Input preset: \`${args.inputPreset}\``,
 		`Input provenance: ${inputProvenanceSummary(inputs)}`,
 		`Worktree: ${claimabilityLabel(worktree, inputs)} (${worktree.branchLine}; untracked entries ${worktree.untrackedCount})`,
 		'',
@@ -636,21 +686,24 @@ function buildProfileMarkdown(
 function claimabilityLabel(worktree: WorktreeState, inputs: readonly InputProvenance[]): string {
 	if (worktree.trackedDirty) return 'tracked dirty; not release-claimable'
 	return inputs.every((input) => input.releaseClaimable)
-		? 'tracked clean with tracked inputs'
+		? 'tracked clean with tracked/generated inputs'
 		: 'tracked clean with local/private inputs; diagnostic only'
 }
 
 function inputProvenanceSummary(inputs: readonly InputProvenance[]): string {
 	return inputs
 		.map((input) => {
-			const status = input.releaseClaimable
-				? 'tracked'
-				: input.exists
-					? input.tracked
+			const status =
+				input.kind === 'generated'
+					? 'generated by tracked harness'
+					: input.releaseClaimable
 						? 'tracked'
-						: 'local/private'
-					: 'missing'
-			return `\`${input.path}\` (${status})`
+						: input.exists
+							? input.tracked
+								? 'tracked'
+								: 'local/private'
+							: 'missing'
+			return `${input.role}: \`${input.path}\` (${status})`
 		})
 		.join(', ')
 }
@@ -658,7 +711,7 @@ function inputProvenanceSummary(inputs: readonly InputProvenance[]): string {
 function worktreeGuardrail(worktree: WorktreeState, inputs: readonly InputProvenance[]): string {
 	const localInputs = inputs.filter((input) => !input.releaseClaimable)
 	if (!worktree.trackedDirty && localInputs.length === 0) {
-		return `Tracked files and benchmark inputs were clean when this report was generated, so benchmark deltas can be compared against the recorded commit state. Untracked entries are recorded separately (${worktree.untrackedCount}) and must be treated as artifact context, not code changes.`
+		return `Tracked files and benchmark inputs were clean when this report was generated, so benchmark deltas can be compared against the recorded commit state. Generated inputs are produced by the tracked benchmark harness and must be labeled as generated, not real-corpus evidence. Untracked entries are recorded separately (${worktree.untrackedCount}) and must be treated as artifact context, not code changes.`
 	}
 	const tracked =
 		worktree.trackedDirtyFiles.length > 0
@@ -1064,7 +1117,13 @@ async function run() {
 	mkdirSync(args.outDir, { recursive: true })
 	mkdirSync(join(args.outDir, 'profiles'), { recursive: true })
 	const worktree = readWorktreeState()
-	const inputs = [inputProvenance(args.inputFile), inputProvenance(args.editInputFile)]
+	const inputs = [
+		inputProvenance('first-view', args.inputFile),
+		args.editInputFile
+			? inputProvenance('edit', args.editInputFile)
+			: generatedInputProvenance('edit', generatedEditInputLabel(args)),
+		inputProvenance('table-inspection', args.tableInputFile),
+	]
 	const steps = buildSteps(args)
 	const results: StepResult[] = []
 	for (const step of steps) {
@@ -1129,7 +1188,7 @@ function readWorktreeState(): WorktreeState {
 	}
 }
 
-function inputProvenance(path: string): InputProvenance {
+function inputProvenance(role: string, path: string): InputProvenance {
 	const exists = existsSync(path)
 	const tracked = isGitTracked(path)
 	return {
@@ -1137,7 +1196,24 @@ function inputProvenance(path: string): InputProvenance {
 		tracked,
 		exists,
 		releaseClaimable: exists && tracked,
+		role,
+		kind: exists ? (tracked ? 'tracked-file' : 'local-file') : 'missing',
 	}
+}
+
+function generatedInputProvenance(role: string, path: string): InputProvenance {
+	return {
+		path,
+		tracked: true,
+		exists: true,
+		releaseClaimable: true,
+		role,
+		kind: 'generated',
+	}
+}
+
+function generatedEditInputLabel(args: Args): string {
+	return `generated:${args.inputPreset}:mixed-10pct-text:65536x10`
 }
 
 function isGitTracked(path: string): boolean {

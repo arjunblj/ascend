@@ -11,6 +11,8 @@ Hand off only two implementation loops:
 
 Everything else remains do-not-promote for this block. Formula intelligence stays rejection-first; do not implement rename.
 
+Promotion throttle: current `release-proof-index` still reports `headlineClaimsAllowed=false` with 9 missing owner requirements. Until those owner gates move, research may run diagnostic probes and record dead ends, but it should not promote new product claims or new public surfaces beyond the two handoffs below.
+
 ## Proof Snapshot
 
 Current local proof gate:

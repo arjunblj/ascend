@@ -192,6 +192,8 @@ Current application: the safe-open signed and unknown-part cases can remain gene
 
 Release-index enforcement: `fixtures/benchmarks/release-proof-index.ts` marks both current top artifacts as `headlineClaimAllowed: false` with `releaseGate: blocked-by-publication-policy`. It exposes per-artifact `readyWhen` requirements by owner loop, compact report reproduction commands, and an aggregate `readiness` summary with `headlineClaimsAllowed=false`, `missingRequirementCount=9`, and missing requirements grouped by owner/artifact. The package-action artifact now carries `streaming-matrix-boundary` so one representative streaming writer proof cannot be described as full streaming parity without performance-owner approval or broader matrix evidence. Both top artifacts carry `compact-report-publication-policy`, so compact report commands stay discoverability pointers only and compact report digests stay out of the index until artifact storage, privacy filtering, and canonicalization policy are owner-approved. This keeps local proof usable while making stronger headline copy a deliberate product decision rather than an accidental interpretation of a digest.
 
+Owner-action priority: `readiness.nextOwnerActions` ranks fixture disclosure/replacement first, correctness boundaries second, performance evidence third, streaming wording fourth, publication wording fifth, and compact report publication policy last. Compact report policy still blocks digest publication, but public/generated fixture policy and claim-boundary approval decide whether the top claims are credible.
+
 ## Do Not Promote Yet
 
 - Formula safe rename or edit-producing rename.

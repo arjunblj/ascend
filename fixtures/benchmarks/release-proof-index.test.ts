@@ -47,6 +47,28 @@ describe('release proof evidence index', () => {
 				],
 			},
 		})
+		expect(index.readiness.nextOwnerActions.map((action) => action.requirementId)).toEqual([
+			'edge-fixture-policy',
+			'public-edge-fixtures',
+			'unsupported-feature-boundary',
+			'release-latency-run',
+			'streaming-matrix-boundary',
+			'provenance-boundary',
+			'publication-boundary',
+			'compact-report-publication-policy',
+			'compact-report-publication-policy',
+		])
+		expect(index.readiness.nextOwnerActions[0]).toMatchObject({
+			rank: 10,
+			artifact: 'package-action-proof',
+			ownerLoop: 'product',
+			priority: 'claim-evidence',
+		})
+		expect(index.readiness.nextOwnerActions.at(-1)).toMatchObject({
+			rank: 60,
+			requirementId: 'compact-report-publication-policy',
+			priority: 'publication-policy',
+		})
 		for (const artifact of index.artifacts) {
 			expect(artifact.sha256).toMatch(/^[a-f0-9]{64}$/)
 			expect(artifact.stableShapeSha256).toMatch(/^[a-f0-9]{64}$/)
@@ -192,6 +214,10 @@ describe('release proof evidence index', () => {
 		)
 		expect(markdown).toContain(
 			'Missing by artifact: safe-open-proof=public-edge-fixtures,release-latency-run,publication-boundary',
+		)
+		expect(markdown).toContain('Next owner actions: 10:package-action-proof/edge-fixture-policy')
+		expect(markdown).toContain(
+			'60:safe-open-proof/compact-report-publication-policy(release,publication-policy)',
 		)
 		expect(markdown).toContain('Headline claim allowed')
 		expect(markdown).toContain('blocked-by-publication-policy')

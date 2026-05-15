@@ -90,7 +90,17 @@ export interface ReleaseProofReadinessSummary {
 	readonly satisfiedRequirementCount: number
 	readonly missingByOwnerLoop: Readonly<Record<ReleaseProofReadinessOwner, number>>
 	readonly missingByArtifact: Readonly<Record<ReleaseProofIndexArtifactName, readonly string[]>>
+	readonly nextOwnerActions: readonly ReleaseProofNextOwnerAction[]
 	readonly boundary: string
+}
+
+export interface ReleaseProofNextOwnerAction {
+	readonly rank: number
+	readonly artifact: ReleaseProofIndexArtifactName
+	readonly requirementId: string
+	readonly ownerLoop: ReleaseProofReadinessOwner
+	readonly priority: 'claim-evidence' | 'claim-boundary' | 'publication-policy'
+	readonly rationale: string
 }
 
 export async function runReleaseProofIndex(
@@ -139,6 +149,7 @@ export function releaseProofIndexMarkdown(result: ReleaseProofIndexResult): stri
 		`ReadyWhen requirements: total=${result.readiness.totalRequirementCount}, missing=${result.readiness.missingRequirementCount}, satisfied=${result.readiness.satisfiedRequirementCount}`,
 		`Missing by owner loop: ${formatOwnerCounts(result.readiness.missingByOwnerLoop)}`,
 		`Missing by artifact: ${formatMissingByArtifact(result.readiness.missingByArtifact)}`,
+		`Next owner actions: ${formatNextOwnerActions(result.readiness.nextOwnerActions)}`,
 		result.readiness.boundary,
 		'',
 		'## Excluded Evidence',
@@ -381,6 +392,10 @@ function releaseReadinessSummary(
 	let totalRequirementCount = 0
 	let missingRequirementCount = 0
 	let satisfiedRequirementCount = 0
+	const missingRequirements: Array<{
+		readonly artifact: ReleaseProofIndexArtifactName
+		readonly requirement: ReleaseProofReadinessRequirement
+	}> = []
 	for (const artifact of artifacts) {
 		for (const requirement of artifact.readyWhen) {
 			totalRequirementCount += 1
@@ -390,6 +405,7 @@ function releaseReadinessSummary(
 				missingRequirementCount += 1
 				missingByOwnerLoop[requirement.ownerLoop] += 1
 				missingByArtifact[artifact.name]?.push(requirement.id)
+				missingRequirements.push({ artifact: artifact.name, requirement })
 			}
 		}
 	}
@@ -404,8 +420,95 @@ function releaseReadinessSummary(
 		satisfiedRequirementCount,
 		missingByOwnerLoop,
 		missingByArtifact,
+		nextOwnerActions: missingRequirements.map(rankMissingRequirement).sort((left, right) => {
+			const byRank = left.rank - right.rank
+			if (byRank !== 0) return byRank
+			return `${left.artifact}:${left.requirementId}`.localeCompare(
+				`${right.artifact}:${right.requirementId}`,
+			)
+		}),
 		boundary:
 			'Aggregate release readiness is a publication gate over local proof artifacts. It is not signed provenance, attestation verification, or a substitute for owner approval of each missing requirement.',
+	}
+}
+
+function rankMissingRequirement(input: {
+	readonly artifact: ReleaseProofIndexArtifactName
+	readonly requirement: ReleaseProofReadinessRequirement
+}): ReleaseProofNextOwnerAction {
+	const { artifact, requirement } = input
+	switch (requirement.id) {
+		case 'public-edge-fixtures':
+		case 'edge-fixture-policy':
+			return {
+				rank: 10,
+				artifact,
+				requirementId: requirement.id,
+				ownerLoop: requirement.ownerLoop,
+				priority: 'claim-evidence',
+				rationale:
+					'Fixture disclosure or replacement decides whether the proof evidence can support release wording without private or hidden generated inputs.',
+			}
+		case 'unsupported-feature-boundary':
+			return {
+				rank: 20,
+				artifact,
+				requirementId: requirement.id,
+				ownerLoop: requirement.ownerLoop,
+				priority: 'claim-boundary',
+				rationale:
+					'Correctness must approve unsupported-feature boundaries before package-action wording can stay honest.',
+			}
+		case 'release-latency-run':
+			return {
+				rank: 30,
+				artifact,
+				requirementId: requirement.id,
+				ownerLoop: requirement.ownerLoop,
+				priority: 'claim-evidence',
+				rationale:
+					'Performance evidence is needed before any release wording implies a latency threshold or speed claim.',
+			}
+		case 'streaming-matrix-boundary':
+			return {
+				rank: 40,
+				artifact,
+				requirementId: requirement.id,
+				ownerLoop: requirement.ownerLoop,
+				priority: 'claim-boundary',
+				rationale:
+					'Streaming wording must stay limited to one representative proof unless a broader matrix is approved.',
+			}
+		case 'publication-boundary':
+		case 'provenance-boundary':
+			return {
+				rank: 50,
+				artifact,
+				requirementId: requirement.id,
+				ownerLoop: requirement.ownerLoop,
+				priority: 'publication-policy',
+				rationale:
+					'Release wording must avoid trust, active-content safety, signed provenance, and attestation implications.',
+			}
+		case 'compact-report-publication-policy':
+			return {
+				rank: 60,
+				artifact,
+				requirementId: requirement.id,
+				ownerLoop: requirement.ownerLoop,
+				priority: 'publication-policy',
+				rationale:
+					'Compact report storage and canonicalization are needed before digest publication, but not before using generated local proof reports.',
+			}
+		default:
+			return {
+				rank: 100,
+				artifact,
+				requirementId: requirement.id,
+				ownerLoop: requirement.ownerLoop,
+				priority: 'publication-policy',
+				rationale: 'Unclassified missing release-readiness requirement.',
+			}
 	}
 }
 
@@ -420,6 +523,15 @@ function formatMissingByArtifact(
 ): string {
 	return (['safe-open-proof', 'package-action-proof'] as const)
 		.map((artifact) => `${artifact}=${missingByArtifact[artifact].join(',') || 'none'}`)
+		.join('; ')
+}
+
+function formatNextOwnerActions(actions: readonly ReleaseProofNextOwnerAction[]): string {
+	return actions
+		.map(
+			(action) =>
+				`${action.rank}:${action.artifact}/${action.requirementId}(${action.ownerLoop},${action.priority})`,
+		)
 		.join('; ')
 }
 

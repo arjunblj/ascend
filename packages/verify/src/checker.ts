@@ -768,6 +768,16 @@ function rangeContainsCell(range: RangeRef, sheetName: string, row: number, col:
 	)
 }
 
+function rangesEqual(left: RangeRef, right: RangeRef): boolean {
+	return (
+		left.sheet === right.sheet &&
+		left.start.row === right.start.row &&
+		left.start.col === right.start.col &&
+		left.end.row === right.end.row &&
+		left.end.col === right.end.col
+	)
+}
+
 function checkFormulaBindingIntegrity(wb: Workbook): CheckIssue[] {
 	const issues: CheckIssue[] = []
 	const sheetsByName = new Map(wb.sheets.map((sheet) => [sheet.name.toLowerCase(), sheet]))
@@ -831,6 +841,24 @@ function checkFormulaBindingIntegrity(wb: Workbook): CheckIssue[] {
 								},
 							),
 						)
+					}
+					if (binding.ref !== undefined) {
+						const memberRange = parseBindingRange(binding.ref, sheet.name)
+						if (!memberRange || !sharedRange || !rangesEqual(memberRange, sharedRange)) {
+							issues.push(
+								formulaBindingIntegrityIssue(
+									`Shared formula metadata at ${cellRef} has a member range that disagrees with its master range`,
+									[cellRef, `${master.sheet}!${toA1({ row: master.row, col: master.col })}`],
+									{
+										kind: 'shared-formula-member-range-mismatch',
+										sharedIndex: binding.sharedIndex,
+										masterRef: binding.masterRef,
+										memberRange: binding.ref,
+										masterRange: masterCell.formulaInfo.ref,
+									},
+								),
+							)
+						}
 					}
 				}
 				if (binding.isMaster) {

@@ -66,6 +66,30 @@ High that the timing numbers are useful local diagnostics. High that they must n
 
 Archive as diagnostic-only evidence. Do not update release claim wording and do not mark any release proof index gate satisfied.
 
+## Second dirty rerun
+
+A second attempted clean-baseline run also stayed diagnostic-only. The baseline check returned:
+
+```text
+ M packages/engine/src/structural/formula-rewrite.ts
+ M packages/sdk/src/journal.ts
+```
+
+The timed proof still showed the same broad pattern over public fixtures, but one synthetic unknown-part case reported a ratio below 1 on this noisy local run. That reinforces the existing boundary: local timing data is owner-input, not threshold proof.
+
+Second run public-fixture ratios:
+
+| Case | Ratio |
+| --- | ---: |
+| clean | 8.98 |
+| formula-heavy | 44.54 |
+| macro | 17.27 |
+| pivot | 13.28 |
+| activex | 23.43 |
+| chart | 36.75 |
+
+The release proof index still reported `headlineClaimsAllowed=false`, `releaseGate=blocked-by-publication-policy`, and 9 missing readyWhen requirements.
+
 ## Next question
 
 After the verify fix is committed, rerun safe-open timing from `git status --porcelain=v1 -uno` returning empty, then record whether the result is still only diagnostic or ready for performance-owner review.

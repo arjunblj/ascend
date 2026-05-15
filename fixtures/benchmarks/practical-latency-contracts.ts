@@ -873,15 +873,16 @@ function statusLink(result: StepResult | undefined): string {
 
 function productionTarget(results: readonly StepResult[]): string {
 	const selected = envelopeDecisions(results)
-		.filter(
-			(decision) =>
-				decision.phaseMedianMs >= MIN_PRODUCTION_TARGET_PHASE_MS && decision.stability !== 'noisy',
-		)
+		.filter((decision) => decision.phaseMedianMs >= MIN_PRODUCTION_TARGET_PHASE_MS)
 		.sort((a, b) => b.envelopeMedianMs - a.envelopeMedianMs || b.phaseMedianMs - a.phaseMedianMs)[0]
 	if (!selected) {
-		return `No production optimization selected yet: required measurements either failed, timed out, were noisy, or were below the ${MIN_PRODUCTION_TARGET_PHASE_MS}ms production tuning floor. Treat those phases as guardrails and remeasure the largest true envelope before code changes.`
+		return `No production optimization selected yet: measured phases were below the ${MIN_PRODUCTION_TARGET_PHASE_MS}ms production tuning floor. Treat those phases as guardrails unless they regress.`
 	}
-	return `Choose exactly one production target: \`${selected.largestPhase}\` in \`${selected.contract}\`. It belongs to the largest true user-visible envelope (${selected.envelopeMedianMs.toFixed(1)}ms median), and users wait on ${selected.phaseMedianMs.toFixed(1)}ms inside it (max plausible win ${selected.maxPlausibleWinMs.toFixed(1)}ms / ${selected.maxPlausibleWinPct.toFixed(1)}%). Decision status: ${selected.stability}; next action: ${selected.nextAction}. Required profile before code changes: \`${selected.profileCommand}\`. Guardrail: ${selected.guardrail}`
+	const profileGate =
+		selected.stability === 'noisy'
+			? 'Remeasure the exact envelope and run this profile before code changes'
+			: 'Run this profile before code changes'
+	return `Choose exactly one production target: \`${selected.largestPhase}\` in \`${selected.contract}\`. It belongs to the largest true user-visible envelope (${selected.envelopeMedianMs.toFixed(1)}ms median), and users wait on ${selected.phaseMedianMs.toFixed(1)}ms inside it (max plausible win ${selected.maxPlausibleWinMs.toFixed(1)}ms / ${selected.maxPlausibleWinPct.toFixed(1)}%). Decision status: ${selected.stability}; next action: ${selected.nextAction}. ${profileGate}: \`${selected.profileCommand}\`. Guardrail: ${selected.guardrail}`
 }
 
 function decisionMatrix(results: readonly StepResult[]): string {

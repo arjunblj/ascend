@@ -201,4 +201,31 @@ describe('practical latency contracts benchmark', () => {
 			'No production optimization selected',
 		)
 	})
+
+	test('chooses a noisy above-floor envelope as a guarded production target', () => {
+		const results = [
+			{
+				contract: 'edit-verify',
+				id: 'workflow-commit',
+				label: 'workflow',
+				status: 'ok',
+				command: 'workflow',
+				elapsedMs: 0,
+				profileCommand: 'profile workflow',
+				summary: {
+					preparedTotalMedianMs: 150,
+					preparedPlanMedianMs: 110,
+					preparedPlanStats: { p95: 150, cv: 0.2 },
+					preparedCommitMedianMs: 40,
+				},
+			},
+		] as Parameters<typeof practicalLatencyContractsTestHooks.envelopeDecisions>[0]
+
+		const target = practicalLatencyContractsTestHooks.productionTarget(results)
+
+		expect(target).toContain('Choose exactly one production target')
+		expect(target).toContain('Prepared plan/open')
+		expect(target).toContain('Remeasure the exact envelope')
+		expect(target).toContain('profile workflow')
+	})
 })

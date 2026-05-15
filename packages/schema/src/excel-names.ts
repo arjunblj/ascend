@@ -9,6 +9,9 @@ const WORKSHEET_NAME_SUGGESTED_FIX =
 const TABLE_NAME_SUGGESTED_FIX =
 	'Use a table name that starts with a letter, underscore, or backslash; uses only letters, numbers, periods, and underscores after that; is not C, R, A1-style, or R1C1-style; and is 255 characters or fewer.'
 
+const DEFINED_NAME_SUGGESTED_FIX =
+	'Use a defined name that starts with a letter, underscore, or backslash; uses only letters, numbers, periods, and underscores after that; is not C, R, A1-style, or R1C1-style; and is 255 characters or fewer.'
+
 const INVALID_WORKSHEET_NAME_CHARS = /[:\\/?*[\]]/
 
 export function validateExcelWorksheetName(name: string): ExcelNameValidationIssue | null {
@@ -45,6 +48,25 @@ export function validateExcelTableName(name: string): ExcelNameValidationIssue |
 	}
 	if (!/^[\p{L}_\\][\p{L}\p{N}._]*$/u.test(name)) {
 		return issue(`Table name "${name}" contains invalid characters`, TABLE_NAME_SUGGESTED_FIX)
+	}
+	return null
+}
+
+export function validateExcelDefinedName(name: string): ExcelNameValidationIssue | null {
+	if (name.length === 0) {
+		return issue('Defined name cannot be empty', DEFINED_NAME_SUGGESTED_FIX)
+	}
+	if (name.length > 255) {
+		return issue(`Defined name "${name}" exceeds 255 characters`, DEFINED_NAME_SUGGESTED_FIX)
+	}
+	if (/^[cr]$/i.test(name)) {
+		return issue(`Defined name "${name}" is reserved`, DEFINED_NAME_SUGGESTED_FIX)
+	}
+	if (isA1StyleReference(name) || /^R\d+C\d+$/i.test(name)) {
+		return issue(`Defined name "${name}" cannot be a cell reference`, DEFINED_NAME_SUGGESTED_FIX)
+	}
+	if (!/^[\p{L}_\\][\p{L}\p{N}._]*$/u.test(name)) {
+		return issue(`Defined name "${name}" contains invalid characters`, DEFINED_NAME_SUGGESTED_FIX)
 	}
 	return null
 }

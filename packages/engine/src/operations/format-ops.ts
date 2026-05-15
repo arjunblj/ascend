@@ -12,7 +12,7 @@ import type {
 } from '@ascend/core'
 import { toA1 } from '@ascend/core'
 import type { Operation, Result } from '@ascend/schema'
-import { ascendError, err, ok } from '@ascend/schema'
+import { ascendError, err, ok, validateExcelDefinedName } from '@ascend/schema'
 import type { PatchResult } from './helpers.ts'
 import {
 	cellPreservingFormulaInfo,
@@ -674,6 +674,8 @@ export function handleSetDefinedName(
 	_workbook: Workbook,
 	op: Extract<Operation, { op: 'setDefinedName' }>,
 ): Result<PatchResult> {
+	const nameError = definedNameError(op.name)
+	if (nameError) return err(nameError)
 	if (op.scope) {
 		const sheet = _workbook.getSheet(op.scope)
 		if (!sheet) {
@@ -689,6 +691,14 @@ export function handleSetDefinedName(
 		_workbook.definedNames.set(op.name, op.ref)
 	}
 	return ok(patch([], []))
+}
+
+function definedNameError(name: string): ReturnType<typeof ascendError> | null {
+	const validation = validateExcelDefinedName(name)
+	if (!validation) return null
+	return ascendError('VALIDATION_ERROR', validation.message, {
+		suggestedFix: validation.suggestedFix,
+	})
 }
 
 export function handleDeleteDefinedName(

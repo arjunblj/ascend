@@ -7063,6 +7063,19 @@ describe('applyOperation', () => {
 		expect(wb.definedNames.get('MyRange')).toBe('Sheet1!A1:A3')
 	})
 
+	test('setDefinedName rejects Excel-invalid public names', () => {
+		const wb = setup()
+		const result = applyOperation(wb, {
+			op: 'setDefinedName',
+			name: 'A1',
+			ref: 'Sheet1!A1:A3',
+		})
+
+		expectErr(result)
+		expect(result.error.code).toBe('VALIDATION_ERROR')
+		expect(wb.definedNames.has('A1')).toBe(false)
+	})
+
 	test('setDefinedName can target a sheet scope', () => {
 		const wb = setup()
 		const result = applyOperation(wb, {

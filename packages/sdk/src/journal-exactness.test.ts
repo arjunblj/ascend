@@ -563,6 +563,31 @@ describe('mutation journal exactness model', () => {
 		})
 	})
 
+	test('classifies invalid defined-name creation as unsupported values', () => {
+		const wb = AscendWorkbook.create()
+		const journal = buildMutationJournal(wb.getWorkbookModel(), [
+			{ op: 'setDefinedName', name: 'A1', ref: 'Sheet1!A1' },
+		])
+		const analysis = analyzeMutationJournalExactness(journal)
+
+		expect(journal.inverseOps).toEqual([])
+		expect(analysis).toMatchObject({
+			supported: true,
+			exact: false,
+			issueCount: 1,
+			surfaces: ['defined-names'],
+			reasons: ['value-unsupported'],
+			hasMatrixViolation: false,
+		})
+		expect(analysis.issues[0]).toMatchObject({
+			code: 'UNSUPPORTED_VALUE',
+			surface: 'defined-names',
+			reason: 'value-unsupported',
+			refs: ['A1'],
+			allowedByMatrix: true,
+		})
+	})
+
 	test('classifies table selector journal preimage failures as table topology', () => {
 		const missingOps: readonly Operation[] = [
 			{ op: 'deleteTable', table: 'MissingTable' },

@@ -66,7 +66,12 @@ import type {
 	ScalarCellValue,
 	StyleInput,
 } from '@ascend/schema'
-import { EMPTY, validateExcelTableName, validateExcelWorksheetName } from '@ascend/schema'
+import {
+	EMPTY,
+	validateExcelDefinedName,
+	validateExcelTableName,
+	validateExcelWorksheetName,
+} from '@ascend/schema'
 
 export type MutationJournalSurface =
 	| 'cells'
@@ -3772,19 +3777,36 @@ function journalSetDefinedName(
 			],
 		}
 	}
+	const nameIssues = definedNameValueIssues(op)
 	const preimage = definedNamePreimage(workbook, op.name, op.scope)
 	const { inverseOps, issues } = restoreDefinedNameOps(workbook, preimage)
 	const allIssues = [
+		...nameIssues,
 		...issues,
 		...savedSourceDefinedNamePackageStateIssues(workbook, op.op, op.name),
 	]
 	return {
 		opIndex,
 		op,
-		inverseOps,
+		inverseOps: nameIssues.length === 0 ? inverseOps : [],
 		preimages: [{ kind: 'defined-name', definedName: preimage }],
 		issues: allIssues,
 	}
+}
+
+function definedNameValueIssues(
+	op: Extract<Operation, { op: 'setDefinedName' }>,
+): MutationJournalIssue[] {
+	if (!validateExcelDefinedName(op.name)) return []
+	return [
+		{
+			code: 'UNSUPPORTED_VALUE',
+			message: `Cannot build exact rollback journal for setDefinedName because ${op.name} is not a valid defined name`,
+			surface: 'defined-names',
+			reason: 'value-unsupported',
+			refs: [op.scope ? `${op.scope}!${op.name}` : op.name],
+		},
+	]
 }
 
 function journalDeleteDefinedName(

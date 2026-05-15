@@ -1086,6 +1086,97 @@ describe('agent workflow loss audit', () => {
 				},
 			},
 			{
+				name: 'case-insensitive-copy-sheet-shared-formulas-reopen-retargeted',
+				risk: 'copySheet over imported sheet-qualified shared-formula bindings could miss case-insensitive source refs and save copied metadata that still points at the original sheet',
+				proof: async () => {
+					const input = join(TEMP_DIR, 'quality-moat-case-copy-sheet.xlsx')
+					const output = join(TEMP_DIR, 'quality-moat-case-copy-sheet-out.xlsx')
+					mkdirSync(TEMP_DIR, { recursive: true })
+					const wb = AscendWorkbook.create()
+					const model = wb.getWorkbookModel()
+					const sheet = model.getSheet('Sheet1')
+					if (!sheet) throw new Error('missing Sheet1')
+					sheet.name = 'Data'
+					model.invalidateSheetCache()
+					sheet.cells.set(0, 0, {
+						value: numberValue(2),
+						formula: 'data!B1*2',
+						styleId: DEFAULT_STYLE_ID,
+						formulaInfo: {
+							kind: 'shared',
+							sharedIndex: 'quality-moat-case-copy-shared',
+							isMaster: true,
+							masterRef: 'data!A1',
+							ref: 'data!A1:A2',
+						},
+					})
+					sheet.cells.set(1, 0, {
+						value: numberValue(4),
+						formula: null,
+						styleId: DEFAULT_STYLE_ID,
+						formulaInfo: {
+							kind: 'shared',
+							sharedIndex: 'quality-moat-case-copy-shared',
+							isMaster: false,
+							masterRef: 'DATA!A1',
+							ref: 'DATA!A1:A2',
+						},
+					})
+					await wb.save(input)
+
+					const prepared = await createPreparedAgentPlan(input, [
+						{ op: 'copySheet' as const, sheet: 'Data', newName: 'Copy' },
+					])
+					expect(prepared.plan.preview.journal?.issues).toContainEqual(
+						expect.objectContaining({
+							surface: 'package-parts',
+							reason: 'package-part-preservation',
+							refs: ['sheet:Data', 'sheet:Copy'],
+						}),
+					)
+
+					const committed = await prepared.commit({
+						output,
+						approvals: prepared.plan.approvals.map((approval) => approval.id),
+					})
+					expect(committed.postWrite.valid).toBe(true)
+					expect(committed.postWrite.auditsPassed).toBe(true)
+					expect(
+						committed.postWrite.check.issues.filter(
+							(issue) => issue.rule === 'formula-binding-integrity',
+						),
+					).toEqual([])
+
+					const reopened = await AscendWorkbook.open(output)
+					const reopenedCheck = reopened.check()
+					expect(reopenedCheck.valid).toBe(true)
+					expect(
+						reopenedCheck.issues.filter((issue) => issue.rule === 'formula-binding-integrity'),
+					).toEqual([])
+					expect(reopened.formula('Copy!A1')?.normalizedFormula).toBe('Copy!B1*2')
+					expect(reopened.formula('Copy!A2')?.normalizedFormula).toBe('Copy!B2*2')
+					expect(reopened.sheet('Copy')?.cell('A1')?.formulaBinding).toEqual({
+						kind: 'shared',
+						sharedIndex: 'quality-moat-case-copy-shared',
+						isMaster: true,
+						masterRef: 'A1',
+						ref: 'Copy!A1:A2',
+					})
+					expect(reopened.sheet('Copy')?.cell('A2')?.formulaBinding).toEqual({
+						kind: 'shared',
+						sharedIndex: 'quality-moat-case-copy-shared',
+						isMaster: false,
+						masterRef: 'A1',
+					})
+					expect(
+						JSON.stringify([
+							reopened.sheet('Copy')?.cell('A1')?.formulaBinding,
+							reopened.sheet('Copy')?.cell('A2')?.formulaBinding,
+						]),
+					).not.toMatch(/data!/i)
+				},
+			},
+			{
 				name: 'real-copy-sheet-shared-formulas-reopen-retargeted',
 				risk: 'copySheet of an imported shared-formula worksheet could save copied formula text or binding refs that still point at the source sheet',
 				proof: async () => {

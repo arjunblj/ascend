@@ -444,11 +444,15 @@ export class WorkbookDocument {
 			const cachedPathDocument = await readCachedPathDocument(source, options)
 			if (cachedPathDocument) return cachedPathDocument
 		}
+		const hashPathSnapshot = shouldHashPathSnapshot(options)
 		const pathSnapshot =
-			typeof source === 'string'
-				? await readPathSnapshot(source, shouldHashPathSnapshot(options))
+			typeof source === 'string' && hashPathSnapshot
+				? await readPathSnapshot(source, true)
 				: undefined
-		const identity = pathSnapshot?.identity ?? readBytesIdentity(source as Uint8Array)
+		const pathIdentity =
+			typeof source === 'string' && !pathSnapshot ? await readIdentity(source, false) : undefined
+		const identity =
+			pathSnapshot?.identity ?? pathIdentity ?? readBytesIdentity(source as Uint8Array)
 		const key = makeSessionKey(identity, options)
 		const cached = sessionCache.get(key)
 		if (cached && isIdentityEqual(cached.identity, identity)) {
@@ -466,6 +470,12 @@ export class WorkbookDocument {
 				? { ...options, sourceExtension: pathSnapshot.sourceExtension }
 				: options,
 		)
+		if (pathIdentity) {
+			const after = await readIdentity(pathIdentity.path, false)
+			if (!isIdentityEqual(pathIdentity, after)) {
+				throw new AscendException(unstablePathDocumentError(pathIdentity.path, null))
+			}
+		}
 		const document = new WorkbookDocument(
 			key,
 			pathSnapshot?.identity.path ?? source,

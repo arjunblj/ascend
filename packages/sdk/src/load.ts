@@ -2,9 +2,11 @@ import { readFile } from 'node:fs/promises'
 import type { Workbook } from '@ascend/core'
 import { readCsv } from '@ascend/io-csv'
 import {
+	extractZipFromFile,
 	type PreservationCapsule,
 	type ReadXlsxLoadInfo,
 	readXlsx,
+	readXlsxArchive,
 	type ZipArchive,
 } from '@ascend/io-xlsx'
 import {
@@ -46,6 +48,22 @@ export async function openWorkbookSource(
 
 	if (typeof pathOrBytes === 'string') {
 		ext = pathOrBytes.split('.').pop()?.toLowerCase() ?? ''
+		if ((ext === 'xlsx' || ext === 'xlsm') && options?.maxRows !== undefined && !options.password) {
+			try {
+				const archive = extractZipFromFile(pathOrBytes)
+				const result = readXlsxArchive(archive, null, options)
+				if (!result.ok) throw new AscendException(result.error)
+				return {
+					workbook: result.value.workbook,
+					capsules: result.value.capsules,
+					report: result.value.report,
+					loadInfo: buildWorkbookLoadInfo(result.value.loadInfo),
+					originalBytes: null,
+				}
+			} catch {
+				// Fall through to the byte snapshot path for ZIP64/encrypted/non-standard packages.
+			}
+		}
 		bytes =
 			typeof Bun !== 'undefined'
 				? await Bun.file(pathOrBytes).bytes()

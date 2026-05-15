@@ -1,4 +1,5 @@
 import type { Buffer } from 'node:buffer'
+import { closeSync, openSync, readSync, statSync } from 'node:fs'
 import { Readable } from 'node:stream'
 import { promisify } from 'node:util'
 import { createInflateRaw, inflateRaw, inflateRawSync } from 'node:zlib'
@@ -32,17 +33,23 @@ interface ReadChunksOptions {
 	readonly preferStreaming?: boolean
 }
 
+interface ZipByteSource {
+	readonly read: (start: number, length: number) => Uint8Array
+}
+
 export class ZipArchive {
-	private readonly bytes: Uint8Array
+	private readonly bytes: Uint8Array | undefined
+	private readonly source: ZipByteSource | undefined
 	private readonly entriesByPath: Map<string, ZipEntry>
 	private readonly decoder = new TextDecoder('utf-8')
 	private readonly bytesCache = new Map<string, Uint8Array>()
 	private readonly textCache = new Map<string, string>()
 	private caseInsensitivePathByLower: Map<string, string> | undefined
 
-	constructor(bytes: Uint8Array) {
-		this.bytes = bytes
-		this.entriesByPath = parseEntries(bytes, this.decoder)
+	constructor(bytes: Uint8Array, entries?: Map<string, ZipEntry>, source?: ZipByteSource) {
+		this.bytes = source ? undefined : bytes
+		this.source = source
+		this.entriesByPath = entries ?? parseEntries(bytes, this.decoder)
 	}
 
 	get(path: string): ZipEntry | undefined {
@@ -67,10 +74,7 @@ export class ZipArchive {
 		if (cached) return cached
 		const entry = this.entriesByPath.get(path)
 		if (!entry) return undefined
-		const compressed = this.bytes.subarray(
-			entry.dataOffset,
-			entry.dataOffset + entry.compressedSize,
-		)
+		const compressed = this.readCompressedEntryBytes(entry)
 		let bytes: Uint8Array
 		if (entry.compressionMethod === 0) bytes = compressed
 		else if (entry.compressionMethod === 8) bytes = inflateRawBytesSync(compressed)
@@ -85,7 +89,7 @@ export class ZipArchive {
 	readCompressedBytes(path: string): Uint8Array | undefined {
 		const entry = this.entriesByPath.get(path)
 		if (!entry) return undefined
-		return this.bytes.subarray(entry.dataOffset, entry.dataOffset + entry.compressedSize)
+		return this.readCompressedEntryBytes(entry)
 	}
 
 	readText(path: string): string | undefined {
@@ -108,13 +112,18 @@ export class ZipArchive {
 	): IterableIterator<string> {
 		const entry = this.entriesByPath.get(path)
 		if (!entry) return
-		const compressed = this.bytes.subarray(
-			entry.dataOffset,
-			entry.dataOffset + entry.compressedSize,
-		)
 		const decoder = new TextDecoder('utf-8')
 		if (entry.compressionMethod === 0) {
-			yield* decodeTextChunks(compressed, decoder, chunkSize)
+			let offset = 0
+			for (const chunk of this.readCompressedEntryChunks(entry, chunkSize)) {
+				offset += chunk.byteLength
+				const text = decoder.decode(chunk, {
+					stream: offset < entry.compressedSize,
+				})
+				if (text) yield text
+			}
+			const tail = decoder.decode()
+			if (tail) yield tail
 			return
 		}
 		if (entry.compressionMethod !== 8) {
@@ -125,6 +134,7 @@ export class ZipArchive {
 			bunInflateRawSync &&
 			entry.uncompressedSize <= FULL_INFLATE_TEXT_CHUNK_LIMIT_BYTES
 		) {
+			const compressed = this.readCompressedEntryBytes(entry)
 			yield* decodeTextChunks(inflateRawBytesSync(compressed), decoder, chunkSize)
 			return
 		}
@@ -137,11 +147,10 @@ export class ZipArchive {
 				if (tail) pending.push(tail)
 			}
 		})
-		for (let offset = 0; offset < compressed.byteLength; offset += chunkSize) {
-			inflater.push(
-				compressed.subarray(offset, offset + chunkSize),
-				offset + chunkSize >= compressed.byteLength,
-			)
+		let offset = 0
+		for (const chunk of this.readCompressedEntryChunks(entry, chunkSize)) {
+			offset += chunk.byteLength
+			inflater.push(chunk, offset >= entry.compressedSize)
 			while (pending.length > 0) {
 				const text = pending.shift()
 				if (text) yield text
@@ -156,14 +165,8 @@ export class ZipArchive {
 	): IterableIterator<Uint8Array> {
 		const entry = this.entriesByPath.get(path)
 		if (!entry) return
-		const compressed = this.bytes.subarray(
-			entry.dataOffset,
-			entry.dataOffset + entry.compressedSize,
-		)
 		if (entry.compressionMethod === 0) {
-			for (let offset = 0; offset < compressed.byteLength; offset += chunkSize) {
-				yield compressed.subarray(offset, offset + chunkSize)
-			}
+			yield* this.readCompressedEntryChunks(entry, chunkSize)
 			return
 		}
 		if (entry.compressionMethod !== 8) {
@@ -174,6 +177,7 @@ export class ZipArchive {
 			bunInflateRawSync &&
 			entry.uncompressedSize <= FULL_INFLATE_TEXT_CHUNK_LIMIT_BYTES
 		) {
+			const compressed = this.readCompressedEntryBytes(entry)
 			const bytes = inflateRawBytesSync(compressed)
 			for (let offset = 0; offset < bytes.byteLength; offset += chunkSize) {
 				yield bytes.subarray(offset, offset + chunkSize)
@@ -184,11 +188,10 @@ export class ZipArchive {
 		const inflater = new Inflate((chunk) => {
 			if (chunk.byteLength > 0) pending.push(chunk)
 		})
-		for (let offset = 0; offset < compressed.byteLength; offset += chunkSize) {
-			inflater.push(
-				compressed.subarray(offset, offset + chunkSize),
-				offset + chunkSize >= compressed.byteLength,
-			)
+		let offset = 0
+		for (const chunk of this.readCompressedEntryChunks(entry, chunkSize)) {
+			offset += chunk.byteLength
+			inflater.push(chunk, offset >= entry.compressedSize)
 			while (pending.length > 0) {
 				const bytes = pending.shift()
 				if (bytes) yield bytes
@@ -199,10 +202,7 @@ export class ZipArchive {
 	async *readTextChunksAsync(path: string, chunkSize = STREAM_CHUNK_BYTES): AsyncGenerator<string> {
 		const entry = this.entriesByPath.get(path)
 		if (!entry) return
-		const compressed = this.bytes.subarray(
-			entry.dataOffset,
-			entry.dataOffset + entry.compressedSize,
-		)
+		const compressed = this.readCompressedEntryBytes(entry)
 		const decoder = new TextDecoder('utf-8')
 		if (entry.compressionMethod === 0) {
 			for (let offset = 0; offset < compressed.byteLength; offset += chunkSize) {
@@ -239,10 +239,7 @@ export class ZipArchive {
 	): AsyncGenerator<Uint8Array> {
 		const entry = this.entriesByPath.get(path)
 		if (!entry) return
-		const compressed = this.bytes.subarray(
-			entry.dataOffset,
-			entry.dataOffset + entry.compressedSize,
-		)
+		const compressed = this.readCompressedEntryBytes(entry)
 		if (entry.compressionMethod === 0) {
 			for (let offset = 0; offset < compressed.byteLength; offset += chunkSize) {
 				yield compressed.subarray(offset, offset + chunkSize)
@@ -269,10 +266,7 @@ export class ZipArchive {
 		if (cached) return cached
 		const entry = this.entriesByPath.get(path)
 		if (!entry) return undefined
-		const compressed = this.bytes.subarray(
-			entry.dataOffset,
-			entry.dataOffset + entry.compressedSize,
-		)
+		const compressed = this.readCompressedEntryBytes(entry)
 		let bytes: Uint8Array
 		if (entry.compressionMethod === 0) bytes = compressed
 		else if (entry.compressionMethod === 8) {
@@ -315,10 +309,73 @@ export class ZipArchive {
 		}
 		return results
 	}
+
+	private readCompressedEntryBytes(entry: ZipEntry): Uint8Array {
+		if (this.bytes) {
+			return this.bytes.subarray(entry.dataOffset, entry.dataOffset + entry.compressedSize)
+		}
+		if (!this.source) throw new Error('ZIP archive has no byte source')
+		return this.source.read(entry.dataOffset, entry.compressedSize)
+	}
+
+	private *readCompressedEntryChunks(
+		entry: ZipEntry,
+		chunkSize: number,
+	): IterableIterator<Uint8Array> {
+		if (this.bytes) {
+			const compressed = this.bytes.subarray(
+				entry.dataOffset,
+				entry.dataOffset + entry.compressedSize,
+			)
+			for (let offset = 0; offset < compressed.byteLength; offset += chunkSize) {
+				yield compressed.subarray(offset, offset + chunkSize)
+			}
+			return
+		}
+		if (!this.source) throw new Error('ZIP archive has no byte source')
+		for (let offset = 0; offset < entry.compressedSize; offset += chunkSize) {
+			yield this.source.read(
+				entry.dataOffset + offset,
+				Math.min(chunkSize, entry.compressedSize - offset),
+			)
+		}
+	}
 }
 
 export function extractZip(bytes: Uint8Array): ZipArchive {
 	return new ZipArchive(bytes)
+}
+
+export function extractZipFromFile(path: string): ZipArchive {
+	const fileSize = statSync(path).size
+	const tailLength = Math.min(fileSize, 65_557)
+	const tailStart = fileSize - tailLength
+	const tail = readFileRangeSync(path, tailStart, tailLength)
+	const tailView = new DataView(tail.buffer, tail.byteOffset, tail.byteLength)
+	const eocdOffset = findEocdOffset(tailView)
+	const directory = readCentralDirectoryInfo(tailView, eocdOffset)
+	const directoryBytes = readFileRangeSync(
+		path,
+		directory.centralDirOffset,
+		directory.centralDirSize,
+	)
+	const directoryView = new DataView(
+		directoryBytes.buffer,
+		directoryBytes.byteOffset,
+		directoryBytes.byteLength,
+	)
+	const decoder = new TextDecoder('utf-8')
+	const entries = parseCentralDirectoryEntries(
+		directoryBytes,
+		directoryView,
+		decoder,
+		directory.entryCount,
+		0,
+		(localHeaderOffset) => readDataOffsetFromFile(path, localHeaderOffset),
+	)
+	return new ZipArchive(new Uint8Array(), entries, {
+		read: (start, length) => readFileRangeSync(path, start, length),
+	})
 }
 
 function buildCaseInsensitivePathMap(entries: ReadonlyMap<string, ZipEntry>): Map<string, string> {
@@ -368,9 +425,27 @@ function parseEntries(bytes: Uint8Array, decoder: TextDecoder): Map<string, ZipE
 	const eocdOffset = findEocdOffset(view)
 	const directory = readCentralDirectoryInfo(view, eocdOffset)
 
+	return parseCentralDirectoryEntries(
+		bytes,
+		view,
+		decoder,
+		directory.entryCount,
+		directory.centralDirOffset,
+		(localHeaderOffset) => getDataOffset(view, localHeaderOffset),
+	)
+}
+
+function parseCentralDirectoryEntries(
+	bytes: Uint8Array,
+	view: DataView,
+	decoder: TextDecoder,
+	entryCount: number,
+	centralDirOffset: number,
+	readDataOffset: (localHeaderOffset: number) => number,
+): Map<string, ZipEntry> {
 	const entries = new Map<string, ZipEntry>()
-	let offset = directory.centralDirOffset
-	for (let i = 0; i < directory.entryCount; i++) {
+	let offset = centralDirOffset
+	for (let i = 0; i < entryCount; i++) {
 		if (view.getUint32(offset, true) !== CENTRAL_DIR_SIGNATURE) {
 			throw new Error('Invalid central directory entry')
 		}
@@ -403,7 +478,7 @@ function parseEntries(bytes: Uint8Array, decoder: TextDecoder): Map<string, ZipE
 			compressedSize = zip64.compressedSize ?? compressedSize
 			localHeaderOffset = zip64.localHeaderOffset ?? localHeaderOffset
 		}
-		const dataOffset = getDataOffset(view, localHeaderOffset)
+		const dataOffset = readDataOffset(localHeaderOffset)
 		entries.set(path, {
 			path,
 			compressionMethod,
@@ -418,6 +493,33 @@ function parseEntries(bytes: Uint8Array, decoder: TextDecoder): Map<string, ZipE
 	}
 
 	return entries
+}
+
+function readFileRangeSync(path: string, start: number, length: number): Uint8Array {
+	const fd = openSync(path, 'r')
+	try {
+		const bytes = new Uint8Array(length)
+		let offset = 0
+		while (offset < length) {
+			const read = readSync(fd, bytes, offset, length - offset, start + offset)
+			if (read === 0) break
+			offset += read
+		}
+		return offset === length ? bytes : bytes.subarray(0, offset)
+	} finally {
+		closeSync(fd)
+	}
+}
+
+function readDataOffsetFromFile(path: string, localHeaderOffset: number): number {
+	const localHeader = readFileRangeSync(path, localHeaderOffset, 30)
+	const view = new DataView(localHeader.buffer, localHeader.byteOffset, localHeader.byteLength)
+	if (view.byteLength < 30 || view.getUint32(0, true) !== LOCAL_FILE_SIGNATURE) {
+		throw new Error('Invalid local file header')
+	}
+	const fileNameLength = view.getUint16(26, true)
+	const extraFieldLength = view.getUint16(28, true)
+	return localHeaderOffset + 30 + fileNameLength + extraFieldLength
 }
 
 function readCentralDirectoryInfo(

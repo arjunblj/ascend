@@ -160,7 +160,6 @@ export function readXlsx(
 	bytes: Uint8Array,
 	options: ReadXlsxOptions = {},
 ): Result<ReadXlsxResult, AscendError> {
-	const mode = options.mode ?? 'full'
 	let archiveBytes = bytes
 
 	let archive: ZipArchive
@@ -187,6 +186,16 @@ export function readXlsx(
 			)
 		}
 	}
+
+	return readXlsxArchive(archive, archiveBytes, options)
+}
+
+export function readXlsxArchive(
+	archive: ZipArchive,
+	archiveBytes: Uint8Array | null,
+	options: ReadXlsxOptions = {},
+): Result<ReadXlsxResult, AscendError> {
+	const mode = options.mode ?? 'full'
 
 	try {
 		const contentTypesXml = readPart(archive, '[Content_Types].xml')

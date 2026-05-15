@@ -1523,6 +1523,55 @@ describe('agent workflow loss audit', () => {
 				},
 			},
 			{
+				name: 'real-shared-formula-precedent-move-reopens-preserved',
+				risk: 'moving precedent cells in an imported XLSX shared-formula group could rewrite only the master text while audit output omits sibling members or save/reopen drifts from verifier truth',
+				proof: async () => {
+					const input = join(TEMP_DIR, 'quality-moat-real-shared-precedent-move.xlsx')
+					const output = join(TEMP_DIR, 'quality-moat-real-shared-precedent-move-out.xlsx')
+					mkdirSync(TEMP_DIR, { recursive: true })
+					await Bun.write(
+						input,
+						readFileSync(
+							new URL('../../../fixtures/xlsx/poi/shared_formulas.xlsx', import.meta.url),
+						),
+					)
+					const sharedRefs = Array.from({ length: 40 }, (_, index) => `A${index + 2}`)
+
+					const prepared = await createPreparedAgentPlan(input, [
+						{ op: 'moveRange' as const, sheet: 'Label', source: 'B2:B41', target: 'C2' },
+					])
+					expect(prepared.plan.preview.journal?.supported).toBe(true)
+					expect(prepared.plan.preview.journal?.exact).toBe(false)
+					expect(
+						prepared.plan.preview.journal?.issues
+							.filter((issue) => issue.surface === 'shared-formulas')
+							.map((issue) => issue.refs?.[0])
+							.sort(),
+					).toEqual(sharedRefs.map((ref) => `Label!${ref}`).sort())
+					expect(prepared.plan.approvals.length).toBeGreaterThan(0)
+
+					const committed = await prepared.commit({
+						output,
+						approvals: prepared.plan.approvals.map((approval) => approval.id),
+					})
+					expect(committed.apply.affectedCells).toEqual(expect.arrayContaining(sharedRefs))
+					expect(committed.postWrite.valid).toBe(true)
+					expect(committed.postWrite.auditsPassed).toBe(true)
+
+					const reopened = await AscendWorkbook.open(output)
+					expect(
+						reopened.check().issues.filter((issue) => issue.rule === 'formula-binding-integrity'),
+					).toEqual([])
+					expect(reopened.formula('Label!A2')?.normalizedFormula).toBe('C2')
+					expect(reopened.formula('Label!A41')?.normalizedFormula).toBe('C41')
+					expect(
+						sharedRefs.every(
+							(ref) => reopened.sheet('Label')?.cell(ref)?.formulaBinding !== undefined,
+						),
+					).toBe(true)
+				},
+			},
+			{
 				name: 'real-absolute-shared-formula-edit-materializes-and-reopens-clean',
 				risk: 'editing one imported absolute shared-formula member could save shifted sibling formula text or stale binding metadata',
 				proof: async () => {

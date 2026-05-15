@@ -16,6 +16,10 @@ Performance hygiene, 2026-05-15:
 
 The full-scalar worksheet byte parser now scans `sheetData` once for formulas and skips repeated row-local `<f>` scans when formulas are known absent. A diagnostic dense-values 5000 x 20 probe reported `readXlsxMedianMs=8.356042` and `readXlsxCellsPerSecondMedian=11967388.387947304`, but this remains performance-loop evidence only, not a release threshold.
 
+Release packageability, 2026-05-15:
+
+`bun run release:rc:gate` now builds local JS artifacts, packs SDK/CLI/API/MCP tarballs, installs them into an isolated consumer app, rejects workspace/file dependency leakage, and runs SDK/CLI/API/MCP workbook proof. The gate passed with approved network access for public npm dependencies. This is a release-loop harness only until `release-proof-index` records it and publication/non-attestation policy is approved.
+
 Proof timestamp: 2026-05-15T21:34:51Z.
 
 The package-action owner-review evidence is now more concrete without promoting a new surface. `release-proof-index --owner-handoffs-json` exposes `fixturePolicyEvidence.packageAction.externalCandidateEvidence` for `excelforge-book1-unknown-part-mutation`: MIT manifest evidence, workbook SHA-256 `9c5426fa71ff68cc7e40e19e02b5992daf91da5754ef643d2db2f89bd70bb122`, mutation `setCells Projekt 1!A1 = "probe"`, action counts `passthrough=42`, `regenerate=6`, `add=0`, `drop=0`, `error=1`, fail-closed unknown part `docMetadata/LabelInfo.xml`, and `gateEffect=does-not-satisfy-edge-fixture-policy`.

@@ -5169,6 +5169,9 @@ function workbookPropertiesValueIssues(
 		return issues
 	}
 	const codeName = (properties as { readonly codeName?: unknown }).codeName
+	if (codeName !== undefined && codeName !== null && typeof codeName !== 'string') {
+		issues.push(workbookMetadataUnsupportedValueIssue(op.op, 'codeName', ['workbook:properties']))
+	}
 	if (typeof codeName === 'string' && codeName.trim() === '') {
 		issues.push(workbookMetadataUnsupportedValueIssue(op.op, 'codeName', ['workbook:properties']))
 	}
@@ -5184,6 +5187,14 @@ function workbookPropertiesValueIssues(
 		issues.push(
 			workbookMetadataUnsupportedValueIssue(op.op, 'defaultThemeVersion', ['workbook:properties']),
 		)
+	}
+	for (const [field, value] of [
+		['filterPrivacy', (properties as { readonly filterPrivacy?: unknown }).filterPrivacy],
+		['date1904', (properties as { readonly date1904?: unknown }).date1904],
+	] as const) {
+		if (value !== undefined && value !== null && typeof value !== 'boolean') {
+			issues.push(workbookMetadataUnsupportedValueIssue(op.op, field, ['workbook:properties']))
+		}
 	}
 	return issues
 }

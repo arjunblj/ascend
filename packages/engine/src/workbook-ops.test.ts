@@ -64,14 +64,24 @@ describe('workbook metadata operations', () => {
 	})
 
 	test('setWorkbookProperties validates property values', () => {
-		const wb = createWorkbook()
-		const result = applyOperation(wb, {
-			op: 'setWorkbookProperties',
-			properties: { defaultThemeVersion: -1 },
-		})
+		const cases: readonly Operation[] = [
+			{ op: 'setWorkbookProperties', properties: { codeName: 123 } } as unknown as Operation,
+			{ op: 'setWorkbookProperties', properties: { defaultThemeVersion: -1 } },
+			{ op: 'setWorkbookProperties', properties: { filterPrivacy: 'yes' } } as unknown as Operation,
+			{ op: 'setWorkbookProperties', properties: { date1904: 'yes' } } as unknown as Operation,
+		]
 
-		expectErr(result)
-		expect(result.error.message).toContain('defaultThemeVersion')
+		for (const op of cases) {
+			const wb = createWorkbook()
+			wb.workbookProperties = { codeName: 'Before', filterPrivacy: true, date1904: false }
+			const beforeProperties = JSON.stringify(wb.workbookProperties)
+			const beforeCalc = JSON.stringify(wb.calcSettings)
+			const result = applyOperation(wb, op)
+			expectErr(result)
+			expect(result.error.code, JSON.stringify(op)).toBe('VALIDATION_ERROR')
+			expect(JSON.stringify(wb.workbookProperties), JSON.stringify(op)).toBe(beforeProperties)
+			expect(JSON.stringify(wb.calcSettings), JSON.stringify(op)).toBe(beforeCalc)
+		}
 	})
 
 	test('setDocumentProperties merges core, app, and custom docProps metadata', () => {

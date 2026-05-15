@@ -426,6 +426,17 @@ function validateWorkbookProperties(
 	if (
 		properties.codeName !== undefined &&
 		properties.codeName !== null &&
+		typeof properties.codeName !== 'string'
+	) {
+		return err(
+			ascendError('VALIDATION_ERROR', 'workbook property codeName must be a string or null', {
+				suggestedFix: 'Use null to clear codeName, or provide a workbook code name string.',
+			}),
+		)
+	}
+	if (
+		properties.codeName !== undefined &&
+		properties.codeName !== null &&
 		properties.codeName.trim() === ''
 	) {
 		return err(
@@ -448,6 +459,18 @@ function validateWorkbookProperties(
 				},
 			),
 		)
+	}
+	for (const [field, value] of [
+		['filterPrivacy', properties.filterPrivacy],
+		['date1904', properties.date1904],
+	] as const) {
+		if (value !== undefined && value !== null && typeof value !== 'boolean') {
+			return err(
+				ascendError('VALIDATION_ERROR', `workbook property ${field} must be a boolean or null`, {
+					suggestedFix: `Use true, false, or null for ${field}.`,
+				}),
+			)
+		}
 	}
 	return ok(undefined)
 }

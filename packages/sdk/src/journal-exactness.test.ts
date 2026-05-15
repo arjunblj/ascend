@@ -1374,7 +1374,10 @@ describe('mutation journal exactness model', () => {
 	test('classifies rejected workbook metadata journals as unsupported values', () => {
 		const cases: readonly Operation[] = [
 			{ op: 'setWorkbookProperties', properties: { codeName: '  ' } },
+			{ op: 'setWorkbookProperties', properties: { codeName: 123 } } as unknown as Operation,
 			{ op: 'setWorkbookProperties', properties: { defaultThemeVersion: -1 } },
+			{ op: 'setWorkbookProperties', properties: { filterPrivacy: 'yes' } } as unknown as Operation,
+			{ op: 'setWorkbookProperties', properties: { date1904: 'yes' } } as unknown as Operation,
 			{ op: 'setDocumentProperties', properties: { core: { title: 123 } } } as unknown as Operation,
 			{ op: 'setDocumentProperties', properties: { app: { Pages: Number.NaN } } },
 			{

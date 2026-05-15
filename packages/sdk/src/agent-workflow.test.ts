@@ -802,6 +802,37 @@ describe('agent workflow loss audit', () => {
 				expectedKind: 'spill-member-formula-text-mismatch',
 			},
 			{
+				name: 'detached-spill-range-member',
+				output: join(TEMP_DIR, 'detached-spill-range-member-out.xlsx'),
+				setup: (wb: AscendWorkbook) => {
+					const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+					if (!sheet) throw new Error('missing sheet')
+					sheet.cells.set(0, 0, {
+						value: numberValue(1),
+						formula: 'SEQUENCE(3)',
+						styleId: DEFAULT_STYLE_ID,
+						formulaInfo: { kind: 'dynamicArray', metadataIndex: 1, collapsed: false },
+					})
+					sheet.cells.set(1, 0, {
+						value: numberValue(2),
+						formula: null,
+						styleId: DEFAULT_STYLE_ID,
+						formulaInfo: {
+							kind: 'spill',
+							anchorRef: 'Sheet1!A1',
+							ref: 'A1:A3',
+							isAnchor: false,
+						},
+					})
+					sheet.cells.set(2, 0, {
+						value: numberValue(99),
+						formula: 'B3*9',
+						styleId: DEFAULT_STYLE_ID,
+					})
+				},
+				expectedKind: 'spill-range-member-mismatch',
+			},
+			{
 				name: 'blocked-spill-non-anchor-metadata',
 				output: join(TEMP_DIR, 'blocked-spill-non-anchor-metadata-out.xlsx'),
 				setup: (wb: AscendWorkbook) => {

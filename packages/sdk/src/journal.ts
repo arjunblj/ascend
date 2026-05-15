@@ -67,6 +67,420 @@ import type {
 } from '@ascend/schema'
 import { EMPTY } from '@ascend/schema'
 
+export type MutationJournalSurface =
+	| 'cells'
+	| 'formulas'
+	| 'formula-bindings'
+	| 'shared-formulas'
+	| 'dynamic-arrays'
+	| 'spills'
+	| 'tables'
+	| 'defined-names'
+	| 'comments'
+	| 'hyperlinks'
+	| 'data-validations'
+	| 'conditional-formats'
+	| 'merged-cells'
+	| 'row-layout'
+	| 'column-layout'
+	| 'page-setup'
+	| 'sheet-layout'
+	| 'x14-metadata'
+	| 'drawings'
+	| 'charts'
+	| 'pivot-caches'
+	| 'workbook-metadata'
+	| 'package-parts'
+
+export type MutationJournalExactness = 'exact' | 'conditional' | 'lossy'
+
+export type MutationJournalPublicInverse = 'exact' | 'conditional' | 'none'
+
+export type MutationJournalReasonCode =
+	| 'operation-unsupported'
+	| 'value-unsupported'
+	| 'journal-build-failed'
+	| 'journal-unavailable'
+	| 'formula-binding-metadata'
+	| 'formula-cache-unsupported-value'
+	| 'formula-reference-rewrite'
+	| 'rich-text-unsupported-runs'
+	| 'metadata-order'
+	| 'metadata-duplicate'
+	| 'metadata-collision'
+	| 'merge-overlap'
+	| 'x14-metadata'
+	| 'comment-author-removal'
+	| 'threaded-comment-selector'
+	| 'drawing-text-selector'
+	| 'chart-series-unsettable'
+	| 'pivot-cache-unsettable'
+	| 'defined-name-metadata'
+	| 'page-setup-unsettable'
+	| 'page-margins-unsettable'
+	| 'row-layout-created'
+	| 'row-layout-custom-height'
+	| 'column-layout-created'
+	| 'column-layout-width-metadata'
+	| 'table-metadata'
+	| 'sheet-topology'
+	| 'workbook-protection-absence'
+	| 'package-part-preservation'
+	| 'partial-workbook'
+
+export const MUTATION_JOURNAL_REASON_DESCRIPTIONS: Record<MutationJournalReasonCode, string> = {
+	'operation-unsupported': 'No public inverse operation exists for this edit.',
+	'value-unsupported': 'The preimage value cannot be expressed through public cell operations.',
+	'journal-build-failed': 'Journal construction failed before a stable inverse could be built.',
+	'journal-unavailable': 'The workbook state cannot provide a journal for this edit.',
+	'formula-binding-metadata':
+		'Imported formulaInfo metadata cannot be reconstructed by public formula operations.',
+	'formula-cache-unsupported-value':
+		'The formula cache preimage cannot be restored by public cell operations.',
+	'formula-reference-rewrite':
+		'Formula reference rewrites changed metadata that public operations cannot fully reverse.',
+	'rich-text-unsupported-runs': 'The rich text run preimage is not representable by setRichText.',
+	'metadata-order': 'The metadata list order cannot be restored exactly.',
+	'metadata-duplicate': 'Duplicate metadata cannot be targeted exactly by public operations.',
+	'metadata-collision': 'Transferred metadata collides with existing target metadata.',
+	'merge-overlap': 'Merge metadata partially overlaps an edited range or target.',
+	'x14-metadata': 'x14 extension metadata has no public inverse operation.',
+	'comment-author-removal': 'Comment author metadata cannot be removed exactly.',
+	'threaded-comment-selector':
+		'The threaded comment selector is not stable enough for exact inverse.',
+	'drawing-text-selector': 'The drawing selector is not stable enough for exact text inverse.',
+	'chart-series-unsettable':
+		'A chart series field would need to be unset through public operations.',
+	'pivot-cache-unsettable': 'A pivot cache field would need to be unset through public operations.',
+	'defined-name-metadata': 'Defined-name metadata exceeds what public name operations can restore.',
+	'page-setup-unsettable': 'Page setup metadata would need to be unset through public operations.',
+	'page-margins-unsettable':
+		'Page margin metadata would need to be unset through public operations.',
+	'row-layout-created': 'Created row layout metadata cannot be cleared exactly.',
+	'row-layout-custom-height': 'Imported row customHeight metadata cannot be restored exactly.',
+	'column-layout-created': 'Created column layout metadata cannot be cleared exactly.',
+	'column-layout-width-metadata': 'Imported column width metadata cannot be restored exactly.',
+	'table-metadata': 'Table metadata exceeds what public table operations can restore.',
+	'sheet-topology': 'Sheet topology metadata cannot be reconstructed through public operations.',
+	'workbook-protection-absence': 'Workbook or sheet protection absence cannot be restored exactly.',
+	'package-part-preservation': 'Package-preserved metadata has no public inverse operation.',
+	'partial-workbook': 'Partial workbook state cannot prove an exact inverse.',
+}
+
+export interface MutationJournalExactnessRule {
+	readonly surface: MutationJournalSurface
+	readonly exactness: MutationJournalExactness
+	readonly publicInverse: MutationJournalPublicInverse
+	readonly constraints: readonly string[]
+	readonly lossReasons: readonly MutationJournalReasonCode[]
+	readonly representativeOps: readonly string[]
+}
+
+export const MUTATION_JOURNAL_EXACTNESS_MATRIX: readonly MutationJournalExactnessRule[] = [
+	{
+		surface: 'cells',
+		exactness: 'conditional',
+		publicInverse: 'conditional',
+		constraints: [
+			'scalar values restore with setCells',
+			'representable rich text restores with setRichText',
+			'unsupported cached value kinds make the inverse unsupported',
+		],
+		lossReasons: ['value-unsupported', 'rich-text-unsupported-runs'],
+		representativeOps: ['setCells', 'clearRange', 'copyRange', 'moveRange', 'sortRange'],
+	},
+	{
+		surface: 'formulas',
+		exactness: 'conditional',
+		publicInverse: 'conditional',
+		constraints: [
+			'formula text restores with setFormula',
+			'formula cache restores only when the cached value is accepted by public cell writes',
+		],
+		lossReasons: ['formula-cache-unsupported-value', 'formula-reference-rewrite'],
+		representativeOps: [
+			'setFormula',
+			'fillFormula',
+			'setCells',
+			'clearRange',
+			'copyRange',
+			'moveRange',
+		],
+	},
+	{
+		surface: 'formula-bindings',
+		exactness: 'lossy',
+		publicInverse: 'none',
+		constraints: [
+			'public operations can materialize formula text but cannot recreate imported formulaInfo bindings',
+		],
+		lossReasons: ['formula-binding-metadata'],
+		representativeOps: ['setCells', 'clearRange', 'fillFormula', 'copyRange', 'moveRange'],
+	},
+	{
+		surface: 'shared-formulas',
+		exactness: 'lossy',
+		publicInverse: 'none',
+		constraints: ['shared formula master/member metadata is formula binding metadata'],
+		lossReasons: ['formula-binding-metadata'],
+		representativeOps: ['setCells', 'clearRange', 'copyRange', 'moveRange'],
+	},
+	{
+		surface: 'dynamic-arrays',
+		exactness: 'lossy',
+		publicInverse: 'none',
+		constraints: ['dynamic array metadata is formula binding metadata'],
+		lossReasons: ['formula-binding-metadata'],
+		representativeOps: ['setCells', 'clearRange', 'copyRange', 'moveRange'],
+	},
+	{
+		surface: 'spills',
+		exactness: 'lossy',
+		publicInverse: 'none',
+		constraints: ['spill footprint metadata is formula binding metadata'],
+		lossReasons: ['formula-binding-metadata'],
+		representativeOps: ['setCells', 'clearRange', 'copyRange', 'moveRange'],
+	},
+	{
+		surface: 'tables',
+		exactness: 'conditional',
+		publicInverse: 'conditional',
+		constraints: [
+			'table lifecycle and editable table fields restore when public operations can address the original table',
+			'unsupported table metadata or missing selectors make rollback lossy',
+		],
+		lossReasons: ['table-metadata', 'value-unsupported'],
+		representativeOps: [
+			'createTable',
+			'deleteTable',
+			'renameTable',
+			'resizeTable',
+			'setTableColumn',
+		],
+	},
+	{
+		surface: 'defined-names',
+		exactness: 'conditional',
+		publicInverse: 'conditional',
+		constraints: [
+			'plain workbook and sheet scoped names restore with setDefinedName/deleteDefinedName',
+			'print areas use the same defined-name inverse path',
+			'extra imported defined-name metadata is not publicly settable',
+		],
+		lossReasons: ['defined-name-metadata'],
+		representativeOps: ['setDefinedName', 'deleteDefinedName', 'setPrintArea'],
+	},
+	{
+		surface: 'comments',
+		exactness: 'conditional',
+		publicInverse: 'conditional',
+		constraints: [
+			'simple cell comments restore with setComment/deleteComment',
+			'threaded comment selectors and author removals are exact only when public selectors can address the original metadata',
+		],
+		lossReasons: ['comment-author-removal', 'threaded-comment-selector'],
+		representativeOps: [
+			'setComment',
+			'deleteComment',
+			'setThreadedComment',
+			'copyRange',
+			'moveRange',
+		],
+	},
+	{
+		surface: 'hyperlinks',
+		exactness: 'exact',
+		publicInverse: 'exact',
+		constraints: ['public hyperlink fields restore with setHyperlink/deleteHyperlink'],
+		lossReasons: [],
+		representativeOps: ['setHyperlink', 'deleteHyperlink', 'copyRange', 'moveRange'],
+	},
+	{
+		surface: 'data-validations',
+		exactness: 'conditional',
+		publicInverse: 'conditional',
+		constraints: [
+			'standard validations restore with setDataValidation/deleteDataValidation',
+			'ordering, duplicates, defaults, and x14 extension payloads can make rollback lossy',
+		],
+		lossReasons: ['metadata-order', 'metadata-duplicate', 'metadata-collision', 'x14-metadata'],
+		representativeOps: [
+			'setDataValidation',
+			'deleteDataValidation',
+			'copyRange',
+			'moveRange',
+			'sortRange',
+		],
+	},
+	{
+		surface: 'conditional-formats',
+		exactness: 'conditional',
+		publicInverse: 'conditional',
+		constraints: [
+			'standard conditional formats restore with setConditionalFormat/deleteConditionalFormat',
+			'rule ordering, duplicate ranges, collisions, and x14 extension payloads can make rollback lossy',
+		],
+		lossReasons: ['metadata-order', 'metadata-duplicate', 'metadata-collision', 'x14-metadata'],
+		representativeOps: [
+			'setConditionalFormat',
+			'deleteConditionalFormat',
+			'copyRange',
+			'moveRange',
+			'sortRange',
+		],
+	},
+	{
+		surface: 'merged-cells',
+		exactness: 'conditional',
+		publicInverse: 'conditional',
+		constraints: [
+			'whole merge add/remove operations restore exactly',
+			'partial overlaps, duplicate metadata, and target collisions are lossy or unsupported',
+		],
+		lossReasons: ['merge-overlap', 'metadata-duplicate', 'metadata-collision'],
+		representativeOps: ['mergeCells', 'unmergeCells', 'copyRange', 'moveRange'],
+	},
+	{
+		surface: 'row-layout',
+		exactness: 'conditional',
+		publicInverse: 'conditional',
+		constraints: [
+			'existing row height and hidden-state edits restore with public operations',
+			'created row layout and customHeight=false metadata cannot be cleared exactly',
+		],
+		lossReasons: ['row-layout-created', 'row-layout-custom-height'],
+		representativeOps: [
+			'setRowHeight',
+			'hideRows',
+			'groupRows',
+			'insertRows',
+			'deleteRows',
+			'sortRange',
+		],
+	},
+	{
+		surface: 'column-layout',
+		exactness: 'conditional',
+		publicInverse: 'conditional',
+		constraints: [
+			'existing column width and hidden-state edits restore with public operations',
+			'created column layout and unsupported width metadata cannot be cleared exactly',
+		],
+		lossReasons: ['column-layout-created', 'column-layout-width-metadata'],
+		representativeOps: ['setColWidth', 'hideCols', 'groupCols', 'insertCols', 'deleteCols'],
+	},
+	{
+		surface: 'page-setup',
+		exactness: 'conditional',
+		publicInverse: 'conditional',
+		constraints: [
+			'representable page setup and margin fields restore with setPageSetup',
+			'absence and imported-only page metadata cannot be restored exactly',
+		],
+		lossReasons: ['page-setup-unsettable', 'page-margins-unsettable'],
+		representativeOps: ['setPageSetup', 'setPrintArea'],
+	},
+	{
+		surface: 'sheet-layout',
+		exactness: 'conditional',
+		publicInverse: 'conditional',
+		constraints: [
+			'sheet position, pane, visibility, tab color, and supported protection fields restore with public operations',
+			'deleted sheets and unsupported sheet metadata are package-preservation risks',
+		],
+		lossReasons: ['sheet-topology', 'workbook-protection-absence'],
+		representativeOps: ['renameSheet', 'moveSheet', 'deleteSheet', 'freezePane', 'setTabColor'],
+	},
+	{
+		surface: 'x14-metadata',
+		exactness: 'lossy',
+		publicInverse: 'none',
+		constraints: [
+			'x14 conditional-format and data-validation extension payloads are preserved package metadata with no public inverse operation',
+		],
+		lossReasons: ['x14-metadata'],
+		representativeOps: ['copyRange', 'moveRange', 'sortRange', 'insertRows', 'deleteRows'],
+	},
+	{
+		surface: 'drawings',
+		exactness: 'conditional',
+		publicInverse: 'conditional',
+		constraints: [
+			'drawing text restores when the public selector uniquely identifies an editable text-bearing drawing object',
+			'other drawing payloads remain package-preserved metadata',
+		],
+		lossReasons: ['drawing-text-selector', 'package-part-preservation'],
+		representativeOps: ['setDrawingText', 'insertImage', 'replaceImage', 'deleteImage'],
+	},
+	{
+		surface: 'charts',
+		exactness: 'conditional',
+		publicInverse: 'conditional',
+		constraints: [
+			'chart series refs restore when every touched field had a prior public value',
+			'unsetting chart refs and unrelated chart payloads remain package-preserved metadata',
+		],
+		lossReasons: ['chart-series-unsettable', 'package-part-preservation'],
+		representativeOps: ['setChartSeriesSource'],
+	},
+	{
+		surface: 'pivot-caches',
+		exactness: 'conditional',
+		publicInverse: 'conditional',
+		constraints: [
+			'pivot cache source and refresh fields restore when every touched field had a prior public value',
+			'unsetting fields and pivot cache records remain package-preserved metadata',
+		],
+		lossReasons: ['pivot-cache-unsettable', 'package-part-preservation'],
+		representativeOps: ['setPivotCache'],
+	},
+	{
+		surface: 'workbook-metadata',
+		exactness: 'conditional',
+		publicInverse: 'conditional',
+		constraints: [
+			'public workbook properties, document properties, views, calc settings, theme colors, and protection restore when represented by public operations',
+			'absence or unsupported imported metadata remains lossy',
+		],
+		lossReasons: ['workbook-protection-absence', 'value-unsupported'],
+		representativeOps: [
+			'setWorkbookProperties',
+			'setDocumentProperties',
+			'setWorkbookView',
+			'setCalcSettings',
+			'setTheme',
+		],
+	},
+	{
+		surface: 'package-parts',
+		exactness: 'lossy',
+		publicInverse: 'none',
+		constraints: [
+			'unknown or preserved package parts cannot be reconstructed through public workbook operations',
+		],
+		lossReasons: [
+			'operation-unsupported',
+			'journal-build-failed',
+			'journal-unavailable',
+			'package-part-preservation',
+			'partial-workbook',
+		],
+		representativeOps: ['unsupported', 'preserved-package-part'],
+	},
+]
+
+const MUTATION_JOURNAL_EXACTNESS_BY_SURFACE = new Map(
+	MUTATION_JOURNAL_EXACTNESS_MATRIX.map((rule) => [rule.surface, rule]),
+)
+
+export function classifyMutationJournalSurface(
+	surface: MutationJournalSurface,
+): MutationJournalExactnessRule {
+	const rule = MUTATION_JOURNAL_EXACTNESS_BY_SURFACE.get(surface)
+	if (!rule) throw new Error(`Unknown mutation journal surface: ${surface}`)
+	return rule
+}
+
 export interface MutationJournalIssue {
 	readonly code:
 		| 'UNSUPPORTED_OPERATION'
@@ -75,7 +489,170 @@ export interface MutationJournalIssue {
 		| 'JOURNAL_UNAVAILABLE'
 		| 'JOURNAL_BUILD_FAILED'
 	readonly message: string
+	readonly surface?: MutationJournalSurface
+	readonly reason?: MutationJournalReasonCode
 	readonly refs?: readonly string[]
+}
+
+export interface MutationJournalIssueClassification {
+	readonly surface: MutationJournalSurface
+	readonly reason: MutationJournalReasonCode
+	readonly exactness: MutationJournalExactness
+	readonly publicInverse: MutationJournalPublicInverse
+}
+
+export function classifyMutationJournalIssue(
+	issue: MutationJournalIssue,
+): MutationJournalIssueClassification {
+	const surface = issue.surface ?? inferMutationJournalIssueSurface(issue)
+	const reason = issue.reason ?? inferMutationJournalIssueReason(issue, surface)
+	const rule = classifyMutationJournalSurface(surface)
+	return {
+		surface,
+		reason,
+		exactness: rule.exactness,
+		publicInverse: rule.publicInverse,
+	}
+}
+
+function inferMutationJournalIssueSurface(issue: MutationJournalIssue): MutationJournalSurface {
+	if (issue.code === 'JOURNAL_BUILD_FAILED' || issue.code === 'JOURNAL_UNAVAILABLE') {
+		return 'package-parts'
+	}
+	if (issue.code === 'UNSUPPORTED_OPERATION') return 'package-parts'
+	const text = journalIssueSearchText(issue)
+	if (text.includes('x14')) return 'x14-metadata'
+	if (text.includes('formula binding') || text.includes('formulainfo')) return 'formula-bindings'
+	if (text.includes('shared formula')) return 'shared-formulas'
+	if (text.includes('dynamic array')) return 'dynamic-arrays'
+	if (text.includes('spill')) return 'spills'
+	if (text.includes('formula')) return 'formulas'
+	if (text.includes('data validation') || text.includes('validation')) return 'data-validations'
+	if (text.includes('conditional format') || text.includes('conditional-format')) {
+		return 'conditional-formats'
+	}
+	if (text.includes('merge')) return 'merged-cells'
+	if (text.includes('row layout') || text.includes('row height') || text.includes(' rows')) {
+		return 'row-layout'
+	}
+	if (
+		text.includes('column layout') ||
+		text.includes('column width') ||
+		text.includes(' col layout') ||
+		text.includes(' cols')
+	) {
+		return 'column-layout'
+	}
+	if (text.includes('threaded comment') || text.includes('comment')) return 'comments'
+	if (text.includes('hyperlink')) return 'hyperlinks'
+	if (text.includes('drawing')) return 'drawings'
+	if (text.includes('chart')) return 'charts'
+	if (text.includes('pivot')) return 'pivot-caches'
+	if (text.includes('table')) return 'tables'
+	if (text.includes('defined name') || text.includes('print area') || text.includes('name:')) {
+		return 'defined-names'
+	}
+	if (text.includes('page setup') || text.includes('page margins')) return 'page-setup'
+	if (text.includes('workbook')) return 'workbook-metadata'
+	if (text.includes('sheet')) return 'sheet-layout'
+	if (issue.code === 'UNSUPPORTED_VALUE') return 'cells'
+	return 'package-parts'
+}
+
+function inferMutationJournalIssueReason(
+	issue: MutationJournalIssue,
+	surface: MutationJournalSurface,
+): MutationJournalReasonCode {
+	const text = journalIssueSearchText(issue)
+	if (issue.code === 'UNSUPPORTED_OPERATION') return 'operation-unsupported'
+	if (issue.code === 'JOURNAL_BUILD_FAILED') return 'journal-build-failed'
+	if (issue.code === 'JOURNAL_UNAVAILABLE') return 'journal-unavailable'
+	if (text.includes('x14')) return 'x14-metadata'
+	if (text.includes('formula binding') || text.includes('formulainfo')) {
+		return 'formula-binding-metadata'
+	}
+	if (text.includes('formula reference rewrite') || text.includes('formula reference rewrites')) {
+		return 'formula-reference-rewrite'
+	}
+	if (text.includes('formula cache')) return 'formula-cache-unsupported-value'
+	if (text.includes('richtext')) return 'rich-text-unsupported-runs'
+	if (text.includes('threaded comment selector')) return 'threaded-comment-selector'
+	if (text.includes('comment author')) return 'comment-author-removal'
+	if (text.includes('drawing object selector')) return 'drawing-text-selector'
+	if (text.includes('chart series selector')) return 'chart-series-unsettable'
+	if (text.includes('pivot cache selector')) return 'pivot-cache-unsettable'
+	if (text.includes('page setup')) return 'page-setup-unsettable'
+	if (text.includes('page margins')) return 'page-margins-unsettable'
+	if (text.includes('created row layout')) return 'row-layout-created'
+	if (text.includes('customheight=false')) return 'row-layout-custom-height'
+	if (text.includes('created col layout') || text.includes('created column layout')) {
+		return 'column-layout-created'
+	}
+	if (text.includes('column width')) return 'column-layout-width-metadata'
+	if (text.includes('rule ordering') || text.includes('order')) return 'metadata-order'
+	if (text.includes('duplicate')) return 'metadata-duplicate'
+	if (text.includes('collides') || text.includes('collision')) return 'metadata-collision'
+	if (text.includes('partial') || text.includes('overlap')) return 'merge-overlap'
+	if (text.includes('defined name') || text.includes('print area')) return 'defined-name-metadata'
+	if (text.includes('table')) return 'table-metadata'
+	if (text.includes('deleted sheet') || text.includes('sheet topology')) return 'sheet-topology'
+	if (text.includes('workbook protection') || text.includes('sheet protection')) {
+		return 'workbook-protection-absence'
+	}
+	if (surface === 'package-parts') return 'package-part-preservation'
+	if (issue.code === 'UNSUPPORTED_VALUE') return 'value-unsupported'
+	return surfaceDefaultLossReason(surface)
+}
+
+function surfaceDefaultLossReason(surface: MutationJournalSurface): MutationJournalReasonCode {
+	switch (surface) {
+		case 'cells':
+			return 'value-unsupported'
+		case 'formulas':
+			return 'formula-cache-unsupported-value'
+		case 'formula-bindings':
+		case 'shared-formulas':
+		case 'dynamic-arrays':
+		case 'spills':
+			return 'formula-binding-metadata'
+		case 'tables':
+			return 'table-metadata'
+		case 'defined-names':
+			return 'defined-name-metadata'
+		case 'comments':
+			return 'threaded-comment-selector'
+		case 'data-validations':
+		case 'conditional-formats':
+			return 'metadata-order'
+		case 'merged-cells':
+			return 'merge-overlap'
+		case 'row-layout':
+			return 'row-layout-created'
+		case 'column-layout':
+			return 'column-layout-created'
+		case 'page-setup':
+			return 'page-setup-unsettable'
+		case 'x14-metadata':
+			return 'x14-metadata'
+		case 'drawings':
+			return 'drawing-text-selector'
+		case 'charts':
+			return 'chart-series-unsettable'
+		case 'pivot-caches':
+			return 'pivot-cache-unsettable'
+		case 'sheet-layout':
+			return 'sheet-topology'
+		case 'workbook-metadata':
+			return 'value-unsupported'
+		case 'package-parts':
+			return 'package-part-preservation'
+		case 'hyperlinks':
+			return 'value-unsupported'
+	}
+}
+
+function journalIssueSearchText(issue: MutationJournalIssue): string {
+	return `${issue.message} ${(issue.refs ?? []).join(' ')}`.toLowerCase()
 }
 
 export interface MutationJournalCellPreimage {

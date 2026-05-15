@@ -296,6 +296,32 @@ describe('checker', () => {
 		expect(result.issues.filter((entry) => entry.rule === 'formula-binding-integrity')).toEqual([])
 	})
 
+	test('accepts case-insensitive sheet-qualified formula binding refs', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Data')
+		s.cells.set(0, 0, {
+			value: numberValue(1),
+			formula: 'SEQUENCE(2)',
+			styleId: SID,
+			formulaInfo: { kind: 'array', ref: 'data!A1:A2' },
+		})
+		s.cells.set(0, 2, {
+			value: numberValue(1),
+			formula: 'SEQUENCE(2)',
+			styleId: SID,
+			formulaInfo: { kind: 'spill', anchorRef: 'DATA!C1', ref: 'data!C1:C2', isAnchor: true },
+		})
+		s.cells.set(1, 2, {
+			value: numberValue(2),
+			formula: null,
+			styleId: SID,
+			formulaInfo: { kind: 'spill', anchorRef: 'DATA!C1', ref: 'DATA!C1:C2', isAnchor: false },
+		})
+
+		const result = check(wb)
+		expect(result.issues.filter((entry) => entry.rule === 'formula-binding-integrity')).toEqual([])
+	})
+
 	test('detects shared formula members outside the master range', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')

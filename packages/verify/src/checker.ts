@@ -762,7 +762,7 @@ function parseBindingCellRef(
 }
 
 function rangeContainsCell(range: RangeRef, sheetName: string, row: number, col: number): boolean {
-	if (range.sheet !== undefined && range.sheet !== sheetName) return false
+	if (range.sheet !== undefined && !sameSheetName(range.sheet, sheetName)) return false
 	return (
 		row >= range.start.row && row <= range.end.row && col >= range.start.col && col <= range.end.col
 	)
@@ -770,7 +770,7 @@ function rangeContainsCell(range: RangeRef, sheetName: string, row: number, col:
 
 function rangesEqual(left: RangeRef, right: RangeRef): boolean {
 	return (
-		left.sheet === right.sheet &&
+		sameOptionalSheetName(left.sheet, right.sheet) &&
 		left.start.row === right.start.row &&
 		left.start.col === right.start.col &&
 		left.end.row === right.end.row &&
@@ -779,7 +779,7 @@ function rangesEqual(left: RangeRef, right: RangeRef): boolean {
 }
 
 function rangesOverlap(left: RangeRef, right: RangeRef): boolean {
-	if (left.sheet !== right.sheet) return false
+	if (!sameOptionalSheetName(left.sheet, right.sheet)) return false
 	return (
 		left.start.row <= right.end.row &&
 		left.end.row >= right.start.row &&
@@ -789,7 +789,16 @@ function rangesOverlap(left: RangeRef, right: RangeRef): boolean {
 }
 
 function rangeKey(range: RangeRef): string {
-	return `${range.sheet ?? ''}!${range.start.row}:${range.start.col}:${range.end.row}:${range.end.col}`
+	return `${range.sheet?.toLowerCase() ?? ''}!${range.start.row}:${range.start.col}:${range.end.row}:${range.end.col}`
+}
+
+function sameOptionalSheetName(left: string | undefined, right: string | undefined): boolean {
+	if (left === undefined || right === undefined) return left === right
+	return sameSheetName(left, right)
+}
+
+function sameSheetName(left: string, right: string): boolean {
+	return left.toLowerCase() === right.toLowerCase()
 }
 
 function sameSharedFormulaBinding(
@@ -1088,7 +1097,8 @@ function checkFormulaBindingIntegrity(wb: Workbook): CheckIssue[] {
 					)
 					continue
 				}
-				const isAnchorCell = anchor.sheet === sheet.name && anchor.row === row && anchor.col === col
+				const isAnchorCell =
+					sameSheetName(anchor.sheet, sheet.name) && anchor.row === row && anchor.col === col
 				if (binding.kind === 'spill') {
 					if (binding.isAnchor !== isAnchorCell) {
 						issues.push(

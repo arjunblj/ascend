@@ -2336,6 +2336,12 @@ describe('Ascend API server', () => {
 		expect(result.body.ok).toBe(true)
 		expect(result.body.data?.journal?.supported).toBe(true)
 		expect(result.body.data?.journal?.exact).toBe(false)
+		expect(result.body.data?.journal?.issues).toContainEqual(
+			expect.objectContaining({
+				surface: 'package-parts',
+				reason: 'package-part-preservation',
+			}),
+		)
 		const inverse = parseOperations(result.body.data?.journal?.inverseOps)
 		expect(inverse.ok).toBe(true)
 		if (!inverse.ok) throw new Error('Expected exact journal inverse ops to parse')
@@ -2461,6 +2467,12 @@ describe('Ascend API server', () => {
 		expect(result.body.ok).toBe(true)
 		expect(result.body.data?.journal?.supported).toBe(true)
 		expect(result.body.data?.journal?.exact).toBe(false)
+		expect(result.body.data?.journal?.issues).toContainEqual(
+			expect.objectContaining({
+				surface: 'package-parts',
+				reason: 'package-part-preservation',
+			}),
+		)
 		const inverse = parseOperations(result.body.data?.journal?.inverseOps)
 		expect(inverse.ok).toBe(true)
 		if (!inverse.ok) throw new Error('Expected exact journal inverse ops to parse')

@@ -1218,6 +1218,122 @@ describe('agent workflow loss audit', () => {
 				},
 			},
 			{
+				name: 'copy-move-range-shared-formula-targets-materialize-and-reopen-clean',
+				risk: 'copyRange or moveRange over an imported shared-formula target could overwrite one member while leaving stale sibling bindings',
+				proof: async () => {
+					const cases = [
+						{
+							name: 'copyRange',
+							op: {
+								op: 'copyRange' as const,
+								sheet: 'Data',
+								source: 'D1',
+								target: 'A2',
+								mode: 'values' as const,
+							},
+							sourceAfterReopen: { kind: 'number' as const, value: 99 },
+						},
+						{
+							name: 'moveRange',
+							op: {
+								op: 'moveRange' as const,
+								sheet: 'Data',
+								source: 'D1',
+								target: 'A2',
+								mode: 'all' as const,
+							},
+							sourceAfterReopen: undefined,
+						},
+					] as const
+
+					for (const entry of cases) {
+						const input = join(TEMP_DIR, `quality-moat-${entry.name}-shared-target.xlsx`)
+						const output = join(TEMP_DIR, `quality-moat-${entry.name}-shared-target-out.xlsx`)
+						mkdirSync(TEMP_DIR, { recursive: true })
+						const wb = AscendWorkbook.create()
+						const model = wb.getWorkbookModel()
+						const sheet = model.getSheet('Sheet1')
+						if (!sheet) throw new Error('missing Sheet1')
+						sheet.name = 'Data'
+						model.invalidateSheetCache()
+						sheet.cells.set(0, 0, {
+							value: numberValue(20),
+							formula: 'B1*2',
+							styleId: DEFAULT_STYLE_ID,
+							formulaInfo: {
+								kind: 'shared',
+								sharedIndex: `quality-moat-${entry.name}-target`,
+								isMaster: true,
+								masterRef: 'A1',
+								ref: 'A1:A2',
+							},
+						})
+						sheet.cells.set(1, 0, {
+							value: numberValue(40),
+							formula: null,
+							styleId: DEFAULT_STYLE_ID,
+							formulaInfo: {
+								kind: 'shared',
+								sharedIndex: `quality-moat-${entry.name}-target`,
+								isMaster: false,
+								masterRef: 'A1',
+								ref: 'A1:A2',
+							},
+						})
+						sheet.cells.set(0, 1, {
+							value: numberValue(10),
+							formula: null,
+							styleId: DEFAULT_STYLE_ID,
+						})
+						sheet.cells.set(1, 1, {
+							value: numberValue(20),
+							formula: null,
+							styleId: DEFAULT_STYLE_ID,
+						})
+						sheet.cells.set(0, 3, {
+							value: numberValue(99),
+							formula: null,
+							styleId: DEFAULT_STYLE_ID,
+						})
+						await wb.save(input)
+
+						const prepared = await createPreparedAgentPlan(input, [entry.op])
+						expect(prepared.plan.preview.journal?.issues, entry.name).toEqual(
+							expect.arrayContaining([
+								expect.objectContaining({
+									surface: 'shared-formulas',
+									reason: 'formula-binding-metadata',
+									refs: ['Data!A1'],
+								}),
+								expect.objectContaining({
+									surface: 'shared-formulas',
+									reason: 'formula-binding-metadata',
+									refs: ['Data!A2'],
+								}),
+							]),
+						)
+
+						const committed = await prepared.commit({ output })
+						expect(committed.postWrite.valid, entry.name).toBe(true)
+						expect(committed.postWrite.auditsPassed, entry.name).toBe(true)
+
+						const reopened = await AscendWorkbook.open(output)
+						expect(reopened.check().valid, entry.name).toBe(true)
+						expect(reopened.sheet('Data')?.cell('A1')?.formulaBinding, entry.name).toBeUndefined()
+						expect(reopened.sheet('Data')?.cell('A2')?.formulaBinding, entry.name).toBeUndefined()
+						expect(reopened.formula('Data!A1')?.normalizedFormula, entry.name).toBe('B1*2')
+						expect(reopened.formula('Data!A2'), entry.name).toBeUndefined()
+						expect(reopened.sheet('Data')?.cell('A2')?.value, entry.name).toEqual({
+							kind: 'number',
+							value: 99,
+						})
+						expect(reopened.sheet('Data')?.cell('D1')?.value, entry.name).toEqual(
+							entry.sourceAfterReopen,
+						)
+					}
+				},
+			},
+			{
 				name: 'real-absolute-shared-formula-edit-materializes-and-reopens-clean',
 				risk: 'editing one imported absolute shared-formula member could save shifted sibling formula text or stale binding metadata',
 				proof: async () => {

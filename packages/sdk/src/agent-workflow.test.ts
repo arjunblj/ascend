@@ -1121,6 +1121,63 @@ describe('agent workflow loss audit', () => {
 				},
 			},
 			{
+				name: 'real-absolute-shared-formula-edit-materializes-and-reopens-clean',
+				risk: 'editing one imported absolute shared-formula member could save shifted sibling formula text or stale binding metadata',
+				proof: async () => {
+					const input = join(TEMP_DIR, 'quality-moat-absolute-shared-formula.xlsx')
+					const output = join(TEMP_DIR, 'quality-moat-absolute-shared-formula-out.xlsx')
+					mkdirSync(TEMP_DIR, { recursive: true })
+					await Bun.write(
+						input,
+						readFileSync(
+							new URL(
+								'../../../fixtures/xlsx/calamine/issue_567_absolute_shared.xlsx',
+								import.meta.url,
+							),
+						),
+					)
+
+					const editedGroupRefs = [
+						'B1',
+						'C1',
+						'D1',
+						'E1',
+						'B2',
+						'C2',
+						'D2',
+						'E2',
+						'B3',
+						'C3',
+						'D3',
+						'E3',
+					].map((ref) => `Sheet1!${ref}`)
+					const prepared = await createPreparedAgentPlan(input, [
+						{ op: 'setCells' as const, sheet: 'Sheet1', updates: [{ ref: 'C2', value: 99 }] },
+					])
+					expect(
+						prepared.plan.preview.journal?.issues
+							.filter((issue) => issue.surface === 'shared-formulas')
+							.map((issue) => issue.refs?.[0])
+							.sort(),
+					).toEqual([...editedGroupRefs].sort())
+					expect(
+						prepared.plan.preview.journal?.issues
+							.filter((issue) => issue.surface === 'shared-formulas')
+							.every((issue) => issue.reason === 'formula-binding-metadata'),
+					).toBe(true)
+					expect(
+						prepared.plan.writePolicy.diagnostics
+							.filter((diagnostic) => diagnostic.severity === 'blocker')
+							.flatMap((diagnostic) => diagnostic.details?.checkIssues ?? [])
+							.map((issue) => issue.rule),
+					).toContain('circular-refs')
+					await expect(prepared.commit({ output })).rejects.toThrow(
+						'Commit blocked by write policy',
+					)
+					expect(existsSync(output)).toBe(false)
+				},
+			},
+			{
 				name: 'real-data-table-edit-detaches-and-reopens-clean',
 				risk: 'editing an imported data-table member could leave stale table formula metadata in the saved workbook',
 				proof: async () => {

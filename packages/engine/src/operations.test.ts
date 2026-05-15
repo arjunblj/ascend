@@ -6392,6 +6392,12 @@ describe('applyOperation', () => {
 	test('copySheet duplicates visual metadata and chart source refs independently', () => {
 		const wb = createWorkbook()
 		const source = wb.addSheet('Sheet1')
+		source.preservedXml = {
+			partPath: 'xl/worksheets/sheet1.xml',
+			relsPath: 'xl/worksheets/_rels/sheet1.xml.rels',
+			xml: '<worksheet><sheetData/></worksheet>',
+			relsXml: '<Relationships/>',
+		}
 		source.drawingRefs = { hasDrawing: true, hasLegacyDrawing: false }
 		source.imageRefs.push({
 			drawingPartPath: 'xl/drawings/drawing1.xml',
@@ -6432,6 +6438,8 @@ describe('applyOperation', () => {
 		expect(copy).toBeDefined()
 		if (!copy) return
 
+		expect(copy.id).not.toBe(source.id)
+		expect(copy.preservedXml).toBeNull()
 		expect(copy.imageRefs[0]).not.toBe(source.imageRefs[0])
 		expect(copy.drawingObjectRefs[0]).not.toBe(source.drawingObjectRefs[0])
 		expect(copy.imageRefs[0]).toMatchObject({

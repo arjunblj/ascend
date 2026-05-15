@@ -1718,20 +1718,23 @@ describe('mutation journal exactness model', () => {
 		})
 	})
 
-	test('copySheet retargets imported sheet-qualified shared formula text and bindings across save reopen', async () => {
+	test('copySheet retargets imported case-insensitive shared formula text and bindings across save reopen', async () => {
 		const source = AscendWorkbook.create()
-		const sheet = source.getWorkbookModel().getSheet('Sheet1')
+		const model = source.getWorkbookModel()
+		const sheet = model.getSheet('Sheet1')
 		if (!sheet) throw new Error('missing Sheet1')
+		sheet.name = 'Data'
+		model.invalidateSheetCache()
 		sheet.cells.set(0, 0, {
 			value: numberValue(2),
-			formula: 'Sheet1!B1*2',
+			formula: 'data!B1*2',
 			styleId: DEFAULT_STYLE_ID,
 			formulaInfo: {
 				kind: 'shared',
 				sharedIndex: 'imported-copy-shared',
 				isMaster: true,
-				masterRef: 'Sheet1!A1',
-				ref: 'Sheet1!A1:A2',
+				masterRef: 'data!A1',
+				ref: 'data!A1:A2',
 			},
 		})
 		sheet.cells.set(1, 0, {
@@ -1742,24 +1745,32 @@ describe('mutation journal exactness model', () => {
 				kind: 'shared',
 				sharedIndex: 'imported-copy-shared',
 				isMaster: false,
-				masterRef: 'Sheet1!A1',
-				ref: 'Sheet1!A1:A2',
+				masterRef: 'data!A1',
+				ref: 'data!A1:A2',
 			},
 		})
 
 		const imported = await AscendWorkbook.open(source.toBytes())
 		expect(imported.check().valid).toBe(true)
-		expect(imported.formula('Sheet1!A1')?.normalizedFormula).toBe('Sheet1!B1*2')
-		expect(imported.formula('Sheet1!A2')?.normalizedFormula).toBe('Sheet1!B2*2')
+		expect(imported.formula('Data!A1')?.normalizedFormula).toBe('data!B1*2')
+		expect(imported.formula('Data!A2')?.normalizedFormula).toBe('data!B2*2')
 
-		const changed = imported.apply([{ op: 'copySheet', sheet: 'Sheet1', newName: 'Copy' }], {
+		const changed = imported.apply([{ op: 'copySheet', sheet: 'Data', newName: 'Copy' }], {
 			journal: true,
 		})
 
 		expect(changed.errors).toEqual([])
+		expect(changed.journal?.exact).toBe(false)
+		expect(changed.journal?.issues).toEqual([
+			expect.objectContaining({
+				surface: 'package-parts',
+				reason: 'package-part-preservation',
+				refs: ['sheet:Data', 'sheet:Copy'],
+			}),
+		])
 		expect(imported.check().valid).toBe(true)
 		const reopened = await AscendWorkbook.open(imported.toBytes())
-		expect(reopened.check().valid).toBe(true)
+		expect(reopened.check().issues.filter((issue) => issue.severity === 'error')).toEqual([])
 		expect(reopened.formula('Copy!A1')?.normalizedFormula).toBe('Copy!B1*2')
 		expect(reopened.formula('Copy!A2')?.normalizedFormula).toBe('Copy!B2*2')
 		expect(reopened.sheet('Copy')?.cell('A1')?.formulaBinding).toEqual({

@@ -1,4 +1,4 @@
-import type { CellFormulaBinding, Sheet, Workbook } from '@ascend/core'
+import { type CellFormulaBinding, createSheetId, type Sheet, type Workbook } from '@ascend/core'
 import type { Operation, Result } from '@ascend/schema'
 import { ascendError, err, ok, validateExcelWorksheetName } from '@ascend/schema'
 import { invalidateSheetIndexCache } from '../evaluator.ts'
@@ -138,8 +138,11 @@ export function handleCopySheet(
 	}
 	const pos = op.position ?? workbook.sheets.length
 	const newSheet = source.clone()
+	const mutableNewSheet = newSheet as { id: Sheet['id'] }
+	mutableNewSheet.id = createSheetId()
 	newSheet.name = op.newName
 	newSheet.ensureWritable()
+	newSheet.preservedXml = null
 	retargetCopiedSheetFormulaBindings(newSheet, source.name, op.newName)
 	retargetCopiedSheetDrawingParts(workbook, newSheet)
 	retargetCopiedSheetImageTargets(workbook, newSheet)

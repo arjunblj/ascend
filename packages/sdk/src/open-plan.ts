@@ -3,7 +3,12 @@ import {
 	type XlsxPackageGraph,
 	type XlsxPackageGraphPart,
 } from '@ascend/io-xlsx'
-import type { WorkbookLoadOptions } from './session.ts'
+import { WorkbookDocument, type WorkbookLoadOptions } from './session.ts'
+import type {
+	WorkbookTrustFinding,
+	WorkbookTrustFindingSeverity,
+	WorkbookTrustReport,
+} from './workbook-trust.ts'
 
 export type WorkbookOpenIntent = 'risk-inventory' | 'read-values' | 'formula-analysis' | 'edit-plan'
 
@@ -43,9 +48,47 @@ export interface WorkbookOpenPlan {
 	readonly reasons: readonly string[]
 }
 
+export type InteractiveOpenStepId =
+	| 'plan-open'
+	| 'open-preview'
+	| 'review-trust'
+	| 'promote-editable'
+
+export interface InteractiveOpenStep {
+	readonly id: InteractiveOpenStepId
+	readonly title: string
+	readonly recommended: boolean
+}
+
+export interface InteractiveOpenTrustSummary {
+	readonly severity: WorkbookTrustFindingSeverity | 'none'
+	readonly title: string
+	readonly explanation: string
+	readonly recommendedAction: string
+	readonly findingCount: number
+	readonly emittedFindingCount: number
+	readonly topFindings: readonly WorkbookTrustFinding[]
+}
+
+export interface InteractiveOpenPlan {
+	readonly plan: WorkbookOpenPlan
+	readonly trustReport: WorkbookTrustReport
+	readonly trustSummary: InteractiveOpenTrustSummary
+	readonly recommendedMode: WorkbookOpenPlan['recommendedMode']
+	readonly recommendedLoadOptions: WorkbookOpenPlan['recommendedLoadOptions']
+	readonly previewLoadOptions: WorkbookOpenPlan['recommendedLoadOptions']
+	readonly editableLoadOptions: Pick<WorkbookLoadOptions, 'mode' | 'richMetadata'>
+	readonly reviewBeforeEdit: boolean
+	readonly steps: readonly InteractiveOpenStep[]
+}
+
 export interface InspectWorkbookOpenPlanOptions {
 	readonly intent?: WorkbookOpenIntent
 	readonly samplePartLimit?: number
+}
+
+export interface PlanInteractiveOpenOptions extends InspectWorkbookOpenPlanOptions {
+	readonly maxTrustFindings?: number
 }
 
 export function inspectWorkbookOpenPlan(
@@ -56,6 +99,38 @@ export function inspectWorkbookOpenPlan(
 		...options,
 		byteLength: bytes.byteLength,
 	})
+}
+
+export async function planInteractiveOpen(
+	bytes: Uint8Array,
+	options: PlanInteractiveOpenOptions = {},
+): Promise<InteractiveOpenPlan> {
+	const packageGraph = inspectXlsxPackageGraph(bytes)
+	const plan = planWorkbookOpen(packageGraph, options)
+	const document = await WorkbookDocument.open(bytes, plan.recommendedLoadOptions)
+	const trustReport = await document.trustReport({
+		packageGraph,
+		...(options.maxTrustFindings !== undefined ? { maxFindings: options.maxTrustFindings } : {}),
+	})
+	const trustSummary = summarizeInteractiveOpenTrust(plan, trustReport)
+	const reviewBeforeEdit =
+		plan.reviewBeforeHydration ||
+		trustSummary.severity === 'blocked' ||
+		trustSummary.severity === 'warning'
+	return {
+		plan,
+		trustReport,
+		trustSummary,
+		recommendedMode: plan.recommendedMode,
+		recommendedLoadOptions: plan.recommendedLoadOptions,
+		previewLoadOptions: plan.recommendedLoadOptions,
+		editableLoadOptions: {
+			mode: 'full',
+			...(plan.richMetadataRecommended ? { richMetadata: true } : {}),
+		},
+		reviewBeforeEdit,
+		steps: interactiveOpenSteps(reviewBeforeEdit),
+	}
 }
 
 interface PlanWorkbookOpenOptions extends InspectWorkbookOpenPlanOptions {
@@ -126,6 +201,80 @@ function planWorkbookOpenFromGraph(
 			worksheetPartCount,
 		}),
 	}
+}
+
+function summarizeInteractiveOpenTrust(
+	plan: WorkbookOpenPlan,
+	report: WorkbookTrustReport,
+): InteractiveOpenTrustSummary {
+	const severity = highestTrustSeverity(report)
+	const activeOrExternal =
+		report.summary.byCategory['active-content'] + report.summary.byCategory['external-content']
+	if (severity === 'blocked') {
+		return {
+			severity,
+			title: 'Review required',
+			explanation: 'The workbook contains active content that Ascend preserves but never executes.',
+			recommendedAction: plan.reviewBeforeHydration
+				? 'Open metadata-only preview, review the trust findings, and promote to editable only after the source is trusted.'
+				: 'Open a read-only preview, review the trust findings, and promote to editable only after the source is trusted.',
+			findingCount: report.summary.findingCount,
+			emittedFindingCount: report.summary.emittedFindingCount,
+			topFindings: report.findings.slice(0, 5),
+		}
+	}
+	if (severity === 'warning') {
+		return {
+			severity,
+			title: 'Review recommended',
+			explanation:
+				activeOrExternal > 0
+					? 'The workbook references external or active workbook content that should be reviewed before editing.'
+					: 'The workbook has trust findings that should be reviewed before editing.',
+			recommendedAction: plan.reviewBeforeHydration
+				? 'Open metadata-only first, review findings, then promote to editable.'
+				: 'Open a read-only preview first and review findings before saving changes.',
+			findingCount: report.summary.findingCount,
+			emittedFindingCount: report.summary.emittedFindingCount,
+			topFindings: report.findings.slice(0, 5),
+		}
+	}
+	if (severity === 'info') {
+		return {
+			severity,
+			title: 'Trust notes available',
+			explanation: 'The workbook has informational trust notes but no blocking findings.',
+			recommendedAction: 'Open the preview using the recommended load mode.',
+			findingCount: report.summary.findingCount,
+			emittedFindingCount: report.summary.emittedFindingCount,
+			topFindings: report.findings.slice(0, 5),
+		}
+	}
+	return {
+		severity: 'none',
+		title: 'No trust findings',
+		explanation: 'No trust findings were emitted for the recommended preview load.',
+		recommendedAction: 'Open the preview using the recommended load mode.',
+		findingCount: report.summary.findingCount,
+		emittedFindingCount: report.summary.emittedFindingCount,
+		topFindings: [],
+	}
+}
+
+function highestTrustSeverity(report: WorkbookTrustReport): WorkbookTrustFindingSeverity | 'none' {
+	if (report.summary.bySeverity.blocked > 0) return 'blocked'
+	if (report.summary.bySeverity.warning > 0) return 'warning'
+	if (report.summary.bySeverity.info > 0) return 'info'
+	return 'none'
+}
+
+function interactiveOpenSteps(reviewBeforeEdit: boolean): readonly InteractiveOpenStep[] {
+	return [
+		{ id: 'plan-open', title: 'Plan open', recommended: true },
+		{ id: 'open-preview', title: 'Open preview', recommended: true },
+		{ id: 'review-trust', title: 'Review trust findings', recommended: reviewBeforeEdit },
+		{ id: 'promote-editable', title: 'Promote editable', recommended: !reviewBeforeEdit },
+	]
 }
 
 function summarizeFeatureSignals(

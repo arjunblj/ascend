@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { inspectXlsxPackageGraph } from '@ascend/io-xlsx'
 import { makeXlsx } from '../../io-xlsx/test/helpers.ts'
-import { inspectWorkbookOpenPlan, planWorkbookOpen } from './index.ts'
+import { inspectWorkbookOpenPlan, planInteractiveOpen, planWorkbookOpen } from './index.ts'
 
 describe('workbook open planner', () => {
 	test('recommends values mode for simple value reads', () => {
@@ -26,6 +26,33 @@ describe('workbook open planner', () => {
 			}),
 		)
 		expect(plan.reasons.join('\n')).toContain('Risk families: preservedMacro')
+	})
+
+	test('plans interactive open with trust summary and editable promotion guidance', async () => {
+		const plan = await planInteractiveOpen(activeContentWorkbook(), { intent: 'edit-plan' })
+
+		expect(plan.recommendedLoadOptions).toEqual({ mode: 'metadata-only' })
+		expect(plan.previewLoadOptions).toEqual({ mode: 'metadata-only' })
+		expect(plan.editableLoadOptions).toEqual({ mode: 'full' })
+		expect(plan.reviewBeforeEdit).toBe(true)
+		expect(plan.trustSummary).toMatchObject({
+			severity: 'blocked',
+			title: 'Review required',
+			findingCount: expect.any(Number),
+		})
+		expect(plan.trustSummary.recommendedAction).toContain('metadata-only')
+		expect(plan.trustSummary.topFindings).toContainEqual(
+			expect.objectContaining({
+				category: 'active-content',
+				code: 'workbook.vbaProject',
+			}),
+		)
+		expect(plan.steps).toEqual([
+			{ id: 'plan-open', title: 'Plan open', recommended: true },
+			{ id: 'open-preview', title: 'Open preview', recommended: true },
+			{ id: 'review-trust', title: 'Review trust findings', recommended: true },
+			{ id: 'promote-editable', title: 'Promote editable', recommended: false },
+		])
 	})
 
 	test('recommends formula mode with rich metadata for dashboard planning', () => {

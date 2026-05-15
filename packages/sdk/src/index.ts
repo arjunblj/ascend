@@ -191,13 +191,18 @@ export {
 } from './journal.ts'
 export type {
 	InspectWorkbookOpenPlanOptions,
+	InteractiveOpenPlan,
+	InteractiveOpenStep,
+	InteractiveOpenStepId,
+	InteractiveOpenTrustSummary,
+	PlanInteractiveOpenOptions,
 	WorkbookOpenCostClass,
 	WorkbookOpenFeatureCategory,
 	WorkbookOpenFeatureSignal,
 	WorkbookOpenIntent,
 	WorkbookOpenPlan,
 } from './open-plan.ts'
-export { inspectWorkbookOpenPlan, planWorkbookOpen } from './open-plan.ts'
+export { inspectWorkbookOpenPlan, planInteractiveOpen, planWorkbookOpen } from './open-plan.ts'
 export type {
 	OperationInputShape,
 	OperationInputSource,

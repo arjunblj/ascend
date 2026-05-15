@@ -2676,12 +2676,57 @@ function journalStyleRange(
 	opIndex: number,
 ): DraftJournalEntry {
 	const cells = cellPreimages(workbook, op.sheet, refsInRange(op.range))
+	const issues = styleRegistryGrowthIssues(workbook, op, cells)
 	return {
 		opIndex,
 		op,
 		inverseOps: styleInverseOps(cells),
 		preimages: [{ kind: 'cells', cells }],
-		issues: [],
+		issues,
+	}
+}
+
+function styleRegistryGrowthIssues(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'setNumberFormat' | 'setStyle' }>,
+	cells: readonly MutationJournalCellPreimage[],
+): MutationJournalIssue[] {
+	const styles = workbook.styles.clone()
+	const originalSize = workbook.styles.size
+	const createdStyleIds = new Set<number>()
+	const refs: string[] = []
+	for (const cell of cells) {
+		const nextStyle =
+			op.op === 'setNumberFormat'
+				? { ...cell.style, numberFormat: op.format }
+				: mergeStyleInputForJournal(cell.style, op.style)
+		const styleId = styles.register(nextStyle)
+		if (styleId < originalSize || styleId === cell.styleId) continue
+		createdStyleIds.add(styleId)
+		refs.push(`${cell.sheet}!${cell.ref}`)
+	}
+	if (createdStyleIds.size === 0) return []
+	return [
+		{
+			code: 'LOSSY_INVERSE',
+			message: `${op.op} creates ${createdStyleIds.size} style registry ${
+				createdStyleIds.size === 1 ? 'entry' : 'entries'
+			} that cannot be removed with public operations`,
+			surface: 'package-parts',
+			reason: 'package-part-preservation',
+			refs: [...new Set(refs)],
+		},
+	]
+}
+
+function mergeStyleInputForJournal(current: CellStyle, input: StyleInput): CellStyle {
+	return {
+		...current,
+		...(input.font && { font: { ...current.font, ...input.font } }),
+		...(input.fill && { fill: { ...current.fill, ...input.fill } }),
+		...(input.border && { border: { ...current.border, ...input.border } }),
+		...(input.alignment && { alignment: { ...current.alignment, ...input.alignment } }),
+		...(input.numberFormat !== undefined && { numberFormat: input.numberFormat }),
 	}
 }
 

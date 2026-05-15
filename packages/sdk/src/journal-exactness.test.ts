@@ -227,6 +227,7 @@ describe('mutation journal exactness model', () => {
 			lossyAutoFilterJournal(),
 			lossyPageSetupJournal(),
 			lossyX14TransferJournal(),
+			lossyStyleRegistryJournal(),
 		]
 
 		for (const journal of journals) {
@@ -845,6 +846,22 @@ describe('mutation journal exactness model', () => {
 					])
 				},
 			},
+			{
+				surface: 'package-parts',
+				exact: false,
+				issue: { surface: 'package-parts', reason: 'package-part-preservation' },
+				run: () => {
+					const wb = AscendWorkbook.create()
+					return applyJournal(wb, [
+						{
+							op: 'setStyle',
+							sheet: 'Sheet1',
+							range: 'A1:A1',
+							style: { font: { bold: true } },
+						},
+					])
+				},
+			},
 		]
 
 		const exercised = new Set<MutationJournalSurface>()
@@ -891,6 +908,7 @@ describe('mutation journal exactness model', () => {
 			'charts',
 			'pivot-caches',
 			'workbook-metadata',
+			'package-parts',
 		] satisfies readonly MutationJournalSurface[]) {
 			expect(exercised.has(surface)).toBe(true)
 		}
@@ -1056,6 +1074,18 @@ function lossyX14TransferJournal(): MutationJournal {
 	})
 	return applyJournal(wb, [
 		{ op: 'copyRange', sheet: 'Sheet1', source: 'A1', target: 'D1', mode: 'validations' },
+	])
+}
+
+function lossyStyleRegistryJournal(): MutationJournal {
+	const wb = AscendWorkbook.create()
+	return applyJournal(wb, [
+		{
+			op: 'setStyle',
+			sheet: 'Sheet1',
+			range: 'A1:A1',
+			style: { font: { bold: true } },
+		},
 	])
 }
 

@@ -1168,7 +1168,6 @@ describe('interactive client contract', () => {
 					],
 				},
 				{ op: 'clearRange', sheet: 'Sheet1', range: 'C1:C1', what: 'all' },
-				{ op: 'setNumberFormat', sheet: 'Sheet1', range: 'D1:D1', format: '0.00' },
 			],
 			{ journal: true },
 		)
@@ -1247,10 +1246,7 @@ describe('interactive client contract', () => {
 			colCount: 4,
 		})
 		const edit = await session.apply(
-			[
-				{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 4 }] },
-				{ op: 'setNumberFormat', sheet: 'Sheet1', range: 'C1:C1', format: '0.00' },
-			],
+			[{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 4 }] }],
 			{ journal: true },
 		)
 		expect(edit.apply.errors).toEqual([])
@@ -7047,6 +7043,7 @@ describe('interactive client contract', () => {
 
 	test('journal exact inverse restores mixed semantic workbook state', () => {
 		const wb = AscendWorkbook.create()
+		wb.getWorkbookModel().styles.register({ numberFormat: '$0.00' })
 		wb.apply([
 			{
 				op: 'setCells',
@@ -7142,7 +7139,7 @@ describe('interactive client contract', () => {
 		expect(journalComparableState(wb)).toEqual(before)
 	})
 
-	test('journal inverse ops clear styles created on empty cells', () => {
+	test('journals mark style registry growth lossy while clearing styled empty cells', () => {
 		const wb = AscendWorkbook.create()
 
 		const changed = wb.apply(
@@ -7159,7 +7156,17 @@ describe('interactive client contract', () => {
 
 		expect(changed.errors).toEqual([])
 		expect(changed.journal?.supported).toBe(true)
-		expect(changed.journal?.exact).toBe(true)
+		expect(changed.journal?.exact).toBe(false)
+		expect(changed.journal?.issues).toEqual([
+			{
+				code: 'LOSSY_INVERSE',
+				message:
+					'setStyle creates 1 style registry entry that cannot be removed with public operations',
+				surface: 'package-parts',
+				reason: 'package-part-preservation',
+				refs: ['Sheet1!E9'],
+			},
+		])
 		expect(changed.journal?.inverseOps).toEqual([
 			{ op: 'clearRange', sheet: 'Sheet1', range: 'E9', what: 'all' },
 		])
@@ -7172,6 +7179,36 @@ describe('interactive client contract', () => {
 		expect(undo.errors).toEqual([])
 		expect(wb.sheet('Sheet1')?.cell('E9')).toBeUndefined()
 		expect(wb.cellStyle('Sheet1!E9')).toBeUndefined()
+	})
+
+	test('style journals stay exact when target styles already exist in the registry', () => {
+		const wb = AscendWorkbook.create()
+		wb.getWorkbookModel().styles.register({ font: { bold: true }, numberFormat: '0.0' })
+		const before = journalComparableState(wb)
+
+		const changed = wb.apply(
+			[
+				{
+					op: 'setStyle',
+					sheet: 'Sheet1',
+					range: 'E9',
+					style: { font: { bold: true }, numberFormat: '0.0' },
+				},
+			],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(true)
+		expect(changed.journal?.issues).toEqual([])
+		expect(changed.journal?.inverseOps).toEqual([
+			{ op: 'clearRange', sheet: 'Sheet1', range: 'E9', what: 'all' },
+		])
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(journalComparableState(wb)).toEqual(before)
 	})
 
 	test('journal exact inverse restores deleted metadata surfaces', () => {
@@ -9093,6 +9130,7 @@ function journalComparableState(wb: AscendWorkbook): object {
 		documentProperties: wb.inspect().documentProperties,
 		workbookViews: wb.inspect().workbookViews,
 		calcSettings: wb.getWorkbookModel().calcSettings,
+		styleRegistrySize: wb.getWorkbookModel().styles.size,
 		themeSummary: wb.inspect().themeSummary,
 		sheetMetadata: wb.sheets.map((name) => {
 			const sheet = wb.sheet(name)

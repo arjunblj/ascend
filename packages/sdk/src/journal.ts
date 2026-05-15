@@ -2082,6 +2082,19 @@ function buildJournalEntry(
 			issues,
 		}
 	}
+	const cellRefIssue = journalOperationCellRefValueIssue(op)
+	if (cellRefIssue) {
+		const issues = [structureMutationJournalIssue(cellRefIssue)]
+		return {
+			opIndex,
+			op,
+			supported: true,
+			exact: false,
+			inverseOps: [],
+			preimages: [],
+			issues,
+		}
+	}
 	const tableIssue = journalOperationTableTopologyIssue(workbook, op)
 	if (tableIssue) {
 		const issues = [structureMutationJournalIssue(tableIssue)]
@@ -2280,6 +2293,47 @@ function journalOperationRange(op: Operation): {
 				: { surface: 'conditional-formats', sheet: op.sheet, range: op.range }
 		case 'setAutoFilter':
 			return { surface: 'auto-filters', sheet: op.sheet, range: op.range }
+		default:
+			return null
+	}
+}
+
+function journalOperationCellRefValueIssue(op: Operation): MutationJournalIssue | null {
+	const target = journalOperationCellRefTarget(op)
+	if (!target) return null
+	const invalidRefs = target.refs.filter((ref) => {
+		try {
+			parseA1(ref)
+			return false
+		} catch {
+			return true
+		}
+	})
+	if (invalidRefs.length === 0) return null
+	return {
+		code: 'UNSUPPORTED_VALUE',
+		message: `Cannot build exact rollback journal for ${op.op} because cell reference ${invalidRefs[0]} is invalid`,
+		surface: target.surface,
+		reason: 'value-unsupported',
+		refs: invalidRefs.map((ref) => `${target.sheet}!${ref}`),
+	}
+}
+
+function journalOperationCellRefTarget(op: Operation): {
+	readonly surface: MutationJournalSurface
+	readonly sheet: string
+	readonly refs: readonly string[]
+} | null {
+	switch (op.op) {
+		case 'setCells':
+			return { surface: 'cells', sheet: op.sheet, refs: op.updates.map((update) => update.ref) }
+		case 'setFormula':
+			return { surface: 'formulas', sheet: op.sheet, refs: [op.ref] }
+		case 'setRichText':
+			return { surface: 'cells', sheet: op.sheet, refs: [op.ref] }
+		case 'setHyperlink':
+		case 'deleteHyperlink':
+			return { surface: 'hyperlinks', sheet: op.sheet, refs: [op.ref] }
 		default:
 			return null
 	}

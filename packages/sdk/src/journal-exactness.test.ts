@@ -729,6 +729,62 @@ describe('mutation journal exactness model', () => {
 		}
 	})
 
+	test('classifies invalid cell reference journals as unsupported values', () => {
+		const cases: readonly {
+			readonly op: Operation
+			readonly surface: string
+			readonly ref: string
+		}[] = [
+			{
+				op: { op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1:', value: 1 }] },
+				surface: 'cells',
+				ref: 'Sheet1!A1:',
+			},
+			{
+				op: { op: 'setFormula', sheet: 'Sheet1', ref: 'A1:', formula: '1' },
+				surface: 'formulas',
+				ref: 'Sheet1!A1:',
+			},
+			{
+				op: { op: 'setRichText', sheet: 'Sheet1', ref: 'A1:', runs: [{ text: 'x' }] },
+				surface: 'cells',
+				ref: 'Sheet1!A1:',
+			},
+			{
+				op: { op: 'setHyperlink', sheet: 'Sheet1', ref: 'A1:', url: 'https://example.test' },
+				surface: 'hyperlinks',
+				ref: 'Sheet1!A1:',
+			},
+			{
+				op: { op: 'deleteHyperlink', sheet: 'Sheet1', ref: 'A1:' },
+				surface: 'hyperlinks',
+				ref: 'Sheet1!A1:',
+			},
+		]
+
+		for (const entry of cases) {
+			const wb = AscendWorkbook.create()
+			const journal = buildMutationJournal(wb.getWorkbookModel(), [entry.op])
+			const analysis = analyzeMutationJournalExactness(journal)
+			expect(journal.inverseOps, entry.op.op).toEqual([])
+			expect(analysis, entry.op.op).toMatchObject({
+				supported: true,
+				exact: false,
+				issueCount: 1,
+				surfaces: [entry.surface],
+				reasons: ['value-unsupported'],
+				hasMatrixViolation: false,
+			})
+			expect(analysis.issues[0], entry.op.op).toMatchObject({
+				code: 'UNSUPPORTED_VALUE',
+				surface: entry.surface,
+				reason: 'value-unsupported',
+				refs: [entry.ref],
+				allowedByMatrix: true,
+			})
+		}
+	})
+
 	test('classifies table selector journal preimage failures as table topology', () => {
 		const missingOps: readonly Operation[] = [
 			{ op: 'deleteTable', table: 'MissingTable' },

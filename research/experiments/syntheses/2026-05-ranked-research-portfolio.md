@@ -13,6 +13,9 @@ Research is no longer a broad sweep. Each direction below must earn its place by
 - [Model Context Protocol](https://modelcontextprotocol.io/specification/2024-11-05/index), [Univer MCP](https://docs.univer.ai/guides/sheets/getting-started/mcp), and [Microsoft Graph Excel APIs](https://learn.microsoft.com/en-us/graph/api/resources/excel?view=graph-rest-1.0) frame agent-context competition.
 - [PostgreSQL MVCC](https://www.postgresql.org/docs/17/mvcc-intro.html), [SQLite isolation](https://www.sqlite.org/isolation.html), [RocksDB snapshots](https://github.com/facebook/rocksdb/wiki/Snapshot), and [Automerge concepts](https://automerge.org/docs/reference/concepts/) frame retained patch history and the CRDT boundary.
 - [DuckDB Excel import](https://duckdb.org/docs/stable/guides/file_formats/excel_import) and [Apache Arrow columnar format](https://arrow.apache.org/docs/format/Columnar.html) frame columnar sidecars.
+- [HyperFormula named expressions](https://hyperformula.handsontable.com/guide/named-expressions.html), [openpyxl formula parsing](https://openpyxl.readthedocs.io/en/latest/formula.html), and [Apache POI formula support](https://poi.apache.org/components/spreadsheet/formula.html) frame the formula-intelligence competitor boundary.
+- [fast-check property-based testing](https://fast-check.dev/docs/introduction/what-is-property-based-testing/) frames journal-law evidence as generated-property proof with shrinking, not more hand-written fixture examples.
+- [SLSA source provenance](https://slsa.dev/spec/v1.2/source-requirements) and [GitHub artifact attestations](https://docs.github.com/actions/concepts/security/artifact-attestations) frame why release proof bundles must not imply signed provenance or attestation.
 
 ## Ranked Portfolio
 
@@ -124,6 +127,82 @@ Readiness gates now fail closed for the top two artifacts. The JSON index includ
 | package-action-proof | edge-fixture-policy; provenance-boundary; unsupported-feature-boundary; streaming-matrix-boundary; compact-report-publication-policy |
 
 Decision: formula intelligence, retained viewport patches, token-bounded agent view, property-based journal laws, and columnar sidecars stay out of the top release proof index for now.
+
+## Current Proof Refresh
+
+Timestamp: 2026-05-15T05:52:35Z local proof run.
+
+This refresh answers the latest portfolio question directly: the top one or two highest-leverage unknowns are still the two release-claim candidates, not another formula rename or sidecar surface.
+
+### Top Unknown 1: Safe Unknown Workbook Opening
+
+Proof command:
+
+```bash
+bun run fixtures/benchmarks/safe-open-proof.ts --no-timings --json
+```
+
+Current proof:
+
+| Metric | Value |
+| --- | ---: |
+| Cases | 9 |
+| OK cases | 8 |
+| Rejected malformed cases | 1 |
+| Public fixture cases | 6 |
+| Generated edge cases | 2 |
+| Review before hydration | 4 |
+| Macro/ActiveX/signature/unknown routed to metadata-only review | 4 |
+
+Decision: hand off to product/performance only. The proof supports cautious pre-hydration package-feature routing across existing surfaces. The proof does not support malware scanning, active-content safety, trust, sandboxing, signed provenance, or release latency wording.
+
+### Top Unknown 2: Auditable Package-Part Mutation
+
+Proof command:
+
+```bash
+bun run fixtures/benchmarks/package-action-proof.ts --no-timings --json
+```
+
+Current proof:
+
+| Metric | Value |
+| --- | ---: |
+| Cases | 8 |
+| Public fixture cases | 2 |
+| Generated workbook cases | 2 |
+| Generated edge-package cases | 4 |
+| Passthrough actions | 27 |
+| Regenerate actions | 38 |
+| Add actions | 3 |
+| Drop actions | 3 |
+| Error actions | 1 |
+| Cases with source graph evidence | 8 |
+| Cases with package-preservation journal issue | 8 |
+| Representative streaming proof cases | 1 |
+
+Decision: hand off to correctness/product only. The proof supports local per-part accounting and journal-linked package evidence. It does not support signed provenance, SLSA, in-toto, Excel recalculation equivalence, chart byte-passthrough, or full streaming matrix parity.
+
+### Release Gate Proof
+
+Proof command:
+
+```bash
+bun run fixtures/benchmarks/release-proof-index.ts --no-timings --json
+```
+
+Current gate:
+
+| Field | Value |
+| --- | --- |
+| Release gate | `blocked-by-publication-policy` |
+| Headline claims allowed | `false` |
+| Missing readyWhen requirements | 9 |
+| Top owner action rank 10 | `package-action-proof/edge-fixture-policy` and `safe-open-proof/public-edge-fixtures` |
+| Top owner action rank 20 | `package-action-proof/unsupported-feature-boundary` |
+| Top owner action rank 30 | `safe-open-proof/release-latency-run` |
+
+Decision: the portfolio should hand off the top two claims to owner loops for proof packaging and boundary approval. Research should not promote formula rename, columnar sidecars, or another release surface during this block.
 
 ## Next Proof Moves
 

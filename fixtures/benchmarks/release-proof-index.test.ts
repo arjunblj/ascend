@@ -18,11 +18,20 @@ describe('release proof evidence index', () => {
 			expect(artifact.markdownBytes).toBeGreaterThan(100)
 		}
 		expect(index.artifacts.find((artifact) => artifact.name === 'safe-open-proof')).toMatchObject({
+			command: 'bun run fixtures/benchmarks/safe-open-proof.ts --no-timings --json',
+			publicationStatus: 'needs-release-packaging',
 			summary: { cases: 9, rejected: 1, malformedRejected: true },
 		})
 		expect(
+			index.artifacts
+				.find((artifact) => artifact.name === 'safe-open-proof')
+				?.publicationBlockers.join(' '),
+		).toContain('public binary fixtures')
+		expect(
 			index.artifacts.find((artifact) => artifact.name === 'package-action-proof'),
 		).toMatchObject({
+			command: 'bun run fixtures/benchmarks/package-action-proof.ts --no-timings --json',
+			publicationStatus: 'needs-release-packaging',
 			summary: { cases: 8, allActionsCovered: true, sourceGraphEverywhere: true },
 		})
 	})
@@ -43,6 +52,8 @@ describe('release proof evidence index', () => {
 
 		expect(markdown).toContain('Release Proof Evidence Index')
 		expect(markdown).toContain('not signed provenance')
+		expect(markdown).toContain('Publication blockers')
+		expect(markdown).toContain('safe-open-proof.ts --no-timings --json')
 		expect(markdown).toContain('SLSA')
 		expect(markdown).toContain('Attestation: false')
 		expect(markdown).toContain('safe unknown workbook opening')

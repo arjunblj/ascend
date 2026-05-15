@@ -41,39 +41,45 @@ bun run fixtures/benchmarks/safe-open-proof.ts --repeat 5 --warmup 1
 
 The proof harness is tracked and intentionally not a new product surface. It generates durable synthetic signed, unknown-part, and malformed cases in code, and uses public workbook fixtures for real-workbook cases.
 
-Latest rerun: 2026-05-15T04:10:16.187Z.
+Latest rerun: 2026-05-15T04:38:17.525Z.
 
 | Case | Fixture | Bytes | Status | Mode | Review before hydration | Risk families | Parts | Worksheets | Relationships | Median open-plan ms | Median full-open ms | Full/open-plan ratio | Boundary |
 | --- | --- | ---: | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
-| clean | `fixtures/xlsx/poi/SampleSS.xlsx` | 9112 | ok | formula | false | none | 13 | 3 | 10 | 0.184 | 2.158 | 11.70x | ok |
-| formula-heavy | `fixtures/xlsx/poi/formula_stress_test.xlsx` | 64769 | ok | formula | false | none | 27 | 10 | 22 | 0.182 | 7.236 | 39.77x | ok |
-| macro | `fixtures/xlsx/calamine/vba.xlsm` | 12752 | ok | metadata-only | true | preservedMacro | 12 | 3 | 9 | 0.100 | 1.777 | 17.70x | ok |
-| pivot | `fixtures/xlsx/poi/ExcelPivotTableSample.xlsx` | 19460 | ok | formula | false | none | 27 | 3 | 19 | 0.167 | 2.495 | 14.97x | ok |
-| ActiveX | `fixtures/xlsx/libreoffice/activex_checkbox.xlsx` | 12433 | ok | metadata-only | true | preservedActiveX | 17 | 1 | 12 | 0.092 | 1.614 | 17.56x | ok |
-| chart | `fixtures/xlsx/poi/WithChart.xlsx` | 10138 | ok | formula | false | none | 15 | 3 | 10 | 0.085 | 1.295 | 15.26x | ok |
-| signed | synthetic digital-signature package | 2254 | ok | metadata-only | true | preservedSignature | 8 | 1 | 4 | 0.051 | 0.101 | 1.99x | ok |
-| unknown part | synthetic unknown package part | 1697 | ok | metadata-only | true | preservedOther | 6 | 1 | 3 | 0.040 | 0.086 | 2.17x | ok |
+| clean | `fixtures/xlsx/poi/SampleSS.xlsx` | 9112 | ok | formula | false | none | 13 | 3 | 10 | 0.190 | 2.674 | 14.09x | ok |
+| formula-heavy | `fixtures/xlsx/poi/formula_stress_test.xlsx` | 64769 | ok | formula | false | none | 27 | 10 | 22 | 0.226 | 7.220 | 31.97x | ok |
+| macro | `fixtures/xlsx/calamine/vba.xlsm` | 12752 | ok | metadata-only | true | preservedMacro | 12 | 3 | 9 | 0.106 | 1.806 | 17.11x | ok |
+| pivot | `fixtures/xlsx/poi/ExcelPivotTableSample.xlsx` | 19460 | ok | formula | false | none | 27 | 3 | 19 | 0.154 | 2.507 | 16.26x | ok |
+| ActiveX | `fixtures/xlsx/libreoffice/activex_checkbox.xlsx` | 12433 | ok | metadata-only | true | preservedActiveX | 17 | 1 | 12 | 0.103 | 1.631 | 15.78x | ok |
+| chart | `fixtures/xlsx/poi/WithChart.xlsx` | 10138 | ok | formula | false | none | 15 | 3 | 10 | 0.083 | 1.645 | 19.82x | ok |
+| signed | synthetic digital-signature package | 2254 | ok | metadata-only | true | preservedSignature | 8 | 1 | 4 | 0.057 | 0.093 | 1.65x | ok |
+| unknown part | synthetic unknown package part | 1697 | ok | metadata-only | true | preservedOther | 6 | 1 | 3 | 0.036 | 0.082 | 2.28x | ok |
 | malformed | synthetic malformed bytes | 9 | rejected | n/a | n/a | none | n/a | n/a | n/a | n/a | n/a | n/a | open-plan rejected: Missing end of central directory record |
 
 Validation commands:
 
 ```bash
+bun test fixtures/benchmarks/release-proof-index.test.ts fixtures/benchmarks/safe-open-proof.test.ts packages/sdk/src/open-plan.test.ts
 bun test fixtures/benchmarks/safe-open-proof.test.ts packages/sdk/src/open-plan.test.ts
 bun test apps/cli/src/cli.test.ts -t "open-plan"
 bun test apps/api/api.test.ts -t "open-plan"
 bun test apps/mcp/src/index.test.ts -t "open_plan|open-plan"
+bunx tsc --build
+bun run test:changed
 ```
 
 Latest validation rerun passed on 2026-05-15:
 
+- `bun test fixtures/benchmarks/release-proof-index.test.ts fixtures/benchmarks/safe-open-proof.test.ts packages/sdk/src/open-plan.test.ts`
 - `bun test fixtures/benchmarks/safe-open-proof.test.ts packages/sdk/src/open-plan.test.ts`
 - `bun test apps/cli/src/cli.test.ts -t "open-plan"`
 - `bun test apps/api/api.test.ts -t "open-plan"`
 - `bun test apps/mcp/src/index.test.ts -t "open_plan|open-plan"`
+- `bunx tsc --build`
+- `bun run test:changed` (repository-level suite: 5048 passed, 1 skipped, 0 failed)
 
 ## Interpretation
 
-- Public workbook cases show open-plan as a cheap pre-hydration routing step: 11.70x to 39.77x faster than full hydration in this local probe.
+- Public workbook cases show open-plan as a cheap pre-hydration routing step: 14.09x to 31.97x faster than full hydration in this local probe.
 - Active content and security-sensitive package material route to `metadata-only` with `reviewBeforeHydration: true`.
 - Unknown package material routes to `metadata-only` review instead of pretending the workbook is fully understood.
 - Malformed bytes do not get a recommendation. They reject at package inspection, which should be presented as a boundary in any proof bundle.
@@ -101,6 +107,8 @@ Do not claim:
 ## Fold-In Recommendation
 
 Promote to product/performance as a proof bundle over existing surfaces. Do not add another CLI/API/MCP surface. The tracked harness is the repeatable report generator; the next production-sized step should only package the report output into release materials if product wants this claim published.
+
+Release proof index status: `fixtures/benchmarks/release-proof-index.ts` now lists the exact reproduction command and publication blockers for this artifact. The safe-open artifact remains `needs-release-packaging` because signed and unknown-part edge cases are durable code-generated packages rather than public binary fixtures, and timing numbers are local proof-run data rather than release thresholds.
 
 ## Next Handoff
 

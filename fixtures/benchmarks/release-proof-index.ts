@@ -21,6 +21,8 @@ export interface ReleaseProofIndexArtifact {
 	readonly name: ReleaseProofIndexArtifactName
 	readonly command: string
 	readonly claim: string
+	readonly publicationStatus: 'local-proof-ready' | 'needs-release-packaging'
+	readonly publicationBlockers: readonly string[]
 	readonly sha256: string
 	readonly stableShapeSha256: string
 	readonly jsonBytes: number
@@ -70,8 +72,8 @@ export function releaseProofIndexMarkdown(result: ReleaseProofIndexResult): stri
 		`Generated: ${result.generatedAt}`,
 		result.boundary,
 		'',
-		'| Artifact | Claim | JSON bytes | Markdown bytes | SHA-256 | Stable shape SHA-256 | Summary | Boundary |',
-		'| --- | --- | ---: | ---: | --- | --- | --- | --- |',
+		'| Artifact | Claim | Command | Publication status | Publication blockers | JSON bytes | Markdown bytes | SHA-256 | Stable shape SHA-256 | Summary | Boundary |',
+		'| --- | --- | --- | --- | --- | ---: | ---: | --- | --- | --- | --- |',
 		...result.artifacts.map(markdownRow),
 		'',
 		`Signed: ${result.signed}`,
@@ -95,6 +97,11 @@ function safeOpenArtifact(
 			? 'bun run fixtures/benchmarks/safe-open-proof.ts --repeat 3 --warmup 1 --json'
 			: 'bun run fixtures/benchmarks/safe-open-proof.ts --no-timings --json',
 		claim: 'safe unknown workbook opening',
+		publicationStatus: 'needs-release-packaging',
+		publicationBlockers: [
+			'signed and unknown-part cases are durable code-generated packages, not public binary fixtures',
+			'local timing evidence is proof-run data, not a release performance threshold',
+		],
 		sha256: sha256(json),
 		stableShapeSha256: sha256(stableJson(stripRunNoise(result))),
 		jsonBytes: utf8Bytes(json),
@@ -126,6 +133,11 @@ function packageActionArtifact(
 			? 'bun run fixtures/benchmarks/package-action-proof.ts --json'
 			: 'bun run fixtures/benchmarks/package-action-proof.ts --no-timings --json',
 		claim: 'auditable package-part mutation',
+		publicationStatus: 'needs-release-packaging',
+		publicationBlockers: [
+			'synthetic edge packages must stay disclosed unless replaced by public binary fixtures',
+			'proof is local evidence, not signed provenance or third-party attestation',
+		],
 		sha256: sha256(json),
 		stableShapeSha256: sha256(stableJson(stripRunNoise(result))),
 		jsonBytes: utf8Bytes(json),
@@ -151,6 +163,9 @@ function markdownRow(row: ReleaseProofIndexArtifact): string {
 	return [
 		row.name,
 		row.claim,
+		`\`${row.command}\``,
+		row.publicationStatus,
+		row.publicationBlockers.join('; '),
 		String(row.jsonBytes),
 		String(row.markdownBytes),
 		`\`${row.sha256}\``,

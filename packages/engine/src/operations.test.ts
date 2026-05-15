@@ -7503,6 +7503,26 @@ describe('applyOperation', () => {
 		if (!result.ok) expect(result.error.code).toBe('VALIDATION_ERROR')
 	})
 
+	test('hyperlink operations reject invalid refs without mutation', () => {
+		const cases: readonly Operation[] = [
+			{ op: 'setHyperlink', sheet: 'Sheet1', ref: 'A1:', url: 'https://example.com' },
+			{ op: 'setHyperlink', sheet: 'Sheet1', ref: 123 as never, url: 'https://example.com' },
+			{ op: 'deleteHyperlink', sheet: 'Sheet1', ref: 'A1:' },
+			{ op: 'deleteHyperlink', sheet: 'Sheet1', ref: 123 as never },
+		]
+
+		for (const op of cases) {
+			const wb = setup()
+			const sheet = wb.getSheet('Sheet1')
+			if (!sheet) throw new Error('expected sheet')
+			sheet.hyperlinks.set('B1', { target: 'https://existing.example' })
+			const result = applyOperation(wb, op)
+			expectErr(result)
+			expect(result.error.code, JSON.stringify(op)).toBe('VALIDATION_ERROR')
+			expect(sheet.hyperlinks).toEqual(new Map([['B1', { target: 'https://existing.example' }]]))
+		}
+	})
+
 	test('setNumberFormat applies styles across a range', () => {
 		const wb = setup()
 		const result = applyOperation(wb, {

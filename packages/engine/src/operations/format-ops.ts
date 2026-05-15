@@ -10,7 +10,7 @@ import type {
 	SortState,
 	Workbook,
 } from '@ascend/core'
-import { toA1 } from '@ascend/core'
+import { parseA1, toA1 } from '@ascend/core'
 import type { Operation, Result } from '@ascend/schema'
 import { ascendError, err, ok, validateExcelDefinedName } from '@ascend/schema'
 import type { PatchResult } from './helpers.ts'
@@ -663,6 +663,8 @@ export function handleSetHyperlink(
 ): Result<PatchResult> {
 	const result = getSheet(workbook, op.sheet)
 	if (!result.ok) return result
+	const refError = hyperlinkRefError('setHyperlink', op.ref)
+	if (refError) return err(refError)
 	if (!hasLinkDestination(op.url) && !hasLinkDestination(op.location)) {
 		return err(
 			ascendError('VALIDATION_ERROR', 'setHyperlink requires url or location', {
@@ -716,6 +718,18 @@ function hasLinkDestination(value: string | undefined): boolean {
 	return typeof value === 'string' && value.trim().length > 0
 }
 
+function hyperlinkRefError(opName: 'setHyperlink' | 'deleteHyperlink', ref: unknown) {
+	if (typeof ref !== 'string') {
+		return ascendError('VALIDATION_ERROR', `${opName} ref must be an A1 cell reference`)
+	}
+	try {
+		parseA1(ref)
+	} catch {
+		return ascendError('VALIDATION_ERROR', `Invalid cell reference: ${ref}`)
+	}
+	return null
+}
+
 export function handleDeleteHyperlink(
 	workbook: Workbook,
 	op: Extract<Operation, { op: 'deleteHyperlink' }>,
@@ -723,6 +737,8 @@ export function handleDeleteHyperlink(
 	const sheetResult = getSheet(workbook, op.sheet)
 	if (!sheetResult.ok) return sheetResult
 	const sheet = sheetResult.value
+	const refError = hyperlinkRefError('deleteHyperlink', op.ref)
+	if (refError) return err(refError)
 	sheet.ensureWritable()
 	const ref = op.ref.toUpperCase()
 	for (const [linkRef] of sheet.hyperlinks) {

@@ -6,6 +6,7 @@ import { buildRawReadWorkloadDataSet, type WorkloadName } from './competitive-io
 type ContractName = 'first-view' | 'edit-verify' | 'repeated-inspection'
 type InputPreset = 'private-nyc311' | 'public-tracked'
 type StepStatus = 'ok' | 'timeout' | 'failed' | 'skipped'
+type DecisionStability = 'stable' | 'noisy' | 'unknown'
 
 interface Args {
 	readonly inputPreset: InputPreset
@@ -60,6 +61,8 @@ interface EnvelopeDecision {
 	readonly phaseMedianMs: number
 	readonly phaseP95Ms?: number
 	readonly phaseCv?: number
+	readonly stability: DecisionStability
+	readonly nextAction: string
 	readonly maxPlausibleWinMs: number
 	readonly maxPlausibleWinPct: number
 	readonly profileCommand: string
@@ -574,6 +577,29 @@ function phaseTailLabel(decision: EnvelopeDecision): string {
 	return parts.join(', ')
 }
 
+function decisionStability(cv: number | undefined): DecisionStability {
+	if (cv === undefined) return 'unknown'
+	return cv > 0.1 ? 'noisy' : 'stable'
+}
+
+function nextDecisionAction(stability: DecisionStability): string {
+	if (stability === 'noisy') {
+		return 'remeasure exact envelope before production changes'
+	}
+	if (stability === 'stable') return 'profile required before production changes'
+	return 'add tail/variance or profile before production changes'
+}
+
+function decisionFields(
+	phaseCv: number | undefined,
+): Pick<EnvelopeDecision, 'stability' | 'nextAction'> {
+	const stability = decisionStability(phaseCv)
+	return {
+		stability,
+		nextAction: nextDecisionAction(stability),
+	}
+}
+
 function phaseCandidateStats(
 	summary: unknown,
 	statsKey: string,
@@ -829,16 +855,16 @@ function productionTarget(results: readonly StepResult[]): string {
 	if (!selected) {
 		return 'No optimization selected yet: one or more required measurements failed or timed out.'
 	}
-	return `Choose exactly one production target: \`${selected.largestPhase}\` in \`${selected.contract}\`. It belongs to the largest true user-visible envelope (${selected.envelopeMedianMs.toFixed(1)}ms median), and users wait on ${selected.phaseMedianMs.toFixed(1)}ms inside it (max plausible win ${selected.maxPlausibleWinMs.toFixed(1)}ms / ${selected.maxPlausibleWinPct.toFixed(1)}%). Required profile before code changes: \`${selected.profileCommand}\`. Guardrail: ${selected.guardrail}`
+	return `Choose exactly one production target: \`${selected.largestPhase}\` in \`${selected.contract}\`. It belongs to the largest true user-visible envelope (${selected.envelopeMedianMs.toFixed(1)}ms median), and users wait on ${selected.phaseMedianMs.toFixed(1)}ms inside it (max plausible win ${selected.maxPlausibleWinMs.toFixed(1)}ms / ${selected.maxPlausibleWinPct.toFixed(1)}%). Decision status: ${selected.stability}; next action: ${selected.nextAction}. Required profile before code changes: \`${selected.profileCommand}\`. Guardrail: ${selected.guardrail}`
 }
 
 function decisionMatrix(results: readonly StepResult[]): string {
 	const rows = envelopeDecisions(results).map((decision) => {
-		return `| ${decision.envelope} | ${decision.envelopeMedianMs.toFixed(3)} | ${decision.largestPhase} | ${decision.phaseMedianMs.toFixed(3)} | ${phaseTailLabel(decision)} | ${decision.maxPlausibleWinMs.toFixed(3)} | ${decision.maxPlausibleWinPct.toFixed(1)}% | \`${decision.profileCommand}\` | ${decision.guardrail} |`
+		return `| ${decision.envelope} | ${decision.envelopeMedianMs.toFixed(3)} | ${decision.largestPhase} | ${decision.phaseMedianMs.toFixed(3)} | ${phaseTailLabel(decision)} | ${decision.stability} | ${decision.nextAction} | ${decision.maxPlausibleWinMs.toFixed(3)} | ${decision.maxPlausibleWinPct.toFixed(1)}% | \`${decision.profileCommand}\` | ${decision.guardrail} |`
 	})
 	return [
-		'| Envelope | Envelope median ms | Largest user-wait phase | Phase median ms | Phase tail/variance | Max plausible win ms | Max plausible win % | Required profile command | Guardrail |',
-		'|---|---:|---|---:|---|---:|---:|---|---|',
+		'| Envelope | Envelope median ms | Largest user-wait phase | Phase median ms | Phase tail/variance | Stability | Next action | Max plausible win ms | Max plausible win % | Required profile command | Guardrail |',
+		'|---|---:|---|---:|---|---|---|---:|---:|---|---|',
 		...rows,
 	].join('\n')
 }
@@ -912,6 +938,7 @@ function envelopeDecisions(results: readonly StepResult[]): EnvelopeDecision[] {
 			phaseMedianMs: largest.medianMs,
 			...(largest.p95Ms !== undefined ? { phaseP95Ms: largest.p95Ms } : {}),
 			...(largest.cv !== undefined ? { phaseCv: largest.cv } : {}),
+			...decisionFields(largest.cv),
 			...maxPlausibleWin(Math.max(firstViewEnvelope, largest.medianMs), largest.medianMs),
 			profileCommand: largest.profileCommand,
 			guardrail: 'must improve the first-view command, not only the full worksheet XML diagnostic',
@@ -1033,6 +1060,7 @@ function envelopeDecisions(results: readonly StepResult[]): EnvelopeDecision[] {
 			phaseMedianMs: largest.medianMs,
 			...(largest.p95Ms !== undefined ? { phaseP95Ms: largest.p95Ms } : {}),
 			...(largest.cv !== undefined ? { phaseCv: largest.cv } : {}),
+			...decisionFields(largest.cv),
 			...maxPlausibleWin(editEnvelope, largest.medianMs),
 			profileCommand: largest.profileCommand,
 			guardrail: 'must preserve write, reopen, structural check, lint, and package verification',
@@ -1066,6 +1094,7 @@ function envelopeDecisions(results: readonly StepResult[]): EnvelopeDecision[] {
 			phaseMedianMs: repeatedLargest.medianMs,
 			...(repeatedLargest.p95Ms !== undefined ? { phaseP95Ms: repeatedLargest.p95Ms } : {}),
 			...(repeatedLargest.cv !== undefined ? { phaseCv: repeatedLargest.cv } : {}),
+			...decisionFields(repeatedLargest.cv),
 			...maxPlausibleWin(repeatedLargest.medianMs, repeatedLargest.medianMs),
 			profileCommand: repeatedLargest.profileCommand,
 			guardrail: 'must name the hot-cache assumption and include cold-open context separately',

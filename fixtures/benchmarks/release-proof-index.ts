@@ -17,6 +17,13 @@ export type ReleaseProofIndexArtifactName = 'safe-open-proof' | 'package-action-
 export type ReleaseProofIndexExcludedEvidenceName = 'practical-latency-contracts'
 export type ReleaseProofReadinessOwner = 'correctness' | 'performance' | 'product' | 'release'
 export type ReleaseProofReadinessStatus = 'missing' | 'satisfied'
+export type ReleaseProofDeferredClaimName =
+	| 'formula-language-service-primitives'
+	| 'token-bounded-agent-view'
+	| 'retained-viewport-patch-history'
+	| 'columnar-scan-sidecars'
+	| 'formula-oracle-routing'
+	| 'agent-workflow-observability'
 
 export interface ReleaseProofIndexOptions {
 	readonly includeTimings?: boolean
@@ -74,12 +81,14 @@ export interface ReleaseProofIndexResult {
 	readonly generatedAt: string
 	readonly artifactCount: number
 	readonly excludedEvidenceCount: number
+	readonly deferredClaimCount: number
 	readonly signed: false
 	readonly attestation: false
 	readonly readiness: ReleaseProofReadinessSummary
 	readonly boundary: string
 	readonly artifacts: readonly ReleaseProofIndexArtifact[]
 	readonly excludedEvidence: readonly ReleaseProofIndexExcludedEvidence[]
+	readonly deferredClaims: readonly ReleaseProofDeferredClaim[]
 }
 
 export interface ReleaseProofReadinessSummary {
@@ -136,6 +145,17 @@ export interface ReleaseProofClaimProofRequired {
 	readonly killCriterion: string
 }
 
+export interface ReleaseProofDeferredClaim {
+	readonly name: ReleaseProofDeferredClaimName
+	readonly claim: string
+	readonly status: 'do-not-promote-yet' | 'proof-backed-hold'
+	readonly ownerLoops: readonly ReleaseProofReadinessOwner[]
+	readonly reason: string
+	readonly proofNeeded: string
+	readonly killCriterion: string
+	readonly boundary: string
+}
+
 export async function runReleaseProofIndex(
 	options: ReleaseProofIndexOptions = {},
 ): Promise<ReleaseProofIndexResult> {
@@ -154,6 +174,7 @@ export async function runReleaseProofIndex(
 		generatedAt: new Date().toISOString(),
 		artifactCount: artifacts.length,
 		excludedEvidenceCount: EXCLUDED_EVIDENCE.length,
+		deferredClaimCount: DEFERRED_CLAIMS.length,
 		signed: false,
 		attestation: false,
 		readiness: releaseReadinessSummary(artifacts),
@@ -161,6 +182,7 @@ export async function runReleaseProofIndex(
 			'Digest index for local release evidence artifacts. This is not signed provenance, SLSA, in-toto attestation, or tamper-evident storage.',
 		artifacts,
 		excludedEvidence: EXCLUDED_EVIDENCE,
+		deferredClaims: DEFERRED_CLAIMS.map(cloneDeferredClaim),
 	}
 }
 
@@ -194,6 +216,12 @@ export function releaseProofIndexMarkdown(result: ReleaseProofIndexResult): stri
 		'| --- | --- | --- | --- | --- | --- |',
 		...result.excludedEvidence.map(excludedEvidenceMarkdownRow),
 		'',
+		'## Deferred Claims',
+		'',
+		'| Claim | Status | Owner loops | Reason | Proof needed | Kill criterion | Boundary |',
+		'| --- | --- | --- | --- | --- | --- | --- |',
+		...result.deferredClaims.map(deferredClaimMarkdownRow),
+		'',
 		`Signed: ${result.signed}`,
 		`Attestation: ${result.attestation}`,
 	].join('\n')
@@ -212,6 +240,100 @@ const EXCLUDED_EVIDENCE: readonly ReleaseProofIndexExcludedEvidence[] = [
 			'No local timing report in this index is a release performance threshold, signed provenance, or headline product claim.',
 	},
 ]
+
+const DEFERRED_CLAIMS: readonly ReleaseProofDeferredClaim[] = [
+	{
+		name: 'formula-language-service-primitives',
+		claim: 'formula language-service primitives',
+		status: 'proof-backed-hold',
+		ownerLoops: ['product', 'correctness'],
+		reason:
+			'Current proof supports spans, diagnostics, hover, completions, binding roles, and rejection-first prepareRename only; edit-producing rename is frozen.',
+		proofNeeded:
+			'Workbook-context ownership for defined names, table columns, sheet refs, external refs, and operation-owned edit plans before any rename promotion.',
+		killCriterion:
+			'Do not promote rename while prepareRename must refuse workbook-context targets or while no operation owns cross-workbook edits.',
+		boundary:
+			'No edit-producing rename, no table/defined-name rename, and no claim that all formula references can be rewritten safely.',
+	},
+	{
+		name: 'token-bounded-agent-view',
+		claim: 'token-bounded agent view',
+		status: 'proof-backed-hold',
+		ownerLoops: ['product'],
+		reason:
+			'Current proof is useful for deterministic compact views, but release copy still needs a concrete product example and budget-boundary wording.',
+		proofNeeded:
+			'One public workbook example showing requested budget, estimated tokens, omissions, locators, and recovery path across existing surfaces.',
+		killCriterion:
+			'Do not publish exact-token wording when structural floors exceed tiny budgets or omitted evidence is not recoverable by locator.',
+		boundary:
+			'Approximate token counts only; compact views do not replace workbook inspection, proof artifacts, or omitted workbook evidence.',
+	},
+	{
+		name: 'retained-viewport-patch-history',
+		claim: 'retained viewport patch history',
+		status: 'proof-backed-hold',
+		ownerLoops: ['product', 'performance'],
+		reason:
+			'SDK/API/MCP retained patch proof exists, but CLI is excluded and the claim must not drift into collaboration or transaction-isolation language.',
+		proofNeeded:
+			'Owner-approved product wording for bounded history, invalidation reasons, retention caps, and cross-surface recovery without CLI claims.',
+		killCriterion:
+			'Do not promote collaboration, sync, CRDT, or unlimited-history wording without multi-writer convergence and storage retention proof.',
+		boundary:
+			'Bounded per-window patch history only; not MVCC transaction isolation, collaborative editing, or unlimited audit history.',
+	},
+	{
+		name: 'columnar-scan-sidecars',
+		claim: 'columnar scan sidecars',
+		status: 'do-not-promote-yet',
+		ownerLoops: ['performance'],
+		reason:
+			'Sidecar probes show promise, but the evidence is still benchmark/research shaped rather than product-surface shaped.',
+		proofNeeded:
+			'Repeated-scan wins, build cost, invalidation cost, memory caps, and checksum parity over multiple public real workbook table/range shapes.',
+		killCriterion:
+			'Do not promote if build plus invalidation erases repeated-scan gains, parity fails, or memory overhead is not bounded.',
+		boundary:
+			'Disposable sidecar only; not a storage engine, workbook rewrite, or guaranteed acceleration for sparse or single-pass reads.',
+	},
+	{
+		name: 'formula-oracle-routing',
+		claim: 'formula oracle routing',
+		status: 'do-not-promote-yet',
+		ownerLoops: ['correctness'],
+		reason:
+			'Mismatch routing is a correctness research program until oracle classes are complete and reproducible without private corpora.',
+		proofNeeded:
+			'Runnable public corpus artifacts with mismatch classes, HyperFormula/LibreOffice/Excel/static-golden routing, skip counters, and divergence counters.',
+		killCriterion:
+			'Do not publish Excel-compatible formula wording while cached values, private corpora, or unsupported oracle classes are required.',
+		boundary:
+			'No blanket Excel-compatibility claim and no claim that every mismatch class has an automated oracle.',
+	},
+	{
+		name: 'agent-workflow-observability',
+		claim: 'agent workflow observability',
+		status: 'do-not-promote-yet',
+		ownerLoops: ['product'],
+		reason:
+			'Trace ideas are promising, but proof must show they improve repair, audit, or recovery decisions rather than duplicating logs.',
+		proofNeeded:
+			'Public inspect/plan/commit/reopen/diff/audit workflow traces with failure taxonomy and recovery prompts over existing agent surfaces.',
+		killCriterion:
+			'Do not promote if traces are only verbose logs or if they do not improve a concrete repair, audit, or recovery workflow.',
+		boundary:
+			'No claim of autonomous correctness, signed audit trail, or complete observability across every workbook feature.',
+	},
+]
+
+function cloneDeferredClaim(claim: ReleaseProofDeferredClaim): ReleaseProofDeferredClaim {
+	return {
+		...claim,
+		ownerLoops: [...claim.ownerLoops],
+	}
+}
 
 function safeOpenArtifact(
 	result: SafeOpenProofResult,
@@ -771,6 +893,22 @@ function excludedEvidenceMarkdownRow(row: ReleaseProofIndexExcludedEvidence): st
 		row.reason,
 		row.eligibilityRule,
 		row.ownerLoop,
+		row.boundary,
+	]
+		.map((cell) => ` ${cell} `)
+		.join('|')
+		.replace(/^/, '|')
+		.replace(/$/, '|')
+}
+
+function deferredClaimMarkdownRow(row: ReleaseProofDeferredClaim): string {
+	return [
+		row.claim,
+		row.status,
+		row.ownerLoops.join('+'),
+		row.reason,
+		row.proofNeeded,
+		row.killCriterion,
 		row.boundary,
 	]
 		.map((cell) => ` ${cell} `)

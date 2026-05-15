@@ -156,6 +156,7 @@ Updated: 2026-05-15
 | [Release surface promotion fail-closed](runs/2026/2026-05-15-release-surface-promotion-fail-closed/log.md) | folded in machine-readable gate that unresolved proof blockers do not authorize new SDK/CLI/API/MCP surfaces | release loop, product loop, correctness loop, performance loop |
 | [Release owner handoff data](runs/2026/2026-05-15-release-owner-handoff-data/log.md) | folded in machine-readable top-two implementation handoffs with blocker IDs and fail-closed promotion flags | product loop, correctness loop, performance loop, release loop |
 | [Release handoff proof requirements](runs/2026/2026-05-15-release-handoff-proof-requirements/log.md) | folded product-shaped proof ladders and kill criteria into top-two release handoff data | product loop, correctness loop, performance loop, release loop |
+| [Release deferred claims index](runs/2026/2026-05-15-release-deferred-claims-index/log.md) | folded do-not-promote/proof-backed-hold claim list into the release proof index | product loop, correctness loop, performance loop, release loop |
 | [Package action proof](runs/2026/2026-05-14-package-action-proof/log.md) | cycle 2 complete, promote | correctness loop, product/DX loop, performance loop |
 | [Formula spans LSP](runs/2026/2026-05-14-formula-spans-lsp/log.md) | cycle 13 complete, folded in SDK hover/code actions | product/DX loop, correctness loop |
 | [Formula sqllogictest conformance](runs/2026/2026-05-14-formula-sqllogictest-conformance/log.md) | cycle 14 complete, folded in converter/runner | correctness loop |

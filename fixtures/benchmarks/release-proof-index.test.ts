@@ -8,6 +8,7 @@ describe('release proof evidence index', () => {
 		expect(index.signed).toBe(false)
 		expect(index.attestation).toBe(false)
 		expect(index.excludedEvidenceCount).toBe(1)
+		expect(index.deferredClaimCount).toBe(6)
 		expect(index.artifacts.map((artifact) => artifact.name)).toEqual([
 			'safe-open-proof',
 			'package-action-proof',
@@ -19,6 +20,29 @@ describe('release proof evidence index', () => {
 				eligibilityRule: expect.stringContaining('tracked-clean'),
 			}),
 		])
+		expect(index.deferredClaims.map((claim) => claim.name)).toEqual([
+			'formula-language-service-primitives',
+			'token-bounded-agent-view',
+			'retained-viewport-patch-history',
+			'columnar-scan-sidecars',
+			'formula-oracle-routing',
+			'agent-workflow-observability',
+		])
+		expect(
+			index.deferredClaims.find((claim) => claim.name === 'formula-language-service-primitives'),
+		).toMatchObject({
+			status: 'proof-backed-hold',
+			ownerLoops: ['product', 'correctness'],
+			reason: expect.stringContaining('edit-producing rename is frozen'),
+			killCriterion: expect.stringContaining('Do not promote rename'),
+		})
+		expect(
+			index.deferredClaims.find((claim) => claim.name === 'columnar-scan-sidecars'),
+		).toMatchObject({
+			status: 'do-not-promote-yet',
+			ownerLoops: ['performance'],
+			boundary: expect.stringContaining('not a storage engine'),
+		})
 		expect(index.readiness).toMatchObject({
 			releaseGate: 'blocked-by-publication-policy',
 			headlineClaimsAllowed: false,
@@ -335,5 +359,10 @@ describe('release proof evidence index', () => {
 		expect(markdown).toContain('Excluded Evidence')
 		expect(markdown).toContain('practical-latency-contracts')
 		expect(markdown).toContain('tracked-clean run')
+		expect(markdown).toContain('Deferred Claims')
+		expect(markdown).toContain('formula language-service primitives')
+		expect(markdown).toContain('edit-producing rename is frozen')
+		expect(markdown).toContain('columnar scan sidecars')
+		expect(markdown).toContain('do-not-promote-yet')
 	})
 })

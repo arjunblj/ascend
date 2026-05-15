@@ -34,3 +34,4 @@ Updated: 2026-05-14
 ## Syntheses
 
 - [2026-05 leapfrog research synthesis](syntheses/2026-05-leapfrog-research.md)
+- [2026-05 claim ladder](syntheses/2026-05-claim-ladder.md)

@@ -5371,6 +5371,7 @@ function moveRangeFormulaSurfaceRestoration(
 	const cellRefsBySheet = new Map<string, string[]>()
 	const dataValidationPreimages = new Map<string, MutationJournalDataValidationPreimage>()
 	const conditionalFormatPreimages = new Map<string, MutationJournalConditionalFormatPreimage>()
+	const hyperlinkLocationPreimages = new Map<string, MutationJournalHyperlinkPreimage>()
 	const metadataRefs: string[] = []
 	for (const sheet of workbook.sheets) {
 		for (const [row, col, cell] of sheet.cells.iterate()) {
@@ -5405,6 +5406,23 @@ function moveRangeFormulaSurfaceRestoration(
 			sourceSheetName,
 			sourceRange,
 		)
+		for (const [ref, hyperlink] of sheet.hyperlinks) {
+			if (
+				hyperlink.location &&
+				formulaReferencesMovedRange(
+					workbook,
+					hyperlink.location,
+					sheet.name,
+					sourceSheetName,
+					sourceRange,
+				)
+			) {
+				hyperlinkLocationPreimages.set(
+					`${sheet.name}!${ref}`,
+					hyperlinkPreimage(workbook, sheet.name, ref),
+				)
+			}
+		}
 		pushMovedRangeMetadataFormulaRefs(metadataRefs, workbook, sheet, sourceSheetName, sourceRange)
 	}
 	const definedNames: MutationJournalDefinedNamePreimage[] = []
@@ -5461,6 +5479,10 @@ function moveRangeFormulaSurfaceRestoration(
 			kind: 'conditional-formats' as const,
 			conditionalFormats,
 		})),
+		...hyperlinkLocationPreimages.values().map((hyperlink) => ({
+			kind: 'hyperlink' as const,
+			hyperlink,
+		})),
 	]
 	if (preimages.length === 0 && metadataIssues.length === 0) return EMPTY_METADATA_RESTORATION
 	return {
@@ -5469,6 +5491,7 @@ function moveRangeFormulaSurfaceRestoration(
 			...definedNameRestorations.flatMap((restoration) => restoration.inverseOps),
 			...dataValidationRestorations.flatMap((restoration) => restoration.inverseOps),
 			...conditionalFormatRestorations.flatMap((restoration) => restoration.inverseOps),
+			...restoreHyperlinkOps([...hyperlinkLocationPreimages.values()]),
 		],
 		preimages,
 		issues: [

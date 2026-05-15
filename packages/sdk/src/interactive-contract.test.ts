@@ -5031,6 +5031,46 @@ describe('interactive client contract', () => {
 		expect(journalComparableState(wb)).toEqual(before)
 	})
 
+	test('moveRange journals restore internal hyperlink location rewrites exactly', () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 1 },
+					{ ref: 'D1', value: 4 },
+				],
+			},
+			{
+				op: 'setHyperlink',
+				sheet: 'Sheet1',
+				ref: 'G1',
+				location: 'Sheet1!A1',
+				display: 'Jump',
+			},
+		])
+		const before = journalComparableState(wb)
+
+		const changed = wb.apply(
+			[{ op: 'moveRange', sheet: 'Sheet1', source: 'A1', target: 'D1', mode: 'all' }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(true)
+		expect(changed.journal?.issues).toEqual([])
+		expect(wb.getWorkbookModel().getSheet('Sheet1')?.hyperlinks.get('G1')).toEqual({
+			location: 'Sheet1!D1',
+			display: 'Jump',
+		})
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(journalComparableState(wb)).toEqual(before)
+	})
+
 	test('moveRange journals restore standard validation formula rewrites exactly', () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

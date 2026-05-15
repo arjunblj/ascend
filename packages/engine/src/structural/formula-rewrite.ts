@@ -187,6 +187,32 @@ export function rewriteWorkbookMetadataFormulasForMove(
 	}
 }
 
+export function rewriteWorkbookHyperlinkLocationsForMove(
+	workbook: Workbook,
+	sourceSheet: string,
+	targetSheet: string,
+	sourceRange: RangeRef,
+	targetRange: RangeRef,
+): FormulaRewriteCell[] {
+	const rewrittenCells: FormulaRewriteCell[] = []
+	for (const sheet of workbook.sheets) {
+		for (const [ref, hyperlink] of sheet.hyperlinks) {
+			const location = rewriteFormulaTextForMove(
+				hyperlink.location,
+				sourceSheet,
+				targetSheet,
+				sheet.name,
+				sourceRange,
+				targetRange,
+			)
+			if (location === undefined || location === hyperlink.location) continue
+			sheet.hyperlinks.set(ref, { ...hyperlink, location })
+			rewrittenCells.push({ sheetName: sheet.name, ref })
+		}
+	}
+	return rewrittenCells
+}
+
 export function findPartialFormulaMoveReference(
 	workbook: Workbook,
 	sourceSheet: string,

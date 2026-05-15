@@ -3191,7 +3191,7 @@ describe('applyOperation', () => {
 			legacyDrawing: { shapeId: '_x0000_s1026', row: 1, column: 0 },
 		})
 		expect(target.threadedComments).toEqual([{ ref: 'A2', text: 'Thread', id: 'tc1' }])
-		expect(target.hyperlinks.get('B2')).toEqual({ location: 'Sheet1!A1', display: 'Jump' })
+		expect(target.hyperlinks.get('B2')).toEqual({ location: 'Sheet2!A2', display: 'Jump' })
 		expect(target.dataValidations).toEqual([{ sqref: 'A2:B2', type: 'whole', formula1: 'A2' }])
 		expect(target.conditionalFormats).toEqual([
 			{ sqref: 'A2:B2', rules: [{ type: 'expression', formulas: ['A2>0'] }] },
@@ -3204,6 +3204,32 @@ describe('applyOperation', () => {
 		])
 		expect(result.value.affectedCells).toContain('Sheet1!A1')
 		expect(result.value.affectedCells).toContain('Sheet2!A2')
+	})
+
+	test('moveRange rewrites internal hyperlink locations that point into moved cells', () => {
+		const wb = createWorkbook()
+		const source = wb.addSheet("Bob's Budget")
+		wb.addSheet('Review!')
+		source.cells.set(0, 0, cell(numberValue(10)))
+		source.hyperlinks.set('C1', {
+			location: "'Bob''s Budget'!A1",
+			display: 'Jump',
+		})
+
+		const result = applyOperation(wb, {
+			op: 'moveRange',
+			sheet: "Bob's Budget",
+			source: 'A1',
+			targetSheet: 'Review!',
+			target: 'B2',
+		})
+		expectOk(result)
+
+		expect(source.hyperlinks.get('C1')).toEqual({
+			location: "'Review!'!B2",
+			display: 'Jump',
+		})
+		expect(result.value.affectedCells).toContain("Bob's Budget!C1")
 	})
 
 	test('moveRange retargets explicit source-sheet metadata formulas moved to another sheet', () => {

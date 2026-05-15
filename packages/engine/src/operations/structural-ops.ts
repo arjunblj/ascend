@@ -20,6 +20,7 @@ import {
 	rewriteDefinedNameFormulasForShift,
 	rewriteWorkbookFormulasForMove,
 	rewriteWorkbookFormulasForShift,
+	rewriteWorkbookHyperlinkLocationsForMove,
 	rewriteWorkbookMetadataFormulasForMove,
 	rewriteWorkbookMetadataFormulasForShift,
 } from '../structural/formula-rewrite.ts'
@@ -341,6 +342,17 @@ export function handleTransferRange(
 				source,
 				mergePlan.value.targetRange,
 			)
+			for (const rewritten of rewriteWorkbookHyperlinkLocationsForMove(
+				workbook,
+				sourceSheet.name,
+				targetSheet.name,
+				source,
+				mergePlan.value.targetRange,
+			)) {
+				affected.add(
+					affectedNamedRef(rewritten.sheetName, rewritten.ref, sourceSheet.name, crossSheet),
+				)
+			}
 		}
 	}
 

@@ -120,6 +120,7 @@ Updated: 2026-05-15
 | [Package action unsupported boundary matrix](runs/2026/2026-05-15-package-action-unsupported-boundary-matrix/log.md) | synthesis boundary matrix prepared for correctness approval; no new mutation surface | correctness loop, product loop, release loop |
 | [Package action provenance boundary audit](runs/2026/2026-05-15-package-action-provenance-boundary-audit/log.md) | synthesis boundary audit keeps local proof digests below signed-provenance and attestation wording | release loop, product loop, correctness loop |
 | [Package action streaming matrix boundary audit](runs/2026/2026-05-15-package-action-streaming-matrix-boundary-audit/log.md) | synthesis boundary audit limits streaming wording to one representative dirty-sheet proof | performance loop, correctness loop, release loop |
+| [Compact report publication policy audit](runs/2026/2026-05-15-compact-report-publication-policy-audit/log.md) | synthesis boundary audit keeps compact report commands as pointers until storage/privacy/canonicalization policy exists | release loop, product loop |
 | [Package action proof](runs/2026/2026-05-14-package-action-proof/log.md) | cycle 2 complete, promote | correctness loop, product/DX loop, performance loop |
 | [Formula spans LSP](runs/2026/2026-05-14-formula-spans-lsp/log.md) | cycle 13 complete, folded in SDK hover/code actions | product/DX loop, correctness loop |
 | [Formula sqllogictest conformance](runs/2026/2026-05-14-formula-sqllogictest-conformance/log.md) | cycle 14 complete, folded in converter/runner | correctness loop |

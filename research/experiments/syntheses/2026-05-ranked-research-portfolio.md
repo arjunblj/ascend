@@ -246,6 +246,28 @@ Current gate:
 
 Decision: keep `streaming-matrix-boundary` missing. The package-action claim can say one representative streaming dirty-sheet proof exists, but it cannot say streaming parity covers add/drop/error, public macro/chart fixtures, or every package-action scenario.
 
+### Compact Report Publication Audit
+
+Proof commands:
+
+```bash
+bun run fixtures/benchmarks/release-proof-index.ts --no-timings --json
+bun run fixtures/benchmarks/safe-open-proof.ts --no-timings --compact-json
+bun run fixtures/benchmarks/package-action-proof.ts --no-timings --compact-json
+```
+
+Current gate:
+
+| Field | Safe open | Package action |
+| --- | --- | --- |
+| Compact report command present | yes | yes |
+| `compact-report-publication-policy` readyWhen present | yes | yes |
+| Compact digest indexed | no | no |
+| Compact report embeds workbook bytes | no | no |
+| Compact JSON bytes | 3755 | 4258 |
+
+Decision: keep compact report publication at rank 6 under release proof index, not as a new product claim. Compact report commands are useful local proof pointers; compact report digests remain do-not-promote until storage, privacy filtering, canonicalization, and verification expectations are owner-approved.
+
 ## Next Proof Moves
 
 1. Product/performance handoff: publish the safe unknown workbook opening proof bundle from existing surfaces and public fixtures.

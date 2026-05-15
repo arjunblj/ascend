@@ -10,7 +10,7 @@ Research is no longer a broad sweep. Each direction below must earn its place by
 
 Proof timestamp: 2026-05-15T19:09:31Z.
 
-The release proof bundle now has a temp external app install proof. `release:apps:smoke` packs CLI/API/MCP app tarballs, installs only those tarballs into `/private/tmp/ascend-apps-local-release/consumer`, runs `node_modules/.bin/ascend --version`, and imports API/MCP server exports from the installed packages. This upgrades the release-packageability row from "app tarball consumer install missing" to "local tarball install smoke exists"; publication policy, signed provenance, artifact retention, and deeper API/MCP protocol smoke remain release/product owner gates.
+The release proof bundle now has a temp external app install proof. `release:apps:smoke` packs CLI/API/MCP app tarballs, installs only those tarballs into `/private/tmp/ascend-apps-local-release/consumer`, runs `node_modules/.bin/ascend --version`, executes an installed API `/capabilities` request returning 66 capabilities, and calls installed MCP capabilities tool/resource callbacks with 32 tools registered. This upgrades the release-packageability row from "app tarball consumer install missing" to "local tarball install and basic runtime smoke exists"; publication policy, signed provenance, artifact retention, production API listener lifecycle, and real stdio MCP protocol smoke remain release/product owner gates.
 
 Proof timestamp: 2026-05-15T19:04:51Z.
 

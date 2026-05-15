@@ -25,7 +25,7 @@ The release proof bundle was blocked by "works only in the workspace" evidence. 
 
 - Added `scripts/release-apps-smoke.ts`.
 - Added `release:apps:smoke` to the root scripts.
-- The harness builds JS artifacts, stages package and app dist folders under `/private/tmp/ascend-apps-local-release`, bundles internal `@ascend/*` package artifacts into each app tarball, packs `@ascend/cli`, `@ascend/api`, and `@ascend/mcp`, installs only those tarballs into a temp consumer, runs `node_modules/.bin/ascend --version`, and imports API/MCP exports from the installed packages.
+- The harness builds JS artifacts, stages package and app dist folders under `/private/tmp/ascend-apps-local-release`, bundles internal `@ascend/*` package artifacts into each app tarball, packs `@ascend/cli`, `@ascend/api`, and `@ascend/mcp`, installs only those tarballs into a temp consumer, runs `node_modules/.bin/ascend --version`, imports API/MCP exports from the installed packages, runs one API `/capabilities` request through `createApiFetch`, and calls the installed MCP capabilities tool and resource registration callbacks.
 
 ## Results
 
@@ -40,13 +40,13 @@ bunx tsc --build
 Observed output:
 
 - `ascend --version` from the temp consumer printed `0.0.0`.
-- API import reported `createApiFetch` and `createServer` as functions.
-- MCP import reported `createServer` as a function.
+- API import reported `createApiFetch` and `createServer` as functions, and the installed API capabilities request returned 66 capabilities.
+- MCP import reported `createServer` as a function, 32 registered tools, and 66 capabilities through `ascend.capabilities`.
 - App artifacts were produced at `/private/tmp/ascend-apps-local-release/artifacts/ascend-cli-0.0.0.tgz`, `ascend-api-0.0.0.tgz`, and `ascend-mcp-0.0.0.tgz`.
 
 ## Confidence
 
-Medium-high for local app tarball installation and import safety. This does not prove registry publication, signed artifacts, provenance, production API server lifecycle, or an MCP protocol session.
+Medium-high for local app tarball installation, import safety, one installed API request, and installed MCP registration behavior. This does not prove registry publication, signed artifacts, provenance, production API server lifecycle, or a real MCP protocol session over stdio.
 
 ## Fold-in decision
 
@@ -54,4 +54,4 @@ Promote to release/product loop as a reusable smoke harness. This is a proof har
 
 ## Next question
 
-Should the release owner extend the app smoke to execute one API request through `createApiFetch` and one MCP tool registration/read path, or keep those as separate product/protocol smoke gates?
+Should the release owner add a stdio MCP protocol session smoke and an API listener lifecycle smoke, or keep those as separate release-readiness gates after artifact publication policy is settled?

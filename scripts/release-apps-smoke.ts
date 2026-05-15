@@ -140,10 +140,36 @@ if (typeof createApiFetch !== 'function') throw new Error('missing createApiFetc
 if (typeof createApiServer !== 'function') throw new Error('missing createApiServer export')
 if (typeof createMcpServer !== 'function') throw new Error('missing createMcpServer export')
 
+const apiFetch = createApiFetch()
+const capabilitiesResponse = await apiFetch(new Request('http://ascend.local/capabilities'))
+const capabilities = await capabilitiesResponse.json()
+if (!capabilities.ok) throw new Error('installed API capabilities request failed')
+if (!Array.isArray(capabilities.data?.capabilities) || capabilities.data.capabilities.length === 0) {
+	throw new Error('installed API capabilities request returned no capabilities')
+}
+
+const mcpServer = createMcpServer()
+const tools = mcpServer._registeredTools
+const resources = mcpServer._registeredResources
+const mcpCapabilities = await tools['ascend.capabilities']?.handler({})
+if (!mcpCapabilities?.structuredContent?.ok) {
+	throw new Error('installed MCP capabilities tool failed')
+}
+const mcpResource = await resources['ascend://capabilities']?.readCallback(
+	new URL('ascend://capabilities'),
+)
+if (!mcpResource?.contents?.[0]?.text?.includes('"capabilities"')) {
+	throw new Error('installed MCP capabilities resource failed')
+}
+
 console.log(JSON.stringify({
 	apiFetchExport: typeof createApiFetch,
 	apiServerExport: typeof createApiServer,
+	apiCapabilities: capabilities.data.capabilities.length,
 	mcpServerExport: typeof createMcpServer,
+	mcpTools: Object.keys(tools).length,
+	mcpCapabilities:
+		mcpCapabilities.structuredContent.data.capabilities.length,
 }))
 `,
 	)

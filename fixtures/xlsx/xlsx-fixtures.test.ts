@@ -214,6 +214,21 @@ if (poiFixtures.length > 0) {
 			])
 		})
 
+		it('accepts real shared and array formula metadata without binding-integrity drift', async () => {
+			const fixtures = [
+				'GeneralFormatTests.xlsx',
+				'MatrixFormulaEvalTestData.xlsx',
+				'testSharedFormulasSetBlank.xlsx',
+			]
+			for (const fixture of fixtures) {
+				const wb = await AscendWorkbook.open(loadFixture(fixture))
+				expect(
+					wb.check().issues.filter((issue) => issue.rule === 'formula-binding-integrity'),
+					fixture,
+				).toEqual([])
+			}
+		})
+
 		it('evaluates conditional formatting rules from ConditionalFormattingSamples.xlsx', () => {
 			const result = readXlsx(loadFixture('ConditionalFormattingSamples.xlsx'))
 			expectOk(result)

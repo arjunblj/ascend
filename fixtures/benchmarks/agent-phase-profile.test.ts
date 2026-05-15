@@ -49,6 +49,8 @@ describe('agent phase profile benchmark', () => {
 				readonly commitPhaseMedianMs?: Record<string, number>
 				readonly sharedPlanPhaseMedianMs?: Record<string, number>
 				readonly sharedCommitPhaseMedianMs?: Record<string, number>
+				readonly commitTimingMedianMs?: Record<string, number>
+				readonly sharedCommitTimingMedianMs?: Record<string, number>
 			}
 		}
 		expect(payload.summary?.planMedianMs).toBeNumber()
@@ -71,6 +73,10 @@ describe('agent phase profile benchmark', () => {
 		expect(payload.summary?.commitPhaseMedianMs?.['post-write']).toBeNumber()
 		expect(payload.summary?.sharedPlanPhaseMedianMs?.preview).toBeNumber()
 		expect(payload.summary?.sharedCommitPhaseMedianMs?.write).toBeNumber()
+		expect(payload.summary?.commitTimingMedianMs?.writePolicyCheckMs).toBeNumber()
+		expect(payload.summary?.commitTimingMedianMs?.toBytesMs).toBeNumber()
+		expect(payload.summary?.sharedCommitTimingMedianMs?.writePolicyBuildMs).toBeNumber()
+		expect(payload.summary?.sharedCommitTimingMedianMs?.outputHashMs).toBeNumber()
 	})
 
 	test('profiles agent phases against an existing input workbook without deleting it', async () => {
@@ -112,6 +118,7 @@ describe('agent phase profile benchmark', () => {
 				readonly postWriteValid?: boolean
 				readonly sharedPostWriteValid?: boolean
 				readonly sharedCommitPhaseMedianMs?: Record<string, number>
+				readonly sharedCommitTimingMedianMs?: Record<string, number>
 			}
 		}
 		expect(payload.input).toEqual({
@@ -128,5 +135,6 @@ describe('agent phase profile benchmark', () => {
 		expect(payload.summary?.postWriteValid).toBe(true)
 		expect(payload.summary?.sharedPostWriteValid).toBe(true)
 		expect(payload.summary?.sharedCommitPhaseMedianMs?.write).toBeNumber()
+		expect(payload.summary?.sharedCommitTimingMedianMs?.toBytesMs).toBeNumber()
 	}, 20_000)
 })

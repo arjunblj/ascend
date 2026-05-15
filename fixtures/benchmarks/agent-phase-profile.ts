@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import type { Operation } from '@ascend/schema'
 import {
+	type AgentCommitTimings,
 	type AgentWorkflowProgressEvent,
 	commitAgentPlan,
 	createAgentPlan,
@@ -59,6 +60,8 @@ interface Sample {
 	readonly commitPayloadBytes: number
 	readonly sharedPlanPayloadBytes: number
 	readonly sharedCommitPayloadBytes: number
+	readonly commitTimingMs: AgentCommitTimings
+	readonly sharedCommitTimingMs: AgentCommitTimings
 	readonly planPhaseMs: Record<string, number>
 	readonly commitPhaseMs: Record<string, number>
 	readonly sharedPlanPhaseMs: Record<string, number>
@@ -218,6 +221,8 @@ async function runSample(
 		commitPayloadBytes: payloadBytes(commit.value),
 		sharedPlanPayloadBytes: payloadBytes(sharedPlan.value.plan),
 		sharedCommitPayloadBytes: payloadBytes(sharedCommit.value),
+		commitTimingMs: commit.value.timings,
+		sharedCommitTimingMs: sharedCommit.value.timings,
 		planPhaseMs: phaseMap(plan.phases),
 		commitPhaseMs: phaseMap(commit.phases),
 		sharedPlanPhaseMs: phaseMap(sharedPlan.phases),
@@ -247,6 +252,18 @@ function summarizePhases(
 	const summary: Record<string, number> = {}
 	for (const phase of allPhaseNames(samples, key)) {
 		summary[phase] = median(samples.map((sample) => sample[key][phase] ?? 0))
+	}
+	return summary
+}
+
+function summarizeCommitTimings(
+	samples: readonly Sample[],
+	key: 'commitTimingMs' | 'sharedCommitTimingMs',
+): Record<string, number> {
+	const summary: Record<string, number> = {}
+	const timingKeys = Object.keys(samples[0]?.[key] ?? {}) as (keyof AgentCommitTimings)[]
+	for (const timingKey of timingKeys) {
+		summary[timingKey] = median(samples.map((sample) => sample[key][timingKey]))
 	}
 	return summary
 }
@@ -282,6 +299,8 @@ function summarize(samples: readonly Sample[]) {
 		commitPhaseMedianMs: summarizePhases(samples, 'commitPhaseMs'),
 		sharedPlanPhaseMedianMs: summarizePhases(samples, 'sharedPlanPhaseMs'),
 		sharedCommitPhaseMedianMs: summarizePhases(samples, 'sharedCommitPhaseMs'),
+		commitTimingMedianMs: summarizeCommitTimings(samples, 'commitTimingMs'),
+		sharedCommitTimingMedianMs: summarizeCommitTimings(samples, 'sharedCommitTimingMs'),
 	}
 }
 

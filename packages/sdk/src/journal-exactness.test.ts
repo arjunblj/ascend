@@ -1240,6 +1240,14 @@ describe('mutation journal exactness model', () => {
 				refs: ['workbook:documentProperties'],
 			},
 			{
+				name: 'setWorkbookProperties',
+				seedOps: [{ op: 'setWorkbookProperties', properties: { date1904: false } }],
+				ops: [{ op: 'setWorkbookProperties', properties: { date1904: true } }],
+				cleanCalcState: true,
+				opName: 'setWorkbookProperties',
+				refs: ['workbook:properties'],
+			},
+			{
 				name: 'setCells',
 				seedOps: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] }],
 				ops: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 2 }] }],

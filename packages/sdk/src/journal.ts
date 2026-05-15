@@ -1745,6 +1745,8 @@ function savedSourcePackageStateRefsForOp(op: Operation): readonly string[] {
 			case 'setTableColumn':
 			case 'setTableStyle':
 				return [`table:${op.table}`]
+			case 'setWorkbookProperties':
+				return ['workbook:properties']
 			case 'setPivotCache':
 				return [`pivot:${op.pivotTable}`]
 			case 'setPivotFieldItem':

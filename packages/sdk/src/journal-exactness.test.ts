@@ -509,6 +509,104 @@ describe('mutation journal exactness model', () => {
 		}
 	})
 
+	test('classifies table selector journal preimage failures as table topology', () => {
+		const missingOps: readonly Operation[] = [
+			{ op: 'deleteTable', table: 'MissingTable' },
+			{ op: 'renameTable', table: 'MissingTable', newName: 'RenamedTable' },
+			{ op: 'resizeTable', table: 'MissingTable', ref: 'A1:B2' },
+			{ op: 'setTableColumn', table: 'MissingTable', column: 'Qty', newName: 'Units' },
+			{ op: 'setTableStyle', table: 'MissingTable', styleName: 'TableStyleMedium2' },
+		]
+
+		for (const op of missingOps) {
+			const wb = AscendWorkbook.create()
+			const analysis = analyzeMutationJournalExactness(
+				buildMutationJournal(wb.getWorkbookModel(), [op]),
+			)
+			expect(analysis, op.op).toMatchObject({
+				supported: true,
+				exact: false,
+				issueCount: 1,
+				surfaces: ['tables'],
+				reasons: ['operation-unsupported'],
+				hasMatrixViolation: false,
+			})
+			expect(analysis.issues[0], op.op).toMatchObject({
+				code: 'UNSUPPORTED_VALUE',
+				surface: 'tables',
+				reason: 'operation-unsupported',
+				refs: ['table:MissingTable'],
+				allowedByMatrix: true,
+			})
+		}
+	})
+
+	test('classifies ambiguous and duplicate table target journals as table topology', () => {
+		const ambiguous = AscendWorkbook.create()
+		seedSimpleTable(ambiguous)
+		applyExact(ambiguous, [
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'D1', value: 'Other' }] },
+			{ op: 'createTable', sheet: 'Sheet1', ref: 'D1:D2', name: 'OtherSales', hasHeaders: true },
+		])
+		const sheet = ambiguous.getWorkbookModel().getSheet('Sheet1')
+		if (!sheet) throw new Error('missing sheet')
+		const duplicateTable = sheet.tables.find((table) => table.name === 'OtherSales')
+		if (!duplicateTable) throw new Error('missing duplicate table seed')
+		duplicateTable.name = 'Sales'
+
+		const ambiguousJournal = analyzeMutationJournalExactness(
+			buildMutationJournal(ambiguous.getWorkbookModel(), [
+				{ op: 'renameTable', table: 'Sales', newName: 'RenamedSales' },
+			]),
+		)
+		expect(ambiguousJournal).toMatchObject({
+			supported: true,
+			exact: false,
+			issueCount: 1,
+			surfaces: ['tables'],
+			reasons: ['operation-unsupported'],
+			hasMatrixViolation: false,
+		})
+		expect(ambiguousJournal.issues[0]).toMatchObject({
+			code: 'UNSUPPORTED_VALUE',
+			surface: 'tables',
+			reason: 'operation-unsupported',
+			refs: ['table:Sales'],
+			allowedByMatrix: true,
+		})
+
+		const cases: readonly Operation[] = [
+			{ op: 'createTable', sheet: 'Sheet1', ref: 'A1:B2', name: 'Sales', hasHeaders: true },
+			{ op: 'renameTable', table: 'Revenue', newName: 'Sales' },
+		]
+		for (const op of cases) {
+			const wb = AscendWorkbook.create()
+			seedSimpleTable(wb)
+			applyExact(wb, [
+				{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'D1', value: 'Revenue' }] },
+				{ op: 'createTable', sheet: 'Sheet1', ref: 'D1:D2', name: 'Revenue', hasHeaders: true },
+			])
+			const analysis = analyzeMutationJournalExactness(
+				buildMutationJournal(wb.getWorkbookModel(), [op]),
+			)
+			expect(analysis, op.op).toMatchObject({
+				supported: true,
+				exact: false,
+				issueCount: 1,
+				surfaces: ['tables'],
+				reasons: ['operation-unsupported'],
+				hasMatrixViolation: false,
+			})
+			expect(analysis.issues[0], op.op).toMatchObject({
+				code: 'UNSUPPORTED_VALUE',
+				surface: 'tables',
+				reason: 'operation-unsupported',
+				refs: ['table:Sales'],
+				allowedByMatrix: true,
+			})
+		}
+	})
+
 	test('classifies setComment legacy drawing loss without changing the v1 vocabulary', () => {
 		const classified = classifyMutationJournalIssues(lossySetCommentLegacyDrawingJournal().issues)
 		expect(classified).toContainEqual({

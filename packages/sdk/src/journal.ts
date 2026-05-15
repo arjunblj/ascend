@@ -2040,6 +2040,19 @@ function buildJournalEntry(
 			issues,
 		}
 	}
+	const tableIssue = journalOperationTableTopologyIssue(workbook, op)
+	if (tableIssue) {
+		const issues = [structureMutationJournalIssue(tableIssue)]
+		return {
+			opIndex,
+			op,
+			supported: true,
+			exact: false,
+			inverseOps: [],
+			preimages: [],
+			issues,
+		}
+	}
 	const duplicateSheet = duplicateJournalOperationTargetSheet(workbook, op)
 	if (duplicateSheet) {
 		const issues = [
@@ -2141,6 +2154,67 @@ function journalOperationRequiredTargetSheet(op: Operation): string | null {
 		case 'copyRange':
 		case 'moveRange':
 			return op.targetSheet ?? null
+		default:
+			return null
+	}
+}
+
+function journalOperationTableTopologyIssue(
+	workbook: Workbook,
+	op: Operation,
+): MutationJournalIssue | null {
+	const requiredTable = journalOperationRequiredTable(op)
+	if (requiredTable !== null) {
+		const matches = findTableMatches(workbook, requiredTable)
+		if (matches.length === 0) {
+			return tableTopologyJournalIssue(
+				requiredTable,
+				`Cannot build exact rollback journal for ${op.op} because table ${requiredTable} was not found`,
+			)
+		}
+		if (matches.length > 1) {
+			return tableTopologyJournalIssue(
+				requiredTable,
+				`Cannot build exact rollback journal for ${op.op} because table ${requiredTable} is ambiguous`,
+			)
+		}
+	}
+	const createdTable = journalOperationCreatedTable(op)
+	if (createdTable !== null) {
+		const sourceTable =
+			op.op === 'renameTable' ? findTableMatches(workbook, op.table)[0]?.table : undefined
+		const collision = findTableMatches(workbook, createdTable).some(
+			(match) => match.table.id !== sourceTable?.id,
+		)
+		if (collision) {
+			return tableTopologyJournalIssue(
+				createdTable,
+				`Cannot build exact rollback journal for ${op.op} because target table ${createdTable} already exists`,
+			)
+		}
+	}
+	return null
+}
+
+function journalOperationRequiredTable(op: Operation): string | null {
+	switch (op.op) {
+		case 'deleteTable':
+		case 'renameTable':
+		case 'resizeTable':
+		case 'setTableColumn':
+		case 'setTableStyle':
+			return op.table
+		default:
+			return null
+	}
+}
+
+function journalOperationCreatedTable(op: Operation): string | null {
+	switch (op.op) {
+		case 'createTable':
+			return op.name
+		case 'renameTable':
+			return op.newName
 		default:
 			return null
 	}
@@ -2452,6 +2526,16 @@ function sheetTopologyJournalIssue(sheet: string, message: string): MutationJour
 		surface: 'sheet-layout',
 		reason: 'sheet-topology',
 		refs: [`sheet:${sheet}`],
+	}
+}
+
+function tableTopologyJournalIssue(table: string, message: string): MutationJournalIssue {
+	return {
+		code: 'UNSUPPORTED_VALUE',
+		message,
+		surface: 'tables',
+		reason: 'operation-unsupported',
+		refs: [`table:${table}`],
 	}
 }
 
@@ -8533,12 +8617,20 @@ function findTable(
 	workbook: Workbook,
 	tableName: string,
 ): { readonly sheet: Sheet; readonly table: Table } | null {
+	return findTableMatches(workbook, tableName)[0] ?? null
+}
+
+function findTableMatches(
+	workbook: Workbook,
+	tableName: string,
+): readonly { readonly sheet: Sheet; readonly table: Table }[] {
+	const matches: { sheet: Sheet; table: Table }[] = []
 	for (const sheet of workbook.sheets) {
 		for (const table of sheet.tables) {
-			if (table.name.toLowerCase() === tableName.toLowerCase()) return { sheet, table }
+			if (table.name.toLowerCase() === tableName.toLowerCase()) matches.push({ sheet, table })
 		}
 	}
-	return null
+	return matches
 }
 
 function findTableColumn(

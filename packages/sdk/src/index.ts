@@ -106,6 +106,8 @@ export type {
 	CycleReferenceResult,
 	FormulaAssistOptions,
 	FormulaAssistResult,
+	FormulaBindingRole,
+	FormulaBindingRoleKind,
 	FormulaCodeAction,
 	FormulaCodeActionOptions,
 	FormulaDiagnostic,
@@ -126,6 +128,7 @@ export type {
 export {
 	cycleFormulaReferenceMode,
 	formulaAssist,
+	formulaBindingRoles,
 	formulaCodeActions,
 	formulaDiagnostics,
 	formulaFunctionCompletions,

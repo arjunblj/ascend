@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import {
 	cycleFormulaReferenceMode,
 	formulaAssist,
+	formulaBindingRoles,
 	formulaCodeActions,
 	formulaDiagnostics,
 	formulaFunctionCompletions,
@@ -28,6 +29,7 @@ describe('formula editing utilities', () => {
 
 		expect(result.diagnostics.parseOk).toBe(false)
 		expect(result.references).toEqual([{ text: 'A1:B2', start: 5, end: 10, kind: 'range' }])
+		expect(result.bindings.map(({ role, text }) => ({ role, text }))).toEqual([])
 		expect(result.activeReference).toMatchObject({ text: 'A1:B2', kind: 'range' })
 		expect(result.hover).toMatchObject({ kind: 'reference', label: 'A1:B2' })
 		expect(result.completions.some((completion) => completion.name === 'SUM')).toBe(true)
@@ -177,6 +179,35 @@ describe('formula editing utilities', () => {
 			end: 44,
 			kind: 'sheet-3d-range',
 		})
+	})
+
+	test('classifies formula binding roles without promoting safe rename', () => {
+		expect(formulaBindingRoles('=LET(total,SUM(A1:A3),total/3)+Budget')).toEqual([
+			{ role: 'let-binding-declaration', text: 'total', start: 5, end: 10 },
+			{ role: 'let-binding-use', text: 'total', start: 22, end: 27 },
+			{ role: 'unresolved-name', text: 'Budget', start: 31, end: 37 },
+		])
+
+		const structured = formulaBindingRoles('=SUM(Sales[[#Totals],[Amount]],Sales[@[Units]])')
+		expect(structured).toContainEqual(
+			expect.objectContaining({ role: 'table-name-use', text: 'Sales', start: 5, end: 10 }),
+		)
+		expect(structured).toContainEqual(
+			expect.objectContaining({
+				role: 'table-column-use',
+				text: 'Amount',
+				start: 22,
+				end: 28,
+			}),
+		)
+		expect(structured).toContainEqual(
+			expect.objectContaining({
+				role: 'table-column-use',
+				text: 'Units',
+				start: 39,
+				end: 44,
+			}),
+		)
 	})
 
 	test('does not treat earlier references as active in empty formula edit slots', () => {

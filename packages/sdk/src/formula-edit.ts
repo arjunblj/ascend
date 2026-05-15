@@ -40,6 +40,21 @@ export interface FormulaReferenceRange {
 		| 'spill'
 }
 
+export type FormulaBindingRoleKind =
+	| 'let-binding-declaration'
+	| 'let-binding-use'
+	| 'table-name-use'
+	| 'table-column-use'
+	| 'unresolved-name'
+
+export interface FormulaBindingRole {
+	readonly role: FormulaBindingRoleKind
+	readonly text: string
+	readonly start: number
+	readonly end: number
+	readonly reference?: FormulaReferenceRange
+}
+
 export interface CycleReferenceResult {
 	readonly formula: string
 	readonly cursor: number
@@ -118,6 +133,7 @@ export interface FormulaAssistResult {
 	readonly diagnostics: FormulaDiagnosticsResult
 	readonly tokens: readonly FormulaTokenRange[]
 	readonly references: readonly FormulaReferenceRange[]
+	readonly bindings: readonly FormulaBindingRole[]
 	readonly activeReference: FormulaReferenceRange | null
 	readonly hover: FormulaHoverInfo | null
 	readonly completions: readonly FormulaFunctionCompletion[]
@@ -216,6 +232,45 @@ export function formulaReferenceRanges(formula: string): FormulaReferenceRange[]
 	return collectFormulaReferenceRanges(formula, tokenSpans(formula))
 }
 
+export function formulaBindingRoles(formula: string): FormulaBindingRole[] {
+	const spans = tokenSpans(formula)
+	const references = collectFormulaReferenceRanges(formula, spans)
+	const roles: FormulaBindingRole[] = []
+	const claimed = new Set<string>()
+	for (const reference of references) {
+		if (reference.kind !== 'structured') continue
+		for (const role of structuredReferenceBindingRoles(formula, spans, reference)) {
+			roles.push(role)
+			claimed.add(bindingRoleKey(role))
+		}
+	}
+	for (const role of letBindingRoles(spans)) {
+		roles.push(role)
+		claimed.add(bindingRoleKey(role))
+	}
+	for (const span of spans) {
+		if (
+			span.token.type !== TokenType.Name ||
+			isClaimedBindingSpan(span, claimed) ||
+			references.some(
+				(reference) =>
+					reference.kind === 'structured' &&
+					span.start >= reference.start &&
+					span.end <= reference.end,
+			)
+		) {
+			continue
+		}
+		roles.push({
+			role: 'unresolved-name',
+			text: span.text,
+			start: span.start,
+			end: span.end,
+		})
+	}
+	return roles.sort((left, right) => left.start - right.start || left.end - right.end)
+}
+
 export function cycleFormulaReferenceMode(formula: string, cursor: number): CycleReferenceResult {
 	const spans = tokenSpans(formula)
 	const clampedCursor = Math.max(0, Math.min(formula.length, cursor))
@@ -303,6 +358,7 @@ export function formulaAssist(
 		diagnostics: formulaDiagnostics(formula),
 		tokens: formulaTokenRanges(formula),
 		references: formulaReferenceRanges(formula),
+		bindings: formulaBindingRoles(formula),
 		activeReference: cursor === null ? null : referenceAtCursor(formula, cursor),
 		hover: cursor === null ? null : formulaHover(formula, cursor),
 		completions:
@@ -727,6 +783,153 @@ function advanceReferenceIndex(
 		nextIndex++
 	}
 	return nextIndex
+}
+
+function structuredReferenceBindingRoles(
+	formula: string,
+	spans: readonly TokenSpan[],
+	reference: FormulaReferenceRange,
+): FormulaBindingRole[] {
+	const roles: FormulaBindingRole[] = []
+	const table = spans.find(
+		(span) =>
+			span.token.type === TokenType.Name &&
+			span.start === reference.start &&
+			span.end <= reference.end,
+	)
+	if (table) {
+		roles.push({
+			role: 'table-name-use',
+			text: table.text,
+			start: table.start,
+			end: table.end,
+			reference,
+		})
+	}
+	const text = formula.slice(reference.start, reference.end)
+	const tableLength = table?.text.length ?? 0
+	const bodyStart = reference.start + tableLength
+	for (const match of text.slice(tableLength).matchAll(/\[([^[\]#][^\]]*)\]/g)) {
+		const raw = match[1]
+		if (!raw) continue
+		let trimStart = 0
+		while (raw[trimStart] === '@' || raw[trimStart] === '[') trimStart++
+		const column = raw.slice(trimStart).trim()
+		if (!column || column.includes(':') || column.startsWith('#')) continue
+		const leadingWhitespace = raw.slice(trimStart).length - raw.slice(trimStart).trimStart().length
+		const start = bodyStart + (match.index ?? 0) + 1 + trimStart + leadingWhitespace
+		roles.push({
+			role: 'table-column-use',
+			text: column,
+			start,
+			end: start + column.length,
+			reference,
+		})
+	}
+	return roles
+}
+
+function letBindingRoles(spans: readonly TokenSpan[]): FormulaBindingRole[] {
+	const roles: FormulaBindingRole[] = []
+	for (let i = 0; i < spans.length; i++) {
+		const span = spans[i]
+		if (!span || span.token.type !== TokenType.Function || span.text.toUpperCase() !== 'LET') {
+			continue
+		}
+		const open = nextNonWhitespace(spans, i + 1)
+		if (open?.span.token.type !== TokenType.OpenParen) continue
+		const args = functionArgumentRanges(spans, open.index)
+		if (args.length < 3) continue
+		const declarations: TokenSpan[] = []
+		for (let argIndex = 0; argIndex < args.length - 1; argIndex += 2) {
+			const declaration = singleNameArgument(spans, args[argIndex])
+			if (!declaration) continue
+			declarations.push(declaration)
+			roles.push({
+				role: 'let-binding-declaration',
+				text: declaration.text,
+				start: declaration.start,
+				end: declaration.end,
+			})
+		}
+		for (let argIndex = 1; argIndex < args.length; argIndex++) {
+			for (const use of nameSpansInRange(spans, args[argIndex] ?? null)) {
+				if (!declarations.some((declaration) => namesEqual(declaration.text, use.text))) {
+					continue
+				}
+				roles.push({
+					role: 'let-binding-use',
+					text: use.text,
+					start: use.start,
+					end: use.end,
+				})
+			}
+		}
+	}
+	return roles
+}
+
+function functionArgumentRanges(
+	spans: readonly TokenSpan[],
+	openIndex: number,
+): Array<{ readonly start: number; readonly end: number }> {
+	const ranges: Array<{ readonly start: number; readonly end: number }> = []
+	let depth = 0
+	let start = openIndex + 1
+	for (let i = openIndex + 1; i < spans.length; i++) {
+		const span = spans[i]
+		if (!span || span.token.type === TokenType.EOF) break
+		if (span.token.type === TokenType.OpenParen) {
+			depth++
+			continue
+		}
+		if (span.token.type === TokenType.CloseParen) {
+			if (depth === 0) {
+				ranges.push({ start, end: i })
+				return ranges
+			}
+			depth--
+			continue
+		}
+		if (span.token.type === TokenType.Comma && depth === 0) {
+			ranges.push({ start, end: i })
+			start = i + 1
+		}
+	}
+	return ranges
+}
+
+function singleNameArgument(
+	spans: readonly TokenSpan[],
+	range: { readonly start: number; readonly end: number } | undefined,
+): TokenSpan | undefined {
+	const names = nameSpansInRange(spans, range ?? null)
+	return names.length === 1 ? names[0] : undefined
+}
+
+function nameSpansInRange(
+	spans: readonly TokenSpan[],
+	range: { readonly start: number; readonly end: number } | null,
+): TokenSpan[] {
+	if (!range) return []
+	const names: TokenSpan[] = []
+	for (let i = range.start; i < range.end; i++) {
+		const span = spans[i]
+		if (span?.token.type === TokenType.Name) names.push(span)
+	}
+	return names
+}
+
+function namesEqual(left: string, right: string): boolean {
+	return left.toLowerCase() === right.toLowerCase()
+}
+
+function bindingRoleKey(role: Pick<FormulaBindingRole, 'start' | 'end'>): string {
+	return `${role.start}:${role.end}`
+}
+
+function isClaimedBindingSpan(span: TokenSpan, claimed: ReadonlySet<string>): boolean {
+	return claimed.has(bindingRoleKey(span))
 }
 
 function collectCellReferenceRange(

@@ -495,11 +495,59 @@ function retargetCopiedFormulaBinding(
 	sourceSheetName: string,
 	newSheetName: string,
 ): CellFormulaBinding | undefined {
-	if (binding?.kind !== 'spill' && binding?.kind !== 'blockedSpill') return binding
-	const anchorRef =
-		rewriteFormulaTextForRename(binding.anchorRef, sourceSheetName, newSheetName) ??
-		binding.anchorRef
-	return anchorRef === binding.anchorRef ? binding : { ...binding, anchorRef }
+	if (!binding) return binding
+	const rewrite = (ref: string | undefined) =>
+		rewriteFormulaTextForRename(ref, sourceSheetName, newSheetName) ?? ref
+	switch (binding.kind) {
+		case 'shared': {
+			const masterRef = rewrite(binding.masterRef)
+			const ref = rewrite(binding.ref)
+			return masterRef === binding.masterRef && ref === binding.ref
+				? binding
+				: {
+						...binding,
+						...(masterRef !== undefined ? { masterRef } : {}),
+						...(ref !== undefined ? { ref } : {}),
+					}
+		}
+		case 'array': {
+			const ref = rewrite(binding.ref)
+			return ref === binding.ref ? binding : { ...binding, ...(ref !== undefined ? { ref } : {}) }
+		}
+		case 'dataTable': {
+			const ref = rewrite(binding.ref)
+			const r1 = rewrite(binding.r1)
+			const r2 = rewrite(binding.r2)
+			return ref === binding.ref && r1 === binding.r1 && r2 === binding.r2
+				? binding
+				: {
+						...binding,
+						...(ref !== undefined ? { ref } : {}),
+						...(r1 !== undefined ? { r1 } : {}),
+						...(r2 !== undefined ? { r2 } : {}),
+					}
+		}
+		case 'spill':
+		case 'blockedSpill': {
+			const anchorRef = rewrite(binding.anchorRef) ?? binding.anchorRef
+			const ref = rewrite(binding.ref) ?? binding.ref
+			if (binding.kind === 'spill') {
+				return anchorRef === binding.anchorRef && ref === binding.ref
+					? binding
+					: { ...binding, anchorRef, ref }
+			}
+			const blockingRefs = binding.blockingRefs.map(
+				(blockingRef) => rewrite(blockingRef) ?? blockingRef,
+			)
+			const changed =
+				anchorRef !== binding.anchorRef ||
+				ref !== binding.ref ||
+				blockingRefs.some((blockingRef, index) => blockingRef !== binding.blockingRefs[index])
+			return changed ? { ...binding, anchorRef, ref, blockingRefs } : binding
+		}
+		case 'dynamicArray':
+			return binding
+	}
 }
 
 function rewriteChartSheetReferencesForRename(

@@ -6320,6 +6320,86 @@ describe('applyOperation', () => {
 		})
 	})
 
+	test('copySheet retargets copied sheet-qualified formula binding refs', () => {
+		const wb = createWorkbook()
+		const source = wb.addSheet('Sheet1')
+		source.cells.set(0, 0, {
+			value: numberValue(1),
+			formula: 'B1*2',
+			styleId: sid,
+			formulaInfo: {
+				kind: 'shared',
+				sharedIndex: 'copy-shared',
+				isMaster: true,
+				masterRef: 'Sheet1!A1',
+				ref: 'Sheet1!A1:A2',
+			},
+		})
+		source.cells.set(1, 0, {
+			value: numberValue(2),
+			formula: null,
+			styleId: sid,
+			formulaInfo: {
+				kind: 'shared',
+				sharedIndex: 'copy-shared',
+				isMaster: false,
+				masterRef: 'Sheet1!A1',
+				ref: 'Sheet1!A1:A2',
+			},
+		})
+		source.cells.set(3, 0, {
+			value: numberValue(4),
+			formula: 'Sheet1!A4:Sheet1!B5',
+			styleId: sid,
+			formulaInfo: { kind: 'array', ref: 'Sheet1!A4:B5' },
+		})
+		source.cells.set(6, 0, {
+			value: numberValue(7),
+			formula: null,
+			styleId: sid,
+			formulaInfo: {
+				kind: 'dataTable',
+				ref: 'Sheet1!A7:B8',
+				dtr: true,
+				r1: 'Sheet1!C1',
+				r2: 'Sheet1!D1',
+			},
+		})
+
+		expectOk(applyOperation(wb, { op: 'copySheet', sheet: 'Sheet1', newName: 'Copy' }))
+
+		const copy = wb.getSheet('Copy')
+		expect(copy?.cells.get(0, 0)?.formulaInfo).toEqual({
+			kind: 'shared',
+			sharedIndex: 'copy-shared',
+			isMaster: true,
+			masterRef: 'Copy!A1',
+			ref: 'Copy!A1:A2',
+		})
+		expect(copy?.cells.get(1, 0)?.formulaInfo).toEqual({
+			kind: 'shared',
+			sharedIndex: 'copy-shared',
+			isMaster: false,
+			masterRef: 'Copy!A1',
+			ref: 'Copy!A1:A2',
+		})
+		expect(copy?.cells.get(3, 0)?.formulaInfo).toEqual({ kind: 'array', ref: 'Copy!A4:B5' })
+		expect(copy?.cells.get(6, 0)?.formulaInfo).toEqual({
+			kind: 'dataTable',
+			ref: 'Copy!A7:B8',
+			dtr: true,
+			r1: 'Copy!C1',
+			r2: 'Copy!D1',
+		})
+		expect(source.cells.get(0, 0)?.formulaInfo).toEqual({
+			kind: 'shared',
+			sharedIndex: 'copy-shared',
+			isMaster: true,
+			masterRef: 'Sheet1!A1',
+			ref: 'Sheet1!A1:A2',
+		})
+	})
+
 	test('copySheet rejects duplicate and Excel-invalid target names before mutating workbook', () => {
 		const wb = setup()
 		wb.addSheet('Existing')

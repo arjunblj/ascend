@@ -3498,7 +3498,7 @@ describe('applyOperation', () => {
 				kind: 'shared',
 				sharedIndex: 'move-rewrite',
 				isMaster: true,
-				masterRef: 'B1',
+				masterRef: 'Sheet1!B1',
 				ref: 'B1:B2',
 			},
 		})
@@ -3510,7 +3510,7 @@ describe('applyOperation', () => {
 				kind: 'shared',
 				sharedIndex: 'move-rewrite',
 				isMaster: false,
-				masterRef: 'B1',
+				masterRef: 'sheet1!$B$1',
 			},
 		})
 
@@ -3527,7 +3527,7 @@ describe('applyOperation', () => {
 			kind: 'shared',
 			sharedIndex: 'move-rewrite',
 			isMaster: false,
-			masterRef: 'B1',
+			masterRef: 'sheet1!$B$1',
 		})
 		expect(result.value.affectedCells).toContain('B1')
 		expect(result.value.affectedCells).toContain('B2')

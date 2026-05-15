@@ -174,9 +174,31 @@ function sameSharedFormulaGroup(
 	if (candidate?.kind !== 'shared') return false
 	if (binding.sharedIndex !== candidate.sharedIndex) return false
 	if (binding.masterRef !== undefined && candidate.masterRef !== undefined) {
-		return binding.masterRef.toLowerCase() === candidate.masterRef.toLowerCase()
+		return sameFormulaCellRef(binding.masterRef, candidate.masterRef)
 	}
 	return true
+}
+
+function sameFormulaCellRef(left: string, right: string): boolean {
+	if (left === right) return true
+	try {
+		const leftRange = parseRange(left)
+		const rightRange = parseRange(right)
+		return (
+			sameOptionalSheetName(leftRange.sheet, rightRange.sheet) &&
+			leftRange.start.row === rightRange.start.row &&
+			leftRange.start.col === rightRange.start.col &&
+			leftRange.end.row === rightRange.end.row &&
+			leftRange.end.col === rightRange.end.col
+		)
+	} catch {
+		return false
+	}
+}
+
+function sameOptionalSheetName(left: string | undefined, right: string | undefined): boolean {
+	if (left === undefined || right === undefined) return left === right
+	return left.toLowerCase() === right.toLowerCase()
 }
 
 export function rewriteDefinedNameFormulasForMove(

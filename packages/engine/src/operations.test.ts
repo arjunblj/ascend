@@ -8885,6 +8885,38 @@ describe('applyOperation', () => {
 		expectErr(missingField)
 	})
 
+	test('setTableStyle rejects invalid public metadata without mutation', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.tables.push({
+			id: createTableId(),
+			name: 'Sales',
+			sheetId: sheet.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 0, col: 1 } },
+			columns: [
+				{ id: 1, name: 'Name' },
+				{ id: 2, name: 'Value' },
+			],
+			tableStyleInfo: { name: 'TableStyleMedium2', showRowStripes: true },
+		})
+		const cases: readonly Operation[] = [
+			{ op: 'setTableStyle', table: 'Sales', styleName: '  ' },
+			{ op: 'setTableStyle', table: 'Sales', styleName: 123 as never },
+			{ op: 'setTableStyle', table: 'Sales', showFirstColumn: 'false' as never },
+			{ op: 'setTableStyle', table: 'Sales', showLastColumn: 1 as never },
+			{ op: 'setTableStyle', table: 'Sales', showRowStripes: 'true' as never },
+			{ op: 'setTableStyle', table: 'Sales', showColumnStripes: 0 as never },
+		]
+
+		for (const op of cases) {
+			const before = JSON.stringify(sheet.tables[0]?.tableStyleInfo)
+			const result = applyOperation(wb, op)
+			expectErr(result)
+			expect(result.error.code, JSON.stringify(op)).toBe('VALIDATION_ERROR')
+			expect(JSON.stringify(sheet.tables[0]?.tableStyleInfo), JSON.stringify(op)).toBe(before)
+		}
+	})
+
 	test('resizeTable preserves overlapping tableColumn metadata when shrinking columns', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

@@ -1422,6 +1422,21 @@ describe('mutation journal exactness model', () => {
 				reason: 'value-unsupported',
 			},
 			{
+				op: { op: 'setTableStyle', table: 'Sales', styleName: '  ' },
+				surface: 'tables',
+				reason: 'value-unsupported',
+			},
+			{
+				op: { op: 'setTableStyle', table: 'Sales', styleName: 123 as never },
+				surface: 'tables',
+				reason: 'value-unsupported',
+			},
+			{
+				op: { op: 'setTableStyle', table: 'Sales', showRowStripes: 'true' as never },
+				surface: 'tables',
+				reason: 'value-unsupported',
+			},
+			{
 				op: { op: 'setTheme' },
 				surface: 'workbook-metadata',
 				reason: 'value-unsupported',

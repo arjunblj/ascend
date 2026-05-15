@@ -912,6 +912,8 @@ export function handleSetTableStyle(
 			}),
 		)
 	}
+	const styleValidation = validateTableStyleInput(op)
+	if (styleValidation) return err(styleValidation)
 
 	const { table, sheet } = located.value
 	const tableIndex = sheet.tables.findIndex((candidate) => candidate.id === table.id)
@@ -924,6 +926,34 @@ export function handleSetTableStyle(
 			: tableWithoutStyle
 	}
 	return ok(patch([], [sheet.name], false))
+}
+
+function validateTableStyleInput(op: Extract<Operation, { op: 'setTableStyle' }>) {
+	if (op.styleName !== undefined && op.styleName !== null) {
+		if (typeof op.styleName !== 'string' || op.styleName.trim() === '') {
+			return ascendError(
+				'VALIDATION_ERROR',
+				'setTableStyle styleName must be a non-empty string or null',
+				{
+					suggestedFix: 'Use a table style name such as TableStyleMedium2, or null to clear it.',
+				},
+			)
+		}
+	}
+	for (const field of [
+		'showFirstColumn',
+		'showLastColumn',
+		'showRowStripes',
+		'showColumnStripes',
+	] as const) {
+		const value = op[field]
+		if (value !== undefined && typeof value !== 'boolean') {
+			return ascendError('VALIDATION_ERROR', `setTableStyle ${field} must be boolean`, {
+				suggestedFix: `Set ${field}=true or ${field}=false.`,
+			})
+		}
+	}
+	return null
 }
 
 function resolveTableColumnIndex(columns: readonly TableColumn[], column: string | number): number {

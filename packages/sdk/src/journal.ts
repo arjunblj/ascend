@@ -4900,22 +4900,25 @@ function journalSetTableStyle(
 	opIndex: number,
 ): DraftJournalEntry {
 	const style = tableStylePreimage(workbook, op.table)
+	const valueIssues = tableStyleValueIssues(op)
 	const issues =
-		op.styleName === undefined &&
-		op.showFirstColumn === undefined &&
-		op.showLastColumn === undefined &&
-		op.showRowStripes === undefined &&
-		op.showColumnStripes === undefined
-			? [
-					{
-						code: 'UNSUPPORTED_VALUE',
-						message: `Cannot build exact rollback journal for setTableStyle because no style field was provided for table ${op.table}`,
-						surface: 'tables',
-						reason: 'value-unsupported',
-						refs: [`table:${op.table}`],
-					} satisfies MutationJournalIssue,
-				]
-			: tableStyleRestoreIssues(op, style.style)
+		valueIssues.length > 0
+			? valueIssues
+			: op.styleName === undefined &&
+					op.showFirstColumn === undefined &&
+					op.showLastColumn === undefined &&
+					op.showRowStripes === undefined &&
+					op.showColumnStripes === undefined
+				? [
+						{
+							code: 'UNSUPPORTED_VALUE',
+							message: `Cannot build exact rollback journal for setTableStyle because no style field was provided for table ${op.table}`,
+							surface: 'tables',
+							reason: 'value-unsupported',
+							refs: [`table:${op.table}`],
+						} satisfies MutationJournalIssue,
+					]
+				: tableStyleRestoreIssues(op, style.style)
 	return {
 		opIndex,
 		op,
@@ -4923,6 +4926,41 @@ function journalSetTableStyle(
 		preimages: [{ kind: 'table-style', tableStyle: style }],
 		issues,
 	}
+}
+
+function tableStyleValueIssues(
+	op: Extract<Operation, { op: 'setTableStyle' }>,
+): MutationJournalIssue[] {
+	const issues: MutationJournalIssue[] = []
+	if (
+		op.styleName !== undefined &&
+		op.styleName !== null &&
+		(typeof op.styleName !== 'string' || op.styleName.trim() === '')
+	) {
+		issues.push(
+			tableUnsupportedValueIssue(
+				op.table,
+				'Cannot build exact rollback journal for setTableStyle because styleName is invalid',
+			),
+		)
+	}
+	for (const field of [
+		'showFirstColumn',
+		'showLastColumn',
+		'showRowStripes',
+		'showColumnStripes',
+	] as const) {
+		const value = op[field]
+		if (value !== undefined && typeof value !== 'boolean') {
+			issues.push(
+				tableUnsupportedValueIssue(
+					op.table,
+					`Cannot build exact rollback journal for setTableStyle because ${field} is not boolean`,
+				),
+			)
+		}
+	}
+	return issues
 }
 
 function journalSetComment(

@@ -1266,6 +1266,80 @@ describe('mutation journal exactness model', () => {
 		}
 	})
 
+	test('topology rewrite journals mark dynamic spill formula bindings lossy', () => {
+		const cases: readonly {
+			readonly name: string
+			readonly setup: (workbook: AscendWorkbook) => void
+			readonly ops: readonly Operation[]
+			readonly issues: readonly {
+				readonly ref: string
+				readonly surface: MutationJournalSurface
+			}[]
+		}[] = [
+			{
+				name: 'renameSheet dynamic spill',
+				setup: (wb) => {
+					seedDynamicArrayFootprint(wb, 0)
+				},
+				ops: [{ op: 'renameSheet', sheet: 'Sheet1', newName: 'Data' }],
+				issues: [
+					{ ref: 'Sheet1!A1', surface: 'dynamic-arrays' },
+					{ ref: 'Sheet1!A2', surface: 'spills' },
+					{ ref: 'Sheet1!A3', surface: 'spills' },
+				],
+			},
+			{
+				name: 'renameTable dynamic spill',
+				setup: (wb) => {
+					seedSimpleTable(wb)
+					seedDynamicArrayFootprint(wb, 3)
+				},
+				ops: [{ op: 'renameTable', table: 'Sales', newName: 'Revenue' }],
+				issues: [
+					{ ref: 'Sheet1!D1', surface: 'dynamic-arrays' },
+					{ ref: 'Sheet1!D2', surface: 'spills' },
+					{ ref: 'Sheet1!D3', surface: 'spills' },
+				],
+			},
+			{
+				name: 'setTableColumn dynamic spill',
+				setup: (wb) => {
+					seedSimpleTable(wb)
+					seedDynamicArrayFootprint(wb, 3)
+				},
+				ops: [{ op: 'setTableColumn', table: 'Sales', column: 'Qty', newName: 'Units' }],
+				issues: [
+					{ ref: 'Sheet1!D1', surface: 'dynamic-arrays' },
+					{ ref: 'Sheet1!D2', surface: 'spills' },
+					{ ref: 'Sheet1!D3', surface: 'spills' },
+				],
+			},
+		]
+
+		for (const entry of cases) {
+			const wb = AscendWorkbook.create()
+			entry.setup(wb)
+
+			const journal = applyJournal(wb, entry.ops)
+
+			expect(journal.supported, entry.name).toBe(true)
+			expect(journal.exact, entry.name).toBe(false)
+			const opName = entry.ops[0]?.op
+			if (!opName) throw new Error(`missing op for ${entry.name}`)
+			for (const issue of entry.issues) {
+				expect(classifyMutationJournalSurface(issue.surface).representativeOps).toContain(opName)
+				expect(journal.issues, `${entry.name} ${issue.ref}`).toContainEqual(
+					expect.objectContaining({
+						code: 'LOSSY_INVERSE',
+						surface: issue.surface,
+						reason: 'formula-binding-metadata',
+						refs: [issue.ref],
+					}),
+				)
+			}
+		}
+	})
+
 	test('destructive cell journals mark formula-binding detachments lossy', () => {
 		const cases: readonly {
 			readonly name: string
@@ -3251,6 +3325,25 @@ function seedSharedFormulaPair(workbook: AscendWorkbook, row: number, col: numbe
 		},
 	})
 	return sheet
+}
+
+function seedSimpleTable(workbook: AscendWorkbook) {
+	const result = workbook.apply([
+		{
+			op: 'setCells',
+			sheet: 'Sheet1',
+			updates: [
+				{ ref: 'A1', value: 'Region' },
+				{ ref: 'B1', value: 'Qty' },
+				{ ref: 'A2', value: 'West' },
+				{ ref: 'B2', value: 2 },
+				{ ref: 'A3', value: 'East' },
+				{ ref: 'B3', value: 3 },
+			],
+		},
+		{ op: 'createTable', sheet: 'Sheet1', ref: 'A1:B3', name: 'Sales', hasHeaders: true },
+	])
+	expect(result.errors).toEqual([])
 }
 
 function seedDynamicArrayFootprint(workbook: AscendWorkbook, col: number) {

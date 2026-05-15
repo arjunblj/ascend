@@ -2657,6 +2657,57 @@ describe('applyOperation', () => {
 		expect(result.value.recalcRequired).toBe(false)
 	})
 
+	test('copyRange style-only paste preserves non-spill formula binding metadata', () => {
+		for (const mode of ['formats', 'styles'] as const) {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			const sourceStyle = wb.styles.register({ numberFormat: '$#,##0.00' })
+			sheet.cells.set(0, 3, { value: numberValue(12), formula: null, styleId: sourceStyle })
+			addSharedFormulaGroup(sheet)
+			sheet.cells.set(0, 1, cell(numberValue(10)))
+			sheet.cells.set(1, 1, cell(numberValue(20)))
+
+			const shared = applyOperation(wb, {
+				op: 'copyRange',
+				sheet: 'Sheet1',
+				source: 'D1',
+				target: 'A2',
+				mode,
+			})
+			expectOk(shared)
+
+			expect(shared.value.recalcRequired, mode).toBe(false)
+			expect(shared.value.affectedCells, mode).toEqual(['A2'])
+			expect(sheet.cells.get(1, 0)).toEqual({
+				value: numberValue(40),
+				formula: null,
+				styleId: sourceStyle,
+				formulaInfo: { kind: 'shared', sharedIndex: '0', isMaster: false, masterRef: 'A1' },
+			})
+
+			addDataTableFormula(sheet)
+			const table = applyOperation(wb, {
+				op: 'copyRange',
+				sheet: 'Sheet1',
+				source: 'D1',
+				target: 'C4',
+				mode,
+			})
+			expectOk(table)
+
+			expect(table.value.recalcRequired, mode).toBe(false)
+			expect(table.value.affectedCells, mode).toEqual(['C4'])
+			expect(sheet.cells.get(2, 2)?.formulaInfo).toEqual({
+				kind: 'dataTable',
+				ref: 'C3:C5',
+				dt2D: false,
+				dtr: true,
+				r1: 'A1',
+			})
+			expect(sheet.cells.get(3, 2)?.styleId).toBe(sourceStyle)
+		}
+	})
+
 	test('copyRange value paste materializes target formula bindings before overwriting a member', () => {
 		const cases: readonly {
 			readonly name: string

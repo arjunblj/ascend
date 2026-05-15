@@ -19,7 +19,7 @@ import { writeHeapSnapshotFromEnv } from './heap-snapshot-on-exit.ts'
 import { UPSTREAM_PROFILES } from './upstream-profiles.ts'
 
 type StringMode = 'runner-default' | 'inline' | 'plain' | 'shared'
-type ValueSource = 'generated' | 'materialized'
+type ValueSource = 'generated' | 'materialized' | 'cached-materialized'
 type WriterPath = 'dense-streaming' | 'workbook-streaming' | 'workbook-buffered'
 
 interface Args {
@@ -48,6 +48,10 @@ interface PhaseSample {
 	readonly bytes: number
 	readonly rssAfterBytes: number
 	readonly heapUsedBytes: number
+}
+
+interface PhaseRunContext {
+	readonly cachedValues?: readonly (readonly ReturnType<typeof workloadValue>[])[] | undefined
 }
 
 const WORKLOADS = new Set<string>([
@@ -111,8 +115,12 @@ function parseArgs(): Args {
 		throw new Error('--string-mode must be runner-default, inline, plain, or shared')
 	}
 	const valueSource = readOption(argv, '--value-source') ?? 'generated'
-	if (valueSource !== 'generated' && valueSource !== 'materialized') {
-		throw new Error('--value-source must be generated or materialized')
+	if (
+		valueSource !== 'generated' &&
+		valueSource !== 'materialized' &&
+		valueSource !== 'cached-materialized'
+	) {
+		throw new Error('--value-source must be generated, materialized, or cached-materialized')
 	}
 	return {
 		...(profile ? { profile: profile.name } : {}),
@@ -224,14 +232,14 @@ function runGc(): void {
 	}
 }
 
-async function runSample(args: Args): Promise<PhaseSample> {
+async function runSample(args: Args, context: PhaseRunContext = {}): Promise<PhaseSample> {
 	const totalStart = performance.now()
 	const buildStart = performance.now()
 	const useDirectDenseStreaming = shouldUseDirectDenseStreaming(args)
 	const materializedValues =
 		useDirectDenseStreaming && args.valueSource === 'materialized'
 			? buildWorkloadValues(args.workload, args.rows, args.cols)
-			: undefined
+			: context.cachedValues
 	const workbook = useDirectDenseStreaming ? undefined : createWorkbook()
 	if (workbook) setCoreCellGenerated(workbook, args.rows, args.cols, args.workload)
 	const buildMs = performance.now() - buildStart
@@ -348,18 +356,26 @@ function summarize(samples: readonly PhaseSample[]) {
 }
 
 const args = parseArgs()
+const cacheBuildStart = performance.now()
+const cachedValues =
+	shouldUseDirectDenseStreaming(args) && args.valueSource === 'cached-materialized'
+		? buildWorkloadValues(args.workload, args.rows, args.cols)
+		: undefined
+const cacheBuildMs = performance.now() - cacheBuildStart
+const context: PhaseRunContext = cachedValues ? { cachedValues } : {}
 for (let i = 0; i < args.warmup; i++) {
-	await runSample(args)
+	await runSample(args, context)
 	if (args.gcBetweenSamples) runGc()
 }
 const samples: PhaseSample[] = []
 for (let i = 0; i < args.repeat; i++) {
-	samples.push(await runSample(args))
+	samples.push(await runSample(args, context))
 	if (args.gcBetweenSamples) runGc()
 }
 const payload = {
 	tool: 'xlsx-write-phase',
 	args,
+	...(cachedValues ? { cacheBuildMs, cachedValueRows: cachedValues.length } : {}),
 	summary: summarize(samples),
 	samples,
 }

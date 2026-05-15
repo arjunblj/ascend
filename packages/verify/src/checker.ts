@@ -773,6 +773,7 @@ function checkFormulaBindingIntegrity(wb: Workbook): CheckIssue[] {
 	const sheetsByName = new Map(wb.sheets.map((sheet) => [sheet.name.toLowerCase(), sheet]))
 
 	for (const sheet of wb.sheets) {
+		if (sheet.cells.formulaInfoCellCount() === 0) continue
 		for (const [row, col, cell] of sheet.cells.iterate()) {
 			const binding = cell.formulaInfo
 			if (!binding) continue
@@ -899,7 +900,12 @@ function checkFormulaBindingIntegrity(wb: Workbook): CheckIssue[] {
 			if (binding.kind === 'spill' || binding.kind === 'blockedSpill') {
 				const anchor = parseBindingCellRef(binding.anchorRef, sheet.name)
 				const spillRange = parseBindingRange(binding.ref, sheet.name)
-				if (!anchor || !spillRange || !rangeContainsCell(spillRange, sheet.name, row, col)) {
+				if (
+					!anchor ||
+					!spillRange ||
+					!rangeContainsCell(spillRange, sheet.name, row, col) ||
+					!rangeContainsCell(spillRange, anchor.sheet, anchor.row, anchor.col)
+				) {
 					issues.push(
 						formulaBindingIntegrityIssue(
 							`${binding.kind === 'spill' ? 'Spill' : 'Blocked spill'} metadata at ${cellRef} has an invalid anchor or range`,
@@ -934,6 +940,38 @@ function checkFormulaBindingIntegrity(wb: Workbook): CheckIssue[] {
 							},
 						),
 					)
+				}
+				if (binding.kind === 'blockedSpill' && binding.reason !== 'sheet-edge') {
+					const staleBlockers = binding.blockingRefs.filter((ref) => {
+						const blocker = parseBindingCellRef(ref, sheet.name)
+						if (!blocker) return true
+						const blockerSheet = sheetsByName.get(blocker.sheet.toLowerCase())
+						const blockerCell = blockerSheet?.cells.get(blocker.row, blocker.col)
+						return !blockerCell || blockerCell.value.kind === 'empty'
+					})
+					if (staleBlockers.length > 0) {
+						issues.push(
+							formulaBindingIntegrityIssue(
+								`Blocked spill metadata at ${cellRef} references stale blocking cells`,
+								[
+									cellRef,
+									...staleBlockers.map((ref) => {
+										const blocker = parseBindingCellRef(ref, sheet.name)
+										return blocker
+											? `${blocker.sheet}!${toA1({ row: blocker.row, col: blocker.col })}`
+											: `${sheet.name}!${ref}`
+									}),
+								],
+								{
+									kind: 'blockedSpill-blocker-mismatch',
+									anchorRef: binding.anchorRef,
+									range: binding.ref,
+									blockingRefs: binding.blockingRefs,
+									staleBlockingRefs: staleBlockers,
+								},
+							),
+						)
+					}
 				}
 			}
 		}

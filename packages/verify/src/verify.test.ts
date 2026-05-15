@@ -297,6 +297,41 @@ describe('checker', () => {
 		})
 	})
 
+	test('detects stale blocked spill blocker metadata', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.cells.set(0, 0, {
+			value: errorValue('#SPILL!'),
+			formula: 'SEQUENCE(3)',
+			styleId: SID,
+			formulaInfo: {
+				kind: 'blockedSpill',
+				anchorRef: 'Sheet1!A1',
+				ref: 'A1:A3',
+				blockingRefs: ['A2'],
+			},
+		})
+
+		const result = check(wb)
+		const issue = result.issues.find(
+			(entry) => entry.details?.kind === 'blockedSpill-blocker-mismatch',
+		)
+		expect(result.passed).toBe(false)
+		expect(issue).toMatchObject({
+			rule: 'formula-binding-integrity',
+			severity: 'error',
+			message: 'Blocked spill metadata at Sheet1!A1 references stale blocking cells',
+			refs: ['Sheet1!A1', 'Sheet1!A2'],
+			details: {
+				kind: 'blockedSpill-blocker-mismatch',
+				anchorRef: 'Sheet1!A1',
+				range: 'A1:A3',
+				blockingRefs: ['A2'],
+				staleBlockingRefs: ['A2'],
+			},
+		})
+	})
+
 	test('detects stale legacy array and data table binding ranges', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')

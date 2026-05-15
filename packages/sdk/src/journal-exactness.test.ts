@@ -217,6 +217,7 @@ describe('mutation journal exactness model', () => {
 	test('generated lossy journals classify every issue into an allowed surface reason', () => {
 		const journals = [
 			lossyDataValidationDefaultJournal(),
+			lossyDataValidationDeleteOrderJournal(),
 			lossyLegacyCommentDrawingJournal(),
 			lossySetCommentLegacyDrawingJournal(),
 			lossyCreatedLayoutJournal(),
@@ -272,6 +273,18 @@ describe('mutation journal exactness model', () => {
 			'auto-filter-extension-metadata',
 			'auto-filter-sort-metadata',
 		])
+	})
+
+	test('classifies data validation delete order as metadata order', () => {
+		const journal = lossyDataValidationDeleteOrderJournal()
+		expect(journal.exact).toBe(false)
+		expect(journal.issues).toContainEqual({
+			code: 'LOSSY_INVERSE',
+			message: 'Data-validation order on Sheet1 cannot be restored exactly with public operations',
+			surface: 'data-validations',
+			reason: 'metadata-order',
+			refs: ['Sheet1!A1:A1'],
+		})
 	})
 
 	test('classifies conditional format replacement order as metadata order', () => {
@@ -1314,26 +1327,33 @@ describe('mutation journal exactness model', () => {
 				],
 			},
 			{
-				name: 'data validation replacement and deletion',
+				name: 'data validation tail replacement and deletion',
 				seedOps: [
 					{
 						op: 'setDataValidation',
 						sheet: 'Sheet1',
 						range: 'A1:A2',
-						rule: { type: 'whole', operator: 'between', formula1: '1', formula2: '9' },
+						rule: {
+							type: 'whole',
+							operator: 'between',
+							formula1: '1',
+							formula2: '9',
+							allowBlank: true,
+							showErrorMessage: true,
+						},
 					},
 					{
 						op: 'setDataValidation',
 						sheet: 'Sheet1',
 						range: 'B1:B2',
-						rule: { type: 'list', formula1: '"A,B"' },
+						rule: { type: 'list', formula1: '"A,B"', allowBlank: true, showErrorMessage: true },
 					},
 				],
 				ops: [
 					{
 						op: 'setDataValidation',
 						sheet: 'Sheet1',
-						range: 'A1:A2',
+						range: 'B1:B2',
 						rule: {
 							type: 'whole',
 							operator: 'greaterThan',
@@ -1725,6 +1745,32 @@ function lossyDataValidationDefaultJournal(): MutationJournal {
 			rule: { type: 'whole', formula1: '2' },
 		},
 	])
+}
+
+function lossyDataValidationDeleteOrderJournal(): MutationJournal {
+	const wb = dataValidationOrderWorkbook()
+	return buildMutationJournal(wb.getWorkbookModel(), [
+		{ op: 'deleteDataValidation', sheet: 'Sheet1', range: 'A1:A1' },
+	])
+}
+
+function dataValidationOrderWorkbook(): AscendWorkbook {
+	const wb = AscendWorkbook.create()
+	applyExact(wb, [
+		{
+			op: 'setDataValidation',
+			sheet: 'Sheet1',
+			range: 'A1:A1',
+			rule: { type: 'whole', formula1: '1', allowBlank: true, showErrorMessage: true },
+		},
+		{
+			op: 'setDataValidation',
+			sheet: 'Sheet1',
+			range: 'B1:B1',
+			rule: { type: 'whole', formula1: '2', allowBlank: true, showErrorMessage: true },
+		},
+	])
+	return wb
 }
 
 function lossyLegacyCommentDrawingJournal(): MutationJournal {

@@ -69,6 +69,7 @@ Updated: 2026-05-15
 | [Release proof index current refresh](runs/2026/2026-05-15-release-proof-index-current-refresh/log.md) | digest index refreshed for top two artifacts only, no attestation claim | product loop, release loop |
 | [Hide columns width preservation](runs/2026/2026-05-15-hide-cols-width-preservation/log.md) | folded in scoped engine fix; conditional-format package-byte exactness remains separate | correctness loop |
 | [Conditional format order journal boundary](runs/2026/2026-05-15-conditional-format-order-journal-boundary/log.md) | folded in lossy metadata-order classification for non-tail conditional-format restores | correctness loop |
+| [Data validation order journal boundary](runs/2026/2026-05-15-data-validation-order-journal-boundary/log.md) | folded in lossy metadata-order classification for non-suffix data-validation restores | correctness loop |
 | [Agent view omitted evidence recovery](runs/2026/2026-05-15-agent-view-omitted-evidence-recovery/log.md) | folded in recovery proof harness, locator metadata needed | product/DX loop |
 | [Agent view omitted locator metadata](runs/2026/2026-05-15-agent-view-omitted-locator-metadata/log.md) | folded in compact omitted-evidence locators | product/DX loop |
 | [Agent view formula pattern provenance](runs/2026/2026-05-15-agent-view-formula-pattern-provenance/log.md) | folded in formula-pattern example refs | product/DX loop |

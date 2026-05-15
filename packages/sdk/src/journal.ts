@@ -2992,12 +2992,16 @@ function journalSetDataValidation(
 ): DraftJournalEntry {
 	const validation = dataValidationPreimage(workbook, op.sheet, op.range)
 	const { inverseOps, issues } = restoreDataValidationOps(validation)
+	const orderIssues =
+		validation.validation === null
+			? []
+			: dataValidationRestoreOrderIssues(workbook, op.sheet, [validation])
 	return {
 		opIndex,
 		op,
 		inverseOps,
 		preimages: [{ kind: 'data-validations', validations: [validation] }],
-		issues,
+		issues: [...issues, ...orderIssues],
 	}
 }
 
@@ -3015,7 +3019,12 @@ function journalDeleteDataValidation(
 		op,
 		inverseOps,
 		preimages: [{ kind: 'data-validations', validations: [validation] }],
-		issues,
+		issues: [
+			...issues,
+			...(validation.validation
+				? dataValidationRestoreOrderIssues(workbook, op.sheet, [validation])
+				: []),
+		],
 	}
 }
 
@@ -4089,6 +4098,33 @@ function dataValidationPreimage(
 		range,
 		validation: validation ? { ...validation } : null,
 	}
+}
+
+function dataValidationRestoreOrderIssues(
+	workbook: Workbook,
+	sheetName: string,
+	validations: readonly MutationJournalDataValidationPreimage[],
+): readonly MutationJournalIssue[] {
+	if (validations.length === 0) return []
+	const sheet = workbook.getSheet(sheetName)
+	if (!sheet) return []
+	const ranges = new Set(validations.map((validation) => validation.range))
+	const indexes = sheet.dataValidations
+		.map((validation, index) => (ranges.has(validation.sqref) ? index : -1))
+		.filter((index) => index >= 0)
+	if (indexes.length !== validations.length) return []
+	const suffixStart = sheet.dataValidations.length - indexes.length
+	const restoresSuffix = indexes.every((index, offset) => index === suffixStart + offset)
+	if (restoresSuffix) return []
+	return [
+		{
+			code: 'LOSSY_INVERSE',
+			message: `Data-validation order on ${sheetName} cannot be restored exactly with public operations`,
+			surface: 'data-validations',
+			reason: 'metadata-order',
+			refs: validations.map((validation) => `${sheetName}!${validation.range}`),
+		},
+	]
 }
 
 function restoreDataValidationOps(validation: MutationJournalDataValidationPreimage): {

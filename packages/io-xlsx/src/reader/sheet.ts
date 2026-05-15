@@ -715,6 +715,7 @@ function parseFullScalarSheetDataBytesToClose(
 ): number | false {
 	let rowCursor = contentStart
 	let currentRow = -1
+	const numberSpanValues: number[] = []
 
 	while (true) {
 		const rowOpen = nextXmlElementOpenBytes(bytes, rowCursor, bytes.length)
@@ -766,6 +767,7 @@ function parseFullScalarSheetDataBytesToClose(
 				row,
 				ctx,
 				sheet,
+				numberSpanValues,
 				explicitRowIndex,
 			)
 		) {
@@ -783,6 +785,7 @@ function parseSimpleValuesRowBytes(
 	ctx: SheetParseContext,
 	sheet: Sheet,
 	rowIndexAttr?: RowIndexAttrBytes,
+	reusableNumberSpanValues?: number[],
 ): boolean {
 	if (!ctx.valuesOnly) return false
 	let cursor = bodyStart
@@ -794,7 +797,8 @@ function parseSimpleValuesRowBytes(
 	let pendingNumberCol = -1
 	let pendingNumberValue = 0
 	let numberSpanStartCol = -1
-	const numberSpanValues: number[] = []
+	const numberSpanValues = reusableNumberSpanValues ?? []
+	numberSpanValues.length = 0
 	const flushNumberSpan = () => {
 		if (numberSpanValues.length > 0) {
 			sheet.cells.setPlainNumberSpan(row, numberSpanStartCol, numberSpanValues)
@@ -1078,6 +1082,7 @@ function parseSimpleFullScalarRowBytes(
 	row: number,
 	ctx: SheetParseContext,
 	sheet: Sheet,
+	numberSpanValues: number[],
 	rowIndexAttr?: RowIndexAttrBytes,
 ): boolean {
 	if (
@@ -1094,7 +1099,7 @@ function parseSimpleFullScalarRowBytes(
 	let pendingNumberCol = -1
 	let pendingNumberValue = 0
 	let numberSpanStartCol = -1
-	let numberSpanValues: number[] | undefined
+	numberSpanValues.length = 0
 	const out: SimpleValuesCellOut = {
 		row,
 		col: 0,
@@ -1107,7 +1112,7 @@ function parseSimpleFullScalarRowBytes(
 		styleIdx: 0,
 	}
 	const flushNumberSpan = () => {
-		if (numberSpanValues && numberSpanValues.length > 0) {
+		if (numberSpanValues.length > 0) {
 			sheet.cells.setPlainNumberSpan(row, numberSpanStartCol, numberSpanValues)
 			numberSpanValues.length = 0
 			numberSpanStartCol = -1
@@ -1133,7 +1138,7 @@ function parseSimpleFullScalarRowBytes(
 		) {
 			return false
 		}
-		if (numberSpanValues && numberSpanValues.length > 0) {
+		if (numberSpanValues.length > 0) {
 			if (cellCol === numberSpanStartCol + numberSpanValues.length) {
 				numberSpanValues.push(value)
 				return true
@@ -1143,7 +1148,7 @@ function parseSimpleFullScalarRowBytes(
 		if (pendingNumberCol >= 0) {
 			if (cellCol === pendingNumberCol + 1) {
 				numberSpanStartCol = pendingNumberCol
-				numberSpanValues = [pendingNumberValue, value]
+				numberSpanValues.push(pendingNumberValue, value)
 				pendingNumberCol = -1
 				return true
 			}

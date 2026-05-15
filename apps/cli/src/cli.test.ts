@@ -18,6 +18,7 @@ const TRUST_REPORT_FILE = 'test-trust-report.xlsm'
 const OPEN_PLAN_FILE = 'test-open-plan.xlsx'
 const AGENT_VIEW_FILE = 'test-agent-view.xlsx'
 const JOURNAL_V1_OPS_FILE = 'journal-v1-ops.json'
+const JOURNAL_V1_OUTPUT_FILE = 'journal-v1-output.xlsx'
 const PIVOT_CORPUS_FILE = '../../../research/excel-corpus/ms-excel-formulas-and-pivot-tables.xlsx'
 const SLICER_CORPUS_FILE = '../../../research/excel-corpus/excel-dashboard-v2.xlsx'
 const HAS_PIVOT_CORPUS_FILE = existsSync(`${import.meta.dir}/${PIVOT_CORPUS_FILE}`)
@@ -135,6 +136,7 @@ afterAll(() => {
 		AGENT_VIEW_FILE,
 		APPROVAL_TEST_FILE,
 		JOURNAL_V1_OPS_FILE,
+		JOURNAL_V1_OUTPUT_FILE,
 		'exported.tsv',
 		'exported.json',
 		'plan-ops.json',
@@ -499,7 +501,7 @@ describe('ascend cli', () => {
 		expect(prettyCommit.stdout).toContain('Post-write package graph issues: 0')
 	})
 
-	test('plan JSON preserves journal v1 issue compatibility', async () => {
+	test('plan and compact commit JSON preserve journal v1 issue compatibility', async () => {
 		const wb = AscendWorkbook.create()
 		await wb.save(`${import.meta.dir}/${TEST_FILE}`)
 		await Bun.write(
@@ -513,6 +515,22 @@ describe('ascend cli', () => {
 		const parsed = JSON.parse(planned.stdout)
 		expect(parsed.ok).toBe(true)
 		expect(compactJournal(parsed.data.preview.journal)).toEqual(JOURNAL_V1_FIXTURE.scenario.journal)
+
+		const committed = await run(
+			'commit',
+			TEST_FILE,
+			'--ops',
+			JOURNAL_V1_OPS_FILE,
+			'--output',
+			JOURNAL_V1_OUTPUT_FILE,
+			'--compact',
+			'--json',
+		)
+
+		expect(committed.exitCode).toBe(0)
+		const committedParsed = JSON.parse(committed.stdout)
+		expect(committedParsed.ok).toBe(true)
+		expect(committedParsed.data.apply.journalSummary).toEqual(JOURNAL_V1_FIXTURE.scenario.journal)
 	})
 
 	test('plan invalid ops return structured batch repair details', async () => {

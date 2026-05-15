@@ -94,6 +94,8 @@ Updated: 2026-05-15
 | [Columnar sidecar public fixture parity](runs/2026/2026-05-15-columnar-sidecar-public-fixture-parity/log.md) | folded in public XLSX fixture sidecar parity report, broad performance claims still blocked | performance loop |
 | [Columnar sidecar stress fixture scale](runs/2026/2026-05-15-columnar-sidecar-stress-fixture-scale/log.md) | stress fixture proves 500k-cell sidecar scale, real-world table claims still blocked | performance loop |
 | [Columnar sidecar external public workbook](runs/2026/2026-05-15-columnar-sidecar-external-public-workbook/log.md) | folded in SEC external workbook parity proof; broad real-world claims still blocked | performance loop |
+| [Prepared plan check reuse](runs/2026/2026-05-15-prepared-plan-check-reuse/log.md) | folded in hash-guarded formula-free prepared check reuse for value-edit commits | product/DX loop, correctness loop |
+| [MoveRange formula binding regression](runs/2026/2026-05-15-moverange-formula-binding-regression/log.md) | finished in-flight shared-formula overwrite regression coverage, no new surface | correctness loop |
 | [Package action proof](runs/2026/2026-05-14-package-action-proof/log.md) | cycle 2 complete, promote | correctness loop, product/DX loop, performance loop |
 | [Formula spans LSP](runs/2026/2026-05-14-formula-spans-lsp/log.md) | cycle 13 complete, folded in SDK hover/code actions | product/DX loop, correctness loop |
 | [Formula sqllogictest conformance](runs/2026/2026-05-14-formula-sqllogictest-conformance/log.md) | cycle 14 complete, folded in converter/runner | correctness loop |

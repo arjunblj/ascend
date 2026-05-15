@@ -123,3 +123,19 @@ Decision: formula intelligence, retained viewport patches, token-bounded agent v
 1. Product/performance handoff: publish the safe unknown workbook opening proof bundle from existing surfaces and public fixtures.
 2. Correctness/product handoff: publish the auditable package-part mutation proof bundle from existing proof/journal surfaces.
 3. Correctness follow-up: property-style journal laws now have a deterministic tracked harness with pre-seeded metadata and package-state replacements, explicit style/table-style lossy boundaries, and a claim-safe report mode. They may rank up only after shrinkable generation or a correctness owner accepts deterministic proof as sufficient for release evidence.
+
+## Stewardship Update: Prepared Agent Commits
+
+Claim placement: supporting evidence under trustworthy mutation planning and agent workflow observability, not a new top release claim.
+
+Proof added:
+
+```bash
+bun test packages/sdk/src/agent-workflow.test.ts -t "prepared agent plans reuse full workflow state|prepared agent plans expose rollback journal safety facts|prepared agent commits"
+bun test apps/mcp/src/index.test.ts -t "prepared plan|planHandle|writePolicyCheckMs"
+bun test apps/api/src/server.test.ts -t "prepared|plan and commit"
+```
+
+Allowed wording: "prepared value-edit commits can reuse the planning structural check under a formula-free, one-shot, hash-guarded contract."
+
+Boundary: this does not support a broad cache claim, formula-workbook reuse, structural-edit reuse, collaboration/snapshot reuse, or release-proof promotion without real-workbook latency evidence.

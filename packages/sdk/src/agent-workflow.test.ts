@@ -3568,6 +3568,7 @@ describe('agent workflow loss audit', () => {
 		expect(committed.planDigest).toBe(prepared.planDigest)
 		expect(committed.postWrite.valid).toBe(true)
 		expect(committed.postWrite.auditsPassed).toBe(true)
+		expect(committed.timings.writePolicyCheckMs).toBe(0)
 		expect(committed.trace.phases.find((phase) => phase.phase === 'hash-guard')?.status).toBe('ok')
 		const reopened = await AscendWorkbook.open(output)
 		expect(reopened.sheet('Sheet1')?.cell('A1')?.value).toEqual({ kind: 'number', value: 42 })

@@ -4529,6 +4529,7 @@ describe('MCP server', () => {
 			expect(committed.structuredContent?.data?.timings?.applyMs).toBeNumber()
 			expect(committed.structuredContent?.data?.timings?.writePlanSummaryMs).toBeNumber()
 			expect(committed.structuredContent?.data?.timings?.writePolicyCheckMs).toBeNumber()
+			expect(committed.structuredContent?.data?.timings?.writePolicyCheckMs).toBe(0)
 			expect(committed.structuredContent?.data?.timings?.toBytesMs).toBeNumber()
 			expect(committed.structuredContent?.data?.timings?.outputByteReadMs).toBeNumber()
 			expect(committed.structuredContent?.data?.postWrite?.valid).toBe(true)

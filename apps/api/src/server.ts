@@ -875,6 +875,7 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 									workbook: wb,
 									ops: input.ops,
 									sourceBytes: opened.sourceBytes,
+									preparedCheck: result.check,
 									...(pathMutations !== undefined ? { pathMutations } : {}),
 								}),
 							)

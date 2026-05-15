@@ -34,6 +34,7 @@ export interface PreparedPathMutationPlanHandleOptions {
 	readonly workbook: AscendWorkbook
 	readonly ops: readonly Operation[]
 	readonly sourceBytes: Uint8Array
+	readonly preparedCheck: ReturnType<AscendWorkbook['check']>
 	readonly pathMutations?: PathMutationResult
 }
 
@@ -211,7 +212,7 @@ export function preparedPathMutationPlanHandle(
 					...options,
 					expectSha256: options.expectSha256 ?? prepared.inputSha256,
 				},
-				{ sourceBytes: prepared.sourceBytes },
+				{ sourceBytes: prepared.sourceBytes, preparedCheck: prepared.preparedCheck },
 			)
 			committed = true
 			return result

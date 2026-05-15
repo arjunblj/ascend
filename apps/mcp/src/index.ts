@@ -1363,6 +1363,7 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 								workbook: wb,
 								ops: input.ops,
 								sourceBytes: opened.sourceBytes,
+								preparedCheck: result.check,
 								...(pathMutations !== undefined ? { pathMutations } : {}),
 							}),
 						)

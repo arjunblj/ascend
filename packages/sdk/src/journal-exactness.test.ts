@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
-import { DEFAULT_STYLE_ID, indexToColumn } from '@ascend/core'
+import { DEFAULT_STYLE_ID, indexToColumn, parseA1 } from '@ascend/core'
 import { numberValue, type Operation } from '@ascend/schema'
 import {
 	analyzeMutationJournalExactness,
@@ -1286,6 +1286,43 @@ describe('mutation journal exactness model', () => {
 		).toBe(true)
 	})
 
+	test('real XLSX multi-axis shared formula edits materialize sibling formulas', async () => {
+		const wb = await AscendWorkbook.open(
+			readFileSync(
+				new URL(
+					'../../../fixtures/xlsx/calamine/issue_565_multi_axis_shared.xlsx',
+					import.meta.url,
+				),
+			),
+		)
+		const groupRefs = ['B1', 'C1', 'D1', 'B2', 'C2', 'D2']
+		expect(formulaInfoRefsIn(wb, 'Sheet1', groupRefs)).toEqual(
+			groupRefs.map((ref) => `Sheet1!${ref}`),
+		)
+
+		const changed = wb.apply(
+			[{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'C2', value: 99 }] }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.affectedCells).toEqual(groupRefs)
+		expect(formulaInfoRefsIn(wb, 'Sheet1', groupRefs)).toEqual([])
+		expect(cellFormulas(wb, 'Sheet1', groupRefs)).toEqual({
+			B1: 'B1',
+			C1: 'C1',
+			D1: 'D1',
+			B2: 'B2',
+			C2: null,
+			D2: 'D2',
+		})
+		expect(changed.journal).toBeDefined()
+		if (!changed.journal) throw new Error('missing journal')
+		expect(journalIssueRefs(changed.journal, 'shared-formulas')).toEqual(
+			groupRefs.map((ref) => `Sheet1!${ref}`).sort(),
+		)
+	})
+
 	test('representative exact journals restore full workbook evidence after inverse apply', () => {
 		const cases: readonly {
 			readonly name: string
@@ -2544,4 +2581,34 @@ function journalIssueRefs(
 		.filter((issue) => issue.surface === surface)
 		.flatMap((issue) => issue.refs ?? [])
 		.sort()
+}
+
+function formulaInfoRefsIn(
+	workbook: AscendWorkbook,
+	sheetName: string,
+	refs: readonly string[],
+): string[] {
+	const sheet = workbook.getWorkbookModel().getSheet(sheetName)
+	if (!sheet) throw new Error(`missing sheet ${sheetName}`)
+	return refs
+		.filter((ref) => {
+			const parsed = parseA1(ref)
+			return sheet.cells.get(parsed.row, parsed.col)?.formulaInfo
+		})
+		.map((ref) => `${sheetName}!${ref}`)
+}
+
+function cellFormulas(
+	workbook: AscendWorkbook,
+	sheetName: string,
+	refs: readonly string[],
+): Record<string, string | null | undefined> {
+	const sheet = workbook.getWorkbookModel().getSheet(sheetName)
+	if (!sheet) throw new Error(`missing sheet ${sheetName}`)
+	return Object.fromEntries(
+		refs.map((ref) => {
+			const parsed = parseA1(ref)
+			return [ref, sheet.cells.get(parsed.row, parsed.col)?.formula]
+		}),
+	)
 }

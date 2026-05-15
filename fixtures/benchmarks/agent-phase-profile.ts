@@ -23,6 +23,8 @@ interface Args {
 	readonly workload: WorkloadName
 	readonly repeat: number
 	readonly warmup: number
+	readonly timeoutMs?: number
+	readonly progress: boolean
 	readonly json: boolean
 }
 
@@ -119,6 +121,10 @@ function parseArgs(): Args {
 		workload: workload as WorkloadName,
 		repeat: positiveInt(readOption(process.argv, '--repeat'), 5),
 		warmup: nonNegativeInt(readOption(process.argv, '--warmup'), 1),
+		...(readOption(process.argv, '--timeout-ms') !== undefined
+			? { timeoutMs: positiveInt(readOption(process.argv, '--timeout-ms'), 0) }
+			: {}),
+		progress: hasFlag(process.argv, '--progress'),
 		json: hasFlag(process.argv, '--json'),
 	}
 }
@@ -154,6 +160,7 @@ function buildSetCellsOperation(
 
 async function timedWorkflow<T>(
 	fn: (onProgress: (event: AgentWorkflowProgressEvent) => void) => Promise<T>,
+	onPhase?: (phase: PhaseTiming) => void,
 ): Promise<TimedRun<T>> {
 	const started = new Map<string, number>()
 	const phases: PhaseTiming[] = []
@@ -166,13 +173,15 @@ async function timedWorkflow<T>(
 			return
 		}
 		const phaseStart = started.get(key)
-		phases.push({
+		const phaseTiming = {
 			kind: event.kind,
 			phase: event.phase,
 			ms: phaseStart === undefined ? 0 : now - phaseStart,
 			status: event.status,
 			...(event.count !== undefined ? { count: event.count } : {}),
-		})
+		} satisfies PhaseTiming
+		phases.push(phaseTiming)
+		onPhase?.(phaseTiming)
 		started.delete(key)
 	})
 	return { ms: performance.now() - start, value, phases }
@@ -193,24 +202,33 @@ async function runSample(
 	outputPath: string,
 	ops: readonly Operation[],
 	updateCount: number,
+	onPhase?: (phase: PhaseTiming) => void,
 ): Promise<Sample> {
 	await rm(outputPath, { force: true })
 	const sharedOutputPath = `${outputPath}.shared.xlsx`
 	await rm(sharedOutputPath, { force: true })
 	runGc()
-	const plan = await timedWorkflow((onProgress) => createAgentPlan(inputPath, ops, { onProgress }))
-	const commit = await timedWorkflow((onProgress) =>
-		commitAgentPlan(inputPath, ops, { output: outputPath, approvals: [], onProgress }),
+	const plan = await timedWorkflow(
+		(onProgress) => createAgentPlan(inputPath, ops, { onProgress }),
+		onPhase,
 	)
-	const sharedPlan = await timedWorkflow((onProgress) =>
-		createPreparedAgentPlan(inputPath, ops, { onProgress }),
+	const commit = await timedWorkflow(
+		(onProgress) =>
+			commitAgentPlan(inputPath, ops, { output: outputPath, approvals: [], onProgress }),
+		onPhase,
+	)
+	const sharedPlan = await timedWorkflow(
+		(onProgress) => createPreparedAgentPlan(inputPath, ops, { onProgress }),
+		onPhase,
 	)
 	const outputBytes = (await stat(outputPath)).size
 	let sharedCommit: TimedRun<Awaited<ReturnType<typeof sharedPlan.value.commit>>>
 	let sharedOutputBytes = 0
 	try {
-		sharedCommit = await timedWorkflow((onProgress) =>
-			sharedPlan.value.commit({ output: sharedOutputPath, approvals: [], onProgress }),
+		sharedCommit = await timedWorkflow(
+			(onProgress) =>
+				sharedPlan.value.commit({ output: sharedOutputPath, approvals: [], onProgress }),
+			onPhase,
 		)
 		sharedOutputBytes = (await stat(sharedOutputPath)).size
 	} finally {
@@ -386,13 +404,43 @@ async function run() {
 	const outputPath = phaseOutputPath(data)
 	const ops = [buildSetCellsOperation(args.updates, data.rows, data.cols, data.sheet)]
 	const samples: Sample[] = []
+	const timeout =
+		args.timeoutMs !== undefined
+			? setTimeout(() => {
+					console.error(
+						JSON.stringify({
+							tool: 'agent-phase-profile',
+							status: 'timeout',
+							timeoutMs: args.timeoutMs,
+							completedSamples: samples.length,
+							input: data,
+						}),
+					)
+					process.exit(124)
+				}, args.timeoutMs)
+			: undefined
+	const reportPhase = args.progress
+		? (sample: number, phase: PhaseTiming) => {
+				console.error(JSON.stringify({ tool: 'agent-phase-profile', sample, ...phase }))
+			}
+		: undefined
 	try {
 		for (let i = 0; i < args.warmup; i++) {
-			await runSample(data.xlsxPath, outputPath, ops, args.updates)
+			if (args.progress)
+				console.error(JSON.stringify({ tool: 'agent-phase-profile', sample: -args.warmup + i }))
+			await runSample(data.xlsxPath, outputPath, ops, args.updates, (phase) =>
+				reportPhase?.(-args.warmup + i, phase),
+			)
 			runGc()
 		}
 		for (let i = 0; i < args.repeat; i++) {
-			samples.push(await runSample(data.xlsxPath, outputPath, ops, args.updates))
+			if (args.progress)
+				console.error(JSON.stringify({ tool: 'agent-phase-profile', sample: i + 1 }))
+			samples.push(
+				await runSample(data.xlsxPath, outputPath, ops, args.updates, (phase) =>
+					reportPhase?.(i + 1, phase),
+				),
+			)
 			runGc()
 		}
 		const payload = {
@@ -405,6 +453,7 @@ async function run() {
 		if (args.json) console.log(JSON.stringify(payload, null, 2))
 		else console.log(payload.summary)
 	} finally {
+		if (timeout !== undefined) clearTimeout(timeout)
 		if (data.cleanup) await rm(data.xlsxPath, { force: true })
 		await rm(outputPath, { force: true })
 	}

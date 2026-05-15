@@ -1437,6 +1437,31 @@ describe('mutation journal exactness model', () => {
 				reason: 'value-unsupported',
 			},
 			{
+				op: { op: 'setTableColumn', table: 'Sales', column: {} as never, newName: 'Units' },
+				surface: 'tables',
+				reason: 'value-unsupported',
+			},
+			{
+				op: { op: 'setTableColumn', table: 'Sales', column: 'Qty', newName: '  ' },
+				surface: 'tables',
+				reason: 'value-unsupported',
+			},
+			{
+				op: { op: 'setTableColumn', table: 'Sales', column: 'Qty', formula: false as never },
+				surface: 'tables',
+				reason: 'value-unsupported',
+			},
+			{
+				op: {
+					op: 'setTableColumn',
+					table: 'Sales',
+					column: 'Qty',
+					totalsRowFunction: true as never,
+				},
+				surface: 'tables',
+				reason: 'value-unsupported',
+			},
+			{
 				op: { op: 'setTheme' },
 				surface: 'workbook-metadata',
 				reason: 'value-unsupported',

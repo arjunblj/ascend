@@ -2712,7 +2712,10 @@ function journalOperationTableMetadataIssue(
 	workbook: Workbook,
 	op: Operation,
 ): MutationJournalIssue | null {
-	if (op.op !== 'setTableColumn' || op.newName === undefined) return null
+	if (op.op !== 'setTableColumn') return null
+	const valueIssue = setTableColumnValueIssue(op)
+	if (valueIssue) return valueIssue
+	if (op.newName === undefined) return null
 	const table = findTableMatches(workbook, op.table)[0]?.table
 	if (!table) return null
 	const sourceIndex = tableColumnIndex(table, op.column)
@@ -2732,6 +2735,45 @@ function journalOperationTableMetadataIssue(
 			surface: 'tables',
 			reason: 'table-metadata',
 			refs: [`table:${op.table}`],
+		}
+	}
+	return null
+}
+
+function setTableColumnValueIssue(
+	op: Extract<Operation, { op: 'setTableColumn' }>,
+): MutationJournalIssue | null {
+	if (
+		(typeof op.column !== 'string' || op.column.trim() === '') &&
+		(typeof op.column !== 'number' || !Number.isInteger(op.column) || op.column < 0)
+	) {
+		return tableUnsupportedValueIssue(
+			op.table,
+			`Cannot build exact rollback journal for ${op.op} because column selector is invalid`,
+		)
+	}
+	if (op.newName !== undefined && (typeof op.newName !== 'string' || op.newName.trim() === '')) {
+		return tableUnsupportedValueIssue(
+			op.table,
+			`Cannot build exact rollback journal for ${op.op} because newName is invalid`,
+		)
+	}
+	for (const field of ['formula', 'totalsRowFormula'] as const) {
+		const value = op[field]
+		if (value !== undefined && value !== null && typeof value !== 'string') {
+			return tableUnsupportedValueIssue(
+				op.table,
+				`Cannot build exact rollback journal for ${op.op} because ${field} is not a string or null`,
+			)
+		}
+	}
+	for (const field of ['totalsRowFunction', 'totalsRowLabel'] as const) {
+		const value = op[field]
+		if (value !== undefined && value !== null && typeof value !== 'string') {
+			return tableUnsupportedValueIssue(
+				op.table,
+				`Cannot build exact rollback journal for ${op.op} because ${field} is not a string or null`,
+			)
 		}
 	}
 	return null

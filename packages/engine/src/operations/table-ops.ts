@@ -740,6 +740,8 @@ export function handleSetTableColumn(
 	const located = resolveUniqueTable(workbook, op.table, 'setTableColumn')
 	if (!located.ok) return located
 	const { table, sheet } = located.value
+	const inputError = validateTableColumnInput(op)
+	if (inputError) return err(inputError)
 	const columnIndex = resolveTableColumnIndex(table.columns, op.column)
 	if (columnIndex < 0) {
 		return err(
@@ -960,7 +962,45 @@ function resolveTableColumnIndex(columns: readonly TableColumn[], column: string
 	if (typeof column === 'number') {
 		return Number.isInteger(column) && column >= 0 && column < columns.length ? column : -1
 	}
+	if (typeof column !== 'string') return -1
 	return columns.findIndex((candidate) => candidate.name.toLowerCase() === column.toLowerCase())
+}
+
+function validateTableColumnInput(op: Extract<Operation, { op: 'setTableColumn' }>) {
+	if (
+		(typeof op.column !== 'string' || op.column.trim() === '') &&
+		(typeof op.column !== 'number' || !Number.isInteger(op.column) || op.column < 0)
+	) {
+		return ascendError(
+			'VALIDATION_ERROR',
+			'setTableColumn column must be a non-empty string or a zero-based column index',
+			{ suggestedFix: 'Use the table column name or a zero-based integer column index.' },
+		)
+	}
+	if (op.newName !== undefined) {
+		if (typeof op.newName !== 'string' || op.newName.trim() === '') {
+			return ascendError('VALIDATION_ERROR', 'setTableColumn newName must be a non-empty string', {
+				suggestedFix: 'Use the target Excel table column header text.',
+			})
+		}
+	}
+	for (const field of ['formula', 'totalsRowFormula'] as const) {
+		const value = op[field]
+		if (value !== undefined && value !== null && typeof value !== 'string') {
+			return ascendError('VALIDATION_ERROR', `setTableColumn ${field} must be a string or null`, {
+				suggestedFix: `Use a formula string for ${field}, or null to clear it.`,
+			})
+		}
+	}
+	for (const field of ['totalsRowFunction', 'totalsRowLabel'] as const) {
+		const value = op[field]
+		if (value !== undefined && value !== null && typeof value !== 'string') {
+			return ascendError('VALIDATION_ERROR', `setTableColumn ${field} must be a string or null`, {
+				suggestedFix: `Use a string for ${field}, or null to clear it.`,
+			})
+		}
+	}
+	return null
 }
 
 function updateTableColumn(

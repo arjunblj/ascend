@@ -8836,6 +8836,72 @@ describe('applyOperation', () => {
 		expect(sheet.cells.get(3, 1)?.formula).toBe('SUBTOTAL(109,Sales[Amount])')
 	})
 
+	test('setTableColumn rejects invalid public metadata without mutation', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: stringValue('Name'), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: stringValue('Amount'), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: stringValue('Debt'), formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: numberValue(10), formula: null, styleId: sid })
+		applyOperation(wb, {
+			op: 'createTable',
+			sheet: 'Sheet1',
+			ref: 'A1:B3',
+			name: 'Sales',
+			hasHeaders: true,
+		})
+		const table = sheet.tables[0]
+		if (!table) throw new Error('expected table')
+		sheet.tables[0] = { ...table, hasTotals: true }
+		const cases: readonly Operation[] = [
+			{ op: 'setTableColumn', table: 'Sales', column: {} as never, newName: 'Units' },
+			{ op: 'setTableColumn', table: 'Sales', column: -1, newName: 'Units' },
+			{ op: 'setTableColumn', table: 'Sales', column: 'Amount', newName: '  ' },
+			{ op: 'setTableColumn', table: 'Sales', column: 'Amount', newName: 123 as never },
+			{ op: 'setTableColumn', table: 'Sales', column: 'Amount', formula: false as never },
+			{
+				op: 'setTableColumn',
+				table: 'Sales',
+				column: 'Amount',
+				totalsRowFormula: 7 as never,
+			},
+			{
+				op: 'setTableColumn',
+				table: 'Sales',
+				column: 'Amount',
+				totalsRowFunction: true as never,
+			},
+			{ op: 'setTableColumn', table: 'Sales', column: 'Amount', totalsRowLabel: 0 as never },
+		]
+
+		for (const op of cases) {
+			const beforeTable = JSON.stringify(sheet.tables[0])
+			const beforeCells = JSON.stringify([
+				sheet.cells.get(0, 0),
+				sheet.cells.get(0, 1),
+				sheet.cells.get(1, 0),
+				sheet.cells.get(1, 1),
+				sheet.cells.get(2, 0),
+				sheet.cells.get(2, 1),
+			])
+			const result = applyOperation(wb, op)
+			expectErr(result)
+			expect(result.error.code, JSON.stringify(op)).toBe('VALIDATION_ERROR')
+			expect(JSON.stringify(sheet.tables[0]), JSON.stringify(op)).toBe(beforeTable)
+			expect(
+				JSON.stringify([
+					sheet.cells.get(0, 0),
+					sheet.cells.get(0, 1),
+					sheet.cells.get(1, 0),
+					sheet.cells.get(1, 1),
+					sheet.cells.get(2, 0),
+					sheet.cells.get(2, 1),
+				]),
+				JSON.stringify(op),
+			).toBe(beforeCells)
+		}
+	})
+
 	test('setTableStyle edits table style metadata', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

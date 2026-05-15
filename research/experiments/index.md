@@ -167,6 +167,7 @@ Updated: 2026-05-15
 | [Journal issue registry proof](runs/2026/2026-05-15-journal-issue-registry-proof/log.md) | folded in registry assertions for generated journal issue codes, surfaces, and reasons | correctness loop |
 | [Safe open edge fixture gate rerun](runs/2026/2026-05-15-safe-open-edge-fixture-gate-rerun/log.md) | reran checked-in public fixture scan: no signed/unknown replacement found, owner decision still required | product loop, release loop |
 | [Package action edge policy proof](runs/2026/2026-05-15-package-action-edge-policy-proof/log.md) | proved package-action generated edge packages can support only disclosed structural wording, not provenance/trust claims | product loop, correctness loop, release loop |
+| [Compact report publication policy proof](runs/2026/2026-05-15-compact-report-publication-policy-proof/log.md) | proved compact reports omit workbook bytes/digests and should remain owner-review pointers until release policy exists | release loop, product loop |
 | [Package action proof](runs/2026/2026-05-14-package-action-proof/log.md) | cycle 2 complete, promote | correctness loop, product/DX loop, performance loop |
 | [Formula spans LSP](runs/2026/2026-05-14-formula-spans-lsp/log.md) | cycle 13 complete, folded in SDK hover/code actions | product/DX loop, correctness loop |
 | [Formula sqllogictest conformance](runs/2026/2026-05-14-formula-sqllogictest-conformance/log.md) | cycle 14 complete, folded in converter/runner | correctness loop |

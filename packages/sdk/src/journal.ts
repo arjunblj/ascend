@@ -1463,6 +1463,8 @@ export interface MutationJournalExactnessAnalysis {
 	readonly exact: boolean
 	readonly issueCount: number
 	readonly issues: readonly MutationJournalClassifiedIssue[]
+	readonly operationSurfaces: readonly MutationJournalSurface[]
+	readonly primaryOperationSurfaces: readonly MutationJournalSurface[]
 	readonly surfaces: readonly MutationJournalSurface[]
 	readonly reasons: readonly MutationJournalReasonCode[]
 	readonly hasLossyInverse: boolean
@@ -1477,11 +1479,19 @@ export function analyzeMutationJournalExactness(
 	journal: MutationJournal,
 ): MutationJournalExactnessAnalysis {
 	const issues = journal.issues.map((issue) => classifyMutationJournalIssueForAnalysis(issue))
+	const operationSurfaces = uniqueSorted(
+		journal.entries.flatMap((entry) => classifyMutationJournalOperationSurfaces(entry.op)),
+	)
+	const primaryOperationSurfaces = uniqueSorted(
+		journal.entries.map((entry) => classifyMutationJournalOperationPrimarySurface(entry.op)),
+	)
 	return {
 		supported: journal.supported,
 		exact: journal.exact,
 		issueCount: issues.length,
 		issues,
+		operationSurfaces,
+		primaryOperationSurfaces,
 		surfaces: uniqueSorted(issues.map((issue) => issue.surface)),
 		reasons: uniqueSorted(issues.map((issue) => issue.reason)),
 		hasLossyInverse: issues.some((issue) => issue.code === 'LOSSY_INVERSE'),

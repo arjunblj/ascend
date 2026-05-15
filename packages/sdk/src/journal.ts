@@ -7922,7 +7922,7 @@ function sameFormulaCellRef(left: string, right: string): boolean {
 		const leftRange = parseRange(left)
 		const rightRange = parseRange(right)
 		return (
-			leftRange.sheet === rightRange.sheet &&
+			sameOptionalSheetName(leftRange.sheet, rightRange.sheet) &&
 			leftRange.start.row === rightRange.start.row &&
 			leftRange.start.col === rightRange.start.col &&
 			leftRange.end.row === rightRange.end.row &&
@@ -7931,6 +7931,11 @@ function sameFormulaCellRef(left: string, right: string): boolean {
 	} catch {
 		return false
 	}
+}
+
+function sameOptionalSheetName(left: string | undefined, right: string | undefined): boolean {
+	if (left === undefined || right === undefined) return left === right
+	return left.toLowerCase() === right.toLowerCase()
 }
 
 function dataTableFormulaRange(

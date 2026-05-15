@@ -53,6 +53,7 @@ describe('mutation journal v1 compatibility', () => {
 		if (!result.journal) throw new Error('missing journal')
 		expect(journalSummary(result.journal)).toEqual(FIXTURE.scenario.journal)
 		expectStructuredIssues(result.journal.issues)
+		for (const entry of result.journal.entries) expectStructuredIssues(entry.issues)
 	})
 })
 

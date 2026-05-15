@@ -21,6 +21,8 @@ Freeze the next release claims into proof-shaped language. This board is deliber
 
 ## Release Claim Board
 
+Rank order is intentional. The first two claims are the only implementation-loop handoffs from this synthesis block.
+
 | Claim wording allowed today | Proof still missing | Owner loop |
 | --- | --- | --- |
 | **Safe unknown workbook opening:** Ascend can inspect workbook package features before full hydration and recommend a load mode or review step from SDK, CLI, API, and MCP surfaces. | Current checkpoint: tracked safe-open proof harness covers public clean, formula-heavy, XLSM macro, pivot, ActiveX, chart, synthetic signed, synthetic unknown-part, and malformed cases with latency versus full hydration. Missing before stronger release copy: release-environment rerun, durable public binary signed/unknown fixtures if available, and one published report generated from existing surfaces. Competitor contrast: Protected View is trust UX; Ascend's claim is OSS pre-hydration package-feature routing. Boundary: not malware scanning, sandboxing, or active-content safety. | **Product/performance.** Top handoff. |
@@ -31,6 +33,25 @@ Freeze the next release claims into proof-shaped language. This board is deliber
 | **Release proof bundle:** Ascend has ingredients for inspect, plan, commit, reopen, diff, audit, digests, package action proof, and boundaries. | Fixture: one real public workbook workflow per top claim. Benchmark: bundle size and generation overhead. API/CLI/MCP: stable SDK schema first, report generation second. Validation: golden proof bundle fixtures, digest checks, reopen/diff/audit checks, explicit failure cases. Current checkpoint: safe-open and package-action harnesses stay as sibling suite-level release evidence artifacts; the benchmark-only release proof index references them by digest without embedding full artifacts. Competitor contrast: generic libraries read/write; Ascend explains the decision trail. Boundary: not signed, tamper-evident, SLSA, in-toto, or certified provenance. | Product after artifact storage/privacy semantics stabilize. |
 | **Formula conformance/oracle routing:** Ascend can classify formula mismatch classes in research and route next oracle work. | Fixture: completed corpus by mismatch class: cached-only, volatile, numeric drift, unsupported function, external refs, dynamic arrays, structured refs, date system. Benchmark: corpus completion and route overhead. API/CLI/MCP: none yet; CLI report is enough when ready. Validation: converter tests, artifact verifier, skipped/divergence counters. Competitor contrast: HyperFormula is the strongest OSS formula baseline; Excel/LibreOffice are behavior oracles with automation limits. Boundary: no blanket Excel-compatible formula claim. | Correctness backlog. |
 | **Columnar scan sidecars:** Ascend has research evidence that disposable sidecars may accelerate repeated scans without replacing workbook truth. | Fixture: real workbook tables/ranges with numbers, dates, blanks, strings, formulas, filters, hidden rows, and styles. Benchmark: repeated scans, build cost, invalidation cost, memory, checksum parity. API/CLI/MCP: benchmark harness only. Validation: generation-key invalidation, memory cap, parity. Competitor contrast: DuckDB reads XLSX into typed SQL; Arrow supplies columnar layout. Boundary: not a storage engine or faster single-pass guarantee. | Performance research only. Do not promote. |
+
+## Claim Ladder
+
+### Credible Today
+
+1. **Safe unknown workbook opening** can be claimed in guarded language because the feature-fingerprint/open-plan path exists across surfaces and has a tracked proof harness. The next loop should package evidence, not invent another opener.
+2. **Auditable package-part mutation** can be claimed in guarded language because package action evidence and journal issue reasons exist. The next loop should make the proof report durable and compact.
+3. **Token-bounded agent view** can be claimed for deterministic summaries and omission metadata, but not yet as a release headline. It now has locator and formula-example recovery evidence; it still needs a product-shaped recovery example.
+
+### Needs One More Fold-In
+
+4. **Retained viewport patch history** needs one proof pass that ties SDK retention semantics to any public API/CLI/MCP surface before release copy.
+5. **Formula language-service primitives** need workbook-context refusal proof across API/CLI/MCP and a latency/corpus gate. Do not add rename; strengthen rejection evidence only.
+6. **Release proof bundle** needs artifact storage, privacy boundaries, and stable report generation before it is more than a benchmark index.
+
+### Still Speculative
+
+7. **Formula conformance/oracle routing** is a correctness research program until mismatch classes are complete and reproducible without private corpora.
+8. **Columnar scan sidecars** are performance research until invalidation, memory caps, and parity are proven on real workbook-shaped ranges.
 
 ## Formula Intelligence Rejection-First Spec
 
@@ -123,6 +144,26 @@ The guard may return `ok: true` only for formula-local `LET` bindings with compl
 
 1. Product/performance: prove safe unknown workbook opening from existing open-plan surfaces over public fixtures and latency evidence.
 2. Correctness/product: prove auditable package-part mutation with stable per-part outcomes and journal/package proof compatibility.
+
+## Next-Loop Prompts
+
+### Product/Performance Loop
+
+```text
+/goal Become Ascend's safe-open release-proof owner. Do not add new open surfaces. Use the existing feature-fingerprint/open-plan implementation and proof harness to produce a public-fixture evidence report for "safe unknown workbook opening." Required proof: fixture list, latency versus full hydration, SDK/CLI/API/MCP surface evidence, validation command, competitor contrast with Microsoft Protected View, and boundaries saying this is not malware scanning, sandboxing, or active-content safety. Commit only the report, harness fixes if needed, and index updates.
+```
+
+### Correctness/Product Loop
+
+```text
+/goal Become Ascend's auditable package-part mutation proof owner. Do not add new mutation surfaces. Use existing package action evidence, release proof index, and rollback journal issue reasons to produce a compact report for "auditable package-part mutation." Required proof: per-part passthrough/regenerate/add/drop/error fixtures, journal/package compatibility, SDK evidence shape, validation gate, competitor contrast with openpyxl/SheetJS preservation boundaries, and honest boundaries around signatures, chart byte passthrough, and provenance. Commit only proof/report/harness fixes and index updates.
+```
+
+### Product/DX Loop
+
+```text
+/goal Become Ascend's formula intelligence claim steward. Do not implement rename. Strengthen only rejection-first evidence for formula language-service primitives: binding roles, LET shadowing, defined names, table names, table columns, external refs, 3D refs, spills, parse failures, and cross-surface refusal reasons. The output is a proof report and tests for refusal semantics, not an edit-producing code action.
+```
 
 ## Do Not Promote Yet
 

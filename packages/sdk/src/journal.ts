@@ -2179,6 +2179,8 @@ function journalOperationTableTopologyIssue(
 			)
 		}
 	}
+	const metadataIssue = journalOperationTableMetadataIssue(workbook, op)
+	if (metadataIssue) return metadataIssue
 	const createdTable = journalOperationCreatedTable(op)
 	if (createdTable !== null) {
 		const sourceTable =
@@ -2219,6 +2221,22 @@ function journalOperationCreatedTable(op: Operation): string | null {
 			return op.newName
 		default:
 			return null
+	}
+}
+
+function journalOperationTableMetadataIssue(
+	workbook: Workbook,
+	op: Operation,
+): MutationJournalIssue | null {
+	if (op.op !== 'setTableColumn' || op.newName === undefined) return null
+	const table = findTableMatches(workbook, op.table)[0]?.table
+	if (!table?.queryTable) return null
+	return {
+		code: 'UNSUPPORTED_VALUE',
+		message: `Cannot build exact rollback journal for ${op.op} because queryTable-backed table ${op.table} cannot safely rename columns`,
+		surface: 'tables',
+		reason: 'table-metadata',
+		refs: [`table:${op.table}`],
 	}
 }
 

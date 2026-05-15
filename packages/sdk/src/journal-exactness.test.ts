@@ -651,6 +651,44 @@ describe('mutation journal exactness model', () => {
 		}
 	})
 
+	test('classifies queryTable column rename journals as table metadata', () => {
+		const wb = AscendWorkbook.create()
+		seedSimpleTable(wb)
+		const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+		if (!sheet) throw new Error('missing sheet')
+		const table = sheet.tables.find((candidate) => candidate.name === 'Sales')
+		if (!table) throw new Error('missing table')
+		;(table as typeof table & { queryTable: NonNullable<typeof table.queryTable> }).queryTable = {
+			relationshipId: 'rIdQuery1',
+			partPath: 'xl/queryTables/queryTable1.xml',
+			relationshipType:
+				'http://schemas.openxmlformats.org/officeDocument/2006/relationships/queryTable',
+			target: '../queryTables/queryTable1.xml',
+		}
+
+		const analysis = analyzeMutationJournalExactness(
+			buildMutationJournal(wb.getWorkbookModel(), [
+				{ op: 'setTableColumn', table: 'Sales', column: 'Qty', newName: 'Units' },
+			]),
+		)
+
+		expect(analysis).toMatchObject({
+			supported: true,
+			exact: false,
+			issueCount: 1,
+			surfaces: ['tables'],
+			reasons: ['table-metadata'],
+			hasMatrixViolation: false,
+		})
+		expect(analysis.issues[0]).toMatchObject({
+			code: 'UNSUPPORTED_VALUE',
+			surface: 'tables',
+			reason: 'table-metadata',
+			refs: ['table:Sales'],
+			allowedByMatrix: true,
+		})
+	})
+
 	test('classifies setComment legacy drawing loss without changing the v1 vocabulary', () => {
 		const classified = classifyMutationJournalIssues(lossySetCommentLegacyDrawingJournal().issues)
 		expect(classified).toContainEqual({

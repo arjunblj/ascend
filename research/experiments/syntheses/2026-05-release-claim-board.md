@@ -8,6 +8,11 @@ Freeze the next release claims into proof-shaped language. This board is deliber
 
 Current stewardship rule: hand off only the top one or two product claims to implementation loops. Everything else stays as proof packaging, validation, or "do not promote yet" until the missing evidence is explicit.
 
+Latest correctness hygiene, 2026-05-15:
+
+- Sheet protection public metadata now follows the same rejection-first boundary as recent workbook/sheet metadata fixes: invalid password/options inputs are rejected before mutation, and journal exactness classifies them as unsupported values.
+- Treat this as auditable mutation hygiene only. It does not promote any new protection/security claim.
+
 Latest proof refresh, 2026-05-15T21:38:09Z:
 
 - `release-proof-index --no-timings --owner-handoffs-json` now emits `fixtureAcquisitionPlan` with `status=ranked-owner-review-required` and three product-owner tasks.

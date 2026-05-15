@@ -15,6 +15,8 @@ Promotion throttle: current `release-proof-index` still reports `headlineClaimsA
 
 Latency diagnostic note: `practical-latency-contracts` now reports input provenance separately from tracked-code cleanliness. A tracked-clean dry run with the current large local/private workbooks reports "tracked clean with local/private inputs; diagnostic only." This helps performance owners avoid turning private-corpus latency numbers into release claims.
 
+Fixture-search note: the targeted checked-in fixture scan still finds no public binary replacement for safe-open signed or unknown-part structural cases. Latest scan: 351 fixtures scanned, 2 protected fixtures rejected, 0 signature/unknown matches. Product must accept disclosed generated structural fixtures or provide public binaries.
+
 ## Proof Snapshot
 
 Current local proof gate:

@@ -921,7 +921,8 @@ function checkFormulaBindingIntegrity(wb: Workbook): CheckIssue[] {
 			}
 
 			if (binding.kind === 'array' || binding.kind === 'dataTable') {
-				const range = parseBindingRange(binding.ref, sheet.name)
+				const bindingRef = binding.ref
+				const range = parseBindingRange(bindingRef, sheet.name)
 				if (!range || !rangeContainsCell(range, sheet.name, row, col)) {
 					issues.push(
 						formulaBindingIntegrityIssue(
@@ -937,11 +938,11 @@ function checkFormulaBindingIntegrity(wb: Workbook): CheckIssue[] {
 						),
 					)
 				}
-				if (range && binding.ref) {
+				if (range && bindingRef) {
 					rangeBindingEntries.push({
 						kind: binding.kind,
 						cellRef,
-						ref: binding.ref,
+						ref: bindingRef,
 						range,
 					})
 				}

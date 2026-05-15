@@ -25,7 +25,7 @@ Folded in a scoped SDK journal change:
 
 - `journalSetConditionalFormat` now adds a metadata-order lossy issue when a replacement preimage is not a suffix of the current conditional-format list.
 - `journalDeleteConditionalFormat` does the same for range/priority/rule-index deletes, while preserving the existing whole-sheet delete boundary.
-- Added a direct test for conditional-format replacement order classification.
+- Added direct tests for conditional-format replacement and delete order classification.
 - Expanded the representative exact saved-byte test with additional exact operation families, but kept conditional-format replacement exact only for the tail case that public inverse operations can restore.
 
 ## Results
@@ -46,6 +46,7 @@ Observed proof:
   - `surface: "conditional-formats"`
   - `reason: "metadata-order"`
   - `refs: ["Sheet1!A1:A2"]`
+- Non-tail deletion of `Sheet1!A1:A2` while another conditional format follows yields the same metadata-order issue.
 - Tail replacement remains in the representative exact saved-byte test and passes byte restoration.
 
 ## Confidence

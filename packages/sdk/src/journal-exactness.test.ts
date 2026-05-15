@@ -226,6 +226,7 @@ describe('mutation journal exactness model', () => {
 			lossyPivotCacheUnsetJournal(),
 			lossyConditionalFormatOrderJournal(),
 			lossyConditionalFormatReplacementOrderJournal(),
+			lossyConditionalFormatDeleteOrderJournal(),
 			lossyAutoFilterJournal(),
 			lossyPageSetupJournal(),
 			lossyX14TransferJournal(),
@@ -275,6 +276,19 @@ describe('mutation journal exactness model', () => {
 
 	test('classifies conditional format replacement order as metadata order', () => {
 		const journal = lossyConditionalFormatReplacementOrderJournal()
+		expect(journal.exact).toBe(false)
+		expect(journal.issues).toContainEqual({
+			code: 'LOSSY_INVERSE',
+			message:
+				'Conditional-format order on Sheet1 cannot be restored exactly with public operations',
+			surface: 'conditional-formats',
+			reason: 'metadata-order',
+			refs: ['Sheet1!A1:A2'],
+		})
+	})
+
+	test('classifies conditional format delete order as metadata order', () => {
+		const journal = lossyConditionalFormatDeleteOrderJournal()
 		expect(journal.exact).toBe(false)
 		expect(journal.issues).toContainEqual({
 			code: 'LOSSY_INVERSE',
@@ -1855,6 +1869,27 @@ function lossyConditionalFormatReplacementOrderJournal(): MutationJournal {
 			range: 'A1:A2',
 			rule: { type: 'expression', formula: 'A1>5', priority: 1 },
 		},
+	])
+}
+
+function lossyConditionalFormatDeleteOrderJournal(): MutationJournal {
+	const wb = AscendWorkbook.create()
+	applyExact(wb, [
+		{
+			op: 'setConditionalFormat',
+			sheet: 'Sheet1',
+			range: 'A1:A2',
+			rule: { type: 'expression', formula: 'A1>0', priority: 1 },
+		},
+		{
+			op: 'setConditionalFormat',
+			sheet: 'Sheet1',
+			range: 'B1:B2',
+			rule: { type: 'expression', formula: 'B1>0', priority: 2 },
+		},
+	])
+	return buildMutationJournal(wb.getWorkbookModel(), [
+		{ op: 'deleteConditionalFormat', sheet: 'Sheet1', range: 'A1:A2' },
 	])
 }
 

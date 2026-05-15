@@ -59,6 +59,7 @@ Latest proof refresh, 2026-05-15T10:15:42Z:
 - CLI/API/MCP packageability now has a narrow implementation proof: app entrypoints can be imported without auto-running, `build:js` emits app JS artifacts, app dist manifests include `ascend`, `ascend-api`, and `ascend-mcp` bin entries, and SDK agent docs are copied into the SDK release artifact. This does not yet prove app tarball installation from an external consumer.
 - Legacy array formula integrity now rejects occupied detached cells inside an array formula range as `legacy-array-range-member-mismatch`. Treat this as correctness hygiene under auditable mutation. It does not change the formula-intelligence board, and it does not authorize rename.
 - `release:apps:smoke` now proves temp external installation of packed CLI/API/MCP tarballs. It runs the installed `ascend` bin, executes an installed API capabilities request, and calls installed MCP capabilities tool/resource callbacks without workspace dependencies. This closes the app-tarball-install and basic runtime-smoke proof gap but not publication policy, signed provenance, artifact retention, API listener lifecycle, or a real MCP stdio protocol session.
+- Practical latency attribution now ranks measured shared plan sub-phases ahead of aggregate prepared-plan timing. The latest public-tracked edit/verify dry run selected prepared-output reopen as the largest phase, but remains diagnostic-only because it was one sample with generated edit input and a dirty harness.
 
 ## External References
 

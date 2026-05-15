@@ -110,6 +110,8 @@ Promote to product/performance as a proof bundle over existing surfaces. Do not 
 
 Release proof index status: `fixtures/benchmarks/release-proof-index.ts` now lists the exact reproduction command and publication blockers for this artifact. The safe-open artifact remains `needs-release-packaging` because signed and unknown-part edge cases are durable code-generated packages rather than public binary fixtures, and timing numbers are local proof-run data rather than release thresholds.
 
+Replacement fixture scan status: `fixtures/benchmarks/safe-open-fixture-scan.ts` scans checked-in public XLSX/XLSM fixtures for `preservedSignature` and `preservedOther` open-plan risk families. The current scan found no replacement candidates in 351 checked-in fixtures, so the signed/unknown edge-case blocker remains unresolved rather than merely stale.
+
 ## Next Handoff
 
 ```text

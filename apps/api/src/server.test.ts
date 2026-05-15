@@ -57,6 +57,36 @@ const JOURNAL_V1_FIXTURE = JSON.parse(
 	}
 }
 
+function compactJournal(journal: {
+	readonly schemaVersion?: number
+	readonly schemaId?: string
+	readonly supported?: boolean
+	readonly exact?: boolean
+	readonly inverseOps?: readonly unknown[]
+	readonly issues?: readonly unknown[]
+}): typeof JOURNAL_V1_FIXTURE.scenario.journal {
+	const { schemaVersion, schemaId, supported, exact, inverseOps, issues } = journal
+	if (
+		schemaVersion === undefined ||
+		schemaId === undefined ||
+		supported === undefined ||
+		exact === undefined ||
+		inverseOps === undefined ||
+		issues === undefined
+	) {
+		throw new Error('journal is missing required v1 fields')
+	}
+	return {
+		schemaVersion,
+		schemaId,
+		supported,
+		exact,
+		inverseOpCount: inverseOps.length,
+		issueCount: issues.length,
+		issues,
+	}
+}
+
 let server: ReturnType<typeof createServer> | undefined
 
 interface ApiEnvelope {
@@ -1856,6 +1886,44 @@ describe('Ascend API server', () => {
 		const reopened = await AscendWorkbook.open(TEMP_FILE)
 		expect(reopened.getWorkbookModel().getSheet('Sheet1')?.rowDefs.size).toBe(0)
 		expect(reopened.getWorkbookModel().getSheet('Sheet1')?.colDefs).toEqual([])
+	})
+
+	test('preview and write preserve the public journal v1 golden issue payload', async () => {
+		const file = join(
+			tmpdir(),
+			`ascend-api-journal-v1-${Date.now()}-${Math.random().toString(16).slice(2)}.xlsx`,
+		)
+		const writeFilePath = `${file}.write.xlsx`
+		const previewWorkbook = AscendWorkbook.create()
+		const writeWorkbook = AscendWorkbook.create()
+		await previewWorkbook.save(file)
+		await writeWorkbook.save(writeFilePath)
+		try {
+			const preview = await postJson('/preview', {
+				file,
+				journal: true,
+				ops: JOURNAL_V1_FIXTURE.scenario.ops,
+			})
+			const write = await postJson('/write', {
+				file: writeFilePath,
+				journal: true,
+				ops: JOURNAL_V1_FIXTURE.scenario.ops,
+			})
+
+			expect(preview.status).toBe(200)
+			expect(preview.body.ok).toBe(true)
+			expect(compactJournal(preview.body.data?.journal ?? {})).toEqual(
+				JOURNAL_V1_FIXTURE.scenario.journal,
+			)
+			expect(write.status).toBe(200)
+			expect(write.body.ok).toBe(true)
+			expect(compactJournal(write.body.data?.journal ?? {})).toEqual(
+				JOURNAL_V1_FIXTURE.scenario.journal,
+			)
+		} finally {
+			await unlink(file).catch(() => {})
+			await unlink(writeFilePath).catch(() => {})
+		}
 	})
 
 	test('preview marks new theme additions lossy with public inverse metadata', async () => {

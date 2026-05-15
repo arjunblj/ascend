@@ -56,6 +56,36 @@ const JOURNAL_V1_FIXTURE = JSON.parse(
 	}
 }
 
+function compactJournal(journal: {
+	readonly schemaVersion?: number
+	readonly schemaId?: string
+	readonly supported?: boolean
+	readonly exact?: boolean
+	readonly inverseOps?: readonly unknown[]
+	readonly issues?: readonly unknown[]
+}): typeof JOURNAL_V1_FIXTURE.scenario.journal {
+	const { schemaVersion, schemaId, supported, exact, inverseOps, issues } = journal
+	if (
+		schemaVersion === undefined ||
+		schemaId === undefined ||
+		supported === undefined ||
+		exact === undefined ||
+		inverseOps === undefined ||
+		issues === undefined
+	) {
+		throw new Error('journal is missing required v1 fields')
+	}
+	return {
+		schemaVersion,
+		schemaId,
+		supported,
+		exact,
+		inverseOpCount: inverseOps.length,
+		issueCount: issues.length,
+		issues,
+	}
+}
+
 afterAll(async () => {
 	await unlink(TEMP_FILE).catch(() => {})
 	await unlink(TEMP_MACRO_FILE).catch(() => {})
@@ -1138,6 +1168,66 @@ describe('MCP server', () => {
 		const reopened = await AscendWorkbook.open(TEMP_FILE)
 		expect(reopened.getWorkbookModel().getSheet('Sheet1')?.rowDefs.size).toBe(0)
 		expect(reopened.getWorkbookModel().getSheet('Sheet1')?.colDefs).toEqual([])
+	})
+
+	test('ascend.preview and ascend.write preserve the public journal v1 golden issue payload', async () => {
+		const file = join(
+			tmpdir(),
+			`ascend-mcp-journal-v1-${Date.now()}-${Math.random().toString(16).slice(2)}.xlsx`,
+		)
+		const writeFilePath = `${file}.write.xlsx`
+		const previewWorkbook = AscendWorkbook.create()
+		const writeWorkbook = AscendWorkbook.create()
+		await previewWorkbook.save(file)
+		await writeWorkbook.save(writeFilePath)
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const preview = (server as any)._registeredTools['ascend.preview'].handler as (args: {
+			file: string
+			ops: unknown[]
+			journal?: boolean
+		}) => Promise<{
+			structuredContent?: {
+				ok?: boolean
+				data?: { journal?: Parameters<typeof compactJournal>[0] }
+			}
+		}>
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const write = (server as any)._registeredTools['ascend.write'].handler as (args: {
+			file: string
+			ops: unknown[]
+			journal?: boolean
+		}) => Promise<{
+			structuredContent?: {
+				ok?: boolean
+				data?: { journal?: Parameters<typeof compactJournal>[0] }
+			}
+		}>
+
+		try {
+			const previewed = await preview({
+				file,
+				journal: true,
+				ops: JOURNAL_V1_FIXTURE.scenario.ops,
+			})
+			const written = await write({
+				file: writeFilePath,
+				journal: true,
+				ops: JOURNAL_V1_FIXTURE.scenario.ops,
+			})
+
+			expect(previewed.structuredContent?.ok).toBe(true)
+			expect(compactJournal(previewed.structuredContent?.data?.journal ?? {})).toEqual(
+				JOURNAL_V1_FIXTURE.scenario.journal,
+			)
+			expect(written.structuredContent?.ok).toBe(true)
+			expect(compactJournal(written.structuredContent?.data?.journal ?? {})).toEqual(
+				JOURNAL_V1_FIXTURE.scenario.journal,
+			)
+		} finally {
+			await unlink(file).catch(() => {})
+			await unlink(writeFilePath).catch(() => {})
+		}
 	})
 
 	test('ascend.preview exposes unsupported journal status with partial inverse ops', async () => {

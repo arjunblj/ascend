@@ -5650,6 +5650,7 @@ function parseResolvedFormulaText(
 				sharedIndex,
 				isMaster: false,
 				...(master.masterRef ? { masterRef: master.masterRef } : {}),
+				...(ref ? { ref } : {}),
 			},
 		}
 	}

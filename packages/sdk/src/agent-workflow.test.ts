@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { DEFAULT_STYLE_ID } from '@ascend/core'
 import { inspectXlsxPackageGraph, type XlsxPackageGraph } from '@ascend/io-xlsx'
 import { numberValue } from '@ascend/schema'
+import { unzipSync } from 'fflate'
 import { createZip, encode } from '../../io-xlsx/src/writer/zip.ts'
 import { makeEmbeddedChartXlsx, makeXlsx } from '../../io-xlsx/test/helpers.ts'
 import type { PackageGraphAudit, WritePolicyReport } from './index.ts'
@@ -656,29 +657,13 @@ describe('agent workflow loss audit', () => {
 	})
 
 	test('commit blocks imported shared formula member range drift', async () => {
+		const input = join(TEMP_DIR, 'imported-shared-range-drift.xlsx')
 		const output = join(TEMP_DIR, 'imported-shared-range-drift-out.xlsx')
 		mkdirSync(TEMP_DIR, { recursive: true })
-		const wb = await AscendWorkbook.open(
-			readFileSync(new URL('../../../fixtures/xlsx/poi/shared_formulas.xlsx', import.meta.url)),
-		)
-		expect(wb.check().valid).toBe(true)
-		const sheet = wb.getWorkbookModel().getSheet('Label')
-		const member = sheet?.cells.get(2, 0)
-		if (!sheet || !member?.formulaInfo || member.formulaInfo.kind !== 'shared') {
-			throw new Error('missing imported shared formula member')
-		}
-		sheet.cells.set(2, 0, {
-			...member,
-			formulaInfo: { ...member.formulaInfo, ref: 'A2:A3' },
-		})
+		await Bun.write(input, makeSharedFormulaMemberRangeDriftXlsx())
 		const ops = [{ op: 'setCells' as const, sheet: 'Label', updates: [{ ref: 'C1', value: 1 }] }]
 
-		const plan = await createAgentPlanFromWorkbook(
-			'imported-shared-range-drift.xlsx',
-			'sha',
-			wb,
-			ops,
-		)
+		const plan = await createAgentPlan(input, ops)
 
 		expect(plan.writePolicy.ok).toBe(false)
 		expect(plan.check.valid).toBe(false)
@@ -707,11 +692,7 @@ describe('agent workflow loss audit', () => {
 		)
 
 		await expect(
-			commitAgentPlanFromWorkbook('imported-shared-range-drift.xlsx', 'sha', wb, ops, {
-				output,
-				allowLoss: 'all',
-				approvals: 'all',
-			}),
+			commitAgentPlan(input, ops, { output, allowLoss: 'all', approvals: 'all' }),
 		).rejects.toThrow('Commit blocked by write policy')
 		expect(existsSync(output)).toBe(false)
 	})
@@ -5041,6 +5022,30 @@ function makeStructuredTableChartXlsx(
   </c:chart>
 </c:chartSpace>`),
 			}),
+		),
+	)
+}
+
+function makeSharedFormulaMemberRangeDriftXlsx(): Uint8Array {
+	const original = readFileSync(
+		new URL('../../../fixtures/xlsx/poi/shared_formulas.xlsx', import.meta.url),
+	)
+	const parts = unzipSync(original)
+	const target = 'xl/worksheets/sheet1.xml'
+	const worksheet = parts[target]
+	if (!worksheet) throw new Error(`missing ${target}`)
+	const xml = new TextDecoder().decode(worksheet)
+	const patched = xml.replace(
+		'<c r="A3" t="str"><f t="shared" si="0"/>',
+		'<c r="A3" t="str"><f t="shared" ref="A2:A3" si="0"/>',
+	)
+	if (patched === xml) throw new Error('failed to patch shared formula member range')
+	return createZip(
+		new Map(
+			Object.entries(parts).map(([path, bytes]) => [
+				path,
+				path === target ? encode(patched) : bytes,
+			]),
 		),
 	)
 }

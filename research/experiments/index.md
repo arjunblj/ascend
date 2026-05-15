@@ -97,6 +97,7 @@ Updated: 2026-05-15
 | [Prepared plan check reuse](runs/2026/2026-05-15-prepared-plan-check-reuse/log.md) | folded in hash-guarded formula-free prepared check reuse for value-edit commits | product/DX loop, correctness loop |
 | [MoveRange formula binding regression](runs/2026/2026-05-15-moverange-formula-binding-regression/log.md) | finished in-flight shared-formula overwrite regression coverage, no new surface | correctness loop |
 | [CopyRange style binding regression](runs/2026/2026-05-15-copyrange-style-binding-regression/log.md) | finished in-flight style-only shared/data-table formula metadata regression coverage | correctness loop |
+| [Practical latency contract guardrails](runs/2026/2026-05-15-practical-latency-contract-guardrails/log.md) | documented committed benchmark evidence guardrail and restored full-suite validation | performance loop, product loop |
 | [Package action proof](runs/2026/2026-05-14-package-action-proof/log.md) | cycle 2 complete, promote | correctness loop, product/DX loop, performance loop |
 | [Formula spans LSP](runs/2026/2026-05-14-formula-spans-lsp/log.md) | cycle 13 complete, folded in SDK hover/code actions | product/DX loop, correctness loop |
 | [Formula sqllogictest conformance](runs/2026/2026-05-14-formula-sqllogictest-conformance/log.md) | cycle 14 complete, folded in converter/runner | correctness loop |

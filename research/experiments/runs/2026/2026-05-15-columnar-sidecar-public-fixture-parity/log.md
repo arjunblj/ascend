@@ -72,4 +72,4 @@ Fold into the performance proof harness. Keep public SDK/API/MCP surfaces and br
 
 ## Next question
 
-Can the performance loop find or create a larger public real-workbook table fixture that is safe to track, then prove parity, payload bytes, invalidation, and speedup without relying on private corpora?
+Can the performance loop find an externally sourced public real-workbook table fixture that is safe to track or reference, then prove parity, payload bytes, invalidation, and speedup without relying on private corpora?

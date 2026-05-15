@@ -201,7 +201,7 @@ export function columnarSidecarClaimReport(
 		boundary:
 			fixtureResult === null
 				? 'This is a synthetic benchmark over numeric/date-like values, not a production cache, Arrow ABI implementation, DuckDB integration, mixed-type table engine, or mutation invalidation system.'
-				: 'This is a small public-fixture benchmark over numeric/date-like values in an imported workbook range, not a production cache, Arrow ABI implementation, DuckDB integration, mixed-type table engine, or mutation invalidation system.',
+				: 'This is a public-fixture benchmark over numeric/date-like values in an imported workbook range, not an externally sourced real-world table proof, production cache, Arrow ABI implementation, DuckDB integration, mixed-type table engine, or mutation invalidation system.',
 		benchmark: result,
 		generationInvalidation: {
 			sidecarGeneration: result.generation,
@@ -216,7 +216,9 @@ export function columnarSidecarClaimReport(
 			'Claims that sidecars replace workbook storage or preservation semantics.',
 			...(fixtureResult === null
 				? []
-				: ['Broad performance claims until larger public real-workbook tables are benchmarked.']),
+				: [
+						'Broad real-workbook performance claims until externally sourced public workbook tables are benchmarked.',
+					]),
 		],
 		nextProof:
 			'Run the benchmark against public real workbook tables and add generation invalidation probes before any performance-loop production work.',

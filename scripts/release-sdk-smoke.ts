@@ -1,0 +1,176 @@
+import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const repoRoot = fileURLToPath(new URL('..', import.meta.url))
+const releaseRoot = '/private/tmp/ascend-sdk-local-release'
+const artifactRoot = join(releaseRoot, 'artifacts')
+const artifactPackagesRoot = join(artifactRoot, 'packages')
+const sdkTarball = join(artifactRoot, 'ascend-sdk-0.0.0.tgz')
+const appRoot = join(releaseRoot, 'consumer')
+
+const packageNames = ['schema', 'core', 'formulas', 'engine', 'io-xlsx', 'io-csv', 'verify', 'sdk']
+const internalPackageNames = new Map(packageNames.map((name) => [`@ascend/${name}`, name]))
+
+type PackageJson = {
+	name: string
+	version: string
+	private?: boolean
+	main?: string
+	dependencies?: Record<string, string>
+	[key: string]: unknown
+}
+
+async function main(): Promise<void> {
+	await run(['bun', 'run', 'build:js'], repoRoot)
+	await prepareArtifacts()
+	await prepareConsumerApp()
+	await run(['bun', 'install'], appRoot)
+	await run(['bun', 'run', 'sdk-smoke.ts'], appRoot)
+	console.log(`SDK release smoke passed: ${appRoot}`)
+	console.log(`SDK artifact: ${sdkTarball}`)
+}
+
+async function prepareArtifacts(): Promise<void> {
+	await rm(releaseRoot, { recursive: true, force: true })
+	await mkdir(artifactPackagesRoot, { recursive: true })
+
+	for (const name of packageNames) {
+		const sourceDist = join(repoRoot, 'packages', name, 'dist')
+		const target = join(artifactPackagesRoot, name)
+		await cp(sourceDist, target, { recursive: true })
+		await rewriteArtifactManifest(target)
+	}
+	await bundleInternalPackagesForSdk()
+	await run(
+		['bun', 'pm', 'pack', '--filename', sdkTarball, '--ignore-scripts', '--quiet'],
+		join(artifactPackagesRoot, 'sdk'),
+	)
+}
+
+async function rewriteArtifactManifest(packageRoot: string): Promise<void> {
+	const manifestPath = join(packageRoot, 'package.json')
+	const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as PackageJson
+	const dependencies = manifest.dependencies
+		? Object.fromEntries(
+				Object.entries(manifest.dependencies).map(([dep, version]) => [
+					dep,
+					internalPackageNames.has(dep) ? `file:../${internalPackageNames.get(dep)}` : version,
+				]),
+			)
+		: undefined
+	const next: PackageJson = {
+		...manifest,
+		private: false,
+		...(dependencies ? { dependencies } : {}),
+	}
+	await writeFile(manifestPath, `${JSON.stringify(next, null, '\t')}\n`)
+}
+
+async function bundleInternalPackagesForSdk(): Promise<void> {
+	const sdkRoot = join(artifactPackagesRoot, 'sdk')
+	const publicDeps: Record<string, string> = {}
+	for (const name of packageNames) {
+		const manifest = JSON.parse(
+			await readFile(join(artifactPackagesRoot, name, 'package.json'), 'utf8'),
+		) as PackageJson
+		for (const [dep, version] of Object.entries(manifest.dependencies ?? {})) {
+			if (!internalPackageNames.has(dep)) publicDeps[dep] = version
+		}
+	}
+
+	const sdkNodeModules = join(sdkRoot, 'node_modules', '@ascend')
+	await mkdir(sdkNodeModules, { recursive: true })
+	for (const name of packageNames) {
+		if (name === 'sdk') continue
+		await cp(join(artifactPackagesRoot, name), join(sdkNodeModules, name), { recursive: true })
+	}
+
+	const manifestPath = join(sdkRoot, 'package.json')
+	const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as PackageJson
+	const bundledInternalDeps = packageNames
+		.filter((name) => name !== 'sdk')
+		.map((name) => `@ascend/${name}`)
+	const next: PackageJson = {
+		...manifest,
+		dependencies: publicDeps,
+		bundledDependencies: bundledInternalDeps,
+	}
+	await writeFile(manifestPath, `${JSON.stringify(next, null, '\t')}\n`)
+}
+
+async function prepareConsumerApp(): Promise<void> {
+	await mkdir(appRoot, { recursive: true })
+	await writeFile(
+		join(appRoot, 'package.json'),
+		`${JSON.stringify(
+			{
+				name: 'ascend-sdk-release-consumer',
+				private: true,
+				type: 'module',
+				dependencies: {
+					'@ascend/sdk': `file:${sdkTarball}`,
+				},
+			},
+			null,
+			'\t',
+		)}\n`,
+	)
+	await writeFile(
+		join(appRoot, 'sdk-smoke.ts'),
+		`import { AscendWorkbook, commitAgentPlan, createAgentPlan } from '@ascend/sdk'
+
+const input = '${join(appRoot, 'input.xlsx')}'
+const output = '${join(appRoot, 'output.xlsx')}'
+
+const created = AscendWorkbook.create()
+created.set('Sheet1!A1', 'Revenue')
+created.set('Sheet1!B1', 100)
+created.setFormula('Sheet1!C1', '=B1*2')
+await created.save(input)
+
+const opened = await AscendWorkbook.open(input)
+const info = opened.inspect()
+const ops = [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'B1', value: 125 }] }]
+const plan = await createAgentPlan(input, ops)
+if (!plan.preview.wouldSucceed) throw new Error(\`plan failed: \${JSON.stringify(plan.preview.errors)}\`)
+
+const commit = await commitAgentPlan(input, ops, { output, expectSha256: plan.inputSha256 })
+const reopened = await AscendWorkbook.open(output)
+const check = reopened.check()
+const b1 = reopened.get('Sheet1!B1')
+const c1 = reopened.get('Sheet1!C1')
+
+if (!check.valid) throw new Error(\`check failed: \${JSON.stringify(check.issues)}\`)
+if (b1.kind !== 'number' || b1.value !== 125) throw new Error(\`unexpected B1: \${JSON.stringify(b1)}\`)
+if (c1.kind !== 'number' || c1.value !== 250) throw new Error(\`unexpected C1: \${JSON.stringify(c1)}\`)
+
+console.log(JSON.stringify({
+	sheets: info.sheets.map((sheet) => sheet.name),
+	planWouldSucceed: plan.preview.wouldSucceed,
+	commitOutputSha256: commit.outputSha256,
+	reopenedValid: check.valid,
+	b1,
+	c1,
+}))
+`,
+	)
+}
+
+async function run(cmd: string[], cwd: string): Promise<void> {
+	console.log(`$ ${cmd.join(' ')}`)
+	const proc = Bun.spawn(cmd, {
+		cwd,
+		stdout: 'inherit',
+		stderr: 'inherit',
+	})
+	const exitCode = await proc.exited
+	if (exitCode !== 0) {
+		throw new Error(`${cmd.join(' ')} failed with exit code ${exitCode}`)
+	}
+}
+
+main().catch((error) => {
+	console.error(error instanceof Error ? error.message : error)
+	process.exit(1)
+})

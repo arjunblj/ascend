@@ -3043,7 +3043,7 @@ describe('interactive client contract', () => {
 					message:
 						'Mutation journal is unavailable because the workbook is partially loaded in values mode. Reopen the workbook with a full load before applying edits.',
 					surface: 'package-parts',
-					reason: 'journal-unavailable',
+					reason: 'partial-workbook',
 				},
 			],
 			undoPolicy: {

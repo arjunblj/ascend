@@ -1876,6 +1876,10 @@ export function failedMutationJournal(error: unknown): MutationJournal {
 export function unavailableMutationJournal(
 	message: string,
 	refs?: readonly string[],
+	classification?: {
+		readonly surface?: MutationJournalSurface
+		readonly reason?: MutationJournalReasonCode
+	},
 ): MutationJournal {
 	return withUndoPolicy({
 		entries: [],
@@ -1886,8 +1890,8 @@ export function unavailableMutationJournal(
 			{
 				code: 'JOURNAL_UNAVAILABLE',
 				message,
-				surface: 'package-parts',
-				reason: 'journal-unavailable',
+				surface: classification?.surface ?? 'package-parts',
+				reason: classification?.reason ?? 'journal-unavailable',
 				...(refs && refs.length > 0 ? { refs } : {}),
 			},
 		],

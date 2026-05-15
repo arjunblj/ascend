@@ -212,6 +212,19 @@ describe('mutation journal exactness model', () => {
 			exactness: 'lossy',
 			publicInverse: 'none',
 		})
+
+		const partialIssue = unavailableMutationJournal(
+			'Partial workbook cannot prove an exact rollback journal',
+			undefined,
+			{ reason: 'partial-workbook' },
+		).issues[0]
+		if (!partialIssue) throw new Error('missing partial workbook issue')
+		expect(classifyMutationJournalIssue(partialIssue)).toEqual({
+			surface: 'package-parts',
+			reason: 'partial-workbook',
+			exactness: 'lossy',
+			publicInverse: 'none',
+		})
 	})
 
 	test('generated lossy journals classify every issue into an allowed surface reason', () => {

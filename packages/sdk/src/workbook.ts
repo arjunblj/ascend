@@ -140,6 +140,8 @@ function maybeBuildMutationJournal(
 function partialWorkbookMutationJournal(loadInfo: WorkbookLoadInfo) {
 	return unavailableMutationJournal(
 		`Mutation journal is unavailable because the workbook is partially loaded in ${loadInfo.mode} mode. Reopen the workbook with a full load before applying edits.`,
+		undefined,
+		{ reason: 'partial-workbook' },
 	)
 }
 

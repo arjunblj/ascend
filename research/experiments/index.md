@@ -38,6 +38,7 @@ Updated: 2026-05-15
 | [Package action proof harness](runs/2026/2026-05-15-package-action-proof-harness/log.md) | folded in tracked proof harness | correctness loop, product loop |
 | [Package action release proof dirty writer blocker](runs/2026/2026-05-15-package-action-release-proof-dirty-writer-blocker/log.md) | blocked by unrelated dirty writer edit | correctness loop, product loop |
 | [Package action release proof rerun](runs/2026/2026-05-15-package-action-release-proof-rerun/log.md) | current proof report refreshed, no new surface | correctness loop, product loop |
+| [Package action release proof packaging rerun](runs/2026/2026-05-15-package-action-release-proof-packaging-rerun/log.md) | current proof report refreshed from existing surfaces, no new surface | correctness loop, product loop |
 | [Workbook property package state journal](runs/2026/2026-05-15-workbook-property-package-state-journal/log.md) | folded in workbook property package-state journal ref | correctness loop |
 | [Package action journal compatibility](runs/2026/2026-05-15-package-action-journal-compatibility/log.md) | folded in proof harness journal compatibility check | correctness loop, product loop |
 | [Package proof compact JSON gate](runs/2026/2026-05-15-package-proof-compact-json-gate/log.md) | archived generated JSON fixture as do-not-promote-yet | product loop |

@@ -38,16 +38,28 @@ Probe command:
 bun run fixtures/benchmarks/package-action-proof.ts
 ```
 
-| Case | Fixture | Input bytes | Output bytes | Commit actions | Digest pairs | Journal package issues | Proof issues | Proof JSON bytes | Post-write audits | Example actions |
-| --- | --- | ---: | ---: | --- | ---: | ---: | ---: | ---: | --- | --- |
-| docprops-passthrough | synthetic docProps package | 2286 | 3485 | passthrough=4, regenerate=4, add=0, drop=0, error=0 | 8 | 1 | 0 | 5155 | passed | passthrough workbook; regenerate sheet |
-| regenerate-existing-sheet | new Ascend workbook | 4624 | 4707 | passthrough=3, regenerate=5, add=0, drop=0, error=0 | 8 | 1 | 0 | 5132 | passed | passthrough workbook; regenerate styles |
-| add-sheet-part | new Ascend workbook | 4624 | 4512 | passthrough=3, regenerate=5, add=1, drop=0, error=0 | 8 | 1 | 0 | 5610 | passed | add worksheet part |
-| calc-chain-drop | synthetic calcChain package | 1776 | 2365 | passthrough=0, regenerate=5, add=0, drop=1, error=0 | 5 | 1 | 0 | 3760 | passed | drop calcChain |
-| signature-invalidation-drop | synthetic digital-signature package | 2253 | 2058 | passthrough=1, regenerate=4, add=0, drop=2, error=0 | 5 | 1 | 0 | 4165 | passed | drop signature parts |
-| macro-passthrough | `fixtures/xlsx/calamine/vba.xlsm` | 12752 | 12175 | passthrough=6, regenerate=5, add=1, drop=0, error=0 | 11 | 1 | 0 | 7359 | passed | passthrough VBA project |
-| chart-sidecar-accounting | `fixtures/xlsx/poi/WithChart.xlsx` | 10138 | 10899 | passthrough=8, regenerate=6, add=1, drop=0, error=0 | 14 | 1 | 0 | 9067 | passed | passthrough drawing; regenerate chart/styles |
-| unknown-part-error | synthetic unknown package part | 1692 | 2315 | passthrough=2, regenerate=4, add=0, drop=0, error=1 | 7 | 1 | 1 | 4629 | needs review | error unknown custom part |
+Latest rerun: 2026-05-15T03:26:22.236Z.
+
+| Case | Fixture | Input bytes | Output bytes | Commit actions | Source graph | Digest pairs | Journal package issues | Proof issues | Proof JSON bytes | Proof ms | Expected action present | Post-write audits | Examples |
+| --- | --- | ---: | ---: | --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- | --- |
+| docprops-passthrough | `synthetic docProps package` | 2286 | 3485 | passthrough=4, regenerate=4, add=0, drop=0, error=0 | true | 8 | 1 | 0 | 5155 | 0.142 | true | passed | passthrough:xl/workbook.xml; regenerate:xl/worksheets/sheet1.xml |
+| regenerate-existing-sheet | `new Ascend workbook` | 4624 | 4707 | passthrough=3, regenerate=5, add=0, drop=0, error=0 | true | 8 | 1 | 0 | 5132 | 0.072 | true | passed | passthrough:xl/workbook.xml; regenerate:xl/styles.xml |
+| add-sheet-part | `new Ascend workbook` | 4624 | 4512 | passthrough=3, regenerate=5, add=1, drop=0, error=0 | true | 8 | 1 | 0 | 5610 | 0.060 | true | passed | passthrough:xl/worksheets/sheet1.xml; regenerate:xl/workbook.xml; add:xl/worksheets/sheet2.xml |
+| calc-chain-drop | `synthetic calcChain package` | 1776 | 2365 | passthrough=0, regenerate=5, add=0, drop=1, error=0 | true | 5 | 1 | 0 | 3760 | 0.065 | true | passed | regenerate:xl/workbook.xml; drop:xl/calcChain.xml |
+| signature-invalidation-drop | `synthetic digital-signature package` | 2253 | 2058 | passthrough=1, regenerate=4, add=0, drop=2, error=0 | true | 5 | 1 | 0 | 4165 | 0.101 | true | passed | passthrough:xl/workbook.xml; regenerate:xl/worksheets/sheet1.xml; drop:_xmlsignatures/origin.sigs |
+| macro-passthrough | `fixtures/xlsx/calamine/vba.xlsm` | 12752 | 12175 | passthrough=6, regenerate=5, add=1, drop=0, error=0 | true | 11 | 1 | 0 | 7359 | 0.195 | true | passed | passthrough:xl/workbook.xml; regenerate:xl/styles.xml; add:xl/sharedStrings.xml |
+| chart-sidecar-accounting | `fixtures/xlsx/poi/WithChart.xlsx` | 10138 | 10899 | passthrough=8, regenerate=6, add=1, drop=0, error=0 | true | 14 | 1 | 0 | 9067 | 0.207 | true | passed | passthrough:xl/workbook.xml; regenerate:xl/styles.xml; add:xl/sharedStrings.xml |
+| unknown-part-error | `synthetic unknown package part` | 1692 | 2315 | passthrough=2, regenerate=4, add=0, drop=0, error=1 | true | 7 | 1 | 1 | 4629 | 0.072 | true | needs review | passthrough:xl/workbook.xml; regenerate:xl/worksheets/sheet1.xml; error:xl/custom/custom1.xml |
+
+Validation commands:
+
+```bash
+bun test fixtures/benchmarks/package-action-proof.test.ts
+bun test packages/sdk/src/agent-workflow.test.ts -t "package action|package graph|journalSummary|compact commit"
+bun test apps/cli/src/cli.test.ts -t "plan and commit implement safe agent workflow"
+bun test apps/api/api.test.ts -t "plan and commit endpoints provide the safe write workflow"
+bun test apps/mcp/src/index.test.ts -t "package action proof evidence"
+```
 
 ## Interpretation
 

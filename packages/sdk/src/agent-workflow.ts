@@ -157,6 +157,7 @@ export interface PackageActionProofOptions {
 	readonly outputBytes?: Uint8Array
 	readonly writePolicy?: WritePolicyReport
 	readonly packageGraphAudit?: PackageGraphAudit
+	readonly claimBoundaries?: readonly string[]
 }
 
 export interface PackageActionProof {
@@ -167,6 +168,7 @@ export interface PackageActionProof {
 	readonly coverage: PackageActionProofCoverage
 	readonly actions: readonly PackageActionProofEntry[]
 	readonly issues: readonly string[]
+	readonly claimBoundaries: readonly string[]
 }
 
 export interface PackageActionProofCoverage {
@@ -1509,6 +1511,7 @@ export function createPackageActionProof(
 		},
 		actions,
 		issues,
+		claimBoundaries: options.claimBoundaries ?? DEFAULT_PACKAGE_ACTION_PROOF_CLAIM_BOUNDARIES,
 	}
 }
 
@@ -1581,6 +1584,13 @@ const DEFAULT_RELEASE_PROOF_CLAIM_BOUNDARIES = [
 	'The bundle reports Ascend plan, commit, reopen, diff, and audit results; it does not claim Excel recalculation equivalence.',
 	'Private workbook data should not be embedded unless the caller explicitly chooses to persist full artifacts.',
 	'Signed provenance claims require an external attestation envelope and verifier roots.',
+] as const
+
+const DEFAULT_PACKAGE_ACTION_PROOF_CLAIM_BOUNDARIES = [
+	'This proof is local package-part evidence, not signed provenance or third-party attestation.',
+	'Package actions describe Ascend write-plan and audit evidence; they do not prove Excel semantic recalculation equivalence.',
+	'Passthrough byte equality is proven only when source and output byte digests are present and bytesEqual is true.',
+	'Drop and error actions require caller review before claiming workbook feature preservation.',
 ] as const
 
 function traceArtifactByName(

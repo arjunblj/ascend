@@ -3335,6 +3335,10 @@ describe('agent workflow loss audit', () => {
 				sourcePresent: true,
 			}),
 		)
+		expect(proof.claimBoundaries.join('\n')).toContain(
+			'not signed provenance or third-party attestation',
+		)
+		expect(proof.claimBoundaries.join('\n')).toContain('bytesEqual is true')
 	})
 
 	test('package action proof records passthrough, drop, and error evidence', () => {
@@ -3444,6 +3448,9 @@ describe('agent workflow loss audit', () => {
 		expect(proof.issues).toContain('custom/item.xml: Preserved bytes changed.')
 		expect(proof.issues).toContain(
 			'custom/_rels/item.xml.rels: Preserved relationship disappeared.',
+		)
+		expect(proof.claimBoundaries.join('\n')).toContain(
+			'Drop and error actions require caller review',
 		)
 	})
 

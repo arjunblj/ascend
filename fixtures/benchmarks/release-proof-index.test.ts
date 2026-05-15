@@ -1,9 +1,12 @@
 import { describe, expect, test } from 'bun:test'
+import { fileURLToPath } from 'node:url'
 import {
 	releaseProofIndexMarkdown,
 	releaseProofOwnerHandoffIndex,
 	runReleaseProofIndex,
 } from './release-proof-index.ts'
+
+const runnerPath = fileURLToPath(new URL('./release-proof-index.ts', import.meta.url))
 
 describe('release proof evidence index', () => {
 	test('references top claim proof artifacts by digest without embedding artifacts', async () => {
@@ -122,9 +125,15 @@ describe('release proof evidence index', () => {
 			'GitHub repository limits',
 			'GitHub large files',
 			'OpenSSF Scorecard binary artifacts',
-			'SLSA provenance',
+			'SLSA 1.2 build provenance distribution',
 			'GitHub artifact attestations',
 		])
+		expect(index.fixturePolicy.sourceReferences.map((entry) => entry.url)).toContain(
+			'https://slsa.dev/spec/v1.2/distributing-provenance',
+		)
+		expect(index.fixturePolicy.sourceReferences.map((entry) => entry.url).join('\n')).not.toContain(
+			'v1.0',
+		)
 		expect(index.fixturePolicyEvidence).toMatchObject({
 			ownerLoop: 'product',
 			status: 'tracked-scan-complete-owner-approval-required',
@@ -465,10 +474,13 @@ describe('release proof evidence index', () => {
 		expect(
 			index.trustCompletenessBoundaryEvidence.sourceReferences.map((entry) => entry.label),
 		).toEqual([
-			'SLSA distributing provenance',
+			'SLSA 1.2 build provenance distribution',
 			'GitHub artifact attestations',
 			'Microsoft Protected View',
 		])
+		expect(
+			index.trustCompletenessBoundaryEvidence.sourceReferences.map((entry) => entry.url),
+		).toContain('https://slsa.dev/spec/v1.2/distributing-provenance')
 		expect(index.compactReportPublicationEvidence).toMatchObject({
 			ownerLoop: 'release',
 			status: 'local-summary-present-publication-policy-required',
@@ -1381,6 +1393,39 @@ describe('release proof evidence index', () => {
 		expect(JSON.stringify(handoff)).not.toContain('"artifacts"')
 		expect(JSON.stringify(handoff)).toContain('"claimBlockerBoard"')
 		expect(JSON.stringify(handoff)).toContain('"nextOwnerActions"')
+	})
+
+	test('emits a compact release decision board JSON mode', async () => {
+		const proc = Bun.spawn([Bun.argv[0], runnerPath, '--no-timings', '--release-decision-json'], {
+			cwd: process.cwd(),
+			stderr: 'pipe',
+			stdout: 'pipe',
+		})
+		const [stdout, stderr, exitCode] = await Promise.all([
+			new Response(proc.stdout).text(),
+			new Response(proc.stderr).text(),
+			proc.exited,
+		])
+
+		expect(exitCode, stderr).toBe(0)
+		expect(stderr.trim()).toBe('')
+		const board = JSON.parse(stdout) as {
+			readonly status?: string
+			readonly rows?: readonly {
+				readonly artifact?: string
+				readonly headlineClaimAllowed?: boolean
+				readonly aPlusBlockingOwnerActions?: readonly unknown[]
+			}[]
+		}
+		expect(board.status).toBe('top-two-only')
+		expect(board.rows?.map((row) => row.artifact)).toEqual([
+			'safe-open-proof',
+			'package-action-proof',
+		])
+		expect(board.rows?.every((row) => row.headlineClaimAllowed === false)).toBe(true)
+		expect(board.rows?.every((row) => (row.aPlusBlockingOwnerActions?.length ?? 0) > 0)).toBe(true)
+		expect(stdout).not.toContain('"claimBlockerBoard"')
+		expect(stdout).not.toContain('"fixturePolicy"')
 	})
 
 	test('renders honest non-attestation boundaries', async () => {

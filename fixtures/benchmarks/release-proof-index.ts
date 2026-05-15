@@ -873,8 +873,8 @@ const FIXTURE_POLICY: ReleaseProofFixturePolicy = {
 			url: 'https://github.com/ossf/scorecard/blob/main/docs/checks.md',
 		},
 		{
-			label: 'SLSA provenance',
-			url: 'https://slsa.dev/spec/v1.0-rc1/provenance',
+			label: 'SLSA 1.2 build provenance distribution',
+			url: 'https://slsa.dev/spec/v1.2/distributing-provenance',
 		},
 		{
 			label: 'GitHub artifact attestations',
@@ -2754,8 +2754,8 @@ function trustCompletenessBoundaryEvidence(): ReleaseProofTrustCompletenessBound
 		doesNotCloseGates: ['product', 'performance', 'release'],
 		sourceReferences: [
 			{
-				label: 'SLSA distributing provenance',
-				url: 'https://slsa.dev/spec/v1.0/distributing-provenance',
+				label: 'SLSA 1.2 build provenance distribution',
+				url: 'https://slsa.dev/spec/v1.2/distributing-provenance',
 			},
 			{
 				label: 'GitHub artifact attestations',
@@ -4482,20 +4482,23 @@ function utf8Bytes(value: string): number {
 if (import.meta.main) {
 	const json = process.argv.includes('--json')
 	const ownerHandoffsJson = process.argv.includes('--owner-handoffs-json')
+	const releaseDecisionJson = process.argv.includes('--release-decision-json')
 	const result = await runReleaseProofIndex({
 		includeTimings: !process.argv.includes('--no-timings'),
 	})
 	console.log(
-		ownerHandoffsJson
-			? JSON.stringify(releaseProofOwnerHandoffIndex(result), null, 2)
-			: json
-				? JSON.stringify(result, null, 2)
-				: releaseProofIndexMarkdown(result),
+		releaseDecisionJson
+			? JSON.stringify(result.releaseDecisionBoard, null, 2)
+			: ownerHandoffsJson
+				? JSON.stringify(releaseProofOwnerHandoffIndex(result), null, 2)
+				: json
+					? JSON.stringify(result, null, 2)
+					: releaseProofIndexMarkdown(result),
 	)
-	if (!json && !ownerHandoffsJson) {
+	if (!json && !ownerHandoffsJson && !releaseDecisionJson) {
 		console.error(`Indexed ${result.artifactCount} release proof evidence artifacts.`)
 		console.error(
-			`Run with --json or --owner-handoffs-json for machine-readable output from ${basename(import.meta.path)}.`,
+			`Run with --json, --owner-handoffs-json, or --release-decision-json for machine-readable output from ${basename(import.meta.path)}.`,
 		)
 	}
 }

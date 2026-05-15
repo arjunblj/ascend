@@ -12,7 +12,7 @@ The release-proof index already has enough evidence to derive a compact decision
 
 - Quadratic docs: current product positioning around AI, Python, SQL, JavaScript, formulas, and database connections. <https://docs.quadratichq.com/>
 - Quadratic navigating docs: current claim around browser spreadsheet navigation and 60 FPS WASM/WebGL interaction. <https://docs.quadratichq.com/spreadsheet/navigating>
-- SLSA distributing provenance: provenance is distributed as attestations bound to artifacts, not implied by local proof reports. <https://slsa.dev/spec/v1.0/distributing-provenance>
+- SLSA 1.2 build provenance distribution: provenance is distributed as attestations bound to artifacts, not implied by local proof reports. <https://slsa.dev/spec/v1.2/distributing-provenance>
 - GitHub artifact attestations: build provenance requires explicit artifact attestation workflows, not local digest output. <https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations/using-artifact-attestations-to-establish-provenance-for-builds>
 
 ## Why this matters to Ascend
@@ -34,14 +34,17 @@ Ascend's release message should be the trust/proof/runtime layer for agentic spr
   - boundary text
 - Included the board in owner-handoff JSON and Markdown output.
 - Added regression tests proving the board does not allow headline claims or implementation promotion while release gates remain blocked.
+- Added `--release-decision-json` so owner loops can fetch only the compact two-claim board without the full owner-handoff payload.
+- Updated release provenance references to current SLSA 1.2 distribution guidance and test-pinned the fixture policy away from old SLSA v1.0 URLs.
 
 ## Results
 
-- `bun test fixtures/benchmarks/release-proof-index.test.ts --timeout 30000`: passed, 4 tests.
+- `bun test fixtures/benchmarks/release-proof-index.test.ts --timeout 30000`: passed, 5 tests.
 - `bunx biome check fixtures/benchmarks/release-proof-index.ts fixtures/benchmarks/release-proof-index.test.ts`: passed.
 - `bunx tsc --build`: passed.
 - `bun run fixtures/benchmarks/release-proof-index.ts --no-timings --owner-handoffs-json`: passed and emits the owner handoff without embedding full proof artifacts.
-- `bun run test:changed`: passed, 5217 pass, 1 skip, 0 fail.
+- `bun run fixtures/benchmarks/release-proof-index.ts --no-timings --release-decision-json`: passed and emits only the compact release decision board.
+- `bun run test:changed`: passed, 5218 pass, 1 skip, 0 fail.
 
 ## Confidence
 

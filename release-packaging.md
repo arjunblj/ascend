@@ -61,13 +61,30 @@ Generated app artifacts:
 
 The API, MCP, and CLI entrypoints use an explicit direct-run check instead of relying on `import.meta.main`, so importing built app packages does not accidentally start a process.
 
+## Installed Docs Update
+
+SDK agent docs/examples now work from the installed SDK package.
+
+Changed shape:
+
+- `packages/sdk/src/agent-docs.ts` resolves package-local docs first, then falls back to the repo root for source-tree development.
+- `scripts/build-packages.ts` copies the known `llms`, `docs`, and `examples` assets into `packages/sdk/dist`.
+- `scripts/release-sdk-smoke.ts` verifies installed-package docs by calling `readAgentDoc('llms.txt')` and `searchAgentDocs({ query: 'plan commit' })` from the fresh temp consumer app.
+
+Validation:
+
+```bash
+bun test packages/sdk/src/agent-docs.test.ts
+bun run release:sdk:smoke
+```
+
 ## Verdict
 
-Ascend is no longer blocked on the first SDK external install smoke, the current-TUI startup split, or the existence of real CLI/API/MCP dist JS and bins. The broader release remains blocked until packaged CLI/API/MCP external install smokes and installed-package docs are handled.
+Ascend is no longer blocked on the first SDK external install smoke, installed SDK docs, the current-TUI startup split, or the existence of real CLI/API/MCP dist JS and bins. The broader release remains blocked until packaged CLI/API/MCP external install smokes use the same artifact standard as SDK.
 
-The SDK workflow now works from a temp external app with a single local `@ascend/sdk` tarball and no consumer overrides. CLI/API/MCP now build real app entrypoints and publish manifests, but they still need the same external packaged workflow smoke standard as SDK. Installed-package docs are still missing.
+The SDK workflow now works from a temp external app with a single local `@ascend/sdk` tarball and no consumer overrides. The installed SDK package can also read/search bundled agent docs. CLI/API/MCP now build real app entrypoints and publish manifests, but they still need the same external packaged workflow smoke standard as SDK.
 
-Previous audit stop condition was reached; current implementation sequence moves next to packaged docs/examples so agent docs work from installed packages.
+Previous audit stop condition was reached; current implementation sequence moves next to external packaged CLI/API/MCP smokes.
 
 ## Manifest, Export, Bin, And Build Audit
 
@@ -110,8 +127,7 @@ Missing export/bin gaps:
 Docs/OpenAPI:
 
 - `bun test packages/sdk/src/agent-docs.test.ts` passed: OpenAPI currently lists implemented endpoints and docs/examples vocabulary is aligned inside the repo.
-- External SDK package docs are not packaged. In the temp app, `readAgentDoc('llms.txt')` returned missing content and `searchAgentDocs({ query: 'plan commit' })` returned `0` hits.
-- Root cause: `packages/sdk/src/agent-docs.ts` resolves docs from `new URL('../../../', import.meta.url)`, which works in repo layout but not in an installed `dist` package.
+- Implementation update: external SDK package docs are now packaged and validated by `bun run release:sdk:smoke`; the installed smoke returned `docHits: 5`.
 
 ## Temp External Install Path
 
@@ -194,12 +210,12 @@ Exact blocker: no packageable MCP `dist` manifest, no bin, and app JS build outp
 | CLI build/bin | `scripts/build-packages.ts`, `apps/cli/dist/package.json` | Done for built artifact shape: real `dist/index.js`, generated publish manifest, and `bin.ascend`. Still needs external install smoke using produced app artifacts. | `bun apps/cli/dist/index.js --version`; manifest audit | Removes CLI dist/bin blocker. |
 | API build/startup | `scripts/build-packages.ts`, `apps/api/src/index.ts`, `apps/api/dist/package.json` | Done for built artifact shape: real `dist/index.js`, generated publish manifest, root exports for `createApiFetch/createServer`, and `bin.ascend-api`. Still needs external install smoke. | import `apps/api/dist/index.js`; call `/health` through `createApiFetch` | Removes API dist/startup blocker. |
 | MCP build/startup | `scripts/build-packages.ts`, `apps/mcp/src/index.ts`, `apps/mcp/dist/package.json` | Done for built artifact shape: real `dist/index.js`, generated publish manifest, root export for `createServer`, and `bin.ascend-mcp`. Still needs external install smoke. | import `apps/mcp/dist/index.js`; verify `32` registered tools | Removes MCP dist/startup blocker. |
-| Bundled docs | `packages/sdk/src/agent-docs.ts`, `docs/*`, `examples/*`, `llms*.txt` | Package docs/examples as assets or embed them at build time; resolve relative to package, not repo root. | External temp app: `readAgentDoc('llms.txt')` returns text and `searchAgentDocs({ query: 'plan commit' })` returns workflow hits. | Blocks agent use without repo-local context. |
+| Bundled docs | `packages/sdk/src/agent-docs.ts`, `scripts/build-packages.ts`, `scripts/release-sdk-smoke.ts` | Done for SDK: package docs/examples into SDK dist, resolve package-local docs first, and validate installed docs in the external SDK smoke. Extend the same standard to CLI/API/MCP packages if they expose docs directly. | `bun test packages/sdk/src/agent-docs.test.ts`; `bun run release:sdk:smoke` | Removes SDK agent-doc dependency on repo-local context. |
 | App dist hygiene | `apps/*/dist/index.js`, app build config | Remove stale placeholder JS; app build must generate runtime JS or omit misleading files. | `bun run build` then inspect app `dist/index.js`; startup smokes use only built app files. | Blocks confidence in release artifacts. |
 
 ## Release Owner Next Step
 
 Implement packageability in this order:
 
-1. Package docs/examples with SDK/API/MCP so agents do not need the repo checkout.
-2. Add external packaged CLI/API/MCP smokes using the same artifact standard as `release:sdk:smoke`.
+1. Add external packaged CLI/API/MCP smokes using the same artifact standard as `release:sdk:smoke`.
+2. Decide whether bundled internal packages or a local tarball-set/registry shape is the final publish design.

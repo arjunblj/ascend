@@ -14,9 +14,15 @@ import {
 	type SheetDataValidation,
 	sqrefIntersects,
 	toA1,
+	type Workbook,
 } from '@ascend/core'
 import { resolveCellFormulaText } from '@ascend/engine'
-import { inspectXlsxPackageGraph, type XlsxPackageGraph } from '@ascend/io-xlsx'
+import {
+	extractZip,
+	inspectXlsxPackageGraph,
+	summarizePlannedWrite,
+	type XlsxPackageGraph,
+} from '@ascend/io-xlsx'
 import { AscendException, ascendError, type CellValue, type Operation } from '@ascend/schema'
 import { check as verifyCheck, lint as verifyLint } from '@ascend/verify'
 import {
@@ -70,6 +76,7 @@ import type {
 	WorkbookLoadInfo,
 	WorkbookRefreshMetadataInfo,
 	WorkbookVisualInventoryInfo,
+	WritePlanInfo,
 } from './types.ts'
 import { type ApplyOptions, AscendWorkbook, type WorkbookBytesOptions } from './workbook.ts'
 import type { WorkbookTrustReport, WorkbookTrustReportOptions } from './workbook-trust.ts'
@@ -586,6 +593,22 @@ export class WorkbookDocument {
 
 	visualInventory(): WorkbookVisualInventoryInfo {
 		return this.view.visualInventory()
+	}
+
+	getWorkbookModel(): Workbook {
+		return this.view.getWorkbookModel()
+	}
+
+	writePlanSummary(): WritePlanInfo {
+		const workbook = this.view.getWorkbookModel()
+		const sourceArchiveBytes = workbook.sourceArchiveBytes ?? this.originalBytes
+		const result = summarizePlannedWrite(
+			workbook,
+			this.capsules.length > 0 ? [...this.capsules] : undefined,
+			sourceArchiveBytes ? { sourceArchive: extractZip(sourceArchiveBytes) } : {},
+		)
+		if (!result.ok) throw new AscendException(result.error)
+		return result.value
 	}
 
 	async packageGraph(): Promise<XlsxPackageGraph> {

@@ -118,7 +118,7 @@ async function prepareConsumerApp(): Promise<void> {
 	)
 	await writeFile(
 		join(appRoot, 'sdk-smoke.ts'),
-		`import { AscendWorkbook, commitAgentPlan, createAgentPlan } from '@ascend/sdk'
+		`import { AscendWorkbook, commitAgentPlan, createAgentPlan, readAgentDoc, searchAgentDocs } from '@ascend/sdk'
 
 const input = '${join(appRoot, 'input.xlsx')}'
 const output = '${join(appRoot, 'output.xlsx')}'
@@ -140,16 +140,21 @@ const reopened = await AscendWorkbook.open(output)
 const check = reopened.check()
 const b1 = reopened.get('Sheet1!B1')
 const c1 = reopened.get('Sheet1!C1')
+const llms = await readAgentDoc('llms.txt')
+const docHits = await searchAgentDocs({ query: 'plan commit' })
 
 if (!check.valid) throw new Error(\`check failed: \${JSON.stringify(check.issues)}\`)
 if (b1.kind !== 'number' || b1.value !== 125) throw new Error(\`unexpected B1: \${JSON.stringify(b1)}\`)
 if (c1.kind !== 'number' || c1.value !== 250) throw new Error(\`unexpected C1: \${JSON.stringify(c1)}\`)
+if (!llms?.includes('Ascend')) throw new Error('installed SDK could not read bundled llms.txt')
+if (docHits.length === 0) throw new Error('installed SDK docs search returned no hits')
 
 console.log(JSON.stringify({
 	sheets: info.sheets.map((sheet) => sheet.name),
 	planWouldSucceed: plan.preview.wouldSucceed,
 	commitOutputSha256: commit.outputSha256,
 	reopenedValid: check.valid,
+	docHits: docHits.length,
 	b1,
 	c1,
 }))

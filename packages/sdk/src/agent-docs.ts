@@ -1,5 +1,6 @@
 import { join } from 'node:path'
 
+const PACKAGE_ROOT = new URL('./', import.meta.url).pathname
 const REPO_ROOT = new URL('../../../', import.meta.url).pathname
 
 export type AgentDocKind = 'docs' | 'example' | 'llms' | 'reference'
@@ -93,12 +94,20 @@ export async function loadAgentDocs(): Promise<readonly AgentDocEntry[]> {
 	if (cachedDocs) return cachedDocs
 	const docs: AgentDocEntry[] = []
 	for (const source of DOC_SOURCES) {
-		const file = Bun.file(join(REPO_ROOT, source.path))
-		if (!(await file.exists())) continue
-		docs.push({ ...source, text: await file.text() })
+		const text = await readBundledDoc(source.path)
+		if (text === undefined) continue
+		docs.push({ ...source, text })
 	}
 	cachedDocs = docs
 	return docs
+}
+
+async function readBundledDoc(path: string): Promise<string | undefined> {
+	for (const root of [PACKAGE_ROOT, REPO_ROOT]) {
+		const file = Bun.file(join(root, path))
+		if (await file.exists()) return file.text()
+	}
+	return undefined
 }
 
 export async function readAgentDoc(path: string): Promise<string | undefined> {

@@ -4060,6 +4060,23 @@ describe('AscendWorkbook', () => {
 		WorkbookDocument.clearCache()
 	})
 
+	test('WorkbookDocument exposes read-side model and write summary for cached verification', async () => {
+		WorkbookDocument.clearCache()
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'verify' }] }])
+		const bytes = wb.toBytes()
+		const document = await WorkbookDocument.open(bytes)
+
+		expect(document.getWorkbookModel().getSheet('Sheet1')?.cells.get(0, 0)?.value).toEqual({
+			kind: 'string',
+			value: 'verify',
+		})
+		expect(document.writePlanSummary().totalParts).toBeGreaterThan(0)
+		expect(document.check().valid).toBe(true)
+
+		WorkbookDocument.clearCache()
+	})
+
 	test('WorkbookDocument derives upgraded load snapshots immutably', async () => {
 		WorkbookDocument.clearCache()
 		const wb = AscendWorkbook.create()

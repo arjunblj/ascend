@@ -1,5 +1,5 @@
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { cp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const packageNames = ['schema', 'core', 'formulas', 'engine', 'io-xlsx', 'io-csv', 'verify', 'sdk']
@@ -9,6 +9,26 @@ const appBins: Record<string, Record<string, string>> = {
 	api: { 'ascend-api': './index.js' },
 	mcp: { 'ascend-mcp': './index.js' },
 }
+const sdkAgentDocAssets = [
+	'llms.txt',
+	'llms-full.txt',
+	'docs/AGENT_API.md',
+	'docs/AGENT_WORKFLOW.md',
+	'docs/SECURITY.md',
+	'docs/VERSIONING.md',
+	'docs/openapi.yaml',
+	'examples/README.md',
+	'examples/agent-safe-edit.ts',
+	'examples/agent-safe-edit-http.md',
+	'examples/agent-safe-edit-mcp.md',
+	'examples/untrusted-workbook-report.md',
+	'examples/mcp-setup.md',
+	'examples/create-from-scratch.ts',
+	'examples/read-modify-save.ts',
+	'examples/batch-ops.ts',
+	'examples/formula-eval.ts',
+	'examples/csv-convert.ts',
+] as const
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 const packageVersions = new Map<string, string>()
 
@@ -96,6 +116,15 @@ async function buildPackage(name: string): Promise<void> {
 	}
 
 	await writePublishManifest(packageRoot, distDir)
+	if (name === 'sdk') await copySdkAgentDocs(distDir)
+}
+
+async function copySdkAgentDocs(distDir: string): Promise<void> {
+	for (const path of sdkAgentDocAssets) {
+		const target = join(distDir, path)
+		await mkdir(dirname(target), { recursive: true })
+		await cp(join(repoRoot, path), target)
+	}
 }
 
 async function buildApp(name: string): Promise<void> {

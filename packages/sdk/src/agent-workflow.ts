@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { copyFile, readFile, rename, stat, writeFile } from 'node:fs/promises'
-import { dirname, extname, join } from 'node:path'
+import { dirname, extname, join, resolve } from 'node:path'
 import {
 	type ActiveContentInfo,
 	type ChartPartInfo,
@@ -36,6 +36,7 @@ import {
 	type MutationJournal,
 	type MutationJournalIssue,
 } from './journal.ts'
+import { WorkbookDocument } from './session.ts'
 import type { CheckIssue, FormulaReferenceInfo } from './types.ts'
 import { AscendWorkbook } from './workbook.ts'
 
@@ -2190,7 +2191,13 @@ async function verifyWrittenWorkbook(
 		'reopen',
 		'Reopening written workbook.',
 		'Written workbook reopened.',
-		() => openWorkbookFromBytes(output, outputBytes, postWriteOpenOptions(sourceGraph, ops)),
+		() =>
+			openPostWriteDocument(
+				output,
+				outputSha256,
+				outputBytes,
+				postWriteOpenOptions(sourceGraph, ops),
+			),
 	)
 	const check = await timedPostWriteStep(
 		progress,
@@ -2213,15 +2220,16 @@ async function verifyWrittenWorkbook(
 		'Post-write preservation summary completed.',
 		() => reopened.value.writePlanSummary(),
 	)
-	const opaquePayloads = postWriteOpaquePayloadSummary(reopened.value.getWorkbookModel())
-	const comments = postWriteCommentSummary(reopened.value.getWorkbookModel())
-	const tables = postWriteTableSummary(reopened.value.getWorkbookModel())
-	const definedNames = postWriteDefinedNameSummary(reopened.value.getWorkbookModel())
-	const externalReferences = postWriteExternalReferenceSummary(reopened.value.getWorkbookModel())
-	const analytics = postWriteAnalyticsSummary(reopened.value.getWorkbookModel())
-	const activeContent = postWriteActiveContentSummary(reopened.value.getWorkbookModel())
-	const visuals = postWriteVisualSummary(reopened.value.getWorkbookModel())
-	const security = postWriteSecuritySummary(reopened.value.getWorkbookModel())
+	const workbook = reopened.value.getWorkbookModel()
+	const opaquePayloads = postWriteOpaquePayloadSummary(workbook)
+	const comments = postWriteCommentSummary(workbook)
+	const tables = postWriteTableSummary(workbook)
+	const definedNames = postWriteDefinedNameSummary(workbook)
+	const externalReferences = postWriteExternalReferenceSummary(workbook)
+	const analytics = postWriteAnalyticsSummary(workbook)
+	const activeContent = postWriteActiveContentSummary(workbook)
+	const visuals = postWriteVisualSummary(workbook)
+	const security = postWriteSecuritySummary(workbook)
 	const outputGraph = await timedPostWriteStep(
 		progress,
 		'package-graph',
@@ -2890,6 +2898,22 @@ async function openWorkbookFromBytes(
 		...options,
 		...(sourceExtension ? { sourceExtension } : {}),
 	})
+}
+
+async function openPostWriteDocument(
+	file: string,
+	sha256: string,
+	bytes: Uint8Array,
+	options: NonNullable<Parameters<typeof WorkbookDocument.open>[1]> = {},
+): Promise<WorkbookDocument> {
+	const path = resolve(file)
+	const info = await stat(path)
+	return WorkbookDocument.openPathSnapshot(
+		path,
+		bytes,
+		{ path, size: info.size, mtimeMs: info.mtimeMs, ctimeMs: info.ctimeMs, sha256 },
+		options,
+	)
 }
 
 function sha256Text(text: string): string {

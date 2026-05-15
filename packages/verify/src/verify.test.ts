@@ -396,6 +396,43 @@ describe('checker', () => {
 		})
 	})
 
+	test('detects blocked spill blockers outside the claimed spill range', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.cells.set(0, 0, {
+			value: errorValue('#SPILL!'),
+			formula: 'SEQUENCE(3)',
+			styleId: SID,
+			formulaInfo: {
+				kind: 'blockedSpill',
+				anchorRef: 'Sheet1!A1',
+				ref: 'A1:A3',
+				blockingRefs: ['B1'],
+			},
+		})
+		s.cells.set(0, 1, { value: stringValue('outside'), formula: null, styleId: SID })
+
+		const result = check(wb)
+		const issue = result.issues.find(
+			(entry) => entry.details?.kind === 'blockedSpill-blocker-outside-range',
+		)
+		expect(result.passed).toBe(false)
+		expect(issue).toMatchObject({
+			rule: 'formula-binding-integrity',
+			severity: 'error',
+			message:
+				'Blocked spill metadata at Sheet1!A1 references blocking cells outside its spill range',
+			refs: ['Sheet1!A1', 'Sheet1!B1'],
+			details: {
+				kind: 'blockedSpill-blocker-outside-range',
+				anchorRef: 'Sheet1!A1',
+				range: 'A1:A3',
+				blockingRefs: ['B1'],
+				blockersOutsideRange: ['B1'],
+			},
+		})
+	})
+
 	test('detects stale legacy array and data table binding ranges', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')

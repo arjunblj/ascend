@@ -942,6 +942,34 @@ function checkFormulaBindingIntegrity(wb: Workbook): CheckIssue[] {
 					)
 				}
 				if (binding.kind === 'blockedSpill' && binding.reason !== 'sheet-edge') {
+					const blockersOutsideRange = binding.blockingRefs.filter((ref) => {
+						const blocker = parseBindingCellRef(ref, sheet.name)
+						if (!blocker) return false
+						return !rangeContainsCell(spillRange, blocker.sheet, blocker.row, blocker.col)
+					})
+					if (blockersOutsideRange.length > 0) {
+						issues.push(
+							formulaBindingIntegrityIssue(
+								`Blocked spill metadata at ${cellRef} references blocking cells outside its spill range`,
+								[
+									cellRef,
+									...blockersOutsideRange.map((ref) => {
+										const blocker = parseBindingCellRef(ref, sheet.name)
+										return blocker
+											? `${blocker.sheet}!${toA1({ row: blocker.row, col: blocker.col })}`
+											: `${sheet.name}!${ref}`
+									}),
+								],
+								{
+									kind: 'blockedSpill-blocker-outside-range',
+									anchorRef: binding.anchorRef,
+									range: binding.ref,
+									blockingRefs: binding.blockingRefs,
+									blockersOutsideRange,
+								},
+							),
+						)
+					}
 					const staleBlockers = binding.blockingRefs.filter((ref) => {
 						const blocker = parseBindingCellRef(ref, sheet.name)
 						if (!blocker) return true

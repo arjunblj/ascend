@@ -3192,6 +3192,7 @@ describe('applyOperation', () => {
 			const sheet = wb.addSheet('Sheet1')
 			entry.setup(sheet)
 			sheet.cells.set(0, 3, cell(numberValue(99)))
+			expectCachedFormulaAnalysisMatchesFullRecompute(wb)
 
 			const result = applyOperation(wb, {
 				op: 'copyRange',
@@ -3204,6 +3205,7 @@ describe('applyOperation', () => {
 
 			expect(result.value.affectedCells, entry.name).toEqual(entry.affectedCells)
 			entry.assert(sheet)
+			expectCachedFormulaAnalysisMatchesFullRecompute(wb)
 		}
 	})
 
@@ -3219,6 +3221,7 @@ describe('applyOperation', () => {
 				formula: '10+1',
 				styleId: sid,
 			})
+			expectCachedFormulaAnalysisMatchesFullRecompute(wb)
 
 			const result = applyOperation(wb, {
 				op: 'copyRange',
@@ -3234,6 +3237,7 @@ describe('applyOperation', () => {
 			expect(sheet.cells.get(0, 0)?.formulaInfo).toBeUndefined()
 			expect(sheet.cells.get(1, 0)?.formula).toBe('10+1')
 			expect(sheet.cells.get(1, 0)?.formulaInfo).toBeUndefined()
+			expectCachedFormulaAnalysisMatchesFullRecompute(wb)
 		}
 	})
 

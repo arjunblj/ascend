@@ -176,6 +176,7 @@ export interface ReleaseProofIndexResult {
 	readonly streamingMatrixEvidence: ReleaseProofStreamingMatrixEvidence
 	readonly compactReportPublicationEvidence: ReleaseProofCompactReportPublicationEvidence
 	readonly readiness: ReleaseProofReadinessSummary
+	readonly qssLeapfrogReleaseMatrix: ReleaseProofQssLeapfrogReleaseMatrix
 	readonly boundary: string
 	readonly claimPortfolio: readonly ReleaseProofPortfolioClaim[]
 	readonly artifacts: readonly ReleaseProofIndexArtifact[]
@@ -203,10 +204,61 @@ export interface ReleaseProofOwnerHandoffIndex {
 	readonly nextOwnerActions: readonly ReleaseProofNextOwnerAction[]
 	readonly claimBlockerBoard: readonly ReleaseProofClaimBlockerBoardRow[]
 	readonly implementationHandoffs: readonly ReleaseProofImplementationHandoff[]
+	readonly qssLeapfrogReleaseMatrix: ReleaseProofQssLeapfrogReleaseMatrix
 	readonly claimPortfolio: readonly ReleaseProofPortfolioClaim[]
 	readonly deferredClaims: readonly ReleaseProofDeferredClaim[]
 	readonly excludedEvidence: readonly ReleaseProofIndexExcludedEvidence[]
 	readonly boundary: string
+}
+
+export interface ReleaseProofQssLeapfrogReleaseMatrix {
+	readonly status: 'top-two-only'
+	readonly northStar: string
+	readonly competitor: 'Quadratic/QSS'
+	readonly sourceReferences: readonly ReleaseProofSourceReference[]
+	readonly rows: readonly ReleaseProofQssLeapfrogReleaseMatrixRow[]
+	readonly activeReleaseBlockers: readonly ReleaseProofClaimBlockerBoardRow[]
+	readonly archivedResearchNotes: readonly ReleaseProofQssArchivedResearchNote[]
+	readonly boundary: string
+}
+
+export interface ReleaseProofQssLeapfrogReleaseMatrixRow {
+	readonly rank: number
+	readonly artifact: ReleaseProofIndexArtifactName
+	readonly claim: string
+	readonly qssLikelyDoesWell: readonly string[]
+	readonly ascendBetterWhereProven: readonly string[]
+	readonly acceptedEvidence: readonly ReleaseProofQssAcceptedEvidenceItem[]
+	readonly missingEvidence: readonly string[]
+	readonly ownerActions: readonly ReleaseProofNextOwnerAction[]
+	readonly claimsWeMustNotMake: readonly string[]
+	readonly weakClaimDisposition: readonly ReleaseProofQssWeakClaimDisposition[]
+	readonly boundary: string
+}
+
+export interface ReleaseProofQssAcceptedEvidenceItem {
+	readonly evidenceId: string
+	readonly kind: 'test' | 'benchmark' | 'proof-artifact' | 'rc-gate'
+	readonly command: string
+	readonly path: string
+	readonly acceptedScope: string
+	readonly boundary: string
+}
+
+export interface ReleaseProofQssWeakClaimDisposition {
+	readonly weakClaim: string
+	readonly disposition: 'downgrade' | 'blocker' | 'kill'
+	readonly ownerLoop: ReleaseProofReadinessOwner
+	readonly action: string
+	readonly stopCondition: string
+}
+
+export interface ReleaseProofQssArchivedResearchNote {
+	readonly name: ReleaseProofDeferredClaimName | ReleaseProofIndexExcludedEvidenceName
+	readonly status: 'archived-research-note'
+	readonly ownerLoops: readonly ReleaseProofReadinessOwner[]
+	readonly reason: string
+	readonly killCriterion: string
 }
 
 export interface ReleaseProofPackageabilityEvidence {
@@ -976,6 +1028,7 @@ export async function runReleaseProofIndex(
 		safeOpenArtifact(safeOpen, includeTimings),
 		packageActionArtifact(packageAction, includeTimings),
 	]
+	const readiness = releaseReadinessSummary(artifacts)
 	const fixtureEvidence = fixturePolicyEvidence(safeOpenFixtureScan, packageActionFixtureScan)
 	return {
 		generatedAt: new Date().toISOString(),
@@ -999,7 +1052,8 @@ export async function runReleaseProofIndex(
 			packageActionCompact,
 			artifacts,
 		),
-		readiness: releaseReadinessSummary(artifacts),
+		readiness,
+		qssLeapfrogReleaseMatrix: qssLeapfrogReleaseMatrix(artifacts, readiness),
 		boundary:
 			'Digest index for local release evidence artifacts. This is not signed provenance, SLSA, in-toto attestation, or tamper-evident storage.',
 		claimPortfolio: CLAIM_PORTFOLIO.map(clonePortfolioClaim),
@@ -1033,6 +1087,33 @@ export function releaseProofIndexMarkdown(result: ReleaseProofIndexResult): stri
 		`Claim blocker board: ${formatClaimBlockerBoard(result.readiness.claimBlockerBoard)}`,
 		`Implementation handoffs: ${formatImplementationHandoffs(result.readiness.implementationHandoffs)}`,
 		result.readiness.boundary,
+		'',
+		'## QSS Leapfrog Release Matrix',
+		'',
+		`Status: ${result.qssLeapfrogReleaseMatrix.status}`,
+		`Competitor: ${result.qssLeapfrogReleaseMatrix.competitor}`,
+		result.qssLeapfrogReleaseMatrix.northStar,
+		result.qssLeapfrogReleaseMatrix.boundary,
+		'',
+		'QSS source references:',
+		...result.qssLeapfrogReleaseMatrix.sourceReferences.map(
+			(reference) => `- ${reference.label}: ${reference.url}`,
+		),
+		'',
+		'| Rank | Claim | QSS likely does well | Ascend better where proven | Accepted evidence | Missing evidence | Owner/action | Must not claim | Weak claim disposition | Boundary |',
+		'| ---: | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+		...result.qssLeapfrogReleaseMatrix.rows.map(qssLeapfrogReleaseMatrixMarkdownRow),
+		'',
+		'Active release blockers:',
+		...result.qssLeapfrogReleaseMatrix.activeReleaseBlockers.map(
+			(row) =>
+				`- ${row.artifact}/${row.ownerLoop}: ${row.requirementIds.join(',')} (${row.nextStepKinds.join(',')})`,
+		),
+		'',
+		'Archived research notes:',
+		...result.qssLeapfrogReleaseMatrix.archivedResearchNotes.map(
+			(note) => `- ${note.name}: ${note.reason}`,
+		),
 		'',
 		'## Release Packageability Evidence',
 		'',
@@ -1315,6 +1396,7 @@ export function releaseProofOwnerHandoffIndex(
 		nextOwnerActions: result.readiness.nextOwnerActions,
 		claimBlockerBoard: result.readiness.claimBlockerBoard,
 		implementationHandoffs: result.readiness.implementationHandoffs,
+		qssLeapfrogReleaseMatrix: cloneQssLeapfrogReleaseMatrix(result.qssLeapfrogReleaseMatrix),
 		claimPortfolio: result.claimPortfolio.map(clonePortfolioClaim),
 		deferredClaims: result.deferredClaims,
 		excludedEvidence: result.excludedEvidence,
@@ -1381,6 +1463,342 @@ function cloneReleasePackageabilityEvidence(
 		coveredEvidence: [...evidence.coveredEvidence],
 		missingPolicyRequirements: [...evidence.missingPolicyRequirements],
 		forbiddenClaims: [...evidence.forbiddenClaims],
+	}
+}
+
+const QSS_SOURCE_REFERENCES: readonly ReleaseProofSourceReference[] = [
+	{
+		label: 'Quadratic docs: AI, Python, SQL, JavaScript spreadsheet',
+		url: 'https://docs.quadratichq.com/',
+	},
+	{
+		label: 'Quadratic docs: navigation, 60 FPS WASM/WebGL interaction',
+		url: 'https://docs.quadratichq.com/spreadsheet/navigating',
+	},
+	{
+		label: 'Quadratic docs: formulas',
+		url: 'https://docs.quadratichq.com/formulas/getting-started',
+	},
+]
+
+function qssLeapfrogReleaseMatrix(
+	artifacts: readonly ReleaseProofIndexArtifact[],
+	readiness: ReleaseProofReadinessSummary,
+): ReleaseProofQssLeapfrogReleaseMatrix {
+	return {
+		status: 'top-two-only',
+		northStar:
+			'Position Ascend as the trust/proof/runtime layer for agentic spreadsheet work where local release evidence proves an advantage over QSS-style AI/code spreadsheet UX.',
+		competitor: 'Quadratic/QSS',
+		sourceReferences: QSS_SOURCE_REFERENCES.map((reference) => ({ ...reference })),
+		rows: artifacts.map((artifact, index) =>
+			qssLeapfrogReleaseMatrixRow(artifact, index + 1, readiness.nextOwnerActions),
+		),
+		activeReleaseBlockers: readiness.claimBlockerBoard.map(cloneClaimBlockerBoardRow),
+		archivedResearchNotes: [
+			...DEFERRED_CLAIMS.map(
+				(claim): ReleaseProofQssArchivedResearchNote => ({
+					name: claim.name,
+					status: 'archived-research-note',
+					ownerLoops: [...claim.ownerLoops],
+					reason: claim.reason,
+					killCriterion: claim.killCriterion,
+				}),
+			),
+			...EXCLUDED_EVIDENCE.map(
+				(evidence): ReleaseProofQssArchivedResearchNote => ({
+					name: evidence.name,
+					status: 'archived-research-note',
+					ownerLoops: [evidence.ownerLoop],
+					reason: evidence.reason,
+					killCriterion: evidence.eligibilityRule,
+				}),
+			),
+		],
+		boundary:
+			'This matrix is a release-priority gate for the top two claims only. Formula rename, token-bounded agent view, viewport history, columnar sidecars, oracle routing, and agent observability remain archived until they change top-claim implementation priority.',
+	}
+}
+
+function qssLeapfrogReleaseMatrixRow(
+	artifact: ReleaseProofIndexArtifact,
+	rank: number,
+	nextOwnerActions: readonly ReleaseProofNextOwnerAction[],
+): ReleaseProofQssLeapfrogReleaseMatrixRow {
+	const ownerActions = nextOwnerActions.filter((action) => action.artifact === artifact.name)
+	const missingEvidence = artifact.readyWhen
+		.filter((requirement) => requirement.status === 'missing')
+		.map((requirement) => `${requirement.id}: ${requirement.requirement}`)
+	if (artifact.name === 'safe-open-proof') {
+		return {
+			rank,
+			artifact: artifact.name,
+			claim: artifact.claim,
+			qssLikelyDoesWell: [
+				'AI/code-first spreadsheet UX with Python, SQL, JavaScript, formulas, and database connections.',
+				'Browser-native interactive spreadsheet experience with WASM/WebGL navigation and collaboration-oriented product shape.',
+			],
+			ascendBetterWhereProven: [
+				'Pre-hydration package-feature routing for unknown, macro, ActiveX, signature, and malformed workbook risk families.',
+				'Local proof artifacts expose fixture provenance, generated-case disclosure, readyWhen gates, and explicit forbidden wording before release claims are allowed.',
+				'Packageability evidence shows the existing SDK/CLI/API/MCP artifacts can be installed and exercised from local tarballs without workspace dependency leakage.',
+			],
+			acceptedEvidence: safeOpenQssEvidence(),
+			missingEvidence,
+			ownerActions: ownerActions.map(cloneNextOwnerAction),
+			claimsWeMustNotMake: [
+				'Malware scanning, active-content safety, sandboxing, trust certification, or Microsoft Protected View equivalence.',
+				'Signed workbook verification, signer identity, SLSA, in-toto, Sigstore, or GitHub artifact attestation.',
+				'Release latency, threshold, or QSS performance win before the performance owner runs the approved public-input validation.',
+				'Public edge fixture coverage while signed and unknown-part cases remain generated or owner-unapproved.',
+			],
+			weakClaimDisposition: [
+				{
+					weakClaim: 'safe unknown workbook opening',
+					disposition: 'downgrade',
+					ownerLoop: 'product',
+					action:
+						'Use cautious pre-hydration package-feature routing wording until public-edge fixture policy is approved.',
+					stopCondition:
+						'Stop if generated signed/unknown cases are hidden or treated as public binaries.',
+				},
+				{
+					weakClaim: 'QSS-beating open latency',
+					disposition: 'blocker',
+					ownerLoop: 'performance',
+					action:
+						'Run the tracked-clean release-latency validation over approved public inputs before any timing comparison.',
+					stopCondition:
+						'Stop if evidence uses private corpus inputs, generated-only inputs, or one-shot local timings.',
+				},
+				{
+					weakClaim: 'safe file/trust/security claim',
+					disposition: 'kill',
+					ownerLoop: 'release',
+					action:
+						'Forbid security/trust wording; publish only package-feature routing boundaries after release approval.',
+					stopCondition:
+						'Stop if wording implies malware safety, sandboxing, signature trust, or attestation.',
+				},
+			],
+			boundary:
+				'Ascend can claim inspectable routing evidence for unknown workbooks, not user safety or full-fidelity opening of arbitrary Excel files.',
+		}
+	}
+	return {
+		rank,
+		artifact: artifact.name,
+		claim: artifact.claim,
+		qssLikelyDoesWell: [
+			'AI-assisted analysis, code cells, database-connected data workflows, and polished spreadsheet interaction.',
+			'Modern browser spreadsheet UX that may be stronger for exploratory analysis than a proof-focused runtime layer.',
+		],
+		ascendBetterWhereProven: [
+			'Per-part write accounting classifies workbook package changes as passthrough, regenerate, add, drop, or error.',
+			'Proof artifacts expose source graph evidence, package journal issues, compact/full reports, and fail-closed boundaries for unsupported package features.',
+			'Post-write verification separates expected generated table-part changes from unresolved package graph drift.',
+		],
+		acceptedEvidence: packageActionQssEvidence(),
+		missingEvidence,
+		ownerActions: ownerActions.map(cloneNextOwnerAction),
+		claimsWeMustNotMake: [
+			'Signed provenance, SLSA, in-toto, Sigstore, GitHub artifact attestation, tamper-evident storage, or registry publication.',
+			'Semantic understanding or preservation of every unsupported workbook feature.',
+			'Full streaming parity while the matrix is representative and owner-gated.',
+			'Arbitrary unknown-part preservation or recovery when generated and external candidates remain policy-gated.',
+		],
+		weakClaimDisposition: [
+			{
+				weakClaim: 'auditable package-part mutation',
+				disposition: 'downgrade',
+				ownerLoop: 'correctness',
+				action:
+					'Use local per-part package action accounting wording until unsupported-feature boundaries are owner-approved.',
+				stopCondition: 'Stop if wording claims semantic support for unsupported features.',
+			},
+			{
+				weakClaim: 'complete streaming package-action parity',
+				disposition: 'blocker',
+				ownerLoop: 'performance',
+				action:
+					'Keep streaming wording representative unless performance expands and approves the streaming action matrix.',
+				stopCondition: 'Stop if representative proofs are described as full streaming parity.',
+			},
+			{
+				weakClaim: 'proof bundle as provenance or attestation',
+				disposition: 'kill',
+				ownerLoop: 'release',
+				action:
+					'Forbid provenance/attestation wording unless a real signed publication and verification workflow exists.',
+				stopCondition:
+					'Stop if local digests, compact reports, or tarball smoke output are described as signed provenance.',
+			},
+		],
+		boundary:
+			'Ascend can claim local package action accounting and fail-closed audit evidence, not universal Excel compatibility or signed provenance.',
+	}
+}
+
+function safeOpenQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceItem[] {
+	return [
+		{
+			evidenceId: 'safe-open-proof-harness',
+			kind: 'proof-artifact',
+			command: 'bun run fixtures/benchmarks/safe-open-proof.ts --no-timings --json',
+			path: 'fixtures/benchmarks/safe-open-proof.ts',
+			acceptedScope:
+				'Local safe-open proof: case counts, review-before-hydration routes, fixture provenance, malformed rejection, and honest boundary fields.',
+			boundary: 'No timing, malware, trust, Protected View, or signed-provenance claim.',
+		},
+		{
+			evidenceId: 'safe-open-proof-tests',
+			kind: 'test',
+			command: 'bun test fixtures/benchmarks/safe-open-proof.test.ts',
+			path: 'fixtures/benchmarks/safe-open-proof.test.ts',
+			acceptedScope:
+				'Committed regression coverage for safe-open proof shape and claim-safe output.',
+			boundary: 'Tests validate proof shape, not external vendor behavior.',
+		},
+		{
+			evidenceId: 'safe-open-fixture-scan',
+			kind: 'benchmark',
+			command: 'bun run fixtures/benchmarks/safe-open-fixture-scan.ts --json',
+			path: 'fixtures/benchmarks/safe-open-fixture-scan.ts',
+			acceptedScope:
+				'Tracked corpus scan showing public fixture coverage and remaining signed/unknown replacement gaps.',
+			boundary: 'Tracked corpus evidence only; not proof that no public fixture exists elsewhere.',
+		},
+		{
+			evidenceId: 'release-proof-index-owner-handoff',
+			kind: 'proof-artifact',
+			command:
+				'bun run fixtures/benchmarks/release-proof-index.ts --no-timings --owner-handoffs-json',
+			path: 'fixtures/benchmarks/release-proof-index.ts',
+			acceptedScope:
+				'Machine-readable readyWhen gates, active blockers, deferred claims, fixture policy, and release boundary.',
+			boundary: 'Owner routing only; headlineClaimsAllowed remains false.',
+		},
+		{
+			evidenceId: 'release-rc-gate',
+			kind: 'rc-gate',
+			command: 'bun run release:rc:gate',
+			path: 'scripts/release-rc-gate.ts',
+			acceptedScope:
+				'Local RC packageability gate for SDK/CLI/API/MCP tarballs and installed workbook proof.',
+			boundary: 'Local tarball proof only; not registry publication or attestation.',
+		},
+	]
+}
+
+function packageActionQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceItem[] {
+	return [
+		{
+			evidenceId: 'package-action-proof-harness',
+			kind: 'proof-artifact',
+			command: 'bun run fixtures/benchmarks/package-action-proof.ts --no-timings --json',
+			path: 'fixtures/benchmarks/package-action-proof.ts',
+			acceptedScope:
+				'Local package-action proof for passthrough/regenerate/add/drop/error accounting, source graph evidence, and post-write audit status.',
+			boundary:
+				'No signed provenance, semantic support for every feature, or full streaming parity claim.',
+		},
+		{
+			evidenceId: 'package-action-proof-tests',
+			kind: 'test',
+			command: 'bun test fixtures/benchmarks/package-action-proof.test.ts',
+			path: 'fixtures/benchmarks/package-action-proof.test.ts',
+			acceptedScope:
+				'Committed regression coverage for package-action proof shape and compact report boundaries.',
+			boundary: 'Tests validate proof shape and fixture cases, not public release policy.',
+		},
+		{
+			evidenceId: 'package-action-fixture-scan',
+			kind: 'benchmark',
+			command: 'bun run fixtures/benchmarks/package-action-fixture-scan.ts --json',
+			path: 'fixtures/benchmarks/package-action-fixture-scan.ts',
+			acceptedScope:
+				'Tracked corpus scan for package features and remaining generated signature/unknown edge cases.',
+			boundary: 'Tracked corpus evidence only; generated edge cases remain owner-gated.',
+		},
+		{
+			evidenceId: 'release-proof-index-owner-handoff',
+			kind: 'proof-artifact',
+			command:
+				'bun run fixtures/benchmarks/release-proof-index.ts --no-timings --owner-handoffs-json',
+			path: 'fixtures/benchmarks/release-proof-index.ts',
+			acceptedScope:
+				'Machine-readable readyWhen gates, unsupported-feature boundary, streaming matrix, provenance boundary, and owner actions.',
+			boundary: 'Owner routing only; headlineClaimsAllowed remains false.',
+		},
+		{
+			evidenceId: 'copy-sheet-table-package-proof',
+			kind: 'test',
+			command:
+				'bun test packages/sdk/src/agent-workflow.test.ts -t "prepared copySheet commits reopen workbook-unique table identities"',
+			path: 'packages/sdk/src/agent-workflow.test.ts',
+			acceptedScope:
+				'Committed post-write proof that generated copied table package parts are expected and reopened-valid.',
+			boundary:
+				'Specific table-copy package topology proof, not universal package mutation support.',
+		},
+		{
+			evidenceId: 'release-rc-gate',
+			kind: 'rc-gate',
+			command: 'bun run release:rc:gate',
+			path: 'scripts/release-rc-gate.ts',
+			acceptedScope:
+				'Local RC packageability gate for SDK/CLI/API/MCP tarballs and installed workbook proof.',
+			boundary: 'Local tarball proof only; not registry publication or attestation.',
+		},
+	]
+}
+
+function qssLeapfrogReleaseMatrixMarkdownRow(row: ReleaseProofQssLeapfrogReleaseMatrixRow): string {
+	return [
+		String(row.rank),
+		row.claim,
+		row.qssLikelyDoesWell.join('; '),
+		row.ascendBetterWhereProven.join('; '),
+		row.acceptedEvidence
+			.map((item) => `${item.evidenceId}=\`${item.command}\` (${item.path})`)
+			.join('; '),
+		row.missingEvidence.join('; '),
+		row.ownerActions
+			.map((action) => `${action.ownerLoop}/${action.requirementId}: ${action.nextStepKind}`)
+			.join('; '),
+		row.claimsWeMustNotMake.join('; '),
+		row.weakClaimDisposition
+			.map((item) => `${item.disposition}:${item.weakClaim}->${item.ownerLoop}`)
+			.join('; '),
+		row.boundary,
+	]
+		.map((cell) => ` ${cell} `)
+		.join('|')
+		.replace(/^/, '|')
+		.replace(/$/, '|')
+}
+
+function cloneQssLeapfrogReleaseMatrix(
+	matrix: ReleaseProofQssLeapfrogReleaseMatrix,
+): ReleaseProofQssLeapfrogReleaseMatrix {
+	return {
+		...matrix,
+		sourceReferences: matrix.sourceReferences.map((reference) => ({ ...reference })),
+		rows: matrix.rows.map((row) => ({
+			...row,
+			qssLikelyDoesWell: [...row.qssLikelyDoesWell],
+			ascendBetterWhereProven: [...row.ascendBetterWhereProven],
+			acceptedEvidence: row.acceptedEvidence.map((item) => ({ ...item })),
+			missingEvidence: [...row.missingEvidence],
+			ownerActions: row.ownerActions.map(cloneNextOwnerAction),
+			claimsWeMustNotMake: [...row.claimsWeMustNotMake],
+			weakClaimDisposition: row.weakClaimDisposition.map((item) => ({ ...item })),
+		})),
+		activeReleaseBlockers: matrix.activeReleaseBlockers.map(cloneClaimBlockerBoardRow),
+		archivedResearchNotes: matrix.archivedResearchNotes.map((note) => ({
+			...note,
+			ownerLoops: [...note.ownerLoops],
+		})),
 	}
 }
 
@@ -2453,6 +2871,19 @@ function buildClaimBlockerBoard(
 
 function cloneNextOwnerAction(action: ReleaseProofNextOwnerAction): ReleaseProofNextOwnerAction {
 	return { ...action }
+}
+
+function cloneClaimBlockerBoardRow(
+	row: ReleaseProofClaimBlockerBoardRow,
+): ReleaseProofClaimBlockerBoardRow {
+	return {
+		...row,
+		requirementIds: [...row.requirementIds],
+		actionRanks: [...row.actionRanks],
+		nextStepKinds: [...row.nextStepKinds],
+		acceptanceEvidence: [...row.acceptanceEvidence],
+		forbiddenShortcuts: [...row.forbiddenShortcuts],
+	}
 }
 
 function claimProofRequired(

@@ -769,6 +769,82 @@ describe('release proof evidence index', () => {
 		expect(packageActionHandoff.blockingActions[4].forbiddenShortcut).toContain(
 			'compact report digests',
 		)
+		expect(index.qssLeapfrogReleaseMatrix).toMatchObject({
+			status: 'top-two-only',
+			competitor: 'Quadratic/QSS',
+			boundary: expect.stringContaining('top two claims only'),
+		})
+		expect(index.qssLeapfrogReleaseMatrix.rows).toHaveLength(2)
+		expect(index.qssLeapfrogReleaseMatrix.rows.map((row) => row.artifact)).toEqual([
+			'safe-open-proof',
+			'package-action-proof',
+		])
+		expect(index.qssLeapfrogReleaseMatrix.rows[0]).toMatchObject({
+			claim: 'safe unknown workbook opening',
+		})
+		expect(index.qssLeapfrogReleaseMatrix.rows[0].qssLikelyDoesWell).toEqual(
+			expect.arrayContaining([expect.stringContaining('Python, SQL, JavaScript')]),
+		)
+		expect(index.qssLeapfrogReleaseMatrix.rows[0].ascendBetterWhereProven).toEqual(
+			expect.arrayContaining([expect.stringContaining('Pre-hydration package-feature routing')]),
+		)
+		expect(index.qssLeapfrogReleaseMatrix.rows[0].claimsWeMustNotMake).toEqual(
+			expect.arrayContaining([expect.stringContaining('Malware scanning')]),
+		)
+		expect(index.qssLeapfrogReleaseMatrix.rows[0].weakClaimDisposition).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ disposition: 'downgrade' }),
+				expect.objectContaining({ disposition: 'blocker', ownerLoop: 'performance' }),
+				expect.objectContaining({ disposition: 'kill', ownerLoop: 'release' }),
+			]),
+		)
+		expect(index.qssLeapfrogReleaseMatrix.rows[0].acceptedEvidence).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					evidenceId: 'safe-open-proof-harness',
+					command: 'bun run fixtures/benchmarks/safe-open-proof.ts --no-timings --json',
+					path: 'fixtures/benchmarks/safe-open-proof.ts',
+				}),
+				expect.objectContaining({
+					evidenceId: 'release-rc-gate',
+					command: 'bun run release:rc:gate',
+					path: 'scripts/release-rc-gate.ts',
+				}),
+			]),
+		)
+		expect(index.qssLeapfrogReleaseMatrix.rows[1]).toMatchObject({
+			claim: 'auditable package-part mutation',
+		})
+		expect(index.qssLeapfrogReleaseMatrix.rows[1].ascendBetterWhereProven).toEqual(
+			expect.arrayContaining([expect.stringContaining('Per-part write accounting')]),
+		)
+		expect(index.qssLeapfrogReleaseMatrix.rows[1].claimsWeMustNotMake).toEqual(
+			expect.arrayContaining([expect.stringContaining('Signed provenance')]),
+		)
+		expect(index.qssLeapfrogReleaseMatrix.rows[1].acceptedEvidence).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					evidenceId: 'package-action-proof-harness',
+					command: 'bun run fixtures/benchmarks/package-action-proof.ts --no-timings --json',
+					path: 'fixtures/benchmarks/package-action-proof.ts',
+				}),
+				expect.objectContaining({
+					evidenceId: 'copy-sheet-table-package-proof',
+					kind: 'test',
+					path: 'packages/sdk/src/agent-workflow.test.ts',
+				}),
+			]),
+		)
+		expect(index.qssLeapfrogReleaseMatrix.activeReleaseBlockers).toHaveLength(7)
+		expect(index.qssLeapfrogReleaseMatrix.archivedResearchNotes.map((note) => note.name)).toEqual([
+			'formula-language-service-primitives',
+			'token-bounded-agent-view',
+			'retained-viewport-patch-history',
+			'columnar-scan-sidecars',
+			'formula-oracle-routing',
+			'agent-workflow-observability',
+			'practical-latency-contracts',
+		])
 		for (const artifact of index.artifacts) {
 			expect(artifact.sha256).toMatch(/^[a-f0-9]{64}$/)
 			expect(artifact.stableShapeSha256).toMatch(/^[a-f0-9]{64}$/)
@@ -1101,6 +1177,40 @@ describe('release proof evidence index', () => {
 			'safe-open-proof',
 			'package-action-proof',
 		])
+		expect(handoff.qssLeapfrogReleaseMatrix.rows.map((row) => row.artifact)).toEqual([
+			'safe-open-proof',
+			'package-action-proof',
+		])
+		expect(handoff.qssLeapfrogReleaseMatrix.rows[0].acceptedEvidence).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ evidenceId: 'safe-open-proof-tests' }),
+				expect.objectContaining({ evidenceId: 'release-proof-index-owner-handoff' }),
+			]),
+		)
+		expect(handoff.qssLeapfrogReleaseMatrix.rows[1].weakClaimDisposition).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					weakClaim: 'complete streaming package-action parity',
+					disposition: 'blocker',
+				}),
+				expect.objectContaining({
+					weakClaim: 'proof bundle as provenance or attestation',
+					disposition: 'kill',
+				}),
+			]),
+		)
+		expect(handoff.qssLeapfrogReleaseMatrix.archivedResearchNotes).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					name: 'formula-language-service-primitives',
+					status: 'archived-research-note',
+				}),
+				expect.objectContaining({
+					name: 'practical-latency-contracts',
+					status: 'archived-research-note',
+				}),
+			]),
+		)
 		expect(handoff.implementationHandoffs[0]).toMatchObject({
 			claim: 'safe unknown workbook opening',
 			proofCommand: 'bun run fixtures/benchmarks/safe-open-proof.ts --no-timings --json',

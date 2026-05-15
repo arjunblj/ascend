@@ -6,6 +6,7 @@ Updated: 2026-05-15
 
 | Run | Status | Fold-in target |
 | --- | --- | --- |
+| [Release gate rerun after streaming drop proof](runs/2026/2026-05-15-release-gate-rerun-after-streaming-drop/log.md) | release index still blocks headline claims and implementation surface promotion after streaming drop proof; top handoffs remain safe-open and package-action only | product loop, release loop |
 | [Range-backed journal validation](runs/2026/2026-05-15-range-backed-journal-validation/log.md) | finished in-flight invalid range-backed journal classification and content-type attribute coverage; no new surface | correctness loop |
 | [Package action streaming drop proof](runs/2026/2026-05-15-package-action-streaming-drop-proof/log.md) | folded streaming `drop` proof into the package-action harness; `error`, macro, and chart streaming remain unpromoted boundaries | performance loop, release loop |
 | [Safe open latency diagnostic proof](runs/2026/2026-05-15-safe-open-latency-diagnostic-proof/log.md) | archived local timed safe-open proof as diagnostic-only; release-latency-run remains owner blocked | performance loop, release loop |

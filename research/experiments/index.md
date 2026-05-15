@@ -289,3 +289,4 @@ Updated: 2026-05-15
 - [2026-05 agent context contracts](syntheses/2026-05-agent-context-contracts.md)
 - [2026-05 ranked research portfolio](syntheses/2026-05-ranked-research-portfolio.md)
 - [2026-05 owner handoff](syntheses/2026-05-owner-handoff.md)
+- [2026-05 release decision artifact](syntheses/2026-05-release-decision-artifact.md)

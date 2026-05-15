@@ -5401,6 +5401,54 @@ describe('interactive client contract', () => {
 		).toBeUndefined()
 	})
 
+	test('journals expose lossy escaped dynamic spill member preimages', () => {
+		const wb = AscendWorkbook.create()
+		const sheet = wb.getWorkbookModel().addSheet("Bob's Budget")
+		sheet.cells.set(0, 0, {
+			value: numberValue(1),
+			formula: 'SEQUENCE(3)',
+			styleId: DEFAULT_STYLE_ID,
+			formulaInfo: { kind: 'dynamicArray', metadataIndex: 1, collapsed: false },
+		})
+		for (const row of [1, 2]) {
+			sheet.cells.set(row, 0, {
+				value: numberValue(row + 1),
+				formula: null,
+				styleId: DEFAULT_STYLE_ID,
+				formulaInfo: {
+					kind: 'spill',
+					anchorRef: "'Bob''s Budget'!A1",
+					ref: 'A1:A3',
+					isAnchor: false,
+				},
+			})
+		}
+
+		const changed = wb.apply(
+			[{ op: 'setCells', sheet: "Bob's Budget", updates: [{ ref: 'A1', value: 99 }] }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(false)
+		const preimage = changed.journal?.entries[0]?.preimages[0]
+		expect(preimage?.kind).toBe('cells')
+		if (preimage?.kind !== 'cells') throw new Error('missing cells preimage')
+		expect(preimage.cells.map((cell) => cell.ref)).toEqual(['A1', 'A2', 'A3'])
+		for (const ref of ['A1', 'A2', 'A3']) {
+			expect(changed.journal?.issues).toContainEqual({
+				code: 'LOSSY_INVERSE',
+				message: `Formula binding metadata for Bob's Budget!${ref} cannot be restored with public operations`,
+				refs: [`Bob's Budget!${ref}`],
+			})
+		}
+		const changedSheet = wb.getWorkbookModel().getSheet("Bob's Budget")
+		expect(changedSheet?.cells.get(0, 0)?.formulaInfo).toBeUndefined()
+		expect(changedSheet?.cells.get(1, 0)?.formulaInfo).toBeUndefined()
+		expect(changedSheet?.cells.get(2, 0)?.formulaInfo).toBeUndefined()
+	})
+
 	test('formula-only clears of blocked-spill blockers keep exact journals', () => {
 		const wb = AscendWorkbook.create()
 		const sheet = wb.getWorkbookModel().getSheet('Sheet1')

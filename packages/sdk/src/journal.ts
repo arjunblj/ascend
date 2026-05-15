@@ -5961,7 +5961,9 @@ function formulaBindingEditRefs(
 		}
 		if (isSpillFormulaBinding(binding)) {
 			const dynamicAnchorRef =
-				binding.kind === 'dynamicArray' ? `${sheet.name}!${toA1(ref)}` : undefined
+				binding.kind === 'dynamicArray'
+					? `${formatSheetNameForFormula(sheet.name)}!${toA1(ref)}`
+					: undefined
 			for (const [row, col, cell] of sheet.cells.iterate()) {
 				if (sameSpillFormulaBinding(binding, cell.formulaInfo, dynamicAnchorRef)) push(row, col)
 			}
@@ -5992,6 +5994,11 @@ function formulaBindingEditRefs(
 		}
 	}
 	return [...expanded.keys()]
+}
+
+function formatSheetNameForFormula(sheet: string): string {
+	if (/^[A-Za-z_][A-Za-z0-9_.]*$/.test(sheet)) return sheet
+	return `'${sheet.replace(/'/g, "''")}'`
 }
 
 function sameSharedFormulaBinding(

@@ -19,6 +19,8 @@ Fresh proof rerun keeps the portfolio stable and blocks new surface promotion. `
 
 Portfolio decision: safe-open and package-action remain the only implementation handoffs. Ranks 3 through 6 stay proof-packaging-only, and ranks 7 through 10 remain do-not-promote-yet. Formula intelligence remains rejection-first; do not implement edit-producing rename.
 
+Safe-open latency diagnostic, 2026-05-15T20:14:51Z: local `--repeat 3 --warmup 1` proof reported public-fixture open-plan medians from 0.075 ms to 0.220 ms and full/open ratios from 12.03x to 32.75x. This remains diagnostic-only; `release-latency-run` stays missing until performance approves environment, repeat/warmup policy, public input set, and non-threshold wording.
+
 Proof timestamp: 2026-05-15T19:37:18Z.
 
 Fresh top-claim proof rerun keeps the ranked portfolio at 10 directions and preserves the no-new-surface decision. `release-proof-index --owner-handoffs-json` still reports `releaseGate=blocked-by-publication-policy`, `headlineClaimsAllowed=false`, `implementationSurfacePromotionAllowed=false`, and `missingRequirementCount=9`. The only implementation handoffs are still `safe-open-proof` and `package-action-proof`; formula language-service primitives, token-bounded agent view, retained viewport patch history, and release proof bundle stay proof-packaging-only; formula oracle routing, property journal laws, columnar scan sidecars, and agent workflow observability stay do-not-promote-yet.

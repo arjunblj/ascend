@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, statSync } from 'node:fs'
 import { type AscendError, AscendException, ascendError, type CellValue } from '@ascend/schema'
 import {
 	type AgentCommitOptions,
@@ -48,6 +48,7 @@ import { binaryResponse, jsonFailure, jsonFailureError, jsonSuccess } from './re
 const DEFAULT_API_RAW_PART_MAX_BYTES = 64 * 1024
 const MAX_API_RAW_PART_MAX_BYTES = 1024 * 1024
 const DEFAULT_AGENT_PREVIEW_ROWS = 500
+const DEFAULT_PATH_MUTATION_PLAN_CACHE_MAX_BYTES = 64 * 1024 * 1024
 
 type PackageActionEvidence = Pick<
 	Awaited<ReturnType<typeof createAgentPlan>>,
@@ -198,7 +199,57 @@ function replayBatchLoadOptionsError(kind: string, options: readonly string[]): 
 export interface ApiFetchOptions {
 	readonly preparedPlanMaxHandles?: number
 	readonly preparedPlanTtlMs?: number
+	readonly pathMutationPlanCacheMaxBytes?: number
 	readonly now?: () => number
+}
+
+interface PathMutationPlanOpenCacheEntry {
+	readonly file: string
+	readonly size: number
+	readonly mtimeMs: number
+	readonly ctimeMs: number
+	readonly inputSha256: string
+	readonly workbook: AscendWorkbook
+	readonly sourceBytes: Uint8Array
+}
+
+function pathMutationPlanCacheLimit(value: number | undefined): number {
+	if (value === undefined) return DEFAULT_PATH_MUTATION_PLAN_CACHE_MAX_BYTES
+	return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0
+}
+
+async function openPathMutationPlanWorkbook(
+	file: string,
+	cache: PathMutationPlanOpenCacheEntry | undefined,
+	cacheMaxBytes: number,
+): Promise<{
+	readonly opened: PathMutationPlanOpenCacheEntry
+	readonly cache: PathMutationPlanOpenCacheEntry | undefined
+}> {
+	const stat = statSync(file)
+	if (
+		cache &&
+		cache.file === file &&
+		cache.size === stat.size &&
+		cache.mtimeMs === stat.mtimeMs &&
+		cache.ctimeMs === stat.ctimeMs
+	) {
+		return { opened: cache, cache }
+	}
+	const source = await AscendWorkbook.openSourceBytes(file)
+	const opened: PathMutationPlanOpenCacheEntry = {
+		file,
+		size: stat.size,
+		mtimeMs: stat.mtimeMs,
+		ctimeMs: stat.ctimeMs,
+		inputSha256: sha256Bytes(source.sourceBytes),
+		workbook: source.workbook,
+		sourceBytes: source.sourceBytes,
+	}
+	return {
+		opened,
+		cache: source.sourceBytes.byteLength <= cacheMaxBytes ? opened : undefined,
+	}
 }
 
 function resolveOperationInputForWorkbook(
@@ -353,6 +404,10 @@ function withCors(res: Response): Response {
 
 export function createApiFetch(options: ApiFetchOptions = {}) {
 	const preparedPlans = new PreparedPlanStore(options)
+	const pathMutationPlanCacheMaxBytes = pathMutationPlanCacheLimit(
+		options.pathMutationPlanCacheMaxBytes,
+	)
+	let pathMutationPlanCache: PathMutationPlanOpenCacheEntry | undefined
 	return async (req: Request) => {
 		const url = new URL(req.url)
 		const method = req.method
@@ -857,8 +912,14 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 					let preparedPlan: PreparedPlanMetadata | undefined
 					const prepare = body?.prepare !== false
 					if ('mutations' in inputShape) {
-						const opened = await AscendWorkbook.openSourceBytes(file)
-						const inputSha256 = sha256Bytes(opened.sourceBytes)
+						const openedResult = await openPathMutationPlanWorkbook(
+							file,
+							pathMutationPlanCache,
+							pathMutationPlanCacheMaxBytes,
+						)
+						pathMutationPlanCache = openedResult.cache
+						const opened = openedResult.opened
+						const inputSha256 = opened.inputSha256
 						const wb = opened.workbook
 						input = compilePathMutationInput(wb, inputShape.mutations)
 						if (input.ok) pathMutations = input.pathMutations
@@ -879,6 +940,7 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 									...(pathMutations !== undefined ? { pathMutations } : {}),
 								}),
 							)
+							pathMutationPlanCache = undefined
 						}
 					} else {
 						input = inputShape
@@ -932,6 +994,7 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 				const file = body ? requireString(body, 'file') : null
 				if (!file && !planHandle) return jsonFailure('Missing or invalid file', 400)
 				try {
+					pathMutationPlanCache = undefined
 					const unsupportedLoadOptions = unsupportedAgentPlanLoadOptions(body)
 					if (unsupportedLoadOptions.length > 0) {
 						return jsonFailureError(agentPlanLoadOptionsError(unsupportedLoadOptions), 400)
@@ -1031,6 +1094,7 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 				const journal = body?.journal === true
 				if (!file) return jsonFailure('Missing or invalid file', 400)
 				try {
+					pathMutationPlanCache = undefined
 					const wb = await AscendWorkbook.open(file)
 					const input = resolveOperationInputForWorkbook(wb, body)
 					if (!input.ok) return jsonFailureError(input.error, 400)

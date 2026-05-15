@@ -29,6 +29,7 @@ Folded in a tracked proof harness:
 - Added `fixtures/benchmarks/journal-law-proof.test.ts`.
 - The harness generates deterministic exact operation sequences over cells, formulas, comments, hyperlinks, freeze panes, data validations, and conditional formats.
 - The harness also seeds existing row layout, column layout, sheet protection, tab color, page setup, and print-area metadata before proving their replacement inverses are exact.
+- It additionally proves exact package-state replacements for workbook/document properties, workbook views, calc settings, workbook protection, and theme metadata, while keeping style/table-style package preservation gaps as explicit lossy boundaries.
 - For exact generated sequences, it applies operations with `journal: true`, applies `journal.inverseOps` transactionally, and compares stable workbook evidence before and after.
 - It separately probes lossy metadata boundaries:
   - non-suffix data-validation delete;
@@ -49,9 +50,9 @@ bun run fixtures/benchmarks/journal-law-proof.ts
 
 Observed:
 
-- 58 total cases.
-- 53 exact law cases: 48 generated exact sequences plus 5 pre-seeded metadata replacement cases.
-- 5 lossy boundary cases.
+- 63 total cases.
+- 56 exact law cases: 48 generated exact sequences plus 8 pre-seeded metadata/package-state replacement cases.
+- 7 lossy boundary cases.
 - 0 failures.
 - Exact operation counts included:
   - `setCells=35`
@@ -69,7 +70,15 @@ Observed:
   - `setTabColor=1`
   - `setPageSetup=1`
   - `setPrintArea=1`
+  - `setDocumentProperties=1`
+  - `setWorkbookProperties=1`
+  - `setWorkbookView=1`
+  - `setCalcSettings=1`
+  - `setWorkbookProtection=1`
+  - `setTheme=1`
 - Lossy issue counts included:
+  - `package-parts:package-part-preservation=2`
+  - `tables:table-metadata=1`
   - `data-validations:metadata-order=1`
   - `data-validations:metadata-duplicate=1`
   - `conditional-formats:metadata-order=2`
@@ -86,7 +95,7 @@ bunx tsc --build
 
 ## Confidence
 
-Medium-high for the covered exact operation families, the pre-seeded row/column/page/protection/tab metadata replacement families, and metadata lossy boundaries. Medium overall because the generator is deterministic and not shrinkable. It proves a stronger subset than hand fixtures, but it is not yet a full fast-check model-based test.
+Medium-high for the covered exact operation families, pre-seeded row/column/page/protection/tab metadata replacement families, exact package-state replacements, and explicit metadata/style lossy boundaries. Medium overall because the generator is deterministic and not shrinkable. It proves a stronger subset than hand fixtures, but it is not yet a full fast-check model-based test.
 
 ## Fold-in decision
 
@@ -94,4 +103,4 @@ Promote to correctness proof harness and commit. Keep it out of release proof in
 
 ## Next question
 
-Should the next correctness loop add `fast-check` and convert this deterministic proof into a shrinkable model-based `bun test`, or should it first broaden exact families into package-state and style-related operations without collapsing known creation-loss boundaries into exact cases?
+Should the next correctness loop add `fast-check` and convert this deterministic proof into a shrinkable model-based `bun test`, or should it first build a compact release-facing report from the exact/lossy journal-law table?

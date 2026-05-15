@@ -130,6 +130,8 @@ export function runJournalLawProof(options: JournalLawProofOptions = {}): Journa
 	const cases = [
 		...generatedExactCases(seed, exactCaseCount, sequenceLength),
 		...metadataExactCases(),
+		...packageStateExactCases(),
+		...styleBoundaryCases(),
 		...metadataBoundaryCases(),
 	]
 	const operationFamilies: Record<string, number> = {}
@@ -419,6 +421,193 @@ function metadataExactCases(): JournalLawCase[] {
 				},
 				{ op: 'setPrintArea', sheet: 'Sheet1', range: 'C1:D2' },
 			],
+		},
+	]
+}
+
+function packageStateExactCases(): JournalLawCase[] {
+	return [
+		{
+			name: 'workbook-document-properties-replacement',
+			kind: 'exact-sequence',
+			setup: (wb) => {
+				applyOrThrow(wb, [
+					{
+						op: 'setWorkbookProperties',
+						properties: { codeName: 'OriginalBook', date1904: true },
+					},
+					{
+						op: 'setDocumentProperties',
+						mode: 'replace',
+						properties: {
+							core: { title: 'Original' },
+							app: { Company: 'Ascend' },
+							custom: [{ name: 'Reviewed', value: false, type: 'bool' }],
+						},
+					},
+				])
+			},
+			ops: [
+				{
+					op: 'setWorkbookProperties',
+					mode: 'replace',
+					properties: { codeName: 'AgentBook', date1904: false },
+				},
+				{
+					op: 'setDocumentProperties',
+					mode: 'replace',
+					properties: {
+						core: { title: 'Changed' },
+						app: { Company: 'Agent' },
+						custom: [{ name: 'Reviewed', value: true, type: 'bool' }],
+					},
+				},
+			],
+		},
+		{
+			name: 'workbook-view-calc-protection-replacement',
+			kind: 'exact-sequence',
+			setup: (wb) => {
+				applyOrThrow(wb, [
+					{
+						op: 'setWorkbookView',
+						index: 0,
+						view: { activeTab: 0, firstSheet: 0, tabRatio: 600 },
+					},
+					{
+						op: 'setCalcSettings',
+						settings: {
+							calcMode: 'auto',
+							fullCalcOnLoad: false,
+							calcId: 1,
+							dateSystem: '1900',
+						},
+					},
+					{
+						op: 'setWorkbookProtection',
+						protection: {
+							lockStructure: true,
+							workbookAlgorithmName: 'SHA-512',
+							workbookSpinCount: 100000,
+						},
+					},
+				])
+			},
+			ops: [
+				{
+					op: 'setWorkbookView',
+					index: 0,
+					mode: 'replace',
+					view: { activeTab: 1, firstSheet: 0, tabRatio: 720 },
+				},
+				{
+					op: 'setCalcSettings',
+					settings: {
+						calcMode: 'manual',
+						fullCalcOnLoad: true,
+						calcId: 42,
+						dateSystem: '1904',
+					},
+				},
+				{
+					op: 'setWorkbookProtection',
+					protection: { lockWindows: true, workbookPassword: 'ABCD' },
+				},
+			],
+		},
+		{
+			name: 'theme-replacement',
+			kind: 'exact-sequence',
+			setup: (wb) => {
+				applyOrThrow(wb, [
+					{
+						op: 'setTheme',
+						themeName: 'Office',
+						colorSchemeName: 'Office Colors',
+						majorFontLatin: 'Aptos Display',
+						minorFontLatin: 'Aptos',
+						themeColors: [
+							{ slot: 'accent1', rgb: '4F81BD' },
+							{ slot: 'lt1', systemColor: 'window', lastColor: 'FFFFFF' },
+						],
+					},
+				])
+			},
+			ops: [
+				{
+					op: 'setTheme',
+					themeName: 'Brand',
+					colorSchemeName: 'Brand Colors',
+					majorFontLatin: 'Inter Display',
+					minorFontLatin: 'Inter',
+					themeColors: [
+						{ slot: 'accent1', rgb: '0F6CBD' },
+						{ slot: 'lt1', systemColor: 'windowText', lastColor: '000000' },
+					],
+				},
+			],
+		},
+	]
+}
+
+function styleBoundaryCases(): JournalLawCase[] {
+	return [
+		{
+			name: 'style-number-format-package-state',
+			kind: 'lossy-boundary',
+			setup: (wb) => {
+				applyOrThrow(wb, [
+					{
+						op: 'setStyle',
+						sheet: 'Sheet1',
+						range: 'A1:A1',
+						style: { numberFormat: '0.00', font: { bold: true } },
+					},
+				])
+			},
+			ops: [
+				{ op: 'setNumberFormat', sheet: 'Sheet1', range: 'A1:A1', format: '$0.00' },
+				{
+					op: 'setStyle',
+					sheet: 'Sheet1',
+					range: 'A1:A1',
+					style: {
+						font: { italic: true },
+						fill: { pattern: 'solid', fgColor: { kind: 'rgb', rgb: 'FFEFEF' } },
+					},
+				},
+			],
+			expectedIssue: [{ surface: 'package-parts', reason: 'package-part-preservation' }],
+		},
+		{
+			name: 'table-style-metadata-replacement',
+			kind: 'lossy-boundary',
+			setup: (wb) => {
+				applyOrThrow(wb, [
+					{
+						op: 'setCells',
+						sheet: 'Sheet1',
+						updates: [
+							{ ref: 'A1', value: 'Name' },
+							{ ref: 'B1', value: 'Qty' },
+							{ ref: 'A2', value: 'West' },
+							{ ref: 'B2', value: 2 },
+						],
+					},
+					{ op: 'createTable', sheet: 'Sheet1', ref: 'A1:B2', name: 'Sales', hasHeaders: true },
+					{ op: 'setTableStyle', table: 'Sales', styleName: 'TableStyleMedium2' },
+				])
+			},
+			ops: [
+				{
+					op: 'setTableStyle',
+					table: 'Sales',
+					styleName: 'TableStyleDark1',
+					showRowStripes: false,
+					showColumnStripes: true,
+				},
+			],
+			expectedIssue: [{ surface: 'tables', reason: 'table-metadata' }],
 		},
 	]
 }

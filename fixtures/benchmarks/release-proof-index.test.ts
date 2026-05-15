@@ -290,6 +290,7 @@ describe('release proof evidence index', () => {
 				expect.objectContaining({
 					id: 'edge-fixture-policy',
 					ownerLoop: 'product',
+					evidence: expect.stringContaining('fixture scan over tracked fixtures'),
 				}),
 				expect.objectContaining({
 					id: 'provenance-boundary',

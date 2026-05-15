@@ -478,7 +478,7 @@ function packageActionArtifact(
 				requirement:
 					'accept disclosed generated edge packages as release proof or replace them with public binary fixtures',
 				evidence:
-					'current proof uses public docProps, calc-chain, macro, and chart fixtures, plus generated signature-invalidation and unknown-part edge packages',
+					'package-action fixture scan over tracked fixtures finds public docProps/calc-chain/customXml/macro/chart candidates but 0 signature/unknown-path replacements; current proof still uses generated signature-invalidation and unknown-part edge packages',
 			},
 			{
 				id: 'provenance-boundary',

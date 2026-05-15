@@ -71,6 +71,26 @@ describe('safe open proof harness', () => {
 		expect(markdown).toContain('metadata-only')
 	})
 
+	test('reports latency distribution fields without turning them into thresholds', async () => {
+		const proof = await runSafeOpenProof({ repeat: 2, warmup: 0, includeTimings: true })
+		const clean = proof.cases.find((entry) => entry.name === 'clean')
+		const markdown = safeOpenProofMarkdown(proof)
+
+		expect(clean).toMatchObject({
+			openPlanSampleCount: 2,
+			fullOpenSampleCount: 2,
+		})
+		expect(clean?.openPlanMedianMs).toBeGreaterThan(0)
+		expect(clean?.openPlanP95Ms).toBeGreaterThan(0)
+		expect(clean?.openPlanCv).toBeGreaterThanOrEqual(0)
+		expect(clean?.fullOpenMedianMs).toBeGreaterThan(0)
+		expect(clean?.fullOpenP95Ms).toBeGreaterThan(0)
+		expect(clean?.fullOpenCv).toBeGreaterThanOrEqual(0)
+		expect(markdown).toContain('P95 open-plan ms')
+		expect(markdown).toContain('Open-plan CV')
+		expect(markdown).toContain('not malware scanning')
+	})
+
 	test('renders compact release report without weakening publication blockers', async () => {
 		const proof = await runSafeOpenProof({ repeat: 1, warmup: 0, includeTimings: false })
 		const compact = safeOpenCompactReleaseReport(proof)

@@ -40,8 +40,14 @@ export interface SafeOpenProofCaseResult {
 	readonly partCount?: number
 	readonly worksheetPartCount?: number
 	readonly relationshipCount?: number
+	readonly openPlanSampleCount?: number
 	readonly openPlanMedianMs?: number
+	readonly openPlanP95Ms?: number
+	readonly openPlanCv?: number
+	readonly fullOpenSampleCount?: number
 	readonly fullOpenMedianMs?: number
+	readonly fullOpenP95Ms?: number
+	readonly fullOpenCv?: number
 	readonly fullOpenRatio?: number
 	readonly boundary: string
 }
@@ -215,8 +221,8 @@ export function safeOpenProofMarkdown(result: SafeOpenProofResult): string {
 		'',
 		'Boundary: this proves pre-hydration package-feature routing, not malware scanning, sandboxing, active-content execution, or malformed-package recovery.',
 		'',
-		'| Case | Fixture | Bytes | Status | Mode | Review before hydration | Risk families | Parts | Worksheets | Relationships | Median open-plan ms | Median full-open ms | Full/open-plan ratio | Boundary |',
-		'| --- | --- | ---: | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |',
+		'| Case | Fixture | Bytes | Status | Mode | Review before hydration | Risk families | Parts | Worksheets | Relationships | Open-plan samples | Median open-plan ms | P95 open-plan ms | Open-plan CV | Full-open samples | Median full-open ms | P95 full-open ms | Full-open CV | Full/open-plan ratio | Boundary |',
+		'| --- | --- | ---: | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |',
 		...result.cases.map(markdownRow),
 		'',
 		'Allowed claim: Ascend can recommend a load mode and review branch from XLSX/XLSM package features before hydrating workbook cells.',
@@ -297,6 +303,8 @@ async function runSafeOpenProofCase(
 	}
 
 	const riskFamilies = plan?.riskFeatures.map((feature) => feature.featureFamily) ?? []
+	const openPlanStats = sampleStats(openPlanSamples)
+	const fullOpenStats = sampleStats(fullOpenSamples)
 	return {
 		name: proofCase.name,
 		kind: proofCase.kind,
@@ -314,8 +322,22 @@ async function runSafeOpenProofCase(
 				}
 			: {}),
 		riskFamilies,
-		...(openPlanSamples.length > 0 ? { openPlanMedianMs: roundMs(median(openPlanSamples)) } : {}),
-		...(fullOpenSamples.length > 0 ? { fullOpenMedianMs: roundMs(median(fullOpenSamples)) } : {}),
+		...(openPlanStats
+			? {
+					openPlanSampleCount: openPlanStats.count,
+					openPlanMedianMs: roundMs(openPlanStats.median),
+					openPlanP95Ms: roundMs(openPlanStats.p95),
+					openPlanCv: roundRatio(openPlanStats.cv),
+				}
+			: {}),
+		...(fullOpenStats
+			? {
+					fullOpenSampleCount: fullOpenStats.count,
+					fullOpenMedianMs: roundMs(fullOpenStats.median),
+					fullOpenP95Ms: roundMs(fullOpenStats.p95),
+					fullOpenCv: roundRatio(fullOpenStats.cv),
+				}
+			: {}),
 		...(openPlanSamples.length > 0 && fullOpenSamples.length > 0
 			? {
 					fullOpenRatio: roundRatio(
@@ -460,8 +482,14 @@ function markdownRow(row: SafeOpenProofCaseResult): string {
 		row.partCount?.toString() ?? 'n/a',
 		row.worksheetPartCount?.toString() ?? 'n/a',
 		row.relationshipCount?.toString() ?? 'n/a',
+		row.openPlanSampleCount?.toString() ?? 'n/a',
 		row.openPlanMedianMs?.toFixed(3) ?? 'n/a',
+		row.openPlanP95Ms?.toFixed(3) ?? 'n/a',
+		row.openPlanCv?.toFixed(2) ?? 'n/a',
+		row.fullOpenSampleCount?.toString() ?? 'n/a',
 		row.fullOpenMedianMs?.toFixed(3) ?? 'n/a',
+		row.fullOpenP95Ms?.toFixed(3) ?? 'n/a',
+		row.fullOpenCv?.toFixed(2) ?? 'n/a',
 		row.fullOpenRatio?.toFixed(2) ?? 'n/a',
 		row.boundary,
 	]
@@ -522,6 +550,31 @@ function median(values: readonly number[]): number {
 	const value =
 		sorted.length % 2 === 0 ? ((sorted[mid - 1] ?? 0) + (sorted[mid] ?? 0)) / 2 : (sorted[mid] ?? 0)
 	return value
+}
+
+function percentile(values: readonly number[], percentileRank: number): number {
+	const sorted = [...values].sort((a, b) => a - b)
+	if (sorted.length === 0) return 0
+	const index = Math.min(
+		sorted.length - 1,
+		Math.max(0, Math.ceil((percentileRank / 100) * sorted.length) - 1),
+	)
+	return sorted[index] ?? 0
+}
+
+function sampleStats(
+	values: readonly number[],
+): { count: number; median: number; p95: number; cv: number } | undefined {
+	if (values.length === 0) return undefined
+	const mean = values.reduce((sum, value) => sum + value, 0) / values.length
+	const variance =
+		values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / Math.max(values.length, 1)
+	return {
+		count: values.length,
+		median: median(values),
+		p95: percentile(values, 95),
+		cv: mean > 0 ? Math.sqrt(variance) / mean : 0,
+	}
 }
 
 function roundMs(value: number): number {

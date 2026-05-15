@@ -267,6 +267,7 @@ describe('release proof evidence index', () => {
 			'Bun benchmarking',
 			'hyperfine benchmarking',
 			'hyperfine manual',
+			'Google Benchmark repeated statistics',
 		])
 		expect(index.safeOpenLatencyValidationEvidence).toMatchObject({
 			artifact: 'safe-open-proof',
@@ -284,6 +285,11 @@ describe('release proof evidence index', () => {
 			publicTimedCaseNames: [],
 			generatedTimedCaseNames: [],
 			publicOpenPlanMedianMs: {},
+			publicOpenPlanP95Ms: {},
+			publicOpenPlanCv: {},
+			publicFullOpenMedianMs: {},
+			publicFullOpenP95Ms: {},
+			publicFullOpenCv: {},
 			publicFullOpenRatio: {},
 			malformedRejected: true,
 			missingPolicyRequirements: [
@@ -1364,6 +1370,10 @@ describe('release proof evidence index', () => {
 		expect(markdown).toContain('Safe-open latency validation evidence:')
 		expect(markdown).toContain('Status: timed-evidence-absent-owner-run-required')
 		expect(markdown).toContain('Timed case count: 0')
+		expect(markdown).toContain('Public open-plan p95 ms: {}')
+		expect(markdown).toContain('Public open-plan CV: {}')
+		expect(markdown).toContain('Public full-open p95 ms: {}')
+		expect(markdown).toContain('Public full-open CV: {}')
 		expect(markdown).toContain('Release claim allowed: false')
 		expect(markdown).toContain('Threshold claim allowed: false')
 		expect(markdown).toContain('Missing latency policy requirements:')

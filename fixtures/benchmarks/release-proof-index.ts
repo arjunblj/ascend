@@ -592,6 +592,11 @@ export interface ReleaseProofSafeOpenLatencyValidationEvidence {
 	readonly generatedTimedCaseNames: readonly string[]
 	readonly malformedRejected: boolean
 	readonly publicOpenPlanMedianMs: Readonly<Record<string, number>>
+	readonly publicOpenPlanP95Ms: Readonly<Record<string, number>>
+	readonly publicOpenPlanCv: Readonly<Record<string, number>>
+	readonly publicFullOpenMedianMs: Readonly<Record<string, number>>
+	readonly publicFullOpenP95Ms: Readonly<Record<string, number>>
+	readonly publicFullOpenCv: Readonly<Record<string, number>>
 	readonly publicFullOpenRatio: Readonly<Record<string, number>>
 	readonly missingPolicyRequirements: readonly string[]
 	readonly boundary: string
@@ -912,6 +917,10 @@ const PERFORMANCE_POLICY: ReleaseProofPerformancePolicy = {
 		{
 			label: 'hyperfine manual',
 			url: 'https://man.archlinux.org/man/hyperfine.1.en',
+		},
+		{
+			label: 'Google Benchmark repeated statistics',
+			url: 'https://github.com/google/benchmark/blob/main/docs/user_guide.md',
 		},
 	],
 	boundary:
@@ -1255,6 +1264,12 @@ export function releaseProofIndexMarkdown(result: ReleaseProofIndexResult): stri
 		`Timed case count: ${result.safeOpenLatencyValidationEvidence.timedCaseCount}`,
 		`Public timed cases: ${result.safeOpenLatencyValidationEvidence.publicTimedCaseNames.join(',') || 'none'}`,
 		`Generated timed cases: ${result.safeOpenLatencyValidationEvidence.generatedTimedCaseNames.join(',') || 'none'}`,
+		`Public open-plan median ms: ${JSON.stringify(result.safeOpenLatencyValidationEvidence.publicOpenPlanMedianMs)}`,
+		`Public open-plan p95 ms: ${JSON.stringify(result.safeOpenLatencyValidationEvidence.publicOpenPlanP95Ms)}`,
+		`Public open-plan CV: ${JSON.stringify(result.safeOpenLatencyValidationEvidence.publicOpenPlanCv)}`,
+		`Public full-open median ms: ${JSON.stringify(result.safeOpenLatencyValidationEvidence.publicFullOpenMedianMs)}`,
+		`Public full-open p95 ms: ${JSON.stringify(result.safeOpenLatencyValidationEvidence.publicFullOpenP95Ms)}`,
+		`Public full-open CV: ${JSON.stringify(result.safeOpenLatencyValidationEvidence.publicFullOpenCv)}`,
 		`Release claim allowed: ${result.safeOpenLatencyValidationEvidence.releaseClaimAllowed}`,
 		`Threshold claim allowed: ${result.safeOpenLatencyValidationEvidence.thresholdClaimAllowed}`,
 		`Owner approval required: ${result.safeOpenLatencyValidationEvidence.ownerApprovalRequired}`,
@@ -3762,6 +3777,11 @@ function safeOpenLatencyValidationEvidence(
 			(entry) => entry.name === 'malformed' && entry.status === 'rejected',
 		),
 		publicOpenPlanMedianMs: numericCaseMetricByName(publicTimedCases, 'openPlanMedianMs'),
+		publicOpenPlanP95Ms: numericCaseMetricByName(publicTimedCases, 'openPlanP95Ms'),
+		publicOpenPlanCv: numericCaseMetricByName(publicTimedCases, 'openPlanCv'),
+		publicFullOpenMedianMs: numericCaseMetricByName(publicTimedCases, 'fullOpenMedianMs'),
+		publicFullOpenP95Ms: numericCaseMetricByName(publicTimedCases, 'fullOpenP95Ms'),
+		publicFullOpenCv: numericCaseMetricByName(publicTimedCases, 'fullOpenCv'),
 		publicFullOpenRatio: numericCaseMetricByName(publicTimedCases, 'fullOpenRatio'),
 		missingPolicyRequirements: [
 			'tracked-clean release environment',
@@ -3776,7 +3796,14 @@ function safeOpenLatencyValidationEvidence(
 
 function numericCaseMetricByName(
 	cases: readonly SafeOpenProofCaseResult[],
-	metric: 'openPlanMedianMs' | 'fullOpenRatio',
+	metric:
+		| 'openPlanMedianMs'
+		| 'openPlanP95Ms'
+		| 'openPlanCv'
+		| 'fullOpenMedianMs'
+		| 'fullOpenP95Ms'
+		| 'fullOpenCv'
+		| 'fullOpenRatio',
 ): Readonly<Record<string, number>> {
 	return Object.fromEntries(
 		cases

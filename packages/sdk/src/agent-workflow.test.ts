@@ -697,6 +697,88 @@ describe('agent workflow loss audit', () => {
 		expect(existsSync(output)).toBe(false)
 	})
 
+	test('commit from workbook blocks hidden formula text under formula metadata', async () => {
+		const cases = [
+			{
+				name: 'hidden-shared-member-formula',
+				output: join(TEMP_DIR, 'hidden-shared-member-formula-out.xlsx'),
+				setup: (wb: AscendWorkbook) => {
+					const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+					if (!sheet) throw new Error('missing sheet')
+					sheet.cells.set(0, 0, {
+						value: numberValue(2),
+						formula: 'B1*2',
+						styleId: DEFAULT_STYLE_ID,
+						formulaInfo: {
+							kind: 'shared',
+							sharedIndex: '0',
+							isMaster: true,
+							masterRef: 'A1',
+							ref: 'A1:A2',
+						},
+					})
+					sheet.cells.set(1, 0, {
+						value: numberValue(198),
+						formula: 'B2*99',
+						styleId: DEFAULT_STYLE_ID,
+						formulaInfo: {
+							kind: 'shared',
+							sharedIndex: '0',
+							isMaster: false,
+							masterRef: 'A1',
+						},
+					})
+				},
+				expectedKind: 'shared-formula-member-formula-text-mismatch',
+			},
+			{
+				name: 'hidden-data-table-formula',
+				output: join(TEMP_DIR, 'hidden-data-table-formula-out.xlsx'),
+				setup: (wb: AscendWorkbook) => {
+					const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+					if (!sheet) throw new Error('missing sheet')
+					sheet.cells.set(0, 0, {
+						value: numberValue(3),
+						formula: 'B1*2',
+						styleId: DEFAULT_STYLE_ID,
+						formulaInfo: { kind: 'dataTable', ref: 'A1:A2', dtr: true, r1: 'B1' },
+					})
+				},
+				expectedKind: 'data-table-formula-text-mismatch',
+			},
+		] as const
+
+		for (const entry of cases) {
+			const wb = AscendWorkbook.create()
+			entry.setup(wb)
+			const sourceBytes = wb.toBytes()
+			const ops = [{ op: 'setCells' as const, sheet: 'Sheet1', updates: [{ ref: 'C1', value: 1 }] }]
+
+			await expect(
+				commitAgentPlanFromWorkbook(
+					entry.name,
+					'0'.repeat(64),
+					wb,
+					ops,
+					{
+						output: entry.output,
+					},
+					{
+						sourceBytes,
+					},
+				),
+			).rejects.toThrow('Commit blocked by write policy')
+			expect(existsSync(entry.output)).toBe(false)
+			expect(wb.check().issues).toContainEqual(
+				expect.objectContaining({
+					rule: 'formula-binding-integrity',
+					severity: 'error',
+					details: expect.objectContaining({ kind: entry.expectedKind }),
+				}),
+			)
+		}
+	})
+
 	test('plans explain calc chain preservation versus formula-topology invalidation', async () => {
 		const input = join(TEMP_DIR, 'calc-chain.xlsx')
 		mkdirSync(TEMP_DIR, { recursive: true })

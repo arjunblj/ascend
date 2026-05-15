@@ -2928,6 +2928,10 @@ describe('interactive client contract', () => {
 				riskLevel: 'none',
 			},
 		})
+		const emptyPreview = wb.preview([], { journal: true })
+		expect(emptyPreview.wouldSucceed).toBe(true)
+		expect(emptyPreview.errors).toEqual([])
+		expect(emptyPreview.journal).toEqual(empty.journal)
 
 		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] }])
 		const beforeNoOp = wb.readSnapshotInfo().generations
@@ -2948,6 +2952,15 @@ describe('interactive client contract', () => {
 		expect(noOp.journal?.inverseOps).toEqual([
 			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] },
 		])
+		const noOpPreview = wb.preview(
+			[{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] }],
+			{ journal: true },
+		)
+		expect(noOpPreview.wouldSucceed).toBe(true)
+		expect(noOpPreview.errors).toEqual([])
+		expect(noOpPreview.journal?.supported).toBe(true)
+		expect(noOpPreview.journal?.exact).toBe(true)
+		expect(noOpPreview.journal?.inverseOps).toEqual(noOp.journal?.inverseOps)
 
 		const undo = wb.apply(noOp.journal?.inverseOps ?? [], { transaction: true })
 		expect(undo.errors).toEqual([])

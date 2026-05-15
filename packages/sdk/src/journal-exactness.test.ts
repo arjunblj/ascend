@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { DEFAULT_STYLE_ID } from '@ascend/core'
 import { numberValue, type Operation } from '@ascend/schema'
-import { AscendWorkbook } from './index.ts'
 import {
 	buildMutationJournal,
 	classifyMutationJournalIssue,
@@ -14,6 +13,7 @@ import {
 	type MutationJournalSurface,
 	unavailableMutationJournal,
 } from './journal.ts'
+import { AscendWorkbook } from './workbook.ts'
 
 const REQUIRED_JOURNAL_SURFACES: readonly MutationJournalSurface[] = [
 	'cells',
@@ -28,6 +28,7 @@ const REQUIRED_JOURNAL_SURFACES: readonly MutationJournalSurface[] = [
 	'hyperlinks',
 	'data-validations',
 	'conditional-formats',
+	'auto-filters',
 	'merged-cells',
 	'row-layout',
 	'column-layout',
@@ -104,6 +105,7 @@ describe('mutation journal exactness model', () => {
 			lossyChartSeriesUnsetJournal(),
 			lossyPivotCacheUnsetJournal(),
 			lossyConditionalFormatOrderJournal(),
+			lossyAutoFilterJournal(),
 			lossyPageSetupJournal(),
 			lossyX14TransferJournal(),
 		]
@@ -117,6 +119,17 @@ describe('mutation journal exactness model', () => {
 				expect(rule.lossReasons).toContain(classification.reason)
 			}
 		}
+	})
+
+	test('classifies autofilter losses by column extension and sort reasons', () => {
+		const reasons = classifyMutationJournalIssues(lossyAutoFilterJournal().issues).map(
+			(classification) => classification.reason,
+		)
+		expect(reasons).toEqual([
+			'auto-filter-column-metadata',
+			'auto-filter-extension-metadata',
+			'auto-filter-sort-metadata',
+		])
 	})
 
 	test('representative edit operations obey the exactness taxonomy', () => {
@@ -286,6 +299,18 @@ describe('mutation journal exactness model', () => {
 					const wb = AscendWorkbook.create()
 					applyExact(wb, [{ op: 'mergeCells', sheet: 'Sheet1', range: 'A1:B1' }])
 					return applyJournal(wb, [{ op: 'unmergeCells', sheet: 'Sheet1', range: 'A1:B1' }])
+				},
+			},
+			{
+				surface: 'auto-filters',
+				exact: true,
+				run: () => {
+					const wb = AscendWorkbook.create()
+					applyExact(wb, [
+						{ op: 'setAutoFilter', sheet: 'Sheet1', range: 'A1:B10' },
+						{ op: 'setAutoFilter', sheet: 'Sheet1', range: 'A1:B10', column: 0, values: ['Open'] },
+					])
+					return applyJournal(wb, [{ op: 'clearAutoFilter', sheet: 'Sheet1' }])
 				},
 			},
 			{
@@ -483,6 +508,7 @@ describe('mutation journal exactness model', () => {
 			'hyperlinks',
 			'data-validations',
 			'conditional-formats',
+			'auto-filters',
 			'merged-cells',
 			'row-layout',
 			'column-layout',
@@ -620,6 +646,23 @@ function lossyConditionalFormatOrderJournal(): MutationJournal {
 	return buildMutationJournal(wb.getWorkbookModel(), [
 		{ op: 'deleteConditionalFormat', sheet: 'Sheet1' },
 	])
+}
+
+function lossyAutoFilterJournal(): MutationJournal {
+	const wb = AscendWorkbook.create()
+	const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+	if (!sheet) throw new Error('missing sheet')
+	sheet.autoFilter = {
+		ref: 'A1:B10',
+		uid: '{filter-uid}',
+		columns: [{ colId: 0, kind: 'filters', values: ['Open'], hiddenButton: true }],
+		sortState: {
+			ref: 'A1:B10',
+			caseSensitive: true,
+			conditions: [{ ref: 'A2:A10', descending: true }, { ref: 'B2:B10' }],
+		},
+	}
+	return applyJournal(wb, [{ op: 'clearAutoFilter', sheet: 'Sheet1' }])
 }
 
 function lossyPageSetupJournal(): MutationJournal {

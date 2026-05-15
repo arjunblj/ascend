@@ -80,6 +80,7 @@ export type MutationJournalSurface =
 	| 'hyperlinks'
 	| 'data-validations'
 	| 'conditional-formats'
+	| 'auto-filters'
 	| 'merged-cells'
 	| 'row-layout'
 	| 'column-layout'
@@ -111,6 +112,9 @@ export type MutationJournalReasonCode =
 	| 'metadata-collision'
 	| 'merge-overlap'
 	| 'x14-metadata'
+	| 'auto-filter-column-metadata'
+	| 'auto-filter-extension-metadata'
+	| 'auto-filter-sort-metadata'
 	| 'legacy-comment-drawing'
 	| 'comment-author-removal'
 	| 'threaded-comment-selector'
@@ -149,6 +153,12 @@ export const MUTATION_JOURNAL_REASON_DESCRIPTIONS: Record<MutationJournalReasonC
 	'metadata-collision': 'Transferred metadata collides with existing target metadata.',
 	'merge-overlap': 'Merge metadata partially overlaps an edited range or target.',
 	'x14-metadata': 'x14 extension metadata has no public inverse operation.',
+	'auto-filter-column-metadata':
+		'AutoFilter column metadata is not fully representable by public filter operations.',
+	'auto-filter-extension-metadata':
+		'AutoFilter extension metadata has no public inverse operation.',
+	'auto-filter-sort-metadata':
+		'AutoFilter sort metadata is not fully representable by public filter operations.',
 	'legacy-comment-drawing': 'Legacy VML comment drawing metadata has no public inverse operation.',
 	'comment-author-removal': 'Comment author metadata cannot be removed exactly.',
 	'threaded-comment-selector':
@@ -339,6 +349,21 @@ export const MUTATION_JOURNAL_EXACTNESS_MATRIX: readonly MutationJournalExactnes
 			'moveRange',
 			'sortRange',
 		],
+	},
+	{
+		surface: 'auto-filters',
+		exactness: 'conditional',
+		publicInverse: 'conditional',
+		constraints: [
+			'simple range filters and single-condition public sort state restore with setAutoFilter/clearAutoFilter',
+			'advanced filter columns, extension metadata, and advanced sort metadata are lossy',
+		],
+		lossReasons: [
+			'auto-filter-column-metadata',
+			'auto-filter-extension-metadata',
+			'auto-filter-sort-metadata',
+		],
+		representativeOps: ['setAutoFilter', 'clearAutoFilter'],
 	},
 	{
 		surface: 'merged-cells',
@@ -548,6 +573,7 @@ function inferMutationJournalIssueSurface(issue: MutationJournalIssue): Mutation
 	if (text.includes('conditional format') || text.includes('conditional-format')) {
 		return 'conditional-formats'
 	}
+	if (text.includes('autofilter') || text.includes('auto filter')) return 'auto-filters'
 	if (text.includes('merge')) return 'merged-cells'
 	if (text.includes('row layout') || text.includes('row height') || text.includes(' rows')) {
 		return 'row-layout'
@@ -594,6 +620,9 @@ function inferMutationJournalIssueReason(
 	if (text.includes('formula cache')) return 'formula-cache-unsupported-value'
 	if (text.includes('richtext')) return 'rich-text-unsupported-runs'
 	if (text.includes('default attributes')) return 'data-validation-default-attributes'
+	if (text.includes('autofilter column')) return 'auto-filter-column-metadata'
+	if (text.includes('autofilter extension metadata')) return 'auto-filter-extension-metadata'
+	if (text.includes('autofilter sort metadata')) return 'auto-filter-sort-metadata'
 	if (text.includes('legacy comment drawing')) return 'legacy-comment-drawing'
 	if (text.includes('threaded comment selector')) return 'threaded-comment-selector'
 	if (text.includes('comment author')) return 'comment-author-removal'
@@ -643,6 +672,8 @@ function surfaceDefaultLossReason(surface: MutationJournalSurface): MutationJour
 		case 'data-validations':
 		case 'conditional-formats':
 			return 'metadata-order'
+		case 'auto-filters':
+			return 'auto-filter-column-metadata'
 		case 'merged-cells':
 			return 'merge-overlap'
 		case 'row-layout':

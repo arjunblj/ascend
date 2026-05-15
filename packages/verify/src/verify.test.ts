@@ -757,6 +757,50 @@ describe('checker', () => {
 		})
 	})
 
+	test('detects blocked spill metadata attached outside the formula anchor', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.cells.set(0, 0, {
+			value: errorValue('#SPILL!'),
+			formula: 'SEQUENCE(3)',
+			styleId: SID,
+			formulaInfo: {
+				kind: 'blockedSpill',
+				anchorRef: 'Sheet1!A1',
+				ref: 'A1:A3',
+				blockingRefs: ['A2'],
+			},
+		})
+		s.cells.set(1, 0, {
+			value: stringValue('blocker'),
+			formula: null,
+			styleId: SID,
+			formulaInfo: {
+				kind: 'blockedSpill',
+				anchorRef: 'Sheet1!A1',
+				ref: 'A1:A3',
+				blockingRefs: ['A2'],
+			},
+		})
+
+		const result = check(wb)
+		const issue = result.issues.find(
+			(entry) => entry.details?.kind === 'blockedSpill-non-anchor-metadata',
+		)
+		expect(result.passed).toBe(false)
+		expect(issue).toMatchObject({
+			rule: 'formula-binding-integrity',
+			severity: 'error',
+			message: 'Blocked spill metadata at Sheet1!A2 is attached outside its formula anchor',
+			refs: ['Sheet1!A2', 'Sheet1!A1'],
+			details: {
+				kind: 'blockedSpill-non-anchor-metadata',
+				anchorRef: 'Sheet1!A1',
+				range: 'A1:A3',
+			},
+		})
+	})
+
 	test('detects stale blocked spill blocker metadata', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')

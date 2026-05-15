@@ -1127,6 +1127,18 @@ function checkFormulaBindingIntegrity(wb: Workbook): CheckIssue[] {
 							),
 						)
 					}
+				} else if (!isAnchorCell) {
+					issues.push(
+						formulaBindingIntegrityIssue(
+							`Blocked spill metadata at ${cellRef} is attached outside its formula anchor`,
+							[cellRef, `${anchor.sheet}!${toA1({ row: anchor.row, col: anchor.col })}`],
+							{
+								kind: 'blockedSpill-non-anchor-metadata',
+								anchorRef: binding.anchorRef,
+								range: binding.ref,
+							},
+						),
+					)
 				}
 				const groupKey = `${anchor.sheet.toLowerCase()}!${anchor.row}:${anchor.col}`
 				const group = spillBindingGroups.get(groupKey)

@@ -15,6 +15,8 @@ import {
 
 export type ReleaseProofIndexArtifactName = 'safe-open-proof' | 'package-action-proof'
 export type ReleaseProofIndexExcludedEvidenceName = 'practical-latency-contracts'
+export type ReleaseProofReadinessOwner = 'correctness' | 'performance' | 'product' | 'release'
+export type ReleaseProofReadinessStatus = 'missing' | 'satisfied'
 
 export interface ReleaseProofIndexOptions {
 	readonly includeTimings?: boolean
@@ -26,6 +28,7 @@ export interface ReleaseProofIndexArtifact {
 	readonly claim: string
 	readonly publicationStatus: 'local-proof-ready' | 'needs-release-packaging'
 	readonly publicationBlockers: readonly string[]
+	readonly readyWhen: readonly ReleaseProofReadinessRequirement[]
 	readonly headlineClaimAllowed: boolean
 	readonly releaseGate: 'ready' | 'blocked-by-publication-policy'
 	readonly sha256: string
@@ -35,6 +38,14 @@ export interface ReleaseProofIndexArtifact {
 	readonly fixtureProvenance: ReleaseProofFixtureProvenance
 	readonly summary: Readonly<Record<string, string | number | boolean>>
 	readonly boundary: string
+}
+
+export interface ReleaseProofReadinessRequirement {
+	readonly id: string
+	readonly status: ReleaseProofReadinessStatus
+	readonly ownerLoop: ReleaseProofReadinessOwner
+	readonly requirement: string
+	readonly evidence?: string
 }
 
 export interface ReleaseProofFixtureProvenance {
@@ -103,8 +114,8 @@ export function releaseProofIndexMarkdown(result: ReleaseProofIndexResult): stri
 		`Generated: ${result.generatedAt}`,
 		result.boundary,
 		'',
-		'| Artifact | Claim | Command | Publication status | Release gate | Headline claim allowed | Publication blockers | JSON bytes | Markdown bytes | Fixture provenance | SHA-256 | Stable shape SHA-256 | Summary | Boundary |',
-		'| --- | --- | --- | --- | --- | --- | --- | ---: | ---: | --- | --- | --- | --- | --- |',
+		'| Artifact | Claim | Command | Publication status | Release gate | Headline claim allowed | Publication blockers | Ready when | JSON bytes | Markdown bytes | Fixture provenance | SHA-256 | Stable shape SHA-256 | Summary | Boundary |',
+		'| --- | --- | --- | --- | --- | --- | --- | --- | ---: | ---: | --- | --- | --- | --- | --- |',
 		...result.artifacts.map(markdownRow),
 		'',
 		'## Excluded Evidence',
@@ -153,6 +164,30 @@ function safeOpenArtifact(
 			'signed and unknown-part cases are durable code-generated packages, not public binary fixtures',
 			'local timing evidence is proof-run data, not a release performance threshold',
 		],
+		readyWhen: [
+			{
+				id: 'public-edge-fixtures',
+				status: 'missing',
+				ownerLoop: 'product',
+				requirement:
+					'replace generated signed/unknown-part packages with public binary fixtures or explicitly approve disclosed generated edge packages',
+				evidence: 'safe-open fixture scan currently finds no checked-in public binary replacements',
+			},
+			{
+				id: 'release-latency-run',
+				status: 'missing',
+				ownerLoop: 'performance',
+				requirement:
+					'run tracked-clean release-environment open-plan latency evidence over standardized public inputs with approved threshold wording',
+			},
+			{
+				id: 'publication-boundary',
+				status: 'missing',
+				ownerLoop: 'release',
+				requirement:
+					'approve boundary language that excludes malware scanning, sandboxing, file trust, active-content safety, and signed provenance',
+			},
+		],
 		headlineClaimAllowed: false,
 		releaseGate: 'blocked-by-publication-policy',
 		sha256: sha256(json),
@@ -192,6 +227,31 @@ function packageActionArtifact(
 			'synthetic edge packages must stay disclosed unless replaced by public binary fixtures',
 			'proof is local evidence, not signed provenance or third-party attestation',
 		],
+		readyWhen: [
+			{
+				id: 'edge-fixture-policy',
+				status: 'missing',
+				ownerLoop: 'product',
+				requirement:
+					'accept disclosed generated edge packages as release proof or replace them with public binary fixtures',
+				evidence:
+					'current proof uses generated calc-chain, signature-invalidation, unknown-part, and docProps edge packages',
+			},
+			{
+				id: 'provenance-boundary',
+				status: 'missing',
+				ownerLoop: 'release',
+				requirement:
+					'approve local-proof wording that does not imply SLSA, in-toto, signed provenance, or third-party attestation',
+			},
+			{
+				id: 'unsupported-feature-boundary',
+				status: 'missing',
+				ownerLoop: 'correctness',
+				requirement:
+					'approve boundaries for signatures, chart byte passthrough, Excel recalculation equivalence, and unsupported feature semantics',
+			},
+		],
 		headlineClaimAllowed: false,
 		releaseGate: 'blocked-by-publication-policy',
 		sha256: sha256(json),
@@ -225,6 +285,7 @@ function markdownRow(row: ReleaseProofIndexArtifact): string {
 		row.releaseGate,
 		String(row.headlineClaimAllowed),
 		row.publicationBlockers.join('; '),
+		formatReadyWhen(row.readyWhen),
 		String(row.jsonBytes),
 		String(row.markdownBytes),
 		formatFixtureProvenance(row.fixtureProvenance),
@@ -237,6 +298,15 @@ function markdownRow(row: ReleaseProofIndexArtifact): string {
 		.join('|')
 		.replace(/^/, '|')
 		.replace(/$/, '|')
+}
+
+function formatReadyWhen(requirements: readonly ReleaseProofReadinessRequirement[]): string {
+	return requirements
+		.map(
+			(requirement) =>
+				`${requirement.id}(${requirement.status},${requirement.ownerLoop})=${requirement.requirement}`,
+		)
+		.join('; ')
 }
 
 function safeOpenFixtureProvenance(

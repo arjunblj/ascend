@@ -168,8 +168,8 @@ The owner loops above are done only when the release artifact can answer these c
 
 | Owner | Required evidence | Blocking exit condition |
 | --- | --- | --- |
-| Safe unknown workbook opening | `safe-open-proof` command, stable shape digest `6aa54a651309b3c45ce7ce93ff7034e7b31e47c7cbc458c58ee6a6f23e0c6178`, public fixture table, explicit review branches, malformed rejection, validation commands, and accepted or resolved publication blockers | Do not publish headline copy if signed/unknown package evidence remains undisclosed or if timing language reads as a threshold |
-| Auditable package-part mutation | `package-action-proof` command, stable shape digest `b9758496346c97920c80ba08b6632315708a6d6cc770927695337e729554dbb0`, all five action classes, journal issue refs, post-write audit status, validation commands, and accepted or resolved publication blockers | Do not publish headline copy if synthetic edge packages are hidden, if chart XML is called byte-passthrough, or if the proof implies SLSA/in-toto/signed provenance |
+| Safe unknown workbook opening | `safe-open-proof` command, stable shape digest `6aa54a651309b3c45ce7ce93ff7034e7b31e47c7cbc458c58ee6a6f23e0c6178`, public fixture table, explicit review branches, malformed rejection, validation commands, and accepted or resolved `readyWhen` gates | Do not publish headline copy if signed/unknown package evidence remains undisclosed or if timing language reads as a threshold |
+| Auditable package-part mutation | `package-action-proof` command, stable shape digest `60da8baa4a897e7edbd3f02fcb1a7026643bc68de1f5dedec082e71d29f03213`, all five action classes, journal issue refs, post-write audit status, validation commands, and accepted or resolved `readyWhen` gates | Do not publish headline copy if synthetic edge packages are hidden, if chart XML is called byte-passthrough, or if the proof implies SLSA/in-toto/signed provenance |
 
 ### Public Fixture Policy
 
@@ -190,7 +190,7 @@ Public binary fixtures are required before stronger headline copy when any of th
 
 Current application: the safe-open signed and unknown-part cases can remain generated local proof because they exercise OPC package topology and are disclosed as synthetic. They should still block stronger release copy until accepted or replaced; `fixtures/benchmarks/safe-open-fixture-scan.ts` currently finds no checked-in public binary replacement.
 
-Release-index enforcement: `fixtures/benchmarks/release-proof-index.ts` marks both current top artifacts as `headlineClaimAllowed: false` with `releaseGate: blocked-by-publication-policy`. This keeps local proof usable while making stronger headline copy a deliberate product decision rather than an accidental interpretation of a digest.
+Release-index enforcement: `fixtures/benchmarks/release-proof-index.ts` marks both current top artifacts as `headlineClaimAllowed: false` with `releaseGate: blocked-by-publication-policy`. It now also exposes `readyWhen` requirements by owner loop so publication blockers stay actionable and machine-readable. This keeps local proof usable while making stronger headline copy a deliberate product decision rather than an accidental interpretation of a digest.
 
 ## Do Not Promote Yet
 

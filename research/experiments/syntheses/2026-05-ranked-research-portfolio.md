@@ -23,7 +23,7 @@ Research is no longer a broad sweep. Each direction below must earn its place by
 | 3 | Formula rejection-first language service | Ascend can expose formula intelligence while refusing unsafe workbook-context rename targets. | Formula intelligence without unsafe mutation. | Cross-surface refusal snapshots, LET shadowing matrix, defined/table/external ref rejection, latency corpus. | Kill rename promotion until workbook-context symbol ownership and operation-owned edits exist. | Product/DX plus correctness |
 | 4 | Retained viewport patch history | Ascend can patch from bounded retained tokens or return explicit refresh reasons. | Real-world performance and UI/agent efficiency. | SDK patch proof, API/MCP `changedSince` recovery, invalid/expired token examples, patch bytes. | Kill collaboration/sync wording unless multi-writer convergence is implemented and tested. | Product/performance |
 | 5 | Token-bounded agent view | Ascend can summarize workbook intent under approximate token budgets with omitted-evidence recovery hints. | World-class agent DX. | Budget/recovery proofs, cross-surface metadata, product example using locators. | Kill exact-token wording if structural floors exceed tiny budgets. | Product/DX |
-| 6 | Release proof index | Ascend can package top claim proof artifacts by digest without fake attestation claims. | Trustworthy releases and auditability. | Digest index, stable-shape hashes, privacy/artifact policy, no signed-provenance language. | Kill publication if storage semantics imply tamper evidence without signing. | Product/release |
+| 6 | Release proof index | Ascend can package top claim proof artifacts by digest and owner-loop readiness gates without fake attestation claims. | Trustworthy releases and auditability. | Digest index, stable-shape hashes, `readyWhen` gates, privacy/artifact policy, no signed-provenance language. | Kill publication if storage semantics imply tamper evidence without signing or if `readyWhen` requirements remain hidden from owner loops. | Product/release |
 | 7 | Formula conformance/oracle routing | Ascend can route formula mismatches by class across static goldens, HyperFormula, LibreOffice, and Excel. | Correctness credibility. | Runnable corpus artifacts, mismatch classes, oracle adapters, skip/divergence counters. | Kill public compatibility claims if private corpora or cached values are required. | Correctness |
 | 8 | Property-style journal laws | Ascend can prove selected inverse journal laws across generated operation sequences, package-state replacements, and explicit lossy metadata/style boundaries. | Trustworthy mutation planning. | fast-check shrinking, changed-test integration. | Kill broad law claims until generated coverage is shrinkable and style/table-style gaps stop being lossy or are excluded from exact wording. | Correctness |
 | 9 | Columnar scan sidecars | Ascend can accelerate repeated table/range scans with disposable generation-keyed sidecars. | Real-world performance without replacing workbook truth. | Multi-source external public workbook benchmarks; first SEC external workbook parity now exists. | Kill product promotion if build+invalidation cost erases repeated-scan gains, checksum parity fails, or evidence stays limited to one external source plus generated/stress fixtures. | Performance |
@@ -114,7 +114,14 @@ bun run fixtures/benchmarks/release-proof-index.ts --no-timings
 | Artifact | Stable shape SHA-256 | Summary |
 | --- | --- | --- |
 | safe-open-proof | `6aa54a651309b3c45ce7ce93ff7034e7b31e47c7cbc458c58ee6a6f23e0c6178` | cases=9, ok=8, rejected=1, reviewBeforeHydration=4, malformedRejected=true |
-| package-action-proof | `b9758496346c97920c80ba08b6632315708a6d6cc770927695337e729554dbb0` | cases=8, passthrough=27, regenerate=38, add=3, drop=3, error=1 |
+| package-action-proof | `60da8baa4a897e7edbd3f02fcb1a7026643bc68de1f5dedec082e71d29f03213` | cases=8, passthrough=27, regenerate=38, add=3, drop=3, error=1 |
+
+Readiness gates now fail closed for the top two artifacts:
+
+| Artifact | Missing readyWhen gates |
+| --- | --- |
+| safe-open-proof | public-edge-fixtures; release-latency-run; publication-boundary |
+| package-action-proof | edge-fixture-policy; provenance-boundary; unsupported-feature-boundary |
 
 Decision: formula intelligence, retained viewport patches, token-bounded agent view, property-based journal laws, and columnar sidecars stay out of the top release proof index for now.
 

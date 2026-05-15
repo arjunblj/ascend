@@ -24,12 +24,28 @@ describe('release proof evidence index', () => {
 			expect(artifact.stableShapeSha256).toMatch(/^[a-f0-9]{64}$/)
 			expect(artifact.jsonBytes).toBeGreaterThan(100)
 			expect(artifact.markdownBytes).toBeGreaterThan(100)
+			expect(artifact.readyWhen.length).toBeGreaterThan(0)
+			expect(artifact.readyWhen.every((requirement) => requirement.status === 'missing')).toBe(true)
 		}
 		expect(index.artifacts.find((artifact) => artifact.name === 'safe-open-proof')).toMatchObject({
 			command: 'bun run fixtures/benchmarks/safe-open-proof.ts --no-timings --json',
 			publicationStatus: 'needs-release-packaging',
 			headlineClaimAllowed: false,
 			releaseGate: 'blocked-by-publication-policy',
+			readyWhen: [
+				expect.objectContaining({
+					id: 'public-edge-fixtures',
+					ownerLoop: 'product',
+				}),
+				expect.objectContaining({
+					id: 'release-latency-run',
+					ownerLoop: 'performance',
+				}),
+				expect.objectContaining({
+					id: 'publication-boundary',
+					ownerLoop: 'release',
+				}),
+			],
 			fixtureProvenance: {
 				publicFixtureCases: 6,
 				generatedWorkbookCases: 0,
@@ -57,6 +73,20 @@ describe('release proof evidence index', () => {
 			publicationStatus: 'needs-release-packaging',
 			headlineClaimAllowed: false,
 			releaseGate: 'blocked-by-publication-policy',
+			readyWhen: [
+				expect.objectContaining({
+					id: 'edge-fixture-policy',
+					ownerLoop: 'product',
+				}),
+				expect.objectContaining({
+					id: 'provenance-boundary',
+					ownerLoop: 'release',
+				}),
+				expect.objectContaining({
+					id: 'unsupported-feature-boundary',
+					ownerLoop: 'correctness',
+				}),
+			],
 			fixtureProvenance: {
 				publicFixtureCases: 2,
 				generatedWorkbookCases: 2,
@@ -103,8 +133,13 @@ describe('release proof evidence index', () => {
 		expect(markdown).toContain('Release Proof Evidence Index')
 		expect(markdown).toContain('not signed provenance')
 		expect(markdown).toContain('Publication blockers')
+		expect(markdown).toContain('Ready when')
 		expect(markdown).toContain('Headline claim allowed')
 		expect(markdown).toContain('blocked-by-publication-policy')
+		expect(markdown).toContain('public-edge-fixtures(missing,product)')
+		expect(markdown).toContain('release-latency-run(missing,performance)')
+		expect(markdown).toContain('edge-fixture-policy(missing,product)')
+		expect(markdown).toContain('provenance-boundary(missing,release)')
 		expect(markdown).toContain('Fixture provenance')
 		expect(markdown).toContain('generatedCases=signed,unknown-part,malformed')
 		expect(markdown).toContain('deterministicGenerated=signed,unknown-part,malformed')

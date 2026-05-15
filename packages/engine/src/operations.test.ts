@@ -7289,7 +7289,7 @@ describe('applyOperation', () => {
 					addDynamicArrayAnchorWithStaleSpillFootprint(sheet, 'Sheet1!D1')
 				},
 				range: 'A1:D3',
-				affectedCells: ['D1', 'D2', 'D3'],
+				affectedCells: ['A1', 'A2', 'A3', 'B1', 'C1', 'D1', 'B2', 'C2', 'D2', 'B3', 'C3', 'D3'],
 				assert: (sheet) => {
 					expect(sheet.cells.get(0, 3)?.formulaInfo).toBeUndefined()
 					expect(sheet.cells.get(1, 3)?.formulaInfo).toBeUndefined()
@@ -7309,7 +7309,7 @@ describe('applyOperation', () => {
 					addDataTableFormula(sheet)
 				},
 				range: 'A1:C5',
-				affectedCells: ['C3'],
+				affectedCells: ['C3', 'A2', 'B2', 'C2', 'A3', 'B3', 'A4', 'B4', 'C4', 'A5', 'B5', 'C5'],
 				assert: (sheet) => {
 					expect(sheet.cells.get(2, 2)?.formulaInfo).toBeUndefined()
 					expect(sheet.cells.get(3, 2)?.value).toEqual(numberValue(20))
@@ -7342,9 +7342,7 @@ describe('applyOperation', () => {
 			})
 			expectOk(result)
 
-			for (const ref of entry.affectedCells) {
-				expect(result.value.affectedCells, entry.name).toContain(ref)
-			}
+			expect(result.value.affectedCells, entry.name).toEqual(entry.affectedCells)
 			entry.assert(sheet)
 		}
 	})

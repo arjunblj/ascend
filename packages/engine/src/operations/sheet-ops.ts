@@ -181,6 +181,7 @@ export function handleCopySheet(
 	newSheet.preservedXml = null
 	retargetCopiedSheetFormulaBindings(newSheet, source.name, op.newName)
 	rewriteSheetMetadataFormulasForRename(newSheet, source.name, op.newName)
+	duplicateCopiedSheetDefinedNames(workbook, source, newSheet)
 	retargetCopiedSheetDrawingParts(workbook, newSheet)
 	retargetCopiedSheetImageTargets(workbook, newSheet)
 	const chartPartPaths = cloneChartsForCopiedSheet(workbook, source.name, op.newName)
@@ -189,6 +190,22 @@ export function handleCopySheet(
 	workbook.invalidateSheetCache()
 	invalidateSheetIndexCache(workbook)
 	return ok(patch([], [op.newName]))
+}
+
+function duplicateCopiedSheetDefinedNames(workbook: Workbook, source: Sheet, copy: Sheet): void {
+	const copiedScope = { kind: 'sheet' as const, sheetId: copy.id }
+	for (const entry of workbook.definedNames.list()) {
+		if (entry.scope.kind !== 'sheet' || entry.scope.sheetId !== source.id) continue
+		workbook.definedNames.add(
+			entry.name,
+			rewriteFormulaTextForRename(entry.formula, source.name, copy.name) ?? entry.formula,
+			copiedScope,
+			{
+				...(entry.hidden !== undefined ? { hidden: entry.hidden } : {}),
+				...(entry.extraAttributes ? { extraAttributes: entry.extraAttributes } : {}),
+			},
+		)
+	}
 }
 
 function worksheetNameError(name: string): ReturnType<typeof ascendError> | null {

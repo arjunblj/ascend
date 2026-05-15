@@ -5428,6 +5428,14 @@ describe('agent workflow loss audit', () => {
 			dataBar: { cfvo: [{ type: 'formula', value: 'data!D1' }] },
 			iconSet: { cfvo: [{ type: 'formula', value: 'data!E1' }] },
 		})
+		model.definedNames.add('LocalData', 'data!$A$1:$B$3', {
+			kind: 'sheet',
+			sheetId: sheet.id,
+		})
+		model.definedNames.add('_xlnm.Print_Area', 'data!$A$1:$C$3', {
+			kind: 'sheet',
+			sheetId: sheet.id,
+		})
 		await wb.save(input)
 
 		const prepared = await createPreparedAgentPlan(input, [
@@ -5469,6 +5477,20 @@ describe('agent workflow loss audit', () => {
 		expect(copy?.x14ConditionalFormats[0]?.colorScale?.cfvo[0]?.value).toBe('Copy!C1')
 		expect(copy?.x14ConditionalFormats[0]?.dataBar?.cfvo[0]?.value).toBe('Copy!D1')
 		expect(copy?.x14ConditionalFormats[0]?.iconSet?.cfvo[0]?.value).toBe('Copy!E1')
+		expect(
+			reopened.getWorkbookModel().definedNames.resolve('LocalData', copy?.id, copy?.id),
+		).toMatchObject({
+			name: 'LocalData',
+			formula: 'Copy!$A$1:$B$3',
+			scope: { kind: 'sheet', sheetId: copy?.id },
+		})
+		expect(
+			reopened.getWorkbookModel().definedNames.resolve('_xlnm.Print_Area', copy?.id, copy?.id),
+		).toMatchObject({
+			name: '_xlnm.Print_Area',
+			formula: 'Copy!$A$1:$C$3',
+			scope: { kind: 'sheet', sheetId: copy?.id },
+		})
 	})
 
 	test('prepared agent commits surface post-write audit failures as blocking model output', async () => {

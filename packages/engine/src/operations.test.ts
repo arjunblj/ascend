@@ -7188,6 +7188,21 @@ describe('applyOperation', () => {
 			dataBar: { cfvo: [{ type: 'formula', value: 'data!D1' }] },
 			iconSet: { cfvo: [{ type: 'formula', value: 'data!E1' }] },
 		})
+		wb.definedNames.add(
+			'LocalData',
+			'data!$A$1:$B$3',
+			{ kind: 'sheet', sheetId: source.id },
+			{
+				hidden: true,
+				extraAttributes: [{ name: 'comment', value: 'copied local name' }],
+			},
+		)
+		wb.definedNames.add(
+			'_xlnm.Print_Area',
+			'data!$A$1:$C$3',
+			{ kind: 'sheet', sheetId: source.id },
+			{ hidden: true },
+		)
 
 		expectOk(applyOperation(wb, { op: 'copySheet', sheet: 'Data', newName: 'Copy' }))
 
@@ -7208,9 +7223,25 @@ describe('applyOperation', () => {
 		expect(copy?.x14ConditionalFormats[0]?.colorScale?.cfvo[0]?.value).toBe('Copy!C1')
 		expect(copy?.x14ConditionalFormats[0]?.dataBar?.cfvo[0]?.value).toBe('Copy!D1')
 		expect(copy?.x14ConditionalFormats[0]?.iconSet?.cfvo[0]?.value).toBe('Copy!E1')
+		expect(wb.definedNames.resolve('LocalData', copy?.id, copy?.id)).toMatchObject({
+			name: 'LocalData',
+			formula: 'Copy!$A$1:$B$3',
+			scope: { kind: 'sheet', sheetId: copy?.id },
+			hidden: true,
+			extraAttributes: [{ name: 'comment', value: 'copied local name' }],
+		})
+		expect(wb.definedNames.resolve('_xlnm.Print_Area', copy?.id, copy?.id)).toMatchObject({
+			name: '_xlnm.Print_Area',
+			formula: 'Copy!$A$1:$C$3',
+			scope: { kind: 'sheet', sheetId: copy?.id },
+			hidden: true,
+		})
 
 		expect(source.dataValidations[0]?.formula1).toBe('data!B1:B3')
 		expect(source.x14ConditionalFormats[0]?.formulas).toEqual(['data!B1>0'])
+		expect(wb.definedNames.resolve('LocalData', source.id, source.id)?.formula).toBe(
+			'data!$A$1:$B$3',
+		)
 	})
 
 	test('copySheet rejects duplicate and Excel-invalid target names before mutating workbook', () => {

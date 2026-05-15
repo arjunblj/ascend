@@ -115,6 +115,7 @@ export function rewriteWorkbookFormulasForMove(
 	const rewrittenCells: FormulaRewriteCell[] = []
 	for (const sheet of workbook.sheets) {
 		const updates: [number, number, Cell][] = []
+		const affectedRefs = new Set<string>()
 		for (const [row, col, existing] of sheet.cells.iterate()) {
 			if (existing.formula === null) continue
 			if (sheet.name === targetSheet && rangeContainsCell(targetRange, row, col)) continue
@@ -137,13 +138,45 @@ export function rewriteWorkbookFormulasForMove(
 					formulaInfo: existing.formulaInfo,
 				},
 			])
+			for (const ref of formulaRewriteAffectedRefs(sheet, row, col, existing)) {
+				affectedRefs.add(ref)
+			}
 		}
 		for (const [row, col, updated] of updates) {
 			sheet.cells.set(row, col, updated)
-			rewrittenCells.push({ sheetName: sheet.name, ref: toA1({ row, col }) })
+		}
+		for (const ref of affectedRefs) {
+			rewrittenCells.push({ sheetName: sheet.name, ref })
 		}
 	}
 	return rewrittenCells
+}
+
+function formulaRewriteAffectedRefs(
+	sheet: Sheet,
+	row: number,
+	col: number,
+	cell: Cell,
+): Set<string> {
+	const affected = new Set([toA1({ row, col })])
+	if (cell.formulaInfo?.kind !== 'shared') return affected
+	for (const [candidateRow, candidateCol, candidate] of sheet.cells.iterate()) {
+		if (!sameSharedFormulaGroup(cell.formulaInfo, candidate.formulaInfo)) continue
+		affected.add(toA1({ row: candidateRow, col: candidateCol }))
+	}
+	return affected
+}
+
+function sameSharedFormulaGroup(
+	binding: NonNullable<Cell['formulaInfo']> & { readonly kind: 'shared' },
+	candidate: Cell['formulaInfo'],
+): candidate is NonNullable<Cell['formulaInfo']> & { readonly kind: 'shared' } {
+	if (candidate?.kind !== 'shared') return false
+	if (binding.sharedIndex !== candidate.sharedIndex) return false
+	if (binding.masterRef !== undefined && candidate.masterRef !== undefined) {
+		return binding.masterRef.toLowerCase() === candidate.masterRef.toLowerCase()
+	}
+	return true
 }
 
 export function rewriteDefinedNameFormulasForMove(

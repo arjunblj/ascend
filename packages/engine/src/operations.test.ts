@@ -3485,6 +3485,55 @@ describe('applyOperation', () => {
 		expect(result.value.affectedCells).toContain('B2')
 	})
 
+	test('moveRange reports every shared formula member when rewriting the shared master', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, cell(numberValue(10)))
+		sheet.cells.set(1, 0, cell(numberValue(20)))
+		sheet.cells.set(0, 1, {
+			value: numberValue(20),
+			formula: 'A1*2',
+			styleId: sid,
+			formulaInfo: {
+				kind: 'shared',
+				sharedIndex: 'move-rewrite',
+				isMaster: true,
+				masterRef: 'B1',
+				ref: 'B1:B2',
+			},
+		})
+		sheet.cells.set(1, 1, {
+			value: numberValue(40),
+			formula: null,
+			styleId: sid,
+			formulaInfo: {
+				kind: 'shared',
+				sharedIndex: 'move-rewrite',
+				isMaster: false,
+				masterRef: 'B1',
+			},
+		})
+
+		const result = applyOperation(wb, {
+			op: 'moveRange',
+			sheet: 'Sheet1',
+			source: 'A1:A2',
+			target: 'C1',
+		})
+		expectOk(result)
+
+		expect(sheet.cells.get(0, 1)?.formula).toBe('C1*2')
+		expect(sheet.cells.get(1, 1)?.formulaInfo).toEqual({
+			kind: 'shared',
+			sharedIndex: 'move-rewrite',
+			isMaster: false,
+			masterRef: 'B1',
+		})
+		expect(result.value.affectedCells).toContain('B1')
+		expect(result.value.affectedCells).toContain('B2')
+		expectCachedFormulaAnalysisMatchesFullRecompute(wb)
+	})
+
 	test('moveRange rewrites cross-sheet formulas and names to the target sheet', () => {
 		const wb = createWorkbook()
 		const source = wb.addSheet('Sheet1')

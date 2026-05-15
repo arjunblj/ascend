@@ -6,6 +6,8 @@ Updated: 2026-05-15
 
 | Run | Status | Fold-in target |
 | --- | --- | --- |
+| [Document properties finite value boundary](runs/2026/2026-05-15-document-properties-finite-value-boundary/log.md) | folded in finite-number validation for document property app/custom metadata plus journal exactness coverage for non-representable numeric values | correctness loop |
+| [Calc settings validation boundary](runs/2026/2026-05-15-calc-settings-validation-boundary/log.md) | folded in calc-setting enum/boolean/date/iterative validation plus unsupported-value journal classification for rejected workbook metadata | correctness loop |
 | [Safe open external candidate license refresh](runs/2026/2026-05-15-safe-open-external-candidate-license-refresh/log.md) | upgraded ExcelForge unknown-part candidate evidence with MIT package-manifest license and repeat safe-open routing proof; still not vendored and signed fixture gap remains | product loop, release loop |
 | [Claim board current proof drift cleanup](runs/2026/2026-05-15-claim-board-current-proof-drift-cleanup/log.md) | refreshed active syntheses from current release-proof-index evidence; package-action remains fail-closed with 3 representative streaming proofs and old stale wording removed | topic synthesis, release loop |
 | [Axis layout validation boundary](runs/2026/2026-05-15-axis-layout-validation-boundary/log.md) | folded in engine validation and SDK journal classification for invalid row/column spans, dimensions, and outline endpoints before metadata mutation | correctness loop |

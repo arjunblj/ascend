@@ -952,6 +952,18 @@ describe('mutation journal exactness model', () => {
 				op: { op: 'setTabColor', sheet: 'Sheet1', color: 'not-a-color' },
 				ref: 'sheet:Sheet1:tabColor:not-a-color',
 			},
+			{
+				op: { op: 'setSheetProtection', sheet: 'Sheet1', password: 123 as never },
+				ref: 'sheet:Sheet1:protection:password',
+			},
+			{
+				op: { op: 'setSheetProtection', sheet: 'Sheet1', options: null as never },
+				ref: 'sheet:Sheet1:protection:options',
+			},
+			{
+				op: { op: 'setSheetProtection', sheet: 'Sheet1', options: { sort: 'yes' } as never },
+				ref: 'sheet:Sheet1:protection:sort',
+			},
 		]
 
 		for (const entry of cases) {

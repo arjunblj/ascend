@@ -3021,6 +3021,16 @@ function journalSetSheetProtection(
 			],
 		}
 	}
+	const valueIssues = sheetProtectionValueIssues(op)
+	if (valueIssues.length > 0) {
+		return {
+			opIndex,
+			op,
+			inverseOps: [],
+			preimages: [{ kind: 'sheet-protection', sheetProtection: preimage }],
+			issues: valueIssues,
+		}
+	}
 	const inverseOp = protection ? sheetProtectionInverseOp(op.sheet, protection) : null
 	const unsupportedKeys = protection ? unsupportedSheetProtectionKeys(protection) : []
 	const issues: MutationJournalIssue[] = []
@@ -3047,6 +3057,39 @@ function journalSetSheetProtection(
 		inverseOps: inverseOp ? [inverseOp] : [],
 		preimages: [{ kind: 'sheet-protection', sheetProtection: preimage }],
 		issues,
+	}
+}
+
+function sheetProtectionValueIssues(
+	op: Extract<Operation, { op: 'setSheetProtection' }>,
+): MutationJournalIssue[] {
+	const issues: MutationJournalIssue[] = []
+	if (op.password !== undefined && typeof op.password !== 'string') {
+		issues.push(sheetProtectionUnsupportedValueIssue(op.sheet, 'password'))
+	}
+	const options = op.options as unknown
+	if (options !== undefined && !isPlainJournalObject(options)) {
+		issues.push(sheetProtectionUnsupportedValueIssue(op.sheet, 'options'))
+		return issues
+	}
+	if (isPlainJournalObject(options)) {
+		for (const field of SHEET_PROTECTION_OPTION_KEYS) {
+			const value = options[field]
+			if (value !== undefined && typeof value !== 'boolean') {
+				issues.push(sheetProtectionUnsupportedValueIssue(op.sheet, field))
+			}
+		}
+	}
+	return issues
+}
+
+function sheetProtectionUnsupportedValueIssue(sheet: string, field: string): MutationJournalIssue {
+	return {
+		code: 'UNSUPPORTED_VALUE',
+		message: `Cannot build exact rollback journal for setSheetProtection because ${field} is not supported by sheet protection validation`,
+		surface: 'sheet-layout',
+		reason: 'value-unsupported',
+		refs: [`sheet:${sheet}:protection:${field}`],
 	}
 }
 

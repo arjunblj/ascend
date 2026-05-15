@@ -230,6 +230,8 @@ export function handleSetSheetProtection(
 	workbook: Workbook,
 	op: Extract<Operation, { op: 'setSheetProtection' }>,
 ): Result<PatchResult> {
+	const validation = validateSheetProtectionInput(op)
+	if (validation) return err(validation)
 	const sheetResult = getSheet(workbook, op.sheet)
 	if (!sheetResult.ok) return sheetResult
 	const sheet = sheetResult.value
@@ -250,6 +252,43 @@ export function handleSetSheetProtection(
 	sheet.protection = prot
 	return ok(patch([], [op.sheet]))
 }
+
+function validateSheetProtectionInput(op: Extract<Operation, { op: 'setSheetProtection' }>) {
+	if (op.password !== undefined && typeof op.password !== 'string') {
+		return ascendError('VALIDATION_ERROR', 'setSheetProtection password must be a string', {
+			suggestedFix: 'Use a string password value or omit password.',
+		})
+	}
+	if (
+		op.options !== undefined &&
+		(!op.options || typeof op.options !== 'object' || Array.isArray(op.options))
+	) {
+		return ascendError('VALIDATION_ERROR', 'setSheetProtection options must be an object', {
+			suggestedFix: 'Provide sheet protection options such as { "sort": true }.',
+		})
+	}
+	for (const field of SHEET_PROTECTION_OPTION_FIELDS) {
+		const value = op.options?.[field]
+		if (value !== undefined && typeof value !== 'boolean') {
+			return ascendError('VALIDATION_ERROR', `sheet protection ${field} must be boolean`, {
+				suggestedFix: `Set ${field}=true or ${field}=false.`,
+			})
+		}
+	}
+	return null
+}
+
+const SHEET_PROTECTION_OPTION_FIELDS = [
+	'formatCells',
+	'formatColumns',
+	'formatRows',
+	'insertColumns',
+	'insertRows',
+	'deleteColumns',
+	'deleteRows',
+	'sort',
+	'autoFilter',
+] as const
 
 export function handleFreezePane(
 	workbook: Workbook,

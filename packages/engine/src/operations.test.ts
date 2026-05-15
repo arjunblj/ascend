@@ -2912,6 +2912,28 @@ describe('applyOperation', () => {
 		}
 	})
 
+	test('setSheetProtection rejects invalid public metadata without mutation', () => {
+		const cases: readonly Operation[] = [
+			{ op: 'setSheetProtection', sheet: 'Sheet1', password: 123 as never },
+			{ op: 'setSheetProtection', sheet: 'Sheet1', options: null as never },
+			{ op: 'setSheetProtection', sheet: 'Sheet1', options: [] as never },
+			{ op: 'setSheetProtection', sheet: 'Sheet1', options: { sort: 'yes' } as never },
+			{ op: 'setSheetProtection', sheet: 'Sheet1', options: { autoFilter: 1 } as never },
+		]
+
+		for (const op of cases) {
+			const wb = setup()
+			const sheet = wb.getSheet('Sheet1')
+			if (!sheet) throw new Error('missing sheet')
+			sheet.protection = { sheet: true, sort: true }
+			const before = JSON.stringify(sheet.protection)
+			const result = applyOperation(wb, op)
+			expectErr(result)
+			expect(result.error.code, JSON.stringify(op)).toBe('VALIDATION_ERROR')
+			expect(JSON.stringify(sheet.protection), JSON.stringify(op)).toBe(before)
+		}
+	})
+
 	test('copyRange copies values and translates relative formulas', () => {
 		const wb = setup()
 		const sheet = wb.getSheet('Sheet1')

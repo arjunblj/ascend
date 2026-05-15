@@ -5323,8 +5323,53 @@ function decodeXmlBytesTextKnown(
 	end: number,
 	hasEntity: boolean,
 ): string {
+	if (!hasEntity) {
+		const ascii = decodeShortAsciiBytes(bytes, start, end)
+		if (ascii !== undefined) return ascii
+	}
 	const text = BYTE_XML_DECODER.decode(bytes.subarray(start, end))
 	return hasEntity ? decodeXmlText(text) : text
+}
+
+function decodeShortAsciiBytes(bytes: Uint8Array, start: number, end: number): string | undefined {
+	const length = end - start
+	if (length <= 0) return ''
+	if (length !== 11 && length !== 13) return undefined
+	for (let offset = 0; offset < length; offset++) {
+		if ((bytes[start + offset] ?? 0) > 0x7f) return undefined
+	}
+	switch (length) {
+		case 11:
+			return String.fromCharCode(
+				bytes[start] ?? 0,
+				bytes[start + 1] ?? 0,
+				bytes[start + 2] ?? 0,
+				bytes[start + 3] ?? 0,
+				bytes[start + 4] ?? 0,
+				bytes[start + 5] ?? 0,
+				bytes[start + 6] ?? 0,
+				bytes[start + 7] ?? 0,
+				bytes[start + 8] ?? 0,
+				bytes[start + 9] ?? 0,
+				bytes[start + 10] ?? 0,
+			)
+		case 13:
+			return String.fromCharCode(
+				bytes[start] ?? 0,
+				bytes[start + 1] ?? 0,
+				bytes[start + 2] ?? 0,
+				bytes[start + 3] ?? 0,
+				bytes[start + 4] ?? 0,
+				bytes[start + 5] ?? 0,
+				bytes[start + 6] ?? 0,
+				bytes[start + 7] ?? 0,
+				bytes[start + 8] ?? 0,
+				bytes[start + 9] ?? 0,
+				bytes[start + 10] ?? 0,
+				bytes[start + 11] ?? 0,
+				bytes[start + 12] ?? 0,
+			)
+	}
 }
 
 function rawBoolAttr(rawAttrs: string, name: string): boolean | undefined {

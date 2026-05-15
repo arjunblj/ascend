@@ -567,8 +567,10 @@ function editVerifyTable(results: readonly StepResult[]): string {
 		`| Prepared plan | ${metric(workflow?.summary, 'preparedPlanMedianMs')} | ${metric(workflow?.summary, 'preparedPlanPayloadBytesMedian')} bytes | ${statusLink(workflow)} |`,
 		`| Commit verified total | ${metric(workflow?.summary, 'commitVerifiedTotalMedianMs')} | ${metric(workflow?.summary, 'commitVerifiedPayloadBytesMedian')} bytes | ${statusLink(workflow)} |`,
 		`| Prepared commit verified total | ${metric(workflow?.summary, 'preparedCommitVerifiedTotalMedianMs')} | ${metric(workflow?.summary, 'preparedCommitVerifiedPayloadBytesMedian')} bytes | ${statusLink(workflow)} |`,
+		`| Prepared write-policy snapshot | ${metric(workflow?.summary, 'preparedCommitWritePolicySnapshotMedianMs')} | | ${statusLink(workflow)} |`,
 		`| Prepared write-policy check | ${metric(workflow?.summary, 'preparedCommitWritePolicyCheckMedianMs')} | | ${statusLink(workflow)} |`,
 		`| Prepared reopen output | ${metric(workflow?.summary, 'preparedCommitPostWriteReopenMedianMs')} | | ${statusLink(workflow)} |`,
+		`| Commit write-policy snapshot | ${metric(postWrite?.summary, 'commitWritePolicySnapshotMedianMs')} | | ${statusLink(postWrite)} |`,
 		`| Commit package graph | ${metric(postWrite?.summary, 'commitPackageGraphMedianMs')} | | ${statusLink(postWrite)} |`,
 		`| Commit write-plan summary | ${metric(postWrite?.summary, 'commitWritePlanSummaryMedianMs')} | | ${statusLink(postWrite)} |`,
 		`| Commit write-policy check | ${metric(postWrite?.summary, 'commitWritePolicyCheckMedianMs')} | | ${statusLink(postWrite)} |`,
@@ -712,6 +714,14 @@ function envelopeDecisions(results: readonly StepResult[]): EnvelopeDecision[] {
 				name: 'Prepared plan/open',
 				medianMs: numericMetric(workflow?.summary, 'preparedPlanMedianMs') ?? 0,
 				profileCommand: workflowProfile,
+			},
+			{
+				name: 'Prepared write-policy snapshot',
+				medianMs:
+					numericMetric(workflow?.summary, 'preparedCommitWritePolicySnapshotMedianMs') ??
+					numericMetric(postWrite?.summary, 'commitWritePolicySnapshotMedianMs') ??
+					0,
+				profileCommand: workflowProfile || postWriteProfile,
 			},
 			{
 				name: 'Prepared commit write-policy check',

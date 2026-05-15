@@ -56,6 +56,7 @@ interface WorkflowSample {
 	readonly preparedPlanMs: number
 	readonly commitMs: number
 	readonly preparedCommitMs: number
+	readonly commitWritePolicySnapshotMs: number | null
 	readonly commitPackageGraphMs: number | null
 	readonly commitPackageGraphAuditMs: number | null
 	readonly commitApplyMs: number | null
@@ -74,6 +75,7 @@ interface WorkflowSample {
 	readonly preparedCommitWriteFileMs: number | null
 	readonly preparedCommitOutputByteReadMs: number | null
 	readonly preparedCommitOutputHashMs: number | null
+	readonly preparedCommitWritePolicySnapshotMs: number | null
 	readonly preparedCommitPackageGraphMs: number | null
 	readonly preparedCommitPackageGraphAuditMs: number | null
 	readonly commitPostWriteReopenMs: number | null
@@ -400,6 +402,7 @@ interface ApiEnvelope {
 		}
 		readonly preparedPlan?: { readonly id?: string }
 		readonly timings?: {
+			readonly writePolicySnapshotMs?: number
 			readonly packageGraphMs?: number
 			readonly packageGraphAuditMs?: number
 			readonly applyMs?: number
@@ -486,6 +489,7 @@ interface PostWriteTimings {
 }
 
 interface CommitTimings {
+	readonly writePolicySnapshotMs: number | null
 	readonly packageGraphMs: number | null
 	readonly packageGraphAuditMs: number | null
 	readonly applyMs: number | null
@@ -537,6 +541,7 @@ function postWriteTimings(payload: ApiEnvelope): PostWriteTimings {
 function commitTimings(payload: ApiEnvelope): CommitTimings {
 	const timings = payload.data?.timings
 	return {
+		writePolicySnapshotMs: timings?.writePolicySnapshotMs ?? null,
 		packageGraphMs: timings?.packageGraphMs ?? null,
 		packageGraphAuditMs: timings?.packageGraphAuditMs ?? null,
 		applyMs: timings?.applyMs ?? null,
@@ -844,6 +849,7 @@ async function runWorkflow(
 		preparedPlanMs: preparedPlan.ms,
 		commitMs: commit.ms,
 		preparedCommitMs: preparedCommit.ms,
+		commitWritePolicySnapshotMs: commitTiming.writePolicySnapshotMs,
 		commitPackageGraphMs: commitTiming.packageGraphMs,
 		commitPackageGraphAuditMs: commitTiming.packageGraphAuditMs,
 		commitApplyMs: commitTiming.applyMs,
@@ -862,6 +868,7 @@ async function runWorkflow(
 		preparedCommitWriteFileMs: preparedCommitTiming.writeFileMs,
 		preparedCommitOutputByteReadMs: preparedCommitTiming.outputByteReadMs,
 		preparedCommitOutputHashMs: preparedCommitTiming.outputHashMs,
+		preparedCommitWritePolicySnapshotMs: preparedCommitTiming.writePolicySnapshotMs,
 		preparedCommitPackageGraphMs: preparedCommitTiming.packageGraphMs,
 		preparedCommitPackageGraphAuditMs: preparedCommitTiming.packageGraphAuditMs,
 		commitPostWriteReopenMs: commitPostWrite.reopenMs,
@@ -950,6 +957,9 @@ function summarize(samples: readonly WorkflowSample[]) {
 		preparedPlanMedianMs: median(samples.map((sample) => sample.preparedPlanMs)),
 		commitMedianMs: median(samples.map((sample) => sample.commitMs)),
 		preparedCommitMedianMs: median(samples.map((sample) => sample.preparedCommitMs)),
+		commitWritePolicySnapshotMedianMs: medianOptional(
+			samples.map((sample) => sample.commitWritePolicySnapshotMs),
+		),
 		commitPackageGraphMedianMs: medianOptional(
 			samples.map((sample) => sample.commitPackageGraphMs),
 		),
@@ -974,6 +984,9 @@ function summarize(samples: readonly WorkflowSample[]) {
 		commitOutputHashMedianMs: medianOptional(samples.map((sample) => sample.commitOutputHashMs)),
 		preparedCommitApplyMedianMs: medianOptional(
 			samples.map((sample) => sample.preparedCommitApplyMs),
+		),
+		preparedCommitWritePolicySnapshotMedianMs: medianOptional(
+			samples.map((sample) => sample.preparedCommitWritePolicySnapshotMs),
 		),
 		preparedCommitPackageGraphMedianMs: medianOptional(
 			samples.map((sample) => sample.preparedCommitPackageGraphMs),

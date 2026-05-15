@@ -36,6 +36,7 @@ interface BenchmarkInput {
 
 interface Sample {
 	readonly commitMs: number
+	readonly commitWritePolicySnapshotMs: number
 	readonly commitPackageGraphMs: number
 	readonly commitApprovalAuditMs: number
 	readonly commitLossAuditMs: number
@@ -195,6 +196,7 @@ async function timedCommit(inputPath: string, outputPath: string, ops: readonly 
 	const timings = commit.value.postWrite.timings
 	return {
 		commitMs: commit.ms,
+		commitWritePolicySnapshotMs: commit.value.timings.writePolicySnapshotMs,
 		commitPackageGraphMs: commit.value.timings.packageGraphMs,
 		commitApprovalAuditMs: commit.value.timings.approvalAuditMs,
 		commitLossAuditMs: commit.value.timings.lossAuditMs,
@@ -294,6 +296,7 @@ async function runSample(
 	runGc()
 	return {
 		commitMs: commit.commitMs,
+		commitWritePolicySnapshotMs: commit.commitWritePolicySnapshotMs,
 		commitPackageGraphMs: commit.commitPackageGraphMs,
 		commitApprovalAuditMs: commit.commitApprovalAuditMs,
 		commitLossAuditMs: commit.commitLossAuditMs,
@@ -324,6 +327,9 @@ async function runSample(
 function summarize(samples: readonly Sample[]) {
 	return {
 		commitMedianMs: median(samples.map((sample) => sample.commitMs)),
+		commitWritePolicySnapshotMedianMs: median(
+			samples.map((sample) => sample.commitWritePolicySnapshotMs),
+		),
 		commitPackageGraphMedianMs: median(samples.map((sample) => sample.commitPackageGraphMs)),
 		commitApprovalAuditMedianMs: median(samples.map((sample) => sample.commitApprovalAuditMs)),
 		commitLossAuditMedianMs: median(samples.map((sample) => sample.commitLossAuditMs)),

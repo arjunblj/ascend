@@ -683,6 +683,7 @@ export interface AgentPostWriteVerificationTimings {
 }
 
 export interface AgentCommitTimings {
+	readonly writePolicySnapshotMs: number
 	readonly packageGraphMs: number
 	readonly approvalAuditMs: number
 	readonly lossAuditMs: number
@@ -1909,9 +1910,17 @@ export async function commitAgentPlanFromWorkbook(
 	}
 	const output =
 		internal.output ?? (await resolveCommitOutputTarget(file, inputSha256, options, progress))
-	const writePolicyWorkbook = snapshotWritePolicyWorkbook(wb.getWorkbookModel())
 	const packageGraphResult = await timedCommitStep(() => wb.packageGraph())
 	const packageGraph = packageGraphResult.value
+	const writePolicySnapshotResult = await timedCommitStep(() =>
+		snapshotWritePolicyWorkbook(wb.getWorkbookModel()),
+	)
+	const writePolicyWorkbook = writePolicySnapshotResult.value
+	const expectedPostWritePackageGraphChanges = expectedPackageGraphChangesForOperations(
+		writePolicyWorkbook,
+		ops,
+		packageGraph,
+	)
 	await progress('approval-audit', 'started', 'Auditing explicit approval requirements.')
 	const approvalsResult = await timedCommitStep(() =>
 		buildApprovalRequirements(wb.report.features, ops),
@@ -1999,11 +2008,6 @@ export async function commitAgentPlanFromWorkbook(
 		),
 	)
 	const writePolicy = writePolicyResult.value
-	const expectedPostWritePackageGraphChanges = expectedPackageGraphChangesForOperations(
-		writePolicyWorkbook,
-		ops,
-		packageGraph,
-	)
 	await progressFromPhase(writePolicyPhase(writePolicy), progress)
 	if (writePolicy.diagnostics.some((diagnostic) => diagnostic.severity === 'blocker')) {
 		throw new AscendException(
@@ -2023,6 +2027,7 @@ export async function commitAgentPlanFromWorkbook(
 	const outputSha256 = outputSha256Result.value
 	await progress('write', 'ok', `Workbook written to ${output}.`)
 	const timings: AgentCommitTimings = {
+		writePolicySnapshotMs: writePolicySnapshotResult.ms,
 		packageGraphMs: packageGraphResult.ms,
 		approvalAuditMs: approvalsResult.ms,
 		lossAuditMs: lossAuditResult.ms,

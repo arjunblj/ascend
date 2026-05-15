@@ -1574,8 +1574,6 @@ export class AscendWorkbook extends WorkbookReadView {
 				case 'deleteSheet':
 				case 'renameSheet':
 				case 'moveSheet':
-				case 'setDefinedName':
-				case 'deleteDefinedName':
 				case 'setPivotCache':
 				case 'setPivotFieldItem':
 				case 'setConnectionRefresh':
@@ -1589,6 +1587,17 @@ export class AscendWorkbook extends WorkbookReadView {
 					workbookMetaDirty = true
 					documentPropertiesDirty = true
 					calcStateDirty = true
+					break
+				case 'setDefinedName':
+				case 'deleteDefinedName':
+					workbookMetaDirty = true
+					if (op.name !== '_xlnm.Print_Area') {
+						calcStateDirty = true
+						calcChainDirty = true
+					}
+					break
+				case 'setPrintArea':
+					workbookMetaDirty = true
 					break
 				case 'setWorkbookProperties':
 				case 'setWorkbookView':

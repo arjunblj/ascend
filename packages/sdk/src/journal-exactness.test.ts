@@ -1125,6 +1125,19 @@ describe('mutation journal exactness model', () => {
 					},
 				],
 			},
+			{
+				name: 'print area addition',
+				seedOps: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'print' }] }],
+				ops: [{ op: 'setPrintArea', sheet: 'Sheet1', range: 'A1:A1' }],
+			},
+			{
+				name: 'print area replacement',
+				seedOps: [
+					{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'print' }] },
+					{ op: 'setPrintArea', sheet: 'Sheet1', range: 'A1:A1' },
+				],
+				ops: [{ op: 'setPrintArea', sheet: 'Sheet1', range: 'B1:B1' }],
+			},
 		]
 
 		for (const entry of cases) {

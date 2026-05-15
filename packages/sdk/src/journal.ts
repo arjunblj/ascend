@@ -4462,6 +4462,8 @@ function dataValidationTransferCollisionIssues(
 			issues.push({
 				code: 'LOSSY_INVERSE',
 				message: `Copied data validation at ${transfer.target.sheet}!${transfer.target.range} collides with existing validation metadata`,
+				surface: 'data-validations',
+				reason: 'metadata-collision',
 				refs: [
 					`${transfer.source.sheet}!${transfer.source.range}`,
 					`${transfer.target.sheet}!${transfer.target.range}`,
@@ -4472,6 +4474,8 @@ function dataValidationTransferCollisionIssues(
 			issues.push({
 				code: 'LOSSY_INVERSE',
 				message: `Retained data validation at ${transfer.source.sheet}!${transfer.retainedSourceRange} cannot be removed without touching unrelated validation metadata`,
+				surface: 'data-validations',
+				reason: 'metadata-collision',
 				refs: [
 					`${transfer.source.sheet}!${transfer.source.range}`,
 					`${transfer.source.sheet}!${transfer.retainedSourceRange}`,
@@ -4517,6 +4521,8 @@ function x14DataValidationTransferIssues(
 		{
 			code: 'LOSSY_INVERSE',
 			message: `Transferred x14 data validation metadata on ${sourceSheet.name}!${rangeToA1(sourceRange)} cannot be restored with public operations`,
+			surface: 'x14-metadata',
+			reason: 'x14-metadata',
 			refs,
 		},
 	]
@@ -4700,6 +4706,8 @@ function conditionalFormatTransferCollisionIssues(
 			issues.push({
 				code: 'LOSSY_INVERSE',
 				message: `Copied conditional format at ${transfer.target.sheet}!${transfer.target.range} collides with existing conditional format metadata`,
+				surface: 'conditional-formats',
+				reason: 'metadata-collision',
 				refs: [
 					`${sourceSheetName}!${transfer.source.sqref}`,
 					`${transfer.target.sheet}!${transfer.target.range}`,
@@ -4710,6 +4718,8 @@ function conditionalFormatTransferCollisionIssues(
 			issues.push({
 				code: 'LOSSY_INVERSE',
 				message: `Retained conditional format at ${sourceSheetName}!${transfer.retainedSourceRange} cannot be removed without touching unrelated conditional format metadata`,
+				surface: 'conditional-formats',
+				reason: 'metadata-collision',
 				refs: [
 					`${sourceSheetName}!${transfer.source.sqref}`,
 					`${sourceSheetName}!${transfer.retainedSourceRange}`,
@@ -4755,6 +4765,8 @@ function x14ConditionalFormatTransferIssues(
 		{
 			code: 'LOSSY_INVERSE',
 			message: `Transferred x14 conditional format metadata on ${sourceSheet.name}!${rangeToA1(sourceRange)} cannot be restored with public operations`,
+			surface: 'x14-metadata',
+			reason: 'x14-metadata',
 			refs,
 		},
 	]
@@ -4774,6 +4786,8 @@ function conditionalFormatMoveOrderIssues(
 				{
 					code: 'LOSSY_INVERSE',
 					message: `Moved conditional format order on ${sourceSheet.name}!${rangeToA1(sourceRange)} cannot be restored exactly with public operations`,
+					surface: 'conditional-formats',
+					reason: 'metadata-order',
 					refs: [`${sourceSheet.name}!${rangeToA1(sourceRange)}`],
 				},
 			]
@@ -4831,6 +4845,8 @@ function dataValidationRuleFromSheet(validation: MutationJournalDataValidationPr
 				{
 					code: 'UNSUPPORTED_VALUE',
 					message: `Cannot restore data validation at ${validation.sheet}!${validation.range} with unsupported type ${source?.type ?? '<missing>'}`,
+					surface: 'data-validations',
+					reason: 'value-unsupported',
 					refs: [`${validation.sheet}!${validation.range}`],
 				},
 			],
@@ -4854,6 +4870,8 @@ function dataValidationRuleFromSheet(validation: MutationJournalDataValidationPr
 		issues.push({
 			code: 'LOSSY_INVERSE',
 			message: `Data validation default attributes ${materializedDefaultFields.join(', ')} at ${validation.sheet}!${validation.range} cannot be restored exactly with public operations`,
+			surface: 'data-validations',
+			reason: 'data-validation-default-attributes',
 			refs: [`${validation.sheet}!${validation.range}`],
 		})
 	}
@@ -4930,6 +4948,8 @@ function restoreAutoFilterOps(preimage: MutationJournalAutoFilterPreimage): {
 		issues.push({
 			code: 'LOSSY_INVERSE',
 			message: `AutoFilter column ${column.colId} on ${preimage.sheet}!${autoFilter.ref} cannot be fully restored with public operations`,
+			surface: 'auto-filters',
+			reason: 'auto-filter-column-metadata',
 			refs: [`${preimage.sheet}!${autoFilter.ref}`],
 		})
 	}
@@ -4937,6 +4957,8 @@ function restoreAutoFilterOps(preimage: MutationJournalAutoFilterPreimage): {
 		issues.push({
 			code: 'LOSSY_INVERSE',
 			message: `AutoFilter extension metadata on ${preimage.sheet}!${autoFilter.ref} cannot be restored with public operations`,
+			surface: 'auto-filters',
+			reason: 'auto-filter-extension-metadata',
 			refs: [`${preimage.sheet}!${autoFilter.ref}`],
 		})
 	}
@@ -4956,6 +4978,8 @@ function restoreAutoFilterOps(preimage: MutationJournalAutoFilterPreimage): {
 			issues.push({
 				code: 'LOSSY_INVERSE',
 				message: `AutoFilter sort metadata on ${preimage.sheet}!${autoFilter.ref} cannot be fully restored with public operations`,
+				surface: 'auto-filters',
+				reason: 'auto-filter-sort-metadata',
 				refs: [`${preimage.sheet}!${autoFilter.ref}`],
 			})
 		}
@@ -5072,6 +5096,8 @@ function conditionalFormatRuleFromSheet(
 				{
 					code: 'UNSUPPORTED_VALUE',
 					message: `Cannot restore conditional format at ${sheet}!${range} with unsupported type ${rule.type}`,
+					surface: 'conditional-formats',
+					reason: 'value-unsupported',
 					refs: [`${sheet}!${range}`],
 				},
 			],
@@ -5093,6 +5119,8 @@ function conditionalFormatRuleFromSheet(
 		issues.push({
 			code: 'LOSSY_INVERSE',
 			message: `Conditional format metadata at ${sheet}!${range} cannot be fully restored with public operations`,
+			surface: 'conditional-formats',
+			reason: 'package-part-preservation',
 			refs: [`${sheet}!${range}`],
 		})
 	}
@@ -7252,16 +7280,7 @@ function moveRangeFormulaSurfaceRestoration(
 	const conditionalFormatRestorations = [...conditionalFormatPreimages.values()].map((preimage) =>
 		restoreConditionalFormatOps(preimage.sheet, preimage.formats),
 	)
-	const metadataIssues: readonly MutationJournalIssue[] =
-		metadataRefs.length > 0
-			? [
-					{
-						code: 'LOSSY_INVERSE',
-						message: `moveRange formula reference rewrites for ${op.sheet}!${op.source} cannot be fully restored with public operations`,
-						refs: metadataRefs,
-					},
-				]
-			: []
+	const metadataIssues = moveRangeFormulaRewriteIssues(op, metadataRefs)
 	const preimages: MutationJournalPreimage[] = [
 		...(cells.length > 0 ? [{ kind: 'cells' as const, cells }] : []),
 		...definedNames.map((definedName) => ({ kind: 'defined-name' as const, definedName })),
@@ -7300,6 +7319,36 @@ function moveRangeFormulaSurfaceRestoration(
 			...metadataIssues,
 		],
 	}
+}
+
+function moveRangeFormulaRewriteIssues(
+	op: Extract<Operation, { op: 'moveRange' }>,
+	metadataRefs: readonly string[],
+): readonly MutationJournalIssue[] {
+	if (metadataRefs.length === 0) return []
+	const x14Refs = metadataRefs.filter((ref) => ref.includes('!x14'))
+	const formulaRefs = metadataRefs.filter((ref) => !ref.includes('!x14'))
+	const message = `moveRange formula reference rewrites for ${op.sheet}!${op.source} cannot be fully restored with public operations`
+	const issues: MutationJournalIssue[] = []
+	if (formulaRefs.length > 0) {
+		issues.push({
+			code: 'LOSSY_INVERSE',
+			message,
+			surface: 'formulas',
+			reason: 'formula-reference-rewrite',
+			refs: formulaRefs,
+		})
+	}
+	if (x14Refs.length > 0) {
+		issues.push({
+			code: 'LOSSY_INVERSE',
+			message,
+			surface: 'x14-metadata',
+			reason: 'x14-metadata',
+			refs: x14Refs,
+		})
+	}
+	return issues
 }
 
 function pushSheetRef(refsBySheet: Map<string, string[]>, sheet: string, ref: string): void {
@@ -8549,6 +8598,8 @@ function deleteCommentThreadedCommentIssues(
 		{
 			code: 'LOSSY_INVERSE',
 			message: `Threaded comments deleted at ${sheetName}!${refText.toUpperCase()} cannot be recreated with public operations`,
+			surface: 'comments',
+			reason: 'threaded-comment-selector',
 			refs: threadedCommentIssueRefs(sheetName, threadedComments),
 		},
 	]

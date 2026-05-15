@@ -2334,6 +2334,44 @@ describe('mutation journal exactness model', () => {
 		}
 	})
 
+	test('saved formula cache journals are model-exact but package-byte lossy', async () => {
+		const seeded = AscendWorkbook.create()
+		applyExact(seeded, [
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 2 }] },
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'B1', formula: 'A1*2' },
+		])
+		expect(seeded.recalc().errors).toEqual([])
+		const beforeBytes = seeded.toBytes()
+		const before = await AscendWorkbook.open(beforeBytes)
+		const beforeEvidence = journalEvidence(before)
+
+		const wb = await AscendWorkbook.open(beforeBytes)
+		const changed = wb.apply([{ op: 'setFormula', sheet: 'Sheet1', ref: 'B1', formula: 'A1*3' }], {
+			journal: true,
+		})
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal).toEqual(
+			expect.objectContaining({
+				supported: true,
+				exact: false,
+				issues: [
+					expect.objectContaining({
+						code: 'LOSSY_INVERSE',
+						surface: 'package-parts',
+						reason: 'package-part-preservation',
+						refs: ['Sheet1!B1'],
+					}),
+				],
+			}),
+		)
+
+		const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+		expect(undo.errors).toEqual([])
+		expect(journalEvidence(wb)).toEqual(beforeEvidence)
+		expect(Buffer.compare(Buffer.from(wb.toBytes()), Buffer.from(beforeBytes))).not.toBe(0)
+	})
+
 	test('saved-source package state journals are lossy when inverse ops cannot restore bytes', async () => {
 		const cases: readonly {
 			readonly name: string

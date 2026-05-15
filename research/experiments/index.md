@@ -29,6 +29,7 @@ Updated: 2026-05-15
 | [Formula binding role boundary](runs/2026/2026-05-14-formula-binding-role-boundary/log.md) | cycle 36 complete, archived safe rename until binding roles | correctness loop, product/DX loop |
 | [Formula binding role primitives](runs/2026/2026-05-14-formula-binding-role-primitives/log.md) | cycle 37 complete, folded in stateless binding roles | correctness loop, product/DX loop |
 | [Product claim map](runs/2026/2026-05-15-product-claim-map/log.md) | synthesis complete, handoff only | product loop, correctness loop, performance loop |
+| [Safe open proof bundle](runs/2026/2026-05-15-safe-open-proof-bundle/log.md) | proof bundle complete, handoff only | product loop, performance loop |
 | [Package action proof](runs/2026/2026-05-14-package-action-proof/log.md) | cycle 2 complete, promote | correctness loop, product/DX loop, performance loop |
 | [Formula spans LSP](runs/2026/2026-05-14-formula-spans-lsp/log.md) | cycle 13 complete, folded in SDK hover/code actions | product/DX loop, correctness loop |
 | [Formula sqllogictest conformance](runs/2026/2026-05-14-formula-sqllogictest-conformance/log.md) | cycle 14 complete, folded in converter/runner | correctness loop |

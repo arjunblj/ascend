@@ -1,44 +1,87 @@
-# 2026-05 Safe Open Proof Bundle Handoff
+# 2026-05 Safe Open Proof Bundle
 
-Date: 2026-05-14
+Date: 2026-05-15
 
 ## Claim
 
-Ascend can route unknown XLSX/XLSM files through a package-level open plan before workbook hydration, recommending a load mode and review step from observable package features.
+Ascend can route unknown XLSX/XLSM files through a package-level open plan before full workbook hydration, recommending a load mode and review step from observable package features.
 
-## Proof Bundle Shape
+## Claim Wording That Is Safe Today
 
-| Required proof | What to show | Current status |
+Ascend recommends a load mode and trust-review branch from XLSX package features before hydrating workbook cells. This is pre-hydration risk routing, not malware scanning, sandboxing, or a guarantee that workbook content is safe.
+
+## External Contrast
+
+- [Microsoft Protected View](https://support.microsoft.com/en-us/office/what-is-protected-view-d6f09ac7-e6b9-4495-8e43-2bbcdbcb6653) opens potentially unsafe files read-only or in Protected View. Ascend's OSS claim is narrower: package-feature routing before choosing hydration mode.
+- [Microsoft Excel digital signatures](https://learn.microsoft.com/en-us/troubleshoot/microsoft-365-apps/excel/digital-signatures-code-signing) help prove a workbook has not changed since signing, and saving after modification invalidates that signature. Ascend should route signature material to review before edit planning.
+- [openpyxl](https://openpyxl.readthedocs.io/en/stable/tutorial.html) documents `keep_vba`, but warns that not all Excel items are read and unsupported shapes can be lost on save. Ascend should contrast with explicit preservation/risk routing, not broad compatibility.
+- [SheetJS write options](https://docs.sheetjs.com/docs/api/write-options/) note that features outside documented support may not serialize. Ascend's proof should show when package features force metadata review rather than silently assuming a full semantic model.
+
+## Proof Bundle Status
+
+| Required proof | Current evidence | Status |
 | --- | --- | --- |
-| Fixture | Clean workbook, macro workbook, ActiveX/control workbook, pivot workbook, chart workbook, malformed bytes | Public fixtures exist for all but malformed should be synthetic and checked as rejection |
-| Benchmark | Open-plan latency versus full hydration on warmed public fixtures | Local probe shows 11.83x-15.27x faster on five fixtures |
+| Fixture mix | Public clean, formula-heavy, macro, pivot, ActiveX, and chart fixtures; synthetic digital signature, unknown package part, and malformed bytes | Covered for local proof; signed/unknown/malformed should become fixture-backed if promoted |
+| Benchmark | Fresh probe measured open-plan against full hydration with 9 repeated samples after warmup | Strong enough for product proof direction, not a CI threshold |
 | API/CLI/MCP surface | Existing SDK `inspectWorkbookOpenPlan`, CLI `ascend open-plan`, API `POST /open-plan`, MCP `ascend.open_plan` | Implemented; do not add another surface |
-| Validation gate | Focused open-plan tests, API/CLI/MCP tests, docs ordering test, typecheck, Biome, changed tests | Existing tests cover behavior; proof bundle needs one report/golden |
-| Competitor contrast | openpyxl warns unsupported items can be lost; SheetJS/ExcelJS expose read/write options; LibreOffice Safe Mode is application recovery rather than pre-hydration workbook routing | Good enough for product contrast if phrased narrowly |
-| Honest boundary | Not malware scanning, not a sandbox, not Excel trust-center replacement, not guaranteed inspection for malformed ZIP packages | Must be included in every claim and report |
+| Validation gate | Focused open-plan tests and docs ordering tests already exist; this cycle ran markdown diff validation only | Needs targeted test run if code changes |
+| Competitor contrast | Microsoft Protected View, openpyxl, SheetJS | Covered |
+| Honest boundary | Malformed bytes reject; active/security/unknown features route to metadata-only review; no malware/sandbox claim | Covered |
 
-## Local Probe
+## Fresh Local Probe
 
-| Fixture | Mode | Review before hydration | Risk families | Parts | Relationships | Median open-plan ms | Median full-open ms | Ratio |
-| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: |
-| `fixtures/xlsx/poi/SampleSS.xlsx` | formula | false | none | 13 | 10 | 0.156 | 2.202 | 14.07x |
-| `fixtures/xlsx/calamine/vba.xlsm` | metadata-only | true | preservedMacro | 12 | 9 | 0.092 | 1.408 | 15.27x |
-| `fixtures/xlsx/poi/ExcelPivotTableSample.xlsx` | formula | false | none | 27 | 19 | 0.189 | 2.235 | 11.83x |
-| `fixtures/xlsx/libreoffice/activex_checkbox.xlsx` | metadata-only | true | preservedActiveX | 17 | 12 | 0.109 | 1.393 | 12.81x |
-| `fixtures/xlsx/poi/WithChart.xlsx` | formula | false | none | 15 | 10 | 0.078 | 1.126 | 14.43x |
+Probe command:
 
-Malformed bytes currently fail with `Missing end of central directory record`. That should be reported as a structured rejection, not as a safe mode recommendation.
-
-## Product Handoff
-
-```text
-/goal Build the safe unknown workbook opening proof bundle without adding a new product surface. Use existing SDK/CLI/API/MCP open-plan contracts to generate a fixture-backed report over clean, macro, ActiveX/control, pivot, chart, and malformed public cases. Include recommendation, reviewBeforeHydration, risk feature families, package counts, open-plan latency versus full hydration, and structured malformed-package rejection. Validate focused open-plan tests, docs ordering, bunx tsc --build, bunx biome check, and bun run test:changed. Keep boundaries explicit: pre-hydration package routing, not malware scanning or sandboxing.
+```bash
+bun run research/experiments/runs/2026/2026-05-15-safe-open-proof-bundle/probes/safe-open-proof.ts 9
 ```
 
-## Do Not Promote Yet
+The probe script is intentionally inside an ignored `probes/` directory. The tracked evidence is this synthesis and the run log.
 
-- Do not claim malicious workbook safety.
-- Do not claim full Excel compatibility from an open plan.
-- Do not add a second CLI/API/MCP surface for the same recommendation.
-- Do not publish private corpus measurements.
-- Do not turn local latency numbers into thresholds until a stable benchmark harness owns them.
+| Case | Fixture | Bytes | Mode | Review before hydration | Risk families | Parts | Relationships | Median open-plan ms | Median full-open ms | Full/open-plan ratio | Boundary |
+| --- | --- | ---: | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
+| clean | `fixtures/xlsx/poi/SampleSS.xlsx` | 9112 | formula | false | none | 13 | 10 | 0.114 | 1.816 | 15.87x | ok |
+| formula-heavy | `fixtures/xlsx/poi/formula_stress_test.xlsx` | 64769 | formula | false | none | 27 | 22 | 0.178 | 5.875 | 33.04x | ok |
+| macro | `fixtures/xlsx/calamine/vba.xlsm` | 12752 | metadata-only | true | preservedMacro | 12 | 9 | 0.058 | 1.209 | 20.73x | ok |
+| pivot | `fixtures/xlsx/poi/ExcelPivotTableSample.xlsx` | 19460 | formula | false | none | 27 | 19 | 0.142 | 2.027 | 14.31x | ok |
+| ActiveX | `fixtures/xlsx/libreoffice/activex_checkbox.xlsx` | 12433 | metadata-only | true | preservedActiveX | 17 | 12 | 0.091 | 1.581 | 17.41x | ok |
+| chart | `fixtures/xlsx/poi/WithChart.xlsx` | 10138 | formula | false | none | 15 | 10 | 0.068 | 1.097 | 16.09x | ok |
+| signed | synthetic digital-signature package | 2293 | metadata-only | true | preservedSignature | 8 | 4 | 0.040 | 0.090 | 2.25x | ok |
+| unknown part | synthetic unknown package part | 1767 | metadata-only | true | preservedOther | 6 | 3 | 0.037 | 0.065 | 1.75x | ok |
+| malformed | synthetic malformed bytes | 9 | rejected | n/a | n/a | n/a | n/a | n/a | n/a | n/a | open-plan rejected: Missing end of central directory record |
+
+## Interpretation
+
+- Public workbook cases show open-plan as a cheap pre-hydration routing step: 14.31x to 33.04x faster than full hydration in this local probe.
+- Active content and security-sensitive package material route to `metadata-only` with `reviewBeforeHydration: true`.
+- Unknown package material routes to `metadata-only` review instead of pretending the workbook is fully understood.
+- Malformed bytes do not get a recommendation. They reject at package inspection, which should be presented as a boundary in any proof bundle.
+- Synthetic signed and unknown cases prove routing semantics, but the public proof bundle should add durable fixture files if this becomes a product-facing report.
+
+## Product Boundary
+
+Do claim:
+
+- pre-hydration package-feature routing;
+- recommended load mode for caller intent;
+- explicit `reviewBeforeHydration` for active-content, security, and unknown package families;
+- lower routing cost than full hydration on public fixtures.
+
+Do not claim:
+
+- malware detection;
+- sandboxed opening;
+- trusted active-content execution;
+- complete Excel compatibility;
+- that malformed packages can always be inspected;
+- that local latency numbers are a benchmark threshold.
+
+## Fold-In Recommendation
+
+Promote to product/performance as a proof bundle over existing surfaces. Do not add another CLI/API/MCP surface. The next production-sized step should be a tracked proof report generator only if product wants this claim published from repeatable fixtures; otherwise the existing open-plan implementation is sufficient.
+
+## Next Handoff
+
+```text
+/goal Publish the safe unknown workbook opening proof bundle without adding a new product surface. Turn the current local proof into a repeatable tracked report over public fixtures, replacing synthetic signed/unknown cases with durable fixture workbooks if possible. Show package fingerprint, recommended load mode, reviewBeforeHydration, risk families, package counts, malformed rejection, and latency versus full hydration. Keep boundaries explicit: this is pre-hydration package routing, not malware scanning or sandboxing.
+```

@@ -43,6 +43,7 @@ export type {
 	LossAuditPackagePart,
 	PackageActionKind,
 	PackageActionProof,
+	PackageActionProofCoverage,
 	PackageActionProofEntry,
 	PackageActionProofOptions,
 	PackageGraphAudit,

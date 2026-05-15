@@ -158,8 +158,20 @@ export interface PackageActionProof {
 	readonly kind: 'ascend-package-action-proof'
 	readonly totalActions: number
 	readonly byAction: Readonly<Record<PackageActionKind, number>>
+	readonly coverage: PackageActionProofCoverage
 	readonly actions: readonly PackageActionProofEntry[]
 	readonly issues: readonly string[]
+}
+
+export interface PackageActionProofCoverage {
+	readonly proofScope: 'package-part-actions-with-audit-summaries'
+	readonly sourceGraphIncluded: boolean
+	readonly sourcePartCount?: number
+	readonly sourceRelationshipCount?: number
+	readonly writePolicyIncluded: boolean
+	readonly packageGraphAuditIncluded: boolean
+	readonly relationshipAuditIssueCount: number
+	readonly bytePreservationAuditIssueCount: number
 }
 
 export interface PackageActionProofEntry {
@@ -1443,6 +1455,7 @@ export function createPackageActionProof(
 
 	const byAction = emptyPackageActionCounts()
 	for (const action of actions) byAction[action.action] += 1
+	const auditIssues = options.packageGraphAudit?.issues ?? []
 	const issues = actions
 		.filter((action) => action.action === 'error')
 		.map((action) => (action.partPath ? `${action.partPath}: ${action.reason}` : action.reason))
@@ -1451,6 +1464,21 @@ export function createPackageActionProof(
 		kind: 'ascend-package-action-proof',
 		totalActions: actions.length,
 		byAction,
+		coverage: {
+			proofScope: 'package-part-actions-with-audit-summaries',
+			sourceGraphIncluded: options.sourcePackageGraph !== undefined,
+			...(options.sourcePackageGraph
+				? {
+						sourcePartCount: options.sourcePackageGraph.parts.length,
+						sourceRelationshipCount: options.sourcePackageGraph.relationships?.length ?? 0,
+					}
+				: {}),
+			writePolicyIncluded: options.writePolicy !== undefined,
+			packageGraphAuditIncluded: options.packageGraphAudit !== undefined,
+			relationshipAuditIssueCount: auditIssues.filter(isPackageRelationshipAuditIssue).length,
+			bytePreservationAuditIssueCount: auditIssues.filter(isPackageBytePreservationAuditIssue)
+				.length,
+		},
 		actions,
 		issues,
 	}
@@ -1591,6 +1619,20 @@ function emptyPackageActionCounts(): Record<PackageActionKind, number> {
 		drop: 0,
 		error: 0,
 	}
+}
+
+function isPackageRelationshipAuditIssue(issue: XlsxPackageGraphFidelityIssue): boolean {
+	return (
+		issue.code === 'package_relationship_duplicate_id' ||
+		issue.code === 'package_relationship_source' ||
+		issue.code === 'package_relationship_target' ||
+		issue.code === 'package_preserved_relationship' ||
+		issue.code === 'package_preserved_relationship_identity'
+	)
+}
+
+function isPackageBytePreservationAuditIssue(issue: XlsxPackageGraphFidelityIssue): boolean {
+	return issue.code === 'package_preserved_part_bytes'
 }
 
 function packageActionCountsEqual(

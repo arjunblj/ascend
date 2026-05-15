@@ -3297,6 +3297,16 @@ describe('agent workflow loss audit', () => {
 		expect(proof.byAction.add).toBeGreaterThan(0)
 		expect(proof.byAction.regenerate).toBeGreaterThan(0)
 		expect(proof.byAction.error).toBe(0)
+		expect(proof.coverage).toMatchObject({
+			proofScope: 'package-part-actions-with-audit-summaries',
+			sourceGraphIncluded: true,
+			writePolicyIncluded: true,
+			packageGraphAuditIncluded: true,
+			relationshipAuditIssueCount: 0,
+			bytePreservationAuditIssueCount: 0,
+		})
+		expect(proof.coverage.sourcePartCount).toBeGreaterThan(0)
+		expect(proof.coverage.sourceRelationshipCount).toBeGreaterThan(0)
 		expect(proof.actions).toContainEqual(
 			expect.objectContaining({
 				action: 'add',
@@ -3381,6 +3391,13 @@ describe('agent workflow loss audit', () => {
 							message: 'Preserved bytes changed.',
 							partPath: 'custom/item.xml',
 						},
+						{
+							code: 'package_preserved_relationship',
+							severity: 'error',
+							message: 'Preserved relationship disappeared.',
+							relationshipPartPath: 'custom/_rels/item.xml.rels',
+							relationshipId: 'rId1',
+						},
 					],
 				} as PackageGraphAudit,
 			},
@@ -3391,7 +3408,17 @@ describe('agent workflow loss audit', () => {
 			regenerate: 1,
 			add: 1,
 			drop: 1,
-			error: 2,
+			error: 3,
+		})
+		expect(proof.coverage).toMatchObject({
+			proofScope: 'package-part-actions-with-audit-summaries',
+			sourceGraphIncluded: true,
+			sourcePartCount: 3,
+			sourceRelationshipCount: 0,
+			writePolicyIncluded: true,
+			packageGraphAuditIncluded: true,
+			relationshipAuditIssueCount: 1,
+			bytePreservationAuditIssueCount: 1,
 		})
 		expect(proof.actions).toContainEqual(
 			expect.objectContaining({ action: 'passthrough', partPath: 'custom/item.xml' }),
@@ -3401,6 +3428,9 @@ describe('agent workflow loss audit', () => {
 		)
 		expect(proof.issues).toContain('xl/workbook.xml: Structural check failed before write.')
 		expect(proof.issues).toContain('custom/item.xml: Preserved bytes changed.')
+		expect(proof.issues).toContain(
+			'custom/_rels/item.xml.rels: Preserved relationship disappeared.',
+		)
 	})
 
 	test('prepared agent plans reuse full workflow state with staleness guards', async () => {

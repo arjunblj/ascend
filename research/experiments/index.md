@@ -121,6 +121,7 @@ Updated: 2026-05-15
 | [Package action provenance boundary audit](runs/2026/2026-05-15-package-action-provenance-boundary-audit/log.md) | synthesis boundary audit keeps local proof digests below signed-provenance and attestation wording | release loop, product loop, correctness loop |
 | [Package action streaming matrix boundary audit](runs/2026/2026-05-15-package-action-streaming-matrix-boundary-audit/log.md) | synthesis boundary audit limits streaming wording to one representative dirty-sheet proof | performance loop, correctness loop, release loop |
 | [Compact report publication policy audit](runs/2026/2026-05-15-compact-report-publication-policy-audit/log.md) | synthesis boundary audit keeps compact report commands as pointers until storage/privacy/canonicalization policy exists | release loop, product loop |
+| [Owner handoff top claims](runs/2026/2026-05-15-owner-handoff-top-claims/log.md) | one-page handoff names only the top two implementation loops and freezes the rest of the portfolio | product loop, correctness loop, performance loop, release loop |
 | [Package action proof](runs/2026/2026-05-14-package-action-proof/log.md) | cycle 2 complete, promote | correctness loop, product/DX loop, performance loop |
 | [Formula spans LSP](runs/2026/2026-05-14-formula-spans-lsp/log.md) | cycle 13 complete, folded in SDK hover/code actions | product/DX loop, correctness loop |
 | [Formula sqllogictest conformance](runs/2026/2026-05-14-formula-sqllogictest-conformance/log.md) | cycle 14 complete, folded in converter/runner | correctness loop |
@@ -144,3 +145,4 @@ Updated: 2026-05-15
 - [2026-05 viewport patch proof report](syntheses/2026-05-viewport-patch-proof-report.md)
 - [2026-05 agent context contracts](syntheses/2026-05-agent-context-contracts.md)
 - [2026-05 ranked research portfolio](syntheses/2026-05-ranked-research-portfolio.md)
+- [2026-05 owner handoff](syntheses/2026-05-owner-handoff.md)

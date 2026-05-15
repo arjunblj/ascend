@@ -7,9 +7,17 @@ describe('release proof evidence index', () => {
 
 		expect(index.signed).toBe(false)
 		expect(index.attestation).toBe(false)
+		expect(index.excludedEvidenceCount).toBe(1)
 		expect(index.artifacts.map((artifact) => artifact.name)).toEqual([
 			'safe-open-proof',
 			'package-action-proof',
+		])
+		expect(index.excludedEvidence).toEqual([
+			expect.objectContaining({
+				name: 'practical-latency-contracts',
+				ownerLoop: 'performance',
+				eligibilityRule: expect.stringContaining('tracked-clean'),
+			}),
 		])
 		for (const artifact of index.artifacts) {
 			expect(artifact.sha256).toMatch(/^[a-f0-9]{64}$/)
@@ -65,5 +73,8 @@ describe('release proof evidence index', () => {
 		expect(markdown).toContain('Attestation: false')
 		expect(markdown).toContain('safe unknown workbook opening')
 		expect(markdown).toContain('auditable package-part mutation')
+		expect(markdown).toContain('Excluded Evidence')
+		expect(markdown).toContain('practical-latency-contracts')
+		expect(markdown).toContain('tracked-clean run')
 	})
 })

@@ -12,6 +12,7 @@ import {
 } from './safe-open-proof.ts'
 
 export type ReleaseProofIndexArtifactName = 'safe-open-proof' | 'package-action-proof'
+export type ReleaseProofIndexExcludedEvidenceName = 'practical-latency-contracts'
 
 export interface ReleaseProofIndexOptions {
 	readonly includeTimings?: boolean
@@ -33,13 +34,24 @@ export interface ReleaseProofIndexArtifact {
 	readonly boundary: string
 }
 
+export interface ReleaseProofIndexExcludedEvidence {
+	readonly name: ReleaseProofIndexExcludedEvidenceName
+	readonly command: string
+	readonly reason: string
+	readonly eligibilityRule: string
+	readonly ownerLoop: 'performance' | 'product' | 'release'
+	readonly boundary: string
+}
+
 export interface ReleaseProofIndexResult {
 	readonly generatedAt: string
 	readonly artifactCount: number
+	readonly excludedEvidenceCount: number
 	readonly signed: false
 	readonly attestation: false
 	readonly boundary: string
 	readonly artifacts: readonly ReleaseProofIndexArtifact[]
+	readonly excludedEvidence: readonly ReleaseProofIndexExcludedEvidence[]
 }
 
 export async function runReleaseProofIndex(
@@ -59,11 +71,13 @@ export async function runReleaseProofIndex(
 	return {
 		generatedAt: new Date().toISOString(),
 		artifactCount: artifacts.length,
+		excludedEvidenceCount: EXCLUDED_EVIDENCE.length,
 		signed: false,
 		attestation: false,
 		boundary:
 			'Digest index for local release evidence artifacts. This is not signed provenance, SLSA, in-toto attestation, or tamper-evident storage.',
 		artifacts,
+		excludedEvidence: EXCLUDED_EVIDENCE,
 	}
 }
 
@@ -78,10 +92,30 @@ export function releaseProofIndexMarkdown(result: ReleaseProofIndexResult): stri
 		'| --- | --- | --- | --- | --- | --- | --- | ---: | ---: | --- | --- | --- | --- |',
 		...result.artifacts.map(markdownRow),
 		'',
+		'## Excluded Evidence',
+		'',
+		'| Evidence | Command | Reason | Eligibility rule | Owner loop | Boundary |',
+		'| --- | --- | --- | --- | --- | --- |',
+		...result.excludedEvidence.map(excludedEvidenceMarkdownRow),
+		'',
 		`Signed: ${result.signed}`,
 		`Attestation: ${result.attestation}`,
 	].join('\n')
 }
+
+const EXCLUDED_EVIDENCE: readonly ReleaseProofIndexExcludedEvidence[] = [
+	{
+		name: 'practical-latency-contracts',
+		command: 'bun run fixtures/benchmarks/practical-latency-contracts.ts --json',
+		reason:
+			'Latency contract reports are diagnostic benchmark evidence, not release proof artifacts.',
+		eligibilityRule:
+			'Eligible for release proof only after a tracked-clean run over standardized public inputs with product-approved threshold wording.',
+		ownerLoop: 'performance',
+		boundary:
+			'No local timing report in this index is a release performance threshold, signed provenance, or headline product claim.',
+	},
+]
 
 function safeOpenArtifact(
 	result: SafeOpenProofResult,
@@ -179,6 +213,21 @@ function markdownRow(row: ReleaseProofIndexArtifact): string {
 		`\`${row.sha256}\``,
 		`\`${row.stableShapeSha256}\``,
 		formatSummary(row.summary),
+		row.boundary,
+	]
+		.map((cell) => ` ${cell} `)
+		.join('|')
+		.replace(/^/, '|')
+		.replace(/$/, '|')
+}
+
+function excludedEvidenceMarkdownRow(row: ReleaseProofIndexExcludedEvidence): string {
+	return [
+		row.name,
+		`\`${row.command}\``,
+		row.reason,
+		row.eligibilityRule,
+		row.ownerLoop,
 		row.boundary,
 	]
 		.map((cell) => ` ${cell} `)

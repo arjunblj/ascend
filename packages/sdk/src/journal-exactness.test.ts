@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { DEFAULT_STYLE_ID } from '@ascend/core'
+import { readFileSync } from 'node:fs'
+import { DEFAULT_STYLE_ID, indexToColumn } from '@ascend/core'
 import { numberValue, type Operation } from '@ascend/schema'
 import {
 	analyzeMutationJournalExactness,
@@ -1227,6 +1228,62 @@ describe('mutation journal exactness model', () => {
 				)
 			}
 		}
+	})
+
+	test('real XLSX shared formula member edits journal every detached imported peer', async () => {
+		const wb = await AscendWorkbook.open(
+			readFileSync(new URL('../../../fixtures/xlsx/poi/shared_formulas.xlsx', import.meta.url)),
+		)
+		const sharedRefs = Array.from({ length: 40 }, (_, index) => `Label!A${index + 2}`)
+		expect(collectFormulaInfoRefs(wb, 'Label')).toEqual(sharedRefs)
+
+		const changed = wb.apply(
+			[{ op: 'setCells', sheet: 'Label', updates: [{ ref: 'A3', value: 99 }] }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.affectedCells).toEqual(sharedRefs.map((ref) => ref.split('!')[1]))
+		expect(collectFormulaInfoRefs(wb, 'Label')).toEqual([])
+		expect(changed.journal).toBeDefined()
+		if (!changed.journal) throw new Error('missing journal')
+		expect(changed.journal.exact).toBe(false)
+		expect(journalIssueRefs(changed.journal, 'shared-formulas')).toEqual([...sharedRefs].sort())
+		expect(
+			changed.journal.issues
+				.filter((issue) => issue.surface === 'shared-formulas')
+				.every((issue) => issue.reason === 'formula-binding-metadata'),
+		).toBe(true)
+	})
+
+	test('real XLSX data table member edits journal detached table metadata', async () => {
+		const wb = await AscendWorkbook.open(
+			readFileSync(
+				new URL(
+					'../../../fixtures/xlsx/closedxml/Other_Formulas_DataTableFormula-Excel-Input.xlsx',
+					import.meta.url,
+				),
+			),
+		)
+		expect(collectFormulaInfoRefs(wb, '1D Row')).toEqual(['1D Row!C4'])
+
+		const changed = wb.apply(
+			[{ op: 'setCells', sheet: '1D Row', updates: [{ ref: 'C6', value: 99 }] }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect([...changed.affectedCells].sort()).toEqual(['C4', 'C6'])
+		expect(collectFormulaInfoRefs(wb, '1D Row')).toEqual([])
+		expect(changed.journal).toBeDefined()
+		if (!changed.journal) throw new Error('missing journal')
+		expect(changed.journal.exact).toBe(false)
+		expect(journalIssueRefs(changed.journal, 'data-tables')).toEqual(['1D Row!C4'])
+		expect(
+			changed.journal.issues
+				.filter((issue) => issue.surface === 'data-tables')
+				.every((issue) => issue.reason === 'formula-binding-metadata'),
+		).toBe(true)
 	})
 
 	test('representative exact journals restore full workbook evidence after inverse apply', () => {
@@ -2467,4 +2524,24 @@ function applyJournal(workbook: AscendWorkbook, ops: readonly Operation[]): Muta
 	expect(journal).toBeDefined()
 	if (!journal) throw new Error('missing journal')
 	return journal
+}
+
+function collectFormulaInfoRefs(workbook: AscendWorkbook, sheetName: string): string[] {
+	const sheet = workbook.getWorkbookModel().getSheet(sheetName)
+	if (!sheet) throw new Error(`missing sheet ${sheetName}`)
+	const refs: string[] = []
+	for (const [row, col, cell] of sheet.cells.iterate()) {
+		if (cell.formulaInfo) refs.push(`${sheetName}!${indexToColumn(col)}${row + 1}`)
+	}
+	return refs
+}
+
+function journalIssueRefs(
+	journal: MutationJournal,
+	surface: MutationJournalSurface,
+): readonly string[] {
+	return journal.issues
+		.filter((issue) => issue.surface === surface)
+		.flatMap((issue) => issue.refs ?? [])
+		.sort()
 }

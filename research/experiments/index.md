@@ -63,6 +63,7 @@ Updated: 2026-05-15
 | [Safe open release index blockers](runs/2026/2026-05-15-safe-open-release-index-blockers/log.md) | folded in release proof index commands and publication blockers for top artifacts | product loop, performance loop |
 | [Package action release index blockers](runs/2026/2026-05-15-package-action-release-index-blockers/log.md) | refreshed package-action report against release proof index blockers; no new mutation surface | correctness loop, product loop |
 | [Journal structured issue field completion](runs/2026/2026-05-15-journal-structured-issue-field-completion/log.md) | finished tiny in-flight SDK fix so emitted journal issues satisfy the v1 surface/reason schema | correctness loop |
+| [Top proof owner prompts](runs/2026/2026-05-15-top-proof-owner-prompts/log.md) | tightened top-two owner prompts with release-index commands, blockers, and exit criteria | product loop, correctness loop |
 | [Release proof index digests](runs/2026/2026-05-15-release-proof-index-digests/log.md) | folded in benchmark-only digest index | product loop |
 | [Release proof index refresh](runs/2026/2026-05-15-release-proof-index-refresh/log.md) | digest index rerun for top two proof artifacts, no attestation claim | product loop |
 | [Agent view index promotion gate](runs/2026/2026-05-15-agent-view-index-promotion-gate/log.md) | handoff only, hold out of release proof index | product/DX loop |

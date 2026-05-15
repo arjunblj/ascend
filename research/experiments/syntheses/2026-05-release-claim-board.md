@@ -153,14 +153,23 @@ The guard may return `ok: true` only for formula-local `LET` bindings with compl
 ### Product/Performance Loop
 
 ```text
-/goal Become Ascend's safe-open release-proof owner. Do not add new open surfaces. Use the existing feature-fingerprint/open-plan implementation and proof harness to produce a public-fixture evidence report for "safe unknown workbook opening." Required proof: fixture list, latency versus full hydration, SDK/CLI/API/MCP surface evidence, validation command, competitor contrast with Microsoft Protected View, and boundaries saying this is not malware scanning, sandboxing, or active-content safety. Commit only the report, harness fixes if needed, and index updates.
+/goal Become Ascend's safe-open release-proof owner. Do not add new open surfaces. Start from `fixtures/benchmarks/release-proof-index.ts` and the `safe-open-proof` artifact. Reproduce with `bun run fixtures/benchmarks/safe-open-proof.ts --no-timings --json` and a timed local rerun when needed. Required proof: fixture list, package counts, recommended load mode, reviewBeforeHydration, risk families, malformed rejection, SDK/CLI/API/MCP surface evidence, validation commands, stable shape digest, competitor contrast with Microsoft Protected View, and boundaries saying this is not malware scanning, sandboxing, file trust, active-content safety, signed provenance, or a release performance threshold. Resolve or explicitly accept the current blockers: signed/unknown-part cases are code-generated packages rather than public binary fixtures, and timing evidence is local proof-run data. Commit only release report/index updates or narrow harness fixes.
 ```
 
 ### Correctness/Product Loop
 
 ```text
-/goal Become Ascend's auditable package-part mutation proof owner. Do not add new mutation surfaces. Use existing package action evidence, release proof index, and rollback journal issue reasons to produce a compact report for "auditable package-part mutation." Required proof: per-part passthrough/regenerate/add/drop/error fixtures, journal/package compatibility, SDK evidence shape, validation gate, competitor contrast with openpyxl/SheetJS preservation boundaries, and honest boundaries around signatures, chart byte passthrough, and provenance. Commit only proof/report/harness fixes and index updates.
+/goal Become Ascend's auditable package-part mutation proof owner. Do not add new mutation surfaces. Start from `fixtures/benchmarks/release-proof-index.ts` and the `package-action-proof` artifact. Reproduce with `bun run fixtures/benchmarks/package-action-proof.ts --no-timings --json` and a timed local rerun when needed. Required proof: per-part `passthrough`/`regenerate`/`add`/`drop`/`error` coverage, source graph evidence, journal package issue refs, SDK evidence shape, validation commands, stable shape digest, competitor contrast with OPC/openpyxl/SheetJS, and honest boundaries around signatures, chart byte passthrough, Excel recalculation equivalence, SLSA, in-toto, and provenance. Resolve or explicitly accept the current blockers: synthetic edge packages must stay disclosed unless replaced by public binary fixtures, and the proof is local evidence rather than signed attestation. Commit only proof/report/harness fixes and index updates.
 ```
+
+### Proof-Owner Exit Criteria
+
+The owner loops above are done only when the release artifact can answer these checks without private data:
+
+| Owner | Required evidence | Blocking exit condition |
+| --- | --- | --- |
+| Safe unknown workbook opening | `safe-open-proof` command, stable shape digest `6aa54a651309b3c45ce7ce93ff7034e7b31e47c7cbc458c58ee6a6f23e0c6178`, public fixture table, explicit review branches, malformed rejection, validation commands, and accepted or resolved publication blockers | Do not publish headline copy if signed/unknown package evidence remains undisclosed or if timing language reads as a threshold |
+| Auditable package-part mutation | `package-action-proof` command, stable shape digest `b9758496346c97920c80ba08b6632315708a6d6cc770927695337e729554dbb0`, all five action classes, journal issue refs, post-write audit status, validation commands, and accepted or resolved publication blockers | Do not publish headline copy if synthetic edge packages are hidden, if chart XML is called byte-passthrough, or if the proof implies SLSA/in-toto/signed provenance |
 
 ## Do Not Promote Yet
 

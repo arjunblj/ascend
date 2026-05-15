@@ -8011,6 +8011,62 @@ describe('applyOperation', () => {
 		expect(sheet.cells.get(5, 0)?.formulaInfo).toBeUndefined()
 	})
 
+	test('setTableColumn rename preserves dynamic spill metadata and reports rewritten formulas', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: stringValue('Qty'), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: stringValue('Total'), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: numberValue(20), formula: null, styleId: sid })
+		applyOperation(wb, {
+			op: 'createTable',
+			sheet: 'Sheet1',
+			ref: 'A1:B2',
+			name: 'Sales',
+			hasHeaders: true,
+		})
+		sheet.cells.set(0, 3, {
+			value: numberValue(2),
+			formula: 'FILTER(Sales[Qty],Sales[Qty]>0)',
+			styleId: sid,
+			formulaInfo: { kind: 'dynamicArray', metadataIndex: 1, collapsed: false },
+		})
+		sheet.cells.set(1, 3, {
+			value: numberValue(2),
+			formula: null,
+			styleId: sid,
+			formulaInfo: {
+				kind: 'spill',
+				anchorRef: 'Sheet1!D1',
+				ref: 'D1:D2',
+				isAnchor: false,
+			},
+		})
+
+		const result = applyOperation(wb, {
+			op: 'setTableColumn',
+			table: 'Sales',
+			column: 'Qty',
+			newName: 'Units',
+		})
+		expectOk(result)
+
+		expect(result.value.affectedCells).toEqual(['A1', 'D1'])
+		expect(sheet.cells.get(0, 3)?.formula).toBe('FILTER(Sales[Units],Sales[Units]>0)')
+		expect(sheet.cells.get(0, 3)?.formulaInfo).toEqual({
+			kind: 'dynamicArray',
+			metadataIndex: 1,
+			collapsed: false,
+		})
+		expect(sheet.cells.get(1, 3)?.formulaInfo).toEqual({
+			kind: 'spill',
+			anchorRef: 'Sheet1!D1',
+			ref: 'D1:D2',
+			isAnchor: false,
+		})
+		expectCachedFormulaAnalysisMatchesFullRecompute(wb)
+	})
+
 	test('setTableColumn renames columns and rewrites structured references', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')
@@ -8115,7 +8171,7 @@ describe('applyOperation', () => {
 			newName: 'Units',
 		})
 		expectOk(result)
-		expect(result.value.affectedCells).toEqual(['A1'])
+		expect(result.value.affectedCells).toEqual(['A1', 'C2', 'C3', 'A5'])
 		expect(result.value.recalcRequired).toBe(true)
 		expect(sheet.tables[0]?.columns.map((column) => column.name)).toEqual([
 			'Units',

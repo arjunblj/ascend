@@ -813,7 +813,19 @@ export function handleSetTableColumn(
 			})
 			affected.add(toA1({ row: table.ref.start.row, col: table.ref.start.col + columnIndex }))
 		}
-		rewriteTableColumnInFormulas(workbook, table, column.name, op.newName)
+		for (const rewritten of rewriteTableColumnInFormulas(
+			workbook,
+			table,
+			column.name,
+			op.newName,
+		)) {
+			affected.add(
+				rewritten.sheetName === sheet.name
+					? rewritten.ref
+					: `${rewritten.sheetName}!${rewritten.ref}`,
+			)
+			sheetsModified.add(rewritten.sheetName)
+		}
 		rewriteTableColumnInDefinedNames(workbook, table.name, column.name, op.newName)
 	}
 	const totalsResult = materializeTotalsRowCell(sheet, table, columnIndex, nextColumn, op)

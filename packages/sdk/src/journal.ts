@@ -53,6 +53,7 @@ import {
 	dateToSerial,
 	extractRefs,
 	type FormulaRef,
+	normalizeFormulaInput,
 	serialToDate,
 } from '@ascend/formulas'
 import type {
@@ -222,8 +223,13 @@ export const MUTATION_JOURNAL_EXACTNESS_MATRIX: readonly MutationJournalExactnes
 		constraints: [
 			'formula text restores with setFormula',
 			'formula cache restores only when the cached value is accepted by public cell writes',
+			'invalid fillFormula text cannot be journaled exactly',
 		],
-		lossReasons: ['formula-cache-unsupported-value', 'formula-reference-rewrite'],
+		lossReasons: [
+			'formula-cache-unsupported-value',
+			'formula-reference-rewrite',
+			'value-unsupported',
+		],
 		representativeOps: [
 			'setFormula',
 			'fillFormula',
@@ -3273,14 +3279,31 @@ function journalFillFormula(
 	opIndex: number,
 ): DraftJournalEntry {
 	const cells = cellEditPreimages(workbook, op.sheet, refsInRange(op.range))
+	const formulaIssues = fillFormulaParseIssues(op)
 	const { inverseOps, issues } = inverseCellOps(cells)
 	return {
 		opIndex,
 		op,
-		inverseOps,
+		inverseOps: formulaIssues.length === 0 ? inverseOps : [],
 		preimages: [{ kind: 'cells', cells }],
-		issues,
+		issues: [...formulaIssues, ...issues],
 	}
+}
+
+function fillFormulaParseIssues(
+	op: Extract<Operation, { op: 'fillFormula' }>,
+): MutationJournalIssue[] {
+	const parsed = cachedParseFormula(normalizeFormulaInput(op.formula))
+	if (parsed.ok) return []
+	return [
+		{
+			code: 'UNSUPPORTED_VALUE',
+			message: `Cannot build exact rollback journal for fillFormula because ${op.formula} is not a valid formula`,
+			surface: 'formulas',
+			reason: 'value-unsupported',
+			refs: [`${op.sheet}!${op.range}`],
+		},
+	]
 }
 
 function journalSetRichText(

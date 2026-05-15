@@ -914,6 +914,31 @@ describe('mutation journal exactness model', () => {
 		}
 	})
 
+	test('classifies fillFormula journals with invalid formulas as unsupported values', () => {
+		const wb = AscendWorkbook.create()
+		const analysis = analyzeMutationJournalExactness(
+			buildMutationJournal(wb.getWorkbookModel(), [
+				{ op: 'fillFormula', sheet: 'Sheet1', range: 'A1:A2', formula: '=1+' },
+			]),
+		)
+
+		expect(analysis).toMatchObject({
+			supported: true,
+			exact: false,
+			issueCount: 1,
+			surfaces: ['formulas'],
+			reasons: ['value-unsupported'],
+			hasMatrixViolation: false,
+		})
+		expect(analysis.issues[0]).toMatchObject({
+			code: 'UNSUPPORTED_VALUE',
+			surface: 'formulas',
+			reason: 'value-unsupported',
+			refs: ['Sheet1!A1:A2'],
+			allowedByMatrix: true,
+		})
+	})
+
 	test('classifies setComment legacy drawing loss without changing the v1 vocabulary', () => {
 		const classified = classifyMutationJournalIssues(lossySetCommentLegacyDrawingJournal().issues)
 		expect(classified).toContainEqual({

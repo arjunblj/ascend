@@ -3745,6 +3745,42 @@ describe('applyOperation', () => {
 		expect(sheet.colDefs).toEqual([{ min: 0, max: 2, width: 18, customWidth: true }])
 	})
 
+	test('hideCols preserves public column widths when creating column definitions', () => {
+		const wb = setup()
+		const sheet = wb.getSheet('Sheet1')
+		if (!sheet) throw new Error('missing sheet')
+
+		const resized = applyOperation(wb, {
+			op: 'setColWidth',
+			sheet: 'Sheet1',
+			col: 1,
+			width: 12,
+		})
+		expectOk(resized)
+
+		const hidden = applyOperation(wb, {
+			op: 'hideCols',
+			sheet: 'Sheet1',
+			at: 1,
+			count: 1,
+			hidden: true,
+		})
+		expectOk(hidden)
+		expect(sheet.colWidths.get(1)).toBe(12)
+		expect(sheet.colDefs).toEqual([{ min: 1, max: 1, width: 12, customWidth: true, hidden: true }])
+
+		const unhidden = applyOperation(wb, {
+			op: 'hideCols',
+			sheet: 'Sheet1',
+			at: 1,
+			count: 1,
+			hidden: false,
+		})
+		expectOk(unhidden)
+		expect(sheet.colWidths.get(1)).toBe(12)
+		expect(sheet.colDefs).toEqual([{ min: 1, max: 1, width: 12, customWidth: true }])
+	})
+
 	test('setColWidth updates imported column definition ranges used by the writer', () => {
 		const wb = setup()
 		const sheet = wb.getSheet('Sheet1')

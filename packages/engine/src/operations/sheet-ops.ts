@@ -294,13 +294,25 @@ function setColHidden(sheet: Sheet, col: number, hidden: boolean): void {
 	if (existing?.hidden === hidden) return
 	if (!hidden && existing?.hidden === undefined) return
 	if (!existing) {
-		if (hidden) insertColDef(sheet, { min: col, max: col, hidden: true })
+		if (hidden) {
+			insertColDef(sheet, {
+				min: col,
+				max: col,
+				...publicColWidthMetadata(sheet, col),
+				hidden: true,
+			})
+		}
 		return
 	}
 
 	const replacements: Sheet['colDefs'] = []
 	if (existing.min < col) replacements.push({ ...existing, max: col - 1 })
-	const target = { ...existing, min: col, max: col }
+	const target = {
+		...existing,
+		...(existing.width === undefined ? publicColWidthMetadata(sheet, col) : {}),
+		min: col,
+		max: col,
+	}
 	if (hidden) {
 		replacements.push({ ...target, hidden: true })
 	} else {
@@ -310,6 +322,11 @@ function setColHidden(sheet: Sheet, col: number, hidden: boolean): void {
 	if (col < existing.max) replacements.push({ ...existing, min: col + 1 })
 	sheet.colDefs.splice(idx, 1, ...replacements)
 	mergeAdjacentColDefs(sheet)
+}
+
+function publicColWidthMetadata(sheet: Sheet, col: number): Partial<Sheet['colDefs'][number]> {
+	const width = sheet.colWidths.get(col)
+	return width === undefined ? {} : { width, customWidth: true }
 }
 
 function setColDefWidth(sheet: Sheet, col: number, width: number): void {

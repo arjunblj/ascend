@@ -67,6 +67,7 @@ Updated: 2026-05-15
 | [Safe open current proof refresh](runs/2026/2026-05-15-safe-open-current-proof-refresh/log.md) | current proof refreshed from existing SDK/CLI/API/MCP surfaces, no new opener | product loop, performance loop |
 | [Package action current proof refresh](runs/2026/2026-05-15-package-action-current-proof-refresh/log.md) | current proof refreshed from existing plan/commit evidence, no new mutation surface | correctness loop, product loop |
 | [Release proof index current refresh](runs/2026/2026-05-15-release-proof-index-current-refresh/log.md) | digest index refreshed for top two artifacts only, no attestation claim | product loop, release loop |
+| [Hide columns width preservation](runs/2026/2026-05-15-hide-cols-width-preservation/log.md) | folded in scoped engine fix; conditional-format package-byte exactness remains separate | correctness loop |
 | [Agent view omitted evidence recovery](runs/2026/2026-05-15-agent-view-omitted-evidence-recovery/log.md) | folded in recovery proof harness, locator metadata needed | product/DX loop |
 | [Agent view omitted locator metadata](runs/2026/2026-05-15-agent-view-omitted-locator-metadata/log.md) | folded in compact omitted-evidence locators | product/DX loop |
 | [Agent view formula pattern provenance](runs/2026/2026-05-15-agent-view-formula-pattern-provenance/log.md) | folded in formula-pattern example refs | product/DX loop |

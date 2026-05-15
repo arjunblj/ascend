@@ -3955,6 +3955,8 @@ function journalSetPivotCache(
 				{
 					code: 'LOSSY_INVERSE',
 					message: 'Pivot cache selector cannot be restored exactly',
+					surface: 'pivot-caches',
+					reason: 'pivot-cache-unsettable',
 				},
 			]
 	return {
@@ -4089,6 +4091,8 @@ function journalSetWorkbookProtection(
 				{
 					code: 'LOSSY_INVERSE',
 					message: 'Workbook protection absence cannot be restored exactly with public operations',
+					surface: 'workbook-metadata',
+					reason: 'workbook-protection-absence',
 				},
 			]
 	return {
@@ -4148,6 +4152,8 @@ function themeInverseOperation(
 		issues.push({
 			code: 'LOSSY_INVERSE',
 			message: `Theme metadata field ${opKey} cannot be removed with public operations`,
+			surface: 'package-parts',
+			reason: 'package-part-preservation',
 		})
 	}
 	if (op.themeColors !== undefined) {
@@ -4159,6 +4165,8 @@ function themeInverseOperation(
 				issues.push({
 					code: 'LOSSY_INVERSE',
 					message: `Theme color slot ${color.slot} cannot be removed with public operations`,
+					surface: 'package-parts',
+					reason: 'package-part-preservation',
 				})
 				continue
 			}
@@ -4166,6 +4174,8 @@ function themeInverseOperation(
 				issues.push({
 					code: 'LOSSY_INVERSE',
 					message: `Theme color slot ${color.slot} cannot be restored with public operations`,
+					surface: 'package-parts',
+					reason: 'package-part-preservation',
 				})
 				continue
 			}
@@ -5143,6 +5153,8 @@ function restorePageSetupOps(
 		issues.push({
 			code: 'LOSSY_INVERSE',
 			message: `Page setup for ${preimage.sheet} cannot be removed with public operations`,
+			surface: 'page-setup',
+			reason: 'page-setup-unsettable',
 			refs: [preimage.sheet],
 		})
 	}
@@ -5154,6 +5166,8 @@ function restorePageSetupOps(
 		issues.push({
 			code: 'LOSSY_INVERSE',
 			message: `Page margins for ${preimage.sheet} cannot be removed with public operations`,
+			surface: 'page-setup',
+			reason: 'page-margins-unsettable',
 			refs: [preimage.sheet],
 		})
 	}
@@ -5260,6 +5274,8 @@ function addPageSetupLossyIssue(sheet: string, issues: MutationJournalIssue[]): 
 	issues.push({
 		code: 'LOSSY_INVERSE',
 		message: `Page setup for ${sheet} contains metadata that cannot be restored with public operations`,
+		surface: 'page-setup',
+		reason: 'page-setup-unsettable',
 		refs: [sheet],
 	})
 }
@@ -5269,6 +5285,8 @@ function addPageMarginsLossyIssue(sheet: string, issues: MutationJournalIssue[])
 	issues.push({
 		code: 'LOSSY_INVERSE',
 		message: `Page margins for ${sheet} cannot be removed with public operations`,
+		surface: 'page-setup',
+		reason: 'page-margins-unsettable',
 		refs: [sheet],
 	})
 }

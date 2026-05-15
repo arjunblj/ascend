@@ -3193,6 +3193,47 @@ describe('applyOperation', () => {
 		expect(sheet.cells.get(5, 5)?.formula).toBe('SUM(A1:A2)')
 	})
 
+	test('moveRange style-only modes preserve non-spill formula binding metadata', () => {
+		for (const mode of ['formats', 'styles'] as const) {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			const sourceStyle = wb.styles.register({ numberFormat: '$#,##0.00' })
+			addSharedFormulaGroup(sheet)
+			sheet.cells.set(0, 1, cell(numberValue(10)))
+			sheet.cells.set(1, 1, cell(numberValue(20)))
+			const source = sheet.cells.get(1, 0)
+			if (!source) throw new Error('missing shared source')
+			sheet.cells.set(1, 0, { ...source, styleId: sourceStyle })
+			addDataTableFormula(sheet)
+
+			const result = applyOperation(wb, {
+				op: 'moveRange',
+				sheet: 'Sheet1',
+				source: 'A2',
+				target: 'C4',
+				mode,
+			})
+			expectOk(result)
+
+			expect(result.value.recalcRequired, mode).toBe(false)
+			expect(result.value.affectedCells, mode).toEqual(['C4', 'A2'])
+			expect(sheet.cells.get(1, 0)).toEqual({
+				value: numberValue(40),
+				formula: null,
+				styleId: sid,
+				formulaInfo: { kind: 'shared', sharedIndex: '0', isMaster: false, masterRef: 'A1' },
+			})
+			expect(sheet.cells.get(2, 2)?.formulaInfo).toEqual({
+				kind: 'dataTable',
+				ref: 'C3:C5',
+				dt2D: false,
+				dtr: true,
+				r1: 'A1',
+			})
+			expect(sheet.cells.get(3, 2)?.styleId).toBe(sourceStyle)
+		}
+	})
+
 	test('moveRange detaches blocked-spill metadata when moving a blocker', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

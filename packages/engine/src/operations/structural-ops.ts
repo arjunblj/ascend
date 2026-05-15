@@ -220,7 +220,7 @@ export function handleTransferRange(
 				affected.add(affectedRef(targetSheet, ref, crossSheet))
 			}
 		}
-		if (op.op === 'moveRange') {
+		if (op.op === 'moveRange' && clearsSourceCellContent(mode)) {
 			for (const ref of materializeFormulaBindingGroupsForRangeEdit(
 				workbook,
 				sourceSheet,

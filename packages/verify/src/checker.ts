@@ -863,17 +863,6 @@ function sameSpillFormulaBinding(
 	)
 }
 
-function sameFormulaRangeBinding(
-	kind: 'array' | 'dataTable',
-	range: RangeRef,
-	candidate: CellFormulaBinding | undefined,
-	sheetName: string,
-): boolean {
-	if (candidate?.kind !== kind) return false
-	const candidateRange = parseBindingRange(candidate.ref, sheetName)
-	return candidateRange !== null && rangesEqual(range, candidateRange)
-}
-
 interface FormulaRangeBindingEntry {
 	readonly kind: 'array' | 'dataTable'
 	readonly cellRef: string
@@ -1058,36 +1047,6 @@ function checkFormulaBindingIntegrity(wb: Workbook): CheckIssue[] {
 									},
 								),
 							)
-						}
-						if (anchorCell?.formulaInfo?.kind === 'array') {
-							for (const [memberRow, memberCol, memberCell] of anchorSheet?.cells.iterate() ?? []) {
-								if (!rangeContainsCell(range, anchorSheetName, memberRow, memberCol)) continue
-								if (memberRow === range.start.row && memberCol === range.start.col) continue
-								if (
-									!memberCell.formulaInfo &&
-									!memberCell.formula &&
-									memberCell.value.kind === 'empty'
-								) {
-									continue
-								}
-								if (
-									sameFormulaRangeBinding('array', range, memberCell.formulaInfo, anchorSheetName)
-								) {
-									continue
-								}
-								const memberRef = `${anchorSheetName}!${toA1({ row: memberRow, col: memberCol })}`
-								issues.push(
-									formulaBindingIntegrityIssue(
-										`Legacy array formula metadata at ${anchorRef} has an inconsistent occupied cell inside its range`,
-										[anchorRef, memberRef],
-										{
-											kind: 'legacy-array-range-member-mismatch',
-											range: binding.ref,
-											memberRef,
-										},
-									),
-								)
-							}
 						}
 					}
 					if ((row !== range.start.row || col !== range.start.col) && cell.formula) {

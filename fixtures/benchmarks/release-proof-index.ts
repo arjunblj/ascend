@@ -87,6 +87,7 @@ export interface ReleaseProofIndexResult {
 	readonly fixturePolicy: ReleaseProofFixturePolicy
 	readonly performancePolicy: ReleaseProofPerformancePolicy
 	readonly correctnessPolicy: ReleaseProofCorrectnessPolicy
+	readonly correctnessBoundaryEvidence: ReleaseProofCorrectnessBoundaryEvidence
 	readonly readiness: ReleaseProofReadinessSummary
 	readonly boundary: string
 	readonly artifacts: readonly ReleaseProofIndexArtifact[]
@@ -103,6 +104,7 @@ export interface ReleaseProofOwnerHandoffIndex {
 	readonly fixturePolicy: ReleaseProofFixturePolicy
 	readonly performancePolicy: ReleaseProofPerformancePolicy
 	readonly correctnessPolicy: ReleaseProofCorrectnessPolicy
+	readonly correctnessBoundaryEvidence: ReleaseProofCorrectnessBoundaryEvidence
 	readonly nextOwnerActions: readonly ReleaseProofNextOwnerAction[]
 	readonly implementationHandoffs: readonly ReleaseProofImplementationHandoff[]
 	readonly deferredClaims: readonly ReleaseProofDeferredClaim[]
@@ -247,6 +249,27 @@ export interface ReleaseProofCorrectnessPolicyApprovalItem {
 export interface ReleaseProofUnsupportedFeatureBoundary {
 	readonly feature: string
 	readonly currentEvidence: string
+	readonly allowedWording: string
+	readonly forbiddenWording: string
+}
+
+export interface ReleaseProofCorrectnessBoundaryEvidence {
+	readonly artifact: 'package-action-proof'
+	readonly gateId: 'unsupported-feature-boundary'
+	readonly ownerLoop: 'correctness'
+	readonly status: 'evidence-present-owner-approval-required'
+	readonly allCurrentEvidencePresent: boolean
+	readonly ownerApprovalRequired: true
+	readonly validationCommand: string
+	readonly featureChecks: readonly ReleaseProofCorrectnessBoundaryFeatureCheck[]
+	readonly boundary: string
+}
+
+export interface ReleaseProofCorrectnessBoundaryFeatureCheck {
+	readonly feature: string
+	readonly evidencePresent: boolean
+	readonly evidenceSources: readonly string[]
+	readonly proofChecks: readonly string[]
 	readonly allowedWording: string
 	readonly forbiddenWording: string
 }
@@ -520,6 +543,7 @@ export async function runReleaseProofIndex(
 		fixturePolicy: cloneFixturePolicy(),
 		performancePolicy: clonePerformancePolicy(),
 		correctnessPolicy: cloneCorrectnessPolicy(),
+		correctnessBoundaryEvidence: correctnessBoundaryEvidence(safeOpen, packageAction),
 		readiness: releaseReadinessSummary(artifacts),
 		boundary:
 			'Digest index for local release evidence artifacts. This is not signed provenance, SLSA, in-toto attestation, or tamper-evident storage.',
@@ -621,6 +645,17 @@ export function releaseProofIndexMarkdown(result: ReleaseProofIndexResult): stri
 			(reference) => `- ${reference.label}: ${reference.url}`,
 		),
 		'',
+		'Correctness boundary evidence:',
+		'',
+		`Status: ${result.correctnessBoundaryEvidence.status}`,
+		`All current evidence present: ${result.correctnessBoundaryEvidence.allCurrentEvidencePresent}`,
+		`Owner approval required: ${result.correctnessBoundaryEvidence.ownerApprovalRequired}`,
+		result.correctnessBoundaryEvidence.boundary,
+		'',
+		'| Feature | Evidence present | Sources | Checks | Allowed wording | Forbidden wording |',
+		'| --- | --- | --- | --- | --- | --- |',
+		...result.correctnessBoundaryEvidence.featureChecks.map(correctnessBoundaryEvidenceMarkdownRow),
+		'',
 		'## Excluded Evidence',
 		'',
 		'| Evidence | Command | Reason | Eligibility rule | Owner loop | Boundary |',
@@ -650,6 +685,9 @@ export function releaseProofOwnerHandoffIndex(
 		fixturePolicy: cloneFixturePolicy(),
 		performancePolicy: clonePerformancePolicy(),
 		correctnessPolicy: cloneCorrectnessPolicy(),
+		correctnessBoundaryEvidence: cloneCorrectnessBoundaryEvidence(
+			result.correctnessBoundaryEvidence,
+		),
 		nextOwnerActions: result.readiness.nextOwnerActions,
 		implementationHandoffs: result.readiness.implementationHandoffs,
 		deferredClaims: result.deferredClaims,
@@ -931,6 +969,187 @@ function packageActionArtifact(
 		boundary:
 			'Local package-part evidence only; not signed provenance, Excel recalculation equivalence, or semantic understanding of every unsupported feature.',
 	}
+}
+
+function correctnessBoundaryEvidence(
+	safeOpen: SafeOpenProofResult,
+	packageAction: PackageActionProofResult,
+): ReleaseProofCorrectnessBoundaryEvidence {
+	const featureChecks: ReleaseProofCorrectnessBoundaryFeatureCheck[] = [
+		correctnessBoundaryFeatureCheck({
+			feature: 'digital-signatures',
+			evidencePresent:
+				packageCaseHasAction(packageAction, 'signature-invalidation-drop', 'drop') &&
+				packageCasePostWritePassed(packageAction, 'signature-invalidation-drop'),
+			evidenceSources: [
+				'package-action-proof/signature-invalidation-drop',
+				'safe-open-proof/signed',
+			],
+			proofChecks: [
+				'generated edge package is disclosed',
+				'commit proof records a drop action for signature package parts',
+				'safe-open proof routes signature package features to metadata-only review',
+			],
+		}),
+		correctnessBoundaryFeatureCheck({
+			feature: 'calc-chain',
+			evidencePresent:
+				packageCaseIsPublicFixture(packageAction, 'calc-chain-drop') &&
+				packageCaseHasAction(packageAction, 'calc-chain-drop', 'drop') &&
+				packageCasePostWritePassed(packageAction, 'calc-chain-drop'),
+			evidenceSources: ['package-action-proof/calc-chain-drop'],
+			proofChecks: [
+				'public fixture is used',
+				'commit proof records a drop action for xl/calcChain.xml',
+				'post-write audit passes after dropping unsafe calculation-order metadata',
+			],
+		}),
+		correctnessBoundaryFeatureCheck({
+			feature: 'chart-drawing-sidecars',
+			evidencePresent:
+				packageCaseIsPublicFixture(packageAction, 'chart-sidecar-accounting') &&
+				packageCaseHasAction(packageAction, 'chart-sidecar-accounting', 'passthrough') &&
+				packageCaseHasAction(packageAction, 'chart-sidecar-accounting', 'regenerate') &&
+				packageCasePostWritePassed(packageAction, 'chart-sidecar-accounting'),
+			evidenceSources: ['package-action-proof/chart-sidecar-accounting'],
+			proofChecks: [
+				'public chart fixture is used',
+				'commit proof records passthrough sidecars and regenerated workbook-owned parts',
+				'post-write audit passes without claiming semantic chart support',
+			],
+		}),
+		correctnessBoundaryFeatureCheck({
+			feature: 'macros-activex',
+			evidencePresent:
+				packageCaseIsPublicFixture(packageAction, 'macro-passthrough') &&
+				packageCaseHasAction(packageAction, 'macro-passthrough', 'passthrough') &&
+				safeOpenRiskRoutedToReview(safeOpen, 'macro', 'preservedMacro') &&
+				safeOpenRiskRoutedToReview(safeOpen, 'activex', 'preservedActiveX'),
+			evidenceSources: [
+				'package-action-proof/macro-passthrough',
+				'safe-open-proof/macro',
+				'safe-open-proof/activex',
+			],
+			proofChecks: [
+				'public macro fixture is used for package-action evidence',
+				'macro-bearing parts are recorded as package evidence',
+				'safe-open proof routes macro and ActiveX risk families to review before hydration',
+			],
+		}),
+		correctnessBoundaryFeatureCheck({
+			feature: 'unknown-parts',
+			evidencePresent:
+				packageCaseHasAction(packageAction, 'unknown-part-error', 'error') &&
+				!packageCasePostWritePassed(packageAction, 'unknown-part-error') &&
+				safeOpenRiskRoutedToReview(safeOpen, 'unknown-part', 'preservedOther'),
+			evidenceSources: ['package-action-proof/unknown-part-error', 'safe-open-proof/unknown-part'],
+			proofChecks: [
+				'generated edge package is disclosed',
+				'commit proof records an error action for the unknown package part',
+				'post-write audit fails closed and safe-open routes unknown package features to review',
+			],
+		}),
+		correctnessBoundaryFeatureCheck({
+			feature: 'streaming-scope',
+			evidencePresent: packageCaseHasRepresentativeStreamingProof(
+				packageAction,
+				'docprops-passthrough',
+			),
+			evidenceSources: ['package-action-proof/docprops-passthrough'],
+			proofChecks: [
+				'one representative public fixture has streaming proof',
+				'streaming proof records regenerated worksheet parts',
+				'streaming proof records passthrough byte equality without claiming full matrix parity',
+			],
+		}),
+	]
+	return {
+		artifact: 'package-action-proof',
+		gateId: 'unsupported-feature-boundary',
+		ownerLoop: 'correctness',
+		status: 'evidence-present-owner-approval-required',
+		allCurrentEvidencePresent: featureChecks.every((entry) => entry.evidencePresent),
+		ownerApprovalRequired: true,
+		validationCommand:
+			'bun run fixtures/benchmarks/release-proof-index.ts --no-timings --owner-handoffs-json',
+		featureChecks,
+		boundary:
+			'Evidence check for unsupported-feature wording only. It does not satisfy the owner gate, approve release copy, or prove semantic support for signatures, calc chains, charts, macros, ActiveX, unknown parts, or full streaming parity.',
+	}
+}
+
+function correctnessBoundaryFeatureCheck(input: {
+	readonly feature: string
+	readonly evidencePresent: boolean
+	readonly evidenceSources: readonly string[]
+	readonly proofChecks: readonly string[]
+}): ReleaseProofCorrectnessBoundaryFeatureCheck {
+	const wording = correctnessBoundaryWording(input.feature)
+	return {
+		feature: input.feature,
+		evidencePresent: input.evidencePresent,
+		evidenceSources: [...input.evidenceSources],
+		proofChecks: [...input.proofChecks],
+		allowedWording: wording.allowedWording,
+		forbiddenWording: wording.forbiddenWording,
+	}
+}
+
+function correctnessBoundaryWording(feature: string): ReleaseProofUnsupportedFeatureBoundary {
+	const boundary = CORRECTNESS_POLICY.unsupportedFeatureBoundaries.find(
+		(entry) => entry.feature === feature,
+	)
+	if (!boundary) throw new Error(`Missing correctness boundary wording for ${feature}`)
+	return boundary
+}
+
+function packageCase(
+	result: PackageActionProofResult,
+	name: string,
+): PackageActionProofCaseResult | undefined {
+	return result.cases.find((entry) => entry.name === name)
+}
+
+function packageCaseHasAction(
+	result: PackageActionProofResult,
+	name: string,
+	action: keyof PackageActionProofCaseResult['commitActionCounts'],
+): boolean {
+	return (packageCase(result, name)?.commitActionCounts[action] ?? 0) > 0
+}
+
+function packageCasePostWritePassed(result: PackageActionProofResult, name: string): boolean {
+	return packageCase(result, name)?.postWriteAuditsPassed === true
+}
+
+function packageCaseIsPublicFixture(result: PackageActionProofResult, name: string): boolean {
+	return packageCase(result, name)?.sourceKind === 'public-fixture'
+}
+
+function packageCaseHasRepresentativeStreamingProof(
+	result: PackageActionProofResult,
+	name: string,
+): boolean {
+	const streamingProof = packageCase(result, name)?.streamingProof
+	return (
+		streamingProof !== undefined &&
+		streamingProof.streamingRegeneratePartPaths.length > 0 &&
+		streamingProof.passthroughBytesEqualCount > 0 &&
+		streamingProof.issueCount === 0
+	)
+}
+
+function safeOpenRiskRoutedToReview(
+	result: SafeOpenProofResult,
+	name: string,
+	riskFamily: string,
+): boolean {
+	const proofCase = result.cases.find((entry) => entry.name === name)
+	return (
+		proofCase?.status === 'ok' &&
+		proofCase.reviewBeforeHydration === true &&
+		proofCase.riskFamilies.includes(riskFamily)
+	)
 }
 
 function markdownRow(row: ReleaseProofIndexArtifact): string {
@@ -1456,6 +1675,23 @@ function correctnessBoundaryMarkdownRow(row: ReleaseProofUnsupportedFeatureBound
 		.replace(/$/, '|')
 }
 
+function correctnessBoundaryEvidenceMarkdownRow(
+	row: ReleaseProofCorrectnessBoundaryFeatureCheck,
+): string {
+	return [
+		row.feature,
+		String(row.evidencePresent),
+		row.evidenceSources.join('; '),
+		row.proofChecks.join('; '),
+		row.allowedWording,
+		row.forbiddenWording,
+	]
+		.map((cell) => ` ${cell} `)
+		.join('|')
+		.replace(/^/, '|')
+		.replace(/$/, '|')
+}
+
 function correctnessPolicyApprovalMarkdownRow(
 	row: ReleaseProofCorrectnessPolicyApprovalItem,
 ): string {
@@ -1473,6 +1709,19 @@ function correctnessPolicyApprovalMarkdownRow(
 		.join('|')
 		.replace(/^/, '|')
 		.replace(/$/, '|')
+}
+
+function cloneCorrectnessBoundaryEvidence(
+	evidence: ReleaseProofCorrectnessBoundaryEvidence,
+): ReleaseProofCorrectnessBoundaryEvidence {
+	return {
+		...evidence,
+		featureChecks: evidence.featureChecks.map((entry) => ({
+			...entry,
+			evidenceSources: [...entry.evidenceSources],
+			proofChecks: [...entry.proofChecks],
+		})),
+	}
 }
 
 function formatFixturePolicyCommands(

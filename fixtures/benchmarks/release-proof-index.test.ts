@@ -141,6 +141,53 @@ describe('release proof evidence index', () => {
 			'SheetJS VBA blobs',
 			'OOXML digital signatures',
 		])
+		expect(index.correctnessBoundaryEvidence).toMatchObject({
+			artifact: 'package-action-proof',
+			gateId: 'unsupported-feature-boundary',
+			ownerLoop: 'correctness',
+			status: 'evidence-present-owner-approval-required',
+			allCurrentEvidencePresent: true,
+			ownerApprovalRequired: true,
+			validationCommand:
+				'bun run fixtures/benchmarks/release-proof-index.ts --no-timings --owner-handoffs-json',
+			boundary: expect.stringContaining('does not satisfy the owner gate'),
+		})
+		expect(index.correctnessBoundaryEvidence.featureChecks.map((item) => item.feature)).toEqual([
+			'digital-signatures',
+			'calc-chain',
+			'chart-drawing-sidecars',
+			'macros-activex',
+			'unknown-parts',
+			'streaming-scope',
+		])
+		expect(
+			index.correctnessBoundaryEvidence.featureChecks.every((item) => item.evidencePresent),
+		).toBe(true)
+		expect(index.correctnessBoundaryEvidence.featureChecks[0]).toMatchObject({
+			evidenceSources: [
+				'package-action-proof/signature-invalidation-drop',
+				'safe-open-proof/signed',
+			],
+			proofChecks: expect.arrayContaining([
+				expect.stringContaining('drop action for signature package parts'),
+			]),
+			forbiddenWording: expect.stringContaining('re-signs'),
+		})
+		expect(index.correctnessBoundaryEvidence.featureChecks[3]).toMatchObject({
+			evidenceSources: [
+				'package-action-proof/macro-passthrough',
+				'safe-open-proof/macro',
+				'safe-open-proof/activex',
+			],
+			proofChecks: expect.arrayContaining([
+				expect.stringContaining('macro and ActiveX risk families'),
+			]),
+			forbiddenWording: expect.stringContaining('safe, sandboxed'),
+		})
+		expect(index.correctnessBoundaryEvidence.featureChecks[4]).toMatchObject({
+			proofChecks: expect.arrayContaining([expect.stringContaining('fails closed')]),
+			allowedWording: expect.stringContaining('explicit unknown-part error'),
+		})
 		expect(index.artifacts.map((artifact) => artifact.name)).toEqual([
 			'safe-open-proof',
 			'package-action-proof',
@@ -515,9 +562,23 @@ describe('release proof evidence index', () => {
 			'unknown-parts',
 			'streaming-scope',
 		])
+		expect(handoff.correctnessBoundaryEvidence).toMatchObject({
+			status: 'evidence-present-owner-approval-required',
+			allCurrentEvidencePresent: true,
+			ownerApprovalRequired: true,
+		})
+		expect(handoff.correctnessBoundaryEvidence.featureChecks.map((item) => item.feature)).toEqual([
+			'digital-signatures',
+			'calc-chain',
+			'chart-drawing-sidecars',
+			'macros-activex',
+			'unknown-parts',
+			'streaming-scope',
+		])
 		expect(JSON.stringify(handoff.fixturePolicy)).toContain('package-action-fixture-scan')
 		expect(JSON.stringify(handoff.performancePolicy)).toContain('safe-open-proof.ts --repeat 3')
 		expect(JSON.stringify(handoff.correctnessPolicy)).toContain('signature preservation')
+		expect(JSON.stringify(handoff.correctnessBoundaryEvidence)).toContain('safe-open-proof/activex')
 		expect(handoff.nextOwnerActions[0]).toMatchObject({
 			requirementId: 'edge-fixture-policy',
 			acceptanceEvidence: expect.stringContaining('accepts disclosed generated'),
@@ -628,6 +689,17 @@ describe('release proof evidence index', () => {
 		expect(markdown).toContain('signature preservation or verification')
 		expect(markdown).toContain('Chart XML is byte-passthrough')
 		expect(markdown).toContain('OOXML digital signatures')
+		expect(markdown).toContain('Correctness boundary evidence:')
+		expect(markdown).toContain('Status: evidence-present-owner-approval-required')
+		expect(markdown).toContain('All current evidence present: true')
+		expect(markdown).toContain('Owner approval required: true')
+		expect(markdown).toContain('does not satisfy the owner gate')
+		expect(markdown).toContain(
+			'| Feature | Evidence present | Sources | Checks | Allowed wording | Forbidden wording |',
+		)
+		expect(markdown).toContain('| macros-activex | true | package-action-proof/macro-passthrough')
+		expect(markdown).toContain('safe-open-proof/activex')
+		expect(markdown).toContain('post-write audit fails closed')
 		expect(markdown).toContain(
 			'| Rank | Artifact | Gate | Owner loop | Priority | Next step | Acceptance evidence | Forbidden shortcut |',
 		)

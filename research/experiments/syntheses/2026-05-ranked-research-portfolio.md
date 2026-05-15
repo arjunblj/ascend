@@ -8,7 +8,7 @@ Research is no longer a broad sweep. Each direction below must earn its place by
 
 ## Latest Claim Steward Refresh
 
-Proof timestamp: 2026-05-15T09:37:13Z.
+Proof timestamp: 2026-05-15T10:15:42Z.
 
 The portfolio ranking still holds after the current proof run. The top two implementation handoffs remain safe unknown workbook opening and auditable package-part mutation. The release gate remains fail-closed, so the next step is owner approval or fixture replacement, not a new SDK/CLI/API/MCP surface.
 
@@ -24,6 +24,7 @@ Fresh proof commands:
 bun run fixtures/benchmarks/safe-open-proof.ts --no-timings --json
 bun run fixtures/benchmarks/package-action-proof.ts --no-timings --json
 bun run fixtures/benchmarks/release-proof-index.ts --no-timings --json
+bun run fixtures/benchmarks/formula-assist-proof.ts --sample 250 --no-timings --json
 ```
 
 External fixture note: a constrained public-candidate probe found `node-projects/excelForge/src/test/Book 1.xlsx` as an unknown-part safe-open candidate (`preservedOther`, `metadata-only`, SHA-256 `9c5426fa71ff68cc7e40e19e02b5992daf91da5754ef643d2db2f89bd70bb122`). This does not close `public-edge-fixtures`: the candidate is not vendored, the source repository API reports no repository license, and the signed-workbook fixture gap remains.
@@ -54,105 +55,9 @@ External fixture note: a constrained public-candidate probe found `node-projects
 | 9 | Columnar scan sidecars | Ascend can accelerate repeated table/range scans with disposable generation-keyed sidecars. | Real-world performance without replacing workbook truth. | Multi-source external public workbook benchmarks; first SEC external workbook parity now exists. | Kill product promotion if build+invalidation cost erases repeated-scan gains, checksum parity fails, or evidence stays limited to one external source plus generated/stress fixtures. | Performance |
 | 10 | Agent workflow observability | Ascend can explain agent workflows as ordered, recoverable tool traces instead of opaque CLI/API calls. | World-class agent DX and observability. | Workflow traces for open-plan/read/agent-view/plan/commit, recovery prompts, failure taxonomy. | Kill if traces duplicate logs without improving repair or audit decisions. | Product/DX |
 
-## Top Unknowns Proven This Block
-
-### 1. Safe Unknown Workbook Opening
-
-Unknown: whether the top product/performance claim has current proof from existing SDK/CLI/API/MCP open-plan surfaces, without adding another opener.
-
-Proof rerun:
-
-```bash
-bun run fixtures/benchmarks/safe-open-proof.ts --repeat 5 --warmup 1
-bun test fixtures/benchmarks/safe-open-proof.test.ts packages/sdk/src/open-plan.test.ts
-```
-
-Latest proof:
-
-| Metric | Value |
-| --- | ---: |
-| Proof cases | 9 |
-| OK cases | 8 |
-| Malformed rejected | 1 |
-| Review before hydration | 4 |
-| Public fixture open-plan speedup range | 14.09x to 31.97x |
-| Synthetic signed mode | metadata-only, review |
-| Synthetic unknown-part mode | metadata-only, review |
-
-Decision: keep safe unknown workbook opening as the top handoff. The allowed claim is "package-feature routing and review branch before hydration." The honest boundary remains: not malware scanning, sandboxing, active-content safety, or malformed-package recovery.
-
-### 2. Auditable Package-Part Mutation
-
-Unknown: whether the second release claim still proves every package action kind and aligns package proof with rollback-journal evidence.
-
-Proof rerun:
-
-```bash
-bun run fixtures/benchmarks/package-action-proof.ts
-bun test fixtures/benchmarks/package-action-proof.test.ts
-```
-
-Latest proof:
-
-| Metric | Value |
-| --- | ---: |
-| Proof cases | 8 |
-| Passthrough actions | 27 |
-| Regenerate actions | 38 |
-| Add actions | 3 |
-| Drop actions | 3 |
-| Error actions | 1 |
-| Cases with source graph evidence | 8 |
-| Cases with package-preservation journal issue | 8 |
-| Unknown-part proof issues | 1 |
-
-Decision: keep auditable package-part mutation as the second handoff. The allowed claim is local per-part accounting with `passthrough`, `regenerate`, `add`, `drop`, and `error`. The honest boundary remains: not signed provenance, SLSA, in-toto attestation, Excel recalc equivalence, or semantic understanding of every unsupported feature.
-
-### Formula Intelligence Guardrail
-
-The latest rejection-first proof rerun is not a handoff to implementation. It exists to keep formula intelligence from overclaiming rename:
-
-```bash
-bun run fixtures/benchmarks/formula-assist-proof.ts --sample 250
-```
-
-| Metric | Value |
-| --- | ---: |
-| Public formulas discovered | 1685 |
-| Sampled formulas | 1685 |
-| Reference spans | 2322 |
-| Binding roles | 25 |
-| Prepare-rename OK targets | 3 |
-| Prepare-rename refusals | 1692 |
-| P95 assist latency | 0.0368 ms |
-
-Decision: formula intelligence remains a rejection-first primitives claim. Do not implement rename; do not hand it to an implementation loop until workbook-context symbol ownership and operation-owned edits exist.
-
-### Release Proof Index
-
-The current digest index covers only the top two artifacts:
-
-```bash
-bun run fixtures/benchmarks/release-proof-index.ts --no-timings
-```
-
-| Artifact | Stable shape SHA-256 | Summary |
-| --- | --- | --- |
-| safe-open-proof | `6aa54a651309b3c45ce7ce93ff7034e7b31e47c7cbc458c58ee6a6f23e0c6178` | cases=9, ok=8, rejected=1, reviewBeforeHydration=4, malformedRejected=true |
-| package-action-proof | `0f9eb22498bc528a63adc40e59a6acbbe07022fde6b2414fcbee73b8b3a56e41` | cases=8, passthrough=32, regenerate=39, add=3, drop=3, error=1, streamingProofCases=1 |
-
-Readiness gates now fail closed for the top two artifacts. The JSON index includes `readiness.releaseGate=blocked-by-publication-policy`, `readiness.headlineClaimsAllowed=false`, `totalRequirementCount=9`, `missingRequirementCount=9`, and `satisfiedRequirementCount=0`. It also points to compact report commands for each top artifact without indexing compact report digests.
-
-| Artifact | Missing readyWhen gates |
-| --- | --- |
-| safe-open-proof | public-edge-fixtures; release-latency-run; publication-boundary; compact-report-publication-policy |
-| package-action-proof | edge-fixture-policy; provenance-boundary; unsupported-feature-boundary; streaming-matrix-boundary; compact-report-publication-policy |
-
-Decision: formula intelligence, retained viewport patches, token-bounded agent view, property-based journal laws, and columnar sidecars stay out of the top release proof index for now.
-
 ## Current Proof Refresh
 
-Timestamp: 2026-05-15T06:24:12Z local proof run.
+Timestamp: 2026-05-15T10:15:42Z local proof run.
 
 This refresh answers the latest portfolio question directly: the top one or two highest-leverage unknowns are still the two release-claim candidates, not another formula rename or sidecar surface.
 
@@ -191,11 +96,11 @@ Current proof:
 | Metric | Value |
 | --- | ---: |
 | Cases | 8 |
-| Public fixture cases | 2 |
+| Public fixture cases | 3 |
 | Generated workbook cases | 2 |
-| Generated edge-package cases | 4 |
-| Passthrough actions | 27 |
-| Regenerate actions | 38 |
+| Generated edge-package cases | 3 |
+| Passthrough actions | 32 |
+| Regenerate actions | 39 |
 | Add actions | 3 |
 | Drop actions | 3 |
 | Error actions | 1 |
@@ -204,6 +109,15 @@ Current proof:
 | Representative streaming proof cases | 1 |
 
 Decision: hand off to correctness/product only. The proof supports local per-part accounting and journal-linked package evidence. It does not support signed provenance, SLSA, in-toto, Excel recalculation equivalence, chart byte-passthrough, or full streaming matrix parity.
+
+### Top Unknowns Proven This Block
+
+| Rank | Claim | Proof produced | Decision |
+| ---: | --- | --- | --- |
+| 1 | Safe unknown workbook opening | 9 proof cases; 6 public fixtures; 2 generated edge packages; 1 malformed package; 8 OK; 1 rejected; 4 review-before-hydration routes; stable shape `6aa54a651309b3c45ce7ce93ff7034e7b31e47c7cbc458c58ee6a6f23e0c6178`. | Hand off to product/performance/release for proof packaging and owner approval only. |
+| 2 | Auditable package-part mutation | 8 proof cases; 3 public fixtures; 2 generated workbooks; 3 generated edge packages; action totals `passthrough=32`, `regenerate=39`, `add=3`, `drop=3`, `error=1`; stable shape `0f9eb22498bc528a63adc40e59a6acbbe07022fde6b2414fcbee73b8b3a56e41`. | Hand off to correctness/product/performance/release for proof packaging and owner approval only. |
+
+Everything else is deliberately withheld from implementation handoff. Formula intelligence remains rank 3 as a rejection-first primitives claim, not a rename project.
 
 ### Release Gate Proof
 
@@ -248,16 +162,6 @@ Current proof:
 | `reference-target-not-renameable` refusals | 1403 |
 
 Decision: keep formula intelligence at rank 3 as a rejection-first primitives claim only. The proof supports formula-local LET guard behavior and refusal classification. It does not support edit-producing rename, workbook-context defined-name rename, table-column rename, sheet/range rename, external-ref rename, or broader formula IDE claims.
-
-### Tiny Correctness Fix Completed
-
-The in-flight verifier false-positive fix is complete:
-
-```bash
-a2860cbf fix(verify): accept case-insensitive binding refs
-```
-
-This supports correctness proof hygiene for formula-binding metadata whose sheet-qualified ranges differ only by sheet-name casing. It does not change the release handoff ranking and does not add any formula rename surface.
 
 ### Provenance Boundary Audit
 
@@ -327,20 +231,5 @@ Decision: keep compact report publication at rank 6 under release proof index, n
 
 1. Product/performance handoff: publish the safe unknown workbook opening proof bundle from existing surfaces and public fixtures.
 2. Correctness/product handoff: publish the auditable package-part mutation proof bundle from existing proof/journal surfaces.
-3. Correctness follow-up: property-style journal laws now have a deterministic tracked harness with pre-seeded metadata and package-state replacements, explicit style/table-style lossy boundaries, and a claim-safe report mode. They may rank up only after shrinkable generation or a correctness owner accepts deterministic proof as sufficient for release evidence.
 
-## Stewardship Update: Prepared Agent Commits
-
-Claim placement: supporting evidence under trustworthy mutation planning and agent workflow observability, not a new top release claim.
-
-Proof added:
-
-```bash
-bun test packages/sdk/src/agent-workflow.test.ts -t "prepared agent plans reuse full workflow state|prepared agent plans expose rollback journal safety facts|prepared agent commits"
-bun test apps/mcp/src/index.test.ts -t "prepared plan|planHandle|writePolicyCheckMs"
-bun test apps/api/src/server.test.ts -t "prepared|plan and commit"
-```
-
-Allowed wording: "prepared value-edit commits can reuse the planning structural check under a formula-free, one-shot, hash-guarded contract."
-
-Boundary: this does not support a broad cache claim, formula-workbook reuse, structural-edit reuse, collaboration/snapshot reuse, or release-proof promotion without real-workbook latency evidence.
+Everything else is either proof-backed hold or do-not-promote-yet. The next loop should not add formula rename, agent-view, viewport, sidecar, oracle, or observability surfaces unless an owner explicitly changes the claim priority and proof gate.

@@ -1081,6 +1081,69 @@ describe('mutation journal exactness model', () => {
 			expect(journalEvidence(wb), entry.name).toEqual(before)
 		}
 	})
+
+	test('representative exact saved journals restore package bytes after inverse apply', async () => {
+		const cases: readonly {
+			readonly name: string
+			readonly seedOps: readonly Operation[]
+			readonly ops: readonly Operation[]
+		}[] = [
+			{
+				name: 'hyperlink relationship',
+				seedOps: [
+					{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'link' }] },
+					{ op: 'setHyperlink', sheet: 'Sheet1', ref: 'A1', url: 'https://example.com' },
+				],
+				ops: [{ op: 'setHyperlink', sheet: 'Sheet1', ref: 'A1', url: 'https://changed.example' }],
+			},
+			{
+				name: 'theme metadata',
+				seedOps: [
+					{
+						op: 'setTheme',
+						themeName: 'Office',
+						colorSchemeName: 'Office Colors',
+						majorFontLatin: 'Aptos Display',
+						minorFontLatin: 'Aptos',
+						themeColors: [
+							{ slot: 'accent1', rgb: '4F81BD' },
+							{ slot: 'lt1', systemColor: 'window', lastColor: 'FFFFFF' },
+						],
+					},
+				],
+				ops: [
+					{
+						op: 'setTheme',
+						themeName: 'Brand',
+						colorSchemeName: 'Brand Colors',
+						majorFontLatin: 'Inter Display',
+						minorFontLatin: 'Inter',
+						themeColors: [
+							{ slot: 'accent1', rgb: '0F6CBD' },
+							{ slot: 'lt1', systemColor: 'windowText', lastColor: '000000' },
+						],
+					},
+				],
+			},
+		]
+
+		for (const entry of cases) {
+			const seeded = AscendWorkbook.create()
+			applyExact(seeded, entry.seedOps)
+			const beforeBytes = seeded.toBytes()
+			const wb = await AscendWorkbook.open(beforeBytes)
+			const changed = wb.apply(entry.ops, { journal: true })
+			expect(changed.errors, entry.name).toEqual([])
+			expect(changed.journal?.supported, entry.name).toBe(true)
+			expect(changed.journal?.exact, entry.name).toBe(true)
+
+			const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+			expect(undo.errors, entry.name).toEqual([])
+			expect(Buffer.compare(Buffer.from(wb.toBytes()), Buffer.from(beforeBytes)), entry.name).toBe(
+				0,
+			)
+		}
+	})
 })
 
 function lossyDataValidationDefaultJournal(): MutationJournal {

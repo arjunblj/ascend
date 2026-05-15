@@ -231,6 +231,7 @@ export const MUTATION_JOURNAL_EXACTNESS_MATRIX: readonly MutationJournalExactnes
 			'clearRange',
 			'copyRange',
 			'moveRange',
+			'sortRange',
 		],
 	},
 	{
@@ -241,7 +242,14 @@ export const MUTATION_JOURNAL_EXACTNESS_MATRIX: readonly MutationJournalExactnes
 			'public operations can materialize formula text but cannot recreate imported formulaInfo bindings',
 		],
 		lossReasons: ['formula-binding-metadata'],
-		representativeOps: ['setCells', 'clearRange', 'fillFormula', 'copyRange', 'moveRange'],
+		representativeOps: [
+			'setCells',
+			'clearRange',
+			'fillFormula',
+			'copyRange',
+			'moveRange',
+			'sortRange',
+		],
 	},
 	{
 		surface: 'shared-formulas',
@@ -249,7 +257,7 @@ export const MUTATION_JOURNAL_EXACTNESS_MATRIX: readonly MutationJournalExactnes
 		publicInverse: 'none',
 		constraints: ['shared formula master/member metadata is formula binding metadata'],
 		lossReasons: ['formula-binding-metadata'],
-		representativeOps: ['setCells', 'clearRange', 'copyRange', 'moveRange'],
+		representativeOps: ['setCells', 'clearRange', 'copyRange', 'moveRange', 'sortRange'],
 	},
 	{
 		surface: 'dynamic-arrays',
@@ -257,7 +265,7 @@ export const MUTATION_JOURNAL_EXACTNESS_MATRIX: readonly MutationJournalExactnes
 		publicInverse: 'none',
 		constraints: ['dynamic array metadata is formula binding metadata'],
 		lossReasons: ['formula-binding-metadata'],
-		representativeOps: ['setCells', 'clearRange', 'copyRange', 'moveRange'],
+		representativeOps: ['setCells', 'clearRange', 'copyRange', 'moveRange', 'sortRange'],
 	},
 	{
 		surface: 'legacy-arrays',
@@ -265,7 +273,7 @@ export const MUTATION_JOURNAL_EXACTNESS_MATRIX: readonly MutationJournalExactnes
 		publicInverse: 'none',
 		constraints: ['legacy array formula metadata is formula binding metadata'],
 		lossReasons: ['formula-binding-metadata'],
-		representativeOps: ['setCells', 'clearRange', 'copyRange', 'moveRange'],
+		representativeOps: ['setCells', 'clearRange', 'copyRange', 'moveRange', 'sortRange'],
 	},
 	{
 		surface: 'data-tables',
@@ -273,7 +281,7 @@ export const MUTATION_JOURNAL_EXACTNESS_MATRIX: readonly MutationJournalExactnes
 		publicInverse: 'none',
 		constraints: ['data-table formula metadata is formula binding metadata'],
 		lossReasons: ['formula-binding-metadata'],
-		representativeOps: ['setCells', 'clearRange', 'copyRange', 'moveRange'],
+		representativeOps: ['setCells', 'clearRange', 'copyRange', 'moveRange', 'sortRange'],
 	},
 	{
 		surface: 'spills',
@@ -281,7 +289,7 @@ export const MUTATION_JOURNAL_EXACTNESS_MATRIX: readonly MutationJournalExactnes
 		publicInverse: 'none',
 		constraints: ['spill footprint metadata is formula binding metadata'],
 		lossReasons: ['formula-binding-metadata'],
-		representativeOps: ['setCells', 'clearRange', 'copyRange', 'moveRange'],
+		representativeOps: ['setCells', 'clearRange', 'copyRange', 'moveRange', 'sortRange'],
 	},
 	{
 		surface: 'tables',

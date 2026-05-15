@@ -1241,7 +1241,10 @@ describe('mutation journal exactness model', () => {
 
 			expect(journal.supported, entry.name).toBe(true)
 			expect(journal.exact, entry.name).toBe(false)
+			const opName = entry.ops[0]?.op
+			if (!opName) throw new Error(`missing op for ${entry.name}`)
 			for (const issue of entry.issues) {
+				expect(classifyMutationJournalSurface(issue.surface).representativeOps).toContain(opName)
 				expect(journal.issues, `${entry.name} ${issue.ref}`).toContainEqual(
 					expect.objectContaining({
 						code: 'LOSSY_INVERSE',

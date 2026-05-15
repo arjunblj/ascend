@@ -30,6 +30,8 @@ export function handleSetPivotCache(workbook: Workbook, op: SetPivotCacheOp): Re
 	}
 	const sourceRefValidation = validatePivotCacheSourceRef(op.sourceRef)
 	if (sourceRefValidation) return err(sourceRefValidation)
+	const pivotCacheValueValidation = validatePivotCacheUpdateValues(op)
+	if (pivotCacheValueValidation) return err(pivotCacheValueValidation)
 	const pivotTableSelectorValidation = validatePivotCacheTableSelector(workbook, op)
 	if (pivotTableSelectorValidation) return err(pivotTableSelectorValidation)
 
@@ -120,6 +122,8 @@ export function handleSetPivotFieldItem(
 			}),
 		)
 	}
+	const pivotItemValueValidation = validatePivotFieldItemUpdateValues(op)
+	if (pivotItemValueValidation) return err(pivotItemValueValidation)
 
 	const matches = resolvePivotTableMatches(workbook, op)
 	if (matches.length === 0) {
@@ -272,6 +276,34 @@ function validatePivotCacheSourceRef(sourceRef: string | undefined) {
 		return ascendError('VALIDATION_ERROR', 'setPivotCache sourceRef must be a valid A1 range', {
 			suggestedFix: 'Use a range such as A1:D100 or Sheet1!A1:D100.',
 		})
+	}
+	return null
+}
+
+function validatePivotCacheUpdateValues(op: SetPivotCacheOp) {
+	if (op.sourceSheet !== undefined && typeof op.sourceSheet !== 'string') {
+		return ascendError('VALIDATION_ERROR', 'setPivotCache sourceSheet must be a string', {
+			suggestedFix: 'Use a worksheet name from the pivot cache source range.',
+		})
+	}
+	for (const field of ['refreshOnLoad', 'enableRefresh', 'invalid', 'saveData'] as const) {
+		if (op[field] !== undefined && typeof op[field] !== 'boolean') {
+			return ascendError('VALIDATION_ERROR', `setPivotCache ${field} must be boolean`, {
+				suggestedFix: `Set ${field}=true or ${field}=false.`,
+			})
+		}
+	}
+	return null
+}
+
+function validatePivotFieldItemUpdateValues(op: SetPivotFieldItemOp) {
+	for (const field of ['hidden', 'showDetails', 'manualFilter'] as const) {
+		const value = op[field]
+		if (value !== undefined && value !== null && typeof value !== 'boolean') {
+			return ascendError('VALIDATION_ERROR', `setPivotFieldItem ${field} must be boolean or null`, {
+				suggestedFix: `Set ${field}=true, ${field}=false, or ${field}=null to clear it.`,
+			})
+		}
 	}
 	return null
 }

@@ -5066,8 +5066,16 @@ function pivotCacheValueIssues(
 	if (!hasPivotCacheUpdate(op)) {
 		return [pivotCacheUnsupportedValueIssue('update')]
 	}
+	if (op.sourceSheet !== undefined && typeof op.sourceSheet !== 'string') {
+		return [pivotCacheUnsupportedValueIssue('sourceSheet')]
+	}
 	if (op.sourceRef !== undefined && !isValidJournalPivotSourceRef(op.sourceRef)) {
 		return [pivotCacheUnsupportedValueIssue('sourceRef')]
+	}
+	for (const field of ['refreshOnLoad', 'enableRefresh', 'invalid', 'saveData'] as const) {
+		if (op[field] !== undefined && typeof op[field] !== 'boolean') {
+			return [pivotCacheUnsupportedValueIssue(field)]
+		}
 	}
 	return []
 }

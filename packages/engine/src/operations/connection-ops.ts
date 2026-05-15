@@ -33,6 +33,8 @@ export function handleSetConnectionRefresh(
 			),
 		)
 	}
+	const updateValidation = validateConnectionRefreshUpdateValues(op)
+	if (updateValidation) return err(updateValidation)
 
 	const matches = resolveConnectionRefreshMatches(workbook, op)
 	if (matches.length === 0) {
@@ -93,6 +95,29 @@ function hasConnectionRefreshUpdate(op: SetConnectionRefreshOp): boolean {
 	return (
 		op.refreshOnLoad !== undefined || op.saveData !== undefined || op.refreshedVersion !== undefined
 	)
+}
+
+function validateConnectionRefreshUpdateValues(op: SetConnectionRefreshOp) {
+	for (const field of ['refreshOnLoad', 'saveData'] as const) {
+		if (op[field] !== undefined && typeof op[field] !== 'boolean') {
+			return ascendError('VALIDATION_ERROR', `setConnectionRefresh ${field} must be boolean`, {
+				suggestedFix: `Set ${field}=true or ${field}=false.`,
+			})
+		}
+	}
+	if (
+		op.refreshedVersion !== undefined &&
+		(!Number.isInteger(op.refreshedVersion) || op.refreshedVersion < 0)
+	) {
+		return ascendError(
+			'VALIDATION_ERROR',
+			'setConnectionRefresh refreshedVersion must be a non-negative integer',
+			{
+				suggestedFix: 'Use the non-negative refreshedVersion value expected by Excel metadata.',
+			},
+		)
+	}
+	return null
 }
 
 function resolveConnectionRefreshMatches(

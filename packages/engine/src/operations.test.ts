@@ -9849,6 +9849,34 @@ describe('applyOperation', () => {
 		expect(JSON.stringify(unbound.pivotCaches)).toBe(beforeUnbound)
 	})
 
+	test('setPivotCache rejects invalid update scalars without mutation', () => {
+		const wb = setup()
+		wb.pivotCaches.push({
+			partPath: 'xl/pivotCache/pivotCacheDefinition1.xml',
+			cacheId: 34,
+			sourceSheet: 'Raw',
+			sourceRef: 'A1:D10',
+			refreshOnLoad: false,
+			fields: [],
+		})
+
+		const cases: readonly Operation[] = [
+			{ op: 'setPivotCache', cacheId: 34, sourceSheet: 42 as never },
+			{ op: 'setPivotCache', cacheId: 34, refreshOnLoad: 'yes' as never },
+			{ op: 'setPivotCache', cacheId: 34, enableRefresh: 1 as never },
+			{ op: 'setPivotCache', cacheId: 34, invalid: 'false' as never },
+			{ op: 'setPivotCache', cacheId: 34, saveData: 0 as never },
+		]
+
+		for (const op of cases) {
+			const before = JSON.stringify(wb.pivotCaches)
+			const result = applyOperation(wb, op)
+			expectErr(result)
+			expect(result.error.message).toContain('setPivotCache')
+			expect(JSON.stringify(wb.pivotCaches), JSON.stringify(op)).toBe(before)
+		}
+	})
+
 	test('setConnectionRefresh updates query-table refresh metadata', () => {
 		const wb = setup()
 		wb.connectionParts.push({
@@ -9910,6 +9938,36 @@ describe('applyOperation', () => {
 		})
 		expectErr(missingUpdate)
 		expect(missingUpdate.error.message).toContain('requires refreshOnLoad')
+	})
+
+	test('setConnectionRefresh rejects invalid refresh scalars without mutation', () => {
+		const wb = setup()
+		wb.connectionParts.push({
+			kind: 'connection',
+			partPath: 'xl/connections.xml',
+			contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.connections+xml',
+			relationshipCount: 0,
+			name: 'SalesConnection',
+			connectionId: 1,
+			refreshOnLoad: false,
+			saveData: true,
+			refreshedVersion: 7,
+		})
+
+		const cases: readonly Operation[] = [
+			{ op: 'setConnectionRefresh', partPath: 'xl/connections.xml', refreshOnLoad: 'yes' as never },
+			{ op: 'setConnectionRefresh', partPath: 'xl/connections.xml', saveData: 1 as never },
+			{ op: 'setConnectionRefresh', partPath: 'xl/connections.xml', refreshedVersion: -1 },
+			{ op: 'setConnectionRefresh', partPath: 'xl/connections.xml', refreshedVersion: 1.5 },
+		]
+
+		for (const op of cases) {
+			const before = JSON.stringify(wb.connectionParts)
+			const result = applyOperation(wb, op)
+			expectErr(result)
+			expect(result.error.message).toContain('setConnectionRefresh')
+			expect(JSON.stringify(wb.connectionParts), JSON.stringify(op)).toBe(before)
+		}
 	})
 
 	test('setPivotFieldItem updates item and page filter state with refresh warning', () => {
@@ -10091,6 +10149,52 @@ describe('applyOperation', () => {
 		expect(missingPageItem.error.message).toContain('Pivot page-field item 2 was not found')
 	})
 
+	test('setPivotFieldItem rejects invalid nullable booleans without mutation', () => {
+		const wb = setup()
+		wb.pivotTables.push({
+			partPath: 'xl/pivotTables/pivotTable1.xml',
+			sheetName: 'Sheet1',
+			name: 'PivotTable1',
+			fields: [{ index: 0, items: [{ index: 0, cacheIndex: 0, hidden: false }] }],
+			rowFields: [],
+			columnFields: [],
+			pageFields: [],
+			dataFields: [],
+		})
+
+		const cases: readonly Operation[] = [
+			{
+				op: 'setPivotFieldItem',
+				pivotTable: 'PivotTable1',
+				fieldIndex: 0,
+				itemIndex: 0,
+				hidden: 'false' as never,
+			},
+			{
+				op: 'setPivotFieldItem',
+				pivotTable: 'PivotTable1',
+				fieldIndex: 0,
+				itemIndex: 0,
+				showDetails: 1 as never,
+			},
+			{
+				op: 'setPivotFieldItem',
+				pivotTable: 'PivotTable1',
+				fieldIndex: 0,
+				itemIndex: 0,
+				manualFilter: 'yes' as never,
+			},
+		]
+
+		for (const op of cases) {
+			const before = JSON.stringify(wb.pivotTables)
+			const result = applyOperation(wb, op)
+			expectErr(result)
+			expect(result.error.message).toContain('setPivotFieldItem')
+			expect(JSON.stringify(wb.pivotTables), JSON.stringify(op)).toBe(before)
+		}
+	})
+
 	test('setSlicerCacheItem updates tabular item state with refresh warning', () => {
 		const wb = setup()
 		wb.pivotTables.push({
@@ -10171,6 +10275,39 @@ describe('applyOperation', () => {
 		})
 		expectErr(missingUpdate)
 		expect(missingUpdate.error.message).toContain('requires selected or noData')
+	})
+
+	test('setSlicerCacheItem rejects invalid nullable booleans without mutation', () => {
+		const wb = setup()
+		wb.slicerCaches.push({
+			partPath: 'xl/slicerCaches/slicerCache1.xml',
+			name: 'Slicer_State',
+			pivotTableNames: [],
+			items: [{ index: 0, selected: true }],
+		})
+
+		const cases: readonly Operation[] = [
+			{
+				op: 'setSlicerCacheItem',
+				slicerCache: 'Slicer_State',
+				item: 0,
+				selected: 'false' as never,
+			},
+			{
+				op: 'setSlicerCacheItem',
+				slicerCache: 'Slicer_State',
+				item: 0,
+				noData: 1 as never,
+			},
+		]
+
+		for (const op of cases) {
+			const before = JSON.stringify(wb.slicerCaches)
+			const result = applyOperation(wb, op)
+			expectErr(result)
+			expect(result.error.message).toContain('setSlicerCacheItem')
+			expect(JSON.stringify(wb.slicerCaches), JSON.stringify(op)).toBe(before)
+		}
 	})
 
 	test('setSlicerCacheItem rejects missing item indexes and duplicate names without mutation', () => {

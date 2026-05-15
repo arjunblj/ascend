@@ -1519,6 +1519,11 @@ describe('mutation journal exactness model', () => {
 			{ op: 'setPivotCache', sourceRef: 'A1:B2' },
 			{ op: 'setPivotCache', cacheId: 1 },
 			{ op: 'setPivotCache', cacheId: 1, sourceRef: 'A1:B2:C3' },
+			{ op: 'setPivotCache', cacheId: 1, sourceSheet: 42 as never },
+			{ op: 'setPivotCache', cacheId: 1, refreshOnLoad: 'yes' as never },
+			{ op: 'setPivotCache', cacheId: 1, enableRefresh: 1 as never },
+			{ op: 'setPivotCache', cacheId: 1, invalid: 'false' as never },
+			{ op: 'setPivotCache', cacheId: 1, saveData: 0 as never },
 		]
 
 		for (const op of cases) {

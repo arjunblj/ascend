@@ -32,6 +32,8 @@ export function handleSetSlicerCacheItem(
 			}),
 		)
 	}
+	const updateValidation = validateSlicerCacheItemUpdateValues(op)
+	if (updateValidation) return err(updateValidation)
 
 	const matches = resolveSlicerCacheMatches(workbook, op)
 	if (matches.length === 0) {
@@ -115,6 +117,22 @@ function resolveSlicerCacheMatches(
 		}
 		return true
 	})
+}
+
+function validateSlicerCacheItemUpdateValues(op: SetSlicerCacheItemOp) {
+	for (const field of ['selected', 'noData'] as const) {
+		const value = op[field]
+		if (value !== undefined && value !== null && typeof value !== 'boolean') {
+			return ascendError(
+				'VALIDATION_ERROR',
+				`setSlicerCacheItem ${field} must be boolean or null`,
+				{
+					suggestedFix: `Set ${field}=true, ${field}=false, or ${field}=null to clear it.`,
+				},
+			)
+		}
+	}
+	return null
 }
 
 function updateSlicerCacheItem(

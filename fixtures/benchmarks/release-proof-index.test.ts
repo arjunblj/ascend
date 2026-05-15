@@ -22,6 +22,10 @@ describe('release proof evidence index', () => {
 		expect(index.readiness).toMatchObject({
 			releaseGate: 'blocked-by-publication-policy',
 			headlineClaimsAllowed: false,
+			implementationSurfacePromotionAllowed: false,
+			implementationSurfacePromotionBoundary: expect.stringContaining(
+				'do not authorize new SDK, CLI, API, or MCP surfaces',
+			),
 			totalRequirementCount: 9,
 			missingRequirementCount: 9,
 			satisfiedRequirementCount: 0,
@@ -224,6 +228,8 @@ describe('release proof evidence index', () => {
 		expect(markdown).toContain('Compact report command')
 		expect(markdown).toContain('Ready when')
 		expect(markdown).toContain('Release Readiness Gate')
+		expect(markdown).toContain('Implementation surface promotion allowed: false')
+		expect(markdown).toContain('do not authorize new SDK, CLI, API, or MCP surfaces')
 		expect(markdown).toContain('ReadyWhen requirements: total=9, missing=9, satisfied=0')
 		expect(markdown).toContain(
 			'Missing by owner loop: correctness=1, performance=2, product=2, release=4',

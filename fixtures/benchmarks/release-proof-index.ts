@@ -85,6 +85,8 @@ export interface ReleaseProofIndexResult {
 export interface ReleaseProofReadinessSummary {
 	readonly releaseGate: 'ready' | 'blocked-by-publication-policy'
 	readonly headlineClaimsAllowed: boolean
+	readonly implementationSurfacePromotionAllowed: boolean
+	readonly implementationSurfacePromotionBoundary: string
 	readonly totalRequirementCount: number
 	readonly missingRequirementCount: number
 	readonly satisfiedRequirementCount: number
@@ -152,6 +154,8 @@ export function releaseProofIndexMarkdown(result: ReleaseProofIndexResult): stri
 		'',
 		`Release gate: ${result.readiness.releaseGate}`,
 		`Headline claims allowed: ${result.readiness.headlineClaimsAllowed}`,
+		`Implementation surface promotion allowed: ${result.readiness.implementationSurfacePromotionAllowed}`,
+		result.readiness.implementationSurfacePromotionBoundary,
 		`ReadyWhen requirements: total=${result.readiness.totalRequirementCount}, missing=${result.readiness.missingRequirementCount}, satisfied=${result.readiness.satisfiedRequirementCount}`,
 		`Missing by owner loop: ${formatOwnerCounts(result.readiness.missingByOwnerLoop)}`,
 		`Missing by artifact: ${formatMissingByArtifact(result.readiness.missingByArtifact)}`,
@@ -418,9 +422,14 @@ function releaseReadinessSummary(
 	const headlineClaimsAllowed =
 		missingRequirementCount === 0 &&
 		artifacts.every((artifact) => artifact.headlineClaimAllowed && artifact.releaseGate === 'ready')
+	const implementationSurfacePromotionAllowed = headlineClaimsAllowed
 	return {
 		releaseGate: headlineClaimsAllowed ? 'ready' : 'blocked-by-publication-policy',
 		headlineClaimsAllowed,
+		implementationSurfacePromotionAllowed,
+		implementationSurfacePromotionBoundary: implementationSurfacePromotionAllowed
+			? 'Implementation surfaces may be considered only after all release proof gates are satisfied and owner loops approve the product shape.'
+			: 'Current release proof blockers are owner decisions, validation runs, optional harness expansion, or publication policy. They do not authorize new SDK, CLI, API, or MCP surfaces.',
 		totalRequirementCount,
 		missingRequirementCount,
 		satisfiedRequirementCount,

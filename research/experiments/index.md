@@ -6,6 +6,7 @@ Updated: 2026-05-15
 
 | Run | Status | Fold-in target |
 | --- | --- | --- |
+| [Release decision board gate](runs/2026/2026-05-15-release-decision-board-gate/log.md) | folded top-two release-decision artifact into release-proof index and owner handoff JSON so claim wording, exact proof, forbidden claims, and A+ blockers are machine-readable | release loop, product loop, correctness loop, performance loop |
 | [Practical latency noisy target boundary](runs/2026/2026-05-15-practical-latency-noisy-target-boundary/log.md) | folded noisy above-floor benchmark envelopes into guarded performance-owner targets while preserving the release boundary that practical-latency reports are diagnostic, not headline claim proof | performance loop, release downgrade |
 | [Release trust owner handoff boundary](runs/2026/2026-05-15-release-trust-owner-handoff-boundary/log.md) | folded correctness/trust completeness boundary into release-proof owner handoff JSON so non-blocking scope control is machine-readable | correctness loop, release loop |
 | [Release trust completeness boundary](runs/2026/2026-05-15-release-trust-completeness-boundary/log.md) | folded a test-pinned out-of-scope boundary into the release trust matrix so correctness work stays collapsed around trust failures, not broad feature expansion | correctness loop, release loop |

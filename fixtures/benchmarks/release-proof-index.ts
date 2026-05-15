@@ -179,6 +179,7 @@ export interface ReleaseProofIndexResult {
 	readonly compactReportPublicationEvidence: ReleaseProofCompactReportPublicationEvidence
 	readonly readiness: ReleaseProofReadinessSummary
 	readonly qssLeapfrogReleaseMatrix: ReleaseProofQssLeapfrogReleaseMatrix
+	readonly releaseDecisionBoard: ReleaseProofReleaseDecisionBoard
 	readonly boundary: string
 	readonly claimPortfolio: readonly ReleaseProofPortfolioClaim[]
 	readonly artifacts: readonly ReleaseProofIndexArtifact[]
@@ -208,6 +209,7 @@ export interface ReleaseProofOwnerHandoffIndex {
 	readonly claimBlockerBoard: readonly ReleaseProofClaimBlockerBoardRow[]
 	readonly implementationHandoffs: readonly ReleaseProofImplementationHandoff[]
 	readonly qssLeapfrogReleaseMatrix: ReleaseProofQssLeapfrogReleaseMatrix
+	readonly releaseDecisionBoard: ReleaseProofReleaseDecisionBoard
 	readonly claimPortfolio: readonly ReleaseProofPortfolioClaim[]
 	readonly deferredClaims: readonly ReleaseProofDeferredClaim[]
 	readonly excludedEvidence: readonly ReleaseProofIndexExcludedEvidence[]
@@ -262,6 +264,25 @@ export interface ReleaseProofQssArchivedResearchNote {
 	readonly ownerLoops: readonly ReleaseProofReadinessOwner[]
 	readonly reason: string
 	readonly killCriterion: string
+}
+
+export interface ReleaseProofReleaseDecisionBoard {
+	readonly status: 'top-two-only'
+	readonly rows: readonly ReleaseProofReleaseDecisionBoardRow[]
+	readonly boundary: string
+}
+
+export interface ReleaseProofReleaseDecisionBoardRow {
+	readonly rank: number
+	readonly artifact: ReleaseProofIndexArtifactName
+	readonly claimWordingAllowedToday: string
+	readonly headlineClaimAllowed: boolean
+	readonly implementationSurfacePromotionAllowed: boolean
+	readonly proofRequired: ReleaseProofClaimProofRequired
+	readonly acceptedEvidence: readonly ReleaseProofQssAcceptedEvidenceItem[]
+	readonly claimsWeMustNotMake: readonly string[]
+	readonly aPlusBlockingOwnerActions: readonly ReleaseProofNextOwnerAction[]
+	readonly boundary: string
 }
 
 export interface ReleaseProofPackageabilityEvidence {
@@ -1141,6 +1162,7 @@ export async function runReleaseProofIndex(
 	]
 	const readiness = releaseReadinessSummary(artifacts)
 	const fixtureEvidence = fixturePolicyEvidence(safeOpenFixtureScan, packageActionFixtureScan)
+	const qssMatrix = qssLeapfrogReleaseMatrix(artifacts, readiness)
 	return {
 		generatedAt: new Date().toISOString(),
 		artifactCount: artifacts.length,
@@ -1165,7 +1187,8 @@ export async function runReleaseProofIndex(
 			artifacts,
 		),
 		readiness,
-		qssLeapfrogReleaseMatrix: qssLeapfrogReleaseMatrix(artifacts, readiness),
+		qssLeapfrogReleaseMatrix: qssMatrix,
+		releaseDecisionBoard: releaseDecisionBoard(artifacts, readiness, qssMatrix),
 		boundary:
 			'Digest index for local release evidence artifacts. This is not signed provenance, SLSA, in-toto attestation, or tamper-evident storage.',
 		claimPortfolio: CLAIM_PORTFOLIO.map(clonePortfolioClaim),
@@ -1226,6 +1249,14 @@ export function releaseProofIndexMarkdown(result: ReleaseProofIndexResult): stri
 		...result.qssLeapfrogReleaseMatrix.archivedResearchNotes.map(
 			(note) => `- ${note.name}: ${note.reason}`,
 		),
+		'',
+		'## Release Decision Board',
+		'',
+		result.releaseDecisionBoard.boundary,
+		'',
+		'| Rank | Claim wording allowed today | Headline claim allowed | Implementation promotion allowed | Exact proof | Must not claim | A+ blocking owner action | Boundary |',
+		'| ---: | --- | --- | --- | --- | --- | --- | --- |',
+		...result.releaseDecisionBoard.rows.map(releaseDecisionBoardMarkdownRow),
 		'',
 		'## Release Packageability Evidence',
 		'',
@@ -1541,6 +1572,7 @@ export function releaseProofOwnerHandoffIndex(
 		claimBlockerBoard: result.readiness.claimBlockerBoard,
 		implementationHandoffs: result.readiness.implementationHandoffs,
 		qssLeapfrogReleaseMatrix: cloneQssLeapfrogReleaseMatrix(result.qssLeapfrogReleaseMatrix),
+		releaseDecisionBoard: cloneReleaseDecisionBoard(result.releaseDecisionBoard),
 		claimPortfolio: result.claimPortfolio.map(clonePortfolioClaim),
 		deferredClaims: result.deferredClaims,
 		excludedEvidence: result.excludedEvidence,
@@ -1895,6 +1927,75 @@ function packageActionQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceIte
 			boundary: 'Local tarball proof only; not registry publication or attestation.',
 		},
 	]
+}
+
+function releaseDecisionBoard(
+	artifacts: readonly ReleaseProofIndexArtifact[],
+	readiness: ReleaseProofReadinessSummary,
+	qssMatrix: ReleaseProofQssLeapfrogReleaseMatrix,
+): ReleaseProofReleaseDecisionBoard {
+	return {
+		status: 'top-two-only',
+		rows: qssMatrix.rows.map((row) => {
+			const artifact = artifacts.find((candidate) => candidate.name === row.artifact)
+			const handoff = readiness.implementationHandoffs.find(
+				(candidate) => candidate.artifact === row.artifact,
+			)
+			return {
+				rank: row.rank,
+				artifact: row.artifact,
+				claimWordingAllowedToday: row.claim,
+				headlineClaimAllowed: artifact?.headlineClaimAllowed ?? false,
+				implementationSurfacePromotionAllowed:
+					handoff?.implementationSurfacePromotionAllowed ??
+					readiness.implementationSurfacePromotionAllowed,
+				proofRequired: claimProofRequired(row.artifact),
+				acceptedEvidence: row.acceptedEvidence.map((item) => ({ ...item })),
+				claimsWeMustNotMake: [...row.claimsWeMustNotMake],
+				aPlusBlockingOwnerActions: row.ownerActions.map(cloneNextOwnerAction),
+				boundary:
+					'Release decision row only. It names allowed local claim wording, exact proof pointers, forbidden shortcuts, and owner blockers without satisfying any gate.',
+			}
+		}),
+		boundary:
+			'Top-two release-decision artifact for claim stewardship. It is derived from committed release proof gates and must not be treated as a product surface, benchmark threshold, signed provenance, or owner approval.',
+	}
+}
+
+function releaseDecisionBoardMarkdownRow(row: ReleaseProofReleaseDecisionBoardRow): string {
+	return [
+		String(row.rank),
+		row.claimWordingAllowedToday,
+		String(row.headlineClaimAllowed),
+		String(row.implementationSurfacePromotionAllowed),
+		row.acceptedEvidence
+			.map((item) => `${item.evidenceId}=\`${item.command}\` (${item.path})`)
+			.join('; '),
+		row.claimsWeMustNotMake.join('; '),
+		row.aPlusBlockingOwnerActions
+			.map((action) => `${action.ownerLoop}/${action.requirementId}: ${action.nextStepKind}`)
+			.join('; '),
+		row.boundary,
+	]
+		.map((cell) => ` ${cell} `)
+		.join('|')
+		.replace(/^/, '|')
+		.replace(/$/, '|')
+}
+
+function cloneReleaseDecisionBoard(
+	board: ReleaseProofReleaseDecisionBoard,
+): ReleaseProofReleaseDecisionBoard {
+	return {
+		...board,
+		rows: board.rows.map((row) => ({
+			...row,
+			proofRequired: { ...row.proofRequired },
+			acceptedEvidence: row.acceptedEvidence.map((item) => ({ ...item })),
+			claimsWeMustNotMake: [...row.claimsWeMustNotMake],
+			aPlusBlockingOwnerActions: row.aPlusBlockingOwnerActions.map(cloneNextOwnerAction),
+		})),
+	}
 }
 
 function qssLeapfrogReleaseMatrixMarkdownRow(row: ReleaseProofQssLeapfrogReleaseMatrixRow): string {

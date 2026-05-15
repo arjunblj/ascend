@@ -898,6 +898,39 @@ describe('release proof evidence index', () => {
 			'agent-workflow-observability',
 			'practical-latency-contracts',
 		])
+		expect(index.releaseDecisionBoard).toMatchObject({
+			status: 'top-two-only',
+			boundary: expect.stringContaining('Top-two release-decision artifact'),
+		})
+		expect(index.releaseDecisionBoard.rows.map((row) => row.artifact)).toEqual([
+			'safe-open-proof',
+			'package-action-proof',
+		])
+		const safeOpenDecision = index.releaseDecisionBoard.rows[0]
+		expect(safeOpenDecision.claimWordingAllowedToday).toBe('safe unknown workbook opening')
+		expect(safeOpenDecision.headlineClaimAllowed).toBe(false)
+		expect(safeOpenDecision.implementationSurfacePromotionAllowed).toBe(false)
+		expect(safeOpenDecision.proofRequired.fixture).toContain('Public clean')
+		expect(safeOpenDecision.proofRequired.validationGate).toContain('safe-open proof harness')
+		expect(safeOpenDecision.acceptedEvidence.map((item) => item.evidenceId)).toContain(
+			'safe-open-proof-harness',
+		)
+		expect(safeOpenDecision.claimsWeMustNotMake.join('\n')).toContain('Malware scanning')
+		expect(
+			safeOpenDecision.aPlusBlockingOwnerActions.map(
+				(action) => `${action.requirementId}/${action.ownerLoop}`,
+			),
+		).toContain('release-latency-run/performance')
+		const packageActionDecision = index.releaseDecisionBoard.rows[1]
+		expect(packageActionDecision.claimWordingAllowedToday).toBe('auditable package-part mutation')
+		expect(packageActionDecision.proofRequired.honestBoundary).toContain('Not signed provenance')
+		expect(packageActionDecision.claimsWeMustNotMake.join('\n')).toContain('Signed provenance')
+		expect(packageActionDecision.claimsWeMustNotMake.join('\n')).toContain('Full streaming parity')
+		expect(
+			packageActionDecision.aPlusBlockingOwnerActions.map(
+				(action) => `${action.requirementId}/${action.ownerLoop}`,
+			),
+		).toContain('streaming-matrix-boundary/performance')
 		for (const artifact of index.artifacts) {
 			expect(artifact.sha256).toMatch(/^[a-f0-9]{64}$/)
 			expect(artifact.stableShapeSha256).toMatch(/^[a-f0-9]{64}$/)
@@ -1280,6 +1313,28 @@ describe('release proof evidence index', () => {
 				}),
 			]),
 		)
+		expect(handoff.releaseDecisionBoard.rows).toHaveLength(2)
+		expect(handoff.releaseDecisionBoard.rows[0]).toMatchObject({
+			artifact: 'safe-open-proof',
+			claimWordingAllowedToday: 'safe unknown workbook opening',
+			headlineClaimAllowed: false,
+			implementationSurfacePromotionAllowed: false,
+			acceptedEvidence: expect.arrayContaining([
+				expect.objectContaining({ evidenceId: 'release-proof-index-owner-handoff' }),
+			]),
+			aPlusBlockingOwnerActions: expect.arrayContaining([
+				expect.objectContaining({ requirementId: 'public-edge-fixtures' }),
+				expect.objectContaining({ requirementId: 'release-latency-run' }),
+			]),
+		})
+		expect(handoff.releaseDecisionBoard.rows[1]).toMatchObject({
+			artifact: 'package-action-proof',
+			claimWordingAllowedToday: 'auditable package-part mutation',
+			aPlusBlockingOwnerActions: expect.arrayContaining([
+				expect.objectContaining({ requirementId: 'edge-fixture-policy' }),
+				expect.objectContaining({ requirementId: 'provenance-boundary' }),
+			]),
+		})
 		expect(handoff.implementationHandoffs[0]).toMatchObject({
 			claim: 'safe unknown workbook opening',
 			proofCommand: 'bun run fixtures/benchmarks/safe-open-proof.ts --no-timings --json',
@@ -1339,6 +1394,14 @@ describe('release proof evidence index', () => {
 		expect(markdown).toContain('Compact report command')
 		expect(markdown).toContain('Ready when')
 		expect(markdown).toContain('Release Readiness Gate')
+		expect(markdown).toContain('## Release Decision Board')
+		expect(markdown).toContain(
+			'| Rank | Claim wording allowed today | Headline claim allowed | Implementation promotion allowed | Exact proof | Must not claim | A+ blocking owner action | Boundary |',
+		)
+		expect(markdown).toContain('| 1 | safe unknown workbook opening | false | false |')
+		expect(markdown).toContain('| 2 | auditable package-part mutation | false | false |')
+		expect(markdown).toContain('release-latency-run: validation-run')
+		expect(markdown).toContain('provenance-boundary: publication-policy')
 		expect(markdown).toContain('Release Packageability Evidence')
 		expect(markdown).toContain('bun run release:apps:smoke')
 		expect(markdown).toContain('bun run release:rc:gate')

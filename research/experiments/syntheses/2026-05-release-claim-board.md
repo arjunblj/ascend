@@ -16,6 +16,7 @@ Latest proof refresh, 2026-05-15T19:37:18Z:
 - Safe-open fixture replacement evidence now reports risk-family counts for the tracked corpus: `preservedActiveX=2`, `preservedControl=3`, `preservedMacro=2`, `preservedVendorSecurity=1`, and still `signatureOrUnknownMatches=0`. This strengthens the owner handoff while keeping `public-edge-fixtures` missing.
 - `fixturePolicy.safeOpenFixtureAcceptanceChecklist` now separates generated topology proof from public binary requirements for `signed`, `unknown-part`, and `malformed`, and every row keeps `public-edge-fixtures` missing until owner approval.
 - Package-action proof covers 8 cases with 4 public fixtures, 2 generated workbooks, 2 generated edge packages, action totals `passthrough=32`, `regenerate=40`, `add=3`, `drop=3`, `error=1`, 8 source-graph evidence cases, 8 package-preservation journal issue cases, and 1 representative streaming proof case.
+- `fixturePolicy.packageActionFixtureAcceptanceChecklist` now separates generated package-action topology proof from public binary requirements for `signature-invalidation-drop` and `unknown-part-error`, and every row keeps `edge-fixture-policy` missing until owner approval.
 - Formula rename remains frozen; formula intelligence stays rejection-first and proof-packaging-only.
 
 Latest proof refresh, 2026-05-15T19:20:27Z:

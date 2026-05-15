@@ -102,6 +102,20 @@ describe('release proof evidence index', () => {
 				requiresPublicBinaryWhen: expect.stringContaining('vendor repair equivalence'),
 			}),
 		])
+		expect(index.fixturePolicy.packageActionFixtureAcceptanceChecklist).toEqual([
+			expect.objectContaining({
+				caseName: 'signature-invalidation-drop',
+				generatedCaseKind: 'generated-edge-package',
+				gateEffect: 'keeps-edge-fixture-policy-missing-until-owner-approval',
+				forbiddenClaim: expect.stringContaining('signed provenance'),
+			}),
+			expect.objectContaining({
+				caseName: 'unknown-part-error',
+				generatedCaseKind: 'generated-edge-package',
+				acceptableAsPackageActionProofWhen: expect.stringContaining('explicit error action'),
+				requiresPublicBinaryWhen: expect.stringContaining('third-party unknown-part preservation'),
+			}),
+		])
 		expect(index.fixturePolicy.sourceReferences.map((entry) => entry.label)).toEqual([
 			'GitHub repository limits',
 			'GitHub large files',
@@ -1131,6 +1145,9 @@ describe('release proof evidence index', () => {
 		expect(markdown).toContain('Safe-open generated case acceptance checklist:')
 		expect(markdown).toContain('| signed | generated-edge-package')
 		expect(markdown).toContain('keeps-public-edge-fixtures-missing-until-owner-approval')
+		expect(markdown).toContain('Package-action generated case acceptance checklist:')
+		expect(markdown).toContain('| signature-invalidation-drop | generated-edge-package')
+		expect(markdown).toContain('keeps-edge-fixture-policy-missing-until-owner-approval')
 		expect(markdown).toContain('Approval checklist:')
 		expect(markdown).toContain(
 			'| Artifact | Gate | Owner | Status | Decision needed | Acceptance evidence | Reject if | Validation command |',

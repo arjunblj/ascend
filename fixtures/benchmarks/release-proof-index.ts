@@ -320,6 +320,7 @@ export interface ReleaseProofFixturePolicy {
 	readonly generatedStructuralFixturesAllowedWhen: readonly string[]
 	readonly publicBinaryFixturesRequiredWhen: readonly string[]
 	readonly safeOpenFixtureAcceptanceChecklist: readonly ReleaseProofSafeOpenFixtureAcceptanceItem[]
+	readonly packageActionFixtureAcceptanceChecklist: readonly ReleaseProofPackageActionFixtureAcceptanceItem[]
 	readonly approvalChecklist: readonly ReleaseProofFixturePolicyApprovalItem[]
 	readonly trackedFixtureScanCommands: Readonly<Record<ReleaseProofIndexArtifactName, string>>
 	readonly currentGeneratedStructuralCases: Readonly<
@@ -336,6 +337,16 @@ export interface ReleaseProofSafeOpenFixtureAcceptanceItem {
 	readonly requiresPublicBinaryWhen: string
 	readonly validationCommand: string
 	readonly gateEffect: 'keeps-public-edge-fixtures-missing-until-owner-approval'
+}
+
+export interface ReleaseProofPackageActionFixtureAcceptanceItem {
+	readonly caseName: 'signature-invalidation-drop' | 'unknown-part-error'
+	readonly generatedCaseKind: 'generated-edge-package'
+	readonly acceptableAsPackageActionProofWhen: string
+	readonly requiresPublicBinaryWhen: string
+	readonly forbiddenClaim: string
+	readonly validationCommand: string
+	readonly gateEffect: 'keeps-edge-fixture-policy-missing-until-owner-approval'
 }
 
 export interface ReleaseProofFixturePolicyApprovalItem {
@@ -549,6 +560,32 @@ const FIXTURE_POLICY: ReleaseProofFixturePolicy = {
 				'Claim wording depends on vendor repair equivalence, recovery of arbitrary malformed files, or real-world corrupt workbook provenance.',
 			validationCommand: 'bun run fixtures/benchmarks/safe-open-proof.ts --no-timings --json',
 			gateEffect: 'keeps-public-edge-fixtures-missing-until-owner-approval',
+		},
+	],
+	packageActionFixtureAcceptanceChecklist: [
+		{
+			caseName: 'signature-invalidation-drop',
+			generatedCaseKind: 'generated-edge-package',
+			acceptableAsPackageActionProofWhen:
+				'Owner accepts generated signature package topology as local evidence that generated edits drop or invalidate signature-related parts.',
+			requiresPublicBinaryWhen:
+				'Claim wording depends on a real signed workbook, signature validity, re-signing behavior, vendor trust UX, or real-world authoring provenance.',
+			forbiddenClaim:
+				'Do not claim signature preservation, verification, re-signing, attestation, SLSA, in-toto, or signed provenance.',
+			validationCommand: 'bun run fixtures/benchmarks/package-action-fixture-scan.ts --json',
+			gateEffect: 'keeps-edge-fixture-policy-missing-until-owner-approval',
+		},
+		{
+			caseName: 'unknown-part-error',
+			generatedCaseKind: 'generated-edge-package',
+			acceptableAsPackageActionProofWhen:
+				'Owner accepts generated unknown package topology as local fail-closed package-action evidence with an explicit error action.',
+			requiresPublicBinaryWhen:
+				'Claim wording depends on arbitrary third-party unknown-part preservation, understanding, recovery, or real workbook semantics.',
+			forbiddenClaim:
+				'Do not claim arbitrary unknown-part preservation, understanding, safe recovery, trust, or signed provenance.',
+			validationCommand: 'bun run fixtures/benchmarks/package-action-fixture-scan.ts --json',
+			gateEffect: 'keeps-edge-fixture-policy-missing-until-owner-approval',
 		},
 	],
 	approvalChecklist: [
@@ -905,6 +942,14 @@ export function releaseProofIndexMarkdown(result: ReleaseProofIndexResult): stri
 		'| --- | --- | --- | --- | --- | --- |',
 		...result.fixturePolicy.safeOpenFixtureAcceptanceChecklist.map(
 			safeOpenFixtureAcceptanceMarkdownRow,
+		),
+		'',
+		'Package-action generated case acceptance checklist:',
+		'',
+		'| Case | Generated kind | Acceptable as package-action proof when | Requires public binary when | Forbidden claim | Validation command | Gate effect |',
+		'| --- | --- | --- | --- | --- | --- | --- |',
+		...result.fixturePolicy.packageActionFixtureAcceptanceChecklist.map(
+			packageActionFixtureAcceptanceMarkdownRow,
 		),
 		'',
 		'Approval checklist:',
@@ -2605,6 +2650,24 @@ function safeOpenFixtureAcceptanceMarkdownRow(
 		row.generatedCaseKind,
 		row.acceptableAsTopologyProofWhen,
 		row.requiresPublicBinaryWhen,
+		`\`${row.validationCommand}\``,
+		row.gateEffect,
+	]
+		.map((cell) => ` ${cell} `)
+		.join('|')
+		.replace(/^/, '|')
+		.replace(/$/, '|')
+}
+
+function packageActionFixtureAcceptanceMarkdownRow(
+	row: ReleaseProofPackageActionFixtureAcceptanceItem,
+): string {
+	return [
+		row.caseName,
+		row.generatedCaseKind,
+		row.acceptableAsPackageActionProofWhen,
+		row.requiresPublicBinaryWhen,
+		row.forbiddenClaim,
 		`\`${row.validationCommand}\``,
 		row.gateEffect,
 	]

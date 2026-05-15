@@ -3111,6 +3111,8 @@ describe('interactive client contract', () => {
 		expect(changed.journal?.issues).toContainEqual({
 			code: 'LOSSY_INVERSE',
 			message: 'Formula cache for Sheet1!A1 cannot be restored with public operations',
+			surface: 'formulas',
+			reason: 'formula-cache-unsupported-value',
 			refs: ['Sheet1!A1'],
 		})
 		expect(changed.journal?.inverseOps).toEqual([
@@ -3139,6 +3141,8 @@ describe('interactive client contract', () => {
 		expect(changed.journal?.issues).toContainEqual({
 			code: 'LOSSY_INVERSE',
 			message: 'Formula cache for Sheet1!A1 cannot be restored with public operations',
+			surface: 'formulas',
+			reason: 'formula-cache-unsupported-value',
 			refs: ['Sheet1!A1'],
 		})
 		expect(changed.journal?.inverseOps).toEqual([
@@ -3167,6 +3171,8 @@ describe('interactive client contract', () => {
 		expect(changed.journal?.issues).toContainEqual({
 			code: 'LOSSY_INVERSE',
 			message: 'Formula cache for Sheet1!A1 cannot be restored with public operations',
+			surface: 'formulas',
+			reason: 'formula-cache-unsupported-value',
 			refs: ['Sheet1!A1'],
 		})
 	})
@@ -3285,6 +3291,8 @@ describe('interactive client contract', () => {
 		expect(changed.journal?.issues).toContainEqual({
 			code: 'UNSUPPORTED_VALUE',
 			message: 'Cannot restore richText at Sheet1!A1 with setRichText',
+			surface: 'cells',
+			reason: 'rich-text-unsupported-runs',
 			refs: ['Sheet1!A1'],
 		})
 		expect(changed.journal?.inverseOps).toEqual([])

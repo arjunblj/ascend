@@ -7333,6 +7333,8 @@ function inverseCellOps(cells: readonly MutationJournalCellPreimage[]): {
 			issues.push({
 				code: 'UNSUPPORTED_VALUE',
 				message: `Cannot restore richText at ${cell.sheet}!${cell.ref} with setRichText`,
+				surface: 'cells',
+				reason: 'rich-text-unsupported-runs',
 				refs: [`${cell.sheet}!${cell.ref}`],
 			})
 			continue
@@ -7347,6 +7349,8 @@ function inverseCellOps(cells: readonly MutationJournalCellPreimage[]): {
 		issues.push({
 			code: 'UNSUPPORTED_VALUE',
 			message: `Cannot restore ${cell.value.kind} at ${cell.sheet}!${cell.ref} with setCells`,
+			surface: 'cells',
+			reason: 'value-unsupported',
 			refs: [`${cell.sheet}!${cell.ref}`],
 		})
 	}
@@ -7388,6 +7392,8 @@ function formulaCacheRestoreOps(cell: MutationJournalCellPreimage): {
 			{
 				code: 'LOSSY_INVERSE',
 				message: `Formula cache for ${cell.sheet}!${cell.ref} cannot be restored with public operations`,
+				surface: 'formulas',
+				reason: 'formula-cache-unsupported-value',
 				refs: [`${cell.sheet}!${cell.ref}`],
 			},
 		],

@@ -38,6 +38,28 @@ bun run fixtures/benchmarks/release-proof-index.ts --no-timings --json
 | Performance | Package-action streaming boundary | Accept one representative streaming proof as sufficient for narrow wording or expand the matrix before broader wording. | Release copy may mention one representative streaming dirty-sheet proof only; no full streaming parity. |
 | Release | Provenance and compact report policy | Approve local-proof wording; define artifact storage, retention/privacy filtering, canonicalization, and verification expectations. | Compact commands remain pointers until this exists; no SLSA, in-toto, Sigstore, GitHub attestation, or signed provenance wording. |
 
+## Safe-Open Acceptance Checkboxes
+
+Current proof input:
+
+| Field | Value |
+| --- | --- |
+| Proof cases | 9 |
+| Public fixture cases | 6 |
+| Generated edge-package cases | 2 |
+| Malformed cases | 1 |
+| Generated/disclosed cases | `signed`, `unknown-part`, `malformed` |
+| Review before hydration | 4 |
+| Malformed rejected | true |
+
+Owner acceptance checklist:
+
+- [ ] Product accepts disclosed generated `signed` and `unknown-part` structural fixtures, or replaces them with public binary fixtures.
+- [ ] Product accepts generated malformed-package evidence as structural rejection proof, not real-world repair behavior.
+- [ ] Performance runs tracked-clean release-environment latency over standardized public inputs and approves wording that does not read as a threshold unless thresholds are explicitly owned.
+- [ ] Release approves boundary wording: not malware scanning, sandboxing, file trust, active-content safety, signed provenance, or malformed-package recovery.
+- [ ] Release keeps compact report digests unpublished until storage, privacy filtering, canonicalization, and verification expectations exist.
+
 ## Do Not Promote
 
 | Direction | Freeze reason |

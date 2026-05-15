@@ -1962,20 +1962,29 @@ describe('writeXlsx', () => {
 			formula: null,
 			styleId: S0,
 		})
+		const sourceArchive = new ZipArchive(sourceBytes)
+		let sharedStringsTextReads = 0
+		const readText = sourceArchive.readText.bind(sourceArchive)
+		sourceArchive.readText = (path: string) => {
+			if (path === 'xl/sharedStrings.xml') sharedStringsTextReads++
+			return readText(path)
+		}
 
 		const written = writeXlsx(source.value.workbook, source.value.capsules, {
 			dirtySheetNames: ['Data'],
+			dirtyCellPatches: [{ sheetName: 'Data', refs: ['B1'] }],
 			sharedStringsDirty: false,
+			sourceArchive,
 		})
 		expectOk(written)
+		expect(sharedStringsTextReads).toBe(0)
 
-		const sourceZip = new ZipArchive(sourceBytes)
 		const writtenZip = new ZipArchive(written.value)
 		expect(writtenZip.readCompressedBytes('xl/sharedStrings.xml')).toEqual(
-			sourceZip.readCompressedBytes('xl/sharedStrings.xml'),
+			sourceArchive.readCompressedBytes('xl/sharedStrings.xml'),
 		)
 		expect(writtenZip.get('xl/worksheets/sheet1.xml')?.crc).not.toBe(
-			sourceZip.get('xl/worksheets/sheet1.xml')?.crc,
+			sourceArchive.get('xl/worksheets/sheet1.xml')?.crc,
 		)
 	})
 

@@ -20,7 +20,7 @@ Top proof facts:
 | Auditable package-part mutation | 8 cases, 4 public fixtures, 2 generated workbooks, 2 generated edge packages, action totals `passthrough=32`, `regenerate=40`, `add=3`, `drop=3`, `error=1`, stable shape `b4cf0755f2fd40ff577ab87b6600ee14a58bbd69608796c903759e7e8b4d29e8`. | Hand off to correctness/product/performance/release for edge fixture, unsupported-feature, streaming, provenance, and publication-boundary approval only. |
 | Formula language-service primitives | 1685 public formulas sampled, 2322 reference spans, 25 binding roles, 3 LET-local prepare-rename OK targets, and 1692 prepare-rename refusals. | Keep rejection-first. Do not implement rename. |
 
-Release packageability remains owner-routing evidence, not a product claim: SDK and app tarball smokes exist, but publication workflow, artifact storage, signed-provenance or explicit non-provenance wording, API listener lifecycle, stdio MCP protocol-session proof, and retention/privacy filtering remain release-owned blockers.
+Release packageability remains owner-routing evidence, not a product claim: SDK and app tarball smokes now cover installed create/write/inspect/plan/commit/check/read workflows plus CLI/MCP bundled docs search, but publication workflow, artifact storage, signed-provenance or explicit non-provenance wording, API listener lifecycle, stdio MCP protocol-session proof, and retention/privacy filtering remain release-owned blockers.
 
 Proof timestamp: 2026-05-15T19:17:18Z.
 

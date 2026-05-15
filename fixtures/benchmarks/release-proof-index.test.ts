@@ -22,9 +22,11 @@ describe('release proof evidence index', () => {
 		expect(index.releasePackageabilityEvidence.coveredEvidence).toEqual([
 			expect.stringContaining('SDK tarball installs'),
 			expect.stringContaining('CLI/API/MCP app tarballs install'),
-			expect.stringContaining('Installed CLI bin reports version'),
-			expect.stringContaining('Installed API createApiFetch handles /capabilities'),
-			expect.stringContaining('Installed MCP package registers capabilities'),
+			expect.stringContaining('Installed CLI bin reports version, completes'),
+			expect.stringContaining(
+				'Installed API createApiFetch handles write/inspect/plan/commit/check/read',
+			),
+			expect.stringContaining('Installed MCP package registers tool/resource callbacks'),
 		])
 		expect(index.releasePackageabilityEvidence.missingPolicyRequirements).toContain(
 			'registry publication workflow',

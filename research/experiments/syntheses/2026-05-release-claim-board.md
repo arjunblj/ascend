@@ -15,7 +15,7 @@ Latest proof refresh, 2026-05-15T19:20:27Z:
 - Safe-open proof covers 9 cases with 6 public fixtures, 2 generated edge packages, 1 malformed package, 8 OK, 1 rejected, 4 review-before-hydration routes, and stable shape `6aa54a651309b3c45ce7ce93ff7034e7b31e47c7cbc458c58ee6a6f23e0c6178`.
 - Package-action proof covers 8 cases with 4 public fixtures, 2 generated workbooks, 2 generated edge packages, action totals `passthrough=32`, `regenerate=40`, `add=3`, `drop=3`, `error=1`, and stable shape `b4cf0755f2fd40ff577ab87b6600ee14a58bbd69608796c903759e7e8b4d29e8`.
 - Formula-assist proof remains rejection-first only: 1685 public formulas sampled, 2322 reference spans, 25 binding roles, 3 LET-local prepare-rename OK targets, and 1692 prepare-rename refusals. No edit-producing rename is allowed.
-- Release packageability evidence is now local-tarball-smoke-backed for SDK and CLI/API/MCP apps, but remains below publication, provenance, API listener lifecycle, MCP stdio protocol, and retention/privacy claims.
+- Release packageability evidence is now local-tarball-smoke-backed for SDK and CLI/API/MCP apps, including installed create/write/inspect/plan/commit/check/read workflows plus CLI/MCP bundled docs search, but remains below publication, provenance, API listener lifecycle, MCP stdio protocol, and retention/privacy claims.
 
 Latest proof refresh, 2026-05-15T10:15:42Z:
 

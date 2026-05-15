@@ -1088,9 +1088,9 @@ function releasePackageabilityEvidence(): ReleaseProofPackageabilityEvidence {
 		coveredEvidence: [
 			'SDK tarball installs into a temp consumer and verifies create/open/plan/commit/reopen/check/recalc plus bundled agent docs.',
 			'CLI/API/MCP app tarballs install into a temp consumer without workspace dependencies.',
-			'Installed CLI bin reports version from node_modules/.bin/ascend.',
-			'Installed API createApiFetch handles /capabilities and returns capability data.',
-			'Installed MCP package registers capabilities tool/resource callbacks and returns capability data.',
+			'Installed CLI bin reports version, completes create/write/inspect/plan/commit/check/read over a temp workbook, and searches bundled docs.',
+			'Installed API createApiFetch handles write/inspect/plan/commit/check/read plus /capabilities over a temp workbook.',
+			'Installed MCP package registers tool/resource callbacks and completes write/inspect/plan/commit/check/read plus docs search and capabilities over a temp workbook.',
 		],
 		missingPolicyRequirements: [
 			'artifact storage path',
@@ -1108,7 +1108,7 @@ function releasePackageabilityEvidence(): ReleaseProofPackageabilityEvidence {
 			'full MCP protocol compatibility',
 		],
 		boundary:
-			'Packageability evidence proves local tarball install and basic runtime smoke only. It is not registry publication, signed provenance, artifact retention policy, production server lifecycle proof, or a real MCP protocol session.',
+			'Packageability evidence proves local tarball install and basic installed workflow smoke only. It is not registry publication, signed provenance, artifact retention policy, production server lifecycle proof, or a real MCP protocol session.',
 	}
 }
 

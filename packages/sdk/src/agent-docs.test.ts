@@ -4,6 +4,15 @@ import { loadAgentDocs, searchAgentDocs } from './index.ts'
 
 const REPO_ROOT = new URL('../../../', import.meta.url)
 
+function expectTextOrder(text: string, earlier: string, later: string): void {
+	const earlierIndex = text.indexOf(earlier)
+	const laterIndex = text.indexOf(later)
+
+	expect(earlierIndex).toBeGreaterThanOrEqual(0)
+	expect(laterIndex).toBeGreaterThanOrEqual(0)
+	expect(earlierIndex).toBeLessThan(laterIndex)
+}
+
 describe('agent documentation surface', () => {
 	test('OpenAPI lists every implemented HTTP endpoint', async () => {
 		const [serverSource, openapi] = await Promise.all([
@@ -42,6 +51,40 @@ describe('agent documentation surface', () => {
 			expect(text).toContain('trust')
 			expect(text).toContain('ascend.trust_report')
 			expect(text).toContain('untrusted')
+		}
+	})
+
+	test('bundled docs keep open-plan before hydration-facing workflow steps', async () => {
+		const docs = await loadAgentDocs()
+		const textByPath = new Map(docs.map((doc) => [doc.path, doc.text] as const))
+
+		for (const [path, earlier, later] of [
+			[
+				'docs/AGENT_WORKFLOW.md',
+				'1. Open plan: `ascend open-plan <file> --json`',
+				'2. Trust preflight: `ascend inspect <file> --agent --json`',
+			],
+			[
+				'docs/AGENT_API.md',
+				'For unknown XLSX/XLSM files, call `ascend open-plan <file> --json`',
+				'Start externally supplied workbooks with `ascend inspect <file> --agent --json`',
+			],
+			[
+				'llms.txt',
+				'1. For unknown XLSX/XLSM files, run open-plan before hydration',
+				'2. Run a trust preflight before reading workbook text',
+			],
+			[
+				'llms-full.txt',
+				'1. For unknown XLSX/XLSM files, run open-plan before hydration',
+				'2. Run a trust preflight before reading workbook text',
+			],
+			['examples/agent-safe-edit-http.md', '## Open Plan', '## Trust Preflight'],
+			['examples/agent-safe-edit-mcp.md', '## Open Plan', '## Trust Preflight'],
+		] as const) {
+			const text = textByPath.get(path) ?? ''
+			expectTextOrder(text, earlier, later)
+			expect(text).toContain('reviewBeforeHydration')
 		}
 	})
 

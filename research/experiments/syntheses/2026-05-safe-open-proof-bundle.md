@@ -39,17 +39,28 @@ bun run fixtures/benchmarks/safe-open-proof.ts --repeat 5 --warmup 1
 
 The proof harness is tracked and intentionally not a new product surface. It generates durable synthetic signed, unknown-part, and malformed cases in code, and uses public workbook fixtures for real-workbook cases.
 
-| Case | Fixture | Bytes | Mode | Review before hydration | Risk families | Parts | Relationships | Median open-plan ms | Median full-open ms | Full/open-plan ratio | Boundary |
-| --- | --- | ---: | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
-| clean | `fixtures/xlsx/poi/SampleSS.xlsx` | 9112 | formula | false | none | 13 | 10 | 0.185 | 1.930 | 10.42x | ok |
-| formula-heavy | `fixtures/xlsx/poi/formula_stress_test.xlsx` | 64769 | formula | false | none | 27 | 22 | 0.199 | 6.367 | 32.01x | ok |
-| macro | `fixtures/xlsx/calamine/vba.xlsm` | 12752 | metadata-only | true | preservedMacro | 12 | 9 | 0.094 | 1.481 | 15.74x | ok |
-| pivot | `fixtures/xlsx/poi/ExcelPivotTableSample.xlsx` | 19460 | formula | false | none | 27 | 19 | 0.161 | 2.280 | 14.16x | ok |
-| ActiveX | `fixtures/xlsx/libreoffice/activex_checkbox.xlsx` | 12433 | metadata-only | true | preservedActiveX | 17 | 12 | 0.092 | 1.740 | 18.87x | ok |
-| chart | `fixtures/xlsx/poi/WithChart.xlsx` | 10138 | formula | false | none | 15 | 10 | 0.108 | 1.417 | 13.14x | ok |
-| signed | synthetic digital-signature package | 2254 | metadata-only | true | preservedSignature | 8 | 4 | 0.050 | 0.086 | 1.73x | ok |
-| unknown part | synthetic unknown package part | 1697 | metadata-only | true | preservedOther | 6 | 3 | 0.037 | 0.081 | 2.20x | ok |
-| malformed | synthetic malformed bytes | 9 | rejected | n/a | n/a | n/a | n/a | n/a | n/a | n/a | open-plan rejected: Missing end of central directory record |
+Latest rerun: 2026-05-15T03:24:15.235Z.
+
+| Case | Fixture | Bytes | Status | Mode | Review before hydration | Risk families | Parts | Worksheets | Relationships | Median open-plan ms | Median full-open ms | Full/open-plan ratio | Boundary |
+| --- | --- | ---: | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| clean | `fixtures/xlsx/poi/SampleSS.xlsx` | 9112 | ok | formula | false | none | 13 | 3 | 10 | 0.191 | 1.741 | 9.14x | ok |
+| formula-heavy | `fixtures/xlsx/poi/formula_stress_test.xlsx` | 64769 | ok | formula | false | none | 27 | 10 | 22 | 0.178 | 5.674 | 31.85x | ok |
+| macro | `fixtures/xlsx/calamine/vba.xlsm` | 12752 | ok | metadata-only | true | preservedMacro | 12 | 3 | 9 | 0.117 | 1.438 | 12.27x | ok |
+| pivot | `fixtures/xlsx/poi/ExcelPivotTableSample.xlsx` | 19460 | ok | formula | false | none | 27 | 3 | 19 | 0.145 | 2.226 | 15.39x | ok |
+| ActiveX | `fixtures/xlsx/libreoffice/activex_checkbox.xlsx` | 12433 | ok | metadata-only | true | preservedActiveX | 17 | 1 | 12 | 0.090 | 1.703 | 19.00x | ok |
+| chart | `fixtures/xlsx/poi/WithChart.xlsx` | 10138 | ok | formula | false | none | 15 | 3 | 10 | 0.086 | 1.264 | 14.76x | ok |
+| signed | synthetic digital-signature package | 2254 | ok | metadata-only | true | preservedSignature | 8 | 1 | 4 | 0.055 | 0.100 | 1.84x | ok |
+| unknown part | synthetic unknown package part | 1697 | ok | metadata-only | true | preservedOther | 6 | 1 | 3 | 0.038 | 0.085 | 2.26x | ok |
+| malformed | synthetic malformed bytes | 9 | rejected | n/a | n/a | none | n/a | n/a | n/a | n/a | n/a | n/a | open-plan rejected: Missing end of central directory record |
+
+Validation commands:
+
+```bash
+bun test fixtures/benchmarks/safe-open-proof.test.ts packages/sdk/src/open-plan.test.ts
+bun test apps/cli/src/cli.test.ts -t "open-plan"
+bun test apps/api/api.test.ts -t "open-plan"
+bun test apps/mcp/src/index.test.ts -t "open_plan|open-plan"
+```
 
 ## Interpretation
 

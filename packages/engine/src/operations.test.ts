@@ -3353,12 +3353,19 @@ describe('applyOperation', () => {
 			const wb = createWorkbook()
 			const sheet = wb.addSheet('Sheet1')
 			entry.setup(sheet)
+			if (entry.name === 'shared formula member') {
+				expect(analyzeWorkbook(wb).sharedFormulaGroups.size).toBe(1)
+			}
 
 			const result = applyOperation(wb, entry.op)
 			expectOk(result)
 
 			expect(result.value.affectedCells, entry.name).toEqual(entry.affectedCells)
 			entry.assert(sheet)
+			expectCachedFormulaAnalysisMatchesFullRecompute(wb)
+			if (entry.name === 'shared formula member') {
+				expect(analyzeWorkbook(wb).sharedFormulaGroups.size).toBe(0)
+			}
 		}
 	})
 

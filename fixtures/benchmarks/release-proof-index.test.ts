@@ -170,6 +170,29 @@ describe('release proof evidence index', () => {
 		expect(index.fixturePolicyEvidence.packageAction.featureCounts.chartOrDrawing).toBeGreaterThan(
 			0,
 		)
+		expect(index.fixtureAcquisitionPlan).toMatchObject({
+			ownerLoop: 'product',
+			status: 'ranked-owner-review-required',
+			taskCount: 3,
+			boundary: expect.stringContaining('not fixture approval'),
+		})
+		expect(index.fixtureAcquisitionPlan.tasks.map((task) => task.caseName)).toEqual([
+			'unknown-part-shared-candidate',
+			'signed-package',
+			'malformed-package',
+		])
+		expect(index.fixtureAcquisitionPlan.tasks[0]).toMatchObject({
+			rank: 1,
+			relatedArtifacts: ['safe-open-proof', 'package-action-proof'],
+			relatedGates: ['public-edge-fixtures', 'edge-fixture-policy'],
+			evidenceAlreadyPresent: expect.stringContaining('excelforge-book1-unknown-part-mutation'),
+			killCriterion: expect.stringContaining('license or attribution policy is unclear'),
+		})
+		expect(index.fixtureAcquisitionPlan.tasks[1]).toMatchObject({
+			caseName: 'signed-package',
+			evidenceAlreadyPresent: expect.stringContaining('signaturePackage=0'),
+			boundary: expect.stringContaining('signature validation'),
+		})
 		expect(index.generatedFixtureDecisionEvidence).toMatchObject({
 			ownerLoop: 'product',
 			status: 'generated-structural-cases-disclosed-owner-approval-required',
@@ -980,6 +1003,15 @@ describe('release proof evidence index', () => {
 				unknownPartPath: 'docMetadata/LabelInfo.xml',
 			}),
 		])
+		expect(handoff.fixtureAcquisitionPlan.tasks[0]).toMatchObject({
+			caseName: 'unknown-part-shared-candidate',
+			relatedArtifacts: ['safe-open-proof', 'package-action-proof'],
+			ownerDecision: expect.stringContaining('accepts as public fixture candidate'),
+		})
+		expect(handoff.fixtureAcquisitionPlan.tasks[1]).toMatchObject({
+			caseName: 'signed-package',
+			killCriterion: expect.stringContaining('certificate meaning'),
+		})
 		expect(handoff.fixturePolicyEvidence.safeOpen.signatureOrUnknownMatches).toBe(0)
 		expect(JSON.stringify(handoff.generatedFixtureDecisionEvidence)).toContain(
 			'generated-malformed-package',
@@ -1194,6 +1226,10 @@ describe('release proof evidence index', () => {
 		expect(markdown).toContain(
 			'missingReplacementFeatures=signaturePackage,syntheticUnknownPathFamily',
 		)
+		expect(markdown).toContain('Fixture acquisition plan:')
+		expect(markdown).toContain('unknown-part-shared-candidate')
+		expect(markdown).toContain('signed-package')
+		expect(markdown).toContain('Product/release accepts as public fixture candidate')
 		expect(markdown).toContain('Generated fixture decision evidence:')
 		expect(markdown).toContain(
 			'Status: generated-structural-cases-disclosed-owner-approval-required',

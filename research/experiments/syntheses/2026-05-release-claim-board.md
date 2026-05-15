@@ -8,6 +8,14 @@ Freeze the next release claims into proof-shaped language. This board is deliber
 
 Current stewardship rule: hand off only the top one or two product claims to implementation loops. Everything else stays as proof packaging, validation, or "do not promote yet" until the missing evidence is explicit.
 
+Latest proof refresh, 2026-05-15T21:38:09Z:
+
+- `release-proof-index --no-timings --owner-handoffs-json` now emits `fixtureAcquisitionPlan` with `status=ranked-owner-review-required` and three product-owner tasks.
+- Rank 1 is the shared unknown-part candidate review: decide whether ExcelForge `Book 1.xlsx` can be vendored as a public fixture for both safe-open `public-edge-fixtures` and package-action `edge-fixture-policy`.
+- Rank 2 is signed-package evidence: acquire an approved public signed XLSX package fixture or explicitly accept generated signature topology while keeping signature validation, trust, and attestation wording forbidden.
+- Rank 3 is malformed-package policy: accept generated malformed bytes for fail-closed rejection proof or require a public malformed workbook fixture.
+- This is owner routing only. Release gates remain blocked with `headlineClaimsAllowed=false`, `implementationSurfacePromotionAllowed=false`, and `missingRequirementCount=9`.
+
 Latest proof refresh, 2026-05-15T21:34:51Z:
 
 - `release-proof-index --no-timings --owner-handoffs-json` still reports `releaseGate=blocked-by-publication-policy`, `headlineClaimsAllowed=false`, `implementationSurfacePromotionAllowed=false`, and `missingRequirementCount=9`.

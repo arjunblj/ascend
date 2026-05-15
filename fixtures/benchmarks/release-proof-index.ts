@@ -166,6 +166,7 @@ export interface ReleaseProofIndexResult {
 	readonly attestation: false
 	readonly fixturePolicy: ReleaseProofFixturePolicy
 	readonly fixturePolicyEvidence: ReleaseProofFixturePolicyEvidence
+	readonly fixtureAcquisitionPlan: ReleaseProofFixtureAcquisitionPlan
 	readonly generatedFixtureDecisionEvidence: ReleaseProofGeneratedFixtureDecisionEvidence
 	readonly performancePolicy: ReleaseProofPerformancePolicy
 	readonly safeOpenLatencyValidationEvidence: ReleaseProofSafeOpenLatencyValidationEvidence
@@ -190,6 +191,7 @@ export interface ReleaseProofOwnerHandoffIndex {
 	readonly missingRequirementCount: number
 	readonly fixturePolicy: ReleaseProofFixturePolicy
 	readonly fixturePolicyEvidence: ReleaseProofFixturePolicyEvidence
+	readonly fixtureAcquisitionPlan: ReleaseProofFixtureAcquisitionPlan
 	readonly generatedFixtureDecisionEvidence: ReleaseProofGeneratedFixtureDecisionEvidence
 	readonly performancePolicy: ReleaseProofPerformancePolicy
 	readonly safeOpenLatencyValidationEvidence: ReleaseProofSafeOpenLatencyValidationEvidence
@@ -216,6 +218,30 @@ export interface ReleaseProofPackageabilityEvidence {
 	readonly coveredEvidence: readonly string[]
 	readonly missingPolicyRequirements: readonly string[]
 	readonly forbiddenClaims: readonly string[]
+	readonly boundary: string
+}
+
+export interface ReleaseProofFixtureAcquisitionPlan {
+	readonly ownerLoop: 'product'
+	readonly status: 'ranked-owner-review-required'
+	readonly validationCommand: string
+	readonly taskCount: number
+	readonly tasks: readonly ReleaseProofFixtureAcquisitionTask[]
+	readonly boundary: string
+}
+
+export interface ReleaseProofFixtureAcquisitionTask {
+	readonly rank: number
+	readonly caseName: 'unknown-part-shared-candidate' | 'signed-package' | 'malformed-package'
+	readonly relatedArtifacts: readonly ReleaseProofIndexArtifactName[]
+	readonly relatedGates: readonly string[]
+	readonly task: string
+	readonly evidenceAlreadyPresent: string
+	readonly proofStillMissing: string
+	readonly validationCommand: string
+	readonly competitorOrSpecReference: string
+	readonly killCriterion: string
+	readonly ownerDecision: string
 	readonly boundary: string
 }
 
@@ -959,6 +985,7 @@ export async function runReleaseProofIndex(
 		attestation: false,
 		fixturePolicy: cloneFixturePolicy(),
 		fixturePolicyEvidence: fixtureEvidence,
+		fixtureAcquisitionPlan: fixtureAcquisitionPlan(fixtureEvidence),
 		generatedFixtureDecisionEvidence: generatedFixtureDecisionEvidence(fixtureEvidence),
 		performancePolicy: clonePerformancePolicy(),
 		safeOpenLatencyValidationEvidence: safeOpenLatencyValidationEvidence(safeOpen),
@@ -1098,6 +1125,16 @@ export function releaseProofIndexMarkdown(result: ReleaseProofIndexResult): stri
 		...result.fixturePolicyEvidence.packageAction.externalCandidateEvidence.map(
 			packageActionExternalCandidateEvidenceMarkdownRow,
 		),
+		'',
+		'Fixture acquisition plan:',
+		'',
+		`Status: ${result.fixtureAcquisitionPlan.status}`,
+		`Task count: ${result.fixtureAcquisitionPlan.taskCount}`,
+		result.fixtureAcquisitionPlan.boundary,
+		'',
+		'| Rank | Case | Artifacts | Gates | Task | Evidence already present | Proof still missing | Validation | Reference | Kill criterion | Owner decision | Boundary |',
+		'| ---: | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+		...result.fixtureAcquisitionPlan.tasks.map(fixtureAcquisitionTaskMarkdownRow),
 		'',
 		'Generated fixture decision evidence:',
 		'',
@@ -1254,6 +1291,7 @@ export function releaseProofOwnerHandoffIndex(
 		missingRequirementCount: result.readiness.missingRequirementCount,
 		fixturePolicy: cloneFixturePolicy(),
 		fixturePolicyEvidence: cloneFixturePolicyEvidence(result.fixturePolicyEvidence),
+		fixtureAcquisitionPlan: cloneFixtureAcquisitionPlan(result.fixtureAcquisitionPlan),
 		generatedFixtureDecisionEvidence: cloneGeneratedFixtureDecisionEvidence(
 			result.generatedFixtureDecisionEvidence,
 		),
@@ -2950,6 +2988,122 @@ function packageActionExternalCandidateEvidenceMarkdownRow(
 		.join('|')
 		.replace(/^/, '|')
 		.replace(/$/, '|')
+}
+
+function fixtureAcquisitionPlan(
+	fixtureEvidence: ReleaseProofFixturePolicyEvidence,
+): ReleaseProofFixtureAcquisitionPlan {
+	const safeOpenCandidate = fixtureEvidence.safeOpen.externalCandidateEvidence[0]
+	const packageActionCandidate = fixtureEvidence.packageAction.externalCandidateEvidence[0]
+	return {
+		ownerLoop: 'product',
+		status: 'ranked-owner-review-required',
+		validationCommand:
+			'bun run fixtures/benchmarks/release-proof-index.ts --no-timings --owner-handoffs-json',
+		taskCount: 3,
+		tasks: [
+			{
+				rank: 1,
+				caseName: 'unknown-part-shared-candidate',
+				relatedArtifacts: ['safe-open-proof', 'package-action-proof'],
+				relatedGates: ['public-edge-fixtures', 'edge-fixture-policy'],
+				task: 'Review whether the ExcelForge Book 1.xlsx sample can be vendored as a public unknown-part fixture with attribution.',
+				evidenceAlreadyPresent:
+					safeOpenCandidate && packageActionCandidate
+						? `safe-open candidate ${safeOpenCandidate.candidateId} and package-action mutation candidate ${packageActionCandidate.candidateId} both identify ${packageActionCandidate.unknownPartPath}`
+						: 'No shared external unknown-part candidate is recorded.',
+				proofStillMissing:
+					'Owner-approved vendoring or rejection decision, attribution policy, tracked fixture location, and harness coverage replacing or supplementing generated unknown-part topology.',
+				validationCommand:
+					'bun test fixtures/benchmarks/release-proof-index.test.ts && bun run fixtures/benchmarks/release-proof-index.ts --no-timings --owner-handoffs-json',
+				competitorOrSpecReference:
+					'ExcelForge advertises patch-only unknown-part preservation; OPC models workbooks as package parts and relationships.',
+				killCriterion:
+					'Do not vendor if license or attribution policy is unclear, workbook contents are unsuitable for a public repo, or the fixture cannot be kept small and reviewable.',
+				ownerDecision:
+					'Product/release accepts as public fixture candidate, requests a different public workbook, or rejects unknown-part public replacement for this release.',
+				boundary:
+					'This task can reduce unknown-part fixture uncertainty, but it does not solve signed workbook evidence or authorize arbitrary unknown-part preservation claims.',
+			},
+			{
+				rank: 2,
+				caseName: 'signed-package',
+				relatedArtifacts: ['safe-open-proof', 'package-action-proof'],
+				relatedGates: ['public-edge-fixtures', 'edge-fixture-policy'],
+				task: 'Acquire or generate under explicit policy a license-clear public signed XLSX package fixture.',
+				evidenceAlreadyPresent:
+					'Tracked fixture scans found signatureOrUnknownMatches=0 for safe-open and signaturePackage=0 for package-action.',
+				proofStillMissing:
+					'Approved public signed workbook bytes or owner acceptance of generated signature topology, plus wording that excludes signature verification, trust, and attestation.',
+				validationCommand:
+					'bun run fixtures/benchmarks/safe-open-fixture-scan.ts --json && bun run fixtures/benchmarks/package-action-fixture-scan.ts --json',
+				competitorOrSpecReference:
+					'OPC digital signatures use signature origin and signature XML parts, but signature trust must be handled by the package consumer.',
+				killCriterion:
+					'Do not use a signed workbook if provenance, redistribution rights, private contents, certificate meaning, or trust wording cannot be reviewed.',
+				ownerDecision:
+					'Product/release either accepts disclosed generated signature topology for narrow package-routing proof or sources an approved public signed workbook.',
+				boundary:
+					'This is topology evidence only. It must not become a signature validation, identity, malware safety, or signed-provenance claim.',
+			},
+			{
+				rank: 3,
+				caseName: 'malformed-package',
+				relatedArtifacts: ['safe-open-proof'],
+				relatedGates: ['public-edge-fixtures'],
+				task: 'Decide whether generated malformed bytes are sufficient for fail-closed rejection proof or whether a public malformed workbook fixture is required.',
+				evidenceAlreadyPresent:
+					'Safe-open proof already includes a generated malformed package rejection path and the tracked scan reports one rejected fixture.',
+				proofStillMissing:
+					'Owner approval for generated bad bytes as rejection-path proof, or an approved public malformed fixture with clear redistribution rights.',
+				validationCommand: 'bun run fixtures/benchmarks/safe-open-proof.ts --no-timings --json',
+				competitorOrSpecReference:
+					'OPC defines package structure; malformed package behavior is an application rejection boundary, not a repair guarantee.',
+				killCriterion:
+					'Do not publish recovery, repair, vendor-equivalence, malware safety, or file-trust wording from malformed rejection evidence.',
+				ownerDecision:
+					'Product/release accepts generated malformed rejection proof for narrow fail-closed wording or requires a public malformed workbook.',
+				boundary:
+					'Malformed proof supports fail-closed rejection only and is lower leverage than unknown-part or signed fixture acquisition.',
+			},
+		],
+		boundary:
+			'Fixture acquisition planning ranks owner work for public proof gaps. It is not fixture approval, not license review, and not gate satisfaction.',
+	}
+}
+
+function fixtureAcquisitionTaskMarkdownRow(row: ReleaseProofFixtureAcquisitionTask): string {
+	return [
+		String(row.rank),
+		row.caseName,
+		row.relatedArtifacts.join(','),
+		row.relatedGates.join(','),
+		row.task,
+		row.evidenceAlreadyPresent,
+		row.proofStillMissing,
+		row.validationCommand,
+		row.competitorOrSpecReference,
+		row.killCriterion,
+		row.ownerDecision,
+		row.boundary,
+	]
+		.map((cell) => ` ${cell} `)
+		.join('|')
+		.replace(/^/, '|')
+		.replace(/$/, '|')
+}
+
+function cloneFixtureAcquisitionPlan(
+	plan: ReleaseProofFixtureAcquisitionPlan,
+): ReleaseProofFixtureAcquisitionPlan {
+	return {
+		...plan,
+		tasks: plan.tasks.map((task) => ({
+			...task,
+			relatedArtifacts: [...task.relatedArtifacts],
+			relatedGates: [...task.relatedGates],
+		})),
+	}
 }
 
 function cloneFixturePolicyEvidence(

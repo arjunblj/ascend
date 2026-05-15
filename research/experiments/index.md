@@ -6,6 +6,7 @@ Updated: 2026-05-15
 
 | Run | Status | Fold-in target |
 | --- | --- | --- |
+| [Fixture acquisition owner ranking](runs/2026/2026-05-15-fixture-acquisition-owner-ranking/log.md) | folded ranked public-fixture acquisition tasks into release-proof-index owner handoff JSON/Markdown while keeping fixture gates blocked | product loop, release loop |
 | [Package action external candidate owner evidence](runs/2026/2026-05-15-package-action-external-candidate-owner-evidence/log.md) | folded ExcelForge unknown-part mutation probe into release-proof-index owner handoff JSON/Markdown with explicit does-not-satisfy-edge-fixture-policy gate effect | product loop, correctness loop, release loop |
 | [Style edit formula binding preservation](runs/2026/2026-05-15-style-edit-formula-binding-preservation/log.md) | folded in regression coverage proving style-only edits preserve representative shared, spill, data-table, and legacy-array formula binding metadata | correctness loop |
 | [Sparkline group validation boundary](runs/2026/2026-05-15-sparkline-group-validation-boundary/log.md) | folded in rejection-first validation for invalid sparkline ranges, empty types, and non-boolean display flags before x14 metadata mutation | correctness loop |

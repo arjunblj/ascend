@@ -8,6 +8,10 @@ Research is no longer a broad sweep. Each direction below must earn its place by
 
 ## Latest Claim Steward Refresh
 
+Proof timestamp: 2026-05-15T21:38:09Z.
+
+The top two claims now have a ranked fixture acquisition plan in the owner-handoff artifact. `fixtureAcquisitionPlan` ranks shared unknown-part candidate review first because it can inform both safe-open and package-action gates, signed-package acquisition second because no tracked signature replacement exists, and malformed-package policy third because the current proof only needs fail-closed rejection wording. This is owner routing, not gate satisfaction: `headlineClaimsAllowed=false`, `implementationSurfacePromotionAllowed=false`, and `missingRequirementCount=9` remain unchanged.
+
 Proof timestamp: 2026-05-15T21:34:51Z.
 
 The package-action owner-review evidence is now more concrete without promoting a new surface. `release-proof-index --owner-handoffs-json` exposes `fixturePolicyEvidence.packageAction.externalCandidateEvidence` for `excelforge-book1-unknown-part-mutation`: MIT manifest evidence, workbook SHA-256 `9c5426fa71ff68cc7e40e19e02b5992daf91da5754ef643d2db2f89bd70bb122`, mutation `setCells Projekt 1!A1 = "probe"`, action counts `passthrough=42`, `regenerate=6`, `add=0`, `drop=0`, `error=1`, fail-closed unknown part `docMetadata/LabelInfo.xml`, and `gateEffect=does-not-satisfy-edge-fixture-policy`.

@@ -1025,6 +1025,67 @@ describe('applyOperation', () => {
 		expect(sheet.cells.get(4, 2)?.value).toEqual(numberValue(30))
 	})
 
+	test('setCells detaches blocked-spill metadata with case-insensitive sheet-qualified ranges', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, {
+			value: errorValue('#SPILL!'),
+			formula: 'SEQUENCE(3)',
+			styleId: sid,
+			formulaInfo: {
+				kind: 'blockedSpill',
+				anchorRef: 'Sheet1!A1',
+				ref: 'sheet1!A1:A3',
+				blockingRefs: ['sheet1!A2'],
+			},
+		})
+		sheet.cells.set(1, 0, { value: stringValue('blocker'), formula: null, styleId: sid })
+
+		const result = applyOperation(wb, {
+			op: 'setCells',
+			sheet: 'Sheet1',
+			updates: [{ ref: 'A2', value: null }],
+		})
+		expectOk(result)
+
+		expect(result.value.affectedCells).toEqual(['A1', 'A2'])
+		expect(sheet.cells.get(0, 0)?.formula).toBe('SEQUENCE(3)')
+		expect(sheet.cells.get(0, 0)?.formulaInfo).toBeUndefined()
+		expect(sheet.cells.get(1, 0)?.value).toEqual(EMPTY)
+	})
+
+	test('setCells detaches data-table metadata with case-insensitive sheet-qualified ranges', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(2, 2, {
+			value: numberValue(10),
+			formula: null,
+			styleId: sid,
+			formulaInfo: {
+				kind: 'dataTable',
+				ref: 'sheet1!C3:C5',
+				dt2D: false,
+				dtr: true,
+				r1: 'A1',
+			},
+		})
+		sheet.cells.set(3, 2, cell(numberValue(20)))
+		sheet.cells.set(4, 2, cell(numberValue(30)))
+
+		const result = applyOperation(wb, {
+			op: 'setCells',
+			sheet: 'Sheet1',
+			updates: [{ ref: 'C4', value: 99 }],
+		})
+		expectOk(result)
+
+		expect(result.value.affectedCells).toEqual(['C3', 'C4'])
+		expect(sheet.cells.get(2, 2)?.formulaInfo).toBeUndefined()
+		expect(sheet.cells.get(2, 2)?.value).toEqual(numberValue(10))
+		expect(sheet.cells.get(3, 2)?.value).toEqual(numberValue(99))
+		expect(sheet.cells.get(4, 2)?.value).toEqual(numberValue(30))
+	})
+
 	test('fillFormula materializes imported shared formula groups before replacement', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

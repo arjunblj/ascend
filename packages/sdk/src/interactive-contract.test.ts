@@ -5710,6 +5710,95 @@ describe('interactive client contract', () => {
 		).toBeUndefined()
 	})
 
+	test('journals expose data-table and blocked-spill preimages with case-insensitive sheet-qualified ranges', () => {
+		const dataTableWb = AscendWorkbook.create()
+		const dataTableSheet = dataTableWb.getWorkbookModel().getSheet('Sheet1')
+		if (!dataTableSheet) throw new Error('missing sheet')
+		dataTableSheet.cells.set(2, 2, {
+			value: numberValue(10),
+			formula: null,
+			styleId: DEFAULT_STYLE_ID,
+			formulaInfo: {
+				kind: 'dataTable',
+				ref: 'sheet1!C3:C5',
+				dt2D: false,
+				dtr: true,
+				r1: 'A1',
+			},
+		})
+		dataTableSheet.cells.set(3, 2, {
+			value: numberValue(20),
+			formula: null,
+			styleId: DEFAULT_STYLE_ID,
+		})
+
+		const dataTableChanged = dataTableWb.apply(
+			[{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'C4', value: 99 }] }],
+			{ journal: true },
+		)
+
+		expect(dataTableChanged.errors).toEqual([])
+		expect(dataTableChanged.journal?.supported).toBe(true)
+		expect(dataTableChanged.journal?.exact).toBe(false)
+		expect(dataTableChanged.journal?.issues).toContainEqual({
+			code: 'LOSSY_INVERSE',
+			message: 'Formula binding metadata for Sheet1!C3 cannot be restored with public operations',
+			surface: 'data-tables',
+			reason: 'formula-binding-metadata',
+			refs: ['Sheet1!C3'],
+		})
+		const dataTablePreimage = dataTableChanged.journal?.entries[0]?.preimages[0]
+		expect(dataTablePreimage?.kind).toBe('cells')
+		if (dataTablePreimage?.kind !== 'cells') throw new Error('missing cells preimage')
+		expect(dataTablePreimage.cells.map((cell) => cell.ref).sort()).toEqual(['C3', 'C4'])
+		expect(
+			dataTableWb.getWorkbookModel().getSheet('Sheet1')?.cells.get(2, 2)?.formulaInfo,
+		).toBeUndefined()
+
+		const blockedSpillWb = AscendWorkbook.create()
+		const blockedSpillSheet = blockedSpillWb.getWorkbookModel().getSheet('Sheet1')
+		if (!blockedSpillSheet) throw new Error('missing sheet')
+		blockedSpillSheet.cells.set(0, 0, {
+			value: errorValue('#SPILL!'),
+			formula: 'SEQUENCE(3)',
+			styleId: DEFAULT_STYLE_ID,
+			formulaInfo: {
+				kind: 'blockedSpill',
+				anchorRef: 'Sheet1!A1',
+				ref: 'sheet1!A1:A3',
+				blockingRefs: ['sheet1!A2'],
+			},
+		})
+		blockedSpillSheet.cells.set(1, 0, {
+			value: stringValue('blocker'),
+			formula: null,
+			styleId: DEFAULT_STYLE_ID,
+		})
+
+		const blockedSpillChanged = blockedSpillWb.apply(
+			[{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A2', value: null }] }],
+			{ journal: true },
+		)
+
+		expect(blockedSpillChanged.errors).toEqual([])
+		expect(blockedSpillChanged.journal?.supported).toBe(true)
+		expect(blockedSpillChanged.journal?.exact).toBe(false)
+		expect(blockedSpillChanged.journal?.issues).toContainEqual({
+			code: 'LOSSY_INVERSE',
+			message: 'Formula binding metadata for Sheet1!A1 cannot be restored with public operations',
+			surface: 'spills',
+			reason: 'formula-binding-metadata',
+			refs: ['Sheet1!A1'],
+		})
+		const blockedSpillPreimage = blockedSpillChanged.journal?.entries[0]?.preimages[0]
+		expect(blockedSpillPreimage?.kind).toBe('cells')
+		if (blockedSpillPreimage?.kind !== 'cells') throw new Error('missing cells preimage')
+		expect(blockedSpillPreimage.cells.map((cell) => cell.ref).sort()).toEqual(['A1', 'A2'])
+		expect(
+			blockedSpillWb.getWorkbookModel().getSheet('Sheet1')?.cells.get(0, 0)?.formulaInfo,
+		).toBeUndefined()
+	})
+
 	test('journals expose lossy escaped dynamic spill member preimages', () => {
 		const wb = AscendWorkbook.create()
 		const sheet = wb.getWorkbookModel().addSheet("Bob's Budget")

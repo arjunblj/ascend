@@ -429,7 +429,7 @@ function formulaBindingRangeContainsCell(
 ): boolean {
 	try {
 		const range = parseRange(refText)
-		if (range.sheet !== undefined && range.sheet !== sheetName) return false
+		if (range.sheet !== undefined && !sameOptionalSheetName(range.sheet, sheetName)) return false
 		return rangeContainsCell(range, ref)
 	} catch {
 		return false

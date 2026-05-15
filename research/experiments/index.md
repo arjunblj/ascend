@@ -6,6 +6,7 @@ Updated: 2026-05-15
 
 | Run | Status | Fold-in target |
 | --- | --- | --- |
+| [Agent first-window progress timeout](runs/2026/2026-05-15-agent-first-window-progress-timeout/log.md) | folded progress JSONL and timeout guard into first-window benchmark harness without changing JSON stdout | performance loop |
 | [Package action generated fixture acceptance matrix](runs/2026/2026-05-15-package-action-generated-fixture-acceptance-matrix/log.md) | folded package-action generated edge fixture acceptance rows into release proof owner handoff JSON while keeping edge-fixture-policy missing | product loop, release loop |
 | [Safe open generated fixture acceptance matrix](runs/2026/2026-05-15-safe-open-generated-fixture-acceptance-matrix/log.md) | folded a case-level safe-open generated-fixture acceptance matrix into release proof owner handoff JSON | product loop, release loop |
 | [Safe open risk family scan evidence](runs/2026/2026-05-15-safe-open-risk-family-scan-evidence/log.md) | folded risk-family counts into tracked safe-open fixture scans so zero signed/unknown replacements have stronger owner evidence | product loop, release loop |

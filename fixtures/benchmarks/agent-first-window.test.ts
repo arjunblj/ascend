@@ -306,6 +306,53 @@ describe('agent first-window benchmark', () => {
 		expect(payload.summary?.tuiFirstPaintMedianMs).toBeUndefined()
 	})
 
+	test('emits progress events to stderr without polluting JSON output', async () => {
+		const proc = Bun.spawn(
+			[
+				Bun.argv[0],
+				runnerPath,
+				'--input-file',
+				'fixtures/xlsx/poi/SampleSS.xlsx',
+				'--range',
+				'A1:D10',
+				'--row-limit',
+				'5',
+				'--repeat',
+				'1',
+				'--warmup',
+				'0',
+				'--only',
+				'capped',
+				'--timeout-ms',
+				'300000',
+				'--progress',
+				'--json',
+			],
+			{ cwd: process.cwd(), stderr: 'pipe', stdout: 'pipe' },
+		)
+		const [stdout, stderr, exitCode] = await Promise.all([
+			new Response(proc.stdout).text(),
+			new Response(proc.stderr).text(),
+			proc.exited,
+		])
+		expect(exitCode, stderr).toBe(0)
+		const payload = JSON.parse(stdout) as {
+			readonly args?: { readonly only?: string }
+			readonly summary?: { readonly cappedOpenWindowMedianMs?: number }
+		}
+		const progressEvents = stderr
+			.trim()
+			.split('\n')
+			.filter(Boolean)
+			.map((line) => JSON.parse(line) as { readonly tool?: string; readonly event?: string })
+
+		expect(payload.args?.only).toBe('capped')
+		expect(payload.summary?.cappedOpenWindowMedianMs).toBeNumber()
+		expect(progressEvents.map((event) => event.event)).toContain('input-ready')
+		expect(progressEvents.map((event) => event.event)).toContain('sample-complete')
+		expect(progressEvents.every((event) => event.tool === 'agent-first-window')).toBe(true)
+	})
+
 	test('runs against an existing input workbook without deleting it', async () => {
 		const proc = Bun.spawn(
 			[

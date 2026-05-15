@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
-import type { StyleId } from '@ascend/core'
+import type { Sheet, StyleId } from '@ascend/core'
 import { createTableId, createWorkbook } from '@ascend/core'
-import { EMPTY, numberValue } from '@ascend/schema'
+import { EMPTY, errorValue, numberValue, stringValue } from '@ascend/schema'
 import {
 	analyzeWorkbook,
 	analyzeWorkbookDependencies,
@@ -515,6 +515,108 @@ describe('analyzeWorkbook', () => {
 		const fresh = analyzeWorkbook(wb)
 		expect([...fresh.formulas]).toEqual(patchedFormulas)
 		expect([...fresh.sharedFormulaGroups]).toEqual(patchedSharedGroups)
+	})
+
+	test('destructive formula-binding edits keep cached analysis equal to full recomputation', () => {
+		const cases: readonly {
+			readonly name: string
+			readonly seed: (sheet: Sheet) => void
+			readonly op: Parameters<typeof applyOperation>[1]
+			readonly affectedCells: readonly string[]
+		}[] = [
+			{
+				name: 'dynamic spill member',
+				seed: (sheet) => {
+					sheet.cells.set(0, 0, {
+						value: numberValue(1),
+						formula: 'SEQUENCE(3)',
+						styleId: sid,
+						formulaInfo: { kind: 'dynamicArray', metadataIndex: 1, collapsed: false },
+					})
+					sheet.cells.set(1, 0, {
+						value: numberValue(2),
+						formula: null,
+						styleId: sid,
+						formulaInfo: {
+							kind: 'spill',
+							anchorRef: 'Sheet1!A1',
+							ref: 'A1:A3',
+							isAnchor: false,
+						},
+					})
+					sheet.cells.set(2, 0, {
+						value: numberValue(3),
+						formula: null,
+						styleId: sid,
+						formulaInfo: {
+							kind: 'spill',
+							anchorRef: 'Sheet1!A1',
+							ref: 'A1:A3',
+							isAnchor: false,
+						},
+					})
+					sheet.cells.set(0, 2, { value: numberValue(9), formula: null, styleId: sid })
+				},
+				op: { op: 'copyRange', sheet: 'Sheet1', source: 'C1', target: 'A2', mode: 'values' },
+				affectedCells: ['A1', 'A2', 'A3'],
+			},
+			{
+				name: 'blocked spill blocker',
+				seed: (sheet) => {
+					sheet.cells.set(0, 0, {
+						value: errorValue('#SPILL!'),
+						formula: 'SEQUENCE(3)',
+						styleId: sid,
+						formulaInfo: {
+							kind: 'blockedSpill',
+							anchorRef: 'Sheet1!A1',
+							ref: 'A1:A3',
+							blockingRefs: ['A2'],
+						},
+					})
+					sheet.cells.set(1, 0, { value: stringValue('blocker'), formula: null, styleId: sid })
+					sheet.cells.set(0, 2, { value: numberValue(9), formula: null, styleId: sid })
+				},
+				op: { op: 'copyRange', sheet: 'Sheet1', source: 'C1', target: 'A2', mode: 'values' },
+				affectedCells: ['A1', 'A2'],
+			},
+			{
+				name: 'data table member',
+				seed: (sheet) => {
+					sheet.cells.set(2, 2, {
+						value: numberValue(10),
+						formula: null,
+						styleId: sid,
+						formulaInfo: { kind: 'dataTable', ref: 'C3:C5', dtr: true, r1: 'A1' },
+					})
+					sheet.cells.set(3, 2, { value: numberValue(20), formula: null, styleId: sid })
+					sheet.cells.set(0, 5, { value: numberValue(9), formula: null, styleId: sid })
+				},
+				op: { op: 'copyRange', sheet: 'Sheet1', source: 'F1', target: 'C4', mode: 'values' },
+				affectedCells: ['C3', 'C4'],
+			},
+		]
+
+		for (const entry of cases) {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			entry.seed(sheet)
+
+			const cached = analyzeWorkbook(wb)
+			const result = applyOperation(wb, entry.op)
+			expect(result.ok, entry.name).toBe(true)
+			if (!result.ok) throw new Error(`${entry.name} edit failed`)
+			expect(result.value.affectedCells, entry.name).toEqual(entry.affectedCells)
+
+			const after = analyzeWorkbook(wb)
+			expect(after, entry.name).toBe(cached)
+			const patchedFormulas = [...after.formulas]
+			const patchedSharedGroups = [...after.sharedFormulaGroups]
+			invalidateWorkbookAnalysis(wb)
+			const fresh = analyzeWorkbook(wb)
+			expect([...fresh.formulas], entry.name).toEqual(patchedFormulas)
+			expect([...fresh.sharedFormulaGroups], entry.name).toEqual(patchedSharedGroups)
+		}
 	})
 
 	test('analyzeWorkbook returns cached result on second call (formulas parsed once, shared across tools)', () => {

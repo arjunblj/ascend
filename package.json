@@ -17,6 +17,7 @@
 		"build": "bun run build:types && bun run build:js",
 		"release:sdk:smoke": "bun run scripts/release-sdk-smoke.ts",
 		"release:apps:smoke": "bun run scripts/release-apps-smoke.ts",
+		"release:rc:gate": "bun run scripts/release-rc-gate.ts",
 		"lint": "biome check",
 		"lint:fix": "biome check --write",
 		"test": "bun test --recursive --parallel=8 --only-failures",

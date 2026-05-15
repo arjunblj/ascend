@@ -22,6 +22,7 @@ Latest proof refresh, 2026-05-15:
 - Each `implementationHandoff` now carries `proofRequired`: fixture, benchmark, surface, validation gate, competitor contrast, honest boundary, and kill criterion. This keeps the claim ladder product-shaped in the machine-readable release artifact, not just in prose.
 - `release-proof-index` now emits `deferredClaims` for lower-ranked directions, so formula rename, columnar sidecars, oracle routing, viewport history, token-bounded agent view, and agent traces stay out of top implementation handoff until their proof gaps close.
 - `practical-latency-contracts --input-preset public-tracked` can now generate a tracked-harness edit workbook for edit/verify phases while labeling it as generated evidence. This improves performance-owner reproducibility, but practical latency remains excluded from release proof until owner-approved tracked-clean threshold wording exists.
+- `agent-phase-profile` now records normal and prepared commit output workbook byte medians alongside JSON payload bytes, giving performance owners a clearer edit/verify profile without promoting latency or size thresholds.
 
 ## External References
 

@@ -37,6 +37,8 @@ describe('agent phase profile benchmark', () => {
 				readonly sharedCommitMedianMs?: number
 				readonly sharedTotalMedianMs?: number
 				readonly sharedWorkflowSpeedupVsCold?: number
+				readonly commitOutputBytesMedian?: number
+				readonly sharedCommitOutputBytesMedian?: number
 				readonly operationCountMedian?: number
 				readonly updateCountMedian?: number
 				readonly changedCellsMedian?: number
@@ -59,6 +61,8 @@ describe('agent phase profile benchmark', () => {
 		expect(payload.summary?.sharedCommitMedianMs).toBeNumber()
 		expect(payload.summary?.sharedTotalMedianMs).toBeNumber()
 		expect(payload.summary?.sharedWorkflowSpeedupVsCold).toBeNumber()
+		expect(payload.summary?.commitOutputBytesMedian).toBeGreaterThan(100)
+		expect(payload.summary?.sharedCommitOutputBytesMedian).toBeGreaterThan(100)
 		expect(payload.summary?.operationCountMedian).toBe(1)
 		expect(payload.summary?.updateCountMedian).toBe(12)
 		expect(payload.summary?.changedCellsMedian).toBe(12)
@@ -114,6 +118,8 @@ describe('agent phase profile benchmark', () => {
 			readonly summary?: {
 				readonly sharedTotalMedianMs?: number
 				readonly updateCountMedian?: number
+				readonly commitOutputBytesMedian?: number
+				readonly sharedCommitOutputBytesMedian?: number
 				readonly sharedChangedCellsMedian?: number
 				readonly postWriteValid?: boolean
 				readonly sharedPostWriteValid?: boolean
@@ -131,6 +137,8 @@ describe('agent phase profile benchmark', () => {
 		})
 		expect(payload.summary?.sharedTotalMedianMs).toBeNumber()
 		expect(payload.summary?.updateCountMedian).toBe(1)
+		expect(payload.summary?.commitOutputBytesMedian).toBeGreaterThan(100)
+		expect(payload.summary?.sharedCommitOutputBytesMedian).toBeGreaterThan(100)
 		expect(payload.summary?.sharedChangedCellsMedian).toBe(1)
 		expect(payload.summary?.postWriteValid).toBe(true)
 		expect(payload.summary?.sharedPostWriteValid).toBe(true)

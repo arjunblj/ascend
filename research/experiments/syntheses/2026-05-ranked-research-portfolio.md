@@ -130,7 +130,7 @@ Decision: formula intelligence, retained viewport patches, token-bounded agent v
 
 ## Current Proof Refresh
 
-Timestamp: 2026-05-15T05:52:35Z local proof run.
+Timestamp: 2026-05-15T06:24:12Z local proof run.
 
 This refresh answers the latest portfolio question directly: the top one or two highest-leverage unknowns are still the two release-claim candidates, not another formula rename or sidecar surface.
 
@@ -203,6 +203,39 @@ Current gate:
 | Top owner action rank 30 | `safe-open-proof/release-latency-run` |
 
 Decision: the portfolio should hand off the top two claims to owner loops for proof packaging and boundary approval. Research should not promote formula rename, columnar sidecars, or another release surface during this block.
+
+### Formula Rejection Proof
+
+Proof command:
+
+```bash
+bun run fixtures/benchmarks/formula-assist-proof.ts --sample 250 --no-timings --json
+```
+
+Current proof:
+
+| Metric | Value |
+| --- | ---: |
+| Public formulas discovered | 1685 |
+| Sampled formulas | 1685 |
+| Reference spans | 2322 |
+| Binding roles | 25 |
+| Prepare-rename OK targets | 3 |
+| Prepare-rename refusals | 1692 |
+| `workbook-context-required` refusals | 4 |
+| `reference-target-not-renameable` refusals | 1403 |
+
+Decision: keep formula intelligence at rank 3 as a rejection-first primitives claim only. The proof supports formula-local LET guard behavior and refusal classification. It does not support edit-producing rename, workbook-context defined-name rename, table-column rename, sheet/range rename, external-ref rename, or broader formula IDE claims.
+
+### Tiny Correctness Fix Completed
+
+The in-flight verifier false-positive fix is complete:
+
+```bash
+a2860cbf fix(verify): accept case-insensitive binding refs
+```
+
+This supports correctness proof hygiene for formula-binding metadata whose sheet-qualified ranges differ only by sheet-name casing. It does not change the release handoff ranking and does not add any formula rename surface.
 
 ### Provenance Boundary Audit
 

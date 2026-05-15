@@ -25,6 +25,7 @@ Latest proof refresh, 2026-05-15:
 - `agent-phase-profile` now records normal and prepared commit output workbook byte medians alongside JSON payload bytes, giving performance owners a clearer edit/verify profile without promoting latency or size thresholds.
 - Current owner-handoff rerun keeps the gate fail-closed: `headlineClaimsAllowed=false`, `implementationSurfacePromotionAllowed=false`, 9 missing owner requirements, and exactly two implementation handoffs: safe unknown workbook opening and auditable package-part mutation.
 - `agent-phase-profile --progress --timeout-ms` can now stream phase-event NDJSON while keeping final JSON on stdout, giving performance owners partial progress evidence for longer local probes without promoting latency claims.
+- Blocker grouping from `release-proof-index --json`: product has 2 fixture-decision blockers, correctness has 1 boundary-approval blocker, performance has 1 validation-run blocker plus 1 streaming-boundary decision, and release owns 4 publication-policy blockers.
 
 ## External References
 

@@ -112,6 +112,7 @@ function parseArgs(): Args {
 	if (!WORKLOADS.has(workload)) throw new Error(`Unsupported --workload "${workload}"`)
 	const inputFile = readOption(process.argv, '--input-file')
 	const sheet = readOption(process.argv, '--sheet')
+	const timeoutMs = readOption(process.argv, '--timeout-ms')
 	return {
 		rows: positiveInt(readOption(process.argv, '--rows'), 65_536),
 		cols: positiveInt(readOption(process.argv, '--cols'), 10),
@@ -121,9 +122,7 @@ function parseArgs(): Args {
 		workload: workload as WorkloadName,
 		repeat: positiveInt(readOption(process.argv, '--repeat'), 5),
 		warmup: nonNegativeInt(readOption(process.argv, '--warmup'), 1),
-		...(readOption(process.argv, '--timeout-ms') !== undefined
-			? { timeoutMs: positiveInt(readOption(process.argv, '--timeout-ms'), 0) }
-			: {}),
+		...(timeoutMs !== undefined ? { timeoutMs: positiveInt(timeoutMs, 300_000) } : {}),
 		progress: hasFlag(process.argv, '--progress'),
 		json: hasFlag(process.argv, '--json'),
 	}

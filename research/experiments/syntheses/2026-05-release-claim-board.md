@@ -23,6 +23,8 @@ Latest proof refresh, 2026-05-15:
 - `release-proof-index` now emits `deferredClaims` for lower-ranked directions, so formula rename, columnar sidecars, oracle routing, viewport history, token-bounded agent view, and agent traces stay out of top implementation handoff until their proof gaps close.
 - `practical-latency-contracts --input-preset public-tracked` can now generate a tracked-harness edit workbook for edit/verify phases while labeling it as generated evidence. This improves performance-owner reproducibility, but practical latency remains excluded from release proof until owner-approved tracked-clean threshold wording exists.
 - `agent-phase-profile` now records normal and prepared commit output workbook byte medians alongside JSON payload bytes, giving performance owners a clearer edit/verify profile without promoting latency or size thresholds.
+- Current owner-handoff rerun keeps the gate fail-closed: `headlineClaimsAllowed=false`, `implementationSurfacePromotionAllowed=false`, 9 missing owner requirements, and exactly two implementation handoffs: safe unknown workbook opening and auditable package-part mutation.
+- `agent-phase-profile --progress --timeout-ms` can now stream phase-event NDJSON while keeping final JSON on stdout, giving performance owners partial progress evidence for longer local probes without promoting latency claims.
 
 ## External References
 

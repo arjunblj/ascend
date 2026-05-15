@@ -145,4 +145,50 @@ describe('agent phase profile benchmark', () => {
 		expect(payload.summary?.sharedCommitPhaseMedianMs?.write).toBeNumber()
 		expect(payload.summary?.sharedCommitTimingMedianMs?.toBytesMs).toBeNumber()
 	}, 20_000)
+
+	test('can stream progress phase events while enforcing a timeout guard', async () => {
+		const proc = Bun.spawn(
+			[
+				Bun.argv[0],
+				runnerPath,
+				'--rows',
+				'40',
+				'--cols',
+				'4',
+				'--updates',
+				'2',
+				'--repeat',
+				'1',
+				'--warmup',
+				'0',
+				'--timeout-ms',
+				'300000',
+				'--progress',
+				'--json',
+			],
+			{ cwd: process.cwd(), stderr: 'pipe', stdout: 'pipe' },
+		)
+		const [stdout, stderr, exitCode] = await Promise.all([
+			new Response(proc.stdout).text(),
+			new Response(proc.stderr).text(),
+			proc.exited,
+		])
+		expect(exitCode, stderr).toBe(0)
+		const payload = JSON.parse(stdout) as {
+			readonly summary?: {
+				readonly postWriteValid?: boolean
+				readonly sharedPostWriteValid?: boolean
+			}
+		}
+		const events = stderr
+			.trim()
+			.split('\n')
+			.filter(Boolean)
+			.map((line) => JSON.parse(line) as { readonly sample?: number; readonly phase?: string })
+		expect(events).toContainEqual(expect.objectContaining({ sample: 1 }))
+		expect(events).toContainEqual(expect.objectContaining({ sample: 1, phase: 'write' }))
+		expect(events).toContainEqual(expect.objectContaining({ sample: 1, phase: 'post-write' }))
+		expect(payload.summary?.postWriteValid).toBe(true)
+		expect(payload.summary?.sharedPostWriteValid).toBe(true)
+	}, 20_000)
 })

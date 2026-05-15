@@ -7264,8 +7264,7 @@ describe('applyOperation', () => {
 		})
 		expectOk(result)
 
-		expect(result.value.affectedCells).toContain('D1')
-		expect(result.value.affectedCells).toContain('D2')
+		expect(result.value.affectedCells).toEqual(['D1', 'D2', 'A2', 'B2', 'C2'])
 		expect(sheet.cells.get(0, 3)?.formula).toBe('B1*2')
 		expect(sheet.cells.get(1, 3)?.formula).toBe('B2*2')
 		expect(sheet.cells.get(0, 3)?.formulaInfo).toBeUndefined()

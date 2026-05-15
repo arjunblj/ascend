@@ -2296,15 +2296,6 @@ describe('Ascend API server', () => {
 				},
 				{ op: 'setTabColor', sheet: 'Sheet1', color: '00FF00' },
 				{ op: 'freezePane', sheet: 'Sheet1', row: 2, col: 0 },
-				{
-					op: 'setDocumentProperties',
-					mode: 'replace',
-					properties: {
-						core: { title: 'After' },
-						app: { company: 'Changed' },
-						custom: [{ name: 'Reviewed', value: true, type: 'bool' }],
-					},
-				},
 			],
 		})
 
@@ -2349,9 +2340,9 @@ describe('Ascend API server', () => {
 		expect(changed.sheet('Sheet1')?.frozenRows).toBe(2)
 		expect(changed.sheet('Sheet1')?.frozenCols).toBe(0)
 		expect(changed.inspect().documentProperties).toMatchObject({
-			core: { title: 'After' },
-			app: { company: 'Changed' },
-			custom: [{ name: 'Reviewed', value: true, type: 'bool' }],
+			core: { title: 'Before' },
+			app: { company: 'Ascend' },
+			custom: [{ name: 'Reviewed', value: false, type: 'bool' }],
 		})
 
 		const rollback = changed.apply(inverse.value)

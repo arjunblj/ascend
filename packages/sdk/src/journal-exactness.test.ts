@@ -1144,6 +1144,113 @@ describe('mutation journal exactness model', () => {
 			)
 		}
 	})
+
+	test('saved-source package state journals are lossy when inverse ops cannot restore bytes', async () => {
+		const cases: readonly {
+			readonly name: string
+			readonly seedOps: readonly Operation[]
+			readonly ops: readonly Operation[]
+			readonly cleanCalcState?: boolean
+			readonly opName: Operation['op']
+			readonly refs: readonly string[]
+		}[] = [
+			{
+				name: 'addSheet',
+				seedOps: [],
+				ops: [{ op: 'addSheet', name: 'Added' }],
+				cleanCalcState: true,
+				opName: 'addSheet',
+				refs: ['sheet:Added'],
+			},
+			{
+				name: 'renameSheet',
+				seedOps: [],
+				ops: [{ op: 'renameSheet', sheet: 'Sheet1', newName: 'Renamed' }],
+				cleanCalcState: true,
+				opName: 'renameSheet',
+				refs: ['sheet:Sheet1', 'sheet:Renamed'],
+			},
+			{
+				name: 'moveSheet',
+				seedOps: [{ op: 'addSheet', name: 'Second' }],
+				ops: [{ op: 'moveSheet', sheet: 'Second', position: 0 }],
+				cleanCalcState: true,
+				opName: 'moveSheet',
+				refs: ['sheet:Second'],
+			},
+			{
+				name: 'copySheet',
+				seedOps: [],
+				ops: [{ op: 'copySheet', sheet: 'Sheet1', newName: 'Copy' }],
+				cleanCalcState: true,
+				opName: 'copySheet',
+				refs: ['sheet:Sheet1', 'sheet:Copy'],
+			},
+			{
+				name: 'deleteSheet',
+				seedOps: [{ op: 'addSheet', name: 'Empty' }],
+				ops: [{ op: 'deleteSheet', sheet: 'Empty' }],
+				cleanCalcState: true,
+				opName: 'deleteSheet',
+				refs: ['sheet:Empty'],
+			},
+			{
+				name: 'setDocumentProperties',
+				seedOps: [
+					{
+						op: 'setDocumentProperties',
+						mode: 'replace',
+						properties: {
+							core: { title: 'Before' },
+							app: { company: 'Ascend' },
+							custom: [{ name: 'Reviewed', value: false, type: 'bool' }],
+						},
+					},
+				],
+				ops: [
+					{
+						op: 'setDocumentProperties',
+						mode: 'replace',
+						properties: {
+							core: { title: 'After' },
+							app: { company: 'Changed' },
+							custom: [{ name: 'Reviewed', value: true, type: 'bool' }],
+						},
+					},
+				],
+				opName: 'setDocumentProperties',
+				refs: ['workbook:documentProperties'],
+			},
+		]
+
+		for (const entry of cases) {
+			const seeded = AscendWorkbook.create()
+			applyExact(seeded, entry.seedOps)
+			if (entry.cleanCalcState) expect(seeded.recalc().errors, entry.name).toEqual([])
+			const beforeBytes = seeded.toBytes()
+			const wb = await AscendWorkbook.open(beforeBytes)
+			const changed = wb.apply(entry.ops, { journal: true })
+			expect(changed.errors, entry.name).toEqual([])
+			expect(changed.journal?.supported, entry.name).toBe(true)
+			expect(changed.journal?.exact, entry.name).toBe(false)
+			expect(changed.journal?.issues, entry.name).toEqual([
+				{
+					code: 'LOSSY_INVERSE',
+					message: `${entry.opName} changes saved package state that public inverse operations cannot restore byte-for-byte`,
+					surface: 'package-parts',
+					reason: 'package-part-preservation',
+					refs: entry.refs,
+				},
+			])
+
+			const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+			expect(undo.errors, entry.name).toEqual([])
+			expect(
+				Buffer.compare(Buffer.from(wb.toBytes()), Buffer.from(beforeBytes)),
+				entry.name,
+			).not.toBe(0)
+		}
+	})
 })
 
 function lossyDataValidationDefaultJournal(): MutationJournal {

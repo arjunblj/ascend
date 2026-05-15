@@ -718,7 +718,7 @@ export const MUTATION_JOURNAL_OPERATION_SURFACE_RULES = {
 			'charts',
 		],
 	},
-	addSheet: { primarySurface: 'sheet-layout', surfaces: ['sheet-layout'] },
+	addSheet: { primarySurface: 'sheet-layout', surfaces: ['sheet-layout', 'package-parts'] },
 	deleteSheet: {
 		primarySurface: 'sheet-layout',
 		surfaces: [
@@ -764,9 +764,10 @@ export const MUTATION_JOURNAL_OPERATION_SURFACE_RULES = {
 			'data-validations',
 			'conditional-formats',
 			'charts',
+			'package-parts',
 		],
 	},
-	moveSheet: { primarySurface: 'sheet-layout', surfaces: ['sheet-layout'] },
+	moveSheet: { primarySurface: 'sheet-layout', surfaces: ['sheet-layout', 'package-parts'] },
 	createTable: { primarySurface: 'tables', surfaces: ['tables'] },
 	appendRows: { primarySurface: 'tables', surfaces: ['tables', 'cells', 'formulas'] },
 	sortRange: {
@@ -904,7 +905,10 @@ export const MUTATION_JOURNAL_OPERATION_SURFACE_RULES = {
 		],
 	},
 	setWorkbookProperties: { primarySurface: 'workbook-metadata', surfaces: ['workbook-metadata'] },
-	setDocumentProperties: { primarySurface: 'workbook-metadata', surfaces: ['workbook-metadata'] },
+	setDocumentProperties: {
+		primarySurface: 'workbook-metadata',
+		surfaces: ['workbook-metadata', 'package-parts'],
+	},
 	setWorkbookView: { primarySurface: 'workbook-metadata', surfaces: ['workbook-metadata'] },
 	setCalcSettings: { primarySurface: 'workbook-metadata', surfaces: ['workbook-metadata'] },
 	setTheme: { primarySurface: 'workbook-metadata', surfaces: ['workbook-metadata'] },
@@ -1827,7 +1831,7 @@ function buildSupportedJournalEntry(
 				op,
 				inverseOps: [{ op: 'deleteSheet', sheet: op.name }],
 				preimages: [],
-				issues: [],
+				issues: savedSourcePackageStateIssues(workbook, op.op, [`sheet:${op.name}`]),
 			}
 		case 'deleteSheet':
 			return journalDeleteSheet(workbook, op, opIndex)
@@ -1837,7 +1841,10 @@ function buildSupportedJournalEntry(
 				op,
 				inverseOps: [{ op: 'deleteSheet', sheet: op.newName }],
 				preimages: [],
-				issues: [],
+				issues: savedSourcePackageStateIssues(workbook, op.op, [
+					`sheet:${op.sheet}`,
+					`sheet:${op.newName}`,
+				]),
 			}
 		case 'setRowHeight':
 			return journalSetSheetLayout(workbook, op, opIndex, 'row')
@@ -1962,6 +1969,23 @@ function journalSetSheetProtection(
 	}
 }
 
+function savedSourcePackageStateIssues(
+	workbook: Workbook,
+	opName: MutationJournalOperationName,
+	refs: readonly string[] = [],
+): MutationJournalIssue[] {
+	if (!workbook.sourceArchiveBytes) return []
+	return [
+		{
+			code: 'LOSSY_INVERSE',
+			message: `${opName} changes saved package state that public inverse operations cannot restore byte-for-byte`,
+			surface: 'package-parts',
+			reason: 'package-part-preservation',
+			...(refs.length > 0 ? { refs } : {}),
+		},
+	]
+}
+
 function journalDeleteSheet(
 	workbook: Workbook,
 	op: Extract<Operation, { op: 'deleteSheet' }>,
@@ -1990,21 +2014,23 @@ function journalDeleteSheet(
 		}
 	}
 	const refs = sheetDeleteLossRefs(workbook, sheet)
+	const issues: MutationJournalIssue[] =
+		refs.length === 0
+			? []
+			: [
+					{
+						code: 'LOSSY_INVERSE',
+						message: `Deleted sheet ${op.sheet} cannot be fully restored with public operations`,
+						refs,
+					},
+				]
+	issues.push(...savedSourcePackageStateIssues(workbook, op.op, [`sheet:${op.sheet}`]))
 	return {
 		opIndex,
 		op,
 		inverseOps: [{ op: 'addSheet', name: op.sheet, position }],
 		preimages: [{ kind: 'sheet-delete', sheetDelete: preimage }],
-		issues:
-			refs.length === 0
-				? []
-				: [
-						{
-							code: 'LOSSY_INVERSE',
-							message: `Deleted sheet ${op.sheet} cannot be fully restored with public operations`,
-							refs,
-						},
-					],
+		issues,
 	}
 }
 
@@ -2020,7 +2046,7 @@ function journalMoveSheet(
 	}
 	const issues: MutationJournalIssue[] =
 		position >= 0
-			? []
+			? [...savedSourcePackageStateIssues(workbook, op.op, [`sheet:${op.sheet}`])]
 			: [
 					{
 						code: 'UNSUPPORTED_VALUE',
@@ -2998,12 +3024,16 @@ function journalRenameSheet(
 	const formulaBindings = formulaBindingJournalAddendum(
 		workbookFormulaBindingCellPreimages(workbook),
 	)
+	const issues = [
+		...formulaBindings.issues,
+		...savedSourcePackageStateIssues(workbook, op.op, [`sheet:${op.sheet}`, `sheet:${op.newName}`]),
+	]
 	return {
 		opIndex,
 		op,
 		inverseOps: [{ op: 'renameSheet', sheet: op.newName, newName: op.sheet }],
 		preimages: formulaBindings.preimages,
-		issues: formulaBindings.issues,
+		issues,
 	}
 }
 
@@ -3695,7 +3725,7 @@ function journalSetDocumentProperties(
 		op,
 		inverseOps: [{ op: 'setDocumentProperties', properties: preimage.properties, mode: 'replace' }],
 		preimages: [{ kind: 'document-properties', documentProperties: preimage }],
-		issues: [],
+		issues: savedSourcePackageStateIssues(workbook, op.op, ['workbook:documentProperties']),
 	}
 }
 

@@ -218,6 +218,7 @@ describe('mutation journal exactness model', () => {
 		const journals = [
 			lossyDataValidationDefaultJournal(),
 			lossyDataValidationDeleteOrderJournal(),
+			lossyDataValidationDuplicateDeleteJournal(),
 			lossyLegacyCommentDrawingJournal(),
 			lossySetCommentLegacyDrawingJournal(),
 			lossyCreatedLayoutJournal(),
@@ -228,6 +229,7 @@ describe('mutation journal exactness model', () => {
 			lossyConditionalFormatOrderJournal(),
 			lossyConditionalFormatReplacementOrderJournal(),
 			lossyConditionalFormatDeleteOrderJournal(),
+			lossyConditionalFormatDuplicateDeleteJournal(),
 			lossyAutoFilterJournal(),
 			lossyPageSetupJournal(),
 			lossyX14TransferJournal(),
@@ -287,6 +289,19 @@ describe('mutation journal exactness model', () => {
 		})
 	})
 
+	test('classifies duplicate data validation deletion as metadata duplicate', () => {
+		const journal = lossyDataValidationDuplicateDeleteJournal()
+		expect(journal.exact).toBe(false)
+		expect(journal.issues).toContainEqual({
+			code: 'LOSSY_INVERSE',
+			message:
+				'Duplicate data validation metadata on Sheet1 cannot be restored exactly with public operations',
+			surface: 'data-validations',
+			reason: 'metadata-duplicate',
+			refs: ['Sheet1!A1:A1'],
+		})
+	})
+
 	test('classifies conditional format replacement order as metadata order', () => {
 		const journal = lossyConditionalFormatReplacementOrderJournal()
 		expect(journal.exact).toBe(false)
@@ -310,6 +325,19 @@ describe('mutation journal exactness model', () => {
 			surface: 'conditional-formats',
 			reason: 'metadata-order',
 			refs: ['Sheet1!A1:A2'],
+		})
+	})
+
+	test('classifies duplicate conditional format deletion as metadata duplicate', () => {
+		const journal = lossyConditionalFormatDuplicateDeleteJournal()
+		expect(journal.exact).toBe(false)
+		expect(journal.issues).toContainEqual({
+			code: 'LOSSY_INVERSE',
+			message:
+				'Duplicate conditional format metadata on Sheet1 cannot be restored exactly with public operations',
+			surface: 'conditional-formats',
+			reason: 'metadata-duplicate',
+			refs: ['Sheet1!A1:A1'],
 		})
 	})
 
@@ -1798,6 +1826,19 @@ function dataValidationOrderWorkbook(): AscendWorkbook {
 	return wb
 }
 
+function lossyDataValidationDuplicateDeleteJournal(): MutationJournal {
+	const wb = AscendWorkbook.create()
+	const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+	if (!sheet) throw new Error('missing sheet')
+	sheet.dataValidations.push(
+		{ sqref: 'A1:A1', type: 'whole', formula1: '1', allowBlank: true, showErrorMessage: true },
+		{ sqref: 'A1:A1', type: 'whole', formula1: '2', allowBlank: true, showErrorMessage: true },
+	)
+	return buildMutationJournal(wb.getWorkbookModel(), [
+		{ op: 'deleteDataValidation', sheet: 'Sheet1', range: 'A1:A1' },
+	])
+}
+
 function lossyLegacyCommentDrawingJournal(): MutationJournal {
 	const wb = AscendWorkbook.create()
 	const sheet = wb.getWorkbookModel().getSheet('Sheet1')
@@ -1961,6 +2002,19 @@ function lossyConditionalFormatDeleteOrderJournal(): MutationJournal {
 	])
 	return buildMutationJournal(wb.getWorkbookModel(), [
 		{ op: 'deleteConditionalFormat', sheet: 'Sheet1', range: 'A1:A2' },
+	])
+}
+
+function lossyConditionalFormatDuplicateDeleteJournal(): MutationJournal {
+	const wb = AscendWorkbook.create()
+	const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+	if (!sheet) throw new Error('missing sheet')
+	sheet.conditionalFormats.push(
+		{ sqref: 'A1:A1', rules: [{ type: 'expression', formulas: ['A1>0'] }] },
+		{ sqref: 'A1:A1', rules: [{ type: 'expression', formulas: ['A1<0'] }] },
+	)
+	return buildMutationJournal(wb.getWorkbookModel(), [
+		{ op: 'deleteConditionalFormat', sheet: 'Sheet1', range: 'A1:A1' },
 	])
 }
 

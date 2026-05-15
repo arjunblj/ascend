@@ -4105,6 +4105,20 @@ function dataValidationRestoreOrderIssues(
 	const sheet = workbook.getSheet(sheetName)
 	if (!sheet) return []
 	const ranges = new Set(validations.map((validation) => validation.range))
+	const duplicateRanges = [...ranges].filter(
+		(range) => sheet.dataValidations.filter((validation) => validation.sqref === range).length > 1,
+	)
+	if (duplicateRanges.length > 0) {
+		return [
+			{
+				code: 'LOSSY_INVERSE',
+				message: `Duplicate data validation metadata on ${sheetName} cannot be restored exactly with public operations`,
+				surface: 'data-validations',
+				reason: 'metadata-duplicate',
+				refs: duplicateRanges.map((range) => `${sheetName}!${range}`),
+			},
+		]
+	}
 	const indexes = sheet.dataValidations
 		.map((validation, index) => (ranges.has(validation.sqref) ? index : -1))
 		.filter((index) => index >= 0)
@@ -4842,6 +4856,18 @@ function conditionalFormatRestoreOrderIssues(
 	if (formats.length === 0) return []
 	const sheet = workbook.getSheet(sheetName)
 	if (!sheet) return []
+	const duplicateRanges = duplicateStrings(formats.map((format) => format.sqref))
+	if (duplicateRanges.length > 0) {
+		return [
+			{
+				code: 'LOSSY_INVERSE',
+				message: `Duplicate conditional format metadata on ${sheetName} cannot be restored exactly with public operations`,
+				surface: 'conditional-formats',
+				reason: 'metadata-duplicate',
+				refs: duplicateRanges.map((range) => `${sheetName}!${range}`),
+			},
+		]
+	}
 	const ranges = new Set(formats.map((format) => format.sqref))
 	const indexes = sheet.conditionalFormats
 		.map((format, index) => (ranges.has(format.sqref) ? index : -1))

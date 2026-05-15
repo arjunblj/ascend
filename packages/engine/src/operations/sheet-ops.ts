@@ -144,6 +144,7 @@ export function handleCopySheet(
 	newSheet.ensureWritable()
 	newSheet.preservedXml = null
 	retargetCopiedSheetFormulaBindings(newSheet, source.name, op.newName)
+	rewriteSheetMetadataFormulasForRename(newSheet, source.name, op.newName)
 	retargetCopiedSheetDrawingParts(workbook, newSheet)
 	retargetCopiedSheetImageTargets(workbook, newSheet)
 	const chartPartPaths = cloneChartsForCopiedSheet(workbook, source.name, op.newName)

@@ -1254,11 +1254,13 @@ export function rewriteSheetMetadataFormulasForRename(
 	oldName: string,
 	newName: string,
 ): void {
+	const rewrite = (formula: string | undefined): string | undefined =>
+		rewriteFormulaTextForRename(formula, oldName, newName)
 	for (let i = 0; i < sheet.dataValidations.length; i++) {
 		const validation = sheet.dataValidations[i]
 		if (!validation) continue
-		const formula1 = rewriteFormulaTextForRename(validation.formula1, oldName, newName)
-		const formula2 = rewriteFormulaTextForRename(validation.formula2, oldName, newName)
+		const formula1 = rewrite(validation.formula1)
+		const formula2 = rewrite(validation.formula2)
 		sheet.dataValidations[i] = {
 			...validation,
 			...(formula1 !== undefined ? { formula1 } : {}),
@@ -1270,24 +1272,33 @@ export function rewriteSheetMetadataFormulasForRename(
 		if (!format) continue
 		sheet.conditionalFormats[i] = {
 			...format,
-			rules: format.rules.map((rule) => ({
-				...rule,
-				formulas: rule.formulas.map(
-					(formula) => rewriteFormulaTextForRename(formula, oldName, newName) ?? formula,
-				),
-			})),
+			rules: format.rules.map((rule) => rewriteConditionalFormatRuleWith(rule, rewrite)),
+		}
+	}
+	for (let i = 0; i < sheet.x14DataValidations.length; i++) {
+		const validation = sheet.x14DataValidations[i]
+		if (!validation || validation.deleted) continue
+		const formula1 = rewrite(validation.formula1)
+		const formula2 = rewrite(validation.formula2)
+		sheet.x14DataValidations[i] = {
+			...validation,
+			...(formula1 !== undefined ? { formula1 } : {}),
+			...(formula2 !== undefined ? { formula2 } : {}),
+		}
+	}
+	for (let i = 0; i < sheet.x14ConditionalFormats.length; i++) {
+		const format = sheet.x14ConditionalFormats[i]
+		if (!format || format.deleted) continue
+		sheet.x14ConditionalFormats[i] = {
+			...rewriteX14ConditionalFormatWith(format, rewrite),
 		}
 	}
 	for (let i = 0; i < sheet.tables.length; i++) {
 		const table = sheet.tables[i]
 		if (!table) continue
 		const columns = table.columns.map((column) => {
-			const formula = rewriteFormulaTextForRename(column.formula, oldName, newName)
-			const totalsRowFormula = rewriteFormulaTextForRename(
-				column.totalsRowFormula,
-				oldName,
-				newName,
-			)
+			const formula = rewrite(column.formula)
+			const totalsRowFormula = rewrite(column.totalsRowFormula)
 			return {
 				...column,
 				...(formula !== undefined ? { formula } : {}),

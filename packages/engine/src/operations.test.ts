@@ -6624,6 +6624,73 @@ describe('applyOperation', () => {
 		expect(source.cells.get(3, 0)?.formula).toBe('SUM(Sheet1!C4:Sheet1!D5)')
 	})
 
+	test('copySheet retargets copied worksheet metadata formulas', () => {
+		const wb = createWorkbook()
+		const source = wb.addSheet('Data')
+		source.dataValidations.push({
+			sqref: 'A1',
+			type: 'list',
+			formula1: 'data!B1:B3',
+			formula2: 'C1:C3',
+		})
+		source.conditionalFormats.push({
+			sqref: 'A1:A3',
+			rules: [
+				{
+					type: 'expression',
+					formulas: ['data!B1>0'],
+					colorScale: {
+						cfvo: [{ type: 'formula', value: 'data!C1' }],
+						colors: [{ rgb: 'FFFF0000' }],
+					},
+					dataBar: { cfvo: [{ type: 'formula', value: 'data!D1' }] },
+					iconSet: { cfvo: [{ type: 'formula', value: 'data!E1' }] },
+				},
+			],
+		})
+		source.x14DataValidations.push({
+			index: 0,
+			sqref: 'B1',
+			type: 'list',
+			formula1: 'data!B1:B3',
+			formula2: 'C1:C3',
+		})
+		source.x14ConditionalFormats.push({
+			index: 0,
+			sqref: 'B1:B3',
+			formulas: ['data!B1>0'],
+			colorScale: {
+				cfvo: [{ type: 'formula', value: 'data!C1' }],
+				colors: [{ rgb: 'FF63BE7B' }],
+			},
+			dataBar: { cfvo: [{ type: 'formula', value: 'data!D1' }] },
+			iconSet: { cfvo: [{ type: 'formula', value: 'data!E1' }] },
+		})
+
+		expectOk(applyOperation(wb, { op: 'copySheet', sheet: 'Data', newName: 'Copy' }))
+
+		const copy = wb.getSheet('Copy')
+		expect(copy?.dataValidations[0]).toMatchObject({
+			formula1: 'Copy!B1:B3',
+			formula2: 'C1:C3',
+		})
+		expect(copy?.conditionalFormats[0]?.rules[0]?.formulas).toEqual(['Copy!B1>0'])
+		expect(copy?.conditionalFormats[0]?.rules[0]?.colorScale?.cfvo[0]?.value).toBe('Copy!C1')
+		expect(copy?.conditionalFormats[0]?.rules[0]?.dataBar?.cfvo[0]?.value).toBe('Copy!D1')
+		expect(copy?.conditionalFormats[0]?.rules[0]?.iconSet?.cfvo[0]?.value).toBe('Copy!E1')
+		expect(copy?.x14DataValidations[0]).toMatchObject({
+			formula1: 'Copy!B1:B3',
+			formula2: 'C1:C3',
+		})
+		expect(copy?.x14ConditionalFormats[0]?.formulas).toEqual(['Copy!B1>0'])
+		expect(copy?.x14ConditionalFormats[0]?.colorScale?.cfvo[0]?.value).toBe('Copy!C1')
+		expect(copy?.x14ConditionalFormats[0]?.dataBar?.cfvo[0]?.value).toBe('Copy!D1')
+		expect(copy?.x14ConditionalFormats[0]?.iconSet?.cfvo[0]?.value).toBe('Copy!E1')
+
+		expect(source.dataValidations[0]?.formula1).toBe('data!B1:B3')
+		expect(source.x14ConditionalFormats[0]?.formulas).toEqual(['data!B1>0'])
+	})
+
 	test('copySheet rejects duplicate and Excel-invalid target names before mutating workbook', () => {
 		const wb = setup()
 		wb.addSheet('Existing')

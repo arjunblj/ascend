@@ -84,7 +84,7 @@ export function renameHyperlinkLocation(
 	if (!location) return location
 	const split = splitSheetQualifiedRef(location)
 	if (!split || split.sheet !== oldName) return location
-	return `${newName}!${split.ref}`
+	return `${formatSheetNameForFormula(newName)}!${split.ref}`
 }
 
 function rewriteHyperlinkLocationsForShift(
@@ -111,15 +111,20 @@ function shiftHyperlinkLocation(
 	const split = splitSheetQualifiedRef(location)
 	if (!split || split.sheet !== sheetName) return location
 	const shifted = shiftA1RangeOrCell(split.ref, axis, at, delta)
-	return shifted ? `${split.sheet}!${shifted}` : location
+	return shifted ? `${formatSheetNameForFormula(split.sheet)}!${shifted}` : location
 }
 
 function splitSheetQualifiedRef(input: string): { sheet: string; ref: string } | null {
 	const bang = input.lastIndexOf('!')
 	if (bang === -1) return null
-	const sheet = input.slice(0, bang).replace(/^'|'$/g, '')
+	const sheet = input.slice(0, bang).replace(/^'|'$/g, '').replace(/''/g, "'")
 	const ref = input.slice(bang + 1)
 	return sheet && ref ? { sheet, ref } : null
+}
+
+function formatSheetNameForFormula(sheet: string): string {
+	if (/^[A-Za-z_][A-Za-z0-9_.]*$/.test(sheet)) return sheet
+	return `'${sheet.replace(/'/g, "''")}'`
 }
 
 function shiftCommentRefs(

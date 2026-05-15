@@ -4713,6 +4713,22 @@ describe('applyOperation', () => {
 		expect(s.rowHeights.get(3)).toBe(24)
 	})
 
+	test('insertRows shifts hyperlink locations with escaped sheet names', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet("Bob's Budget")
+		s.hyperlinks.set('A1', { location: "'Bob''s Budget'!A2", display: 'jump' })
+
+		const result = applyOperation(wb, {
+			op: 'insertRows',
+			sheet: "Bob's Budget",
+			at: 1,
+			count: 1,
+		})
+		expectOk(result)
+
+		expect(s.hyperlinks.get('A1')?.location).toBe("'Bob''s Budget'!A3")
+	})
+
 	test('row and column shifts keep comment refs and VML metadata coherent', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')
@@ -5386,6 +5402,21 @@ describe('applyOperation', () => {
 		expect(s.hyperlinks.get('A1')?.location).toBe('Data!A1')
 		expect(s.tables[0]?.columns[0]?.formula).toBe('Data!A:A')
 		expect(s.tables[0]?.columns[0]?.totalsRowFormula).toBe('SUM(Data!A:A)')
+	})
+
+	test('renameSheet updates hyperlink locations with escaped sheet names', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet("Bob's Budget")
+		s.hyperlinks.set('A1', { location: "'Bob''s Budget'!A1", display: 'jump' })
+
+		const result = applyOperation(wb, {
+			op: 'renameSheet',
+			sheet: "Bob's Budget",
+			newName: "Bob's Actuals",
+		})
+		expectOk(result)
+
+		expect(s.hyperlinks.get('A1')?.location).toBe("'Bob''s Actuals'!A1")
 	})
 
 	test('renameSheet updates chart ownership and series source refs', () => {

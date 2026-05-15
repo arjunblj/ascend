@@ -2260,6 +2260,8 @@ function journalDeleteSheet(
 				{
 					code: 'UNSUPPORTED_VALUE',
 					message: `Cannot restore deleted sheet ${op.sheet} because it was not found`,
+					surface: 'sheet-layout',
+					reason: 'sheet-topology',
 					refs: [`sheet:${op.sheet}`],
 				},
 			],
@@ -3219,6 +3221,8 @@ function journalDeleteConditionalFormat(
 							code: 'LOSSY_INVERSE' as const,
 							message:
 								'Conditional-format deletion without a range may not restore original rule ordering exactly',
+							surface: 'conditional-formats' as const,
+							reason: 'metadata-order' as const,
 						},
 					]
 				: []),
@@ -4542,6 +4546,8 @@ function dataValidationMoveOrderIssues(
 				{
 					code: 'LOSSY_INVERSE',
 					message: `Moved data validation order on ${sourceSheet.name}!${rangeToA1(sourceRange)} cannot be restored exactly with public operations`,
+					surface: 'data-validations',
+					reason: 'metadata-order',
 					refs: [`${sourceSheet.name}!${rangeToA1(sourceRange)}`],
 				},
 			]
@@ -5410,6 +5416,8 @@ function restoreTableColumnOps(
 				{
 					code: 'UNSUPPORTED_VALUE',
 					message: `Cannot restore table column ${op.table}[${String(op.column)}] because it was not found before the edit`,
+					surface: 'tables',
+					reason: 'operation-unsupported',
 				},
 			],
 		}
@@ -5451,6 +5459,8 @@ function restoreTableOps(preimage: MutationJournalTablePreimage): {
 				{
 					code: 'UNSUPPORTED_VALUE',
 					message: 'Cannot restore deleted table because it was not found before the edit',
+					surface: 'tables',
+					reason: 'operation-unsupported',
 				},
 			],
 		}
@@ -5477,6 +5487,8 @@ function restoreExistingTableOps(
 				{
 					code: 'UNSUPPORTED_VALUE',
 					message: `Cannot restore table ${table.name} because its sheet is missing`,
+					surface: 'tables',
+					reason: 'operation-unsupported',
 				},
 			],
 		}

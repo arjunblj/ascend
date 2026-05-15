@@ -72,6 +72,7 @@ Updated: 2026-05-15
 | [Data validation order journal boundary](runs/2026/2026-05-15-data-validation-order-journal-boundary/log.md) | folded in lossy metadata-order classification for non-suffix data-validation restores | correctness loop |
 | [Metadata duplicate journal boundary](runs/2026/2026-05-15-metadata-duplicate-journal-boundary/log.md) | folded in duplicate metadata classification for validation and conditional-format restores | correctness loop |
 | [Ranked portfolio top claim proof rerun](runs/2026/2026-05-15-ranked-portfolio-top-claim-proof-rerun/log.md) | synthesis refreshed; top two claims proof-backed from existing surfaces only | product loop, correctness loop, performance loop |
+| [Journal law proof harness](runs/2026/2026-05-15-journal-law-proof-harness/log.md) | folded in deterministic generated journal-law proof harness | correctness loop |
 | [Agent view omitted evidence recovery](runs/2026/2026-05-15-agent-view-omitted-evidence-recovery/log.md) | folded in recovery proof harness, locator metadata needed | product/DX loop |
 | [Agent view omitted locator metadata](runs/2026/2026-05-15-agent-view-omitted-locator-metadata/log.md) | folded in compact omitted-evidence locators | product/DX loop |
 | [Agent view formula pattern provenance](runs/2026/2026-05-15-agent-view-formula-pattern-provenance/log.md) | folded in formula-pattern example refs | product/DX loop |

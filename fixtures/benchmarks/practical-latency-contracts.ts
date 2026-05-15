@@ -569,6 +569,9 @@ function editVerifyTable(results: readonly StepResult[]): string {
 		`| Prepared commit verified total | ${metric(workflow?.summary, 'preparedCommitVerifiedTotalMedianMs')} | ${metric(workflow?.summary, 'preparedCommitVerifiedPayloadBytesMedian')} bytes | ${statusLink(workflow)} |`,
 		`| Prepared write-policy check | ${metric(workflow?.summary, 'preparedCommitWritePolicyCheckMedianMs')} | | ${statusLink(workflow)} |`,
 		`| Prepared reopen output | ${metric(workflow?.summary, 'preparedCommitPostWriteReopenMedianMs')} | | ${statusLink(workflow)} |`,
+		`| Commit package graph | ${metric(postWrite?.summary, 'commitPackageGraphMedianMs')} | | ${statusLink(postWrite)} |`,
+		`| Commit write-plan summary | ${metric(postWrite?.summary, 'commitWritePlanSummaryMedianMs')} | | ${statusLink(postWrite)} |`,
+		`| Commit write-policy check | ${metric(postWrite?.summary, 'commitWritePolicyCheckMedianMs')} | | ${statusLink(postWrite)} |`,
 		`| Write | ${metric(postWrite?.summary, 'commitWriteMedianMs')} | output ${metric(postWrite?.summary, 'outputBytesMedian')} bytes | ${statusLink(postWrite)} |`,
 		`| Reopen output | ${metric(postWrite?.summary, 'commitPostWriteReopenMedianMs')} | | ${statusLink(postWrite)} |`,
 		`| Check | ${metric(postWrite?.summary, 'commitPostWriteCheckMedianMs')} | | ${statusLink(postWrite)} |`,
@@ -698,8 +701,12 @@ function envelopeDecisions(results: readonly StepResult[]): EnvelopeDecision[] {
 		const workflowProfile = workflow?.profileCommand ?? ''
 		const postWriteProfile = postWrite?.profileCommand ?? workflowProfile
 		const preparedDirtyWrite =
-			(numericMetric(workflow?.summary, 'preparedCommitToBytesMedianMs') ?? 0) +
-			(numericMetric(workflow?.summary, 'preparedCommitWriteFileMedianMs') ?? 0)
+			(numericMetric(workflow?.summary, 'preparedCommitToBytesMedianMs') ??
+				numericMetric(postWrite?.summary, 'commitToBytesMedianMs') ??
+				0) +
+			(numericMetric(workflow?.summary, 'preparedCommitWriteFileMedianMs') ??
+				numericMetric(postWrite?.summary, 'commitWriteFileMedianMs') ??
+				0)
 		const largest = largestPhase([
 			{
 				name: 'Prepared plan/open',
@@ -708,8 +715,11 @@ function envelopeDecisions(results: readonly StepResult[]): EnvelopeDecision[] {
 			},
 			{
 				name: 'Prepared commit write-policy check',
-				medianMs: numericMetric(workflow?.summary, 'preparedCommitWritePolicyCheckMedianMs') ?? 0,
-				profileCommand: workflowProfile,
+				medianMs:
+					numericMetric(workflow?.summary, 'preparedCommitWritePolicyCheckMedianMs') ??
+					numericMetric(postWrite?.summary, 'commitWritePolicyCheckMedianMs') ??
+					0,
+				profileCommand: workflowProfile || postWriteProfile,
 			},
 			{
 				name: 'Prepared dirty write bytes',

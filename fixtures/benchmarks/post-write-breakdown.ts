@@ -36,7 +36,21 @@ interface BenchmarkInput {
 
 interface Sample {
 	readonly commitMs: number
+	readonly commitPackageGraphMs: number
+	readonly commitApprovalAuditMs: number
+	readonly commitLossAuditMs: number
+	readonly commitPackageGraphAuditMs: number
+	readonly commitApplyMs: number
+	readonly commitRecalcMs: number
+	readonly commitWritePlanSummaryMs: number
+	readonly commitWritePolicyCheckMs: number
+	readonly commitWritePolicyBuildMs: number
+	readonly commitToBytesMs: number
 	readonly commitWriteMs: number
+	readonly commitWriteFileMs: number
+	readonly commitRenameMs: number
+	readonly commitOutputByteReadMs: number
+	readonly commitOutputHashMs: number
 	readonly commitPostWriteMs: number
 	readonly commitPostWriteReopenMs: number
 	readonly commitPostWriteCheckMs: number
@@ -181,7 +195,21 @@ async function timedCommit(inputPath: string, outputPath: string, ops: readonly 
 	const timings = commit.value.postWrite.timings
 	return {
 		commitMs: commit.ms,
+		commitPackageGraphMs: commit.value.timings.packageGraphMs,
+		commitApprovalAuditMs: commit.value.timings.approvalAuditMs,
+		commitLossAuditMs: commit.value.timings.lossAuditMs,
+		commitPackageGraphAuditMs: commit.value.timings.packageGraphAuditMs,
+		commitApplyMs: commit.value.timings.applyMs,
+		commitRecalcMs: commit.value.timings.recalcMs,
+		commitWritePlanSummaryMs: commit.value.timings.writePlanSummaryMs,
+		commitWritePolicyCheckMs: commit.value.timings.writePolicyCheckMs,
+		commitWritePolicyBuildMs: commit.value.timings.writePolicyBuildMs,
+		commitToBytesMs: commit.value.timings.toBytesMs,
 		writeMs,
+		commitWriteFileMs: commit.value.timings.writeFileMs,
+		commitRenameMs: commit.value.timings.renameMs,
+		commitOutputByteReadMs: commit.value.timings.outputByteReadMs,
+		commitOutputHashMs: commit.value.timings.outputHashMs,
 		postWriteMs,
 		reopenMs: postWriteTimings.reopen ?? timings?.reopenMs ?? 0,
 		checkMs: postWriteTimings.check ?? timings?.checkMs ?? 0,
@@ -266,7 +294,21 @@ async function runSample(
 	runGc()
 	return {
 		commitMs: commit.commitMs,
+		commitPackageGraphMs: commit.commitPackageGraphMs,
+		commitApprovalAuditMs: commit.commitApprovalAuditMs,
+		commitLossAuditMs: commit.commitLossAuditMs,
+		commitPackageGraphAuditMs: commit.commitPackageGraphAuditMs,
+		commitApplyMs: commit.commitApplyMs,
+		commitRecalcMs: commit.commitRecalcMs,
+		commitWritePlanSummaryMs: commit.commitWritePlanSummaryMs,
+		commitWritePolicyCheckMs: commit.commitWritePolicyCheckMs,
+		commitWritePolicyBuildMs: commit.commitWritePolicyBuildMs,
+		commitToBytesMs: commit.commitToBytesMs,
 		commitWriteMs: commit.writeMs,
+		commitWriteFileMs: commit.commitWriteFileMs,
+		commitRenameMs: commit.commitRenameMs,
+		commitOutputByteReadMs: commit.commitOutputByteReadMs,
+		commitOutputHashMs: commit.commitOutputHashMs,
 		commitPostWriteMs: commit.postWriteMs,
 		commitPostWriteReopenMs: commit.reopenMs,
 		commitPostWriteCheckMs: commit.checkMs,
@@ -282,7 +324,29 @@ async function runSample(
 function summarize(samples: readonly Sample[]) {
 	return {
 		commitMedianMs: median(samples.map((sample) => sample.commitMs)),
+		commitPackageGraphMedianMs: median(samples.map((sample) => sample.commitPackageGraphMs)),
+		commitApprovalAuditMedianMs: median(samples.map((sample) => sample.commitApprovalAuditMs)),
+		commitLossAuditMedianMs: median(samples.map((sample) => sample.commitLossAuditMs)),
+		commitPackageGraphAuditMedianMs: median(
+			samples.map((sample) => sample.commitPackageGraphAuditMs),
+		),
+		commitApplyMedianMs: median(samples.map((sample) => sample.commitApplyMs)),
+		commitRecalcMedianMs: median(samples.map((sample) => sample.commitRecalcMs)),
+		commitWritePlanSummaryMedianMs: median(
+			samples.map((sample) => sample.commitWritePlanSummaryMs),
+		),
+		commitWritePolicyCheckMedianMs: median(
+			samples.map((sample) => sample.commitWritePolicyCheckMs),
+		),
+		commitWritePolicyBuildMedianMs: median(
+			samples.map((sample) => sample.commitWritePolicyBuildMs),
+		),
+		commitToBytesMedianMs: median(samples.map((sample) => sample.commitToBytesMs)),
 		commitWriteMedianMs: median(samples.map((sample) => sample.commitWriteMs)),
+		commitWriteFileMedianMs: median(samples.map((sample) => sample.commitWriteFileMs)),
+		commitRenameMedianMs: median(samples.map((sample) => sample.commitRenameMs)),
+		commitOutputByteReadMedianMs: median(samples.map((sample) => sample.commitOutputByteReadMs)),
+		commitOutputHashMedianMs: median(samples.map((sample) => sample.commitOutputHashMs)),
 		commitPostWriteMedianMs: median(samples.map((sample) => sample.commitPostWriteMs)),
 		commitPostWriteReopenMedianMs: median(samples.map((sample) => sample.commitPostWriteReopenMs)),
 		commitPostWriteCheckMedianMs: median(samples.map((sample) => sample.commitPostWriteCheckMs)),

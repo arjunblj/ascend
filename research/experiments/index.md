@@ -6,6 +6,7 @@ Updated: 2026-05-15
 
 | Run | Status | Fold-in target |
 | --- | --- | --- |
+| [Package action streaming drop proof](runs/2026/2026-05-15-package-action-streaming-drop-proof/log.md) | folded streaming `drop` proof into the package-action harness; `error`, macro, and chart streaming remain unpromoted boundaries | performance loop, release loop |
 | [Safe open latency diagnostic proof](runs/2026/2026-05-15-safe-open-latency-diagnostic-proof/log.md) | archived local timed safe-open proof as diagnostic-only; release-latency-run remains owner blocked | performance loop, release loop |
 | [Generated fixture owner action proof](runs/2026/2026-05-15-generated-fixture-owner-action-proof/log.md) | folded per-case recommended owner actions into generated fixture decision evidence while keeping release gates fail-closed | product loop, release loop |
 | [Top claim proof evidence refresh](runs/2026/2026-05-15-top-claim-proof-evidence-refresh/log.md) | refreshed rank-1/rank-2 proof from current compact harnesses and preserved the no-new-surface promotion throttle | product loop, correctness loop, performance loop, release loop |

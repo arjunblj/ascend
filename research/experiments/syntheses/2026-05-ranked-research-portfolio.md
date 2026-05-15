@@ -8,14 +8,14 @@ Research is no longer a broad sweep. Each direction below must earn its place by
 
 ## Latest Claim Steward Refresh
 
-Proof timestamp: 2026-05-15T20:11:24Z.
+Proof timestamp: 2026-05-15T20:59:04Z.
 
 Fresh proof rerun keeps the portfolio stable and blocks new surface promotion. `release-proof-index --owner-handoffs-json` reports `releaseGate=blocked-by-publication-policy`, `headlineClaimsAllowed=false`, `implementationSurfacePromotionAllowed=false`, and `missingRequirementCount=9`. The top two proof artifacts still answer the user's "produce proof, not prose" requirement from existing harnesses:
 
 | Claim | Proof produced | Missing owner proof |
 | --- | --- | --- |
 | Safe unknown workbook opening | Compact proof: 9 cases, 8 OK, 1 malformed rejection, 6 public fixtures, 2 generated edge packages, 1 malformed package, 4 review-before-hydration routes, risk families `preservedActiveX`, `preservedMacro`, `preservedOther`, `preservedSignature`. | Product must accept or replace generated signed/unknown/malformed fixtures; performance must run approved release-latency evidence; release must approve non-security/non-provenance wording. |
-| Auditable package-part mutation | Compact proof: 8 cases, 4 public fixtures, 2 generated workbooks, 2 generated edge packages, action totals `passthrough=32`, `regenerate=40`, `add=3`, `drop=3`, `error=1`, source graph evidence everywhere, package journal issues everywhere, 2 representative streaming proofs. | Product must approve generated edge policy; correctness must approve unsupported-feature boundaries; performance must keep streaming wording to representative passthrough/regenerate/add proof; release must approve local-proof/non-attestation wording. |
+| Auditable package-part mutation | Compact proof: 8 cases, 4 public fixtures, 2 generated workbooks, 2 generated edge packages, action totals `passthrough=32`, `regenerate=40`, `add=3`, `drop=3`, `error=1`, source graph evidence everywhere, package journal issues everywhere, 3 representative streaming proofs. | Product must approve generated edge policy; correctness must approve unsupported-feature boundaries; performance must keep streaming wording to representative passthrough/regenerate/add/drop proof; release must approve local-proof/non-attestation wording. |
 
 Portfolio decision: safe-open and package-action remain the only implementation handoffs. Ranks 3 through 6 stay proof-packaging-only, and ranks 7 through 10 remain do-not-promote-yet. Formula intelligence remains rejection-first; do not implement edit-producing rename.
 
@@ -301,13 +301,13 @@ Current gate:
 | Field | Value |
 | --- | --- |
 | Total package-action cases | 8 |
-| Cases with streaming proof | 1 |
-| Streaming proof case | `docprops-passthrough` |
+| Cases with streaming proof | 3 |
+| Streaming proof cases | `docprops-passthrough`, `add-sheet-part`, `calc-chain-drop` |
 | Package-action classes covered overall | `passthrough`, `regenerate`, `add`, `drop`, `error` |
-| Package-action classes covered by streaming proof | `passthrough`, `regenerate` |
+| Package-action classes covered by streaming proof | `passthrough`, `regenerate`, `add`, `drop` |
 | Non-streaming public fixtures | `macro-passthrough`, `chart-sidecar-accounting` |
 
-Decision: keep `streaming-matrix-boundary` missing. The package-action claim can say representative streaming proofs cover passthrough/regenerate/add, but it cannot say streaming parity covers drop/error, public macro/chart fixtures, or every package-action scenario.
+Decision: keep `streaming-matrix-boundary` missing. The package-action claim can say representative streaming proofs cover passthrough/regenerate/add/drop, but it cannot say streaming parity covers error, public macro/chart fixtures, or every package-action scenario.
 
 ### Compact Report Publication Audit
 

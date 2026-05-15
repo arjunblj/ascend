@@ -212,6 +212,7 @@ export function defaultPackageActionProofCases(): PackageActionProofCase[] {
 			sourceKind: 'public-fixture',
 			fixture: 'fixtures/xlsx/poi/Booleans.xlsx',
 			ops: [{ op: 'setFormula', sheet: 'Sheet1', ref: 'B1', formula: '=A1+A1' }],
+			streamingProbe: true,
 			prepareInput: writeFixture('fixtures/xlsx/poi/Booleans.xlsx'),
 			expectedCommitActions: [{ action: 'drop', partPathIncludes: 'xl/calcChain.xml' }],
 		},
@@ -383,6 +384,7 @@ async function runStreamingPackageActionProof(
 	const writeOptions = {
 		streaming: true,
 		dirtySheetNames: applied.value.sheetsModified,
+		calcChainDirty: applied.value.recalcRequired,
 		sourceArchive: read.value.sourceArchive,
 	} as const
 	const summary = summarizePlannedWrite(read.value.workbook, read.value.capsules, writeOptions)

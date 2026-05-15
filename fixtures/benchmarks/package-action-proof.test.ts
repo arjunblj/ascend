@@ -74,6 +74,16 @@ describe('package action proof harness', () => {
 			proof.cases.find((entry) => entry.name === 'docprops-passthrough')?.streamingProof
 				?.outputByteDigestCount,
 		).toBeGreaterThan(0)
+		expect(proof.cases.find((entry) => entry.name === 'calc-chain-drop')).toMatchObject({
+			streamingProof: {
+				expectedActionsPresent: true,
+				actionCounts: expect.objectContaining({ drop: expect.any(Number) }),
+				issueCount: 0,
+			},
+		})
+		expect(proof.cases.find((entry) => entry.name === 'unknown-part-error')).not.toHaveProperty(
+			'streamingProof',
+		)
 	})
 
 	test('renders claim-safe markdown report boundaries', async () => {
@@ -107,8 +117,8 @@ describe('package action proof harness', () => {
 			packageJournalIssuesEverywhere: true,
 			postWriteAuditFailures: ['unknown-part-error'],
 			proofIssueCases: ['unknown-part-error'],
-			streamingProofCases: 2,
-			streamingRegenerateParts: 1,
+			streamingProofCases: 3,
+			streamingRegenerateParts: 2,
 		})
 		expect(compact.sourceCaseCounts).toEqual({
 			'public-fixture': 4,

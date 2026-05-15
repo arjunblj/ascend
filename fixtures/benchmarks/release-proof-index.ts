@@ -702,11 +702,11 @@ const PERFORMANCE_POLICY: ReleaseProofPerformancePolicy = {
 			ownerLoop: 'performance',
 			status: 'pending-owner-decision',
 			decisionNeeded:
-				'Accept representative streaming proofs covering passthrough/regenerate/add for narrow wording, or require a broader streaming matrix before any parity claim.',
+				'Accept representative streaming proofs covering passthrough/regenerate/add/drop for narrow wording, or require a broader streaming matrix before any parity claim.',
 			acceptanceEvidence:
-				'Package-action proof reports two streaming proof cases covering passthrough/regenerate/add with passthrough-byte equality, and release wording says representative proofs only.',
+				'Package-action proof reports three streaming proof cases covering passthrough/regenerate/add/drop with passthrough-byte equality, and release wording says representative proofs only.',
 			rejectIf:
-				'Copy says full streaming parity, covers drop/error streaming behavior, or implies macro/chart streaming preservation without a broader matrix.',
+				'Copy says full streaming parity, covers error streaming behavior, or implies macro/chart streaming preservation without a broader matrix.',
 			validationCommand: 'bun run fixtures/benchmarks/package-action-proof.ts --no-timings --json',
 		},
 	],
@@ -1706,7 +1706,7 @@ function packageActionArtifact(
 				requirement:
 					'approve that representative streaming writer proofs are sufficient for release wording, or expand package-action proof to streaming variants for every package-action scenario before claiming streaming parity',
 				evidence:
-					'current proof reports two streamingProofCases covering passthrough/regenerate/add and one streamingRegeneratePart',
+					'current proof reports three streamingProofCases covering passthrough/regenerate/add/drop and two streamingRegenerateParts; error remains non-streaming',
 			},
 			{
 				id: 'compact-report-publication-policy',
@@ -1826,15 +1826,18 @@ function correctnessBoundaryEvidence(
 		}),
 		correctnessBoundaryFeatureCheck({
 			feature: 'streaming-scope',
-			evidencePresent: packageCaseHasRepresentativeStreamingProof(
-				packageAction,
-				'docprops-passthrough',
-			),
-			evidenceSources: ['package-action-proof/docprops-passthrough'],
+			evidencePresent:
+				packageCaseHasRepresentativeStreamingProof(packageAction, 'docprops-passthrough') &&
+				packageCaseHasRepresentativeStreamingProof(packageAction, 'calc-chain-drop'),
+			evidenceSources: [
+				'package-action-proof/docprops-passthrough',
+				'package-action-proof/add-sheet-part',
+				'package-action-proof/calc-chain-drop',
+			],
 			proofChecks: [
-				'one representative public fixture has streaming proof',
-				'streaming proof records regenerated worksheet parts',
-				'streaming proof records passthrough byte equality without claiming full matrix parity',
+				'representative streaming proofs cover passthrough/regenerate/add/drop',
+				'streaming proof records regenerated worksheet parts and passthrough byte equality',
+				'error and macro/chart streaming remain outside the proof boundary',
 			],
 		}),
 	]
@@ -1954,7 +1957,7 @@ function streamingMatrixEvidence(
 			.filter((entry) => (entry.streamingProof?.issueCount ?? 0) > 0)
 			.map((entry) => entry.name),
 		boundary:
-			'Streaming matrix evidence proves representative streaming package-action cases covering passthrough/regenerate/add only. It does not prove full streaming parity, drop/error streaming behavior, or streaming coverage for public macro/chart fixtures.',
+			'Streaming matrix evidence proves representative streaming package-action cases covering passthrough/regenerate/add/drop. It does not prove full streaming parity, error streaming behavior, or streaming coverage for public macro/chart fixtures.',
 	}
 }
 
@@ -2324,7 +2327,7 @@ function claimProofRequired(
 				honestBoundary:
 					'Not signed provenance, SLSA, in-toto attestation, Excel recalculation equivalence, chart byte passthrough, or semantic understanding of every unsupported feature.',
 				killCriterion:
-					'Do not publish stronger wording if synthetic edge packages are hidden, chart XML is described as byte-passthrough, one streaming proof is described as full matrix parity, or local digests imply attestation.',
+					'Do not publish stronger wording if synthetic edge packages are hidden, chart XML is described as byte-passthrough, representative streaming proofs are described as full matrix parity, or local digests imply attestation.',
 			}
 	}
 }
@@ -2394,7 +2397,7 @@ function rankMissingRequirement(input: {
 				rationale:
 					'Streaming wording must stay limited to representative proof cases unless a broader matrix is approved.',
 				acceptanceEvidence:
-					'Performance accepts representative streaming proofs covering passthrough/regenerate/add for narrow wording, or expands the matrix to drop/error and public macro/chart cases.',
+					'Performance accepts representative streaming proofs covering passthrough/regenerate/add/drop for narrow wording, or expands the matrix to error and public macro/chart cases.',
 				forbiddenShortcut:
 					'Do not call representative streaming cases full streaming parity or imply streaming coverage for every package-action scenario.',
 			}

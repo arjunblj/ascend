@@ -891,6 +891,54 @@ describe('mutation journal exactness model', () => {
 		}
 	})
 
+	test('classifies invalid sheet layout journals as unsupported values', () => {
+		const cases: readonly {
+			readonly op: Operation
+			readonly ref: string
+		}[] = [
+			{ op: { op: 'addSheet', name: 'Sheet2', position: -1 }, ref: 'sheet-position:-1' },
+			{
+				op: { op: 'copySheet', sheet: 'Sheet1', newName: 'Copy', position: -1 },
+				ref: 'sheet-position:-1',
+			},
+			{ op: { op: 'moveSheet', sheet: 'Sheet1', position: -1 }, ref: 'sheet-position:-1' },
+			{
+				op: { op: 'freezePane', sheet: 'Sheet1', row: -1, col: 0 },
+				ref: 'Sheet1!freeze-row:-1',
+			},
+			{
+				op: { op: 'freezePane', sheet: 'Sheet1', row: 0.5, col: 0 },
+				ref: 'Sheet1!freeze-row:0.5',
+			},
+			{
+				op: { op: 'freezePane', sheet: 'Sheet1', row: 0, col: -1 },
+				ref: 'Sheet1!freeze-column:-1',
+			},
+		]
+
+		for (const entry of cases) {
+			const wb = AscendWorkbook.create()
+			const journal = buildMutationJournal(wb.getWorkbookModel(), [entry.op])
+			const analysis = analyzeMutationJournalExactness(journal)
+			expect(journal.inverseOps, entry.op.op).toEqual([])
+			expect(analysis, entry.op.op).toMatchObject({
+				supported: true,
+				exact: false,
+				issueCount: 1,
+				surfaces: ['sheet-layout'],
+				reasons: ['value-unsupported'],
+				hasMatrixViolation: false,
+			})
+			expect(analysis.issues[0], entry.op.op).toMatchObject({
+				code: 'UNSUPPORTED_VALUE',
+				surface: 'sheet-layout',
+				reason: 'value-unsupported',
+				refs: [entry.ref],
+				allowedByMatrix: true,
+			})
+		}
+	})
+
 	test('classifies table selector journal preimage failures as table topology', () => {
 		const missingOps: readonly Operation[] = [
 			{ op: 'deleteTable', table: 'MissingTable' },

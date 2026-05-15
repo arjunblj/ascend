@@ -30,6 +30,14 @@ export function handleAddSheet(
 ): Result<PatchResult> {
 	const nameError = worksheetNameError(op.name)
 	if (nameError) return err(nameError)
+	if (op.position !== undefined) {
+		const positionError = validateSheetPosition(
+			'addSheet position',
+			op.position,
+			workbook.sheets.length,
+		)
+		if (positionError) return err(positionError)
+	}
 	if (workbook.getSheet(op.name)) {
 		return err(
 			ascendError('NAME_CONFLICT', `Sheet "${op.name}" already exists`, {
@@ -131,6 +139,12 @@ export function handleMoveSheet(
 	const result = getSheet(workbook, op.sheet)
 	if (!result.ok) return result
 	const sheet = result.value
+	const positionError = validateSheetPosition(
+		'moveSheet position',
+		op.position,
+		workbook.sheets.length - 1,
+	)
+	if (positionError) return err(positionError)
 
 	const idx = workbook.sheets.indexOf(sheet)
 	workbook.sheets.splice(idx, 1)
@@ -157,6 +171,8 @@ export function handleCopySheet(
 		)
 	}
 	const pos = op.position ?? workbook.sheets.length
+	const positionError = validateSheetPosition('copySheet position', pos, workbook.sheets.length)
+	if (positionError) return err(positionError)
 	const newSheet = source.clone()
 	const mutableNewSheet = newSheet as { id: Sheet['id'] }
 	mutableNewSheet.id = createSheetId()
@@ -236,6 +252,10 @@ export function handleFreezePane(
 	workbook: Workbook,
 	op: Extract<Operation, { op: 'freezePane' }>,
 ): Result<PatchResult> {
+	const rowError = validateAxisIndex('row', op.row)
+	if (rowError) return err(rowError)
+	const colError = validateAxisIndex('column', op.col)
+	if (colError) return err(colError)
 	const result = getSheet(workbook, op.sheet)
 	if (!result.ok) return result
 	result.value.frozenRows = op.row
@@ -438,6 +458,14 @@ function validateAxisSpan(label: 'row' | 'column', at: number, count: number) {
 	if (indexError) return indexError
 	if (Number.isInteger(count) && count > 0) return null
 	return ascendError('VALIDATION_ERROR', `${label} count must be a positive integer`)
+}
+
+function validateSheetPosition(label: string, position: number, maxInclusive: number) {
+	if (Number.isInteger(position) && position >= 0 && position <= maxInclusive) return null
+	return ascendError(
+		'VALIDATION_ERROR',
+		`${label} must be an integer between 0 and ${maxInclusive}`,
+	)
 }
 
 export function handleSetWorkbookProtection(

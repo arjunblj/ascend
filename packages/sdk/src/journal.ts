@@ -548,7 +548,7 @@ export const MUTATION_JOURNAL_EXACTNESS_MATRIX: readonly MutationJournalExactnes
 			'sheet position, pane, visibility, tab color, and supported protection fields restore with public operations',
 			'deleted sheets and unsupported sheet metadata are package-preservation risks',
 		],
-		lossReasons: ['sheet-topology', 'workbook-protection-absence'],
+		lossReasons: ['value-unsupported', 'sheet-topology', 'workbook-protection-absence'],
 		representativeOps: ['renameSheet', 'moveSheet', 'deleteSheet', 'freezePane', 'setTabColor'],
 	},
 	{
@@ -2166,6 +2166,19 @@ function buildJournalEntry(
 			issues,
 		}
 	}
+	const sheetLayoutIssue = journalOperationSheetLayoutValueIssue(workbook, op)
+	if (sheetLayoutIssue) {
+		const issues = [structureMutationJournalIssue(sheetLayoutIssue)]
+		return {
+			opIndex,
+			op,
+			supported: true,
+			exact: false,
+			inverseOps: [],
+			preimages: [],
+			issues,
+		}
+	}
 	const draft = buildSupportedJournalEntry(workbook, op, opIndex)
 	if (!draft) {
 		const issues: MutationJournalStructuredIssue[] = [
@@ -2472,6 +2485,86 @@ function journalAxisBandTarget(
 	}
 	if (!Number.isInteger(to) || to < from) {
 		return { valid: false as const, surface, label, value: to, ref: `${sheet}!${label}:${to}` }
+	}
+	return { valid: true as const }
+}
+
+function journalOperationSheetLayoutValueIssue(
+	workbook: Workbook,
+	op: Operation,
+): MutationJournalIssue | null {
+	const target = journalOperationSheetLayoutTarget(workbook, op)
+	if (!target) return null
+	if (target.valid) return null
+	return {
+		code: 'UNSUPPORTED_VALUE',
+		message: `Cannot build exact rollback journal for ${op.op} because ${target.label} ${target.value} is invalid`,
+		surface: 'sheet-layout',
+		reason: 'value-unsupported',
+		refs: [target.ref],
+	}
+}
+
+function journalOperationSheetLayoutTarget(
+	workbook: Workbook,
+	op: Operation,
+):
+	| {
+			readonly valid: true
+	  }
+	| {
+			readonly valid: false
+			readonly label: string
+			readonly value: number
+			readonly ref: string
+	  }
+	| null {
+	switch (op.op) {
+		case 'addSheet':
+			return op.position === undefined
+				? null
+				: journalSheetPositionTarget('sheet-position', op.position, workbook.sheets.length)
+		case 'copySheet':
+			return op.position === undefined
+				? null
+				: journalSheetPositionTarget('sheet-position', op.position, workbook.sheets.length)
+		case 'moveSheet':
+			return journalSheetPositionTarget('sheet-position', op.position, workbook.sheets.length - 1)
+		case 'freezePane':
+			return journalFreezePaneTarget(op)
+		default:
+			return null
+	}
+}
+
+function journalSheetPositionTarget(label: string, position: number, maxInclusive: number) {
+	if (Number.isInteger(position) && position >= 0 && position <= maxInclusive) {
+		return { valid: true as const }
+	}
+	return {
+		valid: false as const,
+		label,
+		value: position,
+		ref: `sheet-position:${position}`,
+	}
+}
+
+function journalFreezePaneTarget(op: Extract<Operation, { op: 'freezePane' }>) {
+	if (!Number.isInteger(op.row) || op.row < 0) {
+		return {
+			valid: false as const,
+			label: 'freeze row',
+			value: op.row,
+			ref: `${op.sheet}!freeze-row:${op.row}`,
+		}
+	}
+	if (!Number.isInteger(op.col) || op.col < 0) {
+		return {
+			valid: false as const,
+			label: 'freeze column',
+			value: op.col,
+			ref: `${op.sheet}!freeze-column:${op.col}`,
+		}
 	}
 	return { valid: true as const }
 }

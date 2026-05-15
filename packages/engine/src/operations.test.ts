@@ -4586,6 +4586,32 @@ describe('applyOperation', () => {
 		expect(result.error.message).toContain('invalid characters')
 	})
 
+	test('sheet layout operations reject invalid positions and panes before mutation', () => {
+		const cases: readonly Operation[] = [
+			{ op: 'addSheet', name: 'Sheet2', position: -1 },
+			{ op: 'copySheet', sheet: 'Sheet1', newName: 'Copy', position: -1 },
+			{ op: 'moveSheet', sheet: 'Sheet1', position: -1 },
+			{ op: 'freezePane', sheet: 'Sheet1', row: -1, col: 0 },
+			{ op: 'freezePane', sheet: 'Sheet1', row: 0.5, col: 0 },
+			{ op: 'freezePane', sheet: 'Sheet1', row: 0, col: -1 },
+		]
+
+		for (const op of cases) {
+			const wb = setup()
+			const beforeSheets = wb.sheets.map((sheet) => sheet.name)
+			const result = applyOperation(wb, op)
+			expectErr(result)
+			expect(result.error.code, op.op).toBe('VALIDATION_ERROR')
+			expect(
+				wb.sheets.map((sheet) => sheet.name),
+				op.op,
+			).toEqual(beforeSheets)
+			const sheet = wb.getSheet('Sheet1')
+			expect(sheet?.frozenRows, op.op).toBe(0)
+			expect(sheet?.frozenCols, op.op).toBe(0)
+		}
+	})
+
 	test('deleteSheet removes sheet', () => {
 		const wb = setup()
 		wb.addSheet('Sheet2')

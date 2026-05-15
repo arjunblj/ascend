@@ -940,6 +940,7 @@ function checkFormulaBindingIntegrity(wb: Workbook): CheckIssue[] {
 						for (const [memberRow, memberCol, memberCell] of sheet.cells.iterate()) {
 							if (!rangeContainsCell(sharedRange, sheet.name, memberRow, memberCol)) continue
 							if (memberRow === row && memberCol === col) continue
+							if (!memberCell.formulaInfo && !memberCell.formula) continue
 							if (sameSharedFormulaBinding(binding, memberCell.formulaInfo, sheet.name)) continue
 							const memberRef = `${sheet.name}!${toA1({ row: memberRow, col: memberCol })}`
 							issues.push(

@@ -316,7 +316,7 @@ describe('checker', () => {
 		})
 	})
 
-	test('detects shared formula master ranges with detached existing members', () => {
+	test('detects shared formula master ranges with detached formula members', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')
 		s.cells.set(0, 0, {
@@ -331,7 +331,7 @@ describe('checker', () => {
 				ref: 'A1:A3',
 			},
 		})
-		s.cells.set(1, 0, { value: numberValue(99), formula: null, styleId: SID })
+		s.cells.set(1, 0, { value: numberValue(4), formula: 'B2*2', styleId: SID })
 		s.cells.set(2, 0, {
 			value: numberValue(6),
 			formula: null,

@@ -212,6 +212,13 @@ function safeOpenArtifact(
 				requirement:
 					'approve boundary language that excludes malware scanning, sandboxing, file trust, active-content safety, and signed provenance',
 			},
+			{
+				id: 'compact-report-publication-policy',
+				status: 'missing',
+				ownerLoop: 'release',
+				requirement:
+					'define artifact storage, privacy filtering, and canonicalization policy before compact report digests are indexed or published',
+			},
 		],
 		headlineClaimAllowed: false,
 		releaseGate: 'blocked-by-publication-policy',
@@ -285,6 +292,13 @@ function packageActionArtifact(
 				requirement:
 					'approve that one representative streaming writer proof is sufficient for release wording, or expand package-action proof to streaming variants for every package-action scenario before claiming streaming parity',
 				evidence: 'current proof reports one streamingProofCase and one streamingRegeneratePart',
+			},
+			{
+				id: 'compact-report-publication-policy',
+				status: 'missing',
+				ownerLoop: 'release',
+				requirement:
+					'define artifact storage, privacy filtering, and canonicalization policy before compact report digests are indexed or published',
 			},
 		],
 		headlineClaimAllowed: false,

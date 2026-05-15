@@ -116,12 +116,12 @@ bun run fixtures/benchmarks/release-proof-index.ts --no-timings
 | safe-open-proof | `6aa54a651309b3c45ce7ce93ff7034e7b31e47c7cbc458c58ee6a6f23e0c6178` | cases=9, ok=8, rejected=1, reviewBeforeHydration=4, malformedRejected=true |
 | package-action-proof | `9abebf576651551f58e00ccf8469d099b2c06dacd48391fe581a24e51a1e0afd` | cases=8, passthrough=27, regenerate=38, add=3, drop=3, error=1, streamingProofCases=1 |
 
-Readiness gates now fail closed for the top two artifacts. The JSON index includes `readiness.releaseGate=blocked-by-publication-policy`, `readiness.headlineClaimsAllowed=false`, `totalRequirementCount=7`, `missingRequirementCount=7`, and `satisfiedRequirementCount=0`. It also points to compact report commands for each top artifact without indexing compact report digests.
+Readiness gates now fail closed for the top two artifacts. The JSON index includes `readiness.releaseGate=blocked-by-publication-policy`, `readiness.headlineClaimsAllowed=false`, `totalRequirementCount=9`, `missingRequirementCount=9`, and `satisfiedRequirementCount=0`. It also points to compact report commands for each top artifact without indexing compact report digests.
 
 | Artifact | Missing readyWhen gates |
 | --- | --- |
-| safe-open-proof | public-edge-fixtures; release-latency-run; publication-boundary |
-| package-action-proof | edge-fixture-policy; provenance-boundary; unsupported-feature-boundary; streaming-matrix-boundary |
+| safe-open-proof | public-edge-fixtures; release-latency-run; publication-boundary; compact-report-publication-policy |
+| package-action-proof | edge-fixture-policy; provenance-boundary; unsupported-feature-boundary; streaming-matrix-boundary; compact-report-publication-policy |
 
 Decision: formula intelligence, retained viewport patches, token-bounded agent view, property-based journal laws, and columnar sidecars stay out of the top release proof index for now.
 

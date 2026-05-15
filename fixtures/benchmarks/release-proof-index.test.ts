@@ -22,22 +22,28 @@ describe('release proof evidence index', () => {
 		expect(index.readiness).toMatchObject({
 			releaseGate: 'blocked-by-publication-policy',
 			headlineClaimsAllowed: false,
-			totalRequirementCount: 7,
-			missingRequirementCount: 7,
+			totalRequirementCount: 9,
+			missingRequirementCount: 9,
 			satisfiedRequirementCount: 0,
 			missingByOwnerLoop: {
 				correctness: 1,
 				performance: 2,
 				product: 2,
-				release: 2,
+				release: 4,
 			},
 			missingByArtifact: {
-				'safe-open-proof': ['public-edge-fixtures', 'release-latency-run', 'publication-boundary'],
+				'safe-open-proof': [
+					'public-edge-fixtures',
+					'release-latency-run',
+					'publication-boundary',
+					'compact-report-publication-policy',
+				],
 				'package-action-proof': [
 					'edge-fixture-policy',
 					'provenance-boundary',
 					'unsupported-feature-boundary',
 					'streaming-matrix-boundary',
+					'compact-report-publication-policy',
 				],
 			},
 		})
@@ -67,6 +73,10 @@ describe('release proof evidence index', () => {
 				}),
 				expect.objectContaining({
 					id: 'publication-boundary',
+					ownerLoop: 'release',
+				}),
+				expect.objectContaining({
+					id: 'compact-report-publication-policy',
 					ownerLoop: 'release',
 				}),
 			],
@@ -115,6 +125,10 @@ describe('release proof evidence index', () => {
 				expect.objectContaining({
 					id: 'streaming-matrix-boundary',
 					ownerLoop: 'performance',
+				}),
+				expect.objectContaining({
+					id: 'compact-report-publication-policy',
+					ownerLoop: 'release',
 				}),
 			],
 			fixtureProvenance: {
@@ -172,9 +186,9 @@ describe('release proof evidence index', () => {
 		expect(markdown).toContain('Compact report command')
 		expect(markdown).toContain('Ready when')
 		expect(markdown).toContain('Release Readiness Gate')
-		expect(markdown).toContain('ReadyWhen requirements: total=7, missing=7, satisfied=0')
+		expect(markdown).toContain('ReadyWhen requirements: total=9, missing=9, satisfied=0')
 		expect(markdown).toContain(
-			'Missing by owner loop: correctness=1, performance=2, product=2, release=2',
+			'Missing by owner loop: correctness=1, performance=2, product=2, release=4',
 		)
 		expect(markdown).toContain(
 			'Missing by artifact: safe-open-proof=public-edge-fixtures,release-latency-run,publication-boundary',
@@ -186,6 +200,7 @@ describe('release proof evidence index', () => {
 		expect(markdown).toContain('edge-fixture-policy(missing,product)')
 		expect(markdown).toContain('provenance-boundary(missing,release)')
 		expect(markdown).toContain('streaming-matrix-boundary(missing,performance)')
+		expect(markdown).toContain('compact-report-publication-policy(missing,release)')
 		expect(markdown).toContain('Fixture provenance')
 		expect(markdown).toContain('generatedCases=signed,unknown-part,malformed')
 		expect(markdown).toContain('deterministicGenerated=signed,unknown-part,malformed')

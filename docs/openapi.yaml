@@ -667,6 +667,9 @@ components:
             file: { type: string }
             compact: { type: boolean }
             prepare: { type: boolean, description: Defaults to true and returns a preparedPlan handle }
+            includePackageActions:
+              type: boolean
+              description: Include package part action proof evidence with passthrough/regenerate/add/drop/error counts.
             maxChangedCells:
               type: integer
               description: Compact response emitted changed-cell cap; total counts are still reported.
@@ -703,6 +706,9 @@ components:
             - { type: array, items: { type: string } }
           description: Exact approval IDs from plan, comma-separated string, array, or "all".
         compact: { type: boolean }
+        includePackageActions:
+          type: boolean
+          description: Include package part action proof evidence with passthrough/regenerate/add/drop/error counts.
         maxAffectedCells:
           type: integer
           description: Compact response emitted affected-cell cap; total counts are still reported.

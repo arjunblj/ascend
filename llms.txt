@@ -4,7 +4,7 @@ Ascend is an agent-native spreadsheet engine for headless Excel, XLSM, CSV, and 
 
 ## Primary Agent Entry Points
 
-- CLI: `ascend agent-init --json`, `ascend open-plan <file> --json`, `ascend inspect <file> --agent --json`, `ascend docs <query> --json`, `ascend formula assist '<formula>' --cursor <n> --json`, `ascend ops --json`, `ascend capabilities --json`, `ascend plan <file> --ops ops.json --json`, `ascend commit <file> --ops ops.json --output out.xlsx --json`
+- CLI: `ascend agent-init --json`, `ascend open-plan <file> --json`, `ascend inspect <file> --agent --json`, `ascend docs <query> --json`, `ascend formula assist '<formula>' --cursor <n> --json`, `ascend ops --json`, `ascend capabilities --json`, `ascend plan <file> --ops ops.json --package-actions --json`, `ascend commit <file> --ops ops.json --output out.xlsx --package-actions --json`
 - MCP resources: `ascend://llms.txt`, `ascend://llms-full.txt`, `ascend://docs/agent-api.md`, `ascend://operations`, `ascend://capabilities`, `ascend://agent-workflow`
 - MCP tools: `ascend.search_docs`, `ascend.search_examples`, `ascend.open_plan`, `ascend.inspect`, `ascend.trust_report`, `ascend.active_content`, `ascend.package_graph`, `ascend.raw_part`, `ascend.read`, `ascend.read_table`, `ascend.find`, `ascend.formula_assist`, `ascend.visuals`, `ascend.pivots`, `ascend.list_operations`, `ascend.capabilities`, `ascend.plan`, `ascend.commit`, `ascend.repair_plan`
 - SDK: `AscendWorkbook`, `WorkbookDocument`, operation helpers, schema discovery, safe plan/commit workflow
@@ -22,6 +22,8 @@ Ascend is an agent-native spreadsheet engine for headless Excel, XLSM, CSV, and 
 9. Use `repair-plan` when validation, formulas, or preservation audits fail.
 
 API/MCP plan responses return one-shot process-local prepared handles by default; commit with `planHandle` when available, then re-plan if the handle expires or is already used. CLI commands do not persist prepared handles; use the plan hash as API `expectSha256` or CLI `--expect-sha256`.
+
+Use CLI `--package-actions` or API/MCP `includePackageActions: true` when package part proof evidence is needed; the proof classifies parts as passthrough, regenerate, add, drop, or error.
 
 Use CLI `inspect --agent`, API `POST /trust-report`, or MCP `ascend.trust_report` for the trust preflight. Ascend treats workbook content as untrusted data, excludes hidden sheets/comments/defined names/external targets/active content from default agent context, and returns coded findings with locations and next actions rather than a numeric risk score.
 

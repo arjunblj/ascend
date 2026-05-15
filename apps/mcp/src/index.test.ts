@@ -21,6 +21,10 @@ const TEMP_MACRO_OUTPUT = join(
 	tmpdir(),
 	`ascend-mcp-macro-out-${Date.now()}-${Math.random().toString(16).slice(2)}.xlsm`,
 )
+const TEMP_PACKAGE_ACTION_OUTPUT = join(
+	tmpdir(),
+	`ascend-mcp-package-actions-out-${Date.now()}-${Math.random().toString(16).slice(2)}.xlsx`,
+)
 const PIVOT_FIXTURE = join(
 	import.meta.dir,
 	'../../../fixtures/xlsx/libreoffice/PivotTable_CachedDefinitionAndDataInSync.xlsx',
@@ -31,6 +35,7 @@ afterAll(async () => {
 	await unlink(TEMP_FILE).catch(() => {})
 	await unlink(TEMP_MACRO_FILE).catch(() => {})
 	await unlink(TEMP_MACRO_OUTPUT).catch(() => {})
+	await unlink(TEMP_PACKAGE_ACTION_OUTPUT).catch(() => {})
 })
 
 describe('MCP server', () => {
@@ -245,6 +250,46 @@ describe('MCP server', () => {
 		expect(data?.signatureHelp?.signature?.name).toBe('SUM')
 		expect(data?.cycle).toMatchObject({ formula: '=SUM(A1:$B$2', changed: true })
 		expect(data?.insertion).toMatchObject({ formula: '=SUM(C1', replaced: { text: 'A1:B2' } })
+	})
+
+	test('ascend.plan and ascend.commit can include package action proof evidence', async () => {
+		const wb = AscendWorkbook.create()
+		await wb.save(TEMP_FILE)
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const tools = (server as any)._registeredTools as Record<
+			string,
+			{
+				handler: (args: Record<string, unknown>) => Promise<{
+					structuredContent?: { ok?: boolean; data?: Record<string, unknown> }
+				}>
+			}
+		>
+		const ops = [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'mcp' }] }]
+
+		const plan = await tools['ascend.plan']?.handler({
+			file: TEMP_FILE,
+			ops,
+			includePackageActions: true,
+			prepare: false,
+		})
+		expect(plan?.structuredContent?.ok).toBe(true)
+		expect((plan?.structuredContent?.data?.packageActions as { kind?: string })?.kind).toBe(
+			'ascend-package-action-proof',
+		)
+
+		const commit = await tools['ascend.commit']?.handler({
+			file: TEMP_FILE,
+			ops,
+			output: TEMP_PACKAGE_ACTION_OUTPUT,
+			includePackageActions: true,
+		})
+		expect(commit?.structuredContent?.ok).toBe(true)
+		const packageActions = commit?.structuredContent?.data?.packageActions as
+			| { kind?: string; byAction?: { regenerate?: number } }
+			| undefined
+		expect(packageActions?.kind).toBe('ascend-package-action-proof')
+		expect(packageActions?.byAction?.regenerate).toBeGreaterThan(0)
 	})
 
 	test('ascend.active_content exposes focused active-content provenance for agents', async () => {

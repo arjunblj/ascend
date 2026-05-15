@@ -36,8 +36,8 @@ Use JSON for automation:
 - `ascend read <file> <selector> --json`
 - `ascend find <file> <query> --json`
 - `ascend formula assist '<formula>' --cursor <n> --json`
-- `ascend plan <file> --ops ops.json --progress jsonl --json`
-- `ascend commit <file> --ops ops.json --output out.xlsx --expect-sha256 <hash> --progress jsonl --json`
+- `ascend plan <file> --ops ops.json --package-actions --progress jsonl --json`
+- `ascend commit <file> --ops ops.json --output out.xlsx --expect-sha256 <hash> --package-actions --progress jsonl --json`
 - `ascend repair-plan <file> --json`
 - `ascend check <file> --progress jsonl --json`
 - `ascend lint <file> --json`
@@ -112,6 +112,8 @@ Use CLI `open-plan`, API `POST /open-plan`, or MCP `ascend.open_plan` before hyd
 Never use destructive in-place writes unless the user asked for them. Never pass `allowLoss` unless the user accepts the specific preservation or unsupported feature risk.
 
 For API/MCP, `plan` prepares a process-local one-shot handle by default. Prefer `commit({ planHandle })`, and re-run `plan` if the handle expires, is unavailable, or has already been consumed. CLI `plan` and `commit` run in separate processes; they do not share prepared handles, so commit with the same operation batch and `expectSha256` from plan.
+
+Use CLI `--package-actions` or API/MCP `includePackageActions: true` when package part proof evidence is needed. The proof classifies package parts as passthrough, regenerate, add, drop, or error.
 
 For formula edits, call CLI `ascend formula assist`, API `formula-assist`, or MCP `ascend.formula_assist` before planning when syntax or references are uncertain. It is read-only and returns diagnostics, token ranges, active reference, function completions, signature help, insertion previews, and F4-style reference cycling.
 

@@ -14,6 +14,7 @@ import {
 	compilePathMutationInput,
 	createAgentPlan,
 	createAgentPlanFromWorkbook,
+	createPackageActionProof,
 	createPreparedAgentPlan,
 	createRepairPlan,
 	formatDisplayCellValue,
@@ -45,6 +46,11 @@ import { binaryResponse, jsonFailure, jsonFailureError, jsonSuccess } from './re
 const DEFAULT_API_RAW_PART_MAX_BYTES = 64 * 1024
 const MAX_API_RAW_PART_MAX_BYTES = 1024 * 1024
 const DEFAULT_AGENT_PREVIEW_ROWS = 500
+
+type PackageActionEvidence = Pick<
+	Awaited<ReturnType<typeof createAgentPlan>>,
+	'preservation' | 'writePolicy' | 'packageGraphAudit'
+>
 
 async function parseJson<T>(req: Request): Promise<T | null> {
 	try {
@@ -93,6 +99,21 @@ function firstWindowRowLimit(rowLimit: number | undefined, preview: boolean): nu
 function withPartialLoadInfo<T extends object>(info: T, wb: WorkbookDocument): T {
 	const load = wb.inspect().load
 	return load.isPartial ? ({ ...info, load } as T) : info
+}
+
+function withPackageActions<T, R extends PackageActionEvidence>(
+	payload: T,
+	result: R,
+	includePackageActions: boolean,
+): T | (T & { readonly packageActions: ReturnType<typeof createPackageActionProof> }) {
+	if (!includePackageActions) return payload
+	return {
+		...payload,
+		packageActions: createPackageActionProof(result.preservation, {
+			writePolicy: result.writePolicy,
+			packageGraphAudit: result.packageGraphAudit,
+		}),
+	}
 }
 
 function rawPartEncoding(
@@ -877,8 +898,16 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 									...(maxChangedCells !== undefined ? { maxChangedCells } : {}),
 								})
 							: result
+					const responsePayload = withPackageActions(
+						payload,
+						result,
+						body?.includePackageActions === true,
+					)
 					return jsonSuccess(
-						withPreparedPlanHandle(withPathMutationResult(payload, pathMutations), preparedPlan),
+						withPreparedPlanHandle(
+							withPathMutationResult(responsePayload, pathMutations),
+							preparedPlan,
+						),
 					)
 				} catch (e) {
 					return handleError(e, file ?? undefined)
@@ -929,7 +958,12 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 									...(maxAffectedCells !== undefined ? { maxAffectedCells } : {}),
 								})
 							: result
-						return jsonSuccess(withPathMutationResult(payload, prepared.handle.pathMutations))
+						return jsonSuccess(
+							withPathMutationResult(
+								withPackageActions(payload, result, body?.includePackageActions === true),
+								prepared.handle.pathMutations,
+							),
+						)
 					}
 					const inputShape = resolveOperationInputShape(operationInputSourceFromBody(body))
 					if (!inputShape.ok) return jsonFailureError(inputShape.error, 400)
@@ -957,7 +991,12 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 								...(maxAffectedCells !== undefined ? { maxAffectedCells } : {}),
 							})
 						: result
-					return jsonSuccess(withPathMutationResult(payload, pathMutations))
+					return jsonSuccess(
+						withPathMutationResult(
+							withPackageActions(payload, result, body?.includePackageActions === true),
+							pathMutations,
+						),
+					)
 				} catch (e) {
 					return handleError(e, file ?? undefined)
 				}

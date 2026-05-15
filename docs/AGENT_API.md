@@ -18,8 +18,8 @@ Core commands:
 - `ascend read <file> <selector> --json` reads ranges, tables (`table:Name`), or defined names (`name:Name`). CLI JSON returns bounded range/table/name payloads; compact/TSV/object read formats are API/MCP-only.
 - `ascend find <file> <query> --json` searches values and formulas.
 - `ascend formula assist '<formula>' --cursor <n> --json` returns read-only formula diagnostics, token ranges, completions, signature help, reference insertion preview, and F4-style reference cycling.
-- `ascend plan <file> --ops ops.json --progress jsonl --json` validates operations, previews diffs, audits recalc, approvals, and preservation risk.
-- `ascend commit <file> --ops ops.json --output out.xlsx --expect-sha256 <hash> --progress jsonl --json` writes safely.
+- `ascend plan <file> --ops ops.json --package-actions --progress jsonl --json` validates operations, previews diffs, audits recalc, approvals, preservation risk, and optional package action proof evidence.
+- `ascend commit <file> --ops ops.json --output out.xlsx --expect-sha256 <hash> --package-actions --progress jsonl --json` writes safely and can include package action proof evidence.
 - `ascend repair-plan <file> --json` suggests recovery actions after failed checks, lints, or unsupported-feature audits.
 - `ascend docs <query> --json`, `ascend docs --examples <query> --json`, `ascend docs --path llms-full.txt`, and `ascend docs --list --json` expose local agent docs without browsing.
 - `ascend check <file> --json`, `ascend lint <file> --json`, `ascend trace <file> <ref> --json`, and `ascend diff <a> <b> --json` verify work.
@@ -39,8 +39,8 @@ Agent workflow endpoints:
 - `POST /agent-view`
 - `POST /formula-assist` for read-only formula diagnostics, token ranges, completions, signature help, reference insertion preview, and F4-style reference cycling
 - `GET /operations`, `GET /capabilities`
-- `POST /plan` with `ops` or `mutations`, optional `compact`, `prepare`, and `maxChangedCells`
-- `POST /commit` with `planHandle` or fresh `file` plus `ops`/`mutations`, optional `allowLoss`, `approvals`, `compact`, and `maxAffectedCells`
+- `POST /plan` with `ops` or `mutations`, optional `compact`, `prepare`, `maxChangedCells`, and `includePackageActions`
+- `POST /commit` with `planHandle` or fresh `file` plus `ops`/`mutations`, optional `allowLoss`, `approvals`, `compact`, `maxAffectedCells`, and `includePackageActions`
 - `POST /check`, `/lint`, `/trace`, `/diff`, `/export`, `/repair-plan`
 
 Compatibility endpoints `/preview` and `/write` remain available for direct replay flows, but agent writes should use `/plan` then `/commit`.
@@ -79,8 +79,8 @@ Use these workbook tools for normal work:
 - `ascend.visuals({ file })`
 - `ascend.pivots({ file, pivotTable?, partPath?, mode? })`
 - `ascend.agent_view({ file, sheet?, range, rowChunkSize?, sampleRowLimit?, sampleValueLimit? })`
-- `ascend.plan({ file, ops? | mutations?, compact?, prepare?, maxChangedCells? })`
-- `ascend.commit({ planHandle?, file?, ops? | mutations?, output?, inPlace?, backup?, expectSha256?, allowLoss?, approvals?, compact?, maxAffectedCells? })`
+- `ascend.plan({ file, ops? | mutations?, compact?, prepare?, maxChangedCells?, includePackageActions? })`
+- `ascend.commit({ planHandle?, file?, ops? | mutations?, output?, inPlace?, backup?, expectSha256?, allowLoss?, approvals?, compact?, maxAffectedCells?, includePackageActions? })`
 - `ascend.repair_plan({ file })`
 - `ascend.check({ file })`, `ascend.lint({ file })`, `ascend.trace({ file, cell })`, `ascend.diff({ fileA, fileB })`, `ascend.export({ file, output, format? })`
 
@@ -95,6 +95,7 @@ Use these workbook tools for normal work:
 - Prefer non-destructive output paths over in-place edits.
 - Use `inputSha256` from plan as `expectSha256` during commit.
 - API/MCP plans default to `prepare: true` and return `preparedPlan` metadata. Prefer `commit({ planHandle })`; handles are in-memory, one-shot, process-local, and expire, so re-plan before retrying a failed commit. CLI does not persist prepared handles between commands; use the same `ops.json` plus `--expect-sha256`.
+- Use CLI `--package-actions` or API/MCP `includePackageActions: true` when an agent needs passthrough/regenerate/add/drop/error proof evidence for package parts.
 - Pass only approval IDs emitted by plan in `approvals`; it accepts comma-separated strings, string arrays, or `"all"` after explicit user approval.
 - Pass `allowLoss` only for user-approved feature keys, `feature:tier` keys, generated loss approval IDs, or `"all"` after explicit user approval.
 - Inspect both `lossAudit.blockedFeatures` and `lossAudit.blockedPackageParts` before approving a lossy write.

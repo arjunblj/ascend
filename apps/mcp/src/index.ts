@@ -19,6 +19,7 @@ import {
 	compilePathMutationInput,
 	createAgentPlan,
 	createAgentPlanFromWorkbook,
+	createPackageActionProof,
 	createPreparedAgentPlan,
 	createRepairPlan,
 	ensureOutputExtension,
@@ -60,6 +61,11 @@ import { errorResponse, okResponse } from './response.ts'
 const DEFAULT_MCP_RAW_PART_MAX_BYTES = 64 * 1024
 const MAX_MCP_RAW_PART_MAX_BYTES = 1024 * 1024
 const DEFAULT_AGENT_PREVIEW_ROWS = 500
+
+type PackageActionEvidence = Pick<
+	Awaited<ReturnType<typeof createAgentPlan>>,
+	'preservation' | 'writePolicy' | 'packageGraphAudit'
+>
 
 const pathMutationSchema = z
 	.unknown()
@@ -1294,8 +1300,23 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 				.describe(
 					'Unsupported on plan; use ascend.read or ascend.agent_view for capped inspection',
 				),
+			includePackageActions: z
+				.boolean()
+				.optional()
+				.describe(
+					'Include package action proof counts and part-level passthrough/regenerate/add/drop/error evidence',
+				),
 		},
-		async ({ file, ops, mutations, compact, prepare, maxChangedCells, maxRows }) => {
+		async ({
+			file,
+			ops,
+			mutations,
+			compact,
+			prepare,
+			maxChangedCells,
+			maxRows,
+			includePackageActions,
+		}) => {
 			try {
 				if (maxRows !== undefined) return errorResponse(agentPlanLoadOptionsError(['maxRows']))
 				const inputShape = resolveOperationInputShape(operationInputSourceFromArgs(ops, mutations))
@@ -1353,8 +1374,12 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 							...(maxChangedCells !== undefined ? { maxChangedCells } : {}),
 						})
 					: result
+				const responsePayload = withPackageActions(payload, result, includePackageActions === true)
 				return okResponse(
-					withPreparedPlanHandle(withPathMutationResult(payload, pathMutations), preparedPlan),
+					withPreparedPlanHandle(
+						withPathMutationResult(responsePayload, pathMutations),
+						preparedPlan,
+					),
 					`Planned ${input.ops.length} operation(s)`,
 				)
 			} catch (e) {
@@ -1415,6 +1440,12 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 				.describe(
 					'Unsupported on commit; use ascend.read or ascend.agent_view for capped inspection',
 				),
+			includePackageActions: z
+				.boolean()
+				.optional()
+				.describe(
+					'Include package action proof counts and part-level passthrough/regenerate/add/drop/error evidence',
+				),
 		},
 		async ({
 			file,
@@ -1430,6 +1461,7 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 			compact,
 			maxAffectedCells,
 			maxRows,
+			includePackageActions,
 		}) => {
 			try {
 				if (maxRows !== undefined) return errorResponse(agentPlanLoadOptionsError(['maxRows']))
@@ -1451,7 +1483,10 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 							})
 						: result
 					return okResponse(
-						withPathMutationResult(payload, prepared.handle.pathMutations),
+						withPathMutationResult(
+							withPackageActions(payload, result, includePackageActions === true),
+							prepared.handle.pathMutations,
+						),
 						`Committed ${result.operationCount} operation(s)`,
 					)
 				}
@@ -1481,7 +1516,10 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 						})
 					: result
 				return okResponse(
-					withPathMutationResult(payload, pathMutations),
+					withPathMutationResult(
+						withPackageActions(payload, result, includePackageActions === true),
+						pathMutations,
+					),
 					`Committed ${input.ops.length} operation(s)`,
 				)
 			} catch (e) {
@@ -1907,6 +1945,21 @@ function firstWindowRowLimit(rowLimit: number | undefined, preview: boolean): nu
 function withPartialLoadInfo<T extends object>(info: T, wb: WorkbookDocument): T {
 	const load = wb.inspect().load
 	return load.isPartial ? ({ ...info, load } as T) : info
+}
+
+function withPackageActions<T, R extends PackageActionEvidence>(
+	payload: T,
+	result: R,
+	includePackageActions: boolean,
+): T | (T & { readonly packageActions: ReturnType<typeof createPackageActionProof> }) {
+	if (!includePackageActions) return payload
+	return {
+		...payload,
+		packageActions: createPackageActionProof(result.preservation, {
+			writePolicy: result.writePolicy,
+			packageGraphAudit: result.packageGraphAudit,
+		}),
+	}
 }
 
 function resolveColumnSelection(

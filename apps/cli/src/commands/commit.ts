@@ -4,6 +4,7 @@ import {
 	type AgentCommitOptions,
 	commitAgentPlan,
 	compactAgentCommitResult,
+	createPackageActionProof,
 	operationValidationDetails,
 	parseOperations,
 } from '@ascend/sdk'
@@ -30,6 +31,7 @@ Flags:
   --approval <id>           Approve an explicit plan approval id, comma-separated list, or "all"
   --progress jsonl          Emit machine-readable progress events to stderr
   --compact                 Return compact JSON verification counts instead of full trace artifacts
+  --package-actions         Include package action proof in JSON output
   --json                    Output as JSON
 `
 
@@ -60,7 +62,7 @@ export async function commitCommand(args: string[], flags: Map<string, string>):
 	const result = await commitAgentPlan(file, ops, options)
 	if (flags.has('json')) {
 		const payload = flags.has('compact') ? compactAgentCommitResult(result) : result
-		console.log(jsonOut(payload))
+		console.log(jsonOut(withPackageActions(payload, result, flags)))
 		return 0
 	}
 	console.log(heading(`Committed: ${file}`))
@@ -76,6 +78,21 @@ export async function commitCommand(args: string[], flags: Map<string, string>):
 		bullet('Post-write package graph issues', result.postWrite.packageGraphAudit.issues.length),
 	)
 	return 0
+}
+
+function withPackageActions<T>(
+	payload: T,
+	result: Awaited<ReturnType<typeof commitAgentPlan>>,
+	flags: Map<string, string>,
+): T | (T & { readonly packageActions: ReturnType<typeof createPackageActionProof> }) {
+	if (!flags.has('package-actions')) return payload
+	return {
+		...payload,
+		packageActions: createPackageActionProof(result.preservation, {
+			writePolicy: result.writePolicy,
+			packageGraphAudit: result.packageGraphAudit,
+		}),
+	}
 }
 
 function parseAllowLoss(value: string): readonly string[] | 'all' {

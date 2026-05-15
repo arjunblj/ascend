@@ -333,6 +333,8 @@ describe('ascend cli', () => {
 	})
 
 	test('plan and commit implement safe agent workflow', async () => {
+		const wb = AscendWorkbook.create()
+		await wb.save(`${import.meta.dir}/${TEST_FILE}`)
 		const opsFile = `${import.meta.dir}/commit-ops.json`
 		await Bun.write(
 			opsFile,
@@ -340,12 +342,21 @@ describe('ascend cli', () => {
 				{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'agent-safe' }] },
 			]),
 		)
-		const plan = await run('plan', TEST_FILE, '--ops', 'commit-ops.json', '--json')
+		const plan = await run(
+			'plan',
+			TEST_FILE,
+			'--ops',
+			'commit-ops.json',
+			'--package-actions',
+			'--json',
+		)
 		expect(plan.exitCode).toBe(0)
 		const planned = JSON.parse(plan.stdout)
 		expect(planned.ok).toBe(true)
 		expect(planned.data.inputSha256).toMatch(/^[a-f0-9]{64}$/)
 		expect(planned.data.preview.wouldSucceed).toBe(true)
+		expect(planned.data.packageActions.kind).toBe('ascend-package-action-proof')
+		expect(planned.data.packageActions.byAction.regenerate).toBeGreaterThan(0)
 
 		const commit = await run(
 			'commit',
@@ -356,12 +367,15 @@ describe('ascend cli', () => {
 			'commit-output.xlsx',
 			'--expect-sha256',
 			planned.data.inputSha256,
+			'--package-actions',
 			'--json',
 		)
 		expect(commit.exitCode).toBe(0)
 		const committed = JSON.parse(commit.stdout)
 		expect(committed.ok).toBe(true)
 		expect(committed.data.outputSha256).toMatch(/^[a-f0-9]{64}$/)
+		expect(committed.data.packageActions.kind).toBe('ascend-package-action-proof')
+		expect(committed.data.packageActions.byAction.regenerate).toBeGreaterThan(0)
 		expect(existsSync(`${import.meta.dir}/commit-output.xlsx`)).toBe(true)
 
 		const compactCommit = await run(

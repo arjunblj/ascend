@@ -42,9 +42,9 @@ const AGENT_INIT: AgentInitInfo = {
 		docs: 'ascend docs <query> --json',
 		operations: 'ascend ops --json',
 		capabilities: 'ascend capabilities --json',
-		plan: 'ascend plan <file> --ops ops.json --progress jsonl --json',
+		plan: 'ascend plan <file> --ops ops.json --package-actions --progress jsonl --json',
 		commit:
-			'ascend commit <file> --ops ops.json --output out.xlsx --expect-sha256 <hash> --progress jsonl --json',
+			'ascend commit <file> --ops ops.json --output out.xlsx --expect-sha256 <hash> --package-actions --progress jsonl --json',
 		check: 'ascend check <file> --progress jsonl --json',
 		repair: 'ascend repair-plan <file> --json',
 	},

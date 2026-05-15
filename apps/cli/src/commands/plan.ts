@@ -1,6 +1,11 @@
 import { readFile } from 'node:fs/promises'
 import { ascendError, type Operation } from '@ascend/schema'
-import { createAgentPlan, operationValidationDetails, parseOperations } from '@ascend/sdk'
+import {
+	createAgentPlan,
+	createPackageActionProof,
+	operationValidationDetails,
+	parseOperations,
+} from '@ascend/sdk'
 import { cliError, jsonErr, jsonOut } from '../output/json.ts'
 import { bullet, heading } from '../output/pretty.ts'
 import { createAgentProgressReporter } from '../progress.ts'
@@ -15,6 +20,7 @@ Arguments:
 
 Flags:
   --ops <file.json>   Operations JSON file
+  --package-actions   Include package action proof in JSON output
   --progress jsonl    Emit machine-readable progress events to stderr
   --json              Output as JSON
 `
@@ -42,7 +48,7 @@ export async function planCommand(args: string[], flags: Map<string, string>): P
 				),
 			)
 		} else {
-			console.log(jsonOut(result))
+			console.log(jsonOut(withPackageActions(result, flags)))
 		}
 		return result.preview.errors.length === 0 ? 0 : 1
 	}
@@ -65,6 +71,20 @@ export async function planCommand(args: string[], flags: Map<string, string>): P
 		for (const error of result.preview.errors) console.log(bullet('Error', error.message))
 	}
 	return result.preview.errors.length === 0 ? 0 : 1
+}
+
+function withPackageActions<T extends Awaited<ReturnType<typeof createAgentPlan>>>(
+	result: T,
+	flags: Map<string, string>,
+): T | (T & { readonly packageActions: ReturnType<typeof createPackageActionProof> }) {
+	if (!flags.has('package-actions')) return result
+	return {
+		...result,
+		packageActions: createPackageActionProof(result.preservation, {
+			writePolicy: result.writePolicy,
+			packageGraphAudit: result.packageGraphAudit,
+		}),
+	}
 }
 
 async function readOpsFile(

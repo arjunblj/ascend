@@ -66,13 +66,15 @@ describe('API', () => {
 		const plan = await api(`/plan`, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ file: tempFile, ops }),
+			body: JSON.stringify({ file: tempFile, ops, includePackageActions: true }),
 		})
 		expect(plan.status).toBe(200)
 		const planBody = await plan.json()
 		expect(planBody.ok).toBe(true)
 		expect(planBody.data.inputSha256).toMatch(/^[a-f0-9]{64}$/)
 		expect(planBody.data.preview.wouldSucceed).toBe(true)
+		expect(planBody.data.packageActions.kind).toBe('ascend-package-action-proof')
+		expect(planBody.data.packageActions.byAction.regenerate).toBeGreaterThan(0)
 
 		const commit = await api(`/commit`, {
 			method: 'POST',
@@ -82,12 +84,15 @@ describe('API', () => {
 				ops,
 				output: outputFile,
 				expectSha256: planBody.data.inputSha256,
+				includePackageActions: true,
 			}),
 		})
 		expect(commit.status).toBe(200)
 		const commitBody = await commit.json()
 		expect(commitBody.ok).toBe(true)
 		expect(commitBody.data.outputSha256).toMatch(/^[a-f0-9]{64}$/)
+		expect(commitBody.data.packageActions.kind).toBe('ascend-package-action-proof')
+		expect(commitBody.data.packageActions.byAction.regenerate).toBeGreaterThan(0)
 	})
 
 	test('plan endpoint rejects malformed operation field types', async () => {

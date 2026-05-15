@@ -120,7 +120,11 @@ const COMMANDS: Record<string, Command> = {
 		usage: capabilitiesUsage,
 		allowedFlags: ['feature', 'family', 'priority', 'status', 'gaps', 'json'],
 	},
-	plan: { run: planCommand, usage: planUsage, allowedFlags: ['ops', 'progress', 'json'] },
+	plan: {
+		run: planCommand,
+		usage: planUsage,
+		allowedFlags: ['ops', 'package-actions', 'progress', 'json'],
+	},
 	commit: {
 		run: commitCommand,
 		usage: commitUsage,
@@ -134,6 +138,7 @@ const COMMANDS: Record<string, Command> = {
 			'approval',
 			'progress',
 			'compact',
+			'package-actions',
 			'json',
 		],
 	},
@@ -201,6 +206,7 @@ const BOOLEAN_FLAGS = new Set([
 	'examples',
 	'list',
 	'compact',
+	'package-actions',
 	'telemetry-json',
 	'calibrate',
 	'replace-reference-at-cursor',

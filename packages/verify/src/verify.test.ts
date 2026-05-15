@@ -267,6 +267,43 @@ describe('checker', () => {
 		})
 	})
 
+	test('detects stale shared formula master metadata', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.cells.set(0, 0, {
+			value: numberValue(2),
+			formula: null,
+			styleId: SID,
+			formulaInfo: {
+				kind: 'shared',
+				sharedIndex: '0',
+				isMaster: true,
+				masterRef: 'A1',
+				ref: 'B1:B2',
+			},
+		})
+
+		const result = check(wb)
+		const issues = result.issues.filter((entry) => entry.rule === 'formula-binding-integrity')
+		expect(result.passed).toBe(false)
+		expect(issues).toEqual([
+			expect.objectContaining({
+				message: 'Shared formula master at Sheet1!A1 has no formula text',
+				refs: ['Sheet1!A1'],
+				details: { kind: 'shared-formula-master-missing-formula', sharedIndex: '0' },
+			}),
+			expect.objectContaining({
+				message: 'Shared formula master at Sheet1!A1 has an invalid shared range',
+				refs: ['Sheet1!A1'],
+				details: {
+					kind: 'shared-formula-invalid-range',
+					sharedIndex: '0',
+					range: 'B1:B2',
+				},
+			}),
+		])
+	})
+
 	test('detects stale spill binding metadata after anchor drift', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')
@@ -293,6 +330,33 @@ describe('checker', () => {
 				kind: 'spill-anchor-mismatch',
 				anchorRef: 'Sheet1!A1',
 				range: 'A1:A3',
+			},
+		})
+	})
+
+	test('detects dynamic array metadata without formula text', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.cells.set(0, 0, {
+			value: numberValue(1),
+			formula: null,
+			styleId: SID,
+			formulaInfo: { kind: 'dynamicArray', metadataIndex: 1, collapsed: false },
+		})
+
+		const result = check(wb)
+		const issue = result.issues.find(
+			(entry) => entry.details?.kind === 'dynamic-array-anchor-missing-formula',
+		)
+		expect(result.passed).toBe(false)
+		expect(issue).toMatchObject({
+			rule: 'formula-binding-integrity',
+			severity: 'error',
+			message: 'Dynamic array metadata at Sheet1!A1 is attached to a cell without formula text',
+			refs: ['Sheet1!A1'],
+			details: {
+				kind: 'dynamic-array-anchor-missing-formula',
+				metadataIndex: 1,
 			},
 		})
 	})

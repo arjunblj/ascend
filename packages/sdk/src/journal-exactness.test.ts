@@ -913,6 +913,163 @@ describe('mutation journal exactness model', () => {
 			expect(exercised.has(surface)).toBe(true)
 		}
 	})
+
+	test('representative exact journals restore full workbook evidence after inverse apply', () => {
+		const cases: readonly {
+			readonly name: string
+			readonly setup: (workbook: AscendWorkbook) => void
+			readonly ops: readonly Operation[]
+		}[] = [
+			{
+				name: 'formula cache replacement',
+				setup: (wb) => {
+					applyExact(wb, [
+						{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 2 }] },
+						{ op: 'setFormula', sheet: 'Sheet1', ref: 'B1', formula: 'A1*2' },
+					])
+					const recalc = wb.recalc()
+					expect(recalc.errors).toEqual([])
+				},
+				ops: [{ op: 'setFormula', sheet: 'Sheet1', ref: 'B1', formula: 'A1*3' }],
+			},
+			{
+				name: 'copyRange all metadata',
+				setup: (wb) => {
+					applyExact(wb, [
+						{
+							op: 'setCells',
+							sheet: 'Sheet1',
+							updates: [
+								{ ref: 'A1', value: 'source' },
+								{ ref: 'D1', value: 'target' },
+							],
+						},
+						{ op: 'setStyle', sheet: 'Sheet1', range: 'A1:A1', style: { numberFormat: '0.0' } },
+						{ op: 'setComment', sheet: 'Sheet1', ref: 'A1', text: 'copy me', author: 'agent' },
+						{ op: 'setComment', sheet: 'Sheet1', ref: 'D1', text: 'keep me', author: 'analyst' },
+						{ op: 'setHyperlink', sheet: 'Sheet1', ref: 'A1', url: 'https://source.example' },
+						{ op: 'setHyperlink', sheet: 'Sheet1', ref: 'D1', url: 'https://target.example' },
+						{
+							op: 'setDataValidation',
+							sheet: 'Sheet1',
+							range: 'A1:A1',
+							rule: { type: 'list', formula1: '"A,B"' },
+						},
+						{
+							op: 'setConditionalFormat',
+							sheet: 'Sheet1',
+							range: 'A1:A1',
+							rule: { type: 'expression', formula: 'A1<>""', priority: 1 },
+						},
+					])
+				},
+				ops: [{ op: 'copyRange', sheet: 'Sheet1', source: 'A1:A1', target: 'D1', mode: 'all' }],
+			},
+			{
+				name: 'moveRange formula surface rewrites',
+				setup: (wb) => {
+					applyExact(wb, [
+						{
+							op: 'setCells',
+							sheet: 'Sheet1',
+							updates: [
+								{ ref: 'A1', value: 1 },
+								{ ref: 'C1', value: 3 },
+							],
+						},
+						{ op: 'setFormula', sheet: 'Sheet1', ref: 'D1', formula: 'A1+C1' },
+						{ op: 'setDefinedName', name: 'Input', ref: 'Sheet1!$A$1' },
+						{ op: 'setHyperlink', sheet: 'Sheet1', ref: 'B1', location: 'Sheet1!A1' },
+					])
+				},
+				ops: [{ op: 'moveRange', sheet: 'Sheet1', source: 'A1:A1', target: 'C1', mode: 'all' }],
+			},
+			{
+				name: 'sortRange row metadata',
+				setup: (wb) => {
+					applyExact(wb, [
+						{
+							op: 'setCells',
+							sheet: 'Sheet1',
+							updates: [
+								{ ref: 'A1', value: 'Key' },
+								{ ref: 'B1', value: 'Qty' },
+								{ ref: 'A2', value: 'b' },
+								{ ref: 'B2', value: 2 },
+								{ ref: 'A3', value: 'a' },
+								{ ref: 'B3', value: 1 },
+							],
+						},
+						{
+							op: 'setDataValidation',
+							sheet: 'Sheet1',
+							range: 'A2:A3',
+							rule: { type: 'list', formula1: '"a,b"' },
+						},
+						{
+							op: 'setConditionalFormat',
+							sheet: 'Sheet1',
+							range: 'B2:B3',
+							rule: { type: 'cellIs', operator: 'greaterThan', formula: '0', priority: 1 },
+						},
+						{ op: 'setComment', sheet: 'Sheet1', ref: 'A2', text: 'row note', author: 'agent' },
+						{ op: 'setHyperlink', sheet: 'Sheet1', ref: 'B2', url: 'https://row.example' },
+					])
+				},
+				ops: [{ op: 'sortRange', sheet: 'Sheet1', range: 'A1:B3', by: [{ column: 'Qty' }] }],
+			},
+			{
+				name: 'page setup and print area',
+				setup: (wb) => {
+					applyExact(wb, [
+						{
+							op: 'setPageSetup',
+							sheet: 'Sheet1',
+							setup: { orientation: 'portrait', paperSize: 9 },
+						},
+						{ op: 'setPrintArea', sheet: 'Sheet1', range: 'A1:B2' },
+					])
+				},
+				ops: [
+					{
+						op: 'setPageSetup',
+						sheet: 'Sheet1',
+						setup: { orientation: 'landscape', paperSize: 9 },
+					},
+					{ op: 'setPrintArea', sheet: 'Sheet1', range: 'C1:D2' },
+				],
+			},
+			{
+				name: 'pre-existing style registry entry',
+				setup: (wb) => {
+					wb.getWorkbookModel().styles.register({ font: { bold: true }, numberFormat: '0.0' })
+				},
+				ops: [
+					{
+						op: 'setStyle',
+						sheet: 'Sheet1',
+						range: 'E9:E9',
+						style: { font: { bold: true }, numberFormat: '0.0' },
+					},
+				],
+			},
+		]
+
+		for (const entry of cases) {
+			const wb = AscendWorkbook.create()
+			entry.setup(wb)
+			const before = journalEvidence(wb)
+			const changed = wb.apply(entry.ops, { journal: true })
+			expect(changed.errors, entry.name).toEqual([])
+			expect(changed.journal?.supported, entry.name).toBe(true)
+			expect(changed.journal?.exact, entry.name).toBe(true)
+			expect(changed.journal?.issues, entry.name).toEqual([])
+
+			const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
+			expect(undo.errors, entry.name).toEqual([])
+			expect(journalEvidence(wb), entry.name).toEqual(before)
+		}
+	})
 })
 
 function lossyDataValidationDefaultJournal(): MutationJournal {
@@ -1087,6 +1244,52 @@ function lossyStyleRegistryJournal(): MutationJournal {
 			style: { font: { bold: true } },
 		},
 	])
+}
+
+function journalEvidence(wb: AscendWorkbook): object {
+	const snapshot = wb.snapshot()
+	const { timestamp: _timestamp, ...stableSnapshot } = snapshot
+	const model = wb.getWorkbookModel()
+	return {
+		snapshot: stableSnapshot,
+		styleRegistry: Array.from({ length: model.styles.size }, (_, index) => model.styles.get(index)),
+		workbookProperties: model.workbookProperties,
+		documentProperties: wb.inspect().documentProperties,
+		workbookViews: wb.inspect().workbookViews,
+		calcSettings: model.calcSettings,
+		themeSummary: wb.inspect().themeSummary,
+		sheetMetadata: model.sheets.map((sheet) => ({
+			name: sheet.name,
+			merges: sheet.merges,
+			dataValidations: sheet.dataValidations,
+			conditionalFormats: sheet.conditionalFormats,
+			x14DataValidations: sheet.x14DataValidations,
+			x14ConditionalFormats: sheet.x14ConditionalFormats,
+			comments: [...sheet.comments.entries()],
+			threadedComments: sheet.threadedComments,
+			hyperlinks: [...sheet.hyperlinks.entries()],
+			tables: sheet.tables,
+			tabColor: sheet.tabColor,
+			protection: sheet.protection,
+			state: sheet.state,
+			outlinePr: sheet.outlinePr,
+			sheetFormatPr: sheet.sheetFormatPr,
+			rowHeights: [...sheet.rowHeights.entries()],
+			colWidths: [...sheet.colWidths.entries()],
+			rowDefs: [...sheet.rowDefs.entries()],
+			colDefs: sheet.colDefs,
+			pageSetup: sheet.pageSetup,
+			pageMargins: sheet.pageMargins,
+			printOptions: sheet.printOptions,
+			printArea: sheet.printArea,
+			frozenRows: sheet.frozenRows,
+			frozenCols: sheet.frozenCols,
+		})),
+		chartParts: model.chartParts,
+		chartSheets: model.chartSheets,
+		pivotCaches: model.pivotCaches,
+		pivotTables: model.pivotTables,
+	}
 }
 
 function applyExact(workbook: AscendWorkbook, ops: readonly Operation[]): void {

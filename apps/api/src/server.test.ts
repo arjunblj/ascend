@@ -10,6 +10,7 @@ import {
 	MUTATION_JOURNAL_ISSUE_SCHEMA,
 	MUTATION_JOURNAL_ISSUE_SCHEMA_VERSION,
 	parseOperations,
+	WorkbookDocument,
 } from '@ascend/sdk'
 import { createZip, encode } from '../../../packages/io-xlsx/src/writer/zip.ts'
 import { makeXlsx } from '../../../packages/io-xlsx/test/helpers.ts'
@@ -4448,6 +4449,56 @@ describe('Ascend API server', () => {
 				configurable: true,
 				value: originalOpenSourceBytes,
 			})
+			await unlink(input).catch(() => {})
+			await unlink(output).catch(() => {})
+		}
+	})
+
+	test('check reuses the guarded post-write verification result after commit', async () => {
+		const input = join(
+			tmpdir(),
+			`ascend-api-check-cache-${Date.now()}-${Math.random().toString(16).slice(2)}.xlsx`,
+		)
+		const output = `${input}.out.xlsx`
+		const wb = AscendWorkbook.create()
+		await wb.save(input)
+		const apiFetch = createApiFetch()
+		try {
+			const plan = await postApiFetch(apiFetch, '/plan', {
+				file: input,
+				mutations: [{ path: '/sheets/Sheet1/cells/A1/value', value: 7 }],
+			})
+			expect(plan.status).toBe(200)
+			const commit = await postApiFetch(apiFetch, '/commit', {
+				planHandle: plan.body.data?.preparedPlan?.id,
+				output,
+				approvals: [],
+				compact: true,
+			})
+			expect(commit.status).toBe(200)
+			expect(commit.body.data?.postWrite?.valid).toBe(true)
+
+			const originalOpen = WorkbookDocument.open.bind(WorkbookDocument)
+			let documentOpenCalls = 0
+			Object.defineProperty(WorkbookDocument, 'open', {
+				configurable: true,
+				value: (async (...args: Parameters<typeof WorkbookDocument.open>) => {
+					documentOpenCalls += 1
+					return originalOpen(...args)
+				}) satisfies typeof WorkbookDocument.open,
+			})
+			try {
+				const check = await postApiFetch(apiFetch, '/check', { file: output })
+				expect(check.status).toBe(200)
+				expect(check.body.data?.valid).toBe(true)
+				expect(documentOpenCalls).toBe(0)
+			} finally {
+				Object.defineProperty(WorkbookDocument, 'open', {
+					configurable: true,
+					value: originalOpen,
+				})
+			}
+		} finally {
 			await unlink(input).catch(() => {})
 			await unlink(output).catch(() => {})
 		}

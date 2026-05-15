@@ -213,6 +213,15 @@ interface PathMutationPlanOpenCacheEntry {
 	readonly sourceBytes: Uint8Array
 }
 
+interface RecentCheckCacheEntry {
+	readonly file: string
+	readonly size: number
+	readonly mtimeMs: number
+	readonly ctimeMs: number
+	readonly sha256: string
+	readonly check: AgentCommitResult['postWrite']['check']
+}
+
 function pathMutationPlanCacheLimit(value: number | undefined): number {
 	if (value === undefined) return DEFAULT_PATH_MUTATION_PLAN_CACHE_MAX_BYTES
 	return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0
@@ -249,6 +258,43 @@ async function openPathMutationPlanWorkbook(
 	return {
 		opened,
 		cache: source.sourceBytes.byteLength <= cacheMaxBytes ? opened : undefined,
+	}
+}
+
+async function readRecentCheckCache(
+	file: string,
+	cache: RecentCheckCacheEntry | undefined,
+): Promise<AgentCommitResult['postWrite']['check'] | undefined> {
+	if (!cache || cache.file !== file) return undefined
+	const stat = statSync(file)
+	if (
+		cache.size !== stat.size ||
+		cache.mtimeMs !== stat.mtimeMs ||
+		cache.ctimeMs !== stat.ctimeMs
+	) {
+		return undefined
+	}
+	const bytes = typeof Bun !== 'undefined' ? await Bun.file(file).bytes() : readFileSync(file)
+	const currentSha256 = sha256Bytes(new Uint8Array(bytes))
+	return currentSha256 === cache.sha256 ? cache.check : undefined
+}
+
+function recentCheckCacheEntry(
+	file: string,
+	result: AgentCommitResult,
+): RecentCheckCacheEntry | undefined {
+	try {
+		const stat = statSync(file)
+		return {
+			file,
+			size: stat.size,
+			mtimeMs: stat.mtimeMs,
+			ctimeMs: stat.ctimeMs,
+			sha256: result.outputSha256,
+			check: result.postWrite.check,
+		}
+	} catch {
+		return undefined
 	}
 }
 
@@ -408,6 +454,7 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 		options.pathMutationPlanCacheMaxBytes,
 	)
 	let pathMutationPlanCache: PathMutationPlanOpenCacheEntry | undefined
+	let recentCheckCache: RecentCheckCacheEntry | undefined
 	return async (req: Request) => {
 		const url = new URL(req.url)
 		const method = req.method
@@ -995,6 +1042,7 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 				if (!file && !planHandle) return jsonFailure('Missing or invalid file', 400)
 				try {
 					pathMutationPlanCache = undefined
+					recentCheckCache = undefined
 					const unsupportedLoadOptions = unsupportedAgentPlanLoadOptions(body)
 					if (unsupportedLoadOptions.length > 0) {
 						return jsonFailureError(agentPlanLoadOptionsError(unsupportedLoadOptions), 400)
@@ -1028,6 +1076,7 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 						const prepared = preparedPlans.take(planHandle)
 						if (!prepared.ok) return jsonFailureError(prepared.error, 400)
 						const result = await prepared.handle.commit(options)
+						recentCheckCache = recentCheckCacheEntry(result.output, result)
 						const payload = compact
 							? compactAgentCommitResult(result, {
 									...(maxAffectedCells !== undefined ? { maxAffectedCells } : {}),
@@ -1061,6 +1110,7 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 						if (!file) return jsonFailure('Missing or invalid file', 400)
 						result = await commitAgentPlan(file, input.ops, options)
 					}
+					recentCheckCache = recentCheckCacheEntry(result.output, result)
 					const payload = compact
 						? compactAgentCommitResult(result, {
 								...(maxAffectedCells !== undefined ? { maxAffectedCells } : {}),
@@ -1095,6 +1145,7 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 				if (!file) return jsonFailure('Missing or invalid file', 400)
 				try {
 					pathMutationPlanCache = undefined
+					recentCheckCache = undefined
 					const wb = await AscendWorkbook.open(file)
 					const input = resolveOperationInputForWorkbook(wb, body)
 					if (!input.ok) return jsonFailureError(input.error, 400)
@@ -1197,6 +1248,10 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 				if (!file) return jsonFailure('Missing or invalid file', 400)
 				try {
 					const maxRows = body ? requireOptionalNumber(body, 'maxRows') : undefined
+					if (maxRows === undefined) {
+						const cachedCheck = await readRecentCheckCache(file, recentCheckCache)
+						if (cachedCheck) return jsonSuccess(cachedCheck)
+					}
 					const wb = await WorkbookDocument.open(file, {
 						...(maxRows !== undefined ? { maxRows } : {}),
 					})

@@ -717,11 +717,11 @@ function partialMoveFormulaReferenceError(
 ): ReturnType<typeof ascendError> {
 	return ascendError(
 		'VALIDATION_ERROR',
-		`Cannot move ${rangeToA1(source)} because ${blocker.owner} contains a formula range reference that partially overlaps the moved cells`,
+		`Cannot move ${rangeToA1(source)} because ${blocker.owner} contains a range reference that partially overlaps the moved cells`,
 		{
 			refs: [rangeToA1(source), blocker.owner, blocker.reference],
 			suggestedFix:
-				'Move the full referenced range, edit the formula reference first, or split the formula so it no longer spans cells that will be left behind.',
+				'Move the full referenced range, edit the reference first, or split it so it no longer spans cells that will be left behind.',
 			details: {
 				kind: 'partial-move-formula-reference',
 				ownerKind: blocker.ownerKind,

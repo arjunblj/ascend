@@ -10,7 +10,7 @@ type FormulaTextRewriter = (formula: string | undefined) => string | undefined
 const REF_ERROR_NODE: FormulaNode = { type: 'error', value: '#REF!' }
 
 export interface PartialFormulaMoveReference {
-	readonly ownerKind: 'cell-formula' | 'defined-name' | 'worksheet-metadata'
+	readonly ownerKind: 'cell-formula' | 'defined-name' | 'worksheet-metadata' | 'hyperlink-location'
 	readonly owner: string
 	readonly formula: string
 	readonly reference: string
@@ -269,6 +269,22 @@ export function findPartialFormulaMoveReference(
 			sourceRange,
 		)
 		if (issue) return issue
+		for (const [ref, hyperlink] of sheet.hyperlinks) {
+			if (!hyperlink.location) continue
+			const reference = findPartialMoveReferenceInFormula(
+				hyperlink.location,
+				sourceSheet,
+				sheet.name,
+				sourceRange,
+			)
+			if (!reference) continue
+			return {
+				ownerKind: 'hyperlink-location',
+				owner: `${sheet.name}!hyperlink(${ref}).location`,
+				formula: hyperlink.location,
+				reference,
+			}
+		}
 	}
 	return null
 }

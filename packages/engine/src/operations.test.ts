@@ -2833,6 +2833,38 @@ describe('applyOperation', () => {
 		expect(summary.cells.get(0, 0)?.formula).toBe('SUM(Sheet1!A1:A3)')
 	})
 
+	test('moveRange rejects hyperlink locations with partially moved range references', () => {
+		const wb = createWorkbook()
+		const source = wb.addSheet('Sheet1')
+		const summary = wb.addSheet('Summary')
+		source.cells.set(0, 0, cell(numberValue(1)))
+		source.cells.set(1, 0, cell(numberValue(2)))
+		source.cells.set(2, 0, cell(numberValue(3)))
+		summary.hyperlinks.set('B1', {
+			location: 'Sheet1!A1:A3',
+			display: 'Jump',
+		})
+
+		const result = applyOperation(wb, {
+			op: 'moveRange',
+			sheet: 'Sheet1',
+			source: 'A2',
+			target: 'C2',
+		})
+
+		expectErr(result)
+		expect(result.error.details).toMatchObject({
+			kind: 'partial-move-formula-reference',
+			ownerKind: 'hyperlink-location',
+			owner: 'Summary!hyperlink(B1).location',
+			reference: 'Sheet1!A1:A3',
+			source: 'A2',
+		})
+		expect(source.cells.get(1, 0)?.value).toEqual(numberValue(2))
+		expect(source.cells.get(1, 2)).toBeUndefined()
+		expect(summary.hyperlinks.get('B1')?.location).toBe('Sheet1!A1:A3')
+	})
+
 	test('moveRange rejects defined names and worksheet metadata formulas with partial moved range refs', () => {
 		const cases: readonly {
 			readonly label: string

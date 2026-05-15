@@ -53,6 +53,50 @@ export interface SafeOpenProofResult {
 	readonly cases: readonly SafeOpenProofCaseResult[]
 }
 
+export interface SafeOpenCompactReleaseReport {
+	readonly claim: 'safe unknown workbook opening'
+	readonly command: string
+	readonly generatedAt: string
+	readonly headlineClaimAllowed: false
+	readonly releaseGate: 'blocked-by-publication-policy'
+	readonly publicationStatus: 'needs-release-packaging'
+	readonly readyWhen: readonly SafeOpenCompactReadyWhen[]
+	readonly caseKindCounts: Readonly<Record<SafeOpenProofCaseKind, number>>
+	readonly coverage: {
+		readonly cases: number
+		readonly ok: number
+		readonly rejected: number
+		readonly reviewBeforeHydration: number
+		readonly malformedRejected: boolean
+		readonly recommendedModes: Readonly<Record<string, number>>
+		readonly riskFamilies: readonly string[]
+	}
+	readonly cases: readonly SafeOpenCompactReleaseCase[]
+	readonly boundary: string
+}
+
+export interface SafeOpenCompactReadyWhen {
+	readonly id: string
+	readonly ownerLoop: 'performance' | 'product' | 'release'
+	readonly status: 'missing'
+	readonly requirement: string
+}
+
+export interface SafeOpenCompactReleaseCase {
+	readonly name: string
+	readonly kind: SafeOpenProofCaseKind
+	readonly fixture: string
+	readonly status: 'ok' | 'rejected'
+	readonly recommendedMode?: WorkbookOpenPlan['recommendedMode']
+	readonly reviewBeforeHydration?: boolean
+	readonly riskFamilies: readonly string[]
+	readonly partCount?: number
+	readonly worksheetPartCount?: number
+	readonly relationshipCount?: number
+	readonly fullOpenRatio?: number
+	readonly boundary: string
+}
+
 interface Timed<T> {
 	readonly value: T
 	readonly ms: number
@@ -60,6 +104,30 @@ interface Timed<T> {
 
 const DEFAULT_REPEAT = 7
 const DEFAULT_WARMUP = 2
+
+const COMPACT_RELEASE_READY_WHEN: readonly SafeOpenCompactReadyWhen[] = [
+	{
+		id: 'public-edge-fixtures',
+		status: 'missing',
+		ownerLoop: 'product',
+		requirement:
+			'replace generated signed/unknown-part packages with public binary fixtures or explicitly approve disclosed generated edge packages',
+	},
+	{
+		id: 'release-latency-run',
+		status: 'missing',
+		ownerLoop: 'performance',
+		requirement:
+			'run tracked-clean release-environment open-plan latency evidence over standardized public inputs with approved threshold wording',
+	},
+	{
+		id: 'publication-boundary',
+		status: 'missing',
+		ownerLoop: 'release',
+		requirement:
+			'approve boundary language that excludes malware scanning, sandboxing, file trust, active-content safety, and signed provenance',
+	},
+]
 
 export async function runSafeOpenProof(
 	options: SafeOpenProofOptions = {},
@@ -153,6 +221,42 @@ export function safeOpenProofMarkdown(result: SafeOpenProofResult): string {
 		'',
 		'Allowed claim: Ascend can recommend a load mode and review branch from XLSX/XLSM package features before hydrating workbook cells.',
 	].join('\n')
+}
+
+export function safeOpenCompactReleaseReport(
+	result: SafeOpenProofResult,
+): SafeOpenCompactReleaseReport {
+	const recommendedModes: Record<string, number> = {}
+	for (const entry of result.cases) {
+		if (entry.recommendedMode) {
+			recommendedModes[entry.recommendedMode] = (recommendedModes[entry.recommendedMode] ?? 0) + 1
+		}
+	}
+	return {
+		claim: 'safe unknown workbook opening',
+		command: 'bun run fixtures/benchmarks/safe-open-proof.ts --no-timings --compact-json',
+		generatedAt: result.generatedAt,
+		headlineClaimAllowed: false,
+		releaseGate: 'blocked-by-publication-policy',
+		publicationStatus: 'needs-release-packaging',
+		readyWhen: COMPACT_RELEASE_READY_WHEN,
+		caseKindCounts: countCaseKinds(result.cases),
+		coverage: {
+			cases: result.cases.length,
+			ok: result.cases.filter((entry) => entry.status === 'ok').length,
+			rejected: result.cases.filter((entry) => entry.status === 'rejected').length,
+			reviewBeforeHydration: result.cases.filter((entry) => entry.reviewBeforeHydration === true)
+				.length,
+			malformedRejected: result.cases.some(
+				(entry) => entry.name === 'malformed' && entry.status === 'rejected',
+			),
+			recommendedModes,
+			riskFamilies: Array.from(new Set(result.cases.flatMap((entry) => entry.riskFamilies))).sort(),
+		},
+		cases: result.cases.map(compactCase),
+		boundary:
+			'Compact release report only. It omits workbook bytes and input digests; it is not malware scanning, sandboxing, file trust, active-content safety, signed provenance, or a release performance threshold.',
+	}
 }
 
 async function runSafeOpenProofCase(
@@ -367,6 +471,35 @@ function markdownRow(row: SafeOpenProofCaseResult): string {
 		.replace(/$/, '|')
 }
 
+function countCaseKinds(
+	cases: readonly SafeOpenProofCaseResult[],
+): Record<SafeOpenProofCaseKind, number> {
+	return {
+		file: cases.filter((entry) => entry.kind === 'file').length,
+		synthetic: cases.filter((entry) => entry.kind === 'synthetic').length,
+		malformed: cases.filter((entry) => entry.kind === 'malformed').length,
+	}
+}
+
+function compactCase(row: SafeOpenProofCaseResult): SafeOpenCompactReleaseCase {
+	return {
+		name: row.name,
+		kind: row.kind,
+		fixture: row.fixture,
+		status: row.status,
+		...(row.recommendedMode ? { recommendedMode: row.recommendedMode } : {}),
+		...(row.reviewBeforeHydration !== undefined
+			? { reviewBeforeHydration: row.reviewBeforeHydration }
+			: {}),
+		riskFamilies: row.riskFamilies,
+		...(row.partCount !== undefined ? { partCount: row.partCount } : {}),
+		...(row.worksheetPartCount !== undefined ? { worksheetPartCount: row.worksheetPartCount } : {}),
+		...(row.relationshipCount !== undefined ? { relationshipCount: row.relationshipCount } : {}),
+		...(row.fullOpenRatio !== undefined ? { fullOpenRatio: row.fullOpenRatio } : {}),
+		boundary: row.boundary,
+	}
+}
+
 function positiveInteger(value: number | undefined, fallback: number): number {
 	return Number.isInteger(value) && value !== undefined && value > 0 ? value : fallback
 }
@@ -420,8 +553,12 @@ if (import.meta.main) {
 		warmup: Number(readFlag('--warmup')) || undefined,
 		includeTimings: !process.argv.includes('--no-timings'),
 	})
-	console.log(json ? JSON.stringify(result, null, 2) : safeOpenProofMarkdown(result))
-	if (!json) {
+	if (process.argv.includes('--compact-json')) {
+		console.log(JSON.stringify(safeOpenCompactReleaseReport(result), null, 2))
+	} else {
+		console.log(json ? JSON.stringify(result, null, 2) : safeOpenProofMarkdown(result))
+	}
+	if (!json && !process.argv.includes('--compact-json')) {
 		console.error(`Generated safe-open proof over ${result.cases.length} cases.`)
 		console.error(`Run with --json for machine-readable output from ${basename(import.meta.path)}.`)
 	}

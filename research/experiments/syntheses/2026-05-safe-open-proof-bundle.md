@@ -26,6 +26,7 @@ Ascend recommends a load mode and trust-review branch from XLSX package features
 | --- | --- | --- |
 | Fixture mix | Public clean, formula-heavy, macro, pivot, ActiveX, and chart fixtures; synthetic digital signature, unknown package part, and malformed bytes | Covered for local proof; signed/unknown/malformed should become fixture-backed if promoted |
 | Benchmark | Tracked `fixtures/benchmarks/safe-open-proof.ts` harness measures open-plan against full hydration and renders Markdown/JSON proof output | Strong enough for product proof direction, not a CI threshold |
+| Compact release report | `bun run fixtures/benchmarks/safe-open-proof.ts --no-timings --compact-json` emits claim wording, case mix, routing outcomes, owner-loop gates, and boundaries without workbook bytes or input digests | Covered for local proof handoff |
 | API/CLI/MCP surface | Existing SDK `inspectWorkbookOpenPlan`, CLI `ascend open-plan`, API `POST /open-plan`, MCP `ascend.open_plan` | Implemented; do not add another surface |
 | Validation gate | Focused open-plan tests, API/CLI/MCP open-plan tests, tracked proof harness tests, typecheck, and markdown diff check | Covered in the current rerun; no production behavior changed |
 | Competitor contrast | Microsoft Protected View, Microsoft Safe Documents, Excel digital signatures, openpyxl, SheetJS | Covered |
@@ -109,6 +110,14 @@ Do not claim:
 Promote to product/performance as a proof bundle over existing surfaces. Do not add another CLI/API/MCP surface. The tracked harness is the repeatable report generator; the next production-sized step should only package the report output into release materials if product wants this claim published.
 
 Release proof index status: `fixtures/benchmarks/release-proof-index.ts` now lists the exact reproduction command and publication blockers for this artifact. The safe-open artifact remains `needs-release-packaging` because signed and unknown-part edge cases are durable code-generated packages rather than public binary fixtures, and timing numbers are local proof-run data rather than release thresholds.
+
+Compact report command:
+
+```bash
+bun run fixtures/benchmarks/safe-open-proof.ts --no-timings --compact-json
+```
+
+Use the compact report for release handoff review when owners need the claim, case mix, routing outcomes, risk families, malformed rejection, and readiness gates without workbook bytes or input digests. Do not treat it as artifact storage, signed provenance, malware scanning, sandboxing, file trust, or a release performance threshold.
 
 Replacement fixture scan status: `fixtures/benchmarks/safe-open-fixture-scan.ts` scans checked-in public XLSX/XLSM fixtures for `preservedSignature` and `preservedOther` open-plan risk families. The current scan found no replacement candidates in 351 checked-in fixtures, so the signed/unknown edge-case blocker remains unresolved rather than merely stale.
 

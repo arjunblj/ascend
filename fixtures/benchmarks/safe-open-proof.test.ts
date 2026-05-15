@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import {
 	defaultSafeOpenProofCases,
 	runSafeOpenProof,
+	safeOpenCompactReleaseReport,
 	safeOpenProofMarkdown,
 } from './safe-open-proof.ts'
 
@@ -68,5 +69,42 @@ describe('safe open proof harness', () => {
 		expect(markdown).toContain('not malware scanning')
 		expect(markdown).toContain('Allowed claim:')
 		expect(markdown).toContain('metadata-only')
+	})
+
+	test('renders compact release report without weakening publication blockers', async () => {
+		const proof = await runSafeOpenProof({ repeat: 1, warmup: 0, includeTimings: false })
+		const compact = safeOpenCompactReleaseReport(proof)
+		const compactJson = JSON.stringify(compact)
+
+		expect(compact.claim).toBe('safe unknown workbook opening')
+		expect(compact.headlineClaimAllowed).toBe(false)
+		expect(compact.releaseGate).toBe('blocked-by-publication-policy')
+		expect(compact.readyWhen.map((entry) => entry.id)).toEqual([
+			'public-edge-fixtures',
+			'release-latency-run',
+			'publication-boundary',
+		])
+		expect(compact.coverage).toMatchObject({
+			cases: 9,
+			ok: 8,
+			rejected: 1,
+			reviewBeforeHydration: 4,
+			malformedRejected: true,
+			recommendedModes: {
+				formula: 4,
+				'metadata-only': 4,
+			},
+			riskFamilies: ['preservedActiveX', 'preservedMacro', 'preservedOther', 'preservedSignature'],
+		})
+		expect(compact.caseKindCounts).toEqual({
+			file: 6,
+			synthetic: 2,
+			malformed: 1,
+		})
+		expect(compactJson).not.toContain('inputSha256')
+		expect(compactJson).not.toContain('"bytes":')
+		expect(compactJson).not.toContain('openPlanMedianMs')
+		expect(compact.boundary).toContain('not malware scanning')
+		expect(compact.boundary).toContain('release performance threshold')
 	})
 })

@@ -78,7 +78,7 @@ Use these workbook tools for normal work:
 - `ascend.formula_assist({ formula, cursor?, prefix?, completionLimit?, functionName?, reference?, replaceReferenceAtCursor?, cycleReference? })`
 - `ascend.visuals({ file })`
 - `ascend.pivots({ file, pivotTable?, partPath?, mode? })`
-- `ascend.agent_view({ file, sheet?, range, rowChunkSize?, sampleRowLimit?, sampleValueLimit? })`
+- `ascend.agent_view({ file, sheet?, range, rowChunkSize?, sampleRowLimit?, sampleValueLimit?, maxApproxTokens? })`
 - `ascend.plan({ file, ops? | mutations?, compact?, prepare?, maxChangedCells?, includePackageActions? })`
 - `ascend.commit({ planHandle?, file?, ops? | mutations?, output?, inPlace?, backup?, expectSha256?, allowLoss?, approvals?, compact?, maxAffectedCells?, includePackageActions? })`
 - `ascend.repair_plan({ file })`

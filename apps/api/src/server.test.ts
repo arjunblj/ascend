@@ -1457,6 +1457,38 @@ describe('Ascend API server', () => {
 		)
 	})
 
+	test('agent-view exposes token budget metadata', async () => {
+		const wb = AscendWorkbook.create()
+		const updates = []
+		for (let row = 1; row <= 20; row++) {
+			for (let col = 0; col < 4; col++) {
+				updates.push({
+					ref: `${String.fromCharCode(65 + col)}${row}`,
+					value: row === 1 ? `Header ${col + 1}` : `r${row}-c${col + 1}`,
+				})
+			}
+		}
+		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates }])
+		await wb.save(TEMP_FILE)
+
+		const result = await postJson('/agent-view', {
+			file: TEMP_FILE,
+			range: 'A1:D20',
+			maxApproxTokens: 384,
+		})
+
+		expect(result.status).toBe(200)
+		expect(result.body.ok).toBe(true)
+		expect(result.body.data?.budget?.requestedApproxTokens).toBe(384)
+		expect(result.body.data?.budget?.truncated).toBe(true)
+		expect(result.body.data?.rowCount).toBe(20)
+		expect(result.body.data?.colCount).toBe(4)
+		expect(
+			(result.body.data?.budget?.omittedSampleRows ?? 0) +
+				(result.body.data?.budget?.omittedColumnSampleValues ?? 0),
+		).toBeGreaterThan(0)
+	})
+
 	test('trace returns structured partial-load diagnostics for capped formula views', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

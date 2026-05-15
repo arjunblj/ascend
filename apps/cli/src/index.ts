@@ -91,7 +91,7 @@ const COMMANDS: Record<string, Command> = {
 	'agent-view': {
 		run: agentViewCommand,
 		usage: agentViewUsage,
-		allowedFlags: ['sheet', 'range', 'json'],
+		allowedFlags: ['sheet', 'range', 'tokens', 'json'],
 	},
 	inspect: {
 		run: inspectCommand,

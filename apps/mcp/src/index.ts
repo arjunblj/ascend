@@ -955,8 +955,23 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 				.positive()
 				.optional()
 				.describe('Maximum sample values per column'),
+			maxApproxTokens: z
+				.number()
+				.int()
+				.positive()
+				.optional()
+				.describe('Approximate maximum output tokens; response includes budget omission counters'),
 		},
-		async ({ file, range, sheet, maxRows, rowChunkSize, sampleRowLimit, sampleValueLimit }) => {
+		async ({
+			file,
+			range,
+			sheet,
+			maxRows,
+			rowChunkSize,
+			sampleRowLimit,
+			sampleValueLimit,
+			maxApproxTokens,
+		}) => {
 			try {
 				const wb = await WorkbookDocument.open(
 					file,
@@ -974,6 +989,7 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 					...(rowChunkSize !== undefined ? { rowChunkSize } : {}),
 					...(sampleRowLimit !== undefined ? { sampleRowLimit } : {}),
 					...(sampleValueLimit !== undefined ? { sampleValueLimit } : {}),
+					...(maxApproxTokens !== undefined ? { maxApproxTokens } : {}),
 				})
 				if (!view) {
 					return errorResponse(

@@ -6605,6 +6605,59 @@ describe('MCP server', () => {
 		)
 	})
 
+	test('ascend.agent_view exposes token budget metadata', async () => {
+		const wb = AscendWorkbook.create()
+		const updates = []
+		for (let row = 1; row <= 20; row++) {
+			for (let col = 0; col < 4; col++) {
+				updates.push({
+					ref: `${String.fromCharCode(65 + col)}${row}`,
+					value: row === 1 ? `Header ${col + 1}` : `r${row}-c${col + 1}`,
+				})
+			}
+		}
+		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates }])
+		await wb.save(TEMP_FILE)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const handler = (server as any)._registeredTools['ascend.agent_view'].handler as (args: {
+			file: string
+			range: string
+			maxApproxTokens?: number
+		}) => Promise<{
+			structuredContent?: {
+				ok?: boolean
+				data?: {
+					rowCount?: number
+					colCount?: number
+					budget?: {
+						requestedApproxTokens?: number
+						truncated?: boolean
+						omittedSampleRows?: number
+						omittedColumnSampleValues?: number
+					}
+				}
+			}
+		}>
+
+		const result = await handler({
+			file: TEMP_FILE,
+			range: 'A1:D20',
+			maxApproxTokens: 384,
+		})
+
+		expect(result.structuredContent?.ok).toBe(true)
+		expect(result.structuredContent?.data?.budget?.requestedApproxTokens).toBe(384)
+		expect(result.structuredContent?.data?.budget?.truncated).toBe(true)
+		expect(result.structuredContent?.data?.rowCount).toBe(20)
+		expect(result.structuredContent?.data?.colCount).toBe(4)
+		expect(
+			(result.structuredContent?.data?.budget?.omittedSampleRows ?? 0) +
+				(result.structuredContent?.data?.budget?.omittedColumnSampleValues ?? 0),
+		).toBeGreaterThan(0)
+	})
+
 	test('ascend.trace returns structured partial-load diagnostics for capped formula views', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

@@ -770,6 +770,7 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 					rowChunkSize?: number
 					sampleRowLimit?: number
 					sampleValueLimit?: number
+					maxApproxTokens?: number
 				}>(req)
 				const file = body ? requireString(body, 'file') : null
 				const range = body ? requireString(body, 'range') : null
@@ -783,6 +784,7 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 					const sampleValueLimit = body
 						? requireOptionalNumber(body, 'sampleValueLimit')
 						: undefined
+					const maxApproxTokens = body ? requireOptionalNumber(body, 'maxApproxTokens') : undefined
 					const wb = await WorkbookDocument.open(
 						file,
 						sheetName
@@ -799,6 +801,7 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 						...(rowChunkSize !== undefined ? { rowChunkSize } : {}),
 						...(sampleRowLimit !== undefined ? { sampleRowLimit } : {}),
 						...(sampleValueLimit !== undefined ? { sampleValueLimit } : {}),
+						...(maxApproxTokens !== undefined ? { maxApproxTokens } : {}),
 					})
 					if (!info) return sheetNotFoundResponse(targetSheet, wb)
 					return jsonSuccess(withPartialLoadInfo(info, wb))

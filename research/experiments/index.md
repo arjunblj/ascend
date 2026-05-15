@@ -23,6 +23,7 @@ Updated: 2026-05-14
 | [Package action proof part digests](runs/2026/2026-05-14-package-action-proof-part-digests/log.md) | cycle 30 complete, folded in optional digest evidence | correctness loop |
 | [Release proof digest-backed package actions](runs/2026/2026-05-14-release-proof-digest-backed-package-actions/log.md) | cycle 31 complete, folded in opt-in bundle digest evidence | correctness loop, product/DX loop |
 | [Safe open proof bundle boundary](runs/2026/2026-05-14-safe-open-proof-bundle-boundary/log.md) | cycle 32 complete, handoff only | product/DX loop, performance loop |
+| [Agent view token budget surfaces](runs/2026/2026-05-14-agent-view-token-budget-surfaces/log.md) | cycle 33 complete, folded in CLI/API/MCP budget knob | product/DX loop |
 | [Package action proof](runs/2026/2026-05-14-package-action-proof/log.md) | cycle 2 complete, promote | correctness loop, product/DX loop, performance loop |
 | [Formula spans LSP](runs/2026/2026-05-14-formula-spans-lsp/log.md) | cycle 13 complete, folded in SDK hover/code actions | product/DX loop, correctness loop |
 | [Formula sqllogictest conformance](runs/2026/2026-05-14-formula-sqllogictest-conformance/log.md) | cycle 14 complete, folded in converter/runner | correctness loop |

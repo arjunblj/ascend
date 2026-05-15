@@ -12,6 +12,7 @@ Arguments:
 Flags:
   --sheet <name>      Sheet name (defaults to first sheet)
   --range <range>     Cell range (e.g. A1:Z100, defaults to used range)
+  --tokens <count>    Approximate maximum tokens for JSON/pretty output
   --json              Output as JSON
 `
 
@@ -27,6 +28,11 @@ export async function agentViewCommand(
 
 	const sheetName = flags.get('sheet')
 	const range = flags.get('range')
+	const maxApproxTokens = parsePositiveInt(flags.get('tokens'))
+	if (flags.has('tokens') && maxApproxTokens == null) {
+		cliError('Invalid --tokens. Use a positive integer.', flags)
+		return 1
+	}
 
 	const { document: wb } = await openWorkbookDocumentWithProgress(file, {
 		mode: 'formula',
@@ -48,7 +54,9 @@ export async function agentViewCommand(
 	const usedRange = sheet.usedRange()
 	const effectiveRange = range ?? (usedRange ? rangeRefToString(usedRange) : 'A1:A1')
 
-	const view = wb.agentView(targetSheet, effectiveRange)
+	const view = wb.agentView(targetSheet, effectiveRange, {
+		...(maxApproxTokens != null ? { maxApproxTokens } : {}),
+	})
 	if (!view) {
 		cliError(`Could not generate agent view for ${targetSheet}!${effectiveRange}`, flags)
 		return 1
@@ -64,6 +72,11 @@ export async function agentViewCommand(
 	console.log(bullet('Columns', view.colCount))
 	console.log(bullet('Non-empty cells', view.nonEmptyCount))
 	console.log(bullet('Formula cells', view.formulaCount))
+	if (view.budget) {
+		console.log(bullet('Requested tokens', view.budget.requestedApproxTokens))
+		console.log(bullet('Estimated tokens', view.budget.estimatedApproxTokens))
+		console.log(bullet('Truncated', view.budget.truncated ? 'yes' : 'no'))
+	}
 	if (view.distinctFunctions.length > 0) {
 		console.log(bullet('Functions', view.distinctFunctions.join(', ')))
 	}
@@ -122,6 +135,14 @@ function colToA1(col: number): string {
 		n = Math.floor(n / 26) - 1
 	}
 	return label
+}
+
+function parsePositiveInt(value: string | undefined): number | null | undefined {
+	if (value === undefined || value === '') return undefined
+	if (!/^\d+$/.test(value)) return null
+	const parsed = Number.parseInt(value, 10)
+	if (!Number.isSafeInteger(parsed) || parsed < 1) return null
+	return parsed
 }
 
 function formatSample(v: unknown): string {

@@ -249,6 +249,7 @@ paths:
                 rowChunkSize: { type: integer }
                 sampleRowLimit: { type: integer }
                 sampleValueLimit: { type: integer }
+                maxApproxTokens: { type: integer }
       responses:
         '200': { description: Agent-oriented range profile }
   /formula-assist:

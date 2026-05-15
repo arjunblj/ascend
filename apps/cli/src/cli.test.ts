@@ -16,6 +16,7 @@ const TUI_TEST_FILE = 'test-tui.xlsx'
 const ACTIVE_CONTENT_FILE = 'test-active-content.xlsm'
 const TRUST_REPORT_FILE = 'test-trust-report.xlsm'
 const OPEN_PLAN_FILE = 'test-open-plan.xlsx'
+const AGENT_VIEW_FILE = 'test-agent-view.xlsx'
 const PIVOT_CORPUS_FILE = '../../../research/excel-corpus/ms-excel-formulas-and-pivot-tables.xlsx'
 const SLICER_CORPUS_FILE = '../../../research/excel-corpus/excel-dashboard-v2.xlsx'
 const HAS_PIVOT_CORPUS_FILE = existsSync(`${import.meta.dir}/${PIVOT_CORPUS_FILE}`)
@@ -101,6 +102,7 @@ afterAll(() => {
 		ACTIVE_CONTENT_FILE,
 		TRUST_REPORT_FILE,
 		OPEN_PLAN_FILE,
+		AGENT_VIEW_FILE,
 		APPROVAL_TEST_FILE,
 		'exported.tsv',
 		'exported.json',
@@ -180,6 +182,42 @@ describe('ascend cli', () => {
 		expect(exitCode).toBe(0)
 		expect(stdout).toContain('Created')
 		expect(existsSync(`${import.meta.dir}/${TEST_FILE}`)).toBe(true)
+	})
+
+	test('agent-view --tokens returns budget metadata', async () => {
+		const wb = AscendWorkbook.create()
+		const updates = []
+		for (let row = 1; row <= 20; row++) {
+			for (let col = 0; col < 4; col++) {
+				updates.push({
+					ref: `${String.fromCharCode(65 + col)}${row}`,
+					value: row === 1 ? `Header ${col + 1}` : `r${row}-c${col + 1}`,
+				})
+			}
+		}
+		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates }])
+		await wb.save(`${import.meta.dir}/${AGENT_VIEW_FILE}`)
+
+		const { stdout, exitCode } = await run(
+			'agent-view',
+			AGENT_VIEW_FILE,
+			'--range',
+			'A1:D20',
+			'--tokens',
+			'384',
+			'--json',
+		)
+
+		expect(exitCode).toBe(0)
+		const parsed = JSON.parse(stdout)
+		expect(parsed.ok).toBe(true)
+		expect(parsed.data.budget.requestedApproxTokens).toBe(384)
+		expect(parsed.data.budget.truncated).toBe(true)
+		expect(parsed.data.rowCount).toBe(20)
+		expect(parsed.data.colCount).toBe(4)
+		expect(
+			parsed.data.budget.omittedSampleRows + parsed.data.budget.omittedColumnSampleValues,
+		).toBeGreaterThan(0)
 	})
 
 	test('tui renders a non-TTY first frame and telemetry JSON', async () => {

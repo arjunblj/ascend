@@ -1086,6 +1086,80 @@ describe('agent workflow loss audit', () => {
 				},
 			},
 			{
+				name: 'real-copy-sheet-shared-formulas-reopen-retargeted',
+				risk: 'copySheet of an imported shared-formula worksheet could save copied formula text or binding refs that still point at the source sheet',
+				proof: async () => {
+					const input = join(TEMP_DIR, 'quality-moat-real-copy-sheet-shared.xlsx')
+					const output = join(TEMP_DIR, 'quality-moat-real-copy-sheet-shared-out.xlsx')
+					mkdirSync(TEMP_DIR, { recursive: true })
+					await Bun.write(
+						input,
+						readFileSync(
+							new URL('../../../fixtures/xlsx/poi/shared_formulas.xlsx', import.meta.url),
+						),
+					)
+
+					const prepared = await createPreparedAgentPlan(input, [
+						{ op: 'copySheet' as const, sheet: 'Label', newName: 'Label_Copy' },
+					])
+					expect(prepared.plan.preview.journal).toEqual(
+						expect.objectContaining({
+							supported: true,
+							exact: false,
+							issues: [
+								expect.objectContaining({
+									surface: 'package-parts',
+									reason: 'package-part-preservation',
+									refs: ['sheet:Label', 'sheet:Label_Copy'],
+								}),
+							],
+						}),
+					)
+					expect(prepared.plan.approvals.length).toBeGreaterThan(0)
+
+					const committed = await prepared.commit({
+						output,
+						approvals: prepared.plan.approvals.map((approval) => approval.id),
+					})
+					expect(committed.postWrite.valid).toBe(true)
+					expect(committed.postWrite.auditsPassed).toBe(true)
+					expect(
+						committed.postWrite.check.issues.filter(
+							(issue) => issue.rule === 'formula-binding-integrity',
+						),
+					).toEqual([])
+
+					const reopened = await AscendWorkbook.open(output)
+					const reopenedCheck = reopened.check()
+					expect(reopenedCheck.valid).toBe(true)
+					expect(
+						reopenedCheck.issues.filter((issue) => issue.rule === 'formula-binding-integrity'),
+					).toEqual([])
+					expect(reopened.formula('Label_Copy!A2')?.normalizedFormula).toBe('B2')
+					expect(reopened.formula('Label_Copy!A3')?.normalizedFormula).toBe('B3')
+					expect(reopened.formula('Label_Copy!A41')?.normalizedFormula).toBe('B41')
+					expect(reopened.sheet('Label_Copy')?.cell('A2')?.formulaBinding).toEqual({
+						kind: 'shared',
+						sharedIndex: '0',
+						isMaster: true,
+						masterRef: 'A2',
+						ref: 'A2:A41',
+					})
+					expect(reopened.sheet('Label_Copy')?.cell('A3')?.formulaBinding).toEqual({
+						kind: 'shared',
+						sharedIndex: '0',
+						isMaster: false,
+						masterRef: 'A2',
+					})
+					expect(
+						JSON.stringify([
+							reopened.sheet('Label_Copy')?.cell('A2')?.formulaBinding,
+							reopened.sheet('Label_Copy')?.cell('A3')?.formulaBinding,
+						]),
+					).not.toContain('Label!')
+				},
+			},
+			{
 				name: 'real-shared-formula-member-edit-detaches-and-reopens-clean',
 				risk: 'editing one imported shared-formula member could leave stale sibling formula metadata in the saved workbook',
 				proof: async () => {

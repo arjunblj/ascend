@@ -24,6 +24,7 @@ Ascend can produce a local package-action proof for representative workbook muta
 | --- | --- | --- |
 | Fixture mix | Synthetic docProps, new workbook edits, calc-chain, signature, unknown package part; public macro and chart workbooks | Covered for local proof; synthetic edge cases may still need durable public binaries before external publication |
 | Action vocabulary | Combined commit evidence covers `passthrough=27`, `regenerate=38`, `add=3`, `drop=3`, `error=1` | Covered |
+| Journal compatibility | Every proof case now reports one `package-part-preservation` journal issue alongside package-action evidence | Covered |
 | SDK evidence shape | Tracked `fixtures/benchmarks/package-action-proof.ts` harness uses existing SDK plan/commit and package-action proof helpers | Covered |
 | Validation gate | Harness test, prior full `test:changed`, typecheck, and Biome on changed TypeScript files | Covered in current loop |
 | Competitor contrast | OPC, openpyxl, SheetJS, in-toto boundary | Covered |
@@ -37,20 +38,21 @@ Probe command:
 bun run fixtures/benchmarks/package-action-proof.ts
 ```
 
-| Case | Fixture | Input bytes | Output bytes | Commit actions | Digest pairs | Issues | Proof JSON bytes | Proof ms | Post-write audits | Example actions |
+| Case | Fixture | Input bytes | Output bytes | Commit actions | Digest pairs | Journal package issues | Proof issues | Proof JSON bytes | Post-write audits | Example actions |
 | --- | --- | ---: | ---: | --- | ---: | ---: | ---: | ---: | --- | --- |
-| docprops-passthrough | synthetic docProps package | 2286 | 3485 | passthrough=4, regenerate=4, add=0, drop=0, error=0 | 8 | 0 | 5155 | 0.224 | passed | passthrough workbook; regenerate sheet |
-| regenerate-existing-sheet | new Ascend workbook | 4624 | 4707 | passthrough=3, regenerate=5, add=0, drop=0, error=0 | 8 | 0 | 5132 | 0.074 | passed | passthrough workbook; regenerate styles |
-| add-sheet-part | new Ascend workbook | 4624 | 4512 | passthrough=3, regenerate=5, add=1, drop=0, error=0 | 8 | 0 | 5610 | 0.071 | passed | add worksheet part |
-| calc-chain-drop | synthetic calcChain package | 1776 | 2365 | passthrough=0, regenerate=5, add=0, drop=1, error=0 | 5 | 0 | 3760 | 0.078 | passed | drop calcChain |
-| signature-invalidation-drop | synthetic digital-signature package | 2253 | 2058 | passthrough=1, regenerate=4, add=0, drop=2, error=0 | 5 | 0 | 4165 | 0.087 | passed | drop signature parts |
-| macro-passthrough | `fixtures/xlsx/calamine/vba.xlsm` | 12752 | 12175 | passthrough=6, regenerate=5, add=1, drop=0, error=0 | 11 | 0 | 7359 | 0.199 | passed | passthrough VBA project |
-| chart-sidecar-accounting | `fixtures/xlsx/poi/WithChart.xlsx` | 10138 | 10899 | passthrough=8, regenerate=6, add=1, drop=0, error=0 | 14 | 0 | 9067 | 0.201 | passed | passthrough drawing; regenerate chart/styles |
-| unknown-part-error | synthetic unknown package part | 1692 | 2315 | passthrough=2, regenerate=4, add=0, drop=0, error=1 | 7 | 1 | 4629 | 0.081 | needs review | error unknown custom part |
+| docprops-passthrough | synthetic docProps package | 2286 | 3485 | passthrough=4, regenerate=4, add=0, drop=0, error=0 | 8 | 1 | 0 | 5155 | passed | passthrough workbook; regenerate sheet |
+| regenerate-existing-sheet | new Ascend workbook | 4624 | 4707 | passthrough=3, regenerate=5, add=0, drop=0, error=0 | 8 | 1 | 0 | 5132 | passed | passthrough workbook; regenerate styles |
+| add-sheet-part | new Ascend workbook | 4624 | 4512 | passthrough=3, regenerate=5, add=1, drop=0, error=0 | 8 | 1 | 0 | 5610 | passed | add worksheet part |
+| calc-chain-drop | synthetic calcChain package | 1776 | 2365 | passthrough=0, regenerate=5, add=0, drop=1, error=0 | 5 | 1 | 0 | 3760 | passed | drop calcChain |
+| signature-invalidation-drop | synthetic digital-signature package | 2253 | 2058 | passthrough=1, regenerate=4, add=0, drop=2, error=0 | 5 | 1 | 0 | 4165 | passed | drop signature parts |
+| macro-passthrough | `fixtures/xlsx/calamine/vba.xlsm` | 12752 | 12175 | passthrough=6, regenerate=5, add=1, drop=0, error=0 | 11 | 1 | 0 | 7359 | passed | passthrough VBA project |
+| chart-sidecar-accounting | `fixtures/xlsx/poi/WithChart.xlsx` | 10138 | 10899 | passthrough=8, regenerate=6, add=1, drop=0, error=0 | 14 | 1 | 0 | 9067 | passed | passthrough drawing; regenerate chart/styles |
+| unknown-part-error | synthetic unknown package part | 1692 | 2315 | passthrough=2, regenerate=4, add=0, drop=0, error=1 | 7 | 1 | 1 | 4629 | needs review | error unknown custom part |
 
 ## Interpretation
 
 - The proof is strong enough for guarded release language around local package-part accounting.
+- Package-action evidence and rollback-journal evidence now line up in the harness: every case has a package-preservation journal issue, and only the unknown-part case has a package-action proof issue.
 - The proof should not say "chart byte passthrough." It should say chart/drawing package content is accounted for with per-part actions.
 - The unknown-part case is intentionally not clean: it demonstrates explicit review-required evidence rather than silent preservation claims.
 - Timing and JSON-size values are evidence for report shape, not performance thresholds.

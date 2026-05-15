@@ -40,6 +40,9 @@ export interface PackageActionProofCaseResult {
 	readonly planActionCounts: Readonly<Record<PackageActionKind, number>>
 	readonly commitActionCounts: Readonly<Record<PackageActionKind, number>>
 	readonly commitCoverage: PackageActionProof['coverage']
+	readonly commitJournalExact: boolean | null
+	readonly commitJournalPackageIssueCount: number
+	readonly commitJournalPackageIssueRefs: readonly string[]
 	readonly expectedActionsPresent: boolean
 	readonly proofJsonBytes: number
 	readonly proofMedianMs?: number
@@ -145,8 +148,8 @@ export function packageActionProofMarkdown(result: PackageActionProofResult): st
 		`Generated: ${result.generatedAt}`,
 		'Boundary: this is local package-part action evidence. It is not signed provenance, Excel recalculation equivalence, or a guarantee that unsupported package features are semantically understood.',
 		'',
-		'| Case | Fixture | Input bytes | Output bytes | Commit actions | Source graph | Digest pairs | Issues | Proof JSON bytes | Proof ms | Expected action present | Post-write audits | Examples |',
-		'| --- | --- | ---: | ---: | --- | --- | ---: | ---: | ---: | ---: | --- | --- | --- |',
+		'| Case | Fixture | Input bytes | Output bytes | Commit actions | Source graph | Digest pairs | Journal package issues | Proof issues | Proof JSON bytes | Proof ms | Expected action present | Post-write audits | Examples |',
+		'| --- | --- | ---: | ---: | --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- | --- |',
 		...result.cases.map(markdownRow),
 		'',
 		`Combined commit actions: ${formatCounts(result.combinedCommitActionCounts)}`,
@@ -176,6 +179,9 @@ async function runPackageActionProofCase(
 		const outputBytes = readFileSync(output)
 		const measured = measureProof(() => createAgentCommitPackageActionProof(committed), options)
 		const commitProof = measured.value
+		const journalPackageIssues = (committed.apply.journal?.issues ?? []).filter(
+			(issue) => issue.surface === 'package-parts' && issue.reason === 'package-part-preservation',
+		)
 		assertExpectedActions(proofCase, commitProof)
 		return {
 			name: proofCase.name,
@@ -185,6 +191,11 @@ async function runPackageActionProofCase(
 			planActionCounts: planProof.byAction,
 			commitActionCounts: commitProof.byAction,
 			commitCoverage: commitProof.coverage,
+			commitJournalExact: committed.apply.journal?.exact ?? null,
+			commitJournalPackageIssueCount: journalPackageIssues.length,
+			commitJournalPackageIssueRefs: Array.from(
+				new Set(journalPackageIssues.flatMap((issue) => issue.refs ?? [])),
+			),
 			expectedActionsPresent: true,
 			proofJsonBytes: new TextEncoder().encode(JSON.stringify(commitProof)).byteLength,
 			...(measured.ms !== undefined ? { proofMedianMs: measured.ms } : {}),
@@ -423,6 +434,7 @@ function markdownRow(row: PackageActionProofCaseResult): string {
 		String(
 			row.commitCoverage.matchingByteDigestCount + row.commitCoverage.mismatchedByteDigestCount,
 		),
+		String(row.commitJournalPackageIssueCount),
 		String(row.issueCount),
 		String(row.proofJsonBytes),
 		row.proofMedianMs?.toFixed(3) ?? 'n/a',

@@ -32,6 +32,9 @@ describe('package action proof harness', () => {
 		expect(proof.cases.every((entry) => entry.expectedActionsPresent)).toBe(true)
 		expect(proof.cases.every((entry) => entry.commitCoverage.sourceGraphIncluded)).toBe(true)
 		expect(proof.cases.every((entry) => entry.commitCoverage.outputByteDigestCount > 0)).toBe(true)
+		expect(proof.cases.every((entry) => entry.commitJournalExact === false)).toBe(true)
+		expect(proof.cases.every((entry) => entry.commitJournalPackageIssueCount > 0)).toBe(true)
+		expect(proof.cases.every((entry) => entry.commitJournalPackageIssueRefs.length > 0)).toBe(true)
 		expect(proof.cases.find((entry) => entry.name === 'unknown-part-error')).toMatchObject({
 			postWriteAuditsPassed: false,
 			issueCount: 1,
@@ -45,6 +48,7 @@ describe('package action proof harness', () => {
 		expect(markdown).toContain('Package Action Proof Report')
 		expect(markdown).toContain('not signed provenance')
 		expect(markdown).toContain('Excel recalculation equivalence')
+		expect(markdown).toContain('Journal package issues')
 		expect(markdown).toContain('Combined commit actions:')
 		expect(markdown).toContain('unknown-part-error')
 	})

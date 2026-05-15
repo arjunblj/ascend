@@ -4163,11 +4163,26 @@ function journalSetTableStyle(
 	opIndex: number,
 ): DraftJournalEntry {
 	const style = tableStylePreimage(workbook, op.table)
-	const issues = tableStyleRestoreIssues(op, style.style)
+	const issues =
+		op.styleName === undefined &&
+		op.showFirstColumn === undefined &&
+		op.showLastColumn === undefined &&
+		op.showRowStripes === undefined &&
+		op.showColumnStripes === undefined
+			? [
+					{
+						code: 'UNSUPPORTED_VALUE',
+						message: `Cannot build exact rollback journal for setTableStyle because no style field was provided for table ${op.table}`,
+						surface: 'tables',
+						reason: 'value-unsupported',
+						refs: [`table:${op.table}`],
+					} satisfies MutationJournalIssue,
+				]
+			: tableStyleRestoreIssues(op, style.style)
 	return {
 		opIndex,
 		op,
-		inverseOps: [tableStyleSetOperation(op.table, style.style)],
+		inverseOps: issues.length === 0 ? [tableStyleSetOperation(op.table, style.style)] : [],
 		preimages: [{ kind: 'table-style', tableStyle: style }],
 		issues,
 	}
@@ -4555,12 +4570,29 @@ function journalSetTheme(
 		colors: workbook.themeColors.map((color) => ({ ...color })),
 	}
 	const inverse = themeInverseOperation(op, preimage)
+	const issues: readonly MutationJournalIssue[] =
+		op.themeName === undefined &&
+		op.colorSchemeName === undefined &&
+		op.majorFontLatin === undefined &&
+		op.minorFontLatin === undefined &&
+		op.themeColors === undefined
+			? [
+					{
+						code: 'UNSUPPORTED_VALUE',
+						message:
+							'Cannot build exact rollback journal for setTheme because no theme field was provided',
+						surface: 'workbook-metadata',
+						reason: 'value-unsupported',
+						refs: ['workbook:theme'],
+					},
+				]
+			: inverse.issues
 	return {
 		opIndex,
 		op,
-		inverseOps: inverse.op ? [inverse.op] : [],
+		inverseOps: issues.length === 0 && inverse.op ? [inverse.op] : [],
 		preimages: [{ kind: 'theme', theme: preimage }],
-		issues: inverse.issues,
+		issues,
 	}
 }
 
@@ -9015,6 +9047,10 @@ function threadedCommentPreimage(
 	const sheet = workbook.getSheet(op.sheet)
 	if (
 		!sheet ||
+		(op.partPath === undefined &&
+			op.threadedCommentId === undefined &&
+			op.ref === undefined &&
+			op.commentIndex === undefined) ||
 		(op.commentIndex !== undefined && (op.commentIndex < 0 || !Number.isInteger(op.commentIndex)))
 	) {
 		return { sheet: op.sheet, commentIndex: null, threadedComment: null }

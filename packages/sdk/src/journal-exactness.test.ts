@@ -778,6 +778,75 @@ describe('mutation journal exactness model', () => {
 		}
 	})
 
+	test('classifies missing required metadata updates as unsupported values', () => {
+		const cases: readonly {
+			readonly op: Operation
+			readonly surface: MutationJournalSurface
+			readonly reason: MutationJournalReasonCode
+		}[] = [
+			{
+				op: { op: 'setTableStyle', table: 'Sales' },
+				surface: 'tables',
+				reason: 'value-unsupported',
+			},
+			{
+				op: { op: 'setTheme' },
+				surface: 'workbook-metadata',
+				reason: 'value-unsupported',
+			},
+		]
+
+		for (const entry of cases) {
+			const wb = AscendWorkbook.create()
+			seedSimpleTable(wb)
+			const analysis = analyzeMutationJournalExactness(
+				buildMutationJournal(wb.getWorkbookModel(), [entry.op]),
+			)
+			expect(analysis, entry.op.op).toMatchObject({
+				supported: true,
+				exact: false,
+				issueCount: 1,
+				surfaces: [entry.surface],
+				reasons: [entry.reason],
+				hasMatrixViolation: false,
+			})
+			expect(analysis.issues[0], entry.op.op).toMatchObject({
+				code: 'UNSUPPORTED_VALUE',
+				surface: entry.surface,
+				reason: entry.reason,
+				allowedByMatrix: true,
+			})
+		}
+	})
+
+	test('classifies selectorless threaded comment journals as comment selector loss', () => {
+		const wb = AscendWorkbook.create()
+		const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+		if (!sheet) throw new Error('missing sheet')
+		sheet.threadedComments.push({ ref: 'B2', text: 'Before', id: 'tc-1' })
+
+		const analysis = analyzeMutationJournalExactness(
+			buildMutationJournal(wb.getWorkbookModel(), [
+				{ op: 'setThreadedComment', sheet: 'Sheet1', text: 'After' },
+			]),
+		)
+
+		expect(analysis).toMatchObject({
+			supported: true,
+			exact: false,
+			issueCount: 1,
+			surfaces: ['comments'],
+			reasons: ['threaded-comment-selector'],
+			hasMatrixViolation: false,
+		})
+		expect(analysis.issues[0]).toMatchObject({
+			code: 'LOSSY_INVERSE',
+			surface: 'comments',
+			reason: 'threaded-comment-selector',
+			allowedByMatrix: true,
+		})
+	})
+
 	test('classifies setComment legacy drawing loss without changing the v1 vocabulary', () => {
 		const classified = classifyMutationJournalIssues(lossySetCommentLegacyDrawingJournal().issues)
 		expect(classified).toContainEqual({

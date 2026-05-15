@@ -19,6 +19,7 @@ Latest proof refresh, 2026-05-15:
 - `release-proof-index` now tags each next owner action with a `nextStepKind`, so top blockers are visibly owner decisions, validation runs, optional harness expansion, or publication policy rather than implicit permission for research to add new surfaces.
 - `release-proof-index` now also reports `implementationSurfacePromotionAllowed=false` while these blockers remain, with boundary text that unresolved proof requirements do not authorize new SDK, CLI, API, or MCP surfaces.
 - `release-proof-index` now emits `implementationHandoffs` for exactly the top two product-shaped claims, carrying owner loops, proof commands, blocker IDs, next-step kinds, and the same fail-closed surface-promotion flag.
+- Each `implementationHandoff` now carries `proofRequired`: fixture, benchmark, surface, validation gate, competitor contrast, honest boundary, and kill criterion. This keeps the claim ladder product-shaped in the machine-readable release artifact, not just in prose.
 
 ## External References
 

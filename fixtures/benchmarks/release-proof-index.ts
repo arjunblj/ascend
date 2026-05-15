@@ -116,6 +116,7 @@ export interface ReleaseProofImplementationHandoff {
 	readonly rank: number
 	readonly artifact: ReleaseProofIndexArtifactName
 	readonly claim: string
+	readonly proofRequired: ReleaseProofClaimProofRequired
 	readonly ownerLoops: readonly ReleaseProofReadinessOwner[]
 	readonly proofCommand: string
 	readonly compactReportCommand?: string
@@ -123,6 +124,16 @@ export interface ReleaseProofImplementationHandoff {
 	readonly blockingRequirementIds: readonly string[]
 	readonly nextStepKinds: readonly ReleaseProofNextOwnerAction['nextStepKind'][]
 	readonly boundary: string
+}
+
+export interface ReleaseProofClaimProofRequired {
+	readonly fixture: string
+	readonly benchmark: string
+	readonly surface: string
+	readonly validationGate: string
+	readonly competitorContrast: string
+	readonly honestBoundary: string
+	readonly killCriterion: string
 }
 
 export async function runReleaseProofIndex(
@@ -479,6 +490,7 @@ function buildImplementationHandoffs(
 			rank: index + 1,
 			artifact: artifact.name,
 			claim: artifact.claim,
+			proofRequired: claimProofRequired(artifact.name),
 			ownerLoops: uniqueOwnerLoops(artifact.readyWhen.map((requirement) => requirement.ownerLoop)),
 			proofCommand: artifact.command,
 			compactReportCommand: artifact.compactReportCommand,
@@ -491,6 +503,47 @@ function buildImplementationHandoffs(
 				'Owner handoff for proof, validation, boundary approval, and publication policy only; it is not permission to add new SDK, CLI, API, or MCP surfaces.',
 		}
 	})
+}
+
+function claimProofRequired(
+	artifact: ReleaseProofIndexArtifactName,
+): ReleaseProofClaimProofRequired {
+	switch (artifact) {
+		case 'safe-open-proof':
+			return {
+				fixture:
+					'Public clean, formula-heavy, macro, pivot, ActiveX, chart, signed, unknown-part, and malformed workbook/package cases; generated signed and unknown-part cases must stay disclosed unless replaced by public binary fixtures.',
+				benchmark:
+					'Release-environment open-plan latency over standardized public inputs, compared with full hydration and approved threshold wording.',
+				surface:
+					'Existing SDK open planner, CLI open-plan, API open-plan endpoint, and MCP open-plan tool only; no new opener surface.',
+				validationGate:
+					'Run the safe-open proof harness, focused open-plan tests, malformed package checks, release-proof-index, typecheck, Biome, and changed tests when code changes.',
+				competitorContrast:
+					'Microsoft Protected View is trust/read-only UX for potentially unsafe files; Ascend claim is OSS pre-hydration package-feature routing.',
+				honestBoundary:
+					'Not malware scanning, sandboxing, file trust, active-content safety, signed provenance, or malformed-package recovery.',
+				killCriterion:
+					'Do not publish headline wording if generated signed/unknown packages are hidden, product rejects disclosed generated topology fixtures, or latency wording lacks an approved release-environment run.',
+			}
+		case 'package-action-proof':
+			return {
+				fixture:
+					'Public and generated package cases covering docProps passthrough, worksheet regeneration, sheet add, calc-chain drop, signature invalidation, macro/sidecar accounting, chart sidecar accounting, and unknown-part error.',
+				benchmark:
+					'Package-proof overhead in bytes and milliseconds for plan/commit evidence, including compact versus expanded report paths and the representative streaming writer proof.',
+				surface:
+					'Existing SDK evidence and compact CLI/API/MCP proof summaries only; no new mutation surface.',
+				validationGate:
+					'Run the package-action proof harness, plan/commit/reopen/diff/audit checks, journal/package compatibility tests, release-proof-index, schema/typecheck/Biome, and changed tests when code changes.',
+				competitorContrast:
+					'openpyxl and SheetJS document preservation/write boundaries; Ascend claim is explicit per-part action accounting.',
+				honestBoundary:
+					'Not signed provenance, SLSA, in-toto attestation, Excel recalculation equivalence, chart byte passthrough, or semantic understanding of every unsupported feature.',
+				killCriterion:
+					'Do not publish stronger wording if synthetic edge packages are hidden, chart XML is described as byte-passthrough, one streaming proof is described as full matrix parity, or local digests imply attestation.',
+			}
+	}
 }
 
 function rankMissingRequirement(input: {
@@ -609,7 +662,7 @@ function formatImplementationHandoffs(
 	return handoffs
 		.map(
 			(handoff) =>
-				`${handoff.rank}:${handoff.artifact}(${handoff.ownerLoops.join('+')};promotion=${handoff.implementationSurfacePromotionAllowed};blockers=${handoff.blockingRequirementIds.join(',') || 'none'})`,
+				`${handoff.rank}:${handoff.artifact}(${handoff.ownerLoops.join('+')};promotion=${handoff.implementationSurfacePromotionAllowed};blockers=${handoff.blockingRequirementIds.join(',') || 'none'};kill=${handoff.proofRequired.killCriterion})`,
 		)
 		.join('; ')
 }

@@ -94,6 +94,17 @@ describe('release proof evidence index', () => {
 				rank: 1,
 				artifact: 'safe-open-proof',
 				claim: 'safe unknown workbook opening',
+				proofRequired: {
+					fixture: expect.stringContaining('generated signed and unknown-part cases'),
+					benchmark: expect.stringContaining('Release-environment open-plan latency'),
+					surface: expect.stringContaining('no new opener surface'),
+					validationGate: expect.stringContaining('safe-open proof harness'),
+					competitorContrast: expect.stringContaining('Microsoft Protected View'),
+					honestBoundary: expect.stringContaining('Not malware scanning'),
+					killCriterion: expect.stringContaining(
+						'Do not publish headline wording if generated signed/unknown packages are hidden',
+					),
+				},
 				ownerLoops: ['performance', 'product', 'release'],
 				implementationSurfacePromotionAllowed: false,
 				blockingRequirementIds: [
@@ -115,6 +126,15 @@ describe('release proof evidence index', () => {
 				rank: 2,
 				artifact: 'package-action-proof',
 				claim: 'auditable package-part mutation',
+				proofRequired: {
+					fixture: expect.stringContaining('docProps passthrough'),
+					benchmark: expect.stringContaining('Package-proof overhead'),
+					surface: expect.stringContaining('no new mutation surface'),
+					validationGate: expect.stringContaining('package-action proof harness'),
+					competitorContrast: expect.stringContaining('openpyxl and SheetJS'),
+					honestBoundary: expect.stringContaining('Not signed provenance'),
+					killCriterion: expect.stringContaining('local digests imply attestation'),
+				},
 				ownerLoops: ['correctness', 'performance', 'product', 'release'],
 				implementationSurfacePromotionAllowed: false,
 				blockingRequirementIds: [
@@ -283,6 +303,8 @@ describe('release proof evidence index', () => {
 		expect(markdown).toContain('Next owner actions: 10:package-action-proof/edge-fixture-policy')
 		expect(markdown).toContain('Implementation handoffs: 1:safe-open-proof')
 		expect(markdown).toContain('promotion=false;blockers=public-edge-fixtures')
+		expect(markdown).toContain('kill=Do not publish headline wording')
+		expect(markdown).toContain('kill=Do not publish stronger wording')
 		expect(markdown).toContain('2:package-action-proof')
 		expect(markdown).toContain(
 			'60:safe-open-proof/compact-report-publication-policy(release,publication-policy,publication-policy)',

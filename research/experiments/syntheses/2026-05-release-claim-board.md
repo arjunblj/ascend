@@ -55,6 +55,7 @@ Latest proof refresh, 2026-05-15T10:15:42Z:
 - Release packaging remains a proof-bundle blocker, not a research surface invitation. Current source manifests are private/workspace-based, app builds emit declarations only, CLI/API/MCP dist JS is placeholder output, CLI still points `bin.ascend` at source and depends on TUI, API/MCP lack publish manifests or bins, and SDK agent docs resolve from repo layout instead of package assets. Product/release should own the next packaging harness.
 - Shared-formula journal coverage was tightened for structural formula rewrites: `moveRange` formula-surface restoration now uses edit preimages so every rewritten shared-formula member is reported in journal issues. Treat this as correctness hygiene under auditable package-part mutation, not a new claim.
 - Practical latency target selection now carries p95/CV and stability fields for key first-view, edit-verify, and repeated-inspection phases. This helps performance owners reject noisy median targets before production work, but remains diagnostic routing and does not satisfy release latency gates.
+- `release:sdk:smoke` now proves a narrow SDK-only temp external install from a built tarball without consumer overrides. It verifies create/open/plan/commit/reopen/check/recalc from `@ascend/sdk`; it does not close CLI/API/MCP packaging, bundled docs, publication policy, provenance, or signed artifact claims.
 
 ## External References
 

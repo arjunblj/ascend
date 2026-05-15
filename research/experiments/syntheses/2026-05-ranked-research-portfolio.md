@@ -16,6 +16,8 @@ Release packaging audit: the release proof bundle row remains `needs-one-more-fo
 
 Performance target routing now includes tail/variance evidence. `agent-first-window` and `agent-phase-profile` emit p95/CV stats for key first-view, edit-verify, and repeated-inspection phases, and `practical-latency-contracts` propagates those fields into target decisions as `phaseP95Ms`, `phaseCv`, `stability`, and `nextAction`. A one-sample public-tracked probe showed the shape is present, but this remains measurement routing only, not a release latency claim.
 
+SDK packaging proof moved from blocker-only audit to a narrow reusable smoke. `release:sdk:smoke` builds local library artifacts, bundles internal packages into an SDK tarball, installs only that tarball into a temp consumer app, then proves create/open/plan/commit/reopen/check/recalc. This partially advances the release proof bundle row, but CLI/API/MCP packaging, packaged docs, publication policy, and provenance remain open.
+
 Proof timestamp: 2026-05-15T18:34:10Z.
 
 Safe-open latency is now an explicit performance-owner gate in JSON. `safeOpenLatencyValidationEvidence` reports that the default owner handoff is untimed (`timed-evidence-absent-owner-run-required`), keeps `releaseClaimAllowed=false` and `thresholdClaimAllowed=false`, and names the missing release policy requirements: tracked-clean release environment, standardized public input set, approved repeat/warmup policy, and non-threshold wording. A local `--repeat 3 --warmup 1` diagnostic was rerun, but remains diagnostic-only.

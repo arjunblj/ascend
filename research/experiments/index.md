@@ -6,6 +6,7 @@ Updated: 2026-05-15
 
 | Run | Status | Fold-in target |
 | --- | --- | --- |
+| [SDK release smoke tarball](runs/2026/2026-05-15-sdk-release-smoke-tarball/log.md) | folded in SDK-only tarball smoke proving temp external install without consumer overrides | product loop, release loop |
 | [Latency target variance routing](runs/2026/2026-05-15-latency-target-variance-routing/log.md) | folded p95/CV stats into first-window summaries and practical-latency target decisions | performance loop |
 | [Shared formula journal coverage](runs/2026/2026-05-15-shared-formula-journal-coverage/log.md) | folded in shared-formula member journal coverage for structural formula rewrites | correctness loop |
 | [Release packaging owner audit](runs/2026/2026-05-15-release-packaging-owner-audit/log.md) | converted untracked packaging audit into owner-routed proof gaps; no package surfaces promoted | product loop, release loop |

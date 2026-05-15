@@ -8,6 +8,10 @@ Research is no longer a broad sweep. Each direction below must earn its place by
 
 ## Latest Claim Steward Refresh
 
+Proof timestamp: 2026-05-15T18:04:42Z.
+
+The portfolio now treats the package-action streaming gap as machine-readable evidence, not prose. `release-proof-index --owner-handoffs-json` emits `streamingMatrixEvidence` with one covered case (`docprops-passthrough`), covered action kinds `passthrough` and `regenerate`, missing action kinds `add`, `drop`, and `error`, and public non-streaming cases `calc-chain-drop`, `macro-passthrough`, and `chart-sidecar-accounting`. This strengthens the rank-2 handoff by proving the boundary while keeping `streaming-matrix-boundary` missing.
+
 Proof timestamp: 2026-05-15T17:38:11Z.
 
 The portfolio ranking still holds after the current proof run. The top two implementation handoffs remain safe unknown workbook opening and auditable package-part mutation. The release gate remains fail-closed, so the next step is owner approval or fixture replacement, not a new SDK/CLI/API/MCP surface.

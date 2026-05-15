@@ -99,6 +99,27 @@ export interface ReleaseProofCompactReportPublicationEvidence {
 	readonly boundary: string
 }
 
+export type ReleaseProofPackageActionKind = 'passthrough' | 'regenerate' | 'add' | 'drop' | 'error'
+
+export interface ReleaseProofStreamingMatrixEvidence {
+	readonly artifact: 'package-action-proof'
+	readonly gateId: 'streaming-matrix-boundary'
+	readonly ownerLoop: 'performance'
+	readonly status: 'representative-proof-present-owner-approval-required'
+	readonly ownerApprovalRequired: true
+	readonly validationCommand: string
+	readonly representativeProofCases: number
+	readonly streamingRegenerateParts: number
+	readonly coveredActionKinds: readonly ReleaseProofPackageActionKind[]
+	readonly missingActionKinds: readonly ReleaseProofPackageActionKind[]
+	readonly coveredCaseNames: readonly string[]
+	readonly nonStreamingCaseNames: readonly string[]
+	readonly publicNonStreamingCaseNames: readonly string[]
+	readonly generatedNonStreamingCaseNames: readonly string[]
+	readonly streamingIssueCaseNames: readonly string[]
+	readonly boundary: string
+}
+
 export interface ReleaseProofCompactReportPublicationEvidenceItem {
 	readonly artifact: ReleaseProofIndexArtifactName
 	readonly gateId: 'compact-report-publication-policy'
@@ -125,6 +146,7 @@ export interface ReleaseProofIndexResult {
 	readonly performancePolicy: ReleaseProofPerformancePolicy
 	readonly correctnessPolicy: ReleaseProofCorrectnessPolicy
 	readonly correctnessBoundaryEvidence: ReleaseProofCorrectnessBoundaryEvidence
+	readonly streamingMatrixEvidence: ReleaseProofStreamingMatrixEvidence
 	readonly compactReportPublicationEvidence: ReleaseProofCompactReportPublicationEvidence
 	readonly readiness: ReleaseProofReadinessSummary
 	readonly boundary: string
@@ -144,6 +166,7 @@ export interface ReleaseProofOwnerHandoffIndex {
 	readonly performancePolicy: ReleaseProofPerformancePolicy
 	readonly correctnessPolicy: ReleaseProofCorrectnessPolicy
 	readonly correctnessBoundaryEvidence: ReleaseProofCorrectnessBoundaryEvidence
+	readonly streamingMatrixEvidence: ReleaseProofStreamingMatrixEvidence
 	readonly compactReportPublicationEvidence: ReleaseProofCompactReportPublicationEvidence
 	readonly nextOwnerActions: readonly ReleaseProofNextOwnerAction[]
 	readonly implementationHandoffs: readonly ReleaseProofImplementationHandoff[]
@@ -627,6 +650,7 @@ export async function runReleaseProofIndex(
 		performancePolicy: clonePerformancePolicy(),
 		correctnessPolicy: cloneCorrectnessPolicy(),
 		correctnessBoundaryEvidence: correctnessBoundaryEvidence(safeOpen, packageAction),
+		streamingMatrixEvidence: streamingMatrixEvidence(packageAction),
 		compactReportPublicationEvidence: compactReportPublicationEvidence(
 			safeOpenCompact,
 			packageActionCompact,
@@ -724,6 +748,17 @@ export function releaseProofIndexMarkdown(result: ReleaseProofIndexResult): stri
 			(reference) => `- ${reference.label}: ${reference.url}`,
 		),
 		'',
+		'## Streaming Matrix Evidence',
+		'',
+		`Status: ${result.streamingMatrixEvidence.status}`,
+		`Covered action kinds: ${result.streamingMatrixEvidence.coveredActionKinds.join(',') || 'none'}`,
+		`Missing action kinds: ${result.streamingMatrixEvidence.missingActionKinds.join(',') || 'none'}`,
+		`Covered cases: ${result.streamingMatrixEvidence.coveredCaseNames.join(',') || 'none'}`,
+		`Non-streaming cases: ${result.streamingMatrixEvidence.nonStreamingCaseNames.join(',') || 'none'}`,
+		`Public non-streaming cases: ${result.streamingMatrixEvidence.publicNonStreamingCaseNames.join(',') || 'none'}`,
+		`Owner approval required: ${result.streamingMatrixEvidence.ownerApprovalRequired}`,
+		result.streamingMatrixEvidence.boundary,
+		'',
 		'## Correctness Policy',
 		'',
 		`Current decision: ${result.correctnessPolicy.currentDecision}`,
@@ -814,6 +849,7 @@ export function releaseProofOwnerHandoffIndex(
 		compactReportPublicationEvidence: cloneCompactReportPublicationEvidence(
 			result.compactReportPublicationEvidence,
 		),
+		streamingMatrixEvidence: cloneStreamingMatrixEvidence(result.streamingMatrixEvidence),
 		nextOwnerActions: result.readiness.nextOwnerActions,
 		implementationHandoffs: result.readiness.implementationHandoffs,
 		deferredClaims: result.deferredClaims,
@@ -922,6 +958,14 @@ const DEFERRED_CLAIMS: readonly ReleaseProofDeferredClaim[] = [
 		boundary:
 			'No claim of autonomous correctness, signed audit trail, or complete observability across every workbook feature.',
 	},
+]
+
+const RELEASE_PACKAGE_ACTION_KINDS: readonly ReleaseProofPackageActionKind[] = [
+	'passthrough',
+	'regenerate',
+	'add',
+	'drop',
+	'error',
 ]
 
 function cloneDeferredClaim(claim: ReleaseProofDeferredClaim): ReleaseProofDeferredClaim {
@@ -1263,6 +1307,60 @@ function packageCaseHasRepresentativeStreamingProof(
 		streamingProof.passthroughBytesEqualCount > 0 &&
 		streamingProof.issueCount === 0
 	)
+}
+
+function streamingMatrixEvidence(
+	result: PackageActionProofResult,
+): ReleaseProofStreamingMatrixEvidence {
+	const streamingCases = result.cases.filter((entry) => entry.streamingProof !== undefined)
+	const nonStreamingCases = result.cases.filter((entry) => entry.streamingProof === undefined)
+	const coveredActionKinds = RELEASE_PACKAGE_ACTION_KINDS.filter((action) =>
+		streamingCases.some((entry) => (entry.streamingProof?.actionCounts[action] ?? 0) > 0),
+	)
+	const covered = new Set(coveredActionKinds)
+	return {
+		artifact: 'package-action-proof',
+		gateId: 'streaming-matrix-boundary',
+		ownerLoop: 'performance',
+		status: 'representative-proof-present-owner-approval-required',
+		ownerApprovalRequired: true,
+		validationCommand: 'bun run fixtures/benchmarks/package-action-proof.ts --no-timings --json',
+		representativeProofCases: streamingCases.length,
+		streamingRegenerateParts: streamingCases.reduce(
+			(count, entry) => count + (entry.streamingProof?.streamingRegeneratePartPaths.length ?? 0),
+			0,
+		),
+		coveredActionKinds,
+		missingActionKinds: RELEASE_PACKAGE_ACTION_KINDS.filter((action) => !covered.has(action)),
+		coveredCaseNames: streamingCases.map((entry) => entry.name),
+		nonStreamingCaseNames: nonStreamingCases.map((entry) => entry.name),
+		publicNonStreamingCaseNames: nonStreamingCases
+			.filter((entry) => entry.sourceKind === 'public-fixture')
+			.map((entry) => entry.name),
+		generatedNonStreamingCaseNames: nonStreamingCases
+			.filter((entry) => entry.sourceKind !== 'public-fixture')
+			.map((entry) => entry.name),
+		streamingIssueCaseNames: streamingCases
+			.filter((entry) => (entry.streamingProof?.issueCount ?? 0) > 0)
+			.map((entry) => entry.name),
+		boundary:
+			'Streaming matrix evidence proves one representative dirty-sheet streaming package-action case only. It does not prove full streaming parity, add/drop/error streaming behavior, or streaming coverage for public macro/chart fixtures.',
+	}
+}
+
+function cloneStreamingMatrixEvidence(
+	evidence: ReleaseProofStreamingMatrixEvidence,
+): ReleaseProofStreamingMatrixEvidence {
+	return {
+		...evidence,
+		coveredActionKinds: [...evidence.coveredActionKinds],
+		missingActionKinds: [...evidence.missingActionKinds],
+		coveredCaseNames: [...evidence.coveredCaseNames],
+		nonStreamingCaseNames: [...evidence.nonStreamingCaseNames],
+		publicNonStreamingCaseNames: [...evidence.publicNonStreamingCaseNames],
+		generatedNonStreamingCaseNames: [...evidence.generatedNonStreamingCaseNames],
+		streamingIssueCaseNames: [...evidence.streamingIssueCaseNames],
+	}
 }
 
 function safeOpenRiskRoutedToReview(

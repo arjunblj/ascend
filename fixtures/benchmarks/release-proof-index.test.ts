@@ -137,6 +137,41 @@ describe('release proof evidence index', () => {
 			'hyperfine benchmarking',
 			'hyperfine manual',
 		])
+		expect(index.streamingMatrixEvidence).toMatchObject({
+			artifact: 'package-action-proof',
+			gateId: 'streaming-matrix-boundary',
+			ownerLoop: 'performance',
+			status: 'representative-proof-present-owner-approval-required',
+			ownerApprovalRequired: true,
+			validationCommand: 'bun run fixtures/benchmarks/package-action-proof.ts --no-timings --json',
+			representativeProofCases: 1,
+			streamingRegenerateParts: 1,
+			coveredActionKinds: ['passthrough', 'regenerate'],
+			missingActionKinds: ['add', 'drop', 'error'],
+			coveredCaseNames: ['docprops-passthrough'],
+			streamingIssueCaseNames: [],
+			boundary: expect.stringContaining('does not prove full streaming parity'),
+		})
+		expect(index.streamingMatrixEvidence.nonStreamingCaseNames).toEqual([
+			'regenerate-existing-sheet',
+			'add-sheet-part',
+			'calc-chain-drop',
+			'signature-invalidation-drop',
+			'macro-passthrough',
+			'chart-sidecar-accounting',
+			'unknown-part-error',
+		])
+		expect(index.streamingMatrixEvidence.publicNonStreamingCaseNames).toEqual([
+			'calc-chain-drop',
+			'macro-passthrough',
+			'chart-sidecar-accounting',
+		])
+		expect(index.streamingMatrixEvidence.generatedNonStreamingCaseNames).toEqual([
+			'regenerate-existing-sheet',
+			'add-sheet-part',
+			'signature-invalidation-drop',
+			'unknown-part-error',
+		])
 		expect(index.correctnessPolicy).toMatchObject({
 			currentDecision: 'owner-approval-required',
 			boundary: expect.stringContaining('does not prove semantic support'),
@@ -638,6 +673,18 @@ describe('release proof evidence index', () => {
 			'release-latency-run',
 			'streaming-matrix-boundary',
 		])
+		expect(handoff.streamingMatrixEvidence).toMatchObject({
+			status: 'representative-proof-present-owner-approval-required',
+			ownerApprovalRequired: true,
+			coveredActionKinds: ['passthrough', 'regenerate'],
+			missingActionKinds: ['add', 'drop', 'error'],
+			coveredCaseNames: ['docprops-passthrough'],
+			publicNonStreamingCaseNames: [
+				'calc-chain-drop',
+				'macro-passthrough',
+				'chart-sidecar-accounting',
+			],
+		})
 		expect(handoff.correctnessPolicy.approvalChecklist.map((item) => item.gateId)).toEqual([
 			'unsupported-feature-boundary',
 		])
@@ -666,6 +713,9 @@ describe('release proof evidence index', () => {
 		])
 		expect(JSON.stringify(handoff.fixturePolicy)).toContain('package-action-fixture-scan')
 		expect(JSON.stringify(handoff.performancePolicy)).toContain('safe-open-proof.ts --repeat 3')
+		expect(JSON.stringify(handoff.streamingMatrixEvidence)).toContain(
+			'"missingActionKinds":["add","drop","error"]',
+		)
 		expect(JSON.stringify(handoff.correctnessPolicy)).toContain('signature preservation')
 		expect(JSON.stringify(handoff.correctnessBoundaryEvidence)).toContain('safe-open-proof/activex')
 		expect(handoff.compactReportPublicationEvidence).toMatchObject({
@@ -790,6 +840,15 @@ describe('release proof evidence index', () => {
 		expect(markdown).toContain('| safe-open-proof | release-latency-run | performance')
 		expect(markdown).toContain('| package-action-proof | streaming-matrix-boundary | performance')
 		expect(markdown).toContain('Bun benchmarking')
+		expect(markdown).toContain('## Streaming Matrix Evidence')
+		expect(markdown).toContain('Status: representative-proof-present-owner-approval-required')
+		expect(markdown).toContain('Covered action kinds: passthrough,regenerate')
+		expect(markdown).toContain('Missing action kinds: add,drop,error')
+		expect(markdown).toContain('Covered cases: docprops-passthrough')
+		expect(markdown).toContain('Non-streaming cases: regenerate-existing-sheet,add-sheet-part')
+		expect(markdown).toContain(
+			'Public non-streaming cases: calc-chain-drop,macro-passthrough,chart-sidecar-accounting',
+		)
 		expect(markdown).toContain('## Correctness Policy')
 		expect(markdown).toContain('Unsupported feature boundaries:')
 		expect(markdown).toContain(

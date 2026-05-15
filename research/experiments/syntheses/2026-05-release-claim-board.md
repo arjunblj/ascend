@@ -45,6 +45,7 @@ Latest proof refresh, 2026-05-15T10:15:42Z:
 - `fixturePolicyEvidence` now records the latest tracked fixture scan summaries in the owner handoff: safe-open scanned 223 fixtures with 0 signature/unknown replacements, package-action scanned 223 fixtures with `signaturePackage=0` and `syntheticUnknownPathFamily=0`, and `ownerApprovalRequired=true`.
 - `fixturePolicy.approvalChecklist` now lists four pending product/release decisions with validation commands, acceptance evidence, and rejection conditions. All checklist items remain `pending-owner-decision`; no release gate is satisfied by the checklist itself.
 - `performancePolicy.approvalChecklist` now lists pending performance decisions for `safe-open-proof/release-latency-run` and `package-action-proof/streaming-matrix-boundary`. It records validation commands and rejection conditions while keeping local timing below release-threshold wording and one streaming case below parity wording.
+- `streamingMatrixEvidence` now records the concrete streaming boundary in owner-handoff JSON: one representative streaming proof case, covered action kinds `passthrough` and `regenerate`, missing action kinds `add`, `drop`, and `error`, and public non-streaming cases `calc-chain-drop`, `macro-passthrough`, and `chart-sidecar-accounting`. This is proof of the boundary, not satisfaction of `streaming-matrix-boundary`.
 
 ## External References
 

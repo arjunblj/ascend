@@ -2992,16 +2992,12 @@ function journalSetDataValidation(
 ): DraftJournalEntry {
 	const validation = dataValidationPreimage(workbook, op.sheet, op.range)
 	const { inverseOps, issues } = restoreDataValidationOps(validation)
-	const orderIssues =
-		validation.validation === null
-			? []
-			: dataValidationRestoreOrderIssues(workbook, op.sheet, [validation])
 	return {
 		opIndex,
 		op,
 		inverseOps,
 		preimages: [{ kind: 'data-validations', validations: [validation] }],
-		issues: [...issues, ...orderIssues],
+		issues,
 	}
 }
 

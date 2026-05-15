@@ -1366,6 +1366,31 @@ describe('mutation journal exactness model', () => {
 				],
 			},
 			{
+				name: 'data validation non-tail replacement',
+				seedOps: [
+					{
+						op: 'setDataValidation',
+						sheet: 'Sheet1',
+						range: 'A1:A1',
+						rule: { type: 'whole', formula1: '1', allowBlank: true, showErrorMessage: true },
+					},
+					{
+						op: 'setDataValidation',
+						sheet: 'Sheet1',
+						range: 'B1:B1',
+						rule: { type: 'whole', formula1: '2', allowBlank: true, showErrorMessage: true },
+					},
+				],
+				ops: [
+					{
+						op: 'setDataValidation',
+						sheet: 'Sheet1',
+						range: 'A1:A1',
+						rule: { type: 'whole', formula1: '3', allowBlank: true, showErrorMessage: true },
+					},
+				],
+			},
+			{
 				name: 'conditional format tail replacement',
 				seedOps: [
 					{

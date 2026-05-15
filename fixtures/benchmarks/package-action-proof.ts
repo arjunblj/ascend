@@ -74,6 +74,53 @@ export interface PackageActionProofResult {
 	readonly combinedCommitActionCounts: Readonly<Record<PackageActionKind, number>>
 }
 
+export interface PackageActionCompactReleaseReport {
+	readonly claim: 'auditable package-part mutation'
+	readonly command: string
+	readonly generatedAt: string
+	readonly headlineClaimAllowed: false
+	readonly releaseGate: 'blocked-by-publication-policy'
+	readonly publicationStatus: 'needs-release-packaging'
+	readonly readyWhen: readonly PackageActionCompactReadyWhen[]
+	readonly sourceCaseCounts: Readonly<Record<PackageActionProofSourceKind, number>>
+	readonly combinedCommitActionCounts: Readonly<Record<PackageActionKind, number>>
+	readonly coverage: {
+		readonly cases: number
+		readonly expectedActionsEverywhere: boolean
+		readonly sourceGraphEverywhere: boolean
+		readonly packageJournalIssuesEverywhere: boolean
+		readonly postWriteAuditFailures: readonly string[]
+		readonly proofIssueCases: readonly string[]
+		readonly streamingProofCases: number
+		readonly streamingRegenerateParts: number
+	}
+	readonly cases: readonly PackageActionCompactReleaseCase[]
+	readonly boundary: string
+}
+
+export interface PackageActionCompactReadyWhen {
+	readonly id: string
+	readonly ownerLoop: 'correctness' | 'performance' | 'product' | 'release'
+	readonly status: 'missing'
+	readonly requirement: string
+}
+
+export interface PackageActionCompactReleaseCase {
+	readonly name: string
+	readonly sourceKind: PackageActionProofSourceKind
+	readonly fixture: string
+	readonly expectedActionsPresent: boolean
+	readonly postWriteAuditsPassed: boolean
+	readonly issueCount: number
+	readonly journalPackageIssueCount: number
+	readonly actionCounts: Readonly<Record<PackageActionKind, number>>
+	readonly streamingProof?: {
+		readonly regeneratePartCount: number
+		readonly passthroughBytesEqualCount: number
+		readonly issueCount: number
+	}
+}
+
 export interface PackageActionStreamingProofResult {
 	readonly outputBytes: number
 	readonly actionCounts: Readonly<Record<PackageActionKind, number>>
@@ -85,6 +132,37 @@ export interface PackageActionStreamingProofResult {
 }
 
 const ACTIONS: readonly PackageActionKind[] = ['passthrough', 'regenerate', 'add', 'drop', 'error']
+
+const COMPACT_RELEASE_READY_WHEN: readonly PackageActionCompactReadyWhen[] = [
+	{
+		id: 'edge-fixture-policy',
+		status: 'missing',
+		ownerLoop: 'product',
+		requirement:
+			'accept disclosed generated edge packages as release proof or replace them with public binary fixtures',
+	},
+	{
+		id: 'provenance-boundary',
+		status: 'missing',
+		ownerLoop: 'release',
+		requirement:
+			'approve local-proof wording that does not imply SLSA, in-toto, signed provenance, or third-party attestation',
+	},
+	{
+		id: 'unsupported-feature-boundary',
+		status: 'missing',
+		ownerLoop: 'correctness',
+		requirement:
+			'approve boundaries for signatures, chart byte passthrough, Excel recalculation equivalence, and unsupported feature semantics',
+	},
+	{
+		id: 'streaming-matrix-boundary',
+		status: 'missing',
+		ownerLoop: 'performance',
+		requirement:
+			'approve one representative streaming writer proof as sufficient for release wording, or expand package-action proof to streaming variants for every package-action scenario before claiming streaming parity',
+	},
+]
 
 export async function runPackageActionProof(
 	options: PackageActionProofOptions = {},
@@ -190,6 +268,47 @@ export function packageActionProofMarkdown(result: PackageActionProofResult): st
 		'',
 		`Combined commit actions: ${formatCounts(result.combinedCommitActionCounts)}`,
 	].join('\n')
+}
+
+export function packageActionCompactReleaseReport(
+	result: PackageActionProofResult,
+): PackageActionCompactReleaseReport {
+	return {
+		claim: 'auditable package-part mutation',
+		command: 'bun run fixtures/benchmarks/package-action-proof.ts --no-timings --compact-json',
+		generatedAt: result.generatedAt,
+		headlineClaimAllowed: false,
+		releaseGate: 'blocked-by-publication-policy',
+		publicationStatus: 'needs-release-packaging',
+		readyWhen: COMPACT_RELEASE_READY_WHEN,
+		sourceCaseCounts: countSourceKinds(result.cases),
+		combinedCommitActionCounts: result.combinedCommitActionCounts,
+		coverage: {
+			cases: result.cases.length,
+			expectedActionsEverywhere: result.cases.every((entry) => entry.expectedActionsPresent),
+			sourceGraphEverywhere: result.cases.every(
+				(entry) => entry.commitCoverage.sourceGraphIncluded,
+			),
+			packageJournalIssuesEverywhere: result.cases.every(
+				(entry) => entry.commitJournalPackageIssueCount > 0,
+			),
+			postWriteAuditFailures: result.cases
+				.filter((entry) => !entry.postWriteAuditsPassed)
+				.map((entry) => entry.name),
+			proofIssueCases: result.cases
+				.filter((entry) => entry.issueCount > 0)
+				.map((entry) => entry.name),
+			streamingProofCases: result.cases.filter((entry) => entry.streamingProof !== undefined)
+				.length,
+			streamingRegenerateParts: result.cases.reduce(
+				(count, entry) => count + (entry.streamingProof?.streamingRegeneratePartPaths.length ?? 0),
+				0,
+			),
+		},
+		cases: result.cases.map(compactCase),
+		boundary:
+			'Compact release report only. It omits workbook bytes, per-part action rows, and generated artifacts; it is not signed provenance, SLSA, in-toto, third-party attestation, or full streaming parity.',
+	}
 }
 
 async function runPackageActionProofCase(
@@ -491,6 +610,39 @@ function combineCounts(
 	return combined
 }
 
+function countSourceKinds(
+	cases: readonly PackageActionProofCaseResult[],
+): Record<PackageActionProofSourceKind, number> {
+	return {
+		'public-fixture': cases.filter((entry) => entry.sourceKind === 'public-fixture').length,
+		'generated-workbook': cases.filter((entry) => entry.sourceKind === 'generated-workbook').length,
+		'generated-edge-package': cases.filter((entry) => entry.sourceKind === 'generated-edge-package')
+			.length,
+	}
+}
+
+function compactCase(row: PackageActionProofCaseResult): PackageActionCompactReleaseCase {
+	return {
+		name: row.name,
+		sourceKind: row.sourceKind,
+		fixture: row.fixture,
+		expectedActionsPresent: row.expectedActionsPresent,
+		postWriteAuditsPassed: row.postWriteAuditsPassed,
+		issueCount: row.issueCount,
+		journalPackageIssueCount: row.commitJournalPackageIssueCount,
+		actionCounts: row.commitActionCounts,
+		...(row.streamingProof
+			? {
+					streamingProof: {
+						regeneratePartCount: row.streamingProof.streamingRegeneratePartPaths.length,
+						passthroughBytesEqualCount: row.streamingProof.passthroughBytesEqualCount,
+						issueCount: row.streamingProof.issueCount,
+					},
+				}
+			: {}),
+	}
+}
+
 function emptyCounts(): Record<PackageActionKind, number> {
 	return { passthrough: 0, regenerate: 0, add: 0, drop: 0, error: 0 }
 }
@@ -556,7 +708,9 @@ if (import.meta.main) {
 	const result = await runPackageActionProof({
 		includeTimings: !process.argv.includes('--no-timings'),
 	})
-	if (process.argv.includes('--json')) {
+	if (process.argv.includes('--compact-json')) {
+		console.log(JSON.stringify(packageActionCompactReleaseReport(result), null, 2))
+	} else if (process.argv.includes('--json')) {
 		console.log(JSON.stringify(result, null, 2))
 	} else {
 		console.log(packageActionProofMarkdown(result))

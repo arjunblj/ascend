@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
 	defaultPackageActionProofCases,
+	packageActionCompactReleaseReport,
 	packageActionProofMarkdown,
 	runPackageActionProof,
 } from './package-action-proof.ts'
@@ -77,5 +78,39 @@ describe('package action proof harness', () => {
 		expect(markdown).toContain('Streaming proof')
 		expect(markdown).toContain('streaming regenerate=xl/worksheets/sheet1.xml')
 		expect(markdown).toContain('unknown-part-error')
+	})
+
+	test('renders compact release report without embedding full proof artifacts', async () => {
+		const proof = await runPackageActionProof({ includeTimings: false })
+		const compact = packageActionCompactReleaseReport(proof)
+		const compactJson = JSON.stringify(compact)
+		const fullJson = JSON.stringify(proof)
+
+		expect(compact.claim).toBe('auditable package-part mutation')
+		expect(compact.headlineClaimAllowed).toBe(false)
+		expect(compact.releaseGate).toBe('blocked-by-publication-policy')
+		expect(compact.readyWhen.map((entry) => entry.id)).toContain('streaming-matrix-boundary')
+		expect(compact.coverage).toMatchObject({
+			cases: 8,
+			expectedActionsEverywhere: true,
+			sourceGraphEverywhere: true,
+			packageJournalIssuesEverywhere: true,
+			postWriteAuditFailures: ['unknown-part-error'],
+			proofIssueCases: ['unknown-part-error'],
+			streamingProofCases: 1,
+			streamingRegenerateParts: 1,
+		})
+		expect(compact.sourceCaseCounts).toEqual({
+			'public-fixture': 2,
+			'generated-workbook': 2,
+			'generated-edge-package': 4,
+		})
+		expect(compactJson.length).toBeLessThan(fullJson.length)
+		expect(compactJson).not.toContain('inputSha256')
+		expect(compactJson).not.toContain('outputBytes')
+		expect(compactJson).not.toContain('proofJsonBytes')
+		expect(compactJson).not.toContain('streamingRegeneratePartPaths')
+		expect(compact.boundary).toContain('not signed provenance')
+		expect(compact.boundary).toContain('full streaming parity')
 	})
 })

@@ -27,6 +27,7 @@ Ascend can produce a local package-action proof for representative workbook muta
 | Journal compatibility | Every proof case now reports one `package-part-preservation` journal issue alongside package-action evidence | Covered |
 | SDK evidence shape | Tracked `fixtures/benchmarks/package-action-proof.ts` harness uses existing SDK plan/commit and package-action proof helpers | Covered |
 | Validation gate | Harness test, prior full `test:changed`, typecheck, and Biome on changed TypeScript files | Covered in current loop |
+| Compact release report | `bun run fixtures/benchmarks/package-action-proof.ts --no-timings --compact-json` emits claim wording, action counts, case outcomes, owner-loop gates, and boundaries without full proof rows or workbook payload fields | Covered for local proof handoff |
 | Competitor contrast | OPC, openpyxl, SheetJS, in-toto boundary | Covered |
 | Honest boundary | Chart XML regenerates while drawing sidecars pass through; proof is local package evidence, not signed provenance or Excel recalc equivalence | Covered |
 
@@ -83,4 +84,12 @@ Promote as the second release-proof artifact beside safe-open. Do not add a new 
 
 Release proof index status: `fixtures/benchmarks/release-proof-index.ts` now lists the exact reproduction command, publication blockers, owner-loop `readyWhen` gates, and one representative streaming writer proof for this artifact. It also carries a fail-closed `streaming-matrix-boundary` gate: do not describe the representative streaming proof as full streaming parity unless a performance owner approves that wording or the proof expands to streaming variants for every package-action scenario. The package-action artifact remains `needs-release-packaging` because synthetic edge packages must stay disclosed unless replaced by public binary fixtures, and this proof is local evidence rather than signed provenance or third-party attestation. The current no-timings stable shape digest is `9abebf576651551f58e00ccf8469d099b2c06dacd48391fe581a24e51a1e0afd`.
 
-Do not track generated compact JSON yet. A local probe measured `7854` bytes for full generated JSON and `1896` bytes for a compact summary, but the current artifact shape includes generated metadata and duplicates harness assertions. Keep JSON as generated output until release-proof publication and privacy rules are explicit.
+Compact report command:
+
+```bash
+bun run fixtures/benchmarks/package-action-proof.ts --no-timings --compact-json
+```
+
+Use the compact report for release handoff review when owners need the claim, action counts, issue cases, and readiness gates without full proof rows. Do not treat it as artifact storage, signed provenance, or a privacy policy.
+
+Do not track generated compact JSON yet. Keep it as generated output until release-proof publication and privacy rules decide where claim reports live and how their digests are retained.

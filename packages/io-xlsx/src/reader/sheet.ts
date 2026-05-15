@@ -314,9 +314,9 @@ export function parseSheet(
 		parseX14DataValidations(strippedXml, sheet, ctx.valuePool)
 		parseAdvancedFilters(ws, sheet)
 		parseSparklineGroups(ws, sheet)
-		extractCustomSheetViews(xml, sheet)
-		extractExtLst(xml, sheet)
-		extractControls(xml, sheet)
+		extractCustomSheetViews(strippedXml, sheet)
+		extractExtLst(strippedXml, sheet)
+		extractControls(strippedXml, sheet)
 	}
 	return sheet
 }

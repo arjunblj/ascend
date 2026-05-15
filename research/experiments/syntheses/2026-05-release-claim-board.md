@@ -30,6 +30,7 @@ Latest proof refresh, 2026-05-15:
 - Safe-open public fixture scan still finds no checked-in signed/unknown replacement: 351 public fixtures scanned, 2 protected fixtures rejected, 0 matches. Product must accept disclosed generated structural fixtures or explicitly acquire public binaries.
 - Package-action compact proof has 2 public fixtures, 2 generated workbooks, and 4 generated edge packages with all five action classes covered; the generated edge packages should support only disclosed structural package-action wording, not provenance, trust, or full streaming-parity claims.
 - Compact safe-open and package-action reports omit workbook bytes, input/output byte fields, per-part digest fields, and generated artifacts. Treat them as owner-review pointers until release approves storage, privacy filtering, and canonicalization policy.
+- Worksheet reader metadata extraction now uses markup-compatibility-stripped XML for custom sheet views, raw extension lists, and controls; the SDK trust moat also uses a real imported shared-formula fixture for corruption blocking. Treat this as correctness hygiene under preservation-first/auditable mutation, not as claim promotion.
 
 ## External References
 

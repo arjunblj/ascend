@@ -316,6 +316,52 @@ describe('checker', () => {
 		})
 	})
 
+	test('detects shared formula members with hidden formula text', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.cells.set(0, 0, {
+			value: numberValue(2),
+			formula: 'B1*2',
+			styleId: SID,
+			formulaInfo: {
+				kind: 'shared',
+				sharedIndex: '0',
+				isMaster: true,
+				masterRef: 'A1',
+				ref: 'A1:A2',
+			},
+		})
+		s.cells.set(1, 0, {
+			value: numberValue(198),
+			formula: 'B2*99',
+			styleId: SID,
+			formulaInfo: {
+				kind: 'shared',
+				sharedIndex: '0',
+				isMaster: false,
+				masterRef: 'A1',
+			},
+		})
+
+		const result = check(wb)
+		const issue = result.issues.find(
+			(entry) => entry.details?.kind === 'shared-formula-member-formula-text-mismatch',
+		)
+		expect(result.passed).toBe(false)
+		expect(issue).toMatchObject({
+			rule: 'formula-binding-integrity',
+			severity: 'error',
+			message:
+				'Shared formula member at Sheet1!A2 has formula text that would be hidden by shared metadata when saved',
+			refs: ['Sheet1!A2', 'Sheet1!A1'],
+			details: {
+				kind: 'shared-formula-member-formula-text-mismatch',
+				sharedIndex: '0',
+				masterRef: 'A1',
+			},
+		})
+	})
+
 	test('detects shared formula master ranges with detached formula members', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')

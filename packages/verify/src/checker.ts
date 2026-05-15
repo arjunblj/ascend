@@ -879,6 +879,19 @@ function checkFormulaBindingIntegrity(wb: Workbook): CheckIssue[] {
 					masterCell.formulaInfo.isMaster &&
 					masterCell.formulaInfo.sharedIndex === binding.sharedIndex
 				) {
+					if (cell.formula) {
+						issues.push(
+							formulaBindingIntegrityIssue(
+								`Shared formula member at ${cellRef} has formula text that would be hidden by shared metadata when saved`,
+								[cellRef, `${master.sheet}!${toA1({ row: master.row, col: master.col })}`],
+								{
+									kind: 'shared-formula-member-formula-text-mismatch',
+									sharedIndex: binding.sharedIndex,
+									masterRef: binding.masterRef,
+								},
+							),
+						)
+					}
 					const sharedRange = parseBindingRange(masterCell.formulaInfo.ref, master.sheet)
 					if (!sharedRange || !rangeContainsCell(sharedRange, sheet.name, row, col)) {
 						issues.push(

@@ -6,6 +6,7 @@ Updated: 2026-05-15
 
 | Run | Status | Fold-in target |
 | --- | --- | --- |
+| [Axis layout validation boundary](runs/2026/2026-05-15-axis-layout-validation-boundary/log.md) | folded in engine validation and SDK journal classification for invalid row/column spans, dimensions, and outline endpoints before metadata mutation | correctness loop |
 | [Release gate rerun after streaming drop proof](runs/2026/2026-05-15-release-gate-rerun-after-streaming-drop/log.md) | release index still blocks headline claims and implementation surface promotion after streaming drop proof; top handoffs remain safe-open and package-action only | product loop, release loop |
 | [Range-backed journal validation](runs/2026/2026-05-15-range-backed-journal-validation/log.md) | finished in-flight invalid range-backed journal classification and content-type attribute coverage; no new surface | correctness loop |
 | [Package action streaming drop proof](runs/2026/2026-05-15-package-action-streaming-drop-proof/log.md) | folded streaming `drop` proof into the package-action harness; `error`, macro, and chart streaming remain unpromoted boundaries | performance loop, release loop |

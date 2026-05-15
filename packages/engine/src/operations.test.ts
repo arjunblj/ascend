@@ -3410,7 +3410,7 @@ describe('applyOperation', () => {
 		const target = wb.addSheet('Sheet2')
 		const summary = wb.addSheet('Summary')
 		source.cells.set(0, 0, cell(numberValue(10)))
-		summary.cells.set(0, 0, cell(EMPTY, 'Sheet1!A1+1'))
+		summary.cells.set(0, 0, cell(EMPTY, 'sheet1!A1+1'))
 		target.cells.set(4, 4, cell(EMPTY, 'Sheet1!A1*2'))
 		wb.definedNames.set('Input', 'Sheet1!A1')
 
@@ -6069,7 +6069,9 @@ describe('applyOperation', () => {
 
 	test('renameSheet updates sheet name', () => {
 		const wb = setup()
-		wb.definedNames.set('Budget', 'Sheet1!A1')
+		const summary = wb.addSheet('Summary')
+		summary.cells.set(0, 0, cell(EMPTY, 'sheet1!A1+1'))
+		wb.definedNames.set('Budget', 'sheet1!A1')
 		const result = applyOperation(wb, {
 			op: 'renameSheet',
 			sheet: 'Sheet1',
@@ -6079,6 +6081,7 @@ describe('applyOperation', () => {
 		expect(wb.getSheet('Data')).toBeDefined()
 		expect(wb.getSheet('Sheet1')).toBeUndefined()
 		expect(wb.definedNames.get('Budget')).toBe('Data!A1')
+		expect(summary.cells.get(0, 0)?.formula).toBe('Data!A1+1')
 	})
 
 	test('renameSheet materializes imported formula bindings before sheet-reference rewrites', () => {

@@ -1602,7 +1602,8 @@ function rewriteFormulaAstForMove(
 ): FormulaNode {
 	const rowDelta = targetRange.start.row - sourceRange.start.row
 	const colDelta = targetRange.start.col - sourceRange.start.col
-	const refOnSource = (refSheet: string | undefined) => (refSheet ?? formulaSheet) === sourceSheet
+	const refOnSource = (refSheet: string | undefined) =>
+		sameSheetName(refSheet ?? formulaSheet, sourceSheet)
 	const targetQualifier = (originalSheet: string | undefined): string | undefined => {
 		if (originalSheet !== undefined) return targetSheet
 		return targetSheet === formulaSheet ? undefined : targetSheet
@@ -1736,7 +1737,11 @@ function rewriteFormulaAstForMove(
 				: { type: 'array', rows }
 		}
 		case 'sheetSpanRef': {
-			if (node.startSheet !== sourceSheet && node.endSheet !== sourceSheet) return node
+			if (
+				!sameSheetName(node.startSheet, sourceSheet) &&
+				!sameSheetName(node.endSheet, sourceSheet)
+			)
+				return node
 			const target = rewriteFormulaAstForMove(
 				node.target,
 				sourceSheet,
@@ -1758,7 +1763,8 @@ function findPartialMoveReferenceAst(
 	formulaSheet: string,
 	sourceRange: RangeRef,
 ): FormulaNode | null {
-	const refOnSource = (refSheet: string | undefined) => (refSheet ?? formulaSheet) === sourceSheet
+	const refOnSource = (refSheet: string | undefined) =>
+		sameSheetName(refSheet ?? formulaSheet, sourceSheet)
 	switch (node.type) {
 		case 'rangeRef': {
 			if (!refOnSource(node.sheet)) return null
@@ -1806,7 +1812,11 @@ function findPartialMoveReferenceAst(
 			}
 			return null
 		case 'sheetSpanRef':
-			if (node.startSheet !== sourceSheet && node.endSheet !== sourceSheet) return null
+			if (
+				!sameSheetName(node.startSheet, sourceSheet) &&
+				!sameSheetName(node.endSheet, sourceSheet)
+			)
+				return null
 			return findPartialMoveReferenceAst(node.target, sourceSheet, sourceSheet, sourceRange)
 		default:
 			return null
@@ -1856,11 +1866,12 @@ function retargetExplicitSheetRefsInRangeAst(
 ): FormulaNode {
 	switch (node.type) {
 		case 'cellRef':
-			return node.sheet === sourceSheet && rangeContainsCell(range, node.ref.row, node.ref.col)
+			return sameSheetName(node.sheet, sourceSheet) &&
+				rangeContainsCell(range, node.ref.row, node.ref.col)
 				? { type: 'cellRef', ref: node.ref, sheet: targetSheet }
 				: node
 		case 'rangeRef':
-			return node.sheet === sourceSheet &&
+			return sameSheetName(node.sheet, sourceSheet) &&
 				rangeContainsCell(range, node.start.row, node.start.col) &&
 				rangeContainsCell(range, node.end.row, node.end.col)
 				? { type: 'rangeRef', start: node.start, end: node.end, sheet: targetSheet }
@@ -1936,9 +1947,9 @@ export function formulaAstReferencesSheet(node: FormulaNode, sheetName: string):
 		case 'wholeRowRange':
 		case 'wholeColumnRange':
 		case 'name':
-			return node.sheet === sheetName
+			return sameSheetName(node.sheet, sheetName)
 		case 'sheetSpanRef':
-			return node.startSheet === sheetName || node.endSheet === sheetName
+			return sameSheetName(node.startSheet, sheetName) || sameSheetName(node.endSheet, sheetName)
 		case 'binary':
 			return (
 				formulaAstReferencesSheet(node.left, sheetName) ||
@@ -1965,24 +1976,26 @@ export function formulaAstReferencesSheet(node: FormulaNode, sheetName: string):
 function rewriteSheetName(node: FormulaNode, oldName: string, newName: string): FormulaNode {
 	switch (node.type) {
 		case 'cellRef':
-			return node.sheet === oldName ? { type: 'cellRef', ref: node.ref, sheet: newName } : node
+			return sameSheetName(node.sheet, oldName)
+				? { type: 'cellRef', ref: node.ref, sheet: newName }
+				: node
 		case 'rangeRef':
-			return node.sheet === oldName
+			return sameSheetName(node.sheet, oldName)
 				? { type: 'rangeRef', start: node.start, end: node.end, sheet: newName }
 				: node
 		case 'wholeRowRange':
-			return node.sheet === oldName
+			return sameSheetName(node.sheet, oldName)
 				? { type: 'wholeRowRange', startRow: node.startRow, endRow: node.endRow, sheet: newName }
 				: node
 		case 'wholeColumnRange':
-			return node.sheet === oldName
+			return sameSheetName(node.sheet, oldName)
 				? { type: 'wholeColumnRange', startCol: node.startCol, endCol: node.endCol, sheet: newName }
 				: node
 		case 'sheetSpanRef':
 			return {
 				type: 'sheetSpanRef',
-				startSheet: node.startSheet === oldName ? newName : node.startSheet,
-				endSheet: node.endSheet === oldName ? newName : node.endSheet,
+				startSheet: sameSheetName(node.startSheet, oldName) ? newName : node.startSheet,
+				endSheet: sameSheetName(node.endSheet, oldName) ? newName : node.endSheet,
 				target: rewriteSheetName(node.target, oldName, newName),
 			}
 		case 'binary':
@@ -2018,6 +2031,10 @@ function rewriteSheetName(node: FormulaNode, oldName: string, newName: string): 
 		default:
 			return node
 	}
+}
+
+function sameSheetName(left: string | undefined, right: string): boolean {
+	return left !== undefined && left.toLowerCase() === right.toLowerCase()
 }
 
 function rewriteTableName(node: FormulaNode, oldName: string, newName: string): FormulaNode {

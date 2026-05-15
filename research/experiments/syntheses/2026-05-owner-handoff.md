@@ -60,6 +60,32 @@ Owner acceptance checklist:
 - [ ] Release approves boundary wording: not malware scanning, sandboxing, file trust, active-content safety, signed provenance, or malformed-package recovery.
 - [ ] Release keeps compact report digests unpublished until storage, privacy filtering, canonicalization, and verification expectations exist.
 
+## Package-Action Acceptance Checkboxes
+
+Current proof input:
+
+| Field | Value |
+| --- | --- |
+| Proof cases | 8 |
+| Public fixture cases | 2 |
+| Generated workbook cases | 2 |
+| Generated edge-package cases | 4 |
+| Generated/disclosed cases | `docprops-passthrough`, `regenerate-existing-sheet`, `add-sheet-part`, `calc-chain-drop`, `signature-invalidation-drop`, `unknown-part-error` |
+| Action classes | `passthrough=27`, `regenerate=38`, `add=3`, `drop=3`, `error=1` |
+| Source graph evidence everywhere | true |
+| Journal package issues everywhere | true |
+| Post-write audit failures | `unknown-part-error` |
+| Representative streaming proof cases | 1 |
+
+Owner acceptance checklist:
+
+- [ ] Product accepts disclosed generated edge packages for docProps passthrough, calc-chain drop, signature invalidation drop, and unknown-part error, or replaces them with public binary fixtures.
+- [ ] Correctness approves unsupported-feature boundaries: signatures are detected/reported but not verified or re-signed; calc-chain decisions are package accounting, not Excel recalc equivalence; chart/drawing sidecars are accounted separately, not semantic chart support; macros/ActiveX are package evidence, not safety; unknown parts fail closed.
+- [ ] Correctness keeps journal/package issue compatibility as part of the claim: every case must include a package-preservation journal issue.
+- [ ] Performance accepts one representative streaming dirty-sheet proof as sufficient for narrow wording, or expands streaming variants before any broader streaming claim.
+- [ ] Release approves local-proof wording that excludes SLSA, in-toto, signed provenance, third-party attestation, and tamper-evident storage.
+- [ ] Release keeps compact report digests unpublished until storage, privacy filtering, canonicalization, and verification expectations exist.
+
 ## Do Not Promote
 
 | Direction | Freeze reason |

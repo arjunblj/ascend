@@ -1178,6 +1178,13 @@ describe('mutation journal exactness model', () => {
 	test('classifies invalid target table names as unsupported values', () => {
 		const cases: readonly Operation[] = [
 			{ op: 'createTable', sheet: 'Sheet1', ref: 'A1:B2', name: 'A1', hasHeaders: true },
+			{
+				op: 'createTable',
+				sheet: 'Sheet1',
+				ref: 'A1:B2',
+				name: 'Inventory',
+				hasHeaders: 'true' as never,
+			},
 			{ op: 'renameTable', table: 'Sales', newName: 'A1' },
 		]
 

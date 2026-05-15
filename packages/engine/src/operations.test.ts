@@ -8042,6 +8042,37 @@ describe('applyOperation', () => {
 		}
 	})
 
+	test('createTable rejects invalid public metadata without mutation', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: stringValue('Name'), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: stringValue('Value'), formula: null, styleId: sid })
+		const cases: readonly Operation[] = [
+			{
+				op: 'createTable',
+				sheet: 'Sheet1',
+				ref: 'A1:B1',
+				name: 'Sales',
+				hasHeaders: 'true' as never,
+			},
+			{
+				op: 'createTable',
+				sheet: 'Sheet1',
+				ref: 'A1:B1',
+				name: 'Sales',
+				hasHeaders: 1 as never,
+			},
+		]
+
+		for (const op of cases) {
+			const result = applyOperation(wb, op)
+			expectErr(result)
+			expect(result.error.code, JSON.stringify(op)).toBe('VALIDATION_ERROR')
+			expect(sheet.tables, JSON.stringify(op)).toHaveLength(0)
+			expect(sheet.autoFilter, JSON.stringify(op)).toBeNull()
+		}
+	})
+
 	test('createTable rejects ranges that overlap existing tables', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

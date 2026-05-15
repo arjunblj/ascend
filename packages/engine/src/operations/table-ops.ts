@@ -56,6 +56,13 @@ export function handleCreateTable(
 	if (!rangeResult.ok) return rangeResult
 	const nameError = tableNameError(op.name)
 	if (nameError) return err(nameError)
+	if (op.hasHeaders !== undefined && typeof op.hasHeaders !== 'boolean') {
+		return err(
+			ascendError('VALIDATION_ERROR', 'createTable hasHeaders must be boolean', {
+				suggestedFix: 'Use hasHeaders=true or hasHeaders=false.',
+			}),
+		)
+	}
 	if (findTableNameCollision(workbook, op.name)) {
 		return err(
 			ascendError('NAME_CONFLICT', `Table "${op.name}" already exists`, {

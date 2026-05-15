@@ -2659,6 +2659,8 @@ function journalOperationTableTopologyIssue(
 	if (metadataIssue) return metadataIssue
 	const createdTable = journalOperationCreatedTable(op)
 	if (createdTable !== null) {
+		const valueIssue = journalOperationCreatedTableValueIssue(op)
+		if (valueIssue) return valueIssue
 		if (validateExcelTableName(createdTable)) {
 			return tableUnsupportedValueIssue(
 				createdTable,
@@ -2695,6 +2697,17 @@ function journalOperationRequiredTable(op: Operation): string | null {
 		default:
 			return null
 	}
+}
+
+function journalOperationCreatedTableValueIssue(op: Operation): MutationJournalIssue | null {
+	if (op.op !== 'createTable') return null
+	if (op.hasHeaders !== undefined && typeof op.hasHeaders !== 'boolean') {
+		return tableUnsupportedValueIssue(
+			op.name,
+			`Cannot build exact rollback journal for ${op.op} because hasHeaders is not boolean`,
+		)
+	}
+	return null
 }
 
 function journalOperationCreatedTable(op: Operation): string | null {

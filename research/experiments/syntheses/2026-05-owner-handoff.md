@@ -29,6 +29,13 @@ bun run fixtures/benchmarks/release-proof-index.ts --no-timings --json
 | Top performance gates | `safe-open-proof/release-latency-run`, `package-action-proof/streaming-matrix-boundary` |
 | Top release gate | `package-action-proof/provenance-boundary` |
 
+Latest compact proof refresh:
+
+| Artifact | Stable shape | Headline allowed | Key coverage |
+| --- | --- | --- | --- |
+| `safe-open-proof` | `6aa54a651309b3c45ce7ce93ff7034e7b31e47c7cbc458c58ee6a6f23e0c6178` | false | cases=9, rejected=1, reviewBeforeHydration=4, public=6, synthetic=2, malformed=1 |
+| `package-action-proof` | `9abebf576651551f58e00ccf8469d099b2c06dacd48391fe581a24e51a1e0afd` | false | cases=8, passthrough=27, regenerate=38, add=3, drop=3, error=1, streamingProofCases=1 |
+
 ## Owner Board
 
 | Owner loop | Claim | Proof required next | Exit criterion |

@@ -125,6 +125,7 @@ Updated: 2026-05-15
 | [Safe open owner acceptance checklist](runs/2026/2026-05-15-safe-open-owner-acceptance-checklist/log.md) | product/performance/release checkboxes make safe-open proof approval explicit without new surfaces | product loop, performance loop, release loop |
 | [Package action owner acceptance checklist](runs/2026/2026-05-15-package-action-owner-acceptance-checklist/log.md) | product/correctness/performance/release checkboxes make package-action proof approval explicit without new surfaces | product loop, correctness loop, performance loop, release loop |
 | [Owner handoff machine-check dead end](runs/2026/2026-05-15-owner-handoff-machine-check-dead-end/log.md) | archived Markdown-only machine gate because release-proof-index remains the canonical gate source | release loop, product loop |
+| [Top proof owner status refresh](runs/2026/2026-05-15-top-proof-owner-status-refresh/log.md) | refreshed top two compact proof statuses and stable shape digests for owner-loop handoff | product loop, correctness loop, performance loop, release loop |
 | [Package action proof](runs/2026/2026-05-14-package-action-proof/log.md) | cycle 2 complete, promote | correctness loop, product/DX loop, performance loop |
 | [Formula spans LSP](runs/2026/2026-05-14-formula-spans-lsp/log.md) | cycle 13 complete, folded in SDK hover/code actions | product/DX loop, correctness loop |
 | [Formula sqllogictest conformance](runs/2026/2026-05-14-formula-sqllogictest-conformance/log.md) | cycle 14 complete, folded in converter/runner | correctness loop |

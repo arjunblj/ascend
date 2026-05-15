@@ -61,6 +61,15 @@ interface PhaseCandidate {
 	readonly profileCommand: string
 }
 
+interface WorktreeState {
+	readonly branchLine: string
+	readonly dirty: boolean
+	readonly trackedDirty: boolean
+	readonly trackedDirtyFiles: readonly string[]
+	readonly untrackedCount: number
+	readonly status: readonly string[]
+}
+
 const DEFAULT_INPUT = 'research/excel-corpus/NYC_311_SR_2010-2020-sample-1M.xlsx'
 const DEFAULT_SHEET = 'NYC_311_SR_2010-2020-sample-1M'
 const DEFAULT_RANGE = 'A1:AO1000001'
@@ -435,7 +444,11 @@ function numericMetric(summary: unknown, key: string): number | undefined {
 	return typeof value === 'number' && Number.isFinite(value) ? value : undefined
 }
 
-function buildMarkdown(args: Args, results: readonly StepResult[]): string {
+function buildMarkdown(
+	args: Args,
+	results: readonly StepResult[],
+	worktree: WorktreeState,
+): string {
 	const lines = [
 		'# Ascend Practical Latency Contracts',
 		'',
@@ -443,6 +456,7 @@ function buildMarkdown(args: Args, results: readonly StepResult[]): string {
 		`Input workbook: \`${args.inputFile}\``,
 		`Edit workbook: \`${args.editInputFile}\``,
 		`Timeout: ${args.timeoutMs}ms per step`,
+		`Worktree: ${worktree.trackedDirty ? 'tracked dirty; not release-claimable' : 'tracked clean'} (${worktree.branchLine}; untracked entries ${worktree.untrackedCount})`,
 		'',
 		'## Contract Phase Map',
 		'',
@@ -453,6 +467,10 @@ function buildMarkdown(args: Args, results: readonly StepResult[]): string {
 		'## Timeout And Progress Behavior',
 		'',
 		`Each step emits \`[contracts] start ...\` and a terminal status to stderr, writes stdout to a \`${basename(args.outDir)}/<contract>-<step>.json\` artifact, and is killed after ${args.timeoutMs}ms. A timeout or failed required step remains visible in this report instead of being silently dropped.`,
+		'',
+		'## Worktree Guardrail',
+		'',
+		worktreeGuardrail(worktree),
 		'',
 		'## Decision Matrix',
 		'',
@@ -504,12 +522,21 @@ function buildMarkdown(args: Args, results: readonly StepResult[]): string {
 	return `${lines.join('\n')}\n`
 }
 
-function buildProfileMarkdown(args: Args, results: readonly StepResult[]): string {
+function buildProfileMarkdown(
+	args: Args,
+	results: readonly StepResult[],
+	worktree: WorktreeState,
+): string {
 	const lines = [
 		'# Ascend Practical Contract Profile Summary',
 		'',
 		`Generated: ${new Date().toISOString()}`,
 		`Output directory: \`${args.outDir}\``,
+		`Worktree: ${worktree.trackedDirty ? 'tracked dirty; not release-claimable' : 'tracked clean'} (${worktree.branchLine}; untracked entries ${worktree.untrackedCount})`,
+		'',
+		'## Worktree Guardrail',
+		'',
+		worktreeGuardrail(worktree),
 		'',
 		'## User-Visible Envelope Decisions',
 		'',
@@ -535,10 +562,21 @@ function buildProfileMarkdown(args: Args, results: readonly StepResult[]): strin
 		'',
 		'## Guardrail',
 		'',
-		'This artifact is a contract report, not an optimization claim. A production change must re-run the same contract subset and show a median movement in one named envelope before it is kept.',
+		'This artifact is a contract report, not an optimization claim. A production change must re-run the same contract subset on a compatible worktree state and show a median movement in one named envelope before it is kept.',
 		'',
 	]
 	return `${lines.join('\n')}\n`
+}
+
+function worktreeGuardrail(worktree: WorktreeState): string {
+	if (!worktree.trackedDirty) {
+		return `Tracked files were clean when this report was generated, so benchmark deltas can be compared against the recorded commit state. Untracked entries are recorded separately (${worktree.untrackedCount}) and must be treated as input/artifact context, not code changes.`
+	}
+	const tracked =
+		worktree.trackedDirtyFiles.length > 0
+			? worktree.trackedDirtyFiles.map((file) => `\`${file}\``).join(', ')
+			: 'none'
+	return `The worktree was dirty when this report was generated. Treat numbers as diagnostic only until rerun from a clean or explicitly documented comparison state. Tracked dirty files: ${tracked}. Untracked entries: ${worktree.untrackedCount}.`
 }
 
 function firstViewTable(results: readonly StepResult[]): string {
@@ -764,6 +802,11 @@ function envelopeDecisions(results: readonly StepResult[]): EnvelopeDecision[] {
 				),
 				profileCommand: workflowProfile || postWriteProfile,
 			},
+			{
+				name: 'Prepared commit unassigned/finalize overhead',
+				medianMs: preparedCommitUnassignedMs(workflow?.summary),
+				profileCommand: workflowProfile,
+			},
 		])
 		decisions.push({
 			contract: 'edit-verify',
@@ -809,6 +852,44 @@ function envelopeDecisions(results: readonly StepResult[]): EnvelopeDecision[] {
 	return decisions
 }
 
+function preparedCommitUnassignedMs(summary: unknown): number {
+	const preparedCommit = numericMetric(summary, 'preparedCommitMedianMs')
+	if (preparedCommit === undefined) return 0
+	const known =
+		sumMetrics(summary, [
+			'preparedCommitWritePolicySnapshotMedianMs',
+			'preparedCommitPackageGraphMedianMs',
+			'preparedCommitPackageGraphAuditMedianMs',
+			'preparedCommitApplyMedianMs',
+			'preparedCommitWritePlanSummaryMedianMs',
+			'preparedCommitWritePolicyCheckMedianMs',
+			'preparedCommitWritePolicyBuildMedianMs',
+			'preparedCommitToBytesMedianMs',
+			'preparedCommitWriteFileMedianMs',
+			'preparedCommitOutputByteReadMedianMs',
+			'preparedCommitOutputHashMedianMs',
+			'preparedCommitPostWriteReopenMedianMs',
+			'preparedCommitPostWriteCheckMedianMs',
+			'preparedCommitPostWriteLintMedianMs',
+			'preparedCommitPostWritePreservationMedianMs',
+			'preparedCommitPostWritePackageGraphMedianMs',
+			'preparedCommitPostWritePackageGraphAuditMedianMs',
+		]) ?? 0
+	return Math.max(0, preparedCommit - known)
+}
+
+function sumMetrics(summary: unknown, keys: readonly string[]): number | undefined {
+	let total = 0
+	let found = false
+	for (const key of keys) {
+		const value = numericMetric(summary, key)
+		if (value === undefined) continue
+		total += value
+		found = true
+	}
+	return found ? total : undefined
+}
+
 function largestPhase(candidates: readonly PhaseCandidate[]): PhaseCandidate {
 	return (
 		candidates
@@ -843,18 +924,19 @@ async function run() {
 	const args = parseArgs()
 	mkdirSync(args.outDir, { recursive: true })
 	mkdirSync(join(args.outDir, 'profiles'), { recursive: true })
+	const worktree = readWorktreeState()
 	const steps = buildSteps(args)
 	const results: StepResult[] = []
 	for (const step of steps) {
 		results.push(await runStep(step, args.outDir, args.dryRun))
 	}
-	const payload = { tool: 'practical-latency-contracts', args, results }
+	const payload = { tool: 'practical-latency-contracts', args, worktree, results }
 	const jsonPath = join(args.outDir, 'summary.json')
 	const markdownPath = join(args.outDir, 'summary.md')
 	const profileMarkdownPath = join(args.outDir, 'profile-summary.md')
 	writeFileSync(jsonPath, JSON.stringify(payload, null, 2))
-	writeFileSync(markdownPath, buildMarkdown(args, results))
-	writeFileSync(profileMarkdownPath, buildProfileMarkdown(args, results))
+	writeFileSync(markdownPath, buildMarkdown(args, results, worktree))
+	writeFileSync(profileMarkdownPath, buildProfileMarkdown(args, results, worktree))
 	const output = {
 		...payload,
 		summaryJson: jsonPath,
@@ -863,6 +945,40 @@ async function run() {
 	}
 	if (args.json) console.log(JSON.stringify(output, null, 2))
 	else console.log(`summary: ${markdownPath}`)
+}
+
+function readWorktreeState(): WorktreeState {
+	const result = Bun.spawnSync(['git', 'status', '--short', '--branch'], {
+		cwd: process.cwd(),
+		stdout: 'pipe',
+		stderr: 'pipe',
+	})
+	if (result.exitCode !== 0) {
+		return {
+			branchLine: 'git-status-unavailable',
+			dirty: true,
+			trackedDirty: true,
+			trackedDirtyFiles: [],
+			untrackedCount: 0,
+			status: [],
+		}
+	}
+	const text = new TextDecoder().decode(result.stdout)
+	const lines = text.trimEnd().split('\n').filter(Boolean)
+	const branchLine = lines[0] ?? 'unknown'
+	const entries = lines.slice(1)
+	const trackedDirtyFiles = entries
+		.filter((line) => !line.startsWith('?? '))
+		.map((line) => line.slice(3).trim())
+	const untrackedCount = entries.filter((line) => line.startsWith('?? ')).length
+	return {
+		branchLine,
+		dirty: entries.length > 0,
+		trackedDirty: trackedDirtyFiles.length > 0,
+		trackedDirtyFiles,
+		untrackedCount,
+		status: entries,
+	}
 }
 
 await run()

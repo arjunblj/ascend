@@ -24,6 +24,8 @@ Updated: 2026-05-14
 | [Release proof digest-backed package actions](runs/2026/2026-05-14-release-proof-digest-backed-package-actions/log.md) | cycle 31 complete, folded in opt-in bundle digest evidence | correctness loop, product/DX loop |
 | [Safe open proof bundle boundary](runs/2026/2026-05-14-safe-open-proof-bundle-boundary/log.md) | cycle 32 complete, handoff only | product/DX loop, performance loop |
 | [Agent view token budget surfaces](runs/2026/2026-05-14-agent-view-token-budget-surfaces/log.md) | cycle 33 complete, folded in CLI/API/MCP budget knob | product/DX loop |
+| [Retained viewport patch contract](runs/2026/2026-05-14-retained-viewport-patch-contract/log.md) | cycle 34 complete, handoff only | product/DX loop |
+| [Formula assist reference span list](runs/2026/2026-05-14-formula-assist-reference-span-list/log.md) | cycle 35 complete, folded in SDK reference list | product/DX loop, correctness loop |
 | [Package action proof](runs/2026/2026-05-14-package-action-proof/log.md) | cycle 2 complete, promote | correctness loop, product/DX loop, performance loop |
 | [Formula spans LSP](runs/2026/2026-05-14-formula-spans-lsp/log.md) | cycle 13 complete, folded in SDK hover/code actions | product/DX loop, correctness loop |
 | [Formula sqllogictest conformance](runs/2026/2026-05-14-formula-sqllogictest-conformance/log.md) | cycle 14 complete, folded in converter/runner | correctness loop |
@@ -42,3 +44,4 @@ Updated: 2026-05-14
 - [2026-05 leapfrog research synthesis](syntheses/2026-05-leapfrog-research.md)
 - [2026-05 claim ladder](syntheses/2026-05-claim-ladder.md)
 - [2026-05 safe open proof bundle](syntheses/2026-05-safe-open-proof-bundle.md)
+- [2026-05 agent context contracts](syntheses/2026-05-agent-context-contracts.md)

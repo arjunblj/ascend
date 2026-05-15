@@ -132,6 +132,7 @@ export {
 	formulaFunctionSignature,
 	formulaFunctionSignatureHelp,
 	formulaHover,
+	formulaReferenceRanges,
 	formulaTokenRanges,
 	insertFormulaReference,
 	referenceAtCursor,

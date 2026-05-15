@@ -8,6 +8,7 @@ import {
 	formulaFunctionSignature,
 	formulaFunctionSignatureHelp,
 	formulaHover,
+	formulaReferenceRanges,
 	formulaTokenRanges,
 	insertFormulaReference,
 	referenceAtCursor,
@@ -26,6 +27,7 @@ describe('formula editing utilities', () => {
 		})
 
 		expect(result.diagnostics.parseOk).toBe(false)
+		expect(result.references).toEqual([{ text: 'A1:B2', start: 5, end: 10, kind: 'range' }])
 		expect(result.activeReference).toMatchObject({ text: 'A1:B2', kind: 'range' })
 		expect(result.hover).toMatchObject({ kind: 'reference', label: 'A1:B2' })
 		expect(result.completions.some((completion) => completion.name === 'SUM')).toBe(true)
@@ -85,6 +87,12 @@ describe('formula editing utilities', () => {
 	})
 
 	test('finds cell, range, sheet-qualified, structured, and spill references at the cursor', () => {
+		expect(formulaReferenceRanges("=SUM(A1,'Q2'!B2,Sales[Amount],A1#)")).toEqual([
+			{ text: 'A1', start: 5, end: 7, kind: 'cell' },
+			{ text: "'Q2'!B2", start: 8, end: 15, kind: 'sheet-cell' },
+			{ text: 'Sales[Amount]', start: 16, end: 29, kind: 'structured' },
+			{ text: 'A1#', start: 30, end: 33, kind: 'spill' },
+		])
 		expect(referenceAtCursor('SUM(A1:B2)', 6)).toEqual({
 			text: 'A1:B2',
 			start: 4,

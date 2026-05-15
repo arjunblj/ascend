@@ -117,6 +117,7 @@ export interface FormulaAssistResult {
 	readonly cursor: number | null
 	readonly diagnostics: FormulaDiagnosticsResult
 	readonly tokens: readonly FormulaTokenRange[]
+	readonly references: readonly FormulaReferenceRange[]
 	readonly activeReference: FormulaReferenceRange | null
 	readonly hover: FormulaHoverInfo | null
 	readonly completions: readonly FormulaFunctionCompletion[]
@@ -203,13 +204,16 @@ export function formulaTokenRanges(formula: string): FormulaTokenRange[] {
 }
 
 export function referenceAtCursor(formula: string, cursor: number): FormulaReferenceRange | null {
-	const spans = tokenSpans(formula)
-	const references = collectFormulaReferenceRanges(formula, spans)
+	const references = formulaReferenceRanges(formula)
 	const clampedCursor = Math.max(0, Math.min(formula.length, cursor))
 	for (const reference of references) {
 		if (clampedCursor >= reference.start && clampedCursor <= reference.end) return reference
 	}
 	return null
+}
+
+export function formulaReferenceRanges(formula: string): FormulaReferenceRange[] {
+	return collectFormulaReferenceRanges(formula, tokenSpans(formula))
 }
 
 export function cycleFormulaReferenceMode(formula: string, cursor: number): CycleReferenceResult {
@@ -298,6 +302,7 @@ export function formulaAssist(
 		cursor,
 		diagnostics: formulaDiagnostics(formula),
 		tokens: formulaTokenRanges(formula),
+		references: formulaReferenceRanges(formula),
 		activeReference: cursor === null ? null : referenceAtCursor(formula, cursor),
 		hover: cursor === null ? null : formulaHover(formula, cursor),
 		completions:
@@ -618,6 +623,7 @@ function collectFormulaReferenceRanges(
 		if (span.token.type === TokenType.CellRef) {
 			const range = collectCellReferenceRange(formula, spans, i)
 			references.push(range)
+			i = advanceReferenceIndex(spans, i, range.end)
 			continue
 		}
 		if (span.token.type !== TokenType.Name) continue
@@ -640,7 +646,7 @@ function collectFormulaReferenceRanges(
 					end: local.end,
 					kind: local.kind === 'range' ? 'sheet-3d-range' : 'sheet-3d-cell',
 				})
-				i = cell.index
+				i = advanceReferenceIndex(spans, cell.index, local.end)
 				continue
 			}
 		}
@@ -660,7 +666,7 @@ function collectFormulaReferenceRanges(
 					end: local.end,
 					kind: local.kind === 'range' ? 'sheet-3d-range' : 'sheet-3d-cell',
 				})
-				i = cell.index
+				i = advanceReferenceIndex(spans, cell.index, local.end)
 				continue
 			}
 		}
@@ -676,7 +682,7 @@ function collectFormulaReferenceRanges(
 						end: local.end,
 						kind: local.kind === 'range' ? 'sheet-range' : 'sheet-cell',
 					})
-					i = cell.index
+					i = advanceReferenceIndex(spans, cell.index, local.end)
 					continue
 				}
 			}
@@ -702,11 +708,25 @@ function collectFormulaReferenceRanges(
 					end: local.end,
 					kind: sheetSpanKind ?? (local.kind === 'range' ? 'sheet-range' : 'sheet-cell'),
 				})
-				i = cell.index
+				i = advanceReferenceIndex(spans, cell.index, local.end)
 			}
 		}
 	}
 	return references
+}
+
+function advanceReferenceIndex(
+	spans: readonly TokenSpan[],
+	index: number,
+	referenceEnd: number,
+): number {
+	let nextIndex = index
+	while (nextIndex + 1 < spans.length) {
+		const next = spans[nextIndex + 1]
+		if (!next || next.start >= referenceEnd) break
+		nextIndex++
+	}
+	return nextIndex
 }
 
 function collectCellReferenceRange(

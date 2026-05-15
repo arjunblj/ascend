@@ -134,6 +134,7 @@ Updated: 2026-05-15
 | [Case-insensitive binding refs](runs/2026/2026-05-15-case-insensitive-binding-refs/log.md) | folded in verifier false-positive fix for sheet-qualified binding refs with casing drift | correctness loop |
 | [Claim portfolio proof refresh after fix](runs/2026/2026-05-15-claim-portfolio-proof-refresh-after-fix/log.md) | refreshed top-claim proof counts after the in-flight verifier fix; top two handoffs unchanged | product loop, correctness loop, performance loop |
 | [Formula no-rename surface audit](runs/2026/2026-05-15-formula-no-rename-surface-audit/log.md) | proved current SDK/CLI/API/MCP formula-assist surfaces expose prepare/refusal metadata only, not edit-producing rename | product/DX loop, correctness loop |
+| [Shared formula master ref casing](runs/2026/2026-05-15-shared-formula-master-ref-casing/log.md) | folded in regression coverage for case-insensitive sheet-qualified shared-formula master refs in engine mutation and SDK journals | correctness loop |
 | [Package action proof](runs/2026/2026-05-14-package-action-proof/log.md) | cycle 2 complete, promote | correctness loop, product/DX loop, performance loop |
 | [Formula spans LSP](runs/2026/2026-05-14-formula-spans-lsp/log.md) | cycle 13 complete, folded in SDK hover/code actions | product/DX loop, correctness loop |
 | [Formula sqllogictest conformance](runs/2026/2026-05-14-formula-sqllogictest-conformance/log.md) | cycle 14 complete, folded in converter/runner | correctness loop |

@@ -31,6 +31,10 @@ function cell(value: ReturnType<typeof numberValue>, formula: string | null = nu
 	return { value, formula, styleId: sid }
 }
 
+function normalizeSheet1Affected(refs: readonly string[]) {
+	return refs.map((ref) => ref.replace(/^Sheet1!/, '')).sort()
+}
+
 function setup() {
 	const wb = createWorkbook()
 	const sheet = wb.addSheet('Sheet1')
@@ -658,6 +662,26 @@ describe('applyOperation', () => {
 		expect(sheet.cells.get(2, 0)?.formulaInfo).toBeUndefined()
 	})
 
+	test('setCells detaches dynamic-array anchors before replacing a spill member', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		addDynamicArrayAnchorWithStaleSpillFootprint(sheet)
+
+		const result = applyOperation(wb, {
+			op: 'setCells',
+			sheet: 'Sheet1',
+			updates: [{ ref: 'A2', value: 9 }],
+		})
+		expectOk(result)
+
+		expect(result.value.affectedCells).toEqual(['A1', 'A2', 'A3'])
+		expect(sheet.cells.get(0, 0)?.formula).toBeNull()
+		expect(sheet.cells.get(0, 0)?.formulaInfo).toBeUndefined()
+		expect(sheet.cells.get(1, 0)?.value).toEqual(numberValue(9))
+		expect(sheet.cells.get(1, 0)?.formulaInfo).toBeUndefined()
+		expect(sheet.cells.get(2, 0)?.formulaInfo).toBeUndefined()
+	})
+
 	test('setCells detaches dynamic-array spill footprints with escaped anchor refs', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet("Bob's Budget")
@@ -701,6 +725,88 @@ describe('applyOperation', () => {
 		expect(sheet.cells.get(0, 0)?.formulaInfo).toBeUndefined()
 		expect(sheet.cells.get(1, 0)?.formulaInfo).toBeUndefined()
 		expect(sheet.cells.get(2, 0)?.formulaInfo).toBeUndefined()
+	})
+
+	test('destructive edits against dynamic-array spill members detach the anchor and footprint', () => {
+		const cases: readonly {
+			readonly name: string
+			readonly op: Parameters<typeof applyOperation>[1]
+			readonly seed?: (sheet: Sheet) => void
+		}[] = [
+			{
+				name: 'setCells',
+				op: { op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A2', value: 9 }] },
+			},
+			{
+				name: 'setRichText',
+				op: { op: 'setRichText', sheet: 'Sheet1', ref: 'A2', runs: [{ text: 'override' }] },
+			},
+			{
+				name: 'fillFormula',
+				op: { op: 'fillFormula', sheet: 'Sheet1', range: 'A2', formula: 'B2*3' },
+			},
+			{
+				name: 'clearRange all',
+				op: { op: 'clearRange', sheet: 'Sheet1', range: 'A2', what: 'all' },
+			},
+			{
+				name: 'copyRange values',
+				op: { op: 'copyRange', sheet: 'Sheet1', source: 'C1', target: 'A2', mode: 'values' },
+				seed: (sheet) => sheet.cells.set(0, 2, cell(numberValue(9))),
+			},
+		]
+
+		for (const entry of cases) {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			addDynamicArrayAnchorWithStaleSpillFootprint(sheet)
+			entry.seed?.(sheet)
+
+			const result = applyOperation(wb, entry.op)
+			expectOk(result)
+
+			expect(normalizeSheet1Affected(result.value.affectedCells), entry.name).toEqual([
+				'A1',
+				'A2',
+				'A3',
+			])
+			expect(sheet.cells.get(0, 0)?.formulaInfo, entry.name).toBeUndefined()
+			expect(sheet.cells.get(1, 0)?.formulaInfo, entry.name).toBeUndefined()
+			expect(sheet.cells.get(2, 0)?.formulaInfo, entry.name).toBeUndefined()
+		}
+	})
+
+	test('style-only edits against dynamic-array spill members preserve formula bindings', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		addDynamicArrayAnchorWithStaleSpillFootprint(sheet)
+
+		const result = applyOperation(wb, {
+			op: 'clearRange',
+			sheet: 'Sheet1',
+			range: 'A2',
+			what: 'styles',
+		})
+		expectOk(result)
+
+		expect(result.value.affectedCells).toEqual(['A2'])
+		expect(sheet.cells.get(0, 0)?.formulaInfo).toEqual({
+			kind: 'dynamicArray',
+			metadataIndex: 1,
+			collapsed: false,
+		})
+		expect(sheet.cells.get(1, 0)?.formulaInfo).toEqual({
+			kind: 'spill',
+			anchorRef: 'Sheet1!A1',
+			ref: 'A1:A3',
+			isAnchor: false,
+		})
+		expect(sheet.cells.get(2, 0)?.formulaInfo).toEqual({
+			kind: 'spill',
+			anchorRef: 'Sheet1!A1',
+			ref: 'A1:A3',
+			isAnchor: false,
+		})
 	})
 
 	test('setCells detaches blocked-spill metadata when replacing a blocker', () => {

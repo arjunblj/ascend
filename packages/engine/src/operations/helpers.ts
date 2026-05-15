@@ -358,7 +358,8 @@ function materializeSpillFormulaGroup(
 			? `${formatSheetNameForFormula(sheet.name)}!${toA1(anchor)}`
 			: undefined
 	for (const [row, col, cell] of sheet.cells.iterate()) {
-		if (!sameSpillFormulaGroup(binding, cell.formulaInfo, dynamicAnchorRef)) continue
+		const candidateRef = `${formatSheetNameForFormula(sheet.name)}!${toA1({ row, col })}`
+		if (!sameSpillFormulaGroup(binding, cell.formulaInfo, dynamicAnchorRef, candidateRef)) continue
 		sheet.cells.set(row, col, cellWithExisting(cell.value, null, cell.styleId ?? DEFAULT_SID))
 		affected.add(toA1({ row, col }))
 	}
@@ -470,6 +471,7 @@ function sameSpillFormulaGroup(
 	binding: Extract<CellFormulaBinding, { kind: 'dynamicArray' | 'spill' | 'blockedSpill' }>,
 	candidate: CellFormulaBinding | undefined,
 	dynamicAnchorRef?: string,
+	candidateRef?: string,
 ): boolean {
 	if (!candidate) return false
 	if (binding.kind === 'dynamicArray') {
@@ -480,6 +482,7 @@ function sameSpillFormulaGroup(
 			candidate.anchorRef === dynamicAnchorRef
 		)
 	}
+	if (candidate.kind === 'dynamicArray') return candidateRef === binding.anchorRef
 	if (candidate.kind !== 'spill' && candidate.kind !== 'blockedSpill') return false
 	return candidate.anchorRef === binding.anchorRef
 }

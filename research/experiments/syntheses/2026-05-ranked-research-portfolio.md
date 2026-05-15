@@ -140,6 +140,8 @@ Current gate:
 | Top owner action rank 20 | `package-action-proof/unsupported-feature-boundary` |
 | Top owner action rank 30 | `safe-open-proof/release-latency-run` |
 
+Fixture policy evidence: `release-proof-index --owner-handoffs-json` reports `fixturePolicyEvidence.allScansUseTrackedCorpus=true`, `fixturePolicyEvidence.publicReplacementGapsRemain=true`, safe-open `signatureOrUnknownMatches=0`, and package-action missing replacements for `signaturePackage` and `syntheticUnknownPathFamily`. This makes the product decision concrete without accepting generated fixtures automatically.
+
 Correctness boundary evidence: `release-proof-index --owner-handoffs-json` reports `correctnessBoundaryEvidence.allCurrentEvidencePresent=true` for digital signatures, calc chain, chart/drawing sidecars, macros/ActiveX, unknown parts, and streaming scope. The field also reports `ownerApprovalRequired=true`, so the proof makes approval concrete without satisfying `unsupported-feature-boundary`.
 
 Decision: the portfolio should hand off the top two claims to owner loops for proof packaging and boundary approval. Research should not promote formula rename, columnar sidecars, or another release surface during this block.

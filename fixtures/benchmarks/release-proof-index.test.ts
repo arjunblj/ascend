@@ -70,6 +70,44 @@ describe('release proof evidence index', () => {
 			'SLSA provenance',
 			'GitHub artifact attestations',
 		])
+		expect(index.fixturePolicyEvidence).toMatchObject({
+			ownerLoop: 'product',
+			status: 'tracked-scan-complete-owner-approval-required',
+			ownerApprovalRequired: true,
+			allScansUseTrackedCorpus: true,
+			publicReplacementGapsRemain: true,
+			boundary: expect.stringContaining('does not prove that no suitable public fixtures exist'),
+		})
+		expect(index.fixturePolicyEvidence.safeOpen).toMatchObject({
+			artifact: 'safe-open-proof',
+			gateId: 'public-edge-fixtures',
+			validationCommand: 'bun run fixtures/benchmarks/safe-open-fixture-scan.ts --json',
+			corpus: 'tracked-git-fixtures',
+			replacementStatus: 'no-public-binary-replacement-found',
+			signatureOrUnknownMatches: 0,
+			currentGeneratedStructuralCases: ['signed', 'unknown-part', 'malformed'],
+		})
+		expect(index.fixturePolicyEvidence.safeOpen.scanned).toBeGreaterThan(0)
+		expect(index.fixturePolicyEvidence.packageAction).toMatchObject({
+			artifact: 'package-action-proof',
+			gateId: 'edge-fixture-policy',
+			validationCommand: 'bun run fixtures/benchmarks/package-action-fixture-scan.ts --json',
+			corpus: 'tracked-git-fixtures',
+			replacementStatus: 'remaining-generated-edge-cases',
+			currentGeneratedStructuralCases: ['signature-invalidation-drop', 'unknown-part-error'],
+			missingReplacementFeatures: ['signaturePackage', 'syntheticUnknownPathFamily'],
+		})
+		expect(index.fixturePolicyEvidence.packageAction.scanned).toBeGreaterThan(0)
+		expect(index.fixturePolicyEvidence.packageAction.featureCounts).toMatchObject({
+			signaturePackage: 0,
+			syntheticUnknownPathFamily: 0,
+		})
+		expect(index.fixturePolicyEvidence.packageAction.featureCounts.docPropsCore).toBeGreaterThan(0)
+		expect(index.fixturePolicyEvidence.packageAction.featureCounts.calcChain).toBeGreaterThan(0)
+		expect(index.fixturePolicyEvidence.packageAction.featureCounts.macro).toBeGreaterThan(0)
+		expect(index.fixturePolicyEvidence.packageAction.featureCounts.chartOrDrawing).toBeGreaterThan(
+			0,
+		)
 		expect(index.performancePolicy).toMatchObject({
 			currentDecision: 'owner-approval-required',
 			boundary: expect.stringContaining('not a release performance threshold'),
@@ -545,6 +583,17 @@ describe('release proof evidence index', () => {
 			'release',
 			'release',
 		])
+		expect(handoff.fixturePolicyEvidence).toMatchObject({
+			status: 'tracked-scan-complete-owner-approval-required',
+			allScansUseTrackedCorpus: true,
+			publicReplacementGapsRemain: true,
+			ownerApprovalRequired: true,
+		})
+		expect(handoff.fixturePolicyEvidence.safeOpen.signatureOrUnknownMatches).toBe(0)
+		expect(handoff.fixturePolicyEvidence.packageAction.missingReplacementFeatures).toEqual([
+			'signaturePackage',
+			'syntheticUnknownPathFamily',
+		])
 		expect(handoff.performancePolicy.approvalChecklist.map((item) => item.gateId)).toEqual([
 			'release-latency-run',
 			'streaming-matrix-boundary',
@@ -672,6 +721,16 @@ describe('release proof evidence index', () => {
 		expect(markdown).toContain('| package-action-proof | provenance-boundary | release')
 		expect(markdown).toContain('pending-owner-decision')
 		expect(markdown).toContain('OpenSSF Scorecard binary artifacts')
+		expect(markdown).toContain('Fixture policy evidence:')
+		expect(markdown).toContain('Status: tracked-scan-complete-owner-approval-required')
+		expect(markdown).toContain('All scans use tracked corpus: true')
+		expect(markdown).toContain('Public replacement gaps remain: true')
+		expect(markdown).toContain('| safe-open-proof | public-edge-fixtures')
+		expect(markdown).toContain('signatureOrUnknownMatches=0')
+		expect(markdown).toContain('| package-action-proof | edge-fixture-policy')
+		expect(markdown).toContain(
+			'missingReplacementFeatures=signaturePackage,syntheticUnknownPathFamily',
+		)
 		expect(markdown).toContain('## Performance Policy')
 		expect(markdown).toContain('not a release performance threshold')
 		expect(markdown).toContain('| safe-open-proof | release-latency-run | performance')

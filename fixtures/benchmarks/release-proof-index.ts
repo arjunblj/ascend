@@ -1,11 +1,16 @@
 import { createHash } from 'node:crypto'
 import { basename } from 'node:path'
 import {
+	type PackageActionFixtureScanResult,
+	runPackageActionFixtureScan,
+} from './package-action-fixture-scan.ts'
+import {
 	type PackageActionProofCaseResult,
 	type PackageActionProofResult,
 	packageActionProofMarkdown,
 	runPackageActionProof,
 } from './package-action-proof.ts'
+import { runSafeOpenFixtureScan, type SafeOpenFixtureScanResult } from './safe-open-fixture-scan.ts'
 import {
 	runSafeOpenProof,
 	type SafeOpenProofCaseResult,
@@ -85,6 +90,7 @@ export interface ReleaseProofIndexResult {
 	readonly signed: false
 	readonly attestation: false
 	readonly fixturePolicy: ReleaseProofFixturePolicy
+	readonly fixturePolicyEvidence: ReleaseProofFixturePolicyEvidence
 	readonly performancePolicy: ReleaseProofPerformancePolicy
 	readonly correctnessPolicy: ReleaseProofCorrectnessPolicy
 	readonly correctnessBoundaryEvidence: ReleaseProofCorrectnessBoundaryEvidence
@@ -102,6 +108,7 @@ export interface ReleaseProofOwnerHandoffIndex {
 	readonly implementationSurfacePromotionAllowed: boolean
 	readonly missingRequirementCount: number
 	readonly fixturePolicy: ReleaseProofFixturePolicy
+	readonly fixturePolicyEvidence: ReleaseProofFixturePolicyEvidence
 	readonly performancePolicy: ReleaseProofPerformancePolicy
 	readonly correctnessPolicy: ReleaseProofCorrectnessPolicy
 	readonly correctnessBoundaryEvidence: ReleaseProofCorrectnessBoundaryEvidence
@@ -202,6 +209,44 @@ export interface ReleaseProofFixturePolicyApprovalItem {
 	readonly acceptanceEvidence: string
 	readonly rejectIf: string
 	readonly validationCommand: string
+}
+
+export interface ReleaseProofFixturePolicyEvidence {
+	readonly ownerLoop: 'product'
+	readonly status: 'tracked-scan-complete-owner-approval-required'
+	readonly ownerApprovalRequired: true
+	readonly allScansUseTrackedCorpus: boolean
+	readonly publicReplacementGapsRemain: boolean
+	readonly safeOpen: ReleaseProofSafeOpenFixturePolicyEvidence
+	readonly packageAction: ReleaseProofPackageActionFixturePolicyEvidence
+	readonly boundary: string
+}
+
+export interface ReleaseProofSafeOpenFixturePolicyEvidence {
+	readonly artifact: 'safe-open-proof'
+	readonly gateId: 'public-edge-fixtures'
+	readonly validationCommand: string
+	readonly corpus: SafeOpenFixtureScanResult['corpus']
+	readonly scanned: number
+	readonly rejected: number
+	readonly replacementStatus: SafeOpenFixtureScanResult['replacementStatus']
+	readonly signatureOrUnknownMatches: number
+	readonly currentGeneratedStructuralCases: readonly string[]
+	readonly boundary: string
+}
+
+export interface ReleaseProofPackageActionFixturePolicyEvidence {
+	readonly artifact: 'package-action-proof'
+	readonly gateId: 'edge-fixture-policy'
+	readonly validationCommand: string
+	readonly corpus: PackageActionFixtureScanResult['corpus']
+	readonly scanned: number
+	readonly rejected: number
+	readonly replacementStatus: PackageActionFixtureScanResult['replacementStatus']
+	readonly featureCounts: PackageActionFixtureScanResult['featureCounts']
+	readonly currentGeneratedStructuralCases: readonly string[]
+	readonly missingReplacementFeatures: readonly string[]
+	readonly boundary: string
 }
 
 export interface ReleaseProofSourceReference {
@@ -529,6 +574,8 @@ export async function runReleaseProofIndex(
 		includeTimings,
 	})
 	const packageAction = await runPackageActionProof({ includeTimings })
+	const safeOpenFixtureScan = runSafeOpenFixtureScan()
+	const packageActionFixtureScan = runPackageActionFixtureScan()
 	const artifacts = [
 		safeOpenArtifact(safeOpen, includeTimings),
 		packageActionArtifact(packageAction, includeTimings),
@@ -541,6 +588,7 @@ export async function runReleaseProofIndex(
 		signed: false,
 		attestation: false,
 		fixturePolicy: cloneFixturePolicy(),
+		fixturePolicyEvidence: fixturePolicyEvidence(safeOpenFixtureScan, packageActionFixtureScan),
 		performancePolicy: clonePerformancePolicy(),
 		correctnessPolicy: cloneCorrectnessPolicy(),
 		correctnessBoundaryEvidence: correctnessBoundaryEvidence(safeOpen, packageAction),
@@ -606,6 +654,19 @@ export function releaseProofIndexMarkdown(result: ReleaseProofIndexResult): stri
 		...result.fixturePolicy.sourceReferences.map(
 			(reference) => `- ${reference.label}: ${reference.url}`,
 		),
+		'',
+		'Fixture policy evidence:',
+		'',
+		`Status: ${result.fixturePolicyEvidence.status}`,
+		`All scans use tracked corpus: ${result.fixturePolicyEvidence.allScansUseTrackedCorpus}`,
+		`Public replacement gaps remain: ${result.fixturePolicyEvidence.publicReplacementGapsRemain}`,
+		`Owner approval required: ${result.fixturePolicyEvidence.ownerApprovalRequired}`,
+		result.fixturePolicyEvidence.boundary,
+		'',
+		'| Artifact | Gate | Command | Corpus | Scanned | Rejected | Replacement status | Generated structural cases | Gap evidence | Boundary |',
+		'| --- | --- | --- | --- | ---: | ---: | --- | --- | --- | --- |',
+		fixturePolicyEvidenceMarkdownRow(result.fixturePolicyEvidence.safeOpen),
+		fixturePolicyEvidenceMarkdownRow(result.fixturePolicyEvidence.packageAction),
 		'',
 		'## Performance Policy',
 		'',
@@ -683,6 +744,7 @@ export function releaseProofOwnerHandoffIndex(
 		implementationSurfacePromotionAllowed: result.readiness.implementationSurfacePromotionAllowed,
 		missingRequirementCount: result.readiness.missingRequirementCount,
 		fixturePolicy: cloneFixturePolicy(),
+		fixturePolicyEvidence: cloneFixturePolicyEvidence(result.fixturePolicyEvidence),
 		performancePolicy: clonePerformancePolicy(),
 		correctnessPolicy: cloneCorrectnessPolicy(),
 		correctnessBoundaryEvidence: cloneCorrectnessBoundaryEvidence(
@@ -1625,6 +1687,119 @@ function fixturePolicyApprovalMarkdownRow(row: ReleaseProofFixturePolicyApproval
 		.join('|')
 		.replace(/^/, '|')
 		.replace(/$/, '|')
+}
+
+function fixturePolicyEvidence(
+	safeOpen: SafeOpenFixtureScanResult,
+	packageAction: PackageActionFixtureScanResult,
+): ReleaseProofFixturePolicyEvidence {
+	const packageActionMissingReplacementFeatures = [
+		packageAction.featureCounts.signaturePackage === 0 ? 'signaturePackage' : undefined,
+		packageAction.featureCounts.syntheticUnknownPathFamily === 0
+			? 'syntheticUnknownPathFamily'
+			: undefined,
+	].filter((entry): entry is string => entry !== undefined)
+	const safeOpenEvidence: ReleaseProofSafeOpenFixturePolicyEvidence = {
+		artifact: 'safe-open-proof',
+		gateId: 'public-edge-fixtures',
+		validationCommand: FIXTURE_POLICY.trackedFixtureScanCommands['safe-open-proof'],
+		corpus: safeOpen.corpus,
+		scanned: safeOpen.scanned,
+		rejected: safeOpen.rejected,
+		replacementStatus: safeOpen.replacementStatus,
+		signatureOrUnknownMatches: safeOpen.signatureOrUnknownMatches.length,
+		currentGeneratedStructuralCases: [
+			...FIXTURE_POLICY.currentGeneratedStructuralCases['safe-open-proof'],
+		],
+		boundary: safeOpen.boundary,
+	}
+	const packageActionEvidence: ReleaseProofPackageActionFixturePolicyEvidence = {
+		artifact: 'package-action-proof',
+		gateId: 'edge-fixture-policy',
+		validationCommand: FIXTURE_POLICY.trackedFixtureScanCommands['package-action-proof'],
+		corpus: packageAction.corpus,
+		scanned: packageAction.scanned,
+		rejected: packageAction.rejected,
+		replacementStatus: packageAction.replacementStatus,
+		featureCounts: { ...packageAction.featureCounts },
+		currentGeneratedStructuralCases: [
+			...FIXTURE_POLICY.currentGeneratedStructuralCases['package-action-proof'],
+		],
+		missingReplacementFeatures: packageActionMissingReplacementFeatures,
+		boundary: packageAction.boundary,
+	}
+	return {
+		ownerLoop: 'product',
+		status: 'tracked-scan-complete-owner-approval-required',
+		ownerApprovalRequired: true,
+		allScansUseTrackedCorpus:
+			safeOpen.corpus === 'tracked-git-fixtures' && packageAction.corpus === 'tracked-git-fixtures',
+		publicReplacementGapsRemain:
+			safeOpen.replacementStatus === 'no-public-binary-replacement-found' ||
+			packageAction.replacementStatus === 'remaining-generated-edge-cases',
+		safeOpen: safeOpenEvidence,
+		packageAction: packageActionEvidence,
+		boundary:
+			'Fixture scan evidence is local tracked-corpus evidence for owner decisions. It does not prove that no suitable public fixtures exist elsewhere, approve generated fixtures as public binaries, or satisfy product release gates.',
+	}
+}
+
+function fixturePolicyEvidenceMarkdownRow(
+	row: ReleaseProofSafeOpenFixturePolicyEvidence | ReleaseProofPackageActionFixturePolicyEvidence,
+): string {
+	const gapEvidence =
+		row.artifact === 'safe-open-proof'
+			? `signatureOrUnknownMatches=${row.signatureOrUnknownMatches}`
+			: `missingReplacementFeatures=${row.missingReplacementFeatures.join(',') || 'none'}; featureCounts=${formatFixtureFeatureCounts(row.featureCounts)}`
+	return [
+		row.artifact,
+		row.gateId,
+		`\`${row.validationCommand}\``,
+		row.corpus,
+		String(row.scanned),
+		String(row.rejected),
+		row.replacementStatus,
+		row.currentGeneratedStructuralCases.join(',') || 'none',
+		gapEvidence,
+		row.boundary,
+	]
+		.map((cell) => ` ${cell} `)
+		.join('|')
+		.replace(/^/, '|')
+		.replace(/$/, '|')
+}
+
+function cloneFixturePolicyEvidence(
+	evidence: ReleaseProofFixturePolicyEvidence,
+): ReleaseProofFixturePolicyEvidence {
+	return {
+		...evidence,
+		safeOpen: {
+			...evidence.safeOpen,
+			currentGeneratedStructuralCases: [...evidence.safeOpen.currentGeneratedStructuralCases],
+		},
+		packageAction: {
+			...evidence.packageAction,
+			featureCounts: { ...evidence.packageAction.featureCounts },
+			currentGeneratedStructuralCases: [...evidence.packageAction.currentGeneratedStructuralCases],
+			missingReplacementFeatures: [...evidence.packageAction.missingReplacementFeatures],
+		},
+	}
+}
+
+function formatFixtureFeatureCounts(
+	counts: PackageActionFixtureScanResult['featureCounts'],
+): string {
+	return [
+		`docPropsCore=${counts.docPropsCore}`,
+		`docPropsCustom=${counts.docPropsCustom}`,
+		`calcChain=${counts.calcChain}`,
+		`customXml=${counts.customXml}`,
+		`macro=${counts.macro}`,
+		`chartOrDrawing=${counts.chartOrDrawing}`,
+		`signaturePackage=${counts.signaturePackage}`,
+		`syntheticUnknownPathFamily=${counts.syntheticUnknownPathFamily}`,
+	].join(',')
 }
 
 function clonePerformancePolicy(): ReleaseProofPerformancePolicy {

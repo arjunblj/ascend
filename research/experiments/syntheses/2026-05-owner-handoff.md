@@ -116,6 +116,7 @@ Owner loops should consume these JSON fields first:
 | `readiness.implementationSurfacePromotionAllowed` | Fail-closed guard for new SDK/CLI/API/MCP surfaces. Currently `false`. |
 | `readiness.implementationHandoffs` | Canonical top-two handoffs with owner loops, proof commands, blocker IDs, next-step kinds, and proof requirements. |
 | `readiness.implementationHandoffs[].proofRequired` | Product-shaped proof ladder: fixture, benchmark, surface, validation gate, competitor contrast, honest boundary, and kill criterion. |
+| `fixturePolicyEvidence` | Summarizes tracked safe-open and package-action fixture scans for product gate decisions while keeping public replacement gaps explicit. |
 | `correctnessBoundaryEvidence` | Verifies the unsupported-feature boundary matrix against current package-action and safe-open proof cases while keeping owner approval required. |
 | `deferredClaims` | Machine-readable do-not-promote/proof-backed-hold list for non-top directions. |
 | `excludedEvidence` | Evidence that exists but must not become release proof yet, currently practical latency contracts. |

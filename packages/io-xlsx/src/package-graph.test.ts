@@ -200,4 +200,37 @@ describe('XLSX package graph', () => {
 		})
 		expect(graph.parts.some((part) => part.featureFamily === 'preservedOther')).toBe(false)
 	})
+
+	test('reads content type attributes with XML whitespace, quotes, and entities', () => {
+		const bytes = makeXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension = 'rels' ContentType = 'application/vnd.openxmlformats-package.relationships+xml'/>
+  <Default Extension = 'bin' ContentType = 'application/octet-stream'/>
+  <Override NotPartName="/ignored.xml" PartName = '/xl/workbook.xml' ContentType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml'/>
+  <Override PartName = '/xl/media/a&amp;b.bin' ContentType = 'application/vnd.example.opaque'/>
+</Types>`,
+			'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+			'xl/workbook.xml': '<workbook/>',
+			'xl/media/a&b.bin': 'opaque',
+		})
+
+		const graph = inspectXlsxPackageGraph(bytes)
+
+		expect(graph.contentTypeDefaults).toContainEqual({
+			extension: 'bin',
+			contentType: 'application/octet-stream',
+		})
+		expect(graph.parts.find((part) => part.path === 'xl/workbook.xml')).toMatchObject({
+			contentTypeSource: 'override',
+			contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml',
+		})
+		expect(graph.parts.find((part) => part.path === 'xl/media/a&b.bin')).toMatchObject({
+			contentTypeSource: 'override',
+			contentType: 'application/vnd.example.opaque',
+		})
+	})
 })

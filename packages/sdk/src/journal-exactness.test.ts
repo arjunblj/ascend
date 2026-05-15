@@ -1430,6 +1430,39 @@ describe('mutation journal exactness model', () => {
 		expect(wb.formula('Sheet1!A2')?.normalizedFormula).toBe('C2*2')
 	})
 
+	test('real XLSX shared formula precedent moves journal every rewritten imported member', async () => {
+		const wb = await AscendWorkbook.open(
+			readFileSync(new URL('../../../fixtures/xlsx/poi/shared_formulas.xlsx', import.meta.url)),
+		)
+		const sharedRefs = Array.from({ length: 40 }, (_, index) => `Label!A${index + 2}`)
+		expect(collectFormulaInfoRefs(wb, 'Label')).toEqual(sharedRefs)
+
+		const changed = wb.apply(
+			[{ op: 'moveRange', sheet: 'Label', source: 'B2:B41', target: 'C2', mode: 'all' }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal).toBeDefined()
+		if (!changed.journal) throw new Error('missing journal')
+		expect(changed.journal.exact).toBe(false)
+		expect(journalIssueRefs(changed.journal, 'shared-formulas')).toEqual([...sharedRefs].sort())
+		expect(changed.affectedCells).toEqual(
+			expect.arrayContaining(sharedRefs.map((ref) => ref.split('!')[1])),
+		)
+		expect(collectFormulaInfoRefs(wb, 'Label')).toEqual(sharedRefs)
+		expect(wb.formula('Label!A2')?.normalizedFormula).toBe('C2')
+		expect(wb.formula('Label!A41')?.normalizedFormula).toBe('C41')
+
+		const reopened = await AscendWorkbook.open(wb.toBytes())
+		expect(
+			reopened.check().issues.filter((issue) => issue.rule === 'formula-binding-integrity'),
+		).toEqual([])
+		expect(collectFormulaInfoRefs(reopened, 'Label')).toEqual(sharedRefs)
+		expect(reopened.formula('Label!A2')?.normalizedFormula).toBe('C2')
+		expect(reopened.formula('Label!A41')?.normalizedFormula).toBe('C41')
+	})
+
 	test('real XLSX data table member edits journal detached table metadata', async () => {
 		const wb = await AscendWorkbook.open(
 			readFileSync(

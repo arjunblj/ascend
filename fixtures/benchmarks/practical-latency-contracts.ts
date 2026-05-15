@@ -115,6 +115,7 @@ const GENERATED_EDIT_ROWS = 65_536
 const GENERATED_EDIT_COLS = 10
 const DEFAULT_OUT_DIR = join('/private/tmp', `ascend-practical-contracts-${Date.now()}`)
 const PROFILE_SCRIPT = 'fixtures/benchmarks/profile-bun.ts'
+const MIN_PRODUCTION_TARGET_PHASE_MS = 5
 
 function readOption(name: string): string | undefined {
 	const index = process.argv.indexOf(name)
@@ -582,7 +583,10 @@ function decisionStability(cv: number | undefined): DecisionStability {
 	return cv > 0.1 ? 'noisy' : 'stable'
 }
 
-function nextDecisionAction(stability: DecisionStability): string {
+function nextDecisionAction(phaseMedianMs: number, stability: DecisionStability): string {
+	if (phaseMedianMs < MIN_PRODUCTION_TARGET_PHASE_MS) {
+		return 'below production tuning floor; keep as guardrail unless it regresses'
+	}
 	if (stability === 'noisy') {
 		return 'remeasure exact envelope before production changes'
 	}
@@ -591,12 +595,13 @@ function nextDecisionAction(stability: DecisionStability): string {
 }
 
 function decisionFields(
+	phaseMedianMs: number,
 	phaseCv: number | undefined,
 ): Pick<EnvelopeDecision, 'stability' | 'nextAction'> {
 	const stability = decisionStability(phaseCv)
 	return {
 		stability,
-		nextAction: nextDecisionAction(stability),
+		nextAction: nextDecisionAction(phaseMedianMs, stability),
 	}
 }
 
@@ -868,10 +873,13 @@ function statusLink(result: StepResult | undefined): string {
 
 function productionTarget(results: readonly StepResult[]): string {
 	const selected = envelopeDecisions(results)
-		.filter((decision) => decision.phaseMedianMs > 0)
+		.filter(
+			(decision) =>
+				decision.phaseMedianMs >= MIN_PRODUCTION_TARGET_PHASE_MS && decision.stability !== 'noisy',
+		)
 		.sort((a, b) => b.envelopeMedianMs - a.envelopeMedianMs || b.phaseMedianMs - a.phaseMedianMs)[0]
 	if (!selected) {
-		return 'No optimization selected yet: one or more required measurements failed or timed out.'
+		return `No production optimization selected yet: required measurements either failed, timed out, were noisy, or were below the ${MIN_PRODUCTION_TARGET_PHASE_MS}ms production tuning floor. Treat those phases as guardrails and remeasure the largest true envelope before code changes.`
 	}
 	return `Choose exactly one production target: \`${selected.largestPhase}\` in \`${selected.contract}\`. It belongs to the largest true user-visible envelope (${selected.envelopeMedianMs.toFixed(1)}ms median), and users wait on ${selected.phaseMedianMs.toFixed(1)}ms inside it (max plausible win ${selected.maxPlausibleWinMs.toFixed(1)}ms / ${selected.maxPlausibleWinPct.toFixed(1)}%). Decision status: ${selected.stability}; next action: ${selected.nextAction}. Required profile before code changes: \`${selected.profileCommand}\`. Guardrail: ${selected.guardrail}`
 }
@@ -957,7 +965,7 @@ function envelopeDecisions(results: readonly StepResult[]): EnvelopeDecision[] {
 			phaseMedianMs: largest.medianMs,
 			...(largest.p95Ms !== undefined ? { phaseP95Ms: largest.p95Ms } : {}),
 			...(largest.cv !== undefined ? { phaseCv: largest.cv } : {}),
-			...decisionFields(largest.cv),
+			...decisionFields(largest.medianMs, largest.cv),
 			...maxPlausibleWin(Math.max(firstViewEnvelope, largest.medianMs), largest.medianMs),
 			profileCommand: largest.profileCommand,
 			guardrail: 'must improve the first-view command, not only the full worksheet XML diagnostic',
@@ -1097,7 +1105,7 @@ function envelopeDecisions(results: readonly StepResult[]): EnvelopeDecision[] {
 			phaseMedianMs: largest.medianMs,
 			...(largest.p95Ms !== undefined ? { phaseP95Ms: largest.p95Ms } : {}),
 			...(largest.cv !== undefined ? { phaseCv: largest.cv } : {}),
-			...decisionFields(largest.cv),
+			...decisionFields(largest.medianMs, largest.cv),
 			...maxPlausibleWin(editEnvelope, largest.medianMs),
 			profileCommand: largest.profileCommand,
 			guardrail:
@@ -1134,7 +1142,7 @@ function envelopeDecisions(results: readonly StepResult[]): EnvelopeDecision[] {
 			phaseMedianMs: repeatedLargest.medianMs,
 			...(repeatedLargest.p95Ms !== undefined ? { phaseP95Ms: repeatedLargest.p95Ms } : {}),
 			...(repeatedLargest.cv !== undefined ? { phaseCv: repeatedLargest.cv } : {}),
-			...decisionFields(repeatedLargest.cv),
+			...decisionFields(repeatedLargest.medianMs, repeatedLargest.cv),
 			...maxPlausibleWin(repeatedLargest.medianMs, repeatedLargest.medianMs),
 			profileCommand: repeatedLargest.profileCommand,
 			guardrail: 'must name the hot-cache assumption and include cold-open context separately',
@@ -1247,6 +1255,7 @@ function largestPhase(candidates: readonly PhaseCandidate[]): PhaseCandidate {
 
 export const practicalLatencyContractsTestHooks = {
 	envelopeDecisions,
+	productionTarget,
 }
 
 function memoryPayloadTable(results: readonly StepResult[]): string {

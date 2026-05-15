@@ -176,4 +176,29 @@ describe('practical latency contracts benchmark', () => {
 		expect(edit?.phaseMedianMs).toBe(100)
 		expect(edit?.profileCommand).toBe('profile workflow')
 	})
+
+	test('keeps tiny hot-cache inspection phases as guardrails instead of production targets', () => {
+		const results = [
+			{
+				contract: 'repeated-inspection',
+				id: 'tui-first-paint-cache',
+				label: 'tui',
+				status: 'ok',
+				command: 'tui',
+				elapsedMs: 0,
+				profileCommand: 'profile tui',
+				summary: {
+					tuiWarmFirstPaintMedianMs: 2.2,
+					tuiWarmFirstPaintStats: { p95: 7.3, cv: 0.71 },
+				},
+			},
+		] as Parameters<typeof practicalLatencyContractsTestHooks.envelopeDecisions>[0]
+		const repeated = practicalLatencyContractsTestHooks
+			.envelopeDecisions(results)
+			.find((decision) => decision.contract === 'repeated-inspection')
+		expect(repeated?.nextAction).toContain('below production tuning floor')
+		expect(practicalLatencyContractsTestHooks.productionTarget(results)).toContain(
+			'No production optimization selected',
+		)
+	})
 })

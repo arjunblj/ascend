@@ -1757,6 +1757,16 @@ describe('Ascend API server', () => {
 				journal: true,
 				ops: [],
 			})
+			const previewMutations = await postJson('/preview', {
+				file,
+				journal: true,
+				mutations: [],
+			})
+			const writeMutations = await postJson('/write', {
+				file,
+				journal: true,
+				mutations: [],
+			})
 
 			expect(preview.status).toBe(200)
 			expect(preview.body.ok).toBe(true)
@@ -1764,6 +1774,24 @@ describe('Ascend API server', () => {
 			expect(write.status).toBe(200)
 			expect(write.body.ok).toBe(true)
 			expect(write.body.data?.journal).toEqual(expectedJournal)
+			expect(previewMutations.status).toBe(200)
+			expect(previewMutations.body.ok).toBe(true)
+			expect(previewMutations.body.data?.journal).toEqual(expectedJournal)
+			expect(previewMutations.body.data?.pathMutations).toMatchObject({
+				mutationCount: 0,
+				issueCount: 0,
+				issues: [],
+				replayable: true,
+			})
+			expect(writeMutations.status).toBe(200)
+			expect(writeMutations.body.ok).toBe(true)
+			expect(writeMutations.body.data?.journal).toEqual(expectedJournal)
+			expect(writeMutations.body.data?.pathMutations).toMatchObject({
+				mutationCount: 0,
+				issueCount: 0,
+				issues: [],
+				replayable: true,
+			})
 		} finally {
 			await unlink(file).catch(() => {})
 		}

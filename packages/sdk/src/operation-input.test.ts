@@ -64,6 +64,22 @@ describe('operation input helpers', () => {
 		expect(result).toEqual({ ok: true, ops: [] })
 	})
 
+	test('accepts explicit empty path mutations as a no-op batch', () => {
+		const wb = AscendWorkbook.create()
+		const result = resolveOperationInputForWorkbook(wb, apiSource({ mutations: [] }))
+
+		expect(result.ok).toBe(true)
+		if (result.ok) {
+			expect(result.ops).toEqual([])
+			expect(result.pathMutations).toMatchObject({
+				mutationCount: 0,
+				issueCount: 0,
+				issues: [],
+				replayable: true,
+			})
+		}
+	})
+
 	test('reports malformed path mutations with structured issue details', () => {
 		const result = resolveOperationInputShape(apiSource({ mutations: [{ path: 123 }] }))
 

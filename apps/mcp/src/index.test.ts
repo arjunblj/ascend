@@ -987,23 +987,25 @@ describe('MCP server', () => {
 		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
 		const preview = (server as any)._registeredTools['ascend.preview'].handler as (args: {
 			file: string
-			ops: unknown[]
+			ops?: unknown[]
+			mutations?: unknown[]
 			journal?: boolean
 		}) => Promise<{
 			structuredContent?: {
 				ok?: boolean
-				data?: { journal?: Record<string, unknown> }
+				data?: { journal?: Record<string, unknown>; pathMutations?: Record<string, unknown> }
 			}
 		}>
 		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
 		const write = (server as any)._registeredTools['ascend.write'].handler as (args: {
 			file: string
-			ops: unknown[]
+			ops?: unknown[]
+			mutations?: unknown[]
 			journal?: boolean
 		}) => Promise<{
 			structuredContent?: {
 				ok?: boolean
-				data?: { journal?: Record<string, unknown> }
+				data?: { journal?: Record<string, unknown>; pathMutations?: Record<string, unknown> }
 			}
 		}>
 		const expectedJournal = {
@@ -1026,11 +1028,29 @@ describe('MCP server', () => {
 		try {
 			const previewed = await preview({ file, journal: true, ops: [] })
 			const written = await write({ file, journal: true, ops: [] })
+			const previewedMutations = await preview({ file, journal: true, mutations: [] })
+			const writtenMutations = await write({ file, journal: true, mutations: [] })
 
 			expect(previewed.structuredContent?.ok).toBe(true)
 			expect(previewed.structuredContent?.data?.journal).toEqual(expectedJournal)
 			expect(written.structuredContent?.ok).toBe(true)
 			expect(written.structuredContent?.data?.journal).toEqual(expectedJournal)
+			expect(previewedMutations.structuredContent?.ok).toBe(true)
+			expect(previewedMutations.structuredContent?.data?.journal).toEqual(expectedJournal)
+			expect(previewedMutations.structuredContent?.data?.pathMutations).toMatchObject({
+				mutationCount: 0,
+				issueCount: 0,
+				issues: [],
+				replayable: true,
+			})
+			expect(writtenMutations.structuredContent?.ok).toBe(true)
+			expect(writtenMutations.structuredContent?.data?.journal).toEqual(expectedJournal)
+			expect(writtenMutations.structuredContent?.data?.pathMutations).toMatchObject({
+				mutationCount: 0,
+				issueCount: 0,
+				issues: [],
+				replayable: true,
+			})
 		} finally {
 			await unlink(file).catch(() => {})
 		}

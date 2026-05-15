@@ -5508,6 +5508,7 @@ describe('applyOperation', () => {
 
 		expect(s2.cells.get(0, 0)?.formula).toBe('SUM(Sheet1!A2#)')
 		expect(result.value.affectedCells).toEqual(['Sheet2!A1'])
+		expect(result.value.sheetsModified).toEqual(['Sheet1', 'Sheet2'])
 		expectCachedFormulaAnalysisMatchesFullRecompute(wb)
 	})
 

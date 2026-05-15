@@ -104,14 +104,16 @@ function applyAxisShift(
 	shiftSheetCellMetadata(sheet, axis, at, delta)
 	clearFormulaMetadata(workbook)
 	const affected = new Set<string>()
+	const sheetsModified = new Set<string>([sheetName])
 	for (const rewritten of rewriteWorkbookFormulasForShift(workbook, sheetName, axis, at, delta)) {
 		affected.add(affectedNamedRef(rewritten.sheetName, rewritten.ref, sheetName, false))
+		sheetsModified.add(rewritten.sheetName)
 	}
 	rewriteDefinedNameFormulasForShift(workbook, sheetName, axis, at, delta)
 	rewriteWorkbookMetadataFormulasForShift(workbook, sheetName, axis, at, delta)
 	removeDeletedQueryTableConnectionParts(workbook, deletedQueryTablePartPaths)
 
-	return ok(patch([...affected], [sheetName], true))
+	return ok(patch([...affected], [...sheetsModified], true))
 }
 
 export function handleInsertRows(

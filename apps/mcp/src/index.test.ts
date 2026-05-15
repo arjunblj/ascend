@@ -40,6 +40,8 @@ const JOURNAL_V1_FIXTURE = JSON.parse(
 	readonly scenario: {
 		readonly ops: readonly Record<string, unknown>[]
 		readonly journal: {
+			readonly schemaVersion: number
+			readonly schemaId: string
 			readonly supported: boolean
 			readonly exact: boolean
 			readonly inverseOpCount: number
@@ -2516,6 +2518,8 @@ describe('MCP server', () => {
 						preparedPlan?: { id?: string }
 						preview?: {
 							journalSummary?: {
+								schemaVersion?: number
+								schemaId?: string
 								supported?: boolean
 								exact?: boolean
 								inverseOpCount?: number
@@ -2537,6 +2541,8 @@ describe('MCP server', () => {
 					data?: {
 						apply?: {
 							journalSummary?: {
+								schemaVersion?: number
+								schemaId?: string
 								supported?: boolean
 								exact?: boolean
 								inverseOpCount?: number

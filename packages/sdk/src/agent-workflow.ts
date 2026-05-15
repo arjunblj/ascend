@@ -30,7 +30,12 @@ import {
 import { AscendException, ascendError, type FeatureReport, type Operation } from '@ascend/schema'
 import { listCapabilities, summarizeCapabilities } from './capabilities.ts'
 import { collectFormulaReferences } from './formula-info.ts'
-import type { MutationJournal, MutationJournalIssue } from './journal.ts'
+import {
+	MUTATION_JOURNAL_ISSUE_SCHEMA,
+	MUTATION_JOURNAL_ISSUE_SCHEMA_VERSION,
+	type MutationJournal,
+	type MutationJournalIssue,
+} from './journal.ts'
 import type { CheckIssue, FormulaReferenceInfo } from './types.ts'
 import { AscendWorkbook } from './workbook.ts'
 
@@ -335,6 +340,8 @@ export interface CompactAffectedRange {
 }
 
 export interface CompactJournalSummary {
+	readonly schemaVersion: number
+	readonly schemaId: string
 	readonly supported: boolean
 	readonly exact: boolean
 	readonly inverseOpCount: number
@@ -1253,6 +1260,8 @@ function compactRangesFromRefs(refs: readonly string[]): readonly CompactAffecte
 
 function compactJournalSummary(journal: MutationJournal): CompactJournalSummary {
 	return {
+		schemaVersion: MUTATION_JOURNAL_ISSUE_SCHEMA_VERSION,
+		schemaId: MUTATION_JOURNAL_ISSUE_SCHEMA.$id,
 		supported: journal.supported,
 		exact: journal.exact,
 		inverseOpCount: journal.inverseOps.length,

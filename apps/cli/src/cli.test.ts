@@ -1,7 +1,11 @@
 import { afterAll, describe, expect, test } from 'bun:test'
 import { existsSync, readFileSync, unlinkSync } from 'node:fs'
 import { inspect as inspectValue } from 'node:util'
-import { AscendWorkbook } from '@ascend/sdk'
+import {
+	AscendWorkbook,
+	MUTATION_JOURNAL_ISSUE_SCHEMA,
+	MUTATION_JOURNAL_ISSUE_SCHEMA_VERSION,
+} from '@ascend/sdk'
 import { makeXlsx } from '../../../packages/io-xlsx/test/helpers.ts'
 import { runCli } from './index.ts'
 
@@ -29,6 +33,8 @@ const JOURNAL_V1_FIXTURE = JSON.parse(
 	readonly scenario: {
 		readonly ops: readonly Record<string, unknown>[]
 		readonly journal: {
+			readonly schemaVersion: number
+			readonly schemaId: string
 			readonly supported: boolean
 			readonly exact: boolean
 			readonly inverseOpCount: number
@@ -114,6 +120,8 @@ function compactJournal(journal: {
 	readonly issues: readonly unknown[]
 }) {
 	return {
+		schemaVersion: MUTATION_JOURNAL_ISSUE_SCHEMA_VERSION,
+		schemaId: MUTATION_JOURNAL_ISSUE_SCHEMA.$id,
 		supported: journal.supported,
 		exact: journal.exact,
 		inverseOpCount: journal.inverseOps.length,

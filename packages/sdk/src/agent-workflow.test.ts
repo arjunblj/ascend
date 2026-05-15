@@ -24,6 +24,8 @@ import {
 	createPackageActionProof,
 	createPreparedAgentPlan,
 	createReleaseProofBundle,
+	MUTATION_JOURNAL_ISSUE_SCHEMA,
+	MUTATION_JOURNAL_ISSUE_SCHEMA_VERSION,
 } from './index.ts'
 
 const TEMP_DIR = join(tmpdir(), `ascend-agent-workflow-${process.pid}`)
@@ -4234,6 +4236,8 @@ describe('agent workflow loss audit', () => {
 		expect(prepared.plan.preview.journal?.inverseOps).toEqual([])
 		expect(prepared.plan.preview.journal?.issues).toEqual([expectedIssue])
 		expect(compactAgentPlanResult(prepared.plan).preview.journalSummary).toEqual({
+			schemaVersion: MUTATION_JOURNAL_ISSUE_SCHEMA_VERSION,
+			schemaId: MUTATION_JOURNAL_ISSUE_SCHEMA.$id,
 			supported: true,
 			exact: false,
 			inverseOpCount: 0,
@@ -4247,6 +4251,8 @@ describe('agent workflow loss audit', () => {
 		expect(committed.apply.journal?.inverseOps).toEqual([])
 		expect(committed.apply.journal?.issues).toEqual([expectedIssue])
 		expect(compactAgentCommitResult(committed).apply.journalSummary).toEqual({
+			schemaVersion: MUTATION_JOURNAL_ISSUE_SCHEMA_VERSION,
+			schemaId: MUTATION_JOURNAL_ISSUE_SCHEMA.$id,
 			supported: true,
 			exact: false,
 			inverseOpCount: 0,
@@ -4299,6 +4305,8 @@ describe('agent workflow loss audit', () => {
 		expect(committed.postWrite.auditsPassed).toBe(true)
 		const compact = compactAgentCommitResult(committed)
 		expect(compact.apply.journalSummary).toEqual({
+			schemaVersion: MUTATION_JOURNAL_ISSUE_SCHEMA_VERSION,
+			schemaId: MUTATION_JOURNAL_ISSUE_SCHEMA.$id,
 			supported: true,
 			exact: false,
 			inverseOpCount: committed.apply.journal?.inverseOps.length ?? 0,

@@ -70,6 +70,8 @@
 		"name": "grouped-rows-lossy-outline",
 		"ops": [{ "op": "groupRows", "sheet": "Sheet1", "from": 1, "to": 2, "collapsed": true }],
 		"journal": {
+			"schemaVersion": 1,
+			"schemaId": "https://ascend.dev/schemas/mutation-journal-issue-v1.json",
 			"supported": true,
 			"exact": false,
 			"inverseOpCount": 0,

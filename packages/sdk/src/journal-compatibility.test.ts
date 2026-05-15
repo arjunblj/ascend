@@ -25,6 +25,8 @@ const FIXTURE = JSON.parse(
 	readonly scenario: {
 		readonly ops: readonly Operation[]
 		readonly journal: {
+			readonly schemaVersion: number
+			readonly schemaId: string
 			readonly supported: boolean
 			readonly exact: boolean
 			readonly inverseOpCount: number
@@ -59,6 +61,8 @@ describe('mutation journal v1 compatibility', () => {
 
 export function journalSummary(journal: MutationJournal): typeof FIXTURE.scenario.journal {
 	return {
+		schemaVersion: MUTATION_JOURNAL_ISSUE_SCHEMA_VERSION,
+		schemaId: MUTATION_JOURNAL_ISSUE_SCHEMA.$id,
 		supported: journal.supported,
 		exact: journal.exact,
 		inverseOpCount: journal.inverseOps.length,

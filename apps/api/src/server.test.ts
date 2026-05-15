@@ -40,6 +40,8 @@ const JOURNAL_V1_FIXTURE = JSON.parse(
 	readonly scenario: {
 		readonly ops: readonly Record<string, unknown>[]
 		readonly journal: {
+			readonly schemaVersion: number
+			readonly schemaId: string
 			readonly supported: boolean
 			readonly exact: boolean
 			readonly inverseOpCount: number
@@ -92,6 +94,8 @@ interface ApiEnvelope {
 			readonly changedRanges?: readonly { readonly sheet?: string; readonly range?: string }[]
 			readonly wouldSucceed?: boolean
 			readonly journalSummary?: {
+				readonly schemaVersion?: number
+				readonly schemaId?: string
 				readonly supported?: boolean
 				readonly exact?: boolean
 				readonly inverseOpCount?: number
@@ -114,6 +118,8 @@ interface ApiEnvelope {
 			readonly affectedCellRefs?: readonly string[]
 			readonly affectedRanges?: readonly { readonly sheet?: string; readonly range?: string }[]
 			readonly journalSummary?: {
+				readonly schemaVersion?: number
+				readonly schemaId?: string
 				readonly supported?: boolean
 				readonly exact?: boolean
 				readonly inverseOpCount?: number

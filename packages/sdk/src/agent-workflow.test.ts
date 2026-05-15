@@ -697,7 +697,7 @@ describe('agent workflow loss audit', () => {
 		expect(existsSync(output)).toBe(false)
 	})
 
-	test('commit from workbook blocks hidden formula text under formula metadata', async () => {
+	test('commit from workbook blocks unsafe formula metadata', async () => {
 		const cases = [
 			{
 				name: 'hidden-shared-member-formula',
@@ -798,6 +798,37 @@ describe('agent workflow loss audit', () => {
 					})
 				},
 				expectedKind: 'spill-member-formula-text-mismatch',
+			},
+			{
+				name: 'blocked-spill-non-anchor-metadata',
+				output: join(TEMP_DIR, 'blocked-spill-non-anchor-metadata-out.xlsx'),
+				setup: (wb: AscendWorkbook) => {
+					const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+					if (!sheet) throw new Error('missing sheet')
+					sheet.cells.set(0, 0, {
+						value: { kind: 'error', value: '#SPILL!' },
+						formula: 'SEQUENCE(3)',
+						styleId: DEFAULT_STYLE_ID,
+						formulaInfo: {
+							kind: 'blockedSpill',
+							anchorRef: 'Sheet1!A1',
+							ref: 'A1:A3',
+							blockingRefs: ['A2'],
+						},
+					})
+					sheet.cells.set(1, 0, {
+						value: { kind: 'string', value: 'blocker' },
+						formula: null,
+						styleId: DEFAULT_STYLE_ID,
+						formulaInfo: {
+							kind: 'blockedSpill',
+							anchorRef: 'Sheet1!A1',
+							ref: 'A1:A3',
+							blockingRefs: ['A2'],
+						},
+					})
+				},
+				expectedKind: 'blockedSpill-non-anchor-metadata',
 			},
 		] as const
 

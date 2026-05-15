@@ -50,7 +50,7 @@ Latest proof:
 | OK cases | 8 |
 | Malformed rejected | 1 |
 | Review before hydration | 4 |
-| Public fixture open-plan speedup range | 11.70x to 39.77x |
+| Public fixture open-plan speedup range | 14.09x to 31.97x |
 | Synthetic signed mode | metadata-only, review |
 | Synthetic unknown-part mode | metadata-only, review |
 
@@ -82,6 +82,26 @@ Latest proof:
 | Unknown-part proof issues | 1 |
 
 Decision: keep auditable package-part mutation as the second handoff. The allowed claim is local per-part accounting with `passthrough`, `regenerate`, `add`, `drop`, and `error`. The honest boundary remains: not signed provenance, SLSA, in-toto attestation, Excel recalc equivalence, or semantic understanding of every unsupported feature.
+
+### Formula Intelligence Guardrail
+
+The latest rejection-first proof rerun is not a handoff to implementation. It exists to keep formula intelligence from overclaiming rename:
+
+```bash
+bun run fixtures/benchmarks/formula-assist-proof.ts --sample 250
+```
+
+| Metric | Value |
+| --- | ---: |
+| Public formulas discovered | 1685 |
+| Sampled formulas | 1685 |
+| Reference spans | 2322 |
+| Binding roles | 25 |
+| Prepare-rename OK targets | 3 |
+| Prepare-rename refusals | 1692 |
+| P95 assist latency | 0.0368 ms |
+
+Decision: formula intelligence remains a rejection-first primitives claim. Do not implement rename; do not hand it to an implementation loop until workbook-context symbol ownership and operation-owned edits exist.
 
 ### Release Proof Index
 

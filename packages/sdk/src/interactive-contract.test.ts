@@ -9056,12 +9056,12 @@ describe('interactive client contract', () => {
 		model.chartParts.push({
 			partPath: 'xl/charts/chart1.xml',
 			sheetName: 'Sheet1',
-			series: [{ valueRef: 'Sheet1!$A$2:$A$2' }],
+			series: [{ valueRef: 'sheet1!$A$2:$A$2' }],
 		})
 		model.pivotCaches.push({
 			partPath: 'xl/pivotCache/pivotCacheDefinition1.xml',
 			cacheId: 1,
-			sourceSheet: 'Sheet1',
+			sourceSheet: 'sheet1',
 			sourceRef: 'A2:B4',
 			fields: [],
 		})

@@ -6117,7 +6117,7 @@ function refTextOverlapsAffected(
 ): boolean {
 	const split = splitSheetQualifiedRefText(refText)
 	const sheetName = split?.sheet ?? ownerSheet
-	if (sheetName !== preimage.sheet) return false
+	if (sheetName === undefined || !sameSheetName(sheetName, preimage.sheet)) return false
 	const ref = refTextToRange(split?.ref ?? refText)
 	return ref ? rangesOverlap(ref, affected) : false
 }

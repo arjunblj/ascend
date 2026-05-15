@@ -444,6 +444,31 @@ describe('release proof evidence index', () => {
 			proofChecks: expect.arrayContaining([expect.stringContaining('fails closed')]),
 			allowedWording: expect.stringContaining('explicit unknown-part error'),
 		})
+		expect(index.trustCompletenessBoundaryEvidence).toMatchObject({
+			ownerLoop: 'correctness',
+			status: 'boundary-pinned-owner-scope',
+			validationCommand: 'bun test packages/sdk/src/release-trust-matrix.test.ts',
+			releaseTrustMatrixPath: 'docs/RELEASE_TRUST_MATRIX.md',
+			requiredPromotionEvidence: expect.stringContaining('top release claim'),
+			doesNotCloseGates: ['product', 'performance', 'release'],
+			boundary: expect.stringContaining('does not approve headline release claims'),
+		})
+		expect(
+			index.trustCompletenessBoundaryEvidence.outOfScopeClasses.map((item) => item.name),
+		).toEqual([
+			'Broad formula function coverage',
+			'Product/DX orchestration such as progressive open or viewport merge helpers',
+			'Reader/writer performance and benchmark tuning',
+			'More malformed-field enumeration',
+			'New unknown Excel feature implementation',
+		])
+		expect(
+			index.trustCompletenessBoundaryEvidence.sourceReferences.map((entry) => entry.label),
+		).toEqual([
+			'SLSA distributing provenance',
+			'GitHub artifact attestations',
+			'Microsoft Protected View',
+		])
 		expect(index.compactReportPublicationEvidence).toMatchObject({
 			ownerLoop: 'release',
 			status: 'local-summary-present-publication-policy-required',
@@ -1098,6 +1123,14 @@ describe('release proof evidence index', () => {
 			'unknown-parts',
 			'streaming-scope',
 		])
+		expect(handoff.trustCompletenessBoundaryEvidence).toMatchObject({
+			status: 'boundary-pinned-owner-scope',
+			validationCommand: 'bun test packages/sdk/src/release-trust-matrix.test.ts',
+			doesNotCloseGates: ['product', 'performance', 'release'],
+		})
+		expect(
+			handoff.trustCompletenessBoundaryEvidence.outOfScopeClasses.map((item) => item.name),
+		).toContain('Reader/writer performance and benchmark tuning')
 		expect(JSON.stringify(handoff.fixturePolicy)).toContain('package-action-fixture-scan')
 		expect(handoff.fixturePolicyEvidence.safeOpen.externalCandidateEvidence).toEqual([
 			expect.objectContaining({
@@ -1455,6 +1488,12 @@ describe('release proof evidence index', () => {
 		expect(markdown).toContain('| macros-activex | true | package-action-proof/macro-passthrough')
 		expect(markdown).toContain('safe-open-proof/activex')
 		expect(markdown).toContain('post-write audit fails closed')
+		expect(markdown).toContain('Correctness/trust completeness boundary:')
+		expect(markdown).toContain('Status: boundary-pinned-owner-scope')
+		expect(markdown).toContain('Does not close gates: product,performance,release')
+		expect(markdown).toContain('| Out-of-scope class | Promote only when | Owner action |')
+		expect(markdown).toContain('| Broad formula function coverage |')
+		expect(markdown).toContain('does not approve headline release claims')
 		expect(markdown).toContain('## Compact Report Publication Evidence')
 		expect(markdown).toContain('Status: local-summary-present-publication-policy-required')
 		expect(markdown).toContain('Compact report digests indexed: false')

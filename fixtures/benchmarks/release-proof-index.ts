@@ -173,6 +173,7 @@ export interface ReleaseProofIndexResult {
 	readonly safeOpenLatencyValidationEvidence: ReleaseProofSafeOpenLatencyValidationEvidence
 	readonly correctnessPolicy: ReleaseProofCorrectnessPolicy
 	readonly correctnessBoundaryEvidence: ReleaseProofCorrectnessBoundaryEvidence
+	readonly trustCompletenessBoundaryEvidence: ReleaseProofTrustCompletenessBoundaryEvidence
 	readonly releasePackageabilityEvidence: ReleaseProofPackageabilityEvidence
 	readonly streamingMatrixEvidence: ReleaseProofStreamingMatrixEvidence
 	readonly compactReportPublicationEvidence: ReleaseProofCompactReportPublicationEvidence
@@ -199,6 +200,7 @@ export interface ReleaseProofOwnerHandoffIndex {
 	readonly safeOpenLatencyValidationEvidence: ReleaseProofSafeOpenLatencyValidationEvidence
 	readonly correctnessPolicy: ReleaseProofCorrectnessPolicy
 	readonly correctnessBoundaryEvidence: ReleaseProofCorrectnessBoundaryEvidence
+	readonly trustCompletenessBoundaryEvidence: ReleaseProofTrustCompletenessBoundaryEvidence
 	readonly releasePackageabilityEvidence: ReleaseProofPackageabilityEvidence
 	readonly streamingMatrixEvidence: ReleaseProofStreamingMatrixEvidence
 	readonly compactReportPublicationEvidence: ReleaseProofCompactReportPublicationEvidence
@@ -673,6 +675,24 @@ export interface ReleaseProofCorrectnessBoundaryEvidence {
 	readonly boundary: string
 }
 
+export interface ReleaseProofTrustCompletenessBoundaryEvidence {
+	readonly ownerLoop: 'correctness'
+	readonly status: 'boundary-pinned-owner-scope'
+	readonly validationCommand: string
+	readonly releaseTrustMatrixPath: string
+	readonly outOfScopeClasses: readonly ReleaseProofTrustCompletenessBoundaryClass[]
+	readonly requiredPromotionEvidence: string
+	readonly doesNotCloseGates: readonly ReleaseProofReadinessOwner[]
+	readonly sourceReferences: readonly ReleaseProofSourceReference[]
+	readonly boundary: string
+}
+
+export interface ReleaseProofTrustCompletenessBoundaryClass {
+	readonly name: string
+	readonly promoteOnlyWhen: string
+	readonly ownerAction: string
+}
+
 export interface ReleaseProofCorrectnessBoundaryFeatureCheck {
 	readonly feature: string
 	readonly evidencePresent: boolean
@@ -1136,6 +1156,7 @@ export async function runReleaseProofIndex(
 		safeOpenLatencyValidationEvidence: safeOpenLatencyValidationEvidence(safeOpen),
 		correctnessPolicy: cloneCorrectnessPolicy(),
 		correctnessBoundaryEvidence: correctnessBoundaryEvidence(safeOpen, packageAction),
+		trustCompletenessBoundaryEvidence: trustCompletenessBoundaryEvidence(),
 		releasePackageabilityEvidence: releasePackageabilityEvidence(),
 		streamingMatrixEvidence: streamingMatrixEvidence(packageAction),
 		compactReportPublicationEvidence: compactReportPublicationEvidence(
@@ -1416,6 +1437,21 @@ export function releaseProofIndexMarkdown(result: ReleaseProofIndexResult): stri
 		'| --- | --- | --- | --- | --- | --- |',
 		...result.correctnessBoundaryEvidence.featureChecks.map(correctnessBoundaryEvidenceMarkdownRow),
 		'',
+		'Correctness/trust completeness boundary:',
+		'',
+		`Status: ${result.trustCompletenessBoundaryEvidence.status}`,
+		`Validation command: \`${result.trustCompletenessBoundaryEvidence.validationCommand}\``,
+		`Matrix path: ${result.trustCompletenessBoundaryEvidence.releaseTrustMatrixPath}`,
+		`Does not close gates: ${result.trustCompletenessBoundaryEvidence.doesNotCloseGates.join(',')}`,
+		result.trustCompletenessBoundaryEvidence.requiredPromotionEvidence,
+		result.trustCompletenessBoundaryEvidence.boundary,
+		'',
+		'| Out-of-scope class | Promote only when | Owner action |',
+		'| --- | --- | --- |',
+		...result.trustCompletenessBoundaryEvidence.outOfScopeClasses.map(
+			trustCompletenessBoundaryMarkdownRow,
+		),
+		'',
 		'## Compact Report Publication Evidence',
 		'',
 		`Status: ${result.compactReportPublicationEvidence.status}`,
@@ -1490,6 +1526,9 @@ export function releaseProofOwnerHandoffIndex(
 		correctnessPolicy: cloneCorrectnessPolicy(),
 		correctnessBoundaryEvidence: cloneCorrectnessBoundaryEvidence(
 			result.correctnessBoundaryEvidence,
+		),
+		trustCompletenessBoundaryEvidence: cloneTrustCompletenessBoundaryEvidence(
+			result.trustCompletenessBoundaryEvidence,
 		),
 		releasePackageabilityEvidence: cloneReleasePackageabilityEvidence(
 			result.releasePackageabilityEvidence,
@@ -2565,6 +2604,69 @@ function correctnessBoundaryFeatureCheck(input: {
 		proofChecks: [...input.proofChecks],
 		allowedWording: wording.allowedWording,
 		forbiddenWording: wording.forbiddenWording,
+	}
+}
+
+function trustCompletenessBoundaryEvidence(): ReleaseProofTrustCompletenessBoundaryEvidence {
+	return {
+		ownerLoop: 'correctness',
+		status: 'boundary-pinned-owner-scope',
+		validationCommand: 'bun test packages/sdk/src/release-trust-matrix.test.ts',
+		releaseTrustMatrixPath: 'docs/RELEASE_TRUST_MATRIX.md',
+		outOfScopeClasses: [
+			{
+				name: 'Broad formula function coverage',
+				promoteOnlyWhen:
+					'a supported edit can write stale formula bindings, stale analysis, or a wrong cached result',
+				ownerAction:
+					'Keep generic function breadth in formula correctness work, not release trust scope.',
+			},
+			{
+				name: 'Product/DX orchestration such as progressive open or viewport merge helpers',
+				promoteOnlyWhen: 'the orchestration hides journal, verifier, or package drift from agents',
+				ownerAction:
+					'Route ergonomics work to product/DX unless it changes fail-closed trust evidence.',
+			},
+			{
+				name: 'Reader/writer performance and benchmark tuning',
+				promoteOnlyWhen:
+					'the benchmark work preserves the same commit/reopen/verify contract or exposes correctness drift',
+				ownerAction:
+					'Keep throughput claims in benchmark-owned proof and out of correctness release scope.',
+			},
+			{
+				name: 'More malformed-field enumeration',
+				promoteOnlyWhen:
+					'the malformed field can mutate the wrong surface, corrupt an exact inverse, or be silently blessed after write',
+				ownerAction: 'Reject enumeration work that does not change a supported edit trust path.',
+			},
+			{
+				name: 'New unknown Excel feature implementation',
+				promoteOnlyWhen:
+					'unknown package state is not preserved, reported honestly, or kept blocking on drift',
+				ownerAction:
+					'Require machine-readable preservation or drift evidence before expanding feature scope.',
+			},
+		],
+		requiredPromotionEvidence:
+			'Promote a new correctness item only when it names a top release claim and proves a silent corruption, exact-journal, or post-write drift path not already covered.',
+		doesNotCloseGates: ['product', 'performance', 'release'],
+		sourceReferences: [
+			{
+				label: 'SLSA distributing provenance',
+				url: 'https://slsa.dev/spec/v1.0/distributing-provenance',
+			},
+			{
+				label: 'GitHub artifact attestations',
+				url: 'https://docs.github.com/en/actions/security-for-github-actions/using-artifact-attestations/using-artifact-attestations-to-establish-provenance-for-builds',
+			},
+			{
+				label: 'Microsoft Protected View',
+				url: 'https://support.microsoft.com/en-gb/office/what-is-protected-view-d6f09ac7-e6b9-4495-8e43-2bbcdbcb6653',
+			},
+		],
+		boundary:
+			'Correctness/trust completeness boundary only. It does not approve headline release claims, product surfaces, performance wording, fixture policy, provenance, or publication gates.',
 	}
 }
 
@@ -4058,6 +4160,16 @@ function correctnessBoundaryEvidenceMarkdownRow(
 		.replace(/$/, '|')
 }
 
+function trustCompletenessBoundaryMarkdownRow(
+	row: ReleaseProofTrustCompletenessBoundaryClass,
+): string {
+	return [row.name, row.promoteOnlyWhen, row.ownerAction]
+		.map((cell) => ` ${cell} `)
+		.join('|')
+		.replace(/^/, '|')
+		.replace(/$/, '|')
+}
+
 function correctnessPolicyApprovalMarkdownRow(
 	row: ReleaseProofCorrectnessPolicyApprovalItem,
 ): string {
@@ -4087,6 +4199,17 @@ function cloneCorrectnessBoundaryEvidence(
 			evidenceSources: [...entry.evidenceSources],
 			proofChecks: [...entry.proofChecks],
 		})),
+	}
+}
+
+function cloneTrustCompletenessBoundaryEvidence(
+	evidence: ReleaseProofTrustCompletenessBoundaryEvidence,
+): ReleaseProofTrustCompletenessBoundaryEvidence {
+	return {
+		...evidence,
+		outOfScopeClasses: evidence.outOfScopeClasses.map((entry) => ({ ...entry })),
+		doesNotCloseGates: [...evidence.doesNotCloseGates],
+		sourceReferences: evidence.sourceReferences.map((entry) => ({ ...entry })),
 	}
 }
 

@@ -6,6 +6,7 @@ Updated: 2026-05-15
 
 | Run | Status | Fold-in target |
 | --- | --- | --- |
+| [Release trust owner handoff boundary](runs/2026/2026-05-15-release-trust-owner-handoff-boundary/log.md) | folded correctness/trust completeness boundary into release-proof owner handoff JSON so non-blocking scope control is machine-readable | correctness loop, release loop |
 | [Release trust completeness boundary](runs/2026/2026-05-15-release-trust-completeness-boundary/log.md) | folded a test-pinned out-of-scope boundary into the release trust matrix so correctness work stays collapsed around trust failures, not broad feature expansion | correctness loop, release loop |
 | [Package action generated edge streaming probe](runs/2026/2026-05-15-package-action-generated-edge-streaming-probe/log.md) | killed generated edge/error streaming promotion because unknown-part streaming did not emit the fail-closed error action from the standard writer proof | performance loop blocker, release downgrade |
 | [Package action public streaming matrix](runs/2026/2026-05-15-package-action-public-streaming-matrix/log.md) | folded public macro/chart streaming probes into package-action proof; streaming coverage is now five cases while generated edge/error cases remain the boundary | performance loop, release loop |

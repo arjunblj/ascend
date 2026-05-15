@@ -538,6 +538,8 @@ export function handleSetComment(
 	const result = getSheet(workbook, op.sheet)
 	if (!result.ok) return result
 
+	const refError = cellRefError('setComment', op.ref)
+	if (refError) return err(refError)
 	const ref = op.ref.toUpperCase()
 	const existing = findCommentEntry(result.value.comments, ref)
 	const comment =
@@ -560,7 +562,6 @@ export function handleSetThreadedComment(
 	const result = getSheet(workbook, op.sheet)
 	if (!result.ok) return result
 	const sheet = result.value
-	sheet.ensureWritable()
 
 	if (
 		op.partPath === undefined &&
@@ -584,6 +585,10 @@ export function handleSetThreadedComment(
 		(op.commentIndex < 0 || !Number.isInteger(op.commentIndex))
 	) {
 		return err(ascendError('VALIDATION_ERROR', 'commentIndex must be a non-negative integer'))
+	}
+	if (op.ref !== undefined) {
+		const refError = cellRefError('setThreadedComment', op.ref)
+		if (refError) return err(refError)
 	}
 
 	const matches = sheet.threadedComments
@@ -615,6 +620,7 @@ export function handleSetThreadedComment(
 
 	const match = matches[0]
 	if (!match) return err(ascendError('VALIDATION_ERROR', 'No matching threaded comment found'))
+	sheet.ensureWritable()
 	sheet.threadedComments[match.index] = { ...match.comment, text: op.text }
 
 	return ok(patch([`${sheet.name}!${match.comment.ref}`], [sheet.name], false))
@@ -627,6 +633,8 @@ export function handleDeleteComment(
 	const sheetResult = getSheet(workbook, op.sheet)
 	if (!sheetResult.ok) return sheetResult
 	const sheet = sheetResult.value
+	const refError = cellRefError('deleteComment', op.ref)
+	if (refError) return err(refError)
 	sheet.ensureWritable()
 	const ref = op.ref.toUpperCase()
 	for (const [commentRef] of sheet.comments) {
@@ -663,7 +671,7 @@ export function handleSetHyperlink(
 ): Result<PatchResult> {
 	const result = getSheet(workbook, op.sheet)
 	if (!result.ok) return result
-	const refError = hyperlinkRefError('setHyperlink', op.ref)
+	const refError = cellRefError('setHyperlink', op.ref)
 	if (refError) return err(refError)
 	if (!hasLinkDestination(op.url) && !hasLinkDestination(op.location)) {
 		return err(
@@ -718,7 +726,7 @@ function hasLinkDestination(value: string | undefined): boolean {
 	return typeof value === 'string' && value.trim().length > 0
 }
 
-function hyperlinkRefError(opName: 'setHyperlink' | 'deleteHyperlink', ref: unknown) {
+function cellRefError(opName: string, ref: unknown) {
 	if (typeof ref !== 'string') {
 		return ascendError('VALIDATION_ERROR', `${opName} ref must be an A1 cell reference`)
 	}
@@ -737,7 +745,7 @@ export function handleDeleteHyperlink(
 	const sheetResult = getSheet(workbook, op.sheet)
 	if (!sheetResult.ok) return sheetResult
 	const sheet = sheetResult.value
-	const refError = hyperlinkRefError('deleteHyperlink', op.ref)
+	const refError = cellRefError('deleteHyperlink', op.ref)
 	if (refError) return err(refError)
 	sheet.ensureWritable()
 	const ref = op.ref.toUpperCase()

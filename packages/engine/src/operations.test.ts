@@ -2018,6 +2018,32 @@ describe('applyOperation', () => {
 		expect(sheet.threadedComments).toEqual([{ ref: 'B1', text: 'Keep', id: 'tc3' }])
 	})
 
+	test('comment operations reject invalid refs without mutation', () => {
+		const cases: readonly Operation[] = [
+			{ op: 'setComment', sheet: 'Sheet1', ref: 'A1:', text: 'Bad' },
+			{ op: 'setComment', sheet: 'Sheet1', ref: 123 as never, text: 'Bad' },
+			{ op: 'setThreadedComment', sheet: 'Sheet1', ref: 'A1:', text: 'Bad' },
+			{ op: 'setThreadedComment', sheet: 'Sheet1', ref: 123 as never, text: 'Bad' },
+			{ op: 'deleteComment', sheet: 'Sheet1', ref: 'A1:' },
+			{ op: 'deleteComment', sheet: 'Sheet1', ref: 123 as never },
+		]
+
+		for (const op of cases) {
+			const wb = setup()
+			const sheet = wb.getSheet('Sheet1')
+			if (!sheet) throw new Error('expected sheet')
+			sheet.comments.set('B1', { text: 'Legacy' })
+			sheet.threadedComments.push({ ref: 'B1', text: 'Thread', id: 'tc1' })
+			const result = applyOperation(wb, op)
+			expectErr(result)
+			expect(result.error.code, JSON.stringify(op)).toBe('VALIDATION_ERROR')
+			expect(sheet.comments).toEqual(new Map([['B1', { text: 'Legacy' }]]))
+			expect(sheet.threadedComments, JSON.stringify(op)).toEqual([
+				{ ref: 'B1', text: 'Thread', id: 'tc1' },
+			])
+		}
+	})
+
 	test('insertImage allocates image identity and anchor metadata', () => {
 		const wb = setup()
 		const result = applyOperation(wb, {

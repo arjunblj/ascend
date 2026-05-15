@@ -13,6 +13,37 @@ describe('release proof evidence index', () => {
 		expect(index.attestation).toBe(false)
 		expect(index.excludedEvidenceCount).toBe(1)
 		expect(index.deferredClaimCount).toBe(6)
+		expect(index.fixturePolicy).toMatchObject({
+			currentDecision: 'owner-approval-required',
+			trackedFixtureScanCommands: {
+				'safe-open-proof': 'bun run fixtures/benchmarks/safe-open-fixture-scan.ts --json',
+				'package-action-proof': 'bun run fixtures/benchmarks/package-action-fixture-scan.ts --json',
+			},
+			currentGeneratedStructuralCases: {
+				'safe-open-proof': ['signed', 'unknown-part', 'malformed'],
+				'package-action-proof': ['signature-invalidation-drop', 'unknown-part-error'],
+			},
+			boundary: expect.stringContaining('not approval to publish generated fixtures'),
+		})
+		expect(index.fixturePolicy.generatedStructuralFixturesAllowedWhen).toEqual([
+			expect.stringContaining('package-topology-only'),
+			expect.stringContaining('tracked harness code'),
+			expect.stringContaining('tracked public fixture scan'),
+			expect.stringContaining('owner gate missing'),
+			expect.stringContaining('signed provenance'),
+		])
+		expect(index.fixturePolicy.publicBinaryFixturesRequiredWhen).toEqual([
+			expect.stringContaining('real-world authoring behavior'),
+			expect.stringContaining('active-content safety'),
+			expect.stringContaining('licensing, privacy, provenance'),
+		])
+		expect(index.fixturePolicy.sourceReferences.map((entry) => entry.label)).toEqual([
+			'GitHub repository limits',
+			'GitHub large files',
+			'OpenSSF Scorecard binary artifacts',
+			'SLSA provenance',
+			'GitHub artifact attestations',
+		])
 		expect(index.artifacts.map((artifact) => artifact.name)).toEqual([
 			'safe-open-proof',
 			'package-action-proof',
@@ -357,6 +388,14 @@ describe('release proof evidence index', () => {
 			missingRequirementCount: 9,
 			boundary: expect.stringContaining('not a release artifact bundle'),
 		})
+		expect(handoff.fixturePolicy).toMatchObject({
+			currentDecision: 'owner-approval-required',
+			currentGeneratedStructuralCases: {
+				'safe-open-proof': ['signed', 'unknown-part', 'malformed'],
+				'package-action-proof': ['signature-invalidation-drop', 'unknown-part-error'],
+			},
+		})
+		expect(JSON.stringify(handoff.fixturePolicy)).toContain('package-action-fixture-scan')
 		expect(handoff.nextOwnerActions[0]).toMatchObject({
 			requirementId: 'edge-fixture-policy',
 			acceptanceEvidence: expect.stringContaining('accepts disclosed generated'),
@@ -428,6 +467,21 @@ describe('release proof evidence index', () => {
 		)
 		expect(markdown).toContain('Next owner actions: 10:package-action-proof/edge-fixture-policy')
 		expect(markdown).toContain('## Next Owner Actions')
+		expect(markdown).toContain('## Fixture Policy')
+		expect(markdown).toContain('Current decision: owner-approval-required')
+		expect(markdown).toContain(
+			'safe-open-proof=`bun run fixtures/benchmarks/safe-open-fixture-scan.ts --json`',
+		)
+		expect(markdown).toContain(
+			'package-action-proof=`bun run fixtures/benchmarks/package-action-fixture-scan.ts --json`',
+		)
+		expect(markdown).toContain('safe-open-proof=signed,unknown-part,malformed')
+		expect(markdown).toContain(
+			'package-action-proof=signature-invalidation-drop,unknown-part-error',
+		)
+		expect(markdown).toContain('edge case is package-topology-only')
+		expect(markdown).toContain('Public binary fixtures are required when:')
+		expect(markdown).toContain('OpenSSF Scorecard binary artifacts')
 		expect(markdown).toContain(
 			'| Rank | Artifact | Gate | Owner loop | Priority | Next step | Acceptance evidence | Forbidden shortcut |',
 		)

@@ -380,6 +380,7 @@ export interface ReleaseProofSafeOpenFixturePolicyEvidence {
 	readonly scanned: number
 	readonly rejected: number
 	readonly replacementStatus: SafeOpenFixtureScanResult['replacementStatus']
+	readonly riskFamilyCounts: Readonly<Record<string, number>>
 	readonly signatureOrUnknownMatches: number
 	readonly currentGeneratedStructuralCases: readonly string[]
 	readonly boundary: string
@@ -2581,6 +2582,7 @@ function fixturePolicyEvidence(
 		scanned: safeOpen.scanned,
 		rejected: safeOpen.rejected,
 		replacementStatus: safeOpen.replacementStatus,
+		riskFamilyCounts: { ...safeOpen.riskFamilyCounts },
 		signatureOrUnknownMatches: safeOpen.signatureOrUnknownMatches.length,
 		currentGeneratedStructuralCases: [
 			...FIXTURE_POLICY.currentGeneratedStructuralCases['safe-open-proof'],
@@ -2650,6 +2652,7 @@ function cloneFixturePolicyEvidence(
 		...evidence,
 		safeOpen: {
 			...evidence.safeOpen,
+			riskFamilyCounts: { ...evidence.safeOpen.riskFamilyCounts },
 			currentGeneratedStructuralCases: [...evidence.safeOpen.currentGeneratedStructuralCases],
 		},
 		packageAction: {

@@ -99,16 +99,25 @@ describe('release proof evidence index', () => {
 			publicReplacementGapsRemain: true,
 			boundary: expect.stringContaining('does not prove that no suitable public fixtures exist'),
 		})
+		const safeOpenRiskFamilyCounts = { ...index.fixturePolicyEvidence.safeOpen.riskFamilyCounts }
 		expect(index.fixturePolicyEvidence.safeOpen).toMatchObject({
 			artifact: 'safe-open-proof',
 			gateId: 'public-edge-fixtures',
 			validationCommand: 'bun run fixtures/benchmarks/safe-open-fixture-scan.ts --json',
 			corpus: 'tracked-git-fixtures',
 			replacementStatus: 'no-public-binary-replacement-found',
+			riskFamilyCounts: expect.objectContaining({
+				preservedMacro: expect.any(Number),
+				preservedActiveX: expect.any(Number),
+			}),
 			signatureOrUnknownMatches: 0,
 			currentGeneratedStructuralCases: ['signed', 'unknown-part', 'malformed'],
 		})
 		expect(index.fixturePolicyEvidence.safeOpen.scanned).toBeGreaterThan(0)
+		expect(
+			Object.values(safeOpenRiskFamilyCounts).reduce((sum, count) => sum + count, 0),
+		).toBeGreaterThan(0)
+		expect(safeOpenRiskFamilyCounts.preservedSignature ?? 0).toBe(0)
 		expect(index.fixturePolicyEvidence.packageAction).toMatchObject({
 			artifact: 'package-action-proof',
 			gateId: 'edge-fixture-policy',

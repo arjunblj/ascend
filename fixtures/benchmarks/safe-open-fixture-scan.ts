@@ -23,6 +23,7 @@ export interface SafeOpenFixtureScanResult {
 	readonly scanned: number
 	readonly rejected: number
 	readonly rejectedFixtures: readonly string[]
+	readonly riskFamilyCounts: Readonly<Record<string, number>>
 	readonly signatureOrUnknownMatches: readonly SafeOpenFixtureScanMatch[]
 	readonly replacementStatus: 'no-public-binary-replacement-found' | 'candidate-found'
 	readonly boundary: string
@@ -39,6 +40,7 @@ export function runSafeOpenFixtureScan(
 	const listed = listFixtureFiles(root)
 	const matches: SafeOpenFixtureScanMatch[] = []
 	const rejectedFixtures: string[] = []
+	const riskFamilyCounts = new Map<string, number>()
 	const files = listed.files
 	for (const fixture of files) {
 		try {
@@ -46,6 +48,9 @@ export function runSafeOpenFixtureScan(
 			const riskFamilies = Array.from(
 				new Set(plan.riskFeatures.map((feature) => feature.featureFamily)),
 			).sort()
+			for (const family of riskFamilies) {
+				riskFamilyCounts.set(family, (riskFamilyCounts.get(family) ?? 0) + 1)
+			}
 			if (riskFamilies.some((family) => REPLACEMENT_RISK_FAMILIES.has(family))) {
 				matches.push({
 					fixture,
@@ -67,6 +72,9 @@ export function runSafeOpenFixtureScan(
 		scanned: files.length,
 		rejected: rejectedFixtures.length,
 		rejectedFixtures,
+		riskFamilyCounts: Object.fromEntries(
+			Array.from(riskFamilyCounts).sort(([left], [right]) => left.localeCompare(right)),
+		),
 		signatureOrUnknownMatches: matches,
 		replacementStatus:
 			matches.length === 0 ? 'no-public-binary-replacement-found' : 'candidate-found',
@@ -86,6 +94,7 @@ export function safeOpenFixtureScanMarkdown(result: SafeOpenFixtureScanResult): 
 		`Scanned fixtures: ${result.scanned}`,
 		`Rejected during scan: ${result.rejected}`,
 		`Replacement status: ${result.replacementStatus}`,
+		`Risk family counts: ${formatRiskFamilyCounts(result.riskFamilyCounts)}`,
 		'',
 		result.boundary,
 		'',
@@ -103,6 +112,12 @@ export function safeOpenFixtureScanMarkdown(result: SafeOpenFixtureScanResult): 
 			? result.rejectedFixtures.map((fixture) => `- \`${fixture}\``)
 			: ['- none']),
 	].join('\n')
+}
+
+function formatRiskFamilyCounts(counts: Readonly<Record<string, number>>): string {
+	const entries = Object.entries(counts)
+	if (entries.length === 0) return 'none'
+	return entries.map(([family, count]) => `${family}=${count}`).join(', ')
 }
 
 function listFixtureFiles(root: string): {

@@ -405,7 +405,8 @@ function safeOpenArtifact(
 				ownerLoop: 'product',
 				requirement:
 					'replace generated signed/unknown-part packages with public binary fixtures or explicitly approve disclosed generated edge packages',
-				evidence: 'safe-open fixture scan currently finds no checked-in public binary replacements',
+				evidence:
+					'safe-open fixture scan over tracked fixtures currently finds no public signed/unknown binary replacements',
 			},
 			{
 				id: 'release-latency-run',

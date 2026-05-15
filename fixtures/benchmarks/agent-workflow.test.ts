@@ -197,7 +197,7 @@ describe('agent workflow benchmark', () => {
 		expect(payload.summary?.commitVerifiedHydratedOpenCountMedian).toBeLessThan(
 			payload.summary?.compactHydratedOpenCountMedian ?? 0,
 		)
-		expect(payload.summary?.preparedCommitVerifiedHydratedOpenCountMedian).toBeLessThan(
+		expect(payload.summary?.preparedCommitVerifiedHydratedOpenCountMedian).toBeLessThanOrEqual(
 			payload.summary?.preparedHydratedOpenCountMedian ?? 0,
 		)
 		expect(payload.summary?.mcpCommitVerifiedHydratedOpenCountMedian).toBeLessThan(

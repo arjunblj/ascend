@@ -12,6 +12,8 @@ Proof timestamp: 2026-05-15T20:59:04Z.
 
 Fresh proof rerun keeps the portfolio stable and blocks new surface promotion. `release-proof-index --owner-handoffs-json` reports `releaseGate=blocked-by-publication-policy`, `headlineClaimsAllowed=false`, `implementationSurfacePromotionAllowed=false`, and `missingRequirementCount=9`. The top two proof artifacts still answer the user's "produce proof, not prose" requirement from existing harnesses:
 
+Safe-open owner evidence update: `release-proof-index --owner-handoffs-json` now includes `fixturePolicyEvidence.safeOpen.externalCandidateEvidence` for `excelforge-book1-unknown-part`, carrying MIT manifest evidence, workbook SHA-256 `9c5426fa71ff68cc7e40e19e02b5992daf91da5754ef643d2db2f89bd70bb122`, `preservedOther` routing to `metadata-only`, 50 parts, 37 relationships, and `gateEffect=does-not-satisfy-public-edge-fixtures`. This makes the product/release decision concrete without closing the gate.
+
 | Claim | Proof produced | Missing owner proof |
 | --- | --- | --- |
 | Safe unknown workbook opening | Compact proof: 9 cases, 8 OK, 1 malformed rejection, 6 public fixtures, 2 generated edge packages, 1 malformed package, 4 review-before-hydration routes, risk families `preservedActiveX`, `preservedMacro`, `preservedOther`, `preservedSignature`. | Product must accept or replace generated signed/unknown/malformed fixtures; performance must run approved release-latency evidence; release must approve non-security/non-provenance wording. |

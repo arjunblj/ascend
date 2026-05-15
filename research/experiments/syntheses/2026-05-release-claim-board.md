@@ -11,6 +11,7 @@ Current stewardship rule: hand off only the top one or two product claims to imp
 Latest proof refresh, 2026-05-15T21:12:54Z:
 
 - `release-proof-index --no-timings --owner-handoffs-json` still reports `releaseGate=blocked-by-publication-policy`, `headlineClaimsAllowed=false`, `implementationSurfacePromotionAllowed=false`, and `missingRequirementCount=9`.
+- `fixturePolicyEvidence.safeOpen.externalCandidateEvidence` now exposes the ExcelForge unknown-part candidate as owner-review evidence with `candidateId=excelforge-book1-unknown-part`, `license=MIT`, workbook SHA-256 `9c5426fa71ff68cc7e40e19e02b5992daf91da5754ef643d2db2f89bd70bb122`, `recommendedMode=metadata-only`, `reviewBeforeHydration=true`, `riskFamily=preservedOther`, and `gateEffect=does-not-satisfy-public-edge-fixtures`.
 - Safe-open external fixture evidence improved for the unknown-part case: `node-projects/excelForge/src/test/Book 1.xlsx` still routes to `metadata-only` with `preservedOther`, SHA-256 `9c5426fa71ff68cc7e40e19e02b5992daf91da5754ef643d2db2f89bd70bb122`, 50 parts, and 37 relationships; the raw package manifest now provides MIT license evidence. This does not close `public-edge-fixtures` because the workbook is not vendored and the signed-workbook fixture gap remains.
 - Package-action proof now has 3 representative streaming proof cases covering `passthrough`, `regenerate`, `add`, and `drop`; `error`, macro, and chart streaming remain unproven boundaries.
 - Package-action compact stable shape is `921dc41d423632c935741dd4fb4e7def4e1c2719c90263c13309e64093419803`.

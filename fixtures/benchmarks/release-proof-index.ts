@@ -405,6 +405,30 @@ export interface ReleaseProofSafeOpenFixturePolicyEvidence {
 	readonly riskFamilyCounts: Readonly<Record<string, number>>
 	readonly signatureOrUnknownMatches: number
 	readonly currentGeneratedStructuralCases: readonly string[]
+	readonly externalCandidateEvidence: readonly ReleaseProofExternalFixtureCandidateEvidence[]
+	readonly boundary: string
+}
+
+export interface ReleaseProofExternalFixtureCandidateEvidence {
+	readonly artifact: 'safe-open-proof'
+	readonly gateId: 'public-edge-fixtures'
+	readonly caseName: 'unknown-part'
+	readonly status: 'external-candidate-owner-review-required'
+	readonly candidateId: string
+	readonly repositoryUrl: string
+	readonly sourceUrl: string
+	readonly licenseEvidenceUrl: string
+	readonly license: string
+	readonly sha256: string
+	readonly packageManifestSha256: string
+	readonly recommendedMode: string
+	readonly reviewBeforeHydration: boolean
+	readonly riskFamily: string
+	readonly partCount: number
+	readonly relationshipCount: number
+	readonly sampleUnknownPart: string
+	readonly ownerDecisionNeeded: string
+	readonly gateEffect: 'does-not-satisfy-public-edge-fixtures'
 	readonly boundary: string
 }
 
@@ -678,6 +702,36 @@ const FIXTURE_POLICY: ReleaseProofFixturePolicy = {
 	boundary:
 		'Fixture policy is an owner-decision aid for local proof artifacts. It is not approval to publish generated fixtures as public binaries, not signed provenance, and not a license or privacy review.',
 }
+
+const SAFE_OPEN_EXTERNAL_FIXTURE_CANDIDATES: readonly ReleaseProofExternalFixtureCandidateEvidence[] =
+	[
+		{
+			artifact: 'safe-open-proof',
+			gateId: 'public-edge-fixtures',
+			caseName: 'unknown-part',
+			status: 'external-candidate-owner-review-required',
+			candidateId: 'excelforge-book1-unknown-part',
+			repositoryUrl: 'https://github.com/node-projects/excelForge',
+			sourceUrl:
+				'https://raw.githubusercontent.com/node-projects/excelForge/master/src/test/Book%201.xlsx',
+			licenseEvidenceUrl:
+				'https://raw.githubusercontent.com/node-projects/excelForge/master/package.json',
+			license: 'MIT',
+			sha256: '9c5426fa71ff68cc7e40e19e02b5992daf91da5754ef643d2db2f89bd70bb122',
+			packageManifestSha256: 'cae1feec581eed864255cff45fa23a7e2c085cb0f2c2628d1a0187fc39de3ef7',
+			recommendedMode: 'metadata-only',
+			reviewBeforeHydration: true,
+			riskFamily: 'preservedOther',
+			partCount: 50,
+			relationshipCount: 37,
+			sampleUnknownPart: 'docMetadata/LabelInfo.xml',
+			ownerDecisionNeeded:
+				'Product/release must decide whether to vendor this MIT-package-manifest-backed workbook as a public unknown-part fixture with attribution policy.',
+			gateEffect: 'does-not-satisfy-public-edge-fixtures',
+			boundary:
+				'External candidate evidence is a pointer for owner review only. The workbook is not vendored, attribution policy is not approved, and this does not address the signed-workbook fixture gap.',
+		},
+	]
 
 const PERFORMANCE_POLICY: ReleaseProofPerformancePolicy = {
 	currentDecision: 'owner-approval-required',
@@ -976,6 +1030,14 @@ export function releaseProofIndexMarkdown(result: ReleaseProofIndexResult): stri
 		'| --- | --- | --- | --- | ---: | ---: | --- | --- | --- | --- |',
 		fixturePolicyEvidenceMarkdownRow(result.fixturePolicyEvidence.safeOpen),
 		fixturePolicyEvidenceMarkdownRow(result.fixturePolicyEvidence.packageAction),
+		'',
+		'External fixture candidates:',
+		'',
+		'| Artifact | Gate | Case | Status | Candidate | License | SHA-256 | Routing | Gate effect | Boundary |',
+		'| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+		...result.fixturePolicyEvidence.safeOpen.externalCandidateEvidence.map(
+			externalFixtureCandidateEvidenceMarkdownRow,
+		),
 		'',
 		'Generated fixture decision evidence:',
 		'',
@@ -2722,6 +2784,9 @@ function fixturePolicyEvidence(
 		currentGeneratedStructuralCases: [
 			...FIXTURE_POLICY.currentGeneratedStructuralCases['safe-open-proof'],
 		],
+		externalCandidateEvidence: SAFE_OPEN_EXTERNAL_FIXTURE_CANDIDATES.map((entry) => ({
+			...entry,
+		})),
 		boundary: safeOpen.boundary,
 	}
 	const packageActionEvidence: ReleaseProofPackageActionFixturePolicyEvidence = {
@@ -2780,6 +2845,27 @@ function fixturePolicyEvidenceMarkdownRow(
 		.replace(/$/, '|')
 }
 
+function externalFixtureCandidateEvidenceMarkdownRow(
+	row: ReleaseProofExternalFixtureCandidateEvidence,
+): string {
+	return [
+		row.artifact,
+		row.gateId,
+		row.caseName,
+		row.status,
+		`${row.candidateId} (${row.sourceUrl})`,
+		`${row.license} (${row.licenseEvidenceUrl})`,
+		row.sha256,
+		`${row.riskFamily}; ${row.recommendedMode}; reviewBeforeHydration=${row.reviewBeforeHydration}; parts=${row.partCount}; relationships=${row.relationshipCount}; sample=${row.sampleUnknownPart}`,
+		row.gateEffect,
+		row.boundary,
+	]
+		.map((cell) => ` ${cell} `)
+		.join('|')
+		.replace(/^/, '|')
+		.replace(/$/, '|')
+}
+
 function cloneFixturePolicyEvidence(
 	evidence: ReleaseProofFixturePolicyEvidence,
 ): ReleaseProofFixturePolicyEvidence {
@@ -2789,6 +2875,9 @@ function cloneFixturePolicyEvidence(
 			...evidence.safeOpen,
 			riskFamilyCounts: { ...evidence.safeOpen.riskFamilyCounts },
 			currentGeneratedStructuralCases: [...evidence.safeOpen.currentGeneratedStructuralCases],
+			externalCandidateEvidence: evidence.safeOpen.externalCandidateEvidence.map((entry) => ({
+				...entry,
+			})),
 		},
 		packageAction: {
 			...evidence.packageAction,
@@ -2823,7 +2912,7 @@ function generatedFixtureDecisionEvidence(
 			gateId: 'public-edge-fixtures',
 			caseName: 'unknown-part',
 			generatedKind: 'generated-edge-package',
-			replacementEvidence: `tracked safe-open scan found signatureOrUnknownMatches=${fixtureEvidence.safeOpen.signatureOrUnknownMatches} across ${fixtureEvidence.safeOpen.scanned} fixtures`,
+			replacementEvidence: `tracked safe-open scan found signatureOrUnknownMatches=${fixtureEvidence.safeOpen.signatureOrUnknownMatches} across ${fixtureEvidence.safeOpen.scanned} fixtures; external candidate excelforge-book1-unknown-part awaits owner review and is not vendored`,
 			ownerDecisionNeeded:
 				'Accept disclosed generated unknown-part topology as safe-open routing proof, or provide an approved public unknown-part workbook fixture.',
 			recommendedOwnerAction:

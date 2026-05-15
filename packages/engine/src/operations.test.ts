@@ -2139,7 +2139,7 @@ describe('applyOperation', () => {
 		const wb = setup()
 		wb.chartParts.push({
 			partPath: 'xl/charts/chart1.xml',
-			sheetName: 'Sheet1',
+			sheetName: 'sheet1',
 			chartType: 'barChart',
 			series: [
 				{
@@ -2152,14 +2152,14 @@ describe('applyOperation', () => {
 
 		const result = applyOperation(wb, {
 			op: 'setChartSeriesSource',
-			partPath: 'xl/charts/chart1.xml',
+			sheet: 'Sheet1',
 			seriesIndex: 0,
 			categoryRef: 'Sheet1!$A$2:$A$10',
 			valueRef: 'Sheet1!$C$2:$C$10',
 		})
 		expectOk(result)
 
-		expect(result.value.sheetsModified).toEqual(['Sheet1'])
+		expect(result.value.sheetsModified).toEqual(['sheet1'])
 		expect(result.value.recalcRequired).toBe(false)
 		expect(wb.chartParts[0]?.series[0]).toMatchObject({
 			nameRef: 'Sheet1!$B$1',

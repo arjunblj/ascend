@@ -6864,7 +6864,7 @@ describe('interactive client contract', () => {
 		const wb = AscendWorkbook.create()
 		wb.getWorkbookModel().chartParts.push({
 			partPath: 'xl/charts/chart1.xml',
-			sheetName: 'Sheet1',
+			sheetName: 'sheet1',
 			chartType: 'lineChart',
 			title: 'Revenue',
 			series: [
@@ -6885,7 +6885,8 @@ describe('interactive client contract', () => {
 			[
 				{
 					op: 'setChartSeriesSource',
-					partPath: 'xl/charts/chart1.xml',
+					sheet: 'Sheet1',
+					chartIndex: 0,
 					seriesIndex: 0,
 					nameRef: 'Sheet1!$D$1',
 					categoryRef: 'Sheet1!$A$2:$A$10',
@@ -6910,7 +6911,7 @@ describe('interactive client contract', () => {
 		])
 		expect(wb.getWorkbookModel().chartParts[0]).toMatchObject({
 			partPath: 'xl/charts/chart1.xml',
-			sheetName: 'Sheet1',
+			sheetName: 'sheet1',
 			chartType: 'lineChart',
 			title: 'Revenue',
 			series: [
@@ -6931,7 +6932,7 @@ describe('interactive client contract', () => {
 		expect(undo.errors).toEqual([])
 		expect(wb.getWorkbookModel().chartParts[0]).toEqual({
 			partPath: 'xl/charts/chart1.xml',
-			sheetName: 'Sheet1',
+			sheetName: 'sheet1',
 			chartType: 'lineChart',
 			title: 'Revenue',
 			series: [

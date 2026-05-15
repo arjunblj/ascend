@@ -339,7 +339,10 @@ export function handleSetChartSeriesSource(
 		candidates = candidates.filter(({ chart }) => chart.partPath === op.partPath)
 	}
 	if (op.sheet !== undefined) {
-		candidates = candidates.filter(({ chart }) => chart.sheetName === op.sheet)
+		const sheetName = op.sheet
+		candidates = candidates.filter(
+			({ chart }) => chart.sheetName !== undefined && sameSheetName(chart.sheetName, sheetName),
+		)
 	}
 	if (op.chartIndex !== undefined) {
 		if (op.chartIndex < 0 || !Number.isInteger(op.chartIndex)) {
@@ -440,6 +443,10 @@ function hasSparklineGroupUpdate(op: SetSparklineGroupOp): boolean {
 		op.negative !== undefined ||
 		op.displayXAxis !== undefined
 	)
+}
+
+function sameSheetName(left: string, right: string): boolean {
+	return left.toLowerCase() === right.toLowerCase()
 }
 
 function missingSparklineGroupError(): Result<never> {

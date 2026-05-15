@@ -8724,7 +8724,10 @@ function chartSeriesPreimage(
 		candidates = candidates.filter(({ chart }) => chart.partPath === op.partPath)
 	}
 	if (op.sheet !== undefined) {
-		candidates = candidates.filter(({ chart }) => chart.sheetName === op.sheet)
+		const sheetName = op.sheet
+		candidates = candidates.filter(
+			({ chart }) => chart.sheetName !== undefined && sameSheetName(chart.sheetName, sheetName),
+		)
 	}
 	if (op.chartIndex !== undefined) {
 		const chart = candidates[op.chartIndex]

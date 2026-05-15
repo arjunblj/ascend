@@ -121,7 +121,7 @@ Use the compact report for release handoff review when owners need the claim, ca
 
 Digest policy: do not add compact report digests to the release proof index yet. A local probe showed raw compact JSON digests change because `generatedAt` is included, while a stable-shape digest after deleting `generatedAt` is reproducible (`0f614b88ca4c5ea0f2a8c4c54147682be144dc404d12502840e770e21d036ae8`). Index stable compact-report digests only after release owners define artifact storage, privacy filtering, and canonicalization rules shared with package-action compact reports.
 
-Replacement fixture scan status: `fixtures/benchmarks/safe-open-fixture-scan.ts` scans checked-in public XLSX/XLSM fixtures for `preservedSignature` and `preservedOther` open-plan risk families. The current scan found no replacement candidates in 351 checked-in fixtures, so the signed/unknown edge-case blocker remains unresolved rather than merely stale.
+Replacement fixture scan status: `fixtures/benchmarks/safe-open-fixture-scan.ts` scans checked-in public XLSX/XLSM fixtures for `preservedSignature` and `preservedOther` open-plan risk families. The current scan found no replacement candidates in 351 checked-in fixtures, so the signed/unknown edge-case blocker remains unresolved rather than merely stale. A constrained external probe found one unknown-part candidate in `node-projects/excelForge/src/test/Book 1.xlsx` with SHA-256 `9c5426fa71ff68cc7e40e19e02b5992daf91da5754ef643d2db2f89bd70bb122`, `preservedOther`, and `metadata-only` routing. It is not a replacement yet because it is not checked in here, the GitHub repository API reports no repository license, and it does not solve the signed-workbook fixture gap.
 
 ## Next Handoff
 

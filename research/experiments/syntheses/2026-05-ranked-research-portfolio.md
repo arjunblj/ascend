@@ -26,6 +26,8 @@ bun run fixtures/benchmarks/package-action-proof.ts --no-timings --json
 bun run fixtures/benchmarks/release-proof-index.ts --no-timings --json
 ```
 
+External fixture note: a constrained public-candidate probe found `node-projects/excelForge/src/test/Book 1.xlsx` as an unknown-part safe-open candidate (`preservedOther`, `metadata-only`, SHA-256 `9c5426fa71ff68cc7e40e19e02b5992daf91da5754ef643d2db2f89bd70bb122`). This does not close `public-edge-fixtures`: the candidate is not vendored, the source repository API reports no repository license, and the signed-workbook fixture gap remains.
+
 ## External Anchors
 
 - [Microsoft Protected View](https://support.microsoft.com/en-us/office/what-is-protected-view-d6f09ac7-e6b9-4495-8e43-2bbcdbcb6653) and [Open Packaging Conventions](https://learn.microsoft.com/en-us/previous-versions/windows/desktop/opc/open-packaging-conventions-overview) frame the safe-open/package proof boundary.

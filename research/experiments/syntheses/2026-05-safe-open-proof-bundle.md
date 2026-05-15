@@ -13,6 +13,7 @@ Ascend recommends a load mode and trust-review branch from XLSX package features
 ## External Contrast
 
 - [Microsoft Protected View](https://support.microsoft.com/en-us/office/what-is-protected-view-d6f09ac7-e6b9-4495-8e43-2bbcdbcb6653) opens potentially unsafe files read-only or in Protected View. Ascend's OSS claim is narrower: package-feature routing before choosing hydration mode.
+- [Microsoft Safe Documents](https://support.microsoft.com/en-us/office/safe-documents-e2071599-fb31-442b-a30c-198c25e2aacd) uses Microsoft Defender scanning for documents opened in Protected View. Ascend must not imply equivalent threat detection.
 - [Microsoft Excel digital signatures](https://learn.microsoft.com/en-us/troubleshoot/microsoft-365-apps/excel/digital-signatures-code-signing) help prove a workbook has not changed since signing, and saving after modification invalidates that signature. Ascend should route signature material to review before edit planning.
 - [openpyxl](https://openpyxl.readthedocs.io/en/stable/tutorial.html) documents `keep_vba`, but warns that not all Excel items are read and unsupported shapes can be lost on save. Ascend should contrast with explicit preservation/risk routing, not broad compatibility.
 - [SheetJS write options](https://docs.sheetjs.com/docs/api/write-options/) note that features outside documented support may not serialize. Ascend's proof should show when package features force metadata review rather than silently assuming a full semantic model.
@@ -24,8 +25,8 @@ Ascend recommends a load mode and trust-review branch from XLSX package features
 | Fixture mix | Public clean, formula-heavy, macro, pivot, ActiveX, and chart fixtures; synthetic digital signature, unknown package part, and malformed bytes | Covered for local proof; signed/unknown/malformed should become fixture-backed if promoted |
 | Benchmark | Tracked `fixtures/benchmarks/safe-open-proof.ts` harness measures open-plan against full hydration and renders Markdown/JSON proof output | Strong enough for product proof direction, not a CI threshold |
 | API/CLI/MCP surface | Existing SDK `inspectWorkbookOpenPlan`, CLI `ascend open-plan`, API `POST /open-plan`, MCP `ascend.open_plan` | Implemented; do not add another surface |
-| Validation gate | Focused open-plan tests and docs ordering tests already exist; tracked proof harness has its own routing tests | Needs full typecheck after unrelated dirty reader changes are resolved |
-| Competitor contrast | Microsoft Protected View, openpyxl, SheetJS | Covered |
+| Validation gate | Focused open-plan tests, API/CLI/MCP open-plan tests, tracked proof harness tests, typecheck, and markdown diff check | Covered in the current rerun; no production behavior changed |
+| Competitor contrast | Microsoft Protected View, Microsoft Safe Documents, Excel digital signatures, openpyxl, SheetJS | Covered |
 | Honest boundary | Malformed bytes reject; active/security/unknown features route to metadata-only review; no malware/sandbox claim | Covered |
 
 ## Fresh Local Probe
@@ -40,19 +41,19 @@ The proof harness is tracked and intentionally not a new product surface. It gen
 
 | Case | Fixture | Bytes | Mode | Review before hydration | Risk families | Parts | Relationships | Median open-plan ms | Median full-open ms | Full/open-plan ratio | Boundary |
 | --- | --- | ---: | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
-| clean | `fixtures/xlsx/poi/SampleSS.xlsx` | 9112 | formula | false | none | 13 | 10 | 0.186 | 1.978 | 10.64x | ok |
-| formula-heavy | `fixtures/xlsx/poi/formula_stress_test.xlsx` | 64769 | formula | false | none | 27 | 22 | 0.197 | 6.514 | 33.05x | ok |
-| macro | `fixtures/xlsx/calamine/vba.xlsm` | 12752 | metadata-only | true | preservedMacro | 12 | 9 | 0.073 | 1.602 | 21.93x | ok |
-| pivot | `fixtures/xlsx/poi/ExcelPivotTableSample.xlsx` | 19460 | formula | false | none | 27 | 19 | 0.143 | 2.143 | 15.00x | ok |
-| ActiveX | `fixtures/xlsx/libreoffice/activex_checkbox.xlsx` | 12433 | metadata-only | true | preservedActiveX | 17 | 12 | 0.096 | 1.595 | 16.62x | ok |
-| chart | `fixtures/xlsx/poi/WithChart.xlsx` | 10138 | formula | false | none | 15 | 10 | 0.090 | 1.355 | 15.11x | ok |
-| signed | synthetic digital-signature package | 2254 | metadata-only | true | preservedSignature | 8 | 4 | 0.055 | 0.091 | 1.66x | ok |
-| unknown part | synthetic unknown package part | 1697 | metadata-only | true | preservedOther | 6 | 3 | 0.036 | 0.081 | 2.26x | ok |
+| clean | `fixtures/xlsx/poi/SampleSS.xlsx` | 9112 | formula | false | none | 13 | 10 | 0.185 | 1.930 | 10.42x | ok |
+| formula-heavy | `fixtures/xlsx/poi/formula_stress_test.xlsx` | 64769 | formula | false | none | 27 | 22 | 0.199 | 6.367 | 32.01x | ok |
+| macro | `fixtures/xlsx/calamine/vba.xlsm` | 12752 | metadata-only | true | preservedMacro | 12 | 9 | 0.094 | 1.481 | 15.74x | ok |
+| pivot | `fixtures/xlsx/poi/ExcelPivotTableSample.xlsx` | 19460 | formula | false | none | 27 | 19 | 0.161 | 2.280 | 14.16x | ok |
+| ActiveX | `fixtures/xlsx/libreoffice/activex_checkbox.xlsx` | 12433 | metadata-only | true | preservedActiveX | 17 | 12 | 0.092 | 1.740 | 18.87x | ok |
+| chart | `fixtures/xlsx/poi/WithChart.xlsx` | 10138 | formula | false | none | 15 | 10 | 0.108 | 1.417 | 13.14x | ok |
+| signed | synthetic digital-signature package | 2254 | metadata-only | true | preservedSignature | 8 | 4 | 0.050 | 0.086 | 1.73x | ok |
+| unknown part | synthetic unknown package part | 1697 | metadata-only | true | preservedOther | 6 | 3 | 0.037 | 0.081 | 2.20x | ok |
 | malformed | synthetic malformed bytes | 9 | rejected | n/a | n/a | n/a | n/a | n/a | n/a | n/a | open-plan rejected: Missing end of central directory record |
 
 ## Interpretation
 
-- Public workbook cases show open-plan as a cheap pre-hydration routing step: 10.64x to 33.05x faster than full hydration in this local probe.
+- Public workbook cases show open-plan as a cheap pre-hydration routing step: 10.42x to 32.01x faster than full hydration in this local probe.
 - Active content and security-sensitive package material route to `metadata-only` with `reviewBeforeHydration: true`.
 - Unknown package material routes to `metadata-only` review instead of pretending the workbook is fully understood.
 - Malformed bytes do not get a recommendation. They reject at package inspection, which should be presented as a boundary in any proof bundle.
@@ -70,6 +71,7 @@ Do claim:
 Do not claim:
 
 - malware detection;
+- Microsoft Safe Documents or Defender-equivalent scanning;
 - sandboxed opening;
 - trusted active-content execution;
 - complete Excel compatibility;

@@ -32,6 +32,7 @@ Updated: 2026-05-15
 | [Release claim board and formula rejection spec](runs/2026/2026-05-15-release-claim-board-formula-rejection-spec/log.md) | synthesis complete, handoff only | product loop, correctness loop, performance loop |
 | [Safe open proof bundle](runs/2026/2026-05-15-safe-open-proof-bundle/log.md) | proof bundle complete, handoff only | product loop, performance loop |
 | [Safe open proof harness](runs/2026/2026-05-15-safe-open-proof-harness/log.md) | folded in tracked proof harness | product loop, performance loop |
+| [Safe open release proof rerun](runs/2026/2026-05-15-safe-open-release-proof-rerun/log.md) | current proof report refreshed, no new surface | product loop, performance loop |
 | [Package action proof source graph](runs/2026/2026-05-15-package-action-proof-source-graph/log.md) | folded in commit-local add/regenerate evidence | correctness loop, product loop |
 | [Package action proof harness](runs/2026/2026-05-15-package-action-proof-harness/log.md) | folded in tracked proof harness | correctness loop, product loop |
 | [Release proof harness artifact boundary](runs/2026/2026-05-15-release-proof-harness-artifact-boundary/log.md) | handoff only, hold embedding harness artifacts | product loop |

@@ -3339,6 +3339,20 @@ function journalSetPageSetup(
 	op: Extract<Operation, { op: 'setPageSetup' }>,
 	opIndex: number,
 ): DraftJournalEntry {
+	if (!workbook.getSheet(op.sheet)) {
+		return {
+			opIndex,
+			op,
+			inverseOps: [],
+			preimages: [],
+			issues: [
+				missingSheetTopologyIssue(
+					op.sheet,
+					`Cannot restore page setup for ${op.sheet} because the sheet was not found`,
+				),
+			],
+		}
+	}
 	const preimage = pageSetupPreimage(workbook, op.sheet)
 	const { inverseOps, issues } = restorePageSetupOps(preimage, op.setup)
 	return {
@@ -3355,6 +3369,20 @@ function journalSetPrintArea(
 	op: Extract<Operation, { op: 'setPrintArea' }>,
 	opIndex: number,
 ): DraftJournalEntry {
+	if (!workbook.getSheet(op.sheet)) {
+		return {
+			opIndex,
+			op,
+			inverseOps: [],
+			preimages: [],
+			issues: [
+				missingSheetTopologyIssue(
+					op.sheet,
+					`Cannot restore print area for ${op.sheet} because the sheet was not found`,
+				),
+			],
+		}
+	}
 	const preimage = definedNamePreimage(workbook, '_xlnm.Print_Area', op.sheet)
 	const { inverseOps, issues } = restoreDefinedNameOps(workbook, preimage)
 	return {

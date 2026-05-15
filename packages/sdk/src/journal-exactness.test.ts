@@ -427,6 +427,8 @@ describe('mutation journal exactness model', () => {
 			{ op: 'hideCols', sheet: 'Missing', at: 0, count: 1, hidden: true },
 			{ op: 'groupRows', sheet: 'Missing', from: 0, to: 1 },
 			{ op: 'groupCols', sheet: 'Missing', from: 0, to: 1 },
+			{ op: 'setPageSetup', sheet: 'Missing', setup: { orientation: 'landscape' } },
+			{ op: 'setPrintArea', sheet: 'Missing', range: 'A1:B2' },
 		]
 
 		for (const op of ops) {

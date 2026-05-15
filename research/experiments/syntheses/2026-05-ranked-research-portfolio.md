@@ -119,7 +119,7 @@ bun run fixtures/benchmarks/release-proof-index.ts --no-timings --json
 bun run fixtures/benchmarks/formula-assist-proof.ts --sample 250 --no-timings --json
 ```
 
-External fixture note: a constrained public-candidate probe found `node-projects/excelForge/src/test/Book 1.xlsx` as an unknown-part safe-open candidate (`preservedOther`, `metadata-only`, SHA-256 `9c5426fa71ff68cc7e40e19e02b5992daf91da5754ef643d2db2f89bd70bb122`). This does not close `public-edge-fixtures`: the candidate is not vendored, the source repository API reports no repository license, and the signed-workbook fixture gap remains.
+External fixture note: a constrained public-candidate probe found `node-projects/excelForge/src/test/Book 1.xlsx` as an unknown-part safe-open candidate (`preservedOther`, `metadata-only`, SHA-256 `9c5426fa71ff68cc7e40e19e02b5992daf91da5754ef643d2db2f89bd70bb122`). A refresh of the raw package manifest now reports `license: MIT`, improving the candidate's acquisition story. This still does not close `public-edge-fixtures`: the candidate is not vendored, release owners have not approved binary fixture attribution policy, and the signed-workbook fixture gap remains.
 
 ## External Anchors
 

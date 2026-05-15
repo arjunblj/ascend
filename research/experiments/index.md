@@ -6,6 +6,7 @@ Updated: 2026-05-15
 
 | Run | Status | Fold-in target |
 | --- | --- | --- |
+| [Safe open external candidate license refresh](runs/2026/2026-05-15-safe-open-external-candidate-license-refresh/log.md) | upgraded ExcelForge unknown-part candidate evidence with MIT package-manifest license and repeat safe-open routing proof; still not vendored and signed fixture gap remains | product loop, release loop |
 | [Claim board current proof drift cleanup](runs/2026/2026-05-15-claim-board-current-proof-drift-cleanup/log.md) | refreshed active syntheses from current release-proof-index evidence; package-action remains fail-closed with 3 representative streaming proofs and old stale wording removed | topic synthesis, release loop |
 | [Axis layout validation boundary](runs/2026/2026-05-15-axis-layout-validation-boundary/log.md) | folded in engine validation and SDK journal classification for invalid row/column spans, dimensions, and outline endpoints before metadata mutation | correctness loop |
 | [Release gate rerun after streaming drop proof](runs/2026/2026-05-15-release-gate-rerun-after-streaming-drop/log.md) | release index still blocks headline claims and implementation surface promotion after streaming drop proof; top handoffs remain safe-open and package-action only | product loop, release loop |

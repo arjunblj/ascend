@@ -644,6 +644,36 @@ describe('analyzeWorkbook', () => {
 				affectedCells: ['C3', 'C4', 'F1'],
 				reusesCache: false,
 			},
+			{
+				name: 'sortRange shared formula member',
+				seed: (sheet) => {
+					sheet.cells.set(0, 0, { value: stringValue('a'), formula: null, styleId: sid })
+					sheet.cells.set(1, 0, { value: stringValue('b'), formula: null, styleId: sid })
+					sheet.cells.set(0, 1, { value: numberValue(10), formula: null, styleId: sid })
+					sheet.cells.set(1, 1, { value: numberValue(20), formula: null, styleId: sid })
+					sheet.cells.set(0, 3, {
+						value: numberValue(20),
+						formula: 'B1*2',
+						styleId: sid,
+						formulaInfo: {
+							kind: 'shared',
+							sharedIndex: '0',
+							isMaster: true,
+							masterRef: 'D1',
+							ref: 'D1:D2',
+						},
+					})
+					sheet.cells.set(1, 3, {
+						value: numberValue(40),
+						formula: null,
+						styleId: sid,
+						formulaInfo: { kind: 'shared', sharedIndex: '0', isMaster: false, masterRef: 'D1' },
+					})
+				},
+				op: { op: 'sortRange', sheet: 'Sheet1', range: 'A1:D2', by: [{ column: 'A' }] },
+				affectedCells: ['D1', 'D2', 'A2', 'B2', 'C2'],
+				reusesCache: false,
+			},
 		]
 
 		for (const entry of cases) {

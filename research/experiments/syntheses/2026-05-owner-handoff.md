@@ -11,13 +11,15 @@ Hand off only two implementation loops:
 
 Everything else remains do-not-promote for this block. Formula intelligence stays rejection-first; do not implement rename.
 
-Promotion throttle: current `release-proof-index` still reports `headlineClaimsAllowed=false` with 9 missing owner requirements. Until those owner gates move, research may run diagnostic probes and record dead ends, but it should not promote new product claims or new public surfaces beyond the two handoffs below.
+Promotion throttle: current `release-proof-index` still reports `headlineClaimsAllowed=false`, `implementationSurfacePromotionAllowed=false`, and 9 missing owner requirements. Until those owner gates move, research may run diagnostic probes and record dead ends, but it should not promote new product claims or new public surfaces beyond the two handoffs below.
 
-Latency diagnostic note: `practical-latency-contracts` now reports input provenance separately from tracked-code cleanliness. A tracked-clean dry run with the current large local/private workbooks reports "tracked clean with local/private inputs; diagnostic only." This helps performance owners avoid turning private-corpus latency numbers into release claims.
+Latency diagnostic note: `practical-latency-contracts` now reports input provenance separately from tracked-code cleanliness. The `public-tracked` preset can generate a tracked-harness edit workbook for edit/verify phases, and labels it as generated evidence. This helps performance owners avoid turning private-corpus latency numbers into release claims, but generated benchmark inputs remain below public real-workbook fixture evidence.
 
 Fixture-search note: the targeted checked-in fixture scan still finds no public binary replacement for safe-open signed or unknown-part structural cases. Latest scan: 351 fixtures scanned, 2 protected fixtures rejected, 0 signature/unknown matches. Product must accept disclosed generated structural fixtures or provide public binaries.
 
 Compact privacy note: field-level inventory of the two compact reports finds no workbook bytes or proof digest artifact fields. The compact reports still include command strings and public fixture paths, so they remain local proof summaries until release owners define publication storage, privacy filtering, canonicalization, and verification expectations.
+
+Machine-readable handoff note: the release index now emits `readiness.implementationHandoffs` for the top two claims, and each handoff includes `proofRequired` with fixture, benchmark, existing-surface boundary, validation gate, competitor contrast, honest boundary, and kill criterion. The same JSON result also emits `deferredClaims` for lower-ranked directions that should not promote in this block.
 
 ## Proof Snapshot
 
@@ -36,6 +38,8 @@ bun run fixtures/benchmarks/release-proof-index.ts --no-timings --json
 | Top correctness gate | `package-action-proof/unsupported-feature-boundary` |
 | Top performance gates | `safe-open-proof/release-latency-run`, `package-action-proof/streaming-matrix-boundary` |
 | Top release gate | `package-action-proof/provenance-boundary` |
+| Implementation surface promotion allowed | `false` |
+| Deferred claims | 6 |
 
 Latest compact proof refresh:
 
@@ -105,18 +109,28 @@ Owner acceptance checklist:
 
 `fixtures/benchmarks/release-proof-index.ts` remains the machine source of truth for release gates. This handoff is a human approval checklist. Do not add a second machine-checked Markdown acceptance table here: the current handoff intentionally has 11 owner checkboxes split from 9 canonical `readyWhen` gates, so treating the Markdown as canonical would duplicate and drift from the release index.
 
+Owner loops should consume these JSON fields first:
+
+| JSON field | Purpose |
+| --- | --- |
+| `readiness.implementationSurfacePromotionAllowed` | Fail-closed guard for new SDK/CLI/API/MCP surfaces. Currently `false`. |
+| `readiness.implementationHandoffs` | Canonical top-two handoffs with owner loops, proof commands, blocker IDs, next-step kinds, and proof requirements. |
+| `readiness.implementationHandoffs[].proofRequired` | Product-shaped proof ladder: fixture, benchmark, surface, validation gate, competitor contrast, honest boundary, and kill criterion. |
+| `deferredClaims` | Machine-readable do-not-promote/proof-backed-hold list for non-top directions. |
+| `excludedEvidence` | Evidence that exists but must not become release proof yet, currently practical latency contracts. |
+
 ## Do Not Promote
 
 | Direction | Freeze reason |
 | --- | --- |
-| Formula language-service primitives | Rejection-first proof exists, but rename remains unsafe without workbook-context symbol ownership and operation-owned edits. |
-| Retained viewport patch history | Product-proof backed, but not a top release handoff and not collaboration/CRDT evidence. |
-| Token-bounded agent view | Product-proof backed, but token counts are approximate and omitted evidence is by design. |
+| Formula language-service primitives | Listed in `deferredClaims` as `proof-backed-hold`; rejection-first proof exists, but rename remains unsafe without workbook-context symbol ownership and operation-owned edits. |
+| Retained viewport patch history | Listed in `deferredClaims` as `proof-backed-hold`; product-proof backed, but not a top release handoff and not collaboration/CRDT evidence. |
+| Token-bounded agent view | Listed in `deferredClaims` as `proof-backed-hold`; product-proof backed, but token counts are approximate and omitted evidence is by design. |
 | Release proof bundle | Ingredients exist, but artifact storage/privacy/canonicalization and non-attestation policy are unresolved. |
-| Formula conformance/oracle routing | Still a correctness research program; no broad Excel-compatible formula claim. |
+| Formula conformance/oracle routing | Listed in `deferredClaims` as `do-not-promote-yet`; still a correctness research program; no broad Excel-compatible formula claim. |
 | Property-style journal laws | Useful correctness evidence, but not a release claim until coverage and shrinkability are owner-approved. |
-| Columnar scan sidecars | Performance research only; not a product surface. |
-| Agent workflow observability | Supporting DX evidence, not a top release claim. |
+| Columnar scan sidecars | Listed in `deferredClaims` as `do-not-promote-yet`; performance research only; not a product surface. |
+| Agent workflow observability | Listed in `deferredClaims` as `do-not-promote-yet`; supporting DX evidence, not a top release claim. |
 
 Formula freeze status: latest proof command `bun run fixtures/benchmarks/formula-assist-proof.ts --sample 250 --no-timings --json` sampled 1685 public formulas, found 2322 reference spans, 25 binding roles, 3 LET-local prepare-rename OK targets, and 1692 prepare-rename refusals. This remains a product/DX proof of formula-local assist and rejection classification only. Do not implement edit-producing rename; do not promote workbook-context defined-name, table, external, 3D, spill, sheet, cell, or range rename.
 

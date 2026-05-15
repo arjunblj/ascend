@@ -8971,7 +8971,7 @@ describe('applyOperation', () => {
 		const wb = setup()
 		wb.pivotTables.push({
 			partPath: 'xl/pivotTables/pivotTable1.xml',
-			sheetName: 'Sheet1',
+			sheetName: 'sheet1',
 			name: 'PivotTable1',
 			cacheId: 34,
 			fields: [],
@@ -9001,7 +9001,7 @@ describe('applyOperation', () => {
 		})
 		expectOk(result)
 
-		expect(result.value.sheetsModified).toEqual(['Sheet1'])
+		expect(result.value.sheetsModified).toEqual(['sheet1'])
 		expect(result.value.recalcRequired).toBe(false)
 		expect(result.value.warnings?.[0]?.message).toContain('Pivot cache source changed')
 		expect(result.value.warnings?.[0]?.details).toMatchObject({
@@ -9162,7 +9162,7 @@ describe('applyOperation', () => {
 		const wb = setup()
 		wb.pivotTables.push({
 			partPath: 'xl/pivotTables/pivotTable1.xml',
-			sheetName: 'Sheet1',
+			sheetName: 'sheet1',
 			name: 'PivotTable1',
 			cacheId: 34,
 			fields: [
@@ -9188,7 +9188,7 @@ describe('applyOperation', () => {
 
 		const result = applyOperation(wb, {
 			op: 'setPivotFieldItem',
-			pivotTable: 'PivotTable1',
+			sheet: 'Sheet1',
 			fieldIndex: 0,
 			itemIndex: 0,
 			hidden: null,
@@ -9197,7 +9197,7 @@ describe('applyOperation', () => {
 		})
 		expectOk(result)
 
-		expect(result.value.sheetsModified).toEqual(['Sheet1'])
+		expect(result.value.sheetsModified).toEqual(['sheet1'])
 		expect(result.value.recalcRequired).toBe(false)
 		expect(result.value.warnings?.[0]?.message).toContain('Pivot field item state changed')
 		expect(result.value.warnings?.[0]?.details).toMatchObject({

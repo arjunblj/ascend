@@ -338,9 +338,13 @@ function resolvePivotTableMatches(workbook: Workbook, op: SetPivotFieldItemOp): 
 	return workbook.pivotTables.filter((pivot) => {
 		if (op.partPath !== undefined && pivot.partPath !== op.partPath) return false
 		if (op.pivotTable !== undefined && pivot.name !== op.pivotTable) return false
-		if (op.sheet !== undefined && pivot.sheetName !== op.sheet) return false
+		if (op.sheet !== undefined && !sameSheetName(pivot.sheetName, op.sheet)) return false
 		return true
 	})
+}
+
+function sameSheetName(left: string, right: string): boolean {
+	return left.toLowerCase() === right.toLowerCase()
 }
 
 function validateSelectedPageItem(

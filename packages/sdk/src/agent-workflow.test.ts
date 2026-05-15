@@ -894,12 +894,31 @@ describe('agent workflow loss audit', () => {
 						ops,
 					)
 					expect(plan.writePolicy.ok).toBe(false)
-					expect(compactAgentPlanResult(plan).check.issues).toContainEqual(
+					const compact = compactAgentPlanResult(plan)
+					expect(compact.check.issues).toContainEqual(
 						expect.objectContaining({
 							rule: 'formula-binding-integrity',
 							severity: 'error',
+							refs: expect.arrayContaining(['Label!A3', 'Label!A2']),
 							details: expect.objectContaining({
 								kind: 'shared-formula-member-formula-text-mismatch',
+							}),
+						}),
+					)
+					expect(compact.writePolicy.diagnostics).toContainEqual(
+						expect.objectContaining({
+							code: 'pre-write-check-error',
+							severity: 'blocker',
+							details: expect.objectContaining({
+								checkIssues: expect.arrayContaining([
+									expect.objectContaining({
+										rule: 'formula-binding-integrity',
+										refs: expect.arrayContaining(['Label!A3', 'Label!A2']),
+										details: expect.objectContaining({
+											kind: 'shared-formula-member-formula-text-mismatch',
+										}),
+									}),
+								]),
 							}),
 						}),
 					)

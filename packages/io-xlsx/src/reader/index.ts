@@ -90,6 +90,7 @@ import {
 } from './shared-strings.ts'
 import {
 	parseSheet,
+	parseSheetFormulaOnlyBytes,
 	parseSheetFullScalarBytes,
 	parseSheetValuesOnlyByteChunks,
 	parseSheetValuesOnlyBytes,
@@ -627,12 +628,16 @@ export function readXlsx(
 					!hydrateRichSheetMetadata &&
 					!canUseStreamedMaxRowsParser &&
 					(sheetEntryInfo?.uncompressedSize ?? 0) >= VALUES_ONLY_BYTE_PARSE_MIN_BYTES
+				const canUseFormulaOnlyByteParser =
+					formulaOnly &&
+					!hydrateRichSheetMetadata &&
+					(sheetEntryInfo?.uncompressedSize ?? 0) >= VALUES_ONLY_BYTE_PARSE_MIN_BYTES
 				const canUseFullScalarByteParser =
 					!valuesOnly &&
 					hydrateRichSheetMetadata &&
 					(sheetEntryInfo?.uncompressedSize ?? 0) >= VALUES_ONLY_BYTE_PARSE_MIN_BYTES
 				const sheetBytes =
-					canUseValuesOnlyByteParser || canUseFullScalarByteParser
+					canUseValuesOnlyByteParser || canUseFormulaOnlyByteParser || canUseFullScalarByteParser
 						? readPartBytes(archive, entry.path)
 						: undefined
 				let sheetXml =
@@ -696,7 +701,9 @@ export function readXlsx(
 					: sheetBytes
 						? canUseValuesOnlyByteParser
 							? parseSheetValuesOnlyBytes(entry.name, sheetBytes, sheetCtx, resolvedSheetId)
-							: parseSheetFullScalarBytes(entry.name, sheetBytes, sheetCtx, resolvedSheetId)
+							: canUseFormulaOnlyByteParser
+								? parseSheetFormulaOnlyBytes(entry.name, sheetBytes, sheetCtx, resolvedSheetId)
+								: parseSheetFullScalarBytes(entry.name, sheetBytes, sheetCtx, resolvedSheetId)
 						: null
 				if (!sheet) {
 					sheetXml ??= sheetBytes ? XML_DECODER.decode(sheetBytes) : readPart(archive, entry.path)

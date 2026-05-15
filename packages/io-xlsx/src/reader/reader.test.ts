@@ -14,6 +14,7 @@ import {
 } from './shared-strings.ts'
 import type { StreamedSheetRow } from './sheet.ts'
 import {
+	parseSheetFormulaOnlyBytes,
 	parseSheetFullScalarBytes,
 	parseSheetValuesOnlyBytes,
 	streamSheetRowsByteChunks,
@@ -4030,6 +4031,40 @@ describe('readXlsx', () => {
 		expect(sheet?.cells.get(2, 0)?.value).toEqual(numberValue(-12))
 		expect(sheet?.cells.get(2, 1)?.value).toEqual(numberValue(1250))
 		expect(sheet?.cells.get(2, 2)?.value).toEqual(numberValue(Number('12345678901234567')))
+	})
+
+	it('formula-only byte parser hydrates no-formula sheets and falls back for formulas', () => {
+		const sharedStrings = parseSharedStrings(
+			`<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <si><t>Shared formula-free</t></si>
+</sst>`,
+		)
+		const ctx = {
+			sharedStrings,
+			styleIds: [S0],
+			isDateFormat: [false],
+			hasDateStyles: false,
+			formulaOnly: true,
+		}
+		const noFormulaXml = `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <dimension ref="A1:B1"/>
+  <sheetData><row r="1"><c r="A1"><v>7</v></c><c r="B1" t="s"><v>0</v></c></row></sheetData>
+</worksheet>`
+
+		const sheet = parseSheetFormulaOnlyBytes('Sheet1', new TextEncoder().encode(noFormulaXml), ctx)
+
+		expect(sheet).not.toBeNull()
+		expect(sheet?.preservedDimensionRef).toBe('A1:B1')
+		expect(sheet?.cells.get(0, 0)?.value).toEqual(numberValue(7))
+		expect(sheet?.cells.get(0, 1)?.value).toEqual(stringValue('Shared formula-free'))
+		expect(sheet?.cells.get(0, 1)?.formula).toBeNull()
+
+		const formulaXml = `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData><row r="1"><c r="A1"><f>1+1</f><v>2</v></c></row></sheetData>
+</worksheet>`
+		expect(
+			parseSheetFormulaOnlyBytes('Sheet1', new TextEncoder().encode(formulaXml), ctx),
+		).toBeNull()
 	})
 
 	it('full scalar byte parser preserves simple rich-read cell semantics', () => {

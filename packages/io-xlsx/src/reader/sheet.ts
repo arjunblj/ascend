@@ -354,6 +354,35 @@ export function parseSheetValuesOnlyBytes(
 	return sheet
 }
 
+export function parseSheetFormulaOnlyBytes(
+	name: string,
+	bytes: Uint8Array,
+	ctx: SheetParseContext,
+	sheetId?: Sheet['id'],
+): Sheet | null {
+	if (!ctx.formulaOnly || ctx.richMetadata || ctx.valuesOnly) return null
+	const sheetDataStart = locateSheetDataStartBytes(bytes)
+	if (!sheetDataStart) return null
+	if (!sheetDataStart.selfClosing) {
+		const sheetDataClose = indexOfBytes(
+			bytes,
+			BYTES_SHEET_DATA_CLOSE,
+			sheetDataStart.contentStart,
+			bytes.length,
+		)
+		if (sheetDataClose === -1) return null
+		if (hasElementOpenBytes(bytes, BYTES_F_OPEN, sheetDataStart.contentStart, sheetDataClose)) {
+			return null
+		}
+	}
+	return parseSheetValuesOnlyBytes(
+		name,
+		bytes,
+		{ ...ctx, valuesOnly: true, formulaOnly: false },
+		sheetId,
+	)
+}
+
 export function parseSheetFullScalarBytes(
 	name: string,
 	bytes: Uint8Array,

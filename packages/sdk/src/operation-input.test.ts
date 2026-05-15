@@ -58,6 +58,12 @@ describe('operation input helpers', () => {
 		}
 	})
 
+	test('accepts explicit empty ops as a no-op batch', () => {
+		const result = resolveOperationInputShape(apiSource({ ops: [] }))
+
+		expect(result).toEqual({ ok: true, ops: [] })
+	})
+
 	test('reports malformed path mutations with structured issue details', () => {
 		const result = resolveOperationInputShape(apiSource({ mutations: [{ path: 123 }] }))
 

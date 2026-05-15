@@ -1722,6 +1722,53 @@ describe('Ascend API server', () => {
 		expect(ambiguous.body.error?.message).toBe('Provide either ops or mutations, not both')
 	})
 
+	test('preview and write return exact empty journals for no-op requests', async () => {
+		const wb = AscendWorkbook.create()
+		const file = join(
+			tmpdir(),
+			`ascend-api-noop-journal-${Date.now()}-${Math.random().toString(16).slice(2)}.xlsx`,
+		)
+		await wb.save(file)
+
+		const expectedJournal = {
+			schemaVersion: MUTATION_JOURNAL_ISSUE_SCHEMA_VERSION,
+			schemaId: MUTATION_JOURNAL_ISSUE_SCHEMA.$id,
+			supported: true,
+			exact: true,
+			entries: [],
+			inverseOps: [],
+			issues: [],
+			undoPolicy: {
+				undoable: true,
+				exact: true,
+				riskLevel: 'none',
+				reason: 'exact',
+				userMessage: 'Undo available.',
+			},
+		}
+		try {
+			const preview = await postJson('/preview', {
+				file,
+				journal: true,
+				ops: [],
+			})
+			const write = await postJson('/write', {
+				file,
+				journal: true,
+				ops: [],
+			})
+
+			expect(preview.status).toBe(200)
+			expect(preview.body.ok).toBe(true)
+			expect(preview.body.data?.journal).toEqual(expectedJournal)
+			expect(write.status).toBe(200)
+			expect(write.body.ok).toBe(true)
+			expect(write.body.data?.journal).toEqual(expectedJournal)
+		} finally {
+			await unlink(file).catch(() => {})
+		}
+	})
+
 	test('preview preserves lossy journal issue metadata for agents', async () => {
 		const wb = AscendWorkbook.create()
 		await wb.save(TEMP_FILE)

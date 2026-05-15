@@ -975,6 +975,67 @@ describe('MCP server', () => {
 		expect(reopened.sheet('Sheet1')?.cell('A1')?.value).toEqual({ kind: 'string', value: 'old' })
 	})
 
+	test('ascend.preview and ascend.write return exact empty journals for no-op requests', async () => {
+		const wb = AscendWorkbook.create()
+		const file = join(
+			tmpdir(),
+			`ascend-mcp-noop-journal-${Date.now()}-${Math.random().toString(16).slice(2)}.xlsx`,
+		)
+		await wb.save(file)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const preview = (server as any)._registeredTools['ascend.preview'].handler as (args: {
+			file: string
+			ops: unknown[]
+			journal?: boolean
+		}) => Promise<{
+			structuredContent?: {
+				ok?: boolean
+				data?: { journal?: Record<string, unknown> }
+			}
+		}>
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const write = (server as any)._registeredTools['ascend.write'].handler as (args: {
+			file: string
+			ops: unknown[]
+			journal?: boolean
+		}) => Promise<{
+			structuredContent?: {
+				ok?: boolean
+				data?: { journal?: Record<string, unknown> }
+			}
+		}>
+		const expectedJournal = {
+			schemaVersion: MUTATION_JOURNAL_ISSUE_SCHEMA_VERSION,
+			schemaId: MUTATION_JOURNAL_ISSUE_SCHEMA.$id,
+			supported: true,
+			exact: true,
+			entries: [],
+			inverseOps: [],
+			issues: [],
+			undoPolicy: {
+				undoable: true,
+				exact: true,
+				riskLevel: 'none',
+				reason: 'exact',
+				userMessage: 'Undo available.',
+			},
+		}
+
+		try {
+			const previewed = await preview({ file, journal: true, ops: [] })
+			const written = await write({ file, journal: true, ops: [] })
+
+			expect(previewed.structuredContent?.ok).toBe(true)
+			expect(previewed.structuredContent?.data?.journal).toEqual(expectedJournal)
+			expect(written.structuredContent?.ok).toBe(true)
+			expect(written.structuredContent?.data?.journal).toEqual(expectedJournal)
+		} finally {
+			await unlink(file).catch(() => {})
+		}
+	})
+
 	test('ascend.preview preserves lossy journal issue metadata', async () => {
 		const wb = AscendWorkbook.create()
 		await wb.save(TEMP_FILE)

@@ -19,6 +19,8 @@ const OPEN_PLAN_FILE = 'test-open-plan.xlsx'
 const AGENT_VIEW_FILE = 'test-agent-view.xlsx'
 const JOURNAL_V1_OPS_FILE = 'journal-v1-ops.json'
 const JOURNAL_V1_OUTPUT_FILE = 'journal-v1-output.xlsx'
+const JOURNAL_NOOP_OPS_FILE = 'journal-noop-ops.json'
+const JOURNAL_NOOP_OUTPUT_FILE = 'journal-noop-output.xlsx'
 const JOURNAL_BUILD_FAILURE_OPS_FILE = 'journal-build-failure-ops.json'
 const PIVOT_CORPUS_FILE = '../../../research/excel-corpus/ms-excel-formulas-and-pivot-tables.xlsx'
 const SLICER_CORPUS_FILE = '../../../research/excel-corpus/excel-dashboard-v2.xlsx'
@@ -144,6 +146,8 @@ afterAll(() => {
 		APPROVAL_TEST_FILE,
 		JOURNAL_V1_OPS_FILE,
 		JOURNAL_V1_OUTPUT_FILE,
+		JOURNAL_NOOP_OPS_FILE,
+		JOURNAL_NOOP_OUTPUT_FILE,
 		JOURNAL_BUILD_FAILURE_OPS_FILE,
 		'exported.tsv',
 		'exported.json',
@@ -539,6 +543,44 @@ describe('ascend cli', () => {
 		const committedParsed = JSON.parse(committed.stdout)
 		expect(committedParsed.ok).toBe(true)
 		expect(committedParsed.data.apply.journalSummary).toEqual(JOURNAL_V1_FIXTURE.scenario.journal)
+	})
+
+	test('plan and compact commit JSON preserve exact empty journals for no-op ops', async () => {
+		const wb = AscendWorkbook.create()
+		await wb.save(`${import.meta.dir}/${TEST_FILE}`)
+		await Bun.write(`${import.meta.dir}/${JOURNAL_NOOP_OPS_FILE}`, JSON.stringify([]))
+		const expectedJournal = {
+			schemaVersion: JOURNAL_V1_FIXTURE.scenario.journal.schemaVersion,
+			schemaId: JOURNAL_V1_FIXTURE.scenario.journal.schemaId,
+			supported: true,
+			exact: true,
+			inverseOpCount: 0,
+			issueCount: 0,
+			issues: [],
+		}
+
+		const planned = await run('plan', TEST_FILE, '--ops', JOURNAL_NOOP_OPS_FILE, '--json')
+
+		expect(planned.exitCode).toBe(0)
+		const parsed = JSON.parse(planned.stdout)
+		expect(parsed.ok).toBe(true)
+		expect(compactJournal(parsed.data.preview.journal)).toEqual(expectedJournal)
+
+		const committed = await run(
+			'commit',
+			TEST_FILE,
+			'--ops',
+			JOURNAL_NOOP_OPS_FILE,
+			'--output',
+			JOURNAL_NOOP_OUTPUT_FILE,
+			'--compact',
+			'--json',
+		)
+
+		expect(committed.exitCode).toBe(0)
+		const committedParsed = JSON.parse(committed.stdout)
+		expect(committedParsed.ok).toBe(true)
+		expect(committedParsed.data.apply.journalSummary).toEqual(expectedJournal)
 	})
 
 	test('plan JSON preserves structured journal build failures for agents', async () => {

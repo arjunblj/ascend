@@ -47,15 +47,15 @@ export function resolveOperationInputShape(input: OperationInputSource): Operati
 			}),
 		}
 	}
-	const hasOps = input.ops !== null && input.ops.length > 0
-	const hasMutations = input.mutations !== null && input.mutations.length > 0
+	const hasOps = input.ops !== null
+	const hasMutations = input.mutations !== null
 	if (!hasOps && !hasMutations) {
 		return {
 			ok: false,
 			error: ascendError('VALIDATION_ERROR', 'Missing or invalid ops or mutations', {
 				retryStrategy: 'modified',
 				suggestedFix:
-					'Send non-empty ops, or send mutations like {"path":"/sheets/Sheet1/cells/A1/value","value":123}.',
+					'Send ops, or send mutations like {"path":"/sheets/Sheet1/cells/A1/value","value":123}.',
 			}),
 		}
 	}

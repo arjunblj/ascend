@@ -8,6 +8,10 @@ Research is no longer a broad sweep. Each direction below must earn its place by
 
 ## Latest Claim Steward Refresh
 
+Proof timestamp: 2026-05-15T18:15:44Z.
+
+Release publication policy is now more concrete without becoming attestation. `compactReportPublicationEvidence.policyDecisions` lists the four missing requirements as release-owner decisions: artifact storage path, retention/privacy filtering, canonicalization subject, and offline verification expectations. Compact report digests remain unindexed and both top claims still have `compact-report-publication-policy` missing.
+
 Proof timestamp: 2026-05-15T18:11:28Z.
 
 The top product blocker is now machine-readable as generated fixture decision evidence. `release-proof-index --owner-handoffs-json` emits `generatedFixtureDecisionEvidence` for five disclosed structural cases: safe-open `signed`, `unknown-part`, and `malformed`, plus package-action `signature-invalidation-drop` and `unknown-part-error`. Each row records tracked replacement evidence, owner decision needed, allowed use, and forbidden use while keeping `public-edge-fixtures` and `edge-fixture-policy` missing.

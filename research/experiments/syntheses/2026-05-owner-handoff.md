@@ -25,6 +25,8 @@ Generated fixture decision note: the release index now emits `generatedFixtureDe
 
 Streaming proof note: the release index now emits `streamingMatrixEvidence` for the package-action performance gate. Current proof covers one streaming case, `docprops-passthrough`, and action kinds `passthrough` and `regenerate`; it explicitly leaves `add`, `drop`, `error`, public macro, and public chart cases unproven for streaming. The gate remains owner-approval required.
 
+Compact publication note: `compactReportPublicationEvidence.policyDecisions` now breaks the release-owned compact-report blocker into four pending decisions: artifact storage path, retention/privacy filtering, canonicalization subject, and offline verification expectations. This keeps compact reports usable as local owner-review summaries while preventing digest publication, signed-provenance wording, or attestation claims.
+
 ## Proof Snapshot
 
 Current local proof gate:
@@ -124,7 +126,7 @@ Owner loops should consume these JSON fields first:
 | `generatedFixtureDecisionEvidence` | Lists every disclosed generated structural case with tracked replacement evidence, owner decision needed, allowed use, and forbidden use. |
 | `correctnessBoundaryEvidence` | Verifies the unsupported-feature boundary matrix against current package-action and safe-open proof cases while keeping owner approval required. |
 | `streamingMatrixEvidence` | Verifies the representative streaming proof boundary: covered action kinds, missing action kinds, covered case names, non-streaming public cases, and owner approval requirement. |
-| `compactReportPublicationEvidence` | Proves compact report commands and privacy/canonicalization blockers without indexing compact report digests. |
+| `compactReportPublicationEvidence` | Proves compact report commands and privacy/canonicalization blockers without indexing compact report digests; `policyDecisions` turns each blocker into release-owner acceptance/rejection evidence. |
 | `deferredClaims` | Machine-readable do-not-promote/proof-backed-hold list for non-top directions. |
 | `excludedEvidence` | Evidence that exists but must not become release proof yet, currently practical latency contracts. |
 

@@ -317,6 +317,37 @@ describe('release proof evidence index', () => {
 			],
 			boundary: expect.stringContaining('does not publish compact report digests'),
 		})
+		expect(index.compactReportPublicationEvidence.policyDecisions).toHaveLength(4)
+		expect(
+			index.compactReportPublicationEvidence.policyDecisions.map(
+				(decision) => decision.requirement,
+			),
+		).toEqual(index.compactReportPublicationEvidence.missingPolicyRequirements)
+		expect(
+			index.compactReportPublicationEvidence.policyDecisions.map((item) => item.status),
+		).toEqual([
+			'pending-owner-decision',
+			'pending-owner-decision',
+			'pending-owner-decision',
+			'pending-owner-decision',
+		])
+		expect(index.compactReportPublicationEvidence.policyDecisions[0]).toMatchObject({
+			requirement: 'artifact storage path',
+			acceptanceEvidence: expect.stringContaining('path convention'),
+			rejectIf: expect.stringContaining('temporary paths'),
+		})
+		expect(index.compactReportPublicationEvidence.policyDecisions[1]).toMatchObject({
+			requirement: 'retention and privacy filtering',
+			rejectIf: expect.stringContaining('workbook bytes'),
+		})
+		expect(index.compactReportPublicationEvidence.policyDecisions[2]).toMatchObject({
+			requirement: 'canonicalization subject',
+			acceptanceEvidence: expect.stringContaining('canonical JSON subject'),
+		})
+		expect(index.compactReportPublicationEvidence.policyDecisions[3]).toMatchObject({
+			requirement: 'offline verification expectations',
+			rejectIf: expect.stringContaining('signed provenance'),
+		})
 		expect(index.compactReportPublicationEvidence.reports.map((item) => item.artifact)).toEqual([
 			'safe-open-proof',
 			'package-action-proof',
@@ -785,8 +816,21 @@ describe('release proof evidence index', () => {
 			'safe-open-proof',
 			'package-action-proof',
 		])
+		expect(
+			handoff.compactReportPublicationEvidence.policyDecisions.map(
+				(decision) => decision.requirement,
+			),
+		).toEqual([
+			'artifact storage path',
+			'retention and privacy filtering',
+			'canonicalization subject',
+			'offline verification expectations',
+		])
 		expect(JSON.stringify(handoff.compactReportPublicationEvidence)).toContain(
 			'offline verification expectations',
+		)
+		expect(JSON.stringify(handoff.compactReportPublicationEvidence)).toContain(
+			'canonical JSON subject',
 		)
 		expect(handoff.nextOwnerActions[0]).toMatchObject({
 			requirementId: 'edge-fixture-policy',
@@ -947,6 +991,14 @@ describe('release proof evidence index', () => {
 		expect(markdown).toContain('GeneratedAt included: true')
 		expect(markdown).toContain('Missing publication policy requirements:')
 		expect(markdown).toContain('offline verification expectations')
+		expect(markdown).toContain('Publication policy decisions:')
+		expect(markdown).toContain(
+			'| Requirement | Owner | Status | Decision needed | Acceptance evidence | Reject if |',
+		)
+		expect(markdown).toContain('| artifact storage path | release | pending-owner-decision')
+		expect(markdown).toContain('| canonicalization subject | release | pending-owner-decision')
+		expect(markdown).toContain('canonical JSON subject')
+		expect(markdown).toContain('transparency-log inclusion')
 		expect(markdown).toContain('| safe-open-proof | compact-report-publication-policy')
 		expect(markdown).toContain('| package-action-proof | compact-report-publication-policy')
 		expect(markdown).toContain('does not publish compact report digests')

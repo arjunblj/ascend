@@ -50,6 +50,7 @@ Updated: 2026-05-15
 | [Agent view budget proof](runs/2026/2026-05-15-agent-view-budget-proof/log.md) | folded in unbudgeted token estimate | product/DX loop |
 | [Agent view budget harness](runs/2026/2026-05-15-agent-view-budget-harness/log.md) | folded in tracked proof harness | product/DX loop |
 | [Viewport patch proof harness](runs/2026/2026-05-15-viewport-patch-proof-harness/log.md) | folded in tracked proof harness | product/DX loop, performance loop |
+| [Viewport cross-surface proof rerun](runs/2026/2026-05-15-viewport-cross-surface-proof-rerun/log.md) | synthesis complete, SDK/API/MCP proof rerun with CLI gap | product/DX loop, performance loop |
 | [Release claim evidence cut](runs/2026/2026-05-15-release-claim-evidence-cut/log.md) | synthesis complete, top claims proof-backed locally | product loop, correctness loop, performance loop |
 | [Release proof index digests](runs/2026/2026-05-15-release-proof-index-digests/log.md) | folded in benchmark-only digest index | product loop |
 | [Agent view index promotion gate](runs/2026/2026-05-15-agent-view-index-promotion-gate/log.md) | handoff only, hold out of release proof index | product/DX loop |
@@ -76,4 +77,5 @@ Updated: 2026-05-15
 - [2026-05 release claim board](syntheses/2026-05-release-claim-board.md)
 - [2026-05 safe open proof bundle](syntheses/2026-05-safe-open-proof-bundle.md)
 - [2026-05 package action proof report](syntheses/2026-05-package-action-proof-report.md)
+- [2026-05 viewport patch proof report](syntheses/2026-05-viewport-patch-proof-report.md)
 - [2026-05 agent context contracts](syntheses/2026-05-agent-context-contracts.md)

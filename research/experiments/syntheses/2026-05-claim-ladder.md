@@ -22,11 +22,11 @@ Rank the product-shaped claims Ascend can prove, nearly prove, or should keep in
 
 | Rank | Product claim | Status | What Ascend can honestly say now | What blocks stronger language |
 | --- | --- | --- | --- | --- |
-| 1 | Safe unknown workbook opening | Credible today, needs proof packaging | Ascend can inspect XLSX package features before full workbook hydration and recommend a load mode/review step across SDK, CLI, API, and MCP. | Needs a public proof bundle with fixture mix and latency numbers before it becomes a headline claim. |
-| 2 | Auditable package-part mutation | Needs one more fold-in | Ascend already exposes package action proof and write-risk evidence for preserved/generated/skipped package content. | Needs stable product language for each package part: passthrough, regenerate, add, drop, or error, proven on real write workflows. |
+| 1 | Safe unknown workbook opening | Proof-backed locally, needs release packaging | Ascend can inspect XLSX package features before full workbook hydration and recommend a load mode/review step across SDK, CLI, API, and MCP. | Needs a release-environment proof report and durable public binary fixtures for synthetic edge cases before it becomes a headline claim. |
+| 2 | Auditable package-part mutation | Proof-backed locally, needs release packaging | Ascend exposes package action proof and write-risk evidence using the action vocabulary passthrough, regenerate, add, drop, and error. | Needs release-environment rerun and published proof packaging; keep chart/drawing language to accounting, not chart byte passthrough. |
 | 3 | Token-bounded agent view | Credible today, needs product packaging | Ascend can emit deterministic workbook summaries with requested budgets, estimated budgets, and omission counters across agent-facing surfaces. | Needs a small product proof showing budget adherence and recovery from omitted evidence on diverse workbook shapes. |
 | 4 | Retained viewport patch history | Credible in SDK, one product loop away | Ascend retains bounded change tokens for compact reads and interactive viewport patches with explicit invalidation reasons. | Needs product examples and telemetry/benchmark proof before implying general sync, history, or collaboration. |
-| 5 | Formula language-service primitives | Credible primitives, not safe rename | Ascend exposes diagnostics, spans, hover, completions, reference edits, F4 cycling, and stateless binding roles. | Needs workbook-context binding resolution and `prepareRename`-style rejection before safe code-action claims. |
+| 5 | Formula language-service primitives | Credible primitives, not safe rename | Ascend exposes diagnostics, spans, hover, completions, reference edits, F4 cycling, stateless binding roles, and a rejection-first prepare guard for formula-local LET evidence. | Needs workbook-context binding resolution, cross-surface proof packaging, and corpus latency before safe code-action claims. |
 | 6 | Release proof bundle | Needs rank 1 and 2 | Ascend has local proof ingredients: inspect, plan, commit, reopen, diff, audit, digests, package action proof, and explicit boundaries. | Should wait until safe-open and package-part proof schemas stabilize; no signed provenance language yet. |
 | 7 | Formula conformance and oracle routing | Correctness backlog | Ascend has mismatch-class and corpus routes in research and supporting tests. | Needs completed artifacts and runnable adapters for Excel, LibreOffice, HyperFormula, static goldens, and manual triage. |
 | 8 | Columnar scan sidecars | Speculative product claim | Ascend has a performance research harness suggesting sidecars can accelerate repeated range scans. | Needs production invalidation semantics, real-workbook benchmarks, memory caps, and checksum parity before product promotion. |
@@ -115,8 +115,7 @@ Rank the product-shaped claims Ascend can prove, nearly prove, or should keep in
 
 ### Needs one more fold-in
 
-- Auditable package-part mutation: stabilize the part action proof vocabulary and fixture-backed workflow evidence.
-- Formula language-service primitives: add workbook-context symbol resolution and `prepareRename` rejection before safe edits.
+- Formula language-service primitives: add workbook-context symbol resolution before safe edits.
 - Release proof bundle: package ranks 1 and 2 into a stable artifact after their schemas are settled.
 - Formula conformance/oracle routing: make completed artifacts runnable and audited.
 
@@ -165,7 +164,7 @@ Rank the product-shaped claims Ascend can prove, nearly prove, or should keep in
 ## Do Not Promote Yet
 
 - Columnar scan sidecars: keep in performance research until real-workbook benchmarks prove net benefit after build, invalidation, and memory costs.
-- Safe formula rename: keep in research until workbook-context symbols and a rejection-first rename contract exist.
+- Safe formula rename: keep in research until workbook-context symbols and an operation-owned edit planner exist; the current rejection-first guard is evidence only.
 - Release proof bundle as provenance: do not imply signed, tamper-evident, SLSA, or third-party attestation.
 - Universal formula compatibility: only claim routed oracle coverage by mismatch class.
 - Collaborative spreadsheet sync: retained viewport history is bounded patch retention, not CRDT collaboration.

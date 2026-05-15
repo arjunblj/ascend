@@ -1430,6 +1430,79 @@ describe('mutation journal exactness model', () => {
 		expect(wb.formula('Sheet1!A2')?.normalizedFormula).toBe('C2*2')
 	})
 
+	test('moveRange formula rewrites journal every dynamic spill member in the rewritten group', () => {
+		const wb = AscendWorkbook.create()
+		const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+		if (!sheet) throw new Error('missing sheet')
+		sheet.cells.set(0, 1, { value: numberValue(3), formula: null, styleId: DEFAULT_STYLE_ID })
+		sheet.cells.set(0, 0, {
+			value: numberValue(1),
+			formula: 'SEQUENCE(B1)',
+			styleId: DEFAULT_STYLE_ID,
+			formulaInfo: { kind: 'dynamicArray', metadataIndex: 1, collapsed: false },
+		})
+		for (let row = 1; row <= 2; row++) {
+			sheet.cells.set(row, 0, {
+				value: numberValue(row + 1),
+				formula: null,
+				styleId: DEFAULT_STYLE_ID,
+				formulaInfo: { kind: 'spill', anchorRef: 'Sheet1!A1', ref: 'A1:A3', isAnchor: false },
+			})
+		}
+
+		const changed = wb.apply(
+			[{ op: 'moveRange', sheet: 'Sheet1', source: 'B1', target: 'C1', mode: 'all' }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal).toBeDefined()
+		if (!changed.journal) throw new Error('missing journal')
+		expect(changed.journal.exact).toBe(false)
+		expect(journalIssueRefs(changed.journal, 'dynamic-arrays')).toEqual(['Sheet1!A1'])
+		expect(journalIssueRefs(changed.journal, 'spills')).toEqual(['Sheet1!A2', 'Sheet1!A3'])
+		expect(wb.formula('Sheet1!A1')?.normalizedFormula).toBe('SEQUENCE(C1)')
+		expect(wb.sheet('Sheet1')?.cell('A2')?.formulaBinding).toEqual({
+			kind: 'spill',
+			anchorRef: 'Sheet1!A1',
+			ref: 'A1:A3',
+			isAnchor: false,
+		})
+	})
+
+	test('moveRange formula rewrites journal data-table formula metadata', () => {
+		const wb = AscendWorkbook.create()
+		const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+		if (!sheet) throw new Error('missing sheet')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: DEFAULT_STYLE_ID })
+		sheet.cells.set(2, 2, {
+			value: numberValue(10),
+			formula: 'A1',
+			styleId: DEFAULT_STYLE_ID,
+			formulaInfo: { kind: 'dataTable', ref: 'C3:C5', dtr: true, r1: 'A1' },
+		})
+		sheet.cells.set(3, 2, { value: numberValue(20), formula: null, styleId: DEFAULT_STYLE_ID })
+
+		const changed = wb.apply(
+			[{ op: 'moveRange', sheet: 'Sheet1', source: 'A1', target: 'B1', mode: 'all' }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.affectedCells).toEqual(['B1', 'A1', 'C3'])
+		expect(changed.journal).toBeDefined()
+		if (!changed.journal) throw new Error('missing journal')
+		expect(changed.journal.exact).toBe(false)
+		expect(journalIssueRefs(changed.journal, 'data-tables')).toEqual(['Sheet1!C3'])
+		expect(wb.formula('Sheet1!C3')?.normalizedFormula).toBe('B1')
+		expect(wb.sheet('Sheet1')?.cell('C3')?.formulaBinding).toEqual({
+			kind: 'dataTable',
+			ref: 'C3:C5',
+			dtr: true,
+			r1: 'A1',
+		})
+	})
+
 	test('real XLSX shared formula precedent moves journal every rewritten imported member', async () => {
 		const wb = await AscendWorkbook.open(
 			readFileSync(new URL('../../../fixtures/xlsx/poi/shared_formulas.xlsx', import.meta.url)),

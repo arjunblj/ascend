@@ -46,6 +46,7 @@ describe('MCP server', () => {
 		const registered = (server as any)._registeredTools as Record<string, unknown>
 		const names = Object.keys(registered)
 
+		expect(names).toContain('ascend.open_plan')
 		expect(names).toContain('ascend.inspect')
 		expect(names).toContain('ascend.trust_report')
 		expect(names).toContain('ascend.active_content')
@@ -77,7 +78,7 @@ describe('MCP server', () => {
 		expect(names).toContain('ascend.plan')
 		expect(names).toContain('ascend.commit')
 		expect(names).toContain('ascend.repair_plan')
-		expect(names.length).toBe(31)
+		expect(names.length).toBe(32)
 	})
 
 	test('agent resources and prompts are registered', () => {
@@ -404,6 +405,61 @@ describe('MCP server', () => {
 				id: 'rId1',
 				resolvedTarget: 'xl/workbook.xml',
 			}),
+		)
+	})
+
+	test('ascend.open_plan recommends values mode for read intent', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 42 }] }])
+		await wb.save(TEMP_FILE)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: accessing internals for test
+		const handler = (server as any)._registeredTools['ascend.open_plan'].handler as (args: {
+			file: string
+			intent?: 'read-values'
+		}) => Promise<{
+			structuredContent?: {
+				data?: {
+					intent?: string
+					recommendedLoadOptions?: { mode?: string; richMetadata?: boolean }
+					reviewBeforeHydration?: boolean
+				}
+			}
+		}>
+
+		const result = await handler({ file: TEMP_FILE, intent: 'read-values' })
+
+		expect(result.structuredContent?.data?.intent).toBe('read-values')
+		expect(result.structuredContent?.data?.recommendedLoadOptions).toEqual({ mode: 'values' })
+		expect(result.structuredContent?.data?.reviewBeforeHydration).toBe(false)
+	})
+
+	test('ascend.open_plan routes macro workbooks to metadata review before edit planning', async () => {
+		await Bun.write(TEMP_MACRO_FILE, signedMacroWorkbook())
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: accessing internals for test
+		const handler = (server as any)._registeredTools['ascend.open_plan'].handler as (args: {
+			file: string
+		}) => Promise<{
+			structuredContent?: {
+				data?: {
+					recommendedLoadOptions?: { mode?: string; richMetadata?: boolean }
+					reviewBeforeHydration?: boolean
+					riskFeatures?: Array<{ featureFamily?: string }>
+				}
+			}
+		}>
+
+		const result = await handler({ file: TEMP_MACRO_FILE })
+
+		expect(result.structuredContent?.data?.recommendedLoadOptions).toEqual({
+			mode: 'metadata-only',
+		})
+		expect(result.structuredContent?.data?.reviewBeforeHydration).toBe(true)
+		expect(result.structuredContent?.data?.riskFeatures).toContainEqual(
+			expect.objectContaining({ featureFamily: 'preservedMacro' }),
 		)
 	})
 

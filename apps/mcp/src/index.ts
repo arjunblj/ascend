@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import {
 	type AscendError,
 	AscendException,
@@ -26,6 +27,7 @@ import {
 	formulaAssist,
 	indexToColumn,
 	inferExportFormat,
+	inspectWorkbookOpenPlan,
 	listCapabilities,
 	normalizeExportFormat,
 	type PathMutationResult,
@@ -185,6 +187,34 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 				{ query, results },
 				`Found ${results.length} Ascend example result(s) for "${query}"`,
 			)
+		},
+	)
+
+	server.tool(
+		'ascend.open_plan',
+		'Recommend a safe XLSX/XLSM open mode before hydration. Use this first for unknown workbooks when cost, active content, formulas, rich metadata, or preservation risks may affect which read/agent-view/plan tool to call next.',
+		{
+			file: z.string().describe('Path to workbook file'),
+			intent: z
+				.enum(['risk-inventory', 'read-values', 'formula-analysis', 'edit-plan'])
+				.optional()
+				.describe('Caller intent for the next step; defaults to edit-plan for safe agent planning'),
+		},
+		async ({ file, intent }) => {
+			try {
+				const plan = inspectWorkbookOpenPlan(
+					new Uint8Array(readFileSync(file)),
+					intent ? { intent } : {},
+				)
+				return okResponse(
+					plan,
+					`Recommended ${JSON.stringify(plan.recommendedLoadOptions)} for "${file}"`,
+				)
+			} catch (e) {
+				return errorResponse(
+					e instanceof AscendException ? e.ascendError : String(e instanceof Error ? e.message : e),
+				)
+			}
 		},
 	)
 

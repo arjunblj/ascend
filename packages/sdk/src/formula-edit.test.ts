@@ -289,6 +289,120 @@ describe('formula editing utilities', () => {
 		})
 	})
 
+	test('refuses prepare rename for workbook-context and reference targets', () => {
+		const cases: Array<{
+			readonly label: string
+			readonly formula: string
+			readonly cursor: number
+			readonly reason:
+				| 'workbook-context-required'
+				| 'reference-target-not-renameable'
+				| 'no-symbol-at-cursor'
+			readonly role?: string
+			readonly reference?: string
+		}> = [
+			{
+				label: 'defined name',
+				formula: '=Budget+1',
+				cursor: 3,
+				reason: 'workbook-context-required',
+				role: 'unresolved-name',
+			},
+			{
+				label: 'table name',
+				formula: '=SUM(Sales[Amount])',
+				cursor: 7,
+				reason: 'workbook-context-required',
+				role: 'table-name-use',
+			},
+			{
+				label: 'table column',
+				formula: '=SUM(Sales[Amount])',
+				cursor: 13,
+				reason: 'workbook-context-required',
+				role: 'table-column-use',
+			},
+			{
+				label: 'structured item selector',
+				formula: '=SUM(Sales[[#Totals],[Amount]])',
+				cursor: 15,
+				reason: 'workbook-context-required',
+				reference: 'Sales[[#Totals],[Amount]]',
+			},
+			{
+				label: 'cell reference',
+				formula: '=A1+B1',
+				cursor: 2,
+				reason: 'reference-target-not-renameable',
+				reference: 'A1',
+			},
+			{
+				label: 'range reference',
+				formula: '=SUM(A1:B2)',
+				cursor: 7,
+				reason: 'reference-target-not-renameable',
+				reference: 'A1:B2',
+			},
+			{
+				label: 'sheet qualifier',
+				formula: '=Sheet1!A1',
+				cursor: 3,
+				reason: 'reference-target-not-renameable',
+				reference: 'Sheet1!A1',
+			},
+			{
+				label: '3d sheet qualifier',
+				formula: '=SUM(Sheet1:Sheet3!A1)',
+				cursor: 9,
+				reason: 'reference-target-not-renameable',
+				reference: 'Sheet1:Sheet3!A1',
+			},
+			{
+				label: 'spill reference',
+				formula: '=A1#',
+				cursor: 2,
+				reason: 'reference-target-not-renameable',
+				reference: 'A1#',
+			},
+			{
+				label: 'external workbook qualifier',
+				formula: '=[Book.xlsx]Sheet1!A1',
+				cursor: 5,
+				reason: 'reference-target-not-renameable',
+				reference: '[Book.xlsx]Sheet1!A1',
+			},
+			{
+				label: 'function name',
+				formula: '=SUM(A1)',
+				cursor: 2,
+				reason: 'no-symbol-at-cursor',
+			},
+			{
+				label: 'string literal',
+				formula: '="Budget"',
+				cursor: 3,
+				reason: 'no-symbol-at-cursor',
+			},
+			{
+				label: 'parse failure punctuation',
+				formula: '=SUM(',
+				cursor: 4,
+				reason: 'no-symbol-at-cursor',
+			},
+		]
+
+		for (const entry of cases) {
+			const result = formulaPrepareRename(entry.formula, entry.cursor)
+			expect(result, entry.label).toMatchObject({
+				ok: false,
+				reason: entry.reason,
+				occurrences: [],
+			})
+			if (entry.role) expect(result.role?.role, entry.label).toBe(entry.role)
+			if (entry.reference) expect(result.reference?.text, entry.label).toBe(entry.reference)
+		}
+	})
+
 	test('does not treat earlier references as active in empty formula edit slots', () => {
 		expect(referenceAtCursor('=A1 + ', 6)).toBeNull()
 		expect(referenceAtCursor('=SUM(A1, )', 9)).toBeNull()

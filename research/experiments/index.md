@@ -42,6 +42,7 @@ Updated: 2026-05-15
 | [Release proof surface promotion gate](runs/2026/2026-05-15-release-proof-surface-promotion-gate/log.md) | handoff only, hold CLI/API/MCP surface | product loop |
 | [Formula LET binding shadowing](runs/2026/2026-05-15-formula-let-binding-shadowing/log.md) | folded in stateless LET scope fix | correctness loop, product/DX loop |
 | [Formula prepare rename boundary](runs/2026/2026-05-15-formula-prepare-rename-boundary/log.md) | folded in guarded prepareRename primitive | correctness loop, product/DX loop |
+| [Formula prepare rename rejection matrix](runs/2026/2026-05-15-formula-prepare-rename-rejection-matrix/log.md) | folded in rejection matrix bug fix, no rename edits | correctness loop, product/DX loop |
 | [Agent view budget proof](runs/2026/2026-05-15-agent-view-budget-proof/log.md) | folded in unbudgeted token estimate | product/DX loop |
 | [Agent view budget harness](runs/2026/2026-05-15-agent-view-budget-harness/log.md) | folded in tracked proof harness | product/DX loop |
 | [Viewport patch proof harness](runs/2026/2026-05-15-viewport-patch-proof-harness/log.md) | folded in tracked proof harness | product/DX loop, performance loop |

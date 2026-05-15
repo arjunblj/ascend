@@ -298,19 +298,29 @@ export function formulaBindingRoles(formula: string): FormulaBindingRole[] {
 export function formulaPrepareRename(formula: string, cursor: number): FormulaPrepareRenameResult {
 	const clampedCursor = Math.max(0, Math.min(formula.length, Math.floor(cursor)))
 	const bindings = formulaBindingRoles(formula)
+	const reference = referenceAtCursor(formula, clampedCursor)
+	if (reference && reference.kind !== 'structured') {
+		return {
+			ok: false,
+			reason: 'reference-target-not-renameable',
+			occurrences: [],
+			reference,
+			boundary:
+				'Cell, range, sheet, and external references require workbook operations, not formula-local rename.',
+		}
+	}
 	const role = bindings.find(
 		(binding) => clampedCursor >= binding.start && clampedCursor <= binding.end,
 	)
 	if (!role) {
-		const reference = referenceAtCursor(formula, clampedCursor)
 		return reference
 			? {
 					ok: false,
-					reason: 'reference-target-not-renameable',
+					reason: 'workbook-context-required',
 					occurrences: [],
 					reference,
 					boundary:
-						'Cell, range, sheet, and external references require workbook operations, not formula-local rename.',
+						'Workbook names, table names, and table columns require workbook-context resolution before rename.',
 				}
 			: {
 					ok: false,

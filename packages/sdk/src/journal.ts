@@ -7536,12 +7536,31 @@ function sameSpillFormulaBinding(
 		return (
 			dynamicAnchorRef !== undefined &&
 			(candidate.kind === 'spill' || candidate.kind === 'blockedSpill') &&
-			candidate.anchorRef === dynamicAnchorRef
+			sameFormulaCellRef(candidate.anchorRef, dynamicAnchorRef)
 		)
 	}
-	if (candidate.kind === 'dynamicArray') return candidateRef === binding.anchorRef
+	if (candidate.kind === 'dynamicArray') {
+		return candidateRef !== undefined && sameFormulaCellRef(candidateRef, binding.anchorRef)
+	}
 	if (candidate.kind !== 'spill' && candidate.kind !== 'blockedSpill') return false
-	return candidate.anchorRef === binding.anchorRef
+	return sameFormulaCellRef(candidate.anchorRef, binding.anchorRef)
+}
+
+function sameFormulaCellRef(left: string, right: string): boolean {
+	if (left === right) return true
+	try {
+		const leftRange = parseRange(left)
+		const rightRange = parseRange(right)
+		return (
+			leftRange.sheet === rightRange.sheet &&
+			leftRange.start.row === rightRange.start.row &&
+			leftRange.start.col === rightRange.start.col &&
+			leftRange.end.row === rightRange.end.row &&
+			leftRange.end.col === rightRange.end.col
+		)
+	} catch {
+		return false
+	}
 }
 
 function dataTableFormulaRange(

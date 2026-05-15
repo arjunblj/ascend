@@ -6848,6 +6848,8 @@ function moveRangeOverlapIssues(
 		{
 			code: 'LOSSY_INVERSE',
 			message: `Overlapping moveRange ${op.sheet}!${op.source} to ${op.target} cannot be fully restored with public operations`,
+			surface: 'cells',
+			reason: 'operation-unsupported',
 			refs: [`${op.sheet}!${op.source}`, `${op.sheet}!${rangeToA1(targetRange)}`],
 		},
 	]

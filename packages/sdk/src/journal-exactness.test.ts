@@ -228,6 +228,7 @@ describe('mutation journal exactness model', () => {
 			lossyAutoFilterJournal(),
 			lossyPageSetupJournal(),
 			lossyX14TransferJournal(),
+			lossyOverlappingMoveRangeJournal(),
 			lossyStyleRegistryJournal(),
 		]
 
@@ -269,6 +270,26 @@ describe('mutation journal exactness model', () => {
 			'auto-filter-extension-metadata',
 			'auto-filter-sort-metadata',
 		])
+	})
+
+	test('classifies overlapping moveRange cell inverse loss without matrix violation', () => {
+		const analysis = analyzeMutationJournalExactness(lossyOverlappingMoveRangeJournal())
+		expect(analysis).toMatchObject({
+			supported: true,
+			exact: false,
+			issueCount: 1,
+			surfaces: ['cells'],
+			reasons: ['operation-unsupported'],
+			hasLossyInverse: true,
+			hasUnsupportedOperation: false,
+			hasMatrixViolation: false,
+		})
+		expect(analysis.issues[0]).toMatchObject({
+			code: 'LOSSY_INVERSE',
+			surface: 'cells',
+			reason: 'operation-unsupported',
+			allowedByMatrix: true,
+		})
 	})
 
 	test('classifies setComment legacy drawing loss without changing the v1 vocabulary', () => {
@@ -1655,6 +1676,23 @@ function lossyX14TransferJournal(): MutationJournal {
 	})
 	return applyJournal(wb, [
 		{ op: 'copyRange', sheet: 'Sheet1', source: 'A1', target: 'D1', mode: 'validations' },
+	])
+}
+
+function lossyOverlappingMoveRangeJournal(): MutationJournal {
+	const wb = AscendWorkbook.create()
+	applyExact(wb, [
+		{
+			op: 'setCells',
+			sheet: 'Sheet1',
+			updates: [
+				{ ref: 'A1', value: 1 },
+				{ ref: 'A2', value: 2 },
+			],
+		},
+	])
+	return applyJournal(wb, [
+		{ op: 'moveRange', sheet: 'Sheet1', source: 'A1:A2', target: 'A2', mode: 'all' },
 	])
 }
 

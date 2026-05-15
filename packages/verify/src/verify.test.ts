@@ -142,6 +142,33 @@ describe('checker', () => {
 		})
 	})
 
+	test('formats qualified blocked spill diagnostics without duplicating sheet names', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Copy')
+		s.cells.set(3, 0, {
+			value: errorValue('#SPILL!'),
+			formula: 'SEQUENCE(2)',
+			styleId: SID,
+			formulaInfo: {
+				kind: 'blockedSpill',
+				anchorRef: 'Copy!A4',
+				ref: 'Copy!A4:A5',
+				blockingRefs: ['Copy!A5'],
+			},
+		})
+		s.cells.set(4, 0, { value: stringValue('blocker'), formula: null, styleId: SID })
+
+		const result = check(wb)
+		const spillIssue = result.issues.find((issue) => issue.rule === 'spill-diagnostics')
+		expect(spillIssue?.refs).toEqual(['Copy!A4', 'Copy!A5'])
+		expect(spillIssue?.details).toEqual({
+			error: '#SPILL!',
+			cause: 'occupied-cell',
+			spillRange: 'Copy!A4:A5',
+			blockingRefs: ['Copy!A5'],
+		})
+	})
+
 	test('reports sheet-edge spill diagnostics without invented blocking cells', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')

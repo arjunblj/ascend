@@ -637,6 +637,7 @@ function blockedSpillIssue(
 	binding: Extract<CellFormulaBinding, { kind: 'blockedSpill' }>,
 ): CheckIssue {
 	const anchorRef = `${sheetName}!${toA1({ row, col })}`
+	const spillRange = formatBindingRangeRef(sheetName, binding.ref)
 	if (binding.reason === 'sheet-edge') {
 		return {
 			rule: 'spill-diagnostics',
@@ -648,11 +649,13 @@ function blockedSpillIssue(
 			details: {
 				error: '#SPILL!',
 				cause: 'sheet-edge',
-				spillRange: `${sheetName}!${binding.ref}`,
+				spillRange,
 			},
 		}
 	}
-	const blockingRefs = binding.blockingRefs.map((ref) => `${sheetName}!${ref}`)
+	const blockingRefs = binding.blockingRefs.map((ref) =>
+		formatBindingCellDisplayRef(sheetName, ref),
+	)
 	return {
 		rule: 'spill-diagnostics',
 		severity: 'warning',
@@ -662,10 +665,25 @@ function blockedSpillIssue(
 		details: {
 			error: '#SPILL!',
 			cause: 'occupied-cell',
-			spillRange: `${sheetName}!${binding.ref}`,
+			spillRange,
 			blockingRefs,
 		},
 	}
+}
+
+function formatBindingRangeRef(sheetName: string, ref: string): string {
+	const parsed = parseBindingRange(ref, sheetName)
+	if (!parsed) return ref.includes('!') ? ref : `${sheetName}!${ref}`
+	const sheet = parsed.sheet ?? sheetName
+	const start = toA1(parsed.start)
+	const end = toA1(parsed.end)
+	return start === end ? `${sheet}!${start}` : `${sheet}!${start}:${end}`
+}
+
+function formatBindingCellDisplayRef(sheetName: string, ref: string): string {
+	const parsed = parseBindingCellRef(ref, sheetName)
+	if (!parsed) return ref.includes('!') ? ref : `${sheetName}!${ref}`
+	return `${parsed.sheet}!${toA1({ row: parsed.row, col: parsed.col })}`
 }
 
 function unknownSpillIssue(sheetName: string, row: number, col: number): CheckIssue {

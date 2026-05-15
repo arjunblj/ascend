@@ -2088,6 +2088,31 @@ describe('mutation journal exactness model', () => {
 				ops: [{ op: 'setPrintArea', sheet: 'Sheet1', range: 'B1:B1' }],
 			},
 			{
+				name: 'page setup replacement',
+				seedOps: [
+					{
+						op: 'setPageSetup',
+						sheet: 'Sheet1',
+						setup: {
+							orientation: 'portrait',
+							paperSize: 1,
+							scale: 95,
+							margins: { left: 0.5, right: 0.5, top: 0.75, bottom: 0.75 },
+						},
+					},
+				],
+				ops: [
+					{
+						op: 'setPageSetup',
+						sheet: 'Sheet1',
+						setup: {
+							orientation: 'landscape',
+							margins: { left: 0.25, right: 0.25 },
+						},
+					},
+				],
+			},
+			{
 				name: 'tab color replacement',
 				seedOps: [{ op: 'setTabColor', sheet: 'Sheet1', color: 'FF0000' }],
 				ops: [{ op: 'setTabColor', sheet: 'Sheet1', color: '00FF00' }],

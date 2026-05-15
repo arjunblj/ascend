@@ -5276,6 +5276,14 @@ function buildBudgetedAgentViewResult(
 	const omittedColumnSampleValues =
 		baseColumnSampleValues - countAgentViewColumnSampleValues(columns)
 	const omittedFormulaPatterns = result.formulaPatterns.length - budgeted.formulaPatterns.length
+	const omittedEvidence = buildAgentViewOmittedEvidence(
+		result,
+		budgeted,
+		formulaPatternLimit,
+		omittedSampleRows,
+		omittedColumnSampleValues,
+		omittedFormulaPatterns,
+	)
 	const budget = {
 		requestedApproxTokens,
 		estimatedApproxTokens: 0,
@@ -5285,6 +5293,7 @@ function buildBudgetedAgentViewResult(
 		omittedSampleRows,
 		omittedColumnSampleValues,
 		omittedFormulaPatterns,
+		...(omittedEvidence ? { omittedEvidence } : {}),
 	}
 	const withBudget = { ...budgeted, budget }
 	return {
@@ -5293,6 +5302,62 @@ function buildBudgetedAgentViewResult(
 			...budget,
 			estimatedApproxTokens: estimateAgentViewApproxTokens(withBudget),
 		},
+	}
+}
+
+const MAX_OMITTED_COLUMN_SAMPLE_HINTS = 2
+
+function buildAgentViewOmittedEvidence(
+	result: AgentViewResult,
+	budgeted: Omit<AgentViewResult, 'budget'>,
+	formulaPatternLimit: number,
+	omittedSampleRows: number,
+	omittedColumnSampleValues: number,
+	omittedFormulaPatterns: number,
+): NonNullable<import('./types.ts').AgentViewBudgetInfo['omittedEvidence']> | undefined {
+	if (omittedSampleRows + omittedColumnSampleValues + omittedFormulaPatterns === 0) return undefined
+	const omittedRows = result.samples.slice(budgeted.samples.length).map((sample) => sample.row)
+	const columnHints = result.columns
+		.map((column, index) => {
+			const shown = budgeted.columns[index]?.sampleValues.length ?? 0
+			const omittedValues = Math.max(0, column.sampleValues.length - shown)
+			return omittedValues > 0 ? { col: column.col, ref: column.ref, omittedValues } : undefined
+		})
+		.filter(
+			(
+				entry,
+			): entry is { readonly col: number; readonly ref: string; readonly omittedValues: number } =>
+				entry !== undefined,
+		)
+	const omittedPatterns = result.formulaPatterns.slice(formulaPatternLimit)
+	return {
+		...(omittedRows.length > 0
+			? {
+					sampleRows: {
+						count: omittedRows.length,
+						firstRow: omittedRows[0] ?? 0,
+						lastRow: omittedRows[omittedRows.length - 1] ?? 0,
+						remainingRows: 0,
+					},
+				}
+			: {}),
+		...(columnHints.length > 0
+			? {
+					columnSampleValues: {
+						omittedValues: omittedColumnSampleValues,
+						columns: columnHints.slice(0, MAX_OMITTED_COLUMN_SAMPLE_HINTS),
+						remainingColumns: Math.max(0, columnHints.length - MAX_OMITTED_COLUMN_SAMPLE_HINTS),
+					},
+				}
+			: {}),
+		...(omittedPatterns.length > 0
+			? {
+					formulaPatterns: {
+						count: omittedFormulaPatterns,
+						firstOmittedIndex: formulaPatternLimit,
+					},
+				}
+			: {}),
 	}
 }
 

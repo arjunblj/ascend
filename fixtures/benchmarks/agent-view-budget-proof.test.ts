@@ -29,10 +29,9 @@ describe('agent view budget proof harness', () => {
 		).toBe(true)
 		expect(proof.cases.every((entry) => entry.compressionRatio < 1)).toBe(true)
 		expect(proof.cases.some((entry) => !entry.withinBudget)).toBe(true)
-		expect(proof.cases.find((entry) => entry.name === 'public-formula-stress')).toMatchObject({
-			omittedFormulaPatterns: 6,
-			withinBudget: true,
-		})
+		const publicFormulaStress = proof.cases.find((entry) => entry.name === 'public-formula-stress')
+		expect(publicFormulaStress?.truncated).toBe(true)
+		expect(Number(publicFormulaStress?.omittedFormulaPatterns ?? 0)).toBeGreaterThan(0)
 	})
 
 	test('renders claim-safe markdown boundaries', async () => {

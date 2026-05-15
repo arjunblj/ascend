@@ -1046,6 +1046,38 @@ export interface AgentSampleRow {
 	readonly cells: readonly CompactCellInfo[]
 }
 
+export interface AgentViewOmittedSampleRowsInfo {
+	readonly count: number
+	readonly firstRow: number
+	readonly lastRow: number
+	readonly remainingRows: number
+}
+
+export interface AgentViewOmittedColumnSampleValueInfo {
+	readonly col: number
+	readonly ref: string
+	readonly omittedValues: number
+}
+
+export interface AgentViewOmittedColumnSampleValuesInfo {
+	readonly omittedValues: number
+	readonly columns: readonly AgentViewOmittedColumnSampleValueInfo[]
+	readonly remainingColumns: number
+}
+
+export interface AgentViewOmittedFormulaPatternsInfo {
+	readonly count: number
+	readonly firstOmittedIndex: number
+	readonly nextPattern?: string
+	readonly nextPatternCount?: number
+}
+
+export interface AgentViewOmittedEvidenceInfo {
+	readonly sampleRows?: AgentViewOmittedSampleRowsInfo
+	readonly columnSampleValues?: AgentViewOmittedColumnSampleValuesInfo
+	readonly formulaPatterns?: AgentViewOmittedFormulaPatternsInfo
+}
+
 export interface AgentViewBudgetInfo {
 	readonly requestedApproxTokens: number
 	readonly estimatedApproxTokens: number
@@ -1055,6 +1087,7 @@ export interface AgentViewBudgetInfo {
 	readonly omittedSampleRows: number
 	readonly omittedColumnSampleValues: number
 	readonly omittedFormulaPatterns: number
+	readonly omittedEvidence?: AgentViewOmittedEvidenceInfo
 }
 
 export interface AgentViewResult {

@@ -17,6 +17,10 @@ export interface AgentViewRecoveryProofCaseResult {
 	readonly omittedColumnSampleValues: number
 	readonly omittedFormulaPatterns: number
 	readonly budgetMetadataHasLocations: boolean
+	readonly sampleRowLocatorExact: boolean
+	readonly columnSampleLocatorExact: boolean
+	readonly narrowSampleRowsRecovered: boolean
+	readonly narrowSampleRange?: string
 	readonly unbudgetedSameRangeRecovered: boolean
 	readonly recoveredSampleRows: number
 	readonly recoveredColumnSampleValues: number
@@ -28,8 +32,10 @@ export interface AgentViewRecoveryProofResult {
 	readonly generatedAt: string
 	readonly cases: readonly AgentViewRecoveryProofCaseResult[]
 	readonly allUnbudgetedRecoveriesExact: boolean
-	readonly allBudgetMetadataCountOnly: boolean
-	readonly narrowerRecoveryRequiresLocatorMetadata: boolean
+	readonly allBudgetMetadataHasLocators: boolean
+	readonly allSampleRowLocatorsExact: boolean
+	readonly allColumnSampleLocatorsExact: boolean
+	readonly allNarrowSampleRowRecoveriesExact: boolean
 }
 
 interface AgentViewShape {
@@ -47,8 +53,10 @@ export async function runAgentViewRecoveryProof(): Promise<AgentViewRecoveryProo
 		generatedAt: new Date().toISOString(),
 		cases: results,
 		allUnbudgetedRecoveriesExact: results.every((entry) => entry.unbudgetedSameRangeRecovered),
-		allBudgetMetadataCountOnly: results.every((entry) => !entry.budgetMetadataHasLocations),
-		narrowerRecoveryRequiresLocatorMetadata: results.some((entry) => entry.truncated),
+		allBudgetMetadataHasLocators: results.every((entry) => entry.budgetMetadataHasLocations),
+		allSampleRowLocatorsExact: results.every((entry) => entry.sampleRowLocatorExact),
+		allColumnSampleLocatorsExact: results.every((entry) => entry.columnSampleLocatorExact),
+		allNarrowSampleRowRecoveriesExact: results.every((entry) => entry.narrowSampleRowsRecovered),
 	}
 }
 
@@ -57,15 +65,17 @@ export function agentViewRecoveryProofMarkdown(result: AgentViewRecoveryProofRes
 		'# Agent View Omitted Evidence Recovery Proof',
 		'',
 		`Generated: ${result.generatedAt}`,
-		'Boundary: budget metadata currently carries omission counts, not omitted row/column/formula locations. Same-range unbudgeted recovery is exact; automated narrower recovery needs locator metadata before it can be product-proofed.',
+		'Boundary: budget metadata carries compact omitted sample-row and column-sample locators plus formula-pattern continuation hints. Same-range unbudgeted recovery is exact; sample-row locators can drive narrower follow-up reads, while formula-pattern recovery still needs richer provenance.',
 		'',
-		'| Case | Fixture | Range | Requested | Budgeted tokens | Unbudgeted tokens | Within budget | Truncated | Omitted rows | Omitted values | Omitted formulas | Has locations | Same-range recovered | Recovered rows | Recovered values | Recovered formulas | Recovery action |',
-		'| --- | --- | --- | ---: | ---: | ---: | --- | --- | ---: | ---: | ---: | --- | --- | ---: | ---: | ---: | --- |',
+		'| Case | Fixture | Range | Requested | Budgeted tokens | Unbudgeted tokens | Within budget | Truncated | Omitted rows | Omitted values | Omitted formulas | Has locations | Row locators exact | Column locators exact | Narrow sample range | Narrow rows recovered | Same-range recovered | Recovered rows | Recovered values | Recovered formulas | Recovery action |',
+		'| --- | --- | --- | ---: | ---: | ---: | --- | --- | ---: | ---: | ---: | --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | --- |',
 		...result.cases.map(markdownRow),
 		'',
 		`All same-range unbudgeted recoveries exact: ${result.allUnbudgetedRecoveriesExact}`,
-		`All budget metadata count-only: ${result.allBudgetMetadataCountOnly}`,
-		`Narrower recovery requires locator metadata: ${result.narrowerRecoveryRequiresLocatorMetadata}`,
+		`All budget metadata has locators: ${result.allBudgetMetadataHasLocators}`,
+		`All sample-row locators exact: ${result.allSampleRowLocatorsExact}`,
+		`All column-sample locators exact: ${result.allColumnSampleLocatorsExact}`,
+		`All narrow sample-row recoveries exact: ${result.allNarrowSampleRowRecoveriesExact}`,
 	].join('\n')
 }
 
@@ -86,6 +96,13 @@ async function runAgentViewRecoveryProofCase(
 	const omittedSampleRows = fullShape.sampleRows - budgetedShape.sampleRows
 	const omittedColumnSampleValues = fullShape.columnSampleValues - budgetedShape.columnSampleValues
 	const omittedFormulaPatterns = fullShape.formulaPatterns - budgetedShape.formulaPatterns
+	const omittedEvidence = budgeted.budget.omittedEvidence
+	const narrowSampleRange = omittedEvidence?.sampleRows
+		? rangeForRows(full, omittedEvidence.sampleRows.firstRow, omittedEvidence.sampleRows.lastRow)
+		: undefined
+	const narrowSampleView = narrowSampleRange
+		? requireAgentView(wb.agentView(proofCase.sheet, narrowSampleRange), proofCase.name)
+		: undefined
 	return {
 		name: proofCase.name,
 		fixture: proofCase.fixture,
@@ -100,6 +117,12 @@ async function runAgentViewRecoveryProofCase(
 		omittedColumnSampleValues,
 		omittedFormulaPatterns,
 		budgetMetadataHasLocations: hasOmissionLocations(budgeted.budget),
+		sampleRowLocatorExact: (omittedEvidence?.sampleRows?.count ?? 0) === omittedSampleRows,
+		columnSampleLocatorExact:
+			(omittedEvidence?.columnSampleValues?.omittedValues ?? 0) === omittedColumnSampleValues,
+		narrowSampleRowsRecovered:
+			omittedSampleRows === 0 || narrowSampleView?.samples.length === omittedSampleRows,
+		...(narrowSampleRange ? { narrowSampleRange } : {}),
 		unbudgetedSameRangeRecovered: stableJson(full) === stableJson(recovered),
 		recoveredSampleRows: recoveredShape.sampleRows - budgetedShape.sampleRows,
 		recoveredColumnSampleValues:
@@ -107,7 +130,7 @@ async function runAgentViewRecoveryProofCase(
 		recoveredFormulaPatterns: recoveredShape.formulaPatterns - budgetedShape.formulaPatterns,
 		recoveryAction:
 			omittedSampleRows + omittedColumnSampleValues + omittedFormulaPatterns > 0
-				? `Run unbudgeted agentView for ${proofCase.sheet}!${proofCase.range}, or choose a human/agent-selected narrower range; budget metadata does not yet locate omitted evidence.`
+				? `Use omittedEvidence sample-row and column-sample locators for narrower follow-up reads, or run unbudgeted agentView for ${proofCase.sheet}!${proofCase.range}.`
 				: 'No omitted evidence to recover.',
 	}
 }
@@ -132,13 +155,28 @@ function shapeOf(view: ReturnType<typeof requireAgentView>): AgentViewShape {
 }
 
 function hasOmissionLocations(budget: Record<string, unknown>): boolean {
-	return Object.keys(budget).some(
-		(key) =>
-			key === 'omittedRows' ||
-			key === 'omittedColumns' ||
-			key === 'omittedRanges' ||
-			key === 'omittedFormulaPatternRanges',
-	)
+	return typeof budget.omittedEvidence === 'object' && budget.omittedEvidence !== null
+}
+
+function rangeForRows(
+	view: ReturnType<typeof requireAgentView>,
+	firstRow: number,
+	lastRow: number,
+): string {
+	const startCol = columnLabel(view.range.start.col)
+	const endCol = columnLabel(view.range.end.col)
+	return `${startCol}${firstRow + 1}:${endCol}${lastRow + 1}`
+}
+
+function columnLabel(index: number): string {
+	let current = index + 1
+	let label = ''
+	while (current > 0) {
+		const mod = (current - 1) % 26
+		label = String.fromCharCode(65 + mod) + label
+		current = Math.floor((current - mod - 1) / 26)
+	}
+	return label
 }
 
 function stableJson(value: unknown): string {
@@ -159,6 +197,10 @@ function markdownRow(row: AgentViewRecoveryProofCaseResult): string {
 		String(row.omittedColumnSampleValues),
 		String(row.omittedFormulaPatterns),
 		String(row.budgetMetadataHasLocations),
+		String(row.sampleRowLocatorExact),
+		String(row.columnSampleLocatorExact),
+		row.narrowSampleRange ?? 'n/a',
+		String(row.narrowSampleRowsRecovered),
 		String(row.unbudgetedSameRangeRecovered),
 		String(row.recoveredSampleRows),
 		String(row.recoveredColumnSampleValues),

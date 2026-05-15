@@ -47,6 +47,7 @@ Updated: 2026-05-15
 | [Release proof index digests](runs/2026/2026-05-15-release-proof-index-digests/log.md) | folded in benchmark-only digest index | product loop |
 | [Agent view index promotion gate](runs/2026/2026-05-15-agent-view-index-promotion-gate/log.md) | handoff only, hold out of release proof index | product/DX loop |
 | [Agent view omitted evidence recovery](runs/2026/2026-05-15-agent-view-omitted-evidence-recovery/log.md) | folded in recovery proof harness, locator metadata needed | product/DX loop |
+| [Agent view omitted locator metadata](runs/2026/2026-05-15-agent-view-omitted-locator-metadata/log.md) | folded in compact omitted-evidence locators | product/DX loop |
 | [Package action proof](runs/2026/2026-05-14-package-action-proof/log.md) | cycle 2 complete, promote | correctness loop, product/DX loop, performance loop |
 | [Formula spans LSP](runs/2026/2026-05-14-formula-spans-lsp/log.md) | cycle 13 complete, folded in SDK hover/code actions | product/DX loop, correctness loop |
 | [Formula sqllogictest conformance](runs/2026/2026-05-14-formula-sqllogictest-conformance/log.md) | cycle 14 complete, folded in converter/runner | correctness loop |

@@ -1505,6 +1505,9 @@ describe('Ascend API server', () => {
 			(result.body.data?.budget?.omittedSampleRows ?? 0) +
 				(result.body.data?.budget?.omittedColumnSampleValues ?? 0),
 		).toBeGreaterThan(0)
+		expect(result.body.data?.budget?.omittedEvidence?.sampleRows?.count).toBe(
+			result.body.data?.budget?.omittedSampleRows,
+		)
 	})
 
 	test('trace returns structured partial-load diagnostics for capped formula views', async () => {

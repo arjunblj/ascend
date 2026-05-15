@@ -779,6 +779,13 @@ describe('AscendWorkbook', () => {
 			(budgeted?.budget?.omittedSampleRows ?? 0) +
 				(budgeted?.budget?.omittedColumnSampleValues ?? 0),
 		).toBeGreaterThan(0)
+		expect(budgeted?.budget?.omittedEvidence?.sampleRows?.count).toBe(
+			budgeted?.budget?.omittedSampleRows,
+		)
+		expect(budgeted?.budget?.omittedEvidence?.sampleRows?.lastRow).toBeGreaterThanOrEqual(
+			budgeted?.budget?.omittedEvidence?.sampleRows?.firstRow ?? 0,
+		)
+		expect(budgeted?.budget?.omittedEvidence).toBeDefined()
 	})
 
 	test('sheet handle returns range info', () => {

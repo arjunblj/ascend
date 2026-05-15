@@ -6653,6 +6653,9 @@ describe('MCP server', () => {
 						truncated?: boolean
 						omittedSampleRows?: number
 						omittedColumnSampleValues?: number
+						omittedEvidence?: {
+							sampleRows?: { count?: number }
+						}
 					}
 				}
 			}
@@ -6673,6 +6676,9 @@ describe('MCP server', () => {
 			(result.structuredContent?.data?.budget?.omittedSampleRows ?? 0) +
 				(result.structuredContent?.data?.budget?.omittedColumnSampleValues ?? 0),
 		).toBeGreaterThan(0)
+		expect(result.structuredContent?.data?.budget?.omittedEvidence?.sampleRows?.count).toBe(
+			result.structuredContent?.data?.budget?.omittedSampleRows,
+		)
 	})
 
 	test('ascend.trace returns structured partial-load diagnostics for capped formula views', async () => {

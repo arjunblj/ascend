@@ -5820,6 +5820,60 @@ describe('interactive client contract', () => {
 		expect(changedSheet?.cells.get(2, 0)?.formulaInfo).toBeUndefined()
 	})
 
+	test('journals expose shared formula preimages with case-insensitive sheet-qualified master refs', () => {
+		const wb = AscendWorkbook.create()
+		const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+		if (!sheet) throw new Error('missing sheet')
+		sheet.cells.set(0, 0, {
+			value: numberValue(20),
+			formula: 'B1*2',
+			styleId: DEFAULT_STYLE_ID,
+			formulaInfo: {
+				kind: 'shared',
+				sharedIndex: '0',
+				isMaster: true,
+				masterRef: 'Sheet1!A1',
+				ref: 'A1:A2',
+			},
+		})
+		sheet.cells.set(1, 0, {
+			value: numberValue(40),
+			formula: null,
+			styleId: DEFAULT_STYLE_ID,
+			formulaInfo: {
+				kind: 'shared',
+				sharedIndex: '0',
+				isMaster: false,
+				masterRef: 'sheet1!$A$1',
+			},
+		})
+
+		const changed = wb.apply(
+			[{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A2', value: 99 }] }],
+			{ journal: true },
+		)
+
+		expect(changed.errors).toEqual([])
+		expect(changed.journal?.supported).toBe(true)
+		expect(changed.journal?.exact).toBe(false)
+		const preimage = changed.journal?.entries[0]?.preimages[0]
+		expect(preimage?.kind).toBe('cells')
+		if (preimage?.kind !== 'cells') throw new Error('missing cells preimage')
+		expect(preimage.cells.map((cell) => cell.ref).sort()).toEqual(['A1', 'A2'])
+		for (const ref of ['A1', 'A2'] as const) {
+			expect(changed.journal?.issues).toContainEqual({
+				code: 'LOSSY_INVERSE',
+				message: `Formula binding metadata for Sheet1!${ref} cannot be restored with public operations`,
+				surface: 'shared-formulas',
+				reason: 'formula-binding-metadata',
+				refs: [`Sheet1!${ref}`],
+			})
+		}
+		const changedSheet = wb.getWorkbookModel().getSheet('Sheet1')
+		expect(changedSheet?.cells.get(0, 0)?.formulaInfo).toBeUndefined()
+		expect(changedSheet?.cells.get(1, 0)?.formulaInfo).toBeUndefined()
+	})
+
 	test('journals expose dynamic spill anchor preimages with absolute spill anchor refs', () => {
 		const wb = AscendWorkbook.create()
 		const sheet = wb.getWorkbookModel().getSheet('Sheet1')

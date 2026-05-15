@@ -621,6 +621,48 @@ describe('applyOperation', () => {
 		expect(sheet.cells.get(1, 0)?.formulaInfo).toBeUndefined()
 	})
 
+	test('setCells materializes shared formula groups with case-insensitive sheet-qualified master refs', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, {
+			value: numberValue(20),
+			formula: 'B1*2',
+			styleId: sid,
+			formulaInfo: {
+				kind: 'shared',
+				sharedIndex: '0',
+				isMaster: true,
+				masterRef: 'Sheet1!A1',
+				ref: 'A1:A2',
+			},
+		})
+		sheet.cells.set(1, 0, {
+			value: numberValue(40),
+			formula: null,
+			styleId: sid,
+			formulaInfo: {
+				kind: 'shared',
+				sharedIndex: '0',
+				isMaster: false,
+				masterRef: 'sheet1!$A$1',
+			},
+		})
+
+		const result = applyOperation(wb, {
+			op: 'setCells',
+			sheet: 'Sheet1',
+			updates: [{ ref: 'A2', value: 9 }],
+		})
+		expectOk(result)
+
+		expect(result.value.affectedCells).toEqual(['A1', 'A2'])
+		expect(sheet.cells.get(0, 0)?.formula).toBe('B1*2')
+		expect(sheet.cells.get(0, 0)?.formulaInfo).toBeUndefined()
+		expect(sheet.cells.get(1, 0)?.value).toEqual(numberValue(9))
+		expect(sheet.cells.get(1, 0)?.formula).toBeNull()
+		expect(sheet.cells.get(1, 0)?.formulaInfo).toBeUndefined()
+	})
+
 	test('setCells scopes shared formula materialization by master when shared indexes collide', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

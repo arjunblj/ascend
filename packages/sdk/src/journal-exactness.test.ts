@@ -2658,6 +2658,7 @@ describe('mutation journal exactness model', () => {
 			if (entry.cleanCalcState) expect(seeded.recalc().errors, entry.name).toEqual([])
 			const beforeBytes = seeded.toBytes()
 			const wb = await AscendWorkbook.open(beforeBytes)
+			const beforeEvidence = journalEvidence(wb)
 			const changed = wb.apply(entry.ops, { journal: true })
 			expect(changed.errors, entry.name).toEqual([])
 			expect(changed.journal?.supported, entry.name).toBe(true)
@@ -2674,6 +2675,7 @@ describe('mutation journal exactness model', () => {
 
 			const undo = wb.apply(changed.journal?.inverseOps ?? [], { transaction: true })
 			expect(undo.errors, entry.name).toEqual([])
+			expect(journalEvidence(wb), entry.name).toEqual(beforeEvidence)
 			expect(
 				Buffer.compare(Buffer.from(wb.toBytes()), Buffer.from(beforeBytes)),
 				entry.name,

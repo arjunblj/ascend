@@ -27,6 +27,7 @@ Latest proof refresh, 2026-05-15:
 - `agent-phase-profile --progress --timeout-ms` can now stream phase-event NDJSON while keeping final JSON on stdout, giving performance owners partial progress evidence for longer local probes without promoting latency claims.
 - Blocker grouping from `release-proof-index --json`: product has 2 fixture-decision blockers, correctness has 1 boundary-approval blocker, performance has 1 validation-run blocker plus 1 streaming-boundary decision, and release owns 4 publication-policy blockers.
 - Journal exactness tests now assert generated lossy journal issues use exported v1 issue-code, surface, and reason registries before classification, strengthening auditable mutation proof without adding a new surface.
+- Safe-open public fixture scan still finds no checked-in signed/unknown replacement: 351 public fixtures scanned, 2 protected fixtures rejected, 0 matches. Product must accept disclosed generated structural fixtures or explicitly acquire public binaries.
 
 ## External References
 

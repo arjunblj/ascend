@@ -5141,6 +5141,8 @@ function structuralX14MetadataIssues(
 		{
 			code: 'LOSSY_INVERSE',
 			message: `Deleted ${preimage.axis === 'row' ? 'row' : 'column'} x14 metadata on ${preimage.sheet} cannot be fully restored with public operations`,
+			surface: 'x14-metadata',
+			reason: 'x14-metadata',
 			refs,
 		},
 	]
@@ -5156,6 +5158,8 @@ function structuralFormulaReferenceIssues(
 		{
 			code: 'LOSSY_INVERSE',
 			message: `Deleted ${preimage.axis === 'row' ? 'row' : 'column'} formula references on ${preimage.sheet} cannot be restored with public operations`,
+			surface: 'formulas',
+			reason: 'formula-reference-rewrite',
 			refs,
 		},
 	]
@@ -5197,6 +5201,8 @@ function structuralRepresentedMetadataIssues(
 		{
 			code: 'LOSSY_INVERSE',
 			message: `Deleted ${preimage.axis === 'row' ? 'row' : 'column'} represented metadata on ${preimage.sheet} cannot be fully restored with public operations`,
+			surface: 'package-parts',
+			reason: 'package-part-preservation',
 			refs,
 		},
 	]

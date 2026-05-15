@@ -8259,6 +8259,8 @@ describe('interactive client contract', () => {
 			code: 'LOSSY_INVERSE',
 			message:
 				'Deleted column formula references on Sheet1 cannot be restored with public operations',
+			surface: 'formulas',
+			reason: 'formula-reference-rewrite',
 			refs: ['Sheet1!conditionalFormat:B2:B5:0:0:0'],
 		})
 		expect(deletedCol.journal?.inverseOps[0]).toEqual({
@@ -8354,6 +8356,8 @@ describe('interactive client contract', () => {
 			code: 'LOSSY_INVERSE',
 			message:
 				'Deleted row represented metadata on Sheet1 cannot be fully restored with public operations',
+			surface: 'package-parts',
+			reason: 'package-part-preservation',
 			refs: [
 				'Sheet1!ignoredError:A2:A2',
 				'Sheet1!sortState:A1:A3',
@@ -8457,6 +8461,8 @@ describe('interactive client contract', () => {
 			code: 'LOSSY_INVERSE',
 			message:
 				'Deleted column represented metadata on Sheet1 cannot be fully restored with public operations',
+			surface: 'package-parts',
+			reason: 'package-part-preservation',
 			refs: [
 				'Sheet1!ignoredError:B2:B2',
 				'Sheet1!sortState:B1:D1',
@@ -8597,6 +8603,8 @@ describe('interactive client contract', () => {
 		expect(deletedRow.journal?.issues).toContainEqual({
 			code: 'LOSSY_INVERSE',
 			message: 'Deleted row formula references on Sheet1 cannot be restored with public operations',
+			surface: 'formulas',
+			reason: 'formula-reference-rewrite',
 			refs: ['Sheet1!B1', 'name:DeletedInput'],
 		})
 		expect(wb.sheet('Sheet1')?.cell('B1')?.formula).toBe('#REF!')
@@ -8667,6 +8675,8 @@ describe('interactive client contract', () => {
 				code: 'LOSSY_INVERSE',
 				message:
 					'Deleted row formula references on Sheet1 cannot be restored with public operations',
+				surface: 'formulas',
+				reason: 'formula-reference-rewrite',
 				refs: expect.arrayContaining([
 					'Sheet1!validation:C1:C1:formula1',
 					'Sheet1!conditionalFormat:D1:D1:0:0:0',
@@ -8825,6 +8835,8 @@ describe('interactive client contract', () => {
 		expect(deleted.journal?.issues).toContainEqual({
 			code: 'LOSSY_INVERSE',
 			message: `Deleted row formula references on ${inputSheet} cannot be restored with public operations`,
+			surface: 'formulas',
+			reason: 'formula-reference-rewrite',
 			refs: expect.arrayContaining([
 				`${inputSheet}!x14Validation:C2:C5:formula1`,
 				`${inputSheet}!x14ConditionalFormat:D2:D5:8:dataBar.cfvo:0`,
@@ -8836,6 +8848,8 @@ describe('interactive client contract', () => {
 		expect(deleted.journal?.issues).toContainEqual({
 			code: 'LOSSY_INVERSE',
 			message: `Deleted row x14 metadata on ${inputSheet} cannot be fully restored with public operations`,
+			surface: 'x14-metadata',
+			reason: 'x14-metadata',
 			refs: [`${inputSheet}!x14Validation:C2:C5:7`, `${inputSheet}!x14ConditionalFormat:D2:D5:8`],
 		})
 		expect(wb.sheet(inputSheet)?.cell('A2')?.value).toEqual({ kind: 'number', value: 5 })
@@ -8887,6 +8901,8 @@ describe('interactive client contract', () => {
 		expect(deleted.journal?.issues).toContainEqual({
 			code: 'LOSSY_INVERSE',
 			message: `Deleted column formula references on ${inputSheet} cannot be restored with public operations`,
+			surface: 'formulas',
+			reason: 'formula-reference-rewrite',
 			refs: expect.arrayContaining([
 				`${inputSheet}!x14Validation:B2:E2:formula1`,
 				`${inputSheet}!x14ConditionalFormat:B3:E3:8:dataBar.cfvo:0`,
@@ -8898,6 +8914,8 @@ describe('interactive client contract', () => {
 		expect(deleted.journal?.issues).toContainEqual({
 			code: 'LOSSY_INVERSE',
 			message: `Deleted column x14 metadata on ${inputSheet} cannot be fully restored with public operations`,
+			surface: 'x14-metadata',
+			reason: 'x14-metadata',
 			refs: [`${inputSheet}!x14Validation:B2:E2:7`, `${inputSheet}!x14ConditionalFormat:B3:E3:8`],
 		})
 		expect(wb.sheet(inputSheet)?.cell('B1')?.value).toEqual({ kind: 'number', value: 5 })

@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { rm } from 'node:fs/promises'
+import { rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { createApiFetch } from '../../apps/api/src/server.ts'
@@ -105,6 +105,8 @@ interface WorkflowSample {
 	readonly preparedPlanPayloadBytes: number
 	readonly commitPayloadBytes: number
 	readonly preparedCommitPayloadBytes: number
+	readonly commitOutputBytes: number
+	readonly preparedCommitOutputBytes: number
 	readonly verifyPayloadBytes: number
 	readonly preparedVerifyPayloadBytes: number
 	readonly readCells: number
@@ -156,6 +158,8 @@ interface WorkflowSample {
 	readonly mcpPreparedPayloadBytes?: number
 	readonly mcpCommitVerifiedPayloadBytes?: number
 	readonly mcpPreparedCommitVerifiedPayloadBytes?: number
+	readonly mcpCommitOutputBytes?: number
+	readonly mcpPreparedCommitOutputBytes?: number
 	readonly mcpReadCells?: number
 	readonly mcpReadPartial?: boolean
 	readonly mcpCompactHydratedOpenCount?: number
@@ -649,6 +653,8 @@ async function runMcpWorkflow(
 	})
 	const verify = await mcpClient.check({ file: outputPath })
 	const preparedVerify = await mcpClient.check({ file: preparedOutputPath })
+	const commitOutputBytes = (await stat(outputPath)).size
+	const preparedCommitOutputBytes = (await stat(preparedOutputPath)).size
 	const sharedOpenStats = addOpenStats(inspect.openStats, read.openStats)
 	const compactOpenStats = addOpenStats(
 		sharedOpenStats,
@@ -729,6 +735,8 @@ async function runMcpWorkflow(
 			read.text.length +
 			preparedPlan.text.length +
 			preparedCommit.text.length,
+		mcpCommitOutputBytes: commitOutputBytes,
+		mcpPreparedCommitOutputBytes: preparedCommitOutputBytes,
 		mcpReadCells: read.payload.data?.cells?.length ?? 0,
 		mcpReadPartial: read.payload.data?.load?.isPartial === true,
 		mcpCompactHydratedOpenCount: hydratedOpenCount(compactOpenStats),
@@ -799,6 +807,8 @@ async function runWorkflow(
 	})
 	const verify = await post(apiFetch, '/check', { file: outputPath })
 	const preparedVerify = await post(apiFetch, '/check', { file: preparedOutputPath })
+	const commitOutputBytes = (await stat(outputPath)).size
+	const preparedCommitOutputBytes = (await stat(preparedOutputPath)).size
 	const measuredSampleMs = performance.now() - totalStart
 	const mcpOutputPath = `${outputPath}.mcp.xlsx`
 	const mcpWorkflow = mcpClient
@@ -941,6 +951,8 @@ async function runWorkflow(
 		preparedPlanPayloadBytes: preparedPlan.text.length,
 		commitPayloadBytes: commit.text.length,
 		preparedCommitPayloadBytes: preparedCommit.text.length,
+		commitOutputBytes,
+		preparedCommitOutputBytes,
 		verifyPayloadBytes: verify.text.length,
 		preparedVerifyPayloadBytes: preparedVerify.text.length,
 		readCells: read.payload.data?.cells?.length ?? 0,
@@ -1127,6 +1139,10 @@ function summarize(samples: readonly WorkflowSample[]) {
 		preparedCommitPayloadBytesMedian: median(
 			samples.map((sample) => sample.preparedCommitPayloadBytes),
 		),
+		commitOutputBytesMedian: median(samples.map((sample) => sample.commitOutputBytes)),
+		preparedCommitOutputBytesMedian: median(
+			samples.map((sample) => sample.preparedCommitOutputBytes),
+		),
 		verifyPayloadBytesMedian: median(samples.map((sample) => sample.verifyPayloadBytes)),
 		preparedVerifyPayloadBytesMedian: median(
 			samples.map((sample) => sample.preparedVerifyPayloadBytes),
@@ -1257,6 +1273,12 @@ function summarize(samples: readonly WorkflowSample[]) {
 		),
 		mcpPreparedCommitVerifiedPayloadBytesMedian: medianOptional(
 			samples.map((sample) => sample.mcpPreparedCommitVerifiedPayloadBytes),
+		),
+		mcpCommitOutputBytesMedian: medianOptional(
+			samples.map((sample) => sample.mcpCommitOutputBytes),
+		),
+		mcpPreparedCommitOutputBytesMedian: medianOptional(
+			samples.map((sample) => sample.mcpPreparedCommitOutputBytes),
 		),
 		mcpReadCellsMedian: medianOptional(samples.map((sample) => sample.mcpReadCells)),
 		mcpCompactHydratedOpenCountMedian: medianOptional(

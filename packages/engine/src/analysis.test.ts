@@ -674,6 +674,45 @@ describe('analyzeWorkbook', () => {
 				affectedCells: ['D1', 'D2', 'A2', 'B2', 'C2'],
 				reusesCache: false,
 			},
+			{
+				name: 'sortRange dynamic spill member',
+				seed: (sheet) => {
+					sheet.cells.set(0, 0, { value: stringValue('a'), formula: null, styleId: sid })
+					sheet.cells.set(1, 0, { value: stringValue('b'), formula: null, styleId: sid })
+					sheet.cells.set(2, 0, { value: stringValue('c'), formula: null, styleId: sid })
+					sheet.cells.set(0, 3, {
+						value: numberValue(1),
+						formula: 'SEQUENCE(3)',
+						styleId: sid,
+						formulaInfo: { kind: 'dynamicArray', metadataIndex: 1, collapsed: false },
+					})
+					sheet.cells.set(1, 3, {
+						value: numberValue(2),
+						formula: null,
+						styleId: sid,
+						formulaInfo: {
+							kind: 'spill',
+							anchorRef: 'Sheet1!D1',
+							ref: 'D1:D3',
+							isAnchor: false,
+						},
+					})
+					sheet.cells.set(2, 3, {
+						value: numberValue(3),
+						formula: null,
+						styleId: sid,
+						formulaInfo: {
+							kind: 'spill',
+							anchorRef: 'Sheet1!D1',
+							ref: 'D1:D3',
+							isAnchor: false,
+						},
+					})
+				},
+				op: { op: 'sortRange', sheet: 'Sheet1', range: 'A1:D3', by: [{ column: 'A' }] },
+				affectedCells: ['D1', 'D2', 'D3', 'A2', 'B2', 'C2', 'A3', 'B3', 'C3'],
+				reusesCache: false,
+			},
 		]
 
 		for (const entry of cases) {

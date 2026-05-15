@@ -819,27 +819,6 @@ function sameSheetName(left: string, right: string): boolean {
 	return left.toLowerCase() === right.toLowerCase()
 }
 
-function sameSharedFormulaBinding(
-	left: Extract<CellFormulaBinding, { kind: 'shared' }>,
-	right: CellFormulaBinding | undefined,
-	sheetName: string,
-): boolean {
-	if (right?.kind !== 'shared') return false
-	if (left.sharedIndex !== right.sharedIndex) return false
-	if (left.masterRef !== undefined && right.masterRef !== undefined) {
-		const leftMaster = parseBindingCellRef(left.masterRef, sheetName)
-		const rightMaster = parseBindingCellRef(right.masterRef, sheetName)
-		return (
-			leftMaster !== null &&
-			rightMaster !== null &&
-			sameSheetName(leftMaster.sheet, rightMaster.sheet) &&
-			leftMaster.row === rightMaster.row &&
-			leftMaster.col === rightMaster.col
-		)
-	}
-	return true
-}
-
 function sameSpillFormulaBinding(
 	left: Extract<CellFormulaBinding, { kind: 'spill' }>,
 	right: CellFormulaBinding | undefined,
@@ -1000,26 +979,6 @@ function checkFormulaBindingIntegrity(wb: Workbook): CheckIssue[] {
 								},
 							),
 						)
-					} else {
-						for (const [memberRow, memberCol, memberCell] of sheet.cells.iterate()) {
-							if (!rangeContainsCell(sharedRange, sheet.name, memberRow, memberCol)) continue
-							if (memberRow === row && memberCol === col) continue
-							if (!memberCell.formulaInfo && !memberCell.formula) continue
-							if (sameSharedFormulaBinding(binding, memberCell.formulaInfo, sheet.name)) continue
-							const memberRef = `${sheet.name}!${toA1({ row: memberRow, col: memberCol })}`
-							issues.push(
-								formulaBindingIntegrityIssue(
-									`Shared formula master at ${cellRef} has an inconsistent member inside its range`,
-									[cellRef, memberRef],
-									{
-										kind: 'shared-formula-range-member-mismatch',
-										sharedIndex: binding.sharedIndex,
-										range: binding.ref,
-										memberRef,
-									},
-								),
-							)
-						}
 					}
 				}
 				continue

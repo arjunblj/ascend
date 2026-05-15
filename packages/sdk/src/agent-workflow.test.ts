@@ -1422,6 +1422,100 @@ describe('agent workflow loss audit', () => {
 				},
 			},
 			{
+				name: 'move-range-shared-master-rewrite-reports-all-members',
+				risk: 'moving precedent cells could rewrite an imported shared-formula master while omitting sibling shared members from affectedCells and leaving cached formula analysis stale',
+				proof: async () => {
+					const input = join(TEMP_DIR, 'quality-moat-move-shared-master-rewrite.xlsx')
+					const output = join(TEMP_DIR, 'quality-moat-move-shared-master-rewrite-out.xlsx')
+					mkdirSync(TEMP_DIR, { recursive: true })
+					const wb = AscendWorkbook.create()
+					const model = wb.getWorkbookModel()
+					const sheet = model.getSheet('Sheet1')
+					if (!sheet) throw new Error('missing Sheet1')
+					sheet.name = 'Data'
+					model.invalidateSheetCache()
+					sheet.cells.set(0, 0, {
+						value: numberValue(10),
+						formula: null,
+						styleId: DEFAULT_STYLE_ID,
+					})
+					sheet.cells.set(1, 0, {
+						value: numberValue(20),
+						formula: null,
+						styleId: DEFAULT_STYLE_ID,
+					})
+					sheet.cells.set(0, 1, {
+						value: numberValue(20),
+						formula: 'A1*2',
+						styleId: DEFAULT_STYLE_ID,
+						formulaInfo: {
+							kind: 'shared',
+							sharedIndex: 'quality-moat-move-rewrite',
+							isMaster: true,
+							masterRef: 'B1',
+							ref: 'B1:B2',
+						},
+					})
+					sheet.cells.set(1, 1, {
+						value: numberValue(40),
+						formula: null,
+						styleId: DEFAULT_STYLE_ID,
+						formulaInfo: {
+							kind: 'shared',
+							sharedIndex: 'quality-moat-move-rewrite',
+							isMaster: false,
+							masterRef: 'B1',
+							ref: 'B1:B2',
+						},
+					})
+					await wb.save(input)
+
+					const prepared = await createPreparedAgentPlan(input, [
+						{ op: 'moveRange' as const, sheet: 'Data', source: 'A1:A2', target: 'C1' },
+					])
+					expect(prepared.plan.preview.journal?.supported).toBe(true)
+					expect(prepared.plan.preview.journal?.exact).toBe(false)
+					expect(prepared.plan.preview.journal?.issues).toContainEqual(
+						expect.objectContaining({
+							surface: 'shared-formulas',
+							reason: 'formula-binding-metadata',
+							refs: ['Data!B1'],
+						}),
+					)
+					expect(prepared.plan.preview.journal?.issues).toContainEqual(
+						expect.objectContaining({
+							surface: 'package-parts',
+							reason: 'package-part-preservation',
+							refs: ['Data!A1:A2', 'Data!C1:C2'],
+						}),
+					)
+
+					const committed = await prepared.commit({ output })
+					const compact = compactAgentCommitResult(committed)
+					expect(compact.apply.affectedCellRefs).toEqual(['C1', 'C2', 'A1', 'A2', 'B1', 'B2'])
+					expect(committed.postWrite.valid).toBe(true)
+					expect(committed.postWrite.auditsPassed).toBe(true)
+
+					const reopened = await AscendWorkbook.open(output)
+					expect(reopened.check().valid).toBe(true)
+					expect(reopened.formula('Data!B1')?.normalizedFormula).toBe('C1*2')
+					expect(reopened.formula('Data!B2')?.normalizedFormula).toBe('C2*2')
+					expect(reopened.sheet('Data')?.cell('B1')?.formulaBinding).toEqual({
+						kind: 'shared',
+						sharedIndex: 'quality-moat-move-rewrite',
+						isMaster: true,
+						masterRef: 'B1',
+						ref: 'B1:B2',
+					})
+					expect(reopened.sheet('Data')?.cell('B2')?.formulaBinding).toEqual({
+						kind: 'shared',
+						sharedIndex: 'quality-moat-move-rewrite',
+						isMaster: false,
+						masterRef: 'B1',
+					})
+				},
+			},
+			{
 				name: 'real-absolute-shared-formula-edit-materializes-and-reopens-clean',
 				risk: 'editing one imported absolute shared-formula member could save shifted sibling formula text or stale binding metadata',
 				proof: async () => {

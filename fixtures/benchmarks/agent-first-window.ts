@@ -1,9 +1,5 @@
 #!/usr/bin/env bun
 import { rm } from 'node:fs/promises'
-import { createApiFetch } from '../../apps/api/src/server.ts'
-import { runCli } from '../../apps/cli/src/index.ts'
-import { createServer } from '../../apps/mcp/src/index.ts'
-import { WorkbookTuiEngine } from '../../apps/tui/src/runtime/engine.ts'
 import { indexToColumn } from '../../packages/core/src/index.ts'
 import { AscendWorkbook, WorkbookDocument } from '../../packages/sdk/src/index.ts'
 import { buildRawReadWorkloadDataSet, type WorkloadName } from './competitive-io.ts'
@@ -360,6 +356,35 @@ function checkTimeout(args: Args, startedAt: number, phase: string): void {
 	)
 }
 
+let apiFetchFactory: typeof import('../../apps/api/src/server.ts').createApiFetch | undefined
+let cliRunner: typeof import('../../apps/cli/src/index.ts').runCli | undefined
+let mcpServerFactory: typeof import('../../apps/mcp/src/index.ts').createServer | undefined
+let tuiEngine: typeof import('../../apps/tui/src/runtime/engine.ts').WorkbookTuiEngine | undefined
+
+async function createApiFetchForBenchmark() {
+	apiFetchFactory ??= (await import('../../apps/api/src/server.ts')).createApiFetch
+	return apiFetchFactory()
+}
+
+async function runCliForBenchmark(args: readonly string[]): Promise<number> {
+	cliRunner ??= (await import('../../apps/cli/src/index.ts')).runCli
+	return cliRunner([...args])
+}
+
+async function createMcpServerForBenchmark() {
+	mcpServerFactory ??= (await import('../../apps/mcp/src/index.ts')).createServer
+	return mcpServerFactory()
+}
+
+async function createTuiEngineForBenchmark(
+	options: Parameters<
+		typeof import('../../apps/tui/src/runtime/engine.ts').WorkbookTuiEngine.create
+	>[0],
+) {
+	tuiEngine ??= (await import('../../apps/tui/src/runtime/engine.ts')).WorkbookTuiEngine
+	return tuiEngine.create(options)
+}
+
 function rssMb(): number {
 	return process.memoryUsage().rss / (1024 * 1024)
 }
@@ -486,7 +511,7 @@ async function runApiFirstWindow(
 	runGc()
 	const rssBefore = rssMb()
 	const beforeOpenStats = snapshotOpenStats()
-	const apiFetch = createApiFetch()
+	const apiFetch = await createApiFetchForBenchmark()
 	const body = JSON.stringify({
 		file: path,
 		range,
@@ -541,7 +566,7 @@ async function runApiCompactDefault(
 > {
 	if (clearCache) WorkbookDocument.clearCache()
 	runGc()
-	const apiFetch = createApiFetch()
+	const apiFetch = await createApiFetchForBenchmark()
 	const body = JSON.stringify({
 		file: path,
 		range,
@@ -584,7 +609,7 @@ async function runCliCapture(args: readonly string[]): Promise<string> {
 	console.log = (...values: unknown[]) => stdout.push(values.map(String).join(' '))
 	console.error = (...values: unknown[]) => stderr.push(values.map(String).join(' '))
 	try {
-		const exitCode = await runCli([...args])
+		const exitCode = await runCliForBenchmark(args)
 		if (exitCode !== 0) throw new Error(stderr.join('\n') || `CLI exited ${exitCode}`)
 		return stdout.join('\n')
 	} finally {
@@ -673,7 +698,7 @@ async function runMcpFirstWindow(
 	runGc()
 	const rssBefore = rssMb()
 	const beforeOpenStats = snapshotOpenStats()
-	const server = createServer()
+	const server = await createMcpServerForBenchmark()
 	const handler = (
 		server as unknown as { _registeredTools: Record<string, { handler: McpReadHandler }> }
 	)._registeredTools['ascend.read']?.handler
@@ -726,7 +751,7 @@ async function runMcpCompactDefault(
 > {
 	if (clearCache) WorkbookDocument.clearCache()
 	runGc()
-	const server = createServer()
+	const server = await createMcpServerForBenchmark()
 	const handler = (
 		server as unknown as { _registeredTools: Record<string, { handler: McpReadHandler }> }
 	)._registeredTools['ascend.read']?.handler
@@ -780,7 +805,7 @@ async function runTuiFirstPaint(
 	const beforeOpenStats = snapshotOpenStats()
 	const start = performance.now()
 	const opened = await time(() =>
-		WorkbookTuiEngine.create({
+		createTuiEngineForBenchmark({
 			path,
 			...(sheet !== undefined ? { sheet } : {}),
 			loadOptions: { mode: 'values', maxRows: rowLimit },

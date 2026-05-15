@@ -10,6 +10,7 @@ Updated: 2026-05-14
 | [Open plan CLI explain first](runs/2026/2026-05-14-open-plan-cli-explain-first/log.md) | cycle 17 complete, folded in CLI command | product/DX loop |
 | [Open plan MCP tool](runs/2026/2026-05-14-open-plan-mcp-tool/log.md) | cycle 18 complete, folded in MCP tool | product/DX loop |
 | [Open plan API endpoint](runs/2026/2026-05-14-open-plan-api-endpoint/log.md) | cycle 19 complete, folded in API endpoint | product/DX loop |
+| [Open plan agent docs](runs/2026/2026-05-14-open-plan-agent-docs/log.md) | cycle 20 complete, folded in agent docs | product/DX loop |
 | [Package action proof](runs/2026/2026-05-14-package-action-proof/log.md) | cycle 2 complete, promote | correctness loop, product/DX loop, performance loop |
 | [Formula spans LSP](runs/2026/2026-05-14-formula-spans-lsp/log.md) | cycle 13 complete, folded in SDK hover/code actions | product/DX loop, correctness loop |
 | [Formula sqllogictest conformance](runs/2026/2026-05-14-formula-sqllogictest-conformance/log.md) | cycle 14 complete, folded in converter/runner | correctness loop |

@@ -6,6 +6,16 @@ Runnable transcript for coding agents using the local HTTP API. Start the server
 bun run apps/api/src/index.ts
 ```
 
+## Open Plan
+
+```bash
+curl -s http://localhost:3000/open-plan \
+  -H 'content-type: application/json' \
+  -d '{"file":"model.xlsx","intent":"edit-plan"}'
+```
+
+Expected fields: `ok`, `data.recommendedLoadOptions`, `data.reviewBeforeHydration`, `data.riskFeatures`, and `data.reasons`.
+
 ## Trust Preflight
 
 ```bash

@@ -23,6 +23,7 @@ interface AgentInitInfo {
 
 const AGENT_INIT: AgentInitInfo = {
 	workflow: [
+		'for unknown XLSX/XLSM files, run open-plan before hydration to choose a safe load mode',
 		'run a trust preflight before reading workbook text into an agent prompt',
 		'inspect workbook structure',
 		'locate only the needed ranges, tables, formulas, visuals, or metadata',
@@ -33,6 +34,7 @@ const AGENT_INIT: AgentInitInfo = {
 		'use repair-plan when validation, recalc, or unsupported-feature audits need recovery actions',
 	],
 	commands: {
+		openPlan: 'ascend open-plan <file> --json',
 		trust: 'ascend inspect <file> --agent --json',
 		inspect: 'ascend inspect <file> --json --verbose',
 		read: 'ascend read <file> <range> --json',

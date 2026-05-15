@@ -2,6 +2,14 @@
 
 Use this transcript with any MCP client connected to `apps/mcp/src/index.ts`.
 
+## Open Plan
+
+```json
+{ "tool": "ascend.open_plan", "arguments": { "file": "model.xlsx", "intent": "edit-plan" } }
+```
+
+Expected fields: `data.recommendedLoadOptions`, `data.reviewBeforeHydration`, `data.riskFeatures`, and `data.reasons`.
+
 ## Trust Preflight
 
 ```json

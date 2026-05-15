@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { DEFAULT_STYLE_ID } from '@ascend/core'
 import { numberValue, type Operation } from '@ascend/schema'
 import {
+	analyzeMutationJournalExactness,
 	buildMutationJournal,
 	classifyMutationJournalIssue,
 	classifyMutationJournalIssues,
@@ -130,6 +131,61 @@ describe('mutation journal exactness model', () => {
 			'auto-filter-extension-metadata',
 			'auto-filter-sort-metadata',
 		])
+	})
+
+	test('analyzes journal exactness into agent-readable surfaces and reasons', () => {
+		const exactWorkbook = AscendWorkbook.create()
+		applyExact(exactWorkbook, [
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] },
+		])
+		const exact = analyzeMutationJournalExactness(
+			applyJournal(exactWorkbook, [
+				{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 2 }] },
+			]),
+		)
+		expect(exact).toMatchObject({
+			supported: true,
+			exact: true,
+			issueCount: 0,
+			issues: [],
+			surfaces: [],
+			reasons: [],
+			hasMatrixViolation: false,
+		})
+
+		const lossy = analyzeMutationJournalExactness(lossyAutoFilterJournal())
+		expect(lossy).toMatchObject({
+			supported: true,
+			exact: false,
+			issueCount: 3,
+			surfaces: ['auto-filters'],
+			reasons: [
+				'auto-filter-column-metadata',
+				'auto-filter-extension-metadata',
+				'auto-filter-sort-metadata',
+			],
+			hasLossyInverse: true,
+			hasUnsupportedOperation: false,
+			hasUnavailableJournal: false,
+			hasJournalBuildFailure: false,
+			hasMatrixViolation: false,
+		})
+		expect(lossy.issues.map((issue) => issue.allowedByMatrix)).toEqual([true, true, true])
+
+		const unavailable = analyzeMutationJournalExactness(
+			unavailableMutationJournal('Partial workbook cannot prove package parts', [
+				'package:xl/workbook.xml',
+			]),
+		)
+		expect(unavailable).toMatchObject({
+			supported: false,
+			exact: false,
+			issueCount: 1,
+			surfaces: ['package-parts'],
+			reasons: ['journal-unavailable'],
+			hasUnavailableJournal: true,
+			hasMatrixViolation: false,
+		})
 	})
 
 	test('representative edit operations obey the exactness taxonomy', () => {

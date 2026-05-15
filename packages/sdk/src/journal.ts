@@ -1000,6 +1000,67 @@ export interface MutationJournal {
 	readonly issues: readonly MutationJournalIssue[]
 }
 
+export interface MutationJournalClassifiedIssue extends MutationJournalIssueClassification {
+	readonly code: MutationJournalIssue['code']
+	readonly message: string
+	readonly refs?: readonly string[]
+	readonly allowedByMatrix: boolean
+}
+
+export interface MutationJournalExactnessAnalysis {
+	readonly supported: boolean
+	readonly exact: boolean
+	readonly issueCount: number
+	readonly issues: readonly MutationJournalClassifiedIssue[]
+	readonly surfaces: readonly MutationJournalSurface[]
+	readonly reasons: readonly MutationJournalReasonCode[]
+	readonly hasLossyInverse: boolean
+	readonly hasUnsupportedOperation: boolean
+	readonly hasUnsupportedValue: boolean
+	readonly hasUnavailableJournal: boolean
+	readonly hasJournalBuildFailure: boolean
+	readonly hasMatrixViolation: boolean
+}
+
+export function analyzeMutationJournalExactness(
+	journal: MutationJournal,
+): MutationJournalExactnessAnalysis {
+	const issues = journal.issues.map((issue) => classifyMutationJournalIssueForAnalysis(issue))
+	return {
+		supported: journal.supported,
+		exact: journal.exact,
+		issueCount: issues.length,
+		issues,
+		surfaces: uniqueSorted(issues.map((issue) => issue.surface)),
+		reasons: uniqueSorted(issues.map((issue) => issue.reason)),
+		hasLossyInverse: issues.some((issue) => issue.code === 'LOSSY_INVERSE'),
+		hasUnsupportedOperation: issues.some((issue) => issue.code === 'UNSUPPORTED_OPERATION'),
+		hasUnsupportedValue: issues.some((issue) => issue.code === 'UNSUPPORTED_VALUE'),
+		hasUnavailableJournal: issues.some((issue) => issue.code === 'JOURNAL_UNAVAILABLE'),
+		hasJournalBuildFailure: issues.some((issue) => issue.code === 'JOURNAL_BUILD_FAILED'),
+		hasMatrixViolation: issues.some((issue) => !issue.allowedByMatrix),
+	}
+}
+
+function classifyMutationJournalIssueForAnalysis(
+	issue: MutationJournalIssue,
+): MutationJournalClassifiedIssue {
+	const classification = classifyMutationJournalIssue(issue)
+	const rule = classifyMutationJournalSurface(classification.surface)
+	const allowedByMatrix = rule.lossReasons.includes(classification.reason)
+	return {
+		code: issue.code,
+		message: issue.message,
+		...(issue.refs && issue.refs.length > 0 ? { refs: issue.refs } : {}),
+		...classification,
+		allowedByMatrix,
+	}
+}
+
+function uniqueSorted<T extends string>(values: readonly T[]): readonly T[] {
+	return [...new Set(values)].sort()
+}
+
 interface DraftJournalEntry {
 	readonly opIndex: number
 	readonly op: Operation

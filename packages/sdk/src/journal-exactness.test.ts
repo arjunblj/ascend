@@ -1267,6 +1267,70 @@ describe('mutation journal exactness model', () => {
 		}
 	})
 
+	test('range operation journals mark unsupported formula caches lossy', () => {
+		const cases: readonly {
+			readonly name: string
+			readonly setup: (workbook: AscendWorkbook) => void
+			readonly ops: readonly Operation[]
+			readonly ref: string
+		}[] = [
+			{
+				name: 'copyRange target formula cache',
+				setup: (wb) => {
+					const sheet = seedUnsupportedFormulaCache(wb, 'A1')
+					sheet.cells.set(0, 3, { value: numberValue(7), formula: null, styleId: DEFAULT_STYLE_ID })
+				},
+				ops: [{ op: 'copyRange', sheet: 'Sheet1', source: 'D1', target: 'A1', mode: 'all' }],
+				ref: 'Sheet1!A1',
+			},
+			{
+				name: 'moveRange source formula cache',
+				setup: (wb) => {
+					const sheet = seedUnsupportedFormulaCache(wb, 'A1')
+					sheet.cells.set(0, 3, { value: numberValue(7), formula: null, styleId: DEFAULT_STYLE_ID })
+				},
+				ops: [{ op: 'moveRange', sheet: 'Sheet1', source: 'A1', target: 'D1', mode: 'all' }],
+				ref: 'Sheet1!A1',
+			},
+			{
+				name: 'sortRange moved formula cache',
+				setup: (wb) => {
+					const sheet = seedUnsupportedFormulaCache(wb, 'B1')
+					sheet.cells.set(0, 0, { value: numberValue(2), formula: null, styleId: DEFAULT_STYLE_ID })
+					sheet.cells.set(1, 0, { value: numberValue(1), formula: null, styleId: DEFAULT_STYLE_ID })
+					sheet.cells.set(1, 1, {
+						value: numberValue(10),
+						formula: null,
+						styleId: DEFAULT_STYLE_ID,
+					})
+				},
+				ops: [{ op: 'sortRange', sheet: 'Sheet1', range: 'A1:B2', by: [{ column: 'A' }] }],
+				ref: 'Sheet1!B1',
+			},
+		]
+
+		for (const entry of cases) {
+			const wb = AscendWorkbook.create()
+			entry.setup(wb)
+
+			const journal = applyJournal(wb, entry.ops)
+			const opName = entry.ops[0]?.op
+			if (!opName) throw new Error(`missing op for ${entry.name}`)
+
+			expect(classifyMutationJournalSurface('formulas').representativeOps).toContain(opName)
+			expect(journal.supported, entry.name).toBe(true)
+			expect(journal.exact, entry.name).toBe(false)
+			expect(journal.issues, entry.name).toContainEqual(
+				expect.objectContaining({
+					code: 'LOSSY_INVERSE',
+					surface: 'formulas',
+					reason: 'formula-cache-unsupported-value',
+					refs: [entry.ref],
+				}),
+			)
+		}
+	})
+
 	test('topology rewrite journals mark dynamic spill formula bindings lossy', () => {
 		const cases: readonly {
 			readonly name: string
@@ -3362,6 +3426,18 @@ function seedSharedFormulaPair(workbook: AscendWorkbook, row: number, col: numbe
 			isMaster: false,
 			masterRef: topRef,
 		},
+	})
+	return sheet
+}
+
+function seedUnsupportedFormulaCache(workbook: AscendWorkbook, ref: string) {
+	const sheet = workbook.getWorkbookModel().getSheet('Sheet1')
+	if (!sheet) throw new Error('missing sheet')
+	const cell = parseA1(ref)
+	sheet.cells.set(cell.row, cell.col, {
+		value: errorValue('#DIV/0!'),
+		formula: '1/0',
+		styleId: DEFAULT_STYLE_ID,
 	})
 	return sheet
 }

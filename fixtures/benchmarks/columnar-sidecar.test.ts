@@ -6,6 +6,7 @@ import {
 	columnarSidecarClaimReportMarkdown,
 	isColumnarSidecarCurrent,
 	runColumnarSidecarBenchmark,
+	runColumnarSidecarFixtureBenchmark,
 	sumSidecarColumn,
 } from './columnar-sidecar.ts'
 
@@ -55,5 +56,28 @@ describe('columnar sidecar benchmark harness', () => {
 		expect(markdown).toContain('Do not promote yet')
 		expect(markdown).toContain('Next generation valid: false')
 		expect(markdown).toContain('Estimated sidecar payload bytes')
+	})
+
+	test('checks public fixture range parity without timing thresholds', async () => {
+		const result = await runColumnarSidecarFixtureBenchmark({
+			fixture: 'fixtures/xlsx/poi/Tables.xlsx',
+			sheet: 'Exp1',
+			repeats: 8,
+		})
+
+		expect(result.source).toBe('fixture')
+		expect(result.fixture).toBe('fixtures/xlsx/poi/Tables.xlsx')
+		expect(result.sheet).toBe('Exp1')
+		expect(result.populatedCount).toBeGreaterThan(0)
+		expect(result.numericCount).toBeGreaterThan(0)
+		expect(result.checksum).toBeGreaterThan(0)
+		expect(result.estimatedSidecarPayloadBytes).toBe(result.cells * 9)
+
+		const report = columnarSidecarClaimReport(result)
+		const markdown = columnarSidecarClaimReportMarkdown(report)
+		expect(report.allowedClaim).toContain('public-fixture evidence')
+		expect(report.boundary).toContain('small public-fixture benchmark')
+		expect(markdown).toContain('Fixture: fixtures/xlsx/poi/Tables.xlsx')
+		expect(markdown).toContain('Broad performance claims')
 	})
 })

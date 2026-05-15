@@ -1,5 +1,5 @@
 import type { CellFormulaBinding, RangeRef, Workbook } from '@ascend/core'
-import { indexToColumn, parseA1, parseRange, toA1 } from '@ascend/core'
+import { indexToColumn, normalizeRange, parseA1, parseRange, toA1 } from '@ascend/core'
 import {
 	analyzeWorkbookDependencies,
 	analyzeWorkbookFormulas,
@@ -717,6 +717,206 @@ function checkBlockedSpills(wb: Workbook, formulas: WorkbookFormulaAnalysis): Ch
 			issues.push(unknownSpillIssue(sheet.name, spill.row, spill.col))
 		}
 	}
+	return issues
+}
+
+function formulaBindingIntegrityIssue(
+	message: string,
+	refs: readonly string[],
+	details: Readonly<Record<string, unknown>>,
+): CheckIssue {
+	return {
+		rule: 'formula-binding-integrity',
+		severity: 'error',
+		message,
+		refs,
+		suggestedFix:
+			'Recalculate or rewrite the affected formula-binding group before trusting saved formula metadata.',
+		details,
+	}
+}
+
+function parseBindingRange(ref: string | undefined, sheetName: string): RangeRef | null {
+	if (!ref) return null
+	try {
+		const parsed = normalizeRange(parseRange(ref))
+		return parsed.sheet === undefined ? { ...parsed, sheet: sheetName } : parsed
+	} catch {
+		return null
+	}
+}
+
+function parseBindingCellRef(
+	ref: string | undefined,
+	sheetName: string,
+): { sheet: string; row: number; col: number } | null {
+	if (!ref) return null
+	try {
+		const parsed = parseBindingRange(ref, sheetName)
+		if (!parsed) return null
+		if (parsed.start.row !== parsed.end.row || parsed.start.col !== parsed.end.col) return null
+		return { sheet: parsed.sheet ?? sheetName, row: parsed.start.row, col: parsed.start.col }
+	} catch {
+		return null
+	}
+}
+
+function rangeContainsCell(range: RangeRef, sheetName: string, row: number, col: number): boolean {
+	if (range.sheet !== undefined && range.sheet !== sheetName) return false
+	return (
+		row >= range.start.row && row <= range.end.row && col >= range.start.col && col <= range.end.col
+	)
+}
+
+function checkFormulaBindingIntegrity(wb: Workbook): CheckIssue[] {
+	const issues: CheckIssue[] = []
+	const sheetsByName = new Map(wb.sheets.map((sheet) => [sheet.name.toLowerCase(), sheet]))
+
+	for (const sheet of wb.sheets) {
+		for (const [row, col, cell] of sheet.cells.iterate()) {
+			const binding = cell.formulaInfo
+			if (!binding) continue
+			const cellRef = `${sheet.name}!${toA1({ row, col })}`
+
+			if (binding.kind === 'shared') {
+				const master = parseBindingCellRef(binding.masterRef, sheet.name)
+				if (!master) {
+					issues.push(
+						formulaBindingIntegrityIssue(
+							`Shared formula metadata at ${cellRef} has no valid master reference`,
+							[cellRef],
+							{ kind: 'shared-formula-missing-master-ref', sharedIndex: binding.sharedIndex },
+						),
+					)
+					continue
+				}
+				const masterSheet = sheetsByName.get(master.sheet.toLowerCase())
+				const masterCell = masterSheet?.cells.get(master.row, master.col)
+				if (
+					!masterCell?.formulaInfo ||
+					masterCell.formulaInfo.kind !== 'shared' ||
+					!masterCell.formulaInfo.isMaster ||
+					masterCell.formulaInfo.sharedIndex !== binding.sharedIndex
+				) {
+					issues.push(
+						formulaBindingIntegrityIssue(
+							`Shared formula metadata at ${cellRef} points to a missing or incompatible master`,
+							[cellRef, `${master.sheet}!${toA1({ row: master.row, col: master.col })}`],
+							{
+								kind: 'shared-formula-master-mismatch',
+								sharedIndex: binding.sharedIndex,
+								masterRef: binding.masterRef,
+							},
+						),
+					)
+				}
+				if (binding.isMaster) {
+					const sharedRange = parseBindingRange(binding.ref, sheet.name)
+					if (!cell.formula) {
+						issues.push(
+							formulaBindingIntegrityIssue(
+								`Shared formula master at ${cellRef} has no formula text`,
+								[cellRef],
+								{ kind: 'shared-formula-master-missing-formula', sharedIndex: binding.sharedIndex },
+							),
+						)
+					}
+					if (!sharedRange || !rangeContainsCell(sharedRange, sheet.name, row, col)) {
+						issues.push(
+							formulaBindingIntegrityIssue(
+								`Shared formula master at ${cellRef} has an invalid shared range`,
+								[cellRef],
+								{
+									kind: 'shared-formula-invalid-range',
+									sharedIndex: binding.sharedIndex,
+									range: binding.ref,
+								},
+							),
+						)
+					}
+				}
+				continue
+			}
+
+			if (binding.kind === 'array' || binding.kind === 'dataTable') {
+				const range = parseBindingRange(binding.ref, sheet.name)
+				if (!range || !rangeContainsCell(range, sheet.name, row, col)) {
+					issues.push(
+						formulaBindingIntegrityIssue(
+							`${binding.kind === 'array' ? 'Legacy array' : 'Data table'} formula metadata at ${cellRef} has an invalid range`,
+							[cellRef],
+							{
+								kind:
+									binding.kind === 'array'
+										? 'legacy-array-invalid-range'
+										: 'data-table-invalid-range',
+								range: binding.ref,
+							},
+						),
+					)
+				}
+				continue
+			}
+
+			if (binding.kind === 'dynamicArray') {
+				if (!cell.formula) {
+					issues.push(
+						formulaBindingIntegrityIssue(
+							`Dynamic array metadata at ${cellRef} is attached to a cell without formula text`,
+							[cellRef],
+							{
+								kind: 'dynamic-array-anchor-missing-formula',
+								metadataIndex: binding.metadataIndex,
+							},
+						),
+					)
+				}
+				continue
+			}
+
+			if (binding.kind === 'spill' || binding.kind === 'blockedSpill') {
+				const anchor = parseBindingCellRef(binding.anchorRef, sheet.name)
+				const spillRange = parseBindingRange(binding.ref, sheet.name)
+				if (!anchor || !spillRange || !rangeContainsCell(spillRange, sheet.name, row, col)) {
+					issues.push(
+						formulaBindingIntegrityIssue(
+							`${binding.kind === 'spill' ? 'Spill' : 'Blocked spill'} metadata at ${cellRef} has an invalid anchor or range`,
+							[cellRef],
+							{
+								kind: `${binding.kind}-invalid-anchor-or-range`,
+								anchorRef: binding.anchorRef,
+								range: binding.ref,
+							},
+						),
+					)
+					continue
+				}
+				const anchorSheet = sheetsByName.get(anchor.sheet.toLowerCase())
+				const anchorCell = anchorSheet?.cells.get(anchor.row, anchor.col)
+				const anchorBinding = anchorCell?.formulaInfo
+				if (
+					!anchorCell?.formula ||
+					!anchorBinding ||
+					(anchorBinding.kind !== 'dynamicArray' &&
+						anchorBinding.kind !== 'spill' &&
+						anchorBinding.kind !== 'blockedSpill')
+				) {
+					issues.push(
+						formulaBindingIntegrityIssue(
+							`${binding.kind === 'spill' ? 'Spill' : 'Blocked spill'} metadata at ${cellRef} points to a missing formula anchor`,
+							[cellRef, `${anchor.sheet}!${toA1({ row: anchor.row, col: anchor.col })}`],
+							{
+								kind: `${binding.kind}-anchor-mismatch`,
+								anchorRef: binding.anchorRef,
+								range: binding.ref,
+							},
+						),
+					)
+				}
+			}
+		}
+	}
+
 	return issues
 }
 
@@ -6535,6 +6735,7 @@ export function check(workbook: Workbook, analysis?: CheckAnalysis): CheckResult
 		...checkCircularRefs(workbook, dependencies),
 		...checkFormulaErrors(workbook, formulas),
 		...checkBlockedSpills(workbook, formulas),
+		...checkFormulaBindingIntegrity(workbook),
 		...checkOrphanedNames(workbook),
 		...checkMergeOverlaps(workbook),
 		...checkTableIntegrity(workbook),

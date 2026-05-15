@@ -191,6 +191,99 @@ describe('checker', () => {
 		expect(s.cells.get(0, 0)?.formulaInfo).toBeUndefined()
 	})
 
+	test('detects stale shared formula binding metadata', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.cells.set(0, 0, {
+			value: numberValue(4),
+			formula: null,
+			styleId: SID,
+			formulaInfo: {
+				kind: 'shared',
+				sharedIndex: '0',
+				isMaster: false,
+				masterRef: 'A1',
+			},
+		})
+
+		const result = check(wb)
+		const issue = result.issues.find((entry) => entry.rule === 'formula-binding-integrity')
+		expect(result.passed).toBe(false)
+		expect(issue).toMatchObject({
+			severity: 'error',
+			message: 'Shared formula metadata at Sheet1!A1 points to a missing or incompatible master',
+			refs: ['Sheet1!A1', 'Sheet1!A1'],
+			details: {
+				kind: 'shared-formula-master-mismatch',
+				sharedIndex: '0',
+				masterRef: 'A1',
+			},
+		})
+	})
+
+	test('detects stale spill binding metadata after anchor drift', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.cells.set(1, 0, {
+			value: numberValue(2),
+			formula: null,
+			styleId: SID,
+			formulaInfo: {
+				kind: 'spill',
+				anchorRef: 'Sheet1!A1',
+				ref: 'A1:A3',
+				isAnchor: false,
+			},
+		})
+
+		const result = check(wb)
+		const issue = result.issues.find((entry) => entry.rule === 'formula-binding-integrity')
+		expect(result.passed).toBe(false)
+		expect(issue).toMatchObject({
+			severity: 'error',
+			message: 'Spill metadata at Sheet1!A2 points to a missing formula anchor',
+			refs: ['Sheet1!A2', 'Sheet1!A1'],
+			details: {
+				kind: 'spill-anchor-mismatch',
+				anchorRef: 'Sheet1!A1',
+				range: 'A1:A3',
+			},
+		})
+	})
+
+	test('detects stale legacy array and data table binding ranges', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.cells.set(0, 0, {
+			value: numberValue(1),
+			formula: 'A1:A2*2',
+			styleId: SID,
+			formulaInfo: { kind: 'array', ref: 'B1:B2' },
+		})
+		s.cells.set(2, 2, {
+			value: numberValue(3),
+			formula: null,
+			styleId: SID,
+			formulaInfo: { kind: 'dataTable', ref: 'D3:D5', dtr: true, r1: 'A1' },
+		})
+
+		const result = check(wb)
+		const issues = result.issues.filter((entry) => entry.rule === 'formula-binding-integrity')
+		expect(result.passed).toBe(false)
+		expect(issues).toEqual([
+			expect.objectContaining({
+				message: 'Legacy array formula metadata at Sheet1!A1 has an invalid range',
+				refs: ['Sheet1!A1'],
+				details: { kind: 'legacy-array-invalid-range', range: 'B1:B2' },
+			}),
+			expect.objectContaining({
+				message: 'Data table formula metadata at Sheet1!C3 has an invalid range',
+				refs: ['Sheet1!C3'],
+				details: { kind: 'data-table-invalid-range', range: 'D3:D5' },
+			}),
+		])
+	})
+
 	test('detects circular refs', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')

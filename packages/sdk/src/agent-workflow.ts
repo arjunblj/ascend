@@ -1012,7 +1012,7 @@ export async function createPreparedAgentPlan(
 				wb,
 				ops,
 				{ ...commitOptions, expectSha256: commitOptions.expectSha256 ?? inputSha256 },
-				{ sourceBytes: source.sourceBytes },
+				{ sourceBytes: source.sourceBytes, planCheck: plan.check },
 			)
 			committed = true
 			return committedResult
@@ -1891,6 +1891,7 @@ export async function commitAgentPlanFromWorkbook(
 		readonly progress?: ReturnType<typeof createProgressEmitter>
 		readonly output?: string
 		readonly sourceBytes?: Uint8Array
+		readonly planCheck?: ReturnType<AscendWorkbook['check']>
 	} = {},
 ): Promise<AgentCommitResult> {
 	const progress = internal.progress ?? createProgressEmitter('commit', options.onProgress)
@@ -1910,6 +1911,11 @@ export async function commitAgentPlanFromWorkbook(
 	const output =
 		internal.output ?? (await resolveCommitOutputTarget(file, inputSha256, options, progress))
 	const writePolicyWorkbook = snapshotWritePolicyWorkbook(wb.getWorkbookModel())
+	const canReusePlanCheckBeforeApply = canReusePreparedCheckForValueCommit(
+		wb.getWorkbookModel(),
+		ops,
+		internal.planCheck,
+	)
 	const packageGraphResult = await timedCommitStep(() => wb.packageGraph())
 	const packageGraph = packageGraphResult.value
 	await progress('approval-audit', 'started', 'Auditing explicit approval requirements.')
@@ -1984,7 +1990,10 @@ export async function commitAgentPlanFromWorkbook(
 	const preservation = preservationResult.value
 	await progressFromPhase(preservationPhase(preservation), progress)
 	await progress('write-policy', 'started', 'Explaining write preservation and loss policy.')
-	const writePolicyCheckResult = await timedCommitStep(() => wb.check())
+	const writePolicyCheckResult =
+		canReusePlanCheckBeforeApply && workbookHasNoFormulas(wb.getWorkbookModel())
+			? { value: internal.planCheck as ReturnType<AscendWorkbook['check']>, ms: 0 }
+			: await timedCommitStep(() => wb.check())
 	const writePolicyCheck = writePolicyCheckResult.value
 	const writePolicyResult = await timedCommitStep(() =>
 		buildWritePolicyReport(
@@ -3553,6 +3562,25 @@ function snapshotWritePolicyWorkbook(workbook: Workbook): Workbook {
 	const snapshot = workbook.clone()
 	for (const sheet of snapshot.sheets) sheet.ensureWritable()
 	return snapshot
+}
+
+function canReusePreparedCheckForValueCommit(
+	workbook: Workbook,
+	operations: readonly Operation[],
+	planCheck: ReturnType<AscendWorkbook['check']> | undefined,
+): boolean {
+	return (
+		planCheck !== undefined &&
+		operations.length > 0 &&
+		operations.every((operation) => operation.op === 'setCells') &&
+		workbookHasNoFormulas(workbook)
+	)
+}
+
+function workbookHasNoFormulas(workbook: Workbook): boolean {
+	return workbook.sheets.every(
+		(sheet) => sheet.cells.formulaCellCount() === 0 && sheet.cells.formulaInfoCellCount() === 0,
+	)
 }
 
 function buildWritePolicyReport(

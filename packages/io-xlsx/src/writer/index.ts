@@ -728,7 +728,7 @@ export function planWriteXlsx(
 		const workbookCapsules: PreservationCapsule[] = []
 		const rewrittenLegacyCommentVmlXml = new Map<string, string>()
 		const liveQueryTablePartPaths = collectLiveQueryTablePartPaths(workbook)
-		let nextGeneratedTableNumber = 1
+		let nextGeneratedTableNumber = nextGeneratedTablePartNumber(workbook, capsules ?? [])
 		let nextGeneratedCommentsNumber = 1
 		let nextGeneratedVmlNumber = 1
 		let nextGeneratedDrawingNumber = 1
@@ -3376,6 +3376,23 @@ function buildGeneratedExternalLinkRelationships(
 		]
 	}
 	return []
+}
+
+function nextGeneratedTablePartNumber(
+	workbook: Workbook,
+	capsules: readonly PreservationCapsule[],
+): number {
+	let next = 1
+	const visit = (partPath: string | undefined) => {
+		const match = /^xl\/tables\/table(\d+)\.xml$/i.exec(partPath ?? '')
+		if (!match) return
+		next = Math.max(next, Number(match[1]) + 1)
+	}
+	for (const capsule of capsules) visit(capsule.partPath)
+	for (const sheet of workbook.sheets) {
+		for (const table of sheet.tables) visit(table.partPath)
+	}
+	return next
 }
 
 function computeRelativePath(fromDir: string, toPath: string): string {

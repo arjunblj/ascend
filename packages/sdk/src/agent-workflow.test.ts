@@ -5493,6 +5493,79 @@ describe('agent workflow loss audit', () => {
 		})
 	})
 
+	test('prepared copySheet commits reopen workbook-unique table identities and copied structured refs', async () => {
+		const input = join(TEMP_DIR, 'prepared-copy-sheet-table.xlsx')
+		const output = join(TEMP_DIR, 'prepared-copy-sheet-table-out.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'Region' },
+					{ ref: 'B1', value: 'Amount' },
+					{ ref: 'A2', value: 'West' },
+					{ ref: 'B2', value: 10 },
+				],
+			},
+			{
+				op: 'createTable',
+				sheet: 'Sheet1',
+				ref: 'A1:B2',
+				name: 'Sales',
+				hasHeaders: true,
+			},
+			{ op: 'setFormula', sheet: 'Sheet1', ref: 'C2', formula: 'SUM(Sales[Amount])' },
+		])
+		const sheet = wb.getWorkbookModel().getSheet('Sheet1')
+		if (!sheet) throw new Error('missing Sheet1')
+		wb.getWorkbookModel().definedNames.add('LocalSales', 'SUM(Sales[Amount])', {
+			kind: 'sheet',
+			sheetId: sheet.id,
+		})
+		expect(wb.recalc().errors).toEqual([])
+		await wb.save(input)
+
+		const prepared = await createPreparedAgentPlan(input, [
+			{ op: 'copySheet' as const, sheet: 'Sheet1', newName: 'Copy' },
+		])
+		expect(prepared.plan.preview.journal?.issues).toContainEqual(
+			expect.objectContaining({
+				surface: 'package-parts',
+				reason: 'package-part-preservation',
+				refs: ['sheet:Sheet1', 'sheet:Copy'],
+			}),
+		)
+
+		const committed = await prepared.commit({
+			output,
+			approvals: prepared.plan.approvals.map((approval) => approval.id),
+		})
+		expect(committed.postWrite.valid).toBe(true)
+		expect(committed.postWrite.check.valid).toBe(true)
+		expect(committed.postWrite.auditsPassed).toBe(false)
+		expect(committed.postWrite.packageGraphAudit.issues).toContainEqual(
+			expect.objectContaining({
+				code: 'package_content_type_override',
+				partPath: 'xl/tables/table2.xml',
+				featureFamily: 'preservedTable',
+			}),
+		)
+
+		const reopened = await AscendWorkbook.open(output)
+		expect(reopened.check().valid).toBe(true)
+		const source = reopened.getWorkbookModel().getSheet('Sheet1')
+		const copy = reopened.getWorkbookModel().getSheet('Copy')
+		expect(source?.tables[0]?.name).toBe('Sales')
+		expect(copy?.tables[0]?.name).toBe('Sales_1')
+		expect(copy?.tables[0]?.id).not.toBe(source?.tables[0]?.id)
+		expect(reopened.formula('Copy!C2')?.normalizedFormula).toBe('SUM(Sales_1[Amount])')
+		expect(
+			reopened.getWorkbookModel().definedNames.resolve('LocalSales', copy?.id, copy?.id)?.formula,
+		).toBe('SUM(Sales_1[Amount])')
+	})
+
 	test('prepared agent commits surface post-write audit failures as blocking model output', async () => {
 		const input = join(TEMP_DIR, 'prepared-preserved.xlsx')
 		const output = join(TEMP_DIR, 'prepared-preserved-out.xlsx')

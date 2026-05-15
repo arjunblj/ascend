@@ -2408,6 +2408,38 @@ describe('applyOperation', () => {
 		)
 	})
 
+	test('setSparklineGroup rejects invalid public metadata before mutation', () => {
+		const cases: readonly Operation[] = [
+			{ op: 'setSparklineGroup', sheet: 'Sheet1', groupIndex: 0, range: 'A1:' },
+			{ op: 'setSparklineGroup', sheet: 'Sheet1', groupIndex: 0, locationRange: ':B2' },
+			{ op: 'setSparklineGroup', sheet: 'Sheet1', groupIndex: 0, type: '  ' },
+			{
+				op: 'setSparklineGroup',
+				sheet: 'Sheet1',
+				groupIndex: 0,
+				markers: 'yes',
+			} as unknown as Operation,
+		]
+
+		for (const op of cases) {
+			const wb = setup()
+			const sheet = wb.getSheet('Sheet1')
+			if (!sheet) throw new Error('missing sheet')
+			sheet.sparklineGroups.push({
+				groupIndex: 0,
+				type: 'line',
+				range: 'Sheet1!B2:B4',
+				locationRange: 'D2:D4',
+				count: 1,
+			})
+			const before = JSON.stringify(sheet.sparklineGroups)
+			const result = applyOperation(wb, op)
+			expectErr(result)
+			expect(result.error.code, JSON.stringify(op)).toBe('VALIDATION_ERROR')
+			expect(JSON.stringify(sheet.sparklineGroups), JSON.stringify(op)).toBe(before)
+		}
+	})
+
 	test('setAdvancedFilter updates custom sheet view criteria and sort metadata', () => {
 		const wb = setup()
 		const sheet = wb.getSheet('Sheet1')

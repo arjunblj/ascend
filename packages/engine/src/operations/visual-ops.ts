@@ -2,7 +2,7 @@ import { Buffer } from 'node:buffer'
 import type { SheetSparklineGroupInfo, Workbook } from '@ascend/core'
 import type { Operation, Result } from '@ascend/schema'
 import { ascendError, err, ok } from '@ascend/schema'
-import { getSheet, type PatchResult, patch } from './helpers.ts'
+import { getSheet, type PatchResult, patch, safeParseRange } from './helpers.ts'
 
 type ReplaceImageOp = Extract<Operation, { op: 'replaceImage' }>
 type InsertImageOp = Extract<Operation, { op: 'insertImage' }>
@@ -157,6 +157,8 @@ export function handleSetSparklineGroup(
 			}),
 		)
 	}
+	const valueValidation = validateSparklineGroupUpdateValues(op)
+	if (!valueValidation.ok) return valueValidation
 	const index = sheet.sparklineGroups.findIndex((group) => group.groupIndex === op.groupIndex)
 	if (index < 0) {
 		return missingSparklineGroupError()
@@ -443,6 +445,48 @@ function hasSparklineGroupUpdate(op: SetSparklineGroupOp): boolean {
 		op.negative !== undefined ||
 		op.displayXAxis !== undefined
 	)
+}
+
+function validateSparklineGroupUpdateValues(op: SetSparklineGroupOp): Result<undefined> {
+	for (const [field, value] of [
+		['range', op.range],
+		['locationRange', op.locationRange],
+	] as const) {
+		if (value === undefined) continue
+		const parsed = safeParseRange(value)
+		if (!parsed.ok) {
+			return err(
+				ascendError('VALIDATION_ERROR', `setSparklineGroup ${field} must be a valid A1 range`, {
+					suggestedFix: `Provide ${field} as a valid A1 range such as A1:A5.`,
+				}),
+			)
+		}
+	}
+	if (op.type !== undefined && op.type.trim() === '') {
+		return err(
+			ascendError('VALIDATION_ERROR', 'setSparklineGroup type must be non-empty', {
+				suggestedFix: 'Omit type to preserve it or provide a non-empty sparkline type.',
+			}),
+		)
+	}
+	for (const [field, value] of [
+		['markers', op.markers],
+		['highPoint', op.highPoint],
+		['lowPoint', op.lowPoint],
+		['firstPoint', op.firstPoint],
+		['lastPoint', op.lastPoint],
+		['negative', op.negative],
+		['displayXAxis', op.displayXAxis],
+	] as const) {
+		if (value !== undefined && typeof value !== 'boolean') {
+			return err(
+				ascendError('VALIDATION_ERROR', `setSparklineGroup ${field} must be a boolean`, {
+					suggestedFix: `Use true or false for ${field}.`,
+				}),
+			)
+		}
+	}
+	return ok(undefined)
 }
 
 function sameSheetName(left: string, right: string): boolean {

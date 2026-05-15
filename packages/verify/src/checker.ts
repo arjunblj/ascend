@@ -810,6 +810,28 @@ function checkFormulaBindingIntegrity(wb: Workbook): CheckIssue[] {
 						),
 					)
 				}
+				if (
+					!binding.isMaster &&
+					masterCell?.formulaInfo?.kind === 'shared' &&
+					masterCell.formulaInfo.isMaster &&
+					masterCell.formulaInfo.sharedIndex === binding.sharedIndex
+				) {
+					const sharedRange = parseBindingRange(masterCell.formulaInfo.ref, master.sheet)
+					if (!sharedRange || !rangeContainsCell(sharedRange, sheet.name, row, col)) {
+						issues.push(
+							formulaBindingIntegrityIssue(
+								`Shared formula metadata at ${cellRef} is outside its master range`,
+								[cellRef, `${master.sheet}!${toA1({ row: master.row, col: master.col })}`],
+								{
+									kind: 'shared-formula-member-outside-master-range',
+									sharedIndex: binding.sharedIndex,
+									masterRef: binding.masterRef,
+									range: masterCell.formulaInfo.ref,
+								},
+							),
+						)
+					}
+				}
 				if (binding.isMaster) {
 					const sharedRange = parseBindingRange(binding.ref, sheet.name)
 					if (!cell.formula) {

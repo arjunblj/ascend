@@ -4367,7 +4367,7 @@ describe('applyOperation', () => {
 		wb.definedNames.set('LocalBudget', 'Sheet2!A1', { kind: 'sheet', sheetId: sheet2.id })
 		wb.pivotTables.push({
 			partPath: 'xl/pivotTables/pivotTable1.xml',
-			sheetName: 'Sheet2',
+			sheetName: 'sheet2',
 			name: 'PivotTable1',
 			cacheId: 4,
 			locationRef: 'A1',
@@ -6252,13 +6252,13 @@ describe('applyOperation', () => {
 		wb.addSheet('Sheet1')
 		wb.chartParts.push({
 			partPath: 'xl/charts/chart1.xml',
-			sheetName: 'Sheet1',
+			sheetName: 'sheet1',
 			chartType: 'lineChart',
 			series: [
 				{
-					nameRef: 'Sheet1!$B$1',
-					categoryRef: 'Sheet1!$A$2:$A$4',
-					valueRef: 'Sheet1!$B$2:$B$4',
+					nameRef: 'sheet1!$B$1',
+					categoryRef: 'sheet1!$A$2:$A$4',
+					valueRef: 'sheet1!$B$2:$B$4',
 				},
 			],
 		})
@@ -6290,7 +6290,7 @@ describe('applyOperation', () => {
 			},
 			{
 				partPath: 'xl/charts/chart2.xml',
-				sheetName: 'Sheet2',
+				sheetName: 'sheet2',
 				series: [{ valueRef: 'Sheet2!$A$1:$A$3' }],
 			},
 		)
@@ -6333,13 +6333,13 @@ describe('applyOperation', () => {
 		})
 		wb.chartParts.push({
 			partPath: 'xl/charts/chart1.xml',
-			sheetName: 'Sheet1',
+			sheetName: 'sheet1',
 			chartType: 'barChart',
 			series: [
 				{
-					nameRef: 'Sheet1!$B$1',
-					categoryRef: 'Sheet1!$A$2:$A$4',
-					valueRef: 'Sheet1!$B$2:$B$4',
+					nameRef: 'sheet1!$B$1',
+					categoryRef: 'sheet1!$A$2:$A$4',
+					valueRef: 'sheet1!$B$2:$B$4',
 				},
 			],
 		})

@@ -49,7 +49,7 @@ export function handleDeleteSheet(
 		)
 	}
 	const removedPivotNames = workbook.pivotTables
-		.filter((entry) => entry.sheetName === op.sheet)
+		.filter((entry) => sameSheetName(entry.sheetName, op.sheet))
 		.map((entry) => entry.name)
 		.filter((name): name is string => Boolean(name))
 	workbook.removeSheet(op.sheet)
@@ -413,7 +413,8 @@ function removeWorkbookMetadataForDeletedSheet(
 	removedPivotNames: readonly string[],
 ): void {
 	for (let index = workbook.pivotTables.length - 1; index >= 0; index--) {
-		if (workbook.pivotTables[index]?.sheetName === sheetName) {
+		const pivot = workbook.pivotTables[index]
+		if (pivot && sameSheetName(pivot.sheetName, sheetName)) {
 			workbook.pivotTables.splice(index, 1)
 		}
 	}
@@ -447,7 +448,8 @@ function removeWorkbookMetadataForDeletedSheet(
 
 function removeChartsForDeletedSheet(workbook: Workbook, sheetName: string): void {
 	for (let index = workbook.chartParts.length - 1; index >= 0; index--) {
-		if (workbook.chartParts[index]?.sheetName === sheetName) {
+		const chart = workbook.chartParts[index]
+		if (chart?.sheetName && sameSheetName(chart.sheetName, sheetName)) {
 			workbook.chartParts.splice(index, 1)
 		}
 	}
@@ -564,7 +566,9 @@ function rewriteChartSheetReferencesForRename(
 		if (!chart) continue
 		workbook.chartParts[index] = {
 			...chart,
-			...(chart.sheetName === oldName ? { sheetName: newName } : {}),
+			...(chart.sheetName !== undefined && sameSheetName(chart.sheetName, oldName)
+				? { sheetName: newName }
+				: {}),
 			series: chart.series.map((series) => ({
 				...series,
 				...(series.nameRef !== undefined
@@ -588,7 +592,9 @@ function cloneChartsForCopiedSheet(
 ): Map<string, string> {
 	const pathMap = new Map<string, string>()
 	const copiedCharts = workbook.chartParts
-		.filter((chart) => chart.sheetName === sourceSheetName)
+		.filter(
+			(chart) => chart.sheetName !== undefined && sameSheetName(chart.sheetName, sourceSheetName),
+		)
 		.map((chart) => {
 			const partPath = nextChartPartPath(workbook, pathMap)
 			pathMap.set(chart.partPath, partPath)
@@ -622,6 +628,10 @@ function cloneChartsForCopiedSheet(
 		})
 	workbook.chartParts.push(...copiedCharts)
 	return pathMap
+}
+
+function sameSheetName(left: string, right: string): boolean {
+	return left.toLowerCase() === right.toLowerCase()
 }
 
 function rewriteChartSeriesRef(ref: string, oldName: string, newName: string): string {

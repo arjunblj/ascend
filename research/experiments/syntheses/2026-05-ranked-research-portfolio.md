@@ -231,6 +231,8 @@ Current gate:
 | Compact report embeds workbook bytes | no | no |
 | Compact JSON bytes | 3755 | 4258 |
 
+Compact publication evidence now lives in `release-proof-index --owner-handoffs-json` as `compactReportPublicationEvidence`. Current local probe reports compact report digests indexed `false`, forbidden payload fields embedded `false`, `generatedAt` included `true`, and missing policy requirements for artifact storage path, retention/privacy filtering, canonicalization subject, and offline verification expectations.
+
 Decision: keep compact report publication at rank 6 under release proof index, not as a new product claim. Compact report commands are useful local proof pointers; compact report digests remain do-not-promote until storage, privacy filtering, canonicalization, and verification expectations are owner-approved.
 
 ## Next Proof Moves

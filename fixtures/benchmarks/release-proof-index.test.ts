@@ -226,6 +226,46 @@ describe('release proof evidence index', () => {
 			proofChecks: expect.arrayContaining([expect.stringContaining('fails closed')]),
 			allowedWording: expect.stringContaining('explicit unknown-part error'),
 		})
+		expect(index.compactReportPublicationEvidence).toMatchObject({
+			ownerLoop: 'release',
+			status: 'local-summary-present-publication-policy-required',
+			ownerApprovalRequired: true,
+			compactReportDigestsIndexed: false,
+			allCompactCommandsPresent: true,
+			compactReportsEmbedForbiddenPayloadFields: false,
+			generatedAtIncluded: true,
+			missingPolicyRequirements: [
+				'artifact storage path',
+				'retention and privacy filtering',
+				'canonicalization subject',
+				'offline verification expectations',
+			],
+			boundary: expect.stringContaining('does not publish compact report digests'),
+		})
+		expect(index.compactReportPublicationEvidence.reports.map((item) => item.artifact)).toEqual([
+			'safe-open-proof',
+			'package-action-proof',
+		])
+		expect(index.compactReportPublicationEvidence.reports[0]).toMatchObject({
+			gateId: 'compact-report-publication-policy',
+			command: 'bun run fixtures/benchmarks/safe-open-proof.ts --no-timings --compact-json',
+			forbiddenPayloadFieldsPresent: [],
+			readyWhenGatePresent: true,
+			generatedAtIncluded: true,
+			headlineClaimAllowed: false,
+			releaseGate: 'blocked-by-publication-policy',
+		})
+		expect(index.compactReportPublicationEvidence.reports[1]).toMatchObject({
+			gateId: 'compact-report-publication-policy',
+			command: 'bun run fixtures/benchmarks/package-action-proof.ts --no-timings --compact-json',
+			forbiddenPayloadFieldsPresent: [],
+			readyWhenGatePresent: true,
+			generatedAtIncluded: true,
+			headlineClaimAllowed: false,
+			releaseGate: 'blocked-by-publication-policy',
+		})
+		expect(index.compactReportPublicationEvidence.reports[0].topLevelFields).toContain('cases')
+		expect(index.compactReportPublicationEvidence.reports[1].topLevelFields).toContain('coverage')
 		expect(index.artifacts.map((artifact) => artifact.name)).toEqual([
 			'safe-open-proof',
 			'package-action-proof',
@@ -628,6 +668,20 @@ describe('release proof evidence index', () => {
 		expect(JSON.stringify(handoff.performancePolicy)).toContain('safe-open-proof.ts --repeat 3')
 		expect(JSON.stringify(handoff.correctnessPolicy)).toContain('signature preservation')
 		expect(JSON.stringify(handoff.correctnessBoundaryEvidence)).toContain('safe-open-proof/activex')
+		expect(handoff.compactReportPublicationEvidence).toMatchObject({
+			status: 'local-summary-present-publication-policy-required',
+			compactReportDigestsIndexed: false,
+			allCompactCommandsPresent: true,
+			compactReportsEmbedForbiddenPayloadFields: false,
+			ownerApprovalRequired: true,
+		})
+		expect(handoff.compactReportPublicationEvidence.reports.map((item) => item.artifact)).toEqual([
+			'safe-open-proof',
+			'package-action-proof',
+		])
+		expect(JSON.stringify(handoff.compactReportPublicationEvidence)).toContain(
+			'offline verification expectations',
+		)
 		expect(handoff.nextOwnerActions[0]).toMatchObject({
 			requirementId: 'edge-fixture-policy',
 			acceptanceEvidence: expect.stringContaining('accepts disclosed generated'),
@@ -759,6 +813,16 @@ describe('release proof evidence index', () => {
 		expect(markdown).toContain('| macros-activex | true | package-action-proof/macro-passthrough')
 		expect(markdown).toContain('safe-open-proof/activex')
 		expect(markdown).toContain('post-write audit fails closed')
+		expect(markdown).toContain('## Compact Report Publication Evidence')
+		expect(markdown).toContain('Status: local-summary-present-publication-policy-required')
+		expect(markdown).toContain('Compact report digests indexed: false')
+		expect(markdown).toContain('Forbidden payload fields embedded: false')
+		expect(markdown).toContain('GeneratedAt included: true')
+		expect(markdown).toContain('Missing publication policy requirements:')
+		expect(markdown).toContain('offline verification expectations')
+		expect(markdown).toContain('| safe-open-proof | compact-report-publication-policy')
+		expect(markdown).toContain('| package-action-proof | compact-report-publication-policy')
+		expect(markdown).toContain('does not publish compact report digests')
 		expect(markdown).toContain(
 			'| Rank | Artifact | Gate | Owner loop | Priority | Next step | Acceptance evidence | Forbidden shortcut |',
 		)

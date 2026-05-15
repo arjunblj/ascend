@@ -5,16 +5,20 @@ import {
 	runPackageActionFixtureScan,
 } from './package-action-fixture-scan.ts'
 import {
+	type PackageActionCompactReleaseReport,
 	type PackageActionProofCaseResult,
 	type PackageActionProofResult,
+	packageActionCompactReleaseReport,
 	packageActionProofMarkdown,
 	runPackageActionProof,
 } from './package-action-proof.ts'
 import { runSafeOpenFixtureScan, type SafeOpenFixtureScanResult } from './safe-open-fixture-scan.ts'
 import {
 	runSafeOpenProof,
+	type SafeOpenCompactReleaseReport,
 	type SafeOpenProofCaseResult,
 	type SafeOpenProofResult,
+	safeOpenCompactReleaseReport,
 	safeOpenProofMarkdown,
 } from './safe-open-proof.ts'
 
@@ -82,6 +86,33 @@ export interface ReleaseProofIndexExcludedEvidence {
 	readonly boundary: string
 }
 
+export interface ReleaseProofCompactReportPublicationEvidence {
+	readonly ownerLoop: 'release'
+	readonly status: 'local-summary-present-publication-policy-required'
+	readonly ownerApprovalRequired: true
+	readonly compactReportDigestsIndexed: false
+	readonly allCompactCommandsPresent: boolean
+	readonly compactReportsEmbedForbiddenPayloadFields: boolean
+	readonly generatedAtIncluded: boolean
+	readonly missingPolicyRequirements: readonly string[]
+	readonly reports: readonly ReleaseProofCompactReportPublicationEvidenceItem[]
+	readonly boundary: string
+}
+
+export interface ReleaseProofCompactReportPublicationEvidenceItem {
+	readonly artifact: ReleaseProofIndexArtifactName
+	readonly gateId: 'compact-report-publication-policy'
+	readonly command: string
+	readonly jsonBytes: number
+	readonly topLevelFields: readonly string[]
+	readonly forbiddenPayloadFieldsPresent: readonly string[]
+	readonly readyWhenGatePresent: boolean
+	readonly generatedAtIncluded: boolean
+	readonly headlineClaimAllowed: false
+	readonly releaseGate: 'blocked-by-publication-policy'
+	readonly boundary: string
+}
+
 export interface ReleaseProofIndexResult {
 	readonly generatedAt: string
 	readonly artifactCount: number
@@ -94,6 +125,7 @@ export interface ReleaseProofIndexResult {
 	readonly performancePolicy: ReleaseProofPerformancePolicy
 	readonly correctnessPolicy: ReleaseProofCorrectnessPolicy
 	readonly correctnessBoundaryEvidence: ReleaseProofCorrectnessBoundaryEvidence
+	readonly compactReportPublicationEvidence: ReleaseProofCompactReportPublicationEvidence
 	readonly readiness: ReleaseProofReadinessSummary
 	readonly boundary: string
 	readonly artifacts: readonly ReleaseProofIndexArtifact[]
@@ -112,6 +144,7 @@ export interface ReleaseProofOwnerHandoffIndex {
 	readonly performancePolicy: ReleaseProofPerformancePolicy
 	readonly correctnessPolicy: ReleaseProofCorrectnessPolicy
 	readonly correctnessBoundaryEvidence: ReleaseProofCorrectnessBoundaryEvidence
+	readonly compactReportPublicationEvidence: ReleaseProofCompactReportPublicationEvidence
 	readonly nextOwnerActions: readonly ReleaseProofNextOwnerAction[]
 	readonly implementationHandoffs: readonly ReleaseProofImplementationHandoff[]
 	readonly deferredClaims: readonly ReleaseProofDeferredClaim[]
@@ -576,6 +609,8 @@ export async function runReleaseProofIndex(
 	const packageAction = await runPackageActionProof({ includeTimings })
 	const safeOpenFixtureScan = runSafeOpenFixtureScan()
 	const packageActionFixtureScan = runPackageActionFixtureScan()
+	const safeOpenCompact = safeOpenCompactReleaseReport(safeOpen)
+	const packageActionCompact = packageActionCompactReleaseReport(packageAction)
 	const artifacts = [
 		safeOpenArtifact(safeOpen, includeTimings),
 		packageActionArtifact(packageAction, includeTimings),
@@ -592,6 +627,11 @@ export async function runReleaseProofIndex(
 		performancePolicy: clonePerformancePolicy(),
 		correctnessPolicy: cloneCorrectnessPolicy(),
 		correctnessBoundaryEvidence: correctnessBoundaryEvidence(safeOpen, packageAction),
+		compactReportPublicationEvidence: compactReportPublicationEvidence(
+			safeOpenCompact,
+			packageActionCompact,
+			artifacts,
+		),
 		readiness: releaseReadinessSummary(artifacts),
 		boundary:
 			'Digest index for local release evidence artifacts. This is not signed provenance, SLSA, in-toto attestation, or tamper-evident storage.',
@@ -717,6 +757,27 @@ export function releaseProofIndexMarkdown(result: ReleaseProofIndexResult): stri
 		'| --- | --- | --- | --- | --- | --- |',
 		...result.correctnessBoundaryEvidence.featureChecks.map(correctnessBoundaryEvidenceMarkdownRow),
 		'',
+		'## Compact Report Publication Evidence',
+		'',
+		`Status: ${result.compactReportPublicationEvidence.status}`,
+		`Compact report digests indexed: ${result.compactReportPublicationEvidence.compactReportDigestsIndexed}`,
+		`All compact commands present: ${result.compactReportPublicationEvidence.allCompactCommandsPresent}`,
+		`Forbidden payload fields embedded: ${result.compactReportPublicationEvidence.compactReportsEmbedForbiddenPayloadFields}`,
+		`GeneratedAt included: ${result.compactReportPublicationEvidence.generatedAtIncluded}`,
+		`Owner approval required: ${result.compactReportPublicationEvidence.ownerApprovalRequired}`,
+		result.compactReportPublicationEvidence.boundary,
+		'',
+		'Missing publication policy requirements:',
+		...result.compactReportPublicationEvidence.missingPolicyRequirements.map(
+			(entry) => `- ${entry}`,
+		),
+		'',
+		'| Artifact | Gate | Command | JSON bytes | Top-level fields | Forbidden payload fields | ReadyWhen gate present | GeneratedAt included | Headline claim allowed | Release gate | Boundary |',
+		'| --- | --- | --- | ---: | --- | --- | --- | --- | --- | --- | --- |',
+		...result.compactReportPublicationEvidence.reports.map(
+			compactReportPublicationEvidenceMarkdownRow,
+		),
+		'',
 		'## Excluded Evidence',
 		'',
 		'| Evidence | Command | Reason | Eligibility rule | Owner loop | Boundary |',
@@ -749,6 +810,9 @@ export function releaseProofOwnerHandoffIndex(
 		correctnessPolicy: cloneCorrectnessPolicy(),
 		correctnessBoundaryEvidence: cloneCorrectnessBoundaryEvidence(
 			result.correctnessBoundaryEvidence,
+		),
+		compactReportPublicationEvidence: cloneCompactReportPublicationEvidence(
+			result.compactReportPublicationEvidence,
 		),
 		nextOwnerActions: result.readiness.nextOwnerActions,
 		implementationHandoffs: result.readiness.implementationHandoffs,
@@ -1212,6 +1276,91 @@ function safeOpenRiskRoutedToReview(
 		proofCase.reviewBeforeHydration === true &&
 		proofCase.riskFamilies.includes(riskFamily)
 	)
+}
+
+const COMPACT_REPORT_FORBIDDEN_PAYLOAD_FIELDS = new Set([
+	'inputBytes',
+	'outputBytes',
+	'inputSha256',
+	'sourceSha256',
+	'outputSha256',
+	'sha256',
+	'stableShapeSha256',
+	'proofJsonBytes',
+	'streamingRegeneratePartPaths',
+])
+
+function compactReportPublicationEvidence(
+	safeOpen: SafeOpenCompactReleaseReport,
+	packageAction: PackageActionCompactReleaseReport,
+	artifacts: readonly ReleaseProofIndexArtifact[],
+): ReleaseProofCompactReportPublicationEvidence {
+	const reports = [
+		compactReportPublicationEvidenceItem('safe-open-proof', safeOpen, artifacts),
+		compactReportPublicationEvidenceItem('package-action-proof', packageAction, artifacts),
+	]
+	return {
+		ownerLoop: 'release',
+		status: 'local-summary-present-publication-policy-required',
+		ownerApprovalRequired: true,
+		compactReportDigestsIndexed: false,
+		allCompactCommandsPresent: reports.every((report) => report.command.length > 0),
+		compactReportsEmbedForbiddenPayloadFields: reports.some(
+			(report) => report.forbiddenPayloadFieldsPresent.length > 0,
+		),
+		generatedAtIncluded: reports.every((report) => report.generatedAtIncluded),
+		missingPolicyRequirements: [
+			'artifact storage path',
+			'retention and privacy filtering',
+			'canonicalization subject',
+			'offline verification expectations',
+		],
+		reports,
+		boundary:
+			'Compact report publication evidence proves only that local claim-safe summaries exist. It does not publish compact report digests, define artifact storage, canonicalize bytes, or create signed provenance.',
+	}
+}
+
+function compactReportPublicationEvidenceItem(
+	artifact: ReleaseProofIndexArtifactName,
+	report: SafeOpenCompactReleaseReport | PackageActionCompactReleaseReport,
+	artifacts: readonly ReleaseProofIndexArtifact[],
+): ReleaseProofCompactReportPublicationEvidenceItem {
+	const readyWhenGatePresent =
+		artifacts
+			.find((entry) => entry.name === artifact)
+			?.readyWhen.some((entry) => entry.id === 'compact-report-publication-policy') ?? false
+	return {
+		artifact,
+		gateId: 'compact-report-publication-policy',
+		command: report.command,
+		jsonBytes: utf8Bytes(JSON.stringify(report)),
+		topLevelFields: Object.keys(report).sort(),
+		forbiddenPayloadFieldsPresent: compactReportForbiddenPayloadFields(report),
+		readyWhenGatePresent,
+		generatedAtIncluded: typeof report.generatedAt === 'string' && report.generatedAt.length > 0,
+		headlineClaimAllowed: report.headlineClaimAllowed,
+		releaseGate: report.releaseGate,
+		boundary: report.boundary,
+	}
+}
+
+function compactReportForbiddenPayloadFields(value: unknown): string[] {
+	const found = new Set<string>()
+	collectForbiddenCompactReportFields(value, found)
+	return Array.from(found).sort()
+}
+
+function collectForbiddenCompactReportFields(value: unknown, found: Set<string>): void {
+	if (Array.isArray(value)) {
+		for (const item of value) collectForbiddenCompactReportFields(item, found)
+		return
+	}
+	if (value === null || typeof value !== 'object') return
+	for (const [key, nested] of Object.entries(value)) {
+		if (COMPACT_REPORT_FORBIDDEN_PAYLOAD_FIELDS.has(key)) found.add(key)
+		collectForbiddenCompactReportFields(nested, found)
+	}
 }
 
 function markdownRow(row: ReleaseProofIndexArtifact): string {
@@ -1895,6 +2044,42 @@ function cloneCorrectnessBoundaryEvidence(
 			...entry,
 			evidenceSources: [...entry.evidenceSources],
 			proofChecks: [...entry.proofChecks],
+		})),
+	}
+}
+
+function compactReportPublicationEvidenceMarkdownRow(
+	row: ReleaseProofCompactReportPublicationEvidenceItem,
+): string {
+	return [
+		row.artifact,
+		row.gateId,
+		`\`${row.command}\``,
+		String(row.jsonBytes),
+		row.topLevelFields.join(','),
+		row.forbiddenPayloadFieldsPresent.join(',') || 'none',
+		String(row.readyWhenGatePresent),
+		String(row.generatedAtIncluded),
+		String(row.headlineClaimAllowed),
+		row.releaseGate,
+		row.boundary,
+	]
+		.map((cell) => ` ${cell} `)
+		.join('|')
+		.replace(/^/, '|')
+		.replace(/$/, '|')
+}
+
+function cloneCompactReportPublicationEvidence(
+	evidence: ReleaseProofCompactReportPublicationEvidence,
+): ReleaseProofCompactReportPublicationEvidence {
+	return {
+		...evidence,
+		missingPolicyRequirements: [...evidence.missingPolicyRequirements],
+		reports: evidence.reports.map((report) => ({
+			...report,
+			topLevelFields: [...report.topLevelFields],
+			forbiddenPayloadFieldsPresent: [...report.forbiddenPayloadFieldsPresent],
 		})),
 	}
 }

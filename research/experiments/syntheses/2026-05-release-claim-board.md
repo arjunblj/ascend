@@ -294,6 +294,8 @@ Boundary decision: keep `streaming-matrix-boundary` missing until a performance 
 
 Compact-report publication policy audit: both top artifacts now have compact report commands, but compact report digests are intentionally not indexed. Current local probe confirms `safe-open-proof` and `package-action-proof` each have a `compactReportCommand`, each carry `compact-report-publication-policy(missing,release)`, neither artifact includes a compact digest field, and neither compact report embeds workbook bytes. This is the correct pre-publication state because RFC 8785-style canonicalization, artifact storage, retention/privacy filtering, and offline verification expectations are release policy decisions, not research defaults.
 
+Machine-readable handoff: `releaseProofOwnerHandoffIndex.compactReportPublicationEvidence` now records compact report command presence, JSON byte sizes, top-level fields, forbidden payload field scan results, and the missing publication policy requirements. Current result: compact report digests indexed `false`, forbidden payload fields embedded `false`, `generatedAt` included `true`, and owner approval required `true`.
+
 | Publication boundary | Current proof evidence | Allowed wording | Forbidden wording |
 | --- | --- | --- | --- |
 | Compact command pointer | Release index includes compact report commands for both top artifacts. | "Compact report commands reproduce claim-safe summaries locally." | "Compact reports are published release evidence artifacts." |

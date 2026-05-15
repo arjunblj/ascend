@@ -1308,6 +1308,10 @@ describe('mutation journal exactness model', () => {
 				.filter((issue) => issue.surface === 'data-tables')
 				.every((issue) => issue.reason === 'formula-binding-metadata'),
 		).toBe(true)
+
+		const reopened = await AscendWorkbook.open(wb.toBytes())
+		expect(collectFormulaInfoRefs(reopened, '1D Row')).toEqual([])
+		expect(cellFormulas(reopened, '1D Row', ['C4', 'C6'])).toEqual({ C4: null, C6: null })
 	})
 
 	test('real XLSX multi-axis shared formula edits materialize sibling formulas', async () => {

@@ -759,7 +759,7 @@ export class AscendWorkbook extends WorkbookReadView {
 		this.advanceApplyGenerations(ops, dirtyFlags, result.value)
 		this.markDirty()
 		for (const sheetName of result.value.sheetsModified) this.dirtySheets.add(sheetName)
-		this.mergePendingDirtyCellRefs(ops)
+		this.mergePendingDirtyCellRefs(ops, result.value)
 		this.workbookMetaDirty ||= dirtyFlags.workbookMetaDirty
 		this.documentPropertiesDirty ||= dirtyFlags.documentPropertiesDirty
 		this.calcStateDirty ||= dirtyFlags.calcStateDirty || result.value.recalcRequired
@@ -869,7 +869,7 @@ export class AscendWorkbook extends WorkbookReadView {
 		this.wb = nextWorkbook
 		this.markDirty()
 		for (const sheetName of result.value.sheetsModified) this.dirtySheets.add(sheetName)
-		this.mergePendingDirtyCellRefs(opsOrFn)
+		this.mergePendingDirtyCellRefs(opsOrFn, result.value)
 		this.workbookMetaDirty ||= dirtyFlags.workbookMetaDirty
 		this.documentPropertiesDirty ||= dirtyFlags.documentPropertiesDirty
 		this.calcStateDirty ||= dirtyFlags.calcStateDirty || result.value.recalcRequired
@@ -1688,7 +1688,7 @@ export class AscendWorkbook extends WorkbookReadView {
 		}
 	}
 
-	private mergePendingDirtyCellRefs(ops: readonly Operation[]): void {
+	private mergePendingDirtyCellRefs(ops: readonly Operation[], applyResult?: PatchResult): void {
 		const refsBySheet = new Map<string, Set<string>>()
 		for (const op of ops) {
 			if (op.op !== 'setCells') {
@@ -1705,6 +1705,44 @@ export class AscendWorkbook extends WorkbookReadView {
 				if (!ref) {
 					this.pendingDirtyCellRefs.clear()
 					return
+				}
+				refs.add(`${indexToColumn(ref.col)}${ref.row + 1}`)
+			}
+		}
+		if (applyResult) {
+			for (const affected of applyResult.affectedCells) {
+				if (affected.includes('!')) {
+					const parsed = splitFullRef(affected, this.wb)
+					if (!parsed) {
+						this.pendingDirtyCellRefs.clear()
+						return
+					}
+					let refs = refsBySheet.get(parsed.sheet)
+					if (!refs) {
+						refs = new Set<string>()
+						refsBySheet.set(parsed.sheet, refs)
+					}
+					refs.add(`${indexToColumn(parsed.col)}${parsed.row + 1}`)
+					continue
+				}
+				if (applyResult.sheetsModified.length !== 1) {
+					this.pendingDirtyCellRefs.clear()
+					return
+				}
+				const ref = parseA1Safe(affected)
+				if (!ref) {
+					this.pendingDirtyCellRefs.clear()
+					return
+				}
+				const sheetName = applyResult.sheetsModified[0]
+				if (!sheetName) {
+					this.pendingDirtyCellRefs.clear()
+					return
+				}
+				let refs = refsBySheet.get(sheetName)
+				if (!refs) {
+					refs = new Set<string>()
+					refsBySheet.set(sheetName, refs)
 				}
 				refs.add(`${indexToColumn(ref.col)}${ref.row + 1}`)
 			}

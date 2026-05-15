@@ -52,15 +52,18 @@ export interface SheetMetadataQueryOptions {
 }
 
 const COMPACT_CHANGE_SNAPSHOT_RETENTION = 8
+const COMPACT_CELL_KEY_COLUMN_STRIDE = 0x4000
 
 interface CompactChangeSnapshot {
 	readonly token: string
-	readonly cells: Map<string, CompactCellInfo>
+	readonly cells: Map<CompactCellKey, CompactCellInfo>
 }
 
 interface CompactChangeSnapshotLedger {
 	readonly snapshots: CompactChangeSnapshot[]
 }
+
+type CompactCellKey = number | string
 
 export class SheetHandle {
 	private readonly sheetName: string
@@ -287,7 +290,7 @@ export class SheetHandle {
 	private rememberCompactChangeSnapshot(
 		snapshotKey: string,
 		token: string,
-		cells: Map<string, CompactCellInfo>,
+		cells: Map<CompactCellKey, CompactCellInfo>,
 	): void {
 		const ledger = this._changeSnapshots.get(snapshotKey) ?? { snapshots: [] }
 		ledger.snapshots.push({ token, cells })
@@ -874,12 +877,20 @@ function flattenCellValue(value: CellValue): FlatCellValue {
 	}
 }
 
-function buildCellMap(cells: readonly CompactCellInfo[]): Map<string, CompactCellInfo> {
-	const map = new Map<string, CompactCellInfo>()
+function buildCellMap(cells: readonly CompactCellInfo[]): Map<CompactCellKey, CompactCellInfo> {
+	const map = new Map<CompactCellKey, CompactCellInfo>()
 	for (const cell of cells) {
-		map.set(`${cell.row},${cell.col}`, cell)
+		map.set(compactCellKey(cell.row, cell.col), cell)
 	}
 	return map
+}
+
+function compactCellKey(row: number, col: number): CompactCellKey {
+	if (row >= 0 && col >= 0 && col < COMPACT_CELL_KEY_COLUMN_STRIDE) {
+		const key = row * COMPACT_CELL_KEY_COLUMN_STRIDE + col
+		if (Number.isSafeInteger(key)) return key
+	}
+	return `${row},${col}`
 }
 
 function compactChangeSnapshotKey(
@@ -948,8 +959,8 @@ function cellInfoEqual(a: CompactCellInfo, b: CompactCellInfo): boolean {
 }
 
 function diffCellMaps(
-	previous: Map<string, CompactCellInfo>,
-	current: Map<string, CompactCellInfo>,
+	previous: Map<CompactCellKey, CompactCellInfo>,
+	current: Map<CompactCellKey, CompactCellInfo>,
 ): CompactCellInfo[] {
 	const changed: CompactCellInfo[] = []
 	for (const [key, cell] of current) {

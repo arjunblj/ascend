@@ -2130,6 +2130,8 @@ function journalSetTabColor(
 					message: tabColor
 						? `Sheet tab color for ${op.sheet} uses unsupported color metadata and cannot be fully restored with public operations`
 						: `Sheet tab color absence for ${op.sheet} cannot be restored with public operations`,
+					surface: 'sheet-layout',
+					reason: 'sheet-topology',
 					refs: [`sheet:${op.sheet}:tabColor`],
 				} satisfies MutationJournalIssue,
 			]
@@ -2174,12 +2176,16 @@ function journalSetSheetProtection(
 		issues.push({
 			code: 'LOSSY_INVERSE',
 			message: `Sheet protection absence for ${op.sheet} cannot be restored with public operations`,
+			surface: 'sheet-layout',
+			reason: 'workbook-protection-absence',
 			refs: [`sheet:${op.sheet}:protection`],
 		})
 	} else if (protection.sheet !== true || unsupportedKeys.length > 0) {
 		issues.push({
 			code: 'LOSSY_INVERSE',
 			message: `Sheet protection for ${op.sheet} contains metadata that cannot be fully restored with public operations`,
+			surface: 'sheet-layout',
+			reason: 'workbook-protection-absence',
 			refs: unsupportedKeys.map((key) => `sheet:${op.sheet}:protection:${key}`),
 		})
 	}
@@ -2357,6 +2363,8 @@ function journalSetSheetLayout(
 				{
 					code: 'LOSSY_INVERSE',
 					message: `Created ${axis} layout at ${ref} cannot be cleared with public operations`,
+					surface: axis === 'row' ? 'row-layout' : 'column-layout',
+					reason: axis === 'row' ? 'row-layout-created' : 'column-layout-created',
 					refs: [ref],
 				},
 			],
@@ -2367,6 +2375,8 @@ function journalSetSheetLayout(
 		issues.push({
 			code: 'LOSSY_INVERSE',
 			message: `Row height metadata at ${ref} has customHeight=false and cannot be restored exactly with public operations`,
+			surface: 'row-layout',
+			reason: 'row-layout-custom-height',
 			refs: [ref],
 		})
 	}
@@ -2379,6 +2389,8 @@ function journalSetSheetLayout(
 		issues.push({
 			code: 'LOSSY_INVERSE',
 			message: `Column width map and column metadata disagree at ${ref} and cannot be restored exactly with public operations`,
+			surface: 'column-layout',
+			reason: 'column-layout-width-metadata',
 			refs: [ref],
 		})
 	}
@@ -2391,6 +2403,8 @@ function journalSetSheetLayout(
 		issues.push({
 			code: 'LOSSY_INVERSE',
 			message: `Column width metadata at ${ref} has customWidth=${String(colDef.customWidth)} and cannot be restored exactly with public operations`,
+			surface: 'column-layout',
+			reason: 'column-layout-width-metadata',
 			refs: [ref],
 		})
 	}
@@ -2437,6 +2451,8 @@ function journalHideSheet(
 					{
 						code: 'LOSSY_INVERSE',
 						message: `Sheet visibility for ${op.sheet} was veryHidden and cannot be restored with public operations`,
+						surface: 'sheet-layout',
+						reason: 'sheet-topology',
 						refs: [`sheet:${op.sheet}:state:veryHidden`],
 					},
 				]
@@ -2503,6 +2519,8 @@ function journalHideRows(
 						{
 							code: 'LOSSY_INVERSE',
 							message: `Explicit row hidden=false metadata cannot be restored exactly with public operations`,
+							surface: 'row-layout',
+							reason: 'row-layout-created',
 							refs,
 						},
 					],
@@ -2561,6 +2579,8 @@ function journalHideCols(
 						{
 							code: 'LOSSY_INVERSE',
 							message: `Explicit column hidden=false metadata cannot be restored exactly with public operations`,
+							surface: 'column-layout',
+							reason: 'column-layout-created',
 							refs,
 						},
 					],
@@ -2628,6 +2648,8 @@ function journalGroupOutline(
 			{
 				code: 'LOSSY_INVERSE',
 				message: `Grouped ${axis === 'row' ? 'rows' : 'columns'} for ${op.sheet} cannot be restored with public operations`,
+				surface: axis === 'row' ? 'row-layout' : 'column-layout',
+				reason: axis === 'row' ? 'row-layout-created' : 'column-layout-created',
 				refs: [...new Set(refs)],
 			},
 		],

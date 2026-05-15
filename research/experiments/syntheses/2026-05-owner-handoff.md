@@ -27,6 +27,8 @@ Streaming proof note: the release index now emits `streamingMatrixEvidence` for 
 
 Compact publication note: `compactReportPublicationEvidence.policyDecisions` now breaks the release-owned compact-report blocker into four pending decisions: artifact storage path, retention/privacy filtering, canonicalization subject, and offline verification expectations. This keeps compact reports usable as local owner-review summaries while preventing digest publication, signed-provenance wording, or attestation claims.
 
+Correctness boundary note: `correctnessBoundaryEvidence` now includes `missingFeatureNames` and `ownerEscalationRequired`. Current proof reports no missing feature names, but if any unsupported-feature row regresses, correctness owners will get the exact failed feature list in the owner-handoff JSON.
+
 ## Proof Snapshot
 
 Current local proof gate:
@@ -124,7 +126,7 @@ Owner loops should consume these JSON fields first:
 | `readiness.implementationHandoffs[].proofRequired` | Product-shaped proof ladder: fixture, benchmark, surface, validation gate, competitor contrast, honest boundary, and kill criterion. |
 | `fixturePolicyEvidence` | Summarizes tracked safe-open and package-action fixture scans for product gate decisions while keeping public replacement gaps explicit. |
 | `generatedFixtureDecisionEvidence` | Lists every disclosed generated structural case with tracked replacement evidence, owner decision needed, allowed use, and forbidden use. |
-| `correctnessBoundaryEvidence` | Verifies the unsupported-feature boundary matrix against current package-action and safe-open proof cases while keeping owner approval required. |
+| `correctnessBoundaryEvidence` | Verifies the unsupported-feature boundary matrix against current package-action and safe-open proof cases while keeping owner approval required; `missingFeatureNames` and `ownerEscalationRequired` make regressions machine-visible. |
 | `streamingMatrixEvidence` | Verifies the representative streaming proof boundary: covered action kinds, missing action kinds, covered case names, non-streaming public cases, and owner approval requirement. |
 | `compactReportPublicationEvidence` | Proves compact report commands and privacy/canonicalization blockers without indexing compact report digests; `policyDecisions` turns each blocker into release-owner acceptance/rejection evidence. |
 | `deferredClaims` | Machine-readable do-not-promote/proof-backed-hold list for non-top directions. |

@@ -260,6 +260,8 @@ describe('release proof evidence index', () => {
 			ownerLoop: 'correctness',
 			status: 'evidence-present-owner-approval-required',
 			allCurrentEvidencePresent: true,
+			missingFeatureNames: [],
+			ownerEscalationRequired: false,
 			ownerApprovalRequired: true,
 			validationCommand:
 				'bun run fixtures/benchmarks/release-proof-index.ts --no-timings --owner-handoffs-json',
@@ -785,6 +787,8 @@ describe('release proof evidence index', () => {
 		expect(handoff.correctnessBoundaryEvidence).toMatchObject({
 			status: 'evidence-present-owner-approval-required',
 			allCurrentEvidencePresent: true,
+			missingFeatureNames: [],
+			ownerEscalationRequired: false,
 			ownerApprovalRequired: true,
 		})
 		expect(handoff.correctnessBoundaryEvidence.featureChecks.map((item) => item.feature)).toEqual([
@@ -976,6 +980,8 @@ describe('release proof evidence index', () => {
 		expect(markdown).toContain('Correctness boundary evidence:')
 		expect(markdown).toContain('Status: evidence-present-owner-approval-required')
 		expect(markdown).toContain('All current evidence present: true')
+		expect(markdown).toContain('Missing feature names: none')
+		expect(markdown).toContain('Owner escalation required: false')
 		expect(markdown).toContain('Owner approval required: true')
 		expect(markdown).toContain('does not satisfy the owner gate')
 		expect(markdown).toContain(

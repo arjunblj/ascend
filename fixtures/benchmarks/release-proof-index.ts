@@ -394,6 +394,8 @@ export interface ReleaseProofCorrectnessBoundaryEvidence {
 	readonly ownerLoop: 'correctness'
 	readonly status: 'evidence-present-owner-approval-required'
 	readonly allCurrentEvidencePresent: boolean
+	readonly missingFeatureNames: readonly string[]
+	readonly ownerEscalationRequired: boolean
 	readonly ownerApprovalRequired: true
 	readonly validationCommand: string
 	readonly featureChecks: readonly ReleaseProofCorrectnessBoundaryFeatureCheck[]
@@ -835,6 +837,8 @@ export function releaseProofIndexMarkdown(result: ReleaseProofIndexResult): stri
 		'',
 		`Status: ${result.correctnessBoundaryEvidence.status}`,
 		`All current evidence present: ${result.correctnessBoundaryEvidence.allCurrentEvidencePresent}`,
+		`Missing feature names: ${result.correctnessBoundaryEvidence.missingFeatureNames.join(',') || 'none'}`,
+		`Owner escalation required: ${result.correctnessBoundaryEvidence.ownerEscalationRequired}`,
 		`Owner approval required: ${result.correctnessBoundaryEvidence.ownerApprovalRequired}`,
 		result.correctnessBoundaryEvidence.boundary,
 		'',
@@ -1294,12 +1298,17 @@ function correctnessBoundaryEvidence(
 			],
 		}),
 	]
+	const missingFeatureNames = featureChecks
+		.filter((entry) => !entry.evidencePresent)
+		.map((entry) => entry.feature)
 	return {
 		artifact: 'package-action-proof',
 		gateId: 'unsupported-feature-boundary',
 		ownerLoop: 'correctness',
 		status: 'evidence-present-owner-approval-required',
 		allCurrentEvidencePresent: featureChecks.every((entry) => entry.evidencePresent),
+		missingFeatureNames,
+		ownerEscalationRequired: missingFeatureNames.length > 0,
 		ownerApprovalRequired: true,
 		validationCommand:
 			'bun run fixtures/benchmarks/release-proof-index.ts --no-timings --owner-handoffs-json',

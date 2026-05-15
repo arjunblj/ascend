@@ -8,6 +8,10 @@ Research is no longer a broad sweep. Each direction below must earn its place by
 
 ## Latest Claim Steward Refresh
 
+Proof timestamp: 2026-05-15T18:20:44Z.
+
+Correctness-boundary regression handling is now explicit. `correctnessBoundaryEvidence` reports `missingFeatureNames` and `ownerEscalationRequired` in addition to `allCurrentEvidencePresent`, so future regressions in signatures, calc-chain, chart/drawing, macro/ActiveX, unknown-part, or streaming evidence become machine-readable owner blockers instead of a vague boolean failure.
+
 Proof timestamp: 2026-05-15T18:15:44Z.
 
 Release publication policy is now more concrete without becoming attestation. `compactReportPublicationEvidence.policyDecisions` lists the four missing requirements as release-owner decisions: artifact storage path, retention/privacy filtering, canonicalization subject, and offline verification expectations. Compact report digests remain unindexed and both top claims still have `compact-report-publication-policy` missing.

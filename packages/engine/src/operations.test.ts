@@ -621,6 +621,54 @@ describe('applyOperation', () => {
 		expect(sheet.cells.get(1, 0)?.formulaInfo).toBeUndefined()
 	})
 
+	test('setCells scopes shared formula materialization by master when shared indexes collide', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		addSharedFormulaGroup(sheet)
+		sheet.cells.set(0, 2, {
+			value: numberValue(30),
+			formula: 'D1*2',
+			styleId: sid,
+			formulaInfo: {
+				kind: 'shared',
+				sharedIndex: '0',
+				isMaster: true,
+				masterRef: 'C1',
+				ref: 'C1:C2',
+			},
+		})
+		sheet.cells.set(1, 2, {
+			value: numberValue(60),
+			formula: null,
+			styleId: sid,
+			formulaInfo: { kind: 'shared', sharedIndex: '0', isMaster: false, masterRef: 'C1' },
+		})
+
+		const result = applyOperation(wb, {
+			op: 'setCells',
+			sheet: 'Sheet1',
+			updates: [{ ref: 'A2', value: 9 }],
+		})
+		expectOk(result)
+
+		expect(result.value.affectedCells).toEqual(['A1', 'A2'])
+		expect(sheet.cells.get(0, 0)?.formulaInfo).toBeUndefined()
+		expect(sheet.cells.get(1, 0)?.formulaInfo).toBeUndefined()
+		expect(sheet.cells.get(0, 2)?.formulaInfo).toEqual({
+			kind: 'shared',
+			sharedIndex: '0',
+			isMaster: true,
+			masterRef: 'C1',
+			ref: 'C1:C2',
+		})
+		expect(sheet.cells.get(1, 2)?.formulaInfo).toEqual({
+			kind: 'shared',
+			sharedIndex: '0',
+			isMaster: false,
+			masterRef: 'C1',
+		})
+	})
+
 	test('setCells materializes spill groups before literal replacement', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

@@ -5375,6 +5375,79 @@ describe('interactive client contract', () => {
 		expect(changedSheet?.cells.get(0, 0)?.formulaInfo).toBeUndefined()
 		expect(changedSheet?.cells.get(1, 0)?.formulaInfo).toBeUndefined()
 
+		const collidingSharedWb = AscendWorkbook.create()
+		const collidingSharedSheet = collidingSharedWb.getWorkbookModel().getSheet('Sheet1')
+		if (!collidingSharedSheet) throw new Error('missing sheet')
+		collidingSharedSheet.cells.set(0, 0, {
+			value: numberValue(20),
+			formula: 'B1*2',
+			styleId: DEFAULT_STYLE_ID,
+			formulaInfo: {
+				kind: 'shared',
+				sharedIndex: '0',
+				isMaster: true,
+				masterRef: 'A1',
+				ref: 'A1:A2',
+			},
+		})
+		collidingSharedSheet.cells.set(1, 0, {
+			value: numberValue(40),
+			formula: null,
+			styleId: DEFAULT_STYLE_ID,
+			formulaInfo: { kind: 'shared', sharedIndex: '0', isMaster: false, masterRef: 'A1' },
+		})
+		collidingSharedSheet.cells.set(0, 2, {
+			value: numberValue(30),
+			formula: 'D1*2',
+			styleId: DEFAULT_STYLE_ID,
+			formulaInfo: {
+				kind: 'shared',
+				sharedIndex: '0',
+				isMaster: true,
+				masterRef: 'C1',
+				ref: 'C1:C2',
+			},
+		})
+		collidingSharedSheet.cells.set(1, 2, {
+			value: numberValue(60),
+			formula: null,
+			styleId: DEFAULT_STYLE_ID,
+			formulaInfo: { kind: 'shared', sharedIndex: '0', isMaster: false, masterRef: 'C1' },
+		})
+
+		const collidingChanged = collidingSharedWb.apply(
+			[{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A2', value: 9 }] }],
+			{ journal: true },
+		)
+
+		expect(collidingChanged.errors).toEqual([])
+		expect(collidingChanged.journal?.supported).toBe(true)
+		expect(collidingChanged.journal?.exact).toBe(false)
+		const collidingPreimage = collidingChanged.journal?.entries[0]?.preimages[0]
+		expect(collidingPreimage?.kind).toBe('cells')
+		if (collidingPreimage?.kind !== 'cells') throw new Error('missing cells preimage')
+		expect(collidingPreimage.cells.map((cell) => cell.ref).sort()).toEqual(['A1', 'A2'])
+		expect(collidingChanged.journal?.issues.map((issue) => issue.refs?.[0]).sort()).toEqual([
+			'Sheet1!A1',
+			'Sheet1!A2',
+		])
+		const collidingAfter = collidingSharedWb.getWorkbookModel().getSheet('Sheet1')
+		expect(collidingAfter?.cells.get(0, 0)?.formulaInfo).toBeUndefined()
+		expect(collidingAfter?.cells.get(1, 0)?.formulaInfo).toBeUndefined()
+		expect(collidingAfter?.cells.get(0, 2)?.formulaInfo).toEqual({
+			kind: 'shared',
+			sharedIndex: '0',
+			isMaster: true,
+			masterRef: 'C1',
+			ref: 'C1:C2',
+		})
+		expect(collidingAfter?.cells.get(1, 2)?.formulaInfo).toEqual({
+			kind: 'shared',
+			sharedIndex: '0',
+			isMaster: false,
+			masterRef: 'C1',
+		})
+
 		const dynamicArrayWb = AscendWorkbook.create()
 		const dynamicArraySheet = dynamicArrayWb.getWorkbookModel().getSheet('Sheet1')
 		if (!dynamicArraySheet) throw new Error('missing sheet')

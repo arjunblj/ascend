@@ -1334,6 +1334,94 @@ describe('agent workflow loss audit', () => {
 				},
 			},
 			{
+				name: 'rich-text-shared-formula-target-materializes-and-reopens-clean',
+				risk: 'setRichText over an imported shared-formula member could save rich text while leaving stale sibling formula metadata',
+				proof: async () => {
+					const input = join(TEMP_DIR, 'quality-moat-rich-text-shared-target.xlsx')
+					const output = join(TEMP_DIR, 'quality-moat-rich-text-shared-target-out.xlsx')
+					mkdirSync(TEMP_DIR, { recursive: true })
+					const wb = AscendWorkbook.create()
+					const model = wb.getWorkbookModel()
+					const sheet = model.getSheet('Sheet1')
+					if (!sheet) throw new Error('missing Sheet1')
+					sheet.name = 'Data'
+					model.invalidateSheetCache()
+					sheet.cells.set(0, 0, {
+						value: numberValue(20),
+						formula: 'B1*2',
+						styleId: DEFAULT_STYLE_ID,
+						formulaInfo: {
+							kind: 'shared',
+							sharedIndex: 'quality-moat-rich-text-target',
+							isMaster: true,
+							masterRef: 'A1',
+							ref: 'A1:A2',
+						},
+					})
+					sheet.cells.set(1, 0, {
+						value: numberValue(40),
+						formula: null,
+						styleId: DEFAULT_STYLE_ID,
+						formulaInfo: {
+							kind: 'shared',
+							sharedIndex: 'quality-moat-rich-text-target',
+							isMaster: false,
+							masterRef: 'A1',
+							ref: 'A1:A2',
+						},
+					})
+					sheet.cells.set(0, 1, {
+						value: numberValue(10),
+						formula: null,
+						styleId: DEFAULT_STYLE_ID,
+					})
+					sheet.cells.set(1, 1, {
+						value: numberValue(20),
+						formula: null,
+						styleId: DEFAULT_STYLE_ID,
+					})
+					await wb.save(input)
+
+					const prepared = await createPreparedAgentPlan(input, [
+						{
+							op: 'setRichText' as const,
+							sheet: 'Data',
+							ref: 'A2',
+							runs: [{ text: 'manual', bold: true }],
+						},
+					])
+					expect(prepared.plan.preview.journal?.issues).toEqual(
+						expect.arrayContaining([
+							expect.objectContaining({
+								surface: 'shared-formulas',
+								reason: 'formula-binding-metadata',
+								refs: ['Data!A1'],
+							}),
+							expect.objectContaining({
+								surface: 'shared-formulas',
+								reason: 'formula-binding-metadata',
+								refs: ['Data!A2'],
+							}),
+						]),
+					)
+
+					const committed = await prepared.commit({ output })
+					expect(committed.postWrite.valid).toBe(true)
+					expect(committed.postWrite.auditsPassed).toBe(true)
+
+					const reopened = await AscendWorkbook.open(output)
+					expect(reopened.check().valid).toBe(true)
+					expect(reopened.sheet('Data')?.cell('A1')?.formulaBinding).toBeUndefined()
+					expect(reopened.sheet('Data')?.cell('A2')?.formulaBinding).toBeUndefined()
+					expect(reopened.formula('Data!A1')?.normalizedFormula).toBe('B1*2')
+					expect(reopened.formula('Data!A2')).toBeUndefined()
+					expect(reopened.sheet('Data')?.cell('A2')?.value).toEqual({
+						kind: 'richText',
+						runs: [{ text: 'manual', bold: true }],
+					})
+				},
+			},
+			{
 				name: 'real-absolute-shared-formula-edit-materializes-and-reopens-clean',
 				risk: 'editing one imported absolute shared-formula member could save shifted sibling formula text or stale binding metadata',
 				proof: async () => {

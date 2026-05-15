@@ -1812,6 +1812,58 @@ describe('agent workflow loss audit', () => {
 					}
 				},
 			},
+			{
+				name: 'structural-row-insert-cross-sheet-formula-rewrite-reopens-clean',
+				risk: 'structural row edits could rewrite formulas on other sheets without exposing affected cells or modified sheets to agents',
+				proof: async () => {
+					const input = join(TEMP_DIR, 'quality-moat-structural-formula-rewrite.xlsx')
+					const output = join(TEMP_DIR, 'quality-moat-structural-formula-rewrite-out.xlsx')
+					mkdirSync(TEMP_DIR, { recursive: true })
+					const wb = AscendWorkbook.create()
+					wb.addSheet('Summary')
+					wb.apply([
+						{
+							op: 'setCells',
+							sheet: 'Sheet1',
+							updates: [
+								{ ref: 'A1', value: 1 },
+								{ ref: 'A2', value: 2 },
+							],
+						},
+						{
+							op: 'setFormula',
+							sheet: 'Summary',
+							ref: 'A1',
+							formula: 'SUM(Sheet1!A1:A2)',
+						},
+					])
+					await wb.save(input)
+
+					const prepared = await createPreparedAgentPlan(input, [
+						{ op: 'insertRows' as const, sheet: 'Sheet1', at: 1, count: 1 },
+					])
+					expect(prepared.plan.preview.journal?.exact).toBe(false)
+					expect(prepared.plan.preview.journal?.issues).toContainEqual(
+						expect.objectContaining({
+							surface: 'package-parts',
+							reason: 'package-part-preservation',
+							refs: ['Sheet1!2:2'],
+						}),
+					)
+					expect(prepared.plan.approvals).toEqual([])
+
+					const committed = await prepared.commit({ output })
+					const compact = compactAgentCommitResult(committed)
+					expect(compact.apply.affectedCellRefs).toEqual(['Summary!A1'])
+					expect(committed.apply.sheetsModified).toEqual(['Sheet1', 'Summary'])
+					expect(committed.postWrite.valid).toBe(true)
+					expect(committed.postWrite.auditsPassed).toBe(true)
+
+					const reopened = await AscendWorkbook.open(output)
+					expect(reopened.check().valid).toBe(true)
+					expect(reopened.formula('Summary!A1')?.normalizedFormula).toBe('SUM(Sheet1!A1:A3)')
+				},
+			},
 		] as const
 
 		for (const entry of cases) {

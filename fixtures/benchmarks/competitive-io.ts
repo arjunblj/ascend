@@ -90,6 +90,7 @@ const ASCEND_LIBRARY_ALIASES = [
 	'ascend-readxlsx-values-rich-metadata-bytes',
 	'ascend-external-metadata-only-bytes',
 	'ascend-external-writer',
+	'ascend-external-writer-compact',
 ] as const
 const LIBRARY_ALLOWLIST_ALIASES = new Map<string, readonly string[]>([
 	['ascend', ASCEND_LIBRARY_ALIASES],

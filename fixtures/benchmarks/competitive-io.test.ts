@@ -889,6 +889,7 @@ describe('competitive IO helpers', () => {
 		expect(competitorMatches('ascend-readxlsx-raw-values-operation-path', 'external')).toBe(true)
 		expect(competitorMatches('ascend-readxlsx-row-stream-bytes', 'external')).toBe(true)
 		expect(competitorMatches('ascend-external-writer', 'external')).toBe(true)
+		expect(competitorMatches('ascend-external-writer-compact', 'external')).toBe(true)
 		expect(competitorMatches('rust-xlsxwriter', 'external')).toBe(true)
 	})
 
@@ -904,6 +905,7 @@ describe('competitive IO helpers', () => {
 	test('library allowlist expands the natural Ascend alias across read and write runners', () => {
 		const allowlist = parseLibraryAllowlist('ascend')
 		expect(libraryAllowed('ascend-external-writer', allowlist)).toBe(true)
+		expect(libraryAllowed('ascend-external-writer-compact', allowlist)).toBe(true)
 		expect(libraryAllowed('ascend-readxlsx-row-stream-bytes', allowlist)).toBe(true)
 		expect(libraryAllowed('ascend', allowlist)).toBe(true)
 		expect(libraryAllowed('rust-xlsxwriter', allowlist)).toBe(false)
@@ -917,6 +919,7 @@ describe('competitive IO helpers', () => {
 		const names = new Set(specs.map((spec) => spec.name))
 		for (const name of [
 			'ascend-external-writer',
+			'ascend-external-writer-compact',
 			'xlsxwriter',
 			'xlsxwriter-constant-memory',
 			'pyexcelerate',

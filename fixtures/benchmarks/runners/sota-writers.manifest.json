@@ -19,6 +19,30 @@
 		}
 	},
 	{
+		"name": "ascend-external-writer-compact",
+		"command": [
+			"bun",
+			"fixtures/benchmarks/runners/ascend_writer_runner.ts",
+			"--compression-profile",
+			"compact"
+		],
+		"categories": ["write"],
+		"runtime": "bun",
+		"adapterVersion": "1",
+		"libraryVersion": "workspace",
+		"validationModel": "external-post-operation-assertions",
+		"memoryModel": "process-rss-reported",
+		"installHint": "bun install",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"xlsmRoundtrip": false,
+			"writeFormulas": true,
+			"writeTables": true,
+			"writeRichMetadata": true
+		}
+	},
+	{
 		"name": "apache-poi",
 		"command": ["bash", "fixtures/benchmarks/runners/apache_poi_runner.sh"],
 		"categories": ["write"],

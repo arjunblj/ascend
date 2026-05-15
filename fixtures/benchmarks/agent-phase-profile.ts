@@ -51,6 +51,17 @@ interface PhaseTiming {
 	readonly count?: number
 }
 
+interface SampleStats {
+	readonly sampleCount: number
+	readonly min: number
+	readonly median: number
+	readonly mean: number
+	readonly p95: number
+	readonly max: number
+	readonly stddev: number
+	readonly cv: number
+}
+
 interface Sample {
 	readonly planMs: number
 	readonly commitMs: number
@@ -133,6 +144,33 @@ function median(values: readonly number[]): number {
 	const middle = Math.floor(sorted.length / 2)
 	const upper = sorted[middle] ?? 0
 	return sorted.length % 2 === 1 ? upper : ((sorted[middle - 1] ?? upper) + upper) / 2
+}
+
+function percentileSorted(sorted: readonly number[], percentile: number): number {
+	if (sorted.length === 0) return 0
+	const index = Math.min(sorted.length - 1, Math.ceil(sorted.length * percentile) - 1)
+	return sorted[index] ?? 0
+}
+
+function sampleStats(values: readonly number[]): SampleStats {
+	const sorted = [...values].filter(Number.isFinite).sort((a, b) => a - b)
+	if (sorted.length === 0) {
+		return { sampleCount: 0, min: 0, median: 0, mean: 0, p95: 0, max: 0, stddev: 0, cv: 0 }
+	}
+	const mean = sorted.reduce((sum, value) => sum + value, 0) / sorted.length
+	const variance =
+		sorted.reduce((sum, value) => sum + (value - mean) ** 2, 0) / Math.max(sorted.length - 1, 1)
+	const stddev = Math.sqrt(variance)
+	return {
+		sampleCount: sorted.length,
+		min: sorted[0] ?? 0,
+		median: median(sorted),
+		mean,
+		p95: percentileSorted(sorted, 0.95),
+		max: sorted[sorted.length - 1] ?? 0,
+		stddev,
+		cv: mean === 0 ? 0 : stddev / mean,
+	}
 }
 
 function runGc(): void {
@@ -281,6 +319,17 @@ function summarizePhases(
 	return summary
 }
 
+function summarizePhaseStats(
+	samples: readonly Sample[],
+	key: 'planPhaseMs' | 'commitPhaseMs' | 'sharedPlanPhaseMs' | 'sharedCommitPhaseMs',
+): Record<string, SampleStats> {
+	const summary: Record<string, SampleStats> = {}
+	for (const phase of allPhaseNames(samples, key)) {
+		summary[phase] = sampleStats(samples.map((sample) => sample[key][phase] ?? 0))
+	}
+	return summary
+}
+
 function summarizeCommitTimings(
 	samples: readonly Sample[],
 	key: 'commitTimingMs' | 'sharedCommitTimingMs',
@@ -326,6 +375,10 @@ function summarize(samples: readonly Sample[]) {
 		commitPhaseMedianMs: summarizePhases(samples, 'commitPhaseMs'),
 		sharedPlanPhaseMedianMs: summarizePhases(samples, 'sharedPlanPhaseMs'),
 		sharedCommitPhaseMedianMs: summarizePhases(samples, 'sharedCommitPhaseMs'),
+		planPhaseStats: summarizePhaseStats(samples, 'planPhaseMs'),
+		commitPhaseStats: summarizePhaseStats(samples, 'commitPhaseMs'),
+		sharedPlanPhaseStats: summarizePhaseStats(samples, 'sharedPlanPhaseMs'),
+		sharedCommitPhaseStats: summarizePhaseStats(samples, 'sharedCommitPhaseMs'),
 		commitTimingMedianMs: summarizeCommitTimings(samples, 'commitTimingMs'),
 		sharedCommitTimingMedianMs: summarizeCommitTimings(samples, 'sharedCommitTimingMs'),
 	}

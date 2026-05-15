@@ -47,6 +47,31 @@ describe('agent first-window benchmark', () => {
 				readonly mcpWarmCompactDefaultMedianMs?: number
 				readonly tuiFirstPaintMedianMs?: number
 				readonly tuiWarmFirstPaintMedianMs?: number
+				readonly apiFirstWindowStats?: {
+					readonly sampleCount?: number
+					readonly p95?: number
+					readonly cv?: number
+				}
+				readonly apiWarmFirstWindowStats?: {
+					readonly sampleCount?: number
+					readonly p95?: number
+					readonly cv?: number
+				}
+				readonly cappedWarmOpenWindowStats?: {
+					readonly sampleCount?: number
+					readonly p95?: number
+					readonly cv?: number
+				}
+				readonly tuiFirstPaintStats?: {
+					readonly sampleCount?: number
+					readonly p95?: number
+					readonly cv?: number
+				}
+				readonly tuiWarmFirstPaintStats?: {
+					readonly sampleCount?: number
+					readonly p95?: number
+					readonly cv?: number
+				}
 				readonly tuiOpenMedianMs?: number
 				readonly tuiWarmOpenMedianMs?: number
 				readonly tuiRenderMedianMs?: number
@@ -124,6 +149,16 @@ describe('agent first-window benchmark', () => {
 		expect(payload.summary?.cappedWarmOpenWindowMedianMs).toBeNumber()
 		expect(payload.summary?.apiFirstWindowMedianMs).toBeNumber()
 		expect(payload.summary?.apiWarmFirstWindowMedianMs).toBeNumber()
+		expect(payload.summary?.apiFirstWindowStats).toMatchObject({
+			sampleCount: 1,
+			p95: payload.summary?.apiFirstWindowMedianMs,
+			cv: 0,
+		})
+		expect(payload.summary?.apiWarmFirstWindowStats).toMatchObject({
+			sampleCount: 1,
+			p95: payload.summary?.apiWarmFirstWindowMedianMs,
+			cv: 0,
+		})
 		expect(payload.summary?.apiCompactDefaultMedianMs).toBeNumber()
 		expect(payload.summary?.apiWarmCompactDefaultMedianMs).toBeNumber()
 		expect(payload.summary?.cliReadFirstWindowMedianMs).toBeNumber()
@@ -134,6 +169,21 @@ describe('agent first-window benchmark', () => {
 		expect(payload.summary?.mcpWarmCompactDefaultMedianMs).toBeNumber()
 		expect(payload.summary?.tuiFirstPaintMedianMs).toBeNumber()
 		expect(payload.summary?.tuiWarmFirstPaintMedianMs).toBeNumber()
+		expect(payload.summary?.cappedWarmOpenWindowStats).toMatchObject({
+			sampleCount: 1,
+			p95: payload.summary?.cappedWarmOpenWindowMedianMs,
+			cv: 0,
+		})
+		expect(payload.summary?.tuiFirstPaintStats).toMatchObject({
+			sampleCount: 1,
+			p95: payload.summary?.tuiFirstPaintMedianMs,
+			cv: 0,
+		})
+		expect(payload.summary?.tuiWarmFirstPaintStats).toMatchObject({
+			sampleCount: 1,
+			p95: payload.summary?.tuiWarmFirstPaintMedianMs,
+			cv: 0,
+		})
 		expect(payload.summary?.tuiOpenMedianMs).toBeNumber()
 		expect(payload.summary?.tuiWarmOpenMedianMs).toBeNumber()
 		expect(payload.summary?.tuiRenderMedianMs).toBeNumber()

@@ -51,6 +51,14 @@ describe('agent phase profile benchmark', () => {
 				readonly commitPhaseMedianMs?: Record<string, number>
 				readonly sharedPlanPhaseMedianMs?: Record<string, number>
 				readonly sharedCommitPhaseMedianMs?: Record<string, number>
+				readonly sharedPlanPhaseStats?: Record<
+					string,
+					{ readonly sampleCount?: number; readonly p95?: number; readonly cv?: number }
+				>
+				readonly sharedCommitPhaseStats?: Record<
+					string,
+					{ readonly sampleCount?: number; readonly p95?: number; readonly cv?: number }
+				>
 				readonly commitTimingMedianMs?: Record<string, number>
 				readonly sharedCommitTimingMedianMs?: Record<string, number>
 			}
@@ -77,6 +85,16 @@ describe('agent phase profile benchmark', () => {
 		expect(payload.summary?.commitPhaseMedianMs?.['post-write']).toBeNumber()
 		expect(payload.summary?.sharedPlanPhaseMedianMs?.preview).toBeNumber()
 		expect(payload.summary?.sharedCommitPhaseMedianMs?.write).toBeNumber()
+		expect(payload.summary?.sharedPlanPhaseStats?.preview).toMatchObject({
+			sampleCount: 1,
+			p95: payload.summary?.sharedPlanPhaseMedianMs?.preview,
+			cv: 0,
+		})
+		expect(payload.summary?.sharedCommitPhaseStats?.write).toMatchObject({
+			sampleCount: 1,
+			p95: payload.summary?.sharedCommitPhaseMedianMs?.write,
+			cv: 0,
+		})
 		expect(payload.summary?.commitTimingMedianMs?.writePolicyCheckMs).toBeNumber()
 		expect(payload.summary?.commitTimingMedianMs?.toBytesMs).toBeNumber()
 		expect(payload.summary?.sharedCommitTimingMedianMs?.writePolicyBuildMs).toBeNumber()

@@ -603,9 +603,26 @@ function decisionFields(
 function phaseCandidateStats(
 	summary: unknown,
 	statsKey: string,
+	phaseKey?: string,
 ): Pick<PhaseCandidate, 'p95Ms' | 'cv'> {
-	const p95Ms = statsMetric(summary, statsKey, 'p95')
-	const cv = statsMetric(summary, statsKey, 'cv')
+	const stats =
+		phaseKey === undefined
+			? summary
+			: summary && typeof summary === 'object'
+				? (summary as Record<string, unknown>)[statsKey]
+				: undefined
+	const statsObject =
+		phaseKey === undefined
+			? summary
+			: stats && typeof stats === 'object'
+				? (stats as Record<string, unknown>)[phaseKey]
+				: undefined
+	const p95Ms =
+		phaseKey === undefined
+			? statsMetric(summary, statsKey, 'p95')
+			: numericMetric(statsObject, 'p95')
+	const cv =
+		phaseKey === undefined ? statsMetric(summary, statsKey, 'cv') : numericMetric(statsObject, 'cv')
 	return {
 		...(p95Ms !== undefined ? { p95Ms } : {}),
 		...(cv !== undefined ? { cv } : {}),
@@ -966,17 +983,20 @@ function envelopeDecisions(results: readonly StepResult[]): EnvelopeDecision[] {
 				name: 'Shared plan load-workbook/open',
 				medianMs:
 					numericNestedMetric(phase?.summary, 'sharedPlanPhaseMedianMs', 'load-workbook') ?? 0,
+				...phaseCandidateStats(phase?.summary, 'sharedPlanPhaseStats', 'load-workbook'),
 				profileCommand: phaseProfile,
 			},
 			{
 				name: 'Shared plan preview/window shaping',
 				medianMs: numericNestedMetric(phase?.summary, 'sharedPlanPhaseMedianMs', 'preview') ?? 0,
+				...phaseCandidateStats(phase?.summary, 'sharedPlanPhaseStats', 'preview'),
 				profileCommand: phaseProfile,
 			},
 			{
 				name: 'Shared plan preservation audit',
 				medianMs:
 					numericNestedMetric(phase?.summary, 'sharedPlanPhaseMedianMs', 'preservation-audit') ?? 0,
+				...phaseCandidateStats(phase?.summary, 'sharedPlanPhaseStats', 'preservation-audit'),
 				profileCommand: phaseProfile,
 			},
 			{
@@ -1009,6 +1029,7 @@ function envelopeDecisions(results: readonly StepResult[]): EnvelopeDecision[] {
 			{
 				name: 'Shared commit dirty write',
 				medianMs: numericNestedMetric(phase?.summary, 'sharedCommitPhaseMedianMs', 'write') ?? 0,
+				...phaseCandidateStats(phase?.summary, 'sharedCommitPhaseStats', 'write'),
 				profileCommand: phaseProfile,
 			},
 			{
@@ -1025,6 +1046,7 @@ function envelopeDecisions(results: readonly StepResult[]): EnvelopeDecision[] {
 				medianMs:
 					numericNestedMetric(phase?.summary, 'sharedCommitPhaseMedianMs', 'post-write:reopen') ??
 					0,
+				...phaseCandidateStats(phase?.summary, 'sharedCommitPhaseStats', 'post-write:reopen'),
 				profileCommand: phaseProfile,
 			},
 			{

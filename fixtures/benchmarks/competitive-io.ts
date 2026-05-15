@@ -3128,6 +3128,11 @@ function buildResult(
 			: validationSamples >= repeat
 				? 'each'
 				: 'final'
+	const assertionBytes = typeof assertions?.bytes === 'number' ? assertions.bytes : undefined
+	const measuredBytes =
+		benchmarkCase.category === 'write' && assertionBytes !== undefined
+			? assertionBytes
+			: input.xlsxBytes.byteLength
 	return {
 		name: benchmarkCase.name,
 		category: benchmarkCase.category,
@@ -3140,7 +3145,11 @@ function buildResult(
 			cells: input.cells,
 			logicalCells: input.rows * input.cols,
 			density: input.rows * input.cols > 0 ? input.cells / (input.rows * input.cols) : 0,
-			bytes: input.xlsxBytes.byteLength,
+			bytes: measuredBytes,
+			inputBytes: input.xlsxBytes.byteLength,
+			...(benchmarkCase.category === 'write' && assertionBytes !== undefined
+				? { outputBytes: assertionBytes }
+				: {}),
 			...(input.sourceMode ? { sourceMode: input.sourceMode } : {}),
 			repeat,
 			executionScope: benchmarkCase.executionScope ?? 'in-process',

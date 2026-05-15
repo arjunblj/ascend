@@ -3454,9 +3454,7 @@ describe('applyOperation', () => {
 		})
 		expectOk(result)
 
-		expect(result.value.affectedCells).toContain('A1')
-		expect(result.value.affectedCells).toContain('A2')
-		expect(result.value.affectedCells).toContain('C1')
+		expect(result.value.affectedCells).toEqual(['A1', 'C1', 'A2'])
 		expect(sheet.cells.get(0, 0)?.formula).toBe('SEQUENCE(3)')
 		expect(sheet.cells.get(0, 0)?.formulaInfo).toBeUndefined()
 		expect(sheet.cells.get(1, 0)).toBeUndefined()
@@ -6224,10 +6222,7 @@ describe('applyOperation', () => {
 		const result = applyOperation(wb, { op: 'renameSheet', sheet: 'Sheet1', newName: 'Data' })
 		expectOk(result)
 
-		expect(result.value.affectedCells).toContain('Data!A1')
-		expect(result.value.affectedCells).toContain('Data!A2')
-		expect(result.value.affectedCells).toContain('Other!C1')
-		expect(result.value.affectedCells).toContain('Other!C2')
+		expect(result.value.affectedCells).toEqual(['Data!A1', 'Data!A2', 'Other!C1', 'Other!C2'])
 		expect(result.value.sheetsModified).toEqual(['Data', 'Other'])
 		expect(renamed.cells.get(0, 0)?.formula).toBe('Other!A1')
 		expect(renamed.cells.get(1, 0)?.formula).toBe('Other!A2')
@@ -7938,9 +7933,7 @@ describe('applyOperation', () => {
 		})
 		expectOk(result)
 
-		expect(result.value.affectedCells).toContain('A1')
-		expect(result.value.affectedCells).toContain('A5')
-		expect(result.value.affectedCells).toContain('A6')
+		expect(result.value.affectedCells).toEqual(['A5', 'A6', 'A1'])
 		expect(sheet.cells.get(4, 0)?.formula).toBe('SUM(Sales[Units])')
 		expect(sheet.cells.get(5, 0)?.formula).toBe('SUM(Sales[Units])')
 		expect(sheet.cells.get(4, 0)?.formulaInfo).toBeUndefined()
@@ -8982,8 +8975,7 @@ describe('applyOperation', () => {
 		})
 		expectOk(result)
 
-		expect(result.value.affectedCells).toContain('A5')
-		expect(result.value.affectedCells).toContain('A6')
+		expect(result.value.affectedCells).toEqual(['A5', 'A6'])
 		expect(sheet.cells.get(4, 0)?.formula).toBe('SUM(Revenue[Qty])')
 		expect(sheet.cells.get(5, 0)?.formula).toBe('SUM(Revenue[Qty])')
 		expect(sheet.cells.get(4, 0)?.formulaInfo).toBeUndefined()

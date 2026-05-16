@@ -38,7 +38,7 @@ describe('release proof evidence index', () => {
 		)
 		expect(index.releasePackageabilityEvidence.forbiddenClaims).toContain('signed provenance')
 		expect(index.excludedEvidenceCount).toBe(1)
-		expect(index.deferredClaimCount).toBe(6)
+		expect(index.deferredClaimCount).toBe(7)
 		expect(index.fixturePolicy).toMatchObject({
 			currentDecision: 'owner-approval-required',
 			trackedFixtureScanCommands: {
@@ -557,6 +557,7 @@ describe('release proof evidence index', () => {
 			'columnar-scan-sidecars',
 			'formula-oracle-routing',
 			'agent-workflow-observability',
+			'research-surface-hygiene',
 		])
 		expect(
 			index.deferredClaims.find((claim) => claim.name === 'formula-language-service-primitives'),
@@ -584,6 +585,7 @@ describe('release proof evidence index', () => {
 			'8:property-journal-laws',
 			'9:columnar-scan-sidecars',
 			'10:agent-workflow-observability',
+			'11:research-surface-hygiene',
 		])
 		expect(index.claimPortfolio[0]).toMatchObject({
 			claim: 'safe unknown workbook opening',
@@ -895,6 +897,7 @@ describe('release proof evidence index', () => {
 			'property-journal-laws',
 			'columnar-scan-sidecars',
 			'agent-workflow-observability',
+			'research-surface-hygiene',
 			'practical-latency-contracts',
 		])
 		expect(index.releaseDecisionBoard).toMatchObject({
@@ -934,6 +937,7 @@ describe('release proof evidence index', () => {
 			'property-journal-laws',
 			'columnar-scan-sidecars',
 			'agent-workflow-observability',
+			'research-surface-hygiene',
 			'practical-latency-contracts',
 		])
 		expect(
@@ -944,12 +948,32 @@ describe('release proof evidence index', () => {
 		expect(index.releaseDecisionBoard.doNotPromoteYet[0].boundary).toContain(
 			'Do not turn this into release wording',
 		)
+		const researchSurfaceDecision = index.releaseDecisionBoard.doNotPromoteYet.find(
+			(item) => item.name === 'research-surface-hygiene',
+		)
+		expect(researchSurfaceDecision?.ownerLoops).toEqual(['product', 'release'])
+		expect(researchSurfaceDecision?.evidenceMissing.join('\n')).toContain(
+			'Classify current research files',
+		)
+		expect(researchSurfaceDecision?.evidenceMissing.join('\n')).toContain(
+			'Inventory of current research files',
+		)
+		expect(researchSurfaceDecision?.allowedWording).toContain(
+			'Do not promote research-surface-hygiene',
+		)
+		expect(researchSurfaceDecision?.forbiddenWording.join('\n')).toContain(
+			'Do not promote any research-derived claim',
+		)
+		expect(researchSurfaceDecision?.forbiddenWording.join('\n')).toContain(
+			'Untriaged research files are not release evidence',
+		)
+		expect(researchSurfaceDecision?.nextOwnerAction).toContain('Classify current research files')
 		for (const item of index.releaseDecisionBoard.doNotPromoteYet) {
-			expect(item.evidenceWeHave.length).toBeGreaterThan(0)
-			expect(item.evidenceMissing.length).toBeGreaterThan(0)
-			expect(item.qssContrast.length).toBeGreaterThan(0)
+			expect(item.evidenceWeHave).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(item.evidenceMissing).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(item.qssContrast).toEqual(expect.arrayContaining([expect.any(String)]))
 			expect(item.allowedWording).toContain('Do not promote')
-			expect(item.forbiddenWording.length).toBeGreaterThan(0)
+			expect(item.forbiddenWording).toEqual(expect.arrayContaining([expect.any(String)]))
 			expect(item.nextOwnerAction.length).toBeGreaterThan(0)
 		}
 		expect(index.releaseDecisionBoard.doNotPromoteYet[0]).toMatchObject({
@@ -1468,6 +1492,10 @@ describe('release proof evidence index', () => {
 					name: 'practical-latency-contracts',
 					status: 'archived-research-note',
 				}),
+				expect.objectContaining({
+					name: 'research-surface-hygiene',
+					status: 'archived-research-note',
+				}),
 			]),
 		)
 		expect(handoff.releaseDecisionBoard.rows).toHaveLength(2)
@@ -1531,7 +1559,7 @@ describe('release proof evidence index', () => {
 			],
 		})
 		expect(handoff.implementationHandoffs[1].blockingActions).toHaveLength(5)
-		expect(handoff.claimPortfolio).toHaveLength(10)
+		expect(handoff.claimPortfolio).toHaveLength(11)
 		expect(handoff.claimPortfolio[0]).toMatchObject({
 			name: 'safe-open-proof',
 			handoffDecision: 'top-implementation-handoff',
@@ -1543,6 +1571,11 @@ describe('release proof evidence index', () => {
 			name: 'property-journal-laws',
 			status: 'speculative-do-not-promote',
 			killCriterion: expect.stringContaining('Do not promote broad inverse-law claims'),
+		})
+		expect(handoff.claimPortfolio[10]).toMatchObject({
+			name: 'research-surface-hygiene',
+			status: 'speculative-do-not-promote',
+			handoffDecision: 'do-not-promote-yet',
 		})
 		expect(handoff.deferredClaims.map((entry) => entry.status)).toContain('do-not-promote-yet')
 		expect(handoff.excludedEvidence.map((entry) => entry.name)).toEqual([
@@ -1598,7 +1631,9 @@ describe('release proof evidence index', () => {
 		expect(stdout).toContain('bounded chart series-source fixtures')
 		expect(stdout).toContain('public external-link/query-table refresh metadata fixtures')
 		expect(stdout).toContain('full chart editing support')
+		expect(stdout).toContain('Classify current research files')
 		expect(board.doNotPromoteYet?.map((item) => item.name)).toContain('columnar-scan-sidecars')
+		expect(board.doNotPromoteYet?.map((item) => item.name)).toContain('research-surface-hygiene')
 		expect(board.doNotPromoteYet?.every((item) => item.status === 'do-not-promote-yet')).toBe(true)
 		expect(stdout).not.toContain('"claimBlockerBoard"')
 		expect(stdout).not.toContain('"fixturePolicy"')
@@ -2070,6 +2105,8 @@ describe('release proof evidence index', () => {
 		expect(markdown).toContain('Excluded Evidence')
 		expect(markdown).toContain('practical-latency-contracts')
 		expect(markdown).toContain('tracked-clean run')
+		expect(markdown).toContain('research surface as release evidence')
+		expect(markdown).toContain('Untriaged research files are not release evidence')
 		expect(markdown).toContain('Ranked Claim Portfolio')
 		expect(markdown).toContain(
 			'| Rank | Claim | Status | North Star link | Owner loops | Handoff decision | Proof command | Kill criterion | Boundary |',

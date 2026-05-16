@@ -1942,7 +1942,7 @@ function qssLeapfrogReleaseMatrix(
 			),
 		],
 		boundary:
-			'This matrix is a release-priority gate for the top two claims only. Formula rename, token-bounded agent view, viewport history, release proof bundle, oracle routing, property journal laws, columnar sidecars, and agent observability remain archived until they change top-claim implementation priority.',
+			'This matrix is a release-priority gate for the top two claims only. Formula rename, token-bounded agent view, viewport history, release proof bundle, oracle routing, property journal laws, columnar sidecars, agent observability, and untriaged research-surface work remain archived until they change top-claim implementation priority.',
 	}
 }
 
@@ -2730,6 +2730,33 @@ const CLAIM_PORTFOLIO: readonly ReleaseProofPortfolioClaim[] = [
 		handoffDecision: 'do-not-promote-yet',
 		boundary: 'Observability must prove recovery value before promotion.',
 	}),
+	portfolioClaim({
+		rank: 11,
+		name: 'research-surface-hygiene',
+		claim: 'research surface as release evidence',
+		northStarLink: 'Honest machine-readable proof instead of expanding notes.',
+		status: 'speculative-do-not-promote',
+		evidenceNeeded: claimEvidenceNeeded({
+			fixture:
+				'Inventory of current research files split into accepted evidence, active owner blockers, and archive-only material.',
+			benchmark:
+				'No benchmark claim; measure only count of unclassified research artifacts and whether each has an owner decision.',
+			surface:
+				'Release-proof index and owner handoff only; no SDK, CLI, API, MCP, or documentation surface.',
+			validationGate:
+				'Release-proof-index tests prove each promoted research item names evidence we have, evidence missing, QSS contrast, allowed wording, forbidden wording, and next owner action.',
+			competitorContrast:
+				'QSS comparison is blocked until research evidence is classified into release decisions instead of broad notes.',
+			honestBoundary:
+				'Untriaged research files are not release evidence and must not be cited for product, correctness, or performance claims.',
+			killCriterion:
+				'Do not promote any new research-derived claim while its source material is unclassified or lacks an owner-ready next action.',
+		}),
+		likelyHandoffOwner: ['product', 'release'],
+		handoffDecision: 'do-not-promote-yet',
+		boundary:
+			'Research hygiene blocker only; classify or archive existing material before starting new research surfaces.',
+	}),
 ]
 
 const DEFERRED_CLAIMS: readonly ReleaseProofDeferredClaim[] = [
@@ -2816,6 +2843,20 @@ const DEFERRED_CLAIMS: readonly ReleaseProofDeferredClaim[] = [
 			'Do not promote if traces are only verbose logs or if they do not improve a concrete repair, audit, or recovery workflow.',
 		boundary:
 			'No claim of autonomous correctness, signed audit trail, or complete observability across every workbook feature.',
+	},
+	{
+		name: 'research-surface-hygiene',
+		claim: 'research surface as release evidence',
+		status: 'do-not-promote-yet',
+		ownerLoops: ['product', 'release'],
+		reason:
+			'The research/product lane must not promote broad or dirty research material until it is classified as accepted evidence, active blocker, or archive-only.',
+		proofNeeded:
+			'Classify current research files into accepted evidence, active owner blockers, and archive-only material, then expose only owner-ready decisions through the release-proof index.',
+		killCriterion:
+			'Do not promote any research-derived claim while its source material is unclassified or lacks an owner-ready next action.',
+		boundary:
+			'Untriaged research files are not release evidence and must not be cited for product, correctness, or performance claims.',
 	},
 ]
 

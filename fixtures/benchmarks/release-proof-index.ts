@@ -3662,6 +3662,7 @@ function releaseDecisionValidationCommands(
 		case 'property-journal-laws':
 			return [
 				'bun test fixtures/benchmarks/journal-law-proof.test.ts --timeout 30000',
+				'bun run fixtures/benchmarks/journal-law-proof.ts --exact-cases 48 --sequence-length 5 --claim-report --json',
 				'bun test packages/sdk/src/journal-exactness.test.ts --timeout 30000',
 			]
 		case 'columnar-scan-sidecars':
@@ -4464,11 +4465,12 @@ const RELEASE_PROOF_BUNDLE_BLOCKER = {
 
 const PROPERTY_JOURNAL_LAW_BLOCKER = {
 	ownerAction:
-		'Correctness owner keeps property-journal-laws out of release wording, accepts deterministic journal-law evidence only as local correctness proof, and either adds shrinkable/replayable fast-check generation or records a permanent test-strategy-only downgrade; validate with `bun test fixtures/benchmarks/journal-law-proof.test.ts --timeout 30000` and focused journal exactness coverage before any inverse-law wording.',
+		'Correctness owner keeps property-journal-laws out of release wording, accepts deterministic journal-law evidence only as local correctness proof, and either adds shrinkable/replayable fast-check generation or records a permanent test-strategy-only downgrade; validate with `bun test fixtures/benchmarks/journal-law-proof.test.ts --timeout 30000`, `bun run fixtures/benchmarks/journal-law-proof.ts --exact-cases 48 --sequence-length 5 --claim-report --json`, and focused journal exactness coverage before any inverse-law wording.',
 	allowedWording:
 		'Do not promote property-journal-laws as release wording today. Allowed wording: deterministic local journal-law tests are correctness guardrails for covered exact operations and explicit lossy boundaries, not product undo or audit claims.',
 	evidenceWeHave: [
 		'Journal-law proof command exists: `bun test fixtures/benchmarks/journal-law-proof.test.ts --timeout 30000` covers generated exact inverse-law sequences, lossy metadata boundaries, operation-family counts, issue reasons, and claim-safe markdown.',
+		'Journal-law claim report exists: `bun run fixtures/benchmarks/journal-law-proof.ts --exact-cases 48 --sequence-length 5 --claim-report --json` emits exact case count, lossy boundary count, exact operation families, lossy issue reasons, do-not-promote wording, and next proof.',
 		'SDK journal exactness tests cover allowed lossy issue reasons, representative exact inverse restoration, saved package-state lossiness, formula-binding lossiness, dynamic spill lossiness, table-style metadata boundaries, and journal surface classifications in `packages/sdk/src/journal-exactness.test.ts`.',
 		'Claim report wording already limits the proof to deterministic local journal evidence and reports style, table-style, package-part, data-validation, and conditional-format lossy boundaries.',
 	],

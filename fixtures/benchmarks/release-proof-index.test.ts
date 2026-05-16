@@ -1518,6 +1518,7 @@ describe('release proof evidence index', () => {
 			'Do not promote property-journal-laws',
 		)
 		expect(propertyJournalEvidence).toContain('journal-law-proof.test.ts')
+		expect(propertyJournalEvidence).toContain('journal-law-proof.ts --exact-cases 48')
 		expect(propertyJournalEvidence).toContain('packages/sdk/src/journal-exactness.test.ts')
 		expect(propertyJournalEvidence).toContain('deterministic local journal evidence')
 		expect(propertyJournalMissing).toContain('Generated operation sequences')
@@ -1528,8 +1529,10 @@ describe('release proof evidence index', () => {
 		expect(propertyJournalForbidden).toContain('signed audit')
 		expect(propertyJournalNextOwnerAction).toContain('fast-check')
 		expect(propertyJournalNextOwnerAction).toContain('journal-law-proof.test.ts')
+		expect(propertyJournalNextOwnerAction).toContain('--claim-report --json')
 		expect(propertyJournalDecision?.validationCommands).toEqual([
 			'bun test fixtures/benchmarks/journal-law-proof.test.ts --timeout 30000',
+			'bun run fixtures/benchmarks/journal-law-proof.ts --exact-cases 48 --sequence-length 5 --claim-report --json',
 			'bun test packages/sdk/src/journal-exactness.test.ts --timeout 30000',
 		])
 		const columnarSidecarDecision = index.releaseDecisionBoard.doNotPromoteYet.find(

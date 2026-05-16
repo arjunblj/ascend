@@ -347,6 +347,10 @@ if (apiOpenPlan.recommendedLoadOptions?.mode !== 'full') {
 	throw new Error('API open-plan returned unexpected load options: ' + JSON.stringify(apiOpenPlan))
 }
 await apiJson(apiFetch, '/write', { file: apiInput, ops: setupOps })
+const apiTrust = await apiJson(apiFetch, '/trust-report', { file: apiInput, maxFindings: 20 })
+if (apiTrust.trust === 'unsafe') {
+	throw new Error('API trust preflight unexpectedly unsafe: ' + JSON.stringify(apiTrust))
+}
 const apiInspect = await apiJson(apiFetch, '/inspect', { file: apiInput })
 const apiPlan = await apiJson(apiFetch, '/plan', { file: apiInput, ops: planOps })
 if (apiPlan.preview?.wouldSucceed !== true) {
@@ -384,6 +388,9 @@ if (apiWorkflow.endpoints?.plan !== 'POST /plan' || apiWorkflow.endpoints?.commi
 if (!apiWorkflow.workflow?.some((step) => step.step === 'reopen-verify')) {
 	throw new Error('installed API agent workflow contract missing reopen-verify step')
 }
+if (!apiWorkflow.workflow?.some((step) => step.step === 'trust-preflight')) {
+	throw new Error('installed API agent workflow contract missing trust-preflight step')
+}
 if (apiWorkflow.examples?.apiSafeEdit !== 'bun run example:safe-edit:http <file.xlsx> <out.xlsx>') {
 	throw new Error('installed API agent workflow contract missing API safe-edit example')
 }
@@ -416,6 +423,13 @@ await mcpTool(tools, 'ascend.write', { file: mcpInput, ops: setupOps })
 const mcpOpenPlan = await mcpTool(tools, 'ascend.open_plan', { file: mcpInput })
 if (mcpOpenPlan.recommendedLoadOptions?.mode !== 'full') {
 	throw new Error('MCP open_plan returned unexpected load options: ' + JSON.stringify(mcpOpenPlan))
+}
+const mcpTrust = await mcpTool(tools, 'ascend.trust_report', {
+	file: mcpInput,
+	maxFindings: 20,
+})
+if (mcpTrust.trust === 'unsafe') {
+	throw new Error('MCP trust preflight unexpectedly unsafe: ' + JSON.stringify(mcpTrust))
 }
 const mcpInspect = await mcpTool(tools, 'ascend.inspect', { file: mcpInput })
 const mcpPlan = await mcpTool(tools, 'ascend.plan', { file: mcpInput, ops: planOps })
@@ -455,6 +469,9 @@ if (mcpWorkflow.tools?.plan !== 'ascend.plan' || mcpWorkflow.tools?.commit !== '
 }
 if (!mcpWorkflow.workflow?.some((step) => step.step === 'reopen-verify')) {
 	throw new Error('installed MCP agent workflow contract missing reopen-verify step')
+}
+if (!mcpWorkflow.workflow?.some((step) => step.step === 'trust-preflight')) {
+	throw new Error('installed MCP agent workflow contract missing trust-preflight step')
 }
 if (mcpWorkflow.examples?.mcpSafeEdit !== 'bun run example:safe-edit:mcp <file.xlsx> <out.xlsx>') {
 	throw new Error('installed MCP agent workflow contract missing MCP safe-edit example')
@@ -519,6 +536,7 @@ console.log(JSON.stringify({
 		createApiFetchExport: typeof createApiFetch,
 		createServerExport: typeof createApiServer,
 		openPlanMode: apiOpenPlan.recommendedLoadOptions.mode,
+		trust: apiTrust.trust,
 		sheets: apiInspect.sheets?.map((sheet) => sheet.name),
 		planWouldSucceed: apiPlan.preview.wouldSucceed,
 		outputSha256: apiCommit.outputSha256,
@@ -532,6 +550,7 @@ console.log(JSON.stringify({
 	mcp: {
 		createServerExport: typeof createMcpServer,
 		openPlanMode: mcpOpenPlan.recommendedLoadOptions.mode,
+		trust: mcpTrust.trust,
 		sheets: mcpInspect.sheets?.map((sheet) => sheet.name),
 		planWouldSucceed: mcpPlan.preview.wouldSucceed,
 		outputSha256: mcpCommit.outputSha256,

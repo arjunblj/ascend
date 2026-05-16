@@ -67,6 +67,7 @@ export type XlsxPackageOwnerScope =
 	| 'timeline'
 	| 'external-link'
 	| 'custom-xml'
+	| 'analytics'
 	| 'active-content'
 	| 'security'
 	| 'document-properties'
@@ -272,7 +273,9 @@ export function classifyPackageFeatureFamily(
 		return 'preservedDataModel'
 	}
 	if (path.includes('/tables/')) return 'preservedTable'
-	if (path.includes('/queryTables/')) return 'preservedQueryTable'
+	if (path.includes('/queryTables/') || lowerRelType.endsWith('/relationships/querytable')) {
+		return 'preservedQueryTable'
+	}
 	if (lowerRelType.endsWith('/relationships/hyperlink')) return 'preservedHyperlink'
 	if (/\/comments\d+\.xml$/i.test(path)) return 'preservedComments'
 	if (path.includes('/threadedComments/') || path.includes('/persons/')) {
@@ -490,6 +493,15 @@ function classifyOwnerScope(
 	if (/(^|\/)externalLinks\//.test(partPath)) return 'external-link'
 	if (primary?.type === REL_CUSTOM_XML) return 'custom-xml'
 	if (/(^|\/)customXml\//i.test(partPath)) return 'custom-xml'
+	if (
+		primary?.type === REL_CONNECTIONS ||
+		primary?.type === REL_DATA_MODEL ||
+		primary?.type === REL_POWER_QUERY_MASHUP ||
+		primary?.type === REL_QUERY_TABLE
+	) {
+		return 'analytics'
+	}
+	if (/(^|\/)(model|customData|queryTables)\//i.test(partPath)) return 'analytics'
 	if (primary?.type === REL_VBA_PROJECT_SIGNATURE) return 'security'
 	if (
 		primary?.type === REL_ACTIVE_X_CONTROL ||

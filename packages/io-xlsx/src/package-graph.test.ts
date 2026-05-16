@@ -53,6 +53,7 @@ describe('XLSX package graph', () => {
 			'xl/worksheets/_rels/sheet1.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rIdDrawing" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/>
+  <Relationship Id="rIdQueryTableOpaque" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/queryTable" Target="opaque-query.bin"/>
   <Relationship Id="rIdHyperlink" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.invalid/report" TargetMode="External"/>
   <Relationship Id="rIdControlProps" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/ctrlProp" Target="https://example.invalid/control.xml" TargetMode="External"/>
   <Relationship Id="rIdControlPropsOpaque" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/ctrlProp" Target="opaque-control.bin"/>
@@ -77,6 +78,8 @@ describe('XLSX package graph', () => {
 			'xl/diagrams/data1.xml': '<dgm:dataModel/>',
 			'xl/model/item.data': 'data-model-bytes',
 			'xl/customData/item1.data': 'power-query-bytes',
+			'xl/opaque-mashup.bin': 'opaque-power-query-bytes',
+			'xl/opaque-model.bin': 'opaque-data-model-bytes',
 			'xl/opaque-calc.bin': 'calc-chain-bytes',
 			'xl/opaque-sheet-metadata.bin': 'metadata-bytes',
 			'xl/opaque-custom.xml': '<custom/>',
@@ -85,6 +88,7 @@ describe('XLSX package graph', () => {
 			'xl/data/connectionsPayload.xml': '<connections/>',
 			'xl/links/bookLink.xml': '<externalLink/>',
 			'xl/revisions/revisionHeaders.xml': '<headers/>',
+			'xl/worksheets/opaque-query.bin': 'query-table-bytes',
 			'xl/worksheets/opaque-control.bin': 'control-bytes',
 			'xl/drawings/opaque-ole.bin': 'ole-bytes',
 			'xl/media/image 1.png': 'not-really-a-png',
@@ -140,6 +144,15 @@ describe('XLSX package graph', () => {
 			rawTarget: 'opaque-model.bin',
 			resolvedTarget: 'xl/opaque-model.bin',
 			featureFamily: 'preservedDataModel',
+		})
+		expect(graph.relationships).toContainEqual({
+			sourcePartPath: 'xl/worksheets/sheet1.xml',
+			relationshipPartPath: 'xl/worksheets/_rels/sheet1.xml.rels',
+			id: 'rIdQueryTableOpaque',
+			type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/queryTable',
+			rawTarget: 'opaque-query.bin',
+			resolvedTarget: 'xl/worksheets/opaque-query.bin',
+			featureFamily: 'preservedQueryTable',
 		})
 		expect(graph.relationships).toContainEqual({
 			sourcePartPath: 'xl/workbook.xml',
@@ -276,16 +289,38 @@ describe('XLSX package graph', () => {
 			preservationPolicy: 'preserve-exact',
 		})
 		expect(graph.parts.find((part) => part.path === 'xl/model/item.data')).toMatchObject({
+			ownerScope: 'analytics',
 			sourceRelationshipId: 'rIdDataModel',
 			featureFamily: 'preservedDataModel',
 			preservationPolicy: 'inspect-only',
 			bytePreservationExpected: true,
 		})
 		expect(graph.parts.find((part) => part.path === 'xl/customData/item1.data')).toMatchObject({
+			ownerScope: 'analytics',
 			sourceRelationshipId: 'rIdPowerQuery',
 			featureFamily: 'preservedPowerQuery',
 			preservationPolicy: 'inspect-only',
 			bytePreservationExpected: true,
+		})
+		expect(graph.parts.find((part) => part.path === 'xl/opaque-mashup.bin')).toMatchObject({
+			ownerScope: 'analytics',
+			sourceRelationshipId: 'rIdPowerQueryOpaque',
+			featureFamily: 'preservedPowerQuery',
+			preservationPolicy: 'inspect-only',
+		})
+		expect(graph.parts.find((part) => part.path === 'xl/opaque-model.bin')).toMatchObject({
+			ownerScope: 'analytics',
+			sourceRelationshipId: 'rIdDataModelOpaque',
+			featureFamily: 'preservedDataModel',
+			preservationPolicy: 'inspect-only',
+		})
+		expect(
+			graph.parts.find((part) => part.path === 'xl/worksheets/opaque-query.bin'),
+		).toMatchObject({
+			ownerScope: 'analytics',
+			sourceRelationshipId: 'rIdQueryTableOpaque',
+			featureFamily: 'preservedQueryTable',
+			preservationPolicy: 'preserve-exact',
 		})
 		expect(graph.parts.find((part) => part.path === 'xl/opaque-calc.bin')).toMatchObject({
 			ownerScope: 'metadata',
@@ -330,6 +365,7 @@ describe('XLSX package graph', () => {
 		expect(
 			graph.parts.find((part) => part.path === 'xl/data/connectionsPayload.xml'),
 		).toMatchObject({
+			ownerScope: 'analytics',
 			sourceRelationshipId: 'rIdConnections',
 			featureFamily: 'preservedConnection',
 			preservationPolicy: 'preserve-exact',

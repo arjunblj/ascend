@@ -1045,6 +1045,18 @@ describe('release proof evidence index', () => {
 			}),
 			expect.objectContaining({
 				evidenceId: 'cli-agent-facing-open-diagnostics-proof',
+				acceptedScope: expect.stringContaining('83246775'),
+				command: expect.stringContaining('find searches for values'),
+				path: expect.stringContaining('apps/cli/src/commands/find.ts'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'cli-agent-facing-open-diagnostics-proof',
+				acceptedScope: expect.stringContaining('42f881b5'),
+				command: expect.stringContaining('ops --json exposes operation schemas with examples'),
+				path: expect.stringContaining('apps/cli/src/cli.test.ts'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'cli-agent-facing-open-diagnostics-proof',
 				acceptedScope: expect.stringContaining('9b155c7f'),
 				boundary: expect.stringContaining('CLI agent-facing diagnostics only'),
 			}),

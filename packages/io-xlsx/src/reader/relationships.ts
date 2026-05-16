@@ -26,6 +26,8 @@ export const REL_SHEET_METADATA =
 export const REL_TABLE = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/table'
 export const REL_QUERY_TABLE =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/queryTable'
+export const REL_HYPERLINK =
+	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink'
 export const REL_COMMENTS =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments'
 export const REL_DRAWING =

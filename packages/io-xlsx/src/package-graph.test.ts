@@ -46,6 +46,7 @@ describe('XLSX package graph', () => {
 			'xl/worksheets/_rels/sheet1.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rIdDrawing" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/>
+  <Relationship Id="rIdHyperlink" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.invalid/report" TargetMode="External"/>
 </Relationships>`,
 			'xl/drawings/drawing1.xml': '<xdr:wsDr/>',
 			'xl/drawings/_rels/drawing1.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -118,6 +119,15 @@ describe('XLSX package graph', () => {
 			rawTarget: 'https://example.invalid/logo.png',
 			targetMode: 'External',
 			featureFamily: 'preservedMedia',
+		})
+		expect(graph.relationships).toContainEqual({
+			sourcePartPath: 'xl/worksheets/sheet1.xml',
+			relationshipPartPath: 'xl/worksheets/_rels/sheet1.xml.rels',
+			id: 'rIdHyperlink',
+			type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink',
+			rawTarget: 'https://example.invalid/report',
+			targetMode: 'External',
+			featureFamily: 'preservedHyperlink',
 		})
 		expect(graph.parts.find((part) => part.path === 'xl/workbook.xml')).toMatchObject({
 			contentTypeSource: 'override',

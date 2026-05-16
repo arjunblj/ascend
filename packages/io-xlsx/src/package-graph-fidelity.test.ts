@@ -489,7 +489,7 @@ describe('XLSX package graph fidelity audits', () => {
 				code: 'package_preserved_relationship_identity',
 				relationshipPartPath: 'xl/drawings/_rels/drawing1.xml.rels',
 				relationshipId: 'rId7',
-				featureFamily: 'preservedOther',
+				featureFamily: 'preservedHyperlink',
 				expected: expect.objectContaining({
 					rawTarget: 'https://example.com/original',
 					targetMode: 'External',

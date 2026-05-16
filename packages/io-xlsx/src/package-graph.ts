@@ -13,6 +13,7 @@ import {
 	REL_CONNECTIONS,
 	REL_DRAWING,
 	REL_EXTERNAL_LINK,
+	REL_HYPERLINK,
 	REL_IMAGE,
 	REL_MACROSHEET,
 	REL_OFFICE_DOC,
@@ -238,6 +239,7 @@ export function classifyPackageFeatureFamily(
 	if (path.includes('/model/')) return 'preservedDataModel'
 	if (path.includes('/tables/')) return 'preservedTable'
 	if (path.includes('/queryTables/')) return 'preservedQueryTable'
+	if (lowerRelType.endsWith('/relationships/hyperlink')) return 'preservedHyperlink'
 	if (/\/comments\d+\.xml$/i.test(path)) return 'preservedComments'
 	if (path.includes('/threadedComments/') || path.includes('/persons/')) {
 		return 'preservedThreadedComments'
@@ -455,6 +457,7 @@ function classifyRelationshipFeatureFamily(
 	if (relationship.type === REL_TABLE) return 'preservedTable'
 	if (relationship.type === REL_QUERY_TABLE) return 'preservedQueryTable'
 	if (relationship.type === REL_CONNECTIONS) return 'preservedConnection'
+	if (relationship.type === REL_HYPERLINK) return 'preservedHyperlink'
 	if (relationship.type === REL_COMMENTS) return 'preservedComments'
 	if (relationship.type === REL_THREADED_COMMENT) return 'preservedThreadedComments'
 	if (relationship.type === REL_DRAWING) return 'preservedDrawing'

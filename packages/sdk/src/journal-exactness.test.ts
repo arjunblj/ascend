@@ -3823,7 +3823,7 @@ describe('mutation journal exactness model', () => {
 					{
 						op: 'setSheetProtection',
 						sheet: 'Sheet1',
-						password: 'before',
+						passwordPlaintext: 'before',
 						options: { selectLockedCells: false },
 					},
 				],
@@ -3831,7 +3831,7 @@ describe('mutation journal exactness model', () => {
 					{
 						op: 'setSheetProtection',
 						sheet: 'Sheet1',
-						password: 'after',
+						passwordPlaintext: 'after',
 						options: { selectUnlockedCells: false },
 					},
 				],

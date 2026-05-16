@@ -106,6 +106,44 @@ describe('operation schema agent DX', () => {
 		}
 	})
 
+	test('setSheetProtection separates plaintext passwords from preserved legacy hashes', () => {
+		const schema = getOperationsSchema().find((entry) => entry.op === 'setSheetProtection')
+		expect(schema?.schema.properties.password?.description).toContain('legacy')
+		expect(schema?.schema.properties.passwordPlaintext?.description).toContain('Plaintext')
+
+		const parsed = parseOperations([
+			{
+				op: 'setSheetProtection',
+				sheet: 'Sheet1',
+				passwordPlaintext: 'review',
+				options: { autoFilter: true },
+			},
+			{ op: 'setSheetProtection', sheet: 'Sheet1', password: '83AF' },
+		])
+		expect(parsed.ok).toBe(true)
+
+		const mixed = parseOperations([
+			{
+				op: 'setSheetProtection',
+				sheet: 'Sheet1',
+				passwordPlaintext: 'review',
+				password: '83AF',
+			},
+		])
+		expect(mixed.ok).toBe(false)
+		if (!mixed.ok) {
+			expect(mixed.issues[0]).toContain('cannot both be provided')
+		}
+
+		const nonHash = parseOperations([
+			{ op: 'setSheetProtection', sheet: 'Sheet1', password: 'review' },
+		])
+		expect(nonHash.ok).toBe(false)
+		if (!nonHash.ok) {
+			expect(nonHash.issues[0]).toContain('legacy hash')
+		}
+	})
+
 	test('copyRange and moveRange expose optional cross-sheet destination', () => {
 		const copySchema = getOperationsSchema().find((entry) => entry.op === 'copyRange')
 		const moveSchema = getOperationsSchema().find((entry) => entry.op === 'moveRange')

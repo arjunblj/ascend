@@ -62,6 +62,27 @@ describe('AscendWorkbook', () => {
 		await expect(Ascend.open(new Uint8Array(encrypted))).rejects.toThrow('requires a password')
 	})
 
+	test('writes sheet protection from plaintext as a legacy Excel hash', async () => {
+		const wb = Ascend.create()
+		const result = wb.apply([
+			{
+				op: 'setSheetProtection',
+				sheet: 'Sheet1',
+				passwordPlaintext: 'password',
+				options: { autoFilter: true },
+			},
+		])
+		expect(result.errors).toEqual([])
+
+		const reopened = await Ascend.open(wb.toBytes())
+		expect(reopened.sheet('Sheet1')?.protection).toMatchObject({
+			sheet: true,
+			password: '83AF',
+			autoFilter: true,
+		})
+		expect(JSON.stringify(reopened.getWorkbookModel())).not.toContain('passwordPlaintext')
+	})
+
 	test('create returns an empty workbook with one sheet', () => {
 		const wb = AscendWorkbook.create()
 		expect(wb.sheets).toEqual(['Sheet1'])

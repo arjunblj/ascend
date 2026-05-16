@@ -72,6 +72,7 @@ export {
 	normalizePivotCaption,
 	pivotDataFieldCaptionsMatch,
 } from './pivot.ts'
+export { hashLegacyProtectionPassword, legacyProtectionPasswordMatches } from './protection.ts'
 export { RangeIndex, type RangeIndexEntry, rangeMaskOffsets } from './range-index.ts'
 export type { CellRef, RangeRef } from './refs.ts'
 export {

@@ -2,6 +2,7 @@ import {
 	type CellFormulaBinding,
 	createSheetId,
 	createTableId,
+	hashLegacyProtectionPassword,
 	parseA1,
 	type Sheet,
 	type Table,
@@ -367,6 +368,9 @@ export function handleSetSheetProtection(
 	sheet.ensureWritable()
 	const prot: import('@ascend/core').SheetProtection = {
 		sheet: true,
+		...(op.passwordPlaintext !== undefined
+			? { password: hashLegacyProtectionPassword(op.passwordPlaintext) }
+			: {}),
 		...(op.password ? { password: op.password } : {}),
 		...(op.options?.formatCells !== undefined ? { formatCells: op.options.formatCells } : {}),
 		...(op.options?.formatColumns !== undefined ? { formatColumns: op.options.formatColumns } : {}),
@@ -385,7 +389,32 @@ export function handleSetSheetProtection(
 function validateSheetProtectionInput(op: Extract<Operation, { op: 'setSheetProtection' }>) {
 	if (op.password !== undefined && typeof op.password !== 'string') {
 		return ascendError('VALIDATION_ERROR', 'setSheetProtection password must be a string', {
-			suggestedFix: 'Use a string password value or omit password.',
+			suggestedFix: 'Use a string legacy hash value or omit password.',
+		})
+	}
+	if (op.passwordPlaintext !== undefined && typeof op.passwordPlaintext !== 'string') {
+		return ascendError(
+			'VALIDATION_ERROR',
+			'setSheetProtection passwordPlaintext must be a string',
+			{
+				suggestedFix: 'Use a string plaintext password or omit passwordPlaintext.',
+			},
+		)
+	}
+	if (op.password !== undefined && op.passwordPlaintext !== undefined) {
+		return ascendError(
+			'VALIDATION_ERROR',
+			'setSheetProtection cannot mix password and passwordPlaintext',
+			{
+				suggestedFix:
+					'Use passwordPlaintext to hash a caller-provided password, or password to preserve an existing legacy hash.',
+			},
+		)
+	}
+	if (op.password !== undefined && !/^[0-9A-Fa-f]{1,4}$/.test(op.password)) {
+		return ascendError('VALIDATION_ERROR', 'setSheetProtection password must be a legacy hash', {
+			suggestedFix:
+				'Use a 1-4 digit hexadecimal legacy hash, or use passwordPlaintext to hash a password.',
 		})
 	}
 	if (

@@ -3199,6 +3199,12 @@ function sheetProtectionValueIssues(
 	if (op.password !== undefined && typeof op.password !== 'string') {
 		issues.push(sheetProtectionUnsupportedValueIssue(op.sheet, 'password'))
 	}
+	if (op.passwordPlaintext !== undefined && typeof op.passwordPlaintext !== 'string') {
+		issues.push(sheetProtectionUnsupportedValueIssue(op.sheet, 'passwordPlaintext'))
+	}
+	if (op.password !== undefined && op.passwordPlaintext !== undefined) {
+		issues.push(sheetProtectionUnsupportedValueIssue(op.sheet, 'password+passwordPlaintext'))
+	}
 	const options = op.options as unknown
 	if (options !== undefined && !isPlainJournalObject(options)) {
 		issues.push(sheetProtectionUnsupportedValueIssue(op.sheet, 'options'))

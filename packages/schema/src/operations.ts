@@ -353,6 +353,7 @@ export type Operation =
 	| {
 			readonly op: 'setSheetProtection'
 			readonly sheet: string
+			readonly passwordPlaintext?: string
 			readonly password?: string
 			readonly options?: SheetProtectionOptions
 	  }

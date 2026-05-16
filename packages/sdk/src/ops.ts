@@ -178,7 +178,15 @@ const FIELD_SCHEMAS: Record<
 			'numberFormat: string (e.g. "#,##0.00"). ' +
 			'protection: { locked?, hidden? }.',
 	},
-	password: { type: 'string', description: 'Protection password' },
+	password: {
+		type: 'string',
+		description: 'Existing Excel legacy sheet-protection hash to preserve.',
+	},
+	passwordPlaintext: {
+		type: 'string',
+		description:
+			'Plaintext sheet-protection password. Ascend writes the Excel legacy hash and does not store this value.',
+	},
 	options: {
 		type: 'object',
 		description:
@@ -480,7 +488,7 @@ export function listOperations(): readonly OperationSchema[] {
 			op: 'setSheetProtection',
 			description: 'Protect a sheet',
 			requiredFields: ['sheet'],
-			optionalFields: ['password', 'options'],
+			optionalFields: ['passwordPlaintext', 'password', 'options'],
 		},
 		{ op: 'setTabColor', description: 'Set sheet tab color', requiredFields: ['sheet', 'color'] },
 		{
@@ -922,9 +930,33 @@ function validateOperationSemantics(
 			return validateSetSlicerCacheItem(record, path)
 		case 'setTimelineRange':
 			return validateSetTimelineRange(record, path)
+		case 'setSheetProtection':
+			return validateSetSheetProtection(record, path)
 		default:
 			return []
 	}
+}
+
+function validateSetSheetProtection(
+	record: Record<string, unknown>,
+	path: string,
+): readonly string[] {
+	if ('password' in record && 'passwordPlaintext' in record) {
+		return [
+			`${path}.password and ${path}.passwordPlaintext cannot both be provided for setSheetProtection`,
+		]
+	}
+	const password = record.password
+	if (
+		password !== undefined &&
+		typeof password === 'string' &&
+		!/^[0-9A-Fa-f]{1,4}$/.test(password)
+	) {
+		return [
+			`${path}.password must be a 1-4 digit Excel legacy hash; use passwordPlaintext for caller-provided passwords`,
+		]
+	}
+	return []
 }
 
 function validateSetPivotCache(record: Record<string, unknown>, path: string): readonly string[] {
@@ -1061,6 +1093,7 @@ function validateOperationField(
 		case 'format':
 		case 'scope':
 		case 'password':
+		case 'passwordPlaintext':
 		case 'color':
 		case 'source':
 		case 'target':
@@ -1688,7 +1721,7 @@ function operationExample(op: string): Record<string, unknown> {
 		case 'clearAutoFilter':
 			return { op, sheet: 'Sheet1' }
 		case 'setSheetProtection':
-			return { op, sheet: 'Sheet1', options: { formatCells: false } }
+			return { op, sheet: 'Sheet1', passwordPlaintext: 'review', options: { formatCells: false } }
 		case 'setTabColor':
 			return { op, sheet: 'Sheet1', color: '#4472C4' }
 		case 'hideSheet':

@@ -2971,6 +2971,14 @@ describe('applyOperation', () => {
 	test('setSheetProtection rejects invalid public metadata without mutation', () => {
 		const cases: readonly Operation[] = [
 			{ op: 'setSheetProtection', sheet: 'Sheet1', password: 123 as never },
+			{ op: 'setSheetProtection', sheet: 'Sheet1', password: 'secret' },
+			{ op: 'setSheetProtection', sheet: 'Sheet1', passwordPlaintext: 123 as never },
+			{
+				op: 'setSheetProtection',
+				sheet: 'Sheet1',
+				password: 'ABCD',
+				passwordPlaintext: 'secret',
+			},
 			{ op: 'setSheetProtection', sheet: 'Sheet1', options: null as never },
 			{ op: 'setSheetProtection', sheet: 'Sheet1', options: [] as never },
 			{ op: 'setSheetProtection', sheet: 'Sheet1', options: { sort: 'yes' } as never },
@@ -2988,6 +2996,31 @@ describe('applyOperation', () => {
 			expect(result.error.code, JSON.stringify(op)).toBe('VALIDATION_ERROR')
 			expect(JSON.stringify(sheet.protection), JSON.stringify(op)).toBe(before)
 		}
+	})
+
+	test('setSheetProtection hashes plaintext passwords while preserving explicit legacy hashes', () => {
+		const hashed = setup()
+		const hashedResult = applyOperation(hashed, {
+			op: 'setSheetProtection',
+			sheet: 'Sheet1',
+			passwordPlaintext: 'password',
+			options: { autoFilter: true },
+		})
+		expectOk(hashedResult)
+		expect(hashed.getSheet('Sheet1')?.protection).toMatchObject({
+			sheet: true,
+			password: '83AF',
+			autoFilter: true,
+		})
+
+		const preserved = setup()
+		const preservedResult = applyOperation(preserved, {
+			op: 'setSheetProtection',
+			sheet: 'Sheet1',
+			password: 'CBEB',
+		})
+		expectOk(preservedResult)
+		expect(preserved.getSheet('Sheet1')?.protection?.password).toBe('CBEB')
 	})
 
 	test('copyRange copies values and translates relative formulas', () => {

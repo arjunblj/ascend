@@ -37,6 +37,8 @@ export interface WorkbookTrustFindingLocation {
 	readonly sheet?: string
 	readonly ref?: string
 	readonly partPath?: string
+	readonly name?: string
+	readonly connectionId?: number
 	readonly relationshipPartPath?: string
 	readonly relationshipId?: string
 	readonly target?: string
@@ -215,6 +217,9 @@ export function buildWorkbookTrustReport(
 			location: {
 				partPath: connection.partPath,
 				kind: connection.kind,
+				...(connection.sheetName ? { sheet: connection.sheetName } : {}),
+				...(connection.name ? { name: connection.name } : {}),
+				...(connection.connectionId !== undefined ? { connectionId: connection.connectionId } : {}),
 			},
 			nextAction:
 				'Review connection settings and refresh externally only in a trusted Excel environment.',

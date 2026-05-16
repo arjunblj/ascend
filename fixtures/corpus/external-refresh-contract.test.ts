@@ -241,6 +241,29 @@ describe('external refresh corpus contract', () => {
 			notSavedCount: 0,
 			unknownCount: 2,
 		})
+		expect(workbook.trustReport().findings).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					code: 'workbook.dataConnection',
+					location: expect.objectContaining({
+						partPath: 'xl/connections.xml',
+						kind: 'connection',
+						name: 'conn_with_delim',
+						connectionId: 1,
+					}),
+				}),
+				expect.objectContaining({
+					code: 'workbook.dataConnection',
+					location: expect.objectContaining({
+						partPath: 'xl/queryTables/queryTable1.xml',
+						kind: 'queryTable',
+						sheet: 'Sheet1',
+						name: 'conn_with_delim',
+						connectionId: 1,
+					}),
+				}),
+			]),
+		)
 		expect(sortedContracts(workbook.refreshMetadata().entries, refreshContract)).toEqual(
 			expect.arrayContaining([
 				expect.objectContaining({

@@ -276,19 +276,56 @@ describe('agent workflow loss audit', () => {
 		const ops = [
 			{ op: 'setCells' as const, sheet: 'Strings', updates: [{ ref: 'Z10', value: 'retryable' }] },
 		]
+		const progressEvents: { readonly phase: string; readonly status: string }[] = []
 
-		await expect(
-			commitAgentPlanFromWorkbook(
+		let blockedError: unknown
+		try {
+			await commitAgentPlanFromWorkbook(
 				input,
 				inputSha256,
 				wb,
 				ops,
-				{ output: blockedOutput },
+				{
+					output: blockedOutput,
+					onProgress: (event) => progressEvents.push(event),
+				},
 				{
 					sourceBytes,
 				},
-			),
-		).rejects.toThrow()
+			)
+		} catch (error) {
+			blockedError = error
+		}
+		expect(
+			(
+				blockedError as {
+					readonly ascendError?: {
+						readonly code?: string
+						readonly retryable?: boolean
+						readonly retryStrategy?: string
+						readonly details?: {
+							readonly output?: string
+							readonly operation?: string
+							readonly cause?: string
+						}
+						readonly suggestedFix?: string
+					}
+				}
+			).ascendError,
+		).toMatchObject({
+			code: 'EXPORT_ERROR',
+			retryable: true,
+			retryStrategy: 'modified',
+			details: {
+				output: blockedOutput,
+				operation: 'atomic-workbook-write',
+				cause: expect.any(String),
+			},
+			suggestedFix: expect.stringContaining('writable output file path'),
+		})
+		expect(progressEvents).toContainEqual(
+			expect.objectContaining({ phase: 'write', status: 'failed' }),
+		)
 		expect(readdirSync(TEMP_DIR).filter((name) => name.includes('.ascend-tmp'))).toHaveLength(0)
 		expect(wb.sheet('Strings')?.cell('Z10')).toBeUndefined()
 
@@ -307,6 +344,95 @@ describe('agent workflow loss audit', () => {
 			kind: 'string',
 			value: 'retryable',
 		})
+	})
+
+	test('in-place backup failures roll back before writing and remain retryable', async () => {
+		const input = join(TEMP_DIR, 'backup-source.xlsx')
+		const blockedBackup = join(TEMP_DIR, 'blocked-backup.xlsx')
+		const retryBackup = join(TEMP_DIR, 'retry-backup.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		mkdirSync(blockedBackup, { recursive: true })
+		const sourceBytes = new Uint8Array(readFileSync('fixtures/xlsx/xlsxwriter/strings_links.xlsx'))
+		await Bun.write(input, sourceBytes)
+		const wb = await AscendWorkbook.open(sourceBytes)
+		const inputSha256 = createHash('sha256').update(sourceBytes).digest('hex')
+		const ops = [
+			{ op: 'setCells' as const, sheet: 'Strings', updates: [{ ref: 'Z11', value: 'retryable' }] },
+		]
+		const progressEvents: { readonly phase: string; readonly status: string }[] = []
+
+		let backupError: unknown
+		try {
+			await commitAgentPlanFromWorkbook(
+				input,
+				inputSha256,
+				wb,
+				ops,
+				{
+					inPlace: true,
+					backup: blockedBackup,
+					onProgress: (event) => progressEvents.push(event),
+				},
+				{
+					output: input,
+					sourceBytes,
+				},
+			)
+		} catch (error) {
+			backupError = error
+		}
+		expect(
+			(
+				backupError as {
+					readonly ascendError?: {
+						readonly code?: string
+						readonly retryable?: boolean
+						readonly retryStrategy?: string
+						readonly details?: {
+							readonly file?: string
+							readonly backup?: string
+							readonly cause?: string
+						}
+						readonly suggestedFix?: string
+					}
+				}
+			).ascendError,
+		).toMatchObject({
+			code: 'EXPORT_ERROR',
+			retryable: true,
+			retryStrategy: 'modified',
+			details: {
+				file: input,
+				backup: blockedBackup,
+				cause: expect.any(String),
+			},
+			suggestedFix: expect.stringContaining('writable backup file path'),
+		})
+		expect(progressEvents).toContainEqual(
+			expect.objectContaining({ phase: 'backup', status: 'failed' }),
+		)
+		expect(wb.sheet('Strings')?.cell('Z11')).toBeUndefined()
+		const inputAfterFailure = await AscendWorkbook.open(new Uint8Array(readFileSync(input)))
+		expect(inputAfterFailure.sheet('Strings')?.cell('Z11')).toBeUndefined()
+
+		await commitAgentPlanFromWorkbook(
+			input,
+			inputSha256,
+			wb,
+			ops,
+			{ inPlace: true, backup: retryBackup },
+			{
+				output: input,
+				sourceBytes,
+			},
+		)
+		const reopenedInput = await AscendWorkbook.open(new Uint8Array(readFileSync(input)))
+		expect(reopenedInput.sheet('Strings')?.cell('Z11')?.value).toEqual({
+			kind: 'string',
+			value: 'retryable',
+		})
+		const reopenedBackup = await AscendWorkbook.open(new Uint8Array(readFileSync(retryBackup)))
+		expect(reopenedBackup.sheet('Strings')?.cell('Z11')).toBeUndefined()
 	})
 
 	test('plans expose digital signature invalidation package policy', async () => {

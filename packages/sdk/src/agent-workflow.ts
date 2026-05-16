@@ -2055,7 +2055,23 @@ export async function commitAgentPlanFromWorkbook(
 		wb.restoreMutationRollbackSnapshot(rollbackSnapshot)
 		throw error
 	}
-	if (options.inPlace && options.backup) await copyFile(file, options.backup)
+	if (options.inPlace && options.backup) {
+		await progress('backup', 'started', `Creating in-place backup at ${options.backup}.`)
+		try {
+			await copyFile(file, options.backup)
+		} catch (error) {
+			wb.restoreMutationRollbackSnapshot(rollbackSnapshot)
+			const backupError = workbookBackupError(file, options.backup, error)
+			await progress(
+				'backup',
+				'failed',
+				backupError.ascendError.message,
+				backupError.ascendError.details,
+			)
+			throw backupError
+		}
+		await progress('backup', 'ok', `In-place backup created at ${options.backup}.`)
+	}
 	const sourceBytes = internal.sourceBytes ?? (await fileBytes(file))
 	await progress('write', 'started', `Writing workbook to ${output}.`)
 	let writeTimings: AtomicWorkbookWriteTimings
@@ -8090,11 +8106,34 @@ function atomicWorkbookWriteError(output: string, error: unknown): AscendExcepti
 			retryStrategy: 'modified',
 			details: {
 				output,
+				operation: 'atomic-workbook-write',
 				cause,
 				...(causeCode ? { causeCode } : {}),
 			},
 			suggestedFix:
 				'Choose a writable output file path and retry the same plan with the same input hash guard.',
+		}),
+	)
+}
+
+function workbookBackupError(file: string, backup: string, error: unknown): AscendException {
+	const cause = error instanceof Error ? error.message : String(error)
+	const causeCode =
+		typeof error === 'object' && error !== null && 'code' in error
+			? String((error as { readonly code?: unknown }).code)
+			: undefined
+	return new AscendException(
+		ascendError('EXPORT_ERROR', `Failed to create in-place backup at ${backup}`, {
+			retryable: true,
+			retryStrategy: 'modified',
+			details: {
+				file,
+				backup,
+				cause,
+				...(causeCode ? { causeCode } : {}),
+			},
+			suggestedFix:
+				'Choose a writable backup file path or remove the backup option before retrying the same input hash guard.',
 		}),
 	)
 }

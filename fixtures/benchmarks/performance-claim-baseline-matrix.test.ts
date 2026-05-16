@@ -62,7 +62,7 @@ describe('performance claim baseline matrix', () => {
 			'Current harness evidence now supports a SheetJS feature-rich rich-metadata row',
 		)
 		expect(markdown).toContain(
-			'Current formula/calc evidence includes focused HyperFormula indexed\n  `INDEX/MATCH` and prefix-range dirty-tail rows.',
+			'Current formula/calc evidence includes focused HyperFormula indexed\n  `INDEX/MATCH` plus prefix-range dirty-head and dirty-tail rows.',
 		)
 		for (const workload of RECORDED_WORKLOADS) expect(markdown).toContain(`\`${workload}\``)
 		expect(markdown).toContain('Humble allowed wording:')
@@ -114,6 +114,24 @@ describe('performance claim baseline matrix', () => {
 		)
 		expect(markdown).toContain(
 			'"Ascend beats HyperFormula on every incremental recalculation workflow."',
+		)
+
+		expect(markdown).toContain(
+			'## Cycle: Formula SOTA Prefix Dirty-Head HyperFormula Row at `bd91386a`',
+		)
+		expect(markdown).toContain('`hf-prefix-range-dirty-head`')
+		expect(markdown).toContain(
+			'/private/tmp/ascend-formula-dirty-head-current-bd91386a-runs/hf-prefix-range-dirty-head-repeat30.json',
+		)
+		expect(markdown).toContain(
+			'| Ascend | ran/won | 6.284 ms / 8.729 ms / 0.372 | 0.810 ms / 0.990 ms / 0.110 | 7.054 ms / 9.612 ms / 0.338 |',
+		)
+		expect(markdown).toContain(
+			'| HyperFormula | ran/lost vs Ascend | 39.465 ms / 46.316 ms / 0.085 | 11.719 ms / 13.636 ms / 0.072 | 51.246 ms / 59.952 ms / 0.073 |',
+		)
+		expect(markdown).toContain('`operationSpeedupVsHyperFormula: 14.474x`')
+		expect(markdown).toContain(
+			'Changed-cell counts differ\nbecause Ascend reports 5,000 changed output cells while HyperFormula reports\n5,001',
 		)
 
 		expect(markdown).toContain('## Owner-Ready Benchmark Blocker')

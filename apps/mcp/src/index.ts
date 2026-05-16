@@ -112,6 +112,45 @@ function replayBatchLoadOptionsError(kind: string, options: readonly string[]): 
 	)
 }
 
+function isFileNotFoundError(e: unknown): boolean {
+	if (
+		typeof e === 'object' &&
+		e !== null &&
+		'code' in e &&
+		(e as { readonly code?: unknown }).code === 'ENOENT'
+	)
+		return true
+	if (
+		typeof e === 'object' &&
+		e !== null &&
+		'errno' in e &&
+		(e as { readonly errno?: unknown }).errno === -2
+	)
+		return true
+	if (e instanceof Error && e.message.includes('ENOENT: no such file or directory')) return true
+	return false
+}
+
+function fileNotFoundAscendError(fileContext?: string): AscendError {
+	return ascendError(
+		'FILE_NOT_FOUND',
+		fileContext ? `File not found: ${fileContext}` : 'File not found',
+		{
+			retryable: true,
+			retryStrategy: 'modified',
+			...(fileContext ? { details: { file: fileContext } } : {}),
+			suggestedFix:
+				'Pass an existing workbook path that the MCP server process can read, then retry the tool call.',
+		},
+	)
+}
+
+function toolError(e: unknown, fileContext?: string): string | AscendError {
+	if (e instanceof AscendException) return e.ascendError
+	if (isFileNotFoundError(e)) return fileNotFoundAscendError(fileContext)
+	return String(e instanceof Error ? e.message : e)
+}
+
 function resolveOperationInputForWorkbook(
 	wb: AscendWorkbook,
 	ops: readonly Record<string, unknown>[] | undefined,
@@ -224,9 +263,7 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 					`Recommended ${JSON.stringify(plan.recommendedLoadOptions)} for "${file}"`,
 				)
 			} catch (e) {
-				return errorResponse(
-					e instanceof AscendException ? e.ascendError : String(e instanceof Error ? e.message : e),
-				)
+				return errorResponse(toolError(e, file))
 			}
 		},
 	)
@@ -258,9 +295,7 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 				const data = wb.inspect()
 				return okResponse(data, `Inspected workbook "${file}"`)
 			} catch (e) {
-				return errorResponse(
-					e instanceof AscendException ? e.ascendError : String(e instanceof Error ? e.message : e),
-				)
+				return errorResponse(toolError(e, file))
 			}
 		},
 	)
@@ -283,9 +318,7 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 				}))
 				return okResponse({ sheets }, `${sheets.length} sheet(s) in "${file}"`)
 			} catch (e) {
-				return errorResponse(
-					e instanceof AscendException ? e.ascendError : String(e instanceof Error ? e.message : e),
-				)
+				return errorResponse(toolError(e, file))
 			}
 		},
 	)
@@ -328,9 +361,7 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 					`Inspected ${info.activeContentCount} active-content part(s) in "${file}"`,
 				)
 			} catch (e) {
-				return errorResponse(
-					e instanceof AscendException ? e.ascendError : String(e instanceof Error ? e.message : e),
-				)
+				return errorResponse(toolError(e, file))
 			}
 		},
 	)
@@ -358,9 +389,7 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 					`Inspected untrusted workbook posture for "${file}" with ${report.summary.findingCount} finding(s)`,
 				)
 			} catch (e) {
-				return errorResponse(
-					e instanceof AscendException ? e.ascendError : String(e instanceof Error ? e.message : e),
-				)
+				return errorResponse(toolError(e, file))
 			}
 		},
 	)
@@ -1414,9 +1443,7 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 					`Planned ${input.ops.length} operation(s)`,
 				)
 			} catch (e) {
-				return errorResponse(
-					e instanceof AscendException ? e.ascendError : String(e instanceof Error ? e.message : e),
-				)
+				return errorResponse(toolError(e, file))
 			}
 		},
 	)
@@ -1554,9 +1581,7 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 					`Committed ${input.ops.length} operation(s)`,
 				)
 			} catch (e) {
-				return errorResponse(
-					e instanceof AscendException ? e.ascendError : String(e instanceof Error ? e.message : e),
-				)
+				return errorResponse(toolError(e, file))
 			}
 		},
 	)

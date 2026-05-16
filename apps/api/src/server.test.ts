@@ -445,7 +445,11 @@ interface ApiEnvelope {
 	readonly error?: {
 		readonly message?: string
 		readonly code?: string
+		readonly retryable?: boolean
+		readonly retryStrategy?: string
+		readonly suggestedFix?: string
 		readonly details?: {
+			readonly file?: string
 			readonly issueCount?: number
 			readonly issues?: readonly string[]
 			readonly found?: boolean
@@ -516,6 +520,24 @@ async function postApiFetch(
 }
 
 describe('Ascend API server', () => {
+	test('/plan reports missing workbook files with structured retry guidance', async () => {
+		const missing = join(tmpdir(), `ascend-api-missing-${Date.now()}.xlsx`)
+		const result = await postJson('/plan', {
+			file: missing,
+			ops: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] }],
+		})
+
+		expect(result.status).toBe(404)
+		expect(result.body.ok).toBe(false)
+		expect(result.body.error).toMatchObject({
+			code: 'FILE_NOT_FOUND',
+			retryable: true,
+			retryStrategy: 'modified',
+			details: { file: missing },
+			suggestedFix: expect.stringContaining('existing workbook path'),
+		})
+	})
+
 	test('/trust-report exposes untrusted workbook boundaries and next actions', async () => {
 		const trustFile = join(
 			tmpdir(),

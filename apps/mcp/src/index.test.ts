@@ -98,6 +98,45 @@ afterAll(async () => {
 })
 
 describe('MCP server', () => {
+	test('ascend.plan reports missing workbook files with structured retry guidance', async () => {
+		const missing = join(tmpdir(), `ascend-mcp-missing-${Date.now()}.xlsx`)
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const plan = (server as any)._registeredTools['ascend.plan'].handler as (args: {
+			file: string
+			ops: readonly Record<string, unknown>[]
+		}) => Promise<{
+			isError?: boolean
+			structuredContent?: {
+				ok?: boolean
+				error?: {
+					code?: string
+					retryable?: boolean
+					retryStrategy?: string
+					details?: { file?: string }
+					suggestedFix?: string
+				}
+			}
+		}>
+
+		const result = await plan({
+			file: missing,
+			ops: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] }],
+		})
+
+		expect(result.isError).toBe(true)
+		expect(result.structuredContent).toMatchObject({
+			ok: false,
+			error: {
+				code: 'FILE_NOT_FOUND',
+				retryable: true,
+				retryStrategy: 'modified',
+				details: { file: missing },
+				suggestedFix: expect.stringContaining('existing workbook path'),
+			},
+		})
+	})
+
 	test('createServer returns a McpServer instance', () => {
 		const server = createServer()
 		expect(server).toBeDefined()

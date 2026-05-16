@@ -357,7 +357,8 @@ function statusForError(ae: AscendError): number {
 	if (
 		ae.code === 'SHEET_NOT_FOUND' ||
 		ae.code === 'NAME_NOT_FOUND' ||
-		ae.code === 'TABLE_NOT_FOUND'
+		ae.code === 'TABLE_NOT_FOUND' ||
+		ae.code === 'FILE_NOT_FOUND'
 	)
 		return 404
 	if (
@@ -384,13 +385,26 @@ function isFileNotFoundError(e: unknown): boolean {
 	return false
 }
 
+function fileNotFoundAscendError(fileContext?: string): AscendError {
+	return ascendError(
+		'FILE_NOT_FOUND',
+		fileContext ? `File not found: ${fileContext}` : 'File not found',
+		{
+			retryable: true,
+			retryStrategy: 'modified',
+			...(fileContext ? { details: { file: fileContext } } : {}),
+			suggestedFix:
+				'Pass an existing workbook path that the API process can read, then retry the request.',
+		},
+	)
+}
+
 function handleError(e: unknown, fileContext?: string): Response {
 	if (e instanceof AscendException) {
 		const status = statusForError(e.ascendError)
 		return jsonFailureError(e.ascendError, status)
 	}
-	if (isFileNotFoundError(e))
-		return jsonFailure(fileContext ? `File not found: ${fileContext}` : 'File not found', 404)
+	if (isFileNotFoundError(e)) return jsonFailureError(fileNotFoundAscendError(fileContext), 404)
 	const msg = e instanceof Error ? e.message : String(e)
 	return jsonFailure(msg, 500)
 }

@@ -33,6 +33,8 @@ import {
 } from './competitive-real-workbook.ts'
 
 const SID = 0 as StyleId
+const openpyxlRunnerAvailable =
+	Bun.spawnSync(['python3', '-c', 'import openpyxl, psutil']).exitCode === 0
 
 type CompetitiveIoJsonPayload = {
 	readonly cases: readonly {
@@ -527,6 +529,40 @@ describe('competitive IO helpers', () => {
 			expect(result.assertions.loadedSheetCount).toBe(1)
 			expect(result.assertions.loadedSheetNames).toBe('Data')
 			expect(result.assertions.hasAllSheets).toBe(false)
+			expect(payload.metadata.skipped.some((entry) => entry.library === 'openpyxl')).toBe(false)
+		},
+		{ timeout: 30_000 },
+	)
+
+	test.skipIf(!openpyxlRunnerAvailable)(
+		'OpenPyXL selected-sheet external runner projects the requested worksheet',
+		async () => {
+			const payload = await runCompetitiveIoJson([
+				'--runner-manifest',
+				'fixtures/benchmarks/runners/openpyxl.manifest.json',
+				'--workload',
+				'selected-sheet',
+				'--category',
+				'read',
+				'--libraries',
+				'openpyxl',
+				'--rows',
+				'5',
+				'--cols',
+				'4',
+				'--repeat',
+				'1',
+				'--warmup',
+				'0',
+				'--json',
+			])
+			const result = payload.cases.find((entry) => entry.dimensions.library === 'openpyxl')
+			expect(result?.dimensions.correctnessStatus).toBe('pass')
+			expect(result?.assertions?.selectedSheetRead).toBe(true)
+			expect(result?.assertions?.sourceSheetCount).toBe(3)
+			expect(result?.assertions?.loadedSheetCount).toBe(1)
+			expect(result?.assertions?.loadedSheetNames).toBe('Data')
+			expect(result?.assertions?.hasAllSheets).toBe(false)
 			expect(payload.metadata.skipped.some((entry) => entry.library === 'openpyxl')).toBe(false)
 		},
 		{ timeout: 30_000 },

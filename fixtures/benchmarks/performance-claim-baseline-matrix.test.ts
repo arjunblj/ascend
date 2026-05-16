@@ -51,6 +51,9 @@ describe('performance claim baseline matrix', () => {
 		expect(markdown).toContain(
 			'ClosedXML was subsequently unblocked in a focused clean head-to-head run and is recorded as ran/lost, not as blocked.',
 		)
+		expect(markdown).toContain(
+			'Current harness evidence now supports an OpenPyXL selected-sheet projection row.',
+		)
 		for (const workload of RECORDED_WORKLOADS) expect(markdown).toContain(`\`${workload}\``)
 		expect(markdown).toContain('Humble allowed wording:')
 		expect(markdown).toContain('Forbidden wording:')
@@ -244,6 +247,19 @@ describe('performance claim baseline matrix', () => {
 		expect(markdown).toContain('| ExcelJS | not comparable | n/a')
 		expect(markdown).toContain(
 			'"Ascend beats ExcelJS, openpyxl, Calamine, Apache POI, or ClosedXML" from this selected-sheet run.',
+		)
+		expect(markdown).toContain('the OpenPyXL unsupported-operation status above is historical')
+		expect(markdown).toContain('## Fold-In: OpenPyXL Selected-Sheet Projection')
+		expect(markdown).toContain('Classification: accepted evidence plus benchmark blocker.')
+		expect(markdown).toContain('OpenPyXL reported\n  median `204.707 ms`')
+		expect(markdown).toContain(
+			'"Ascend beats OpenPyXL for selected-sheet reads" from the current worktree',
+		)
+		expect(markdown).toContain(
+			'bun run fixtures/benchmarks/competitive-io.ts --json --category read --competitor all --libraries ascend,sheetjs,openpyxl --workload selected-sheet',
+		)
+		expect(markdown).toContain(
+			'keeps Ascend-vs-OpenPyXL selected-sheet\nspeed wording forbidden because the timing lanes differ',
 		)
 		expect(markdown).toContain('Continue profile expansion with `metadata-only`')
 

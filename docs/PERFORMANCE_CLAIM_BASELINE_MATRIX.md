@@ -14,6 +14,7 @@ No broad XLSX read, SOTA, or QSS-leapfrog speed claim is promotable from this ar
 
 - `competitive-scoreboard --require-profile xlsx-read-sota` still fails for a single-run full-profile promotion because fastxlsx and several unsupported/semantic-mismatch rows remain explicit blockers. ClosedXML was subsequently unblocked in a focused clean head-to-head run and is recorded as ran/lost, not as blocked.
 - The recorded cycles cover public/reproducible generated `dense-values`, `sparse-wide`, `styles-heavy`, `formula-heavy`, `table-heavy`, `feature-rich`, `selected-sheet`, `metadata-only`, `warm-workflow`, and `string-heavy` workloads over `raw-ooxml`, but they are per-workload evidence rows rather than one clean all-workload promotion run.
+- Current harness evidence now supports an OpenPyXL selected-sheet projection row. Treat older `openpyxl` selected-sheet `unsupported-operation` wording as historical for the recorded clean runs; the current blocker is a clean repeat-5 selected-sheet rerun plus timing-boundary handling, not OpenPyXL runner capability.
 - Several external runners were unavailable or blocked in the clean benchmark worktree. They are recorded as blockers, not wins.
 - Several timing lanes are semantically related but not one unified timing boundary. Do not collapse in-process, preloaded-bytes, file-path, row-stream, and materialized-workbook timings into a single "wins everything" claim.
 
@@ -61,7 +62,10 @@ Stop condition: do not optimize further from the measured winning rows
 `feature-rich` row identified a meaningful loss and was optimized at `05656d4e`;
 continue only on the next named loss, unstable tail, or memory/latency tradeoff
 worth production work. The ClosedXML runner blocker was resolved by restoring
-the runner in a clean worktree and is now a measured bounded-gap row.
+the runner in a clean worktree and is now a measured bounded-gap row. OpenPyXL
+selected-sheet support was resolved in the harness and is now waiting on a
+clean rerun plus timing-lane treatment before any OpenPyXL selected-sheet speed
+wording is allowed.
 
 ## Full Current-Commit Gate: XLSX Read SOTA
 
@@ -795,6 +799,13 @@ All successful timing rows below use 5 measured samples after 1 warmup. Unsuppor
 
 Coverage gate result: failed, as expected for a partial profile. The selected-sheet row is only comparable against SheetJS in the current profile; ExcelJS, openpyxl, Calamine, Apache POI, and ClosedXML are explicit unsupported-operation gaps. The profile remains missing `string-heavy` from current commit, `metadata-only`, and `warm-workflow` coverage.
 
+Supersession note: the OpenPyXL unsupported-operation status above is historical
+for the clean detached `5055d794` cycle. Current harness tests now prove an
+OpenPyXL selected-sheet projection row can run and pass semantic assertions.
+Do not route current owner work as "make OpenPyXL selected-sheet run"; route it
+as "record a clean repeat-5 selected-sheet benchmark and resolve the timing-lane
+boundary before promoting any OpenPyXL selected-sheet speed wording."
+
 Humble allowed wording:
 
 > On the generated `selected-sheet` raw OOXML workload at commit `5055d794`, Ascend loaded the selected `Data` sheet faster than the only completed comparable external selected-sheet runner, SheetJS. Other libraries in the profile are unsupported for this operation and are not counted as wins.
@@ -806,6 +817,91 @@ Forbidden wording:
 - Any wording that counts unsupported operations or the incomplete full profile as wins.
 
 Next action: defer production optimization. Continue profile expansion with `metadata-only`.
+
+## Fold-In: OpenPyXL Selected-Sheet Projection
+
+Classification: accepted evidence plus benchmark blocker. This closes the
+current OpenPyXL generated selected-sheet `unsupported-operation` gap in the
+harness, but it does not promote a speed claim.
+
+Workflow: generated `selected-sheet` read, projecting only the `Data` worksheet
+from a workbook that also contains `Summary` and `Archive`.
+
+Why it matters for release: selected-sheet open/inspect is a practical
+agent-native workflow for unknown workbooks. The release proof must distinguish
+"can produce the selected-sheet semantic view" from "proved fastest under the
+same timing boundary" and from "proved true internal one-sheet hydration."
+
+Evidence we have:
+
+- `fixtures/benchmarks/runners/openpyxl_runner.py` accepts `--selected-sheet`
+  for read operations and reports `selectedSheetRead: true`,
+  `sourceSheetCount: 3`, `loadedSheetCount: 1`, `loadedSheetNames: Data`,
+  `hasAllSheets: false`, and selected-sheet cell/formula/range hashes.
+- `fixtures/benchmarks/competitive-io.ts` includes external selected-sheet
+  read cases only for runners declaring `selectedSheetRead: true`, and passes
+  `--selected-sheet Data` to those runners.
+- `fixtures/benchmarks/runners/openpyxl.manifest.json`,
+  `fixtures/benchmarks/runners/python-readers.manifest.json`, and
+  `fixtures/benchmarks/runners/ascend-python-readers.manifest.json` declare
+  `selectedSheetRead: true` for the non-read-only OpenPyXL runner.
+- Focused validation passed:
+  `python3 -m py_compile fixtures/benchmarks/runners/openpyxl_runner.py`,
+  `bun test fixtures/benchmarks/competitive-io.test.ts -t "selected-sheet" --timeout 30000`,
+  and `bun test fixtures/benchmarks/competitive-real-workbook.test.ts -t "external runner manifests preserve normalized metadata|combined reader manifests include direct rust calamine and excelize coverage"`.
+- A current-worktree bounded run at `/private/tmp/ascend-selected-sheet-openpyxl-current.json`
+  recorded pass rows for Ascend, SheetJS, and OpenPyXL. OpenPyXL reported
+  median `204.707 ms`, p95 `222.561 ms`, CV `0.070`, and peak RSS `86.4 MiB`
+  for its external selected-sheet projection row; Ascend and SheetJS remained
+  in the in-process selected-sheet lane at medians `3.172 ms` and `27.188 ms`.
+
+Evidence missing:
+
+- No clean detached repeat-5 post-fold-in selected-sheet profile has been
+  recorded in this matrix.
+- The current scoreboard separates OpenPyXL's
+  `external-internal-operation-timing:selected-sheet` lane from Ascend and
+  SheetJS `in-process-generated-selected-sheet`, so this evidence does not
+  create a fair Ascend-vs-OpenPyXL speed comparison.
+- OpenPyXL is proven here as selected-sheet projection semantics, not as true
+  preservation-first one-sheet package hydration. Do not claim it avoids loading
+  other workbook internals.
+- ExcelJS, Calamine, Apache POI, and ClosedXML selected-sheet gaps remain.
+
+Competitor/QSS contrast: this reduces an OpenPyXL unsupported-operation gap in
+the external baseline matrix, but it does not change the QSS/SOTA decision.
+Ascend still cannot make a broad speed claim, and OpenPyXL timing must stay in
+its own boundary until the benchmark loop records a comparable external Ascend
+selected-sheet row or explicitly downgrades the comparison.
+
+Allowed wording:
+
+> Ascend's benchmark harness can now run a generated selected-sheet semantic
+> projection against OpenPyXL and verify that only the requested `Data` sheet is
+> represented in the output assertions. A clean timing-boundary rerun is still
+> required before any OpenPyXL selected-sheet speed wording is allowed.
+
+Forbidden wording:
+
+- "OpenPyXL selected-sheet is still unsupported" as a current harness blocker.
+- "Ascend beats OpenPyXL for selected-sheet reads" from the current worktree
+  run.
+- "OpenPyXL hydrates only one sheet internally."
+- Any broad XLSX read, SOTA, or QSS-leapfrog wording from this fold-in.
+
+Next owner action: benchmarking/external baselines owns the clean rerun and
+timing-boundary decision.
+
+```bash
+env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-io.ts --json --category read --competitor all --libraries ascend,sheetjs,openpyxl --workload selected-sheet --read-source raw-ooxml --repeat 5 --warmup 1 --validation-mode each --runner-manifest fixtures/benchmarks/runners/openpyxl.manifest.json > /private/tmp/ascend-selected-sheet-openpyxl-clean.json
+env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-scoreboard.ts /private/tmp/ascend-selected-sheet-openpyxl-clean.json --json --metric medianMs --require-profile xlsx-read-sota > /private/tmp/ascend-selected-sheet-openpyxl-clean-scoreboard.json
+```
+
+Acceptance evidence: clean worktree status, exact commit, environment versions,
+OpenPyXL runner/library version, all three selected-sheet semantic assertions
+passing, and an explicit scoreboard decision that either adds a comparable
+external Ascend selected-sheet row or keeps Ascend-vs-OpenPyXL selected-sheet
+speed wording forbidden because the timing lanes differ.
 
 ## Cycle: Metadata-Only Read
 

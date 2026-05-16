@@ -1038,6 +1038,7 @@ describe('release proof evidence index', () => {
 					validationCommand:
 						'bun test fixtures/benchmarks/performance-claim-baseline-matrix.test.ts',
 					nextAction: expect.stringContaining('focused ClosedXML head-to-head read run'),
+					decision: expect.stringContaining('performance matrix as a defer decision'),
 					forbiddenShortcut: expect.stringContaining('one-workload medians'),
 				}),
 			]),

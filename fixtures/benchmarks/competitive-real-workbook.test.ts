@@ -685,6 +685,7 @@ describe('evaluateAssertions', () => {
 						internalTiming: true,
 						valueOnlyRead: true,
 						metadataOnlyRead: true,
+						selectedSheetRead: true,
 					},
 				},
 				{
@@ -704,6 +705,7 @@ describe('evaluateAssertions', () => {
 					internalTiming: true,
 					valueOnlyRead: true,
 					metadataOnlyRead: true,
+					selectedSheetRead: true,
 				},
 			},
 			{

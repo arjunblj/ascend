@@ -511,6 +511,7 @@ export interface ReleaseProofReleaseDecisionBoard {
 export interface ReleaseProofTodayCommitClaimMatrixRow {
 	readonly claimArea:
 		| 'safe-agent-workflows'
+		| 'formula-calc-behavior'
 		| 'signed-encrypted-macro-handling'
 		| 'write-performance'
 		| 'external-baselines'
@@ -3792,6 +3793,25 @@ function todayCommitClaimMatrix(): readonly ReleaseProofTodayCommitClaimMatrixRo
 				'Release-code owner stops adding discovery-only workflow affordances; next accepted work must either fix the unrelated API export-format test expectation, run package publication/install smoke in a clean release environment, or add one public inspect/plan/commit/reopen/diff/audit/trace workflow that changes an agent repair decision.',
 			boundary:
 				'Compact current-commit claim row only; evidence is local workflow proof, not a broad product or publication claim.',
+		},
+		{
+			claimArea: 'formula-calc-behavior',
+			commits: ['f6a71088', '104c38c0', '64d82251'],
+			releaseOrSotaClaimBecameMoreTrue:
+				'Ascend formula/calc behavior is more credible for dynamic-array-style workflows because common IS predicates and ERROR.TYPE now map over range operands and spill through IF/IFERROR contexts instead of collapsing to a top-left scalar.',
+			evidenceProvesIt: [
+				'bun test packages/engine/src/calc.test.ts packages/formulas/src/functions/functions.test.ts -t "error predicates map over arrays inside IF conditions|common IS predicates spill boolean masks for range operands|ERROR.TYPE spills error codes for range operands|IS predicates do not coerce text as numbers" --timeout 30000',
+			],
+			allowedWording:
+				'Ascend has local regression proof for array/range mapping of ISERROR, ISERR, ISNA, ISBLANK, ISTEXT, ISLOGICAL, ISNONTEXT, ISEVEN, ISODD, and ERROR.TYPE in focused formula-engine cases, including spilled IF/IFERROR masks.',
+			forbiddenWording: [
+				'Do not claim Excel-compatible formulas, dynamic-array completeness, full INFO-function parity, external-oracle parity, fresh cached values, or QSS/SOTA formula superiority from these local unit regressions.',
+			],
+			ownerLoop: 'correctness',
+			nextOwnerAction:
+				'Formula/Calc owner should promote these cases into the oracle corpus by adding LibreOffice/Excel-ground-truth workbook rows or accepted-mismatch retirements, then rerun formula-corpus-correctness with --max-mismatches 0 before any parity wording changes.',
+			boundary:
+				'Compact current-commit claim row only; evidence is local formula-engine regression coverage, not an external Excel oracle or broad formula-compatibility claim.',
 		},
 		{
 			claimArea: 'signed-encrypted-macro-handling',

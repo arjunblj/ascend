@@ -1822,6 +1822,7 @@ describe('release proof evidence index', () => {
 		).toEqual(index.releaseDecisionBoard.rows[1].forbiddenWording)
 		expect(index.releaseDecisionBoard.todayCommitClaimMatrix.map((row) => row.claimArea)).toEqual([
 			'safe-agent-workflows',
+			'formula-calc-behavior',
 			'signed-encrypted-macro-handling',
 			'write-performance',
 			'external-baselines',
@@ -1902,6 +1903,20 @@ describe('release proof evidence index', () => {
 					]),
 					ownerLoop: 'release',
 					nextOwnerAction: expect.stringContaining('export-format test expectation'),
+				}),
+				expect.objectContaining({
+					claimArea: 'formula-calc-behavior',
+					commits: expect.arrayContaining(['f6a71088', '104c38c0', '64d82251']),
+					allowedWording: expect.stringContaining('ERROR.TYPE'),
+					evidenceProvesIt: expect.arrayContaining([
+						expect.stringContaining('common IS predicates spill boolean masks'),
+					]),
+					forbiddenWording: expect.arrayContaining([
+						expect.stringContaining('Excel-compatible formulas'),
+						expect.stringContaining('external-oracle parity'),
+					]),
+					ownerLoop: 'correctness',
+					nextOwnerAction: expect.stringContaining('formula-corpus-correctness'),
 				}),
 				expect.objectContaining({
 					claimArea: 'signed-encrypted-macro-handling',

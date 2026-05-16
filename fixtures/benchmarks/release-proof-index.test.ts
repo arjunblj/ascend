@@ -871,120 +871,133 @@ describe('release proof evidence index', () => {
 				expect.objectContaining({ disposition: 'kill', ownerLoop: 'release' }),
 			]),
 		)
-		expect(index.qssLeapfrogReleaseMatrix.rows[0].acceptedEvidence).toEqual(
-			expect.arrayContaining([
-				expect.objectContaining({
-					evidenceId: 'safe-open-proof-harness',
-					command: 'bun run fixtures/benchmarks/safe-open-proof.ts --no-timings --json',
-					path: 'fixtures/benchmarks/safe-open-proof.ts',
-				}),
-				expect.objectContaining({
-					evidenceId: 'safe-open-encrypted-password-no-echo-tests',
-					acceptedScope: expect.stringContaining('92acf61e'),
-					boundary: expect.stringContaining('No password recovery'),
-				}),
-				expect.objectContaining({
-					evidenceId: 'mcp-agent-workflow-open-plan-first',
-					acceptedScope: expect.stringContaining('d4ee22e1'),
-					boundary: expect.stringContaining('MCP workflow guidance evidence only'),
-				}),
-				expect.objectContaining({
-					evidenceId: 'api-custom-ui-active-content-proof',
-					acceptedScope: expect.stringContaining('3653fd6f'),
-					boundary: expect.stringContaining('Generated custom UI agent-context proof only'),
-				}),
-				expect.objectContaining({
-					evidenceId: 'cli-agent-facing-open-diagnostics-proof',
-					acceptedScope: expect.stringContaining('d837689e'),
-					command: expect.stringContaining('apps/cli/src/file-errors.test.ts'),
-					path: expect.stringContaining('apps/cli/src/file-errors.test.ts'),
-				}),
-				expect.objectContaining({
-					evidenceId: 'cli-agent-facing-open-diagnostics-proof',
-					acceptedScope: expect.stringContaining('9b155c7f'),
-					boundary: expect.stringContaining('CLI agent-facing diagnostics only'),
-				}),
-				expect.objectContaining({
-					evidenceId: 'cli-agent-facing-open-diagnostics-proof',
-					acceptedScope: expect.stringContaining('3d4d5374'),
-					command: expect.stringContaining('missing ops sidecar'),
-				}),
-				expect.objectContaining({
-					evidenceId: 'api-open-workflow-reference-proof',
-					acceptedScope: expect.stringContaining('215d6e57'),
-					command:
-						'bun test apps/api/src/server.test.ts -t "missing workbook references" --timeout 30000',
-				}),
-				expect.objectContaining({
-					evidenceId: 'api-open-workflow-reference-proof',
-					acceptedScope: expect.stringContaining('7c1a9708'),
-					boundary: expect.stringContaining('API request-shape diagnostics only'),
-				}),
-				expect.objectContaining({
-					evidenceId: 'api-open-workflow-reference-proof',
-					acceptedScope: expect.stringContaining('8ce0fbe2'),
-				}),
-				expect.objectContaining({
-					evidenceId: 'api-open-workflow-reference-proof',
-					acceptedScope: expect.stringContaining('43781bef'),
-				}),
-				expect.objectContaining({
-					evidenceId: 'api-open-workflow-reference-proof',
-					acceptedScope: expect.stringContaining('ea67f3b3'),
-				}),
-				expect.objectContaining({
-					evidenceId: 'api-open-workflow-reference-proof',
-					acceptedScope: expect.stringContaining('e090fe13'),
-				}),
-				expect.objectContaining({
-					evidenceId: 'api-open-workflow-reference-proof',
-					acceptedScope: expect.stringContaining('6490a0e6'),
-				}),
-				expect.objectContaining({
-					evidenceId: 'api-open-workflow-reference-proof',
-					acceptedScope: expect.stringContaining('346410a9'),
-				}),
-				expect.objectContaining({
-					evidenceId: 'api-open-workflow-reference-proof',
-					acceptedScope: expect.stringContaining('8d12c141'),
-				}),
-				expect.objectContaining({
-					evidenceId: 'api-open-workflow-reference-proof',
-					acceptedScope: expect.stringContaining('2cb02045'),
-				}),
-				expect.objectContaining({
-					evidenceId: 'api-open-workflow-reference-proof',
-					acceptedScope: expect.stringContaining('active-content/trust-report'),
-				}),
-				expect.objectContaining({
-					evidenceId: 'api-open-workflow-reference-proof',
-					acceptedScope: expect.stringContaining('package-graph/raw-part'),
-				}),
-				expect.objectContaining({
-					evidenceId: 'api-open-workflow-reference-proof',
-					acceptedScope: expect.stringContaining('visuals/pivots/dump/template-merge'),
-				}),
-				expect.objectContaining({
-					evidenceId: 'api-open-workflow-reference-proof',
-					acceptedScope: expect.stringContaining('repair-plan'),
-				}),
-				expect.objectContaining({
-					evidenceId: 'api-open-workflow-reference-proof',
-					acceptedScope: expect.stringContaining('structured retryable missing-range errors'),
-				}),
-				expect.objectContaining({
-					evidenceId: 'mcp-open-workflow-reference-proof',
-					acceptedScope: expect.stringContaining('da273900'),
-					command:
-						'bun test apps/mcp/src/index.test.ts -t "missing workbook references" --timeout 30000',
-				}),
-				expect.objectContaining({
-					evidenceId: 'release-rc-gate',
-					command: 'bun run release:rc:gate',
-					path: 'scripts/release-rc-gate.ts',
-				}),
-			]),
-		)
+		const safeOpenAcceptedEvidence = index.qssLeapfrogReleaseMatrix.rows[0].acceptedEvidence
+		for (const evidence of [
+			expect.objectContaining({
+				evidenceId: 'safe-open-proof-harness',
+				command: 'bun run fixtures/benchmarks/safe-open-proof.ts --no-timings --json',
+				path: 'fixtures/benchmarks/safe-open-proof.ts',
+			}),
+			expect.objectContaining({
+				evidenceId: 'safe-open-encrypted-password-no-echo-tests',
+				acceptedScope: expect.stringContaining('92acf61e'),
+				boundary: expect.stringContaining('No password recovery'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'mcp-agent-workflow-open-plan-first',
+				acceptedScope: expect.stringContaining('d4ee22e1'),
+				boundary: expect.stringContaining('MCP workflow guidance evidence only'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'api-custom-ui-active-content-proof',
+				acceptedScope: expect.stringContaining('3653fd6f'),
+				boundary: expect.stringContaining('Generated custom UI agent-context proof only'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'cli-agent-facing-open-diagnostics-proof',
+				acceptedScope: expect.stringContaining('d837689e'),
+				command: expect.stringContaining('apps/cli/src/file-errors.test.ts'),
+				path: expect.stringContaining('apps/cli/src/file-errors.test.ts'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'cli-agent-facing-open-diagnostics-proof',
+				acceptedScope: expect.stringContaining('9b155c7f'),
+				boundary: expect.stringContaining('CLI agent-facing diagnostics only'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'cli-agent-facing-open-diagnostics-proof',
+				acceptedScope: expect.stringContaining('3d4d5374'),
+				command: expect.stringContaining('missing ops sidecar'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'api-open-workflow-reference-proof',
+				acceptedScope: expect.stringContaining('215d6e57'),
+				command:
+					'bun test apps/api/src/server.test.ts -t "missing workbook references" --timeout 30000',
+			}),
+			expect.objectContaining({
+				evidenceId: 'api-open-workflow-reference-proof',
+				acceptedScope: expect.stringContaining('7c1a9708'),
+				boundary: expect.stringContaining('API request-shape diagnostics only'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'api-open-workflow-reference-proof',
+				acceptedScope: expect.stringContaining('8ce0fbe2'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'api-open-workflow-reference-proof',
+				acceptedScope: expect.stringContaining('43781bef'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'api-open-workflow-reference-proof',
+				acceptedScope: expect.stringContaining('ea67f3b3'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'api-open-workflow-reference-proof',
+				acceptedScope: expect.stringContaining('e090fe13'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'api-open-workflow-reference-proof',
+				acceptedScope: expect.stringContaining('6490a0e6'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'api-open-workflow-reference-proof',
+				acceptedScope: expect.stringContaining('346410a9'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'api-open-workflow-reference-proof',
+				acceptedScope: expect.stringContaining('8d12c141'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'api-open-workflow-reference-proof',
+				acceptedScope: expect.stringContaining('2cb02045'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'api-open-workflow-reference-proof',
+				acceptedScope: expect.stringContaining('7303b787'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'api-open-workflow-reference-proof',
+				acceptedScope: expect.stringContaining('active-content/trust-report'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'api-open-workflow-reference-proof',
+				acceptedScope: expect.stringContaining('package-graph/raw-part'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'api-open-workflow-reference-proof',
+				acceptedScope: expect.stringContaining('visuals/pivots/dump/template-merge'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'api-open-workflow-reference-proof',
+				acceptedScope: expect.stringContaining('repair-plan'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'api-open-workflow-reference-proof',
+				acceptedScope: expect.stringContaining('check/lint/trace'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'api-open-workflow-reference-proof',
+				acceptedScope: expect.stringContaining('read/agent-view ranges'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'api-open-workflow-reference-proof',
+				acceptedScope: expect.stringContaining('trace cells'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'mcp-open-workflow-reference-proof',
+				acceptedScope: expect.stringContaining('da273900'),
+				command:
+					'bun test apps/mcp/src/index.test.ts -t "missing workbook references" --timeout 30000',
+			}),
+			expect.objectContaining({
+				evidenceId: 'release-rc-gate',
+				command: 'bun run release:rc:gate',
+				path: 'scripts/release-rc-gate.ts',
+			}),
+		]) {
+			expect(safeOpenAcceptedEvidence).toContainEqual(evidence)
+		}
 		expect(index.qssLeapfrogReleaseMatrix.rows[1]).toMatchObject({
 			claim: 'auditable package-part mutation',
 		})

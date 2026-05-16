@@ -3048,12 +3048,23 @@ function safeOpenQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceItem[] {
 			evidenceId: 'cli-agent-facing-open-diagnostics-proof',
 			kind: 'test',
 			command:
-				'bun test apps/cli/src/cli.test.ts apps/cli/src/file-errors.test.ts -t "custom UI callbacks|open-plan --json reports missing files|raw ENOENT noise" --timeout 30000',
+				'bun test apps/cli/src/cli.test.ts apps/cli/src/file-errors.test.ts -t "custom UI callbacks|open-plan --json reports missing files|raw ENOENT noise|missing ops sidecar" --timeout 30000',
 			path: 'apps/cli/src/index.ts; apps/cli/src/commands/inspect.ts; apps/cli/src/cli.test.ts; apps/cli/src/file-errors.test.ts',
 			acceptedScope:
-				'Commit d837689e makes CLI inspect --detail active-content report generated RibbonX custom UI callbacks and makes CLI open-plan --json return retryable FILE_NOT_FOUND guidance for missing workbook paths; commit 9b155c7f extends missing-file guidance to non-JSON CLI output without raw ENOENT noise.',
+				'Commit d837689e makes CLI inspect --detail active-content report generated RibbonX custom UI callbacks and makes CLI open-plan --json return retryable FILE_NOT_FOUND guidance for missing workbook paths; commit 9b155c7f extends missing-file guidance to non-JSON CLI output without raw ENOENT noise; commit 3d4d5374 reports missing plan/commit ops sidecar paths directly and leaves commit output absent.',
 			boundary:
 				'CLI agent-facing diagnostics only; it does not prove public custom UI fixture coverage, file recovery, path discovery, Custom UI safety, active-content safety, or trust wording.',
+		},
+		{
+			evidenceId: 'api-open-workflow-reference-proof',
+			kind: 'test',
+			command:
+				'bun test apps/api/src/server.test.ts -t "missing workbook references" --timeout 30000',
+			path: 'apps/api/src/server.ts; apps/api/src/server.test.ts',
+			acceptedScope:
+				'Commits 215d6e57 and 7c1a9708 return structured retryable missing-workbook-reference errors for API plan/commit/open-plan/inspect workflow requests instead of generic missing-file responses.',
+			boundary:
+				'API request-shape diagnostics only; it does not prove file recovery, path discovery, source workbook existence, edit correctness, latency, or trust wording.',
 		},
 		{
 			evidenceId: 'release-proof-index-owner-handoff',

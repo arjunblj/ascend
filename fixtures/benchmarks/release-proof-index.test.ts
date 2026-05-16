@@ -905,6 +905,22 @@ describe('release proof evidence index', () => {
 					boundary: expect.stringContaining('CLI agent-facing diagnostics only'),
 				}),
 				expect.objectContaining({
+					evidenceId: 'cli-agent-facing-open-diagnostics-proof',
+					acceptedScope: expect.stringContaining('3d4d5374'),
+					command: expect.stringContaining('missing ops sidecar'),
+				}),
+				expect.objectContaining({
+					evidenceId: 'api-open-workflow-reference-proof',
+					acceptedScope: expect.stringContaining('215d6e57'),
+					command:
+						'bun test apps/api/src/server.test.ts -t "missing workbook references" --timeout 30000',
+				}),
+				expect.objectContaining({
+					evidenceId: 'api-open-workflow-reference-proof',
+					acceptedScope: expect.stringContaining('7c1a9708'),
+					boundary: expect.stringContaining('API request-shape diagnostics only'),
+				}),
+				expect.objectContaining({
 					evidenceId: 'release-rc-gate',
 					command: 'bun run release:rc:gate',
 					path: 'scripts/release-rc-gate.ts',
@@ -2230,6 +2246,7 @@ describe('release proof evidence index', () => {
 				expect.objectContaining({ evidenceId: 'mcp-agent-workflow-open-plan-first' }),
 				expect.objectContaining({ evidenceId: 'api-custom-ui-active-content-proof' }),
 				expect.objectContaining({ evidenceId: 'cli-agent-facing-open-diagnostics-proof' }),
+				expect.objectContaining({ evidenceId: 'api-open-workflow-reference-proof' }),
 				expect.objectContaining({ evidenceId: 'release-proof-index-owner-handoff' }),
 			]),
 		)

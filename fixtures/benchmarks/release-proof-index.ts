@@ -3323,11 +3323,11 @@ function safeOpenQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceItem[] {
 			kind: 'test',
 			command:
 				'bun test packages/sdk/src/agent-workflow.test.ts -t "commits public shape macro drawings as blocked active content after safe edit" --timeout 30000',
-			path: 'packages/sdk/src/agent-workflow.ts; packages/sdk/src/agent-workflow.test.ts',
+			path: 'packages/sdk/src/agent-workflow.ts; packages/sdk/src/agent-workflow.test.ts; packages/sdk/src/index.ts; packages/sdk/src/index-exports.test.ts',
 			acceptedScope:
-				'Commit 9df35fd6 proves safe edits against a public LibreOffice shape-macro workbook preserve source bytes, reopen output, keep package graph audits passing, and report post-write shape macros as blocked active content with shape identity.',
+				'Commit 9df35fd6 proves safe edits against a public LibreOffice shape-macro workbook preserve source bytes, reopen output, keep package graph audits passing, and report post-write shape macros as blocked active content with shape identity. Commit fef9294f expands post-write visual proof to report drawing-object details including drawing part path, source, kind, id, name, text, relationship ids, and chart relationship targets, with root SDK proof types exported.',
 			boundary:
-				'Public shape-macro commit audit evidence only; it does not authorize macro execution, malware scanning, active-content safety, trusted-source behavior, or broad custom UI safety wording.',
+				'Public shape-macro drawing-object commit audit evidence only; it does not authorize macro execution, malware scanning, active-content safety, trusted-source behavior, broad custom UI safety wording, or full drawing/layout parity.',
 		},
 		{
 			evidenceId: 'public-activex-blocked-execution-policy-proof',
@@ -3695,6 +3695,7 @@ function todayCommitClaimMatrix(): readonly ReleaseProofTodayCommitClaimMatrixRo
 				'868add46',
 				'caa08959',
 				'62566e09',
+				'91dabea8',
 				'1eaf28ff',
 				'31141dd4',
 				'f7338c91',
@@ -3704,7 +3705,7 @@ function todayCommitClaimMatrix(): readonly ReleaseProofTodayCommitClaimMatrixRo
 				'62f45cb5',
 			],
 			releaseOrSotaClaimBecameMoreTrue:
-				'Ascend is more credible as an agent-native spreadsheet runtime because SDK, installed-SDK, CLI, HTTP API, MCP, root-package, public query-table/data-connection, public chart-source, public calc-chain/formula-cache, public hidden-sheet/workbook-view, and public protected-range examples expose runnable open-plan/trust/inspect/plan/commit/reopen/verify workflows plus shared proof-bundle context.',
+				'Ascend is more credible as an agent-native spreadsheet runtime because SDK, installed-SDK, CLI, HTTP API, MCP, root-package, public query-table/data-connection, public chart-source, public calc-chain/formula-cache, public hidden-sheet/workbook-view, and public protected-range examples expose runnable open-plan/trust/inspect/plan/commit/reopen/verify workflows plus shared proof-bundle and post-write proof context.',
 			evidenceProvesIt: [
 				'bun test examples/agent-safe-edit.test.ts --timeout 30000',
 				'bun test examples/agent-safe-edit-mcp.test.ts --timeout 30000',
@@ -3722,6 +3723,9 @@ function todayCommitClaimMatrix(): readonly ReleaseProofTodayCommitClaimMatrixRo
 				'bun test packages/sdk/src/agent-workflow.test.ts -t "commits public query-table refresh metadata edits through save and reopen" --timeout 30000',
 				'bun test fixtures/corpus/external-refresh-contract.test.ts -t "commit proof reports reopened public query-table connection metadata" --timeout 30000',
 				'bun test packages/io-xlsx/src/reader/connections.test.ts packages/sdk/src/connection-inventory.test.ts fixtures/corpus/external-refresh-contract.test.ts -t "connection part inventory|connection SDK inventory|reports and preserves public query-table refresh surfaces without executing them|commit proof reports reopened public query-table connection metadata" --timeout 60000',
+				'bun test apps/cli/src/cli.test.ts -t "agent-init prints the canonical agent workflow contract" --timeout 30000',
+				'bun test apps/api/src/server.test.ts -t "/agent-workflow exposes the API safe edit contract" --timeout 30000',
+				'bun test apps/mcp/src/index.test.ts -t "ascend.agent_workflow exposes machine-readable safe edit guidance|agent resources return canonical workflow context" --timeout 30000',
 				'bun test packages/sdk/src/agent-workflow.test.ts -t "commits public chart source edits through save and reopen audits" --timeout 30000',
 				'bun test packages/sdk/src/agent-workflow.test.ts -t "commits public calc-chain formula edits through save and reopen audits" --timeout 30000',
 				'bun test fixtures/corpus/formula-binding-contract.test.ts -t "commit proof reports missing public formula caches after save and reopen" --timeout 30000',
@@ -3732,7 +3736,7 @@ function todayCommitClaimMatrix(): readonly ReleaseProofTodayCommitClaimMatrixRo
 				'Blocked adjacent API package sweep: bun test apps/api/api.test.ts --timeout 30000 currently fails outside workflow discovery because the export-format assertion expects "Unsupported format" while the current response is "Unsupported export format: weird".',
 			],
 			allowedWording:
-				'Ascend provides local runnable SDK, installed-SDK package-bin, CLI, API, and MCP safe-edit workflow examples with root commands, explicit trust-preflight steps, shared SDK proof-summary gates, public query-table refresh/data-connection metadata including source file, command text, refresh flags, and connection-string presence without secret disclosure, chart-source, calc-chain/formula-cache reporting, hidden-sheet/workbook-view topology, workbook structure-protection reporting, and protected-range metadata commit proof, and machine-readable proof context for generated/public workbooks.',
+				'Ascend provides local runnable SDK, installed-SDK package-bin, CLI, API, and MCP safe-edit workflow examples with root commands, explicit trust-preflight steps, shared SDK proof-summary gates, workflow discovery that points agents to postWrite.dataConnections, public query-table refresh/data-connection metadata including source file, command text, refresh flags, and connection-string presence without secret disclosure, chart-source, calc-chain/formula-cache reporting, hidden-sheet/workbook-view topology, workbook structure-protection reporting, and protected-range metadata commit proof, and machine-readable proof context for generated/public workbooks.',
 			forbiddenWording: [
 				'Do not claim arbitrary workbook safety, package publication, registry download proof, hosted service readiness, public-workbook generality, connection execution, credential safety, external-data freshness, complete workbook-view parity, protection enforcement/security validation, complete API package health, or complete workflow observability from the local generated/public-workbook examples.',
 			],
@@ -3744,9 +3748,18 @@ function todayCommitClaimMatrix(): readonly ReleaseProofTodayCommitClaimMatrixRo
 		},
 		{
 			claimArea: 'signed-encrypted-macro-handling',
-			commits: ['7ff308c9', 'e5d0ee17', 'ca3c3296', '2401fa0a', 'b7e8eccc', 'a004fb4a', '9df35fd6'],
+			commits: [
+				'7ff308c9',
+				'e5d0ee17',
+				'ca3c3296',
+				'2401fa0a',
+				'b7e8eccc',
+				'a004fb4a',
+				'9df35fd6',
+				'fef9294f',
+			],
 			releaseOrSotaClaimBecameMoreTrue:
-				'Ascend is stricter and more explainable on high-risk workbook handling: encrypted package inspection uses decrypted session bytes, signed/VBA signature edits fail closed, streams and values-only text exports require explicit high-risk approvals, and public shape macros remain blocked active content after safe edit.',
+				'Ascend is stricter and more explainable on high-risk workbook handling: encrypted package inspection uses decrypted session bytes, signed/VBA signature edits fail closed, streams and values-only text exports require explicit high-risk approvals, and public shape macros remain blocked active content with drawing-object proof after safe edit.',
 			evidenceProvesIt: [
 				'bun test packages/sdk/src/sdk.test.ts -t "rawPackagePart inspects decrypted package parts after password open" --timeout 30000',
 				'bun test packages/sdk/src/sdk.test.ts -t "VBA project signatures fail closed while approved exports preserve macros" --timeout 30000',
@@ -3755,9 +3768,9 @@ function todayCommitClaimMatrix(): readonly ReleaseProofTodayCommitClaimMatrixRo
 				'bun test packages/sdk/src/agent-workflow.test.ts -t "commits public shape macro drawings as blocked active content after safe edit" --timeout 30000',
 			],
 			allowedWording:
-				'Ascend has local proof that encrypted, signed, macro, signed-macro, and public shape-macro workflows fail closed or report blocked active content unless the exact loss/decryption/signature approvals are explicit.',
+				'Ascend has local proof that encrypted, signed, macro, signed-macro, and public shape-macro workflows fail closed or report blocked active content with drawing-object identity unless the exact loss/decryption/signature approvals are explicit.',
 			forbiddenWording: [
-				'Do not claim macro safety, malware scanning, re-encryption, signature preservation, re-signing, signer trust, or safe execution of active content.',
+				'Do not claim macro safety, malware scanning, re-encryption, signature preservation, re-signing, signer trust, safe execution of active content, or full drawing/layout parity.',
 			],
 			ownerLoop: 'correctness',
 			nextOwnerAction:
@@ -5711,7 +5724,7 @@ const AGENT_WORKFLOW_OBSERVABILITY_BLOCKER = {
 		'Installed SDK safe-edit workflow proof is accepted after `5915794f feat(sdk): summarize installed safe edit proof` and `56cd4aa0 feat(sdk): add safe edit package bin`: `bun test examples/package-install-safe-edit.test.ts --timeout 30000` now proves safeToUse, changed-cell before/after evidence, gate outcomes, hashes, check/lint validity, post-write audit validity, and the outside-user `node_modules/.bin/ascend-sdk-safe-edit` command from the installed-SDK example. This closes the earlier `5981764c` blank/empty proof contract blocker for generated-workbook wording.',
 		'Reusable SDK workflow proof summary is accepted after `a5fa3006 feat(sdk): expose workflow proof summary`: `bun test packages/sdk/src/agent-workflow.test.ts -t "workflow proof summary explains changed cells and safety gates" --timeout 30000` proves changed-cell before/after evidence plus plan-linked, plan, write-policy, commit, reopen-verify, and package-graph safety gates, and the installed SDK example now uses that helper.',
 		'Root SDK safe-edit proof-bundle output is accepted after `adc9c1e1 feat(examples): show sdk workflow proof bundle`: `bun test examples/agent-safe-edit.test.ts --timeout 30000`, `bun test examples/package-scripts.test.ts --timeout 30000`, and `bun test examples/root-scripts.test.ts --timeout 30000` prove the runnable SDK example emits proofBundle.safeToUse, changed-cell evidence, and the shared whySafe gates from package and root commands.',
-		'Installed safe-edit workflow discovery is accepted after `f8d63593 feat(apps): expose installed safe edit workflow`, `cc689bcc test(api): prove installed workflow discovery`, and `56cd4aa0 feat(sdk): add safe edit package bin`: CLI, API, MCP, MCP resources, API package tests, and installed app smoke output expose the installed SDK package-bin command plus proofBundle output contract. The full `bun test apps/api/api.test.ts --timeout 30000` sweep remains blocked by an unrelated export-format message expectation, so package health wording is not accepted.',
+		'Installed safe-edit workflow discovery is accepted after `f8d63593 feat(apps): expose installed safe edit workflow`, `cc689bcc test(api): prove installed workflow discovery`, `56cd4aa0 feat(sdk): add safe edit package bin`, and `91dabea8 feat(apps): expose connection proof workflow field`: CLI, API, MCP, MCP resources, API package tests, and installed app smoke output expose the installed SDK package-bin command plus proofBundle and postWrite.dataConnections output contracts. The full `bun test apps/api/api.test.ts --timeout 30000` sweep remains blocked by an unrelated export-format message expectation, so package health wording is not accepted.',
 		'Installed CLI safe-edit workflow proof is accepted after `3d630232 feat(cli): add packaged safe edit workflow` and `7e7183df fix(cli): share safe edit proof summary`: `bun test apps/cli/src/cli.test.ts -t "example-safe-edit runs the packaged inspect plan commit reopen verify workflow" --timeout 30000` proves `ascend example-safe-edit <file.xlsx> <out.xlsx>` runs inspect, plan, commit, reopen, and verify with the shared SDK proof summary, `proofBundle.safeToUse`, changed-cell evidence, plan-linked/write-policy/reopen-verify/package-graph gates, and reopened check/lint output.',
 		'CLI commit proof-bundle output is accepted after `5028438e feat(cli): summarize commit proof bundle` and `223a1ec7 fix(cli): align proof gate naming`: `bun test apps/cli/src/cli.test.ts -t "plan and commit implement safe agent workflow" --timeout 30000` proves `ascend commit --proof --json` and compact `--proof` output include safeToUse, whatChanged, whySafe, input-guard/write-policy/commit/reopen/package-graph gates, and output hashes.',
 		'API and MCP commit proof-bundle output is accepted after `1ed2be29 feat(apps): expose commit proof bundles`: `bun test apps/api/src/server.test.ts -t "dump emits replayable operation batches" --timeout 30000` and `bun test apps/mcp/src/index.test.ts -t "ascend.commit accepts prepared plan handles" --timeout 30000` prove prepared commit responses can include proofBundle.safeToUse, whatChanged, whySafe, and write-policy/commit/reopen/package-graph gates.',

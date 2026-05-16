@@ -1120,7 +1120,13 @@ describe('release proof evidence index', () => {
 				command: expect.stringContaining(
 					'commits public shape macro drawings as blocked active content',
 				),
-				boundary: expect.stringContaining('Public shape-macro commit audit evidence only'),
+				boundary: expect.stringContaining('Public shape-macro drawing-object commit audit'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'public-shape-macro-commit-proof',
+				acceptedScope: expect.stringContaining('fef9294f'),
+				path: expect.stringContaining('packages/sdk/src/index-exports.test.ts'),
+				boundary: expect.stringContaining('full drawing/layout parity'),
 			}),
 			expect.objectContaining({
 				evidenceId: 'public-activex-blocked-execution-policy-proof',
@@ -1820,6 +1826,7 @@ describe('release proof evidence index', () => {
 						'868add46',
 						'caa08959',
 						'62566e09',
+						'91dabea8',
 						'1eaf28ff',
 						'31141dd4',
 						'f7338c91',
@@ -1829,7 +1836,7 @@ describe('release proof evidence index', () => {
 						'62f45cb5',
 					]),
 					allowedWording: expect.stringContaining(
-						'connection-string presence without secret disclosure',
+						'workflow discovery that points agents to postWrite.dataConnections',
 					),
 					forbiddenWording: expect.arrayContaining([
 						expect.stringContaining('external-data freshness'),
@@ -1839,9 +1846,17 @@ describe('release proof evidence index', () => {
 				}),
 				expect.objectContaining({
 					claimArea: 'signed-encrypted-macro-handling',
-					commits: expect.arrayContaining(['7ff308c9', 'b7e8eccc', 'a004fb4a', '9df35fd6']),
-					allowedWording: expect.stringContaining('shape-macro'),
-					forbiddenWording: expect.arrayContaining([expect.stringContaining('macro safety')]),
+					commits: expect.arrayContaining([
+						'7ff308c9',
+						'b7e8eccc',
+						'a004fb4a',
+						'9df35fd6',
+						'fef9294f',
+					]),
+					allowedWording: expect.stringContaining('drawing-object identity'),
+					forbiddenWording: expect.arrayContaining([
+						expect.stringContaining('full drawing/layout parity'),
+					]),
 					ownerLoop: 'correctness',
 				}),
 				expect.objectContaining({
@@ -2460,6 +2475,7 @@ describe('release proof evidence index', () => {
 		expect(agentWorkflowEvidence).toContain('f8d63593')
 		expect(agentWorkflowEvidence).toContain('cc689bcc')
 		expect(agentWorkflowEvidence).toContain('56cd4aa0')
+		expect(agentWorkflowEvidence).toContain('91dabea8')
 		expect(agentWorkflowEvidence).toContain('Installed safe-edit workflow discovery is accepted')
 		expect(agentWorkflowEvidence).toContain('full `bun test apps/api/api.test.ts --timeout 30000`')
 		expect(agentWorkflowEvidence).toContain('3d630232')

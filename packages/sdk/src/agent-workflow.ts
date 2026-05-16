@@ -27,7 +27,13 @@ import {
 	extractZip,
 	inspectXlsxPackageGraph,
 } from '@ascend/io-xlsx'
-import { AscendException, ascendError, type FeatureReport, type Operation } from '@ascend/schema'
+import {
+	AscendException,
+	ascendError,
+	type CalcSettings,
+	type FeatureReport,
+	type Operation,
+} from '@ascend/schema'
 import { listCapabilities, summarizeCapabilities } from './capabilities.ts'
 import { collectFormulaReferences } from './formula-info.ts'
 import {
@@ -408,6 +414,7 @@ export interface CompactAgentPostWriteVerification {
 	readonly tables: PostWriteTableSummary
 	readonly definedNames: PostWriteDefinedNameSummary
 	readonly externalReferences: PostWriteExternalReferenceSummary
+	readonly formulaState: PostWriteFormulaSummary
 	readonly analytics: PostWriteAnalyticsSummary
 	readonly activeContent: PostWriteActiveContentSummary
 	readonly visuals: PostWriteVisualSummary
@@ -448,6 +455,7 @@ export interface AgentPostWriteVerification {
 	readonly tables: PostWriteTableSummary
 	readonly definedNames: PostWriteDefinedNameSummary
 	readonly externalReferences: PostWriteExternalReferenceSummary
+	readonly formulaState: PostWriteFormulaSummary
 	readonly analytics: PostWriteAnalyticsSummary
 	readonly activeContent: PostWriteActiveContentSummary
 	readonly visuals: PostWriteVisualSummary
@@ -525,6 +533,15 @@ export interface PostWriteExternalReferenceEntry {
 	readonly linkRelationshipKind?: ExternalReferenceInfo['linkRelationshipKind']
 	readonly target?: string
 	readonly targetMode?: string
+}
+
+export interface PostWriteFormulaSummary {
+	readonly calcChainState: 'present' | 'absent' | 'not-applicable'
+	readonly calcChainParts: readonly string[]
+	readonly recalculationRequested: boolean
+	readonly calcSettings: CalcSettings
+	readonly warnings: readonly string[]
+	readonly verification: 'reopened-output'
 }
 
 export interface PostWriteAnalyticsSummary {
@@ -1806,6 +1823,7 @@ function compactPostWriteVerification(
 		tables: postWrite.tables,
 		definedNames: postWrite.definedNames,
 		externalReferences: postWrite.externalReferences,
+		formulaState: postWrite.formulaState,
 		analytics: postWrite.analytics,
 		activeContent: postWrite.activeContent,
 		visuals: postWrite.visuals,
@@ -2320,6 +2338,7 @@ async function verifyWrittenWorkbook(
 				() => reopened.value.packageGraph(),
 			)
 		: { value: null, ms: 0 }
+	const formulaState = postWriteFormulaSummary(workbook, outputGraph.value, outputIsXlsx)
 	const packageGraphAudit = outputGraph.value
 		? await timedPostWriteStep(
 				progress,
@@ -2365,6 +2384,7 @@ async function verifyWrittenWorkbook(
 		tables,
 		definedNames,
 		externalReferences,
+		formulaState,
 		analytics,
 		activeContent,
 		visuals,
@@ -2472,6 +2492,48 @@ function postWriteExternalReferenceSummary(workbook: Workbook): PostWriteExterna
 		targets: uniqueStrings(parts.flatMap((entry) => (entry.target ? [entry.target] : []))),
 		parts,
 		preservationMode: parts.length > 0 ? 'preserve-exact' : 'none',
+		verification: 'reopened-output',
+	}
+}
+
+function postWriteFormulaSummary(
+	workbook: Workbook,
+	packageGraph: XlsxPackageGraph | null,
+	outputIsXlsx: boolean,
+): PostWriteFormulaSummary {
+	const calcChainParts = outputIsXlsx
+		? (packageGraph?.parts ?? [])
+				.filter((part) => part.featureFamily === 'preservedCalcChain')
+				.map((part) => part.path)
+		: []
+	const calcSettings = workbook.calcSettings
+	const recalculationRequested =
+		calcSettings.fullCalcOnLoad ||
+		calcSettings.forceFullCalc === true ||
+		calcSettings.calcCompleted === false ||
+		calcSettings.calcOnSave === true
+	const warnings: string[] = []
+	if (calcSettings.calcMode === 'manual') {
+		warnings.push('Workbook is in manual calculation mode in the reopened output.')
+	}
+	if (recalculationRequested) {
+		warnings.push('Reopened output calculation settings request recalculation on open or save.')
+	}
+	if (calcChainParts.length > 0) {
+		warnings.push(
+			'CalcChain is present in the reopened output and is dependency-order metadata, not proof of fresh formula values.',
+		)
+	}
+	return {
+		calcChainState: outputIsXlsx
+			? calcChainParts.length > 0
+				? 'present'
+				: 'absent'
+			: 'not-applicable',
+		calcChainParts,
+		recalculationRequested,
+		calcSettings,
+		warnings,
 		verification: 'reopened-output',
 	}
 }

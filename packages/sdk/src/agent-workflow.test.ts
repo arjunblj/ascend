@@ -2800,6 +2800,56 @@ describe('agent workflow loss audit', () => {
 		)
 	})
 
+	test('commits public calc-chain formula edits through save and reopen audits', async () => {
+		const input = join(TEMP_DIR, 'poi-calc-chain.xlsx')
+		const output = join(TEMP_DIR, 'poi-calc-chain-out.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		const sourceBytes = new Uint8Array(readFileSync('fixtures/xlsx/poi/55906-MultiSheetRefs.xlsx'))
+		await Bun.write(input, sourceBytes)
+		const ops = [{ op: 'setFormula' as const, sheet: 'Sheet1', ref: 'J1', formula: '=A1*2' }]
+
+		const plan = await createAgentPlan(input, ops)
+		expect(plan.writePolicy.summary.calcChainPolicy).toBe('discarded-for-formula-topology')
+		expect(plan.writePolicy.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: 'calc-chain-discarded',
+				severity: 'warning',
+				partPaths: ['xl/calcChain.xml'],
+				preservationMode: 'discarded-for-recalc',
+			}),
+		)
+
+		const committed = await commitAgentPlan(input, ops, {
+			output,
+			approvals: plan.approvals.map((approval) => approval.id),
+		})
+
+		expect(committed.postWrite.reopened).toBe(true)
+		expect(committed.postWrite.auditsPassed).toBe(true)
+		expect(committed.postWrite.formulaState).toEqual(
+			expect.objectContaining({
+				calcChainState: 'absent',
+				calcChainParts: [],
+				recalculationRequested: false,
+				verification: 'reopened-output',
+			}),
+		)
+		expect(committed.postWrite.expectedPackageGraphIssueCount).toBe(1)
+		expect(committed.postWrite.unresolvedPackageGraphIssueCount).toBe(0)
+		const outputArchive = unzipSync(new Uint8Array(readFileSync(output)))
+		expect(outputArchive['xl/calcChain.xml']).toBeUndefined()
+		expect(new TextDecoder().decode(outputArchive['[Content_Types].xml'])).not.toContain(
+			'calcChain+xml',
+		)
+		expect(new TextDecoder().decode(outputArchive['xl/_rels/workbook.xml.rels'])).not.toContain(
+			'relationships/calcChain',
+		)
+		const reopened = await AscendWorkbook.open(new Uint8Array(readFileSync(output)))
+		expect(reopened.check().valid).toBe(true)
+		expect(reopened.formula('Sheet1!J1')?.normalizedFormula).toBe('A1*2')
+		expect(Buffer.from(readFileSync(input)).equals(Buffer.from(sourceBytes))).toBe(true)
+	})
+
 	test('plans explain external link package binding risk', async () => {
 		const input = join(TEMP_DIR, 'external-link-missing-binding.xlsx')
 		mkdirSync(TEMP_DIR, { recursive: true })

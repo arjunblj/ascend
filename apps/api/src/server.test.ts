@@ -788,6 +788,21 @@ describe('Ascend API server', () => {
 		})
 	})
 
+	test('/repair-plan rejects missing workbook references with structured retry guidance', async () => {
+		const result = await postJson('/repair-plan', {})
+
+		expect(result.status).toBe(400)
+		expect(result.body.ok).toBe(false)
+		expect(result.body.error).toMatchObject({
+			code: 'VALIDATION_ERROR',
+			message: 'Missing or invalid repair-plan workbook reference',
+			retryable: true,
+			retryStrategy: 'modified',
+			details: { required: ['file'] },
+			suggestedFix: expect.stringContaining('suggest repair actions'),
+		})
+	})
+
 	test('/plan reports missing workbook files with structured retry guidance', async () => {
 		const missing = join(tmpdir(), `ascend-api-missing-${Date.now()}.xlsx`)
 		const result = await postJson('/plan', {

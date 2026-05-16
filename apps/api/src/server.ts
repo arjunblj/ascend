@@ -207,6 +207,7 @@ type AgentWorkflowFileContext =
 	| 'agent-view'
 	| 'plan'
 	| 'commit'
+	| 'repair-plan'
 
 function missingAgentWorkflowFileError(context: AgentWorkflowFileContext): AscendError {
 	const requirement = (() => {
@@ -239,6 +240,8 @@ function missingAgentWorkflowFileError(context: AgentWorkflowFileContext): Ascen
 				return 'Pass either file with ops/mutations for a direct commit, or planHandle from a prepared /plan response.'
 			case 'plan':
 				return 'Pass file with ops or mutations so Ascend can read the source workbook and build a safe plan.'
+			case 'repair-plan':
+				return 'Pass file so Ascend can inspect failed workflow state and suggest repair actions.'
 		}
 	})()
 	return ascendError('VALIDATION_ERROR', `Missing or invalid ${context} workbook reference`, {
@@ -1277,7 +1280,7 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 			if (method === 'POST' && path === '/repair-plan') {
 				const body = await parseJson<{ file?: string }>(req)
 				const file = body ? requireString(body, 'file') : null
-				if (!file) return jsonFailure('Missing or invalid file', 400)
+				if (!file) return jsonFailureError(missingAgentWorkflowFileError('repair-plan'), 400)
 				try {
 					return jsonSuccess(await createRepairPlan(file))
 				} catch (e) {

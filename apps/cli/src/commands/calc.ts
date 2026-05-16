@@ -16,7 +16,20 @@ Flags:
 export async function calcCommand(args: string[], flags: Map<string, string>): Promise<number> {
 	const file = args[0]
 	if (!file) {
-		cliError('Usage: ascend calc <file>', flags)
+		cliError(
+			ascendError('INVALID_ARGUMENT', 'Missing required calc input', {
+				retryable: true,
+				retryStrategy: 'modified',
+				details: {
+					command: 'calc',
+					required: ['file'],
+					missing: ['file'],
+					workflow: ['reopen', 'verify'],
+				},
+				suggestedFix: 'Run ascend calc <file> --json after reopening a workbook with formulas.',
+			}),
+			flags,
+		)
 		return 1
 	}
 

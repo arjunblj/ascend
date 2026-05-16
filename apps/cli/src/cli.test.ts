@@ -883,6 +883,48 @@ describe('ascend cli', () => {
 		}
 	})
 
+	test('calc and export --json return structured missing input guidance', async () => {
+		const cases = [
+			{
+				argv: ['calc', '--json'] as const,
+				message: 'Missing required calc input',
+				details: {
+					command: 'calc',
+					required: ['file'],
+					missing: ['file'],
+					workflow: ['reopen', 'verify'],
+				},
+				fix: 'ascend calc <file> --json',
+			},
+			{
+				argv: ['export', TEST_FILE, '--json'] as const,
+				message: 'Missing required export input',
+				details: {
+					command: 'export',
+					required: ['file', 'output'],
+					missing: ['output'],
+					workflow: ['reopen', 'verify', 'export'],
+				},
+				fix: 'ascend export <file> <output> --format csv|tsv|json|xlsx|xlsm --json',
+			},
+		]
+
+		for (const entry of cases) {
+			const result = await run(...entry.argv)
+			expect(result.exitCode).toBe(1)
+			const parsed = JSON.parse(result.stdout)
+			expect(parsed.ok).toBe(false)
+			expect(parsed.error).toMatchObject({
+				code: 'INVALID_ARGUMENT',
+				message: entry.message,
+				retryable: true,
+				retryStrategy: 'modified',
+				details: entry.details,
+			})
+			expect(parsed.error.suggestedFix).toContain(entry.fix)
+		}
+	})
+
 	test('dump --json emits a replayable operation batch', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

@@ -1,4 +1,5 @@
 import { writeFile } from 'node:fs/promises'
+import { ascendError } from '@ascend/schema'
 import { inferExportFormat, normalizeExportFormat } from '@ascend/sdk'
 import { cliError, jsonOut } from '../output/json.ts'
 import { openWorkbookWithProgress, withProgress } from '../progress.ts'
@@ -21,7 +22,21 @@ export async function exportCommand(args: string[], flags: Map<string, string>):
 	const file = args[0]
 	const output = args[1]
 	if (!file || !output) {
-		cliError('Usage: ascend export <file> <output> [--format csv|json]', flags)
+		cliError(
+			ascendError('INVALID_ARGUMENT', 'Missing required export input', {
+				retryable: true,
+				retryStrategy: 'modified',
+				details: {
+					command: 'export',
+					required: ['file', 'output'],
+					missing: [...(!file ? ['file'] : []), ...(!output ? ['output'] : [])],
+					workflow: ['reopen', 'verify', 'export'],
+				},
+				suggestedFix:
+					'Run ascend export <file> <output> --format csv|tsv|json|xlsx|xlsm --json after verifying the workbook.',
+			}),
+			flags,
+		)
 		return 1
 	}
 

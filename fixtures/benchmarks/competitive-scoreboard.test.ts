@@ -692,6 +692,14 @@ describe('buildCompetitiveScoreboard', () => {
 				peakRssBytes: 2_000,
 			}),
 			matrixCase({
+				library: 'openpyxl',
+				category: 'read',
+				workload: 'selected-sheet',
+				repeat: 5,
+				operationProfile: 'read-selected-values',
+				peakRssBytes: 3_000,
+			}),
+			matrixCase({
 				library: 'ascend',
 				category: 'read',
 				workload: 'metadata-only',
@@ -723,6 +731,12 @@ describe('buildCompetitiveScoreboard', () => {
 		)
 		expect(inspection.gaps).not.toContain(
 			'xlsx-read-sota coverage-gap competitor=SheetJS category=read operationProfile=read-selected-values workload=selected-sheet reason=unsupported-operation',
+		)
+		expect(inspection.failures).not.toContain(
+			'xlsx-read-sota missing competitor=openpyxl category=read operationProfile=read-selected-values workload=selected-sheet',
+		)
+		expect(inspection.gaps).not.toContain(
+			'xlsx-read-sota coverage-gap competitor=openpyxl category=read operationProfile=read-selected-values workload=selected-sheet reason=unsupported-operation',
 		)
 		expect(inspection.failures).not.toContain(
 			'xlsx-read-sota missing competitor=ExcelJS category=read operationProfile=read-metadata-only workload=metadata-only',

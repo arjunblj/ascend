@@ -233,13 +233,10 @@ const CLAIM_PROFILES: Record<ClaimProfileName, ClaimProfile> = {
 				competitors: [
 					{ label: 'Ascend', libraries: ASCEND_READ_LIBRARIES },
 					{ label: 'SheetJS', libraries: ['sheetjs'] },
+					{ label: 'openpyxl', libraries: ['openpyxl'] },
 				],
 				capabilityGaps: [
 					{ label: 'ExcelJS', libraries: ['exceljs'] },
-					{
-						label: 'openpyxl',
-						libraries: ['openpyxl', 'openpyxl-read-only', 'openpyxl-read-only-values'],
-					},
 					{
 						label: 'Calamine',
 						libraries: ['calamine', 'python-calamine', 'rust-calamine', 'fastexcel'],

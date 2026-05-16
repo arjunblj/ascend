@@ -19,6 +19,7 @@ import {
 	retargetExplicitFormulaSheetRefsInRange,
 	rewriteDefinedNameFormulasForMove,
 	rewriteDefinedNameFormulasForShift,
+	rewriteWorkbookChartSourceRefsForMove,
 	rewriteWorkbookChartSourceRefsForShift,
 	rewriteWorkbookFormulasForMove,
 	rewriteWorkbookFormulasForShift,
@@ -256,6 +257,7 @@ export function handleTransferRange(
 	const colDelta = targetStart.col - source.start.col
 	const mode = op.mode ?? 'all'
 	const affected = new Set<string>()
+	const sheetsModified = new Set<string>([sourceSheet.name, targetSheet.name])
 
 	if (overwritesTargetFormulas(mode) || (op.op === 'moveRange' && clearsSourceCellContent(mode))) {
 		const targetLegacyArrayIndex = createLegacyArrayFormulaIndex(targetSheet)
@@ -448,6 +450,15 @@ export function handleTransferRange(
 				source,
 				mergePlan.value.targetRange,
 			)
+			for (const chartSheetName of rewriteWorkbookChartSourceRefsForMove(
+				workbook,
+				sourceSheet.name,
+				targetSheet.name,
+				source,
+				mergePlan.value.targetRange,
+			)) {
+				sheetsModified.add(chartSheetName)
+			}
 			for (const rewritten of rewriteWorkbookHyperlinkLocationsForMove(
 				workbook,
 				sourceSheet.name,
@@ -462,7 +473,7 @@ export function handleTransferRange(
 		}
 	}
 
-	return ok(patch([...affected], [sourceSheet.name, targetSheet.name], pasteRequiresRecalc(mode)))
+	return ok(patch([...affected], [...sheetsModified], pasteRequiresRecalc(mode)))
 }
 
 function affectedRef(sheet: Sheet, ref: string, qualify: boolean): string {

@@ -10,7 +10,12 @@ type FormulaTextRewriter = (formula: string | undefined) => string | undefined
 const REF_ERROR_NODE: FormulaNode = { type: 'error', value: '#REF!' }
 
 export interface PartialFormulaMoveReference {
-	readonly ownerKind: 'cell-formula' | 'defined-name' | 'worksheet-metadata' | 'hyperlink-location'
+	readonly ownerKind:
+		| 'cell-formula'
+		| 'defined-name'
+		| 'worksheet-metadata'
+		| 'hyperlink-location'
+		| 'chart-source'
 	readonly owner: string
 	readonly formula: string
 	readonly reference: string
@@ -273,6 +278,66 @@ export function rewriteWorkbookHyperlinkLocationsForMove(
 	return rewrittenCells
 }
 
+export function rewriteWorkbookChartSourceRefsForMove(
+	workbook: Workbook,
+	sourceSheet: string,
+	targetSheet: string,
+	sourceRange: RangeRef,
+	targetRange: RangeRef,
+): string[] {
+	const modifiedSheets = new Set<string>()
+	for (let index = 0; index < workbook.chartParts.length; index++) {
+		const chart = workbook.chartParts[index]
+		if (!chart) continue
+		let changed = false
+		const formulaSheet = chart.sheetName ?? sourceSheet
+		const series = chart.series.map((entry) => {
+			const nameRef = rewriteFormulaTextForMove(
+				entry.nameRef,
+				sourceSheet,
+				targetSheet,
+				formulaSheet,
+				sourceRange,
+				targetRange,
+			)
+			const categoryRef = rewriteFormulaTextForMove(
+				entry.categoryRef,
+				sourceSheet,
+				targetSheet,
+				formulaSheet,
+				sourceRange,
+				targetRange,
+			)
+			const valueRef = rewriteFormulaTextForMove(
+				entry.valueRef,
+				sourceSheet,
+				targetSheet,
+				formulaSheet,
+				sourceRange,
+				targetRange,
+			)
+			if (
+				nameRef === entry.nameRef &&
+				categoryRef === entry.categoryRef &&
+				valueRef === entry.valueRef
+			) {
+				return entry
+			}
+			changed = true
+			return {
+				...entry,
+				...(nameRef !== undefined ? { nameRef } : {}),
+				...(categoryRef !== undefined ? { categoryRef } : {}),
+				...(valueRef !== undefined ? { valueRef } : {}),
+			}
+		})
+		if (!changed) continue
+		workbook.chartParts[index] = { ...chart, series }
+		if (chart.sheetName) modifiedSheets.add(chart.sheetName)
+	}
+	return [...modifiedSheets]
+}
+
 export function findPartialFormulaMoveReference(
 	workbook: Workbook,
 	sourceSheet: string,
@@ -343,6 +408,27 @@ export function findPartialFormulaMoveReference(
 				owner: `${sheet.name}!hyperlink(${ref}).location`,
 				formula: hyperlink.location,
 				reference,
+			}
+		}
+	}
+	for (const [chartIndex, chart] of workbook.chartParts.entries()) {
+		const formulaSheet = chart.sheetName ?? sourceSheet
+		for (const [seriesIndex, series] of chart.series.entries()) {
+			for (const sourceKind of ['nameRef', 'categoryRef', 'valueRef'] as const) {
+				const formula = series[sourceKind]
+				const reference = findPartialMoveReferenceInFormula(
+					formula,
+					sourceSheet,
+					formulaSheet,
+					sourceRange,
+				)
+				if (!reference || !formula) continue
+				return {
+					ownerKind: 'chart-source',
+					owner: `${chart.partPath}#chart${chartIndex}.series${seriesIndex}.${sourceKind}`,
+					formula,
+					reference,
+				}
 			}
 		}
 	}

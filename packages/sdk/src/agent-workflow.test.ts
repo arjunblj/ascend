@@ -4622,6 +4622,40 @@ describe('agent workflow loss audit', () => {
 		expect(Buffer.from(readFileSync(input)).equals(Buffer.from(sourceBytes))).toBe(true)
 	})
 
+	test('commits moved chart source refs after save and reopen', async () => {
+		const input = join(TEMP_DIR, 'closedxml-chart-move-source.xlsx')
+		const output = join(TEMP_DIR, 'closedxml-chart-move-source-out.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		const sourceBytes = new Uint8Array(
+			readFileSync('fixtures/xlsx/closedxml/Other_Charts_PreserveCharts_inputfile.xlsx'),
+		)
+		await Bun.write(input, sourceBytes)
+		const ops = [{ op: 'moveRange' as const, sheet: 'Sheet1', source: 'A2:B8', target: 'D2' }]
+
+		const plan = await createAgentPlan(input, ops)
+		const committed = await commitAgentPlan(input, ops, {
+			output,
+			approvals: plan.approvals.map((approval) => approval.id),
+		})
+
+		expect(committed.postWrite.reopened).toBe(true)
+		expect(committed.postWrite.auditsPassed).toBe(true)
+		expect(committed.postWrite.packageGraphAudit.ok).toBe(false)
+		expect(committed.postWrite.expectedPackageGraphIssueCount).toBe(2)
+		expect(committed.postWrite.unresolvedPackageGraphIssueCount).toBe(0)
+		const reopened = await AscendWorkbook.open(new Uint8Array(readFileSync(output)))
+		const chart = reopened
+			.visualInventory()
+			.charts.find((entry) => entry.partPath === 'xl/charts/chart1.xml')
+		expect(chart?.series[0]).toMatchObject({
+			nameRef: 'Sheet1!$B$1',
+			nameText: 'Value',
+			categoryRef: 'Sheet1!$D$2:$D$8',
+			valueRef: 'Sheet1!$E$2:$E$8',
+		})
+		expect(Buffer.from(readFileSync(input)).equals(Buffer.from(sourceBytes))).toBe(true)
+	})
+
 	test('does not treat external 3D chart source refs as local structural drift', async () => {
 		const input = join(TEMP_DIR, 'external-3d-chart-source.xlsx')
 		mkdirSync(TEMP_DIR, { recursive: true })

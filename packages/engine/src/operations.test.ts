@@ -3886,6 +3886,75 @@ describe('applyOperation', () => {
 		expect(result.value.affectedCells).toContain('B2')
 	})
 
+	test('moveRange rewrites chart source refs that reference the moved range', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		wb.addSheet('Dashboard')
+		sheet.cells.set(0, 0, cell(numberValue(10)))
+		sheet.cells.set(1, 0, cell(numberValue(20)))
+		wb.chartParts.push({
+			partPath: 'xl/charts/chart1.xml',
+			sheetName: 'Dashboard',
+			chartType: 'lineChart',
+			series: [
+				{
+					nameRef: 'Sheet1!$A$1',
+					categoryRef: 'Sheet1!$A$1:$A$2',
+					valueRef: 'Sheet1!$A$1:$A$2',
+				},
+			],
+		})
+
+		const result = applyOperation(wb, {
+			op: 'moveRange',
+			sheet: 'Sheet1',
+			source: 'A1:A2',
+			target: 'C1',
+		})
+		expectOk(result)
+
+		expect(wb.chartParts[0]?.series[0]).toMatchObject({
+			nameRef: 'Sheet1!$C$1',
+			categoryRef: 'Sheet1!$C$1:$C$2',
+			valueRef: 'Sheet1!$C$1:$C$2',
+		})
+		expect(result.value.sheetsModified).toEqual(['Sheet1', 'Dashboard'])
+	})
+
+	test('moveRange rejects partial chart source refs before mutation', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		wb.addSheet('Dashboard')
+		sheet.cells.set(0, 0, cell(numberValue(10)))
+		sheet.cells.set(1, 0, cell(numberValue(20)))
+		sheet.cells.set(2, 0, cell(numberValue(30)))
+		wb.chartParts.push({
+			partPath: 'xl/charts/chart1.xml',
+			sheetName: 'Dashboard',
+			chartType: 'lineChart',
+			series: [{ valueRef: 'Sheet1!$A$1:$A$3' }],
+		})
+
+		const result = applyOperation(wb, {
+			op: 'moveRange',
+			sheet: 'Sheet1',
+			source: 'A2',
+			target: 'C2',
+		})
+
+		expectErr(result)
+		expect(result.error.details).toMatchObject({
+			kind: 'partial-move-formula-reference',
+			ownerKind: 'chart-source',
+			owner: 'xl/charts/chart1.xml#chart0.series0.valueRef',
+			reference: 'Sheet1!$A$1:$A$3',
+			source: 'A2',
+		})
+		expect(wb.chartParts[0]?.series[0]?.valueRef).toBe('Sheet1!$A$1:$A$3')
+		expect(sheet.cells.get(1, 0)?.value).toEqual(numberValue(20))
+		expect(sheet.cells.get(1, 2)).toBeUndefined()
+	})
+
 	test('moveRange reports every shared formula member when rewriting the shared master', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

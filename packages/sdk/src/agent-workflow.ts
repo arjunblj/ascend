@@ -4557,7 +4557,8 @@ function expectedPackageGraphChangesForOperations(
 					operation.op === 'insertRows' ||
 					operation.op === 'deleteRows' ||
 					operation.op === 'insertCols' ||
-					operation.op === 'deleteCols',
+					operation.op === 'deleteCols' ||
+					operation.op === 'moveRange',
 			)
 		) {
 			rewrittenPartPaths.add(risk.chartPartPath)
@@ -5707,9 +5708,12 @@ interface ChartSourceRelatedOperation {
 	readonly operationIndex: number
 	readonly op: Operation['op']
 	readonly sheetName: string
-	readonly rangeImpact: 'rows' | 'columns' | 'sheet'
+	readonly rangeImpact: 'rows' | 'columns' | 'sheet' | 'range'
 	readonly at?: number | undefined
 	readonly count?: number | undefined
+	readonly source?: string | undefined
+	readonly targetSheet?: string | undefined
+	readonly target?: string | undefined
 	readonly newName?: string | undefined
 }
 
@@ -6816,6 +6820,18 @@ function chartSourceRelatedOperations(
 					rangeImpact: 'columns',
 					at: operation.at,
 					count: operation.count,
+				})
+				break
+			case 'moveRange':
+				if (!referencedSheets.has(operation.sheet)) return
+				related.push({
+					operationIndex,
+					op: operation.op,
+					sheetName: operation.sheet,
+					rangeImpact: 'range',
+					source: operation.source,
+					targetSheet: operation.targetSheet,
+					target: operation.target,
 				})
 				break
 			case 'renameSheet':

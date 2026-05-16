@@ -1336,6 +1336,101 @@ winning row. Continue with the next priority workflow only if it can produce a
 validated optimization, a comparable baseline row, or an explicit claim
 downgrade.
 
+## Cycle: Formula Heavy Write Fastest Comparable Row at `7118f208`
+
+Classification: comparable external evidence. Ascend is the median and p95
+winner among the completed formula-capable generated XLSX writers in this row.
+The full `xlsx-write-sota` profile is still not promotable from this single
+workload, and no production optimization is justified from a winning row.
+
+Workflow: generated XLSX write for formula-heavy workbooks, 2000 rows x 20
+columns.
+
+Why it matters for release: formula-bearing workbook export is a visible
+commit/export workflow for agent-authored sheets. This row checks whether
+Ascend's write path remains competitive when most cells are formulas rather
+than plain values or styles.
+
+Public/tracked-clean input: `competitive-io` generated the `formula-heavy`
+`source-mode generated-write` workload from tracked benchmark code in a clean
+detached worktree at commit `7118f208`. No private corpus or local research
+workbook was used.
+
+Commands:
+
+```bash
+git worktree add --detach /private/tmp/ascend-write-formula-current-7118f208 7118f2086545
+cd /private/tmp/ascend-write-formula-current-7118f208
+bun install --frozen-lockfile
+mkdir -p /private/tmp/ascend-write-formula-current-7118f208-runs
+TMPDIR=/private/tmp ACCEPT_NPOI_OSMF_LICENSE=1 env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-io.ts --json --category write --competitor all --execution-scope external-process --source-mode generated-write --libraries ascend-external-writer,xlsxwriter,xlsxwriter-constant-memory,rust-xlsxwriter --workload formula-heavy --repeat 15 --warmup 3 --validation-mode each --write-runner-manifest fixtures/benchmarks/runners/sota-writers.manifest.json > /private/tmp/ascend-write-formula-current-7118f208-runs/write-formula-heavy-repeat15.json
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-scoreboard.ts /private/tmp/ascend-write-formula-current-7118f208-runs/write-formula-heavy-repeat15.json --json --metric medianMs --require-profile xlsx-write-sota --assert-profile-leader ascend > /private/tmp/ascend-write-formula-current-7118f208-runs/write-formula-heavy-repeat15-scoreboard.json
+```
+
+Environment:
+
+- Commit: `7118f20865456199b7e37f848b9df6018f6dee2d`
+- Worktree: clean detached worktree at
+  `/private/tmp/ascend-write-formula-current-7118f208`
+- Bun runtime: `1.3.13`
+- Node: `24.3.0`
+- Platform: Darwin arm64
+- Runtime profile: `category write`, `executionScope external-process`,
+  `sourceMode generated-write`, `workload formula-heavy`,
+  `validationMode each`, `repeat 15`, `warmup 3`.
+
+Raw output:
+
+```text
+/private/tmp/ascend-write-formula-current-7118f208-runs/write-formula-heavy-repeat15.json
+/private/tmp/ascend-write-formula-current-7118f208-runs/write-formula-heavy-repeat15-scoreboard.json
+```
+
+Focused formula-capable writer rerun, repeat 15 after 3 warmups:
+
+| Runner | Status vs Ascend | Median ms | P95 ms | CV | Peak RSS | Output bytes |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| `ascend-external-writer` | ran/won | 41.758 | 85.659 | 0.293 | 196.9 MiB | 405795 |
+| `rust-xlsxwriter` | ran/lost vs Ascend | 72.837 | 100.303 | 0.163 | 23.6 MiB | 245490 |
+| `xlsxwriter` | ran/lost vs Ascend | 1238.221 | 2176.396 | 0.243 | 117.0 MiB | 234257 |
+| `xlsxwriter-constant-memory` | ran/lost vs Ascend | 1351.949 | 1802.284 | 0.144 | 96.4 MiB | 234041 |
+
+Scoreboard result:
+
+- Focused repeat-15 formula-capable row: group winner was
+  `ascend-external-writer`; `leaderFailures: []` and
+  `profileLeaderFailures: []`.
+- The scoreboard command exits nonzero for full-profile coverage because this is
+  not a full `xlsx-write-sota` run. Coverage failures and omitted/unsupported
+  formula writers are not counted as Ascend wins.
+
+Semantic comparability: all listed rows reopened successfully, matched the
+expected one-sheet and 40,000-cell shape, matched the expected 36,000 formula
+cells, and passed sorted semantic cell value validation. XlsxWriter,
+XlsxWriter constant-memory, and rust_xlsxwriter did not match ordered semantic
+cell value hashes, so their rows are useful formula-write comparisons but not
+byte/order-equivalent output claims. Ascend uses more RSS and emits a larger
+XLSX than the compared formula writers.
+
+Humble allowed wording:
+
+> On the generated 2000 x 20 formula-heavy write row at commit `7118f208`,
+> Ascend's focused external repeat-15 run had the fastest median and p95 among
+> the completed formula-capable comparable writers in this row. This is scoped
+> generated formula-write evidence, not a broad `xlsx-write-sota` claim.
+
+Forbidden wording:
+
+- "Ascend is SOTA for XLSX write."
+- "Ascend beats every formula-capable writer."
+- "Ascend beats omitted, unsupported, blocked, or untested formula writers."
+- "Ascend produces the smallest formula-heavy XLSX."
+- "Ascend proves byte/order-equivalent output against every compared writer."
+
+Next action: defer production optimization for formula-heavy from this winning
+row. Continue only with a measured release workflow loss, a full-profile
+coverage blocker, or an explicit claim downgrade.
+
 ## Owner-Ready Benchmark Blocker
 
 Owner: benchmarking/external baselines.

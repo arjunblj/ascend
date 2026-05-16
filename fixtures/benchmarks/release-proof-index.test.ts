@@ -3931,6 +3931,9 @@ describe('release proof evidence index', () => {
 			'metadata-only external-process evidence at commit fa3a13dc',
 		)
 		expect(packet.benchmarkBlocker?.evidenceWeHave?.join('\n')).toContain(
+			'Commit bbf875b4 adds an Ascend readXlsx selected-sheet external-process row',
+		)
+		expect(packet.benchmarkBlocker?.evidenceWeHave?.join('\n')).toContain(
 			'Current full-profile and merged selected-sheet/metadata-only scoreboards',
 		)
 		expect(packet.benchmarkBlocker?.evidenceMissing?.join('\n')).toContain(
@@ -3938,6 +3941,9 @@ describe('release proof evidence index', () => {
 		)
 		expect(packet.benchmarkBlocker?.evidenceMissing?.join('\n')).toContain(
 			'FastXLSX environment coverage',
+		)
+		expect(packet.benchmarkBlocker?.evidenceMissing?.join('\n')).toContain(
+			'Clean repeat-5 selected-sheet rerun that includes the new ascend-readXlsx selected-sheet row',
 		)
 		expect(packet.benchmarkBlocker?.qssContrast?.join('\n')).toContain(
 			'QSS-leapfrog speed wording is blocked',

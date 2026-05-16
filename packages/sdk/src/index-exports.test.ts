@@ -16,6 +16,7 @@ import type {
 	PostWriteOpaquePayloadSummary,
 	PostWritePivotCacheEntry,
 	PostWritePivotTableEntry,
+	PostWriteProtectedRangeSecurityEntry,
 	PostWriteSecuritySummary,
 	PostWriteSheetSecurityEntry,
 	PostWriteSheetTopologyEntry,
@@ -44,6 +45,7 @@ type CommitProofExportSurface = {
 	readonly opaquePayloads?: PostWriteOpaquePayloadSummary
 	readonly pivotCache?: PostWritePivotCacheEntry
 	readonly pivotTable?: PostWritePivotTableEntry
+	readonly protectedRangeSecurity?: PostWriteProtectedRangeSecurityEntry
 	readonly security?: PostWriteSecuritySummary
 	readonly sheetSecurity?: PostWriteSheetSecurityEntry
 	readonly sheetTopology?: PostWriteSheetTopologyEntry
@@ -75,6 +77,7 @@ test('root SDK exports commit proof audit types for release consumers', () => {
 		'opaquePayloads',
 		'pivotCache',
 		'pivotTable',
+		'protectedRangeSecurity',
 		'security',
 		'sheetSecurity',
 		'sheetTopology',

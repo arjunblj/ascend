@@ -66,6 +66,7 @@ export type {
 	PostWriteOpaquePayloadSummary,
 	PostWritePivotCacheEntry,
 	PostWritePivotTableEntry,
+	PostWriteProtectedRangeSecurityEntry,
 	PostWriteSecuritySummary,
 	PostWriteSheetSecurityEntry,
 	PostWriteSheetTopologyEntry,

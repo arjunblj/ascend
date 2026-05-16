@@ -674,6 +674,10 @@ export interface PostWriteSecuritySummary {
 	readonly sheetStrongHashProtected: number
 	readonly protectedRanges: number
 	readonly protectedRangeLocations: readonly string[]
+	readonly protectedRangePasswordProtected: number
+	readonly protectedRangeStrongHashProtected: number
+	readonly protectedRangeSecurityDescriptors: number
+	readonly protectedRangeDetails: readonly PostWriteProtectedRangeSecurityEntry[]
 	readonly sheets: readonly PostWriteSheetSecurityEntry[]
 	readonly passwordHashVerification: 'reported-not-validated' | 'none'
 	readonly preservationMode: 'generated' | 'none'
@@ -688,6 +692,16 @@ export interface PostWriteSheetSecurityEntry {
 	readonly allowedActions: readonly string[]
 	readonly protectedRanges: number
 	readonly protectedRangeLocations: readonly string[]
+}
+
+export interface PostWriteProtectedRangeSecurityEntry {
+	readonly sheetName: string
+	readonly name?: string
+	readonly sqref: string
+	readonly location: string
+	readonly passwordProtected: boolean
+	readonly strongHashProtected: boolean
+	readonly hasSecurityDescriptor: boolean
 }
 
 export interface PostWriteVisualSummary {
@@ -2765,13 +2779,30 @@ function postWriteSecuritySummary(workbook: Workbook): PostWriteSecuritySummary 
 			}
 		})
 		.filter((sheet) => sheet.protected || sheet.protectedRanges > 0)
+	const protectedRangeDetails = workbook.sheets.flatMap((sheet) =>
+		sheet.protectedRanges.map((range) => {
+			const strongHashProtected = Boolean(
+				range.algorithmName || range.hashValue || range.saltValue || range.spinCount,
+			)
+			return {
+				sheetName: sheet.name,
+				...(range.name ? { name: range.name } : {}),
+				sqref: range.sqref,
+				location: `${sheet.name}!${range.sqref}`,
+				passwordProtected: Boolean(range.password),
+				strongHashProtected,
+				hasSecurityDescriptor: Boolean(range.securityDescriptor),
+			}
+		}),
+	)
 	const protectedRangeLocations = uniqueStrings(
-		sheets.flatMap((sheet) => sheet.protectedRangeLocations),
+		protectedRangeDetails.map((range) => range.location),
 	)
 	const hasPasswordOrHash =
 		workbookPasswordProtected ||
 		workbookRevisionPasswordProtected ||
-		sheets.some((sheet) => sheet.passwordProtected || sheet.strongHashProtected)
+		sheets.some((sheet) => sheet.passwordProtected || sheet.strongHashProtected) ||
+		protectedRangeDetails.some((range) => range.passwordProtected || range.strongHashProtected)
 	const hasSecurity =
 		workbookProtection !== null || sheets.length > 0 || protectedRangeLocations.length > 0
 	return {
@@ -2785,6 +2816,16 @@ function postWriteSecuritySummary(workbook: Workbook): PostWriteSecuritySummary 
 		sheetStrongHashProtected: sheets.filter((sheet) => sheet.strongHashProtected).length,
 		protectedRanges: protectedRangeLocations.length,
 		protectedRangeLocations,
+		protectedRangePasswordProtected: protectedRangeDetails.filter(
+			(range) => range.passwordProtected,
+		).length,
+		protectedRangeStrongHashProtected: protectedRangeDetails.filter(
+			(range) => range.strongHashProtected,
+		).length,
+		protectedRangeSecurityDescriptors: protectedRangeDetails.filter(
+			(range) => range.hasSecurityDescriptor,
+		).length,
+		protectedRangeDetails,
 		sheets,
 		passwordHashVerification: hasPasswordOrHash ? 'reported-not-validated' : 'none',
 		preservationMode: hasSecurity ? 'generated' : 'none',

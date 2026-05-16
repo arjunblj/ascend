@@ -1005,6 +1005,9 @@ describe('agent workflow loss audit', () => {
 			sheetStrongHashProtected: 0,
 			protectedRanges: 1,
 			protectedRangeLocations: ['Sheet1!C:C'],
+			protectedRangePasswordProtected: 1,
+			protectedRangeStrongHashProtected: 0,
+			protectedRangeSecurityDescriptors: 0,
 			passwordHashVerification: 'reported-not-validated',
 			preservationMode: 'generated',
 			verification: 'reopened-output',
@@ -1013,6 +1016,17 @@ describe('agent workflow loss audit', () => {
 			workbookProtected: true,
 			protectedSheets: 1,
 			protectedRangeLocations: ['Sheet1!C:C'],
+			protectedRangeDetails: [
+				{
+					sheetName: 'Sheet1',
+					name: 'Editable',
+					sqref: 'C:C',
+					location: 'Sheet1!C:C',
+					passwordProtected: true,
+					strongHashProtected: false,
+					hasSecurityDescriptor: false,
+				},
+			],
 			sheets: [
 				{
 					sheetName: 'Sheet1',
@@ -1023,6 +1037,71 @@ describe('agent workflow loss audit', () => {
 				},
 			],
 		})
+	})
+
+	test('commits public protected ranges with honest hash reporting after save and reopen', async () => {
+		const input = join(TEMP_DIR, 'libreoffice-enhanced-protection.xlsx')
+		const output = join(TEMP_DIR, 'libreoffice-enhanced-protection-out.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		const sourceBytes = new Uint8Array(
+			readFileSync('fixtures/xlsx/libreoffice/enhanced-protection.xlsx'),
+		)
+		await Bun.write(input, sourceBytes)
+
+		const committed = await commitAgentPlan(
+			input,
+			[{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'B1', value: 'audit' }] }],
+			{ output },
+		)
+
+		expect(committed.postWrite.auditsPassed).toBe(true)
+		expect(committed.postWrite.security).toMatchObject({
+			workbookProtected: false,
+			protectedSheets: 1,
+			protectedSheetNames: ['Sheet1'],
+			sheetPasswordProtected: 0,
+			sheetStrongHashProtected: 0,
+			protectedRanges: 5,
+			protectedRangePasswordProtected: 0,
+			protectedRangeStrongHashProtected: 2,
+			protectedRangeSecurityDescriptors: 2,
+			passwordHashVerification: 'reported-not-validated',
+			verification: 'reopened-output',
+		})
+		expect(committed.postWrite.security.protectedRangeDetails).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					sheetName: 'Sheet1',
+					name: 'Range5_editable_with_descriptor_and_password_foo',
+					sqref: 'A6',
+					location: 'Sheet1!A6',
+					passwordProtected: false,
+					strongHashProtected: true,
+					hasSecurityDescriptor: true,
+				}),
+				expect.objectContaining({
+					sheetName: 'Sheet1',
+					name: 'Range4_with_descriptor',
+					sqref: 'A5',
+					location: 'Sheet1!A5',
+					passwordProtected: false,
+					strongHashProtected: false,
+					hasSecurityDescriptor: true,
+				}),
+				expect.objectContaining({
+					sheetName: 'Sheet1',
+					name: 'Range3_with_password_foo',
+					sqref: 'A4',
+					location: 'Sheet1!A4',
+					passwordProtected: false,
+					strongHashProtected: true,
+					hasSecurityDescriptor: false,
+				}),
+			]),
+		)
+		const reopened = await AscendWorkbook.open(new Uint8Array(readFileSync(output)))
+		expect(reopened.getWorkbookModel().sheets[0]?.protectedRanges).toHaveLength(5)
+		expect(Buffer.from(readFileSync(input)).equals(Buffer.from(sourceBytes))).toBe(true)
 	})
 
 	test('commits public hidden-sheet topology through save and reopen audits', async () => {

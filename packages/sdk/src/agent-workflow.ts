@@ -2058,7 +2058,13 @@ export async function commitAgentPlanFromWorkbook(
 	if (options.inPlace && options.backup) await copyFile(file, options.backup)
 	const sourceBytes = internal.sourceBytes ?? (await fileBytes(file))
 	await progress('write', 'started', `Writing workbook to ${output}.`)
-	const writeTimings = await writeWorkbookAtomically(wb, output)
+	let writeTimings: AtomicWorkbookWriteTimings
+	try {
+		writeTimings = await writeWorkbookAtomically(wb, output)
+	} catch (error) {
+		wb.restoreMutationRollbackSnapshot(rollbackSnapshot)
+		throw error
+	}
 	const outputBytesResult = await timedCommitStep(() => fileBytes(output))
 	const outputBytes = outputBytesResult.value
 	const outputSha256Result = await timedCommitStep(() => sha256Bytes(outputBytes))

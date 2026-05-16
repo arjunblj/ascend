@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { Buffer } from 'node:buffer'
+import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, utimesSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -233,6 +234,25 @@ describe('agent workflow loss audit', () => {
 		)
 		expect(committed.modelOutput.blocked).toBe(true)
 		expect(committed.modelOutput.digests.traceDigest).toBe(committed.trace.traceDigest)
+	})
+
+	test('encrypted workbook commits fail closed and roll back dirty state before decrypted export', async () => {
+		const input = join(TEMP_DIR, 'pass_protected.xlsx')
+		const output = join(TEMP_DIR, 'pass_protected-out.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		const sourceBytes = new Uint8Array(readFileSync('fixtures/xlsx/calamine/pass_protected.xlsx'))
+		await Bun.write(input, sourceBytes)
+		const wb = await AscendWorkbook.open(sourceBytes, { password: '123' })
+		const inputSha256 = createHash('sha256').update(sourceBytes).digest('hex')
+		const ops = [
+			{ op: 'setCells' as const, sheet: 'Sheet1', updates: [{ ref: 'Z10', value: 'blocked' }] },
+		]
+
+		await expect(
+			commitAgentPlanFromWorkbook(input, inputSha256, wb, ops, { output }, { sourceBytes }),
+		).rejects.toThrow('Cannot export an edited encrypted workbook without re-encryption support')
+		expect(existsSync(output)).toBe(false)
+		expect(Buffer.from(wb.toBytes()).equals(Buffer.from(sourceBytes))).toBe(true)
 	})
 
 	test('plans expose digital signature invalidation package policy', async () => {

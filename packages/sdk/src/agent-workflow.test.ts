@@ -255,12 +255,85 @@ describe('agent workflow loss audit', () => {
 		const ops = [
 			{ op: 'setCells' as const, sheet: 'Sheet1', updates: [{ ref: 'Z10', value: 'blocked' }] },
 		]
+		const progressEvents: { readonly phase: string; readonly status: string }[] = []
 
-		await expect(
-			commitAgentPlanFromWorkbook(input, inputSha256, wb, ops, { output }, { sourceBytes }),
-		).rejects.toThrow('Cannot export an edited encrypted workbook without re-encryption support')
+		let blockedError: unknown
+		try {
+			await commitAgentPlanFromWorkbook(
+				input,
+				inputSha256,
+				wb,
+				ops,
+				{
+					output,
+					onProgress: (event) => progressEvents.push(event),
+				},
+				{ sourceBytes },
+			)
+		} catch (error) {
+			blockedError = error
+		}
+		expect(
+			(
+				blockedError as {
+					readonly ascendError?: {
+						readonly code?: string
+						readonly details?: {
+							readonly output?: string
+							readonly sourceWasEncrypted?: boolean
+							readonly reEncryptionSupported?: boolean
+						}
+						readonly suggestedFix?: string
+					}
+				}
+			).ascendError,
+		).toMatchObject({
+			code: 'EXPORT_ERROR',
+			details: {
+				output,
+				sourceWasEncrypted: true,
+				reEncryptionSupported: false,
+			},
+			suggestedFix: expect.stringContaining('allowDecryptedExport: true'),
+		})
+		expect(progressEvents).toContainEqual(
+			expect.objectContaining({ phase: 'write-policy', status: 'failed' }),
+		)
+		expect(progressEvents.some((event) => event.phase === 'apply')).toBe(false)
+		expect(progressEvents.some((event) => event.phase === 'write')).toBe(false)
 		expect(existsSync(output)).toBe(false)
 		expect(Buffer.from(wb.toBytes()).equals(Buffer.from(sourceBytes))).toBe(true)
+	})
+
+	test('encrypted workbook commits can explicitly write a decrypted output and reopen it', async () => {
+		const input = join(TEMP_DIR, 'pass_protected-explicit.xlsx')
+		const output = join(TEMP_DIR, 'pass_protected-decrypted-out.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		const sourceBytes = new Uint8Array(readFileSync('fixtures/xlsx/calamine/pass_protected.xlsx'))
+		await Bun.write(input, sourceBytes)
+		const wb = await AscendWorkbook.open(sourceBytes, { password: '123' })
+		const inputSha256 = createHash('sha256').update(sourceBytes).digest('hex')
+		const ops = [
+			{ op: 'setCells' as const, sheet: 'Sheet1', updates: [{ ref: 'Z10', value: 'decrypted' }] },
+		]
+
+		const committed = await commitAgentPlanFromWorkbook(
+			input,
+			inputSha256,
+			wb,
+			ops,
+			{ output, allowDecryptedExport: true },
+			{ sourceBytes },
+		)
+
+		expect(committed.postWrite.reopened).toBe(true)
+		expect(committed.postWrite.auditsPassed).toBe(true)
+		const reopened = await AscendWorkbook.open(new Uint8Array(readFileSync(output)))
+		expect(reopened.sheet('Sheet1')?.cell('Z10')?.value).toEqual({
+			kind: 'string',
+			value: 'decrypted',
+		})
+		expect(Buffer.from(readFileSync(input)).equals(Buffer.from(sourceBytes))).toBe(true)
 	})
 
 	test('agent plans open encrypted workbooks with explicit passwords', async () => {

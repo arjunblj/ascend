@@ -1,7 +1,15 @@
-import { describe, expect, test } from 'bun:test'
-import { readFileSync } from 'node:fs'
+import { afterEach, describe, expect, test } from 'bun:test'
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { auditXlsxPackageGraphSafeEditIntegrity, inspectXlsxPackageGraph } from '@ascend/io-xlsx'
-import { AscendWorkbook } from '@ascend/sdk'
+import { AscendWorkbook, commitAgentPlan, createAgentPlan } from '@ascend/sdk'
+
+const TEMP_DIR = join(tmpdir(), `ascend-formula-binding-contract-${process.pid}`)
+
+afterEach(() => {
+	if (existsSync(TEMP_DIR)) rmSync(TEMP_DIR, { recursive: true, force: true })
+})
 
 function loadFixture(path: string): Uint8Array {
 	return new Uint8Array(readFileSync(new URL(path, import.meta.url)))
@@ -39,6 +47,62 @@ function formulaBindingIntegrityIssues(workbook: AscendWorkbook): readonly unkno
 }
 
 describe('formula binding corpus contract', () => {
+	test('commit proof reports missing public formula caches after save and reopen', async () => {
+		const input = join(TEMP_DIR, 'closedxml-formulas-without-caches.xlsx')
+		const output = join(TEMP_DIR, 'closedxml-formulas-without-caches-out.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		const source = loadFixture('../xlsx/closedxml/Misc_Formulas.xlsx')
+		await Bun.write(input, source)
+		const ops = [
+			{ op: 'setCells' as const, sheet: 'Formulas', updates: [{ ref: 'H20', value: 'audit' }] },
+		]
+
+		const plan = await createAgentPlan(input, ops)
+		expect(
+			plan.writePolicy.diagnostics.some((diagnostic) => diagnostic.severity === 'blocker'),
+		).toBe(false)
+		const committed = await commitAgentPlan(input, ops, {
+			output,
+			approvals: plan.approvals.map((approval) => approval.id),
+		})
+
+		expect(committed.postWrite.auditsPassed).toBe(true)
+		expect(committed.postWrite.formulaState).toMatchObject({
+			calcChainState: 'present',
+			calcChainParts: ['xl/calcChain.xml'],
+			recalculationRequested: false,
+			formulaCells: 12,
+			cachedFormulaValues: 0,
+			missingCachedFormulaValues: 12,
+			formulaCacheState: 'all-missing',
+			cachedValueKinds: [],
+			missingCachedFormulaLocationSample: [
+				'Formulas!C2',
+				'Formulas!G2',
+				'Formulas!C3',
+				'Formulas!G3',
+				'Formulas!C4',
+				'Formulas!G4',
+				'Formulas!B6',
+				'Formulas!C6',
+				'Formulas!A11',
+				'Formulas!A12',
+				'Formulas!A13',
+				'Formulas!A14',
+			],
+		})
+		expect(committed.postWrite.formulaState.warnings.join('\n')).toContain(
+			'12 reopened formula cell(s) do not carry cached formula values',
+		)
+		const reopened = await AscendWorkbook.open(new Uint8Array(readFileSync(output)))
+		expect(cellFormulaContract(reopened, 'Formulas', ['C2', 'G2', 'A14'])).toMatchObject({
+			C2: { formula: 'A2+$B$2', value: { kind: 'empty' } },
+			G2: { formula: 'IF(C2=F2,"Yes","No")', value: { kind: 'empty' } },
+			A14: { formula: 'SUM(8:9)', value: { kind: 'empty' } },
+		})
+		expect(Buffer.from(readFileSync(input)).equals(Buffer.from(source))).toBe(true)
+	})
+
 	test('preserves public POI shared formulas through unrelated safe edits and reopen', async () => {
 		const source = loadFixture('../xlsx/poi/shared_formulas.xlsx')
 		const workbook = await AscendWorkbook.open(source)

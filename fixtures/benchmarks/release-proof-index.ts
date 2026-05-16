@@ -268,6 +268,10 @@ export interface ReleaseProofQssArchivedResearchNote {
 
 export interface ReleaseProofReleaseDecisionBoard {
 	readonly status: 'top-two-only'
+	readonly releaseGate: ReleaseProofReadinessSummary['releaseGate']
+	readonly headlineClaimsAllowed: boolean
+	readonly implementationSurfacePromotionAllowed: boolean
+	readonly missingRequirementCount: number
 	readonly rows: readonly ReleaseProofReleaseDecisionBoardRow[]
 	readonly boundary: string
 }
@@ -1936,6 +1940,10 @@ function releaseDecisionBoard(
 ): ReleaseProofReleaseDecisionBoard {
 	return {
 		status: 'top-two-only',
+		releaseGate: readiness.releaseGate,
+		headlineClaimsAllowed: readiness.headlineClaimsAllowed,
+		implementationSurfacePromotionAllowed: readiness.implementationSurfacePromotionAllowed,
+		missingRequirementCount: readiness.missingRequirementCount,
 		rows: qssMatrix.rows.map((row) => {
 			const artifact = artifacts.find((candidate) => candidate.name === row.artifact)
 			const handoff = readiness.implementationHandoffs.find(

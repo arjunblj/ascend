@@ -912,6 +912,10 @@ describe('release proof evidence index', () => {
 		])
 		expect(index.releaseDecisionBoard).toMatchObject({
 			status: 'top-two-only',
+			releaseGate: 'blocked-by-publication-policy',
+			headlineClaimsAllowed: false,
+			implementationSurfacePromotionAllowed: false,
+			missingRequirementCount: 9,
 			boundary: expect.stringContaining('Top-two release-decision artifact'),
 		})
 		expect(index.releaseDecisionBoard.rows.map((row) => row.artifact)).toEqual([
@@ -1411,6 +1415,10 @@ describe('release proof evidence index', () => {
 		expect(stderr.trim()).toBe('')
 		const board = JSON.parse(stdout) as {
 			readonly status?: string
+			readonly releaseGate?: string
+			readonly headlineClaimsAllowed?: boolean
+			readonly implementationSurfacePromotionAllowed?: boolean
+			readonly missingRequirementCount?: number
 			readonly rows?: readonly {
 				readonly artifact?: string
 				readonly headlineClaimAllowed?: boolean
@@ -1418,6 +1426,10 @@ describe('release proof evidence index', () => {
 			}[]
 		}
 		expect(board.status).toBe('top-two-only')
+		expect(board.releaseGate).toBe('blocked-by-publication-policy')
+		expect(board.headlineClaimsAllowed).toBe(false)
+		expect(board.implementationSurfacePromotionAllowed).toBe(false)
+		expect(board.missingRequirementCount).toBe(9)
 		expect(board.rows?.map((row) => row.artifact)).toEqual([
 			'safe-open-proof',
 			'package-action-proof',

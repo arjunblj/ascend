@@ -36,6 +36,7 @@ Ascend's release message should be the trust/proof/runtime layer for agentic spr
 - Added regression tests proving the board does not allow headline claims or implementation promotion while release gates remain blocked.
 - Added `--release-decision-json` so owner loops can fetch only the compact two-claim board without the full owner-handoff payload.
 - Updated release provenance references to current SLSA 1.2 distribution guidance and test-pinned the fixture policy away from old SLSA v1.0 URLs.
+- Added aggregate `releaseGate`, `headlineClaimsAllowed`, `implementationSurfacePromotionAllowed`, and `missingRequirementCount` fields to the compact board so claim rows cannot be detached from the blocked release state.
 
 ## Results
 
@@ -44,7 +45,7 @@ Ascend's release message should be the trust/proof/runtime layer for agentic spr
 - `bunx tsc --build`: passed.
 - `bun run fixtures/benchmarks/release-proof-index.ts --no-timings --owner-handoffs-json`: passed and emits the owner handoff without embedding full proof artifacts.
 - `bun run fixtures/benchmarks/release-proof-index.ts --no-timings --release-decision-json`: passed and emits only the compact release decision board.
-- `bun run test:changed`: passed, 5218 pass, 1 skip, 0 fail.
+- `bun run test:changed`: passed, 5219 pass, 1 skip, 0 fail.
 
 ## Confidence
 

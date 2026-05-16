@@ -2279,6 +2279,12 @@ describe('release proof evidence index', () => {
 			]),
 		)
 		expect(handoff.releaseDecisionBoard.implementationReadyOwnerActionQueue).toHaveLength(14)
+		for (const row of handoff.releaseDecisionBoard.implementationReadyOwnerActionQueue) {
+			expect(row.ownerFiles).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(row.commandsToRun).toEqual(row.validationCommands)
+			expect(row.failureEvidence).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(row.acceptanceCriteria.length).toBeGreaterThan(0)
+		}
 		expect(handoff.releaseDecisionBoard.implementationReadyOwnerActionQueue).toEqual(
 			expect.arrayContaining([
 				expect.objectContaining({
@@ -2286,6 +2292,7 @@ describe('release proof evidence index', () => {
 					ownerLoop: 'correctness',
 					name: 'package-action-proof',
 					requirementId: 'unsupported-feature-boundary',
+					ownerFiles: ['fixtures/benchmarks/package-action-proof.ts'],
 					validationCommands: [
 						'bun run fixtures/benchmarks/package-action-proof.ts --no-timings --json',
 					],
@@ -2295,6 +2302,7 @@ describe('release proof evidence index', () => {
 					ownerLoop: 'release',
 					name: 'safe-open-proof',
 					requirementId: 'compact-report-publication-policy',
+					ownerFiles: ['fixtures/benchmarks/safe-open-proof.ts'],
 					validationCommands: [
 						'bun run fixtures/benchmarks/safe-open-proof.ts --no-timings --compact-json',
 					],
@@ -2303,6 +2311,7 @@ describe('release proof evidence index', () => {
 					sourceQueue: 'blocked-owner-action',
 					ownerLoop: 'product',
 					name: 'agent-workflow-observability',
+					ownerFiles: expect.arrayContaining(['packages/sdk/src/agent-workflow.test.ts']),
 					validationCommands: expect.arrayContaining([
 						expect.stringContaining('packages/sdk/src/agent-workflow.test.ts'),
 					]),
@@ -2311,6 +2320,7 @@ describe('release proof evidence index', () => {
 					sourceQueue: 'blocked-owner-action',
 					ownerLoop: 'release',
 					name: 'release-proof-bundle',
+					ownerFiles: expect.arrayContaining(['scripts/release-rc-gate.ts']),
 					validationCommands: expect.arrayContaining(['bun run release:rc:gate']),
 				}),
 			]),
@@ -2569,7 +2579,11 @@ describe('release proof evidence index', () => {
 				readonly ownerLoop?: string
 				readonly requirementId?: string
 				readonly workBlockDisposition?: string
+				readonly ownerFiles?: readonly string[]
 				readonly validationCommands?: readonly string[]
+				readonly commandsToRun?: readonly string[]
+				readonly failureEvidence?: readonly string[]
+				readonly acceptanceCriteria?: string
 				readonly evidenceWeHave?: readonly string[]
 				readonly evidenceMissing?: readonly string[]
 				readonly qssContrast?: readonly string[]
@@ -2895,7 +2909,11 @@ describe('release proof evidence index', () => {
 		])
 		for (const row of board.implementationReadyOwnerActionQueue ?? []) {
 			expect(row.workBlockDisposition).toBe('implementation-ready-blocker')
+			expect(row.ownerFiles).toEqual(expect.arrayContaining([expect.any(String)]))
 			expect(row.validationCommands).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(row.commandsToRun).toEqual(row.validationCommands)
+			expect(row.failureEvidence).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(row.acceptanceCriteria).toEqual(expect.any(String))
 			expect(row.evidenceWeHave).toEqual(expect.arrayContaining([expect.any(String)]))
 			expect(row.evidenceMissing).toEqual(expect.arrayContaining([expect.any(String)]))
 			expect(row.qssContrast).toEqual(expect.arrayContaining([expect.any(String)]))
@@ -2909,13 +2927,24 @@ describe('release proof evidence index', () => {
 					sourceQueue: 'top-claim-owner-action',
 					name: 'package-action-proof',
 					requirementId: 'unsupported-feature-boundary',
+					ownerFiles: ['fixtures/benchmarks/package-action-proof.ts'],
 					validationCommands: [
 						'bun run fixtures/benchmarks/package-action-proof.ts --no-timings --json',
 					],
+					commandsToRun: [
+						'bun run fixtures/benchmarks/package-action-proof.ts --no-timings --json',
+					],
+					failureEvidence: expect.arrayContaining([
+						expect.stringContaining('unsupported-feature-boundary'),
+					]),
 				}),
 				expect.objectContaining({
 					sourceQueue: 'blocked-owner-action',
 					name: 'formula-language-service-primitives',
+					ownerFiles: expect.arrayContaining([
+						'fixtures/benchmarks/formula-assist-proof.ts',
+						'packages/sdk/src/formula-edit.test.ts',
+					]),
 					validationCommands: expect.arrayContaining([
 						expect.stringContaining('formula-assist-proof.ts'),
 					]),

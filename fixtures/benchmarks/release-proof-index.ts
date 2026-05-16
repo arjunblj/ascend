@@ -507,7 +507,11 @@ export interface ReleaseProofImplementationReadyOwnerAction {
 	readonly ownerLoop: ReleaseProofReadinessOwner
 	readonly requirementId?: string
 	readonly workBlockDisposition: 'implementation-ready-blocker'
+	readonly ownerFiles: readonly string[]
 	readonly validationCommands: readonly string[]
+	readonly commandsToRun: readonly string[]
+	readonly failureEvidence: readonly string[]
+	readonly acceptanceCriteria: string
 	readonly evidenceWeHave: readonly string[]
 	readonly evidenceMissing: readonly string[]
 	readonly qssContrast: readonly string[]
@@ -1521,7 +1525,7 @@ export function releaseProofIndexMarkdown(result: ReleaseProofIndexResult): stri
 		'Implementation-ready owner action queue:',
 		...result.releaseDecisionBoard.implementationReadyOwnerActionQueue.map(
 			(row) =>
-				`- ${row.ownerLoop}/${row.name}${row.requirementId ? `/${row.requirementId}` : ''}: ${row.sourceQueue}. Commands: ${row.validationCommands.map((command) => `\`${command}\``).join('; ')} Next: ${row.nextOwnerAction}`,
+				`- ${row.ownerLoop}/${row.name}${row.requirementId ? `/${row.requirementId}` : ''}: ${row.sourceQueue}. Files: ${row.ownerFiles.map((file) => `\`${file}\``).join('; ')} Commands: ${row.commandsToRun.map((command) => `\`${command}\``).join('; ')} Failure evidence: ${row.failureEvidence.join('; ')} Accept: ${row.acceptanceCriteria} Next: ${row.nextOwnerAction}`,
 		),
 		'Claim downgrade owner action queue:',
 		...result.releaseDecisionBoard.claimDowngradeOwnerActionQueue.map(
@@ -2703,7 +2707,11 @@ function releaseDecisionImplementationReadyOwnerActionQueue(
 				ownerLoop: action.ownerLoop,
 				requirementId: action.requirementId,
 				workBlockDisposition: action.workBlockDisposition,
+				ownerFiles: releaseDecisionImplementationOwnerFiles(action.artifact, action.requirementId),
 				validationCommands: [action.validationCommand],
+				commandsToRun: [action.validationCommand],
+				failureEvidence: [...action.evidenceMissing],
+				acceptanceCriteria: action.acceptanceEvidence,
 				evidenceWeHave: action.evidenceWeHave.map(
 					(item) => `${item.evidenceId}: \`${item.command}\` (${item.path})`,
 				),
@@ -2723,7 +2731,11 @@ function releaseDecisionImplementationReadyOwnerActionQueue(
 				claim: action.name,
 				ownerLoop: action.ownerLoop,
 				workBlockDisposition: action.workBlockDisposition,
+				ownerFiles: releaseDecisionImplementationOwnerFiles(action.name),
 				validationCommands: [...action.validationCommands],
+				commandsToRun: [...action.validationCommands],
+				failureEvidence: [...action.evidenceMissing],
+				acceptanceCriteria: action.nextOwnerAction,
 				evidenceWeHave: [...action.evidenceWeHave],
 				evidenceMissing: [...action.evidenceMissing],
 				qssContrast: [...action.qssContrast],
@@ -2734,6 +2746,74 @@ function releaseDecisionImplementationReadyOwnerActionQueue(
 					'Implementation-ready owner-action queue row derived from do-not-promote decisions. It tells correctness, product, or release owners exactly what to validate without promoting the claim or satisfying the blocker.',
 			})),
 	]
+}
+
+function releaseDecisionImplementationOwnerFiles(
+	name: ReleaseProofIndexArtifactName | ReleaseProofReleaseDecisionDoNotPromoteItem['name'],
+	requirementId?: string,
+): readonly string[] {
+	if (
+		(name === 'safe-open-proof' || name === 'package-action-proof') &&
+		(requirementId === 'publication-boundary' || requirementId === 'provenance-boundary')
+	) {
+		return ['fixtures/benchmarks/release-proof-index.ts']
+	}
+	if (name === 'safe-open-proof' && requirementId === 'compact-report-publication-policy') {
+		return ['fixtures/benchmarks/safe-open-proof.ts']
+	}
+	if (name === 'package-action-proof' && requirementId === 'compact-report-publication-policy') {
+		return ['fixtures/benchmarks/package-action-proof.ts']
+	}
+	if (name === 'package-action-proof' && requirementId === 'unsupported-feature-boundary') {
+		return ['fixtures/benchmarks/package-action-proof.ts']
+	}
+	switch (name) {
+		case 'formula-language-service-primitives':
+			return [
+				'fixtures/benchmarks/formula-assist-proof.ts',
+				'packages/sdk/src/formula-edit.test.ts',
+				'apps/cli/src/cli.test.ts',
+				'apps/api/src/server.test.ts',
+				'apps/mcp/src/index.test.ts',
+			]
+		case 'token-bounded-agent-view':
+			return [
+				'fixtures/benchmarks/agent-view-budget-proof.test.ts',
+				'fixtures/benchmarks/agent-view-recovery-proof.test.ts',
+				'packages/sdk/src/sdk.test.ts',
+				'apps/cli/src/cli.test.ts',
+				'apps/api/src/server.test.ts',
+				'apps/mcp/src/index.test.ts',
+			]
+		case 'retained-viewport-patch-history':
+			return [
+				'fixtures/benchmarks/viewport-patch-proof.test.ts',
+				'packages/sdk/src/interactive-contract.test.ts',
+				'apps/api/src/server.test.ts',
+				'apps/mcp/src/index.test.ts',
+			]
+		case 'release-proof-bundle':
+			return [
+				'scripts/release-rc-gate.ts',
+				'fixtures/benchmarks/safe-open-proof.ts',
+				'fixtures/benchmarks/package-action-proof.ts',
+				'fixtures/benchmarks/release-proof-index.ts',
+			]
+		case 'property-journal-laws':
+			return [
+				'fixtures/benchmarks/journal-law-proof.test.ts',
+				'packages/sdk/src/journal-exactness.test.ts',
+			]
+		case 'agent-workflow-observability':
+			return [
+				'packages/sdk/src/agent-workflow.test.ts',
+				'apps/cli/src/cli.test.ts',
+				'apps/api/src/server.test.ts',
+				'apps/mcp/src/index.test.ts',
+			]
+		default:
+			return []
+	}
 }
 
 function releaseDecisionClaimDowngradeOwnerActionQueue(
@@ -3135,7 +3215,10 @@ function cloneReleaseDecisionBoard(
 		})),
 		implementationReadyOwnerActionQueue: board.implementationReadyOwnerActionQueue.map((row) => ({
 			...row,
+			ownerFiles: [...row.ownerFiles],
 			validationCommands: [...row.validationCommands],
+			commandsToRun: [...row.commandsToRun],
+			failureEvidence: [...row.failureEvidence],
 			evidenceWeHave: [...row.evidenceWeHave],
 			evidenceMissing: [...row.evidenceMissing],
 			qssContrast: [...row.qssContrast],

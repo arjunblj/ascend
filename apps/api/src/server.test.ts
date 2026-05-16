@@ -610,6 +610,18 @@ describe('Ascend API server', () => {
 		)
 	})
 
+	test('OpenAPI documents the agent workflow discovery endpoint', () => {
+		const openapi = readFileSync(join(import.meta.dir, '../../../docs/openapi.yaml'), 'utf-8')
+
+		expect(openapi).toContain('/agent-workflow:')
+		expect(openapi).toContain(
+			'Return the machine-readable inspect, plan, commit, reopen, verify, and repair workflow contract',
+		)
+		expect(openapi).toContain(
+			'Agent workflow contract with API endpoints, proof fields, safety defaults, and prepared-handle semantics',
+		)
+	})
+
 	test('/open-plan rejects missing workbook references with structured retry guidance', async () => {
 		const result = await postJson('/open-plan', { intent: 'edit-plan' })
 

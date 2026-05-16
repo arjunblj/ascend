@@ -29,6 +29,12 @@ paths:
         - { name: gaps, in: query, schema: { type: boolean } }
       responses:
         '200': { description: Capability registry envelope }
+  /agent-workflow:
+    get:
+      summary: Return the machine-readable inspect, plan, commit, reopen, verify, and repair workflow contract
+      responses:
+        '200':
+          description: Agent workflow contract with API endpoints, proof fields, safety defaults, and prepared-handle semantics
   /inspect:
     post:
       summary: Inspect workbook or single sheet

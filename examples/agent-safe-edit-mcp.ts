@@ -6,8 +6,8 @@
 import { existsSync } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
+import { createServer } from '@ascend/mcp'
 import { Ascend } from '@ascend/sdk'
-import { createServer } from '../apps/mcp/src/index.ts'
 
 const input = process.argv[2]
 if (!input) {

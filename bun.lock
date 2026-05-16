@@ -35,7 +35,6 @@
       "dependencies": {
         "@ascend/schema": "workspace:*",
         "@ascend/sdk": "workspace:*",
-        "@ascend/tui": "workspace:*",
       },
     },
     "apps/mcp": {
@@ -52,7 +51,6 @@
       "name": "@ascend/tui",
       "version": "0.0.0",
       "dependencies": {
-        "@ascend/core": "workspace:*",
         "@ascend/schema": "workspace:*",
         "@ascend/sdk": "workspace:*",
         "@opentui/core": "^0.2.6",
@@ -66,6 +64,8 @@
     "examples": {
       "name": "@ascend/examples",
       "dependencies": {
+        "@ascend/api": "workspace:*",
+        "@ascend/mcp": "workspace:*",
         "@ascend/sdk": "workspace:*",
       },
     },

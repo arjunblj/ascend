@@ -8,6 +8,8 @@
 		"safe-edit:mcp": "bun run agent-safe-edit-mcp.ts"
 	},
 	"dependencies": {
+		"@ascend/api": "workspace:*",
+		"@ascend/mcp": "workspace:*",
 		"@ascend/sdk": "workspace:*"
 	}
 }

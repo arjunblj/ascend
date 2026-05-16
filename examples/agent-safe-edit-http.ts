@@ -6,8 +6,8 @@
 import { existsSync } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
+import { createApiFetch } from '@ascend/api'
 import { Ascend } from '@ascend/sdk'
-import { createApiFetch } from '../apps/api/src/server.ts'
 
 const input = process.argv[2]
 if (!input) {

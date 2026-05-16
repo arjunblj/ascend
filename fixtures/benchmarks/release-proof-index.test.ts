@@ -2098,6 +2098,14 @@ describe('release proof evidence index', () => {
 		expect(handoff.researchHygieneDecisionPacket.inventorySnapshot.classifiedPathCount).toBe(
 			handoff.researchHygieneDecisionPacket.inventorySnapshot.classifiedEntries.length,
 		)
+		expect(handoff.researchHygieneDecisionPacket.localExcelCorpus).toMatchObject({
+			path: 'research/excel-corpus',
+			releaseDecision: 'active-owner-blocker-not-release-evidence',
+			manifestPath: 'research/excel-corpus/manifest.json',
+		})
+		expect(handoff.researchHygieneDecisionPacket.localExcelCorpus.boundary).toContain(
+			'not permission to use these files in release wording',
+		)
 		expect(
 			handoff.researchHygieneDecisionPacket.classificationBuckets.map((item) => item.bucket),
 		).toEqual(['accepted-evidence', 'active-owner-blocker', 'archive-only'])
@@ -3646,6 +3654,30 @@ describe('release proof evidence index', () => {
 				}[]
 				readonly boundary?: string
 			}
+			readonly localExcelCorpus?: {
+				readonly path?: string
+				readonly status?: string
+				readonly releaseDecision?: string
+				readonly fileCount?: number
+				readonly workbookCount?: number
+				readonly totalBytes?: number
+				readonly largestFile?: string
+				readonly manifestPath?: string
+				readonly manifestEntryCount?: number
+				readonly manifestMissingFiles?: readonly string[]
+				readonly files?: readonly {
+					readonly path?: string
+					readonly sizeBytes?: number
+					readonly manifestListed?: boolean
+					readonly workbookKind?: string
+					readonly featureSignals?: readonly string[]
+					readonly releaseStatus?: string
+					readonly nextOwnerAction?: string
+				}[]
+				readonly ownerAction?: string
+				readonly forbiddenWording?: readonly string[]
+				readonly boundary?: string
+			}
 			readonly validationCommands?: readonly string[]
 			readonly ownerFiles?: readonly string[]
 			readonly classificationBuckets?: readonly {
@@ -3748,6 +3780,37 @@ describe('release proof evidence index', () => {
 		}
 		if (classifiedPaths.has('research/docs-archive/')) {
 			expect(classifiedPaths.get('research/docs-archive/')?.classification).toBe('archive-only')
+		}
+		expect(packet.localExcelCorpus).toMatchObject({
+			path: 'research/excel-corpus',
+			releaseDecision: 'active-owner-blocker-not-release-evidence',
+			manifestPath: 'research/excel-corpus/manifest.json',
+			boundary: expect.stringContaining('not vendored public fixture approval'),
+		})
+		if (packet.localExcelCorpus?.status === 'local-corpus-inventory-present') {
+			expect(packet.localExcelCorpus.fileCount).toBe(packet.localExcelCorpus.files?.length ?? 0)
+			expect(packet.localExcelCorpus.workbookCount).toBe(
+				(packet.localExcelCorpus.files ?? []).filter((file) => file.workbookKind !== 'metadata')
+					.length,
+			)
+			expect(packet.localExcelCorpus.totalBytes).toBe(
+				(packet.localExcelCorpus.files ?? []).reduce((sum, file) => sum + (file.sizeBytes ?? 0), 0),
+			)
+			expect(packet.localExcelCorpus.manifestEntryCount).toBeGreaterThanOrEqual(0)
+			expect(packet.localExcelCorpus.files?.map((file) => file.path)).toContain(
+				'research/excel-corpus/NYC_311_SR_2010-2020-sample-1M.xlsx',
+			)
+			const nyc311 = packet.localExcelCorpus.files?.find((file) =>
+				file.path?.endsWith('NYC_311_SR_2010-2020-sample-1M.xlsx'),
+			)
+			expect(nyc311).toMatchObject({
+				manifestListed: false,
+				releaseStatus: 'local-only-owner-review-required',
+			})
+			expect(packet.localExcelCorpus.ownerAction).toContain('redistribution license')
+			expect(packet.localExcelCorpus.forbiddenWording?.join('\n')).toContain(
+				'Do not cite research/excel-corpus workbooks as public release fixtures',
+			)
 		}
 		expect(packet.validationCommands).toEqual([
 			'git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager',

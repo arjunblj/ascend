@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 import { basename } from 'node:path'
 import {
 	type PackageActionFixtureScanResult,
@@ -288,6 +289,7 @@ export interface ReleaseProofResearchHygieneDecisionPacket {
 	readonly workBlockDisposition: 'claim-downgrade-do-not-promote'
 	readonly dirtyInventoryCommand: string
 	readonly inventorySnapshot: ReleaseProofResearchHygieneInventorySnapshot
+	readonly localExcelCorpus: ReleaseProofResearchHygieneLocalExcelCorpus
 	readonly validationCommands: readonly string[]
 	readonly ownerFiles: readonly string[]
 	readonly classificationBuckets: readonly ReleaseProofResearchHygieneClassificationBucket[]
@@ -340,6 +342,37 @@ export interface ReleaseProofResearchHygieneInventoryEntry {
 	readonly path: string
 	readonly classification: ReleaseProofResearchHygieneClassification
 	readonly reason: string
+	readonly nextOwnerAction: string
+}
+
+export interface ReleaseProofResearchHygieneLocalExcelCorpus {
+	readonly path: 'research/excel-corpus'
+	readonly status:
+		| 'local-corpus-inventory-present'
+		| 'local-corpus-missing'
+		| 'local-corpus-unreadable'
+	readonly releaseDecision: 'active-owner-blocker-not-release-evidence'
+	readonly fileCount: number
+	readonly workbookCount: number
+	readonly totalBytes: number
+	readonly largestFile?: string
+	readonly manifestPath: 'research/excel-corpus/manifest.json'
+	readonly manifestEntryCount: number
+	readonly manifestMissingFiles: readonly string[]
+	readonly files: readonly ReleaseProofResearchHygieneLocalExcelCorpusFile[]
+	readonly ownerAction: string
+	readonly forbiddenWording: readonly string[]
+	readonly failure?: string
+	readonly boundary: string
+}
+
+export interface ReleaseProofResearchHygieneLocalExcelCorpusFile {
+	readonly path: string
+	readonly sizeBytes: number
+	readonly manifestListed: boolean
+	readonly workbookKind: 'xlsx' | 'xlsm' | 'metadata'
+	readonly featureSignals: readonly string[]
+	readonly releaseStatus: 'local-only-owner-review-required'
 	readonly nextOwnerAction: string
 }
 
@@ -2217,6 +2250,7 @@ export function releaseProofResearchHygieneDecisionPacket(
 		workBlockDisposition: 'claim-downgrade-do-not-promote',
 		dirtyInventoryCommand,
 		inventorySnapshot: researchHygieneInventorySnapshot(dirtyInventoryCommand),
+		localExcelCorpus: researchHygieneLocalExcelCorpus(),
 		validationCommands,
 		ownerFiles,
 		classificationBuckets: [
@@ -2398,6 +2432,144 @@ function classifyResearchHygienePath(
 		nextOwnerAction:
 			'Product/release owner must classify this path before citing it or expanding the release-proof index.',
 	}
+}
+
+type ResearchHygieneManifestEntry = {
+	readonly file?: unknown
+	readonly size_bytes?: unknown
+	readonly features?: Record<string, unknown>
+}
+
+function researchHygieneLocalExcelCorpus(): ReleaseProofResearchHygieneLocalExcelCorpus {
+	const corpusPath = 'research/excel-corpus'
+	const manifestPath = 'research/excel-corpus/manifest.json' as const
+	const ownerAction =
+		'Product/release owner reviews each local corpus workbook for source URL, redistribution license, privacy, size, and release relevance; classify each as approved public fixture, private/local-only diagnostic, or archive/deletion candidate before any release claim cites it.'
+	const forbiddenWording = [
+		'Do not cite research/excel-corpus workbooks as public release fixtures until provenance, license, privacy, size, and vendoring policy are approved.',
+		'Do not use the local NYC 311 materialized workbook as a release benchmark input unless acquisition, materialization, and size policy are explicitly approved.',
+	]
+
+	try {
+		if (!existsSync(corpusPath)) {
+			return {
+				path: corpusPath,
+				status: 'local-corpus-missing',
+				releaseDecision: 'active-owner-blocker-not-release-evidence',
+				fileCount: 0,
+				workbookCount: 0,
+				totalBytes: 0,
+				manifestPath,
+				manifestEntryCount: 0,
+				manifestMissingFiles: [],
+				files: [],
+				ownerAction,
+				forbiddenWording,
+				boundary:
+					'Local Excel corpus directory is absent. This satisfies no fixture evidence, creates no release claim, and is not permission to use these files in release wording.',
+			}
+		}
+
+		const files = execFileSync('find', [corpusPath, '-maxdepth', '1', '-type', 'f', '-print'], {
+			cwd: process.cwd(),
+			encoding: 'utf8',
+		})
+			.split('\n')
+			.map((line) => line.trim())
+			.filter((line) => line.length > 0)
+			.sort()
+
+		const manifest = readResearchHygieneManifest(manifestPath)
+		const manifestByFile = new Map(manifest.map((entry) => [String(entry.file), entry]))
+		const corpusFiles = files.map((path) => {
+			const fileName = basename(path)
+			const manifestEntry = manifestByFile.get(fileName)
+			const sizeBytes = statSync(path).size
+			return {
+				path,
+				sizeBytes,
+				manifestListed: Boolean(manifestEntry),
+				workbookKind: researchHygieneWorkbookKind(path),
+				featureSignals: researchHygieneFeatureSignals(manifestEntry),
+				releaseStatus: 'local-only-owner-review-required' as const,
+				nextOwnerAction:
+					'Review source, license, privacy, size, and fixture relevance before promoting this local corpus file into tracked release evidence.',
+			}
+		})
+		const workbookFiles = corpusFiles.filter((file) => file.workbookKind !== 'metadata')
+		const largestFile = corpusFiles.reduce<ReleaseProofResearchHygieneLocalExcelCorpusFile | null>(
+			(current, file) => (!current || file.sizeBytes > current.sizeBytes ? file : current),
+			null,
+		)
+		const corpusFileNames = new Set(corpusFiles.map((file) => basename(file.path)))
+		const manifestMissingFiles = manifest
+			.map((entry) => String(entry.file))
+			.filter((file) => !corpusFileNames.has(file))
+			.sort()
+
+		return {
+			path: corpusPath,
+			status: 'local-corpus-inventory-present',
+			releaseDecision: 'active-owner-blocker-not-release-evidence',
+			fileCount: corpusFiles.length,
+			workbookCount: workbookFiles.length,
+			totalBytes: corpusFiles.reduce((sum, file) => sum + file.sizeBytes, 0),
+			largestFile: largestFile?.path,
+			manifestPath,
+			manifestEntryCount: manifest.length,
+			manifestMissingFiles,
+			files: corpusFiles,
+			ownerAction,
+			forbiddenWording,
+			boundary:
+				'Local Excel corpus inventory is owner-routing evidence only. It is not vendored public fixture approval, not license review, not privacy review, and not permission to use these files in release wording or benchmark claims.',
+		}
+	} catch (error) {
+		return {
+			path: corpusPath,
+			status: 'local-corpus-unreadable',
+			releaseDecision: 'active-owner-blocker-not-release-evidence',
+			fileCount: 0,
+			workbookCount: 0,
+			totalBytes: 0,
+			manifestPath,
+			manifestEntryCount: 0,
+			manifestMissingFiles: [],
+			files: [],
+			ownerAction,
+			forbiddenWording,
+			failure: error instanceof Error ? error.message : String(error),
+			boundary:
+				'Local Excel corpus inventory could not be read. Product/release owners must rerun the research hygiene packet before citing corpus-derived evidence; this is not permission to use these files in release wording.',
+		}
+	}
+}
+
+function readResearchHygieneManifest(path: string): readonly ResearchHygieneManifestEntry[] {
+	if (!existsSync(path)) return []
+	const parsed = JSON.parse(readFileSync(path, 'utf8')) as unknown
+	if (!Array.isArray(parsed)) return []
+	return parsed.filter((entry): entry is ResearchHygieneManifestEntry => {
+		return typeof entry === 'object' && entry !== null && 'file' in entry
+	})
+}
+
+function researchHygieneWorkbookKind(
+	path: string,
+): ReleaseProofResearchHygieneLocalExcelCorpusFile['workbookKind'] {
+	if (path.endsWith('.xlsx')) return 'xlsx'
+	if (path.endsWith('.xlsm')) return 'xlsm'
+	return 'metadata'
+}
+
+function researchHygieneFeatureSignals(
+	entry: ResearchHygieneManifestEntry | undefined,
+): readonly string[] {
+	if (!entry?.features) return []
+	return Object.entries(entry.features)
+		.filter(([, value]) => value === true)
+		.map(([feature]) => feature)
+		.sort()
 }
 
 function researchHygieneInventoryRootCounts(

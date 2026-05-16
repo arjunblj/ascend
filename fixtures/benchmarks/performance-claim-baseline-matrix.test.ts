@@ -26,7 +26,13 @@ const UNAVAILABLE_RUNNER_ROWS = [
 	'fastxlsx',
 ]
 
-const RECORDED_WORKLOADS = ['dense-values', 'sparse-wide', 'styles-heavy', 'string-heavy']
+const RECORDED_WORKLOADS = [
+	'dense-values',
+	'sparse-wide',
+	'styles-heavy',
+	'formula-heavy',
+	'string-heavy',
+]
 
 describe('performance claim baseline matrix', () => {
 	test('pins scoped read evidence as a defer decision, not a speed claim', () => {
@@ -48,7 +54,7 @@ describe('performance claim baseline matrix', () => {
 		expect(markdown).toContain('Owner: benchmarking/external baselines.')
 		expect(markdown).toContain('broad read-speed and QSS-leapfrog performance wording is blocked')
 		expect(markdown).toContain(
-			'do not optimize from the partial `dense-values`, `sparse-wide`,\n`styles-heavy`, and `string-heavy` rows',
+			'do not optimize from the partial `dense-values`, `sparse-wide`,\n`styles-heavy`, `formula-heavy`, and `string-heavy` rows',
 		)
 		expect(markdown).toContain(
 			'Failed, missing, or semantically mismatched runners are not counted as wins.',
@@ -114,13 +120,25 @@ describe('performance claim baseline matrix', () => {
 		expect(markdown).toContain('"Ascend beats ClosedXML or fastxlsx" from this run.')
 		expect(markdown).toContain('Continue profile expansion with `formula-heavy`')
 
+		expect(markdown).toContain('## Cycle: Formula-Heavy Value Read')
+		expect(markdown).toContain('generated `formula-heavy` workbook')
+		expect(markdown).toContain('Commit: `e1c69a32`')
+		expect(markdown).toContain('246,241 input bytes')
+		expect(markdown).toContain(
+			'| Ascend | ran/won | `ascend-readxlsx-raw-values-operation-path` | 5.587 | 5.689 | 0.013 | 101.9 MiB |',
+		)
+		expect(markdown).toContain(
+			'"Ascend proves formula calculation, recalc, or formula preservation" from this value-read run.',
+		)
+		expect(markdown).toContain('Continue profile expansion with `table-heavy`')
+
 		expect(markdown).toContain('Promote: no.')
 		expect(markdown).toContain(
 			'Optimize: no production optimization from the partial profile rows.',
 		)
 		expect(markdown).toContain('Defer: yes.')
 		expect(markdown).toContain(
-			'The immediate next action is `formula-heavy` profile expansion plus runner hardening for FastExcel Java on `sparse-wide`, ClosedXML, and fastxlsx',
+			'The immediate next action is `table-heavy` profile expansion plus runner hardening for FastExcel Java on `sparse-wide`, ClosedXML, and fastxlsx',
 		)
 	})
 })

@@ -722,7 +722,7 @@ describe('ascend cli', () => {
 				gate.ok,
 			]),
 		).toEqual([
-			['input-hash', true],
+			['input-guard', true],
 			['approval', true],
 			['write-policy', true],
 			['commit', true],

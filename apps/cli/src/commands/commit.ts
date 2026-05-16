@@ -127,9 +127,10 @@ function createCommitProofBundle(result: AgentCommitResult, flags: Map<string, s
 	const whatChanged = result.apply.affectedCells.map((ref) => ({ ref }))
 	const whySafe = [
 		{
-			gate: 'input-hash',
+			gate: 'input-guard',
 			ok: expectedSha256 !== undefined && expectedSha256 === result.inputSha256,
 			evidence: {
+				guard: expectedSha256 === undefined ? null : 'expect-sha256',
 				expectedSha256: expectedSha256 ?? null,
 				inputSha256: result.inputSha256,
 			},

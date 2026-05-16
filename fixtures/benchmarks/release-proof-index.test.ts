@@ -1676,7 +1676,7 @@ describe('release proof evidence index', () => {
 					path: 'docs/PERFORMANCE_CLAIM_BASELINE_MATRIX.md',
 					validationCommand:
 						'bun test fixtures/benchmarks/performance-claim-baseline-matrix.test.ts',
-					nextAction: expect.stringContaining('external-process selected-sheet lanes'),
+					nextAction: expect.stringContaining('selected-sheet external runner manifest'),
 					decision: expect.stringContaining('performance matrix as a defer decision'),
 					forbiddenShortcut: expect.stringContaining('one-workload medians'),
 				}),

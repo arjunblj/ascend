@@ -3981,7 +3981,7 @@ function ownerDecisionArtifactsFor(
 					decision:
 						'Use the performance matrix as a defer decision: no broad XLSX read, SOTA, or QSS-leapfrog speed claim is promotable from the current partial baseline.',
 					nextAction:
-						'Benchmarking owner treats the focused ClosedXML head-to-head read run and clean OpenPyXL selected-sheet head-to-head run as accepted bounded-gap evidence, keeps broad speed wording downgraded, then adds external-process selected-sheet lanes for Ascend and SheetJS or records the lane split as a permanent not-comparable boundary before any selected-sheet speed claim is promoted.',
+						'Benchmarking owner treats the focused ClosedXML head-to-head read run and clean OpenPyXL selected-sheet head-to-head run as accepted bounded-gap evidence, keeps broad speed wording downgraded, then runs the selected-sheet external runner manifest cleanly for Ascend, SheetJS, and OpenPyXL or records the lane split as a permanent not-comparable boundary before any selected-sheet speed claim is promoted.',
 					forbiddenShortcut:
 						'Do not count unavailable runners, blocked runners, dirty-worktree timings, or one-workload medians as speed wins.',
 					boundary:

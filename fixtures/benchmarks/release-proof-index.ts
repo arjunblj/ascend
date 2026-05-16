@@ -26,6 +26,8 @@ import {
 
 export type ReleaseProofIndexArtifactName = 'safe-open-proof' | 'package-action-proof'
 export type ReleaseProofIndexExcludedEvidenceName = 'practical-latency-contracts'
+const HIGH_RISK_PACKAGE_CONTRACT_COMMAND =
+	'bun test fixtures/corpus/high-risk-package-contract.test.ts --timeout 30000'
 export type ReleaseProofReadinessOwner = 'correctness' | 'performance' | 'product' | 'release'
 export type ReleaseProofReadinessStatus = 'missing' | 'satisfied'
 export type ReleaseProofDeferredClaimName =
@@ -2106,6 +2108,7 @@ export function releaseProofCorrectnessBoundaryDecisionPacket(
 		validationCommands: [
 			...new Set([
 				result.correctnessBoundaryEvidence.validationCommand,
+				HIGH_RISK_PACKAGE_CONTRACT_COMMAND,
 				...approvalChecklist.map((item) => item.validationCommand),
 			]),
 		],
@@ -3205,8 +3208,8 @@ function releaseDecisionImplementationReadyOwnerActionQueue(
 				requirementId: action.requirementId,
 				workBlockDisposition: action.workBlockDisposition,
 				ownerFiles: releaseDecisionImplementationOwnerFiles(action.artifact, action.requirementId),
-				validationCommands: [action.validationCommand],
-				commandsToRun: [action.validationCommand],
+				validationCommands: releaseDecisionImplementationValidationCommands(action),
+				commandsToRun: releaseDecisionImplementationValidationCommands(action),
 				failureEvidence: [...action.evidenceMissing],
 				acceptanceCriteria: action.acceptanceEvidence,
 				evidenceWeHave: action.evidenceWeHave.map(
@@ -3262,7 +3265,10 @@ function releaseDecisionImplementationOwnerFiles(
 		return ['fixtures/benchmarks/package-action-proof.ts']
 	}
 	if (name === 'package-action-proof' && requirementId === 'unsupported-feature-boundary') {
-		return ['fixtures/benchmarks/package-action-proof.ts']
+		return [
+			'fixtures/benchmarks/package-action-proof.ts',
+			'fixtures/corpus/high-risk-package-contract.test.ts',
+		]
 	}
 	switch (name) {
 		case 'formula-language-service-primitives':
@@ -3311,6 +3317,18 @@ function releaseDecisionImplementationOwnerFiles(
 		default:
 			return []
 	}
+}
+
+function releaseDecisionImplementationValidationCommands(
+	action: ReleaseProofTopClaimOwnerAction,
+): readonly string[] {
+	if (
+		action.artifact === 'package-action-proof' &&
+		action.requirementId === 'unsupported-feature-boundary'
+	) {
+		return [HIGH_RISK_PACKAGE_CONTRACT_COMMAND, action.validationCommand]
+	}
+	return [action.validationCommand]
 }
 
 function releaseDecisionClaimDowngradeOwnerActionQueue(
@@ -4914,6 +4932,7 @@ function correctnessBoundaryEvidence(
 			evidenceSources: ['package-action-proof/unknown-part-error', 'safe-open-proof/unknown-part'],
 			proofChecks: [
 				'public unknown-part fixture is used',
+				'high-risk package corpus contract proves unknown package parts route to review and mutation stays fail-closed',
 				'commit proof records an error action for the unknown package part',
 				'post-write audit fails closed and safe-open routes unknown package features to review',
 			],
@@ -4928,11 +4947,13 @@ function correctnessBoundaryEvidence(
 				'safe-open-proof/encrypted-password',
 				'safe-open-proof/encrypted-missing-password',
 				'safe-open-proof/encrypted-wrong-password',
+				'high-risk-package-contract/encrypted-password',
 			],
 			proofChecks: [
 				'public encrypted Calamine fixture is used',
 				'valid password opens with full-mode planning',
 				'missing or wrong password rejects before hydration',
+				'high-risk package corpus contract proves password-supplied decrypted edits save as plain XLSX without re-encryption wording',
 				'boundary does not claim password recovery, protection removal, malware scanning, or file trust',
 			],
 		}),

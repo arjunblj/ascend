@@ -449,8 +449,17 @@ describe('release proof evidence index', () => {
 			forbiddenWording: expect.stringContaining('safe, sandboxed'),
 		})
 		expect(index.correctnessBoundaryEvidence.featureChecks[4]).toMatchObject({
-			proofChecks: expect.arrayContaining([expect.stringContaining('fails closed')]),
+			proofChecks: expect.arrayContaining([
+				expect.stringContaining('high-risk package corpus contract'),
+				expect.stringContaining('fails closed'),
+			]),
 			allowedWording: expect.stringContaining('explicit unknown-part error'),
+		})
+		expect(index.correctnessBoundaryEvidence.featureChecks[5]).toMatchObject({
+			evidenceSources: expect.arrayContaining(['high-risk-package-contract/encrypted-password']),
+			proofChecks: expect.arrayContaining([
+				expect.stringContaining('decrypted edits save as plain XLSX'),
+			]),
 		})
 		expect(index.trustCompletenessBoundaryEvidence).toMatchObject({
 			ownerLoop: 'correctness',
@@ -1208,6 +1217,7 @@ describe('release proof evidence index', () => {
 					name: 'package-action-proof',
 					requirementId: 'unsupported-feature-boundary',
 					validationCommands: [
+						'bun test fixtures/corpus/high-risk-package-contract.test.ts --timeout 30000',
 						'bun run fixtures/benchmarks/package-action-proof.ts --no-timings --json',
 					],
 				}),
@@ -2441,8 +2451,12 @@ describe('release proof evidence index', () => {
 					ownerLoop: 'correctness',
 					name: 'package-action-proof',
 					requirementId: 'unsupported-feature-boundary',
-					ownerFiles: ['fixtures/benchmarks/package-action-proof.ts'],
+					ownerFiles: [
+						'fixtures/benchmarks/package-action-proof.ts',
+						'fixtures/corpus/high-risk-package-contract.test.ts',
+					],
 					validationCommands: [
+						'bun test fixtures/corpus/high-risk-package-contract.test.ts --timeout 30000',
 						'bun run fixtures/benchmarks/package-action-proof.ts --no-timings --json',
 					],
 				}),
@@ -3172,11 +3186,16 @@ describe('release proof evidence index', () => {
 					sourceQueue: 'top-claim-owner-action',
 					name: 'package-action-proof',
 					requirementId: 'unsupported-feature-boundary',
-					ownerFiles: ['fixtures/benchmarks/package-action-proof.ts'],
+					ownerFiles: [
+						'fixtures/benchmarks/package-action-proof.ts',
+						'fixtures/corpus/high-risk-package-contract.test.ts',
+					],
 					validationCommands: [
+						'bun test fixtures/corpus/high-risk-package-contract.test.ts --timeout 30000',
 						'bun run fixtures/benchmarks/package-action-proof.ts --no-timings --json',
 					],
 					commandsToRun: [
+						'bun test fixtures/corpus/high-risk-package-contract.test.ts --timeout 30000',
 						'bun run fixtures/benchmarks/package-action-proof.ts --no-timings --json',
 					],
 					failureEvidence: expect.arrayContaining([
@@ -3456,6 +3475,7 @@ describe('release proof evidence index', () => {
 		expect(packet.featureChecks?.[0].forbiddenWording).toContain('re-signs')
 		expect(packet.validationCommands).toEqual([
 			'bun run fixtures/benchmarks/release-proof-index.ts --no-timings --owner-handoffs-json',
+			'bun test fixtures/corpus/high-risk-package-contract.test.ts --timeout 30000',
 			'bun run fixtures/benchmarks/package-action-proof.ts --no-timings --json',
 		])
 		expect(packet.forbiddenShortcuts?.join('\n')).toContain('semantic support')

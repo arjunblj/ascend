@@ -2349,6 +2349,8 @@ describe('release proof evidence index', () => {
 		)
 		expect(agentWorkflowMissing).toContain('Commit or revert the dirty installed CLI safe-edit')
 		expect(agentWorkflowMissing).toContain('packages/sdk/src/agent-workflow.ts')
+		expect(agentWorkflowMissing).toContain('ReferenceError: uniqueNumbers is not defined')
+		expect(agentWorkflowMissing).toContain('postWriteDataConnectionSummary')
 		expect(agentWorkflowMissing).toContain('Golden trace fixtures')
 		expect(agentWorkflowForbidden).toContain('autonomous correctness')
 		expect(agentWorkflowForbidden).toContain('signed audit trail')

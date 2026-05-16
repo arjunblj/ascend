@@ -1022,6 +1022,12 @@ describe('release proof evidence index', () => {
 				boundary: expect.stringContaining('Installed SDK generated-workbook proof only'),
 			}),
 			expect.objectContaining({
+				evidenceId: 'installed-sdk-workflow-discovery-proof',
+				acceptedScope: expect.stringContaining('f8d63593'),
+				command: expect.stringContaining('agent-init prints the canonical agent workflow contract'),
+				boundary: expect.stringContaining('Installed workflow-discovery evidence only'),
+			}),
+			expect.objectContaining({
 				evidenceId: 'cli-agent-init-workflow-examples-proof',
 				acceptedScope: expect.stringContaining('0d1b33f7'),
 				command: expect.stringContaining('agent-init prints the canonical agent workflow contract'),
@@ -1065,6 +1071,12 @@ describe('release proof evidence index', () => {
 				acceptedScope: expect.stringContaining('1eaf28ff'),
 				command: expect.stringContaining('commits public chart source edits'),
 				boundary: expect.stringContaining('Public chart-source commit evidence only'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'public-calc-chain-formula-commit-proof',
+				acceptedScope: expect.stringContaining('31141dd4'),
+				command: expect.stringContaining('commits public calc-chain formula edits'),
+				boundary: expect.stringContaining('Public calc-chain formula commit evidence only'),
 			}),
 			expect.objectContaining({
 				evidenceId: 'query-table-topology-fail-closed-proof',
@@ -1667,11 +1679,13 @@ describe('release proof evidence index', () => {
 						'58a7f579',
 						'5981764c',
 						'5915794f',
+						'f8d63593',
 						'868add46',
 						'1eaf28ff',
+						'31141dd4',
 						'62f45cb5',
 					]),
-					allowedWording: expect.stringContaining('installed-SDK'),
+					allowedWording: expect.stringContaining('calc-chain formula commit proof'),
 					forbiddenWording: expect.arrayContaining([
 						expect.stringContaining('registry download proof'),
 					]),
@@ -1694,8 +1708,9 @@ describe('release proof evidence index', () => {
 				}),
 				expect.objectContaining({
 					claimArea: 'external-baselines',
+					commits: expect.arrayContaining(['df349629']),
 					ownerLoop: 'performance',
-					nextOwnerAction: expect.stringContaining('ClosedXML coverage'),
+					nextOwnerAction: expect.stringContaining('same-timing SDK selected-sheet'),
 				}),
 				expect.objectContaining({
 					claimArea: 'research-proof-surface',
@@ -2282,6 +2297,8 @@ describe('release proof evidence index', () => {
 		expect(agentWorkflowEvidence).toContain('5981764c')
 		expect(agentWorkflowEvidence).toContain('5915794f')
 		expect(agentWorkflowEvidence).toContain('Installed SDK safe-edit workflow proof is accepted')
+		expect(agentWorkflowEvidence).toContain('f8d63593')
+		expect(agentWorkflowEvidence).toContain('Installed safe-edit workflow discovery is accepted')
 		expect(agentWorkflowEvidence).toContain('docs/AGENT_WORKFLOW.md')
 		expect(agentWorkflowMissing).toContain('inspect, plan, commit, reopen, diff, audit')
 		expect(agentWorkflowMissing).toContain('Trace payload size')
@@ -2391,6 +2408,9 @@ describe('release proof evidence index', () => {
 		expect(performanceOwnerArtifact?.nextAction).toContain(
 			'current full-profile/merged scoreboard runs',
 		)
+		expect(performanceOwnerArtifact?.nextAction).toContain(
+			'df349629 current selected-sheet same-lane read proof',
+		)
 		expect(performanceOwnerArtifact?.nextAction).toContain('67b900ed plain-text write baseline')
 		expect(performanceOwnerArtifact?.nextAction).toContain('e22eb86a string-heavy write baseline')
 		expect(performanceOwnerArtifact?.nextAction).toContain(
@@ -2406,6 +2426,9 @@ describe('release proof evidence index', () => {
 			'27af69d4 string-heavy current repeat-15 comparable win',
 		)
 		expect(performanceOwnerArtifact?.nextAction).toContain('stops production optimization')
+		expect(performanceOwnerArtifact?.nextAction).toContain(
+			'same-timing SDK selected-sheet open-only row',
+		)
 		expect(performanceOwnerArtifact?.forbiddenShortcut).toContain(
 			'the 2000x20 plain-text/dense/string/styles rows',
 		)
@@ -4419,6 +4442,9 @@ describe('release proof evidence index', () => {
 		expect(packet.benchmarkBlocker?.evidenceMissing?.join('\n')).toContain(
 			'Clean repeat-5 selected-sheet rerun that includes the new ascend-readXlsx selected-sheet row',
 		)
+		expect(packet.benchmarkBlocker?.evidenceMissing?.join('\n')).toContain(
+			'Same-timing SDK Ascend.open selected-sheet open-only row',
+		)
 		expect(packet.benchmarkBlocker?.qssContrast?.join('\n')).toContain(
 			'QSS-leapfrog speed wording is blocked',
 		)
@@ -4450,6 +4476,9 @@ describe('release proof evidence index', () => {
 			'Calamine metadata-only baseline is not an Ascend win',
 		)
 		expect(packet.benchmarkBlocker?.nextAction).toContain(
+			'df349629 keeps selected-sheet wording scoped',
+		)
+		expect(packet.benchmarkBlocker?.nextAction).toContain(
 			'f8846cf8 kills the capsule-skip metadata-only optimization target',
 		)
 		expect(packet.benchmarkBlocker?.nextAction).toContain(
@@ -4477,6 +4506,9 @@ describe('release proof evidence index', () => {
 			'current full-profile FastXLSX carry-forward policy',
 		)
 		expect(packet.benchmarkBlocker?.nextOwnerAction).toContain(
+			'same-timing SDK selected-sheet open-only row',
+		)
+		expect(packet.benchmarkBlocker?.nextOwnerAction).toContain(
 			'clean multi-workload xlsx-write-sota coverage',
 		)
 		expect(packet.benchmarkBlocker?.benchmarkCommands?.join('\n')).toContain(
@@ -4494,6 +4526,9 @@ describe('release proof evidence index', () => {
 		expect(packet.benchmarkBlocker?.acceptanceEvidence?.join('\n')).toContain('ClosedXML')
 		expect(packet.benchmarkBlocker?.acceptanceEvidence?.join('\n')).toContain(
 			'selected-sheet same-lane external-process run at commit 39163862',
+		)
+		expect(packet.benchmarkBlocker?.acceptanceEvidence?.join('\n')).toContain(
+			'Commit df349629 records current selected-sheet same-lane evidence',
 		)
 		expect(packet.benchmarkBlocker?.acceptanceEvidence?.join('\n')).toContain(
 			'metadata-only same-lane external-process run at commit fa3a13dc',

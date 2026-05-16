@@ -2263,6 +2263,7 @@ export function releaseProofPerformanceBoundaryDecisionPacket(
 				'Same-lane selected-sheet external-process evidence at commit 39163862 is accepted for Ascend, SheetJS, and OpenPyXL Data-sheet-only rows.',
 				'Current-worktree python-calamine selected-sheet runner proof at commit 79d6cefd is accepted as evidence that Calamine can project the Data sheet on the same selected-sheet lane, but not as clean repeat-5 speed evidence.',
 				'Commit bbf875b4 adds an Ascend readXlsx selected-sheet external-process row to the same selected-sheet timing lane, making it benchmarkable without using a separate in-process timing model.',
+				'Commit df349629 records a current same-lane selected-sheet repeat-15 baseline: readXlsx selected-sheet is faster than SheetJS, openpyxl, and python-calamine on the completed comparable rows, while SDK Ascend.open remains a timing-boundary row and unsupported competitors remain non-wins.',
 				'Same-lane metadata-only external-process evidence at commit fa3a13dc is accepted for Ascend, SheetJS, and OpenPyXL metadata-only rows.',
 				'Commit b6925afe adds a python-calamine metadata-only baseline to the same metadata-only timing lane and scoreboard coverage; the synthetic scoreboard fixture shows Calamine can be the metadata-only row winner, so this is downgrade evidence rather than an Ascend speed win.',
 				'Commit bb31bebe pins current FastXLSX carry-forward evidence: FastXLSX runs in an isolated Python 3.12 environment on the same cell-materialization lane, Ascend wins comparable value/warm rows by median, but FastXLSX uses less memory and one noisy table-heavy repeat-5 group briefly favored FastXLSX.',
@@ -2276,6 +2277,7 @@ export function releaseProofPerformanceBoundaryDecisionPacket(
 				'Feature-rich SheetJS and Calamine semantic-support evidence or an explicit not-comparable policy.',
 				'Unsupported selected-sheet policy for ExcelJS, Apache POI, and ClosedXML rows, plus unsupported metadata-only competitor policy for ExcelJS, Apache POI, and ClosedXML rows.',
 				'Clean repeat-5 selected-sheet rerun that includes the new ascend-readXlsx selected-sheet row before any readXlsx-specific speed wording.',
+				'Same-timing SDK Ascend.open selected-sheet open-only row or benchmark bug classification before any SDK selected-sheet speed wording.',
 				'Current full-profile gate that carries the isolated FastXLSX setup forward while keeping feature-rich and memory-footprint boundaries explicit.',
 				'Named metadata-only production cost center from profiling before any further metadata-only optimization work.',
 				'Clean multi-workload XLSX write SOTA gate before any broad write-speed or QSS/SOTA write wording.',
@@ -2297,14 +2299,15 @@ export function releaseProofPerformanceBoundaryDecisionPacket(
 				'Do not count unavailable runners, unsupported operations, feature-rich semantic mismatches, or dirty-worktree timings as wins.',
 			],
 			nextAction:
-				'Downgrade broad read/write speed wording and stop production optimization from this evidence: the current full-profile and merged selected-sheet/metadata-only scoreboards have no leader failures, the Calamine metadata-only baseline is not an Ascend win, commit f8846cf8 kills the capsule-skip metadata-only optimization target after a measured non-win, generated-write wins remain scoped to plain-text/string-heavy/dense-values/styles-heavy comparable rows, current FastXLSX value/warm rows are scoped wins with memory and feature-rich boundaries, and ClosedXML coverage, feature-rich SheetJS/Calamine semantic mismatches, remaining unsupported selected-sheet/metadata-only competitor rows, and clean multi-workload xlsx-write-sota coverage remain non-wins.',
+				'Downgrade broad read/write speed wording and stop production optimization from this evidence: the current full-profile and merged selected-sheet/metadata-only scoreboards have no leader failures, the Calamine metadata-only baseline is not an Ascend win, commit df349629 keeps selected-sheet wording scoped to readXlsx same-lane rows and blocks SDK Ascend.open speed wording on a timing boundary, commit f8846cf8 kills the capsule-skip metadata-only optimization target after a measured non-win, generated-write wins remain scoped to plain-text/string-heavy/dense-values/styles-heavy comparable rows, current FastXLSX value/warm rows are scoped wins with memory and feature-rich boundaries, and ClosedXML coverage, feature-rich SheetJS/Calamine semantic mismatches, remaining unsupported selected-sheet/metadata-only competitor rows, and clean multi-workload xlsx-write-sota coverage remain non-wins.',
 			nextOwnerAction:
-				'Benchmarking owner either resolves one explicit blocker row (ClosedXML coverage policy, feature-rich SheetJS/Calamine semantic policy, remaining unsupported selected-sheet/metadata-only competitor policy, current full-profile FastXLSX carry-forward policy, clean multi-workload xlsx-write-sota coverage, or a profiling-named public workflow cost center) with the commands below, or keeps the broad speed claim downgraded and stops.',
+				'Benchmarking owner either resolves one explicit blocker row (ClosedXML coverage policy, feature-rich SheetJS/Calamine semantic policy, remaining unsupported selected-sheet/metadata-only competitor policy, current full-profile FastXLSX carry-forward policy, same-timing SDK selected-sheet open-only row, clean multi-workload xlsx-write-sota coverage, or a profiling-named public workflow cost center) with the commands below, or keeps the broad speed claim downgraded and stops.',
 			benchmarkCommands,
 			acceptanceEvidence: [
 				'Clean detached worktree or clean release benchmark environment.',
 				'ClosedXML is measured as ran/won for comparable value-read rows in the focused head-to-head run and remains not comparable for selected-sheet and metadata-only.',
 				'The selected-sheet same-lane external-process run at commit 39163862 is accepted as scoped evidence: Ascend, SheetJS, and OpenPyXL all loaded only the Data sheet; Ascend had the fastest median among those completed comparable rows.',
+				'Commit df349629 records current selected-sheet same-lane evidence: readXlsx selected-sheet wins completed comparable rows against SheetJS, openpyxl, and python-calamine, but SDK Ascend.open selected-sheet remains a timing-boundary row and unsupported selected-sheet competitors stay non-wins.',
 				'Selected-sheet wording remains scoped because ExcelJS, Apache POI, and ClosedXML are unsupported-operation gaps, while python-calamine selected-sheet has only current-worktree projection proof and must not be counted as a clean speed win.',
 				'The metadata-only same-lane external-process run at commit fa3a13dc is accepted as scoped evidence: Ascend, SheetJS, and OpenPyXL all loaded workbook metadata without hydrating cells; Ascend had the fastest median among those completed comparable rows.',
 				'Commit b6925afe adds python-calamine metadata-only runner and scoreboard coverage on the same metadata-only lane; treat the row as comparable coverage and downgrade broad speed wording because Calamine may win that row.',
@@ -2317,7 +2320,7 @@ export function releaseProofPerformanceBoundaryDecisionPacket(
 				'Failed, missing, or semantically mismatched runners are not counted as wins.',
 			],
 			stopCondition:
-				'Stop production optimization from this evidence. Continue only as blocker work for ClosedXML coverage policy, feature-rich SheetJS/Calamine semantic support or not-comparable policy, remaining unsupported selected-sheet/metadata-only competitor policy, current full-profile FastXLSX carry-forward policy, clean multi-workload xlsx-write-sota coverage, or a profiling-named public workflow cost center.',
+				'Stop production optimization from this evidence. Continue only as blocker work for ClosedXML coverage policy, feature-rich SheetJS/Calamine semantic support or not-comparable policy, remaining unsupported selected-sheet/metadata-only competitor policy, current full-profile FastXLSX carry-forward policy, same-timing SDK selected-sheet open-only row, clean multi-workload xlsx-write-sota coverage, or a profiling-named public workflow cost center.',
 		},
 		approvalChecklist,
 		validationCommands: [
@@ -3270,6 +3273,17 @@ function safeOpenQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceItem[] {
 				'Installed SDK generated-workbook proof only; it does not prove registry publication, arbitrary workbook safety, hosted service readiness, external trust, performance, or public workbook behavior.',
 		},
 		{
+			evidenceId: 'installed-sdk-workflow-discovery-proof',
+			kind: 'test',
+			command:
+				'bun test apps/cli/src/cli.test.ts apps/api/src/server.test.ts apps/mcp/src/index.test.ts -t "agent-init prints the canonical agent workflow contract|/agent-workflow exposes the API safe edit contract|ascend.agent_workflow exposes machine-readable safe edit guidance" --timeout 30000',
+			path: 'apps/cli/src/commands/agent-init.ts; apps/cli/src/cli.test.ts; apps/api/src/server.ts; apps/api/src/server.test.ts; apps/mcp/src/index.ts; apps/mcp/src/index.test.ts; scripts/release-apps-smoke.ts',
+			acceptedScope:
+				'Commit f8d63593 exposes the installed SDK safe-edit example and proof-bundle context through CLI agent-init, API /agent-workflow, MCP ascend.agent_workflow, the MCP workflow resource, and installed app smoke checks.',
+			boundary:
+				'Installed workflow-discovery evidence only; it does not prove registry download success, arbitrary workbook safety, hosted service readiness, public workbook behavior, or package publication.',
+		},
+		{
 			evidenceId: 'api-custom-ui-active-content-proof',
 			kind: 'test',
 			command:
@@ -3334,6 +3348,17 @@ function safeOpenQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceItem[] {
 				'Commit 1eaf28ff proves a public ClosedXML chart source edit is an expected package graph rewrite, commits through save/reopen, preserves source bytes, and reopens with the edited chart series source.',
 			boundary:
 				'Public chart-source commit evidence only; it does not prove full chart authoring, chart layout editing, arbitrary chart XML preservation, or byte-equivalent chart output.',
+		},
+		{
+			evidenceId: 'public-calc-chain-formula-commit-proof',
+			kind: 'test',
+			command:
+				'bun test packages/sdk/src/agent-workflow.test.ts -t "commits public calc-chain formula edits through save and reopen audits" --timeout 30000',
+			path: 'packages/sdk/src/agent-workflow.ts; packages/sdk/src/agent-workflow.test.ts',
+			acceptedScope:
+				'Commit 31141dd4 proves public calc-chain formula edits discard stale calcChain package parts as expected, reopen cleanly, surface post-write formulaState with calcChainState absent, and preserve the source bytes.',
+			boundary:
+				'Public calc-chain formula commit evidence only; it does not prove Excel-fresh formula values, full calculation parity, formula engine completeness, or arbitrary calc-chain preservation.',
 		},
 		{
 			evidenceId: 'query-table-topology-fail-closed-proof',
@@ -3587,12 +3612,14 @@ function todayCommitClaimMatrix(): readonly ReleaseProofTodayCommitClaimMatrixRo
 				'58a7f579',
 				'5981764c',
 				'5915794f',
+				'f8d63593',
 				'868add46',
 				'1eaf28ff',
+				'31141dd4',
 				'62f45cb5',
 			],
 			releaseOrSotaClaimBecameMoreTrue:
-				'Ascend is more credible as an agent-native spreadsheet runtime because SDK, installed-SDK, HTTP API, MCP, root-package, public query-table, and public chart-source examples expose runnable inspect/plan/commit/reopen/verify workflows plus proof context.',
+				'Ascend is more credible as an agent-native spreadsheet runtime because SDK, installed-SDK, HTTP API, MCP, root-package, public query-table, public chart-source, and public calc-chain examples expose runnable inspect/plan/commit/reopen/verify workflows plus proof context.',
 			evidenceProvesIt: [
 				'bun test examples/agent-safe-edit-mcp.test.ts --timeout 30000',
 				'bun test examples/root-scripts.test.ts --timeout 30000',
@@ -3600,10 +3627,11 @@ function todayCommitClaimMatrix(): readonly ReleaseProofTodayCommitClaimMatrixRo
 				'bun test examples/package-install-safe-edit.test.ts --timeout 30000',
 				'bun test packages/sdk/src/agent-workflow.test.ts -t "commits public query-table refresh metadata edits through save and reopen" --timeout 30000',
 				'bun test packages/sdk/src/agent-workflow.test.ts -t "commits public chart source edits through save and reopen audits" --timeout 30000',
+				'bun test packages/sdk/src/agent-workflow.test.ts -t "commits public calc-chain formula edits through save and reopen audits" --timeout 30000',
 				'fixtures/benchmarks/release-proof-index.test.ts pins workflow example evidence, proof context, and RC-gate scope.',
 			],
 			allowedWording:
-				'Ascend provides local runnable SDK, installed-SDK, API, and MCP safe-edit workflow examples with root commands, public query-table refresh metadata and chart-source commit proof, and machine-readable proof context for generated/public workbooks.',
+				'Ascend provides local runnable SDK, installed-SDK, API, and MCP safe-edit workflow examples with root commands, public query-table refresh metadata, chart-source, and calc-chain formula commit proof, and machine-readable proof context for generated/public workbooks.',
 			forbiddenWording: [
 				'Do not claim arbitrary workbook safety, package publication, registry download proof, hosted service readiness, public-workbook generality, or complete workflow observability from the local generated/public-workbook examples.',
 			],
@@ -3658,21 +3686,21 @@ function todayCommitClaimMatrix(): readonly ReleaseProofTodayCommitClaimMatrixRo
 		},
 		{
 			claimArea: 'external-baselines',
-			commits: ['fa3a13dc', 'b6925afe', 'bb31bebe', 'f8846cf8', '9ddfff91'],
+			commits: ['fa3a13dc', 'b6925afe', 'bb31bebe', 'f8846cf8', '9ddfff91', 'df349629'],
 			releaseOrSotaClaimBecameMoreTrue:
-				'External read baselines are more comparable across selected-sheet, metadata-only, FastXLSX, SheetJS, ExcelJS, Calamine, and ClosedXML boundaries, but they mostly sharpen downgrade decisions rather than promote speed leadership.',
+				'External read baselines are more comparable across current selected-sheet, metadata-only, FastXLSX, SheetJS, ExcelJS, Calamine, and ClosedXML boundaries, but they mostly sharpen downgrade decisions rather than promote speed leadership.',
 			evidenceProvesIt: [
-				'fixtures/benchmarks/release-proof-index.ts performance boundary packet records same-lane selected-sheet/metadata-only evidence, Calamine metadata-only non-win, FastXLSX scoped rows, and current full-profile/merged scoreboard status.',
+				'fixtures/benchmarks/release-proof-index.ts performance boundary packet records same-lane selected-sheet/metadata-only evidence, df349629 current selected-sheet same-lane read proof, Calamine metadata-only non-win, FastXLSX scoped rows, and current full-profile/merged scoreboard status.',
 				'bun run fixtures/benchmarks/release-proof-index.ts --no-timings --performance-boundary-json',
 			],
 			allowedWording:
-				'Ascend has bounded local comparable external-baseline evidence for selected-sheet, metadata-only, and FastXLSX rows with unsupported/mismatch boundaries disclosed.',
+				'Ascend has bounded local comparable external-baseline evidence for selected-sheet, metadata-only, and FastXLSX rows with unsupported/mismatch/timing-boundary disclosures.',
 			forbiddenWording: [
 				'Do not claim fastest XLSX reader, broad SOTA read speed, QSS speed leadership, or a Calamine metadata-only win.',
 			],
 			ownerLoop: 'performance',
 			nextOwnerAction:
-				'Benchmark owner resolves one explicit blocker row: ClosedXML coverage, feature-rich SheetJS/Calamine semantic policy, remaining unsupported selected-sheet/metadata-only competitors, FastXLSX environment coverage, or a profiling-named public workflow cost center.',
+				'Benchmark owner resolves one explicit blocker row: ClosedXML coverage, feature-rich SheetJS/Calamine semantic policy, remaining unsupported selected-sheet/metadata-only competitors, FastXLSX environment coverage, same-timing SDK selected-sheet open-only row, or a profiling-named public workflow cost center.',
 			boundary:
 				'Compact current-commit claim row only; external baseline evidence is scoped and mostly blocks broad speed claims.',
 		},
@@ -4931,7 +4959,7 @@ function ownerDecisionArtifactsFor(
 					decision:
 						'Use the performance matrix as a defer decision: no broad XLSX read, SOTA, or QSS-leapfrog speed claim is promotable from the current partial baseline.',
 					nextAction:
-						'Benchmarking owner treats the focused ClosedXML, same-lane selected-sheet, same-lane metadata-only, current-worktree python-calamine selected-sheet runner proof, current full-profile/merged scoreboard runs, commit 67b900ed plain-text write baseline, commit e22eb86a string-heavy write baseline, commit 0d0c9632 string-heavy write optimization proof, commit 905ecb5e styles-heavy write baseline win, commit c297ba4c dense-values current repeat-15 comparable win, and commit 27af69d4 string-heavy current repeat-15 comparable win as accepted bounded evidence, downgrades broad speed wording, and stops production optimization unless the next work is explicit blocker resolution for ClosedXML coverage, feature-rich semantic mismatches, remaining unsupported selected-sheet/metadata-only competitors, FastXLSX environment coverage, a clean multi-workload xlsx-write-sota gate, or another named public workflow loss.',
+						'Benchmarking owner treats the focused ClosedXML, same-lane selected-sheet, same-lane metadata-only, current-worktree python-calamine selected-sheet runner proof, current full-profile/merged scoreboard runs, commit df349629 current selected-sheet same-lane read proof, commit 67b900ed plain-text write baseline, commit e22eb86a string-heavy write baseline, commit 0d0c9632 string-heavy write optimization proof, commit 905ecb5e styles-heavy write baseline win, commit c297ba4c dense-values current repeat-15 comparable win, and commit 27af69d4 string-heavy current repeat-15 comparable win as accepted bounded evidence, downgrades broad speed wording, and stops production optimization unless the next work is explicit blocker resolution for ClosedXML coverage, feature-rich semantic mismatches, remaining unsupported selected-sheet/metadata-only competitors, FastXLSX environment coverage, a same-timing SDK selected-sheet open-only row, a clean multi-workload xlsx-write-sota gate, or another named public workflow loss.',
 					forbiddenShortcut:
 						'Do not count unavailable runners, blocked runners, dirty-worktree timings, one-workload medians, the 2000x20 plain-text/dense/string/styles rows, or focused fastest-comparable reruns as broad XLSX write/SOTA/QSS speed wins.',
 					boundary:
@@ -5567,6 +5595,7 @@ const AGENT_WORKFLOW_OBSERVABILITY_BLOCKER = {
 		'Workflow discovery surfaces expose runnable-example proof context through `f3347e17 feat(api): expose workflow example proof context`, including repository-root workdir, setup prerequisites, and `bun test examples/root-scripts.test.ts` as the proof command.',
 		'Packaged proof surfaces expose workflow examples through `58a7f579 test(release): expose workflow examples in packaged proof`, including MCP agent-workflow resource text and installed smoke output.',
 		'Installed SDK safe-edit workflow proof is accepted after `5915794f feat(sdk): summarize installed safe edit proof`: `bun test examples/package-install-safe-edit.test.ts --timeout 30000` now proves safeToUse, changed-cell before/after evidence, gate outcomes, hashes, check/lint validity, and post-write audit validity from the installed-SDK example. This closes the earlier `5981764c` blank/empty proof contract blocker for generated-workbook wording.',
+		'Installed safe-edit workflow discovery is accepted after `f8d63593 feat(apps): expose installed safe edit workflow`: CLI, API, MCP, MCP resources, and installed app smoke output expose the installed SDK example command plus proofBundle output contract.',
 		'Workflow docs list inspect, plan, commit, verify, trace, and repair-plan recovery paths in `docs/AGENT_WORKFLOW.md`, but documentation is guidance rather than release proof.',
 	],
 	evidenceMissing: [

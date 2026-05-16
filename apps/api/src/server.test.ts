@@ -970,6 +970,28 @@ describe('Ascend API server', () => {
 		})
 	})
 
+	test('/trace reports missing target cells with structured retry guidance', async () => {
+		const wb = AscendWorkbook.create()
+		await wb.save(TEMP_FILE)
+
+		const result = await postJson('/trace', { file: TEMP_FILE, cell: 'Missing!A1' })
+
+		expect(result.status).toBe(400)
+		expect(result.body.ok).toBe(false)
+		expect(result.body.error).toMatchObject({
+			code: 'VALIDATION_ERROR',
+			message: 'Trace cell not found',
+			retryable: true,
+			retryStrategy: 'modified',
+			details: {
+				cell: 'Missing!A1',
+				workflow: ['inspect', 'read', 'trace'],
+				load: { mode: 'formula' },
+			},
+			suggestedFix: expect.stringContaining('/inspect or /read'),
+		})
+	})
+
 	test('/write rejects missing workbook references with structured retry guidance', async () => {
 		const result = await postJson('/write', {
 			ops: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] }],

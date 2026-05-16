@@ -315,6 +315,20 @@ function missingTraceCellError(): AscendError {
 	})
 }
 
+function traceCellNotFoundError(cell: string, wb: WorkbookDocument): AscendError {
+	return ascendError('VALIDATION_ERROR', 'Trace cell not found', {
+		retryable: true,
+		retryStrategy: 'modified',
+		details: {
+			cell,
+			workflow: ['inspect', 'read', 'trace'],
+			load: wb.inspect().load,
+		},
+		suggestedFix:
+			'Run /inspect or /read to confirm the target sheet and cell before retrying /trace.',
+	})
+}
+
 function missingDiffWorkbookError(field: 'fileA' | 'fileB'): AscendError {
 	return ascendError('VALIDATION_ERROR', `Missing or invalid diff ${field}`, {
 		retryable: true,
@@ -1563,7 +1577,7 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 						)
 					}
 					const result = wb.trace(cell)
-					if (!result) return jsonFailure('Cell not found', 400)
+					if (!result) return jsonFailureError(traceCellNotFoundError(cell, wb), 400)
 					return jsonSuccess(result)
 				} catch (e) {
 					return handleError(e, file)

@@ -682,6 +682,7 @@ export interface PostWriteChartEntry {
 }
 
 export interface AgentPostWriteVerificationTimings {
+	readonly outputSnapshotMs: number
 	readonly reopenMs: number
 	readonly checkMs: number
 	readonly lintMs: number
@@ -2111,17 +2112,22 @@ export async function commitAgentPlanFromWorkbook(
 		outputHashMs: outputSha256Result.ms,
 	}
 	await progress('post-write', 'started', 'Reopening written workbook for verification.')
-	const postWrite = await verifyWrittenWorkbook(
-		output,
-		outputSha256,
-		packageGraph,
-		sourceBytes,
-		outputBytes,
-		expectedPostWritePackageGraphChanges,
-		progress,
-		ops,
-		wb.getWorkbookModel(),
-	)
+	let postWrite: AgentPostWriteVerification
+	try {
+		postWrite = await verifyWrittenWorkbook(
+			output,
+			outputSha256,
+			packageGraph,
+			sourceBytes,
+			expectedPostWritePackageGraphChanges,
+			progress,
+			ops,
+			wb.getWorkbookModel(),
+		)
+	} catch (error) {
+		wb.restoreMutationRollbackSnapshot(rollbackSnapshot)
+		throw error
+	}
 	await progressFromPhase(postWritePhase(postWrite, expectedPostWritePackageGraphChanges), progress)
 	await progress('check', 'started', 'Reusing pre-write structural checks.')
 	const check = writePolicyCheck
@@ -2217,12 +2223,24 @@ async function verifyWrittenWorkbook(
 	outputSha256: string,
 	sourceGraph: XlsxPackageGraph,
 	sourceBytes: Uint8Array,
-	outputBytes: Uint8Array,
 	expectedPackageGraphChanges: ExpectedPostWritePackageGraphChanges,
 	progress: ReturnType<typeof createProgressEmitter>,
 	ops: readonly Operation[],
 	sourceWorkbook: Workbook,
 ): Promise<AgentPostWriteVerification> {
+	const outputSnapshot = await timedPostWriteStep(
+		progress,
+		'output-snapshot',
+		'Reading post-write output snapshot.',
+		'Post-write output snapshot matched written bytes.',
+		async () => {
+			const snapshot = await readStablePostWriteOutputSnapshot(output)
+			if (snapshot.identity.sha256 !== outputSha256) {
+				throw postWriteOutputChangedError(output, outputSha256, snapshot.identity.sha256)
+			}
+			return snapshot
+		},
+	)
 	const reopened = await timedPostWriteStep(
 		progress,
 		'reopen',
@@ -2230,9 +2248,8 @@ async function verifyWrittenWorkbook(
 		'Written workbook reopened.',
 		() =>
 			openPostWriteDocument(
-				output,
-				outputSha256,
-				outputBytes,
+				outputSnapshot.value.identity,
+				outputSnapshot.value.bytes,
 				postWriteOpenOptions(sourceGraph, ops, sourceWorkbook),
 			),
 	)
@@ -2279,7 +2296,13 @@ async function verifyWrittenWorkbook(
 		'package-graph-audit',
 		'Auditing post-write package graph roundtrip.',
 		'Post-write package graph roundtrip audit completed.',
-		() => auditPackageGraphRoundtrip(sourceGraph, sourceBytes, outputGraph.value, outputBytes),
+		() =>
+			auditPackageGraphRoundtrip(
+				sourceGraph,
+				sourceBytes,
+				outputGraph.value,
+				outputSnapshot.value.bytes,
+			),
 	)
 	const unresolvedPackageGraphIssues = packageGraphAudit.value.issues.filter(
 		(issue) => !isExpectedPostWritePackageGraphIssue(issue, expectedPackageGraphChanges),
@@ -2295,6 +2318,7 @@ async function verifyWrittenWorkbook(
 		outputSha256,
 		reopened: true,
 		timings: {
+			outputSnapshotMs: outputSnapshot.ms,
 			reopenMs: reopened.ms,
 			checkMs: check.ms,
 			lintMs: lint.ms,
@@ -2993,18 +3017,88 @@ async function openWorkbookFromBytes(
 }
 
 async function openPostWriteDocument(
-	file: string,
-	sha256: string,
+	identity: PostWriteOutputIdentity,
 	bytes: Uint8Array,
 	options: NonNullable<Parameters<typeof WorkbookDocument.open>[1]> = {},
 ): Promise<WorkbookDocument> {
+	return WorkbookDocument.openPathSnapshot(identity.path, bytes, identity, options)
+}
+
+interface PostWriteOutputIdentity {
+	readonly path: string
+	readonly size: number
+	readonly mtimeMs: number
+	readonly ctimeMs: number
+	readonly sha256: string
+}
+
+interface PostWriteOutputSnapshot {
+	readonly bytes: Uint8Array
+	readonly identity: PostWriteOutputIdentity
+}
+
+async function readStablePostWriteOutputSnapshot(file: string): Promise<PostWriteOutputSnapshot> {
 	const path = resolve(file)
-	const info = await stat(path)
-	return WorkbookDocument.openPathSnapshot(
-		path,
-		bytes,
-		{ path, size: info.size, mtimeMs: info.mtimeMs, ctimeMs: info.ctimeMs, sha256 },
-		options,
+	let lastSnapshot: PostWriteOutputSnapshot | null = null
+	for (let attempt = 0; attempt < 2; attempt++) {
+		const before = await stat(path)
+		const bytes = await fileBytes(path)
+		const sha256 = sha256Bytes(bytes)
+		const after = await stat(path)
+		lastSnapshot = {
+			bytes,
+			identity: {
+				path,
+				size: after.size,
+				mtimeMs: after.mtimeMs,
+				ctimeMs: after.ctimeMs,
+				sha256,
+			},
+		}
+		if (
+			before.size === after.size &&
+			before.mtimeMs === after.mtimeMs &&
+			before.ctimeMs === after.ctimeMs
+		) {
+			return lastSnapshot
+		}
+	}
+	const observedSha256 = lastSnapshot?.identity.sha256
+	throw new AscendException(
+		ascendError('EXPORT_ERROR', `Written workbook was unstable before verification: ${file}`, {
+			retryable: true,
+			retryStrategy: 'modified',
+			details: {
+				output: file,
+				...(observedSha256 ? { observedSha256 } : {}),
+			},
+			suggestedFix:
+				'Retry the commit after ensuring no other process is modifying the output workbook.',
+		}),
+	)
+}
+
+function postWriteOutputChangedError(
+	output: string,
+	expectedSha256: string,
+	actualSha256: string,
+): AscendException {
+	return new AscendException(
+		ascendError(
+			'EXPORT_ERROR',
+			`Written workbook changed before post-write verification: ${output}`,
+			{
+				retryable: true,
+				retryStrategy: 'modified',
+				details: {
+					output,
+					expectedSha256,
+					actualSha256,
+				},
+				suggestedFix:
+					'Retry the commit after ensuring no other process is modifying the output workbook.',
+			},
+		),
 	)
 }
 

@@ -346,6 +346,76 @@ describe('agent workflow loss audit', () => {
 		})
 	})
 
+	test('post-write verification fails closed when output changes after write', async () => {
+		const input = join(TEMP_DIR, 'post-write-race-source.xlsx')
+		const output = join(TEMP_DIR, 'post-write-race-out.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		const sourceBytes = new Uint8Array(readFileSync('fixtures/xlsx/xlsxwriter/strings_links.xlsx'))
+		await Bun.write(input, sourceBytes)
+		const replacement = AscendWorkbook.create()
+		replacement.apply([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'external-change' }] },
+		])
+		const replacementBytes = replacement.toBytes()
+		const replacementSha256 = createHash('sha256').update(replacementBytes).digest('hex')
+		const wb = await AscendWorkbook.open(sourceBytes)
+		const inputSha256 = createHash('sha256').update(sourceBytes).digest('hex')
+		const ops = [
+			{ op: 'setCells' as const, sheet: 'Strings', updates: [{ ref: 'Z12', value: 'verified' }] },
+		]
+		const progressEvents: { readonly phase: string; readonly status: string }[] = []
+
+		let verificationError: unknown
+		try {
+			await commitAgentPlanFromWorkbook(
+				input,
+				inputSha256,
+				wb,
+				ops,
+				{
+					output,
+					onProgress: async (event) => {
+						progressEvents.push(event)
+						if (event.phase === 'write' && event.status === 'ok') {
+							await Bun.write(output, replacementBytes)
+						}
+					},
+				},
+				{ sourceBytes },
+			)
+		} catch (error) {
+			verificationError = error
+		}
+		expect(
+			(
+				verificationError as {
+					readonly ascendError?: {
+						readonly code?: string
+						readonly retryable?: boolean
+						readonly details?: {
+							readonly output?: string
+							readonly actualSha256?: string
+						}
+						readonly suggestedFix?: string
+					}
+				}
+			).ascendError,
+		).toMatchObject({
+			code: 'EXPORT_ERROR',
+			retryable: true,
+			details: {
+				output,
+				actualSha256: replacementSha256,
+			},
+			suggestedFix: expect.stringContaining('no other process is modifying'),
+		})
+		expect(progressEvents).toContainEqual(
+			expect.objectContaining({ phase: 'post-write:output-snapshot', status: 'failed' }),
+		)
+		expect(wb.sheet('Strings')?.cell('Z12')).toBeUndefined()
+		expect(createHash('sha256').update(readFileSync(output)).digest('hex')).toBe(replacementSha256)
+	})
+
 	test('in-place backup failures roll back before writing and remain retryable', async () => {
 		const input = join(TEMP_DIR, 'backup-source.xlsx')
 		const blockedBackup = join(TEMP_DIR, 'blocked-backup.xlsx')

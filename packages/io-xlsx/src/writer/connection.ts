@@ -52,6 +52,9 @@ function updateConnectionAttrs(attrs: string, part: WorkbookConnectionPartInfo):
 		)
 	} else {
 		updated = setOptionalBoolAttr(updated, 'saveData', part.saveData)
+		updated = setOptionalBoolAttr(updated, 'background', part.backgroundRefresh)
+		updated = setOptionalBoolAttr(updated, 'keepAlive', part.keepAlive)
+		updated = setOptionalNumberAttr(updated, 'interval', part.refreshInterval)
 	}
 	updated = setOptionalNumberAttr(updated, 'refreshedVersion', part.refreshedVersion)
 	return updated

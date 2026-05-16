@@ -667,12 +667,16 @@ describe('operation schema agent DX', () => {
 		expect(schema?.schema.required).toEqual(['op'])
 		expect(schema?.schema.properties.connectionId?.description).toContain('connection id')
 		expect(schema?.schema.properties.refreshedVersion?.description).toContain('refresh engine')
+		expect(schema?.schema.properties.backgroundRefresh?.description).toContain('background')
+		expect(schema?.schema.properties.refreshInterval?.description).toContain('minutes')
 		expect(schema?.examples[0]).toMatchObject({
 			op: 'setConnectionRefresh',
-			partPath: 'xl/queryTables/queryTable1.xml',
+			partPath: 'xl/connections.xml',
 			connectionId: 1,
 			refreshOnLoad: true,
 			saveData: false,
+			backgroundRefresh: false,
+			refreshInterval: 30,
 		})
 		expect(schema?.recoveryActions.join('\n')).toContain('refreshMetadata')
 
@@ -683,6 +687,9 @@ describe('operation schema agent DX', () => {
 				connectionId: 1,
 				refreshOnLoad: true,
 				saveData: false,
+				backgroundRefresh: false,
+				keepAlive: true,
+				refreshInterval: 30,
 				refreshedVersion: 9,
 			},
 		])

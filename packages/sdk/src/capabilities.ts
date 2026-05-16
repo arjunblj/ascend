@@ -776,7 +776,7 @@ export const EXCEL_CAPABILITIES: readonly ExcelCapability[] = [
 		'editable',
 		'P1',
 		'Add refresh execution adapters for connection-aware engines.',
-		'Workbook calculation refresh flags, calc-chain preservation, pivot cache freshness, workbook connections, and query-table refresh metadata are surfaced with stale/not-saved indicators; tracked public query-table refreshOnLoad, saveData, and refreshedVersion edits persist into OOXML without query execution.',
+		'Workbook calculation refresh flags, calc-chain preservation, pivot cache freshness, workbook connections, and query-table refresh metadata are surfaced with stale/not-saved indicators; tracked public query-table refreshOnLoad, saveData, refreshedVersion edits and workbook connection background/keepAlive/interval scheduling edits persist into OOXML without query execution.',
 		[
 			'fixtures/corpus/external-refresh-contract.test.ts',
 			'packages/sdk/src/connection-inventory.test.ts',

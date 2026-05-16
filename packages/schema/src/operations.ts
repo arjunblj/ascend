@@ -658,6 +658,9 @@ export type Operation =
 			readonly sheet?: string
 			readonly refreshOnLoad?: boolean
 			readonly saveData?: boolean
+			readonly backgroundRefresh?: boolean
+			readonly keepAlive?: boolean
+			readonly refreshInterval?: number
 			readonly refreshedVersion?: number
 	  }
 	| {

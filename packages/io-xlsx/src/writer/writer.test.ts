@@ -944,7 +944,7 @@ describe('writeXlsx', () => {
 	})
 
 	it('updates XML-legal single-quoted connection attributes without duplicating them', () => {
-		const xml = `<connections><connection id='1' name='Sales' refreshOnLoad='0' saveData='1' refreshedVersion='5'/></connections>`
+		const xml = `<connections><connection id='1' name='Sales' refreshOnLoad='0' saveData='1' background='1' keepAlive='1' interval='15' refreshedVersion='5'/></connections>`
 		const updated = updateConnectionPartXml(xml, [
 			{
 				kind: 'connection',
@@ -953,14 +953,22 @@ describe('writeXlsx', () => {
 				name: 'Sales',
 				refreshOnLoad: true,
 				saveData: false,
+				backgroundRefresh: false,
+				keepAlive: false,
+				refreshInterval: 30,
 				refreshedVersion: 7,
 			},
 		])
 
 		expect(updated).toContain('refreshOnLoad="1"')
 		expect(updated).toContain('saveData="0"')
+		expect(updated).toContain('background="0"')
+		expect(updated).toContain('keepAlive="0"')
+		expect(updated).toContain('interval="30"')
 		expect(updated).toContain('refreshedVersion="7"')
 		expect(updated).not.toContain("refreshOnLoad='0' refreshOnLoad=")
+		expect(updated).not.toContain("background='1' background=")
+		expect(updated).not.toContain("interval='15' interval=")
 		expect(updated).not.toContain("refreshedVersion='5' refreshedVersion=")
 	})
 

@@ -4215,6 +4215,97 @@ describe('agent workflow loss audit', () => {
 		expect(Buffer.from(readFileSync(input)).equals(Buffer.from(sourceBytes))).toBe(true)
 	})
 
+	test('commits public workbook connection scheduling edits through save and reopen', async () => {
+		const input = join(TEMP_DIR, 'workbook-connection-schedule.xlsx')
+		const output = join(TEMP_DIR, 'workbook-connection-schedule-out.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		const sourceBytes = new Uint8Array(
+			readFileSync('fixtures/xlsx/libreoffice/TableEmptyHeaders.xlsx'),
+		)
+		await Bun.write(input, sourceBytes)
+		const ops = [
+			{
+				op: 'setConnectionRefresh' as const,
+				partPath: 'xl/connections.xml',
+				name: 'Query - Bitcoin',
+				connectionId: 2,
+				refreshOnLoad: false,
+				saveData: true,
+				backgroundRefresh: false,
+				keepAlive: false,
+				refreshInterval: 30,
+				refreshedVersion: 7,
+			},
+		]
+
+		const plan = await createAgentPlan(input, ops)
+		expect(
+			plan.writePolicy.diagnostics.some((diagnostic) => diagnostic.severity === 'blocker'),
+		).toBe(false)
+		expect(plan.writePolicy.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: 'approval-required-feature',
+				severity: 'warning',
+				featureFamily: 'preservedConnection',
+			}),
+		)
+		const committed = await commitAgentPlan(input, ops, {
+			output,
+			approvals: plan.approvals.map((approval) => approval.id),
+		})
+
+		expect(committed.postWrite.reopened).toBe(true)
+		expect(committed.postWrite.auditsPassed).toBe(true)
+		expect(committed.postWrite.dataConnections.connections).toContainEqual(
+			expect.objectContaining({
+				kind: 'connection',
+				partPath: 'xl/connections.xml',
+				name: 'Query - Bitcoin',
+				connectionId: 2,
+				connectionType: 5,
+				backgroundRefresh: false,
+				keepAlive: false,
+				refreshInterval: 30,
+				refreshOnLoad: false,
+				saveData: true,
+				refreshedVersion: 7,
+				state: 'cached',
+			}),
+		)
+		const reopened = await AscendWorkbook.open(new Uint8Array(readFileSync(output)))
+		expect(reopened.connectionParts()).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					kind: 'connection',
+					partPath: 'xl/connections.xml',
+					name: 'Query - Bitcoin',
+					connectionId: 2,
+					backgroundRefresh: false,
+					keepAlive: false,
+					refreshInterval: 30,
+					refreshOnLoad: false,
+					saveData: true,
+					refreshedVersion: 7,
+				}),
+			]),
+		)
+		expect(reopened.refreshMetadata().entries).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					kind: 'workbookConnection',
+					partPath: 'xl/connections.xml',
+					name: 'Query - Bitcoin',
+					connectionId: 2,
+					backgroundRefresh: false,
+					keepAlive: false,
+					refreshInterval: 30,
+					state: 'cached',
+				}),
+			]),
+		)
+		expect(Buffer.from(readFileSync(input)).equals(Buffer.from(sourceBytes))).toBe(true)
+	})
+
 	test('routes analytics package graph issues into analytics diagnostics', async () => {
 		const input = join(TEMP_DIR, 'stale-pivot-override.xlsx')
 		mkdirSync(TEMP_DIR, { recursive: true })

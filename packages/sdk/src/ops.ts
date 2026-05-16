@@ -347,6 +347,18 @@ const FIELD_SCHEMAS: Record<
 	sourceSheet: { type: 'string', description: 'Worksheet name for a pivot cache source' },
 	sourceRef: { type: 'string', description: 'A1 range for a pivot cache source' },
 	refreshOnLoad: { type: 'boolean', description: 'Whether Excel should refresh the cache on open' },
+	backgroundRefresh: {
+		type: 'boolean',
+		description: 'Whether Excel may refresh the workbook connection in the background',
+	},
+	keepAlive: {
+		type: 'boolean',
+		description: 'Whether Excel should keep the workbook connection alive between refreshes',
+	},
+	refreshInterval: {
+		type: 'integer',
+		description: 'Workbook connection automatic refresh interval in minutes',
+	},
 	enableRefresh: { type: 'boolean', description: 'Whether refresh is enabled for the cache' },
 	invalid: { type: 'boolean', description: 'Whether the cache should be treated as stale' },
 	saveData: { type: 'boolean', description: 'Whether cache records are saved in the workbook' },
@@ -804,6 +816,9 @@ export function listOperations(): readonly OperationSchema[] {
 				'sheet',
 				'refreshOnLoad',
 				'saveData',
+				'backgroundRefresh',
+				'keepAlive',
+				'refreshInterval',
 				'refreshedVersion',
 			],
 		},
@@ -1294,6 +1309,7 @@ function validateOperationField(
 		case 'from':
 		case 'to':
 		case 'index':
+		case 'refreshInterval':
 		case 'refreshedVersion':
 			return isNonNegativeInteger(value) ? null : `${path} must be a non-negative integer`
 		case 'selectedPageItem':
@@ -1317,6 +1333,8 @@ function validateOperationField(
 		case 'summaryBelow':
 		case 'summaryRight':
 		case 'refreshOnLoad':
+		case 'backgroundRefresh':
+		case 'keepAlive':
 		case 'enableRefresh':
 		case 'invalid':
 		case 'saveData':
@@ -1714,7 +1732,7 @@ function operationRecoveryActions(op: string): readonly string[] {
 		case 'setConnectionRefresh':
 			return [
 				'Use inspect --detail connections or refreshMetadata to choose partPath, name, connectionId, or sheet.',
-				'Set refreshOnLoad=true or saveData=false when external query output should be refreshed before use.',
+				'Set refreshOnLoad=true or saveData=false when external query output should be refreshed before use; workbook connection scheduling flags are editable without executing the connection.',
 				...common,
 			]
 		case 'rewriteExternalLink':
@@ -2035,10 +2053,12 @@ function operationExample(op: string): Record<string, unknown> {
 		case 'setConnectionRefresh':
 			return {
 				op,
-				partPath: 'xl/queryTables/queryTable1.xml',
+				partPath: 'xl/connections.xml',
 				connectionId: 1,
 				refreshOnLoad: true,
 				saveData: false,
+				backgroundRefresh: false,
+				refreshInterval: 30,
 			}
 		case 'rewriteExternalLink':
 			return {

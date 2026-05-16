@@ -3178,6 +3178,9 @@ function connectionRefreshWritableState(part: ConnectionPartInfo): unknown {
 		sheetName: part.sheetName ?? null,
 		refreshOnLoad: part.refreshOnLoad ?? null,
 		saveData: part.saveData ?? null,
+		backgroundRefresh: part.backgroundRefresh ?? null,
+		keepAlive: part.keepAlive ?? null,
+		refreshInterval: part.refreshInterval ?? null,
 		refreshedVersion: part.refreshedVersion ?? null,
 	}
 }

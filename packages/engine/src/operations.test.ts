@@ -10625,6 +10625,49 @@ describe('applyOperation', () => {
 		})
 	})
 
+	test('setConnectionRefresh updates workbook connection scheduling metadata', () => {
+		const wb = setup()
+		wb.connectionParts.push({
+			kind: 'connection',
+			partPath: 'xl/connections.xml',
+			contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.connections+xml',
+			relationshipCount: 0,
+			name: 'SalesConnection',
+			connectionId: 1,
+			backgroundRefresh: true,
+			keepAlive: true,
+			refreshInterval: 15,
+			refreshOnLoad: true,
+			saveData: false,
+			refreshedVersion: 7,
+		})
+
+		const result = applyOperation(wb, {
+			op: 'setConnectionRefresh',
+			partPath: 'xl/connections.xml',
+			connectionId: 1,
+			backgroundRefresh: false,
+			keepAlive: false,
+			refreshInterval: 30,
+			refreshOnLoad: false,
+			saveData: true,
+			refreshedVersion: 8,
+		})
+		expectOk(result)
+
+		expect(result.value.sheetsModified).toEqual([])
+		expect(result.value.recalcRequired).toBe(false)
+		expect(result.value.warnings).toBeUndefined()
+		expect(wb.connectionParts[0]).toMatchObject({
+			backgroundRefresh: false,
+			keepAlive: false,
+			refreshInterval: 30,
+			refreshOnLoad: false,
+			saveData: true,
+			refreshedVersion: 8,
+		})
+	})
+
 	test('setConnectionRefresh validates selectors and editable fields', () => {
 		const wb = setup()
 		wb.connectionParts.push({
@@ -10668,6 +10711,14 @@ describe('applyOperation', () => {
 		const cases: readonly Operation[] = [
 			{ op: 'setConnectionRefresh', partPath: 'xl/connections.xml', refreshOnLoad: 'yes' as never },
 			{ op: 'setConnectionRefresh', partPath: 'xl/connections.xml', saveData: 1 as never },
+			{
+				op: 'setConnectionRefresh',
+				partPath: 'xl/connections.xml',
+				backgroundRefresh: 'yes' as never,
+			},
+			{ op: 'setConnectionRefresh', partPath: 'xl/connections.xml', keepAlive: 1 as never },
+			{ op: 'setConnectionRefresh', partPath: 'xl/connections.xml', refreshInterval: -1 },
+			{ op: 'setConnectionRefresh', partPath: 'xl/connections.xml', refreshInterval: 1.5 },
 			{ op: 'setConnectionRefresh', partPath: 'xl/connections.xml', refreshedVersion: -1 },
 			{ op: 'setConnectionRefresh', partPath: 'xl/connections.xml', refreshedVersion: 1.5 },
 		]
@@ -10679,6 +10730,32 @@ describe('applyOperation', () => {
 			expect(result.error.message).toContain('setConnectionRefresh')
 			expect(JSON.stringify(wb.connectionParts), JSON.stringify(op)).toBe(before)
 		}
+	})
+
+	test('setConnectionRefresh rejects workbook connection scheduling fields for query tables', () => {
+		const wb = setup()
+		wb.connectionParts.push({
+			kind: 'queryTable',
+			partPath: 'xl/queryTables/queryTable1.xml',
+			contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.queryTable+xml',
+			sheetName: 'sheet1',
+			relationshipCount: 0,
+			name: 'SalesQuery',
+			connectionId: 1,
+			refreshOnLoad: false,
+		})
+
+		const before = JSON.stringify(wb.connectionParts)
+		const result = applyOperation(wb, {
+			op: 'setConnectionRefresh',
+			partPath: 'xl/queryTables/queryTable1.xml',
+			connectionId: 1,
+			backgroundRefresh: false,
+		})
+
+		expectErr(result)
+		expect(result.error.message).toContain('only apply to workbook connection parts')
+		expect(JSON.stringify(wb.connectionParts)).toBe(before)
 	})
 
 	test('setPivotFieldItem updates item and page filter state with refresh warning', () => {

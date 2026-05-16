@@ -1431,6 +1431,102 @@ Next action: defer production optimization for formula-heavy from this winning
 row. Continue only with a measured release workflow loss, a full-profile
 coverage blocker, or an explicit claim downgrade.
 
+## Cycle: Table Heavy Write Current Fastest Comparable Row at `06b2230a`
+
+Classification: comparable external evidence. Ascend is the median and p95
+winner among the completed table-capable generated XLSX writers in this row with
+acceptable noise. This is a scoped table-write row, not a broad `xlsx-write-sota`
+promotion.
+
+Workflow: generated XLSX write for table-heavy workbooks, 2000 rows x 20
+columns, including an emitted XLSX table part.
+
+Why it matters for release: table-bearing workbook export is a common
+agent-produced report shape. It checks whether Ascend remains competitive on a
+release-visible commit/export workflow where the writer must preserve tabular
+metadata, not just cell values.
+
+Public/tracked-clean input: `competitive-io` generated the `table-heavy`
+`source-mode generated-write` workload from tracked benchmark code in a clean
+detached worktree at commit `06b2230a`. No private corpus or local research
+workbook was used.
+
+Commands:
+
+```bash
+git worktree add --detach /private/tmp/ascend-write-table-current-06b2230a 06b2230a8f55
+cd /private/tmp/ascend-write-table-current-06b2230a
+bun install --frozen-lockfile
+mkdir -p /private/tmp/ascend-write-table-current-06b2230a-runs
+TMPDIR=/private/tmp ACCEPT_NPOI_OSMF_LICENSE=1 env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-io.ts --json --category write --competitor all --execution-scope external-process --source-mode generated-write --libraries ascend-external-writer,xlsxwriter,openpyxl,rust-xlsxwriter --workload table-heavy --repeat 15 --warmup 3 --validation-mode each --write-runner-manifest fixtures/benchmarks/runners/sota-writers.manifest.json > /private/tmp/ascend-write-table-current-06b2230a-runs/write-table-heavy-repeat15.json
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-scoreboard.ts /private/tmp/ascend-write-table-current-06b2230a-runs/write-table-heavy-repeat15.json --json --metric medianMs --require-profile xlsx-write-sota --assert-profile-leader ascend > /private/tmp/ascend-write-table-current-06b2230a-runs/write-table-heavy-repeat15-scoreboard.json
+```
+
+Environment:
+
+- Commit: `06b2230a8f55cee88fc0af8ced101f2fab22923f`
+- Worktree: clean detached worktree at
+  `/private/tmp/ascend-write-table-current-06b2230a`
+- Bun runtime: `1.3.13`
+- Node: `24.3.0`
+- Platform: Darwin arm64
+- Runtime profile: `category write`, `executionScope external-process`,
+  `sourceMode generated-write`, `workload table-heavy`,
+  `validationMode each`.
+
+Raw output:
+
+```text
+/private/tmp/ascend-write-table-current-06b2230a-runs/write-table-heavy-repeat15.json
+/private/tmp/ascend-write-table-current-06b2230a-runs/write-table-heavy-repeat15-scoreboard.json
+```
+
+Full comparable table-capable writer row, repeat 15 after 3 warmups:
+
+| Runner | Status vs Ascend | Median ms | P95 ms | CV | Peak RSS | Output bytes |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| `ascend-external-writer` | ran/won | 12.037 | 16.663 | 0.129 | 173.0 MiB | 274212 |
+| `rust-xlsxwriter` | ran/lost vs Ascend | 36.493 | 67.496 | 0.277 | 23.4 MiB | 185656 |
+| `xlsxwriter` | ran/lost vs Ascend | 142.865 | 175.005 | 0.130 | 109.7 MiB | 188023 |
+| `openpyxl` | ran/lost vs Ascend | 236.053 | 333.412 | 0.146 | 105.2 MiB | 152823 |
+
+Scoreboard result:
+
+- Full repeat-15 table-capable row: group winner was
+  `ascend-external-writer`; `leaderFailures: []` and
+  `profileLeaderFailures: []`.
+- The full scoreboard command exits nonzero for full-profile coverage because
+  this is not a full `xlsx-write-sota` run. Coverage failures and omitted,
+  unsupported, blocked, or untested table writers are not counted as Ascend
+  wins.
+
+Semantic comparability: all listed rows reopened successfully, matched the
+expected one-sheet and 40,000-cell shape, emitted exactly one table part, and
+passed sorted semantic cell value validation. Ascend matched ordered semantic
+cell value hashes; XlsxWriter, OpenPyXL, and rust_xlsxwriter did not, so their
+rows are useful table-capable write comparisons but not byte/order-equivalent
+output claims. Ascend uses more RSS and emits a larger XLSX than the compared
+table writers.
+
+Humble allowed wording:
+
+> On the generated 2000 x 20 table-heavy write row at commit `06b2230a`,
+> Ascend's focused external repeat-15 run had the fastest median and p95 among
+> completed table-capable comparable writers. This is scoped table-write
+> evidence, not a broad `xlsx-write-sota` claim.
+
+Forbidden wording:
+
+- "Ascend is SOTA for XLSX write."
+- "Ascend beats every table-capable writer."
+- "Ascend beats omitted, unsupported, blocked, or untested table writers."
+- "Ascend produces the smallest table-heavy XLSX."
+- "Ascend proves byte/order-equivalent output against every compared writer."
+
+Next action: defer production optimization for table-heavy from this current
+winning row. Continue only with a measured release workflow loss, a full-profile
+coverage blocker, or an explicit claim downgrade.
+
 ## Owner-Ready Benchmark Blocker
 
 Owner: benchmarking/external baselines.

@@ -28,7 +28,13 @@ describe('XLSX package graph', () => {
 			'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rIdOffice" Type="http://purl.oclc.org/ooxml/officeDocument/relationships/officeDocument" Target="xl/workbook.xml"/>
+  <Relationship Id="rIdOpaqueCoreProps" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="package/services/metadata/core-properties/source.psmdcp"/>
+  <Relationship Id="rIdOpaqueAppProps" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="package/services/app.bin"/>
+  <Relationship Id="rIdOpaqueCustomProps" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/custom-properties" Target="package/services/custom.bin"/>
 </Relationships>`,
+			'package/services/metadata/core-properties/source.psmdcp': '<core/>',
+			'package/services/app.bin': '<app/>',
+			'package/services/custom.bin': '<custom/>',
 			'xl/workbook.xml': '<workbook/>',
 			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
@@ -108,6 +114,33 @@ describe('XLSX package graph', () => {
 			rawTarget: 'xl/workbook.xml',
 			resolvedTarget: 'xl/workbook.xml',
 			featureFamily: 'workbook',
+		})
+		expect(graph.relationships).toContainEqual({
+			sourcePartPath: '',
+			relationshipPartPath: '_rels/.rels',
+			id: 'rIdOpaqueCoreProps',
+			type: 'http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties',
+			rawTarget: 'package/services/metadata/core-properties/source.psmdcp',
+			resolvedTarget: 'package/services/metadata/core-properties/source.psmdcp',
+			featureFamily: 'preservedDocumentProperties',
+		})
+		expect(graph.relationships).toContainEqual({
+			sourcePartPath: '',
+			relationshipPartPath: '_rels/.rels',
+			id: 'rIdOpaqueAppProps',
+			type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties',
+			rawTarget: 'package/services/app.bin',
+			resolvedTarget: 'package/services/app.bin',
+			featureFamily: 'preservedDocumentProperties',
+		})
+		expect(graph.relationships).toContainEqual({
+			sourcePartPath: '',
+			relationshipPartPath: '_rels/.rels',
+			id: 'rIdOpaqueCustomProps',
+			type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/custom-properties',
+			rawTarget: 'package/services/custom.bin',
+			resolvedTarget: 'package/services/custom.bin',
+			featureFamily: 'preservedDocumentProperties',
 		})
 		expect(graph.relationships).toContainEqual({
 			sourcePartPath: 'xl/workbook.xml',
@@ -253,6 +286,28 @@ describe('XLSX package graph', () => {
 			sourceRelationshipRawType:
 				'http://purl.oclc.org/ooxml/officeDocument/relationships/officeDocument',
 			featureFamily: 'workbook',
+		})
+		expect(
+			graph.parts.find(
+				(part) => part.path === 'package/services/metadata/core-properties/source.psmdcp',
+			),
+		).toMatchObject({
+			ownerScope: 'document-properties',
+			sourceRelationshipId: 'rIdOpaqueCoreProps',
+			featureFamily: 'preservedDocumentProperties',
+			preservationPolicy: 'preserve-exact',
+		})
+		expect(graph.parts.find((part) => part.path === 'package/services/app.bin')).toMatchObject({
+			ownerScope: 'document-properties',
+			sourceRelationshipId: 'rIdOpaqueAppProps',
+			featureFamily: 'preservedDocumentProperties',
+			preservationPolicy: 'preserve-exact',
+		})
+		expect(graph.parts.find((part) => part.path === 'package/services/custom.bin')).toMatchObject({
+			ownerScope: 'document-properties',
+			sourceRelationshipId: 'rIdOpaqueCustomProps',
+			featureFamily: 'preservedDocumentProperties',
+			preservationPolicy: 'preserve-exact',
 		})
 		expect(graph.parts.find((part) => part.path === 'xl/worksheets/sheet1.xml')).toMatchObject({
 			ownerScope: 'worksheet',

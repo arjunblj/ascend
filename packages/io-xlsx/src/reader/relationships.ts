@@ -10,6 +10,12 @@ export interface Relationship {
 
 export const REL_OFFICE_DOC =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument'
+export const REL_CORE_PROPERTIES =
+	'http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties'
+export const REL_EXTENDED_PROPERTIES =
+	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties'
+export const REL_CUSTOM_PROPERTIES =
+	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/custom-properties'
 export const REL_WORKSHEET =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet'
 export const REL_CHARTSHEET =

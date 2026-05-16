@@ -17,9 +17,12 @@ import {
 	REL_COMMENTS,
 	REL_CONNECTIONS,
 	REL_CONTROL_PROP,
+	REL_CORE_PROPERTIES,
+	REL_CUSTOM_PROPERTIES,
 	REL_CUSTOM_XML,
 	REL_DATA_MODEL,
 	REL_DRAWING,
+	REL_EXTENDED_PROPERTIES,
 	REL_EXTERNAL_LINK,
 	REL_HYPERLINK,
 	REL_IMAGE,
@@ -238,6 +241,13 @@ export function classifyPackageFeatureFamily(
 	if (path === '[Content_Types].xml') return 'packageContentTypes'
 	if (path === '_rels/.rels' || path.endsWith('.rels')) return 'packageRelationships'
 	if (isVendorSecurityPart(lowerPath, lowerRelType)) return 'preservedVendorSecurity'
+	if (
+		lowerRelType.endsWith('/relationships/metadata/core-properties') ||
+		lowerRelType.endsWith('/relationships/extended-properties') ||
+		lowerRelType.endsWith('/relationships/custom-properties')
+	) {
+		return 'preservedDocumentProperties'
+	}
 	if (path.startsWith('docProps/')) return 'preservedDocumentProperties'
 	if (path === 'xl/workbook.xml') return 'workbook'
 	if (/(^|\/)sharedStrings\.xml$/i.test(path)) return 'sharedStrings'
@@ -467,6 +477,13 @@ function classifyOwnerScope(
 		return 'security'
 	}
 	if (partPath.startsWith('docProps/')) return 'document-properties'
+	if (
+		primary?.type === REL_CORE_PROPERTIES ||
+		primary?.type === REL_EXTENDED_PROPERTIES ||
+		primary?.type === REL_CUSTOM_PROPERTIES
+	) {
+		return 'document-properties'
+	}
 	if (primary?.type === REL_OFFICE_DOC || partPath === 'xl/workbook.xml') return 'workbook'
 	if (primary?.type === REL_WORKSHEET) return 'worksheet'
 	if (primary?.type === REL_CHARTSHEET) return 'chartsheet'
@@ -527,6 +544,13 @@ function classifyRelationshipFeatureFamily(
 	resolvedTarget: string | undefined,
 ): string {
 	if (relationship.type === REL_OFFICE_DOC) return 'workbook'
+	if (
+		relationship.type === REL_CORE_PROPERTIES ||
+		relationship.type === REL_EXTENDED_PROPERTIES ||
+		relationship.type === REL_CUSTOM_PROPERTIES
+	) {
+		return 'preservedDocumentProperties'
+	}
 	if (relationship.type === REL_WORKSHEET) return 'worksheet'
 	if (relationship.type === REL_CHARTSHEET) return 'preservedChartSheet'
 	if (relationship.type === REL_MACROSHEET) return 'preservedMacroSheet'

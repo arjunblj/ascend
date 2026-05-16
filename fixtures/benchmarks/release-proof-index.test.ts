@@ -1254,7 +1254,7 @@ describe('release proof evidence index', () => {
 			])
 			expect(row.commandsToRun).toEqual(row.validationCommands)
 			expect(row.failureEvidence).toEqual(expect.arrayContaining([expect.any(String)]))
-			expect(row.acceptanceCriteria).toContain('classifies each untriaged path')
+			expect(row.acceptanceCriteria).toContain('reviews `classifiedEntries`')
 			expect(row.evidenceWeHave).toEqual(expect.arrayContaining([expect.any(String)]))
 			expect(row.evidenceMissing).toEqual(expect.arrayContaining([expect.any(String)]))
 			expect(row.qssContrast).toEqual(expect.arrayContaining([expect.any(String)]))
@@ -2085,11 +2085,18 @@ describe('release proof evidence index', () => {
 		expect(handoff.researchHygieneDecisionPacket.inventorySnapshot).toMatchObject({
 			status: 'inventory-collected',
 			decision: expect.stringMatching(
-				/^(owner-classification-required|no-unclassified-paths-currently-visible)$/,
+				/^(owner-classification-required|current-inventory-classified-release-routing-required|no-unclassified-paths-currently-visible)$/,
 			),
 		})
-		expect(handoff.researchHygieneDecisionPacket.inventorySnapshot.dirtyPathCount).toBe(
+		expect(
+			handoff.researchHygieneDecisionPacket.inventorySnapshot.classifiedPathCount +
+				handoff.researchHygieneDecisionPacket.inventorySnapshot.unclassifiedPathCount,
+		).toBe(handoff.researchHygieneDecisionPacket.inventorySnapshot.dirtyPathCount)
+		expect(handoff.researchHygieneDecisionPacket.inventorySnapshot.unclassifiedPathCount).toBe(
 			handoff.researchHygieneDecisionPacket.inventorySnapshot.unclassifiedEntries.length,
+		)
+		expect(handoff.researchHygieneDecisionPacket.inventorySnapshot.classifiedPathCount).toBe(
+			handoff.researchHygieneDecisionPacket.inventorySnapshot.classifiedEntries.length,
 		)
 		expect(
 			handoff.researchHygieneDecisionPacket.classificationBuckets.map((item) => item.bucket),
@@ -2520,7 +2527,7 @@ describe('release proof evidence index', () => {
 					'bun run fixtures/benchmarks/release-proof-index.ts --no-timings --research-hygiene-json',
 					'bun test fixtures/benchmarks/release-proof-index.test.ts',
 				],
-				acceptanceCriteria: expect.stringContaining('classifies each untriaged path'),
+				acceptanceCriteria: expect.stringContaining('reviews `classifiedEntries`'),
 			}),
 		])
 		expect(handoff.releaseDecisionBoard.ownerActionQueueCoverage).toMatchObject({
@@ -3244,7 +3251,7 @@ describe('release proof evidence index', () => {
 					'bun run fixtures/benchmarks/release-proof-index.ts --no-timings --research-hygiene-json',
 					'bun test fixtures/benchmarks/release-proof-index.test.ts',
 				],
-				acceptanceCriteria: expect.stringContaining('classifies each untriaged path'),
+				acceptanceCriteria: expect.stringContaining('reviews `classifiedEntries`'),
 			}),
 		])
 		for (const row of board.claimDowngradeOwnerActionQueue ?? []) {
@@ -3616,14 +3623,26 @@ describe('release proof evidence index', () => {
 				readonly status?: string
 				readonly decision?: string
 				readonly dirtyPathCount?: number
+				readonly classifiedPathCount?: number
+				readonly unclassifiedPathCount?: number
 				readonly statusCodeCounts?: Record<string, number>
+				readonly classificationCounts?: Record<string, number>
 				readonly rootCounts?: Record<string, number>
 				readonly untrackedDirectoryCount?: number
 				readonly modifiedFileCount?: number
+				readonly classifiedEntries?: readonly {
+					readonly statusCode?: string
+					readonly path?: string
+					readonly classification?: string
+					readonly reason?: string
+					readonly nextOwnerAction?: string
+				}[]
 				readonly unclassifiedEntries?: readonly {
 					readonly statusCode?: string
 					readonly path?: string
 					readonly classification?: string
+					readonly reason?: string
+					readonly nextOwnerAction?: string
 				}[]
 				readonly boundary?: string
 			}
@@ -3662,38 +3681,73 @@ describe('release proof evidence index', () => {
 			),
 		})
 		expect(typeof packet.inventorySnapshot?.dirtyPathCount).toBe('number')
-		expect(['owner-classification-required', 'no-unclassified-paths-currently-visible']).toContain(
-			packet.inventorySnapshot?.decision,
+		expect([
+			'owner-classification-required',
+			'current-inventory-classified-release-routing-required',
+			'no-unclassified-paths-currently-visible',
+		]).toContain(packet.inventorySnapshot?.decision)
+		expect(
+			(packet.inventorySnapshot?.classifiedPathCount ?? 0) +
+				(packet.inventorySnapshot?.unclassifiedPathCount ?? 0),
+		).toBe(packet.inventorySnapshot?.dirtyPathCount)
+		expect(packet.inventorySnapshot?.classifiedPathCount).toBe(
+			packet.inventorySnapshot?.classifiedEntries?.length ?? 0,
 		)
-		expect(packet.inventorySnapshot?.dirtyPathCount).toBe(
+		expect(packet.inventorySnapshot?.unclassifiedPathCount).toBe(
 			packet.inventorySnapshot?.unclassifiedEntries?.length ?? 0,
 		)
 		const statusTotal = Object.values(packet.inventorySnapshot?.statusCodeCounts ?? {}).reduce(
 			(sum, count) => sum + count,
 			0,
 		)
+		const classificationTotal = Object.values(
+			packet.inventorySnapshot?.classificationCounts ?? {},
+		).reduce((sum, count) => sum + count, 0)
 		const rootTotal = Object.values(packet.inventorySnapshot?.rootCounts ?? {}).reduce(
 			(sum, count) => sum + count,
 			0,
 		)
 		expect(statusTotal).toBe(packet.inventorySnapshot?.dirtyPathCount)
+		expect(classificationTotal).toBe(packet.inventorySnapshot?.dirtyPathCount)
 		expect(rootTotal).toBe(packet.inventorySnapshot?.dirtyPathCount)
+		const inventoryEntries = [
+			...(packet.inventorySnapshot?.classifiedEntries ?? []),
+			...(packet.inventorySnapshot?.unclassifiedEntries ?? []),
+		]
 		expect(packet.inventorySnapshot?.untrackedDirectoryCount).toBe(
-			(packet.inventorySnapshot?.unclassifiedEntries ?? []).filter(
-				(entry) => entry.statusCode === '??' && entry.path?.endsWith('/'),
-			).length,
+			inventoryEntries.filter((entry) => entry.statusCode === '??' && entry.path?.endsWith('/'))
+				.length,
 		)
 		expect(packet.inventorySnapshot?.modifiedFileCount).toBe(
-			(packet.inventorySnapshot?.unclassifiedEntries ?? []).filter(
-				(entry) => entry.statusCode === 'M',
-			).length,
+			inventoryEntries.filter((entry) => entry.statusCode === 'M').length,
 		)
-		for (const entry of packet.inventorySnapshot?.unclassifiedEntries ?? []) {
+		for (const entry of inventoryEntries) {
 			expect(entry.path).toMatch(
 				/^(research|scripts\/ascend-loop-manager\.ts|tmp\/ascend-loop-manager)/,
 			)
 			expect(entry.statusCode?.length).toBeGreaterThan(0)
+			expect(entry.reason?.length).toBeGreaterThan(0)
+			expect(entry.nextOwnerAction?.length).toBeGreaterThan(0)
+		}
+		for (const entry of packet.inventorySnapshot?.unclassifiedEntries ?? []) {
 			expect(entry.classification).toBe('unclassified-owner-decision-required')
+		}
+		const classifiedPaths = new Map(
+			(packet.inventorySnapshot?.classifiedEntries ?? []).map((entry) => [entry.path, entry]),
+		)
+		if (classifiedPaths.has('research/experiments/runs/2026/2026-05-15-fixture-decision-packet/')) {
+			expect(
+				classifiedPaths.get('research/experiments/runs/2026/2026-05-15-fixture-decision-packet/')
+					?.classification,
+			).toBe('accepted-evidence')
+		}
+		if (classifiedPaths.has('research/excel-corpus/')) {
+			expect(classifiedPaths.get('research/excel-corpus/')?.classification).toBe(
+				'active-owner-blocker',
+			)
+		}
+		if (classifiedPaths.has('research/docs-archive/')) {
+			expect(classifiedPaths.get('research/docs-archive/')?.classification).toBe('archive-only')
 		}
 		expect(packet.validationCommands).toEqual([
 			'git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager',
@@ -3713,8 +3767,8 @@ describe('release proof evidence index', () => {
 			'active-owner-blocker',
 			'archive-only',
 		])
-		expect(packet.failureEvidence?.join('\n')).toContain('Owner-classified inventory')
-		expect(packet.acceptanceCriteria).toContain('classifies each untriaged path')
+		expect(packet.failureEvidence?.join('\n')).toContain('Product/release owner review')
+		expect(packet.acceptanceCriteria).toContain('reviews `classifiedEntries`')
 		expect(packet.allowedWording).toContain('Do not promote research-surface-hygiene')
 		expect(packet.forbiddenWording?.join('\n')).toContain('Do not cite `research/` or `tmp/`')
 		expect(packet.qssContrast?.join('\n')).toContain('QSS comparison is blocked')

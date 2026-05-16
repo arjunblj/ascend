@@ -312,22 +312,35 @@ export interface ReleaseProofResearchHygieneInventorySnapshot {
 	readonly status: 'inventory-collected' | 'inventory-command-failed'
 	readonly decision:
 		| 'owner-classification-required'
+		| 'current-inventory-classified-release-routing-required'
 		| 'no-unclassified-paths-currently-visible'
 		| 'inventory-rerun-required'
 	readonly dirtyPathCount: number
+	readonly classifiedPathCount: number
+	readonly unclassifiedPathCount: number
 	readonly statusCodeCounts: Readonly<Record<string, number>>
+	readonly classificationCounts: Readonly<Record<string, number>>
 	readonly rootCounts: Readonly<Record<'research' | 'scripts' | 'tmp' | 'other', number>>
 	readonly untrackedDirectoryCount: number
 	readonly modifiedFileCount: number
+	readonly classifiedEntries: readonly ReleaseProofResearchHygieneInventoryEntry[]
 	readonly unclassifiedEntries: readonly ReleaseProofResearchHygieneInventoryEntry[]
 	readonly failure?: string
 	readonly boundary: string
 }
 
+type ReleaseProofResearchHygieneClassification =
+	| 'accepted-evidence'
+	| 'active-owner-blocker'
+	| 'archive-only'
+	| 'unclassified-owner-decision-required'
+
 export interface ReleaseProofResearchHygieneInventoryEntry {
 	readonly statusCode: string
 	readonly path: string
-	readonly classification: 'unclassified-owner-decision-required'
+	readonly classification: ReleaseProofResearchHygieneClassification
+	readonly reason: string
+	readonly nextOwnerAction: string
 }
 
 export interface ReleaseProofFixtureDecisionTrackedScan {
@@ -2266,34 +2279,50 @@ function researchHygieneInventorySnapshot(
 				encoding: 'utf8',
 			},
 		)
-		const unclassifiedEntries = stdout
+		const entries = stdout
 			.split('\n')
 			.map((line) => line.trimEnd())
 			.filter((line) => line.length > 0)
-			.map((line) => ({
-				statusCode: line.slice(0, 2).trim(),
-				path: line.slice(3),
-				classification: 'unclassified-owner-decision-required' as const,
-			}))
-		const statusCodeCounts = countBy(unclassifiedEntries, (entry) => entry.statusCode)
-		const rootCounts = researchHygieneInventoryRootCounts(unclassifiedEntries)
+			.map((line) => {
+				const path = line.slice(3)
+				return {
+					statusCode: line.slice(0, 2).trim(),
+					path,
+					...classifyResearchHygienePath(path),
+				}
+			})
+		const classifiedEntries = entries.filter(
+			(entry) => entry.classification !== 'unclassified-owner-decision-required',
+		)
+		const unclassifiedEntries = entries.filter(
+			(entry) => entry.classification === 'unclassified-owner-decision-required',
+		)
+		const statusCodeCounts = countBy(entries, (entry) => entry.statusCode)
+		const classificationCounts = countBy(entries, (entry) => entry.classification)
+		const rootCounts = researchHygieneInventoryRootCounts(entries)
 		return {
 			command,
 			status: 'inventory-collected',
 			decision:
 				unclassifiedEntries.length > 0
 					? 'owner-classification-required'
-					: 'no-unclassified-paths-currently-visible',
-			dirtyPathCount: unclassifiedEntries.length,
+					: entries.length > 0
+						? 'current-inventory-classified-release-routing-required'
+						: 'no-unclassified-paths-currently-visible',
+			dirtyPathCount: entries.length,
+			classifiedPathCount: classifiedEntries.length,
+			unclassifiedPathCount: unclassifiedEntries.length,
 			statusCodeCounts,
+			classificationCounts,
 			rootCounts,
-			untrackedDirectoryCount: unclassifiedEntries.filter(
+			untrackedDirectoryCount: entries.filter(
 				(entry) => entry.statusCode === '??' && entry.path.endsWith('/'),
 			).length,
-			modifiedFileCount: unclassifiedEntries.filter((entry) => entry.statusCode === 'M').length,
+			modifiedFileCount: entries.filter((entry) => entry.statusCode === 'M').length,
+			classifiedEntries,
 			unclassifiedEntries,
 			boundary:
-				'Inventory snapshot is current git-status routing evidence only. It is not owner classification, accepted evidence, or permission to cite research paths in release wording.',
+				'Inventory snapshot is current git-status routing evidence only. Classification routes paths to release-proof citation, active owner blocker, or archive-only handling; it is not permission to cite raw research paths in release wording.',
 		}
 	} catch (error) {
 		return {
@@ -2301,15 +2330,73 @@ function researchHygieneInventorySnapshot(
 			status: 'inventory-command-failed',
 			decision: 'inventory-rerun-required',
 			dirtyPathCount: 0,
+			classifiedPathCount: 0,
+			unclassifiedPathCount: 0,
 			statusCodeCounts: {},
+			classificationCounts: {},
 			rootCounts: { research: 0, scripts: 0, tmp: 0, other: 0 },
 			untrackedDirectoryCount: 0,
 			modifiedFileCount: 0,
+			classifiedEntries: [],
 			unclassifiedEntries: [],
 			failure: error instanceof Error ? error.message : String(error),
 			boundary:
 				'Inventory snapshot failed to collect. Owners must rerun the dirty inventory command before citing any research-derived claim.',
 		}
+	}
+}
+
+function classifyResearchHygienePath(
+	path: string,
+): Omit<ReleaseProofResearchHygieneInventoryEntry, 'statusCode' | 'path'> {
+	if (
+		path === 'research/experiments/index.md' ||
+		path === 'research/experiments/runs/2026/2026-05-15-fixture-decision-packet/'
+	) {
+		return {
+			classification: 'accepted-evidence',
+			reason:
+				'Current fixture-decision research is already folded into release-proof-index compact fixture-decision output; cite the proof packet, not the raw research log.',
+			nextOwnerAction:
+				'Keep the release-proof-index fixture-decision packet as the canonical citation and do not promote raw experiment notes.',
+		}
+	}
+
+	if (path === 'research/excel-corpus/') {
+		return {
+			classification: 'active-owner-blocker',
+			reason:
+				'Local workbook corpus material may contain useful public-fixture candidates, but it is not release evidence until license, provenance, and tracked-fixture policy are resolved.',
+			nextOwnerAction:
+				'Product/release owner classifies each workbook as vendored public fixture, private/local-only diagnostic, or deletion/archive candidate before any claim uses it.',
+		}
+	}
+
+	if (path === 'scripts/ascend-loop-manager.ts' || path === 'tmp/ascend-loop-manager/') {
+		return {
+			classification: 'active-owner-blocker',
+			reason:
+				'Loop-manager script and board state are operational steering surfaces, not product proof or release evidence.',
+			nextOwnerAction:
+				'Release owner decides whether to track, ignore, or archive the manager tool/state; do not cite it for Ascend runtime claims.',
+		}
+	}
+
+	if (path.startsWith('research/')) {
+		return {
+			classification: 'archive-only',
+			reason:
+				'Broad research note is not represented as a current release-proof-index claim decision and must stay out of release wording.',
+			nextOwnerAction:
+				'Leave as archive-only unless a future owner converts one specific finding into release-proof evidence with commands, forbidden wording, and a next action.',
+		}
+	}
+
+	return {
+		classification: 'unclassified-owner-decision-required',
+		reason: 'Path is outside the current research hygiene routing rules.',
+		nextOwnerAction:
+			'Product/release owner must classify this path before citing it or expanding the release-proof index.',
 	}
 }
 
@@ -4639,15 +4726,17 @@ const PRACTICAL_LATENCY_CONTRACTS_BLOCKER = {
 
 const RESEARCH_SURFACE_HYGIENE_BLOCKER = {
 	ownerAction:
-		'Product/release owner runs `git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager` and `bun run fixtures/benchmarks/release-proof-index.ts --no-timings --research-hygiene-json`, classifies each untriaged path as accepted evidence, active owner blocker, or archive-only, and reruns `bun test fixtures/benchmarks/release-proof-index.test.ts` before citing any research-derived claim.',
+		'Product/release owner runs `git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager` and `bun run fixtures/benchmarks/release-proof-index.ts --no-timings --research-hygiene-json`, reviews `classifiedEntries`, resolves active-owner-blocker rows for the local Excel corpus and loop-manager state, keeps archive-only rows out of release wording, and reruns `bun test fixtures/benchmarks/release-proof-index.test.ts` before citing any research-derived claim.',
 	allowedWording:
-		'Do not promote research-surface-hygiene as release wording today. Allowed wording: untriaged research/tmp material is a release hygiene blocker requiring accepted-evidence, active-blocker, or archive-only classification before citation.',
+		'Do not promote research-surface-hygiene as release wording today. Allowed wording: current research/tmp material is routed as accepted-evidence, active-owner-blocker, or archive-only, and raw research paths remain non-citeable for release claims.',
 	evidenceWeHave: [
-		'Current board/state shows unclassified research surface in `research/`, `research/experiments/`, `research/docs-archive/`, `research/excel-corpus/`, `research/topics/`, `scripts/ascend-loop-manager.ts`, and `tmp/ascend-loop-manager/`.',
-		'Release-proof index already blocks research-surface-hygiene promotion and keeps untriaged research files out of top-two release wording.',
+		'`bun run fixtures/benchmarks/release-proof-index.ts --no-timings --research-hygiene-json` classifies the current visible research inventory into accepted-evidence, active-owner-blocker, and archive-only rows.',
+		'The current fixture-decision research entry is routed to accepted evidence only through the compact fixture-decision proof packet; raw experiment notes remain non-citeable.',
+		'The local Excel corpus (`research/excel-corpus/`) plus loop-manager script/state (`scripts/ascend-loop-manager.ts`, `tmp/ascend-loop-manager/`) are active owner blockers; broad research notes are archive-only unless a future owner converts one finding into release-proof evidence.',
 	],
 	evidenceMissing: [
-		'Owner-classified inventory from `git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager` and `bun run fixtures/benchmarks/release-proof-index.ts --no-timings --research-hygiene-json`, with each path mapped to accepted evidence, active owner blocker, or archive-only.',
+		'Product/release owner review of `classifiedEntries` from `git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager` and `bun run fixtures/benchmarks/release-proof-index.ts --no-timings --research-hygiene-json`, including whether the local Excel corpus becomes approved public fixtures, private/local-only diagnostics, or archive/deletion candidates.',
+		'Release owner decision for whether `scripts/ascend-loop-manager.ts` and `tmp/ascend-loop-manager/` should be tracked, ignored, or archived as operational steering state.',
 		'Passing `bun test fixtures/benchmarks/release-proof-index.test.ts` proving any promoted research item has evidence we have, evidence missing, QSS contrast, allowed wording, forbidden wording, and next owner action.',
 	],
 	forbiddenWording: [

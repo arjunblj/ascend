@@ -661,6 +661,22 @@ describe('Ascend API server', () => {
 		})
 	})
 
+	test('/pivots rejects invalid materialization modes before opening workbooks', async () => {
+		const missing = join(tmpdir(), `ascend-api-pivot-mode-${Date.now()}.xlsx`)
+		const result = await postJson('/pivots', { file: missing, mode: 'refresh' })
+
+		expect(result.status).toBe(400)
+		expect(result.body.ok).toBe(false)
+		expect(result.body.error).toMatchObject({
+			code: 'VALIDATION_ERROR',
+			message: 'Invalid pivot output materialize mode',
+			retryable: true,
+			retryStrategy: 'modified',
+			details: { field: 'mode', allowedModes: ['missing', 'mismatches', 'all'] },
+			suggestedFix: expect.stringContaining('missing, mismatches, or all'),
+		})
+	})
+
 	test('/dump rejects missing workbook references with structured retry guidance', async () => {
 		const result = await postJson('/dump', {})
 
@@ -673,6 +689,26 @@ describe('Ascend API server', () => {
 			retryStrategy: 'modified',
 			details: { required: ['file'] },
 			suggestedFix: expect.stringContaining('Pass file so Ascend can dump replayable operations'),
+		})
+	})
+
+	test('/dump rejects conflicting replay filters before opening workbooks', async () => {
+		const missing = join(tmpdir(), `ascend-api-dump-filter-${Date.now()}.xlsx`)
+		const result = await postJson('/dump', {
+			file: missing,
+			valuesOnly: true,
+			formulasOnly: true,
+		})
+
+		expect(result.status).toBe(400)
+		expect(result.body.ok).toBe(false)
+		expect(result.body.error).toMatchObject({
+			code: 'VALIDATION_ERROR',
+			message: 'Conflicting dump replay filters',
+			retryable: true,
+			retryStrategy: 'modified',
+			details: { mutuallyExclusive: ['valuesOnly', 'formulasOnly'] },
+			suggestedFix: expect.stringContaining('Use either valuesOnly or formulasOnly'),
 		})
 	})
 
@@ -708,6 +744,27 @@ describe('Ascend API server', () => {
 		})
 	})
 
+	test('/template-merge rejects conflicting replay filters before opening workbooks', async () => {
+		const missing = join(tmpdir(), `ascend-api-template-filter-${Date.now()}.xlsx`)
+		const result = await postJson('/template-merge', {
+			file: missing,
+			data: { name: 'Ascend' },
+			valuesOnly: true,
+			formulasOnly: true,
+		})
+
+		expect(result.status).toBe(400)
+		expect(result.body.ok).toBe(false)
+		expect(result.body.error).toMatchObject({
+			code: 'VALIDATION_ERROR',
+			message: 'Conflicting template-merge replay filters',
+			retryable: true,
+			retryStrategy: 'modified',
+			details: { mutuallyExclusive: ['valuesOnly', 'formulasOnly'] },
+			suggestedFix: expect.stringContaining('Use either valuesOnly or formulasOnly'),
+		})
+	})
+
 	test('/read rejects missing workbook references with structured retry guidance', async () => {
 		const result = await postJson('/read', { range: 'A1:A1' })
 
@@ -735,6 +792,30 @@ describe('Ascend API server', () => {
 			retryStrategy: 'modified',
 			details: { required: ['range'] },
 			suggestedFix: expect.stringContaining('Pass range such as A1:D20'),
+		})
+	})
+
+	test('/read rejects invalid formats before opening workbooks', async () => {
+		const missing = join(tmpdir(), `ascend-api-read-format-${Date.now()}.xlsx`)
+		const result = await postJson('/read', {
+			file: missing,
+			range: 'A1:A1',
+			format: 'html',
+		})
+
+		expect(result.status).toBe(400)
+		expect(result.body.ok).toBe(false)
+		expect(result.body.error).toMatchObject({
+			code: 'VALIDATION_ERROR',
+			message: 'Invalid read format: html',
+			retryable: true,
+			retryStrategy: 'modified',
+			details: {
+				field: 'format',
+				received: 'html',
+				allowedFormats: ['cells', 'rows', 'objects', 'compact'],
+			},
+			suggestedFix: expect.stringContaining('cells, rows, objects, or compact'),
 		})
 	})
 
@@ -974,6 +1055,26 @@ describe('Ascend API server', () => {
 			retryable: true,
 			retryStrategy: 'modified',
 			details: { required: ['format'], allowedFormats: ['csv', 'tsv', 'json', 'xlsx', 'xlsm'] },
+			suggestedFix: expect.stringContaining('csv, tsv, json, xlsx, or xlsm'),
+		})
+	})
+
+	test('/export rejects unsupported formats before opening workbooks', async () => {
+		const missing = join(tmpdir(), `ascend-api-export-format-${Date.now()}.xlsx`)
+		const result = await postJson('/export', { file: missing, format: 'pdf' })
+
+		expect(result.status).toBe(400)
+		expect(result.body.ok).toBe(false)
+		expect(result.body.error).toMatchObject({
+			code: 'VALIDATION_ERROR',
+			message: 'Unsupported export format: pdf',
+			retryable: true,
+			retryStrategy: 'modified',
+			details: {
+				field: 'format',
+				received: 'pdf',
+				allowedFormats: ['csv', 'tsv', 'json', 'xlsx', 'xlsm'],
+			},
 			suggestedFix: expect.stringContaining('csv, tsv, json, xlsx, or xlsm'),
 		})
 	})

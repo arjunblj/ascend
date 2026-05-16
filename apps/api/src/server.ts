@@ -333,6 +333,19 @@ function missingExportFormatError(): AscendError {
 	})
 }
 
+function unsupportedExportFormatError(format: string): AscendError {
+	return ascendError('VALIDATION_ERROR', `Unsupported export format: ${format}`, {
+		retryable: true,
+		retryStrategy: 'modified',
+		details: {
+			field: 'format',
+			received: format,
+			allowedFormats: ['csv', 'tsv', 'json', 'xlsx', 'xlsm'],
+		},
+		suggestedFix: 'Use format csv, tsv, json, xlsx, or xlsm.',
+	})
+}
+
 function missingTemplateMergeDataError(): AscendError {
 	return ascendError('VALIDATION_ERROR', 'Missing or invalid template data', {
 		retryable: true,
@@ -340,6 +353,37 @@ function missingTemplateMergeDataError(): AscendError {
 		details: { required: ['data'] },
 		suggestedFix:
 			'Pass data as an object mapping template placeholder names to replacement values.',
+	})
+}
+
+function conflictingReplayBatchFilterError(kind: 'dump' | 'template-merge'): AscendError {
+	return ascendError('VALIDATION_ERROR', `Conflicting ${kind} replay filters`, {
+		retryable: true,
+		retryStrategy: 'modified',
+		details: { mutuallyExclusive: ['valuesOnly', 'formulasOnly'] },
+		suggestedFix: 'Use either valuesOnly or formulasOnly, not both.',
+	})
+}
+
+function invalidPivotOutputModeError(): AscendError {
+	return ascendError('VALIDATION_ERROR', 'Invalid pivot output materialize mode', {
+		retryable: true,
+		retryStrategy: 'modified',
+		details: { field: 'mode', allowedModes: ['missing', 'mismatches', 'all'] },
+		suggestedFix: 'Use mode missing, mismatches, or all.',
+	})
+}
+
+function invalidReadFormatError(format: string): AscendError {
+	return ascendError('VALIDATION_ERROR', `Invalid read format: ${format}`, {
+		retryable: true,
+		retryStrategy: 'modified',
+		details: {
+			field: 'format',
+			received: format,
+			allowedFormats: ['cells', 'rows', 'objects', 'compact'],
+		},
+		suggestedFix: 'Use read format cells, rows, objects, or compact.',
 	})
 }
 
@@ -865,7 +909,7 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 					return jsonFailureError(replayBatchLoadOptionsError('Dump', unsupportedLoadOptions), 400)
 				}
 				if (body?.valuesOnly === true && body?.formulasOnly === true) {
-					return jsonFailure('Use either valuesOnly or formulasOnly, not both', 400)
+					return jsonFailureError(conflictingReplayBatchFilterError('dump'), 400)
 				}
 				try {
 					const wb = await AscendWorkbook.open(file)
@@ -903,7 +947,7 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 					return jsonFailureError(missingTemplateMergeDataError(), 400)
 				}
 				if (body.valuesOnly === true && body.formulasOnly === true) {
-					return jsonFailure('Use either valuesOnly or formulasOnly, not both', 400)
+					return jsonFailureError(conflictingReplayBatchFilterError('template-merge'), 400)
 				}
 				try {
 					const wb = await AscendWorkbook.open(file)
@@ -946,7 +990,7 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 					body && typeof body === 'object' ? (body as Record<string, unknown>) : null,
 				)
 				if (!options) {
-					return jsonFailure('Invalid mode. Use one of: missing, mismatches, all', 400)
+					return jsonFailureError(invalidPivotOutputModeError(), 400)
 				}
 				try {
 					const wb = await WorkbookDocument.open(file, {
@@ -986,6 +1030,14 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 				try {
 					const sheetName = body ? requireString(body, 'sheet') : null
 					const format = (body ? requireString(body, 'format') : null) ?? 'cells'
+					if (
+						format !== 'cells' &&
+						format !== 'rows' &&
+						format !== 'objects' &&
+						format !== 'compact'
+					) {
+						return jsonFailureError(invalidReadFormatError(format), 400)
+					}
 					const headers = body ? requireArray(body, 'headers') : null
 					const changedSince = body ? requireString(body, 'changedSince') : null
 					const rowOffset = body ? requireOptionalNumber(body, 'rowOffset') : undefined
@@ -1046,7 +1098,6 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 						)
 						return jsonSuccess(withPartialLoadInfo(info, wb))
 					}
-					if (format !== 'cells') return jsonFailure('Invalid read format', 400)
 					const info = sheet.readWindow(range, {
 						...(rowOffset !== undefined ? { rowOffset } : {}),
 						...(rowLimit !== undefined ? { rowLimit } : {}),
@@ -1541,10 +1592,10 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 				const format = body ? requireString(body, 'format') : null
 				if (!file) return jsonFailureError(missingAgentWorkflowFileError('export'), 400)
 				if (!format) return jsonFailureError(missingExportFormatError(), 400)
+				const fmt = normalizeExportFormat(format)
+				if (!fmt) return jsonFailureError(unsupportedExportFormatError(format), 400)
 				try {
 					const wb = await AscendWorkbook.open(file)
-					const fmt = normalizeExportFormat(format)
-					if (!fmt) return jsonFailure(`Unsupported format: ${format}`, 400)
 					if (fmt === 'xlsx' || fmt === 'xlsm') {
 						const bytes = wb.toBytes()
 						return binaryResponse(

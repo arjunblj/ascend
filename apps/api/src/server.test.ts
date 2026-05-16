@@ -693,6 +693,21 @@ describe('Ascend API server', () => {
 		})
 	})
 
+	test('/template-merge rejects missing template data with structured retry guidance', async () => {
+		const result = await postJson('/template-merge', { file: TEMP_FILE })
+
+		expect(result.status).toBe(400)
+		expect(result.body.ok).toBe(false)
+		expect(result.body.error).toMatchObject({
+			code: 'VALIDATION_ERROR',
+			message: 'Missing or invalid template data',
+			retryable: true,
+			retryStrategy: 'modified',
+			details: { required: ['data'] },
+			suggestedFix: expect.stringContaining('mapping template placeholder names'),
+		})
+	})
+
 	test('/read rejects missing workbook references with structured retry guidance', async () => {
 		const result = await postJson('/read', { range: 'A1:A1' })
 

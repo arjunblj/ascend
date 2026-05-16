@@ -333,6 +333,16 @@ function missingExportFormatError(): AscendError {
 	})
 }
 
+function missingTemplateMergeDataError(): AscendError {
+	return ascendError('VALIDATION_ERROR', 'Missing or invalid template data', {
+		retryable: true,
+		retryStrategy: 'modified',
+		details: { required: ['data'] },
+		suggestedFix:
+			'Pass data as an object mapping template placeholder names to replacement values.',
+	})
+}
+
 function replayBatchLoadOptionsError(kind: string, options: readonly string[]): AscendError {
 	return ascendError(
 		'VALIDATION_ERROR',
@@ -890,7 +900,7 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 					)
 				}
 				if (!body || !body.data || Array.isArray(body.data) || typeof body.data !== 'object') {
-					return jsonFailure('Missing or invalid template data', 400)
+					return jsonFailureError(missingTemplateMergeDataError(), 400)
 				}
 				if (body.valuesOnly === true && body.formulasOnly === true) {
 					return jsonFailure('Use either valuesOnly or formulasOnly, not both', 400)

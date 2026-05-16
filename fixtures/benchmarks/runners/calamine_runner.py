@@ -82,6 +82,25 @@ def read_materialized(path: Path, selected_sheet: str | None = None) -> Any:
         workbook.close()
 
 
+def read_metadata_only(path: Path) -> dict[str, str | int | bool]:
+    workbook = python_calamine.load_workbook(path)
+    try:
+        sheet_names = list(workbook.sheet_names)
+        return {
+            "metadataOnlyRead": True,
+            "sourceSheetCount": len(sheet_names),
+            "loadedSheetCount": len(sheet_names),
+            "loadedSheetNames": ",".join(sheet_names),
+            "hasAllSheets": True,
+            "cellsHydrated": False,
+            "cellCount": 0,
+            "runnerVersion": RUNNER_VERSION,
+            "runnerLoadMode": "metadata-only",
+        }
+    finally:
+        workbook.close()
+
+
 def read_assertions(
     sheets: list[tuple[str, list[list[Any]]]],
     source_sheet_names: list[str] | None = None,
@@ -147,8 +166,11 @@ def main() -> None:
     parser.add_argument("--repeat", type=int, default=1)
     parser.add_argument("--warmup", type=int, default=0)
     parser.add_argument("--selected-sheet")
+    parser.add_argument("--metadata-only", action="store_true")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
+    if args.selected_sheet is not None and args.metadata_only:
+        parser.error("--selected-sheet cannot be combined with --metadata-only")
 
     path = Path(args.file)
     source_sheet_names: list[str] | None = None
@@ -159,12 +181,20 @@ def main() -> None:
         finally:
             workbook.close()
     for _ in range(max(0, args.warmup)):
+        if args.metadata_only:
+            read_metadata_only(path)
+            continue
         read_materialized(path, args.selected_sheet)
     samples: list[dict[str, float]] = []
     assertions: dict[str, str | int | bool | None] | None = None
     for _ in range(max(1, args.repeat)):
         before = memory_baseline()
         start = time.perf_counter()
+        if args.metadata_only:
+            assertions = read_metadata_only(path)
+            duration_ms = (time.perf_counter() - start) * 1000
+            samples.append(sample_with_memory(duration_ms, before))
+            continue
         sheets = read_materialized(path, args.selected_sheet)
         duration_ms = (time.perf_counter() - start) * 1000
         assertions = read_assertions(sheets, source_sheet_names, args.selected_sheet)

@@ -362,6 +362,7 @@ export function competitorMatches(library: string, selection: CompetitorSelectio
 		library === 'openpyxl' ||
 		library === 'openpyxl-write-only' ||
 		library === 'openpyxl-metadata-only' ||
+		library === 'python-calamine-metadata-only' ||
 		library === 'xlsxwriter' ||
 		library === 'xlsxwriter-constant-memory' ||
 		library === 'pyexcelerate' ||

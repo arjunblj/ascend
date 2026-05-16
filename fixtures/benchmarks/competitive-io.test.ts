@@ -877,7 +877,7 @@ describe('competitive IO helpers', () => {
 		{ timeout: 30_000 },
 	)
 
-	test.skipIf(!openpyxlRunnerAvailable)(
+	test.skipIf(!openpyxlRunnerAvailable || !pythonCalamineRunnerAvailable)(
 		'metadata-only external runners share a comparable timing lane',
 		async () => {
 			const payload = await runCompetitiveIoJson([
@@ -892,7 +892,7 @@ describe('competitive IO helpers', () => {
 				'--execution-scope',
 				'external-process',
 				'--libraries',
-				'ascend-external-metadata-only,sheetjs-metadata-only,openpyxl-metadata-only',
+				'ascend-external-metadata-only,sheetjs-metadata-only,openpyxl-metadata-only,python-calamine-metadata-only',
 				'--rows',
 				'5',
 				'--cols',
@@ -927,6 +927,13 @@ describe('competitive IO helpers', () => {
 				},
 				{
 					library: 'openpyxl-metadata-only',
+					status: 'pass',
+					timingLane: 'external-internal-metadata-only-load-timing:metadata-only',
+					metadataOnlyRead: true,
+					cellsHydrated: false,
+				},
+				{
+					library: 'python-calamine-metadata-only',
 					status: 'pass',
 					timingLane: 'external-internal-metadata-only-load-timing:metadata-only',
 					metadataOnlyRead: true,

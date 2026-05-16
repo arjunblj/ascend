@@ -255,13 +255,10 @@ const CLAIM_PROFILES: Record<ClaimProfileName, ClaimProfile> = {
 					{ label: 'Ascend', libraries: ASCEND_READ_LIBRARIES },
 					{ label: 'SheetJS', libraries: ['sheetjs', 'sheetjs-metadata-only'] },
 					{ label: 'openpyxl', libraries: ['openpyxl-metadata-only'] },
+					{ label: 'Calamine', libraries: ['python-calamine-metadata-only'] },
 				],
 				capabilityGaps: [
 					{ label: 'ExcelJS', libraries: ['exceljs'] },
-					{
-						label: 'Calamine',
-						libraries: ['calamine', 'python-calamine', 'rust-calamine', 'fastexcel'],
-					},
 					{ label: 'Apache POI', libraries: ['apache-poi', 'poi'] },
 					{ label: 'ClosedXML', libraries: ['closedxml'] },
 				],

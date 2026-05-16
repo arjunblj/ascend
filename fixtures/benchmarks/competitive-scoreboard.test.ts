@@ -723,8 +723,18 @@ describe('buildCompetitiveScoreboard', () => {
 				operationProfile: 'read-metadata-only',
 				peakRssBytes: 3_000,
 			}),
+			matrixCase({
+				library: 'python-calamine-metadata-only',
+				category: 'read',
+				workload: 'metadata-only',
+				repeat: 5,
+				operationProfile: 'read-metadata-only',
+				medianMs: 1,
+				peakRssBytes: 4_000,
+			}),
 		])
 		const inspection = inspectScoreboardCoverage(suite, 'xlsx-read-sota')
+		const scoreboard = buildCompetitiveScoreboard(suite)
 
 		expect(inspection.failures).not.toContain(
 			'xlsx-read-sota missing competitor=SheetJS category=read operationProfile=read-selected-values workload=selected-sheet',
@@ -750,6 +760,15 @@ describe('buildCompetitiveScoreboard', () => {
 		expect(inspection.gaps).not.toContain(
 			'xlsx-read-sota coverage-gap competitor=openpyxl category=read operationProfile=read-metadata-only workload=metadata-only reason=unsupported-operation',
 		)
+		expect(inspection.failures).not.toContain(
+			'xlsx-read-sota missing competitor=Calamine category=read operationProfile=read-metadata-only workload=metadata-only',
+		)
+		expect(inspection.gaps).not.toContain(
+			'xlsx-read-sota coverage-gap competitor=Calamine category=read operationProfile=read-metadata-only workload=metadata-only reason=unsupported-operation',
+		)
+		expect(assertScoreboardProfileLeader(scoreboard, 'xlsx-read-sota', 'ascend')).toEqual([
+			'xlsx-read-sota:read:read-metadata-only:in-process-generated-metadata-only:metadata-only winner=python-calamine-metadata-only expected=ascend',
+		])
 	})
 
 	test('xlsx read SOTA profile accepts Ascend external runner evidence', () => {

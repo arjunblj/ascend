@@ -1052,13 +1052,20 @@ describe('release proof evidence index', () => {
 			'bun test fixtures/benchmarks/viewport-patch-proof.test.ts',
 		)
 		for (const item of index.releaseDecisionBoard.doNotPromoteYet) {
+			const qssContrast = item.qssContrast.join('\n')
 			expect(item.evidenceWeHave).toEqual(expect.arrayContaining([expect.any(String)]))
 			expect(item.evidenceMissing).toEqual(expect.arrayContaining([expect.any(String)]))
 			expect(item.qssContrast).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(qssContrast).not.toContain(
+				'QSS contrast is blocked until this diagnostic evidence changes a top-two release claim.',
+			)
 			expect(item.allowedWording).toContain('Do not promote')
 			expect(item.allowedWording).not.toContain('owner planning or research evidence')
 			expect(item.forbiddenWording).toEqual(expect.arrayContaining([expect.any(String)]))
 			expect(item.nextOwnerAction.length).toBeGreaterThan(0)
+			expect(item.nextOwnerAction).not.toContain(
+				'No owner action is release-blocking until this claim changes the top-two release gate.',
+			)
 		}
 		expect(index.releaseDecisionBoard.doNotPromoteYet[0]).toMatchObject({
 			evidenceWeHave: expect.arrayContaining([

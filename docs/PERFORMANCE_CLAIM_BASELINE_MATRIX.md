@@ -12,8 +12,8 @@ release wording.
 
 No broad XLSX read, SOTA, or QSS-leapfrog speed claim is promotable from this artifact. The cycles below are useful external baseline evidence for scoped release workflows, but they are not a clean full-profile claim because:
 
-- `competitive-scoreboard --require-profile xlsx-read-sota` fails coverage for the rest of the profile.
-- The recorded cycles cover public/reproducible generated `dense-values`, `sparse-wide`, `styles-heavy`, `formula-heavy`, `table-heavy`, `feature-rich`, `selected-sheet`, `metadata-only`, and `string-heavy` workloads over `raw-ooxml`, not the full profile.
+- `competitive-scoreboard --require-profile xlsx-read-sota` still fails for a single-run full-profile promotion because ClosedXML, fastxlsx, and several unsupported/semantic-mismatch rows remain explicit blockers.
+- The recorded cycles cover public/reproducible generated `dense-values`, `sparse-wide`, `styles-heavy`, `formula-heavy`, `table-heavy`, `feature-rich`, `selected-sheet`, `metadata-only`, `warm-workflow`, and `string-heavy` workloads over `raw-ooxml`, but they are per-workload evidence rows rather than one clean all-workload promotion run.
 - Several external runners were unavailable or blocked in the clean benchmark worktree. They are recorded as blockers, not wins.
 - Several timing lanes are semantically related but not one unified timing boundary. Do not collapse in-process, preloaded-bytes, file-path, row-stream, and materialized-workbook timings into a single "wins everything" claim.
 
@@ -55,11 +55,12 @@ Acceptance evidence:
   input shape, and semantic comparability are recorded for each comparable row.
 - Failed, missing, or semantically mismatched runners are not counted as wins.
 
-Stop condition: do not optimize further from the partial winning rows
+Stop condition: do not optimize further from the measured winning rows
 `dense-values`, `sparse-wide`, `styles-heavy`, `formula-heavy`, `table-heavy`,
-and `string-heavy`. The `feature-rich` row identified a meaningful loss and was
-optimized at `05656d4e`; continue only on the next named loss, unstable tail, or
-memory/latency tradeoff worth production work.
+`selected-sheet`, `metadata-only`, `warm-workflow`, and `string-heavy`. The
+`feature-rich` row identified a meaningful loss and was optimized at `05656d4e`;
+continue only on the next named loss, unstable tail, or memory/latency tradeoff
+worth production work.
 
 ## Cycle: Dense Value Read
 
@@ -685,6 +686,85 @@ Forbidden wording:
 
 Next action: defer production optimization. Continue profile expansion with `warm-workflow`.
 
+## Cycle: Warm Workflow Value Read
+
+Classification: defer. No production optimization is justified from this cycle.
+
+Workflow: XLSX warm open/inspect value read.
+
+Why it matters for release: this is a required `xlsx-read-sota` workload and represents repeated agent inspection after the runtime and parsers are already warm.
+
+Public/tracked-clean input: `competitive-io` generated `warm-workflow` workbook using tracked benchmark code from detached commit `add13c79`, `raw-ooxml` source, 2000 rows x 20 columns, 40,000 logical cells, 40,000 populated cells, 112,699 input bytes. No private corpus or local research workbook was used.
+
+Commands:
+
+```bash
+git worktree add --detach /private/tmp/ascend-perf-hillclimb-add13c79 add13c79
+cd /private/tmp/ascend-perf-hillclimb-add13c79
+bun install --frozen-lockfile
+env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-io.ts --json --category read --competitor all --workload warm-workflow --read-source raw-ooxml --repeat 5 --warmup 1 --validation-mode each --runner-manifest fixtures/benchmarks/runners/ascend-python-readers.manifest.json > /private/tmp/ascend-perf-hillclimb-add13c79-runs/warm-workflow-read-values.json
+env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-scoreboard.ts /private/tmp/ascend-perf-hillclimb-add13c79-runs/warm-workflow-read-values.json --json --metric medianMs --require-profile xlsx-read-sota > /private/tmp/ascend-perf-hillclimb-add13c79-runs/warm-workflow-scoreboard.json
+```
+
+Environment:
+
+- Commit: `add13c79`
+- Worktree: clean detached worktree at `/private/tmp/ascend-perf-hillclimb-add13c79`; `git status --short --branch` reported `## HEAD (no branch)` with no changed paths after the run.
+- OS: Darwin 25.4.0 arm64
+- Bun: `1.3.13`
+- Python: `3.13.3`
+- Cargo: `1.91.1`
+- Maven: `3.9.15`, Java runtime `25.0.2` as reported by Maven
+- .NET: `8.0.125`
+- Go: `go1.26.3 darwin/arm64`
+
+Raw output:
+
+```text
+/private/tmp/ascend-perf-hillclimb-add13c79-runs/warm-workflow-read-values.json
+/private/tmp/ascend-perf-hillclimb-add13c79-runs/warm-workflow-scoreboard.json
+```
+
+All successful timing rows below use 5 measured samples after 1 warmup. Rows marked `blocked` or `runner unavailable` are non-ranking status rows for claim wording and are not counted as wins.
+
+| Competitor | Status | Representative row | Median ms | P95 ms | CV | Peak RSS/heap | Semantic comparability |
+| --- | --- | --- | ---: | ---: | ---: | ---: | --- |
+| Ascend operation bytes | ran/won | `ascend-readxlsx-raw-values-operation-bytes` | 3.244 | 3.297 | 0.016 | 92.5 MiB | Warm value-read operation over preloaded bytes with ordered semantic assertions. Comparable for operation-timing warm workflow only. |
+| Ascend operation path | ran/won | `ascend-readxlsx-raw-values-operation-path` | 3.773 | 3.905 | 0.042 | 91.3 MiB | Warm value-read operation from file path. Comparable for operation-timing warm workflow only. |
+| FastExcel Java | ran/lost | `fastexcel-java` | 14.338 | 38.646 | 0.514 | 344.0 MiB heap | Streaming value read. Tail is noisy; 4.42x slower than Ascend operation-bytes by median. |
+| python-calamine | ran/lost | `python-calamine` | 16.621 | 50.326 | 0.657 | 42.9 MiB | File-path materialized value read. Lower memory; tail is noisy; 5.12x slower by median. |
+| Polars calamine | ran/lost | `polars-calamine` | 17.451 | 38.641 | 0.442 | 104.6 MiB | Value read through Polars/calamine. Tail is noisy; 5.38x slower by median. |
+| rust-calamine | ran/lost | `rust-calamine` | 42.163 | 51.009 | 0.108 | 12.2 MiB | File-path materialized value read. Much lower memory; 13.00x slower by median. |
+| Apache POI | ran/lost | `apache-poi` | 82.584 | 176.589 | 0.444 | 352.0 MiB heap | Materialized workbook value read. Tail is noisy; 25.46x slower by median. |
+| Polars xlsx2csv | ran/lost | `polars-xlsx2csv` | 114.935 | 174.521 | 0.210 | 75.1 MiB | Value read through xlsx2csv path. 35.43x slower by median. |
+| Excelize | ran/lost | `excelize` | 119.388 | 124.169 | 0.026 | 47.3 MiB | File-path materialized value read. Lower memory; 36.80x slower by median. |
+| Polars openpyxl | ran/lost | `polars-openpyxl` | 219.728 | 247.138 | 0.148 | 118.8 MiB | Value read through openpyxl engine. 67.73x slower by median. |
+| pyopenxlsx | ran/lost | `pyopenxlsx` | 495.510 | 689.964 | 0.286 | 74.7 MiB | Cell materialization. Tail is noisy; 152.75x slower by median. |
+| ClosedXML | blocked | `closedxml` | n/a | n/a | n/a | n/a | Not counted. The .NET runner failed with `CSSM_ModuleLoad(): One or more parameters passed to a function were not valid.` |
+| fastxlsx | runner unavailable | `fastxlsx` | n/a | n/a | n/a | n/a | Not counted. Python runner failed because `fastxlsx` is not installed in the clean Python environment. |
+
+In-process JavaScript reference:
+
+| Library | Status | Median ms | P95 ms | CV | Peak RSS |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Ascend in-process | ran/won | 2.911 | 3.259 | 0.081 | 190.6 MiB |
+| SheetJS `xlsx@0.18.5` | ran/lost | 26.839 | 30.851 | 0.067 | 285.3 MiB |
+| ExcelJS `4.4.0` | ran/lost | 42.433 | 55.173 | 0.151 | 317.6 MiB |
+
+Coverage gate result: failed only because the single-workload scoreboard cannot satisfy earlier workload rows and ClosedXML remains blocked on `warm-workflow`. The warm-workflow comparable rows are ran/won for Ascend against completed comparable runners, but broad speed wording still requires a single clean full-profile promotion run or explicit per-runner blockers.
+
+Humble allowed wording:
+
+> On the generated `warm-workflow` 2000x20 raw OOXML workload at commit `add13c79`, Ascend's warm value-read operation rows were faster than the completed comparable external runners. ClosedXML and fastxlsx are still blocker/unavailable rows and are not counted.
+
+Forbidden wording:
+
+- "Ascend is the fastest XLSX reader."
+- "Ascend beats ClosedXML or fastxlsx" from this run.
+- Any wording that counts blocked/unavailable runners or a single-workload run as a full-profile win.
+
+Next action: defer production optimization. Run or assemble a current-commit full-profile gate next; if it still fails only for explicit blocked, unavailable, unsupported, or semantic-mismatch rows, keep the claim scoped and attack the highest-impact blocker.
+
 ## Workflow
 
 Workflow: XLSX open/inspect value read for a string-heavy worksheet.
@@ -782,4 +862,4 @@ Optimize: no production optimization from the partial profile rows. The top rele
 
 Kill: no current optimization is killed by this row.
 
-Defer: yes. Defer all broad read-speed wording until a clean-tree full `xlsx-read-sota` run either passes coverage or records per-runner blockers without counting them as wins. The immediate next action is `warm-workflow` profile expansion plus runner hardening for FastExcel Java on `sparse-wide`, ClosedXML, fastxlsx, rich-metadata semantic mismatches, selected-sheet unsupported-operation gaps, and metadata-only unsupported-operation gaps, followed by the full profile run.
+Defer: yes. Defer all broad read-speed wording until a clean-tree full `xlsx-read-sota` run either passes coverage or records per-runner blockers without counting them as wins. The immediate next action is a current-commit full-profile gate or merged profile artifact, plus runner hardening for ClosedXML, fastxlsx, rich-metadata semantic mismatches, selected-sheet unsupported-operation gaps, and metadata-only unsupported-operation gaps.

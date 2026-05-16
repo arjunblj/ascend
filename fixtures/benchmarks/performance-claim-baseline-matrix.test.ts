@@ -35,6 +35,7 @@ const RECORDED_WORKLOADS = [
 	'feature-rich',
 	'selected-sheet',
 	'metadata-only',
+	'warm-workflow',
 	'string-heavy',
 ]
 
@@ -58,7 +59,7 @@ describe('performance claim baseline matrix', () => {
 		expect(markdown).toContain('Owner: benchmarking/external baselines.')
 		expect(markdown).toContain('broad read-speed and QSS-leapfrog performance wording is blocked')
 		expect(markdown).toContain(
-			'do not optimize further from the partial winning rows\n`dense-values`, `sparse-wide`, `styles-heavy`, `formula-heavy`, `table-heavy`,\nand `string-heavy`',
+			'do not optimize further from the measured winning rows\n`dense-values`, `sparse-wide`, `styles-heavy`, `formula-heavy`, `table-heavy`,\n`selected-sheet`, `metadata-only`, `warm-workflow`, and `string-heavy`',
 		)
 		expect(markdown).toContain(
 			'Failed, missing, or semantically mismatched runners are not counted as wins.',
@@ -197,13 +198,25 @@ describe('performance claim baseline matrix', () => {
 		)
 		expect(markdown).toContain('Continue profile expansion with `warm-workflow`')
 
+		expect(markdown).toContain('## Cycle: Warm Workflow Value Read')
+		expect(markdown).toContain('generated `warm-workflow` workbook')
+		expect(markdown).toContain('Commit: `add13c79`')
+		expect(markdown).toContain('112,699 input bytes')
+		expect(markdown).toContain(
+			'| Ascend operation bytes | ran/won | `ascend-readxlsx-raw-values-operation-bytes` | 3.244 | 3.297 | 0.016 | 92.5 MiB |',
+		)
+		expect(markdown).toContain('| FastExcel Java | ran/lost | `fastexcel-java` | 14.338')
+		expect(markdown).toContain('| ClosedXML | blocked | `closedxml` | n/a')
+		expect(markdown).toContain('| fastxlsx | runner unavailable | `fastxlsx` | n/a')
+		expect(markdown).toContain('Run or assemble a current-commit full-profile gate next')
+
 		expect(markdown).toContain('Promote: no.')
 		expect(markdown).toContain(
 			'Optimize: no production optimization from the partial profile rows.',
 		)
 		expect(markdown).toContain('Defer: yes.')
 		expect(markdown).toContain(
-			'The immediate next action is `warm-workflow` profile expansion plus runner hardening for FastExcel Java on `sparse-wide`, ClosedXML, fastxlsx, rich-metadata semantic mismatches, selected-sheet unsupported-operation gaps, and metadata-only unsupported-operation gaps',
+			'The immediate next action is a current-commit full-profile gate or merged profile artifact, plus runner hardening for ClosedXML, fastxlsx, rich-metadata semantic mismatches, selected-sheet unsupported-operation gaps, and metadata-only unsupported-operation gaps',
 		)
 	})
 })

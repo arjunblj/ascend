@@ -2222,6 +2222,21 @@ function ownerDecisionArtifactsFor(
 					boundary:
 						'Owner decision artifact only. It constrains package-action wording without replacing package-action proof gates.',
 				},
+				{
+					ownerLoop: 'performance',
+					artifactId: 'package-action-streaming-matrix-evidence',
+					path: 'fixtures/benchmarks/release-proof-index.ts',
+					validationCommand:
+						'bun run fixtures/benchmarks/package-action-proof.ts --no-timings --json',
+					decision:
+						'Use the streaming matrix as an owner decision point: current evidence is representative proof, not full streaming parity.',
+					nextAction:
+						'Performance owner either accepts representative passthrough/regenerate/add/drop streaming proof for narrow package-action wording, or expands generated edge/error and signature cases before any parity wording.',
+					forbiddenShortcut:
+						'Do not describe representative streaming cases, public macro/chart accounting, or non-streaming generated edge cases as full streaming writer parity.',
+					boundary:
+						'Owner decision artifact only. It routes the streaming blocker without authorizing a speed claim or package-action parity claim.',
+				},
 			]
 	}
 }

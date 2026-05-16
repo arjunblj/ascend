@@ -988,6 +988,15 @@ describe('release proof evidence index', () => {
 					path: 'docs/EXCEL_BEHAVIOR_COMPATIBILITY_MATRIX.md',
 					forbiddenShortcut: expect.stringContaining('arbitrary unknown-part preservation'),
 				}),
+				expect.objectContaining({
+					ownerLoop: 'performance',
+					artifactId: 'package-action-streaming-matrix-evidence',
+					path: 'fixtures/benchmarks/release-proof-index.ts',
+					validationCommand:
+						'bun run fixtures/benchmarks/package-action-proof.ts --no-timings --json',
+					nextAction: expect.stringContaining('representative passthrough/regenerate/add/drop'),
+					forbiddenShortcut: expect.stringContaining('full streaming writer parity'),
+				}),
 			]),
 		)
 		expect(packageActionDecision.nextOwnerActions.map((action) => action.requirementId)).toContain(
@@ -1398,6 +1407,11 @@ describe('release proof evidence index', () => {
 		expect(handoff.releaseDecisionBoard.rows[1]).toMatchObject({
 			artifact: 'package-action-proof',
 			claimWordingAllowedToday: 'auditable package-part mutation',
+			ownerDecisionArtifacts: expect.arrayContaining([
+				expect.objectContaining({
+					artifactId: 'package-action-streaming-matrix-evidence',
+				}),
+			]),
 			aPlusBlockingOwnerActions: expect.arrayContaining([
 				expect.objectContaining({ requirementId: 'edge-fixture-policy' }),
 				expect.objectContaining({ requirementId: 'provenance-boundary' }),
@@ -1599,6 +1613,7 @@ describe('release proof evidence index', () => {
 		expect(markdown).toContain('pre-hydration package-feature routing')
 		expect(markdown).toContain('| 2 | auditable package-part mutation |')
 		expect(markdown).toContain('per-part package action accounting')
+		expect(markdown).toContain('performance/package-action-streaming-matrix-evidence')
 		expect(markdown).toContain('release-latency-run: validation-run')
 		expect(markdown).toContain('provenance-boundary: publication-policy')
 		expect(markdown).toContain('Release Packageability Evidence')

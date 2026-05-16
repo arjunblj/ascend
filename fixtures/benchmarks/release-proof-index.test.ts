@@ -956,12 +956,16 @@ describe('release proof evidence index', () => {
 			'release:package-action-proof:compact-report-publication-policy:publication-policy',
 		])
 		for (const row of index.releaseDecisionBoard.topClaimOwnerActionQueue) {
+			expect(row.evidenceWeHave).toEqual(expect.arrayContaining([expect.any(Object)]))
+			expect(row.evidenceMissing).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(row.qssContrast).toEqual(expect.arrayContaining([expect.any(String)]))
 			expect(row.validationCommand.length).toBeGreaterThan(0)
 			expect(row.acceptanceEvidence.length).toBeGreaterThan(0)
 			expect(row.forbiddenShortcut.length).toBeGreaterThan(0)
 			expect(row.allowedWording.length).toBeGreaterThan(0)
 			expect(row.forbiddenWording).toEqual(expect.arrayContaining([expect.any(String)]))
-			expect(row.qssContrast).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(row.nextOwnerAction).toContain(row.validationCommand)
+			expect(row.nextOwnerAction).toContain(row.acceptanceEvidence)
 			expect(row.boundary).toContain('Owner-action queue row for top claims')
 		}
 		expect(index.releaseDecisionBoard.topClaimOwnerActionQueue).toEqual(
@@ -1049,7 +1053,9 @@ describe('release proof evidence index', () => {
 			'performance:practical-latency-contracts:benchmark-corpus-blocker',
 		])
 		for (const row of index.releaseDecisionBoard.blockedOwnerActionQueue) {
+			expect(row.evidenceWeHave).toEqual(expect.arrayContaining([expect.any(String)]))
 			expect(row.evidenceMissing).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(row.qssContrast).toEqual(expect.arrayContaining([expect.any(String)]))
 			expect(row.allowedWording).toContain('Do not promote')
 			expect(row.forbiddenWording).toEqual(expect.arrayContaining([expect.any(String)]))
 			expect(row.nextOwnerAction.length).toBeGreaterThan(0)
@@ -1904,6 +1910,13 @@ describe('release proof evidence index', () => {
 			]),
 		})
 		expect(handoff.releaseDecisionBoard.topClaimOwnerActionQueue).toHaveLength(9)
+		for (const row of handoff.releaseDecisionBoard.topClaimOwnerActionQueue) {
+			expect(row.evidenceWeHave).toEqual(expect.arrayContaining([expect.any(Object)]))
+			expect(row.evidenceMissing).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(row.qssContrast).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(row.nextOwnerAction).toContain(row.validationCommand)
+			expect(row.nextOwnerAction).toContain(row.acceptanceEvidence)
+		}
 		expect(handoff.releaseDecisionBoard.topClaimOwnerActionQueue).toEqual(
 			expect.arrayContaining([
 				expect.objectContaining({
@@ -1991,6 +2004,11 @@ describe('release proof evidence index', () => {
 			claimDowngradeDoNotPromoteNames: ['research-surface-hygiene'],
 		})
 		expect(handoff.releaseDecisionBoard.blockedOwnerActionQueue).toHaveLength(14)
+		for (const row of handoff.releaseDecisionBoard.blockedOwnerActionQueue) {
+			expect(row.evidenceWeHave).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(row.evidenceMissing).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(row.qssContrast).toEqual(expect.arrayContaining([expect.any(String)]))
+		}
 		expect(handoff.releaseDecisionBoard.blockedOwnerActionQueue).toEqual(
 			expect.arrayContaining([
 				expect.objectContaining({
@@ -2178,12 +2196,15 @@ describe('release proof evidence index', () => {
 				readonly ownerLoop?: string
 				readonly requirementId?: string
 				readonly nextStepKind?: string
+				readonly evidenceWeHave?: readonly unknown[]
+				readonly evidenceMissing?: readonly string[]
+				readonly qssContrast?: readonly string[]
 				readonly validationCommand?: string
 				readonly acceptanceEvidence?: string
 				readonly forbiddenShortcut?: string
 				readonly allowedWording?: string
 				readonly forbiddenWording?: readonly string[]
-				readonly qssContrast?: readonly string[]
+				readonly nextOwnerAction?: string
 			}[]
 			readonly doNotPromoteYet?: readonly {
 				readonly name?: string
@@ -2207,7 +2228,9 @@ describe('release proof evidence index', () => {
 				readonly ownerLoop?: string
 				readonly workBlockDisposition?: string
 				readonly validationCommands?: readonly string[]
+				readonly evidenceWeHave?: readonly string[]
 				readonly evidenceMissing?: readonly string[]
+				readonly qssContrast?: readonly string[]
 				readonly allowedWording?: string
 				readonly forbiddenWording?: readonly string[]
 				readonly nextOwnerAction?: string
@@ -2279,12 +2302,17 @@ describe('release proof evidence index', () => {
 			'release:package-action-proof:compact-report-publication-policy:publication-policy',
 		])
 		for (const row of board.topClaimOwnerActionQueue ?? []) {
+			expect(row.evidenceWeHave).toEqual(expect.arrayContaining([expect.any(Object)]))
+			expect(row.evidenceMissing).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(row.qssContrast).toEqual(expect.arrayContaining([expect.any(String)]))
 			expect(row.validationCommand).toEqual(expect.any(String))
 			expect(row.acceptanceEvidence).toEqual(expect.any(String))
 			expect(row.forbiddenShortcut).toEqual(expect.any(String))
 			expect(row.allowedWording).toEqual(expect.any(String))
 			expect(row.forbiddenWording).toEqual(expect.arrayContaining([expect.any(String)]))
-			expect(row.qssContrast).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(row.nextOwnerAction).toEqual(expect.any(String))
+			expect(row.nextOwnerAction).toContain(String(row.validationCommand))
+			expect(row.nextOwnerAction).toContain(String(row.acceptanceEvidence))
 		}
 		expect(board.topClaimOwnerActionQueue).toEqual(
 			expect.arrayContaining([
@@ -2374,7 +2402,9 @@ describe('release proof evidence index', () => {
 			'performance:practical-latency-contracts:benchmark-corpus-blocker',
 		])
 		for (const row of board.blockedOwnerActionQueue ?? []) {
+			expect(row.evidenceWeHave).toEqual(expect.arrayContaining([expect.any(String)]))
 			expect(row.evidenceMissing).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(row.qssContrast).toEqual(expect.arrayContaining([expect.any(String)]))
 			expect(row.allowedWording).toContain('Do not promote')
 			expect(row.forbiddenWording).toEqual(expect.arrayContaining([expect.any(String)]))
 			expect(row.nextOwnerAction).toEqual(expect.any(String))

@@ -429,12 +429,15 @@ export interface ReleaseProofTopClaimOwnerAction {
 	readonly rank: number
 	readonly priority: ReleaseProofNextOwnerAction['priority']
 	readonly nextStepKind: ReleaseProofNextOwnerAction['nextStepKind']
+	readonly evidenceWeHave: readonly ReleaseProofQssAcceptedEvidenceItem[]
+	readonly evidenceMissing: readonly string[]
+	readonly qssContrast: readonly string[]
 	readonly validationCommand: string
 	readonly acceptanceEvidence: string
 	readonly forbiddenShortcut: string
 	readonly allowedWording: string
 	readonly forbiddenWording: readonly string[]
-	readonly qssContrast: readonly string[]
+	readonly nextOwnerAction: string
 	readonly boundary: string
 }
 
@@ -442,7 +445,9 @@ export interface ReleaseProofBlockedOwnerAction {
 	readonly name: ReleaseProofReleaseDecisionDoNotPromoteItem['name']
 	readonly ownerLoop: ReleaseProofReadinessOwner
 	readonly workBlockDisposition: ReleaseProofReleaseDecisionDoNotPromoteItem['workBlockDisposition']
+	readonly evidenceWeHave: readonly string[]
 	readonly evidenceMissing: readonly string[]
+	readonly qssContrast: readonly string[]
 	readonly allowedWording: string
 	readonly forbiddenWording: readonly string[]
 	readonly nextOwnerAction: string
@@ -2379,12 +2384,15 @@ function releaseDecisionTopClaimOwnerActionQueue(
 			rank: action.rank,
 			priority: action.priority,
 			nextStepKind: action.nextStepKind,
+			evidenceWeHave: row.evidenceWeHave.map((item) => ({ ...item })),
+			evidenceMissing: [...row.evidenceMissing],
+			qssContrast: [...row.qssContrast],
 			validationCommand: action.validationCommand,
 			acceptanceEvidence: action.acceptanceEvidence,
 			forbiddenShortcut: action.forbiddenShortcut,
 			allowedWording: row.allowedWording,
 			forbiddenWording: [...row.forbiddenWording],
-			qssContrast: [...row.qssContrast],
+			nextOwnerAction: `${action.rationale} Validate with \`${action.validationCommand}\`; acceptance evidence: ${action.acceptanceEvidence}`,
 			boundary:
 				'Owner-action queue row for top claims only. It exposes missing readyWhen gates and exact validation commands without satisfying gates or promoting stronger wording.',
 		})),
@@ -2399,7 +2407,9 @@ function releaseDecisionBlockedOwnerActionQueue(
 			name: item.name,
 			ownerLoop,
 			workBlockDisposition: item.workBlockDisposition,
+			evidenceWeHave: [...item.evidenceWeHave],
 			evidenceMissing: [...item.evidenceMissing],
+			qssContrast: [...item.qssContrast],
 			allowedWording: item.allowedWording,
 			forbiddenWording: [...item.forbiddenWording],
 			nextOwnerAction: item.nextOwnerAction,
@@ -2692,7 +2702,9 @@ function cloneReleaseDecisionBoard(
 		})),
 		blockedOwnerActionQueue: board.blockedOwnerActionQueue.map((row) => ({
 			...row,
+			evidenceWeHave: [...row.evidenceWeHave],
 			evidenceMissing: [...row.evidenceMissing],
+			qssContrast: [...row.qssContrast],
 			forbiddenWording: [...row.forbiddenWording],
 			validationCommands: [...row.validationCommands],
 		})),
@@ -2711,6 +2723,8 @@ function cloneReleaseDecisionBoard(
 		})),
 		topClaimOwnerActionQueue: board.topClaimOwnerActionQueue.map((row) => ({
 			...row,
+			evidenceWeHave: row.evidenceWeHave.map((item) => ({ ...item })),
+			evidenceMissing: [...row.evidenceMissing],
 			forbiddenWording: [...row.forbiddenWording],
 			qssContrast: [...row.qssContrast],
 		})),

@@ -953,6 +953,22 @@ describe('release proof evidence index', () => {
 			'practical-latency-contracts',
 		])
 		expect(
+			index.releaseDecisionBoard.doNotPromoteYet.map(
+				(item) => `${item.name}:${item.workBlockDisposition}`,
+			),
+		).toEqual([
+			'formula-language-service-primitives:implementation-ready-blocker',
+			'token-bounded-agent-view:implementation-ready-blocker',
+			'retained-viewport-patch-history:implementation-ready-blocker',
+			'release-proof-bundle:implementation-ready-blocker',
+			'formula-oracle-routing:benchmark-corpus-blocker',
+			'property-journal-laws:implementation-ready-blocker',
+			'columnar-scan-sidecars:benchmark-corpus-blocker',
+			'agent-workflow-observability:implementation-ready-blocker',
+			'research-surface-hygiene:claim-downgrade-do-not-promote',
+			'practical-latency-contracts:benchmark-corpus-blocker',
+		])
+		expect(
 			index.releaseDecisionBoard.doNotPromoteYet.every(
 				(item) => item.status === 'do-not-promote-yet',
 			),
@@ -1053,6 +1069,11 @@ describe('release proof evidence index', () => {
 		)
 		for (const item of index.releaseDecisionBoard.doNotPromoteYet) {
 			const qssContrast = item.qssContrast.join('\n')
+			expect([
+				'implementation-ready-blocker',
+				'benchmark-corpus-blocker',
+				'claim-downgrade-do-not-promote',
+			]).toContain(item.workBlockDisposition)
 			expect(item.evidenceWeHave).toEqual(expect.arrayContaining([expect.any(String)]))
 			expect(item.evidenceMissing).toEqual(expect.arrayContaining([expect.any(String)]))
 			expect(item.qssContrast).toEqual(expect.arrayContaining([expect.any(String)]))
@@ -1734,6 +1755,11 @@ describe('release proof evidence index', () => {
 		expect(handoff.releaseDecisionBoard.doNotPromoteYet).toHaveLength(10)
 		for (const item of handoff.releaseDecisionBoard.doNotPromoteYet) {
 			const qssContrast = item.qssContrast.join('\n')
+			expect([
+				'implementation-ready-blocker',
+				'benchmark-corpus-blocker',
+				'claim-downgrade-do-not-promote',
+			]).toContain(item.workBlockDisposition)
 			expect(item.evidenceWeHave).toEqual(expect.arrayContaining([expect.any(String)]))
 			expect(item.evidenceMissing).toEqual(expect.arrayContaining([expect.any(String)]))
 			expect(qssContrast).not.toContain(
@@ -1909,6 +1935,7 @@ describe('release proof evidence index', () => {
 			readonly doNotPromoteYet?: readonly {
 				readonly name?: string
 				readonly status?: string
+				readonly workBlockDisposition?: string
 				readonly evidenceWeHave?: readonly string[]
 				readonly evidenceMissing?: readonly string[]
 				readonly qssContrast?: readonly string[]
@@ -1983,8 +2010,27 @@ describe('release proof evidence index', () => {
 			'research-surface-hygiene',
 			'practical-latency-contracts',
 		])
+		expect(
+			board.doNotPromoteYet?.map((item) => `${item.name}:${item.workBlockDisposition}`),
+		).toEqual([
+			'formula-language-service-primitives:implementation-ready-blocker',
+			'token-bounded-agent-view:implementation-ready-blocker',
+			'retained-viewport-patch-history:implementation-ready-blocker',
+			'release-proof-bundle:implementation-ready-blocker',
+			'formula-oracle-routing:benchmark-corpus-blocker',
+			'property-journal-laws:implementation-ready-blocker',
+			'columnar-scan-sidecars:benchmark-corpus-blocker',
+			'agent-workflow-observability:implementation-ready-blocker',
+			'research-surface-hygiene:claim-downgrade-do-not-promote',
+			'practical-latency-contracts:benchmark-corpus-blocker',
+		])
 		expect(board.doNotPromoteYet?.every((item) => item.status === 'do-not-promote-yet')).toBe(true)
 		for (const item of board.doNotPromoteYet ?? []) {
+			expect([
+				'implementation-ready-blocker',
+				'benchmark-corpus-blocker',
+				'claim-downgrade-do-not-promote',
+			]).toContain(item.workBlockDisposition)
 			expect(item.evidenceWeHave).toEqual(expect.arrayContaining([expect.any(String)]))
 			expect(item.evidenceMissing).toEqual(expect.arrayContaining([expect.any(String)]))
 			expect(item.qssContrast).toEqual(expect.arrayContaining([expect.any(String)]))

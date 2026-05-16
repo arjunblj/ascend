@@ -394,6 +394,10 @@ export interface ReleaseProofOwnerDecisionArtifact {
 export interface ReleaseProofReleaseDecisionDoNotPromoteItem {
 	readonly name: ReleaseProofQssArchivedResearchNote['name']
 	readonly status: 'do-not-promote-yet'
+	readonly workBlockDisposition:
+		| 'implementation-ready-blocker'
+		| 'benchmark-corpus-blocker'
+		| 'claim-downgrade-do-not-promote'
 	readonly ownerLoops: readonly ReleaseProofReadinessOwner[]
 	readonly reason: string
 	readonly evidenceWeHave: readonly string[]
@@ -1371,7 +1375,7 @@ export function releaseProofIndexMarkdown(result: ReleaseProofIndexResult): stri
 		'Do not promote yet:',
 		...result.releaseDecisionBoard.doNotPromoteYet.map(
 			(item) =>
-				`- ${item.name}: ${item.reason} Missing: ${item.evidenceMissing.join('; ')} Allowed: ${item.allowedWording} Forbidden: ${item.forbiddenWording.join('; ')} Next: ${item.nextOwnerAction}`,
+				`- ${item.name}: Disposition: ${item.workBlockDisposition}. ${item.reason} Missing: ${item.evidenceMissing.join('; ')} Allowed: ${item.allowedWording} Forbidden: ${item.forbiddenWording.join('; ')} Next: ${item.nextOwnerAction}`,
 		),
 		'',
 		'## Release Packageability Evidence',
@@ -2333,6 +2337,7 @@ function releaseDecisionDoNotPromoteItem(
 	return {
 		name: note.name,
 		status: 'do-not-promote-yet',
+		workBlockDisposition: releaseDecisionWorkBlockDisposition(note.name),
 		ownerLoops: [...note.ownerLoops],
 		reason: note.reason,
 		evidenceWeHave: [
@@ -2407,6 +2412,29 @@ function releaseDecisionDoNotPromoteItem(
 		killCriterion: note.killCriterion,
 		boundary:
 			'Archived research note for release stewardship. Do not turn this into release wording or a new implementation surface until it changes the top-two claim gate.',
+	}
+}
+
+function releaseDecisionWorkBlockDisposition(
+	name: ReleaseProofQssArchivedResearchNote['name'],
+): ReleaseProofReleaseDecisionDoNotPromoteItem['workBlockDisposition'] {
+	switch (name) {
+		case 'safe-open-proof':
+		case 'package-action-proof':
+			return 'claim-downgrade-do-not-promote'
+		case 'columnar-scan-sidecars':
+		case 'formula-oracle-routing':
+		case 'practical-latency-contracts':
+			return 'benchmark-corpus-blocker'
+		case 'research-surface-hygiene':
+			return 'claim-downgrade-do-not-promote'
+		case 'formula-language-service-primitives':
+		case 'token-bounded-agent-view':
+		case 'retained-viewport-patch-history':
+		case 'release-proof-bundle':
+		case 'property-journal-laws':
+		case 'agent-workflow-observability':
+			return 'implementation-ready-blocker'
 	}
 }
 

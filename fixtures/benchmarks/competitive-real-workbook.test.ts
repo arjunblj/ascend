@@ -966,6 +966,23 @@ describe('evaluateAssertions', () => {
 		expect(specs.every((spec) => spec.capabilities?.selectedSheetRead === true)).toBe(true)
 	})
 
+	test('metadata-only reader manifest keeps required competitors on one timing lane', () => {
+		const specs = normalizeExternalRunnerSpecs(
+			JSON.parse(
+				readFileSync('fixtures/benchmarks/runners/metadata-only-readers.manifest.json', 'utf-8'),
+			) as unknown,
+		)
+		expect(specs.map((spec) => spec.name)).toEqual([
+			'ascend-external-metadata-only',
+			'sheetjs-metadata-only',
+			'openpyxl-metadata-only',
+		])
+		expect(
+			specs.every((spec) => spec.timingModel === 'external-internal-metadata-only-load-timing'),
+		).toBe(true)
+		expect(specs.every((spec) => spec.capabilities?.metadataOnlyRead === true)).toBe(true)
+	})
+
 	test('corpus target selection resolves manifest filters to benchmark paths', () => {
 		const entries = normalizeManifest([
 			corpusEntry('pivot.xlsx', {

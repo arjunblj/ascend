@@ -693,6 +693,66 @@ describe('competitive IO helpers', () => {
 		{ timeout: 30_000 },
 	)
 
+	test.skipIf(!openpyxlRunnerAvailable)(
+		'metadata-only external runners share a comparable timing lane',
+		async () => {
+			const payload = await runCompetitiveIoJson([
+				'--runner-manifest',
+				'fixtures/benchmarks/runners/metadata-only-readers.manifest.json',
+				'--workload',
+				'metadata-only',
+				'--category',
+				'read',
+				'--competitor',
+				'all',
+				'--execution-scope',
+				'external-process',
+				'--libraries',
+				'ascend-external-metadata-only,sheetjs-metadata-only,openpyxl-metadata-only',
+				'--rows',
+				'5',
+				'--cols',
+				'4',
+				'--repeat',
+				'1',
+				'--warmup',
+				'0',
+				'--json',
+			])
+			const results = payload.cases.map((entry) => ({
+				library: entry.dimensions.library,
+				status: entry.dimensions.correctnessStatus,
+				timingLane: entry.dimensions.timingLane,
+				metadataOnlyRead: entry.assertions?.metadataOnlyRead,
+				cellsHydrated: entry.assertions?.cellsHydrated,
+			}))
+			expect(results).toEqual([
+				{
+					library: 'ascend-external-metadata-only',
+					status: 'pass',
+					timingLane: 'external-internal-metadata-only-load-timing:metadata-only',
+					metadataOnlyRead: true,
+					cellsHydrated: false,
+				},
+				{
+					library: 'sheetjs-metadata-only',
+					status: 'pass',
+					timingLane: 'external-internal-metadata-only-load-timing:metadata-only',
+					metadataOnlyRead: true,
+					cellsHydrated: false,
+				},
+				{
+					library: 'openpyxl-metadata-only',
+					status: 'pass',
+					timingLane: 'external-internal-metadata-only-load-timing:metadata-only',
+					metadataOnlyRead: true,
+					cellsHydrated: false,
+				},
+			])
+		},
+		{ timeout: 30_000 },
+	)
+
 	test('raw OOXML generated data set is independent and semantically equivalent', async () => {
 		const input = await buildWorkloadDataSet('sparse-wide', 4, 16, 'raw-ooxml')
 		const read = readXlsx(input.xlsxBytes, { mode: 'values' })

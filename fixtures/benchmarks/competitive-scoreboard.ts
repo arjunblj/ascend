@@ -37,6 +37,7 @@ const ASCEND_READ_LIBRARIES = [
 	'ascend-readxlsx-cell-materialization-bytes',
 	'ascend-readxlsx-values-bytes',
 	'ascend-readxlsx-values-rich-metadata-bytes',
+	'ascend-external-metadata-only',
 	'ascend-external-metadata-only-bytes',
 ] as const
 const ASCEND_WRITE_LIBRARIES = ['ascend', 'ascend-external-writer'] as const

@@ -3029,6 +3029,7 @@ function qssLeapfrogReleaseMatrixRow(
 		claimsWeMustNotMake: [
 			'Signed provenance, SLSA, in-toto, Sigstore, GitHub artifact attestation, tamper-evident storage, or registry publication.',
 			'Semantic understanding or preservation of every unsupported workbook feature.',
+			'Execution or semantic support for active content, Power Query, Data Model, chart style/color, analytical sidecar, or calc metadata parts.',
 			'Full streaming parity while the matrix is representative and owner-gated.',
 			'Arbitrary unknown-part preservation or recovery when generated and external candidates remain policy-gated.',
 		],
@@ -3589,6 +3590,17 @@ function packageActionQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceIte
 				'Commits 8576a860, ab5d635a, 4a61e9af, and 66111c9e prove external-link source bindings are inventoried for DDE/OLE/externalBook-style relationships, externalLinkPath and nonstandard external-link parts are classified as preservedExternalLink, hyperlink relationships are classified as preservedHyperlink, and relationship source/id/target/TargetMode drift remains audited.',
 			boundary:
 				'External-link and hyperlink package relationship evidence only; it does not execute links, fetch external workbooks, prove linked-data freshness, validate linked workbook contents, repair arbitrary broken links, or make external references safe to trust.',
+		},
+		{
+			evidenceId: 'opaque-relationship-classification-proof',
+			kind: 'test',
+			command:
+				'bun test packages/io-xlsx/src/package-graph.test.ts -t "normalizes content types, relationship identity, owners, and feature families" --timeout 30000',
+			path: 'packages/io-xlsx/src/package-graph.ts; packages/io-xlsx/src/package-graph.test.ts; packages/io-xlsx/src/reader/relationships.ts',
+			acceptedScope:
+				'Commits 1410d809, 8e351092, 75698a98, 346da8b1, and 844336cb classify package relationships and parts for active content/control/embedding, Power Query/Data Model, chart style/color, custom XML/VBA/signature, calc-chain, and sheet metadata surfaces with owner scopes and preservation policies.',
+			boundary:
+				'Package relationship classification evidence only; it does not execute active content, refresh Power Query, understand Data Model semantics, edit chart styles/colors, prove calc metadata freshness, or guarantee arbitrary unknown-part recovery.',
 		},
 		{
 			evidenceId: 'public-formula-cache-post-write-proof',

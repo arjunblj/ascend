@@ -1591,7 +1591,10 @@ describe('release proof evidence index', () => {
 			expect.arrayContaining([expect.stringContaining('Per-part write accounting')]),
 		)
 		expect(index.qssLeapfrogReleaseMatrix.rows[1].claimsWeMustNotMake).toEqual(
-			expect.arrayContaining([expect.stringContaining('Signed provenance')]),
+			expect.arrayContaining([
+				expect.stringContaining('Signed provenance'),
+				expect.stringContaining('Power Query'),
+			]),
 		)
 		expect(index.qssLeapfrogReleaseMatrix.rows[1].acceptedEvidence).toEqual(
 			expect.arrayContaining([
@@ -1642,6 +1645,14 @@ describe('release proof evidence index', () => {
 					acceptedScope: expect.stringMatching(/8576a860.*66111c9e/),
 					command: expect.stringContaining('inventories OLE external link relationship binding'),
 					boundary: expect.stringContaining('does not execute links'),
+				}),
+				expect.objectContaining({
+					evidenceId: 'opaque-relationship-classification-proof',
+					acceptedScope: expect.stringMatching(/1410d809.*844336cb/),
+					command: expect.stringContaining(
+						'normalizes content types, relationship identity, owners, and feature families',
+					),
+					boundary: expect.stringContaining('does not execute active content'),
 				}),
 				expect.objectContaining({
 					evidenceId: 'public-formula-cache-post-write-proof',
@@ -2827,6 +2838,7 @@ describe('release proof evidence index', () => {
 			)?.boundary,
 		).toContain('generated signature topology remains owner-gated')
 		expect(packageActionDecision.claimsWeMustNotMake.join('\n')).toContain('Signed provenance')
+		expect(packageActionDecision.claimsWeMustNotMake.join('\n')).toContain('Power Query')
 		expect(packageActionDecision.claimsWeMustNotMake.join('\n')).toContain('Full streaming parity')
 		expect(
 			packageActionDecision.aPlusBlockingOwnerActions.map(

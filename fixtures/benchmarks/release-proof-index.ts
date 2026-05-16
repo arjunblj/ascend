@@ -2181,11 +2181,11 @@ function ownerDecisionArtifactsFor(
 					validationCommand:
 						'bun test packages/sdk/src/excel-behavior-compatibility-matrix.test.ts',
 					decision:
-						'Use the ranked compatibility matrix for safe wording on common workbook support, active content, unknown parts, encryption, malformed packages, and signature blockers.',
+						'Use the ranked compatibility matrix for safe wording on common workbook support, protection metadata, active content, unknown parts, encryption, malformed packages, and signature blockers.',
 					nextAction:
 						'Compatibility owner adds the next real/public workbook gap from the matrix; product/release owners keep signed and generated malformed/signature policy blockers explicit.',
 					forbiddenShortcut:
-						'Do not turn the matrix into full Excel compatibility, file trust, malware scanning, password recovery, or signature preservation wording.',
+						'Do not turn the matrix into full Excel compatibility, worksheet-security, file trust, malware scanning, password recovery, or signature preservation wording.',
 					boundary:
 						'Owner decision artifact only. It routes compatibility work and claim wording without satisfying release proof gates by itself.',
 				},
@@ -2214,11 +2214,11 @@ function ownerDecisionArtifactsFor(
 					validationCommand:
 						'bun test packages/sdk/src/excel-behavior-compatibility-matrix.test.ts',
 					decision:
-						'Use the compatibility matrix to keep package-action wording preservation-first for visual, pivot, active-content, external-link, unknown-part, encrypted, malformed, and signature surfaces.',
+						'Use the compatibility matrix to keep package-action wording preservation-first for protection metadata, visual, pivot, active-content, external-link, unknown-part, encrypted, malformed, and signature surfaces.',
 					nextAction:
 						'Correctness owner promotes an individual package surface only after real/public open -> inspect -> edit -> save/reopen -> verify evidence exists.',
 					forbiddenShortcut:
-						'Do not claim semantic support for every unsupported package feature, byte passthrough for chart XML, signature verification, or arbitrary unknown-part preservation.',
+						'Do not claim semantic support for every unsupported package feature, worksheet protection as file security, byte passthrough for chart XML, signature verification, or arbitrary unknown-part preservation.',
 					boundary:
 						'Owner decision artifact only. It constrains package-action wording without replacing package-action proof gates.',
 				},

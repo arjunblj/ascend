@@ -945,6 +945,7 @@ describe('release proof evidence index', () => {
 					path: 'docs/EXCEL_BEHAVIOR_COMPATIBILITY_MATRIX.md',
 					validationCommand:
 						'bun test packages/sdk/src/excel-behavior-compatibility-matrix.test.ts',
+					decision: expect.stringContaining('protection metadata'),
 					forbiddenShortcut: expect.stringContaining('full Excel compatibility'),
 				}),
 				expect.objectContaining({
@@ -986,7 +987,8 @@ describe('release proof evidence index', () => {
 					ownerLoop: 'correctness',
 					artifactId: 'excel-behavior-compatibility-matrix',
 					path: 'docs/EXCEL_BEHAVIOR_COMPATIBILITY_MATRIX.md',
-					forbiddenShortcut: expect.stringContaining('arbitrary unknown-part preservation'),
+					decision: expect.stringContaining('protection metadata'),
+					forbiddenShortcut: expect.stringContaining('worksheet protection as file security'),
 				}),
 				expect.objectContaining({
 					ownerLoop: 'performance',

@@ -566,6 +566,7 @@ describe('MCP server', () => {
 				'proofBundle.whySafe',
 				'postWrite.dataConnections',
 				'postWrite.formulaState',
+				'postWrite.security',
 				'postWrite.visuals',
 			]),
 		})
@@ -659,6 +660,7 @@ describe('MCP server', () => {
 		expect(workflow?.contents[0]?.text).toContain('proofBundle.safeToUse')
 		expect(workflow?.contents[0]?.text).toContain('postWrite.dataConnections')
 		expect(workflow?.contents[0]?.text).toContain('postWrite.formulaState')
+		expect(workflow?.contents[0]?.text).toContain('postWrite.security')
 		expect(workflow?.contents[0]?.text).toContain('postWrite.visuals')
 		expect(workflow?.contents[0]?.text).toContain('bun run example:safe-edit:mcp')
 		expect(workflow?.contents[0]?.text).toContain('bun test examples/root-scripts.test.ts')

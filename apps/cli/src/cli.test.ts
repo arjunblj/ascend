@@ -510,6 +510,7 @@ describe('ascend cli', () => {
 				'proofBundle.whySafe',
 				'postWrite.dataConnections',
 				'postWrite.formulaState',
+				'postWrite.security',
 				'postWrite.visuals',
 			]),
 		})
@@ -529,6 +530,7 @@ describe('ascend cli', () => {
 		expect(parsed.data.safetyDefaults.join('\n')).toContain('proofBundle.safeToUse')
 		expect(parsed.data.safetyDefaults.join('\n')).toContain('postWrite.dataConnections')
 		expect(parsed.data.safetyDefaults.join('\n')).toContain('postWrite.formulaState')
+		expect(parsed.data.safetyDefaults.join('\n')).toContain('postWrite.security')
 		expect(parsed.data.safetyDefaults.join('\n')).toContain('postWrite.visuals')
 		expect(parsed.data.safetyDefaults.join('\n')).toContain('planHandle')
 		expect(parsed.data.safetyDefaults.join('\n')).toContain('untrusted data')

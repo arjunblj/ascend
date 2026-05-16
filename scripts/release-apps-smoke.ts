@@ -295,6 +295,12 @@ if (!cliAgentInit.packageInstallExampleContext?.proofOutput?.includes('postWrite
 		'CLI agent-init missing installed formula proof output context: ' + JSON.stringify(cliAgentInit),
 	)
 }
+if (!cliAgentInit.packageInstallExampleContext?.proofOutput?.includes('postWrite.security')) {
+	throw new Error(
+		'CLI agent-init missing installed security proof output context: ' +
+			JSON.stringify(cliAgentInit),
+	)
+}
 if (!cliAgentInit.packageInstallExampleContext?.proofOutput?.includes('postWrite.visuals')) {
 	throw new Error(
 		'CLI agent-init missing installed visual proof output context: ' + JSON.stringify(cliAgentInit),
@@ -430,6 +436,9 @@ if (!apiWorkflow.packageInstallExampleContext?.proofOutput?.includes('postWrite.
 if (!apiWorkflow.packageInstallExampleContext?.proofOutput?.includes('postWrite.formulaState')) {
 	throw new Error('installed API agent workflow contract missing formula proof output context')
 }
+if (!apiWorkflow.packageInstallExampleContext?.proofOutput?.includes('postWrite.security')) {
+	throw new Error('installed API agent workflow contract missing security proof output context')
+}
 if (!apiWorkflow.packageInstallExampleContext?.proofOutput?.includes('postWrite.visuals')) {
 	throw new Error('installed API agent workflow contract missing visual proof output context')
 }
@@ -521,6 +530,9 @@ if (!mcpWorkflow.packageInstallExampleContext?.proofOutput?.includes('postWrite.
 if (!mcpWorkflow.packageInstallExampleContext?.proofOutput?.includes('postWrite.formulaState')) {
 	throw new Error('installed MCP agent workflow contract missing formula proof output context')
 }
+if (!mcpWorkflow.packageInstallExampleContext?.proofOutput?.includes('postWrite.security')) {
+	throw new Error('installed MCP agent workflow contract missing security proof output context')
+}
 if (!mcpWorkflow.packageInstallExampleContext?.proofOutput?.includes('postWrite.visuals')) {
 	throw new Error('installed MCP agent workflow contract missing visual proof output context')
 }
@@ -550,6 +562,9 @@ if (!mcpWorkflowResource.contents[0].text.includes('postWrite.dataConnections'))
 }
 if (!mcpWorkflowResource.contents[0].text.includes('postWrite.formulaState')) {
 	throw new Error('installed MCP agent workflow resource missing formula proof output context')
+}
+if (!mcpWorkflowResource.contents[0].text.includes('postWrite.security')) {
+	throw new Error('installed MCP agent workflow resource missing security proof output context')
 }
 if (!mcpWorkflowResource.contents[0].text.includes('postWrite.visuals')) {
 	throw new Error('installed MCP agent workflow resource missing visual proof output context')

@@ -524,6 +524,36 @@ async function postApiFetch(
 }
 
 describe('Ascend API server', () => {
+	test('/open-plan rejects missing workbook references with structured retry guidance', async () => {
+		const result = await postJson('/open-plan', { intent: 'edit-plan' })
+
+		expect(result.status).toBe(400)
+		expect(result.body.ok).toBe(false)
+		expect(result.body.error).toMatchObject({
+			code: 'VALIDATION_ERROR',
+			message: 'Missing or invalid open-plan workbook reference',
+			retryable: true,
+			retryStrategy: 'modified',
+			details: { required: ['file'] },
+			suggestedFix: expect.stringContaining('Pass file so Ascend can inspect workbook risks'),
+		})
+	})
+
+	test('/inspect rejects missing workbook references with structured retry guidance', async () => {
+		const result = await postJson('/inspect', { sheet: 'Sheet1' })
+
+		expect(result.status).toBe(400)
+		expect(result.body.ok).toBe(false)
+		expect(result.body.error).toMatchObject({
+			code: 'VALIDATION_ERROR',
+			message: 'Missing or invalid inspect workbook reference',
+			retryable: true,
+			retryStrategy: 'modified',
+			details: { required: ['file'] },
+			suggestedFix: expect.stringContaining('Pass file so Ascend can inspect workbook structure'),
+		})
+	})
+
 	test('/plan rejects missing workbook references with structured retry guidance', async () => {
 		const result = await postJson('/plan', {
 			ops: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] }],

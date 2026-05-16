@@ -192,11 +192,21 @@ function optionalPasswordError(
 	})
 }
 
-function missingAgentWorkflowFileError(context: 'plan' | 'commit'): AscendError {
-	const requirement =
-		context === 'commit'
-			? 'Pass either file with ops/mutations for a direct commit, or planHandle from a prepared /plan response.'
-			: 'Pass file with ops or mutations so Ascend can read the source workbook and build a safe plan.'
+type AgentWorkflowFileContext = 'open-plan' | 'inspect' | 'plan' | 'commit'
+
+function missingAgentWorkflowFileError(context: AgentWorkflowFileContext): AscendError {
+	const requirement = (() => {
+		switch (context) {
+			case 'open-plan':
+				return 'Pass file so Ascend can inspect workbook risks before hydration.'
+			case 'inspect':
+				return 'Pass file so Ascend can inspect workbook structure before planning edits.'
+			case 'commit':
+				return 'Pass either file with ops/mutations for a direct commit, or planHandle from a prepared /plan response.'
+			case 'plan':
+				return 'Pass file with ops or mutations so Ascend can read the source workbook and build a safe plan.'
+		}
+	})()
 	return ascendError('VALIDATION_ERROR', `Missing or invalid ${context} workbook reference`, {
 		retryable: true,
 		retryStrategy: 'modified',
@@ -542,7 +552,7 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 				const body = await parseJson<{ file?: string; sheet?: string }>(req)
 				const file = body ? requireString(body, 'file') : null
 				const sheetName = body ? requireString(body, 'sheet') : null
-				if (!file) return jsonFailure('Missing or invalid file', 400)
+				if (!file) return jsonFailureError(missingAgentWorkflowFileError('inspect'), 400)
 				try {
 					const wb = await WorkbookDocument.open(
 						file,
@@ -560,7 +570,7 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 			if (method === 'POST' && path === '/open-plan') {
 				const body = await parseJson<Record<string, unknown>>(req)
 				const file = body ? requireString(body, 'file') : null
-				if (!file) return jsonFailure('Missing or invalid file', 400)
+				if (!file) return jsonFailureError(missingAgentWorkflowFileError('open-plan'), 400)
 				const intent = openPlanIntent(body?.intent)
 				if (!intent.ok) {
 					return jsonFailureError(

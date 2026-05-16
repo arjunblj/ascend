@@ -9,6 +9,7 @@ import {
 	parseRelationships,
 	REL_ACTIVE_X_CONTROL,
 	REL_ACTIVE_X_CONTROL_BINARY,
+	REL_CALC_CHAIN,
 	REL_CHART,
 	REL_CHART_COLOR_STYLE,
 	REL_CHART_STYLE,
@@ -32,6 +33,7 @@ import {
 	REL_PRINTER_SETTINGS,
 	REL_QUERY_TABLE,
 	REL_SHARED_STRINGS,
+	REL_SHEET_METADATA,
 	REL_SLICER,
 	REL_SLICER_CACHE,
 	REL_STYLES,
@@ -246,6 +248,8 @@ export function classifyPackageFeatureFamily(
 	if (lowerRelType.endsWith('/relationships/ctrlprop')) return 'preservedControl'
 	if (lowerRelType.endsWith('/relationships/oleobject')) return 'preservedEmbedding'
 	if (lowerRelType.endsWith('/relationships/customxml')) return 'preservedCustomXml'
+	if (lowerRelType.endsWith('/relationships/calcchain')) return 'preservedCalcChain'
+	if (lowerRelType.endsWith('/relationships/sheetmetadata')) return 'preservedMetadata'
 	if (path.includes('/chartsheets/')) return 'preservedChartSheet'
 	if (path.includes('/macrosheets/')) return 'preservedMacroSheet'
 	if (
@@ -497,6 +501,7 @@ function classifyOwnerScope(
 		return 'active-content'
 	}
 	if (/(^|\/)(activeX|ctrlProps|embeddings)\//i.test(partPath)) return 'active-content'
+	if (primary?.type === REL_CALC_CHAIN || primary?.type === REL_SHEET_METADATA) return 'metadata'
 	if (/(^|\/)(metadata|calcChain)\.xml$/i.test(partPath)) return 'metadata'
 	if (primary?.sourcePartPath.includes('/worksheets/')) return 'worksheet'
 	if (primary?.sourcePartPath.includes('/tables/')) return 'worksheet'
@@ -516,6 +521,8 @@ function classifyRelationshipFeatureFamily(
 	if (relationship.type === REL_SHARED_STRINGS) return 'sharedStrings'
 	if (relationship.type === REL_STYLES) return 'preservedStyles'
 	if (relationship.type === REL_THEME) return 'preservedTheme'
+	if (relationship.type === REL_CALC_CHAIN) return 'preservedCalcChain'
+	if (relationship.type === REL_SHEET_METADATA) return 'preservedMetadata'
 	if (relationship.type === REL_TABLE) return 'preservedTable'
 	if (relationship.type === REL_QUERY_TABLE) return 'preservedQueryTable'
 	if (relationship.type === REL_CONNECTIONS) return 'preservedConnection'

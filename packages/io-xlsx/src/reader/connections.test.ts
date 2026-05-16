@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { makeXlsx } from '../../test/helpers.ts'
+import { writeXlsx } from '../writer/index.ts'
 import { readXlsx } from './index.ts'
 
 function expectOk<T, E extends { message: string }>(
@@ -33,6 +34,10 @@ describe('connection part inventory', () => {
 				saveData: false,
 				savePassword: false,
 				refreshedVersion: 8,
+				refreshedDateIso: '2026-05-16T18:42:00Z',
+				minRefreshableVersion: 5,
+				credentials: 'integrated',
+				singleSignOnId: 'corp-sso',
 				sourceFile: 'C:\\data\\sales.csv',
 				command: 'SELECT * FROM [Sales]',
 				hasConnectionString: true,
@@ -76,6 +81,34 @@ describe('connection part inventory', () => {
 			locations: ['xl/queryTables/queryTable1.xml'],
 		})
 	})
+
+	test('preserves connection credential and freshness metadata across save and reopen', () => {
+		const source = readXlsx(connectionWorkbook())
+		expectOk(source)
+
+		const written = writeXlsx(source.value.workbook, source.value.capsules)
+		expectOk(written)
+
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+		expect(reopened.value.workbook.connectionParts[0]).toMatchObject({
+			kind: 'connection',
+			partPath: 'xl/connections.xml',
+			connectionId: 1,
+			refreshedVersion: 8,
+			refreshedDateIso: '2026-05-16T18:42:00Z',
+			minRefreshableVersion: 5,
+			credentials: 'integrated',
+			singleSignOnId: 'corp-sso',
+			hasConnectionString: true,
+		})
+		expect(
+			reopened.value.report.features.find((feature) => feature.feature === 'preservedConnection'),
+		).toMatchObject({
+			tier: 'preserved',
+			locations: ['xl/connections.xml'],
+		})
+	})
 })
 
 function connectionWorkbook(): Uint8Array {
@@ -115,7 +148,7 @@ function connectionWorkbook(): Uint8Array {
 </Relationships>`,
 		'xl/connections.xml': `<?xml version="1.0"?>
 <connections xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-  <connection id="1" name="SalesConnection" description="CSV import" type="6" deleted="0" background="1" keepAlive="1" interval="15" refreshOnLoad="1" saveData="0" savePassword="0" refreshedVersion="8">
+  <connection id="1" name="SalesConnection" description="CSV import" type="6" deleted="0" background="1" keepAlive="1" interval="15" refreshOnLoad="1" saveData="0" savePassword="0" refreshedVersion="8" refreshedDateIso="2026-05-16T18:42:00Z" minRefreshableVersion="5" credentials="integrated" singleSignOnId="corp-sso">
     <dbPr connection="Provider=Microsoft.ACE.OLEDB.12.0;" command="SELECT * FROM [Sales]"/>
     <textPr sourceFile="C:\\data\\sales.csv"/>
   </connection>

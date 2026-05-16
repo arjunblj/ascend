@@ -5170,6 +5170,12 @@ function buildWorkbookRefreshMetadata(
 			...(part.saveData !== undefined ? { saveData: part.saveData } : {}),
 			...(part.savePassword !== undefined ? { savePassword: part.savePassword } : {}),
 			...(part.refreshedVersion !== undefined ? { refreshedVersion: part.refreshedVersion } : {}),
+			...(part.refreshedDateIso !== undefined ? { refreshedDateIso: part.refreshedDateIso } : {}),
+			...(part.minRefreshableVersion !== undefined
+				? { minRefreshableVersion: part.minRefreshableVersion }
+				: {}),
+			...(part.credentials !== undefined ? { credentials: part.credentials } : {}),
+			...(part.singleSignOnId !== undefined ? { singleSignOnId: part.singleSignOnId } : {}),
 			...(part.sourceFile !== undefined ? { sourceFile: part.sourceFile } : {}),
 			...(part.odcFile !== undefined ? { odcFile: part.odcFile } : {}),
 			...(part.onlyUseConnectionFile !== undefined

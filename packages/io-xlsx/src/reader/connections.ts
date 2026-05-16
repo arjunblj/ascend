@@ -15,6 +15,10 @@ interface ParsedConnectionAttrs {
 	saveData?: boolean
 	savePassword?: boolean
 	refreshedVersion?: number
+	refreshedDateIso?: string
+	minRefreshableVersion?: number
+	credentials?: string
+	singleSignOnId?: string
 	sourceFile?: string
 	odcFile?: string
 	onlyUseConnectionFile?: boolean
@@ -118,6 +122,14 @@ function readConnectionAttrs(
 	}
 	const refreshedVersion = numAttr(node, 'refreshedVersion')
 	if (refreshedVersion !== undefined) parsed.refreshedVersion = refreshedVersion
+	const refreshedDateIso = attr(node, 'refreshedDateIso')
+	if (refreshedDateIso) parsed.refreshedDateIso = refreshedDateIso
+	const minRefreshableVersion = numAttr(node, 'minRefreshableVersion')
+	if (minRefreshableVersion !== undefined) parsed.minRefreshableVersion = minRefreshableVersion
+	const credentials = attr(node, 'credentials')
+	if (credentials) parsed.credentials = credentials
+	const singleSignOnId = attr(node, 'singleSignOnId')
+	if (singleSignOnId) parsed.singleSignOnId = singleSignOnId
 	const textPr = node.textPr as XmlNode | undefined
 	const dbPr = node.dbPr as XmlNode | undefined
 	const sourceFile = attr(node, 'sourceFile') ?? (textPr ? attr(textPr, 'sourceFile') : undefined)

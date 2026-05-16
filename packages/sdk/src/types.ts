@@ -502,6 +502,10 @@ export interface WorkbookRefreshMetadataEntry {
 	readonly savePassword?: boolean
 	readonly invalid?: boolean
 	readonly refreshedVersion?: number
+	readonly refreshedDateIso?: string
+	readonly minRefreshableVersion?: number
+	readonly credentials?: string
+	readonly singleSignOnId?: string
 	readonly sourceFile?: string
 	readonly odcFile?: string
 	readonly onlyUseConnectionFile?: boolean

@@ -3071,10 +3071,10 @@ function safeOpenQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceItem[] {
 			evidenceId: 'mcp-open-workflow-reference-proof',
 			kind: 'test',
 			command:
-				'bun test apps/mcp/src/index.test.ts -t "missing workbook references" --timeout 30000',
-			path: 'apps/mcp/src/index.ts; apps/mcp/src/index.test.ts',
+				'bun test apps/mcp/src/index.test.ts -t "missing workbook references|string MCP tool errors return coded JSON failures" --timeout 30000',
+			path: 'apps/mcp/src/index.ts; apps/mcp/src/response.ts; apps/mcp/src/index.test.ts',
 			acceptedScope:
-				'Commit da273900 returns structured retryable missing-workbook-reference errors for MCP commit requests without file or planHandle instead of generic missing-file responses.',
+				'Commit da273900 returns structured retryable missing-workbook-reference errors for MCP commit requests without file or planHandle instead of generic missing-file responses. Commit daa3ecb5 makes legacy MCP string tool errors return coded retryable machine failures.',
 			boundary:
 				'MCP request-shape diagnostics only; it does not prove file recovery, path discovery, source workbook existence, edit correctness, latency, or trust wording.',
 		},

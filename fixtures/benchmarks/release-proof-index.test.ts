@@ -1096,7 +1096,12 @@ describe('release proof evidence index', () => {
 				evidenceId: 'mcp-open-workflow-reference-proof',
 				acceptedScope: expect.stringContaining('da273900'),
 				command:
-					'bun test apps/mcp/src/index.test.ts -t "missing workbook references" --timeout 30000',
+					'bun test apps/mcp/src/index.test.ts -t "missing workbook references|string MCP tool errors return coded JSON failures" --timeout 30000',
+			}),
+			expect.objectContaining({
+				evidenceId: 'mcp-open-workflow-reference-proof',
+				acceptedScope: expect.stringContaining('daa3ecb5'),
+				path: expect.stringContaining('apps/mcp/src/response.ts'),
 			}),
 			expect.objectContaining({
 				evidenceId: 'release-rc-gate',

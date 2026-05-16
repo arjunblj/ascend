@@ -150,6 +150,63 @@ describe('AscendWorkbook', () => {
 		)
 	})
 
+	test('VBA project signatures fail closed while approved exports preserve macros', async () => {
+		const signedVba = makeSignedVbaXlsm()
+		const wb = await Ascend.open(signedVba)
+		expect(wb.trustReport().findings).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ code: 'workbook.vbaProject', severity: 'blocked' }),
+				expect.objectContaining({ code: 'workbook.signature' }),
+			]),
+		)
+		expect(wb.inspect().activeContent).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ kind: 'vbaProject', partPath: 'xl/vbaProject.bin' }),
+				expect.objectContaining({
+					kind: 'vbaSignature',
+					partPath: 'xl/vbaProjectSignature.bin',
+					invalidationPolicy: 'invalidatedByPackageEdit',
+				}),
+			]),
+		)
+
+		const changed = wb.apply([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'macro edit' }] },
+		])
+		expect(changed.errors).toEqual([])
+		expect(() => wb.toBytes()).toThrow(
+			'Cannot export an edited signed workbook without explicit signature invalidation approval',
+		)
+		const plannedGraph = wb.packageGraph()
+		expect(plannedGraph.parts.map((part) => part.path)).toContain('xl/vbaProject.bin')
+		expect(plannedGraph.parts.map((part) => part.path)).not.toContain('xl/vbaProjectSignature.bin')
+
+		const unsigned = wb.toBytes({ allowSignatureInvalidation: true })
+		const archive = extractZip(unsigned)
+		expect(archive.readBytes('xl/vbaProject.bin')).toBeDefined()
+		expect(archive.readBytes('xl/vbaProjectSignature.bin')).toBeUndefined()
+		const reopened = await Ascend.open(unsigned)
+		expect(reopened.sheet('Sheet1')?.cell('A1')?.value).toEqual({
+			kind: 'string',
+			value: 'macro edit',
+		})
+		expect(reopened.inspect().activeContent).toContainEqual(
+			expect.objectContaining({ kind: 'vbaProject', partPath: 'xl/vbaProject.bin' }),
+		)
+		expect(reopened.inspect().activeContent).not.toContainEqual(
+			expect.objectContaining({ kind: 'vbaSignature' }),
+		)
+		expect(reopened.trustReport().findings).toContainEqual(
+			expect.objectContaining({ code: 'workbook.vbaProject', severity: 'blocked' }),
+		)
+		expect(reopened.trustReport().findings).not.toContainEqual(
+			expect.objectContaining({ code: 'workbook.signature' }),
+		)
+		expect(() => wb.toBytes()).toThrow(
+			'Cannot export an edited signed workbook without explicit signature invalidation approval',
+		)
+	})
+
 	test('signed workbook saves fail closed unless signature invalidation is explicit', async () => {
 		const dir = join(
 			tmpdir(),
@@ -4916,5 +4973,41 @@ function makeSignedXlsx(): Uint8Array {
 		'_xmlsignatures/origin.sigs': '',
 		'_xmlsignatures/sig1.xml':
 			'<?xml version="1.0"?><Signature xmlns="http://www.w3.org/2000/09/xmldsig#"/>',
+	})
+}
+
+function makeSignedVbaXlsm(): Uint8Array {
+	return makeSyntheticXlsx({
+		'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Default Extension="bin" ContentType="application/vnd.ms-office.vbaProject"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.ms-excel.sheet.macroEnabled.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/vbaProject.bin" ContentType="application/vnd.ms-office.vbaProject"/>
+  <Override PartName="/xl/vbaProjectSignature.bin" ContentType="application/vnd.ms-office.vbaProjectSignature"/>
+</Types>`,
+		'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+		'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSheet1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rIdVba" Type="http://schemas.microsoft.com/office/2006/relationships/vbaProject" Target="vbaProject.bin"/>
+</Relationships>`,
+		'xl/_rels/vbaProject.bin.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdVbaSignature" Type="http://schemas.microsoft.com/office/2006/relationships/vbaProjectSignature" Target="vbaProjectSignature.bin"/>
+</Relationships>`,
+		'xl/workbook.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Sheet1" sheetId="1" r:id="rIdSheet1"/></sheets>
+</workbook>`,
+		'xl/worksheets/sheet1.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`,
+		'xl/vbaProject.bin': new Uint8Array([1, 2, 3, 4]),
+		'xl/vbaProjectSignature.bin': new Uint8Array([9, 8, 7, 6]),
 	})
 }

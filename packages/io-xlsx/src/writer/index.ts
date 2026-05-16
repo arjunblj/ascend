@@ -713,7 +713,7 @@ export function planWriteXlsx(
 		const effectiveSharedStringsDirty = options.sharedStringsDirty ?? dirtyPatchMode
 		const effectiveWorkbookMetaDirty = options.workbookMetaDirty ?? dirtyPatchMode
 		const effectiveCalcChainDirty = options.calcChainDirty ?? options.calcStateDirty ?? false
-		const invalidateDigitalSignatures =
+		const invalidatePackageSignatures =
 			effectiveWorkbookMetaDirty ||
 			effectiveSharedStringsDirty ||
 			effectiveStylesDirty ||
@@ -924,7 +924,7 @@ export function planWriteXlsx(
 					plan.skipCapsulePath(capsule.partPath)
 					continue
 				}
-				if (invalidateDigitalSignatures && isDigitalSignatureCapsule(capsule)) {
+				if (invalidatePackageSignatures && isSignatureCapsule(capsule)) {
 					plan.skipCapsulePath(capsule.partPath)
 					continue
 				}
@@ -2922,11 +2922,17 @@ function isPackageSignatureOriginCapsule(capsule: PreservationCapsule): boolean 
 	)
 }
 
-function isDigitalSignatureCapsule(capsule: PreservationCapsule): boolean {
+function isSignatureCapsule(capsule: PreservationCapsule): boolean {
+	const partPath = capsule.partPath.toLowerCase()
+	const contentType = capsule.contentType.toLowerCase()
+	const relType = capsule.relType?.toLowerCase()
 	return (
-		capsule.partPath.startsWith('_xmlsignatures/') ||
-		capsule.contentType.includes('digital-signature') ||
-		capsule.relType?.includes('digital-signature') === true
+		partPath.startsWith('_xmlsignatures/') ||
+		partPath.includes('/vbaprojectsignature') ||
+		contentType.includes('digital-signature') ||
+		contentType.includes('vbaprojectsignature') ||
+		relType?.includes('digital-signature') === true ||
+		relType?.includes('vbaprojectsignature') === true
 	)
 }
 

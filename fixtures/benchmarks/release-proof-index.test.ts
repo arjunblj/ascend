@@ -992,6 +992,10 @@ describe('release proof evidence index', () => {
 				acceptedScope: expect.stringContaining('7afcd630'),
 			}),
 			expect.objectContaining({
+				evidenceId: 'api-agent-safe-edit-example-proof',
+				acceptedScope: expect.stringContaining('a8e15d9b'),
+			}),
+			expect.objectContaining({
 				evidenceId: 'mcp-agent-safe-edit-example-proof',
 				acceptedScope: expect.stringContaining('de45eb83'),
 				command: 'bun test examples/agent-safe-edit-mcp.test.ts --timeout 30000',
@@ -1004,6 +1008,10 @@ describe('release proof evidence index', () => {
 			expect.objectContaining({
 				evidenceId: 'mcp-agent-safe-edit-example-proof',
 				acceptedScope: expect.stringContaining('7afcd630'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'mcp-agent-safe-edit-example-proof',
+				acceptedScope: expect.stringContaining('a8e15d9b'),
 			}),
 			expect.objectContaining({
 				evidenceId: 'examples-package-safe-edit-scripts-proof',
@@ -1024,6 +1032,10 @@ describe('release proof evidence index', () => {
 				acceptedScope: expect.stringContaining('adc9c1e1'),
 			}),
 			expect.objectContaining({
+				evidenceId: 'examples-package-safe-edit-scripts-proof',
+				acceptedScope: expect.stringContaining('a8e15d9b'),
+			}),
+			expect.objectContaining({
 				evidenceId: 'root-package-safe-edit-scripts-proof',
 				acceptedScope: expect.stringContaining('a09660be'),
 				command: 'bun test examples/root-scripts.test.ts --timeout 30000',
@@ -1036,6 +1048,10 @@ describe('release proof evidence index', () => {
 			expect.objectContaining({
 				evidenceId: 'root-package-safe-edit-scripts-proof',
 				acceptedScope: expect.stringContaining('adc9c1e1'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'root-package-safe-edit-scripts-proof',
+				acceptedScope: expect.stringContaining('a8e15d9b'),
 			}),
 			expect.objectContaining({
 				evidenceId: 'workflow-example-proof-context',
@@ -1135,8 +1151,22 @@ describe('release proof evidence index', () => {
 			expect.objectContaining({
 				evidenceId: 'public-hidden-sheet-topology-commit-proof',
 				acceptedScope: expect.stringContaining('74f63b73'),
-				command: expect.stringContaining('commits public hidden-sheet topology'),
+				command: expect.stringContaining('commits public hidden-sheet workbook views'),
 				boundary: expect.stringContaining('Public hidden-sheet topology commit evidence only'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'public-hidden-sheet-topology-commit-proof',
+				acceptedScope: expect.stringContaining('033be30c'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'public-workbook-view-protection-proof',
+				acceptedScope: expect.stringContaining('033be30c'),
+				command: expect.stringContaining(
+					'commits public workbook structure protection and view metadata',
+				),
+				boundary: expect.stringContaining(
+					'Public workbook-view and structure-protection reporting evidence only',
+				),
 			}),
 			expect.objectContaining({
 				evidenceId: 'public-protected-range-hash-proof',
@@ -1461,6 +1491,10 @@ describe('release proof evidence index', () => {
 				acceptedScope: expect.stringContaining('407499cd'),
 			}),
 			expect.objectContaining({
+				evidenceId: 'api-open-workflow-reference-proof',
+				acceptedScope: expect.stringContaining('a8e15d9b'),
+			}),
+			expect.objectContaining({
 				evidenceId: 'mcp-open-workflow-reference-proof',
 				acceptedScope: expect.stringContaining('da273900'),
 				command:
@@ -1486,6 +1520,10 @@ describe('release proof evidence index', () => {
 			expect.objectContaining({
 				evidenceId: 'mcp-open-workflow-reference-proof',
 				acceptedScope: expect.stringContaining('407499cd'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'mcp-open-workflow-reference-proof',
+				acceptedScope: expect.stringContaining('a8e15d9b'),
 			}),
 			expect.objectContaining({
 				evidenceId: 'release-rc-gate',
@@ -1771,6 +1809,7 @@ describe('release proof evidence index', () => {
 						'7afcd630',
 						'adc9c1e1',
 						'7e7183df',
+						'a8e15d9b',
 						'223a1ec7',
 						'868add46',
 						'caa08959',
@@ -1778,12 +1817,13 @@ describe('release proof evidence index', () => {
 						'31141dd4',
 						'f7338c91',
 						'74f63b73',
+						'033be30c',
 						'd519c5a7',
 						'62f45cb5',
 					]),
-					allowedWording: expect.stringContaining('shared SDK proof-summary gates'),
+					allowedWording: expect.stringContaining('explicit trust-preflight steps'),
 					forbiddenWording: expect.arrayContaining([
-						expect.stringContaining('complete API package health'),
+						expect.stringContaining('complete workbook-view parity'),
 					]),
 					ownerLoop: 'release',
 					nextOwnerAction: expect.stringContaining('export-format test expectation'),
@@ -2427,6 +2467,10 @@ describe('release proof evidence index', () => {
 		expect(agentWorkflowEvidence).toContain('7afcd630')
 		expect(agentWorkflowEvidence).toContain(
 			'API and MCP runnable example proof bundles are accepted',
+		)
+		expect(agentWorkflowEvidence).toContain('a8e15d9b')
+		expect(agentWorkflowEvidence).toContain(
+			'API and MCP trust-preflight workflow proof is accepted',
 		)
 		expect(agentWorkflowEvidence).toContain('caa08959')
 		expect(agentWorkflowEvidence).toContain('postWrite.dataConnections')

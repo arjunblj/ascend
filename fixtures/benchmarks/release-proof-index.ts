@@ -210,6 +210,7 @@ export interface ReleaseProofOwnerHandoffIndex {
 	readonly implementationHandoffs: readonly ReleaseProofImplementationHandoff[]
 	readonly qssLeapfrogReleaseMatrix: ReleaseProofQssLeapfrogReleaseMatrix
 	readonly releaseDecisionBoard: ReleaseProofReleaseDecisionBoard
+	readonly claimDecisionCoverage: ReleaseProofClaimDecisionCoverage
 	readonly claimPortfolio: readonly ReleaseProofPortfolioClaim[]
 	readonly deferredClaims: readonly ReleaseProofDeferredClaim[]
 	readonly excludedEvidence: readonly ReleaseProofIndexExcludedEvidence[]
@@ -343,6 +344,19 @@ export interface ReleaseProofReleaseDecisionBoard {
 	readonly missingRequirementCount: number
 	readonly rows: readonly ReleaseProofReleaseDecisionBoardRow[]
 	readonly doNotPromoteYet: readonly ReleaseProofReleaseDecisionDoNotPromoteItem[]
+	readonly boundary: string
+}
+
+export interface ReleaseProofClaimDecisionCoverage {
+	readonly status: 'all-handoff-claims-covered-by-release-decision-board' | 'coverage-gap'
+	readonly topClaimNames: readonly ReleaseProofIndexArtifactName[]
+	readonly doNotPromoteNames: readonly ReleaseProofReleaseDecisionDoNotPromoteItem['name'][]
+	readonly portfolioClaimCount: number
+	readonly deferredClaimCount: number
+	readonly excludedEvidenceCount: number
+	readonly uncoveredPortfolioClaimNames: readonly ReleaseProofPortfolioClaimName[]
+	readonly uncoveredDeferredClaimNames: readonly ReleaseProofDeferredClaimName[]
+	readonly uncoveredExcludedEvidenceNames: readonly ReleaseProofIndexExcludedEvidenceName[]
 	readonly boundary: string
 }
 
@@ -1675,11 +1689,48 @@ export function releaseProofOwnerHandoffIndex(
 		implementationHandoffs: result.readiness.implementationHandoffs,
 		qssLeapfrogReleaseMatrix: cloneQssLeapfrogReleaseMatrix(result.qssLeapfrogReleaseMatrix),
 		releaseDecisionBoard: cloneReleaseDecisionBoard(result.releaseDecisionBoard),
+		claimDecisionCoverage: claimDecisionCoverage(result),
 		claimPortfolio: result.claimPortfolio.map(clonePortfolioClaim),
 		deferredClaims: result.deferredClaims,
 		excludedEvidence: result.excludedEvidence,
 		boundary:
 			'Compact owner handoff index for release proof routing. It is not a release artifact bundle, signed attestation, or product surface.',
+	}
+}
+
+function claimDecisionCoverage(result: ReleaseProofIndexResult): ReleaseProofClaimDecisionCoverage {
+	const coveredNames = new Set<string>([
+		...result.releaseDecisionBoard.rows.map((row) => row.artifact),
+		...result.releaseDecisionBoard.doNotPromoteYet.map((item) => item.name),
+	])
+	const uncoveredPortfolioClaimNames = result.claimPortfolio
+		.map((claim) => claim.name)
+		.filter((name) => !coveredNames.has(name))
+	const uncoveredDeferredClaimNames = result.deferredClaims
+		.map((claim) => claim.name)
+		.filter((name) => !coveredNames.has(name))
+	const uncoveredExcludedEvidenceNames = result.excludedEvidence
+		.map((evidence) => evidence.name)
+		.filter((name) => !coveredNames.has(name))
+	const uncoveredCount =
+		uncoveredPortfolioClaimNames.length +
+		uncoveredDeferredClaimNames.length +
+		uncoveredExcludedEvidenceNames.length
+	return {
+		status:
+			uncoveredCount === 0
+				? 'all-handoff-claims-covered-by-release-decision-board'
+				: 'coverage-gap',
+		topClaimNames: result.releaseDecisionBoard.rows.map((row) => row.artifact),
+		doNotPromoteNames: result.releaseDecisionBoard.doNotPromoteYet.map((item) => item.name),
+		portfolioClaimCount: result.claimPortfolio.length,
+		deferredClaimCount: result.deferredClaims.length,
+		excludedEvidenceCount: result.excludedEvidence.length,
+		uncoveredPortfolioClaimNames,
+		uncoveredDeferredClaimNames,
+		uncoveredExcludedEvidenceNames,
+		boundary:
+			'Coverage summary only. Every owner-handoff claim, deferred claim, and excluded diagnostic must resolve to a top release-decision row or a do-not-promote decision before it can influence release wording.',
 	}
 }
 

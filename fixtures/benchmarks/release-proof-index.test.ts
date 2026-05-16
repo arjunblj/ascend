@@ -1767,6 +1767,22 @@ describe('release proof evidence index', () => {
 			...handoff.releaseDecisionBoard.rows.map((row) => row.artifact),
 			...handoff.releaseDecisionBoard.doNotPromoteYet.map((item) => item.name),
 		])
+		expect(handoff.claimDecisionCoverage).toMatchObject({
+			status: 'all-handoff-claims-covered-by-release-decision-board',
+			portfolioClaimCount: 11,
+			deferredClaimCount: 7,
+			excludedEvidenceCount: 1,
+			uncoveredPortfolioClaimNames: [],
+			uncoveredDeferredClaimNames: [],
+			uncoveredExcludedEvidenceNames: [],
+			boundary: expect.stringContaining('Every owner-handoff claim'),
+		})
+		expect(handoff.claimDecisionCoverage.topClaimNames).toEqual(
+			handoff.releaseDecisionBoard.rows.map((row) => row.artifact),
+		)
+		expect(handoff.claimDecisionCoverage.doNotPromoteNames).toEqual(
+			handoff.releaseDecisionBoard.doNotPromoteYet.map((item) => item.name),
+		)
 		expect(
 			handoff.claimPortfolio
 				.map((claim) => claim.name)
@@ -1852,6 +1868,7 @@ describe('release proof evidence index', () => {
 		])
 		expect(JSON.stringify(handoff)).not.toContain('"artifacts"')
 		expect(JSON.stringify(handoff)).toContain('"claimBlockerBoard"')
+		expect(JSON.stringify(handoff)).toContain('"claimDecisionCoverage"')
 		expect(JSON.stringify(handoff)).toContain('"nextOwnerActions"')
 	})
 

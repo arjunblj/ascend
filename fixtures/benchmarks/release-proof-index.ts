@@ -3579,6 +3579,17 @@ function packageActionQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceIte
 				'Public workbook-connection scheduling edit evidence only; it does not execute connections, prove external-data freshness, validate credentials, support arbitrary connection authoring, or allow workbook-only scheduling fields on query-table parts.',
 		},
 		{
+			evidenceId: 'external-link-source-binding-proof',
+			kind: 'test',
+			command:
+				'bun test packages/io-xlsx/src/reader/external-links.test.ts packages/io-xlsx/src/package-graph.test.ts packages/io-xlsx/src/package-graph-fidelity.test.ts -t "parses DDE and OLE external link source metadata|inventories OLE external link relationship binding across save and reopen|normalizes content types, relationship identity, owners, and feature families|uses OPC source, id, target, and TargetMode fields for adversarial relationship drift|classifies external workbook path relationships as external-link metadata" --timeout 60000',
+			path: 'packages/core/src/workbook.ts; packages/io-xlsx/src/reader/external-links.ts; packages/io-xlsx/src/reader/external-links.test.ts; packages/io-xlsx/src/reader/relationships.ts; packages/io-xlsx/src/package-graph.ts; packages/io-xlsx/src/package-graph.test.ts; packages/io-xlsx/src/package-graph-fidelity.test.ts; packages/sdk/src/agent-workflow.ts; packages/sdk/src/types.ts',
+			acceptedScope:
+				'Commits 8576a860, ab5d635a, 4a61e9af, and 66111c9e prove external-link source bindings are inventoried for DDE/OLE/externalBook-style relationships, externalLinkPath and nonstandard external-link parts are classified as preservedExternalLink, hyperlink relationships are classified as preservedHyperlink, and relationship source/id/target/TargetMode drift remains audited.',
+			boundary:
+				'External-link and hyperlink package relationship evidence only; it does not execute links, fetch external workbooks, prove linked-data freshness, validate linked workbook contents, repair arbitrary broken links, or make external references safe to trust.',
+		},
+		{
 			evidenceId: 'public-formula-cache-post-write-proof',
 			kind: 'test',
 			command:
@@ -3718,6 +3729,10 @@ function todayCommitClaimMatrix(): readonly ReleaseProofTodayCommitClaimMatrixRo
 				'caa08959',
 				'62566e09',
 				'1cb093fe',
+				'8576a860',
+				'ab5d635a',
+				'4a61e9af',
+				'66111c9e',
 				'91dabea8',
 				'4d272f77',
 				'1eaf28ff',
@@ -3733,7 +3748,7 @@ function todayCommitClaimMatrix(): readonly ReleaseProofTodayCommitClaimMatrixRo
 				'62f45cb5',
 			],
 			releaseOrSotaClaimBecameMoreTrue:
-				'Ascend is more credible as an agent-native spreadsheet runtime because SDK, installed-SDK, CLI, HTTP API, MCP, root-package, public query-table/data-connection reporting, public workbook-connection scheduling edits, public chart/visual, chart-source structural edit, public calc-chain/formula-cache, public hidden-sheet/workbook-view, public workbook-protection, and public protected-range examples expose runnable open-plan/trust/inspect/plan/commit/reopen/verify workflows plus shared proof-bundle and post-write proof context.',
+				'Ascend is more credible as an agent-native spreadsheet runtime because SDK, installed-SDK, CLI, HTTP API, MCP, root-package, public query-table/data-connection reporting, public workbook-connection scheduling edits, external-link source-binding/package classification, public chart/visual, chart-source structural edit, public calc-chain/formula-cache, public hidden-sheet/workbook-view, public workbook-protection, and public protected-range examples expose runnable open-plan/trust/inspect/plan/commit/reopen/verify workflows plus shared proof-bundle and post-write proof context.',
 			evidenceProvesIt: [
 				'bun test examples/agent-safe-edit.test.ts --timeout 30000',
 				'bun test examples/agent-safe-edit-mcp.test.ts --timeout 30000',
@@ -3752,6 +3767,7 @@ function todayCommitClaimMatrix(): readonly ReleaseProofTodayCommitClaimMatrixRo
 				'bun test fixtures/corpus/external-refresh-contract.test.ts -t "commit proof reports reopened public query-table connection metadata" --timeout 30000',
 				'bun test packages/io-xlsx/src/reader/connections.test.ts packages/sdk/src/connection-inventory.test.ts fixtures/corpus/external-refresh-contract.test.ts -t "connection part inventory|connection SDK inventory|reports and preserves public query-table refresh surfaces without executing them|commit proof reports reopened public query-table connection metadata" --timeout 60000',
 				'bun test packages/engine/src/operations.test.ts packages/io-xlsx/src/writer/writer.test.ts packages/sdk/src/ops-schema.test.ts packages/sdk/src/agent-workflow.test.ts -t "setConnectionRefresh|updates XML-legal single-quoted connection attributes without duplicating them|setConnectionRefresh is exposed with connection refresh guidance|commits public workbook connection scheduling edits through save and reopen" --timeout 30000',
+				'bun test packages/io-xlsx/src/reader/external-links.test.ts packages/io-xlsx/src/package-graph.test.ts packages/io-xlsx/src/package-graph-fidelity.test.ts -t "parses DDE and OLE external link source metadata|inventories OLE external link relationship binding across save and reopen|normalizes content types, relationship identity, owners, and feature families|uses OPC source, id, target, and TargetMode fields for adversarial relationship drift|classifies external workbook path relationships as external-link metadata" --timeout 60000',
 				'bun test apps/cli/src/cli.test.ts -t "agent-init prints the canonical agent workflow contract" --timeout 30000',
 				'bun test apps/api/src/server.test.ts -t "/agent-workflow exposes the API safe edit contract" --timeout 30000',
 				'bun test apps/mcp/src/index.test.ts -t "ascend.agent_workflow exposes machine-readable safe edit guidance|agent resources return canonical workflow context" --timeout 30000',
@@ -3767,9 +3783,9 @@ function todayCommitClaimMatrix(): readonly ReleaseProofTodayCommitClaimMatrixRo
 				'Blocked adjacent API package sweep: bun test apps/api/api.test.ts --timeout 30000 currently fails outside workflow discovery because the export-format assertion expects "Unsupported format" while the current response is "Unsupported export format: weird".',
 			],
 			allowedWording:
-				'Ascend provides local runnable SDK, installed-SDK package-bin, CLI, API, and MCP safe-edit workflow examples with root commands, explicit trust-preflight steps, shared SDK proof-summary gates, workflow discovery that points agents to postWrite.dataConnections, postWrite.formulaState, and postWrite.visuals, public query-table refresh/data-connection metadata including source file, command text, refresh flags, and connection-string presence without secret disclosure, workbook connection scheduling metadata edits for backgroundRefresh, keepAlive, refreshInterval, refreshOnLoad, saveData, and refreshedVersion without connection execution, chart-source/visual object reporting, local chart source refs shifted by structural row/column edits with reopened public-workbook proof, calc-chain/formula-cache reporting with cached and missing value locations, hidden-sheet/workbook-view topology, workbook structure-protection and strong-hash metadata reporting without raw hash/salt disclosure, protected-range metadata commit proof, and machine-readable proof context for generated/public workbooks.',
+				'Ascend provides local runnable SDK, installed-SDK package-bin, CLI, API, and MCP safe-edit workflow examples with root commands, explicit trust-preflight steps, shared SDK proof-summary gates, workflow discovery that points agents to postWrite.dataConnections, postWrite.formulaState, and postWrite.visuals, public query-table refresh/data-connection metadata including source file, command text, refresh flags, and connection-string presence without secret disclosure, workbook connection scheduling metadata edits for backgroundRefresh, keepAlive, refreshInterval, refreshOnLoad, saveData, and refreshedVersion without connection execution, external-link source binding and package relationship classification for inspection/preservation, chart-source/visual object reporting, local chart source refs shifted by structural row/column edits with reopened public-workbook proof, calc-chain/formula-cache reporting with cached and missing value locations, hidden-sheet/workbook-view topology, workbook structure-protection and strong-hash metadata reporting without raw hash/salt disclosure, protected-range metadata commit proof, and machine-readable proof context for generated/public workbooks.',
 			forbiddenWording: [
-				'Do not claim arbitrary workbook safety, package publication, registry download proof, hosted service readiness, public-workbook generality, connection execution, arbitrary connection authoring, credential safety, external-data freshness, fresh recalculation, full drawing/layout parity, full chart authoring, chart layout editing, structured-reference chart rewriting, external workbook chart-reference rewriting, complete workbook-view parity, password correctness validation, raw protection hash/salt disclosure, protection enforcement/security validation, complete API package health, or complete workflow observability from the local generated/public-workbook examples.',
+				'Do not claim arbitrary workbook safety, package publication, registry download proof, hosted service readiness, public-workbook generality, connection execution, arbitrary connection authoring, credential safety, external-data freshness, external-link execution, linked-workbook fetch/validation, arbitrary broken-link repair, fresh recalculation, full drawing/layout parity, full chart authoring, chart layout editing, structured-reference chart rewriting, external workbook chart-reference rewriting, complete workbook-view parity, password correctness validation, raw protection hash/salt disclosure, protection enforcement/security validation, complete API package health, or complete workflow observability from the local generated/public-workbook examples.',
 			],
 			ownerLoop: 'release',
 			nextOwnerAction:

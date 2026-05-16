@@ -1638,6 +1638,12 @@ describe('release proof evidence index', () => {
 					boundary: expect.stringContaining('does not execute connections'),
 				}),
 				expect.objectContaining({
+					evidenceId: 'external-link-source-binding-proof',
+					acceptedScope: expect.stringMatching(/8576a860.*66111c9e/),
+					command: expect.stringContaining('inventories OLE external link relationship binding'),
+					boundary: expect.stringContaining('does not execute links'),
+				}),
+				expect.objectContaining({
 					evidenceId: 'public-formula-cache-post-write-proof',
 					acceptedScope: expect.stringContaining('f7338c91'),
 					command: expect.stringContaining(
@@ -1856,6 +1862,10 @@ describe('release proof evidence index', () => {
 						'caa08959',
 						'62566e09',
 						'1cb093fe',
+						'8576a860',
+						'ab5d635a',
+						'4a61e9af',
+						'66111c9e',
 						'91dabea8',
 						'4d272f77',
 						'1eaf28ff',
@@ -1877,6 +1887,7 @@ describe('release proof evidence index', () => {
 						expect.stringContaining(
 							'commits public workbook connection scheduling edits through save and reopen',
 						),
+						expect.stringContaining('inventories OLE external link relationship binding'),
 						expect.stringContaining('commits structural row edits with shifted chart source refs'),
 						expect.stringContaining(
 							'commits public workbook strong-hash protection with honest metadata reporting',
@@ -1884,6 +1895,8 @@ describe('release proof evidence index', () => {
 					]),
 					forbiddenWording: expect.arrayContaining([
 						expect.stringContaining('arbitrary connection authoring'),
+						expect.stringContaining('external-link execution'),
+						expect.stringContaining('linked-workbook fetch/validation'),
 						expect.stringContaining('full chart authoring'),
 						expect.stringContaining('external workbook chart-reference rewriting'),
 					]),

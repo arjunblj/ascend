@@ -233,6 +233,21 @@ describe('active content corpus contract', () => {
 					}),
 				},
 			},
+			{
+				path: '../xlsx/libreoffice/checkbox-form-control.xlsx',
+				expected: {
+					partPath: 'xl/ctrlProps/ctrlProp1.xml',
+					sheetName: 'Sheet1',
+					sourceRelationshipId: 'rId3',
+					formControl: expect.objectContaining({
+						objectType: 'CheckBox',
+					}),
+					worksheetControl: expect.objectContaining({
+						shapeId: 1025,
+						name: 'Check Box 1',
+					}),
+				},
+			},
 		] as const
 
 		for (const entry of cases) {

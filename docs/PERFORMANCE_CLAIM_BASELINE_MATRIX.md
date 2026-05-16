@@ -847,6 +847,108 @@ Next action: defer production optimization for sparse-wide from this focused
 median/p95 win, keep the broad sparse-wide row blocked, and continue splitting
 the write-values profile into attributable rows.
 
+## Cycle: Sparse Wide Write Current Tail Boundary at `6595d42c`
+
+Classification: comparable external evidence plus p95/tail boundary. Ascend is
+the median winner in the current fastest-comparable sparse-wide generated write
+row, but `rust-xlsxwriter` is the p95 winner and uses less RSS with a smaller
+output file. This is a scoped median win and a tail-latency claim downgrade, not
+a broad `xlsx-write-sota` claim or a production optimization target.
+
+Workflow: generated XLSX write for sparse-wide values, 5000 rows x 256 columns,
+23,093 populated cells.
+
+Why it matters for release: sparse-wide exports are a required write-values row
+in the `xlsx-write-sota` profile. Broad write-speed wording must cover both the
+median and tail behavior of sparse agent-generated workbooks instead of
+promoting median-only wins.
+
+Public/tracked-clean input: `competitive-io` generated the `sparse-wide`
+`source-mode generated-write` workload from tracked benchmark code in a clean
+detached worktree at commit `6595d42c`. No private corpus or local research
+workbook was used.
+
+Commands:
+
+```bash
+git worktree add --detach /private/tmp/ascend-write-values-current-6595d42c 6595d42c
+cd /private/tmp/ascend-write-values-current-6595d42c
+bun install --frozen-lockfile
+mkdir -p /private/tmp/ascend-write-values-current-6595d42c-runs
+TMPDIR=/private/tmp ACCEPT_NPOI_OSMF_LICENSE=1 env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-io.ts --json --category write --competitor all --execution-scope external-process --source-mode generated-write --libraries ascend-external-writer,rust-xlsxwriter,excelize,fastexcel-java,sheetjs,xlsxwriter --workload sparse-wide --repeat 15 --warmup 3 --validation-mode each --write-runner-manifest fixtures/benchmarks/runners/sota-writers.manifest.json > /private/tmp/ascend-write-values-current-6595d42c-runs/write-values-sparse-repeat15.json
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-scoreboard.ts /private/tmp/ascend-write-values-current-6595d42c-runs/write-values-sparse-repeat15.json --json --metric medianMs --require-profile xlsx-write-sota --assert-profile-leader ascend > /private/tmp/ascend-write-values-current-6595d42c-runs/write-values-sparse-repeat15-scoreboard.json
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-scoreboard.ts /private/tmp/ascend-write-values-current-6595d42c-runs/write-values-sparse-repeat15.json --json --metric p95Ms --require-profile xlsx-write-sota --assert-profile-leader ascend > /private/tmp/ascend-write-values-current-6595d42c-runs/write-values-sparse-repeat15-p95-scoreboard.json
+```
+
+Environment:
+
+- Commit: `6595d42c38b2d089a96251755e7a8af86c3e4e6a`
+- Worktree: clean detached worktree at
+  `/private/tmp/ascend-write-values-current-6595d42c`
+- Benchmark runtime metadata: Bun `1.3.13`, Node `24.3.0`, Darwin arm64
+- Shell runtime checks: `/Users/arjun/.bun/bin/bun --version` reported `1.3.6`,
+  Python `3.9.6`, Go `1.26.3 darwin/arm64`, macOS `26.4`, kernel `25.4.0`
+- Runtime profile: `category write`, `executionScope external-process`,
+  `sourceMode generated-write`, `workload sparse-wide`, `validationMode each`,
+  `repeat 15`, `warmup 3`.
+
+Raw output:
+
+```text
+/private/tmp/ascend-write-values-current-6595d42c-runs/write-values-sparse-repeat15.json
+/private/tmp/ascend-write-values-current-6595d42c-runs/write-values-sparse-repeat15-scoreboard.json
+/private/tmp/ascend-write-values-current-6595d42c-runs/write-values-sparse-repeat15-p95-scoreboard.json
+```
+
+Focused fastest comparable writer rerun, repeat 15 after 3 warmups:
+
+| Runner | Status vs Ascend | Median ms | P95 ms | CV | Peak RSS | Output bytes |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| `ascend-external-writer` | median winner, p95 loss vs `rust-xlsxwriter` | 27.860 | 173.863 | 0.919 | 117.1 MiB | 228209 |
+| `rust-xlsxwriter` | median loss vs Ascend, p95 winner | 41.707 | 54.644 | 0.203 | 53.6 MiB | 175581 |
+| `fastexcel-java` | ran/lost vs Ascend median | 68.097 | 493.538 | 1.038 | 568.0 MiB | 183159 |
+| `excelize` | ran/lost vs Ascend median | 121.323 | 242.010 | 0.334 | 21.3 MiB | 168716 |
+| `xlsxwriter` | ran/lost vs Ascend median | 860.903 | 1915.833 | 0.337 | 74.3 MiB | 180516 |
+| `sheetjs` | ran/lost vs Ascend median | 866.457 | 2503.080 | 0.481 | 201.8 MiB | 883673 |
+
+Scoreboard result:
+
+- Median scoreboard: sparse-wide group winner was `ascend-external-writer`.
+- P95 scoreboard: sparse-wide group winner was `rust-xlsxwriter`.
+- Both scoreboard commands exit nonzero for full-profile coverage because this
+  is not a full `xlsx-write-sota` run. Missing/omitted full-profile libraries,
+  unsupported rows, and blocked runners are not counted as wins.
+
+Semantic comparability: all listed rows reopened successfully, matched the
+expected one-sheet and 23,093-cell populated shape, and passed the harness'
+external post-write semantic validation. Ascend, Excelize, SheetJS, and
+XlsxWriter matched ordered semantic cell hashes. FastExcel Java and
+rust_xlsxwriter passed semantic value validation but did not match ordered
+semantic hashes, so their rows are useful lower-fidelity sparse value-write
+comparisons, not byte/order-equivalent output claims.
+
+Humble allowed wording:
+
+> On the generated 5000 x 256 sparse-wide write row at commit `6595d42c`,
+> Ascend's focused external repeat-15 run had the fastest median among the
+> completed fastest comparable writers, but `rust-xlsxwriter` had the best p95,
+> lower RSS, and smaller output. This is scoped sparse-write evidence and a
+> tail-latency boundary, not a broad `xlsx-write-sota` claim.
+
+Forbidden wording:
+
+- "Ascend is SOTA for XLSX write."
+- "Ascend has the best sparse-wide write tail latency."
+- "Ascend beats `rust-xlsxwriter` on p95 or memory for sparse-wide writes."
+- "Ascend beats omitted, unsupported, blocked, or untested sparse-wide writers."
+- "Ascend produces the smallest sparse-wide XLSX."
+- "Ascend proves byte/order-equivalent output against every compared writer."
+
+Next action: do not optimize from the median win alone. Keep sparse-wide
+write-speed wording scoped to median; if this workflow becomes a release p95
+claim, profile Ascend's sparse-wide writer tail against `rust-xlsxwriter` before
+making a production change.
+
 ## Cycle: Plain Text Write SOTA Gate
 
 Classification: comparable external evidence plus defer. The clean

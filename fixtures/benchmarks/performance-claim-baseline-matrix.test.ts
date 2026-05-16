@@ -210,6 +210,26 @@ describe('performance claim baseline matrix', () => {
 		expect(markdown).toContain('"Ascend is SOTA for XLSX write."')
 		expect(markdown).toContain('defer production optimization from this row')
 
+		expect(markdown).toContain('## Cycle: Sparse Wide Write Current Tail Boundary at `6595d42c`')
+		expect(markdown).toContain(
+			'Classification: comparable external evidence plus p95/tail boundary.',
+		)
+		expect(markdown).toContain(
+			'/private/tmp/ascend-write-values-current-6595d42c-runs/write-values-sparse-repeat15.json',
+		)
+		expect(markdown).toContain(
+			'/private/tmp/ascend-write-values-current-6595d42c-runs/write-values-sparse-repeat15-p95-scoreboard.json',
+		)
+		expect(markdown).toContain(
+			'| `ascend-external-writer` | median winner, p95 loss vs `rust-xlsxwriter` | 27.860 | 173.863 | 0.919 | 117.1 MiB | 228209 |',
+		)
+		expect(markdown).toContain(
+			'| `rust-xlsxwriter` | median loss vs Ascend, p95 winner | 41.707 | 54.644 | 0.203 | 53.6 MiB | 175581 |',
+		)
+		expect(markdown).toContain('P95 scoreboard: sparse-wide group winner was `rust-xlsxwriter`.')
+		expect(markdown).toContain('"Ascend has the best sparse-wide write tail latency."')
+		expect(markdown).toContain('Keep sparse-wide\nwrite-speed wording scoped to median')
+
 		expect(markdown).toContain('## Cycle: Plain Text Write SOTA Gate')
 		expect(markdown).toContain('Classification: comparable external evidence plus defer.')
 		expect(markdown).toContain('commit\n`98752c84`')

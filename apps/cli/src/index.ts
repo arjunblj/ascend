@@ -332,14 +332,14 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
 				err instanceof AscendException
 					? err.ascendError
 					: isFileNotFoundError(err)
-						? fileNotFoundCliError(args[0])
+						? fileNotFoundCliError(missingFilePath(err) ?? args[0])
 						: err instanceof Error
 							? err.message
 							: String(err)
 			console.log(jsonErr(error))
 		} else {
 			if (isFileNotFoundError(err)) {
-				const error = fileNotFoundCliError(args[0])
+				const error = fileNotFoundCliError(missingFilePath(err) ?? args[0])
 				console.error(`Error: ${error.message}`)
 				if (error.suggestedFix) console.error(error.suggestedFix)
 			} else {
@@ -376,6 +376,12 @@ function isFileNotFoundError(e: unknown): boolean {
 	if ((e as { readonly code?: unknown }).code === 'ENOENT') return true
 	if (e instanceof Error && e.message.includes('ENOENT: no such file or directory')) return true
 	return false
+}
+
+function missingFilePath(e: unknown): string | undefined {
+	if (!e || typeof e !== 'object') return undefined
+	const path = (e as { readonly path?: unknown }).path
+	return typeof path === 'string' && path.length > 0 ? path : undefined
 }
 
 function fileNotFoundCliError(file?: string): AscendError {

@@ -35,6 +35,7 @@ import {
 const SID = 0 as StyleId
 const openpyxlRunnerAvailable =
 	Bun.spawnSync(['python3', '-c', 'import openpyxl, psutil']).exitCode === 0
+const fastExcelJavaRunnerAvailable = Bun.spawnSync(['mvn', '-version']).exitCode === 0
 
 type CompetitiveIoJsonPayload = {
 	readonly cases: readonly {
@@ -796,6 +797,56 @@ describe('competitive IO helpers', () => {
 		expect(input.semanticCellValuesHash).toBe(expectedSparseWideValuesHash(4, 16))
 		expect(assertions.status).toBe('pass')
 	})
+
+	test.skipIf(!fastExcelJavaRunnerAvailable)(
+		'FastExcel Java reader handles sparse-wide blank cells',
+		async () => {
+			const tempDir = mkdtempSync(join(tmpdir(), 'ascend-fastexcel-sparse-'))
+			try {
+				const input = await buildWorkloadDataSet('sparse-wide', 20, 32, 'raw-ooxml')
+				const file = join(tempDir, 'sparse-wide.xlsx')
+				writeFileSync(file, input.xlsxBytes)
+
+				const proc = Bun.spawn(
+					[
+						'bash',
+						'fixtures/benchmarks/runners/fastexcel_java_runner.sh',
+						'--operation',
+						'read',
+						'--file',
+						file,
+						'--repeat',
+						'1',
+						'--warmup',
+						'0',
+						'--validation-mode',
+						'each',
+						'--json',
+					],
+					{ stdout: 'pipe', stderr: 'pipe' },
+				)
+				const [stdout, stderr, exitCode] = await Promise.all([
+					new Response(proc.stdout).text(),
+					new Response(proc.stderr).text(),
+					proc.exited,
+				])
+
+				expect(stderr).toBe('')
+				expect(exitCode).toBe(0)
+				const payload = JSON.parse(stdout) as {
+					readonly assertions?: {
+						readonly cellCount?: number
+						readonly semanticCellValuesHash?: string
+					}
+				}
+				expect(payload.assertions?.cellCount).toBe(input.cells)
+				expect(payload.assertions?.semanticCellValuesHash).toBe(input.semanticCellValuesHash)
+			} finally {
+				rmSync(tempDir, { recursive: true, force: true })
+			}
+		},
+		{ timeout: 60_000 },
+	)
 
 	test(
 		'Ascend-writer read source is interoperable with ExcelJS',

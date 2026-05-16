@@ -1630,7 +1630,7 @@ export function releaseProofFixtureDecisionPacket(
 			],
 			publicReplacementGap: true,
 			boundary:
-				'Tracked safe-open scan found no public signed or unknown-part replacement in the checked-in fixture corpus.',
+				'Tracked safe-open scan found a public unknown-part replacement, but no public signed-package replacement in the checked-in fixture corpus.',
 		},
 		{
 			artifact: 'package-action-proof',
@@ -1644,7 +1644,7 @@ export function releaseProofFixtureDecisionPacket(
 			],
 			publicReplacementGap: true,
 			boundary:
-				'Tracked package-action scan found no public signature-package or synthetic unknown-path replacement in the checked-in fixture corpus.',
+				'Tracked package-action scan found a public unknown-path replacement, but no public signature-package replacement in the checked-in fixture corpus.',
 		},
 	]
 	return {
@@ -2661,9 +2661,9 @@ function packageActionArtifact(
 				status: 'missing',
 				ownerLoop: 'product',
 				requirement:
-					'accept disclosed generated edge packages as release proof or replace them with public binary fixtures',
+					'accept disclosed generated signature topology as release proof or replace it with a public binary fixture',
 				evidence:
-					'package-action fixture scan over tracked fixtures finds public docProps/calc-chain/customXml/macro/chart candidates but 0 signature/unknown-path replacements; current proof still uses generated signature-invalidation and unknown-part edge packages',
+					'package-action fixture scan over tracked fixtures finds public docProps/calc-chain/customXml/macro/chart/unknown-path candidates but 0 signature-package replacements; current proof still uses a generated signature-invalidation edge package',
 			},
 			{
 				id: 'provenance-boundary',
@@ -2741,7 +2741,7 @@ function correctnessBoundaryEvidence(
 				'safe-open-proof/signed',
 			],
 			proofChecks: [
-				'generated edge package is disclosed',
+				'generated signature topology is disclosed',
 				'commit proof records a drop action for signature package parts',
 				'safe-open proof routes signature package features to metadata-only review',
 			],
@@ -2799,7 +2799,7 @@ function correctnessBoundaryEvidence(
 				safeOpenRiskRoutedToReview(safeOpen, 'unknown-part', 'preservedOther'),
 			evidenceSources: ['package-action-proof/unknown-part-error', 'safe-open-proof/unknown-part'],
 			proofChecks: [
-				'generated edge package is disclosed',
+				'public unknown-part fixture is used',
 				'commit proof records an error action for the unknown package part',
 				'post-write audit fails closed and safe-open routes unknown package features to review',
 			],

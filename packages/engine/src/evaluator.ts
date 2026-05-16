@@ -1981,8 +1981,12 @@ function resolveIndexReference(argNodes: readonly FormulaNode[], ctx: EvalContex
 	const source = resolveArg(argNodes[0] ?? { type: 'missing' }, ctx)
 	if (source.value.kind === 'error' && !source.ref && !source.areas?.length) return source
 	const areas = areasOf(source)
-	if (!areas || areas.length !== 1) return { value: errorValue('#VALUE!') }
-	const area = areas[0]
+	if (!areas?.length) return { value: errorValue('#VALUE!') }
+	const areaNum = argNodes.length > 3 ? offsetNumberArg(argNodes[3], ctx) : 1
+	if (typeof areaNum !== 'number') return { value: areaNum }
+	const areaIndex = Math.floor(areaNum) - 1
+	if (areaIndex < 0) return { value: errorValue('#VALUE!') }
+	const area = areas[areaIndex]
 	if (!area) return { value: errorValue('#VALUE!') }
 	const bounds = toAreaBounds(area.ref)
 	const height = bounds.endRow - bounds.startRow + 1

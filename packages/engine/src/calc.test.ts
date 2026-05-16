@@ -183,6 +183,33 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(2, 3)?.value).toEqual(errorValue('#VALUE!'))
 	})
 
+	test('INDEX returns selected multi-area references to aggregate functions', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(10), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(20), formula: null, styleId: sid })
+		sheet.cells.set(0, 2, { value: numberValue(30), formula: null, styleId: sid })
+		sheet.cells.set(1, 2, { value: numberValue(40), formula: null, styleId: sid })
+		sheet.cells.set(0, 3, {
+			value: EMPTY,
+			formula: 'SUM(INDEX((A1:A2,C1:C2),0,1,2))',
+			styleId: sid,
+		})
+		sheet.cells.set(1, 3, { value: EMPTY, formula: 'SUM(INDEX((A1:A2,C1:C2),0,1))', styleId: sid })
+		sheet.cells.set(2, 3, {
+			value: EMPTY,
+			formula: 'SUM(INDEX((A1:A2,C1:C2),0,1,3))',
+			styleId: sid,
+		})
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(0, 3)?.value).toEqual(numberValue(70))
+		expect(sheet.cells.get(1, 3)?.value).toEqual(numberValue(30))
+		expect(sheet.cells.get(2, 3)?.value).toEqual(errorValue('#VALUE!'))
+	})
+
 	test('SUM supports OFFSET as a dynamic range endpoint', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

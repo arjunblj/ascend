@@ -58,6 +58,8 @@ export const REL_EXTERNAL_LINK_LIBRARY_PATH =
 	'http://schemas.microsoft.com/office/2006/relationships/xlExternalLinkPath/xlLibrary'
 export const REL_EXTERNAL_LINK_MISSING_PATH =
 	'http://schemas.microsoft.com/office/2006/relationships/xlExternalLinkPath/xlPathMissing'
+export const REL_CONNECTIONS =
+	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/connections'
 
 export type ExternalLinkPathRelationshipKind =
 	| 'externalLinkPath'

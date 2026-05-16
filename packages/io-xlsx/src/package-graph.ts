@@ -10,6 +10,7 @@ import {
 	REL_CHART,
 	REL_CHARTSHEET,
 	REL_COMMENTS,
+	REL_CONNECTIONS,
 	REL_DRAWING,
 	REL_MACROSHEET,
 	REL_OFFICE_DOC,
@@ -254,7 +255,9 @@ export function classifyPackageFeatureFamily(
 	}
 	if (path.includes('/slicers/') || path.includes('/slicerCaches/')) return 'preservedSlicer'
 	if (path.includes('/timelines/') || path.includes('/timelineCaches/')) return 'preservedTimeline'
-	if (path.endsWith('/connections.xml')) return 'preservedConnection'
+	if (path.endsWith('/connections.xml') || lowerRelType.endsWith('/relationships/connections')) {
+		return 'preservedConnection'
+	}
 	if (path.includes('/customData/')) return 'preservedPowerQuery'
 	if (path.includes('/theme/')) return 'preservedTheme'
 	if (path.includes('/styles.xml')) return 'preservedStyles'
@@ -446,6 +449,7 @@ function classifyRelationshipFeatureFamily(
 	if (relationship.type === REL_THEME) return 'preservedTheme'
 	if (relationship.type === REL_TABLE) return 'preservedTable'
 	if (relationship.type === REL_QUERY_TABLE) return 'preservedQueryTable'
+	if (relationship.type === REL_CONNECTIONS) return 'preservedConnection'
 	if (relationship.type === REL_COMMENTS) return 'preservedComments'
 	if (relationship.type === REL_THREADED_COMMENT) return 'preservedThreadedComments'
 	if (relationship.type === REL_DRAWING) return 'preservedDrawing'

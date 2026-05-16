@@ -520,6 +520,102 @@ Next action: defer production optimization for dense-values. Continue with the
 next priority workflow only if it can produce a comparable baseline row,
 validated optimization, or explicit claim downgrade.
 
+## Cycle: Dense Values Write Current Fastest Comparable Row at `d7b17aa6`
+
+Classification: comparable external evidence plus defer. This refreshes the
+dense-values write row at current `HEAD`. Ascend is the median and p95 winner
+among the completed fastest comparable writers in this row with low noise. No
+production optimization is justified from a winning row.
+
+Workflow: generated XLSX write for dense numeric values, 2000 rows x 20 columns.
+
+Why it matters for release: dense value export is the simplest generated
+commit/write path after an agent creates or rewrites workbook values. It is the
+lowest-level write row in the `xlsx-write-sota` profile and validates that the
+dense streaming fallback remains a current release win.
+
+Public/tracked-clean input: `competitive-io` generated the `dense-values`
+`source-mode generated-write` workload from tracked benchmark code in a clean
+detached worktree at commit `d7b17aa6`. No private corpus or local research
+workbook was used.
+
+Commands:
+
+```bash
+git worktree add --detach /private/tmp/ascend-write-dense-current-d7b17aa6 d7b17aa6c744
+cd /private/tmp/ascend-write-dense-current-d7b17aa6
+bun install --frozen-lockfile
+mkdir -p /private/tmp/ascend-write-dense-current-d7b17aa6-runs
+TMPDIR=/private/tmp ACCEPT_NPOI_OSMF_LICENSE=1 env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-io.ts --json --category write --competitor all --execution-scope external-process --source-mode generated-write --libraries ascend-external-writer,rust-xlsxwriter,excelize,fastexcel-java,sheetjs --workload dense-values --repeat 15 --warmup 3 --validation-mode each --write-runner-manifest fixtures/benchmarks/runners/sota-writers.manifest.json > /private/tmp/ascend-write-dense-current-d7b17aa6-runs/write-dense-values-fastest-repeat15.json
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-scoreboard.ts /private/tmp/ascend-write-dense-current-d7b17aa6-runs/write-dense-values-fastest-repeat15.json --json --metric medianMs --require-profile xlsx-write-sota --assert-profile-leader ascend > /private/tmp/ascend-write-dense-current-d7b17aa6-runs/write-dense-values-fastest-repeat15-scoreboard.json
+```
+
+Environment:
+
+- Commit: `d7b17aa6c7447b7dc3e6eadfc303e63d5cc22d51`
+- Worktree: clean detached worktree at
+  `/private/tmp/ascend-write-dense-current-d7b17aa6`
+- Bun runtime: `1.3.13`
+- Node: `24.3.0`
+- Platform: Darwin arm64
+- Runtime profile: `category write`, `executionScope external-process`,
+  `sourceMode generated-write`, `workload dense-values`, `validationMode each`,
+  `repeat 15`, `warmup 3`.
+
+Raw output:
+
+```text
+/private/tmp/ascend-write-dense-current-d7b17aa6-runs/write-dense-values-fastest-repeat15.json
+/private/tmp/ascend-write-dense-current-d7b17aa6-runs/write-dense-values-fastest-repeat15-scoreboard.json
+```
+
+Focused fastest comparable writer rerun, repeat 15 after 3 warmups:
+
+| Runner | Status vs Ascend | Median ms | P95 ms | CV | Peak RSS | Output bytes |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| `ascend-external-writer` | ran/won | 2.667 | 3.592 | 0.100 | 79.0 MiB | 172259 |
+| `fastexcel-java` | ran/lost vs Ascend | 10.011 | 27.631 | 0.408 | 472.0 MiB | 161598 |
+| `excelize` | ran/lost vs Ascend | 15.337 | 17.198 | 0.040 | 17.1 MiB | 120015 |
+| `rust-xlsxwriter` | ran/lost vs Ascend | 20.924 | 22.041 | 0.027 | 17.9 MiB | 119134 |
+| `sheetjs` | ran/lost vs Ascend | 26.855 | 33.489 | 0.095 | 243.2 MiB | 1181431 |
+
+Scoreboard result:
+
+- Focused repeat-15 fastest-writer row: group winner was
+  `ascend-external-writer`; `leaderFailures: []` and
+  `profileLeaderFailures: []`.
+- The scoreboard command exits nonzero for full-profile coverage because this is
+  not a full `xlsx-write-sota` run. Missing/omitted full-profile libraries,
+  unsupported rows, and blocked runners are not counted as wins.
+
+Semantic comparability: all listed rows reopened successfully, matched the
+expected one-sheet and 40,000-cell shape, and passed semantic cell value
+validation. Ascend, Excelize, and SheetJS matched ordered semantic cell hashes.
+FastExcel Java and rust_xlsxwriter passed sorted semantic value equality but did
+not match ordered semantic value hashes, so their rows are useful lower-fidelity
+value-write comparisons, not byte/order-equivalent output claims. Ascend wins
+speed here but uses more RSS and emits a larger XLSX than Excelize and
+rust_xlsxwriter.
+
+Humble allowed wording:
+
+> On the generated 2000 x 20 dense-values write row at commit `d7b17aa6`,
+> Ascend's focused external repeat-15 run had the fastest median and p95 among
+> the completed fastest comparable writers in this row. This is scoped generated
+> dense-value write evidence, not a broad `xlsx-write-sota` claim.
+
+Forbidden wording:
+
+- "Ascend is SOTA for XLSX write."
+- "Ascend beats every generated XLSX writer."
+- "Ascend beats omitted, unsupported, or blocked dense-value writers."
+- "Ascend produces the smallest dense-value XLSX."
+- "Ascend proves byte/order-equivalent output against every compared writer."
+
+Next action: defer production optimization for dense-values from this current
+winning row. Continue with the next priority workflow only if it can produce a
+validated optimization, comparable baseline row, or explicit claim downgrade.
+
 ## Cycle: Plain Text Write SOTA Gate
 
 Classification: comparable external evidence plus defer. The clean

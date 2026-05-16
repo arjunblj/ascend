@@ -465,6 +465,49 @@ describe('ascend cli', () => {
 		expect(parsed.error.suggestedFix).toContain('ascend inspect <file> --agent --json')
 	})
 
+	test('read surfaces --json return structured missing input guidance', async () => {
+		const cases = [
+			{
+				argv: ['read', TEST_FILE, '--json'] as const,
+				message: 'Missing required read input',
+				details: {
+					command: 'read',
+					required: ['file', 'selector'],
+					missing: ['selector'],
+				},
+				fix: 'ascend read <file> <range|table:Name|name:Name>',
+			},
+			{
+				argv: ['agent-view', '--json'] as const,
+				message: 'Missing required agent-view input',
+				details: {
+					command: 'agent-view',
+					required: ['file'],
+					missing: ['file'],
+				},
+				fix: 'ascend agent-view <file> --sheet <name> --range <range> --json',
+			},
+		]
+
+		for (const entry of cases) {
+			const result = await run(...entry.argv)
+			expect(result.exitCode).toBe(1)
+			const parsed = JSON.parse(result.stdout)
+			expect(parsed.ok).toBe(false)
+			expect(parsed.error).toMatchObject({
+				code: 'INVALID_ARGUMENT',
+				message: entry.message,
+				retryable: true,
+				retryStrategy: 'modified',
+				details: {
+					...entry.details,
+					workflow: ['inspect', 'read', 'plan'],
+				},
+			})
+			expect(parsed.error.suggestedFix).toContain(entry.fix)
+		}
+	})
+
 	test('plan and commit implement safe agent workflow', async () => {
 		const wb = AscendWorkbook.create()
 		await wb.save(`${import.meta.dir}/${TEST_FILE}`)

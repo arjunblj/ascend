@@ -1,3 +1,4 @@
+import { ascendError } from '@ascend/schema'
 import type { CompactCellInfo, WorkbookDocument } from '@ascend/sdk'
 import { cliError, jsonOut } from '../output/json.ts'
 import { formatCellValue, table } from '../output/pretty.ts'
@@ -24,7 +25,21 @@ export async function readCommand(args: string[], flags: Map<string, string>): P
 	const file = args[0]
 	const selectorArg = args[1]
 	if (!file || !selectorArg) {
-		cliError('Usage: ascend read <file> <selector> [--sheet <name>]', flags)
+		cliError(
+			ascendError('INVALID_ARGUMENT', 'Missing required read input', {
+				retryable: true,
+				retryStrategy: 'modified',
+				details: {
+					command: 'read',
+					required: ['file', 'selector'],
+					missing: [...(!file ? ['file'] : []), ...(!selectorArg ? ['selector'] : [])],
+					workflow: ['inspect', 'read', 'plan'],
+				},
+				suggestedFix:
+					'Run ascend read <file> <range|table:Name|name:Name> --sheet <name> --json after inspecting workbook structure.',
+			}),
+			flags,
+		)
 		return 1
 	}
 

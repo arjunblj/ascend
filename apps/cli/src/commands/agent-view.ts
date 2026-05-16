@@ -1,3 +1,4 @@
+import { ascendError } from '@ascend/schema'
 import { cliError, jsonOut } from '../output/json.ts'
 import { bullet, formatCellValue, heading } from '../output/pretty.ts'
 import { openWorkbookDocumentWithProgress } from '../progress.ts'
@@ -22,7 +23,21 @@ export async function agentViewCommand(
 ): Promise<number> {
 	const file = args[0]
 	if (!file) {
-		cliError('Usage: ascend agent-view <file> [--sheet <name>] [--range <range>]', flags)
+		cliError(
+			ascendError('INVALID_ARGUMENT', 'Missing required agent-view input', {
+				retryable: true,
+				retryStrategy: 'modified',
+				details: {
+					command: 'agent-view',
+					required: ['file'],
+					missing: ['file'],
+					workflow: ['inspect', 'read', 'plan'],
+				},
+				suggestedFix:
+					'Run ascend agent-view <file> --sheet <name> --range <range> --json after a trust preflight.',
+			}),
+			flags,
+		)
 		return 1
 	}
 

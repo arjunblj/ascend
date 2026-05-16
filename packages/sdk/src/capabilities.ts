@@ -729,8 +729,9 @@ export const EXCEL_CAPABILITIES: readonly ExcelCapability[] = [
 		'editable',
 		'P0',
 		'Add optional resolution hooks for controlled headless external workbook reads.',
-		'External link targets are inspectable/editable, and SDK inspect maps cell, defined-name, chart-series, table, conditional-format, data-validation, sparkline, and x14 metadata formula usages before rewrites.',
+		'External link targets are inspectable/editable for tracked public fixtures, and SDK inspect maps cell, defined-name, chart-series, table, conditional-format, data-validation, sparkline, and x14 metadata formula usages before rewrites.',
 		[
+			'fixtures/corpus/external-refresh-contract.test.ts',
 			'packages/engine/src/operations.test.ts',
 			'packages/sdk/src/external-reference-usages.test.ts',
 		],
@@ -742,8 +743,9 @@ export const EXCEL_CAPABILITIES: readonly ExcelCapability[] = [
 		'editable',
 		'P1',
 		'Add query execution adapters and table-output impact planning.',
-		'Query table parts are inventoried with sheet anchors, connection IDs, refresh flags, and preservation/loss-audit features; setConnectionRefresh edits refreshOnLoad, saved-data policy, and refreshedVersion without executing the external query.',
+		'Query table parts are inventoried for tracked public fixtures with sheet anchors, connection IDs, refresh flags, and preservation/loss-audit features; setConnectionRefresh edits refreshOnLoad, saved-data policy, and refreshedVersion without executing the external query.',
 		[
+			'fixtures/corpus/external-refresh-contract.test.ts',
 			'packages/io-xlsx/src/reader/connections.test.ts',
 			'packages/sdk/src/connection-inventory.test.ts',
 			'packages/engine/src/operations.test.ts',
@@ -769,8 +771,9 @@ export const EXCEL_CAPABILITIES: readonly ExcelCapability[] = [
 		'editable',
 		'P1',
 		'Add refresh execution adapters for connection-aware engines.',
-		'Workbook calculation refresh flags, calc-chain preservation, pivot cache freshness, workbook connections, and query-table refresh metadata are surfaced with stale/not-saved indicators; connection/query-table refreshOnLoad, saveData, and refreshedVersion are safely editable and persisted into OOXML.',
+		'Workbook calculation refresh flags, calc-chain preservation, pivot cache freshness, workbook connections, and query-table refresh metadata are surfaced with stale/not-saved indicators; tracked public query-table refreshOnLoad, saveData, and refreshedVersion edits persist into OOXML without query execution.',
 		[
+			'fixtures/corpus/external-refresh-contract.test.ts',
 			'packages/sdk/src/connection-inventory.test.ts',
 			'packages/sdk/src/ops-schema.test.ts',
 			'packages/engine/src/operations.test.ts',

@@ -1037,7 +1037,7 @@ describe('release proof evidence index', () => {
 					path: 'docs/PERFORMANCE_CLAIM_BASELINE_MATRIX.md',
 					validationCommand:
 						'bun test fixtures/benchmarks/performance-claim-baseline-matrix.test.ts',
-					nextAction: expect.stringContaining('current-commit full-profile `xlsx-read-sota` gate'),
+					nextAction: expect.stringContaining('focused ClosedXML head-to-head read run'),
 					forbiddenShortcut: expect.stringContaining('one-workload medians'),
 				}),
 			]),
@@ -1594,7 +1594,8 @@ describe('release proof evidence index', () => {
 		expect(board.rows?.every((row) => row.headlineClaimAllowed === false)).toBe(true)
 		expect(board.rows?.every((row) => (row.aPlusBlockingOwnerActions?.length ?? 0) > 0)).toBe(true)
 		expect(stdout).toContain('Excel-ground-truth formula/cached-result fixtures')
-		expect(stdout).toContain('bounded chart series-source fixtures as accepted evidence')
+		expect(stdout).toContain('bounded chart series-source fixtures')
+		expect(stdout).toContain('public external-link/query-table refresh metadata fixtures')
 		expect(stdout).toContain('full chart editing support')
 		expect(board.doNotPromoteYet?.map((item) => item.name)).toContain('columnar-scan-sidecars')
 		expect(board.doNotPromoteYet?.every((item) => item.status === 'do-not-promote-yet')).toBe(true)
@@ -1807,10 +1808,12 @@ describe('release proof evidence index', () => {
 				validationCommand: 'bun test fixtures/benchmarks/performance-claim-baseline-matrix.test.ts',
 			},
 		})
-		expect(packet.benchmarkBlocker?.nextAction).toContain('full-profile `xlsx-read-sota` gate')
+		expect(packet.benchmarkBlocker?.nextAction).toContain('ClosedXML head-to-head read run')
+		expect(packet.benchmarkBlocker?.nextAction).toContain('fastxlsx runner')
 		expect(packet.benchmarkBlocker?.benchmarkCommands?.join('\n')).toContain(
 			'competitive-scoreboard.ts <suite.json> --json --metric medianMs --require-profile xlsx-read-sota',
 		)
+		expect(packet.benchmarkBlocker?.acceptanceEvidence?.join('\n')).toContain('ClosedXML')
 		expect(packet.benchmarkBlocker?.acceptanceEvidence?.join('\n')).toContain('not counted as wins')
 		expect(packet.approvalChecklist?.map((item) => `${item.ownerLoop}/${item.gateId}`)).toEqual([
 			'performance/release-latency-run',

@@ -1806,10 +1806,11 @@ export function releaseProofPerformanceBoundaryDecisionPacket(
 			path: 'docs/PERFORMANCE_CLAIM_BASELINE_MATRIX.md',
 			validationCommand: benchmarkValidationCommand,
 			nextAction:
-				'Run or assemble a current-commit full-profile `xlsx-read-sota` gate next; if it still fails only for explicit blocked, unavailable, unsupported, or semantic-mismatch rows, keep the claim scoped and attack the highest-impact blocker.',
+				'Treat the focused ClosedXML head-to-head read run as accepted bounded-gap evidence, keep broad speed wording downgraded, then attack the next highest-impact blocker: selected-sheet/metadata-only unsupported-operation gaps, feature-rich semantic mismatches, or the unavailable fastxlsx runner.',
 			benchmarkCommands,
 			acceptanceEvidence: [
 				'Clean detached worktree or clean release benchmark environment.',
+				'ClosedXML is measured as ran/won for comparable value-read rows in the focused head-to-head run and remains not comparable for selected-sheet and metadata-only.',
 				'Every `xlsx-read-sota` workload either has comparable Ascend and external rows or an explicit runner unavailable, blocked, unsupported-operation, or not-comparable status.',
 				'Median, p95, CV/noise, memory, environment, runner/library versions, command, input shape, and semantic comparability are recorded for each comparable row.',
 				'Failed, missing, or semantically mismatched runners are not counted as wins.',
@@ -2372,7 +2373,7 @@ function ownerDecisionArtifactsFor(
 					decision:
 						'Use the ranked compatibility matrix for safe wording on common workbook support, protection metadata, active content, unknown parts, encryption, malformed packages, and signature blockers.',
 					nextAction:
-						'Compatibility owner treats formula-binding fixtures, public LibreOffice cached-value parity, public table header/totals/current-row structured-reference fixtures, classic/x14 conditional-format fixtures, and bounded chart series-source fixtures as accepted evidence, then adds Excel-ground-truth formula/cached-result fixtures outside the LibreOffice set, remaining lower-frequency table/conditional-format edge cases, and broader chart authoring fixtures from the matrix.',
+						'Compatibility owner treats formula-binding fixtures, public LibreOffice cached-value parity, public table header/totals/current-row structured-reference fixtures, classic/x14 conditional-format fixtures, bounded chart series-source fixtures, and public external-link/query-table refresh metadata fixtures as accepted evidence, then adds Excel-ground-truth formula/cached-result fixtures outside the LibreOffice set, remaining lower-frequency table/conditional-format edge cases, broader chart authoring fixtures, and broader public cross-workbook refresh fixtures from the matrix.',
 					forbiddenShortcut:
 						'Do not turn the matrix into full Excel compatibility, full chart editing support, worksheet/workbook/protected-range protection security, file trust, malware scanning, password recovery, or signature preservation wording.',
 					boundary:
@@ -2387,7 +2388,7 @@ function ownerDecisionArtifactsFor(
 					decision:
 						'Use the performance matrix as a defer decision: no broad XLSX read, SOTA, or QSS-leapfrog speed claim is promotable from the current partial baseline.',
 					nextAction:
-						'Benchmarking owner runs or assembles a current-commit full-profile `xlsx-read-sota` gate next, then hardens ClosedXML, fastxlsx, rich-metadata semantic mismatch blockers, selected-sheet unsupported-operation gaps, and metadata-only unsupported-operation gaps before any broad speed claim is promoted.',
+						'Benchmarking owner treats the focused ClosedXML head-to-head read run as accepted bounded-gap evidence, keeps broad speed wording downgraded, then attacks selected-sheet/metadata-only unsupported-operation gaps, feature-rich semantic mismatches, or the unavailable fastxlsx runner before any broad speed claim is promoted.',
 					forbiddenShortcut:
 						'Do not count unavailable runners, blocked runners, dirty-worktree timings, or one-workload medians as speed wins.',
 					boundary:

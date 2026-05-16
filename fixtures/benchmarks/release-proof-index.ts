@@ -2238,6 +2238,7 @@ export function releaseProofPerformanceBoundaryDecisionPacket(
 				'Commit bbf875b4 adds an Ascend readXlsx selected-sheet external-process row to the same selected-sheet timing lane, making it benchmarkable without using a separate in-process timing model.',
 				'Same-lane metadata-only external-process evidence at commit fa3a13dc is accepted for Ascend, SheetJS, and OpenPyXL metadata-only rows.',
 				'Commit b6925afe adds a python-calamine metadata-only baseline to the same metadata-only timing lane and scoreboard coverage; the synthetic scoreboard fixture shows Calamine can be the metadata-only row winner, so this is downgrade evidence rather than an Ascend speed win.',
+				'Commit bb31bebe pins current FastXLSX carry-forward evidence: FastXLSX runs in an isolated Python 3.12 environment on the same cell-materialization lane, Ascend wins comparable value/warm rows by median, but FastXLSX uses less memory and one noisy table-heavy repeat-5 group briefly favored FastXLSX.',
 				'Current full-profile and merged selected-sheet/metadata-only scoreboards from commit 9ddfff91 report no leader failures or profile leader failures.',
 			],
 			evidenceMissing: [
@@ -2245,7 +2246,7 @@ export function releaseProofPerformanceBoundaryDecisionPacket(
 				'Feature-rich SheetJS and Calamine semantic-support evidence or an explicit not-comparable policy.',
 				'Unsupported selected-sheet policy for ExcelJS, Apache POI, and ClosedXML rows, plus unsupported metadata-only competitor policy for ExcelJS, Apache POI, and ClosedXML rows.',
 				'Clean repeat-5 selected-sheet rerun that includes the new ascend-readXlsx selected-sheet row before any readXlsx-specific speed wording.',
-				'FastXLSX environment coverage or a kill/defer decision for unavailable runner evidence.',
+				'Current full-profile gate that carries the isolated FastXLSX setup forward while keeping feature-rich and memory-footprint boundaries explicit.',
 				'Tracked-clean release-environment approval before any public speed wording.',
 			],
 			qssContrast: [
@@ -2257,13 +2258,14 @@ export function releaseProofPerformanceBoundaryDecisionPacket(
 			forbiddenWording: [
 				'Do not claim Ascend is the fastest XLSX reader.',
 				'Do not claim Ascend leads metadata-only reads while the Calamine metadata-only baseline is comparable and may win the row.',
+				'Do not claim Ascend beats FastXLSX on memory, feature-rich rich-metadata reads, or every XLSX workflow.',
 				'Do not claim SOTA, QSS-leapfrog read speed, or broad speed leadership from the current partial baseline.',
 				'Do not count unavailable runners, unsupported operations, feature-rich semantic mismatches, or dirty-worktree timings as wins.',
 			],
 			nextAction:
-				'Downgrade broad read-speed wording and stop production optimization from this evidence: the current full-profile and merged selected-sheet/metadata-only scoreboards have no leader failures, but the Calamine metadata-only baseline is not an Ascend win, and ClosedXML coverage, feature-rich SheetJS/Calamine semantic mismatches, and remaining unsupported selected-sheet/metadata-only competitor rows remain non-wins.',
+				'Downgrade broad read-speed wording and stop production optimization from this evidence: the current full-profile and merged selected-sheet/metadata-only scoreboards have no leader failures, the Calamine metadata-only baseline is not an Ascend win, current FastXLSX value/warm rows are scoped wins with memory and feature-rich boundaries, and ClosedXML coverage, feature-rich SheetJS/Calamine semantic mismatches, and remaining unsupported selected-sheet/metadata-only competitor rows remain non-wins.',
 			nextOwnerAction:
-				'Benchmarking owner either resolves one explicit blocker row (ClosedXML coverage policy, feature-rich SheetJS/Calamine semantic policy, remaining unsupported selected-sheet/metadata-only competitor policy, or FastXLSX environment coverage) with the commands below, or keeps the broad speed claim downgraded and stops.',
+				'Benchmarking owner either resolves one explicit blocker row (ClosedXML coverage policy, feature-rich SheetJS/Calamine semantic policy, remaining unsupported selected-sheet/metadata-only competitor policy, or current full-profile FastXLSX carry-forward policy) with the commands below, or keeps the broad speed claim downgraded and stops.',
 			benchmarkCommands,
 			acceptanceEvidence: [
 				'Clean detached worktree or clean release benchmark environment.',
@@ -2272,12 +2274,13 @@ export function releaseProofPerformanceBoundaryDecisionPacket(
 				'Selected-sheet wording remains scoped because ExcelJS, Apache POI, and ClosedXML are unsupported-operation gaps, while python-calamine selected-sheet has only current-worktree projection proof and must not be counted as a clean speed win.',
 				'The metadata-only same-lane external-process run at commit fa3a13dc is accepted as scoped evidence: Ascend, SheetJS, and OpenPyXL all loaded workbook metadata without hydrating cells; Ascend had the fastest median among those completed comparable rows.',
 				'Commit b6925afe adds python-calamine metadata-only runner and scoreboard coverage on the same metadata-only lane; treat the row as comparable coverage and downgrade broad speed wording because Calamine may win that row.',
+				'Commit bb31bebe pins current FastXLSX evidence: same-lane value/warm rows are comparable and mostly Ascend median wins, but FastXLSX lower RSS and the feature-rich boundary keep the evidence scoped.',
 				'The current full-profile run at commit 9ddfff91 and merged selected-sheet/metadata-only scoreboard report no leader failures or profile leader failures, but coverage still fails for ClosedXML missing/error rows and feature-rich semantic mismatches.',
 				'Median, p95, CV/noise, memory, environment, runner/library versions, command, input shape, and semantic comparability are recorded for each comparable row.',
 				'Failed, missing, or semantically mismatched runners are not counted as wins.',
 			],
 			stopCondition:
-				'Stop production optimization from this evidence. Continue only as blocker work for ClosedXML coverage policy, feature-rich SheetJS/Calamine semantic support or not-comparable policy, remaining unsupported selected-sheet/metadata-only competitor policy, or FastXLSX environment coverage.',
+				'Stop production optimization from this evidence. Continue only as blocker work for ClosedXML coverage policy, feature-rich SheetJS/Calamine semantic support or not-comparable policy, remaining unsupported selected-sheet/metadata-only competitor policy, or current full-profile FastXLSX carry-forward policy.',
 		},
 		approvalChecklist,
 		validationCommands: [
@@ -3073,13 +3076,24 @@ function safeOpenQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceItem[] {
 				'Public shape-macro reporting and preservation evidence only; it does not authorize macro execution, malware scanning, active-content safety, trusted-source behavior, or broad custom UI safety wording.',
 		},
 		{
+			evidenceId: 'public-activex-blocked-execution-policy-proof',
+			kind: 'test',
+			command:
+				'bun test fixtures/corpus/active-content-contract.test.ts packages/io-xlsx/src/reader/active-content.test.ts -t "ActiveX control|ActiveX controls" --timeout 60000',
+			path: 'packages/io-xlsx/src/reader/index.ts; packages/io-xlsx/src/reader/active-content.test.ts; fixtures/corpus/active-content-contract.test.ts',
+			acceptedScope:
+				'Commit 2459f79a marks public ActiveX and macro-bearing form-control inventory with blocked executionPolicy metadata while preserving ActiveX XML, binary, worksheet, and VML identity through safe edit/reopen evidence.',
+			boundary:
+				'ActiveX/form-control execution metadata only; it does not execute, sandbox, scan, trust, or semantically edit ActiveX controls.',
+		},
+		{
 			evidenceId: 'cli-agent-facing-open-diagnostics-proof',
 			kind: 'test',
 			command:
-				'bun test apps/cli/src/cli.test.ts apps/cli/src/file-errors.test.ts -t "custom UI callbacks|open-plan --json reports missing files|raw ENOENT noise|missing ops sidecar|structured missing workflow input guidance|structured missing workbook guidance|verification commands --json return structured missing input guidance|read surfaces --json return structured missing input guidance|proof and recovery commands --json return structured missing input guidance|calc and export --json return structured missing input guidance|direct mutation commands --json return structured missing input guidance before opening files|utility commands --json return structured missing input guidance|CLI JSON validation errors include command-specific guidance and fallback codes|formula edit commands --json return structured missing input guidance|unknown command --json returns a failure envelope|unknown inspect flag --json returns actionable retry details|doctor unsupported flag --json returns command flag details" --timeout 30000',
+				'bun test apps/cli/src/cli.test.ts apps/cli/src/file-errors.test.ts -t "custom UI callbacks|open-plan --json reports missing files|raw ENOENT noise|missing ops sidecar|structured missing workflow input guidance|structured missing workbook guidance|verification commands --json return structured missing input guidance|read surfaces --json return structured missing input guidance|proof and recovery commands --json return structured missing input guidance|calc and export --json return structured missing input guidance|direct mutation commands --json return structured missing input guidance before opening files|utility commands --json return structured missing input guidance|CLI JSON validation errors include command-specific guidance and fallback codes|formula edit commands --json return structured missing input guidance|unknown command --json returns a failure envelope|unknown inspect flag --json returns actionable retry details|doctor unsupported flag --json returns command flag details|read table --json exposes table metadata and paginated rows|trace --json reports missing cells with structured retry guidance|read name --json exposes parsed name metadata|read --json reports missing sheets with structured retry guidance" --timeout 30000',
 			path: 'apps/cli/src/index.ts; apps/cli/src/output/json.ts; apps/cli/src/commands/open-plan.ts; apps/cli/src/commands/inspect.ts; apps/cli/src/commands/read.ts; apps/cli/src/commands/agent-view.ts; apps/cli/src/commands/plan.ts; apps/cli/src/commands/commit.ts; apps/cli/src/commands/check.ts; apps/cli/src/commands/diff.ts; apps/cli/src/commands/lint.ts; apps/cli/src/commands/trace.ts; apps/cli/src/commands/dump.ts; apps/cli/src/commands/template-merge.ts; apps/cli/src/commands/repair-plan.ts; apps/cli/src/commands/calc.ts; apps/cli/src/commands/export.ts; apps/cli/src/commands/preview.ts; apps/cli/src/commands/write.ts; apps/cli/src/commands/create.ts; apps/cli/src/commands/find.ts; apps/cli/src/commands/formula.ts; apps/cli/src/commands/list.ts; apps/cli/src/cli.test.ts; apps/cli/src/file-errors.test.ts',
 			acceptedScope:
-				'Commit d837689e makes CLI inspect --detail active-content report generated RibbonX custom UI callbacks and makes CLI open-plan --json return retryable FILE_NOT_FOUND guidance for missing workbook paths; commit 9b155c7f extends missing-file guidance to non-JSON CLI output without raw ENOENT noise; commit 3d4d5374 reports missing plan/commit ops sidecar paths directly and leaves commit output absent; commit ff38e8f4 makes CLI plan/commit --json return structured retryable missing workflow input guidance for file/ops gaps; commit b81bd22e makes CLI open-plan/inspect --json return structured retryable missing workbook guidance; commit 7e31d148 makes CLI check/lint/trace/diff --json return structured retryable missing verification input guidance; commit 21c5a987 makes CLI read/agent-view --json return structured retryable missing read input guidance; commit 5ab3470e makes CLI dump/template-merge/repair-plan --json return structured retryable missing proof and recovery input guidance; commit 6e190776 makes CLI calc/export --json return structured retryable missing calc/export input guidance; commit 4a2abfdb makes CLI preview/write --json return structured retryable missing direct-edit input guidance before opening files; commit a736a539 makes CLI create/list/find/formula --json return structured retryable missing utility input guidance; commit c7455eeb makes legacy CLI string errors emitted with --json return coded retryable machine failures; commit 4b867889 makes CLI formula assist/set/fill --json return structured retryable missing formula-edit input guidance; commit 2a996840 makes CLI inspect/read --json invalid-argument failures include command-specific retry details and suggested fixes; commit 8826b61b extends command-specific JSON guidance to find --match, dump conflicting flags, template-merge data shape, and export format failures; commit 78e06818 makes CLI unknown command and unknown flag --json dispatch errors include retryable details, allowed commands/flags, and agent workflow guidance.',
+				'Commit d837689e makes CLI inspect --detail active-content report generated RibbonX custom UI callbacks and makes CLI open-plan --json return retryable FILE_NOT_FOUND guidance for missing workbook paths; commit 9b155c7f extends missing-file guidance to non-JSON CLI output without raw ENOENT noise; commit 3d4d5374 reports missing plan/commit ops sidecar paths directly and leaves commit output absent; commit ff38e8f4 makes CLI plan/commit --json return structured retryable missing workflow input guidance for file/ops gaps; commit b81bd22e makes CLI open-plan/inspect --json return structured retryable missing workbook guidance; commit 7e31d148 makes CLI check/lint/trace/diff --json return structured retryable missing verification input guidance; commit 21c5a987 makes CLI read/agent-view --json return structured retryable missing read input guidance; commit 5ab3470e makes CLI dump/template-merge/repair-plan --json return structured retryable missing proof and recovery input guidance; commit 6e190776 makes CLI calc/export --json return structured retryable missing calc/export input guidance; commit 4a2abfdb makes CLI preview/write --json return structured retryable missing direct-edit input guidance before opening files; commit a736a539 makes CLI create/list/find/formula --json return structured retryable missing utility input guidance; commit c7455eeb makes legacy CLI string errors emitted with --json return coded retryable machine failures; commit 4b867889 makes CLI formula assist/set/fill --json return structured retryable missing formula-edit input guidance; commit 2a996840 makes CLI inspect/read --json invalid-argument failures include command-specific retry details and suggested fixes; commit 8826b61b extends command-specific JSON guidance to find --match, dump conflicting flags, template-merge data shape, and export format failures; commit 78e06818 makes CLI unknown command and unknown flag --json dispatch errors include retryable details, allowed commands/flags, and agent workflow guidance; commit f20db00b makes CLI read table misses and trace missing-cell failures return structured retryable guidance; commit 9cd51118 makes CLI read missing defined names and missing sheets return structured retryable guidance with available names/sheets.',
 			boundary:
 				'CLI agent-facing diagnostics only; it does not prove public custom UI fixture coverage, file recovery, path discovery, Custom UI safety, active-content safety, or trust wording.',
 		},
@@ -3098,10 +3112,10 @@ function safeOpenQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceItem[] {
 			evidenceId: 'mcp-open-workflow-reference-proof',
 			kind: 'test',
 			command:
-				'bun test apps/mcp/src/index.test.ts -t "missing workbook references|string MCP tool errors return coded JSON failures" --timeout 30000',
+				'bun test apps/mcp/src/index.test.ts -t "missing workbook references|string MCP tool errors return coded JSON failures|ascend.read_table reports missing tables" --timeout 30000',
 			path: 'apps/mcp/src/index.ts; apps/mcp/src/response.ts; apps/mcp/src/index.test.ts',
 			acceptedScope:
-				'Commit da273900 returns structured retryable missing-workbook-reference errors for MCP commit requests without file or planHandle instead of generic missing-file responses. Commit daa3ecb5 makes legacy MCP string tool errors return coded retryable machine failures.',
+				'Commit da273900 returns structured retryable missing-workbook-reference errors for MCP commit requests without file or planHandle instead of generic missing-file responses. Commit daa3ecb5 makes legacy MCP string tool errors return coded retryable machine failures. Commit f16085b3 makes MCP ascend.read_table missing-table failures return structured retryable guidance with available table names.',
 			boundary:
 				'MCP request-shape diagnostics only; it does not prove file recovery, path discovery, source workbook existence, edit correctness, latency, or trust wording.',
 		},

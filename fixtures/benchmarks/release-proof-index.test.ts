@@ -910,6 +910,12 @@ describe('release proof evidence index', () => {
 				boundary: expect.stringContaining('Public shape-macro reporting'),
 			}),
 			expect.objectContaining({
+				evidenceId: 'public-activex-blocked-execution-policy-proof',
+				acceptedScope: expect.stringContaining('2459f79a'),
+				command: expect.stringContaining('ActiveX control'),
+				boundary: expect.stringContaining('ActiveX/form-control execution metadata only'),
+			}),
+			expect.objectContaining({
 				evidenceId: 'cli-agent-facing-open-diagnostics-proof',
 				acceptedScope: expect.stringContaining('d837689e'),
 				command: expect.stringContaining('apps/cli/src/file-errors.test.ts'),
@@ -1012,6 +1018,18 @@ describe('release proof evidence index', () => {
 				acceptedScope: expect.stringContaining('78e06818'),
 				command: expect.stringContaining('unknown command --json returns a failure envelope'),
 				path: expect.stringContaining('apps/cli/src/index.ts'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'cli-agent-facing-open-diagnostics-proof',
+				acceptedScope: expect.stringContaining('f20db00b'),
+				command: expect.stringContaining('trace --json reports missing cells'),
+				path: expect.stringContaining('apps/cli/src/commands/trace.ts'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'cli-agent-facing-open-diagnostics-proof',
+				acceptedScope: expect.stringContaining('9cd51118'),
+				command: expect.stringContaining('read --json reports missing sheets'),
+				path: expect.stringContaining('apps/cli/src/commands/read.ts'),
 			}),
 			expect.objectContaining({
 				evidenceId: 'cli-agent-facing-open-diagnostics-proof',
@@ -1149,12 +1167,17 @@ describe('release proof evidence index', () => {
 				evidenceId: 'mcp-open-workflow-reference-proof',
 				acceptedScope: expect.stringContaining('da273900'),
 				command:
-					'bun test apps/mcp/src/index.test.ts -t "missing workbook references|string MCP tool errors return coded JSON failures" --timeout 30000',
+					'bun test apps/mcp/src/index.test.ts -t "missing workbook references|string MCP tool errors return coded JSON failures|ascend.read_table reports missing tables" --timeout 30000',
 			}),
 			expect.objectContaining({
 				evidenceId: 'mcp-open-workflow-reference-proof',
 				acceptedScope: expect.stringContaining('daa3ecb5'),
 				path: expect.stringContaining('apps/mcp/src/response.ts'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'mcp-open-workflow-reference-proof',
+				acceptedScope: expect.stringContaining('f16085b3'),
+				command: expect.stringContaining('ascend.read_table reports missing tables'),
 			}),
 			expect.objectContaining({
 				evidenceId: 'release-rc-gate',
@@ -3984,6 +4007,9 @@ describe('release proof evidence index', () => {
 			'Commit b6925afe adds a python-calamine metadata-only baseline',
 		)
 		expect(packet.benchmarkBlocker?.evidenceWeHave?.join('\n')).toContain(
+			'Commit bb31bebe pins current FastXLSX carry-forward evidence',
+		)
+		expect(packet.benchmarkBlocker?.evidenceWeHave?.join('\n')).toContain(
 			'Commit bbf875b4 adds an Ascend readXlsx selected-sheet external-process row',
 		)
 		expect(packet.benchmarkBlocker?.evidenceWeHave?.join('\n')).toContain(
@@ -3993,7 +4019,7 @@ describe('release proof evidence index', () => {
 			'Feature-rich SheetJS and Calamine semantic-support evidence',
 		)
 		expect(packet.benchmarkBlocker?.evidenceMissing?.join('\n')).toContain(
-			'FastXLSX environment coverage',
+			'Current full-profile gate that carries the isolated FastXLSX setup forward',
 		)
 		expect(packet.benchmarkBlocker?.evidenceMissing?.join('\n')).toContain(
 			'Clean repeat-5 selected-sheet rerun that includes the new ascend-readXlsx selected-sheet row',
@@ -4013,9 +4039,15 @@ describe('release proof evidence index', () => {
 		expect(packet.benchmarkBlocker?.forbiddenWording).toContain(
 			'Do not claim Ascend leads metadata-only reads while the Calamine metadata-only baseline is comparable and may win the row.',
 		)
+		expect(packet.benchmarkBlocker?.forbiddenWording).toContain(
+			'Do not claim Ascend beats FastXLSX on memory, feature-rich rich-metadata reads, or every XLSX workflow.',
+		)
 		expect(packet.benchmarkBlocker?.nextAction).toContain('Downgrade broad read-speed wording')
 		expect(packet.benchmarkBlocker?.nextAction).toContain(
 			'Calamine metadata-only baseline is not an Ascend win',
+		)
+		expect(packet.benchmarkBlocker?.nextAction).toContain(
+			'current FastXLSX value/warm rows are scoped wins',
 		)
 		expect(packet.benchmarkBlocker?.nextAction).toContain('current full-profile')
 		expect(packet.benchmarkBlocker?.nextAction).toContain('merged selected-sheet/metadata-only')
@@ -4031,6 +4063,9 @@ describe('release proof evidence index', () => {
 		)
 		expect(packet.benchmarkBlocker?.nextOwnerAction).toContain(
 			'keeps the broad speed claim downgraded',
+		)
+		expect(packet.benchmarkBlocker?.nextOwnerAction).toContain(
+			'current full-profile FastXLSX carry-forward policy',
 		)
 		expect(packet.benchmarkBlocker?.benchmarkCommands?.join('\n')).toContain(
 			'--runner-manifest fixtures/benchmarks/runners/ascend-python-readers.manifest.json',
@@ -4053,6 +4088,9 @@ describe('release proof evidence index', () => {
 		)
 		expect(packet.benchmarkBlocker?.acceptanceEvidence?.join('\n')).toContain(
 			'Commit b6925afe adds python-calamine metadata-only runner',
+		)
+		expect(packet.benchmarkBlocker?.acceptanceEvidence?.join('\n')).toContain(
+			'Commit bb31bebe pins current FastXLSX evidence',
 		)
 		expect(packet.benchmarkBlocker?.acceptanceEvidence?.join('\n')).toContain(
 			'current full-profile run at commit 9ddfff91',

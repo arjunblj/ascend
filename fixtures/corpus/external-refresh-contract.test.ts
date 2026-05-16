@@ -63,6 +63,18 @@ function refreshContract(entry: WorkbookRefreshMetadataEntry): Record<string, un
 	}
 }
 
+function tableContracts(workbook: AscendWorkbook): readonly Record<string, unknown>[] {
+	return workbook.getWorkbookModel().sheets.flatMap((sheet) =>
+		sheet.tables.map((table) => ({
+			sheetName: sheet.name,
+			name: table.name,
+			ref: table.ref,
+			tableType: table.tableType,
+			queryTablePartPath: table.queryTable?.partPath,
+		})),
+	)
+}
+
 async function safeEdit(bytes: Uint8Array, sheet: string, ref: string): Promise<Uint8Array> {
 	const workbook = await AscendWorkbook.open(bytes)
 	const result = workbook.apply([{ op: 'setCells', sheet, updates: [{ ref, value: 'safe-edit' }] }])
@@ -386,5 +398,56 @@ describe('external refresh corpus contract', () => {
 				}),
 			]),
 		)
+	})
+
+	test('fails closed on public query-table column topology edits without dirtying output', async () => {
+		const source = loadFixture('../xlsx/libreoffice/TableEmptyHeaders.xlsx')
+		const workbook = await AscendWorkbook.open(source)
+		const beforeConnections = sortedContracts(workbook.connectionParts(), connectionContract)
+		const beforeTables = tableContracts(workbook)
+		expect(beforeTables).toEqual([
+			expect.objectContaining({
+				sheetName: 'BTC',
+				name: 'Bitcoin',
+				tableType: 'queryTable',
+				queryTablePartPath: 'xl/queryTables/queryTable1.xml',
+			}),
+		])
+
+		const blocked = workbook.apply([{ op: 'resizeTable', table: 'Bitcoin', ref: 'A1:C16' }], {
+			journal: true,
+		})
+
+		expect(blocked.errors.map((error) => error.message).join('\n')).toContain(
+			'Cannot resize queryTable-backed table "Bitcoin"',
+		)
+		expect(blocked.journal).toMatchObject({
+			supported: false,
+			exact: false,
+			inverseOps: [],
+			issues: [
+				expect.objectContaining({
+					code: 'JOURNAL_UNAVAILABLE',
+					surface: 'package-parts',
+				}),
+			],
+		})
+		expect(tableContracts(workbook)).toEqual(beforeTables)
+
+		const saved = workbook.toBytes()
+		const reopened = await AscendWorkbook.open(saved)
+		expect(sortedContracts(reopened.connectionParts(), connectionContract)).toEqual(
+			beforeConnections,
+		)
+		expect(tableContracts(reopened)).toEqual(beforeTables)
+		expect(
+			auditXlsxPackageGraphSafeEditIntegrity(
+				inspectXlsxPackageGraph(source),
+				inspectXlsxPackageGraph(saved),
+			),
+		).toEqual([])
+		expect(
+			auditXlsxPackageGraphBytePreservation(inspectXlsxPackageGraph(source), source, saved),
+		).toEqual([])
 	})
 })

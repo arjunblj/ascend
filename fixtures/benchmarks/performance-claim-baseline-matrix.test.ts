@@ -156,6 +156,31 @@ describe('performance claim baseline matrix', () => {
 		expect(markdown).toContain('"Ascend has a full selected-sheet SOTA claim."')
 		expect(markdown).toContain('Add external-process selected-sheet\nlanes for Ascend and SheetJS')
 
+		expect(markdown).toContain('## Cycle: Selected-Sheet Same-Lane External Read')
+		expect(markdown).toContain('mixed in-process/external timing lane')
+		expect(markdown).toContain('Commit: `3916386295e83b234dba10bdb7f007a9f5d52704`')
+		expect(markdown).toContain(
+			'/private/tmp/ascend-perf-hillclimb-39163862-runs/selected-sheet-same-lane.json',
+		)
+		expect(markdown).toContain(
+			'/private/tmp/ascend-perf-hillclimb-39163862-runs/selected-sheet-same-lane-scoreboard.json',
+		)
+		expect(markdown).toContain(
+			'| Ascend | ran/won | `ascend-external-values` | 22.066 | 25.622 | 0.085 | 154.4 MiB |',
+		)
+		expect(markdown).toContain('| SheetJS | ran/lost | `sheetjs` | 27.981')
+		expect(markdown).toContain('| openpyxl | ran/lost | `openpyxl` | 205.474')
+		expect(markdown).toContain(
+			'No selected-sheet `coverageFailures` remain for Ascend, SheetJS, or openpyxl.',
+		)
+		expect(markdown).toContain(
+			'Selected-sheet `coverageGaps` remain for ExcelJS, Calamine, Apache POI, and\n  ClosedXML',
+		)
+		expect(markdown).toContain(
+			'"Ascend has a full selected-sheet SOTA claim across every library."',
+		)
+		expect(markdown).toContain('metadata-only same-lane coverage')
+
 		expect(markdown).toContain(
 			'bun run fixtures/benchmarks/competitive-io.ts --json --category read --competitor all',
 		)

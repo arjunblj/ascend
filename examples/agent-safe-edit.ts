@@ -109,6 +109,10 @@ if (prepared.plan.needsApproval) {
 }
 
 const committed = await prepared.commit({ output })
+const reopened = await Ascend.open(output)
+const reopenedCell = reopened.sheet(sheet)?.cell('B2')
+const reopenedCheck = reopened.check()
+const reopenedLint = reopened.lint()
 
 console.log(
 	JSON.stringify(
@@ -134,7 +138,6 @@ console.log(
 				read: {
 					ref: readWindow?.ref,
 					cellCount: readWindow?.cells.length ?? 0,
-					changeToken: readWindow?.snapshot.changeToken,
 				},
 				operationCount: prepared.operationCount,
 				inputSha256: prepared.inputSha256,
@@ -156,9 +159,21 @@ console.log(
 				lintClean: committed.postWrite.lint.clean,
 			},
 			verify: {
-				reopen: `ascend check ${output} --json`,
-				diff: `ascend diff ${input} ${output} --json`,
-				repair: `ascend repair-plan ${output} --json`,
+				reopened: true,
+				cell: {
+					ref: `${sheet}!B2`,
+					formula: reopenedCell?.formula ?? null,
+					value: reopenedCell?.value ?? null,
+				},
+				checkValid: reopenedCheck.valid,
+				checkIssueCount: reopenedCheck.issues.length,
+				lintClean: reopenedLint.clean,
+				lintWarningCount: reopenedLint.warnings.length,
+				commands: {
+					check: `ascend check ${output} --json`,
+					diff: `ascend diff ${input} ${output} --json`,
+					repair: `ascend repair-plan ${output} --json`,
+				},
 			},
 		},
 		null,

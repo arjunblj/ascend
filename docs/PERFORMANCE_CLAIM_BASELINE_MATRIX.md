@@ -10,9 +10,15 @@ This document is the tracked release claim artifact. `/private/tmp` paths below
 are reproducibility pointers to the clean run outputs, not required context for
 release wording.
 
-No broad XLSX read, SOTA, or QSS-leapfrog speed claim is promotable from this artifact. The cycles below are useful external baseline evidence for scoped release workflows, but they are not a clean full-profile claim because:
+No broad XLSX read, XLSX write, SOTA, or QSS-leapfrog speed claim is promotable from this artifact. The cycles below are useful external baseline evidence for scoped release workflows, but they are not a clean full-profile claim because:
 
 - `competitive-scoreboard --require-profile xlsx-read-sota` still fails for broad promotion. The current full-profile run at `9ddfff91` reports no leader failures, and a merged selected-sheet/metadata-only scoreboard removes those same-lane comparability failures, but ClosedXML coverage, feature-rich semantic mismatches, and unsupported selected-sheet/metadata-only competitors remain explicit blockers.
+- `competitive-scoreboard --require-profile xlsx-write-sota` is not promotable
+  from the current artifact. The completed write rows are scoped wins or
+  not-comparable boundaries, and a broad all-workload/all-runner generated-write
+  gate at `eca32509` was killed as an operational blocker after producing no
+  JSON. Treat broad write wording as downgraded until the gate is split into
+  attributable workload groups or produces complete coverage.
 - The recorded cycles cover public/reproducible generated `dense-values`, `sparse-wide`, `styles-heavy`, `formula-heavy`, `table-heavy`, `feature-rich`, `selected-sheet`, `metadata-only`, `warm-workflow`, and `string-heavy` workloads over `raw-ooxml`, but they are per-workload evidence rows rather than one clean all-workload promotion run.
 - Current harness evidence now supports same-lane selected-sheet rows for Ascend, SheetJS, OpenPyXL, and python-calamine. Treat older `openpyxl` and Calamine selected-sheet `unsupported-operation` wording as historical for the recorded clean runs.
 - Current harness evidence now supports same-lane metadata-only rows for Ascend, SheetJS, OpenPyXL, and python-calamine. Calamine wins that head-to-head; treat older metadata-only `missing-comparable` or Calamine `unsupported-operation` wording as historical.
@@ -28,6 +34,7 @@ Forbidden wording:
 
 - "Ascend is the fastest XLSX reader."
 - "Ascend is SOTA for XLSX read."
+- "Ascend is SOTA for XLSX write."
 - "Ascend beats every external library."
 - Any wording that treats failed or unavailable runners as wins.
 
@@ -1628,6 +1635,93 @@ Forbidden wording:
 Next action: defer production optimization for feature-rich from the XlsxWriter
 win and keep OpenPyXL as a not-comparable boundary unless the runner or semantic
 contract is narrowed in a future claim-specific block.
+
+## Current Full-Profile Downgrade: XLSX Write SOTA
+
+Classification: blocked claim downgrade. No production optimization target is
+justified from this evidence because the attempted broad generated-write gate
+did not complete or emit JSON. The completed write rows remain scoped evidence;
+they are not a clean full `xlsx-write-sota` promotion artifact.
+
+Workflow: full generated XLSX write coverage for the existing
+`xlsx-write-sota` profile, using `competitive-io` generated-write mode and the
+existing SOTA writer runner manifest.
+
+Why it matters for release: release wording must not promote "SOTA XLSX write"
+from isolated row wins. A full-profile gate needs either complete comparable
+coverage or explicit per-runner blockers that do not count as wins.
+
+Public/tracked-clean input: `competitive-io` would generate tracked
+`source-mode generated-write` workloads in a clean detached worktree at commit
+`eca32509`. No private corpus or local research workbook was used. The run did
+not reach sample emission.
+
+Command attempted:
+
+```bash
+git worktree add --detach /private/tmp/ascend-write-profile-current-eca32509 eca3250951b3
+cd /private/tmp/ascend-write-profile-current-eca32509
+bun install --frozen-lockfile
+mkdir -p /private/tmp/ascend-write-profile-current-eca32509-runs
+TMPDIR=/private/tmp ACCEPT_NPOI_OSMF_LICENSE=1 env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-io.ts --json --category write --competitor all --execution-scope external-process --source-mode generated-write --libraries ascend-external-writer,sheetjs,exceljs,xlsxwriter,xlsxwriter-constant-memory,pyexcelerate,pyexcelerate-range,pyexcelerate-cell,fastexcel-java,openpyxl,openpyxl-write-only,apache-poi,closedxml,npoi,rust-xlsxwriter,excelize --workload all --repeat 5 --warmup 1 --validation-mode each --write-runner-manifest fixtures/benchmarks/runners/sota-writers.manifest.json > /private/tmp/ascend-write-profile-current-eca32509-runs/write-profile-repeat5.json
+```
+
+Environment:
+
+- Commit: `eca3250951b3`
+- Worktree: clean detached worktree at
+  `/private/tmp/ascend-write-profile-current-eca32509`
+- Bun install reported Bun `1.3.6` and installed `@types/bun@1.3.13`.
+- Command runtime environment used `/Users/arjun/.bun/bin/bun`; the previous
+  completed benchmark rows on this machine report Bun runtime `1.3.13`, Node
+  `24.3.0`, Darwin arm64.
+- Attempt stopped at `2026-05-16T22:36:31Z` after repeated 60-second polls with
+  no JSON emitted.
+
+Raw output:
+
+```text
+/private/tmp/ascend-write-profile-current-eca32509-runs/write-profile-repeat5.json
+```
+
+Result:
+
+| Artifact | Status | Sample count | Median | P95 | CV/noise | Memory/size |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| `write-profile-repeat5.json` | blocked, killed before JSON emission | 0 | n/a | n/a | n/a | n/a |
+
+Operational blocker: the all-workload/all-runner command was too opaque for a
+claim-grade gate in this environment. The output file remained zero bytes and no
+`competitive-io` process remained after termination. Because no row-level JSON
+was produced, this attempt cannot identify a winner, loser, timeout, semantic
+mismatch, or optimization target for any individual workflow.
+
+Semantic comparability: none established by this attempted full gate. Existing
+row-level sections remain the only valid write evidence: dense-values,
+plain-text, sparse-wide, string-heavy, styles-heavy, formula-heavy, table-heavy,
+and feature-rich are scoped rows with their own comparability limits.
+
+Humble allowed wording:
+
+> Ascend has scoped external write-row evidence, but the current broad
+> `xlsx-write-sota` promotion gate is blocked. The all-workload/all-runner
+> generated-write attempt did not emit JSON, so broad XLSX write speed wording
+> remains downgraded until the profile is split into attributable workload groups
+> or a complete full-profile gate succeeds.
+
+Forbidden wording:
+
+- "Ascend is SOTA for XLSX write."
+- "Ascend has passed the full `xlsx-write-sota` gate."
+- "Ascend beats every generated XLSX writer."
+- "Ascend wins the all-workload writer profile."
+- Any wording that counts the killed full-gate attempt, missing rows, omitted
+  runners, unsupported semantics, or timeouts as wins.
+
+Next action: split the write profile into existing workload groups and record
+per-group coverage, or attack the first completed comparable row that shows a
+durable leader failure. Do not do production optimization from this blocked
+full-gate attempt.
 
 ## Owner-Ready Benchmark Blocker
 

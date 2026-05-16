@@ -3048,10 +3048,10 @@ function safeOpenQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceItem[] {
 			evidenceId: 'cli-agent-facing-open-diagnostics-proof',
 			kind: 'test',
 			command:
-				'bun test apps/cli/src/cli.test.ts -t "custom UI callbacks|open-plan --json reports missing files" --timeout 30000',
-			path: 'apps/cli/src/index.ts; apps/cli/src/commands/inspect.ts; apps/cli/src/cli.test.ts',
+				'bun test apps/cli/src/cli.test.ts apps/cli/src/file-errors.test.ts -t "custom UI callbacks|open-plan --json reports missing files|raw ENOENT noise" --timeout 30000',
+			path: 'apps/cli/src/index.ts; apps/cli/src/commands/inspect.ts; apps/cli/src/cli.test.ts; apps/cli/src/file-errors.test.ts',
 			acceptedScope:
-				'Commit d837689e makes CLI inspect --detail active-content report generated RibbonX custom UI callbacks and makes CLI open-plan --json return retryable FILE_NOT_FOUND guidance for missing workbook paths.',
+				'Commit d837689e makes CLI inspect --detail active-content report generated RibbonX custom UI callbacks and makes CLI open-plan --json return retryable FILE_NOT_FOUND guidance for missing workbook paths; commit dc20726f extends missing-file guidance to non-JSON CLI output without raw ENOENT noise.',
 			boundary:
 				'CLI agent-facing diagnostics only; it does not prove public custom UI fixture coverage, file recovery, path discovery, Custom UI safety, active-content safety, or trust wording.',
 		},

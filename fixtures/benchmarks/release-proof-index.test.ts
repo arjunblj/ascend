@@ -1926,10 +1926,17 @@ describe('release proof evidence index', () => {
 				}),
 				expect.objectContaining({
 					claimArea: 'formula-calc-behavior',
-					commits: expect.arrayContaining(['f6a71088', '104c38c0', '64d82251']),
-					allowedWording: expect.stringContaining('ERROR.TYPE'),
+					commits: expect.arrayContaining([
+						'f6a71088',
+						'104c38c0',
+						'64d82251',
+						'ba8ea5fb',
+						'0604c9f3',
+					]),
+					allowedWording: expect.stringContaining('SWITCH'),
 					evidenceProvesIt: expect.arrayContaining([
 						expect.stringContaining('common IS predicates spill boolean masks'),
+						expect.stringContaining('IFS spills results for array conditions'),
 					]),
 					forbiddenWording: expect.arrayContaining([
 						expect.stringContaining('Excel-compatible formulas'),

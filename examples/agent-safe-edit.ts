@@ -6,7 +6,12 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
-import { Ascend, createPreparedAgentPlan, inspectWorkbookOpenPlan } from '@ascend/sdk'
+import {
+	Ascend,
+	createAgentWorkflowProofSummary,
+	createPreparedAgentPlan,
+	inspectWorkbookOpenPlan,
+} from '@ascend/sdk'
 
 const input = process.argv[2]
 if (!input) {
@@ -113,6 +118,28 @@ const reopened = await Ascend.open(output)
 const reopenedCell = reopened.sheet(sheet)?.cell('B2')
 const reopenedCheck = reopened.check()
 const reopenedLint = reopened.lint()
+const proofBundle = createAgentWorkflowProofSummary(prepared.plan, committed, {
+	defaultSheetName: sheet,
+	preflightGates: [
+		{
+			gate: 'open-plan',
+			ok: !openPlan.reviewBeforeHydration,
+			evidence: {
+				mode: openPlan.recommendedLoadOptions.mode,
+				riskFeatureCount: openPlan.riskFeatures.length,
+			},
+		},
+		{
+			gate: 'trust',
+			ok: trustReport.trust !== 'unsafe',
+			evidence: {
+				trust: trustReport.trust,
+				posture: trustReport.posture,
+				findingCount: trustReport.summary.findingCount,
+			},
+		},
+	],
+})
 
 console.log(
 	JSON.stringify(
@@ -175,6 +202,7 @@ console.log(
 					repair: `ascend repair-plan ${output} --json`,
 				},
 			},
+			proofBundle,
 		},
 		null,
 		2,

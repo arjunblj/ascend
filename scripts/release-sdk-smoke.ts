@@ -166,6 +166,7 @@ const preparedB1 = preparedReopened.get('Sheet1!B1')
 const preparedC1 = preparedReopened.get('Sheet1!C1')
 const llms = await readAgentDoc('llms.txt')
 const examplesReadme = await readAgentDoc('examples/README.md')
+const rootExample = await readAgentDoc('examples/agent-safe-edit.ts')
 const packageInstallExample = await readAgentDoc('examples/package-install-safe-edit.ts')
 const apiExample = await readAgentDoc('examples/agent-safe-edit-http.ts')
 const mcpExample = await readAgentDoc('examples/agent-safe-edit-mcp.ts')
@@ -192,6 +193,12 @@ if (preparedC1.kind !== 'number' || preparedC1.value !== 300) {
 if (!llms?.includes('Ascend')) throw new Error('installed SDK could not read bundled llms.txt')
 if (!examplesReadme?.includes('bun run example:safe-edit')) {
 	throw new Error('installed SDK missing root safe-edit workflow examples')
+}
+if (
+	!rootExample?.includes('createAgentWorkflowProofSummary') ||
+	!rootExample?.includes('proofBundle')
+) {
+	throw new Error('installed SDK root safe-edit example missing proof bundle contract')
 }
 if (!packageInstallExample?.includes('ascend-sdk-safe-edit')) {
 	throw new Error('installed SDK missing package-install safe-edit example')

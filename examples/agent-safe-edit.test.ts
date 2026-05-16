@@ -43,6 +43,17 @@ describe('agent-safe-edit example', () => {
 					checkValid?: boolean
 					lintClean?: boolean
 				}
+				proofBundle?: {
+					safeToUse?: boolean
+					whatChanged?: Array<{
+						ref?: string
+						before?: unknown
+						after?: unknown
+						formulaBefore?: string | null
+						formulaAfter?: string | null
+					}>
+					whySafe?: Array<{ gate?: string; ok?: boolean; evidence?: Record<string, unknown> }>
+				}
 				verify?: {
 					reopened?: boolean
 					cell?: {
@@ -76,6 +87,28 @@ describe('agent-safe-edit example', () => {
 				checkValid: true,
 				lintClean: true,
 			})
+			expect(result.proofBundle).toMatchObject({
+				safeToUse: true,
+				whatChanged: [
+					{
+						ref: 'Sheet1!B2',
+						before: { kind: 'empty' },
+						after: { kind: 'number', value: 450 },
+						formulaBefore: null,
+						formulaAfter: 'SUM(A2:A4)',
+					},
+				],
+			})
+			expect(result.proofBundle?.whySafe?.map((gate) => [gate.gate, gate.ok])).toEqual([
+				['open-plan', true],
+				['trust', true],
+				['plan-linked', true],
+				['plan', true],
+				['write-policy', true],
+				['commit', true],
+				['reopen-verify', true],
+				['package-graph', true],
+			])
 			expect(result.verify).toMatchObject({
 				reopened: true,
 				cell: {

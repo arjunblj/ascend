@@ -7,14 +7,17 @@ const workflows = [
 	{
 		script: 'safe-edit',
 		expectedWorkflow: 'open-plan-trust-inspect-read-plan-prepared-commit-verify-repair',
+		expectedProofRef: 'Sheet1!B2',
 	},
 	{
 		script: 'safe-edit:http',
 		expectedWorkflow: 'api-open-plan-inspect-read-plan-prepared-commit-reopen-verify',
+		expectedProofRef: 'B2',
 	},
 	{
 		script: 'safe-edit:mcp',
 		expectedWorkflow: 'mcp-open-plan-inspect-read-plan-prepared-commit-reopen-verify',
+		expectedProofRef: 'B2',
 	},
 ]
 
@@ -61,12 +64,10 @@ describe('example package scripts', () => {
 					output,
 					postWriteValid: true,
 				})
-				if (workflow.script !== 'safe-edit') {
-					expect(result.proofBundle).toMatchObject({
-						safeToUse: true,
-						whatChanged: [{ ref: 'B2' }],
-					})
-				}
+				expect(result.proofBundle).toMatchObject({
+					safeToUse: true,
+					whatChanged: [{ ref: workflow.expectedProofRef }],
+				})
 				expect(result.verify).toMatchObject({
 					checkValid: true,
 					lintClean: true,

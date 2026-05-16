@@ -261,6 +261,101 @@ describe('MCP server', () => {
 		}
 	})
 
+	test('ascend.plan accepts encrypted workbook passwords for path mutations and commit fails closed without source drift', async () => {
+		const input = join(
+			tmpdir(),
+			`ascend-mcp-encrypted-path-${Date.now()}-${Math.random().toString(16).slice(2)}.xlsx`,
+		)
+		const output = `${input}.out.xlsx`
+		const sourceBytes = readFileSync(ENCRYPTED_FIXTURE)
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const plan = (server as any)._registeredTools['ascend.plan'].handler as (args: {
+			file: string
+			password?: string
+			mutations: readonly Record<string, unknown>[]
+		}) => Promise<{
+			structuredContent?: {
+				ok?: boolean
+				data?: {
+					pathMutations?: { replayable?: boolean; ops?: unknown[] }
+					preparedPlan?: { id?: string }
+				}
+			}
+		}>
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const commit = (server as any)._registeredTools['ascend.commit'].handler as (args: {
+			planHandle?: string
+			output?: string
+			compact?: boolean
+		}) => Promise<{
+			isError?: boolean
+			structuredContent?: {
+				ok?: boolean
+				error?: {
+					code?: string
+					message?: string
+					retryable?: boolean
+					retryStrategy?: string
+					details?: {
+						sourceWasEncrypted?: boolean
+						reEncryptionSupported?: boolean
+						requestedExport?: string
+					}
+				}
+			}
+		}>
+		try {
+			await Bun.write(input, sourceBytes)
+			const planned = await plan({
+				file: input,
+				password: '123',
+				mutations: [{ path: '/sheets/Sheet1/cells/Z10/value', value: 'blocked' }],
+			})
+			expect(planned.structuredContent?.ok).toBe(true)
+			expect(planned.structuredContent?.data?.pathMutations).toMatchObject({
+				replayable: true,
+				ops: [
+					{
+						op: 'setCells',
+						sheet: 'Sheet1',
+						updates: [{ ref: 'Z10', value: 'blocked' }],
+					},
+				],
+			})
+			expect(planned.structuredContent?.data?.preparedPlan?.id).toBeString()
+			expect(JSON.stringify(planned)).not.toContain('123')
+
+			const committed = await commit({
+				planHandle: planned.structuredContent?.data?.preparedPlan?.id,
+				output,
+				compact: true,
+			})
+			expect(committed.isError).toBe(true)
+			expect(committed.structuredContent?.error).toMatchObject({
+				code: 'EXPORT_ERROR',
+				retryable: false,
+				details: {
+					sourceWasEncrypted: true,
+					reEncryptionSupported: false,
+					requestedExport: 'xlsx',
+				},
+			})
+			expect(committed.structuredContent?.error?.message).toContain(
+				'Cannot export an edited encrypted workbook without re-encryption support',
+			)
+			expect(JSON.stringify(committed)).not.toContain('123')
+			expect(await Bun.file(output).exists()).toBe(false)
+			expect(Buffer.from(readFileSync(input)).equals(sourceBytes)).toBe(true)
+			await expect(
+				AscendWorkbook.open(new Uint8Array(readFileSync(input)), { password: '123' }),
+			).resolves.toBeDefined()
+		} finally {
+			await unlink(input).catch(() => {})
+			await unlink(output).catch(() => {})
+		}
+	})
+
 	test('createServer returns a McpServer instance', () => {
 		const server = createServer()
 		expect(server).toBeDefined()

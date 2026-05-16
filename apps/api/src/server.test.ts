@@ -612,6 +612,66 @@ describe('Ascend API server', () => {
 		}
 	})
 
+	test('/plan accepts encrypted workbook passwords for path mutations and commit fails closed without source drift', async () => {
+		const input = join(
+			tmpdir(),
+			`ascend-api-encrypted-path-${Date.now()}-${Math.random().toString(16).slice(2)}.xlsx`,
+		)
+		const output = `${input}.out.xlsx`
+		const sourceBytes = readFileSync(ENCRYPTED_FIXTURE)
+		try {
+			await Bun.write(input, sourceBytes)
+			const plan = await postJson('/plan', {
+				file: input,
+				password: '123',
+				mutations: [{ path: '/sheets/Sheet1/cells/Z10/value', value: 'blocked' }],
+			})
+			expect(plan.status).toBe(200)
+			expect(plan.body.ok).toBe(true)
+			expect(plan.body.data?.pathMutations).toMatchObject({
+				replayable: true,
+				ops: [
+					{
+						op: 'setCells',
+						sheet: 'Sheet1',
+						updates: [{ ref: 'Z10', value: 'blocked' }],
+					},
+				],
+			})
+			expect(plan.body.data?.preparedPlan?.id).toBeString()
+			expect(JSON.stringify(plan.body)).not.toContain('123')
+
+			const commit = await postJson('/commit', {
+				planHandle: plan.body.data?.preparedPlan?.id,
+				output,
+				compact: true,
+			})
+			expect(commit.status).toBe(409)
+			expect(commit.body.ok).toBe(false)
+			expect(commit.body.error).toMatchObject({
+				code: 'EXPORT_ERROR',
+				retryable: false,
+				details: {
+					sourceWasEncrypted: true,
+					reEncryptionSupported: false,
+					requestedExport: 'xlsx',
+				},
+			})
+			expect(commit.body.error?.message).toContain(
+				'Cannot export an edited encrypted workbook without re-encryption support',
+			)
+			expect(JSON.stringify(commit.body)).not.toContain('123')
+			expect(await Bun.file(output).exists()).toBe(false)
+			expect(Buffer.from(readFileSync(input)).equals(sourceBytes)).toBe(true)
+			await expect(
+				AscendWorkbook.open(new Uint8Array(readFileSync(input)), { password: '123' }),
+			).resolves.toBeDefined()
+		} finally {
+			await unlink(input).catch(() => {})
+			await unlink(output).catch(() => {})
+		}
+	})
+
 	test('/trust-report exposes untrusted workbook boundaries and next actions', async () => {
 		const trustFile = join(
 			tmpdir(),

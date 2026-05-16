@@ -3721,6 +3721,9 @@ function expectedPackageGraphChangesForOperations(
 		if (op.op === 'setConnectionRefresh' && op.partPath) {
 			rewrittenPartPaths.add(op.partPath)
 		}
+		if (op.op === 'setChartSeriesSource' && op.partPath) {
+			rewrittenPartPaths.add(op.partPath)
+		}
 	}
 	if (ops.some((op) => operationInvalidatesCalcChain(workbook, op))) {
 		for (const part of sourceGraph.parts) {

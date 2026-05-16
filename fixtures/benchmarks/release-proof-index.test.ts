@@ -884,6 +884,16 @@ describe('release proof evidence index', () => {
 				boundary: expect.stringContaining('No password recovery'),
 			}),
 			expect.objectContaining({
+				evidenceId: 'sdk-encrypted-agent-commit-policy-proof',
+				acceptedScope: expect.stringContaining('5ab9365d'),
+				path: expect.stringContaining('packages/sdk/src/agent-workflow.test.ts'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'sdk-encrypted-agent-commit-policy-proof',
+				acceptedScope: expect.stringContaining('a9ae9276'),
+				command: expect.stringContaining('packages/sdk/src/agent-workflow.test.ts'),
+			}),
+			expect.objectContaining({
 				evidenceId: 'mcp-agent-workflow-open-plan-first',
 				acceptedScope: expect.stringContaining('d4ee22e1'),
 				boundary: expect.stringContaining('MCP workflow guidance evidence only'),
@@ -996,6 +1006,12 @@ describe('release proof evidence index', () => {
 					'CLI JSON validation errors include command-specific guidance and fallback codes',
 				),
 				path: expect.stringContaining('apps/cli/src/commands/template-merge.ts'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'cli-agent-facing-open-diagnostics-proof',
+				acceptedScope: expect.stringContaining('78e06818'),
+				command: expect.stringContaining('unknown command --json returns a failure envelope'),
+				path: expect.stringContaining('apps/cli/src/index.ts'),
 			}),
 			expect.objectContaining({
 				evidenceId: 'cli-agent-facing-open-diagnostics-proof',
@@ -1144,6 +1160,7 @@ describe('release proof evidence index', () => {
 				evidenceId: 'release-rc-gate',
 				command: 'bun run release:rc:gate',
 				path: 'scripts/release-rc-gate.ts',
+				acceptedScope: expect.stringContaining('0931685e'),
 			}),
 		]) {
 			expect(safeOpenAcceptedEvidence).toContainEqual(evidence)

@@ -446,6 +446,7 @@ describe('release proof evidence index', () => {
 			proofChecks: expect.arrayContaining([
 				expect.stringContaining('macro and ActiveX risk families'),
 				expect.stringContaining('VBA project signature parts'),
+				expect.stringContaining('signed macro workbooks requires both signature-loss'),
 			]),
 			forbiddenWording: expect.stringContaining('safe, sandboxed'),
 		})
@@ -938,6 +939,18 @@ describe('release proof evidence index', () => {
 				boundary: expect.stringContaining('High-risk stream export approval evidence only'),
 			}),
 			expect.objectContaining({
+				evidenceId: 'sdk-high-risk-text-export-approval-proof',
+				acceptedScope: expect.stringContaining('b7e8eccc'),
+				command: expect.stringContaining(
+					'high-risk workbook text saves require the same explicit export approvals',
+				),
+				boundary: expect.stringContaining('High-risk values-only text export evidence only'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'sdk-high-risk-text-export-approval-proof',
+				acceptedScope: expect.stringContaining('a004fb4a'),
+			}),
+			expect.objectContaining({
 				evidenceId: 'sdk-signed-agent-text-commit-policy-proof',
 				acceptedScope: expect.stringContaining('90f4c248'),
 				command: expect.stringContaining(
@@ -995,6 +1008,12 @@ describe('release proof evidence index', () => {
 				acceptedScope: expect.stringContaining('a09660be'),
 				command: 'bun test examples/root-scripts.test.ts --timeout 30000',
 				boundary: expect.stringContaining('Local root-package script evidence only'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'workflow-example-proof-context',
+				acceptedScope: expect.stringContaining('f3347e17'),
+				command: expect.stringContaining('agent-init prints the canonical agent workflow contract'),
+				boundary: expect.stringContaining('Workflow-discovery proof-context evidence only'),
 			}),
 			expect.objectContaining({
 				evidenceId: 'cli-agent-init-workflow-examples-proof',
@@ -1396,6 +1415,10 @@ describe('release proof evidence index', () => {
 				evidenceId: 'release-rc-gate',
 				acceptedScope: expect.stringContaining('a09660be'),
 			}),
+			expect.objectContaining({
+				evidenceId: 'release-rc-gate',
+				acceptedScope: expect.stringContaining('f3347e17'),
+			}),
 		]) {
 			expect(safeOpenAcceptedEvidence).toContainEqual(evidence)
 		}
@@ -1584,6 +1607,60 @@ describe('release proof evidence index', () => {
 				'package-action-proof'
 			],
 		).toEqual(index.releaseDecisionBoard.rows[1].forbiddenWording)
+		expect(index.releaseDecisionBoard.todayCommitClaimMatrix.map((row) => row.claimArea)).toEqual([
+			'safe-agent-workflows',
+			'signed-encrypted-macro-handling',
+			'write-performance',
+			'external-baselines',
+			'research-proof-surface',
+		])
+		for (const row of index.releaseDecisionBoard.todayCommitClaimMatrix) {
+			expect(row.commits.length).toBeGreaterThan(0)
+			expect(row.releaseOrSotaClaimBecameMoreTrue.length).toBeGreaterThan(0)
+			expect(row.evidenceProvesIt.length).toBeGreaterThan(0)
+			expect(row.allowedWording.length).toBeGreaterThan(0)
+			expect(row.forbiddenWording.length).toBeGreaterThan(0)
+			expect(row.nextOwnerAction.length).toBeGreaterThan(0)
+			expect(row.boundary).toContain('Compact current-commit claim row only')
+		}
+		expect(index.releaseDecisionBoard.todayCommitClaimMatrix).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					claimArea: 'safe-agent-workflows',
+					commits: expect.arrayContaining(['a09660be', 'f3347e17', '62f45cb5']),
+					allowedWording: expect.stringContaining('root commands'),
+					forbiddenWording: expect.arrayContaining([
+						expect.stringContaining('arbitrary workbook safety'),
+					]),
+					ownerLoop: 'release',
+					nextOwnerAction: expect.stringContaining('stops adding discovery-only'),
+				}),
+				expect.objectContaining({
+					claimArea: 'signed-encrypted-macro-handling',
+					commits: expect.arrayContaining(['7ff308c9', 'b7e8eccc', 'a004fb4a']),
+					allowedWording: expect.stringContaining('signed-macro exports fail closed'),
+					forbiddenWording: expect.arrayContaining([expect.stringContaining('macro safety')]),
+					ownerLoop: 'correctness',
+				}),
+				expect.objectContaining({
+					claimArea: 'write-performance',
+					commits: expect.arrayContaining(['0d0c9632']),
+					allowedWording: expect.stringContaining('optimized string-heavy'),
+					forbiddenWording: expect.arrayContaining([expect.stringContaining('fastest XLSX')]),
+					ownerLoop: 'performance',
+				}),
+				expect.objectContaining({
+					claimArea: 'external-baselines',
+					ownerLoop: 'performance',
+					nextOwnerAction: expect.stringContaining('ClosedXML coverage'),
+				}),
+				expect.objectContaining({
+					claimArea: 'research-proof-surface',
+					ownerLoop: 'product',
+					allowedWording: expect.stringContaining('proof-index packets'),
+				}),
+			]),
+		)
 		expect(index.releaseDecisionBoard.claimDecisionContractCoverage).toMatchObject({
 			status: 'all-release-claim-decisions-self-contained',
 			decisionCount: 12,
@@ -2155,6 +2232,8 @@ describe('release proof evidence index', () => {
 		expect(agentWorkflowEvidence).toContain('CLI agent-init surfaces runnable SDK, HTTP, and MCP')
 		expect(agentWorkflowEvidence).toContain('407499cd')
 		expect(agentWorkflowEvidence).toContain('API and MCP workflow discovery surfaces')
+		expect(agentWorkflowEvidence).toContain('f3347e17')
+		expect(agentWorkflowEvidence).toContain('Workflow discovery surfaces expose runnable-example')
 		expect(agentWorkflowEvidence).toContain('docs/AGENT_WORKFLOW.md')
 		expect(agentWorkflowMissing).toContain('inspect, plan, commit, reopen, diff, audit')
 		expect(agentWorkflowMissing).toContain('Trace payload size')
@@ -2698,6 +2777,17 @@ describe('release proof evidence index', () => {
 		expect(handoff.researchHygieneDecisionPacket.loopManagerState.boundary).toContain(
 			'not Ascend runtime proof',
 		)
+		expect(handoff.researchHygieneDecisionPacket.releaseRoutingSummary).toMatchObject({
+			boundary: expect.stringContaining('Compact routing summary only'),
+		})
+		expect(
+			handoff.researchHygieneDecisionPacket.releaseRoutingSummary.blockedClaims.join('\n'),
+		).toContain('research-surface-hygiene')
+		expect(
+			handoff.researchHygieneDecisionPacket.releaseRoutingSummary.ownerReadyImplementationTasks.join(
+				'\n',
+			),
+		).toContain('agent-workflow-observability')
 		expect(
 			handoff.researchHygieneDecisionPacket.classificationBuckets.map((item) => item.bucket),
 		).toEqual(['accepted-evidence', 'active-owner-blocker', 'archive-only'])
@@ -4472,6 +4562,13 @@ describe('release proof evidence index', () => {
 				readonly forbiddenWording?: readonly string[]
 				readonly boundary?: string
 			}
+			readonly releaseRoutingSummary?: {
+				readonly acceptedReleaseEvidence?: readonly string[]
+				readonly blockedClaims?: readonly string[]
+				readonly ownerReadyImplementationTasks?: readonly string[]
+				readonly archiveDeferMaterial?: readonly string[]
+				readonly boundary?: string
+			}
 			readonly validationCommands?: readonly string[]
 			readonly ownerFiles?: readonly string[]
 			readonly classificationBuckets?: readonly {
@@ -4633,6 +4730,33 @@ describe('release proof evidence index', () => {
 			expect(packet.loopManagerState.ownerAction).toContain('tracked operational tooling')
 			expect(packet.loopManagerState.forbiddenWording?.join('\n')).toContain(
 				'Do not cite scripts/ascend-loop-manager.ts or tmp/ascend-loop-manager',
+			)
+		}
+		expect(packet.releaseRoutingSummary).toMatchObject({
+			boundary: expect.stringContaining('Compact routing summary only'),
+		})
+		expect(packet.releaseRoutingSummary?.blockedClaims?.join('\n')).toContain(
+			'research-surface-hygiene',
+		)
+		expect(packet.releaseRoutingSummary?.blockedClaims?.join('\n')).toContain(
+			'agent-workflow-observability',
+		)
+		expect(packet.releaseRoutingSummary?.ownerReadyImplementationTasks?.join('\n')).toContain(
+			'agent-workflow-observability',
+		)
+		expect(packet.releaseRoutingSummary?.ownerReadyImplementationTasks?.join('\n')).toContain(
+			'formula-language-service-primitives',
+		)
+		expect(packet.releaseRoutingSummary?.archiveDeferMaterial?.join('\n')).toContain(
+			'Broad research note',
+		)
+		if (
+			(packet.inventorySnapshot?.classifiedEntries ?? []).some(
+				(entry) => entry.classification === 'accepted-evidence',
+			)
+		) {
+			expect(packet.releaseRoutingSummary?.acceptedReleaseEvidence?.join('\n')).toContain(
+				'release-proof-index compact fixture-decision output',
 			)
 		}
 		expect(packet.validationCommands).toEqual([

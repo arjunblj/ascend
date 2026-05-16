@@ -299,6 +299,7 @@ export interface ReleaseProofResearchHygieneDecisionPacket {
 	readonly inventorySnapshot: ReleaseProofResearchHygieneInventorySnapshot
 	readonly localExcelCorpus: ReleaseProofResearchHygieneLocalExcelCorpus
 	readonly loopManagerState: ReleaseProofResearchHygieneLoopManagerState
+	readonly releaseRoutingSummary: ReleaseProofResearchHygieneReleaseRoutingSummary
 	readonly validationCommands: readonly string[]
 	readonly ownerFiles: readonly string[]
 	readonly classificationBuckets: readonly ReleaseProofResearchHygieneClassificationBucket[]
@@ -309,6 +310,14 @@ export interface ReleaseProofResearchHygieneDecisionPacket {
 	readonly qssContrast: readonly string[]
 	readonly nextOwnerAction: string
 	readonly stopCondition: string
+	readonly boundary: string
+}
+
+export interface ReleaseProofResearchHygieneReleaseRoutingSummary {
+	readonly acceptedReleaseEvidence: readonly string[]
+	readonly blockedClaims: readonly string[]
+	readonly ownerReadyImplementationTasks: readonly string[]
+	readonly archiveDeferMaterial: readonly string[]
 	readonly boundary: string
 }
 
@@ -487,6 +496,7 @@ export interface ReleaseProofReleaseDecisionBoard {
 	readonly doNotPromoteYet: readonly ReleaseProofReleaseDecisionDoNotPromoteItem[]
 	readonly doNotPromoteDispositionSummary: ReleaseProofReleaseDecisionDispositionSummary
 	readonly releaseWordingDecisionSummary: ReleaseProofReleaseWordingDecisionSummary
+	readonly todayCommitClaimMatrix: readonly ReleaseProofTodayCommitClaimMatrixRow[]
 	readonly claimDecisionContractCoverage: ReleaseProofClaimDecisionContractCoverage
 	readonly blockedOwnerActionQueue: readonly ReleaseProofBlockedOwnerAction[]
 	readonly benchmarkCorpusOwnerActionQueue: readonly ReleaseProofBenchmarkCorpusOwnerAction[]
@@ -495,6 +505,23 @@ export interface ReleaseProofReleaseDecisionBoard {
 	readonly benchmarkCorpusRunContractCoverage: ReleaseProofBenchmarkCorpusRunContractCoverage
 	readonly ownerActionQueueCoverage: ReleaseProofOwnerActionQueueCoverage
 	readonly ownerActionExecutionContractCoverage: ReleaseProofOwnerActionExecutionContractCoverage
+	readonly boundary: string
+}
+
+export interface ReleaseProofTodayCommitClaimMatrixRow {
+	readonly claimArea:
+		| 'safe-agent-workflows'
+		| 'signed-encrypted-macro-handling'
+		| 'write-performance'
+		| 'external-baselines'
+		| 'research-proof-surface'
+	readonly commits: readonly string[]
+	readonly releaseOrSotaClaimBecameMoreTrue: string
+	readonly evidenceProvesIt: readonly string[]
+	readonly allowedWording: string
+	readonly forbiddenWording: readonly string[]
+	readonly ownerLoop: ReleaseProofReadinessOwner
+	readonly nextOwnerAction: string
 	readonly boundary: string
 }
 
@@ -2323,6 +2350,7 @@ export function releaseProofResearchHygieneDecisionPacket(
 	const validationCommands = [...new Set(downgradeRows.flatMap((row) => row.commandsToRun))]
 	const dirtyInventoryCommand =
 		'git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager'
+	const inventorySnapshot = researchHygieneInventorySnapshot(dirtyInventoryCommand)
 	return {
 		ownerLoops: ['product', 'release'],
 		status: 'claim-downgrade-do-not-promote',
@@ -2332,9 +2360,10 @@ export function releaseProofResearchHygieneDecisionPacket(
 		claim: 'research-surface-hygiene',
 		workBlockDisposition: 'claim-downgrade-do-not-promote',
 		dirtyInventoryCommand,
-		inventorySnapshot: researchHygieneInventorySnapshot(dirtyInventoryCommand),
+		inventorySnapshot,
 		localExcelCorpus: researchHygieneLocalExcelCorpus(),
 		loopManagerState: researchHygieneLoopManagerState(),
+		releaseRoutingSummary: researchHygieneReleaseRoutingSummary(result, inventorySnapshot),
 		validationCommands,
 		ownerFiles,
 		classificationBuckets: [
@@ -2376,6 +2405,33 @@ export function releaseProofResearchHygieneDecisionPacket(
 			'Stop only when every path reported by the dirty inventory command is classified as accepted evidence, active owner blocker, or archive-only, and release-proof-index tests pass.',
 		boundary:
 			'Compact research hygiene decision packet. It is not research approval, not archive deletion, not owner classification by itself, and not permission to cite untriaged research in release wording.',
+	}
+}
+
+function researchHygieneReleaseRoutingSummary(
+	result: ReleaseProofIndexResult,
+	inventorySnapshot: ReleaseProofResearchHygieneInventorySnapshot,
+): ReleaseProofResearchHygieneReleaseRoutingSummary {
+	const formatEntry = (entry: ReleaseProofResearchHygieneInventoryEntry) =>
+		`${entry.path}: ${entry.reason} Next: ${entry.nextOwnerAction}`
+	return {
+		acceptedReleaseEvidence: inventorySnapshot.classifiedEntries
+			.filter((entry) => entry.classification === 'accepted-evidence')
+			.map(formatEntry),
+		blockedClaims: result.releaseDecisionBoard.doNotPromoteYet.map(
+			(item) =>
+				`${item.name}: ${item.allowedWording} Forbidden: ${item.forbiddenWording.join('; ')}`,
+		),
+		ownerReadyImplementationTasks:
+			result.releaseDecisionBoard.implementationReadyOwnerActionQueue.map(
+				(row) =>
+					`${row.ownerLoop}/${row.name}${row.requirementId ? `/${row.requirementId}` : ''}: ${row.nextOwnerAction}`,
+			),
+		archiveDeferMaterial: inventorySnapshot.classifiedEntries
+			.filter((entry) => entry.classification === 'archive-only')
+			.map(formatEntry),
+		boundary:
+			'Compact routing summary only. It separates accepted evidence, blocked claims, owner-ready implementation work, and archive/defer material without promoting raw research or creating new work surfaces.',
 	}
 }
 
@@ -3107,6 +3163,17 @@ function safeOpenQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceItem[] {
 				'High-risk stream export approval evidence only; it does not provide re-encryption support, signature preservation, re-signing, signature validation, malware scanning, or file trust.',
 		},
 		{
+			evidenceId: 'sdk-high-risk-text-export-approval-proof',
+			kind: 'test',
+			command:
+				'bun test packages/sdk/src/sdk.test.ts -t "high-risk workbook text saves require the same explicit export approvals" --timeout 30000',
+			path: 'packages/sdk/src/workbook.ts; packages/sdk/src/sdk.test.ts',
+			acceptedScope:
+				'Commits b7e8eccc and a004fb4a make values-only text exports from encrypted, signed, macro, and signed-macro workbooks fail closed unless the exact decrypted-export, signature-loss, and active-content-loss approvals are present; the combined signed-macro case requires both signature and active-content approval and still keeps XLSX/XLSM byte export fail-closed without signature invalidation.',
+			boundary:
+				'High-risk values-only text export evidence only; it does not provide re-encryption, signature preservation, re-signing, macro safety, active-content execution, malware scanning, package-preserving text output, or file trust.',
+		},
+		{
 			evidenceId: 'sdk-signed-agent-text-commit-policy-proof',
 			kind: 'test',
 			command:
@@ -3178,6 +3245,17 @@ function safeOpenQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceItem[] {
 				'Commit a09660be adds root package scripts for SDK, HTTP, and MCP safe-edit workflows, proves each root script runs the generated-workbook workflow, and updates CLI/API/MCP workflow discovery plus installed app smoke checks to point at the root commands.',
 			boundary:
 				'Local root-package script evidence only; it does not prove package publication, registry install behavior, arbitrary workbook safety, performance, external trust, or every SDK/CLI/API/MCP workflow.',
+		},
+		{
+			evidenceId: 'workflow-example-proof-context',
+			kind: 'test',
+			command:
+				'bun test apps/cli/src/cli.test.ts apps/api/src/server.test.ts apps/mcp/src/index.test.ts -t "agent-init prints the canonical agent workflow contract|/agent-workflow exposes the API safe edit contract|ascend.agent_workflow exposes machine-readable safe edit guidance" --timeout 30000',
+			path: 'apps/cli/src/commands/agent-init.ts; apps/cli/src/cli.test.ts; apps/api/src/server.ts; apps/api/src/server.test.ts; apps/mcp/src/index.ts; apps/mcp/src/index.test.ts; scripts/release-apps-smoke.ts',
+			acceptedScope:
+				'Commit f3347e17 exposes workflow example proof context on CLI agent-init and API/MCP agent-workflow surfaces: repository-root workdir, source-checkout/Bun prerequisites, and the root-scripts proof command are visible to outside users and guarded by installed app smoke checks.',
+			boundary:
+				'Workflow-discovery proof-context evidence only; it does not prove package publication, registry install behavior, arbitrary workbook safety, example runtime success beyond the cited root-script proof, performance, or external trust.',
 		},
 		{
 			evidenceId: 'api-custom-ui-active-content-proof',
@@ -3294,7 +3372,7 @@ function safeOpenQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceItem[] {
 			command: 'bun run release:rc:gate',
 			path: 'scripts/release-rc-gate.ts',
 			acceptedScope:
-				'Local RC packageability gate for SDK/CLI/API/MCP tarballs and installed workbook proof. Commit 0931685e fixes bundled SDK agent docs resolution from file URLs, preserving installed docs-search smoke coverage; commit f1f76e36 adds installed CLI agent-init plus API/MCP agent-workflow discovery smoke checks; commit 37794635 packages runnable HTTP/MCP workflow examples and extends installed SDK smoke coverage for bundled example discovery; commit 0d1b33f7 extends installed app smoke coverage for CLI agent-init runnable example commands; commit 407499cd extends installed app smoke coverage for API/MCP workflow example commands; commit a09660be updates installed app smoke coverage to assert root-level safe-edit example commands.',
+				'Local RC packageability gate for SDK/CLI/API/MCP tarballs and installed workbook proof. Commit 0931685e fixes bundled SDK agent docs resolution from file URLs, preserving installed docs-search smoke coverage; commit f1f76e36 adds installed CLI agent-init plus API/MCP agent-workflow discovery smoke checks; commit 37794635 packages runnable HTTP/MCP workflow examples and extends installed SDK smoke coverage for bundled example discovery; commit 0d1b33f7 extends installed app smoke coverage for CLI agent-init runnable example commands; commit 407499cd extends installed app smoke coverage for API/MCP workflow example commands; commit a09660be updates installed app smoke coverage to assert root-level safe-edit example commands; commit f3347e17 extends installed app smoke coverage for example proof context.',
 			boundary: 'Local tarball proof only; not registry publication or attestation.',
 		},
 	]
@@ -3424,6 +3502,7 @@ function releaseDecisionBoard(
 		doNotPromoteYet,
 		doNotPromoteDispositionSummary: releaseDecisionDispositionSummary(doNotPromoteYet),
 		releaseWordingDecisionSummary: releaseWordingDecisionSummary(rows, doNotPromoteYet),
+		todayCommitClaimMatrix: todayCommitClaimMatrix(),
 		claimDecisionContractCoverage: releaseDecisionClaimDecisionContractCoverage(
 			rows,
 			doNotPromoteYet,
@@ -3448,6 +3527,115 @@ function releaseDecisionBoard(
 		boundary:
 			'Top-two release-decision artifact for claim stewardship. It is derived from committed release proof gates and must not be treated as a product surface, benchmark threshold, signed provenance, or owner approval.',
 	}
+}
+
+function todayCommitClaimMatrix(): readonly ReleaseProofTodayCommitClaimMatrixRow[] {
+	return [
+		{
+			claimArea: 'safe-agent-workflows',
+			commits: ['de45eb83', '37794635', 'a09660be', '407499cd', 'f3347e17', '62f45cb5'],
+			releaseOrSotaClaimBecameMoreTrue:
+				'Ascend is more credible as an agent-native spreadsheet runtime because SDK, HTTP API, MCP, and root-package examples expose a runnable inspect/plan/commit/reopen/verify workflow plus proof context.',
+			evidenceProvesIt: [
+				'bun test examples/agent-safe-edit-mcp.test.ts --timeout 30000',
+				'bun test examples/root-scripts.test.ts --timeout 30000',
+				'bun test apps/cli/src/cli.test.ts apps/api/src/server.test.ts apps/mcp/src/index.test.ts -t "agent-init prints the canonical agent workflow contract|/agent-workflow exposes the API safe edit contract|ascend.agent_workflow exposes machine-readable safe edit guidance" --timeout 30000',
+				'fixtures/benchmarks/release-proof-index.test.ts pins workflow example evidence, proof context, and RC-gate scope.',
+			],
+			allowedWording:
+				'Ascend provides local runnable SDK/API/MCP safe-edit workflow examples with root commands and machine-readable proof context for generated workbooks.',
+			forbiddenWording: [
+				'Do not claim arbitrary workbook safety, package publication, registry install proof, hosted service readiness, or complete workflow observability from the local generated-workbook examples.',
+			],
+			ownerLoop: 'release',
+			nextOwnerAction:
+				'Release-code owner stops adding discovery-only workflow affordances and next improves one public/outside-user workflow proof or package publication smoke if release wants stronger adoption wording.',
+			boundary:
+				'Compact current-commit claim row only; evidence is local workflow proof, not a broad product or publication claim.',
+		},
+		{
+			claimArea: 'signed-encrypted-macro-handling',
+			commits: ['7ff308c9', 'e5d0ee17', 'ca3c3296', '2401fa0a', 'b7e8eccc', 'a004fb4a'],
+			releaseOrSotaClaimBecameMoreTrue:
+				'Ascend is stricter and more explainable on high-risk workbook handling: encrypted package inspection uses decrypted session bytes, signed/VBA signature edits fail closed, streams and values-only text exports require explicit high-risk approvals.',
+			evidenceProvesIt: [
+				'bun test packages/sdk/src/sdk.test.ts -t "rawPackagePart inspects decrypted package parts after password open" --timeout 30000',
+				'bun test packages/sdk/src/sdk.test.ts -t "VBA project signatures fail closed while approved exports preserve macros" --timeout 30000',
+				'bun test packages/sdk/src/sdk.test.ts -t "high-risk workbook streams require the same explicit export approvals" --timeout 30000',
+				'bun test packages/sdk/src/sdk.test.ts -t "high-risk workbook text saves require the same explicit export approvals" --timeout 30000',
+			],
+			allowedWording:
+				'Ascend has local proof that encrypted, signed, macro, and signed-macro exports fail closed unless the exact loss/decryption/signature approvals are explicit.',
+			forbiddenWording: [
+				'Do not claim macro safety, malware scanning, re-encryption, signature preservation, re-signing, signer trust, or safe execution of active content.',
+			],
+			ownerLoop: 'correctness',
+			nextOwnerAction:
+				'Excel compatibility owner should stop adding synthetic high-risk policy cases unless they close a public signed/macro fixture policy gap; next work is public fixture/provenance coverage or an explicit do-not-promote decision for signed fixture wording.',
+			boundary:
+				'Compact current-commit claim row only; synthetic high-risk topology proof remains below broad trust or safety wording.',
+		},
+		{
+			claimArea: 'write-performance',
+			commits: ['67b900ed', 'e22eb86a', 'bd162937', '0d0c9632'],
+			releaseOrSotaClaimBecameMoreTrue:
+				'String-heavy generated XLSX write throughput has a scoped optimization proof, but broad XLSX write/SOTA/QSS speed wording remains downgraded.',
+			evidenceProvesIt: [
+				'bun test fixtures/benchmarks/performance-claim-baseline-matrix.test.ts --timeout 30000',
+				'performance owner artifact in release-proof-index names the plain-text baseline, string-heavy baseline, and 0d0c9632 string-heavy optimization proof as bounded evidence.',
+			],
+			allowedWording:
+				'Ascend has bounded local evidence of an optimized string-heavy generated write row; treat it as release-owner diagnostic/performance evidence, not broad speed leadership.',
+			forbiddenWording: [
+				'Do not claim fastest XLSX writer, broad write SOTA, QSS-leapfrog speed, or external workflow dominance from one generated row.',
+			],
+			ownerLoop: 'performance',
+			nextOwnerAction:
+				'Benchmark owner either runs a full-profile regression for the optimized string-heavy row or stops optimization and keeps broad speed wording downgraded until a named public workflow loss appears.',
+			boundary:
+				'Compact current-commit claim row only; one generated write row cannot promote broad performance claims.',
+		},
+		{
+			claimArea: 'external-baselines',
+			commits: ['fa3a13dc', 'b6925afe', 'bb31bebe', 'f8846cf8', '9ddfff91'],
+			releaseOrSotaClaimBecameMoreTrue:
+				'External read baselines are more comparable across selected-sheet, metadata-only, FastXLSX, SheetJS, ExcelJS, Calamine, and ClosedXML boundaries, but they mostly sharpen downgrade decisions rather than promote speed leadership.',
+			evidenceProvesIt: [
+				'fixtures/benchmarks/release-proof-index.ts performance boundary packet records same-lane selected-sheet/metadata-only evidence, Calamine metadata-only non-win, FastXLSX scoped rows, and current full-profile/merged scoreboard status.',
+				'bun run fixtures/benchmarks/release-proof-index.ts --no-timings --performance-boundary-json',
+			],
+			allowedWording:
+				'Ascend has bounded local comparable external-baseline evidence for selected-sheet, metadata-only, and FastXLSX rows with unsupported/mismatch boundaries disclosed.',
+			forbiddenWording: [
+				'Do not claim fastest XLSX reader, broad SOTA read speed, QSS speed leadership, or a Calamine metadata-only win.',
+			],
+			ownerLoop: 'performance',
+			nextOwnerAction:
+				'Benchmark owner resolves one explicit blocker row: ClosedXML coverage, feature-rich SheetJS/Calamine semantic policy, remaining unsupported selected-sheet/metadata-only competitors, FastXLSX environment coverage, or a profiling-named public workflow cost center.',
+			boundary:
+				'Compact current-commit claim row only; external baseline evidence is scoped and mostly blocks broad speed claims.',
+		},
+		{
+			claimArea: 'research-proof-surface',
+			commits: ['62f45cb5'],
+			releaseOrSotaClaimBecameMoreTrue:
+				'Research material is more release-safe because the dirty research/tmp surface is routed into accepted evidence, blocked claims, owner-ready implementation tasks, or archive/defer material instead of being cited directly.',
+			evidenceProvesIt: [
+				'bun run fixtures/benchmarks/release-proof-index.ts --no-timings --research-hygiene-json',
+				'bun test fixtures/benchmarks/release-proof-index.test.ts --timeout 120000',
+			],
+			allowedWording:
+				'Raw research and tmp material is classified as release routing evidence only; cite the proof-index packets, not the raw notes.',
+			forbiddenWording: [
+				'Do not cite research/ or tmp/ paths as product, correctness, performance, QSS, or release evidence unless a future commit folds one finding into the proof index with commands and owner action.',
+			],
+			ownerLoop: 'product',
+			nextOwnerAction:
+				'Product/release owner reviews classifiedEntries, resolves local Excel corpus and loop-manager state as active owner blockers, and archives broad research notes unless they change a claim or implementation target.',
+			boundary:
+				'Compact current-commit claim row only; research classification is not approval to publish or cite raw research.',
+		},
+	]
 }
 
 function releaseDecisionDispositionSummary(
@@ -4513,6 +4701,12 @@ function cloneReleaseDecisionBoard(
 				),
 			) as ReleaseProofReleaseWordingDecisionSummary['forbiddenWordingByClaim'],
 		},
+		todayCommitClaimMatrix: board.todayCommitClaimMatrix.map((row) => ({
+			...row,
+			commits: [...row.commits],
+			evidenceProvesIt: [...row.evidenceProvesIt],
+			forbiddenWording: [...row.forbiddenWording],
+		})),
 		claimDecisionContractCoverage: {
 			...board.claimDecisionContractCoverage,
 			missingEvidenceWeHaveKeys: [...board.claimDecisionContractCoverage.missingEvidenceWeHaveKeys],
@@ -5309,6 +5503,7 @@ const AGENT_WORKFLOW_OBSERVABILITY_BLOCKER = {
 		'Agent-doc search indexes runnable HTTP and MCP safe-edit workflows through `2569626c fix(sdk): index runnable http workflow example` and `de45eb83 test(examples): add runnable mcp safe edit workflow`, making outside-user workflow examples discoverable from the SDK docs surface.',
 		'CLI agent-init surfaces runnable SDK, HTTP, and MCP safe-edit example commands through `0d1b33f7 feat(cli): surface runnable agent workflow examples`, so a CLI user can find the same outside-user workflows without knowing repo paths.',
 		'API and MCP workflow discovery surfaces expose runnable SDK, HTTP, and MCP safe-edit example commands through `407499cd feat(api): expose runnable workflow examples`, and installed app smoke checks guard those example fields.',
+		'Workflow discovery surfaces expose runnable-example proof context through `f3347e17 feat(api): expose workflow example proof context`, including repository-root workdir, setup prerequisites, and `bun test examples/root-scripts.test.ts` as the proof command.',
 		'Workflow docs list inspect, plan, commit, verify, trace, and repair-plan recovery paths in `docs/AGENT_WORKFLOW.md`, but documentation is guidance rather than release proof.',
 	],
 	evidenceMissing: [
@@ -5635,6 +5830,7 @@ function correctnessBoundaryEvidence(
 				'macro-bearing parts are recorded as package evidence',
 				'safe-open proof routes macro and ActiveX risk families to review before hydration',
 				'VBA project signature parts are dropped on approved edited exports while the VBA project remains inventoried',
+				'values-only text export from signed macro workbooks requires both signature-loss and active-content-loss approvals',
 			],
 		}),
 		correctnessBoundaryFeatureCheck({

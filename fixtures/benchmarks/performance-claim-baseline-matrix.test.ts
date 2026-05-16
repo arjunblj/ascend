@@ -234,6 +234,33 @@ describe('performance claim baseline matrix', () => {
 			'defer production optimization from this row. If string-heavy\nmatters for a release claim later',
 		)
 
+		expect(markdown).toContain('## Cycle: String Heavy Write Optimization')
+		expect(markdown).toContain('Classification: validated optimization.')
+		expect(markdown).toContain('Commit: `bd1629373a9a4a17edd2db9125b6cd19e6df7504`')
+		expect(markdown).toContain(
+			'`packages/io-xlsx/src/writer/dense-rows.ts` now uses the synchronous dense\n  ZIP builder when the estimated dense sheet XML is at or below 4 MiB.',
+		)
+		expect(markdown).toContain(
+			'/private/tmp/ascend-write-string-heavy-optimized-bd162937-runs/write-string-heavy-fastest-repeat15.json',
+		)
+		expect(markdown).toContain(
+			'| `string-heavy` dense streaming | 107.176 | 12.418 | samples up to 198.748 ms | samples up to 31.683 ms |',
+		)
+		expect(markdown).toContain(
+			'| `dense-values` dense streaming | 76.335 | 11.179 | samples up to 176.338 ms | samples up to 24.411 ms |',
+		)
+		expect(markdown).toContain(
+			'| `ascend-external-writer` | ran/won | 5.001 | 6.077 | 0.099 | 91.8 MiB | 201984 |',
+		)
+		expect(markdown).toContain(
+			'| `rust-xlsxwriter` | ran/lost vs Ascend | 30.237 | 34.996 | 0.079 | 24.3 MiB | 237837 |',
+		)
+		expect(markdown).toContain('Ascend now wins median and p95 on this focused row.')
+		expect(markdown).toContain('"Ascend beats ClosedXML or NPOI on string-heavy writes."')
+		expect(markdown).toContain(
+			'continue optimizing or bounding the next existing `xlsx-write-sota`\ngap',
+		)
+
 		expect(markdown).toContain('## Full Current-Commit Gate: XLSX Read SOTA')
 		expect(markdown).toContain(
 			'Classification: blocked/defer. No production optimization is justified',

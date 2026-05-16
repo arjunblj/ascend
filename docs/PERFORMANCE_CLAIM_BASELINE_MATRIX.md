@@ -536,6 +536,115 @@ Next action: defer production optimization from this row. If string-heavy
 matters for a release claim later, attack the noisy Ascend tail with profiling
 before changing writer code.
 
+## Cycle: String Heavy Write Optimization
+
+Classification: validated optimization. The noisy `string-heavy` write gap was
+real under the benchmark runtime, not under the default shell Bun. The external
+matrix PATH uses `/Users/arjun/.bun/bin/bun` `1.3.13`; under that runtime the
+small dense streaming ZIP path was much slower and noisier than the buffered
+dense writer. Commit `bd162937` routes small dense streaming writes through the
+buffered dense ZIP path, preserving the streaming API while avoiding async
+stream overhead for small generated sheets.
+
+Workflow: generated XLSX write for varied string values, 2000 rows x 20 columns.
+
+Why it matters for release: this directly improves the generated string export
+workflow that previously had a repeat-5 median loss and a noisy repeat-15 tail.
+It also improves small dense generated numeric/text writes because they share
+the same dense streaming writer path.
+
+Public/tracked-clean input: `competitive-io` generated the `string-heavy`
+`source-mode generated-write` workload from tracked benchmark code at commit
+`bd162937`. No private corpus or local research workbook was used.
+
+Production change:
+
+- `packages/io-xlsx/src/writer/dense-rows.ts` now uses the synchronous dense
+  ZIP builder when the estimated dense sheet XML is at or below 4 MiB.
+- `packages/io-xlsx/src/writer/writer.test.ts` proves small dense streaming
+  output is byte-equivalent to the buffered dense writer and reopens with the
+  expected values.
+
+Commands:
+
+```bash
+bun test packages/io-xlsx/src/writer/writer.test.ts -t "small dense streaming output"
+bun test packages/io-xlsx/src/writer/writer.test.ts -t "dense rows"
+bun test fixtures/benchmarks/competitive-io.test.ts -t "string-heavy"
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/xlsx-write-phase.ts --workload string-heavy --rows 2000 --cols 20 --repeat 12 --warmup 3 --streaming --json
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/xlsx-write-phase.ts --workload dense-values --rows 2000 --cols 20 --repeat 12 --warmup 3 --streaming --json
+git worktree add --detach /private/tmp/ascend-write-string-heavy-optimized-bd162937 bd162937
+cd /private/tmp/ascend-write-string-heavy-optimized-bd162937
+bun install --frozen-lockfile
+mkdir -p /private/tmp/ascend-write-string-heavy-optimized-bd162937-runs
+TMPDIR=/private/tmp ACCEPT_NPOI_OSMF_LICENSE=1 env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-io.ts --json --category write --competitor all --execution-scope external-process --source-mode generated-write --libraries ascend-external-writer,rust-xlsxwriter,excelize,sheetjs,fastexcel-java --workload string-heavy --repeat 15 --warmup 3 --validation-mode each --write-runner-manifest fixtures/benchmarks/runners/sota-writers.manifest.json > /private/tmp/ascend-write-string-heavy-optimized-bd162937-runs/write-string-heavy-fastest-repeat15.json
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-scoreboard.ts /private/tmp/ascend-write-string-heavy-optimized-bd162937-runs/write-string-heavy-fastest-repeat15.json --json --metric medianMs --require-profile xlsx-write-sota --assert-profile-leader ascend > /private/tmp/ascend-write-string-heavy-optimized-bd162937-runs/write-string-heavy-fastest-repeat15-scoreboard.json
+```
+
+Environment:
+
+- Commit: `bd1629373a9a4a17edd2db9125b6cd19e6df7504`
+- Worktree: clean detached worktree at
+  `/private/tmp/ascend-write-string-heavy-optimized-bd162937`
+- Bun runtime: `1.3.13`
+- Node: `24.3.0`
+- Platform: Darwin arm64
+- Runtime profile: `category write`, `executionScope external-process`,
+  `sourceMode generated-write`, `workload string-heavy`, `validationMode each`.
+
+Raw output:
+
+```text
+/private/tmp/ascend-write-string-heavy-optimized-bd162937-runs/write-string-heavy-fastest-repeat15.json
+/private/tmp/ascend-write-string-heavy-optimized-bd162937-runs/write-string-heavy-fastest-repeat15-scoreboard.json
+```
+
+Phase evidence under Bun `1.3.13`:
+
+| Workload | Before median write ms | After median write ms | Before tail/noise | After tail/noise |
+| --- | ---: | ---: | --- | --- |
+| `string-heavy` dense streaming | 107.176 | 12.418 | samples up to 198.748 ms | samples up to 31.683 ms |
+| `dense-values` dense streaming | 76.335 | 11.179 | samples up to 176.338 ms | samples up to 24.411 ms |
+
+Optimized focused fastest-writer rerun, repeat 15 after 3 warmups:
+
+| Runner | Status vs Ascend | Median ms | P95 ms | CV | Peak RSS | Output bytes |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| `ascend-external-writer` | ran/won | 5.001 | 6.077 | 0.099 | 91.8 MiB | 201984 |
+| `rust-xlsxwriter` | ran/lost vs Ascend | 30.237 | 34.996 | 0.079 | 24.3 MiB | 237837 |
+| `fastexcel-java` | ran/lost vs Ascend | 30.614 | 44.745 | 0.183 | 808.0 MiB | 260426 |
+| `excelize` | ran/lost vs Ascend | 33.528 | 41.901 | 0.108 | 23.3 MiB | 218447 |
+| `sheetjs` | ran/lost vs Ascend | 62.450 | 224.709 | 0.622 | 278.0 MiB | 2016032 |
+
+Scoreboard result:
+
+- Focused repeat-15 fastest-writer rerun: group winner was
+  `ascend-external-writer`; `profileLeaderFailures: []`.
+- The full `xlsx-write-sota` gate still fails coverage because this is a
+  focused row, not a full-profile promotion run.
+
+Semantic comparability: all passing rows write the same generated string-heavy
+sheet and pass external post-write semantic validation for one sheet and 40,000
+cells. Memory and size tradeoffs remain material: rust_xlsxwriter and Excelize
+use less RSS, while Ascend now wins median and p95 on this focused row.
+
+Humble allowed wording:
+
+> On the generated 2000 x 20 string-heavy write row, after `bd162937`, Ascend's
+> focused external repeat-15 row was faster by median and p95 than
+> rust_xlsxwriter, FastExcel Java, Excelize, and SheetJS. This is scoped
+> generated string-write evidence, not a broad `xlsx-write-sota` claim.
+
+Forbidden wording:
+
+- "Ascend is SOTA for XLSX write."
+- "Ascend beats every generated XLSX writer."
+- "Ascend beats ClosedXML or NPOI on string-heavy writes."
+- "Ascend has the smallest string-heavy XLSX."
+
+Next action: continue optimizing or bounding the next existing `xlsx-write-sota`
+gap; do not revisit string-heavy unless a full-profile rerun regresses this row.
+
 ## Owner-Ready Benchmark Blocker
 
 Owner: benchmarking/external baselines.

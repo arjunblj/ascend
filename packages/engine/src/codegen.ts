@@ -585,10 +585,10 @@ function emitFunction(state: CodegenState, node: FormulaNode & { type: 'function
 		return emitIf(state, node.args)
 	}
 	if (upper === 'IFERROR' && node.args.length === 2) {
-		return emitIfError(state, node.args)
+		return emitIfError(state, node)
 	}
 	if (upper === 'IFNA' && node.args.length === 2) {
-		return emitIfNa(state, node.args)
+		return emitIfNa(state, node)
 	}
 	if (upper === 'AND' || upper === 'OR') return emitAndOr(state, node.args, upper === 'AND')
 	if (upper === 'NOT' && node.args.length === 1) return emitNot(state, node.args)
@@ -1276,7 +1276,8 @@ function emitIf(state: CodegenState, args: readonly FormulaNode[]): string {
 	return result
 }
 
-function emitIfError(state: CodegenState, args: readonly FormulaNode[]): string {
+function emitIfError(state: CodegenState, node: FormulaNode & { type: 'function' }): string {
+	const args = node.args
 	const innerState: CodegenState = {
 		lines: [],
 		varCounter: state.varCounter,
@@ -1295,7 +1296,11 @@ function emitIfError(state: CodegenState, args: readonly FormulaNode[]): string 
 	const scalar = freshVar(state, 'ie')
 	state.lines.push(`var ${scalar} = _topLeft(${valueVar});`)
 	state.lines.push(`var ${result};`)
-	state.lines.push(`if (${scalar}.kind === 'error') {`)
+	const nodeKey = `_tree${state.treeNodes.size}`
+	state.treeNodes.set(nodeKey, node)
+	state.lines.push(`if (${valueVar}.kind === 'array') {`)
+	state.lines.push(`${result} = _treeEval(${nodeKey}, ctx);`)
+	state.lines.push(`} else if (${scalar}.kind === 'error') {`)
 	const fallbackVar = emitNode(state, args[1] as FormulaNode)
 	state.lines.push(`${result} = ${fallbackVar};`)
 	state.lines.push('} else {')
@@ -1304,7 +1309,8 @@ function emitIfError(state: CodegenState, args: readonly FormulaNode[]): string 
 	return result
 }
 
-function emitIfNa(state: CodegenState, args: readonly FormulaNode[]): string {
+function emitIfNa(state: CodegenState, node: FormulaNode & { type: 'function' }): string {
+	const args = node.args
 	const innerState: CodegenState = {
 		lines: [],
 		varCounter: state.varCounter,
@@ -1323,7 +1329,11 @@ function emitIfNa(state: CodegenState, args: readonly FormulaNode[]): string {
 	const scalar = freshVar(state, 'in')
 	state.lines.push(`var ${scalar} = _topLeft(${valueVar});`)
 	state.lines.push(`var ${result};`)
-	state.lines.push(`if (${scalar}.kind === 'error' && ${scalar}.value === '#N/A') {`)
+	const nodeKey = `_tree${state.treeNodes.size}`
+	state.treeNodes.set(nodeKey, node)
+	state.lines.push(`if (${valueVar}.kind === 'array') {`)
+	state.lines.push(`${result} = _treeEval(${nodeKey}, ctx);`)
+	state.lines.push(`} else if (${scalar}.kind === 'error' && ${scalar}.value === '#N/A') {`)
 	const fallbackVar = emitNode(state, args[1] as FormulaNode)
 	state.lines.push(`${result} = ${fallbackVar};`)
 	state.lines.push('} else {')

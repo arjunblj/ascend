@@ -1201,12 +1201,45 @@ function evalIfArray(
 
 function evalIfError(argNodes: readonly FormulaNode[], ctx: EvalContext): CellValue {
 	const value = evalLazyArg(argNodes[0], ctx)
+	if (value.kind === 'array') return evalIfErrorArray(value, evalLazyArg(argNodes[1], ctx))
 	return value.kind === 'error' ? evalLazyArg(argNodes[1], ctx) : value
 }
 
 function evalIfNa(argNodes: readonly FormulaNode[], ctx: EvalContext): CellValue {
 	const value = evalLazyArg(argNodes[0], ctx)
+	if (value.kind === 'array') return evalIfErrorArray(value, evalLazyArg(argNodes[1], ctx), '#N/A')
 	return value.kind === 'error' && value.value === '#N/A' ? evalLazyArg(argNodes[1], ctx) : value
+}
+
+function evalIfErrorArray(
+	value: Extract<CellValue, { kind: 'array' }>,
+	fallback: CellValue,
+	errorCode?: string,
+): CellValue {
+	const valueRows = value.rows.length
+	const valueCols = maxRowLength(value.rows)
+	const fallbackRows = fallback.kind === 'array' ? fallback.rows.length : 1
+	const fallbackCols = fallback.kind === 'array' ? maxRowLength(fallback.rows) : 1
+	const rows = broadcastLength(valueRows, fallbackRows)
+	const cols = broadcastLength(valueCols, fallbackCols)
+	if (rows === null || cols === null) return errorValue('#VALUE!')
+
+	const result: ScalarCellValue[][] = []
+	for (let row = 0; row < rows; row++) {
+		const resultRow: ScalarCellValue[] = []
+		for (let col = 0; col < cols; col++) {
+			const cell = arrayCellAt(value, row, col)
+			resultRow.push(
+				topLeftScalar(
+					cell.kind === 'error' && (errorCode === undefined || cell.value === errorCode)
+						? arrayCellAt(fallback, row, col)
+						: cell,
+				),
+			)
+		}
+		result.push(resultRow)
+	}
+	return arrayValue(result)
 }
 
 function evalChoose(argNodes: readonly FormulaNode[], ctx: EvalContext): CellValue {

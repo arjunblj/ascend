@@ -865,6 +865,26 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(1, 1)?.value).toEqual(numberValue(0))
 	})
 
+	test('IFERROR and IFNA replace matching errors inside arrays', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: errorValue('#DIV/0!'), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: errorValue('#N/A'), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: EMPTY, formula: 'IFERROR(A1:A3,0)', styleId: sid })
+		sheet.cells.set(0, 2, { value: EMPTY, formula: 'IFNA(A1:A3,"missing")', styleId: sid })
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(0, 1)?.value).toEqual(numberValue(1))
+		expect(sheet.cells.get(1, 1)?.value).toEqual(numberValue(0))
+		expect(sheet.cells.get(2, 1)?.value).toEqual(numberValue(0))
+		expect(sheet.cells.get(0, 2)?.value).toEqual(numberValue(1))
+		expect(sheet.cells.get(1, 2)?.value).toEqual(errorValue('#DIV/0!'))
+		expect(sheet.cells.get(2, 2)?.value).toEqual(stringValue('missing'))
+	})
+
 	test('FREQUENCY formulas can count unique filtered numeric ids from array expressions', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

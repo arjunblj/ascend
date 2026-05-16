@@ -23,10 +23,10 @@ No broad XLSX read, XLSX write, SOTA, or QSS-leapfrog speed claim is promotable 
 - Current harness evidence now supports same-lane selected-sheet rows for Ascend, SheetJS, OpenPyXL, and python-calamine. Treat older `openpyxl` and Calamine selected-sheet `unsupported-operation` wording as historical for the recorded clean runs.
 - Current harness evidence now supports same-lane metadata-only rows for Ascend, SheetJS, OpenPyXL, and python-calamine. Calamine wins that head-to-head; treat older metadata-only `missing-comparable` or Calamine `unsupported-operation` wording as historical.
 - Current harness evidence now supports a SheetJS feature-rich rich-metadata row using SheetJS `bookFiles`; older SheetJS `semantic-mismatch` wording is historical for the pre-runner-fix cycles. Calamine-family rich-metadata rows remain not comparable.
-- Current formula/calc evidence includes a focused HyperFormula indexed
-  `INDEX/MATCH` row. It is useful formula-engine performance evidence, but it
-  is not XLSX behavior parity, Excel compatibility, or broad formula SOTA
-  evidence.
+- Current formula/calc evidence includes focused HyperFormula indexed
+  `INDEX/MATCH` and prefix-range dirty-tail rows. They are useful
+  formula-engine performance evidence, but they are not XLSX behavior parity,
+  Excel compatibility, or broad formula SOTA evidence.
 - Several external runners were unavailable or blocked in the clean benchmark worktree. They are recorded as blockers, not wins.
 - Several timing lanes are semantically related but not one unified timing boundary. Do not collapse in-process, preloaded-bytes, file-path, row-stream, and materialized-workbook timings into a single "wins everything" claim.
 
@@ -136,6 +136,95 @@ Next action: defer production optimization from this winning row. Continue
 formula/calc performance work only with a named HyperFormula workflow that
 loses, an external formula oracle boundary, or a smaller attributable all-profile
 gate that emits complete JSON.
+
+## Cycle: Formula SOTA Prefix Dirty-Tail HyperFormula Row at `c06bba18`
+
+Classification: comparable formula-engine evidence plus defer. Ascend is the
+median and p95 winner on this focused incremental dirty recalculation workflow.
+No production optimization is justified from the row.
+
+Workflow: after an initial full recalc over 5,000 growing
+`SUM(A$1:A<n>)` formulas, edit the last source row and measure dirty
+propagation through the affected prefix formula.
+
+Why it matters for release: incremental recalculation is a practical calc
+workflow after agent edits. This row checks a HyperFormula-documented optimized
+growing-range shape, but it is generated in-memory formula-engine evidence only;
+it does not prove Excel-compatible formula coverage, cached formula truth, or
+XLSX roundtrip behavior.
+
+Public/tracked-clean input: `formula-sota` generated the
+`hf-prefix-range-dirty-tail` workload from tracked benchmark code in a clean
+detached worktree at commit `c06bba18`. No private corpus or local research
+workbook was used. The row used 5,000 source rows, 5,000 formulas, `SUM`, 30
+measured samples, and 5 warmups.
+
+Commands:
+
+```bash
+git worktree add --detach /private/tmp/ascend-formula-dirty-current-c06bba18 c06bba18
+cd /private/tmp/ascend-formula-dirty-current-c06bba18
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun install --frozen-lockfile
+mkdir -p /private/tmp/ascend-formula-dirty-current-c06bba18-runs
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/sbin:/sbin /usr/bin/time -l /Users/arjun/.bun/bin/bun run fixtures/benchmarks/formula-sota.ts --profile hf-prefix-range-dirty-tail --aggregate SUM --repeat 30 --warmup 5 --assert-correctness --json > /private/tmp/ascend-formula-dirty-current-c06bba18-runs/hf-prefix-range-dirty-tail-repeat30.json 2> /private/tmp/ascend-formula-dirty-current-c06bba18-runs/hf-prefix-range-dirty-tail-repeat30-time.txt
+```
+
+Environment:
+
+- Commit: `c06bba18`
+- Worktree: clean detached worktree at
+  `/private/tmp/ascend-formula-dirty-current-c06bba18`; `git status --short
+  --branch` reported `## HEAD (no branch)`.
+- Bun runtime: `1.3.13`
+- Node: `22.22.0`
+- HyperFormula dependency: `^3.2.0`
+- Platform: Darwin arm64, macOS kernel `25.4.0`
+- Runtime profile: `profile hf-prefix-range-dirty-tail`, `aggregate SUM`,
+  `rows 5000`, `formulas 5000`, `repeat 30`, `warmup 5`,
+  `assertCorrectness true`.
+
+Raw output:
+
+```text
+/private/tmp/ascend-formula-dirty-current-c06bba18-runs/hf-prefix-range-dirty-tail-repeat30.json
+/private/tmp/ascend-formula-dirty-current-c06bba18-runs/hf-prefix-range-dirty-tail-repeat30-time.txt
+```
+
+Focused formula-engine row, repeat 30 after 5 warmups:
+
+| Engine | Status | Setup median / p95 / CV | Operation median / p95 / CV | Total median / p95 / CV | Correctness | Memory |
+| --- | --- | ---: | ---: | ---: | --- | --- |
+| Ascend | ran/won | 7.122 ms / 9.880 ms / 0.185 | 0.059 ms / 0.090 ms / 0.208 | 7.184 ms / 9.941 ms / 0.183 | Tail edit changed 1 cell, 0 errors, probe value matched expected `13497503`. | Process-level peak RSS shared by both engines: 247.8 MiB maximum resident set size; 183.7 MiB peak memory footprint. |
+| HyperFormula | ran/lost vs Ascend | 53.358 ms / 65.878 ms / 0.171 | 0.091 ms / 0.516 ms / 1.157 | 53.496 ms / 65.946 ms / 0.172 | Tail edit changed 2 cells; probe value matched expected `13497503`. | Process-level peak RSS shared by both engines: 247.8 MiB maximum resident set size; 183.7 MiB peak memory footprint. |
+
+Comparison: `operationSpeedupVsHyperFormula: 1.531x`;
+`totalSpeedupVsHyperFormula: 7.447x`. HyperFormula's operation tail is much
+noisier in this row, with `opCv 1.157` and p95 `0.516 ms`; Ascend's p95 is
+`0.090 ms`.
+
+Semantic boundary: both engines calculate the same generated in-memory dirty
+tail edit and pass the same probe-value assertion. Changed-cell counts differ
+because Ascend reports 1 changed output cell while HyperFormula reports 2
+changed cells from the edit API. This row is formula-engine timing evidence,
+not XLSX behavior, formula-corpus parity, or Excel/LibreOffice oracle evidence.
+
+Humble allowed wording:
+
+> On the generated `hf-prefix-range-dirty-tail/SUM` workflow at commit
+> `c06bba18`, Ascend had faster median and p95 dirty recalculation than
+> HyperFormula `^3.2.0` on the same generated tail edit. This is scoped
+> formula-engine evidence, not broad formula parity or XLSX behavior evidence.
+
+Forbidden wording:
+
+- "Ascend is SOTA for formula calculation."
+- "Ascend beats HyperFormula on every incremental recalculation workflow."
+- "Ascend proves Excel-compatible formula parity."
+- "Ascend proves workbook formula preservation or cached formula truth."
+
+Next action: defer production optimization from this winning row. Continue
+formula/calc performance work only with a named HyperFormula workflow that
+loses or an attributable all-profile gate that emits complete JSON.
 
 ## Metadata-Only Calamine Boundary
 

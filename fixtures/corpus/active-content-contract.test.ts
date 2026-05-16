@@ -163,12 +163,14 @@ describe('active content corpus contract', () => {
 				partPath: 'xl/activeX/activeX1.bin',
 				sourcePartPath: 'xl/activeX/activeX1.xml',
 				sourceRelationshipId: 'rId1',
+				executionPolicy: 'blocked',
 			}),
 			expect.objectContaining({
 				kind: 'activeX',
 				partPath: 'xl/activeX/activeX1.xml',
 				sheetName: 'Sheet1',
 				sourceRelationshipId: 'rId3',
+				executionPolicy: 'blocked',
 				activeX: expect.objectContaining({
 					classId: '{8BD21D40-EC42-11CE-9E0D-00AA006002F3}',
 					persistence: 'persistStreamInit',

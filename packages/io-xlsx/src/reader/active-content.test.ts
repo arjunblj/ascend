@@ -165,6 +165,7 @@ describe('active content inventory', () => {
 				relType: 'http://schemas.microsoft.com/office/2006/relationships/activeXControl',
 				sourceRelationshipId: 'rId1',
 				relationshipCount: 1,
+				executionPolicy: 'blocked',
 				activeX: {
 					classId: '{8BD21D40-EC42-11CE-9E0D-00AA006002F3}',
 					persistence: 'persistStreamInit',
@@ -182,6 +183,7 @@ describe('active content inventory', () => {
 				relType: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/ctrlProp',
 				sourceRelationshipId: 'rId2',
 				relationshipCount: 0,
+				executionPolicy: 'blocked',
 				formControl: {
 					macro: 'Module1.Run',
 					linkedCell: '$A$1',

@@ -1,3 +1,4 @@
+import { ascendError } from '@ascend/schema'
 import { getOperationsSchema, listOperations } from '@ascend/sdk'
 import { cliError, jsonOut } from '../output/json.ts'
 import { table } from '../output/pretty.ts'
@@ -18,7 +19,7 @@ export async function opsCommand(_args: string[], flags: Map<string, string>): P
 		? getOperationsSchema().filter((entry) => entry.op === op)
 		: getOperationsSchema()
 	if (op && operations.length === 0) {
-		cliError(`Unknown operation: ${op}`, flags)
+		cliError(unknownOperationError(op), flags)
 		return 1
 	}
 	const data = { operations, schemas }
@@ -38,4 +39,21 @@ export async function opsCommand(_args: string[], flags: Map<string, string>): P
 		),
 	)
 	return 0
+}
+
+function unknownOperationError(op: string) {
+	return ascendError('INVALID_ARGUMENT', `Unknown operation: ${op}`, {
+		retryable: true,
+		retryStrategy: 'modified',
+		details: {
+			command: 'ops',
+			op,
+			availableOperations: listOperations()
+				.map((entry) => entry.op)
+				.sort(),
+			workflow: ['ops', 'plan', 'commit'],
+		},
+		suggestedFix:
+			'Run ascend ops --json to list canonical operation schemas, then retry with a supported --op value.',
+	})
 }

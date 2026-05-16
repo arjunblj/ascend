@@ -394,6 +394,26 @@ describe('ascend cli', () => {
 		expect(parsed.ok).toBe(true)
 		expect(parsed.data.operations[0].op).toBe('setCells')
 		expect(parsed.data.schemas[0].examples[0].op).toBe('setCells')
+
+		const missing = await run('ops', '--op', 'missingOp', '--json')
+		expect(missing.exitCode).toBe(1)
+		const missingParsed = JSON.parse(missing.stdout)
+		expect(missingParsed).toMatchObject({
+			ok: false,
+			error: {
+				code: 'INVALID_ARGUMENT',
+				message: 'Unknown operation: missingOp',
+				retryable: true,
+				retryStrategy: 'modified',
+				details: {
+					command: 'ops',
+					op: 'missingOp',
+					workflow: ['ops', 'plan', 'commit'],
+				},
+			},
+		})
+		expect(missingParsed.error.details.availableOperations).toContain('setCells')
+		expect(missingParsed.error.suggestedFix).toContain('ascend ops --json')
 	})
 
 	test('capabilities --json exposes the Excel capability matrix', async () => {

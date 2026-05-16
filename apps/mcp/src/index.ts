@@ -111,6 +111,7 @@ const MCP_AGENT_WORKFLOW = {
 		repairPlan: 'ascend.repair_plan',
 	},
 	examples: {
+		installedCliSafeEdit: 'ascend example-safe-edit <file.xlsx> <out.xlsx>',
 		installedSdkSafeEdit: 'node_modules/.bin/ascend-sdk-safe-edit <file.xlsx> <out.xlsx>',
 		sdkSafeEdit: 'bun run example:safe-edit <file.xlsx> <out.xlsx>',
 		apiSafeEdit: 'bun run example:safe-edit:http <file.xlsx> <out.xlsx>',
@@ -118,7 +119,11 @@ const MCP_AGENT_WORKFLOW = {
 	},
 	packageInstallExampleContext: {
 		workdir: 'consumer-project',
-		requires: ['@ascend/sdk installed', 'Bun or a TypeScript-capable runner'],
+		requires: [
+			'@ascend/cli installed for ascend example-safe-edit',
+			'@ascend/sdk installed for node_modules/.bin/ascend-sdk-safe-edit',
+			'Bun or a TypeScript-capable runner',
+		],
 		proofOutput: ['proofBundle.safeToUse', 'proofBundle.whatChanged', 'proofBundle.whySafe'],
 	},
 	exampleContext: {

@@ -264,6 +264,12 @@ if (cliAgentInit.mcpTools?.workflow !== 'ascend.agent_workflow') {
 	throw new Error('CLI agent-init missing MCP workflow tool: ' + JSON.stringify(cliAgentInit))
 }
 if (
+	cliAgentInit.examples?.installedCliSafeEdit !==
+	'ascend example-safe-edit <file.xlsx> <out.xlsx>'
+) {
+	throw new Error('CLI agent-init missing installed CLI safe-edit example: ' + JSON.stringify(cliAgentInit))
+}
+if (
 	cliAgentInit.examples?.installedSdkSafeEdit !==
 	'node_modules/.bin/ascend-sdk-safe-edit <file.xlsx> <out.xlsx>'
 ) {
@@ -271,6 +277,13 @@ if (
 }
 if (!cliAgentInit.packageInstallExampleContext?.proofOutput?.includes('proofBundle.safeToUse')) {
 	throw new Error('CLI agent-init missing installed SDK proof output context: ' + JSON.stringify(cliAgentInit))
+}
+if (
+	!cliAgentInit.packageInstallExampleContext?.requires?.includes(
+		'@ascend/cli installed for ascend example-safe-edit',
+	)
+) {
+	throw new Error('CLI agent-init missing installed CLI safe-edit requirement: ' + JSON.stringify(cliAgentInit))
 }
 if (cliAgentInit.examples?.sdkSafeEdit !== 'bun run example:safe-edit <file.xlsx> <out.xlsx>') {
 	throw new Error('CLI agent-init missing SDK safe-edit example: ' + JSON.stringify(cliAgentInit))
@@ -283,6 +296,20 @@ if (cliAgentInit.examples?.mcpSafeEdit !== 'bun run example:safe-edit:mcp <file.
 }
 if (cliAgentInit.exampleContext?.proofCommand !== 'bun test examples/root-scripts.test.ts') {
 	throw new Error('CLI agent-init missing runnable example proof context: ' + JSON.stringify(cliAgentInit))
+}
+const cliSafeEdit = await runCliJson([
+	'example-safe-edit',
+	join(cwd, 'cli-safe-edit-input.xlsx'),
+	join(cwd, 'cli-safe-edit-output.xlsx'),
+])
+if (cliSafeEdit.workflow !== 'installed-cli-open-plan-trust-inspect-read-plan-commit-reopen-verify') {
+	throw new Error('installed CLI safe-edit returned unexpected workflow: ' + JSON.stringify(cliSafeEdit))
+}
+if (cliSafeEdit.proofBundle?.safeToUse !== true) {
+	throw new Error('installed CLI safe-edit proof did not pass: ' + JSON.stringify(cliSafeEdit))
+}
+if (!cliSafeEdit.proofBundle?.whatChanged?.some((cell) => cell.ref === 'Sheet1!B2')) {
+	throw new Error('installed CLI safe-edit proof did not explain the changed cell: ' + JSON.stringify(cliSafeEdit))
 }
 
 const apiFetch = createApiFetch()
@@ -329,6 +356,12 @@ if (!apiWorkflow.workflow?.some((step) => step.step === 'reopen-verify')) {
 }
 if (apiWorkflow.examples?.apiSafeEdit !== 'bun run example:safe-edit:http <file.xlsx> <out.xlsx>') {
 	throw new Error('installed API agent workflow contract missing API safe-edit example')
+}
+if (
+	apiWorkflow.examples?.installedCliSafeEdit !==
+	'ascend example-safe-edit <file.xlsx> <out.xlsx>'
+) {
+	throw new Error('installed API agent workflow contract missing installed CLI safe-edit example')
 }
 if (
 	apiWorkflow.examples?.installedSdkSafeEdit !==
@@ -393,6 +426,12 @@ if (mcpWorkflow.examples?.mcpSafeEdit !== 'bun run example:safe-edit:mcp <file.x
 	throw new Error('installed MCP agent workflow contract missing MCP safe-edit example')
 }
 if (
+	mcpWorkflow.examples?.installedCliSafeEdit !==
+	'ascend example-safe-edit <file.xlsx> <out.xlsx>'
+) {
+	throw new Error('installed MCP agent workflow contract missing installed CLI safe-edit example')
+}
+if (
 	mcpWorkflow.examples?.installedSdkSafeEdit !==
 	'node_modules/.bin/ascend-sdk-safe-edit <file.xlsx> <out.xlsx>'
 ) {
@@ -436,6 +475,11 @@ console.log(JSON.stringify({
 		examples: cliAgentInit.examples,
 		packageInstallExampleContext: cliAgentInit.packageInstallExampleContext,
 		exampleContext: cliAgentInit.exampleContext,
+		safeEdit: {
+			workflow: cliSafeEdit.workflow,
+			safeToUse: cliSafeEdit.proofBundle.safeToUse,
+			changedCells: cliSafeEdit.proofBundle.whatChanged.map((cell) => cell.ref),
+		},
 	},
 	api: {
 		createApiFetchExport: typeof createApiFetch,

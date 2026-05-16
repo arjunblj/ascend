@@ -589,6 +589,7 @@ describe('Ascend API server', () => {
 				oneShot: true,
 			},
 			examples: {
+				installedCliSafeEdit: 'ascend example-safe-edit <file.xlsx> <out.xlsx>',
 				installedSdkSafeEdit: 'node_modules/.bin/ascend-sdk-safe-edit <file.xlsx> <out.xlsx>',
 				sdkSafeEdit: 'bun run example:safe-edit <file.xlsx> <out.xlsx>',
 				apiSafeEdit: 'bun run example:safe-edit:http <file.xlsx> <out.xlsx>',
@@ -596,7 +597,10 @@ describe('Ascend API server', () => {
 			},
 			packageInstallExampleContext: {
 				workdir: 'consumer-project',
-				requires: expect.arrayContaining(['@ascend/sdk installed']),
+				requires: expect.arrayContaining([
+					'@ascend/cli installed for ascend example-safe-edit',
+					'@ascend/sdk installed for node_modules/.bin/ascend-sdk-safe-edit',
+				]),
 				proofOutput: expect.arrayContaining([
 					'proofBundle.safeToUse',
 					'proofBundle.whatChanged',

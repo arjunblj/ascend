@@ -13,6 +13,10 @@ import { diffCommand, usage as diffUsage } from './commands/diff.ts'
 import { docsCommand, usage as docsUsage } from './commands/docs.ts'
 import { doctorCommand, usage as doctorUsage } from './commands/doctor.ts'
 import { dumpCommand, usage as dumpUsage } from './commands/dump.ts'
+import {
+	exampleSafeEditCommand,
+	usage as exampleSafeEditUsage,
+} from './commands/example-safe-edit.ts'
 import { exportCommand, usage as exportUsage } from './commands/export.ts'
 import { findCommand, usage as findUsage } from './commands/find.ts'
 import { formulaCommand, usage as formulaUsage } from './commands/formula.ts'
@@ -49,6 +53,7 @@ Commands:
   find <file> <query>           Search for cells matching a value
   agent-view <file>             Get AI-friendly sheet summary
   agent-init                    Print the recommended agent workflow contract
+  example-safe-edit <file>      Run packaged safe-edit workflow example
   ops                           List operation schemas and examples
   capabilities                  Show Excel capability coverage matrix
   plan <file> --ops <json>      Validate and preview a safe edit plan
@@ -89,6 +94,11 @@ interface Command {
 const COMMANDS: Record<string, Command> = {
 	create: { run: createCommand, usage: createUsage, allowedFlags: ['json'] },
 	'agent-init': { run: agentInitCommand, usage: agentInitUsage, allowedFlags: ['json'] },
+	'example-safe-edit': {
+		run: exampleSafeEditCommand,
+		usage: exampleSafeEditUsage,
+		allowedFlags: ['json'],
+	},
 	'agent-view': {
 		run: agentViewCommand,
 		usage: agentViewUsage,

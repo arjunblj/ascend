@@ -17,6 +17,8 @@ const ACTIVE_CONTENT_FILE = 'test-active-content.xlsm'
 const TRUST_REPORT_FILE = 'test-trust-report.xlsm'
 const CUSTOM_UI_FILE = 'test-custom-ui.xlsm'
 const OPEN_PLAN_FILE = 'test-open-plan.xlsx'
+const EXAMPLE_SAFE_EDIT_FILE = 'test-example-safe-edit.xlsx'
+const EXAMPLE_SAFE_EDIT_OUTPUT_FILE = 'test-example-safe-edit-out.xlsx'
 const ENCRYPTED_OPEN_PLAN_FIXTURE = '../../../fixtures/xlsx/calamine/pass_protected.xlsx'
 const AGENT_VIEW_FILE = 'test-agent-view.xlsx'
 const JOURNAL_V1_OPS_FILE = 'journal-v1-ops.json'
@@ -145,6 +147,8 @@ afterAll(() => {
 		TRUST_REPORT_FILE,
 		CUSTOM_UI_FILE,
 		OPEN_PLAN_FILE,
+		EXAMPLE_SAFE_EDIT_FILE,
+		EXAMPLE_SAFE_EDIT_OUTPUT_FILE,
 		AGENT_VIEW_FILE,
 		APPROVAL_TEST_FILE,
 		JOURNAL_V1_OPS_FILE,
@@ -474,6 +478,9 @@ describe('ascend cli', () => {
 		expect(parsed.data.commands.openPlan).toContain('open-plan')
 		expect(parsed.data.commands.encryptedOpenPlan).toContain('--password <value>')
 		expect(parsed.data.commands.trust).toContain('inspect <file> --agent --json')
+		expect(parsed.data.examples.installedCliSafeEdit).toBe(
+			'ascend example-safe-edit <file.xlsx> <out.xlsx>',
+		)
 		expect(parsed.data.examples.installedSdkSafeEdit).toBe(
 			'node_modules/.bin/ascend-sdk-safe-edit <file.xlsx> <out.xlsx>',
 		)
@@ -493,7 +500,10 @@ describe('ascend cli', () => {
 		})
 		expect(parsed.data.packageInstallExampleContext).toMatchObject({
 			workdir: 'consumer-project',
-			requires: expect.arrayContaining(['@ascend/sdk installed']),
+			requires: expect.arrayContaining([
+				'@ascend/cli installed for ascend example-safe-edit',
+				'@ascend/sdk installed for node_modules/.bin/ascend-sdk-safe-edit',
+			]),
 			proofOutput: expect.arrayContaining([
 				'proofBundle.safeToUse',
 				'proofBundle.whatChanged',
@@ -515,6 +525,53 @@ describe('ascend cli', () => {
 		expect(parsed.data.safetyDefaults.join('\n')).toContain('planHandle')
 		expect(parsed.data.safetyDefaults.join('\n')).toContain('untrusted data')
 		expect(parsed.data.safetyDefaults.join('\n')).toContain('must not echo the password')
+	})
+
+	test('example-safe-edit runs the packaged inspect plan commit reopen verify workflow', async () => {
+		const { stdout, exitCode } = await run(
+			'example-safe-edit',
+			EXAMPLE_SAFE_EDIT_FILE,
+			EXAMPLE_SAFE_EDIT_OUTPUT_FILE,
+			'--json',
+		)
+		expect(exitCode).toBe(0)
+		const parsed = JSON.parse(stdout)
+		expect(parsed.ok).toBe(true)
+		expect(parsed.data.workflow).toBe(
+			'installed-cli-open-plan-trust-inspect-read-plan-commit-reopen-verify',
+		)
+		expect(parsed.data.install).toMatchObject({
+			package: '@ascend/cli',
+			example: 'ascend example-safe-edit',
+		})
+		expect(parsed.data.proofBundle.safeToUse).toBe(true)
+		expect(parsed.data.proofBundle.whatChanged).toEqual([
+			expect.objectContaining({
+				ref: 'Sheet1!B2',
+				formulaAfter: 'SUM(A2:A4)',
+			}),
+		])
+		expect(
+			parsed.data.proofBundle.whySafe.map((gate: { gate: string; ok: boolean }) => [
+				gate.gate,
+				gate.ok,
+			]),
+		).toEqual([
+			['open-plan', true],
+			['trust', true],
+			['plan', true],
+			['commit', true],
+			['reopen-verify', true],
+		])
+		expect(parsed.data.verify).toMatchObject({
+			reopened: true,
+			checkValid: true,
+			lintClean: true,
+			cell: {
+				ref: 'Sheet1!B2',
+				value: { kind: 'number', value: 450 },
+			},
+		})
 	})
 
 	test('open-plan --json returns structured missing workbook guidance', async () => {

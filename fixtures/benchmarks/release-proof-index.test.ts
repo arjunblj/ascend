@@ -960,6 +960,24 @@ describe('release proof evidence index', () => {
 		expect(index.releaseDecisionBoard.doNotPromoteYet[0].boundary).toContain(
 			'Do not turn this into release wording',
 		)
+		const formulaLanguageDecision = index.releaseDecisionBoard.doNotPromoteYet.find(
+			(item) => item.name === 'formula-language-service-primitives',
+		)
+		const formulaLanguageEvidence = formulaLanguageDecision?.evidenceWeHave.join('\n') ?? ''
+		const formulaLanguageMissing = formulaLanguageDecision?.evidenceMissing.join('\n') ?? ''
+		const formulaLanguageForbidden = formulaLanguageDecision?.forbiddenWording.join('\n') ?? ''
+		const formulaLanguageNextOwnerAction = formulaLanguageDecision?.nextOwnerAction ?? ''
+		expect(formulaLanguageEvidence).toContain('formula-assist-proof.ts')
+		expect(formulaLanguageEvidence).toContain('packages/sdk/src/formula-edit.test.ts')
+		expect(formulaLanguageEvidence).toContain('apps/cli/src/cli.test.ts')
+		expect(formulaLanguageEvidence).toContain('apps/api/src/server.test.ts')
+		expect(formulaLanguageEvidence).toContain('apps/mcp/src/index.test.ts')
+		expect(formulaLanguageMissing).toContain('public formula corpus')
+		expect(formulaLanguageMissing).toContain('operation-owned edit plans')
+		expect(formulaLanguageForbidden).toContain('edit-producing rename')
+		expect(formulaLanguageForbidden).toContain('external-ref rename')
+		expect(formulaLanguageNextOwnerAction).toContain('SDK/CLI/API/MCP')
+		expect(formulaLanguageNextOwnerAction).toContain('formula-assist-proof.ts')
 		const researchSurfaceDecision = index.releaseDecisionBoard.doNotPromoteYet.find(
 			(item) => item.name === 'research-surface-hygiene',
 		)
@@ -2216,6 +2234,8 @@ describe('release proof evidence index', () => {
 		expect(markdown).toContain('Deferred Claims')
 		expect(markdown).toContain('formula language-service primitives')
 		expect(markdown).toContain('edit-producing rename is frozen')
+		expect(markdown).toContain('formula-assist-proof.ts')
+		expect(markdown).toContain('Do not claim edit-producing rename')
 		expect(markdown).toContain('columnar scan sidecars')
 		expect(markdown).toContain('do-not-promote-yet')
 	})

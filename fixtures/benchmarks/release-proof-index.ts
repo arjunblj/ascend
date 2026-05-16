@@ -2245,6 +2245,10 @@ function releaseDecisionDoNotPromoteItem(
 	const deferredClaim = DEFERRED_CLAIMS.find((claim) => claim.name === note.name)
 	const excludedEvidence = EXCLUDED_EVIDENCE.find((evidence) => evidence.name === note.name)
 	const proof = portfolioClaim?.evidenceNeeded
+	const formulaLanguageServiceBlocker =
+		note.name === 'formula-language-service-primitives'
+			? FORMULA_LANGUAGE_SERVICE_BLOCKER
+			: undefined
 	const releaseProofBundleBlocker =
 		note.name === 'release-proof-bundle' ? RELEASE_PROOF_BUNDLE_BLOCKER : undefined
 	const researchHygieneBlocker =
@@ -2260,6 +2264,7 @@ function releaseDecisionDoNotPromoteItem(
 		reason: note.reason,
 		evidenceWeHave: [
 			note.reason,
+			...(formulaLanguageServiceBlocker?.evidenceWeHave ?? []),
 			...(releaseProofBundleBlocker?.evidenceWeHave ?? []),
 			...(researchHygieneBlocker?.evidenceWeHave ?? []),
 			...(tokenBoundedAgentViewBlocker?.evidenceWeHave ?? []),
@@ -2274,6 +2279,7 @@ function releaseDecisionDoNotPromoteItem(
 		evidenceMissing: [
 			...(deferredClaim ? [deferredClaim.proofNeeded] : []),
 			...(excludedEvidence ? [excludedEvidence.eligibilityRule] : []),
+			...(formulaLanguageServiceBlocker?.evidenceMissing ?? []),
 			...(releaseProofBundleBlocker?.evidenceMissing ?? []),
 			...(researchHygieneBlocker?.evidenceMissing ?? []),
 			...(tokenBoundedAgentViewBlocker?.evidenceMissing ?? []),
@@ -2287,6 +2293,7 @@ function releaseDecisionDoNotPromoteItem(
 		allowedWording: `Do not promote ${note.name} as release wording today; use it only as owner planning or research evidence.`,
 		forbiddenWording: [
 			note.killCriterion,
+			...(formulaLanguageServiceBlocker?.forbiddenWording ?? []),
 			...(releaseProofBundleBlocker?.forbiddenWording ?? []),
 			...(researchHygieneBlocker?.forbiddenWording ?? []),
 			...(tokenBoundedAgentViewBlocker?.forbiddenWording ?? []),
@@ -2295,6 +2302,7 @@ function releaseDecisionDoNotPromoteItem(
 			...(excludedEvidence ? [excludedEvidence.boundary] : []),
 		],
 		nextOwnerAction:
+			formulaLanguageServiceBlocker?.ownerAction ??
 			releaseProofBundleBlocker?.ownerAction ??
 			researchHygieneBlocker?.ownerAction ??
 			tokenBoundedAgentViewBlocker?.ownerAction ??
@@ -2884,6 +2892,24 @@ const DEFERRED_CLAIMS: readonly ReleaseProofDeferredClaim[] = [
 			'Untriaged research files are not release evidence and must not be cited for product, correctness, or performance claims.',
 	},
 ]
+
+const FORMULA_LANGUAGE_SERVICE_BLOCKER = {
+	ownerAction:
+		'Product/correctness owner records one public SDK/CLI/API/MCP formula-assist workflow with diagnostics, reference spans, binding roles, completions, signature help, LET prepareRename success, workbook-context prepareRename refusal, and no edit-producing rename; then defines Workbook-context ownership and operation-owned edit plans before any rename wording. Validate with `bun run fixtures/benchmarks/formula-assist-proof.ts --sample 250 --no-timings --json`, `bun test packages/sdk/src/formula-edit.test.ts --timeout 30000`, and focused CLI/API/MCP formula-assist tests.',
+	evidenceWeHave: [
+		'Formula-assist proof command exists: `bun run fixtures/benchmarks/formula-assist-proof.ts --sample 250 --no-timings --json` records sampled formula diagnostics, reference spans, binding roles, refusal counts, and claim boundaries.',
+		'SDK formula-edit tests cover bundled formulaAssist, hover/code actions, reference kinds, binding roles, LET prepareRename success, and workbook-context/reference refusal in `packages/sdk/src/formula-edit.test.ts`.',
+		'CLI/API/MCP formula-assist tests expose diagnostics, completions, signature help, reference edits, and workbook-context rename refusal in `apps/cli/src/cli.test.ts`, `apps/api/src/server.test.ts`, and `apps/mcp/src/index.test.ts`.',
+	],
+	evidenceMissing: [
+		'One public formula corpus workflow showing sampled formulas, spans, binding roles, refusal counts, and recovery wording across SDK/CLI/API/MCP.',
+		'Workbook-context ownership and operation-owned edit plans for defined names, table names, table columns, sheet/range references, and external workbook references before any edit-producing rename.',
+		'Owner-approved latency evidence for formula-assist only; no timing or practical-efficiency wording from proof shape alone.',
+	],
+	forbiddenWording: [
+		'Do not claim edit-producing rename, safe rewrite of workbook-context references, defined-name rename, table/table-column rename, sheet/range rename, external-ref rename, or Excel-compatible formula language from formula-assist evidence.',
+	],
+} as const
 
 const RELEASE_PROOF_BUNDLE_BLOCKER = {
 	ownerAction:

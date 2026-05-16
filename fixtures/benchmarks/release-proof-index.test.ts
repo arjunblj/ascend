@@ -922,6 +922,23 @@ describe('release proof evidence index', () => {
 			'safe-open-proof',
 			'package-action-proof',
 		])
+		expect(index.releaseDecisionBoard.doNotPromoteYet.map((item) => item.name)).toEqual([
+			'formula-language-service-primitives',
+			'token-bounded-agent-view',
+			'retained-viewport-patch-history',
+			'columnar-scan-sidecars',
+			'formula-oracle-routing',
+			'agent-workflow-observability',
+			'practical-latency-contracts',
+		])
+		expect(
+			index.releaseDecisionBoard.doNotPromoteYet.every(
+				(item) => item.status === 'do-not-promote-yet',
+			),
+		).toBe(true)
+		expect(index.releaseDecisionBoard.doNotPromoteYet[0].boundary).toContain(
+			'Do not turn this into release wording',
+		)
 		const safeOpenDecision = index.releaseDecisionBoard.rows[0]
 		expect(safeOpenDecision.claimWordingAllowedToday).toBe('safe unknown workbook opening')
 		expect(safeOpenDecision.headlineClaimAllowed).toBe(false)
@@ -1424,6 +1441,10 @@ describe('release proof evidence index', () => {
 				readonly headlineClaimAllowed?: boolean
 				readonly aPlusBlockingOwnerActions?: readonly unknown[]
 			}[]
+			readonly doNotPromoteYet?: readonly {
+				readonly name?: string
+				readonly status?: string
+			}[]
 		}
 		expect(board.status).toBe('top-two-only')
 		expect(board.releaseGate).toBe('blocked-by-publication-policy')
@@ -1436,8 +1457,11 @@ describe('release proof evidence index', () => {
 		])
 		expect(board.rows?.every((row) => row.headlineClaimAllowed === false)).toBe(true)
 		expect(board.rows?.every((row) => (row.aPlusBlockingOwnerActions?.length ?? 0) > 0)).toBe(true)
+		expect(board.doNotPromoteYet?.map((item) => item.name)).toContain('columnar-scan-sidecars')
+		expect(board.doNotPromoteYet?.every((item) => item.status === 'do-not-promote-yet')).toBe(true)
 		expect(stdout).not.toContain('"claimBlockerBoard"')
 		expect(stdout).not.toContain('"fixturePolicy"')
+		expect(stdout).not.toContain('"deferredClaims"')
 	})
 
 	test('renders honest non-attestation boundaries', async () => {
@@ -1452,6 +1476,7 @@ describe('release proof evidence index', () => {
 		expect(markdown).toContain('Ready when')
 		expect(markdown).toContain('Release Readiness Gate')
 		expect(markdown).toContain('## Release Decision Board')
+		expect(markdown).toContain('Do not promote yet:')
 		expect(markdown).toContain(
 			'| Rank | Claim wording allowed today | Headline claim allowed | Implementation promotion allowed | Exact proof | Must not claim | A+ blocking owner action | Boundary |',
 		)

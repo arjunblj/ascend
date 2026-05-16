@@ -273,6 +273,7 @@ export interface ReleaseProofReleaseDecisionBoard {
 	readonly implementationSurfacePromotionAllowed: boolean
 	readonly missingRequirementCount: number
 	readonly rows: readonly ReleaseProofReleaseDecisionBoardRow[]
+	readonly doNotPromoteYet: readonly ReleaseProofReleaseDecisionDoNotPromoteItem[]
 	readonly boundary: string
 }
 
@@ -286,6 +287,15 @@ export interface ReleaseProofReleaseDecisionBoardRow {
 	readonly acceptedEvidence: readonly ReleaseProofQssAcceptedEvidenceItem[]
 	readonly claimsWeMustNotMake: readonly string[]
 	readonly aPlusBlockingOwnerActions: readonly ReleaseProofNextOwnerAction[]
+	readonly boundary: string
+}
+
+export interface ReleaseProofReleaseDecisionDoNotPromoteItem {
+	readonly name: ReleaseProofQssArchivedResearchNote['name']
+	readonly status: 'do-not-promote-yet'
+	readonly ownerLoops: readonly ReleaseProofReadinessOwner[]
+	readonly reason: string
+	readonly killCriterion: string
 	readonly boundary: string
 }
 
@@ -1262,6 +1272,9 @@ export function releaseProofIndexMarkdown(result: ReleaseProofIndexResult): stri
 		'| ---: | --- | --- | --- | --- | --- | --- | --- |',
 		...result.releaseDecisionBoard.rows.map(releaseDecisionBoardMarkdownRow),
 		'',
+		'Do not promote yet:',
+		...result.releaseDecisionBoard.doNotPromoteYet.map((item) => `- ${item.name}: ${item.reason}`),
+		'',
 		'## Release Packageability Evidence',
 		'',
 		`Status: ${result.releasePackageabilityEvidence.status}`,
@@ -1965,6 +1978,15 @@ function releaseDecisionBoard(
 					'Release decision row only. It names allowed local claim wording, exact proof pointers, forbidden shortcuts, and owner blockers without satisfying any gate.',
 			}
 		}),
+		doNotPromoteYet: qssMatrix.archivedResearchNotes.map((note) => ({
+			name: note.name,
+			status: 'do-not-promote-yet',
+			ownerLoops: [...note.ownerLoops],
+			reason: note.reason,
+			killCriterion: note.killCriterion,
+			boundary:
+				'Archived research note for release stewardship. Do not turn this into release wording or a new implementation surface until it changes the top-two claim gate.',
+		})),
 		boundary:
 			'Top-two release-decision artifact for claim stewardship. It is derived from committed release proof gates and must not be treated as a product surface, benchmark threshold, signed provenance, or owner approval.',
 	}
@@ -1996,6 +2018,10 @@ function cloneReleaseDecisionBoard(
 ): ReleaseProofReleaseDecisionBoard {
 	return {
 		...board,
+		doNotPromoteYet: board.doNotPromoteYet.map((item) => ({
+			...item,
+			ownerLoops: [...item.ownerLoops],
+		})),
 		rows: board.rows.map((row) => ({
 			...row,
 			proofRequired: { ...row.proofRequired },

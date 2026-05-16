@@ -3415,7 +3415,12 @@ describe('release proof evidence index', () => {
 			readonly inventorySnapshot?: {
 				readonly command?: string
 				readonly status?: string
+				readonly decision?: string
 				readonly dirtyPathCount?: number
+				readonly statusCodeCounts?: Record<string, number>
+				readonly rootCounts?: Record<string, number>
+				readonly untrackedDirectoryCount?: number
+				readonly modifiedFileCount?: number
 				readonly unclassifiedEntries?: readonly {
 					readonly statusCode?: string
 					readonly path?: string
@@ -3458,8 +3463,31 @@ describe('release proof evidence index', () => {
 			),
 		})
 		expect(typeof packet.inventorySnapshot?.dirtyPathCount).toBe('number')
+		expect(['owner-classification-required', 'no-unclassified-paths-currently-visible']).toContain(
+			packet.inventorySnapshot?.decision,
+		)
 		expect(packet.inventorySnapshot?.dirtyPathCount).toBe(
 			packet.inventorySnapshot?.unclassifiedEntries?.length ?? 0,
+		)
+		const statusTotal = Object.values(packet.inventorySnapshot?.statusCodeCounts ?? {}).reduce(
+			(sum, count) => sum + count,
+			0,
+		)
+		const rootTotal = Object.values(packet.inventorySnapshot?.rootCounts ?? {}).reduce(
+			(sum, count) => sum + count,
+			0,
+		)
+		expect(statusTotal).toBe(packet.inventorySnapshot?.dirtyPathCount)
+		expect(rootTotal).toBe(packet.inventorySnapshot?.dirtyPathCount)
+		expect(packet.inventorySnapshot?.untrackedDirectoryCount).toBe(
+			(packet.inventorySnapshot?.unclassifiedEntries ?? []).filter(
+				(entry) => entry.statusCode === '??' && entry.path?.endsWith('/'),
+			).length,
+		)
+		expect(packet.inventorySnapshot?.modifiedFileCount).toBe(
+			(packet.inventorySnapshot?.unclassifiedEntries ?? []).filter(
+				(entry) => entry.statusCode === 'M',
+			).length,
 		)
 		for (const entry of packet.inventorySnapshot?.unclassifiedEntries ?? []) {
 			expect(entry.path).toMatch(

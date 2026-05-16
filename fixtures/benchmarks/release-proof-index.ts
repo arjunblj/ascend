@@ -307,7 +307,15 @@ export interface ReleaseProofResearchHygieneClassificationBucket {
 export interface ReleaseProofResearchHygieneInventorySnapshot {
 	readonly command: string
 	readonly status: 'inventory-collected' | 'inventory-command-failed'
+	readonly decision:
+		| 'owner-classification-required'
+		| 'no-unclassified-paths-currently-visible'
+		| 'inventory-rerun-required'
 	readonly dirtyPathCount: number
+	readonly statusCodeCounts: Readonly<Record<string, number>>
+	readonly rootCounts: Readonly<Record<'research' | 'scripts' | 'tmp' | 'other', number>>
+	readonly untrackedDirectoryCount: number
+	readonly modifiedFileCount: number
 	readonly unclassifiedEntries: readonly ReleaseProofResearchHygieneInventoryEntry[]
 	readonly failure?: string
 	readonly boundary: string
@@ -2239,10 +2247,22 @@ function researchHygieneInventorySnapshot(
 				path: line.slice(3),
 				classification: 'unclassified-owner-decision-required' as const,
 			}))
+		const statusCodeCounts = countBy(unclassifiedEntries, (entry) => entry.statusCode)
+		const rootCounts = researchHygieneInventoryRootCounts(unclassifiedEntries)
 		return {
 			command,
 			status: 'inventory-collected',
+			decision:
+				unclassifiedEntries.length > 0
+					? 'owner-classification-required'
+					: 'no-unclassified-paths-currently-visible',
 			dirtyPathCount: unclassifiedEntries.length,
+			statusCodeCounts,
+			rootCounts,
+			untrackedDirectoryCount: unclassifiedEntries.filter(
+				(entry) => entry.statusCode === '??' && entry.path.endsWith('/'),
+			).length,
+			modifiedFileCount: unclassifiedEntries.filter((entry) => entry.statusCode === 'M').length,
 			unclassifiedEntries,
 			boundary:
 				'Inventory snapshot is current git-status routing evidence only. It is not owner classification, accepted evidence, or permission to cite research paths in release wording.',
@@ -2251,13 +2271,36 @@ function researchHygieneInventorySnapshot(
 		return {
 			command,
 			status: 'inventory-command-failed',
+			decision: 'inventory-rerun-required',
 			dirtyPathCount: 0,
+			statusCodeCounts: {},
+			rootCounts: { research: 0, scripts: 0, tmp: 0, other: 0 },
+			untrackedDirectoryCount: 0,
+			modifiedFileCount: 0,
 			unclassifiedEntries: [],
 			failure: error instanceof Error ? error.message : String(error),
 			boundary:
 				'Inventory snapshot failed to collect. Owners must rerun the dirty inventory command before citing any research-derived claim.',
 		}
 	}
+}
+
+function researchHygieneInventoryRootCounts(
+	entries: readonly ReleaseProofResearchHygieneInventoryEntry[],
+): Readonly<Record<'research' | 'scripts' | 'tmp' | 'other', number>> {
+	const counts = { research: 0, scripts: 0, tmp: 0, other: 0 }
+	for (const entry of entries) {
+		if (entry.path.startsWith('research/')) {
+			counts.research += 1
+		} else if (entry.path.startsWith('scripts/')) {
+			counts.scripts += 1
+		} else if (entry.path.startsWith('tmp/')) {
+			counts.tmp += 1
+		} else {
+			counts.other += 1
+		}
+	}
+	return counts
 }
 
 const EXCLUDED_EVIDENCE: readonly ReleaseProofIndexExcludedEvidence[] = [

@@ -315,6 +315,9 @@ if (apiWorkflow.endpoints?.plan !== 'POST /plan' || apiWorkflow.endpoints?.commi
 if (!apiWorkflow.workflow?.some((step) => step.step === 'reopen-verify')) {
 	throw new Error('installed API agent workflow contract missing reopen-verify step')
 }
+if (!apiWorkflow.examples?.apiSafeEdit?.includes('safe-edit:http')) {
+	throw new Error('installed API agent workflow contract missing API safe-edit example')
+}
 
 const mcpInput = join(cwd, 'mcp-input.xlsx')
 const mcpOutput = join(cwd, 'mcp-output.xlsx')
@@ -361,6 +364,9 @@ if (mcpWorkflow.tools?.plan !== 'ascend.plan' || mcpWorkflow.tools?.commit !== '
 }
 if (!mcpWorkflow.workflow?.some((step) => step.step === 'reopen-verify')) {
 	throw new Error('installed MCP agent workflow contract missing reopen-verify step')
+}
+if (!mcpWorkflow.examples?.mcpSafeEdit?.includes('safe-edit:mcp')) {
+	throw new Error('installed MCP agent workflow contract missing MCP safe-edit example')
 }
 const mcpResource = await resources['ascend://capabilities']?.readCallback(
 	new URL('ascend://capabilities'),

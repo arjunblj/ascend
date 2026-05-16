@@ -73,6 +73,11 @@ describe('API', () => {
 				endpoints: expect.arrayContaining(['POST /check', 'POST /lint', 'POST /diff']),
 			}),
 		)
+		expect(workflowBody.data.examples).toMatchObject({
+			sdkSafeEdit: 'bun run --cwd examples safe-edit <file.xlsx> <out.xlsx>',
+			apiSafeEdit: expect.stringContaining('safe-edit:http'),
+			mcpSafeEdit: expect.stringContaining('safe-edit:mcp'),
+		})
 		expect(workflowBody.data.preparedHandles).toMatchObject({
 			scope: 'process-local',
 			oneShot: true,

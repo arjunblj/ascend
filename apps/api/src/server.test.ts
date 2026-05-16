@@ -588,6 +588,11 @@ describe('Ascend API server', () => {
 				scope: 'process-local',
 				oneShot: true,
 			},
+			examples: {
+				sdkSafeEdit: 'bun run --cwd examples safe-edit <file.xlsx> <out.xlsx>',
+				apiSafeEdit: 'bun run --cwd examples safe-edit:http <file.xlsx> <out.xlsx>',
+				mcpSafeEdit: 'bun run --cwd examples safe-edit:mcp <file.xlsx> <out.xlsx>',
+			},
 		})
 		expect(body.data?.workflow).toContainEqual(
 			expect.objectContaining({

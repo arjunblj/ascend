@@ -519,6 +519,7 @@ describe('MCP server', () => {
 				data?: {
 					workflow?: unknown[]
 					tools?: Record<string, string>
+					examples?: Record<string, string>
 					resources?: string[]
 					preparedHandles?: { scope?: string; oneShot?: boolean }
 				}
@@ -536,6 +537,11 @@ describe('MCP server', () => {
 			lint: 'ascend.lint',
 		})
 		expect(result.structuredContent?.data?.resources).toContain('ascend://agent-workflow')
+		expect(result.structuredContent?.data?.examples).toMatchObject({
+			sdkSafeEdit: 'bun run --cwd examples safe-edit <file.xlsx> <out.xlsx>',
+			apiSafeEdit: expect.stringContaining('safe-edit:http'),
+			mcpSafeEdit: expect.stringContaining('safe-edit:mcp'),
+		})
 		expect(result.structuredContent?.data?.preparedHandles).toMatchObject({
 			scope: 'process-local',
 			oneShot: true,

@@ -110,6 +110,11 @@ const MCP_AGENT_WORKFLOW = {
 		lint: 'ascend.lint',
 		repairPlan: 'ascend.repair_plan',
 	},
+	examples: {
+		sdkSafeEdit: 'bun run --cwd examples safe-edit <file.xlsx> <out.xlsx>',
+		apiSafeEdit: 'bun run --cwd examples safe-edit:http <file.xlsx> <out.xlsx>',
+		mcpSafeEdit: 'bun run --cwd examples safe-edit:mcp <file.xlsx> <out.xlsx>',
+	},
 	resources: ['ascend://agent-workflow', 'ascend://operations', 'ascend://capabilities'],
 	preparedHandles: {
 		scope: 'process-local',

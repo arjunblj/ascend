@@ -38,6 +38,8 @@ describe('XLSX package graph', () => {
   <Relationship Id="rIdDiagramData" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/diagramData" Target="diagrams/data1.xml"/>
   <Relationship Id="rIdDataModel" Type="http://schemas.microsoft.com/office/2011/relationships/model" Target="model/item.data"/>
   <Relationship Id="rIdPowerQuery" Type="http://schemas.microsoft.com/office/2014/relationships/powerQueryMashup" Target="customData/item1.data"/>
+  <Relationship Id="rIdPowerQueryOpaque" Type="http://schemas.microsoft.com/office/2014/relationships/powerQueryMashup" Target="opaque-mashup.bin"/>
+  <Relationship Id="rIdDataModelOpaque" Type="http://schemas.microsoft.com/office/2011/relationships/model" Target="opaque-model.bin"/>
   <Relationship Id="rIdConnections" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/connections" Target="data/connectionsPayload.xml"/>
   <Relationship Id="rIdExternalLink" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLink" Target="links/bookLink.xml"/>
   <Relationship Id="rIdRevisionHeaders" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/revisionHeaders" Target="revisions/revisionHeaders.xml"/>
@@ -104,6 +106,24 @@ describe('XLSX package graph', () => {
 			rawTarget: 'links/bookLink.xml',
 			resolvedTarget: 'xl/links/bookLink.xml',
 			featureFamily: 'preservedExternalLink',
+		})
+		expect(graph.relationships).toContainEqual({
+			sourcePartPath: 'xl/workbook.xml',
+			relationshipPartPath: 'xl/_rels/workbook.xml.rels',
+			id: 'rIdPowerQueryOpaque',
+			type: 'http://schemas.microsoft.com/office/2014/relationships/powerQueryMashup',
+			rawTarget: 'opaque-mashup.bin',
+			resolvedTarget: 'xl/opaque-mashup.bin',
+			featureFamily: 'preservedPowerQuery',
+		})
+		expect(graph.relationships).toContainEqual({
+			sourcePartPath: 'xl/workbook.xml',
+			relationshipPartPath: 'xl/_rels/workbook.xml.rels',
+			id: 'rIdDataModelOpaque',
+			type: 'http://schemas.microsoft.com/office/2011/relationships/model',
+			rawTarget: 'opaque-model.bin',
+			resolvedTarget: 'xl/opaque-model.bin',
+			featureFamily: 'preservedDataModel',
 		})
 		expect(graph.relationships).toContainEqual({
 			sourcePartPath: 'xl/drawings/drawing1.xml',

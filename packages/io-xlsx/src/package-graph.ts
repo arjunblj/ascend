@@ -15,6 +15,7 @@ import {
 	REL_CONNECTIONS,
 	REL_CONTROL_PROP,
 	REL_CUSTOM_XML,
+	REL_DATA_MODEL,
 	REL_DRAWING,
 	REL_EXTERNAL_LINK,
 	REL_HYPERLINK,
@@ -25,6 +26,7 @@ import {
 	REL_PIVOT_CACHE_DEFINITION,
 	REL_PIVOT_CACHE_RECORDS,
 	REL_PIVOT_TABLE,
+	REL_POWER_QUERY_MASHUP,
 	REL_PRINTER_SETTINGS,
 	REL_QUERY_TABLE,
 	REL_SHARED_STRINGS,
@@ -244,7 +246,9 @@ export function classifyPackageFeatureFamily(
 	if (path.includes('/drawings/') && path.endsWith('.vml')) return 'preservedVml'
 	if (path.includes('/drawings/')) return 'preservedDrawing'
 	if (path.includes('/media/')) return 'preservedMedia'
-	if (path.includes('/model/')) return 'preservedDataModel'
+	if (path.includes('/model/') || lowerRelType.endsWith('/relationships/model')) {
+		return 'preservedDataModel'
+	}
 	if (path.includes('/tables/')) return 'preservedTable'
 	if (path.includes('/queryTables/')) return 'preservedQueryTable'
 	if (lowerRelType.endsWith('/relationships/hyperlink')) return 'preservedHyperlink'
@@ -272,7 +276,9 @@ export function classifyPackageFeatureFamily(
 	if (path.endsWith('/connections.xml') || lowerRelType.endsWith('/relationships/connections')) {
 		return 'preservedConnection'
 	}
-	if (path.includes('/customData/')) return 'preservedPowerQuery'
+	if (path.includes('/customData/') || lowerRelType.endsWith('/relationships/powerquerymashup')) {
+		return 'preservedPowerQuery'
+	}
 	if (path.includes('/theme/')) return 'preservedTheme'
 	if (path.includes('/styles.xml')) return 'preservedStyles'
 	if (path.includes('/metadata')) return 'preservedMetadata'
@@ -484,6 +490,8 @@ function classifyRelationshipFeatureFamily(
 	if (relationship.type === REL_TABLE) return 'preservedTable'
 	if (relationship.type === REL_QUERY_TABLE) return 'preservedQueryTable'
 	if (relationship.type === REL_CONNECTIONS) return 'preservedConnection'
+	if (relationship.type === REL_DATA_MODEL) return 'preservedDataModel'
+	if (relationship.type === REL_POWER_QUERY_MASHUP) return 'preservedPowerQuery'
 	if (relationship.type === REL_HYPERLINK) return 'preservedHyperlink'
 	if (relationship.type === REL_CUSTOM_XML) return 'preservedCustomXml'
 	if (relationship.type === REL_COMMENTS) return 'preservedComments'

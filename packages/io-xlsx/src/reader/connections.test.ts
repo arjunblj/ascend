@@ -23,9 +23,19 @@ describe('connection part inventory', () => {
 				relationshipCount: 0,
 				name: 'SalesConnection',
 				connectionId: 1,
+				connectionType: 6,
+				description: 'CSV import',
+				deleted: false,
+				backgroundRefresh: true,
+				keepAlive: true,
+				refreshInterval: 15,
 				refreshOnLoad: true,
 				saveData: false,
+				savePassword: false,
 				refreshedVersion: 8,
+				sourceFile: 'C:\\data\\sales.csv',
+				command: 'SELECT * FROM [Sales]',
+				hasConnectionString: true,
 			},
 			{
 				kind: 'queryTable',
@@ -105,7 +115,10 @@ function connectionWorkbook(): Uint8Array {
 </Relationships>`,
 		'xl/connections.xml': `<?xml version="1.0"?>
 <connections xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-  <connection id="1" name="SalesConnection" refreshOnLoad="1" saveData="0" refreshedVersion="8"/>
+  <connection id="1" name="SalesConnection" description="CSV import" type="6" deleted="0" background="1" keepAlive="1" interval="15" refreshOnLoad="1" saveData="0" savePassword="0" refreshedVersion="8">
+    <dbPr connection="Provider=Microsoft.ACE.OLEDB.12.0;" command="SELECT * FROM [Sales]"/>
+    <textPr sourceFile="C:\\data\\sales.csv"/>
+  </connection>
 </connections>`,
 		'xl/queryTables/queryTable1.xml': `<?xml version="1.0"?>
 <queryTable xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" name="SalesQuery" connectionId="1" refreshOnLoad="1" removeDataOnSave="1"/>`,

@@ -5158,9 +5158,27 @@ function buildWorkbookRefreshMetadata(
 			...(part.name !== undefined ? { name: part.name } : {}),
 			...(part.sheetName !== undefined ? { sheetName: part.sheetName } : {}),
 			...(part.connectionId !== undefined ? { connectionId: part.connectionId } : {}),
+			...(part.connectionType !== undefined ? { connectionType: part.connectionType } : {}),
+			...(part.description !== undefined ? { description: part.description } : {}),
+			...(part.deleted !== undefined ? { deleted: part.deleted } : {}),
+			...(part.backgroundRefresh !== undefined
+				? { backgroundRefresh: part.backgroundRefresh }
+				: {}),
+			...(part.keepAlive !== undefined ? { keepAlive: part.keepAlive } : {}),
+			...(part.refreshInterval !== undefined ? { refreshInterval: part.refreshInterval } : {}),
 			...(part.refreshOnLoad !== undefined ? { refreshOnLoad: part.refreshOnLoad } : {}),
 			...(part.saveData !== undefined ? { saveData: part.saveData } : {}),
+			...(part.savePassword !== undefined ? { savePassword: part.savePassword } : {}),
 			...(part.refreshedVersion !== undefined ? { refreshedVersion: part.refreshedVersion } : {}),
+			...(part.sourceFile !== undefined ? { sourceFile: part.sourceFile } : {}),
+			...(part.odcFile !== undefined ? { odcFile: part.odcFile } : {}),
+			...(part.onlyUseConnectionFile !== undefined
+				? { onlyUseConnectionFile: part.onlyUseConnectionFile }
+				: {}),
+			...(part.command !== undefined ? { command: part.command } : {}),
+			...(part.hasConnectionString !== undefined
+				? { hasConnectionString: part.hasConnectionString }
+				: {}),
 			warnings: connectionRefreshWarnings(part, state),
 			recommendedOps: connectionRefreshRecommendedOps(part, state),
 		})

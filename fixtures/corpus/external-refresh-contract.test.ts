@@ -27,8 +27,12 @@ function loadFixture(path: string): Uint8Array {
 	return new Uint8Array(readFileSync(new URL(path, import.meta.url)))
 }
 
+function definedContract(fields: Record<string, unknown>): Record<string, unknown> {
+	return Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== undefined))
+}
+
 function externalReferenceContract(entry: ExternalReferenceInfo): Record<string, unknown> {
-	return {
+	return definedContract({
 		partPath: entry.partPath,
 		relId: entry.relId,
 		externalBookRelId: entry.externalBookRelId,
@@ -41,7 +45,7 @@ function externalReferenceContract(entry: ExternalReferenceInfo): Record<string,
 		sourceRelationshipRawTarget: entry.sourceRelationshipRawTarget,
 		linkRelationshipPart: entry.linkRelationshipPart,
 		linkRelationshipRawTarget: entry.linkRelationshipRawTarget,
-	}
+	})
 }
 
 type ConnectionContractInfo = Pick<
@@ -51,38 +55,70 @@ type ConnectionContractInfo = Pick<
 	| 'sheetName'
 	| 'name'
 	| 'connectionId'
+	| 'connectionType'
+	| 'description'
+	| 'deleted'
+	| 'backgroundRefresh'
+	| 'keepAlive'
+	| 'refreshInterval'
 	| 'refreshOnLoad'
 	| 'saveData'
+	| 'savePassword'
 	| 'refreshedVersion'
+	| 'sourceFile'
+	| 'odcFile'
+	| 'onlyUseConnectionFile'
+	| 'command'
+	| 'hasConnectionString'
 >
 
 function connectionContract(entry: ConnectionContractInfo): Record<string, unknown> {
-	return {
+	return definedContract({
 		kind: entry.kind,
 		partPath: entry.partPath,
 		sheetName: entry.sheetName,
 		name: entry.name,
 		connectionId: entry.connectionId,
+		connectionType: entry.connectionType,
+		description: entry.description,
+		deleted: entry.deleted,
+		backgroundRefresh: entry.backgroundRefresh,
+		keepAlive: entry.keepAlive,
+		refreshInterval: entry.refreshInterval,
 		refreshOnLoad: entry.refreshOnLoad,
 		saveData: entry.saveData,
+		savePassword: entry.savePassword,
 		refreshedVersion: entry.refreshedVersion,
-	}
+		sourceFile: entry.sourceFile,
+		odcFile: entry.odcFile,
+		onlyUseConnectionFile: entry.onlyUseConnectionFile,
+		command: entry.command,
+		hasConnectionString: entry.hasConnectionString,
+	})
 }
 
 function refreshContract(entry: WorkbookRefreshMetadataEntry): Record<string, unknown> {
-	return {
+	return definedContract({
 		kind: entry.kind,
 		partPath: entry.partPath,
 		state: entry.state,
 		name: entry.name,
 		sheetName: entry.sheetName,
 		connectionId: entry.connectionId,
+		connectionType: entry.connectionType,
+		deleted: entry.deleted,
+		backgroundRefresh: entry.backgroundRefresh,
+		keepAlive: entry.keepAlive,
+		refreshInterval: entry.refreshInterval,
 		refreshOnLoad: entry.refreshOnLoad,
 		saveData: entry.saveData,
 		refreshedVersion: entry.refreshedVersion,
+		sourceFile: entry.sourceFile,
+		command: entry.command,
+		hasConnectionString: entry.hasConnectionString,
 		recommendedOps: entry.recommendedOps,
 		warnings: entry.warnings,
-	}
+	})
 }
 
 function tableContracts(workbook: AscendWorkbook): readonly Record<string, unknown>[] {
@@ -244,16 +280,24 @@ describe('external refresh corpus contract', () => {
 				partPath: 'xl/connections.xml',
 				name: 'conn_with_comma',
 				connectionId: 2,
+				connectionType: 6,
+				deleted: true,
+				backgroundRefresh: true,
 				saveData: true,
 				refreshedVersion: 3,
+				sourceFile: 'C:\\data\\file2.csv',
 			},
 			{
 				kind: 'connection',
 				partPath: 'xl/connections.xml',
 				name: 'conn_with_delim',
 				connectionId: 1,
+				connectionType: 6,
+				deleted: true,
+				backgroundRefresh: true,
 				saveData: true,
 				refreshedVersion: 3,
+				sourceFile: 'C:\\data\\file1.csv',
 			},
 			{
 				kind: 'queryTable',
@@ -319,6 +363,10 @@ describe('external refresh corpus contract', () => {
 					partPath: 'xl/connections.xml',
 					state: 'cached',
 					connectionId: 1,
+					connectionType: 6,
+					deleted: true,
+					backgroundRefresh: true,
+					sourceFile: 'C:\\data\\file1.csv',
 					warnings: [
 						'Workbook connection refresh metadata is inspectable and editable without executing the connection.',
 					],
@@ -393,7 +441,14 @@ describe('external refresh corpus contract', () => {
 				partPath: 'xl/connections.xml',
 				name: 'Query - Bitcoin',
 				connectionId: 2,
+				connectionType: 5,
+				description: "Connection to the 'Bitcoin' query in the workbook.",
+				backgroundRefresh: true,
+				keepAlive: true,
+				refreshInterval: 1,
 				refreshOnLoad: true,
+				command: 'SELECT * FROM [Bitcoin]',
+				hasConnectionString: true,
 				state: 'refresh-on-open',
 			}),
 		)

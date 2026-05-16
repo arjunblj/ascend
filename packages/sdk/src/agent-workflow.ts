@@ -604,9 +604,21 @@ export interface PostWriteDataConnectionEntry {
 	readonly sheetName?: string
 	readonly name?: string
 	readonly connectionId?: number
+	readonly connectionType?: number
+	readonly description?: string
+	readonly deleted?: boolean
+	readonly backgroundRefresh?: boolean
+	readonly keepAlive?: boolean
+	readonly refreshInterval?: number
 	readonly refreshOnLoad?: boolean
 	readonly saveData?: boolean
+	readonly savePassword?: boolean
 	readonly refreshedVersion?: number
+	readonly sourceFile?: string
+	readonly odcFile?: string
+	readonly onlyUseConnectionFile?: boolean
+	readonly command?: string
+	readonly hasConnectionString?: boolean
 }
 
 export interface PostWriteTableSummary {
@@ -2788,9 +2800,25 @@ function postWriteDataConnectionSummary(workbook: Workbook): PostWriteDataConnec
 		...(part.sheetName !== undefined ? { sheetName: part.sheetName } : {}),
 		...(part.name !== undefined ? { name: part.name } : {}),
 		...(part.connectionId !== undefined ? { connectionId: part.connectionId } : {}),
+		...(part.connectionType !== undefined ? { connectionType: part.connectionType } : {}),
+		...(part.description !== undefined ? { description: part.description } : {}),
+		...(part.deleted !== undefined ? { deleted: part.deleted } : {}),
+		...(part.backgroundRefresh !== undefined ? { backgroundRefresh: part.backgroundRefresh } : {}),
+		...(part.keepAlive !== undefined ? { keepAlive: part.keepAlive } : {}),
+		...(part.refreshInterval !== undefined ? { refreshInterval: part.refreshInterval } : {}),
 		...(part.refreshOnLoad !== undefined ? { refreshOnLoad: part.refreshOnLoad } : {}),
 		...(part.saveData !== undefined ? { saveData: part.saveData } : {}),
+		...(part.savePassword !== undefined ? { savePassword: part.savePassword } : {}),
 		...(part.refreshedVersion !== undefined ? { refreshedVersion: part.refreshedVersion } : {}),
+		...(part.sourceFile !== undefined ? { sourceFile: part.sourceFile } : {}),
+		...(part.odcFile !== undefined ? { odcFile: part.odcFile } : {}),
+		...(part.onlyUseConnectionFile !== undefined
+			? { onlyUseConnectionFile: part.onlyUseConnectionFile }
+			: {}),
+		...(part.command !== undefined ? { command: part.command } : {}),
+		...(part.hasConnectionString !== undefined
+			? { hasConnectionString: part.hasConnectionString }
+			: {}),
 	}))
 	return {
 		total: connections.length,

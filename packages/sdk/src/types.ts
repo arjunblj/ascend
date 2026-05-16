@@ -491,10 +491,22 @@ export interface WorkbookRefreshMetadataEntry {
 	readonly sheetName?: string
 	readonly cacheId?: number
 	readonly connectionId?: number
+	readonly connectionType?: number
+	readonly description?: string
+	readonly deleted?: boolean
+	readonly backgroundRefresh?: boolean
+	readonly keepAlive?: boolean
+	readonly refreshInterval?: number
 	readonly refreshOnLoad?: boolean
 	readonly saveData?: boolean
+	readonly savePassword?: boolean
 	readonly invalid?: boolean
 	readonly refreshedVersion?: number
+	readonly sourceFile?: string
+	readonly odcFile?: string
+	readonly onlyUseConnectionFile?: boolean
+	readonly command?: string
+	readonly hasConnectionString?: boolean
 	readonly sourceSheet?: string
 	readonly sourceRef?: string
 	readonly warnings: readonly string[]

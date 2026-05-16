@@ -9,7 +9,10 @@ import type {
 	TableColumn,
 } from '@ascend/core'
 import { parseA1Safe, parseRange } from '@ascend/core'
-import { rewriteSheetMetadataFormulasForShift } from './formula-rewrite.ts'
+import {
+	rewriteFormulaTextForShift,
+	rewriteSheetMetadataFormulasForShift,
+} from './formula-rewrite.ts'
 import {
 	shiftA1RangeOrCell,
 	shiftA1Ref,
@@ -42,6 +45,7 @@ export function shiftSheetCellMetadata(
 	shiftSheetSortState(sheet, axis, at, delta)
 	shiftAdvancedFilters(sheet, axis, at, delta)
 	shiftSheetTables(sheet, axis, at, delta)
+	shiftSparklineGroups(sheet, axis, at, delta)
 	rewriteSheetMetadataFormulasForShift(sheet, axis, at, delta)
 }
 
@@ -325,6 +329,29 @@ function shiftAdvancedFilter(
 		filterColumnCount: autoFilter.columns.length,
 		sortConditionCount: autoFilter.sortState?.conditions.length ?? 0,
 	}
+}
+
+function shiftSparklineGroups(sheet: Sheet, axis: 'row' | 'col', at: number, delta: number): void {
+	if (sheet.sparklineGroups.length === 0) return
+	const rewrite = (ref: string): string =>
+		rewriteFormulaTextForShift(ref, sheet.name, sheet.name, axis, at, delta) ?? ref
+	sheet.sparklineGroups = sheet.sparklineGroups.map((group) => ({
+		...group,
+		...(group.range !== undefined ? { range: rewrite(group.range) } : {}),
+		...(group.locationRange !== undefined ? { locationRange: rewrite(group.locationRange) } : {}),
+		...(group.dateAxisRange !== undefined ? { dateAxisRange: rewrite(group.dateAxisRange) } : {}),
+		...(group.sparklines
+			? {
+					sparklines: group.sparklines.map((sparkline) => ({
+						...sparkline,
+						...(sparkline.range !== undefined ? { range: rewrite(sparkline.range) } : {}),
+						...(sparkline.locationRange !== undefined
+							? { locationRange: rewrite(sparkline.locationRange) }
+							: {}),
+					})),
+				}
+			: {}),
+	}))
 }
 
 function shiftSheetTables(sheet: Sheet, axis: 'row' | 'col', at: number, delta: number): void {

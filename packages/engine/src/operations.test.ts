@@ -5309,6 +5309,45 @@ describe('applyOperation', () => {
 		})
 	})
 
+	test('row and column shifts update sparkline source and location ranges', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Data')
+		sheet.sparklineGroups.push({
+			groupIndex: 0,
+			type: 'line',
+			range: 'Data!$B$2:$B$4',
+			locationRange: '$D$2:$D$4',
+			dateAxisRange: 'Data!$A$2:$A$4',
+			count: 2,
+			sparklines: [
+				{ range: 'Data!$B$2', locationRange: '$D$2' },
+				{ range: 'Data!$B$3', locationRange: '$D$3' },
+			],
+		})
+
+		expectOk(applyOperation(wb, { op: 'insertRows', sheet: 'Data', at: 1, count: 1 }))
+		expect(sheet.sparklineGroups[0]).toMatchObject({
+			range: 'Data!$B$3:$B$5',
+			locationRange: '$D$3:$D$5',
+			dateAxisRange: 'Data!$A$3:$A$5',
+			sparklines: [
+				{ range: 'Data!$B$3', locationRange: '$D$3' },
+				{ range: 'Data!$B$4', locationRange: '$D$4' },
+			],
+		})
+
+		expectOk(applyOperation(wb, { op: 'insertCols', sheet: 'Data', at: 1, count: 1 }))
+		expect(sheet.sparklineGroups[0]).toMatchObject({
+			range: 'Data!$C$3:$C$5',
+			locationRange: '$E$3:$E$5',
+			dateAxisRange: 'Data!$A$3:$A$5',
+			sparklines: [
+				{ range: 'Data!$C$3', locationRange: '$E$3' },
+				{ range: 'Data!$C$4', locationRange: '$E$4' },
+			],
+		})
+	})
+
 	test('deleteRows shrinks overlapping table, filter, and validation ranges', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')

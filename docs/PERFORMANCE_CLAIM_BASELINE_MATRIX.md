@@ -13,7 +13,7 @@ release wording.
 No broad XLSX read, SOTA, or QSS-leapfrog speed claim is promotable from this artifact. The cycles below are useful external baseline evidence for scoped release workflows, but they are not a clean full-profile claim because:
 
 - `competitive-scoreboard --require-profile xlsx-read-sota` fails coverage for the rest of the profile.
-- The recorded cycles cover public/reproducible generated `dense-values`, `sparse-wide`, `styles-heavy`, `formula-heavy`, `table-heavy`, `feature-rich`, `selected-sheet`, and `string-heavy` workloads over `raw-ooxml`, not the full profile.
+- The recorded cycles cover public/reproducible generated `dense-values`, `sparse-wide`, `styles-heavy`, `formula-heavy`, `table-heavy`, `feature-rich`, `selected-sheet`, `metadata-only`, and `string-heavy` workloads over `raw-ooxml`, not the full profile.
 - Several external runners were unavailable or blocked in the clean benchmark worktree. They are recorded as blockers, not wins.
 - Several timing lanes are semantically related but not one unified timing boundary. Do not collapse in-process, preloaded-bytes, file-path, row-stream, and materialized-workbook timings into a single "wins everything" claim.
 
@@ -619,6 +619,72 @@ Forbidden wording:
 
 Next action: defer production optimization. Continue profile expansion with `metadata-only`.
 
+## Cycle: Metadata-Only Read
+
+Classification: defer. No production optimization is justified from this cycle.
+
+Workflow: XLSX metadata-only open/inspect without hydrating cells.
+
+Why it matters for release: this is a required `xlsx-read-sota` workload and the fastest safe first-pass workflow when an agent needs sheet inventory before deciding whether to hydrate workbook values.
+
+Public/tracked-clean input: `competitive-io` generated `metadata-only` workbook using tracked benchmark code from detached commit `5261b08d`, `raw-ooxml` source, 200 rows x 20 columns, 4,000 logical cells, 4,000 populated cells, 15,347 input bytes. No private corpus or local research workbook was used.
+
+Commands:
+
+```bash
+git worktree add --detach /private/tmp/ascend-perf-hillclimb-5261b08d 5261b08d
+cd /private/tmp/ascend-perf-hillclimb-5261b08d
+bun install --frozen-lockfile
+env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-io.ts --json --category read --competitor all --workload metadata-only --read-source raw-ooxml --repeat 5 --warmup 1 --validation-mode each --runner-manifest fixtures/benchmarks/runners/ascend-python-readers.manifest.json > /private/tmp/ascend-perf-hillclimb-5261b08d-runs/metadata-only-read-values.json
+env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-scoreboard.ts /private/tmp/ascend-perf-hillclimb-5261b08d-runs/metadata-only-read-values.json --json --metric medianMs --require-profile xlsx-read-sota > /private/tmp/ascend-perf-hillclimb-5261b08d-runs/metadata-only-scoreboard.json
+```
+
+Environment:
+
+- Commit: `5261b08d`
+- Worktree: clean detached worktree at `/private/tmp/ascend-perf-hillclimb-5261b08d`; `git status --short --branch` reported `## HEAD (no branch)` with no changed paths after the run.
+- OS: Darwin 25.4.0 arm64
+- Bun: `1.3.13`
+- Python: `3.13.3`
+- Cargo: `1.91.1`
+- Maven: `3.9.15`, Java runtime `25.0.2` as reported by Maven
+- .NET: `8.0.125`
+- Go: `go1.26.3 darwin/arm64`
+
+Raw output:
+
+```text
+/private/tmp/ascend-perf-hillclimb-5261b08d-runs/metadata-only-read-values.json
+/private/tmp/ascend-perf-hillclimb-5261b08d-runs/metadata-only-scoreboard.json
+```
+
+All successful timing rows below use 5 measured samples after 1 warmup. Unsupported-operation rows are non-ranking status rows for claim wording and are not counted as wins.
+
+| Competitor | Status | Representative row | Median ms | P95 ms | CV | Peak RSS/heap | Semantic comparability |
+| --- | --- | --- | ---: | ---: | ---: | ---: | --- |
+| Ascend external | ran/won | `ascend-external-metadata-only-bytes` | 0.310 | 0.329 | 0.082 | 89.8 MiB | External metadata-only read over preloaded bytes. Assertions loaded 3 sheets, hydrated no cells, and `cellsNotHydrated=true`. |
+| openpyxl | ran/lost | `openpyxl-metadata-only` | 1.986 | 3.492 | 0.296 | 50.8 MiB | Metadata-only workbook inventory. Lower memory; tail is moderately noisy; 6.41x slower by median. |
+| Ascend in-process | ran/won | `ascend` | 0.325 | 0.375 | 0.109 | 152.1 MiB | In-process metadata-only read. Compare with SheetJS in-process, not external-process lanes. |
+| SheetJS | ran/lost | `sheetjs` | 0.832 | 0.892 | 0.056 | 154.5 MiB | In-process metadata-only read. 2.56x slower than Ascend in-process by median. |
+| ExcelJS | not comparable | n/a | n/a | n/a | n/a | n/a | Unsupported operation for this profile; not counted. |
+| Calamine | not comparable | n/a | n/a | n/a | n/a | n/a | Unsupported operation for this profile; not counted. |
+| Apache POI | not comparable | n/a | n/a | n/a | n/a | n/a | Unsupported operation for this profile; not counted. |
+| ClosedXML | not comparable | n/a | n/a | n/a | n/a | n/a | Unsupported operation for this profile; not counted. |
+
+Coverage gate result: failed, as expected for a partial profile. The metadata-only row has comparable Ascend, SheetJS, and openpyxl evidence, while ExcelJS, Calamine, Apache POI, and ClosedXML are explicit unsupported-operation gaps. The profile remains missing `string-heavy` from current commit and `warm-workflow` coverage.
+
+Humble allowed wording:
+
+> On the generated `metadata-only` raw OOXML workload at commit `5261b08d`, Ascend's metadata-only readers were faster than the completed comparable SheetJS and openpyxl rows while proving cells were not hydrated. Unsupported metadata-only operations in other libraries are not counted as wins.
+
+Forbidden wording:
+
+- "Ascend is the fastest XLSX reader."
+- "Ascend beats ExcelJS, Calamine, Apache POI, or ClosedXML" from this metadata-only run.
+- Any wording that counts unsupported operations or the incomplete full profile as wins.
+
+Next action: defer production optimization. Continue profile expansion with `warm-workflow`.
+
 ## Workflow
 
 Workflow: XLSX open/inspect value read for a string-heavy worksheet.
@@ -716,4 +782,4 @@ Optimize: no production optimization from the partial profile rows. The top rele
 
 Kill: no current optimization is killed by this row.
 
-Defer: yes. Defer all broad read-speed wording until a clean-tree full `xlsx-read-sota` run either passes coverage or records per-runner blockers without counting them as wins. The immediate next action is `metadata-only` profile expansion plus runner hardening for FastExcel Java on `sparse-wide`, ClosedXML, fastxlsx, rich-metadata semantic mismatches, and selected-sheet unsupported-operation gaps, followed by the full profile run.
+Defer: yes. Defer all broad read-speed wording until a clean-tree full `xlsx-read-sota` run either passes coverage or records per-runner blockers without counting them as wins. The immediate next action is `warm-workflow` profile expansion plus runner hardening for FastExcel Java on `sparse-wide`, ClosedXML, fastxlsx, rich-metadata semantic mismatches, selected-sheet unsupported-operation gaps, and metadata-only unsupported-operation gaps, followed by the full profile run.

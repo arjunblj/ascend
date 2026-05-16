@@ -669,8 +669,11 @@ export const EXCEL_CAPABILITIES: readonly ExcelCapability[] = [
 		'inspectable',
 		'P1',
 		'Add richer non-source project metadata.',
-		'VBA project parts are inventoried with names-only CFB PROJECT-stream module summaries, opaque byte-size summaries, signed-project relationship provenance, preservation, and executionPolicy=blocked; macro execution, source inspection, and semantic edits remain blocked by policy.',
-		['packages/io-xlsx/src/reader/active-content.test.ts'],
+		'VBA project parts are inventoried for tracked public fixtures with names-only CFB PROJECT-stream module summaries, opaque byte-size summaries, signed-project relationship provenance, preservation, and executionPolicy=blocked; macro execution, source inspection, and semantic edits remain blocked by policy.',
+		[
+			'fixtures/corpus/active-content-contract.test.ts',
+			'packages/io-xlsx/src/reader/active-content.test.ts',
+		],
 	),
 	cap(
 		'active.activex-controls',
@@ -679,8 +682,9 @@ export const EXCEL_CAPABILITIES: readonly ExcelCapability[] = [
 		'inspectable',
 		'P1',
 		'Map VML/object anchors and safe linked-cell behavior while keeping executable control bytes blocked.',
-		'ActiveX parts are inventoried with source relationship IDs, class IDs, persistence mode, control relationship IDs, binary relationship targets, preservation, and loss-audit blocking before writes.',
+		'ActiveX parts are inventoried for tracked public fixtures with source relationship IDs, class IDs, persistence mode, control relationship IDs, binary relationship targets, preservation, and loss-audit blocking before writes.',
 		[
+			'fixtures/corpus/active-content-contract.test.ts',
 			'packages/io-xlsx/src/reader/active-content.test.ts',
 			'packages/sdk/src/active-content-inventory.test.ts',
 		],
@@ -692,8 +696,9 @@ export const EXCEL_CAPABILITIES: readonly ExcelCapability[] = [
 		'inspectable',
 		'P1',
 		'Add safe generated control edits and formula-aware linked-cell behavior after broader real fixture coverage.',
-		'Control property parts are inventoried with source relationship IDs, macro bindings, linked-cell formulas, list-fill ranges, checked state, and dropdown line metadata; linked behavior is not semantically editable.',
+		'Control property parts are inventoried for tracked public fixtures with source relationship IDs, macro bindings, linked-cell formulas, list-fill ranges, checked state, and dropdown line metadata; linked behavior is not semantically editable.',
 		[
+			'fixtures/corpus/active-content-contract.test.ts',
 			'packages/io-xlsx/src/reader/active-content.test.ts',
 			'packages/sdk/src/active-content-inventory.test.ts',
 		],

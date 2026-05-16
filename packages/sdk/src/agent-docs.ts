@@ -45,6 +45,12 @@ const DOC_SOURCES: readonly Omit<AgentDocEntry, 'text'>[] = [
 		kind: 'example',
 	},
 	{
+		id: 'example-agent-safe-edit-http-runnable',
+		title: 'Runnable Agent Safe Edit HTTP Workflow',
+		path: 'examples/agent-safe-edit-http.ts',
+		kind: 'example',
+	},
+	{
 		id: 'example-agent-safe-edit-mcp',
 		title: 'Agent Safe Edit MCP Transcript',
 		path: 'examples/agent-safe-edit-mcp.md',

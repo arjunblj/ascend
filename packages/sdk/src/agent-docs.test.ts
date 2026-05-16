@@ -35,6 +35,7 @@ describe('agent documentation surface', () => {
 		const paths = docs.map((doc) => doc.path)
 		expect(paths).toContain('examples/agent-safe-edit.ts')
 		expect(paths).toContain('examples/agent-safe-edit-http.md')
+		expect(paths).toContain('examples/agent-safe-edit-http.ts')
 		expect(paths).toContain('examples/agent-safe-edit-mcp.md')
 		expect(paths).toContain('examples/untrusted-workbook-report.md')
 
@@ -161,5 +162,15 @@ describe('agent documentation surface', () => {
 
 		expect(paths).toContain('examples/agent-safe-edit-http.md')
 		expect(paths).toContain('examples/agent-safe-edit-mcp.md')
+	})
+
+	test('example search finds the runnable HTTP safe edit workflow', async () => {
+		const results = await searchAgentDocs({
+			query: 'runnable HTTP API open-plan prepared commit reopen verify',
+			kind: 'example',
+			limit: 8,
+		})
+
+		expect(results.some((result) => result.path === 'examples/agent-safe-edit-http.ts')).toBe(true)
 	})
 })

@@ -3376,6 +3376,17 @@ function safeOpenQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceItem[] {
 				'Chart-source structural edit evidence only; it does not prove full chart authoring, chart layout editing, structured-reference chart rewriting, external workbook reference rewriting, arbitrary chart XML preservation, or byte-equivalent chart output.',
 		},
 		{
+			evidenceId: 'sparkline-structural-edit-proof',
+			kind: 'test',
+			command:
+				'bun test packages/engine/src/operations.test.ts packages/sdk/src/advanced-filter-sparkline.test.ts -t "row and column shifts update sparkline source and location ranges|structural row edits shift sparkline ranges through SDK save and reopen" --timeout 30000',
+			path: 'packages/engine/src/operations.test.ts; packages/engine/src/structural/sheet-topology.ts; packages/sdk/src/advanced-filter-sparkline.test.ts',
+			acceptedScope:
+				'Commit 8357e5de proves structural row/column edits shift sparkline group source ranges, location ranges, date-axis ranges, and individual sparkline refs, with SDK save/reopen coverage for a generated workbook containing advanced filters and sparklines.',
+			boundary:
+				'Sparkline structural edit evidence only; it does not prove Excel rendering parity, arbitrary sparkline OOXML preservation, unsupported sparkline settings, or public workbook generality.',
+		},
+		{
 			evidenceId: 'public-calc-chain-formula-commit-proof',
 			kind: 'test',
 			command:
@@ -3751,6 +3762,7 @@ function todayCommitClaimMatrix(): readonly ReleaseProofTodayCommitClaimMatrixRo
 				'1eaf28ff',
 				'0fc4370a',
 				'c06bba18',
+				'8357e5de',
 				'31141dd4',
 				'f7338c91',
 				'019f457e',
@@ -3762,7 +3774,7 @@ function todayCommitClaimMatrix(): readonly ReleaseProofTodayCommitClaimMatrixRo
 				'62f45cb5',
 			],
 			releaseOrSotaClaimBecameMoreTrue:
-				'Ascend is more credible as an agent-native spreadsheet runtime because SDK, installed-SDK, CLI, HTTP API, MCP, root-package, public query-table/data-connection reporting, public workbook-connection scheduling edits, external-link source-binding/package classification, public chart/visual, chart-source structural row/column/range-move edit proof, public calc-chain/formula-cache, public hidden-sheet/workbook-view, public workbook-protection, and public protected-range examples expose runnable open-plan/trust/inspect/plan/commit/reopen/verify workflows plus shared proof-bundle and post-write proof context.',
+				'Ascend is more credible as an agent-native spreadsheet runtime because SDK, installed-SDK, CLI, HTTP API, MCP, root-package, public query-table/data-connection reporting, public workbook-connection scheduling edits, external-link source-binding/package classification, public chart/visual, chart-source structural row/column/range-move edit proof, sparkline structural edit proof, public calc-chain/formula-cache, public hidden-sheet/workbook-view, public workbook-protection, and public protected-range examples expose runnable open-plan/trust/inspect/plan/commit/reopen/verify workflows plus shared proof-bundle and post-write proof context.',
 			evidenceProvesIt: [
 				'bun test examples/agent-safe-edit.test.ts --timeout 30000',
 				'bun test examples/agent-safe-edit-mcp.test.ts --timeout 30000',
@@ -3787,6 +3799,7 @@ function todayCommitClaimMatrix(): readonly ReleaseProofTodayCommitClaimMatrixRo
 				'bun test apps/mcp/src/index.test.ts -t "ascend.agent_workflow exposes machine-readable safe edit guidance|agent resources return canonical workflow context" --timeout 30000',
 				'bun test packages/sdk/src/agent-workflow.test.ts -t "commits public chart source edits through save and reopen audits" --timeout 30000',
 				'bun test packages/engine/src/operations.test.ts packages/sdk/src/agent-workflow.test.ts -t "row and column shifts update chart source refs|moveRange rewrites chart source refs that reference the moved range|moveRange rejects partial chart source refs before mutation|commits structural row edits with shifted chart source refs after save and reopen|commits moved chart source refs after save and reopen" --timeout 30000',
+				'bun test packages/engine/src/operations.test.ts packages/sdk/src/advanced-filter-sparkline.test.ts -t "row and column shifts update sparkline source and location ranges|structural row edits shift sparkline ranges through SDK save and reopen" --timeout 30000',
 				'bun test packages/sdk/src/agent-workflow.test.ts -t "commits public calc-chain formula edits through save and reopen audits" --timeout 30000',
 				'bun test fixtures/corpus/formula-binding-contract.test.ts -t "commit proof reports missing public formula caches after save and reopen" --timeout 30000',
 				'bun test packages/sdk/src/agent-workflow.test.ts -t "commits public hidden-sheet workbook views through save and reopen audits" --timeout 30000',
@@ -3797,9 +3810,9 @@ function todayCommitClaimMatrix(): readonly ReleaseProofTodayCommitClaimMatrixRo
 				'Blocked adjacent API package sweep: bun test apps/api/api.test.ts --timeout 30000 currently fails outside workflow discovery because the export-format assertion expects "Unsupported format" while the current response is "Unsupported export format: weird".',
 			],
 			allowedWording:
-				'Ascend provides local runnable SDK, installed-SDK package-bin, CLI, API, and MCP safe-edit workflow examples with root commands, explicit trust-preflight steps, shared SDK proof-summary gates, workflow discovery that points agents to postWrite.dataConnections, postWrite.formulaState, and postWrite.visuals, public query-table refresh/data-connection metadata including source file, command text, refresh flags, and connection-string presence without secret disclosure, workbook connection scheduling metadata edits for backgroundRefresh, keepAlive, refreshInterval, refreshOnLoad, saveData, and refreshedVersion without connection execution, external-link source binding and package relationship classification for inspection/preservation, chart-source/visual object reporting, local chart source refs shifted or rebased by structural row/column/range-move edits with reopened public-workbook proof, calc-chain/formula-cache reporting with cached and missing value locations, hidden-sheet/workbook-view topology, workbook structure-protection and strong-hash metadata reporting without raw hash/salt disclosure, protected-range metadata commit proof, and machine-readable proof context for generated/public workbooks.',
+				'Ascend provides local runnable SDK, installed-SDK package-bin, CLI, API, and MCP safe-edit workflow examples with root commands, explicit trust-preflight steps, shared SDK proof-summary gates, workflow discovery that points agents to postWrite.dataConnections, postWrite.formulaState, and postWrite.visuals, public query-table refresh/data-connection metadata including source file, command text, refresh flags, and connection-string presence without secret disclosure, workbook connection scheduling metadata edits for backgroundRefresh, keepAlive, refreshInterval, refreshOnLoad, saveData, and refreshedVersion without connection execution, external-link source binding and package relationship classification for inspection/preservation, chart-source/visual object reporting, local chart source refs shifted or rebased by structural row/column/range-move edits with reopened public-workbook proof, local sparkline source/location refs shifted by structural row/column edits with SDK save/reopen proof, calc-chain/formula-cache reporting with cached and missing value locations, hidden-sheet/workbook-view topology, workbook structure-protection and strong-hash metadata reporting without raw hash/salt disclosure, protected-range metadata commit proof, and machine-readable proof context for generated/public workbooks.',
 			forbiddenWording: [
-				'Do not claim arbitrary workbook safety, package publication, registry download proof, hosted service readiness, public-workbook generality, connection execution, arbitrary connection authoring, credential safety, external-data freshness, external-link execution, linked-workbook fetch/validation, arbitrary broken-link repair, fresh recalculation, full drawing/layout parity, full chart authoring, chart layout editing, structured-reference chart rewriting, external workbook chart-reference rewriting, complete workbook-view parity, password correctness validation, raw protection hash/salt disclosure, protection enforcement/security validation, complete API package health, or complete workflow observability from the local generated/public-workbook examples.',
+				'Do not claim arbitrary workbook safety, package publication, registry download proof, hosted service readiness, public-workbook generality, connection execution, arbitrary connection authoring, credential safety, external-data freshness, external-link execution, linked-workbook fetch/validation, arbitrary broken-link repair, fresh recalculation, full drawing/layout parity, full chart authoring, chart layout editing, full sparkline rendering or arbitrary sparkline OOXML preservation, structured-reference chart rewriting, external workbook chart-reference rewriting, complete workbook-view parity, password correctness validation, raw protection hash/salt disclosure, protection enforcement/security validation, complete API package health, or complete workflow observability from the local generated/public-workbook examples.',
 			],
 			ownerLoop: 'release',
 			nextOwnerAction:

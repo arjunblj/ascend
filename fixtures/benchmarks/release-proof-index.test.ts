@@ -1155,6 +1155,12 @@ describe('release proof evidence index', () => {
 				boundary: expect.stringContaining('Chart-source structural edit evidence only'),
 			}),
 			expect.objectContaining({
+				evidenceId: 'sparkline-structural-edit-proof',
+				acceptedScope: expect.stringContaining('8357e5de'),
+				command: expect.stringContaining('structural row edits shift sparkline ranges'),
+				boundary: expect.stringContaining('Sparkline structural edit evidence only'),
+			}),
+			expect.objectContaining({
 				evidenceId: 'public-calc-chain-formula-commit-proof',
 				acceptedScope: expect.stringContaining('31141dd4'),
 				command: expect.stringContaining('commits public calc-chain formula edits'),
@@ -1881,6 +1887,7 @@ describe('release proof evidence index', () => {
 						'1eaf28ff',
 						'0fc4370a',
 						'c06bba18',
+						'8357e5de',
 						'31141dd4',
 						'f7338c91',
 						'019f457e',
@@ -1901,6 +1908,7 @@ describe('release proof evidence index', () => {
 						expect.stringContaining('inventories OLE external link relationship binding'),
 						expect.stringContaining('commits structural row edits with shifted chart source refs'),
 						expect.stringContaining('commits moved chart source refs after save and reopen'),
+						expect.stringContaining('structural row edits shift sparkline ranges'),
 						expect.stringContaining(
 							'commits public workbook strong-hash protection with honest metadata reporting',
 						),
@@ -1910,6 +1918,7 @@ describe('release proof evidence index', () => {
 						expect.stringContaining('external-link execution'),
 						expect.stringContaining('linked-workbook fetch/validation'),
 						expect.stringContaining('full chart authoring'),
+						expect.stringContaining('full sparkline rendering'),
 						expect.stringContaining('external workbook chart-reference rewriting'),
 					]),
 					ownerLoop: 'release',

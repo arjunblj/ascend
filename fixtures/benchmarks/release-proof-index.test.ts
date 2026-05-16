@@ -1621,6 +1621,11 @@ describe('release proof evidence index', () => {
 					),
 					boundary: expect.stringContaining('Public formula-cache reporting evidence only'),
 				}),
+				expect.objectContaining({
+					evidenceId: 'public-formula-cache-post-write-proof',
+					acceptedScope: expect.stringContaining('019f457e'),
+					path: expect.stringContaining('packages/sdk/src/index-exports.test.ts'),
+				}),
 			]),
 		)
 		expect(index.qssLeapfrogReleaseMatrix.activeReleaseBlockers).toHaveLength(7)
@@ -1827,19 +1832,22 @@ describe('release proof evidence index', () => {
 						'caa08959',
 						'62566e09',
 						'91dabea8',
+						'4d272f77',
 						'1eaf28ff',
 						'31141dd4',
 						'f7338c91',
+						'019f457e',
+						'a2960803',
 						'74f63b73',
 						'033be30c',
 						'd519c5a7',
 						'62f45cb5',
 					]),
 					allowedWording: expect.stringContaining(
-						'workflow discovery that points agents to postWrite.dataConnections',
+						'workflow discovery that points agents to postWrite.dataConnections, postWrite.formulaState, and postWrite.visuals',
 					),
 					forbiddenWording: expect.arrayContaining([
-						expect.stringContaining('external-data freshness'),
+						expect.stringContaining('fresh recalculation'),
 					]),
 					ownerLoop: 'release',
 					nextOwnerAction: expect.stringContaining('export-format test expectation'),
@@ -2476,6 +2484,8 @@ describe('release proof evidence index', () => {
 		expect(agentWorkflowEvidence).toContain('cc689bcc')
 		expect(agentWorkflowEvidence).toContain('56cd4aa0')
 		expect(agentWorkflowEvidence).toContain('91dabea8')
+		expect(agentWorkflowEvidence).toContain('4d272f77')
+		expect(agentWorkflowEvidence).toContain('a2960803')
 		expect(agentWorkflowEvidence).toContain('Installed safe-edit workflow discovery is accepted')
 		expect(agentWorkflowEvidence).toContain('full `bun test apps/api/api.test.ts --timeout 30000`')
 		expect(agentWorkflowEvidence).toContain('3d630232')
@@ -2501,6 +2511,9 @@ describe('release proof evidence index', () => {
 		expect(agentWorkflowEvidence).toContain('62566e09')
 		expect(agentWorkflowEvidence).toContain('hasConnectionString')
 		expect(agentWorkflowEvidence).toContain('postWrite.dataConnections')
+		expect(agentWorkflowEvidence).toContain('019f457e')
+		expect(agentWorkflowEvidence).toContain('postWrite.formulaState')
+		expect(agentWorkflowEvidence).toContain('postWrite.visuals')
 		expect(agentWorkflowEvidence).toContain('docs/AGENT_WORKFLOW.md')
 		expect(agentWorkflowMissing).toContain('inspect, plan, commit, reopen, diff, audit')
 		expect(agentWorkflowMissing).toContain('Trace payload size')

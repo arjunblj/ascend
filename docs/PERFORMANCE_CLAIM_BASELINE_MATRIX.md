@@ -13,7 +13,7 @@ release wording.
 No broad XLSX read, SOTA, or QSS-leapfrog speed claim is promotable from this artifact. The cycles below are useful external baseline evidence for scoped release workflows, but they are not a clean full-profile claim because:
 
 - `competitive-scoreboard --require-profile xlsx-read-sota` fails coverage for the rest of the profile.
-- The recorded cycles cover public/reproducible generated `dense-values`, `sparse-wide`, and `string-heavy` `read-values` workloads over `raw-ooxml`, not the full profile.
+- The recorded cycles cover public/reproducible generated `dense-values`, `sparse-wide`, `styles-heavy`, and `string-heavy` `read-values` workloads over `raw-ooxml`, not the full profile.
 - Several external runners were unavailable or blocked in the clean benchmark worktree. They are recorded as blockers, not wins.
 - Several timing lanes are semantically related but not one unified timing boundary. Do not collapse in-process, preloaded-bytes, file-path, row-stream, and materialized-workbook timings into a single "wins everything" claim.
 
@@ -56,9 +56,9 @@ Acceptance evidence:
 - Failed, missing, or semantically mismatched runners are not counted as wins.
 
 Stop condition: do not optimize from the partial `dense-values`, `sparse-wide`,
-and `string-heavy` rows. Optimize only after the full profile identifies one
-release workflow as a meaningful loss, unstable tail, or memory/latency tradeoff
-worth production work.
+`styles-heavy`, and `string-heavy` rows. Optimize only after the full profile
+identifies one release workflow as a meaningful loss, unstable tail, or
+memory/latency tradeoff worth production work.
 
 ## Cycle: Dense Value Read
 
@@ -211,6 +211,91 @@ Forbidden wording:
 
 Next action: defer production optimization. Continue profile expansion with `styles-heavy`; separately investigate the FastExcel Java sparse-wide failure and ClosedXML runtime failure as runner blockers.
 
+## Cycle: Styles-Heavy Value Read
+
+Classification: defer. No production optimization is justified from this cycle.
+
+Workflow: XLSX open/inspect value read for a style-dense worksheet.
+
+Why it matters for release: this is a required `xlsx-read-sota` workload and a common shape for business workbooks where formatting is widespread even when the release workflow only needs fast value inspection.
+
+Public/tracked-clean input: `competitive-io` generated `styles-heavy` workbook using tracked benchmark code from detached commit `b1a53ea0`, `raw-ooxml` source, 2000 rows x 20 columns, 40,000 logical cells, 40,000 populated cells, 257,177 input bytes. No private corpus or local research workbook was used.
+
+Commands:
+
+```bash
+git worktree add --detach /private/tmp/ascend-perf-hillclimb-b1a53ea0 b1a53ea0
+cd /private/tmp/ascend-perf-hillclimb-b1a53ea0
+bun install --frozen-lockfile
+env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-io.ts --json --category read --competitor all --workload styles-heavy --read-source raw-ooxml --repeat 5 --warmup 1 --validation-mode each --runner-manifest fixtures/benchmarks/runners/ascend-python-readers.manifest.json > /private/tmp/ascend-perf-hillclimb-b1a53ea0-runs/styles-heavy-read-values.json
+env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-scoreboard.ts /private/tmp/ascend-perf-hillclimb-b1a53ea0-runs/styles-heavy-read-values.json --json --metric medianMs --require-profile xlsx-read-sota > /private/tmp/ascend-perf-hillclimb-b1a53ea0-runs/styles-heavy-scoreboard.json
+```
+
+Environment:
+
+- Commit: `b1a53ea0`
+- Worktree: clean detached worktree at `/private/tmp/ascend-perf-hillclimb-b1a53ea0`; `git status --short --branch` reported `## HEAD (no branch)` with no changed paths after the run.
+- OS: Darwin 25.4.0 arm64
+- Bun: `1.3.13`
+- Python: `3.13.3`
+- Cargo: `1.91.1`
+- Maven: `3.9.15`, Java runtime `25.0.2` as reported by Maven
+- .NET: `8.0.125`
+- Go: `go1.26.3 darwin/arm64`
+
+Raw output:
+
+```text
+/private/tmp/ascend-perf-hillclimb-b1a53ea0-runs/styles-heavy-read-values.json
+/private/tmp/ascend-perf-hillclimb-b1a53ea0-runs/styles-heavy-scoreboard.json
+```
+
+All successful timing rows below use 5 measured samples after 1 warmup. Rows marked `blocked`, `runner unavailable`, or `not comparable` are non-ranking status rows for claim wording and are not counted as wins.
+
+| Competitor | Status | Representative row | Median ms | P95 ms | CV | Peak RSS/heap | Semantic comparability |
+| --- | --- | --- | ---: | ---: | ---: | ---: | --- |
+| Ascend | ran/won | `ascend-readxlsx-raw-values-operation-path` | 5.733 | 7.387 | 0.142 | 99.4 MiB | File-path value read with post-operation assertions. Comparable for value-read inspection only; this does not prove style fidelity or preservation. |
+| Ascend row stream | not comparable | `ascend-readxlsx-row-stream-bytes` | 6.012 | 6.161 | 0.023 | 107.8 MiB | Row-stream over bytes; useful diagnostic path but not the default file-path comparison. |
+| fastexcel Python | ran/lost | `fastexcel` | 9.518 | 9.581 | 0.017 | 63.3 MiB | Value read, operation timing. Lower memory; bounded gap versus Ascend file-path is 1.66x slower by median. |
+| Polars calamine | ran/lost | `polars-calamine` | 11.099 | 12.675 | 0.069 | 104.0 MiB | Value read through Polars/calamine. Bounded gap is 1.94x slower by median. |
+| FastExcel Java | ran/lost | `fastexcel-java` | 12.527 | 28.055 | 0.427 | 112.0 MiB heap | Streaming value read. Tail is noisy; bounded gap is 2.18x slower by median. |
+| python-calamine | ran/lost | `python-calamine` | 19.725 | 22.513 | 0.064 | 42.2 MiB | File-path materialized value read. Lower memory; 3.44x slower by median. |
+| rust-calamine | ran/lost | `rust-calamine` | 38.072 | 39.113 | 0.017 | 11.5 MiB | File-path materialized value read. Much lower memory; 6.64x slower by median. |
+| SheetJS | ran/lost | `sheetjs` | 39.359 | 40.306 | 0.026 | 301.7 MiB | In-process value read. Compare only with Ascend in-process row, not external-process lanes. |
+| ExcelJS | ran/lost | `exceljs` | 53.636 | 59.321 | 0.054 | 311.5 MiB | In-process value read. Compare only with Ascend in-process row, not external-process lanes. |
+| Apache POI | ran/lost | `apache-poi` | 73.070 | 193.725 | 0.574 | 352.0 MiB heap | Materialized workbook value read. Tail is noisy; 12.75x slower by median. |
+| Polars xlsx2csv | ran/lost | `polars-xlsx2csv` | 78.880 | 80.045 | 0.009 | 75.7 MiB | Value read through xlsx2csv path. 13.76x slower by median. |
+| Excelize | ran/lost | `excelize` | 135.631 | 163.217 | 0.096 | 47.4 MiB | File-path materialized value read. Lower memory; 23.66x slower by median. |
+| Polars openpyxl | ran/lost | `polars-openpyxl` | 148.769 | 163.828 | 0.079 | 120.1 MiB | Value read through openpyxl engine. 25.95x slower by median. |
+| openpyxl read-only values | ran/lost | `openpyxl-read-only-values` | 167.175 | 171.429 | 0.014 | 64.3 MiB | Streaming data-only value read. Lower memory; 29.16x slower by median. |
+| pyopenxlsx | ran/lost | `pyopenxlsx` | 229.439 | 233.102 | 0.010 | 75.7 MiB | Cell materialization. 40.02x slower by median. |
+| ClosedXML | blocked | `closedxml` | n/a | n/a | n/a | n/a | Not counted. The .NET runner failed with `CSSM_ModuleLoad(): One or more parameters passed to a function were not valid.` |
+| fastxlsx | runner unavailable | `fastxlsx` | n/a | n/a | n/a | n/a | Not counted. Python runner failed because `fastxlsx` is not installed in the clean Python environment. |
+
+In-process JavaScript reference:
+
+| Library | Status | Median ms | P95 ms | CV | Peak RSS |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Ascend in-process | ran/won | 4.727 | 4.947 | 0.029 | 199.8 MiB |
+| SheetJS `xlsx@0.18.5` | ran/lost | 39.359 | 40.306 | 0.026 | 301.7 MiB |
+| ExcelJS `4.4.0` | ran/lost | 53.636 | 59.321 | 0.054 | 311.5 MiB |
+
+Coverage gate result: failed, as expected for a partial profile. The styles-heavy row lacks ClosedXML and fastxlsx coverage. The profile remains missing `string-heavy` from current commit, `formula-heavy`, `table-heavy`, `feature-rich`, `selected-sheet`, `metadata-only`, and `warm-workflow` coverage.
+
+Humble allowed wording:
+
+> On the generated `styles-heavy` 2000x20 raw OOXML workload at commit `b1a53ea0`, Ascend's file-path value-read row had the fastest eligible median and p95 among completed comparable external runners. The full `xlsx-read-sota` profile remains incomplete, and ClosedXML/fastxlsx blockers are still recorded.
+
+Forbidden wording:
+
+- "Ascend is the fastest XLSX reader."
+- "Ascend has a clean style-heavy read speed win across all runners."
+- "Ascend beats ClosedXML or fastxlsx" from this run.
+- "Ascend proves style fidelity or preservation" from this value-read run.
+- Any wording that hides the incomplete full profile or blocked/unavailable runners.
+
+Next action: defer production optimization. Continue profile expansion with `formula-heavy`; keep ClosedXML and fastxlsx as blockers unless their runners are fixed.
+
 ## Workflow
 
 Workflow: XLSX open/inspect value read for a string-heavy worksheet.
@@ -308,4 +393,4 @@ Optimize: no production optimization from the partial profile rows. The top rele
 
 Kill: no current optimization is killed by this row.
 
-Defer: yes. Defer all broad read-speed wording until a clean-tree full `xlsx-read-sota` run either passes coverage or records per-runner blockers without counting them as wins. The immediate next action is `styles-heavy` profile expansion plus runner hardening for FastExcel Java on `sparse-wide`, ClosedXML, and fastxlsx, followed by the full profile run.
+Defer: yes. Defer all broad read-speed wording until a clean-tree full `xlsx-read-sota` run either passes coverage or records per-runner blockers without counting them as wins. The immediate next action is `formula-heavy` profile expansion plus runner hardening for FastExcel Java on `sparse-wide`, ClosedXML, and fastxlsx, followed by the full profile run.

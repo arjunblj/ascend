@@ -4775,6 +4775,17 @@ describe('formula functions', () => {
 	})
 
 	describe('info functions - SHEET/SHEETS', () => {
+		test('IS predicates do not coerce text as numbers', () => {
+			const wb = makeWorkbook()
+			setFormula(wb, 0, 0, 'ISNUMBER("19")')
+			setFormula(wb, 1, 0, 'ISEVEN("4")')
+			setFormula(wb, 2, 0, 'ISODD("5")')
+			recalc(wb)
+			expect(getResult(wb, 0, 0)).toEqual(booleanValue(false))
+			expect(getResult(wb, 1, 0)).toEqual(errorValue('#VALUE!'))
+			expect(getResult(wb, 2, 0)).toEqual(errorValue('#VALUE!'))
+		})
+
 		test('registry implementations use reference metadata when provided', () => {
 			const sheetFn = functionRegistry.get('SHEET')
 			const sheetsFn = functionRegistry.get('SHEETS')

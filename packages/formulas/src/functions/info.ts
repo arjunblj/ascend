@@ -8,10 +8,10 @@ import {
 	topLeftScalar,
 } from '@ascend/schema'
 import type { FunctionDef } from './registry.ts'
-import { cellOf, type EvalArg, getRange, numArg } from './registry.ts'
+import { cellOf, type EvalArg, getRange } from './registry.ts'
 
 function isblank(args: EvalArg[]): CellValue {
-	return booleanValue(cellOf(args[0]).kind === 'empty')
+	return mapInfoPredicate(args[0], (v) => v.kind === 'empty')
 }
 
 function iserror(args: EvalArg[]): CellValue {
@@ -46,11 +46,11 @@ function mapInfoPredicate(
 }
 
 function istext(args: EvalArg[]): CellValue {
-	return booleanValue(cellOf(args[0]).kind === 'string')
+	return mapInfoPredicate(args[0], (v) => v.kind === 'string')
 }
 
 function islogical(args: EvalArg[]): CellValue {
-	return booleanValue(cellOf(args[0]).kind === 'boolean')
+	return mapInfoPredicate(args[0], (v) => v.kind === 'boolean')
 }
 
 function isformula(args: EvalArg[]): CellValue {
@@ -106,19 +106,37 @@ function na(_args: EvalArg[]): CellValue {
 }
 
 function iseven(args: EvalArg[]): CellValue {
-	const n = numArg(args[0])
-	if (typeof n !== 'number') return n
-	return booleanValue(Math.trunc(n) % 2 === 0)
+	return mapInfoNumberPredicate(args[0], (n) => Math.trunc(n) % 2 === 0)
 }
 
 function isodd(args: EvalArg[]): CellValue {
-	const n = numArg(args[0])
-	if (typeof n !== 'number') return n
-	return booleanValue(Math.trunc(n) % 2 !== 0)
+	return mapInfoNumberPredicate(args[0], (n) => Math.trunc(n) % 2 !== 0)
 }
 
 function isnontext(args: EvalArg[]): CellValue {
-	return booleanValue(cellOf(args[0]).kind !== 'string')
+	return mapInfoPredicate(args[0], (v) => v.kind !== 'string')
+}
+
+function mapInfoNumberPredicate(
+	arg: EvalArg | undefined,
+	predicate: (value: number) => boolean,
+): CellValue {
+	const evaluateCell = (value: CellValue): ScalarCellValue => {
+		const n = infoNumberArg(topLeftScalar(value))
+		return topLeftScalar(typeof n === 'number' ? booleanValue(predicate(n)) : n)
+	}
+	if (arg?.kind === 'range' || arg?.value.kind === 'array') {
+		return arrayValue(getRange(arg).map((row) => row.map(evaluateCell)))
+	}
+	return evaluateCell(cellOf(arg))
+}
+
+function infoNumberArg(value: CellValue): number | CellValue {
+	if (value.kind === 'error') return value
+	if (value.kind === 'number') return value.value
+	if (value.kind === 'date') return value.serial
+	if (value.kind === 'empty') return 0
+	return errorValue('#VALUE!')
 }
 
 const ERROR_TYPE_MAP: Record<string, number> = {

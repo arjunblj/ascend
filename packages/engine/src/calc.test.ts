@@ -917,6 +917,65 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(2, 3)?.value).toEqual(errorValue('#N/A'))
 	})
 
+	test('common IS predicates spill boolean masks for range operands', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: EMPTY, formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: stringValue('north'), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: booleanValue(true), formula: null, styleId: sid })
+		sheet.cells.set(3, 0, { value: numberValue(4), formula: null, styleId: sid })
+		sheet.cells.set(4, 0, { value: numberValue(5), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, {
+			value: EMPTY,
+			formula: 'IF(ISBLANK(A1:A5),"blank","filled")',
+			styleId: sid,
+		})
+		sheet.cells.set(0, 2, {
+			value: EMPTY,
+			formula: 'IF(ISTEXT(A1:A5),A1:A5,"")',
+			styleId: sid,
+		})
+		sheet.cells.set(0, 3, {
+			value: EMPTY,
+			formula: 'IF(ISLOGICAL(A1:A5),"logical","other")',
+			styleId: sid,
+		})
+		sheet.cells.set(0, 4, {
+			value: EMPTY,
+			formula: 'IF(ISNONTEXT(A1:A5),"not-text","text")',
+			styleId: sid,
+		})
+		sheet.cells.set(0, 5, {
+			value: EMPTY,
+			formula: 'IF(ISEVEN(A1:A5),"even","odd")',
+			styleId: sid,
+		})
+		sheet.cells.set(0, 6, {
+			value: EMPTY,
+			formula: 'IF(ISODD(A1:A5),"odd","even")',
+			styleId: sid,
+		})
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(0, 1)?.value).toEqual(stringValue('blank'))
+		expect(sheet.cells.get(1, 1)?.value).toEqual(stringValue('filled'))
+		expect(sheet.cells.get(0, 2)?.value).toEqual(stringValue(''))
+		expect(sheet.cells.get(1, 2)?.value).toEqual(stringValue('north'))
+		expect(sheet.cells.get(2, 3)?.value).toEqual(stringValue('logical'))
+		expect(sheet.cells.get(3, 3)?.value).toEqual(stringValue('other'))
+		expect(sheet.cells.get(0, 4)?.value).toEqual(stringValue('not-text'))
+		expect(sheet.cells.get(1, 4)?.value).toEqual(stringValue('text'))
+		expect(sheet.cells.get(0, 5)?.value).toEqual(stringValue('even'))
+		expect(sheet.cells.get(1, 5)?.value).toEqual(errorValue('#VALUE!'))
+		expect(sheet.cells.get(2, 5)?.value).toEqual(errorValue('#VALUE!'))
+		expect(sheet.cells.get(3, 5)?.value).toEqual(stringValue('even'))
+		expect(sheet.cells.get(4, 5)?.value).toEqual(stringValue('odd'))
+		expect(sheet.cells.get(3, 6)?.value).toEqual(stringValue('even'))
+		expect(sheet.cells.get(4, 6)?.value).toEqual(stringValue('odd'))
+	})
+
 	test('FREQUENCY formulas can count unique filtered numeric ids from array expressions', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

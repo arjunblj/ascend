@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { Buffer } from 'node:buffer'
 import { createHash } from 'node:crypto'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
 import { unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -1746,6 +1746,44 @@ describe('AscendWorkbook', () => {
 		expect(internal.workbookMetaDirty).toBe(false)
 		expect(internal.sharedStringsDirty).toBe(false)
 		expect(wb.toBytes()).toBe(bytes)
+	})
+
+	test('failed workbook saves keep dirty state retryable', async () => {
+		const dir = join(
+			tmpdir(),
+			`ascend-save-rollback-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+		)
+		const blockedOutput = join(dir, 'blocked.xlsx')
+		const retryOutput = join(dir, 'retry.xlsx')
+		try {
+			mkdirSync(blockedOutput, { recursive: true })
+			const sourceBytes = new Uint8Array(
+				readFileSync('fixtures/xlsx/xlsxwriter/strings_links.xlsx'),
+			)
+			const wb = await AscendWorkbook.open(sourceBytes)
+			wb.apply([
+				{ op: 'setCells', sheet: 'Strings', updates: [{ ref: 'Z14', value: 'retryable' }] },
+			])
+			const internal = wb as unknown as { readonly dirty: boolean }
+			expect(internal.dirty).toBe(true)
+
+			await expect(wb.save(blockedOutput)).rejects.toThrow()
+			expect(internal.dirty).toBe(true)
+			expect(wb.sheet('Strings')?.cell('Z14')?.value).toEqual({
+				kind: 'string',
+				value: 'retryable',
+			})
+
+			await wb.save(retryOutput)
+			expect(internal.dirty).toBe(false)
+			const reopened = await AscendWorkbook.open(new Uint8Array(readFileSync(retryOutput)))
+			expect(reopened.sheet('Strings')?.cell('Z14')?.value).toEqual({
+				kind: 'string',
+				value: 'retryable',
+			})
+		} finally {
+			rmSync(dir, { recursive: true, force: true })
+		}
 	})
 
 	test('scalar setCells patches preserved worksheet XML in place', async () => {

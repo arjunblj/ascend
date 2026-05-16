@@ -1438,17 +1438,23 @@ export class AscendWorkbook extends WorkbookReadView {
 	async save(path: string): Promise<void> {
 		this.assertWritable()
 		const ext = path.split('.').pop()?.toLowerCase() ?? ''
+		const rollbackSnapshot = this.createMutationRollbackSnapshot()
 
-		if (ext === 'csv' || ext === 'tsv') {
-			const result =
-				ext === 'tsv' ? writeCsv(this.wb, { dialect: { delimiter: '\t' } }) : writeCsv(this.wb)
-			if (!result.ok) throw new AscendException(result.error)
-			await writeFile(path, result.value, 'utf-8')
-			return
+		try {
+			if (ext === 'csv' || ext === 'tsv') {
+				const result =
+					ext === 'tsv' ? writeCsv(this.wb, { dialect: { delimiter: '\t' } }) : writeCsv(this.wb)
+				if (!result.ok) throw new AscendException(result.error)
+				await writeFile(path, result.value, 'utf-8')
+				return
+			}
+
+			const bytes = this.toBytes()
+			await writeFile(path, bytes)
+		} catch (error) {
+			this.restoreMutationRollbackSnapshot(rollbackSnapshot)
+			throw error
 		}
-
-		const bytes = this.toBytes()
-		await writeFile(path, bytes)
 	}
 
 	/**

@@ -40,6 +40,7 @@ const REQUIRED_COMMANDS = [
 	'bun test packages/sdk/src/agent-workflow.test.ts -t "in-place backup failures roll back"',
 	'bun test packages/sdk/src/agent-workflow.test.ts -t "post-write verification fails closed"',
 	'bun test packages/sdk/src/agent-workflow.test.ts -t "progress callback failures"',
+	'bun test packages/sdk/src/sdk.test.ts -t "failed workbook saves keep dirty state"',
 	'bun test fixtures/corpus/feature-contract.test.ts',
 	'bun run fixtures/corpus/audit.ts',
 	'bun run fixtures/benchmarks/package-action-proof.ts --json',

@@ -1100,20 +1100,27 @@ describe('release proof evidence index', () => {
 			]),
 			nextOwnerAction: expect.stringContaining('bun run release:rc:gate'),
 		})
-		expect(
-			index.releaseDecisionBoard.doNotPromoteYet.find(
-				(item) => item.name === 'property-journal-laws',
-			),
-		).toMatchObject({
-			evidenceMissing: expect.arrayContaining([
-				expect.stringContaining('Generated operation sequences'),
-				expect.stringContaining('fast-check shrinking'),
-			]),
-			allowedWording: expect.stringContaining('Do not promote property-journal-laws'),
-			forbiddenWording: expect.arrayContaining([
-				expect.stringContaining('Do not promote broad inverse-law claims'),
-			]),
-		})
+		const propertyJournalDecision = index.releaseDecisionBoard.doNotPromoteYet.find(
+			(item) => item.name === 'property-journal-laws',
+		)
+		const propertyJournalEvidence = propertyJournalDecision?.evidenceWeHave.join('\n') ?? ''
+		const propertyJournalMissing = propertyJournalDecision?.evidenceMissing.join('\n') ?? ''
+		const propertyJournalForbidden = propertyJournalDecision?.forbiddenWording.join('\n') ?? ''
+		const propertyJournalNextOwnerAction = propertyJournalDecision?.nextOwnerAction ?? ''
+		expect(propertyJournalDecision?.allowedWording).toContain(
+			'Do not promote property-journal-laws',
+		)
+		expect(propertyJournalEvidence).toContain('journal-law-proof.test.ts')
+		expect(propertyJournalEvidence).toContain('packages/sdk/src/journal-exactness.test.ts')
+		expect(propertyJournalEvidence).toContain('deterministic local journal evidence')
+		expect(propertyJournalMissing).toContain('Generated operation sequences')
+		expect(propertyJournalMissing).toContain('Shrinkable and replayable property generation')
+		expect(propertyJournalMissing).toContain('style exactness')
+		expect(propertyJournalForbidden).toContain('Do not promote broad inverse-law claims')
+		expect(propertyJournalForbidden).toContain('full undo coverage')
+		expect(propertyJournalForbidden).toContain('signed audit')
+		expect(propertyJournalNextOwnerAction).toContain('fast-check')
+		expect(propertyJournalNextOwnerAction).toContain('journal-law-proof.test.ts')
 		expect(index.releaseDecisionBoard.doNotPromoteYet.at(-1)).toMatchObject({
 			name: 'practical-latency-contracts',
 			evidenceWeHave: expect.arrayContaining([
@@ -2236,6 +2243,8 @@ describe('release proof evidence index', () => {
 		expect(markdown).toContain('edit-producing rename is frozen')
 		expect(markdown).toContain('formula-assist-proof.ts')
 		expect(markdown).toContain('Do not claim edit-producing rename')
+		expect(markdown).toContain('journal-law-proof.test.ts')
+		expect(markdown).toContain('Do not claim property-based testing')
 		expect(markdown).toContain('columnar scan sidecars')
 		expect(markdown).toContain('do-not-promote-yet')
 	})

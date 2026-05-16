@@ -2251,6 +2251,8 @@ function releaseDecisionDoNotPromoteItem(
 			: undefined
 	const releaseProofBundleBlocker =
 		note.name === 'release-proof-bundle' ? RELEASE_PROOF_BUNDLE_BLOCKER : undefined
+	const propertyJournalLawBlocker =
+		note.name === 'property-journal-laws' ? PROPERTY_JOURNAL_LAW_BLOCKER : undefined
 	const researchHygieneBlocker =
 		note.name === 'research-surface-hygiene' ? RESEARCH_SURFACE_HYGIENE_BLOCKER : undefined
 	const tokenBoundedAgentViewBlocker =
@@ -2266,6 +2268,7 @@ function releaseDecisionDoNotPromoteItem(
 			note.reason,
 			...(formulaLanguageServiceBlocker?.evidenceWeHave ?? []),
 			...(releaseProofBundleBlocker?.evidenceWeHave ?? []),
+			...(propertyJournalLawBlocker?.evidenceWeHave ?? []),
 			...(researchHygieneBlocker?.evidenceWeHave ?? []),
 			...(tokenBoundedAgentViewBlocker?.evidenceWeHave ?? []),
 			...(retainedViewportPatchBlocker?.evidenceWeHave ?? []),
@@ -2281,6 +2284,7 @@ function releaseDecisionDoNotPromoteItem(
 			...(excludedEvidence ? [excludedEvidence.eligibilityRule] : []),
 			...(formulaLanguageServiceBlocker?.evidenceMissing ?? []),
 			...(releaseProofBundleBlocker?.evidenceMissing ?? []),
+			...(propertyJournalLawBlocker?.evidenceMissing ?? []),
 			...(researchHygieneBlocker?.evidenceMissing ?? []),
 			...(tokenBoundedAgentViewBlocker?.evidenceMissing ?? []),
 			...(retainedViewportPatchBlocker?.evidenceMissing ?? []),
@@ -2295,6 +2299,7 @@ function releaseDecisionDoNotPromoteItem(
 			note.killCriterion,
 			...(formulaLanguageServiceBlocker?.forbiddenWording ?? []),
 			...(releaseProofBundleBlocker?.forbiddenWording ?? []),
+			...(propertyJournalLawBlocker?.forbiddenWording ?? []),
 			...(researchHygieneBlocker?.forbiddenWording ?? []),
 			...(tokenBoundedAgentViewBlocker?.forbiddenWording ?? []),
 			...(retainedViewportPatchBlocker?.forbiddenWording ?? []),
@@ -2304,6 +2309,7 @@ function releaseDecisionDoNotPromoteItem(
 		nextOwnerAction:
 			formulaLanguageServiceBlocker?.ownerAction ??
 			releaseProofBundleBlocker?.ownerAction ??
+			propertyJournalLawBlocker?.ownerAction ??
 			researchHygieneBlocker?.ownerAction ??
 			tokenBoundedAgentViewBlocker?.ownerAction ??
 			retainedViewportPatchBlocker?.ownerAction ??
@@ -2926,6 +2932,24 @@ const RELEASE_PROOF_BUNDLE_BLOCKER = {
 	],
 	forbiddenWording: [
 		'Do not call a release proof bundle signed provenance, tamper-evident storage, SLSA, in-toto, certified provenance, third-party attestation, or registry publication evidence.',
+	],
+} as const
+
+const PROPERTY_JOURNAL_LAW_BLOCKER = {
+	ownerAction:
+		'Correctness owner keeps property-journal-laws out of release wording, accepts deterministic journal-law evidence only as local correctness proof, and either adds shrinkable/replayable fast-check generation or records a permanent test-strategy-only downgrade; validate with `bun test fixtures/benchmarks/journal-law-proof.test.ts --timeout 30000` and focused journal exactness coverage before any inverse-law wording.',
+	evidenceWeHave: [
+		'Journal-law proof command exists: `bun test fixtures/benchmarks/journal-law-proof.test.ts --timeout 30000` covers generated exact inverse-law sequences, lossy metadata boundaries, operation-family counts, issue reasons, and claim-safe markdown.',
+		'SDK journal exactness tests cover allowed lossy issue reasons, representative exact inverse restoration, saved package-state lossiness, formula-binding lossiness, dynamic spill lossiness, table-style metadata boundaries, and journal surface classifications in `packages/sdk/src/journal-exactness.test.ts`.',
+		'Claim report wording already limits the proof to deterministic local journal evidence and reports style, table-style, package-part, data-validation, and conditional-format lossy boundaries.',
+	],
+	evidenceMissing: [
+		'Shrinkable and replayable property generation with stable seeds, replay paths, minimized failing cases, and operation-family coverage thresholds.',
+		'Public inverse operations or explicit permanent downgrade for style exactness, table-style exactness, package-part preservation, data-validation ordering/duplicate metadata, and conditional-format ordering/duplicate metadata.',
+		'Owner-approved changed-test integration cost and failure triage workflow before any broad inverse-law or rollback wording.',
+	],
+	forbiddenWording: [
+		'Do not claim property-based testing, full undo coverage, exact rollback for every operation, style/table-style exactness, package-byte restoration, or signed audit/release attestation from deterministic journal-law proof.',
 	],
 } as const
 

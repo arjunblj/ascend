@@ -153,10 +153,18 @@ const ERROR_TYPE_MAP: Record<string, number> = {
 }
 
 function errorType(args: EvalArg[]): CellValue {
-	const v = cellOf(args[0])
-	if (v.kind !== 'error') return errorValue('#N/A')
+	const arg = args[0]
+	if (arg?.kind === 'range' || arg?.value.kind === 'array') {
+		return arrayValue(getRange(arg).map((row) => row.map((value) => errorTypeValue(value))))
+	}
+	return errorTypeValue(cellOf(arg))
+}
+
+function errorTypeValue(value: CellValue): ScalarCellValue {
+	const v = topLeftScalar(value)
+	if (v.kind !== 'error') return topLeftScalar(errorValue('#N/A'))
 	const code = ERROR_TYPE_MAP[v.value]
-	return code !== undefined ? numberValue(code) : errorValue('#N/A')
+	return topLeftScalar(code !== undefined ? numberValue(code) : errorValue('#N/A'))
 }
 
 function infoFn(args: EvalArg[]): CellValue {

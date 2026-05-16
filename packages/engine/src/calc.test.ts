@@ -976,6 +976,28 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(4, 6)?.value).toEqual(stringValue('odd'))
 	})
 
+	test('ERROR.TYPE spills error codes for range operands', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: errorValue('#DIV/0!'), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(10), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: errorValue('#N/A'), formula: null, styleId: sid })
+		sheet.cells.set(3, 0, { value: errorValue('#VALUE!'), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, {
+			value: EMPTY,
+			formula: 'IFERROR(ERROR.TYPE(A1:A4),0)',
+			styleId: sid,
+		})
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(0, 1)?.value).toEqual(numberValue(2))
+		expect(sheet.cells.get(1, 1)?.value).toEqual(numberValue(0))
+		expect(sheet.cells.get(2, 1)?.value).toEqual(numberValue(7))
+		expect(sheet.cells.get(3, 1)?.value).toEqual(numberValue(3))
+	})
+
 	test('FREQUENCY formulas can count unique filtered numeric ids from array expressions', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

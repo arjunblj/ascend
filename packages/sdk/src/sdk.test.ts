@@ -111,6 +111,49 @@ describe('AscendWorkbook', () => {
 		)
 	})
 
+	test('signed workbook saves fail closed unless signature invalidation is explicit', async () => {
+		const dir = join(
+			tmpdir(),
+			`ascend-signed-save-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+		)
+		const blockedOutput = join(dir, 'blocked.xlsx')
+		const approvedOutput = join(dir, 'approved.xlsx')
+		try {
+			mkdirSync(dir, { recursive: true })
+			const wb = await Ascend.open(makeSignedXlsx())
+			const changed = wb.apply([
+				{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'approved edit' }] },
+			])
+			expect(changed.errors).toEqual([])
+
+			await expect(wb.save(blockedOutput)).rejects.toThrow(
+				'Cannot export an edited signed workbook without explicit signature invalidation approval',
+			)
+			expect(existsSync(blockedOutput)).toBe(false)
+			expect(() => wb.toBytes()).toThrow(
+				'Cannot export an edited signed workbook without explicit signature invalidation approval',
+			)
+
+			await wb.save(approvedOutput, { allowSignatureInvalidation: true })
+			const archive = extractZip(new Uint8Array(readFileSync(approvedOutput)))
+			expect(archive.readBytes('_xmlsignatures/origin.sigs')).toBeUndefined()
+			expect(archive.readBytes('_xmlsignatures/sig1.xml')).toBeUndefined()
+			const reopened = await Ascend.open(new Uint8Array(readFileSync(approvedOutput)))
+			expect(reopened.trustReport().findings).not.toContainEqual(
+				expect.objectContaining({ code: 'workbook.signature' }),
+			)
+			expect(reopened.sheet('Sheet1')?.cell('A1')?.value).toEqual({
+				kind: 'string',
+				value: 'approved edit',
+			})
+			expect(() => wb.toBytes()).toThrow(
+				'Cannot export an edited signed workbook without explicit signature invalidation approval',
+			)
+		} finally {
+			rmSync(dir, { recursive: true, force: true })
+		}
+	})
+
 	test('writes sheet protection from plaintext as a legacy Excel hash', async () => {
 		const wb = Ascend.create()
 		const result = wb.apply([

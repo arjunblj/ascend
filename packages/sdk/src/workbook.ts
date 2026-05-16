@@ -1441,7 +1441,7 @@ export class AscendWorkbook extends WorkbookReadView {
 	 * @example
 	 * await wb.save('./output.xlsx')
 	 */
-	async save(path: string): Promise<void> {
+	async save(path: string, options: WorkbookBytesOptions = {}): Promise<void> {
 		this.assertWritable()
 		const ext = path.split('.').pop()?.toLowerCase() ?? ''
 		const rollbackSnapshot = this.createMutationRollbackSnapshot()
@@ -1455,7 +1455,7 @@ export class AscendWorkbook extends WorkbookReadView {
 				return
 			}
 
-			const bytes = this.toBytes()
+			const bytes = this.toBytes(options)
 			await writeFileAtomically(path, bytes)
 		} catch (error) {
 			this.restoreMutationRollbackSnapshot(rollbackSnapshot)

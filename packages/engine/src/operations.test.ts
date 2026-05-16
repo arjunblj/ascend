@@ -5190,6 +5190,56 @@ describe('applyOperation', () => {
 		])
 	})
 
+	test('row and column shifts update chart source refs', () => {
+		const wb = createWorkbook()
+		wb.addSheet('Data')
+		wb.addSheet('Dashboard')
+		wb.chartParts.push({
+			partPath: 'xl/charts/chart1.xml',
+			sheetName: 'Dashboard',
+			chartType: 'lineChart',
+			series: [
+				{
+					nameRef: 'Data!$B$1',
+					categoryRef: 'Data!$A$2:$A$4',
+					valueRef: 'Data!$B$2:$B$4',
+				},
+				{
+					valueRef: "'[Budget.xlsx]FY26:FY28'!$B$2:$B$4",
+				},
+				{
+					valueRef: 'Data!$C$2',
+				},
+			],
+		})
+
+		const inserted = applyOperation(wb, { op: 'insertRows', sheet: 'Data', at: 2, count: 1 })
+		expectOk(inserted)
+		expect(inserted.value.sheetsModified).toEqual(['Data', 'Dashboard'])
+		expect(wb.chartParts[0]?.series[0]).toMatchObject({
+			nameRef: 'Data!$B$1',
+			categoryRef: 'Data!$A$2:$A$5',
+			valueRef: 'Data!$B$2:$B$5',
+		})
+		expect(wb.chartParts[0]?.series[1]?.valueRef).toBe("'[Budget.xlsx]FY26:FY28'!$B$2:$B$4")
+		expect(wb.chartParts[0]?.series[2]?.valueRef).toBe('Data!$C$2')
+
+		expectOk(applyOperation(wb, { op: 'deleteRows', sheet: 'Data', at: 1, count: 1 }))
+		expect(wb.chartParts[0]?.series[0]).toMatchObject({
+			nameRef: 'Data!$B$1',
+			categoryRef: 'Data!$A$2:$A$4',
+			valueRef: 'Data!$B$2:$B$4',
+		})
+		expect(wb.chartParts[0]?.series[2]?.valueRef).toBe('#REF!')
+
+		expectOk(applyOperation(wb, { op: 'deleteRows', sheet: 'Data', at: 1, count: 1 }))
+		expect(wb.chartParts[0]?.series[0]).toMatchObject({
+			nameRef: 'Data!$B$1',
+			categoryRef: 'Data!$A$2:$A$3',
+			valueRef: 'Data!$B$2:$B$3',
+		})
+	})
+
 	test('deleteRows shrinks overlapping table, filter, and validation ranges', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')

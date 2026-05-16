@@ -662,6 +662,93 @@ export function rewriteWorkbookMetadataFormulasForShift(
 	}
 }
 
+export function rewriteWorkbookChartSourceRefsForShift(
+	workbook: Workbook,
+	targetSheet: string,
+	axis: 'row' | 'col',
+	at: number,
+	delta: number,
+): string[] {
+	const modifiedSheets = new Set<string>()
+	for (let index = 0; index < workbook.chartParts.length; index++) {
+		const chart = workbook.chartParts[index]
+		if (!chart) continue
+		let changed = false
+		const formulaSheet = chart.sheetName
+		const series = chart.series.map((entry) => {
+			const nameRef = rewriteChartSourceRefForShift(
+				entry.nameRef,
+				targetSheet,
+				formulaSheet,
+				axis,
+				at,
+				delta,
+			)
+			const categoryRef = rewriteChartSourceRefForShift(
+				entry.categoryRef,
+				targetSheet,
+				formulaSheet,
+				axis,
+				at,
+				delta,
+			)
+			const valueRef = rewriteChartSourceRefForShift(
+				entry.valueRef,
+				targetSheet,
+				formulaSheet,
+				axis,
+				at,
+				delta,
+			)
+			if (
+				nameRef === entry.nameRef &&
+				categoryRef === entry.categoryRef &&
+				valueRef === entry.valueRef
+			) {
+				return entry
+			}
+			changed = true
+			return {
+				...entry,
+				...(nameRef !== undefined ? { nameRef } : {}),
+				...(categoryRef !== undefined ? { categoryRef } : {}),
+				...(valueRef !== undefined ? { valueRef } : {}),
+			}
+		})
+		if (!changed) continue
+		workbook.chartParts[index] = { ...chart, series }
+		if (chart.sheetName) modifiedSheets.add(chart.sheetName)
+	}
+	return [...modifiedSheets]
+}
+
+function rewriteChartSourceRefForShift(
+	ref: string | undefined,
+	targetSheet: string,
+	formulaSheet: string | undefined,
+	axis: 'row' | 'col',
+	at: number,
+	delta: number,
+): string | undefined {
+	if (!ref) return ref
+	const parsed = cachedParseFormula(ref)
+	if (!parsed.ok) return ref
+	if (formulaSheet === undefined && !formulaAstReferencesSheet(parsed.value, targetSheet)) {
+		return ref
+	}
+	const rewritten = rewriteFormulaAstForShift(
+		parsed.value,
+		targetSheet,
+		formulaSheet ?? targetSheet,
+		axis,
+		at,
+		delta,
+	)
+	if (rewritten === parsed.value) return ref
+	const formula = printFormula(rewritten)
+	return formula === ref ? ref : formula
+}
+
 function rewriteSheetMetadataFormulasForShiftTarget(
 	sheet: Sheet,
 	targetSheet: string,

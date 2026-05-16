@@ -18,6 +18,7 @@ import {
 	retargetExplicitFormulaSheetRefsInRange,
 	rewriteDefinedNameFormulasForMove,
 	rewriteDefinedNameFormulasForShift,
+	rewriteWorkbookChartSourceRefsForShift,
 	rewriteWorkbookFormulasForMove,
 	rewriteWorkbookFormulasForShift,
 	rewriteWorkbookHyperlinkLocationsForMove,
@@ -116,6 +117,15 @@ function applyAxisShift(
 	}
 	rewriteDefinedNameFormulasForShift(workbook, sheetName, axis, at, delta)
 	rewriteWorkbookMetadataFormulasForShift(workbook, sheetName, axis, at, delta)
+	for (const chartSheetName of rewriteWorkbookChartSourceRefsForShift(
+		workbook,
+		sheetName,
+		axis,
+		at,
+		delta,
+	)) {
+		sheetsModified.add(chartSheetName)
+	}
 	removeDeletedQueryTableConnectionParts(workbook, deletedQueryTablePartPaths)
 
 	return ok(patch([...affected], [...sheetsModified], true))

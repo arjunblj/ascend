@@ -4550,6 +4550,19 @@ function expectedPackageGraphChangesForOperations(
 			rewrittenPartPaths.add(op.partPath)
 		}
 	}
+	for (const risk of collectChartSourceRefDriftRisks(workbook, ops, sourceGraph.parts)) {
+		if (
+			risk.relatedOperations.some(
+				(operation) =>
+					operation.op === 'insertRows' ||
+					operation.op === 'deleteRows' ||
+					operation.op === 'insertCols' ||
+					operation.op === 'deleteCols',
+			)
+		) {
+			rewrittenPartPaths.add(risk.chartPartPath)
+		}
+	}
 	if (ops.some((op) => operationInvalidatesCalcChain(workbook, op))) {
 		for (const part of sourceGraph.parts) {
 			if (part.featureFamily === 'preservedCalcChain') removedPartPaths.add(part.path)

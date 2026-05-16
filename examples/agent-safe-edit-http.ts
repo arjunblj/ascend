@@ -136,10 +136,16 @@ const committed = await postJson<{
 		check?: { valid?: boolean }
 		lint?: { clean?: boolean }
 	}
+	proofBundle?: {
+		safeToUse?: boolean
+		whatChanged?: Array<{ ref?: string }>
+		whySafe?: Array<{ gate?: string; ok?: boolean }>
+	}
 }>('/commit', {
 	planHandle: plan.preparedPlan.id,
 	output,
 	includePackageActions: true,
+	includeProofBundle: true,
 })
 const check = await postJson<{ valid?: boolean; issues?: unknown[] }>('/check', { file: output })
 const lint = await postJson<{ clean?: boolean; warnings?: unknown[] }>('/lint', { file: output })
@@ -184,6 +190,7 @@ console.log(
 				checkValid: committed.postWrite?.check?.valid,
 				lintClean: committed.postWrite?.lint?.clean,
 			},
+			proofBundle: committed.proofBundle,
 			verify: {
 				checkValid: check.valid,
 				checkIssueCount: check.issues?.length ?? 0,

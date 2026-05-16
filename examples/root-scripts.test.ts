@@ -47,6 +47,7 @@ describe('root package safe-edit scripts', () => {
 					workflow?: string
 					plan?: { changedCells?: string[] }
 					commit?: { output?: string; postWriteValid?: boolean }
+					proofBundle?: { safeToUse?: boolean; whatChanged?: Array<{ ref?: string }> }
 					verify?: {
 						checkValid?: boolean
 						lintClean?: boolean
@@ -61,6 +62,12 @@ describe('root package safe-edit scripts', () => {
 					output,
 					postWriteValid: true,
 				})
+				if (workflow.script !== 'example:safe-edit') {
+					expect(result.proofBundle).toMatchObject({
+						safeToUse: true,
+						whatChanged: [{ ref: 'B2' }],
+					})
+				}
 				expect(result.verify).toMatchObject({
 					checkValid: true,
 					lintClean: true,

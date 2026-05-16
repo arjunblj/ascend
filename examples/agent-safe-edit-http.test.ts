@@ -49,6 +49,11 @@ describe('agent-safe-edit HTTP example', () => {
 					checkValid?: boolean
 					lintClean?: boolean
 				}
+				proofBundle?: {
+					safeToUse?: boolean
+					whatChanged?: Array<{ ref?: string }>
+					whySafe?: Array<{ gate?: string; ok?: boolean }>
+				}
 				verify?: {
 					checkValid?: boolean
 					checkIssueCount?: number
@@ -75,6 +80,18 @@ describe('agent-safe-edit HTTP example', () => {
 				lintClean: true,
 			})
 			expect(result.commit?.outputSha256).toMatch(/^[a-f0-9]{64}$/)
+			expect(result.proofBundle).toMatchObject({
+				safeToUse: true,
+				whatChanged: [{ ref: 'B2' }],
+			})
+			expect(result.proofBundle?.whySafe?.map((gate) => [gate.gate, gate.ok])).toEqual([
+				['input-guard', true],
+				['approval', true],
+				['write-policy', true],
+				['commit', true],
+				['reopen-verify', true],
+				['package-graph', true],
+			])
 			expect(result.verify).toMatchObject({
 				checkValid: true,
 				checkIssueCount: 0,

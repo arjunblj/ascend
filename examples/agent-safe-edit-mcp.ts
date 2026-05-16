@@ -148,10 +148,16 @@ const committed = await callTool<{
 		check?: { valid?: boolean }
 		lint?: { clean?: boolean }
 	}
+	proofBundle?: {
+		safeToUse?: boolean
+		whatChanged?: Array<{ ref?: string }>
+		whySafe?: Array<{ gate?: string; ok?: boolean }>
+	}
 }>('ascend.commit', {
 	planHandle: plan.preparedPlan.id,
 	output,
 	includePackageActions: true,
+	includeProofBundle: true,
 })
 const check = await callTool<{ valid?: boolean; issues?: unknown[] }>('ascend.check', {
 	file: output,
@@ -205,6 +211,7 @@ console.log(
 				checkValid: committed.postWrite?.check?.valid,
 				lintClean: committed.postWrite?.lint?.clean,
 			},
+			proofBundle: committed.proofBundle,
 			verify: {
 				checkValid: check.valid,
 				checkIssueCount: check.issues?.length ?? 0,

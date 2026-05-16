@@ -691,8 +691,17 @@ export interface PostWriteWorkbookTopologySummary {
 	readonly workbookViews: number
 	readonly activeTabs: readonly number[]
 	readonly firstSheets: readonly number[]
+	readonly workbookViewDetails: readonly PostWriteWorkbookViewEntry[]
 	readonly sheetStates: readonly PostWriteSheetTopologyEntry[]
 	readonly verification: 'reopened-output'
+}
+
+export interface PostWriteWorkbookViewEntry {
+	readonly index: number
+	readonly activeTab?: number
+	readonly firstSheet?: number
+	readonly visibility?: string
+	readonly tabRatio?: number
 }
 
 export interface PostWriteSheetTopologyEntry {
@@ -3024,6 +3033,13 @@ function postWriteWorkbookTopologySummary(workbook: Workbook): PostWriteWorkbook
 		sheetName: sheet.name,
 		state: sheet.state,
 	}))
+	const workbookViewDetails = workbook.workbookViews.map((view, index) => ({
+		index,
+		...(view.activeTab !== undefined ? { activeTab: view.activeTab } : {}),
+		...(view.firstSheet !== undefined ? { firstSheet: view.firstSheet } : {}),
+		...(view.visibility !== undefined ? { visibility: view.visibility } : {}),
+		...(view.tabRatio !== undefined ? { tabRatio: view.tabRatio } : {}),
+	}))
 	const hiddenSheetNames = sheetStates
 		.filter((sheet) => sheet.state === 'hidden')
 		.map((sheet) => sheet.sheetName)
@@ -3044,6 +3060,7 @@ function postWriteWorkbookTopologySummary(workbook: Workbook): PostWriteWorkbook
 		firstSheets: workbook.workbookViews.flatMap((view) =>
 			view.firstSheet === undefined ? [] : [view.firstSheet],
 		),
+		workbookViewDetails,
 		sheetStates,
 		verification: 'reopened-output',
 	}

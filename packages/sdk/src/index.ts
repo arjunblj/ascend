@@ -86,6 +86,7 @@ export type {
 	PostWriteTimelineCacheEntry,
 	PostWriteVisualSummary,
 	PostWriteWorkbookTopologySummary,
+	PostWriteWorkbookViewEntry,
 	PreparedAgentPlan,
 	ReleaseProofArtifactDigest,
 	ReleaseProofBundle,

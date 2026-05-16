@@ -1040,6 +1040,47 @@ describe('agent workflow loss audit', () => {
 		})
 	})
 
+	test('commits public workbook structure protection and view metadata through reopen audits', async () => {
+		const input = join(TEMP_DIR, 'poi-structure-protected.xlsx')
+		const output = join(TEMP_DIR, 'poi-structure-protected-out.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		const sourceBytes = new Uint8Array(
+			readFileSync('fixtures/xlsx/poi/workbookProtection_workbook_structure_protected.xlsx'),
+		)
+		await Bun.write(input, sourceBytes)
+		const ops = [
+			{ op: 'setCells' as const, sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'audit' }] },
+		]
+		const plan = await createAgentPlan(input, ops)
+
+		expect(plan.preview.wouldSucceed).toBe(true)
+
+		const committed = await commitAgentPlan(input, ops, { output })
+
+		expect(committed.postWrite.auditsPassed).toBe(true)
+		expect(committed.postWrite.workbookTopology).toMatchObject({
+			sheets: 1,
+			visibleSheets: 1,
+			hiddenSheets: 0,
+			veryHiddenSheets: 0,
+			workbookViews: 1,
+			workbookViewDetails: [{ index: 0, tabRatio: 500 }],
+			sheetStates: [{ sheetName: 'Sheet1', state: 'visible' }],
+			verification: 'reopened-output',
+		})
+		expect(committed.postWrite.security).toMatchObject({
+			workbookProtected: true,
+			workbookLocks: ['lockStructure'],
+			workbookPasswordProtected: false,
+			passwordHashVerification: 'none',
+			verification: 'reopened-output',
+		})
+		const reopened = await AscendWorkbook.open(new Uint8Array(readFileSync(output)))
+		expect(reopened.getWorkbookModel().workbookViews).toEqual([{ tabRatio: 500 }])
+		expect(reopened.getWorkbookModel().workbookProtection).toEqual({ lockStructure: true })
+		expect(Buffer.from(readFileSync(input)).equals(Buffer.from(sourceBytes))).toBe(true)
+	})
+
 	test('commits public protected ranges with honest hash reporting after save and reopen', async () => {
 		const input = join(TEMP_DIR, 'libreoffice-enhanced-protection.xlsx')
 		const output = join(TEMP_DIR, 'libreoffice-enhanced-protection-out.xlsx')
@@ -1105,18 +1146,21 @@ describe('agent workflow loss audit', () => {
 		expect(Buffer.from(readFileSync(input)).equals(Buffer.from(sourceBytes))).toBe(true)
 	})
 
-	test('commits public hidden-sheet topology through save and reopen audits', async () => {
+	test('commits public hidden-sheet workbook views through save and reopen audits', async () => {
 		const input = join(TEMP_DIR, 'poi-hidden-sheet.xlsx')
 		const output = join(TEMP_DIR, 'poi-hidden-sheet-out.xlsx')
 		mkdirSync(TEMP_DIR, { recursive: true })
 		const sourceBytes = new Uint8Array(readFileSync('fixtures/xlsx/poi/TwoSheetsOneHidden.xlsx'))
 		await Bun.write(input, sourceBytes)
 
-		const committed = await commitAgentPlan(
-			input,
-			[{ op: 'setCells', sheet: 'Sheet2', updates: [{ ref: 'A1', value: 'visible-edit' }] }],
-			{ output },
-		)
+		const ops = [
+			{ op: 'setCells' as const, sheet: 'Sheet2', updates: [{ ref: 'A1', value: 'visible-edit' }] },
+		]
+		const plan = await createAgentPlan(input, ops)
+
+		expect(plan.preview.wouldSucceed).toBe(true)
+
+		const committed = await commitAgentPlan(input, ops, { output })
 
 		expect(committed.postWrite.auditsPassed).toBe(true)
 		expect(committed.postWrite.workbookTopology).toMatchObject({
@@ -1129,6 +1173,7 @@ describe('agent workflow loss audit', () => {
 			workbookViews: 1,
 			activeTabs: [1],
 			firstSheets: [1],
+			workbookViewDetails: [{ index: 0, activeTab: 1, firstSheet: 1 }],
 			verification: 'reopened-output',
 		})
 		expect(committed.postWrite.workbookTopology.sheetStates).toEqual([
@@ -1142,6 +1187,7 @@ describe('agent workflow loss audit', () => {
 			['Sheet1', 'hidden'],
 			['Sheet2', 'visible'],
 		])
+		expect(reopened.getWorkbookModel().workbookViews).toEqual([{ activeTab: 1, firstSheet: 1 }])
 		expect(Buffer.from(readFileSync(input)).equals(Buffer.from(sourceBytes))).toBe(true)
 	})
 

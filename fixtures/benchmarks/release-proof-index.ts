@@ -2642,8 +2642,8 @@ function packageActionQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceIte
 			command: 'bun run fixtures/benchmarks/package-action-fixture-scan.ts --json',
 			path: 'fixtures/benchmarks/package-action-fixture-scan.ts',
 			acceptedScope:
-				'Tracked corpus scan for package features and remaining generated signature/unknown edge cases.',
-			boundary: 'Tracked corpus evidence only; generated edge cases remain owner-gated.',
+				'Tracked corpus scan for package features, public unknown-path coverage, and the remaining generated signature edge case.',
+			boundary: 'Tracked corpus evidence only; generated signature topology remains owner-gated.',
 		},
 		{
 			evidenceId: 'release-proof-index-owner-handoff',

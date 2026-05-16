@@ -1730,6 +1730,16 @@ describe('release proof evidence index', () => {
 			)?.validationCommand,
 		).toBe('bun run fixtures/benchmarks/package-action-proof.ts --no-timings --json')
 		expect(packageActionDecision.proofRequired.honestBoundary).toContain('Not signed provenance')
+		expect(
+			packageActionDecision.acceptedEvidence.find(
+				(item) => item.evidenceId === 'package-action-fixture-scan',
+			)?.acceptedScope,
+		).toContain('public unknown-path coverage')
+		expect(
+			packageActionDecision.acceptedEvidence.find(
+				(item) => item.evidenceId === 'package-action-fixture-scan',
+			)?.boundary,
+		).toContain('generated signature topology remains owner-gated')
 		expect(packageActionDecision.claimsWeMustNotMake.join('\n')).toContain('Signed provenance')
 		expect(packageActionDecision.claimsWeMustNotMake.join('\n')).toContain('Full streaming parity')
 		expect(

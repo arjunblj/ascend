@@ -3547,9 +3547,21 @@ describe('release proof evidence index', () => {
 			'clean selected-sheet timing-boundary rerun',
 		)
 		expect(packet.benchmarkBlocker?.benchmarkCommands?.join('\n')).toContain(
+			'--runner-manifest fixtures/benchmarks/runners/selected-sheet-readers.manifest.json',
+		)
+		expect(packet.benchmarkBlocker?.benchmarkCommands?.join('\n')).toContain(
+			'--execution-scope external-process --libraries ascend-external-values,sheetjs,openpyxl',
+		)
+		expect(packet.benchmarkBlocker?.benchmarkCommands?.join('\n')).toContain(
+			'competitive-scoreboard.ts <selected-sheet-external-suite.json> --json --metric medianMs --require-profile xlsx-read-sota',
+		)
+		expect(packet.benchmarkBlocker?.benchmarkCommands?.join('\n')).toContain(
 			'competitive-scoreboard.ts <suite.json> --json --metric medianMs --require-profile xlsx-read-sota',
 		)
 		expect(packet.benchmarkBlocker?.acceptanceEvidence?.join('\n')).toContain('ClosedXML')
+		expect(packet.benchmarkBlocker?.acceptanceEvidence?.join('\n')).toContain(
+			'selected-sheet external runner manifest exists',
+		)
 		expect(packet.benchmarkBlocker?.acceptanceEvidence?.join('\n')).toContain(
 			'OpenPyXL selected-sheet projection now runs',
 		)

@@ -825,6 +825,113 @@ Forbidden wording:
 Next action: defer production optimization from this row and continue only with
 another existing `xlsx-write-sota` row or a measured workflow loss.
 
+## Cycle: Plain Text Write Current Split Row at `91dabea8`
+
+Classification: comparable external evidence plus blocked broad-row boundary.
+The all-runner current plain-text generated-write row was killed as an opaque
+zero-byte blocker, then a focused fastest/profile-critical split row completed.
+Ascend is the median and p95 winner among the completed focused comparable
+writers, but the Ascend, FastExcel Java, and SheetJS rows are noisy. This is
+scoped plain-text write evidence, not a full write-values or `xlsx-write-sota`
+claim.
+
+Workflow: generated XLSX write for plain text values, 2000 rows x 20 columns.
+
+Why it matters for release: text-heavy generated exports are a common
+agent-produced workbook output, and `plain-text` is one of the value-write rows
+required by the existing `xlsx-write-sota` profile.
+
+Public/tracked-clean input: `competitive-io` generated the `plain-text`
+`source-mode generated-write` workload from tracked benchmark code in a clean
+detached worktree at commit `91dabea8`. No private corpus or local research
+workbook was used.
+
+Commands:
+
+```bash
+git worktree add --detach /private/tmp/ascend-write-plain-current-91dabea8 91dabea8fc84
+cd /private/tmp/ascend-write-plain-current-91dabea8
+bun install --frozen-lockfile
+mkdir -p /private/tmp/ascend-write-plain-current-91dabea8-runs
+TMPDIR=/private/tmp ACCEPT_NPOI_OSMF_LICENSE=1 env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-io.ts --json --category write --competitor all --execution-scope external-process --source-mode generated-write --libraries ascend-external-writer,sheetjs,exceljs,xlsxwriter,xlsxwriter-constant-memory,pyexcelerate,pyexcelerate-range,pyexcelerate-cell,openpyxl,openpyxl-write-only,apache-poi,closedxml,rust-xlsxwriter,excelize,fastexcel-java --workload plain-text --repeat 5 --warmup 1 --validation-mode each --write-runner-manifest fixtures/benchmarks/runners/sota-writers.manifest.json > /private/tmp/ascend-write-plain-current-91dabea8-runs/write-plain-text-repeat5.json
+TMPDIR=/private/tmp ACCEPT_NPOI_OSMF_LICENSE=1 env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-io.ts --json --category write --competitor all --execution-scope external-process --source-mode generated-write --libraries ascend-external-writer,excelize,rust-xlsxwriter,sheetjs,fastexcel-java,xlsxwriter,xlsxwriter-constant-memory --workload plain-text --repeat 15 --warmup 3 --validation-mode each --write-runner-manifest fixtures/benchmarks/runners/sota-writers.manifest.json > /private/tmp/ascend-write-plain-current-91dabea8-runs/write-plain-text-fastest-repeat15.json
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-scoreboard.ts /private/tmp/ascend-write-plain-current-91dabea8-runs/write-plain-text-fastest-repeat15.json --json --metric medianMs --require-profile xlsx-write-sota --assert-profile-leader ascend > /private/tmp/ascend-write-plain-current-91dabea8-runs/write-plain-text-fastest-repeat15-scoreboard.json
+```
+
+Environment:
+
+- Commit: `91dabea8fc84eac74efca3efd0081a0e44766748`
+- Worktree: clean detached worktree at
+  `/private/tmp/ascend-write-plain-current-91dabea8`
+- Bun runtime: `1.3.13`
+- Node: `24.3.0`
+- Platform: Darwin arm64
+- Runtime profile: `category write`, `executionScope external-process`,
+  `sourceMode generated-write`, `workload plain-text`, `validationMode each`.
+
+Raw output:
+
+```text
+/private/tmp/ascend-write-plain-current-91dabea8-runs/write-plain-text-repeat5.json
+/private/tmp/ascend-write-plain-current-91dabea8-runs/write-plain-text-fastest-repeat15.json
+/private/tmp/ascend-write-plain-current-91dabea8-runs/write-plain-text-fastest-repeat15-scoreboard.json
+```
+
+Blocked broad row:
+
+| Artifact | Status | Sample count | Median | P95 | CV/noise | Memory/size |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| `write-plain-text-repeat5.json` | blocked, killed before JSON emission | 0 | n/a | n/a | n/a | n/a |
+
+Focused fastest/profile-critical split row, repeat 15 after 3 warmups:
+
+| Runner | Status vs Ascend | Median ms | P95 ms | CV | Peak RSS | Output bytes |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| `ascend-external-writer` | ran/won | 12.238 | 60.870 | 0.805 | 98.4 MiB | 169097 |
+| `rust-xlsxwriter` | ran/lost vs Ascend | 93.945 | 229.973 | 0.397 | 31.2 MiB | 229139 |
+| `fastexcel-java` | ran/lost vs Ascend | 123.541 | 568.597 | 0.816 | 1456.0 MiB | 227254 |
+| `excelize` | ran/lost vs Ascend | 138.027 | 235.307 | 0.474 | 23.2 MiB | 142890 |
+| `sheetjs` | ran/lost vs Ascend | 151.009 | 449.305 | 0.621 | 194.4 MiB | 1832541 |
+| `xlsxwriter` | ran/lost vs Ascend | 444.135 | 1062.576 | 0.405 | 94.4 MiB | 230175 |
+| `xlsxwriter-constant-memory` | ran/lost vs Ascend | 467.383 | 812.873 | 0.264 | 56.4 MiB | 141062 |
+
+Scoreboard result:
+
+- Focused repeat-15 plain-text split row: group winner was
+  `ascend-external-writer`; `leaderFailures: []` and
+  `profileLeaderFailures: []`.
+- The scoreboard command exits nonzero for full-profile coverage because this is
+  a single split row. Omitted writers from the blocked broad row are not counted
+  as Ascend wins.
+
+Semantic comparability: all listed focused rows reopened successfully, matched
+the expected sheet and cell-count shape, and passed the benchmark's write
+correctness gate. The semantic hash assertions differ by writer ordering lane,
+so this row supports value-write comparability, not byte/order-equivalent output
+claims. Ascend is not the smallest output and uses more RSS than Excelize,
+rust_xlsxwriter, and XlsxWriter constant-memory.
+
+Humble allowed wording:
+
+> On the generated plain-text write row at commit `91dabea8`, Ascend's focused
+> external repeat-15 split run had the fastest median and p95 among the completed
+> focused comparable writers. The broader all-runner plain-text row was blocked
+> before JSON emission, so this is scoped plain-text write evidence, not a broad
+> `xlsx-write-sota` claim.
+
+Forbidden wording:
+
+- "Ascend is SOTA for XLSX write."
+- "Ascend beats every plain-text writer."
+- "Ascend has a low-noise plain-text tail win."
+- "Ascend beats omitted, unsupported, blocked, or untested plain-text writers."
+- "Ascend produces the smallest plain-text XLSX."
+- "Ascend proves byte/order-equivalent output against every compared writer."
+
+Next action: defer production optimization for plain-text from this focused
+median/p95 win, keep the broad plain-text row blocked, and continue splitting
+the write-values profile into attributable rows.
+
 ## Cycle: String Heavy Write SOTA Gate
 
 Classification: comparable external evidence plus defer. The first full

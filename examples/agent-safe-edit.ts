@@ -3,10 +3,10 @@
  * Golden-path safe edit for coding agents.
  * Usage: bun run examples/agent-safe-edit.ts <input.xlsx> [output.xlsx]
  */
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
-import { Ascend, createPreparedAgentPlan } from '@ascend/sdk'
+import { Ascend, createPreparedAgentPlan, inspectWorkbookOpenPlan } from '@ascend/sdk'
 
 const input = process.argv[2]
 if (!input) {
@@ -37,7 +37,30 @@ if (!existsSync(input)) {
 	await seed.save(input)
 }
 
-const inspected = await Ascend.open(input)
+const openPlan = inspectWorkbookOpenPlan(new Uint8Array(readFileSync(input)), {
+	intent: 'edit-plan',
+})
+if (openPlan.reviewBeforeHydration) {
+	console.log(
+		JSON.stringify(
+			{
+				ok: false,
+				step: 'open-plan',
+				recommendedLoadOptions: openPlan.recommendedLoadOptions,
+				riskFeatures: openPlan.riskFeatures,
+				nextActions: [
+					'Review trust, package graph, and active-content findings before reading workbook cells.',
+					'Promote to editable only after the source is trusted.',
+				],
+			},
+			null,
+			2,
+		),
+	)
+	process.exit(1)
+}
+
+const inspected = await Ascend.open(input, openPlan.recommendedLoadOptions)
 const trustReport = inspected.trustReport({ maxFindings: 20 })
 const sheet = inspected.inspect().sheets[0]?.name ?? 'Sheet1'
 const readWindow = inspected.sheet(sheet)?.readWindow('A1:B4', { rowLimit: 4 })
@@ -91,9 +114,15 @@ console.log(
 	JSON.stringify(
 		{
 			ok: true,
-			workflow: 'trust-inspect-read-plan-prepared-commit-verify-repair',
+			workflow: 'open-plan-trust-inspect-read-plan-prepared-commit-verify-repair',
 			input: {
 				file: input,
+				openPlan: {
+					recommendedLoadOptions: openPlan.recommendedLoadOptions,
+					reviewBeforeHydration: openPlan.reviewBeforeHydration,
+					riskFeatureCount: openPlan.riskFeatures.length,
+					reasons: openPlan.reasons,
+				},
 				trust: {
 					trust: trustReport.trust,
 					posture: trustReport.posture,

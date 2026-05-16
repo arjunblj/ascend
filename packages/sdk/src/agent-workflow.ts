@@ -146,6 +146,45 @@ export interface AgentCommitResult {
 	readonly packageGraphAudit: PackageGraphAudit
 }
 
+export interface AgentWorkflowProofGate {
+	readonly gate: string
+	readonly ok: boolean
+	readonly evidence: Record<string, unknown>
+}
+
+export interface AgentWorkflowProofChangedCell {
+	readonly ref: string
+	readonly before: AgentPlanResult['preview']['cellChanges'][number]['before']
+	readonly after: AgentPlanResult['preview']['cellChanges'][number]['after']
+	readonly formulaBefore: AgentPlanResult['preview']['cellChanges'][number]['formulaBefore']
+	readonly formulaAfter: AgentPlanResult['preview']['cellChanges'][number]['formulaAfter']
+}
+
+export interface AgentWorkflowProofSummaryOptions {
+	readonly preflightGates?: readonly AgentWorkflowProofGate[]
+	readonly defaultSheetName?: string
+}
+
+export interface AgentWorkflowProofSummary {
+	readonly safeToUse: boolean
+	readonly whatChanged: readonly AgentWorkflowProofChangedCell[]
+	readonly whySafe: readonly AgentWorkflowProofGate[]
+	readonly evidence: {
+		readonly inputSha256: string
+		readonly planDigest: string
+		readonly outputSha256: string
+		readonly operationCount: number
+		readonly changedCellCount: number
+		readonly postWriteValid: boolean
+		readonly auditsPassed: boolean
+		readonly reopened: boolean
+		readonly checkValid: boolean
+		readonly lintClean: boolean
+		readonly writePolicyOk: boolean
+		readonly packageGraphAuditOk: boolean
+	}
+}
+
 export interface ReleaseProofDiffEvidence {
 	readonly sheetDiffCount: number
 	readonly changedSheets?: readonly string[]
@@ -627,8 +666,19 @@ export interface PostWriteFormulaSummary {
 	readonly calcChainParts: readonly string[]
 	readonly recalculationRequested: boolean
 	readonly calcSettings: CalcSettings
+	readonly formulaCells: number
+	readonly cachedFormulaValues: number
+	readonly missingCachedFormulaValues: number
+	readonly formulaCacheState: 'no-formulas' | 'all-cached' | 'partially-cached' | 'all-missing'
+	readonly cachedValueKinds: readonly PostWriteFormulaCacheValueKindCount[]
+	readonly missingCachedFormulaLocationSample: readonly string[]
 	readonly warnings: readonly string[]
 	readonly verification: 'reopened-output'
+}
+
+export interface PostWriteFormulaCacheValueKindCount {
+	readonly kind: string
+	readonly count: number
 }
 
 export interface PostWriteWorkbookTopologySummary {
@@ -1378,6 +1428,107 @@ export function compactAgentCommitResult(
 		lossAudit: compactLossAuditSummary(result.lossAudit),
 		packageGraphAudit: compactPackageGraphAuditSummary(result.packageGraphAudit),
 	}
+}
+
+export function createAgentWorkflowProofSummary(
+	plan: AgentPlanResult,
+	commit: AgentCommitResult,
+	options: AgentWorkflowProofSummaryOptions = {},
+): AgentWorkflowProofSummary {
+	const whatChanged = plan.preview.cellChanges.map((cell) => ({
+		ref: qualifyProofCellRef(cell.ref, options.defaultSheetName),
+		before: cell.before,
+		after: cell.after,
+		formulaBefore: cell.formulaBefore,
+		formulaAfter: cell.formulaAfter,
+	}))
+	const whySafe = [
+		...(options.preflightGates ?? []),
+		{
+			gate: 'plan-linked',
+			ok: commit.inputSha256 === plan.inputSha256 && commit.planDigest === plan.planDigest,
+			evidence: {
+				planInputSha256: plan.inputSha256,
+				commitInputSha256: commit.inputSha256,
+				planDigest: plan.planDigest,
+				commitPlanDigest: commit.planDigest,
+			},
+		},
+		{
+			gate: 'plan',
+			ok: plan.preview.wouldSucceed && plan.approvals.length === 0,
+			evidence: {
+				planDigest: plan.planDigest,
+				changedCellCount: whatChanged.length,
+				approvalCount: plan.approvals.length,
+				errorCount: plan.preview.errors.length,
+			},
+		},
+		{
+			gate: 'write-policy',
+			ok: commit.writePolicy.ok,
+			evidence: {
+				diagnosticCount: commit.writePolicy.diagnostics.length,
+				blockerCount: commit.writePolicy.diagnostics.filter(
+					(diagnostic) => diagnostic.severity === 'blocker',
+				).length,
+			},
+		},
+		{
+			gate: 'commit',
+			ok: commit.postWrite.valid && commit.postWrite.auditsPassed,
+			evidence: {
+				outputSha256: commit.outputSha256,
+				postWriteValid: commit.postWrite.valid,
+				auditsPassed: commit.postWrite.auditsPassed,
+			},
+		},
+		{
+			gate: 'reopen-verify',
+			ok: commit.postWrite.reopened && commit.postWrite.check.valid && commit.postWrite.lint.clean,
+			evidence: {
+				reopened: commit.postWrite.reopened,
+				checkValid: commit.postWrite.check.valid,
+				checkIssueCount: commit.postWrite.check.issues.length,
+				lintClean: commit.postWrite.lint.clean,
+				lintWarningCount: commit.postWrite.lint.warnings.length,
+			},
+		},
+		{
+			gate: 'package-graph',
+			ok:
+				commit.postWrite.packageGraphAudit.ok &&
+				commit.postWrite.unresolvedPackageGraphIssueCount === 0,
+			evidence: {
+				packageGraphAuditOk: commit.postWrite.packageGraphAudit.ok,
+				expectedPackageGraphIssueCount: commit.postWrite.expectedPackageGraphIssueCount,
+				unresolvedPackageGraphIssueCount: commit.postWrite.unresolvedPackageGraphIssueCount,
+			},
+		},
+	] as const satisfies readonly AgentWorkflowProofGate[]
+	return {
+		safeToUse: whySafe.every((gate) => gate.ok),
+		whatChanged,
+		whySafe,
+		evidence: {
+			inputSha256: plan.inputSha256,
+			planDigest: plan.planDigest,
+			outputSha256: commit.outputSha256,
+			operationCount: commit.operationCount,
+			changedCellCount: whatChanged.length,
+			postWriteValid: commit.postWrite.valid,
+			auditsPassed: commit.postWrite.auditsPassed,
+			reopened: commit.postWrite.reopened,
+			checkValid: commit.postWrite.check.valid,
+			lintClean: commit.postWrite.lint.clean,
+			writePolicyOk: commit.writePolicy.ok,
+			packageGraphAuditOk: commit.postWrite.packageGraphAudit.ok,
+		},
+	}
+}
+
+function qualifyProofCellRef(ref: string, defaultSheetName: string | undefined): string {
+	return defaultSheetName && !ref.includes('!') ? `${defaultSheetName}!${ref}` : ref
 }
 
 function compactRangesFromDirtyRegions(
@@ -2767,12 +2918,23 @@ function postWriteFormulaSummary(
 		calcSettings.forceFullCalc === true ||
 		calcSettings.calcCompleted === false ||
 		calcSettings.calcOnSave === true
+	const formulaCache = postWriteFormulaCacheSummary(workbook)
 	const warnings: string[] = []
 	if (calcSettings.calcMode === 'manual') {
 		warnings.push('Workbook is in manual calculation mode in the reopened output.')
 	}
 	if (recalculationRequested) {
 		warnings.push('Reopened output calculation settings request recalculation on open or save.')
+	}
+	if (formulaCache.missingCachedFormulaValues > 0) {
+		warnings.push(
+			`${formulaCache.missingCachedFormulaValues} reopened formula cell(s) do not carry cached formula values; Ascend is reporting the missing cache rather than claiming recalculation.`,
+		)
+	}
+	if (formulaCache.cachedFormulaValues > 0) {
+		warnings.push(
+			'Reopened formula cache values are stored workbook values, not proof that Ascend recalculated formulas equivalently to Excel.',
+		)
 	}
 	if (calcChainParts.length > 0) {
 		warnings.push(
@@ -2788,9 +2950,73 @@ function postWriteFormulaSummary(
 		calcChainParts,
 		recalculationRequested,
 		calcSettings,
+		...formulaCache,
 		warnings,
 		verification: 'reopened-output',
 	}
+}
+
+function postWriteFormulaCacheSummary(
+	workbook: Workbook,
+): Pick<
+	PostWriteFormulaSummary,
+	| 'formulaCells'
+	| 'cachedFormulaValues'
+	| 'missingCachedFormulaValues'
+	| 'formulaCacheState'
+	| 'cachedValueKinds'
+	| 'missingCachedFormulaLocationSample'
+> {
+	let formulaCells = 0
+	let cachedFormulaValues = 0
+	let missingCachedFormulaValues = 0
+	const cachedValueKindCounts = new Map<string, number>()
+	const missingCachedFormulaLocationSample: string[] = []
+	for (const sheet of workbook.sheets) {
+		const range = sheet.cells.usedRange()
+		if (!range) continue
+		sheet.cells.forEachCellInRange(range, (row, col, cell) => {
+			if (cell.formula === null) return
+			formulaCells++
+			if (cell.value.kind === 'empty') {
+				missingCachedFormulaValues++
+				if (missingCachedFormulaLocationSample.length < 25) {
+					missingCachedFormulaLocationSample.push(`${sheet.name}!${indexToColumn(col)}${row + 1}`)
+				}
+				return
+			}
+			cachedFormulaValues++
+			cachedValueKindCounts.set(
+				cell.value.kind,
+				(cachedValueKindCounts.get(cell.value.kind) ?? 0) + 1,
+			)
+		})
+	}
+	return {
+		formulaCells,
+		cachedFormulaValues,
+		missingCachedFormulaValues,
+		formulaCacheState: formulaCacheState(
+			formulaCells,
+			cachedFormulaValues,
+			missingCachedFormulaValues,
+		),
+		cachedValueKinds: [...cachedValueKindCounts.entries()]
+			.map(([kind, count]) => ({ kind, count }))
+			.sort((left, right) => left.kind.localeCompare(right.kind)),
+		missingCachedFormulaLocationSample,
+	}
+}
+
+function formulaCacheState(
+	formulaCells: number,
+	cachedFormulaValues: number,
+	missingCachedFormulaValues: number,
+): PostWriteFormulaSummary['formulaCacheState'] {
+	if (formulaCells === 0) return 'no-formulas'
+	if (cachedFormulaValues === formulaCells) return 'all-cached'
+	if (missingCachedFormulaValues === formulaCells) return 'all-missing'
+	return 'partially-cached'
 }
 
 function postWriteWorkbookTopologySummary(workbook: Workbook): PostWriteWorkbookTopologySummary {

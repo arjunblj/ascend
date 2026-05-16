@@ -252,9 +252,12 @@ if (
 	JSON.stringify([
 		['open-plan', true],
 		['trust', true],
+		['plan-linked', true],
 		['plan', true],
+		['write-policy', true],
 		['commit', true],
 		['reopen-verify', true],
+		['package-graph', true],
 	])
 ) {
 	throw new Error(\`installed SDK safe-edit proof gates failed: \${installedExampleStdout}\`)

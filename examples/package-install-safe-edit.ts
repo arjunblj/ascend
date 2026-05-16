@@ -7,7 +7,12 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
-import { Ascend, createPreparedAgentPlan, inspectWorkbookOpenPlan } from '@ascend/sdk'
+import {
+	Ascend,
+	createAgentWorkflowProofSummary,
+	createPreparedAgentPlan,
+	inspectWorkbookOpenPlan,
+} from '@ascend/sdk'
 
 const input = process.argv[2]
 if (!input) {
@@ -100,60 +105,28 @@ const reopened = await Ascend.open(output)
 const reopenedCell = reopened.sheet(sheet)?.cell('B2')
 const reopenedCheck = reopened.check()
 const reopenedLint = reopened.lint()
-const changedCells = prepared.plan.preview.cellChanges.map((cell) => ({
-	ref: `${sheet}!${cell.ref}`,
-	before: cell.before,
-	after: cell.after,
-	formulaBefore: cell.formulaBefore,
-	formulaAfter: cell.formulaAfter,
-}))
-const safetyGates = [
-	{
-		gate: 'open-plan',
-		ok: !openPlan.reviewBeforeHydration,
-		evidence: {
-			mode: openPlan.recommendedLoadOptions.mode,
-			riskFeatureCount: openPlan.riskFeatures.length,
+const proofBundle = createAgentWorkflowProofSummary(prepared.plan, committed, {
+	defaultSheetName: sheet,
+	preflightGates: [
+		{
+			gate: 'open-plan',
+			ok: !openPlan.reviewBeforeHydration,
+			evidence: {
+				mode: openPlan.recommendedLoadOptions.mode,
+				riskFeatureCount: openPlan.riskFeatures.length,
+			},
 		},
-	},
-	{
-		gate: 'trust',
-		ok: trustReport.trust !== 'unsafe',
-		evidence: {
-			trust: trustReport.trust,
-			posture: trustReport.posture,
-			findingCount: trustReport.summary.findingCount,
+		{
+			gate: 'trust',
+			ok: trustReport.trust !== 'unsafe',
+			evidence: {
+				trust: trustReport.trust,
+				posture: trustReport.posture,
+				findingCount: trustReport.summary.findingCount,
+			},
 		},
-	},
-	{
-		gate: 'plan',
-		ok: prepared.plan.preview.wouldSucceed && prepared.plan.approvals.length === 0,
-		evidence: {
-			planDigest: prepared.planDigest,
-			changedCellCount: changedCells.length,
-			approvalCount: prepared.plan.approvals.length,
-		},
-	},
-	{
-		gate: 'commit',
-		ok: committed.postWrite.valid && committed.postWrite.auditsPassed,
-		evidence: {
-			outputSha256: committed.outputSha256,
-			postWriteValid: committed.postWrite.valid,
-			auditsPassed: committed.postWrite.auditsPassed,
-		},
-	},
-	{
-		gate: 'reopen-verify',
-		ok: reopenedCheck.valid && reopenedLint.clean,
-		evidence: {
-			reopened: true,
-			checkIssueCount: reopenedCheck.issues.length,
-			lintWarningCount: reopenedLint.warnings.length,
-		},
-	},
-] as const
-const safeToUse = safetyGates.every((gate) => gate.ok)
+	],
+})
 
 console.log(
 	JSON.stringify(
@@ -206,21 +179,7 @@ console.log(
 					value: reopenedCell?.value ?? null,
 				},
 			},
-			proofBundle: {
-				safeToUse,
-				whatChanged: changedCells,
-				whySafe: safetyGates,
-				evidence: {
-					inputSha256: prepared.inputSha256,
-					planDigest: prepared.planDigest,
-					outputSha256: committed.outputSha256,
-					reopened: true,
-					checkValid: reopenedCheck.valid,
-					lintClean: reopenedLint.clean,
-					postWriteValid: committed.postWrite.valid,
-					auditsPassed: committed.postWrite.auditsPassed,
-				},
-			},
+			proofBundle,
 		},
 		null,
 		2,

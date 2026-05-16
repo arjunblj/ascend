@@ -109,9 +109,12 @@ describe('package-install-safe-edit example', () => {
 			expect(result.proofBundle?.whySafe?.map((gate) => [gate.gate, gate.ok])).toEqual([
 				['open-plan', true],
 				['trust', true],
+				['plan-linked', true],
 				['plan', true],
+				['write-policy', true],
 				['commit', true],
 				['reopen-verify', true],
+				['package-graph', true],
 			])
 		} finally {
 			await rm(dir, { recursive: true, force: true })

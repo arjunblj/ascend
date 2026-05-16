@@ -3,6 +3,9 @@ import type {
 	AgentCommitTimings,
 	AgentPostWriteVerification,
 	AgentPostWriteVerificationTimings,
+	AgentWorkflowProofChangedCell,
+	AgentWorkflowProofGate,
+	AgentWorkflowProofSummary,
 	PostWriteActiveContentEntry,
 	PostWriteActiveContentSummary,
 	PostWriteAnalyticsSummary,
@@ -17,6 +20,7 @@ import type {
 	PostWriteDefinedNameSummary,
 	PostWriteExternalReferenceEntry,
 	PostWriteExternalReferenceSummary,
+	PostWriteFormulaCacheValueKindCount,
 	PostWriteFormulaSummary,
 	PostWriteOpaquePayloadSummary,
 	PostWritePivotCacheEntry,
@@ -34,6 +38,7 @@ import type {
 	WritePolicyPreservationMode,
 	WritePolicyPreservationModeSummary,
 } from './index.ts'
+import { createAgentWorkflowProofSummary } from './index.ts'
 
 type CommitProofExportSurface = {
 	readonly activeContentEntry?: PostWriteActiveContentEntry
@@ -42,6 +47,9 @@ type CommitProofExportSurface = {
 	readonly chart?: PostWriteChartEntry
 	readonly chartSeries?: PostWriteChartSeriesEntry
 	readonly comment?: PostWriteCommentSummary
+	readonly proofChangedCell?: AgentWorkflowProofChangedCell
+	readonly proofGate?: AgentWorkflowProofGate
+	readonly proofSummary?: AgentWorkflowProofSummary
 	readonly dataConnection?: PostWriteDataConnectionEntry
 	readonly dataConnections?: PostWriteDataConnectionSummary
 	readonly dataValidation?: PostWriteDataValidationEntry
@@ -51,6 +59,7 @@ type CommitProofExportSurface = {
 	readonly definedNames?: PostWriteDefinedNameSummary
 	readonly externalReference?: PostWriteExternalReferenceEntry
 	readonly externalReferences?: PostWriteExternalReferenceSummary
+	readonly formulaCacheValueKind?: PostWriteFormulaCacheValueKindCount
 	readonly formula?: PostWriteFormulaSummary
 	readonly opaquePayloads?: PostWriteOpaquePayloadSummary
 	readonly pivotCache?: PostWritePivotCacheEntry
@@ -79,6 +88,9 @@ test('root SDK exports commit proof audit types for release consumers', () => {
 		'chart',
 		'chartSeries',
 		'comment',
+		'proofChangedCell',
+		'proofGate',
+		'proofSummary',
 		'dataConnection',
 		'dataConnections',
 		'dataValidation',
@@ -88,6 +100,7 @@ test('root SDK exports commit proof audit types for release consumers', () => {
 		'definedNames',
 		'externalReference',
 		'externalReferences',
+		'formulaCacheValueKind',
 		'formula',
 		'opaquePayloads',
 		'pivotCache',
@@ -110,4 +123,5 @@ test('root SDK exports commit proof audit types for release consumers', () => {
 
 	expect(exportNames).toContain('verification')
 	expect(exportNames).toContain('writePolicyModes')
+	expect(typeof createAgentWorkflowProofSummary).toBe('function')
 })

@@ -30,6 +30,7 @@ import {
 	createAgentCommitPackageActionProof,
 	createAgentPlan,
 	createAgentPlanFromWorkbook,
+	createAgentWorkflowProofSummary,
 	createPackageActionProof,
 	createPreparedAgentPlan,
 	createReleaseProofBundle,
@@ -5831,6 +5832,66 @@ describe('agent workflow loss audit', () => {
 		)
 		expect(commitEvents.some((event) => event.includes('post-write:ok'))).toBe(true)
 		expect(commitEvents.at(-1)).toContain('finalize:ok')
+	})
+
+	test('workflow proof summary explains changed cells and safety gates', async () => {
+		const input = join(TEMP_DIR, 'workflow-proof-summary.xlsx')
+		const output = join(TEMP_DIR, 'workflow-proof-summary-out.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A2', value: 120 },
+					{ ref: 'A3', value: 150 },
+					{ ref: 'A4', value: 180 },
+				],
+			},
+		])
+		await wb.save(input)
+		const ops = [{ op: 'setFormula' as const, sheet: 'Sheet1', ref: 'B2', formula: '=SUM(A2:A4)' }]
+
+		const plan = await createAgentPlan(input, ops)
+		const committed = await commitAgentPlan(input, ops, { output, expectSha256: plan.inputSha256 })
+		const proof = createAgentWorkflowProofSummary(plan, committed, {
+			defaultSheetName: 'Sheet1',
+			preflightGates: [{ gate: 'open-plan', ok: true, evidence: { mode: 'full' } }],
+		})
+
+		expect(proof.safeToUse).toBe(true)
+		expect(proof.whatChanged).toEqual([
+			{
+				ref: 'Sheet1!B2',
+				before: { kind: 'empty' },
+				after: { kind: 'number', value: 450 },
+				formulaBefore: null,
+				formulaAfter: 'SUM(A2:A4)',
+			},
+		])
+		expect(proof.whySafe.map((gate) => [gate.gate, gate.ok])).toEqual([
+			['open-plan', true],
+			['plan-linked', true],
+			['plan', true],
+			['write-policy', true],
+			['commit', true],
+			['reopen-verify', true],
+			['package-graph', true],
+		])
+		expect(proof.evidence).toMatchObject({
+			inputSha256: plan.inputSha256,
+			planDigest: plan.planDigest,
+			outputSha256: committed.outputSha256,
+			changedCellCount: 1,
+			postWriteValid: true,
+			auditsPassed: true,
+			reopened: true,
+			checkValid: true,
+			lintClean: true,
+			writePolicyOk: true,
+			packageGraphAuditOk: true,
+		})
 	})
 
 	test('release proof bundle links plan, commit, reopen, diff, and audit evidence', async () => {

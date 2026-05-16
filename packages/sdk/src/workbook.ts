@@ -559,6 +559,10 @@ export class AscendWorkbook extends WorkbookReadView {
 		)
 	}
 
+	sourceInfo(): { readonly sourceWasEncrypted: boolean } {
+		return { sourceWasEncrypted: this.sourceWasEncrypted }
+	}
+
 	/**
 	 * Create a workbook from CSV content.
 	 * @example
@@ -1465,7 +1469,14 @@ export class AscendWorkbook extends WorkbookReadView {
 	 */
 	toBytes(options: WorkbookBytesOptions = {}): Uint8Array {
 		this.assertWritable()
-		if (this.originalBytes && !this.dirty && !options.compressionProfile) return this.originalBytes
+		if (
+			this.originalBytes &&
+			!this.dirty &&
+			!options.compressionProfile &&
+			!(this.sourceWasEncrypted && options.allowDecryptedExport)
+		) {
+			return this.originalBytes
+		}
 		if (this.sourceWasEncrypted && !options.allowDecryptedExport) {
 			throw new AscendException(
 				ascendError(
@@ -1551,7 +1562,7 @@ export class AscendWorkbook extends WorkbookReadView {
 				? this.wb.sourceArchiveBytes
 				: this.originalBytes && !this.dirty
 					? this.originalBytes
-					: this.toBytes()
+					: this.toBytes({ allowDecryptedExport: this.sourceWasEncrypted })
 		if (this.packageGraphCache?.bytes === bytes) return this.packageGraphCache.graph
 		const graph = inspectXlsxPackageGraph(bytes)
 		this.packageGraphCache = { bytes, graph }

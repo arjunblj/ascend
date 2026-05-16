@@ -105,6 +105,7 @@ export interface AgentCommitOptions {
 	readonly backup?: string
 	readonly expectSha256?: string
 	readonly password?: string
+	readonly allowDecryptedExport?: boolean
 	readonly allowLoss?: readonly string[] | 'all'
 	readonly approvals?: readonly string[] | 'all'
 	readonly onProgress?: AgentWorkflowProgressHandler
@@ -1932,9 +1933,18 @@ export async function commitAgentPlanFromWorkbook(
 	}
 	const output =
 		internal.output ?? (await resolveCommitOutputTarget(file, inputSha256, options, progress))
+	if (wb.sourceInfo().sourceWasEncrypted && !options.allowDecryptedExport) {
+		const error = encryptedWorkbookCommitExportError(output)
+		await progress('write-policy', 'failed', error.ascendError.message, error.ascendError.details)
+		throw error
+	}
 	const workbookModel = wb.getWorkbookModel()
 	const packageGraphResult = await timedCommitStep(() => wb.packageGraph())
 	const packageGraph = packageGraphResult.value
+	const sourceBytesForPackageAudit =
+		wb.sourceInfo().sourceWasEncrypted && options.allowDecryptedExport
+			? wb.toBytes({ allowDecryptedExport: true })
+			: undefined
 	const useLiveWritePolicyWorkbook = canUseLiveWritePolicyWorkbook(workbookModel, ops)
 	const writePolicySnapshotResult = useLiveWritePolicyWorkbook
 		? { value: workbookModel, ms: 0 }
@@ -2080,10 +2090,15 @@ export async function commitAgentPlanFromWorkbook(
 		await progress('backup', 'ok', `In-place backup created at ${options.backup}.`)
 	}
 	const sourceBytes = internal.sourceBytes ?? (await fileBytes(file))
+	const sourcePackageBytes = sourceBytesForPackageAudit ?? sourceBytes
 	await progress('write', 'started', `Writing workbook to ${output}.`)
 	let writeTimings: AtomicWorkbookWriteTimings
 	try {
-		writeTimings = await writeWorkbookAtomically(wb, output)
+		writeTimings = await writeWorkbookAtomically(
+			wb,
+			output,
+			options.allowDecryptedExport ? { allowDecryptedExport: true } : {},
+		)
 	} catch (error) {
 		wb.restoreMutationRollbackSnapshot(rollbackSnapshot)
 		const writeError = atomicWorkbookWriteError(output, error)
@@ -2124,7 +2139,7 @@ export async function commitAgentPlanFromWorkbook(
 			output,
 			outputSha256,
 			packageGraph,
-			sourceBytes,
+			sourcePackageBytes,
 			expectedPostWritePackageGraphChanges,
 			progress,
 			ops,
@@ -2220,7 +2235,7 @@ export async function commitAgentPlanFromWorkbook(
 		lossAudit,
 		packageGraphAudit,
 	}
-	COMMIT_PACKAGE_ACTION_PROOF_BYTES.set(result, { sourceBytes, outputBytes })
+	COMMIT_PACKAGE_ACTION_PROOF_BYTES.set(result, { sourceBytes: sourcePackageBytes, outputBytes })
 	return result
 }
 
@@ -8176,6 +8191,7 @@ interface AtomicWorkbookWriteTimings {
 async function writeWorkbookAtomically(
 	wb: AscendWorkbook,
 	output: string,
+	options: Pick<AgentCommitOptions, 'allowDecryptedExport'> = {},
 ): Promise<AtomicWorkbookWriteTimings> {
 	const ext = extname(output)
 	const temp = join(dirname(output), `.${Date.now()}.${process.pid}.ascend-tmp${ext}`)
@@ -8189,7 +8205,9 @@ async function writeWorkbookAtomically(
 				renameMs: renameResult.ms,
 			}
 		}
-		const bytes = await timedCommitStep(() => wb.toBytes())
+		const bytes = await timedCommitStep(() =>
+			wb.toBytes(options.allowDecryptedExport ? { allowDecryptedExport: true } : {}),
+		)
 		const write = await timedCommitStep(() => writeFile(temp, bytes.value))
 		const renameResult = await timedCommitStep(() => rename(temp, output))
 		return {
@@ -8201,6 +8219,25 @@ async function writeWorkbookAtomically(
 		await unlink(temp).catch(() => undefined)
 		throw error
 	}
+}
+
+function encryptedWorkbookCommitExportError(output: string): AscendException {
+	return new AscendException(
+		ascendError(
+			'EXPORT_ERROR',
+			'Cannot export an edited encrypted workbook without re-encryption support.',
+			{
+				details: {
+					output,
+					sourceWasEncrypted: true,
+					reEncryptionSupported: false,
+					requestedExport: 'xlsx',
+				},
+				suggestedFix:
+					'Pass allowDecryptedExport: true only when the caller explicitly accepts a decrypted plain XLSX output, or reopen the original encrypted workbook without editing.',
+			},
+		),
+	)
 }
 
 function atomicWorkbookWriteError(output: string, error: unknown): AscendException {

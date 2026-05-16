@@ -32,6 +32,7 @@ const RECORDED_WORKLOADS = [
 	'styles-heavy',
 	'formula-heavy',
 	'table-heavy',
+	'feature-rich',
 	'string-heavy',
 ]
 
@@ -55,7 +56,7 @@ describe('performance claim baseline matrix', () => {
 		expect(markdown).toContain('Owner: benchmarking/external baselines.')
 		expect(markdown).toContain('broad read-speed and QSS-leapfrog performance wording is blocked')
 		expect(markdown).toContain(
-			'do not optimize from the partial `dense-values`, `sparse-wide`,\n`styles-heavy`, `formula-heavy`, `table-heavy`, and `string-heavy` rows',
+			'do not optimize further from the partial winning rows\n`dense-values`, `sparse-wide`, `styles-heavy`, `formula-heavy`, `table-heavy`,\nand `string-heavy`',
 		)
 		expect(markdown).toContain(
 			'Failed, missing, or semantically mismatched runners are not counted as wins.',
@@ -147,13 +148,32 @@ describe('performance claim baseline matrix', () => {
 		)
 		expect(markdown).toContain('Continue profile expansion with `feature-rich`')
 
+		expect(markdown).toContain('## Cycle: Feature-Rich Metadata Read')
+		expect(markdown).toContain('Classification: optimize, then validated ran/won')
+		expect(markdown).toContain('generated `feature-rich` workbook')
+		expect(markdown).toContain('Commit: `05656d4e`')
+		expect(markdown).toContain('114,404 input bytes')
+		expect(markdown).toContain(
+			'pre-optimization clean run at detached commit `222c4898` made the comparable Ascend rich-metadata row eligible but slower than Apache POI',
+		)
+		expect(markdown).toContain('`ascend-readxlsx-values-rich-metadata-bytes` median 92.937 ms')
+		expect(markdown).toContain(
+			'| Ascend | ran/won | `ascend-readxlsx-values-rich-metadata-bytes` | 41.335 | 41.442 | 0.048 | 171.3 MiB |',
+		)
+		expect(markdown).toContain('| Apache POI | ran/lost | `apache-poi` | 86.697')
+		expect(markdown).toContain('| SheetJS | not comparable | `sheetjs` | 33.529')
+		expect(markdown).toContain(
+			'"Ascend beats SheetJS, fastexcel, Calamine, FastExcel Java, Polars, or pyopenxlsx" from this rich-metadata run.',
+		)
+		expect(markdown).toContain('Continue profile expansion with `selected-sheet`')
+
 		expect(markdown).toContain('Promote: no.')
 		expect(markdown).toContain(
 			'Optimize: no production optimization from the partial profile rows.',
 		)
 		expect(markdown).toContain('Defer: yes.')
 		expect(markdown).toContain(
-			'The immediate next action is `feature-rich` profile expansion plus runner hardening for FastExcel Java on `sparse-wide`, ClosedXML, fastxlsx, and table-heavy semantic mismatches',
+			'The immediate next action is `selected-sheet` profile expansion plus runner hardening for FastExcel Java on `sparse-wide`, ClosedXML, fastxlsx, and rich-metadata semantic mismatches',
 		)
 	})
 })

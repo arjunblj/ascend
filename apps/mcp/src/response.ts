@@ -1,5 +1,4 @@
-import type { AscendError } from '@ascend/schema'
-import { machineFailure, machineSuccess } from '@ascend/schema'
+import { type AscendError, ascendError, machineFailure, machineSuccess } from '@ascend/schema'
 
 export function okResponse<T>(data: T, summary: string) {
 	return {
@@ -9,10 +8,17 @@ export function okResponse<T>(data: T, summary: string) {
 }
 
 export function errorResponse(error: string | AscendError) {
-	const message = typeof error === 'string' ? error : error.message
+	const structuredError =
+		typeof error === 'string'
+			? ascendError('INVALID_ARGUMENT', error, {
+					retryable: true,
+					retryStrategy: 'modified',
+					suggestedFix: 'Adjust the tool arguments and retry.',
+				})
+			: error
 	return {
-		content: [{ type: 'text' as const, text: message }],
-		structuredContent: machineFailure(error) as unknown as Record<string, unknown>,
+		content: [{ type: 'text' as const, text: structuredError.message }],
+		structuredContent: machineFailure(structuredError) as unknown as Record<string, unknown>,
 		isError: true,
 	}
 }

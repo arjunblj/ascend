@@ -230,6 +230,52 @@ describe('MCP server', () => {
 		}
 	})
 
+	test('string MCP tool errors return coded JSON failures', async () => {
+		const wb = AscendWorkbook.create()
+		await wb.save(TEMP_FILE)
+		const output = join(tmpdir(), `ascend-mcp-unsupported-export-${Date.now()}.bad`)
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const exportTool = (server as any)._registeredTools['ascend.export'].handler as (args: {
+			file: string
+			output: string
+			format?: string
+		}) => Promise<{
+			isError?: boolean
+			content?: Array<{ type?: string; text?: string }>
+			structuredContent?: {
+				ok?: boolean
+				error?: {
+					code?: string
+					message?: string
+					retryable?: boolean
+					retryStrategy?: string
+					suggestedFix?: string
+				}
+			}
+		}>
+
+		try {
+			const result = await exportTool({ file: TEMP_FILE, output, format: 'bad' })
+
+			expect(result.isError).toBe(true)
+			expect(result.content?.[0]?.text).toBe('Unsupported format: bad')
+			expect(result.structuredContent).toMatchObject({
+				ok: false,
+				error: {
+					code: 'INVALID_ARGUMENT',
+					message: 'Unsupported format: bad',
+					retryable: true,
+					retryStrategy: 'modified',
+					suggestedFix: 'Adjust the tool arguments and retry.',
+				},
+			})
+			expect(await Bun.file(output).exists()).toBe(false)
+		} finally {
+			await unlink(output).catch(() => {})
+		}
+	})
+
 	test('ascend.plan accepts encrypted workbook passwords and commit fails closed before decrypted export', async () => {
 		const input = join(
 			tmpdir(),

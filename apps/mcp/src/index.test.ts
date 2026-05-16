@@ -184,6 +184,52 @@ describe('MCP server', () => {
 		}
 	})
 
+	test('ascend.commit rejects missing workbook references with structured retry guidance', async () => {
+		const output = join(tmpdir(), `ascend-mcp-missing-reference-${Date.now()}.xlsx`)
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const commit = (server as any)._registeredTools['ascend.commit'].handler as (args: {
+			output?: string
+			ops?: readonly Record<string, unknown>[]
+		}) => Promise<{
+			isError?: boolean
+			structuredContent?: {
+				ok?: boolean
+				error?: {
+					code?: string
+					message?: string
+					retryable?: boolean
+					retryStrategy?: string
+					details?: { required?: string[] }
+					suggestedFix?: string
+				}
+			}
+		}>
+
+		try {
+			const result = await commit({
+				output,
+				ops: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] }],
+			})
+
+			expect(result.isError).toBe(true)
+			expect(result.structuredContent).toMatchObject({
+				ok: false,
+				error: {
+					code: 'VALIDATION_ERROR',
+					message: 'Missing or invalid commit workbook reference',
+					retryable: true,
+					retryStrategy: 'modified',
+					details: { required: ['file or planHandle'] },
+					suggestedFix: expect.stringContaining('Pass either file with ops/mutations'),
+				},
+			})
+			expect(await Bun.file(output).exists()).toBe(false)
+		} finally {
+			await unlink(output).catch(() => {})
+		}
+	})
+
 	test('ascend.plan accepts encrypted workbook passwords and commit fails closed before decrypted export', async () => {
 		const input = join(
 			tmpdir(),

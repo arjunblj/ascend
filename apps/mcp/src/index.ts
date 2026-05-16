@@ -97,6 +97,16 @@ function agentPlanLoadOptionsError(options: readonly string[]): AscendError {
 	)
 }
 
+function missingCommitWorkbookReferenceError(): AscendError {
+	return ascendError('VALIDATION_ERROR', 'Missing or invalid commit workbook reference', {
+		retryable: true,
+		retryStrategy: 'modified',
+		details: { required: ['file or planHandle'] },
+		suggestedFix:
+			'Pass either file with ops/mutations for a direct commit, or planHandle from a prepared ascend.plan response.',
+	})
+}
+
 function replayBatchLoadOptionsError(kind: string, options: readonly string[]): AscendError {
 	return ascendError(
 		'VALIDATION_ERROR',
@@ -1571,7 +1581,7 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 						`Committed ${result.operationCount} operation(s)`,
 					)
 				}
-				if (!file) return errorResponse('Missing file')
+				if (!file) return errorResponse(missingCommitWorkbookReferenceError())
 				const inputShape = resolveOperationInputShape(operationInputSourceFromArgs(ops, mutations))
 				if (!inputShape.ok) return errorResponse(inputShape.error)
 				let input: ResolvedOperationInput

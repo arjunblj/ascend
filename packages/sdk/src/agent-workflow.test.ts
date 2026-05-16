@@ -336,6 +336,42 @@ describe('agent workflow loss audit', () => {
 		expect(Buffer.from(readFileSync(input)).equals(Buffer.from(sourceBytes))).toBe(true)
 	})
 
+	test('encrypted workbook commits can explicitly write decrypted text output and verify it', async () => {
+		const input = join(TEMP_DIR, 'pass_protected-explicit-text.xlsx')
+		const output = join(TEMP_DIR, 'pass_protected-decrypted-out.csv')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		const sourceBytes = new Uint8Array(readFileSync('fixtures/xlsx/calamine/pass_protected.xlsx'))
+		await Bun.write(input, sourceBytes)
+		const wb = await AscendWorkbook.open(sourceBytes, { password: '123' })
+		const inputSha256 = createHash('sha256').update(sourceBytes).digest('hex')
+		const ops = [
+			{
+				op: 'setCells' as const,
+				sheet: 'Sheet1',
+				updates: [{ ref: 'A1', value: 'decrypted-csv' }],
+			},
+		]
+
+		const committed = await commitAgentPlanFromWorkbook(
+			input,
+			inputSha256,
+			wb,
+			ops,
+			{ output, allowDecryptedExport: true },
+			{ sourceBytes },
+		)
+
+		expect(committed.postWrite.reopened).toBe(true)
+		expect(committed.postWrite.auditsPassed).toBe(true)
+		expect(committed.postWrite.packageGraphAudit.policy).toBe('not-applicable-non-xlsx')
+		const reopened = AscendWorkbook.fromCsv(readFileSync(output, 'utf8'))
+		expect(reopened.sheet('Sheet1')?.cell('A1')?.value).toEqual({
+			kind: 'string',
+			value: 'decrypted-csv',
+		})
+		expect(Buffer.from(readFileSync(input)).equals(Buffer.from(sourceBytes))).toBe(true)
+	})
+
 	test('agent plans open encrypted workbooks with explicit passwords', async () => {
 		const input = join(TEMP_DIR, 'pass_protected-plan.xlsx')
 		mkdirSync(TEMP_DIR, { recursive: true })
@@ -706,9 +742,8 @@ describe('agent workflow loss audit', () => {
 		mkdirSync(TEMP_DIR, { recursive: true })
 		await Bun.write(input, makeSignedXlsx())
 
-		const plan = await createAgentPlan(input, [
-			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] },
-		])
+		const ops = [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] }] as const
+		const plan = await createAgentPlan(input, ops)
 		expect(plan.lossAudit.ok).toBe(false)
 		expect(plan.lossAudit.blockedFeatures).toContainEqual(
 			expect.objectContaining({ feature: 'preservedSignature' }),
@@ -753,6 +788,21 @@ describe('agent workflow loss audit', () => {
 		expect(plan.trace.phases.find((phase) => phase.phase === 'write-policy')?.status).toBe(
 			'warning',
 		)
+
+		const output = join(TEMP_DIR, 'signed-output.xlsx')
+		const committed = await commitAgentPlan(input, ops, {
+			output,
+			approvals: plan.approvals.map((approval) => approval.id),
+		})
+		expect(committed.writePolicy.summary.invalidatedSignatures).toBe(2)
+		const zip = unzipSync(new Uint8Array(readFileSync(output)))
+		expect(zip['_xmlsignatures/origin.sigs']).toBeUndefined()
+		expect(zip['_xmlsignatures/sig1.xml']).toBeUndefined()
+		const reopened = await AscendWorkbook.open(new Uint8Array(readFileSync(output)))
+		expect(reopened.trustReport().findings).not.toContainEqual(
+			expect.objectContaining({ code: 'workbook.signature' }),
+		)
+		expect(reopened.sheet('Sheet1')?.cell('A1')?.value).toEqual({ kind: 'number', value: 1 })
 	})
 
 	test('plans expose inspect-only package preservation mode', async () => {

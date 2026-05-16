@@ -745,7 +745,7 @@ export interface LossAuditPackagePart {
 export interface PackageGraphAudit {
 	readonly ok: boolean
 	readonly issues: readonly XlsxPackageGraphFidelityIssue[]
-	readonly policy: 'read-integrity' | 'safe-edit-roundtrip'
+	readonly policy: 'read-integrity' | 'safe-edit-roundtrip' | 'not-applicable-non-xlsx'
 }
 
 export interface WritePolicyReport {
@@ -2094,11 +2094,10 @@ export async function commitAgentPlanFromWorkbook(
 	await progress('write', 'started', `Writing workbook to ${output}.`)
 	let writeTimings: AtomicWorkbookWriteTimings
 	try {
-		writeTimings = await writeWorkbookAtomically(
-			wb,
-			output,
-			options.allowDecryptedExport ? { allowDecryptedExport: true } : {},
-		)
+		writeTimings = await writeWorkbookAtomically(wb, output, {
+			...(options.allowDecryptedExport ? { allowDecryptedExport: true } : {}),
+			allowSignatureInvalidation: true,
+		})
 	} catch (error) {
 		wb.restoreMutationRollbackSnapshot(rollbackSnapshot)
 		const writeError = atomicWorkbookWriteError(output, error)
@@ -2305,26 +2304,31 @@ async function verifyWrittenWorkbook(
 	const activeContent = postWriteActiveContentSummary(workbook)
 	const visuals = postWriteVisualSummary(workbook)
 	const security = postWriteSecuritySummary(workbook)
-	const outputGraph = await timedPostWriteStep(
-		progress,
-		'package-graph',
-		'Reading post-write package graph.',
-		'Post-write package graph read completed.',
-		() => reopened.value.packageGraph(),
-	)
-	const packageGraphAudit = await timedPostWriteStep(
-		progress,
-		'package-graph-audit',
-		'Auditing post-write package graph roundtrip.',
-		'Post-write package graph roundtrip audit completed.',
-		() =>
-			auditPackageGraphRoundtrip(
-				sourceGraph,
-				sourceBytes,
-				outputGraph.value,
-				outputSnapshot.value.bytes,
-			),
-	)
+	const outputIsXlsx = reopened.value.inspect().sourceFormat === 'xlsx'
+	const outputGraph = outputIsXlsx
+		? await timedPostWriteStep(
+				progress,
+				'package-graph',
+				'Reading post-write package graph.',
+				'Post-write package graph read completed.',
+				() => reopened.value.packageGraph(),
+			)
+		: { value: null, ms: 0 }
+	const packageGraphAudit = outputGraph.value
+		? await timedPostWriteStep(
+				progress,
+				'package-graph-audit',
+				'Auditing post-write package graph roundtrip.',
+				'Post-write package graph roundtrip audit completed.',
+				() =>
+					auditPackageGraphRoundtrip(
+						sourceGraph,
+						sourceBytes,
+						outputGraph.value,
+						outputSnapshot.value.bytes,
+					),
+			)
+		: { value: nonXlsxPackageGraphAudit(), ms: 0 }
 	const unresolvedPackageGraphIssues = packageGraphAudit.value.issues.filter(
 		(issue) => !isExpectedPostWritePackageGraphIssue(issue, expectedPackageGraphChanges),
 	)
@@ -2898,6 +2902,14 @@ export function auditPackageGraphRoundtrip(
 	}
 }
 
+function nonXlsxPackageGraphAudit(): PackageGraphAudit {
+	return {
+		ok: true,
+		issues: [],
+		policy: 'not-applicable-non-xlsx',
+	}
+}
+
 export async function createRepairPlan(file: string): Promise<RepairPlanResult> {
 	const inputSha256 = await fileSha256(file)
 	const wb = await AscendWorkbook.open(file)
@@ -3370,6 +3382,9 @@ function packageGraphAuditPhase(audit: PackageGraphAudit): AgentTracePhase {
 			audit.issues.length,
 			{ issues: audit.issues },
 		)
+	}
+	if (audit.policy === 'not-applicable-non-xlsx') {
+		return okPhase('package-graph-audit', 'Package graph audit skipped for non-XLSX output.', 0)
 	}
 	return okPhase('package-graph-audit', 'Package graph fidelity audit passed.', 0)
 }
@@ -8191,13 +8206,20 @@ interface AtomicWorkbookWriteTimings {
 async function writeWorkbookAtomically(
 	wb: AscendWorkbook,
 	output: string,
-	options: Pick<AgentCommitOptions, 'allowDecryptedExport'> = {},
+	options: Pick<AgentCommitOptions, 'allowDecryptedExport'> & {
+		readonly allowSignatureInvalidation?: boolean
+	} = {},
 ): Promise<AtomicWorkbookWriteTimings> {
 	const ext = extname(output)
 	const temp = join(dirname(output), `.${Date.now()}.${process.pid}.ascend-tmp${ext}`)
 	try {
 		if (ext === '.csv' || ext === '.tsv') {
-			const save = await timedCommitStep(() => wb.save(temp))
+			const save = await timedCommitStep(() =>
+				wb.save(temp, {
+					...(options.allowDecryptedExport ? { allowDecryptedExport: true } : {}),
+					...(options.allowSignatureInvalidation ? { allowSignatureInvalidation: true } : {}),
+				}),
+			)
 			const renameResult = await timedCommitStep(() => rename(temp, output))
 			return {
 				toBytesMs: 0,
@@ -8206,7 +8228,10 @@ async function writeWorkbookAtomically(
 			}
 		}
 		const bytes = await timedCommitStep(() =>
-			wb.toBytes(options.allowDecryptedExport ? { allowDecryptedExport: true } : {}),
+			wb.toBytes({
+				...(options.allowDecryptedExport ? { allowDecryptedExport: true } : {}),
+				...(options.allowSignatureInvalidation ? { allowSignatureInvalidation: true } : {}),
+			}),
 		)
 		const write = await timedCommitStep(() => writeFile(temp, bytes.value))
 		const renameResult = await timedCommitStep(() => rename(temp, output))

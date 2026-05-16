@@ -2162,6 +2162,27 @@ describe('ascend cli', () => {
 		expect(parsed.data.page.hasMore).toBe(false)
 		expect(parsed.data.rows).toHaveLength(1)
 		expect(parsed.data.rows[0].Name).toEqual({ kind: 'string', value: 'Bob' })
+
+		const missing = await run('read', TEST_FILE, 'table:Missing', '--json')
+		expect(missing.exitCode).toBe(1)
+		const missingParsed = JSON.parse(missing.stdout)
+		expect(missingParsed).toMatchObject({
+			ok: false,
+			error: {
+				code: 'TABLE_NOT_FOUND',
+				message: 'Table "Missing" not found',
+				retryable: true,
+				retryStrategy: 'modified',
+				details: {
+					command: 'read',
+					selector: 'table:Missing',
+					table: 'Missing',
+					availableTables: ['MyTable'],
+					workflow: ['inspect', 'read', 'plan'],
+				},
+			},
+		})
+		expect(missingParsed.error.suggestedFix).toContain('MyTable')
 	})
 
 	test('write requires an explicit sheet when workbook has multiple sheets', async () => {
@@ -2439,6 +2460,32 @@ describe('ascend cli', () => {
 			},
 		})
 		expect(parsed.error.suggestedFix).toContain('--max-depth 0')
+	})
+
+	test('trace --json reports missing cells with structured retry guidance', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 2 }] }])
+		await wb.save(`${import.meta.dir}/${TEST_FILE}`)
+
+		const { exitCode, stdout } = await run('trace', TEST_FILE, 'Missing!A1', '--json')
+		expect(exitCode).toBe(1)
+		const parsed = JSON.parse(stdout)
+		expect(parsed).toMatchObject({
+			ok: false,
+			error: {
+				code: 'VALIDATION_ERROR',
+				message: 'Trace cell not found',
+				retryable: true,
+				retryStrategy: 'modified',
+				details: {
+					command: 'trace',
+					cell: 'Missing!A1',
+					workflow: ['inspect', 'read', 'trace'],
+					load: { mode: 'formula' },
+				},
+			},
+		})
+		expect(parsed.error.suggestedFix).toContain('ascend inspect')
 	})
 
 	test('formula suggests the closest subcommand', async () => {

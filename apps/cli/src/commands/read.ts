@@ -100,7 +100,7 @@ export async function readCommand(args: string[], flags: Map<string, string>): P
 		case 'table': {
 			const handle = wb.table(selector.name)
 			if (!handle) {
-				cliError(`Table "${selector.name}" not found`, flags)
+				cliError(tableNotFoundError(selector.name, wb), flags)
 				return 1
 			}
 			const page = handle.readRows({
@@ -443,6 +443,28 @@ function parseReadMode(mode: string | undefined): 'values' | 'full' | undefined 
 		default:
 			return null
 	}
+}
+
+function tableNotFoundError(name: string, wb: WorkbookDocument) {
+	const availableTables = wb
+		.getWorkbookModel()
+		.sheets.flatMap((sheet) => sheet.tables.map((entry) => entry.name))
+		.sort()
+	return ascendError('TABLE_NOT_FOUND', `Table "${name}" not found`, {
+		retryable: true,
+		retryStrategy: availableTables.length > 0 ? 'modified' : 'none',
+		details: {
+			command: 'read',
+			selector: `table:${name}`,
+			table: name,
+			availableTables,
+			workflow: ['inspect', 'read', 'plan'],
+		},
+		suggestedFix:
+			availableTables.length > 0
+				? `Use one of the available tables: ${availableTables.join(', ')}.`
+				: 'Run ascend inspect <file> --json to list workbook tables before retrying ascend read.',
+	})
 }
 
 function invalidReadArgumentError(

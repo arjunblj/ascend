@@ -65,7 +65,21 @@ export async function traceCommand(args: string[], flags: Map<string, string>): 
 	)
 
 	if (!result) {
-		cliError(`Could not trace "${cellRef}"`, flags)
+		cliError(
+			ascendError('VALIDATION_ERROR', 'Trace cell not found', {
+				retryable: true,
+				retryStrategy: 'modified',
+				details: {
+					command: 'trace',
+					cell: cellRef,
+					workflow: ['inspect', 'read', 'trace'],
+					load: session.inspect().load,
+				},
+				suggestedFix:
+					'Run ascend inspect or ascend read to confirm the target sheet and cell before retrying ascend trace.',
+			}),
+			flags,
+		)
 		return 1
 	}
 

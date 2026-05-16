@@ -848,7 +848,13 @@ const API_AGENT_WORKFLOW = {
 		{
 			step: 'commit',
 			endpoint: 'POST /commit',
-			proof: ['outputSha256', 'postWrite', 'packageActions', 'proofBundle'],
+			proof: [
+				'outputSha256',
+				'postWrite',
+				'postWrite.dataConnections',
+				'packageActions',
+				'proofBundle',
+			],
 		},
 		{
 			step: 'reopen-verify',
@@ -886,7 +892,12 @@ const API_AGENT_WORKFLOW = {
 			'@ascend/sdk installed for node_modules/.bin/ascend-sdk-safe-edit',
 			'Bun or a TypeScript-capable runner',
 		],
-		proofOutput: ['proofBundle.safeToUse', 'proofBundle.whatChanged', 'proofBundle.whySafe'],
+		proofOutput: [
+			'proofBundle.safeToUse',
+			'proofBundle.whatChanged',
+			'proofBundle.whySafe',
+			'postWrite.dataConnections',
+		],
 	},
 	exampleContext: {
 		workdir: 'repository-root',

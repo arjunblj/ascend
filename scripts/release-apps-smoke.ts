@@ -285,6 +285,11 @@ if (
 if (!cliAgentInit.packageInstallExampleContext?.proofOutput?.includes('proofBundle.safeToUse')) {
 	throw new Error('CLI agent-init missing installed SDK proof output context: ' + JSON.stringify(cliAgentInit))
 }
+if (!cliAgentInit.packageInstallExampleContext?.proofOutput?.includes('postWrite.dataConnections')) {
+	throw new Error(
+		'CLI agent-init missing installed connection proof output context: ' + JSON.stringify(cliAgentInit),
+	)
+}
 if (
 	!cliAgentInit.packageInstallExampleContext?.requires?.includes(
 		'@ascend/cli installed for ascend example-safe-edit',
@@ -409,6 +414,9 @@ if (
 if (!apiWorkflow.packageInstallExampleContext?.proofOutput?.includes('proofBundle.whatChanged')) {
 	throw new Error('installed API agent workflow contract missing installed SDK proof output context')
 }
+if (!apiWorkflow.packageInstallExampleContext?.proofOutput?.includes('postWrite.dataConnections')) {
+	throw new Error('installed API agent workflow contract missing connection proof output context')
+}
 if (apiWorkflow.exampleContext?.workdir !== 'repository-root') {
 	throw new Error('installed API agent workflow contract missing example workdir context')
 }
@@ -491,6 +499,9 @@ if (
 if (!mcpWorkflow.packageInstallExampleContext?.proofOutput?.includes('proofBundle.whySafe')) {
 	throw new Error('installed MCP agent workflow contract missing installed SDK proof output context')
 }
+if (!mcpWorkflow.packageInstallExampleContext?.proofOutput?.includes('postWrite.dataConnections')) {
+	throw new Error('installed MCP agent workflow contract missing connection proof output context')
+}
 if (mcpWorkflow.exampleContext?.proofCommand !== 'bun test examples/root-scripts.test.ts') {
 	throw new Error('installed MCP agent workflow contract missing example proof context')
 }
@@ -511,6 +522,9 @@ if (!mcpWorkflowResource.contents[0].text.includes('root-scripts.test.ts')) {
 }
 if (!mcpWorkflowResource.contents[0].text.includes('proofBundle.safeToUse')) {
 	throw new Error('installed MCP agent workflow resource missing installed package proof output context')
+}
+if (!mcpWorkflowResource.contents[0].text.includes('postWrite.dataConnections')) {
+	throw new Error('installed MCP agent workflow resource missing connection proof output context')
 }
 
 console.log(JSON.stringify({

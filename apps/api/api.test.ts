@@ -90,6 +90,7 @@ describe('API', () => {
 				'proofBundle.safeToUse',
 				'proofBundle.whatChanged',
 				'proofBundle.whySafe',
+				'postWrite.dataConnections',
 			]),
 		})
 		expect(workflowBody.data.exampleContext).toMatchObject({

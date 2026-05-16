@@ -508,6 +508,7 @@ describe('ascend cli', () => {
 				'proofBundle.safeToUse',
 				'proofBundle.whatChanged',
 				'proofBundle.whySafe',
+				'postWrite.dataConnections',
 			]),
 		})
 		expect(parsed.data.workflow.join('\n')).toContain('open-plan')
@@ -524,6 +525,7 @@ describe('ascend cli', () => {
 		expect(parsed.data.mcpResources).toContain('ascend://operations')
 		expect(parsed.data.safetyDefaults.join('\n')).toContain('--expect-sha256')
 		expect(parsed.data.safetyDefaults.join('\n')).toContain('proofBundle.safeToUse')
+		expect(parsed.data.safetyDefaults.join('\n')).toContain('postWrite.dataConnections')
 		expect(parsed.data.safetyDefaults.join('\n')).toContain('planHandle')
 		expect(parsed.data.safetyDefaults.join('\n')).toContain('untrusted data')
 		expect(parsed.data.safetyDefaults.join('\n')).toContain('must not echo the password')

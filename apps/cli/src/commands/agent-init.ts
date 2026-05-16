@@ -81,7 +81,12 @@ const AGENT_INIT: AgentInitInfo = {
 			'@ascend/sdk installed for node_modules/.bin/ascend-sdk-safe-edit',
 			'Bun or a TypeScript-capable runner',
 		],
-		proofOutput: ['proofBundle.safeToUse', 'proofBundle.whatChanged', 'proofBundle.whySafe'],
+		proofOutput: [
+			'proofBundle.safeToUse',
+			'proofBundle.whatChanged',
+			'proofBundle.whySafe',
+			'postWrite.dataConnections',
+		],
 	},
 	exampleContext: {
 		workdir: 'repository-root',
@@ -127,7 +132,7 @@ const AGENT_INIT: AgentInitInfo = {
 		'For encrypted workbook workflows, pass --password only to commands that open source bytes; responses must not echo the password.',
 		'Prefer non-destructive --output writes over --in-place.',
 		'Use --expect-sha256 from plan output to reject stale inputs.',
-		'Use --proof on commit JSON to get proofBundle.safeToUse, proofBundle.whatChanged, and proofBundle.whySafe.',
+		'Use --proof on commit JSON to get proofBundle.safeToUse, proofBundle.whatChanged, proofBundle.whySafe, and postWrite.dataConnections.',
 		'CLI plan/commit do not persist prepared handles; API/MCP planHandle values are one-shot and process-local.',
 		'Pass --approval only for approval ids emitted by plan.',
 		'Pass --allow-loss only for feature loss explicitly accepted by the user.',

@@ -474,6 +474,9 @@ describe('ascend cli', () => {
 		expect(parsed.data.commands.openPlan).toContain('open-plan')
 		expect(parsed.data.commands.encryptedOpenPlan).toContain('--password <value>')
 		expect(parsed.data.commands.trust).toContain('inspect <file> --agent --json')
+		expect(parsed.data.examples.installedSdkSafeEdit).toBe(
+			'bun node_modules/@ascend/sdk/examples/package-install-safe-edit.ts <file.xlsx> <out.xlsx>',
+		)
 		expect(parsed.data.examples.sdkSafeEdit).toBe(
 			'bun run example:safe-edit <file.xlsx> <out.xlsx>',
 		)
@@ -487,6 +490,15 @@ describe('ascend cli', () => {
 			workdir: 'repository-root',
 			requires: expect.arrayContaining(['source checkout', 'bun install']),
 			proofCommand: 'bun test examples/root-scripts.test.ts',
+		})
+		expect(parsed.data.packageInstallExampleContext).toMatchObject({
+			workdir: 'consumer-project',
+			requires: expect.arrayContaining(['@ascend/sdk installed']),
+			proofOutput: expect.arrayContaining([
+				'proofBundle.safeToUse',
+				'proofBundle.whatChanged',
+				'proofBundle.whySafe',
+			]),
 		})
 		expect(parsed.data.workflow.join('\n')).toContain('open-plan')
 		expect(parsed.data.workflow.join('\n')).toContain('encrypted XLSX/XLSM')

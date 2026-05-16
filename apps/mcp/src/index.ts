@@ -111,9 +111,16 @@ const MCP_AGENT_WORKFLOW = {
 		repairPlan: 'ascend.repair_plan',
 	},
 	examples: {
+		installedSdkSafeEdit:
+			'bun node_modules/@ascend/sdk/examples/package-install-safe-edit.ts <file.xlsx> <out.xlsx>',
 		sdkSafeEdit: 'bun run example:safe-edit <file.xlsx> <out.xlsx>',
 		apiSafeEdit: 'bun run example:safe-edit:http <file.xlsx> <out.xlsx>',
 		mcpSafeEdit: 'bun run example:safe-edit:mcp <file.xlsx> <out.xlsx>',
+	},
+	packageInstallExampleContext: {
+		workdir: 'consumer-project',
+		requires: ['@ascend/sdk installed', 'Bun or a TypeScript-capable runner'],
+		proofOutput: ['proofBundle.safeToUse', 'proofBundle.whatChanged', 'proofBundle.whySafe'],
 	},
 	exampleContext: {
 		workdir: 'repository-root',
@@ -134,6 +141,10 @@ const MCP_AGENT_WORKFLOW = {
 		'Preserve but never execute macros, ActiveX/OLE, DDE, external links, or data connections.',
 	],
 } as const
+
+function mcpAgentWorkflowPayload(): typeof MCP_AGENT_WORKFLOW {
+	return structuredClone(MCP_AGENT_WORKFLOW)
+}
 
 type PackageActionEvidence = Pick<
 	Awaited<ReturnType<typeof createAgentPlan>>,
@@ -317,7 +328,7 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 		{},
 		async () =>
 			okResponse(
-				MCP_AGENT_WORKFLOW,
+				mcpAgentWorkflowPayload(),
 				'Ascend MCP workflow: open-plan, inspect/read, plan, commit, reopen-verify, repair',
 			),
 	)
@@ -2084,14 +2095,24 @@ function buildAgentWorkflowGuide(): string {
 		'13. Verify with ascend.check, ascend.lint, ascend.trace, ascend.diff, and ascend.export as needed.',
 		'14. Use ascend.repair_plan when checks, lints, approvals, or unsupported-feature audits need recovery actions.',
 		'',
+		'Runnable installed-package example:',
+		`- SDK safe edit: ${MCP_AGENT_WORKFLOW.examples.installedSdkSafeEdit}`,
+		`- Workdir: ${MCP_AGENT_WORKFLOW.packageInstallExampleContext.workdir}`,
+		`- Requires: ${formatGuideList(MCP_AGENT_WORKFLOW.packageInstallExampleContext.requires)}`,
+		`- Proof output: ${formatGuideList(MCP_AGENT_WORKFLOW.packageInstallExampleContext.proofOutput)}`,
+		'',
 		'Runnable source-checkout examples:',
 		`- SDK safe edit: ${MCP_AGENT_WORKFLOW.examples.sdkSafeEdit}`,
 		`- API safe edit: ${MCP_AGENT_WORKFLOW.examples.apiSafeEdit}`,
 		`- MCP safe edit: ${MCP_AGENT_WORKFLOW.examples.mcpSafeEdit}`,
 		`- Workdir: ${MCP_AGENT_WORKFLOW.exampleContext.workdir}`,
-		`- Requires: ${MCP_AGENT_WORKFLOW.exampleContext.requires.join(', ')}`,
+		`- Requires: ${formatGuideList(MCP_AGENT_WORKFLOW.exampleContext.requires)}`,
 		`- Proof: ${MCP_AGENT_WORKFLOW.exampleContext.proofCommand}`,
 	].join('\n')
+}
+
+function formatGuideList(values: readonly string[] | string): string {
+	return Array.isArray(values) ? values.join(', ') : values
 }
 
 function buildAgentWorkflowPrompt(file?: string, task?: string): string {

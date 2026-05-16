@@ -520,6 +520,11 @@ describe('MCP server', () => {
 					workflow?: unknown[]
 					tools?: Record<string, string>
 					examples?: Record<string, string>
+					packageInstallExampleContext?: {
+						workdir?: string
+						requires?: string[]
+						proofOutput?: string[]
+					}
 					exampleContext?: {
 						workdir?: string
 						requires?: string[]
@@ -543,9 +548,20 @@ describe('MCP server', () => {
 		})
 		expect(result.structuredContent?.data?.resources).toContain('ascend://agent-workflow')
 		expect(result.structuredContent?.data?.examples).toMatchObject({
+			installedSdkSafeEdit:
+				'bun node_modules/@ascend/sdk/examples/package-install-safe-edit.ts <file.xlsx> <out.xlsx>',
 			sdkSafeEdit: 'bun run example:safe-edit <file.xlsx> <out.xlsx>',
 			apiSafeEdit: 'bun run example:safe-edit:http <file.xlsx> <out.xlsx>',
 			mcpSafeEdit: 'bun run example:safe-edit:mcp <file.xlsx> <out.xlsx>',
+		})
+		expect(result.structuredContent?.data?.packageInstallExampleContext).toMatchObject({
+			workdir: 'consumer-project',
+			requires: expect.arrayContaining(['@ascend/sdk installed']),
+			proofOutput: expect.arrayContaining([
+				'proofBundle.safeToUse',
+				'proofBundle.whatChanged',
+				'proofBundle.whySafe',
+			]),
 		})
 		expect(result.structuredContent?.data?.exampleContext).toMatchObject({
 			workdir: 'repository-root',
@@ -626,6 +642,10 @@ describe('MCP server', () => {
 		expect(workflow?.contents[0]?.text).toContain('planHandle')
 		expect(workflow?.contents[0]?.text).toContain('must not echo it')
 		expect(workflow?.contents[0]?.text).toContain('formula_assist')
+		expect(workflow?.contents[0]?.text).toContain(
+			'bun node_modules/@ascend/sdk/examples/package-install-safe-edit.ts',
+		)
+		expect(workflow?.contents[0]?.text).toContain('proofBundle.safeToUse')
 		expect(workflow?.contents[0]?.text).toContain('bun run example:safe-edit:mcp')
 		expect(workflow?.contents[0]?.text).toContain('bun test examples/root-scripts.test.ts')
 	})

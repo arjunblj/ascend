@@ -763,9 +763,16 @@ const API_AGENT_WORKFLOW = {
 		repairPlan: 'POST /repair-plan',
 	},
 	examples: {
+		installedSdkSafeEdit:
+			'bun node_modules/@ascend/sdk/examples/package-install-safe-edit.ts <file.xlsx> <out.xlsx>',
 		sdkSafeEdit: 'bun run example:safe-edit <file.xlsx> <out.xlsx>',
 		apiSafeEdit: 'bun run example:safe-edit:http <file.xlsx> <out.xlsx>',
 		mcpSafeEdit: 'bun run example:safe-edit:mcp <file.xlsx> <out.xlsx>',
+	},
+	packageInstallExampleContext: {
+		workdir: 'consumer-project',
+		requires: ['@ascend/sdk installed', 'Bun or a TypeScript-capable runner'],
+		proofOutput: ['proofBundle.safeToUse', 'proofBundle.whatChanged', 'proofBundle.whySafe'],
 	},
 	exampleContext: {
 		workdir: 'repository-root',

@@ -13,6 +13,11 @@ interface AgentInitInfo {
 	readonly workflow: readonly string[]
 	readonly commands: Record<string, string>
 	readonly examples: Record<string, string>
+	readonly packageInstallExampleContext: {
+		readonly workdir: 'consumer-project'
+		readonly requires: readonly string[]
+		readonly proofOutput: readonly string[]
+	}
 	readonly exampleContext: {
 		readonly workdir: 'repository-root'
 		readonly requires: readonly string[]
@@ -63,9 +68,16 @@ const AGENT_INIT: AgentInitInfo = {
 		repair: 'ascend repair-plan <file> --json',
 	},
 	examples: {
+		installedSdkSafeEdit:
+			'bun node_modules/@ascend/sdk/examples/package-install-safe-edit.ts <file.xlsx> <out.xlsx>',
 		sdkSafeEdit: 'bun run example:safe-edit <file.xlsx> <out.xlsx>',
 		apiSafeEdit: 'bun run example:safe-edit:http <file.xlsx> <out.xlsx>',
 		mcpSafeEdit: 'bun run example:safe-edit:mcp <file.xlsx> <out.xlsx>',
+	},
+	packageInstallExampleContext: {
+		workdir: 'consumer-project',
+		requires: ['@ascend/sdk installed', 'Bun or a TypeScript-capable runner'],
+		proofOutput: ['proofBundle.safeToUse', 'proofBundle.whatChanged', 'proofBundle.whySafe'],
 	},
 	exampleContext: {
 		workdir: 'repository-root',
@@ -142,6 +154,19 @@ export async function agentInitCommand(
 	for (const [name, command] of Object.entries(AGENT_INIT.examples)) {
 		console.log(bullet(`Example ${name}`, command))
 	}
+	console.log(bullet('Installed example workdir', AGENT_INIT.packageInstallExampleContext.workdir))
+	console.log(
+		bullet(
+			'Installed example requires',
+			AGENT_INIT.packageInstallExampleContext.requires.join(', '),
+		),
+	)
+	console.log(
+		bullet(
+			'Installed example proof output',
+			AGENT_INIT.packageInstallExampleContext.proofOutput.join(', '),
+		),
+	)
 	console.log(bullet('Example workdir', AGENT_INIT.exampleContext.workdir))
 	console.log(bullet('Example proof', AGENT_INIT.exampleContext.proofCommand))
 	console.log('')

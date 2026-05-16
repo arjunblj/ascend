@@ -263,6 +263,15 @@ if (cliAgentInit.apiEndpoints?.workflow !== 'GET /agent-workflow') {
 if (cliAgentInit.mcpTools?.workflow !== 'ascend.agent_workflow') {
 	throw new Error('CLI agent-init missing MCP workflow tool: ' + JSON.stringify(cliAgentInit))
 }
+if (
+	cliAgentInit.examples?.installedSdkSafeEdit !==
+	'bun node_modules/@ascend/sdk/examples/package-install-safe-edit.ts <file.xlsx> <out.xlsx>'
+) {
+	throw new Error('CLI agent-init missing installed SDK safe-edit example: ' + JSON.stringify(cliAgentInit))
+}
+if (!cliAgentInit.packageInstallExampleContext?.proofOutput?.includes('proofBundle.safeToUse')) {
+	throw new Error('CLI agent-init missing installed SDK proof output context: ' + JSON.stringify(cliAgentInit))
+}
 if (cliAgentInit.examples?.sdkSafeEdit !== 'bun run example:safe-edit <file.xlsx> <out.xlsx>') {
 	throw new Error('CLI agent-init missing SDK safe-edit example: ' + JSON.stringify(cliAgentInit))
 }
@@ -321,6 +330,15 @@ if (!apiWorkflow.workflow?.some((step) => step.step === 'reopen-verify')) {
 if (apiWorkflow.examples?.apiSafeEdit !== 'bun run example:safe-edit:http <file.xlsx> <out.xlsx>') {
 	throw new Error('installed API agent workflow contract missing API safe-edit example')
 }
+if (
+	apiWorkflow.examples?.installedSdkSafeEdit !==
+	'bun node_modules/@ascend/sdk/examples/package-install-safe-edit.ts <file.xlsx> <out.xlsx>'
+) {
+	throw new Error('installed API agent workflow contract missing installed SDK safe-edit example')
+}
+if (!apiWorkflow.packageInstallExampleContext?.proofOutput?.includes('proofBundle.whatChanged')) {
+	throw new Error('installed API agent workflow contract missing installed SDK proof output context')
+}
 if (apiWorkflow.exampleContext?.workdir !== 'repository-root') {
 	throw new Error('installed API agent workflow contract missing example workdir context')
 }
@@ -374,6 +392,15 @@ if (!mcpWorkflow.workflow?.some((step) => step.step === 'reopen-verify')) {
 if (mcpWorkflow.examples?.mcpSafeEdit !== 'bun run example:safe-edit:mcp <file.xlsx> <out.xlsx>') {
 	throw new Error('installed MCP agent workflow contract missing MCP safe-edit example')
 }
+if (
+	mcpWorkflow.examples?.installedSdkSafeEdit !==
+	'bun node_modules/@ascend/sdk/examples/package-install-safe-edit.ts <file.xlsx> <out.xlsx>'
+) {
+	throw new Error('installed MCP agent workflow contract missing installed SDK safe-edit example')
+}
+if (!mcpWorkflow.packageInstallExampleContext?.proofOutput?.includes('proofBundle.whySafe')) {
+	throw new Error('installed MCP agent workflow contract missing installed SDK proof output context')
+}
 if (mcpWorkflow.exampleContext?.proofCommand !== 'bun test examples/root-scripts.test.ts') {
 	throw new Error('installed MCP agent workflow contract missing example proof context')
 }
@@ -392,6 +419,9 @@ if (!mcpWorkflowResource?.contents?.[0]?.text?.includes('ascend.plan')) {
 if (!mcpWorkflowResource.contents[0].text.includes('root-scripts.test.ts')) {
 	throw new Error('installed MCP agent workflow resource missing example proof context')
 }
+if (!mcpWorkflowResource.contents[0].text.includes('proofBundle.safeToUse')) {
+	throw new Error('installed MCP agent workflow resource missing installed package proof output context')
+}
 
 console.log(JSON.stringify({
 	cli: {
@@ -404,6 +434,7 @@ console.log(JSON.stringify({
 		apiWorkflowEndpoint: cliAgentInit.apiEndpoints.workflow,
 		mcpWorkflowTool: cliAgentInit.mcpTools.workflow,
 		examples: cliAgentInit.examples,
+		packageInstallExampleContext: cliAgentInit.packageInstallExampleContext,
 		exampleContext: cliAgentInit.exampleContext,
 	},
 	api: {
@@ -416,6 +447,7 @@ console.log(JSON.stringify({
 		values: apiValues,
 		workflowSteps: apiWorkflow.workflow.length,
 		examples: apiWorkflow.examples,
+		packageInstallExampleContext: apiWorkflow.packageInstallExampleContext,
 		exampleContext: apiWorkflow.exampleContext,
 	},
 	apiCapabilities: capabilities.data.capabilities.length,
@@ -431,6 +463,7 @@ console.log(JSON.stringify({
 		capabilities: mcpCapabilities.structuredContent.data.capabilities.length,
 		workflowSteps: mcpWorkflow.workflow.length,
 		examples: mcpWorkflow.examples,
+		packageInstallExampleContext: mcpWorkflow.packageInstallExampleContext,
 		exampleContext: mcpWorkflow.exampleContext,
 	},
 }))

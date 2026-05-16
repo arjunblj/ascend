@@ -1100,6 +1100,24 @@ describe('release proof evidence index', () => {
 			]),
 			nextOwnerAction: expect.stringContaining('bun run release:rc:gate'),
 		})
+		const formulaOracleDecision = index.releaseDecisionBoard.doNotPromoteYet.find(
+			(item) => item.name === 'formula-oracle-routing',
+		)
+		const formulaOracleEvidence = formulaOracleDecision?.evidenceWeHave.join('\n') ?? ''
+		const formulaOracleMissing = formulaOracleDecision?.evidenceMissing.join('\n') ?? ''
+		const formulaOracleForbidden = formulaOracleDecision?.forbiddenWording.join('\n') ?? ''
+		const formulaOracleNextOwnerAction = formulaOracleDecision?.nextOwnerAction ?? ''
+		expect(formulaOracleEvidence).toContain('formula-corpus-correctness.test.ts')
+		expect(formulaOracleEvidence).toContain('fixtures/xlsx/libreoffice/manifest.ts')
+		expect(formulaOracleEvidence).toContain('formula-sota.test.ts')
+		expect(formulaOracleMissing).toContain('unsupported function')
+		expect(formulaOracleMissing).toContain('HyperFormula, LibreOffice, Excel')
+		expect(formulaOracleMissing).toContain('artifact verifier')
+		expect(formulaOracleForbidden).toContain('Excel-compatible formulas')
+		expect(formulaOracleForbidden).toContain('fresh cached values')
+		expect(formulaOracleForbidden).toContain('QSS/SOTA formula superiority')
+		expect(formulaOracleNextOwnerAction).toContain('formula-corpus-correctness.test.ts')
+		expect(formulaOracleNextOwnerAction).toContain('--tag formula-fidelity')
 		const propertyJournalDecision = index.releaseDecisionBoard.doNotPromoteYet.find(
 			(item) => item.name === 'property-journal-laws',
 		)
@@ -2261,6 +2279,8 @@ describe('release proof evidence index', () => {
 		expect(markdown).toContain('edit-producing rename is frozen')
 		expect(markdown).toContain('formula-assist-proof.ts')
 		expect(markdown).toContain('Do not claim edit-producing rename')
+		expect(markdown).toContain('formula-corpus-correctness.test.ts')
+		expect(markdown).toContain('Do not claim Excel-compatible formulas')
 		expect(markdown).toContain('journal-law-proof.test.ts')
 		expect(markdown).toContain('Do not claim property-based testing')
 		expect(markdown).toContain('columnar-sidecar.test.ts')

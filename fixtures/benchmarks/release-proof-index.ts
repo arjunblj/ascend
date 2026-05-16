@@ -2257,6 +2257,8 @@ function releaseDecisionDoNotPromoteItem(
 		note.name === 'research-surface-hygiene' ? RESEARCH_SURFACE_HYGIENE_BLOCKER : undefined
 	const columnarSidecarBlocker =
 		note.name === 'columnar-scan-sidecars' ? COLUMNAR_SIDECAR_BLOCKER : undefined
+	const formulaOracleRoutingBlocker =
+		note.name === 'formula-oracle-routing' ? FORMULA_ORACLE_ROUTING_BLOCKER : undefined
 	const tokenBoundedAgentViewBlocker =
 		note.name === 'token-bounded-agent-view' ? TOKEN_BOUNDED_AGENT_VIEW_BLOCKER : undefined
 	const retainedViewportPatchBlocker =
@@ -2273,6 +2275,7 @@ function releaseDecisionDoNotPromoteItem(
 			...(propertyJournalLawBlocker?.evidenceWeHave ?? []),
 			...(researchHygieneBlocker?.evidenceWeHave ?? []),
 			...(columnarSidecarBlocker?.evidenceWeHave ?? []),
+			...(formulaOracleRoutingBlocker?.evidenceWeHave ?? []),
 			...(tokenBoundedAgentViewBlocker?.evidenceWeHave ?? []),
 			...(retainedViewportPatchBlocker?.evidenceWeHave ?? []),
 			...(portfolioClaim?.proofCommand
@@ -2290,6 +2293,7 @@ function releaseDecisionDoNotPromoteItem(
 			...(propertyJournalLawBlocker?.evidenceMissing ?? []),
 			...(researchHygieneBlocker?.evidenceMissing ?? []),
 			...(columnarSidecarBlocker?.evidenceMissing ?? []),
+			...(formulaOracleRoutingBlocker?.evidenceMissing ?? []),
 			...(tokenBoundedAgentViewBlocker?.evidenceMissing ?? []),
 			...(retainedViewportPatchBlocker?.evidenceMissing ?? []),
 			...(proof ? [proof.fixture, proof.benchmark, proof.surface, proof.validationGate] : []),
@@ -2306,6 +2310,7 @@ function releaseDecisionDoNotPromoteItem(
 			...(propertyJournalLawBlocker?.forbiddenWording ?? []),
 			...(researchHygieneBlocker?.forbiddenWording ?? []),
 			...(columnarSidecarBlocker?.forbiddenWording ?? []),
+			...(formulaOracleRoutingBlocker?.forbiddenWording ?? []),
 			...(tokenBoundedAgentViewBlocker?.forbiddenWording ?? []),
 			...(retainedViewportPatchBlocker?.forbiddenWording ?? []),
 			...(proof ? [proof.honestBoundary] : []),
@@ -2317,6 +2322,7 @@ function releaseDecisionDoNotPromoteItem(
 			propertyJournalLawBlocker?.ownerAction ??
 			researchHygieneBlocker?.ownerAction ??
 			columnarSidecarBlocker?.ownerAction ??
+			formulaOracleRoutingBlocker?.ownerAction ??
 			tokenBoundedAgentViewBlocker?.ownerAction ??
 			retainedViewportPatchBlocker?.ownerAction ??
 			deferredClaim?.proofNeeded ??
@@ -2974,6 +2980,24 @@ const COLUMNAR_SIDECAR_BLOCKER = {
 	],
 	forbiddenWording: [
 		'Do not claim a production cache, Arrow ABI, DuckDB integration, storage engine, workbook rewrite path, mixed-type table engine, guaranteed acceleration, QSS/SOTA speed win, or SDK/API/MCP sidecar product surface from current columnar sidecar evidence.',
+	],
+} as const
+
+const FORMULA_ORACLE_ROUTING_BLOCKER = {
+	ownerAction:
+		'Correctness owner keeps formula-oracle-routing out of release wording, reruns `bun test fixtures/benchmarks/formula-corpus-correctness.test.ts --timeout 30000` and `bun run fixtures/benchmarks/formula-corpus-correctness.ts --corpus-root fixtures/xlsx/libreoffice --manifest fixtures/xlsx/libreoffice/manifest.ts --tag formula-fidelity --max-workbooks 5 --json`, then adds public corpus artifacts and real HyperFormula/LibreOffice/Excel/static-golden oracle adapters with skip/divergence counters before any Excel-compatible formula wording.',
+	evidenceWeHave: [
+		'Formula corpus correctness tests cover TypeScript corpus manifests, cached-value comparisons, date-system-sensitive formulas, control-character strings, mismatch references, no-cached-value skips, volatile oracle skips, accepted numeric drift, stale oracle routing, assertion gates, and CLI threshold gates in `fixtures/benchmarks/formula-corpus-correctness.test.ts`.',
+		'Public cached-value corpus command exists: `bun run fixtures/benchmarks/formula-corpus-correctness.ts --corpus-root fixtures/xlsx/libreoffice --manifest fixtures/xlsx/libreoffice/manifest.ts --tag formula-fidelity --max-workbooks 5 --json` reports workbook/formula/compared counts, mismatch classes, skip counts, route counts, and source URLs.',
+		'HyperFormula comparator smoke tests exist in `fixtures/benchmarks/formula-sota.test.ts`, but they are performance/correctness comparator evidence, not a formula-corpus oracle replacement.',
+	],
+	evidenceMissing: [
+		'Runnable public corpus artifacts for cached-only, volatile, numeric drift, unsupported function, external refs, dynamic arrays, structured refs, and date-system mismatch classes with stable expected route counts.',
+		'Actual HyperFormula, LibreOffice, Excel, and static-golden oracle adapters that emit skip counters, divergence counters, oracle artifacts, and reproducible failure output without private corpora.',
+		'Owner-approved thresholds and artifact verifier before changing formula compatibility, cached-value freshness, or QSS/SOTA wording.',
+	],
+	forbiddenWording: [
+		'Do not claim Excel-compatible formulas, full formula parity, complete oracle automation, fresh cached values, zero mismatches, QSS/SOTA formula superiority, or HyperFormula/LibreOffice/Excel oracle execution from cached-value routing evidence alone.',
 	],
 } as const
 

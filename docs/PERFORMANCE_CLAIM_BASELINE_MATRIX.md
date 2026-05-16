@@ -15,7 +15,7 @@ No broad XLSX read, SOTA, or QSS-leapfrog speed claim is promotable from this ar
 - `competitive-scoreboard --require-profile xlsx-read-sota` still fails for broad promotion. The current full-profile run at `9ddfff91` reports no leader failures, and a merged selected-sheet/metadata-only scoreboard removes those same-lane comparability failures, but ClosedXML coverage, feature-rich semantic mismatches, and unsupported selected-sheet/metadata-only competitors remain explicit blockers.
 - The recorded cycles cover public/reproducible generated `dense-values`, `sparse-wide`, `styles-heavy`, `formula-heavy`, `table-heavy`, `feature-rich`, `selected-sheet`, `metadata-only`, `warm-workflow`, and `string-heavy` workloads over `raw-ooxml`, but they are per-workload evidence rows rather than one clean all-workload promotion run.
 - Current harness evidence now supports same-lane selected-sheet rows for Ascend, SheetJS, OpenPyXL, and python-calamine. Treat older `openpyxl` and Calamine selected-sheet `unsupported-operation` wording as historical for the recorded clean runs.
-- Current harness evidence now supports same-lane metadata-only rows for Ascend, SheetJS, and OpenPyXL. Treat older metadata-only `missing-comparable` wording as historical for the recorded clean runs.
+- Current harness evidence now supports same-lane metadata-only rows for Ascend, SheetJS, OpenPyXL, and python-calamine. Calamine wins that head-to-head; treat older metadata-only `missing-comparable` or Calamine `unsupported-operation` wording as historical.
 - Current harness evidence now supports a SheetJS feature-rich rich-metadata row using SheetJS `bookFiles`; older SheetJS `semantic-mismatch` wording is historical for the pre-runner-fix cycles. Calamine-family rich-metadata rows remain not comparable.
 - Several external runners were unavailable or blocked in the clean benchmark worktree. They are recorded as blockers, not wins.
 - Several timing lanes are semantically related but not one unified timing boundary. Do not collapse in-process, preloaded-bytes, file-path, row-stream, and materialized-workbook timings into a single "wins everything" claim.
@@ -31,7 +31,82 @@ Forbidden wording:
 - "Ascend beats every external library."
 - Any wording that treats failed or unavailable runners as wins.
 
-Next action: downgrade the broad speed claim and stop production optimization from this evidence. Continue only if the performance loop is explicitly attacking a remaining claim blocker: ClosedXML coverage, feature-rich semantic mismatches for SheetJS/Calamine, remaining unsupported selected-sheet or metadata-only competitors, or FastXLSX environment coverage.
+Next action: downgrade the broad speed claim and stop production optimization from winning rows. Continue only if the performance loop is explicitly attacking a remaining claim blocker or measured loss: ClosedXML coverage, feature-rich semantic mismatches for SheetJS/Calamine, metadata-only versus Calamine, remaining unsupported selected-sheet/metadata-only competitors, or FastXLSX environment coverage.
+
+## Metadata-Only Calamine Boundary
+
+Classification: defer/optimization target. Calamine is now a comparable
+metadata-only runner, and Ascend loses this row. A narrow attempted optimization
+to skip plain worksheet relationship probes was rejected because paired local
+measurement did not validate an improvement.
+
+Workflow: generated XLSX metadata-only open/inspect, loading workbook and sheet
+metadata without hydrating cells.
+
+Why it matters for release: metadata-only open is the safety-first path used
+before edit planning on unknown workbooks. A speed claim here must not ignore the
+native Calamine baseline.
+
+Public/tracked-clean input: `competitive-io` generated `metadata-only`
+`raw-ooxml`, 200 rows x 20 columns, three workbook sheets, 15,347 input bytes,
+from tracked benchmark code at commit `b6925afe`.
+
+Commands:
+
+```bash
+git worktree add --detach /private/tmp/ascend-metadata-calamine-clean-b6925afe b6925afe
+cd /private/tmp/ascend-metadata-calamine-clean-b6925afe
+bun install --frozen-lockfile
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-io.ts --json --category read --competitor all --execution-scope external-process --libraries ascend-external-metadata-only,sheetjs-metadata-only,openpyxl-metadata-only,python-calamine-metadata-only --workload metadata-only --read-source raw-ooxml --repeat 15 --warmup 3 --validation-mode each --runner-manifest fixtures/benchmarks/runners/metadata-only-readers.manifest.json > /private/tmp/ascend-metadata-calamine-clean-b6925afe/metadata-calamine-head-to-head.json
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-scoreboard.ts /private/tmp/ascend-metadata-calamine-clean-b6925afe/metadata-calamine-head-to-head.json --json --metric medianMs --require-profile xlsx-read-sota --assert-profile-leader ascend > /private/tmp/ascend-metadata-calamine-clean-b6925afe/metadata-calamine-scoreboard.json
+```
+
+Environment:
+
+- Commit: `b6925afe`
+- Worktree: clean detached worktree at
+  `/private/tmp/ascend-metadata-calamine-clean-b6925afe`
+- Bun: `1.3.13`
+- Python: `3.9.6`
+- Runtime profile: `category read`, `executionScope external-process`,
+  `workload metadata-only`, `readSource raw-ooxml`, `validationMode each`,
+  `repeat 15`, `warmup 3`.
+
+Result:
+
+| Runner | Status | Median ms | P95 ms | CV | Peak RSS | Semantic comparability |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| `python-calamine-metadata-only` | ran/won | 0.056 | 0.078 | 0.122 | 28.4 MiB | `metadataOnlyRead: true`, `cellsHydrated: false`, three sheets loaded |
+| `sheetjs-metadata-only` | ran/lost vs Calamine, ran/won vs Ascend median | 2.864 | 9.810 | 0.714 | 126.7 MiB | `metadataOnlyRead: true`, `cellsHydrated: false`, three sheets loaded |
+| `ascend-external-metadata-only` | ran/lost | 3.211 | 8.596 | 0.623 | 88.4 MiB | `metadataOnlyRead: true`, `cellsHydrated: false`, three sheets loaded |
+| `openpyxl-metadata-only` | ran/lost | 9.631 | 16.499 | 0.286 | 52.4 MiB | `metadataOnlyRead: true`, `cellsHydrated: false`, three sheets loaded |
+
+Gate result: `profileLeaderFailures` contains the metadata-only loss to
+`python-calamine-metadata-only`. ExcelJS, Apache POI, and ClosedXML remain
+`unsupported-operation` coverage gaps for this profile row and are not wins.
+
+Rejected optimization: a current-worktree patch that skipped plain worksheet
+relationship probes in metadata-only mode preserved focused semantic tests, but
+paired local `readXlsx(..., { mode: "metadata-only" })` measurement did not
+validate it: baseline median `0.105 ms`, patched median `0.168 ms` on the same
+generated input after warmup. The patch was reverted.
+
+Humble allowed wording:
+
+> Ascend has comparable metadata-only external evidence, but python-calamine is
+> faster on the generated metadata-only lane. This row is an optimization target,
+> not an Ascend speed win.
+
+Forbidden wording:
+
+- "Ascend is fastest for metadata-only XLSX reads."
+- "Ascend beats Calamine on metadata-only open."
+- Any wording that counts unsupported metadata-only competitors as wins.
+
+Next action: optimize only if profiling identifies a production change that
+reduces Ascend's measured metadata-only open time without weakening active
+content inventory or document-property inspection. Otherwise keep the
+metadata-only claim downgraded.
 
 ## Owner-Ready Benchmark Blocker
 

@@ -989,7 +989,12 @@ describe('release proof evidence index', () => {
 				evidenceId: 'api-open-workflow-reference-proof',
 				acceptedScope: expect.stringContaining('215d6e57'),
 				command:
-					'bun test apps/api/src/server.test.ts -t "missing workbook references|missing inputs|missing template data|before opening workbooks" --timeout 30000',
+					'bun test apps/api/src/server.test.ts -t "string API failures return coded JSON envelopes|missing workbook references|missing inputs|missing template data|before opening workbooks" --timeout 30000',
+			}),
+			expect.objectContaining({
+				evidenceId: 'api-open-workflow-reference-proof',
+				acceptedScope: expect.stringContaining('0a7d9d32'),
+				path: expect.stringContaining('apps/api/src/response.ts'),
 			}),
 			expect.objectContaining({
 				evidenceId: 'api-open-workflow-reference-proof',

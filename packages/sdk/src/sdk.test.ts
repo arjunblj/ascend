@@ -318,16 +318,16 @@ describe('AscendWorkbook', () => {
 				{ password: '123' },
 			)
 			await expect(encrypted.save(encryptedBlocked)).rejects.toThrow(
-				'Cannot export an edited encrypted workbook without re-encryption support',
+				'Cannot export an encrypted workbook to text without explicit decrypted export approval',
 			)
 			expect(() => encrypted.toCsv()).toThrow(
-				'Cannot export an edited encrypted workbook without re-encryption support',
+				'Cannot export an encrypted workbook to text without explicit decrypted export approval',
 			)
 			encrypted.apply([
 				{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'plain export' }] },
 			])
 			await expect(encrypted.save(encryptedBlocked)).rejects.toThrow(
-				'Cannot export an edited encrypted workbook without re-encryption support',
+				'Cannot export an encrypted workbook to text without explicit decrypted export approval',
 			)
 			expect(existsSync(encryptedBlocked)).toBe(false)
 			await encrypted.save(encryptedApproved, { allowDecryptedExport: true })
@@ -343,16 +343,16 @@ describe('AscendWorkbook', () => {
 
 			const signed = await Ascend.open(makeSignedXlsx())
 			await expect(signed.save(signedBlocked)).rejects.toThrow(
-				'Cannot export an edited signed workbook without explicit signature invalidation approval',
+				'Cannot export a signed workbook to text without explicit signature loss approval',
 			)
 			expect(() => signed.toCsv()).toThrow(
-				'Cannot export an edited signed workbook without explicit signature invalidation approval',
+				'Cannot export a signed workbook to text without explicit signature loss approval',
 			)
 			signed.apply([
 				{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'unsigned' }] },
 			])
 			await expect(signed.save(signedBlocked)).rejects.toThrow(
-				'Cannot export an edited signed workbook without explicit signature invalidation approval',
+				'Cannot export a signed workbook to text without explicit signature loss approval',
 			)
 			expect(existsSync(signedBlocked)).toBe(false)
 			await signed.save(signedApproved, { allowSignatureInvalidation: true })

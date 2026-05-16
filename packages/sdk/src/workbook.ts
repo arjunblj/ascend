@@ -1609,39 +1609,43 @@ export class AscendWorkbook extends WorkbookReadView {
 	}
 
 	private encryptedWorkbookExportError(requestedExport: 'xlsx' | 'text'): AscendException {
+		const message =
+			requestedExport === 'text'
+				? 'Cannot export an encrypted workbook to text without explicit decrypted export approval.'
+				: 'Cannot export an edited encrypted workbook without re-encryption support.'
 		return new AscendException(
-			ascendError(
-				'EXPORT_ERROR',
-				'Cannot export an edited encrypted workbook without re-encryption support.',
-				{
-					details: {
-						sourceWasEncrypted: true,
-						reEncryptionSupported: false,
-						requestedExport,
-					},
-					suggestedFix:
-						'Reopen the original encrypted workbook without editing, or pass allowDecryptedExport: true to explicitly save a decrypted plain output.',
+			ascendError('EXPORT_ERROR', message, {
+				details: {
+					sourceWasEncrypted: true,
+					reEncryptionSupported: false,
+					requestedExport,
 				},
-			),
+				suggestedFix:
+					requestedExport === 'text'
+						? 'Save as XLSX/XLSM to keep the encrypted package, or pass allowDecryptedExport: true only when the caller explicitly accepts decrypted values-only text output.'
+						: 'Reopen the original encrypted workbook without editing, or pass allowDecryptedExport: true to explicitly save a decrypted plain output.',
+			}),
 		)
 	}
 
 	private signedWorkbookExportError(requestedExport: 'xlsx' | 'text'): AscendException {
+		const message =
+			requestedExport === 'text'
+				? 'Cannot export a signed workbook to text without explicit signature loss approval.'
+				: 'Cannot export an edited signed workbook without explicit signature invalidation approval.'
 		return new AscendException(
-			ascendError(
-				'EXPORT_ERROR',
-				'Cannot export an edited signed workbook without explicit signature invalidation approval.',
-				{
-					details: {
-						signatureInvalidationSupported: true,
-						reSigningSupported: false,
-						requestedExport,
-						signatureParts: this.invalidatedSignaturePartPaths(),
-					},
-					suggestedFix:
-						'Reopen the original signed workbook without editing, or pass allowSignatureInvalidation: true only when the caller explicitly accepts unsigned output and will re-sign outside Ascend if signature trust matters.',
+			ascendError('EXPORT_ERROR', message, {
+				details: {
+					signatureInvalidationSupported: true,
+					reSigningSupported: false,
+					requestedExport,
+					signatureParts: this.invalidatedSignaturePartPaths(),
 				},
-			),
+				suggestedFix:
+					requestedExport === 'text'
+						? 'Save as XLSX/XLSM to preserve signature material, or pass allowSignatureInvalidation: true only when the caller explicitly accepts unsigned values-only text output.'
+						: 'Reopen the original signed workbook without editing, or pass allowSignatureInvalidation: true only when the caller explicitly accepts unsigned output and will re-sign outside Ascend if signature trust matters.',
+			}),
 		)
 	}
 

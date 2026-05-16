@@ -2255,7 +2255,7 @@ function ownerDecisionArtifactsFor(
 					decision:
 						'Use the performance matrix as a defer decision: no broad XLSX read, SOTA, or QSS-leapfrog speed claim is promotable from the current partial baseline.',
 					nextAction:
-						'Benchmarking owner expands the profile with `metadata-only` next, hardens FastExcel Java on `sparse-wide`, ClosedXML, fastxlsx, rich-metadata semantic mismatch blockers, and selected-sheet unsupported-operation gaps, and only then continues toward a full clean `xlsx-read-sota` profile.',
+						'Benchmarking owner expands the profile with `warm-workflow` next, hardens FastExcel Java on `sparse-wide`, ClosedXML, fastxlsx, rich-metadata semantic mismatch blockers, selected-sheet unsupported-operation gaps, and metadata-only unsupported-operation gaps, and only then continues toward a full clean `xlsx-read-sota` profile.',
 					forbiddenShortcut:
 						'Do not count unavailable runners, blocked runners, dirty-worktree timings, or one-workload medians as speed wins.',
 					boundary:

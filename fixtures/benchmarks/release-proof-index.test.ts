@@ -1020,7 +1020,7 @@ describe('release proof evidence index', () => {
 					path: 'docs/PERFORMANCE_CLAIM_BASELINE_MATRIX.md',
 					validationCommand:
 						'bun test fixtures/benchmarks/performance-claim-baseline-matrix.test.ts',
-					nextAction: expect.stringContaining('`metadata-only` next'),
+					nextAction: expect.stringContaining('`warm-workflow` next'),
 					forbiddenShortcut: expect.stringContaining('one-workload medians'),
 				}),
 			]),

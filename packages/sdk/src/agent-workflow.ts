@@ -414,6 +414,7 @@ export interface CompactAgentPostWriteVerification {
 	readonly comments: PostWriteCommentSummary
 	readonly hyperlinks: PostWriteHyperlinkSummary
 	readonly dataValidations: PostWriteDataValidationSummary
+	readonly dataConnections: PostWriteDataConnectionSummary
 	readonly tables: PostWriteTableSummary
 	readonly definedNames: PostWriteDefinedNameSummary
 	readonly externalReferences: PostWriteExternalReferenceSummary
@@ -458,6 +459,7 @@ export interface AgentPostWriteVerification {
 	readonly comments: PostWriteCommentSummary
 	readonly hyperlinks: PostWriteHyperlinkSummary
 	readonly dataValidations: PostWriteDataValidationSummary
+	readonly dataConnections: PostWriteDataConnectionSummary
 	readonly tables: PostWriteTableSummary
 	readonly definedNames: PostWriteDefinedNameSummary
 	readonly externalReferences: PostWriteExternalReferenceSummary
@@ -538,6 +540,34 @@ export interface PostWriteDataValidationEntry {
 	readonly allowBlank?: boolean
 	readonly showInputMessage?: boolean
 	readonly showErrorMessage?: boolean
+}
+
+export interface PostWriteDataConnectionSummary {
+	readonly total: number
+	readonly workbookConnections: number
+	readonly queryTables: number
+	readonly refreshOnOpen: number
+	readonly notSaved: number
+	readonly unknown: number
+	readonly cached: number
+	readonly partPaths: readonly string[]
+	readonly names: readonly string[]
+	readonly connectionIds: readonly number[]
+	readonly connections: readonly PostWriteDataConnectionEntry[]
+	readonly preservationMode: 'preserve-exact' | 'none'
+	readonly verification: 'reopened-output'
+}
+
+export interface PostWriteDataConnectionEntry {
+	readonly kind: 'connection' | 'queryTable' | 'powerQueryMashup'
+	readonly partPath: string
+	readonly state: 'cached' | 'refresh-on-open' | 'not-saved' | 'unknown'
+	readonly sheetName?: string
+	readonly name?: string
+	readonly connectionId?: number
+	readonly refreshOnLoad?: boolean
+	readonly saveData?: boolean
+	readonly refreshedVersion?: number
 }
 
 export interface PostWriteTableSummary {
@@ -1912,6 +1942,7 @@ function compactPostWriteVerification(
 		comments: postWrite.comments,
 		hyperlinks: postWrite.hyperlinks,
 		dataValidations: postWrite.dataValidations,
+		dataConnections: postWrite.dataConnections,
 		tables: postWrite.tables,
 		definedNames: postWrite.definedNames,
 		externalReferences: postWrite.externalReferences,
@@ -2416,6 +2447,7 @@ async function verifyWrittenWorkbook(
 	const comments = postWriteCommentSummary(workbook)
 	const hyperlinks = postWriteHyperlinkSummary(workbook)
 	const dataValidations = postWriteDataValidationSummary(workbook)
+	const dataConnections = postWriteDataConnectionSummary(workbook)
 	const tables = postWriteTableSummary(workbook)
 	const definedNames = postWriteDefinedNameSummary(workbook)
 	const externalReferences = postWriteExternalReferenceSummary(workbook)
@@ -2479,6 +2511,7 @@ async function verifyWrittenWorkbook(
 		comments,
 		hyperlinks,
 		dataValidations,
+		dataConnections,
 		tables,
 		definedNames,
 		externalReferences,
@@ -2576,6 +2609,54 @@ function postWriteDataValidationSummary(workbook: Workbook): PostWriteDataValida
 		preservationMode: validations.length > 0 ? 'generated' : 'none',
 		verification: 'reopened-output',
 	}
+}
+
+function postWriteDataConnectionSummary(workbook: Workbook): PostWriteDataConnectionSummary {
+	const connections = workbook.connectionParts.map((part) => ({
+		kind: part.kind,
+		partPath: part.partPath,
+		state: postWriteDataConnectionState(part),
+		...(part.sheetName !== undefined ? { sheetName: part.sheetName } : {}),
+		...(part.name !== undefined ? { name: part.name } : {}),
+		...(part.connectionId !== undefined ? { connectionId: part.connectionId } : {}),
+		...(part.refreshOnLoad !== undefined ? { refreshOnLoad: part.refreshOnLoad } : {}),
+		...(part.saveData !== undefined ? { saveData: part.saveData } : {}),
+		...(part.refreshedVersion !== undefined ? { refreshedVersion: part.refreshedVersion } : {}),
+	}))
+	return {
+		total: connections.length,
+		workbookConnections: connections.filter((connection) => connection.kind === 'connection')
+			.length,
+		queryTables: connections.filter((connection) => connection.kind === 'queryTable').length,
+		refreshOnOpen: connections.filter((connection) => connection.state === 'refresh-on-open')
+			.length,
+		notSaved: connections.filter(
+			(connection) => connection.state === 'not-saved' || connection.saveData === false,
+		).length,
+		unknown: connections.filter((connection) => connection.state === 'unknown').length,
+		cached: connections.filter((connection) => connection.state === 'cached').length,
+		partPaths: uniqueStrings(connections.map((connection) => connection.partPath)),
+		names: uniqueStrings(
+			connections.flatMap((connection) => (connection.name ? [connection.name] : [])),
+		),
+		connectionIds: uniqueNumbers(
+			connections.flatMap((connection) =>
+				connection.connectionId !== undefined ? [connection.connectionId] : [],
+			),
+		),
+		connections,
+		preservationMode: connections.length > 0 ? 'preserve-exact' : 'none',
+		verification: 'reopened-output',
+	}
+}
+
+function postWriteDataConnectionState(
+	part: Workbook['connectionParts'][number],
+): PostWriteDataConnectionEntry['state'] {
+	if (part.refreshOnLoad) return 'refresh-on-open'
+	if (part.saveData === false) return 'not-saved'
+	if (part.refreshedVersion === undefined) return 'unknown'
+	return 'cached'
 }
 
 function postWriteTableSummary(workbook: Workbook): PostWriteTableSummary {
@@ -8222,6 +8303,10 @@ function isExpectedDiscardedCalcChainCheckIssue(
 }
 
 function uniqueStrings(values: readonly string[]): string[] {
+	return [...new Set(values)]
+}
+
+function uniqueNumbers(values: readonly number[]): number[] {
 	return [...new Set(values)]
 }
 

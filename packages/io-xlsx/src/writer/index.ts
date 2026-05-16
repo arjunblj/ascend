@@ -98,6 +98,8 @@ const REL_EXT_PROPS =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties'
 const REL_CUSTOM_PROPS =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/custom-properties'
+const REL_THUMBNAIL =
+	'http://schemas.openxmlformats.org/package/2006/relationships/metadata/thumbnail'
 const REL_DIGITAL_SIGNATURE_ORIGIN =
 	'http://schemas.openxmlformats.org/package/2006/relationships/digital-signature/origin'
 const REL_HYPERLINK =
@@ -1963,6 +1965,7 @@ export function planWriteXlsx(
 				type: preserved?.type ?? type,
 				...(preserved?.rawType ? { rawType: preserved.rawType } : {}),
 				target: preserved?.target ?? rootRelTarget(type, partPath, fallback),
+				...(preserved?.targetMode ? { targetMode: preserved.targetMode } : {}),
 			})
 			return id
 		}
@@ -1971,6 +1974,10 @@ export function planWriteXlsx(
 			addRootRel(REL_CORE_PROPS, corePropsPath, corePropsPath)
 			addRootRel(REL_EXT_PROPS, appPropsPath, appPropsPath)
 			if (shouldWriteCustomDocProps) addRootRel(REL_CUSTOM_PROPS, customPropsPath, customPropsPath)
+		}
+		for (const rel of preservedRootRels) {
+			if (rel.type !== REL_THUMBNAIL) continue
+			addRootRel(rel.type, resolvePath('', rel.target), rel.target)
 		}
 		if (capsules) {
 			for (const capsule of capsules) {

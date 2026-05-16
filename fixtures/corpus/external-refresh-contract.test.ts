@@ -1,5 +1,7 @@
-import { describe, expect, test } from 'bun:test'
-import { readFileSync } from 'node:fs'
+import { afterEach, describe, expect, test } from 'bun:test'
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import {
 	auditXlsxPackageGraphBytePreservation,
 	auditXlsxPackageGraphReadIntegrity,
@@ -8,10 +10,18 @@ import {
 } from '@ascend/io-xlsx'
 import {
 	AscendWorkbook,
+	commitAgentPlan,
+	createAgentPlan,
 	type ExternalReferenceInfo,
 	type WorkbookConnectionPartInfo,
 	type WorkbookRefreshMetadataEntry,
 } from '@ascend/sdk'
+
+const TEMP_DIR = join(tmpdir(), `ascend-external-refresh-contract-${process.pid}`)
+
+afterEach(() => {
+	if (existsSync(TEMP_DIR)) rmSync(TEMP_DIR, { recursive: true, force: true })
+})
 
 function loadFixture(path: string): Uint8Array {
 	return new Uint8Array(readFileSync(new URL(path, import.meta.url)))
@@ -34,7 +44,19 @@ function externalReferenceContract(entry: ExternalReferenceInfo): Record<string,
 	}
 }
 
-function connectionContract(entry: WorkbookConnectionPartInfo): Record<string, unknown> {
+type ConnectionContractInfo = Pick<
+	WorkbookConnectionPartInfo,
+	| 'kind'
+	| 'partPath'
+	| 'sheetName'
+	| 'name'
+	| 'connectionId'
+	| 'refreshOnLoad'
+	| 'saveData'
+	| 'refreshedVersion'
+>
+
+function connectionContract(entry: ConnectionContractInfo): Record<string, unknown> {
 	return {
 		kind: entry.kind,
 		partPath: entry.partPath,
@@ -316,6 +338,117 @@ describe('external refresh corpus contract', () => {
 				{ ignoredRelationshipFamilies: ['preservedDocumentProperties'] },
 			),
 		).toEqual([])
+	})
+
+	test('commit proof reports reopened public query-table connection metadata', async () => {
+		const input = join(TEMP_DIR, 'libreoffice-table-owned-query.xlsx')
+		const output = join(TEMP_DIR, 'libreoffice-table-owned-query-out.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		const source = loadFixture('../xlsx/libreoffice/TableEmptyHeaders.xlsx')
+		await Bun.write(input, source)
+		const ops = [
+			{
+				op: 'setConnectionRefresh' as const,
+				partPath: 'xl/queryTables/queryTable1.xml',
+				connectionId: 2,
+				refreshOnLoad: false,
+				saveData: true,
+				refreshedVersion: 6,
+			},
+		]
+
+		const plan = await createAgentPlan(input, ops)
+		expect(
+			plan.writePolicy.diagnostics.some((diagnostic) => diagnostic.severity === 'blocker'),
+		).toBe(false)
+		const committed = await commitAgentPlan(input, ops, {
+			output,
+			approvals: plan.approvals.map((approval) => approval.id),
+		})
+
+		expect(committed.postWrite.auditsPassed).toBe(true)
+		expect(committed.postWrite.dataConnections).toMatchObject({
+			total: 14,
+			workbookConnections: 13,
+			queryTables: 1,
+			refreshOnOpen: 4,
+			notSaved: 0,
+			unknown: 0,
+			cached: 10,
+			preservationMode: 'preserve-exact',
+			verification: 'reopened-output',
+		})
+		expect(committed.postWrite.dataConnections.partPaths).toEqual(
+			expect.arrayContaining(['xl/connections.xml', 'xl/queryTables/queryTable1.xml']),
+		)
+		expect(committed.postWrite.dataConnections.names).toEqual(
+			expect.arrayContaining(['Query - Bitcoin', 'ExternalData_1']),
+		)
+		expect(committed.postWrite.dataConnections.connectionIds).toEqual(
+			expect.arrayContaining([1, 2, 13]),
+		)
+		expect(committed.postWrite.dataConnections.connections).toContainEqual(
+			expect.objectContaining({
+				kind: 'connection',
+				partPath: 'xl/connections.xml',
+				name: 'Query - Bitcoin',
+				connectionId: 2,
+				refreshOnLoad: true,
+				state: 'refresh-on-open',
+			}),
+		)
+		expect(committed.postWrite.dataConnections.connections).toContainEqual(
+			expect.objectContaining({
+				kind: 'queryTable',
+				partPath: 'xl/queryTables/queryTable1.xml',
+				name: 'ExternalData_1',
+				connectionId: 2,
+				refreshOnLoad: false,
+				saveData: true,
+				refreshedVersion: 6,
+				state: 'cached',
+			}),
+		)
+		const reopened = await AscendWorkbook.open(new Uint8Array(readFileSync(output)))
+		expect(sortedContracts(reopened.connectionParts(), connectionContract)).toEqual(
+			sortedContracts(committed.postWrite.dataConnections.connections, connectionContract),
+		)
+	})
+
+	test('fails closed on public query-table workbook with dangling thumbnail relationship', async () => {
+		const input = join(TEMP_DIR, 'libreoffice-query-table-dangling-thumbnail.xlsx')
+		const output = join(TEMP_DIR, 'libreoffice-query-table-dangling-thumbnail-out.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		const source = loadFixture('../xlsx/libreoffice/queryTableExport.xlsx')
+		await Bun.write(input, source)
+		const ops = [
+			{ op: 'setCells' as const, sheet: 'Sheet1', updates: [{ ref: 'Z99', value: 'audit' }] },
+		]
+
+		const plan = await createAgentPlan(input, ops)
+		expect(plan.writePolicy.diagnostics).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					code: 'pre-write-check-error',
+					severity: 'blocker',
+					message: expect.stringContaining('structural check error'),
+				}),
+			]),
+		)
+		expect(plan.writePolicy.diagnostics.map((diagnostic) => JSON.stringify(diagnostic))).toEqual(
+			expect.arrayContaining([
+				expect.stringContaining('docProps/thumbnail.jpeg'),
+				expect.stringContaining('Package relationship _rels/.rels#rId2 resolves to missing target'),
+			]),
+		)
+		await expect(
+			commitAgentPlan(input, ops, {
+				output,
+				approvals: plan.approvals.map((approval) => approval.id),
+			}),
+		).rejects.toThrow('Commit blocked by write policy')
+		expect(existsSync(output)).toBe(false)
+		expect(Buffer.from(readFileSync(input)).equals(Buffer.from(source))).toBe(true)
 	})
 
 	test('edits public table-owned query refresh metadata and reopens as cached', async () => {

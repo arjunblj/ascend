@@ -1527,6 +1527,108 @@ Next action: defer production optimization for table-heavy from this current
 winning row. Continue only with a measured release workflow loss, a full-profile
 coverage blocker, or an explicit claim downgrade.
 
+## Cycle: Feature Rich Write Current Comparable Boundary at `a5fa3006`
+
+Classification: comparable external evidence plus not-comparable boundary.
+Ascend is the median and p95 winner against XlsxWriter on the completed
+feature-rich generated XLSX write row. OpenPyXL ran but is not ranking eligible
+because it failed the rich feature semantic contract, so it is not counted as a
+win. This is scoped write-rich-metadata evidence, not a broad `xlsx-write-sota`
+promotion.
+
+Workflow: generated XLSX write for feature-rich workbooks, 2000 rows x 20
+columns, including defined name, hyperlink, comment, data validation, and
+conditional formatting obligations.
+
+Why it matters for release: feature-rich generated export is the closest write
+row to a practical agent-authored workbook with visible metadata. Any release
+speed claim here must prove both cell values and workbook features, not just
+file generation.
+
+Public/tracked-clean input: `competitive-io` generated the `feature-rich`
+`source-mode generated-write` workload from tracked benchmark code in a clean
+detached worktree at commit `a5fa3006`. No private corpus or local research
+workbook was used.
+
+Commands:
+
+```bash
+git worktree add --detach /private/tmp/ascend-write-feature-current-a5fa3006 a5fa30069de7
+cd /private/tmp/ascend-write-feature-current-a5fa3006
+bun install --frozen-lockfile
+mkdir -p /private/tmp/ascend-write-feature-current-a5fa3006-runs
+TMPDIR=/private/tmp ACCEPT_NPOI_OSMF_LICENSE=1 env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-io.ts --json --category write --competitor all --execution-scope external-process --source-mode generated-write --libraries ascend-external-writer,xlsxwriter,openpyxl --workload feature-rich --repeat 15 --warmup 3 --validation-mode each --write-runner-manifest fixtures/benchmarks/runners/sota-writers.manifest.json > /private/tmp/ascend-write-feature-current-a5fa3006-runs/write-feature-rich-repeat15.json
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-scoreboard.ts /private/tmp/ascend-write-feature-current-a5fa3006-runs/write-feature-rich-repeat15.json --json --metric medianMs --require-profile xlsx-write-sota --assert-profile-leader ascend > /private/tmp/ascend-write-feature-current-a5fa3006-runs/write-feature-rich-repeat15-scoreboard.json
+```
+
+Environment:
+
+- Commit: `a5fa30069de793a6e1b07addebb6b37108968995`
+- Worktree: clean detached worktree at
+  `/private/tmp/ascend-write-feature-current-a5fa3006`
+- Bun runtime: `1.3.13`
+- Node: `24.3.0`
+- Platform: Darwin arm64
+- Runtime profile: `category write`, `executionScope external-process`,
+  `sourceMode generated-write`, `workload feature-rich`,
+  `validationMode each`, `repeat 15`, `warmup 3`.
+
+Raw output:
+
+```text
+/private/tmp/ascend-write-feature-current-a5fa3006-runs/write-feature-rich-repeat15.json
+/private/tmp/ascend-write-feature-current-a5fa3006-runs/write-feature-rich-repeat15-scoreboard.json
+```
+
+Feature-rich writer row, repeat 15 after 3 warmups:
+
+| Runner | Status vs Ascend | Median ms | P95 ms | CV | Peak RSS | Output bytes |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| `ascend-external-writer` | ran/won vs XlsxWriter | 15.270 | 16.568 | 0.070 | 171.0 MiB | 271114 |
+| `xlsxwriter` | ran/lost vs Ascend | 160.324 | 232.014 | 0.181 | 104.0 MiB | 121085 |
+| `openpyxl` | not comparable | 265.857 | 498.744 | 0.248 | 106.9 MiB | 126574 |
+
+Scoreboard result:
+
+- Feature-rich row: group winner was `ascend-external-writer`;
+  `leaderFailures: []` and `profileLeaderFailures: []`.
+- OpenPyXL ran but was `semantic-mismatch` and `rankingEligible: false`.
+- The scoreboard command exits nonzero for full-profile coverage because this is
+  not a full `xlsx-write-sota` run. Coverage failures and omitted, unsupported,
+  blocked, semantically mismatched, or untested feature-rich writers are not
+  counted as Ascend wins.
+
+Semantic comparability: Ascend and XlsxWriter reopened successfully, matched the
+expected one-sheet and 40,000-cell shape, passed sorted semantic cell value
+validation, and met the six feature-rich obligations tracked by the scorer.
+Ascend matched ordered semantic cell value hashes; XlsxWriter did not, so the
+comparison is feature-semantic, not byte/order-equivalent. OpenPyXL reopened and
+matched cell values, but it failed the feature-rich semantic contract because
+`featureRichSemanticMatches=false` and `featureRichHyperlinkMatches=false`; it
+is therefore not comparable for a write-rich-metadata speed claim.
+
+Humble allowed wording:
+
+> On the generated 2000 x 20 feature-rich write row at commit `a5fa3006`,
+> Ascend's focused external repeat-15 run was faster than XlsxWriter while
+> satisfying the tracked feature-rich obligations. OpenPyXL ran but was not
+> semantically comparable, so this is scoped write-rich-metadata evidence, not a
+> broad `xlsx-write-sota` claim.
+
+Forbidden wording:
+
+- "Ascend is SOTA for XLSX write."
+- "Ascend beats OpenPyXL on feature-rich writes."
+- "Ascend beats every feature-rich writer."
+- "Ascend beats omitted, unsupported, blocked, semantically mismatched, or
+  untested feature-rich writers."
+- "Ascend produces the smallest feature-rich XLSX."
+- "Ascend proves byte/order-equivalent output against every compared writer."
+
+Next action: defer production optimization for feature-rich from the XlsxWriter
+win and keep OpenPyXL as a not-comparable boundary unless the runner or semantic
+contract is narrowed in a future claim-specific block.
+
 ## Owner-Ready Benchmark Blocker
 
 Owner: benchmarking/external baselines.

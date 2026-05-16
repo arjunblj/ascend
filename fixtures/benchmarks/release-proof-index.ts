@@ -274,6 +274,34 @@ export interface ReleaseProofPerformanceBoundaryDecisionPacket {
 	readonly boundary: string
 }
 
+export interface ReleaseProofResearchHygieneDecisionPacket {
+	readonly ownerLoops: readonly ['product', 'release']
+	readonly status: 'claim-downgrade-do-not-promote'
+	readonly releaseGate: ReleaseProofReadinessSummary['releaseGate']
+	readonly headlineClaimsAllowed: boolean
+	readonly ownerApprovalRequired: true
+	readonly claim: 'research-surface-hygiene'
+	readonly workBlockDisposition: 'claim-downgrade-do-not-promote'
+	readonly dirtyInventoryCommand: string
+	readonly validationCommands: readonly string[]
+	readonly ownerFiles: readonly string[]
+	readonly classificationBuckets: readonly ReleaseProofResearchHygieneClassificationBucket[]
+	readonly failureEvidence: readonly string[]
+	readonly acceptanceCriteria: string
+	readonly allowedWording: string
+	readonly forbiddenWording: readonly string[]
+	readonly qssContrast: readonly string[]
+	readonly nextOwnerAction: string
+	readonly stopCondition: string
+	readonly boundary: string
+}
+
+export interface ReleaseProofResearchHygieneClassificationBucket {
+	readonly bucket: 'accepted-evidence' | 'active-owner-blocker' | 'archive-only'
+	readonly requirement: string
+	readonly forbiddenShortcut: string
+}
+
 export interface ReleaseProofFixtureDecisionTrackedScan {
 	readonly artifact: ReleaseProofIndexArtifactName
 	readonly gateId: 'public-edge-fixtures' | 'edge-fixture-policy'
@@ -2097,6 +2125,71 @@ export function releaseProofPerformanceBoundaryDecisionPacket(
 		],
 		boundary:
 			'Compact performance boundary packet. It is not a release speed claim, benchmark promotion, production optimization mandate, or owner approval.',
+	}
+}
+
+export function releaseProofResearchHygieneDecisionPacket(
+	result: ReleaseProofIndexResult,
+): ReleaseProofResearchHygieneDecisionPacket {
+	const decision = result.releaseDecisionBoard.doNotPromoteYet.find(
+		(item) => item.name === 'research-surface-hygiene',
+	)
+	const downgradeRows = result.releaseDecisionBoard.claimDowngradeOwnerActionQueue.filter(
+		(row) => row.name === 'research-surface-hygiene',
+	)
+	const ownerFiles = [...new Set(downgradeRows.flatMap((row) => row.ownerFiles))]
+	const validationCommands = [...new Set(downgradeRows.flatMap((row) => row.commandsToRun))]
+	return {
+		ownerLoops: ['product', 'release'],
+		status: 'claim-downgrade-do-not-promote',
+		releaseGate: result.readiness.releaseGate,
+		headlineClaimsAllowed: result.readiness.headlineClaimsAllowed,
+		ownerApprovalRequired: true,
+		claim: 'research-surface-hygiene',
+		workBlockDisposition: 'claim-downgrade-do-not-promote',
+		dirtyInventoryCommand:
+			'git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager',
+		validationCommands,
+		ownerFiles,
+		classificationBuckets: [
+			{
+				bucket: 'accepted-evidence',
+				requirement:
+					'Only cite a research path after it is represented in the release-proof index with evidence we have, evidence missing, QSS contrast, allowed wording, forbidden wording, and next owner action.',
+				forbiddenShortcut:
+					'Do not cite raw research, tmp, or experiment files directly in release wording.',
+			},
+			{
+				bucket: 'active-owner-blocker',
+				requirement:
+					'Convert unfinished research into an owner action with files, commands, failure evidence, acceptance criteria, and a stop condition.',
+				forbiddenShortcut:
+					'Do not let broad research notes create new product surfaces or benchmark work without a named owner loop.',
+			},
+			{
+				bucket: 'archive-only',
+				requirement:
+					'Keep stale or non-release research out of release wording and owner queues unless new evidence changes a top claim.',
+				forbiddenShortcut:
+					'Do not promote archive-only material as product, correctness, performance, QSS, or release evidence.',
+			},
+		],
+		failureEvidence: decision?.evidenceMissing ?? [],
+		acceptanceCriteria:
+			decision?.nextOwnerAction ??
+			'Product/release owner classifies each untriaged path before citing any research-derived claim.',
+		allowedWording: decision?.allowedWording ?? RESEARCH_SURFACE_HYGIENE_BLOCKER.allowedWording,
+		forbiddenWording: decision?.forbiddenWording ?? [
+			...RESEARCH_SURFACE_HYGIENE_BLOCKER.forbiddenWording,
+		],
+		qssContrast: decision?.qssContrast ?? [
+			'QSS comparison is blocked until research evidence is classified into release decisions instead of broad notes.',
+		],
+		nextOwnerAction: decision?.nextOwnerAction ?? RESEARCH_SURFACE_HYGIENE_BLOCKER.ownerAction,
+		stopCondition:
+			'Stop only when every path reported by the dirty inventory command is classified as accepted evidence, active owner blocker, or archive-only, and release-proof-index tests pass.',
+		boundary:
+			'Compact research hygiene decision packet. It is not research approval, not archive deletion, not owner classification by itself, and not permission to cite untriaged research in release wording.',
 	}
 }
 
@@ -6306,6 +6399,7 @@ if (import.meta.main) {
 	const fixtureDecisionJson = process.argv.includes('--fixture-decision-json')
 	const correctnessBoundaryJson = process.argv.includes('--correctness-boundary-json')
 	const performanceBoundaryJson = process.argv.includes('--performance-boundary-json')
+	const researchHygieneJson = process.argv.includes('--research-hygiene-json')
 	const result = await runReleaseProofIndex({
 		includeTimings: !process.argv.includes('--no-timings'),
 	})
@@ -6316,13 +6410,15 @@ if (import.meta.main) {
 				? JSON.stringify(releaseProofPerformanceBoundaryDecisionPacket(result), null, 2)
 				: correctnessBoundaryJson
 					? JSON.stringify(releaseProofCorrectnessBoundaryDecisionPacket(result), null, 2)
-					: fixtureDecisionJson
-						? JSON.stringify(releaseProofFixtureDecisionPacket(result), null, 2)
-						: ownerHandoffsJson
-							? JSON.stringify(releaseProofOwnerHandoffIndex(result), null, 2)
-							: json
-								? JSON.stringify(result, null, 2)
-								: releaseProofIndexMarkdown(result),
+					: researchHygieneJson
+						? JSON.stringify(releaseProofResearchHygieneDecisionPacket(result), null, 2)
+						: fixtureDecisionJson
+							? JSON.stringify(releaseProofFixtureDecisionPacket(result), null, 2)
+							: ownerHandoffsJson
+								? JSON.stringify(releaseProofOwnerHandoffIndex(result), null, 2)
+								: json
+									? JSON.stringify(result, null, 2)
+									: releaseProofIndexMarkdown(result),
 	)
 	if (
 		!json &&
@@ -6330,11 +6426,12 @@ if (import.meta.main) {
 		!releaseDecisionJson &&
 		!fixtureDecisionJson &&
 		!correctnessBoundaryJson &&
-		!performanceBoundaryJson
+		!performanceBoundaryJson &&
+		!researchHygieneJson
 	) {
 		console.error(`Indexed ${result.artifactCount} release proof evidence artifacts.`)
 		console.error(
-			`Run with --json, --owner-handoffs-json, --release-decision-json, --fixture-decision-json, --correctness-boundary-json, or --performance-boundary-json for machine-readable output from ${basename(import.meta.path)}.`,
+			`Run with --json, --owner-handoffs-json, --release-decision-json, --fixture-decision-json, --correctness-boundary-json, --performance-boundary-json, or --research-hygiene-json for machine-readable output from ${basename(import.meta.path)}.`,
 		)
 	}
 }

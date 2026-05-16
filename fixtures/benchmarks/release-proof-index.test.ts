@@ -3389,6 +3389,88 @@ describe('release proof evidence index', () => {
 		expect(stdout).not.toContain('"qssLeapfrogReleaseMatrix"')
 	})
 
+	test('emits a compact research hygiene decision packet JSON mode', async () => {
+		const proc = Bun.spawn([Bun.argv[0], runnerPath, '--no-timings', '--research-hygiene-json'], {
+			cwd: process.cwd(),
+			stderr: 'pipe',
+			stdout: 'pipe',
+		})
+		const [stdout, stderr, exitCode] = await Promise.all([
+			new Response(proc.stdout).text(),
+			new Response(proc.stderr).text(),
+			proc.exited,
+		])
+
+		expect(exitCode, stderr).toBe(0)
+		expect(stderr.trim()).toBe('')
+		const packet = JSON.parse(stdout) as {
+			readonly ownerLoops?: readonly string[]
+			readonly status?: string
+			readonly releaseGate?: string
+			readonly headlineClaimsAllowed?: boolean
+			readonly ownerApprovalRequired?: boolean
+			readonly claim?: string
+			readonly workBlockDisposition?: string
+			readonly dirtyInventoryCommand?: string
+			readonly validationCommands?: readonly string[]
+			readonly ownerFiles?: readonly string[]
+			readonly classificationBuckets?: readonly {
+				readonly bucket?: string
+				readonly requirement?: string
+				readonly forbiddenShortcut?: string
+			}[]
+			readonly failureEvidence?: readonly string[]
+			readonly acceptanceCriteria?: string
+			readonly allowedWording?: string
+			readonly forbiddenWording?: readonly string[]
+			readonly qssContrast?: readonly string[]
+			readonly nextOwnerAction?: string
+			readonly stopCondition?: string
+			readonly boundary?: string
+		}
+		expect(packet).toMatchObject({
+			ownerLoops: ['product', 'release'],
+			status: 'claim-downgrade-do-not-promote',
+			releaseGate: 'blocked-by-publication-policy',
+			headlineClaimsAllowed: false,
+			ownerApprovalRequired: true,
+			claim: 'research-surface-hygiene',
+			workBlockDisposition: 'claim-downgrade-do-not-promote',
+			dirtyInventoryCommand:
+				'git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager',
+		})
+		expect(packet.validationCommands).toEqual([
+			'git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager',
+			'bun test fixtures/benchmarks/release-proof-index.test.ts',
+		])
+		expect(packet.ownerFiles).toEqual(
+			expect.arrayContaining([
+				'research/',
+				'research/experiments/',
+				'scripts/ascend-loop-manager.ts',
+				'tmp/ascend-loop-manager/',
+			]),
+		)
+		expect(packet.classificationBuckets?.map((entry) => entry.bucket)).toEqual([
+			'accepted-evidence',
+			'active-owner-blocker',
+			'archive-only',
+		])
+		expect(packet.failureEvidence?.join('\n')).toContain('Owner-classified inventory')
+		expect(packet.acceptanceCriteria).toContain('classifies each untriaged path')
+		expect(packet.allowedWording).toContain('Do not promote research-surface-hygiene')
+		expect(packet.forbiddenWording?.join('\n')).toContain('Do not cite `research/` or `tmp/`')
+		expect(packet.qssContrast?.join('\n')).toContain('QSS comparison is blocked')
+		expect(packet.nextOwnerAction).toContain('git status --short research')
+		expect(packet.stopCondition).toContain(
+			'accepted evidence, active owner blocker, or archive-only',
+		)
+		expect(packet.boundary).toContain('Compact research hygiene decision packet')
+		expect(stdout).not.toContain('"claimBlockerBoard"')
+		expect(stdout).not.toContain('"fixturePolicy"')
+		expect(stdout).not.toContain('"qssLeapfrogReleaseMatrix"')
+	})
+
 	test('renders honest non-attestation boundaries', async () => {
 		const markdown = releaseProofIndexMarkdown(
 			await runReleaseProofIndex({ includeTimings: false }),

@@ -584,6 +584,53 @@ describe('Ascend API server', () => {
 		})
 	})
 
+	test('/package-graph rejects missing workbook references with structured retry guidance', async () => {
+		const result = await postJson('/package-graph', {})
+
+		expect(result.status).toBe(400)
+		expect(result.body.ok).toBe(false)
+		expect(result.body.error).toMatchObject({
+			code: 'VALIDATION_ERROR',
+			message: 'Missing or invalid package-graph workbook reference',
+			retryable: true,
+			retryStrategy: 'modified',
+			details: { required: ['file'] },
+			suggestedFix: expect.stringContaining('Pass file so Ascend can audit workbook package'),
+		})
+	})
+
+	test('/raw-part rejects missing workbook references with structured retry guidance', async () => {
+		const result = await postJson('/raw-part', { partPath: 'xl/workbook.xml' })
+
+		expect(result.status).toBe(400)
+		expect(result.body.ok).toBe(false)
+		expect(result.body.error).toMatchObject({
+			code: 'VALIDATION_ERROR',
+			message: 'Missing or invalid raw-part workbook reference',
+			retryable: true,
+			retryStrategy: 'modified',
+			details: { required: ['file'] },
+			suggestedFix: expect.stringContaining(
+				'Pass file so Ascend can inspect the requested raw package part',
+			),
+		})
+	})
+
+	test('/raw-part rejects missing package paths with structured retry guidance', async () => {
+		const result = await postJson('/raw-part', { file: TEMP_FILE })
+
+		expect(result.status).toBe(400)
+		expect(result.body.ok).toBe(false)
+		expect(result.body.error).toMatchObject({
+			code: 'VALIDATION_ERROR',
+			message: 'Missing or invalid package part path',
+			retryable: true,
+			retryStrategy: 'modified',
+			details: { required: ['partPath'] },
+			suggestedFix: expect.stringContaining('Pass partPath from /package-graph'),
+		})
+	})
+
 	test('/read rejects missing workbook references with structured retry guidance', async () => {
 		const result = await postJson('/read', { range: 'A1:A1' })
 

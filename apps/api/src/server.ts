@@ -197,6 +197,8 @@ type AgentWorkflowFileContext =
 	| 'inspect'
 	| 'active-content'
 	| 'trust-report'
+	| 'package-graph'
+	| 'raw-part'
 	| 'read'
 	| 'agent-view'
 	| 'plan'
@@ -213,6 +215,10 @@ function missingAgentWorkflowFileError(context: AgentWorkflowFileContext): Ascen
 				return 'Pass file so Ascend can inspect active content risks before planning edits.'
 			case 'trust-report':
 				return 'Pass file so Ascend can build a trust report before planning edits.'
+			case 'package-graph':
+				return 'Pass file so Ascend can audit workbook package preservation before planning edits.'
+			case 'raw-part':
+				return 'Pass file so Ascend can inspect the requested raw package part safely.'
 			case 'read':
 				return 'Pass file so Ascend can read the requested workbook range before planning edits.'
 			case 'agent-view':
@@ -230,6 +236,15 @@ function missingAgentWorkflowFileError(context: AgentWorkflowFileContext): Ascen
 			required: context === 'commit' ? ['file or planHandle'] : ['file'],
 		},
 		suggestedFix: requirement,
+	})
+}
+
+function missingPackagePartPathError(): AscendError {
+	return ascendError('VALIDATION_ERROR', 'Missing or invalid package part path', {
+		retryable: true,
+		retryStrategy: 'modified',
+		details: { required: ['partPath'] },
+		suggestedFix: 'Pass partPath from /package-graph using an exact package part path.',
 	})
 }
 
@@ -648,7 +663,7 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 			if (method === 'POST' && path === '/package-graph') {
 				const body = await parseJson<{ file?: string }>(req)
 				const file = body ? requireString(body, 'file') : null
-				if (!file) return jsonFailure('Missing or invalid file', 400)
+				if (!file) return jsonFailureError(missingAgentWorkflowFileError('package-graph'), 400)
 				try {
 					const wb = await WorkbookDocument.open(file, { mode: 'metadata-only' })
 					return jsonSuccess(await wb.packageGraph())
@@ -661,8 +676,8 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 				const body = await parseJson<Record<string, unknown>>(req)
 				const file = body ? requireString(body, 'file') : null
 				const partPath = body ? requireString(body, 'partPath') : null
-				if (!file) return jsonFailure('Missing or invalid file', 400)
-				if (!partPath) return jsonFailure('Missing or invalid partPath', 400)
+				if (!file) return jsonFailureError(missingAgentWorkflowFileError('raw-part'), 400)
+				if (!partPath) return jsonFailureError(missingPackagePartPathError(), 400)
 				const encoding = rawPartEncoding(body?.encoding)
 				if (!encoding.ok) {
 					return jsonFailureError(

@@ -486,7 +486,11 @@ export interface ReleaseProofBenchmarkCorpusOwnerAction {
 	readonly ownerLoop: ReleaseProofReadinessOwner
 	readonly requirementId?: string
 	readonly workBlockDisposition: 'benchmark-corpus-blocker'
+	readonly ownerFiles: readonly string[]
 	readonly validationCommands: readonly string[]
+	readonly commandsToRun: readonly string[]
+	readonly failureEvidence: readonly string[]
+	readonly acceptanceCriteria: string
 	readonly evidenceWeHave: readonly string[]
 	readonly evidenceMissing: readonly string[]
 	readonly qssContrast: readonly string[]
@@ -1512,7 +1516,7 @@ export function releaseProofIndexMarkdown(result: ReleaseProofIndexResult): stri
 		'Benchmark/corpus owner action queue:',
 		...result.releaseDecisionBoard.benchmarkCorpusOwnerActionQueue.map(
 			(row) =>
-				`- ${row.ownerLoop}/${row.name}${row.requirementId ? `/${row.requirementId}` : ''}: ${row.sourceQueue}. Commands: ${row.validationCommands.map((command) => `\`${command}\``).join('; ')} Next: ${row.nextOwnerAction}`,
+				`- ${row.ownerLoop}/${row.name}${row.requirementId ? `/${row.requirementId}` : ''}: ${row.sourceQueue}. Files: ${row.ownerFiles.map((file) => `\`${file}\``).join('; ')} Commands: ${row.commandsToRun.map((command) => `\`${command}\``).join('; ')} Failure evidence: ${row.failureEvidence.join('; ')} Accept: ${row.acceptanceCriteria} Next: ${row.nextOwnerAction}`,
 		),
 		'Implementation-ready owner action queue:',
 		...result.releaseDecisionBoard.implementationReadyOwnerActionQueue.map(
@@ -2605,7 +2609,11 @@ function releaseDecisionBenchmarkCorpusOwnerActionQueue(
 				ownerLoop: action.ownerLoop,
 				requirementId: action.requirementId,
 				workBlockDisposition: action.workBlockDisposition,
+				ownerFiles: releaseDecisionBenchmarkCorpusOwnerFiles(action.artifact, action.requirementId),
 				validationCommands: [action.validationCommand],
+				commandsToRun: [action.validationCommand],
+				failureEvidence: [...action.evidenceMissing],
+				acceptanceCriteria: action.acceptanceEvidence,
 				evidenceWeHave: action.evidenceWeHave.map(
 					(item) => `${item.evidenceId}: \`${item.command}\` (${item.path})`,
 				),
@@ -2625,7 +2633,11 @@ function releaseDecisionBenchmarkCorpusOwnerActionQueue(
 				claim: action.name,
 				ownerLoop: action.ownerLoop,
 				workBlockDisposition: action.workBlockDisposition,
+				ownerFiles: releaseDecisionBenchmarkCorpusOwnerFiles(action.name),
 				validationCommands: [...action.validationCommands],
+				commandsToRun: [...action.validationCommands],
+				failureEvidence: [...action.evidenceMissing],
+				acceptanceCriteria: action.nextOwnerAction,
 				evidenceWeHave: [...action.evidenceWeHave],
 				evidenceMissing: [...action.evidenceMissing],
 				qssContrast: [...action.qssContrast],
@@ -2636,6 +2648,45 @@ function releaseDecisionBenchmarkCorpusOwnerActionQueue(
 					'Benchmark/corpus owner-action queue row derived from do-not-promote decisions. It tells the benchmark loop exactly what to run without promoting the claim or satisfying the blocker.',
 			})),
 	]
+}
+
+function releaseDecisionBenchmarkCorpusOwnerFiles(
+	name: ReleaseProofIndexArtifactName | ReleaseProofReleaseDecisionDoNotPromoteItem['name'],
+	requirementId?: string,
+): readonly string[] {
+	if (name === 'safe-open-proof' && requirementId === 'public-edge-fixtures') {
+		return ['fixtures/benchmarks/safe-open-fixture-scan.ts']
+	}
+	if (name === 'safe-open-proof' && requirementId === 'release-latency-run') {
+		return ['fixtures/benchmarks/safe-open-proof.ts']
+	}
+	if (name === 'package-action-proof' && requirementId === 'edge-fixture-policy') {
+		return ['fixtures/benchmarks/package-action-fixture-scan.ts']
+	}
+	if (name === 'package-action-proof' && requirementId === 'streaming-matrix-boundary') {
+		return ['fixtures/benchmarks/package-action-proof.ts']
+	}
+	switch (name) {
+		case 'formula-oracle-routing':
+			return [
+				'fixtures/benchmarks/formula-corpus-correctness.ts',
+				'fixtures/benchmarks/formula-corpus-correctness.test.ts',
+				'fixtures/xlsx/libreoffice/manifest.ts',
+			]
+		case 'columnar-scan-sidecars':
+			return [
+				'fixtures/benchmarks/columnar-sidecar.ts',
+				'fixtures/benchmarks/columnar-sidecar.test.ts',
+				'fixtures/xlsx/external/sec-mmf-statistics-2022-02.xlsx',
+			]
+		case 'practical-latency-contracts':
+			return [
+				'fixtures/benchmarks/practical-latency-contracts.ts',
+				'fixtures/benchmarks/practical-latency-contracts.test.ts',
+			]
+		default:
+			return []
+	}
 }
 
 function releaseDecisionImplementationReadyOwnerActionQueue(
@@ -3073,7 +3124,10 @@ function cloneReleaseDecisionBoard(
 		})),
 		benchmarkCorpusOwnerActionQueue: board.benchmarkCorpusOwnerActionQueue.map((row) => ({
 			...row,
+			ownerFiles: [...row.ownerFiles],
 			validationCommands: [...row.validationCommands],
+			commandsToRun: [...row.commandsToRun],
+			failureEvidence: [...row.failureEvidence],
 			evidenceWeHave: [...row.evidenceWeHave],
 			evidenceMissing: [...row.evidenceMissing],
 			qssContrast: [...row.qssContrast],

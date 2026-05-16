@@ -28,6 +28,8 @@ export const REL_QUERY_TABLE =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/queryTable'
 export const REL_HYPERLINK =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink'
+export const REL_CUSTOM_XML =
+	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml'
 export const REL_COMMENTS =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments'
 export const REL_DRAWING =
@@ -64,6 +66,19 @@ export const REL_EXTERNAL_LINK_MISSING_PATH =
 	'http://schemas.microsoft.com/office/2006/relationships/xlExternalLinkPath/xlPathMissing'
 export const REL_CONNECTIONS =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/connections'
+export const REL_PRINTER_SETTINGS =
+	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/printerSettings'
+export const REL_OLE_OBJECT =
+	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObject'
+export const REL_CONTROL_PROP =
+	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/ctrlProp'
+export const REL_ACTIVE_X_CONTROL =
+	'http://schemas.microsoft.com/office/2006/relationships/activeXControl'
+export const REL_ACTIVE_X_CONTROL_BINARY =
+	'http://schemas.microsoft.com/office/2006/relationships/activeXControlBinary'
+export const REL_VBA_PROJECT = 'http://schemas.microsoft.com/office/2006/relationships/vbaProject'
+export const REL_VBA_PROJECT_SIGNATURE =
+	'http://schemas.microsoft.com/office/2006/relationships/vbaProjectSignature'
 
 export type ExternalLinkPathRelationshipKind =
 	| 'externalLinkPath'

@@ -47,6 +47,8 @@ describe('XLSX package graph', () => {
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rIdDrawing" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/>
   <Relationship Id="rIdHyperlink" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.invalid/report" TargetMode="External"/>
+  <Relationship Id="rIdControlProps" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/ctrlProp" Target="https://example.invalid/control.xml" TargetMode="External"/>
+  <Relationship Id="rIdActiveX" Type="http://schemas.microsoft.com/office/2006/relationships/activeXControl" Target="https://example.invalid/control.ocx" TargetMode="External"/>
 </Relationships>`,
 			'xl/drawings/drawing1.xml': '<xdr:wsDr/>',
 			'xl/drawings/_rels/drawing1.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -54,6 +56,7 @@ describe('XLSX package graph', () => {
   <Relationship Id="rIdChart" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="../charts/chart1.xml"/>
   <Relationship Id="rIdImage" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image%201.png"/>
   <Relationship Id="rIdLinkedImage" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="https://example.invalid/logo.png" TargetMode="External"/>
+  <Relationship Id="rIdOleObject" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObject" Target="file:///C:/objects/report.bin" TargetMode="External"/>
 </Relationships>`,
 			'xl/charts/chart1.xml': '<c:chartSpace/>',
 			'xl/charts/style1.xml': '<cs:chartStyle/>',
@@ -128,6 +131,33 @@ describe('XLSX package graph', () => {
 			rawTarget: 'https://example.invalid/report',
 			targetMode: 'External',
 			featureFamily: 'preservedHyperlink',
+		})
+		expect(graph.relationships).toContainEqual({
+			sourcePartPath: 'xl/worksheets/sheet1.xml',
+			relationshipPartPath: 'xl/worksheets/_rels/sheet1.xml.rels',
+			id: 'rIdControlProps',
+			type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/ctrlProp',
+			rawTarget: 'https://example.invalid/control.xml',
+			targetMode: 'External',
+			featureFamily: 'preservedControl',
+		})
+		expect(graph.relationships).toContainEqual({
+			sourcePartPath: 'xl/worksheets/sheet1.xml',
+			relationshipPartPath: 'xl/worksheets/_rels/sheet1.xml.rels',
+			id: 'rIdActiveX',
+			type: 'http://schemas.microsoft.com/office/2006/relationships/activeXControl',
+			rawTarget: 'https://example.invalid/control.ocx',
+			targetMode: 'External',
+			featureFamily: 'preservedActiveX',
+		})
+		expect(graph.relationships).toContainEqual({
+			sourcePartPath: 'xl/drawings/drawing1.xml',
+			relationshipPartPath: 'xl/drawings/_rels/drawing1.xml.rels',
+			id: 'rIdOleObject',
+			type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObject',
+			rawTarget: 'file:///C:/objects/report.bin',
+			targetMode: 'External',
+			featureFamily: 'preservedEmbedding',
 		})
 		expect(graph.parts.find((part) => part.path === 'xl/workbook.xml')).toMatchObject({
 			contentTypeSource: 'override',

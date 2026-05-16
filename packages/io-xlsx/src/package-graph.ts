@@ -7,19 +7,25 @@ import { maybeDecryptOoxmlPackage } from './reader/encryption.ts'
 import {
 	isExternalLinkPathRelationshipType,
 	parseRelationships,
+	REL_ACTIVE_X_CONTROL,
+	REL_ACTIVE_X_CONTROL_BINARY,
 	REL_CHART,
 	REL_CHARTSHEET,
 	REL_COMMENTS,
 	REL_CONNECTIONS,
+	REL_CONTROL_PROP,
+	REL_CUSTOM_XML,
 	REL_DRAWING,
 	REL_EXTERNAL_LINK,
 	REL_HYPERLINK,
 	REL_IMAGE,
 	REL_MACROSHEET,
 	REL_OFFICE_DOC,
+	REL_OLE_OBJECT,
 	REL_PIVOT_CACHE_DEFINITION,
 	REL_PIVOT_CACHE_RECORDS,
 	REL_PIVOT_TABLE,
+	REL_PRINTER_SETTINGS,
 	REL_QUERY_TABLE,
 	REL_SHARED_STRINGS,
 	REL_SLICER,
@@ -30,6 +36,8 @@ import {
 	REL_THREADED_COMMENT,
 	REL_TIMELINE,
 	REL_TIMELINE_CACHE,
+	REL_VBA_PROJECT,
+	REL_VBA_PROJECT_SIGNATURE,
 	REL_VML_DRAWING,
 	REL_WORKSHEET,
 	type Relationship,
@@ -274,6 +282,9 @@ export function classifyPackageFeatureFamily(
 	if (path === 'xl/xmlMaps.xml' || lowerRelType.endsWith('/relationships/xmlmaps')) {
 		return 'preservedCustomXml'
 	}
+	if (/(^|\/)customXml\//i.test(path) || lowerRelType.endsWith('/relationships/customxml')) {
+		return 'preservedCustomXml'
+	}
 	if (
 		path.includes('/revisions/') ||
 		lowerRelType.endsWith('/relationships/revisionheaders') ||
@@ -283,15 +294,31 @@ export function classifyPackageFeatureFamily(
 		return 'preservedRevision'
 	}
 	if (path.endsWith('/calcChain.xml')) return 'preservedCalcChain'
-	if (path.includes('/vbaProjectSignature') || path.startsWith('_xmlsignatures/')) {
+	if (
+		path.includes('/vbaProjectSignature') ||
+		path.startsWith('_xmlsignatures/') ||
+		lowerRelType.endsWith('/relationships/vbaprojectsignature')
+	) {
 		return 'preservedSignature'
 	}
-	if (path.includes('/vbaProject')) return 'preservedMacro'
-	if (path.includes('/activeX/')) return 'preservedActiveX'
-	if (path.includes('/ctrlProps/')) return 'preservedControl'
-	if (path.startsWith('customXml/')) return 'preservedCustomXml'
-	if (path.includes('/printerSettings/')) return 'preservedPrinterSettings'
-	if (path.includes('/embeddings/')) return 'preservedEmbedding'
+	if (path.includes('/vbaProject') || lowerRelType.endsWith('/relationships/vbaproject')) {
+		return 'preservedMacro'
+	}
+	if (path.includes('/activeX/') || lowerRelType.includes('/relationships/activexcontrol')) {
+		return 'preservedActiveX'
+	}
+	if (path.includes('/ctrlProps/') || lowerRelType.endsWith('/relationships/ctrlprop')) {
+		return 'preservedControl'
+	}
+	if (
+		path.includes('/printerSettings/') ||
+		lowerRelType.endsWith('/relationships/printersettings')
+	) {
+		return 'preservedPrinterSettings'
+	}
+	if (path.includes('/embeddings/') || lowerRelType.endsWith('/relationships/oleobject')) {
+		return 'preservedEmbedding'
+	}
 	if (
 		lowerPath.startsWith('customui/') ||
 		lowerContentType.includes('customui') ||
@@ -433,7 +460,7 @@ function classifyOwnerScope(
 	}
 	if (primary?.type === REL_EXTERNAL_LINK) return 'external-link'
 	if (/(^|\/)externalLinks\//.test(partPath)) return 'external-link'
-	if (partPath.startsWith('customXml/')) return 'custom-xml'
+	if (/(^|\/)customXml\//i.test(partPath)) return 'custom-xml'
 	if (/(^|\/)(activeX|ctrlProps|embeddings)\//i.test(partPath)) return 'active-content'
 	if (/(^|\/)(metadata|calcChain)\.xml$/i.test(partPath)) return 'metadata'
 	if (primary?.sourcePartPath.includes('/worksheets/')) return 'worksheet'
@@ -458,6 +485,7 @@ function classifyRelationshipFeatureFamily(
 	if (relationship.type === REL_QUERY_TABLE) return 'preservedQueryTable'
 	if (relationship.type === REL_CONNECTIONS) return 'preservedConnection'
 	if (relationship.type === REL_HYPERLINK) return 'preservedHyperlink'
+	if (relationship.type === REL_CUSTOM_XML) return 'preservedCustomXml'
 	if (relationship.type === REL_COMMENTS) return 'preservedComments'
 	if (relationship.type === REL_THREADED_COMMENT) return 'preservedThreadedComments'
 	if (relationship.type === REL_DRAWING) return 'preservedDrawing'
@@ -479,6 +507,17 @@ function classifyRelationshipFeatureFamily(
 	if (relationship.type === REL_TIMELINE || relationship.type === REL_TIMELINE_CACHE) {
 		return 'preservedTimeline'
 	}
+	if (relationship.type === REL_PRINTER_SETTINGS) return 'preservedPrinterSettings'
+	if (relationship.type === REL_OLE_OBJECT) return 'preservedEmbedding'
+	if (relationship.type === REL_CONTROL_PROP) return 'preservedControl'
+	if (
+		relationship.type === REL_ACTIVE_X_CONTROL ||
+		relationship.type === REL_ACTIVE_X_CONTROL_BINARY
+	) {
+		return 'preservedActiveX'
+	}
+	if (relationship.type === REL_VBA_PROJECT_SIGNATURE) return 'preservedSignature'
+	if (relationship.type === REL_VBA_PROJECT) return 'preservedMacro'
 	return resolvedTarget
 		? classifyPackageFeatureFamily(resolvedTarget, '', relationship.type)
 		: classifyPackageFeatureFamily(relationship.target, '', relationship.type)

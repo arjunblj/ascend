@@ -4121,7 +4121,7 @@ describe('readXlsx', () => {
 		expect(formulaModeSheet?.cells.get(0, 4)?.styleId).toBe(1)
 	})
 
-	it('full scalar byte parser rejects formulas and sheet metadata for XML fallback', () => {
+	it('full scalar byte parser rejects formulas and hydrates rich sheet metadata', () => {
 		const ctx = {
 			sharedStrings: emptySharedStrings(),
 			styleIds: [S0],
@@ -4140,13 +4140,14 @@ describe('readXlsx', () => {
 		const metadataSheet = parseSheetFullScalarBytes(
 			'Sheet1',
 			new TextEncoder().encode(
-				`<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews/><sheetData><row r="1"><c r="A1"><v>2</v></c></row></sheetData></worksheet>`,
+				`<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews/><sheetData><row r="1"><c r="A1"><v>2</v></c></row></sheetData><autoFilter ref="A1:A1"/></worksheet>`,
 			),
 			ctx,
 		)
 
 		expect(formulaSheet).toBeNull()
-		expect(metadataSheet).toBeNull()
+		expect(metadataSheet?.cells.get(0, 0)?.value).toEqual(numberValue(2))
+		expect(metadataSheet?.autoFilter?.ref).toBe('A1:A1')
 	})
 
 	it('values mode preserves mixed direct values, dates, row metadata, maxRows, and sheet metadata', () => {

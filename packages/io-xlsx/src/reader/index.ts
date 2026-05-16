@@ -643,7 +643,6 @@ export function readXlsxArchive(
 					!hydrateRichSheetMetadata &&
 					(sheetEntryInfo?.uncompressedSize ?? 0) >= VALUES_ONLY_BYTE_PARSE_MIN_BYTES
 				const canUseFullScalarByteParser =
-					!valuesOnly &&
 					hydrateRichSheetMetadata &&
 					(sheetEntryInfo?.uncompressedSize ?? 0) >= VALUES_ONLY_BYTE_PARSE_MIN_BYTES
 				const sheetBytes =

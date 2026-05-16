@@ -293,12 +293,23 @@ export function parseSheet(
 	if (richMetadata && sheetDataLoc && hasOnlyCellTableAndDimensionOuterMarkup(xml, sheetDataLoc)) {
 		return sheet
 	}
+	parseSheetMetadataFromXml(xml, sheetDataLoc, sheet, ctx)
+	return sheet
+}
+
+function parseSheetMetadataFromXml(
+	xml: string,
+	sheetDataLoc: SheetDataLocation | null,
+	sheet: Sheet,
+	ctx: SheetParseContext,
+): void {
+	const richMetadata = ctx.richMetadata === true
 	const strippedXml = sheetDataLoc
 		? `${xml.slice(0, sheetDataLoc.tagStart)}<sheetData/>${xml.slice(sheetDataLoc.closeEnd)}`
 		: xml
 	const doc = parseXml(strippedXml)
 	const ws = doc.worksheet as XmlNode | undefined
-	if (!ws) return sheet
+	if (!ws) return
 
 	parseSheetPr(ws, sheet)
 	parseSheetFormatPr(ws, sheet)
@@ -329,7 +340,6 @@ export function parseSheet(
 		extractExtLst(strippedXml, sheet)
 		extractControls(strippedXml, sheet)
 	}
-	return sheet
 }
 
 export function parseSheetValuesOnlyBytes(
@@ -426,7 +436,7 @@ export function parseSheetFullScalarBytes(
 	ctx: SheetParseContext,
 	sheetId?: Sheet['id'],
 ): Sheet | null {
-	if (ctx.valuesOnly || (ctx.formulaOnly && !ctx.richMetadata)) return null
+	if ((ctx.valuesOnly && !ctx.richMetadata) || (ctx.formulaOnly && !ctx.richMetadata)) return null
 	const sheetDataStart = locateSheetDataStartBytes(bytes)
 	if (!sheetDataStart) return null
 	const sheet = new Sheet(name, sheetId)
@@ -440,13 +450,17 @@ export function parseSheetFullScalarBytes(
 			hasUnsupportedValuesOnlyOuterTagsInRangeBytes(bytes, 0, sheetDataStart.tagStart) ||
 			hasUnsupportedValuesOnlyOuterTagsInRangeBytes(bytes, sheetDataStart.closeEnd, bytes.length)
 		) {
-			return null
+			if (!ctx.richMetadata) return null
+			parseSheetMetadataFromXml(BYTE_XML_DECODER.decode(bytes), null, sheet, ctx)
 		}
 		return sheet
 	}
-	if (hasUnsupportedValuesOnlyOuterTagsInRangeBytes(bytes, 0, sheetDataStart.tagStart)) {
-		return null
-	}
+	const hasUnsupportedOuterBefore = hasUnsupportedValuesOnlyOuterTagsInRangeBytes(
+		bytes,
+		0,
+		sheetDataStart.tagStart,
+	)
+	if (hasUnsupportedOuterBefore && !ctx.richMetadata) return null
 	const sheetDataClose = indexOfBytes(
 		bytes,
 		BYTES_SHEET_DATA_CLOSE,
@@ -466,7 +480,16 @@ export function parseSheetFullScalarBytes(
 		ctx,
 	)
 	if (closeEnd === false) return null
-	if (hasUnsupportedValuesOnlyOuterTagsInRangeBytes(bytes, closeEnd, bytes.length)) return null
+	const hasUnsupportedOuterAfter = hasUnsupportedValuesOnlyOuterTagsInRangeBytes(
+		bytes,
+		closeEnd,
+		bytes.length,
+	)
+	if (hasUnsupportedOuterAfter && !ctx.richMetadata) return null
+	if (ctx.richMetadata && (hasUnsupportedOuterBefore || hasUnsupportedOuterAfter)) {
+		const xml = BYTE_XML_DECODER.decode(bytes)
+		parseSheetMetadataFromXml(xml, locateSheetData(xml), sheet, ctx)
+	}
 	return sheet
 }
 
@@ -1163,7 +1186,7 @@ function parseSimpleFullScalarRowBytes(
 	formulasKnownAbsent = false,
 ): boolean {
 	if (
-		ctx.valuesOnly ||
+		(ctx.valuesOnly && !ctx.richMetadata) ||
 		(ctx.formulaOnly && !ctx.richMetadata) ||
 		(!formulasKnownAbsent && hasElementOpenBytes(bytes, BYTES_F_OPEN, bodyStart, bodyEnd))
 	) {

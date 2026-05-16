@@ -369,6 +369,7 @@ function statusForError(ae: AscendError): number {
 		ae.code === 'INVALID_ARGUMENT'
 	)
 		return 400
+	if (ae.code === 'EXPORT_ERROR') return 409
 	return 500
 }
 

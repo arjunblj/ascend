@@ -4520,7 +4520,7 @@ describe('Ascend API server', () => {
 				approvals: [],
 				compact: true,
 			})
-			expect(blocked.status).toBe(500)
+			expect(blocked.status).toBe(409)
 			expect(blocked.body.ok).toBe(false)
 			expect(blocked.body.error).toMatchObject({
 				code: 'EXPORT_ERROR',

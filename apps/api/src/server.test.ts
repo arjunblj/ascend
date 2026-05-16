@@ -524,6 +524,41 @@ async function postApiFetch(
 }
 
 describe('Ascend API server', () => {
+	test('/plan rejects missing workbook references with structured retry guidance', async () => {
+		const result = await postJson('/plan', {
+			ops: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] }],
+		})
+
+		expect(result.status).toBe(400)
+		expect(result.body.ok).toBe(false)
+		expect(result.body.error).toMatchObject({
+			code: 'VALIDATION_ERROR',
+			message: 'Missing or invalid plan workbook reference',
+			retryable: true,
+			retryStrategy: 'modified',
+			details: { required: ['file'] },
+			suggestedFix: expect.stringContaining('Pass file with ops or mutations'),
+		})
+	})
+
+	test('/commit rejects missing workbook references with structured retry guidance', async () => {
+		const result = await postJson('/commit', {
+			ops: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] }],
+			output: 'missing-reference-output.xlsx',
+		})
+
+		expect(result.status).toBe(400)
+		expect(result.body.ok).toBe(false)
+		expect(result.body.error).toMatchObject({
+			code: 'VALIDATION_ERROR',
+			message: 'Missing or invalid commit workbook reference',
+			retryable: true,
+			retryStrategy: 'modified',
+			details: { required: ['file or planHandle'] },
+			suggestedFix: expect.stringContaining('Pass either file with ops/mutations'),
+		})
+	})
+
 	test('/plan reports missing workbook files with structured retry guidance', async () => {
 		const missing = join(tmpdir(), `ascend-api-missing-${Date.now()}.xlsx`)
 		const result = await postJson('/plan', {

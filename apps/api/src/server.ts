@@ -192,6 +192,21 @@ function optionalPasswordError(
 	})
 }
 
+function missingAgentWorkflowFileError(context: 'plan' | 'commit'): AscendError {
+	const requirement =
+		context === 'commit'
+			? 'Pass either file with ops/mutations for a direct commit, or planHandle from a prepared /plan response.'
+			: 'Pass file with ops or mutations so Ascend can read the source workbook and build a safe plan.'
+	return ascendError('VALIDATION_ERROR', `Missing or invalid ${context} workbook reference`, {
+		retryable: true,
+		retryStrategy: 'modified',
+		details: {
+			required: context === 'commit' ? ['file or planHandle'] : ['file'],
+		},
+		suggestedFix: requirement,
+	})
+}
+
 function replayBatchLoadOptionsError(kind: string, options: readonly string[]): AscendError {
 	return ascendError(
 		'VALIDATION_ERROR',
@@ -980,7 +995,7 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 			if (method === 'POST' && path === '/plan') {
 				const body = await parseJson<Record<string, unknown>>(req)
 				const file = body ? requireString(body, 'file') : null
-				if (!file) return jsonFailure('Missing or invalid file', 400)
+				if (!file) return jsonFailureError(missingAgentWorkflowFileError('plan'), 400)
 				try {
 					const unsupportedLoadOptions = unsupportedAgentPlanLoadOptions(body)
 					if (unsupportedLoadOptions.length > 0) {
@@ -1082,7 +1097,9 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 				const body = await parseJson<Record<string, unknown>>(req)
 				const planHandle = body ? requireString(body, 'planHandle') : null
 				const file = body ? requireString(body, 'file') : null
-				if (!file && !planHandle) return jsonFailure('Missing or invalid file', 400)
+				if (!file && !planHandle) {
+					return jsonFailureError(missingAgentWorkflowFileError('commit'), 400)
+				}
 				try {
 					pathMutationPlanCache = undefined
 					recentCheckCache = undefined

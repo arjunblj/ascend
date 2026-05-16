@@ -901,7 +901,7 @@ describe('release proof evidence index', () => {
 				}),
 				expect.objectContaining({
 					evidenceId: 'cli-agent-facing-open-diagnostics-proof',
-					acceptedScope: expect.stringContaining('dc20726f'),
+					acceptedScope: expect.stringContaining('9b155c7f'),
 					boundary: expect.stringContaining('CLI agent-facing diagnostics only'),
 				}),
 				expect.objectContaining({

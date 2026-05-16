@@ -2240,7 +2240,7 @@ function ownerDecisionArtifactsFor(
 					decision:
 						'Use the ranked compatibility matrix for safe wording on common workbook support, protection metadata, active content, unknown parts, encryption, malformed packages, and signature blockers.',
 					nextAction:
-						'Compatibility owner adds the next real/public workbook gap from the matrix; product/release owners keep signed and generated malformed/signature policy blockers explicit.',
+						'Compatibility owner treats public table header/totals/current-row structured-reference fixtures as accepted row-3 evidence, then adds broader advanced conditional-format fixtures and remaining lower-frequency table edge cases from the matrix.',
 					forbiddenShortcut:
 						'Do not turn the matrix into full Excel compatibility, worksheet/workbook/protected-range protection security, file trust, malware scanning, password recovery, or signature preservation wording.',
 					boundary:

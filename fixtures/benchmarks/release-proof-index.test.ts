@@ -1028,6 +1028,7 @@ describe('release proof evidence index', () => {
 					validationCommand:
 						'bun test packages/sdk/src/excel-behavior-compatibility-matrix.test.ts',
 					decision: expect.stringContaining('protection metadata'),
+					nextAction: expect.stringContaining('advanced conditional-format fixtures'),
 					forbiddenShortcut: expect.stringContaining('full Excel compatibility'),
 				}),
 				expect.objectContaining({

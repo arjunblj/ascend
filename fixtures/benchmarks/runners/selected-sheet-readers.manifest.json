@@ -59,5 +59,23 @@
 			"selectedSheetRead": true,
 			"xlsmRoundtrip": true
 		}
+	},
+	{
+		"name": "python-calamine",
+		"command": ["python3", "fixtures/benchmarks/runners/calamine_runner.py"],
+		"categories": ["read"],
+		"runtime": "python3",
+		"adapterVersion": "1",
+		"libraryVersion": "reported-by-runner",
+		"timingModel": "external-internal-operation-timing",
+		"validationModel": "external-post-selected-sheet-assertions",
+		"memoryModel": "peak-rss-reported",
+		"installHint": "python3 -m pip install python-calamine psutil",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"selectedSheetRead": true,
+			"xlsmRoundtrip": false
+		}
 	}
 ]

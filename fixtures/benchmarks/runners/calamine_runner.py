@@ -67,9 +67,12 @@ def used_range(sheet_name: str, coords: list[tuple[int, int]]) -> str:
     return f"{sheet_name}!{column_name(min_col)}{min_row}:{column_name(max_col)}{max_row}"
 
 
-def read_materialized(path: Path) -> Any:
+def read_materialized(path: Path, selected_sheet: str | None = None) -> Any:
     workbook = python_calamine.load_workbook(path)
     try:
+        if selected_sheet is not None:
+            sheet = workbook.get_sheet_by_name(selected_sheet)
+            return [(selected_sheet, sheet.to_python())]
         sheets: list[tuple[str, list[list[Any]]]] = []
         for sheet_name in workbook.sheet_names:
             sheet = workbook.get_sheet_by_name(sheet_name)
@@ -79,7 +82,11 @@ def read_materialized(path: Path) -> Any:
         workbook.close()
 
 
-def read_assertions(sheets: list[tuple[str, list[list[Any]]]]) -> dict[str, str | int | bool | None]:
+def read_assertions(
+    sheets: list[tuple[str, list[list[Any]]]],
+    source_sheet_names: list[str] | None = None,
+    selected_sheet: str | None = None,
+) -> dict[str, str | int | bool | None]:
     cell_count = 0
     used_ranges: list[str] = []
     semantic_cell_refs: list[str] = []
@@ -98,7 +105,7 @@ def read_assertions(sheets: list[tuple[str, list[list[Any]]]]) -> dict[str, str 
                 semantic_cell_refs.append(ref)
                 semantic_cell_values.append(f"{ref}\t{payload}")
         used_ranges.append(used_range(sheet_name, semantic_coords))
-    return {
+    assertions: dict[str, str | int | bool | None] = {
         "runnerVersion": RUNNER_VERSION,
         "sheetCount": len(sheet_names),
         "sheetNamesHash": hash_lines([f"{index}:{name}" for index, name in enumerate(sheet_names)]),
@@ -119,6 +126,18 @@ def read_assertions(sheets: list[tuple[str, list[list[Any]]]]) -> dict[str, str 
         "readConditionalFormatCount": 0,
         "readDefinedNameCount": 0,
     }
+    if selected_sheet is not None and source_sheet_names is not None:
+        assertions.update(
+            {
+                "selectedSheetRead": True,
+                "sourceSheetCount": len(source_sheet_names),
+                "loadedSheetCount": len(sheet_names),
+                "loadedSheetNames": ",".join(sheet_names),
+                "hasAllSheets": False,
+                "cellsHydrated": True,
+            }
+        )
+    return assertions
 
 
 def main() -> None:
@@ -127,20 +146,28 @@ def main() -> None:
     parser.add_argument("--file", required=True)
     parser.add_argument("--repeat", type=int, default=1)
     parser.add_argument("--warmup", type=int, default=0)
+    parser.add_argument("--selected-sheet")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
 
     path = Path(args.file)
+    source_sheet_names: list[str] | None = None
+    if args.selected_sheet is not None:
+        workbook = python_calamine.load_workbook(path)
+        try:
+            source_sheet_names = list(workbook.sheet_names)
+        finally:
+            workbook.close()
     for _ in range(max(0, args.warmup)):
-        read_materialized(path)
+        read_materialized(path, args.selected_sheet)
     samples: list[dict[str, float]] = []
     assertions: dict[str, str | int | bool | None] | None = None
     for _ in range(max(1, args.repeat)):
         before = memory_baseline()
         start = time.perf_counter()
-        sheets = read_materialized(path)
+        sheets = read_materialized(path, args.selected_sheet)
         duration_ms = (time.perf_counter() - start) * 1000
-        assertions = read_assertions(sheets)
+        assertions = read_assertions(sheets, source_sheet_names, args.selected_sheet)
         samples.append(sample_with_memory(duration_ms, before))
     payload: dict[str, Any] = {"assertions": assertions or {}, "samples": samples}
     if args.json:

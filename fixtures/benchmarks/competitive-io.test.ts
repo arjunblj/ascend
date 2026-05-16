@@ -35,6 +35,10 @@ import {
 const SID = 0 as StyleId
 const openpyxlRunnerAvailable =
 	Bun.spawnSync(['python3', '-c', 'import openpyxl, psutil']).exitCode === 0
+const pythonCalamineRunnerAvailable =
+	Bun.spawnSync(['python3', '-c', 'import python_calamine, psutil']).exitCode === 0
+const selectedSheetExternalRunnersAvailable =
+	openpyxlRunnerAvailable && pythonCalamineRunnerAvailable
 const fastExcelJavaRunnerAvailable = Bun.spawnSync(['mvn', '-version']).exitCode === 0
 
 type CompetitiveIoJsonPayload = {
@@ -597,7 +601,43 @@ describe('competitive IO helpers', () => {
 		{ timeout: 30_000 },
 	)
 
-	test.skipIf(!openpyxlRunnerAvailable)(
+	test.skipIf(!pythonCalamineRunnerAvailable)(
+		'python-calamine selected-sheet external runner projects the requested worksheet',
+		async () => {
+			const payload = await runCompetitiveIoJson([
+				'--runner-manifest',
+				'fixtures/benchmarks/runners/selected-sheet-readers.manifest.json',
+				'--workload',
+				'selected-sheet',
+				'--category',
+				'read',
+				'--libraries',
+				'python-calamine',
+				'--rows',
+				'5',
+				'--cols',
+				'4',
+				'--repeat',
+				'1',
+				'--warmup',
+				'0',
+				'--json',
+			])
+			const result = payload.cases.find((entry) => entry.dimensions.library === 'python-calamine')
+			expect(result?.dimensions.correctnessStatus).toBe('pass')
+			expect(result?.assertions?.selectedSheetRead).toBe(true)
+			expect(result?.assertions?.sourceSheetCount).toBe(3)
+			expect(result?.assertions?.loadedSheetCount).toBe(1)
+			expect(result?.assertions?.loadedSheetNames).toBe('Data')
+			expect(result?.assertions?.hasAllSheets).toBe(false)
+			expect(payload.metadata.skipped.some((entry) => entry.library === 'python-calamine')).toBe(
+				false,
+			)
+		},
+		{ timeout: 30_000 },
+	)
+
+	test.skipIf(!selectedSheetExternalRunnersAvailable)(
 		'selected-sheet external runners share a comparable timing lane',
 		async () => {
 			const payload = await runCompetitiveIoJson([
@@ -612,7 +652,7 @@ describe('competitive IO helpers', () => {
 				'--execution-scope',
 				'external-process',
 				'--libraries',
-				'ascend-external-values,sheetjs,openpyxl',
+				'ascend-external-values,sheetjs,openpyxl,python-calamine',
 				'--rows',
 				'5',
 				'--cols',
@@ -644,6 +684,12 @@ describe('competitive IO helpers', () => {
 				},
 				{
 					library: 'openpyxl',
+					status: 'pass',
+					timingLane: 'external-internal-operation-timing:selected-sheet',
+					selectedSheetRead: true,
+				},
+				{
+					library: 'python-calamine',
 					status: 'pass',
 					timingLane: 'external-internal-operation-timing:selected-sheet',
 					selectedSheetRead: true,

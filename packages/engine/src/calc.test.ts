@@ -885,6 +885,38 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(2, 2)?.value).toEqual(stringValue('missing'))
 	})
 
+	test('error predicates map over arrays inside IF conditions', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: errorValue('#DIV/0!'), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: errorValue('#N/A'), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: EMPTY, formula: 'IF(ISERROR(A1:A3),0,A1:A3)', styleId: sid })
+		sheet.cells.set(0, 2, {
+			value: EMPTY,
+			formula: 'IF(ISNA(A1:A3),"missing",A1:A3)',
+			styleId: sid,
+		})
+		sheet.cells.set(0, 3, {
+			value: EMPTY,
+			formula: 'IF(ISERR(A1:A3),"non-na",A1:A3)',
+			styleId: sid,
+		})
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(0, 1)?.value).toEqual(numberValue(1))
+		expect(sheet.cells.get(1, 1)?.value).toEqual(numberValue(0))
+		expect(sheet.cells.get(2, 1)?.value).toEqual(numberValue(0))
+		expect(sheet.cells.get(0, 2)?.value).toEqual(numberValue(1))
+		expect(sheet.cells.get(1, 2)?.value).toEqual(errorValue('#DIV/0!'))
+		expect(sheet.cells.get(2, 2)?.value).toEqual(stringValue('missing'))
+		expect(sheet.cells.get(0, 3)?.value).toEqual(numberValue(1))
+		expect(sheet.cells.get(1, 3)?.value).toEqual(stringValue('non-na'))
+		expect(sheet.cells.get(2, 3)?.value).toEqual(errorValue('#N/A'))
+	})
+
 	test('FREQUENCY formulas can count unique filtered numeric ids from array expressions', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

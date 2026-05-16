@@ -15,17 +15,15 @@ function isblank(args: EvalArg[]): CellValue {
 }
 
 function iserror(args: EvalArg[]): CellValue {
-	return booleanValue(cellOf(args[0]).kind === 'error')
+	return mapInfoPredicate(args[0], (v) => v.kind === 'error')
 }
 
 function iserr(args: EvalArg[]): CellValue {
-	const v = cellOf(args[0])
-	return booleanValue(v.kind === 'error' && v.value !== '#N/A')
+	return mapInfoPredicate(args[0], (v) => v.kind === 'error' && v.value !== '#N/A')
 }
 
 function isna(args: EvalArg[]): CellValue {
-	const v = cellOf(args[0])
-	return booleanValue(v.kind === 'error' && v.value === '#N/A')
+	return mapInfoPredicate(args[0], (v) => v.kind === 'error' && v.value === '#N/A')
 }
 
 function isnumber(args: EvalArg[]): CellValue {

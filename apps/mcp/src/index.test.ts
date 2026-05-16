@@ -7724,6 +7724,69 @@ describe('MCP server', () => {
 		expect(result.structuredContent?.data?.rows).toEqual([{ Name: 'Alice', Score: '10' }])
 	})
 
+	test('ascend.read_table reports missing tables with structured retry guidance', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([
+			{
+				op: 'setCells',
+				sheet: 'Sheet1',
+				updates: [
+					{ ref: 'A1', value: 'Name' },
+					{ ref: 'B1', value: 'Score' },
+					{ ref: 'A2', value: 'Alice' },
+					{ ref: 'B2', value: 10 },
+				],
+			},
+			{ op: 'createTable', sheet: 'Sheet1', ref: 'A1:B2', name: 'Scores', hasHeaders: true },
+		])
+		await wb.save(TEMP_FILE)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const handler = (server as any)._registeredTools['ascend.read_table'].handler as (args: {
+			file: string
+			table: string
+		}) => Promise<{
+			isError?: boolean
+			content?: Array<{ text?: string }>
+			structuredContent?: {
+				ok?: boolean
+				error?: {
+					code?: string
+					message?: string
+					retryable?: boolean
+					retryStrategy?: string
+					details?: {
+						table?: string
+						availableTables?: readonly string[]
+						workflow?: readonly string[]
+					}
+					suggestedFix?: string
+				}
+			}
+		}>
+
+		const result = await handler({ file: TEMP_FILE, table: 'Missing' })
+
+		expect(result.isError).toBe(true)
+		expect(result.content?.[0]?.text).toBe('Table "Missing" not found')
+		expect(result.structuredContent).toMatchObject({
+			ok: false,
+			error: {
+				code: 'TABLE_NOT_FOUND',
+				message: 'Table "Missing" not found',
+				retryable: true,
+				retryStrategy: 'modified',
+				details: {
+					table: 'Missing',
+					availableTables: ['Scores'],
+					workflow: ['inspect', 'read_table'],
+				},
+			},
+		})
+		expect(result.structuredContent?.error?.suggestedFix).toContain('Scores')
+	})
+
 	test('ascend.dump emits replayable operation batches', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

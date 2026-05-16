@@ -190,6 +190,26 @@ function unsupportedExportFormatError(format: string): AscendError {
 	})
 }
 
+function tableNotFoundError(table: string, wb: WorkbookDocument): AscendError {
+	const availableTables = wb
+		.getWorkbookModel()
+		.sheets.flatMap((sheet) => sheet.tables.map((entry) => entry.name))
+		.sort()
+	return ascendError('TABLE_NOT_FOUND', `Table "${table}" not found`, {
+		retryable: true,
+		retryStrategy: availableTables.length > 0 ? 'modified' : 'none',
+		details: {
+			table,
+			availableTables,
+			workflow: ['inspect', 'read_table'],
+		},
+		suggestedFix:
+			availableTables.length > 0
+				? `Use one of the available tables: ${availableTables.join(', ')}.`
+				: 'Run ascend.inspect to list workbook tables before retrying ascend.read_table.',
+	})
+}
+
 function resolveOperationInputForWorkbook(
 	wb: AscendWorkbook,
 	ops: readonly Record<string, unknown>[] | undefined,
@@ -853,7 +873,7 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 			try {
 				const wb = await WorkbookDocument.open(file, { mode: 'full' })
 				const handle = wb.table(table)
-				if (!handle) return errorResponse(`Table "${table}" not found`)
+				if (!handle) return errorResponse(tableNotFoundError(table, wb))
 				const page = handle.readRows({
 					...(rowOffset !== undefined ? { offset: rowOffset } : {}),
 					...(rowLimit !== undefined ? { limit: rowLimit } : {}),

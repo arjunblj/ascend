@@ -3550,11 +3550,11 @@ function packageActionQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceIte
 			kind: 'test',
 			command:
 				'bun test fixtures/corpus/external-refresh-contract.test.ts -t "commit proof reports reopened public query-table connection metadata" --timeout 30000',
-			path: 'packages/sdk/src/agent-workflow.ts; fixtures/corpus/external-refresh-contract.test.ts',
+			path: 'packages/core/src/connection.ts; packages/io-xlsx/src/reader/connections.ts; packages/sdk/src/agent-workflow.ts; packages/sdk/src/read-view.ts; packages/sdk/src/types.ts; fixtures/corpus/external-refresh-contract.test.ts',
 			acceptedScope:
-				'Commit caa08959 makes SDK post-write verification report reopened workbook/query-table connection metadata after an approved public query-table refresh metadata edit, with safe-open blocker coverage for the dangling-thumbnail query-table fixture.',
+				'Commit caa08959 makes SDK post-write verification report reopened workbook/query-table connection metadata after an approved public query-table refresh metadata edit, with safe-open blocker coverage for the dangling-thumbnail query-table fixture. Commit 62566e09 expands reader, SDK inspect/refresh metadata, and post-write proof to report public connection type, description, deleted/background/keepAlive/interval flags, source file, command text, and a hasConnectionString boolean without exposing connection-string contents.',
 			boundary:
-				'Public post-write data-connection reporting evidence only; it does not execute connections, validate external data freshness, or prove arbitrary query-table editing.',
+				'Public post-write data-connection reporting evidence only; it does not execute connections, validate external data freshness, expose connection-string secrets, prove credential safety, or prove arbitrary query-table editing.',
 		},
 		{
 			evidenceId: 'public-formula-cache-post-write-proof',
@@ -3694,6 +3694,7 @@ function todayCommitClaimMatrix(): readonly ReleaseProofTodayCommitClaimMatrixRo
 				'223a1ec7',
 				'868add46',
 				'caa08959',
+				'62566e09',
 				'1eaf28ff',
 				'31141dd4',
 				'f7338c91',
@@ -3703,7 +3704,7 @@ function todayCommitClaimMatrix(): readonly ReleaseProofTodayCommitClaimMatrixRo
 				'62f45cb5',
 			],
 			releaseOrSotaClaimBecameMoreTrue:
-				'Ascend is more credible as an agent-native spreadsheet runtime because SDK, installed-SDK, CLI, HTTP API, MCP, root-package, public query-table, public chart-source, public calc-chain/formula-cache, public hidden-sheet/workbook-view, and public protected-range examples expose runnable open-plan/trust/inspect/plan/commit/reopen/verify workflows plus shared proof-bundle context.',
+				'Ascend is more credible as an agent-native spreadsheet runtime because SDK, installed-SDK, CLI, HTTP API, MCP, root-package, public query-table/data-connection, public chart-source, public calc-chain/formula-cache, public hidden-sheet/workbook-view, and public protected-range examples expose runnable open-plan/trust/inspect/plan/commit/reopen/verify workflows plus shared proof-bundle context.',
 			evidenceProvesIt: [
 				'bun test examples/agent-safe-edit.test.ts --timeout 30000',
 				'bun test examples/agent-safe-edit-mcp.test.ts --timeout 30000',
@@ -3720,6 +3721,7 @@ function todayCommitClaimMatrix(): readonly ReleaseProofTodayCommitClaimMatrixRo
 				'bun test examples/root-scripts.test.ts --timeout 30000',
 				'bun test packages/sdk/src/agent-workflow.test.ts -t "commits public query-table refresh metadata edits through save and reopen" --timeout 30000',
 				'bun test fixtures/corpus/external-refresh-contract.test.ts -t "commit proof reports reopened public query-table connection metadata" --timeout 30000',
+				'bun test packages/io-xlsx/src/reader/connections.test.ts packages/sdk/src/connection-inventory.test.ts fixtures/corpus/external-refresh-contract.test.ts -t "connection part inventory|connection SDK inventory|reports and preserves public query-table refresh surfaces without executing them|commit proof reports reopened public query-table connection metadata" --timeout 60000',
 				'bun test packages/sdk/src/agent-workflow.test.ts -t "commits public chart source edits through save and reopen audits" --timeout 30000',
 				'bun test packages/sdk/src/agent-workflow.test.ts -t "commits public calc-chain formula edits through save and reopen audits" --timeout 30000',
 				'bun test fixtures/corpus/formula-binding-contract.test.ts -t "commit proof reports missing public formula caches after save and reopen" --timeout 30000',
@@ -3730,9 +3732,9 @@ function todayCommitClaimMatrix(): readonly ReleaseProofTodayCommitClaimMatrixRo
 				'Blocked adjacent API package sweep: bun test apps/api/api.test.ts --timeout 30000 currently fails outside workflow discovery because the export-format assertion expects "Unsupported format" while the current response is "Unsupported export format: weird".',
 			],
 			allowedWording:
-				'Ascend provides local runnable SDK, installed-SDK package-bin, CLI, API, and MCP safe-edit workflow examples with root commands, explicit trust-preflight steps, shared SDK proof-summary gates, public query-table refresh/data-connection metadata, chart-source, calc-chain/formula-cache reporting, hidden-sheet/workbook-view topology, workbook structure-protection reporting, and protected-range metadata commit proof, and machine-readable proof context for generated/public workbooks.',
+				'Ascend provides local runnable SDK, installed-SDK package-bin, CLI, API, and MCP safe-edit workflow examples with root commands, explicit trust-preflight steps, shared SDK proof-summary gates, public query-table refresh/data-connection metadata including source file, command text, refresh flags, and connection-string presence without secret disclosure, chart-source, calc-chain/formula-cache reporting, hidden-sheet/workbook-view topology, workbook structure-protection reporting, and protected-range metadata commit proof, and machine-readable proof context for generated/public workbooks.',
 			forbiddenWording: [
-				'Do not claim arbitrary workbook safety, package publication, registry download proof, hosted service readiness, public-workbook generality, complete workbook-view parity, protection enforcement/security validation, complete API package health, or complete workflow observability from the local generated/public-workbook examples.',
+				'Do not claim arbitrary workbook safety, package publication, registry download proof, hosted service readiness, public-workbook generality, connection execution, credential safety, external-data freshness, complete workbook-view parity, protection enforcement/security validation, complete API package health, or complete workflow observability from the local generated/public-workbook examples.',
 			],
 			ownerLoop: 'release',
 			nextOwnerAction:
@@ -5715,7 +5717,7 @@ const AGENT_WORKFLOW_OBSERVABILITY_BLOCKER = {
 		'API and MCP commit proof-bundle output is accepted after `1ed2be29 feat(apps): expose commit proof bundles`: `bun test apps/api/src/server.test.ts -t "dump emits replayable operation batches" --timeout 30000` and `bun test apps/mcp/src/index.test.ts -t "ascend.commit accepts prepared plan handles" --timeout 30000` prove prepared commit responses can include proofBundle.safeToUse, whatChanged, whySafe, and write-policy/commit/reopen/package-graph gates.',
 		'API and MCP runnable example proof bundles are accepted after `7afcd630 feat(examples): show api mcp proof bundles`: `bun test examples/package-scripts.test.ts --timeout 30000` and `bun test examples/root-scripts.test.ts --timeout 30000` prove HTTP and MCP examples expose proofBundle.safeToUse and changed-cell evidence from package and root commands.',
 		'API and MCP trust-preflight workflow proof is accepted after `a8e15d9b feat(apps): add trust preflight workflows`: `bun test apps/api/src/server.test.ts -t "/agent-workflow exposes the API safe edit contract" --timeout 30000`, `bun test apps/mcp/src/index.test.ts -t "ascend.agent_workflow exposes machine-readable safe edit guidance" --timeout 30000`, `bun test examples/agent-safe-edit-http.test.ts examples/agent-safe-edit-mcp.test.ts --timeout 30000`, `bun test examples/package-scripts.test.ts --timeout 30000`, and `bun test examples/root-scripts.test.ts --timeout 30000` prove API/MCP workflow discovery and runnable examples include a trust-preflight step before inspect/read.',
-		'Post-write data-connection proof is accepted after `caa08959 fix(sdk): report post-write data connections`: `bun test fixtures/corpus/external-refresh-contract.test.ts -t "commit proof reports reopened public query-table connection metadata" --timeout 30000` proves an approved public query-table refresh metadata commit returns reopened workbook/query-table connection counts, states, names, ids, and part paths in `postWrite.dataConnections`.',
+		'Post-write data-connection proof is accepted after `caa08959 fix(sdk): report post-write data connections` and `62566e09 fix(sdk): report connection proof metadata`: `bun test fixtures/corpus/external-refresh-contract.test.ts -t "commit proof reports reopened public query-table connection metadata" --timeout 30000` and `bun test packages/io-xlsx/src/reader/connections.test.ts packages/sdk/src/connection-inventory.test.ts fixtures/corpus/external-refresh-contract.test.ts -t "connection part inventory|connection SDK inventory|reports and preserves public query-table refresh surfaces without executing them|commit proof reports reopened public query-table connection metadata" --timeout 60000` prove approved public query-table/data-connection commits return reopened connection counts, states, names, ids, part paths, type/description/source/command/refresh flags, and `hasConnectionString` without exposing connection-string contents in `postWrite.dataConnections`.',
 		'Workflow docs list inspect, plan, commit, verify, trace, and repair-plan recovery paths in `docs/AGENT_WORKFLOW.md`, but documentation is guidance rather than release proof.',
 	],
 	evidenceMissing: [

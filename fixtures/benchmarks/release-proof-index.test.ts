@@ -1602,6 +1602,12 @@ describe('release proof evidence index', () => {
 					boundary: expect.stringContaining('Public post-write data-connection reporting'),
 				}),
 				expect.objectContaining({
+					evidenceId: 'query-table-post-write-data-connections-proof',
+					acceptedScope: expect.stringContaining('62566e09'),
+					path: expect.stringContaining('packages/io-xlsx/src/reader/connections.ts'),
+					boundary: expect.stringContaining('does not execute connections'),
+				}),
+				expect.objectContaining({
 					evidenceId: 'public-formula-cache-post-write-proof',
 					acceptedScope: expect.stringContaining('f7338c91'),
 					command: expect.stringContaining(
@@ -1813,6 +1819,7 @@ describe('release proof evidence index', () => {
 						'223a1ec7',
 						'868add46',
 						'caa08959',
+						'62566e09',
 						'1eaf28ff',
 						'31141dd4',
 						'f7338c91',
@@ -1821,9 +1828,11 @@ describe('release proof evidence index', () => {
 						'd519c5a7',
 						'62f45cb5',
 					]),
-					allowedWording: expect.stringContaining('explicit trust-preflight steps'),
+					allowedWording: expect.stringContaining(
+						'connection-string presence without secret disclosure',
+					),
 					forbiddenWording: expect.arrayContaining([
-						expect.stringContaining('complete workbook-view parity'),
+						expect.stringContaining('external-data freshness'),
 					]),
 					ownerLoop: 'release',
 					nextOwnerAction: expect.stringContaining('export-format test expectation'),
@@ -2473,6 +2482,8 @@ describe('release proof evidence index', () => {
 			'API and MCP trust-preflight workflow proof is accepted',
 		)
 		expect(agentWorkflowEvidence).toContain('caa08959')
+		expect(agentWorkflowEvidence).toContain('62566e09')
+		expect(agentWorkflowEvidence).toContain('hasConnectionString')
 		expect(agentWorkflowEvidence).toContain('postWrite.dataConnections')
 		expect(agentWorkflowEvidence).toContain('docs/AGENT_WORKFLOW.md')
 		expect(agentWorkflowMissing).toContain('inspect, plan, commit, reopen, diff, audit')

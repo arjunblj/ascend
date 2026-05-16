@@ -1,3 +1,4 @@
+import { ascendError } from '@ascend/schema'
 import { AscendWorkbook } from '@ascend/sdk'
 import { cliError, jsonOut } from '../output/json.ts'
 import { bullet, heading } from '../output/pretty.ts'
@@ -19,7 +20,21 @@ Flags:
 export async function dumpCommand(args: string[], flags: Map<string, string>): Promise<number> {
 	const file = args[0]
 	if (!file) {
-		cliError('Usage: ascend dump <file>', flags)
+		cliError(
+			ascendError('INVALID_ARGUMENT', 'Missing required dump input', {
+				retryable: true,
+				retryStrategy: 'modified',
+				details: {
+					command: 'dump',
+					required: ['file'],
+					missing: ['file'],
+					workflow: ['inspect', 'dump', 'plan'],
+				},
+				suggestedFix:
+					'Run ascend dump <file> --json to produce a replayable operation batch for supported cells and formulas.',
+			}),
+			flags,
+		)
 		return 1
 	}
 	if (flags.has('values-only') && flags.has('formulas-only')) {

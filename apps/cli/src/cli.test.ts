@@ -830,6 +830,59 @@ describe('ascend cli', () => {
 		}
 	})
 
+	test('proof and recovery commands --json return structured missing input guidance', async () => {
+		const cases = [
+			{
+				argv: ['repair-plan', '--json'] as const,
+				message: 'Missing required repair-plan input',
+				details: {
+					command: 'repair-plan',
+					required: ['file'],
+					missing: ['file'],
+					workflow: ['inspect', 'repair-plan', 'plan'],
+				},
+				fix: 'ascend repair-plan <file> --json',
+			},
+			{
+				argv: ['dump', '--json'] as const,
+				message: 'Missing required dump input',
+				details: {
+					command: 'dump',
+					required: ['file'],
+					missing: ['file'],
+					workflow: ['inspect', 'dump', 'plan'],
+				},
+				fix: 'ascend dump <file> --json',
+			},
+			{
+				argv: ['template-merge', TEST_FILE, '--json'] as const,
+				message: 'Missing required template-merge input',
+				details: {
+					command: 'template-merge',
+					required: ['file', 'data'],
+					missing: ['data'],
+					workflow: ['inspect', 'template-merge', 'plan'],
+				},
+				fix: 'ascend template-merge <file> --data <json-or-file> --json',
+			},
+		]
+
+		for (const entry of cases) {
+			const result = await run(...entry.argv)
+			expect(result.exitCode).toBe(1)
+			const parsed = JSON.parse(result.stdout)
+			expect(parsed.ok).toBe(false)
+			expect(parsed.error).toMatchObject({
+				code: 'INVALID_ARGUMENT',
+				message: entry.message,
+				retryable: true,
+				retryStrategy: 'modified',
+				details: entry.details,
+			})
+			expect(parsed.error.suggestedFix).toContain(entry.fix)
+		}
+	})
+
 	test('dump --json emits a replayable operation batch', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

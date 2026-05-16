@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
+import { ascendError } from '@ascend/schema'
 import { AscendWorkbook } from '@ascend/sdk'
 import { cliError, jsonOut } from '../output/json.ts'
 import { bullet, heading } from '../output/pretty.ts'
@@ -28,7 +29,21 @@ export async function templateMergeCommand(
 	const file = args[0]
 	const dataArg = flags.get('data')
 	if (!file || !dataArg) {
-		cliError('Usage: ascend template-merge <file> --data <json-or-file>', flags)
+		cliError(
+			ascendError('INVALID_ARGUMENT', 'Missing required template-merge input', {
+				retryable: true,
+				retryStrategy: 'modified',
+				details: {
+					command: 'template-merge',
+					required: ['file', 'data'],
+					missing: [...(!file ? ['file'] : []), ...(!dataArg ? ['data'] : [])],
+					workflow: ['inspect', 'template-merge', 'plan'],
+				},
+				suggestedFix:
+					'Run ascend template-merge <file> --data <json-or-file> --json, then inspect replayable ops before commit.',
+			}),
+			flags,
+		)
 		return 1
 	}
 	if (flags.has('values-only') && flags.has('formulas-only')) {

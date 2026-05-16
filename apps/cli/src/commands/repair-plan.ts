@@ -1,3 +1,4 @@
+import { ascendError } from '@ascend/schema'
 import { createRepairPlan } from '@ascend/sdk'
 import { cliError, jsonOut } from '../output/json.ts'
 import { bullet, heading, table } from '../output/pretty.ts'
@@ -19,7 +20,21 @@ export async function repairPlanCommand(
 ): Promise<number> {
 	const file = args[0]
 	if (!file) {
-		cliError('Usage: ascend repair-plan <file>', flags)
+		cliError(
+			ascendError('INVALID_ARGUMENT', 'Missing required repair-plan input', {
+				retryable: true,
+				retryStrategy: 'modified',
+				details: {
+					command: 'repair-plan',
+					required: ['file'],
+					missing: ['file'],
+					workflow: ['inspect', 'repair-plan', 'plan'],
+				},
+				suggestedFix:
+					'Run ascend repair-plan <file> --json after check, lint, or unsupported-feature reports need recovery actions.',
+			}),
+			flags,
+		)
 		return 1
 	}
 	const result = await createRepairPlan(file)

@@ -87,6 +87,7 @@ const ASCEND_LIBRARY_ALIASES = [
 	'ascend-readxlsx-row-stream-bytes',
 	'ascend-readxlsx-cell-materialization-bytes',
 	'ascend-readxlsx-values-bytes',
+	'ascend-readxlsx-values-rich-metadata-path',
 	'ascend-readxlsx-values-rich-metadata-bytes',
 	'ascend-external-metadata-only-bytes',
 	'ascend-external-writer',

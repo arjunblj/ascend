@@ -157,6 +157,7 @@ async function readSheetJs(
 		cellFormula: true,
 		cellHTML: false,
 		cellStyles: false,
+		bookFiles: true,
 		...(selectedSheet ? { sheets: selectedSheet } : {}),
 	})
 }
@@ -204,6 +205,7 @@ function sheetJsFeatureAssertions(
 	workbook: import('xlsx').WorkBook,
 ): Record<string, PrimitiveAssertion> {
 	const worksheet = workbook.Sheets.Data as Record<string, unknown> | undefined
+	const packageAssertions = sheetJsPackageFeatureAssertions(workbook)
 	let readCommentCount = 0
 	let readHyperlinkCount = 0
 	if (worksheet) {
@@ -218,12 +220,132 @@ function sheetJsFeatureAssertions(
 		}
 	}
 	return {
-		readCommentCount,
-		readHyperlinkCount,
-		readDataValidationCount: 0,
-		readConditionalFormatCount: 0,
-		readDefinedNameCount: workbook.Workbook?.Names?.length ?? 0,
+		...packageAssertions,
+		readCommentCount: Math.max(readCommentCount, Number(packageAssertions.readCommentCount ?? 0)),
+		readHyperlinkCount: Math.max(
+			readHyperlinkCount,
+			Number(packageAssertions.readHyperlinkCount ?? 0),
+		),
+		readDataValidationCount: Number(packageAssertions.readDataValidationCount ?? 0),
+		readConditionalFormatCount: Number(packageAssertions.readConditionalFormatCount ?? 0),
+		readDefinedNameCount: Math.max(
+			workbook.Workbook?.Names?.length ?? 0,
+			Number(packageAssertions.readDefinedNameCount ?? 0),
+		),
 	}
+}
+
+function sheetJsPackageFeatureAssertions(
+	workbook: import('xlsx').WorkBook,
+): Record<string, PrimitiveAssertion> {
+	const files = (
+		workbook as unknown as {
+			readonly files?: Record<string, { readonly content?: Uint8Array | string }>
+		}
+	).files
+	if (!files) return {}
+	const workbookXml = sheetJsPackageFileText(files, 'xl/workbook.xml')
+	const sheetXml = sheetJsPackageFileText(files, 'xl/worksheets/sheet1.xml')
+	const sheetRelsXml = sheetJsPackageFileText(files, 'xl/worksheets/_rels/sheet1.xml.rels')
+	const commentsXml = sheetJsPackageFileText(files, 'xl/comments1.xml')
+	if (!workbookXml || !sheetXml) return {}
+	const hyperlink = firstXmlElement(sheetXml, 'hyperlink', 'ref', 'A1')
+	const hyperlinkRelId = xmlAttr(hyperlink, 'r:id') ?? xmlAttr(hyperlink, 'id') ?? ''
+	const hyperlinkTarget = relationshipTarget(sheetRelsXml, hyperlinkRelId)
+	const comment = firstXmlElement(commentsXml, 'comment', 'ref', 'B2')
+	const dataValidation = firstXmlElement(sheetXml, 'dataValidation')
+	const conditionalFormatting = firstXmlElement(sheetXml, 'conditionalFormatting')
+	const cfRule = firstXmlElement(conditionalFormatting, 'cfRule')
+	const definedNameMatches =
+		/<definedName\b[^>]*name="FeatureRange"[^>]*>Data!\$A\$1:\$[A-Z]+\$\d+<\/definedName>/.test(
+			workbookXml,
+		)
+	const hyperlinkMatches =
+		xmlAttr(hyperlink, 'ref') === 'A1' &&
+		xmlAttr(hyperlink, 'tooltip') === 'Open Ascend' &&
+		hyperlinkTarget === 'https://example.com/ascend'
+	const commentMatches =
+		xmlAttr(comment, 'ref') === 'B2' &&
+		tagText(commentsXml, 'author') === 'Ascend' &&
+		tagText(comment, 't') === 'Review'
+	const dataValidationMatches =
+		xmlAttr(dataValidation, 'type') === 'list' &&
+		xmlAttr(dataValidation, 'allowBlank') === '1' &&
+		xmlAttr(dataValidation, 'showInputMessage') === '1' &&
+		xmlAttr(dataValidation, 'sqref')?.startsWith('C2:C') === true &&
+		tagText(dataValidation, 'formula1') === '"Q1,Q2,Q3"'
+	const conditionalFormattingMatches =
+		xmlAttr(conditionalFormatting, 'sqref')?.startsWith('A1:A') === true &&
+		xmlAttr(cfRule, 'type') === 'cellIs' &&
+		xmlAttr(cfRule, 'operator') === 'greaterThan' &&
+		tagText(conditionalFormatting, 'formula') === '0'
+	return {
+		readCommentCount: countXmlElements(commentsXml, 'comment'),
+		readHyperlinkCount: countXmlElements(sheetXml, 'hyperlink'),
+		readDataValidationCount: countXmlElements(sheetXml, 'dataValidation'),
+		readConditionalFormatCount: countXmlElements(sheetXml, 'conditionalFormatting'),
+		readDefinedNameCount: countXmlElements(workbookXml, 'definedName'),
+		readFeatureRichSemanticMatches:
+			definedNameMatches &&
+			hyperlinkMatches &&
+			commentMatches &&
+			dataValidationMatches &&
+			conditionalFormattingMatches,
+		readFeatureRichDefinedNameMatches: definedNameMatches,
+		readFeatureRichHyperlinkMatches: hyperlinkMatches,
+		readFeatureRichCommentMatches: commentMatches,
+		readFeatureRichDataValidationMatches: dataValidationMatches,
+		readFeatureRichConditionalFormattingMatches: conditionalFormattingMatches,
+	}
+}
+
+function sheetJsPackageFileText(
+	files: Record<string, { readonly content?: Uint8Array | string }>,
+	path: string,
+): string {
+	const content = files[path]?.content
+	if (typeof content === 'string') return content
+	if (content instanceof Uint8Array) return new TextDecoder().decode(content)
+	return ''
+}
+
+function countXmlElements(xml: string, tagName: string): number {
+	if (!xml) return 0
+	return [...xml.matchAll(new RegExp(`<${tagName}\\b`, 'g'))].length
+}
+
+function firstXmlElement(
+	xml: string,
+	tagName: string,
+	attrName?: string,
+	attrValue?: string,
+): string {
+	if (!xml) return ''
+	const pattern =
+		attrName && attrValue
+			? new RegExp(
+					`<${tagName}\\b(?=[^>]*\\b${escapeRegex(attrName)}="${escapeRegex(attrValue)}")[\\s\\S]*?(?:/>|</${tagName}>)`,
+				)
+			: new RegExp(`<${tagName}\\b[\\s\\S]*?(?:/>|</${tagName}>)`)
+	return xml.match(pattern)?.[0] ?? ''
+}
+
+function xmlAttr(element: string, name: string): string | undefined {
+	return element.match(new RegExp(`\\b${escapeRegex(name)}="([^"]*)"`))?.[1]
+}
+
+function tagText(xml: string, tagName: string): string {
+	return xml.match(new RegExp(`<${tagName}\\b[^>]*>([\\s\\S]*?)</${tagName}>`))?.[1] ?? ''
+}
+
+function relationshipTarget(relsXml: string, id: string): string {
+	if (!id) return ''
+	const rel = firstXmlElement(relsXml, 'Relationship', 'Id', id)
+	return xmlAttr(rel, 'Target') ?? ''
+}
+
+function escapeRegex(value: string): string {
+	return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 function sheetJsSelectedSheetAssertions(

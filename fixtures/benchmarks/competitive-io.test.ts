@@ -722,6 +722,109 @@ describe('competitive IO helpers', () => {
 		{ timeout: 30_000 },
 	)
 
+	test(
+		'external SheetJS runner reports feature-rich package semantics',
+		async () => {
+			const input = await buildWorkloadDataSet('feature-rich', 5, 4, 'raw-ooxml')
+			const proc = Bun.spawn(
+				[
+					'bun',
+					'fixtures/benchmarks/runners/js_read_runner.ts',
+					'--library',
+					'sheetjs',
+					'--operation',
+					'read',
+					'--file',
+					input.xlsxPath,
+					'--repeat',
+					'1',
+					'--warmup',
+					'0',
+					'--json',
+				],
+				{ stdout: 'pipe', stderr: 'pipe' },
+			)
+			const [stdout, stderr, exitCode] = await Promise.all([
+				new Response(proc.stdout).text(),
+				new Response(proc.stderr).text(),
+				proc.exited,
+			])
+			expect(stderr).toBe('')
+			expect(exitCode).toBe(0)
+			const payload = JSON.parse(stdout) as {
+				readonly assertions: Record<string, unknown>
+			}
+			expect(payload.assertions.readFeatureRichSemanticMatches).toBe(true)
+			expect(payload.assertions.readCommentCount).toBe(1)
+			expect(payload.assertions.readHyperlinkCount).toBe(1)
+			expect(payload.assertions.readDataValidationCount).toBe(1)
+			expect(payload.assertions.readConditionalFormatCount).toBe(1)
+			expect(payload.assertions.readDefinedNameCount).toBe(1)
+
+			const evaluated = evaluateAssertions('read', input, payload.assertions)
+			expect(evaluated.status).toBe('pass')
+			expect(evaluated.assertions.readFeatureRichMatches).toBe(true)
+		},
+		{ timeout: 30_000 },
+	)
+
+	test(
+		'external JS feature-rich rows are comparable with Ascend rich metadata',
+		async () => {
+			const payload = await runCompetitiveIoJson([
+				'--json',
+				'--category',
+				'read',
+				'--competitor',
+				'all',
+				'--execution-scope',
+				'external-process',
+				'--libraries',
+				'ascend-readxlsx-values-rich-metadata-path,sheetjs,exceljs',
+				'--workload',
+				'feature-rich',
+				'--read-source',
+				'raw-ooxml',
+				'--repeat',
+				'1',
+				'--warmup',
+				'0',
+				'--validation-mode',
+				'each',
+				'--runner-manifest',
+				'fixtures/benchmarks/runners/js-readers.manifest.json',
+			])
+			const results = payload.cases.map((entry) => ({
+				library: entry.dimensions.library,
+				status: entry.dimensions.correctnessStatus,
+				timingLane: entry.dimensions.timingLane,
+				readFeatureRichMatches: entry.assertions?.readFeatureRichMatches,
+			}))
+
+			expect(results).toEqual([
+				{
+					library: 'ascend-readxlsx-values-rich-metadata-path',
+					status: 'pass',
+					timingLane: 'external-internal-operation-file-path-timing:feature-rich',
+					readFeatureRichMatches: true,
+				},
+				{
+					library: 'sheetjs',
+					status: 'pass',
+					timingLane: 'external-internal-operation-file-path-timing:feature-rich',
+					readFeatureRichMatches: true,
+				},
+				{
+					library: 'exceljs',
+					status: 'pass',
+					timingLane: 'external-internal-operation-file-path-timing:feature-rich',
+					readFeatureRichMatches: true,
+				},
+			])
+		},
+		{ timeout: 30_000 },
+	)
+
 	test.skipIf(!openpyxlRunnerAvailable)(
 		'metadata-only external runners share a comparable timing lane',
 		async () => {

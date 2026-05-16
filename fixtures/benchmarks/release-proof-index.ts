@@ -527,7 +527,11 @@ export interface ReleaseProofClaimDowngradeOwnerAction {
 	readonly claim: string
 	readonly ownerLoop: ReleaseProofReadinessOwner
 	readonly workBlockDisposition: 'claim-downgrade-do-not-promote'
+	readonly ownerFiles: readonly string[]
 	readonly validationCommands: readonly string[]
+	readonly commandsToRun: readonly string[]
+	readonly failureEvidence: readonly string[]
+	readonly acceptanceCriteria: string
 	readonly evidenceWeHave: readonly string[]
 	readonly evidenceMissing: readonly string[]
 	readonly qssContrast: readonly string[]
@@ -1530,7 +1534,7 @@ export function releaseProofIndexMarkdown(result: ReleaseProofIndexResult): stri
 		'Claim downgrade owner action queue:',
 		...result.releaseDecisionBoard.claimDowngradeOwnerActionQueue.map(
 			(row) =>
-				`- ${row.ownerLoop}/${row.name}: ${row.sourceQueue}. Commands: ${row.validationCommands.map((command) => `\`${command}\``).join('; ')} Next: ${row.nextOwnerAction}`,
+				`- ${row.ownerLoop}/${row.name}: ${row.sourceQueue}. Files: ${row.ownerFiles.map((file) => `\`${file}\``).join('; ')} Commands: ${row.commandsToRun.map((command) => `\`${command}\``).join('; ')} Failure evidence: ${row.failureEvidence.join('; ')} Accept: ${row.acceptanceCriteria} Next: ${row.nextOwnerAction}`,
 		),
 		`Owner action queue coverage: status=${result.releaseDecisionBoard.ownerActionQueueCoverage.status}; top=${result.releaseDecisionBoard.ownerActionQueueCoverage.sourceTopClaimActionCount}; blocked=${result.releaseDecisionBoard.ownerActionQueueCoverage.sourceBlockedActionCount}; covered=${result.releaseDecisionBoard.ownerActionQueueCoverage.coveredActionCount}; uncoveredTop=${result.releaseDecisionBoard.ownerActionQueueCoverage.uncoveredTopClaimActionKeys.join(',')}; uncoveredBlocked=${result.releaseDecisionBoard.ownerActionQueueCoverage.uncoveredBlockedActionKeys.join(',')}`,
 		'',
@@ -2827,7 +2831,11 @@ function releaseDecisionClaimDowngradeOwnerActionQueue(
 			claim: action.name,
 			ownerLoop: action.ownerLoop,
 			workBlockDisposition: action.workBlockDisposition,
+			ownerFiles: releaseDecisionClaimDowngradeOwnerFiles(action.name),
 			validationCommands: [...action.validationCommands],
+			commandsToRun: [...action.validationCommands],
+			failureEvidence: [...action.evidenceMissing],
+			acceptanceCriteria: action.nextOwnerAction,
 			evidenceWeHave: [...action.evidenceWeHave],
 			evidenceMissing: [...action.evidenceMissing],
 			qssContrast: [...action.qssContrast],
@@ -2837,6 +2845,19 @@ function releaseDecisionClaimDowngradeOwnerActionQueue(
 			boundary:
 				'Claim downgrade owner-action queue row derived from do-not-promote decisions. It tells product or release owners exactly what to classify, archive, or keep forbidden without promoting the claim.',
 		}))
+}
+
+function releaseDecisionClaimDowngradeOwnerFiles(
+	name: ReleaseProofReleaseDecisionDoNotPromoteItem['name'],
+): readonly string[] {
+	if (name !== 'research-surface-hygiene') return []
+	return [
+		'research/',
+		'research/experiments/',
+		'scripts/ascend-loop-manager.ts',
+		'tmp/ascend-loop-manager/',
+		'fixtures/benchmarks/release-proof-index.test.ts',
+	]
 }
 
 function releaseDecisionOwnerActionQueueCoverage(
@@ -3226,7 +3247,10 @@ function cloneReleaseDecisionBoard(
 		})),
 		claimDowngradeOwnerActionQueue: board.claimDowngradeOwnerActionQueue.map((row) => ({
 			...row,
+			ownerFiles: [...row.ownerFiles],
 			validationCommands: [...row.validationCommands],
+			commandsToRun: [...row.commandsToRun],
+			failureEvidence: [...row.failureEvidence],
 			evidenceWeHave: [...row.evidenceWeHave],
 			evidenceMissing: [...row.evidenceMissing],
 			qssContrast: [...row.qssContrast],

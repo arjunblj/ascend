@@ -1203,10 +1203,20 @@ describe('release proof evidence index', () => {
 		])
 		for (const row of index.releaseDecisionBoard.claimDowngradeOwnerActionQueue) {
 			expect(row.workBlockDisposition).toBe('claim-downgrade-do-not-promote')
+			expect(row.ownerFiles).toEqual(
+				expect.arrayContaining([
+					'research/',
+					'scripts/ascend-loop-manager.ts',
+					'tmp/ascend-loop-manager/',
+				]),
+			)
 			expect(row.validationCommands).toEqual([
 				'git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager',
 				'bun test fixtures/benchmarks/release-proof-index.test.ts',
 			])
+			expect(row.commandsToRun).toEqual(row.validationCommands)
+			expect(row.failureEvidence).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(row.acceptanceCriteria).toContain('classifies each untriaged path')
 			expect(row.evidenceWeHave).toEqual(expect.arrayContaining([expect.any(String)]))
 			expect(row.evidenceMissing).toEqual(expect.arrayContaining([expect.any(String)]))
 			expect(row.qssContrast).toEqual(expect.arrayContaining([expect.any(String)]))
@@ -2331,20 +2341,30 @@ describe('release proof evidence index', () => {
 				ownerLoop: 'product',
 				name: 'research-surface-hygiene',
 				workBlockDisposition: 'claim-downgrade-do-not-promote',
+				ownerFiles: expect.arrayContaining(['research/', 'tmp/ascend-loop-manager/']),
 				validationCommands: [
 					'git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager',
 					'bun test fixtures/benchmarks/release-proof-index.test.ts',
 				],
+				commandsToRun: [
+					'git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager',
+					'bun test fixtures/benchmarks/release-proof-index.test.ts',
+				],
+				failureEvidence: expect.arrayContaining([
+					expect.stringContaining('Classify current research files'),
+				]),
 			}),
 			expect.objectContaining({
 				sourceQueue: 'blocked-owner-action',
 				ownerLoop: 'release',
 				name: 'research-surface-hygiene',
 				workBlockDisposition: 'claim-downgrade-do-not-promote',
+				ownerFiles: expect.arrayContaining(['research/', 'tmp/ascend-loop-manager/']),
 				validationCommands: [
 					'git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager',
 					'bun test fixtures/benchmarks/release-proof-index.test.ts',
 				],
+				acceptanceCriteria: expect.stringContaining('classifies each untriaged path'),
 			}),
 		])
 		expect(handoff.releaseDecisionBoard.ownerActionQueueCoverage).toMatchObject({
@@ -2547,7 +2567,11 @@ describe('release proof evidence index', () => {
 				readonly name?: string
 				readonly ownerLoop?: string
 				readonly workBlockDisposition?: string
+				readonly ownerFiles?: readonly string[]
 				readonly validationCommands?: readonly string[]
+				readonly commandsToRun?: readonly string[]
+				readonly failureEvidence?: readonly string[]
+				readonly acceptanceCriteria?: string
 				readonly evidenceWeHave?: readonly string[]
 				readonly evidenceMissing?: readonly string[]
 				readonly qssContrast?: readonly string[]
@@ -2957,7 +2981,12 @@ describe('release proof evidence index', () => {
 				ownerLoop: 'product',
 				name: 'research-surface-hygiene',
 				workBlockDisposition: 'claim-downgrade-do-not-promote',
+				ownerFiles: expect.arrayContaining(['research/', 'tmp/ascend-loop-manager/']),
 				validationCommands: [
+					'git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager',
+					'bun test fixtures/benchmarks/release-proof-index.test.ts',
+				],
+				commandsToRun: [
 					'git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager',
 					'bun test fixtures/benchmarks/release-proof-index.test.ts',
 				],
@@ -2967,13 +2996,19 @@ describe('release proof evidence index', () => {
 				ownerLoop: 'release',
 				name: 'research-surface-hygiene',
 				workBlockDisposition: 'claim-downgrade-do-not-promote',
+				ownerFiles: expect.arrayContaining(['research/', 'tmp/ascend-loop-manager/']),
 				validationCommands: [
 					'git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager',
 					'bun test fixtures/benchmarks/release-proof-index.test.ts',
 				],
+				acceptanceCriteria: expect.stringContaining('classifies each untriaged path'),
 			}),
 		])
 		for (const row of board.claimDowngradeOwnerActionQueue ?? []) {
+			expect(row.ownerFiles).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(row.commandsToRun).toEqual(row.validationCommands)
+			expect(row.failureEvidence).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(row.acceptanceCriteria).toEqual(expect.any(String))
 			expect(row.evidenceWeHave).toEqual(expect.arrayContaining([expect.any(String)]))
 			expect(row.evidenceMissing).toEqual(expect.arrayContaining([expect.any(String)]))
 			expect(row.qssContrast).toEqual(expect.arrayContaining([expect.any(String)]))

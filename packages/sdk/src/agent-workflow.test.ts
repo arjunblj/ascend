@@ -1072,12 +1072,93 @@ describe('agent workflow loss audit', () => {
 			workbookProtected: true,
 			workbookLocks: ['lockStructure'],
 			workbookPasswordProtected: false,
+			workbookProtectionDetails: {
+				locks: ['lockStructure'],
+				workbookPasswordHashKind: 'none',
+				workbookStrongHashProtected: false,
+				workbookLegacyPasswordHashPresent: false,
+				workbookHashPresent: false,
+				workbookSaltPresent: false,
+				revisionsPasswordHashKind: 'none',
+				revisionsStrongHashProtected: false,
+				revisionsLegacyPasswordHashPresent: false,
+				revisionsHashPresent: false,
+				revisionsSaltPresent: false,
+				passwordHashVerification: 'none',
+			},
 			passwordHashVerification: 'none',
 			verification: 'reopened-output',
 		})
 		const reopened = await AscendWorkbook.open(new Uint8Array(readFileSync(output)))
 		expect(reopened.getWorkbookModel().workbookViews).toEqual([{ tabRatio: 500 }])
 		expect(reopened.getWorkbookModel().workbookProtection).toEqual({ lockStructure: true })
+		expect(Buffer.from(readFileSync(input)).equals(Buffer.from(sourceBytes))).toBe(true)
+	})
+
+	test('commits public workbook strong-hash protection with honest metadata reporting', async () => {
+		const input = join(TEMP_DIR, 'poi-workbook-password-2013.xlsx')
+		const output = join(TEMP_DIR, 'poi-workbook-password-2013-out.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		const sourceBytes = new Uint8Array(
+			readFileSync('fixtures/xlsx/poi/workbookProtection-workbook_password-2013.xlsx'),
+		)
+		await Bun.write(input, sourceBytes)
+		const ops = [
+			{
+				op: 'setCells' as const,
+				sheet: 'Sheet1',
+				updates: [{ ref: 'A1', value: 'hash audit' }],
+			},
+		]
+		const plan = await createAgentPlan(input, ops)
+
+		expect(plan.preview.wouldSucceed).toBe(true)
+
+		const committed = await commitAgentPlan(input, ops, { output })
+
+		expect(committed.postWrite.auditsPassed).toBe(true)
+		expect(committed.postWrite.security).toMatchObject({
+			workbookProtected: true,
+			workbookLocks: ['lockStructure'],
+			workbookPasswordProtected: true,
+			workbookRevisionPasswordProtected: false,
+			passwordHashVerification: 'reported-not-validated',
+			workbookProtectionDetails: {
+				locks: ['lockStructure'],
+				workbookPasswordHashKind: 'strong-hash',
+				workbookStrongHashProtected: true,
+				workbookLegacyPasswordHashPresent: false,
+				workbookAlgorithmName: 'SHA-512',
+				workbookSpinCount: 100000,
+				workbookHashPresent: true,
+				workbookSaltPresent: true,
+				revisionsPasswordHashKind: 'none',
+				revisionsStrongHashProtected: false,
+				revisionsLegacyPasswordHashPresent: false,
+				revisionsHashPresent: false,
+				revisionsSaltPresent: false,
+				passwordHashVerification: 'reported-not-validated',
+			},
+			verification: 'reopened-output',
+		})
+		const securityJson = JSON.stringify(committed.postWrite.security)
+		expect(securityJson).not.toContain(
+			'hBZdAINPpoA+8nBASfoa7mLOowkmljnvmY5sAOt6nY7wp+OXyq6jhmkmos6b6EcAd60kZXMvRbeTfI+rfSsTDg==',
+		)
+		expect(securityJson).not.toContain('Wq5e2oy8ZLa/369T8z/Jaw==')
+		const reopened = await AscendWorkbook.open(new Uint8Array(readFileSync(output)))
+		expect(reopened.getWorkbookModel().workbookProtection).toEqual({
+			lockStructure: true,
+			workbookAlgorithmName: 'SHA-512',
+			workbookHashValue:
+				'hBZdAINPpoA+8nBASfoa7mLOowkmljnvmY5sAOt6nY7wp+OXyq6jhmkmos6b6EcAd60kZXMvRbeTfI+rfSsTDg==',
+			workbookSaltValue: 'Wq5e2oy8ZLa/369T8z/Jaw==',
+			workbookSpinCount: 100000,
+		})
+		expect(reopened.sheet('Sheet1')?.cell('A1')?.value).toEqual({
+			kind: 'string',
+			value: 'hash audit',
+		})
 		expect(Buffer.from(readFileSync(input)).equals(Buffer.from(sourceBytes))).toBe(true)
 	})
 

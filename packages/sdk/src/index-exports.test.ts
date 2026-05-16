@@ -37,6 +37,7 @@ import type {
 	PostWriteTableSummary,
 	PostWriteTimelineCacheEntry,
 	PostWriteVisualSummary,
+	PostWriteWorkbookProtectionSecurityEntry,
 	PostWriteWorkbookTopologySummary,
 	PostWriteWorkbookViewEntry,
 	WritePolicyPreservationMode,
@@ -82,6 +83,7 @@ type CommitProofExportSurface = {
 	readonly verification?: AgentPostWriteVerification
 	readonly verificationTimings?: AgentPostWriteVerificationTimings
 	readonly visual?: PostWriteVisualSummary
+	readonly workbookProtectionSecurity?: PostWriteWorkbookProtectionSecurityEntry
 	readonly workbookTopology?: PostWriteWorkbookTopologySummary
 	readonly workbookView?: PostWriteWorkbookViewEntry
 	readonly writePolicyMode?: WritePolicyPreservationMode
@@ -127,6 +129,7 @@ test('root SDK exports commit proof audit types for release consumers', () => {
 		'verification',
 		'verificationTimings',
 		'visual',
+		'workbookProtectionSecurity',
 		'workbookTopology',
 		'workbookView',
 		'writePolicyMode',

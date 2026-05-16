@@ -88,6 +88,7 @@ export type {
 	PostWriteTableSummary,
 	PostWriteTimelineCacheEntry,
 	PostWriteVisualSummary,
+	PostWriteWorkbookProtectionSecurityEntry,
 	PostWriteWorkbookTopologySummary,
 	PostWriteWorkbookViewEntry,
 	PreparedAgentPlan,

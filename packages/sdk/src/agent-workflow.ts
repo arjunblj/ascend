@@ -829,6 +829,7 @@ export interface PostWriteSecuritySummary {
 	readonly workbookLocks: readonly string[]
 	readonly workbookPasswordProtected: boolean
 	readonly workbookRevisionPasswordProtected: boolean
+	readonly workbookProtectionDetails?: PostWriteWorkbookProtectionSecurityEntry
 	readonly protectedSheets: number
 	readonly protectedSheetNames: readonly string[]
 	readonly sheetPasswordProtected: number
@@ -843,6 +844,25 @@ export interface PostWriteSecuritySummary {
 	readonly passwordHashVerification: 'reported-not-validated' | 'none'
 	readonly preservationMode: 'generated' | 'none'
 	readonly verification: 'reopened-output'
+}
+
+export interface PostWriteWorkbookProtectionSecurityEntry {
+	readonly locks: readonly string[]
+	readonly workbookPasswordHashKind: 'none' | 'legacy-xor' | 'strong-hash'
+	readonly workbookStrongHashProtected: boolean
+	readonly workbookLegacyPasswordHashPresent: boolean
+	readonly workbookAlgorithmName?: string
+	readonly workbookSpinCount?: number
+	readonly workbookHashPresent: boolean
+	readonly workbookSaltPresent: boolean
+	readonly revisionsPasswordHashKind: 'none' | 'legacy-xor' | 'strong-hash'
+	readonly revisionsStrongHashProtected: boolean
+	readonly revisionsLegacyPasswordHashPresent: boolean
+	readonly revisionsAlgorithmName?: string
+	readonly revisionsSpinCount?: number
+	readonly revisionsHashPresent: boolean
+	readonly revisionsSaltPresent: boolean
+	readonly passwordHashVerification: 'reported-not-validated' | 'none'
 }
 
 export interface PostWriteSheetSecurityEntry {
@@ -3336,6 +3356,14 @@ function postWriteSecuritySummary(workbook: Workbook): PostWriteSecuritySummary 
 		workbookLocks,
 		workbookPasswordProtected,
 		workbookRevisionPasswordProtected,
+		...(workbookProtection
+			? {
+					workbookProtectionDetails: workbookProtectionSecurityEntry(
+						workbookProtection,
+						workbookLocks,
+					),
+				}
+			: {}),
 		protectedSheets: sheets.filter((sheet) => sheet.protected).length,
 		protectedSheetNames: sheets.filter((sheet) => sheet.protected).map((sheet) => sheet.sheetName),
 		sheetPasswordProtected: sheets.filter((sheet) => sheet.passwordProtected).length,
@@ -3356,6 +3384,65 @@ function postWriteSecuritySummary(workbook: Workbook): PostWriteSecuritySummary 
 		passwordHashVerification: hasPasswordOrHash ? 'reported-not-validated' : 'none',
 		preservationMode: hasSecurity ? 'generated' : 'none',
 		verification: 'reopened-output',
+	}
+}
+
+function workbookProtectionSecurityEntry(
+	protection: NonNullable<Workbook['workbookProtection']>,
+	locks: readonly string[],
+): PostWriteWorkbookProtectionSecurityEntry {
+	const workbookStrongHashProtected = Boolean(
+		protection.workbookAlgorithmName ||
+			protection.workbookHashValue ||
+			protection.workbookSaltValue ||
+			protection.workbookSpinCount,
+	)
+	const revisionsStrongHashProtected = Boolean(
+		protection.revisionsAlgorithmName ||
+			protection.revisionsHashValue ||
+			protection.revisionsSaltValue ||
+			protection.revisionsSpinCount,
+	)
+	const workbookLegacyPasswordHashPresent = Boolean(protection.workbookPassword)
+	const revisionsLegacyPasswordHashPresent = Boolean(protection.revisionsPassword)
+	const hasPasswordOrHash =
+		workbookStrongHashProtected ||
+		revisionsStrongHashProtected ||
+		workbookLegacyPasswordHashPresent ||
+		revisionsLegacyPasswordHashPresent
+	return {
+		locks,
+		workbookPasswordHashKind: workbookStrongHashProtected
+			? 'strong-hash'
+			: workbookLegacyPasswordHashPresent
+				? 'legacy-xor'
+				: 'none',
+		workbookStrongHashProtected,
+		workbookLegacyPasswordHashPresent,
+		...(protection.workbookAlgorithmName
+			? { workbookAlgorithmName: protection.workbookAlgorithmName }
+			: {}),
+		...(protection.workbookSpinCount !== undefined
+			? { workbookSpinCount: protection.workbookSpinCount }
+			: {}),
+		workbookHashPresent: Boolean(protection.workbookHashValue),
+		workbookSaltPresent: Boolean(protection.workbookSaltValue),
+		revisionsPasswordHashKind: revisionsStrongHashProtected
+			? 'strong-hash'
+			: revisionsLegacyPasswordHashPresent
+				? 'legacy-xor'
+				: 'none',
+		revisionsStrongHashProtected,
+		revisionsLegacyPasswordHashPresent,
+		...(protection.revisionsAlgorithmName
+			? { revisionsAlgorithmName: protection.revisionsAlgorithmName }
+			: {}),
+		...(protection.revisionsSpinCount !== undefined
+			? { revisionsSpinCount: protection.revisionsSpinCount }
+			: {}),
+		revisionsHashPresent: Boolean(protection.revisionsHashValue),
+		revisionsSaltPresent: Boolean(protection.revisionsSaltValue),
+		passwordHashVerification: hasPasswordOrHash ? 'reported-not-validated' : 'none',
 	}
 }
 

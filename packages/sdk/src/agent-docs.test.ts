@@ -37,6 +37,7 @@ describe('agent documentation surface', () => {
 		expect(paths).toContain('examples/agent-safe-edit-http.md')
 		expect(paths).toContain('examples/agent-safe-edit-http.ts')
 		expect(paths).toContain('examples/agent-safe-edit-mcp.md')
+		expect(paths).toContain('examples/agent-safe-edit-mcp.ts')
 		expect(paths).toContain('examples/untrusted-workbook-report.md')
 
 		const agentApi = docs.find((doc) => doc.path === 'docs/AGENT_API.md')?.text ?? ''
@@ -172,5 +173,15 @@ describe('agent documentation surface', () => {
 		})
 
 		expect(results.some((result) => result.path === 'examples/agent-safe-edit-http.ts')).toBe(true)
+	})
+
+	test('example search finds the runnable MCP safe edit workflow', async () => {
+		const results = await searchAgentDocs({
+			query: 'runnable MCP tool open-plan prepared commit reopen verify',
+			kind: 'example',
+			limit: 8,
+		})
+
+		expect(results.some((result) => result.path === 'examples/agent-safe-edit-mcp.ts')).toBe(true)
 	})
 })

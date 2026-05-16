@@ -447,6 +447,7 @@ function activeContentPayload(wb: WorkbookDocument) {
 		'preservedMacroSheet',
 		'preservedActiveContent',
 		'preservedSignature',
+		'preservedCustomUi',
 	])
 	return {
 		activeContentCount: info.activeContentCount,
@@ -457,7 +458,7 @@ function activeContentPayload(wb: WorkbookDocument) {
 			(feature) =>
 				activeFeatureFamilies.has(feature.feature) ||
 				feature.locations.some((location) =>
-					/(vba|macro|activex|ctrlprops|_xmlsignatures|signature)/i.test(location),
+					/(vba|macro|activex|ctrlprops|customui|_xmlsignatures|signature)/i.test(location),
 				),
 		),
 		capabilityWarnings: info.capabilityWarnings.filter(

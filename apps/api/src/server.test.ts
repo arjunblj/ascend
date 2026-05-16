@@ -704,6 +704,69 @@ describe('Ascend API server', () => {
 		}
 	})
 
+	test('/active-content reports custom UI callbacks as active content for agents', async () => {
+		const customUiFile = join(
+			tmpdir(),
+			`ascend-api-custom-ui-${Date.now()}-${Math.random().toString(16).slice(2)}.xlsm`,
+		)
+		await Bun.write(customUiFile, customUiWorkbook())
+		try {
+			const result = await postJson('/active-content', { file: customUiFile })
+			const data = result.body.data as
+				| {
+						activeContentCount?: number
+						activeContent?: Array<{
+							kind?: string
+							partPath?: string
+							contentType?: string
+							relType?: string
+							executionPolicy?: string
+							customUi?: {
+								callbacks?: readonly { readonly attribute?: string; readonly macro?: string }[]
+							}
+						}>
+						compatibilityFeatures?: Array<{ feature?: string; locations?: readonly string[] }>
+						capabilityWarnings?: Array<{ family?: string; message?: string }>
+				  }
+				| undefined
+
+			expect(result.status).toBe(200)
+			expect(result.body.ok).toBe(true)
+			expect(data?.activeContentCount).toBe(1)
+			const customUiEntry = data?.activeContent?.find(
+				(entry) => entry.kind === 'customUi' && entry.partPath === 'customUI/customUI2.xml',
+			)
+			expect(customUiEntry).toMatchObject({
+				contentType: 'application/vnd.ms-office.customUI+xml',
+				relType: 'http://schemas.microsoft.com/office/2007/relationships/ui/extensibility',
+				executionPolicy: 'blocked',
+			})
+			expect(customUiEntry?.customUi?.callbacks).toEqual(
+				expect.arrayContaining([
+					{ attribute: 'onLoad', macro: 'Ribbon.OnLoad' },
+					{ attribute: 'loadImage', macro: 'Ribbon.LoadImage' },
+					{ attribute: 'onAction', macro: 'Module1.RunReport' },
+					{ attribute: 'getEnabled', macro: 'Ribbon.CanRun' },
+				]),
+			)
+			expect(data?.compatibilityFeatures).toContainEqual(
+				expect.objectContaining({
+					feature: 'preservedCustomUi',
+					locations: ['customUI/customUI2.xml'],
+				}),
+			)
+			expect(data?.capabilityWarnings).toContainEqual(
+				expect.objectContaining({
+					family: 'active content',
+					capabilityId: 'active.custom-ui',
+					reason: expect.stringContaining('executionPolicy=blocked'),
+				}),
+			)
+		} finally {
+			await unlink(customUiFile).catch(() => {})
+		}
+	})
+
 	test('formula-assist exposes diagnostics, completions, signature help, and reference edits', async () => {
 		const result = await postJson('/formula-assist', {
 			formula: '=SUM(A1:B2',

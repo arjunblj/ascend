@@ -33,6 +33,7 @@ const REQUIRED_COMMANDS = [
 	'bun test fixtures/corpus/conditional-format-contract.test.ts',
 	'bun test fixtures/corpus/chart-contract.test.ts',
 	'bun test fixtures/corpus/active-content-contract.test.ts',
+	'bun test apps/api/src/server.test.ts -t "custom UI callbacks"',
 	'bun test fixtures/corpus/external-refresh-contract.test.ts',
 	'bun test fixtures/corpus/high-risk-package-contract.test.ts',
 	'bun test packages/sdk/src/agent-workflow.test.ts -t "encrypted workbook commits fail closed"',

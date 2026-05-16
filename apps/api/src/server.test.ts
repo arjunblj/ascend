@@ -1643,10 +1643,38 @@ describe('Ascend API server', () => {
 				planHandle: plan.body.data?.preparedPlan?.id,
 				output: replayOutput,
 				compact: true,
+				includeProofBundle: true,
 			})
 			expect(commit.status).toBe(200)
 			expect(commit.body.ok).toBe(true)
 			expect(commit.body.data?.outputSha256).toMatch(/^[a-f0-9]{64}$/)
+			expect(commit.body.data?.proofBundle).toMatchObject({
+				safeToUse: true,
+				evidence: {
+					outputSha256: commit.body.data?.outputSha256,
+					postWriteValid: true,
+					auditsPassed: true,
+					reopened: true,
+					checkValid: true,
+					lintClean: true,
+				},
+			})
+			expect(commit.body.data?.proofBundle?.whatChanged).toEqual(
+				expect.arrayContaining([{ ref: 'A1' }, { ref: 'B1' }, { ref: 'B2' }]),
+			)
+			expect(
+				commit.body.data?.proofBundle?.whySafe?.map((gate: { gate: string; ok: boolean }) => [
+					gate.gate,
+					gate.ok,
+				]),
+			).toEqual([
+				['input-guard', true],
+				['approval', true],
+				['write-policy', true],
+				['commit', true],
+				['reopen-verify', true],
+				['package-graph', true],
+			])
 			expect(commit.body.data?.postWrite?.valid).toBe(true)
 			expect(commit.body.data?.postWrite?.auditsPassed).toBe(true)
 			expect(commit.body.data?.postWrite?.unresolvedPackageGraphIssueCount).toBe(0)

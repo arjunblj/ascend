@@ -339,7 +339,11 @@ const apiCommit = await apiJson(apiFetch, '/commit', {
 	output: apiOutput,
 	expectSha256: apiPlan.inputSha256,
 	compact: true,
+	includeProofBundle: true,
 })
+if (apiCommit.proofBundle?.safeToUse !== true) {
+	throw new Error('API commit proof bundle did not pass: ' + JSON.stringify(apiCommit))
+}
 const apiCheck = await apiJson(apiFetch, '/check', { file: apiOutput })
 const apiRead = await apiJson(apiFetch, '/read', {
 	file: apiOutput,
@@ -405,7 +409,11 @@ const mcpCommit = await mcpTool(tools, 'ascend.commit', {
 	output: mcpOutput,
 	expectSha256: mcpPlan.inputSha256,
 	compact: true,
+	includeProofBundle: true,
 })
+if (mcpCommit.proofBundle?.safeToUse !== true) {
+	throw new Error('MCP commit proof bundle did not pass: ' + JSON.stringify(mcpCommit))
+}
 const mcpCheck = await mcpTool(tools, 'ascend.check', { file: mcpOutput })
 const mcpRead = await mcpTool(tools, 'ascend.read', {
 	file: mcpOutput,

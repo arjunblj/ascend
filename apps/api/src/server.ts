@@ -121,6 +121,111 @@ function withPackageActions<T, R extends PackageActionEvidence>(
 	}
 }
 
+function withCommitProofBundle<T>(
+	payload: T,
+	result: AgentCommitResult,
+	includeProofBundle: boolean,
+	inputGuard: CommitProofInputGuard | undefined,
+): T | (T & { readonly proofBundle: ReturnType<typeof createCommitProofBundle> }) {
+	if (!includeProofBundle) return payload
+	return {
+		...payload,
+		proofBundle: createCommitProofBundle(result, inputGuard),
+	}
+}
+
+type CommitProofInputGuard =
+	| { readonly kind: 'expect-sha256'; readonly expectedSha256: string }
+	| { readonly kind: 'prepared-plan-handle' }
+
+function createCommitProofBundle(
+	result: AgentCommitResult,
+	inputGuard: CommitProofInputGuard | undefined,
+) {
+	const whatChanged = result.apply.affectedCells.map((ref) => ({ ref }))
+	const whySafe = [
+		{
+			gate: 'input-guard',
+			ok:
+				inputGuard?.kind === 'prepared-plan-handle' ||
+				(inputGuard?.kind === 'expect-sha256' && inputGuard.expectedSha256 === result.inputSha256),
+			evidence: {
+				guard: inputGuard?.kind ?? null,
+				expectedSha256: inputGuard?.kind === 'expect-sha256' ? inputGuard.expectedSha256 : null,
+				inputSha256: result.inputSha256,
+			},
+		},
+		{
+			gate: 'approval',
+			ok: result.approvals.length === 0,
+			evidence: {
+				approvalCount: result.approvals.length,
+				approvalIds: result.approvals.map((approval) => approval.id),
+			},
+		},
+		{
+			gate: 'write-policy',
+			ok: result.writePolicy.ok,
+			evidence: {
+				diagnosticCount: result.writePolicy.diagnostics.length,
+				blockerCount: result.writePolicy.diagnostics.filter(
+					(diagnostic) => diagnostic.severity === 'blocker',
+				).length,
+			},
+		},
+		{
+			gate: 'commit',
+			ok: result.postWrite.valid && result.postWrite.auditsPassed,
+			evidence: {
+				outputSha256: result.outputSha256,
+				postWriteValid: result.postWrite.valid,
+				auditsPassed: result.postWrite.auditsPassed,
+			},
+		},
+		{
+			gate: 'reopen-verify',
+			ok: result.postWrite.reopened && result.postWrite.check.valid && result.postWrite.lint.clean,
+			evidence: {
+				reopened: result.postWrite.reopened,
+				checkValid: result.postWrite.check.valid,
+				checkIssueCount: result.postWrite.check.issues.length,
+				lintClean: result.postWrite.lint.clean,
+				lintWarningCount: result.postWrite.lint.warnings.length,
+			},
+		},
+		{
+			gate: 'package-graph',
+			ok:
+				result.postWrite.packageGraphAudit.ok &&
+				result.postWrite.unresolvedPackageGraphIssueCount === 0,
+			evidence: {
+				packageGraphAuditOk: result.postWrite.packageGraphAudit.ok,
+				expectedPackageGraphIssueCount: result.postWrite.expectedPackageGraphIssueCount,
+				unresolvedPackageGraphIssueCount: result.postWrite.unresolvedPackageGraphIssueCount,
+			},
+		},
+	] as const
+	return {
+		safeToUse: whySafe.every((gate) => gate.ok),
+		whatChanged,
+		whySafe,
+		evidence: {
+			inputSha256: result.inputSha256,
+			planDigest: result.planDigest,
+			outputSha256: result.outputSha256,
+			operationCount: result.operationCount,
+			affectedCellCount: result.apply.affectedCells.length,
+			postWriteValid: result.postWrite.valid,
+			auditsPassed: result.postWrite.auditsPassed,
+			reopened: result.postWrite.reopened,
+			checkValid: result.postWrite.check.valid,
+			lintClean: result.postWrite.lint.clean,
+			writePolicyOk: result.writePolicy.ok,
+			packageGraphAuditOk: result.postWrite.packageGraphAudit.ok,
+		},
+	}
+}
+
 function isCommitPackageActionEvidence(result: PackageActionEvidence): result is AgentCommitResult {
 	return 'outputSha256' in result && 'postWrite' in result
 }
@@ -738,7 +843,7 @@ const API_AGENT_WORKFLOW = {
 		{
 			step: 'commit',
 			endpoint: 'POST /commit',
-			proof: ['outputSha256', 'postWrite', 'packageActions'],
+			proof: ['outputSha256', 'postWrite', 'packageActions', 'proofBundle'],
 		},
 		{
 			step: 'reopen-verify',
@@ -1458,6 +1563,7 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 					const maxAffectedCells = body
 						? requireOptionalNumber(body, 'maxAffectedCells')
 						: undefined
+					const includeProofBundle = body?.includeProofBundle === true
 					const inPlace =
 						body !== null &&
 						typeof body === 'object' &&
@@ -1487,11 +1593,14 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 									...(maxAffectedCells !== undefined ? { maxAffectedCells } : {}),
 								})
 							: result
+						const responsePayload = withCommitProofBundle(
+							withPackageActions(payload, result, body?.includePackageActions === true),
+							result,
+							includeProofBundle,
+							{ kind: 'prepared-plan-handle' },
+						)
 						return jsonSuccess(
-							withPathMutationResult(
-								withPackageActions(payload, result, body?.includePackageActions === true),
-								prepared.handle.pathMutations,
-							),
+							withPathMutationResult(responsePayload, prepared.handle.pathMutations),
 						)
 					}
 					const inputShape = resolveOperationInputShape(operationInputSourceFromBody(body))
@@ -1523,12 +1632,13 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 								...(maxAffectedCells !== undefined ? { maxAffectedCells } : {}),
 							})
 						: result
-					return jsonSuccess(
-						withPathMutationResult(
-							withPackageActions(payload, result, body?.includePackageActions === true),
-							pathMutations,
-						),
+					const responsePayload = withCommitProofBundle(
+						withPackageActions(payload, result, body?.includePackageActions === true),
+						result,
+						includeProofBundle,
+						expectSha256 ? { kind: 'expect-sha256', expectedSha256: expectSha256 } : undefined,
 					)
+					return jsonSuccess(withPathMutationResult(responsePayload, pathMutations))
 				} catch (e) {
 					return handleError(e, file ?? undefined)
 				}

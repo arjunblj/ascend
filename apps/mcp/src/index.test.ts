@@ -5179,6 +5179,7 @@ describe('MCP server', () => {
 				output?: string
 				approvals?: string[]
 				compact?: boolean
+				includeProofBundle?: boolean
 			}) => Promise<{
 				structuredContent?: {
 					ok?: boolean
@@ -5189,6 +5190,19 @@ describe('MCP server', () => {
 					data?: {
 						pathMutations?: { ops?: unknown[] }
 						apply?: { affectedCellCount?: number }
+						proofBundle?: {
+							safeToUse?: boolean
+							whatChanged?: Array<{ ref: string }>
+							whySafe?: Array<{ gate: string; ok: boolean }>
+							evidence?: {
+								outputSha256?: string
+								postWriteValid?: boolean
+								auditsPassed?: boolean
+								reopened?: boolean
+								checkValid?: boolean
+								lintClean?: boolean
+							}
+						}
 						timings?: {
 							applyMs?: number
 							writePlanSummaryMs?: number
@@ -5237,12 +5251,37 @@ describe('MCP server', () => {
 				output,
 				approvals: [],
 				compact: true,
+				includeProofBundle: true,
 			})
 			expect(committed.structuredContent?.ok).toBe(true)
 			expect(committed.structuredContent?.data?.pathMutations?.ops).toEqual([
 				{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 321 }] },
 			])
 			expect(committed.structuredContent?.data?.apply?.affectedCellCount).toBe(1)
+			expect(committed.structuredContent?.data?.proofBundle).toMatchObject({
+				safeToUse: true,
+				evidence: {
+					postWriteValid: true,
+					auditsPassed: true,
+					reopened: true,
+					checkValid: true,
+					lintClean: true,
+				},
+			})
+			expect(committed.structuredContent?.data?.proofBundle?.whatChanged).toEqual([{ ref: 'A1' }])
+			expect(
+				committed.structuredContent?.data?.proofBundle?.whySafe?.map((gate) => [
+					gate.gate,
+					gate.ok,
+				]),
+			).toEqual([
+				['input-guard', true],
+				['approval', true],
+				['write-policy', true],
+				['commit', true],
+				['reopen-verify', true],
+				['package-graph', true],
+			])
 			expect(committed.structuredContent?.data?.timings?.applyMs).toBeNumber()
 			expect(committed.structuredContent?.data?.timings?.writePlanSummaryMs).toBeNumber()
 			expect(committed.structuredContent?.data?.timings?.writePolicyCheckMs).toBeNumber()

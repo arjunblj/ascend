@@ -229,6 +229,10 @@ const cliInput = join(cwd, 'cli-input.xlsx')
 const cliOutput = join(cwd, 'cli-output.xlsx')
 await runCliJson(['create', cliInput])
 await runCliJson(['write', cliInput, '--ops', setupOpsPath])
+const cliOpenPlan = await runCliJson(['open-plan', cliInput])
+if (cliOpenPlan.recommendedLoadOptions?.mode !== 'full') {
+	throw new Error('CLI open-plan returned unexpected load options: ' + JSON.stringify(cliOpenPlan))
+}
 const cliInspect = await runCliJson(['inspect', cliInput])
 const cliPlan = await runCliJson(['plan', cliInput, '--ops', planOpsPath])
 if (cliPlan.preview?.wouldSucceed !== true) {
@@ -257,6 +261,10 @@ const apiFetch = createApiFetch()
 const apiInput = join(cwd, 'api-input.xlsx')
 const apiOutput = join(cwd, 'api-output.xlsx')
 await runCliJson(['create', apiInput])
+const apiOpenPlan = await apiJson(apiFetch, '/open-plan', { file: apiInput })
+if (apiOpenPlan.recommendedLoadOptions?.mode !== 'full') {
+	throw new Error('API open-plan returned unexpected load options: ' + JSON.stringify(apiOpenPlan))
+}
 await apiJson(apiFetch, '/write', { file: apiInput, ops: setupOps })
 const apiInspect = await apiJson(apiFetch, '/inspect', { file: apiInput })
 const apiPlan = await apiJson(apiFetch, '/plan', { file: apiInput, ops: planOps })
@@ -292,6 +300,10 @@ const mcpServer = createMcpServer()
 const tools = mcpServer._registeredTools
 const resources = mcpServer._registeredResources
 await mcpTool(tools, 'ascend.write', { file: mcpInput, ops: setupOps })
+const mcpOpenPlan = await mcpTool(tools, 'ascend.open_plan', { file: mcpInput })
+if (mcpOpenPlan.recommendedLoadOptions?.mode !== 'full') {
+	throw new Error('MCP open_plan returned unexpected load options: ' + JSON.stringify(mcpOpenPlan))
+}
 const mcpInspect = await mcpTool(tools, 'ascend.inspect', { file: mcpInput })
 const mcpPlan = await mcpTool(tools, 'ascend.plan', { file: mcpInput, ops: planOps })
 if (mcpPlan.preview?.wouldSucceed !== true) {
@@ -329,6 +341,7 @@ if (!mcpResource?.contents?.[0]?.text?.includes('"capabilities"')) {
 
 console.log(JSON.stringify({
 	cli: {
+		openPlanMode: cliOpenPlan.recommendedLoadOptions.mode,
 		sheets: cliInspect.sheets?.map((sheet) => sheet.name),
 		planWouldSucceed: cliPlan.preview.wouldSucceed,
 		outputSha256: cliCommit.outputSha256,
@@ -338,6 +351,7 @@ console.log(JSON.stringify({
 	api: {
 		createApiFetchExport: typeof createApiFetch,
 		createServerExport: typeof createApiServer,
+		openPlanMode: apiOpenPlan.recommendedLoadOptions.mode,
 		sheets: apiInspect.sheets?.map((sheet) => sheet.name),
 		planWouldSucceed: apiPlan.preview.wouldSucceed,
 		outputSha256: apiCommit.outputSha256,
@@ -346,6 +360,7 @@ console.log(JSON.stringify({
 	apiCapabilities: capabilities.data.capabilities.length,
 	mcp: {
 		createServerExport: typeof createMcpServer,
+		openPlanMode: mcpOpenPlan.recommendedLoadOptions.mode,
 		sheets: mcpInspect.sheets?.map((sheet) => sheet.name),
 		planWouldSucceed: mcpPlan.preview.wouldSucceed,
 		outputSha256: mcpCommit.outputSha256,

@@ -11,6 +11,7 @@ interface Args {
 	readonly file: string
 	readonly mode: Mode
 	readonly source: Source
+	readonly selectedSheet: string | undefined
 	readonly richMetadata: boolean
 	readonly parseDates: boolean
 	readonly materializeCells: boolean
@@ -45,6 +46,7 @@ function parseArgs(): Args {
 		file,
 		mode,
 		source,
+		selectedSheet: readOption(args, '--selected-sheet'),
 		richMetadata: hasFlag(args, '--rich-metadata'),
 		parseDates: !hasFlag(args, '--raw-values'),
 		materializeCells: hasFlag(args, '--materialize-cells'),
@@ -73,6 +75,7 @@ async function openWorkbook(args: Args, preloaded: Uint8Array | undefined) {
 	const bytes = await readBytes(args, preloaded)
 	const result = readXlsx(bytes, {
 		mode: args.mode,
+		...(args.selectedSheet ? { sheets: [args.selectedSheet] } : {}),
 		...(args.richMetadata ? { richMetadata: true } : {}),
 		...(args.parseDates ? {} : { parseDates: false }),
 	})
@@ -239,6 +242,9 @@ function readAssertions(
 			runnerApi: 'readXlsx',
 		}
 	}
+	if (args.selectedSheet) {
+		return selectedReadAssertions(result, args)
+	}
 	return {
 		...workbookShapeAssertions(result.workbook, result.report.status),
 		...readFeatureAssertions(result.workbook),
@@ -249,6 +255,62 @@ function readAssertions(
 		runnerParseDates: args.parseDates,
 		runnerApi: 'readXlsx',
 		runnerTimeOpenOnly: args.timeOpenOnly,
+	}
+}
+
+function selectedReadAssertions(
+	result: Awaited<ReturnType<typeof openWorkbook>>,
+	args: Args,
+): Record<string, string | number | boolean | null> {
+	const selectedSheetName = args.selectedSheet ?? ''
+	const sheet = result.workbook.getSheet(selectedSheetName)
+	const semanticCellRefs: string[] = []
+	const semanticCellValues: string[] = []
+	let cellCount = 0
+	let usedRangeText = `${selectedSheetName}!empty`
+	if (sheet) {
+		const usedRange = sheet.cells.usedRange()
+		usedRangeText = usedRange
+			? `${sheet.name}!${indexToColumn(usedRange.start.col)}${usedRange.start.row + 1}:${indexToColumn(
+					usedRange.end.col,
+				)}${usedRange.end.row + 1}`
+			: `${sheet.name}!empty`
+		for (const [row, col, cell] of sheet.cells.iterate()) {
+			cellCount++
+			const ref = `${sheet.name}!${indexToColumn(col)}${row + 1}`
+			semanticCellRefs.push(ref)
+			semanticCellValues.push(`${ref}\t${serializeCellValue(cell.value)}`)
+		}
+	}
+	return {
+		sheetCount: sheet ? 1 : 0,
+		sheetNamesHash: hashLines(sheet ? [`0:${sheet.name}`] : []),
+		cellCount,
+		physicalCellCount: null,
+		formulaCount: sheet?.cells.formulaCellCount() ?? 0,
+		usedRangeCount: sheet ? 1 : 0,
+		firstUsedRange: usedRangeText,
+		firstPhysicalUsedRange: null,
+		usedRangesHash: hashLines([usedRangeText]),
+		physicalUsedRangesHash: hashLines([]),
+		semanticCellRefsHash: hashLines(semanticCellRefs),
+		semanticCellValuesHash: hashLines(semanticCellValues),
+		formulaTextHash: hashLines([]),
+		...readFeatureAssertions(result.workbook),
+		selectedSheetRead: true,
+		sourceSheetCount: result.loadInfo.sourceSheetNames.length,
+		loadedSheetCount: result.loadInfo.loadedSheetNames.length,
+		loadedSheetNames: result.loadInfo.loadedSheetNames.join(','),
+		hasAllSheets: result.loadInfo.hasAllSheets,
+		cellsHydrated: result.loadInfo.cellsHydrated,
+		runnerVersion: 'workspace',
+		runnerSource: args.source,
+		runnerLoadMode: args.mode,
+		runnerRichMetadata: args.richMetadata,
+		runnerParseDates: args.parseDates,
+		runnerApi: 'readXlsx',
+		runnerTimeOpenOnly: args.timeOpenOnly,
+		runnerSelectedSheet: args.selectedSheet,
 	}
 }
 

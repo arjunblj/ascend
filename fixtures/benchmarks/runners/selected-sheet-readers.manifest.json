@@ -25,6 +25,32 @@
 		}
 	},
 	{
+		"name": "ascend-readxlsx-selected-values",
+		"command": [
+			"bun",
+			"fixtures/benchmarks/runners/ascend_readxlsx_runner.ts",
+			"--mode",
+			"values",
+			"--source",
+			"path",
+			"--time-open-only"
+		],
+		"categories": ["read"],
+		"runtime": "bun",
+		"adapterVersion": "1",
+		"libraryVersion": "workspace",
+		"timingModel": "external-internal-operation-timing",
+		"validationModel": "external-post-selected-sheet-assertions",
+		"memoryModel": "peak-rss-reported",
+		"installHint": "bun install",
+		"capabilities": {
+			"internalTiming": true,
+			"valueOnlyRead": true,
+			"selectedSheetRead": true,
+			"xlsmRoundtrip": true
+		}
+	},
+	{
 		"name": "sheetjs",
 		"command": ["bun", "fixtures/benchmarks/runners/js_read_runner.ts", "--library", "sheetjs"],
 		"categories": ["read"],

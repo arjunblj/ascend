@@ -652,7 +652,7 @@ describe('competitive IO helpers', () => {
 				'--execution-scope',
 				'external-process',
 				'--libraries',
-				'ascend-external-values,sheetjs,openpyxl,python-calamine',
+				'ascend-readxlsx-selected-values,ascend-external-values,sheetjs,openpyxl,python-calamine',
 				'--rows',
 				'5',
 				'--cols',
@@ -672,6 +672,12 @@ describe('competitive IO helpers', () => {
 			expect(results).toEqual([
 				{
 					library: 'ascend-external-values',
+					status: 'pass',
+					timingLane: 'external-internal-operation-timing:selected-sheet',
+					selectedSheetRead: true,
+				},
+				{
+					library: 'ascend-readxlsx-selected-values',
 					status: 'pass',
 					timingLane: 'external-internal-operation-timing:selected-sheet',
 					selectedSheetRead: true,

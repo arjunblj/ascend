@@ -925,6 +925,48 @@ describe('ascend cli', () => {
 		}
 	})
 
+	test('direct mutation commands --json return structured missing input guidance before opening files', async () => {
+		const cases = [
+			{
+				argv: ['preview', TEST_FILE, '--json'] as const,
+				message: 'Missing required preview input',
+				details: {
+					command: 'preview',
+					required: ['file', 'selector or ops', 'values when selector is used'],
+					missing: ['selector', 'values'],
+					workflow: ['preview', 'plan'],
+				},
+				fix: 'ascend preview <file> <selector> <json-values> --json',
+			},
+			{
+				argv: ['write', TEST_FILE, '--json'] as const,
+				message: 'Missing required write input',
+				details: {
+					command: 'write',
+					required: ['file', 'selector or ops', 'values when selector is used'],
+					missing: ['selector', 'values'],
+					workflow: ['write', 'reopen', 'verify'],
+				},
+				fix: 'Prefer ascend plan/commit for auditable edits.',
+			},
+		]
+
+		for (const entry of cases) {
+			const result = await run(...entry.argv)
+			expect(result.exitCode).toBe(1)
+			const parsed = JSON.parse(result.stdout)
+			expect(parsed.ok).toBe(false)
+			expect(parsed.error).toMatchObject({
+				code: 'INVALID_ARGUMENT',
+				message: entry.message,
+				retryable: true,
+				retryStrategy: 'modified',
+				details: entry.details,
+			})
+			expect(parsed.error.suggestedFix).toContain(entry.fix)
+		}
+	})
+
 	test('dump --json emits a replayable operation batch', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

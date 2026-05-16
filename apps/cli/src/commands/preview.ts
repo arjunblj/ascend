@@ -24,8 +24,18 @@ Flags:
 export async function previewCommand(args: string[], flags: Map<string, string>): Promise<number> {
 	const file = args[0]
 	if (!file) {
+		cliError(missingPreviewInputError(['file']), flags)
+		return 1
+	}
+	const opsFile = flags.get('ops')
+	const selectorArg = args[1]
+	const valuesStr = args[2]
+	if (!opsFile && (!selectorArg || !valuesStr)) {
 		cliError(
-			'Usage: ascend preview <file> <selector> <json-values> [--sheet <name>]\n       ascend preview <file> --ops <file.json>',
+			missingPreviewInputError([
+				...(!selectorArg ? ['selector'] : []),
+				...(!valuesStr ? ['values'] : []),
+			]),
 			flags,
 		)
 		return 1
@@ -102,7 +112,13 @@ async function resolvePreviewOps(
 	const selectorArg = args[1]
 	const valuesStr = args[2]
 	if (!selectorArg || !valuesStr) {
-		cliError('Usage: ascend preview <file> <selector> <json-values> [--sheet <name>]', flags)
+		cliError(
+			missingPreviewInputError([
+				...(!selectorArg ? ['selector'] : []),
+				...(!valuesStr ? ['values'] : []),
+			]),
+			flags,
+		)
 		return null
 	}
 
@@ -119,6 +135,21 @@ async function resolvePreviewOps(
 		return null
 	}
 	return buildSetCellOps(sheetName, selector.ref, values)
+}
+
+function missingPreviewInputError(missing: readonly string[]) {
+	return ascendError('INVALID_ARGUMENT', 'Missing required preview input', {
+		retryable: true,
+		retryStrategy: 'modified',
+		details: {
+			command: 'preview',
+			required: ['file', 'selector or ops', 'values when selector is used'],
+			missing,
+			workflow: ['preview', 'plan'],
+		},
+		suggestedFix:
+			'Run ascend preview <file> <selector> <json-values> --json, or ascend preview <file> --ops <file.json> --json.',
+	})
 }
 
 function formatValue(value: CellValue): string {

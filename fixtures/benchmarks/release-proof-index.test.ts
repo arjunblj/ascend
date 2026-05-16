@@ -937,6 +937,14 @@ describe('release proof evidence index', () => {
 			}),
 			expect.objectContaining({
 				evidenceId: 'cli-agent-facing-open-diagnostics-proof',
+				acceptedScope: expect.stringContaining('6e190776'),
+				command: expect.stringContaining(
+					'calc and export --json return structured missing input guidance',
+				),
+				path: expect.stringContaining('apps/cli/src/commands/export.ts'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'cli-agent-facing-open-diagnostics-proof',
 				acceptedScope: expect.stringContaining('9b155c7f'),
 				boundary: expect.stringContaining('CLI agent-facing diagnostics only'),
 			}),

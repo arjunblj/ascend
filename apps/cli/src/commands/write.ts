@@ -23,8 +23,19 @@ Flags:
 export async function writeCommand(args: string[], flags: Map<string, string>): Promise<number> {
 	const file = args[0]
 	if (!file) {
+		cliError(missingWriteInputError(['file']), flags)
+		return 1
+	}
+
+	const opsFile = flags.get('ops')
+	const selectorArg = args[1]
+	const valuesStr = args[2]
+	if (!opsFile && (!selectorArg || !valuesStr)) {
 		cliError(
-			'Usage: ascend write <file> <selector> <json-values> [--sheet <name>]\n       ascend write <file> --ops <file.json>',
+			missingWriteInputError([
+				...(!selectorArg ? ['selector'] : []),
+				...(!valuesStr ? ['values'] : []),
+			]),
 			flags,
 		)
 		return 1
@@ -32,7 +43,6 @@ export async function writeCommand(args: string[], flags: Map<string, string>): 
 
 	const { workbook: wb } = await openWorkbookWithProgress(file)
 
-	const opsFile = flags.get('ops')
 	if (opsFile) {
 		const raw = await readFile(opsFile, 'utf-8')
 		const ops: Operation[] = JSON.parse(raw)
@@ -86,10 +96,14 @@ export async function writeCommand(args: string[], flags: Map<string, string>): 
 		return 0
 	}
 
-	const selectorArg = args[1]
-	const valuesStr = args[2]
 	if (!selectorArg || !valuesStr) {
-		cliError('Usage: ascend write <file> <selector> <json-values> [--sheet <name>]', flags)
+		cliError(
+			missingWriteInputError([
+				...(!selectorArg ? ['selector'] : []),
+				...(!valuesStr ? ['values'] : []),
+			]),
+			flags,
+		)
 		return 1
 	}
 
@@ -157,4 +171,19 @@ export async function writeCommand(args: string[], flags: Map<string, string>): 
 		console.log(`Wrote ${updateCount} cell(s) to ${file}`)
 	}
 	return 0
+}
+
+function missingWriteInputError(missing: readonly string[]) {
+	return ascendError('INVALID_ARGUMENT', 'Missing required write input', {
+		retryable: true,
+		retryStrategy: 'modified',
+		details: {
+			command: 'write',
+			required: ['file', 'selector or ops', 'values when selector is used'],
+			missing,
+			workflow: ['write', 'reopen', 'verify'],
+		},
+		suggestedFix:
+			'Prefer ascend plan/commit for auditable edits. For direct writes, run ascend write <file> <selector> <json-values> --json or ascend write <file> --ops <file.json> --json.',
+	})
 }

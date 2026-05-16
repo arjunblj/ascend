@@ -909,6 +909,60 @@ describe('Ascend API server', () => {
 		})
 	})
 
+	test('/diff rejects missing workbook references with structured retry guidance', async () => {
+		const missingA = await postJson('/diff', { fileB: TEMP_FILE })
+		const missingB = await postJson('/diff', { fileA: TEMP_FILE })
+
+		expect(missingA.status).toBe(400)
+		expect(missingA.body.ok).toBe(false)
+		expect(missingA.body.error).toMatchObject({
+			code: 'VALIDATION_ERROR',
+			message: 'Missing or invalid diff fileA',
+			retryable: true,
+			retryStrategy: 'modified',
+			details: { required: ['fileA'] },
+			suggestedFix: expect.stringContaining('compare the two workbooks'),
+		})
+
+		expect(missingB.status).toBe(400)
+		expect(missingB.body.ok).toBe(false)
+		expect(missingB.body.error).toMatchObject({
+			code: 'VALIDATION_ERROR',
+			message: 'Missing or invalid diff fileB',
+			retryable: true,
+			retryStrategy: 'modified',
+			details: { required: ['fileB'] },
+			suggestedFix: expect.stringContaining('compare the two workbooks'),
+		})
+	})
+
+	test('/export rejects missing inputs with structured retry guidance', async () => {
+		const missingFile = await postJson('/export', { format: 'json' })
+		const missingFormat = await postJson('/export', { file: TEMP_FILE })
+
+		expect(missingFile.status).toBe(400)
+		expect(missingFile.body.ok).toBe(false)
+		expect(missingFile.body.error).toMatchObject({
+			code: 'VALIDATION_ERROR',
+			message: 'Missing or invalid export workbook reference',
+			retryable: true,
+			retryStrategy: 'modified',
+			details: { required: ['file'] },
+			suggestedFix: expect.stringContaining('export the workbook'),
+		})
+
+		expect(missingFormat.status).toBe(400)
+		expect(missingFormat.body.ok).toBe(false)
+		expect(missingFormat.body.error).toMatchObject({
+			code: 'VALIDATION_ERROR',
+			message: 'Missing or invalid export format',
+			retryable: true,
+			retryStrategy: 'modified',
+			details: { required: ['format'], allowedFormats: ['csv', 'tsv', 'json', 'xlsx', 'xlsm'] },
+			suggestedFix: expect.stringContaining('csv, tsv, json, xlsx, or xlsm'),
+		})
+	})
+
 	test('/plan reports missing workbook files with structured retry guidance', async () => {
 		const missing = join(tmpdir(), `ascend-api-missing-${Date.now()}.xlsx`)
 		const result = await postJson('/plan', {

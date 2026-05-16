@@ -214,6 +214,7 @@ type AgentWorkflowFileContext =
 	| 'write'
 	| 'preview'
 	| 'calc'
+	| 'export'
 
 function missingAgentWorkflowFileError(context: AgentWorkflowFileContext): AscendError {
 	const requirement = (() => {
@@ -260,6 +261,8 @@ function missingAgentWorkflowFileError(context: AgentWorkflowFileContext): Ascen
 				return 'Pass file so Ascend can preview operations before writing. Prefer /plan for full agent-safe edit audits.'
 			case 'calc':
 				return 'Pass file so Ascend can recalculate and save the workbook.'
+			case 'export':
+				return 'Pass file so Ascend can export the workbook in the requested format.'
 		}
 	})()
 	return ascendError('VALIDATION_ERROR', `Missing or invalid ${context} workbook reference`, {
@@ -309,6 +312,24 @@ function missingTraceCellError(): AscendError {
 		retryStrategy: 'modified',
 		details: { required: ['cell'] },
 		suggestedFix: 'Pass cell such as Sheet1!A1 or A1 so Ascend can trace the requested dependency.',
+	})
+}
+
+function missingDiffWorkbookError(field: 'fileA' | 'fileB'): AscendError {
+	return ascendError('VALIDATION_ERROR', `Missing or invalid diff ${field}`, {
+		retryable: true,
+		retryStrategy: 'modified',
+		details: { required: [field] },
+		suggestedFix: `Pass ${field} with an existing workbook path so Ascend can compare the two workbooks.`,
+	})
+}
+
+function missingExportFormatError(): AscendError {
+	return ascendError('VALIDATION_ERROR', 'Missing or invalid export format', {
+		retryable: true,
+		retryStrategy: 'modified',
+		details: { required: ['format'], allowedFormats: ['csv', 'tsv', 'json', 'xlsx', 'xlsm'] },
+		suggestedFix: 'Pass format as csv, tsv, json, xlsx, or xlsm.',
 	})
 }
 
@@ -1492,8 +1513,8 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 				const body = await parseJson<{ fileA?: string; fileB?: string }>(req)
 				const fileA = body ? requireString(body, 'fileA') : null
 				const fileB = body ? requireString(body, 'fileB') : null
-				if (!fileA) return jsonFailure('Missing or invalid fileA', 400)
-				if (!fileB) return jsonFailure('Missing or invalid fileB', 400)
+				if (!fileA) return jsonFailureError(missingDiffWorkbookError('fileA'), 400)
+				if (!fileB) return jsonFailureError(missingDiffWorkbookError('fileB'), 400)
 				try {
 					const wbA = await AscendWorkbook.open(fileA)
 					const wbB = await AscendWorkbook.open(fileB)
@@ -1508,8 +1529,8 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 				const body = await parseJson<{ file?: string; format?: string }>(req)
 				const file = body ? requireString(body, 'file') : null
 				const format = body ? requireString(body, 'format') : null
-				if (!file) return jsonFailure('Missing or invalid file', 400)
-				if (!format) return jsonFailure('Missing or invalid format', 400)
+				if (!file) return jsonFailureError(missingAgentWorkflowFileError('export'), 400)
+				if (!format) return jsonFailureError(missingExportFormatError(), 400)
 				try {
 					const wb = await AscendWorkbook.open(file)
 					const fmt = normalizeExportFormat(format)

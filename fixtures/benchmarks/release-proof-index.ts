@@ -347,6 +347,7 @@ export interface ReleaseProofReleaseDecisionBoard {
 	readonly doNotPromoteYet: readonly ReleaseProofReleaseDecisionDoNotPromoteItem[]
 	readonly doNotPromoteDispositionSummary: ReleaseProofReleaseDecisionDispositionSummary
 	readonly releaseWordingDecisionSummary: ReleaseProofReleaseWordingDecisionSummary
+	readonly claimDecisionContractCoverage: ReleaseProofClaimDecisionContractCoverage
 	readonly blockedOwnerActionQueue: readonly ReleaseProofBlockedOwnerAction[]
 	readonly benchmarkCorpusOwnerActionQueue: readonly ReleaseProofBenchmarkCorpusOwnerAction[]
 	readonly implementationReadyOwnerActionQueue: readonly ReleaseProofImplementationReadyOwnerAction[]
@@ -378,6 +379,20 @@ export interface ReleaseProofReleaseWordingDecisionSummary {
 			readonly string[]
 		>
 	>
+	readonly boundary: string
+}
+
+export interface ReleaseProofClaimDecisionContractCoverage {
+	readonly status: 'all-release-claim-decisions-self-contained' | 'claim-decision-contract-gap'
+	readonly decisionCount: number
+	readonly topClaimDecisionCount: number
+	readonly doNotPromoteDecisionCount: number
+	readonly missingEvidenceWeHaveKeys: readonly string[]
+	readonly missingEvidenceMissingKeys: readonly string[]
+	readonly missingQssContrastKeys: readonly string[]
+	readonly missingAllowedWordingKeys: readonly string[]
+	readonly missingForbiddenWordingKeys: readonly string[]
+	readonly missingNextOwnerActionKeys: readonly string[]
 	readonly boundary: string
 }
 
@@ -1528,6 +1543,7 @@ export function releaseProofIndexMarkdown(result: ReleaseProofIndexResult): stri
 		'',
 		result.releaseDecisionBoard.boundary,
 		`Release wording summary: status=${result.releaseDecisionBoard.releaseWordingDecisionSummary.status}; localAllowed=${result.releaseDecisionBoard.releaseWordingDecisionSummary.localAllowedClaimNames.join(',')}; doNotPromote=${result.releaseDecisionBoard.releaseWordingDecisionSummary.doNotPromoteClaimNames.join(',')}`,
+		`Claim decision contract coverage: status=${result.releaseDecisionBoard.claimDecisionContractCoverage.status}; decisions=${result.releaseDecisionBoard.claimDecisionContractCoverage.decisionCount}; missingEvidenceHave=${result.releaseDecisionBoard.claimDecisionContractCoverage.missingEvidenceWeHaveKeys.join(',')}; missingEvidenceMissing=${result.releaseDecisionBoard.claimDecisionContractCoverage.missingEvidenceMissingKeys.join(',')}; missingQss=${result.releaseDecisionBoard.claimDecisionContractCoverage.missingQssContrastKeys.join(',')}; missingAllowed=${result.releaseDecisionBoard.claimDecisionContractCoverage.missingAllowedWordingKeys.join(',')}; missingForbidden=${result.releaseDecisionBoard.claimDecisionContractCoverage.missingForbiddenWordingKeys.join(',')}; missingNext=${result.releaseDecisionBoard.claimDecisionContractCoverage.missingNextOwnerActionKeys.join(',')}`,
 		'',
 		'| Rank | Claim | Evidence we have | Evidence missing | QSS contrast | Allowed wording | Forbidden wording | Next owner action | Owner decision artifact | Headline claim allowed | Implementation promotion allowed | Exact proof | Must not claim | A+ blocking owner action | Boundary |',
 		'| ---: | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
@@ -2494,6 +2510,10 @@ function releaseDecisionBoard(
 		doNotPromoteYet,
 		doNotPromoteDispositionSummary: releaseDecisionDispositionSummary(doNotPromoteYet),
 		releaseWordingDecisionSummary: releaseWordingDecisionSummary(rows, doNotPromoteYet),
+		claimDecisionContractCoverage: releaseDecisionClaimDecisionContractCoverage(
+			rows,
+			doNotPromoteYet,
+		),
 		blockedOwnerActionQueue,
 		benchmarkCorpusOwnerActionQueue,
 		implementationReadyOwnerActionQueue,
@@ -2559,6 +2579,91 @@ function releaseWordingDecisionSummary(
 		>,
 		boundary:
 			'Release wording decision summary only. It is for copy review and owner routing; headline claims remain blocked until release gates and owner approvals pass.',
+	}
+}
+
+type ReleaseProofClaimDecisionContractSubject = {
+	readonly key: string
+	readonly evidenceWeHaveCount: number
+	readonly evidenceMissingCount: number
+	readonly qssContrast: readonly string[]
+	readonly allowedWording: string
+	readonly forbiddenWordingCount: number
+	readonly nextOwnerActionCount: number
+}
+
+function releaseDecisionClaimDecisionContractCoverage(
+	rows: readonly ReleaseProofReleaseDecisionBoardRow[],
+	doNotPromoteYet: readonly ReleaseProofReleaseDecisionDoNotPromoteItem[],
+): ReleaseProofClaimDecisionContractCoverage {
+	const decisions: readonly ReleaseProofClaimDecisionContractSubject[] = [
+		...rows.map((row) => ({
+			key: `top-claim:${row.artifact}`,
+			evidenceWeHaveCount: row.evidenceWeHave.length,
+			evidenceMissingCount: row.evidenceMissing.length,
+			qssContrast: row.qssContrast,
+			allowedWording: row.allowedWording,
+			forbiddenWordingCount: row.forbiddenWording.length,
+			nextOwnerActionCount: row.nextOwnerActions.length,
+		})),
+		...doNotPromoteYet.map((item) => ({
+			key: `do-not-promote:${item.name}`,
+			evidenceWeHaveCount: item.evidenceWeHave.length,
+			evidenceMissingCount: item.evidenceMissing.length,
+			qssContrast: item.qssContrast,
+			allowedWording: item.allowedWording,
+			forbiddenWordingCount: item.forbiddenWording.length,
+			nextOwnerActionCount: item.nextOwnerAction.trim().length > 0 ? 1 : 0,
+		})),
+	]
+	const missingEvidenceWeHaveKeys = decisions
+		.filter((decision) => decision.evidenceWeHaveCount === 0)
+		.map((decision) => decision.key)
+	const missingEvidenceMissingKeys = decisions
+		.filter((decision) => decision.evidenceMissingCount === 0)
+		.map((decision) => decision.key)
+	const missingQssContrastKeys = decisions
+		.filter(
+			(decision) =>
+				decision.qssContrast.length === 0 ||
+				decision.qssContrast.some((item) =>
+					item.includes(
+						'QSS contrast is blocked until this diagnostic evidence changes a top-two release claim.',
+					),
+				),
+		)
+		.map((decision) => decision.key)
+	const missingAllowedWordingKeys = decisions
+		.filter((decision) => decision.allowedWording.trim().length === 0)
+		.map((decision) => decision.key)
+	const missingForbiddenWordingKeys = decisions
+		.filter((decision) => decision.forbiddenWordingCount === 0)
+		.map((decision) => decision.key)
+	const missingNextOwnerActionKeys = decisions
+		.filter((decision) => decision.nextOwnerActionCount === 0)
+		.map((decision) => decision.key)
+	const status =
+		missingEvidenceWeHaveKeys.length === 0 &&
+		missingEvidenceMissingKeys.length === 0 &&
+		missingQssContrastKeys.length === 0 &&
+		missingAllowedWordingKeys.length === 0 &&
+		missingForbiddenWordingKeys.length === 0 &&
+		missingNextOwnerActionKeys.length === 0
+			? 'all-release-claim-decisions-self-contained'
+			: 'claim-decision-contract-gap'
+	return {
+		status,
+		decisionCount: decisions.length,
+		topClaimDecisionCount: rows.length,
+		doNotPromoteDecisionCount: doNotPromoteYet.length,
+		missingEvidenceWeHaveKeys,
+		missingEvidenceMissingKeys,
+		missingQssContrastKeys,
+		missingAllowedWordingKeys,
+		missingForbiddenWordingKeys,
+		missingNextOwnerActionKeys,
+		boundary:
+			'Claim decision contract coverage only. It proves every release decision or do-not-promote claim names evidence we have, evidence missing, QSS contrast, allowed wording, forbidden wording, and next owner action without approving release claims.',
 	}
 }
 
@@ -3276,6 +3381,21 @@ function cloneReleaseDecisionBoard(
 					([name, forbiddenWording]) => [name, [...forbiddenWording]],
 				),
 			) as ReleaseProofReleaseWordingDecisionSummary['forbiddenWordingByClaim'],
+		},
+		claimDecisionContractCoverage: {
+			...board.claimDecisionContractCoverage,
+			missingEvidenceWeHaveKeys: [...board.claimDecisionContractCoverage.missingEvidenceWeHaveKeys],
+			missingEvidenceMissingKeys: [
+				...board.claimDecisionContractCoverage.missingEvidenceMissingKeys,
+			],
+			missingQssContrastKeys: [...board.claimDecisionContractCoverage.missingQssContrastKeys],
+			missingAllowedWordingKeys: [...board.claimDecisionContractCoverage.missingAllowedWordingKeys],
+			missingForbiddenWordingKeys: [
+				...board.claimDecisionContractCoverage.missingForbiddenWordingKeys,
+			],
+			missingNextOwnerActionKeys: [
+				...board.claimDecisionContractCoverage.missingNextOwnerActionKeys,
+			],
 		},
 		doNotPromoteYet: board.doNotPromoteYet.map((item) => ({
 			...item,

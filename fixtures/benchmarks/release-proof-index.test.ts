@@ -1062,6 +1062,19 @@ describe('release proof evidence index', () => {
 				'package-action-proof'
 			],
 		).toEqual(index.releaseDecisionBoard.rows[1].forbiddenWording)
+		expect(index.releaseDecisionBoard.claimDecisionContractCoverage).toMatchObject({
+			status: 'all-release-claim-decisions-self-contained',
+			decisionCount: 12,
+			topClaimDecisionCount: 2,
+			doNotPromoteDecisionCount: 10,
+			missingEvidenceWeHaveKeys: [],
+			missingEvidenceMissingKeys: [],
+			missingQssContrastKeys: [],
+			missingAllowedWordingKeys: [],
+			missingForbiddenWordingKeys: [],
+			missingNextOwnerActionKeys: [],
+			boundary: expect.stringContaining('Claim decision contract coverage only'),
+		})
 		expect(
 			index.releaseDecisionBoard.blockedOwnerActionQueue.map(
 				(row) => `${row.ownerLoop}:${row.name}:${row.workBlockDisposition}`,
@@ -2189,6 +2202,18 @@ describe('release proof evidence index', () => {
 				(item) => item.name === 'formula-language-service-primitives',
 			)?.forbiddenWording,
 		)
+		expect(handoff.releaseDecisionBoard.claimDecisionContractCoverage).toMatchObject({
+			status: 'all-release-claim-decisions-self-contained',
+			decisionCount: 12,
+			topClaimDecisionCount: 2,
+			doNotPromoteDecisionCount: 10,
+			missingEvidenceWeHaveKeys: [],
+			missingEvidenceMissingKeys: [],
+			missingQssContrastKeys: [],
+			missingAllowedWordingKeys: [],
+			missingForbiddenWordingKeys: [],
+			missingNextOwnerActionKeys: [],
+		})
 		expect(handoff.releaseDecisionBoard.doNotPromoteDispositionSummary).toMatchObject({
 			implementationReadyBlockerNames: [
 				'formula-language-service-primitives',
@@ -2586,6 +2611,18 @@ describe('release proof evidence index', () => {
 				readonly doNotPromoteAllowedWordingByClaim?: Record<string, string>
 				readonly forbiddenWordingByClaim?: Record<string, readonly string[]>
 			}
+			readonly claimDecisionContractCoverage?: {
+				readonly status?: string
+				readonly decisionCount?: number
+				readonly topClaimDecisionCount?: number
+				readonly doNotPromoteDecisionCount?: number
+				readonly missingEvidenceWeHaveKeys?: readonly string[]
+				readonly missingEvidenceMissingKeys?: readonly string[]
+				readonly missingQssContrastKeys?: readonly string[]
+				readonly missingAllowedWordingKeys?: readonly string[]
+				readonly missingForbiddenWordingKeys?: readonly string[]
+				readonly missingNextOwnerActionKeys?: readonly string[]
+			}
 			readonly blockedOwnerActionQueue?: readonly {
 				readonly name?: string
 				readonly ownerLoop?: string
@@ -2740,6 +2777,18 @@ describe('release proof evidence index', () => {
 				'research-surface-hygiene'
 			],
 		).toContain('Do not promote research-surface-hygiene')
+		expect(board.claimDecisionContractCoverage).toMatchObject({
+			status: 'all-release-claim-decisions-self-contained',
+			decisionCount: 12,
+			topClaimDecisionCount: 2,
+			doNotPromoteDecisionCount: 10,
+			missingEvidenceWeHaveKeys: [],
+			missingEvidenceMissingKeys: [],
+			missingQssContrastKeys: [],
+			missingAllowedWordingKeys: [],
+			missingForbiddenWordingKeys: [],
+			missingNextOwnerActionKeys: [],
+		})
 		expect(board.topClaimOwnerActionQueue).toHaveLength(9)
 		expect(
 			board.topClaimOwnerActionQueue?.map(

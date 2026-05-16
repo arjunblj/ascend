@@ -890,8 +890,10 @@ describe('release proof evidence index', () => {
 			'formula-language-service-primitives',
 			'token-bounded-agent-view',
 			'retained-viewport-patch-history',
-			'columnar-scan-sidecars',
+			'release-proof-bundle',
 			'formula-oracle-routing',
+			'property-journal-laws',
+			'columnar-scan-sidecars',
 			'agent-workflow-observability',
 			'practical-latency-contracts',
 		])
@@ -911,8 +913,10 @@ describe('release proof evidence index', () => {
 			'formula-language-service-primitives',
 			'token-bounded-agent-view',
 			'retained-viewport-patch-history',
-			'columnar-scan-sidecars',
+			'release-proof-bundle',
 			'formula-oracle-routing',
+			'property-journal-laws',
+			'columnar-scan-sidecars',
 			'agent-workflow-observability',
 			'practical-latency-contracts',
 		])
@@ -947,6 +951,34 @@ describe('release proof evidence index', () => {
 				expect.stringContaining('No edit-producing rename'),
 			]),
 			nextOwnerAction: expect.stringContaining('Workbook-context ownership'),
+		})
+		expect(
+			index.releaseDecisionBoard.doNotPromoteYet.find(
+				(item) => item.name === 'release-proof-bundle',
+			),
+		).toMatchObject({
+			evidenceMissing: expect.arrayContaining([
+				expect.stringContaining('One real public workbook workflow per top claim'),
+				expect.stringContaining('Golden proof fixtures'),
+			]),
+			qssContrast: expect.arrayContaining([
+				expect.stringContaining('Generic spreadsheet libraries'),
+			]),
+			forbiddenWording: expect.arrayContaining([expect.stringContaining('Not signed')]),
+		})
+		expect(
+			index.releaseDecisionBoard.doNotPromoteYet.find(
+				(item) => item.name === 'property-journal-laws',
+			),
+		).toMatchObject({
+			evidenceMissing: expect.arrayContaining([
+				expect.stringContaining('Generated operation sequences'),
+				expect.stringContaining('fast-check shrinking'),
+			]),
+			allowedWording: expect.stringContaining('Do not promote property-journal-laws'),
+			forbiddenWording: expect.arrayContaining([
+				expect.stringContaining('Do not promote broad inverse-law claims'),
+			]),
 		})
 		expect(index.releaseDecisionBoard.doNotPromoteYet.at(-1)).toMatchObject({
 			name: 'practical-latency-contracts',

@@ -287,7 +287,7 @@ export interface ReleaseProofQssWeakClaimDisposition {
 }
 
 export interface ReleaseProofQssArchivedResearchNote {
-	readonly name: ReleaseProofDeferredClaimName | ReleaseProofIndexExcludedEvidenceName
+	readonly name: ReleaseProofPortfolioClaimName | ReleaseProofIndexExcludedEvidenceName
 	readonly status: 'archived-research-note'
 	readonly ownerLoops: readonly ReleaseProofReadinessOwner[]
 	readonly reason: string
@@ -1796,15 +1796,7 @@ function qssLeapfrogReleaseMatrix(
 		),
 		activeReleaseBlockers: readiness.claimBlockerBoard.map(cloneClaimBlockerBoardRow),
 		archivedResearchNotes: [
-			...DEFERRED_CLAIMS.map(
-				(claim): ReleaseProofQssArchivedResearchNote => ({
-					name: claim.name,
-					status: 'archived-research-note',
-					ownerLoops: [...claim.ownerLoops],
-					reason: claim.reason,
-					killCriterion: claim.killCriterion,
-				}),
-			),
+			...CLAIM_PORTFOLIO.slice(2).map(portfolioClaimArchivedResearchNote),
 			...EXCLUDED_EVIDENCE.map(
 				(evidence): ReleaseProofQssArchivedResearchNote => ({
 					name: evidence.name,
@@ -1816,7 +1808,20 @@ function qssLeapfrogReleaseMatrix(
 			),
 		],
 		boundary:
-			'This matrix is a release-priority gate for the top two claims only. Formula rename, token-bounded agent view, viewport history, columnar sidecars, oracle routing, and agent observability remain archived until they change top-claim implementation priority.',
+			'This matrix is a release-priority gate for the top two claims only. Formula rename, token-bounded agent view, viewport history, release proof bundle, oracle routing, property journal laws, columnar sidecars, and agent observability remain archived until they change top-claim implementation priority.',
+	}
+}
+
+function portfolioClaimArchivedResearchNote(
+	claim: ReleaseProofPortfolioClaim,
+): ReleaseProofQssArchivedResearchNote {
+	const deferredClaim = DEFERRED_CLAIMS.find((candidate) => candidate.name === claim.name)
+	return {
+		name: claim.name,
+		status: 'archived-research-note',
+		ownerLoops: deferredClaim ? [...deferredClaim.ownerLoops] : [...claim.likelyHandoffOwner],
+		reason: deferredClaim?.reason ?? claim.boundary,
+		killCriterion: deferredClaim?.killCriterion ?? claim.killCriterion,
 	}
 }
 

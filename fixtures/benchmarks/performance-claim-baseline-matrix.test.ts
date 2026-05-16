@@ -55,8 +55,9 @@ describe('performance claim baseline matrix', () => {
 			'Current harness evidence now supports same-lane selected-sheet rows for Ascend, SheetJS, OpenPyXL, and python-calamine.',
 		)
 		expect(markdown).toContain(
-			'Current harness evidence now supports same-lane metadata-only rows for Ascend, SheetJS, and OpenPyXL.',
+			'Current harness evidence now supports same-lane metadata-only rows for Ascend, SheetJS, OpenPyXL, and python-calamine.',
 		)
+		expect(markdown).toContain('Calamine wins that head-to-head')
 		expect(markdown).toContain(
 			'Current harness evidence now supports a SheetJS feature-rich rich-metadata row',
 		)
@@ -102,6 +103,28 @@ describe('performance claim baseline matrix', () => {
 		)
 		expect(markdown).toContain('In a clean detached current full-profile run at `9ddfff91`')
 		expect(markdown).toContain('Next action: stop production optimization from this evidence.')
+
+		expect(markdown).toContain('## Metadata-Only Calamine Boundary')
+		expect(markdown).toContain('Classification: defer/optimization target.')
+		expect(markdown).toContain('Calamine is now a comparable\nmetadata-only runner')
+		expect(markdown).toContain('commit `b6925afe`')
+		expect(markdown).toContain(
+			'/private/tmp/ascend-metadata-calamine-clean-b6925afe/metadata-calamine-head-to-head.json',
+		)
+		expect(markdown).toContain(
+			'/private/tmp/ascend-metadata-calamine-clean-b6925afe/metadata-calamine-scoreboard.json',
+		)
+		expect(markdown).toContain(
+			'| `python-calamine-metadata-only` | ran/won | 0.056 | 0.078 | 0.122 | 28.4 MiB |',
+		)
+		expect(markdown).toContain(
+			'| `ascend-external-metadata-only` | ran/lost | 3.211 | 8.596 | 0.623 | 88.4 MiB |',
+		)
+		expect(markdown).toContain(
+			'`profileLeaderFailures` contains the metadata-only loss to\n`python-calamine-metadata-only`',
+		)
+		expect(markdown).toContain('baseline median `0.105 ms`, patched median `0.168 ms`')
+		expect(markdown).toContain('"Ascend beats Calamine on metadata-only open."')
 
 		expect(markdown).toContain('## Full Current-Commit Gate: XLSX Read SOTA')
 		expect(markdown).toContain(

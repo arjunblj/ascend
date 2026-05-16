@@ -65,6 +65,38 @@ describe('performance claim baseline matrix', () => {
 			'Failed, missing, or semantically mismatched runners are not counted as wins.',
 		)
 
+		expect(markdown).toContain('## Full Current-Commit Gate: XLSX Read SOTA')
+		expect(markdown).toContain(
+			'Classification: blocked/defer. No production optimization is justified',
+		)
+		expect(markdown).toContain('full `xlsx-read-sota` open/inspect coverage')
+		expect(markdown).toContain('Commit: `4b1c1734b95ee96da0078b60f5e439768303e04e`')
+		expect(markdown).toContain('`leaderFailures: []`')
+		expect(markdown).toContain('`profileLeaderFailures: []`')
+		expect(markdown).toContain(
+			'/private/tmp/ascend-perf-hillclimb-4b1c1734-runs/xlsx-read-sota-all.json',
+		)
+		expect(markdown).toContain(
+			'/private/tmp/ascend-perf-hillclimb-4b1c1734-runs/xlsx-read-sota-all-scoreboard.json',
+		)
+		expect(markdown).toContain(
+			'ClosedXML` missing for `dense-values`, `sparse-wide`, `string-heavy`',
+		)
+		expect(markdown).toContain('`SheetJS` and `Calamine` ineligible for `feature-rich`')
+		expect(markdown).toContain(
+			'`metadata-only` reports `missing-comparable` for required competitors',
+		)
+		expect(markdown).toContain(
+			'`selected-sheet` is `unsupported-operation` for\n  `ExcelJS`, `openpyxl`, `Calamine`, `Apache POI`, and `ClosedXML`',
+		)
+		expect(markdown).toContain('| Completed comparable profile rows | ran/won |')
+		expect(markdown).toContain('| ClosedXML | blocked |')
+		expect(markdown).toContain('| fastxlsx | runner unavailable |')
+		expect(markdown).toContain(
+			'"Ascend beats ClosedXML, fastxlsx, unsupported runners, or semantic-mismatch rows."',
+		)
+		expect(markdown).toContain('starting with the ClosedXML\nrunner')
+
 		expect(markdown).toContain(
 			'bun run fixtures/benchmarks/competitive-io.ts --json --category read --competitor all',
 		)

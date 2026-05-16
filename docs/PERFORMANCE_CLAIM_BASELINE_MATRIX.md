@@ -62,6 +62,98 @@ Stop condition: do not optimize further from the measured winning rows
 continue only on the next named loss, unstable tail, or memory/latency tradeoff
 worth production work.
 
+## Full Current-Commit Gate: XLSX Read SOTA
+
+Classification: blocked/defer. No production optimization is justified from
+this gate because the completed comparable head-to-head rows produced no leader
+failures; broad wording is still blocked by explicit coverage and semantic
+comparability gaps.
+
+Workflow: full `xlsx-read-sota` open/inspect coverage across the tracked read
+workloads.
+
+Why it matters for release: this is the closest current evidence to a broad
+release-read claim. It checks whether the per-workload wins survive a single
+current-commit run, and it prevents treating failed, unsupported, or
+semantically mismatched external runners as Ascend wins.
+
+Public/tracked-clean input: `competitive-io` generated `workload all` raw OOXML
+inputs from tracked benchmark code in detached commit `4b1c1734`. The profile
+included the required release rows `dense-values`, `sparse-wide`,
+`string-heavy`, `styles-heavy`, `formula-heavy`, `table-heavy`, `feature-rich`,
+`selected-sheet`, `metadata-only`, and `warm-workflow`; the harness also emitted
+non-profile generated read workloads. No private corpus or local research
+workbook was used.
+
+Commands:
+
+```bash
+git worktree add --detach /private/tmp/ascend-perf-hillclimb-4b1c1734 4b1c1734
+cd /private/tmp/ascend-perf-hillclimb-4b1c1734
+bun install --frozen-lockfile
+env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-io.ts --json --category read --competitor all --workload all --read-source raw-ooxml --repeat 5 --warmup 1 --validation-mode each --runner-manifest fixtures/benchmarks/runners/ascend-python-readers.manifest.json > /private/tmp/ascend-perf-hillclimb-4b1c1734-runs/xlsx-read-sota-all.json
+env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-scoreboard.ts /private/tmp/ascend-perf-hillclimb-4b1c1734-runs/xlsx-read-sota-all.json --json --metric medianMs --require-profile xlsx-read-sota > /private/tmp/ascend-perf-hillclimb-4b1c1734-runs/xlsx-read-sota-all-scoreboard.json
+```
+
+Environment:
+
+- Commit: `4b1c1734b95ee96da0078b60f5e439768303e04e`
+- Worktree: clean detached worktree at `/private/tmp/ascend-perf-hillclimb-4b1c1734`; `git status --short --branch` reported `## HEAD (no branch)` with no changed paths after the run.
+- OS: Darwin 25.4.0 arm64
+- Bun: `1.3.13`
+- Node: `24.3.0`
+- Runtime profile: `category read`, `competitor all`, `workload all`, `readSource raw-ooxml`, `validationMode each`, `repeat 5`, `warmup 1`, `sourceMode full`.
+
+Raw output:
+
+```text
+/private/tmp/ascend-perf-hillclimb-4b1c1734-runs/xlsx-read-sota-all.json
+/private/tmp/ascend-perf-hillclimb-4b1c1734-runs/xlsx-read-sota-all-scoreboard.json
+```
+
+Scoreboard result:
+
+- `leaderFailures: []`
+- `profileLeaderFailures: []`
+- Coverage failures remain:
+  `ClosedXML` missing for `dense-values`, `sparse-wide`, `string-heavy`,
+  `styles-heavy`, `formula-heavy`, `table-heavy`, `feature-rich`, and
+  `warm-workflow`; `SheetJS` and `Calamine` ineligible for `feature-rich`
+  rich-metadata read because their correctness status is `semantic-mismatch`;
+  and `metadata-only` reports `missing-comparable` for required competitors
+  `Ascend`, `SheetJS`, and `openpyxl`.
+- Coverage gaps remain: `selected-sheet` is `unsupported-operation` for
+  `ExcelJS`, `openpyxl`, `Calamine`, `Apache POI`, and `ClosedXML`;
+  `metadata-only` is `unsupported-operation` for `ExcelJS`, `Calamine`,
+  `Apache POI`, and `ClosedXML`.
+
+Competitor status:
+
+| Competitor/gap | Status | Semantic comparability |
+| --- | --- | --- |
+| Completed comparable profile rows | ran/won | No `leaderFailures` or `profileLeaderFailures` were reported by the current full-profile scoreboard. This supports scoped wording only for completed comparable rows. |
+| ClosedXML | blocked | Missing across most required read-value rows because the runner remains blocked. Not counted as an Ascend win. |
+| SheetJS and Calamine on `feature-rich` rich metadata | not comparable | The scoreboard marks these rows ineligible with `correctnessStatus=semantic-mismatch`. Not counted as Ascend wins. |
+| `selected-sheet` unsupported competitors | not comparable | ExcelJS, openpyxl, Calamine, Apache POI, and ClosedXML do not provide the same selected-sheet operation in this profile. Not counted as wins. |
+| `metadata-only` unsupported competitors | not comparable | ExcelJS, Calamine, Apache POI, and ClosedXML are unsupported for the metadata-only operation; the full scoreboard also reports a metadata-only `missing-comparable` grouping gap for Ascend, SheetJS, and openpyxl. |
+| fastxlsx | runner unavailable | Not part of a completed comparable current full-profile row; missing dependency rows remain non-wins. |
+
+Humble allowed wording:
+
+> In a clean detached current-commit full `xlsx-read-sota` run at `4b1c1734`, the scoreboard reported no leader failures for completed comparable profile rows. A broad XLSX-read speed claim is still not promotable because ClosedXML coverage, feature-rich semantic mismatches, selected-sheet unsupported operations, and metadata-only comparability gaps remain explicit blockers.
+
+Forbidden wording:
+
+- "Ascend is the fastest XLSX reader."
+- "Ascend is SOTA for XLSX read."
+- "Ascend beats ClosedXML, fastxlsx, unsupported runners, or semantic-mismatch rows."
+- Any wording that converts `leaderFailures: []` into a full-profile coverage pass.
+
+Next action: attack the highest-impact blocker, starting with the ClosedXML
+runner because it blocks the most required head-to-head read rows. If the runner
+cannot be made comparable in the local release environment, record a tighter
+blocked decision and keep the broad claim downgraded.
+
 ## Cycle: Dense Value Read
 
 Classification: defer. No production optimization is justified from this cycle.

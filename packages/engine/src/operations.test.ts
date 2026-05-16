@@ -6525,6 +6525,122 @@ describe('applyOperation', () => {
 		])
 	})
 
+	test('row and column shifts update image and drawing object anchors', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.imageRefs.push(
+			{
+				drawingPartPath: 'xl/drawings/drawing1.xml',
+				relId: 'rIdImage1',
+				targetPath: 'xl/media/image1.png',
+				anchor: {
+					kind: 'oneCell',
+					from: { row: 1, col: 1, rowOff: 5, colOff: 6 },
+					cx: 320000,
+					cy: 240000,
+				},
+				name: 'Logo',
+			},
+			{
+				drawingPartPath: 'xl/drawings/drawing1.xml',
+				relId: 'rIdImage2',
+				targetPath: 'xl/media/image2.png',
+				anchor: {
+					kind: 'twoCell',
+					from: { row: 0, col: 2 },
+					to: { row: 2, col: 4 },
+					editAs: 'oneCell',
+				},
+				name: 'Chart snapshot',
+			},
+			{
+				drawingPartPath: 'xl/drawings/drawing1.xml',
+				relId: 'rIdImage3',
+				targetPath: 'xl/media/image3.png',
+				anchor: { kind: 'absolute', x: 1000, y: 2000, cx: 3000, cy: 4000 },
+				name: 'Watermark',
+			},
+		)
+		s.drawingObjectRefs.push({
+			drawingPartPath: 'xl/drawings/drawing1.xml',
+			kind: 'textBox',
+			source: 'drawingml',
+			name: 'Callout',
+			text: 'Revenue note',
+			anchor: {
+				kind: 'twoCell',
+				from: { row: 3, col: 0 },
+				to: { row: 5, col: 2 },
+			},
+		})
+
+		expectOk(applyOperation(wb, { op: 'insertRows', sheet: 'Sheet1', at: 1, count: 2 }))
+		expectOk(applyOperation(wb, { op: 'insertCols', sheet: 'Sheet1', at: 1, count: 1 }))
+
+		expect(s.imageRefs.map((image) => image.anchor)).toEqual([
+			{
+				kind: 'oneCell',
+				from: { row: 3, col: 2, rowOff: 5, colOff: 6 },
+				cx: 320000,
+				cy: 240000,
+			},
+			{
+				kind: 'twoCell',
+				from: { row: 0, col: 3 },
+				to: { row: 4, col: 5 },
+				editAs: 'oneCell',
+			},
+			{ kind: 'absolute', x: 1000, y: 2000, cx: 3000, cy: 4000 },
+		])
+		expect(s.drawingObjectRefs[0]?.anchor).toEqual({
+			kind: 'twoCell',
+			from: { row: 5, col: 0 },
+			to: { row: 7, col: 3 },
+		})
+	})
+
+	test('row and column deletes clamp surviving visual anchors', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.imageRefs.push({
+			drawingPartPath: 'xl/drawings/drawing1.xml',
+			relId: 'rIdImage1',
+			targetPath: 'xl/media/image1.png',
+			anchor: {
+				kind: 'twoCell',
+				from: { row: 1, col: 1 },
+				to: { row: 4, col: 4 },
+			},
+		})
+		s.drawingObjectRefs.push({
+			drawingPartPath: 'xl/drawings/vmlDrawing1.vml',
+			kind: 'shape',
+			source: 'vml',
+			name: 'Button',
+			anchor: {
+				kind: 'oneCell',
+				from: { row: 5, col: 5 },
+				cx: 100000,
+				cy: 100000,
+			},
+		})
+
+		expectOk(applyOperation(wb, { op: 'deleteRows', sheet: 'Sheet1', at: 2, count: 2 }))
+		expectOk(applyOperation(wb, { op: 'deleteCols', sheet: 'Sheet1', at: 2, count: 2 }))
+
+		expect(s.imageRefs[0]?.anchor).toEqual({
+			kind: 'twoCell',
+			from: { row: 1, col: 1 },
+			to: { row: 2, col: 2 },
+		})
+		expect(s.drawingObjectRefs[0]?.anchor).toEqual({
+			kind: 'oneCell',
+			from: { row: 3, col: 3 },
+			cx: 100000,
+			cy: 100000,
+		})
+	})
+
 	test('row and column deletes remove comments whose refs are deleted', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')

@@ -3,7 +3,9 @@ import type {
 	FilterColumn,
 	Sheet,
 	SheetAdvancedFilterInfo,
+	SheetAnchorMarker,
 	SheetComment,
+	SheetImageAnchor,
 	SortState,
 	Table,
 	TableColumn,
@@ -29,6 +31,7 @@ export function shiftSheetCellMetadata(
 ): void {
 	shiftCommentRefs(sheet.comments, axis, at, delta)
 	shiftThreadedCommentRefs(sheet.threadedComments, axis, at, delta)
+	shiftVisualAnchors(sheet, axis, at, delta)
 	shiftMappedRefs(sheet.hyperlinks, axis, at, delta)
 	rewriteHyperlinkLocationsForShift(sheet, axis, at, delta)
 	shiftRowOrColMap(sheet.rowHeights, axis === 'row', at, delta)
@@ -202,6 +205,57 @@ function shiftLegacyCommentAnchor(
 	next[startIndex] = shiftAnchorMarker(next[startIndex], at, delta)
 	next[endIndex] = Math.max(next[startIndex], shiftAnchorMarker(next[endIndex], at, delta))
 	return next
+}
+
+function shiftVisualAnchors(sheet: Sheet, axis: 'row' | 'col', at: number, delta: number): void {
+	if (sheet.imageRefs.length > 0) {
+		sheet.imageRefs = sheet.imageRefs.map((image) =>
+			image.anchor
+				? { ...image, anchor: shiftSheetImageAnchor(image.anchor, axis, at, delta) }
+				: image,
+		)
+	}
+	if (sheet.drawingObjectRefs.length > 0) {
+		sheet.drawingObjectRefs = sheet.drawingObjectRefs.map((object) =>
+			object.anchor
+				? { ...object, anchor: shiftSheetImageAnchor(object.anchor, axis, at, delta) }
+				: object,
+		)
+	}
+}
+
+function shiftSheetImageAnchor(
+	anchor: SheetImageAnchor,
+	axis: 'row' | 'col',
+	at: number,
+	delta: number,
+): SheetImageAnchor {
+	switch (anchor.kind) {
+		case 'absolute':
+			return anchor
+		case 'oneCell':
+			return { ...anchor, from: shiftSheetAnchorMarker(anchor.from, axis, at, delta) }
+		case 'twoCell': {
+			const from = shiftSheetAnchorMarker(anchor.from, axis, at, delta)
+			const shiftedTo = shiftSheetAnchorMarker(anchor.to, axis, at, delta)
+			const to =
+				axis === 'row'
+					? { ...shiftedTo, row: Math.max(from.row, shiftedTo.row) }
+					: { ...shiftedTo, col: Math.max(from.col, shiftedTo.col) }
+			return { ...anchor, from, to }
+		}
+	}
+}
+
+function shiftSheetAnchorMarker(
+	marker: SheetAnchorMarker,
+	axis: 'row' | 'col',
+	at: number,
+	delta: number,
+): SheetAnchorMarker {
+	return axis === 'row'
+		? { ...marker, row: shiftAnchorMarker(marker.row, at, delta) }
+		: { ...marker, col: shiftAnchorMarker(marker.col, at, delta) }
 }
 
 function shiftAnchorMarker(index: number, at: number, delta: number): number {

@@ -43,6 +43,44 @@ describe('image lifecycle operations', () => {
 		})
 	})
 
+	test('structural edits shift image anchors through write and reopen', () => {
+		const wb = new Workbook()
+		wb.addSheet('Images')
+		const applied = applyOperations(wb, [
+			{
+				op: 'insertImage',
+				sheet: 'Images',
+				contentBase64: 'iVBORw0KGgo=',
+				contentType: 'image/png',
+				name: 'Logo',
+				anchor: {
+					kind: 'twoCell',
+					from: { row: 1, col: 1 },
+					to: { row: 4, col: 3 },
+					editAs: 'oneCell',
+				},
+			},
+			{ op: 'insertRows', sheet: 'Images', at: 1, count: 2 },
+			{ op: 'insertCols', sheet: 'Images', at: 2, count: 1 },
+		])
+		expectOk(applied)
+
+		const written = writeXlsx(wb)
+		expectOk(written)
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+
+		expect(reopened.value.workbook.sheets[0]?.imageRefs[0]).toMatchObject({
+			name: 'Logo',
+			anchor: {
+				kind: 'twoCell',
+				from: { row: 3, col: 1 },
+				to: { row: 6, col: 4 },
+				editAs: 'oneCell',
+			},
+		})
+	})
+
 	test('deleteImage removes generated drawing when last image is deleted', () => {
 		const wb = new Workbook()
 		wb.addSheet('Images')

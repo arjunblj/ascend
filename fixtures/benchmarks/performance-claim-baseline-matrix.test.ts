@@ -46,7 +46,7 @@ describe('performance claim baseline matrix', () => {
 		expect(markdown).toContain('Status: defer.')
 		expect(markdown).toContain('This document is the tracked release claim artifact')
 		expect(markdown).toContain(
-			'No broad XLSX read, SOTA, or QSS-leapfrog speed claim is promotable',
+			'No broad XLSX read, XLSX write, SOTA, or QSS-leapfrog speed claim is promotable',
 		)
 		expect(markdown).toContain(
 			'The current full-profile run at `9ddfff91` reports no leader failures',
@@ -153,6 +153,33 @@ describe('performance claim baseline matrix', () => {
 		)
 		expect(markdown).toContain('"Calamine proves faster safe-open trust inspection than Ascend."')
 		expect(markdown).toContain('kill the capsule-skip optimization target')
+
+		expect(markdown).toContain(
+			'## Cycle: Metadata-Only Relationship Recovery Profile at `38cd8ec5`',
+		)
+		expect(markdown).toContain('Classification: kill/defer.')
+		expect(markdown).toContain(
+			'Profiling named one narrow production cost\ncenter, but the smallest safe candidate did not validate',
+		)
+		expect(markdown).toContain(
+			'/private/tmp/ascend-metadata-profile-38cd8ec5-runs/metadata-calamine-head-to-head.json',
+		)
+		expect(markdown).toContain(
+			'/private/tmp/ascend-metadata-profile-38cd8ec5-runs/metadata-ascend-only-repeat40.json',
+		)
+		expect(markdown).toContain(
+			'| `python-calamine-metadata-only` | ran/won | 0.102 | 1.692 | 1.705 | 28.7 MiB |',
+		)
+		expect(markdown).toContain(
+			'| `ascend-external-metadata-only` | ran/lost vs Calamine and SheetJS, ran/won vs OpenPyXL | 3.558 | 8.432 | 0.594 | 88.8 MiB |',
+		)
+		expect(markdown).toContain('`recoverWorkbookRelationships`, `availablePartsForContentType`')
+		expect(markdown).toContain(
+			'baseline median `2.779 ms`, p95 `13.191 ms`, CV `1.046`, peak RSS\n`81.4 MiB`; patched median `3.017 ms`, p95 `13.135 ms`, CV `0.949`, peak RSS\n`83.9 MiB`',
+		)
+		expect(markdown).toContain(
+			'"The relationship-recovery early-return patch improves metadata-only reads."',
+		)
 
 		expect(markdown).toContain('## Cycle: Dense Values Write SOTA Gate')
 		expect(markdown).toContain('Classification: comparable external evidence plus defer.')

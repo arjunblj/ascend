@@ -1676,7 +1676,7 @@ describe('release proof evidence index', () => {
 					path: 'docs/PERFORMANCE_CLAIM_BASELINE_MATRIX.md',
 					validationCommand:
 						'bun test fixtures/benchmarks/performance-claim-baseline-matrix.test.ts',
-					nextAction: expect.stringContaining('selected-sheet external runner manifest'),
+					nextAction: expect.stringContaining('metadata-only same-lane external coverage'),
 					decision: expect.stringContaining('performance matrix as a defer decision'),
 					forbiddenShortcut: expect.stringContaining('one-workload medians'),
 				}),
@@ -1688,7 +1688,7 @@ describe('release proof evidence index', () => {
 		expect(performanceOwnerArtifact?.nextAction).toContain(
 			'focused ClosedXML head-to-head read run',
 		)
-		expect(performanceOwnerArtifact?.nextAction).toContain('clean OpenPyXL selected-sheet')
+		expect(performanceOwnerArtifact?.nextAction).toContain('same-lane selected-sheet external run')
 		expect(
 			safeOpenDecision.nextOwnerActions.find(
 				(action) => action.requirementId === 'release-latency-run',
@@ -3539,34 +3539,34 @@ describe('release proof evidence index', () => {
 			},
 		})
 		expect(packet.benchmarkBlocker?.nextAction).toContain('ClosedXML head-to-head read run')
-		expect(packet.benchmarkBlocker?.nextAction).toContain(
-			'same-lane external-process selected-sheet',
-		)
+		expect(packet.benchmarkBlocker?.nextAction).toContain('same-lane selected-sheet external run')
+		expect(packet.benchmarkBlocker?.nextAction).toContain('metadata-only same-lane external')
+		expect(packet.benchmarkBlocker?.nextAction).toContain('current-commit full-profile')
 		expect(packet.benchmarkBlocker?.nextAction).toContain('fastxlsx runner')
 		expect(packet.benchmarkBlocker?.nextAction).not.toContain(
 			'clean selected-sheet timing-boundary rerun',
 		)
 		expect(packet.benchmarkBlocker?.benchmarkCommands?.join('\n')).toContain(
-			'--runner-manifest fixtures/benchmarks/runners/selected-sheet-readers.manifest.json',
+			'--runner-manifest fixtures/benchmarks/runners/metadata-only-readers.manifest.json',
 		)
 		expect(packet.benchmarkBlocker?.benchmarkCommands?.join('\n')).toContain(
-			'--execution-scope external-process --libraries ascend-external-values,sheetjs,openpyxl',
+			'--execution-scope external-process --libraries ascend-external-metadata-only,sheetjs-metadata-only,openpyxl-metadata-only',
 		)
 		expect(packet.benchmarkBlocker?.benchmarkCommands?.join('\n')).toContain(
-			'competitive-scoreboard.ts <selected-sheet-external-suite.json> --json --metric medianMs --require-profile xlsx-read-sota',
+			'competitive-scoreboard.ts <metadata-only-external-suite.json> --json --metric medianMs --require-profile xlsx-read-sota',
 		)
 		expect(packet.benchmarkBlocker?.benchmarkCommands?.join('\n')).toContain(
-			'competitive-scoreboard.ts <suite.json> --json --metric medianMs --require-profile xlsx-read-sota',
+			'competitive-scoreboard.ts <current-commit-xlsx-read-sota-all.json> --json --metric medianMs --require-profile xlsx-read-sota',
 		)
 		expect(packet.benchmarkBlocker?.acceptanceEvidence?.join('\n')).toContain('ClosedXML')
 		expect(packet.benchmarkBlocker?.acceptanceEvidence?.join('\n')).toContain(
-			'selected-sheet external runner manifest exists',
+			'selected-sheet same-lane external-process run at commit 39163862',
 		)
 		expect(packet.benchmarkBlocker?.acceptanceEvidence?.join('\n')).toContain(
-			'OpenPyXL selected-sheet projection now runs',
+			'ExcelJS, Calamine, Apache POI, and ClosedXML are unsupported-operation gaps',
 		)
 		expect(packet.benchmarkBlocker?.acceptanceEvidence?.join('\n')).toContain(
-			'permanently not comparable',
+			'Metadata-only promotion still requires same-lane external-process evidence',
 		)
 		expect(packet.benchmarkBlocker?.acceptanceEvidence?.join('\n')).toContain('not counted as wins')
 		expect(packet.approvalChecklist?.map((item) => `${item.ownerLoop}/${item.gateId}`)).toEqual([

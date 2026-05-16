@@ -3528,7 +3528,15 @@ describe('release proof evidence index', () => {
 				readonly artifactId?: string
 				readonly path?: string
 				readonly validationCommand?: string
+				readonly claim?: string
+				readonly releaseDecision?: string
+				readonly evidenceWeHave?: readonly string[]
+				readonly evidenceMissing?: readonly string[]
+				readonly qssContrast?: readonly string[]
+				readonly allowedWording?: string
+				readonly forbiddenWording?: readonly string[]
 				readonly nextAction?: string
+				readonly nextOwnerAction?: string
 				readonly benchmarkCommands?: readonly string[]
 				readonly acceptanceEvidence?: readonly string[]
 				readonly stopCondition?: string
@@ -3551,8 +3559,34 @@ describe('release proof evidence index', () => {
 				artifactId: 'performance-claim-baseline-matrix',
 				path: 'docs/PERFORMANCE_CLAIM_BASELINE_MATRIX.md',
 				validationCommand: 'bun test fixtures/benchmarks/performance-claim-baseline-matrix.test.ts',
+				claim: 'broad XLSX read speed leadership',
+				releaseDecision: 'claim-downgrade-do-not-promote',
 			},
 		})
+		expect(packet.benchmarkBlocker?.evidenceWeHave?.join('\n')).toContain(
+			'selected-sheet external-process evidence at commit 39163862',
+		)
+		expect(packet.benchmarkBlocker?.evidenceWeHave?.join('\n')).toContain(
+			'metadata-only external-process evidence at commit fa3a13dc',
+		)
+		expect(packet.benchmarkBlocker?.evidenceWeHave?.join('\n')).toContain(
+			'Current full-profile and merged selected-sheet/metadata-only scoreboards',
+		)
+		expect(packet.benchmarkBlocker?.evidenceMissing?.join('\n')).toContain(
+			'Feature-rich SheetJS and Calamine semantic-support evidence',
+		)
+		expect(packet.benchmarkBlocker?.evidenceMissing?.join('\n')).toContain(
+			'FastXLSX environment coverage',
+		)
+		expect(packet.benchmarkBlocker?.qssContrast?.join('\n')).toContain(
+			'QSS-leapfrog speed wording is blocked',
+		)
+		expect(packet.benchmarkBlocker?.allowedWording).toContain(
+			'broad XLSX read-speed leadership remains blocked',
+		)
+		expect(packet.benchmarkBlocker?.forbiddenWording).toContain(
+			'Do not claim Ascend is the fastest XLSX reader.',
+		)
 		expect(packet.benchmarkBlocker?.nextAction).toContain('Downgrade broad read-speed wording')
 		expect(packet.benchmarkBlocker?.nextAction).toContain('current full-profile')
 		expect(packet.benchmarkBlocker?.nextAction).toContain('merged selected-sheet/metadata-only')
@@ -3562,6 +3596,12 @@ describe('release proof evidence index', () => {
 		)
 		expect(packet.benchmarkBlocker?.nextAction).not.toContain(
 			'clean selected-sheet timing-boundary rerun',
+		)
+		expect(packet.benchmarkBlocker?.nextOwnerAction).toContain(
+			'Benchmarking owner either resolves one explicit blocker row',
+		)
+		expect(packet.benchmarkBlocker?.nextOwnerAction).toContain(
+			'keeps the broad speed claim downgraded',
 		)
 		expect(packet.benchmarkBlocker?.benchmarkCommands?.join('\n')).toContain(
 			'--runner-manifest fixtures/benchmarks/runners/ascend-python-readers.manifest.json',

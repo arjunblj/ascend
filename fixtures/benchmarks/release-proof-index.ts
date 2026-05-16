@@ -267,7 +267,15 @@ export interface ReleaseProofPerformanceBoundaryDecisionPacket {
 		readonly artifactId: 'performance-claim-baseline-matrix'
 		readonly path: 'docs/PERFORMANCE_CLAIM_BASELINE_MATRIX.md'
 		readonly validationCommand: 'bun test fixtures/benchmarks/performance-claim-baseline-matrix.test.ts'
+		readonly claim: 'broad XLSX read speed leadership'
+		readonly releaseDecision: 'claim-downgrade-do-not-promote'
+		readonly evidenceWeHave: readonly string[]
+		readonly evidenceMissing: readonly string[]
+		readonly qssContrast: readonly string[]
+		readonly allowedWording: string
+		readonly forbiddenWording: readonly string[]
 		readonly nextAction: string
+		readonly nextOwnerAction: string
 		readonly benchmarkCommands: readonly string[]
 		readonly acceptanceEvidence: readonly string[]
 		readonly stopCondition: string
@@ -2191,8 +2199,36 @@ export function releaseProofPerformanceBoundaryDecisionPacket(
 			artifactId: 'performance-claim-baseline-matrix',
 			path: 'docs/PERFORMANCE_CLAIM_BASELINE_MATRIX.md',
 			validationCommand: benchmarkValidationCommand,
+			claim: 'broad XLSX read speed leadership',
+			releaseDecision: 'claim-downgrade-do-not-promote',
+			evidenceWeHave: [
+				'Focused ClosedXML value-read head-to-head evidence is accepted for comparable value-read rows only.',
+				'Same-lane selected-sheet external-process evidence at commit 39163862 is accepted for Ascend, SheetJS, and OpenPyXL Data-sheet-only rows.',
+				'Same-lane metadata-only external-process evidence at commit fa3a13dc is accepted for Ascend, SheetJS, and OpenPyXL metadata-only rows.',
+				'Current full-profile and merged selected-sheet/metadata-only scoreboards from commit 9ddfff91 report no leader failures or profile leader failures.',
+			],
+			evidenceMissing: [
+				'ClosedXML coverage policy for missing/error rows outside comparable value-read.',
+				'Feature-rich SheetJS and Calamine semantic-support evidence or an explicit not-comparable policy.',
+				'Unsupported selected-sheet and metadata-only competitor policy for ExcelJS, Calamine, Apache POI, and ClosedXML rows.',
+				'FastXLSX environment coverage or a kill/defer decision for unavailable runner evidence.',
+				'Tracked-clean release-environment approval before any public speed wording.',
+			],
+			qssContrast: [
+				'QSS-leapfrog speed wording is blocked because current evidence is scoped to completed comparable rows, not all broad XLSX read workloads.',
+				'Competitor rows with unsupported operations, semantic mismatches, or unavailable runners are non-wins and cannot be counted against QSS or SOTA claims.',
+			],
+			allowedWording:
+				'Allowed wording: Ascend has bounded local evidence of fast selected-sheet and metadata-only reads against completed comparable SheetJS/OpenPyXL rows, while broad XLSX read-speed leadership remains blocked.',
+			forbiddenWording: [
+				'Do not claim Ascend is the fastest XLSX reader.',
+				'Do not claim SOTA, QSS-leapfrog read speed, or broad speed leadership from the current partial baseline.',
+				'Do not count unavailable runners, unsupported operations, feature-rich semantic mismatches, or dirty-worktree timings as wins.',
+			],
 			nextAction:
 				'Downgrade broad read-speed wording and stop production optimization from this evidence: the current full-profile and merged selected-sheet/metadata-only scoreboards have no leader failures, but ClosedXML coverage, feature-rich SheetJS/Calamine semantic mismatches, and unsupported selected-sheet/metadata-only competitor rows remain non-wins.',
+			nextOwnerAction:
+				'Benchmarking owner either resolves one explicit blocker row (ClosedXML coverage policy, feature-rich SheetJS/Calamine semantic policy, unsupported selected-sheet/metadata-only competitor policy, or FastXLSX environment coverage) with the commands below, or keeps the broad speed claim downgraded and stops.',
 			benchmarkCommands,
 			acceptanceEvidence: [
 				'Clean detached worktree or clean release benchmark environment.',

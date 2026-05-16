@@ -3208,7 +3208,7 @@ function safeOpenQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceItem[] {
 				'bun run examples/agent-safe-edit.ts /private/tmp/ascend-agent-safe-edit-input.xlsx /private/tmp/ascend-agent-safe-edit-output.xlsx',
 			path: 'examples/agent-safe-edit.ts',
 			acceptedScope:
-				'Commit cab4bff1 makes the agent-safe-edit example reopen the committed workbook, verify the edited formula cell, run check/lint, and emit concrete follow-up verification commands after commit.',
+				'Commit cab4bff1 makes the agent-safe-edit example reopen the committed workbook, verify the edited formula cell, run check/lint, and emit concrete follow-up verification commands after commit. Commit adc9c1e1 makes the root SDK example emit the shared proofBundle.safeToUse, whatChanged, and whySafe gate evidence using createAgentWorkflowProofSummary.',
 			boundary:
 				'Local example workflow proof only; it does not prove package publication, arbitrary workbook safety, performance, external trust, or every SDK/CLI/API/MCP workflow.',
 		},
@@ -3239,7 +3239,7 @@ function safeOpenQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceItem[] {
 			command: 'bun test examples/package-scripts.test.ts --timeout 30000',
 			path: 'examples/package.json; examples/package-scripts.test.ts; examples/README.md',
 			acceptedScope:
-				'Commit bbea493c adds examples package scripts for SDK, HTTP, and MCP safe-edit workflows and proves each script runs inspect/open-plan, prepared plan, commit, reopen/check/lint, and edited formula verification from the examples package. Commit 37794635 adds package dependencies so the runnable HTTP/MCP examples use packaged app imports. Commit 7afcd630 verifies HTTP and MCP scripts surface proofBundle.safeToUse and changed-cell evidence.',
+				'Commit bbea493c adds examples package scripts for SDK, HTTP, and MCP safe-edit workflows and proves each script runs inspect/open-plan, prepared plan, commit, reopen/check/lint, and edited formula verification from the examples package. Commit 37794635 adds package dependencies so the runnable HTTP/MCP examples use packaged app imports. Commit 7afcd630 verifies HTTP and MCP scripts surface proofBundle.safeToUse and changed-cell evidence. Commit adc9c1e1 verifies the SDK script surfaces proofBundle.safeToUse and changed-cell evidence too.',
 			boundary:
 				'Local examples-package workflow proof only; it does not prove package publication, registry install behavior, arbitrary workbook safety, performance, external trust, or every SDK/CLI/API/MCP workflow.',
 		},
@@ -3249,7 +3249,7 @@ function safeOpenQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceItem[] {
 			command: 'bun test examples/root-scripts.test.ts --timeout 30000',
 			path: 'package.json; examples/root-scripts.test.ts; examples/README.md; apps/cli/src/commands/agent-init.ts; apps/api/src/server.ts; apps/mcp/src/index.ts; scripts/release-apps-smoke.ts',
 			acceptedScope:
-				'Commit a09660be adds root package scripts for SDK, HTTP, and MCP safe-edit workflows, proves each root script runs the generated-workbook workflow, and updates CLI/API/MCP workflow discovery plus installed app smoke checks to point at the root commands. Commit 7afcd630 verifies HTTP and MCP root scripts surface proofBundle.safeToUse and changed-cell evidence.',
+				'Commit a09660be adds root package scripts for SDK, HTTP, and MCP safe-edit workflows, proves each root script runs the generated-workbook workflow, and updates CLI/API/MCP workflow discovery plus installed app smoke checks to point at the root commands. Commit 7afcd630 verifies HTTP and MCP root scripts surface proofBundle.safeToUse and changed-cell evidence. Commit adc9c1e1 verifies the SDK root script surfaces proofBundle.safeToUse and changed-cell evidence too.',
 			boundary:
 				'Local root-package script evidence only; it does not prove package publication, registry install behavior, arbitrary workbook safety, performance, external trust, or every SDK/CLI/API/MCP workflow.',
 		},
@@ -3273,6 +3273,17 @@ function safeOpenQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceItem[] {
 				'Commit 5915794f makes the installed SDK safe-edit example emit a machine-readable proof bundle with safeToUse, changed-cell before/after evidence, open-plan/trust/plan/commit/reopen gates, hashes, check/lint validity, post-write validity, and release-sdk-smoke assertions. Commit 56cd4aa0 moves the outside-user command to the packaged bin `node_modules/.bin/ascend-sdk-safe-edit` and keeps the focused installed example proof passing. Commit a5fa3006 promotes the proof bundle into an SDK `createAgentWorkflowProofSummary` helper with plan-linked, write-policy, reopen-verify, and package-graph gates reused by the installed example. This closes the prior blank-vs-empty proof contract mismatch for the generated example.',
 			boundary:
 				'Installed SDK generated-workbook proof only; it does not prove registry publication, arbitrary workbook safety, hosted service readiness, external trust, performance, or public workbook behavior.',
+		},
+		{
+			evidenceId: 'installed-cli-safe-edit-example-proof',
+			kind: 'test',
+			command:
+				'bun test apps/cli/src/cli.test.ts -t "example-safe-edit runs the packaged inspect plan commit reopen verify workflow" --timeout 30000',
+			path: 'apps/cli/src/commands/example-safe-edit.ts; apps/cli/src/cli.test.ts; scripts/release-apps-smoke.ts',
+			acceptedScope:
+				'Commit 3d630232 adds the installed CLI `ascend example-safe-edit <file.xlsx> <out.xlsx>` workflow with proofBundle.safeToUse, changed-cell evidence, safety gates, and reopen/check/lint verification. Commit 7e7183df makes the CLI example use the shared SDK createAgentWorkflowProofSummary helper and proves plan-linked, write-policy, reopen-verify, and package-graph gates through the CLI test and installed app smoke.',
+			boundary:
+				'Installed CLI generated-workbook proof only; it does not prove registry publication, arbitrary workbook safety, hosted service readiness, external trust, performance, or public workbook behavior.',
 		},
 		{
 			evidenceId: 'installed-sdk-workflow-discovery-proof',
@@ -3666,6 +3677,8 @@ function todayCommitClaimMatrix(): readonly ReleaseProofTodayCommitClaimMatrixRo
 				'1ed2be29',
 				'a5fa3006',
 				'7afcd630',
+				'adc9c1e1',
+				'7e7183df',
 				'223a1ec7',
 				'868add46',
 				'caa08959',
@@ -3677,8 +3690,9 @@ function todayCommitClaimMatrix(): readonly ReleaseProofTodayCommitClaimMatrixRo
 				'62f45cb5',
 			],
 			releaseOrSotaClaimBecameMoreTrue:
-				'Ascend is more credible as an agent-native spreadsheet runtime because SDK, installed-SDK, CLI, HTTP API, MCP, root-package, public query-table, public chart-source, public calc-chain/formula-cache, public hidden-sheet, and public protected-range examples expose runnable inspect/plan/commit/reopen/verify workflows plus proof context.',
+				'Ascend is more credible as an agent-native spreadsheet runtime because SDK, installed-SDK, CLI, HTTP API, MCP, root-package, public query-table, public chart-source, public calc-chain/formula-cache, public hidden-sheet, and public protected-range examples expose runnable inspect/plan/commit/reopen/verify workflows plus shared proof-bundle context.',
 			evidenceProvesIt: [
+				'bun test examples/agent-safe-edit.test.ts --timeout 30000',
 				'bun test examples/agent-safe-edit-mcp.test.ts --timeout 30000',
 				'bun test examples/root-scripts.test.ts --timeout 30000',
 				'bun test apps/cli/src/cli.test.ts apps/api/src/server.test.ts apps/mcp/src/index.test.ts -t "agent-init prints the canonical agent workflow contract|/agent-workflow exposes the API safe edit contract|ascend.agent_workflow exposes machine-readable safe edit guidance" --timeout 30000',
@@ -3702,7 +3716,7 @@ function todayCommitClaimMatrix(): readonly ReleaseProofTodayCommitClaimMatrixRo
 				'Blocked adjacent API package sweep: bun test apps/api/api.test.ts --timeout 30000 currently fails outside workflow discovery because the export-format assertion expects "Unsupported format" while the current response is "Unsupported export format: weird".',
 			],
 			allowedWording:
-				'Ascend provides local runnable SDK, installed-SDK package-bin, CLI, API, and MCP safe-edit workflow examples with root commands, consistent proofBundle gates, public query-table refresh/data-connection metadata, chart-source, calc-chain/formula-cache reporting, hidden-sheet topology, and protected-range metadata commit proof, and machine-readable proof context for generated/public workbooks.',
+				'Ascend provides local runnable SDK, installed-SDK package-bin, CLI, API, and MCP safe-edit workflow examples with root commands, shared SDK proof-summary gates, public query-table refresh/data-connection metadata, chart-source, calc-chain/formula-cache reporting, hidden-sheet topology, and protected-range metadata commit proof, and machine-readable proof context for generated/public workbooks.',
 			forbiddenWording: [
 				'Do not claim arbitrary workbook safety, package publication, registry download proof, hosted service readiness, public-workbook generality, complete API package health, or complete workflow observability from the local generated/public-workbook examples.',
 			],
@@ -5680,8 +5694,9 @@ const AGENT_WORKFLOW_OBSERVABILITY_BLOCKER = {
 		'Packaged proof surfaces expose workflow examples through `58a7f579 test(release): expose workflow examples in packaged proof`, including MCP agent-workflow resource text and installed smoke output.',
 		'Installed SDK safe-edit workflow proof is accepted after `5915794f feat(sdk): summarize installed safe edit proof` and `56cd4aa0 feat(sdk): add safe edit package bin`: `bun test examples/package-install-safe-edit.test.ts --timeout 30000` now proves safeToUse, changed-cell before/after evidence, gate outcomes, hashes, check/lint validity, post-write audit validity, and the outside-user `node_modules/.bin/ascend-sdk-safe-edit` command from the installed-SDK example. This closes the earlier `5981764c` blank/empty proof contract blocker for generated-workbook wording.',
 		'Reusable SDK workflow proof summary is accepted after `a5fa3006 feat(sdk): expose workflow proof summary`: `bun test packages/sdk/src/agent-workflow.test.ts -t "workflow proof summary explains changed cells and safety gates" --timeout 30000` proves changed-cell before/after evidence plus plan-linked, plan, write-policy, commit, reopen-verify, and package-graph safety gates, and the installed SDK example now uses that helper.',
+		'Root SDK safe-edit proof-bundle output is accepted after `adc9c1e1 feat(examples): show sdk workflow proof bundle`: `bun test examples/agent-safe-edit.test.ts --timeout 30000`, `bun test examples/package-scripts.test.ts --timeout 30000`, and `bun test examples/root-scripts.test.ts --timeout 30000` prove the runnable SDK example emits proofBundle.safeToUse, changed-cell evidence, and the shared whySafe gates from package and root commands.',
 		'Installed safe-edit workflow discovery is accepted after `f8d63593 feat(apps): expose installed safe edit workflow`, `cc689bcc test(api): prove installed workflow discovery`, and `56cd4aa0 feat(sdk): add safe edit package bin`: CLI, API, MCP, MCP resources, API package tests, and installed app smoke output expose the installed SDK package-bin command plus proofBundle output contract. The full `bun test apps/api/api.test.ts --timeout 30000` sweep remains blocked by an unrelated export-format message expectation, so package health wording is not accepted.',
-		'Installed CLI safe-edit workflow proof is accepted after `3d630232 feat(cli): add packaged safe edit workflow`: `bun test apps/cli/src/cli.test.ts -t "example-safe-edit runs the packaged inspect plan commit reopen verify workflow" --timeout 30000` proves `ascend example-safe-edit <file.xlsx> <out.xlsx>` runs inspect, plan, commit, reopen, and verify with `proofBundle.safeToUse`, changed-cell evidence, safety gates, and reopened check/lint output.',
+		'Installed CLI safe-edit workflow proof is accepted after `3d630232 feat(cli): add packaged safe edit workflow` and `7e7183df fix(cli): share safe edit proof summary`: `bun test apps/cli/src/cli.test.ts -t "example-safe-edit runs the packaged inspect plan commit reopen verify workflow" --timeout 30000` proves `ascend example-safe-edit <file.xlsx> <out.xlsx>` runs inspect, plan, commit, reopen, and verify with the shared SDK proof summary, `proofBundle.safeToUse`, changed-cell evidence, plan-linked/write-policy/reopen-verify/package-graph gates, and reopened check/lint output.',
 		'CLI commit proof-bundle output is accepted after `5028438e feat(cli): summarize commit proof bundle` and `223a1ec7 fix(cli): align proof gate naming`: `bun test apps/cli/src/cli.test.ts -t "plan and commit implement safe agent workflow" --timeout 30000` proves `ascend commit --proof --json` and compact `--proof` output include safeToUse, whatChanged, whySafe, input-guard/write-policy/commit/reopen/package-graph gates, and output hashes.',
 		'API and MCP commit proof-bundle output is accepted after `1ed2be29 feat(apps): expose commit proof bundles`: `bun test apps/api/src/server.test.ts -t "dump emits replayable operation batches" --timeout 30000` and `bun test apps/mcp/src/index.test.ts -t "ascend.commit accepts prepared plan handles" --timeout 30000` prove prepared commit responses can include proofBundle.safeToUse, whatChanged, whySafe, and write-policy/commit/reopen/package-graph gates.',
 		'API and MCP runnable example proof bundles are accepted after `7afcd630 feat(examples): show api mcp proof bundles`: `bun test examples/package-scripts.test.ts --timeout 30000` and `bun test examples/root-scripts.test.ts --timeout 30000` prove HTTP and MCP examples expose proofBundle.safeToUse and changed-cell evidence from package and root commands.',

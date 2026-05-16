@@ -970,6 +970,10 @@ describe('release proof evidence index', () => {
 				boundary: expect.stringContaining('Local example workflow proof only'),
 			}),
 			expect.objectContaining({
+				evidenceId: 'agent-safe-edit-example-proof',
+				acceptedScope: expect.stringContaining('adc9c1e1'),
+			}),
+			expect.objectContaining({
 				evidenceId: 'api-agent-safe-edit-example-proof',
 				acceptedScope: expect.stringContaining('01d08512'),
 				command: expect.stringContaining('examples/agent-safe-edit-http.ts'),
@@ -1016,6 +1020,10 @@ describe('release proof evidence index', () => {
 				acceptedScope: expect.stringContaining('7afcd630'),
 			}),
 			expect.objectContaining({
+				evidenceId: 'examples-package-safe-edit-scripts-proof',
+				acceptedScope: expect.stringContaining('adc9c1e1'),
+			}),
+			expect.objectContaining({
 				evidenceId: 'root-package-safe-edit-scripts-proof',
 				acceptedScope: expect.stringContaining('a09660be'),
 				command: 'bun test examples/root-scripts.test.ts --timeout 30000',
@@ -1024,6 +1032,10 @@ describe('release proof evidence index', () => {
 			expect.objectContaining({
 				evidenceId: 'root-package-safe-edit-scripts-proof',
 				acceptedScope: expect.stringContaining('7afcd630'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'root-package-safe-edit-scripts-proof',
+				acceptedScope: expect.stringContaining('adc9c1e1'),
 			}),
 			expect.objectContaining({
 				evidenceId: 'workflow-example-proof-context',
@@ -1044,6 +1056,16 @@ describe('release proof evidence index', () => {
 			expect.objectContaining({
 				evidenceId: 'installed-sdk-safe-edit-example-proof',
 				acceptedScope: expect.stringContaining('a5fa3006'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'installed-cli-safe-edit-example-proof',
+				acceptedScope: expect.stringContaining('3d630232'),
+				command: expect.stringContaining('example-safe-edit runs the packaged'),
+				boundary: expect.stringContaining('Installed CLI generated-workbook proof only'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'installed-cli-safe-edit-example-proof',
+				acceptedScope: expect.stringContaining('7e7183df'),
 			}),
 			expect.objectContaining({
 				evidenceId: 'installed-sdk-workflow-discovery-proof',
@@ -1747,6 +1769,8 @@ describe('release proof evidence index', () => {
 						'1ed2be29',
 						'a5fa3006',
 						'7afcd630',
+						'adc9c1e1',
+						'7e7183df',
 						'223a1ec7',
 						'868add46',
 						'caa08959',
@@ -1757,7 +1781,7 @@ describe('release proof evidence index', () => {
 						'd519c5a7',
 						'62f45cb5',
 					]),
-					allowedWording: expect.stringContaining('formula-cache reporting'),
+					allowedWording: expect.stringContaining('shared SDK proof-summary gates'),
 					forbiddenWording: expect.arrayContaining([
 						expect.stringContaining('complete API package health'),
 					]),
@@ -2382,6 +2406,8 @@ describe('release proof evidence index', () => {
 		expect(agentWorkflowEvidence).toContain('node_modules/.bin/ascend-sdk-safe-edit')
 		expect(agentWorkflowEvidence).toContain('a5fa3006')
 		expect(agentWorkflowEvidence).toContain('Reusable SDK workflow proof summary is accepted')
+		expect(agentWorkflowEvidence).toContain('adc9c1e1')
+		expect(agentWorkflowEvidence).toContain('Root SDK safe-edit proof-bundle output is accepted')
 		expect(agentWorkflowEvidence).toContain('f8d63593')
 		expect(agentWorkflowEvidence).toContain('cc689bcc')
 		expect(agentWorkflowEvidence).toContain('56cd4aa0')
@@ -2390,6 +2416,8 @@ describe('release proof evidence index', () => {
 		expect(agentWorkflowEvidence).toContain('3d630232')
 		expect(agentWorkflowEvidence).toContain('Installed CLI safe-edit workflow proof is accepted')
 		expect(agentWorkflowEvidence).toContain('ascend example-safe-edit <file.xlsx> <out.xlsx>')
+		expect(agentWorkflowEvidence).toContain('7e7183df')
+		expect(agentWorkflowEvidence).toContain('shared SDK proof summary')
 		expect(agentWorkflowEvidence).toContain('5028438e')
 		expect(agentWorkflowEvidence).toContain('CLI commit proof-bundle output is accepted')
 		expect(agentWorkflowEvidence).toContain('223a1ec7')

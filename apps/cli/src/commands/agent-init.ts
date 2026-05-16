@@ -12,6 +12,7 @@ Flags:
 interface AgentInitInfo {
 	readonly workflow: readonly string[]
 	readonly commands: Record<string, string>
+	readonly examples: Record<string, string>
 	readonly apiEndpoints: Record<string, string>
 	readonly mcpResources: readonly string[]
 	readonly mcpTools: Record<string, string>
@@ -55,6 +56,11 @@ const AGENT_INIT: AgentInitInfo = {
 			'ascend commit <file> --ops ops.json --output out.xlsx --password <value> --expect-sha256 <hash> --package-actions --progress jsonl --json',
 		check: 'ascend check <file> --progress jsonl --json',
 		repair: 'ascend repair-plan <file> --json',
+	},
+	examples: {
+		sdkSafeEdit: 'bun run --cwd examples safe-edit <file.xlsx> <out.xlsx>',
+		apiSafeEdit: 'bun run --cwd examples safe-edit:http <file.xlsx> <out.xlsx>',
+		mcpSafeEdit: 'bun run --cwd examples safe-edit:mcp <file.xlsx> <out.xlsx>',
 	},
 	apiEndpoints: {
 		workflow: 'GET /agent-workflow',
@@ -121,6 +127,10 @@ export async function agentInitCommand(
 	console.log('')
 	for (const [name, command] of Object.entries(AGENT_INIT.commands)) {
 		console.log(bullet(name, command))
+	}
+	console.log('')
+	for (const [name, command] of Object.entries(AGENT_INIT.examples)) {
+		console.log(bullet(`Example ${name}`, command))
 	}
 	console.log('')
 	for (const [name, endpoint] of Object.entries(AGENT_INIT.apiEndpoints)) {

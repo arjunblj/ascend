@@ -263,6 +263,15 @@ if (cliAgentInit.apiEndpoints?.workflow !== 'GET /agent-workflow') {
 if (cliAgentInit.mcpTools?.workflow !== 'ascend.agent_workflow') {
 	throw new Error('CLI agent-init missing MCP workflow tool: ' + JSON.stringify(cliAgentInit))
 }
+if (cliAgentInit.examples?.sdkSafeEdit !== 'bun run --cwd examples safe-edit <file.xlsx> <out.xlsx>') {
+	throw new Error('CLI agent-init missing SDK safe-edit example: ' + JSON.stringify(cliAgentInit))
+}
+if (!cliAgentInit.examples?.apiSafeEdit?.includes('safe-edit:http')) {
+	throw new Error('CLI agent-init missing API safe-edit example: ' + JSON.stringify(cliAgentInit))
+}
+if (!cliAgentInit.examples?.mcpSafeEdit?.includes('safe-edit:mcp')) {
+	throw new Error('CLI agent-init missing MCP safe-edit example: ' + JSON.stringify(cliAgentInit))
+}
 
 const apiFetch = createApiFetch()
 const apiInput = join(cwd, 'api-input.xlsx')

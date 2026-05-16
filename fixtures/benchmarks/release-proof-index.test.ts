@@ -1177,6 +1177,10 @@ describe('release proof evidence index', () => {
 		expect(agentWorkflowForbidden).toContain('repair automation')
 		expect(agentWorkflowNextOwnerAction).toContain('failure taxonomy')
 		expect(agentWorkflowNextOwnerAction).toContain('trace payload size')
+		expect(agentWorkflowNextOwnerAction).toContain('packages/sdk/src/agent-workflow.test.ts')
+		expect(agentWorkflowNextOwnerAction).toContain('apps/cli/src/cli.test.ts')
+		expect(agentWorkflowNextOwnerAction).toContain('apps/api/src/server.test.ts')
+		expect(agentWorkflowNextOwnerAction).toContain('apps/mcp/src/index.test.ts')
 		expect(agentWorkflowNextOwnerAction).toContain('release-proof-index.ts --no-timings')
 		expect(index.releaseDecisionBoard.doNotPromoteYet.at(-1)).toMatchObject({
 			name: 'practical-latency-contracts',

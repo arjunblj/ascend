@@ -8,6 +8,8 @@ import {
 	withProgress,
 } from '../progress.ts'
 
+const FORMULA_SUBCOMMANDS = ['show', 'assist', 'set', 'fill'] as const
+
 export const usage = `Usage: ascend formula <subcommand> [args] [flags]
 
   Inspect and edit cell formulas.
@@ -41,13 +43,32 @@ export async function formulaCommand(args: string[], flags: Map<string, string>)
 		case 'fill':
 			return fillFormula(args.slice(1), flags)
 		default: {
-			const msg = `Unknown formula subcommand: ${action ?? '(missing)'}`
-			const suggestion = suggestClosest(action ?? '', ['show', 'assist', 'set', 'fill'])
-			const hint = suggestion ? `\nDid you mean "${suggestion}"?` : ''
-			cliError(`${msg}${hint}\nUsage: ascend formula <show|assist|set|fill> ...`, flags)
+			cliError(unknownFormulaSubcommandError(action), flags)
 			return 1
 		}
 	}
+}
+
+function unknownFormulaSubcommandError(action: string | undefined) {
+	const received = action ?? '(missing)'
+	const suggestion = suggestClosest(action ?? '', FORMULA_SUBCOMMANDS)
+	const message = suggestion
+		? `Unknown formula subcommand: ${received}. Did you mean "${suggestion}"?`
+		: `Unknown formula subcommand: ${received}`
+	return ascendError('INVALID_ARGUMENT', message, {
+		retryable: true,
+		retryStrategy: 'modified',
+		details: {
+			command: 'formula',
+			subcommand: received,
+			allowedSubcommands: FORMULA_SUBCOMMANDS,
+			workflow: ['inspect', 'formula-assist', 'plan'],
+			...(suggestion ? { suggestion } : {}),
+		},
+		suggestedFix: suggestion
+			? `Did you mean "${suggestion}"? Retry with subcommand "${suggestion}".`
+			: 'Use one of: show, assist, set, fill.',
+	})
 }
 
 async function showFormula(args: string[], flags: Map<string, string>): Promise<number> {

@@ -1222,8 +1222,20 @@ describe('ascend cli', () => {
 		expect(unknownFormula.exitCode).toBe(1)
 		const parsedUnknownFormula = JSON.parse(unknownFormula.stdout)
 		expect(parsedUnknownFormula.ok).toBe(false)
-		expect(parsedUnknownFormula.error.code).toBe('INVALID_ARGUMENT')
-		expect(parsedUnknownFormula.error.message).toContain('Unknown formula subcommand')
+		expect(parsedUnknownFormula.error).toMatchObject({
+			code: 'INVALID_ARGUMENT',
+			message: 'Unknown formula subcommand: wat. Did you mean "set"?',
+			retryable: true,
+			retryStrategy: 'modified',
+			details: {
+				command: 'formula',
+				subcommand: 'wat',
+				allowedSubcommands: ['show', 'assist', 'set', 'fill'],
+				workflow: ['inspect', 'formula-assist', 'plan'],
+				suggestion: 'set',
+			},
+		})
+		expect(parsedUnknownFormula.error.suggestedFix).toContain('subcommand "set"')
 	})
 
 	test('formula edit commands --json return structured missing input guidance', async () => {

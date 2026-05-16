@@ -2000,6 +2000,36 @@ describe('release proof evidence index', () => {
 		expect(JSON.stringify(handoff.compactReportPublicationEvidence)).toContain(
 			'canonical JSON subject',
 		)
+		expect(handoff.researchHygieneDecisionPacket).toMatchObject({
+			ownerLoops: ['product', 'release'],
+			status: 'claim-downgrade-do-not-promote',
+			releaseGate: 'blocked-by-publication-policy',
+			headlineClaimsAllowed: false,
+			ownerApprovalRequired: true,
+			claim: 'research-surface-hygiene',
+			workBlockDisposition: 'claim-downgrade-do-not-promote',
+			dirtyInventoryCommand:
+				'git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager',
+		})
+		expect(handoff.researchHygieneDecisionPacket.inventorySnapshot).toMatchObject({
+			status: 'inventory-collected',
+			decision: expect.stringMatching(
+				/^(owner-classification-required|no-unclassified-paths-currently-visible)$/,
+			),
+		})
+		expect(handoff.researchHygieneDecisionPacket.inventorySnapshot.dirtyPathCount).toBe(
+			handoff.researchHygieneDecisionPacket.inventorySnapshot.unclassifiedEntries.length,
+		)
+		expect(
+			handoff.researchHygieneDecisionPacket.classificationBuckets.map((item) => item.bucket),
+		).toEqual(['accepted-evidence', 'active-owner-blocker', 'archive-only'])
+		expect(handoff.researchHygieneDecisionPacket.validationCommands).toEqual([
+			'git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager',
+			'bun test fixtures/benchmarks/release-proof-index.test.ts',
+		])
+		expect(handoff.researchHygieneDecisionPacket.boundary).toContain(
+			'Compact research hygiene decision packet',
+		)
 		expect(handoff.nextOwnerActions[0]).toMatchObject({
 			requirementId: 'edge-fixture-policy',
 			acceptanceEvidence: expect.stringContaining('accepts disclosed generated'),

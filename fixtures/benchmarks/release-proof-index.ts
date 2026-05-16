@@ -206,6 +206,7 @@ export interface ReleaseProofOwnerHandoffIndex {
 	readonly releasePackageabilityEvidence: ReleaseProofPackageabilityEvidence
 	readonly streamingMatrixEvidence: ReleaseProofStreamingMatrixEvidence
 	readonly compactReportPublicationEvidence: ReleaseProofCompactReportPublicationEvidence
+	readonly researchHygieneDecisionPacket: ReleaseProofResearchHygieneDecisionPacket
 	readonly nextOwnerActions: readonly ReleaseProofNextOwnerAction[]
 	readonly claimBlockerBoard: readonly ReleaseProofClaimBlockerBoardRow[]
 	readonly implementationHandoffs: readonly ReleaseProofImplementationHandoff[]
@@ -1945,6 +1946,7 @@ export function releaseProofOwnerHandoffIndex(
 		compactReportPublicationEvidence: cloneCompactReportPublicationEvidence(
 			result.compactReportPublicationEvidence,
 		),
+		researchHygieneDecisionPacket: releaseProofResearchHygieneDecisionPacket(result),
 		streamingMatrixEvidence: cloneStreamingMatrixEvidence(result.streamingMatrixEvidence),
 		nextOwnerActions: result.readiness.nextOwnerActions,
 		claimBlockerBoard: result.readiness.claimBlockerBoard,

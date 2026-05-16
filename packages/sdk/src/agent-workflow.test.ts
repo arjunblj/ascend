@@ -1405,6 +1405,36 @@ describe('agent workflow loss audit', () => {
 		expect(existsSync(output)).toBe(false)
 	})
 
+	test('commit stops before writing ambiguous workbook defined name structural edits', async () => {
+		const input = join(TEMP_DIR, 'ambiguous-workbook-defined-name.xlsx')
+		const output = join(TEMP_DIR, 'ambiguous-workbook-defined-name-out.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		await Bun.write(input, makeAmbiguousWorkbookDefinedNameXlsx())
+		const ops = [{ op: 'insertRows' as const, sheet: 'Data', at: 1, count: 1 }]
+
+		const prepared = await createPreparedAgentPlan(input, ops)
+
+		expect(prepared.plan.preview.wouldSucceed).toBe(false)
+		expect(prepared.plan.modelOutput.blocked).toBe(true)
+		expect(prepared.plan.preview.errors).toContainEqual(
+			expect.objectContaining({
+				code: 'VALIDATION_ERROR',
+				refs: ['definedName:AmbiguousBudget'],
+				details: expect.objectContaining({
+					kind: 'ambiguous-workbook-defined-name-structural-edit',
+					name: 'AmbiguousBudget',
+					formula: 'A1:A3',
+				}),
+			}),
+		)
+		await expect(prepared.commit({ output, approvals: 'all' })).rejects.toThrow(
+			'workbook-scoped defined name "AmbiguousBudget" contains unqualified references',
+		)
+		expect(existsSync(output)).toBe(false)
+		const reopened = await AscendWorkbook.open(input)
+		expect(reopened.definedName('AmbiguousBudget')?.formula).toBe('A1:A3')
+	})
+
 	test('commit stops before writing stale formula-binding metadata', async () => {
 		const input = join(TEMP_DIR, 'stale-formula-binding.xlsx')
 		const output = join(TEMP_DIR, 'stale-formula-binding-out.xlsx')
@@ -7211,6 +7241,35 @@ function makeBrokenConditionalFormatXlsx(): Uint8Array {
 			}),
 		),
 	)
+}
+
+function makeAmbiguousWorkbookDefinedNameXlsx(): Uint8Array {
+	return makeXlsx({
+		'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`,
+		'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+		'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`,
+		'xl/workbook.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets>
+  <definedNames><definedName name="AmbiguousBudget">A1:A3</definedName></definedNames>
+</workbook>`,
+		'xl/worksheets/sheet1.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData>
+</worksheet>`,
+	})
 }
 
 function makeThreadedCommentXlsx(options: { readonly includePersons?: boolean } = {}): Uint8Array {

@@ -14,6 +14,7 @@ import { ascendError, EMPTY, err, ok } from '@ascend/schema'
 import { resolveCellFormulaText } from '../analysis.ts'
 import {
 	findPartialFormulaMoveReference,
+	formulaAstHasLocalStructuralReference,
 	type PartialFormulaMoveReference,
 	retargetExplicitFormulaSheetRefsInRange,
 	rewriteDefinedNameFormulasForMove,
@@ -70,6 +71,10 @@ function applyAxisShift(
 	const sheet = result.value
 	const protectionBlocker = validateStructuralProtection(sheet, axis, delta)
 	if (protectionBlocker) return err(protectionBlocker)
+	const ambiguousDefinedName = findAmbiguousWorkbookDefinedNameStructuralReference(workbook)
+	if (ambiguousDefinedName) {
+		return err(ambiguousWorkbookDefinedNameStructuralEditError(ambiguousDefinedName))
+	}
 	const formulaBindingBlocker = findWorkbookFormulaBinding(workbook)
 	if (formulaBindingBlocker) return err(formulaBindingStructuralEditError(formulaBindingBlocker))
 	const deletedTableColumns =
@@ -155,6 +160,36 @@ function validateStructuralProtection(sheet: Sheet, axis: 'row' | 'col', delta: 
 				sheetName: sheet.name,
 				operation,
 				allowed,
+			},
+		},
+	)
+}
+
+function findAmbiguousWorkbookDefinedNameStructuralReference(workbook: Workbook) {
+	for (const entry of workbook.definedNames.list()) {
+		if (entry.scope.kind !== 'workbook') continue
+		const parsed = cachedParseFormula(entry.formula)
+		if (!parsed.ok) continue
+		if (formulaAstHasLocalStructuralReference(parsed.value)) return entry
+	}
+	return null
+}
+
+function ambiguousWorkbookDefinedNameStructuralEditError(
+	entry: NonNullable<ReturnType<typeof findAmbiguousWorkbookDefinedNameStructuralReference>>,
+) {
+	return ascendError(
+		'VALIDATION_ERROR',
+		`Cannot apply structural row or column edit while workbook-scoped defined name "${entry.name}" contains unqualified references`,
+		{
+			refs: [`definedName:${entry.name}`],
+			suggestedFix:
+				'Qualify the defined name formula with an explicit sheet name or convert it to a sheet-scoped name before applying structural edits.',
+			details: {
+				kind: 'ambiguous-workbook-defined-name-structural-edit',
+				name: entry.name,
+				formula: entry.formula,
+				scope: entry.scope,
 			},
 		},
 	)

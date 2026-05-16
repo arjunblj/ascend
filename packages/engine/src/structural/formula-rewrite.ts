@@ -2141,6 +2141,38 @@ export function formulaAstReferencesSheet(node: FormulaNode, sheetName: string):
 	}
 }
 
+export function formulaAstHasLocalStructuralReference(node: FormulaNode): boolean {
+	switch (node.type) {
+		case 'cellRef':
+		case 'rangeRef':
+		case 'wholeRowRange':
+		case 'wholeColumnRange':
+			return node.sheet === undefined
+		case 'binary':
+			return (
+				formulaAstHasLocalStructuralReference(node.left) ||
+				formulaAstHasLocalStructuralReference(node.right)
+			)
+		case 'dynamicRangeRef':
+			return (
+				formulaAstHasLocalStructuralReference(node.start) ||
+				formulaAstHasLocalStructuralReference(node.end)
+			)
+		case 'unary':
+			return formulaAstHasLocalStructuralReference(node.operand)
+		case 'spillRef':
+			return formulaAstHasLocalStructuralReference(node.target)
+		case 'function':
+			return node.args.some((arg) => formulaAstHasLocalStructuralReference(arg))
+		case 'array':
+			return node.rows.some((row) =>
+				row.some((cell) => formulaAstHasLocalStructuralReference(cell)),
+			)
+		default:
+			return false
+	}
+}
+
 function rewriteSheetName(node: FormulaNode, oldName: string, newName: string): FormulaNode {
 	switch (node.type) {
 		case 'cellRef':

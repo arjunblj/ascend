@@ -5375,6 +5375,29 @@ describe('applyOperation', () => {
 		expect(s.tables[0]?.columns[1]?.totalsRowFormula).toBe('SUM(A1:A2)')
 	})
 
+	test('structural shifts update sheet-scoped local names and block ambiguous workbook names', () => {
+		const wb = createWorkbook()
+		const data = wb.addSheet('Data')
+		data.cells.set(0, 0, cell(numberValue(1)))
+		wb.definedNames.set('LocalBudget', 'A1:A3', { kind: 'sheet', sheetId: data.id })
+
+		expectOk(applyOperation(wb, { op: 'insertRows', sheet: 'Data', at: 1, count: 1 }))
+		expect(wb.definedNames.resolve('LocalBudget', data.id)?.formula).toBe('A1:A4')
+
+		wb.definedNames.set('AmbiguousBudget', 'A1:A3')
+		const result = applyOperation(wb, { op: 'insertRows', sheet: 'Data', at: 1, count: 1 })
+
+		expectErr(result)
+		expect(result.error.code).toBe('VALIDATION_ERROR')
+		expect(result.error.details).toMatchObject({
+			kind: 'ambiguous-workbook-defined-name-structural-edit',
+			name: 'AmbiguousBudget',
+			formula: 'A1:A3',
+		})
+		expect(wb.definedNames.get('AmbiguousBudget')).toBe('A1:A3')
+		expect(wb.definedNames.resolve('LocalBudget', data.id)?.formula).toBe('A1:A4')
+	})
+
 	test('insertRows rewrites cross-sheet worksheet metadata formulas', () => {
 		const wb = createWorkbook()
 		const input = wb.addSheet('Input')

@@ -1,3 +1,4 @@
+import { ascendError } from '@ascend/schema'
 import { cliError, jsonOut } from '../output/json.ts'
 import { openWorkbookDocumentWithProgress } from '../progress.ts'
 
@@ -15,7 +16,20 @@ Flags:
 export async function listCommand(args: string[], flags: Map<string, string>): Promise<number> {
 	const file = args[0]
 	if (!file) {
-		cliError('Usage: ascend list <file>', flags)
+		cliError(
+			ascendError('INVALID_ARGUMENT', 'Missing required list input', {
+				retryable: true,
+				retryStrategy: 'modified',
+				details: {
+					command: 'list',
+					required: ['file'],
+					missing: ['file'],
+					workflow: ['inspect', 'read'],
+				},
+				suggestedFix: 'Run ascend list <file> --json to enumerate workbook sheets and tables.',
+			}),
+			flags,
+		)
 		return 1
 	}
 
@@ -31,7 +45,7 @@ export async function listCommand(args: string[], flags: Map<string, string>): P
 	}))
 
 	if (flags.has('json')) {
-		jsonOut({ sheets })
+		console.log(jsonOut({ sheets }))
 		return 0
 	}
 

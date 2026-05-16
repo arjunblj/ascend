@@ -1,3 +1,4 @@
+import { ascendError } from '@ascend/schema'
 import { AscendWorkbook } from '@ascend/sdk'
 import { cliError, jsonOut } from '../output/json.ts'
 import { withProgress } from '../progress.ts'
@@ -16,7 +17,19 @@ Flags:
 export async function createCommand(args: string[], flags: Map<string, string>): Promise<number> {
 	const file = args[0]
 	if (!file) {
-		cliError('Usage: ascend create <file>', flags)
+		cliError(
+			ascendError('INVALID_ARGUMENT', 'Missing required create input', {
+				retryable: true,
+				retryStrategy: 'modified',
+				details: {
+					command: 'create',
+					required: ['output'],
+					missing: ['output'],
+				},
+				suggestedFix: 'Run ascend create <output.xlsx> --json to create a workbook.',
+			}),
+			flags,
+		)
 		return 1
 	}
 

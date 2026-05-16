@@ -1,4 +1,4 @@
-import type { CellValue } from '@ascend/schema'
+import { ascendError, type CellValue } from '@ascend/schema'
 import { cliError, jsonOut } from '../output/json.ts'
 import { formatCellValue } from '../output/pretty.ts'
 import { openWorkbookWithProgress } from '../progress.ts'
@@ -45,7 +45,21 @@ export async function findCommand(args: string[], flags: Map<string, string>): P
 	const file = args[0]
 	const queryArg = args[1]
 	if (!file || !queryArg) {
-		cliError('Usage: ascend find <file> <query> [--sheet <name>]', flags)
+		cliError(
+			ascendError('INVALID_ARGUMENT', 'Missing required find input', {
+				retryable: true,
+				retryStrategy: 'modified',
+				details: {
+					command: 'find',
+					required: ['file', 'query'],
+					missing: [...(!file ? ['file'] : []), ...(!queryArg ? ['query'] : [])],
+					workflow: ['inspect', 'read'],
+				},
+				suggestedFix:
+					'Run ascend find <file> <query> --sheet <name> --json after inspecting workbook sheets.',
+			}),
+			flags,
+		)
 		return 1
 	}
 

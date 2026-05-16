@@ -54,7 +54,20 @@ async function showFormula(args: string[], flags: Map<string, string>): Promise<
 	const file = args[0]
 	const cellRef = args[1]
 	if (!file || !cellRef) {
-		cliError('Usage: ascend formula show <file> <sheet!cell>', flags)
+		cliError(
+			ascendError('INVALID_ARGUMENT', 'Missing required formula show input', {
+				retryable: true,
+				retryStrategy: 'modified',
+				details: {
+					command: 'formula show',
+					required: ['file', 'cell'],
+					missing: [...(!file ? ['file'] : []), ...(!cellRef ? ['cell'] : [])],
+					workflow: ['inspect', 'read', 'plan'],
+				},
+				suggestedFix: 'Run ascend formula show <file> <sheet!cell> --json.',
+			}),
+			flags,
+		)
 		return 1
 	}
 

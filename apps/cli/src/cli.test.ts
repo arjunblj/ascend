@@ -967,6 +967,65 @@ describe('ascend cli', () => {
 		}
 	})
 
+	test('utility commands --json return structured missing input guidance', async () => {
+		const cases = [
+			{
+				argv: ['create', '--json'] as const,
+				message: 'Missing required create input',
+				details: { command: 'create', required: ['output'], missing: ['output'] },
+				fix: 'ascend create <output.xlsx> --json',
+			},
+			{
+				argv: ['list', '--json'] as const,
+				message: 'Missing required list input',
+				details: {
+					command: 'list',
+					required: ['file'],
+					missing: ['file'],
+					workflow: ['inspect', 'read'],
+				},
+				fix: 'ascend list <file> --json',
+			},
+			{
+				argv: ['find', TEST_FILE, '--json'] as const,
+				message: 'Missing required find input',
+				details: {
+					command: 'find',
+					required: ['file', 'query'],
+					missing: ['query'],
+					workflow: ['inspect', 'read'],
+				},
+				fix: 'ascend find <file> <query> --sheet <name> --json',
+			},
+			{
+				argv: ['formula', 'show', TEST_FILE, '--json'] as const,
+				message: 'Missing required formula show input',
+				details: {
+					command: 'formula show',
+					required: ['file', 'cell'],
+					missing: ['cell'],
+					workflow: ['inspect', 'read', 'plan'],
+				},
+				fix: 'ascend formula show <file> <sheet!cell> --json',
+			},
+		]
+
+		for (const entry of cases) {
+			const result = await run(...entry.argv)
+			expect(result.exitCode).toBe(1)
+			const parsed = JSON.parse(result.stdout)
+			expect(parsed.ok).toBe(false)
+			expect(parsed.error).toMatchObject({
+				code: 'INVALID_ARGUMENT',
+				message: entry.message,
+				retryable: true,
+				retryStrategy: 'modified',
+				details: entry.details,
+			})
+			expect(parsed.error.suggestedFix).toContain(entry.fix)
+		}
+	})
+
 	test('dump --json emits a replayable operation batch', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([
@@ -2348,6 +2407,12 @@ describe('ascend cli', () => {
 		const { exitCode, stdout } = await run('list', TEST_FILE)
 		expect(exitCode).toBe(0)
 		expect(stdout).toContain('MySheet')
+
+		const json = await run('list', TEST_FILE, '--json')
+		expect(json.exitCode).toBe(0)
+		const parsed = JSON.parse(json.stdout)
+		expect(parsed.ok).toBe(true)
+		expect(parsed.data.sheets.map((sheet: { name: string }) => sheet.name)).toContain('MySheet')
 	})
 
 	test('find searches for values', async () => {

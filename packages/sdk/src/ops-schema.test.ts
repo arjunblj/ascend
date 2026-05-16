@@ -144,6 +144,55 @@ describe('operation schema agent DX', () => {
 		}
 	})
 
+	test('setProtectedRange separates plaintext passwords from preserved metadata', () => {
+		const schema = getOperationsSchema().find((entry) => entry.op === 'setProtectedRange')
+		expect(schema?.schema.properties.sqref?.description).toContain('Worksheet-local')
+		expect(schema?.schema.properties.password?.description).toContain('legacy')
+		expect(schema?.schema.properties.passwordPlaintext?.description).toContain('Plaintext')
+
+		const parsed = parseOperations([
+			{
+				op: 'setProtectedRange',
+				sheet: 'Sheet1',
+				name: 'Editable',
+				sqref: 'B2:B20',
+				passwordPlaintext: 'review',
+			},
+			{
+				op: 'setProtectedRange',
+				sheet: 'Sheet1',
+				sqref: 'C:C',
+				password: '83AF',
+				algorithmName: 'SHA-512',
+				hashValue: 'hash',
+				saltValue: 'salt',
+				spinCount: 100000,
+			},
+			{ op: 'deleteProtectedRange', sheet: 'Sheet1', name: 'Editable' },
+		])
+		expect(parsed.ok).toBe(true)
+
+		const mixed = parseOperations([
+			{
+				op: 'setProtectedRange',
+				sheet: 'Sheet1',
+				sqref: 'B2:B20',
+				passwordPlaintext: 'review',
+				password: '83AF',
+			},
+		])
+		expect(mixed.ok).toBe(false)
+		if (!mixed.ok) {
+			expect(mixed.issues[0]).toContain('cannot both be provided')
+		}
+
+		const deleteWithoutSelector = parseOperations([{ op: 'deleteProtectedRange', sheet: 'Sheet1' }])
+		expect(deleteWithoutSelector.ok).toBe(false)
+		if (!deleteWithoutSelector.ok) {
+			expect(deleteWithoutSelector.issues[0]).toContain('requires name or sqref')
+		}
+	})
+
 	test('setWorkbookProtection separates plaintext passwords from preserved legacy hashes', () => {
 		const schema = getOperationsSchema().find((entry) => entry.op === 'setWorkbookProtection')
 		expect(schema?.schema.properties.protection?.description).toContain('workbookPasswordPlaintext')

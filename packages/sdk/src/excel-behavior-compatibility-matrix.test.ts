@@ -7,7 +7,7 @@ const MATRIX_PATH = 'docs/EXCEL_BEHAVIOR_COMPATIBILITY_MATRIX.md'
 const EXPECTED_SURFACES = [
 	'Existing cells, sheet names, dimensions, styles, merges, panes, row/column sizing, workbook views, doc properties',
 	'Formula text, shared formulas, legacy arrays, data tables, formula binding metadata, calc settings and calcChain invalidation',
-	'Tables, structured references, defined names, validations, conditional formatting, filters, hyperlinks, comments, sheet/workbook protection metadata',
+	'Tables, structured references, defined names, validations, conditional formatting, filters, hyperlinks, comments, sheet/workbook/protected-range protection metadata',
 	'Charts, chart sheets, drawings, images, VML, media, visual sidecars',
 	'Pivot tables, pivot caches, slicers, timelines, data model, GETPIVOTDATA-facing output',
 	'Macros, Excel 4 macro sheets, ActiveX, form controls, custom UI callbacks, vendor security parts',
@@ -62,7 +62,7 @@ describe('Excel behavior compatibility matrix', () => {
 		expect(markdown).toContain('1 public unknown-path-family fixture')
 		expect(markdown).toContain('no public signed-workbook candidate found')
 		expect(markdown).toContain('does not echo the password in returned plan JSON')
-		expect(markdown).toContain('sheet/workbook-protection plaintext operation input')
+		expect(markdown).toContain('sheet/workbook/protected-range plaintext operation input')
 		expect(markdown).toContain('without storing the plaintext')
 
 		for (const row of rows) {

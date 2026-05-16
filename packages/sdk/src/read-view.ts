@@ -475,6 +475,7 @@ export class WorkbookReadView {
 			drawingRefs: cellsHydrated ? { ...sheet.drawingRefs } : null,
 			autoFilter: cellsHydrated ? sheet.autoFilter : null,
 			protection: cellsHydrated ? sheet.protection : null,
+			protectedRanges: cellsHydrated ? sheet.protectedRanges.map((range) => ({ ...range })) : null,
 			tabColor: cellsHydrated ? sheet.tabColor : null,
 			sheetFormatPr: cellsHydrated ? sheet.sheetFormatPr : null,
 			pageMargins: cellsHydrated ? sheet.pageMargins : null,

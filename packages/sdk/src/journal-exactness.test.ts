@@ -87,6 +87,8 @@ const REQUIRED_JOURNAL_OPERATIONS: readonly MutationJournalOperationName[] = [
 	'setAutoFilter',
 	'clearAutoFilter',
 	'setSheetProtection',
+	'setProtectedRange',
+	'deleteProtectedRange',
 	'setTabColor',
 	'hideSheet',
 	'hideRows',

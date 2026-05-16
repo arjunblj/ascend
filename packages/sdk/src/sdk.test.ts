@@ -110,6 +110,31 @@ describe('AscendWorkbook', () => {
 		expect(reopenedJson).not.toContain('revisionsPasswordPlaintext')
 	})
 
+	test('writes protected ranges from plaintext as legacy Excel hashes', async () => {
+		const wb = Ascend.create()
+		const result = wb.apply([
+			{
+				op: 'setSheetProtection',
+				sheet: 'Sheet1',
+				passwordPlaintext: 'review',
+			},
+			{
+				op: 'setProtectedRange',
+				sheet: 'Sheet1',
+				name: 'Editable',
+				sqref: 'B2:B20',
+				passwordPlaintext: 'password',
+			},
+		])
+		expect(result.errors).toEqual([])
+
+		const reopened = await Ascend.open(wb.toBytes())
+		expect(reopened.getWorkbookModel().sheets[0]?.protectedRanges).toEqual([
+			{ name: 'Editable', sqref: 'B2:B20', password: '83AF' },
+		])
+		expect(JSON.stringify(reopened.getWorkbookModel())).not.toContain('passwordPlaintext')
+	})
+
 	test('create returns an empty workbook with one sheet', () => {
 		const wb = AscendWorkbook.create()
 		expect(wb.sheets).toEqual(['Sheet1'])

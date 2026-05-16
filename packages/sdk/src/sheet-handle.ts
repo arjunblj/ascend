@@ -9,6 +9,7 @@ import type {
 	SheetFormatPr,
 	SheetHyperlink,
 	SheetImageRef,
+	SheetProtectedRange,
 	SheetProtection,
 	SheetTabColor,
 	StyleId,
@@ -491,6 +492,10 @@ export class SheetHandle {
 
 	get protection(): SheetProtection | null {
 		return this.requireSheet().protection
+	}
+
+	get protectedRanges(): readonly SheetProtectedRange[] {
+		return this.requireSheet().protectedRanges
 	}
 
 	get conditionalFormats(): readonly SheetConditionalFormat[] {

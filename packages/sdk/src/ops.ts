@@ -187,6 +187,31 @@ const FIELD_SCHEMAS: Record<
 		description:
 			'Plaintext sheet-protection password. Ascend writes the Excel legacy hash and does not store this value.',
 	},
+	sqref: {
+		type: 'string',
+		description:
+			'Worksheet-local sqref range list, such as A1:B10 or A1:A5 C:C. Do not include a sheet name.',
+	},
+	algorithmName: {
+		type: 'string',
+		description: 'Existing Excel protected-range strong-hash algorithm metadata to preserve.',
+	},
+	hashValue: {
+		type: 'string',
+		description: 'Existing Excel protected-range strong-hash value metadata to preserve.',
+	},
+	saltValue: {
+		type: 'string',
+		description: 'Existing Excel protected-range salt metadata to preserve.',
+	},
+	spinCount: {
+		type: 'number',
+		description: 'Existing Excel protected-range hash spin count metadata to preserve.',
+	},
+	securityDescriptor: {
+		type: 'string',
+		description: 'Existing Excel protected-range security descriptor metadata to preserve.',
+	},
 	options: {
 		type: 'object',
 		description:
@@ -489,6 +514,28 @@ export function listOperations(): readonly OperationSchema[] {
 			description: 'Protect a sheet',
 			requiredFields: ['sheet'],
 			optionalFields: ['passwordPlaintext', 'password', 'options'],
+		},
+		{
+			op: 'setProtectedRange',
+			description:
+				'Create or replace an Excel protected range; plaintext passwords are written as legacy hashes and not stored.',
+			requiredFields: ['sheet', 'sqref'],
+			optionalFields: [
+				'name',
+				'passwordPlaintext',
+				'password',
+				'algorithmName',
+				'hashValue',
+				'saltValue',
+				'spinCount',
+				'securityDescriptor',
+			],
+		},
+		{
+			op: 'deleteProtectedRange',
+			description: 'Delete an Excel protected range by name or exact worksheet-local sqref',
+			requiredFields: ['sheet'],
+			optionalFields: ['name', 'sqref'],
 		},
 		{ op: 'setTabColor', description: 'Set sheet tab color', requiredFields: ['sheet', 'color'] },
 		{
@@ -932,6 +979,10 @@ function validateOperationSemantics(
 			return validateSetTimelineRange(record, path)
 		case 'setSheetProtection':
 			return validateSetSheetProtection(record, path)
+		case 'setProtectedRange':
+			return validateSetProtectedRange(record, path)
+		case 'deleteProtectedRange':
+			return validateDeleteProtectedRange(record, path)
 		case 'setWorkbookProtection':
 			return validateSetWorkbookProtection(record, path)
 		default:
@@ -957,6 +1008,54 @@ function validateSetSheetProtection(
 		return [
 			`${path}.password must be a 1-4 digit Excel legacy hash; use passwordPlaintext for caller-provided passwords`,
 		]
+	}
+	return []
+}
+
+function validateSetProtectedRange(
+	record: Record<string, unknown>,
+	path: string,
+): readonly string[] {
+	const issues: string[] = []
+	const sqref = record.sqref
+	if (typeof sqref === 'string' && sqref.includes('!')) {
+		issues.push(`${path}.sqref must be worksheet-local and must not include a sheet name`)
+	}
+	if ('password' in record && 'passwordPlaintext' in record) {
+		issues.push(
+			`${path}.password and ${path}.passwordPlaintext cannot both be provided for setProtectedRange`,
+		)
+	}
+	const password = record.password
+	if (
+		password !== undefined &&
+		typeof password === 'string' &&
+		!/^[0-9A-Fa-f]{1,4}$/.test(password)
+	) {
+		issues.push(
+			`${path}.password must be a 1-4 digit Excel legacy hash; use passwordPlaintext for caller-provided passwords`,
+		)
+	}
+	const spinCount = record.spinCount
+	if (
+		spinCount !== undefined &&
+		typeof spinCount === 'number' &&
+		(!Number.isInteger(spinCount) || spinCount < 0 || !Number.isFinite(spinCount))
+	) {
+		issues.push(`${path}.spinCount must be a non-negative integer`)
+	}
+	return issues
+}
+
+function validateDeleteProtectedRange(
+	record: Record<string, unknown>,
+	path: string,
+): readonly string[] {
+	const hasName = hasNonEmptyString(record.name)
+	const hasSqref = hasNonEmptyString(record.sqref)
+	if (!hasName && !hasSqref) return [`${path} requires name or sqref for deleteProtectedRange`]
+	if (typeof record.sqref === 'string' && record.sqref.includes('!')) {
+		return [`${path}.sqref must be worksheet-local and must not include a sheet name`]
 	}
 	return []
 }
@@ -1748,6 +1847,10 @@ function operationExample(op: string): Record<string, unknown> {
 			return { op, sheet: 'Sheet1' }
 		case 'setSheetProtection':
 			return { op, sheet: 'Sheet1', passwordPlaintext: 'review', options: { formatCells: false } }
+		case 'setProtectedRange':
+			return { op, sheet: 'Sheet1', sqref: 'B2:B20', name: 'Editable', passwordPlaintext: 'review' }
+		case 'deleteProtectedRange':
+			return { op, sheet: 'Sheet1', name: 'Editable' }
 		case 'setTabColor':
 			return { op, sheet: 'Sheet1', color: '#4472C4' }
 		case 'hideSheet':

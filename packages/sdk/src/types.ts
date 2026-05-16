@@ -21,6 +21,7 @@ import type {
 	SheetPageMargins,
 	SheetPageSetup,
 	SheetPrintOptions,
+	SheetProtectedRange,
 	SheetProtection,
 	SheetSparklineGroupInfo,
 	SheetState,
@@ -916,6 +917,7 @@ export interface SheetInspectInfo extends SheetInfo {
 	readonly drawingRefs: SheetDrawingRefs | null
 	readonly autoFilter: AutoFilter | null
 	readonly protection: SheetProtection | null
+	readonly protectedRanges: readonly SheetProtectedRange[] | null
 	readonly tabColor: SheetTabColor | null
 	readonly sheetFormatPr: SheetFormatPr | null
 	readonly pageMargins: SheetPageMargins | null

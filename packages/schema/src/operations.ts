@@ -358,6 +358,25 @@ export type Operation =
 			readonly options?: SheetProtectionOptions
 	  }
 	| {
+			readonly op: 'setProtectedRange'
+			readonly sheet: string
+			readonly sqref: string
+			readonly name?: string
+			readonly passwordPlaintext?: string
+			readonly password?: string
+			readonly algorithmName?: string
+			readonly hashValue?: string
+			readonly saltValue?: string
+			readonly spinCount?: number
+			readonly securityDescriptor?: string
+	  }
+	| {
+			readonly op: 'deleteProtectedRange'
+			readonly sheet: string
+			readonly name?: string
+			readonly sqref?: string
+	  }
+	| {
 			readonly op: 'setTabColor'
 			readonly sheet: string
 			readonly color: string

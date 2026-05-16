@@ -63,6 +63,8 @@ const handlers: Record<string, OperationHandler> = {
 	hideSheet: sheetOps.handleHideSheet as OperationHandler,
 	setTabColor: sheetOps.handleSetTabColor as OperationHandler,
 	setSheetProtection: sheetOps.handleSetSheetProtection as OperationHandler,
+	setProtectedRange: sheetOps.handleSetProtectedRange as OperationHandler,
+	deleteProtectedRange: sheetOps.handleDeleteProtectedRange as OperationHandler,
 	freezePane: sheetOps.handleFreezePane as OperationHandler,
 	setColWidth: sheetOps.handleSetColWidth as OperationHandler,
 	setRowHeight: sheetOps.handleSetRowHeight as OperationHandler,

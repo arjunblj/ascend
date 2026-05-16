@@ -2098,6 +2098,8 @@ function operationChangesSheetMetadata(op: Operation): boolean {
 		case 'hideSheet':
 		case 'setTabColor':
 		case 'setSheetProtection':
+		case 'setProtectedRange':
+		case 'deleteProtectedRange':
 		case 'freezePane':
 		case 'setColWidth':
 		case 'setRowHeight':

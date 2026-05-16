@@ -4,7 +4,9 @@ import {
 	createTableId,
 	hashLegacyProtectionPassword,
 	parseA1,
+	parseSqref,
 	type Sheet,
+	type SheetProtectedRange,
 	type Table,
 	toA1,
 	type Workbook,
@@ -386,6 +388,57 @@ export function handleSetSheetProtection(
 	return ok(patch([], [op.sheet]))
 }
 
+export function handleSetProtectedRange(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'setProtectedRange' }>,
+): Result<PatchResult> {
+	const validation = validateProtectedRangeInput(op)
+	if (validation) return err(validation)
+	const sheetResult = getSheet(workbook, op.sheet)
+	if (!sheetResult.ok) return sheetResult
+	const sheet = sheetResult.value
+	sheet.ensureWritable()
+	const range: SheetProtectedRange = {
+		sqref: op.sqref,
+		...(op.name !== undefined ? { name: op.name } : {}),
+		...(op.passwordPlaintext !== undefined
+			? { password: hashLegacyProtectionPassword(op.passwordPlaintext) }
+			: {}),
+		...(op.password !== undefined ? { password: op.password } : {}),
+		...(op.algorithmName !== undefined ? { algorithmName: op.algorithmName } : {}),
+		...(op.hashValue !== undefined ? { hashValue: op.hashValue } : {}),
+		...(op.saltValue !== undefined ? { saltValue: op.saltValue } : {}),
+		...(op.spinCount !== undefined ? { spinCount: op.spinCount } : {}),
+		...(op.securityDescriptor !== undefined ? { securityDescriptor: op.securityDescriptor } : {}),
+	}
+	const existingIndex = findProtectedRangeIndex(sheet.protectedRanges, op)
+	if (existingIndex >= 0) sheet.protectedRanges.splice(existingIndex, 1, range)
+	else sheet.protectedRanges.push(range)
+	return ok(patch([], [op.sheet]))
+}
+
+export function handleDeleteProtectedRange(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'deleteProtectedRange' }>,
+): Result<PatchResult> {
+	const validation = validateProtectedRangeDeleteInput(op)
+	if (validation) return err(validation)
+	const sheetResult = getSheet(workbook, op.sheet)
+	if (!sheetResult.ok) return sheetResult
+	const sheet = sheetResult.value
+	sheet.ensureWritable()
+	const existingIndex = findProtectedRangeIndex(sheet.protectedRanges, op)
+	if (existingIndex < 0) {
+		return err(
+			ascendError('VALIDATION_ERROR', 'deleteProtectedRange target was not found', {
+				suggestedFix: 'Provide the protected range name or exact sqref from inspect/model output.',
+			}),
+		)
+	}
+	sheet.protectedRanges.splice(existingIndex, 1)
+	return ok(patch([], [op.sheet]))
+}
+
 function validateSheetProtectionInput(op: Extract<Operation, { op: 'setSheetProtection' }>) {
 	if (op.password !== undefined && typeof op.password !== 'string') {
 		return ascendError('VALIDATION_ERROR', 'setSheetProtection password must be a string', {
@@ -434,6 +487,140 @@ function validateSheetProtectionInput(op: Extract<Operation, { op: 'setSheetProt
 		}
 	}
 	return null
+}
+
+function validateProtectedRangeInput(op: Extract<Operation, { op: 'setProtectedRange' }>) {
+	if (typeof op.sqref !== 'string' || op.sqref.trim().length === 0) {
+		return ascendError('VALIDATION_ERROR', 'setProtectedRange sqref must be a non-empty string', {
+			suggestedFix: 'Use a worksheet-local sqref such as A1:B10 or C:C.',
+		})
+	}
+	try {
+		const ranges = parseSqref(op.sqref)
+		if (ranges.length === 0 || ranges.some((range) => range.sheet !== undefined)) {
+			return ascendError(
+				'VALIDATION_ERROR',
+				'setProtectedRange sqref must contain worksheet-local ranges',
+				{
+					suggestedFix: 'Omit sheet names from protected range sqref values.',
+				},
+			)
+		}
+	} catch {
+		return ascendError('VALIDATION_ERROR', 'setProtectedRange sqref must be a valid sqref', {
+			suggestedFix: 'Use one or more A1 ranges separated by spaces, such as A1:B10 D:D.',
+		})
+	}
+	if (op.name !== undefined && (typeof op.name !== 'string' || op.name.trim().length === 0)) {
+		return ascendError('VALIDATION_ERROR', 'setProtectedRange name must be a non-empty string', {
+			suggestedFix: 'Use a stable protected range name, or omit name and match by sqref.',
+		})
+	}
+	const passwordIssue = validateProtectedRangePasswordFields(op)
+	if (passwordIssue) return passwordIssue
+	const scalarIssue = validateProtectedRangeScalars('setProtectedRange', op)
+	if (scalarIssue) return scalarIssue
+	return null
+}
+
+function validateProtectedRangeDeleteInput(op: Extract<Operation, { op: 'deleteProtectedRange' }>) {
+	const hasName = typeof op.name === 'string' && op.name.trim().length > 0
+	const hasSqref = typeof op.sqref === 'string' && op.sqref.trim().length > 0
+	if (!hasName && !hasSqref) {
+		return ascendError('VALIDATION_ERROR', 'deleteProtectedRange requires name or sqref', {
+			suggestedFix: 'Provide the protected range name or exact sqref from inspect/model output.',
+		})
+	}
+	if (op.name !== undefined && !hasName) {
+		return ascendError('VALIDATION_ERROR', 'deleteProtectedRange name must be a non-empty string', {
+			suggestedFix: 'Use a protected range name, or omit name and match by sqref.',
+		})
+	}
+	if (op.sqref !== undefined) {
+		try {
+			const ranges = parseSqref(op.sqref)
+			if (!hasSqref || ranges.length === 0 || ranges.some((range) => range.sheet !== undefined)) {
+				return ascendError(
+					'VALIDATION_ERROR',
+					'deleteProtectedRange sqref must contain worksheet-local ranges',
+					{
+						suggestedFix: 'Use the worksheet-local sqref from inspect/model output.',
+					},
+				)
+			}
+		} catch {
+			return ascendError('VALIDATION_ERROR', 'deleteProtectedRange sqref must be a valid sqref', {
+				suggestedFix: 'Use one or more A1 ranges separated by spaces, such as A1:B10 D:D.',
+			})
+		}
+	}
+	return null
+}
+
+function validateProtectedRangePasswordFields(op: Extract<Operation, { op: 'setProtectedRange' }>) {
+	if (op.password !== undefined && typeof op.password !== 'string') {
+		return ascendError('VALIDATION_ERROR', 'setProtectedRange password must be a string', {
+			suggestedFix: 'Use a string legacy hash value or omit password.',
+		})
+	}
+	if (op.passwordPlaintext !== undefined && typeof op.passwordPlaintext !== 'string') {
+		return ascendError('VALIDATION_ERROR', 'setProtectedRange passwordPlaintext must be a string', {
+			suggestedFix: 'Use a string plaintext password or omit passwordPlaintext.',
+		})
+	}
+	if (op.password !== undefined && op.passwordPlaintext !== undefined) {
+		return ascendError(
+			'VALIDATION_ERROR',
+			'setProtectedRange cannot mix password and passwordPlaintext',
+			{
+				suggestedFix:
+					'Use passwordPlaintext to hash a caller-provided password, or password to preserve an existing legacy hash.',
+			},
+		)
+	}
+	if (op.password !== undefined && !/^[0-9A-Fa-f]{1,4}$/.test(op.password)) {
+		return ascendError('VALIDATION_ERROR', 'setProtectedRange password must be a legacy hash', {
+			suggestedFix:
+				'Use a 1-4 digit hexadecimal legacy hash, or use passwordPlaintext to hash a password.',
+		})
+	}
+	return null
+}
+
+function validateProtectedRangeScalars(
+	opName: 'setProtectedRange',
+	op: Extract<Operation, { op: 'setProtectedRange' }>,
+) {
+	for (const field of ['algorithmName', 'hashValue', 'saltValue', 'securityDescriptor'] as const) {
+		if (op[field] !== undefined && typeof op[field] !== 'string') {
+			return ascendError('VALIDATION_ERROR', `${opName} ${field} must be a string`, {
+				suggestedFix: `Use a string ${field} value or omit it.`,
+			})
+		}
+	}
+	if (
+		op.spinCount !== undefined &&
+		(!Number.isInteger(op.spinCount) || op.spinCount < 0 || !Number.isFinite(op.spinCount))
+	) {
+		return ascendError('VALIDATION_ERROR', `${opName} spinCount must be a non-negative integer`, {
+			suggestedFix: 'Use the existing Excel spinCount integer or omit spinCount.',
+		})
+	}
+	return null
+}
+
+function findProtectedRangeIndex(
+	ranges: readonly SheetProtectedRange[],
+	selector: { readonly name?: string; readonly sqref?: string },
+): number {
+	if (selector.name !== undefined) {
+		const byName = ranges.findIndex((range) => range.name === selector.name)
+		if (byName >= 0) return byName
+	}
+	if (selector.sqref !== undefined) {
+		return ranges.findIndex((range) => range.sqref === selector.sqref)
+	}
+	return -1
 }
 
 const SHEET_PROTECTION_OPTION_FIELDS = [

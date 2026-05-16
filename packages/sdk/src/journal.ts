@@ -28,6 +28,7 @@ import {
 	type SheetOutlinePr,
 	type SheetPageMargins,
 	type SheetPageSetup,
+	type SheetProtectedRange,
 	type SheetProtection,
 	type SheetRowDef,
 	type SheetState,
@@ -915,6 +916,8 @@ export const MUTATION_JOURNAL_OPERATION_SURFACE_RULES = {
 	setAutoFilter: { primarySurface: 'auto-filters', surfaces: ['auto-filters'] },
 	clearAutoFilter: { primarySurface: 'auto-filters', surfaces: ['auto-filters'] },
 	setSheetProtection: { primarySurface: 'sheet-layout', surfaces: ['sheet-layout'] },
+	setProtectedRange: { primarySurface: 'sheet-layout', surfaces: ['sheet-layout'] },
+	deleteProtectedRange: { primarySurface: 'sheet-layout', surfaces: ['sheet-layout'] },
 	setTabColor: { primarySurface: 'sheet-layout', surfaces: ['sheet-layout'] },
 	hideSheet: { primarySurface: 'sheet-layout', surfaces: ['sheet-layout'] },
 	hideRows: { primarySurface: 'row-layout', surfaces: ['row-layout'] },
@@ -1504,6 +1507,15 @@ export interface MutationJournalSheetProtectionPreimage {
 	readonly protection: SheetProtection | null
 }
 
+export interface MutationJournalProtectedRangePreimage {
+	readonly sheet: string
+	readonly selector: {
+		readonly name?: string
+		readonly sqref?: string
+	}
+	readonly range: SheetProtectedRange | null
+}
+
 export interface MutationJournalSheetVisibilityPreimage {
 	readonly sheet: string
 	readonly state: SheetState | null
@@ -1616,6 +1628,10 @@ export type MutationJournalPreimage =
 	| {
 			readonly kind: 'sheet-protection'
 			readonly sheetProtection: MutationJournalSheetProtectionPreimage
+	  }
+	| {
+			readonly kind: 'protected-range'
+			readonly protectedRange: MutationJournalProtectedRangePreimage
 	  }
 	| {
 			readonly kind: 'sheet-visibility'
@@ -3063,6 +3079,10 @@ function buildSupportedJournalEntry(
 			return journalSetTabColor(workbook, op, opIndex)
 		case 'setSheetProtection':
 			return journalSetSheetProtection(workbook, op, opIndex)
+		case 'setProtectedRange':
+			return journalSetProtectedRange(workbook, op, opIndex)
+		case 'deleteProtectedRange':
+			return journalDeleteProtectedRange(workbook, op, opIndex)
 		case 'hideSheet':
 			return journalHideSheet(workbook, op, opIndex)
 		case 'hideRows':
@@ -3221,6 +3241,171 @@ function sheetProtectionValueIssues(
 	return issues
 }
 
+function protectedRangeSetValueIssues(
+	op: Extract<Operation, { op: 'setProtectedRange' }>,
+): MutationJournalIssue[] {
+	const issues: MutationJournalIssue[] = []
+	if (typeof op.sqref !== 'string' || op.sqref.trim().length === 0) {
+		issues.push(protectedRangeUnsupportedValueIssue(op.sheet, 'sqref'))
+	}
+	if (op.name !== undefined && (typeof op.name !== 'string' || op.name.trim().length === 0)) {
+		issues.push(protectedRangeUnsupportedValueIssue(op.sheet, 'name'))
+	}
+	if (op.password !== undefined && typeof op.password !== 'string') {
+		issues.push(protectedRangeUnsupportedValueIssue(op.sheet, 'password'))
+	}
+	if (op.passwordPlaintext !== undefined && typeof op.passwordPlaintext !== 'string') {
+		issues.push(protectedRangeUnsupportedValueIssue(op.sheet, 'passwordPlaintext'))
+	}
+	if (op.password !== undefined && op.passwordPlaintext !== undefined) {
+		issues.push(protectedRangeUnsupportedValueIssue(op.sheet, 'password+passwordPlaintext'))
+	}
+	if (
+		typeof op.password === 'string' &&
+		op.password !== undefined &&
+		!/^[0-9A-Fa-f]{1,4}$/.test(op.password)
+	) {
+		issues.push(protectedRangeUnsupportedValueIssue(op.sheet, 'password'))
+	}
+	for (const field of ['algorithmName', 'hashValue', 'saltValue', 'securityDescriptor'] as const) {
+		if (op[field] !== undefined && typeof op[field] !== 'string') {
+			issues.push(protectedRangeUnsupportedValueIssue(op.sheet, field))
+		}
+	}
+	if (
+		op.spinCount !== undefined &&
+		(!Number.isInteger(op.spinCount) || op.spinCount < 0 || !Number.isFinite(op.spinCount))
+	) {
+		issues.push(protectedRangeUnsupportedValueIssue(op.sheet, 'spinCount'))
+	}
+	return issues
+}
+
+function protectedRangeDeleteValueIssues(
+	op: Extract<Operation, { op: 'deleteProtectedRange' }>,
+): MutationJournalIssue[] {
+	const hasName = typeof op.name === 'string' && op.name.trim().length > 0
+	const hasSqref = typeof op.sqref === 'string' && op.sqref.trim().length > 0
+	if (!hasName && !hasSqref) return [protectedRangeUnsupportedValueIssue(op.sheet, 'selector')]
+	if (op.name !== undefined && !hasName) {
+		return [protectedRangeUnsupportedValueIssue(op.sheet, 'name')]
+	}
+	if (op.sqref !== undefined && !hasSqref) {
+		return [protectedRangeUnsupportedValueIssue(op.sheet, 'sqref')]
+	}
+	return []
+}
+
+function journalSetProtectedRange(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'setProtectedRange' }>,
+	opIndex: number,
+): DraftJournalEntry {
+	const sheet = workbook.getSheet(op.sheet)
+	const range = sheet ? findProtectedRange(sheet.protectedRanges, op) : null
+	const preimage: MutationJournalProtectedRangePreimage = {
+		sheet: op.sheet,
+		selector: protectedRangeSelector(op),
+		range: range ? cloneProtectedRange(range) : null,
+	}
+	if (!sheet) {
+		return {
+			opIndex,
+			op,
+			inverseOps: [],
+			preimages: [{ kind: 'protected-range', protectedRange: preimage }],
+			issues: [
+				missingSheetTopologyIssue(
+					op.sheet,
+					`Cannot restore protected range for ${op.sheet} because the sheet was not found`,
+				),
+			],
+		}
+	}
+	const valueIssues = protectedRangeSetValueIssues(op)
+	if (valueIssues.length > 0) {
+		return {
+			opIndex,
+			op,
+			inverseOps: [],
+			preimages: [{ kind: 'protected-range', protectedRange: preimage }],
+			issues: valueIssues,
+		}
+	}
+	const inverseOps: Operation[] = range
+		? [protectedRangeSetInverseOp(op.sheet, range)]
+		: [{ op: 'deleteProtectedRange', sheet: op.sheet, ...protectedRangeSelector(op) }]
+	return {
+		opIndex,
+		op,
+		inverseOps,
+		preimages: [{ kind: 'protected-range', protectedRange: preimage }],
+		issues: [],
+	}
+}
+
+function journalDeleteProtectedRange(
+	workbook: Workbook,
+	op: Extract<Operation, { op: 'deleteProtectedRange' }>,
+	opIndex: number,
+): DraftJournalEntry {
+	const sheet = workbook.getSheet(op.sheet)
+	const range = sheet ? findProtectedRange(sheet.protectedRanges, op) : null
+	const preimage: MutationJournalProtectedRangePreimage = {
+		sheet: op.sheet,
+		selector: protectedRangeSelector(op),
+		range: range ? cloneProtectedRange(range) : null,
+	}
+	if (!sheet) {
+		return {
+			opIndex,
+			op,
+			inverseOps: [],
+			preimages: [{ kind: 'protected-range', protectedRange: preimage }],
+			issues: [
+				missingSheetTopologyIssue(
+					op.sheet,
+					`Cannot restore protected range for ${op.sheet} because the sheet was not found`,
+				),
+			],
+		}
+	}
+	const valueIssues = protectedRangeDeleteValueIssues(op)
+	if (valueIssues.length > 0) {
+		return {
+			opIndex,
+			op,
+			inverseOps: [],
+			preimages: [{ kind: 'protected-range', protectedRange: preimage }],
+			issues: valueIssues,
+		}
+	}
+	if (!range) {
+		return {
+			opIndex,
+			op,
+			inverseOps: [],
+			preimages: [{ kind: 'protected-range', protectedRange: preimage }],
+			issues: [
+				{
+					code: 'LOSSY_INVERSE',
+					message: `Protected range for ${op.sheet} could not be found before deleteProtectedRange`,
+					surface: 'sheet-layout',
+					reason: 'sheet-topology',
+					refs: [`sheet:${op.sheet}:protectedRange`],
+				} satisfies MutationJournalIssue,
+			],
+		}
+	}
+	return {
+		opIndex,
+		op,
+		inverseOps: [protectedRangeSetInverseOp(op.sheet, range)],
+		preimages: [{ kind: 'protected-range', protectedRange: preimage }],
+		issues: [],
+	}
+}
+
 function sheetProtectionUnsupportedValueIssue(sheet: string, field: string): MutationJournalIssue {
 	return {
 		code: 'UNSUPPORTED_VALUE',
@@ -3228,6 +3413,16 @@ function sheetProtectionUnsupportedValueIssue(sheet: string, field: string): Mut
 		surface: 'sheet-layout',
 		reason: 'value-unsupported',
 		refs: [`sheet:${sheet}:protection:${field}`],
+	}
+}
+
+function protectedRangeUnsupportedValueIssue(sheet: string, field: string): MutationJournalIssue {
+	return {
+		code: 'UNSUPPORTED_VALUE',
+		message: `Cannot build exact rollback journal for protected range because ${field} is not supported by protected range validation`,
+		surface: 'sheet-layout',
+		reason: 'value-unsupported',
+		refs: [`sheet:${sheet}:protectedRange:${field}`],
 	}
 }
 
@@ -3817,6 +4012,53 @@ function cloneSheetTabColor(tabColor: SheetTabColor): SheetTabColor {
 
 function cloneSheetProtection(protection: SheetProtection): SheetProtection {
 	return { ...protection }
+}
+
+function cloneProtectedRange(range: SheetProtectedRange): SheetProtectedRange {
+	return { ...range }
+}
+
+function protectedRangeSelector(
+	op: Extract<Operation, { op: 'setProtectedRange' | 'deleteProtectedRange' }>,
+): { readonly name?: string; readonly sqref?: string } {
+	return {
+		...(op.name !== undefined ? { name: op.name } : {}),
+		...(op.sqref !== undefined ? { sqref: op.sqref } : {}),
+	}
+}
+
+function findProtectedRange(
+	ranges: readonly SheetProtectedRange[],
+	selector: { readonly name?: string; readonly sqref?: string },
+): SheetProtectedRange | null {
+	if (selector.name !== undefined) {
+		const byName = ranges.find((range) => range.name === selector.name)
+		if (byName) return byName
+	}
+	if (selector.sqref !== undefined) {
+		return ranges.find((range) => range.sqref === selector.sqref) ?? null
+	}
+	return null
+}
+
+function protectedRangeSetInverseOp(
+	sheet: string,
+	range: SheetProtectedRange,
+): Extract<Operation, { op: 'setProtectedRange' }> {
+	return {
+		op: 'setProtectedRange',
+		sheet,
+		sqref: range.sqref,
+		...(range.name !== undefined ? { name: range.name } : {}),
+		...(range.password !== undefined ? { password: range.password } : {}),
+		...(range.algorithmName !== undefined ? { algorithmName: range.algorithmName } : {}),
+		...(range.hashValue !== undefined ? { hashValue: range.hashValue } : {}),
+		...(range.saltValue !== undefined ? { saltValue: range.saltValue } : {}),
+		...(range.spinCount !== undefined ? { spinCount: range.spinCount } : {}),
+		...(range.securityDescriptor !== undefined
+			? { securityDescriptor: range.securityDescriptor }
+			: {}),
+	}
 }
 
 function tabColorIsPublicRgb(tabColor: SheetTabColor | null): boolean {

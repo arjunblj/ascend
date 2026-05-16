@@ -3023,6 +3023,108 @@ describe('applyOperation', () => {
 		expect(preserved.getSheet('Sheet1')?.protection?.password).toBe('CBEB')
 	})
 
+	test('setProtectedRange hashes plaintext passwords while preserving explicit metadata', () => {
+		const hashed = setup()
+		const hashedResult = applyOperation(hashed, {
+			op: 'setProtectedRange',
+			sheet: 'Sheet1',
+			name: 'Editable',
+			sqref: 'B2:B20',
+			passwordPlaintext: 'password',
+		})
+		expectOk(hashedResult)
+		expect(hashed.getSheet('Sheet1')?.protectedRanges).toEqual([
+			{ name: 'Editable', sqref: 'B2:B20', password: '83AF' },
+		])
+
+		const preserved = setup()
+		const preservedResult = applyOperation(preserved, {
+			op: 'setProtectedRange',
+			sheet: 'Sheet1',
+			name: 'Editable',
+			sqref: 'C:C',
+			password: 'CBEB',
+			algorithmName: 'SHA-512',
+			hashValue: 'hash',
+			saltValue: 'salt',
+			spinCount: 100000,
+			securityDescriptor: 'descriptor',
+		})
+		expectOk(preservedResult)
+		expect(preserved.getSheet('Sheet1')?.protectedRanges).toEqual([
+			{
+				name: 'Editable',
+				sqref: 'C:C',
+				password: 'CBEB',
+				algorithmName: 'SHA-512',
+				hashValue: 'hash',
+				saltValue: 'salt',
+				spinCount: 100000,
+				securityDescriptor: 'descriptor',
+			},
+		])
+	})
+
+	test('setProtectedRange replaces by name and deleteProtectedRange removes by selector', () => {
+		const wb = setup()
+		expectOk(
+			applyOperation(wb, {
+				op: 'setProtectedRange',
+				sheet: 'Sheet1',
+				name: 'Editable',
+				sqref: 'B2:B20',
+				password: '83AF',
+			}),
+		)
+		expectOk(
+			applyOperation(wb, {
+				op: 'setProtectedRange',
+				sheet: 'Sheet1',
+				name: 'Editable',
+				sqref: 'C:C',
+				password: 'CBEB',
+			}),
+		)
+		expect(wb.getSheet('Sheet1')?.protectedRanges).toEqual([
+			{ name: 'Editable', sqref: 'C:C', password: 'CBEB' },
+		])
+		expectOk(applyOperation(wb, { op: 'deleteProtectedRange', sheet: 'Sheet1', name: 'Editable' }))
+		expect(wb.getSheet('Sheet1')?.protectedRanges).toEqual([])
+	})
+
+	test('protected range operations reject invalid public metadata without mutation', () => {
+		const cases: readonly Operation[] = [
+			{ op: 'setProtectedRange', sheet: 'Sheet1', sqref: 'Sheet1!A1' },
+			{ op: 'setProtectedRange', sheet: 'Sheet1', sqref: 'A1:', password: '83AF' },
+			{ op: 'setProtectedRange', sheet: 'Sheet1', sqref: 'A1', name: '' },
+			{ op: 'setProtectedRange', sheet: 'Sheet1', sqref: 'A1', password: 'secret' },
+			{ op: 'setProtectedRange', sheet: 'Sheet1', sqref: 'A1', password: 123 as never },
+			{
+				op: 'setProtectedRange',
+				sheet: 'Sheet1',
+				sqref: 'A1',
+				password: '83AF',
+				passwordPlaintext: 'secret',
+			},
+			{ op: 'setProtectedRange', sheet: 'Sheet1', sqref: 'A1', spinCount: -1 },
+			{ op: 'deleteProtectedRange', sheet: 'Sheet1' },
+			{ op: 'deleteProtectedRange', sheet: 'Sheet1', sqref: 'Sheet1!A1' },
+			{ op: 'deleteProtectedRange', sheet: 'Sheet1', name: '' },
+		]
+
+		for (const op of cases) {
+			const wb = setup()
+			const sheet = wb.getSheet('Sheet1')
+			if (!sheet) throw new Error('missing sheet')
+			sheet.protectedRanges = [{ name: 'Editable', sqref: 'C:C', password: '1234' }]
+			const before = JSON.stringify(sheet.protectedRanges)
+			const result = applyOperation(wb, op)
+			expectErr(result)
+			expect(result.error.code, JSON.stringify(op)).toBe('VALIDATION_ERROR')
+			expect(JSON.stringify(sheet.protectedRanges), JSON.stringify(op)).toBe(before)
+		}
+	})
+
 	test('copyRange copies values and translates relative formulas', () => {
 		const wb = setup()
 		const sheet = wb.getSheet('Sheet1')

@@ -1055,7 +1055,7 @@ describe('release proof evidence index', () => {
 					path: 'docs/EXCEL_BEHAVIOR_COMPATIBILITY_MATRIX.md',
 					decision: expect.stringContaining('protection metadata'),
 					forbiddenShortcut: expect.stringContaining(
-						'worksheet/workbook protection as file security',
+						'worksheet/workbook/protected-range protection as file security',
 					),
 				}),
 				expect.objectContaining({

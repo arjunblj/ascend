@@ -921,6 +921,10 @@ describe('release proof evidence index', () => {
 					boundary: expect.stringContaining('API request-shape diagnostics only'),
 				}),
 				expect.objectContaining({
+					evidenceId: 'api-open-workflow-reference-proof',
+					acceptedScope: expect.stringContaining('8ce0fbe2'),
+				}),
+				expect.objectContaining({
 					evidenceId: 'mcp-open-workflow-reference-proof',
 					acceptedScope: expect.stringContaining('da273900'),
 					command:

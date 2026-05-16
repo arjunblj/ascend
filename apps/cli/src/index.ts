@@ -196,6 +196,7 @@ const COMMANDS: Record<string, Command> = {
 }
 
 const GLOBAL_FLAGS = new Set(['help', 'h', 'version', 'v'])
+const AGENT_WORKFLOW = ['inspect', 'plan', 'commit', 'reopen', 'verify'] as const
 const BOOLEAN_FLAGS = new Set([
 	'help',
 	'h',
@@ -281,7 +282,14 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
 			console.log(
 				jsonErr(
 					ascendError('INVALID_ARGUMENT', `Unknown command: ${command}`, {
-						...(suggestion ? { details: { suggestion } } : {}),
+						retryable: true,
+						retryStrategy: 'modified',
+						details: {
+							command,
+							availableCommands: Object.keys(COMMANDS).sort(),
+							workflow: AGENT_WORKFLOW,
+							...(suggestion ? { suggestion } : {}),
+						},
 						suggestedFix: suggestion
 							? `Run "ascend ${suggestion} --help".`
 							: 'Run "ascend --help" for usage.',
@@ -311,7 +319,16 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
 			console.log(
 				jsonErr(
 					ascendError('INVALID_ARGUMENT', `Unknown flag for "${command}": --${invalid}`, {
-						...(suggestion ? { details: { suggestion } } : {}),
+						retryable: true,
+						retryStrategy: 'modified',
+						details: {
+							command,
+							flag: invalid,
+							allowedFlags: [...(cmd.allowedFlags ?? [])].sort(),
+							globalFlags: [...GLOBAL_FLAGS].sort(),
+							workflow: AGENT_WORKFLOW,
+							...(suggestion ? { suggestion } : {}),
+						},
 						suggestedFix: suggestion ? `Use "--${suggestion}".` : cmd.usage,
 					}),
 				),

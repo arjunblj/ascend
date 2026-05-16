@@ -224,7 +224,16 @@ describe('ascend cli', () => {
 		const parsed = JSON.parse(stdout)
 		expect(parsed.ok).toBe(false)
 		expect(parsed.error.code).toBe('INVALID_ARGUMENT')
-		expect(parsed.error.details.suggestion).toBe('inspect')
+		expect(parsed.error).toMatchObject({
+			retryable: true,
+			retryStrategy: 'modified',
+			details: {
+				command: 'inspcet',
+				suggestion: 'inspect',
+				workflow: ['inspect', 'plan', 'commit', 'reopen', 'verify'],
+			},
+		})
+		expect(parsed.error.details.availableCommands).toContain('inspect')
 	})
 
 	test('create makes a workbook file', async () => {
@@ -1641,6 +1650,28 @@ describe('ascend cli', () => {
 		expect(stderr).toContain('Did you mean "--sheet"?')
 	})
 
+	test('unknown inspect flag --json returns actionable retry details', async () => {
+		const { exitCode, stdout } = await run('inspect', TEST_FILE, '--shet', 'Sheet1', '--json')
+		expect(exitCode).toBe(1)
+		const parsed = JSON.parse(stdout)
+		expect(parsed.ok).toBe(false)
+		expect(parsed.error).toMatchObject({
+			code: 'INVALID_ARGUMENT',
+			message: 'Unknown flag for "inspect": --shet',
+			retryable: true,
+			retryStrategy: 'modified',
+			details: {
+				command: 'inspect',
+				flag: 'shet',
+				suggestion: 'sheet',
+				workflow: ['inspect', 'plan', 'commit', 'reopen', 'verify'],
+			},
+			suggestedFix: 'Use "--sheet".',
+		})
+		expect(parsed.error.details.allowedFlags).toContain('sheet')
+		expect(parsed.error.details.globalFlags).toContain('help')
+	})
+
 	test('inspect --mode full loads full workbook detail', async () => {
 		const { stdout, exitCode } = await run('inspect', TEST_FILE, '--mode', 'full', '--json')
 		expect(exitCode).toBe(0)
@@ -2421,6 +2452,27 @@ describe('ascend cli', () => {
 		const { exitCode, stderr } = await run('doctor', '--verbose')
 		expect(exitCode).toBe(1)
 		expect(stderr).toContain('Unknown flag for "doctor": --verbose')
+	})
+
+	test('doctor unsupported flag --json returns command flag details', async () => {
+		const { exitCode, stdout } = await run('doctor', '--verbose', '--json')
+		expect(exitCode).toBe(1)
+		const parsed = JSON.parse(stdout)
+		expect(parsed.ok).toBe(false)
+		expect(parsed.error).toMatchObject({
+			code: 'INVALID_ARGUMENT',
+			message: 'Unknown flag for "doctor": --verbose',
+			retryable: true,
+			retryStrategy: 'modified',
+			details: {
+				command: 'doctor',
+				flag: 'verbose',
+				allowedFlags: [],
+				workflow: ['inspect', 'plan', 'commit', 'reopen', 'verify'],
+			},
+		})
+		expect(parsed.error.details.globalFlags).toContain('help')
+		expect(parsed.error.suggestedFix).toContain('Usage: ascend doctor')
 	})
 
 	test('calc exits nonzero when recalculation reports errors', async () => {

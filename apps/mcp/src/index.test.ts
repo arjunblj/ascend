@@ -472,6 +472,7 @@ describe('MCP server', () => {
 		const registered = (server as any)._registeredTools as Record<string, unknown>
 		const names = Object.keys(registered)
 
+		expect(names).toContain('ascend.agent_workflow')
 		expect(names).toContain('ascend.open_plan')
 		expect(names).toContain('ascend.inspect')
 		expect(names).toContain('ascend.trust_report')
@@ -504,7 +505,54 @@ describe('MCP server', () => {
 		expect(names).toContain('ascend.plan')
 		expect(names).toContain('ascend.commit')
 		expect(names).toContain('ascend.repair_plan')
-		expect(names.length).toBe(32)
+		expect(names.length).toBe(33)
+	})
+
+	test('ascend.agent_workflow exposes machine-readable safe edit guidance', async () => {
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: accessing private MCP registry internals for behavior testing
+		const handler = (server as any)._registeredTools['ascend.agent_workflow'].handler as (
+			args: Record<string, never>,
+		) => Promise<{
+			structuredContent?: {
+				ok?: boolean
+				data?: {
+					workflow?: unknown[]
+					tools?: Record<string, string>
+					resources?: string[]
+					preparedHandles?: { scope?: string; oneShot?: boolean }
+				}
+			}
+		}>
+		const result = await handler({})
+
+		expect(result.structuredContent?.ok).toBe(true)
+		expect(result.structuredContent?.data?.tools).toMatchObject({
+			operations: 'ascend.list_operations',
+			openPlan: 'ascend.open_plan',
+			plan: 'ascend.plan',
+			commit: 'ascend.commit',
+			check: 'ascend.check',
+			lint: 'ascend.lint',
+		})
+		expect(result.structuredContent?.data?.resources).toContain('ascend://agent-workflow')
+		expect(result.structuredContent?.data?.preparedHandles).toMatchObject({
+			scope: 'process-local',
+			oneShot: true,
+		})
+		expect(result.structuredContent?.data?.workflow).toContainEqual(
+			expect.objectContaining({
+				step: 'plan',
+				tool: 'ascend.plan',
+				proof: expect.arrayContaining(['inputSha256', 'planDigest', 'preparedPlan']),
+			}),
+		)
+		expect(result.structuredContent?.data?.workflow).toContainEqual(
+			expect.objectContaining({
+				step: 'reopen-verify',
+				tools: expect.arrayContaining(['ascend.check', 'ascend.lint', 'ascend.diff']),
+			}),
+		)
 	})
 
 	test('agent resources and prompts are registered', () => {

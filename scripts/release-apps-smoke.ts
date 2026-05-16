@@ -225,9 +225,32 @@ function assertWorkbookResult(label, readResult, checkResult) {
 	return { b1, c1 }
 }
 
+function assertConnectionSchedulingOperationFields(label, operationsPayload) {
+	const expected = ['backgroundRefresh', 'keepAlive', 'refreshInterval']
+	const operation = operationsPayload.operations?.find((entry) => entry.op === 'setConnectionRefresh')
+	if (!operation) throw new Error(label + ' missing setConnectionRefresh operation schema')
+	for (const field of expected) {
+		if (!operation.optionalFields?.includes(field)) {
+			throw new Error(label + ' setConnectionRefresh missing optional field ' + field + ': ' + JSON.stringify(operation))
+		}
+	}
+	const schema = operationsPayload.schemas?.find((entry) => entry.op === 'setConnectionRefresh')
+	if (!schema) throw new Error(label + ' missing setConnectionRefresh JSON schema')
+	for (const field of expected) {
+		if (!schema.schema?.properties?.[field]) {
+			throw new Error(label + ' setConnectionRefresh missing JSON schema property ' + field + ': ' + JSON.stringify(schema))
+		}
+	}
+	return expected
+}
+
 const cliInput = join(cwd, 'cli-input.xlsx')
 const cliOutput = join(cwd, 'cli-output.xlsx')
 await runCliJson(['create', cliInput])
+const cliConnectionRefreshFields = assertConnectionSchedulingOperationFields(
+	'CLI',
+	await runCliJson(['ops', '--op', 'setConnectionRefresh']),
+)
 await runCliJson(['write', cliInput, '--ops', setupOpsPath])
 const cliOpenPlan = await runCliJson(['open-plan', cliInput])
 if (cliOpenPlan.recommendedLoadOptions?.mode !== 'full') {
@@ -406,6 +429,10 @@ const apiRead = await apiJson(apiFetch, '/read', {
 	range: 'B1:C1',
 })
 const apiValues = assertWorkbookResult('API', apiRead, apiCheck)
+const apiConnectionRefreshFields = assertConnectionSchedulingOperationFields(
+	'API',
+	await apiJson(apiFetch, '/operations', undefined, 'GET'),
+)
 
 const capabilitiesResponse = await apiFetch(new Request('http://ascend.local/capabilities'))
 const capabilities = await capabilitiesResponse.json()
@@ -499,6 +526,10 @@ const mcpRead = await mcpTool(tools, 'ascend.read', {
 	format: 'cells',
 })
 const mcpValues = assertWorkbookResult('MCP', mcpRead, mcpCheck)
+const mcpConnectionRefreshFields = assertConnectionSchedulingOperationFields(
+	'MCP',
+	await mcpTool(tools, 'ascend.list_operations', {}),
+)
 const mcpDocs = await mcpTool(tools, 'ascend.search_docs', { query: 'plan commit' })
 if (!Array.isArray(mcpDocs.results) || mcpDocs.results.length === 0) {
 	throw new Error('MCP installed docs search returned no hits')
@@ -600,6 +631,7 @@ console.log(JSON.stringify({
 			changedCells: cliSafeEdit.proofBundle.whatChanged.map((cell) => cell.ref),
 			postWriteProof: cliSafeEdit.postWriteProof,
 		},
+		connectionRefreshFields: cliConnectionRefreshFields,
 	},
 	api: {
 		createApiFetchExport: typeof createApiFetch,
@@ -616,6 +648,7 @@ console.log(JSON.stringify({
 		exampleContext: apiWorkflow.exampleContext,
 	},
 	apiCapabilities: capabilities.data.capabilities.length,
+	apiConnectionRefreshFields,
 	mcp: {
 		createServerExport: typeof createMcpServer,
 		openPlanMode: mcpOpenPlan.recommendedLoadOptions.mode,
@@ -631,6 +664,7 @@ console.log(JSON.stringify({
 		examples: mcpWorkflow.examples,
 		packageInstallExampleContext: mcpWorkflow.packageInstallExampleContext,
 		exampleContext: mcpWorkflow.exampleContext,
+		connectionRefreshFields: mcpConnectionRefreshFields,
 	},
 }))
 `,

@@ -909,6 +909,22 @@ describe('release proof evidence index', () => {
 			'safe-open-proof',
 			'package-action-proof',
 		])
+		for (const row of index.releaseDecisionBoard.rows) {
+			expect(row.evidenceWeHave.length).toBeGreaterThan(0)
+			expect(row.evidenceMissing.length).toBeGreaterThan(0)
+			expect(row.qssContrast.length).toBeGreaterThan(0)
+			expect(row.allowedWording.length).toBeGreaterThan(0)
+			expect(row.forbiddenWording.length).toBeGreaterThan(0)
+			expect(row.nextOwnerActions.length).toBeGreaterThan(0)
+			expect(row.claimsWeMustNotMake.length).toBeGreaterThan(0)
+			for (const ownerArtifact of row.ownerDecisionArtifacts) {
+				expect(ownerArtifact.path).toMatch(/^(docs|fixtures|packages|scripts)\//)
+				expect(ownerArtifact.validationCommand.length).toBeGreaterThan(0)
+				expect(ownerArtifact.decision.length).toBeGreaterThan(0)
+				expect(ownerArtifact.nextAction.length).toBeGreaterThan(0)
+				expect(ownerArtifact.forbiddenShortcut.length).toBeGreaterThan(0)
+			}
+		}
 		expect(index.releaseDecisionBoard.doNotPromoteYet.map((item) => item.name)).toEqual([
 			'formula-language-service-primitives',
 			'token-bounded-agent-view',

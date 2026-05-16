@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { copyFile, readFile, rename, stat, writeFile } from 'node:fs/promises'
+import { copyFile, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import { dirname, extname, join, resolve } from 'node:path'
 import {
 	type ActiveContentInfo,
@@ -2063,7 +2063,14 @@ export async function commitAgentPlanFromWorkbook(
 		writeTimings = await writeWorkbookAtomically(wb, output)
 	} catch (error) {
 		wb.restoreMutationRollbackSnapshot(rollbackSnapshot)
-		throw error
+		const writeError = atomicWorkbookWriteError(output, error)
+		await progress(
+			'write',
+			'failed',
+			writeError.ascendError.message,
+			writeError.ascendError.details,
+		)
+		throw writeError
 	}
 	const outputBytesResult = await timedCommitStep(() => fileBytes(output))
 	const outputBytes = outputBytesResult.value
@@ -8046,15 +8053,16 @@ async function writeWorkbookAtomically(
 ): Promise<AtomicWorkbookWriteTimings> {
 	const ext = extname(output)
 	const temp = join(dirname(output), `.${Date.now()}.${process.pid}.ascend-tmp${ext}`)
-	if (ext === '.csv' || ext === '.tsv') {
-		const save = await timedCommitStep(() => wb.save(temp))
-		const renameResult = await timedCommitStep(() => rename(temp, output))
-		return {
-			toBytesMs: 0,
-			writeFileMs: save.ms,
-			renameMs: renameResult.ms,
+	try {
+		if (ext === '.csv' || ext === '.tsv') {
+			const save = await timedCommitStep(() => wb.save(temp))
+			const renameResult = await timedCommitStep(() => rename(temp, output))
+			return {
+				toBytesMs: 0,
+				writeFileMs: save.ms,
+				renameMs: renameResult.ms,
+			}
 		}
-	} else {
 		const bytes = await timedCommitStep(() => wb.toBytes())
 		const write = await timedCommitStep(() => writeFile(temp, bytes.value))
 		const renameResult = await timedCommitStep(() => rename(temp, output))
@@ -8063,7 +8071,32 @@ async function writeWorkbookAtomically(
 			writeFileMs: write.ms,
 			renameMs: renameResult.ms,
 		}
+	} catch (error) {
+		await unlink(temp).catch(() => undefined)
+		throw error
 	}
+}
+
+function atomicWorkbookWriteError(output: string, error: unknown): AscendException {
+	if (error instanceof AscendException) return error
+	const cause = error instanceof Error ? error.message : String(error)
+	const causeCode =
+		typeof error === 'object' && error !== null && 'code' in error
+			? String((error as { readonly code?: unknown }).code)
+			: undefined
+	return new AscendException(
+		ascendError('EXPORT_ERROR', `Failed to write workbook atomically to ${output}`, {
+			retryable: true,
+			retryStrategy: 'modified',
+			details: {
+				output,
+				cause,
+				...(causeCode ? { causeCode } : {}),
+			},
+			suggestedFix:
+				'Choose a writable output file path and retry the same plan with the same input hash guard.',
+		}),
+	)
 }
 
 function stableStringify(value: unknown): string {

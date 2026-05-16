@@ -36,6 +36,7 @@ const REQUIRED_COMMANDS = [
 	'bun test fixtures/corpus/external-refresh-contract.test.ts',
 	'bun test fixtures/corpus/high-risk-package-contract.test.ts',
 	'bun test packages/sdk/src/agent-workflow.test.ts -t "encrypted workbook commits fail closed"',
+	'bun test packages/sdk/src/agent-workflow.test.ts -t "blocked atomic workbook writes remove temp packages"',
 	'bun test fixtures/corpus/feature-contract.test.ts',
 	'bun run fixtures/corpus/audit.ts',
 	'bun run fixtures/benchmarks/package-action-proof.ts --json',

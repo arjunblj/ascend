@@ -1,7 +1,15 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { Buffer } from 'node:buffer'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync, utimesSync } from 'node:fs'
+import {
+	existsSync,
+	mkdirSync,
+	readdirSync,
+	readFileSync,
+	rmSync,
+	statSync,
+	utimesSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DEFAULT_STYLE_ID } from '@ascend/core'
@@ -253,6 +261,52 @@ describe('agent workflow loss audit', () => {
 		).rejects.toThrow('Cannot export an edited encrypted workbook without re-encryption support')
 		expect(existsSync(output)).toBe(false)
 		expect(Buffer.from(wb.toBytes()).equals(Buffer.from(sourceBytes))).toBe(true)
+	})
+
+	test('blocked atomic workbook writes remove temp packages and remain retryable', async () => {
+		const input = join(TEMP_DIR, 'strings-links.xlsx')
+		const blockedOutput = join(TEMP_DIR, 'blocked-output.xlsx')
+		const retryOutput = join(TEMP_DIR, 'retry-output.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		mkdirSync(blockedOutput, { recursive: true })
+		const sourceBytes = new Uint8Array(readFileSync('fixtures/xlsx/xlsxwriter/strings_links.xlsx'))
+		await Bun.write(input, sourceBytes)
+		const wb = await AscendWorkbook.open(sourceBytes)
+		const inputSha256 = createHash('sha256').update(sourceBytes).digest('hex')
+		const ops = [
+			{ op: 'setCells' as const, sheet: 'Strings', updates: [{ ref: 'Z10', value: 'retryable' }] },
+		]
+
+		await expect(
+			commitAgentPlanFromWorkbook(
+				input,
+				inputSha256,
+				wb,
+				ops,
+				{ output: blockedOutput },
+				{
+					sourceBytes,
+				},
+			),
+		).rejects.toThrow()
+		expect(readdirSync(TEMP_DIR).filter((name) => name.includes('.ascend-tmp'))).toHaveLength(0)
+		expect(wb.sheet('Strings')?.cell('Z10')).toBeUndefined()
+
+		await commitAgentPlanFromWorkbook(
+			input,
+			inputSha256,
+			wb,
+			ops,
+			{ output: retryOutput },
+			{
+				sourceBytes,
+			},
+		)
+		const reopened = await AscendWorkbook.open(new Uint8Array(readFileSync(retryOutput)))
+		expect(reopened.sheet('Strings')?.cell('Z10')?.value).toEqual({
+			kind: 'string',
+			value: 'retryable',
+		})
 	})
 
 	test('plans expose digital signature invalidation package policy', async () => {

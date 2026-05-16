@@ -2083,6 +2083,14 @@ function buildAgentWorkflowGuide(): string {
 		'12. Commit with ascend.commit using planHandle when available, output paths, input hash guards, approvals, and allow-loss only when explicit.',
 		'13. Verify with ascend.check, ascend.lint, ascend.trace, ascend.diff, and ascend.export as needed.',
 		'14. Use ascend.repair_plan when checks, lints, approvals, or unsupported-feature audits need recovery actions.',
+		'',
+		'Runnable source-checkout examples:',
+		`- SDK safe edit: ${MCP_AGENT_WORKFLOW.examples.sdkSafeEdit}`,
+		`- API safe edit: ${MCP_AGENT_WORKFLOW.examples.apiSafeEdit}`,
+		`- MCP safe edit: ${MCP_AGENT_WORKFLOW.examples.mcpSafeEdit}`,
+		`- Workdir: ${MCP_AGENT_WORKFLOW.exampleContext.workdir}`,
+		`- Requires: ${MCP_AGENT_WORKFLOW.exampleContext.requires.join(', ')}`,
+		`- Proof: ${MCP_AGENT_WORKFLOW.exampleContext.proofCommand}`,
 	].join('\n')
 }
 

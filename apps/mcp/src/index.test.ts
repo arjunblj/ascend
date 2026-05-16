@@ -626,6 +626,8 @@ describe('MCP server', () => {
 		expect(workflow?.contents[0]?.text).toContain('planHandle')
 		expect(workflow?.contents[0]?.text).toContain('must not echo it')
 		expect(workflow?.contents[0]?.text).toContain('formula_assist')
+		expect(workflow?.contents[0]?.text).toContain('bun run example:safe-edit:mcp')
+		expect(workflow?.contents[0]?.text).toContain('bun test examples/root-scripts.test.ts')
 	})
 
 	test('documentation search tools return local docs and examples', async () => {

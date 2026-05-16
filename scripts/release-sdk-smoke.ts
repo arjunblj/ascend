@@ -161,9 +161,11 @@ const preparedCheck = preparedReopened.check()
 const preparedB1 = preparedReopened.get('Sheet1!B1')
 const preparedC1 = preparedReopened.get('Sheet1!C1')
 const llms = await readAgentDoc('llms.txt')
+const examplesReadme = await readAgentDoc('examples/README.md')
 const apiExample = await readAgentDoc('examples/agent-safe-edit-http.ts')
 const mcpExample = await readAgentDoc('examples/agent-safe-edit-mcp.ts')
 const docHits = await searchAgentDocs({ query: 'plan commit' })
+const rootExampleHits = await searchAgentDocs({ query: 'example:safe-edit root workflow' })
 const apiExampleHits = await searchAgentDocs({ query: 'runnable HTTP safe edit workflow' })
 const mcpExampleHits = await searchAgentDocs({ query: 'runnable MCP safe edit workflow' })
 
@@ -181,6 +183,9 @@ if (preparedC1.kind !== 'number' || preparedC1.value !== 300) {
 	throw new Error(\`unexpected prepared C1: \${JSON.stringify(preparedC1)}\`)
 }
 if (!llms?.includes('Ascend')) throw new Error('installed SDK could not read bundled llms.txt')
+if (!examplesReadme?.includes('bun run example:safe-edit')) {
+	throw new Error('installed SDK missing root safe-edit workflow examples')
+}
 if (!apiExample?.includes("from '@ascend/api'")) {
 	throw new Error('installed SDK missing runnable HTTP API safe-edit example')
 }
@@ -188,6 +193,9 @@ if (!mcpExample?.includes("from '@ascend/mcp'")) {
 	throw new Error('installed SDK missing runnable MCP safe-edit example')
 }
 if (docHits.length === 0) throw new Error('installed SDK docs search returned no hits')
+if (!rootExampleHits.some((hit) => hit.path === 'examples/README.md')) {
+	throw new Error('installed SDK docs search did not find root safe-edit workflow examples')
+}
 if (!apiExampleHits.some((hit) => hit.path === 'examples/agent-safe-edit-http.ts')) {
 	throw new Error('installed SDK docs search did not find runnable HTTP safe-edit example')
 }
@@ -205,6 +213,7 @@ console.log(JSON.stringify({
 	preparedOutputSha256: preparedCommit.outputSha256,
 	preparedReopenedValid: preparedCheck.valid,
 	docHits: docHits.length,
+	rootExampleHits: rootExampleHits.length,
 	apiExampleHits: apiExampleHits.length,
 	mcpExampleHits: mcpExampleHits.length,
 	b1,

@@ -389,6 +389,9 @@ const mcpWorkflowResource = await resources['ascend://agent-workflow']?.readCall
 if (!mcpWorkflowResource?.contents?.[0]?.text?.includes('ascend.plan')) {
 	throw new Error('installed MCP agent workflow resource failed')
 }
+if (!mcpWorkflowResource.contents[0].text.includes('root-scripts.test.ts')) {
+	throw new Error('installed MCP agent workflow resource missing example proof context')
+}
 
 console.log(JSON.stringify({
 	cli: {
@@ -400,6 +403,8 @@ console.log(JSON.stringify({
 		docHits: cliDocs.results.length,
 		apiWorkflowEndpoint: cliAgentInit.apiEndpoints.workflow,
 		mcpWorkflowTool: cliAgentInit.mcpTools.workflow,
+		examples: cliAgentInit.examples,
+		exampleContext: cliAgentInit.exampleContext,
 	},
 	api: {
 		createApiFetchExport: typeof createApiFetch,
@@ -410,6 +415,8 @@ console.log(JSON.stringify({
 		outputSha256: apiCommit.outputSha256,
 		values: apiValues,
 		workflowSteps: apiWorkflow.workflow.length,
+		examples: apiWorkflow.examples,
+		exampleContext: apiWorkflow.exampleContext,
 	},
 	apiCapabilities: capabilities.data.capabilities.length,
 	mcp: {
@@ -423,6 +430,8 @@ console.log(JSON.stringify({
 		tools: Object.keys(tools).length,
 		capabilities: mcpCapabilities.structuredContent.data.capabilities.length,
 		workflowSteps: mcpWorkflow.workflow.length,
+		examples: mcpWorkflow.examples,
+		exampleContext: mcpWorkflow.exampleContext,
 	},
 }))
 `,

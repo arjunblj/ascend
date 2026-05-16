@@ -986,6 +986,40 @@ describe('release proof evidence index', () => {
 			boundary: expect.stringContaining('Routing summary for blocked claims only'),
 		})
 		expect(
+			index.releaseDecisionBoard.blockedOwnerActionQueue.map(
+				(row) => `${row.ownerLoop}:${row.name}:${row.workBlockDisposition}`,
+			),
+		).toEqual([
+			'product:formula-language-service-primitives:implementation-ready-blocker',
+			'correctness:formula-language-service-primitives:implementation-ready-blocker',
+			'product:token-bounded-agent-view:implementation-ready-blocker',
+			'product:retained-viewport-patch-history:implementation-ready-blocker',
+			'performance:retained-viewport-patch-history:implementation-ready-blocker',
+			'product:release-proof-bundle:implementation-ready-blocker',
+			'release:release-proof-bundle:implementation-ready-blocker',
+			'correctness:formula-oracle-routing:benchmark-corpus-blocker',
+			'correctness:property-journal-laws:implementation-ready-blocker',
+			'performance:columnar-scan-sidecars:benchmark-corpus-blocker',
+			'product:agent-workflow-observability:implementation-ready-blocker',
+			'product:research-surface-hygiene:claim-downgrade-do-not-promote',
+			'release:research-surface-hygiene:claim-downgrade-do-not-promote',
+			'performance:practical-latency-contracts:benchmark-corpus-blocker',
+		])
+		for (const row of index.releaseDecisionBoard.blockedOwnerActionQueue) {
+			expect(row.evidenceMissing).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(row.allowedWording).toContain('Do not promote')
+			expect(row.forbiddenWording).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(row.nextOwnerAction.length).toBeGreaterThan(0)
+			expect(row.validationCommands).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(row.validationCommands.every((command) => command.length > 0)).toBe(true)
+			expect(row.boundary).toContain('Owner-action queue row')
+		}
+		expect(
+			index.releaseDecisionBoard.blockedOwnerActionQueue
+				.filter((row) => row.workBlockDisposition === 'benchmark-corpus-blocker')
+				.map((row) => row.name),
+		).toEqual(['formula-oracle-routing', 'columnar-scan-sidecars', 'practical-latency-contracts'])
+		expect(
 			index.releaseDecisionBoard.doNotPromoteYet.every(
 				(item) => item.status === 'do-not-promote-yet',
 			),
@@ -1881,6 +1915,46 @@ describe('release proof evidence index', () => {
 			],
 			claimDowngradeDoNotPromoteNames: ['research-surface-hygiene'],
 		})
+		expect(handoff.releaseDecisionBoard.blockedOwnerActionQueue).toHaveLength(14)
+		expect(handoff.releaseDecisionBoard.blockedOwnerActionQueue).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					ownerLoop: 'correctness',
+					name: 'formula-oracle-routing',
+					workBlockDisposition: 'benchmark-corpus-blocker',
+					validationCommands: expect.arrayContaining([
+						expect.stringContaining('formula-corpus-correctness.ts'),
+					]),
+				}),
+				expect.objectContaining({
+					ownerLoop: 'performance',
+					name: 'columnar-scan-sidecars',
+					workBlockDisposition: 'benchmark-corpus-blocker',
+					validationCommands: expect.arrayContaining([
+						expect.stringContaining('columnar-sidecar.ts'),
+					]),
+				}),
+				expect.objectContaining({
+					ownerLoop: 'performance',
+					name: 'practical-latency-contracts',
+					workBlockDisposition: 'benchmark-corpus-blocker',
+					validationCommands: expect.arrayContaining([
+						expect.stringContaining(
+							'--input-preset public-tracked --contract all --repeat 3 --warmup 1 --json',
+						),
+					]),
+				}),
+				expect.objectContaining({
+					ownerLoop: 'release',
+					name: 'research-surface-hygiene',
+					workBlockDisposition: 'claim-downgrade-do-not-promote',
+					validationCommands: [
+						'git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager',
+						'bun test fixtures/benchmarks/release-proof-index.test.ts',
+					],
+				}),
+			]),
+		)
 		const releaseDecisionCoverage = new Set([
 			...handoff.releaseDecisionBoard.rows.map((row) => row.artifact),
 			...handoff.releaseDecisionBoard.doNotPromoteYet.map((item) => item.name),
@@ -2041,6 +2115,16 @@ describe('release proof evidence index', () => {
 				readonly benchmarkCorpusBlockerNames?: readonly string[]
 				readonly claimDowngradeDoNotPromoteNames?: readonly string[]
 			}
+			readonly blockedOwnerActionQueue?: readonly {
+				readonly name?: string
+				readonly ownerLoop?: string
+				readonly workBlockDisposition?: string
+				readonly validationCommands?: readonly string[]
+				readonly evidenceMissing?: readonly string[]
+				readonly allowedWording?: string
+				readonly forbiddenWording?: readonly string[]
+				readonly nextOwnerAction?: string
+			}[]
 		}
 		expect(board.status).toBe('top-two-only')
 		expect(board.releaseGate).toBe('blocked-by-publication-policy')
@@ -2138,6 +2222,48 @@ describe('release proof evidence index', () => {
 			],
 			claimDowngradeDoNotPromoteNames: ['research-surface-hygiene'],
 		})
+		expect(board.blockedOwnerActionQueue).toHaveLength(14)
+		expect(
+			board.blockedOwnerActionQueue?.map(
+				(row) => `${row.ownerLoop}:${row.name}:${row.workBlockDisposition}`,
+			),
+		).toEqual([
+			'product:formula-language-service-primitives:implementation-ready-blocker',
+			'correctness:formula-language-service-primitives:implementation-ready-blocker',
+			'product:token-bounded-agent-view:implementation-ready-blocker',
+			'product:retained-viewport-patch-history:implementation-ready-blocker',
+			'performance:retained-viewport-patch-history:implementation-ready-blocker',
+			'product:release-proof-bundle:implementation-ready-blocker',
+			'release:release-proof-bundle:implementation-ready-blocker',
+			'correctness:formula-oracle-routing:benchmark-corpus-blocker',
+			'correctness:property-journal-laws:implementation-ready-blocker',
+			'performance:columnar-scan-sidecars:benchmark-corpus-blocker',
+			'product:agent-workflow-observability:implementation-ready-blocker',
+			'product:research-surface-hygiene:claim-downgrade-do-not-promote',
+			'release:research-surface-hygiene:claim-downgrade-do-not-promote',
+			'performance:practical-latency-contracts:benchmark-corpus-blocker',
+		])
+		for (const row of board.blockedOwnerActionQueue ?? []) {
+			expect(row.evidenceMissing).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(row.allowedWording).toContain('Do not promote')
+			expect(row.forbiddenWording).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(row.nextOwnerAction).toEqual(expect.any(String))
+			expect(row.validationCommands).toEqual(expect.arrayContaining([expect.any(String)]))
+		}
+		expect(board.blockedOwnerActionQueue).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					ownerLoop: 'performance',
+					name: 'practical-latency-contracts',
+					workBlockDisposition: 'benchmark-corpus-blocker',
+					validationCommands: expect.arrayContaining([
+						expect.stringContaining(
+							'--input-preset public-tracked --contract all --repeat 3 --warmup 1 --json',
+						),
+					]),
+				}),
+			]),
+		)
 		expect(board.doNotPromoteYet?.every((item) => item.status === 'do-not-promote-yet')).toBe(true)
 		for (const item of board.doNotPromoteYet ?? []) {
 			expect([

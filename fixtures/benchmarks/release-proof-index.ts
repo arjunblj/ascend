@@ -345,6 +345,7 @@ export interface ReleaseProofReleaseDecisionBoard {
 	readonly rows: readonly ReleaseProofReleaseDecisionBoardRow[]
 	readonly doNotPromoteYet: readonly ReleaseProofReleaseDecisionDoNotPromoteItem[]
 	readonly doNotPromoteDispositionSummary: ReleaseProofReleaseDecisionDispositionSummary
+	readonly blockedOwnerActionQueue: readonly ReleaseProofBlockedOwnerAction[]
 	readonly boundary: string
 }
 
@@ -416,6 +417,18 @@ export interface ReleaseProofReleaseDecisionDoNotPromoteItem {
 	readonly nextOwnerAction: string
 	readonly validationCommands: readonly string[]
 	readonly killCriterion: string
+	readonly boundary: string
+}
+
+export interface ReleaseProofBlockedOwnerAction {
+	readonly name: ReleaseProofReleaseDecisionDoNotPromoteItem['name']
+	readonly ownerLoop: ReleaseProofReadinessOwner
+	readonly workBlockDisposition: ReleaseProofReleaseDecisionDoNotPromoteItem['workBlockDisposition']
+	readonly evidenceMissing: readonly string[]
+	readonly allowedWording: string
+	readonly forbiddenWording: readonly string[]
+	readonly nextOwnerAction: string
+	readonly validationCommands: readonly string[]
 	readonly boundary: string
 }
 
@@ -1387,6 +1400,11 @@ export function releaseProofIndexMarkdown(result: ReleaseProofIndexResult): stri
 			(item) =>
 				`- ${item.name}: Disposition: ${item.workBlockDisposition}. ${item.reason} Missing: ${item.evidenceMissing.join('; ')} Allowed: ${item.allowedWording} Forbidden: ${item.forbiddenWording.join('; ')} Commands: ${item.validationCommands.map((command) => `\`${command}\``).join('; ')} Next: ${item.nextOwnerAction}`,
 		),
+		'Blocked owner action queue:',
+		...result.releaseDecisionBoard.blockedOwnerActionQueue.map(
+			(row) =>
+				`- ${row.ownerLoop}/${row.name}: ${row.workBlockDisposition}. Commands: ${row.validationCommands.map((command) => `\`${command}\``).join('; ')} Next: ${row.nextOwnerAction}`,
+		),
 		'',
 		'## Release Packageability Evidence',
 		'',
@@ -2300,6 +2318,7 @@ function releaseDecisionBoard(
 		}),
 		doNotPromoteYet,
 		doNotPromoteDispositionSummary: releaseDecisionDispositionSummary(doNotPromoteYet),
+		blockedOwnerActionQueue: releaseDecisionBlockedOwnerActionQueue(doNotPromoteYet),
 		boundary:
 			'Top-two release-decision artifact for claim stewardship. It is derived from committed release proof gates and must not be treated as a product surface, benchmark threshold, signed provenance, or owner approval.',
 	}
@@ -2321,6 +2340,25 @@ function releaseDecisionDispositionSummary(
 		boundary:
 			'Routing summary for blocked claims only. It groups do-not-promote decisions by the next work block type without changing claim wording, owner approval, or release gates.',
 	}
+}
+
+function releaseDecisionBlockedOwnerActionQueue(
+	items: readonly ReleaseProofReleaseDecisionDoNotPromoteItem[],
+): readonly ReleaseProofBlockedOwnerAction[] {
+	return items.flatMap((item) =>
+		item.ownerLoops.map((ownerLoop) => ({
+			name: item.name,
+			ownerLoop,
+			workBlockDisposition: item.workBlockDisposition,
+			evidenceMissing: [...item.evidenceMissing],
+			allowedWording: item.allowedWording,
+			forbiddenWording: [...item.forbiddenWording],
+			nextOwnerAction: item.nextOwnerAction,
+			validationCommands: [...item.validationCommands],
+			boundary:
+				'Owner-action queue row for blocked claims only. It lets owner loops filter exact next work without promoting the claim, satisfying evidence, or changing release gates.',
+		})),
+	)
 }
 
 function releaseDecisionDoNotPromoteItem(
@@ -2602,6 +2640,12 @@ function cloneReleaseDecisionBoard(
 			qssContrast: [...item.qssContrast],
 			forbiddenWording: [...item.forbiddenWording],
 			validationCommands: [...item.validationCommands],
+		})),
+		blockedOwnerActionQueue: board.blockedOwnerActionQueue.map((row) => ({
+			...row,
+			evidenceMissing: [...row.evidenceMissing],
+			forbiddenWording: [...row.forbiddenWording],
+			validationCommands: [...row.validationCommands],
 		})),
 		rows: board.rows.map((row) => ({
 			...row,

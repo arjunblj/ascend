@@ -21,6 +21,8 @@ import {
 	REL_CUSTOM_PROPERTIES,
 	REL_CUSTOM_XML,
 	REL_DATA_MODEL,
+	REL_DIGITAL_SIGNATURE,
+	REL_DIGITAL_SIGNATURE_ORIGIN,
 	REL_DRAWING,
 	REL_EXTENDED_PROPERTIES,
 	REL_EXTERNAL_LINK,
@@ -248,6 +250,7 @@ export function classifyPackageFeatureFamily(
 	) {
 		return 'preservedDocumentProperties'
 	}
+	if (lowerRelType.includes('/relationships/digital-signature/')) return 'preservedSignature'
 	if (path.startsWith('docProps/')) return 'preservedDocumentProperties'
 	if (path === 'xl/workbook.xml') return 'workbook'
 	if (/(^|\/)sharedStrings\.xml$/i.test(path)) return 'sharedStrings'
@@ -520,6 +523,9 @@ function classifyOwnerScope(
 	}
 	if (/(^|\/)(model|customData|queryTables)\//i.test(partPath)) return 'analytics'
 	if (primary?.type === REL_VBA_PROJECT_SIGNATURE) return 'security'
+	if (primary?.type === REL_DIGITAL_SIGNATURE_ORIGIN || primary?.type === REL_DIGITAL_SIGNATURE) {
+		return 'security'
+	}
 	if (
 		primary?.type === REL_ACTIVE_X_CONTROL ||
 		primary?.type === REL_ACTIVE_X_CONTROL_BINARY ||
@@ -550,6 +556,12 @@ function classifyRelationshipFeatureFamily(
 		relationship.type === REL_CUSTOM_PROPERTIES
 	) {
 		return 'preservedDocumentProperties'
+	}
+	if (
+		relationship.type === REL_DIGITAL_SIGNATURE_ORIGIN ||
+		relationship.type === REL_DIGITAL_SIGNATURE
+	) {
+		return 'preservedSignature'
 	}
 	if (relationship.type === REL_WORKSHEET) return 'worksheet'
 	if (relationship.type === REL_CHARTSHEET) return 'preservedChartSheet'

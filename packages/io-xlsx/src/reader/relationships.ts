@@ -16,6 +16,10 @@ export const REL_EXTENDED_PROPERTIES =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties'
 export const REL_CUSTOM_PROPERTIES =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/custom-properties'
+export const REL_DIGITAL_SIGNATURE_ORIGIN =
+	'http://schemas.openxmlformats.org/package/2006/relationships/digital-signature/origin'
+export const REL_DIGITAL_SIGNATURE =
+	'http://schemas.openxmlformats.org/package/2006/relationships/digital-signature/signature'
 export const REL_WORKSHEET =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet'
 export const REL_CHARTSHEET =

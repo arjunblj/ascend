@@ -31,10 +31,17 @@ describe('XLSX package graph', () => {
   <Relationship Id="rIdOpaqueCoreProps" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="package/services/metadata/core-properties/source.psmdcp"/>
   <Relationship Id="rIdOpaqueAppProps" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="package/services/app.bin"/>
   <Relationship Id="rIdOpaqueCustomProps" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/custom-properties" Target="package/services/custom.bin"/>
+  <Relationship Id="rIdOpaqueSignatureOrigin" Type="http://schemas.openxmlformats.org/package/2006/relationships/digital-signature/origin" Target="package/signatures/origin.sigs"/>
 </Relationships>`,
 			'package/services/metadata/core-properties/source.psmdcp': '<core/>',
 			'package/services/app.bin': '<app/>',
 			'package/services/custom.bin': '<custom/>',
+			'package/signatures/origin.sigs': '',
+			'package/signatures/_rels/origin.sigs.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdOpaqueSignature" Type="http://schemas.openxmlformats.org/package/2006/relationships/digital-signature/signature" Target="signature-package.bin"/>
+</Relationships>`,
+			'package/signatures/signature-package.bin': '<Signature/>',
 			'xl/workbook.xml': '<workbook/>',
 			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
@@ -141,6 +148,24 @@ describe('XLSX package graph', () => {
 			rawTarget: 'package/services/custom.bin',
 			resolvedTarget: 'package/services/custom.bin',
 			featureFamily: 'preservedDocumentProperties',
+		})
+		expect(graph.relationships).toContainEqual({
+			sourcePartPath: '',
+			relationshipPartPath: '_rels/.rels',
+			id: 'rIdOpaqueSignatureOrigin',
+			type: 'http://schemas.openxmlformats.org/package/2006/relationships/digital-signature/origin',
+			rawTarget: 'package/signatures/origin.sigs',
+			resolvedTarget: 'package/signatures/origin.sigs',
+			featureFamily: 'preservedSignature',
+		})
+		expect(graph.relationships).toContainEqual({
+			sourcePartPath: 'package/signatures/origin.sigs',
+			relationshipPartPath: 'package/signatures/_rels/origin.sigs.rels',
+			id: 'rIdOpaqueSignature',
+			type: 'http://schemas.openxmlformats.org/package/2006/relationships/digital-signature/signature',
+			rawTarget: 'signature-package.bin',
+			resolvedTarget: 'package/signatures/signature-package.bin',
+			featureFamily: 'preservedSignature',
 		})
 		expect(graph.relationships).toContainEqual({
 			sourcePartPath: 'xl/workbook.xml',
@@ -308,6 +333,24 @@ describe('XLSX package graph', () => {
 			sourceRelationshipId: 'rIdOpaqueCustomProps',
 			featureFamily: 'preservedDocumentProperties',
 			preservationPolicy: 'preserve-exact',
+		})
+		expect(
+			graph.parts.find((part) => part.path === 'package/signatures/origin.sigs'),
+		).toMatchObject({
+			ownerScope: 'security',
+			sourceRelationshipId: 'rIdOpaqueSignatureOrigin',
+			featureFamily: 'preservedSignature',
+			preservationPolicy: 'invalidate-on-edit',
+			bytePreservationExpected: false,
+		})
+		expect(
+			graph.parts.find((part) => part.path === 'package/signatures/signature-package.bin'),
+		).toMatchObject({
+			ownerScope: 'security',
+			sourceRelationshipId: 'rIdOpaqueSignature',
+			featureFamily: 'preservedSignature',
+			preservationPolicy: 'invalidate-on-edit',
+			bytePreservationExpected: false,
 		})
 		expect(graph.parts.find((part) => part.path === 'xl/worksheets/sheet1.xml')).toMatchObject({
 			ownerScope: 'worksheet',

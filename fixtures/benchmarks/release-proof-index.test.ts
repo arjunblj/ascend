@@ -1182,16 +1182,35 @@ describe('release proof evidence index', () => {
 		expect(agentWorkflowNextOwnerAction).toContain('apps/api/src/server.test.ts')
 		expect(agentWorkflowNextOwnerAction).toContain('apps/mcp/src/index.test.ts')
 		expect(agentWorkflowNextOwnerAction).toContain('release-proof-index.ts --no-timings')
-		expect(index.releaseDecisionBoard.doNotPromoteYet.at(-1)).toMatchObject({
+		const practicalLatencyDecision = index.releaseDecisionBoard.doNotPromoteYet.at(-1)
+		const practicalLatencyNextOwnerAction = String(practicalLatencyDecision?.nextOwnerAction ?? '')
+		expect(practicalLatencyDecision).toMatchObject({
 			name: 'practical-latency-contracts',
 			evidenceWeHave: expect.arrayContaining([
 				expect.stringContaining('practical-latency-contracts.ts'),
+				expect.stringContaining('practical-latency-contracts.test.ts'),
 			]),
 			evidenceMissing: expect.arrayContaining([
 				expect.stringContaining('tracked-clean run over standardized public inputs'),
+				expect.stringContaining('--input-preset public-tracked --contract all --repeat 3'),
+				expect.stringContaining('summary/profile artifacts'),
 			]),
-			forbiddenWording: expect.arrayContaining([expect.stringContaining('No local timing report')]),
+			qssContrast: expect.arrayContaining([
+				expect.stringContaining('visible spreadsheet responsiveness'),
+			]),
+			forbiddenWording: expect.arrayContaining([
+				expect.stringContaining('No local timing report'),
+				expect.stringContaining('fastest XLSX reader'),
+				expect.stringContaining('hot-cache-only timing evidence'),
+			]),
+			nextOwnerAction: expect.stringContaining(
+				'bun run fixtures/benchmarks/practical-latency-contracts.ts --input-preset public-tracked --contract all --repeat 3 --warmup 1 --json',
+			),
 		})
+		expect(practicalLatencyNextOwnerAction).toContain(
+			'bun test fixtures/benchmarks/practical-latency-contracts.test.ts --timeout 30000',
+		)
+		expect(practicalLatencyNextOwnerAction).toContain('--dry-run --json')
 		const safeOpenDecision = index.releaseDecisionBoard.rows[0]
 		expect(safeOpenDecision.claimWordingAllowedToday).toBe('safe unknown workbook opening')
 		expect(safeOpenDecision.evidenceWeHave.map((item) => item.evidenceId)).toContain(

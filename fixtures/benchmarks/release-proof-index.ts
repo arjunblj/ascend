@@ -2265,6 +2265,8 @@ function releaseDecisionDoNotPromoteItem(
 		note.name === 'retained-viewport-patch-history' ? RETAINED_VIEWPORT_PATCH_BLOCKER : undefined
 	const agentWorkflowObservabilityBlocker =
 		note.name === 'agent-workflow-observability' ? AGENT_WORKFLOW_OBSERVABILITY_BLOCKER : undefined
+	const practicalLatencyContractsBlocker =
+		note.name === 'practical-latency-contracts' ? PRACTICAL_LATENCY_CONTRACTS_BLOCKER : undefined
 	return {
 		name: note.name,
 		status: 'do-not-promote-yet',
@@ -2281,6 +2283,7 @@ function releaseDecisionDoNotPromoteItem(
 			...(tokenBoundedAgentViewBlocker?.evidenceWeHave ?? []),
 			...(retainedViewportPatchBlocker?.evidenceWeHave ?? []),
 			...(agentWorkflowObservabilityBlocker?.evidenceWeHave ?? []),
+			...(practicalLatencyContractsBlocker?.evidenceWeHave ?? []),
 			...(portfolioClaim?.proofCommand
 				? [`Existing proof command: \`${portfolioClaim.proofCommand}\`.`]
 				: []),
@@ -2300,9 +2303,10 @@ function releaseDecisionDoNotPromoteItem(
 			...(tokenBoundedAgentViewBlocker?.evidenceMissing ?? []),
 			...(retainedViewportPatchBlocker?.evidenceMissing ?? []),
 			...(agentWorkflowObservabilityBlocker?.evidenceMissing ?? []),
+			...(practicalLatencyContractsBlocker?.evidenceMissing ?? []),
 			...(proof ? [proof.fixture, proof.benchmark, proof.surface, proof.validationGate] : []),
 		],
-		qssContrast: [
+		qssContrast: practicalLatencyContractsBlocker?.qssContrast ?? [
 			proof?.competitorContrast ??
 				'QSS contrast is blocked until this diagnostic evidence changes a top-two release claim.',
 		],
@@ -2318,6 +2322,7 @@ function releaseDecisionDoNotPromoteItem(
 			...(tokenBoundedAgentViewBlocker?.forbiddenWording ?? []),
 			...(retainedViewportPatchBlocker?.forbiddenWording ?? []),
 			...(agentWorkflowObservabilityBlocker?.forbiddenWording ?? []),
+			...(practicalLatencyContractsBlocker?.forbiddenWording ?? []),
 			...(proof ? [proof.honestBoundary] : []),
 			...(excludedEvidence ? [excludedEvidence.boundary] : []),
 		],
@@ -2331,6 +2336,7 @@ function releaseDecisionDoNotPromoteItem(
 			tokenBoundedAgentViewBlocker?.ownerAction ??
 			retainedViewportPatchBlocker?.ownerAction ??
 			agentWorkflowObservabilityBlocker?.ownerAction ??
+			practicalLatencyContractsBlocker?.ownerAction ??
 			deferredClaim?.proofNeeded ??
 			excludedEvidence?.eligibilityRule ??
 			proof?.validationGate ??
@@ -3059,6 +3065,27 @@ const AGENT_WORKFLOW_OBSERVABILITY_BLOCKER = {
 	],
 	forbiddenWording: [
 		'Do not claim autonomous correctness, complete observability, signed audit trail, repair automation, root-cause diagnosis, privacy-safe redaction, or that traces alone prove workbook safety from current workflow evidence.',
+	],
+} as const
+
+const PRACTICAL_LATENCY_CONTRACTS_BLOCKER = {
+	ownerAction:
+		'Performance owner keeps practical-latency-contracts out of release wording, reruns `bun test fixtures/benchmarks/practical-latency-contracts.test.ts --timeout 30000`, dry-runs `bun run fixtures/benchmarks/practical-latency-contracts.ts --input-preset public-tracked --contract all --repeat 1 --warmup 0 --dry-run --json`, then runs the real public-tracked contract `bun run fixtures/benchmarks/practical-latency-contracts.ts --input-preset public-tracked --contract all --repeat 3 --warmup 1 --json` from a tracked-clean worktree; promote only if summary/profile artifacts name first-view, edit-verify, and repeated-inspection envelopes, public/generated input provenance, median/p95/CV, memory or payload guardrails, one profile-backed production target, and product-approved non-threshold wording.',
+	evidenceWeHave: [
+		'Practical latency contract tests cover the public-tracked preset, generated edit-input labeling, envelope target selection, noisy-above-floor target handling, and hot-cache guardrails in `fixtures/benchmarks/practical-latency-contracts.test.ts`.',
+		'The benchmark emits summary JSON, markdown, profile-summary markdown, input provenance, worktree guardrails, user-visible envelope decisions, diagnostic ceilings, memory/payload guardrails, and profile commands from `fixtures/benchmarks/practical-latency-contracts.ts`.',
+		'Release-proof index already treats the existing practical-latency report as excluded diagnostic evidence rather than a release proof artifact.',
+	],
+	evidenceMissing: [
+		'Tracked-clean public-tracked run of `bun run fixtures/benchmarks/practical-latency-contracts.ts --input-preset public-tracked --contract all --repeat 3 --warmup 1 --json` with no tracked dirty files.',
+		'Published summary/profile artifacts showing first-view, edit-verify, and repeated-inspection envelopes with median, p95, CV/noise, memory or payload guardrails, and one profile-backed production target or explicit no-target decision.',
+		'Product/performance approval that any wording is non-threshold, public-input scoped, and not a QSS/SOTA speed claim.',
+	],
+	qssContrast: [
+		'QSS can sell visible spreadsheet responsiveness from an integrated product; Ascend must prove public-input first-view, edit-verify, and repeated-inspection envelopes instead of internal phase timings.',
+	],
+	forbiddenWording: [
+		'Do not claim release latency, SLA, fastest XLSX reader, QSS/SOTA speed win, production optimization target, or user-visible workflow improvement from dirty-worktree, dry-run, private-input, local one-off, diagnostic-ceiling, or hot-cache-only timing evidence.',
 	],
 } as const
 

@@ -476,6 +476,34 @@ describe('competitive IO helpers', () => {
 		{ timeout: 30_000 },
 	)
 
+	test('SheetJS feature-rich read uses package files for rich metadata assertions', async () => {
+		const payload = await runCompetitiveIoJson([
+			'--workload',
+			'feature-rich',
+			'--category',
+			'read',
+			'--libraries',
+			'sheetjs',
+			'--rows',
+			'5',
+			'--cols',
+			'4',
+			'--repeat',
+			'1',
+			'--warmup',
+			'0',
+			'--json',
+		])
+		const result = payload.cases[0]
+		expect(result?.dimensions.correctnessStatus).toBe('pass')
+		expect(result?.assertions?.readCommentCount).toBe(1)
+		expect(result?.assertions?.readHyperlinkCount).toBe(1)
+		expect(result?.assertions?.readDataValidationCount).toBe(1)
+		expect(result?.assertions?.readConditionalFormatCount).toBe(1)
+		expect(result?.assertions?.readDefinedNameCount).toBe(1)
+		expect(result?.assertions?.readFeatureRichSemanticMatches).toBe(true)
+	})
+
 	test(
 		'openpyxl selected-sheet runner reports selected-sheet semantics',
 		async () => {

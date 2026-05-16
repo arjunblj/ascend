@@ -786,6 +786,7 @@ function sheetJsReadFeatureAssertions(
 	input: CompetitiveDataSet,
 ): Record<string, PrimitiveAssertion> {
 	if (input.workloadName !== 'feature-rich') return {}
+	const packageAssertions = sheetJsPackageFeatureAssertions(workbook, input)
 	const worksheet = workbook.Sheets.Data as Record<string, unknown> | undefined
 	let readCommentCount = 0
 	let readHyperlinkCount = 0
@@ -801,12 +802,104 @@ function sheetJsReadFeatureAssertions(
 		}
 	}
 	return {
-		readCommentCount,
-		readHyperlinkCount,
-		readDataValidationCount: 0,
-		readConditionalFormatCount: 0,
-		readDefinedNameCount: workbook.Workbook?.Names?.length ?? 0,
+		...packageAssertions,
+		readCommentCount: Math.max(readCommentCount, Number(packageAssertions.readCommentCount ?? 0)),
+		readHyperlinkCount: Math.max(
+			readHyperlinkCount,
+			Number(packageAssertions.readHyperlinkCount ?? 0),
+		),
+		readDataValidationCount: Number(packageAssertions.readDataValidationCount ?? 0),
+		readConditionalFormatCount: Number(packageAssertions.readConditionalFormatCount ?? 0),
+		readDefinedNameCount: Math.max(
+			workbook.Workbook?.Names?.length ?? 0,
+			Number(packageAssertions.readDefinedNameCount ?? 0),
+		),
 	}
+}
+
+function sheetJsPackageFeatureAssertions(
+	workbook: import('xlsx').WorkBook,
+	input: CompetitiveDataSet,
+): Record<string, PrimitiveAssertion> {
+	const files = (
+		workbook as unknown as {
+			readonly files?: Record<string, { readonly content?: Uint8Array | string }>
+		}
+	).files
+	if (!files) return {}
+	const workbookXml = sheetJsPackageFileText(files, 'xl/workbook.xml')
+	const sheetXml = sheetJsPackageFileText(files, 'xl/worksheets/sheet1.xml')
+	const sheetRelsXml = sheetJsPackageFileText(files, 'xl/worksheets/_rels/sheet1.xml.rels')
+	const commentsXml = sheetJsPackageFileText(files, 'xl/comments1.xml')
+	if (!workbookXml || !sheetXml) return {}
+	const expected = expectedFeatureRichContract(input)
+	const definedNameRef = definedNameValue(workbookXml, 'FeatureRange')
+	const hyperlink = firstElementAttributes(sheetXml, 'hyperlink', 'ref', expected.hyperlinkRef)
+	const hyperlinkRelId = hyperlink.get('r:id') ?? hyperlink.get('id') ?? ''
+	const hyperlinkTarget = relationshipTarget(sheetRelsXml, hyperlinkRelId)
+	const comment = commentEntry(commentsXml, expected.commentRef)
+	const dataValidation = firstElementAttributes(sheetXml, 'dataValidation')
+	const conditionalFormatting = elementWithAttributesAndBody(sheetXml, 'conditionalFormatting', {
+		sqref: expected.conditionalFormatRef,
+	})
+	const cfRule = conditionalFormatting
+		? firstElementAttributes(conditionalFormatting.body, 'cfRule')
+		: new Map<string, string>()
+	const definedNameMatches = normalizeFormulaRef(definedNameRef) === expected.featureRange
+	const hyperlinkMatches =
+		hyperlink.get('ref') === expected.hyperlinkRef &&
+		(hyperlink.get('display') === undefined ||
+			hyperlink.get('display') === expected.hyperlinkDisplay) &&
+		hyperlink.get('tooltip') === expected.hyperlinkTooltip &&
+		hyperlinkTarget === expected.hyperlinkTarget
+	const commentMatches =
+		comment.ref === expected.commentRef &&
+		comment.author === expected.commentAuthor &&
+		comment.text === expected.commentText
+	const dataValidationMatches =
+		dataValidation.get('type') === 'list' &&
+		dataValidation.get('allowBlank') === '1' &&
+		dataValidation.get('showInputMessage') === '1' &&
+		dataValidation.get('sqref') === expected.validationRef &&
+		tagText(sheetXml, 'formula1') === expected.validationFormula
+	const conditionalFormattingMatches =
+		conditionalFormatting !== null &&
+		cfRule.get('type') === 'cellIs' &&
+		cfRule.get('operator') === 'greaterThan' &&
+		tagText(conditionalFormatting.body, 'formula') === expected.conditionalFormula
+	return {
+		readCommentCount: countXmlElements(commentsXml, 'comment'),
+		readHyperlinkCount: countXmlElements(sheetXml, 'hyperlink'),
+		readDataValidationCount: countXmlElements(sheetXml, 'dataValidation'),
+		readConditionalFormatCount: countXmlElements(sheetXml, 'conditionalFormatting'),
+		readDefinedNameCount: countXmlElements(workbookXml, 'definedName'),
+		readFeatureRichSemanticMatches:
+			definedNameMatches &&
+			hyperlinkMatches &&
+			commentMatches &&
+			dataValidationMatches &&
+			conditionalFormattingMatches,
+		readFeatureRichDefinedNameMatches: definedNameMatches,
+		readFeatureRichHyperlinkMatches: hyperlinkMatches,
+		readFeatureRichCommentMatches: commentMatches,
+		readFeatureRichDataValidationMatches: dataValidationMatches,
+		readFeatureRichConditionalFormattingMatches: conditionalFormattingMatches,
+	}
+}
+
+function sheetJsPackageFileText(
+	files: Record<string, { readonly content?: Uint8Array | string }>,
+	path: string,
+): string {
+	const content = files[path]?.content
+	if (typeof content === 'string') return content
+	if (content instanceof Uint8Array) return new TextDecoder().decode(content)
+	return ''
+}
+
+function countXmlElements(xml: string, tagName: string): number {
+	if (!xml) return 0
+	return [...xml.matchAll(new RegExp(`<${tagName}\\b`, 'g'))].length
 }
 
 function excelJsReadFeatureAssertions(
@@ -2295,7 +2388,10 @@ async function loadCases(workloadName: WorkloadName): Promise<{
 					const workbook = sheetJs.read(input.xlsxBytes, { type: 'buffer', bookSheets: true })
 					return { assertions: sheetJsMetadataOnlyAssertions(workbook, input) }
 				}
-				const workbook = sheetJs.read(input.xlsxBytes, { type: 'buffer' })
+				const workbook = sheetJs.read(input.xlsxBytes, {
+					type: 'buffer',
+					...(workloadName === 'feature-rich' ? { bookFiles: true } : {}),
+				})
 				return { assertions: workloadSheetJsAssertions(sheetJs, workbook, input) }
 			},
 			async runBatched(input, repeat, warmup) {
@@ -2305,7 +2401,10 @@ async function loadCases(workloadName: WorkloadName): Promise<{
 					}
 					return workloadName === 'metadata-only'
 						? sheetJs.read(input.xlsxBytes, { type: 'buffer', bookSheets: true })
-						: sheetJs.read(input.xlsxBytes, { type: 'buffer' })
+						: sheetJs.read(input.xlsxBytes, {
+								type: 'buffer',
+								...(workloadName === 'feature-rich' ? { bookFiles: true } : {}),
+							})
 				})
 				return {
 					samples: timed.samples,

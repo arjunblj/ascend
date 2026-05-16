@@ -64,6 +64,7 @@ import { errorResponse, okResponse } from './response.ts'
 const DEFAULT_MCP_RAW_PART_MAX_BYTES = 64 * 1024
 const MAX_MCP_RAW_PART_MAX_BYTES = 1024 * 1024
 const DEFAULT_AGENT_PREVIEW_ROWS = 500
+const EXPORT_FORMATS = ['csv', 'tsv', 'json', 'xlsx', 'xlsm'] as const
 
 type PackageActionEvidence = Pick<
 	Awaited<ReturnType<typeof createAgentPlan>>,
@@ -159,6 +160,34 @@ function toolError(e: unknown, fileContext?: string): string | AscendError {
 	if (e instanceof AscendException) return e.ascendError
 	if (isFileNotFoundError(e)) return fileNotFoundAscendError(fileContext)
 	return String(e instanceof Error ? e.message : e)
+}
+
+function traceCellNotFoundError(cell: string, wb: WorkbookDocument): AscendError {
+	return ascendError('VALIDATION_ERROR', 'Trace cell not found', {
+		retryable: true,
+		retryStrategy: 'modified',
+		details: {
+			cell,
+			workflow: ['inspect', 'read', 'trace'],
+			load: wb.inspect().load,
+		},
+		suggestedFix:
+			'Run ascend.inspect or ascend.read to confirm the target sheet and cell before retrying ascend.trace.',
+	})
+}
+
+function unsupportedExportFormatError(format: string): AscendError {
+	return ascendError('VALIDATION_ERROR', `Unsupported export format: ${format}`, {
+		retryable: true,
+		retryStrategy: 'modified',
+		details: {
+			field: 'format',
+			received: format,
+			allowedFormats: EXPORT_FORMATS,
+			workflow: ['reopen', 'verify', 'export'],
+		},
+		suggestedFix: 'Use format csv, tsv, json, xlsx, or xlsm.',
+	})
 }
 
 function resolveOperationInputForWorkbook(
@@ -1740,7 +1769,7 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 				}
 				const result = wb.trace(cell)
 				if (!result) {
-					return errorResponse(`Cannot trace "${cell}"`)
+					return errorResponse(traceCellNotFoundError(cell, wb))
 				}
 				return okResponse(result, `Traced cell "${cell}"`)
 			} catch (e) {
@@ -1783,7 +1812,7 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 			try {
 				const wb = await Ascend.open(file)
 				const normalized = format ? normalizeExportFormat(format) : inferExportFormat(output)
-				if (!normalized) return errorResponse(`Unsupported format: ${format ?? output}`)
+				if (!normalized) return errorResponse(unsupportedExportFormatError(format ?? output))
 				const target = ensureOutputExtension(output, normalized)
 				if (normalized === 'json') {
 					await Bun.write(target, JSON.stringify(wb.toJSON(), null, 2))

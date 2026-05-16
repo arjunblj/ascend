@@ -230,7 +230,7 @@ describe('MCP server', () => {
 		}
 	})
 
-	test('string MCP tool errors return coded JSON failures', async () => {
+	test('ascend.export reports unsupported formats with structured retry guidance', async () => {
 		const wb = AscendWorkbook.create()
 		await wb.save(TEMP_FILE)
 		const output = join(tmpdir(), `ascend-mcp-unsupported-export-${Date.now()}.bad`)
@@ -250,6 +250,12 @@ describe('MCP server', () => {
 					message?: string
 					retryable?: boolean
 					retryStrategy?: string
+					details?: {
+						field?: string
+						received?: string
+						allowedFormats?: readonly string[]
+						workflow?: readonly string[]
+					}
 					suggestedFix?: string
 				}
 			}
@@ -259,15 +265,21 @@ describe('MCP server', () => {
 			const result = await exportTool({ file: TEMP_FILE, output, format: 'bad' })
 
 			expect(result.isError).toBe(true)
-			expect(result.content?.[0]?.text).toBe('Unsupported format: bad')
+			expect(result.content?.[0]?.text).toBe('Unsupported export format: bad')
 			expect(result.structuredContent).toMatchObject({
 				ok: false,
 				error: {
-					code: 'INVALID_ARGUMENT',
-					message: 'Unsupported format: bad',
+					code: 'VALIDATION_ERROR',
+					message: 'Unsupported export format: bad',
 					retryable: true,
 					retryStrategy: 'modified',
-					suggestedFix: 'Adjust the tool arguments and retry.',
+					details: {
+						field: 'format',
+						received: 'bad',
+						allowedFormats: ['csv', 'tsv', 'json', 'xlsx', 'xlsm'],
+						workflow: ['reopen', 'verify', 'export'],
+					},
+					suggestedFix: 'Use format csv, tsv, json, xlsx, or xlsm.',
 				},
 			})
 			expect(await Bun.file(output).exists()).toBe(false)
@@ -7502,6 +7514,57 @@ describe('MCP server', () => {
 		expect(result.structuredContent?.error?.details?.load?.partialReasons).toContain(
 			'only the first 1 row(s) are hydrated per loaded sheet',
 		)
+	})
+
+	test('ascend.trace reports missing cells with structured retry guidance', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 2 }] }])
+		await wb.save(TEMP_FILE)
+
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const handler = (server as any)._registeredTools['ascend.trace'].handler as (args: {
+			file: string
+			cell: string
+		}) => Promise<{
+			isError?: boolean
+			content?: Array<{ text?: string }>
+			structuredContent?: {
+				ok?: boolean
+				error?: {
+					code?: string
+					message?: string
+					retryable?: boolean
+					retryStrategy?: string
+					details?: {
+						cell?: string
+						workflow?: readonly string[]
+						load?: { mode?: string }
+					}
+					suggestedFix?: string
+				}
+			}
+		}>
+
+		const result = await handler({ file: TEMP_FILE, cell: 'Missing!A1' })
+
+		expect(result.isError).toBe(true)
+		expect(result.content?.[0]?.text).toBe('Trace cell not found')
+		expect(result.structuredContent).toMatchObject({
+			ok: false,
+			error: {
+				code: 'VALIDATION_ERROR',
+				message: 'Trace cell not found',
+				retryable: true,
+				retryStrategy: 'modified',
+				details: {
+					cell: 'Missing!A1',
+					workflow: ['inspect', 'read', 'trace'],
+					load: { mode: 'formula' },
+				},
+			},
+		})
+		expect(result.structuredContent?.error?.suggestedFix).toContain('ascend.inspect')
 	})
 
 	test('ascend.check and ascend.lint expose partial-load metadata for capped formula views', async () => {

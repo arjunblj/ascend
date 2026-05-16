@@ -234,9 +234,28 @@ if (installedExampleExitCode !== 0) {
 const installedExampleProof = JSON.parse(installedExampleStdout)
 if (
 	installedExampleProof.workflow !== 'installed-sdk-open-plan-trust-inspect-read-plan-commit-reopen-verify' ||
-	installedExampleProof.verify?.cell?.value?.value !== 450
+	installedExampleProof.verify?.cell?.value?.value !== 450 ||
+	installedExampleProof.proofBundle?.safeToUse !== true
 ) {
 	throw new Error(\`installed SDK safe-edit proof failed: \${installedExampleStdout}\`)
+}
+const installedProofGates = installedExampleProof.proofBundle?.whySafe?.map(
+	(gate) => [gate.gate, gate.ok],
+)
+if (
+	JSON.stringify(installedProofGates) !==
+	JSON.stringify([
+		['open-plan', true],
+		['trust', true],
+		['plan', true],
+		['commit', true],
+		['reopen-verify', true],
+	])
+) {
+	throw new Error(\`installed SDK safe-edit proof gates failed: \${installedExampleStdout}\`)
+}
+if (installedExampleProof.proofBundle?.whatChanged?.[0]?.ref !== 'Sheet1!B2') {
+	throw new Error(\`installed SDK safe-edit proof did not explain the changed cell: \${installedExampleStdout}\`)
 }
 
 console.log(JSON.stringify({
@@ -253,6 +272,14 @@ console.log(JSON.stringify({
 	packageInstallExampleHits: packageInstallExampleHits.length,
 	installedExampleWorkflow: installedExampleProof.workflow,
 	installedExampleCell: installedExampleProof.verify?.cell,
+	installedExampleProofBundle: {
+		safeToUse: installedExampleProof.proofBundle?.safeToUse,
+		whatChanged: installedExampleProof.proofBundle?.whatChanged,
+		whySafe: installedExampleProof.proofBundle?.whySafe?.map((gate) => ({
+			gate: gate.gate,
+			ok: gate.ok,
+		})),
+	},
 	apiExampleHits: apiExampleHits.length,
 	mcpExampleHits: mcpExampleHits.length,
 	b1,

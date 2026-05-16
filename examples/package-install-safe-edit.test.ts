@@ -40,6 +40,27 @@ describe('package-install-safe-edit example', () => {
 					lintClean?: boolean
 					cell?: { formula?: string | null; value?: { kind?: string; value?: number } }
 				}
+				proofBundle?: {
+					safeToUse?: boolean
+					whatChanged?: Array<{
+						ref?: string
+						before?: unknown
+						after?: unknown
+						formulaBefore?: string | null
+						formulaAfter?: string | null
+					}>
+					whySafe?: Array<{ gate?: string; ok?: boolean; evidence?: Record<string, unknown> }>
+					evidence?: {
+						inputSha256?: string
+						planDigest?: string
+						outputSha256?: string
+						reopened?: boolean
+						checkValid?: boolean
+						lintClean?: boolean
+						postWriteValid?: boolean
+						auditsPassed?: boolean
+					}
+				}
 			}
 
 			expect(result.ok).toBe(true)
@@ -66,6 +87,32 @@ describe('package-install-safe-edit example', () => {
 					value: { kind: 'number', value: 450 },
 				},
 			})
+			expect(result.proofBundle).toMatchObject({
+				safeToUse: true,
+				whatChanged: [
+					{
+						ref: 'Sheet1!B2',
+						before: { kind: 'empty' },
+						after: { kind: 'number', value: 450 },
+						formulaBefore: null,
+						formulaAfter: 'SUM(A2:A4)',
+					},
+				],
+				evidence: {
+					reopened: true,
+					checkValid: true,
+					lintClean: true,
+					postWriteValid: true,
+					auditsPassed: true,
+				},
+			})
+			expect(result.proofBundle?.whySafe?.map((gate) => [gate.gate, gate.ok])).toEqual([
+				['open-plan', true],
+				['trust', true],
+				['plan', true],
+				['commit', true],
+				['reopen-verify', true],
+			])
 		} finally {
 			await rm(dir, { recursive: true, force: true })
 		}

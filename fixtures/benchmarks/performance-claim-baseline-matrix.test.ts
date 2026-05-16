@@ -351,6 +351,29 @@ describe('performance claim baseline matrix', () => {
 		expect(markdown).toContain('"Ascend has a full metadata-only SOTA claim across every library."')
 		expect(markdown).toContain('feature-rich semantic mismatches for SheetJS and Calamine')
 
+		expect(markdown).toContain('## Cycle: FastXLSX Cell-Materialization Coverage')
+		expect(markdown).toContain('historical FastXLSX row was a cooked non-result')
+		expect(markdown).toContain('Commit: `52f7f172e2826211a4a0ba811a722077dcd1a824`')
+		expect(markdown).toContain('fastxlsx==0.2.0')
+		expect(markdown).toContain(
+			'/private/tmp/ascend-perf-hillclimb-52f7f172-runs/fastxlsx-cell-materialization-all.json',
+		)
+		expect(markdown).toContain(
+			'/private/tmp/ascend-perf-hillclimb-52f7f172-runs/fastxlsx-cell-materialization-all-scoreboard.json',
+		)
+		expect(markdown).toContain(
+			'| `dense-values` | ran/won | 9.270 ms / 10.247 ms / 0.067 / 102.6 | ran/lost | 34.884 ms / 57.856 ms / 0.287 / 52.5 |',
+		)
+		expect(markdown).toContain(
+			'| `sparse-wide` | ran/won | 13.066 ms / 14.376 ms / 0.047 / 127.3 | ran/lost | 101.486 ms / 102.578 ms / 0.009 / 87.5 |',
+		)
+		expect(markdown).toContain(
+			'| `feature-rich` | not comparable | 11.573 ms / 11.793 ms / 0.017 / 116.6 | not comparable | 25.734 ms / 25.911 ms / 0.006 / 53.3 |',
+		)
+		expect(markdown).toContain('Every comparable FastXLSX value/warm group winner was')
+		expect(markdown).toContain('"Ascend beats FastXLSX on rich-metadata feature-rich reads."')
+		expect(markdown).toContain('Carry the isolated Python 3.12\nFastXLSX setup')
+
 		expect(markdown).toContain('## Cycle: Warm Workflow Value Read')
 		expect(markdown).toContain('generated `warm-workflow` workbook')
 		expect(markdown).toContain('Commit: `add13c79`')

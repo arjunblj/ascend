@@ -1225,6 +1225,7 @@ describe('release proof evidence index', () => {
 			)
 			expect(row.validationCommands).toEqual([
 				'git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager',
+				'bun run fixtures/benchmarks/release-proof-index.ts --no-timings --research-hygiene-json',
 				'bun test fixtures/benchmarks/release-proof-index.test.ts',
 			])
 			expect(row.commandsToRun).toEqual(row.validationCommands)
@@ -1328,10 +1329,14 @@ describe('release proof evidence index', () => {
 			'git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager',
 		)
 		expect(researchSurfaceDecision?.nextOwnerAction).toContain(
+			'bun run fixtures/benchmarks/release-proof-index.ts --no-timings --research-hygiene-json',
+		)
+		expect(researchSurfaceDecision?.nextOwnerAction).toContain(
 			'bun test fixtures/benchmarks/release-proof-index.test.ts',
 		)
 		expect(researchSurfaceDecision?.validationCommands).toEqual([
 			'git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager',
+			'bun run fixtures/benchmarks/release-proof-index.ts --no-timings --research-hygiene-json',
 			'bun test fixtures/benchmarks/release-proof-index.test.ts',
 		])
 		const tokenBoundedDecision = index.releaseDecisionBoard.doNotPromoteYet.find(
@@ -2025,6 +2030,7 @@ describe('release proof evidence index', () => {
 		).toEqual(['accepted-evidence', 'active-owner-blocker', 'archive-only'])
 		expect(handoff.researchHygieneDecisionPacket.validationCommands).toEqual([
 			'git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager',
+			'bun run fixtures/benchmarks/release-proof-index.ts --no-timings --research-hygiene-json',
 			'bun test fixtures/benchmarks/release-proof-index.test.ts',
 		])
 		expect(handoff.researchHygieneDecisionPacket.boundary).toContain(
@@ -2300,6 +2306,7 @@ describe('release proof evidence index', () => {
 					workBlockDisposition: 'claim-downgrade-do-not-promote',
 					validationCommands: [
 						'git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager',
+						'bun run fixtures/benchmarks/release-proof-index.ts --no-timings --research-hygiene-json',
 						'bun test fixtures/benchmarks/release-proof-index.test.ts',
 					],
 				}),
@@ -2411,10 +2418,12 @@ describe('release proof evidence index', () => {
 				ownerFiles: expect.arrayContaining(['research/', 'tmp/ascend-loop-manager/']),
 				validationCommands: [
 					'git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager',
+					'bun run fixtures/benchmarks/release-proof-index.ts --no-timings --research-hygiene-json',
 					'bun test fixtures/benchmarks/release-proof-index.test.ts',
 				],
 				commandsToRun: [
 					'git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager',
+					'bun run fixtures/benchmarks/release-proof-index.ts --no-timings --research-hygiene-json',
 					'bun test fixtures/benchmarks/release-proof-index.test.ts',
 				],
 				failureEvidence: expect.arrayContaining([
@@ -2429,6 +2438,7 @@ describe('release proof evidence index', () => {
 				ownerFiles: expect.arrayContaining(['research/', 'tmp/ascend-loop-manager/']),
 				validationCommands: [
 					'git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager',
+					'bun run fixtures/benchmarks/release-proof-index.ts --no-timings --research-hygiene-json',
 					'bun test fixtures/benchmarks/release-proof-index.test.ts',
 				],
 				acceptanceCriteria: expect.stringContaining('classifies each untriaged path'),
@@ -3097,10 +3107,12 @@ describe('release proof evidence index', () => {
 				ownerFiles: expect.arrayContaining(['research/', 'tmp/ascend-loop-manager/']),
 				validationCommands: [
 					'git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager',
+					'bun run fixtures/benchmarks/release-proof-index.ts --no-timings --research-hygiene-json',
 					'bun test fixtures/benchmarks/release-proof-index.test.ts',
 				],
 				commandsToRun: [
 					'git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager',
+					'bun run fixtures/benchmarks/release-proof-index.ts --no-timings --research-hygiene-json',
 					'bun test fixtures/benchmarks/release-proof-index.test.ts',
 				],
 			}),
@@ -3112,6 +3124,7 @@ describe('release proof evidence index', () => {
 				ownerFiles: expect.arrayContaining(['research/', 'tmp/ascend-loop-manager/']),
 				validationCommands: [
 					'git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager',
+					'bun run fixtures/benchmarks/release-proof-index.ts --no-timings --research-hygiene-json',
 					'bun test fixtures/benchmarks/release-proof-index.test.ts',
 				],
 				acceptanceCriteria: expect.stringContaining('classifies each untriaged path'),
@@ -3528,6 +3541,7 @@ describe('release proof evidence index', () => {
 		}
 		expect(packet.validationCommands).toEqual([
 			'git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager',
+			'bun run fixtures/benchmarks/release-proof-index.ts --no-timings --research-hygiene-json',
 			'bun test fixtures/benchmarks/release-proof-index.test.ts',
 		])
 		expect(packet.ownerFiles).toEqual(
@@ -3549,6 +3563,7 @@ describe('release proof evidence index', () => {
 		expect(packet.forbiddenWording?.join('\n')).toContain('Do not cite `research/` or `tmp/`')
 		expect(packet.qssContrast?.join('\n')).toContain('QSS comparison is blocked')
 		expect(packet.nextOwnerAction).toContain('git status --short research')
+		expect(packet.nextOwnerAction).toContain('--research-hygiene-json')
 		expect(packet.stopCondition).toContain(
 			'accepted evidence, active owner blocker, or archive-only',
 		)

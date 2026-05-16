@@ -3480,6 +3480,7 @@ function releaseDecisionValidationCommands(
 		case 'research-surface-hygiene':
 			return [
 				'git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager',
+				'bun run fixtures/benchmarks/release-proof-index.ts --no-timings --research-hygiene-json',
 				'bun test fixtures/benchmarks/release-proof-index.test.ts',
 			]
 		case 'practical-latency-contracts':
@@ -4388,7 +4389,7 @@ const PRACTICAL_LATENCY_CONTRACTS_BLOCKER = {
 
 const RESEARCH_SURFACE_HYGIENE_BLOCKER = {
 	ownerAction:
-		'Product/release owner runs `git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager`, classifies each untriaged path as accepted evidence, active owner blocker, or archive-only, and reruns `bun test fixtures/benchmarks/release-proof-index.test.ts` before citing any research-derived claim.',
+		'Product/release owner runs `git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager` and `bun run fixtures/benchmarks/release-proof-index.ts --no-timings --research-hygiene-json`, classifies each untriaged path as accepted evidence, active owner blocker, or archive-only, and reruns `bun test fixtures/benchmarks/release-proof-index.test.ts` before citing any research-derived claim.',
 	allowedWording:
 		'Do not promote research-surface-hygiene as release wording today. Allowed wording: untriaged research/tmp material is a release hygiene blocker requiring accepted-evidence, active-blocker, or archive-only classification before citation.',
 	evidenceWeHave: [
@@ -4396,7 +4397,7 @@ const RESEARCH_SURFACE_HYGIENE_BLOCKER = {
 		'Release-proof index already blocks research-surface-hygiene promotion and keeps untriaged research files out of top-two release wording.',
 	],
 	evidenceMissing: [
-		'Owner-classified inventory from `git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager` with each path mapped to accepted evidence, active owner blocker, or archive-only.',
+		'Owner-classified inventory from `git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager` and `bun run fixtures/benchmarks/release-proof-index.ts --no-timings --research-hygiene-json`, with each path mapped to accepted evidence, active owner blocker, or archive-only.',
 		'Passing `bun test fixtures/benchmarks/release-proof-index.test.ts` proving any promoted research item has evidence we have, evidence missing, QSS contrast, allowed wording, forbidden wording, and next owner action.',
 	],
 	forbiddenWording: [

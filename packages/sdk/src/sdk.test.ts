@@ -193,6 +193,56 @@ describe('AscendWorkbook', () => {
 		}
 	})
 
+	test('high-risk workbook streams require the same explicit export approvals', async () => {
+		const encrypted = await Ascend.open(
+			new Uint8Array(readFileSync('fixtures/xlsx/calamine/pass_protected.xlsx')),
+			{ password: '123' },
+		)
+		encrypted.apply([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'stream decrypted' }] },
+		])
+		await expect(collectWorkbookStream(encrypted.toStream())).rejects.toThrow(
+			'Cannot export an edited encrypted workbook without re-encryption support',
+		)
+		const decrypted = await collectWorkbookStream(
+			encrypted.toStream({ allowDecryptedExport: true }),
+		)
+		expect(() => extractZip(decrypted)).not.toThrow()
+		const reopenedDecrypted = await Ascend.open(decrypted)
+		expect(reopenedDecrypted.sheet('Sheet1')?.cell('A1')?.value).toEqual({
+			kind: 'string',
+			value: 'stream decrypted',
+		})
+		expect(() => encrypted.toBytes()).toThrow(
+			'Cannot export an edited encrypted workbook without re-encryption support',
+		)
+
+		const signed = await Ascend.open(makeSignedXlsx())
+		signed.apply([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'stream unsigned' }] },
+		])
+		await expect(collectWorkbookStream(signed.toStream())).rejects.toThrow(
+			'Cannot export an edited signed workbook without explicit signature invalidation approval',
+		)
+		const unsigned = await collectWorkbookStream(
+			signed.toStream({ allowSignatureInvalidation: true }),
+		)
+		const archive = extractZip(unsigned)
+		expect(archive.readBytes('_xmlsignatures/origin.sigs')).toBeUndefined()
+		expect(archive.readBytes('_xmlsignatures/sig1.xml')).toBeUndefined()
+		const reopenedUnsigned = await Ascend.open(unsigned)
+		expect(reopenedUnsigned.trustReport().findings).not.toContainEqual(
+			expect.objectContaining({ code: 'workbook.signature' }),
+		)
+		expect(reopenedUnsigned.sheet('Sheet1')?.cell('A1')?.value).toEqual({
+			kind: 'string',
+			value: 'stream unsigned',
+		})
+		expect(() => signed.toBytes()).toThrow(
+			'Cannot export an edited signed workbook without explicit signature invalidation approval',
+		)
+	})
+
 	test('high-risk workbook text saves require the same explicit export approvals', async () => {
 		const dir = join(
 			tmpdir(),
@@ -4818,6 +4868,12 @@ describe('capabilities registry', () => {
 		expect(workbookProperties?.gapReason).toContain('setDocumentProperties')
 	})
 })
+
+async function collectWorkbookStream(stream: AsyncIterable<Uint8Array>): Promise<Uint8Array> {
+	const chunks: Uint8Array[] = []
+	for await (const chunk of stream) chunks.push(chunk)
+	return new Uint8Array(Buffer.concat(chunks))
+}
 
 function makeSyntheticXlsx(parts: Record<string, string | Uint8Array>): Uint8Array {
 	const entries = new Map<string, Uint8Array>()

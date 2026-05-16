@@ -1517,8 +1517,8 @@ export class AscendWorkbook extends WorkbookReadView {
 		return result.value
 	}
 
-	async *toStream(): AsyncGenerator<Uint8Array> {
-		yield this.toBytes()
+	async *toStream(options: WorkbookBytesOptions = {}): AsyncGenerator<Uint8Array> {
+		yield this.toBytes(options)
 	}
 
 	/**

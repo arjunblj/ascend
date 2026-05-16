@@ -1,3 +1,4 @@
+import { ascendError } from '@ascend/schema'
 import { cliError, jsonOut } from '../output/json.ts'
 import { table } from '../output/pretty.ts'
 import { openWorkbookDocumentWithProgress } from '../progress.ts'
@@ -16,7 +17,20 @@ Flags:
 export async function lintCommand(args: string[], flags: Map<string, string>): Promise<number> {
 	const file = args[0]
 	if (!file) {
-		cliError('Usage: ascend lint <file>', flags)
+		cliError(
+			ascendError('INVALID_ARGUMENT', 'Missing required lint input', {
+				retryable: true,
+				retryStrategy: 'modified',
+				details: {
+					command: 'lint',
+					required: ['file'],
+					missing: ['file'],
+					workflow: ['reopen', 'verify'],
+				},
+				suggestedFix: 'Run ascend lint <file> --json after committing or reopening a workbook.',
+			}),
+			flags,
+		)
 		return 1
 	}
 

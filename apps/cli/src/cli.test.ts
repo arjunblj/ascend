@@ -740,6 +740,53 @@ describe('ascend cli', () => {
 		expect(parsed.error.suggestedFix).toContain('ascend commit <file> --ops <file.json>')
 	})
 
+	test('verification commands --json return structured missing input guidance', async () => {
+		const cases = [
+			{
+				argv: ['check', '--json'] as const,
+				message: 'Missing required check input',
+				details: { command: 'check', required: ['file'], missing: ['file'] },
+				fix: 'ascend check <file> --json',
+			},
+			{
+				argv: ['lint', '--json'] as const,
+				message: 'Missing required lint input',
+				details: { command: 'lint', required: ['file'], missing: ['file'] },
+				fix: 'ascend lint <file> --json',
+			},
+			{
+				argv: ['trace', TEST_FILE, '--json'] as const,
+				message: 'Missing required trace input',
+				details: { command: 'trace', required: ['file', 'cell'], missing: ['cell'] },
+				fix: 'ascend trace <file> <sheet!cell> --json',
+			},
+			{
+				argv: ['diff', TEST_FILE, '--json'] as const,
+				message: 'Missing required diff input',
+				details: { command: 'diff', required: ['fileA', 'fileB'], missing: ['fileB'] },
+				fix: 'ascend diff <before.xlsx> <after.xlsx> --json',
+			},
+		]
+
+		for (const entry of cases) {
+			const result = await run(...entry.argv)
+			expect(result.exitCode).toBe(1)
+			const parsed = JSON.parse(result.stdout)
+			expect(parsed.ok).toBe(false)
+			expect(parsed.error).toMatchObject({
+				code: 'INVALID_ARGUMENT',
+				message: entry.message,
+				retryable: true,
+				retryStrategy: 'modified',
+				details: {
+					...entry.details,
+					workflow: ['reopen', 'verify'],
+				},
+			})
+			expect(parsed.error.suggestedFix).toContain(entry.fix)
+		}
+	})
+
 	test('dump --json emits a replayable operation batch', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

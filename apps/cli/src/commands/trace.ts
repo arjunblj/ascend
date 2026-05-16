@@ -1,3 +1,4 @@
+import { ascendError } from '@ascend/schema'
 import { cliError, jsonOut } from '../output/json.ts'
 import { bullet, formatCellValue, heading } from '../output/pretty.ts'
 import { openWorkbookDocumentWithProgress } from '../progress.ts'
@@ -19,7 +20,20 @@ export async function traceCommand(args: string[], flags: Map<string, string>): 
 	const file = args[0]
 	const cellRef = args[1]
 	if (!file || !cellRef) {
-		cliError('Usage: ascend trace <file> <cell>', flags)
+		cliError(
+			ascendError('INVALID_ARGUMENT', 'Missing required trace input', {
+				retryable: true,
+				retryStrategy: 'modified',
+				details: {
+					command: 'trace',
+					required: ['file', 'cell'],
+					missing: [...(!file ? ['file'] : []), ...(!cellRef ? ['cell'] : [])],
+					workflow: ['reopen', 'verify'],
+				},
+				suggestedFix: 'Run ascend trace <file> <sheet!cell> --json for formula dependency proof.',
+			}),
+			flags,
+		)
 		return 1
 	}
 

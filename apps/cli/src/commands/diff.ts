@@ -1,3 +1,4 @@
+import { ascendError } from '@ascend/schema'
 import { AscendWorkbook } from '@ascend/sdk'
 import { cliError, jsonOut } from '../output/json.ts'
 import { heading, table } from '../output/pretty.ts'
@@ -19,7 +20,21 @@ export async function diffCommand(args: string[], flags: Map<string, string>): P
 	const fileA = args[0]
 	const fileB = args[1]
 	if (!fileA || !fileB) {
-		cliError('Usage: ascend diff <file-a> <file-b>', flags)
+		cliError(
+			ascendError('INVALID_ARGUMENT', 'Missing required diff input', {
+				retryable: true,
+				retryStrategy: 'modified',
+				details: {
+					command: 'diff',
+					required: ['fileA', 'fileB'],
+					missing: [...(!fileA ? ['fileA'] : []), ...(!fileB ? ['fileB'] : [])],
+					workflow: ['reopen', 'verify'],
+				},
+				suggestedFix:
+					'Run ascend diff <before.xlsx> <after.xlsx> --json to verify semantic changes.',
+			}),
+			flags,
+		)
 		return 1
 	}
 

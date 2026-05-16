@@ -1,3 +1,4 @@
+import { ascendError } from '@ascend/schema'
 import { cliError, jsonOut } from '../output/json.ts'
 import { table } from '../output/pretty.ts'
 import {
@@ -21,7 +22,20 @@ Flags:
 export async function checkCommand(args: string[], flags: Map<string, string>): Promise<number> {
 	const file = args[0]
 	if (!file) {
-		cliError('Usage: ascend check <file>', flags)
+		cliError(
+			ascendError('INVALID_ARGUMENT', 'Missing required check input', {
+				retryable: true,
+				retryStrategy: 'modified',
+				details: {
+					command: 'check',
+					required: ['file'],
+					missing: ['file'],
+					workflow: ['reopen', 'verify'],
+				},
+				suggestedFix: 'Run ascend check <file> --json after committing or reopening a workbook.',
+			}),
+			flags,
+		)
 		return 1
 	}
 

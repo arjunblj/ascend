@@ -3388,12 +3388,12 @@ function safeOpenQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceItem[] {
 			evidenceId: 'public-workbook-view-protection-proof',
 			kind: 'test',
 			command:
-				'bun test packages/sdk/src/agent-workflow.test.ts -t "commits public workbook structure protection and view metadata through reopen audits" --timeout 30000',
+				'bun test packages/sdk/src/agent-workflow.test.ts -t "commits public workbook structure protection and view metadata through reopen audits|commits public workbook strong-hash protection with honest metadata reporting" --timeout 30000',
 			path: 'packages/sdk/src/agent-workflow.ts; packages/sdk/src/agent-workflow.test.ts; packages/sdk/src/index.ts; packages/sdk/src/index-exports.test.ts',
 			acceptedScope:
-				'Commit 033be30c proves a public Apache POI workbook with structure protection can be safely edited while post-write proof reports reopened workbook protection plus workbookViewDetails such as tabRatio, and root SDK exports the workbook-view proof type.',
+				'Commit 033be30c proves a public Apache POI workbook with structure protection can be safely edited while post-write proof reports reopened workbook protection plus workbookViewDetails such as tabRatio, and root SDK exports the workbook-view proof type. Commit 1a620712 proves public strong-hash workbook protection is reported after save/reopen with algorithm name, spin count, hash/salt presence, and reported-not-validated verification while raw hash and salt values stay out of agent-facing proof JSON.',
 			boundary:
-				'Public workbook-view and structure-protection reporting evidence only; it does not validate protection strength, authorize protected structure edits, prove full workbook-view parity, or guarantee arbitrary topology preservation.',
+				'Public workbook-view and workbook-protection reporting evidence only; it does not validate password correctness, disclose raw hash or salt values, enforce protection security, authorize protected structure edits, prove full workbook-view parity, or guarantee arbitrary topology preservation.',
 		},
 		{
 			evidenceId: 'public-protected-range-hash-proof',
@@ -3704,11 +3704,12 @@ function todayCommitClaimMatrix(): readonly ReleaseProofTodayCommitClaimMatrixRo
 				'a2960803',
 				'74f63b73',
 				'033be30c',
+				'1a620712',
 				'd519c5a7',
 				'62f45cb5',
 			],
 			releaseOrSotaClaimBecameMoreTrue:
-				'Ascend is more credible as an agent-native spreadsheet runtime because SDK, installed-SDK, CLI, HTTP API, MCP, root-package, public query-table/data-connection, public chart/visual, public calc-chain/formula-cache, public hidden-sheet/workbook-view, and public protected-range examples expose runnable open-plan/trust/inspect/plan/commit/reopen/verify workflows plus shared proof-bundle and post-write proof context.',
+				'Ascend is more credible as an agent-native spreadsheet runtime because SDK, installed-SDK, CLI, HTTP API, MCP, root-package, public query-table/data-connection, public chart/visual, public calc-chain/formula-cache, public hidden-sheet/workbook-view, public workbook-protection, and public protected-range examples expose runnable open-plan/trust/inspect/plan/commit/reopen/verify workflows plus shared proof-bundle and post-write proof context.',
 			evidenceProvesIt: [
 				'bun test examples/agent-safe-edit.test.ts --timeout 30000',
 				'bun test examples/agent-safe-edit-mcp.test.ts --timeout 30000',
@@ -3734,14 +3735,15 @@ function todayCommitClaimMatrix(): readonly ReleaseProofTodayCommitClaimMatrixRo
 				'bun test fixtures/corpus/formula-binding-contract.test.ts -t "commit proof reports missing public formula caches after save and reopen" --timeout 30000',
 				'bun test packages/sdk/src/agent-workflow.test.ts -t "commits public hidden-sheet workbook views through save and reopen audits" --timeout 30000',
 				'bun test packages/sdk/src/agent-workflow.test.ts -t "commits public workbook structure protection and view metadata through reopen audits" --timeout 30000',
+				'bun test packages/sdk/src/agent-workflow.test.ts -t "commits public workbook strong-hash protection with honest metadata reporting" --timeout 30000',
 				'bun test packages/sdk/src/agent-workflow.test.ts -t "commits public protected ranges with honest hash reporting after save and reopen" --timeout 30000',
 				'fixtures/benchmarks/release-proof-index.test.ts pins workflow example evidence, proof context, and RC-gate scope.',
 				'Blocked adjacent API package sweep: bun test apps/api/api.test.ts --timeout 30000 currently fails outside workflow discovery because the export-format assertion expects "Unsupported format" while the current response is "Unsupported export format: weird".',
 			],
 			allowedWording:
-				'Ascend provides local runnable SDK, installed-SDK package-bin, CLI, API, and MCP safe-edit workflow examples with root commands, explicit trust-preflight steps, shared SDK proof-summary gates, workflow discovery that points agents to postWrite.dataConnections, postWrite.formulaState, and postWrite.visuals, public query-table refresh/data-connection metadata including source file, command text, refresh flags, and connection-string presence without secret disclosure, chart-source/visual object reporting, calc-chain/formula-cache reporting with cached and missing value locations, hidden-sheet/workbook-view topology, workbook structure-protection reporting, and protected-range metadata commit proof, and machine-readable proof context for generated/public workbooks.',
+				'Ascend provides local runnable SDK, installed-SDK package-bin, CLI, API, and MCP safe-edit workflow examples with root commands, explicit trust-preflight steps, shared SDK proof-summary gates, workflow discovery that points agents to postWrite.dataConnections, postWrite.formulaState, and postWrite.visuals, public query-table refresh/data-connection metadata including source file, command text, refresh flags, and connection-string presence without secret disclosure, chart-source/visual object reporting, calc-chain/formula-cache reporting with cached and missing value locations, hidden-sheet/workbook-view topology, workbook structure-protection and strong-hash metadata reporting without raw hash/salt disclosure, protected-range metadata commit proof, and machine-readable proof context for generated/public workbooks.',
 			forbiddenWording: [
-				'Do not claim arbitrary workbook safety, package publication, registry download proof, hosted service readiness, public-workbook generality, connection execution, credential safety, external-data freshness, fresh recalculation, full drawing/layout parity, complete workbook-view parity, protection enforcement/security validation, complete API package health, or complete workflow observability from the local generated/public-workbook examples.',
+				'Do not claim arbitrary workbook safety, package publication, registry download proof, hosted service readiness, public-workbook generality, connection execution, credential safety, external-data freshness, fresh recalculation, full drawing/layout parity, complete workbook-view parity, password correctness validation, raw protection hash/salt disclosure, protection enforcement/security validation, complete API package health, or complete workflow observability from the local generated/public-workbook examples.',
 			],
 			ownerLoop: 'release',
 			nextOwnerAction:

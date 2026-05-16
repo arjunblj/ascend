@@ -1171,8 +1171,16 @@ describe('release proof evidence index', () => {
 					'commits public workbook structure protection and view metadata',
 				),
 				boundary: expect.stringContaining(
-					'Public workbook-view and structure-protection reporting evidence only',
+					'Public workbook-view and workbook-protection reporting evidence only',
 				),
+			}),
+			expect.objectContaining({
+				evidenceId: 'public-workbook-view-protection-proof',
+				acceptedScope: expect.stringContaining('1a620712'),
+				command: expect.stringContaining(
+					'commits public workbook strong-hash protection with honest metadata reporting',
+				),
+				boundary: expect.stringContaining('raw hash or salt values'),
 			}),
 			expect.objectContaining({
 				evidenceId: 'public-protected-range-hash-proof',
@@ -1840,14 +1848,20 @@ describe('release proof evidence index', () => {
 						'a2960803',
 						'74f63b73',
 						'033be30c',
+						'1a620712',
 						'd519c5a7',
 						'62f45cb5',
 					]),
 					allowedWording: expect.stringContaining(
 						'workflow discovery that points agents to postWrite.dataConnections, postWrite.formulaState, and postWrite.visuals',
 					),
+					evidenceProvesIt: expect.arrayContaining([
+						expect.stringContaining(
+							'commits public workbook strong-hash protection with honest metadata reporting',
+						),
+					]),
 					forbiddenWording: expect.arrayContaining([
-						expect.stringContaining('fresh recalculation'),
+						expect.stringContaining('raw protection hash/salt disclosure'),
 					]),
 					ownerLoop: 'release',
 					nextOwnerAction: expect.stringContaining('export-format test expectation'),

@@ -946,6 +946,10 @@ describe('release proof evidence index', () => {
 				}),
 				expect.objectContaining({
 					evidenceId: 'api-open-workflow-reference-proof',
+					acceptedScope: expect.stringContaining('8d12c141'),
+				}),
+				expect.objectContaining({
+					evidenceId: 'api-open-workflow-reference-proof',
 					acceptedScope: expect.stringContaining('active-content/trust-report'),
 				}),
 				expect.objectContaining({
@@ -954,7 +958,7 @@ describe('release proof evidence index', () => {
 				}),
 				expect.objectContaining({
 					evidenceId: 'api-open-workflow-reference-proof',
-					acceptedScope: expect.stringContaining('visuals/dump/template-merge'),
+					acceptedScope: expect.stringContaining('visuals/pivots/dump/template-merge'),
 				}),
 				expect.objectContaining({
 					evidenceId: 'api-open-workflow-reference-proof',
@@ -3806,7 +3810,7 @@ describe('release proof evidence index', () => {
 		expect(packet.benchmarkBlocker?.nextAction).toContain('merged selected-sheet/metadata-only')
 		expect(packet.benchmarkBlocker?.nextAction).toContain('feature-rich SheetJS/Calamine')
 		expect(packet.benchmarkBlocker?.nextAction).toContain(
-			'unsupported selected-sheet/metadata-only',
+			'remaining unsupported selected-sheet/metadata-only',
 		)
 		expect(packet.benchmarkBlocker?.nextAction).not.toContain(
 			'clean selected-sheet timing-boundary rerun',

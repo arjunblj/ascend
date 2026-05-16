@@ -2234,13 +2234,14 @@ export function releaseProofPerformanceBoundaryDecisionPacket(
 			evidenceWeHave: [
 				'Focused ClosedXML value-read head-to-head evidence is accepted for comparable value-read rows only.',
 				'Same-lane selected-sheet external-process evidence at commit 39163862 is accepted for Ascend, SheetJS, and OpenPyXL Data-sheet-only rows.',
+				'Current-worktree python-calamine selected-sheet runner proof at commit 79d6cefd is accepted as evidence that Calamine can project the Data sheet on the same selected-sheet lane, but not as clean repeat-5 speed evidence.',
 				'Same-lane metadata-only external-process evidence at commit fa3a13dc is accepted for Ascend, SheetJS, and OpenPyXL metadata-only rows.',
 				'Current full-profile and merged selected-sheet/metadata-only scoreboards from commit 9ddfff91 report no leader failures or profile leader failures.',
 			],
 			evidenceMissing: [
 				'ClosedXML coverage policy for missing/error rows outside comparable value-read.',
 				'Feature-rich SheetJS and Calamine semantic-support evidence or an explicit not-comparable policy.',
-				'Unsupported selected-sheet and metadata-only competitor policy for ExcelJS, Calamine, Apache POI, and ClosedXML rows.',
+				'Unsupported selected-sheet policy for ExcelJS, Apache POI, and ClosedXML rows, plus unsupported metadata-only competitor policy for ExcelJS, Calamine, Apache POI, and ClosedXML rows.',
 				'FastXLSX environment coverage or a kill/defer decision for unavailable runner evidence.',
 				'Tracked-clean release-environment approval before any public speed wording.',
 			],
@@ -2256,22 +2257,22 @@ export function releaseProofPerformanceBoundaryDecisionPacket(
 				'Do not count unavailable runners, unsupported operations, feature-rich semantic mismatches, or dirty-worktree timings as wins.',
 			],
 			nextAction:
-				'Downgrade broad read-speed wording and stop production optimization from this evidence: the current full-profile and merged selected-sheet/metadata-only scoreboards have no leader failures, but ClosedXML coverage, feature-rich SheetJS/Calamine semantic mismatches, and unsupported selected-sheet/metadata-only competitor rows remain non-wins.',
+				'Downgrade broad read-speed wording and stop production optimization from this evidence: the current full-profile and merged selected-sheet/metadata-only scoreboards have no leader failures, but ClosedXML coverage, feature-rich SheetJS/Calamine semantic mismatches, and remaining unsupported selected-sheet/metadata-only competitor rows remain non-wins.',
 			nextOwnerAction:
-				'Benchmarking owner either resolves one explicit blocker row (ClosedXML coverage policy, feature-rich SheetJS/Calamine semantic policy, unsupported selected-sheet/metadata-only competitor policy, or FastXLSX environment coverage) with the commands below, or keeps the broad speed claim downgraded and stops.',
+				'Benchmarking owner either resolves one explicit blocker row (ClosedXML coverage policy, feature-rich SheetJS/Calamine semantic policy, remaining unsupported selected-sheet/metadata-only competitor policy, or FastXLSX environment coverage) with the commands below, or keeps the broad speed claim downgraded and stops.',
 			benchmarkCommands,
 			acceptanceEvidence: [
 				'Clean detached worktree or clean release benchmark environment.',
 				'ClosedXML is measured as ran/won for comparable value-read rows in the focused head-to-head run and remains not comparable for selected-sheet and metadata-only.',
 				'The selected-sheet same-lane external-process run at commit 39163862 is accepted as scoped evidence: Ascend, SheetJS, and OpenPyXL all loaded only the Data sheet; Ascend had the fastest median among those completed comparable rows.',
-				'Selected-sheet wording remains scoped because ExcelJS, Calamine, Apache POI, and ClosedXML are unsupported-operation gaps and must not be counted as wins.',
+				'Selected-sheet wording remains scoped because ExcelJS, Apache POI, and ClosedXML are unsupported-operation gaps, while python-calamine selected-sheet has only current-worktree projection proof and must not be counted as a clean speed win.',
 				'The metadata-only same-lane external-process run at commit fa3a13dc is accepted as scoped evidence: Ascend, SheetJS, and OpenPyXL all loaded workbook metadata without hydrating cells; Ascend had the fastest median among those completed comparable rows.',
 				'The current full-profile run at commit 9ddfff91 and merged selected-sheet/metadata-only scoreboard report no leader failures or profile leader failures, but coverage still fails for ClosedXML missing/error rows and feature-rich semantic mismatches.',
 				'Median, p95, CV/noise, memory, environment, runner/library versions, command, input shape, and semantic comparability are recorded for each comparable row.',
 				'Failed, missing, or semantically mismatched runners are not counted as wins.',
 			],
 			stopCondition:
-				'Stop production optimization from this evidence. Continue only as blocker work for ClosedXML coverage policy, feature-rich SheetJS/Calamine semantic support or not-comparable policy, unsupported selected-sheet/metadata-only competitor policy, or FastXLSX environment coverage.',
+				'Stop production optimization from this evidence. Continue only as blocker work for ClosedXML coverage policy, feature-rich SheetJS/Calamine semantic support or not-comparable policy, remaining unsupported selected-sheet/metadata-only competitor policy, or FastXLSX environment coverage.',
 		},
 		approvalChecklist,
 		validationCommands: [
@@ -3062,7 +3063,7 @@ function safeOpenQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceItem[] {
 				'bun test apps/api/src/server.test.ts -t "missing workbook references" --timeout 30000',
 			path: 'apps/api/src/server.ts; apps/api/src/server.test.ts',
 			acceptedScope:
-				'Commits 215d6e57, 7c1a9708, 8ce0fbe2, 43781bef, ea67f3b3, 6490a0e6, and e090fe13 return structured retryable missing-workbook-reference errors for API plan/commit/open-plan/inspect/active-content/trust-report/package-graph/raw-part/visuals/dump/template-merge/read/agent-view workflow requests instead of generic missing-file responses. Commit 346410a9 also returns structured retryable missing-range errors for API read/agent-view requests.',
+				'Commits 215d6e57, 7c1a9708, 8ce0fbe2, 43781bef, ea67f3b3, 6490a0e6, e090fe13, and 8d12c141 return structured retryable missing-workbook-reference errors for API plan/commit/open-plan/inspect/active-content/trust-report/package-graph/raw-part/visuals/pivots/dump/template-merge/read/agent-view workflow requests instead of generic missing-file responses. Commit 346410a9 also returns structured retryable missing-range errors for API read/agent-view requests.',
 			boundary:
 				'API request-shape diagnostics only; it does not prove file recovery, path discovery, source workbook existence, edit correctness, latency, or trust wording.',
 		},
@@ -4475,7 +4476,7 @@ function ownerDecisionArtifactsFor(
 					decision:
 						'Use the performance matrix as a defer decision: no broad XLSX read, SOTA, or QSS-leapfrog speed claim is promotable from the current partial baseline.',
 					nextAction:
-						'Benchmarking owner treats the focused ClosedXML, same-lane selected-sheet, same-lane metadata-only, and current full-profile/merged scoreboard runs as accepted bounded evidence, downgrades broad speed wording, and stops production optimization unless the next work is explicit blocker resolution for ClosedXML coverage, feature-rich semantic mismatches, unsupported selected-sheet/metadata-only competitors, or FastXLSX environment coverage.',
+						'Benchmarking owner treats the focused ClosedXML, same-lane selected-sheet, same-lane metadata-only, current-worktree python-calamine selected-sheet runner proof, and current full-profile/merged scoreboard runs as accepted bounded evidence, downgrades broad speed wording, and stops production optimization unless the next work is explicit blocker resolution for ClosedXML coverage, feature-rich semantic mismatches, remaining unsupported selected-sheet/metadata-only competitors, or FastXLSX environment coverage.',
 					forbiddenShortcut:
 						'Do not count unavailable runners, blocked runners, dirty-worktree timings, or one-workload medians as speed wins.',
 					boundary:

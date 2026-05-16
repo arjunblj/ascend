@@ -1157,6 +1157,27 @@ describe('release proof evidence index', () => {
 		expect(columnarSidecarForbidden).toContain('SDK/API/MCP sidecar product surface')
 		expect(columnarSidecarNextOwnerAction).toContain('columnar-sidecar.test.ts')
 		expect(columnarSidecarNextOwnerAction).toContain('claim-report --json')
+		const agentWorkflowDecision = index.releaseDecisionBoard.doNotPromoteYet.find(
+			(item) => item.name === 'agent-workflow-observability',
+		)
+		const agentWorkflowEvidence = agentWorkflowDecision?.evidenceWeHave.join('\n') ?? ''
+		const agentWorkflowMissing = agentWorkflowDecision?.evidenceMissing.join('\n') ?? ''
+		const agentWorkflowForbidden = agentWorkflowDecision?.forbiddenWording.join('\n') ?? ''
+		const agentWorkflowNextOwnerAction = agentWorkflowDecision?.nextOwnerAction ?? ''
+		expect(agentWorkflowEvidence).toContain('packages/sdk/src/agent-workflow.test.ts')
+		expect(agentWorkflowEvidence).toContain('apps/cli/src/cli.test.ts')
+		expect(agentWorkflowEvidence).toContain('apps/api/src/server.test.ts')
+		expect(agentWorkflowEvidence).toContain('apps/mcp/src/index.test.ts')
+		expect(agentWorkflowEvidence).toContain('docs/AGENT_WORKFLOW.md')
+		expect(agentWorkflowMissing).toContain('inspect, plan, commit, reopen, diff, audit')
+		expect(agentWorkflowMissing).toContain('Trace payload size')
+		expect(agentWorkflowMissing).toContain('Golden trace fixtures')
+		expect(agentWorkflowForbidden).toContain('autonomous correctness')
+		expect(agentWorkflowForbidden).toContain('signed audit trail')
+		expect(agentWorkflowForbidden).toContain('repair automation')
+		expect(agentWorkflowNextOwnerAction).toContain('failure taxonomy')
+		expect(agentWorkflowNextOwnerAction).toContain('trace payload size')
+		expect(agentWorkflowNextOwnerAction).toContain('release-proof-index.ts --no-timings')
 		expect(index.releaseDecisionBoard.doNotPromoteYet.at(-1)).toMatchObject({
 			name: 'practical-latency-contracts',
 			evidenceWeHave: expect.arrayContaining([
@@ -2026,6 +2047,9 @@ describe('release proof evidence index', () => {
 		expect(markdown).toContain('Do not claim exact model-token counts')
 		expect(markdown).toContain('viewport-patch-proof.test.ts')
 		expect(markdown).toContain('Do not claim collaboration, sync, CRDT')
+		expect(markdown).toContain('packages/sdk/src/agent-workflow.test.ts')
+		expect(markdown).toContain('Do not claim autonomous correctness')
+		expect(markdown).toContain('trace payload size')
 		expect(markdown).toContain(
 			'git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager',
 		)

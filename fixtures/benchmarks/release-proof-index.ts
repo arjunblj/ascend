@@ -2263,6 +2263,8 @@ function releaseDecisionDoNotPromoteItem(
 		note.name === 'token-bounded-agent-view' ? TOKEN_BOUNDED_AGENT_VIEW_BLOCKER : undefined
 	const retainedViewportPatchBlocker =
 		note.name === 'retained-viewport-patch-history' ? RETAINED_VIEWPORT_PATCH_BLOCKER : undefined
+	const agentWorkflowObservabilityBlocker =
+		note.name === 'agent-workflow-observability' ? AGENT_WORKFLOW_OBSERVABILITY_BLOCKER : undefined
 	return {
 		name: note.name,
 		status: 'do-not-promote-yet',
@@ -2278,6 +2280,7 @@ function releaseDecisionDoNotPromoteItem(
 			...(formulaOracleRoutingBlocker?.evidenceWeHave ?? []),
 			...(tokenBoundedAgentViewBlocker?.evidenceWeHave ?? []),
 			...(retainedViewportPatchBlocker?.evidenceWeHave ?? []),
+			...(agentWorkflowObservabilityBlocker?.evidenceWeHave ?? []),
 			...(portfolioClaim?.proofCommand
 				? [`Existing proof command: \`${portfolioClaim.proofCommand}\`.`]
 				: []),
@@ -2296,6 +2299,7 @@ function releaseDecisionDoNotPromoteItem(
 			...(formulaOracleRoutingBlocker?.evidenceMissing ?? []),
 			...(tokenBoundedAgentViewBlocker?.evidenceMissing ?? []),
 			...(retainedViewportPatchBlocker?.evidenceMissing ?? []),
+			...(agentWorkflowObservabilityBlocker?.evidenceMissing ?? []),
 			...(proof ? [proof.fixture, proof.benchmark, proof.surface, proof.validationGate] : []),
 		],
 		qssContrast: [
@@ -2313,6 +2317,7 @@ function releaseDecisionDoNotPromoteItem(
 			...(formulaOracleRoutingBlocker?.forbiddenWording ?? []),
 			...(tokenBoundedAgentViewBlocker?.forbiddenWording ?? []),
 			...(retainedViewportPatchBlocker?.forbiddenWording ?? []),
+			...(agentWorkflowObservabilityBlocker?.forbiddenWording ?? []),
 			...(proof ? [proof.honestBoundary] : []),
 			...(excludedEvidence ? [excludedEvidence.boundary] : []),
 		],
@@ -2325,6 +2330,7 @@ function releaseDecisionDoNotPromoteItem(
 			formulaOracleRoutingBlocker?.ownerAction ??
 			tokenBoundedAgentViewBlocker?.ownerAction ??
 			retainedViewportPatchBlocker?.ownerAction ??
+			agentWorkflowObservabilityBlocker?.ownerAction ??
 			deferredClaim?.proofNeeded ??
 			excludedEvidence?.eligibilityRule ??
 			proof?.validationGate ??
@@ -3034,6 +3040,25 @@ const RETAINED_VIEWPORT_PATCH_BLOCKER = {
 	],
 	forbiddenWording: [
 		'Do not claim collaboration, sync, CRDT, multi-writer convergence, transaction isolation, unlimited history, or a signed audit trail from viewport patch evidence.',
+	],
+} as const
+
+const AGENT_WORKFLOW_OBSERVABILITY_BLOCKER = {
+	ownerAction:
+		'Product owner keeps agent-workflow-observability out of release wording, records one public inspect/plan/commit/reopen/diff/audit/trace/repair workflow with failure taxonomy, trace payload size, compact/redacted artifact behavior, recovery prompts, and proof that trace output changes the next repair or audit decision; validate with focused SDK agent workflow coverage, CLI/API/MCP trace and repair tests, and `bun run fixtures/benchmarks/release-proof-index.ts --no-timings --owner-handoffs-json` before any observability wording.',
+	evidenceWeHave: [
+		'SDK agent workflow tests cover package graph visibility, post-write audit blocking, compact trace artifact counts, and release proof bundle links in `packages/sdk/src/agent-workflow.test.ts`.',
+		'CLI trace and repair tests expose trace depth, formula precedents, structured batch repair details, and check metadata for agent repair in `apps/cli/src/cli.test.ts`.',
+		'API and MCP tests expose capped formula-view trace diagnostics, structured repair details, compact trace artifact counts, and blocked post-write audit output in `apps/api/src/server.test.ts` and `apps/mcp/src/index.test.ts`.',
+		'Workflow docs list inspect, plan, commit, verify, trace, and repair-plan recovery paths in `docs/AGENT_WORKFLOW.md`, but documentation is guidance rather than release proof.',
+	],
+	evidenceMissing: [
+		'One public workbook workflow showing inspect, plan, commit, reopen, diff, audit, trace, and repair-plan output with a failure taxonomy and recovery prompts.',
+		'Trace payload size, compact/redacted artifact behavior, failure-class coverage, and evidence that trace output changes a concrete repair or audit decision.',
+		'Golden trace fixtures, redaction/privacy checks, and owner-approved recovery wording before publishing observability language.',
+	],
+	forbiddenWording: [
+		'Do not claim autonomous correctness, complete observability, signed audit trail, repair automation, root-cause diagnosis, privacy-safe redaction, or that traces alone prove workbook safety from current workflow evidence.',
 	],
 } as const
 

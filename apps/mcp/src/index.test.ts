@@ -451,9 +451,12 @@ describe('MCP server', () => {
 		expect(agentApi?.contents[0]?.text).toContain('Ascend Agent API')
 		expect(capabilities?.contents[0]?.text).toContain('"capabilities"')
 		expect(operations?.contents[0]?.text).toContain('"schemas"')
+		expect(workflow?.contents[0]?.text).toContain('ascend.open_plan')
+		expect(workflow?.contents[0]?.text).toContain('before hydrating unknown XLSX/XLSM')
 		expect(workflow?.contents[0]?.text).toContain('ascend.plan')
 		expect(workflow?.contents[0]?.text).toContain('ascend.trust_report')
 		expect(workflow?.contents[0]?.text).toContain('planHandle')
+		expect(workflow?.contents[0]?.text).toContain('must not echo it')
 		expect(workflow?.contents[0]?.text).toContain('formula_assist')
 	})
 
@@ -511,6 +514,7 @@ describe('MCP server', () => {
 		})
 		const text = prompt?.messages[0]?.content.text ?? ''
 		expect(text).toContain('Workbook: book.xlsx')
+		expect(text).toContain('ascend.open_plan')
 		expect(text).toContain('ascend.plan')
 		expect(text).toContain('ascend.commit')
 		expect(text).toContain('ascend.trust_report')
@@ -518,6 +522,7 @@ describe('MCP server', () => {
 		expect(text).toContain('ascend.formula_assist')
 		expect(text).toContain('planHandle')
 		expect(text).toContain('allowLoss')
+		expect(text).toContain('never echo it')
 	})
 
 	test('ascend.formula_assist exposes formula IDE helpers for agents', async () => {

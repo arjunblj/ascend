@@ -631,6 +631,21 @@ describe('Ascend API server', () => {
 		})
 	})
 
+	test('/visuals rejects missing workbook references with structured retry guidance', async () => {
+		const result = await postJson('/visuals', {})
+
+		expect(result.status).toBe(400)
+		expect(result.body.ok).toBe(false)
+		expect(result.body.error).toMatchObject({
+			code: 'VALIDATION_ERROR',
+			message: 'Missing or invalid visuals workbook reference',
+			retryable: true,
+			retryStrategy: 'modified',
+			details: { required: ['file'] },
+			suggestedFix: expect.stringContaining('Pass file so Ascend can inspect visual inventory'),
+		})
+	})
+
 	test('/dump rejects missing workbook references with structured retry guidance', async () => {
 		const result = await postJson('/dump', {})
 

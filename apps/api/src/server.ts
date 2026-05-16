@@ -199,6 +199,7 @@ type AgentWorkflowFileContext =
 	| 'trust-report'
 	| 'package-graph'
 	| 'raw-part'
+	| 'visuals'
 	| 'dump'
 	| 'template-merge'
 	| 'read'
@@ -221,6 +222,8 @@ function missingAgentWorkflowFileError(context: AgentWorkflowFileContext): Ascen
 				return 'Pass file so Ascend can audit workbook package preservation before planning edits.'
 			case 'raw-part':
 				return 'Pass file so Ascend can inspect the requested raw package part safely.'
+			case 'visuals':
+				return 'Pass file so Ascend can inspect visual inventory before visual, chart, drawing, or image edits.'
 			case 'dump':
 				return 'Pass file so Ascend can dump replayable operations from a full workbook load.'
 			case 'template-merge':
@@ -753,7 +756,7 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 			if (method === 'POST' && path === '/visuals') {
 				const body = await parseJson<{ file?: string }>(req)
 				const file = body ? requireString(body, 'file') : null
-				if (!file) return jsonFailure('Missing or invalid file', 400)
+				if (!file) return jsonFailureError(missingAgentWorkflowFileError('visuals'), 400)
 				try {
 					const wb = await WorkbookDocument.open(file, { mode: 'full' })
 					return jsonSuccess(wb.visualInventory())

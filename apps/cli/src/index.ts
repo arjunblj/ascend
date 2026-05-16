@@ -338,7 +338,13 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
 							: String(err)
 			console.log(jsonErr(error))
 		} else {
-			console.error(`Error: ${err instanceof Error ? err.message : String(err)}`)
+			if (isFileNotFoundError(err)) {
+				const error = fileNotFoundCliError(args[0])
+				console.error(`Error: ${error.message}`)
+				if (error.suggestedFix) console.error(error.suggestedFix)
+			} else {
+				console.error(`Error: ${err instanceof Error ? err.message : String(err)}`)
+			}
 		}
 		return 1
 	}

@@ -36,6 +36,10 @@ const XML_BYTE_BATCH_TARGET = positiveEnvInt('ASCEND_DENSE_XML_BYTE_BATCH', 256 
 const XML_ROW_BATCH_TARGET_OVERRIDE = optionalPositiveEnvInt('ASCEND_DENSE_XML_ROW_BATCH')
 const XML_ROW_BATCH_TARGET = XML_ROW_BATCH_TARGET_OVERRIDE ?? 256
 const XML_SAFE_STRING_ROW_BATCH_TARGET = XML_ROW_BATCH_TARGET_OVERRIDE ?? 128
+const STREAMING_SYNC_FALLBACK_XML_BYTES = positiveEnvInt(
+	'ASCEND_DENSE_STREAMING_SYNC_FALLBACK_XML_BYTES',
+	4 * 1024 * 1024,
+)
 
 interface XmlByteSink {
 	write(chunk: string): void
@@ -55,9 +59,7 @@ export function writeDenseRowsXlsx(
 ): Result<Uint8Array, AscendError> {
 	try {
 		validateDenseRowsOptions(options)
-		const parts = buildBaseParts(options.sheetName ?? DEFAULT_SHEET_NAME)
-		parts.set('xl/worksheets/sheet1.xml', buildSheetXml(options))
-		return ok(createZip(parts, zipOptionsForDenseRows(options)))
+		return ok(buildDenseRowsZip(options))
 	} catch (error) {
 		return err(toExportError(error))
 	}
@@ -68,6 +70,7 @@ export async function writeDenseRowsXlsxStreaming(
 ): Promise<Result<Uint8Array, AscendError>> {
 	try {
 		validateDenseRowsOptions(options)
+		if (shouldUseSyncFallbackForStreaming(options)) return ok(buildDenseRowsZip(options))
 		const builder = new StreamingZipBuilder(zipOptionsForDenseRows(options))
 		for (const [path, data] of buildBaseParts(options.sheetName ?? DEFAULT_SHEET_NAME)) {
 			builder.addEntry(path, data)
@@ -79,6 +82,16 @@ export async function writeDenseRowsXlsxStreaming(
 	} catch (error) {
 		return err(toExportError(error))
 	}
+}
+
+function buildDenseRowsZip(options: WriteDenseRowsXlsxOptions): Uint8Array {
+	const parts = buildBaseParts(options.sheetName ?? DEFAULT_SHEET_NAME)
+	parts.set('xl/worksheets/sheet1.xml', buildSheetXml(options))
+	return createZip(parts, zipOptionsForDenseRows(options))
+}
+
+function shouldUseSyncFallbackForStreaming(options: WriteDenseRowsXlsxOptions): boolean {
+	return estimateDenseSheetXmlBytes(options) <= STREAMING_SYNC_FALLBACK_XML_BYTES
 }
 
 function validateDenseRowsOptions(options: WriteDenseRowsXlsxOptions): void {

@@ -4929,6 +4929,30 @@ describe('writeXlsx', () => {
 		expect(readSheet?.cells.get(1, 1)?.value).toEqual({ kind: 'number', value: 3 })
 	})
 
+	it('keeps small dense streaming output equivalent to the buffered dense writer', async () => {
+		const options = {
+			rows: 64,
+			cols: 8,
+			omitCellRefs: true,
+			omitRowRefs: true,
+			allCellsPresent: true,
+			stringsAreXmlSafe: true,
+			valueType: 'string' as const,
+			valueAt: (row: number, col: number) => `text-${row}-${col}`,
+		}
+		const buffered = writeDenseRowsXlsx(options)
+		expectOk(buffered)
+		const streaming = await writeDenseRowsXlsxStreaming(options)
+		expectOk(streaming)
+		expect(streaming.value).toEqual(buffered.value)
+
+		const read = readXlsx(streaming.value, { mode: 'values' })
+		expectOk(read)
+		const readSheet = read.value.workbook.sheets[0]
+		expect(readSheet?.cells.get(0, 0)?.value).toEqual({ kind: 'string', value: 'text-0-0' })
+		expect(readSheet?.cells.get(63, 7)?.value).toEqual({ kind: 'string', value: 'text-63-7' })
+	})
+
 	it('supports compact dense writer compression without changing values', async () => {
 		const fast = await writeDenseRowsXlsxStreaming({
 			rows: 200,

@@ -20,9 +20,9 @@ describe('package action proof harness', () => {
 			'chart-sidecar-accounting',
 			'unknown-part-error',
 		])
-		expect(cases.filter((entry) => entry.sourceKind === 'public-fixture')).toHaveLength(4)
+		expect(cases.filter((entry) => entry.sourceKind === 'public-fixture')).toHaveLength(5)
 		expect(cases.filter((entry) => entry.sourceKind === 'generated-workbook')).toHaveLength(2)
-		expect(cases.filter((entry) => entry.sourceKind === 'generated-edge-package')).toHaveLength(2)
+		expect(cases.filter((entry) => entry.sourceKind === 'generated-edge-package')).toHaveLength(1)
 	})
 
 	test('proves all package action kinds without relying on timing thresholds', async () => {
@@ -40,10 +40,10 @@ describe('package action proof harness', () => {
 		expect(proof.cases.every((entry) => entry.commitJournalExact === false)).toBe(true)
 		expect(proof.cases.every((entry) => entry.commitJournalPackageIssueCount > 0)).toBe(true)
 		expect(proof.cases.every((entry) => entry.commitJournalPackageIssueRefs.length > 0)).toBe(true)
-		expect(proof.cases.filter((entry) => entry.sourceKind === 'public-fixture')).toHaveLength(4)
+		expect(proof.cases.filter((entry) => entry.sourceKind === 'public-fixture')).toHaveLength(5)
 		expect(
 			proof.cases.filter((entry) => entry.sourceKind === 'generated-edge-package'),
-		).toHaveLength(2)
+		).toHaveLength(1)
 		expect(proof.cases.find((entry) => entry.name === 'docprops-passthrough')).toMatchObject({
 			sourceKind: 'public-fixture',
 			fixture: 'fixtures/xlsx/calamine/date_1904.xlsx',
@@ -55,6 +55,8 @@ describe('package action proof harness', () => {
 			issueCount: 0,
 		})
 		expect(proof.cases.find((entry) => entry.name === 'unknown-part-error')).toMatchObject({
+			sourceKind: 'public-fixture',
+			fixture: 'fixtures/xlsx/excelforge/Book_1_unknown_part.xlsx',
 			postWriteAuditsPassed: false,
 			issueCount: 1,
 		})
@@ -138,9 +140,9 @@ describe('package action proof harness', () => {
 			streamingRegenerateParts: 4,
 		})
 		expect(compact.sourceCaseCounts).toEqual({
-			'public-fixture': 4,
+			'public-fixture': 5,
 			'generated-workbook': 2,
-			'generated-edge-package': 2,
+			'generated-edge-package': 1,
 		})
 		expect(compactJson.length).toBeLessThan(fullJson.length)
 		expect(compactJson).not.toContain('inputSha256')

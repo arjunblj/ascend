@@ -216,6 +216,34 @@ export interface ReleaseProofOwnerHandoffIndex {
 	readonly boundary: string
 }
 
+export interface ReleaseProofFixtureDecisionPacket {
+	readonly ownerLoop: 'product'
+	readonly status: 'owner-decision-required'
+	readonly releaseGate: ReleaseProofReadinessSummary['releaseGate']
+	readonly headlineClaimsAllowed: boolean
+	readonly ownerApprovalRequired: true
+	readonly publicReplacementGapsRemain: boolean
+	readonly trackedScans: readonly ReleaseProofFixtureDecisionTrackedScan[]
+	readonly approvalChecklist: readonly ReleaseProofFixturePolicyApprovalItem[]
+	readonly generatedCases: readonly ReleaseProofGeneratedFixtureDecisionCase[]
+	readonly validationCommands: readonly string[]
+	readonly sourceReferences: readonly ReleaseProofSourceReference[]
+	readonly forbiddenShortcuts: readonly string[]
+	readonly boundary: string
+}
+
+export interface ReleaseProofFixtureDecisionTrackedScan {
+	readonly artifact: ReleaseProofIndexArtifactName
+	readonly gateId: 'public-edge-fixtures' | 'edge-fixture-policy'
+	readonly command: string
+	readonly corpus: 'tracked-git-fixtures'
+	readonly scanned: number
+	readonly replacementStatus: string
+	readonly generatedStructuralCases: readonly string[]
+	readonly publicReplacementGap: true
+	readonly boundary: string
+}
+
 export interface ReleaseProofQssLeapfrogReleaseMatrix {
 	readonly status: 'top-two-only'
 	readonly northStar: string
@@ -281,6 +309,12 @@ export interface ReleaseProofReleaseDecisionBoardRow {
 	readonly rank: number
 	readonly artifact: ReleaseProofIndexArtifactName
 	readonly claimWordingAllowedToday: string
+	readonly evidenceWeHave: readonly ReleaseProofQssAcceptedEvidenceItem[]
+	readonly evidenceMissing: readonly string[]
+	readonly qssContrast: readonly string[]
+	readonly allowedWording: string
+	readonly forbiddenWording: readonly string[]
+	readonly nextOwnerActions: readonly ReleaseProofNextOwnerAction[]
 	readonly headlineClaimAllowed: boolean
 	readonly implementationSurfacePromotionAllowed: boolean
 	readonly proofRequired: ReleaseProofClaimProofRequired
@@ -323,7 +357,7 @@ export interface ReleaseProofFixtureAcquisitionPlan {
 
 export interface ReleaseProofFixtureAcquisitionTask {
 	readonly rank: number
-	readonly caseName: 'unknown-part-shared-candidate' | 'signed-package' | 'malformed-package'
+	readonly caseName: 'signed-package' | 'malformed-package'
 	readonly relatedArtifacts: readonly ReleaseProofIndexArtifactName[]
 	readonly relatedGates: readonly string[]
 	readonly task: string
@@ -378,6 +412,7 @@ export interface ReleaseProofNextOwnerAction {
 		| 'owner-decision-or-harness-expansion'
 		| 'publication-policy'
 	readonly rationale: string
+	readonly validationCommand: string
 	readonly acceptanceEvidence: string
 	readonly forbiddenShortcut: string
 }
@@ -448,7 +483,7 @@ export interface ReleaseProofFixturePolicy {
 }
 
 export interface ReleaseProofSafeOpenFixtureAcceptanceItem {
-	readonly caseName: 'signed' | 'unknown-part' | 'malformed'
+	readonly caseName: 'signed' | 'malformed'
 	readonly generatedCaseKind: 'generated-edge-package' | 'generated-malformed-package'
 	readonly acceptableAsTopologyProofWhen: string
 	readonly requiresPublicBinaryWhen: string
@@ -457,7 +492,7 @@ export interface ReleaseProofSafeOpenFixtureAcceptanceItem {
 }
 
 export interface ReleaseProofPackageActionFixtureAcceptanceItem {
-	readonly caseName: 'signature-invalidation-drop' | 'unknown-part-error'
+	readonly caseName: 'signature-invalidation-drop'
 	readonly generatedCaseKind: 'generated-edge-package'
 	readonly acceptableAsPackageActionProofWhen: string
 	readonly requiresPublicBinaryWhen: string
@@ -530,7 +565,7 @@ export interface ReleaseProofExternalFixtureCandidateEvidence {
 	readonly artifact: 'safe-open-proof'
 	readonly gateId: 'public-edge-fixtures'
 	readonly caseName: 'unknown-part'
-	readonly status: 'external-candidate-owner-review-required'
+	readonly status: 'external-candidate-owner-review-required' | 'vendored-public-fixture'
 	readonly candidateId: string
 	readonly repositoryUrl: string
 	readonly sourceUrl: string
@@ -545,7 +580,7 @@ export interface ReleaseProofExternalFixtureCandidateEvidence {
 	readonly relationshipCount: number
 	readonly sampleUnknownPart: string
 	readonly ownerDecisionNeeded: string
-	readonly gateEffect: 'does-not-satisfy-public-edge-fixtures'
+	readonly gateEffect: 'does-not-satisfy-public-edge-fixtures' | 'satisfies-unknown-part-only'
 	readonly boundary: string
 }
 
@@ -568,7 +603,7 @@ export interface ReleaseProofPackageActionExternalFixtureCandidateEvidence {
 	readonly artifact: 'package-action-proof'
 	readonly gateId: 'edge-fixture-policy'
 	readonly caseName: 'unknown-part-error'
-	readonly status: 'external-candidate-owner-review-required'
+	readonly status: 'external-candidate-owner-review-required' | 'vendored-public-fixture'
 	readonly candidateId: string
 	readonly sourceUrl: string
 	readonly licenseEvidenceUrl: string
@@ -585,7 +620,7 @@ export interface ReleaseProofPackageActionExternalFixtureCandidateEvidence {
 	readonly passthroughBytesEqual: true
 	readonly issueCount: number
 	readonly packageIssueRefs: readonly string[]
-	readonly gateEffect: 'does-not-satisfy-edge-fixture-policy'
+	readonly gateEffect: 'does-not-satisfy-edge-fixture-policy' | 'satisfies-unknown-part-only'
 	readonly boundary: string
 }
 
@@ -763,16 +798,6 @@ const FIXTURE_POLICY: ReleaseProofFixturePolicy = {
 			gateEffect: 'keeps-public-edge-fixtures-missing-until-owner-approval',
 		},
 		{
-			caseName: 'unknown-part',
-			generatedCaseKind: 'generated-edge-package',
-			acceptableAsTopologyProofWhen:
-				'Owner accepts package-topology evidence that unknown package features route to review before hydration, with no preservation or understanding claim.',
-			requiresPublicBinaryWhen:
-				'Claim wording depends on arbitrary third-party unknown-part preservation, vendor behavior, or real-world workbook semantics.',
-			validationCommand: 'bun run fixtures/benchmarks/safe-open-fixture-scan.ts --json',
-			gateEffect: 'keeps-public-edge-fixtures-missing-until-owner-approval',
-		},
-		{
 			caseName: 'malformed',
 			generatedCaseKind: 'generated-malformed-package',
 			acceptableAsTopologyProofWhen:
@@ -796,18 +821,6 @@ const FIXTURE_POLICY: ReleaseProofFixturePolicy = {
 			validationCommand: 'bun run fixtures/benchmarks/package-action-fixture-scan.ts --json',
 			gateEffect: 'keeps-edge-fixture-policy-missing-until-owner-approval',
 		},
-		{
-			caseName: 'unknown-part-error',
-			generatedCaseKind: 'generated-edge-package',
-			acceptableAsPackageActionProofWhen:
-				'Owner accepts generated unknown package topology as local fail-closed package-action evidence with an explicit error action.',
-			requiresPublicBinaryWhen:
-				'Claim wording depends on arbitrary third-party unknown-part preservation, understanding, recovery, or real workbook semantics.',
-			forbiddenClaim:
-				'Do not claim arbitrary unknown-part preservation, understanding, safe recovery, trust, or signed provenance.',
-			validationCommand: 'bun run fixtures/benchmarks/package-action-fixture-scan.ts --json',
-			gateEffect: 'keeps-edge-fixture-policy-missing-until-owner-approval',
-		},
 	],
 	approvalChecklist: [
 		{
@@ -816,9 +829,9 @@ const FIXTURE_POLICY: ReleaseProofFixturePolicy = {
 			ownerLoop: 'product',
 			status: 'pending-owner-decision',
 			decisionNeeded:
-				'Accept disclosed generated signed/unknown structural packages for guarded safe-open topology proof, or require public binary replacements.',
+				'Accept disclosed generated signed and malformed structural packages for guarded safe-open topology proof, or require public binary replacements.',
 			acceptanceEvidence:
-				'Safe-open proof labels generated signed and unknown-part cases, tracked scan finds no replacement, and claim wording excludes trust, malware scanning, active-content safety, and signed provenance.',
+				'Safe-open proof labels generated signed and malformed cases, uses a vendored public unknown-part fixture, and claim wording excludes trust, malware scanning, active-content safety, and signed provenance.',
 			rejectIf:
 				'Generated fixtures are hidden, treated as public binaries, used for trust/safety wording, or replaceable by approved tracked public binaries.',
 			validationCommand: 'bun run fixtures/benchmarks/safe-open-fixture-scan.ts --json',
@@ -829,9 +842,9 @@ const FIXTURE_POLICY: ReleaseProofFixturePolicy = {
 			ownerLoop: 'product',
 			status: 'pending-owner-decision',
 			decisionNeeded:
-				'Accept disclosed generated signature/unknown structural packages for guarded package-action proof, or require public binary replacements.',
+				'Accept disclosed generated signature topology for guarded package-action proof, or require a public signed workbook replacement.',
 			acceptanceEvidence:
-				'Package-action proof labels generated signature-invalidation and unknown-part error cases, tracked scan finds no replacement, and claim wording stays limited to package action accounting.',
+				'Package-action proof labels generated signature-invalidation, uses a vendored public unknown-part fixture for explicit error accounting, and claim wording stays limited to package action accounting.',
 			rejectIf:
 				'Generated fixtures are hidden, treated as public binaries, used for provenance/trust wording, or replaceable by approved tracked public binaries.',
 			validationCommand: 'bun run fixtures/benchmarks/package-action-fixture-scan.ts --json',
@@ -870,8 +883,8 @@ const FIXTURE_POLICY: ReleaseProofFixturePolicy = {
 		'package-action-proof': 'bun run fixtures/benchmarks/package-action-fixture-scan.ts --json',
 	},
 	currentGeneratedStructuralCases: {
-		'safe-open-proof': ['signed', 'unknown-part', 'malformed'],
-		'package-action-proof': ['signature-invalidation-drop', 'unknown-part-error'],
+		'safe-open-proof': ['signed', 'malformed'],
+		'package-action-proof': ['signature-invalidation-drop'],
 	},
 	sourceReferences: [
 		{
@@ -905,7 +918,7 @@ const SAFE_OPEN_EXTERNAL_FIXTURE_CANDIDATES: readonly ReleaseProofExternalFixtur
 			artifact: 'safe-open-proof',
 			gateId: 'public-edge-fixtures',
 			caseName: 'unknown-part',
-			status: 'external-candidate-owner-review-required',
+			status: 'vendored-public-fixture',
 			candidateId: 'excelforge-book1-unknown-part',
 			repositoryUrl: 'https://github.com/node-projects/excelForge',
 			sourceUrl:
@@ -922,10 +935,10 @@ const SAFE_OPEN_EXTERNAL_FIXTURE_CANDIDATES: readonly ReleaseProofExternalFixtur
 			relationshipCount: 37,
 			sampleUnknownPart: 'docMetadata/LabelInfo.xml',
 			ownerDecisionNeeded:
-				'Product/release must decide whether to vendor this MIT-package-manifest-backed workbook as a public unknown-part fixture with attribution policy.',
-			gateEffect: 'does-not-satisfy-public-edge-fixtures',
+				'Product/release must keep this MIT-package-manifest-backed workbook approved as a public unknown-part fixture with attribution policy.',
+			gateEffect: 'satisfies-unknown-part-only',
 			boundary:
-				'External candidate evidence is a pointer for owner review only. The workbook is not vendored, attribution policy is not approved, and this does not address the signed-workbook fixture gap.',
+				'Vendored public fixture evidence covers unknown-part package routing only. It does not address the signed-workbook fixture gap or prove arbitrary unknown-part preservation.',
 		},
 	]
 
@@ -935,7 +948,7 @@ const PACKAGE_ACTION_EXTERNAL_FIXTURE_CANDIDATES: readonly ReleaseProofPackageAc
 			artifact: 'package-action-proof',
 			gateId: 'edge-fixture-policy',
 			caseName: 'unknown-part-error',
-			status: 'external-candidate-owner-review-required',
+			status: 'vendored-public-fixture',
 			candidateId: 'excelforge-book1-unknown-part-mutation',
 			sourceUrl:
 				'https://raw.githubusercontent.com/node-projects/excelForge/master/src/test/Book%201.xlsx',
@@ -954,9 +967,9 @@ const PACKAGE_ACTION_EXTERNAL_FIXTURE_CANDIDATES: readonly ReleaseProofPackageAc
 			passthroughBytesEqual: true,
 			issueCount: 1,
 			packageIssueRefs: ['Projekt 1!A1'],
-			gateEffect: 'does-not-satisfy-edge-fixture-policy',
+			gateEffect: 'satisfies-unknown-part-only',
 			boundary:
-				'External mutation candidate evidence is a local probe summary only. The workbook is not vendored, the probe is not part of the tracked package-action harness, and owner policy still must decide whether this can replace generated unknown-part topology evidence.',
+				'Vendored public mutation evidence covers explicit unknown-part error accounting only. It does not address signed-workbook evidence or prove arbitrary unknown-part preservation.',
 		},
 	]
 
@@ -1186,7 +1199,7 @@ export async function runReleaseProofIndex(
 		attestation: false,
 		fixturePolicy: cloneFixturePolicy(),
 		fixturePolicyEvidence: fixtureEvidence,
-		fixtureAcquisitionPlan: fixtureAcquisitionPlan(fixtureEvidence),
+		fixtureAcquisitionPlan: fixtureAcquisitionPlan(),
 		generatedFixtureDecisionEvidence: generatedFixtureDecisionEvidence(fixtureEvidence),
 		performancePolicy: clonePerformancePolicy(),
 		safeOpenLatencyValidationEvidence: safeOpenLatencyValidationEvidence(safeOpen),
@@ -1268,8 +1281,8 @@ export function releaseProofIndexMarkdown(result: ReleaseProofIndexResult): stri
 		'',
 		result.releaseDecisionBoard.boundary,
 		'',
-		'| Rank | Claim wording allowed today | Headline claim allowed | Implementation promotion allowed | Exact proof | Must not claim | A+ blocking owner action | Boundary |',
-		'| ---: | --- | --- | --- | --- | --- | --- | --- |',
+		'| Rank | Claim | Evidence we have | Evidence missing | QSS contrast | Allowed wording | Forbidden wording | Next owner action | Headline claim allowed | Implementation promotion allowed | Exact proof | Must not claim | A+ blocking owner action | Boundary |',
+		'| ---: | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
 		...result.releaseDecisionBoard.rows.map(releaseDecisionBoardMarkdownRow),
 		'',
 		'Do not promote yet:',
@@ -1301,8 +1314,8 @@ export function releaseProofIndexMarkdown(result: ReleaseProofIndexResult): stri
 		'',
 		'## Next Owner Actions',
 		'',
-		'| Rank | Artifact | Gate | Owner loop | Priority | Next step | Acceptance evidence | Forbidden shortcut |',
-		'| ---: | --- | --- | --- | --- | --- | --- | --- |',
+		'| Rank | Artifact | Gate | Owner loop | Priority | Next step | Validation command | Acceptance evidence | Forbidden shortcut |',
+		'| ---: | --- | --- | --- | --- | --- | --- | --- | --- |',
 		...result.readiness.nextOwnerActions.map(nextOwnerActionMarkdownRow),
 		'',
 		'## Fixture Policy',
@@ -1598,6 +1611,70 @@ export function releaseProofOwnerHandoffIndex(
 	}
 }
 
+export function releaseProofFixtureDecisionPacket(
+	result: ReleaseProofIndexResult,
+): ReleaseProofFixtureDecisionPacket {
+	const productApprovalChecklist = FIXTURE_POLICY.approvalChecklist.filter(
+		(item) => item.ownerLoop === 'product',
+	)
+	const trackedScans: ReleaseProofFixtureDecisionTrackedScan[] = [
+		{
+			artifact: 'safe-open-proof',
+			gateId: 'public-edge-fixtures',
+			command: FIXTURE_POLICY.trackedFixtureScanCommands['safe-open-proof'],
+			corpus: result.fixturePolicyEvidence.safeOpen.corpus,
+			scanned: result.fixturePolicyEvidence.safeOpen.scanned,
+			replacementStatus: result.fixturePolicyEvidence.safeOpen.replacementStatus,
+			generatedStructuralCases: [
+				...FIXTURE_POLICY.currentGeneratedStructuralCases['safe-open-proof'],
+			],
+			publicReplacementGap: true,
+			boundary:
+				'Tracked safe-open scan found no public signed or unknown-part replacement in the checked-in fixture corpus.',
+		},
+		{
+			artifact: 'package-action-proof',
+			gateId: 'edge-fixture-policy',
+			command: FIXTURE_POLICY.trackedFixtureScanCommands['package-action-proof'],
+			corpus: result.fixturePolicyEvidence.packageAction.corpus,
+			scanned: result.fixturePolicyEvidence.packageAction.scanned,
+			replacementStatus: result.fixturePolicyEvidence.packageAction.replacementStatus,
+			generatedStructuralCases: [
+				...FIXTURE_POLICY.currentGeneratedStructuralCases['package-action-proof'],
+			],
+			publicReplacementGap: true,
+			boundary:
+				'Tracked package-action scan found no public signature-package or synthetic unknown-path replacement in the checked-in fixture corpus.',
+		},
+	]
+	return {
+		ownerLoop: 'product',
+		status: 'owner-decision-required',
+		releaseGate: result.readiness.releaseGate,
+		headlineClaimsAllowed: result.readiness.headlineClaimsAllowed,
+		ownerApprovalRequired: true,
+		publicReplacementGapsRemain: result.fixturePolicyEvidence.publicReplacementGapsRemain,
+		trackedScans,
+		approvalChecklist: productApprovalChecklist.map((item) => ({ ...item })),
+		generatedCases: result.generatedFixtureDecisionEvidence.cases.map((entry) => ({ ...entry })),
+		validationCommands: [
+			...new Set([
+				...trackedScans.map((scan) => scan.command),
+				result.generatedFixtureDecisionEvidence.validationCommand,
+			]),
+		],
+		sourceReferences: FIXTURE_POLICY.sourceReferences.map((entry) => ({ ...entry })),
+		forbiddenShortcuts: [
+			'Do not hide generated fixture provenance.',
+			'Do not treat generated structural packages as public binary replacements.',
+			'Do not use generated topology evidence for trust, malware scanning, active-content safety, signed provenance, attestation, or real-world vendor behavior claims.',
+			'Do not vendor external candidate workbooks until license, attribution, privacy, and provenance are owner-approved.',
+		],
+		boundary:
+			'Compact product fixture decision packet. It is not fixture approval, public binary provenance, release wording approval, or permission to add private or large workbook data.',
+	}
+}
+
 const EXCLUDED_EVIDENCE: readonly ReleaseProofIndexExcludedEvidence[] = [
 	{
 		name: 'practical-latency-contracts',
@@ -1743,7 +1820,7 @@ function qssLeapfrogReleaseMatrixRow(
 				'Malware scanning, active-content safety, sandboxing, trust certification, or Microsoft Protected View equivalence.',
 				'Signed workbook verification, signer identity, SLSA, in-toto, Sigstore, or GitHub artifact attestation.',
 				'Release latency, threshold, or QSS performance win before the performance owner runs the approved public-input validation.',
-				'Public edge fixture coverage while signed and unknown-part cases remain generated or owner-unapproved.',
+				'Complete public edge fixture coverage while signed or malformed cases remain generated or owner-unapproved.',
 			],
 			weakClaimDisposition: [
 				{
@@ -1753,7 +1830,7 @@ function qssLeapfrogReleaseMatrixRow(
 					action:
 						'Use cautious pre-hydration package-feature routing wording until public-edge fixture policy is approved.',
 					stopCondition:
-						'Stop if generated signed/unknown cases are hidden or treated as public binaries.',
+						'Stop if generated signed or malformed cases are hidden or treated as public binaries.',
 				},
 				{
 					weakClaim: 'QSS-beating open latency',
@@ -1858,7 +1935,7 @@ function safeOpenQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceItem[] {
 			command: 'bun run fixtures/benchmarks/safe-open-fixture-scan.ts --json',
 			path: 'fixtures/benchmarks/safe-open-fixture-scan.ts',
 			acceptedScope:
-				'Tracked corpus scan showing public fixture coverage and remaining signed/unknown replacement gaps.',
+				'Tracked corpus scan showing public unknown-part fixture coverage and remaining signed fixture gap.',
 			boundary: 'Tracked corpus evidence only; not proof that no public fixture exists elsewhere.',
 		},
 		{
@@ -1966,6 +2043,12 @@ function releaseDecisionBoard(
 				rank: row.rank,
 				artifact: row.artifact,
 				claimWordingAllowedToday: row.claim,
+				evidenceWeHave: row.acceptedEvidence.map((item) => ({ ...item })),
+				evidenceMissing: [...row.missingEvidence],
+				qssContrast: releaseDecisionQssContrast(row),
+				allowedWording: releaseDecisionAllowedWording(row.artifact),
+				forbiddenWording: [...row.claimsWeMustNotMake],
+				nextOwnerActions: row.ownerActions.map(cloneNextOwnerAction),
 				headlineClaimAllowed: artifact?.headlineClaimAllowed ?? false,
 				implementationSurfacePromotionAllowed:
 					handoff?.implementationSurfacePromotionAllowed ??
@@ -1996,6 +2079,19 @@ function releaseDecisionBoardMarkdownRow(row: ReleaseProofReleaseDecisionBoardRo
 	return [
 		String(row.rank),
 		row.claimWordingAllowedToday,
+		row.evidenceWeHave
+			.map((item) => `${item.evidenceId}=\`${item.command}\` (${item.path})`)
+			.join('; '),
+		row.evidenceMissing.join('; '),
+		row.qssContrast.join('; '),
+		row.allowedWording,
+		row.forbiddenWording.join('; '),
+		row.nextOwnerActions
+			.map(
+				(action) =>
+					`${action.ownerLoop}/${action.requirementId}: ${action.nextStepKind}=\`${action.validationCommand}\``,
+			)
+			.join('; '),
 		String(row.headlineClaimAllowed),
 		String(row.implementationSurfacePromotionAllowed),
 		row.acceptedEvidence
@@ -2025,10 +2121,33 @@ function cloneReleaseDecisionBoard(
 		rows: board.rows.map((row) => ({
 			...row,
 			proofRequired: { ...row.proofRequired },
+			evidenceWeHave: row.evidenceWeHave.map((item) => ({ ...item })),
+			evidenceMissing: [...row.evidenceMissing],
+			qssContrast: [...row.qssContrast],
+			forbiddenWording: [...row.forbiddenWording],
+			nextOwnerActions: row.nextOwnerActions.map(cloneNextOwnerAction),
 			acceptedEvidence: row.acceptedEvidence.map((item) => ({ ...item })),
 			claimsWeMustNotMake: [...row.claimsWeMustNotMake],
 			aPlusBlockingOwnerActions: row.aPlusBlockingOwnerActions.map(cloneNextOwnerAction),
 		})),
+	}
+}
+
+function releaseDecisionQssContrast(
+	row: ReleaseProofQssLeapfrogReleaseMatrixRow,
+): readonly string[] {
+	return [
+		...row.qssLikelyDoesWell.map((entry) => `QSS likely does well: ${entry}`),
+		...row.ascendBetterWhereProven.map((entry) => `Ascend proven today: ${entry}`),
+	]
+}
+
+function releaseDecisionAllowedWording(artifact: ReleaseProofIndexArtifactName): string {
+	switch (artifact) {
+		case 'safe-open-proof':
+			return 'Ascend provides local pre-hydration package-feature routing evidence for unknown workbook risk families, with generated fixture provenance disclosed and headline safety wording blocked.'
+		case 'package-action-proof':
+			return 'Ascend provides local per-part package action accounting for workbook edits, with unsupported feature boundaries and representative streaming scope disclosed.'
 	}
 }
 
@@ -2460,7 +2579,7 @@ function safeOpenArtifact(
 		claim: 'safe unknown workbook opening',
 		publicationStatus: 'needs-release-packaging',
 		publicationBlockers: [
-			'signed and unknown-part cases are durable code-generated packages, not public binary fixtures',
+			'signed and malformed cases are durable code-generated packages, not public binary fixtures',
 			'local timing evidence is proof-run data, not a release performance threshold',
 		],
 		readyWhen: [
@@ -2469,9 +2588,9 @@ function safeOpenArtifact(
 				status: 'missing',
 				ownerLoop: 'product',
 				requirement:
-					'replace generated signed/unknown-part packages with public binary fixtures or explicitly approve disclosed generated edge packages',
+					'replace generated signed/malformed packages with public binary fixtures or explicitly approve disclosed generated edge packages',
 				evidence:
-					'safe-open fixture scan over tracked fixtures currently finds no public signed/unknown binary replacements',
+					'safe-open fixture scan now includes a vendored public unknown-part workbook but still lacks a public signed workbook fixture',
 			},
 			{
 				id: 'release-latency-run',
@@ -3238,7 +3357,7 @@ function claimProofRequired(
 		case 'safe-open-proof':
 			return {
 				fixture:
-					'Public clean, formula-heavy, macro, pivot, ActiveX, chart, signed, unknown-part, and malformed workbook/package cases; generated signed and unknown-part cases must stay disclosed unless replaced by public binary fixtures.',
+					'Public clean, formula-heavy, macro, pivot, ActiveX, chart, unknown-part, plus signed and malformed workbook/package cases; generated signed and malformed cases must stay disclosed unless replaced by public binary fixtures.',
 				benchmark:
 					'Release-environment open-plan latency over standardized public inputs, compared with full hydration and approved threshold wording.',
 				surface:
@@ -3250,7 +3369,7 @@ function claimProofRequired(
 				honestBoundary:
 					'Not malware scanning, sandboxing, file trust, active-content safety, signed provenance, or malformed-package recovery.',
 				killCriterion:
-					'Do not publish headline wording if generated signed/unknown packages are hidden, product rejects disclosed generated topology fixtures, or latency wording lacks an approved release-environment run.',
+					'Do not publish headline wording if generated signed or malformed packages are hidden, product rejects disclosed generated topology fixtures, or latency wording lacks an approved release-environment run.',
 			}
 		case 'package-action-proof':
 			return {
@@ -3289,10 +3408,14 @@ function rankMissingRequirement(input: {
 				nextStepKind: 'owner-decision-or-fixture-replacement',
 				rationale:
 					'Fixture disclosure or replacement decides whether the proof evidence can support release wording without private or hidden generated inputs.',
+				validationCommand:
+					artifact === 'safe-open-proof'
+						? 'bun run fixtures/benchmarks/safe-open-fixture-scan.ts --json'
+						: 'bun run fixtures/benchmarks/package-action-fixture-scan.ts --json',
 				acceptanceEvidence:
 					artifact === 'safe-open-proof'
-						? 'Product accepts disclosed generated signed/unknown structural packages for guarded topology proof, or replaces them with approved public binary fixtures.'
-						: 'Product accepts disclosed generated signature/unknown structural packages for guarded package-action proof, or replaces them with approved public binary fixtures.',
+						? 'Product accepts disclosed generated signed/malformed structural packages for guarded topology proof, while the vendored public unknown-part fixture remains approved.'
+						: 'Product accepts disclosed generated signature topology for guarded package-action proof, while the vendored public unknown-part fixture remains approved.',
 				forbiddenShortcut:
 					'Do not hide generated fixture provenance, vendor license-unclear binaries, or imply real-world trust behavior from structural package topology alone.',
 			}
@@ -3306,6 +3429,8 @@ function rankMissingRequirement(input: {
 				nextStepKind: 'owner-boundary-approval',
 				rationale:
 					'Correctness must approve unsupported-feature boundaries before package-action wording can stay honest.',
+				validationCommand:
+					'bun run fixtures/benchmarks/package-action-proof.ts --no-timings --json',
 				acceptanceEvidence:
 					'Correctness approves allowed/forbidden wording for signatures, calc chains, chart/drawing sidecars, macros/ActiveX, unknown parts, and streaming scope.',
 				forbiddenShortcut:
@@ -3321,6 +3446,8 @@ function rankMissingRequirement(input: {
 				nextStepKind: 'validation-run',
 				rationale:
 					'Performance evidence is needed before any release wording implies a latency threshold or speed claim.',
+				validationCommand:
+					'bun run fixtures/benchmarks/safe-open-proof.ts --repeat 10 --warmup 3 --json',
 				acceptanceEvidence:
 					'Performance reruns tracked-clean release-environment open-plan evidence over standardized public inputs and approves non-threshold wording.',
 				forbiddenShortcut:
@@ -3336,6 +3463,8 @@ function rankMissingRequirement(input: {
 				nextStepKind: 'owner-decision-or-harness-expansion',
 				rationale:
 					'Streaming wording must stay limited to representative proof cases unless a broader matrix is approved.',
+				validationCommand:
+					'bun run fixtures/benchmarks/package-action-proof.ts --no-timings --json',
 				acceptanceEvidence:
 					'Performance accepts representative streaming proofs covering passthrough/regenerate/add/drop plus public macro/chart package accounting for narrow wording, or expands the matrix to generated edge/error cases.',
 				forbiddenShortcut:
@@ -3352,6 +3481,8 @@ function rankMissingRequirement(input: {
 				nextStepKind: 'publication-policy',
 				rationale:
 					'Release wording must avoid trust, active-content safety, signed provenance, and attestation implications.',
+				validationCommand:
+					'bun run fixtures/benchmarks/release-proof-index.ts --no-timings --owner-handoffs-json',
 				acceptanceEvidence:
 					artifact === 'safe-open-proof'
 						? 'Release approves safe-open boundary language that excludes malware scanning, sandboxing, file trust, active-content safety, signed provenance, and malformed-package recovery.'
@@ -3369,6 +3500,10 @@ function rankMissingRequirement(input: {
 				nextStepKind: 'publication-policy',
 				rationale:
 					'Compact report storage and canonicalization are needed before digest publication, but not before using generated local proof reports.',
+				validationCommand:
+					artifact === 'safe-open-proof'
+						? 'bun run fixtures/benchmarks/safe-open-proof.ts --no-timings --compact-json'
+						: 'bun run fixtures/benchmarks/package-action-proof.ts --no-timings --compact-json',
 				acceptanceEvidence:
 					'Release defines artifact storage path, retention/privacy filtering, canonicalization subject, and verification expectations for compact reports.',
 				forbiddenShortcut:
@@ -3383,6 +3518,8 @@ function rankMissingRequirement(input: {
 				priority: 'publication-policy',
 				nextStepKind: 'publication-policy',
 				rationale: 'Unclassified missing release-readiness requirement.',
+				validationCommand:
+					'bun run fixtures/benchmarks/release-proof-index.ts --no-timings --owner-handoffs-json',
 				acceptanceEvidence:
 					'Owner supplies explicit acceptance evidence or replaces this requirement with a classified release-readiness gate.',
 				forbiddenShortcut: 'Do not treat an unclassified missing requirement as satisfied.',
@@ -3408,7 +3545,7 @@ function formatNextOwnerActions(actions: readonly ReleaseProofNextOwnerAction[])
 	return actions
 		.map(
 			(action) =>
-				`${action.rank}:${action.artifact}/${action.requirementId}(${action.ownerLoop},${action.priority},${action.nextStepKind};accept=${action.acceptanceEvidence};forbid=${action.forbiddenShortcut})`,
+				`${action.rank}:${action.artifact}/${action.requirementId}(${action.ownerLoop},${action.priority},${action.nextStepKind};cmd=${action.validationCommand};accept=${action.acceptanceEvidence};forbid=${action.forbiddenShortcut})`,
 		)
 		.join('; ')
 }
@@ -3421,6 +3558,7 @@ function nextOwnerActionMarkdownRow(action: ReleaseProofNextOwnerAction): string
 		action.ownerLoop,
 		action.priority,
 		action.nextStepKind,
+		`\`${action.validationCommand}\``,
 		action.acceptanceEvidence,
 		action.forbiddenShortcut,
 	]
@@ -3645,9 +3783,7 @@ function fixturePolicyEvidence(
 ): ReleaseProofFixturePolicyEvidence {
 	const packageActionMissingReplacementFeatures = [
 		packageAction.featureCounts.signaturePackage === 0 ? 'signaturePackage' : undefined,
-		packageAction.featureCounts.syntheticUnknownPathFamily === 0
-			? 'syntheticUnknownPathFamily'
-			: undefined,
+		packageAction.featureCounts.unknownPathFamily === 0 ? 'unknownPathFamily' : undefined,
 	].filter((entry): entry is string => entry !== undefined)
 	const safeOpenEvidence: ReleaseProofSafeOpenFixturePolicyEvidence = {
 		artifact: 'safe-open-proof',
@@ -3770,49 +3906,22 @@ function packageActionExternalCandidateEvidenceMarkdownRow(
 		.replace(/$/, '|')
 }
 
-function fixtureAcquisitionPlan(
-	fixtureEvidence: ReleaseProofFixturePolicyEvidence,
-): ReleaseProofFixtureAcquisitionPlan {
-	const safeOpenCandidate = fixtureEvidence.safeOpen.externalCandidateEvidence[0]
-	const packageActionCandidate = fixtureEvidence.packageAction.externalCandidateEvidence[0]
+function fixtureAcquisitionPlan(): ReleaseProofFixtureAcquisitionPlan {
 	return {
 		ownerLoop: 'product',
 		status: 'ranked-owner-review-required',
 		validationCommand:
 			'bun run fixtures/benchmarks/release-proof-index.ts --no-timings --owner-handoffs-json',
-		taskCount: 3,
+		taskCount: 2,
 		tasks: [
 			{
 				rank: 1,
-				caseName: 'unknown-part-shared-candidate',
-				relatedArtifacts: ['safe-open-proof', 'package-action-proof'],
-				relatedGates: ['public-edge-fixtures', 'edge-fixture-policy'],
-				task: 'Review whether the ExcelForge Book 1.xlsx sample can be vendored as a public unknown-part fixture with attribution.',
-				evidenceAlreadyPresent:
-					safeOpenCandidate && packageActionCandidate
-						? `safe-open candidate ${safeOpenCandidate.candidateId} and package-action mutation candidate ${packageActionCandidate.candidateId} both identify ${packageActionCandidate.unknownPartPath}`
-						: 'No shared external unknown-part candidate is recorded.',
-				proofStillMissing:
-					'Owner-approved vendoring or rejection decision, attribution policy, tracked fixture location, and harness coverage replacing or supplementing generated unknown-part topology.',
-				validationCommand:
-					'bun test fixtures/benchmarks/release-proof-index.test.ts && bun run fixtures/benchmarks/release-proof-index.ts --no-timings --owner-handoffs-json',
-				competitorOrSpecReference:
-					'ExcelForge advertises patch-only unknown-part preservation; OPC models workbooks as package parts and relationships.',
-				killCriterion:
-					'Do not vendor if license or attribution policy is unclear, workbook contents are unsuitable for a public repo, or the fixture cannot be kept small and reviewable.',
-				ownerDecision:
-					'Product/release accepts as public fixture candidate, requests a different public workbook, or rejects unknown-part public replacement for this release.',
-				boundary:
-					'This task can reduce unknown-part fixture uncertainty, but it does not solve signed workbook evidence or authorize arbitrary unknown-part preservation claims.',
-			},
-			{
-				rank: 2,
 				caseName: 'signed-package',
 				relatedArtifacts: ['safe-open-proof', 'package-action-proof'],
 				relatedGates: ['public-edge-fixtures', 'edge-fixture-policy'],
 				task: 'Acquire or generate under explicit policy a license-clear public signed XLSX package fixture.',
 				evidenceAlreadyPresent:
-					'Tracked fixture scans found signatureOrUnknownMatches=0 for safe-open and signaturePackage=0 for package-action.',
+					'Tracked fixture scans now include a public unknown-part match for safe-open, but still find signaturePackage=0 for package-action and no public signed workbook fixture.',
 				proofStillMissing:
 					'Approved public signed workbook bytes or owner acceptance of generated signature topology, plus wording that excludes signature verification, trust, and attestation.',
 				validationCommand:
@@ -3827,7 +3936,7 @@ function fixtureAcquisitionPlan(
 					'This is topology evidence only. It must not become a signature validation, identity, malware safety, or signed-provenance claim.',
 			},
 			{
-				rank: 3,
+				rank: 2,
 				caseName: 'malformed-package',
 				relatedArtifacts: ['safe-open-proof'],
 				relatedGates: ['public-edge-fixtures'],
@@ -3935,21 +4044,6 @@ function generatedFixtureDecisionEvidence(
 		{
 			artifact: 'safe-open-proof',
 			gateId: 'public-edge-fixtures',
-			caseName: 'unknown-part',
-			generatedKind: 'generated-edge-package',
-			replacementEvidence: `tracked safe-open scan found signatureOrUnknownMatches=${fixtureEvidence.safeOpen.signatureOrUnknownMatches} across ${fixtureEvidence.safeOpen.scanned} fixtures; external candidate excelforge-book1-unknown-part awaits owner review and is not vendored`,
-			ownerDecisionNeeded:
-				'Accept disclosed generated unknown-part topology as safe-open routing proof, or provide an approved public unknown-part workbook fixture.',
-			recommendedOwnerAction:
-				'Accept disclosed generated topology for local unknown-part routing proof only, while keeping the release gate missing until product and release approve the wording.',
-			allowedUse:
-				'Pre-hydration package-feature routing evidence that unknown package features require review before hydration.',
-			forbiddenUse:
-				'Do not claim arbitrary unknown-part preservation, understanding, recovery, trust, malware scanning, or signed provenance.',
-		},
-		{
-			artifact: 'safe-open-proof',
-			gateId: 'public-edge-fixtures',
 			caseName: 'malformed',
 			generatedKind: 'generated-malformed-package',
 			replacementEvidence: `tracked safe-open scan rejected ${fixtureEvidence.safeOpen.rejected} fixture(s); malformed proof input remains generated structural bytes`,
@@ -3975,21 +4069,6 @@ function generatedFixtureDecisionEvidence(
 				'Local package-action accounting evidence that signature package parts are dropped or invalidated after mutation.',
 			forbiddenUse:
 				'Do not claim signature preservation, re-signing, verification, attestation, SLSA, in-toto, or signed provenance.',
-		},
-		{
-			artifact: 'package-action-proof',
-			gateId: 'edge-fixture-policy',
-			caseName: 'unknown-part-error',
-			generatedKind: 'generated-edge-package',
-			replacementEvidence: `tracked package-action scan found syntheticUnknownPathFamily=${fixtureEvidence.packageAction.featureCounts.syntheticUnknownPathFamily} across ${fixtureEvidence.packageAction.scanned} fixtures; external candidate excelforge-book1-unknown-part-mutation awaits owner review and is not vendored`,
-			ownerDecisionNeeded:
-				'Accept disclosed generated unknown-part topology as fail-closed package-action proof, or provide an approved public unknown-part workbook fixture.',
-			recommendedOwnerAction:
-				'Accept disclosed generated topology for local fail-closed unknown-part package-action proof only, while keeping arbitrary preservation and trust wording forbidden.',
-			allowedUse:
-				'Local package-action accounting evidence that an unsupported unknown package part can fail closed with an explicit error action.',
-			forbiddenUse:
-				'Do not claim arbitrary unknown-part preservation, understanding, safe recovery, trust, or signed provenance.',
 		},
 	]
 	return {
@@ -4048,7 +4127,7 @@ function formatFixtureFeatureCounts(
 		`macro=${counts.macro}`,
 		`chartOrDrawing=${counts.chartOrDrawing}`,
 		`signaturePackage=${counts.signaturePackage}`,
-		`syntheticUnknownPathFamily=${counts.syntheticUnknownPathFamily}`,
+		`unknownPathFamily=${counts.unknownPathFamily}`,
 	].join(',')
 }
 
@@ -4517,22 +4596,25 @@ if (import.meta.main) {
 	const json = process.argv.includes('--json')
 	const ownerHandoffsJson = process.argv.includes('--owner-handoffs-json')
 	const releaseDecisionJson = process.argv.includes('--release-decision-json')
+	const fixtureDecisionJson = process.argv.includes('--fixture-decision-json')
 	const result = await runReleaseProofIndex({
 		includeTimings: !process.argv.includes('--no-timings'),
 	})
 	console.log(
 		releaseDecisionJson
 			? JSON.stringify(result.releaseDecisionBoard, null, 2)
-			: ownerHandoffsJson
-				? JSON.stringify(releaseProofOwnerHandoffIndex(result), null, 2)
-				: json
-					? JSON.stringify(result, null, 2)
-					: releaseProofIndexMarkdown(result),
+			: fixtureDecisionJson
+				? JSON.stringify(releaseProofFixtureDecisionPacket(result), null, 2)
+				: ownerHandoffsJson
+					? JSON.stringify(releaseProofOwnerHandoffIndex(result), null, 2)
+					: json
+						? JSON.stringify(result, null, 2)
+						: releaseProofIndexMarkdown(result),
 	)
-	if (!json && !ownerHandoffsJson && !releaseDecisionJson) {
+	if (!json && !ownerHandoffsJson && !releaseDecisionJson && !fixtureDecisionJson) {
 		console.error(`Indexed ${result.artifactCount} release proof evidence artifacts.`)
 		console.error(
-			`Run with --json, --owner-handoffs-json, or --release-decision-json for machine-readable output from ${basename(import.meta.path)}.`,
+			`Run with --json, --owner-handoffs-json, --release-decision-json, or --fixture-decision-json for machine-readable output from ${basename(import.meta.path)}.`,
 		)
 	}
 }

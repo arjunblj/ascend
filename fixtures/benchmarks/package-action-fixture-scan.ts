@@ -15,7 +15,7 @@ export interface PackageActionFixtureFeatureCounts {
 	readonly macro: number
 	readonly chartOrDrawing: number
 	readonly signaturePackage: number
-	readonly syntheticUnknownPathFamily: number
+	readonly unknownPathFamily: number
 }
 
 export interface PackageActionFixtureCandidate {
@@ -31,7 +31,7 @@ export type PackageActionFixtureFeature =
 	| 'macro'
 	| 'chartOrDrawing'
 	| 'signaturePackage'
-	| 'syntheticUnknownPathFamily'
+	| 'unknownPathFamily'
 
 export interface PackageActionFixtureScanResult {
 	readonly generatedAt: string
@@ -57,7 +57,7 @@ const FEATURES: readonly PackageActionFixtureFeature[] = [
 	'macro',
 	'chartOrDrawing',
 	'signaturePackage',
-	'syntheticUnknownPathFamily',
+	'unknownPathFamily',
 ]
 
 const SKIPPED_DIRECTORIES = new Set(['external', 'stress'])
@@ -91,7 +91,7 @@ export function runPackageActionFixtureScan(
 		rejectedFixtures,
 		featureCounts,
 		replacementStatus:
-			featureCounts.signaturePackage === 0 || featureCounts.syntheticUnknownPathFamily === 0
+			featureCounts.signaturePackage === 0 || featureCounts.unknownPathFamily === 0
 				? 'remaining-generated-edge-cases'
 				: 'all-edge-cases-have-public-candidates',
 		candidates,
@@ -153,7 +153,10 @@ function classifyFixtureParts(partPaths: readonly string[]): PackageActionFixtur
 		features.push('signaturePackage')
 	}
 	if (partPaths.some((path) => /^xl\/custom\/.+/.test(path) || /^custom\/.+/.test(path))) {
-		features.push('syntheticUnknownPathFamily')
+		features.push('unknownPathFamily')
+	}
+	if (partPaths.some((path) => /^docMetadata\/.+/.test(path))) {
+		features.push('unknownPathFamily')
 	}
 	return features
 }
@@ -187,7 +190,7 @@ function emptyCounts(): Record<PackageActionFixtureFeature, number> {
 		macro: 0,
 		chartOrDrawing: 0,
 		signaturePackage: 0,
-		syntheticUnknownPathFamily: 0,
+		unknownPathFamily: 0,
 	}
 }
 

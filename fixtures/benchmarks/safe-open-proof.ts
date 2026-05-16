@@ -131,7 +131,7 @@ const COMPACT_RELEASE_READY_WHEN: readonly SafeOpenCompactReadyWhen[] = [
 		status: 'missing',
 		ownerLoop: 'product',
 		requirement:
-			'replace generated signed/unknown-part packages with public binary fixtures or explicitly approve disclosed generated edge packages',
+			'replace the generated signed package with a public binary fixture or explicitly approve disclosed generated signature topology',
 	},
 	{
 		id: 'release-latency-run',
@@ -207,16 +207,11 @@ export function defaultSafeOpenProofCases(): SafeOpenProofCase[] {
 			expectedReviewBeforeHydration: true,
 			expectedRiskFamilies: ['preservedSignature'],
 		},
-		{
-			name: 'unknown-part',
-			kind: 'synthetic',
-			fixture: 'synthetic unknown package part',
-			bytes: unknownPartWorkbook(),
-			fullOpenExpected: true,
+		fileCase('unknown-part', 'fixtures/xlsx/excelforge/Book_1_unknown_part.xlsx', {
 			expectedMode: 'metadata-only',
 			expectedReviewBeforeHydration: true,
 			expectedRiskFamilies: ['preservedOther'],
-		},
+		}),
 		{
 			name: 'malformed',
 			kind: 'malformed',
@@ -434,26 +429,6 @@ function signedWorkbook(): Uint8Array {
 		'_xmlsignatures/origin.sigs': '',
 		'_xmlsignatures/sig1.xml':
 			'<?xml version="1.0"?><Signature xmlns="http://www.w3.org/2000/09/xmldsig#"/>',
-	})
-}
-
-function unknownPartWorkbook(): Uint8Array {
-	return makeXlsx({
-		'[Content_Types].xml': contentTypes(`
-  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
-  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
-  <Override PartName="/xl/custom/custom1.xml" ContentType="application/vnd.example.opaque+xml"/>
-`),
-		'_rels/.rels': relationships(`
-  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
-`),
-		'xl/_rels/workbook.xml.rels': relationships(`
-  <Relationship Id="rIdSheet" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
-  <Relationship Id="rIdCustom" Type="http://schemas.example.invalid/relationships/opaque" Target="custom/custom1.xml"/>
-`),
-		'xl/workbook.xml': workbookXml('Unknown'),
-		'xl/worksheets/sheet1.xml': worksheetXml(''),
-		'xl/custom/custom1.xml': '<opaque/>',
 	})
 }
 

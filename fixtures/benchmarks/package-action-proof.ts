@@ -139,7 +139,7 @@ const COMPACT_RELEASE_READY_WHEN: readonly PackageActionCompactReadyWhen[] = [
 		status: 'missing',
 		ownerLoop: 'product',
 		requirement:
-			'accept disclosed generated edge packages as release proof or replace them with public binary fixtures',
+			'accept disclosed generated signature topology as release proof or replace it with a public signed workbook fixture',
 	},
 	{
 		id: 'provenance-boundary',
@@ -249,12 +249,12 @@ export function defaultPackageActionProofCases(): PackageActionProofCase[] {
 		},
 		{
 			name: 'unknown-part-error',
-			sourceKind: 'generated-edge-package',
-			fixture: 'synthetic unknown package part',
-			ops: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'unknown' }] }],
+			sourceKind: 'public-fixture',
+			fixture: 'fixtures/xlsx/excelforge/Book_1_unknown_part.xlsx',
+			ops: [{ op: 'setCells', sheet: 'Projekt 1', updates: [{ ref: 'A1', value: 'unknown' }] }],
 			allowLoss: 'all',
-			prepareInput: writeBytes(unknownPartWorkbook),
-			expectedCommitActions: [{ action: 'error', partPathIncludes: 'custom/custom1.xml' }],
+			prepareInput: writeFixture('fixtures/xlsx/excelforge/Book_1_unknown_part.xlsx'),
+			expectedCommitActions: [{ action: 'error', partPathIncludes: 'docMetadata/LabelInfo.xml' }],
 		},
 	]
 }
@@ -495,23 +495,6 @@ function signedWorkbook(): Uint8Array {
 	})
 }
 
-function unknownPartWorkbook(): Uint8Array {
-	return makeXlsx({
-		'[Content_Types].xml': contentTypes(`
-  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
-  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
-  <Override PartName="/xl/custom/custom1.xml" ContentType="application/vnd.example.opaque+xml"/>
-`),
-		'_rels/.rels': rootRels(),
-		'xl/_rels/workbook.xml.rels': workbookRels(`
-  <Relationship Id="rIdCustom" Type="http://schemas.example.invalid/relationships/opaque" Target="custom/custom1.xml"/>
-`),
-		'xl/workbook.xml': workbookXml(),
-		'xl/worksheets/sheet1.xml': worksheetXml(''),
-		'xl/custom/custom1.xml': '<opaque/>',
-	})
-}
-
 function contentTypes(extra: string): string {
 	return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
@@ -519,12 +502,6 @@ function contentTypes(extra: string): string {
   <Default Extension="xml" ContentType="application/xml"/>
 ${extra}
 </Types>`
-}
-
-function rootRels(): string {
-	return relationships(`
-  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
-`)
 }
 
 function workbookRels(extra: string): string {

@@ -1,0 +1,30 @@
+{
+	"name": "@node-projects/excelforge",
+	"version": "3.6.0",
+	"description": "A **complete TypeScript library** for reading and writing Excel `.xlsx` files with **zero external dependencies**. Works in browsers, Node.js, Deno, Bun, and edge runtimes.",
+	"homepage": "https://github.com/node-projects/excelForge#readme",
+	"bugs": {
+		"url": "https://github.com/node-projects/excelForge/issues"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/node-projects/excelForge.git"
+	},
+	"license": "MIT",
+	"author": "jogibear9988",
+	"type": "module",
+	"main": "./dist/index.js",
+	"scripts": {
+		"test": "node ./dist/test/examples.js",
+		"test2": "node ./dist/test/test_features",
+		"build": "tsc",
+		"prepublishOnly": "npm run build && npm run bundle && npm run bundle-core",
+		"bundle": "esbuild ./dist/index.js --format=esm --minify --external:fs/promises --external:zlib --platform=neutral --bundle --outfile=./dist/index-min.js",
+		"bundle-core": "esbuild ./dist/index-core.js --format=esm --minify --external:../features/ChartBuilder.js --external:../features/FormControlBuilder.js  --external:../features/PivotTableBuilder.js  --external:../vba/VbaProject.js --external:fs/promises --external:zlib --platform=neutral --bundle --outfile=./dist/index-core-min.js"
+	},
+	"devDependencies": {
+		"esbuild": "^0.28.0",
+		"typescript": "^6.0.2",
+		"zlib": "^1.0.5"
+	}
+}

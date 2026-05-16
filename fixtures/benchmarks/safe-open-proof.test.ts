@@ -21,8 +21,8 @@ describe('safe open proof harness', () => {
 			'unknown-part',
 			'malformed',
 		])
-		expect(cases.filter((entry) => entry.kind === 'file')).toHaveLength(6)
-		expect(cases.filter((entry) => entry.kind === 'synthetic')).toHaveLength(2)
+		expect(cases.filter((entry) => entry.kind === 'file')).toHaveLength(7)
+		expect(cases.filter((entry) => entry.kind === 'synthetic')).toHaveLength(1)
 		expect(cases.filter((entry) => entry.kind === 'malformed')).toHaveLength(1)
 	})
 
@@ -49,6 +49,8 @@ describe('safe open proof harness', () => {
 			riskFamilies: ['preservedSignature'],
 		})
 		expect(byName.get('unknown-part')).toMatchObject({
+			kind: 'file',
+			fixture: 'fixtures/xlsx/excelforge/Book_1_unknown_part.xlsx',
 			status: 'ok',
 			recommendedMode: 'metadata-only',
 			reviewBeforeHydration: true,
@@ -131,8 +133,8 @@ describe('safe open proof harness', () => {
 			riskFamilies: ['preservedActiveX', 'preservedMacro', 'preservedOther', 'preservedSignature'],
 		})
 		expect(compact.caseKindCounts).toEqual({
-			file: 6,
-			synthetic: 2,
+			file: 7,
+			synthetic: 1,
 			malformed: 1,
 		})
 		expect(compactJson).not.toContain('inputSha256')

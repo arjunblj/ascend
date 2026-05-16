@@ -46,8 +46,8 @@ describe('release proof evidence index', () => {
 				'package-action-proof': 'bun run fixtures/benchmarks/package-action-fixture-scan.ts --json',
 			},
 			currentGeneratedStructuralCases: {
-				'safe-open-proof': ['signed', 'unknown-part', 'malformed'],
-				'package-action-proof': ['signature-invalidation-drop', 'unknown-part-error'],
+				'safe-open-proof': ['signed', 'malformed'],
+				'package-action-proof': ['signature-invalidation-drop'],
 			},
 			boundary: expect.stringContaining('not approval to publish generated fixtures'),
 		})
@@ -97,11 +97,6 @@ describe('release proof evidence index', () => {
 				requiresPublicBinaryWhen: expect.stringContaining('real signed workbook behavior'),
 			}),
 			expect.objectContaining({
-				caseName: 'unknown-part',
-				generatedCaseKind: 'generated-edge-package',
-				acceptableAsTopologyProofWhen: expect.stringContaining('unknown package features'),
-			}),
-			expect.objectContaining({
 				caseName: 'malformed',
 				generatedCaseKind: 'generated-malformed-package',
 				requiresPublicBinaryWhen: expect.stringContaining('vendor repair equivalence'),
@@ -113,12 +108,6 @@ describe('release proof evidence index', () => {
 				generatedCaseKind: 'generated-edge-package',
 				gateEffect: 'keeps-edge-fixture-policy-missing-until-owner-approval',
 				forbiddenClaim: expect.stringContaining('signed provenance'),
-			}),
-			expect.objectContaining({
-				caseName: 'unknown-part-error',
-				generatedCaseKind: 'generated-edge-package',
-				acceptableAsPackageActionProofWhen: expect.stringContaining('explicit error action'),
-				requiresPublicBinaryWhen: expect.stringContaining('third-party unknown-part preservation'),
 			}),
 		])
 		expect(index.fixturePolicy.sourceReferences.map((entry) => entry.label)).toEqual([
@@ -148,13 +137,13 @@ describe('release proof evidence index', () => {
 			gateId: 'public-edge-fixtures',
 			validationCommand: 'bun run fixtures/benchmarks/safe-open-fixture-scan.ts --json',
 			corpus: 'tracked-git-fixtures',
-			replacementStatus: 'no-public-binary-replacement-found',
+			replacementStatus: 'candidate-found',
 			riskFamilyCounts: expect.objectContaining({
 				preservedMacro: expect.any(Number),
 				preservedActiveX: expect.any(Number),
 			}),
-			signatureOrUnknownMatches: 0,
-			currentGeneratedStructuralCases: ['signed', 'unknown-part', 'malformed'],
+			signatureOrUnknownMatches: 1,
+			currentGeneratedStructuralCases: ['signed', 'malformed'],
 		})
 		expect(index.fixturePolicyEvidence.safeOpen.scanned).toBeGreaterThan(0)
 		expect(
@@ -167,14 +156,17 @@ describe('release proof evidence index', () => {
 			validationCommand: 'bun run fixtures/benchmarks/package-action-fixture-scan.ts --json',
 			corpus: 'tracked-git-fixtures',
 			replacementStatus: 'remaining-generated-edge-cases',
-			currentGeneratedStructuralCases: ['signature-invalidation-drop', 'unknown-part-error'],
-			missingReplacementFeatures: ['signaturePackage', 'syntheticUnknownPathFamily'],
+			currentGeneratedStructuralCases: ['signature-invalidation-drop'],
+			missingReplacementFeatures: ['signaturePackage'],
 		})
 		expect(index.fixturePolicyEvidence.packageAction.scanned).toBeGreaterThan(0)
 		expect(index.fixturePolicyEvidence.packageAction.featureCounts).toMatchObject({
 			signaturePackage: 0,
-			syntheticUnknownPathFamily: 0,
+			unknownPathFamily: expect.any(Number),
 		})
+		expect(index.fixturePolicyEvidence.packageAction.missingReplacementFeatures).not.toContain(
+			'unknownPathFamily',
+		)
 		expect(index.fixturePolicyEvidence.packageAction.featureCounts.docPropsCore).toBeGreaterThan(0)
 		expect(index.fixturePolicyEvidence.packageAction.featureCounts.calcChain).toBeGreaterThan(0)
 		expect(index.fixturePolicyEvidence.packageAction.featureCounts.macro).toBeGreaterThan(0)
@@ -184,11 +176,10 @@ describe('release proof evidence index', () => {
 		expect(index.fixtureAcquisitionPlan).toMatchObject({
 			ownerLoop: 'product',
 			status: 'ranked-owner-review-required',
-			taskCount: 3,
+			taskCount: 2,
 			boundary: expect.stringContaining('not fixture approval'),
 		})
 		expect(index.fixtureAcquisitionPlan.tasks.map((task) => task.caseName)).toEqual([
-			'unknown-part-shared-candidate',
 			'signed-package',
 			'malformed-package',
 		])
@@ -196,10 +187,6 @@ describe('release proof evidence index', () => {
 			rank: 1,
 			relatedArtifacts: ['safe-open-proof', 'package-action-proof'],
 			relatedGates: ['public-edge-fixtures', 'edge-fixture-policy'],
-			evidenceAlreadyPresent: expect.stringContaining('excelforge-book1-unknown-part-mutation'),
-			killCriterion: expect.stringContaining('license or attribution policy is unclear'),
-		})
-		expect(index.fixtureAcquisitionPlan.tasks[1]).toMatchObject({
 			caseName: 'signed-package',
 			evidenceAlreadyPresent: expect.stringContaining('signaturePackage=0'),
 			boundary: expect.stringContaining('signature validation'),
@@ -216,37 +203,30 @@ describe('release proof evidence index', () => {
 		})
 		expect(index.generatedFixtureDecisionEvidence.cases.map((entry) => entry.caseName)).toEqual([
 			'signed',
-			'unknown-part',
 			'malformed',
 			'signature-invalidation-drop',
-			'unknown-part-error',
 		])
 		expect(index.generatedFixtureDecisionEvidence.cases[0]).toMatchObject({
 			artifact: 'safe-open-proof',
 			gateId: 'public-edge-fixtures',
 			generatedKind: 'generated-edge-package',
-			replacementEvidence: expect.stringContaining('signatureOrUnknownMatches=0'),
+			replacementEvidence: expect.stringContaining('signatureOrUnknownMatches=1'),
 			recommendedOwnerAction: expect.stringContaining('local safe-open package-feature routing'),
 			forbiddenUse: expect.stringContaining('signature verification'),
 		})
-		expect(index.generatedFixtureDecisionEvidence.cases[2]).toMatchObject({
+		expect(index.generatedFixtureDecisionEvidence.cases[1]).toMatchObject({
 			caseName: 'malformed',
 			generatedKind: 'generated-malformed-package',
 			recommendedOwnerAction: expect.stringContaining('fail-closed rejection-path proof'),
 			allowedUse: expect.stringContaining('malformed-package rejection'),
 			forbiddenUse: expect.stringContaining('arbitrary malformed files'),
 		})
-		expect(index.generatedFixtureDecisionEvidence.cases[3]).toMatchObject({
+		expect(index.generatedFixtureDecisionEvidence.cases[2]).toMatchObject({
 			artifact: 'package-action-proof',
 			gateId: 'edge-fixture-policy',
 			replacementEvidence: expect.stringContaining('signaturePackage=0'),
 			recommendedOwnerAction: expect.stringContaining('local signature-part drop'),
 			forbiddenUse: expect.stringContaining('SLSA'),
-		})
-		expect(index.generatedFixtureDecisionEvidence.cases[4]).toMatchObject({
-			replacementEvidence: expect.stringContaining('syntheticUnknownPathFamily=0'),
-			recommendedOwnerAction: expect.stringContaining('fail-closed unknown-part'),
-			allowedUse: expect.stringContaining('explicit error action'),
 		})
 		expect(index.performancePolicy).toMatchObject({
 			currentDecision: 'owner-approval-required',
@@ -356,11 +336,12 @@ describe('release proof evidence index', () => {
 			'signature-invalidation-drop',
 			'unknown-part-error',
 		])
-		expect(index.streamingMatrixEvidence.publicNonStreamingCaseNames).toEqual([])
+		expect(index.streamingMatrixEvidence.publicNonStreamingCaseNames).toEqual([
+			'unknown-part-error',
+		])
 		expect(index.streamingMatrixEvidence.generatedNonStreamingCaseNames).toEqual([
 			'regenerate-existing-sheet',
 			'signature-invalidation-drop',
-			'unknown-part-error',
 		])
 		expect(index.correctnessPolicy).toMatchObject({
 			currentDecision: 'owner-approval-required',
@@ -742,9 +723,7 @@ describe('release proof evidence index', () => {
 		expect(safeOpenHandoff.claim).toBe('safe unknown workbook opening')
 		expect(safeOpenHandoff.ownerLoops).toEqual(['performance', 'product', 'release'])
 		expect(safeOpenHandoff.implementationSurfacePromotionAllowed).toBe(false)
-		expect(safeOpenHandoff.proofRequired.fixture).toContain(
-			'generated signed and unknown-part cases',
-		)
+		expect(safeOpenHandoff.proofRequired.fixture).toContain('generated signed and malformed cases')
 		expect(safeOpenHandoff.proofRequired.benchmark).toContain(
 			'Release-environment open-plan latency',
 		)
@@ -753,7 +732,7 @@ describe('release proof evidence index', () => {
 		expect(safeOpenHandoff.proofRequired.competitorContrast).toContain('Microsoft Protected View')
 		expect(safeOpenHandoff.proofRequired.honestBoundary).toContain('Not malware scanning')
 		expect(safeOpenHandoff.proofRequired.killCriterion).toContain(
-			'Do not publish headline wording if generated signed/unknown packages are hidden',
+			'Do not publish headline wording if generated signed or malformed packages are hidden',
 		)
 		expect(safeOpenHandoff.blockingRequirementIds).toEqual([
 			'public-edge-fixtures',
@@ -776,7 +755,7 @@ describe('release proof evidence index', () => {
 			'compact-report-publication-policy',
 		])
 		expect(safeOpenHandoff.blockingActions[0].acceptanceEvidence).toContain(
-			'generated signed/unknown',
+			'generated signed/malformed',
 		)
 		expect(safeOpenHandoff.blockingActions[1].forbiddenShortcut).toContain('private-corpus')
 		expect(safeOpenHandoff.blockingActions[2].forbiddenShortcut).toContain('signed provenance')
@@ -824,7 +803,7 @@ describe('release proof evidence index', () => {
 			'compact-report-publication-policy',
 		])
 		expect(packageActionHandoff.blockingActions[0].acceptanceEvidence).toContain(
-			'generated signature/unknown',
+			'generated signature topology',
 		)
 		expect(packageActionHandoff.blockingActions[1].forbiddenShortcut).toContain('chart XML')
 		expect(packageActionHandoff.blockingActions[2].forbiddenShortcut).toContain(
@@ -941,6 +920,22 @@ describe('release proof evidence index', () => {
 		)
 		const safeOpenDecision = index.releaseDecisionBoard.rows[0]
 		expect(safeOpenDecision.claimWordingAllowedToday).toBe('safe unknown workbook opening')
+		expect(safeOpenDecision.evidenceWeHave.map((item) => item.evidenceId)).toContain(
+			'safe-open-proof-harness',
+		)
+		expect(safeOpenDecision.evidenceMissing.join('\n')).toContain('public-edge-fixtures')
+		expect(safeOpenDecision.qssContrast.join('\n')).toContain('QSS likely does well')
+		expect(safeOpenDecision.qssContrast.join('\n')).toContain('Ascend proven today')
+		expect(safeOpenDecision.allowedWording).toContain('pre-hydration package-feature routing')
+		expect(safeOpenDecision.forbiddenWording.join('\n')).toContain('Malware scanning')
+		expect(safeOpenDecision.nextOwnerActions.map((action) => action.requirementId)).toContain(
+			'release-latency-run',
+		)
+		expect(
+			safeOpenDecision.nextOwnerActions.find(
+				(action) => action.requirementId === 'release-latency-run',
+			)?.validationCommand,
+		).toBe('bun run fixtures/benchmarks/safe-open-proof.ts --repeat 10 --warmup 3 --json')
 		expect(safeOpenDecision.headlineClaimAllowed).toBe(false)
 		expect(safeOpenDecision.implementationSurfacePromotionAllowed).toBe(false)
 		expect(safeOpenDecision.proofRequired.fixture).toContain('Public clean')
@@ -956,6 +951,16 @@ describe('release proof evidence index', () => {
 		).toContain('release-latency-run/performance')
 		const packageActionDecision = index.releaseDecisionBoard.rows[1]
 		expect(packageActionDecision.claimWordingAllowedToday).toBe('auditable package-part mutation')
+		expect(packageActionDecision.evidenceMissing.join('\n')).toContain('edge-fixture-policy')
+		expect(packageActionDecision.allowedWording).toContain('per-part package action accounting')
+		expect(packageActionDecision.nextOwnerActions.map((action) => action.requirementId)).toContain(
+			'streaming-matrix-boundary',
+		)
+		expect(
+			packageActionDecision.nextOwnerActions.find(
+				(action) => action.requirementId === 'streaming-matrix-boundary',
+			)?.validationCommand,
+		).toBe('bun run fixtures/benchmarks/package-action-proof.ts --no-timings --json')
 		expect(packageActionDecision.proofRequired.honestBoundary).toContain('Not signed provenance')
 		expect(packageActionDecision.claimsWeMustNotMake.join('\n')).toContain('Signed provenance')
 		expect(packageActionDecision.claimsWeMustNotMake.join('\n')).toContain('Full streaming parity')
@@ -998,15 +1003,14 @@ describe('release proof evidence index', () => {
 				}),
 			],
 			fixtureProvenance: {
-				publicFixtureCases: 6,
+				publicFixtureCases: 7,
 				generatedWorkbookCases: 0,
-				generatedEdgePackageCases: 2,
+				generatedEdgePackageCases: 1,
 				malformedCases: 1,
-				generatedCaseNames: ['signed', 'unknown-part', 'malformed'],
-				deterministicGeneratedCaseNames: ['signed', 'unknown-part', 'malformed'],
+				generatedCaseNames: ['signed', 'malformed'],
+				deterministicGeneratedCaseNames: ['signed', 'malformed'],
 				generatedCaseSha256: {
 					signed: expect.stringMatching(/^[a-f0-9]{64}$/),
-					'unknown-part': expect.stringMatching(/^[a-f0-9]{64}$/),
 					malformed: expect.stringMatching(/^[a-f0-9]{64}$/),
 				},
 			},
@@ -1050,20 +1054,18 @@ describe('release proof evidence index', () => {
 				}),
 			],
 			fixtureProvenance: {
-				publicFixtureCases: 4,
+				publicFixtureCases: 5,
 				generatedWorkbookCases: 2,
-				generatedEdgePackageCases: 2,
+				generatedEdgePackageCases: 1,
 				malformedCases: 0,
 				generatedCaseNames: [
 					'regenerate-existing-sheet',
 					'add-sheet-part',
 					'signature-invalidation-drop',
-					'unknown-part-error',
 				],
-				deterministicGeneratedCaseNames: ['signature-invalidation-drop', 'unknown-part-error'],
+				deterministicGeneratedCaseNames: ['signature-invalidation-drop'],
 				generatedCaseSha256: expect.objectContaining({
 					'signature-invalidation-drop': expect.stringMatching(/^[a-f0-9]{64}$/),
-					'unknown-part-error': expect.stringMatching(/^[a-f0-9]{64}$/),
 				}),
 			},
 			summary: {
@@ -1100,8 +1102,8 @@ describe('release proof evidence index', () => {
 		expect(handoff.fixturePolicy).toMatchObject({
 			currentDecision: 'owner-approval-required',
 			currentGeneratedStructuralCases: {
-				'safe-open-proof': ['signed', 'unknown-part', 'malformed'],
-				'package-action-proof': ['signature-invalidation-drop', 'unknown-part-error'],
+				'safe-open-proof': ['signed', 'malformed'],
+				'package-action-proof': ['signature-invalidation-drop'],
 			},
 		})
 		expect(handoff.fixturePolicy.approvalChecklist.map((item) => item.ownerLoop)).toEqual([
@@ -1116,10 +1118,9 @@ describe('release proof evidence index', () => {
 			publicReplacementGapsRemain: true,
 			ownerApprovalRequired: true,
 		})
-		expect(handoff.fixturePolicyEvidence.safeOpen.signatureOrUnknownMatches).toBe(0)
+		expect(handoff.fixturePolicyEvidence.safeOpen.signatureOrUnknownMatches).toBe(1)
 		expect(handoff.fixturePolicyEvidence.packageAction.missingReplacementFeatures).toEqual([
 			'signaturePackage',
-			'syntheticUnknownPathFamily',
 		])
 		expect(handoff.generatedFixtureDecisionEvidence).toMatchObject({
 			status: 'generated-structural-cases-disclosed-owner-approval-required',
@@ -1129,10 +1130,8 @@ describe('release proof evidence index', () => {
 		})
 		expect(handoff.generatedFixtureDecisionEvidence.cases.map((entry) => entry.caseName)).toEqual([
 			'signed',
-			'unknown-part',
 			'malformed',
 			'signature-invalidation-drop',
-			'unknown-part-error',
 		])
 		expect(handoff.performancePolicy.approvalChecklist.map((item) => item.gateId)).toEqual([
 			'release-latency-run',
@@ -1159,7 +1158,7 @@ describe('release proof evidence index', () => {
 				'macro-passthrough',
 				'chart-sidecar-accounting',
 			],
-			publicNonStreamingCaseNames: [],
+			publicNonStreamingCaseNames: ['unknown-part-error'],
 		})
 		expect(handoff.correctnessPolicy.approvalChecklist.map((item) => item.gateId)).toEqual([
 			'unsupported-feature-boundary',
@@ -1201,8 +1200,8 @@ describe('release proof evidence index', () => {
 		expect(handoff.fixturePolicyEvidence.safeOpen.externalCandidateEvidence).toEqual([
 			expect.objectContaining({
 				candidateId: 'excelforge-book1-unknown-part',
-				status: 'external-candidate-owner-review-required',
-				gateEffect: 'does-not-satisfy-public-edge-fixtures',
+				status: 'vendored-public-fixture',
+				gateEffect: 'satisfies-unknown-part-only',
 				riskFamily: 'preservedOther',
 				recommendedMode: 'metadata-only',
 			}),
@@ -1210,30 +1209,19 @@ describe('release proof evidence index', () => {
 		expect(handoff.fixturePolicyEvidence.packageAction.externalCandidateEvidence).toEqual([
 			expect.objectContaining({
 				candidateId: 'excelforge-book1-unknown-part-mutation',
-				status: 'external-candidate-owner-review-required',
-				gateEffect: 'does-not-satisfy-edge-fixture-policy',
+				status: 'vendored-public-fixture',
+				gateEffect: 'satisfies-unknown-part-only',
 				postWriteAuditsPassed: false,
 				unknownPartPath: 'docMetadata/LabelInfo.xml',
 			}),
 		])
 		expect(handoff.fixtureAcquisitionPlan.tasks[0]).toMatchObject({
-			caseName: 'unknown-part-shared-candidate',
-			relatedArtifacts: ['safe-open-proof', 'package-action-proof'],
-			ownerDecision: expect.stringContaining('accepts as public fixture candidate'),
-		})
-		expect(handoff.fixtureAcquisitionPlan.tasks[1]).toMatchObject({
 			caseName: 'signed-package',
 			killCriterion: expect.stringContaining('certificate meaning'),
 		})
-		expect(handoff.fixturePolicyEvidence.safeOpen.signatureOrUnknownMatches).toBe(0)
+		expect(handoff.fixturePolicyEvidence.safeOpen.signatureOrUnknownMatches).toBe(1)
 		expect(JSON.stringify(handoff.generatedFixtureDecisionEvidence)).toContain(
 			'generated-malformed-package',
-		)
-		expect(JSON.stringify(handoff.generatedFixtureDecisionEvidence)).toContain(
-			'external candidate excelforge-book1-unknown-part awaits owner review',
-		)
-		expect(JSON.stringify(handoff.generatedFixtureDecisionEvidence)).toContain(
-			'external candidate excelforge-book1-unknown-part-mutation awaits owner review',
 		)
 		expect(JSON.stringify(handoff.performancePolicy)).toContain('safe-open-proof.ts --repeat 10')
 		expect(JSON.stringify(handoff.safeOpenLatencyValidationEvidence)).toContain(
@@ -1464,6 +1452,82 @@ describe('release proof evidence index', () => {
 		expect(stdout).not.toContain('"deferredClaims"')
 	})
 
+	test('emits a compact fixture decision packet JSON mode', async () => {
+		const proc = Bun.spawn([Bun.argv[0], runnerPath, '--no-timings', '--fixture-decision-json'], {
+			cwd: process.cwd(),
+			stderr: 'pipe',
+			stdout: 'pipe',
+		})
+		const [stdout, stderr, exitCode] = await Promise.all([
+			new Response(proc.stdout).text(),
+			new Response(proc.stderr).text(),
+			proc.exited,
+		])
+
+		expect(exitCode, stderr).toBe(0)
+		expect(stderr.trim()).toBe('')
+		const packet = JSON.parse(stdout) as {
+			readonly ownerLoop?: string
+			readonly status?: string
+			readonly releaseGate?: string
+			readonly headlineClaimsAllowed?: boolean
+			readonly ownerApprovalRequired?: boolean
+			readonly publicReplacementGapsRemain?: boolean
+			readonly trackedScans?: readonly {
+				readonly artifact?: string
+				readonly gateId?: string
+				readonly publicReplacementGap?: boolean
+				readonly generatedStructuralCases?: readonly string[]
+			}[]
+			readonly approvalChecklist?: readonly {
+				readonly gateId?: string
+				readonly ownerLoop?: string
+			}[]
+			readonly generatedCases?: readonly {
+				readonly caseName?: string
+				readonly forbiddenUse?: string
+			}[]
+			readonly validationCommands?: readonly string[]
+			readonly forbiddenShortcuts?: readonly string[]
+		}
+		expect(packet).toMatchObject({
+			ownerLoop: 'product',
+			status: 'owner-decision-required',
+			releaseGate: 'blocked-by-publication-policy',
+			headlineClaimsAllowed: false,
+			ownerApprovalRequired: true,
+			publicReplacementGapsRemain: true,
+		})
+		expect(packet.trackedScans?.map((scan) => `${scan.artifact}/${scan.gateId}`)).toEqual([
+			'safe-open-proof/public-edge-fixtures',
+			'package-action-proof/edge-fixture-policy',
+		])
+		expect(packet.trackedScans?.every((scan) => scan.publicReplacementGap === true)).toBe(true)
+		expect(packet.trackedScans?.[0].generatedStructuralCases).toEqual(['signed', 'malformed'])
+		expect(packet.approvalChecklist?.map((item) => item.ownerLoop)).toEqual(['product', 'product'])
+		expect(packet.approvalChecklist?.map((item) => item.gateId)).toEqual([
+			'public-edge-fixtures',
+			'edge-fixture-policy',
+		])
+		expect(packet.generatedCases?.map((item) => item.caseName)).toEqual([
+			'signed',
+			'malformed',
+			'signature-invalidation-drop',
+		])
+		expect(packet.generatedCases?.[0].forbiddenUse).toContain('signature verification')
+		expect(packet.validationCommands).toEqual([
+			'bun run fixtures/benchmarks/safe-open-fixture-scan.ts --json',
+			'bun run fixtures/benchmarks/package-action-fixture-scan.ts --json',
+			'bun run fixtures/benchmarks/release-proof-index.ts --no-timings --owner-handoffs-json',
+		])
+		expect(packet.forbiddenShortcuts?.join('\n')).toContain(
+			'Do not hide generated fixture provenance',
+		)
+		expect(stdout).not.toContain('"claimBlockerBoard"')
+		expect(stdout).not.toContain('"deferredClaims"')
+		expect(stdout).not.toContain('"qssLeapfrogReleaseMatrix"')
+	})
+
 	test('renders honest non-attestation boundaries', async () => {
 		const markdown = releaseProofIndexMarkdown(
 			await runReleaseProofIndex({ includeTimings: false }),
@@ -1478,10 +1542,14 @@ describe('release proof evidence index', () => {
 		expect(markdown).toContain('## Release Decision Board')
 		expect(markdown).toContain('Do not promote yet:')
 		expect(markdown).toContain(
-			'| Rank | Claim wording allowed today | Headline claim allowed | Implementation promotion allowed | Exact proof | Must not claim | A+ blocking owner action | Boundary |',
+			'| Rank | Claim | Evidence we have | Evidence missing | QSS contrast | Allowed wording | Forbidden wording | Next owner action | Headline claim allowed | Implementation promotion allowed | Exact proof | Must not claim | A+ blocking owner action | Boundary |',
 		)
-		expect(markdown).toContain('| 1 | safe unknown workbook opening | false | false |')
-		expect(markdown).toContain('| 2 | auditable package-part mutation | false | false |')
+		expect(markdown).toContain('| 1 | safe unknown workbook opening |')
+		expect(markdown).toContain('QSS likely does well:')
+		expect(markdown).toContain('Ascend proven today:')
+		expect(markdown).toContain('pre-hydration package-feature routing')
+		expect(markdown).toContain('| 2 | auditable package-part mutation |')
+		expect(markdown).toContain('per-part package action accounting')
 		expect(markdown).toContain('release-latency-run: validation-run')
 		expect(markdown).toContain('provenance-boundary: publication-policy')
 		expect(markdown).toContain('Release Packageability Evidence')
@@ -1519,10 +1587,8 @@ describe('release proof evidence index', () => {
 		expect(markdown).toContain(
 			'package-action-proof=`bun run fixtures/benchmarks/package-action-fixture-scan.ts --json`',
 		)
-		expect(markdown).toContain('safe-open-proof=signed,unknown-part,malformed')
-		expect(markdown).toContain(
-			'package-action-proof=signature-invalidation-drop,unknown-part-error',
-		)
+		expect(markdown).toContain('safe-open-proof=signed,malformed')
+		expect(markdown).toContain('package-action-proof=signature-invalidation-drop')
 		expect(markdown).toContain('edge case is package-topology-only')
 		expect(markdown).toContain('Public binary fixtures are required when:')
 		expect(markdown).toContain('Safe-open generated case acceptance checklist:')
@@ -1544,20 +1610,15 @@ describe('release proof evidence index', () => {
 		expect(markdown).toContain('All scans use tracked corpus: true')
 		expect(markdown).toContain('Public replacement gaps remain: true')
 		expect(markdown).toContain('| safe-open-proof | public-edge-fixtures')
-		expect(markdown).toContain('signatureOrUnknownMatches=0')
+		expect(markdown).toContain('signatureOrUnknownMatches=1')
 		expect(markdown).toContain('External fixture candidates:')
 		expect(markdown).toContain('excelforge-book1-unknown-part')
-		expect(markdown).toContain('does-not-satisfy-public-edge-fixtures')
+		expect(markdown).toContain('satisfies-unknown-part-only')
 		expect(markdown).toContain('excelforge-book1-unknown-part-mutation')
-		expect(markdown).toContain('does-not-satisfy-edge-fixture-policy')
 		expect(markdown).toContain('| package-action-proof | edge-fixture-policy')
-		expect(markdown).toContain(
-			'missingReplacementFeatures=signaturePackage,syntheticUnknownPathFamily',
-		)
+		expect(markdown).toContain('missingReplacementFeatures=signaturePackage')
 		expect(markdown).toContain('Fixture acquisition plan:')
-		expect(markdown).toContain('unknown-part-shared-candidate')
 		expect(markdown).toContain('signed-package')
-		expect(markdown).toContain('Product/release accepts as public fixture candidate')
 		expect(markdown).toContain('Generated fixture decision evidence:')
 		expect(markdown).toContain(
 			'Status: generated-structural-cases-disclosed-owner-approval-required',
@@ -1607,7 +1668,7 @@ describe('release proof evidence index', () => {
 			'Covered cases: docprops-passthrough,add-sheet-part,calc-chain-drop,macro-passthrough,chart-sidecar-accounting',
 		)
 		expect(markdown).toContain('Non-streaming cases: regenerate-existing-sheet')
-		expect(markdown).toContain('Public non-streaming cases: none')
+		expect(markdown).toContain('Public non-streaming cases: unknown-part-error')
 		expect(markdown).toContain('## Correctness Policy')
 		expect(markdown).toContain('Unsupported feature boundaries:')
 		expect(markdown).toContain(
@@ -1658,13 +1719,13 @@ describe('release proof evidence index', () => {
 		expect(markdown).toContain('| package-action-proof | compact-report-publication-policy')
 		expect(markdown).toContain('does not publish compact report digests')
 		expect(markdown).toContain(
-			'| Rank | Artifact | Gate | Owner loop | Priority | Next step | Acceptance evidence | Forbidden shortcut |',
+			'| Rank | Artifact | Gate | Owner loop | Priority | Next step | Validation command | Acceptance evidence | Forbidden shortcut |',
 		)
 		expect(markdown).toContain(
-			'| 10 | package-action-proof | edge-fixture-policy | product | claim-evidence | owner-decision-or-fixture-replacement | Product accepts disclosed generated',
+			'| 10 | package-action-proof | edge-fixture-policy | product | claim-evidence | owner-decision-or-fixture-replacement | `bun run fixtures/benchmarks/package-action-fixture-scan.ts --json` | Product accepts disclosed generated',
 		)
 		expect(markdown).toContain(
-			'| 50 | package-action-proof | provenance-boundary | release | publication-policy | publication-policy | Release approves local package-action proof wording below SLSA',
+			'| 50 | package-action-proof | provenance-boundary | release | publication-policy | publication-policy | `bun run fixtures/benchmarks/release-proof-index.ts --no-timings --owner-handoffs-json` | Release approves local package-action proof wording below SLSA',
 		)
 		expect(markdown).toContain('accept=Product accepts disclosed generated')
 		expect(markdown).toContain('forbid=Do not hide generated fixture provenance')
@@ -1690,8 +1751,8 @@ describe('release proof evidence index', () => {
 		expect(markdown).toContain('streaming-matrix-boundary(missing,performance)')
 		expect(markdown).toContain('compact-report-publication-policy(missing,release)')
 		expect(markdown).toContain('Fixture provenance')
-		expect(markdown).toContain('generatedCases=signed,unknown-part,malformed')
-		expect(markdown).toContain('deterministicGenerated=signed,unknown-part,malformed')
+		expect(markdown).toContain('generatedCases=signed,malformed')
+		expect(markdown).toContain('deterministicGenerated=signed,malformed')
 		expect(markdown).toContain('generatedDigests=signed:')
 		expect(markdown).toContain('safe-open-proof.ts --no-timings --json')
 		expect(markdown).toContain('safe-open-proof.ts --no-timings --compact-json')

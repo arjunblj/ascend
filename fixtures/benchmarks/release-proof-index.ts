@@ -3062,7 +3062,7 @@ function safeOpenQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceItem[] {
 				'bun test apps/api/src/server.test.ts -t "missing workbook references" --timeout 30000',
 			path: 'apps/api/src/server.ts; apps/api/src/server.test.ts',
 			acceptedScope:
-				'Commits 215d6e57, 7c1a9708, 8ce0fbe2, 43781bef, ea67f3b3, and e090fe13 return structured retryable missing-workbook-reference errors for API plan/commit/open-plan/inspect/active-content/trust-report/package-graph/raw-part/dump/template-merge/read/agent-view workflow requests instead of generic missing-file responses.',
+				'Commits 215d6e57, 7c1a9708, 8ce0fbe2, 43781bef, ea67f3b3, 6490a0e6, and e090fe13 return structured retryable missing-workbook-reference errors for API plan/commit/open-plan/inspect/active-content/trust-report/package-graph/raw-part/visuals/dump/template-merge/read/agent-view workflow requests instead of generic missing-file responses. Commit 346410a9 also returns structured retryable missing-range errors for API read/agent-view requests.',
 			boundary:
 				'API request-shape diagnostics only; it does not prove file recovery, path discovery, source workbook existence, edit correctness, latency, or trust wording.',
 		},

@@ -938,6 +938,14 @@ describe('release proof evidence index', () => {
 				}),
 				expect.objectContaining({
 					evidenceId: 'api-open-workflow-reference-proof',
+					acceptedScope: expect.stringContaining('6490a0e6'),
+				}),
+				expect.objectContaining({
+					evidenceId: 'api-open-workflow-reference-proof',
+					acceptedScope: expect.stringContaining('346410a9'),
+				}),
+				expect.objectContaining({
+					evidenceId: 'api-open-workflow-reference-proof',
 					acceptedScope: expect.stringContaining('active-content/trust-report'),
 				}),
 				expect.objectContaining({
@@ -946,7 +954,11 @@ describe('release proof evidence index', () => {
 				}),
 				expect.objectContaining({
 					evidenceId: 'api-open-workflow-reference-proof',
-					acceptedScope: expect.stringContaining('dump/template-merge'),
+					acceptedScope: expect.stringContaining('visuals/dump/template-merge'),
+				}),
+				expect.objectContaining({
+					evidenceId: 'api-open-workflow-reference-proof',
+					acceptedScope: expect.stringContaining('structured retryable missing-range errors'),
 				}),
 				expect.objectContaining({
 					evidenceId: 'mcp-open-workflow-reference-proof',

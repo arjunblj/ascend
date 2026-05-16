@@ -200,6 +200,7 @@ type AgentWorkflowFileContext =
 	| 'package-graph'
 	| 'raw-part'
 	| 'visuals'
+	| 'pivots'
 	| 'dump'
 	| 'template-merge'
 	| 'read'
@@ -224,6 +225,8 @@ function missingAgentWorkflowFileError(context: AgentWorkflowFileContext): Ascen
 				return 'Pass file so Ascend can inspect the requested raw package part safely.'
 			case 'visuals':
 				return 'Pass file so Ascend can inspect visual inventory before visual, chart, drawing, or image edits.'
+			case 'pivots':
+				return 'Pass file so Ascend can inspect PivotTables, cache metadata, and materialization plans before edits.'
 			case 'dump':
 				return 'Pass file so Ascend can dump replayable operations from a full workbook load.'
 			case 'template-merge':
@@ -868,7 +871,7 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 					mode?: PivotOutputMaterializeMode
 				}>(req)
 				const file = body ? requireString(body, 'file') : null
-				if (!file) return jsonFailure('Missing or invalid file', 400)
+				if (!file) return jsonFailureError(missingAgentWorkflowFileError('pivots'), 400)
 				const options = parsePivotOutputMaterializeOptions(
 					body && typeof body === 'object' ? (body as Record<string, unknown>) : null,
 				)

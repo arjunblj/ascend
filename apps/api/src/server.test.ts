@@ -538,6 +538,31 @@ describe('Ascend API server', () => {
 		})
 	})
 
+	test('/commit reports missing workbook files without creating output artifacts', async () => {
+		const missing = join(tmpdir(), `ascend-api-missing-commit-${Date.now()}.xlsx`)
+		const output = `${missing}.out.xlsx`
+		try {
+			const result = await postJson('/commit', {
+				file: missing,
+				output,
+				ops: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] }],
+			})
+
+			expect(result.status).toBe(404)
+			expect(result.body.ok).toBe(false)
+			expect(result.body.error).toMatchObject({
+				code: 'FILE_NOT_FOUND',
+				retryable: true,
+				retryStrategy: 'modified',
+				details: { file: missing },
+				suggestedFix: expect.stringContaining('existing workbook path'),
+			})
+			expect(await Bun.file(output).exists()).toBe(false)
+		} finally {
+			await unlink(output).catch(() => {})
+		}
+	})
+
 	test('/trust-report exposes untrusted workbook boundaries and next actions', async () => {
 		const trustFile = join(
 			tmpdir(),

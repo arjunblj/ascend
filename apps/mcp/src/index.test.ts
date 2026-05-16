@@ -137,6 +137,53 @@ describe('MCP server', () => {
 		})
 	})
 
+	test('ascend.commit reports missing workbook files without creating output artifacts', async () => {
+		const missing = join(tmpdir(), `ascend-mcp-missing-commit-${Date.now()}.xlsx`)
+		const output = `${missing}.out.xlsx`
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const commit = (server as any)._registeredTools['ascend.commit'].handler as (args: {
+			file: string
+			output: string
+			ops: readonly Record<string, unknown>[]
+		}) => Promise<{
+			isError?: boolean
+			structuredContent?: {
+				ok?: boolean
+				error?: {
+					code?: string
+					retryable?: boolean
+					retryStrategy?: string
+					details?: { file?: string }
+					suggestedFix?: string
+				}
+			}
+		}>
+
+		try {
+			const result = await commit({
+				file: missing,
+				output,
+				ops: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] }],
+			})
+
+			expect(result.isError).toBe(true)
+			expect(result.structuredContent).toMatchObject({
+				ok: false,
+				error: {
+					code: 'FILE_NOT_FOUND',
+					retryable: true,
+					retryStrategy: 'modified',
+					details: { file: missing },
+					suggestedFix: expect.stringContaining('existing workbook path'),
+				},
+			})
+			expect(await Bun.file(output).exists()).toBe(false)
+		} finally {
+			await unlink(output).catch(() => {})
+		}
+	})
+
 	test('createServer returns a McpServer instance', () => {
 		const server = createServer()
 		expect(server).toBeDefined()

@@ -14,6 +14,7 @@ import {
 } from '@ascend/sdk'
 import { createZip, encode } from '../../../packages/io-xlsx/src/writer/zip.ts'
 import { makeXlsx } from '../../../packages/io-xlsx/test/helpers.ts'
+import { jsonFailureError } from './response.ts'
 import { createApiFetch, createServer } from './server.ts'
 
 const TEMP_FILE = join(
@@ -524,6 +525,23 @@ async function postApiFetch(
 }
 
 describe('Ascend API server', () => {
+	test('jsonFailureError wraps string failures in coded machine envelopes', async () => {
+		const response = jsonFailureError('Direct helper failure', 400)
+		const body = (await response.json()) as ApiEnvelope
+
+		expect(response.status).toBe(400)
+		expect(body).toMatchObject({
+			ok: false,
+			error: {
+				code: 'INVALID_ARGUMENT',
+				message: 'Direct helper failure',
+				retryable: true,
+				retryStrategy: 'modified',
+				suggestedFix: 'Adjust the request body or endpoint arguments and retry.',
+			},
+		})
+	})
+
 	test('string API failures return coded JSON envelopes', async () => {
 		const missingRoute = await postJson('/not-a-real-endpoint', {})
 

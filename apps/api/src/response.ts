@@ -17,7 +17,8 @@ export function jsonFailure(message: string, status: number): Response {
 }
 
 export function jsonFailureError(error: string | AscendError, status: number): Response {
-	return new Response(JSON.stringify(machineFailure(error)), {
+	const structuredError = typeof error === 'string' ? structuredStringFailure(error, status) : error
+	return new Response(JSON.stringify(machineFailure(structuredError)), {
 		status,
 		headers: JSON_HEADERS,
 	})

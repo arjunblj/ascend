@@ -196,6 +196,7 @@ public final class FastExcelRunner {
 					try (Stream<org.dhatim.fastexcel.reader.Row> rows = sheet.openStream()) {
 						for (org.dhatim.fastexcel.reader.Row row : (Iterable<org.dhatim.fastexcel.reader.Row>) rows::iterator) {
 							for (org.dhatim.fastexcel.reader.Cell cell : row) {
+								if (cell == null) continue;
 								if (cell.getType() == org.dhatim.fastexcel.reader.CellType.FORMULA) formulaCount++;
 								String payload = scalarPayload(cell);
 								if (payload == null) continue;
@@ -228,6 +229,7 @@ public final class FastExcelRunner {
 				try (Stream<org.dhatim.fastexcel.reader.Row> rows = sheet.openStream()) {
 					for (org.dhatim.fastexcel.reader.Row row : (Iterable<org.dhatim.fastexcel.reader.Row>) rows::iterator) {
 						for (org.dhatim.fastexcel.reader.Cell cell : row) {
+							if (cell == null) continue;
 							if (cell.getType() != org.dhatim.fastexcel.reader.CellType.EMPTY) cellCount++;
 						}
 					}

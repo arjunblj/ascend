@@ -715,6 +715,7 @@ const ARRAY_MAPPING_FUNCTIONS = new Set([
 	'IF',
 	'IFERROR',
 	'IFNA',
+	'IFS',
 	'ISBLANK',
 	'ISERR',
 	'ISERROR',

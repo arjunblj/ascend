@@ -3480,6 +3480,48 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(1, 2)?.value).toEqual(stringValue('ok'))
 	})
 
+	test('IFS spills results for array conditions', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(95), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(84), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: numberValue(72), formula: null, styleId: sid })
+		sheet.cells.set(3, 0, { value: numberValue(58), formula: null, styleId: sid })
+		sheet.cells.set(0, 2, {
+			value: EMPTY,
+			formula: 'IFS(A1:A4>=90,"A",A1:A4>=80,"B",A1:A4>=70,"C",TRUE,"F")',
+			styleId: sid,
+		})
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(0, 2)?.value).toEqual(stringValue('A'))
+		expect(sheet.cells.get(1, 2)?.value).toEqual(stringValue('B'))
+		expect(sheet.cells.get(2, 2)?.value).toEqual(stringValue('C'))
+		expect(sheet.cells.get(3, 2)?.value).toEqual(stringValue('F'))
+	})
+
+	test('IFS array conditions preserve selected array results and lazy branch evaluation', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: stringValue('x'), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: stringValue('y'), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: stringValue('first'), formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: stringValue('second'), formula: null, styleId: sid })
+		sheet.cells.set(0, 3, {
+			value: EMPTY,
+			formula: 'IFS(A1:A2="x",B1:B2,A1:A2="z",1/0,TRUE,"fallback")',
+			styleId: sid,
+		})
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(0, 3)?.value).toEqual(stringValue('first'))
+		expect(sheet.cells.get(1, 3)?.value).toEqual(stringValue('fallback'))
+	})
+
 	test('TEXTBEFORE and TEXTAFTER support modern text slicing formulas', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

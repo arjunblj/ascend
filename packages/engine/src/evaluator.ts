@@ -1385,14 +1385,87 @@ function switchValuesMatch(a: CellValue, b: CellValue): boolean {
 
 function evalIfs(argNodes: readonly FormulaNode[], ctx: EvalContext): CellValue {
 	if (argNodes.length < 2 || argNodes.length % 2 !== 0) return errorValue('#VALUE!')
+	const conditions = new Map<number, CellValue>()
 	for (let i = 0; i + 1 < argNodes.length; i += 2) {
 		const v = evaluate(argNodes[i] ?? { type: 'missing' }, ctx)
+		conditions.set(i, v)
+		if (v.kind === 'array') return evalIfsArray(argNodes, conditions, ctx)
 		if (v.kind === 'error') return v
 		const cond = coerceToBoolean(v)
 		if (typeof cond !== 'boolean') return cond
 		if (cond) return evalLazyArg(argNodes[i + 1], ctx)
 	}
 	return errorValue('#N/A')
+}
+
+function evalIfsArray(
+	argNodes: readonly FormulaNode[],
+	conditions: Map<number, CellValue>,
+	ctx: EvalContext,
+): CellValue {
+	const results = new Map<number, CellValue>()
+	let rows = 1
+	let cols = 1
+	for (let i = 0; i + 1 < argNodes.length; i += 2) {
+		if (!conditions.has(i)) {
+			conditions.set(i, evaluate(argNodes[i] ?? { type: 'missing' }, ctx))
+		}
+		const condition = conditions.get(i) ?? EMPTY
+		if (condition.kind !== 'array') continue
+		const nextRows = broadcastLength(rows, condition.rows.length)
+		const nextCols = broadcastLength(cols, maxRowLength(condition.rows))
+		if (nextRows === null || nextCols === null) return errorValue('#VALUE!')
+		rows = nextRows
+		cols = nextCols
+	}
+
+	const output: ScalarCellValue[][] = []
+	for (let rowIndex = 0; rowIndex < rows; rowIndex++) {
+		const row: ScalarCellValue[] = []
+		for (let colIndex = 0; colIndex < cols; colIndex++) {
+			let matched = false
+			for (let i = 0; i + 1 < argNodes.length; i += 2) {
+				const conditionValue = topLeftScalar(
+					arrayCellAt(conditions.get(i) ?? EMPTY, rowIndex, colIndex),
+				)
+				if (conditionValue.kind === 'error') {
+					row.push(conditionValue)
+					matched = true
+					break
+				}
+				const condition = coerceToBoolean(conditionValue)
+				if (typeof condition !== 'boolean') {
+					row.push(topLeftScalar(condition))
+					matched = true
+					break
+				}
+				if (!condition) continue
+
+				if (!results.has(i + 1)) {
+					results.set(i + 1, evalLazyArg(argNodes[i + 1], ctx))
+				}
+				const resultValue = results.get(i + 1) ?? EMPTY
+				if (!canBroadcastToShape(resultValue, rows, cols)) {
+					row.push(topLeftScalar(errorValue('#VALUE!')))
+				} else {
+					row.push(topLeftScalar(arrayCellAt(resultValue, rowIndex, colIndex)))
+				}
+				matched = true
+				break
+			}
+			if (!matched) row.push(topLeftScalar(errorValue('#N/A')))
+		}
+		output.push(row)
+	}
+	return arrayValue(output)
+}
+
+function canBroadcastToShape(value: CellValue, rows: number, cols: number): boolean {
+	if (value.kind !== 'array') return true
+	return (
+		broadcastLength(rows, value.rows.length) !== null &&
+		broadcastLength(cols, maxRowLength(value.rows)) !== null
+	)
 }
 
 function evalFormulaText(argNodes: readonly FormulaNode[], ctx: EvalContext): CellValue {

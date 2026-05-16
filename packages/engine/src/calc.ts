@@ -726,10 +726,14 @@ const ARRAY_MAPPING_FUNCTIONS = new Set([
 	'ISNUMBER',
 	'ISODD',
 	'ISTEXT',
+	'LEN',
+	'LOWER',
 	'N',
 	'ROW',
 	'SQRT',
 	'SWITCH',
+	'TRIM',
+	'UPPER',
 ])
 
 const REFERENCE_SENSITIVE_SHARED_FUNCTIONS = new Set(['INDIRECT', 'OFFSET'])
@@ -883,7 +887,7 @@ function evalFormula(
 		if (legacyValue) return normalizeTopLevelFormulaValue(ast, legacyValue, ctx)
 	}
 	if (needsInterpreterArraySemantics(ast))
-		return normalizeTopLevelFormulaValue(ast, evaluate(ast, ctx), ctx)
+		return normalizeTopLevelFormulaValue(ast, evaluate(ast, withArrayFormulaSemantics(ctx)), ctx)
 	if (containsEmptyStringLiteralNumericBinary(ast)) {
 		return normalizeTopLevelFormulaValue(ast, evaluate(ast, ctx), ctx)
 	}
@@ -910,6 +914,10 @@ function evalFormula(
 		return normalizeTopLevelFormulaValue(ast, evaluateCompiled(compiled, ctx), ctx)
 	}
 	return normalizeTopLevelFormulaValue(ast, evaluate(ast, ctx), ctx)
+}
+
+function withArrayFormulaSemantics(ctx: EvalContext): EvalContext {
+	return ctx.arrayFormulaSemantics === true ? ctx : { ...ctx, arrayFormulaSemantics: true }
 }
 
 function containsEmptyStringLiteralNumericBinary(node: FormulaNode): boolean {

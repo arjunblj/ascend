@@ -998,6 +998,26 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(3, 1)?.value).toEqual(numberValue(3))
 	})
 
+	test('common text scalar functions spill over range operands in array formulas', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: stringValue(' north '), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: stringValue('East'), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: stringValue('No'), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, {
+			value: EMPTY,
+			formula: 'IF(LEN(A1:A3)>3,UPPER(TRIM(A1:A3)),LOWER(A1:A3))',
+			styleId: sid,
+		})
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(0, 1)?.value).toEqual(stringValue('NORTH'))
+		expect(sheet.cells.get(1, 1)?.value).toEqual(stringValue('EAST'))
+		expect(sheet.cells.get(2, 1)?.value).toEqual(stringValue('no'))
+	})
+
 	test('FREQUENCY formulas can count unique filtered numeric ids from array expressions', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

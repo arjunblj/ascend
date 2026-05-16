@@ -60,6 +60,7 @@ export interface EvalContext {
 	readonly aggregateRangeCache?: AggregateRangeCache
 	readonly numericVectorCache?: NumericVectorCache
 	readonly structuredRefResolver?: StructuredRefResolver
+	readonly arrayFormulaSemantics?: boolean
 }
 
 export class MutableEvalContext implements EvalContext {
@@ -73,6 +74,7 @@ export class MutableEvalContext implements EvalContext {
 	aggregateRangeCache?: AggregateRangeCache
 	numericVectorCache?: NumericVectorCache
 	structuredRefResolver?: StructuredRefResolver
+	arrayFormulaSemantics?: boolean
 }
 
 class FunctionEvalCtx implements FunctionEvalContext {
@@ -203,7 +205,11 @@ const ARRAY_CONTEXT_MAPPABLE_FUNCTIONS = new Set([
 	'ISNONTEXT',
 	'ISODD',
 	'ISTEXT',
+	'LEN',
+	'LOWER',
 	'SQRT',
+	'TRIM',
+	'UPPER',
 ])
 
 const LEGACY_TOP_LEVEL_SCALAR_FUNCTIONS = new Set([
@@ -1103,6 +1109,7 @@ function evalFunction(name: string, argNodes: readonly FormulaNode[], ctx: EvalC
 }
 
 function usesFormulaArraySemantics(ctx: EvalContext): boolean {
+	if (ctx.arrayFormulaSemantics === true) return true
 	const binding = ctx.workbook.sheets[ctx.sheetIndex]?.cells.get(ctx.row, ctx.col)?.formulaInfo
 	return (
 		binding?.kind === 'array' ||

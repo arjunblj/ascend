@@ -1191,6 +1191,41 @@ describe('agent workflow loss audit', () => {
 		expect(Buffer.from(readFileSync(input)).equals(Buffer.from(sourceBytes))).toBe(true)
 	})
 
+	test('commits public LibreOffice hidden sheets without materializing content type defaults', async () => {
+		const input = join(TEMP_DIR, 'libreoffice-hidden-sheet.xlsx')
+		const output = join(TEMP_DIR, 'libreoffice-hidden-sheet-out.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		const sourceBytes = new Uint8Array(readFileSync('fixtures/xlsx/libreoffice/hidden_sheets.xlsx'))
+		await Bun.write(input, sourceBytes)
+		const ops = [
+			{ op: 'setCells' as const, sheet: 'Sheet2', updates: [{ ref: 'A1', value: 'visible-edit' }] },
+		]
+		const plan = await createAgentPlan(input, ops)
+
+		expect(plan.preview.wouldSucceed).toBe(true)
+
+		const committed = await commitAgentPlan(input, ops, { output })
+
+		expect(committed.postWrite.auditsPassed).toBe(true)
+		expect(committed.postWrite.packageGraphAudit.issues).not.toContainEqual(
+			expect.objectContaining({ code: 'package_content_type_default_set' }),
+		)
+		expect(committed.postWrite.workbookTopology).toMatchObject({
+			sheets: 3,
+			hiddenSheets: 2,
+			hiddenSheetNames: ['Sheet1', 'Sheet3'],
+			workbookViewDetails: [{ index: 0, activeTab: 1, firstSheet: 1, tabRatio: 990 }],
+			verification: 'reopened-output',
+		})
+		const graph = inspectXlsxPackageGraph(new Uint8Array(readFileSync(output)))
+		expect(graph.contentTypeDefaults).toEqual([])
+		const reopened = await AscendWorkbook.open(new Uint8Array(readFileSync(output)))
+		expect(reopened.getWorkbookModel().workbookViews).toEqual([
+			{ activeTab: 1, firstSheet: 1, tabRatio: 990 },
+		])
+		expect(Buffer.from(readFileSync(input)).equals(Buffer.from(sourceBytes))).toBe(true)
+	})
+
 	test('compact plan result preserves changed ranges when changed cells are capped', async () => {
 		const input = join(TEMP_DIR, 'compact-plan-ranges.xlsx')
 		mkdirSync(TEMP_DIR, { recursive: true })

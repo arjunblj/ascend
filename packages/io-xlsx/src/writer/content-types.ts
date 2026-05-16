@@ -59,8 +59,12 @@ export function buildContentTypesXml(
 			pushDefault(entry.extension, entry.contentType)
 		}
 	}
-	pushDefault('rels', CT_RELS)
-	pushDefault('xml', CT_XML)
+	const preserveSourceDefaultSet =
+		preservedDefaults !== undefined && preservedOverrides !== undefined
+	if (!preserveSourceDefaultSet) {
+		pushDefault('rels', CT_RELS)
+		pushDefault('xml', CT_XML)
+	}
 	pushOverride('xl/workbook.xml', workbookContentType, true)
 
 	for (const sheetPartPath of sheetPartPaths) {

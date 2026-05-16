@@ -10,6 +10,8 @@ import {
 	REL_ACTIVE_X_CONTROL,
 	REL_ACTIVE_X_CONTROL_BINARY,
 	REL_CHART,
+	REL_CHART_COLOR_STYLE,
+	REL_CHART_STYLE,
 	REL_CHARTSHEET,
 	REL_COMMENTS,
 	REL_CONNECTIONS,
@@ -240,8 +242,18 @@ export function classifyPackageFeatureFamily(
 	if (/^xl\/worksheets\/sheet\d+_[^/]+\.xml$/i.test(path)) return 'preservedWorksheetSidecar'
 	if (path.includes('/chartsheets/')) return 'preservedChartSheet'
 	if (path.includes('/macrosheets/')) return 'preservedMacroSheet'
-	if (/(^|\/)charts\/style\d+\.xml$/i.test(path)) return 'preservedChartStyle'
-	if (/(^|\/)charts\/colors\d+\.xml$/i.test(path)) return 'preservedChartColor'
+	if (
+		/(^|\/)charts\/style\d+\.xml$/i.test(path) ||
+		lowerRelType.endsWith('/relationships/chartstyle')
+	) {
+		return 'preservedChartStyle'
+	}
+	if (
+		/(^|\/)charts\/colors\d+\.xml$/i.test(path) ||
+		lowerRelType.endsWith('/relationships/chartcolorstyle')
+	) {
+		return 'preservedChartColor'
+	}
 	if (path.includes('/charts/') || path.includes('/chartEx/')) return 'preservedChart'
 	if (path.includes('/drawings/') && path.endsWith('.vml')) return 'preservedVml'
 	if (path.includes('/drawings/')) return 'preservedDrawing'
@@ -499,6 +511,8 @@ function classifyRelationshipFeatureFamily(
 	if (relationship.type === REL_DRAWING) return 'preservedDrawing'
 	if (relationship.type === REL_VML_DRAWING) return 'preservedVml'
 	if (relationship.type === REL_CHART) return 'preservedChart'
+	if (relationship.type === REL_CHART_STYLE) return 'preservedChartStyle'
+	if (relationship.type === REL_CHART_COLOR_STYLE) return 'preservedChartColor'
 	if (relationship.type === REL_IMAGE) return 'preservedMedia'
 	if (relationship.type === REL_EXTERNAL_LINK) return 'preservedExternalLink'
 	if (isExternalLinkPathRelationshipType(relationship.type)) return 'preservedExternalLink'

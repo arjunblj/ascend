@@ -59,6 +59,8 @@ describe('XLSX package graph', () => {
   <Relationship Id="rIdImage" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image%201.png"/>
   <Relationship Id="rIdLinkedImage" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="https://example.invalid/logo.png" TargetMode="External"/>
   <Relationship Id="rIdOleObject" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObject" Target="file:///C:/objects/report.bin" TargetMode="External"/>
+  <Relationship Id="rIdOpaqueChartStyle" Type="http://schemas.microsoft.com/office/2011/relationships/chartStyle" Target="style-package.bin"/>
+  <Relationship Id="rIdOpaqueChartColors" Type="http://schemas.microsoft.com/office/2011/relationships/chartColorStyle" Target="color-package.bin"/>
 </Relationships>`,
 			'xl/charts/chart1.xml': '<c:chartSpace/>',
 			'xl/charts/style1.xml': '<cs:chartStyle/>',
@@ -178,6 +180,24 @@ describe('XLSX package graph', () => {
 			rawTarget: 'file:///C:/objects/report.bin',
 			targetMode: 'External',
 			featureFamily: 'preservedEmbedding',
+		})
+		expect(graph.relationships).toContainEqual({
+			sourcePartPath: 'xl/drawings/drawing1.xml',
+			relationshipPartPath: 'xl/drawings/_rels/drawing1.xml.rels',
+			id: 'rIdOpaqueChartStyle',
+			type: 'http://schemas.microsoft.com/office/2011/relationships/chartStyle',
+			rawTarget: 'style-package.bin',
+			resolvedTarget: 'xl/drawings/style-package.bin',
+			featureFamily: 'preservedChartStyle',
+		})
+		expect(graph.relationships).toContainEqual({
+			sourcePartPath: 'xl/drawings/drawing1.xml',
+			relationshipPartPath: 'xl/drawings/_rels/drawing1.xml.rels',
+			id: 'rIdOpaqueChartColors',
+			type: 'http://schemas.microsoft.com/office/2011/relationships/chartColorStyle',
+			rawTarget: 'color-package.bin',
+			resolvedTarget: 'xl/drawings/color-package.bin',
+			featureFamily: 'preservedChartColor',
 		})
 		expect(graph.parts.find((part) => part.path === 'xl/workbook.xml')).toMatchObject({
 			contentTypeSource: 'override',

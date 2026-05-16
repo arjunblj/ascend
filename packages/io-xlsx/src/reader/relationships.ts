@@ -16,6 +16,9 @@ export const REL_CHARTSHEET =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/chartsheet'
 export const REL_MACROSHEET = 'http://schemas.microsoft.com/office/2006/relationships/xlMacrosheet'
 export const REL_CHART = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart'
+export const REL_CHART_STYLE = 'http://schemas.microsoft.com/office/2011/relationships/chartStyle'
+export const REL_CHART_COLOR_STYLE =
+	'http://schemas.microsoft.com/office/2011/relationships/chartColorStyle'
 export const REL_STYLES =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles'
 export const REL_SHARED_STRINGS =

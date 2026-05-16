@@ -414,6 +414,7 @@ export interface ReleaseProofReleaseDecisionDoNotPromoteItem {
 	readonly allowedWording: string
 	readonly forbiddenWording: readonly string[]
 	readonly nextOwnerAction: string
+	readonly validationCommands: readonly string[]
 	readonly killCriterion: string
 	readonly boundary: string
 }
@@ -1384,7 +1385,7 @@ export function releaseProofIndexMarkdown(result: ReleaseProofIndexResult): stri
 		`Disposition summary: implementation-ready-blocker=${result.releaseDecisionBoard.doNotPromoteDispositionSummary.implementationReadyBlockerNames.join(',')}; benchmark-corpus-blocker=${result.releaseDecisionBoard.doNotPromoteDispositionSummary.benchmarkCorpusBlockerNames.join(',')}; claim-downgrade-do-not-promote=${result.releaseDecisionBoard.doNotPromoteDispositionSummary.claimDowngradeDoNotPromoteNames.join(',')}`,
 		...result.releaseDecisionBoard.doNotPromoteYet.map(
 			(item) =>
-				`- ${item.name}: Disposition: ${item.workBlockDisposition}. ${item.reason} Missing: ${item.evidenceMissing.join('; ')} Allowed: ${item.allowedWording} Forbidden: ${item.forbiddenWording.join('; ')} Next: ${item.nextOwnerAction}`,
+				`- ${item.name}: Disposition: ${item.workBlockDisposition}. ${item.reason} Missing: ${item.evidenceMissing.join('; ')} Allowed: ${item.allowedWording} Forbidden: ${item.forbiddenWording.join('; ')} Commands: ${item.validationCommands.map((command) => `\`${command}\``).join('; ')} Next: ${item.nextOwnerAction}`,
 		),
 		'',
 		'## Release Packageability Evidence',
@@ -2438,9 +2439,78 @@ function releaseDecisionDoNotPromoteItem(
 			excludedEvidence?.eligibilityRule ??
 			proof?.validationGate ??
 			'No owner action is release-blocking until this claim changes the top-two release gate.',
+		validationCommands: releaseDecisionValidationCommands(note.name),
 		killCriterion: note.killCriterion,
 		boundary:
 			'Archived research note for release stewardship. Do not turn this into release wording or a new implementation surface until it changes the top-two claim gate.',
+	}
+}
+
+function releaseDecisionValidationCommands(
+	name: ReleaseProofQssArchivedResearchNote['name'],
+): readonly string[] {
+	switch (name) {
+		case 'safe-open-proof':
+		case 'package-action-proof':
+			return [
+				'bun run fixtures/benchmarks/release-proof-index.ts --no-timings --release-decision-json',
+			]
+		case 'formula-language-service-primitives':
+			return [
+				'bun run fixtures/benchmarks/formula-assist-proof.ts --sample 250 --no-timings --json',
+				'bun test packages/sdk/src/formula-edit.test.ts apps/cli/src/cli.test.ts apps/api/src/server.test.ts apps/mcp/src/index.test.ts --timeout 30000',
+			]
+		case 'token-bounded-agent-view':
+			return [
+				'bun test fixtures/benchmarks/agent-view-budget-proof.test.ts fixtures/benchmarks/agent-view-recovery-proof.test.ts',
+				'bun test packages/sdk/src/sdk.test.ts apps/cli/src/cli.test.ts apps/api/src/server.test.ts apps/mcp/src/index.test.ts --timeout 30000',
+			]
+		case 'retained-viewport-patch-history':
+			return [
+				'bun test fixtures/benchmarks/viewport-patch-proof.test.ts',
+				'bun test packages/sdk/src/interactive-contract.test.ts apps/api/src/server.test.ts apps/mcp/src/index.test.ts --timeout 30000',
+			]
+		case 'release-proof-bundle':
+			return [
+				'bun run release:rc:gate',
+				'bun run fixtures/benchmarks/safe-open-proof.ts --no-timings --compact-json',
+				'bun run fixtures/benchmarks/package-action-proof.ts --no-timings --compact-json',
+				'bun run fixtures/benchmarks/release-proof-index.ts --no-timings --owner-handoffs-json',
+			]
+		case 'formula-oracle-routing':
+			return [
+				'bun test fixtures/benchmarks/formula-corpus-correctness.test.ts --timeout 30000',
+				'bun run fixtures/benchmarks/formula-corpus-correctness.ts --corpus-root fixtures/xlsx/libreoffice --manifest fixtures/xlsx/libreoffice/manifest.ts --tag formula-fidelity --max-workbooks 5 --json',
+			]
+		case 'property-journal-laws':
+			return [
+				'bun test fixtures/benchmarks/journal-law-proof.test.ts --timeout 30000',
+				'bun test packages/sdk/src/journal-exactness.test.ts --timeout 30000',
+			]
+		case 'columnar-scan-sidecars':
+			return [
+				'bun test fixtures/benchmarks/columnar-sidecar.test.ts --timeout 30000',
+				'bun run fixtures/benchmarks/columnar-sidecar.ts --fixture fixtures/xlsx/external/sec-mmf-statistics-2022-02.xlsx --sheet "Table 9" --repeats 8 --claim-report --json',
+			]
+		case 'agent-workflow-observability':
+			return [
+				'bun test packages/sdk/src/agent-workflow.test.ts -t "keeps unresolved external-link package graph failures visible to agents|release proof bundle links plan, commit, reopen, diff, and audit evidence|prepared agent commits surface post-write audit failures as blocking model output" --timeout 30000',
+				'bun test apps/cli/src/cli.test.ts -t "plan invalid ops return structured batch repair details|check surfaces structured issue metadata for agent repair|trace shows values and respects max depth|trace shows precedents for formula cell" --timeout 30000',
+				'bun test apps/api/src/server.test.ts -t "trace returns structured partial-load diagnostics for capped formula views|plan invalid ops return structured batch repair details|prepared path mutation handles surface post-write audit failures as blocked output|direct path mutation commits surface post-write audit failures as blocked output" --timeout 30000',
+				'bun test apps/mcp/src/index.test.ts -t "ascend.trace returns structured partial-load diagnostics for capped formula views|ascend.plan invalid ops return structured batch repair details|prepared MCP path mutation handles surface post-write audit failures as blocked output|direct MCP path mutation commits surface post-write audit failures as blocked output" --timeout 30000',
+				'bun run fixtures/benchmarks/release-proof-index.ts --no-timings --owner-handoffs-json',
+			]
+		case 'research-surface-hygiene':
+			return [
+				'git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager',
+				'bun test fixtures/benchmarks/release-proof-index.test.ts',
+			]
+		case 'practical-latency-contracts':
+			return [
+				'bun test fixtures/benchmarks/practical-latency-contracts.test.ts --timeout 30000',
+				'bun run fixtures/benchmarks/practical-latency-contracts.ts --input-preset public-tracked --contract all --repeat 1 --warmup 0 --dry-run --json',
+				'bun run fixtures/benchmarks/practical-latency-contracts.ts --input-preset public-tracked --contract all --repeat 3 --warmup 1 --json',
+			]
 	}
 }
 
@@ -2531,6 +2601,7 @@ function cloneReleaseDecisionBoard(
 			evidenceMissing: [...item.evidenceMissing],
 			qssContrast: [...item.qssContrast],
 			forbiddenWording: [...item.forbiddenWording],
+			validationCommands: [...item.validationCommands],
 		})),
 		rows: board.rows.map((row) => ({
 			...row,

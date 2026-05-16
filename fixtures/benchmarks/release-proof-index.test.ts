@@ -1011,6 +1011,12 @@ describe('release proof evidence index', () => {
 		expect(formulaLanguageForbidden).toContain('external-ref rename')
 		expect(formulaLanguageNextOwnerAction).toContain('SDK/CLI/API/MCP')
 		expect(formulaLanguageNextOwnerAction).toContain('formula-assist-proof.ts')
+		expect(formulaLanguageDecision?.validationCommands).toEqual(
+			expect.arrayContaining([
+				'bun run fixtures/benchmarks/formula-assist-proof.ts --sample 250 --no-timings --json',
+				expect.stringContaining('packages/sdk/src/formula-edit.test.ts'),
+			]),
+		)
 		const researchSurfaceDecision = index.releaseDecisionBoard.doNotPromoteYet.find(
 			(item) => item.name === 'research-surface-hygiene',
 		)
@@ -1045,6 +1051,10 @@ describe('release proof evidence index', () => {
 		expect(researchSurfaceDecision?.nextOwnerAction).toContain(
 			'bun test fixtures/benchmarks/release-proof-index.test.ts',
 		)
+		expect(researchSurfaceDecision?.validationCommands).toEqual([
+			'git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager',
+			'bun test fixtures/benchmarks/release-proof-index.test.ts',
+		])
 		const tokenBoundedDecision = index.releaseDecisionBoard.doNotPromoteYet.find(
 			(item) => item.name === 'token-bounded-agent-view',
 		)
@@ -1065,6 +1075,12 @@ describe('release proof evidence index', () => {
 				'bun test fixtures/benchmarks/agent-view-budget-proof.test.ts fixtures/benchmarks/agent-view-recovery-proof.test.ts',
 			),
 		)
+		expect(tokenBoundedDecision?.validationCommands).toEqual(
+			expect.arrayContaining([
+				'bun test fixtures/benchmarks/agent-view-budget-proof.test.ts fixtures/benchmarks/agent-view-recovery-proof.test.ts',
+				expect.stringContaining('packages/sdk/src/sdk.test.ts'),
+			]),
+		)
 		const viewportPatchDecision = index.releaseDecisionBoard.doNotPromoteYet.find(
 			(item) => item.name === 'retained-viewport-patch-history',
 		)
@@ -1084,6 +1100,12 @@ describe('release proof evidence index', () => {
 		expect(viewportPatchNextOwnerAction).toContain(
 			'bun test fixtures/benchmarks/viewport-patch-proof.test.ts',
 		)
+		expect(viewportPatchDecision?.validationCommands).toEqual(
+			expect.arrayContaining([
+				'bun test fixtures/benchmarks/viewport-patch-proof.test.ts',
+				expect.stringContaining('packages/sdk/src/interactive-contract.test.ts'),
+			]),
+		)
 		for (const item of index.releaseDecisionBoard.doNotPromoteYet) {
 			const qssContrast = item.qssContrast.join('\n')
 			expect([
@@ -1101,6 +1123,8 @@ describe('release proof evidence index', () => {
 			expect(item.allowedWording).not.toContain('owner planning or research evidence')
 			expect(item.forbiddenWording).toEqual(expect.arrayContaining([expect.any(String)]))
 			expect(item.nextOwnerAction.length).toBeGreaterThan(0)
+			expect(item.validationCommands).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(item.validationCommands.every((command) => command.length > 0)).toBe(true)
 			expect(item.nextOwnerAction).not.toContain(
 				'No owner action is release-blocking until this claim changes the top-two release gate.',
 			)
@@ -1144,6 +1168,11 @@ describe('release proof evidence index', () => {
 				expect.stringContaining('third-party attestation'),
 				expect.stringContaining('Not signed'),
 			]),
+			validationCommands: expect.arrayContaining([
+				'bun run release:rc:gate',
+				'bun run fixtures/benchmarks/safe-open-proof.ts --no-timings --compact-json',
+				'bun run fixtures/benchmarks/package-action-proof.ts --no-timings --compact-json',
+			]),
 			nextOwnerAction: expect.stringContaining('bun run release:rc:gate'),
 		})
 		const formulaOracleDecision = index.releaseDecisionBoard.doNotPromoteYet.find(
@@ -1164,6 +1193,12 @@ describe('release proof evidence index', () => {
 		expect(formulaOracleForbidden).toContain('QSS/SOTA formula superiority')
 		expect(formulaOracleNextOwnerAction).toContain('formula-corpus-correctness.test.ts')
 		expect(formulaOracleNextOwnerAction).toContain('--tag formula-fidelity')
+		expect(formulaOracleDecision?.validationCommands).toEqual(
+			expect.arrayContaining([
+				'bun test fixtures/benchmarks/formula-corpus-correctness.test.ts --timeout 30000',
+				expect.stringContaining('--tag formula-fidelity'),
+			]),
+		)
 		const propertyJournalDecision = index.releaseDecisionBoard.doNotPromoteYet.find(
 			(item) => item.name === 'property-journal-laws',
 		)
@@ -1185,6 +1220,10 @@ describe('release proof evidence index', () => {
 		expect(propertyJournalForbidden).toContain('signed audit')
 		expect(propertyJournalNextOwnerAction).toContain('fast-check')
 		expect(propertyJournalNextOwnerAction).toContain('journal-law-proof.test.ts')
+		expect(propertyJournalDecision?.validationCommands).toEqual([
+			'bun test fixtures/benchmarks/journal-law-proof.test.ts --timeout 30000',
+			'bun test packages/sdk/src/journal-exactness.test.ts --timeout 30000',
+		])
 		const columnarSidecarDecision = index.releaseDecisionBoard.doNotPromoteYet.find(
 			(item) => item.name === 'columnar-scan-sidecars',
 		)
@@ -1204,6 +1243,10 @@ describe('release proof evidence index', () => {
 		expect(columnarSidecarNextOwnerAction).toContain('columnar-sidecar.test.ts')
 		expect(columnarSidecarNextOwnerAction).toContain('claim-report --json')
 		expect(columnarSidecarDecision?.allowedWording).toContain('benchmark-only disposable sidecar')
+		expect(columnarSidecarDecision?.validationCommands).toEqual([
+			'bun test fixtures/benchmarks/columnar-sidecar.test.ts --timeout 30000',
+			'bun run fixtures/benchmarks/columnar-sidecar.ts --fixture fixtures/xlsx/external/sec-mmf-statistics-2022-02.xlsx --sheet "Table 9" --repeats 8 --claim-report --json',
+		])
 		const agentWorkflowDecision = index.releaseDecisionBoard.doNotPromoteYet.find(
 			(item) => item.name === 'agent-workflow-observability',
 		)
@@ -1230,6 +1273,15 @@ describe('release proof evidence index', () => {
 		expect(agentWorkflowNextOwnerAction).toContain('apps/api/src/server.test.ts')
 		expect(agentWorkflowNextOwnerAction).toContain('apps/mcp/src/index.test.ts')
 		expect(agentWorkflowNextOwnerAction).toContain('release-proof-index.ts --no-timings')
+		expect(agentWorkflowDecision?.validationCommands).toEqual(
+			expect.arrayContaining([
+				expect.stringContaining('packages/sdk/src/agent-workflow.test.ts'),
+				expect.stringContaining('apps/cli/src/cli.test.ts'),
+				expect.stringContaining('apps/api/src/server.test.ts'),
+				expect.stringContaining('apps/mcp/src/index.test.ts'),
+				'bun run fixtures/benchmarks/release-proof-index.ts --no-timings --owner-handoffs-json',
+			]),
+		)
 		const practicalLatencyDecision = index.releaseDecisionBoard.doNotPromoteYet.at(-1)
 		const practicalLatencyNextOwnerAction = String(practicalLatencyDecision?.nextOwnerAction ?? '')
 		expect(practicalLatencyDecision).toMatchObject({
@@ -1255,6 +1307,11 @@ describe('release proof evidence index', () => {
 			nextOwnerAction: expect.stringContaining(
 				'bun run fixtures/benchmarks/practical-latency-contracts.ts --input-preset public-tracked --contract all --repeat 3 --warmup 1 --json',
 			),
+			validationCommands: [
+				'bun test fixtures/benchmarks/practical-latency-contracts.test.ts --timeout 30000',
+				'bun run fixtures/benchmarks/practical-latency-contracts.ts --input-preset public-tracked --contract all --repeat 1 --warmup 0 --dry-run --json',
+				'bun run fixtures/benchmarks/practical-latency-contracts.ts --input-preset public-tracked --contract all --repeat 3 --warmup 1 --json',
+			],
 		})
 		expect(practicalLatencyNextOwnerAction).toContain(
 			'bun test fixtures/benchmarks/practical-latency-contracts.test.ts --timeout 30000',
@@ -1786,6 +1843,8 @@ describe('release proof evidence index', () => {
 			expect(item.allowedWording).not.toContain('owner planning or research evidence')
 			expect(item.forbiddenWording).toEqual(expect.arrayContaining([expect.any(String)]))
 			expect(item.nextOwnerAction.length).toBeGreaterThan(0)
+			expect(item.validationCommands).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(item.validationCommands.every((command) => command.length > 0)).toBe(true)
 			expect(item.nextOwnerAction).not.toContain(
 				'No owner action is release-blocking until this claim changes the top-two release gate.',
 			)
@@ -1975,6 +2034,7 @@ describe('release proof evidence index', () => {
 				readonly allowedWording?: string
 				readonly forbiddenWording?: readonly string[]
 				readonly nextOwnerAction?: string
+				readonly validationCommands?: readonly string[]
 			}[]
 			readonly doNotPromoteDispositionSummary?: {
 				readonly implementationReadyBlockerNames?: readonly string[]
@@ -2095,6 +2155,7 @@ describe('release proof evidence index', () => {
 			expect(item.allowedWording).not.toContain('owner planning or research evidence')
 			expect(item.forbiddenWording).toEqual(expect.arrayContaining([expect.any(String)]))
 			expect(item.nextOwnerAction).toEqual(expect.any(String))
+			expect(item.validationCommands).toEqual(expect.arrayContaining([expect.any(String)]))
 			expect(item.nextOwnerAction).not.toContain(
 				'No owner action is release-blocking until this claim changes the top-two release gate.',
 			)

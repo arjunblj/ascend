@@ -208,6 +208,9 @@ type AgentWorkflowFileContext =
 	| 'plan'
 	| 'commit'
 	| 'repair-plan'
+	| 'check'
+	| 'lint'
+	| 'trace'
 
 function missingAgentWorkflowFileError(context: AgentWorkflowFileContext): AscendError {
 	const requirement = (() => {
@@ -242,6 +245,12 @@ function missingAgentWorkflowFileError(context: AgentWorkflowFileContext): Ascen
 				return 'Pass file with ops or mutations so Ascend can read the source workbook and build a safe plan.'
 			case 'repair-plan':
 				return 'Pass file so Ascend can inspect failed workflow state and suggest repair actions.'
+			case 'check':
+				return 'Pass file so Ascend can run structural verification on the workbook.'
+			case 'lint':
+				return 'Pass file so Ascend can run formula lint verification on the workbook.'
+			case 'trace':
+				return 'Pass file so Ascend can trace a cell dependency or issue.'
 		}
 	})()
 	return ascendError('VALIDATION_ERROR', `Missing or invalid ${context} workbook reference`, {
@@ -282,6 +291,15 @@ function missingFormulaAssistFormulaError(): AscendError {
 		retryStrategy: 'modified',
 		details: { required: ['formula'] },
 		suggestedFix: 'Pass formula text such as =SUM(A1:B2) for formula diagnostics and repair hints.',
+	})
+}
+
+function missingTraceCellError(): AscendError {
+	return ascendError('VALIDATION_ERROR', 'Missing or invalid trace cell', {
+		retryable: true,
+		retryStrategy: 'modified',
+		details: { required: ['cell'] },
+		suggestedFix: 'Pass cell such as Sheet1!A1 or A1 so Ascend can trace the requested dependency.',
 	})
 }
 
@@ -1395,7 +1413,7 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 			if (method === 'POST' && path === '/check') {
 				const body = await parseJson<{ file?: string; maxRows?: number }>(req)
 				const file = body ? requireString(body, 'file') : null
-				if (!file) return jsonFailure('Missing or invalid file', 400)
+				if (!file) return jsonFailureError(missingAgentWorkflowFileError('check'), 400)
 				try {
 					const maxRows = body ? requireOptionalNumber(body, 'maxRows') : undefined
 					if (maxRows === undefined) {
@@ -1414,7 +1432,7 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 			if (method === 'POST' && path === '/lint') {
 				const body = await parseJson<{ file?: string; maxRows?: number }>(req)
 				const file = body ? requireString(body, 'file') : null
-				if (!file) return jsonFailure('Missing or invalid file', 400)
+				if (!file) return jsonFailureError(missingAgentWorkflowFileError('lint'), 400)
 				try {
 					const maxRows = body ? requireOptionalNumber(body, 'maxRows') : undefined
 					const wb = await WorkbookDocument.open(file, {
@@ -1431,8 +1449,8 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 				const body = await parseJson<{ file?: string; cell?: string; maxRows?: number }>(req)
 				const file = body ? requireString(body, 'file') : null
 				const cell = body ? requireString(body, 'cell') : null
-				if (!file) return jsonFailure('Missing or invalid file', 400)
-				if (!cell) return jsonFailure('Missing or invalid cell', 400)
+				if (!file) return jsonFailureError(missingAgentWorkflowFileError('trace'), 400)
+				if (!cell) return jsonFailureError(missingTraceCellError(), 400)
 				try {
 					const maxRows = body ? requireOptionalNumber(body, 'maxRows') : undefined
 					const wb = await WorkbookDocument.open(file, {

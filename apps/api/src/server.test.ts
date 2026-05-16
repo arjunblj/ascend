@@ -803,6 +803,63 @@ describe('Ascend API server', () => {
 		})
 	})
 
+	test('/check rejects missing workbook references with structured retry guidance', async () => {
+		const result = await postJson('/check', {})
+
+		expect(result.status).toBe(400)
+		expect(result.body.ok).toBe(false)
+		expect(result.body.error).toMatchObject({
+			code: 'VALIDATION_ERROR',
+			message: 'Missing or invalid check workbook reference',
+			retryable: true,
+			retryStrategy: 'modified',
+			details: { required: ['file'] },
+			suggestedFix: expect.stringContaining('structural verification'),
+		})
+	})
+
+	test('/lint rejects missing workbook references with structured retry guidance', async () => {
+		const result = await postJson('/lint', {})
+
+		expect(result.status).toBe(400)
+		expect(result.body.ok).toBe(false)
+		expect(result.body.error).toMatchObject({
+			code: 'VALIDATION_ERROR',
+			message: 'Missing or invalid lint workbook reference',
+			retryable: true,
+			retryStrategy: 'modified',
+			details: { required: ['file'] },
+			suggestedFix: expect.stringContaining('formula lint verification'),
+		})
+	})
+
+	test('/trace rejects missing workbook references and cells with structured retry guidance', async () => {
+		const missingFile = await postJson('/trace', { cell: 'A1' })
+		const missingCell = await postJson('/trace', { file: TEMP_FILE })
+
+		expect(missingFile.status).toBe(400)
+		expect(missingFile.body.ok).toBe(false)
+		expect(missingFile.body.error).toMatchObject({
+			code: 'VALIDATION_ERROR',
+			message: 'Missing or invalid trace workbook reference',
+			retryable: true,
+			retryStrategy: 'modified',
+			details: { required: ['file'] },
+			suggestedFix: expect.stringContaining('trace a cell dependency'),
+		})
+
+		expect(missingCell.status).toBe(400)
+		expect(missingCell.body.ok).toBe(false)
+		expect(missingCell.body.error).toMatchObject({
+			code: 'VALIDATION_ERROR',
+			message: 'Missing or invalid trace cell',
+			retryable: true,
+			retryStrategy: 'modified',
+			details: { required: ['cell'] },
+			suggestedFix: expect.stringContaining('Pass cell such as'),
+		})
+	})
+
 	test('/plan reports missing workbook files with structured retry guidance', async () => {
 		const missing = join(tmpdir(), `ascend-api-missing-${Date.now()}.xlsx`)
 		const result = await postJson('/plan', {

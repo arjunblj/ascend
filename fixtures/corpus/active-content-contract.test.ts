@@ -43,6 +43,13 @@ function activeContentContract(entry: ActiveContentInfo): Record<string, unknown
 					dropLines: entry.formControl.dropLines,
 				}
 			: undefined,
+		shapeMacro: entry.shapeMacro
+			? {
+					macro: entry.shapeMacro.macro,
+					shapeId: entry.shapeMacro.shapeId,
+					shapeName: entry.shapeMacro.shapeName,
+				}
+			: undefined,
 		worksheetControl: entry.worksheetControl
 			? {
 					shapeId: entry.worksheetControl.shapeId,
@@ -278,5 +285,49 @@ describe('active content corpus contract', () => {
 				),
 			).toEqual([])
 		}
+	})
+
+	test('reports public LibreOffice drawing shape macro bindings as blocked active content', async () => {
+		const source = loadFixture('../xlsx/libreoffice/shape-macro-ext-ref.xlsx')
+		const workbook = await AscendWorkbook.open(source)
+		const before = sortedActiveContracts(workbook.inspect().activeContent)
+		expect(before).toContainEqual(
+			expect.objectContaining({
+				kind: 'shapeMacro',
+				partPath: 'xl/drawings/drawing1.xml',
+				sheetName: 'Auswertung',
+				sourcePartPath: 'xl/worksheets/sheet1.xml',
+				sourceRelationshipId: 'rId1',
+				executionPolicy: 'blocked',
+				shapeMacro: {
+					macro: '[1]!Importieren',
+					shapeId: 7,
+					shapeName: 'Abgerundetes Rechteck 6',
+				},
+			}),
+		)
+		expect(workbook.trustReport().findings).toContainEqual(
+			expect.objectContaining({
+				code: 'workbook.shapeMacro',
+				severity: 'blocked',
+				message:
+					'Workbook contains drawing shape macro bindings. Ascend reports bindings but never runs them.',
+			}),
+		)
+
+		const edited = await safeEdit(source, 'Auswertung', 'Z10')
+		const reopened = await AscendWorkbook.open(edited)
+		expect(sortedActiveContracts(reopened.inspect().activeContent)).toEqual(before)
+		expect(
+			auditXlsxPackageGraphSafeEditIntegrity(
+				inspectXlsxPackageGraph(source),
+				inspectXlsxPackageGraph(edited),
+			),
+		).toEqual([])
+		expect(
+			activePackageIssues(
+				auditXlsxPackageGraphBytePreservation(inspectXlsxPackageGraph(source), source, edited),
+			),
+		).toEqual([])
 	})
 })

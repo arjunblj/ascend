@@ -6,6 +6,7 @@ export {
 	type CustomUiInfo,
 	cloneActiveContentInfo,
 	type FormControlInfo,
+	type ShapeMacroInfo,
 	type VbaModuleInfo,
 	type VbaModuleKind,
 	type VbaProjectInfo,

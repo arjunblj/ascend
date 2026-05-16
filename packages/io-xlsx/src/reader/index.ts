@@ -23,6 +23,7 @@ import type { PreservationCapsule } from '../preserve.ts'
 import {
 	parseActiveXControlInfo,
 	parseCustomUiInfo,
+	parseDrawingShapeMacroInfos,
 	parseFormControlInfo,
 	parseVmlControlInfos,
 	parseWorksheetControlInfos,
@@ -1404,6 +1405,46 @@ function collectActiveContent(
 			...(customUi ? { customUi } : {}),
 			...(worksheetControl ? { worksheetControl } : {}),
 		})
+	}
+	activeContent.push(
+		...collectDrawingShapeMacros(archive, capsules, sheetPathToAnchor, sheetRelsByPath),
+	)
+	return activeContent
+}
+
+function collectDrawingShapeMacros(
+	archive: ZipArchive,
+	capsules: readonly PreservationCapsule[],
+	sheetPathToAnchor: ReadonlyMap<string, { sheetId: string; sheetName: string }>,
+	sheetRelsByPath: ReadonlyMap<string, readonly Relationship[]>,
+): ActiveContentInfo[] {
+	const capsuleByPath = new Map(capsules.map((capsule) => [capsule.partPath, capsule]))
+	const activeContent: ActiveContentInfo[] = []
+	for (const [sheetPath, anchor] of sheetPathToAnchor) {
+		const relationships = sheetRelsByPath.get(sheetPath) ?? []
+		for (const rel of relationships) {
+			if (rel.type !== REL_DRAWING || rel.targetMode === 'External') continue
+			const drawingPath = resolvePath(sheetPath, rel.target)
+			const xml = readPart(archive, drawingPath)
+			if (!xml) continue
+			const capsule = capsuleByPath.get(drawingPath)
+			for (const shapeMacro of parseDrawingShapeMacroInfos(xml)) {
+				activeContent.push({
+					kind: 'shapeMacro',
+					partPath: drawingPath,
+					contentType:
+						capsule?.contentType ?? 'application/vnd.openxmlformats-officedocument.drawing+xml',
+					anchor: 'sheet',
+					sheetName: anchor.sheetName,
+					sourcePartPath: sheetPath,
+					relType: rel.type,
+					sourceRelationshipId: rel.id,
+					relationshipCount: capsule?.relationships.length ?? 0,
+					executionPolicy: 'blocked',
+					shapeMacro,
+				})
+			}
+		}
 	}
 	return activeContent
 }

@@ -1160,6 +1160,12 @@ function buildCapabilityWarnings(
 			([kind, count]) => `${kind}=${count}`,
 		),
 	)
+	add(
+		'active.shape-macros',
+		countActiveKinds(workbook.activeContent, ['shapeMacro']).map(
+			([kind, count]) => `${kind}=${count}`,
+		),
+	)
 	add('connections.power-query', [
 		...countConnectionKinds(workbook.connectionParts, ['powerQueryMashup']).map(
 			([kind, count]) => `${kind}=${count}`,

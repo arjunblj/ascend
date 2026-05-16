@@ -496,6 +496,14 @@ function activeContentFinding(kind: string): {
 				message: 'Workbook contains Custom UI callbacks that Ascend preserves but never executes.',
 				nextAction: 'Review Custom UI callbacks before opening with trusted macro settings.',
 			}
+		case 'shapeMacro':
+			return {
+				code: 'workbook.shapeMacro',
+				severity: 'blocked',
+				message:
+					'Workbook contains drawing shape macro bindings. Ascend reports bindings but never runs them.',
+				nextAction: 'Review shape macro bindings before opening with trusted macro settings.',
+			}
 		case 'vbaSignature':
 		case 'digitalSignature':
 			return {

@@ -2,6 +2,7 @@ import type {
 	ActiveXControlInfo,
 	CustomUiInfo,
 	FormControlInfo,
+	ShapeMacroInfo,
 	SheetAnchorMarker,
 	SheetImageAnchor,
 	WorksheetControlInfo,
@@ -85,6 +86,31 @@ export function parseCustomUiInfo(xml: string | undefined): CustomUiInfo | undef
 		callbacks,
 		...(namespaceUri ? { namespaceUri } : {}),
 	}
+}
+
+export function parseDrawingShapeMacroInfos(xml: string | undefined): readonly ShapeMacroInfo[] {
+	if (!xml || !xml.includes(' macro=')) return []
+	const infos: ShapeMacroInfo[] = []
+	const seen = new Set<string>()
+	for (const match of xml.matchAll(DRAWING_MACRO_SHAPE_RE)) {
+		const attrs = parseAttrs(match[2] ?? '')
+		const macro = attrs.get('macro')
+		if (!macro) continue
+		const body = match[3] ?? ''
+		const cNvPrAttrs = firstTagAttrs(body, 'cNvPr')
+		const shapeId = parseOptionalNumber(cNvPrAttrs.get('id'))
+		const shapeName = cNvPrAttrs.get('name')
+		const parsed: ShapeMacroInfo = {
+			macro,
+			...(shapeId !== undefined ? { shapeId } : {}),
+			...(shapeName ? { shapeName } : {}),
+		}
+		const key = `${macro}\u0000${parsed.shapeId ?? ''}\u0000${parsed.shapeName ?? ''}`
+		if (seen.has(key)) continue
+		seen.add(key)
+		infos.push(parsed)
+	}
+	return infos
 }
 
 export function parseWorksheetControlInfos(
@@ -203,6 +229,8 @@ function assignVmlControlInfo(info: WorksheetControlBuilder, vml: VmlControlInfo
 const CONTROL_RE =
 	/<(?:[A-Za-z_][\w.-]*:)?control\b([^/>]*?)>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?control>|<(?:[A-Za-z_][\w.-]*:)?control\b([^/>]*?)\/>/g
 const VML_SHAPE_RE = /<v:shape\b([^>]*)>([\s\S]*?)<\/v:shape>/g
+const DRAWING_MACRO_SHAPE_RE =
+	/<((?:[A-Za-z_][\w.-]*:)?(?:sp|graphicFrame|cxnSp|pic))\b([^>]*)>([\s\S]*?)<\/\1>/g
 const ATTR_RE = /([A-Za-z_][\w:.-]*)=(?:"([^"]*)"|'([^']*)')/g
 const CUSTOM_UI_TAG_RE = /<(?:[A-Za-z_][\w.-]*:)?[A-Za-z_][\w.-]*\b([^<>]*?)(?:\/>|>)/g
 const CUSTOM_UI_CALLBACK_ATTRS = new Set([

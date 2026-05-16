@@ -8,6 +8,7 @@ export type ActiveContentKind =
 	| 'vbaSignature'
 	| 'digitalSignature'
 	| 'customUi'
+	| 'shapeMacro'
 	| 'unknownActiveContent'
 
 export type VbaModuleKind = 'document' | 'standard' | 'class' | 'designer'
@@ -52,6 +53,12 @@ export interface CustomUiInfo {
 	readonly callbacks: readonly CustomUiCallbackInfo[]
 }
 
+export interface ShapeMacroInfo {
+	readonly macro: string
+	readonly shapeId?: number
+	readonly shapeName?: string
+}
+
 export interface WorksheetControlInfo {
 	readonly shapeId?: number
 	readonly name?: string
@@ -88,6 +95,7 @@ export interface ActiveContentInfo {
 	readonly activeX?: ActiveXControlInfo
 	readonly formControl?: FormControlInfo
 	readonly customUi?: CustomUiInfo
+	readonly shapeMacro?: ShapeMacroInfo
 	readonly worksheetControl?: WorksheetControlInfo
 }
 
@@ -104,6 +112,7 @@ export function cloneActiveContentInfo(entry: ActiveContentInfo): ActiveContentI
 					},
 				}
 			: {}),
+		...(entry.shapeMacro ? { shapeMacro: { ...entry.shapeMacro } } : {}),
 		...(entry.worksheetControl
 			? {
 					worksheetControl: {

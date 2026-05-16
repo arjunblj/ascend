@@ -994,6 +994,26 @@ describe('release proof evidence index', () => {
 		expect(researchSurfaceDecision?.nextOwnerAction).toContain(
 			'bun test fixtures/benchmarks/release-proof-index.test.ts',
 		)
+		const tokenBoundedDecision = index.releaseDecisionBoard.doNotPromoteYet.find(
+			(item) => item.name === 'token-bounded-agent-view',
+		)
+		const tokenBoundedEvidence = tokenBoundedDecision?.evidenceWeHave.join('\n') ?? ''
+		const tokenBoundedMissing = tokenBoundedDecision?.evidenceMissing.join('\n') ?? ''
+		const tokenBoundedForbidden = tokenBoundedDecision?.forbiddenWording.join('\n') ?? ''
+		const tokenBoundedNextOwnerAction = tokenBoundedDecision?.nextOwnerAction ?? ''
+		expect(tokenBoundedEvidence).toContain('agent-view-budget-proof.test.ts')
+		expect(tokenBoundedEvidence).toContain('agent-view-recovery-proof.test.ts')
+		expect(tokenBoundedEvidence).toContain('apps/mcp/src/index.test.ts')
+		expect(tokenBoundedMissing).toContain('One public product example')
+		expect(tokenBoundedMissing).toContain('approximate token estimates')
+		expect(tokenBoundedMissing).toContain('SDK/CLI/API/MCP agent-view budget tests')
+		expect(tokenBoundedForbidden).toContain('exact model-token counts')
+		expect(tokenBoundedNextOwnerAction).toContain('maxApproxTokens')
+		expect(tokenBoundedNextOwnerAction).toEqual(
+			expect.stringContaining(
+				'bun test fixtures/benchmarks/agent-view-budget-proof.test.ts fixtures/benchmarks/agent-view-recovery-proof.test.ts',
+			),
+		)
 		for (const item of index.releaseDecisionBoard.doNotPromoteYet) {
 			expect(item.evidenceWeHave).toEqual(expect.arrayContaining([expect.any(String)]))
 			expect(item.evidenceMissing).toEqual(expect.arrayContaining([expect.any(String)]))
@@ -1921,6 +1941,9 @@ describe('release proof evidence index', () => {
 		expect(markdown).toContain('Release Readiness Gate')
 		expect(markdown).toContain('## Release Decision Board')
 		expect(markdown).toContain('Do not promote yet:')
+		expect(markdown).toContain('agent-view-budget-proof.test.ts')
+		expect(markdown).toContain('agent-view-recovery-proof.test.ts')
+		expect(markdown).toContain('Do not claim exact model-token counts')
 		expect(markdown).toContain(
 			'git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager',
 		)

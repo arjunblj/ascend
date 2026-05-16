@@ -2249,6 +2249,8 @@ function releaseDecisionDoNotPromoteItem(
 		note.name === 'release-proof-bundle' ? RELEASE_PROOF_BUNDLE_BLOCKER : undefined
 	const researchHygieneBlocker =
 		note.name === 'research-surface-hygiene' ? RESEARCH_SURFACE_HYGIENE_BLOCKER : undefined
+	const tokenBoundedAgentViewBlocker =
+		note.name === 'token-bounded-agent-view' ? TOKEN_BOUNDED_AGENT_VIEW_BLOCKER : undefined
 	return {
 		name: note.name,
 		status: 'do-not-promote-yet',
@@ -2258,6 +2260,7 @@ function releaseDecisionDoNotPromoteItem(
 			note.reason,
 			...(releaseProofBundleBlocker?.evidenceWeHave ?? []),
 			...(researchHygieneBlocker?.evidenceWeHave ?? []),
+			...(tokenBoundedAgentViewBlocker?.evidenceWeHave ?? []),
 			...(portfolioClaim?.proofCommand
 				? [`Existing proof command: \`${portfolioClaim.proofCommand}\`.`]
 				: []),
@@ -2270,6 +2273,7 @@ function releaseDecisionDoNotPromoteItem(
 			...(excludedEvidence ? [excludedEvidence.eligibilityRule] : []),
 			...(releaseProofBundleBlocker?.evidenceMissing ?? []),
 			...(researchHygieneBlocker?.evidenceMissing ?? []),
+			...(tokenBoundedAgentViewBlocker?.evidenceMissing ?? []),
 			...(proof ? [proof.fixture, proof.benchmark, proof.surface, proof.validationGate] : []),
 		],
 		qssContrast: [
@@ -2281,12 +2285,14 @@ function releaseDecisionDoNotPromoteItem(
 			note.killCriterion,
 			...(releaseProofBundleBlocker?.forbiddenWording ?? []),
 			...(researchHygieneBlocker?.forbiddenWording ?? []),
+			...(tokenBoundedAgentViewBlocker?.forbiddenWording ?? []),
 			...(proof ? [proof.honestBoundary] : []),
 			...(excludedEvidence ? [excludedEvidence.boundary] : []),
 		],
 		nextOwnerAction:
 			releaseProofBundleBlocker?.ownerAction ??
 			researchHygieneBlocker?.ownerAction ??
+			tokenBoundedAgentViewBlocker?.ownerAction ??
 			deferredClaim?.proofNeeded ??
 			excludedEvidence?.eligibilityRule ??
 			proof?.validationGate ??
@@ -2888,6 +2894,24 @@ const RELEASE_PROOF_BUNDLE_BLOCKER = {
 	],
 	forbiddenWording: [
 		'Do not call a release proof bundle signed provenance, tamper-evident storage, SLSA, in-toto, certified provenance, third-party attestation, or registry publication evidence.',
+	],
+} as const
+
+const TOKEN_BOUNDED_AGENT_VIEW_BLOCKER = {
+	ownerAction:
+		'Product owner records one public end-to-end agent-view example that starts from a strict `maxApproxTokens` request, shows omitted sample-row, column-sample, and formula-pattern locators, then recovers omitted evidence through narrower reads or an unbudgeted same-range view; validate with `bun test fixtures/benchmarks/agent-view-budget-proof.test.ts fixtures/benchmarks/agent-view-recovery-proof.test.ts` plus SDK/CLI/API/MCP agent-view budget tests before any release wording.',
+	evidenceWeHave: [
+		'Budget proof command exists: `bun test fixtures/benchmarks/agent-view-budget-proof.test.ts` covers dense-table, wide-sparse, formula-heavy, metadata-heavy, and public-formula-stress cases for deterministic budget metadata, shape preservation, and counted omissions.',
+		'Recovery proof command exists: `bun test fixtures/benchmarks/agent-view-recovery-proof.test.ts` proves same-range unbudgeted recovery, compact omitted-evidence locators, narrow sample-row recovery, and formula-pattern example recovery.',
+		'Committed SDK/CLI/API/MCP tests expose budget metadata through `packages/sdk/src/sdk.test.ts`, `apps/cli/src/cli.test.ts`, `apps/api/src/server.test.ts`, and `apps/mcp/src/index.test.ts`.',
+	],
+	evidenceMissing: [
+		'One public product example that demonstrates an agent using omitted-evidence locators to recover missing rows, column samples, and formula-pattern examples instead of trusting the compact view as complete.',
+		'Owner-approved wording for approximate token estimates, structural floor behavior, omitted-evidence recovery, and when an unbudgeted read is required.',
+		'Cross-surface validation command list covering `fixtures/benchmarks/agent-view-budget-proof.test.ts`, `fixtures/benchmarks/agent-view-recovery-proof.test.ts`, and the SDK/CLI/API/MCP agent-view budget tests.',
+	],
+	forbiddenWording: [
+		'Do not claim exact model-token counts, complete workbook context under every budget, hidden summarization, or automatic recovery of omitted evidence.',
 	],
 } as const
 

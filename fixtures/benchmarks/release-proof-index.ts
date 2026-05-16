@@ -232,6 +232,24 @@ export interface ReleaseProofFixtureDecisionPacket {
 	readonly boundary: string
 }
 
+export interface ReleaseProofCorrectnessBoundaryDecisionPacket {
+	readonly ownerLoop: 'correctness'
+	readonly status: 'owner-decision-required'
+	readonly releaseGate: ReleaseProofReadinessSummary['releaseGate']
+	readonly headlineClaimsAllowed: boolean
+	readonly ownerApprovalRequired: true
+	readonly artifact: 'package-action-proof'
+	readonly gateId: 'unsupported-feature-boundary'
+	readonly allCurrentEvidencePresent: boolean
+	readonly missingFeatureNames: readonly string[]
+	readonly approvalChecklist: readonly ReleaseProofCorrectnessPolicyApprovalItem[]
+	readonly featureChecks: readonly ReleaseProofCorrectnessBoundaryFeatureCheck[]
+	readonly validationCommands: readonly string[]
+	readonly sourceReferences: readonly ReleaseProofSourceReference[]
+	readonly forbiddenShortcuts: readonly string[]
+	readonly boundary: string
+}
+
 export interface ReleaseProofFixtureDecisionTrackedScan {
 	readonly artifact: ReleaseProofIndexArtifactName
 	readonly gateId: 'public-edge-fixtures' | 'edge-fixture-policy'
@@ -1705,6 +1723,44 @@ export function releaseProofFixtureDecisionPacket(
 	}
 }
 
+export function releaseProofCorrectnessBoundaryDecisionPacket(
+	result: ReleaseProofIndexResult,
+): ReleaseProofCorrectnessBoundaryDecisionPacket {
+	const approvalChecklist = result.correctnessPolicy.approvalChecklist.map((item) => ({ ...item }))
+	const featureChecks = result.correctnessBoundaryEvidence.featureChecks.map((entry) => ({
+		...entry,
+		evidenceSources: [...entry.evidenceSources],
+		proofChecks: [...entry.proofChecks],
+	}))
+	return {
+		ownerLoop: 'correctness',
+		status: 'owner-decision-required',
+		releaseGate: result.readiness.releaseGate,
+		headlineClaimsAllowed: result.readiness.headlineClaimsAllowed,
+		ownerApprovalRequired: true,
+		artifact: result.correctnessBoundaryEvidence.artifact,
+		gateId: result.correctnessBoundaryEvidence.gateId,
+		allCurrentEvidencePresent: result.correctnessBoundaryEvidence.allCurrentEvidencePresent,
+		missingFeatureNames: [...result.correctnessBoundaryEvidence.missingFeatureNames],
+		approvalChecklist,
+		featureChecks,
+		validationCommands: [
+			...new Set([
+				result.correctnessBoundaryEvidence.validationCommand,
+				...approvalChecklist.map((item) => item.validationCommand),
+			]),
+		],
+		sourceReferences: result.correctnessPolicy.sourceReferences.map((entry) => ({ ...entry })),
+		forbiddenShortcuts: [
+			'Do not claim semantic support for every unsupported workbook feature.',
+			'Do not claim chart XML byte passthrough, signature preservation or verification, Excel-fresh cached formulas, macro/ActiveX safety, unknown-part understanding, or full streaming parity.',
+			'Do not treat evidence-present status as owner approval or release wording approval.',
+		],
+		boundary:
+			'Compact correctness unsupported-feature boundary packet. It is not owner approval, semantic support for unsupported features, release wording approval, or permission to promote package-action parity claims.',
+	}
+}
+
 const EXCLUDED_EVIDENCE: readonly ReleaseProofIndexExcludedEvidence[] = [
 	{
 		name: 'practical-latency-contracts',
@@ -2240,7 +2296,7 @@ function ownerDecisionArtifactsFor(
 					decision:
 						'Use the ranked compatibility matrix for safe wording on common workbook support, protection metadata, active content, unknown parts, encryption, malformed packages, and signature blockers.',
 					nextAction:
-						'Compatibility owner treats public table header/totals/current-row structured-reference fixtures as accepted row-3 evidence, then adds broader advanced conditional-format fixtures and remaining lower-frequency table edge cases from the matrix.',
+						'Compatibility owner treats public table header/totals/current-row structured-reference fixtures and classic/x14 conditional-format fixtures as accepted row-3 evidence, then adds remaining lower-frequency table and conditional-format edge cases from the matrix.',
 					forbiddenShortcut:
 						'Do not turn the matrix into full Excel compatibility, worksheet/workbook/protected-range protection security, file trust, malware scanning, password recovery, or signature preservation wording.',
 					boundary:
@@ -4788,24 +4844,33 @@ if (import.meta.main) {
 	const ownerHandoffsJson = process.argv.includes('--owner-handoffs-json')
 	const releaseDecisionJson = process.argv.includes('--release-decision-json')
 	const fixtureDecisionJson = process.argv.includes('--fixture-decision-json')
+	const correctnessBoundaryJson = process.argv.includes('--correctness-boundary-json')
 	const result = await runReleaseProofIndex({
 		includeTimings: !process.argv.includes('--no-timings'),
 	})
 	console.log(
 		releaseDecisionJson
 			? JSON.stringify(result.releaseDecisionBoard, null, 2)
-			: fixtureDecisionJson
-				? JSON.stringify(releaseProofFixtureDecisionPacket(result), null, 2)
-				: ownerHandoffsJson
-					? JSON.stringify(releaseProofOwnerHandoffIndex(result), null, 2)
-					: json
-						? JSON.stringify(result, null, 2)
-						: releaseProofIndexMarkdown(result),
+			: correctnessBoundaryJson
+				? JSON.stringify(releaseProofCorrectnessBoundaryDecisionPacket(result), null, 2)
+				: fixtureDecisionJson
+					? JSON.stringify(releaseProofFixtureDecisionPacket(result), null, 2)
+					: ownerHandoffsJson
+						? JSON.stringify(releaseProofOwnerHandoffIndex(result), null, 2)
+						: json
+							? JSON.stringify(result, null, 2)
+							: releaseProofIndexMarkdown(result),
 	)
-	if (!json && !ownerHandoffsJson && !releaseDecisionJson && !fixtureDecisionJson) {
+	if (
+		!json &&
+		!ownerHandoffsJson &&
+		!releaseDecisionJson &&
+		!fixtureDecisionJson &&
+		!correctnessBoundaryJson
+	) {
 		console.error(`Indexed ${result.artifactCount} release proof evidence artifacts.`)
 		console.error(
-			`Run with --json, --owner-handoffs-json, --release-decision-json, or --fixture-decision-json for machine-readable output from ${basename(import.meta.path)}.`,
+			`Run with --json, --owner-handoffs-json, --release-decision-json, --fixture-decision-json, or --correctness-boundary-json for machine-readable output from ${basename(import.meta.path)}.`,
 		)
 	}
 }

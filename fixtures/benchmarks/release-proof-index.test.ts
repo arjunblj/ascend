@@ -1028,7 +1028,7 @@ describe('release proof evidence index', () => {
 					validationCommand:
 						'bun test packages/sdk/src/excel-behavior-compatibility-matrix.test.ts',
 					decision: expect.stringContaining('protection metadata'),
-					nextAction: expect.stringContaining('advanced conditional-format fixtures'),
+					nextAction: expect.stringContaining('conditional-format fixtures as accepted'),
 					forbiddenShortcut: expect.stringContaining('full Excel compatibility'),
 				}),
 				expect.objectContaining({
@@ -1672,6 +1672,81 @@ describe('release proof evidence index', () => {
 			'Do not hide generated fixture provenance',
 		)
 		expect(stdout).not.toContain('"claimBlockerBoard"')
+		expect(stdout).not.toContain('"deferredClaims"')
+		expect(stdout).not.toContain('"qssLeapfrogReleaseMatrix"')
+	})
+
+	test('emits a compact correctness boundary packet JSON mode', async () => {
+		const proc = Bun.spawn(
+			[Bun.argv[0], runnerPath, '--no-timings', '--correctness-boundary-json'],
+			{
+				cwd: process.cwd(),
+				stderr: 'pipe',
+				stdout: 'pipe',
+			},
+		)
+		const [stdout, stderr, exitCode] = await Promise.all([
+			new Response(proc.stdout).text(),
+			new Response(proc.stderr).text(),
+			proc.exited,
+		])
+
+		expect(exitCode, stderr).toBe(0)
+		expect(stderr.trim()).toBe('')
+		const packet = JSON.parse(stdout) as {
+			readonly ownerLoop?: string
+			readonly status?: string
+			readonly releaseGate?: string
+			readonly headlineClaimsAllowed?: boolean
+			readonly ownerApprovalRequired?: boolean
+			readonly artifact?: string
+			readonly gateId?: string
+			readonly allCurrentEvidencePresent?: boolean
+			readonly missingFeatureNames?: readonly string[]
+			readonly approvalChecklist?: readonly {
+				readonly gateId?: string
+				readonly ownerLoop?: string
+			}[]
+			readonly featureChecks?: readonly {
+				readonly feature?: string
+				readonly evidencePresent?: boolean
+				readonly forbiddenWording?: string
+			}[]
+			readonly validationCommands?: readonly string[]
+			readonly forbiddenShortcuts?: readonly string[]
+		}
+		expect(packet).toMatchObject({
+			ownerLoop: 'correctness',
+			status: 'owner-decision-required',
+			releaseGate: 'blocked-by-publication-policy',
+			headlineClaimsAllowed: false,
+			ownerApprovalRequired: true,
+			artifact: 'package-action-proof',
+			gateId: 'unsupported-feature-boundary',
+			allCurrentEvidencePresent: true,
+			missingFeatureNames: [],
+		})
+		expect(packet.approvalChecklist?.map((item) => `${item.ownerLoop}/${item.gateId}`)).toEqual([
+			'correctness/unsupported-feature-boundary',
+		])
+		expect(packet.featureChecks?.map((item) => item.feature)).toEqual([
+			'digital-signatures',
+			'calc-chain',
+			'chart-drawing-sidecars',
+			'macros-activex',
+			'unknown-parts',
+			'encrypted-files',
+			'streaming-scope',
+		])
+		expect(packet.featureChecks?.every((item) => item.evidencePresent === true)).toBe(true)
+		expect(packet.featureChecks?.[0].forbiddenWording).toContain('re-signs')
+		expect(packet.validationCommands).toEqual([
+			'bun run fixtures/benchmarks/release-proof-index.ts --no-timings --owner-handoffs-json',
+			'bun run fixtures/benchmarks/package-action-proof.ts --no-timings --json',
+		])
+		expect(packet.forbiddenShortcuts?.join('\n')).toContain('semantic support')
+		expect(stdout).not.toContain('"claimBlockerBoard"')
+		expect(stdout).not.toContain('"fixturePolicy"')
 		expect(stdout).not.toContain('"deferredClaims"')
 		expect(stdout).not.toContain('"qssLeapfrogReleaseMatrix"')
 	})

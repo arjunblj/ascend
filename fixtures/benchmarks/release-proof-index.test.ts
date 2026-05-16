@@ -921,6 +921,22 @@ describe('release proof evidence index', () => {
 			}),
 			expect.objectContaining({
 				evidenceId: 'cli-agent-facing-open-diagnostics-proof',
+				acceptedScope: expect.stringContaining('21c5a987'),
+				command: expect.stringContaining(
+					'read surfaces --json return structured missing input guidance',
+				),
+				path: expect.stringContaining('apps/cli/src/commands/agent-view.ts'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'cli-agent-facing-open-diagnostics-proof',
+				acceptedScope: expect.stringContaining('5ab3470e'),
+				command: expect.stringContaining(
+					'proof and recovery commands --json return structured missing input guidance',
+				),
+				path: expect.stringContaining('apps/cli/src/commands/repair-plan.ts'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'cli-agent-facing-open-diagnostics-proof',
 				acceptedScope: expect.stringContaining('9b155c7f'),
 				boundary: expect.stringContaining('CLI agent-facing diagnostics only'),
 			}),

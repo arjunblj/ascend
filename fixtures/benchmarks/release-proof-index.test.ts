@@ -1097,6 +1097,12 @@ describe('release proof evidence index', () => {
 				boundary: expect.stringContaining('Public hidden-sheet topology commit evidence only'),
 			}),
 			expect.objectContaining({
+				evidenceId: 'public-protected-range-hash-proof',
+				acceptedScope: expect.stringContaining('d519c5a7'),
+				command: expect.stringContaining('commits public protected ranges'),
+				boundary: expect.stringContaining('Public protected-range reporting evidence only'),
+			}),
+			expect.objectContaining({
 				evidenceId: 'query-table-topology-fail-closed-proof',
 				acceptedScope: expect.stringContaining('a477e2ed'),
 				command: expect.stringContaining(
@@ -1704,9 +1710,10 @@ describe('release proof evidence index', () => {
 						'1eaf28ff',
 						'31141dd4',
 						'74f63b73',
+						'd519c5a7',
 						'62f45cb5',
 					]),
-					allowedWording: expect.stringContaining('installed-SDK package-bin'),
+					allowedWording: expect.stringContaining('protected-range metadata commit proof'),
 					forbiddenWording: expect.arrayContaining([
 						expect.stringContaining('complete API package health'),
 					]),
@@ -1722,7 +1729,13 @@ describe('release proof evidence index', () => {
 				}),
 				expect.objectContaining({
 					claimArea: 'write-performance',
-					commits: expect.arrayContaining(['0d0c9632', '905ecb5e', 'c297ba4c', '27af69d4']),
+					commits: expect.arrayContaining([
+						'0d0c9632',
+						'905ecb5e',
+						'c297ba4c',
+						'27af69d4',
+						'2029dfab',
+					]),
 					allowedWording: expect.stringContaining('dense-values'),
 					forbiddenWording: expect.arrayContaining([expect.stringContaining('fastest XLSX')]),
 					ownerLoop: 'performance',
@@ -2452,6 +2465,9 @@ describe('release proof evidence index', () => {
 		)
 		expect(performanceOwnerArtifact?.nextAction).toContain(
 			'27af69d4 string-heavy current repeat-15 comparable win',
+		)
+		expect(performanceOwnerArtifact?.nextAction).toContain(
+			'2029dfab current styles-heavy repeat-15 comparable win',
 		)
 		expect(performanceOwnerArtifact?.nextAction).toContain('stops production optimization')
 		expect(performanceOwnerArtifact?.nextAction).toContain(

@@ -3374,6 +3374,17 @@ function safeOpenQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceItem[] {
 				'Public hidden-sheet topology commit evidence only; it does not prove workbook protection security, visibility authorization, full workbook-view parity, or arbitrary topology editing support.',
 		},
 		{
+			evidenceId: 'public-protected-range-hash-proof',
+			kind: 'test',
+			command:
+				'bun test packages/sdk/src/agent-workflow.test.ts -t "commits public protected ranges with honest hash reporting after save and reopen" --timeout 30000',
+			path: 'packages/sdk/src/agent-workflow.ts; packages/sdk/src/agent-workflow.test.ts; packages/sdk/src/index.ts; packages/sdk/src/index-exports.test.ts',
+			acceptedScope:
+				'Commit d519c5a7 proves public protected-range metadata is included in post-write proof with password/hash/security-descriptor counts and per-range details after safe edit, save, and reopen; root SDK exports the protected-range security type.',
+			boundary:
+				'Public protected-range reporting evidence only; it does not validate password hashes, enforce protection security, authorize protected-range edits, or prove Excel protection equivalence.',
+		},
+		{
 			evidenceId: 'query-table-topology-fail-closed-proof',
 			kind: 'test',
 			command:
@@ -3632,10 +3643,11 @@ function todayCommitClaimMatrix(): readonly ReleaseProofTodayCommitClaimMatrixRo
 				'1eaf28ff',
 				'31141dd4',
 				'74f63b73',
+				'd519c5a7',
 				'62f45cb5',
 			],
 			releaseOrSotaClaimBecameMoreTrue:
-				'Ascend is more credible as an agent-native spreadsheet runtime because SDK, installed-SDK, HTTP API, MCP, root-package, public query-table, public chart-source, public calc-chain, and public hidden-sheet examples expose runnable inspect/plan/commit/reopen/verify workflows plus proof context.',
+				'Ascend is more credible as an agent-native spreadsheet runtime because SDK, installed-SDK, HTTP API, MCP, root-package, public query-table, public chart-source, public calc-chain, public hidden-sheet, and public protected-range examples expose runnable inspect/plan/commit/reopen/verify workflows plus proof context.',
 			evidenceProvesIt: [
 				'bun test examples/agent-safe-edit-mcp.test.ts --timeout 30000',
 				'bun test examples/root-scripts.test.ts --timeout 30000',
@@ -3646,11 +3658,12 @@ function todayCommitClaimMatrix(): readonly ReleaseProofTodayCommitClaimMatrixRo
 				'bun test packages/sdk/src/agent-workflow.test.ts -t "commits public chart source edits through save and reopen audits" --timeout 30000',
 				'bun test packages/sdk/src/agent-workflow.test.ts -t "commits public calc-chain formula edits through save and reopen audits" --timeout 30000',
 				'bun test packages/sdk/src/agent-workflow.test.ts -t "commits public hidden-sheet topology through save and reopen audits" --timeout 30000',
+				'bun test packages/sdk/src/agent-workflow.test.ts -t "commits public protected ranges with honest hash reporting after save and reopen" --timeout 30000',
 				'fixtures/benchmarks/release-proof-index.test.ts pins workflow example evidence, proof context, and RC-gate scope.',
 				'Blocked adjacent API package sweep: bun test apps/api/api.test.ts --timeout 30000 currently fails outside workflow discovery because the export-format assertion expects "Unsupported format" while the current response is "Unsupported export format: weird".',
 			],
 			allowedWording:
-				'Ascend provides local runnable SDK, installed-SDK package-bin, API, and MCP safe-edit workflow examples with root commands, public query-table refresh metadata, chart-source, calc-chain formula, and hidden-sheet topology commit proof, and machine-readable proof context for generated/public workbooks.',
+				'Ascend provides local runnable SDK, installed-SDK package-bin, API, and MCP safe-edit workflow examples with root commands, public query-table refresh metadata, chart-source, calc-chain formula, hidden-sheet topology, and protected-range metadata commit proof, and machine-readable proof context for generated/public workbooks.',
 			forbiddenWording: [
 				'Do not claim arbitrary workbook safety, package publication, registry download proof, hosted service readiness, public-workbook generality, complete API package health, or complete workflow observability from the local generated/public-workbook examples.',
 			],
@@ -3685,12 +3698,21 @@ function todayCommitClaimMatrix(): readonly ReleaseProofTodayCommitClaimMatrixRo
 		},
 		{
 			claimArea: 'write-performance',
-			commits: ['67b900ed', 'e22eb86a', 'bd162937', '0d0c9632', '905ecb5e', 'c297ba4c', '27af69d4'],
+			commits: [
+				'67b900ed',
+				'e22eb86a',
+				'bd162937',
+				'0d0c9632',
+				'905ecb5e',
+				'c297ba4c',
+				'27af69d4',
+				'2029dfab',
+			],
 			releaseOrSotaClaimBecameMoreTrue:
 				'Dense-values, string-heavy, and styles-heavy generated XLSX write rows now have scoped current comparable wins, but broad XLSX write/SOTA/QSS speed wording remains downgraded.',
 			evidenceProvesIt: [
 				'bun test fixtures/benchmarks/performance-claim-baseline-matrix.test.ts --timeout 30000',
-				'performance owner artifact in release-proof-index names the plain-text baseline, string-heavy baseline, 0d0c9632 string-heavy optimization proof, 905ecb5e styles-heavy write baseline win, c297ba4c dense-values current repeat-15 comparable win, and 27af69d4 string-heavy current repeat-15 comparable win as bounded evidence.',
+				'performance owner artifact in release-proof-index names the plain-text baseline, string-heavy baseline, 0d0c9632 string-heavy optimization proof, 905ecb5e styles-heavy write baseline win, c297ba4c dense-values current repeat-15 comparable win, 27af69d4 string-heavy current repeat-15 comparable win, and 2029dfab current styles-heavy repeat-15 comparable win as bounded evidence.',
 			],
 			allowedWording:
 				'Ascend has bounded local evidence of dense-values, string-heavy, and styles-heavy generated write rows where focused comparable external reruns favor Ascend; treat them as scoped generated-write evidence, not broad speed leadership.',
@@ -4978,7 +5000,7 @@ function ownerDecisionArtifactsFor(
 					decision:
 						'Use the performance matrix as a defer decision: no broad XLSX read, SOTA, or QSS-leapfrog speed claim is promotable from the current partial baseline.',
 					nextAction:
-						'Benchmarking owner treats the focused ClosedXML, same-lane selected-sheet, same-lane metadata-only, current-worktree python-calamine selected-sheet runner proof, current full-profile/merged scoreboard runs, commit df349629 current selected-sheet same-lane read proof, commit 1908f3f5 current metadata-only Calamine loss, commit 67b900ed plain-text write baseline, commit e22eb86a string-heavy write baseline, commit 0d0c9632 string-heavy write optimization proof, commit 905ecb5e styles-heavy write baseline win, commit c297ba4c dense-values current repeat-15 comparable win, and commit 27af69d4 string-heavy current repeat-15 comparable win as accepted bounded evidence, downgrades broad speed wording, and stops production optimization unless the next work is explicit blocker resolution for ClosedXML coverage, feature-rich semantic mismatches, remaining unsupported selected-sheet/metadata-only competitors, FastXLSX environment coverage, a same-timing SDK selected-sheet open-only row, a clean multi-workload xlsx-write-sota gate, or another named public workflow loss.',
+						'Benchmarking owner treats the focused ClosedXML, same-lane selected-sheet, same-lane metadata-only, current-worktree python-calamine selected-sheet runner proof, current full-profile/merged scoreboard runs, commit df349629 current selected-sheet same-lane read proof, commit 1908f3f5 current metadata-only Calamine loss, commit 67b900ed plain-text write baseline, commit e22eb86a string-heavy write baseline, commit 0d0c9632 string-heavy write optimization proof, commit 905ecb5e styles-heavy write baseline win, commit c297ba4c dense-values current repeat-15 comparable win, commit 27af69d4 string-heavy current repeat-15 comparable win, and commit 2029dfab current styles-heavy repeat-15 comparable win as accepted bounded evidence, downgrades broad speed wording, and stops production optimization unless the next work is explicit blocker resolution for ClosedXML coverage, feature-rich semantic mismatches, remaining unsupported selected-sheet/metadata-only competitors, FastXLSX environment coverage, a same-timing SDK selected-sheet open-only row, a clean multi-workload xlsx-write-sota gate, or another named public workflow loss.',
 					forbiddenShortcut:
 						'Do not count unavailable runners, blocked runners, dirty-worktree timings, one-workload medians, the 2000x20 plain-text/dense/string/styles rows, or focused fastest-comparable reruns as broad XLSX write/SOTA/QSS speed wins.',
 					boundary:

@@ -309,6 +309,8 @@ describe('AscendWorkbook', () => {
 		const encryptedApproved = join(dir, 'encrypted-approved.csv')
 		const signedBlocked = join(dir, 'signed-blocked.tsv')
 		const signedApproved = join(dir, 'signed-approved.tsv')
+		const macroBlocked = join(dir, 'macro-blocked.csv')
+		const macroApproved = join(dir, 'macro-approved.csv')
 		try {
 			mkdirSync(dir, { recursive: true })
 			const encrypted = await Ascend.open(
@@ -366,6 +368,42 @@ describe('AscendWorkbook', () => {
 			).toContain('unsigned')
 			expect(() => signed.toBytes()).toThrow(
 				'Cannot export an edited signed workbook without explicit signature invalidation approval',
+			)
+
+			const macro = await Ascend.open(
+				new Uint8Array(readFileSync('fixtures/xlsx/calamine/vba.xlsm')),
+			)
+			expect(macro.inspect().activeContent).toContainEqual(
+				expect.objectContaining({ kind: 'vbaProject', partPath: 'xl/vbaProject.bin' }),
+			)
+			await expect(macro.save(macroBlocked)).rejects.toThrow(
+				'Cannot export a workbook with active content to text without explicit active content loss approval',
+			)
+			expect(() => macro.toCsv()).toThrow(
+				'Cannot export a workbook with active content to text without explicit active content loss approval',
+			)
+			macro.apply([
+				{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'macro values' }] },
+			])
+			await expect(macro.save(macroBlocked)).rejects.toThrow(
+				'Cannot export a workbook with active content to text without explicit active content loss approval',
+			)
+			expect(existsSync(macroBlocked)).toBe(false)
+			await macro.save(macroApproved, { allowActiveContentLoss: true })
+			const macroCsv = readFileSync(macroApproved, 'utf8')
+			expect(Ascend.fromCsv(macroCsv).sheet('Sheet1')?.cell('A1')?.value).toEqual({
+				kind: 'string',
+				value: 'macro values',
+			})
+			expect(macro.toCsv({ allowActiveContentLoss: true })).toContain('macro values')
+			expect(() => macro.toBytes()).not.toThrow()
+			const macroReopened = await Ascend.open(macro.toBytes())
+			expect(macroReopened.sheet('Sheet1')?.cell('A1')?.value).toEqual({
+				kind: 'string',
+				value: 'macro values',
+			})
+			expect(macroReopened.inspect().activeContent).toContainEqual(
+				expect.objectContaining({ kind: 'vbaProject', partPath: 'xl/vbaProject.bin' }),
 			)
 		} finally {
 			rmSync(dir, { recursive: true, force: true })

@@ -121,6 +121,7 @@ export interface WorkbookBytesOptions {
 	readonly compressionProfile?: ZipCompressionProfile
 	readonly allowDecryptedExport?: boolean
 	readonly allowSignatureInvalidation?: boolean
+	readonly allowActiveContentLoss?: boolean
 }
 
 export interface WorkbookCsvOptions {
@@ -129,6 +130,7 @@ export interface WorkbookCsvOptions {
 	readonly dialect?: Partial<CsvDialect>
 	readonly allowDecryptedExport?: boolean
 	readonly allowSignatureInvalidation?: boolean
+	readonly allowActiveContentLoss?: boolean
 }
 
 interface WorkbookMutationRollbackSnapshot {
@@ -1587,13 +1589,22 @@ export class AscendWorkbook extends WorkbookReadView {
 	}
 
 	private assertHighRiskPlaintextExportApproved(
-		options: Pick<WorkbookBytesOptions, 'allowDecryptedExport' | 'allowSignatureInvalidation'>,
+		options: Pick<
+			WorkbookBytesOptions,
+			'allowDecryptedExport' | 'allowSignatureInvalidation' | 'allowActiveContentLoss'
+		>,
 	): void {
 		if (this.sourceWasEncrypted && !options.allowDecryptedExport) {
 			throw this.encryptedWorkbookExportError('text')
 		}
 		if (this.invalidatedSignaturePartPaths().length > 0 && !options.allowSignatureInvalidation) {
 			throw this.signedWorkbookExportError('text')
+		}
+		if (
+			this.plaintextExportActiveContentPartPaths().length > 0 &&
+			!options.allowActiveContentLoss
+		) {
+			throw this.activeContentPlaintextExportError()
 		}
 	}
 
@@ -1634,6 +1645,25 @@ export class AscendWorkbook extends WorkbookReadView {
 		)
 	}
 
+	private activeContentPlaintextExportError(): AscendException {
+		const activeContentParts = this.plaintextExportActiveContentPartPaths()
+		return new AscendException(
+			ascendError(
+				'EXPORT_ERROR',
+				'Cannot export a workbook with active content to text without explicit active content loss approval.',
+				{
+					details: {
+						requestedExport: 'text',
+						activeContentPreserved: false,
+						activeContentParts,
+					},
+					suggestedFix:
+						'Save as XLSX/XLSM to preserve active content, or pass allowActiveContentLoss: true only when the caller explicitly wants values-only text output.',
+				},
+			),
+		)
+	}
+
 	private invalidatedSignaturePartPaths(): readonly string[] {
 		return this.wb.activeContent
 			.filter(
@@ -1641,6 +1671,12 @@ export class AscendWorkbook extends WorkbookReadView {
 					(entry.kind === 'digitalSignature' || entry.kind === 'vbaSignature') &&
 					entry.invalidationPolicy === 'invalidatedByPackageEdit',
 			)
+			.map((entry) => entry.partPath)
+	}
+
+	private plaintextExportActiveContentPartPaths(): readonly string[] {
+		return this.wb.activeContent
+			.filter((entry) => entry.kind !== 'digitalSignature' && entry.kind !== 'vbaSignature')
 			.map((entry) => entry.partPath)
 	}
 

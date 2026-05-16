@@ -475,10 +475,14 @@ describe('ascend cli', () => {
 		expect(parsed.data.commands.encryptedOpenPlan).toContain('--password <value>')
 		expect(parsed.data.commands.trust).toContain('inspect <file> --agent --json')
 		expect(parsed.data.examples.sdkSafeEdit).toBe(
-			'bun run --cwd examples safe-edit <file.xlsx> <out.xlsx>',
+			'bun run example:safe-edit <file.xlsx> <out.xlsx>',
 		)
-		expect(parsed.data.examples.apiSafeEdit).toContain('safe-edit:http')
-		expect(parsed.data.examples.mcpSafeEdit).toContain('safe-edit:mcp')
+		expect(parsed.data.examples.apiSafeEdit).toBe(
+			'bun run example:safe-edit:http <file.xlsx> <out.xlsx>',
+		)
+		expect(parsed.data.examples.mcpSafeEdit).toBe(
+			'bun run example:safe-edit:mcp <file.xlsx> <out.xlsx>',
+		)
 		expect(parsed.data.workflow.join('\n')).toContain('open-plan')
 		expect(parsed.data.workflow.join('\n')).toContain('encrypted XLSX/XLSM')
 		expect(parsed.data.mcpResources).toContain('ascend://llms.txt')

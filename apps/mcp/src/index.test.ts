@@ -538,9 +538,9 @@ describe('MCP server', () => {
 		})
 		expect(result.structuredContent?.data?.resources).toContain('ascend://agent-workflow')
 		expect(result.structuredContent?.data?.examples).toMatchObject({
-			sdkSafeEdit: 'bun run --cwd examples safe-edit <file.xlsx> <out.xlsx>',
-			apiSafeEdit: expect.stringContaining('safe-edit:http'),
-			mcpSafeEdit: expect.stringContaining('safe-edit:mcp'),
+			sdkSafeEdit: 'bun run example:safe-edit <file.xlsx> <out.xlsx>',
+			apiSafeEdit: 'bun run example:safe-edit:http <file.xlsx> <out.xlsx>',
+			mcpSafeEdit: 'bun run example:safe-edit:mcp <file.xlsx> <out.xlsx>',
 		})
 		expect(result.structuredContent?.data?.preparedHandles).toMatchObject({
 			scope: 'process-local',

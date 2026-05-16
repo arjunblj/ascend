@@ -263,13 +263,13 @@ if (cliAgentInit.apiEndpoints?.workflow !== 'GET /agent-workflow') {
 if (cliAgentInit.mcpTools?.workflow !== 'ascend.agent_workflow') {
 	throw new Error('CLI agent-init missing MCP workflow tool: ' + JSON.stringify(cliAgentInit))
 }
-if (cliAgentInit.examples?.sdkSafeEdit !== 'bun run --cwd examples safe-edit <file.xlsx> <out.xlsx>') {
+if (cliAgentInit.examples?.sdkSafeEdit !== 'bun run example:safe-edit <file.xlsx> <out.xlsx>') {
 	throw new Error('CLI agent-init missing SDK safe-edit example: ' + JSON.stringify(cliAgentInit))
 }
-if (!cliAgentInit.examples?.apiSafeEdit?.includes('safe-edit:http')) {
+if (cliAgentInit.examples?.apiSafeEdit !== 'bun run example:safe-edit:http <file.xlsx> <out.xlsx>') {
 	throw new Error('CLI agent-init missing API safe-edit example: ' + JSON.stringify(cliAgentInit))
 }
-if (!cliAgentInit.examples?.mcpSafeEdit?.includes('safe-edit:mcp')) {
+if (cliAgentInit.examples?.mcpSafeEdit !== 'bun run example:safe-edit:mcp <file.xlsx> <out.xlsx>') {
 	throw new Error('CLI agent-init missing MCP safe-edit example: ' + JSON.stringify(cliAgentInit))
 }
 
@@ -315,7 +315,7 @@ if (apiWorkflow.endpoints?.plan !== 'POST /plan' || apiWorkflow.endpoints?.commi
 if (!apiWorkflow.workflow?.some((step) => step.step === 'reopen-verify')) {
 	throw new Error('installed API agent workflow contract missing reopen-verify step')
 }
-if (!apiWorkflow.examples?.apiSafeEdit?.includes('safe-edit:http')) {
+if (apiWorkflow.examples?.apiSafeEdit !== 'bun run example:safe-edit:http <file.xlsx> <out.xlsx>') {
 	throw new Error('installed API agent workflow contract missing API safe-edit example')
 }
 
@@ -365,7 +365,7 @@ if (mcpWorkflow.tools?.plan !== 'ascend.plan' || mcpWorkflow.tools?.commit !== '
 if (!mcpWorkflow.workflow?.some((step) => step.step === 'reopen-verify')) {
 	throw new Error('installed MCP agent workflow contract missing reopen-verify step')
 }
-if (!mcpWorkflow.examples?.mcpSafeEdit?.includes('safe-edit:mcp')) {
+if (mcpWorkflow.examples?.mcpSafeEdit !== 'bun run example:safe-edit:mcp <file.xlsx> <out.xlsx>') {
 	throw new Error('installed MCP agent workflow contract missing MCP safe-edit example')
 }
 const mcpResource = await resources['ascend://capabilities']?.readCallback(

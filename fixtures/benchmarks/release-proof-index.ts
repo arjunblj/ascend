@@ -3651,7 +3651,9 @@ function releaseDecisionValidationCommands(
 		case 'retained-viewport-patch-history':
 			return [
 				'bun test fixtures/benchmarks/viewport-patch-proof.test.ts',
-				'bun test packages/sdk/src/interactive-contract.test.ts apps/api/src/server.test.ts apps/mcp/src/index.test.ts --timeout 30000',
+				'bun test packages/sdk/src/interactive-contract.test.ts -t "interactive viewport tokens from other sessions refreshes and retained-log gaps force fresh reads|interactive viewport patch results expose invalidation reasons without silent nulls|interactive pull patches refuse metadata and layout edits that need fresh viewport state|interactive pull patches reject tokens older than the retained change log" --timeout 30000',
+				'bun test apps/api/src/server.test.ts -t "compact changedSince reads invalidate when the requested window changes|compact changedSince reads return a fresh window after source changes" --timeout 30000',
+				'bun test apps/mcp/src/index.test.ts -t "ascend.read compact changedSince invalidates when the requested window changes|ascend.read compact changedSince invalidates when selected columns change|ascend.read compact changedSince returns a fresh window after source changes" --timeout 30000',
 			]
 		case 'release-proof-bundle':
 			return [
@@ -4552,7 +4554,7 @@ const TOKEN_BOUNDED_AGENT_VIEW_BLOCKER = {
 
 const RETAINED_VIEWPORT_PATCH_BLOCKER = {
 	ownerAction:
-		'Product/performance owner records one public SDK/API/MCP compact-read workflow with retained patch, skipped token, invalid token, expired history, projection-change invalidation, metadata invalidation, patch bytes, retention cap, and recovery action; validate with `bun test fixtures/benchmarks/viewport-patch-proof.test.ts`, the SDK interactive viewport patch tests, and API/MCP compact changedSince tests before any retained-history wording.',
+		'Product/performance owner records one public SDK/API/MCP compact-read workflow with retained patch, skipped token, invalid token, expired history, projection-change invalidation, metadata invalidation, patch bytes, retention cap, and recovery action; validate with `bun test fixtures/benchmarks/viewport-patch-proof.test.ts`, the focused SDK interactive viewport patch tests, and the focused API/MCP compact changedSince tests before any retained-history wording.',
 	allowedWording:
 		'Do not promote retained-viewport-patch-history as release wording today. Allowed wording: SDK/API/MCP proof can describe bounded single-session retained patches, invalidation reasons, and fresh-window recovery; CLI and collaboration claims stay excluded.',
 	evidenceWeHave: [

@@ -1412,12 +1412,12 @@ describe('release proof evidence index', () => {
 		expect(viewportPatchNextOwnerAction).toContain(
 			'bun test fixtures/benchmarks/viewport-patch-proof.test.ts',
 		)
-		expect(viewportPatchDecision?.validationCommands).toEqual(
-			expect.arrayContaining([
-				'bun test fixtures/benchmarks/viewport-patch-proof.test.ts',
-				expect.stringContaining('packages/sdk/src/interactive-contract.test.ts'),
-			]),
-		)
+		expect(viewportPatchDecision?.validationCommands).toEqual([
+			'bun test fixtures/benchmarks/viewport-patch-proof.test.ts',
+			'bun test packages/sdk/src/interactive-contract.test.ts -t "interactive viewport tokens from other sessions refreshes and retained-log gaps force fresh reads|interactive viewport patch results expose invalidation reasons without silent nulls|interactive pull patches refuse metadata and layout edits that need fresh viewport state|interactive pull patches reject tokens older than the retained change log" --timeout 30000',
+			'bun test apps/api/src/server.test.ts -t "compact changedSince reads invalidate when the requested window changes|compact changedSince reads return a fresh window after source changes" --timeout 30000',
+			'bun test apps/mcp/src/index.test.ts -t "ascend.read compact changedSince invalidates when the requested window changes|ascend.read compact changedSince invalidates when selected columns change|ascend.read compact changedSince returns a fresh window after source changes" --timeout 30000',
+		])
 		for (const item of index.releaseDecisionBoard.doNotPromoteYet) {
 			const qssContrast = item.qssContrast.join('\n')
 			expect([

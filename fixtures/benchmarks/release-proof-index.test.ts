@@ -991,6 +991,14 @@ describe('release proof evidence index', () => {
 			}),
 			expect.objectContaining({
 				evidenceId: 'cli-agent-facing-open-diagnostics-proof',
+				acceptedScope: expect.stringContaining('8826b61b'),
+				command: expect.stringContaining(
+					'CLI JSON validation errors include command-specific guidance and fallback codes',
+				),
+				path: expect.stringContaining('apps/cli/src/commands/template-merge.ts'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'cli-agent-facing-open-diagnostics-proof',
 				acceptedScope: expect.stringContaining('9b155c7f'),
 				boundary: expect.stringContaining('CLI agent-facing diagnostics only'),
 			}),
@@ -1003,12 +1011,17 @@ describe('release proof evidence index', () => {
 				evidenceId: 'api-open-workflow-reference-proof',
 				acceptedScope: expect.stringContaining('215d6e57'),
 				command:
-					'bun test apps/api/src/server.test.ts -t "string API failures return coded JSON envelopes|missing workbook references|missing inputs|missing template data|before opening workbooks|trace reports missing target cells" --timeout 30000',
+					'bun test apps/api/src/server.test.ts -t "jsonFailureError wraps string failures|string API failures return coded JSON envelopes|missing workbook references|missing inputs|missing template data|before opening workbooks|trace reports missing target cells" --timeout 30000',
 			}),
 			expect.objectContaining({
 				evidenceId: 'api-open-workflow-reference-proof',
 				acceptedScope: expect.stringContaining('0a7d9d32'),
 				path: expect.stringContaining('apps/api/src/response.ts'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'api-open-workflow-reference-proof',
+				acceptedScope: expect.stringContaining('25ca9b21'),
+				command: expect.stringContaining('jsonFailureError wraps string failures'),
 			}),
 			expect.objectContaining({
 				evidenceId: 'api-open-workflow-reference-proof',
@@ -3951,6 +3964,9 @@ describe('release proof evidence index', () => {
 			'metadata-only external-process evidence at commit fa3a13dc',
 		)
 		expect(packet.benchmarkBlocker?.evidenceWeHave?.join('\n')).toContain(
+			'Commit b6925afe adds a python-calamine metadata-only baseline',
+		)
+		expect(packet.benchmarkBlocker?.evidenceWeHave?.join('\n')).toContain(
 			'Commit bbf875b4 adds an Ascend readXlsx selected-sheet external-process row',
 		)
 		expect(packet.benchmarkBlocker?.evidenceWeHave?.join('\n')).toContain(
@@ -3971,10 +3987,19 @@ describe('release proof evidence index', () => {
 		expect(packet.benchmarkBlocker?.allowedWording).toContain(
 			'broad XLSX read-speed leadership remains blocked',
 		)
+		expect(packet.benchmarkBlocker?.allowedWording).toContain(
+			'Calamine metadata-only coverage must not be counted as an Ascend win',
+		)
 		expect(packet.benchmarkBlocker?.forbiddenWording).toContain(
 			'Do not claim Ascend is the fastest XLSX reader.',
 		)
+		expect(packet.benchmarkBlocker?.forbiddenWording).toContain(
+			'Do not claim Ascend leads metadata-only reads while the Calamine metadata-only baseline is comparable and may win the row.',
+		)
 		expect(packet.benchmarkBlocker?.nextAction).toContain('Downgrade broad read-speed wording')
+		expect(packet.benchmarkBlocker?.nextAction).toContain(
+			'Calamine metadata-only baseline is not an Ascend win',
+		)
 		expect(packet.benchmarkBlocker?.nextAction).toContain('current full-profile')
 		expect(packet.benchmarkBlocker?.nextAction).toContain('merged selected-sheet/metadata-only')
 		expect(packet.benchmarkBlocker?.nextAction).toContain('feature-rich SheetJS/Calamine')
@@ -4008,6 +4033,9 @@ describe('release proof evidence index', () => {
 		)
 		expect(packet.benchmarkBlocker?.acceptanceEvidence?.join('\n')).toContain(
 			'metadata-only same-lane external-process run at commit fa3a13dc',
+		)
+		expect(packet.benchmarkBlocker?.acceptanceEvidence?.join('\n')).toContain(
+			'Commit b6925afe adds python-calamine metadata-only runner',
 		)
 		expect(packet.benchmarkBlocker?.acceptanceEvidence?.join('\n')).toContain(
 			'current full-profile run at commit 9ddfff91',

@@ -1023,7 +1023,7 @@ describe('release proof evidence index', () => {
 			'release-proof-bundle:implementation-ready-blocker',
 			'formula-oracle-routing:benchmark-corpus-blocker',
 			'property-journal-laws:implementation-ready-blocker',
-			'columnar-scan-sidecars:benchmark-corpus-blocker',
+			'columnar-scan-sidecars:claim-downgrade-do-not-promote',
 			'agent-workflow-observability:implementation-ready-blocker',
 			'research-surface-hygiene:claim-downgrade-do-not-promote',
 			'practical-latency-contracts:benchmark-corpus-blocker',
@@ -1037,12 +1037,8 @@ describe('release proof evidence index', () => {
 				'property-journal-laws',
 				'agent-workflow-observability',
 			],
-			benchmarkCorpusBlockerNames: [
-				'formula-oracle-routing',
-				'columnar-scan-sidecars',
-				'practical-latency-contracts',
-			],
-			claimDowngradeDoNotPromoteNames: ['research-surface-hygiene'],
+			benchmarkCorpusBlockerNames: ['formula-oracle-routing', 'practical-latency-contracts'],
+			claimDowngradeDoNotPromoteNames: ['columnar-scan-sidecars', 'research-surface-hygiene'],
 			boundary: expect.stringContaining('Routing summary for blocked claims only'),
 		})
 		expect(index.releaseDecisionBoard.releaseWordingDecisionSummary).toMatchObject({
@@ -1098,7 +1094,7 @@ describe('release proof evidence index', () => {
 			'release:release-proof-bundle:implementation-ready-blocker',
 			'correctness:formula-oracle-routing:benchmark-corpus-blocker',
 			'correctness:property-journal-laws:implementation-ready-blocker',
-			'performance:columnar-scan-sidecars:benchmark-corpus-blocker',
+			'performance:columnar-scan-sidecars:claim-downgrade-do-not-promote',
 			'product:agent-workflow-observability:implementation-ready-blocker',
 			'product:research-surface-hygiene:claim-downgrade-do-not-promote',
 			'release:research-surface-hygiene:claim-downgrade-do-not-promote',
@@ -1119,7 +1115,7 @@ describe('release proof evidence index', () => {
 			index.releaseDecisionBoard.blockedOwnerActionQueue
 				.filter((row) => row.workBlockDisposition === 'benchmark-corpus-blocker')
 				.map((row) => row.name),
-		).toEqual(['formula-oracle-routing', 'columnar-scan-sidecars', 'practical-latency-contracts'])
+		).toEqual(['formula-oracle-routing', 'practical-latency-contracts'])
 		expect(
 			index.releaseDecisionBoard.benchmarkCorpusOwnerActionQueue.map(
 				(row) => `${row.sourceQueue}:${row.ownerLoop}:${row.name}:${row.requirementId ?? 'none'}`,
@@ -1130,7 +1126,6 @@ describe('release proof evidence index', () => {
 			'top-claim-owner-action:product:package-action-proof:edge-fixture-policy',
 			'top-claim-owner-action:performance:package-action-proof:streaming-matrix-boundary',
 			'blocked-owner-action:correctness:formula-oracle-routing:none',
-			'blocked-owner-action:performance:columnar-scan-sidecars:none',
 			'blocked-owner-action:performance:practical-latency-contracts:none',
 		])
 		for (const row of index.releaseDecisionBoard.benchmarkCorpusOwnerActionQueue) {
@@ -1235,43 +1230,59 @@ describe('release proof evidence index', () => {
 				(row) => `${row.sourceQueue}:${row.ownerLoop}:${row.name}`,
 			),
 		).toEqual([
+			'blocked-owner-action:performance:columnar-scan-sidecars',
 			'blocked-owner-action:product:research-surface-hygiene',
 			'blocked-owner-action:release:research-surface-hygiene',
 		])
 		for (const row of index.releaseDecisionBoard.claimDowngradeOwnerActionQueue) {
 			expect(row.workBlockDisposition).toBe('claim-downgrade-do-not-promote')
-			expect(row.ownerFiles).toEqual(
-				expect.arrayContaining([
-					'research/',
-					'scripts/ascend-loop-manager.ts',
-					'tmp/ascend-loop-manager/',
-				]),
-			)
-			expect(row.validationCommands).toEqual([
-				'git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager',
-				'bun run fixtures/benchmarks/release-proof-index.ts --no-timings --research-hygiene-json',
-				'bun test fixtures/benchmarks/release-proof-index.test.ts',
-			])
+			if (row.name === 'columnar-scan-sidecars') {
+				expect(row.ownerFiles).toEqual(
+					expect.arrayContaining([
+						'fixtures/benchmarks/release-proof-index.ts',
+						'fixtures/benchmarks/columnar-sidecar.ts',
+					]),
+				)
+				expect(row.validationCommands).toEqual([
+					'bun run fixtures/benchmarks/release-proof-index.ts --no-timings --release-decision-json',
+					'bun test fixtures/benchmarks/release-proof-index.test.ts --timeout 30000',
+				])
+				expect(row.allowedWording).toContain('Do not promote columnar-scan-sidecars')
+				expect(row.nextOwnerAction).toContain('stops benchmark expansion')
+			} else {
+				expect(row.ownerFiles).toEqual(
+					expect.arrayContaining([
+						'research/',
+						'scripts/ascend-loop-manager.ts',
+						'tmp/ascend-loop-manager/',
+					]),
+				)
+				expect(row.validationCommands).toEqual([
+					'git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager',
+					'bun run fixtures/benchmarks/release-proof-index.ts --no-timings --research-hygiene-json',
+					'bun test fixtures/benchmarks/release-proof-index.test.ts',
+				])
+				expect(row.allowedWording).toContain('Do not promote research-surface-hygiene')
+				expect(row.nextOwnerAction).toContain(
+					'git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager',
+				)
+			}
 			expect(row.commandsToRun).toEqual(row.validationCommands)
 			expect(row.failureEvidence).toEqual(expect.arrayContaining([expect.any(String)]))
-			expect(row.acceptanceCriteria).toContain('reviews `classifiedEntries`')
+			expect(row.acceptanceCriteria.length).toBeGreaterThan(0)
 			expect(row.evidenceWeHave).toEqual(expect.arrayContaining([expect.any(String)]))
 			expect(row.evidenceMissing).toEqual(expect.arrayContaining([expect.any(String)]))
 			expect(row.qssContrast).toEqual(expect.arrayContaining([expect.any(String)]))
-			expect(row.allowedWording).toContain('Do not promote research-surface-hygiene')
 			expect(row.forbiddenWording).toEqual(expect.arrayContaining([expect.any(String)]))
-			expect(row.nextOwnerAction).toContain(
-				'git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager',
-			)
 			expect(row.boundary).toContain('Claim downgrade owner-action queue row')
 		}
 		expect(index.releaseDecisionBoard.ownerActionQueueCoverage).toMatchObject({
 			status: 'all-owner-actions-covered-by-disposition-queues',
 			sourceTopClaimActionCount: 9,
 			sourceBlockedActionCount: 14,
-			benchmarkCorpusActionCount: 7,
+			benchmarkCorpusActionCount: 6,
 			implementationReadyActionCount: 14,
-			claimDowngradeActionCount: 2,
+			claimDowngradeActionCount: 3,
 			coveredActionCount: 23,
 			uncoveredTopClaimActionKeys: [],
 			uncoveredBlockedActionKeys: [],
@@ -1279,7 +1290,7 @@ describe('release proof evidence index', () => {
 		})
 		expect(index.releaseDecisionBoard.benchmarkCorpusRunContractCoverage).toMatchObject({
 			status: 'all-benchmark-corpus-actions-have-run-contract',
-			actionCount: 7,
+			actionCount: 6,
 			missingInputScopeActionKeys: [],
 			missingRunEnvironmentActionKeys: [],
 			missingRequiredOutputEvidenceActionKeys: [],
@@ -1290,9 +1301,9 @@ describe('release proof evidence index', () => {
 		expect(index.releaseDecisionBoard.ownerActionExecutionContractCoverage).toMatchObject({
 			status: 'all-disposition-owner-actions-have-execution-contract',
 			actionCount: 23,
-			benchmarkCorpusActionCount: 7,
+			benchmarkCorpusActionCount: 6,
 			implementationReadyActionCount: 14,
-			claimDowngradeActionCount: 2,
+			claimDowngradeActionCount: 3,
 			missingOwnerFileActionKeys: [],
 			missingCommandActionKeys: [],
 			missingFailureEvidenceActionKeys: [],
@@ -1559,18 +1570,20 @@ describe('release proof evidence index', () => {
 		expect(columnarSidecarEvidence).toContain('columnar-sidecar.test.ts')
 		expect(columnarSidecarEvidence).toContain('sec-mmf-statistics-2022-02.xlsx')
 		expect(columnarSidecarEvidence).toContain('workbook grid as source of truth')
-		expect(columnarSidecarMissing).toContain('structurally diverse external public workbook')
+		expect(columnarSidecarEvidence).toContain('stop decision')
+		expect(columnarSidecarMissing).toContain('Product-approved repeated-scan workflow')
 		expect(columnarSidecarMissing).toContain('memory caps')
 		expect(columnarSidecarMissing).toContain('generation-key invalidation')
 		expect(columnarSidecarForbidden).toContain('Arrow ABI')
 		expect(columnarSidecarForbidden).toContain('QSS/SOTA speed win')
 		expect(columnarSidecarForbidden).toContain('SDK/API/MCP sidecar product surface')
-		expect(columnarSidecarNextOwnerAction).toContain('columnar-sidecar.test.ts')
-		expect(columnarSidecarNextOwnerAction).toContain('claim-report --json')
-		expect(columnarSidecarDecision?.allowedWording).toContain('benchmark-only disposable sidecar')
+		expect(columnarSidecarForbidden).toContain('benchmark-backed production optimization target')
+		expect(columnarSidecarNextOwnerAction).toContain('stops benchmark expansion')
+		expect(columnarSidecarNextOwnerAction).toContain('release-decision-json')
+		expect(columnarSidecarDecision?.allowedWording).toContain('downgraded research evidence')
 		expect(columnarSidecarDecision?.validationCommands).toEqual([
-			'bun test fixtures/benchmarks/columnar-sidecar.test.ts --timeout 30000',
-			'bun run fixtures/benchmarks/columnar-sidecar.ts --fixture fixtures/xlsx/external/sec-mmf-statistics-2022-02.xlsx --sheet "Table 9" --repeats 8 --claim-report --json',
+			'bun run fixtures/benchmarks/release-proof-index.ts --no-timings --release-decision-json',
+			'bun test fixtures/benchmarks/release-proof-index.test.ts --timeout 30000',
 		])
 		const agentWorkflowDecision = index.releaseDecisionBoard.doNotPromoteYet.find(
 			(item) => item.name === 'agent-workflow-observability',
@@ -2353,12 +2366,8 @@ describe('release proof evidence index', () => {
 				'property-journal-laws',
 				'agent-workflow-observability',
 			],
-			benchmarkCorpusBlockerNames: [
-				'formula-oracle-routing',
-				'columnar-scan-sidecars',
-				'practical-latency-contracts',
-			],
-			claimDowngradeDoNotPromoteNames: ['research-surface-hygiene'],
+			benchmarkCorpusBlockerNames: ['formula-oracle-routing', 'practical-latency-contracts'],
+			claimDowngradeDoNotPromoteNames: ['columnar-scan-sidecars', 'research-surface-hygiene'],
 		})
 		expect(handoff.releaseDecisionBoard.blockedOwnerActionQueue).toHaveLength(14)
 		for (const row of handoff.releaseDecisionBoard.blockedOwnerActionQueue) {
@@ -2379,9 +2388,9 @@ describe('release proof evidence index', () => {
 				expect.objectContaining({
 					ownerLoop: 'performance',
 					name: 'columnar-scan-sidecars',
-					workBlockDisposition: 'benchmark-corpus-blocker',
+					workBlockDisposition: 'claim-downgrade-do-not-promote',
 					validationCommands: expect.arrayContaining([
-						expect.stringContaining('columnar-sidecar.ts'),
+						expect.stringContaining('release-proof-index.ts'),
 					]),
 				}),
 				expect.objectContaining({
@@ -2406,7 +2415,7 @@ describe('release proof evidence index', () => {
 				}),
 			]),
 		)
-		expect(handoff.releaseDecisionBoard.benchmarkCorpusOwnerActionQueue).toHaveLength(7)
+		expect(handoff.releaseDecisionBoard.benchmarkCorpusOwnerActionQueue).toHaveLength(6)
 		for (const row of handoff.releaseDecisionBoard.benchmarkCorpusOwnerActionQueue) {
 			expect(row.ownerFiles).toEqual(expect.arrayContaining([expect.any(String)]))
 			expect(row.commandsToRun).toEqual(row.validationCommands)
@@ -2452,15 +2461,6 @@ describe('release proof evidence index', () => {
 					]),
 					validationCommands: expect.arrayContaining([
 						expect.stringContaining('formula-corpus-correctness.ts'),
-					]),
-				}),
-				expect.objectContaining({
-					sourceQueue: 'blocked-owner-action',
-					ownerLoop: 'performance',
-					name: 'columnar-scan-sidecars',
-					ownerFiles: expect.arrayContaining(['fixtures/benchmarks/columnar-sidecar.ts']),
-					validationCommands: expect.arrayContaining([
-						expect.stringContaining('columnar-sidecar.ts'),
 					]),
 				}),
 			]),
@@ -2519,6 +2519,24 @@ describe('release proof evidence index', () => {
 		expect(handoff.releaseDecisionBoard.claimDowngradeOwnerActionQueue).toEqual([
 			expect.objectContaining({
 				sourceQueue: 'blocked-owner-action',
+				ownerLoop: 'performance',
+				name: 'columnar-scan-sidecars',
+				workBlockDisposition: 'claim-downgrade-do-not-promote',
+				ownerFiles: expect.arrayContaining([
+					'fixtures/benchmarks/release-proof-index.ts',
+					'fixtures/benchmarks/columnar-sidecar.ts',
+				]),
+				validationCommands: [
+					'bun run fixtures/benchmarks/release-proof-index.ts --no-timings --release-decision-json',
+					'bun test fixtures/benchmarks/release-proof-index.test.ts --timeout 30000',
+				],
+				failureEvidence: expect.arrayContaining([
+					expect.stringContaining('Product-approved repeated-scan workflow'),
+				]),
+				acceptanceCriteria: expect.stringContaining('stops benchmark expansion'),
+			}),
+			expect.objectContaining({
+				sourceQueue: 'blocked-owner-action',
 				ownerLoop: 'product',
 				name: 'research-surface-hygiene',
 				workBlockDisposition: 'claim-downgrade-do-not-promote',
@@ -2555,16 +2573,16 @@ describe('release proof evidence index', () => {
 			status: 'all-owner-actions-covered-by-disposition-queues',
 			sourceTopClaimActionCount: 9,
 			sourceBlockedActionCount: 14,
-			benchmarkCorpusActionCount: 7,
+			benchmarkCorpusActionCount: 6,
 			implementationReadyActionCount: 14,
-			claimDowngradeActionCount: 2,
+			claimDowngradeActionCount: 3,
 			coveredActionCount: 23,
 			uncoveredTopClaimActionKeys: [],
 			uncoveredBlockedActionKeys: [],
 		})
 		expect(handoff.releaseDecisionBoard.benchmarkCorpusRunContractCoverage).toMatchObject({
 			status: 'all-benchmark-corpus-actions-have-run-contract',
-			actionCount: 7,
+			actionCount: 6,
 			missingInputScopeActionKeys: [],
 			missingRunEnvironmentActionKeys: [],
 			missingRequiredOutputEvidenceActionKeys: [],
@@ -2574,9 +2592,9 @@ describe('release proof evidence index', () => {
 		expect(handoff.releaseDecisionBoard.ownerActionExecutionContractCoverage).toMatchObject({
 			status: 'all-disposition-owner-actions-have-execution-contract',
 			actionCount: 23,
-			benchmarkCorpusActionCount: 7,
+			benchmarkCorpusActionCount: 6,
 			implementationReadyActionCount: 14,
-			claimDowngradeActionCount: 2,
+			claimDowngradeActionCount: 3,
 			missingOwnerFileActionKeys: [],
 			missingCommandActionKeys: [],
 			missingFailureEvidenceActionKeys: [],
@@ -3039,7 +3057,7 @@ describe('release proof evidence index', () => {
 			'release-proof-bundle:implementation-ready-blocker',
 			'formula-oracle-routing:benchmark-corpus-blocker',
 			'property-journal-laws:implementation-ready-blocker',
-			'columnar-scan-sidecars:benchmark-corpus-blocker',
+			'columnar-scan-sidecars:claim-downgrade-do-not-promote',
 			'agent-workflow-observability:implementation-ready-blocker',
 			'research-surface-hygiene:claim-downgrade-do-not-promote',
 			'practical-latency-contracts:benchmark-corpus-blocker',
@@ -3053,12 +3071,8 @@ describe('release proof evidence index', () => {
 				'property-journal-laws',
 				'agent-workflow-observability',
 			],
-			benchmarkCorpusBlockerNames: [
-				'formula-oracle-routing',
-				'columnar-scan-sidecars',
-				'practical-latency-contracts',
-			],
-			claimDowngradeDoNotPromoteNames: ['research-surface-hygiene'],
+			benchmarkCorpusBlockerNames: ['formula-oracle-routing', 'practical-latency-contracts'],
+			claimDowngradeDoNotPromoteNames: ['columnar-scan-sidecars', 'research-surface-hygiene'],
 		})
 		expect(board.blockedOwnerActionQueue).toHaveLength(14)
 		expect(
@@ -3075,7 +3089,7 @@ describe('release proof evidence index', () => {
 			'release:release-proof-bundle:implementation-ready-blocker',
 			'correctness:formula-oracle-routing:benchmark-corpus-blocker',
 			'correctness:property-journal-laws:implementation-ready-blocker',
-			'performance:columnar-scan-sidecars:benchmark-corpus-blocker',
+			'performance:columnar-scan-sidecars:claim-downgrade-do-not-promote',
 			'product:agent-workflow-observability:implementation-ready-blocker',
 			'product:research-surface-hygiene:claim-downgrade-do-not-promote',
 			'release:research-surface-hygiene:claim-downgrade-do-not-promote',
@@ -3104,7 +3118,7 @@ describe('release proof evidence index', () => {
 				}),
 			]),
 		)
-		expect(board.benchmarkCorpusOwnerActionQueue).toHaveLength(7)
+		expect(board.benchmarkCorpusOwnerActionQueue).toHaveLength(6)
 		expect(
 			board.benchmarkCorpusOwnerActionQueue?.map(
 				(row) => `${row.sourceQueue}:${row.ownerLoop}:${row.name}:${row.requirementId ?? 'none'}`,
@@ -3115,7 +3129,6 @@ describe('release proof evidence index', () => {
 			'top-claim-owner-action:product:package-action-proof:edge-fixture-policy',
 			'top-claim-owner-action:performance:package-action-proof:streaming-matrix-boundary',
 			'blocked-owner-action:correctness:formula-oracle-routing:none',
-			'blocked-owner-action:performance:columnar-scan-sidecars:none',
 			'blocked-owner-action:performance:practical-latency-contracts:none',
 		])
 		for (const row of board.benchmarkCorpusOwnerActionQueue ?? []) {
@@ -3246,6 +3259,24 @@ describe('release proof evidence index', () => {
 		expect(board.claimDowngradeOwnerActionQueue).toEqual([
 			expect.objectContaining({
 				sourceQueue: 'blocked-owner-action',
+				ownerLoop: 'performance',
+				name: 'columnar-scan-sidecars',
+				workBlockDisposition: 'claim-downgrade-do-not-promote',
+				ownerFiles: expect.arrayContaining([
+					'fixtures/benchmarks/release-proof-index.ts',
+					'fixtures/benchmarks/columnar-sidecar.ts',
+				]),
+				validationCommands: [
+					'bun run fixtures/benchmarks/release-proof-index.ts --no-timings --release-decision-json',
+					'bun test fixtures/benchmarks/release-proof-index.test.ts --timeout 30000',
+				],
+				commandsToRun: [
+					'bun run fixtures/benchmarks/release-proof-index.ts --no-timings --release-decision-json',
+					'bun test fixtures/benchmarks/release-proof-index.test.ts --timeout 30000',
+				],
+			}),
+			expect.objectContaining({
+				sourceQueue: 'blocked-owner-action',
 				ownerLoop: 'product',
 				name: 'research-surface-hygiene',
 				workBlockDisposition: 'claim-downgrade-do-not-promote',
@@ -3291,16 +3322,16 @@ describe('release proof evidence index', () => {
 			status: 'all-owner-actions-covered-by-disposition-queues',
 			sourceTopClaimActionCount: 9,
 			sourceBlockedActionCount: 14,
-			benchmarkCorpusActionCount: 7,
+			benchmarkCorpusActionCount: 6,
 			implementationReadyActionCount: 14,
-			claimDowngradeActionCount: 2,
+			claimDowngradeActionCount: 3,
 			coveredActionCount: 23,
 			uncoveredTopClaimActionKeys: [],
 			uncoveredBlockedActionKeys: [],
 		})
 		expect(board.benchmarkCorpusRunContractCoverage).toMatchObject({
 			status: 'all-benchmark-corpus-actions-have-run-contract',
-			actionCount: 7,
+			actionCount: 6,
 			missingInputScopeActionKeys: [],
 			missingRunEnvironmentActionKeys: [],
 			missingRequiredOutputEvidenceActionKeys: [],
@@ -3310,9 +3341,9 @@ describe('release proof evidence index', () => {
 		expect(board.ownerActionExecutionContractCoverage).toMatchObject({
 			status: 'all-disposition-owner-actions-have-execution-contract',
 			actionCount: 23,
-			benchmarkCorpusActionCount: 7,
+			benchmarkCorpusActionCount: 6,
 			implementationReadyActionCount: 14,
-			claimDowngradeActionCount: 2,
+			claimDowngradeActionCount: 3,
 			missingOwnerFileActionKeys: [],
 			missingCommandActionKeys: [],
 			missingFailureEvidenceActionKeys: [],

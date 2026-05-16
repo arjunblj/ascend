@@ -3777,6 +3777,14 @@ function releaseDecisionClaimDowngradeOwnerActionQueue(
 function releaseDecisionClaimDowngradeOwnerFiles(
 	name: ReleaseProofReleaseDecisionDoNotPromoteItem['name'],
 ): readonly string[] {
+	if (name === 'columnar-scan-sidecars') {
+		return [
+			'fixtures/benchmarks/release-proof-index.ts',
+			'fixtures/benchmarks/release-proof-index.test.ts',
+			'fixtures/benchmarks/columnar-sidecar.ts',
+			'fixtures/benchmarks/columnar-sidecar.test.ts',
+		]
+	}
 	if (name !== 'research-surface-hygiene') return []
 	return [
 		'research/',
@@ -4109,8 +4117,8 @@ function releaseDecisionValidationCommands(
 			]
 		case 'columnar-scan-sidecars':
 			return [
-				'bun test fixtures/benchmarks/columnar-sidecar.test.ts --timeout 30000',
-				'bun run fixtures/benchmarks/columnar-sidecar.ts --fixture fixtures/xlsx/external/sec-mmf-statistics-2022-02.xlsx --sheet "Table 9" --repeats 8 --claim-report --json',
+				'bun run fixtures/benchmarks/release-proof-index.ts --no-timings --release-decision-json',
+				'bun test fixtures/benchmarks/release-proof-index.test.ts --timeout 30000',
 			]
 		case 'agent-workflow-observability':
 			return [
@@ -4142,10 +4150,10 @@ function releaseDecisionWorkBlockDisposition(
 		case 'safe-open-proof':
 		case 'package-action-proof':
 			return 'claim-downgrade-do-not-promote'
-		case 'columnar-scan-sidecars':
 		case 'formula-oracle-routing':
 		case 'practical-latency-contracts':
 			return 'benchmark-corpus-blocker'
+		case 'columnar-scan-sidecars':
 		case 'research-surface-hygiene':
 			return 'claim-downgrade-do-not-promote'
 		case 'formula-language-service-primitives':
@@ -4693,12 +4701,13 @@ const CLAIM_PORTFOLIO: readonly ReleaseProofPortfolioClaim[] = [
 		status: 'speculative-do-not-promote',
 		evidenceNeeded: claimEvidenceNeeded({
 			fixture:
-				'Real workbook tables and ranges with numbers, dates, blanks, strings, formulas, filters, hidden rows, and styles.',
+				'No additional sidecar fixtures until product defines a repeated-scan user workflow and a release claim that sidecar evidence can answer.',
 			benchmark:
-				'Repeated scans, sidecar build cost, invalidation cost, memory overhead, and checksum parity against canonical workbook reads.',
-			surface: 'Benchmark harness only; no SDK, CLI, API, or MCP product surface.',
+				'No benchmark-loop expansion from current evidence; only after product approval would repeated scans need build cost, invalidation cost, memory overhead, and checksum parity against canonical workbook reads.',
+			surface:
+				'No SDK, CLI, API, or MCP product surface; existing sidecar code remains downgraded research evidence.',
 			validationGate:
-				'Generation-key invalidation, checksum parity, memory caps, and benchmark guard before production.',
+				'Release-proof-index stop decision first; generation-key invalidation, checksum parity, and memory caps are prerequisites only if product revives the surface.',
 			competitorContrast:
 				'DuckDB reads XLSX ranges into typed SQL tables; Arrow supplies the columnar scan substrate.',
 			honestBoundary:
@@ -4813,11 +4822,11 @@ const DEFERRED_CLAIMS: readonly ReleaseProofDeferredClaim[] = [
 		status: 'do-not-promote-yet',
 		ownerLoops: ['performance'],
 		reason:
-			'Sidecar probes show promise, but the evidence is still benchmark/research shaped rather than product-surface shaped.',
+			'Sidecar probes are downgraded research evidence; without a product-defined repeated-scan workflow they should not keep benchmark or production optimization work alive.',
 		proofNeeded:
-			'Repeated-scan wins, build cost, invalidation cost, memory caps, and checksum parity over multiple public real workbook table/range shapes.',
+			'Product-approved repeated-scan workflow, bounded memory semantics, generation-key invalidation contract, and a release claim that sidecar evidence could answer before any renewed benchmark work.',
 		killCriterion:
-			'Do not promote if build plus invalidation erases repeated-scan gains, parity fails, or memory overhead is not bounded.',
+			'Do not promote or benchmark-expand while the surface is undefined, build plus invalidation costs are unknown, parity can fail, or memory overhead is not bounded.',
 		boundary:
 			'Disposable sidecar only; not a storage engine, workbook rewrite, or guaranteed acceleration for sparse or single-pass reads.',
 	},
@@ -4928,21 +4937,22 @@ const PROPERTY_JOURNAL_LAW_BLOCKER = {
 
 const COLUMNAR_SIDECAR_BLOCKER = {
 	ownerAction:
-		'Performance owner treats columnar-scan-sidecars as benchmark-only evidence, reruns `bun test fixtures/benchmarks/columnar-sidecar.test.ts --timeout 30000` plus a public external claim report such as `bun run fixtures/benchmarks/columnar-sidecar.ts --fixture fixtures/xlsx/external/sec-mmf-statistics-2022-02.xlsx --sheet "Table 9" --repeats 8 --claim-report --json`, then adds multiple structurally diverse public workbook tables with build cost, invalidation cost, memory cap, checksum parity, and noise before any product or speed wording.',
+		'Performance owner downgrades columnar-scan-sidecars to do-not-promote and stops benchmark expansion from the current evidence. Do not add more sidecar fixtures, SDK/API/MCP surfaces, or production optimization work unless product first defines a real repeated-scan user workflow, bounded memory semantics, generation-key invalidation contract, and a release claim that sidecar evidence could answer; validate the stop decision with `bun run fixtures/benchmarks/release-proof-index.ts --no-timings --release-decision-json`.',
 	allowedWording:
-		'Do not promote columnar-scan-sidecars as release wording today. Allowed wording: benchmark-only disposable sidecar experiments show checksum-parity probes on limited public ranges while the workbook grid remains source of truth.',
+		'Do not promote columnar-scan-sidecars as release wording today. Allowed wording: existing disposable sidecar experiments are downgraded research evidence showing checksum-parity probes on limited public ranges while the workbook grid remains source of truth.',
 	evidenceWeHave: [
 		'Columnar sidecar proof command exists: `bun test fixtures/benchmarks/columnar-sidecar.test.ts --timeout 30000` covers synthetic checksum parity, generation invalidation, claim-safe markdown, a tracked public fixture range, and an externally sourced public workbook range.',
 		'External claim-report command exists: `bun run fixtures/benchmarks/columnar-sidecar.ts --fixture fixtures/xlsx/external/sec-mmf-statistics-2022-02.xlsx --sheet "Table 9" --repeats 8 --claim-report --json` reports checksum parity and boundaries for one public numeric/date-like imported range.',
 		'Claim report already labels the sidecar disposable and keeps the workbook grid as source of truth.',
+		'No release owner has defined a production sidecar surface or repeated-scan user workflow; current evidence is therefore a stop decision, not a benchmark-loop expansion.',
 	],
 	evidenceMissing: [
-		'Multiple larger and structurally diverse external public workbook tables/ranges with numbers, dates, blanks, strings, formulas, filters, hidden rows, styles, table totals, and query-backed shapes.',
-		'Repeated-scan wins that include sidecar build cost, invalidation cost, memory caps, checksum parity, noise/CV, and end-to-end comparisons against canonical workbook reads.',
-		'Owner-approved decision to keep this as benchmark-only or define a real SDK/API/MCP product surface with generation-key invalidation and bounded memory semantics.',
+		'Product-approved repeated-scan workflow that explains why a sidecar belongs in an agent-native spreadsheet runtime instead of remaining an experiment.',
+		'Bounded memory semantics, generation-key invalidation contract, and source-of-truth guarantees for any real SDK/API/MCP product surface.',
+		'Only after product approval: multiple larger and structurally diverse external public workbook tables/ranges plus end-to-end wins including build cost, invalidation cost, memory caps, checksum parity, and noise/CV.',
 	],
 	forbiddenWording: [
-		'Do not claim a production cache, Arrow ABI, DuckDB integration, storage engine, workbook rewrite path, mixed-type table engine, guaranteed acceleration, QSS/SOTA speed win, or SDK/API/MCP sidecar product surface from current columnar sidecar evidence.',
+		'Do not claim a production cache, Arrow ABI, DuckDB integration, storage engine, workbook rewrite path, mixed-type table engine, guaranteed acceleration, QSS/SOTA speed win, SDK/API/MCP sidecar product surface, or benchmark-backed production optimization target from current columnar sidecar evidence.',
 	],
 } as const
 

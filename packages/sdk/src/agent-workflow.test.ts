@@ -3071,6 +3071,76 @@ describe('agent workflow loss audit', () => {
 		})
 	})
 
+	test('commits public shape macro drawings as blocked active content after safe edit', async () => {
+		const input = join(TEMP_DIR, 'shape-macro.xlsx')
+		const output = join(TEMP_DIR, 'shape-macro-out.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		const sourceBytes = new Uint8Array(
+			readFileSync('fixtures/xlsx/libreoffice/shape-macro-ext-ref.xlsx'),
+		)
+		await Bun.write(input, sourceBytes)
+
+		const ops = [
+			{
+				op: 'setCells' as const,
+				sheet: 'Auswertung',
+				updates: [{ ref: 'Z10', value: 'shape macro edit' }],
+			},
+		]
+		const plan = await createAgentPlan(input, ops)
+		expect(plan.lossAudit.blockedFeatures).toContainEqual(
+			expect.objectContaining({
+				feature: 'preservedDrawing',
+				locations: ['xl/drawings/drawing1.xml'],
+			}),
+		)
+
+		const committed = await commitAgentPlan(input, ops, {
+			output,
+			approvals: plan.approvals.map((approval) => approval.id),
+		})
+
+		expect(committed.postWrite.reopened).toBe(true)
+		expect(committed.postWrite.packageGraphAudit.ok).toBe(true)
+		expect(committed.postWrite.activeContent).toMatchObject({
+			total: 1,
+			shapeMacros: 1,
+			unknownActiveContent: 0,
+			partPaths: ['xl/drawings/drawing1.xml'],
+			executionPolicy: 'blocked',
+			preservationMode: 'preserve-exact',
+			verification: 'reopened-output',
+			entries: [
+				expect.objectContaining({
+					kind: 'shapeMacro',
+					partPath: 'xl/drawings/drawing1.xml',
+					sheetName: 'Auswertung',
+					sourcePartPath: 'xl/worksheets/sheet1.xml',
+					executionPolicy: 'blocked',
+					shapeMacro: {
+						macro: '[1]!Importieren',
+						shapeId: 7,
+						shapeName: 'Abgerundetes Rechteck 6',
+					},
+				}),
+			],
+		})
+		expect(compactAgentCommitResult(committed).postWrite.activeContent).toMatchObject({
+			total: 1,
+			shapeMacros: 1,
+			executionPolicy: 'blocked',
+		})
+		const reopened = await AscendWorkbook.open(new Uint8Array(readFileSync(output)))
+		expect(reopened.sheet('Auswertung')?.cell('Z10')?.value).toEqual({
+			kind: 'string',
+			value: 'shape macro edit',
+		})
+		expect(reopened.trustReport().findings).toContainEqual(
+			expect.objectContaining({ code: 'workbook.shapeMacro', severity: 'blocked' }),
+		)
+		expect(Buffer.from(readFileSync(input)).equals(Buffer.from(sourceBytes))).toBe(true)
+	})
+
 	test('macro text commits require active content loss approval before values-only output', async () => {
 		const input = join(TEMP_DIR, 'macro-text.xlsm')
 		const output = join(TEMP_DIR, 'macro-text-out.csv')

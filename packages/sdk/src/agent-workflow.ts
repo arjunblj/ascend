@@ -597,6 +597,7 @@ export interface PostWriteActiveContentSummary {
 	readonly vbaSignatures: number
 	readonly digitalSignatures: number
 	readonly customUi: number
+	readonly shapeMacros: number
 	readonly unknownActiveContent: number
 	readonly partPaths: readonly string[]
 	readonly entries: readonly PostWriteActiveContentEntry[]
@@ -620,6 +621,7 @@ export interface PostWriteActiveContentEntry {
 	readonly executionPolicy?: ActiveContentInfo['executionPolicy']
 	readonly invalidationPolicy?: ActiveContentInfo['invalidationPolicy']
 	readonly resigningPolicy?: ActiveContentInfo['resigningPolicy']
+	readonly shapeMacro?: ActiveContentInfo['shapeMacro']
 }
 
 export interface PostWriteSecuritySummary {
@@ -2575,6 +2577,7 @@ function postWriteActiveContentSummary(workbook: Workbook): PostWriteActiveConte
 		...(entry.executionPolicy ? { executionPolicy: entry.executionPolicy } : {}),
 		...(entry.invalidationPolicy ? { invalidationPolicy: entry.invalidationPolicy } : {}),
 		...(entry.resigningPolicy ? { resigningPolicy: entry.resigningPolicy } : {}),
+		...(entry.shapeMacro ? { shapeMacro: entry.shapeMacro } : {}),
 	}))
 	return {
 		total: entries.length,
@@ -2590,6 +2593,7 @@ function postWriteActiveContentSummary(workbook: Workbook): PostWriteActiveConte
 		vbaSignatures: entries.filter((entry) => entry.kind === 'vbaSignature').length,
 		digitalSignatures: entries.filter((entry) => entry.kind === 'digitalSignature').length,
 		customUi: entries.filter((entry) => entry.kind === 'customUi').length,
+		shapeMacros: entries.filter((entry) => entry.kind === 'shapeMacro').length,
 		unknownActiveContent: entries.filter((entry) => entry.kind === 'unknownActiveContent').length,
 		partPaths: uniqueStrings(entries.map((entry) => entry.partPath)),
 		entries,

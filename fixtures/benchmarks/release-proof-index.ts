@@ -3643,7 +3643,10 @@ function releaseDecisionValidationCommands(
 		case 'token-bounded-agent-view':
 			return [
 				'bun test fixtures/benchmarks/agent-view-budget-proof.test.ts fixtures/benchmarks/agent-view-recovery-proof.test.ts',
-				'bun test packages/sdk/src/sdk.test.ts apps/cli/src/cli.test.ts apps/api/src/server.test.ts apps/mcp/src/index.test.ts --timeout 30000',
+				'bun test packages/sdk/src/sdk.test.ts -t "agentView applies approximate token budgets without losing shape facts" --timeout 30000',
+				'bun test apps/cli/src/cli.test.ts -t "agent-view --tokens returns budget metadata" --timeout 30000',
+				'bun test apps/api/src/server.test.ts -t "agent-view exposes token budget metadata" --timeout 30000',
+				'bun test apps/mcp/src/index.test.ts -t "ascend.agent_view exposes token budget metadata" --timeout 30000',
 			]
 		case 'retained-viewport-patch-history':
 			return [
@@ -4529,7 +4532,7 @@ const FORMULA_ORACLE_ROUTING_BLOCKER = {
 
 const TOKEN_BOUNDED_AGENT_VIEW_BLOCKER = {
 	ownerAction:
-		'Product owner records one public end-to-end agent-view example that starts from a strict `maxApproxTokens` request, shows omitted sample-row, column-sample, and formula-pattern locators, then recovers omitted evidence through narrower reads or an unbudgeted same-range view; validate with `bun test fixtures/benchmarks/agent-view-budget-proof.test.ts fixtures/benchmarks/agent-view-recovery-proof.test.ts` plus SDK/CLI/API/MCP agent-view budget tests before any release wording.',
+		'Product owner records one public end-to-end agent-view example that starts from a strict `maxApproxTokens` request, shows omitted sample-row, column-sample, and formula-pattern locators, then recovers omitted evidence through narrower reads or an unbudgeted same-range view; validate with `bun test fixtures/benchmarks/agent-view-budget-proof.test.ts fixtures/benchmarks/agent-view-recovery-proof.test.ts` plus the focused SDK/CLI/API/MCP agent-view token-budget tests before any release wording.',
 	allowedWording:
 		'Do not promote token-bounded-agent-view as release wording today. Allowed wording: deterministic compact views can expose approximate token budgets, structural floors, omitted-evidence counters, and recovery locators for owner review.',
 	evidenceWeHave: [
@@ -4540,7 +4543,7 @@ const TOKEN_BOUNDED_AGENT_VIEW_BLOCKER = {
 	evidenceMissing: [
 		'One public product example that demonstrates an agent using omitted-evidence locators to recover missing rows, column samples, and formula-pattern examples instead of trusting the compact view as complete.',
 		'Owner-approved wording for approximate token estimates, structural floor behavior, omitted-evidence recovery, and when an unbudgeted read is required.',
-		'Cross-surface validation command list covering `fixtures/benchmarks/agent-view-budget-proof.test.ts`, `fixtures/benchmarks/agent-view-recovery-proof.test.ts`, and the SDK/CLI/API/MCP agent-view budget tests.',
+		'Focused cross-surface validation commands covering `fixtures/benchmarks/agent-view-budget-proof.test.ts`, `fixtures/benchmarks/agent-view-recovery-proof.test.ts`, and the SDK/CLI/API/MCP agent-view token-budget tests without unrelated API server coverage.',
 	],
 	forbiddenWording: [
 		'Do not claim exact model-token counts, complete workbook context under every budget, hidden summarization, or automatic recovery of omitted evidence.',

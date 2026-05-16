@@ -1378,7 +1378,7 @@ describe('release proof evidence index', () => {
 		expect(tokenBoundedEvidence).toContain('apps/mcp/src/index.test.ts')
 		expect(tokenBoundedMissing).toContain('One public product example')
 		expect(tokenBoundedMissing).toContain('approximate token estimates')
-		expect(tokenBoundedMissing).toContain('SDK/CLI/API/MCP agent-view budget tests')
+		expect(tokenBoundedMissing).toContain('SDK/CLI/API/MCP agent-view token-budget tests')
 		expect(tokenBoundedForbidden).toContain('exact model-token counts')
 		expect(tokenBoundedNextOwnerAction).toContain('maxApproxTokens')
 		expect(tokenBoundedNextOwnerAction).toEqual(
@@ -1386,12 +1386,13 @@ describe('release proof evidence index', () => {
 				'bun test fixtures/benchmarks/agent-view-budget-proof.test.ts fixtures/benchmarks/agent-view-recovery-proof.test.ts',
 			),
 		)
-		expect(tokenBoundedDecision?.validationCommands).toEqual(
-			expect.arrayContaining([
-				'bun test fixtures/benchmarks/agent-view-budget-proof.test.ts fixtures/benchmarks/agent-view-recovery-proof.test.ts',
-				expect.stringContaining('packages/sdk/src/sdk.test.ts'),
-			]),
-		)
+		expect(tokenBoundedDecision?.validationCommands).toEqual([
+			'bun test fixtures/benchmarks/agent-view-budget-proof.test.ts fixtures/benchmarks/agent-view-recovery-proof.test.ts',
+			'bun test packages/sdk/src/sdk.test.ts -t "agentView applies approximate token budgets without losing shape facts" --timeout 30000',
+			'bun test apps/cli/src/cli.test.ts -t "agent-view --tokens returns budget metadata" --timeout 30000',
+			'bun test apps/api/src/server.test.ts -t "agent-view exposes token budget metadata" --timeout 30000',
+			'bun test apps/mcp/src/index.test.ts -t "ascend.agent_view exposes token budget metadata" --timeout 30000',
+		])
 		const viewportPatchDecision = index.releaseDecisionBoard.doNotPromoteYet.find(
 			(item) => item.name === 'retained-viewport-patch-history',
 		)

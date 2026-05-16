@@ -1041,6 +1041,107 @@ Next action: defer production optimization for styles-heavy. Continue with the
 next priority workflow only if it can produce a comparable baseline row,
 validated optimization, or explicit claim downgrade.
 
+## Cycle: Styles Heavy Write Current Fastest Comparable Row at `1908f3f5`
+
+Classification: comparable external evidence. This refreshes the styles-heavy
+write row at current `HEAD` after the latest claim-matrix commits. Ascend is the
+median and p95 winner among the completed comparable writers in this row. No
+production optimization is justified from a winning row.
+
+Workflow: generated XLSX write for styled numeric cells, 2000 rows x 20 columns.
+
+Why it matters for release: styled generated workbook export is a user-visible
+agent commit/export workflow. It is also one of the named `xlsx-write-sota`
+profile rows and exercises style-bearing output rather than the small dense
+streaming path optimized for string-heavy writes.
+
+Public/tracked-clean input: `competitive-io` generated the `styles-heavy`
+`source-mode generated-write` workload from tracked benchmark code in a clean
+detached worktree at commit `1908f3f5`. No private corpus or local research
+workbook was used.
+
+Commands:
+
+```bash
+git worktree add --detach /private/tmp/ascend-write-styles-current-1908f3f5 1908f3f5d527
+cd /private/tmp/ascend-write-styles-current-1908f3f5
+bun install --frozen-lockfile
+mkdir -p /private/tmp/ascend-write-styles-current-1908f3f5-runs
+TMPDIR=/private/tmp ACCEPT_NPOI_OSMF_LICENSE=1 env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-io.ts --json --category write --competitor all --execution-scope external-process --source-mode generated-write --libraries ascend-external-writer,excelize,rust-xlsxwriter,fastexcel-java,pyexcelerate,pyexcelerate-cell,pyexcelerate-range,xlsxwriter,xlsxwriter-constant-memory --workload styles-heavy --repeat 15 --warmup 3 --validation-mode each --write-runner-manifest fixtures/benchmarks/runners/sota-writers.manifest.json > /private/tmp/ascend-write-styles-current-1908f3f5-runs/write-styles-heavy-fastest-repeat15.json
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-scoreboard.ts /private/tmp/ascend-write-styles-current-1908f3f5-runs/write-styles-heavy-fastest-repeat15.json --json --metric medianMs --require-profile xlsx-write-sota --assert-profile-leader ascend > /private/tmp/ascend-write-styles-current-1908f3f5-runs/write-styles-heavy-fastest-repeat15-scoreboard.json
+```
+
+Environment:
+
+- Commit: `1908f3f5d5278fb53b45db2cf647bb5079d4e757`
+- Worktree: clean detached worktree at
+  `/private/tmp/ascend-write-styles-current-1908f3f5`
+- Bun runtime: `1.3.13`
+- Node: `24.3.0`
+- Platform: Darwin arm64
+- Runtime profile: `category write`, `executionScope external-process`,
+  `sourceMode generated-write`, `workload styles-heavy`, `validationMode each`,
+  `repeat 15`, `warmup 3`.
+
+Raw output:
+
+```text
+/private/tmp/ascend-write-styles-current-1908f3f5-runs/write-styles-heavy-fastest-repeat15.json
+/private/tmp/ascend-write-styles-current-1908f3f5-runs/write-styles-heavy-fastest-repeat15-scoreboard.json
+```
+
+Focused fastest comparable writer rerun, repeat 15 after 3 warmups:
+
+| Runner | Status vs Ascend | Median ms | P95 ms | CV | Peak RSS | Output bytes |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| `ascend-external-writer` | ran/won | 22.807 | 50.078 | 0.308 | 164.0 MiB | 434417 |
+| `excelize` | ran/lost vs Ascend | 30.670 | 97.713 | 0.497 | 43.2 MiB | 212204 |
+| `rust-xlsxwriter` | ran/lost vs Ascend | 33.215 | 81.985 | 0.364 | 20.7 MiB | 227731 |
+| `fastexcel-java` | ran/lost vs Ascend | 56.309 | 138.151 | 0.469 | 448.0 MiB | 271770 |
+| `pyexcelerate-range` | ran/lost vs Ascend | 113.329 | 139.287 | 0.075 | 70.6 MiB | 210469 |
+| `pyexcelerate` | ran/lost vs Ascend | 157.284 | 190.012 | 0.110 | 71.0 MiB | 210469 |
+| `pyexcelerate-cell` | ran/lost vs Ascend | 195.004 | 315.969 | 0.213 | 72.7 MiB | 210469 |
+| `xlsxwriter` | ran/lost vs Ascend | 248.385 | 392.426 | 0.267 | 100.6 MiB | 250498 |
+| `xlsxwriter-constant-memory` | ran/lost vs Ascend | 251.426 | 349.041 | 0.134 | 60.0 MiB | 250149 |
+
+Scoreboard result:
+
+- Focused repeat-15 fastest-writer row: group winner was
+  `ascend-external-writer`; `leaderFailures: []` and
+  `profileLeaderFailures: []`.
+- The scoreboard command exits nonzero for full-profile coverage because this is
+  not a full `xlsx-write-sota` run. Missing/omitted full-profile libraries,
+  unsupported rows, and blocked runners are not counted as wins.
+
+Semantic comparability: all listed rows reopened successfully, matched the
+expected one-sheet and 40,000-cell shape, and passed semantic cell value
+validation. Ascend, Excelize, XlsxWriter, pyexcelerate, and XlsxWriter
+constant-memory matched ordered semantic cell hashes. FastExcel Java and
+rust_xlsxwriter passed sorted semantic value equality but did not match ordered
+semantic value hashes, so their rows are useful lower-fidelity value-write
+comparisons, not byte/order-equivalent output claims. This row validates value
+semantics, not style-fidelity equivalence across writer libraries.
+
+Humble allowed wording:
+
+> On the generated 2000 x 20 styles-heavy write row at commit `1908f3f5`,
+> Ascend's focused external repeat-15 run had the fastest median and p95 among
+> the completed comparable writers in this row. This is scoped generated
+> styled-write evidence, not a broad `xlsx-write-sota` claim.
+
+Forbidden wording:
+
+- "Ascend is SOTA for XLSX write."
+- "Ascend beats every styles-capable writer."
+- "Ascend beats omitted, unsupported, or blocked styles-heavy writers."
+- "Ascend produces the smallest styled XLSX."
+- "Ascend proves style-fidelity equivalence across all compared writers."
+
+Next action: defer production optimization for styles-heavy from this current
+winning row. Continue with the next priority workflow only if it can produce a
+validated optimization, a comparable baseline row, or an explicit claim
+downgrade.
+
 ## Owner-Ready Benchmark Blocker
 
 Owner: benchmarking/external baselines.

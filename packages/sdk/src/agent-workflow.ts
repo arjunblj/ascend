@@ -2097,6 +2097,9 @@ export async function commitAgentPlanFromWorkbook(
 		writeTimings = await writeWorkbookAtomically(wb, output, {
 			...(options.allowDecryptedExport ? { allowDecryptedExport: true } : {}),
 			allowSignatureInvalidation: true,
+			...(shouldAllowActiveContentLossForTextExport(wb, output, effectiveAllowLoss)
+				? { allowActiveContentLoss: true }
+				: {}),
 		})
 	} catch (error) {
 		wb.restoreMutationRollbackSnapshot(rollbackSnapshot)
@@ -8203,11 +8206,52 @@ interface AtomicWorkbookWriteTimings {
 	readonly renameMs: number
 }
 
+const ACTIVE_CONTENT_TEXT_LOSS_FEATURES = new Set([
+	'preservedMacro',
+	'preservedActiveX',
+	'preservedControl',
+	'preservedCustomUi',
+	'preservedDrawing',
+])
+
+function shouldAllowActiveContentLossForTextExport(
+	wb: AscendWorkbook,
+	output: string,
+	effectiveAllowLoss: readonly string[] | 'all',
+): boolean {
+	const ext = extname(output).toLowerCase()
+	if (ext !== '.csv' && ext !== '.tsv') return false
+	if (
+		!wb
+			.inspect()
+			.activeContent.some(
+				(entry) => entry.kind !== 'digitalSignature' && entry.kind !== 'vbaSignature',
+			)
+	) {
+		return false
+	}
+	if (effectiveAllowLoss === 'all') return true
+	const allowed = new Set(effectiveAllowLoss.map((entry) => entry.toLowerCase()))
+	const activeContentFeatures = wb.report.features.filter(
+		(feature) =>
+			ACTIVE_CONTENT_TEXT_LOSS_FEATURES.has(feature.feature) &&
+			(feature.tier === 'preserved' || feature.tier === 'unsupported'),
+	)
+	if (activeContentFeatures.length === 0) return false
+	return activeContentFeatures.every(
+		(feature) =>
+			allowed.has(feature.feature.toLowerCase()) ||
+			allowed.has(lossFeatureTierKey(feature)) ||
+			allowed.has(lossFeatureApprovalId(feature)),
+	)
+}
+
 async function writeWorkbookAtomically(
 	wb: AscendWorkbook,
 	output: string,
 	options: Pick<AgentCommitOptions, 'allowDecryptedExport'> & {
 		readonly allowSignatureInvalidation?: boolean
+		readonly allowActiveContentLoss?: boolean
 	} = {},
 ): Promise<AtomicWorkbookWriteTimings> {
 	const ext = extname(output)
@@ -8218,6 +8262,7 @@ async function writeWorkbookAtomically(
 				wb.save(temp, {
 					...(options.allowDecryptedExport ? { allowDecryptedExport: true } : {}),
 					...(options.allowSignatureInvalidation ? { allowSignatureInvalidation: true } : {}),
+					...(options.allowActiveContentLoss ? { allowActiveContentLoss: true } : {}),
 				}),
 			)
 			const renameResult = await timedCommitStep(() => rename(temp, output))

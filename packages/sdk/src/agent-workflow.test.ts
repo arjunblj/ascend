@@ -3071,6 +3071,45 @@ describe('agent workflow loss audit', () => {
 		})
 	})
 
+	test('macro text commits require active content loss approval before values-only output', async () => {
+		const input = join(TEMP_DIR, 'macro-text.xlsm')
+		const output = join(TEMP_DIR, 'macro-text-out.csv')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		const sourceBytes = makeMacroXlsx()
+		await Bun.write(input, sourceBytes)
+
+		const ops = [
+			{ op: 'setCells' as const, sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'macro-csv' }] },
+		]
+		const plan = await createAgentPlan(input, ops)
+		const macroApproval = plan.approvals.find((approval) => approval.feature === 'preservedMacro')
+		expect(macroApproval).toMatchObject({
+			kind: 'lossy-write',
+			feature: 'preservedMacro',
+		})
+
+		await expect(commitAgentPlan(input, ops, { output })).rejects.toThrow(
+			'Commit requires explicit approval',
+		)
+		expect(existsSync(output)).toBe(false)
+
+		const committed = await commitAgentPlan(input, ops, {
+			output,
+			approvals: [macroApproval?.id ?? ''],
+		})
+
+		expect(committed.lossAudit.ok).toBe(true)
+		expect(committed.postWrite.reopened).toBe(true)
+		expect(committed.postWrite.auditsPassed).toBe(true)
+		expect(committed.postWrite.packageGraphAudit.policy).toBe('not-applicable-non-xlsx')
+		const reopened = AscendWorkbook.fromCsv(readFileSync(output, 'utf8'))
+		expect(reopened.sheet('Sheet1')?.cell('A1')?.value).toEqual({
+			kind: 'string',
+			value: 'macro-csv',
+		})
+		expect(Buffer.from(readFileSync(input)).equals(Buffer.from(sourceBytes))).toBe(true)
+	})
+
 	test('dirty cell edits preserve visual sidecars without visual-edit noise', async () => {
 		const input = join(TEMP_DIR, 'visual.xlsx')
 		const output = join(TEMP_DIR, 'visual-out.xlsx')

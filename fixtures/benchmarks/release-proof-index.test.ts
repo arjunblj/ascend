@@ -940,6 +940,49 @@ describe('release proof evidence index', () => {
 				expect(ownerArtifact.forbiddenShortcut.length).toBeGreaterThan(0)
 			}
 		}
+		expect(
+			index.releaseDecisionBoard.topClaimOwnerActionQueue.map(
+				(row) => `${row.ownerLoop}:${row.artifact}:${row.requirementId}:${row.nextStepKind}`,
+			),
+		).toEqual([
+			'product:safe-open-proof:public-edge-fixtures:owner-decision-or-fixture-replacement',
+			'performance:safe-open-proof:release-latency-run:validation-run',
+			'release:safe-open-proof:publication-boundary:publication-policy',
+			'release:safe-open-proof:compact-report-publication-policy:publication-policy',
+			'product:package-action-proof:edge-fixture-policy:owner-decision-or-fixture-replacement',
+			'correctness:package-action-proof:unsupported-feature-boundary:owner-boundary-approval',
+			'performance:package-action-proof:streaming-matrix-boundary:owner-decision-or-harness-expansion',
+			'release:package-action-proof:provenance-boundary:publication-policy',
+			'release:package-action-proof:compact-report-publication-policy:publication-policy',
+		])
+		for (const row of index.releaseDecisionBoard.topClaimOwnerActionQueue) {
+			expect(row.validationCommand.length).toBeGreaterThan(0)
+			expect(row.acceptanceEvidence.length).toBeGreaterThan(0)
+			expect(row.forbiddenShortcut.length).toBeGreaterThan(0)
+			expect(row.allowedWording.length).toBeGreaterThan(0)
+			expect(row.forbiddenWording).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(row.qssContrast).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(row.boundary).toContain('Owner-action queue row for top claims')
+		}
+		expect(index.releaseDecisionBoard.topClaimOwnerActionQueue).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					ownerLoop: 'correctness',
+					artifact: 'package-action-proof',
+					requirementId: 'unsupported-feature-boundary',
+					validationCommand:
+						'bun run fixtures/benchmarks/package-action-proof.ts --no-timings --json',
+					forbiddenShortcut: expect.stringContaining('chart XML'),
+				}),
+				expect.objectContaining({
+					ownerLoop: 'performance',
+					artifact: 'safe-open-proof',
+					requirementId: 'release-latency-run',
+					validationCommand:
+						'bun run fixtures/benchmarks/safe-open-proof.ts --repeat 10 --warmup 3 --json',
+				}),
+			]),
+		)
 		expect(index.releaseDecisionBoard.doNotPromoteYet.map((item) => item.name)).toEqual([
 			'formula-language-service-primitives',
 			'token-bounded-agent-view',
@@ -1860,6 +1903,38 @@ describe('release proof evidence index', () => {
 				expect.objectContaining({ requirementId: 'provenance-boundary' }),
 			]),
 		})
+		expect(handoff.releaseDecisionBoard.topClaimOwnerActionQueue).toHaveLength(9)
+		expect(handoff.releaseDecisionBoard.topClaimOwnerActionQueue).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					ownerLoop: 'product',
+					artifact: 'safe-open-proof',
+					requirementId: 'public-edge-fixtures',
+					validationCommand: 'bun run fixtures/benchmarks/safe-open-fixture-scan.ts --json',
+				}),
+				expect.objectContaining({
+					ownerLoop: 'correctness',
+					artifact: 'package-action-proof',
+					requirementId: 'unsupported-feature-boundary',
+					acceptanceEvidence: expect.stringContaining(
+						'Correctness approves allowed/forbidden wording',
+					),
+				}),
+				expect.objectContaining({
+					ownerLoop: 'performance',
+					artifact: 'package-action-proof',
+					requirementId: 'streaming-matrix-boundary',
+					validationCommand:
+						'bun run fixtures/benchmarks/package-action-proof.ts --no-timings --json',
+				}),
+				expect.objectContaining({
+					ownerLoop: 'release',
+					artifact: 'package-action-proof',
+					requirementId: 'provenance-boundary',
+					forbiddenShortcut: expect.stringContaining('signed provenance'),
+				}),
+			]),
+		)
 		expect(handoff.releaseDecisionBoard.doNotPromoteYet).toHaveLength(10)
 		for (const item of handoff.releaseDecisionBoard.doNotPromoteYet) {
 			const qssContrast = item.qssContrast.join('\n')
@@ -2098,6 +2173,18 @@ describe('release proof evidence index', () => {
 				readonly aPlusBlockingOwnerActions?: readonly unknown[]
 				readonly claimsWeMustNotMake?: readonly string[]
 			}[]
+			readonly topClaimOwnerActionQueue?: readonly {
+				readonly artifact?: string
+				readonly ownerLoop?: string
+				readonly requirementId?: string
+				readonly nextStepKind?: string
+				readonly validationCommand?: string
+				readonly acceptanceEvidence?: string
+				readonly forbiddenShortcut?: string
+				readonly allowedWording?: string
+				readonly forbiddenWording?: readonly string[]
+				readonly qssContrast?: readonly string[]
+			}[]
 			readonly doNotPromoteYet?: readonly {
 				readonly name?: string
 				readonly status?: string
@@ -2175,6 +2262,49 @@ describe('release proof evidence index', () => {
 				expect.stringContaining('Full streaming parity'),
 			]),
 		})
+		expect(board.topClaimOwnerActionQueue).toHaveLength(9)
+		expect(
+			board.topClaimOwnerActionQueue?.map(
+				(row) => `${row.ownerLoop}:${row.artifact}:${row.requirementId}:${row.nextStepKind}`,
+			),
+		).toEqual([
+			'product:safe-open-proof:public-edge-fixtures:owner-decision-or-fixture-replacement',
+			'performance:safe-open-proof:release-latency-run:validation-run',
+			'release:safe-open-proof:publication-boundary:publication-policy',
+			'release:safe-open-proof:compact-report-publication-policy:publication-policy',
+			'product:package-action-proof:edge-fixture-policy:owner-decision-or-fixture-replacement',
+			'correctness:package-action-proof:unsupported-feature-boundary:owner-boundary-approval',
+			'performance:package-action-proof:streaming-matrix-boundary:owner-decision-or-harness-expansion',
+			'release:package-action-proof:provenance-boundary:publication-policy',
+			'release:package-action-proof:compact-report-publication-policy:publication-policy',
+		])
+		for (const row of board.topClaimOwnerActionQueue ?? []) {
+			expect(row.validationCommand).toEqual(expect.any(String))
+			expect(row.acceptanceEvidence).toEqual(expect.any(String))
+			expect(row.forbiddenShortcut).toEqual(expect.any(String))
+			expect(row.allowedWording).toEqual(expect.any(String))
+			expect(row.forbiddenWording).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(row.qssContrast).toEqual(expect.arrayContaining([expect.any(String)]))
+		}
+		expect(board.topClaimOwnerActionQueue).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					ownerLoop: 'correctness',
+					artifact: 'package-action-proof',
+					requirementId: 'unsupported-feature-boundary',
+					acceptanceEvidence: expect.stringContaining(
+						'Correctness approves allowed/forbidden wording',
+					),
+				}),
+				expect.objectContaining({
+					ownerLoop: 'performance',
+					artifact: 'safe-open-proof',
+					requirementId: 'release-latency-run',
+					validationCommand:
+						'bun run fixtures/benchmarks/safe-open-proof.ts --repeat 10 --warmup 3 --json',
+				}),
+			]),
+		)
 		expect(stdout).toContain('Excel-ground-truth formula/cached-result fixtures')
 		expect(stdout).toContain('bounded chart series-source fixtures')
 		expect(stdout).toContain('public external-link/query-table refresh metadata fixtures')

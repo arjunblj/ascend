@@ -343,6 +343,7 @@ export interface ReleaseProofReleaseDecisionBoard {
 	readonly implementationSurfacePromotionAllowed: boolean
 	readonly missingRequirementCount: number
 	readonly rows: readonly ReleaseProofReleaseDecisionBoardRow[]
+	readonly topClaimOwnerActionQueue: readonly ReleaseProofTopClaimOwnerAction[]
 	readonly doNotPromoteYet: readonly ReleaseProofReleaseDecisionDoNotPromoteItem[]
 	readonly doNotPromoteDispositionSummary: ReleaseProofReleaseDecisionDispositionSummary
 	readonly blockedOwnerActionQueue: readonly ReleaseProofBlockedOwnerAction[]
@@ -417,6 +418,23 @@ export interface ReleaseProofReleaseDecisionDoNotPromoteItem {
 	readonly nextOwnerAction: string
 	readonly validationCommands: readonly string[]
 	readonly killCriterion: string
+	readonly boundary: string
+}
+
+export interface ReleaseProofTopClaimOwnerAction {
+	readonly artifact: ReleaseProofIndexArtifactName
+	readonly claim: string
+	readonly ownerLoop: ReleaseProofReadinessOwner
+	readonly requirementId: string
+	readonly rank: number
+	readonly priority: ReleaseProofNextOwnerAction['priority']
+	readonly nextStepKind: ReleaseProofNextOwnerAction['nextStepKind']
+	readonly validationCommand: string
+	readonly acceptanceEvidence: string
+	readonly forbiddenShortcut: string
+	readonly allowedWording: string
+	readonly forbiddenWording: readonly string[]
+	readonly qssContrast: readonly string[]
 	readonly boundary: string
 }
 
@@ -1393,6 +1411,11 @@ export function releaseProofIndexMarkdown(result: ReleaseProofIndexResult): stri
 		'| Rank | Claim | Evidence we have | Evidence missing | QSS contrast | Allowed wording | Forbidden wording | Next owner action | Owner decision artifact | Headline claim allowed | Implementation promotion allowed | Exact proof | Must not claim | A+ blocking owner action | Boundary |',
 		'| ---: | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
 		...result.releaseDecisionBoard.rows.map(releaseDecisionBoardMarkdownRow),
+		'Top claim owner action queue:',
+		...result.releaseDecisionBoard.topClaimOwnerActionQueue.map(
+			(row) =>
+				`- ${row.ownerLoop}/${row.artifact}/${row.requirementId}: ${row.nextStepKind}. Command: \`${row.validationCommand}\`. Accept: ${row.acceptanceEvidence} Forbidden: ${row.forbiddenShortcut}`,
+		),
 		'',
 		'Do not promote yet:',
 		`Disposition summary: implementation-ready-blocker=${result.releaseDecisionBoard.doNotPromoteDispositionSummary.implementationReadyBlockerNames.join(',')}; benchmark-corpus-blocker=${result.releaseDecisionBoard.doNotPromoteDispositionSummary.benchmarkCorpusBlockerNames.join(',')}; claim-downgrade-do-not-promote=${result.releaseDecisionBoard.doNotPromoteDispositionSummary.claimDowngradeDoNotPromoteNames.join(',')}`,
@@ -2282,40 +2305,42 @@ function releaseDecisionBoard(
 	qssMatrix: ReleaseProofQssLeapfrogReleaseMatrix,
 ): ReleaseProofReleaseDecisionBoard {
 	const doNotPromoteYet = qssMatrix.archivedResearchNotes.map(releaseDecisionDoNotPromoteItem)
+	const rows = qssMatrix.rows.map((row) => {
+		const artifact = artifacts.find((candidate) => candidate.name === row.artifact)
+		const handoff = readiness.implementationHandoffs.find(
+			(candidate) => candidate.artifact === row.artifact,
+		)
+		return {
+			rank: row.rank,
+			artifact: row.artifact,
+			claimWordingAllowedToday: row.claim,
+			evidenceWeHave: row.acceptedEvidence.map((item) => ({ ...item })),
+			evidenceMissing: [...row.missingEvidence],
+			qssContrast: releaseDecisionQssContrast(row),
+			allowedWording: releaseDecisionAllowedWording(row.artifact),
+			forbiddenWording: [...row.claimsWeMustNotMake],
+			nextOwnerActions: row.ownerActions.map(cloneNextOwnerAction),
+			ownerDecisionArtifacts: ownerDecisionArtifactsFor(row.artifact),
+			headlineClaimAllowed: artifact?.headlineClaimAllowed ?? false,
+			implementationSurfacePromotionAllowed:
+				handoff?.implementationSurfacePromotionAllowed ??
+				readiness.implementationSurfacePromotionAllowed,
+			proofRequired: claimProofRequired(row.artifact),
+			acceptedEvidence: row.acceptedEvidence.map((item) => ({ ...item })),
+			claimsWeMustNotMake: [...row.claimsWeMustNotMake],
+			aPlusBlockingOwnerActions: row.ownerActions.map(cloneNextOwnerAction),
+			boundary:
+				'Release decision row only. It names allowed local claim wording, exact proof pointers, forbidden shortcuts, and owner blockers without satisfying any gate.',
+		}
+	})
 	return {
 		status: 'top-two-only',
 		releaseGate: readiness.releaseGate,
 		headlineClaimsAllowed: readiness.headlineClaimsAllowed,
 		implementationSurfacePromotionAllowed: readiness.implementationSurfacePromotionAllowed,
 		missingRequirementCount: readiness.missingRequirementCount,
-		rows: qssMatrix.rows.map((row) => {
-			const artifact = artifacts.find((candidate) => candidate.name === row.artifact)
-			const handoff = readiness.implementationHandoffs.find(
-				(candidate) => candidate.artifact === row.artifact,
-			)
-			return {
-				rank: row.rank,
-				artifact: row.artifact,
-				claimWordingAllowedToday: row.claim,
-				evidenceWeHave: row.acceptedEvidence.map((item) => ({ ...item })),
-				evidenceMissing: [...row.missingEvidence],
-				qssContrast: releaseDecisionQssContrast(row),
-				allowedWording: releaseDecisionAllowedWording(row.artifact),
-				forbiddenWording: [...row.claimsWeMustNotMake],
-				nextOwnerActions: row.ownerActions.map(cloneNextOwnerAction),
-				ownerDecisionArtifacts: ownerDecisionArtifactsFor(row.artifact),
-				headlineClaimAllowed: artifact?.headlineClaimAllowed ?? false,
-				implementationSurfacePromotionAllowed:
-					handoff?.implementationSurfacePromotionAllowed ??
-					readiness.implementationSurfacePromotionAllowed,
-				proofRequired: claimProofRequired(row.artifact),
-				acceptedEvidence: row.acceptedEvidence.map((item) => ({ ...item })),
-				claimsWeMustNotMake: [...row.claimsWeMustNotMake],
-				aPlusBlockingOwnerActions: row.ownerActions.map(cloneNextOwnerAction),
-				boundary:
-					'Release decision row only. It names allowed local claim wording, exact proof pointers, forbidden shortcuts, and owner blockers without satisfying any gate.',
-			}
-		}),
+		rows,
+		topClaimOwnerActionQueue: releaseDecisionTopClaimOwnerActionQueue(rows),
 		doNotPromoteYet,
 		doNotPromoteDispositionSummary: releaseDecisionDispositionSummary(doNotPromoteYet),
 		blockedOwnerActionQueue: releaseDecisionBlockedOwnerActionQueue(doNotPromoteYet),
@@ -2340,6 +2365,30 @@ function releaseDecisionDispositionSummary(
 		boundary:
 			'Routing summary for blocked claims only. It groups do-not-promote decisions by the next work block type without changing claim wording, owner approval, or release gates.',
 	}
+}
+
+function releaseDecisionTopClaimOwnerActionQueue(
+	rows: readonly ReleaseProofReleaseDecisionBoardRow[],
+): readonly ReleaseProofTopClaimOwnerAction[] {
+	return rows.flatMap((row) =>
+		row.nextOwnerActions.map((action) => ({
+			artifact: row.artifact,
+			claim: row.claimWordingAllowedToday,
+			ownerLoop: action.ownerLoop,
+			requirementId: action.requirementId,
+			rank: action.rank,
+			priority: action.priority,
+			nextStepKind: action.nextStepKind,
+			validationCommand: action.validationCommand,
+			acceptanceEvidence: action.acceptanceEvidence,
+			forbiddenShortcut: action.forbiddenShortcut,
+			allowedWording: row.allowedWording,
+			forbiddenWording: [...row.forbiddenWording],
+			qssContrast: [...row.qssContrast],
+			boundary:
+				'Owner-action queue row for top claims only. It exposes missing readyWhen gates and exact validation commands without satisfying gates or promoting stronger wording.',
+		})),
+	)
 }
 
 function releaseDecisionBlockedOwnerActionQueue(
@@ -2659,6 +2708,11 @@ function cloneReleaseDecisionBoard(
 			acceptedEvidence: row.acceptedEvidence.map((item) => ({ ...item })),
 			claimsWeMustNotMake: [...row.claimsWeMustNotMake],
 			aPlusBlockingOwnerActions: row.aPlusBlockingOwnerActions.map(cloneNextOwnerAction),
+		})),
+		topClaimOwnerActionQueue: board.topClaimOwnerActionQueue.map((row) => ({
+			...row,
+			forbiddenWording: [...row.forbiddenWording],
+			qssContrast: [...row.qssContrast],
 		})),
 	}
 }

@@ -358,6 +358,17 @@ if (
 ) {
 	throw new Error('installed CLI safe-edit proof gates were incomplete: ' + JSON.stringify(cliSafeEdit))
 }
+if (
+	cliSafeEdit.postWriteProof?.formulaState?.formulaCells !== 1 ||
+	cliSafeEdit.postWriteProof?.security?.workbookProtected !== false ||
+	cliSafeEdit.postWriteProof?.dataConnections?.verification !== 'reopened-output' ||
+	cliSafeEdit.postWriteProof?.visuals?.verification !== 'reopened-output'
+) {
+	throw new Error(
+		'installed CLI safe-edit did not expose advertised post-write proof slices: ' +
+			JSON.stringify(cliSafeEdit),
+	)
+}
 
 const apiFetch = createApiFetch()
 const apiInput = join(cwd, 'api-input.xlsx')
@@ -587,6 +598,7 @@ console.log(JSON.stringify({
 			workflow: cliSafeEdit.workflow,
 			safeToUse: cliSafeEdit.proofBundle.safeToUse,
 			changedCells: cliSafeEdit.proofBundle.whatChanged.map((cell) => cell.ref),
+			postWriteProof: cliSafeEdit.postWriteProof,
 		},
 	},
 	api: {

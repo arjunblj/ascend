@@ -34,6 +34,12 @@ describe('package-install-safe-edit example', () => {
 				input?: { read?: { cellCount?: number } }
 				plan?: { changedCells?: string[]; approvalCount?: number }
 				commit?: { output?: string; postWriteValid?: boolean; auditsPassed?: boolean }
+				postWriteProof?: {
+					dataConnections?: { total?: number; verification?: string }
+					formulaState?: { formulaCells?: number; verification?: string }
+					security?: { workbookProtected?: boolean; verification?: string }
+					visuals?: { chartParts?: number; verification?: string }
+				}
 				verify?: {
 					reopened?: boolean
 					checkValid?: boolean
@@ -77,6 +83,12 @@ describe('package-install-safe-edit example', () => {
 				output,
 				postWriteValid: true,
 				auditsPassed: true,
+			})
+			expect(result.postWriteProof).toMatchObject({
+				dataConnections: { total: 0, verification: 'reopened-output' },
+				formulaState: { formulaCells: 1, verification: 'reopened-output' },
+				security: { workbookProtected: false, verification: 'reopened-output' },
+				visuals: { chartParts: 0, verification: 'reopened-output' },
 			})
 			expect(result.verify).toMatchObject({
 				reopened: true,

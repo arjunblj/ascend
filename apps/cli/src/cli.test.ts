@@ -561,6 +561,12 @@ describe('ascend cli', () => {
 				formulaAfter: 'SUM(A2:A4)',
 			}),
 		])
+		expect(parsed.data.postWriteProof).toMatchObject({
+			dataConnections: { total: 0, verification: 'reopened-output' },
+			formulaState: { formulaCells: 1, verification: 'reopened-output' },
+			security: { workbookProtected: false, verification: 'reopened-output' },
+			visuals: { chartParts: 0, verification: 'reopened-output' },
+		})
 		expect(
 			parsed.data.proofBundle.whySafe.map((gate: { gate: string; ok: boolean }) => [
 				gate.gate,

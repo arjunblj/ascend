@@ -272,6 +272,16 @@ if (
 if (installedExampleProof.proofBundle?.whatChanged?.[0]?.ref !== 'Sheet1!B2') {
 	throw new Error(\`installed SDK safe-edit proof did not explain the changed cell: \${installedExampleStdout}\`)
 }
+if (
+	installedExampleProof.postWriteProof?.formulaState?.formulaCells !== 1 ||
+	installedExampleProof.postWriteProof?.security?.workbookProtected !== false ||
+	installedExampleProof.postWriteProof?.dataConnections?.verification !== 'reopened-output' ||
+	installedExampleProof.postWriteProof?.visuals?.verification !== 'reopened-output'
+) {
+	throw new Error(
+		\`installed SDK safe-edit did not expose advertised post-write proof slices: \${installedExampleStdout}\`,
+	)
+}
 
 console.log(JSON.stringify({
 	openPlanMode: openPlan.recommendedLoadOptions.mode,
@@ -296,6 +306,7 @@ console.log(JSON.stringify({
 			ok: gate.ok,
 		})),
 	},
+	installedExamplePostWriteProof: installedExampleProof.postWriteProof,
 	apiExampleHits: apiExampleHits.length,
 	mcpExampleHits: mcpExampleHits.length,
 	b1,

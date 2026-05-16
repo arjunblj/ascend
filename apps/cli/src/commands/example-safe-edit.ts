@@ -192,6 +192,12 @@ export async function exampleSafeEditCommand(
 			postWriteValid: committed.postWrite.valid,
 			auditsPassed: committed.postWrite.auditsPassed,
 		},
+		postWriteProof: {
+			dataConnections: committed.postWrite.dataConnections,
+			formulaState: committed.postWrite.formulaState,
+			security: committed.postWrite.security,
+			visuals: committed.postWrite.visuals,
+		},
 		verify: {
 			reopened: true,
 			checkValid: reopenedCheck.valid,

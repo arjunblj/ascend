@@ -103,6 +103,72 @@ describe('formula binding corpus contract', () => {
 		expect(Buffer.from(readFileSync(input)).equals(Buffer.from(source))).toBe(true)
 	})
 
+	test('commit proof reports cached public formula locations after save and reopen', async () => {
+		const input = join(TEMP_DIR, 'closedxml-formulas-with-caches.xlsx')
+		const output = join(TEMP_DIR, 'closedxml-formulas-with-caches-out.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		const source = loadFixture('../xlsx/closedxml/Misc_FormulasWithEvaluation.xlsx')
+		await Bun.write(input, source)
+		const ops = [
+			{ op: 'setCells' as const, sheet: 'Formulas', updates: [{ ref: 'H20', value: 'audit' }] },
+		]
+
+		const plan = await createAgentPlan(input, ops)
+		expect(
+			plan.writePolicy.diagnostics.some((diagnostic) => diagnostic.severity === 'blocker'),
+		).toBe(false)
+		const committed = await commitAgentPlan(input, ops, {
+			output,
+			approvals: plan.approvals.map((approval) => approval.id),
+		})
+
+		expect(committed.postWrite.auditsPassed).toBe(true)
+		expect(committed.postWrite.formulaState).toMatchObject({
+			calcChainState: 'present',
+			calcChainParts: ['xl/calcChain.xml'],
+			recalculationRequested: false,
+			formulaCells: 12,
+			cachedFormulaValues: 12,
+			missingCachedFormulaValues: 0,
+			formulaCacheState: 'all-cached',
+			cachedValueKinds: [
+				{ kind: 'number', count: 8 },
+				{ kind: 'string', count: 4 },
+			],
+			cachedFormulaLocationSample: [
+				{ location: 'Formulas!C2', valueKind: 'number' },
+				{ location: 'Formulas!G2', valueKind: 'string' },
+				{ location: 'Formulas!C3', valueKind: 'number' },
+				{ location: 'Formulas!G3', valueKind: 'string' },
+				{ location: 'Formulas!C4', valueKind: 'string' },
+				{ location: 'Formulas!G4', valueKind: 'string' },
+				{ location: 'Formulas!B6', valueKind: 'number' },
+				{ location: 'Formulas!C6', valueKind: 'number' },
+				{ location: 'Formulas!A11', valueKind: 'number' },
+				{ location: 'Formulas!A12', valueKind: 'number' },
+				{ location: 'Formulas!A13', valueKind: 'number' },
+				{ location: 'Formulas!A14', valueKind: 'number' },
+			],
+			missingCachedFormulaLocationSample: [],
+		})
+		expect(committed.postWrite.formulaState.warnings.join('\n')).toContain(
+			'Reopened formula cache values are stored workbook values',
+		)
+		const reopened = await AscendWorkbook.open(new Uint8Array(readFileSync(output)))
+		expect(cellFormulaContract(reopened, 'Formulas', ['C2', 'G2', 'A14'])).toMatchObject({
+			C2: { formula: 'A2+$B$2', value: { kind: 'number', value: 3 } },
+			G2: { formula: 'IF(C2=F2,"Yes","No")', value: { kind: 'string', value: 'Yes' } },
+			A14: { formula: 'SUM(8:9)', value: { kind: 'number', value: 0 } },
+		})
+		expect(
+			auditXlsxPackageGraphSafeEditIntegrity(
+				inspectXlsxPackageGraph(source),
+				inspectXlsxPackageGraph(new Uint8Array(readFileSync(output))),
+			),
+		).toEqual([])
+		expect(Buffer.from(readFileSync(input)).equals(Buffer.from(source))).toBe(true)
+	})
+
 	test('preserves public POI shared formulas through unrelated safe edits and reopen', async () => {
 		const source = loadFixture('../xlsx/poi/shared_formulas.xlsx')
 		const workbook = await AscendWorkbook.open(source)

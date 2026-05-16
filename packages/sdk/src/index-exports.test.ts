@@ -22,6 +22,7 @@ import type {
 	PostWriteDrawingObjectRelationshipEntry,
 	PostWriteExternalReferenceEntry,
 	PostWriteExternalReferenceSummary,
+	PostWriteFormulaCacheLocationEntry,
 	PostWriteFormulaCacheValueKindCount,
 	PostWriteFormulaSummary,
 	PostWriteOpaquePayloadSummary,
@@ -64,6 +65,7 @@ type CommitProofExportSurface = {
 	readonly drawingObjectRelationship?: PostWriteDrawingObjectRelationshipEntry
 	readonly externalReference?: PostWriteExternalReferenceEntry
 	readonly externalReferences?: PostWriteExternalReferenceSummary
+	readonly formulaCacheLocation?: PostWriteFormulaCacheLocationEntry
 	readonly formulaCacheValueKind?: PostWriteFormulaCacheValueKindCount
 	readonly formula?: PostWriteFormulaSummary
 	readonly opaquePayloads?: PostWriteOpaquePayloadSummary
@@ -108,6 +110,7 @@ test('root SDK exports commit proof audit types for release consumers', () => {
 		'drawingObjectRelationship',
 		'externalReference',
 		'externalReferences',
+		'formulaCacheLocation',
 		'formulaCacheValueKind',
 		'formula',
 		'opaquePayloads',

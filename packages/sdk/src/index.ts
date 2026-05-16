@@ -73,6 +73,7 @@ export type {
 	PostWriteDrawingObjectRelationshipEntry,
 	PostWriteExternalReferenceEntry,
 	PostWriteExternalReferenceSummary,
+	PostWriteFormulaCacheLocationEntry,
 	PostWriteFormulaCacheValueKindCount,
 	PostWriteFormulaSummary,
 	PostWriteOpaquePayloadSummary,

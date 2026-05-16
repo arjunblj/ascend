@@ -683,6 +683,7 @@ export interface PostWriteFormulaSummary {
 	readonly missingCachedFormulaValues: number
 	readonly formulaCacheState: 'no-formulas' | 'all-cached' | 'partially-cached' | 'all-missing'
 	readonly cachedValueKinds: readonly PostWriteFormulaCacheValueKindCount[]
+	readonly cachedFormulaLocationSample: readonly PostWriteFormulaCacheLocationEntry[]
 	readonly missingCachedFormulaLocationSample: readonly string[]
 	readonly warnings: readonly string[]
 	readonly verification: 'reopened-output'
@@ -691,6 +692,11 @@ export interface PostWriteFormulaSummary {
 export interface PostWriteFormulaCacheValueKindCount {
 	readonly kind: string
 	readonly count: number
+}
+
+export interface PostWriteFormulaCacheLocationEntry {
+	readonly location: string
+	readonly valueKind: string
 }
 
 export interface PostWriteWorkbookTopologySummary {
@@ -3026,12 +3032,14 @@ function postWriteFormulaCacheSummary(
 	| 'missingCachedFormulaValues'
 	| 'formulaCacheState'
 	| 'cachedValueKinds'
+	| 'cachedFormulaLocationSample'
 	| 'missingCachedFormulaLocationSample'
 > {
 	let formulaCells = 0
 	let cachedFormulaValues = 0
 	let missingCachedFormulaValues = 0
 	const cachedValueKindCounts = new Map<string, number>()
+	const cachedFormulaLocationSample: PostWriteFormulaCacheLocationEntry[] = []
 	const missingCachedFormulaLocationSample: string[] = []
 	for (const sheet of workbook.sheets) {
 		const range = sheet.cells.usedRange()
@@ -3047,6 +3055,12 @@ function postWriteFormulaCacheSummary(
 				return
 			}
 			cachedFormulaValues++
+			if (cachedFormulaLocationSample.length < 25) {
+				cachedFormulaLocationSample.push({
+					location: `${sheet.name}!${indexToColumn(col)}${row + 1}`,
+					valueKind: cell.value.kind,
+				})
+			}
 			cachedValueKindCounts.set(
 				cell.value.kind,
 				(cachedValueKindCounts.get(cell.value.kind) ?? 0) + 1,
@@ -3065,6 +3079,7 @@ function postWriteFormulaCacheSummary(
 		cachedValueKinds: [...cachedValueKindCounts.entries()]
 			.map(([kind, count]) => ({ kind, count }))
 			.sort((left, right) => left.kind.localeCompare(right.kind)),
+		cachedFormulaLocationSample,
 		missingCachedFormulaLocationSample,
 	}
 }

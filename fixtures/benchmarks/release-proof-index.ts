@@ -3524,6 +3524,17 @@ function packageActionQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceIte
 				'Public query-table refresh metadata edit evidence only; it does not execute queries, refresh external data, prove arbitrary query-table editing, or authorize external data trust wording.',
 		},
 		{
+			evidenceId: 'query-table-post-write-data-connections-proof',
+			kind: 'test',
+			command:
+				'bun test fixtures/corpus/external-refresh-contract.test.ts -t "commit proof reports reopened public query-table connection metadata" --timeout 30000',
+			path: 'packages/sdk/src/agent-workflow.ts; fixtures/corpus/external-refresh-contract.test.ts',
+			acceptedScope:
+				'Commit caa08959 makes SDK post-write verification report reopened workbook/query-table connection metadata after an approved public query-table refresh metadata edit, with safe-open blocker coverage for the dangling-thumbnail query-table fixture.',
+			boundary:
+				'Public post-write data-connection reporting evidence only; it does not execute connections, validate external data freshness, or prove arbitrary query-table editing.',
+		},
+		{
 			evidenceId: 'release-rc-gate',
 			kind: 'rc-gate',
 			command: 'bun run release:rc:gate',
@@ -5638,19 +5649,20 @@ const AGENT_WORKFLOW_OBSERVABILITY_BLOCKER = {
 		'Packaged proof surfaces expose workflow examples through `58a7f579 test(release): expose workflow examples in packaged proof`, including MCP agent-workflow resource text and installed smoke output.',
 		'Installed SDK safe-edit workflow proof is accepted after `5915794f feat(sdk): summarize installed safe edit proof` and `56cd4aa0 feat(sdk): add safe edit package bin`: `bun test examples/package-install-safe-edit.test.ts --timeout 30000` now proves safeToUse, changed-cell before/after evidence, gate outcomes, hashes, check/lint validity, post-write audit validity, and the outside-user `node_modules/.bin/ascend-sdk-safe-edit` command from the installed-SDK example. This closes the earlier `5981764c` blank/empty proof contract blocker for generated-workbook wording.',
 		'Installed safe-edit workflow discovery is accepted after `f8d63593 feat(apps): expose installed safe edit workflow`, `cc689bcc test(api): prove installed workflow discovery`, and `56cd4aa0 feat(sdk): add safe edit package bin`: CLI, API, MCP, MCP resources, API package tests, and installed app smoke output expose the installed SDK package-bin command plus proofBundle output contract. The full `bun test apps/api/api.test.ts --timeout 30000` sweep remains blocked by an unrelated export-format message expectation, so package health wording is not accepted.',
-		'Dirty candidate evidence exists but is not accepted release wording: current uncommitted CLI/API/MCP changes add `ascend example-safe-edit <file.xlsx> <out.xlsx>` discovery and the focused command `bun test apps/cli/src/cli.test.ts -t "example-safe-edit runs the packaged inspect plan commit reopen verify workflow" --timeout 30000` passes. Because `apps/cli/src/commands/example-safe-edit.ts`, CLI/API/MCP discovery files, and SDK post-write proof files are still dirty, installed CLI workflow wording remains blocked until the owning lane commits or reverts those files.',
+		'Installed CLI safe-edit workflow proof is accepted after `3d630232 feat(cli): add packaged safe edit workflow`: `bun test apps/cli/src/cli.test.ts -t "example-safe-edit runs the packaged inspect plan commit reopen verify workflow" --timeout 30000` proves `ascend example-safe-edit <file.xlsx> <out.xlsx>` runs inspect, plan, commit, reopen, and verify with `proofBundle.safeToUse`, changed-cell evidence, safety gates, and reopened check/lint output.',
+		'CLI commit proof-bundle output is accepted after `5028438e feat(cli): summarize commit proof bundle`: `bun test apps/cli/src/cli.test.ts -t "plan and commit implement safe agent workflow" --timeout 30000` proves `ascend commit --proof --json` and compact `--proof` output include safeToUse, whatChanged, whySafe, hash/write-policy/commit/reopen/package-graph gates, and output hashes.',
+		'Post-write data-connection proof is accepted after `caa08959 fix(sdk): report post-write data connections`: `bun test fixtures/corpus/external-refresh-contract.test.ts -t "commit proof reports reopened public query-table connection metadata" --timeout 30000` proves an approved public query-table refresh metadata commit returns reopened workbook/query-table connection counts, states, names, ids, and part paths in `postWrite.dataConnections`.',
 		'Workflow docs list inspect, plan, commit, verify, trace, and repair-plan recovery paths in `docs/AGENT_WORKFLOW.md`, but documentation is guidance rather than release proof.',
 	],
 	evidenceMissing: [
 		'One public workbook workflow showing inspect, plan, commit, reopen, diff, audit, trace, and repair-plan output with a failure taxonomy and recovery prompts.',
 		'Trace payload size, compact/redacted artifact behavior, failure-class coverage, and evidence that trace output changes a concrete repair or audit decision.',
 		'Owner-approved decision that prepared-plan rollback/retry plus installed-consumer smoke evidence is enough for prepared-plan plumbing and should not continue as low-value API/SDK/MCP work without a new public workflow failure class.',
-		'Commit or revert the dirty installed CLI safe-edit and post-write proof surfaces before any installed CLI workflow wording: `apps/cli/src/commands/example-safe-edit.ts`, `apps/cli/src/index.ts`, `apps/cli/src/commands/agent-init.ts`, `apps/api/src/server.ts`, `apps/mcp/src/index.ts`, `packages/sdk/src/agent-workflow.ts`, `packages/sdk/src/index.ts`, and `packages/sdk/src/index-exports.test.ts`; then rerun `bun test apps/cli/src/cli.test.ts -t "example-safe-edit runs the packaged inspect plan commit reopen verify workflow" --timeout 30000`, the focused SDK post-write proof tests, and `bun test fixtures/benchmarks/release-proof-index.test.ts --timeout 120000`.',
-		'Current failure evidence for the dirty SDK post-write proof surface: `bun test fixtures/benchmarks/release-proof-index.test.ts --timeout 120000` fails in release-decision/fixture/correctness/performance JSON modes with `ReferenceError: uniqueNumbers is not defined` at `packages/sdk/src/agent-workflow.ts:2640` inside `postWriteDataConnectionSummary`; release-code owner must fix or revert `packages/sdk/src/agent-workflow.ts` before proof-index JSON output can be treated as passing gate evidence.',
+		'Commit or revert the dirty API commit proof-bundle parity surface before any API proof-bundle wording: `apps/api/src/server.ts` currently adds `proofBundle` output without a committed focused API test. Release-code owner should add `apps/api/src/server.test.ts` coverage for the direct and/or prepared commit path with proofBundle.safeToUse, whatChanged, whySafe, and write-policy/reopen/package-graph gates; then rerun that focused API test and `bun test fixtures/benchmarks/release-proof-index.test.ts --timeout 120000`.',
 		'Golden trace fixtures, redaction/privacy checks, and owner-approved recovery wording before publishing observability language.',
 	],
 	forbiddenWording: [
-		'Do not claim autonomous correctness, complete observability, signed audit trail, repair automation, root-cause diagnosis, privacy-safe redaction, installed CLI safe-edit availability, or that traces alone prove workbook safety from current workflow evidence.',
+		'Do not claim autonomous correctness, complete observability, signed audit trail, repair automation, root-cause diagnosis, privacy-safe redaction, registry-published CLI safe-edit availability, API proof-bundle parity, or that traces alone prove workbook safety from current workflow evidence.',
 	],
 } as const
 

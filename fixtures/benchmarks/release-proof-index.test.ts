@@ -1513,6 +1513,14 @@ describe('release proof evidence index', () => {
 						'Public query-table refresh metadata edit evidence only',
 					),
 				}),
+				expect.objectContaining({
+					evidenceId: 'query-table-post-write-data-connections-proof',
+					acceptedScope: expect.stringContaining('caa08959'),
+					command: expect.stringContaining(
+						'commit proof reports reopened public query-table connection metadata',
+					),
+					boundary: expect.stringContaining('Public post-write data-connection reporting'),
+				}),
 			]),
 		)
 		expect(index.qssLeapfrogReleaseMatrix.activeReleaseBlockers).toHaveLength(7)
@@ -2338,24 +2346,28 @@ describe('release proof evidence index', () => {
 		expect(agentWorkflowEvidence).toContain('56cd4aa0')
 		expect(agentWorkflowEvidence).toContain('Installed safe-edit workflow discovery is accepted')
 		expect(agentWorkflowEvidence).toContain('full `bun test apps/api/api.test.ts --timeout 30000`')
-		expect(agentWorkflowEvidence).toContain('Dirty candidate evidence exists')
+		expect(agentWorkflowEvidence).toContain('3d630232')
+		expect(agentWorkflowEvidence).toContain('Installed CLI safe-edit workflow proof is accepted')
 		expect(agentWorkflowEvidence).toContain('ascend example-safe-edit <file.xlsx> <out.xlsx>')
-		expect(agentWorkflowEvidence).toContain('apps/cli/src/commands/example-safe-edit.ts')
+		expect(agentWorkflowEvidence).toContain('5028438e')
+		expect(agentWorkflowEvidence).toContain('CLI commit proof-bundle output is accepted')
+		expect(agentWorkflowEvidence).toContain('caa08959')
+		expect(agentWorkflowEvidence).toContain('postWrite.dataConnections')
 		expect(agentWorkflowEvidence).toContain('docs/AGENT_WORKFLOW.md')
 		expect(agentWorkflowMissing).toContain('inspect, plan, commit, reopen, diff, audit')
 		expect(agentWorkflowMissing).toContain('Trace payload size')
 		expect(agentWorkflowMissing).toContain(
 			'prepared-plan rollback/retry plus installed-consumer smoke evidence is enough',
 		)
-		expect(agentWorkflowMissing).toContain('Commit or revert the dirty installed CLI safe-edit')
-		expect(agentWorkflowMissing).toContain('packages/sdk/src/agent-workflow.ts')
-		expect(agentWorkflowMissing).toContain('ReferenceError: uniqueNumbers is not defined')
-		expect(agentWorkflowMissing).toContain('postWriteDataConnectionSummary')
+		expect(agentWorkflowMissing).toContain('Commit or revert the dirty API commit proof-bundle')
+		expect(agentWorkflowMissing).toContain('apps/api/src/server.ts')
+		expect(agentWorkflowMissing).toContain('proofBundle.safeToUse')
 		expect(agentWorkflowMissing).toContain('Golden trace fixtures')
 		expect(agentWorkflowForbidden).toContain('autonomous correctness')
 		expect(agentWorkflowForbidden).toContain('signed audit trail')
 		expect(agentWorkflowForbidden).toContain('repair automation')
-		expect(agentWorkflowForbidden).toContain('installed CLI safe-edit availability')
+		expect(agentWorkflowForbidden).toContain('registry-published CLI safe-edit availability')
+		expect(agentWorkflowForbidden).toContain('API proof-bundle parity')
 		expect(agentWorkflowDecision?.allowedWording).toContain('installed SDK prepared-plan smoke')
 		expect(agentWorkflowNextOwnerAction).toContain('stops adding more prepared-plan smoke')
 		expect(agentWorkflowNextOwnerAction).toContain('failure taxonomy')

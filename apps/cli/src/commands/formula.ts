@@ -107,7 +107,20 @@ async function showFormula(args: string[], flags: Map<string, string>): Promise<
 async function assistFormula(args: string[], flags: Map<string, string>): Promise<number> {
 	const expr = args[0]
 	if (!expr) {
-		cliError("Usage: ascend formula assist '<formula>' [--cursor n] [--prefix text]", flags)
+		cliError(
+			ascendError('INVALID_ARGUMENT', 'Missing required formula assist input', {
+				retryable: true,
+				retryStrategy: 'modified',
+				details: {
+					command: 'formula assist',
+					required: ['formula'],
+					missing: ['formula'],
+					workflow: ['inspect', 'formula-assist', 'plan'],
+				},
+				suggestedFix: "Run ascend formula assist '<formula>' --json before planning formula edits.",
+			}),
+			flags,
+		)
 		return 1
 	}
 
@@ -165,7 +178,25 @@ async function setFormula(args: string[], flags: Map<string, string>): Promise<n
 	const cellRef = args[1]
 	const expr = args[2]
 	if (!file || !cellRef || !expr) {
-		cliError("Usage: ascend formula set <file> <sheet!cell> '<formula>'", flags)
+		cliError(
+			ascendError('INVALID_ARGUMENT', 'Missing required formula set input', {
+				retryable: true,
+				retryStrategy: 'modified',
+				details: {
+					command: 'formula set',
+					required: ['file', 'cell', 'formula'],
+					missing: [
+						...(!file ? ['file'] : []),
+						...(!cellRef ? ['cell'] : []),
+						...(!expr ? ['formula'] : []),
+					],
+					workflow: ['formula-assist', 'plan', 'commit', 'verify'],
+				},
+				suggestedFix:
+					"Prefer ascend plan/commit for auditable formula edits. For direct edits, run ascend formula set <file> <sheet!cell> '<formula>' --json.",
+			}),
+			flags,
+		)
 		return 1
 	}
 
@@ -226,7 +257,25 @@ async function fillFormula(args: string[], flags: Map<string, string>): Promise<
 	const rangeRef = args[1]
 	const expr = args[2]
 	if (!file || !rangeRef || !expr) {
-		cliError("Usage: ascend formula fill <file> <sheet!range> '<formula>'", flags)
+		cliError(
+			ascendError('INVALID_ARGUMENT', 'Missing required formula fill input', {
+				retryable: true,
+				retryStrategy: 'modified',
+				details: {
+					command: 'formula fill',
+					required: ['file', 'range', 'formula'],
+					missing: [
+						...(!file ? ['file'] : []),
+						...(!rangeRef ? ['range'] : []),
+						...(!expr ? ['formula'] : []),
+					],
+					workflow: ['formula-assist', 'plan', 'commit', 'verify'],
+				},
+				suggestedFix:
+					"Prefer ascend plan/commit for auditable formula edits. For direct edits, run ascend formula fill <file> <sheet!range> '<formula>' --json.",
+			}),
+			flags,
+		)
 		return 1
 	}
 

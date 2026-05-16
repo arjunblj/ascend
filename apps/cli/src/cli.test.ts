@@ -1049,6 +1049,59 @@ describe('ascend cli', () => {
 		expect(parsedUnknownFormula.error.message).toContain('Unknown formula subcommand')
 	})
 
+	test('formula edit commands --json return structured missing input guidance', async () => {
+		const cases = [
+			{
+				argv: ['formula', 'assist', '--json'] as const,
+				message: 'Missing required formula assist input',
+				details: {
+					command: 'formula assist',
+					required: ['formula'],
+					missing: ['formula'],
+					workflow: ['inspect', 'formula-assist', 'plan'],
+				},
+				fix: "ascend formula assist '<formula>' --json",
+			},
+			{
+				argv: ['formula', 'set', TEST_FILE, 'Sheet1!A1', '--json'] as const,
+				message: 'Missing required formula set input',
+				details: {
+					command: 'formula set',
+					required: ['file', 'cell', 'formula'],
+					missing: ['formula'],
+					workflow: ['formula-assist', 'plan', 'commit', 'verify'],
+				},
+				fix: 'Prefer ascend plan/commit for auditable formula edits.',
+			},
+			{
+				argv: ['formula', 'fill', TEST_FILE, 'Sheet1!A1:A2', '--json'] as const,
+				message: 'Missing required formula fill input',
+				details: {
+					command: 'formula fill',
+					required: ['file', 'range', 'formula'],
+					missing: ['formula'],
+					workflow: ['formula-assist', 'plan', 'commit', 'verify'],
+				},
+				fix: 'Prefer ascend plan/commit for auditable formula edits.',
+			},
+		]
+
+		for (const entry of cases) {
+			const result = await run(...entry.argv)
+			expect(result.exitCode).toBe(1)
+			const parsed = JSON.parse(result.stdout)
+			expect(parsed.ok).toBe(false)
+			expect(parsed.error).toMatchObject({
+				code: 'INVALID_ARGUMENT',
+				message: entry.message,
+				retryable: true,
+				retryStrategy: 'modified',
+				details: entry.details,
+			})
+			expect(parsed.error.suggestedFix).toContain(entry.fix)
+		}
+	})
+
 	test('dump --json emits a replayable operation batch', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

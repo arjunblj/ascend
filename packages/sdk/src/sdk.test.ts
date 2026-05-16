@@ -193,6 +193,78 @@ describe('AscendWorkbook', () => {
 		}
 	})
 
+	test('high-risk workbook text saves require the same explicit export approvals', async () => {
+		const dir = join(
+			tmpdir(),
+			`ascend-high-risk-text-save-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+		)
+		const encryptedBlocked = join(dir, 'encrypted-blocked.csv')
+		const encryptedApproved = join(dir, 'encrypted-approved.csv')
+		const signedBlocked = join(dir, 'signed-blocked.tsv')
+		const signedApproved = join(dir, 'signed-approved.tsv')
+		try {
+			mkdirSync(dir, { recursive: true })
+			const encrypted = await Ascend.open(
+				new Uint8Array(readFileSync('fixtures/xlsx/calamine/pass_protected.xlsx')),
+				{ password: '123' },
+			)
+			await expect(encrypted.save(encryptedBlocked)).rejects.toThrow(
+				'Cannot export an edited encrypted workbook without re-encryption support',
+			)
+			expect(() => encrypted.toCsv()).toThrow(
+				'Cannot export an edited encrypted workbook without re-encryption support',
+			)
+			encrypted.apply([
+				{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'plain export' }] },
+			])
+			await expect(encrypted.save(encryptedBlocked)).rejects.toThrow(
+				'Cannot export an edited encrypted workbook without re-encryption support',
+			)
+			expect(existsSync(encryptedBlocked)).toBe(false)
+			await encrypted.save(encryptedApproved, { allowDecryptedExport: true })
+			const encryptedCsv = readFileSync(encryptedApproved, 'utf8')
+			expect(Ascend.fromCsv(encryptedCsv).sheet('Sheet1')?.cell('A1')?.value).toEqual({
+				kind: 'string',
+				value: 'plain export',
+			})
+			expect(encrypted.toCsv({ allowDecryptedExport: true })).toContain('plain export')
+			expect(() => encrypted.toBytes()).toThrow(
+				'Cannot export an edited encrypted workbook without re-encryption support',
+			)
+
+			const signed = await Ascend.open(makeSignedXlsx())
+			await expect(signed.save(signedBlocked)).rejects.toThrow(
+				'Cannot export an edited signed workbook without explicit signature invalidation approval',
+			)
+			expect(() => signed.toCsv()).toThrow(
+				'Cannot export an edited signed workbook without explicit signature invalidation approval',
+			)
+			signed.apply([
+				{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'unsigned' }] },
+			])
+			await expect(signed.save(signedBlocked)).rejects.toThrow(
+				'Cannot export an edited signed workbook without explicit signature invalidation approval',
+			)
+			expect(existsSync(signedBlocked)).toBe(false)
+			await signed.save(signedApproved, { allowSignatureInvalidation: true })
+			const signedTsv = readFileSync(signedApproved, 'utf8')
+			expect(
+				Ascend.fromCsv(signedTsv, { delimiter: '\t' }).sheet('Sheet1')?.cell('A1')?.value,
+			).toEqual({
+				kind: 'string',
+				value: 'unsigned',
+			})
+			expect(
+				signed.toCsv({ dialect: { delimiter: '\t' }, allowSignatureInvalidation: true }),
+			).toContain('unsigned')
+			expect(() => signed.toBytes()).toThrow(
+				'Cannot export an edited signed workbook without explicit signature invalidation approval',
+			)
+		} finally {
+			rmSync(dir, { recursive: true, force: true })
+		}
+	})
+
 	test('writes sheet protection from plaintext as a legacy Excel hash', async () => {
 		const wb = Ascend.create()
 		const result = wb.apply([

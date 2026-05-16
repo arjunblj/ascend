@@ -123,6 +123,14 @@ export interface WorkbookBytesOptions {
 	readonly allowSignatureInvalidation?: boolean
 }
 
+export interface WorkbookCsvOptions {
+	readonly sheet?: string
+	readonly range?: string
+	readonly dialect?: Partial<CsvDialect>
+	readonly allowDecryptedExport?: boolean
+	readonly allowSignatureInvalidation?: boolean
+}
+
 interface WorkbookMutationRollbackSnapshot {
 	readonly workbook: Workbook
 	readonly originalBytes: Uint8Array | null
@@ -1448,6 +1456,7 @@ export class AscendWorkbook extends WorkbookReadView {
 
 		try {
 			if (ext === 'csv' || ext === 'tsv') {
+				this.assertHighRiskPlaintextExportApproved(options)
 				const result =
 					ext === 'tsv' ? writeCsv(this.wb, { dialect: { delimiter: '\t' } }) : writeCsv(this.wb)
 				if (!result.ok) throw new AscendException(result.error)
@@ -1479,39 +1488,10 @@ export class AscendWorkbook extends WorkbookReadView {
 			return this.originalBytes
 		}
 		if (this.sourceWasEncrypted && !options.allowDecryptedExport) {
-			throw new AscendException(
-				ascendError(
-					'EXPORT_ERROR',
-					'Cannot export an edited encrypted workbook without re-encryption support.',
-					{
-						details: {
-							sourceWasEncrypted: true,
-							reEncryptionSupported: false,
-							requestedExport: 'xlsx',
-						},
-						suggestedFix:
-							'Reopen the original encrypted workbook without editing, or pass allowDecryptedExport: true to explicitly save a decrypted plain XLSX.',
-					},
-				),
-			)
+			throw this.encryptedWorkbookExportError('xlsx')
 		}
 		if (this.hasInvalidatedSignatureContent() && !options.allowSignatureInvalidation) {
-			throw new AscendException(
-				ascendError(
-					'EXPORT_ERROR',
-					'Cannot export an edited signed workbook without explicit signature invalidation approval.',
-					{
-						details: {
-							signatureInvalidationSupported: true,
-							reSigningSupported: false,
-							requestedExport: 'xlsx',
-							signatureParts: this.invalidatedSignaturePartPaths(),
-						},
-						suggestedFix:
-							'Reopen the original signed workbook without editing, or pass allowSignatureInvalidation: true only when the caller explicitly accepts an unsigned output and will re-sign outside Ascend if signature trust matters.',
-					},
-				),
-			)
+			throw this.signedWorkbookExportError('xlsx')
 		}
 		const sourceArchive = this.getSourceArchive()
 		const dirtyCellPatches = this.dirtyCellPatchOptions()
@@ -1547,8 +1527,9 @@ export class AscendWorkbook extends WorkbookReadView {
 	 * const csv = wb.toCsv()
 	 * const csv2 = wb.toCsv({ sheet: 'Data', dialect: { delimiter: ';' } })
 	 */
-	toCsv(opts?: { sheet?: string; range?: string; dialect?: Partial<CsvDialect> }): string {
+	toCsv(opts: WorkbookCsvOptions = {}): string {
 		this.assertWritable()
+		this.assertHighRiskPlaintextExportApproved(opts)
 		const result = writeCsv(this.wb, opts)
 		if (!result.ok) throw new AscendException(result.error)
 		return result.value
@@ -1603,6 +1584,54 @@ export class AscendWorkbook extends WorkbookReadView {
 
 	private hasInvalidatedSignatureContent(): boolean {
 		return this.dirty && this.invalidatedSignaturePartPaths().length > 0
+	}
+
+	private assertHighRiskPlaintextExportApproved(
+		options: Pick<WorkbookBytesOptions, 'allowDecryptedExport' | 'allowSignatureInvalidation'>,
+	): void {
+		if (this.sourceWasEncrypted && !options.allowDecryptedExport) {
+			throw this.encryptedWorkbookExportError('text')
+		}
+		if (this.invalidatedSignaturePartPaths().length > 0 && !options.allowSignatureInvalidation) {
+			throw this.signedWorkbookExportError('text')
+		}
+	}
+
+	private encryptedWorkbookExportError(requestedExport: 'xlsx' | 'text'): AscendException {
+		return new AscendException(
+			ascendError(
+				'EXPORT_ERROR',
+				'Cannot export an edited encrypted workbook without re-encryption support.',
+				{
+					details: {
+						sourceWasEncrypted: true,
+						reEncryptionSupported: false,
+						requestedExport,
+					},
+					suggestedFix:
+						'Reopen the original encrypted workbook without editing, or pass allowDecryptedExport: true to explicitly save a decrypted plain output.',
+				},
+			),
+		)
+	}
+
+	private signedWorkbookExportError(requestedExport: 'xlsx' | 'text'): AscendException {
+		return new AscendException(
+			ascendError(
+				'EXPORT_ERROR',
+				'Cannot export an edited signed workbook without explicit signature invalidation approval.',
+				{
+					details: {
+						signatureInvalidationSupported: true,
+						reSigningSupported: false,
+						requestedExport,
+						signatureParts: this.invalidatedSignaturePartPaths(),
+					},
+					suggestedFix:
+						'Reopen the original signed workbook without editing, or pass allowSignatureInvalidation: true only when the caller explicitly accepts unsigned output and will re-sign outside Ascend if signature trust matters.',
+				},
+			),
+		)
 	}
 
 	private invalidatedSignaturePartPaths(): readonly string[] {

@@ -37,6 +37,7 @@ export function shiftSheetCellMetadata(
 	shiftX14SqrefEntries(sheet.x14DataValidations, axis, at, delta)
 	shiftX14SqrefEntries(sheet.x14ConditionalFormats, axis, at, delta)
 	shiftIgnoredErrors(sheet.ignoredErrors, axis, at, delta)
+	shiftSqrefEntries(sheet.protectedRanges, axis, at, delta)
 	shiftSheetAutoFilter(sheet, axis, at, delta)
 	shiftSheetSortState(sheet, axis, at, delta)
 	shiftAdvancedFilters(sheet, axis, at, delta)

@@ -5160,6 +5160,36 @@ describe('applyOperation', () => {
 		}
 	})
 
+	test('row and column shifts update protected range sqrefs', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.protectedRanges = [
+			{ name: 'ExpandsWithRows', sqref: 'A1:A4', password: '1234' },
+			{ name: 'MovesWithColumns', sqref: 'B2:C4 D2:D4' },
+			{ name: 'DeletedByRows', sqref: 'F3:F4' },
+		]
+
+		expectOk(applyOperation(wb, { op: 'insertRows', sheet: 'Sheet1', at: 1, count: 1 }))
+		expect(s.protectedRanges).toEqual([
+			{ name: 'ExpandsWithRows', sqref: 'A1:A5', password: '1234' },
+			{ name: 'MovesWithColumns', sqref: 'B3:C5 D3:D5' },
+			{ name: 'DeletedByRows', sqref: 'F4:F5' },
+		])
+
+		expectOk(applyOperation(wb, { op: 'insertCols', sheet: 'Sheet1', at: 2, count: 1 }))
+		expect(s.protectedRanges).toEqual([
+			{ name: 'ExpandsWithRows', sqref: 'A1:A5', password: '1234' },
+			{ name: 'MovesWithColumns', sqref: 'B3:D5 E3:E5' },
+			{ name: 'DeletedByRows', sqref: 'G4:G5' },
+		])
+
+		expectOk(applyOperation(wb, { op: 'deleteRows', sheet: 'Sheet1', at: 3, count: 2 }))
+		expect(s.protectedRanges).toEqual([
+			{ name: 'ExpandsWithRows', sqref: 'A1:A3', password: '1234' },
+			{ name: 'MovesWithColumns', sqref: 'B3:D3 E3' },
+		])
+	})
+
 	test('deleteRows shrinks overlapping table, filter, and validation ranges', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')

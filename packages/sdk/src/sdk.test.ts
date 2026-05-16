@@ -517,6 +517,38 @@ describe('AscendWorkbook', () => {
 		expect(JSON.stringify(reopened.getWorkbookModel())).not.toContain('passwordPlaintext')
 	})
 
+	test('structural row edits shift protected ranges through save and reopen', async () => {
+		const wb = Ascend.create()
+		const result = wb.apply([
+			{
+				op: 'setSheetProtection',
+				sheet: 'Sheet1',
+				options: { insertRows: true },
+			},
+			{
+				op: 'setProtectedRange',
+				sheet: 'Sheet1',
+				name: 'EditableBudget',
+				sqref: 'B2:B4',
+				passwordPlaintext: 'password',
+			},
+			{
+				op: 'setProtectedRange',
+				sheet: 'Sheet1',
+				name: 'ApprovalCell',
+				sqref: 'C5',
+			},
+			{ op: 'insertRows', sheet: 'Sheet1', at: 2, count: 1 },
+		])
+		expect(result.errors).toEqual([])
+
+		const reopened = await Ascend.open(wb.toBytes())
+		expect(reopened.getWorkbookModel().sheets[0]?.protectedRanges).toEqual([
+			{ name: 'EditableBudget', sqref: 'B2:B5', password: '83AF' },
+			{ name: 'ApprovalCell', sqref: 'C6' },
+		])
+	})
+
 	test('create returns an empty workbook with one sheet', () => {
 		const wb = AscendWorkbook.create()
 		expect(wb.sheets).toEqual(['Sheet1'])

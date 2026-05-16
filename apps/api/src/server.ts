@@ -529,11 +529,21 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 					)
 				}
 				try {
+					if (body?.password !== undefined && typeof body.password !== 'string') {
+						return jsonFailureError(
+							ascendError('VALIDATION_ERROR', 'Invalid open-plan password', {
+								details: { receivedType: typeof body.password },
+								suggestedFix: 'Pass password as a string or omit it.',
+							}),
+							400,
+						)
+					}
+					const password = body?.password
 					return jsonSuccess(
-						inspectWorkbookOpenPlan(
-							new Uint8Array(readFileSync(file)),
-							intent.intent ? { intent: intent.intent } : {},
-						),
+						inspectWorkbookOpenPlan(new Uint8Array(readFileSync(file)), {
+							...(intent.intent ? { intent: intent.intent } : {}),
+							...(password !== undefined ? { password } : {}),
+						}),
 					)
 				} catch (e) {
 					return handleError(e, file)

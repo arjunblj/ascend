@@ -12,6 +12,7 @@ const PIVOT_FIXTURE = join(
 	import.meta.dir,
 	'../../fixtures/xlsx/libreoffice/PivotTable_CachedDefinitionAndDataInSync.xlsx',
 )
+const ENCRYPTED_FIXTURE = join(import.meta.dir, '../../fixtures/xlsx/calamine/pass_protected.xlsx')
 
 beforeAll(() => {
 	tempDir = mkdtempSync(join(tmpdir(), 'ascend-api-test-'))
@@ -327,6 +328,39 @@ describe('API', () => {
 		expect(body.data.riskFeatures).toContainEqual(
 			expect.objectContaining({ featureFamily: 'preservedMacro' }),
 		)
+	})
+
+	test('open-plan endpoint accepts encrypted workbook passwords without echoing them', async () => {
+		const res = await api(`/open-plan`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ file: ENCRYPTED_FIXTURE, password: '123' }),
+		})
+		expect(res.status).toBe(200)
+		const responseText = await res.text()
+		const body = JSON.parse(responseText)
+		expect(body.ok).toBe(true)
+		expect(body.data.recommendedLoadOptions).toEqual({ mode: 'full' })
+		expect(body.data.partCount).toBeGreaterThan(0)
+		expect(responseText).not.toContain('123')
+	})
+
+	test('open-plan endpoint rejects non-string encrypted workbook passwords', async () => {
+		const res = await api(`/open-plan`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ file: ENCRYPTED_FIXTURE, password: 123 }),
+		})
+
+		expect(res.status).toBe(400)
+		const body = await res.json()
+		expect(body).toMatchObject({
+			ok: false,
+			error: {
+				code: 'VALIDATION_ERROR',
+				message: 'Invalid open-plan password',
+			},
+		})
 	})
 
 	test('open-plan endpoint rejects invalid intents', async () => {

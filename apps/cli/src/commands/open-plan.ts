@@ -16,6 +16,7 @@ Arguments:
 
 Flags:
   --intent <intent>   risk-inventory, read-values, formula-analysis, or edit-plan (default: edit-plan)
+  --password <value>  Password for encrypted XLSX/XLSM workbooks
   --json              Output as JSON
 `
 
@@ -35,7 +36,11 @@ export async function openPlanCommand(args: string[], flags: Map<string, string>
 		return 1
 	}
 
-	const plan = inspectWorkbookOpenPlan(new Uint8Array(readFileSync(file)), intent ? { intent } : {})
+	const password = flags.get('password')
+	const plan = inspectWorkbookOpenPlan(new Uint8Array(readFileSync(file)), {
+		...(intent ? { intent } : {}),
+		...(password !== undefined ? { password } : {}),
+	})
 	if (flags.has('json')) {
 		console.log(jsonOut(plan))
 		return 0

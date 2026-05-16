@@ -208,13 +208,17 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 				.enum(['risk-inventory', 'read-values', 'formula-analysis', 'edit-plan'])
 				.optional()
 				.describe('Caller intent for the next step; defaults to edit-plan for safe agent planning'),
+			password: z
+				.string()
+				.optional()
+				.describe('Password for encrypted XLSX/XLSM workbooks; omitted from the returned plan'),
 		},
-		async ({ file, intent }) => {
+		async ({ file, intent, password }) => {
 			try {
-				const plan = inspectWorkbookOpenPlan(
-					new Uint8Array(readFileSync(file)),
-					intent ? { intent } : {},
-				)
+				const plan = inspectWorkbookOpenPlan(new Uint8Array(readFileSync(file)), {
+					...(intent ? { intent } : {}),
+					...(password !== undefined ? { password } : {}),
+				})
 				return okResponse(
 					plan,
 					`Recommended ${JSON.stringify(plan.recommendedLoadOptions)} for "${file}"`,

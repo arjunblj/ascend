@@ -16,6 +16,7 @@ const TUI_TEST_FILE = 'test-tui.xlsx'
 const ACTIVE_CONTENT_FILE = 'test-active-content.xlsm'
 const TRUST_REPORT_FILE = 'test-trust-report.xlsm'
 const OPEN_PLAN_FILE = 'test-open-plan.xlsx'
+const ENCRYPTED_OPEN_PLAN_FIXTURE = '../../../fixtures/xlsx/calamine/pass_protected.xlsx'
 const AGENT_VIEW_FILE = 'test-agent-view.xlsx'
 const JOURNAL_V1_OPS_FILE = 'journal-v1-ops.json'
 const JOURNAL_V1_OUTPUT_FILE = 'journal-v1-output.xlsx'
@@ -1086,6 +1087,23 @@ describe('ascend cli', () => {
 		expect(parsed.data.riskFeatures).toContainEqual(
 			expect.objectContaining({ featureFamily: 'preservedMacro' }),
 		)
+	})
+
+	test('open-plan --password plans encrypted workbooks without echoing the password', async () => {
+		const { stdout, exitCode } = await run(
+			'open-plan',
+			ENCRYPTED_OPEN_PLAN_FIXTURE,
+			'--password',
+			'123',
+			'--json',
+		)
+
+		expect(exitCode).toBe(0)
+		const parsed = JSON.parse(stdout)
+		expect(parsed.ok).toBe(true)
+		expect(parsed.data.recommendedLoadOptions).toEqual({ mode: 'full' })
+		expect(parsed.data.partCount).toBeGreaterThan(0)
+		expect(stdout).not.toContain('123')
 	})
 
 	test.skipIf(!HAS_PIVOT_CORPUS_FILE)(

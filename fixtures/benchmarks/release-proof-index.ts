@@ -3398,7 +3398,7 @@ function claimProofRequired(
 				surface:
 					'Existing SDK open planner, CLI open-plan, API open-plan endpoint, and MCP open-plan tool only; no new opener surface.',
 				validationGate:
-					'Run the safe-open proof harness, focused open-plan tests, malformed package checks, release-proof-index, typecheck, Biome, and changed tests when code changes.',
+					'Run the safe-open proof harness, focused SDK/CLI/API/MCP open-plan tests, malformed package checks, release-proof-index, typecheck, Biome, and changed tests when code changes.',
 				competitorContrast:
 					'Microsoft Protected View is trust/read-only UX for potentially unsafe files; Ascend claim is OSS pre-hydration package-feature routing.',
 				honestBoundary:

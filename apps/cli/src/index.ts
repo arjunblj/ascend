@@ -189,7 +189,7 @@ const COMMANDS: Record<string, Command> = {
 	'open-plan': {
 		run: openPlanCommand,
 		usage: openPlanUsage,
-		allowedFlags: ['intent', 'json'],
+		allowedFlags: ['intent', 'password', 'json'],
 	},
 	doctor: { run: doctorCommand, usage: doctorUsage },
 }

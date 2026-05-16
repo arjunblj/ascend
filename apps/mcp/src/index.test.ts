@@ -36,6 +36,10 @@ const PIVOT_FIXTURE = join(
 	'../../../fixtures/xlsx/libreoffice/PivotTable_CachedDefinitionAndDataInSync.xlsx',
 )
 const CHARTSHEET_FIXTURE = join(import.meta.dir, '../../../fixtures/xlsx/exceljs/chart-sheet.xlsx')
+const ENCRYPTED_FIXTURE = join(
+	import.meta.dir,
+	'../../../fixtures/xlsx/calamine/pass_protected.xlsx',
+)
 const JOURNAL_V1_FIXTURE = JSON.parse(
 	readFileSync(
 		join(import.meta.dir, '../../../fixtures/journal/mutation-journal-v1.json'),
@@ -589,6 +593,29 @@ describe('MCP server', () => {
 		expect(result.structuredContent?.data?.riskFeatures).toContainEqual(
 			expect.objectContaining({ featureFamily: 'preservedMacro' }),
 		)
+	})
+
+	test('ascend.open_plan accepts encrypted workbook passwords without echoing them', async () => {
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: accessing internals for test
+		const handler = (server as any)._registeredTools['ascend.open_plan'].handler as (args: {
+			file: string
+			password?: string
+		}) => Promise<{
+			structuredContent?: {
+				data?: {
+					recommendedLoadOptions?: { mode?: string; richMetadata?: boolean }
+					partCount?: number
+				}
+			}
+		}>
+
+		const result = await handler({ file: ENCRYPTED_FIXTURE, password: '123' })
+		const serialized = JSON.stringify(result)
+
+		expect(result.structuredContent?.data?.recommendedLoadOptions).toEqual({ mode: 'full' })
+		expect(result.structuredContent?.data?.partCount).toBeGreaterThan(0)
+		expect(serialized).not.toContain('123')
 	})
 
 	test('ascend.raw_part exposes bounded package text and metadata', async () => {

@@ -2251,6 +2251,8 @@ function releaseDecisionDoNotPromoteItem(
 		note.name === 'research-surface-hygiene' ? RESEARCH_SURFACE_HYGIENE_BLOCKER : undefined
 	const tokenBoundedAgentViewBlocker =
 		note.name === 'token-bounded-agent-view' ? TOKEN_BOUNDED_AGENT_VIEW_BLOCKER : undefined
+	const retainedViewportPatchBlocker =
+		note.name === 'retained-viewport-patch-history' ? RETAINED_VIEWPORT_PATCH_BLOCKER : undefined
 	return {
 		name: note.name,
 		status: 'do-not-promote-yet',
@@ -2261,6 +2263,7 @@ function releaseDecisionDoNotPromoteItem(
 			...(releaseProofBundleBlocker?.evidenceWeHave ?? []),
 			...(researchHygieneBlocker?.evidenceWeHave ?? []),
 			...(tokenBoundedAgentViewBlocker?.evidenceWeHave ?? []),
+			...(retainedViewportPatchBlocker?.evidenceWeHave ?? []),
 			...(portfolioClaim?.proofCommand
 				? [`Existing proof command: \`${portfolioClaim.proofCommand}\`.`]
 				: []),
@@ -2274,6 +2277,7 @@ function releaseDecisionDoNotPromoteItem(
 			...(releaseProofBundleBlocker?.evidenceMissing ?? []),
 			...(researchHygieneBlocker?.evidenceMissing ?? []),
 			...(tokenBoundedAgentViewBlocker?.evidenceMissing ?? []),
+			...(retainedViewportPatchBlocker?.evidenceMissing ?? []),
 			...(proof ? [proof.fixture, proof.benchmark, proof.surface, proof.validationGate] : []),
 		],
 		qssContrast: [
@@ -2286,6 +2290,7 @@ function releaseDecisionDoNotPromoteItem(
 			...(releaseProofBundleBlocker?.forbiddenWording ?? []),
 			...(researchHygieneBlocker?.forbiddenWording ?? []),
 			...(tokenBoundedAgentViewBlocker?.forbiddenWording ?? []),
+			...(retainedViewportPatchBlocker?.forbiddenWording ?? []),
 			...(proof ? [proof.honestBoundary] : []),
 			...(excludedEvidence ? [excludedEvidence.boundary] : []),
 		],
@@ -2293,6 +2298,7 @@ function releaseDecisionDoNotPromoteItem(
 			releaseProofBundleBlocker?.ownerAction ??
 			researchHygieneBlocker?.ownerAction ??
 			tokenBoundedAgentViewBlocker?.ownerAction ??
+			retainedViewportPatchBlocker?.ownerAction ??
 			deferredClaim?.proofNeeded ??
 			excludedEvidence?.eligibilityRule ??
 			proof?.validationGate ??
@@ -2912,6 +2918,24 @@ const TOKEN_BOUNDED_AGENT_VIEW_BLOCKER = {
 	],
 	forbiddenWording: [
 		'Do not claim exact model-token counts, complete workbook context under every budget, hidden summarization, or automatic recovery of omitted evidence.',
+	],
+} as const
+
+const RETAINED_VIEWPORT_PATCH_BLOCKER = {
+	ownerAction:
+		'Product/performance owner records one public SDK/API/MCP compact-read workflow with retained patch, skipped token, invalid token, expired history, projection-change invalidation, metadata invalidation, patch bytes, retention cap, and recovery action; validate with `bun test fixtures/benchmarks/viewport-patch-proof.test.ts`, the SDK interactive viewport patch tests, and API/MCP compact changedSince tests before any retained-history wording.',
+	evidenceWeHave: [
+		'Viewport proof command exists: `bun test fixtures/benchmarks/viewport-patch-proof.test.ts` covers retained patches, skipped retained tokens, invalid tokens, cross-session tokens, expired history, projection changes, and metadata invalidation.',
+		'SDK interactive contract tests cover viewport patch helpers and invalidation reasons in `packages/sdk/src/interactive-contract.test.ts`.',
+		'API and MCP compact `changedSince` tests cover empty patches, projection changes, invalid tokens, selected-column changes, and changed-source invalidations in `apps/api/src/server.test.ts` and `apps/mcp/src/index.test.ts`.',
+	],
+	evidenceMissing: [
+		'One public workflow showing patch bytes, retained history size or cap, invalidation reasons, and recovery action across SDK/API/MCP without CLI claims.',
+		'Owner-approved product wording for bounded single-session history, invalidation reasons, retention caps, and fresh-window recovery.',
+		'Performance-approved patch-size and invalidation-rate evidence before any practical latency or efficiency wording.',
+	],
+	forbiddenWording: [
+		'Do not claim collaboration, sync, CRDT, multi-writer convergence, transaction isolation, unlimited history, or a signed audit trail from viewport patch evidence.',
 	],
 } as const
 

@@ -1014,6 +1014,25 @@ describe('release proof evidence index', () => {
 				'bun test fixtures/benchmarks/agent-view-budget-proof.test.ts fixtures/benchmarks/agent-view-recovery-proof.test.ts',
 			),
 		)
+		const viewportPatchDecision = index.releaseDecisionBoard.doNotPromoteYet.find(
+			(item) => item.name === 'retained-viewport-patch-history',
+		)
+		const viewportPatchEvidence = viewportPatchDecision?.evidenceWeHave.join('\n') ?? ''
+		const viewportPatchMissing = viewportPatchDecision?.evidenceMissing.join('\n') ?? ''
+		const viewportPatchForbidden = viewportPatchDecision?.forbiddenWording.join('\n') ?? ''
+		const viewportPatchNextOwnerAction = viewportPatchDecision?.nextOwnerAction ?? ''
+		expect(viewportPatchEvidence).toContain('viewport-patch-proof.test.ts')
+		expect(viewportPatchEvidence).toContain('packages/sdk/src/interactive-contract.test.ts')
+		expect(viewportPatchEvidence).toContain('apps/api/src/server.test.ts')
+		expect(viewportPatchEvidence).toContain('apps/mcp/src/index.test.ts')
+		expect(viewportPatchMissing).toContain('patch bytes')
+		expect(viewportPatchMissing).toContain('retention caps')
+		expect(viewportPatchForbidden).toContain('CRDT')
+		expect(viewportPatchForbidden).toContain('unlimited history')
+		expect(viewportPatchNextOwnerAction).toContain('SDK/API/MCP')
+		expect(viewportPatchNextOwnerAction).toContain(
+			'bun test fixtures/benchmarks/viewport-patch-proof.test.ts',
+		)
 		for (const item of index.releaseDecisionBoard.doNotPromoteYet) {
 			expect(item.evidenceWeHave).toEqual(expect.arrayContaining([expect.any(String)]))
 			expect(item.evidenceMissing).toEqual(expect.arrayContaining([expect.any(String)]))
@@ -1944,6 +1963,8 @@ describe('release proof evidence index', () => {
 		expect(markdown).toContain('agent-view-budget-proof.test.ts')
 		expect(markdown).toContain('agent-view-recovery-proof.test.ts')
 		expect(markdown).toContain('Do not claim exact model-token counts')
+		expect(markdown).toContain('viewport-patch-proof.test.ts')
+		expect(markdown).toContain('Do not claim collaboration, sync, CRDT')
 		expect(markdown).toContain(
 			'git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager',
 		)

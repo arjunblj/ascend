@@ -417,6 +417,125 @@ Forbidden wording:
 Next action: defer production optimization from this row and continue only with
 another existing `xlsx-write-sota` row or a measured workflow loss.
 
+## Cycle: String Heavy Write SOTA Gate
+
+Classification: comparable external evidence plus defer. The first full
+external `string-heavy` write row had Ascend behind rust_xlsxwriter, Excelize,
+SheetJS, and FastExcel Java by median, but the row was noisy across several
+runners. A repeat-15 rerun against the fastest comparable writers reversed the
+median result: Ascend was the median winner. The tail remains noisy, so this is
+not a production optimization target or broad write-speed claim.
+
+Workflow: generated XLSX write for varied string values, 2000 rows x 20 columns.
+
+Why it matters for release: string-heavy generated exports exercise a common
+agent output shape for reports, lists, labels, regions, customer notes, and
+statuses. This row is one of the value-write workloads required by the existing
+`xlsx-write-sota` profile.
+
+Public/tracked-clean input: `competitive-io` generated the `string-heavy`
+`source-mode generated-write` workload from tracked benchmark code at commit
+`67b900ed`. No private corpus or local research workbook was used.
+
+Commands:
+
+```bash
+git worktree add --detach /private/tmp/ascend-write-string-heavy-current-67b900ed 67b900ed
+cd /private/tmp/ascend-write-string-heavy-current-67b900ed
+bun install --frozen-lockfile
+mkdir -p /private/tmp/ascend-write-string-heavy-current-67b900ed-runs
+TMPDIR=/private/tmp ACCEPT_NPOI_OSMF_LICENSE=1 env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-io.ts --json --category write --competitor all --execution-scope external-process --source-mode generated-write --libraries ascend-external-writer,sheetjs,exceljs,xlsxwriter,xlsxwriter-constant-memory,pyexcelerate,pyexcelerate-range,pyexcelerate-cell,openpyxl,openpyxl-write-only,apache-poi,closedxml,rust-xlsxwriter,excelize,fastexcel-java --workload string-heavy --repeat 5 --warmup 1 --validation-mode each --write-runner-manifest fixtures/benchmarks/runners/sota-writers.manifest.json > /private/tmp/ascend-write-string-heavy-current-67b900ed-runs/write-string-heavy-head-to-head.json
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-scoreboard.ts /private/tmp/ascend-write-string-heavy-current-67b900ed-runs/write-string-heavy-head-to-head.json --json --metric medianMs --require-profile xlsx-write-sota --assert-profile-leader ascend > /private/tmp/ascend-write-string-heavy-current-67b900ed-runs/write-string-heavy-scoreboard.json
+TMPDIR=/private/tmp ACCEPT_NPOI_OSMF_LICENSE=1 env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-io.ts --json --category write --competitor all --execution-scope external-process --source-mode generated-write --libraries ascend-external-writer,rust-xlsxwriter,excelize,sheetjs,fastexcel-java --workload string-heavy --repeat 15 --warmup 3 --validation-mode each --write-runner-manifest fixtures/benchmarks/runners/sota-writers.manifest.json > /private/tmp/ascend-write-string-heavy-current-67b900ed-runs/write-string-heavy-fastest-repeat15.json
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-scoreboard.ts /private/tmp/ascend-write-string-heavy-current-67b900ed-runs/write-string-heavy-fastest-repeat15.json --json --metric medianMs --require-profile xlsx-write-sota --assert-profile-leader ascend > /private/tmp/ascend-write-string-heavy-current-67b900ed-runs/write-string-heavy-fastest-repeat15-scoreboard.json
+```
+
+Environment:
+
+- Commit: `67b900edffc46955d9bbc8f98782600facb83ec2`
+- Worktree: clean detached worktree at
+  `/private/tmp/ascend-write-string-heavy-current-67b900ed`
+- Bun runtime: `1.3.13`
+- Node: `24.3.0`
+- Platform: Darwin arm64
+- Runtime profile: `category write`, `executionScope external-process`,
+  `sourceMode generated-write`, `workload string-heavy`, `validationMode each`.
+
+Raw output:
+
+```text
+/private/tmp/ascend-write-string-heavy-current-67b900ed-runs/write-string-heavy-head-to-head.json
+/private/tmp/ascend-write-string-heavy-current-67b900ed-runs/write-string-heavy-scoreboard.json
+/private/tmp/ascend-write-string-heavy-current-67b900ed-runs/write-string-heavy-fastest-repeat15.json
+/private/tmp/ascend-write-string-heavy-current-67b900ed-runs/write-string-heavy-fastest-repeat15-scoreboard.json
+```
+
+Full external row, repeat 5 after 1 warmup:
+
+| Runner | Status vs Ascend | Median ms | P95 ms | CV | Peak RSS | Output bytes |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| `ascend-external-writer` | ran/lost | 152.628 | 209.349 | 0.566 | 60.7 MiB | 201985 |
+| `rust-xlsxwriter` | ran/won vs Ascend | 65.802 | 135.550 | 0.424 | 25.5 MiB | 237837 |
+| `excelize` | ran/won vs Ascend | 75.903 | 186.230 | 0.540 | 21.8 MiB | 218447 |
+| `sheetjs` | ran/won vs Ascend | 117.119 | 328.740 | 0.611 | 173.3 MiB | 2016032 |
+| `fastexcel-java` | ran/won vs Ascend | 138.447 | 188.627 | 0.180 | 688.0 MiB | 260427 |
+| `exceljs` | ran/lost vs Ascend | 282.215 | 355.848 | 0.151 | 206.7 MiB | 240319 |
+| `pyexcelerate` | ran/lost vs Ascend | 363.745 | 624.459 | 0.341 | 67.2 MiB | 217988 |
+| `pyexcelerate-cell` | ran/lost vs Ascend | 443.577 | 610.712 | 0.327 | 72.2 MiB | 217988 |
+| `xlsxwriter` | ran/lost vs Ascend | 467.612 | 792.297 | 0.444 | 79.9 MiB | 238362 |
+| `xlsxwriter-constant-memory` | ran/lost vs Ascend | 471.814 | 646.756 | 0.197 | 58.3 MiB | 211656 |
+| `pyexcelerate-range` | ran/lost vs Ascend | 517.739 | 2124.323 | 0.803 | 64.4 MiB | 217988 |
+| `apache-poi` | ran/lost vs Ascend | 675.989 | 2551.732 | 0.809 | 1176.0 MiB | 241513 |
+| `openpyxl-write-only` | ran/lost vs Ascend | 784.534 | 923.160 | 0.169 | 84.6 MiB | 211499 |
+| `openpyxl` | ran/lost vs Ascend | 1408.501 | 1990.245 | 0.353 | 88.0 MiB | 211519 |
+| `closedxml` | runner unavailable | n/a | n/a | n/a | n/a | n/a |
+
+Focused fastest-writer rerun, repeat 15 after 3 warmups:
+
+| Runner | Status vs Ascend | Median ms | P95 ms | CV | Peak RSS | Output bytes |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| `ascend-external-writer` | ran/won | 63.896 | 372.935 | 0.927 | 65.5 MiB | 201985 |
+| `rust-xlsxwriter` | ran/lost vs Ascend | 89.210 | 175.070 | 0.322 | 23.9 MiB | 237837 |
+| `sheetjs` | ran/lost vs Ascend | 94.161 | 209.940 | 0.352 | 276.5 MiB | 2016032 |
+| `fastexcel-java` | ran/lost vs Ascend | 112.387 | 512.219 | 0.770 | 1544.0 MiB | 260427 |
+| `excelize` | ran/lost vs Ascend | 229.576 | 334.389 | 0.351 | 24.3 MiB | 218447 |
+
+Scoreboard result:
+
+- Full external row: group winner was `rust-xlsxwriter`; the single-row
+  scoreboard still reports `profileLeaderFailures: []` because full
+  `xlsx-write-sota` coverage is missing.
+- Focused repeat-15 fastest-writer rerun: group winner was
+  `ascend-external-writer`; `profileLeaderFailures: []`.
+- `closedxml` failed with `CSSM_ModuleLoad()` during the .NET build. It is not
+  counted as a win.
+
+Semantic comparability: all passing rows write the same generated string-heavy
+sheet and pass external post-write semantic validation for one sheet and 40,000
+cells. Memory and size tradeoffs remain material: rust_xlsxwriter and Excelize
+use less RSS; SheetJS emits a much larger file; Ascend's focused rerun median
+wins but its p95 and CV are noisy.
+
+Humble allowed wording:
+
+> On the generated 2000 x 20 string-heavy write row, a noisy full repeat-5 run
+> showed native writers ahead of Ascend, but a focused repeat-15 rerun against
+> the fastest comparable writers had Ascend as the median winner. This is scoped
+> value-write evidence with a noisy tail, not a broad `xlsx-write-sota` claim.
+
+Forbidden wording:
+
+- "Ascend is SOTA for XLSX write."
+- "Ascend always beats rust_xlsxwriter, Excelize, SheetJS, or FastExcel Java on
+  string-heavy writes."
+- "Ascend beats ClosedXML on string-heavy writes."
+- "Ascend has the best tail latency for string-heavy writes."
+- "Ascend produces the smallest string-heavy XLSX."
+
+Next action: defer production optimization from this row. If string-heavy
+matters for a release claim later, attack the noisy Ascend tail with profiling
+before changing writer code.
+
 ## Owner-Ready Benchmark Blocker
 
 Owner: benchmarking/external baselines.

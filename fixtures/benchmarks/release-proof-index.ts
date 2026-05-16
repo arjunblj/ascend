@@ -3220,7 +3220,7 @@ function safeOpenQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceItem[] {
 			command: 'bun run release:rc:gate',
 			path: 'scripts/release-rc-gate.ts',
 			acceptedScope:
-				'Local RC packageability gate for SDK/CLI/API/MCP tarballs and installed workbook proof. Commit 0931685e fixes bundled SDK agent docs resolution from file URLs, preserving installed docs-search smoke coverage.',
+				'Local RC packageability gate for SDK/CLI/API/MCP tarballs and installed workbook proof. Commit 0931685e fixes bundled SDK agent docs resolution from file URLs, preserving installed docs-search smoke coverage; commit f1f76e36 adds installed CLI agent-init plus API/MCP agent-workflow discovery smoke checks.',
 			boundary: 'Local tarball proof only; not registry publication or attestation.',
 		},
 	]

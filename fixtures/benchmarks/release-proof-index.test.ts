@@ -1306,6 +1306,10 @@ describe('release proof evidence index', () => {
 				path: 'scripts/release-rc-gate.ts',
 				acceptedScope: expect.stringContaining('0931685e'),
 			}),
+			expect.objectContaining({
+				evidenceId: 'release-rc-gate',
+				acceptedScope: expect.stringContaining('f1f76e36'),
+			}),
 		]) {
 			expect(safeOpenAcceptedEvidence).toContainEqual(evidence)
 		}

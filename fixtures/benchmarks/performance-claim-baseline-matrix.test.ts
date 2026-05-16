@@ -205,6 +205,35 @@ describe('performance claim baseline matrix', () => {
 			'defer production optimization from this row and continue only with\nanother existing `xlsx-write-sota` row',
 		)
 
+		expect(markdown).toContain('## Cycle: String Heavy Write SOTA Gate')
+		expect(markdown).toContain('commit\n`67b900ed`')
+		expect(markdown).toContain(
+			'/private/tmp/ascend-write-string-heavy-current-67b900ed-runs/write-string-heavy-head-to-head.json',
+		)
+		expect(markdown).toContain(
+			'/private/tmp/ascend-write-string-heavy-current-67b900ed-runs/write-string-heavy-fastest-repeat15.json',
+		)
+		expect(markdown).toContain(
+			'| `ascend-external-writer` | ran/lost | 152.628 | 209.349 | 0.566 | 60.7 MiB | 201985 |',
+		)
+		expect(markdown).toContain(
+			'| `rust-xlsxwriter` | ran/won vs Ascend | 65.802 | 135.550 | 0.424 | 25.5 MiB | 237837 |',
+		)
+		expect(markdown).toContain(
+			'| `ascend-external-writer` | ran/won | 63.896 | 372.935 | 0.927 | 65.5 MiB | 201985 |',
+		)
+		expect(markdown).toContain(
+			'| `sheetjs` | ran/lost vs Ascend | 94.161 | 209.940 | 0.352 | 276.5 MiB | 2016032 |',
+		)
+		expect(markdown).toContain('Full external row: group winner was `rust-xlsxwriter`')
+		expect(markdown).toContain(
+			'Focused repeat-15 fastest-writer rerun: group winner was\n  `ascend-external-writer`',
+		)
+		expect(markdown).toContain('"Ascend has the best tail latency for string-heavy writes."')
+		expect(markdown).toContain(
+			'defer production optimization from this row. If string-heavy\nmatters for a release claim later',
+		)
+
 		expect(markdown).toContain('## Full Current-Commit Gate: XLSX Read SOTA')
 		expect(markdown).toContain(
 			'Classification: blocked/defer. No production optimization is justified',

@@ -805,6 +805,39 @@ describe('agent workflow loss audit', () => {
 		expect(reopened.sheet('Sheet1')?.cell('A1')?.value).toEqual({ kind: 'number', value: 1 })
 	})
 
+	test('signed workbook commits can explicitly write unsigned text output and verify it', async () => {
+		const input = join(TEMP_DIR, 'signed-text.xlsx')
+		const output = join(TEMP_DIR, 'signed-text-output.tsv')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		const sourceBytes = makeSignedXlsx()
+		await Bun.write(input, sourceBytes)
+		const ops = [
+			{ op: 'setCells' as const, sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'unsigned-tsv' }] },
+		]
+
+		const plan = await createAgentPlan(input, ops)
+		expect(plan.lossAudit.ok).toBe(false)
+		expect(plan.lossAudit.blockedFeatures).toContainEqual(
+			expect.objectContaining({ feature: 'preservedSignature' }),
+		)
+
+		const committed = await commitAgentPlan(input, ops, {
+			output,
+			approvals: plan.approvals.map((approval) => approval.id),
+		})
+
+		expect(committed.writePolicy.summary.invalidatedSignatures).toBe(2)
+		expect(committed.postWrite.reopened).toBe(true)
+		expect(committed.postWrite.auditsPassed).toBe(true)
+		expect(committed.postWrite.packageGraphAudit.policy).toBe('not-applicable-non-xlsx')
+		const reopened = AscendWorkbook.fromCsv(readFileSync(output, 'utf8'), { delimiter: '\t' })
+		expect(reopened.sheet('Sheet1')?.cell('A1')?.value).toEqual({
+			kind: 'string',
+			value: 'unsigned-tsv',
+		})
+		expect(Buffer.from(readFileSync(input)).equals(Buffer.from(sourceBytes))).toBe(true)
+	})
+
 	test('plans expose inspect-only package preservation mode', async () => {
 		const input = join(TEMP_DIR, 'inspect-only.xlsx')
 		mkdirSync(TEMP_DIR, { recursive: true })

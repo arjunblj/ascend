@@ -2185,7 +2185,7 @@ function ownerDecisionArtifactsFor(
 					nextAction:
 						'Compatibility owner adds the next real/public workbook gap from the matrix; product/release owners keep signed and generated malformed/signature policy blockers explicit.',
 					forbiddenShortcut:
-						'Do not turn the matrix into full Excel compatibility, worksheet-security, file trust, malware scanning, password recovery, or signature preservation wording.',
+						'Do not turn the matrix into full Excel compatibility, worksheet/workbook protection security, file trust, malware scanning, password recovery, or signature preservation wording.',
 					boundary:
 						'Owner decision artifact only. It routes compatibility work and claim wording without satisfying release proof gates by itself.',
 				},
@@ -2218,7 +2218,7 @@ function ownerDecisionArtifactsFor(
 					nextAction:
 						'Correctness owner promotes an individual package surface only after real/public open -> inspect -> edit -> save/reopen -> verify evidence exists.',
 					forbiddenShortcut:
-						'Do not claim semantic support for every unsupported package feature, worksheet protection as file security, byte passthrough for chart XML, signature verification, or arbitrary unknown-part preservation.',
+						'Do not claim semantic support for every unsupported package feature, worksheet/workbook protection as file security, byte passthrough for chart XML, signature verification, or arbitrary unknown-part preservation.',
 					boundary:
 						'Owner decision artifact only. It constrains package-action wording without replacing package-action proof gates.',
 				},

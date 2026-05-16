@@ -988,7 +988,9 @@ describe('release proof evidence index', () => {
 					artifactId: 'excel-behavior-compatibility-matrix',
 					path: 'docs/EXCEL_BEHAVIOR_COMPATIBILITY_MATRIX.md',
 					decision: expect.stringContaining('protection metadata'),
-					forbiddenShortcut: expect.stringContaining('worksheet protection as file security'),
+					forbiddenShortcut: expect.stringContaining(
+						'worksheet/workbook protection as file security',
+					),
 				}),
 				expect.objectContaining({
 					ownerLoop: 'performance',

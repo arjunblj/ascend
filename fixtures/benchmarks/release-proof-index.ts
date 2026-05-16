@@ -2282,7 +2282,7 @@ function ownerDecisionArtifactsFor(
 				{
 					ownerLoop: 'performance',
 					artifactId: 'package-action-streaming-matrix-evidence',
-					path: 'fixtures/benchmarks/release-proof-index.ts',
+					path: 'fixtures/benchmarks/package-action-proof.ts',
 					validationCommand:
 						'bun run fixtures/benchmarks/package-action-proof.ts --no-timings --json',
 					decision:

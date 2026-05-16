@@ -34,6 +34,7 @@ describe('agent documentation surface', () => {
 		const docs = await loadAgentDocs()
 		const paths = docs.map((doc) => doc.path)
 		expect(paths).toContain('examples/agent-safe-edit.ts')
+		expect(paths).toContain('examples/package-install-safe-edit.ts')
 		expect(paths).toContain('examples/agent-safe-edit-http.md')
 		expect(paths).toContain('examples/agent-safe-edit-http.ts')
 		expect(paths).toContain('examples/agent-safe-edit-mcp.md')
@@ -139,6 +140,18 @@ describe('agent documentation surface', () => {
 		})
 
 		expect(results.some((result) => result.path === 'examples/agent-safe-edit.ts')).toBe(true)
+	})
+
+	test('example search finds the installed SDK safe edit workflow', async () => {
+		const results = await searchAgentDocs({
+			query: 'installed SDK package safe edit node_modules open-plan commit reopen verify',
+			kind: 'example',
+			limit: 8,
+		})
+
+		expect(results.some((result) => result.path === 'examples/package-install-safe-edit.ts')).toBe(
+			true,
+		)
 	})
 
 	test('example search finds the untrusted workbook preflight', async () => {

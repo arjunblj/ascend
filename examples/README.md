@@ -30,6 +30,12 @@ bun run example:safe-edit:http ./path/to/file.xlsx ./path/to/file.api-agent.xlsx
 bun run example:safe-edit:mcp ./path/to/file.xlsx ./path/to/file.mcp-agent.xlsx
 ```
 
+After installing `@ascend/sdk`, run the packaged SDK-only workflow example from a consumer app:
+
+```bash
+bun node_modules/@ascend/sdk/examples/package-install-safe-edit.ts ./path/to/file.xlsx ./path/to/file.sdk-agent.xlsx
+```
+
 `agent-safe-edit.ts` is the golden path for coding agents: trust preflight, inspect, prepare a safe plan, commit with the prepared handle, verify, and print expected JSON fields.
 `agent-safe-edit-http.ts` runs the same workflow through the HTTP API fetch surface, and `agent-safe-edit-mcp.ts` runs it through MCP tools; `agent-safe-edit-http.md` and `agent-safe-edit-mcp.md` show API and MCP request shapes, including open-plan preflight, formula assistance, and path-addressed mutations.
 `untrusted-workbook-report.md` shows the trust preflight for files from email, downloads, customers, or another agent: CLI `inspect --agent`, API `/trust-report`, and MCP `ascend.trust_report`.

@@ -20,6 +20,7 @@ const sdkAgentDocAssets = [
 	'examples/README.md',
 	'examples/package.json',
 	'examples/agent-safe-edit.ts',
+	'examples/package-install-safe-edit.ts',
 	'examples/agent-safe-edit-http.ts',
 	'examples/agent-safe-edit-http.md',
 	'examples/agent-safe-edit-mcp.ts',

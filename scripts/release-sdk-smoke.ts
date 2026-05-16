@@ -123,6 +123,9 @@ async function prepareConsumerApp(): Promise<void> {
 const input = '${join(appRoot, 'input.xlsx')}'
 const output = '${join(appRoot, 'output.xlsx')}'
 const preparedOutput = '${join(appRoot, 'prepared-output.xlsx')}'
+const installedExampleInput = '${join(appRoot, 'installed-example-input.xlsx')}'
+const installedExampleOutput = '${join(appRoot, 'installed-example-output.xlsx')}'
+const installedExample = '${join(appRoot, 'node_modules', '@ascend', 'sdk', 'examples', 'package-install-safe-edit.ts')}'
 
 const created = AscendWorkbook.create()
 created.set('Sheet1!A1', 'Revenue')
@@ -162,10 +165,12 @@ const preparedB1 = preparedReopened.get('Sheet1!B1')
 const preparedC1 = preparedReopened.get('Sheet1!C1')
 const llms = await readAgentDoc('llms.txt')
 const examplesReadme = await readAgentDoc('examples/README.md')
+const packageInstallExample = await readAgentDoc('examples/package-install-safe-edit.ts')
 const apiExample = await readAgentDoc('examples/agent-safe-edit-http.ts')
 const mcpExample = await readAgentDoc('examples/agent-safe-edit-mcp.ts')
 const docHits = await searchAgentDocs({ query: 'plan commit' })
 const rootExampleHits = await searchAgentDocs({ query: 'example:safe-edit root workflow' })
+const packageInstallExampleHits = await searchAgentDocs({ query: 'installed SDK package safe edit workflow' })
 const apiExampleHits = await searchAgentDocs({ query: 'runnable HTTP safe edit workflow' })
 const mcpExampleHits = await searchAgentDocs({ query: 'runnable MCP safe edit workflow' })
 
@@ -186,6 +191,9 @@ if (!llms?.includes('Ascend')) throw new Error('installed SDK could not read bun
 if (!examplesReadme?.includes('bun run example:safe-edit')) {
 	throw new Error('installed SDK missing root safe-edit workflow examples')
 }
+if (!packageInstallExample?.includes('node_modules/@ascend/sdk/examples/package-install-safe-edit.ts')) {
+	throw new Error('installed SDK missing package-install safe-edit example')
+}
 if (!apiExample?.includes("from '@ascend/api'")) {
 	throw new Error('installed SDK missing runnable HTTP API safe-edit example')
 }
@@ -196,11 +204,39 @@ if (docHits.length === 0) throw new Error('installed SDK docs search returned no
 if (!rootExampleHits.some((hit) => hit.path === 'examples/README.md')) {
 	throw new Error('installed SDK docs search did not find root safe-edit workflow examples')
 }
+if (!packageInstallExampleHits.some((hit) => hit.path === 'examples/package-install-safe-edit.ts')) {
+	throw new Error('installed SDK docs search did not find package-install safe-edit example')
+}
 if (!apiExampleHits.some((hit) => hit.path === 'examples/agent-safe-edit-http.ts')) {
 	throw new Error('installed SDK docs search did not find runnable HTTP safe-edit example')
 }
 if (!mcpExampleHits.some((hit) => hit.path === 'examples/agent-safe-edit-mcp.ts')) {
 	throw new Error('installed SDK docs search did not find runnable MCP safe-edit example')
+}
+const installedExampleProc = Bun.spawn(
+	[process.execPath, installedExample, installedExampleInput, installedExampleOutput],
+	{
+		cwd: process.cwd(),
+		stdout: 'pipe',
+		stderr: 'pipe',
+	},
+)
+const [installedExampleStdout, installedExampleStderr, installedExampleExitCode] = await Promise.all([
+	new Response(installedExampleProc.stdout).text(),
+	new Response(installedExampleProc.stderr).text(),
+	installedExampleProc.exited,
+])
+if (installedExampleExitCode !== 0) {
+	throw new Error(
+		\`installed SDK safe-edit example failed with exit \${installedExampleExitCode}: \${installedExampleStdout}\${installedExampleStderr}\`,
+	)
+}
+const installedExampleProof = JSON.parse(installedExampleStdout)
+if (
+	installedExampleProof.workflow !== 'installed-sdk-open-plan-trust-inspect-read-plan-commit-reopen-verify' ||
+	installedExampleProof.verify?.cell?.value?.value !== 450
+) {
+	throw new Error(\`installed SDK safe-edit proof failed: \${installedExampleStdout}\`)
 }
 
 console.log(JSON.stringify({
@@ -214,6 +250,9 @@ console.log(JSON.stringify({
 	preparedReopenedValid: preparedCheck.valid,
 	docHits: docHits.length,
 	rootExampleHits: rootExampleHits.length,
+	packageInstallExampleHits: packageInstallExampleHits.length,
+	installedExampleWorkflow: installedExampleProof.workflow,
+	installedExampleCell: installedExampleProof.verify?.cell,
 	apiExampleHits: apiExampleHits.length,
 	mcpExampleHits: mcpExampleHits.length,
 	b1,

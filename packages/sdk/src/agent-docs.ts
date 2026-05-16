@@ -39,6 +39,12 @@ const DOC_SOURCES: readonly Omit<AgentDocEntry, 'text'>[] = [
 		kind: 'example',
 	},
 	{
+		id: 'example-package-install-safe-edit',
+		title: 'Installed SDK Safe Edit Workflow',
+		path: 'examples/package-install-safe-edit.ts',
+		kind: 'example',
+	},
+	{
 		id: 'example-agent-safe-edit-http',
 		title: 'Agent Safe Edit HTTP Transcript',
 		path: 'examples/agent-safe-edit-http.md',

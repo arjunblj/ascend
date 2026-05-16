@@ -568,12 +568,13 @@ function printActiveContentDetail(wb: WorkbookDocument, json: boolean): number {
 		'preservedMacroSheet',
 		'preservedActiveContent',
 		'preservedSignature',
+		'preservedCustomUi',
 	])
 	const compatibilityFeatures = info.compatibility.features.filter(
 		(feature) =>
 			activeFeatureFamilies.has(feature.feature) ||
 			feature.locations.some((location) =>
-				/(vba|macro|activex|ctrlprops|_xmlsignatures|signature)/i.test(location),
+				/(vba|macro|activex|ctrlprops|customui|_xmlsignatures|signature)/i.test(location),
 			),
 	)
 	const capabilityWarnings = info.capabilityWarnings.filter(

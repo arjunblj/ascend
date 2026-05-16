@@ -15,6 +15,7 @@ const NAMED_RANGE_FILE = 'test-named.xlsx'
 const TUI_TEST_FILE = 'test-tui.xlsx'
 const ACTIVE_CONTENT_FILE = 'test-active-content.xlsm'
 const TRUST_REPORT_FILE = 'test-trust-report.xlsm'
+const CUSTOM_UI_FILE = 'test-custom-ui.xlsm'
 const OPEN_PLAN_FILE = 'test-open-plan.xlsx'
 const ENCRYPTED_OPEN_PLAN_FIXTURE = '../../../fixtures/xlsx/calamine/pass_protected.xlsx'
 const AGENT_VIEW_FILE = 'test-agent-view.xlsx'
@@ -142,6 +143,7 @@ afterAll(() => {
 		TUI_TEST_FILE,
 		ACTIVE_CONTENT_FILE,
 		TRUST_REPORT_FILE,
+		CUSTOM_UI_FILE,
 		OPEN_PLAN_FILE,
 		AGENT_VIEW_FILE,
 		APPROVAL_TEST_FILE,
@@ -1011,6 +1013,45 @@ describe('ascend cli', () => {
 		)
 	})
 
+	test('inspect --detail active-content --json reports custom UI callbacks', async () => {
+		await Bun.write(`${import.meta.dir}/${CUSTOM_UI_FILE}`, customUiWorkbook())
+
+		const { stdout, exitCode } = await run(
+			'inspect',
+			CUSTOM_UI_FILE,
+			'--detail',
+			'active-content',
+			'--json',
+		)
+		expect(exitCode).toBe(0)
+		const parsed = JSON.parse(stdout)
+		expect(parsed.ok).toBe(true)
+		expect(parsed.data.activeContentCount).toBe(1)
+		const customUiEntry = parsed.data.activeContent.find(
+			(entry: { kind?: string; partPath?: string }) =>
+				entry.kind === 'customUi' && entry.partPath === 'customUI/customUI2.xml',
+		)
+		expect(customUiEntry).toMatchObject({
+			contentType: 'application/vnd.ms-office.customUI+xml',
+			relType: 'http://schemas.microsoft.com/office/2007/relationships/ui/extensibility',
+			executionPolicy: 'blocked',
+		})
+		expect(customUiEntry.customUi.callbacks).toEqual(
+			expect.arrayContaining([
+				{ attribute: 'onLoad', macro: 'Ribbon.OnLoad' },
+				{ attribute: 'loadImage', macro: 'Ribbon.LoadImage' },
+				{ attribute: 'onAction', macro: 'Module1.RunReport' },
+				{ attribute: 'getEnabled', macro: 'Ribbon.CanRun' },
+			]),
+		)
+		expect(parsed.data.compatibilityFeatures).toContainEqual(
+			expect.objectContaining({
+				feature: 'preservedCustomUi',
+				locations: ['customUI/customUI2.xml'],
+			}),
+		)
+	})
+
 	test('inspect --agent --json returns an untrusted workbook trust report', async () => {
 		await Bun.write(`${import.meta.dir}/${TRUST_REPORT_FILE}`, signedMacroWorkbook())
 
@@ -1111,6 +1152,22 @@ describe('ascend cli', () => {
 		expect(parsed.data.recommendedLoadOptions).toEqual({ mode: 'full' })
 		expect(parsed.data.partCount).toBeGreaterThan(0)
 		expect(stdout).not.toContain('"123"')
+	})
+
+	test('open-plan --json reports missing files with retry guidance', async () => {
+		const missing = `missing-open-plan-${Date.now()}.xlsx`
+		const { stdout, exitCode } = await run('open-plan', missing, '--json')
+
+		expect(exitCode).toBe(1)
+		const parsed = JSON.parse(stdout)
+		expect(parsed.ok).toBe(false)
+		expect(parsed.error).toMatchObject({
+			code: 'FILE_NOT_FOUND',
+			retryable: true,
+			retryStrategy: 'modified',
+			details: { file: missing },
+			suggestedFix: expect.stringContaining('existing workbook path'),
+		})
 	})
 
 	test('plan --password previews encrypted workbooks without echoing the password', async () => {
@@ -2061,6 +2118,45 @@ function signedMacroWorkbook(): Uint8Array {
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`,
 		'xl/vbaProject.bin': 'macro-bytes',
 		'xl/vbaProjectSignature.bin': 'signature-bytes',
+	})
+}
+
+function customUiWorkbook(): Uint8Array {
+	return makeXlsx({
+		'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.ms-excel.sheet.macroEnabled.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/customUI/customUI2.xml" ContentType="application/vnd.ms-office.customUI+xml"/>
+</Types>`,
+		'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+  <Relationship Id="rIdCustomUi" Type="http://schemas.microsoft.com/office/2007/relationships/ui/extensibility" Target="/customUI/customUI2.xml"/>
+</Relationships>`,
+		'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSheet" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`,
+		'xl/workbook.xml': `<?xml version="1.0"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Data" sheetId="1" r:id="rIdSheet"/></sheets>
+</workbook>`,
+		'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`,
+		'customUI/customUI2.xml': `<?xml version="1.0"?>
+<customUI xmlns="http://schemas.microsoft.com/office/2009/07/customui" onLoad="Ribbon.OnLoad" loadImage="Ribbon.LoadImage">
+  <ribbon><tabs><tab id="tabAscend" label="Ascend">
+    <group id="grpActions" label="Actions">
+      <button id="btnRun" label="Run" onAction="Module1.RunReport" getEnabled="Ribbon.CanRun"/>
+    </group>
+  </tab></tabs></ribbon>
+</customUI>`,
+		'customUI/_rels/customUI2.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"/>`,
 	})
 }
 

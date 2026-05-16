@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
 import { pathToFileURL } from 'node:url'
-import { AscendException, ascendError, levenshtein } from '@ascend/schema'
+import { type AscendError, AscendException, ascendError, levenshtein } from '@ascend/schema'
 import { agentInitCommand, usage as agentInitUsage } from './commands/agent-init.ts'
 import { agentViewCommand, usage as agentViewUsage } from './commands/agent-view.ts'
 import { calcCommand, usage as calcUsage } from './commands/calc.ts'
@@ -331,9 +331,11 @@ export async function runCli(argv: string[] = process.argv.slice(2)): Promise<nu
 			const error =
 				err instanceof AscendException
 					? err.ascendError
-					: err instanceof Error
-						? err.message
-						: String(err)
+					: isFileNotFoundError(err)
+						? fileNotFoundCliError(args[0])
+						: err instanceof Error
+							? err.message
+							: String(err)
 			console.log(jsonErr(error))
 		} else {
 			console.error(`Error: ${err instanceof Error ? err.message : String(err)}`)
@@ -361,4 +363,21 @@ function suggestClosest(input: string, candidates: readonly string[]): string | 
 	return best.distance <= Math.max(2, Math.floor(best.candidate.length / 3))
 		? best.candidate
 		: undefined
+}
+
+function isFileNotFoundError(e: unknown): boolean {
+	if (!e || typeof e !== 'object') return false
+	if ((e as { readonly code?: unknown }).code === 'ENOENT') return true
+	if (e instanceof Error && e.message.includes('ENOENT: no such file or directory')) return true
+	return false
+}
+
+function fileNotFoundCliError(file?: string): AscendError {
+	return ascendError('FILE_NOT_FOUND', file ? `File not found: ${file}` : 'File not found', {
+		retryable: true,
+		retryStrategy: 'modified',
+		...(file ? { details: { file } } : {}),
+		suggestedFix:
+			'Pass an existing workbook path that this CLI process can read, then retry the command.',
+	})
 }

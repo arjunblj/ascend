@@ -728,6 +728,7 @@ const ARRAY_MAPPING_FUNCTIONS = new Set([
 	'N',
 	'ROW',
 	'SQRT',
+	'SWITCH',
 ])
 
 const REFERENCE_SENSITIVE_SHARED_FUNCTIONS = new Set(['INDIRECT', 'OFFSET'])

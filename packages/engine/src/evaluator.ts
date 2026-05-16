@@ -1302,6 +1302,7 @@ function evalSwitch(argNodes: readonly FormulaNode[], ctx: EvalContext): CellVal
 	if (argNodes.length < 3) return errorValue('#VALUE!')
 	const expr = evaluate(argNodes[0] ?? { type: 'missing' }, ctx)
 	if (expr.kind === 'error') return expr
+	if (expr.kind === 'array') return evalSwitchArray(expr, argNodes, ctx)
 	const remaining = argNodes.length - 1
 	const hasDefault = remaining % 2 === 1
 	const pairEnd = hasDefault ? argNodes.length - 1 : argNodes.length
@@ -1311,6 +1312,65 @@ function evalSwitch(argNodes: readonly FormulaNode[], ctx: EvalContext): CellVal
 		if (switchValuesMatch(expr, val)) return evalLazyArg(argNodes[i + 1], ctx)
 	}
 	return hasDefault ? evalLazyArg(argNodes[argNodes.length - 1], ctx) : errorValue('#N/A')
+}
+
+function evalSwitchArray(
+	expr: Extract<CellValue, { kind: 'array' }>,
+	argNodes: readonly FormulaNode[],
+	ctx: EvalContext,
+): CellValue {
+	const remaining = argNodes.length - 1
+	const hasDefault = remaining % 2 === 1
+	const pairEnd = hasDefault ? argNodes.length - 1 : argNodes.length
+	const values = new Map<number, CellValue>()
+	const results = new Map<number, CellValue>()
+	let defaultValue: CellValue | undefined
+	const rows: ScalarCellValue[][] = []
+
+	for (let rowIndex = 0; rowIndex < expr.rows.length; rowIndex++) {
+		const exprRow = expr.rows[rowIndex] ?? []
+		const row: ScalarCellValue[] = []
+		for (let colIndex = 0; colIndex < exprRow.length; colIndex++) {
+			const exprCell = exprRow[colIndex] ?? EMPTY
+			if (exprCell.kind === 'error') {
+				row.push(exprCell)
+				continue
+			}
+
+			let matched = false
+			for (let i = 1; i < pairEnd; i += 2) {
+				if (!values.has(i)) {
+					values.set(i, evaluate(argNodes[i] ?? { type: 'missing' }, ctx))
+				}
+				const valueCell = topLeftScalar(arrayCellAt(values.get(i) ?? EMPTY, rowIndex, colIndex))
+				if (valueCell.kind === 'error') {
+					row.push(valueCell)
+					matched = true
+					break
+				}
+				if (!switchValuesMatch(exprCell, valueCell)) continue
+
+				if (!results.has(i + 1)) {
+					results.set(i + 1, evalLazyArg(argNodes[i + 1], ctx))
+				}
+				row.push(topLeftScalar(arrayCellAt(results.get(i + 1) ?? EMPTY, rowIndex, colIndex)))
+				matched = true
+				break
+			}
+
+			if (matched) continue
+			if (!hasDefault) {
+				row.push(topLeftScalar(errorValue('#N/A')))
+				continue
+			}
+			if (defaultValue === undefined) {
+				defaultValue = evalLazyArg(argNodes[argNodes.length - 1], ctx)
+			}
+			row.push(topLeftScalar(arrayCellAt(defaultValue, rowIndex, colIndex)))
+		}
+		rows.push(row)
+	}
+	return arrayValue(rows)
 }
 
 function switchValuesMatch(a: CellValue, b: CellValue): boolean {

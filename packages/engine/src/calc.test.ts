@@ -3440,6 +3440,46 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(2, 0)?.value).toEqual(stringValue('third'))
 	})
 
+	test('SWITCH spills results for array expressions', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: numberValue(3), formula: null, styleId: sid })
+		sheet.cells.set(3, 0, { value: stringValue('b'), formula: null, styleId: sid })
+		sheet.cells.set(0, 2, {
+			value: EMPTY,
+			formula: 'SWITCH(A1:A4,1,"one",2,"two","B","bee","other")',
+			styleId: sid,
+		})
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(0, 2)?.value).toEqual(stringValue('one'))
+		expect(sheet.cells.get(1, 2)?.value).toEqual(stringValue('two'))
+		expect(sheet.cells.get(2, 2)?.value).toEqual(stringValue('other'))
+		expect(sheet.cells.get(3, 2)?.value).toEqual(stringValue('bee'))
+	})
+
+	test('SWITCH array expressions preserve lazy branch evaluation', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(0, 2, {
+			value: EMPTY,
+			formula: 'SWITCH(A1:A2,1,"ok",2,1/0,"fallback")',
+			styleId: sid,
+		})
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(0, 2)?.value).toEqual(stringValue('ok'))
+		expect(sheet.cells.get(1, 2)?.value).toEqual(stringValue('ok'))
+	})
+
 	test('TEXTBEFORE and TEXTAFTER support modern text slicing formulas', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

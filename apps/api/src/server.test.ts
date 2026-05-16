@@ -631,6 +631,38 @@ describe('Ascend API server', () => {
 		})
 	})
 
+	test('/dump rejects missing workbook references with structured retry guidance', async () => {
+		const result = await postJson('/dump', {})
+
+		expect(result.status).toBe(400)
+		expect(result.body.ok).toBe(false)
+		expect(result.body.error).toMatchObject({
+			code: 'VALIDATION_ERROR',
+			message: 'Missing or invalid dump workbook reference',
+			retryable: true,
+			retryStrategy: 'modified',
+			details: { required: ['file'] },
+			suggestedFix: expect.stringContaining('Pass file so Ascend can dump replayable operations'),
+		})
+	})
+
+	test('/template-merge rejects missing workbook references with structured retry guidance', async () => {
+		const result = await postJson('/template-merge', { data: { name: 'Ascend' } })
+
+		expect(result.status).toBe(400)
+		expect(result.body.ok).toBe(false)
+		expect(result.body.error).toMatchObject({
+			code: 'VALIDATION_ERROR',
+			message: 'Missing or invalid template-merge workbook reference',
+			retryable: true,
+			retryStrategy: 'modified',
+			details: { required: ['file'] },
+			suggestedFix: expect.stringContaining(
+				'Pass file so Ascend can compile template placeholders',
+			),
+		})
+	})
+
 	test('/read rejects missing workbook references with structured retry guidance', async () => {
 		const result = await postJson('/read', { range: 'A1:A1' })
 

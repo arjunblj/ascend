@@ -199,6 +199,8 @@ type AgentWorkflowFileContext =
 	| 'trust-report'
 	| 'package-graph'
 	| 'raw-part'
+	| 'dump'
+	| 'template-merge'
 	| 'read'
 	| 'agent-view'
 	| 'plan'
@@ -219,6 +221,10 @@ function missingAgentWorkflowFileError(context: AgentWorkflowFileContext): Ascen
 				return 'Pass file so Ascend can audit workbook package preservation before planning edits.'
 			case 'raw-part':
 				return 'Pass file so Ascend can inspect the requested raw package part safely.'
+			case 'dump':
+				return 'Pass file so Ascend can dump replayable operations from a full workbook load.'
+			case 'template-merge':
+				return 'Pass file so Ascend can compile template placeholders into replayable operations.'
 			case 'read':
 				return 'Pass file so Ascend can read the requested workbook range before planning edits.'
 			case 'agent-view':
@@ -764,7 +770,7 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 					formulasOnly?: boolean
 				}>(req)
 				const file = body ? requireString(body, 'file') : null
-				if (!file) return jsonFailure('Missing or invalid file', 400)
+				if (!file) return jsonFailureError(missingAgentWorkflowFileError('dump'), 400)
 				const unsupportedLoadOptions = unsupportedAgentPlanLoadOptions(body)
 				if (unsupportedLoadOptions.length > 0) {
 					return jsonFailureError(replayBatchLoadOptionsError('Dump', unsupportedLoadOptions), 400)
@@ -796,7 +802,7 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 					delimiters?: { open?: string; close?: string }
 				}>(req)
 				const file = body ? requireString(body, 'file') : null
-				if (!file) return jsonFailure('Missing or invalid file', 400)
+				if (!file) return jsonFailureError(missingAgentWorkflowFileError('template-merge'), 400)
 				const unsupportedLoadOptions = unsupportedAgentPlanLoadOptions(body)
 				if (unsupportedLoadOptions.length > 0) {
 					return jsonFailureError(

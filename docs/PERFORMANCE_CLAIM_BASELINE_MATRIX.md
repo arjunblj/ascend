@@ -23,6 +23,10 @@ No broad XLSX read, XLSX write, SOTA, or QSS-leapfrog speed claim is promotable 
 - Current harness evidence now supports same-lane selected-sheet rows for Ascend, SheetJS, OpenPyXL, and python-calamine. Treat older `openpyxl` and Calamine selected-sheet `unsupported-operation` wording as historical for the recorded clean runs.
 - Current harness evidence now supports same-lane metadata-only rows for Ascend, SheetJS, OpenPyXL, and python-calamine. Calamine wins that head-to-head; treat older metadata-only `missing-comparable` or Calamine `unsupported-operation` wording as historical.
 - Current harness evidence now supports a SheetJS feature-rich rich-metadata row using SheetJS `bookFiles`; older SheetJS `semantic-mismatch` wording is historical for the pre-runner-fix cycles. Calamine-family rich-metadata rows remain not comparable.
+- Current formula/calc evidence includes a focused HyperFormula indexed
+  `INDEX/MATCH` row. It is useful formula-engine performance evidence, but it
+  is not XLSX behavior parity, Excel compatibility, or broad formula SOTA
+  evidence.
 - Several external runners were unavailable or blocked in the clean benchmark worktree. They are recorded as blockers, not wins.
 - Several timing lanes are semantically related but not one unified timing boundary. Do not collapse in-process, preloaded-bytes, file-path, row-stream, and materialized-workbook timings into a single "wins everything" claim.
 
@@ -39,6 +43,99 @@ Forbidden wording:
 - Any wording that treats failed or unavailable runners as wins.
 
 Next action: downgrade the broad speed claim and stop production optimization from winning rows. Continue only if the performance loop is explicitly attacking a remaining claim blocker or measured loss: ClosedXML coverage, feature-rich semantic mismatches for SheetJS/Calamine, metadata-only versus Calamine, remaining unsupported selected-sheet/metadata-only competitors, or FastXLSX environment coverage.
+
+## Cycle: Formula SOTA Indexed Lookup HyperFormula Row at `cd1c0415`
+
+Classification: comparable formula-engine evidence plus defer. Ascend is the
+median and p95 winner on this focused indexed `INDEX/MATCH` formula workflow,
+so no production optimization is justified from the row. This is not a broad
+formula/calc SOTA claim.
+
+Workflow: exact `INDEX(C$1:C$8000,MATCH(E<n>,A$1:A$8000,0))` formulas over an
+8,000-row keyed table, comparing Ascend lookup caching against HyperFormula
+with `useColumnIndex` enabled.
+
+Why it matters for release: formula/calc performance is a named performance
+lane after read/write baselines. HyperFormula is the strongest direct OSS
+formula-engine baseline in this repo, but this row measures generated in-memory
+formula calculation only; it does not prove Excel-compatible formula behavior,
+XLSX preservation, cached-value truth, or real-workbook parity.
+
+Public/tracked-clean input: `formula-sota` generated the `hf-indexed-index-match`
+workload from tracked benchmark code in a clean detached worktree at commit
+`cd1c0415`. No private corpus or local research workbook was used. The row used
+8,000 data rows, 1,000 formulas, 30 measured samples, and 5 warmups.
+
+Commands:
+
+```bash
+git worktree add --detach /private/tmp/ascend-formula-sota-current-cd1c0415 cd1c0415bf3137d89d2b79ad5b64540c1065a434
+cd /private/tmp/ascend-formula-sota-current-cd1c0415
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun install --frozen-lockfile
+mkdir -p /private/tmp/ascend-formula-sota-current-cd1c0415-runs
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/sbin:/sbin /usr/bin/time -l /Users/arjun/.bun/bin/bun run fixtures/benchmarks/formula-sota.ts --profile hf-indexed-index-match --repeat 30 --warmup 5 --assert-correctness --json > /private/tmp/ascend-formula-sota-current-cd1c0415-runs/hf-indexed-index-match-repeat30.json 2> /private/tmp/ascend-formula-sota-current-cd1c0415-runs/hf-indexed-index-match-repeat30-time.txt
+```
+
+Environment:
+
+- Commit: `cd1c0415bf3137d89d2b79ad5b64540c1065a434`
+- Worktree: clean detached worktree at
+  `/private/tmp/ascend-formula-sota-current-cd1c0415`; `git status --short
+  --branch` reported `## HEAD (no branch)`.
+- Bun runtime: `1.3.13`
+- Node: `22.22.0`
+- HyperFormula dependency: `^3.2.0`
+- Platform: Darwin arm64, macOS kernel `25.4.0`
+- Runtime profile: `profile hf-indexed-index-match`, `rows 8000`, `formulas
+  1000`, `repeat 30`, `warmup 5`, `assertCorrectness true`.
+
+Raw output:
+
+```text
+/private/tmp/ascend-formula-sota-current-cd1c0415-runs/hf-indexed-index-match-repeat30.json
+/private/tmp/ascend-formula-sota-current-cd1c0415-runs/hf-indexed-index-match-repeat30-time.txt
+```
+
+Focused formula-engine row, repeat 30 after 5 warmups:
+
+| Engine | Status | Setup median / p95 / CV | Operation median / p95 / CV | Total median / p95 / CV | Correctness | Memory |
+| --- | --- | ---: | ---: | ---: | --- | --- |
+| Ascend | ran/won | 6.305 ms / 12.225 ms / 0.398 | 29.644 ms / 58.706 ms / 0.379 | 36.690 ms / 67.769 ms / 0.341 | 1,000 changed cells, 0 errors, probe value matched expected `21259` | Process-level peak RSS shared by both engines: 394.2 MiB maximum resident set size; 284.4 MiB peak memory footprint. |
+| HyperFormula | ran/lost vs Ascend | 1075.377 ms / 1736.006 ms / 0.295 | 437.929 ms / 1031.233 ms / 0.471 | 1539.467 ms / 2709.070 ms / 0.321 | Probe value matched expected `21259`; `useColumnIndex` enabled | Process-level peak RSS shared by both engines: 394.2 MiB maximum resident set size; 284.4 MiB peak memory footprint. |
+
+Comparison: `operationSpeedupVsHyperFormula: 14.773x`;
+`totalSpeedupVsHyperFormula: 41.959x`. Operation sample ranges were
+`17.894..67.884 ms` for Ascend and `266.366..1048.998 ms` for HyperFormula.
+
+Rejected broad command: `--profile all --repeat 15 --warmup 3
+--assert-correctness --json` was killed after more than two minutes with a
+zero-byte JSON file. It is not evidence for any formula speed claim.
+
+Semantic boundary: both engines calculate the same generated in-memory formula
+shape and pass the same probe-value assertion. HyperFormula is a formula engine
+baseline, not an XLSX reader/writer/preservation engine. This row does not cover
+Excel/LibreOffice oracle behavior, formula coverage breadth, cached formula
+values, dependency edits after workbook operations, or XLSX roundtrip fidelity.
+
+Humble allowed wording:
+
+> On the generated `hf-indexed-index-match` formula-engine workflow at commit
+> `cd1c0415`, Ascend was faster by median and p95 than HyperFormula `^3.2.0`
+> with `useColumnIndex` enabled. This is scoped generated formula calculation
+> evidence, not broad formula parity or XLSX behavior evidence.
+
+Forbidden wording:
+
+- "Ascend is SOTA for formula calculation."
+- "Ascend beats HyperFormula on every formula workflow."
+- "Ascend proves Excel-compatible formula parity."
+- "Ascend proves cached formula truth or workbook formula preservation."
+- Any wording that treats the killed all-profile command as evidence.
+
+Next action: defer production optimization from this winning row. Continue
+formula/calc performance work only with a named HyperFormula workflow that
+loses, an external formula oracle boundary, or a smaller attributable all-profile
+gate that emits complete JSON.
 
 ## Metadata-Only Calamine Boundary
 

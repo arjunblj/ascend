@@ -61,12 +61,39 @@ describe('performance claim baseline matrix', () => {
 		expect(markdown).toContain(
 			'Current harness evidence now supports a SheetJS feature-rich rich-metadata row',
 		)
+		expect(markdown).toContain(
+			'Current formula/calc evidence includes a focused HyperFormula indexed\n  `INDEX/MATCH` row.',
+		)
 		for (const workload of RECORDED_WORKLOADS) expect(markdown).toContain(`\`${workload}\``)
 		expect(markdown).toContain('Humble allowed wording:')
 		expect(markdown).toContain('Forbidden wording:')
 		expect(markdown).toContain('"Ascend is the fastest XLSX reader."')
 		expect(markdown).toContain('"Ascend is SOTA for XLSX read."')
 		expect(markdown).toContain('Any wording that treats failed or unavailable runners as wins.')
+
+		expect(markdown).toContain(
+			'## Cycle: Formula SOTA Indexed Lookup HyperFormula Row at `cd1c0415`',
+		)
+		expect(markdown).toContain('Classification: comparable formula-engine evidence plus defer.')
+		expect(markdown).toContain('`hf-indexed-index-match`')
+		expect(markdown).toContain('commit\n`cd1c0415`')
+		expect(markdown).toContain(
+			'/private/tmp/ascend-formula-sota-current-cd1c0415-runs/hf-indexed-index-match-repeat30.json',
+		)
+		expect(markdown).toContain(
+			'| Ascend | ran/won | 6.305 ms / 12.225 ms / 0.398 | 29.644 ms / 58.706 ms / 0.379 | 36.690 ms / 67.769 ms / 0.341 |',
+		)
+		expect(markdown).toContain(
+			'| HyperFormula | ran/lost vs Ascend | 1075.377 ms / 1736.006 ms / 0.295 | 437.929 ms / 1031.233 ms / 0.471 | 1539.467 ms / 2709.070 ms / 0.321 |',
+		)
+		expect(markdown).toContain('`operationSpeedupVsHyperFormula: 14.773x`')
+		expect(markdown).toContain(
+			'`--profile all --repeat 15 --warmup 3\n--assert-correctness --json` was killed',
+		)
+		expect(markdown).toContain('"Ascend is SOTA for formula calculation."')
+		expect(markdown).toContain(
+			'defer production optimization from this winning row. Continue\nformula/calc performance work only with a named HyperFormula workflow',
+		)
 
 		expect(markdown).toContain('## Owner-Ready Benchmark Blocker')
 		expect(markdown).toContain('Owner: benchmarking/external baselines.')

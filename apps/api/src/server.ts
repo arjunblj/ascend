@@ -192,7 +192,7 @@ function optionalPasswordError(
 	})
 }
 
-type AgentWorkflowFileContext = 'open-plan' | 'inspect' | 'plan' | 'commit'
+type AgentWorkflowFileContext = 'open-plan' | 'inspect' | 'read' | 'agent-view' | 'plan' | 'commit'
 
 function missingAgentWorkflowFileError(context: AgentWorkflowFileContext): AscendError {
 	const requirement = (() => {
@@ -201,6 +201,10 @@ function missingAgentWorkflowFileError(context: AgentWorkflowFileContext): Ascen
 				return 'Pass file so Ascend can inspect workbook risks before hydration.'
 			case 'inspect':
 				return 'Pass file so Ascend can inspect workbook structure before planning edits.'
+			case 'read':
+				return 'Pass file so Ascend can read the requested workbook range before planning edits.'
+			case 'agent-view':
+				return 'Pass file so Ascend can build a bounded agent view before planning edits.'
 			case 'commit':
 				return 'Pass either file with ops/mutations for a direct commit, or planHandle from a prepared /plan response.'
 			case 'plan':
@@ -855,7 +859,7 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 				}>(req)
 				const file = body ? requireString(body, 'file') : null
 				const range = body ? requireString(body, 'range') : null
-				if (!file) return jsonFailure('Missing or invalid file', 400)
+				if (!file) return jsonFailureError(missingAgentWorkflowFileError('read'), 400)
 				if (!range) return jsonFailure('Missing or invalid range', 400)
 				try {
 					const sheetName = body ? requireString(body, 'sheet') : null
@@ -944,7 +948,7 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 				}>(req)
 				const file = body ? requireString(body, 'file') : null
 				const range = body ? requireString(body, 'range') : null
-				if (!file) return jsonFailure('Missing or invalid file', 400)
+				if (!file) return jsonFailureError(missingAgentWorkflowFileError('agent-view'), 400)
 				if (!range) return jsonFailure('Missing or invalid range', 400)
 				try {
 					const sheetName = body ? requireString(body, 'sheet') : null

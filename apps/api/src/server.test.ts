@@ -554,6 +554,36 @@ describe('Ascend API server', () => {
 		})
 	})
 
+	test('/read rejects missing workbook references with structured retry guidance', async () => {
+		const result = await postJson('/read', { range: 'A1:A1' })
+
+		expect(result.status).toBe(400)
+		expect(result.body.ok).toBe(false)
+		expect(result.body.error).toMatchObject({
+			code: 'VALIDATION_ERROR',
+			message: 'Missing or invalid read workbook reference',
+			retryable: true,
+			retryStrategy: 'modified',
+			details: { required: ['file'] },
+			suggestedFix: expect.stringContaining('Pass file so Ascend can read'),
+		})
+	})
+
+	test('/agent-view rejects missing workbook references with structured retry guidance', async () => {
+		const result = await postJson('/agent-view', { range: 'A1:A1' })
+
+		expect(result.status).toBe(400)
+		expect(result.body.ok).toBe(false)
+		expect(result.body.error).toMatchObject({
+			code: 'VALIDATION_ERROR',
+			message: 'Missing or invalid agent-view workbook reference',
+			retryable: true,
+			retryStrategy: 'modified',
+			details: { required: ['file'] },
+			suggestedFix: expect.stringContaining('Pass file so Ascend can build a bounded agent view'),
+		})
+	})
+
 	test('/plan rejects missing workbook references with structured retry guidance', async () => {
 		const result = await postJson('/plan', {
 			ops: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] }],

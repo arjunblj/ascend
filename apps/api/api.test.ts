@@ -537,7 +537,13 @@ describe('API', () => {
 		const body = await res.json()
 		expect(body.formatVersion).toBe(1)
 		expect(body.ok).toBe(false)
-		expect(body.error.message).toBe('Missing or invalid file')
+		expect(body.error).toMatchObject({
+			code: 'VALIDATION_ERROR',
+			message: 'Missing or invalid read workbook reference',
+			retryable: true,
+			retryStrategy: 'modified',
+			details: { required: ['file'] },
+		})
 	})
 
 	test('preview returns a diff without mutating the workbook on disk', async () => {

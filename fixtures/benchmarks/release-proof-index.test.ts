@@ -1149,6 +1149,14 @@ describe('release proof evidence index', () => {
 				boundary: expect.stringContaining('Public chart-source commit evidence only'),
 			}),
 			expect.objectContaining({
+				evidenceId: 'chart-source-structural-edit-proof',
+				acceptedScope: expect.stringContaining('0fc4370a'),
+				command: expect.stringContaining(
+					'commits structural row edits with shifted chart source refs',
+				),
+				boundary: expect.stringContaining('Chart-source structural edit evidence only'),
+			}),
+			expect.objectContaining({
 				evidenceId: 'public-calc-chain-formula-commit-proof',
 				acceptedScope: expect.stringContaining('31141dd4'),
 				command: expect.stringContaining('commits public calc-chain formula edits'),
@@ -1851,6 +1859,7 @@ describe('release proof evidence index', () => {
 						'91dabea8',
 						'4d272f77',
 						'1eaf28ff',
+						'0fc4370a',
 						'31141dd4',
 						'f7338c91',
 						'019f457e',
@@ -1868,12 +1877,15 @@ describe('release proof evidence index', () => {
 						expect.stringContaining(
 							'commits public workbook connection scheduling edits through save and reopen',
 						),
+						expect.stringContaining('commits structural row edits with shifted chart source refs'),
 						expect.stringContaining(
 							'commits public workbook strong-hash protection with honest metadata reporting',
 						),
 					]),
 					forbiddenWording: expect.arrayContaining([
 						expect.stringContaining('arbitrary connection authoring'),
+						expect.stringContaining('full chart authoring'),
+						expect.stringContaining('external workbook chart-reference rewriting'),
 					]),
 					ownerLoop: 'release',
 					nextOwnerAction: expect.stringContaining('export-format test expectation'),

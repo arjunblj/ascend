@@ -3058,7 +3058,7 @@ function safeOpenQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceItem[] {
 				'bun test packages/sdk/src/agent-workflow.test.ts -t "encrypted workbook commits" --timeout 30000',
 			path: 'packages/sdk/src/agent-workflow.ts; packages/sdk/src/workbook.ts; packages/sdk/src/agent-workflow.test.ts',
 			acceptedScope:
-				'Commits 5ab9365d and a9ae9276 make SDK agent commits fail closed before apply/write for encrypted sources unless allowDecryptedExport is explicit, and prove explicit decrypted output can reopen while the encrypted source remains unchanged.',
+				'Commits 5ab9365d, a9ae9276, and d8d9ae1a make SDK agent commits fail closed before apply/write for encrypted sources unless allowDecryptedExport is explicit, and prove explicit decrypted XLSX/text outputs can reopen while the encrypted source remains unchanged.',
 			boundary:
 				'SDK agent commit policy evidence only; it does not provide re-encryption support, password recovery, encrypted output writing, or arbitrary log scrubbing.',
 		},
@@ -3072,6 +3072,17 @@ function safeOpenQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceItem[] {
 				'Commits 4502acbf and 17fa6741 make dirty signed workbook byte export and file save fail closed unless signature invalidation is explicit, while keeping package-graph audit possible and proving approved unsigned outputs reopen without signature findings.',
 			boundary:
 				'Synthetic signed-package topology fail-closed evidence only; it does not prove real signer identity, signature verification, re-signing, certificate trust, attestation, or public signed-workbook fixture coverage.',
+		},
+		{
+			evidenceId: 'sdk-signed-agent-text-commit-policy-proof',
+			kind: 'test',
+			command:
+				'bun test packages/sdk/src/agent-workflow.test.ts -t "signed workbook commits can explicitly write unsigned text output and verify it" --timeout 30000',
+			path: 'packages/sdk/src/agent-workflow.ts; packages/sdk/src/agent-workflow.test.ts',
+			acceptedScope:
+				'Commits d8d9ae1a and 90f4c248 prove approved SDK agent commits from signed sources can write unsigned TSV output, reopen/verify the text output, record not-applicable-non-xlsx package audit policy, and leave the signed source bytes unchanged.',
+			boundary:
+				'Synthetic signed-package approved text-output evidence only; it does not prove signature preservation, re-signing, signature validation, signer identity, or public signed-workbook fixture coverage.',
 		},
 		{
 			evidenceId: 'mcp-agent-workflow-open-plan-first',
@@ -3093,6 +3104,17 @@ function safeOpenQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceItem[] {
 				'Commit cab4bff1 makes the agent-safe-edit example reopen the committed workbook, verify the edited formula cell, run check/lint, and emit concrete follow-up verification commands after commit.',
 			boundary:
 				'Local example workflow proof only; it does not prove package publication, arbitrary workbook safety, performance, external trust, or every SDK/CLI/API/MCP workflow.',
+		},
+		{
+			evidenceId: 'api-agent-safe-edit-example-proof',
+			kind: 'proof-artifact',
+			command:
+				'bun run examples/agent-safe-edit-http.ts /private/tmp/ascend-agent-safe-edit-http-input.xlsx /private/tmp/ascend-agent-safe-edit-http-output.xlsx',
+			path: 'examples/agent-safe-edit-http.ts; examples/agent-safe-edit-http.test.ts',
+			acceptedScope:
+				'Commit 01d08512 adds a runnable HTTP API safe-edit example that opens/plans, inspects, reads, prepares a plan, commits, reopens, checks, lints, verifies the edited formula cell, and has a focused example test for the workflow contract.',
+			boundary:
+				'Local generated-workbook API workflow proof only; it does not prove arbitrary workbook safety, public workbook behavior, package publication, performance, external trust, or every SDK/CLI/API/MCP workflow.',
 		},
 		{
 			evidenceId: 'api-custom-ui-active-content-proof',
@@ -4580,9 +4602,9 @@ function ownerDecisionArtifactsFor(
 					decision:
 						'Use the performance matrix as a defer decision: no broad XLSX read, SOTA, or QSS-leapfrog speed claim is promotable from the current partial baseline.',
 					nextAction:
-						'Benchmarking owner treats the focused ClosedXML, same-lane selected-sheet, same-lane metadata-only, current-worktree python-calamine selected-sheet runner proof, and current full-profile/merged scoreboard runs as accepted bounded evidence, downgrades broad speed wording, and stops production optimization unless the next work is explicit blocker resolution for ClosedXML coverage, feature-rich semantic mismatches, remaining unsupported selected-sheet/metadata-only competitors, or FastXLSX environment coverage.',
+						'Benchmarking owner treats the focused ClosedXML, same-lane selected-sheet, same-lane metadata-only, current-worktree python-calamine selected-sheet runner proof, current full-profile/merged scoreboard runs, and commit 67b900ed plain-text write baseline as accepted bounded evidence, downgrades broad speed wording, and stops production optimization unless the next work is explicit blocker resolution for ClosedXML coverage, feature-rich semantic mismatches, remaining unsupported selected-sheet/metadata-only competitors, FastXLSX environment coverage, or another named public workflow loss.',
 					forbiddenShortcut:
-						'Do not count unavailable runners, blocked runners, dirty-worktree timings, or one-workload medians as speed wins.',
+						'Do not count unavailable runners, blocked runners, dirty-worktree timings, one-workload medians, or the 2000x20 plain-text write baseline as broad XLSX write/SOTA/QSS speed wins.',
 					boundary:
 						'Owner decision artifact only. It blocks weak performance wording and names the next benchmark loop; it is not a release speed claim.',
 				},
@@ -5209,6 +5231,7 @@ const AGENT_WORKFLOW_OBSERVABILITY_BLOCKER = {
 		'CLI trace and repair tests expose trace depth, formula precedents, structured batch repair details, and check metadata for agent repair in `apps/cli/src/cli.test.ts`.',
 		'API and MCP tests expose capped formula-view trace diagnostics, structured repair details, compact trace artifact counts, and blocked post-write audit output in `apps/api/src/server.test.ts` and `apps/mcp/src/index.test.ts`.',
 		'API repair-plan input diagnostics are accepted as internal workflow proof: `2cb02045 fix(api): structure repair plan inputs` returns a structured retryable missing-workbook-reference error for `/repair-plan` instead of a generic missing-file response.',
+		'Runnable safe-edit examples are accepted as local workflow proof: `cab4bff1 test(examples): prove agent safe edit workflow` covers SDK inspect/plan/commit/reopen/check/lint verification, and `01d08512 test(examples): add runnable api safe edit workflow` covers the same generated-workbook path through HTTP API calls.',
 		'Workflow docs list inspect, plan, commit, verify, trace, and repair-plan recovery paths in `docs/AGENT_WORKFLOW.md`, but documentation is guidance rather than release proof.',
 	],
 	evidenceMissing: [

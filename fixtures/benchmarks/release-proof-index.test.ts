@@ -900,6 +900,11 @@ describe('release proof evidence index', () => {
 				command: expect.stringContaining('packages/sdk/src/agent-workflow.test.ts'),
 			}),
 			expect.objectContaining({
+				evidenceId: 'sdk-encrypted-agent-commit-policy-proof',
+				acceptedScope: expect.stringContaining('d8d9ae1a'),
+				boundary: expect.stringContaining('SDK agent commit policy evidence only'),
+			}),
+			expect.objectContaining({
 				evidenceId: 'sdk-signed-output-fail-closed-proof',
 				acceptedScope: expect.stringContaining('4502acbf'),
 				command: expect.stringContaining('signed workbook saves fail closed'),
@@ -911,6 +916,14 @@ describe('release proof evidence index', () => {
 				command: expect.stringContaining('dirty signed workbooks require explicit signature'),
 			}),
 			expect.objectContaining({
+				evidenceId: 'sdk-signed-agent-text-commit-policy-proof',
+				acceptedScope: expect.stringContaining('90f4c248'),
+				command: expect.stringContaining(
+					'signed workbook commits can explicitly write unsigned text output',
+				),
+				boundary: expect.stringContaining('approved text-output evidence only'),
+			}),
+			expect.objectContaining({
 				evidenceId: 'mcp-agent-workflow-open-plan-first',
 				acceptedScope: expect.stringContaining('d4ee22e1'),
 				boundary: expect.stringContaining('MCP workflow guidance evidence only'),
@@ -920,6 +933,12 @@ describe('release proof evidence index', () => {
 				acceptedScope: expect.stringContaining('cab4bff1'),
 				command: expect.stringContaining('examples/agent-safe-edit.ts'),
 				boundary: expect.stringContaining('Local example workflow proof only'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'api-agent-safe-edit-example-proof',
+				acceptedScope: expect.stringContaining('01d08512'),
+				command: expect.stringContaining('examples/agent-safe-edit-http.ts'),
+				boundary: expect.stringContaining('Local generated-workbook API workflow proof only'),
 			}),
 			expect.objectContaining({
 				evidenceId: 'api-custom-ui-active-content-proof',
@@ -2032,6 +2051,8 @@ describe('release proof evidence index', () => {
 		expect(agentWorkflowEvidence).toContain('apps/mcp/src/index.test.ts')
 		expect(agentWorkflowEvidence).toContain('2cb02045')
 		expect(agentWorkflowEvidence).toContain('structured retryable missing-workbook-reference')
+		expect(agentWorkflowEvidence).toContain('01d08512')
+		expect(agentWorkflowEvidence).toContain('HTTP API calls')
 		expect(agentWorkflowEvidence).toContain('docs/AGENT_WORKFLOW.md')
 		expect(agentWorkflowMissing).toContain('inspect, plan, commit, reopen, diff, audit')
 		expect(agentWorkflowMissing).toContain('Trace payload size')
@@ -2141,7 +2162,11 @@ describe('release proof evidence index', () => {
 		expect(performanceOwnerArtifact?.nextAction).toContain(
 			'current full-profile/merged scoreboard runs',
 		)
+		expect(performanceOwnerArtifact?.nextAction).toContain('67b900ed plain-text write baseline')
 		expect(performanceOwnerArtifact?.nextAction).toContain('stops production optimization')
+		expect(performanceOwnerArtifact?.forbiddenShortcut).toContain(
+			'plain-text write baseline as broad XLSX write',
+		)
 		expect(
 			safeOpenDecision.nextOwnerActions.find(
 				(action) => action.requirementId === 'release-latency-run',

@@ -250,6 +250,31 @@ describe('LibreOffice XLSX fixture corpus', () => {
 		expect(sheet?.drawingObjectRefs).toHaveLength(1)
 	})
 
+	test('inventories real LibreOffice shape macro bindings on drawing objects', () => {
+		const initial = readXlsx(loadFixture('shape-macro-ext-ref.xlsx'))
+		expectOk(initial)
+
+		const sheet = initial.value.workbook.sheets.find((entry) => entry.name === 'Auswertung')
+		expect(sheet?.drawingObjectRefs).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					drawingPartPath: 'xl/drawings/drawing1.xml',
+					source: 'drawingml',
+					kind: 'textBox',
+					id: 7,
+					name: 'Abgerundetes Rechteck 6',
+					text: 'Datenimport+ Auswertung',
+					macro: '[1]!Importieren',
+					anchor: {
+						kind: 'twoCell',
+						from: { col: 16, row: 0, colOff: 9525, rowOff: 190499 },
+						to: { col: 19, row: 6, colOff: 752475, rowOff: 0 },
+					},
+				}),
+			]),
+		)
+	})
+
 	test('links LibreOffice ActiveX checkbox controls to worksheet and drawing metadata', () => {
 		const initial = readXlsx(loadFixture('activex_checkbox.xlsx'))
 		expectOk(initial)

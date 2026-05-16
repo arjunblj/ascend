@@ -926,6 +926,7 @@ export interface PostWriteDrawingObjectEntry {
 	readonly name?: string
 	readonly description?: string
 	readonly text?: string
+	readonly macro?: string
 	readonly vmlShapeId?: string
 	readonly vmlObjectType?: string
 	readonly visible?: boolean
@@ -3482,6 +3483,7 @@ function postWriteVisualSummary(workbook: Workbook): PostWriteVisualSummary {
 				...(object.name !== undefined ? { name: object.name } : {}),
 				...(object.description !== undefined ? { description: object.description } : {}),
 				...(object.text !== undefined ? { text: object.text } : {}),
+				...(object.macro !== undefined ? { macro: object.macro } : {}),
 				...(object.vmlShapeId !== undefined ? { vmlShapeId: object.vmlShapeId } : {}),
 				...(object.vmlObjectType !== undefined ? { vmlObjectType: object.vmlObjectType } : {}),
 				...(object.visible !== undefined ? { visible: object.visible } : {}),

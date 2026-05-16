@@ -533,7 +533,7 @@ export const EXCEL_CAPABILITIES: readonly ExcelCapability[] = [
 		'editable',
 		'P0',
 		'Broaden drawing edits beyond existing text runs and add deeper VML form-control semantics.',
-		'Drawing object inventory exposes DrawingML and VML shape, connector, group shape, graphic frame, text box anchors, names, text, and resolved relationship refs; existing DrawingML shape/text-box text runs are editable while preserving anchors, geometry, and relationships.',
+		'Drawing object inventory exposes DrawingML and VML shape, connector, group shape, graphic frame, text box anchors, names, text, macro bindings, and resolved relationship refs; existing DrawingML shape/text-box text runs are editable while preserving anchors, geometry, and relationships.',
 		[
 			'packages/io-xlsx/src/reader/drawing.test.ts',
 			'packages/io-xlsx/src/writer/writer.test.ts',
@@ -701,6 +701,21 @@ export const EXCEL_CAPABILITIES: readonly ExcelCapability[] = [
 			'fixtures/corpus/active-content-contract.test.ts',
 			'packages/io-xlsx/src/reader/active-content.test.ts',
 			'packages/sdk/src/active-content-inventory.test.ts',
+		],
+	),
+	cap(
+		'active.shape-macros',
+		'active content',
+		'Shape macro bindings',
+		'inspectable',
+		'P1',
+		'Link shape macro bindings to callable VBA/project metadata when macro project summaries are available.',
+		'DrawingML and VML shape macro bindings are inventoried on drawing objects and as blocked active content for tracked public fixtures; macro execution remains blocked.',
+		[
+			'fixtures/corpus/active-content-contract.test.ts',
+			'fixtures/xlsx/libreoffice-fixtures.test.ts',
+			'packages/io-xlsx/src/reader/drawing.test.ts',
+			'packages/sdk/src/agent-workflow.test.ts',
 		],
 	),
 	cap(

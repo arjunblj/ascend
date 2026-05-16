@@ -24,7 +24,7 @@ describe('drawing inventory', () => {
   </xdr:oneCellAnchor>
   <xdr:absoluteAnchor>
     <xdr:pos x="7" y="8"/><xdr:ext cx="9" cy="10"/>
-    <xdr:graphicFrame>
+    <xdr:graphicFrame macro="Book.xlsm!RefreshChart">
       <xdr:nvGraphicFramePr><xdr:cNvPr id="12" name="Chart Frame"/></xdr:nvGraphicFramePr>
       <a:graphic><a:graphicData><c:chart xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" r:id="rIdChart"/></a:graphicData></a:graphic>
     </xdr:graphicFrame>
@@ -63,6 +63,7 @@ describe('drawing inventory', () => {
 				kind: 'graphicFrame',
 				id: 12,
 				name: 'Chart Frame',
+				macro: 'Book.xlsm!RefreshChart',
 				relIds: ['rIdChart'],
 				anchor: { kind: 'absolute', x: 7, y: 8, cx: 9, cy: 10 },
 			},
@@ -106,6 +107,7 @@ describe('drawing inventory', () => {
 				id: 1025,
 				name: '_x0000_s1025',
 				text: 'Multi Line Text',
+				macro: '[0]!Button1_Click',
 				style: expect.stringContaining('position:absolute'),
 				vmlShapeId: '_x0000_s1025',
 				vmlObjectType: 'Button',

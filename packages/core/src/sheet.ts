@@ -254,6 +254,7 @@ export interface SheetDrawingObjectRef {
 	readonly name?: string
 	readonly description?: string
 	readonly text?: string
+	readonly macro?: string
 	readonly style?: string
 	readonly vmlShapeId?: string
 	readonly vmlObjectType?: string

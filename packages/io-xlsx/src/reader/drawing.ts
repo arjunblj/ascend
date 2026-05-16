@@ -179,6 +179,7 @@ function parseDrawingObject(
 	const name = cNvPr ? attr(cNvPr, 'name') : undefined
 	const description = cNvPr ? attr(cNvPr, 'descr') : undefined
 	const text = kind === 'textBox' ? extractDrawingText(node) : undefined
+	const macro = attr(node, 'macro')
 	const relIds = collectRelationshipIds(node)
 	const relationshipRefs = relIds.flatMap((relId) => {
 		const rel = relationships.get(relId)
@@ -202,6 +203,7 @@ function parseDrawingObject(
 		...(name ? { name } : {}),
 		...(description ? { description } : {}),
 		...(text ? { text } : {}),
+		...(macro ? { macro } : {}),
 		...(relIds.length > 0 ? { relIds } : {}),
 		...(relationshipRefs.length > 0 ? { relationshipRefs } : {}),
 	}
@@ -220,6 +222,7 @@ function parseVmlDrawingObject(
 	const id = parseVmlShapeId(shapeSpid ?? vmlShapeId)
 	const style = attrs.get('style')
 	const text = extractVmlTextBoxText(body)
+	const macro = extractVmlMacro(body)
 	const relIds = collectVmlRelationshipIds(body)
 	const relationshipRefs = relIds.flatMap((relId) => {
 		const rel = relationships.get(relId)
@@ -246,12 +249,20 @@ function parseVmlDrawingObject(
 		...(id !== undefined ? { id } : {}),
 		...(vmlShapeId ? { name: vmlShapeId, vmlShapeId } : {}),
 		...(text ? { text } : {}),
+		...(macro ? { macro } : {}),
 		...(style ? { style } : {}),
 		...(objectType ? { vmlObjectType: objectType } : {}),
 		...(visible !== undefined ? { visible } : {}),
 		...(relIds.length > 0 ? { relIds } : {}),
 		...(relationshipRefs.length > 0 ? { relationshipRefs } : {}),
 	}
+}
+
+function extractVmlMacro(xml: string): string | undefined {
+	const macro = localTagBody(xml, 'FmlaMacro')
+	if (!macro) return undefined
+	const decoded = decodeXmlEntities(macro.replace(/<[^>]+>/g, '').trim())
+	return decoded.length > 0 ? decoded : undefined
 }
 
 function findNonVisualProps(node: XmlNode, names: readonly string[]): XmlNode | undefined {

@@ -3494,6 +3494,7 @@ describe('agent workflow loss audit', () => {
 							id: 7,
 							name: 'Abgerundetes Rechteck 6',
 							text: 'Datenimport+ Auswertung',
+							macro: '[1]!Importieren',
 							relIds: [],
 							relationships: [],
 						}),

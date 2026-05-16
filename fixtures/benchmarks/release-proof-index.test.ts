@@ -1028,7 +1028,7 @@ describe('release proof evidence index', () => {
 					validationCommand:
 						'bun test packages/sdk/src/excel-behavior-compatibility-matrix.test.ts',
 					decision: expect.stringContaining('protection metadata'),
-					nextAction: expect.stringContaining('classic/x14 conditional-format fixtures'),
+					nextAction: expect.stringContaining('public LibreOffice cached-value parity'),
 					forbiddenShortcut: expect.stringContaining('full chart editing support'),
 				}),
 				expect.objectContaining({
@@ -1593,6 +1593,7 @@ describe('release proof evidence index', () => {
 		])
 		expect(board.rows?.every((row) => row.headlineClaimAllowed === false)).toBe(true)
 		expect(board.rows?.every((row) => (row.aPlusBlockingOwnerActions?.length ?? 0) > 0)).toBe(true)
+		expect(stdout).toContain('Excel-ground-truth formula/cached-result fixtures')
 		expect(stdout).toContain('bounded chart series-source fixtures as accepted evidence')
 		expect(stdout).toContain('full chart editing support')
 		expect(board.doNotPromoteYet?.map((item) => item.name)).toContain('columnar-scan-sidecars')

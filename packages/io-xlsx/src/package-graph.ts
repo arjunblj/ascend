@@ -19,6 +19,7 @@ import {
 	REL_CONTROL_PROP,
 	REL_CORE_PROPERTIES,
 	REL_CUSTOM_PROPERTIES,
+	REL_CUSTOM_UI,
 	REL_CUSTOM_XML,
 	REL_DATA_MODEL,
 	REL_DIGITAL_SIGNATURE,
@@ -262,6 +263,7 @@ export function classifyPackageFeatureFamily(
 	if (lowerRelType.endsWith('/relationships/ctrlprop')) return 'preservedControl'
 	if (lowerRelType.endsWith('/relationships/oleobject')) return 'preservedEmbedding'
 	if (lowerRelType.endsWith('/relationships/customxml')) return 'preservedCustomXml'
+	if (lowerRelType.endsWith('/relationships/ui/extensibility')) return 'preservedCustomUi'
 	if (lowerRelType.endsWith('/relationships/calcchain')) return 'preservedCalcChain'
 	if (lowerRelType.endsWith('/relationships/sheetmetadata')) return 'preservedMetadata'
 	if (path.includes('/chartsheets/')) return 'preservedChartSheet'
@@ -531,11 +533,14 @@ function classifyOwnerScope(
 		primary?.type === REL_ACTIVE_X_CONTROL_BINARY ||
 		primary?.type === REL_CONTROL_PROP ||
 		primary?.type === REL_OLE_OBJECT ||
-		primary?.type === REL_VBA_PROJECT
+		primary?.type === REL_VBA_PROJECT ||
+		primary?.type === REL_CUSTOM_UI
 	) {
 		return 'active-content'
 	}
-	if (/(^|\/)(activeX|ctrlProps|embeddings)\//i.test(partPath)) return 'active-content'
+	if (/(^|\/)(activeX|ctrlProps|embeddings|customUI)\//i.test(partPath)) {
+		return 'active-content'
+	}
 	if (primary?.type === REL_CALC_CHAIN || primary?.type === REL_SHEET_METADATA) return 'metadata'
 	if (/(^|\/)(metadata|calcChain)\.xml$/i.test(partPath)) return 'metadata'
 	if (primary?.sourcePartPath.includes('/worksheets/')) return 'worksheet'
@@ -578,6 +583,7 @@ function classifyRelationshipFeatureFamily(
 	if (relationship.type === REL_POWER_QUERY_MASHUP) return 'preservedPowerQuery'
 	if (relationship.type === REL_HYPERLINK) return 'preservedHyperlink'
 	if (relationship.type === REL_CUSTOM_XML) return 'preservedCustomXml'
+	if (relationship.type === REL_CUSTOM_UI) return 'preservedCustomUi'
 	if (relationship.type === REL_COMMENTS) return 'preservedComments'
 	if (relationship.type === REL_THREADED_COMMENT) return 'preservedThreadedComments'
 	if (relationship.type === REL_DRAWING) return 'preservedDrawing'

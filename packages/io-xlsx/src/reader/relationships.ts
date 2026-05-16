@@ -43,6 +43,8 @@ export const REL_HYPERLINK =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink'
 export const REL_CUSTOM_XML =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml'
+export const REL_CUSTOM_UI =
+	'http://schemas.microsoft.com/office/2006/relationships/ui/extensibility'
 export const REL_COMMENTS =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments'
 export const REL_DRAWING =

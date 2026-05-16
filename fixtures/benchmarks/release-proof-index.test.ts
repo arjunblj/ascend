@@ -459,6 +459,7 @@ describe('release proof evidence index', () => {
 			evidenceSources: expect.arrayContaining(['high-risk-package-contract/encrypted-password']),
 			proofChecks: expect.arrayContaining([
 				expect.stringContaining('edited encrypted export fails closed'),
+				expect.stringContaining('metadata-only sessions'),
 			]),
 		})
 		expect(index.trustCompletenessBoundaryEvidence).toMatchObject({
@@ -890,6 +891,12 @@ describe('release proof evidence index', () => {
 				boundary: expect.stringContaining('Encrypted output fail-closed evidence only'),
 			}),
 			expect.objectContaining({
+				evidenceId: 'sdk-encrypted-session-package-inspection-proof',
+				acceptedScope: expect.stringContaining('7ff308c9'),
+				command: expect.stringContaining('rawPackagePart inspects decrypted package parts'),
+				boundary: expect.stringContaining('Encrypted package-inspection evidence only'),
+			}),
+			expect.objectContaining({
 				evidenceId: 'sdk-encrypted-agent-commit-policy-proof',
 				acceptedScope: expect.stringContaining('5ab9365d'),
 				path: expect.stringContaining('packages/sdk/src/agent-workflow.test.ts'),
@@ -939,6 +946,16 @@ describe('release proof evidence index', () => {
 				acceptedScope: expect.stringContaining('01d08512'),
 				command: expect.stringContaining('examples/agent-safe-edit-http.ts'),
 				boundary: expect.stringContaining('Local generated-workbook API workflow proof only'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'api-agent-safe-edit-example-proof',
+				acceptedScope: expect.stringContaining('2569626c'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'mcp-agent-safe-edit-example-proof',
+				acceptedScope: expect.stringContaining('de45eb83'),
+				command: 'bun test examples/agent-safe-edit-mcp.test.ts --timeout 30000',
+				boundary: expect.stringContaining('Local generated-workbook MCP workflow proof only'),
 			}),
 			expect.objectContaining({
 				evidenceId: 'api-custom-ui-active-content-proof',
@@ -2057,6 +2074,10 @@ describe('release proof evidence index', () => {
 		expect(agentWorkflowEvidence).toContain('structured retryable missing-workbook-reference')
 		expect(agentWorkflowEvidence).toContain('01d08512')
 		expect(agentWorkflowEvidence).toContain('HTTP API calls')
+		expect(agentWorkflowEvidence).toContain('de45eb83')
+		expect(agentWorkflowEvidence).toContain('MCP tools')
+		expect(agentWorkflowEvidence).toContain('2569626c')
+		expect(agentWorkflowEvidence).toContain('Agent-doc search indexes runnable HTTP and MCP')
 		expect(agentWorkflowEvidence).toContain('docs/AGENT_WORKFLOW.md')
 		expect(agentWorkflowMissing).toContain('inspect, plan, commit, reopen, diff, audit')
 		expect(agentWorkflowMissing).toContain('Trace payload size')
@@ -2167,10 +2188,12 @@ describe('release proof evidence index', () => {
 			'current full-profile/merged scoreboard runs',
 		)
 		expect(performanceOwnerArtifact?.nextAction).toContain('67b900ed plain-text write baseline')
+		expect(performanceOwnerArtifact?.nextAction).toContain('e22eb86a string-heavy write baseline')
 		expect(performanceOwnerArtifact?.nextAction).toContain('stops production optimization')
 		expect(performanceOwnerArtifact?.forbiddenShortcut).toContain(
-			'plain-text write baseline as broad XLSX write',
+			'the 2000x20 plain-text write baseline',
 		)
+		expect(performanceOwnerArtifact?.forbiddenShortcut).toContain('noisy string-heavy reruns')
 		expect(
 			safeOpenDecision.nextOwnerActions.find(
 				(action) => action.requirementId === 'release-latency-run',

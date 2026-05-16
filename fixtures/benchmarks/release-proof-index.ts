@@ -3052,6 +3052,17 @@ function safeOpenQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceItem[] {
 				'Encrypted output fail-closed evidence only; it does not provide re-encryption support, password recovery, encrypted output writing, or arbitrary log scrubbing.',
 		},
 		{
+			evidenceId: 'sdk-encrypted-session-package-inspection-proof',
+			kind: 'test',
+			command:
+				'bun test packages/sdk/src/sdk.test.ts -t "rawPackagePart inspects decrypted package parts after password open" --timeout 30000',
+			path: 'packages/sdk/src/session.ts; packages/sdk/src/sdk.test.ts',
+			acceptedScope:
+				'Commit 7ff308c9 makes WorkbookDocument packageGraph/rawPackagePart inspect decrypted package bytes after password open, including metadata-only sessions, while preserving fail-closed behavior for dirty encrypted exports.',
+			boundary:
+				'Encrypted package-inspection evidence only; it does not provide re-encryption support, password recovery, encrypted output writing, malware scanning, or file trust.',
+		},
+		{
 			evidenceId: 'sdk-encrypted-agent-commit-policy-proof',
 			kind: 'test',
 			command:
@@ -3112,9 +3123,19 @@ function safeOpenQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceItem[] {
 				'bun run examples/agent-safe-edit-http.ts /private/tmp/ascend-agent-safe-edit-http-input.xlsx /private/tmp/ascend-agent-safe-edit-http-output.xlsx',
 			path: 'examples/agent-safe-edit-http.ts; examples/agent-safe-edit-http.test.ts',
 			acceptedScope:
-				'Commit 01d08512 adds a runnable HTTP API safe-edit example that opens/plans, inspects, reads, prepares a plan, commits, reopens, checks, lints, verifies the edited formula cell, and has a focused example test for the workflow contract.',
+				'Commit 01d08512 adds a runnable HTTP API safe-edit example that opens/plans, inspects, reads, prepares a plan, commits, reopens, checks, lints, verifies the edited formula cell, and has a focused example test for the workflow contract. Commit 2569626c indexes the runnable HTTP workflow in SDK agent-doc search so outside users can discover it.',
 			boundary:
 				'Local generated-workbook API workflow proof only; it does not prove arbitrary workbook safety, public workbook behavior, package publication, performance, external trust, or every SDK/CLI/API/MCP workflow.',
+		},
+		{
+			evidenceId: 'mcp-agent-safe-edit-example-proof',
+			kind: 'proof-artifact',
+			command: 'bun test examples/agent-safe-edit-mcp.test.ts --timeout 30000',
+			path: 'examples/agent-safe-edit-mcp.ts; examples/agent-safe-edit-mcp.test.ts; packages/sdk/src/agent-docs.ts; packages/sdk/src/agent-docs.test.ts',
+			acceptedScope:
+				'Commit de45eb83 adds a runnable MCP safe-edit example and focused test covering agent_workflow discovery, open-plan, inspect, read, prepared plan, commit, reopen, check, lint, and edited formula verification, and indexes the runnable MCP workflow in SDK agent-doc search.',
+			boundary:
+				'Local generated-workbook MCP workflow proof only; it does not prove arbitrary workbook safety, public workbook behavior, package publication, performance, external trust, or every SDK/CLI/API/MCP workflow.',
 		},
 		{
 			evidenceId: 'api-custom-ui-active-content-proof',
@@ -4602,9 +4623,9 @@ function ownerDecisionArtifactsFor(
 					decision:
 						'Use the performance matrix as a defer decision: no broad XLSX read, SOTA, or QSS-leapfrog speed claim is promotable from the current partial baseline.',
 					nextAction:
-						'Benchmarking owner treats the focused ClosedXML, same-lane selected-sheet, same-lane metadata-only, current-worktree python-calamine selected-sheet runner proof, current full-profile/merged scoreboard runs, and commit 67b900ed plain-text write baseline as accepted bounded evidence, downgrades broad speed wording, and stops production optimization unless the next work is explicit blocker resolution for ClosedXML coverage, feature-rich semantic mismatches, remaining unsupported selected-sheet/metadata-only competitors, FastXLSX environment coverage, or another named public workflow loss.',
+						'Benchmarking owner treats the focused ClosedXML, same-lane selected-sheet, same-lane metadata-only, current-worktree python-calamine selected-sheet runner proof, current full-profile/merged scoreboard runs, commit 67b900ed plain-text write baseline, and commit e22eb86a string-heavy write baseline as accepted bounded evidence, downgrades broad speed wording, and stops production optimization unless the next work is explicit blocker resolution for ClosedXML coverage, feature-rich semantic mismatches, remaining unsupported selected-sheet/metadata-only competitors, FastXLSX environment coverage, unstable string-heavy tail profiling tied to release wording, or another named public workflow loss.',
 					forbiddenShortcut:
-						'Do not count unavailable runners, blocked runners, dirty-worktree timings, one-workload medians, or the 2000x20 plain-text write baseline as broad XLSX write/SOTA/QSS speed wins.',
+						'Do not count unavailable runners, blocked runners, dirty-worktree timings, one-workload medians, the 2000x20 plain-text write baseline, or noisy string-heavy reruns as broad XLSX write/SOTA/QSS speed wins.',
 					boundary:
 						'Owner decision artifact only. It blocks weak performance wording and names the next benchmark loop; it is not a release speed claim.',
 				},
@@ -5231,7 +5252,8 @@ const AGENT_WORKFLOW_OBSERVABILITY_BLOCKER = {
 		'CLI trace and repair tests expose trace depth, formula precedents, structured batch repair details, and check metadata for agent repair in `apps/cli/src/cli.test.ts`.',
 		'API and MCP tests expose capped formula-view trace diagnostics, structured repair details, compact trace artifact counts, and blocked post-write audit output in `apps/api/src/server.test.ts` and `apps/mcp/src/index.test.ts`.',
 		'API repair-plan input diagnostics are accepted as internal workflow proof: `2cb02045 fix(api): structure repair plan inputs` returns a structured retryable missing-workbook-reference error for `/repair-plan` instead of a generic missing-file response.',
-		'Runnable safe-edit examples are accepted as local workflow proof: `cab4bff1 test(examples): prove agent safe edit workflow` covers SDK inspect/plan/commit/reopen/check/lint verification, and `01d08512 test(examples): add runnable api safe edit workflow` covers the same generated-workbook path through HTTP API calls.',
+		'Runnable safe-edit examples are accepted as local workflow proof: `cab4bff1 test(examples): prove agent safe edit workflow` covers SDK inspect/plan/commit/reopen/check/lint verification, `01d08512 test(examples): add runnable api safe edit workflow` covers the same generated-workbook path through HTTP API calls, and `de45eb83 test(examples): add runnable mcp safe edit workflow` covers it through MCP tools.',
+		'Agent-doc search indexes runnable HTTP and MCP safe-edit workflows through `2569626c fix(sdk): index runnable http workflow example` and `de45eb83 test(examples): add runnable mcp safe edit workflow`, making outside-user workflow examples discoverable from the SDK docs surface.',
 		'Workflow docs list inspect, plan, commit, verify, trace, and repair-plan recovery paths in `docs/AGENT_WORKFLOW.md`, but documentation is guidance rather than release proof.',
 	],
 	evidenceMissing: [
@@ -5590,6 +5612,7 @@ function correctnessBoundaryEvidence(
 				'valid password opens with full-mode planning',
 				'missing or wrong password rejects before hydration',
 				'high-risk package corpus contract proves no-op encrypted bytes stay encrypted and edited encrypted export fails closed unless decrypted plain XLSX output is explicitly requested',
+				'SDK session packageGraph/rawPackagePart inspect decrypted package bytes after password open, including metadata-only sessions',
 				'boundary does not claim password recovery, protection removal, malware scanning, or file trust',
 			],
 		}),

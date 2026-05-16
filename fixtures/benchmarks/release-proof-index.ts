@@ -3093,7 +3093,7 @@ function releaseDecisionBenchmarkCorpusRunContract(
 				'Tracked-clean release environment with repeat 10, warmup 3, timing metadata, and no dirty-worktree or private-corpus timings counted.',
 			requiredOutputEvidence: [
 				'Open-plan and full-open median, p95, and CV for each required public case.',
-				'Timing environment metadata and product-approved non-threshold wording.',
+				'Timing environment metadata, worktree `releaseClaimable` status, tracked-dirty file list, and product-approved non-threshold wording.',
 			],
 			promotionCondition:
 				'Promote only bounded latency wording after the public profile passes CV/noise guardrails and product approves non-threshold copy.',

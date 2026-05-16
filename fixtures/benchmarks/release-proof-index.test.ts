@@ -3104,6 +3104,7 @@ describe('release proof evidence index', () => {
 					runEnvironment: expect.stringContaining('Tracked-clean release environment'),
 					requiredOutputEvidence: expect.arrayContaining([
 						expect.stringContaining('Open-plan and full-open median'),
+						expect.stringContaining('worktree `releaseClaimable` status'),
 					]),
 					failureEvidence: expect.arrayContaining([expect.stringContaining('release-latency-run')]),
 				}),

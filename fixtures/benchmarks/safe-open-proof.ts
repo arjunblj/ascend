@@ -59,6 +59,7 @@ export interface SafeOpenProofResult {
 	readonly warmup: number
 	readonly generatedAt: string
 	readonly timingEnvironment?: SafeOpenProofTimingEnvironment
+	readonly worktree?: SafeOpenProofWorktreeState
 	readonly cases: readonly SafeOpenProofCaseResult[]
 }
 
@@ -71,6 +72,17 @@ export interface SafeOpenProofTimingEnvironment {
 	readonly cpuModel: string
 	readonly cpuCount: number
 	readonly totalMemoryBytes: number
+	readonly boundary: string
+}
+
+export interface SafeOpenProofWorktreeState {
+	readonly branchLine: string
+	readonly dirty: boolean
+	readonly trackedDirty: boolean
+	readonly trackedDirtyFiles: readonly string[]
+	readonly untrackedCount: number
+	readonly status: readonly string[]
+	readonly releaseClaimable: boolean
 	readonly boundary: string
 }
 
@@ -165,7 +177,9 @@ export async function runSafeOpenProof(
 		repeat,
 		warmup,
 		generatedAt: new Date().toISOString(),
-		...(includeTimings ? { timingEnvironment: timingEnvironment() } : {}),
+		...(includeTimings
+			? { timingEnvironment: timingEnvironment(), worktree: readWorktreeState() }
+			: {}),
 		cases: results,
 	}
 }
@@ -241,6 +255,9 @@ export function safeOpenProofMarkdown(result: SafeOpenProofResult): string {
 		result.timingEnvironment
 			? `Timing environment: ${formatTimingEnvironment(result.timingEnvironment)}`
 			: 'Timing environment: not captured because timings were disabled',
+		result.worktree
+			? `Worktree: ${formatWorktreeState(result.worktree)}`
+			: 'Worktree: not captured because timings were disabled',
 		'',
 		'Boundary: this proves pre-hydration package-feature routing, not malware scanning, sandboxing, active-content execution, or malformed-package recovery.',
 		'',
@@ -616,6 +633,59 @@ function timingEnvironment(): SafeOpenProofTimingEnvironment {
 		boundary:
 			'Local timing environment metadata for owner review only. It is not a release benchmark attestation or hardware-normalized result.',
 	}
+}
+
+function readWorktreeState(): SafeOpenProofWorktreeState {
+	const result = Bun.spawnSync(['git', 'status', '--short', '--branch'], {
+		cwd: process.cwd(),
+		stdout: 'pipe',
+		stderr: 'pipe',
+	})
+	if (result.exitCode !== 0) {
+		return {
+			branchLine: 'git-status-unavailable',
+			dirty: true,
+			trackedDirty: true,
+			trackedDirtyFiles: [],
+			untrackedCount: 0,
+			status: [],
+			releaseClaimable: false,
+			boundary:
+				'Git status was unavailable, so timing evidence is diagnostic only and cannot satisfy release-latency-run.',
+		}
+	}
+	const text = new TextDecoder().decode(result.stdout)
+	const lines = text.trimEnd().split('\n').filter(Boolean)
+	const branchLine = lines[0] ?? 'unknown'
+	const entries = lines.slice(1)
+	const trackedDirtyFiles = entries
+		.filter((line) => !line.startsWith('?? '))
+		.map((line) => line.slice(3).trim())
+	const trackedDirty = trackedDirtyFiles.length > 0
+	return {
+		branchLine,
+		dirty: entries.length > 0,
+		trackedDirty,
+		trackedDirtyFiles,
+		untrackedCount: entries.filter((line) => line.startsWith('?? ')).length,
+		status: entries,
+		releaseClaimable: !trackedDirty,
+		boundary: trackedDirty
+			? 'Tracked dirty files were present, so timing evidence is diagnostic only and cannot satisfy release-latency-run.'
+			: 'No tracked dirty files were present; timing evidence can support release-latency-run owner review only with approved wording, while untracked entries are recorded as artifact context.',
+	}
+}
+
+function formatWorktreeState(worktree: SafeOpenProofWorktreeState): string {
+	const tracked =
+		worktree.trackedDirtyFiles.length > 0 ? worktree.trackedDirtyFiles.join(',') : 'none'
+	return [
+		`releaseClaimable=${worktree.releaseClaimable}`,
+		`trackedDirty=${worktree.trackedDirty}`,
+		`trackedDirtyFiles=${tracked}`,
+		`untrackedCount=${worktree.untrackedCount}`,
+		`branch=${worktree.branchLine}`,
+	].join(';')
 }
 
 function formatTimingEnvironment(environment: SafeOpenProofTimingEnvironment): string {

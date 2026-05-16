@@ -93,6 +93,7 @@ describe('safe open proof harness', () => {
 		expect(markdown).toContain('pre-hydration package-feature routing')
 		expect(markdown).toContain('not malware scanning')
 		expect(markdown).toContain('Timing environment: not captured')
+		expect(markdown).toContain('Worktree: not captured')
 		expect(markdown).toContain('Allowed claim:')
 		expect(markdown).toContain('metadata-only')
 	})
@@ -117,6 +118,16 @@ describe('safe open proof harness', () => {
 			totalMemoryBytes: expect.any(Number),
 			boundary: expect.stringContaining('owner review only'),
 		})
+		expect(proof.worktree).toMatchObject({
+			branchLine: expect.any(String),
+			dirty: expect.any(Boolean),
+			trackedDirty: expect.any(Boolean),
+			trackedDirtyFiles: expect.arrayContaining([]),
+			untrackedCount: expect.any(Number),
+			status: expect.arrayContaining([]),
+			releaseClaimable: !proof.worktree?.trackedDirty,
+			boundary: expect.stringContaining('release-latency-run'),
+		})
 		expect(clean?.openPlanMedianMs).toBeGreaterThan(0)
 		expect(clean?.openPlanP95Ms).toBeGreaterThan(0)
 		expect(clean?.openPlanCv).toBeGreaterThanOrEqual(0)
@@ -126,6 +137,7 @@ describe('safe open proof harness', () => {
 		expect(markdown).toContain('P95 open-plan ms')
 		expect(markdown).toContain('Open-plan CV')
 		expect(markdown).toContain('Timing environment: runtime=bun')
+		expect(markdown).toContain('Worktree: releaseClaimable=')
 		expect(markdown).toContain('not malware scanning')
 	})
 

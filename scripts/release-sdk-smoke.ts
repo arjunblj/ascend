@@ -118,7 +118,7 @@ async function prepareConsumerApp(): Promise<void> {
 	)
 	await writeFile(
 		join(appRoot, 'sdk-smoke.ts'),
-		`import { AscendWorkbook, commitAgentPlan, createAgentPlan, readAgentDoc, searchAgentDocs } from '@ascend/sdk'
+		`import { AscendWorkbook, commitAgentPlan, createAgentPlan, inspectWorkbookOpenPlan, readAgentDoc, searchAgentDocs } from '@ascend/sdk'
 
 const input = '${join(appRoot, 'input.xlsx')}'
 const output = '${join(appRoot, 'output.xlsx')}'
@@ -129,7 +129,13 @@ created.set('Sheet1!B1', 100)
 created.setFormula('Sheet1!C1', '=B1*2')
 await created.save(input)
 
-const opened = await AscendWorkbook.open(input)
+const sourceBytes = await Bun.file(input).bytes()
+const openPlan = inspectWorkbookOpenPlan(new Uint8Array(sourceBytes), { intent: 'edit-plan' })
+if (openPlan.recommendedLoadOptions.mode !== 'full') {
+	throw new Error(\`unexpected open plan: \${JSON.stringify(openPlan)}\`)
+}
+
+const opened = await AscendWorkbook.open(input, openPlan.recommendedLoadOptions)
 const info = opened.inspect()
 const ops = [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'B1', value: 125 }] }]
 const plan = await createAgentPlan(input, ops)
@@ -150,6 +156,7 @@ if (!llms?.includes('Ascend')) throw new Error('installed SDK could not read bun
 if (docHits.length === 0) throw new Error('installed SDK docs search returned no hits')
 
 console.log(JSON.stringify({
+	openPlanMode: openPlan.recommendedLoadOptions.mode,
 	sheets: info.sheets.map((sheet) => sheet.name),
 	planWouldSucceed: plan.preview.wouldSucceed,
 	commitOutputSha256: commit.outputSha256,

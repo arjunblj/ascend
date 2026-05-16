@@ -2267,6 +2267,18 @@ function releaseDecisionDoNotPromoteItem(
 		note.name === 'agent-workflow-observability' ? AGENT_WORKFLOW_OBSERVABILITY_BLOCKER : undefined
 	const practicalLatencyContractsBlocker =
 		note.name === 'practical-latency-contracts' ? PRACTICAL_LATENCY_CONTRACTS_BLOCKER : undefined
+	const allowedWording =
+		formulaLanguageServiceBlocker?.allowedWording ??
+		releaseProofBundleBlocker?.allowedWording ??
+		propertyJournalLawBlocker?.allowedWording ??
+		researchHygieneBlocker?.allowedWording ??
+		columnarSidecarBlocker?.allowedWording ??
+		formulaOracleRoutingBlocker?.allowedWording ??
+		tokenBoundedAgentViewBlocker?.allowedWording ??
+		retainedViewportPatchBlocker?.allowedWording ??
+		agentWorkflowObservabilityBlocker?.allowedWording ??
+		practicalLatencyContractsBlocker?.allowedWording ??
+		`Do not promote ${note.name} as release wording today; use it only as owner planning or research evidence.`
 	return {
 		name: note.name,
 		status: 'do-not-promote-yet',
@@ -2310,7 +2322,7 @@ function releaseDecisionDoNotPromoteItem(
 			proof?.competitorContrast ??
 				'QSS contrast is blocked until this diagnostic evidence changes a top-two release claim.',
 		],
-		allowedWording: `Do not promote ${note.name} as release wording today; use it only as owner planning or research evidence.`,
+		allowedWording,
 		forbiddenWording: [
 			note.killCriterion,
 			...(formulaLanguageServiceBlocker?.forbiddenWording ?? []),
@@ -2926,6 +2938,8 @@ const DEFERRED_CLAIMS: readonly ReleaseProofDeferredClaim[] = [
 const FORMULA_LANGUAGE_SERVICE_BLOCKER = {
 	ownerAction:
 		'Product/correctness owner records one public SDK/CLI/API/MCP formula-assist workflow with diagnostics, reference spans, binding roles, completions, signature help, LET prepareRename success, workbook-context prepareRename refusal, and no edit-producing rename; then defines Workbook-context ownership and operation-owned edit plans before any rename wording. Validate with `bun run fixtures/benchmarks/formula-assist-proof.ts --sample 250 --no-timings --json`, `bun test packages/sdk/src/formula-edit.test.ts --timeout 30000`, and focused CLI/API/MCP formula-assist tests.',
+	allowedWording:
+		'Do not promote formula-language-service-primitives as release wording today. Allowed wording: local formula-assist evidence covers diagnostics, spans, hovers, completions, signature help, binding roles, and rejection-first prepareRename only; rename remains blocked.',
 	evidenceWeHave: [
 		'Formula-assist proof command exists: `bun run fixtures/benchmarks/formula-assist-proof.ts --sample 250 --no-timings --json` records sampled formula diagnostics, reference spans, binding roles, refusal counts, and claim boundaries.',
 		'SDK formula-edit tests cover bundled formulaAssist, hover/code actions, reference kinds, binding roles, LET prepareRename success, and workbook-context/reference refusal in `packages/sdk/src/formula-edit.test.ts`.',
@@ -2944,6 +2958,8 @@ const FORMULA_LANGUAGE_SERVICE_BLOCKER = {
 const RELEASE_PROOF_BUNDLE_BLOCKER = {
 	ownerAction:
 		'Product/release owner records one public workbook workflow per top claim with inspect, plan, commit, reopen, diff, audit, compact report digest, `bun run release:rc:gate`, both compact proof commands, and `bun run fixtures/benchmarks/release-proof-index.ts --no-timings --owner-handoffs-json`; keep bundle wording blocked until artifact storage, privacy filtering, canonicalization subject, and offline verification policy are approved.',
+	allowedWording:
+		'Do not promote release-proof-bundle as release wording today. Allowed wording: local proof plumbing can link plan, commit, reopen, diff, audit, and compact report evidence for owner review, below artifact storage, privacy, canonicalization, and offline verification policy.',
 	evidenceWeHave: [
 		'Local RC gate exists: `bun run release:rc:gate` proves SDK/CLI/API/MCP tarballs can be installed and exercised from a fresh temp app.',
 		'Compact proof commands exist for top claims: `bun run fixtures/benchmarks/safe-open-proof.ts --no-timings --compact-json` and `bun run fixtures/benchmarks/package-action-proof.ts --no-timings --compact-json`.',
@@ -2962,6 +2978,8 @@ const RELEASE_PROOF_BUNDLE_BLOCKER = {
 const PROPERTY_JOURNAL_LAW_BLOCKER = {
 	ownerAction:
 		'Correctness owner keeps property-journal-laws out of release wording, accepts deterministic journal-law evidence only as local correctness proof, and either adds shrinkable/replayable fast-check generation or records a permanent test-strategy-only downgrade; validate with `bun test fixtures/benchmarks/journal-law-proof.test.ts --timeout 30000` and focused journal exactness coverage before any inverse-law wording.',
+	allowedWording:
+		'Do not promote property-journal-laws as release wording today. Allowed wording: deterministic local journal-law tests are correctness guardrails for covered exact operations and explicit lossy boundaries, not product undo or audit claims.',
 	evidenceWeHave: [
 		'Journal-law proof command exists: `bun test fixtures/benchmarks/journal-law-proof.test.ts --timeout 30000` covers generated exact inverse-law sequences, lossy metadata boundaries, operation-family counts, issue reasons, and claim-safe markdown.',
 		'SDK journal exactness tests cover allowed lossy issue reasons, representative exact inverse restoration, saved package-state lossiness, formula-binding lossiness, dynamic spill lossiness, table-style metadata boundaries, and journal surface classifications in `packages/sdk/src/journal-exactness.test.ts`.',
@@ -2980,6 +2998,8 @@ const PROPERTY_JOURNAL_LAW_BLOCKER = {
 const COLUMNAR_SIDECAR_BLOCKER = {
 	ownerAction:
 		'Performance owner treats columnar-scan-sidecars as benchmark-only evidence, reruns `bun test fixtures/benchmarks/columnar-sidecar.test.ts --timeout 30000` plus a public external claim report such as `bun run fixtures/benchmarks/columnar-sidecar.ts --fixture fixtures/xlsx/external/sec-mmf-statistics-2022-02.xlsx --sheet "Table 9" --repeats 8 --claim-report --json`, then adds multiple structurally diverse public workbook tables with build cost, invalidation cost, memory cap, checksum parity, and noise before any product or speed wording.',
+	allowedWording:
+		'Do not promote columnar-scan-sidecars as release wording today. Allowed wording: benchmark-only disposable sidecar experiments show checksum-parity probes on limited public ranges while the workbook grid remains source of truth.',
 	evidenceWeHave: [
 		'Columnar sidecar proof command exists: `bun test fixtures/benchmarks/columnar-sidecar.test.ts --timeout 30000` covers synthetic checksum parity, generation invalidation, claim-safe markdown, a tracked public fixture range, and an externally sourced public workbook range.',
 		'External claim-report command exists: `bun run fixtures/benchmarks/columnar-sidecar.ts --fixture fixtures/xlsx/external/sec-mmf-statistics-2022-02.xlsx --sheet "Table 9" --repeats 8 --claim-report --json` reports checksum parity and boundaries for one public numeric/date-like imported range.',
@@ -2998,6 +3018,8 @@ const COLUMNAR_SIDECAR_BLOCKER = {
 const FORMULA_ORACLE_ROUTING_BLOCKER = {
 	ownerAction:
 		'Correctness owner keeps formula-oracle-routing out of release wording, reruns `bun test fixtures/benchmarks/formula-corpus-correctness.test.ts --timeout 30000` and `bun run fixtures/benchmarks/formula-corpus-correctness.ts --corpus-root fixtures/xlsx/libreoffice --manifest fixtures/xlsx/libreoffice/manifest.ts --tag formula-fidelity --max-workbooks 5 --json`, then adds public corpus artifacts and real HyperFormula/LibreOffice/Excel/static-golden oracle adapters with skip/divergence counters before any Excel-compatible formula wording.',
+	allowedWording:
+		'Do not promote formula-oracle-routing as release wording today. Allowed wording: public cached-value corpus routing can report sampled formula counts, skips, mismatch classes, and oracle gaps; it does not prove Excel-compatible formulas.',
 	evidenceWeHave: [
 		'Formula corpus correctness tests cover TypeScript corpus manifests, cached-value comparisons, date-system-sensitive formulas, control-character strings, mismatch references, no-cached-value skips, volatile oracle skips, accepted numeric drift, stale oracle routing, assertion gates, and CLI threshold gates in `fixtures/benchmarks/formula-corpus-correctness.test.ts`.',
 		'Public cached-value corpus command exists: `bun run fixtures/benchmarks/formula-corpus-correctness.ts --corpus-root fixtures/xlsx/libreoffice --manifest fixtures/xlsx/libreoffice/manifest.ts --tag formula-fidelity --max-workbooks 5 --json` reports workbook/formula/compared counts, mismatch classes, skip counts, route counts, and source URLs.',
@@ -3016,6 +3038,8 @@ const FORMULA_ORACLE_ROUTING_BLOCKER = {
 const TOKEN_BOUNDED_AGENT_VIEW_BLOCKER = {
 	ownerAction:
 		'Product owner records one public end-to-end agent-view example that starts from a strict `maxApproxTokens` request, shows omitted sample-row, column-sample, and formula-pattern locators, then recovers omitted evidence through narrower reads or an unbudgeted same-range view; validate with `bun test fixtures/benchmarks/agent-view-budget-proof.test.ts fixtures/benchmarks/agent-view-recovery-proof.test.ts` plus SDK/CLI/API/MCP agent-view budget tests before any release wording.',
+	allowedWording:
+		'Do not promote token-bounded-agent-view as release wording today. Allowed wording: deterministic compact views can expose approximate token budgets, structural floors, omitted-evidence counters, and recovery locators for owner review.',
 	evidenceWeHave: [
 		'Budget proof command exists: `bun test fixtures/benchmarks/agent-view-budget-proof.test.ts` covers dense-table, wide-sparse, formula-heavy, metadata-heavy, and public-formula-stress cases for deterministic budget metadata, shape preservation, and counted omissions.',
 		'Recovery proof command exists: `bun test fixtures/benchmarks/agent-view-recovery-proof.test.ts` proves same-range unbudgeted recovery, compact omitted-evidence locators, narrow sample-row recovery, and formula-pattern example recovery.',
@@ -3034,6 +3058,8 @@ const TOKEN_BOUNDED_AGENT_VIEW_BLOCKER = {
 const RETAINED_VIEWPORT_PATCH_BLOCKER = {
 	ownerAction:
 		'Product/performance owner records one public SDK/API/MCP compact-read workflow with retained patch, skipped token, invalid token, expired history, projection-change invalidation, metadata invalidation, patch bytes, retention cap, and recovery action; validate with `bun test fixtures/benchmarks/viewport-patch-proof.test.ts`, the SDK interactive viewport patch tests, and API/MCP compact changedSince tests before any retained-history wording.',
+	allowedWording:
+		'Do not promote retained-viewport-patch-history as release wording today. Allowed wording: SDK/API/MCP proof can describe bounded single-session retained patches, invalidation reasons, and fresh-window recovery; CLI and collaboration claims stay excluded.',
 	evidenceWeHave: [
 		'Viewport proof command exists: `bun test fixtures/benchmarks/viewport-patch-proof.test.ts` covers retained patches, skipped retained tokens, invalid tokens, cross-session tokens, expired history, projection changes, and metadata invalidation.',
 		'SDK interactive contract tests cover viewport patch helpers and invalidation reasons in `packages/sdk/src/interactive-contract.test.ts`.',
@@ -3052,6 +3078,8 @@ const RETAINED_VIEWPORT_PATCH_BLOCKER = {
 const AGENT_WORKFLOW_OBSERVABILITY_BLOCKER = {
 	ownerAction:
 		'Product owner keeps agent-workflow-observability out of release wording, records one public inspect/plan/commit/reopen/diff/audit/trace/repair workflow with failure taxonomy, trace payload size, compact/redacted artifact behavior, recovery prompts, and proof that trace output changes the next repair or audit decision. Own the workflow proof in `packages/sdk/src/agent-workflow.test.ts`, `apps/cli/src/cli.test.ts`, `apps/api/src/server.test.ts`, and `apps/mcp/src/index.test.ts`; validate with `bun test packages/sdk/src/agent-workflow.test.ts -t "keeps unresolved external-link package graph failures visible to agents|release proof bundle links plan, commit, reopen, diff, and audit evidence|prepared agent commits surface post-write audit failures as blocking model output" --timeout 30000`, `bun test apps/cli/src/cli.test.ts -t "plan invalid ops return structured batch repair details|check surfaces structured issue metadata for agent repair|trace shows values and respects max depth|trace shows precedents for formula cell" --timeout 30000`, `bun test apps/api/src/server.test.ts -t "trace returns structured partial-load diagnostics for capped formula views|plan invalid ops return structured batch repair details|prepared path mutation handles surface post-write audit failures as blocked output|direct path mutation commits surface post-write audit failures as blocked output" --timeout 30000`, `bun test apps/mcp/src/index.test.ts -t "ascend.trace returns structured partial-load diagnostics for capped formula views|ascend.plan invalid ops return structured batch repair details|prepared MCP path mutation handles surface post-write audit failures as blocked output|direct MCP path mutation commits surface post-write audit failures as blocked output" --timeout 30000`, and `bun run fixtures/benchmarks/release-proof-index.ts --no-timings --owner-handoffs-json` before any observability wording.',
+	allowedWording:
+		'Do not promote agent-workflow-observability as release wording today. Allowed wording: existing trace and repair surfaces are internal workflow evidence for blocked post-write audit and structured repair visibility until a public workflow proves decision improvement.',
 	evidenceWeHave: [
 		'SDK agent workflow tests cover package graph visibility, post-write audit blocking, compact trace artifact counts, and release proof bundle links in `packages/sdk/src/agent-workflow.test.ts`.',
 		'CLI trace and repair tests expose trace depth, formula precedents, structured batch repair details, and check metadata for agent repair in `apps/cli/src/cli.test.ts`.',
@@ -3071,6 +3099,8 @@ const AGENT_WORKFLOW_OBSERVABILITY_BLOCKER = {
 const PRACTICAL_LATENCY_CONTRACTS_BLOCKER = {
 	ownerAction:
 		'Performance owner keeps practical-latency-contracts out of release wording, reruns `bun test fixtures/benchmarks/practical-latency-contracts.test.ts --timeout 30000`, dry-runs `bun run fixtures/benchmarks/practical-latency-contracts.ts --input-preset public-tracked --contract all --repeat 1 --warmup 0 --dry-run --json`, then runs the real public-tracked contract `bun run fixtures/benchmarks/practical-latency-contracts.ts --input-preset public-tracked --contract all --repeat 3 --warmup 1 --json` from a tracked-clean worktree; promote only if summary/profile artifacts name first-view, edit-verify, and repeated-inspection envelopes, public/generated input provenance, median/p95/CV, memory or payload guardrails, one profile-backed production target, and product-approved non-threshold wording.',
+	allowedWording:
+		'Do not promote practical-latency-contracts as release wording today. Allowed wording: public-tracked latency contracts are benchmark-owner diagnostics for first-view, edit-verify, and repeated-inspection envelopes until a tracked-clean run and non-threshold wording are approved.',
 	evidenceWeHave: [
 		'Practical latency contract tests cover the public-tracked preset, generated edit-input labeling, envelope target selection, noisy-above-floor target handling, and hot-cache guardrails in `fixtures/benchmarks/practical-latency-contracts.test.ts`.',
 		'The benchmark emits summary JSON, markdown, profile-summary markdown, input provenance, worktree guardrails, user-visible envelope decisions, diagnostic ceilings, memory/payload guardrails, and profile commands from `fixtures/benchmarks/practical-latency-contracts.ts`.',
@@ -3092,6 +3122,8 @@ const PRACTICAL_LATENCY_CONTRACTS_BLOCKER = {
 const RESEARCH_SURFACE_HYGIENE_BLOCKER = {
 	ownerAction:
 		'Product/release owner runs `git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager`, classifies each untriaged path as accepted evidence, active owner blocker, or archive-only, and reruns `bun test fixtures/benchmarks/release-proof-index.test.ts` before citing any research-derived claim.',
+	allowedWording:
+		'Do not promote research-surface-hygiene as release wording today. Allowed wording: untriaged research/tmp material is a release hygiene blocker requiring accepted-evidence, active-blocker, or archive-only classification before citation.',
 	evidenceWeHave: [
 		'Current board/state shows unclassified research surface in `research/`, `research/experiments/`, `research/docs-archive/`, `research/excel-corpus/`, `research/topics/`, `scripts/ascend-loop-manager.ts`, and `tmp/ascend-loop-manager/`.',
 		'Release-proof index already blocks research-surface-hygiene promotion and keeps untriaged research files out of top-two release wording.',

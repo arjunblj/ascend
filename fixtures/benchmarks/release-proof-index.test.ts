@@ -1056,6 +1056,7 @@ describe('release proof evidence index', () => {
 			expect(item.evidenceMissing).toEqual(expect.arrayContaining([expect.any(String)]))
 			expect(item.qssContrast).toEqual(expect.arrayContaining([expect.any(String)]))
 			expect(item.allowedWording).toContain('Do not promote')
+			expect(item.allowedWording).not.toContain('owner planning or research evidence')
 			expect(item.forbiddenWording).toEqual(expect.arrayContaining([expect.any(String)]))
 			expect(item.nextOwnerAction.length).toBeGreaterThan(0)
 		}
@@ -1157,6 +1158,7 @@ describe('release proof evidence index', () => {
 		expect(columnarSidecarForbidden).toContain('SDK/API/MCP sidecar product surface')
 		expect(columnarSidecarNextOwnerAction).toContain('columnar-sidecar.test.ts')
 		expect(columnarSidecarNextOwnerAction).toContain('claim-report --json')
+		expect(columnarSidecarDecision?.allowedWording).toContain('benchmark-only disposable sidecar')
 		const agentWorkflowDecision = index.releaseDecisionBoard.doNotPromoteYet.find(
 			(item) => item.name === 'agent-workflow-observability',
 		)
@@ -1175,6 +1177,7 @@ describe('release proof evidence index', () => {
 		expect(agentWorkflowForbidden).toContain('autonomous correctness')
 		expect(agentWorkflowForbidden).toContain('signed audit trail')
 		expect(agentWorkflowForbidden).toContain('repair automation')
+		expect(agentWorkflowDecision?.allowedWording).toContain('internal workflow evidence')
 		expect(agentWorkflowNextOwnerAction).toContain('failure taxonomy')
 		expect(agentWorkflowNextOwnerAction).toContain('trace payload size')
 		expect(agentWorkflowNextOwnerAction).toContain('packages/sdk/src/agent-workflow.test.ts')
@@ -1186,6 +1189,7 @@ describe('release proof evidence index', () => {
 		const practicalLatencyNextOwnerAction = String(practicalLatencyDecision?.nextOwnerAction ?? '')
 		expect(practicalLatencyDecision).toMatchObject({
 			name: 'practical-latency-contracts',
+			allowedWording: expect.stringContaining('benchmark-owner diagnostics'),
 			evidenceWeHave: expect.arrayContaining([
 				expect.stringContaining('practical-latency-contracts.ts'),
 				expect.stringContaining('practical-latency-contracts.test.ts'),

@@ -1168,6 +1168,30 @@ describe('release proof evidence index', () => {
 			]),
 		)
 		expect(
+			index.releaseDecisionBoard.claimDowngradeOwnerActionQueue.map(
+				(row) => `${row.sourceQueue}:${row.ownerLoop}:${row.name}`,
+			),
+		).toEqual([
+			'blocked-owner-action:product:research-surface-hygiene',
+			'blocked-owner-action:release:research-surface-hygiene',
+		])
+		for (const row of index.releaseDecisionBoard.claimDowngradeOwnerActionQueue) {
+			expect(row.workBlockDisposition).toBe('claim-downgrade-do-not-promote')
+			expect(row.validationCommands).toEqual([
+				'git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager',
+				'bun test fixtures/benchmarks/release-proof-index.test.ts',
+			])
+			expect(row.evidenceWeHave).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(row.evidenceMissing).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(row.qssContrast).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(row.allowedWording).toContain('Do not promote research-surface-hygiene')
+			expect(row.forbiddenWording).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(row.nextOwnerAction).toContain(
+				'git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager',
+			)
+			expect(row.boundary).toContain('Claim downgrade owner-action queue row')
+		}
+		expect(
 			index.releaseDecisionBoard.doNotPromoteYet.every(
 				(item) => item.status === 'do-not-promote-yet',
 			),
@@ -2225,6 +2249,28 @@ describe('release proof evidence index', () => {
 				}),
 			]),
 		)
+		expect(handoff.releaseDecisionBoard.claimDowngradeOwnerActionQueue).toEqual([
+			expect.objectContaining({
+				sourceQueue: 'blocked-owner-action',
+				ownerLoop: 'product',
+				name: 'research-surface-hygiene',
+				workBlockDisposition: 'claim-downgrade-do-not-promote',
+				validationCommands: [
+					'git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager',
+					'bun test fixtures/benchmarks/release-proof-index.test.ts',
+				],
+			}),
+			expect.objectContaining({
+				sourceQueue: 'blocked-owner-action',
+				ownerLoop: 'release',
+				name: 'research-surface-hygiene',
+				workBlockDisposition: 'claim-downgrade-do-not-promote',
+				validationCommands: [
+					'git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager',
+					'bun test fixtures/benchmarks/release-proof-index.test.ts',
+				],
+			}),
+		])
 		const releaseDecisionCoverage = new Set([
 			...handoff.releaseDecisionBoard.rows.map((row) => row.artifact),
 			...handoff.releaseDecisionBoard.doNotPromoteYet.map((item) => item.name),
@@ -2432,6 +2478,19 @@ describe('release proof evidence index', () => {
 				readonly name?: string
 				readonly ownerLoop?: string
 				readonly requirementId?: string
+				readonly workBlockDisposition?: string
+				readonly validationCommands?: readonly string[]
+				readonly evidenceWeHave?: readonly string[]
+				readonly evidenceMissing?: readonly string[]
+				readonly qssContrast?: readonly string[]
+				readonly allowedWording?: string
+				readonly forbiddenWording?: readonly string[]
+				readonly nextOwnerAction?: string
+			}[]
+			readonly claimDowngradeOwnerActionQueue?: readonly {
+				readonly sourceQueue?: string
+				readonly name?: string
+				readonly ownerLoop?: string
 				readonly workBlockDisposition?: string
 				readonly validationCommands?: readonly string[]
 				readonly evidenceWeHave?: readonly string[]
@@ -2731,6 +2790,36 @@ describe('release proof evidence index', () => {
 				}),
 			]),
 		)
+		expect(board.claimDowngradeOwnerActionQueue).toEqual([
+			expect.objectContaining({
+				sourceQueue: 'blocked-owner-action',
+				ownerLoop: 'product',
+				name: 'research-surface-hygiene',
+				workBlockDisposition: 'claim-downgrade-do-not-promote',
+				validationCommands: [
+					'git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager',
+					'bun test fixtures/benchmarks/release-proof-index.test.ts',
+				],
+			}),
+			expect.objectContaining({
+				sourceQueue: 'blocked-owner-action',
+				ownerLoop: 'release',
+				name: 'research-surface-hygiene',
+				workBlockDisposition: 'claim-downgrade-do-not-promote',
+				validationCommands: [
+					'git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager',
+					'bun test fixtures/benchmarks/release-proof-index.test.ts',
+				],
+			}),
+		])
+		for (const row of board.claimDowngradeOwnerActionQueue ?? []) {
+			expect(row.evidenceWeHave).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(row.evidenceMissing).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(row.qssContrast).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(row.allowedWording).toEqual(expect.any(String))
+			expect(row.forbiddenWording).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(row.nextOwnerAction).toEqual(expect.any(String))
+		}
 		expect(board.doNotPromoteYet?.every((item) => item.status === 'do-not-promote-yet')).toBe(true)
 		for (const item of board.doNotPromoteYet ?? []) {
 			expect([

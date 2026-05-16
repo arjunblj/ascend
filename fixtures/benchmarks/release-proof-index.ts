@@ -349,6 +349,7 @@ export interface ReleaseProofReleaseDecisionBoard {
 	readonly blockedOwnerActionQueue: readonly ReleaseProofBlockedOwnerAction[]
 	readonly benchmarkCorpusOwnerActionQueue: readonly ReleaseProofBenchmarkCorpusOwnerAction[]
 	readonly implementationReadyOwnerActionQueue: readonly ReleaseProofImplementationReadyOwnerAction[]
+	readonly claimDowngradeOwnerActionQueue: readonly ReleaseProofClaimDowngradeOwnerAction[]
 	readonly boundary: string
 }
 
@@ -482,6 +483,22 @@ export interface ReleaseProofImplementationReadyOwnerAction {
 	readonly ownerLoop: ReleaseProofReadinessOwner
 	readonly requirementId?: string
 	readonly workBlockDisposition: 'implementation-ready-blocker'
+	readonly validationCommands: readonly string[]
+	readonly evidenceWeHave: readonly string[]
+	readonly evidenceMissing: readonly string[]
+	readonly qssContrast: readonly string[]
+	readonly allowedWording: string
+	readonly forbiddenWording: readonly string[]
+	readonly nextOwnerAction: string
+	readonly boundary: string
+}
+
+export interface ReleaseProofClaimDowngradeOwnerAction {
+	readonly sourceQueue: 'blocked-owner-action'
+	readonly name: ReleaseProofReleaseDecisionDoNotPromoteItem['name']
+	readonly claim: string
+	readonly ownerLoop: ReleaseProofReadinessOwner
+	readonly workBlockDisposition: 'claim-downgrade-do-not-promote'
 	readonly validationCommands: readonly string[]
 	readonly evidenceWeHave: readonly string[]
 	readonly evidenceMissing: readonly string[]
@@ -1468,6 +1485,11 @@ export function releaseProofIndexMarkdown(result: ReleaseProofIndexResult): stri
 			(row) =>
 				`- ${row.ownerLoop}/${row.name}${row.requirementId ? `/${row.requirementId}` : ''}: ${row.sourceQueue}. Commands: ${row.validationCommands.map((command) => `\`${command}\``).join('; ')} Next: ${row.nextOwnerAction}`,
 		),
+		'Claim downgrade owner action queue:',
+		...result.releaseDecisionBoard.claimDowngradeOwnerActionQueue.map(
+			(row) =>
+				`- ${row.ownerLoop}/${row.name}: ${row.sourceQueue}. Commands: ${row.validationCommands.map((command) => `\`${command}\``).join('; ')} Next: ${row.nextOwnerAction}`,
+		),
 		'',
 		'Do not promote yet:',
 		`Disposition summary: implementation-ready-blocker=${result.releaseDecisionBoard.doNotPromoteDispositionSummary.implementationReadyBlockerNames.join(',')}; benchmark-corpus-blocker=${result.releaseDecisionBoard.doNotPromoteDispositionSummary.benchmarkCorpusBlockerNames.join(',')}; claim-downgrade-do-not-promote=${result.releaseDecisionBoard.doNotPromoteDispositionSummary.claimDowngradeDoNotPromoteNames.join(',')}`,
@@ -2406,6 +2428,8 @@ function releaseDecisionBoard(
 			topClaimOwnerActionQueue,
 			blockedOwnerActionQueue,
 		),
+		claimDowngradeOwnerActionQueue:
+			releaseDecisionClaimDowngradeOwnerActionQueue(blockedOwnerActionQueue),
 		boundary:
 			'Top-two release-decision artifact for claim stewardship. It is derived from committed release proof gates and must not be treated as a product surface, benchmark threshold, signed provenance, or owner approval.',
 	}
@@ -2584,6 +2608,29 @@ function releaseDecisionImplementationReadyOwnerActionQueue(
 					'Implementation-ready owner-action queue row derived from do-not-promote decisions. It tells correctness, product, or release owners exactly what to validate without promoting the claim or satisfying the blocker.',
 			})),
 	]
+}
+
+function releaseDecisionClaimDowngradeOwnerActionQueue(
+	blockedActions: readonly ReleaseProofBlockedOwnerAction[],
+): readonly ReleaseProofClaimDowngradeOwnerAction[] {
+	return blockedActions
+		.filter((action) => action.workBlockDisposition === 'claim-downgrade-do-not-promote')
+		.map((action) => ({
+			sourceQueue: 'blocked-owner-action' as const,
+			name: action.name,
+			claim: action.name,
+			ownerLoop: action.ownerLoop,
+			workBlockDisposition: action.workBlockDisposition,
+			validationCommands: [...action.validationCommands],
+			evidenceWeHave: [...action.evidenceWeHave],
+			evidenceMissing: [...action.evidenceMissing],
+			qssContrast: [...action.qssContrast],
+			allowedWording: action.allowedWording,
+			forbiddenWording: [...action.forbiddenWording],
+			nextOwnerAction: action.nextOwnerAction,
+			boundary:
+				'Claim downgrade owner-action queue row derived from do-not-promote decisions. It tells product or release owners exactly what to classify, archive, or keep forbidden without promoting the claim.',
+		}))
 }
 
 function releaseDecisionDoNotPromoteItem(
@@ -2883,6 +2930,14 @@ function cloneReleaseDecisionBoard(
 			forbiddenWording: [...row.forbiddenWording],
 		})),
 		implementationReadyOwnerActionQueue: board.implementationReadyOwnerActionQueue.map((row) => ({
+			...row,
+			validationCommands: [...row.validationCommands],
+			evidenceWeHave: [...row.evidenceWeHave],
+			evidenceMissing: [...row.evidenceMissing],
+			qssContrast: [...row.qssContrast],
+			forbiddenWording: [...row.forbiddenWording],
+		})),
+		claimDowngradeOwnerActionQueue: board.claimDowngradeOwnerActionQueue.map((row) => ({
 			...row,
 			validationCommands: [...row.validationCommands],
 			evidenceWeHave: [...row.evidenceWeHave],

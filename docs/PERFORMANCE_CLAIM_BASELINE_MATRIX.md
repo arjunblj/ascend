@@ -210,6 +210,117 @@ Next action: kill the capsule-skip optimization target and defer further
 metadata-only production work until profiling identifies a narrower measured
 cost center. Keep the metadata-only claim downgraded.
 
+## Cycle: Dense Values Write SOTA Gate
+
+Classification: comparable external evidence plus defer. The first full
+external dense-values write row reported a `profileLeaderFailures` loss to
+`rust-xlsxwriter`, but Ascend's row was very noisy. A repeat-15 rerun against
+the fastest comparable writers did not reproduce the loss: Ascend was the median
+winner. No production optimization is justified from this evidence.
+
+Workflow: generated XLSX write for dense numeric values, 2000 rows x 20 columns.
+
+Why it matters for release: generated value writes are the basic commit/export
+path after an agent produces or rewrites a workbook. This is the first `xlsx-write-sota`
+head-to-head row that can block write-speed wording.
+
+Public/tracked-clean input: `competitive-io` generated the `dense-values`
+`source-mode generated-write` workload from tracked benchmark code at commit
+`4b8b82b6`. No private corpus or local research workbook was used.
+
+Commands:
+
+```bash
+git worktree add --detach /private/tmp/ascend-write-dense-current-4b8b82b6 4b8b82b6
+cd /private/tmp/ascend-write-dense-current-4b8b82b6
+bun install --frozen-lockfile
+mkdir -p /private/tmp/ascend-write-dense-current-4b8b82b6-runs
+TMPDIR=/private/tmp ACCEPT_NPOI_OSMF_LICENSE=1 env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-io.ts --json --category write --competitor all --execution-scope external-process --source-mode generated-write --libraries ascend-external-writer,sheetjs,exceljs,xlsxwriter,xlsxwriter-constant-memory,pyexcelerate,pyexcelerate-range,pyexcelerate-cell,openpyxl,openpyxl-write-only,apache-poi,closedxml,rust-xlsxwriter,excelize,fastexcel-java --workload dense-values --repeat 5 --warmup 1 --validation-mode each --write-runner-manifest fixtures/benchmarks/runners/sota-writers.manifest.json > /private/tmp/ascend-write-dense-current-4b8b82b6-runs/write-dense-values-head-to-head.json
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-scoreboard.ts /private/tmp/ascend-write-dense-current-4b8b82b6-runs/write-dense-values-head-to-head.json --json --metric medianMs --require-profile xlsx-write-sota --assert-profile-leader ascend > /private/tmp/ascend-write-dense-current-4b8b82b6-runs/write-dense-values-scoreboard.json
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-io.ts --json --category write --competitor all --execution-scope external-process --source-mode generated-write --libraries ascend-external-writer,rust-xlsxwriter,excelize,fastexcel-java --workload dense-values --repeat 15 --warmup 3 --validation-mode each --write-runner-manifest fixtures/benchmarks/runners/sota-writers.manifest.json > /private/tmp/ascend-write-dense-current-4b8b82b6-runs/write-dense-values-fastest-repeat15.json
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-scoreboard.ts /private/tmp/ascend-write-dense-current-4b8b82b6-runs/write-dense-values-fastest-repeat15.json --json --metric medianMs --require-profile xlsx-write-sota --assert-profile-leader ascend > /private/tmp/ascend-write-dense-current-4b8b82b6-runs/write-dense-values-fastest-repeat15-scoreboard.json
+```
+
+Environment:
+
+- Commit: `4b8b82b602abc2980138d670f5e6591199beb39a`
+- Worktree: clean detached worktree at
+  `/private/tmp/ascend-write-dense-current-4b8b82b6`
+- Bun runtime: `1.3.13`
+- Node: `24.3.0`
+- Platform: Darwin arm64
+- Runtime profile: `category write`, `executionScope external-process`,
+  `sourceMode generated-write`, `workload dense-values`, `validationMode each`.
+
+Raw output:
+
+```text
+/private/tmp/ascend-write-dense-current-4b8b82b6-runs/write-dense-values-head-to-head.json
+/private/tmp/ascend-write-dense-current-4b8b82b6-runs/write-dense-values-scoreboard.json
+/private/tmp/ascend-write-dense-current-4b8b82b6-runs/write-dense-values-fastest-repeat15.json
+/private/tmp/ascend-write-dense-current-4b8b82b6-runs/write-dense-values-fastest-repeat15-scoreboard.json
+```
+
+Full external row, repeat 5 after 1 warmup:
+
+| Runner | Status vs Ascend | Median ms | P95 ms | CV | Peak RSS | Output bytes |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| `ascend-external-writer` | ran/lost | 70.080 | 222.688 | 0.674 | 58.8 MiB | 172260 |
+| `rust-xlsxwriter` | ran/won vs Ascend | 26.806 | 31.020 | 0.076 | 17.3 MiB | 119133 |
+| `excelize` | ran/won vs Ascend | 64.487 | 80.300 | 0.226 | 17.0 MiB | 120015 |
+| `fastexcel-java` | ran/won vs Ascend | 65.433 | 187.666 | 0.657 | 360.0 MiB | 161599 |
+| `sheetjs` | ran/lost vs Ascend | 89.976 | 102.173 | 0.070 | 212.8 MiB | 1181431 |
+| `pyexcelerate-cell` | ran/lost vs Ascend | 276.001 | 986.370 | 0.863 | 60.7 MiB | 116623 |
+| `pyexcelerate` | ran/lost vs Ascend | 351.764 | 436.320 | 0.149 | 60.8 MiB | 116623 |
+| `apache-poi` | ran/lost vs Ascend | 360.049 | 840.329 | 0.499 | 888.0 MiB | 124020 |
+| `exceljs` | ran/lost vs Ascend | 376.254 | 531.876 | 0.193 | 204.5 MiB | 121315 |
+| `pyexcelerate-range` | ran/lost vs Ascend | 392.131 | 833.361 | 0.441 | 63.0 MiB | 116623 |
+| `openpyxl` | ran/lost vs Ascend | 401.464 | 521.731 | 0.164 | 99.0 MiB | 124665 |
+| `xlsxwriter` | ran/lost vs Ascend | 422.958 | 468.257 | 0.114 | 71.4 MiB | 118761 |
+| `openpyxl-write-only` | ran/lost vs Ascend | 448.541 | 468.733 | 0.064 | 82.4 MiB | 124636 |
+| `xlsxwriter-constant-memory` | ran/lost vs Ascend | 468.404 | 728.297 | 0.275 | 53.4 MiB | 118249 |
+| `closedxml` | runner unavailable | n/a | n/a | n/a | n/a | n/a |
+
+Focused fastest-writer rerun, repeat 15 after 3 warmups:
+
+| Runner | Status vs Ascend | Median ms | P95 ms | CV | Peak RSS | Output bytes |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| `ascend-external-writer` | ran/won | 4.851 | 9.392 | 0.244 | 73.7 MiB | 172260 |
+| `excelize` | ran/lost vs Ascend | 17.403 | 18.270 | 0.033 | 17.6 MiB | 120015 |
+| `fastexcel-java` | ran/lost vs Ascend | 21.152 | 42.718 | 0.314 | 576.0 MiB | 161598 |
+| `rust-xlsxwriter` | ran/lost vs Ascend | 31.758 | 36.138 | 0.070 | 18.8 MiB | 119134 |
+
+Scoreboard result:
+
+- Full external row: `profileLeaderFailures` contains
+  `winner=rust-xlsxwriter expected=ascend`.
+- Focused repeat-15 fastest-writer rerun: `profileLeaderFailures: []`.
+- `closedxml` was `runner unavailable` because the .NET build failed with
+  `CSSM_ModuleLoad()`. It is not counted as a win.
+
+Semantic comparability: all passing rows write the same generated dense numeric
+sheet and pass external post-write semantic validation. File-size and memory are
+not equal: Ascend emits a larger XLSX than the fastest native writers and uses
+more RSS than Excelize/rust_xlsxwriter in the repeat-15 rerun.
+
+Humble allowed wording:
+
+> On the generated 2000 x 20 dense-values write row, a noisy full external
+> repeat-5 run showed native writers ahead of Ascend, but a focused repeat-15
+> rerun against the fastest comparable writers had Ascend as the median winner.
+> This is scoped write evidence, not a broad `xlsx-write-sota` claim.
+
+Forbidden wording:
+
+- "Ascend is SOTA for XLSX write."
+- "Ascend beats every generated XLSX writer."
+- "Ascend beats ClosedXML on dense-value writes."
+- "Ascend produces the smallest dense-value XLSX."
+
+Next action: defer production optimization from this row. Continue write-profile
+coverage with the next release workflow only after a clean multi-workload
+`xlsx-write-sota` gate identifies a durable leader failure.
+
 ## Owner-Ready Benchmark Blocker
 
 Owner: benchmarking/external baselines.

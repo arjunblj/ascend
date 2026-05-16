@@ -154,6 +154,35 @@ describe('performance claim baseline matrix', () => {
 		expect(markdown).toContain('"Calamine proves faster safe-open trust inspection than Ascend."')
 		expect(markdown).toContain('kill the capsule-skip optimization target')
 
+		expect(markdown).toContain('## Cycle: Dense Values Write SOTA Gate')
+		expect(markdown).toContain('Classification: comparable external evidence plus defer.')
+		expect(markdown).toContain('commit\n`4b8b82b6`')
+		expect(markdown).toContain(
+			'/private/tmp/ascend-write-dense-current-4b8b82b6-runs/write-dense-values-head-to-head.json',
+		)
+		expect(markdown).toContain(
+			'/private/tmp/ascend-write-dense-current-4b8b82b6-runs/write-dense-values-fastest-repeat15.json',
+		)
+		expect(markdown).toContain(
+			'| `ascend-external-writer` | ran/lost | 70.080 | 222.688 | 0.674 | 58.8 MiB | 172260 |',
+		)
+		expect(markdown).toContain(
+			'| `rust-xlsxwriter` | ran/won vs Ascend | 26.806 | 31.020 | 0.076 | 17.3 MiB | 119133 |',
+		)
+		expect(markdown).toContain(
+			'| `ascend-external-writer` | ran/won | 4.851 | 9.392 | 0.244 | 73.7 MiB | 172260 |',
+		)
+		expect(markdown).toContain(
+			'| `rust-xlsxwriter` | ran/lost vs Ascend | 31.758 | 36.138 | 0.070 | 18.8 MiB | 119134 |',
+		)
+		expect(markdown).toContain('`winner=rust-xlsxwriter expected=ascend`')
+		expect(markdown).toContain(
+			'Focused repeat-15 fastest-writer rerun: `profileLeaderFailures: []`',
+		)
+		expect(markdown).toContain('`closedxml` was `runner unavailable`')
+		expect(markdown).toContain('"Ascend is SOTA for XLSX write."')
+		expect(markdown).toContain('defer production optimization from this row')
+
 		expect(markdown).toContain('## Full Current-Commit Gate: XLSX Read SOTA')
 		expect(markdown).toContain(
 			'Classification: blocked/defer. No production optimization is justified',

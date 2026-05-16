@@ -2245,6 +2245,8 @@ function releaseDecisionDoNotPromoteItem(
 	const deferredClaim = DEFERRED_CLAIMS.find((claim) => claim.name === note.name)
 	const excludedEvidence = EXCLUDED_EVIDENCE.find((evidence) => evidence.name === note.name)
 	const proof = portfolioClaim?.evidenceNeeded
+	const releaseProofBundleBlocker =
+		note.name === 'release-proof-bundle' ? RELEASE_PROOF_BUNDLE_BLOCKER : undefined
 	const researchHygieneBlocker =
 		note.name === 'research-surface-hygiene' ? RESEARCH_SURFACE_HYGIENE_BLOCKER : undefined
 	return {
@@ -2254,6 +2256,7 @@ function releaseDecisionDoNotPromoteItem(
 		reason: note.reason,
 		evidenceWeHave: [
 			note.reason,
+			...(releaseProofBundleBlocker?.evidenceWeHave ?? []),
 			...(researchHygieneBlocker?.evidenceWeHave ?? []),
 			...(portfolioClaim?.proofCommand
 				? [`Existing proof command: \`${portfolioClaim.proofCommand}\`.`]
@@ -2265,6 +2268,7 @@ function releaseDecisionDoNotPromoteItem(
 		evidenceMissing: [
 			...(deferredClaim ? [deferredClaim.proofNeeded] : []),
 			...(excludedEvidence ? [excludedEvidence.eligibilityRule] : []),
+			...(releaseProofBundleBlocker?.evidenceMissing ?? []),
 			...(researchHygieneBlocker?.evidenceMissing ?? []),
 			...(proof ? [proof.fixture, proof.benchmark, proof.surface, proof.validationGate] : []),
 		],
@@ -2275,11 +2279,13 @@ function releaseDecisionDoNotPromoteItem(
 		allowedWording: `Do not promote ${note.name} as release wording today; use it only as owner planning or research evidence.`,
 		forbiddenWording: [
 			note.killCriterion,
+			...(releaseProofBundleBlocker?.forbiddenWording ?? []),
 			...(researchHygieneBlocker?.forbiddenWording ?? []),
 			...(proof ? [proof.honestBoundary] : []),
 			...(excludedEvidence ? [excludedEvidence.boundary] : []),
 		],
 		nextOwnerAction:
+			releaseProofBundleBlocker?.ownerAction ??
 			researchHygieneBlocker?.ownerAction ??
 			deferredClaim?.proofNeeded ??
 			excludedEvidence?.eligibilityRule ??
@@ -2866,6 +2872,24 @@ const DEFERRED_CLAIMS: readonly ReleaseProofDeferredClaim[] = [
 			'Untriaged research files are not release evidence and must not be cited for product, correctness, or performance claims.',
 	},
 ]
+
+const RELEASE_PROOF_BUNDLE_BLOCKER = {
+	ownerAction:
+		'Product/release owner records one public workbook workflow per top claim with inspect, plan, commit, reopen, diff, audit, compact report digest, `bun run release:rc:gate`, both compact proof commands, and `bun run fixtures/benchmarks/release-proof-index.ts --no-timings --owner-handoffs-json`; keep bundle wording blocked until artifact storage, privacy filtering, canonicalization subject, and offline verification policy are approved.',
+	evidenceWeHave: [
+		'Local RC gate exists: `bun run release:rc:gate` proves SDK/CLI/API/MCP tarballs can be installed and exercised from a fresh temp app.',
+		'Compact proof commands exist for top claims: `bun run fixtures/benchmarks/safe-open-proof.ts --no-timings --compact-json` and `bun run fixtures/benchmarks/package-action-proof.ts --no-timings --compact-json`.',
+		'Release-proof index already carries stable digests, compact report publication blockers, and top-claim owner handoffs.',
+	],
+	evidenceMissing: [
+		'One public workbook workflow per top claim that includes inspect, plan, commit, reopen, diff, audit, and compact report digest evidence.',
+		'Approved artifact storage path, retention/privacy filtering, canonicalization subject, and offline verification expectations for compact reports.',
+		'Passing validation sequence: `bun run release:rc:gate`, both compact proof commands, and `bun run fixtures/benchmarks/release-proof-index.ts --no-timings --owner-handoffs-json`.',
+	],
+	forbiddenWording: [
+		'Do not call a release proof bundle signed provenance, tamper-evident storage, SLSA, in-toto, certified provenance, third-party attestation, or registry publication evidence.',
+	],
+} as const
 
 const RESEARCH_SURFACE_HYGIENE_BLOCKER = {
 	ownerAction:

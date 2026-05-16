@@ -1023,14 +1023,25 @@ describe('release proof evidence index', () => {
 				(item) => item.name === 'release-proof-bundle',
 			),
 		).toMatchObject({
+			evidenceWeHave: expect.arrayContaining([
+				expect.stringContaining('bun run release:rc:gate'),
+				expect.stringContaining('safe-open-proof.ts --no-timings --compact-json'),
+				expect.stringContaining('package-action-proof.ts --no-timings --compact-json'),
+			]),
 			evidenceMissing: expect.arrayContaining([
 				expect.stringContaining('One real public workbook workflow per top claim'),
+				expect.stringContaining('artifact storage path'),
+				expect.stringContaining('Passing validation sequence'),
 				expect.stringContaining('Golden proof fixtures'),
 			]),
 			qssContrast: expect.arrayContaining([
 				expect.stringContaining('Generic spreadsheet libraries'),
 			]),
-			forbiddenWording: expect.arrayContaining([expect.stringContaining('Not signed')]),
+			forbiddenWording: expect.arrayContaining([
+				expect.stringContaining('third-party attestation'),
+				expect.stringContaining('Not signed'),
+			]),
+			nextOwnerAction: expect.stringContaining('bun run release:rc:gate'),
 		})
 		expect(
 			index.releaseDecisionBoard.doNotPromoteYet.find(
@@ -1931,6 +1942,8 @@ describe('release proof evidence index', () => {
 		expect(markdown).toContain('Release Packageability Evidence')
 		expect(markdown).toContain('bun run release:apps:smoke')
 		expect(markdown).toContain('bun run release:rc:gate')
+		expect(markdown).toContain('both compact proof commands')
+		expect(markdown).toContain('offline verification policy')
 		expect(markdown).toContain('local tarball install')
 		expect(markdown).toContain('Implementation surface promotion allowed: false')
 		expect(markdown).toContain('do not authorize new SDK, CLI, API, or MCP surfaces')

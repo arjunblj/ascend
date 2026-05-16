@@ -27,6 +27,7 @@ export interface LoadedWorkbookSource {
 	readonly loadInfo: WorkbookLoadInfo
 	readonly originalBytes: Uint8Array | null
 	readonly sourceArchive?: ZipArchive
+	readonly sourceWasEncrypted: boolean
 }
 
 export interface OpenWorkbookSourceOptions {
@@ -60,6 +61,7 @@ export async function openWorkbookSource(
 					report: result.value.report,
 					loadInfo: buildWorkbookLoadInfo(result.value.loadInfo),
 					originalBytes: null,
+					sourceWasEncrypted: false,
 				}
 			} catch {
 				// Fall through to the byte snapshot path for ZIP64/encrypted/non-standard packages.
@@ -93,10 +95,12 @@ export async function openWorkbookSource(
 				loadedSheetNames: result.value.sheets.map((sheet) => sheet.name),
 			}),
 			originalBytes: null,
+			sourceWasEncrypted: false,
 		}
 	}
 
 	if (ext === 'xlsx' || ext === 'xlsm' || isZip(bytes) || isCompoundFile(bytes)) {
+		const sourceWasEncrypted = isCompoundFile(bytes)
 		const result = readXlsx(bytes, options)
 		if (!result.ok) throw new AscendException(result.error)
 		const loadInfo = buildWorkbookLoadInfo(result.value.loadInfo)
@@ -110,10 +114,13 @@ export async function openWorkbookSource(
 			loadInfo,
 			originalBytes: loadInfo.isPartial
 				? null
-				: (result.value.workbook.sourceArchiveBytes ?? bytes),
+				: sourceWasEncrypted
+					? bytes
+					: (result.value.workbook.sourceArchiveBytes ?? bytes),
 			...(loadInfo.isPartial || !result.value.sourceArchive
 				? {}
 				: { sourceArchive: result.value.sourceArchive }),
+			sourceWasEncrypted,
 		}
 	}
 
@@ -135,6 +142,7 @@ export async function openWorkbookSource(
 			loadedSheetNames: result.value.sheets.map((sheet) => sheet.name),
 		}),
 		originalBytes: null,
+		sourceWasEncrypted: false,
 	}
 }
 

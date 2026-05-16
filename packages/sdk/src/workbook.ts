@@ -118,6 +118,7 @@ export interface ApplyOptions {
 
 export interface WorkbookBytesOptions {
 	readonly compressionProfile?: ZipCompressionProfile
+	readonly allowDecryptedExport?: boolean
 }
 
 interface WorkbookMutationRollbackSnapshot {
@@ -451,6 +452,7 @@ export class AscendWorkbook extends WorkbookReadView {
 	private readonly caps: PreservationCapsule[]
 	private originalBytes: Uint8Array | null
 	private sourceArchive: ZipArchive | undefined
+	private readonly sourceWasEncrypted: boolean
 	private packageGraphCache:
 		| { readonly bytes: Uint8Array; readonly graph: XlsxPackageGraph }
 		| undefined
@@ -478,11 +480,13 @@ export class AscendWorkbook extends WorkbookReadView {
 		loadInfo: import('./types.ts').WorkbookLoadInfo,
 		originalBytes: Uint8Array | null,
 		sourceArchive?: ZipArchive,
+		sourceWasEncrypted = false,
 	) {
 		super(workbook, report, loadInfo)
 		this.caps = capsules
 		this.originalBytes = originalBytes
 		this.sourceArchive = sourceArchive
+		this.sourceWasEncrypted = sourceWasEncrypted
 		this.dirty = false
 	}
 
@@ -522,6 +526,7 @@ export class AscendWorkbook extends WorkbookReadView {
 			loaded.loadInfo,
 			loaded.originalBytes,
 			loaded.sourceArchive,
+			loaded.sourceWasEncrypted,
 		)
 	}
 
@@ -548,6 +553,8 @@ export class AscendWorkbook extends WorkbookReadView {
 				loadedSheetNames: ['Sheet1'],
 			}),
 			null,
+			undefined,
+			false,
 		)
 	}
 
@@ -1452,6 +1459,23 @@ export class AscendWorkbook extends WorkbookReadView {
 	toBytes(options: WorkbookBytesOptions = {}): Uint8Array {
 		this.assertWritable()
 		if (this.originalBytes && !this.dirty && !options.compressionProfile) return this.originalBytes
+		if (this.sourceWasEncrypted && !options.allowDecryptedExport) {
+			throw new AscendException(
+				ascendError(
+					'EXPORT_ERROR',
+					'Cannot export an edited encrypted workbook without re-encryption support.',
+					{
+						details: {
+							sourceWasEncrypted: true,
+							reEncryptionSupported: false,
+							requestedExport: 'xlsx',
+						},
+						suggestedFix:
+							'Reopen the original encrypted workbook without editing, or pass allowDecryptedExport: true to explicitly save a decrypted plain XLSX.',
+					},
+				),
+			)
+		}
 		const sourceArchive = this.getSourceArchive()
 		const dirtyCellPatches = this.dirtyCellPatchOptions()
 		const writeOptions: import('@ascend/io-xlsx').WriteXlsxOptions = {
@@ -1514,7 +1538,12 @@ export class AscendWorkbook extends WorkbookReadView {
 	}
 
 	packageGraph(): XlsxPackageGraph {
-		const bytes = this.originalBytes && !this.dirty ? this.originalBytes : this.toBytes()
+		const bytes =
+			this.sourceWasEncrypted && !this.dirty && this.wb.sourceArchiveBytes
+				? this.wb.sourceArchiveBytes
+				: this.originalBytes && !this.dirty
+					? this.originalBytes
+					: this.toBytes()
 		if (this.packageGraphCache?.bytes === bytes) return this.packageGraphCache.graph
 		const graph = inspectXlsxPackageGraph(bytes)
 		this.packageGraphCache = { bytes, graph }

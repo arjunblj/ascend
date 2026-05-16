@@ -458,7 +458,7 @@ describe('release proof evidence index', () => {
 		expect(index.correctnessBoundaryEvidence.featureChecks[5]).toMatchObject({
 			evidenceSources: expect.arrayContaining(['high-risk-package-contract/encrypted-password']),
 			proofChecks: expect.arrayContaining([
-				expect.stringContaining('decrypted edits save as plain XLSX'),
+				expect.stringContaining('edited encrypted export fails closed'),
 			]),
 		})
 		expect(index.trustCompletenessBoundaryEvidence).toMatchObject({

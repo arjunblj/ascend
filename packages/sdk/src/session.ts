@@ -418,6 +418,7 @@ export class WorkbookDocument {
 	private readonly view: WorkbookReadView
 	private readonly capsules: LoadedWorkbookSource['capsules']
 	private readonly originalBytes: Uint8Array | null
+	private readonly sourceWasEncrypted: boolean
 
 	private constructor(
 		cacheKey: string,
@@ -427,6 +428,7 @@ export class WorkbookDocument {
 		view: WorkbookReadView,
 		capsules: LoadedWorkbookSource['capsules'],
 		originalBytes: Uint8Array | null,
+		sourceWasEncrypted: boolean,
 	) {
 		this.cacheKey = cacheKey
 		this.source = source
@@ -435,6 +437,7 @@ export class WorkbookDocument {
 		this.view = view
 		this.capsules = capsules
 		this.originalBytes = originalBytes
+		this.sourceWasEncrypted = sourceWasEncrypted
 	}
 
 	static async open(
@@ -485,6 +488,7 @@ export class WorkbookDocument {
 			new WorkbookReadView(loaded.workbook, loaded.report, loaded.loadInfo),
 			loaded.capsules,
 			loaded.originalBytes,
+			loaded.sourceWasEncrypted,
 		)
 		document.refreshCacheFootprint('base')
 		return document
@@ -512,6 +516,7 @@ export class WorkbookDocument {
 			new WorkbookReadView(loaded.workbook, loaded.report, loaded.loadInfo),
 			loaded.capsules,
 			loaded.originalBytes,
+			loaded.sourceWasEncrypted,
 		)
 		document.refreshCacheFootprint('base')
 		return document
@@ -588,6 +593,7 @@ export class WorkbookDocument {
 			report: this.report,
 			loadInfo: load,
 			originalBytes: this.originalBytes,
+			sourceWasEncrypted: this.sourceWasEncrypted,
 		})
 	}
 

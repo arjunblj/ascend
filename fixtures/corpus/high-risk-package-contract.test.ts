@@ -21,6 +21,9 @@ function fixturePath(path: string): string {
 	return fileURLToPath(new URL(path, import.meta.url))
 }
 
+const ZIP_MAGIC = [0x50, 0x4b, 0x03, 0x04]
+const COMPOUND_FILE_MAGIC = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]
+
 describe('high-risk package corpus contract', () => {
 	test('routes a public unknown package part to review and keeps mutation proof fail-closed', async () => {
 		const source = loadFixture('../xlsx/excelforge/Book_1_unknown_part.xlsx')
@@ -121,7 +124,7 @@ describe('high-risk package corpus contract', () => {
 		}
 	})
 
-	test('requires the public encrypted fixture password and never echoes it in plans', async () => {
+	test('requires the public encrypted fixture password and fails closed before decrypted export', async () => {
 		const source = loadFixture('../xlsx/calamine/pass_protected.xlsx')
 		expect(() => inspectWorkbookOpenPlan(source, { intent: 'edit-plan' })).toThrow(
 			'requires a password',
@@ -145,6 +148,9 @@ describe('high-risk package corpus contract', () => {
 			cellsHydrated: true,
 			richSheetMetadataHydrated: true,
 		})
+		expect(Array.from(workbook.toBytes().slice(0, COMPOUND_FILE_MAGIC.length))).toEqual(
+			COMPOUND_FILE_MAGIC,
+		)
 		const changed = workbook.apply(
 			[{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'Z10', value: 'decrypted-edit' }] }],
 			{ journal: true },
@@ -156,8 +162,11 @@ describe('high-risk package corpus contract', () => {
 			issues: [expect.objectContaining({ code: 'LOSSY_INVERSE', surface: 'package-parts' })],
 		})
 
-		const saved = workbook.toBytes()
-		expect(Array.from(saved.slice(0, 4))).toEqual([0x50, 0x4b, 0x03, 0x04])
+		expect(() => workbook.toBytes()).toThrow(
+			'Cannot export an edited encrypted workbook without re-encryption support',
+		)
+		const saved = workbook.toBytes({ allowDecryptedExport: true })
+		expect(Array.from(saved.slice(0, 4))).toEqual(ZIP_MAGIC)
 		const reopened = await AscendWorkbook.open(saved)
 		expect(reopened.sheet('Sheet1')?.cell('Z10')?.value).toEqual({
 			kind: 'string',

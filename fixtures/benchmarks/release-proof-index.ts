@@ -4956,7 +4956,7 @@ function correctnessBoundaryEvidence(
 				'public encrypted Calamine fixture is used',
 				'valid password opens with full-mode planning',
 				'missing or wrong password rejects before hydration',
-				'high-risk package corpus contract proves password-supplied decrypted edits save as plain XLSX without re-encryption wording',
+				'high-risk package corpus contract proves no-op encrypted bytes stay encrypted and edited encrypted export fails closed unless decrypted plain XLSX output is explicitly requested',
 				'boundary does not claim password recovery, protection removal, malware scanning, or file trust',
 			],
 		}),

@@ -58,7 +58,12 @@ describe('AscendWorkbook', () => {
 		const encrypted = readFileSync('fixtures/xlsx/calamine/pass_protected.xlsx')
 		const wb = await Ascend.open(new Uint8Array(encrypted), { password: '123' })
 		expect(wb.sheets).toContain('Sheet1')
-		expect(() => extractZip(wb.toBytes())).not.toThrow()
+		expect(Buffer.from(wb.toBytes()).equals(encrypted)).toBe(true)
+		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'Z10', value: 'sdk-edit' }] }])
+		expect(() => wb.toBytes()).toThrow(
+			'Cannot export an edited encrypted workbook without re-encryption support',
+		)
+		expect(() => extractZip(wb.toBytes({ allowDecryptedExport: true }))).not.toThrow()
 		await expect(Ascend.open(new Uint8Array(encrypted))).rejects.toThrow('requires a password')
 	})
 

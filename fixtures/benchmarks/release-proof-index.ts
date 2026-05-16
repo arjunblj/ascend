@@ -2130,10 +2130,9 @@ export function releaseProofPerformanceBoundaryDecisionPacket(
 	const benchmarkValidationCommand =
 		'bun test fixtures/benchmarks/performance-claim-baseline-matrix.test.ts'
 	const benchmarkCommands = [
-		'env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-io.ts --json --category read --competitor all --execution-scope external-process --libraries ascend-external-metadata-only,sheetjs-metadata-only,openpyxl-metadata-only --workload metadata-only --read-source raw-ooxml --repeat 5 --warmup 1 --validation-mode each --runner-manifest fixtures/benchmarks/runners/metadata-only-readers.manifest.json',
-		'env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-scoreboard.ts <metadata-only-external-suite.json> --json --metric medianMs --require-profile xlsx-read-sota',
-		'env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-io.ts --json --category read --competitor all --workload all --read-source raw-ooxml --repeat 5 --warmup 1 --validation-mode each --runner-manifest fixtures/benchmarks/runners/ascend-python-readers.manifest.json',
-		'env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-scoreboard.ts <current-commit-xlsx-read-sota-all.json> --json --metric medianMs --require-profile xlsx-read-sota',
+		'env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-io.ts --json --category read --competitor all --workload all --read-source raw-ooxml --repeat 5 --warmup 1 --validation-mode each --runner-manifest fixtures/benchmarks/runners/ascend-python-readers.manifest.json > /private/tmp/ascend-perf-hillclimb-9ddfff91-runs/xlsx-read-sota-all.json',
+		'env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-scoreboard.ts /private/tmp/ascend-perf-hillclimb-9ddfff91-runs/xlsx-read-sota-all.json --json --metric medianMs --require-profile xlsx-read-sota > /private/tmp/ascend-perf-hillclimb-9ddfff91-runs/xlsx-read-sota-all-scoreboard.json',
+		'env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-scoreboard.ts /private/tmp/ascend-perf-hillclimb-9ddfff91-runs/xlsx-read-sota-merged-selected-metadata.json --json --metric medianMs --require-profile xlsx-read-sota > /private/tmp/ascend-perf-hillclimb-9ddfff91-runs/xlsx-read-sota-merged-selected-metadata-scoreboard.json',
 	]
 	return {
 		ownerLoop: 'performance',
@@ -2147,20 +2146,20 @@ export function releaseProofPerformanceBoundaryDecisionPacket(
 			path: 'docs/PERFORMANCE_CLAIM_BASELINE_MATRIX.md',
 			validationCommand: benchmarkValidationCommand,
 			nextAction:
-				'Treat the focused ClosedXML head-to-head read run and same-lane selected-sheet external run as accepted bounded evidence, keep broad speed wording downgraded, then attack the next highest-impact blockers: metadata-only same-lane external coverage, a current-commit full-profile or merged xlsx-read-sota scoreboard, feature-rich semantic mismatches for SheetJS and Calamine, and the unavailable fastxlsx runner.',
+				'Downgrade broad read-speed wording and stop production optimization from this evidence: the current full-profile and merged selected-sheet/metadata-only scoreboards have no leader failures, but ClosedXML coverage, feature-rich SheetJS/Calamine semantic mismatches, and unsupported selected-sheet/metadata-only competitor rows remain non-wins.',
 			benchmarkCommands,
 			acceptanceEvidence: [
 				'Clean detached worktree or clean release benchmark environment.',
 				'ClosedXML is measured as ran/won for comparable value-read rows in the focused head-to-head run and remains not comparable for selected-sheet and metadata-only.',
 				'The selected-sheet same-lane external-process run at commit 39163862 is accepted as scoped evidence: Ascend, SheetJS, and OpenPyXL all loaded only the Data sheet; Ascend had the fastest median among those completed comparable rows.',
 				'Selected-sheet wording remains scoped because ExcelJS, Calamine, Apache POI, and ClosedXML are unsupported-operation gaps and must not be counted as wins.',
-				'Metadata-only promotion still requires same-lane external-process evidence for Ascend, SheetJS, and OpenPyXL or an explicit not-comparable boundary before it changes release wording.',
-				'Every `xlsx-read-sota` workload either has comparable Ascend and external rows or an explicit runner unavailable, blocked, unsupported-operation, or not-comparable status.',
+				'The metadata-only same-lane external-process run at commit fa3a13dc is accepted as scoped evidence: Ascend, SheetJS, and OpenPyXL all loaded workbook metadata without hydrating cells; Ascend had the fastest median among those completed comparable rows.',
+				'The current full-profile run at commit 9ddfff91 and merged selected-sheet/metadata-only scoreboard report no leader failures or profile leader failures, but coverage still fails for ClosedXML missing/error rows and feature-rich semantic mismatches.',
 				'Median, p95, CV/noise, memory, environment, runner/library versions, command, input shape, and semantic comparability are recorded for each comparable row.',
 				'Failed, missing, or semantically mismatched runners are not counted as wins.',
 			],
 			stopCondition:
-				'Do not optimize further from measured winning rows; continue only on the next named loss, unstable tail, or memory/latency tradeoff worth production work.',
+				'Stop production optimization from this evidence. Continue only as blocker work for ClosedXML coverage policy, feature-rich SheetJS/Calamine semantic support or not-comparable policy, unsupported selected-sheet/metadata-only competitor policy, or FastXLSX environment coverage.',
 		},
 		approvalChecklist,
 		validationCommands: [
@@ -3982,7 +3981,7 @@ function ownerDecisionArtifactsFor(
 					decision:
 						'Use the performance matrix as a defer decision: no broad XLSX read, SOTA, or QSS-leapfrog speed claim is promotable from the current partial baseline.',
 					nextAction:
-						'Benchmarking owner treats the focused ClosedXML head-to-head read run and same-lane selected-sheet external run as accepted bounded evidence, keeps broad speed wording downgraded, then runs metadata-only same-lane external coverage plus a current-commit full-profile or merged xlsx-read-sota scoreboard before any broader read-speed claim is promoted.',
+						'Benchmarking owner treats the focused ClosedXML, same-lane selected-sheet, same-lane metadata-only, and current full-profile/merged scoreboard runs as accepted bounded evidence, downgrades broad speed wording, and stops production optimization unless the next work is explicit blocker resolution for ClosedXML coverage, feature-rich semantic mismatches, unsupported selected-sheet/metadata-only competitors, or FastXLSX environment coverage.',
 					forbiddenShortcut:
 						'Do not count unavailable runners, blocked runners, dirty-worktree timings, or one-workload medians as speed wins.',
 					boundary:

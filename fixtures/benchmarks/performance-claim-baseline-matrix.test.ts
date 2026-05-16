@@ -49,10 +49,13 @@ describe('performance claim baseline matrix', () => {
 			'No broad XLSX read, SOTA, or QSS-leapfrog speed claim is promotable',
 		)
 		expect(markdown).toContain(
-			'ClosedXML was subsequently unblocked in a focused clean head-to-head run and is recorded as ran/lost, not as blocked.',
+			'The current full-profile run at `9ddfff91` reports no leader failures',
 		)
 		expect(markdown).toContain(
-			'Current harness evidence now supports an OpenPyXL selected-sheet projection row.',
+			'Current harness evidence now supports same-lane selected-sheet rows for Ascend, SheetJS, and OpenPyXL.',
+		)
+		expect(markdown).toContain(
+			'Current harness evidence now supports same-lane metadata-only rows for Ascend, SheetJS, and OpenPyXL.',
 		)
 		expect(markdown).toContain(
 			'Current harness evidence now supports a SheetJS feature-rich rich-metadata row',
@@ -66,13 +69,39 @@ describe('performance claim baseline matrix', () => {
 
 		expect(markdown).toContain('## Owner-Ready Benchmark Blocker')
 		expect(markdown).toContain('Owner: benchmarking/external baselines.')
-		expect(markdown).toContain('broad read-speed and QSS-leapfrog performance wording is blocked')
+		expect(markdown).toContain(
+			'broad read-speed and QSS-leapfrog performance wording is downgraded',
+		)
 		expect(markdown).toContain(
 			'do not optimize further from the measured winning rows\n`dense-values`, `sparse-wide`, `styles-heavy`, `formula-heavy`, `table-heavy`,\n`selected-sheet`, `metadata-only`, `warm-workflow`, and `string-heavy`',
 		)
 		expect(markdown).toContain(
 			'Failed, missing, or semantically mismatched runners are not counted as wins.',
 		)
+
+		expect(markdown).toContain('## Current Full-Profile Downgrade: XLSX Read SOTA')
+		expect(markdown).toContain('Classification: claim downgrade.')
+		expect(markdown).toContain('Commit: `9ddfff91efc8f0f95edf36f44b78f5313480ad11`')
+		expect(markdown).toContain(
+			'/private/tmp/ascend-perf-hillclimb-9ddfff91-runs/xlsx-read-sota-all.json',
+		)
+		expect(markdown).toContain(
+			'/private/tmp/ascend-perf-hillclimb-9ddfff91-runs/xlsx-read-sota-merged-selected-metadata-scoreboard.json',
+		)
+		expect(markdown).toContain('Current full-profile scoreboard: `leaderFailures: []`')
+		expect(markdown).toContain('Merged selected-sheet/metadata-only scoreboard')
+		expect(markdown).toContain('`coverageFailures: 10`, `coverageGaps: 8`')
+		expect(markdown).toContain(
+			'The merged scoreboard removes the selected-sheet and metadata-only\n  `missing-comparable` failures.',
+		)
+		expect(markdown).toContain(
+			'| `dense-values` | `ascend-readxlsx-raw-values-operation-bytes` | 3.166 | 3.287 | 91.1 MiB | no optimization target |',
+		)
+		expect(markdown).toContain(
+			'| `feature-rich` | `ascend` | 4.955 | 5.161 | 157.2 MiB | claim blocked by competitor semantic mismatch |',
+		)
+		expect(markdown).toContain('In a clean detached current full-profile run at `9ddfff91`')
+		expect(markdown).toContain('Next action: stop production optimization from this evidence.')
 
 		expect(markdown).toContain('## Full Current-Commit Gate: XLSX Read SOTA')
 		expect(markdown).toContain(

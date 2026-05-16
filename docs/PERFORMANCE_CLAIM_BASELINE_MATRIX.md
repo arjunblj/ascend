@@ -12,9 +12,10 @@ release wording.
 
 No broad XLSX read, SOTA, or QSS-leapfrog speed claim is promotable from this artifact. The cycles below are useful external baseline evidence for scoped release workflows, but they are not a clean full-profile claim because:
 
-- `competitive-scoreboard --require-profile xlsx-read-sota` still fails for a single-run full-profile promotion because several unsupported and semantic-mismatch rows remain explicit blockers. ClosedXML was subsequently unblocked in a focused clean head-to-head run and is recorded as ran/lost, not as blocked. FastXLSX was subsequently unblocked in an isolated Python 3.12 environment for same-lane cell-materialization value rows and is recorded as ran/lost there, not as unavailable for those rows.
+- `competitive-scoreboard --require-profile xlsx-read-sota` still fails for broad promotion. The current full-profile run at `9ddfff91` reports no leader failures, and a merged selected-sheet/metadata-only scoreboard removes those same-lane comparability failures, but ClosedXML coverage, feature-rich semantic mismatches, and unsupported selected-sheet/metadata-only competitors remain explicit blockers.
 - The recorded cycles cover public/reproducible generated `dense-values`, `sparse-wide`, `styles-heavy`, `formula-heavy`, `table-heavy`, `feature-rich`, `selected-sheet`, `metadata-only`, `warm-workflow`, and `string-heavy` workloads over `raw-ooxml`, but they are per-workload evidence rows rather than one clean all-workload promotion run.
-- Current harness evidence now supports an OpenPyXL selected-sheet projection row. Treat older `openpyxl` selected-sheet `unsupported-operation` wording as historical for the recorded clean runs; the current blocker is a clean repeat-5 selected-sheet rerun plus timing-boundary handling, not OpenPyXL runner capability.
+- Current harness evidence now supports same-lane selected-sheet rows for Ascend, SheetJS, and OpenPyXL. Treat older `openpyxl` selected-sheet `unsupported-operation` wording as historical for the recorded clean runs.
+- Current harness evidence now supports same-lane metadata-only rows for Ascend, SheetJS, and OpenPyXL. Treat older metadata-only `missing-comparable` wording as historical for the recorded clean runs.
 - Current harness evidence now supports a SheetJS feature-rich rich-metadata row using SheetJS `bookFiles`; older SheetJS `semantic-mismatch` wording is historical for the pre-runner-fix cycles. Calamine-family rich-metadata rows remain not comparable.
 - Several external runners were unavailable or blocked in the clean benchmark worktree. They are recorded as blockers, not wins.
 - Several timing lanes are semantically related but not one unified timing boundary. Do not collapse in-process, preloaded-bytes, file-path, row-stream, and materialized-workbook timings into a single "wins everything" claim.
@@ -30,15 +31,16 @@ Forbidden wording:
 - "Ascend beats every external library."
 - Any wording that treats failed or unavailable runners as wins.
 
-Next action: defer the speed claim. Continue expanding the clean-tree `xlsx-read-sota` matrix across the required workloads and unblock remaining runner issues, then optimize only if a named release workflow loses or shows an unstable tail.
+Next action: downgrade the broad speed claim and stop production optimization from this evidence. Continue only if the performance loop is explicitly attacking a remaining claim blocker: ClosedXML coverage, feature-rich semantic mismatches for SheetJS/Calamine, unsupported selected-sheet or metadata-only competitors, or FastXLSX environment coverage.
 
 ## Owner-Ready Benchmark Blocker
 
 Owner: benchmarking/external baselines.
 
-Blocker: broad read-speed and QSS-leapfrog performance wording is blocked until
-the full `xlsx-read-sota` profile is reproduced from a clean worktree or
-downgraded per runner/workload with explicit blocker reasons.
+Blocker: broad read-speed and QSS-leapfrog performance wording is downgraded.
+The current full `xlsx-read-sota` profile and merged selected-sheet/metadata-only
+scoreboard show no leader failures, but they still do not satisfy coverage
+because blocked, unsupported, and semantic-mismatch rows remain non-wins.
 
 Exact next command shape:
 
@@ -64,9 +66,97 @@ Stop condition: do not optimize further from the measured winning rows
 continue only on the next named loss, unstable tail, or memory/latency tradeoff
 worth production work. The ClosedXML runner blocker was resolved by restoring
 the runner in a clean worktree and is now a measured bounded-gap row. OpenPyXL
-selected-sheet support was resolved in the harness and is now waiting on a
-clean rerun plus timing-lane treatment before any OpenPyXL selected-sheet speed
-wording is allowed.
+selected-sheet support and metadata-only same-lane coverage were resolved in
+focused runs. The broad speed claim remains downgraded rather than promoted.
+
+## Current Full-Profile Downgrade: XLSX Read SOTA
+
+Classification: claim downgrade. No production optimization target is justified
+from this evidence because the current full-profile and merged scoreboard report
+no leader failures for completed comparable rows.
+
+Workflow: full `xlsx-read-sota` open/inspect coverage, with focused same-lane
+selected-sheet and metadata-only evidence merged back into the current profile
+for claim gating.
+
+Why it matters for release: this finishes the selected-sheet and metadata-only
+timing-boundary questions while testing whether the broad speed claim can be
+promoted. It cannot.
+
+Public/tracked-clean input: `competitive-io` generated `workload all` raw OOXML
+inputs from tracked benchmark code in detached commit `9ddfff91`; same-lane
+selected-sheet evidence comes from clean detached commit `39163862`, and
+same-lane metadata-only evidence comes from clean detached commit `fa3a13dc`.
+No private corpus or local research workbook was used.
+
+Commands:
+
+```bash
+git worktree add --detach /private/tmp/ascend-perf-hillclimb-9ddfff91 9ddfff91
+cd /private/tmp/ascend-perf-hillclimb-9ddfff91
+bun install --frozen-lockfile
+env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-io.ts --json --category read --competitor all --workload all --read-source raw-ooxml --repeat 5 --warmup 1 --validation-mode each --runner-manifest fixtures/benchmarks/runners/ascend-python-readers.manifest.json > /private/tmp/ascend-perf-hillclimb-9ddfff91-runs/xlsx-read-sota-all.json
+env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-scoreboard.ts /private/tmp/ascend-perf-hillclimb-9ddfff91-runs/xlsx-read-sota-all.json --json --metric medianMs --require-profile xlsx-read-sota > /private/tmp/ascend-perf-hillclimb-9ddfff91-runs/xlsx-read-sota-all-scoreboard.json
+env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-scoreboard.ts /private/tmp/ascend-perf-hillclimb-9ddfff91-runs/xlsx-read-sota-merged-selected-metadata.json --json --metric medianMs --require-profile xlsx-read-sota > /private/tmp/ascend-perf-hillclimb-9ddfff91-runs/xlsx-read-sota-merged-selected-metadata-scoreboard.json
+```
+
+Environment:
+
+- Commit: `9ddfff91efc8f0f95edf36f44b78f5313480ad11`
+- Worktree: clean detached worktree at `/private/tmp/ascend-perf-hillclimb-9ddfff91`; `git status --short --branch` reported `## HEAD (no branch)` with no changed paths after the run.
+- OS: Darwin 25.4.0 arm64
+- Bun: `1.3.13`
+- Node: `24.3.0`
+- Runtime profile: `category read`, `competitor all`, `workload all`, `readSource raw-ooxml`, `validationMode each`, `repeat 5`, `warmup 1`, `sourceMode full`.
+
+Raw output:
+
+```text
+/private/tmp/ascend-perf-hillclimb-9ddfff91-runs/xlsx-read-sota-all.json
+/private/tmp/ascend-perf-hillclimb-9ddfff91-runs/xlsx-read-sota-all-scoreboard.json
+/private/tmp/ascend-perf-hillclimb-9ddfff91-runs/xlsx-read-sota-merged-selected-metadata.json
+/private/tmp/ascend-perf-hillclimb-9ddfff91-runs/xlsx-read-sota-merged-selected-metadata-scoreboard.json
+```
+
+Scoreboard result:
+
+- Current full-profile scoreboard: `leaderFailures: []`,
+  `profileLeaderFailures: []`, `coverageFailures: 12`.
+- Merged selected-sheet/metadata-only scoreboard: `leaderFailures: []`,
+  `profileLeaderFailures: []`, `coverageFailures: 10`, `coverageGaps: 8`.
+- The merged scoreboard removes the selected-sheet and metadata-only
+  `missing-comparable` failures. The remaining `coverageFailures` are ClosedXML
+  missing/error rows for required value-read workloads and SheetJS/Calamine
+  semantic mismatches for `feature-rich` rich metadata.
+
+Representative Ascend medians from the current full-profile run:
+
+| Workload | Representative Ascend row | Median ms | P95 ms | Peak RSS | Decision |
+| --- | --- | ---: | ---: | ---: | --- |
+| `dense-values` | `ascend-readxlsx-raw-values-operation-bytes` | 3.166 | 3.287 | 91.1 MiB | no optimization target |
+| `sparse-wide` | `ascend-readxlsx-row-stream-bytes` | 8.223 | 9.052 | 100.3 MiB | no optimization target |
+| `string-heavy` | `ascend-readxlsx-row-stream-bytes` | 8.412 | 8.451 | 111.7 MiB | no optimization target |
+| `styles-heavy` | `ascend` | 4.849 | 5.515 | 148.2 MiB | no optimization target |
+| `formula-heavy` | `ascend-readxlsx-raw-values-operation-bytes` | 5.338 | 6.074 | 100.7 MiB | no optimization target |
+| `table-heavy` | `ascend-readxlsx-row-stream-bytes` | 5.608 | 5.743 | 98.8 MiB | no optimization target |
+| `feature-rich` | `ascend` | 4.955 | 5.161 | 157.2 MiB | claim blocked by competitor semantic mismatch |
+| `warm-workflow` | `ascend` | 2.870 | 3.545 | 183.7 MiB | no optimization target |
+
+Humble allowed wording:
+
+> In a clean detached current full-profile run at `9ddfff91`, Ascend reported no leader failures for completed comparable `xlsx-read-sota` rows. Merged same-lane selected-sheet and metadata-only evidence removes those comparability failures, but the broad speed claim remains downgraded because ClosedXML coverage, feature-rich semantic mismatches, and unsupported selected-sheet/metadata-only competitors remain non-wins.
+
+Forbidden wording:
+
+- "Ascend is the fastest XLSX reader."
+- "Ascend is SOTA for XLSX read."
+- "Ascend beats ClosedXML, fastxlsx, unsupported runners, or semantic-mismatch rows."
+- Any wording that converts `leaderFailures: []` into a full-profile coverage pass.
+
+Next action: stop production optimization from this evidence. If the performance
+loop continues, it must be blocker work: ClosedXML coverage policy, feature-rich
+SheetJS/Calamine semantic support or not-comparable policy, unsupported
+selected-sheet/metadata-only competitor policy, or FastXLSX environment coverage.
 
 ## Full Current-Commit Gate: XLSX Read SOTA
 

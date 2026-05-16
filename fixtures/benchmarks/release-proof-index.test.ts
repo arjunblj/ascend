@@ -1676,7 +1676,7 @@ describe('release proof evidence index', () => {
 					path: 'docs/PERFORMANCE_CLAIM_BASELINE_MATRIX.md',
 					validationCommand:
 						'bun test fixtures/benchmarks/performance-claim-baseline-matrix.test.ts',
-					nextAction: expect.stringContaining('metadata-only same-lane external coverage'),
+					nextAction: expect.stringContaining('downgrades broad speed wording'),
 					decision: expect.stringContaining('performance matrix as a defer decision'),
 					forbiddenShortcut: expect.stringContaining('one-workload medians'),
 				}),
@@ -1686,9 +1686,9 @@ describe('release proof evidence index', () => {
 			(artifact) => artifact.artifactId === 'performance-claim-baseline-matrix',
 		)
 		expect(performanceOwnerArtifact?.nextAction).toContain(
-			'focused ClosedXML head-to-head read run',
+			'current full-profile/merged scoreboard runs',
 		)
-		expect(performanceOwnerArtifact?.nextAction).toContain('same-lane selected-sheet external run')
+		expect(performanceOwnerArtifact?.nextAction).toContain('stops production optimization')
 		expect(
 			safeOpenDecision.nextOwnerActions.find(
 				(action) => action.requirementId === 'release-latency-run',
@@ -3538,35 +3538,40 @@ describe('release proof evidence index', () => {
 				validationCommand: 'bun test fixtures/benchmarks/performance-claim-baseline-matrix.test.ts',
 			},
 		})
-		expect(packet.benchmarkBlocker?.nextAction).toContain('ClosedXML head-to-head read run')
-		expect(packet.benchmarkBlocker?.nextAction).toContain('same-lane selected-sheet external run')
-		expect(packet.benchmarkBlocker?.nextAction).toContain('metadata-only same-lane external')
-		expect(packet.benchmarkBlocker?.nextAction).toContain('current-commit full-profile')
-		expect(packet.benchmarkBlocker?.nextAction).toContain('fastxlsx runner')
+		expect(packet.benchmarkBlocker?.nextAction).toContain('Downgrade broad read-speed wording')
+		expect(packet.benchmarkBlocker?.nextAction).toContain('current full-profile')
+		expect(packet.benchmarkBlocker?.nextAction).toContain('merged selected-sheet/metadata-only')
+		expect(packet.benchmarkBlocker?.nextAction).toContain('feature-rich SheetJS/Calamine')
+		expect(packet.benchmarkBlocker?.nextAction).toContain(
+			'unsupported selected-sheet/metadata-only',
+		)
 		expect(packet.benchmarkBlocker?.nextAction).not.toContain(
 			'clean selected-sheet timing-boundary rerun',
 		)
 		expect(packet.benchmarkBlocker?.benchmarkCommands?.join('\n')).toContain(
-			'--runner-manifest fixtures/benchmarks/runners/metadata-only-readers.manifest.json',
+			'--runner-manifest fixtures/benchmarks/runners/ascend-python-readers.manifest.json',
 		)
 		expect(packet.benchmarkBlocker?.benchmarkCommands?.join('\n')).toContain(
-			'--execution-scope external-process --libraries ascend-external-metadata-only,sheetjs-metadata-only,openpyxl-metadata-only',
+			'/private/tmp/ascend-perf-hillclimb-9ddfff91-runs/xlsx-read-sota-all.json',
 		)
 		expect(packet.benchmarkBlocker?.benchmarkCommands?.join('\n')).toContain(
-			'competitive-scoreboard.ts <metadata-only-external-suite.json> --json --metric medianMs --require-profile xlsx-read-sota',
+			'/private/tmp/ascend-perf-hillclimb-9ddfff91-runs/xlsx-read-sota-all-scoreboard.json',
 		)
 		expect(packet.benchmarkBlocker?.benchmarkCommands?.join('\n')).toContain(
-			'competitive-scoreboard.ts <current-commit-xlsx-read-sota-all.json> --json --metric medianMs --require-profile xlsx-read-sota',
+			'/private/tmp/ascend-perf-hillclimb-9ddfff91-runs/xlsx-read-sota-merged-selected-metadata-scoreboard.json',
 		)
 		expect(packet.benchmarkBlocker?.acceptanceEvidence?.join('\n')).toContain('ClosedXML')
 		expect(packet.benchmarkBlocker?.acceptanceEvidence?.join('\n')).toContain(
 			'selected-sheet same-lane external-process run at commit 39163862',
 		)
 		expect(packet.benchmarkBlocker?.acceptanceEvidence?.join('\n')).toContain(
-			'ExcelJS, Calamine, Apache POI, and ClosedXML are unsupported-operation gaps',
+			'metadata-only same-lane external-process run at commit fa3a13dc',
 		)
 		expect(packet.benchmarkBlocker?.acceptanceEvidence?.join('\n')).toContain(
-			'Metadata-only promotion still requires same-lane external-process evidence',
+			'current full-profile run at commit 9ddfff91',
+		)
+		expect(packet.benchmarkBlocker?.acceptanceEvidence?.join('\n')).toContain(
+			'coverage still fails for ClosedXML missing/error rows and feature-rich semantic mismatches',
 		)
 		expect(packet.benchmarkBlocker?.acceptanceEvidence?.join('\n')).toContain('not counted as wins')
 		expect(packet.approvalChecklist?.map((item) => `${item.ownerLoop}/${item.gateId}`)).toEqual([

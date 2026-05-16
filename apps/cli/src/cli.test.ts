@@ -509,6 +509,7 @@ describe('ascend cli', () => {
 				'proofBundle.whatChanged',
 				'proofBundle.whySafe',
 				'postWrite.dataConnections',
+				'postWrite.formulaState',
 				'postWrite.visuals',
 			]),
 		})
@@ -527,6 +528,7 @@ describe('ascend cli', () => {
 		expect(parsed.data.safetyDefaults.join('\n')).toContain('--expect-sha256')
 		expect(parsed.data.safetyDefaults.join('\n')).toContain('proofBundle.safeToUse')
 		expect(parsed.data.safetyDefaults.join('\n')).toContain('postWrite.dataConnections')
+		expect(parsed.data.safetyDefaults.join('\n')).toContain('postWrite.formulaState')
 		expect(parsed.data.safetyDefaults.join('\n')).toContain('postWrite.visuals')
 		expect(parsed.data.safetyDefaults.join('\n')).toContain('planHandle')
 		expect(parsed.data.safetyDefaults.join('\n')).toContain('untrusted data')

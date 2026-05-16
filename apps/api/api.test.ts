@@ -91,6 +91,7 @@ describe('API', () => {
 				'proofBundle.whatChanged',
 				'proofBundle.whySafe',
 				'postWrite.dataConnections',
+				'postWrite.formulaState',
 				'postWrite.visuals',
 			]),
 		})

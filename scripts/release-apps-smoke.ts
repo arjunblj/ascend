@@ -290,6 +290,11 @@ if (!cliAgentInit.packageInstallExampleContext?.proofOutput?.includes('postWrite
 		'CLI agent-init missing installed connection proof output context: ' + JSON.stringify(cliAgentInit),
 	)
 }
+if (!cliAgentInit.packageInstallExampleContext?.proofOutput?.includes('postWrite.formulaState')) {
+	throw new Error(
+		'CLI agent-init missing installed formula proof output context: ' + JSON.stringify(cliAgentInit),
+	)
+}
 if (!cliAgentInit.packageInstallExampleContext?.proofOutput?.includes('postWrite.visuals')) {
 	throw new Error(
 		'CLI agent-init missing installed visual proof output context: ' + JSON.stringify(cliAgentInit),
@@ -422,6 +427,9 @@ if (!apiWorkflow.packageInstallExampleContext?.proofOutput?.includes('proofBundl
 if (!apiWorkflow.packageInstallExampleContext?.proofOutput?.includes('postWrite.dataConnections')) {
 	throw new Error('installed API agent workflow contract missing connection proof output context')
 }
+if (!apiWorkflow.packageInstallExampleContext?.proofOutput?.includes('postWrite.formulaState')) {
+	throw new Error('installed API agent workflow contract missing formula proof output context')
+}
 if (!apiWorkflow.packageInstallExampleContext?.proofOutput?.includes('postWrite.visuals')) {
 	throw new Error('installed API agent workflow contract missing visual proof output context')
 }
@@ -510,6 +518,9 @@ if (!mcpWorkflow.packageInstallExampleContext?.proofOutput?.includes('proofBundl
 if (!mcpWorkflow.packageInstallExampleContext?.proofOutput?.includes('postWrite.dataConnections')) {
 	throw new Error('installed MCP agent workflow contract missing connection proof output context')
 }
+if (!mcpWorkflow.packageInstallExampleContext?.proofOutput?.includes('postWrite.formulaState')) {
+	throw new Error('installed MCP agent workflow contract missing formula proof output context')
+}
 if (!mcpWorkflow.packageInstallExampleContext?.proofOutput?.includes('postWrite.visuals')) {
 	throw new Error('installed MCP agent workflow contract missing visual proof output context')
 }
@@ -536,6 +547,9 @@ if (!mcpWorkflowResource.contents[0].text.includes('proofBundle.safeToUse')) {
 }
 if (!mcpWorkflowResource.contents[0].text.includes('postWrite.dataConnections')) {
 	throw new Error('installed MCP agent workflow resource missing connection proof output context')
+}
+if (!mcpWorkflowResource.contents[0].text.includes('postWrite.formulaState')) {
+	throw new Error('installed MCP agent workflow resource missing formula proof output context')
 }
 if (!mcpWorkflowResource.contents[0].text.includes('postWrite.visuals')) {
 	throw new Error('installed MCP agent workflow resource missing visual proof output context')

@@ -565,6 +565,7 @@ describe('MCP server', () => {
 				'proofBundle.whatChanged',
 				'proofBundle.whySafe',
 				'postWrite.dataConnections',
+				'postWrite.formulaState',
 				'postWrite.visuals',
 			]),
 		})
@@ -657,6 +658,7 @@ describe('MCP server', () => {
 		expect(workflow?.contents[0]?.text).toContain('node_modules/.bin/ascend-sdk-safe-edit')
 		expect(workflow?.contents[0]?.text).toContain('proofBundle.safeToUse')
 		expect(workflow?.contents[0]?.text).toContain('postWrite.dataConnections')
+		expect(workflow?.contents[0]?.text).toContain('postWrite.formulaState')
 		expect(workflow?.contents[0]?.text).toContain('postWrite.visuals')
 		expect(workflow?.contents[0]?.text).toContain('bun run example:safe-edit:mcp')
 		expect(workflow?.contents[0]?.text).toContain('bun test examples/root-scripts.test.ts')

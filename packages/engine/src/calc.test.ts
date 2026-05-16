@@ -3237,6 +3237,30 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(1, 3)?.value).toEqual(stringValue('Three'))
 	})
 
+	test('CHOOSE spills values selected by an array index', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, {
+			value: EMPTY,
+			formula: 'CHOOSE({1,2,1},"North","South")',
+			styleId: sid,
+		})
+		sheet.cells.set(1, 0, {
+			value: EMPTY,
+			formula: 'CHOOSE({1;3},"first",1/0,"third")',
+			styleId: sid,
+		})
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(0, 0)?.value).toEqual(stringValue('North'))
+		expect(sheet.cells.get(0, 1)?.value).toEqual(stringValue('South'))
+		expect(sheet.cells.get(0, 2)?.value).toEqual(stringValue('North'))
+		expect(sheet.cells.get(1, 0)?.value).toEqual(stringValue('first'))
+		expect(sheet.cells.get(2, 0)?.value).toEqual(stringValue('third'))
+	})
+
 	test('TEXTBEFORE and TEXTAFTER support modern text slicing formulas', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

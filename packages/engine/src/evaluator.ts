@@ -1213,11 +1213,44 @@ function evalChoose(argNodes: readonly FormulaNode[], ctx: EvalContext): CellVal
 	if (argNodes.length < 2) return errorValue('#VALUE!')
 	const idxVal = evaluate(argNodes[0] ?? { type: 'missing' }, ctx)
 	if (idxVal.kind === 'error') return idxVal
+	if (idxVal.kind === 'array') return evalChooseArray(idxVal, argNodes, ctx)
 	const n = coerceToNumber(idxVal)
 	if (n === null) return errorValue('#VALUE!')
 	const idx = Math.floor(n)
 	if (idx < 1 || idx >= argNodes.length) return errorValue('#VALUE!')
 	return evalLazyArg(argNodes[idx], ctx)
+}
+
+function evalChooseArray(
+	indexes: Extract<CellValue, { kind: 'array' }>,
+	argNodes: readonly FormulaNode[],
+	ctx: EvalContext,
+): CellValue {
+	const selected = new Map<number, CellValue>()
+	const rows: ScalarCellValue[][] = []
+	for (const indexRow of indexes.rows) {
+		const row: ScalarCellValue[] = []
+		for (const indexValue of indexRow) {
+			if (indexValue.kind === 'error') {
+				row.push(indexValue)
+				continue
+			}
+			const n = coerceToNumber(indexValue)
+			const idx = n === null ? 0 : Math.floor(n)
+			if (n === null || idx < 1 || idx >= argNodes.length) {
+				row.push(topLeftScalar(errorValue('#VALUE!')))
+				continue
+			}
+			let value = selected.get(idx)
+			if (!value) {
+				value = evalLazyArg(argNodes[idx], ctx)
+				selected.set(idx, value)
+			}
+			row.push(topLeftScalar(value))
+		}
+		rows.push(row)
+	}
+	return arrayValue(rows)
 }
 
 function evalSwitch(argNodes: readonly FormulaNode[], ctx: EvalContext): CellValue {

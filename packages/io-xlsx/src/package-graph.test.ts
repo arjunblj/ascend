@@ -51,8 +51,11 @@ describe('XLSX package graph', () => {
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rIdSheet" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
   <Relationship Id="rIdXmlMaps" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/xmlMaps" Target="xmlMaps.xml"/>
+  <Relationship Id="rIdXmlMapsOpaque" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/xmlMaps" Target="opaque-xmlmaps.bin"/>
   <Relationship Id="rIdCustomProperty" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/customProperty" Target="customProperty1.bin"/>
+  <Relationship Id="rIdCustomPropertyOpaque" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/customProperty" Target="opaque-custom-property.bin"/>
   <Relationship Id="rIdDiagramData" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/diagramData" Target="diagrams/data1.xml"/>
+  <Relationship Id="rIdDiagramDataOpaque" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/diagramData" Target="opaque-diagram.bin"/>
   <Relationship Id="rIdDataModel" Type="http://schemas.microsoft.com/office/2011/relationships/model" Target="model/item.data"/>
   <Relationship Id="rIdPowerQuery" Type="http://schemas.microsoft.com/office/2014/relationships/powerQueryMashup" Target="customData/item1.data"/>
   <Relationship Id="rIdPowerQueryOpaque" Type="http://schemas.microsoft.com/office/2014/relationships/powerQueryMashup" Target="opaque-mashup.bin"/>
@@ -65,6 +68,7 @@ describe('XLSX package graph', () => {
   <Relationship Id="rIdConnections" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/connections" Target="data/connectionsPayload.xml"/>
   <Relationship Id="rIdExternalLink" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLink" Target="links/bookLink.xml"/>
   <Relationship Id="rIdRevisionHeaders" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/revisionHeaders" Target="revisions/revisionHeaders.xml"/>
+  <Relationship Id="rIdRevisionHeadersOpaque" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/revisionHeaders" Target="opaque-revision.bin"/>
 </Relationships>`,
 			'xl/worksheets/sheet1.xml': '<worksheet/>',
 			'xl/worksheets/_rels/sheet1.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -91,8 +95,11 @@ describe('XLSX package graph', () => {
 			'xl/charts/style1.xml': '<cs:chartStyle/>',
 			'xl/charts/colors1.xml': '<cs:colors/>',
 			'xl/xmlMaps.xml': '<xmlMaps/>',
+			'xl/opaque-xmlmaps.bin': 'xml-map-bytes',
 			'xl/customProperty1.bin': 'custom-property-bytes',
+			'xl/opaque-custom-property.bin': 'custom-property-opaque-bytes',
 			'xl/diagrams/data1.xml': '<dgm:dataModel/>',
+			'xl/opaque-diagram.bin': 'diagram-bytes',
 			'xl/model/item.data': 'data-model-bytes',
 			'xl/customData/item1.data': 'power-query-bytes',
 			'xl/opaque-mashup.bin': 'opaque-power-query-bytes',
@@ -105,6 +112,7 @@ describe('XLSX package graph', () => {
 			'xl/data/connectionsPayload.xml': '<connections/>',
 			'xl/links/bookLink.xml': '<externalLink/>',
 			'xl/revisions/revisionHeaders.xml': '<headers/>',
+			'xl/opaque-revision.bin': 'revision-bytes',
 			'xl/worksheets/opaque-query.bin': 'query-table-bytes',
 			'xl/worksheets/opaque-control.bin': 'control-bytes',
 			'xl/drawings/opaque-ole.bin': 'ole-bytes',
@@ -251,6 +259,42 @@ describe('XLSX package graph', () => {
 			rawTarget: 'opaque-sheet-metadata.bin',
 			resolvedTarget: 'xl/opaque-sheet-metadata.bin',
 			featureFamily: 'preservedMetadata',
+		})
+		expect(graph.relationships).toContainEqual({
+			sourcePartPath: 'xl/workbook.xml',
+			relationshipPartPath: 'xl/_rels/workbook.xml.rels',
+			id: 'rIdXmlMapsOpaque',
+			type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/xmlMaps',
+			rawTarget: 'opaque-xmlmaps.bin',
+			resolvedTarget: 'xl/opaque-xmlmaps.bin',
+			featureFamily: 'preservedCustomXml',
+		})
+		expect(graph.relationships).toContainEqual({
+			sourcePartPath: 'xl/workbook.xml',
+			relationshipPartPath: 'xl/_rels/workbook.xml.rels',
+			id: 'rIdCustomPropertyOpaque',
+			type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/customProperty',
+			rawTarget: 'opaque-custom-property.bin',
+			resolvedTarget: 'xl/opaque-custom-property.bin',
+			featureFamily: 'preservedMetadata',
+		})
+		expect(graph.relationships).toContainEqual({
+			sourcePartPath: 'xl/workbook.xml',
+			relationshipPartPath: 'xl/_rels/workbook.xml.rels',
+			id: 'rIdDiagramDataOpaque',
+			type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/diagramData',
+			rawTarget: 'opaque-diagram.bin',
+			resolvedTarget: 'xl/opaque-diagram.bin',
+			featureFamily: 'preservedDrawing',
+		})
+		expect(graph.relationships).toContainEqual({
+			sourcePartPath: 'xl/workbook.xml',
+			relationshipPartPath: 'xl/_rels/workbook.xml.rels',
+			id: 'rIdRevisionHeadersOpaque',
+			type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/revisionHeaders',
+			rawTarget: 'opaque-revision.bin',
+			resolvedTarget: 'xl/opaque-revision.bin',
+			featureFamily: 'preservedRevision',
 		})
 		expect(graph.relationships).toContainEqual({
 			sourcePartPath: 'xl/drawings/drawing1.xml',
@@ -412,13 +456,33 @@ describe('XLSX package graph', () => {
 			featureFamily: 'preservedCustomXml',
 			preservationPolicy: 'preserve-exact',
 		})
+		expect(graph.parts.find((part) => part.path === 'xl/opaque-xmlmaps.bin')).toMatchObject({
+			ownerScope: 'custom-xml',
+			sourceRelationshipId: 'rIdXmlMapsOpaque',
+			featureFamily: 'preservedCustomXml',
+			preservationPolicy: 'preserve-exact',
+		})
 		expect(graph.parts.find((part) => part.path === 'xl/customProperty1.bin')).toMatchObject({
 			sourceRelationshipId: 'rIdCustomProperty',
 			featureFamily: 'preservedMetadata',
 			preservationPolicy: 'preserve-exact',
 		})
+		expect(graph.parts.find((part) => part.path === 'xl/opaque-custom-property.bin')).toMatchObject(
+			{
+				ownerScope: 'metadata',
+				sourceRelationshipId: 'rIdCustomPropertyOpaque',
+				featureFamily: 'preservedMetadata',
+				preservationPolicy: 'preserve-exact',
+			},
+		)
 		expect(graph.parts.find((part) => part.path === 'xl/diagrams/data1.xml')).toMatchObject({
 			sourceRelationshipId: 'rIdDiagramData',
+			featureFamily: 'preservedDrawing',
+			preservationPolicy: 'preserve-exact',
+		})
+		expect(graph.parts.find((part) => part.path === 'xl/opaque-diagram.bin')).toMatchObject({
+			ownerScope: 'drawing',
+			sourceRelationshipId: 'rIdDiagramDataOpaque',
 			featureFamily: 'preservedDrawing',
 			preservationPolicy: 'preserve-exact',
 		})
@@ -514,6 +578,13 @@ describe('XLSX package graph', () => {
 			graph.parts.find((part) => part.path === 'xl/revisions/revisionHeaders.xml'),
 		).toMatchObject({
 			sourceRelationshipId: 'rIdRevisionHeaders',
+			featureFamily: 'preservedRevision',
+			preservationPolicy: 'inspect-only',
+			bytePreservationExpected: true,
+		})
+		expect(graph.parts.find((part) => part.path === 'xl/opaque-revision.bin')).toMatchObject({
+			ownerScope: 'metadata',
+			sourceRelationshipId: 'rIdRevisionHeadersOpaque',
 			featureFamily: 'preservedRevision',
 			preservationPolicy: 'inspect-only',
 			bytePreservationExpected: true,

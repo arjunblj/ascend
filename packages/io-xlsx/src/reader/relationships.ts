@@ -38,6 +38,18 @@ export const REL_SHARED_STRINGS =
 export const REL_THEME = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme'
 export const REL_SHEET_METADATA =
 	'http://purl.oclc.org/ooxml/officeDocument/relationships/sheetMetadata'
+export const REL_XML_MAPS =
+	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/xmlMaps'
+export const REL_CUSTOM_PROPERTY =
+	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/customProperty'
+export const REL_DIAGRAM_DATA =
+	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/diagramData'
+export const REL_REVISION_HEADERS =
+	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/revisionHeaders'
+export const REL_REVISION_LOG =
+	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/revisionLog'
+export const REL_USER_NAMES =
+	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/usernames'
 export const REL_TABLE = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/table'
 export const REL_QUERY_TABLE =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/queryTable'

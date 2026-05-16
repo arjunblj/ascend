@@ -19,9 +19,11 @@ import {
 	REL_CONTROL_PROP,
 	REL_CORE_PROPERTIES,
 	REL_CUSTOM_PROPERTIES,
+	REL_CUSTOM_PROPERTY,
 	REL_CUSTOM_UI,
 	REL_CUSTOM_XML,
 	REL_DATA_MODEL,
+	REL_DIAGRAM_DATA,
 	REL_DIGITAL_SIGNATURE,
 	REL_DIGITAL_SIGNATURE_ORIGIN,
 	REL_DRAWING,
@@ -38,6 +40,8 @@ import {
 	REL_POWER_QUERY_MASHUP,
 	REL_PRINTER_SETTINGS,
 	REL_QUERY_TABLE,
+	REL_REVISION_HEADERS,
+	REL_REVISION_LOG,
 	REL_SHARED_STRINGS,
 	REL_SHEET_METADATA,
 	REL_SLICER,
@@ -49,10 +53,12 @@ import {
 	REL_THUMBNAIL,
 	REL_TIMELINE,
 	REL_TIMELINE_CACHE,
+	REL_USER_NAMES,
 	REL_VBA_PROJECT,
 	REL_VBA_PROJECT_SIGNATURE,
 	REL_VML_DRAWING,
 	REL_WORKSHEET,
+	REL_XML_MAPS,
 	type Relationship,
 	resolvePath,
 } from './reader/relationships.ts'
@@ -265,6 +271,16 @@ export function classifyPackageFeatureFamily(
 	if (lowerRelType.endsWith('/relationships/ctrlprop')) return 'preservedControl'
 	if (lowerRelType.endsWith('/relationships/oleobject')) return 'preservedEmbedding'
 	if (lowerRelType.endsWith('/relationships/customxml')) return 'preservedCustomXml'
+	if (lowerRelType.endsWith('/relationships/xmlmaps')) return 'preservedCustomXml'
+	if (lowerRelType.endsWith('/relationships/customproperty')) return 'preservedMetadata'
+	if (lowerRelType.includes('/relationships/diagram')) return 'preservedDrawing'
+	if (
+		lowerRelType.endsWith('/relationships/revisionheaders') ||
+		lowerRelType.endsWith('/relationships/revisionlog') ||
+		lowerRelType.endsWith('/relationships/usernames')
+	) {
+		return 'preservedRevision'
+	}
 	if (lowerRelType.endsWith('/relationships/ui/extensibility')) return 'preservedCustomUi'
 	if (lowerRelType.endsWith('/relationships/calcchain')) return 'preservedCalcChain'
 	if (lowerRelType.endsWith('/relationships/sheetmetadata')) return 'preservedMetadata'
@@ -517,6 +533,7 @@ function classifyOwnerScope(
 	if (primary?.type === REL_EXTERNAL_LINK) return 'external-link'
 	if (/(^|\/)externalLinks\//.test(partPath)) return 'external-link'
 	if (primary?.type === REL_CUSTOM_XML) return 'custom-xml'
+	if (primary?.type === REL_XML_MAPS) return 'custom-xml'
 	if (/(^|\/)customXml\//i.test(partPath)) return 'custom-xml'
 	if (
 		primary?.type === REL_CONNECTIONS ||
@@ -545,6 +562,15 @@ function classifyOwnerScope(
 		return 'active-content'
 	}
 	if (primary?.type === REL_CALC_CHAIN || primary?.type === REL_SHEET_METADATA) return 'metadata'
+	if (primary?.type === REL_CUSTOM_PROPERTY) return 'metadata'
+	if (primary?.type === REL_DIAGRAM_DATA) return 'drawing'
+	if (
+		primary?.type === REL_REVISION_HEADERS ||
+		primary?.type === REL_REVISION_LOG ||
+		primary?.type === REL_USER_NAMES
+	) {
+		return 'metadata'
+	}
 	if (/(^|\/)(metadata|calcChain)\.xml$/i.test(partPath)) return 'metadata'
 	if (primary?.sourcePartPath.includes('/worksheets/')) return 'worksheet'
 	if (primary?.sourcePartPath.includes('/tables/')) return 'worksheet'
@@ -587,6 +613,16 @@ function classifyRelationshipFeatureFamily(
 	if (relationship.type === REL_POWER_QUERY_MASHUP) return 'preservedPowerQuery'
 	if (relationship.type === REL_HYPERLINK) return 'preservedHyperlink'
 	if (relationship.type === REL_CUSTOM_XML) return 'preservedCustomXml'
+	if (relationship.type === REL_XML_MAPS) return 'preservedCustomXml'
+	if (relationship.type === REL_CUSTOM_PROPERTY) return 'preservedMetadata'
+	if (relationship.type === REL_DIAGRAM_DATA) return 'preservedDrawing'
+	if (
+		relationship.type === REL_REVISION_HEADERS ||
+		relationship.type === REL_REVISION_LOG ||
+		relationship.type === REL_USER_NAMES
+	) {
+		return 'preservedRevision'
+	}
 	if (relationship.type === REL_CUSTOM_UI) return 'preservedCustomUi'
 	if (relationship.type === REL_COMMENTS) return 'preservedComments'
 	if (relationship.type === REL_THREADED_COMMENT) return 'preservedThreadedComments'

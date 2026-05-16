@@ -1622,6 +1622,14 @@ describe('release proof evidence index', () => {
 					boundary: expect.stringContaining('does not execute connections'),
 				}),
 				expect.objectContaining({
+					evidenceId: 'workbook-connection-scheduling-commit-proof',
+					acceptedScope: expect.stringContaining('1cb093fe'),
+					command: expect.stringContaining(
+						'commits public workbook connection scheduling edits through save and reopen',
+					),
+					boundary: expect.stringContaining('does not execute connections'),
+				}),
+				expect.objectContaining({
 					evidenceId: 'public-formula-cache-post-write-proof',
 					acceptedScope: expect.stringContaining('f7338c91'),
 					command: expect.stringContaining(
@@ -1839,6 +1847,7 @@ describe('release proof evidence index', () => {
 						'868add46',
 						'caa08959',
 						'62566e09',
+						'1cb093fe',
 						'91dabea8',
 						'4d272f77',
 						'1eaf28ff',
@@ -1852,16 +1861,19 @@ describe('release proof evidence index', () => {
 						'd519c5a7',
 						'62f45cb5',
 					]),
-					allowedWording: expect.stringContaining(
-						'workflow discovery that points agents to postWrite.dataConnections, postWrite.formulaState, and postWrite.visuals',
+					allowedWording: expect.stringMatching(
+						/workflow discovery that points agents to postWrite\.dataConnections, postWrite\.formulaState, and postWrite\.visuals.*workbook connection scheduling metadata edits/,
 					),
 					evidenceProvesIt: expect.arrayContaining([
+						expect.stringContaining(
+							'commits public workbook connection scheduling edits through save and reopen',
+						),
 						expect.stringContaining(
 							'commits public workbook strong-hash protection with honest metadata reporting',
 						),
 					]),
 					forbiddenWording: expect.arrayContaining([
-						expect.stringContaining('raw protection hash/salt disclosure'),
+						expect.stringContaining('arbitrary connection authoring'),
 					]),
 					ownerLoop: 'release',
 					nextOwnerAction: expect.stringContaining('export-format test expectation'),

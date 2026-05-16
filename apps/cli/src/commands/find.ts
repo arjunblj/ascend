@@ -1,4 +1,5 @@
 import { ascendError, type CellValue } from '@ascend/schema'
+import { WorkbookDocument } from '@ascend/sdk'
 import { cliError, jsonOut } from '../output/json.ts'
 import { formatCellValue } from '../output/pretty.ts'
 import { openWorkbookWithProgress } from '../progress.ts'
@@ -96,7 +97,14 @@ export async function findCommand(args: string[], flags: Map<string, string>): P
 
 	const sheetName = flags.get('sheet') ?? wb.sheets[0]
 	if (!sheetName) {
-		cliError('No sheets in workbook', flags)
+		cliError(findMissingSheetError(wb.sheets), flags)
+		return 1
+	}
+	if (!wb.sheet(sheetName)) {
+		cliError(
+			findSheetNotFoundError(sheetName, await loadAvailableSheetsForFind(file, wb.sheets)),
+			flags,
+		)
 		return 1
 	}
 
@@ -130,6 +138,49 @@ export async function findCommand(args: string[], flags: Map<string, string>): P
 	}
 	console.log(`\n${matches.length} match(es) found`)
 	return 0
+}
+
+async function loadAvailableSheetsForFind(
+	file: string,
+	fallbackSheets: readonly string[],
+): Promise<readonly string[]> {
+	if (fallbackSheets.length > 0) return fallbackSheets
+	try {
+		const workbook = await WorkbookDocument.open(file, { mode: 'metadata-only' })
+		return workbook.sheets
+	} catch {
+		return fallbackSheets
+	}
+}
+
+function findMissingSheetError(availableSheets: readonly string[]) {
+	return ascendError('INVALID_ARGUMENT', 'No sheets in workbook', {
+		retryable: false,
+		retryStrategy: 'none',
+		details: {
+			command: 'find',
+			availableSheets,
+			workflow: ['inspect', 'find', 'read'],
+		},
+		suggestedFix: 'Open or create a workbook with at least one sheet before searching cells.',
+	})
+}
+
+function findSheetNotFoundError(sheetName: string, availableSheets: readonly string[]) {
+	return ascendError('SHEET_NOT_FOUND', `Sheet "${sheetName}" not found`, {
+		retryable: true,
+		retryStrategy: availableSheets.length > 0 ? 'modified' : 'none',
+		details: {
+			command: 'find',
+			sheet: sheetName,
+			availableSheets,
+			workflow: ['inspect', 'find', 'read'],
+		},
+		suggestedFix:
+			availableSheets.length > 0
+				? `Retry with --sheet set to one of: ${availableSheets.join(', ')}.`
+				: 'Run ascend inspect <file> --json to confirm workbook sheets before retrying find.',
+	})
 }
 
 function cellValueToJson(v: CellValue): unknown {

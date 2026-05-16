@@ -2870,6 +2870,26 @@ describe('ascend cli', () => {
 		const { exitCode, stdout } = await run('find', TEST_FILE, 'hello')
 		expect(exitCode).toBe(0)
 		expect(stdout).toContain('A1')
+
+		const missing = await run('find', TEST_FILE, 'hello', '--sheet', 'Missing', '--json')
+		expect(missing.exitCode).toBe(1)
+		const parsed = JSON.parse(missing.stdout)
+		expect(parsed).toMatchObject({
+			ok: false,
+			error: {
+				code: 'SHEET_NOT_FOUND',
+				message: 'Sheet "Missing" not found',
+				retryable: true,
+				retryStrategy: 'modified',
+				details: {
+					command: 'find',
+					sheet: 'Missing',
+					availableSheets: ['Sheet1'],
+					workflow: ['inspect', 'find', 'read'],
+				},
+			},
+		})
+		expect(parsed.error.suggestedFix).toContain('Sheet1')
 	})
 
 	test('export --json writes JSON output', async () => {

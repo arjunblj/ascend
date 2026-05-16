@@ -40,7 +40,22 @@ export async function traceCommand(args: string[], flags: Map<string, string>): 
 	const { document: session } = await openWorkbookDocumentWithProgress(file, { mode: 'formula' })
 	const maxDepth = parseOptionalInt(flags.get('max-depth'))
 	if (flags.has('max-depth') && (maxDepth == null || maxDepth < 0)) {
-		cliError('Invalid --max-depth. Use a non-negative integer.', flags)
+		cliError(
+			ascendError('INVALID_ARGUMENT', 'Invalid --max-depth. Use a non-negative integer.', {
+				retryable: true,
+				retryStrategy: 'modified',
+				details: {
+					command: 'trace',
+					flag: 'max-depth',
+					received: flags.get('max-depth'),
+					expected: 'non-negative integer',
+					workflow: ['reopen', 'verify', 'trace'],
+				},
+				suggestedFix:
+					'Use --max-depth 0 or another non-negative integer when bounding trace proof output.',
+			}),
+			flags,
+		)
 		return 1
 	}
 	const validatedMaxDepth = maxDepth ?? undefined

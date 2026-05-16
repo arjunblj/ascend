@@ -45,7 +45,22 @@ export async function agentViewCommand(
 	const range = flags.get('range')
 	const maxApproxTokens = parsePositiveInt(flags.get('tokens'))
 	if (flags.has('tokens') && maxApproxTokens == null) {
-		cliError('Invalid --tokens. Use a positive integer.', flags)
+		cliError(
+			ascendError('INVALID_ARGUMENT', 'Invalid --tokens. Use a positive integer.', {
+				retryable: true,
+				retryStrategy: 'modified',
+				details: {
+					command: 'agent-view',
+					flag: 'tokens',
+					received: flags.get('tokens'),
+					expected: 'positive integer',
+					workflow: ['inspect', 'agent-view', 'plan'],
+				},
+				suggestedFix:
+					'Use --tokens 1 or another positive integer to cap agent-view output for context.',
+			}),
+			flags,
+		)
 		return 1
 	}
 

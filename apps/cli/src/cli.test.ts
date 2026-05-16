@@ -1069,6 +1069,27 @@ describe('ascend cli', () => {
 		})
 		expect(parsedInvalidReadLimit.error.suggestedFix).toContain('--row-limit 1')
 
+		const invalidAgentViewTokens = await run('agent-view', TEST_FILE, '--tokens', '0', '--json')
+		expect(invalidAgentViewTokens.exitCode).toBe(1)
+		const parsedInvalidAgentViewTokens = JSON.parse(invalidAgentViewTokens.stdout)
+		expect(parsedInvalidAgentViewTokens).toMatchObject({
+			ok: false,
+			error: {
+				code: 'INVALID_ARGUMENT',
+				message: 'Invalid --tokens. Use a positive integer.',
+				retryable: true,
+				retryStrategy: 'modified',
+				details: {
+					command: 'agent-view',
+					flag: 'tokens',
+					received: '0',
+					expected: 'positive integer',
+					workflow: ['inspect', 'agent-view', 'plan'],
+				},
+			},
+		})
+		expect(parsedInvalidAgentViewTokens.error.suggestedFix).toContain('--tokens 1')
+
 		const unknownFormula = await run('formula', 'wat', '--json')
 		expect(unknownFormula.exitCode).toBe(1)
 		const parsedUnknownFormula = JSON.parse(unknownFormula.stdout)
@@ -2300,6 +2321,27 @@ describe('ascend cli', () => {
 		const { exitCode, stderr } = await run('trace', TEST_FILE, 'Sheet1!A1', '--max-depth', 'bad')
 		expect(exitCode).toBe(1)
 		expect(stderr).toContain('Invalid --max-depth')
+
+		const json = await run('trace', TEST_FILE, 'Sheet1!A1', '--max-depth', 'bad', '--json')
+		expect(json.exitCode).toBe(1)
+		const parsed = JSON.parse(json.stdout)
+		expect(parsed).toMatchObject({
+			ok: false,
+			error: {
+				code: 'INVALID_ARGUMENT',
+				message: 'Invalid --max-depth. Use a non-negative integer.',
+				retryable: true,
+				retryStrategy: 'modified',
+				details: {
+					command: 'trace',
+					flag: 'max-depth',
+					received: 'bad',
+					expected: 'non-negative integer',
+					workflow: ['reopen', 'verify', 'trace'],
+				},
+			},
+		})
+		expect(parsed.error.suggestedFix).toContain('--max-depth 0')
 	})
 
 	test('formula suggests the closest subcommand', async () => {

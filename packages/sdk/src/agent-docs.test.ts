@@ -109,6 +109,17 @@ describe('agent documentation surface', () => {
 		}
 	})
 
+	test('OpenAPI documents encrypted workbook password fields for agent workflows', async () => {
+		const openapi = await readFile(new URL('docs/openapi.yaml', REPO_ROOT), 'utf-8')
+
+		expect(openapi).toContain('Password for encrypted XLSX/XLSM workbooks')
+		expect(openapi).toContain('Password for encrypted source workbooks')
+		expect(openapi).toContain(
+			'Password for encrypted source workbooks when committing without a prepared handle',
+		)
+		expect(openapi).toContain('never echoed in responses')
+	})
+
 	test('example search finds the runnable golden path by agent workflow terms', async () => {
 		const results = await searchAgentDocs({
 			query: 'golden path prepared planHandle verify repair',

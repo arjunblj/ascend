@@ -59,6 +59,9 @@ paths:
                 intent:
                   enum: [risk-inventory, read-values, formula-analysis, edit-plan]
                   description: Caller intent for the next step; defaults to edit-plan.
+                password:
+                  type: string
+                  description: Password for encrypted XLSX/XLSM workbooks; never echoed in responses.
       responses:
         '200': { description: Open-plan recommendation with reasons, risk features, and recommended load options }
   /active-content:
@@ -666,6 +669,9 @@ components:
           required: [file]
           properties:
             file: { type: string }
+            password:
+              type: string
+              description: Password for encrypted source workbooks; never echoed in responses.
             compact: { type: boolean }
             prepare: { type: boolean, description: Defaults to true and returns a preparedPlan handle }
             includePackageActions:
@@ -684,6 +690,9 @@ components:
       properties:
         planHandle: { type: string, description: One-shot prepared plan handle returned by /plan }
         file: { type: string }
+        password:
+          type: string
+          description: Password for encrypted source workbooks when committing without a prepared handle; never echoed in responses.
         ops:
           type: array
           items:

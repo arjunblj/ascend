@@ -984,6 +984,10 @@ describe('release proof evidence index', () => {
 				acceptedScope: expect.stringContaining('37794635'),
 			}),
 			expect.objectContaining({
+				evidenceId: 'api-agent-safe-edit-example-proof',
+				acceptedScope: expect.stringContaining('7afcd630'),
+			}),
+			expect.objectContaining({
 				evidenceId: 'mcp-agent-safe-edit-example-proof',
 				acceptedScope: expect.stringContaining('de45eb83'),
 				command: 'bun test examples/agent-safe-edit-mcp.test.ts --timeout 30000',
@@ -992,6 +996,10 @@ describe('release proof evidence index', () => {
 			expect.objectContaining({
 				evidenceId: 'mcp-agent-safe-edit-example-proof',
 				acceptedScope: expect.stringContaining('37794635'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'mcp-agent-safe-edit-example-proof',
+				acceptedScope: expect.stringContaining('7afcd630'),
 			}),
 			expect.objectContaining({
 				evidenceId: 'examples-package-safe-edit-scripts-proof',
@@ -1004,10 +1012,18 @@ describe('release proof evidence index', () => {
 				acceptedScope: expect.stringContaining('37794635'),
 			}),
 			expect.objectContaining({
+				evidenceId: 'examples-package-safe-edit-scripts-proof',
+				acceptedScope: expect.stringContaining('7afcd630'),
+			}),
+			expect.objectContaining({
 				evidenceId: 'root-package-safe-edit-scripts-proof',
 				acceptedScope: expect.stringContaining('a09660be'),
 				command: 'bun test examples/root-scripts.test.ts --timeout 30000',
 				boundary: expect.stringContaining('Local root-package script evidence only'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'root-package-safe-edit-scripts-proof',
+				acceptedScope: expect.stringContaining('7afcd630'),
 			}),
 			expect.objectContaining({
 				evidenceId: 'workflow-example-proof-context',
@@ -1024,6 +1040,10 @@ describe('release proof evidence index', () => {
 			expect.objectContaining({
 				evidenceId: 'installed-sdk-safe-edit-example-proof',
 				acceptedScope: expect.stringContaining('56cd4aa0'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'installed-sdk-safe-edit-example-proof',
+				acceptedScope: expect.stringContaining('a5fa3006'),
 			}),
 			expect.objectContaining({
 				evidenceId: 'installed-sdk-workflow-discovery-proof',
@@ -1521,6 +1541,14 @@ describe('release proof evidence index', () => {
 					),
 					boundary: expect.stringContaining('Public post-write data-connection reporting'),
 				}),
+				expect.objectContaining({
+					evidenceId: 'public-formula-cache-post-write-proof',
+					acceptedScope: expect.stringContaining('f7338c91'),
+					command: expect.stringContaining(
+						'commit proof reports missing public formula caches after save and reopen',
+					),
+					boundary: expect.stringContaining('Public formula-cache reporting evidence only'),
+				}),
 			]),
 		)
 		expect(index.qssLeapfrogReleaseMatrix.activeReleaseBlockers).toHaveLength(7)
@@ -1714,14 +1742,22 @@ describe('release proof evidence index', () => {
 						'f8d63593',
 						'cc689bcc',
 						'56cd4aa0',
+						'3d630232',
+						'5028438e',
+						'1ed2be29',
+						'a5fa3006',
+						'7afcd630',
+						'223a1ec7',
 						'868add46',
+						'caa08959',
 						'1eaf28ff',
 						'31141dd4',
+						'f7338c91',
 						'74f63b73',
 						'd519c5a7',
 						'62f45cb5',
 					]),
-					allowedWording: expect.stringContaining('protected-range metadata commit proof'),
+					allowedWording: expect.stringContaining('formula-cache reporting'),
 					forbiddenWording: expect.arrayContaining([
 						expect.stringContaining('complete API package health'),
 					]),
@@ -1744,8 +1780,11 @@ describe('release proof evidence index', () => {
 						'27af69d4',
 						'2029dfab',
 						'9cab723f',
+						'7d61a2ef',
+						'183e7ebf',
+						'eca32509',
 					]),
-					allowedWording: expect.stringContaining('dense-values'),
+					allowedWording: expect.stringContaining('table-heavy'),
 					forbiddenWording: expect.arrayContaining([expect.stringContaining('fastest XLSX')]),
 					ownerLoop: 'performance',
 				}),
@@ -2341,6 +2380,8 @@ describe('release proof evidence index', () => {
 		expect(agentWorkflowEvidence).toContain('5915794f')
 		expect(agentWorkflowEvidence).toContain('Installed SDK safe-edit workflow proof is accepted')
 		expect(agentWorkflowEvidence).toContain('node_modules/.bin/ascend-sdk-safe-edit')
+		expect(agentWorkflowEvidence).toContain('a5fa3006')
+		expect(agentWorkflowEvidence).toContain('Reusable SDK workflow proof summary is accepted')
 		expect(agentWorkflowEvidence).toContain('f8d63593')
 		expect(agentWorkflowEvidence).toContain('cc689bcc')
 		expect(agentWorkflowEvidence).toContain('56cd4aa0')
@@ -2351,8 +2392,14 @@ describe('release proof evidence index', () => {
 		expect(agentWorkflowEvidence).toContain('ascend example-safe-edit <file.xlsx> <out.xlsx>')
 		expect(agentWorkflowEvidence).toContain('5028438e')
 		expect(agentWorkflowEvidence).toContain('CLI commit proof-bundle output is accepted')
+		expect(agentWorkflowEvidence).toContain('223a1ec7')
+		expect(agentWorkflowEvidence).toContain('input-guard')
 		expect(agentWorkflowEvidence).toContain('1ed2be29')
 		expect(agentWorkflowEvidence).toContain('API and MCP commit proof-bundle output is accepted')
+		expect(agentWorkflowEvidence).toContain('7afcd630')
+		expect(agentWorkflowEvidence).toContain(
+			'API and MCP runnable example proof bundles are accepted',
+		)
 		expect(agentWorkflowEvidence).toContain('caa08959')
 		expect(agentWorkflowEvidence).toContain('postWrite.dataConnections')
 		expect(agentWorkflowEvidence).toContain('docs/AGENT_WORKFLOW.md')
@@ -2490,6 +2537,15 @@ describe('release proof evidence index', () => {
 		)
 		expect(performanceOwnerArtifact?.nextAction).toContain(
 			'2029dfab current styles-heavy repeat-15 comparable win',
+		)
+		expect(performanceOwnerArtifact?.nextAction).toContain(
+			'7d61a2ef current formula-heavy comparable win',
+		)
+		expect(performanceOwnerArtifact?.nextAction).toContain(
+			'183e7ebf current table-heavy comparable win',
+		)
+		expect(performanceOwnerArtifact?.nextAction).toContain(
+			'eca32509 feature-rich XlsxWriter win plus OpenPyXL not-comparable boundary',
 		)
 		expect(performanceOwnerArtifact?.nextAction).toContain('stops production optimization')
 		expect(performanceOwnerArtifact?.nextAction).toContain(
@@ -4551,7 +4607,7 @@ describe('release proof evidence index', () => {
 			'commits f8846cf8 and 1908f3f5 kill metadata-only optimization targets',
 		)
 		expect(packet.benchmarkBlocker?.nextAction).toContain(
-			'generated-write wins remain scoped to plain-text/string-heavy/dense-values/styles-heavy comparable rows',
+			'generated-write wins remain scoped to plain-text/string-heavy/dense-values/styles-heavy/formula-heavy/table-heavy/feature-rich comparable rows',
 		)
 		expect(packet.benchmarkBlocker?.nextAction).toContain(
 			'current FastXLSX value/warm rows are scoped wins',
@@ -4618,7 +4674,7 @@ describe('release proof evidence index', () => {
 			'Commit 187548bf records scoped dense-values write evidence',
 		)
 		expect(packet.benchmarkBlocker?.acceptanceEvidence?.join('\n')).toContain(
-			'Commits 67b900ed, e22eb86a, 0d0c9632, 905ecb5e, c297ba4c, and 27af69d4 record scoped generated-write evidence',
+			'Commits 67b900ed, e22eb86a, 0d0c9632, 905ecb5e, c297ba4c, 27af69d4, 7d61a2ef, 183e7ebf, and eca32509 record scoped generated-write evidence',
 		)
 		expect(packet.benchmarkBlocker?.acceptanceEvidence?.join('\n')).toContain(
 			'current full-profile run at commit 9ddfff91',

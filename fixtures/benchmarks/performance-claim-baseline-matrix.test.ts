@@ -126,6 +126,34 @@ describe('performance claim baseline matrix', () => {
 		expect(markdown).toContain('baseline median `0.105 ms`, patched median `0.168 ms`')
 		expect(markdown).toContain('"Ascend beats Calamine on metadata-only open."')
 
+		expect(markdown).toContain('## Cycle: Current Metadata-Only Calamine Recheck')
+		expect(markdown).toContain('Classification: kill/defer.')
+		expect(markdown).toContain('commit `c70385bc`')
+		expect(markdown).toContain(
+			'/private/tmp/ascend-metadata-current-c70385bc-runs/metadata-calamine-head-to-head.json',
+		)
+		expect(markdown).toContain(
+			'/private/tmp/ascend-metadata-current-c70385bc-runs/metadata-calamine-scoreboard.json',
+		)
+		expect(markdown).toContain(
+			'/private/tmp/ascend-metadata-current-c70385bc-patched-runs/metadata-calamine-head-to-head.json',
+		)
+		expect(markdown).toContain(
+			'| `python-calamine-metadata-only` | ran/won | 0.070 | 0.151 | 0.309 | 28.4 MiB |',
+		)
+		expect(markdown).toContain(
+			'| `ascend-external-metadata-only` | ran/lost vs Calamine, ran/won vs SheetJS/openpyxl | 1.208 | 6.171 | 0.840 | 83.4 MiB |',
+		)
+		expect(markdown).toContain('`winner=python-calamine-metadata-only expected=ascend`')
+		expect(markdown).toContain(
+			'patched Ascend median\n`1.348 ms`, p95 `4.410 ms`, CV `0.628`, peak RSS `90.6 MiB`',
+		)
+		expect(markdown).toContain(
+			'Semantic boundary: this row is comparable only for the generated plain\nmetadata-only sheet-list contract.',
+		)
+		expect(markdown).toContain('"Calamine proves faster safe-open trust inspection than Ascend."')
+		expect(markdown).toContain('kill the capsule-skip optimization target')
+
 		expect(markdown).toContain('## Full Current-Commit Gate: XLSX Read SOTA')
 		expect(markdown).toContain(
 			'Classification: blocked/defer. No production optimization is justified',

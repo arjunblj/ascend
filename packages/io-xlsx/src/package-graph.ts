@@ -46,6 +46,7 @@ import {
 	REL_TABLE,
 	REL_THEME,
 	REL_THREADED_COMMENT,
+	REL_THUMBNAIL,
 	REL_TIMELINE,
 	REL_TIMELINE_CACHE,
 	REL_VBA_PROJECT,
@@ -246,6 +247,7 @@ export function classifyPackageFeatureFamily(
 	if (isVendorSecurityPart(lowerPath, lowerRelType)) return 'preservedVendorSecurity'
 	if (
 		lowerRelType.endsWith('/relationships/metadata/core-properties') ||
+		lowerRelType.endsWith('/relationships/metadata/thumbnail') ||
 		lowerRelType.endsWith('/relationships/extended-properties') ||
 		lowerRelType.endsWith('/relationships/custom-properties')
 	) {
@@ -484,6 +486,7 @@ function classifyOwnerScope(
 	if (partPath.startsWith('docProps/')) return 'document-properties'
 	if (
 		primary?.type === REL_CORE_PROPERTIES ||
+		primary?.type === REL_THUMBNAIL ||
 		primary?.type === REL_EXTENDED_PROPERTIES ||
 		primary?.type === REL_CUSTOM_PROPERTIES
 	) {
@@ -557,6 +560,7 @@ function classifyRelationshipFeatureFamily(
 	if (relationship.type === REL_OFFICE_DOC) return 'workbook'
 	if (
 		relationship.type === REL_CORE_PROPERTIES ||
+		relationship.type === REL_THUMBNAIL ||
 		relationship.type === REL_EXTENDED_PROPERTIES ||
 		relationship.type === REL_CUSTOM_PROPERTIES
 	) {

@@ -29,12 +29,14 @@ describe('XLSX package graph', () => {
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rIdOffice" Type="http://purl.oclc.org/ooxml/officeDocument/relationships/officeDocument" Target="xl/workbook.xml"/>
   <Relationship Id="rIdOpaqueCoreProps" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="package/services/metadata/core-properties/source.psmdcp"/>
+  <Relationship Id="rIdOpaqueThumbnail" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/thumbnail" Target="package/services/metadata/thumbnail.bin"/>
   <Relationship Id="rIdOpaqueAppProps" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="package/services/app.bin"/>
   <Relationship Id="rIdOpaqueCustomProps" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/custom-properties" Target="package/services/custom.bin"/>
   <Relationship Id="rIdOpaqueSignatureOrigin" Type="http://schemas.openxmlformats.org/package/2006/relationships/digital-signature/origin" Target="package/signatures/origin.sigs"/>
   <Relationship Id="rIdOpaqueCustomUi" Type="http://schemas.microsoft.com/office/2006/relationships/ui/extensibility" Target="package/ui/custom-ui.bin"/>
 </Relationships>`,
 			'package/services/metadata/core-properties/source.psmdcp': '<core/>',
+			'package/services/metadata/thumbnail.bin': 'thumbnail-bytes',
 			'package/services/app.bin': '<app/>',
 			'package/services/custom.bin': '<custom/>',
 			'package/signatures/origin.sigs': '',
@@ -140,6 +142,15 @@ describe('XLSX package graph', () => {
 			type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties',
 			rawTarget: 'package/services/app.bin',
 			resolvedTarget: 'package/services/app.bin',
+			featureFamily: 'preservedDocumentProperties',
+		})
+		expect(graph.relationships).toContainEqual({
+			sourcePartPath: '',
+			relationshipPartPath: '_rels/.rels',
+			id: 'rIdOpaqueThumbnail',
+			type: 'http://schemas.openxmlformats.org/package/2006/relationships/metadata/thumbnail',
+			rawTarget: 'package/services/metadata/thumbnail.bin',
+			resolvedTarget: 'package/services/metadata/thumbnail.bin',
 			featureFamily: 'preservedDocumentProperties',
 		})
 		expect(graph.relationships).toContainEqual({
@@ -330,6 +341,14 @@ describe('XLSX package graph', () => {
 		).toMatchObject({
 			ownerScope: 'document-properties',
 			sourceRelationshipId: 'rIdOpaqueCoreProps',
+			featureFamily: 'preservedDocumentProperties',
+			preservationPolicy: 'preserve-exact',
+		})
+		expect(
+			graph.parts.find((part) => part.path === 'package/services/metadata/thumbnail.bin'),
+		).toMatchObject({
+			ownerScope: 'document-properties',
+			sourceRelationshipId: 'rIdOpaqueThumbnail',
 			featureFamily: 'preservedDocumentProperties',
 			preservationPolicy: 'preserve-exact',
 		})

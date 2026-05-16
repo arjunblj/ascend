@@ -1,4 +1,5 @@
 export type {
+	InspectXlsxPackageGraphOptions,
 	XlsxPackageContentTypeDefault,
 	XlsxPackageContentTypeOverride,
 	XlsxPackageContentTypeSource,

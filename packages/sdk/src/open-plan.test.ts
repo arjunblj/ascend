@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { readFileSync } from 'node:fs'
 import { inspectXlsxPackageGraph } from '@ascend/io-xlsx'
 import { makeXlsx } from '../../io-xlsx/test/helpers.ts'
 import { inspectWorkbookOpenPlan, planInteractiveOpen, planWorkbookOpen } from './index.ts'
@@ -74,6 +75,30 @@ describe('workbook open planner', () => {
 				category: 'visual',
 			}),
 		)
+	})
+
+	test('plans encrypted workbooks when a password is supplied', async () => {
+		const encrypted = readFileSync('fixtures/xlsx/calamine/pass_protected.xlsx')
+
+		expect(() => inspectWorkbookOpenPlan(encrypted, { intent: 'edit-plan' })).toThrow(
+			'requires a password',
+		)
+		expect(() =>
+			inspectWorkbookOpenPlan(encrypted, { intent: 'edit-plan', password: 'wrong' }),
+		).toThrow('Invalid XLSX password')
+
+		const plan = inspectWorkbookOpenPlan(encrypted, { intent: 'edit-plan', password: '123' })
+		expect(plan.recommendedMode).toBe('full')
+		expect(plan.recommendedLoadOptions).toEqual({ mode: 'full' })
+		expect(JSON.stringify(plan)).not.toContain('123')
+
+		const interactive = await planInteractiveOpen(encrypted, {
+			intent: 'edit-plan',
+			password: '123',
+		})
+		expect(interactive.recommendedMode).toBe('full')
+		expect(interactive.editableLoadOptions).toEqual({ mode: 'full' })
+		expect(JSON.stringify(interactive)).not.toContain('123')
 	})
 })
 

@@ -19,9 +19,12 @@ describe('safe open proof harness', () => {
 			'chart',
 			'signed',
 			'unknown-part',
+			'encrypted-password',
+			'encrypted-missing-password',
+			'encrypted-wrong-password',
 			'malformed',
 		])
-		expect(cases.filter((entry) => entry.kind === 'file')).toHaveLength(7)
+		expect(cases.filter((entry) => entry.kind === 'file')).toHaveLength(10)
 		expect(cases.filter((entry) => entry.kind === 'synthetic')).toHaveLength(1)
 		expect(cases.filter((entry) => entry.kind === 'malformed')).toHaveLength(1)
 	})
@@ -59,6 +62,25 @@ describe('safe open proof harness', () => {
 		expect(byName.get('malformed')).toMatchObject({
 			status: 'rejected',
 		})
+		expect(byName.get('encrypted-password')).toMatchObject({
+			kind: 'file',
+			fixture: 'fixtures/xlsx/calamine/pass_protected.xlsx',
+			status: 'ok',
+			recommendedMode: 'full',
+			reviewBeforeHydration: false,
+		})
+		expect(byName.get('encrypted-missing-password')).toMatchObject({
+			kind: 'file',
+			fixture: 'fixtures/xlsx/calamine/pass_protected.xlsx',
+			status: 'rejected',
+		})
+		expect(byName.get('encrypted-wrong-password')).toMatchObject({
+			kind: 'file',
+			fixture: 'fixtures/xlsx/calamine/pass_protected.xlsx',
+			status: 'rejected',
+		})
+		expect(byName.get('encrypted-missing-password')?.boundary).toContain('requires a password')
+		expect(byName.get('encrypted-wrong-password')?.boundary).toContain('Invalid XLSX password')
 		expect(byName.get('malformed')?.boundary).toContain('open-plan rejected:')
 	})
 
@@ -121,24 +143,27 @@ describe('safe open proof harness', () => {
 			'publication-boundary',
 		])
 		expect(compact.coverage).toMatchObject({
-			cases: 9,
-			ok: 8,
-			rejected: 1,
+			cases: 12,
+			ok: 9,
+			rejected: 3,
 			reviewBeforeHydration: 4,
 			malformedRejected: true,
 			recommendedModes: {
 				formula: 4,
 				'metadata-only': 4,
+				full: 1,
 			},
 			riskFamilies: ['preservedActiveX', 'preservedMacro', 'preservedOther', 'preservedSignature'],
 		})
 		expect(compact.caseKindCounts).toEqual({
-			file: 7,
+			file: 10,
 			synthetic: 1,
 			malformed: 1,
 		})
 		expect(compactJson).not.toContain('inputSha256')
 		expect(compactJson).not.toContain('"bytes":')
+		expect(compactJson).not.toContain('"password"')
+		expect(compactJson).not.toContain('123')
 		expect(compactJson).not.toContain('openPlanMedianMs')
 		expect(compact.boundary).toContain('not malware scanning')
 		expect(compact.boundary).toContain('release performance threshold')

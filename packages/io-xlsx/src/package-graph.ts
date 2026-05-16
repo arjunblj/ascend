@@ -3,6 +3,7 @@ import {
 	type ThreadedCommentPersonEntry,
 } from './reader/comments.ts'
 import { parseContentTypes } from './reader/content-types.ts'
+import { maybeDecryptOoxmlPackage } from './reader/encryption.ts'
 import {
 	isExternalLinkPathRelationshipType,
 	parseRelationships,
@@ -30,7 +31,7 @@ import {
 	type Relationship,
 	resolvePath,
 } from './reader/relationships.ts'
-import { extractZip } from './reader/zip.ts'
+import { extractZip, type ZipArchive } from './reader/zip.ts'
 
 export type XlsxPackageContentTypeSource = 'override' | 'default' | 'fallback' | 'package'
 
@@ -117,12 +118,27 @@ export interface XlsxPackageContentTypeOverride {
 	readonly contentType: string
 }
 
+export interface InspectXlsxPackageGraphOptions {
+	readonly password?: string
+}
+
 const CT_PACKAGE_CONTENT_TYPES = 'application/vnd.openxmlformats-package.content-types+xml'
 const CT_RELS = 'application/vnd.openxmlformats-package.relationships+xml'
 const CT_FALLBACK = 'application/octet-stream'
 
-export function inspectXlsxPackageGraph(bytes: Uint8Array): XlsxPackageGraph {
-	const archive = extractZip(bytes)
+export function inspectXlsxPackageGraph(
+	bytes: Uint8Array,
+	options: InspectXlsxPackageGraphOptions = {},
+): XlsxPackageGraph {
+	let archive: ZipArchive
+	try {
+		archive = extractZip(bytes)
+	} catch (error) {
+		const decrypted = maybeDecryptOoxmlPackage(bytes, options.password)
+		if (!decrypted.ok) throw new Error(decrypted.error.message)
+		if (!decrypted.value) throw error
+		archive = extractZip(decrypted.value)
+	}
 	const contentTypesXml = archive.readText('[Content_Types].xml') ?? ''
 	const contentTypes = parseContentTypes(contentTypesXml)
 	const relationships = collectPackageRelationships(archive)

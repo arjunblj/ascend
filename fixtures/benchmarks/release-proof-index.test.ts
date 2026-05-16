@@ -364,6 +364,7 @@ describe('release proof evidence index', () => {
 			'chart-drawing-sidecars',
 			'macros-activex',
 			'unknown-parts',
+			'encrypted-files',
 			'streaming-scope',
 		])
 		expect(index.correctnessPolicy.unsupportedFeatureBoundaries[0]).toMatchObject({
@@ -375,6 +376,10 @@ describe('release proof evidence index', () => {
 			forbiddenWording: expect.stringContaining('byte-passthrough'),
 		})
 		expect(index.correctnessPolicy.unsupportedFeatureBoundaries[5]).toMatchObject({
+			allowedWording: expect.stringContaining('decrypt supported OOXML password-protected'),
+			forbiddenWording: expect.stringContaining('recovers passwords'),
+		})
+		expect(index.correctnessPolicy.unsupportedFeatureBoundaries[6]).toMatchObject({
 			allowedWording: expect.stringContaining('representative streaming writer'),
 			forbiddenWording: expect.stringContaining('Full streaming parity'),
 		})
@@ -404,6 +409,7 @@ describe('release proof evidence index', () => {
 			'chart-drawing-sidecars',
 			'macros-activex',
 			'unknown-parts',
+			'encrypted-files',
 			'streaming-scope',
 		])
 		expect(
@@ -1003,7 +1009,7 @@ describe('release proof evidence index', () => {
 				}),
 			],
 			fixtureProvenance: {
-				publicFixtureCases: 7,
+				publicFixtureCases: 10,
 				generatedWorkbookCases: 0,
 				generatedEdgePackageCases: 1,
 				malformedCases: 1,
@@ -1014,7 +1020,7 @@ describe('release proof evidence index', () => {
 					malformed: expect.stringMatching(/^[a-f0-9]{64}$/),
 				},
 			},
-			summary: { cases: 9, rejected: 1, malformedRejected: true },
+			summary: { cases: 12, rejected: 3, malformedRejected: true },
 		})
 		expect(
 			index.artifacts
@@ -1171,6 +1177,7 @@ describe('release proof evidence index', () => {
 			'chart-drawing-sidecars',
 			'macros-activex',
 			'unknown-parts',
+			'encrypted-files',
 			'streaming-scope',
 		])
 		expect(handoff.correctnessBoundaryEvidence).toMatchObject({
@@ -1186,6 +1193,7 @@ describe('release proof evidence index', () => {
 			'chart-drawing-sidecars',
 			'macros-activex',
 			'unknown-parts',
+			'encrypted-files',
 			'streaming-scope',
 		])
 		expect(handoff.trustCompletenessBoundaryEvidence).toMatchObject({

@@ -1131,9 +1131,18 @@ const CORRECTNESS_POLICY: ReleaseProofCorrectnessPolicy = {
 		{
 			feature: 'unknown-parts',
 			currentEvidence:
-				'Generated unknown-part case reports one error action and failed post-write audit.',
+				'Public unknown-part evidence routes unknown package features to review or fails closed with explicit package-action errors.',
 			allowedWording: 'Ascend can fail closed with an explicit unknown-part error.',
 			forbiddenWording: 'Ascend preserves or understands arbitrary unknown parts.',
+		},
+		{
+			feature: 'encrypted-files',
+			currentEvidence:
+				'Public Calamine password-protected fixture opens with the fixture password and rejects missing or wrong passwords before workbook hydration.',
+			allowedWording:
+				'Ascend can decrypt supported OOXML password-protected workbooks when the caller supplies the password, and fail closed on missing or wrong passwords.',
+			forbiddenWording:
+				'Ascend recovers passwords, removes protection, verifies file trust, scans encrypted files for malware, or supports every Excel encryption variant.',
 		},
 		{
 			feature: 'streaming-scope',
@@ -2579,7 +2588,7 @@ function safeOpenArtifact(
 		claim: 'safe unknown workbook opening',
 		publicationStatus: 'needs-release-packaging',
 		publicationBlockers: [
-			'signed and malformed cases are durable code-generated packages, not public binary fixtures',
+			'signed and malformed cases remain disclosed generated topology/rejection packages, not public binary fixtures',
 			'local timing evidence is proof-run data, not a release performance threshold',
 		],
 		readyWhen: [
@@ -2590,7 +2599,7 @@ function safeOpenArtifact(
 				requirement:
 					'replace generated signed/malformed packages with public binary fixtures or explicitly approve disclosed generated edge packages',
 				evidence:
-					'safe-open fixture scan now includes a vendored public unknown-part workbook but still lacks a public signed workbook fixture',
+					'safe-open proof uses public unknown-part and encrypted password workbooks, but still lacks a public signed workbook fixture and keeps malformed rejection generated',
 			},
 			{
 				id: 'release-latency-run',
@@ -2802,6 +2811,24 @@ function correctnessBoundaryEvidence(
 				'public unknown-part fixture is used',
 				'commit proof records an error action for the unknown package part',
 				'post-write audit fails closed and safe-open routes unknown package features to review',
+			],
+		}),
+		correctnessBoundaryFeatureCheck({
+			feature: 'encrypted-files',
+			evidencePresent:
+				safeOpenCaseOk(safeOpen, 'encrypted-password') &&
+				safeOpenCaseRejected(safeOpen, 'encrypted-missing-password') &&
+				safeOpenCaseRejected(safeOpen, 'encrypted-wrong-password'),
+			evidenceSources: [
+				'safe-open-proof/encrypted-password',
+				'safe-open-proof/encrypted-missing-password',
+				'safe-open-proof/encrypted-wrong-password',
+			],
+			proofChecks: [
+				'public encrypted Calamine fixture is used',
+				'valid password opens with full-mode planning',
+				'missing or wrong password rejects before hydration',
+				'boundary does not claim password recovery, protection removal, malware scanning, or file trust',
 			],
 		}),
 		correctnessBoundaryFeatureCheck({
@@ -3033,6 +3060,14 @@ function safeOpenRiskRoutedToReview(
 		proofCase.reviewBeforeHydration === true &&
 		proofCase.riskFamilies.includes(riskFamily)
 	)
+}
+
+function safeOpenCaseOk(result: SafeOpenProofResult, name: string): boolean {
+	return result.cases.some((entry) => entry.name === name && entry.status === 'ok')
+}
+
+function safeOpenCaseRejected(result: SafeOpenProofResult, name: string): boolean {
+	return result.cases.some((entry) => entry.name === name && entry.status === 'rejected')
 }
 
 const COMPACT_REPORT_FORBIDDEN_PAYLOAD_FIELDS = new Set([
@@ -3357,7 +3392,7 @@ function claimProofRequired(
 		case 'safe-open-proof':
 			return {
 				fixture:
-					'Public clean, formula-heavy, macro, pivot, ActiveX, chart, unknown-part, plus signed and malformed workbook/package cases; generated signed and malformed cases must stay disclosed unless replaced by public binary fixtures.',
+					'Public clean, formula-heavy, macro, pivot, ActiveX, chart, unknown-part, encrypted valid-password and fail-closed password-rejection, plus signed and malformed workbook/package cases; generated signed and malformed cases must stay disclosed unless replaced by public binary fixtures.',
 				benchmark:
 					'Release-environment open-plan latency over standardized public inputs, compared with full hydration and approved threshold wording.',
 				surface:

@@ -85,6 +85,7 @@ export interface InteractiveOpenPlan {
 export interface InspectWorkbookOpenPlanOptions {
 	readonly intent?: WorkbookOpenIntent
 	readonly samplePartLimit?: number
+	readonly password?: string
 }
 
 export interface PlanInteractiveOpenOptions extends InspectWorkbookOpenPlanOptions {
@@ -95,7 +96,7 @@ export function inspectWorkbookOpenPlan(
 	bytes: Uint8Array,
 	options: InspectWorkbookOpenPlanOptions = {},
 ): WorkbookOpenPlan {
-	return planWorkbookOpenFromGraph(inspectXlsxPackageGraph(bytes), {
+	return planWorkbookOpenFromGraph(inspectXlsxPackageGraph(bytes, passwordGraphOptions(options)), {
 		...options,
 		byteLength: bytes.byteLength,
 	})
@@ -105,9 +106,12 @@ export async function planInteractiveOpen(
 	bytes: Uint8Array,
 	options: PlanInteractiveOpenOptions = {},
 ): Promise<InteractiveOpenPlan> {
-	const packageGraph = inspectXlsxPackageGraph(bytes)
+	const packageGraph = inspectXlsxPackageGraph(bytes, passwordGraphOptions(options))
 	const plan = planWorkbookOpen(packageGraph, options)
-	const document = await WorkbookDocument.open(bytes, plan.recommendedLoadOptions)
+	const document = await WorkbookDocument.open(bytes, {
+		...plan.recommendedLoadOptions,
+		...(options.password !== undefined ? { password: options.password } : {}),
+	})
 	const trustReport = await document.trustReport({
 		packageGraph,
 		...(options.maxTrustFindings !== undefined ? { maxFindings: options.maxTrustFindings } : {}),
@@ -131,6 +135,12 @@ export async function planInteractiveOpen(
 		reviewBeforeEdit,
 		steps: interactiveOpenSteps(reviewBeforeEdit),
 	}
+}
+
+function passwordGraphOptions(options: Pick<InspectWorkbookOpenPlanOptions, 'password'>): {
+	readonly password?: string
+} {
+	return options.password === undefined ? {} : { password: options.password }
 }
 
 interface PlanWorkbookOpenOptions extends InspectWorkbookOpenPlanOptions {

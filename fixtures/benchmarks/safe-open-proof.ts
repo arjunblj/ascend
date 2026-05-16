@@ -16,6 +16,7 @@ export interface SafeOpenProofCase {
 	readonly kind: SafeOpenProofCaseKind
 	readonly fixture: string
 	readonly bytes: Uint8Array
+	readonly password?: string
 	readonly fullOpenExpected: boolean
 	readonly expectedMode?: WorkbookOpenPlan['recommendedMode']
 	readonly expectedReviewBeforeHydration?: boolean
@@ -212,6 +213,15 @@ export function defaultSafeOpenProofCases(): SafeOpenProofCase[] {
 			expectedReviewBeforeHydration: true,
 			expectedRiskFamilies: ['preservedOther'],
 		}),
+		fileCase('encrypted-password', 'fixtures/xlsx/calamine/pass_protected.xlsx', {
+			password: '123',
+			expectedMode: 'full',
+			expectedReviewBeforeHydration: false,
+		}),
+		rejectedFileCase('encrypted-missing-password', 'fixtures/xlsx/calamine/pass_protected.xlsx'),
+		rejectedFileCase('encrypted-wrong-password', 'fixtures/xlsx/calamine/pass_protected.xlsx', {
+			password: 'wrong',
+		}),
 		{
 			name: 'malformed',
 			kind: 'malformed',
@@ -291,7 +301,10 @@ async function runSafeOpenProofCase(
 	for (let index = 0; index < openPlanIterations; index++) {
 		try {
 			const measured = timeMs(() =>
-				inspectWorkbookOpenPlan(proofCase.bytes, { intent: 'edit-plan' }),
+				inspectWorkbookOpenPlan(proofCase.bytes, {
+					intent: 'edit-plan',
+					...(proofCase.password !== undefined ? { password: proofCase.password } : {}),
+				}),
 			)
 			plan = measured.value
 			if (index >= options.warmup && options.includeTimings) openPlanSamples.push(measured.ms)
@@ -307,7 +320,10 @@ async function runSafeOpenProofCase(
 		const fullOpenIterations = options.includeTimings ? options.warmup + options.repeat : 0
 		for (let index = 0; index < fullOpenIterations; index++) {
 			const measured = await timeMsAsync(() =>
-				AscendWorkbook.open(proofCase.bytes, { mode: 'full' }),
+				AscendWorkbook.open(proofCase.bytes, {
+					mode: 'full',
+					...(proofCase.password !== undefined ? { password: proofCase.password } : {}),
+				}),
 			)
 			if (index >= options.warmup) fullOpenSamples.push(measured.ms)
 		}
@@ -367,7 +383,7 @@ function fileCase(
 	fixture: string,
 	options: Pick<
 		SafeOpenProofCase,
-		'expectedMode' | 'expectedReviewBeforeHydration' | 'expectedRiskFamilies'
+		'expectedMode' | 'expectedReviewBeforeHydration' | 'expectedRiskFamilies' | 'password'
 	>,
 ): SafeOpenProofCase {
 	if (!existsSync(fixture)) throw new Error(`Missing proof fixture ${fixture}`)
@@ -377,6 +393,22 @@ function fileCase(
 		fixture,
 		bytes: readFileSync(fixture),
 		fullOpenExpected: true,
+		...options,
+	}
+}
+
+function rejectedFileCase(
+	name: string,
+	fixture: string,
+	options: Pick<SafeOpenProofCase, 'password'> = {},
+): SafeOpenProofCase {
+	if (!existsSync(fixture)) throw new Error(`Missing proof fixture ${fixture}`)
+	return {
+		name,
+		kind: 'file',
+		fixture,
+		bytes: readFileSync(fixture),
+		fullOpenExpected: false,
 		...options,
 	}
 }

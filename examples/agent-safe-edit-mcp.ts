@@ -172,6 +172,10 @@ const committed = await callTool<{
 		auditsPassed?: boolean
 		check?: { valid?: boolean }
 		lint?: { clean?: boolean }
+		dataConnections?: unknown
+		formulaState?: unknown
+		security?: unknown
+		visuals?: unknown
 	}
 	proofBundle?: {
 		safeToUse?: boolean
@@ -242,6 +246,12 @@ console.log(
 				auditsPassed: committed.postWrite?.auditsPassed,
 				checkValid: committed.postWrite?.check?.valid,
 				lintClean: committed.postWrite?.lint?.clean,
+			},
+			postWriteProof: {
+				dataConnections: committed.postWrite?.dataConnections,
+				formulaState: committed.postWrite?.formulaState,
+				security: committed.postWrite?.security,
+				visuals: committed.postWrite?.visuals,
 			},
 			proofBundle: committed.proofBundle,
 			verify: {

@@ -185,6 +185,12 @@ console.log(
 				checkValid: committed.postWrite.check.valid,
 				lintClean: committed.postWrite.lint.clean,
 			},
+			postWriteProof: {
+				dataConnections: committed.postWrite.dataConnections,
+				formulaState: committed.postWrite.formulaState,
+				security: committed.postWrite.security,
+				visuals: committed.postWrite.visuals,
+			},
 			verify: {
 				reopened: true,
 				cell: {

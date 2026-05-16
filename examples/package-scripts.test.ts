@@ -49,6 +49,12 @@ describe('example package scripts', () => {
 					workflow?: string
 					plan?: { changedCells?: string[] }
 					commit?: { output?: string; postWriteValid?: boolean }
+					postWriteProof?: {
+						dataConnections?: { total?: number; verification?: string }
+						formulaState?: { formulaCells?: number; verification?: string }
+						security?: { workbookProtected?: boolean; verification?: string }
+						visuals?: { chartParts?: number; verification?: string }
+					}
 					proofBundle?: { safeToUse?: boolean; whatChanged?: Array<{ ref?: string }> }
 					verify?: {
 						checkValid?: boolean
@@ -63,6 +69,12 @@ describe('example package scripts', () => {
 				expect(result.commit).toMatchObject({
 					output,
 					postWriteValid: true,
+				})
+				expect(result.postWriteProof).toMatchObject({
+					dataConnections: { total: 0, verification: 'reopened-output' },
+					formulaState: { formulaCells: 1, verification: 'reopened-output' },
+					security: { workbookProtected: false, verification: 'reopened-output' },
+					visuals: { chartParts: 0, verification: 'reopened-output' },
 				})
 				expect(result.proofBundle).toMatchObject({
 					safeToUse: true,

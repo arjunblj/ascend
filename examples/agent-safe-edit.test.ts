@@ -43,6 +43,12 @@ describe('agent-safe-edit example', () => {
 					checkValid?: boolean
 					lintClean?: boolean
 				}
+				postWriteProof?: {
+					dataConnections?: { total?: number; verification?: string }
+					formulaState?: { formulaCells?: number; verification?: string }
+					security?: { workbookProtected?: boolean; verification?: string }
+					visuals?: { chartParts?: number; verification?: string }
+				}
 				proofBundle?: {
 					safeToUse?: boolean
 					whatChanged?: Array<{
@@ -86,6 +92,12 @@ describe('agent-safe-edit example', () => {
 				auditsPassed: true,
 				checkValid: true,
 				lintClean: true,
+			})
+			expect(result.postWriteProof).toMatchObject({
+				dataConnections: { total: 0, verification: 'reopened-output' },
+				formulaState: { formulaCells: 1, verification: 'reopened-output' },
+				security: { workbookProtected: false, verification: 'reopened-output' },
+				visuals: { chartParts: 0, verification: 'reopened-output' },
 			})
 			expect(result.proofBundle).toMatchObject({
 				safeToUse: true,

@@ -50,6 +50,12 @@ describe('agent-safe-edit HTTP example', () => {
 					checkValid?: boolean
 					lintClean?: boolean
 				}
+				postWriteProof?: {
+					dataConnections?: { total?: number; verification?: string }
+					formulaState?: { formulaCells?: number; verification?: string }
+					security?: { workbookProtected?: boolean; verification?: string }
+					visuals?: { chartParts?: number; verification?: string }
+				}
 				proofBundle?: {
 					safeToUse?: boolean
 					whatChanged?: Array<{ ref?: string }>
@@ -88,6 +94,12 @@ describe('agent-safe-edit HTTP example', () => {
 				lintClean: true,
 			})
 			expect(result.commit?.outputSha256).toMatch(/^[a-f0-9]{64}$/)
+			expect(result.postWriteProof).toMatchObject({
+				dataConnections: { total: 0, verification: 'reopened-output' },
+				formulaState: { formulaCells: 1, verification: 'reopened-output' },
+				security: { workbookProtected: false, verification: 'reopened-output' },
+				visuals: { chartParts: 0, verification: 'reopened-output' },
+			})
 			expect(result.proofBundle).toMatchObject({
 				safeToUse: true,
 				whatChanged: [{ ref: 'B2' }],

@@ -1659,6 +1659,112 @@ FastXLSX setup into the next full-profile gate, and keep attacking
 feature-rich rich-metadata semantic mismatches rather than optimizing this
 winning value-read lane.
 
+## Cycle: Current FastXLSX Carry-Forward Gate
+
+Classification: comparable external evidence plus defer. FastXLSX is runnable
+again in the isolated Python 3.12 environment at current commit `248f76d9`. The
+focused all-workload run reproduced same-lane FastXLSX coverage and exposed a
+noisy table-heavy median blip; a repeat-15 table-heavy rerun resolved it in
+Ascend's favor. No production optimization is justified.
+
+Workflow: XLSX open/inspect value read with cell materialization.
+
+Why it matters for release: this carries the previously isolated FastXLSX setup
+forward to the current claim state. It prevents stale `runner unavailable`
+wording from being used where FastXLSX can now run, while still keeping the
+comparison scoped to value materialization rather than rich metadata.
+
+Public/tracked-clean input: `competitive-io` generated `workload all`
+`raw-ooxml` inputs from tracked benchmark code at commit `248f76d9`. The
+follow-up table-heavy run used the same generated workload shape, 2000 rows x 20
+columns. No private corpus or local research workbook was used.
+
+Commands:
+
+```bash
+git worktree add --detach /private/tmp/ascend-fastxlsx-current-248f76d9 248f76d9
+cd /private/tmp/ascend-fastxlsx-current-248f76d9
+bun install --frozen-lockfile
+/opt/homebrew/bin/python3.12 -m pip install --target /private/tmp/ascend-fastxlsx-py312 fastxlsx==0.2.0 openpyxl psutil
+mkdir -p /private/tmp/ascend-py312-bin
+ln -sf /opt/homebrew/bin/python3.12 /private/tmp/ascend-py312-bin/python3
+PYTHONPATH=/private/tmp/ascend-fastxlsx-py312 TMPDIR=/private/tmp env PATH=/private/tmp/ascend-py312-bin:/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-io.ts --json --category read --competitor all --execution-scope external-process --libraries ascend-readxlsx-cell-materialization-bytes,fastxlsx --workload all --read-source raw-ooxml --repeat 5 --warmup 1 --validation-mode each --runner-manifest fixtures/benchmarks/runners/ascend-python-readers.manifest.json > /private/tmp/ascend-fastxlsx-current-248f76d9/fastxlsx-cell-materialization-all.json
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-scoreboard.ts /private/tmp/ascend-fastxlsx-current-248f76d9/fastxlsx-cell-materialization-all.json --json --metric medianMs --assert-leader ascend > /private/tmp/ascend-fastxlsx-current-248f76d9/fastxlsx-cell-materialization-all-assert-ascend.json
+PYTHONPATH=/private/tmp/ascend-fastxlsx-py312 TMPDIR=/private/tmp env PATH=/private/tmp/ascend-py312-bin:/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-io.ts --json --category read --competitor all --execution-scope external-process --libraries ascend-readxlsx-cell-materialization-bytes,fastxlsx --workload table-heavy --read-source raw-ooxml --repeat 15 --warmup 3 --validation-mode each --runner-manifest fixtures/benchmarks/runners/ascend-python-readers.manifest.json > /private/tmp/ascend-fastxlsx-current-248f76d9/fastxlsx-table-heavy-repeat15.json
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-scoreboard.ts /private/tmp/ascend-fastxlsx-current-248f76d9/fastxlsx-table-heavy-repeat15.json --json --metric medianMs --assert-leader ascend > /private/tmp/ascend-fastxlsx-current-248f76d9/fastxlsx-table-heavy-repeat15-scoreboard.json
+```
+
+Environment:
+
+- Commit: `248f76d9f9812f2ac5106cf7b492e448cc8a11de`
+- Worktree: clean detached worktree at
+  `/private/tmp/ascend-fastxlsx-current-248f76d9`
+- Bun: `1.3.13`
+- Python runner: `/opt/homebrew/bin/python3.12` exposed as
+  `/private/tmp/ascend-py312-bin/python3`
+- Python: `3.12.13`
+- FastXLSX: `0.2.0`
+- Runtime profile: `category read`, `executionScope external-process`,
+  `readSource raw-ooxml`, `validationMode each`.
+
+Raw output:
+
+```text
+/private/tmp/ascend-fastxlsx-current-248f76d9/fastxlsx-cell-materialization-all.json
+/private/tmp/ascend-fastxlsx-current-248f76d9/fastxlsx-cell-materialization-all-assert-ascend.json
+/private/tmp/ascend-fastxlsx-current-248f76d9/fastxlsx-table-heavy-repeat15.json
+/private/tmp/ascend-fastxlsx-current-248f76d9/fastxlsx-table-heavy-repeat15-scoreboard.json
+```
+
+Focused all-workload result, repeat 5 after 1 warmup, same
+`external-internal-cell-materialization-timing:<workload>` lane:
+
+| Workload | Ascend status | Ascend median / p95 / CV / RSS | FastXLSX status | FastXLSX median / p95 / CV / RSS | Semantic comparability |
+| --- | --- | ---: | --- | ---: | --- |
+| `dense-values` | ran/won | 19.885 ms / 25.612 ms / 0.164 / 101.3 MiB | ran/lost | 42.789 ms / 51.235 ms / 0.092 / 56.6 MiB | Same cell-materialization value semantics; FastXLSX uses less RSS but is 2.15x slower by median. |
+| `string-heavy` | ran/won | 41.127 ms / 50.171 ms / 0.180 / 124.1 MiB | ran/lost | 103.684 ms / 119.541 ms / 0.168 / 58.5 MiB | Same value semantics; FastXLSX is 2.52x slower by median. |
+| `sparse-wide` | ran/won | 41.422 ms / 63.959 ms / 0.273 / 127.3 MiB | ran/lost | 200.662 ms / 214.111 ms / 0.051 / 87.8 MiB | Same value semantics; FastXLSX is 4.84x slower by median. |
+| `styles-heavy` | ran/won | 21.742 ms / 27.272 ms / 0.151 / 113.4 MiB | ran/lost | 49.134 ms / 51.950 ms / 0.042 / 55.0 MiB | Same value semantics; FastXLSX is 2.26x slower by median. |
+| `formula-heavy` | ran/won | 25.768 ms / 72.697 ms / 0.604 / 109.7 MiB | ran/lost | 60.932 ms / 65.558 ms / 0.042 / 54.4 MiB | Same cached-value semantics; Ascend tail is noisy but median remains 2.36x faster. |
+| `warm-workflow` | ran/won | 25.409 ms / 41.971 ms / 0.302 / 101.3 MiB | ran/lost | 51.711 ms / 54.289 ms / 0.078 / 53.4 MiB | Same value semantics; FastXLSX is 2.04x slower by median. |
+| `feature-rich` | not comparable | 25.415 ms / 29.076 ms / 0.093 / 114.9 MiB | not comparable | 58.247 ms / 67.872 ms / 0.084 / 53.2 MiB | Both rows are `semantic-mismatch` for `read-values-rich-metadata`; not counted as wins or losses. |
+
+Table-heavy repeat-15 check:
+
+| Runner | Status | Median ms | P95 ms | CV | Peak RSS | Semantic comparability |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| `ascend-readxlsx-cell-materialization-bytes` | ran/won | 30.133 | 38.316 | 0.152 | 140.5 MiB | Same table-heavy value materialization; table metadata is not part of this lane. |
+| `fastxlsx` | ran/lost | 46.843 | 59.085 | 0.106 | 55.6 MiB | Same value materialization; lower memory but 1.55x slower by median. |
+
+Scoreboard result:
+
+- Focused all-workload `--assert-leader ascend`: `leaderFailures: []`.
+- Table-heavy repeat-15 `--assert-leader ascend`: `leaderFailures: []`.
+- The all-workload table-heavy repeat-5 group briefly had `fastxlsx` as the
+  median winner by 1.7%, but the difference was not a significant leader loss
+  and the repeat-15 check reversed it.
+- FastXLSX consistently used lower RSS than Ascend on this lane.
+- The feature-rich rich-metadata row remains not comparable.
+
+Humble allowed wording:
+
+> In an isolated Python 3.12 environment with `fastxlsx==0.2.0` at current commit
+> `248f76d9`, FastXLSX ran the generated same-lane cell-materialization
+> value/warm workloads. Ascend had no significant leader failures and the
+> repeat-15 table-heavy check favored Ascend, while FastXLSX used less memory.
+> Feature-rich rich-metadata remains not comparable.
+
+Forbidden wording:
+
+- "Ascend beats FastXLSX on feature-rich rich-metadata reads."
+- "Ascend beats FastXLSX on memory."
+- "Ascend beats FastXLSX in every XLSX workflow."
+
+Next action: defer production optimization on FastXLSX value materialization.
+Carry this current FastXLSX setup into the next full-profile gate and keep
+attacking feature-rich rich-metadata semantic mismatches or the metadata-only
+Calamine loss.
+
 ## Cycle: Warm Workflow Value Read
 
 Classification: defer. No production optimization is justified from this cycle.

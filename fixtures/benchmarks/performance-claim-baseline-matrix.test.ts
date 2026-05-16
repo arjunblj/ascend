@@ -475,6 +475,40 @@ describe('performance claim baseline matrix', () => {
 		expect(markdown).toContain('"Ascend beats FastXLSX on rich-metadata feature-rich reads."')
 		expect(markdown).toContain('Carry the isolated Python 3.12\nFastXLSX setup')
 
+		expect(markdown).toContain('## Cycle: Current FastXLSX Carry-Forward Gate')
+		expect(markdown).toContain('Classification: comparable external evidence plus defer')
+		expect(markdown).toContain('current commit `248f76d9`')
+		expect(markdown).toContain(
+			'/private/tmp/ascend-fastxlsx-current-248f76d9/fastxlsx-cell-materialization-all.json',
+		)
+		expect(markdown).toContain(
+			'/private/tmp/ascend-fastxlsx-current-248f76d9/fastxlsx-table-heavy-repeat15.json',
+		)
+		expect(markdown).toContain(
+			'| `dense-values` | ran/won | 19.885 ms / 25.612 ms / 0.164 / 101.3 MiB | ran/lost | 42.789 ms / 51.235 ms / 0.092 / 56.6 MiB |',
+		)
+		expect(markdown).toContain(
+			'| `feature-rich` | not comparable | 25.415 ms / 29.076 ms / 0.093 / 114.9 MiB | not comparable | 58.247 ms / 67.872 ms / 0.084 / 53.2 MiB |',
+		)
+		expect(markdown).toContain(
+			'| `ascend-readxlsx-cell-materialization-bytes` | ran/won | 30.133 | 38.316 | 0.152 | 140.5 MiB |',
+		)
+		expect(markdown).toContain('| `fastxlsx` | ran/lost | 46.843 | 59.085 | 0.106 | 55.6 MiB |')
+		expect(markdown).toContain(
+			'Focused all-workload `--assert-leader ascend`: `leaderFailures: []`',
+		)
+		expect(markdown).toContain(
+			'Table-heavy repeat-15 `--assert-leader ascend`: `leaderFailures: []`',
+		)
+		expect(markdown).toContain(
+			'The all-workload table-heavy repeat-5 group briefly had `fastxlsx` as the\n  median winner by 1.7%',
+		)
+		expect(markdown).toContain('FastXLSX consistently used lower RSS than Ascend on this lane.')
+		expect(markdown).toContain('"Ascend beats FastXLSX on memory."')
+		expect(markdown).toContain(
+			'Next action: defer production optimization on FastXLSX value materialization.',
+		)
+
 		expect(markdown).toContain('## Cycle: Warm Workflow Value Read')
 		expect(markdown).toContain('generated `warm-workflow` workbook')
 		expect(markdown).toContain('Commit: `add13c79`')

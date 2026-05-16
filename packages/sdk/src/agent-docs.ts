@@ -1,7 +1,8 @@
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-const PACKAGE_ROOT = new URL('./', import.meta.url).pathname
-const REPO_ROOT = new URL('../../../', import.meta.url).pathname
+const PACKAGE_ROOT = fileURLToPath(new URL('./', import.meta.url))
+const REPO_ROOT = fileURLToPath(new URL('../../../', import.meta.url))
 
 export type AgentDocKind = 'docs' | 'example' | 'llms' | 'reference'
 

@@ -3361,6 +3361,17 @@ function safeOpenQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceItem[] {
 				'Public calc-chain formula commit evidence only; it does not prove Excel-fresh formula values, full calculation parity, formula engine completeness, or arbitrary calc-chain preservation.',
 		},
 		{
+			evidenceId: 'public-hidden-sheet-topology-commit-proof',
+			kind: 'test',
+			command:
+				'bun test packages/sdk/src/agent-workflow.test.ts -t "commits public hidden-sheet topology through save and reopen audits" --timeout 30000',
+			path: 'packages/sdk/src/agent-workflow.ts; packages/sdk/src/agent-workflow.test.ts; packages/sdk/src/index.ts; packages/sdk/src/index-exports.test.ts',
+			acceptedScope:
+				'Commit 74f63b73 proves public hidden-sheet workbook topology is included in post-write proof: safe edits reopen cleanly, compact commit results report hidden sheet names and sheet states, root SDK exports the topology types, and source bytes remain unchanged.',
+			boundary:
+				'Public hidden-sheet topology commit evidence only; it does not prove workbook protection security, visibility authorization, full workbook-view parity, or arbitrary topology editing support.',
+		},
+		{
 			evidenceId: 'query-table-topology-fail-closed-proof',
 			kind: 'test',
 			command:
@@ -3617,10 +3628,11 @@ function todayCommitClaimMatrix(): readonly ReleaseProofTodayCommitClaimMatrixRo
 				'868add46',
 				'1eaf28ff',
 				'31141dd4',
+				'74f63b73',
 				'62f45cb5',
 			],
 			releaseOrSotaClaimBecameMoreTrue:
-				'Ascend is more credible as an agent-native spreadsheet runtime because SDK, installed-SDK, HTTP API, MCP, root-package, public query-table, public chart-source, and public calc-chain examples expose runnable inspect/plan/commit/reopen/verify workflows plus proof context.',
+				'Ascend is more credible as an agent-native spreadsheet runtime because SDK, installed-SDK, HTTP API, MCP, root-package, public query-table, public chart-source, public calc-chain, and public hidden-sheet examples expose runnable inspect/plan/commit/reopen/verify workflows plus proof context.',
 			evidenceProvesIt: [
 				'bun test examples/agent-safe-edit-mcp.test.ts --timeout 30000',
 				'bun test examples/root-scripts.test.ts --timeout 30000',
@@ -3630,11 +3642,12 @@ function todayCommitClaimMatrix(): readonly ReleaseProofTodayCommitClaimMatrixRo
 				'bun test packages/sdk/src/agent-workflow.test.ts -t "commits public query-table refresh metadata edits through save and reopen" --timeout 30000',
 				'bun test packages/sdk/src/agent-workflow.test.ts -t "commits public chart source edits through save and reopen audits" --timeout 30000',
 				'bun test packages/sdk/src/agent-workflow.test.ts -t "commits public calc-chain formula edits through save and reopen audits" --timeout 30000',
+				'bun test packages/sdk/src/agent-workflow.test.ts -t "commits public hidden-sheet topology through save and reopen audits" --timeout 30000',
 				'fixtures/benchmarks/release-proof-index.test.ts pins workflow example evidence, proof context, and RC-gate scope.',
 				'Blocked adjacent API package sweep: bun test apps/api/api.test.ts --timeout 30000 currently fails outside workflow discovery because the export-format assertion expects "Unsupported format" while the current response is "Unsupported export format: weird".',
 			],
 			allowedWording:
-				'Ascend provides local runnable SDK, installed-SDK, API, and MCP safe-edit workflow examples with root commands, public query-table refresh metadata, chart-source, and calc-chain formula commit proof, and machine-readable proof context for generated/public workbooks.',
+				'Ascend provides local runnable SDK, installed-SDK, API, and MCP safe-edit workflow examples with root commands, public query-table refresh metadata, chart-source, calc-chain formula, and hidden-sheet topology commit proof, and machine-readable proof context for generated/public workbooks.',
 			forbiddenWording: [
 				'Do not claim arbitrary workbook safety, package publication, registry download proof, hosted service readiness, public-workbook generality, complete API package health, or complete workflow observability from the local generated/public-workbook examples.',
 			],

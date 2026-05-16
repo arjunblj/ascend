@@ -1083,6 +1083,12 @@ describe('release proof evidence index', () => {
 				boundary: expect.stringContaining('Public calc-chain formula commit evidence only'),
 			}),
 			expect.objectContaining({
+				evidenceId: 'public-hidden-sheet-topology-commit-proof',
+				acceptedScope: expect.stringContaining('74f63b73'),
+				command: expect.stringContaining('commits public hidden-sheet topology'),
+				boundary: expect.stringContaining('Public hidden-sheet topology commit evidence only'),
+			}),
+			expect.objectContaining({
 				evidenceId: 'query-table-topology-fail-closed-proof',
 				acceptedScope: expect.stringContaining('a477e2ed'),
 				command: expect.stringContaining(
@@ -1688,9 +1694,10 @@ describe('release proof evidence index', () => {
 						'868add46',
 						'1eaf28ff',
 						'31141dd4',
+						'74f63b73',
 						'62f45cb5',
 					]),
-					allowedWording: expect.stringContaining('calc-chain formula commit proof'),
+					allowedWording: expect.stringContaining('hidden-sheet topology commit proof'),
 					forbiddenWording: expect.arrayContaining([
 						expect.stringContaining('complete API package health'),
 					]),

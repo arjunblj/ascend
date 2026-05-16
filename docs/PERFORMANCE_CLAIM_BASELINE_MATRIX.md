@@ -253,6 +253,93 @@ longer ClosedXML value-read coverage; they are selected-sheet/metadata-only
 unsupported-operation gaps, feature-rich semantic mismatches for SheetJS and
 Calamine, and the unavailable fastxlsx runner.
 
+## Cycle: Selected-Sheet OpenPyXL Head-to-Head Read
+
+Classification: defer. The openpyxl selected-sheet gap moved from
+`unsupported-operation` to a passing measured row, but no production
+optimization is justified because Ascend still leads the focused comparison and
+the full profile needs timing-lane alignment before promotion.
+
+Workflow: XLSX selected-sheet open/inspect value read for the `Data` sheet while
+the generated workbook also contains `Summary` and `Archive`.
+
+Why it matters for release: selected-sheet read is a user-visible agent workflow
+for inspecting one sheet of a multi-sheet workbook without hydrating unrelated
+sheets. openpyxl was previously listed as unsupported for this profile gap; this
+cycle adds a real external baseline instead of counting the absence as a win.
+
+Public/tracked-clean input: `competitive-io` generated the `selected-sheet`
+raw OOXML workload from detached commit `57c5a242`, 2000 rows x 20 columns,
+40,000 `Data` cells plus auxiliary `Summary` and `Archive` sheets, 114,747 input
+bytes. No private corpus or local research workbook was used.
+
+Commands:
+
+```bash
+git worktree add --detach /private/tmp/ascend-perf-hillclimb-57c5a242 57c5a242
+cd /private/tmp/ascend-perf-hillclimb-57c5a242
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun install --frozen-lockfile
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-io.ts --json --category read --competitor all --libraries ascend,sheetjs,openpyxl --workload selected-sheet --read-source raw-ooxml --repeat 5 --warmup 1 --validation-mode each --runner-manifest fixtures/benchmarks/runners/ascend-python-readers.manifest.json > /private/tmp/ascend-perf-hillclimb-57c5a242-runs/selected-sheet-openpyxl-head-to-head.json
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-scoreboard.ts /private/tmp/ascend-perf-hillclimb-57c5a242-runs/selected-sheet-openpyxl-head-to-head.json --json --metric medianMs --require-profile xlsx-read-sota > /private/tmp/ascend-perf-hillclimb-57c5a242-runs/selected-sheet-openpyxl-head-to-head-scoreboard.json
+```
+
+Environment:
+
+- Commit: `57c5a2420d9d19a3f4f2138bf6644303450b01a1`
+- Worktree: clean detached worktree at `/private/tmp/ascend-perf-hillclimb-57c5a242`; `git status --short --branch` reported `## HEAD (no branch)` with no changed paths after the run.
+- OS: Darwin 25.4.0 arm64
+- Bun: `1.3.13`
+- Node: `24.3.0`
+- Runtime profile: `category read`, `workload selected-sheet`, `readSource raw-ooxml`, `validationMode each`, `repeat 5`, `warmup 1`.
+
+Raw output:
+
+```text
+/private/tmp/ascend-perf-hillclimb-57c5a242-runs/selected-sheet-openpyxl-head-to-head.json
+/private/tmp/ascend-perf-hillclimb-57c5a242-runs/selected-sheet-openpyxl-head-to-head-scoreboard.json
+```
+
+All successful timing rows below use 5 measured samples after 1 warmup. All
+three rows assert `selectedSheetRead: true`, `sourceSheetCount: 3`,
+`loadedSheetCount: 1`, `loadedSheetNames: Data`, `hasAllSheets: false`, and
+`selectedSheetMatches: true`.
+
+| Competitor | Status | Representative row | Median ms | P95 ms | CV | Peak RSS | Semantic comparability |
+| --- | --- | --- | ---: | ---: | ---: | ---: | --- |
+| Ascend | ran/won | `ascend` | 37.985 | 82.642 | 0.726 | 185.6 MiB | In-process selected-sheet value read. Correct semantics, but tail is very noisy in this clean run. |
+| SheetJS | ran/lost | `sheetjs` | 66.446 | 82.170 | 0.119 | 237.6 MiB | In-process selected-sheet parse of `Data`; 1.75x slower than Ascend by median. |
+| openpyxl | ran/lost | `openpyxl` | 372.944 | 405.825 | 0.076 | 87.4 MiB | External-process selected-sheet assertions over `Data`; lower memory than Ascend but 9.82x slower by median. |
+| ExcelJS | not comparable | n/a | n/a | n/a | n/a | n/a | Still skipped: selected-sheet read is unsupported by this harness without full workbook hydration. |
+| Calamine | not comparable | n/a | n/a | n/a | n/a | n/a | Still a profile `unsupported-operation` gap. |
+| Apache POI | not comparable | n/a | n/a | n/a | n/a | n/a | Still a profile `unsupported-operation` gap. |
+| ClosedXML | not comparable | n/a | n/a | n/a | n/a | n/a | Still a profile `unsupported-operation` gap. |
+
+Scoreboard result for the focused run:
+
+- `leaderFailures: []`
+- `profileLeaderFailures: []`
+- The selected-sheet profile row now requires `openpyxl`, but the focused
+  scoreboard still reports `missing-comparable` for
+  `requiredCompetitors=Ascend,SheetJS,openpyxl` because the current evidence
+  spans in-process and external-process timing lanes.
+- The openpyxl selected-sheet `unsupported-operation` coverage gap is removed
+  from the current scorer; ExcelJS, Calamine, Apache POI, and ClosedXML remain
+  unsupported-operation gaps.
+
+Humble allowed wording:
+
+> In a clean focused selected-sheet run at `57c5a242`, Ascend, SheetJS, and openpyxl all loaded only the `Data` sheet from a three-sheet generated workbook. Ascend had the fastest median in that focused comparison, but the full profile still needs same-lane evidence before broad selected-sheet wording is promotable.
+
+Forbidden wording:
+
+- "Ascend has a full selected-sheet SOTA claim."
+- "Ascend beats ExcelJS, Calamine, Apache POI, or ClosedXML on selected-sheet reads."
+- Any wording that hides Ascend's noisy tail or the in-process/external-process lane split.
+
+Next action: defer production optimization. Add external-process selected-sheet
+lanes for Ascend and SheetJS, or record the lane split as a permanent
+not-comparable boundary if those runners cannot expose equivalent semantics.
+
 ## Cycle: Dense Value Read
 
 Classification: defer. No production optimization is justified from this cycle.

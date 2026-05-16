@@ -131,6 +131,31 @@ describe('performance claim baseline matrix', () => {
 		)
 		expect(markdown).toContain('no\nlonger ClosedXML value-read coverage')
 
+		expect(markdown).toContain('## Cycle: Selected-Sheet OpenPyXL Head-to-Head Read')
+		expect(markdown).toContain(
+			'The openpyxl selected-sheet gap moved from\n`unsupported-operation` to a passing measured row',
+		)
+		expect(markdown).toContain('Commit: `57c5a2420d9d19a3f4f2138bf6644303450b01a1`')
+		expect(markdown).toContain(
+			'/private/tmp/ascend-perf-hillclimb-57c5a242-runs/selected-sheet-openpyxl-head-to-head.json',
+		)
+		expect(markdown).toContain(
+			'/private/tmp/ascend-perf-hillclimb-57c5a242-runs/selected-sheet-openpyxl-head-to-head-scoreboard.json',
+		)
+		expect(markdown).toContain(
+			'| Ascend | ran/won | `ascend` | 37.985 | 82.642 | 0.726 | 185.6 MiB |',
+		)
+		expect(markdown).toContain('| SheetJS | ran/lost | `sheetjs` | 66.446')
+		expect(markdown).toContain('| openpyxl | ran/lost | `openpyxl` | 372.944')
+		expect(markdown).toContain(
+			'`requiredCompetitors=Ascend,SheetJS,openpyxl` because the current evidence',
+		)
+		expect(markdown).toContain(
+			'openpyxl selected-sheet `unsupported-operation` coverage gap is removed',
+		)
+		expect(markdown).toContain('"Ascend has a full selected-sheet SOTA claim."')
+		expect(markdown).toContain('Add external-process selected-sheet\nlanes for Ascend and SheetJS')
+
 		expect(markdown).toContain(
 			'bun run fixtures/benchmarks/competitive-io.ts --json --category read --competitor all',
 		)

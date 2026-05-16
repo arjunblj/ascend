@@ -907,6 +907,20 @@ describe('release proof evidence index', () => {
 			}),
 			expect.objectContaining({
 				evidenceId: 'cli-agent-facing-open-diagnostics-proof',
+				acceptedScope: expect.stringContaining('b81bd22e'),
+				command: expect.stringContaining('structured missing workbook guidance'),
+				path: expect.stringContaining('apps/cli/src/commands/open-plan.ts'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'cli-agent-facing-open-diagnostics-proof',
+				acceptedScope: expect.stringContaining('7e31d148'),
+				command: expect.stringContaining(
+					'verification commands --json return structured missing input guidance',
+				),
+				path: expect.stringContaining('apps/cli/src/commands/trace.ts'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'cli-agent-facing-open-diagnostics-proof',
 				acceptedScope: expect.stringContaining('9b155c7f'),
 				boundary: expect.stringContaining('CLI agent-facing diagnostics only'),
 			}),
@@ -919,7 +933,7 @@ describe('release proof evidence index', () => {
 				evidenceId: 'api-open-workflow-reference-proof',
 				acceptedScope: expect.stringContaining('215d6e57'),
 				command:
-					'bun test apps/api/src/server.test.ts -t "missing workbook references|missing inputs|missing template data" --timeout 30000',
+					'bun test apps/api/src/server.test.ts -t "missing workbook references|missing inputs|missing template data|before opening workbooks" --timeout 30000',
 			}),
 			expect.objectContaining({
 				evidenceId: 'api-open-workflow-reference-proof',
@@ -976,6 +990,10 @@ describe('release proof evidence index', () => {
 			}),
 			expect.objectContaining({
 				evidenceId: 'api-open-workflow-reference-proof',
+				acceptedScope: expect.stringContaining('542523a4'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'api-open-workflow-reference-proof',
 				acceptedScope: expect.stringContaining('active-content/trust-report'),
 			}),
 			expect.objectContaining({
@@ -1013,6 +1031,10 @@ describe('release proof evidence index', () => {
 			expect.objectContaining({
 				evidenceId: 'api-open-workflow-reference-proof',
 				acceptedScope: expect.stringContaining('template data errors'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'api-open-workflow-reference-proof',
+				acceptedScope: expect.stringContaining('before opening workbooks'),
 			}),
 			expect.objectContaining({
 				evidenceId: 'mcp-open-workflow-reference-proof',

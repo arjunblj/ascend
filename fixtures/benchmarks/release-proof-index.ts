@@ -3049,10 +3049,10 @@ function safeOpenQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceItem[] {
 			evidenceId: 'cli-agent-facing-open-diagnostics-proof',
 			kind: 'test',
 			command:
-				'bun test apps/cli/src/cli.test.ts apps/cli/src/file-errors.test.ts -t "custom UI callbacks|open-plan --json reports missing files|raw ENOENT noise|missing ops sidecar|structured missing workflow input guidance" --timeout 30000',
-			path: 'apps/cli/src/index.ts; apps/cli/src/commands/inspect.ts; apps/cli/src/commands/plan.ts; apps/cli/src/commands/commit.ts; apps/cli/src/cli.test.ts; apps/cli/src/file-errors.test.ts',
+				'bun test apps/cli/src/cli.test.ts apps/cli/src/file-errors.test.ts -t "custom UI callbacks|open-plan --json reports missing files|raw ENOENT noise|missing ops sidecar|structured missing workflow input guidance|structured missing workbook guidance|verification commands --json return structured missing input guidance" --timeout 30000',
+			path: 'apps/cli/src/index.ts; apps/cli/src/commands/open-plan.ts; apps/cli/src/commands/inspect.ts; apps/cli/src/commands/plan.ts; apps/cli/src/commands/commit.ts; apps/cli/src/commands/check.ts; apps/cli/src/commands/diff.ts; apps/cli/src/commands/lint.ts; apps/cli/src/commands/trace.ts; apps/cli/src/cli.test.ts; apps/cli/src/file-errors.test.ts',
 			acceptedScope:
-				'Commit d837689e makes CLI inspect --detail active-content report generated RibbonX custom UI callbacks and makes CLI open-plan --json return retryable FILE_NOT_FOUND guidance for missing workbook paths; commit 9b155c7f extends missing-file guidance to non-JSON CLI output without raw ENOENT noise; commit 3d4d5374 reports missing plan/commit ops sidecar paths directly and leaves commit output absent; commit ff38e8f4 makes CLI plan/commit --json return structured retryable missing workflow input guidance for file/ops gaps.',
+				'Commit d837689e makes CLI inspect --detail active-content report generated RibbonX custom UI callbacks and makes CLI open-plan --json return retryable FILE_NOT_FOUND guidance for missing workbook paths; commit 9b155c7f extends missing-file guidance to non-JSON CLI output without raw ENOENT noise; commit 3d4d5374 reports missing plan/commit ops sidecar paths directly and leaves commit output absent; commit ff38e8f4 makes CLI plan/commit --json return structured retryable missing workflow input guidance for file/ops gaps; commit b81bd22e makes CLI open-plan/inspect --json return structured retryable missing workbook guidance; commit 7e31d148 makes CLI check/lint/trace/diff --json return structured retryable missing verification input guidance.',
 			boundary:
 				'CLI agent-facing diagnostics only; it does not prove public custom UI fixture coverage, file recovery, path discovery, Custom UI safety, active-content safety, or trust wording.',
 		},
@@ -3060,10 +3060,10 @@ function safeOpenQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceItem[] {
 			evidenceId: 'api-open-workflow-reference-proof',
 			kind: 'test',
 			command:
-				'bun test apps/api/src/server.test.ts -t "missing workbook references|missing inputs|missing template data" --timeout 30000',
+				'bun test apps/api/src/server.test.ts -t "missing workbook references|missing inputs|missing template data|before opening workbooks" --timeout 30000',
 			path: 'apps/api/src/server.ts; apps/api/src/server.test.ts',
 			acceptedScope:
-				'Commits 215d6e57, 7c1a9708, 8ce0fbe2, 43781bef, ea67f3b3, 6490a0e6, e090fe13, 8d12c141, 2cb02045, 7303b787, ac7d8006, and 091a4318 return structured retryable missing-workbook-reference errors for API plan/commit/open-plan/inspect/active-content/trust-report/package-graph/raw-part/visuals/pivots/dump/template-merge/read/agent-view/repair-plan/check/lint/trace/write/preview/calc/diff/export workflow requests instead of generic missing-file responses. Commit 346410a9 returns structured retryable missing-range errors for API read/agent-view ranges, commit 7303b787 returns structured retryable missing trace-cell errors for trace cells, commit 091a4318 returns structured retryable missing export-format errors, and commit 2b884ed6 returns structured retryable missing template data errors.',
+				'Commits 215d6e57, 7c1a9708, 8ce0fbe2, 43781bef, ea67f3b3, 6490a0e6, e090fe13, 8d12c141, 2cb02045, 7303b787, ac7d8006, and 091a4318 return structured retryable missing-workbook-reference errors for API plan/commit/open-plan/inspect/active-content/trust-report/package-graph/raw-part/visuals/pivots/dump/template-merge/read/agent-view/repair-plan/check/lint/trace/write/preview/calc/diff/export workflow requests instead of generic missing-file responses. Commit 346410a9 returns structured retryable missing-range errors for API read/agent-view ranges, commit 7303b787 returns structured retryable missing trace-cell errors for trace cells, commit 091a4318 returns structured retryable missing export-format errors, commit 2b884ed6 returns structured retryable missing template data errors, and commit 542523a4 rejects invalid replay filters, Pivot materialization mode, read format, and unsupported export format before opening workbooks.',
 			boundary:
 				'API request-shape diagnostics only; it does not prove file recovery, path discovery, source workbook existence, edit correctness, latency, or trust wording.',
 		},

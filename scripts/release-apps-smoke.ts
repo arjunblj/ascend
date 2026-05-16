@@ -256,6 +256,13 @@ const cliDocs = await runCliJson(['docs', 'plan commit'])
 if (!Array.isArray(cliDocs.results) || cliDocs.results.length === 0) {
 	throw new Error('CLI installed docs search returned no hits')
 }
+const cliAgentInit = await runCliJson(['agent-init'])
+if (cliAgentInit.apiEndpoints?.workflow !== 'GET /agent-workflow') {
+	throw new Error('CLI agent-init missing API workflow endpoint: ' + JSON.stringify(cliAgentInit))
+}
+if (cliAgentInit.mcpTools?.workflow !== 'ascend.agent_workflow') {
+	throw new Error('CLI agent-init missing MCP workflow tool: ' + JSON.stringify(cliAgentInit))
+}
 
 const apiFetch = createApiFetch()
 const apiInput = join(cwd, 'api-input.xlsx')
@@ -291,6 +298,13 @@ const capabilities = await capabilitiesResponse.json()
 if (!capabilities.ok) throw new Error('installed API capabilities request failed')
 if (!Array.isArray(capabilities.data?.capabilities) || capabilities.data.capabilities.length === 0) {
 	throw new Error('installed API capabilities request returned no capabilities')
+}
+const apiWorkflow = await apiJson(apiFetch, '/agent-workflow', undefined, 'GET')
+if (apiWorkflow.endpoints?.plan !== 'POST /plan' || apiWorkflow.endpoints?.commit !== 'POST /commit') {
+	throw new Error('installed API agent workflow contract missing plan/commit endpoints')
+}
+if (!apiWorkflow.workflow?.some((step) => step.step === 'reopen-verify')) {
+	throw new Error('installed API agent workflow contract missing reopen-verify step')
 }
 
 const mcpInput = join(cwd, 'mcp-input.xlsx')
@@ -332,11 +346,24 @@ const mcpCapabilities = await tools['ascend.capabilities']?.handler({})
 if (!mcpCapabilities?.structuredContent?.ok) {
 	throw new Error('installed MCP capabilities tool failed')
 }
+const mcpWorkflow = await mcpTool(tools, 'ascend.agent_workflow', {})
+if (mcpWorkflow.tools?.plan !== 'ascend.plan' || mcpWorkflow.tools?.commit !== 'ascend.commit') {
+	throw new Error('installed MCP agent workflow contract missing plan/commit tools')
+}
+if (!mcpWorkflow.workflow?.some((step) => step.step === 'reopen-verify')) {
+	throw new Error('installed MCP agent workflow contract missing reopen-verify step')
+}
 const mcpResource = await resources['ascend://capabilities']?.readCallback(
 	new URL('ascend://capabilities'),
 )
 if (!mcpResource?.contents?.[0]?.text?.includes('"capabilities"')) {
 	throw new Error('installed MCP capabilities resource failed')
+}
+const mcpWorkflowResource = await resources['ascend://agent-workflow']?.readCallback(
+	new URL('ascend://agent-workflow'),
+)
+if (!mcpWorkflowResource?.contents?.[0]?.text?.includes('ascend.plan')) {
+	throw new Error('installed MCP agent workflow resource failed')
 }
 
 console.log(JSON.stringify({
@@ -347,6 +374,8 @@ console.log(JSON.stringify({
 		outputSha256: cliCommit.outputSha256,
 		values: cliValues,
 		docHits: cliDocs.results.length,
+		apiWorkflowEndpoint: cliAgentInit.apiEndpoints.workflow,
+		mcpWorkflowTool: cliAgentInit.mcpTools.workflow,
 	},
 	api: {
 		createApiFetchExport: typeof createApiFetch,
@@ -356,6 +385,7 @@ console.log(JSON.stringify({
 		planWouldSucceed: apiPlan.preview.wouldSucceed,
 		outputSha256: apiCommit.outputSha256,
 		values: apiValues,
+		workflowSteps: apiWorkflow.workflow.length,
 	},
 	apiCapabilities: capabilities.data.capabilities.length,
 	mcp: {
@@ -368,6 +398,7 @@ console.log(JSON.stringify({
 		docHits: mcpDocs.results.length,
 		tools: Object.keys(tools).length,
 		capabilities: mcpCapabilities.structuredContent.data.capabilities.length,
+		workflowSteps: mcpWorkflow.workflow.length,
 	},
 }))
 `,

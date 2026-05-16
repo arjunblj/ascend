@@ -21,6 +21,25 @@ Flags:
   --verbose       Show compatibility report and timing
 `
 
+const INSPECT_DETAIL_TYPES = [
+	'cf',
+	'dv',
+	'hyperlinks',
+	'comments',
+	'drawings',
+	'images',
+	'tables',
+	'compatibility',
+	'package-graph',
+	'active-content',
+	'visuals',
+	'pivots',
+	'slicers',
+	'names',
+	'external-refs',
+	'views',
+] as const
+
 export async function inspectCommand(args: string[], flags: Map<string, string>): Promise<number> {
 	const file = args[0]
 	if (!file) {
@@ -634,12 +653,24 @@ async function printSheetDetail(
 			return printCompatibilityDetail(wb, json)
 		}
 		default:
-			cliError(
-				`Unknown detail type: ${detail}. Options: cf, dv, hyperlinks, comments, drawings, images, tables, compatibility, package-graph, active-content, visuals, pivots, slicers, names, external-refs, views`,
-				flags,
-			)
+			cliError(unknownInspectDetailError(detail), flags)
 			return 1
 	}
+}
+
+function unknownInspectDetailError(detail: string) {
+	return ascendError('INVALID_ARGUMENT', `Unknown detail type: ${detail}`, {
+		retryable: true,
+		retryStrategy: 'modified',
+		details: {
+			command: 'inspect',
+			flag: 'detail',
+			received: detail,
+			allowed: INSPECT_DETAIL_TYPES,
+			workflow: ['open-plan', 'inspect', 'plan'],
+		},
+		suggestedFix: `Use --detail with one of: ${INSPECT_DETAIL_TYPES.join(', ')}.`,
+	})
 }
 
 function printCompatibilityDetail(wb: WorkbookDocument, json: boolean): number {

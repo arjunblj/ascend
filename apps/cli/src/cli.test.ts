@@ -1585,6 +1585,32 @@ describe('ascend cli', () => {
 		expect(parsed.error.suggestedFix).toContain('Sheet1')
 	})
 
+	test('inspect --json reports unknown details with structured retry guidance', async () => {
+		const wb = AscendWorkbook.create()
+		await wb.save(`${import.meta.dir}/${TEST_FILE}`)
+
+		const result = await run('inspect', TEST_FILE, 'Sheet1', '--detail', 'bad', '--json')
+		expect(result.exitCode).toBe(1)
+		const parsed = JSON.parse(result.stdout)
+		expect(parsed).toMatchObject({
+			ok: false,
+			error: {
+				code: 'INVALID_ARGUMENT',
+				message: 'Unknown detail type: bad',
+				retryable: true,
+				retryStrategy: 'modified',
+				details: {
+					command: 'inspect',
+					flag: 'detail',
+					received: 'bad',
+					workflow: ['open-plan', 'inspect', 'plan'],
+				},
+			},
+		})
+		expect(parsed.error.details.allowed).toContain('tables')
+		expect(parsed.error.suggestedFix).toContain('--detail')
+	})
+
 	test('inspect --detail package-graph --json returns package graph identity', async () => {
 		const { stdout, exitCode } = await run(
 			'inspect',

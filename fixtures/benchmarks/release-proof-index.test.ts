@@ -1666,12 +1666,19 @@ describe('release proof evidence index', () => {
 					path: 'docs/PERFORMANCE_CLAIM_BASELINE_MATRIX.md',
 					validationCommand:
 						'bun test fixtures/benchmarks/performance-claim-baseline-matrix.test.ts',
-					nextAction: expect.stringContaining('focused ClosedXML head-to-head read run'),
+					nextAction: expect.stringContaining('external-process selected-sheet lanes'),
 					decision: expect.stringContaining('performance matrix as a defer decision'),
 					forbiddenShortcut: expect.stringContaining('one-workload medians'),
 				}),
 			]),
 		)
+		const performanceOwnerArtifact = safeOpenDecision.ownerDecisionArtifacts.find(
+			(artifact) => artifact.artifactId === 'performance-claim-baseline-matrix',
+		)
+		expect(performanceOwnerArtifact?.nextAction).toContain(
+			'focused ClosedXML head-to-head read run',
+		)
+		expect(performanceOwnerArtifact?.nextAction).toContain('clean OpenPyXL selected-sheet')
 		expect(
 			safeOpenDecision.nextOwnerActions.find(
 				(action) => action.requirementId === 'release-latency-run',
@@ -3512,11 +3519,23 @@ describe('release proof evidence index', () => {
 			},
 		})
 		expect(packet.benchmarkBlocker?.nextAction).toContain('ClosedXML head-to-head read run')
+		expect(packet.benchmarkBlocker?.nextAction).toContain(
+			'same-lane external-process selected-sheet',
+		)
 		expect(packet.benchmarkBlocker?.nextAction).toContain('fastxlsx runner')
+		expect(packet.benchmarkBlocker?.nextAction).not.toContain(
+			'clean selected-sheet timing-boundary rerun',
+		)
 		expect(packet.benchmarkBlocker?.benchmarkCommands?.join('\n')).toContain(
 			'competitive-scoreboard.ts <suite.json> --json --metric medianMs --require-profile xlsx-read-sota',
 		)
 		expect(packet.benchmarkBlocker?.acceptanceEvidence?.join('\n')).toContain('ClosedXML')
+		expect(packet.benchmarkBlocker?.acceptanceEvidence?.join('\n')).toContain(
+			'OpenPyXL selected-sheet projection now runs',
+		)
+		expect(packet.benchmarkBlocker?.acceptanceEvidence?.join('\n')).toContain(
+			'permanently not comparable',
+		)
 		expect(packet.benchmarkBlocker?.acceptanceEvidence?.join('\n')).toContain('not counted as wins')
 		expect(packet.approvalChecklist?.map((item) => `${item.ownerLoop}/${item.gateId}`)).toEqual([
 			'performance/release-latency-run',

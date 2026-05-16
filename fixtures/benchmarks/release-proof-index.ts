@@ -2142,12 +2142,12 @@ export function releaseProofPerformanceBoundaryDecisionPacket(
 			path: 'docs/PERFORMANCE_CLAIM_BASELINE_MATRIX.md',
 			validationCommand: benchmarkValidationCommand,
 			nextAction:
-				'Treat the focused ClosedXML head-to-head read run and OpenPyXL selected-sheet projection fold-in as accepted bounded-gap evidence, keep broad speed wording downgraded, then attack the next highest-impact blocker: clean selected-sheet timing-boundary rerun, remaining selected-sheet/metadata-only unsupported-operation gaps, feature-rich semantic mismatches, or the unavailable fastxlsx runner.',
+				'Treat the focused ClosedXML head-to-head read run and clean OpenPyXL selected-sheet head-to-head run as accepted bounded-gap evidence, keep broad speed wording downgraded, then attack the next highest-impact blocker: same-lane external-process selected-sheet rows for Ascend and SheetJS or an explicit permanent not-comparable boundary, remaining selected-sheet/metadata-only unsupported-operation gaps, feature-rich semantic mismatches, or the unavailable fastxlsx runner.',
 			benchmarkCommands,
 			acceptanceEvidence: [
 				'Clean detached worktree or clean release benchmark environment.',
 				'ClosedXML is measured as ran/won for comparable value-read rows in the focused head-to-head run and remains not comparable for selected-sheet and metadata-only.',
-				'OpenPyXL selected-sheet projection now runs and passes semantic assertions in the harness, but Ascend-vs-OpenPyXL selected-sheet speed wording remains forbidden until a clean rerun resolves the timing-lane boundary.',
+				'OpenPyXL selected-sheet projection now runs and passes semantic assertions in a clean focused run; Ascend-vs-OpenPyXL selected-sheet speed wording remains forbidden until Ascend and SheetJS are measured in the same external-process timing lane or the lane split is recorded as permanently not comparable.',
 				'Every `xlsx-read-sota` workload either has comparable Ascend and external rows or an explicit runner unavailable, blocked, unsupported-operation, or not-comparable status.',
 				'Median, p95, CV/noise, memory, environment, runner/library versions, command, input shape, and semantic comparability are recorded for each comparable row.',
 				'Failed, missing, or semantically mismatched runners are not counted as wins.',
@@ -3960,7 +3960,7 @@ function ownerDecisionArtifactsFor(
 					decision:
 						'Use the performance matrix as a defer decision: no broad XLSX read, SOTA, or QSS-leapfrog speed claim is promotable from the current partial baseline.',
 					nextAction:
-						'Benchmarking owner treats the focused ClosedXML head-to-head read run and OpenPyXL selected-sheet projection fold-in as accepted bounded-gap evidence, keeps broad speed wording downgraded, then attacks the clean selected-sheet timing-boundary rerun, remaining selected-sheet/metadata-only unsupported-operation gaps, feature-rich semantic mismatches, or the unavailable fastxlsx runner before any broad speed claim is promoted.',
+						'Benchmarking owner treats the focused ClosedXML head-to-head read run and clean OpenPyXL selected-sheet head-to-head run as accepted bounded-gap evidence, keeps broad speed wording downgraded, then adds external-process selected-sheet lanes for Ascend and SheetJS or records the lane split as a permanent not-comparable boundary before any selected-sheet speed claim is promoted.',
 					forbiddenShortcut:
 						'Do not count unavailable runners, blocked runners, dirty-worktree timings, or one-workload medians as speed wins.',
 					boundary:

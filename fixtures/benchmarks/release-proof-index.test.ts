@@ -937,6 +937,26 @@ describe('release proof evidence index', () => {
 		expect(safeOpenDecision.nextOwnerActions.map((action) => action.requirementId)).toContain(
 			'release-latency-run',
 		)
+		expect(safeOpenDecision.ownerDecisionArtifacts).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					ownerLoop: 'correctness',
+					artifactId: 'excel-behavior-compatibility-matrix',
+					path: 'docs/EXCEL_BEHAVIOR_COMPATIBILITY_MATRIX.md',
+					validationCommand:
+						'bun test packages/sdk/src/excel-behavior-compatibility-matrix.test.ts',
+					forbiddenShortcut: expect.stringContaining('full Excel compatibility'),
+				}),
+				expect.objectContaining({
+					ownerLoop: 'performance',
+					artifactId: 'performance-claim-baseline-matrix',
+					path: 'docs/PERFORMANCE_CLAIM_BASELINE_MATRIX.md',
+					validationCommand:
+						'bun test fixtures/benchmarks/performance-claim-baseline-matrix.test.ts',
+					nextAction: expect.stringContaining('full clean `xlsx-read-sota` profile'),
+				}),
+			]),
+		)
 		expect(
 			safeOpenDecision.nextOwnerActions.find(
 				(action) => action.requirementId === 'release-latency-run',
@@ -959,6 +979,16 @@ describe('release proof evidence index', () => {
 		expect(packageActionDecision.claimWordingAllowedToday).toBe('auditable package-part mutation')
 		expect(packageActionDecision.evidenceMissing.join('\n')).toContain('edge-fixture-policy')
 		expect(packageActionDecision.allowedWording).toContain('per-part package action accounting')
+		expect(packageActionDecision.ownerDecisionArtifacts).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					ownerLoop: 'correctness',
+					artifactId: 'excel-behavior-compatibility-matrix',
+					path: 'docs/EXCEL_BEHAVIOR_COMPATIBILITY_MATRIX.md',
+					forbiddenShortcut: expect.stringContaining('arbitrary unknown-part preservation'),
+				}),
+			]),
+		)
 		expect(packageActionDecision.nextOwnerActions.map((action) => action.requirementId)).toContain(
 			'streaming-matrix-boundary',
 		)
@@ -1351,6 +1381,14 @@ describe('release proof evidence index', () => {
 			acceptedEvidence: expect.arrayContaining([
 				expect.objectContaining({ evidenceId: 'release-proof-index-owner-handoff' }),
 			]),
+			ownerDecisionArtifacts: expect.arrayContaining([
+				expect.objectContaining({
+					artifactId: 'excel-behavior-compatibility-matrix',
+				}),
+				expect.objectContaining({
+					artifactId: 'performance-claim-baseline-matrix',
+				}),
+			]),
 			aPlusBlockingOwnerActions: expect.arrayContaining([
 				expect.objectContaining({ requirementId: 'public-edge-fixtures' }),
 				expect.objectContaining({ requirementId: 'release-latency-run' }),
@@ -1550,9 +1588,11 @@ describe('release proof evidence index', () => {
 		expect(markdown).toContain('## Release Decision Board')
 		expect(markdown).toContain('Do not promote yet:')
 		expect(markdown).toContain(
-			'| Rank | Claim | Evidence we have | Evidence missing | QSS contrast | Allowed wording | Forbidden wording | Next owner action | Headline claim allowed | Implementation promotion allowed | Exact proof | Must not claim | A+ blocking owner action | Boundary |',
+			'| Rank | Claim | Evidence we have | Evidence missing | QSS contrast | Allowed wording | Forbidden wording | Next owner action | Owner decision artifact | Headline claim allowed | Implementation promotion allowed | Exact proof | Must not claim | A+ blocking owner action | Boundary |',
 		)
 		expect(markdown).toContain('| 1 | safe unknown workbook opening |')
+		expect(markdown).toContain('performance/performance-claim-baseline-matrix')
+		expect(markdown).toContain('correctness/excel-behavior-compatibility-matrix')
 		expect(markdown).toContain('QSS likely does well:')
 		expect(markdown).toContain('Ascend proven today:')
 		expect(markdown).toContain('pre-hydration package-feature routing')

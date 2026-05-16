@@ -315,12 +315,24 @@ export interface ReleaseProofReleaseDecisionBoardRow {
 	readonly allowedWording: string
 	readonly forbiddenWording: readonly string[]
 	readonly nextOwnerActions: readonly ReleaseProofNextOwnerAction[]
+	readonly ownerDecisionArtifacts: readonly ReleaseProofOwnerDecisionArtifact[]
 	readonly headlineClaimAllowed: boolean
 	readonly implementationSurfacePromotionAllowed: boolean
 	readonly proofRequired: ReleaseProofClaimProofRequired
 	readonly acceptedEvidence: readonly ReleaseProofQssAcceptedEvidenceItem[]
 	readonly claimsWeMustNotMake: readonly string[]
 	readonly aPlusBlockingOwnerActions: readonly ReleaseProofNextOwnerAction[]
+	readonly boundary: string
+}
+
+export interface ReleaseProofOwnerDecisionArtifact {
+	readonly ownerLoop: ReleaseProofReadinessOwner
+	readonly artifactId: string
+	readonly path: string
+	readonly validationCommand: string
+	readonly decision: string
+	readonly nextAction: string
+	readonly forbiddenShortcut: string
 	readonly boundary: string
 }
 
@@ -1290,8 +1302,8 @@ export function releaseProofIndexMarkdown(result: ReleaseProofIndexResult): stri
 		'',
 		result.releaseDecisionBoard.boundary,
 		'',
-		'| Rank | Claim | Evidence we have | Evidence missing | QSS contrast | Allowed wording | Forbidden wording | Next owner action | Headline claim allowed | Implementation promotion allowed | Exact proof | Must not claim | A+ blocking owner action | Boundary |',
-		'| ---: | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+		'| Rank | Claim | Evidence we have | Evidence missing | QSS contrast | Allowed wording | Forbidden wording | Next owner action | Owner decision artifact | Headline claim allowed | Implementation promotion allowed | Exact proof | Must not claim | A+ blocking owner action | Boundary |',
+		'| ---: | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
 		...result.releaseDecisionBoard.rows.map(releaseDecisionBoardMarkdownRow),
 		'',
 		'Do not promote yet:',
@@ -2058,6 +2070,7 @@ function releaseDecisionBoard(
 				allowedWording: releaseDecisionAllowedWording(row.artifact),
 				forbiddenWording: [...row.claimsWeMustNotMake],
 				nextOwnerActions: row.ownerActions.map(cloneNextOwnerAction),
+				ownerDecisionArtifacts: ownerDecisionArtifactsFor(row.artifact),
 				headlineClaimAllowed: artifact?.headlineClaimAllowed ?? false,
 				implementationSurfacePromotionAllowed:
 					handoff?.implementationSurfacePromotionAllowed ??
@@ -2101,6 +2114,12 @@ function releaseDecisionBoardMarkdownRow(row: ReleaseProofReleaseDecisionBoardRo
 					`${action.ownerLoop}/${action.requirementId}: ${action.nextStepKind}=\`${action.validationCommand}\``,
 			)
 			.join('; '),
+		row.ownerDecisionArtifacts
+			.map(
+				(artifact) =>
+					`${artifact.ownerLoop}/${artifact.artifactId}: \`${artifact.validationCommand}\` (${artifact.path})`,
+			)
+			.join('; '),
 		String(row.headlineClaimAllowed),
 		String(row.implementationSurfacePromotionAllowed),
 		row.acceptedEvidence
@@ -2135,10 +2154,75 @@ function cloneReleaseDecisionBoard(
 			qssContrast: [...row.qssContrast],
 			forbiddenWording: [...row.forbiddenWording],
 			nextOwnerActions: row.nextOwnerActions.map(cloneNextOwnerAction),
+			ownerDecisionArtifacts: row.ownerDecisionArtifacts.map(cloneOwnerDecisionArtifact),
 			acceptedEvidence: row.acceptedEvidence.map((item) => ({ ...item })),
 			claimsWeMustNotMake: [...row.claimsWeMustNotMake],
 			aPlusBlockingOwnerActions: row.aPlusBlockingOwnerActions.map(cloneNextOwnerAction),
 		})),
+	}
+}
+
+function cloneOwnerDecisionArtifact(
+	artifact: ReleaseProofOwnerDecisionArtifact,
+): ReleaseProofOwnerDecisionArtifact {
+	return { ...artifact }
+}
+
+function ownerDecisionArtifactsFor(
+	artifact: ReleaseProofIndexArtifactName,
+): readonly ReleaseProofOwnerDecisionArtifact[] {
+	switch (artifact) {
+		case 'safe-open-proof':
+			return [
+				{
+					ownerLoop: 'correctness',
+					artifactId: 'excel-behavior-compatibility-matrix',
+					path: 'docs/EXCEL_BEHAVIOR_COMPATIBILITY_MATRIX.md',
+					validationCommand:
+						'bun test packages/sdk/src/excel-behavior-compatibility-matrix.test.ts',
+					decision:
+						'Use the ranked compatibility matrix for safe wording on common workbook support, active content, unknown parts, encryption, malformed packages, and signature blockers.',
+					nextAction:
+						'Compatibility owner adds the next real/public workbook gap from the matrix; product/release owners keep signed and generated malformed/signature policy blockers explicit.',
+					forbiddenShortcut:
+						'Do not turn the matrix into full Excel compatibility, file trust, malware scanning, password recovery, or signature preservation wording.',
+					boundary:
+						'Owner decision artifact only. It routes compatibility work and claim wording without satisfying release proof gates by itself.',
+				},
+				{
+					ownerLoop: 'performance',
+					artifactId: 'performance-claim-baseline-matrix',
+					path: 'docs/PERFORMANCE_CLAIM_BASELINE_MATRIX.md',
+					validationCommand:
+						'bun test fixtures/benchmarks/performance-claim-baseline-matrix.test.ts',
+					decision:
+						'Use the performance matrix as a defer decision: no broad XLSX read, SOTA, or QSS-leapfrog speed claim is promotable from the current partial baseline.',
+					nextAction:
+						'Benchmarking owner runs or expands the full clean `xlsx-read-sota` profile before optimizing or promoting speed wording.',
+					forbiddenShortcut:
+						'Do not count unavailable runners, blocked runners, dirty-worktree timings, or one-workload medians as speed wins.',
+					boundary:
+						'Owner decision artifact only. It blocks weak performance wording and names the next benchmark loop; it is not a release speed claim.',
+				},
+			]
+		case 'package-action-proof':
+			return [
+				{
+					ownerLoop: 'correctness',
+					artifactId: 'excel-behavior-compatibility-matrix',
+					path: 'docs/EXCEL_BEHAVIOR_COMPATIBILITY_MATRIX.md',
+					validationCommand:
+						'bun test packages/sdk/src/excel-behavior-compatibility-matrix.test.ts',
+					decision:
+						'Use the compatibility matrix to keep package-action wording preservation-first for visual, pivot, active-content, external-link, unknown-part, encrypted, malformed, and signature surfaces.',
+					nextAction:
+						'Correctness owner promotes an individual package surface only after real/public open -> inspect -> edit -> save/reopen -> verify evidence exists.',
+					forbiddenShortcut:
+						'Do not claim semantic support for every unsupported package feature, byte passthrough for chart XML, signature verification, or arbitrary unknown-part preservation.',
+					boundary:
+						'Owner decision artifact only. It constrains package-action wording without replacing package-action proof gates.',
+				},
+			]
 	}
 }
 

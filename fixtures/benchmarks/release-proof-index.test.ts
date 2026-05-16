@@ -445,6 +445,7 @@ describe('release proof evidence index', () => {
 			],
 			proofChecks: expect.arrayContaining([
 				expect.stringContaining('macro and ActiveX risk families'),
+				expect.stringContaining('VBA project signature parts'),
 			]),
 			forbiddenWording: expect.stringContaining('safe, sandboxed'),
 		})
@@ -923,6 +924,20 @@ describe('release proof evidence index', () => {
 				command: expect.stringContaining('dirty signed workbooks require explicit signature'),
 			}),
 			expect.objectContaining({
+				evidenceId: 'sdk-vba-signature-invalidation-proof',
+				acceptedScope: expect.stringContaining('e5d0ee17'),
+				command: expect.stringContaining('VBA project signatures fail closed'),
+				boundary: expect.stringContaining('Synthetic VBA-signature package topology evidence only'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'sdk-high-risk-stream-export-approval-proof',
+				acceptedScope: expect.stringContaining('ca3c3296'),
+				command: expect.stringContaining(
+					'high-risk workbook streams require the same explicit export approvals',
+				),
+				boundary: expect.stringContaining('High-risk stream export approval evidence only'),
+			}),
+			expect.objectContaining({
 				evidenceId: 'sdk-signed-agent-text-commit-policy-proof',
 				acceptedScope: expect.stringContaining('90f4c248'),
 				command: expect.stringContaining(
@@ -952,10 +967,40 @@ describe('release proof evidence index', () => {
 				acceptedScope: expect.stringContaining('2569626c'),
 			}),
 			expect.objectContaining({
+				evidenceId: 'api-agent-safe-edit-example-proof',
+				acceptedScope: expect.stringContaining('37794635'),
+			}),
+			expect.objectContaining({
 				evidenceId: 'mcp-agent-safe-edit-example-proof',
 				acceptedScope: expect.stringContaining('de45eb83'),
 				command: 'bun test examples/agent-safe-edit-mcp.test.ts --timeout 30000',
 				boundary: expect.stringContaining('Local generated-workbook MCP workflow proof only'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'mcp-agent-safe-edit-example-proof',
+				acceptedScope: expect.stringContaining('37794635'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'examples-package-safe-edit-scripts-proof',
+				acceptedScope: expect.stringContaining('bbea493c'),
+				command: 'bun test examples/package-scripts.test.ts --timeout 30000',
+				boundary: expect.stringContaining('Local examples-package workflow proof only'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'examples-package-safe-edit-scripts-proof',
+				acceptedScope: expect.stringContaining('37794635'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'root-package-safe-edit-scripts-proof',
+				acceptedScope: expect.stringContaining('a09660be'),
+				command: 'bun test examples/root-scripts.test.ts --timeout 30000',
+				boundary: expect.stringContaining('Local root-package script evidence only'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'cli-agent-init-workflow-examples-proof',
+				acceptedScope: expect.stringContaining('0d1b33f7'),
+				command: expect.stringContaining('agent-init prints the canonical agent workflow contract'),
+				boundary: expect.stringContaining('CLI workflow-discovery evidence only'),
 			}),
 			expect.objectContaining({
 				evidenceId: 'api-custom-ui-active-content-proof',
@@ -1295,6 +1340,10 @@ describe('release proof evidence index', () => {
 				acceptedScope: expect.stringContaining('before opening workbooks'),
 			}),
 			expect.objectContaining({
+				evidenceId: 'api-open-workflow-reference-proof',
+				acceptedScope: expect.stringContaining('407499cd'),
+			}),
+			expect.objectContaining({
 				evidenceId: 'mcp-open-workflow-reference-proof',
 				acceptedScope: expect.stringContaining('da273900'),
 				command:
@@ -1318,6 +1367,10 @@ describe('release proof evidence index', () => {
 				),
 			}),
 			expect.objectContaining({
+				evidenceId: 'mcp-open-workflow-reference-proof',
+				acceptedScope: expect.stringContaining('407499cd'),
+			}),
+			expect.objectContaining({
 				evidenceId: 'release-rc-gate',
 				command: 'bun run release:rc:gate',
 				path: 'scripts/release-rc-gate.ts',
@@ -1326,6 +1379,22 @@ describe('release proof evidence index', () => {
 			expect.objectContaining({
 				evidenceId: 'release-rc-gate',
 				acceptedScope: expect.stringContaining('f1f76e36'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'release-rc-gate',
+				acceptedScope: expect.stringContaining('37794635'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'release-rc-gate',
+				acceptedScope: expect.stringContaining('0d1b33f7'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'release-rc-gate',
+				acceptedScope: expect.stringContaining('407499cd'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'release-rc-gate',
+				acceptedScope: expect.stringContaining('a09660be'),
 			}),
 		]) {
 			expect(safeOpenAcceptedEvidence).toContainEqual(evidence)
@@ -2076,8 +2145,16 @@ describe('release proof evidence index', () => {
 		expect(agentWorkflowEvidence).toContain('HTTP API calls')
 		expect(agentWorkflowEvidence).toContain('de45eb83')
 		expect(agentWorkflowEvidence).toContain('MCP tools')
+		expect(agentWorkflowEvidence).toContain('bbea493c')
+		expect(agentWorkflowEvidence).toContain('examples package scripts')
+		expect(agentWorkflowEvidence).toContain('a09660be')
+		expect(agentWorkflowEvidence).toContain('root package scripts')
 		expect(agentWorkflowEvidence).toContain('2569626c')
 		expect(agentWorkflowEvidence).toContain('Agent-doc search indexes runnable HTTP and MCP')
+		expect(agentWorkflowEvidence).toContain('0d1b33f7')
+		expect(agentWorkflowEvidence).toContain('CLI agent-init surfaces runnable SDK, HTTP, and MCP')
+		expect(agentWorkflowEvidence).toContain('407499cd')
+		expect(agentWorkflowEvidence).toContain('API and MCP workflow discovery surfaces')
 		expect(agentWorkflowEvidence).toContain('docs/AGENT_WORKFLOW.md')
 		expect(agentWorkflowMissing).toContain('inspect, plan, commit, reopen, diff, audit')
 		expect(agentWorkflowMissing).toContain('Trace payload size')
@@ -2189,6 +2266,9 @@ describe('release proof evidence index', () => {
 		)
 		expect(performanceOwnerArtifact?.nextAction).toContain('67b900ed plain-text write baseline')
 		expect(performanceOwnerArtifact?.nextAction).toContain('e22eb86a string-heavy write baseline')
+		expect(performanceOwnerArtifact?.nextAction).toContain(
+			'0d0c9632 string-heavy write optimization proof',
+		)
 		expect(performanceOwnerArtifact?.nextAction).toContain('stops production optimization')
 		expect(performanceOwnerArtifact?.forbiddenShortcut).toContain(
 			'the 2000x20 plain-text write baseline',

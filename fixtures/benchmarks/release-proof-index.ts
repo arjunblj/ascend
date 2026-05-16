@@ -3085,6 +3085,28 @@ function safeOpenQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceItem[] {
 				'Synthetic signed-package topology fail-closed evidence only; it does not prove real signer identity, signature verification, re-signing, certificate trust, attestation, or public signed-workbook fixture coverage.',
 		},
 		{
+			evidenceId: 'sdk-vba-signature-invalidation-proof',
+			kind: 'test',
+			command:
+				'bun test packages/sdk/src/sdk.test.ts -t "VBA project signatures fail closed while approved exports preserve macros" --timeout 30000',
+			path: 'packages/io-xlsx/src/writer/index.ts; packages/sdk/src/sdk.test.ts',
+			acceptedScope:
+				'Commit e5d0ee17 treats VBA project signature parts as signature capsules: edited macro-enabled workbooks fail closed unless signature invalidation is explicit, approved exports preserve the VBA project, drop vbaProjectSignature, reopen with macro inventory intact, and remove signature findings.',
+			boundary:
+				'Synthetic VBA-signature package topology evidence only; it does not prove macro safety, macro execution, signature verification, re-signing, signer identity, malware scanning, or public signed-VBA fixture coverage.',
+		},
+		{
+			evidenceId: 'sdk-high-risk-stream-export-approval-proof',
+			kind: 'test',
+			command:
+				'bun test packages/sdk/src/sdk.test.ts -t "high-risk workbook streams require the same explicit export approvals" --timeout 30000',
+			path: 'packages/sdk/src/workbook.ts; packages/sdk/src/sdk.test.ts',
+			acceptedScope:
+				'Commit ca3c3296 makes toStream use the same explicit approvals as toBytes for edited encrypted and signed workbooks, proving blocked streams reject, approved decrypted/signed-invalidating streams reopen, and original high-risk workbooks remain guarded.',
+			boundary:
+				'High-risk stream export approval evidence only; it does not provide re-encryption support, signature preservation, re-signing, signature validation, malware scanning, or file trust.',
+		},
+		{
 			evidenceId: 'sdk-signed-agent-text-commit-policy-proof',
 			kind: 'test',
 			command:
@@ -3123,7 +3145,7 @@ function safeOpenQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceItem[] {
 				'bun run examples/agent-safe-edit-http.ts /private/tmp/ascend-agent-safe-edit-http-input.xlsx /private/tmp/ascend-agent-safe-edit-http-output.xlsx',
 			path: 'examples/agent-safe-edit-http.ts; examples/agent-safe-edit-http.test.ts',
 			acceptedScope:
-				'Commit 01d08512 adds a runnable HTTP API safe-edit example that opens/plans, inspects, reads, prepares a plan, commits, reopens, checks, lints, verifies the edited formula cell, and has a focused example test for the workflow contract. Commit 2569626c indexes the runnable HTTP workflow in SDK agent-doc search so outside users can discover it.',
+				'Commit 01d08512 adds a runnable HTTP API safe-edit example that opens/plans, inspects, reads, prepares a plan, commits, reopens, checks, lints, verifies the edited formula cell, and has a focused example test for the workflow contract. Commit 2569626c indexes the runnable HTTP workflow in SDK agent-doc search so outside users can discover it. Commit 37794635 switches it to the packaged @ascend/api import for installed-consumer proof.',
 			boundary:
 				'Local generated-workbook API workflow proof only; it does not prove arbitrary workbook safety, public workbook behavior, package publication, performance, external trust, or every SDK/CLI/API/MCP workflow.',
 		},
@@ -3133,9 +3155,29 @@ function safeOpenQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceItem[] {
 			command: 'bun test examples/agent-safe-edit-mcp.test.ts --timeout 30000',
 			path: 'examples/agent-safe-edit-mcp.ts; examples/agent-safe-edit-mcp.test.ts; packages/sdk/src/agent-docs.ts; packages/sdk/src/agent-docs.test.ts',
 			acceptedScope:
-				'Commit de45eb83 adds a runnable MCP safe-edit example and focused test covering agent_workflow discovery, open-plan, inspect, read, prepared plan, commit, reopen, check, lint, and edited formula verification, and indexes the runnable MCP workflow in SDK agent-doc search.',
+				'Commit de45eb83 adds a runnable MCP safe-edit example and focused test covering agent_workflow discovery, open-plan, inspect, read, prepared plan, commit, reopen, check, lint, and edited formula verification, and indexes the runnable MCP workflow in SDK agent-doc search. Commit 37794635 switches it to the packaged @ascend/mcp import for installed-consumer proof.',
 			boundary:
 				'Local generated-workbook MCP workflow proof only; it does not prove arbitrary workbook safety, public workbook behavior, package publication, performance, external trust, or every SDK/CLI/API/MCP workflow.',
+		},
+		{
+			evidenceId: 'examples-package-safe-edit-scripts-proof',
+			kind: 'test',
+			command: 'bun test examples/package-scripts.test.ts --timeout 30000',
+			path: 'examples/package.json; examples/package-scripts.test.ts; examples/README.md',
+			acceptedScope:
+				'Commit bbea493c adds examples package scripts for SDK, HTTP, and MCP safe-edit workflows and proves each script runs inspect/open-plan, prepared plan, commit, reopen/check/lint, and edited formula verification from the examples package. Commit 37794635 adds package dependencies so the runnable HTTP/MCP examples use packaged app imports.',
+			boundary:
+				'Local examples-package workflow proof only; it does not prove package publication, registry install behavior, arbitrary workbook safety, performance, external trust, or every SDK/CLI/API/MCP workflow.',
+		},
+		{
+			evidenceId: 'root-package-safe-edit-scripts-proof',
+			kind: 'test',
+			command: 'bun test examples/root-scripts.test.ts --timeout 30000',
+			path: 'package.json; examples/root-scripts.test.ts; examples/README.md; apps/cli/src/commands/agent-init.ts; apps/api/src/server.ts; apps/mcp/src/index.ts; scripts/release-apps-smoke.ts',
+			acceptedScope:
+				'Commit a09660be adds root package scripts for SDK, HTTP, and MCP safe-edit workflows, proves each root script runs the generated-workbook workflow, and updates CLI/API/MCP workflow discovery plus installed app smoke checks to point at the root commands.',
+			boundary:
+				'Local root-package script evidence only; it does not prove package publication, registry install behavior, arbitrary workbook safety, performance, external trust, or every SDK/CLI/API/MCP workflow.',
 		},
 		{
 			evidenceId: 'api-custom-ui-active-content-proof',
@@ -3204,13 +3246,24 @@ function safeOpenQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceItem[] {
 				'CLI agent-facing diagnostics only; it does not prove public custom UI fixture coverage, file recovery, path discovery, Custom UI safety, active-content safety, or trust wording.',
 		},
 		{
+			evidenceId: 'cli-agent-init-workflow-examples-proof',
+			kind: 'test',
+			command:
+				'bun test apps/cli/src/cli.test.ts -t "agent-init prints the canonical agent workflow contract" --timeout 30000',
+			path: 'apps/cli/src/commands/agent-init.ts; apps/cli/src/cli.test.ts',
+			acceptedScope:
+				'Commit 0d1b33f7 makes CLI agent-init surface runnable SDK, HTTP, and MCP safe-edit example commands alongside the canonical workflow contract, API endpoints, MCP tools, and safety defaults.',
+			boundary:
+				'CLI workflow-discovery evidence only; it does not prove package publication, arbitrary workbook safety, performance, external trust, or every SDK/API/MCP workflow.',
+		},
+		{
 			evidenceId: 'api-open-workflow-reference-proof',
 			kind: 'test',
 			command:
 				'bun test apps/api/src/server.test.ts -t "jsonFailureError wraps string failures|string API failures return coded JSON envelopes|missing workbook references|missing inputs|missing template data|before opening workbooks|trace reports missing target cells|/agent-workflow exposes the API safe edit contract" --timeout 30000',
 			path: 'apps/api/src/server.ts; apps/api/src/response.ts; apps/api/src/server.test.ts',
 			acceptedScope:
-				'Commits 215d6e57, 7c1a9708, 8ce0fbe2, 43781bef, ea67f3b3, 6490a0e6, e090fe13, 8d12c141, 2cb02045, 7303b787, ac7d8006, and 091a4318 return structured retryable missing-workbook-reference errors for API plan/commit/open-plan/inspect/active-content/trust-report/package-graph/raw-part/visuals/pivots/dump/template-merge/read/agent-view/repair-plan/check/lint/trace/write/preview/calc/diff/export workflow requests instead of generic missing-file responses. Commit 346410a9 returns structured retryable missing-range errors for API read/agent-view ranges, commit 7303b787 returns structured retryable missing trace-cell errors for trace cells, commit 091a4318 returns structured retryable missing export-format errors, commit 2b884ed6 returns structured retryable missing template data errors, commit 542523a4 rejects invalid replay filters, Pivot materialization mode, read format, and unsupported export format before opening workbooks, commit 0a7d9d32 makes legacy string API failures return coded machine envelopes, commit ceb94425 makes API /trace missing target cells return structured retryable guidance, commit 25ca9b21 makes direct jsonFailureError string helper failures return coded machine envelopes, commit ec0b98e9 makes unsupported API routes return structured retryable guidance with supported route inventory, and commit 98752c84 exposes a machine-readable API safe-edit workflow contract for open-plan, inspect, read, plan, commit, reopen-verify, and repair.',
+				'Commits 215d6e57, 7c1a9708, 8ce0fbe2, 43781bef, ea67f3b3, 6490a0e6, e090fe13, 8d12c141, 2cb02045, 7303b787, ac7d8006, and 091a4318 return structured retryable missing-workbook-reference errors for API plan/commit/open-plan/inspect/active-content/trust-report/package-graph/raw-part/visuals/pivots/dump/template-merge/read/agent-view/repair-plan/check/lint/trace/write/preview/calc/diff/export workflow requests instead of generic missing-file responses. Commit 346410a9 returns structured retryable missing-range errors for API read/agent-view ranges, commit 7303b787 returns structured retryable missing trace-cell errors for trace cells, commit 091a4318 returns structured retryable missing export-format errors, commit 2b884ed6 returns structured retryable missing template data errors, commit 542523a4 rejects invalid replay filters, Pivot materialization mode, read format, and unsupported export format before opening workbooks, commit 0a7d9d32 makes legacy string API failures return coded machine envelopes, commit ceb94425 makes API /trace missing target cells return structured retryable guidance, commit 25ca9b21 makes direct jsonFailureError string helper failures return coded machine envelopes, commit ec0b98e9 makes unsupported API routes return structured retryable guidance with supported route inventory, commit 98752c84 exposes a machine-readable API safe-edit workflow contract for open-plan, inspect, read, plan, commit, reopen-verify, and repair, and commit 407499cd exposes runnable SDK/API/MCP workflow example commands in that API contract.',
 			boundary:
 				'API request-shape diagnostics only; it does not prove file recovery, path discovery, source workbook existence, edit correctness, latency, or trust wording.',
 		},
@@ -3221,7 +3274,7 @@ function safeOpenQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceItem[] {
 				'bun test apps/mcp/src/index.test.ts -t "missing workbook references|string MCP tool errors return coded JSON failures|ascend.read_table reports missing tables|ascend.agent_workflow exposes machine-readable safe edit guidance" --timeout 30000',
 			path: 'apps/mcp/src/index.ts; apps/mcp/src/response.ts; apps/mcp/src/index.test.ts',
 			acceptedScope:
-				'Commit da273900 returns structured retryable missing-workbook-reference errors for MCP commit requests without file or planHandle instead of generic missing-file responses. Commit daa3ecb5 makes legacy MCP string tool errors return coded retryable machine failures. Commit f16085b3 makes MCP ascend.read_table missing-table failures return structured retryable guidance with available table names. Commit 77695508 exposes a machine-readable MCP safe-edit workflow contract for open-plan, inspect/read, plan, commit, reopen-verify, and repair.',
+				'Commit da273900 returns structured retryable missing-workbook-reference errors for MCP commit requests without file or planHandle instead of generic missing-file responses. Commit daa3ecb5 makes legacy MCP string tool errors return coded retryable machine failures. Commit f16085b3 makes MCP ascend.read_table missing-table failures return structured retryable guidance with available table names. Commit 77695508 exposes a machine-readable MCP safe-edit workflow contract for open-plan, inspect/read, plan, commit, reopen-verify, and repair. Commit 407499cd exposes runnable SDK/API/MCP workflow example commands in that MCP contract.',
 			boundary:
 				'MCP request-shape diagnostics only; it does not prove file recovery, path discovery, source workbook existence, edit correctness, latency, or trust wording.',
 		},
@@ -3241,7 +3294,7 @@ function safeOpenQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceItem[] {
 			command: 'bun run release:rc:gate',
 			path: 'scripts/release-rc-gate.ts',
 			acceptedScope:
-				'Local RC packageability gate for SDK/CLI/API/MCP tarballs and installed workbook proof. Commit 0931685e fixes bundled SDK agent docs resolution from file URLs, preserving installed docs-search smoke coverage; commit f1f76e36 adds installed CLI agent-init plus API/MCP agent-workflow discovery smoke checks.',
+				'Local RC packageability gate for SDK/CLI/API/MCP tarballs and installed workbook proof. Commit 0931685e fixes bundled SDK agent docs resolution from file URLs, preserving installed docs-search smoke coverage; commit f1f76e36 adds installed CLI agent-init plus API/MCP agent-workflow discovery smoke checks; commit 37794635 packages runnable HTTP/MCP workflow examples and extends installed SDK smoke coverage for bundled example discovery; commit 0d1b33f7 extends installed app smoke coverage for CLI agent-init runnable example commands; commit 407499cd extends installed app smoke coverage for API/MCP workflow example commands; commit a09660be updates installed app smoke coverage to assert root-level safe-edit example commands.',
 			boundary: 'Local tarball proof only; not registry publication or attestation.',
 		},
 	]
@@ -4623,7 +4676,7 @@ function ownerDecisionArtifactsFor(
 					decision:
 						'Use the performance matrix as a defer decision: no broad XLSX read, SOTA, or QSS-leapfrog speed claim is promotable from the current partial baseline.',
 					nextAction:
-						'Benchmarking owner treats the focused ClosedXML, same-lane selected-sheet, same-lane metadata-only, current-worktree python-calamine selected-sheet runner proof, current full-profile/merged scoreboard runs, commit 67b900ed plain-text write baseline, and commit e22eb86a string-heavy write baseline as accepted bounded evidence, downgrades broad speed wording, and stops production optimization unless the next work is explicit blocker resolution for ClosedXML coverage, feature-rich semantic mismatches, remaining unsupported selected-sheet/metadata-only competitors, FastXLSX environment coverage, unstable string-heavy tail profiling tied to release wording, or another named public workflow loss.',
+						'Benchmarking owner treats the focused ClosedXML, same-lane selected-sheet, same-lane metadata-only, current-worktree python-calamine selected-sheet runner proof, current full-profile/merged scoreboard runs, commit 67b900ed plain-text write baseline, commit e22eb86a string-heavy write baseline, and commit 0d0c9632 string-heavy write optimization proof as accepted bounded evidence, downgrades broad speed wording, and stops production optimization unless the next work is explicit blocker resolution for ClosedXML coverage, feature-rich semantic mismatches, remaining unsupported selected-sheet/metadata-only competitors, FastXLSX environment coverage, a full-profile regression of the optimized string-heavy row, or another named public workflow loss.',
 					forbiddenShortcut:
 						'Do not count unavailable runners, blocked runners, dirty-worktree timings, one-workload medians, the 2000x20 plain-text write baseline, or noisy string-heavy reruns as broad XLSX write/SOTA/QSS speed wins.',
 					boundary:
@@ -5252,8 +5305,10 @@ const AGENT_WORKFLOW_OBSERVABILITY_BLOCKER = {
 		'CLI trace and repair tests expose trace depth, formula precedents, structured batch repair details, and check metadata for agent repair in `apps/cli/src/cli.test.ts`.',
 		'API and MCP tests expose capped formula-view trace diagnostics, structured repair details, compact trace artifact counts, and blocked post-write audit output in `apps/api/src/server.test.ts` and `apps/mcp/src/index.test.ts`.',
 		'API repair-plan input diagnostics are accepted as internal workflow proof: `2cb02045 fix(api): structure repair plan inputs` returns a structured retryable missing-workbook-reference error for `/repair-plan` instead of a generic missing-file response.',
-		'Runnable safe-edit examples are accepted as local workflow proof: `cab4bff1 test(examples): prove agent safe edit workflow` covers SDK inspect/plan/commit/reopen/check/lint verification, `01d08512 test(examples): add runnable api safe edit workflow` covers the same generated-workbook path through HTTP API calls, and `de45eb83 test(examples): add runnable mcp safe edit workflow` covers it through MCP tools.',
+		'Runnable safe-edit examples are accepted as local workflow proof: `cab4bff1 test(examples): prove agent safe edit workflow` covers SDK inspect/plan/commit/reopen/check/lint verification, `01d08512 test(examples): add runnable api safe edit workflow` covers the same generated-workbook path through HTTP API calls, `de45eb83 test(examples): add runnable mcp safe edit workflow` covers it through MCP tools, `bbea493c test(examples): add package safe edit scripts` proves all three workflows run from examples package scripts, and `a09660be feat(cli): add root safe edit workflow scripts` proves the same workflows through root package scripts.',
 		'Agent-doc search indexes runnable HTTP and MCP safe-edit workflows through `2569626c fix(sdk): index runnable http workflow example` and `de45eb83 test(examples): add runnable mcp safe edit workflow`, making outside-user workflow examples discoverable from the SDK docs surface.',
+		'CLI agent-init surfaces runnable SDK, HTTP, and MCP safe-edit example commands through `0d1b33f7 feat(cli): surface runnable agent workflow examples`, so a CLI user can find the same outside-user workflows without knowing repo paths.',
+		'API and MCP workflow discovery surfaces expose runnable SDK, HTTP, and MCP safe-edit example commands through `407499cd feat(api): expose runnable workflow examples`, and installed app smoke checks guard those example fields.',
 		'Workflow docs list inspect, plan, commit, verify, trace, and repair-plan recovery paths in `docs/AGENT_WORKFLOW.md`, but documentation is guidance rather than release proof.',
 	],
 	evidenceMissing: [
@@ -5579,6 +5634,7 @@ function correctnessBoundaryEvidence(
 				'public macro fixture is used for package-action evidence',
 				'macro-bearing parts are recorded as package evidence',
 				'safe-open proof routes macro and ActiveX risk families to review before hydration',
+				'VBA project signature parts are dropped on approved edited exports while the VBA project remains inventoried',
 			],
 		}),
 		correctnessBoundaryFeatureCheck({

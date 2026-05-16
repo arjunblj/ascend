@@ -963,7 +963,7 @@ describe('release proof evidence index', () => {
 				evidenceId: 'cli-agent-facing-open-diagnostics-proof',
 				acceptedScope: expect.stringContaining('c7455eeb'),
 				command: expect.stringContaining(
-					'legacy string cli errors still return coded JSON failures',
+					'CLI JSON validation errors include command-specific guidance and fallback codes',
 				),
 				path: expect.stringContaining('apps/cli/src/output/json.ts'),
 			}),
@@ -974,6 +974,14 @@ describe('release proof evidence index', () => {
 					'formula edit commands --json return structured missing input guidance',
 				),
 				path: expect.stringContaining('apps/cli/src/commands/formula.ts'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'cli-agent-facing-open-diagnostics-proof',
+				acceptedScope: expect.stringContaining('2a996840'),
+				command: expect.stringContaining(
+					'CLI JSON validation errors include command-specific guidance and fallback codes',
+				),
+				path: expect.stringContaining('apps/cli/src/commands/read.ts'),
 			}),
 			expect.objectContaining({
 				evidenceId: 'cli-agent-facing-open-diagnostics-proof',
@@ -989,12 +997,17 @@ describe('release proof evidence index', () => {
 				evidenceId: 'api-open-workflow-reference-proof',
 				acceptedScope: expect.stringContaining('215d6e57'),
 				command:
-					'bun test apps/api/src/server.test.ts -t "string API failures return coded JSON envelopes|missing workbook references|missing inputs|missing template data|before opening workbooks" --timeout 30000',
+					'bun test apps/api/src/server.test.ts -t "string API failures return coded JSON envelopes|missing workbook references|missing inputs|missing template data|before opening workbooks|trace reports missing target cells" --timeout 30000',
 			}),
 			expect.objectContaining({
 				evidenceId: 'api-open-workflow-reference-proof',
 				acceptedScope: expect.stringContaining('0a7d9d32'),
 				path: expect.stringContaining('apps/api/src/response.ts'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'api-open-workflow-reference-proof',
+				acceptedScope: expect.stringContaining('ceb94425'),
+				command: expect.stringContaining('trace reports missing target cells'),
 			}),
 			expect.objectContaining({
 				evidenceId: 'api-open-workflow-reference-proof',

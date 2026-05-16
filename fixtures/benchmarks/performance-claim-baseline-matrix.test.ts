@@ -313,6 +313,26 @@ describe('performance claim baseline matrix', () => {
 			'"Ascend beats Calamine-family readers on feature-rich rich-metadata reads."',
 		)
 
+		expect(markdown).toContain('## Cycle: Calamine Feature-Rich Rich Metadata Boundary')
+		expect(markdown).toContain('Classification: not comparable/defer')
+		expect(markdown).toContain(
+			'/private/tmp/ascend-perf-hillclimb-15119c8d-runs/feature-rich-calamine-boundary.json',
+		)
+		expect(markdown).toContain(
+			'/private/tmp/ascend-perf-hillclimb-15119c8d-runs/feature-rich-calamine-boundary-scoreboard.json',
+		)
+		expect(markdown).toContain(
+			'| python-calamine | not comparable | `python-calamine` | 24.332 | 39.131 | 0.246 | 42.4 MiB |',
+		)
+		expect(markdown).toContain(
+			'| rust-calamine | not comparable | `rust-calamine` | 135.078 | 162.012 | 0.280 | 15.6 MiB |',
+		)
+		expect(markdown).toContain(
+			'The Calamine timing lane has no winner because both rows are\n  `semantic-mismatch`.',
+		)
+		expect(markdown).toContain('"Calamine lost the feature-rich rich-metadata benchmark."')
+		expect(markdown).toContain('kill Calamine-family rich-metadata speed comparisons')
+
 		expect(markdown).toContain('## Cycle: Selected-Sheet Value Read')
 		expect(markdown).toContain('generated `selected-sheet` workbook')
 		expect(markdown).toContain('Commit: `5055d794`')

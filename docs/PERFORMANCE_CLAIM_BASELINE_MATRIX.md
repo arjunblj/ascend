@@ -1004,6 +1004,82 @@ required metadata, then assemble a current full-profile or merged
 `xlsx-read-sota` gate using the cleaned selected-sheet, metadata-only,
 FastXLSX, ClosedXML, and SheetJS evidence.
 
+## Cycle: Calamine Feature-Rich Rich Metadata Boundary
+
+Classification: not comparable/defer. No production optimization is justified.
+The Calamine-family rows run, but their current public runner surfaces expose
+values, sheet names, dimensions, and merged ranges, not the feature-rich metadata
+required for this release workflow.
+
+Workflow: XLSX open/inspect value read with rich workbook metadata for a
+feature-rich worksheet.
+
+Why it matters for release: Calamine-family readers are fast value readers, but
+the release claim must not count value-only speed as a win on a workflow that
+requires comments, hyperlinks, data validations, conditional formatting, and
+defined names.
+
+Public/tracked-clean input: `competitive-io` generated the `feature-rich`
+raw OOXML workload from detached commit `15119c8d`, 2000 rows x 20 columns,
+40,000 logical cells, 40,000 populated cells, 114,404 input bytes. No private
+corpus or local research workbook was used.
+
+Commands:
+
+```bash
+cd /private/tmp/ascend-perf-hillclimb-15119c8d
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-io.ts --json --category read --competitor all --execution-scope external-process --libraries ascend-readxlsx-values-rich-metadata-bytes,python-calamine,rust-calamine --workload feature-rich --read-source raw-ooxml --repeat 5 --warmup 1 --validation-mode each --runner-manifest fixtures/benchmarks/runners/ascend-python-readers.manifest.json > /private/tmp/ascend-perf-hillclimb-15119c8d-runs/feature-rich-calamine-boundary.json
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-scoreboard.ts /private/tmp/ascend-perf-hillclimb-15119c8d-runs/feature-rich-calamine-boundary.json --json --metric medianMs > /private/tmp/ascend-perf-hillclimb-15119c8d-runs/feature-rich-calamine-boundary-scoreboard.json
+```
+
+Environment:
+
+- Commit: `15119c8d828e52493866c760c7fe28972e4a3bee`
+- Worktree: clean detached worktree at `/private/tmp/ascend-perf-hillclimb-15119c8d`; `git status --short --branch` reported `## HEAD (no branch)` with no changed paths after the run.
+- OS: Darwin 25.4.0 arm64
+- Bun: `1.3.13`
+- Node: `24.3.0`
+- Runtime profile: `category read`, `executionScope external-process`, `workload feature-rich`, `readSource raw-ooxml`, `validationMode each`, `repeat 5`, `warmup 1`.
+
+Raw output:
+
+```text
+/private/tmp/ascend-perf-hillclimb-15119c8d-runs/feature-rich-calamine-boundary.json
+/private/tmp/ascend-perf-hillclimb-15119c8d-runs/feature-rich-calamine-boundary-scoreboard.json
+```
+
+All rows below use 5 measured samples after 1 warmup.
+
+| Competitor | Status | Representative row | Median ms | P95 ms | CV | Peak RSS | Semantic comparability |
+| --- | --- | --- | ---: | ---: | ---: | ---: | --- |
+| Ascend | ran/won only in its own lane | `ascend-readxlsx-values-rich-metadata-bytes` | 56.250 | 57.118 | 0.019 | 161.2 MiB | Rich-metadata assertions pass, but this preloaded-bytes lane is not the same timing lane as Calamine materialization. |
+| python-calamine | not comparable | `python-calamine` | 24.332 | 39.131 | 0.246 | 42.4 MiB | Runner completed but reported 0 comments, 0 hyperlinks, 0 data validations, 0 conditional formats, and 0 defined names; status `semantic-mismatch`. |
+| rust-calamine | not comparable | `rust-calamine` | 135.078 | 162.012 | 0.280 | 15.6 MiB | Runner completed but reported 0 comments, 0 hyperlinks, 0 data validations, 0 conditional formats, and 0 defined names; status `semantic-mismatch`. |
+
+Scoreboard result for the focused Calamine boundary run:
+
+- `leaderFailures: []`
+- `profileLeaderFailures: []`
+- `coverageFailures: []`
+- `coverageGaps: []`
+- The Calamine timing lane has no winner because both rows are
+  `semantic-mismatch`.
+
+Humble allowed wording:
+
+> Python Calamine and Rust Calamine completed the generated `feature-rich` read workflow, but their current benchmark runners did not expose the rich metadata required for the release claim. They are not comparable for rich-metadata feature-rich reads and are not counted as Ascend wins.
+
+Forbidden wording:
+
+- "Ascend beats Calamine on feature-rich rich-metadata reads."
+- "Calamine lost the feature-rich rich-metadata benchmark."
+- Any wording that counts value-only Calamine timings as rich-metadata evidence.
+
+Next action: kill Calamine-family rich-metadata speed comparisons unless a
+public Calamine API can expose the required metadata. Continue by assembling the
+current full-profile or merged `xlsx-read-sota` gate from accepted comparable
+evidence and explicit not-comparable boundaries.
+
 ## Cycle: Selected-Sheet Value Read
 
 Classification: defer. No production optimization is justified from this cycle.

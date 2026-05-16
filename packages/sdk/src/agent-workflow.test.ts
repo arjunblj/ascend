@@ -1025,6 +1025,46 @@ describe('agent workflow loss audit', () => {
 		})
 	})
 
+	test('commits public hidden-sheet topology through save and reopen audits', async () => {
+		const input = join(TEMP_DIR, 'poi-hidden-sheet.xlsx')
+		const output = join(TEMP_DIR, 'poi-hidden-sheet-out.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		const sourceBytes = new Uint8Array(readFileSync('fixtures/xlsx/poi/TwoSheetsOneHidden.xlsx'))
+		await Bun.write(input, sourceBytes)
+
+		const committed = await commitAgentPlan(
+			input,
+			[{ op: 'setCells', sheet: 'Sheet2', updates: [{ ref: 'A1', value: 'visible-edit' }] }],
+			{ output },
+		)
+
+		expect(committed.postWrite.auditsPassed).toBe(true)
+		expect(committed.postWrite.workbookTopology).toMatchObject({
+			sheets: 2,
+			visibleSheets: 1,
+			hiddenSheets: 1,
+			veryHiddenSheets: 0,
+			hiddenSheetNames: ['Sheet1'],
+			veryHiddenSheetNames: [],
+			workbookViews: 1,
+			activeTabs: [1],
+			firstSheets: [1],
+			verification: 'reopened-output',
+		})
+		expect(committed.postWrite.workbookTopology.sheetStates).toEqual([
+			{ sheetName: 'Sheet1', state: 'hidden' },
+			{ sheetName: 'Sheet2', state: 'visible' },
+		])
+		const compact = compactAgentCommitResult(committed)
+		expect(compact.postWrite.workbookTopology.hiddenSheetNames).toEqual(['Sheet1'])
+		const reopened = await AscendWorkbook.open(new Uint8Array(readFileSync(output)))
+		expect(reopened.getWorkbookModel().sheets.map((sheet) => [sheet.name, sheet.state])).toEqual([
+			['Sheet1', 'hidden'],
+			['Sheet2', 'visible'],
+		])
+		expect(Buffer.from(readFileSync(input)).equals(Buffer.from(sourceBytes))).toBe(true)
+	})
+
 	test('compact plan result preserves changed ranges when changed cells are capped', async () => {
 		const input = join(TEMP_DIR, 'compact-plan-ranges.xlsx')
 		mkdirSync(TEMP_DIR, { recursive: true })

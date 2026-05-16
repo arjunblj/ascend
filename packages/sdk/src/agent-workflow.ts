@@ -11,6 +11,7 @@ import {
 	type RangeRef,
 	type SheetDrawingObjectRef,
 	type SheetImageRef,
+	type SheetState,
 	type Workbook,
 } from '@ascend/core'
 import { normalizeFormulaInput, parseFormula } from '@ascend/formulas'
@@ -415,6 +416,7 @@ export interface CompactAgentPostWriteVerification {
 	readonly definedNames: PostWriteDefinedNameSummary
 	readonly externalReferences: PostWriteExternalReferenceSummary
 	readonly formulaState: PostWriteFormulaSummary
+	readonly workbookTopology: PostWriteWorkbookTopologySummary
 	readonly analytics: PostWriteAnalyticsSummary
 	readonly activeContent: PostWriteActiveContentSummary
 	readonly visuals: PostWriteVisualSummary
@@ -456,6 +458,7 @@ export interface AgentPostWriteVerification {
 	readonly definedNames: PostWriteDefinedNameSummary
 	readonly externalReferences: PostWriteExternalReferenceSummary
 	readonly formulaState: PostWriteFormulaSummary
+	readonly workbookTopology: PostWriteWorkbookTopologySummary
 	readonly analytics: PostWriteAnalyticsSummary
 	readonly activeContent: PostWriteActiveContentSummary
 	readonly visuals: PostWriteVisualSummary
@@ -542,6 +545,25 @@ export interface PostWriteFormulaSummary {
 	readonly calcSettings: CalcSettings
 	readonly warnings: readonly string[]
 	readonly verification: 'reopened-output'
+}
+
+export interface PostWriteWorkbookTopologySummary {
+	readonly sheets: number
+	readonly visibleSheets: number
+	readonly hiddenSheets: number
+	readonly veryHiddenSheets: number
+	readonly hiddenSheetNames: readonly string[]
+	readonly veryHiddenSheetNames: readonly string[]
+	readonly workbookViews: number
+	readonly activeTabs: readonly number[]
+	readonly firstSheets: readonly number[]
+	readonly sheetStates: readonly PostWriteSheetTopologyEntry[]
+	readonly verification: 'reopened-output'
+}
+
+export interface PostWriteSheetTopologyEntry {
+	readonly sheetName: string
+	readonly state: SheetState
 }
 
 export interface PostWriteAnalyticsSummary {
@@ -1824,6 +1846,7 @@ function compactPostWriteVerification(
 		definedNames: postWrite.definedNames,
 		externalReferences: postWrite.externalReferences,
 		formulaState: postWrite.formulaState,
+		workbookTopology: postWrite.workbookTopology,
 		analytics: postWrite.analytics,
 		activeContent: postWrite.activeContent,
 		visuals: postWrite.visuals,
@@ -2328,6 +2351,7 @@ async function verifyWrittenWorkbook(
 	const activeContent = postWriteActiveContentSummary(workbook)
 	const visuals = postWriteVisualSummary(workbook)
 	const security = postWriteSecuritySummary(workbook)
+	const workbookTopology = postWriteWorkbookTopologySummary(workbook)
 	const outputIsXlsx = reopened.value.inspect().sourceFormat === 'xlsx'
 	const outputGraph = outputIsXlsx
 		? await timedPostWriteStep(
@@ -2385,6 +2409,7 @@ async function verifyWrittenWorkbook(
 		definedNames,
 		externalReferences,
 		formulaState,
+		workbookTopology,
 		analytics,
 		activeContent,
 		visuals,
@@ -2534,6 +2559,36 @@ function postWriteFormulaSummary(
 		recalculationRequested,
 		calcSettings,
 		warnings,
+		verification: 'reopened-output',
+	}
+}
+
+function postWriteWorkbookTopologySummary(workbook: Workbook): PostWriteWorkbookTopologySummary {
+	const sheetStates = workbook.sheets.map((sheet) => ({
+		sheetName: sheet.name,
+		state: sheet.state,
+	}))
+	const hiddenSheetNames = sheetStates
+		.filter((sheet) => sheet.state === 'hidden')
+		.map((sheet) => sheet.sheetName)
+	const veryHiddenSheetNames = sheetStates
+		.filter((sheet) => sheet.state === 'veryHidden')
+		.map((sheet) => sheet.sheetName)
+	return {
+		sheets: sheetStates.length,
+		visibleSheets: sheetStates.filter((sheet) => sheet.state === 'visible').length,
+		hiddenSheets: hiddenSheetNames.length,
+		veryHiddenSheets: veryHiddenSheetNames.length,
+		hiddenSheetNames,
+		veryHiddenSheetNames,
+		workbookViews: workbook.workbookViews.length,
+		activeTabs: workbook.workbookViews.flatMap((view) =>
+			view.activeTab === undefined ? [] : [view.activeTab],
+		),
+		firstSheets: workbook.workbookViews.flatMap((view) =>
+			view.firstSheet === undefined ? [] : [view.firstSheet],
+		),
+		sheetStates,
 		verification: 'reopened-output',
 	}
 }

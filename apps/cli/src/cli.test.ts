@@ -1506,6 +1506,32 @@ describe('ascend cli', () => {
 		expect(parsed.data.sheets[0].name).toBe('Sheet1')
 	})
 
+	test('inspect --json reports missing sheets with structured retry guidance', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 2 }] }])
+		await wb.save(`${import.meta.dir}/${TEST_FILE}`)
+
+		const result = await run('inspect', TEST_FILE, 'Missing', '--json')
+		expect(result.exitCode).toBe(1)
+		const parsed = JSON.parse(result.stdout)
+		expect(parsed).toMatchObject({
+			ok: false,
+			error: {
+				code: 'SHEET_NOT_FOUND',
+				message: 'Sheet "Missing" not found',
+				retryable: true,
+				retryStrategy: 'modified',
+				details: {
+					command: 'inspect',
+					sheet: 'Missing',
+					availableSheets: ['Sheet1'],
+					workflow: ['open-plan', 'inspect', 'plan'],
+				},
+			},
+		})
+		expect(parsed.error.suggestedFix).toContain('Sheet1')
+	})
+
 	test('inspect --detail package-graph --json returns package graph identity', async () => {
 		const { stdout, exitCode } = await run(
 			'inspect',

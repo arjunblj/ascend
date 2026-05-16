@@ -1,5 +1,5 @@
 import { ascendError } from '@ascend/schema'
-import type { WorkbookDocument } from '@ascend/sdk'
+import { WorkbookDocument } from '@ascend/sdk'
 import { cliError, jsonOut } from '../output/json.ts'
 import { bullet, formatCellValue, heading, table } from '../output/pretty.ts'
 import { openWorkbookDocumentWithProgress } from '../progress.ts'
@@ -182,7 +182,7 @@ export async function inspectCommand(args: string[], flags: Map<string, string>)
 	}
 
 	if (detail && sheetArg) {
-		return printSheetDetail(wb, sheetArg, detail, flags.has('json'), flags)
+		return printSheetDetail(file, wb, sheetArg, detail, flags.has('json'), flags)
 	}
 
 	if (detail) {
@@ -196,7 +196,10 @@ export async function inspectCommand(args: string[], flags: Map<string, string>)
 	if (sheetArg) {
 		const sheet = wb.inspectSheet(sheetArg)
 		if (!sheet) {
-			cliError(`Sheet "${sheetArg}" not found`, flags)
+			cliError(
+				inspectSheetNotFoundError(sheetArg, await loadAvailableSheetsForInspect(file, wb.sheets)),
+				flags,
+			)
 			return 1
 		}
 		if (flags.has('json')) {
@@ -424,16 +427,59 @@ function invalidInspectArgumentError(
 	})
 }
 
-function printSheetDetail(
+async function loadAvailableSheetsForInspect(
+	file: string,
+	fallbackSheets: readonly string[],
+): Promise<readonly string[]> {
+	if (fallbackSheets.length > 0) return fallbackSheets
+	try {
+		const workbook = await WorkbookDocument.open(file, { mode: 'metadata-only' })
+		return workbook.sheets
+	} catch {
+		return fallbackSheets
+	}
+}
+
+function inspectSheetNotFoundError(
+	sheetName: string,
+	availableSheets: readonly string[],
+	detail?: string,
+) {
+	return ascendError('SHEET_NOT_FOUND', `Sheet "${sheetName}" not found`, {
+		retryable: true,
+		retryStrategy: availableSheets.length > 0 ? 'modified' : 'none',
+		details: {
+			command: 'inspect',
+			sheet: sheetName,
+			availableSheets,
+			...(detail ? { detail } : {}),
+			workflow: ['open-plan', 'inspect', 'plan'],
+		},
+		suggestedFix:
+			availableSheets.length > 0
+				? `Retry with one of the available sheets: ${availableSheets.join(', ')}.`
+				: 'Run ascend inspect <file> --json to confirm workbook sheets before retrying sheet inspection.',
+	})
+}
+
+async function printSheetDetail(
+	file: string,
 	wb: WorkbookDocument,
 	sheetName: string,
 	detail: string,
 	json: boolean,
 	flags: Map<string, string>,
-): number {
+): Promise<number> {
 	const handle = wb.sheet(sheetName)
 	if (!handle) {
-		cliError(`Sheet "${sheetName}" not found`, flags)
+		cliError(
+			inspectSheetNotFoundError(
+				sheetName,
+				await loadAvailableSheetsForInspect(file, wb.sheets),
+				detail,
+			),
+			flags,
+		)
 		return 1
 	}
 	switch (detail) {

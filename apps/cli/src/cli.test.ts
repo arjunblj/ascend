@@ -660,6 +660,46 @@ describe('ascend cli', () => {
 		)
 	})
 
+	test('plan --json returns structured missing workflow input guidance', async () => {
+		const result = await run('plan', TEST_FILE, '--json')
+		expect(result.exitCode).toBe(1)
+		const parsed = JSON.parse(result.stdout)
+		expect(parsed.ok).toBe(false)
+		expect(parsed.error).toMatchObject({
+			code: 'INVALID_ARGUMENT',
+			message: 'Missing required plan input',
+			retryable: true,
+			retryStrategy: 'modified',
+			details: {
+				command: 'plan',
+				required: ['file', 'ops'],
+				missing: ['ops'],
+				workflow: ['inspect', 'plan', 'commit', 'reopen', 'verify'],
+			},
+		})
+		expect(parsed.error.suggestedFix).toContain('ascend plan <file> --ops <file.json>')
+	})
+
+	test('commit --json returns structured missing workflow input guidance', async () => {
+		const result = await run('commit', '--json')
+		expect(result.exitCode).toBe(1)
+		const parsed = JSON.parse(result.stdout)
+		expect(parsed.ok).toBe(false)
+		expect(parsed.error).toMatchObject({
+			code: 'INVALID_ARGUMENT',
+			message: 'Missing required commit input',
+			retryable: true,
+			retryStrategy: 'modified',
+			details: {
+				command: 'commit',
+				required: ['file', 'ops'],
+				missing: ['file', 'ops'],
+				workflow: ['inspect', 'plan', 'commit', 'reopen', 'verify'],
+			},
+		})
+		expect(parsed.error.suggestedFix).toContain('ascend commit <file> --ops <file.json>')
+	})
+
 	test('dump --json emits a replayable operation batch', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

@@ -30,7 +30,21 @@ export async function planCommand(args: string[], flags: Map<string, string>): P
 	const file = args[0]
 	const opsFile = flags.get('ops')
 	if (!file || !opsFile) {
-		cliError('Usage: ascend plan <file> --ops <file.json>', flags)
+		cliError(
+			ascendError('INVALID_ARGUMENT', 'Missing required plan input', {
+				retryable: true,
+				retryStrategy: 'modified',
+				details: {
+					command: 'plan',
+					required: ['file', 'ops'],
+					missing: [...(!file ? ['file'] : []), ...(!opsFile ? ['ops'] : [])],
+					workflow: ['inspect', 'plan', 'commit', 'reopen', 'verify'],
+				},
+				suggestedFix:
+					'Run ascend plan <file> --ops <file.json> --json after creating an operations JSON file.',
+			}),
+			flags,
+		)
 		return 1
 	}
 

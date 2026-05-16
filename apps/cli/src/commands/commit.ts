@@ -40,7 +40,21 @@ export async function commitCommand(args: string[], flags: Map<string, string>):
 	const file = args[0]
 	const opsFile = flags.get('ops')
 	if (!file || !opsFile) {
-		cliError('Usage: ascend commit <file> --ops <file.json> --output <out.xlsx>', flags)
+		cliError(
+			ascendError('INVALID_ARGUMENT', 'Missing required commit input', {
+				retryable: true,
+				retryStrategy: 'modified',
+				details: {
+					command: 'commit',
+					required: ['file', 'ops'],
+					missing: [...(!file ? ['file'] : []), ...(!opsFile ? ['ops'] : [])],
+					workflow: ['inspect', 'plan', 'commit', 'reopen', 'verify'],
+				},
+				suggestedFix:
+					'Run ascend commit <file> --ops <file.json> --output out.xlsx --expect-sha256 <inputSha256> --json.',
+			}),
+			flags,
+		)
 		return 1
 	}
 

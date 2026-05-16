@@ -147,6 +147,7 @@ interface CompetitiveCase {
 	readonly capabilities?: {
 		readonly valueOnlyRead?: boolean
 		readonly metadataOnlyRead?: boolean
+		readonly selectedSheetRead?: boolean
 		readonly writeFormulas?: boolean
 		readonly writeTables?: boolean
 		readonly writeRichMetadata?: boolean
@@ -2651,41 +2652,42 @@ async function loadCases(workloadName: WorkloadName): Promise<{
 	const externalReadRunnerSpecs = (await loadExternalReadRunnerSpecs()).filter((spec) =>
 		supportsGeneratedRunnerWorkload(spec, workloadName),
 	)
-	if (workloadName !== 'selected-sheet') {
-		for (const spec of externalReadRunnerSpecs) {
-			if (spec.capabilities?.metadataOnlyRead === true && workloadName !== 'metadata-only') {
-				continue
-			}
-			if (workloadName === 'metadata-only' && spec.capabilities?.metadataOnlyRead !== true) {
-				continue
-			}
-			cases.push({
-				name: `${spec.name}:xlsx-read-${suffix}`,
-				library: spec.name,
-				category: 'read',
-				executionScope: 'external-process',
-				runnerProvenance: {
-					...(spec.adapterVersion ? { adapterVersion: spec.adapterVersion } : {}),
-					...(spec.libraryVersion ? { libraryVersion: spec.libraryVersion } : {}),
-					...(spec.runtime ? { runtime: spec.runtime } : {}),
-				},
-				...(spec.timingModel ? { timingModel: spec.timingModel } : {}),
-				...(spec.validationModel ? { validationModel: spec.validationModel } : {}),
-				...(spec.memoryModel ? { memoryModel: spec.memoryModel } : {}),
-				...(readOperationProfile ? { operationProfile: readOperationProfile } : {}),
-				...(spec.capabilities ? { capabilities: spec.capabilities } : {}),
-				async run(input) {
-					return {
-						assertions: await runExternalReadRunner(spec, input, 1, 0).then(
-							(result) => result.assertions,
-						),
-					}
-				},
-				async runBatched(input, repeat, warmup) {
-					return runExternalReadRunner(spec, input, repeat, warmup)
-				},
-			})
+	for (const spec of externalReadRunnerSpecs) {
+		if (spec.capabilities?.metadataOnlyRead === true && workloadName !== 'metadata-only') {
+			continue
 		}
+		if (workloadName === 'metadata-only' && spec.capabilities?.metadataOnlyRead !== true) {
+			continue
+		}
+		if (workloadName === 'selected-sheet' && spec.capabilities?.selectedSheetRead !== true) {
+			continue
+		}
+		cases.push({
+			name: `${spec.name}:xlsx-read-${suffix}`,
+			library: spec.name,
+			category: 'read',
+			executionScope: 'external-process',
+			runnerProvenance: {
+				...(spec.adapterVersion ? { adapterVersion: spec.adapterVersion } : {}),
+				...(spec.libraryVersion ? { libraryVersion: spec.libraryVersion } : {}),
+				...(spec.runtime ? { runtime: spec.runtime } : {}),
+			},
+			...(spec.timingModel ? { timingModel: spec.timingModel } : {}),
+			...(spec.validationModel ? { validationModel: spec.validationModel } : {}),
+			...(spec.memoryModel ? { memoryModel: spec.memoryModel } : {}),
+			...(readOperationProfile ? { operationProfile: readOperationProfile } : {}),
+			...(spec.capabilities ? { capabilities: spec.capabilities } : {}),
+			async run(input) {
+				return {
+					assertions: await runExternalReadRunner(spec, input, 1, 0).then(
+						(result) => result.assertions,
+					),
+				}
+			},
+			async runBatched(input, repeat, warmup) {
+				return runExternalReadRunner(spec, input, repeat, warmup)
+			},
+		})
 	}
 
 	if (includeWriteCases) {
@@ -2772,6 +2774,10 @@ async function runExternalReadRunner(
 	const validationMode = readValidationModeFlag()
 	const validationArgs =
 		spec.capabilities?.finalValidation === true ? ['--validation-mode', validationMode] : []
+	const selectedSheetArgs =
+		input.workloadName === 'selected-sheet' && spec.capabilities?.selectedSheetRead === true
+			? ['--selected-sheet', 'Data']
+			: []
 	const proc = Bun.spawn(
 		[
 			...resolveExternalRunnerCommand(spec.command),
@@ -2784,6 +2790,7 @@ async function runExternalReadRunner(
 			'--warmup',
 			String(warmup),
 			...validationArgs,
+			...selectedSheetArgs,
 			'--json',
 		],
 		{

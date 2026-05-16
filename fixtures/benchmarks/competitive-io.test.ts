@@ -474,6 +474,64 @@ describe('competitive IO helpers', () => {
 		{ timeout: 30_000 },
 	)
 
+	test(
+		'openpyxl selected-sheet runner reports selected-sheet semantics',
+		async () => {
+			const proc = Bun.spawn(
+				[
+					'bun',
+					'run',
+					'fixtures/benchmarks/competitive-io.ts',
+					'--workload',
+					'selected-sheet',
+					'--category',
+					'read',
+					'--competitor',
+					'external',
+					'--libraries',
+					'openpyxl',
+					'--runner-manifest',
+					'fixtures/benchmarks/runners/ascend-python-readers.manifest.json',
+					'--rows',
+					'5',
+					'--cols',
+					'4',
+					'--repeat',
+					'1',
+					'--warmup',
+					'0',
+					'--json',
+				],
+				{ stdout: 'pipe', stderr: 'pipe' },
+			)
+			const [stdout, stderr, exitCode] = await Promise.all([
+				new Response(proc.stdout).text(),
+				new Response(proc.stderr).text(),
+				proc.exited,
+			])
+			expect(stderr).toBe('')
+			expect(exitCode).toBe(0)
+			const payload = JSON.parse(stdout) as {
+				readonly cases: readonly [
+					{
+						readonly dimensions: { readonly correctnessStatus: string }
+						readonly assertions: Record<string, unknown>
+					},
+				]
+				readonly metadata: { readonly skipped: readonly { readonly library: string }[] }
+			}
+			const result = payload.cases[0]
+			expect(result.dimensions.correctnessStatus).toBe('pass')
+			expect(result.assertions.selectedSheetRead).toBe(true)
+			expect(result.assertions.sourceSheetCount).toBe(3)
+			expect(result.assertions.loadedSheetCount).toBe(1)
+			expect(result.assertions.loadedSheetNames).toBe('Data')
+			expect(result.assertions.hasAllSheets).toBe(false)
+			expect(payload.metadata.skipped.some((entry) => entry.library === 'openpyxl')).toBe(false)
+		},
+		{ timeout: 30_000 },
+	)
+
 	test('metadata-only workload checks workbook metadata without hydrating cells', async () => {
 		const input = await buildWorkloadDataSet('metadata-only', 5, 4, 'raw-ooxml')
 		const read = readXlsx(input.xlsxBytes, { mode: 'metadata-only' })

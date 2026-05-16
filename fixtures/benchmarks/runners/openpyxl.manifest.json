@@ -12,6 +12,7 @@
 		"installHint": "python3 -m pip install openpyxl psutil",
 		"capabilities": {
 			"internalTiming": true,
+			"selectedSheetRead": true,
 			"xlsmRoundtrip": true
 		}
 	},

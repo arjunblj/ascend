@@ -925,6 +925,7 @@ describe('evaluateAssertions', () => {
 				valueOnlyRead: true,
 			})
 			expect(openpyxl?.categories).toEqual(['read', 'roundtrip', 'edit-roundtrip'])
+			expect(openpyxl?.capabilities?.selectedSheetRead).toBe(true)
 			expect(openpyxlMetadataOnly?.capabilities).toEqual({
 				xlsmRoundtrip: false,
 				internalTiming: true,

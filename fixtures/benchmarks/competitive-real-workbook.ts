@@ -1015,6 +1015,7 @@ interface CompetitiveCase {
 		readonly internalTiming?: boolean
 		readonly valueOnlyRead?: boolean
 		readonly metadataOnlyRead?: boolean
+		readonly selectedSheetRead?: boolean
 		readonly writeFormulas?: boolean
 		readonly writeTables?: boolean
 		readonly writeRichMetadata?: boolean
@@ -1065,6 +1066,7 @@ export interface ExternalRunnerSpec {
 		readonly internalTiming?: boolean
 		readonly valueOnlyRead?: boolean
 		readonly metadataOnlyRead?: boolean
+		readonly selectedSheetRead?: boolean
 		readonly writeFormulas?: boolean
 		readonly writeTables?: boolean
 		readonly writeRichMetadata?: boolean
@@ -2704,6 +2706,7 @@ function normalizeRunnerCapabilities(
 		'internalTiming',
 		'valueOnlyRead',
 		'metadataOnlyRead',
+		'selectedSheetRead',
 		'writeFormulas',
 		'writeTables',
 		'writeRichMetadata',

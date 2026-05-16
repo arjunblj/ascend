@@ -299,6 +299,56 @@ def shape_assertions(workbook: Any) -> dict[str, str | int | bool | None]:
         workbook.close()
 
 
+def selected_sheet_assertions(
+    workbook: Any, selected_sheet: str
+) -> dict[str, str | int | bool | None]:
+    try:
+        source_sheet_names = list(workbook.sheetnames)
+        sheet = workbook[selected_sheet]
+        physical_cells = list(sheet._cells.values())
+        semantic_cells = [
+            cell for cell in physical_cells if cell.value is not None or cell.data_type == "f"
+        ]
+        semantic_cell_refs: list[str] = []
+        semantic_cell_values: list[str] = []
+        formula_texts: list[str] = []
+        formula_count = 0
+        for cell in semantic_cells:
+            ref = cell_ref(sheet.title, cell)
+            semantic_cell_refs.append(ref)
+            semantic_cell_values.append(f"{ref}\t{scalar_payload(cell)}")
+            formula = formula_text(cell.value)
+            if formula is not None:
+                formula_count += 1
+                formula_texts.append(f"{ref}={formula}")
+        semantic_used_range = used_range(sheet.title, semantic_cells)
+        physical_used_range = used_range(sheet.title, physical_cells)
+        return {
+            "runnerVersion": openpyxl.__version__,
+            "selectedSheetRead": True,
+            "sourceSheetCount": len(source_sheet_names),
+            "loadedSheetCount": 1,
+            "loadedSheetNames": selected_sheet,
+            "hasAllSheets": False,
+            "cellsHydrated": True,
+            "sheetCount": 1,
+            "sheetNamesHash": hash_lines([f"0:{selected_sheet}"]),
+            "cellCount": len(semantic_cells),
+            "physicalCellCount": len(physical_cells),
+            "formulaCount": formula_count,
+            "usedRangeCount": 1,
+            "firstUsedRange": semantic_used_range,
+            "firstPhysicalUsedRange": physical_used_range,
+            "usedRangesHash": hash_lines([semantic_used_range]),
+            "physicalUsedRangesHash": hash_lines([physical_used_range]),
+            "semanticCellRefsHash": hash_lines(semantic_cell_refs),
+            "semanticCellValuesHash": hash_lines(semantic_cell_values),
+            "formulaTextHash": hash_lines(formula_texts),
+        }
+    finally:
+        workbook.close()
+
+
 def roundtrip_operation(path: Path) -> bytes:
     workbook = load_workbook_for_read(path)
     try:
@@ -411,9 +461,15 @@ def run_operation(
     edit_sheet: str | None,
     edit_ref: str | None,
     edit_value: str | float | bool | None,
+    selected_sheet: str | None,
 ) -> Any:
     if operation == "read":
         workbook = load_workbook_for_read(path, read_only=read_only, data_only=data_only)
+        if selected_sheet is not None:
+            if read_only:
+                workbook.close()
+                raise ValueError("--selected-sheet is not supported with --read-only")
+            return selected_sheet_assertions(workbook, selected_sheet)
         if read_only:
             try:
                 return streaming_shape_data_from_workbook(workbook)
@@ -468,6 +524,7 @@ def main() -> None:
     parser.add_argument("--read-only", action="store_true")
     parser.add_argument("--data-only", action="store_true")
     parser.add_argument("--metadata-only", action="store_true")
+    parser.add_argument("--selected-sheet")
     parser.add_argument("--edit-sheet")
     parser.add_argument("--edit-ref")
     parser.add_argument("--edit-value")
@@ -479,6 +536,10 @@ def main() -> None:
         parser.error("--read-only and --data-only are only supported for read operations")
     if args.metadata_only and args.operation != "read":
         parser.error("--metadata-only is only supported for read operations")
+    if args.selected_sheet is not None and args.operation != "read":
+        parser.error("--selected-sheet is only supported for read operations")
+    if args.selected_sheet is not None and args.metadata_only:
+        parser.error("--selected-sheet cannot be combined with --metadata-only")
     if args.operation == "edit-roundtrip" and (
         args.edit_sheet is None or args.edit_ref is None or args.edit_value is None
     ):
@@ -499,6 +560,7 @@ def main() -> None:
                 args.edit_sheet,
                 args.edit_ref,
                 edit_value,
+                args.selected_sheet,
             )
             assertions_for_result(
                 path,
@@ -532,6 +594,7 @@ def main() -> None:
             args.edit_sheet,
             args.edit_ref,
             edit_value,
+            args.selected_sheet,
         )
         duration_ms = (time.perf_counter() - start) * 1000
         assertions = assertions_for_result(

@@ -5863,7 +5863,9 @@ function workbookProtectionValueIssues(
 	}
 	for (const field of [
 		'workbookPassword',
+		'workbookPasswordPlaintext',
 		'revisionsPassword',
+		'revisionsPasswordPlaintext',
 		'workbookAlgorithmName',
 		'workbookHashValue',
 		'workbookSaltValue',
@@ -5873,6 +5875,24 @@ function workbookProtectionValueIssues(
 	] as const) {
 		const value = protection[field]
 		if (value !== undefined && typeof value !== 'string') {
+			issues.push(workbookMetadataUnsupportedValueIssue(op.op, field, ['workbook:protection']))
+		}
+	}
+	for (const [hashField, plaintextField] of [
+		['workbookPassword', 'workbookPasswordPlaintext'],
+		['revisionsPassword', 'revisionsPasswordPlaintext'],
+	] as const) {
+		if (protection[hashField] !== undefined && protection[plaintextField] !== undefined) {
+			issues.push(
+				workbookMetadataUnsupportedValueIssue(op.op, `${hashField}+${plaintextField}`, [
+					'workbook:protection',
+				]),
+			)
+		}
+	}
+	for (const field of ['workbookPassword', 'revisionsPassword'] as const) {
+		const value = protection[field]
+		if (typeof value === 'string' && !/^[0-9A-Fa-f]{1,4}$/.test(value)) {
 			issues.push(workbookMetadataUnsupportedValueIssue(op.op, field, ['workbook:protection']))
 		}
 	}

@@ -685,7 +685,16 @@ export function handleSetWorkbookProtection(
 ): Result<PatchResult> {
 	const validation = validateWorkbookProtectionInput(op.protection)
 	if (validation) return err(validation)
-	workbook.workbookProtection = { ...op.protection }
+	const { workbookPasswordPlaintext, revisionsPasswordPlaintext, ...protection } = op.protection
+	workbook.workbookProtection = {
+		...protection,
+		...(workbookPasswordPlaintext !== undefined
+			? { workbookPassword: hashLegacyProtectionPassword(workbookPasswordPlaintext) }
+			: {}),
+		...(revisionsPasswordPlaintext !== undefined
+			? { revisionsPassword: hashLegacyProtectionPassword(revisionsPasswordPlaintext) }
+			: {}),
+	}
 	return ok(patch([], []))
 }
 
@@ -707,7 +716,9 @@ function validateWorkbookProtectionInput(
 	}
 	for (const field of [
 		'workbookPassword',
+		'workbookPasswordPlaintext',
 		'revisionsPassword',
+		'revisionsPasswordPlaintext',
 		'workbookAlgorithmName',
 		'workbookHashValue',
 		'workbookSaltValue',
@@ -719,6 +730,29 @@ function validateWorkbookProtectionInput(
 		if (value !== undefined && typeof value !== 'string') {
 			return ascendError('VALIDATION_ERROR', `workbook protection ${field} must be a string`, {
 				suggestedFix: `Use a string value for ${field}.`,
+			})
+		}
+	}
+	for (const [hashField, plaintextField] of [
+		['workbookPassword', 'workbookPasswordPlaintext'],
+		['revisionsPassword', 'revisionsPasswordPlaintext'],
+	] as const) {
+		if (protection[hashField] !== undefined && protection[plaintextField] !== undefined) {
+			return ascendError(
+				'VALIDATION_ERROR',
+				`workbook protection cannot mix ${hashField} and ${plaintextField}`,
+				{
+					suggestedFix:
+						'Use plaintext fields to hash caller-provided passwords, or legacy hash fields to preserve existing workbook protection metadata.',
+				},
+			)
+		}
+	}
+	for (const field of ['workbookPassword', 'revisionsPassword'] as const) {
+		const value = protection[field]
+		if (value !== undefined && !/^[0-9A-Fa-f]{1,4}$/.test(value)) {
+			return ascendError('VALIDATION_ERROR', `workbook protection ${field} must be a legacy hash`, {
+				suggestedFix: `Use a 1-4 digit hexadecimal legacy hash, or use ${field}Plaintext to hash a password.`,
 			})
 		}
 	}

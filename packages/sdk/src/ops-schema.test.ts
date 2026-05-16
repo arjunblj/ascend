@@ -144,6 +144,43 @@ describe('operation schema agent DX', () => {
 		}
 	})
 
+	test('setWorkbookProtection separates plaintext passwords from preserved legacy hashes', () => {
+		const schema = getOperationsSchema().find((entry) => entry.op === 'setWorkbookProtection')
+		expect(schema?.schema.properties.protection?.description).toContain('workbookPasswordPlaintext')
+		expect(schema?.schema.properties.protection?.description).toContain('not stored')
+
+		const parsed = parseOperations([
+			{
+				op: 'setWorkbookProtection',
+				protection: {
+					lockStructure: true,
+					workbookPasswordPlaintext: 'review',
+					revisionsPasswordPlaintext: 'audit',
+				},
+			},
+			{
+				op: 'setWorkbookProtection',
+				protection: { workbookPassword: '83AF', revisionsPassword: 'CBEB' },
+			},
+		])
+		expect(parsed.ok).toBe(true)
+
+		const mixed = parseOperations([
+			{
+				op: 'setWorkbookProtection',
+				protection: { workbookPassword: '83AF', workbookPasswordPlaintext: 'review' },
+			},
+		])
+		expect(mixed.ok).toBe(false)
+		if (!mixed.ok) expect(mixed.issues[0]).toContain('cannot mix')
+
+		const nonHash = parseOperations([
+			{ op: 'setWorkbookProtection', protection: { revisionsPassword: 'review' } },
+		])
+		expect(nonHash.ok).toBe(false)
+		if (!nonHash.ok) expect(nonHash.issues[0]).toContain('legacy hash')
+	})
+
 	test('copyRange and moveRange expose optional cross-sheet destination', () => {
 		const copySchema = getOperationsSchema().find((entry) => entry.op === 'copyRange')
 		const moveSchema = getOperationsSchema().find((entry) => entry.op === 'moveRange')

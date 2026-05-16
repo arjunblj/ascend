@@ -195,7 +195,7 @@ const FIELD_SCHEMAS: Record<
 	protection: {
 		type: 'object',
 		description:
-			'Workbook protection: lockStructure?, lockWindows?, lockRevision?, workbookPassword?, revisionsPassword?, plus optional Excel hash fields (workbookAlgorithmName, workbookHashValue, workbookSaltValue, workbookSpinCount, revisionsAlgorithmName, revisionsHashValue, revisionsSaltValue, revisionsSpinCount).',
+			'Workbook protection: lockStructure?, lockWindows?, lockRevision?, workbookPasswordPlaintext?, revisionsPasswordPlaintext?, workbookPassword?, revisionsPassword?, plus optional Excel strong-hash fields (workbookAlgorithmName, workbookHashValue, workbookSaltValue, workbookSpinCount, revisionsAlgorithmName, revisionsHashValue, revisionsSaltValue, revisionsSpinCount). Plaintext fields are hashed to Excel legacy verifiers and are not stored.',
 	},
 	properties: {
 		type: 'object',
@@ -932,6 +932,8 @@ function validateOperationSemantics(
 			return validateSetTimelineRange(record, path)
 		case 'setSheetProtection':
 			return validateSetSheetProtection(record, path)
+		case 'setWorkbookProtection':
+			return validateSetWorkbookProtection(record, path)
 		default:
 			return []
 	}
@@ -957,6 +959,30 @@ function validateSetSheetProtection(
 		]
 	}
 	return []
+}
+
+function validateSetWorkbookProtection(
+	record: Record<string, unknown>,
+	path: string,
+): readonly string[] {
+	const protection = record.protection
+	if (!isPlainObject(protection)) return []
+	const issues: string[] = []
+	for (const [hashField, plaintextField] of [
+		['workbookPassword', 'workbookPasswordPlaintext'],
+		['revisionsPassword', 'revisionsPasswordPlaintext'],
+	] as const) {
+		if (hashField in protection && plaintextField in protection) {
+			issues.push(`${path}.protection cannot mix ${hashField} and ${plaintextField}`)
+		}
+		const hash = protection[hashField]
+		if (hash !== undefined && typeof hash === 'string' && !/^[0-9A-Fa-f]{1,4}$/.test(hash)) {
+			issues.push(
+				`${path}.protection.${hashField} must be a 1-4 digit Excel legacy hash; use ${plaintextField} for caller-provided passwords`,
+			)
+		}
+	}
+	return issues
 }
 
 function validateSetPivotCache(record: Record<string, unknown>, path: string): readonly string[] {
@@ -1783,7 +1809,7 @@ function operationExample(op: string): Record<string, unknown> {
 				themeColors: [{ slot: 'accent1', rgb: '0F6CBD' }],
 			}
 		case 'setWorkbookProtection':
-			return { op, protection: { lockStructure: true } }
+			return { op, protection: { lockStructure: true, workbookPasswordPlaintext: 'review' } }
 		case 'deleteTable':
 			return { op, table: 'Sales' }
 		case 'renameTable':

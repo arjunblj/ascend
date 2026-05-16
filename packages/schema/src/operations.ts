@@ -683,7 +683,9 @@ export interface WorkbookProtectionInput {
 	readonly lockStructure?: boolean
 	readonly lockWindows?: boolean
 	readonly lockRevision?: boolean
+	readonly workbookPasswordPlaintext?: string
 	readonly workbookPassword?: string
+	readonly revisionsPasswordPlaintext?: string
 	readonly revisionsPassword?: string
 	readonly workbookAlgorithmName?: string
 	readonly workbookHashValue?: string

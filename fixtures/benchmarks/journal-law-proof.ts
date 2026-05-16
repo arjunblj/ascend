@@ -562,6 +562,7 @@ function packageStateExactCases(): JournalLawCase[] {
 						op: 'setWorkbookProtection',
 						protection: {
 							lockStructure: true,
+							workbookPasswordPlaintext: 'before',
 							workbookAlgorithmName: 'SHA-512',
 							workbookSpinCount: 100000,
 						},
@@ -586,7 +587,7 @@ function packageStateExactCases(): JournalLawCase[] {
 				},
 				{
 					op: 'setWorkbookProtection',
-					protection: { lockWindows: true, workbookPassword: 'ABCD' },
+					protection: { lockWindows: true, workbookPasswordPlaintext: 'after' },
 				},
 			],
 		},

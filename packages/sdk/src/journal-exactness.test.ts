@@ -1534,6 +1534,19 @@ describe('mutation journal exactness model', () => {
 				op: 'setWorkbookProtection',
 				protection: { workbookPassword: 123 },
 			} as unknown as Operation,
+			{ op: 'setWorkbookProtection', protection: { workbookPassword: 'secret' } },
+			{
+				op: 'setWorkbookProtection',
+				protection: { workbookPassword: 'ABCD', workbookPasswordPlaintext: 'secret' },
+			},
+			{
+				op: 'setWorkbookProtection',
+				protection: { revisionsPassword: 'DCBA', revisionsPasswordPlaintext: 'secret' },
+			},
+			{
+				op: 'setWorkbookProtection',
+				protection: { workbookPasswordPlaintext: 123 },
+			} as unknown as Operation,
 			{ op: 'setWorkbookProtection', protection: { workbookSpinCount: -1 } },
 			{ op: 'setWorkbookProtection', protection: { revisionsSpinCount: 1.5 } },
 			{ op: 'setTheme', themeName: '  ' },

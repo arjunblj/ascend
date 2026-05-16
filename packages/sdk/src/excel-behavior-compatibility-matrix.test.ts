@@ -62,6 +62,7 @@ describe('Excel behavior compatibility matrix', () => {
 		expect(markdown).toContain('1 public unknown-path-family fixture')
 		expect(markdown).toContain('no public signed-workbook candidate found')
 		expect(markdown).toContain('does not echo the password in returned plan JSON')
+		expect(markdown).toContain('sheet/workbook-protection plaintext operation input')
 		expect(markdown).toContain('without storing the plaintext')
 
 		for (const row of rows) {

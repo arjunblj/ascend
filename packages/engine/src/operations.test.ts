@@ -10258,6 +10258,8 @@ describe('applyOperation', () => {
 			op: 'setWorkbookProtection',
 			protection: {
 				lockStructure: true,
+				workbookPasswordPlaintext: 'password',
+				revisionsPasswordPlaintext: 'test',
 				workbookAlgorithmName: 'SHA-512',
 				workbookSpinCount: 100000,
 			},
@@ -10266,6 +10268,8 @@ describe('applyOperation', () => {
 		expect(result.value.recalcRequired).toBe(false)
 		expect(wb.workbookProtection).toEqual({
 			lockStructure: true,
+			workbookPassword: '83AF',
+			revisionsPassword: 'CBEB',
 			workbookAlgorithmName: 'SHA-512',
 			workbookSpinCount: 100000,
 		})
@@ -10277,6 +10281,19 @@ describe('applyOperation', () => {
 			{ op: 'setWorkbookProtection', protection: [] as never },
 			{ op: 'setWorkbookProtection', protection: { lockStructure: 'yes' } as never },
 			{ op: 'setWorkbookProtection', protection: { workbookPassword: 123 } as never },
+			{ op: 'setWorkbookProtection', protection: { workbookPassword: 'secret' } },
+			{
+				op: 'setWorkbookProtection',
+				protection: { workbookPassword: 'ABCD', workbookPasswordPlaintext: 'secret' },
+			},
+			{
+				op: 'setWorkbookProtection',
+				protection: { revisionsPassword: 'DCBA', revisionsPasswordPlaintext: 'secret' },
+			},
+			{
+				op: 'setWorkbookProtection',
+				protection: { workbookPasswordPlaintext: 123 } as never,
+			},
 			{ op: 'setWorkbookProtection', protection: { workbookSpinCount: -1 } },
 			{ op: 'setWorkbookProtection', protection: { revisionsSpinCount: 1.5 } },
 		]

@@ -20,6 +20,7 @@ Arguments:
 
 Flags:
   --ops <file.json>   Operations JSON file
+  --password <value>  Password for encrypted XLSX/XLSM workbooks
   --package-actions   Include package action proof in JSON output
   --progress jsonl    Emit machine-readable progress events to stderr
   --json              Output as JSON
@@ -36,7 +37,11 @@ export async function planCommand(args: string[], flags: Map<string, string>): P
 	const ops = await readOpsFile(opsFile, flags)
 	if (!ops) return 1
 	const onProgress = createAgentProgressReporter(flags)
-	const result = await createAgentPlan(file, ops, onProgress ? { onProgress } : {})
+	const password = flags.get('password')
+	const result = await createAgentPlan(file, ops, {
+		...(password !== undefined ? { password } : {}),
+		...(onProgress ? { onProgress } : {}),
+	})
 	if (flags.has('json')) {
 		if (result.preview.errors.length > 0) {
 			const first = result.preview.errors[0]

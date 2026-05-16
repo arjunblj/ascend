@@ -154,6 +154,8 @@ afterAll(() => {
 		'exported.json',
 		'plan-ops.json',
 		'plan-risk-ops.json',
+		'encrypted-plan-ops.json',
+		'encrypted-plan-output.xlsx',
 		'invalid-agent-ops.json',
 		'commit-ops.json',
 		'commit-output.xlsx',
@@ -1104,6 +1106,58 @@ describe('ascend cli', () => {
 		expect(parsed.data.recommendedLoadOptions).toEqual({ mode: 'full' })
 		expect(parsed.data.partCount).toBeGreaterThan(0)
 		expect(stdout).not.toContain('123')
+	})
+
+	test('plan --password previews encrypted workbooks without echoing the password', async () => {
+		await Bun.write(
+			`${import.meta.dir}/encrypted-plan-ops.json`,
+			JSON.stringify([
+				{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'planned' }] },
+			]),
+		)
+
+		const missingPassword = await run(
+			'plan',
+			ENCRYPTED_OPEN_PLAN_FIXTURE,
+			'--ops',
+			'encrypted-plan-ops.json',
+			'--json',
+		)
+		expect(missingPassword.exitCode).toBe(1)
+		expect(JSON.parse(missingPassword.stdout).error.message).toContain('requires a password')
+
+		const { stdout, exitCode } = await run(
+			'plan',
+			ENCRYPTED_OPEN_PLAN_FIXTURE,
+			'--ops',
+			'encrypted-plan-ops.json',
+			'--password',
+			'123',
+			'--json',
+		)
+
+		expect(exitCode).toBe(0)
+		const parsed = JSON.parse(stdout)
+		expect(parsed.ok).toBe(true)
+		expect(parsed.data.preview.wouldSucceed).toBe(true)
+		expect(stdout).not.toContain('"123"')
+
+		const commit = await run(
+			'commit',
+			ENCRYPTED_OPEN_PLAN_FIXTURE,
+			'--ops',
+			'encrypted-plan-ops.json',
+			'--output',
+			'encrypted-plan-output.xlsx',
+			'--password',
+			'123',
+			'--json',
+		)
+		expect(commit.exitCode).toBe(1)
+		const committed = JSON.parse(commit.stdout)
+		expect(committed.error.message).toContain('Cannot export an edited encrypted workbook')
+		expect(commit.stdout).not.toContain('"123"')
+		expect(existsSync(`${import.meta.dir}/encrypted-plan-output.xlsx`)).toBe(false)
 	})
 
 	test.skipIf(!HAS_PIVOT_CORPUS_FILE)(

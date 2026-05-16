@@ -124,7 +124,7 @@ const COMMANDS: Record<string, Command> = {
 	plan: {
 		run: planCommand,
 		usage: planUsage,
-		allowedFlags: ['ops', 'package-actions', 'progress', 'json'],
+		allowedFlags: ['ops', 'password', 'package-actions', 'progress', 'json'],
 	},
 	commit: {
 		run: commitCommand,
@@ -134,6 +134,7 @@ const COMMANDS: Record<string, Command> = {
 			'output',
 			'in-place',
 			'backup',
+			'password',
 			'expect-sha256',
 			'allow-loss',
 			'approval',

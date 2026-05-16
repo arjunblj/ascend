@@ -79,8 +79,8 @@ Use these workbook tools for normal work:
 - `ascend.visuals({ file })`
 - `ascend.pivots({ file, pivotTable?, partPath?, mode? })`
 - `ascend.agent_view({ file, sheet?, range, rowChunkSize?, sampleRowLimit?, sampleValueLimit?, maxApproxTokens? })`
-- `ascend.plan({ file, ops? | mutations?, compact?, prepare?, maxChangedCells?, includePackageActions? })`
-- `ascend.commit({ planHandle?, file?, ops? | mutations?, output?, inPlace?, backup?, expectSha256?, allowLoss?, approvals?, compact?, maxAffectedCells?, includePackageActions? })`
+- `ascend.plan({ file, ops? | mutations?, compact?, prepare?, password?, maxChangedCells?, includePackageActions? })`
+- `ascend.commit({ planHandle?, file?, ops? | mutations?, output?, inPlace?, backup?, expectSha256?, password?, allowLoss?, approvals?, compact?, maxAffectedCells?, includePackageActions? })`
 - `ascend.repair_plan({ file })`
 - `ascend.check({ file })`, `ascend.lint({ file })`, `ascend.trace({ file, cell })`, `ascend.diff({ fileA, fileB })`, `ascend.export({ file, output, format? })`
 
@@ -94,6 +94,7 @@ Use these workbook tools for normal work:
 - Ascend preserves macros, ActiveX/OLE, signatures, Custom UI, embedded packages, DDE formulas, external links, and data connections; it does not execute active content or refresh external content.
 - Prefer non-destructive output paths over in-place edits.
 - Use `inputSha256` from plan as `expectSha256` during commit.
+- For encrypted XLSX/XLSM workbooks, pass `--password` to CLI `open-plan`/`plan`/`commit` or `password` to API/MCP `plan` and direct `commit`; passwords are omitted from plan and commit responses. Edited encrypted commits still fail closed unless/until re-encryption support exists.
 - API/MCP plans default to `prepare: true` and return `preparedPlan` metadata. Prefer `commit({ planHandle })`; handles are in-memory, process-local, expire, and are consumed after a successful commit. Failed commit attempts keep the handle retryable until expiry; re-plan only when the handle is unavailable, expired, evicted, or already used. CLI does not persist prepared handles between commands; use the same `ops.json` plus `--expect-sha256`.
 - Use CLI `--package-actions` or API/MCP `includePackageActions: true` when an agent needs passthrough/regenerate/add/drop/error proof evidence for package parts.
 - Pass only approval IDs emitted by plan in `approvals`; it accepts comma-separated strings, string arrays, or `"all"` after explicit user approval.

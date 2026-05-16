@@ -29,6 +29,10 @@ const PIVOT_FIXTURE = join(
 	import.meta.dir,
 	'../../../fixtures/xlsx/libreoffice/PivotTable_CachedDefinitionAndDataInSync.xlsx',
 )
+const ENCRYPTED_FIXTURE = join(
+	import.meta.dir,
+	'../../../fixtures/xlsx/calamine/pass_protected.xlsx',
+)
 const MACRO_FILE = join(
 	tmpdir(),
 	`ascend-api-macro-${Date.now()}-${Math.random().toString(16).slice(2)}.xlsm`,
@@ -563,6 +567,51 @@ describe('Ascend API server', () => {
 		}
 	})
 
+	test('/plan accepts encrypted workbook passwords and commit fails closed before decrypted export', async () => {
+		const input = join(
+			tmpdir(),
+			`ascend-api-encrypted-${Date.now()}-${Math.random().toString(16).slice(2)}.xlsx`,
+		)
+		const output = `${input}.out.xlsx`
+		try {
+			await Bun.write(input, readFileSync(ENCRYPTED_FIXTURE))
+			const plan = await postJson('/plan', {
+				file: input,
+				password: '123',
+				ops: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'Z10', value: 'blocked' }] }],
+			})
+			expect(plan.status).toBe(200)
+			expect(plan.body.ok).toBe(true)
+			expect(plan.body.data?.preparedPlan?.id).toBeString()
+			expect(JSON.stringify(plan.body)).not.toContain('123')
+
+			const commit = await postJson('/commit', {
+				planHandle: plan.body.data?.preparedPlan?.id,
+				output,
+				compact: true,
+			})
+			expect(commit.status).toBe(409)
+			expect(commit.body.ok).toBe(false)
+			expect(commit.body.error).toMatchObject({
+				code: 'EXPORT_ERROR',
+				retryable: false,
+				details: {
+					sourceWasEncrypted: true,
+					reEncryptionSupported: false,
+					requestedExport: 'xlsx',
+				},
+			})
+			expect(commit.body.error?.message).toContain(
+				'Cannot export an edited encrypted workbook without re-encryption support',
+			)
+			expect(JSON.stringify(commit.body)).not.toContain('123')
+			expect(await Bun.file(output).exists()).toBe(false)
+		} finally {
+			await unlink(input).catch(() => {})
+			await unlink(output).catch(() => {})
+		}
+	})
+
 	test('/trust-report exposes untrusted workbook boundaries and next actions', async () => {
 		const trustFile = join(
 			tmpdir(),
@@ -647,6 +696,21 @@ describe('Ascend API server', () => {
 			reason: 'workbook-context-required',
 			role: { role: 'table-name-use', text: 'Sales' },
 		})
+	})
+
+	test('/plan accepts encrypted workbook passwords without echoing them', async () => {
+		const result = await postJson('/plan', {
+			file: ENCRYPTED_FIXTURE,
+			password: '123',
+			ops: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'planned' }] }],
+		})
+		const serialized = JSON.stringify(result.body)
+
+		expect(result.status).toBe(200)
+		expect(result.body.ok).toBe(true)
+		expect(result.body.data?.preview?.wouldSucceed).toBe(true)
+		expect(result.body.data?.preparedPlan?.id).toBeString()
+		expect(serialized).not.toContain('"123"')
 	})
 
 	test('dump emits replayable operation batches', async () => {

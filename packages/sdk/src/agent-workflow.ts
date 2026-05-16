@@ -104,8 +104,14 @@ export interface AgentCommitOptions {
 	readonly inPlace?: boolean
 	readonly backup?: string
 	readonly expectSha256?: string
+	readonly password?: string
 	readonly allowLoss?: readonly string[] | 'all'
 	readonly approvals?: readonly string[] | 'all'
+	readonly onProgress?: AgentWorkflowProgressHandler
+}
+
+export interface AgentPlanOptions {
+	readonly password?: string
 	readonly onProgress?: AgentWorkflowProgressHandler
 }
 
@@ -958,7 +964,7 @@ interface AgentSourceIdentity {
 export async function createAgentPlan(
 	file: string,
 	ops: readonly Operation[],
-	options: { readonly onProgress?: AgentWorkflowProgressHandler } = {},
+	options: AgentPlanOptions = {},
 ): Promise<AgentPlanResult> {
 	const progress = createProgressEmitter('plan', options.onProgress)
 	await progress('hash-input', 'started', 'Hashing input workbook.')
@@ -966,7 +972,7 @@ export async function createAgentPlan(
 	const inputSha256 = sha256Bytes(source.sourceBytes)
 	await progress('hash-input', 'ok', 'Input workbook hash captured.')
 	await progress('load-workbook', 'started', 'Opening workbook.')
-	const wb = await openWorkbookFromBytes(file, source.sourceBytes)
+	const wb = await openWorkbookFromBytes(file, source.sourceBytes, passwordOpenOptions(options))
 	await progress('load-workbook', 'ok', 'Workbook opened.')
 	return createAgentPlanFromWorkbook(file, inputSha256, wb, ops, { progress })
 }
@@ -974,7 +980,7 @@ export async function createAgentPlan(
 export async function createPreparedAgentPlan(
 	file: string,
 	ops: readonly Operation[],
-	options: { readonly onProgress?: AgentWorkflowProgressHandler } = {},
+	options: AgentPlanOptions = {},
 ): Promise<PreparedAgentPlan> {
 	const progress = createProgressEmitter('plan', options.onProgress)
 	await progress('hash-input', 'started', 'Hashing input workbook.')
@@ -982,7 +988,7 @@ export async function createPreparedAgentPlan(
 	const inputSha256 = sha256Bytes(source.sourceBytes)
 	await progress('hash-input', 'ok', 'Input workbook hash captured.')
 	await progress('load-workbook', 'started', 'Opening workbook.')
-	const wb = await openWorkbookFromBytes(file, source.sourceBytes)
+	const wb = await openWorkbookFromBytes(file, source.sourceBytes, passwordOpenOptions(options))
 	await progress('load-workbook', 'ok', 'Workbook opened.')
 	const plan = await createAgentPlanFromWorkbook(file, inputSha256, wb, ops, { progress })
 	const planDigest = plan.planDigest
@@ -1888,7 +1894,7 @@ export async function commitAgentPlan(
 	await progress('hash-input', 'ok', 'Input workbook hash captured.')
 	const output = await resolveCommitOutputTarget(file, inputSha256, options, progress)
 	await progress('load-workbook', 'started', 'Opening workbook.')
-	const wb = await openWorkbookFromBytes(file, source.sourceBytes)
+	const wb = await openWorkbookFromBytes(file, source.sourceBytes, passwordOpenOptions(options))
 	await progress('load-workbook', 'ok', 'Workbook opened.')
 	return commitAgentPlanFromWorkbook(file, inputSha256, wb, ops, options, {
 		progress,
@@ -3002,6 +3008,12 @@ function isAgentSourceIdentityEqual(
 	right: AgentSourceIdentity,
 ): boolean {
 	return left.size === right.size && left.mtimeMs === right.mtimeMs
+}
+
+function passwordOpenOptions(options: Pick<AgentCommitOptions, 'password'>): {
+	readonly password?: string
+} {
+	return options.password === undefined ? {} : { password: options.password }
 }
 
 async function openWorkbookFromBytes(

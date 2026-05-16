@@ -184,6 +184,83 @@ describe('MCP server', () => {
 		}
 	})
 
+	test('ascend.plan accepts encrypted workbook passwords and commit fails closed before decrypted export', async () => {
+		const input = join(
+			tmpdir(),
+			`ascend-mcp-encrypted-${Date.now()}-${Math.random().toString(16).slice(2)}.xlsx`,
+		)
+		const output = `${input}.out.xlsx`
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const plan = (server as any)._registeredTools['ascend.plan'].handler as (args: {
+			file: string
+			password?: string
+			ops: readonly Record<string, unknown>[]
+		}) => Promise<{
+			structuredContent?: {
+				ok?: boolean
+				data?: { preparedPlan?: { id?: string } }
+			}
+		}>
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const commit = (server as any)._registeredTools['ascend.commit'].handler as (args: {
+			planHandle?: string
+			output?: string
+			compact?: boolean
+		}) => Promise<{
+			isError?: boolean
+			structuredContent?: {
+				ok?: boolean
+				error?: {
+					code?: string
+					message?: string
+					retryable?: boolean
+					retryStrategy?: string
+					details?: {
+						sourceWasEncrypted?: boolean
+						reEncryptionSupported?: boolean
+						requestedExport?: string
+					}
+				}
+			}
+		}>
+		try {
+			await Bun.write(input, readFileSync(ENCRYPTED_FIXTURE))
+			const planned = await plan({
+				file: input,
+				password: '123',
+				ops: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'Z10', value: 'blocked' }] }],
+			})
+			expect(planned.structuredContent?.ok).toBe(true)
+			expect(planned.structuredContent?.data?.preparedPlan?.id).toBeString()
+			expect(JSON.stringify(planned)).not.toContain('123')
+
+			const committed = await commit({
+				planHandle: planned.structuredContent?.data?.preparedPlan?.id,
+				output,
+				compact: true,
+			})
+			expect(committed.isError).toBe(true)
+			expect(committed.structuredContent?.error).toMatchObject({
+				code: 'EXPORT_ERROR',
+				retryable: false,
+				details: {
+					sourceWasEncrypted: true,
+					reEncryptionSupported: false,
+					requestedExport: 'xlsx',
+				},
+			})
+			expect(committed.structuredContent?.error?.message).toContain(
+				'Cannot export an edited encrypted workbook without re-encryption support',
+			)
+			expect(JSON.stringify(committed)).not.toContain('123')
+			expect(await Bun.file(output).exists()).toBe(false)
+		} finally {
+			await unlink(input).catch(() => {})
+			await unlink(output).catch(() => {})
+		}
+	})
+
 	test('createServer returns a McpServer instance', () => {
 		const server = createServer()
 		expect(server).toBeDefined()
@@ -702,6 +779,36 @@ describe('MCP server', () => {
 		expect(result.structuredContent?.data?.recommendedLoadOptions).toEqual({ mode: 'full' })
 		expect(result.structuredContent?.data?.partCount).toBeGreaterThan(0)
 		expect(serialized).not.toContain('123')
+	})
+
+	test('ascend.plan accepts encrypted workbook passwords without echoing them', async () => {
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: accessing internals for test
+		const handler = (server as any)._registeredTools['ascend.plan'].handler as (args: {
+			file: string
+			password?: string
+			ops: readonly Record<string, unknown>[]
+		}) => Promise<{
+			structuredContent?: {
+				ok?: boolean
+				data?: {
+					preview?: { wouldSucceed?: boolean }
+					preparedPlan?: { id?: string }
+				}
+			}
+		}>
+
+		const result = await handler({
+			file: ENCRYPTED_FIXTURE,
+			password: '123',
+			ops: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'planned' }] }],
+		})
+		const serialized = JSON.stringify(result)
+
+		expect(result.structuredContent?.ok).toBe(true)
+		expect(result.structuredContent?.data?.preview?.wouldSucceed).toBe(true)
+		expect(result.structuredContent?.data?.preparedPlan?.id).toBeString()
+		expect(serialized).not.toContain('"123"')
 	})
 
 	test('ascend.raw_part exposes bounded package text and metadata', async () => {

@@ -263,6 +263,28 @@ describe('agent workflow loss audit', () => {
 		expect(Buffer.from(wb.toBytes()).equals(Buffer.from(sourceBytes))).toBe(true)
 	})
 
+	test('agent plans open encrypted workbooks with explicit passwords', async () => {
+		const input = join(TEMP_DIR, 'pass_protected-plan.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		const sourceBytes = new Uint8Array(readFileSync('fixtures/xlsx/calamine/pass_protected.xlsx'))
+		await Bun.write(input, sourceBytes)
+
+		await expect(
+			createAgentPlan(input, [
+				{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'blocked' }] },
+			]),
+		).rejects.toThrow('requires a password')
+		const plan = await createAgentPlan(
+			input,
+			[{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'planned' }] }],
+			{ password: '123' },
+		)
+
+		expect(plan.preview.wouldSucceed).toBe(true)
+		expect(plan.inputSha256).toBe(createHash('sha256').update(sourceBytes).digest('hex'))
+		expect(JSON.stringify(plan)).not.toContain('"123"')
+	})
+
 	test('blocked atomic workbook writes remove temp packages and remain retryable', async () => {
 		const input = join(TEMP_DIR, 'strings-links.xlsx')
 		const blockedOutput = join(TEMP_DIR, 'blocked-output.xlsx')

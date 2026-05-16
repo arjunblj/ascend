@@ -231,12 +231,14 @@ async function openPathMutationPlanWorkbook(
 	file: string,
 	cache: PathMutationPlanOpenCacheEntry | undefined,
 	cacheMaxBytes: number,
+	options: { readonly password?: string } = {},
 ): Promise<{
 	readonly opened: PathMutationPlanOpenCacheEntry
 	readonly cache: PathMutationPlanOpenCacheEntry | undefined
 }> {
 	const stat = statSync(file)
 	if (
+		options.password === undefined &&
 		cache &&
 		cache.file === file &&
 		cache.size === stat.size &&
@@ -245,7 +247,7 @@ async function openPathMutationPlanWorkbook(
 	) {
 		return { opened: cache, cache }
 	}
-	const source = await AscendWorkbook.openSourceBytes(file)
+	const source = await AscendWorkbook.openSourceBytes(file, options)
 	const opened: PathMutationPlanOpenCacheEntry = {
 		file,
 		size: stat.size,
@@ -257,7 +259,10 @@ async function openPathMutationPlanWorkbook(
 	}
 	return {
 		opened,
-		cache: source.sourceBytes.byteLength <= cacheMaxBytes ? opened : undefined,
+		cache:
+			options.password === undefined && source.sourceBytes.byteLength <= cacheMaxBytes
+				? opened
+				: undefined,
 	}
 }
 
@@ -976,6 +981,7 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 					if (unsupportedLoadOptions.length > 0) {
 						return jsonFailureError(agentPlanLoadOptionsError(unsupportedLoadOptions), 400)
 					}
+					const password = body ? requireString(body, 'password') : null
 					const inputShape = resolveOperationInputShape(operationInputSourceFromBody(body))
 					if (!inputShape.ok) return jsonFailureError(inputShape.error, 400)
 					let input: ResolvedOperationInput
@@ -988,6 +994,7 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 							file,
 							pathMutationPlanCache,
 							pathMutationPlanCacheMaxBytes,
+							password ? { password } : {},
 						)
 						pathMutationPlanCache = openedResult.cache
 						const opened = openedResult.opened
@@ -1017,11 +1024,15 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 					} else {
 						input = inputShape
 						if (prepare) {
-							const prepared = await createPreparedAgentPlan(file, inputShape.ops)
+							const prepared = await createPreparedAgentPlan(file, inputShape.ops, {
+								...(password ? { password } : {}),
+							})
 							result = prepared.plan
 							preparedPlan = preparedPlans.add(preparedPlanHandle(prepared))
 						} else {
-							result = await createAgentPlan(file, inputShape.ops)
+							result = await createAgentPlan(file, inputShape.ops, {
+								...(password ? { password } : {}),
+							})
 						}
 					}
 					if (!input.ok) return jsonFailureError(input.error, 400)
@@ -1074,6 +1085,7 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 					}
 					const output = body ? requireString(body, 'output') : null
 					const backup = body ? requireString(body, 'backup') : null
+					const password = body ? requireString(body, 'password') : null
 					const expectSha256 = body ? requireString(body, 'expectSha256') : null
 					const allowLoss = body
 						? parseAllowLoss((body as Record<string, unknown>).allowLoss)
@@ -1093,6 +1105,7 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 						...(output ? { output } : {}),
 						...(inPlace ? { inPlace: true } : {}),
 						...(backup ? { backup } : {}),
+						...(password ? { password } : {}),
 						...(expectSha256 ? { expectSha256 } : {}),
 						...(allowLoss ? { allowLoss } : {}),
 						...(approvals ? { approvals } : {}),
@@ -1127,7 +1140,9 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 					let result: Awaited<ReturnType<typeof commitAgentPlan>>
 					if ('mutations' in inputShape) {
 						if (!file) return jsonFailure('Missing or invalid file', 400)
-						const opened = await AscendWorkbook.openSourceBytes(file)
+						const opened = await AscendWorkbook.openSourceBytes(file, {
+							...(password ? { password } : {}),
+						})
 						const inputSha256 = sha256Bytes(opened.sourceBytes)
 						const wb = opened.workbook
 						input = compilePathMutationInput(wb, inputShape.mutations)

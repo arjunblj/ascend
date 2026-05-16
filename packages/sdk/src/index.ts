@@ -19,6 +19,7 @@ export type {
 	AgentCommitPackageActionProofOptions,
 	AgentCommitResult,
 	AgentModelOutput,
+	AgentPlanOptions,
 	AgentPlanResult,
 	AgentPostWriteVerification,
 	AgentTraceArtifact,

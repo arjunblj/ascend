@@ -1345,6 +1345,10 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 				.describe(
 					'Return a one-shot prepared plan handle that can be passed to ascend.commit; defaults to true, set false to opt out',
 				),
+			password: z
+				.string()
+				.optional()
+				.describe('Password for encrypted XLSX/XLSM workbooks; omitted from responses'),
 			maxChangedCells: z
 				.number()
 				.int()
@@ -1372,6 +1376,7 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 			mutations,
 			compact,
 			prepare,
+			password,
 			maxChangedCells,
 			maxRows,
 			includePackageActions,
@@ -1386,7 +1391,9 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 				let preparedPlan: PreparedPlanMetadata | undefined
 				const shouldPrepare = prepare !== false
 				if ('mutations' in inputShape) {
-					const opened = await AscendWorkbook.openSourceBytes(file)
+					const opened = await AscendWorkbook.openSourceBytes(file, {
+						...(password ? { password } : {}),
+					})
 					const inputSha256 = sha256Bytes(opened.sourceBytes)
 					const wb = opened.workbook
 					input = compilePathMutationInput(wb, inputShape.mutations)
@@ -1412,11 +1419,15 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 				} else {
 					input = inputShape
 					if (shouldPrepare) {
-						const prepared = await createPreparedAgentPlan(file, inputShape.ops)
+						const prepared = await createPreparedAgentPlan(file, inputShape.ops, {
+							...(password ? { password } : {}),
+						})
 						result = prepared.plan
 						preparedPlan = preparedPlans.add(preparedPlanHandle(prepared))
 					} else {
-						result = await createAgentPlan(file, inputShape.ops)
+						result = await createAgentPlan(file, inputShape.ops, {
+							...(password ? { password } : {}),
+						})
 					}
 				}
 				if (!input.ok) return errorResponse(input.error)
@@ -1472,6 +1483,10 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 				.string()
 				.optional()
 				.describe('Reject if the input hash has changed since plan'),
+			password: z
+				.string()
+				.optional()
+				.describe('Password for encrypted XLSX/XLSM workbooks; omitted from responses'),
 			allowLoss: z
 				.union([z.string(), z.array(z.string())])
 				.optional()
@@ -1514,6 +1529,7 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 			inPlace,
 			backup,
 			expectSha256,
+			password,
 			allowLoss,
 			approvals,
 			compact,
@@ -1528,6 +1544,7 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 					...(inPlace ? { inPlace: true } : {}),
 					...(backup ? { backup } : {}),
 					...(expectSha256 ? { expectSha256 } : {}),
+					...(password ? { password } : {}),
 					...(allowLoss ? { allowLoss: parseAllowLoss(allowLoss) } : {}),
 					...(approvals ? { approvals: parseStringListOrAll(approvals) } : {}),
 				}
@@ -1561,7 +1578,9 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 				let pathMutations: PathMutationResult | undefined
 				let result: Awaited<ReturnType<typeof commitAgentPlan>>
 				if ('mutations' in inputShape) {
-					const opened = await AscendWorkbook.openSourceBytes(file)
+					const opened = await AscendWorkbook.openSourceBytes(file, {
+						...(password ? { password } : {}),
+					})
 					const inputSha256 = sha256Bytes(opened.sourceBytes)
 					const wb = opened.workbook
 					input = compilePathMutationInput(wb, inputShape.mutations)

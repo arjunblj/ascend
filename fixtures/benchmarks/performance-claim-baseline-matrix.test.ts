@@ -52,7 +52,7 @@ describe('performance claim baseline matrix', () => {
 			'The current full-profile run at `9ddfff91` reports no leader failures',
 		)
 		expect(markdown).toContain(
-			'Current harness evidence now supports same-lane selected-sheet rows for Ascend, SheetJS, and OpenPyXL.',
+			'Current harness evidence now supports same-lane selected-sheet rows for Ascend, SheetJS, OpenPyXL, and python-calamine.',
 		)
 		expect(markdown).toContain(
 			'Current harness evidence now supports same-lane metadata-only rows for Ascend, SheetJS, and OpenPyXL.',
@@ -125,7 +125,7 @@ describe('performance claim baseline matrix', () => {
 			'`metadata-only` reports `missing-comparable` for required competitors',
 		)
 		expect(markdown).toContain(
-			'`selected-sheet` is `unsupported-operation` for\n  `ExcelJS`, `openpyxl`, `Calamine`, `Apache POI`, and `ClosedXML`',
+			'`selected-sheet` is `unsupported-operation` for\n  `ExcelJS`, `Apache POI`, and `ClosedXML`',
 		)
 		expect(markdown).toContain('| Completed comparable profile rows | ran/won |')
 		expect(markdown).toContain('| ClosedXML | blocked |')
@@ -206,7 +206,7 @@ describe('performance claim baseline matrix', () => {
 			'No selected-sheet `coverageFailures` remain for Ascend, SheetJS, or openpyxl.',
 		)
 		expect(markdown).toContain(
-			'Selected-sheet `coverageGaps` remain for ExcelJS, Calamine, Apache POI, and\n  ClosedXML',
+			'Selected-sheet `coverageGaps` remain for ExcelJS, Apache POI, and ClosedXML',
 		)
 		expect(markdown).toContain(
 			'"Ascend has a full selected-sheet SOTA claim across every library."',
@@ -375,6 +375,8 @@ describe('performance claim baseline matrix', () => {
 			'"Ascend beats ExcelJS, openpyxl, Calamine, Apache POI, or ClosedXML" from this selected-sheet run.',
 		)
 		expect(markdown).toContain('the OpenPyXL unsupported-operation status above is historical')
+		expect(markdown).toContain('the Calamine unsupported-operation status above is also')
+		expect(markdown).toContain('Commit `79d6cefd` proves the\npython-calamine runner')
 		expect(markdown).toContain('## Fold-In: OpenPyXL Selected-Sheet Projection')
 		expect(markdown).toContain('Classification: accepted evidence plus benchmark blocker.')
 		expect(markdown).toContain('OpenPyXL reported\n  median `204.707 ms`')

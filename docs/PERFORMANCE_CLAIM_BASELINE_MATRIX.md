@@ -14,7 +14,7 @@ No broad XLSX read, SOTA, or QSS-leapfrog speed claim is promotable from this ar
 
 - `competitive-scoreboard --require-profile xlsx-read-sota` still fails for broad promotion. The current full-profile run at `9ddfff91` reports no leader failures, and a merged selected-sheet/metadata-only scoreboard removes those same-lane comparability failures, but ClosedXML coverage, feature-rich semantic mismatches, and unsupported selected-sheet/metadata-only competitors remain explicit blockers.
 - The recorded cycles cover public/reproducible generated `dense-values`, `sparse-wide`, `styles-heavy`, `formula-heavy`, `table-heavy`, `feature-rich`, `selected-sheet`, `metadata-only`, `warm-workflow`, and `string-heavy` workloads over `raw-ooxml`, but they are per-workload evidence rows rather than one clean all-workload promotion run.
-- Current harness evidence now supports same-lane selected-sheet rows for Ascend, SheetJS, and OpenPyXL. Treat older `openpyxl` selected-sheet `unsupported-operation` wording as historical for the recorded clean runs.
+- Current harness evidence now supports same-lane selected-sheet rows for Ascend, SheetJS, OpenPyXL, and python-calamine. Treat older `openpyxl` and Calamine selected-sheet `unsupported-operation` wording as historical for the recorded clean runs.
 - Current harness evidence now supports same-lane metadata-only rows for Ascend, SheetJS, and OpenPyXL. Treat older metadata-only `missing-comparable` wording as historical for the recorded clean runs.
 - Current harness evidence now supports a SheetJS feature-rich rich-metadata row using SheetJS `bookFiles`; older SheetJS `semantic-mismatch` wording is historical for the pre-runner-fix cycles. Calamine-family rich-metadata rows remain not comparable.
 - Several external runners were unavailable or blocked in the clean benchmark worktree. They are recorded as blockers, not wins.
@@ -31,7 +31,7 @@ Forbidden wording:
 - "Ascend beats every external library."
 - Any wording that treats failed or unavailable runners as wins.
 
-Next action: downgrade the broad speed claim and stop production optimization from this evidence. Continue only if the performance loop is explicitly attacking a remaining claim blocker: ClosedXML coverage, feature-rich semantic mismatches for SheetJS/Calamine, unsupported selected-sheet or metadata-only competitors, or FastXLSX environment coverage.
+Next action: downgrade the broad speed claim and stop production optimization from this evidence. Continue only if the performance loop is explicitly attacking a remaining claim blocker: ClosedXML coverage, feature-rich semantic mismatches for SheetJS/Calamine, remaining unsupported selected-sheet or metadata-only competitors, or FastXLSX environment coverage.
 
 ## Owner-Ready Benchmark Blocker
 
@@ -219,7 +219,7 @@ Scoreboard result:
   and `metadata-only` reports `missing-comparable` for required competitors
   `Ascend`, `SheetJS`, and `openpyxl`.
 - Coverage gaps remain: `selected-sheet` is `unsupported-operation` for
-  `ExcelJS`, `openpyxl`, `Calamine`, `Apache POI`, and `ClosedXML`;
+  `ExcelJS`, `Apache POI`, and `ClosedXML`;
   `metadata-only` is `unsupported-operation` for `ExcelJS`, `Calamine`,
   `Apache POI`, and `ClosedXML`.
 
@@ -230,7 +230,7 @@ Competitor status:
 | Completed comparable profile rows | ran/won | No `leaderFailures` or `profileLeaderFailures` were reported by the current full-profile scoreboard. This supports scoped wording only for completed comparable rows. |
 | ClosedXML | blocked | Missing across most required read-value rows because the runner remains blocked. Not counted as an Ascend win. |
 | SheetJS and Calamine on `feature-rich` rich metadata | not comparable | The scoreboard marks these rows ineligible with `correctnessStatus=semantic-mismatch`. Not counted as Ascend wins. |
-| `selected-sheet` unsupported competitors | not comparable | ExcelJS, openpyxl, Calamine, Apache POI, and ClosedXML do not provide the same selected-sheet operation in this profile. Not counted as wins. |
+| `selected-sheet` unsupported competitors | not comparable | ExcelJS, Apache POI, and ClosedXML do not provide the same selected-sheet operation in this profile. Not counted as wins. |
 | `metadata-only` unsupported competitors | not comparable | ExcelJS, Calamine, Apache POI, and ClosedXML are unsupported for the metadata-only operation; the full scoreboard also reports a metadata-only `missing-comparable` grouping gap for Ascend, SheetJS, and openpyxl. |
 | fastxlsx | runner unavailable | Not part of a completed comparable current full-profile row; missing dependency rows remain non-wins. |
 
@@ -498,13 +498,12 @@ Scoreboard result for the focused same-lane run:
 - `leaderFailures: []`
 - `profileLeaderFailures: []`
 - No selected-sheet `coverageFailures` remain for Ascend, SheetJS, or openpyxl.
-- Selected-sheet `coverageGaps` remain for ExcelJS, Calamine, Apache POI, and
-  ClosedXML because their selected-sheet operation is unsupported in the
-  current profile.
+- Selected-sheet `coverageGaps` remain for ExcelJS, Apache POI, and ClosedXML
+  because their selected-sheet operation is unsupported in the current profile.
 
 Humble allowed wording:
 
-> On the generated `selected-sheet` raw OOXML workload at commit `39163862`, Ascend's external-process selected-sheet value read was faster by median than the same-lane SheetJS and openpyxl rows that successfully ran. ExcelJS, Calamine, Apache POI, and ClosedXML remain unsupported-operation gaps, so this is scoped selected-sheet evidence, not a broad XLSX-read claim.
+> On the generated `selected-sheet` raw OOXML workload at commit `39163862`, Ascend's external-process selected-sheet value read was faster by median than the same-lane SheetJS and openpyxl rows that successfully ran. ExcelJS, Apache POI, and ClosedXML remain unsupported-operation gaps, and python-calamine has only current-worktree runner proof, so this is scoped selected-sheet evidence, not a broad XLSX-read claim.
 
 Forbidden wording:
 
@@ -1221,7 +1220,7 @@ All successful timing rows below use 5 measured samples after 1 warmup. Unsuppor
 | Apache POI | not comparable | n/a | n/a | n/a | n/a | n/a | Unsupported operation for this profile; not counted. |
 | ClosedXML | not comparable | n/a | n/a | n/a | n/a | n/a | Unsupported operation for this profile; not counted. |
 
-Coverage gate result: failed, as expected for a partial profile. The selected-sheet row is only comparable against SheetJS in the current profile; ExcelJS, openpyxl, Calamine, Apache POI, and ClosedXML are explicit unsupported-operation gaps. The profile remains missing `string-heavy` from current commit, `metadata-only`, and `warm-workflow` coverage.
+Coverage gate result: failed, as expected for a partial profile. The selected-sheet row is only comparable against SheetJS in the recorded clean profile; ExcelJS, openpyxl, Calamine, Apache POI, and ClosedXML were explicit unsupported-operation gaps in that historical run. The profile remains missing `string-heavy` from current commit, `metadata-only`, and `warm-workflow` coverage.
 
 Supersession note: the OpenPyXL unsupported-operation status above is historical
 for the clean detached `5055d794` cycle. Current harness tests now prove an
@@ -1229,6 +1228,14 @@ OpenPyXL selected-sheet projection row can run and pass semantic assertions.
 Do not route current owner work as "make OpenPyXL selected-sheet run"; route it
 as "record a clean repeat-5 selected-sheet benchmark and resolve the timing-lane
 boundary before promoting any OpenPyXL selected-sheet speed wording."
+
+Supersession note: the Calamine unsupported-operation status above is also
+historical for the clean detached `5055d794` cycle. Commit `79d6cefd` proves the
+python-calamine runner can project only the `Data` sheet and join the same
+selected-sheet external timing lane. Do not route current owner work as "make
+Calamine selected-sheet run"; route it as "record a clean repeat-5 selected-sheet
+benchmark and resolve the broad-claim blockers before promoting any Calamine
+selected-sheet speed wording."
 
 Humble allowed wording:
 
@@ -1290,7 +1297,9 @@ Evidence missing:
 - OpenPyXL is proven here as selected-sheet projection semantics, not as true
   preservation-first one-sheet package hydration. Do not claim it avoids loading
   other workbook internals.
-- ExcelJS, Calamine, Apache POI, and ClosedXML selected-sheet gaps remain.
+- ExcelJS, Apache POI, and ClosedXML selected-sheet gaps remain; Calamine
+  selected-sheet now has current-worktree runner proof but no accepted clean
+  repeat-5 benchmark row in this matrix.
 
 Competitor/QSS contrast: this reduces an OpenPyXL unsupported-operation gap in
 the external baseline matrix, but it does not change the QSS/SOTA decision.

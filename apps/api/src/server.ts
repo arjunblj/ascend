@@ -192,7 +192,15 @@ function optionalPasswordError(
 	})
 }
 
-type AgentWorkflowFileContext = 'open-plan' | 'inspect' | 'read' | 'agent-view' | 'plan' | 'commit'
+type AgentWorkflowFileContext =
+	| 'open-plan'
+	| 'inspect'
+	| 'active-content'
+	| 'trust-report'
+	| 'read'
+	| 'agent-view'
+	| 'plan'
+	| 'commit'
 
 function missingAgentWorkflowFileError(context: AgentWorkflowFileContext): AscendError {
 	const requirement = (() => {
@@ -201,6 +209,10 @@ function missingAgentWorkflowFileError(context: AgentWorkflowFileContext): Ascen
 				return 'Pass file so Ascend can inspect workbook risks before hydration.'
 			case 'inspect':
 				return 'Pass file so Ascend can inspect workbook structure before planning edits.'
+			case 'active-content':
+				return 'Pass file so Ascend can inspect active content risks before planning edits.'
+			case 'trust-report':
+				return 'Pass file so Ascend can build a trust report before planning edits.'
 			case 'read':
 				return 'Pass file so Ascend can read the requested workbook range before planning edits.'
 			case 'agent-view':
@@ -607,7 +619,7 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 			if (method === 'POST' && path === '/active-content') {
 				const body = await parseJson<{ file?: string }>(req)
 				const file = body ? requireString(body, 'file') : null
-				if (!file) return jsonFailure('Missing or invalid file', 400)
+				if (!file) return jsonFailureError(missingAgentWorkflowFileError('active-content'), 400)
 				try {
 					const wb = await WorkbookDocument.open(file, { mode: 'metadata-only' })
 					return jsonSuccess(activeContentPayload(wb))
@@ -620,7 +632,7 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 				const body = await parseJson<{ file?: string; maxFindings?: number }>(req)
 				const file = body ? requireString(body, 'file') : null
 				const maxFindings = body ? requireOptionalNumber(body, 'maxFindings') : undefined
-				if (!file) return jsonFailure('Missing or invalid file', 400)
+				if (!file) return jsonFailureError(missingAgentWorkflowFileError('trust-report'), 400)
 				try {
 					const wb = await WorkbookDocument.open(file, { mode: 'full' })
 					return jsonSuccess(

@@ -554,6 +554,36 @@ describe('Ascend API server', () => {
 		})
 	})
 
+	test('/active-content rejects missing workbook references with structured retry guidance', async () => {
+		const result = await postJson('/active-content', {})
+
+		expect(result.status).toBe(400)
+		expect(result.body.ok).toBe(false)
+		expect(result.body.error).toMatchObject({
+			code: 'VALIDATION_ERROR',
+			message: 'Missing or invalid active-content workbook reference',
+			retryable: true,
+			retryStrategy: 'modified',
+			details: { required: ['file'] },
+			suggestedFix: expect.stringContaining('Pass file so Ascend can inspect active content'),
+		})
+	})
+
+	test('/trust-report rejects missing workbook references with structured retry guidance', async () => {
+		const result = await postJson('/trust-report', {})
+
+		expect(result.status).toBe(400)
+		expect(result.body.ok).toBe(false)
+		expect(result.body.error).toMatchObject({
+			code: 'VALIDATION_ERROR',
+			message: 'Missing or invalid trust-report workbook reference',
+			retryable: true,
+			retryStrategy: 'modified',
+			details: { required: ['file'] },
+			suggestedFix: expect.stringContaining('Pass file so Ascend can build a trust report'),
+		})
+	})
+
 	test('/read rejects missing workbook references with structured retry guidance', async () => {
 		const result = await postJson('/read', { range: 'A1:A1' })
 

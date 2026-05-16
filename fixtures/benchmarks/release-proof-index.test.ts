@@ -1419,6 +1419,10 @@ describe('release proof evidence index', () => {
 				evidenceId: 'release-rc-gate',
 				acceptedScope: expect.stringContaining('f3347e17'),
 			}),
+			expect.objectContaining({
+				evidenceId: 'release-rc-gate',
+				acceptedScope: expect.stringContaining('58a7f579'),
+			}),
 		]) {
 			expect(safeOpenAcceptedEvidence).toContainEqual(evidence)
 		}
@@ -1442,6 +1446,16 @@ describe('release proof evidence index', () => {
 					evidenceId: 'copy-sheet-table-package-proof',
 					kind: 'test',
 					path: 'packages/sdk/src/agent-workflow.test.ts',
+				}),
+				expect.objectContaining({
+					evidenceId: 'query-table-refresh-agent-commit-proof',
+					acceptedScope: expect.stringContaining('868add46'),
+					command: expect.stringContaining(
+						'commits public query-table refresh metadata edits through save and reopen',
+					),
+					boundary: expect.stringContaining(
+						'Public query-table refresh metadata edit evidence only',
+					),
 				}),
 			]),
 		)
@@ -1627,13 +1641,20 @@ describe('release proof evidence index', () => {
 			expect.arrayContaining([
 				expect.objectContaining({
 					claimArea: 'safe-agent-workflows',
-					commits: expect.arrayContaining(['a09660be', 'f3347e17', '62f45cb5']),
-					allowedWording: expect.stringContaining('root commands'),
+					commits: expect.arrayContaining([
+						'a09660be',
+						'f3347e17',
+						'58a7f579',
+						'5981764c',
+						'868add46',
+						'62f45cb5',
+					]),
+					allowedWording: expect.stringContaining('query-table refresh metadata'),
 					forbiddenWording: expect.arrayContaining([
-						expect.stringContaining('arbitrary workbook safety'),
+						expect.stringContaining('installed-SDK safe-edit proof'),
 					]),
 					ownerLoop: 'release',
-					nextOwnerAction: expect.stringContaining('stops adding discovery-only'),
+					nextOwnerAction: expect.stringContaining('blank'),
 				}),
 				expect.objectContaining({
 					claimArea: 'signed-encrypted-macro-handling',
@@ -1644,8 +1665,8 @@ describe('release proof evidence index', () => {
 				}),
 				expect.objectContaining({
 					claimArea: 'write-performance',
-					commits: expect.arrayContaining(['0d0c9632']),
-					allowedWording: expect.stringContaining('optimized string-heavy'),
+					commits: expect.arrayContaining(['0d0c9632', '905ecb5e']),
+					allowedWording: expect.stringContaining('styles-heavy'),
 					forbiddenWording: expect.arrayContaining([expect.stringContaining('fastest XLSX')]),
 					ownerLoop: 'performance',
 				}),
@@ -2234,6 +2255,12 @@ describe('release proof evidence index', () => {
 		expect(agentWorkflowEvidence).toContain('API and MCP workflow discovery surfaces')
 		expect(agentWorkflowEvidence).toContain('f3347e17')
 		expect(agentWorkflowEvidence).toContain('Workflow discovery surfaces expose runnable-example')
+		expect(agentWorkflowEvidence).toContain('58a7f579')
+		expect(agentWorkflowEvidence).toContain('Packaged proof surfaces expose workflow examples')
+		expect(agentWorkflowEvidence).toContain('5981764c')
+		expect(agentWorkflowEvidence).toContain(
+			'Installed SDK safe-edit workflow proof remains blocked',
+		)
 		expect(agentWorkflowEvidence).toContain('docs/AGENT_WORKFLOW.md')
 		expect(agentWorkflowMissing).toContain('inspect, plan, commit, reopen, diff, audit')
 		expect(agentWorkflowMissing).toContain('Trace payload size')
@@ -2347,6 +2374,9 @@ describe('release proof evidence index', () => {
 		expect(performanceOwnerArtifact?.nextAction).toContain('e22eb86a string-heavy write baseline')
 		expect(performanceOwnerArtifact?.nextAction).toContain(
 			'0d0c9632 string-heavy write optimization proof',
+		)
+		expect(performanceOwnerArtifact?.nextAction).toContain(
+			'905ecb5e styles-heavy write baseline win',
 		)
 		expect(performanceOwnerArtifact?.nextAction).toContain('stops production optimization')
 		expect(performanceOwnerArtifact?.forbiddenShortcut).toContain(

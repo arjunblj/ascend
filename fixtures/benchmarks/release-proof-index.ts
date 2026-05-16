@@ -3372,7 +3372,7 @@ function safeOpenQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceItem[] {
 			command: 'bun run release:rc:gate',
 			path: 'scripts/release-rc-gate.ts',
 			acceptedScope:
-				'Local RC packageability gate for SDK/CLI/API/MCP tarballs and installed workbook proof. Commit 0931685e fixes bundled SDK agent docs resolution from file URLs, preserving installed docs-search smoke coverage; commit f1f76e36 adds installed CLI agent-init plus API/MCP agent-workflow discovery smoke checks; commit 37794635 packages runnable HTTP/MCP workflow examples and extends installed SDK smoke coverage for bundled example discovery; commit 0d1b33f7 extends installed app smoke coverage for CLI agent-init runnable example commands; commit 407499cd extends installed app smoke coverage for API/MCP workflow example commands; commit a09660be updates installed app smoke coverage to assert root-level safe-edit example commands; commit f3347e17 extends installed app smoke coverage for example proof context.',
+				'Local RC packageability gate for SDK/CLI/API/MCP tarballs and installed workbook proof. Commit 0931685e fixes bundled SDK agent docs resolution from file URLs, preserving installed docs-search smoke coverage; commit f1f76e36 adds installed CLI agent-init plus API/MCP agent-workflow discovery smoke checks; commit 37794635 packages runnable HTTP/MCP workflow examples and extends installed SDK smoke coverage for bundled example discovery; commit 0d1b33f7 extends installed app smoke coverage for CLI agent-init runnable example commands; commit 407499cd extends installed app smoke coverage for API/MCP workflow example commands; commit a09660be updates installed app smoke coverage to assert root-level safe-edit example commands; commit f3347e17 extends installed app smoke coverage for example proof context; commit 58a7f579 exposes workflow examples and proof context in packaged MCP resource/app smoke output.',
 			boundary: 'Local tarball proof only; not registry publication or attestation.',
 		},
 	]
@@ -3428,6 +3428,17 @@ function packageActionQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceIte
 				'Committed post-write proof that generated copied table package parts are expected and reopened-valid.',
 			boundary:
 				'Specific table-copy package topology proof, not universal package mutation support.',
+		},
+		{
+			evidenceId: 'query-table-refresh-agent-commit-proof',
+			kind: 'test',
+			command:
+				'bun test packages/sdk/src/agent-workflow.test.ts -t "commits public query-table refresh metadata edits through save and reopen" --timeout 30000',
+			path: 'packages/sdk/src/agent-workflow.ts; packages/sdk/src/agent-workflow.test.ts',
+			acceptedScope:
+				'Commit 868add46 proves an agent commit can edit public query-table refresh metadata with required preservedQueryTable approval, save, reopen, retain inspectable refresh metadata, keep source bytes unchanged, and treat the intentionally rewritten query-table part as expected post-write package graph evidence.',
+			boundary:
+				'Public query-table refresh metadata edit evidence only; it does not execute queries, refresh external data, prove arbitrary query-table editing, or authorize external data trust wording.',
 		},
 		{
 			evidenceId: 'release-rc-gate',
@@ -3533,23 +3544,35 @@ function todayCommitClaimMatrix(): readonly ReleaseProofTodayCommitClaimMatrixRo
 	return [
 		{
 			claimArea: 'safe-agent-workflows',
-			commits: ['de45eb83', '37794635', 'a09660be', '407499cd', 'f3347e17', '62f45cb5'],
+			commits: [
+				'de45eb83',
+				'37794635',
+				'a09660be',
+				'407499cd',
+				'f3347e17',
+				'58a7f579',
+				'5981764c',
+				'868add46',
+				'62f45cb5',
+			],
 			releaseOrSotaClaimBecameMoreTrue:
-				'Ascend is more credible as an agent-native spreadsheet runtime because SDK, HTTP API, MCP, and root-package examples expose a runnable inspect/plan/commit/reopen/verify workflow plus proof context.',
+				'Ascend is more credible as an agent-native spreadsheet runtime because SDK, HTTP API, MCP, root-package, and public query-table examples expose runnable inspect/plan/commit/reopen/verify workflows plus proof context; installed-SDK example promotion is blocked until its focused proof test is fixed.',
 			evidenceProvesIt: [
 				'bun test examples/agent-safe-edit-mcp.test.ts --timeout 30000',
 				'bun test examples/root-scripts.test.ts --timeout 30000',
 				'bun test apps/cli/src/cli.test.ts apps/api/src/server.test.ts apps/mcp/src/index.test.ts -t "agent-init prints the canonical agent workflow contract|/agent-workflow exposes the API safe edit contract|ascend.agent_workflow exposes machine-readable safe edit guidance" --timeout 30000',
+				'bun test packages/sdk/src/agent-workflow.test.ts -t "commits public query-table refresh metadata edits through save and reopen" --timeout 30000',
+				'Blocked installed-SDK proof: bun test examples/package-install-safe-edit.test.ts --timeout 30000 currently fails because proofBundle.whatChanged[0].before.kind is "empty" while the test expects "blank".',
 				'fixtures/benchmarks/release-proof-index.test.ts pins workflow example evidence, proof context, and RC-gate scope.',
 			],
 			allowedWording:
-				'Ascend provides local runnable SDK/API/MCP safe-edit workflow examples with root commands and machine-readable proof context for generated workbooks.',
+				'Ascend provides local runnable SDK/API/MCP safe-edit workflow examples with root commands, public query-table refresh metadata commit proof, and machine-readable proof context for generated/public workbooks.',
 			forbiddenWording: [
-				'Do not claim arbitrary workbook safety, package publication, registry install proof, hosted service readiness, or complete workflow observability from the local generated-workbook examples.',
+				'Do not claim arbitrary workbook safety, package publication, registry install proof, hosted service readiness, installed-SDK safe-edit proof, or complete workflow observability from the local generated-workbook examples.',
 			],
 			ownerLoop: 'release',
 			nextOwnerAction:
-				'Release-code owner stops adding discovery-only workflow affordances and next improves one public/outside-user workflow proof or package publication smoke if release wants stronger adoption wording.',
+				'Release-code owner fixes or downgrades the installed-SDK safe-edit example proof before any installed-SDK workflow wording: run `bun test examples/package-install-safe-edit.test.ts --timeout 30000`, resolve the `blank` vs `empty` proofBundle mismatch or update the expected proof contract, then rerun proof-index tests. Otherwise stop adding discovery-only workflow affordances.',
 			boundary:
 				'Compact current-commit claim row only; evidence is local workflow proof, not a broad product or publication claim.',
 		},
@@ -3577,15 +3600,15 @@ function todayCommitClaimMatrix(): readonly ReleaseProofTodayCommitClaimMatrixRo
 		},
 		{
 			claimArea: 'write-performance',
-			commits: ['67b900ed', 'e22eb86a', 'bd162937', '0d0c9632'],
+			commits: ['67b900ed', 'e22eb86a', 'bd162937', '0d0c9632', '905ecb5e'],
 			releaseOrSotaClaimBecameMoreTrue:
-				'String-heavy generated XLSX write throughput has a scoped optimization proof, but broad XLSX write/SOTA/QSS speed wording remains downgraded.',
+				'String-heavy generated XLSX write throughput has a scoped optimization proof and styles-heavy generated writes have a scoped fastest comparable row, but broad XLSX write/SOTA/QSS speed wording remains downgraded.',
 			evidenceProvesIt: [
 				'bun test fixtures/benchmarks/performance-claim-baseline-matrix.test.ts --timeout 30000',
-				'performance owner artifact in release-proof-index names the plain-text baseline, string-heavy baseline, and 0d0c9632 string-heavy optimization proof as bounded evidence.',
+				'performance owner artifact in release-proof-index names the plain-text baseline, string-heavy baseline, 0d0c9632 string-heavy optimization proof, and 905ecb5e styles-heavy write baseline win as bounded evidence.',
 			],
 			allowedWording:
-				'Ascend has bounded local evidence of an optimized string-heavy generated write row; treat it as release-owner diagnostic/performance evidence, not broad speed leadership.',
+				'Ascend has bounded local evidence of optimized string-heavy and styles-heavy generated write rows; treat them as release-owner diagnostic/performance evidence, not broad speed leadership.',
 			forbiddenWording: [
 				'Do not claim fastest XLSX writer, broad write SOTA, QSS-leapfrog speed, or external workflow dominance from one generated row.',
 			],
@@ -4870,7 +4893,7 @@ function ownerDecisionArtifactsFor(
 					decision:
 						'Use the performance matrix as a defer decision: no broad XLSX read, SOTA, or QSS-leapfrog speed claim is promotable from the current partial baseline.',
 					nextAction:
-						'Benchmarking owner treats the focused ClosedXML, same-lane selected-sheet, same-lane metadata-only, current-worktree python-calamine selected-sheet runner proof, current full-profile/merged scoreboard runs, commit 67b900ed plain-text write baseline, commit e22eb86a string-heavy write baseline, and commit 0d0c9632 string-heavy write optimization proof as accepted bounded evidence, downgrades broad speed wording, and stops production optimization unless the next work is explicit blocker resolution for ClosedXML coverage, feature-rich semantic mismatches, remaining unsupported selected-sheet/metadata-only competitors, FastXLSX environment coverage, a full-profile regression of the optimized string-heavy row, or another named public workflow loss.',
+						'Benchmarking owner treats the focused ClosedXML, same-lane selected-sheet, same-lane metadata-only, current-worktree python-calamine selected-sheet runner proof, current full-profile/merged scoreboard runs, commit 67b900ed plain-text write baseline, commit e22eb86a string-heavy write baseline, commit 0d0c9632 string-heavy write optimization proof, and commit 905ecb5e styles-heavy write baseline win as accepted bounded evidence, downgrades broad speed wording, and stops production optimization unless the next work is explicit blocker resolution for ClosedXML coverage, feature-rich semantic mismatches, remaining unsupported selected-sheet/metadata-only competitors, FastXLSX environment coverage, a full-profile regression of the optimized string-heavy/styles-heavy rows, or another named public workflow loss.',
 					forbiddenShortcut:
 						'Do not count unavailable runners, blocked runners, dirty-worktree timings, one-workload medians, the 2000x20 plain-text write baseline, or noisy string-heavy reruns as broad XLSX write/SOTA/QSS speed wins.',
 					boundary:
@@ -5504,6 +5527,8 @@ const AGENT_WORKFLOW_OBSERVABILITY_BLOCKER = {
 		'CLI agent-init surfaces runnable SDK, HTTP, and MCP safe-edit example commands through `0d1b33f7 feat(cli): surface runnable agent workflow examples`, so a CLI user can find the same outside-user workflows without knowing repo paths.',
 		'API and MCP workflow discovery surfaces expose runnable SDK, HTTP, and MCP safe-edit example commands through `407499cd feat(api): expose runnable workflow examples`, and installed app smoke checks guard those example fields.',
 		'Workflow discovery surfaces expose runnable-example proof context through `f3347e17 feat(api): expose workflow example proof context`, including repository-root workdir, setup prerequisites, and `bun test examples/root-scripts.test.ts` as the proof command.',
+		'Packaged proof surfaces expose workflow examples through `58a7f579 test(release): expose workflow examples in packaged proof`, including MCP agent-workflow resource text and installed smoke output.',
+		'Installed SDK safe-edit workflow proof remains blocked after `5981764c feat(sdk): add installed safe edit example`: current focused proof fails on the proofBundle blank/empty before-value contract, so installed-SDK workflow wording is not accepted.',
 		'Workflow docs list inspect, plan, commit, verify, trace, and repair-plan recovery paths in `docs/AGENT_WORKFLOW.md`, but documentation is guidance rather than release proof.',
 	],
 	evidenceMissing: [

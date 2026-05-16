@@ -884,6 +884,12 @@ describe('release proof evidence index', () => {
 				boundary: expect.stringContaining('No password recovery'),
 			}),
 			expect.objectContaining({
+				evidenceId: 'sdk-encrypted-output-fail-closed-proof',
+				acceptedScope: expect.stringContaining('bd6e4358'),
+				command: expect.stringContaining('encrypted workbook saves fail closed'),
+				boundary: expect.stringContaining('Encrypted output fail-closed evidence only'),
+			}),
+			expect.objectContaining({
 				evidenceId: 'sdk-encrypted-agent-commit-policy-proof',
 				acceptedScope: expect.stringContaining('5ab9365d'),
 				path: expect.stringContaining('packages/sdk/src/agent-workflow.test.ts'),
@@ -894,9 +900,26 @@ describe('release proof evidence index', () => {
 				command: expect.stringContaining('packages/sdk/src/agent-workflow.test.ts'),
 			}),
 			expect.objectContaining({
+				evidenceId: 'sdk-signed-output-fail-closed-proof',
+				acceptedScope: expect.stringContaining('4502acbf'),
+				command: expect.stringContaining('signed workbook saves fail closed'),
+				boundary: expect.stringContaining('Synthetic signed-package topology'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'sdk-signed-output-fail-closed-proof',
+				acceptedScope: expect.stringContaining('17fa6741'),
+				command: expect.stringContaining('dirty signed workbooks require explicit signature'),
+			}),
+			expect.objectContaining({
 				evidenceId: 'mcp-agent-workflow-open-plan-first',
 				acceptedScope: expect.stringContaining('d4ee22e1'),
 				boundary: expect.stringContaining('MCP workflow guidance evidence only'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'agent-safe-edit-example-proof',
+				acceptedScope: expect.stringContaining('cab4bff1'),
+				command: expect.stringContaining('examples/agent-safe-edit.ts'),
+				boundary: expect.stringContaining('Local example workflow proof only'),
 			}),
 			expect.objectContaining({
 				evidenceId: 'api-custom-ui-active-content-proof',
@@ -914,6 +937,22 @@ describe('release proof evidence index', () => {
 				acceptedScope: expect.stringContaining('2459f79a'),
 				command: expect.stringContaining('ActiveX control'),
 				boundary: expect.stringContaining('ActiveX/form-control execution metadata only'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'chart-series-source-fail-closed-proof',
+				acceptedScope: expect.stringContaining('44f43d12'),
+				command: expect.stringContaining(
+					'setChartSeriesSource rejects source fields absent from parsed chart series',
+				),
+				boundary: expect.stringContaining('Chart series-source insertion guard only'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'query-table-topology-fail-closed-proof',
+				acceptedScope: expect.stringContaining('a477e2ed'),
+				command: expect.stringContaining(
+					'fails closed on public query-table column topology edits',
+				),
+				boundary: expect.stringContaining('Public query-table topology fail-closed evidence only'),
 			}),
 			expect.objectContaining({
 				evidenceId: 'cli-agent-facing-open-diagnostics-proof',
@@ -1057,6 +1096,28 @@ describe('release proof evidence index', () => {
 			}),
 			expect.objectContaining({
 				evidenceId: 'cli-agent-facing-open-diagnostics-proof',
+				acceptedScope: expect.stringContaining('315cd030'),
+				command: expect.stringContaining(
+					'inspect --json reports unknown details with structured retry guidance',
+				),
+				path: expect.stringContaining('apps/cli/src/commands/inspect.ts'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'cli-agent-facing-open-diagnostics-proof',
+				acceptedScope: expect.stringContaining('4b8b82b6'),
+				command: expect.stringContaining(
+					'CLI JSON validation errors include command-specific guidance and fallback codes',
+				),
+				path: expect.stringContaining('apps/cli/src/commands/formula.ts'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'cli-agent-facing-open-diagnostics-proof',
+				acceptedScope: expect.stringContaining('59d0d65c'),
+				command: expect.stringContaining('formula show returns parsed formula info'),
+				path: expect.stringContaining('apps/cli/src/commands/formula.ts'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'cli-agent-facing-open-diagnostics-proof',
 				acceptedScope: expect.stringContaining('9b155c7f'),
 				boundary: expect.stringContaining('CLI agent-facing diagnostics only'),
 			}),
@@ -1069,7 +1130,7 @@ describe('release proof evidence index', () => {
 				evidenceId: 'api-open-workflow-reference-proof',
 				acceptedScope: expect.stringContaining('215d6e57'),
 				command:
-					'bun test apps/api/src/server.test.ts -t "jsonFailureError wraps string failures|string API failures return coded JSON envelopes|missing workbook references|missing inputs|missing template data|before opening workbooks|trace reports missing target cells" --timeout 30000',
+					'bun test apps/api/src/server.test.ts -t "jsonFailureError wraps string failures|string API failures return coded JSON envelopes|missing workbook references|missing inputs|missing template data|before opening workbooks|trace reports missing target cells|/agent-workflow exposes the API safe edit contract" --timeout 30000',
 			}),
 			expect.objectContaining({
 				evidenceId: 'api-open-workflow-reference-proof',
@@ -1080,6 +1141,16 @@ describe('release proof evidence index', () => {
 				evidenceId: 'api-open-workflow-reference-proof',
 				acceptedScope: expect.stringContaining('25ca9b21'),
 				command: expect.stringContaining('jsonFailureError wraps string failures'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'api-open-workflow-reference-proof',
+				acceptedScope: expect.stringContaining('ec0b98e9'),
+				command: expect.stringContaining('string API failures return coded JSON envelopes'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'api-open-workflow-reference-proof',
+				acceptedScope: expect.stringContaining('98752c84'),
+				command: expect.stringContaining('/agent-workflow exposes the API safe edit contract'),
 			}),
 			expect.objectContaining({
 				evidenceId: 'api-open-workflow-reference-proof',
@@ -1191,7 +1262,7 @@ describe('release proof evidence index', () => {
 				evidenceId: 'mcp-open-workflow-reference-proof',
 				acceptedScope: expect.stringContaining('da273900'),
 				command:
-					'bun test apps/mcp/src/index.test.ts -t "missing workbook references|string MCP tool errors return coded JSON failures|ascend.read_table reports missing tables" --timeout 30000',
+					'bun test apps/mcp/src/index.test.ts -t "missing workbook references|string MCP tool errors return coded JSON failures|ascend.read_table reports missing tables|ascend.agent_workflow exposes machine-readable safe edit guidance" --timeout 30000',
 			}),
 			expect.objectContaining({
 				evidenceId: 'mcp-open-workflow-reference-proof',
@@ -1202,6 +1273,13 @@ describe('release proof evidence index', () => {
 				evidenceId: 'mcp-open-workflow-reference-proof',
 				acceptedScope: expect.stringContaining('f16085b3'),
 				command: expect.stringContaining('ascend.read_table reports missing tables'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'mcp-open-workflow-reference-proof',
+				acceptedScope: expect.stringContaining('77695508'),
+				command: expect.stringContaining(
+					'ascend.agent_workflow exposes machine-readable safe edit guidance',
+				),
 			}),
 			expect.objectContaining({
 				evidenceId: 'release-rc-gate',
@@ -4037,6 +4115,9 @@ describe('release proof evidence index', () => {
 			'Commit f8846cf8 records a current clean metadata-only Calamine recheck',
 		)
 		expect(packet.benchmarkBlocker?.evidenceWeHave?.join('\n')).toContain(
+			'Commit 187548bf pins dense-values write evidence',
+		)
+		expect(packet.benchmarkBlocker?.evidenceWeHave?.join('\n')).toContain(
 			'Commit bbf875b4 adds an Ascend readXlsx selected-sheet external-process row',
 		)
 		expect(packet.benchmarkBlocker?.evidenceWeHave?.join('\n')).toContain(
@@ -4050,6 +4131,9 @@ describe('release proof evidence index', () => {
 		)
 		expect(packet.benchmarkBlocker?.evidenceMissing?.join('\n')).toContain(
 			'Named metadata-only production cost center from profiling',
+		)
+		expect(packet.benchmarkBlocker?.evidenceMissing?.join('\n')).toContain(
+			'Clean multi-workload XLSX write SOTA gate',
 		)
 		expect(packet.benchmarkBlocker?.evidenceMissing?.join('\n')).toContain(
 			'Clean repeat-5 selected-sheet rerun that includes the new ascend-readXlsx selected-sheet row',
@@ -4075,12 +4159,18 @@ describe('release proof evidence index', () => {
 		expect(packet.benchmarkBlocker?.forbiddenWording).toContain(
 			'Do not claim Ascend beats FastXLSX on memory, feature-rich rich-metadata reads, or every XLSX workflow.',
 		)
+		expect(packet.benchmarkBlocker?.forbiddenWording).toContain(
+			'Do not claim Ascend is SOTA for XLSX write, beats every generated XLSX writer, beats ClosedXML on dense-value writes, or produces the smallest dense-value XLSX.',
+		)
 		expect(packet.benchmarkBlocker?.nextAction).toContain('Downgrade broad read-speed wording')
 		expect(packet.benchmarkBlocker?.nextAction).toContain(
 			'Calamine metadata-only baseline is not an Ascend win',
 		)
 		expect(packet.benchmarkBlocker?.nextAction).toContain(
 			'f8846cf8 kills the capsule-skip metadata-only optimization target',
+		)
+		expect(packet.benchmarkBlocker?.nextAction).toContain(
+			'187548bf keeps dense-values write wording scoped',
 		)
 		expect(packet.benchmarkBlocker?.nextAction).toContain(
 			'current FastXLSX value/warm rows are scoped wins',
@@ -4133,6 +4223,9 @@ describe('release proof evidence index', () => {
 		)
 		expect(packet.benchmarkBlocker?.acceptanceEvidence?.join('\n')).toContain(
 			'Commit f8846cf8 records the current metadata-only Calamine recheck',
+		)
+		expect(packet.benchmarkBlocker?.acceptanceEvidence?.join('\n')).toContain(
+			'Commit 187548bf records scoped dense-values write evidence',
 		)
 		expect(packet.benchmarkBlocker?.acceptanceEvidence?.join('\n')).toContain(
 			'current full-profile run at commit 9ddfff91',

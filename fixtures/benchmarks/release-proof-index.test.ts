@@ -1016,6 +1016,12 @@ describe('release proof evidence index', () => {
 				boundary: expect.stringContaining('Workflow-discovery proof-context evidence only'),
 			}),
 			expect.objectContaining({
+				evidenceId: 'installed-sdk-safe-edit-example-proof',
+				acceptedScope: expect.stringContaining('5915794f'),
+				command: 'bun test examples/package-install-safe-edit.test.ts --timeout 30000',
+				boundary: expect.stringContaining('Installed SDK generated-workbook proof only'),
+			}),
+			expect.objectContaining({
 				evidenceId: 'cli-agent-init-workflow-examples-proof',
 				acceptedScope: expect.stringContaining('0d1b33f7'),
 				command: expect.stringContaining('agent-init prints the canonical agent workflow contract'),
@@ -1033,6 +1039,14 @@ describe('release proof evidence index', () => {
 				boundary: expect.stringContaining('Public shape-macro reporting'),
 			}),
 			expect.objectContaining({
+				evidenceId: 'public-shape-macro-commit-proof',
+				acceptedScope: expect.stringContaining('9df35fd6'),
+				command: expect.stringContaining(
+					'commits public shape macro drawings as blocked active content',
+				),
+				boundary: expect.stringContaining('Public shape-macro commit audit evidence only'),
+			}),
+			expect.objectContaining({
 				evidenceId: 'public-activex-blocked-execution-policy-proof',
 				acceptedScope: expect.stringContaining('2459f79a'),
 				command: expect.stringContaining('ActiveX control'),
@@ -1045,6 +1059,12 @@ describe('release proof evidence index', () => {
 					'setChartSeriesSource rejects source fields absent from parsed chart series',
 				),
 				boundary: expect.stringContaining('Chart series-source insertion guard only'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'public-chart-source-commit-proof',
+				acceptedScope: expect.stringContaining('1eaf28ff'),
+				command: expect.stringContaining('commits public chart source edits'),
+				boundary: expect.stringContaining('Public chart-source commit evidence only'),
 			}),
 			expect.objectContaining({
 				evidenceId: 'query-table-topology-fail-closed-proof',
@@ -1646,27 +1666,29 @@ describe('release proof evidence index', () => {
 						'f3347e17',
 						'58a7f579',
 						'5981764c',
+						'5915794f',
 						'868add46',
+						'1eaf28ff',
 						'62f45cb5',
 					]),
-					allowedWording: expect.stringContaining('query-table refresh metadata'),
+					allowedWording: expect.stringContaining('installed-SDK'),
 					forbiddenWording: expect.arrayContaining([
-						expect.stringContaining('installed-SDK safe-edit proof'),
+						expect.stringContaining('registry download proof'),
 					]),
 					ownerLoop: 'release',
-					nextOwnerAction: expect.stringContaining('blank'),
+					nextOwnerAction: expect.stringContaining('package publication/install smoke'),
 				}),
 				expect.objectContaining({
 					claimArea: 'signed-encrypted-macro-handling',
-					commits: expect.arrayContaining(['7ff308c9', 'b7e8eccc', 'a004fb4a']),
-					allowedWording: expect.stringContaining('signed-macro exports fail closed'),
+					commits: expect.arrayContaining(['7ff308c9', 'b7e8eccc', 'a004fb4a', '9df35fd6']),
+					allowedWording: expect.stringContaining('shape-macro'),
 					forbiddenWording: expect.arrayContaining([expect.stringContaining('macro safety')]),
 					ownerLoop: 'correctness',
 				}),
 				expect.objectContaining({
 					claimArea: 'write-performance',
-					commits: expect.arrayContaining(['0d0c9632', '905ecb5e']),
-					allowedWording: expect.stringContaining('styles-heavy'),
+					commits: expect.arrayContaining(['0d0c9632', '905ecb5e', 'c297ba4c', '27af69d4']),
+					allowedWording: expect.stringContaining('dense-values'),
 					forbiddenWording: expect.arrayContaining([expect.stringContaining('fastest XLSX')]),
 					ownerLoop: 'performance',
 				}),
@@ -2258,9 +2280,8 @@ describe('release proof evidence index', () => {
 		expect(agentWorkflowEvidence).toContain('58a7f579')
 		expect(agentWorkflowEvidence).toContain('Packaged proof surfaces expose workflow examples')
 		expect(agentWorkflowEvidence).toContain('5981764c')
-		expect(agentWorkflowEvidence).toContain(
-			'Installed SDK safe-edit workflow proof remains blocked',
-		)
+		expect(agentWorkflowEvidence).toContain('5915794f')
+		expect(agentWorkflowEvidence).toContain('Installed SDK safe-edit workflow proof is accepted')
 		expect(agentWorkflowEvidence).toContain('docs/AGENT_WORKFLOW.md')
 		expect(agentWorkflowMissing).toContain('inspect, plan, commit, reopen, diff, audit')
 		expect(agentWorkflowMissing).toContain('Trace payload size')
@@ -2378,11 +2399,19 @@ describe('release proof evidence index', () => {
 		expect(performanceOwnerArtifact?.nextAction).toContain(
 			'905ecb5e styles-heavy write baseline win',
 		)
+		expect(performanceOwnerArtifact?.nextAction).toContain(
+			'c297ba4c dense-values current repeat-15 comparable win',
+		)
+		expect(performanceOwnerArtifact?.nextAction).toContain(
+			'27af69d4 string-heavy current repeat-15 comparable win',
+		)
 		expect(performanceOwnerArtifact?.nextAction).toContain('stops production optimization')
 		expect(performanceOwnerArtifact?.forbiddenShortcut).toContain(
-			'the 2000x20 plain-text write baseline',
+			'the 2000x20 plain-text/dense/string/styles rows',
 		)
-		expect(performanceOwnerArtifact?.forbiddenShortcut).toContain('noisy string-heavy reruns')
+		expect(performanceOwnerArtifact?.forbiddenShortcut).toContain(
+			'focused fastest-comparable reruns',
+		)
 		expect(
 			safeOpenDecision.nextOwnerActions.find(
 				(action) => action.requirementId === 'release-latency-run',
@@ -4412,9 +4441,11 @@ describe('release proof evidence index', () => {
 			'Do not claim Ascend beats FastXLSX on memory, feature-rich rich-metadata reads, or every XLSX workflow.',
 		)
 		expect(packet.benchmarkBlocker?.forbiddenWording).toContain(
-			'Do not claim Ascend is SOTA for XLSX write, beats every generated XLSX writer, beats ClosedXML on dense-value writes, or produces the smallest dense-value XLSX.',
+			'Do not claim Ascend is SOTA for XLSX write, beats every generated XLSX writer, beats omitted/unsupported/blocked writers, produces the smallest XLSX, or proves byte/order-equivalent output against every writer.',
 		)
-		expect(packet.benchmarkBlocker?.nextAction).toContain('Downgrade broad read-speed wording')
+		expect(packet.benchmarkBlocker?.nextAction).toContain(
+			'Downgrade broad read/write speed wording',
+		)
 		expect(packet.benchmarkBlocker?.nextAction).toContain(
 			'Calamine metadata-only baseline is not an Ascend win',
 		)
@@ -4422,7 +4453,7 @@ describe('release proof evidence index', () => {
 			'f8846cf8 kills the capsule-skip metadata-only optimization target',
 		)
 		expect(packet.benchmarkBlocker?.nextAction).toContain(
-			'187548bf keeps dense-values write wording scoped',
+			'generated-write wins remain scoped to plain-text/string-heavy/dense-values/styles-heavy comparable rows',
 		)
 		expect(packet.benchmarkBlocker?.nextAction).toContain(
 			'current FastXLSX value/warm rows are scoped wins',
@@ -4446,7 +4477,7 @@ describe('release proof evidence index', () => {
 			'current full-profile FastXLSX carry-forward policy',
 		)
 		expect(packet.benchmarkBlocker?.nextOwnerAction).toContain(
-			'profiling-named metadata-only cost center',
+			'clean multi-workload xlsx-write-sota coverage',
 		)
 		expect(packet.benchmarkBlocker?.benchmarkCommands?.join('\n')).toContain(
 			'--runner-manifest fixtures/benchmarks/runners/ascend-python-readers.manifest.json',
@@ -4478,6 +4509,9 @@ describe('release proof evidence index', () => {
 		)
 		expect(packet.benchmarkBlocker?.acceptanceEvidence?.join('\n')).toContain(
 			'Commit 187548bf records scoped dense-values write evidence',
+		)
+		expect(packet.benchmarkBlocker?.acceptanceEvidence?.join('\n')).toContain(
+			'Commits 67b900ed, e22eb86a, 0d0c9632, 905ecb5e, c297ba4c, and 27af69d4 record scoped generated-write evidence',
 		)
 		expect(packet.benchmarkBlocker?.acceptanceEvidence?.join('\n')).toContain(
 			'current full-profile run at commit 9ddfff91',

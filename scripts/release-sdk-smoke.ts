@@ -118,10 +118,11 @@ async function prepareConsumerApp(): Promise<void> {
 	)
 	await writeFile(
 		join(appRoot, 'sdk-smoke.ts'),
-		`import { AscendWorkbook, commitAgentPlan, createAgentPlan, inspectWorkbookOpenPlan, readAgentDoc, searchAgentDocs } from '@ascend/sdk'
+		`import { AscendWorkbook, commitAgentPlan, createAgentPlan, createPreparedAgentPlan, inspectWorkbookOpenPlan, readAgentDoc, searchAgentDocs } from '@ascend/sdk'
 
 const input = '${join(appRoot, 'input.xlsx')}'
 const output = '${join(appRoot, 'output.xlsx')}'
+const preparedOutput = '${join(appRoot, 'prepared-output.xlsx')}'
 
 const created = AscendWorkbook.create()
 created.set('Sheet1!A1', 'Revenue')
@@ -146,12 +147,35 @@ const reopened = await AscendWorkbook.open(output)
 const check = reopened.check()
 const b1 = reopened.get('Sheet1!B1')
 const c1 = reopened.get('Sheet1!C1')
+const preparedOps = [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'B1', value: 150 }] }]
+const prepared = await createPreparedAgentPlan(input, preparedOps)
+if (prepared.plan.planDigest !== prepared.planDigest) {
+	throw new Error(\`prepared plan digest mismatch: \${prepared.plan.planDigest} !== \${prepared.planDigest}\`)
+}
+const preparedCommit = await prepared.commit({
+	output: preparedOutput,
+	expectSha256: prepared.inputSha256,
+})
+const preparedReopened = await AscendWorkbook.open(preparedOutput)
+const preparedCheck = preparedReopened.check()
+const preparedB1 = preparedReopened.get('Sheet1!B1')
+const preparedC1 = preparedReopened.get('Sheet1!C1')
 const llms = await readAgentDoc('llms.txt')
 const docHits = await searchAgentDocs({ query: 'plan commit' })
 
 if (!check.valid) throw new Error(\`check failed: \${JSON.stringify(check.issues)}\`)
 if (b1.kind !== 'number' || b1.value !== 125) throw new Error(\`unexpected B1: \${JSON.stringify(b1)}\`)
 if (c1.kind !== 'number' || c1.value !== 250) throw new Error(\`unexpected C1: \${JSON.stringify(c1)}\`)
+if (!preparedCheck.valid) throw new Error(\`prepared check failed: \${JSON.stringify(preparedCheck.issues)}\`)
+if (!preparedCommit.postWrite.reopened || !preparedCommit.postWrite.auditsPassed) {
+	throw new Error(\`prepared commit did not reopen cleanly: \${JSON.stringify(preparedCommit.postWrite)}\`)
+}
+if (preparedB1.kind !== 'number' || preparedB1.value !== 150) {
+	throw new Error(\`unexpected prepared B1: \${JSON.stringify(preparedB1)}\`)
+}
+if (preparedC1.kind !== 'number' || preparedC1.value !== 300) {
+	throw new Error(\`unexpected prepared C1: \${JSON.stringify(preparedC1)}\`)
+}
 if (!llms?.includes('Ascend')) throw new Error('installed SDK could not read bundled llms.txt')
 if (docHits.length === 0) throw new Error('installed SDK docs search returned no hits')
 
@@ -161,9 +185,14 @@ console.log(JSON.stringify({
 	planWouldSucceed: plan.preview.wouldSucceed,
 	commitOutputSha256: commit.outputSha256,
 	reopenedValid: check.valid,
+	preparedPlanDigest: prepared.planDigest,
+	preparedOutputSha256: preparedCommit.outputSha256,
+	preparedReopenedValid: preparedCheck.valid,
 	docHits: docHits.length,
 	b1,
 	c1,
+	preparedB1,
+	preparedC1,
 }))
 `,
 	)

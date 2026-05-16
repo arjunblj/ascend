@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises'
 import { ascendError, type Operation } from '@ascend/schema'
 import {
 	type AgentCommitOptions,
+	type AgentCommitResult,
 	commitAgentPlan,
 	compactAgentCommitResult,
 	createAgentCommitPackageActionProof,
@@ -33,6 +34,7 @@ Flags:
   --progress jsonl          Emit machine-readable progress events to stderr
   --compact                 Return compact JSON verification counts instead of full trace artifacts
   --package-actions         Include package action proof in JSON output
+  --proof                   Include compact workflow proof bundle in JSON output
   --json                    Output as JSON
 `
 
@@ -78,7 +80,7 @@ export async function commitCommand(args: string[], flags: Map<string, string>):
 	const result = await commitAgentPlan(file, ops, options)
 	if (flags.has('json')) {
 		const payload = flags.has('compact') ? compactAgentCommitResult(result) : result
-		console.log(jsonOut(withPackageActions(payload, result, flags)))
+		console.log(jsonOut(withProofBundle(withPackageActions(payload, result, flags), result, flags)))
 		return 0
 	}
 	console.log(heading(`Committed: ${file}`))
@@ -105,6 +107,101 @@ function withPackageActions<T>(
 	return {
 		...payload,
 		packageActions: createAgentCommitPackageActionProof(result),
+	}
+}
+
+function withProofBundle<T>(
+	payload: T,
+	result: AgentCommitResult,
+	flags: Map<string, string>,
+): T | (T & { readonly proofBundle: ReturnType<typeof createCommitProofBundle> }) {
+	if (!flags.has('proof')) return payload
+	return {
+		...payload,
+		proofBundle: createCommitProofBundle(result, flags),
+	}
+}
+
+function createCommitProofBundle(result: AgentCommitResult, flags: Map<string, string>) {
+	const expectedSha256 = flags.get('expect-sha256')
+	const whatChanged = result.apply.affectedCells.map((ref) => ({ ref }))
+	const whySafe = [
+		{
+			gate: 'input-hash',
+			ok: expectedSha256 !== undefined && expectedSha256 === result.inputSha256,
+			evidence: {
+				expectedSha256: expectedSha256 ?? null,
+				inputSha256: result.inputSha256,
+			},
+		},
+		{
+			gate: 'approval',
+			ok: result.approvals.length === 0,
+			evidence: {
+				approvalCount: result.approvals.length,
+				approvalIds: result.approvals.map((approval) => approval.id),
+			},
+		},
+		{
+			gate: 'write-policy',
+			ok: result.writePolicy.ok,
+			evidence: {
+				diagnosticCount: result.writePolicy.diagnostics.length,
+				blockerCount: result.writePolicy.diagnostics.filter(
+					(diagnostic) => diagnostic.severity === 'blocker',
+				).length,
+			},
+		},
+		{
+			gate: 'commit',
+			ok: result.postWrite.valid && result.postWrite.auditsPassed,
+			evidence: {
+				outputSha256: result.outputSha256,
+				postWriteValid: result.postWrite.valid,
+				auditsPassed: result.postWrite.auditsPassed,
+			},
+		},
+		{
+			gate: 'reopen-verify',
+			ok: result.postWrite.reopened && result.postWrite.check.valid && result.postWrite.lint.clean,
+			evidence: {
+				reopened: result.postWrite.reopened,
+				checkValid: result.postWrite.check.valid,
+				checkIssueCount: result.postWrite.check.issues.length,
+				lintClean: result.postWrite.lint.clean,
+				lintWarningCount: result.postWrite.lint.warnings.length,
+			},
+		},
+		{
+			gate: 'package-graph',
+			ok:
+				result.postWrite.packageGraphAudit.ok &&
+				result.postWrite.unresolvedPackageGraphIssueCount === 0,
+			evidence: {
+				packageGraphAuditOk: result.postWrite.packageGraphAudit.ok,
+				expectedPackageGraphIssueCount: result.postWrite.expectedPackageGraphIssueCount,
+				unresolvedPackageGraphIssueCount: result.postWrite.unresolvedPackageGraphIssueCount,
+			},
+		},
+	] as const
+	return {
+		safeToUse: whySafe.every((gate) => gate.ok),
+		whatChanged,
+		whySafe,
+		evidence: {
+			inputSha256: result.inputSha256,
+			planDigest: result.planDigest,
+			outputSha256: result.outputSha256,
+			operationCount: result.operationCount,
+			affectedCellCount: result.apply.affectedCells.length,
+			postWriteValid: result.postWrite.valid,
+			auditsPassed: result.postWrite.auditsPassed,
+			reopened: result.postWrite.reopened,
+			checkValid: result.postWrite.check.valid,
+			lintClean: result.postWrite.lint.clean,
+			writePolicyOk: result.writePolicy.ok,
+			packageGraphAuditOk: result.postWrite.packageGraphAudit.ok,
+		},
 	}
 }
 

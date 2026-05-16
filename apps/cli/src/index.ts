@@ -151,6 +151,7 @@ const COMMANDS: Record<string, Command> = {
 			'progress',
 			'compact',
 			'package-actions',
+			'proof',
 			'json',
 		],
 	},

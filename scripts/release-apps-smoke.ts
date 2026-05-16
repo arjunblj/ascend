@@ -248,7 +248,14 @@ const cliCommit = await runCliJson([
 	'--expect-sha256',
 	cliPlan.inputSha256,
 	'--compact',
+	'--proof',
 ])
+if (cliCommit.proofBundle?.safeToUse !== true) {
+	throw new Error('CLI commit proof bundle did not pass: ' + JSON.stringify(cliCommit))
+}
+if (!cliCommit.proofBundle?.whatChanged?.some((cell) => cell.ref === 'B1')) {
+	throw new Error('CLI commit proof bundle did not explain changed B1: ' + JSON.stringify(cliCommit))
+}
 const cliCheck = await runCliJson(['check', cliOutput])
 const cliRead = await runCliJson(['read', cliOutput, 'Sheet1!B1:C1'])
 const cliValues = assertWorkbookResult('CLI', cliRead, cliCheck)

@@ -520,8 +520,10 @@ describe('ascend cli', () => {
 		expect(parsed.data.commands.plan).toContain('--progress jsonl')
 		expect(parsed.data.commands.encryptedPlan).toContain('--password <value>')
 		expect(parsed.data.commands.encryptedCommit).toContain('--password <value>')
+		expect(parsed.data.commands.commit).toContain('--proof')
 		expect(parsed.data.mcpResources).toContain('ascend://operations')
 		expect(parsed.data.safetyDefaults.join('\n')).toContain('--expect-sha256')
+		expect(parsed.data.safetyDefaults.join('\n')).toContain('proofBundle.safeToUse')
 		expect(parsed.data.safetyDefaults.join('\n')).toContain('planHandle')
 		expect(parsed.data.safetyDefaults.join('\n')).toContain('untrusted data')
 		expect(parsed.data.safetyDefaults.join('\n')).toContain('must not echo the password')
@@ -693,6 +695,7 @@ describe('ascend cli', () => {
 			'--expect-sha256',
 			planned.data.inputSha256,
 			'--package-actions',
+			'--proof',
 			'--json',
 		)
 		expect(commit.exitCode).toBe(0)
@@ -700,6 +703,32 @@ describe('ascend cli', () => {
 		expect(committed.ok).toBe(true)
 		expect(committed.data.outputSha256).toMatch(/^[a-f0-9]{64}$/)
 		expect(committed.data.packageActions.kind).toBe('ascend-package-action-proof')
+		expect(committed.data.proofBundle).toMatchObject({
+			safeToUse: true,
+			evidence: {
+				inputSha256: planned.data.inputSha256,
+				outputSha256: committed.data.outputSha256,
+				postWriteValid: true,
+				auditsPassed: true,
+				reopened: true,
+				checkValid: true,
+				lintClean: true,
+			},
+		})
+		expect(committed.data.proofBundle.whatChanged).toEqual([{ ref: 'A1' }])
+		expect(
+			committed.data.proofBundle.whySafe.map((gate: { gate: string; ok: boolean }) => [
+				gate.gate,
+				gate.ok,
+			]),
+		).toEqual([
+			['input-hash', true],
+			['approval', true],
+			['write-policy', true],
+			['commit', true],
+			['reopen-verify', true],
+			['package-graph', true],
+		])
 		expect(committed.data.packageActions.byAction.regenerate).toBeGreaterThan(0)
 		expect(committed.data.packageActions.coverage.sourceByteDigestCount).toBeGreaterThan(0)
 		expect(committed.data.packageActions.coverage.outputByteDigestCount).toBeGreaterThan(0)
@@ -724,6 +753,7 @@ describe('ascend cli', () => {
 			'--expect-sha256',
 			planned.data.inputSha256,
 			'--compact',
+			'--proof',
 			'--json',
 		)
 		expect(compactCommit.exitCode).toBe(0)
@@ -736,6 +766,8 @@ describe('ascend cli', () => {
 		expect(compact.data.postWrite.reopened).toBe(true)
 		expect(compact.data.postWrite.check.valid).toBe(true)
 		expect(compact.data.postWrite.packageGraphAudit.ok).toBe(true)
+		expect(compact.data.proofBundle.safeToUse).toBe(true)
+		expect(compact.data.proofBundle.whatChanged).toEqual([{ ref: 'A1' }])
 		expect(compact.data.trace.artifactCount).toBeNumber()
 		expect(compact.data.trace.artifacts).toBeUndefined()
 		expect(compact.data.apply.affectedCells).toBeUndefined()

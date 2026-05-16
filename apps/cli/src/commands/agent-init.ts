@@ -61,9 +61,9 @@ const AGENT_INIT: AgentInitInfo = {
 		encryptedPlan:
 			'ascend plan <file> --ops ops.json --password <value> --package-actions --progress jsonl --json',
 		commit:
-			'ascend commit <file> --ops ops.json --output out.xlsx --expect-sha256 <hash> --package-actions --progress jsonl --json',
+			'ascend commit <file> --ops ops.json --output out.xlsx --expect-sha256 <hash> --proof --package-actions --progress jsonl --json',
 		encryptedCommit:
-			'ascend commit <file> --ops ops.json --output out.xlsx --password <value> --expect-sha256 <hash> --package-actions --progress jsonl --json',
+			'ascend commit <file> --ops ops.json --output out.xlsx --password <value> --expect-sha256 <hash> --proof --package-actions --progress jsonl --json',
 		check: 'ascend check <file> --progress jsonl --json',
 		repair: 'ascend repair-plan <file> --json',
 	},
@@ -127,6 +127,7 @@ const AGENT_INIT: AgentInitInfo = {
 		'For encrypted workbook workflows, pass --password only to commands that open source bytes; responses must not echo the password.',
 		'Prefer non-destructive --output writes over --in-place.',
 		'Use --expect-sha256 from plan output to reject stale inputs.',
+		'Use --proof on commit JSON to get proofBundle.safeToUse, proofBundle.whatChanged, and proofBundle.whySafe.',
 		'CLI plan/commit do not persist prepared handles; API/MCP planHandle values are one-shot and process-local.',
 		'Pass --approval only for approval ids emitted by plan.',
 		'Pass --allow-loss only for feature loss explicitly accepted by the user.',

@@ -2499,6 +2499,26 @@ describe('ascend cli', () => {
 		expect(stdout).toContain('SUM')
 		expect(stdout).toContain('References')
 		expect(stdout).toContain('B1:B2')
+
+		const missing = await run('formula', 'show', TEST_FILE, 'Sheet1!B1', '--json')
+		expect(missing.exitCode).toBe(1)
+		const parsed = JSON.parse(missing.stdout)
+		expect(parsed).toMatchObject({
+			ok: false,
+			error: {
+				code: 'VALIDATION_ERROR',
+				message: 'Formula not found',
+				retryable: true,
+				retryStrategy: 'modified',
+				details: {
+					command: 'formula show',
+					cell: 'Sheet1!B1',
+					load: { mode: 'formula' },
+					workflow: ['inspect', 'read', 'formula-assist'],
+				},
+			},
+		})
+		expect(parsed.error.suggestedFix).toContain('ascend inspect')
 	})
 
 	test('formula assist returns formula IDE help without opening a workbook', async () => {

@@ -1,5 +1,5 @@
 import { ascendError, levenshtein } from '@ascend/schema'
-import { formulaAssist } from '@ascend/sdk'
+import { formulaAssist, type WorkbookLoadInfo } from '@ascend/sdk'
 import { cliError, jsonErr, jsonOut } from '../output/json.ts'
 import { bullet, heading } from '../output/pretty.ts'
 import {
@@ -95,7 +95,7 @@ async function showFormula(args: string[], flags: Map<string, string>): Promise<
 	const { document: session } = await openWorkbookDocumentWithProgress(file, { mode: 'formula' })
 	const info = session.formula(cellRef)
 	if (!info) {
-		cliError(`No formula found at "${cellRef}"`, flags)
+		cliError(formulaNotFoundError(cellRef, session.inspect().load), flags)
 		return 1
 	}
 
@@ -123,6 +123,21 @@ async function showFormula(args: string[], flags: Map<string, string>): Promise<
 		console.log(bullet('Parse error', info.parseError))
 	}
 	return 0
+}
+
+function formulaNotFoundError(cellRef: string, load: WorkbookLoadInfo) {
+	return ascendError('VALIDATION_ERROR', 'Formula not found', {
+		retryable: true,
+		retryStrategy: 'modified',
+		details: {
+			command: 'formula show',
+			cell: cellRef,
+			load,
+			workflow: ['inspect', 'read', 'formula-assist'],
+		},
+		suggestedFix:
+			'Run ascend inspect or ascend read to confirm the target sheet and cell before retrying formula show.',
+	})
 }
 
 async function assistFormula(args: string[], flags: Map<string, string>): Promise<number> {

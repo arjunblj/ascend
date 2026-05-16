@@ -945,6 +945,14 @@ describe('release proof evidence index', () => {
 			}),
 			expect.objectContaining({
 				evidenceId: 'cli-agent-facing-open-diagnostics-proof',
+				acceptedScope: expect.stringContaining('4a2abfdb'),
+				command: expect.stringContaining(
+					'direct mutation commands --json return structured missing input guidance before opening files',
+				),
+				path: expect.stringContaining('apps/cli/src/commands/write.ts'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'cli-agent-facing-open-diagnostics-proof',
 				acceptedScope: expect.stringContaining('9b155c7f'),
 				boundary: expect.stringContaining('CLI agent-facing diagnostics only'),
 			}),

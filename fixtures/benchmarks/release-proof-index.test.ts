@@ -1150,10 +1150,8 @@ describe('release proof evidence index', () => {
 			}),
 			expect.objectContaining({
 				evidenceId: 'chart-source-structural-edit-proof',
-				acceptedScope: expect.stringContaining('0fc4370a'),
-				command: expect.stringContaining(
-					'commits structural row edits with shifted chart source refs',
-				),
+				acceptedScope: expect.stringMatching(/0fc4370a.*c06bba18/),
+				command: expect.stringContaining('commits moved chart source refs after save and reopen'),
 				boundary: expect.stringContaining('Chart-source structural edit evidence only'),
 			}),
 			expect.objectContaining({
@@ -1882,6 +1880,7 @@ describe('release proof evidence index', () => {
 						'4d272f77',
 						'1eaf28ff',
 						'0fc4370a',
+						'c06bba18',
 						'31141dd4',
 						'f7338c91',
 						'019f457e',
@@ -1901,6 +1900,7 @@ describe('release proof evidence index', () => {
 						),
 						expect.stringContaining('inventories OLE external link relationship binding'),
 						expect.stringContaining('commits structural row edits with shifted chart source refs'),
+						expect.stringContaining('commits moved chart source refs after save and reopen'),
 						expect.stringContaining(
 							'commits public workbook strong-hash protection with honest metadata reporting',
 						),

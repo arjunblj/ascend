@@ -318,6 +318,25 @@ if (cliSafeEdit.proofBundle?.safeToUse !== true) {
 if (!cliSafeEdit.proofBundle?.whatChanged?.some((cell) => cell.ref === 'Sheet1!B2')) {
 	throw new Error('installed CLI safe-edit proof did not explain the changed cell: ' + JSON.stringify(cliSafeEdit))
 }
+const cliSafeEditProofGates = cliSafeEdit.proofBundle?.whySafe?.map((gate) => [
+	gate.gate,
+	gate.ok,
+])
+if (
+	JSON.stringify(cliSafeEditProofGates) !==
+	JSON.stringify([
+		['open-plan', true],
+		['trust', true],
+		['plan-linked', true],
+		['plan', true],
+		['write-policy', true],
+		['commit', true],
+		['reopen-verify', true],
+		['package-graph', true],
+	])
+) {
+	throw new Error('installed CLI safe-edit proof gates were incomplete: ' + JSON.stringify(cliSafeEdit))
+}
 
 const apiFetch = createApiFetch()
 const apiInput = join(cwd, 'api-input.xlsx')

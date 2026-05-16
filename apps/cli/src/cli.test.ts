@@ -561,9 +561,12 @@ describe('ascend cli', () => {
 		).toEqual([
 			['open-plan', true],
 			['trust', true],
+			['plan-linked', true],
 			['plan', true],
+			['write-policy', true],
 			['commit', true],
 			['reopen-verify', true],
+			['package-graph', true],
 		])
 		expect(parsed.data.verify).toMatchObject({
 			reopened: true,

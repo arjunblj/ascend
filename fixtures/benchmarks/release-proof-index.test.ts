@@ -925,6 +925,30 @@ describe('release proof evidence index', () => {
 					acceptedScope: expect.stringContaining('8ce0fbe2'),
 				}),
 				expect.objectContaining({
+					evidenceId: 'api-open-workflow-reference-proof',
+					acceptedScope: expect.stringContaining('43781bef'),
+				}),
+				expect.objectContaining({
+					evidenceId: 'api-open-workflow-reference-proof',
+					acceptedScope: expect.stringContaining('ea67f3b3'),
+				}),
+				expect.objectContaining({
+					evidenceId: 'api-open-workflow-reference-proof',
+					acceptedScope: expect.stringContaining('e090fe13'),
+				}),
+				expect.objectContaining({
+					evidenceId: 'api-open-workflow-reference-proof',
+					acceptedScope: expect.stringContaining('active-content/trust-report'),
+				}),
+				expect.objectContaining({
+					evidenceId: 'api-open-workflow-reference-proof',
+					acceptedScope: expect.stringContaining('package-graph/raw-part'),
+				}),
+				expect.objectContaining({
+					evidenceId: 'api-open-workflow-reference-proof',
+					acceptedScope: expect.stringContaining('dump/template-merge'),
+				}),
+				expect.objectContaining({
 					evidenceId: 'mcp-open-workflow-reference-proof',
 					acceptedScope: expect.stringContaining('da273900'),
 					command:

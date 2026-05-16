@@ -257,6 +257,19 @@ function missingPackagePartPathError(): AscendError {
 	})
 }
 
+function missingReadRangeError(context: 'read' | 'agent-view'): AscendError {
+	const suggestedFix =
+		context === 'agent-view'
+			? 'Pass range such as A1:D20 so Ascend can build a bounded agent view.'
+			: 'Pass range such as A1:D20 so Ascend can read the requested workbook window.'
+	return ascendError('VALIDATION_ERROR', `Missing or invalid ${context} range`, {
+		retryable: true,
+		retryStrategy: 'modified',
+		details: { required: ['range'] },
+		suggestedFix,
+	})
+}
+
 function replayBatchLoadOptionsError(kind: string, options: readonly string[]): AscendError {
 	return ascendError(
 		'VALIDATION_ERROR',
@@ -896,7 +909,7 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 				const file = body ? requireString(body, 'file') : null
 				const range = body ? requireString(body, 'range') : null
 				if (!file) return jsonFailureError(missingAgentWorkflowFileError('read'), 400)
-				if (!range) return jsonFailure('Missing or invalid range', 400)
+				if (!range) return jsonFailureError(missingReadRangeError('read'), 400)
 				try {
 					const sheetName = body ? requireString(body, 'sheet') : null
 					const format = (body ? requireString(body, 'format') : null) ?? 'cells'
@@ -985,7 +998,7 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 				const file = body ? requireString(body, 'file') : null
 				const range = body ? requireString(body, 'range') : null
 				if (!file) return jsonFailureError(missingAgentWorkflowFileError('agent-view'), 400)
-				if (!range) return jsonFailure('Missing or invalid range', 400)
+				if (!range) return jsonFailureError(missingReadRangeError('agent-view'), 400)
 				try {
 					const sheetName = body ? requireString(body, 'sheet') : null
 					const maxRows = body ? requireOptionalNumber(body, 'maxRows') : undefined

@@ -693,6 +693,21 @@ describe('Ascend API server', () => {
 		})
 	})
 
+	test('/read rejects missing ranges with structured retry guidance', async () => {
+		const result = await postJson('/read', { file: TEMP_FILE })
+
+		expect(result.status).toBe(400)
+		expect(result.body.ok).toBe(false)
+		expect(result.body.error).toMatchObject({
+			code: 'VALIDATION_ERROR',
+			message: 'Missing or invalid read range',
+			retryable: true,
+			retryStrategy: 'modified',
+			details: { required: ['range'] },
+			suggestedFix: expect.stringContaining('Pass range such as A1:D20'),
+		})
+	})
+
 	test('/agent-view rejects missing workbook references with structured retry guidance', async () => {
 		const result = await postJson('/agent-view', { range: 'A1:A1' })
 
@@ -705,6 +720,21 @@ describe('Ascend API server', () => {
 			retryStrategy: 'modified',
 			details: { required: ['file'] },
 			suggestedFix: expect.stringContaining('Pass file so Ascend can build a bounded agent view'),
+		})
+	})
+
+	test('/agent-view rejects missing ranges with structured retry guidance', async () => {
+		const result = await postJson('/agent-view', { file: TEMP_FILE })
+
+		expect(result.status).toBe(400)
+		expect(result.body.ok).toBe(false)
+		expect(result.body.error).toMatchObject({
+			code: 'VALIDATION_ERROR',
+			message: 'Missing or invalid agent-view range',
+			retryable: true,
+			retryStrategy: 'modified',
+			details: { required: ['range'] },
+			suggestedFix: expect.stringContaining('bounded agent view'),
 		})
 	})
 

@@ -2,6 +2,11 @@
 	"name": "@ascend/examples",
 	"private": true,
 	"type": "module",
+	"scripts": {
+		"safe-edit": "bun run agent-safe-edit.ts",
+		"safe-edit:http": "bun run agent-safe-edit-http.ts",
+		"safe-edit:mcp": "bun run agent-safe-edit-mcp.ts"
+	},
 	"dependencies": {
 		"@ascend/sdk": "workspace:*"
 	}

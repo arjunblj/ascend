@@ -144,10 +144,11 @@ function scoreDoc(
 	const haystack = `${doc.title}\n${doc.path}\n${doc.text}`.toLowerCase()
 	let score = 0
 	for (const term of terms) {
+		const idHits = countOccurrences(doc.id.toLowerCase(), term)
 		const titleHits = countOccurrences(doc.title.toLowerCase(), term)
 		const pathHits = countOccurrences(doc.path.toLowerCase(), term)
 		const bodyHits = countOccurrences(haystack, term)
-		score += titleHits * 8 + pathHits * 5 + bodyHits
+		score += idHits * 12 + titleHits * 8 + pathHits * 5 + bodyHits
 	}
 	if (score === 0) return null
 	return {

@@ -120,6 +120,15 @@ describe('agent documentation surface', () => {
 		expect(openapi).toContain('never echoed in responses')
 	})
 
+	test('doc search keeps explicitly named llms context discoverable', async () => {
+		const results = await searchAgentDocs({
+			query: 'llms plan commit allowLoss',
+			limit: 3,
+		})
+
+		expect(results.some((result) => result.path.includes('llms'))).toBe(true)
+	})
+
 	test('example search finds the runnable golden path by agent workflow terms', async () => {
 		const results = await searchAgentDocs({
 			query: 'golden path prepared planHandle verify repair',

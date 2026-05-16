@@ -1838,8 +1838,17 @@ describe('release proof evidence index', () => {
 			readonly missingRequirementCount?: number
 			readonly rows?: readonly {
 				readonly artifact?: string
+				readonly evidenceWeHave?: readonly unknown[]
+				readonly evidenceMissing?: readonly string[]
+				readonly qssContrast?: readonly string[]
+				readonly allowedWording?: string
+				readonly forbiddenWording?: readonly string[]
+				readonly nextOwnerActions?: readonly unknown[]
+				readonly ownerDecisionArtifacts?: readonly unknown[]
 				readonly headlineClaimAllowed?: boolean
+				readonly implementationSurfacePromotionAllowed?: boolean
 				readonly aPlusBlockingOwnerActions?: readonly unknown[]
+				readonly claimsWeMustNotMake?: readonly string[]
 			}[]
 			readonly doNotPromoteYet?: readonly {
 				readonly name?: string
@@ -1862,7 +1871,45 @@ describe('release proof evidence index', () => {
 			'package-action-proof',
 		])
 		expect(board.rows?.every((row) => row.headlineClaimAllowed === false)).toBe(true)
+		expect(board.rows?.every((row) => row.implementationSurfacePromotionAllowed === false)).toBe(
+			true,
+		)
 		expect(board.rows?.every((row) => (row.aPlusBlockingOwnerActions?.length ?? 0) > 0)).toBe(true)
+		for (const row of board.rows ?? []) {
+			expect(row.evidenceWeHave).toEqual(expect.arrayContaining([expect.any(Object)]))
+			expect(row.evidenceMissing).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(row.qssContrast).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(row.allowedWording).toEqual(expect.any(String))
+			expect(row.forbiddenWording).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(row.nextOwnerActions).toEqual(expect.arrayContaining([expect.any(Object)]))
+			expect(row.ownerDecisionArtifacts).toEqual(expect.arrayContaining([expect.any(Object)]))
+			expect(row.claimsWeMustNotMake).toEqual(expect.arrayContaining([expect.any(String)]))
+		}
+		expect(board.rows?.[0]).toMatchObject({
+			artifact: 'safe-open-proof',
+			allowedWording: expect.stringContaining('pre-hydration package-feature routing'),
+			evidenceMissing: expect.arrayContaining([
+				expect.stringContaining('public-edge-fixtures'),
+				expect.stringContaining('release-latency-run'),
+			]),
+			qssContrast: expect.arrayContaining([expect.stringContaining('QSS likely does well')]),
+			forbiddenWording: expect.arrayContaining([
+				expect.stringContaining('Microsoft Protected View equivalence'),
+			]),
+		})
+		expect(board.rows?.[1]).toMatchObject({
+			artifact: 'package-action-proof',
+			allowedWording: expect.stringContaining('local per-part package action accounting'),
+			evidenceMissing: expect.arrayContaining([
+				expect.stringContaining('edge-fixture-policy'),
+				expect.stringContaining('streaming-matrix-boundary'),
+			]),
+			qssContrast: expect.arrayContaining([expect.stringContaining('QSS likely does well')]),
+			forbiddenWording: expect.arrayContaining([
+				expect.stringContaining('Signed provenance'),
+				expect.stringContaining('Full streaming parity'),
+			]),
+		})
 		expect(stdout).toContain('Excel-ground-truth formula/cached-result fixtures')
 		expect(stdout).toContain('bounded chart series-source fixtures')
 		expect(stdout).toContain('public external-link/query-table refresh metadata fixtures')

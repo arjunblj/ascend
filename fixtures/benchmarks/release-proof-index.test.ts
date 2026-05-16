@@ -1439,6 +1439,8 @@ describe('release proof evidence index', () => {
 		expect(formulaLanguageEvidence).toContain('apps/cli/src/cli.test.ts')
 		expect(formulaLanguageEvidence).toContain('apps/api/src/server.test.ts')
 		expect(formulaLanguageEvidence).toContain('apps/mcp/src/index.test.ts')
+		expect(formulaLanguageEvidence).toContain('0e253fe4')
+		expect(formulaLanguageEvidence).toContain('structured retryable missing-formula error')
 		expect(formulaLanguageMissing).toContain('public formula corpus')
 		expect(formulaLanguageMissing).toContain('operation-owned edit plans')
 		expect(formulaLanguageForbidden).toContain('edit-producing rename')

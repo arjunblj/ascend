@@ -4958,6 +4958,7 @@ const FORMULA_LANGUAGE_SERVICE_BLOCKER = {
 		'Formula-assist proof command exists: `bun run fixtures/benchmarks/formula-assist-proof.ts --sample 250 --no-timings --json` records sampled formula diagnostics, reference spans, binding roles, refusal counts, and claim boundaries.',
 		'SDK formula-edit tests cover bundled formulaAssist, hover/code actions, reference kinds, binding roles, LET prepareRename success, and workbook-context/reference refusal in `packages/sdk/src/formula-edit.test.ts`.',
 		'CLI/API/MCP formula-assist tests expose diagnostics, completions, signature help, reference edits, and workbook-context rename refusal in `apps/cli/src/cli.test.ts`, `apps/api/src/server.test.ts`, and `apps/mcp/src/index.test.ts`.',
+		'API formula-assist input diagnostics are accepted as workflow polish: `0e253fe4 fix(api): structure formula assist inputs` returns a structured retryable missing-formula error instead of a generic missing-formula string in `apps/api/src/server.ts` and `apps/api/src/server.test.ts`.',
 	],
 	evidenceMissing: [
 		'One public formula corpus workflow showing sampled formulas, spans, binding roles, refusal counts, and recovery wording across SDK/CLI/API/MCP.',

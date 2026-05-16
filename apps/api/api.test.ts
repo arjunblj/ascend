@@ -78,6 +78,11 @@ describe('API', () => {
 			apiSafeEdit: 'bun run example:safe-edit:http <file.xlsx> <out.xlsx>',
 			mcpSafeEdit: 'bun run example:safe-edit:mcp <file.xlsx> <out.xlsx>',
 		})
+		expect(workflowBody.data.exampleContext).toMatchObject({
+			workdir: 'repository-root',
+			requires: expect.arrayContaining(['source checkout', 'bun install']),
+			proofCommand: 'bun test examples/root-scripts.test.ts',
+		})
 		expect(workflowBody.data.preparedHandles).toMatchObject({
 			scope: 'process-local',
 			oneShot: true,

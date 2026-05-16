@@ -13,6 +13,11 @@ interface AgentInitInfo {
 	readonly workflow: readonly string[]
 	readonly commands: Record<string, string>
 	readonly examples: Record<string, string>
+	readonly exampleContext: {
+		readonly workdir: 'repository-root'
+		readonly requires: readonly string[]
+		readonly proofCommand: string
+	}
 	readonly apiEndpoints: Record<string, string>
 	readonly mcpResources: readonly string[]
 	readonly mcpTools: Record<string, string>
@@ -61,6 +66,11 @@ const AGENT_INIT: AgentInitInfo = {
 		sdkSafeEdit: 'bun run example:safe-edit <file.xlsx> <out.xlsx>',
 		apiSafeEdit: 'bun run example:safe-edit:http <file.xlsx> <out.xlsx>',
 		mcpSafeEdit: 'bun run example:safe-edit:mcp <file.xlsx> <out.xlsx>',
+	},
+	exampleContext: {
+		workdir: 'repository-root',
+		requires: ['source checkout', 'bun install'],
+		proofCommand: 'bun test examples/root-scripts.test.ts',
 	},
 	apiEndpoints: {
 		workflow: 'GET /agent-workflow',
@@ -132,6 +142,8 @@ export async function agentInitCommand(
 	for (const [name, command] of Object.entries(AGENT_INIT.examples)) {
 		console.log(bullet(`Example ${name}`, command))
 	}
+	console.log(bullet('Example workdir', AGENT_INIT.exampleContext.workdir))
+	console.log(bullet('Example proof', AGENT_INIT.exampleContext.proofCommand))
 	console.log('')
 	for (const [name, endpoint] of Object.entries(AGENT_INIT.apiEndpoints)) {
 		console.log(bullet(`API ${name}`, endpoint))

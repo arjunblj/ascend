@@ -115,6 +115,11 @@ const MCP_AGENT_WORKFLOW = {
 		apiSafeEdit: 'bun run example:safe-edit:http <file.xlsx> <out.xlsx>',
 		mcpSafeEdit: 'bun run example:safe-edit:mcp <file.xlsx> <out.xlsx>',
 	},
+	exampleContext: {
+		workdir: 'repository-root',
+		requires: ['source checkout', 'bun install'],
+		proofCommand: 'bun test examples/root-scripts.test.ts',
+	},
 	resources: ['ascend://agent-workflow', 'ascend://operations', 'ascend://capabilities'],
 	preparedHandles: {
 		scope: 'process-local',

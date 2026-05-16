@@ -272,6 +272,9 @@ if (cliAgentInit.examples?.apiSafeEdit !== 'bun run example:safe-edit:http <file
 if (cliAgentInit.examples?.mcpSafeEdit !== 'bun run example:safe-edit:mcp <file.xlsx> <out.xlsx>') {
 	throw new Error('CLI agent-init missing MCP safe-edit example: ' + JSON.stringify(cliAgentInit))
 }
+if (cliAgentInit.exampleContext?.proofCommand !== 'bun test examples/root-scripts.test.ts') {
+	throw new Error('CLI agent-init missing runnable example proof context: ' + JSON.stringify(cliAgentInit))
+}
 
 const apiFetch = createApiFetch()
 const apiInput = join(cwd, 'api-input.xlsx')
@@ -317,6 +320,9 @@ if (!apiWorkflow.workflow?.some((step) => step.step === 'reopen-verify')) {
 }
 if (apiWorkflow.examples?.apiSafeEdit !== 'bun run example:safe-edit:http <file.xlsx> <out.xlsx>') {
 	throw new Error('installed API agent workflow contract missing API safe-edit example')
+}
+if (apiWorkflow.exampleContext?.workdir !== 'repository-root') {
+	throw new Error('installed API agent workflow contract missing example workdir context')
 }
 
 const mcpInput = join(cwd, 'mcp-input.xlsx')
@@ -367,6 +373,9 @@ if (!mcpWorkflow.workflow?.some((step) => step.step === 'reopen-verify')) {
 }
 if (mcpWorkflow.examples?.mcpSafeEdit !== 'bun run example:safe-edit:mcp <file.xlsx> <out.xlsx>') {
 	throw new Error('installed MCP agent workflow contract missing MCP safe-edit example')
+}
+if (mcpWorkflow.exampleContext?.proofCommand !== 'bun test examples/root-scripts.test.ts') {
+	throw new Error('installed MCP agent workflow contract missing example proof context')
 }
 const mcpResource = await resources['ascend://capabilities']?.readCallback(
 	new URL('ascend://capabilities'),

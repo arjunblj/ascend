@@ -520,6 +520,11 @@ describe('MCP server', () => {
 					workflow?: unknown[]
 					tools?: Record<string, string>
 					examples?: Record<string, string>
+					exampleContext?: {
+						workdir?: string
+						requires?: string[]
+						proofCommand?: string
+					}
 					resources?: string[]
 					preparedHandles?: { scope?: string; oneShot?: boolean }
 				}
@@ -541,6 +546,11 @@ describe('MCP server', () => {
 			sdkSafeEdit: 'bun run example:safe-edit <file.xlsx> <out.xlsx>',
 			apiSafeEdit: 'bun run example:safe-edit:http <file.xlsx> <out.xlsx>',
 			mcpSafeEdit: 'bun run example:safe-edit:mcp <file.xlsx> <out.xlsx>',
+		})
+		expect(result.structuredContent?.data?.exampleContext).toMatchObject({
+			workdir: 'repository-root',
+			requires: expect.arrayContaining(['source checkout', 'bun install']),
+			proofCommand: 'bun test examples/root-scripts.test.ts',
 		})
 		expect(result.structuredContent?.data?.preparedHandles).toMatchObject({
 			scope: 'process-local',

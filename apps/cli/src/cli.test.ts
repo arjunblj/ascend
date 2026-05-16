@@ -483,6 +483,11 @@ describe('ascend cli', () => {
 		expect(parsed.data.examples.mcpSafeEdit).toBe(
 			'bun run example:safe-edit:mcp <file.xlsx> <out.xlsx>',
 		)
+		expect(parsed.data.exampleContext).toMatchObject({
+			workdir: 'repository-root',
+			requires: expect.arrayContaining(['source checkout', 'bun install']),
+			proofCommand: 'bun test examples/root-scripts.test.ts',
+		})
 		expect(parsed.data.workflow.join('\n')).toContain('open-plan')
 		expect(parsed.data.workflow.join('\n')).toContain('encrypted XLSX/XLSM')
 		expect(parsed.data.mcpResources).toContain('ascend://llms.txt')

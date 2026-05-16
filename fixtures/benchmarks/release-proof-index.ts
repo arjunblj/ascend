@@ -348,6 +348,7 @@ export interface ReleaseProofReleaseDecisionBoard {
 	readonly doNotPromoteDispositionSummary: ReleaseProofReleaseDecisionDispositionSummary
 	readonly blockedOwnerActionQueue: readonly ReleaseProofBlockedOwnerAction[]
 	readonly benchmarkCorpusOwnerActionQueue: readonly ReleaseProofBenchmarkCorpusOwnerAction[]
+	readonly implementationReadyOwnerActionQueue: readonly ReleaseProofImplementationReadyOwnerAction[]
 	readonly boundary: string
 }
 
@@ -464,6 +465,23 @@ export interface ReleaseProofBenchmarkCorpusOwnerAction {
 	readonly ownerLoop: ReleaseProofReadinessOwner
 	readonly requirementId?: string
 	readonly workBlockDisposition: 'benchmark-corpus-blocker'
+	readonly validationCommands: readonly string[]
+	readonly evidenceWeHave: readonly string[]
+	readonly evidenceMissing: readonly string[]
+	readonly qssContrast: readonly string[]
+	readonly allowedWording: string
+	readonly forbiddenWording: readonly string[]
+	readonly nextOwnerAction: string
+	readonly boundary: string
+}
+
+export interface ReleaseProofImplementationReadyOwnerAction {
+	readonly sourceQueue: 'top-claim-owner-action' | 'blocked-owner-action'
+	readonly name: ReleaseProofIndexArtifactName | ReleaseProofReleaseDecisionDoNotPromoteItem['name']
+	readonly claim: string
+	readonly ownerLoop: ReleaseProofReadinessOwner
+	readonly requirementId?: string
+	readonly workBlockDisposition: 'implementation-ready-blocker'
 	readonly validationCommands: readonly string[]
 	readonly evidenceWeHave: readonly string[]
 	readonly evidenceMissing: readonly string[]
@@ -1445,6 +1463,11 @@ export function releaseProofIndexMarkdown(result: ReleaseProofIndexResult): stri
 			(row) =>
 				`- ${row.ownerLoop}/${row.name}${row.requirementId ? `/${row.requirementId}` : ''}: ${row.sourceQueue}. Commands: ${row.validationCommands.map((command) => `\`${command}\``).join('; ')} Next: ${row.nextOwnerAction}`,
 		),
+		'Implementation-ready owner action queue:',
+		...result.releaseDecisionBoard.implementationReadyOwnerActionQueue.map(
+			(row) =>
+				`- ${row.ownerLoop}/${row.name}${row.requirementId ? `/${row.requirementId}` : ''}: ${row.sourceQueue}. Commands: ${row.validationCommands.map((command) => `\`${command}\``).join('; ')} Next: ${row.nextOwnerAction}`,
+		),
 		'',
 		'Do not promote yet:',
 		`Disposition summary: implementation-ready-blocker=${result.releaseDecisionBoard.doNotPromoteDispositionSummary.implementationReadyBlockerNames.join(',')}; benchmark-corpus-blocker=${result.releaseDecisionBoard.doNotPromoteDispositionSummary.benchmarkCorpusBlockerNames.join(',')}; claim-downgrade-do-not-promote=${result.releaseDecisionBoard.doNotPromoteDispositionSummary.claimDowngradeDoNotPromoteNames.join(',')}`,
@@ -2379,6 +2402,10 @@ function releaseDecisionBoard(
 			topClaimOwnerActionQueue,
 			blockedOwnerActionQueue,
 		),
+		implementationReadyOwnerActionQueue: releaseDecisionImplementationReadyOwnerActionQueue(
+			topClaimOwnerActionQueue,
+			blockedOwnerActionQueue,
+		),
 		boundary:
 			'Top-two release-decision artifact for claim stewardship. It is derived from committed release proof gates and must not be treated as a product surface, benchmark threshold, signed provenance, or owner approval.',
 	}
@@ -2508,6 +2535,53 @@ function releaseDecisionBenchmarkCorpusOwnerActionQueue(
 				nextOwnerAction: action.nextOwnerAction,
 				boundary:
 					'Benchmark/corpus owner-action queue row derived from do-not-promote decisions. It tells the benchmark loop exactly what to run without promoting the claim or satisfying the blocker.',
+			})),
+	]
+}
+
+function releaseDecisionImplementationReadyOwnerActionQueue(
+	topClaimActions: readonly ReleaseProofTopClaimOwnerAction[],
+	blockedActions: readonly ReleaseProofBlockedOwnerAction[],
+): readonly ReleaseProofImplementationReadyOwnerAction[] {
+	return [
+		...topClaimActions
+			.filter((action) => action.workBlockDisposition === 'implementation-ready-blocker')
+			.map((action) => ({
+				sourceQueue: 'top-claim-owner-action' as const,
+				name: action.artifact,
+				claim: action.claim,
+				ownerLoop: action.ownerLoop,
+				requirementId: action.requirementId,
+				workBlockDisposition: action.workBlockDisposition,
+				validationCommands: [action.validationCommand],
+				evidenceWeHave: action.evidenceWeHave.map(
+					(item) => `${item.evidenceId}: \`${item.command}\` (${item.path})`,
+				),
+				evidenceMissing: [...action.evidenceMissing],
+				qssContrast: [...action.qssContrast],
+				allowedWording: action.allowedWording,
+				forbiddenWording: [...action.forbiddenWording],
+				nextOwnerAction: action.nextOwnerAction,
+				boundary:
+					'Implementation-ready owner-action queue row derived from top release claims. It tells correctness, product, or release owners exactly what to validate without satisfying the gate or authorizing stronger wording.',
+			})),
+		...blockedActions
+			.filter((action) => action.workBlockDisposition === 'implementation-ready-blocker')
+			.map((action) => ({
+				sourceQueue: 'blocked-owner-action' as const,
+				name: action.name,
+				claim: action.name,
+				ownerLoop: action.ownerLoop,
+				workBlockDisposition: action.workBlockDisposition,
+				validationCommands: [...action.validationCommands],
+				evidenceWeHave: [...action.evidenceWeHave],
+				evidenceMissing: [...action.evidenceMissing],
+				qssContrast: [...action.qssContrast],
+				allowedWording: action.allowedWording,
+				forbiddenWording: [...action.forbiddenWording],
+				nextOwnerAction: action.nextOwnerAction,
+				boundary:
+					'Implementation-ready owner-action queue row derived from do-not-promote decisions. It tells correctness, product, or release owners exactly what to validate without promoting the claim or satisfying the blocker.',
 			})),
 	]
 }
@@ -2801,6 +2875,14 @@ function cloneReleaseDecisionBoard(
 			validationCommands: [...row.validationCommands],
 		})),
 		benchmarkCorpusOwnerActionQueue: board.benchmarkCorpusOwnerActionQueue.map((row) => ({
+			...row,
+			validationCommands: [...row.validationCommands],
+			evidenceWeHave: [...row.evidenceWeHave],
+			evidenceMissing: [...row.evidenceMissing],
+			qssContrast: [...row.qssContrast],
+			forbiddenWording: [...row.forbiddenWording],
+		})),
+		implementationReadyOwnerActionQueue: board.implementationReadyOwnerActionQueue.map((row) => ({
 			...row,
 			validationCommands: [...row.validationCommands],
 			evidenceWeHave: [...row.evidenceWeHave],

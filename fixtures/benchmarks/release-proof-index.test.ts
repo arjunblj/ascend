@@ -1118,6 +1118,56 @@ describe('release proof evidence index', () => {
 			]),
 		)
 		expect(
+			index.releaseDecisionBoard.implementationReadyOwnerActionQueue.map(
+				(row) => `${row.sourceQueue}:${row.ownerLoop}:${row.name}:${row.requirementId ?? 'none'}`,
+			),
+		).toEqual([
+			'top-claim-owner-action:release:safe-open-proof:publication-boundary',
+			'top-claim-owner-action:release:safe-open-proof:compact-report-publication-policy',
+			'top-claim-owner-action:correctness:package-action-proof:unsupported-feature-boundary',
+			'top-claim-owner-action:release:package-action-proof:provenance-boundary',
+			'top-claim-owner-action:release:package-action-proof:compact-report-publication-policy',
+			'blocked-owner-action:product:formula-language-service-primitives:none',
+			'blocked-owner-action:correctness:formula-language-service-primitives:none',
+			'blocked-owner-action:product:token-bounded-agent-view:none',
+			'blocked-owner-action:product:retained-viewport-patch-history:none',
+			'blocked-owner-action:performance:retained-viewport-patch-history:none',
+			'blocked-owner-action:product:release-proof-bundle:none',
+			'blocked-owner-action:release:release-proof-bundle:none',
+			'blocked-owner-action:correctness:property-journal-laws:none',
+			'blocked-owner-action:product:agent-workflow-observability:none',
+		])
+		for (const row of index.releaseDecisionBoard.implementationReadyOwnerActionQueue) {
+			expect(row.workBlockDisposition).toBe('implementation-ready-blocker')
+			expect(row.validationCommands).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(row.evidenceWeHave).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(row.evidenceMissing).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(row.qssContrast).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(row.allowedWording.length).toBeGreaterThan(0)
+			expect(row.forbiddenWording).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(row.nextOwnerAction.length).toBeGreaterThan(0)
+			expect(row.boundary).toContain('Implementation-ready owner-action queue row')
+		}
+		expect(index.releaseDecisionBoard.implementationReadyOwnerActionQueue).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					sourceQueue: 'top-claim-owner-action',
+					name: 'package-action-proof',
+					requirementId: 'unsupported-feature-boundary',
+					validationCommands: [
+						'bun run fixtures/benchmarks/package-action-proof.ts --no-timings --json',
+					],
+				}),
+				expect.objectContaining({
+					sourceQueue: 'blocked-owner-action',
+					name: 'formula-language-service-primitives',
+					validationCommands: expect.arrayContaining([
+						expect.stringContaining('formula-assist-proof.ts'),
+					]),
+				}),
+			]),
+		)
+		expect(
 			index.releaseDecisionBoard.doNotPromoteYet.every(
 				(item) => item.status === 'do-not-promote-yet',
 			),
@@ -2138,6 +2188,43 @@ describe('release proof evidence index', () => {
 				}),
 			]),
 		)
+		expect(handoff.releaseDecisionBoard.implementationReadyOwnerActionQueue).toHaveLength(14)
+		expect(handoff.releaseDecisionBoard.implementationReadyOwnerActionQueue).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					sourceQueue: 'top-claim-owner-action',
+					ownerLoop: 'correctness',
+					name: 'package-action-proof',
+					requirementId: 'unsupported-feature-boundary',
+					validationCommands: [
+						'bun run fixtures/benchmarks/package-action-proof.ts --no-timings --json',
+					],
+				}),
+				expect.objectContaining({
+					sourceQueue: 'top-claim-owner-action',
+					ownerLoop: 'release',
+					name: 'safe-open-proof',
+					requirementId: 'compact-report-publication-policy',
+					validationCommands: [
+						'bun run fixtures/benchmarks/safe-open-proof.ts --no-timings --compact-json',
+					],
+				}),
+				expect.objectContaining({
+					sourceQueue: 'blocked-owner-action',
+					ownerLoop: 'product',
+					name: 'agent-workflow-observability',
+					validationCommands: expect.arrayContaining([
+						expect.stringContaining('packages/sdk/src/agent-workflow.test.ts'),
+					]),
+				}),
+				expect.objectContaining({
+					sourceQueue: 'blocked-owner-action',
+					ownerLoop: 'release',
+					name: 'release-proof-bundle',
+					validationCommands: expect.arrayContaining(['bun run release:rc:gate']),
+				}),
+			]),
+		)
 		const releaseDecisionCoverage = new Set([
 			...handoff.releaseDecisionBoard.rows.map((row) => row.artifact),
 			...handoff.releaseDecisionBoard.doNotPromoteYet.map((item) => item.name),
@@ -2327,6 +2414,20 @@ describe('release proof evidence index', () => {
 				readonly nextOwnerAction?: string
 			}[]
 			readonly benchmarkCorpusOwnerActionQueue?: readonly {
+				readonly sourceQueue?: string
+				readonly name?: string
+				readonly ownerLoop?: string
+				readonly requirementId?: string
+				readonly workBlockDisposition?: string
+				readonly validationCommands?: readonly string[]
+				readonly evidenceWeHave?: readonly string[]
+				readonly evidenceMissing?: readonly string[]
+				readonly qssContrast?: readonly string[]
+				readonly allowedWording?: string
+				readonly forbiddenWording?: readonly string[]
+				readonly nextOwnerAction?: string
+			}[]
+			readonly implementationReadyOwnerActionQueue?: readonly {
 				readonly sourceQueue?: string
 				readonly name?: string
 				readonly ownerLoop?: string
@@ -2576,6 +2677,56 @@ describe('release proof evidence index', () => {
 						expect.stringContaining(
 							'--input-preset public-tracked --contract all --repeat 3 --warmup 1 --json',
 						),
+					]),
+				}),
+			]),
+		)
+		expect(board.implementationReadyOwnerActionQueue).toHaveLength(14)
+		expect(
+			board.implementationReadyOwnerActionQueue?.map(
+				(row) => `${row.sourceQueue}:${row.ownerLoop}:${row.name}:${row.requirementId ?? 'none'}`,
+			),
+		).toEqual([
+			'top-claim-owner-action:release:safe-open-proof:publication-boundary',
+			'top-claim-owner-action:release:safe-open-proof:compact-report-publication-policy',
+			'top-claim-owner-action:correctness:package-action-proof:unsupported-feature-boundary',
+			'top-claim-owner-action:release:package-action-proof:provenance-boundary',
+			'top-claim-owner-action:release:package-action-proof:compact-report-publication-policy',
+			'blocked-owner-action:product:formula-language-service-primitives:none',
+			'blocked-owner-action:correctness:formula-language-service-primitives:none',
+			'blocked-owner-action:product:token-bounded-agent-view:none',
+			'blocked-owner-action:product:retained-viewport-patch-history:none',
+			'blocked-owner-action:performance:retained-viewport-patch-history:none',
+			'blocked-owner-action:product:release-proof-bundle:none',
+			'blocked-owner-action:release:release-proof-bundle:none',
+			'blocked-owner-action:correctness:property-journal-laws:none',
+			'blocked-owner-action:product:agent-workflow-observability:none',
+		])
+		for (const row of board.implementationReadyOwnerActionQueue ?? []) {
+			expect(row.workBlockDisposition).toBe('implementation-ready-blocker')
+			expect(row.validationCommands).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(row.evidenceWeHave).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(row.evidenceMissing).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(row.qssContrast).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(row.allowedWording).toEqual(expect.any(String))
+			expect(row.forbiddenWording).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(row.nextOwnerAction).toEqual(expect.any(String))
+		}
+		expect(board.implementationReadyOwnerActionQueue).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					sourceQueue: 'top-claim-owner-action',
+					name: 'package-action-proof',
+					requirementId: 'unsupported-feature-boundary',
+					validationCommands: [
+						'bun run fixtures/benchmarks/package-action-proof.ts --no-timings --json',
+					],
+				}),
+				expect.objectContaining({
+					sourceQueue: 'blocked-owner-action',
+					name: 'formula-language-service-primitives',
+					validationCommands: expect.arrayContaining([
+						expect.stringContaining('formula-assist-proof.ts'),
 					]),
 				}),
 			]),

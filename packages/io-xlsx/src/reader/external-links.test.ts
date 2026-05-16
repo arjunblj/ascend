@@ -1,5 +1,15 @@
 import { describe, expect, test } from 'bun:test'
-import { parseExternalBookRelationshipId } from './external-links.ts'
+import { makeXlsx } from '../../test/helpers.ts'
+import { writeXlsx } from '../writer/index.ts'
+import { parseExternalBookRelationshipId, parseExternalLinkInfo } from './external-links.ts'
+import { readXlsx } from './index.ts'
+
+function expectOk<T, E extends { message: string }>(
+	result: { ok: true; value: T } | { ok: false; error: E },
+): asserts result is { ok: true; value: T } {
+	expect(result.ok).toBe(true)
+	if (!result.ok) throw new Error(result.error.message)
+}
 
 describe('external link metadata', () => {
 	test('parses the externalBook relationship id across namespace prefixes', () => {
@@ -45,4 +55,91 @@ describe('external link metadata', () => {
 			),
 		).toBe('rId&Single')
 	})
+
+	test('parses DDE and OLE external link source metadata', () => {
+		expect(
+			parseExternalLinkInfo(
+				'<externalLink xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><ddeLink ddeService="Excel" ddeTopic="Sheet1!R1C1"/></externalLink>',
+			),
+		).toEqual({
+			kind: 'ddeLink',
+			ddeService: 'Excel',
+			ddeTopic: 'Sheet1!R1C1',
+		})
+		expect(
+			parseExternalLinkInfo(
+				'<externalLink xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><oleLink r:id="rIdOle"/></externalLink>',
+			),
+		).toEqual({
+			kind: 'oleLink',
+			relationshipId: 'rIdOle',
+		})
+		expect(parseExternalBookRelationshipId('<oleLink id="rIdOle"/>')).toBeUndefined()
+	})
+
+	test('inventories OLE external link relationship binding across save and reopen', () => {
+		const source = readXlsx(externalLinkWorkbook())
+		expectOk(source)
+		expect(source.value.workbook.externalReferenceDetails).toEqual([
+			expect.objectContaining({
+				partPath: 'xl/externalLinks/externalLink1.xml',
+				externalLinkKind: 'oleLink',
+				externalLinkRelId: 'rIdOle',
+				linkRelId: 'rIdOle',
+				linkBindingStatus: 'externalLinkRelId',
+				target: '../linked/source.xlsx',
+				targetMode: 'External',
+			}),
+		])
+
+		const written = writeXlsx(source.value.workbook, source.value.capsules)
+		expectOk(written)
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+		expect(reopened.value.workbook.externalReferenceDetails[0]).toMatchObject({
+			externalLinkKind: 'oleLink',
+			externalLinkRelId: 'rIdOle',
+			linkBindingStatus: 'externalLinkRelId',
+			target: '../linked/source.xlsx',
+		})
+	})
 })
+
+function externalLinkWorkbook(): Uint8Array {
+	return makeXlsx({
+		'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/externalLinks/externalLink1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.externalLink+xml"/>
+</Types>`,
+		'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+		'xl/workbook.xml': `<?xml version="1.0"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <externalReferences><externalReference r:id="rIdExternal"/></externalReferences>
+  <sheets><sheet name="Sheet1" sheetId="1" r:id="rIdSheet"/></sheets>
+</workbook>`,
+		'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSheet" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rIdExternal" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLink" Target="externalLinks/externalLink1.xml"/>
+</Relationships>`,
+		'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`,
+		'xl/externalLinks/externalLink1.xml': `<?xml version="1.0"?>
+<externalLink xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <oleLink r:id="rIdOle"/>
+</externalLink>`,
+		'xl/externalLinks/_rels/externalLink1.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdOle" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLinkPath" Target="../linked/source.xlsx" TargetMode="External"/>
+</Relationships>`,
+	})
+}

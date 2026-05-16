@@ -657,6 +657,7 @@ export interface PostWriteDefinedNameEntry {
 export interface PostWriteExternalReferenceSummary {
 	readonly total: number
 	readonly boundByExternalBookRelId: number
+	readonly boundByExternalLinkRelId: number
 	readonly fallbackPathRelationships: number
 	readonly missingPathRelationships: number
 	readonly partPaths: readonly string[]
@@ -669,7 +670,11 @@ export interface PostWriteExternalReferenceSummary {
 export interface PostWriteExternalReferenceEntry {
 	readonly partPath: string
 	readonly relId?: string
+	readonly externalLinkKind?: ExternalReferenceInfo['externalLinkKind']
+	readonly externalLinkRelId?: string
 	readonly externalBookRelId?: string
+	readonly externalLinkDdeService?: string
+	readonly externalLinkDdeTopic?: string
 	readonly linkRelId?: string
 	readonly linkBindingStatus?: ExternalReferenceInfo['linkBindingStatus']
 	readonly linkRelationshipKind?: ExternalReferenceInfo['linkRelationshipKind']
@@ -2974,7 +2979,13 @@ function postWriteExternalReferenceSummary(workbook: Workbook): PostWriteExterna
 	const parts = workbook.externalReferenceDetails.map((entry) => ({
 		partPath: entry.partPath,
 		...(entry.relId ? { relId: entry.relId } : {}),
+		...(entry.externalLinkKind ? { externalLinkKind: entry.externalLinkKind } : {}),
+		...(entry.externalLinkRelId ? { externalLinkRelId: entry.externalLinkRelId } : {}),
 		...(entry.externalBookRelId ? { externalBookRelId: entry.externalBookRelId } : {}),
+		...(entry.externalLinkDdeService
+			? { externalLinkDdeService: entry.externalLinkDdeService }
+			: {}),
+		...(entry.externalLinkDdeTopic ? { externalLinkDdeTopic: entry.externalLinkDdeTopic } : {}),
 		...(entry.linkRelId ? { linkRelId: entry.linkRelId } : {}),
 		...(entry.linkBindingStatus ? { linkBindingStatus: entry.linkBindingStatus } : {}),
 		...(entry.linkRelationshipKind ? { linkRelationshipKind: entry.linkRelationshipKind } : {}),
@@ -2985,6 +2996,9 @@ function postWriteExternalReferenceSummary(workbook: Workbook): PostWriteExterna
 		total: parts.length,
 		boundByExternalBookRelId: parts.filter(
 			(entry) => entry.linkBindingStatus === 'externalBookRelId',
+		).length,
+		boundByExternalLinkRelId: parts.filter(
+			(entry) => entry.linkBindingStatus === 'externalLinkRelId',
 		).length,
 		fallbackPathRelationships: parts.filter(
 			(entry) => entry.linkBindingStatus === 'fallbackPathRelationship',
@@ -5474,8 +5488,7 @@ function buildWritePolicyReport(
 		})
 	}
 	const externalReferenceBindingIssues = externalReferences.filter(
-		(entry) =>
-			entry.linkBindingStatus !== undefined && entry.linkBindingStatus !== 'externalBookRelId',
+		(entry) => entry.linkBindingStatus !== undefined && !externalReferenceBindingIsExact(entry),
 	)
 	if (externalReferenceBindingIssues.length > 0) {
 		const issuePartPaths = uniqueStrings(
@@ -6858,6 +6871,7 @@ interface ExternalLinkRiskGroup {
 
 interface ExternalLinkBindingRisk {
 	readonly status: NonNullable<ExternalReferenceInfo['linkBindingStatus']>
+	readonly externalLinkRelId?: string | undefined
 	readonly externalBookRelId?: string | undefined
 	readonly linkRelId?: string | undefined
 	readonly linkRelationshipPart?: string | undefined
@@ -7386,14 +7400,22 @@ function externalLinkGroupKey(reference: ExternalReferenceInfo): string {
 	return `part:${reference.partPath}`
 }
 
+function externalReferenceBindingIsExact(reference: ExternalReferenceInfo): boolean {
+	return (
+		reference.linkBindingStatus === 'externalBookRelId' ||
+		reference.linkBindingStatus === 'externalLinkRelId'
+	)
+}
+
 function externalLinkBindingRisk(
 	reference: ExternalReferenceInfo | undefined,
 ): ExternalLinkBindingRisk | undefined {
-	if (!reference?.linkBindingStatus || reference.linkBindingStatus === 'externalBookRelId') {
+	if (!reference?.linkBindingStatus || externalReferenceBindingIsExact(reference)) {
 		return undefined
 	}
 	return {
 		status: reference.linkBindingStatus,
+		...(reference.externalLinkRelId ? { externalLinkRelId: reference.externalLinkRelId } : {}),
 		...(reference.externalBookRelId ? { externalBookRelId: reference.externalBookRelId } : {}),
 		...(reference.linkRelId ? { linkRelId: reference.linkRelId } : {}),
 		...(reference.linkRelationshipPart

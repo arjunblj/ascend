@@ -3354,7 +3354,7 @@ function buildGeneratedExternalLinkRelationships(
 	if (relationships.length === 0) {
 		return [
 			{
-				id: detail.linkRelId ?? detail.externalBookRelId ?? 'rId1',
+				id: detail.linkRelId ?? detail.externalLinkRelId ?? detail.externalBookRelId ?? 'rId1',
 				type: detail.linkRelationshipType ?? REL_EXTERNAL_LINK_PATH,
 				...(detail.linkRelationshipRawType ? { rawType: detail.linkRelationshipRawType } : {}),
 				target,
@@ -3376,14 +3376,12 @@ function buildGeneratedExternalLinkRelationships(
 		}
 	})
 	if (changed) return updated
-	if (
-		detail.externalBookRelId !== undefined &&
-		!relationships.some((rel) => rel.id === detail.externalBookRelId)
-	) {
+	const linkElementRelId = detail.externalLinkRelId ?? detail.externalBookRelId
+	if (linkElementRelId !== undefined && !relationships.some((rel) => rel.id === linkElementRelId)) {
 		return [
 			...relationships,
 			{
-				id: detail.externalBookRelId,
+				id: linkElementRelId,
 				type: detail.linkRelationshipType ?? REL_EXTERNAL_LINK_PATH,
 				...(detail.linkRelationshipRawType ? { rawType: detail.linkRelationshipRawType } : {}),
 				target,

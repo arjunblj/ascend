@@ -4,6 +4,7 @@ import type {
 	CellFormulaBinding,
 	ChartPartInfo,
 	ChartSheetInfo,
+	ExternalLinkKind,
 	ExternalReferenceLinkBindingStatus,
 	ExternalReferenceLinkRelationshipKind,
 	RangeRef,
@@ -43,6 +44,7 @@ import type {
 export type {
 	ActiveContentInfo,
 	ActiveContentKind,
+	ExternalLinkKind,
 	ExternalReferenceLinkBindingStatus,
 	ExternalReferenceLinkRelationshipKind,
 	VbaModuleInfo,
@@ -265,7 +267,11 @@ export interface ExternalReferenceInfo {
 	readonly sourceRelationshipRawType?: string
 	readonly sourceRelationshipRawTarget?: string
 	readonly sourceRelationshipResolvedTarget?: string
+	readonly externalLinkKind?: ExternalLinkKind
+	readonly externalLinkRelId?: string
 	readonly externalBookRelId?: string
+	readonly externalLinkDdeService?: string
+	readonly externalLinkDdeTopic?: string
 	readonly linkRelId?: string
 	readonly linkRelationshipPart?: string
 	readonly linkRelationshipKind?: ExternalReferenceLinkRelationshipKind

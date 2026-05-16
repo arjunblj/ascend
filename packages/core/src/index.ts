@@ -185,6 +185,7 @@ export type {
 	TableXmlColumnPr,
 } from './table.ts'
 export type {
+	ExternalLinkKind,
 	ExternalReferenceInfo,
 	ExternalReferenceLinkBindingStatus,
 	ExternalReferenceLinkRelationshipKind,

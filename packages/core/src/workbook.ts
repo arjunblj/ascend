@@ -193,7 +193,11 @@ export interface ExternalReferenceInfo {
 	readonly sourceRelationshipRawType?: string
 	readonly sourceRelationshipRawTarget?: string
 	readonly sourceRelationshipResolvedTarget?: string
+	readonly externalLinkKind?: ExternalLinkKind
+	readonly externalLinkRelId?: string
 	readonly externalBookRelId?: string
+	readonly externalLinkDdeService?: string
+	readonly externalLinkDdeTopic?: string
 	readonly linkRelId?: string
 	readonly linkRelationshipPart?: string
 	readonly linkRelationshipKind?: ExternalReferenceLinkRelationshipKind
@@ -205,6 +209,8 @@ export interface ExternalReferenceInfo {
 	readonly targetMode?: string
 }
 
+export type ExternalLinkKind = 'externalBook' | 'ddeLink' | 'oleLink'
+
 export type ExternalReferenceLinkRelationshipKind =
 	| 'externalLinkPath'
 	| 'xlStartup'
@@ -215,6 +221,7 @@ export type ExternalReferenceLinkRelationshipKind =
 
 export type ExternalReferenceLinkBindingStatus =
 	| 'externalBookRelId'
+	| 'externalLinkRelId'
 	| 'fallbackPathRelationship'
 	| 'missingPathRelationship'
 

@@ -45,7 +45,7 @@ import {
 	parseVmlDrawingObjectRefs,
 } from './drawing.ts'
 import { maybeDecryptOoxmlPackage } from './encryption.ts'
-import { parseExternalBookRelationshipId } from './external-links.ts'
+import { parseExternalLinkInfo } from './external-links.ts'
 import { inferLegacyArrayFormulaBlocks } from './legacy-array-inference.ts'
 import { parseMacroSheetInfo } from './macro-sheet.ts'
 import { parseMetadataXml } from './metadata.ts'
@@ -276,20 +276,25 @@ export function readXlsxArchive(
 			workbook.externalReferences.push(partPath)
 			const relsXml = readPart(archive, getRelsPath(partPath))
 			const linkXml = readPart(archive, partPath)
-			const externalBookRelId = linkXml ? parseExternalBookRelationshipId(linkXml) : undefined
+			const externalLinkInfo = linkXml ? parseExternalLinkInfo(linkXml) : undefined
+			const externalLinkRelId = externalLinkInfo?.relationshipId
+			const externalBookRelId =
+				externalLinkInfo?.kind === 'externalBook' ? externalLinkRelId : undefined
 			const linkRelationships = relsXml ? parseRelationships(relsXml) : []
-			const linkedByExternalBookRelId = externalBookRelId
+			const linkedByExternalLinkRelId = externalLinkRelId
 				? linkRelationships.find(
 						(entry) =>
-							entry.id === externalBookRelId && isExternalLinkPathRelationshipType(entry.type),
+							entry.id === externalLinkRelId && isExternalLinkPathRelationshipType(entry.type),
 					)
 				: undefined
 			const fallbackLinkRelationship = linkRelationships.find((entry) =>
 				isExternalLinkPathRelationshipType(entry.type),
 			)
-			const linkRelationship = linkedByExternalBookRelId ?? fallbackLinkRelationship
-			const linkBindingStatus = linkedByExternalBookRelId
-				? 'externalBookRelId'
+			const linkRelationship = linkedByExternalLinkRelId ?? fallbackLinkRelationship
+			const linkBindingStatus = linkedByExternalLinkRelId
+				? externalLinkInfo?.kind === 'externalBook'
+					? 'externalBookRelId'
+					: 'externalLinkRelId'
 				: linkRelationship
 					? 'fallbackPathRelationship'
 					: 'missingPathRelationship'
@@ -302,7 +307,13 @@ export function readXlsxArchive(
 				...(rel.rawType ? { sourceRelationshipRawType: rel.rawType } : {}),
 				sourceRelationshipRawTarget: rel.target,
 				sourceRelationshipResolvedTarget: partPath,
+				...(externalLinkInfo?.kind ? { externalLinkKind: externalLinkInfo.kind } : {}),
+				...(externalLinkRelId ? { externalLinkRelId } : {}),
 				...(externalBookRelId ? { externalBookRelId } : {}),
+				...(externalLinkInfo?.ddeService
+					? { externalLinkDdeService: externalLinkInfo.ddeService }
+					: {}),
+				...(externalLinkInfo?.ddeTopic ? { externalLinkDdeTopic: externalLinkInfo.ddeTopic } : {}),
 				...(linkRelationship?.id ? { linkRelId: linkRelationship.id } : {}),
 				...(linkRelationship ? { linkRelationshipPart: getRelsPath(partPath) } : {}),
 				...(linkRelationship?.type

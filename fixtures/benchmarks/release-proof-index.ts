@@ -350,6 +350,7 @@ export interface ReleaseProofReleaseDecisionBoard {
 	readonly benchmarkCorpusOwnerActionQueue: readonly ReleaseProofBenchmarkCorpusOwnerAction[]
 	readonly implementationReadyOwnerActionQueue: readonly ReleaseProofImplementationReadyOwnerAction[]
 	readonly claimDowngradeOwnerActionQueue: readonly ReleaseProofClaimDowngradeOwnerAction[]
+	readonly ownerActionQueueCoverage: ReleaseProofOwnerActionQueueCoverage
 	readonly boundary: string
 }
 
@@ -506,6 +507,19 @@ export interface ReleaseProofClaimDowngradeOwnerAction {
 	readonly allowedWording: string
 	readonly forbiddenWording: readonly string[]
 	readonly nextOwnerAction: string
+	readonly boundary: string
+}
+
+export interface ReleaseProofOwnerActionQueueCoverage {
+	readonly status: 'all-owner-actions-covered-by-disposition-queues' | 'coverage-gap'
+	readonly sourceTopClaimActionCount: number
+	readonly sourceBlockedActionCount: number
+	readonly benchmarkCorpusActionCount: number
+	readonly implementationReadyActionCount: number
+	readonly claimDowngradeActionCount: number
+	readonly coveredActionCount: number
+	readonly uncoveredTopClaimActionKeys: readonly string[]
+	readonly uncoveredBlockedActionKeys: readonly string[]
 	readonly boundary: string
 }
 
@@ -1490,6 +1504,7 @@ export function releaseProofIndexMarkdown(result: ReleaseProofIndexResult): stri
 			(row) =>
 				`- ${row.ownerLoop}/${row.name}: ${row.sourceQueue}. Commands: ${row.validationCommands.map((command) => `\`${command}\``).join('; ')} Next: ${row.nextOwnerAction}`,
 		),
+		`Owner action queue coverage: status=${result.releaseDecisionBoard.ownerActionQueueCoverage.status}; top=${result.releaseDecisionBoard.ownerActionQueueCoverage.sourceTopClaimActionCount}; blocked=${result.releaseDecisionBoard.ownerActionQueueCoverage.sourceBlockedActionCount}; covered=${result.releaseDecisionBoard.ownerActionQueueCoverage.coveredActionCount}; uncoveredTop=${result.releaseDecisionBoard.ownerActionQueueCoverage.uncoveredTopClaimActionKeys.join(',')}; uncoveredBlocked=${result.releaseDecisionBoard.ownerActionQueueCoverage.uncoveredBlockedActionKeys.join(',')}`,
 		'',
 		'Do not promote yet:',
 		`Disposition summary: implementation-ready-blocker=${result.releaseDecisionBoard.doNotPromoteDispositionSummary.implementationReadyBlockerNames.join(',')}; benchmark-corpus-blocker=${result.releaseDecisionBoard.doNotPromoteDispositionSummary.benchmarkCorpusBlockerNames.join(',')}; claim-downgrade-do-not-promote=${result.releaseDecisionBoard.doNotPromoteDispositionSummary.claimDowngradeDoNotPromoteNames.join(',')}`,
@@ -2409,6 +2424,16 @@ function releaseDecisionBoard(
 	})
 	const topClaimOwnerActionQueue = releaseDecisionTopClaimOwnerActionQueue(rows)
 	const blockedOwnerActionQueue = releaseDecisionBlockedOwnerActionQueue(doNotPromoteYet)
+	const benchmarkCorpusOwnerActionQueue = releaseDecisionBenchmarkCorpusOwnerActionQueue(
+		topClaimOwnerActionQueue,
+		blockedOwnerActionQueue,
+	)
+	const implementationReadyOwnerActionQueue = releaseDecisionImplementationReadyOwnerActionQueue(
+		topClaimOwnerActionQueue,
+		blockedOwnerActionQueue,
+	)
+	const claimDowngradeOwnerActionQueue =
+		releaseDecisionClaimDowngradeOwnerActionQueue(blockedOwnerActionQueue)
 	return {
 		status: 'top-two-only',
 		releaseGate: readiness.releaseGate,
@@ -2420,16 +2445,16 @@ function releaseDecisionBoard(
 		doNotPromoteYet,
 		doNotPromoteDispositionSummary: releaseDecisionDispositionSummary(doNotPromoteYet),
 		blockedOwnerActionQueue,
-		benchmarkCorpusOwnerActionQueue: releaseDecisionBenchmarkCorpusOwnerActionQueue(
+		benchmarkCorpusOwnerActionQueue,
+		implementationReadyOwnerActionQueue,
+		claimDowngradeOwnerActionQueue,
+		ownerActionQueueCoverage: releaseDecisionOwnerActionQueueCoverage(
 			topClaimOwnerActionQueue,
 			blockedOwnerActionQueue,
+			benchmarkCorpusOwnerActionQueue,
+			implementationReadyOwnerActionQueue,
+			claimDowngradeOwnerActionQueue,
 		),
-		implementationReadyOwnerActionQueue: releaseDecisionImplementationReadyOwnerActionQueue(
-			topClaimOwnerActionQueue,
-			blockedOwnerActionQueue,
-		),
-		claimDowngradeOwnerActionQueue:
-			releaseDecisionClaimDowngradeOwnerActionQueue(blockedOwnerActionQueue),
 		boundary:
 			'Top-two release-decision artifact for claim stewardship. It is derived from committed release proof gates and must not be treated as a product surface, benchmark threshold, signed provenance, or owner approval.',
 	}
@@ -2631,6 +2656,65 @@ function releaseDecisionClaimDowngradeOwnerActionQueue(
 			boundary:
 				'Claim downgrade owner-action queue row derived from do-not-promote decisions. It tells product or release owners exactly what to classify, archive, or keep forbidden without promoting the claim.',
 		}))
+}
+
+function releaseDecisionOwnerActionQueueCoverage(
+	topClaimActions: readonly ReleaseProofTopClaimOwnerAction[],
+	blockedActions: readonly ReleaseProofBlockedOwnerAction[],
+	benchmarkCorpusActions: readonly ReleaseProofBenchmarkCorpusOwnerAction[],
+	implementationReadyActions: readonly ReleaseProofImplementationReadyOwnerAction[],
+	claimDowngradeActions: readonly ReleaseProofClaimDowngradeOwnerAction[],
+): ReleaseProofOwnerActionQueueCoverage {
+	const coveredKeys = new Set([
+		...benchmarkCorpusActions.map(releaseDecisionDispositionActionKey),
+		...implementationReadyActions.map(releaseDecisionDispositionActionKey),
+		...claimDowngradeActions.map(releaseDecisionDispositionActionKey),
+	])
+	const uncoveredTopClaimActionKeys = topClaimActions
+		.map(releaseDecisionTopClaimActionKey)
+		.filter((key) => !coveredKeys.has(key))
+	const uncoveredBlockedActionKeys = blockedActions
+		.map(releaseDecisionBlockedActionKey)
+		.filter((key) => !coveredKeys.has(key))
+	const coveredActionCount =
+		benchmarkCorpusActions.length + implementationReadyActions.length + claimDowngradeActions.length
+	const status =
+		uncoveredTopClaimActionKeys.length === 0 &&
+		uncoveredBlockedActionKeys.length === 0 &&
+		coveredActionCount === topClaimActions.length + blockedActions.length
+			? 'all-owner-actions-covered-by-disposition-queues'
+			: 'coverage-gap'
+	return {
+		status,
+		sourceTopClaimActionCount: topClaimActions.length,
+		sourceBlockedActionCount: blockedActions.length,
+		benchmarkCorpusActionCount: benchmarkCorpusActions.length,
+		implementationReadyActionCount: implementationReadyActions.length,
+		claimDowngradeActionCount: claimDowngradeActions.length,
+		coveredActionCount,
+		uncoveredTopClaimActionKeys,
+		uncoveredBlockedActionKeys,
+		boundary:
+			'Owner action queue coverage only. It proves routing rows are present in the disposition queues without satisfying any claim gate, approving wording, or executing validation commands.',
+	}
+}
+
+function releaseDecisionTopClaimActionKey(action: ReleaseProofTopClaimOwnerAction): string {
+	return `top-claim-owner-action:${action.ownerLoop}:${action.artifact}:${action.requirementId}:${action.workBlockDisposition}`
+}
+
+function releaseDecisionBlockedActionKey(action: ReleaseProofBlockedOwnerAction): string {
+	return `blocked-owner-action:${action.ownerLoop}:${action.name}:none:${action.workBlockDisposition}`
+}
+
+function releaseDecisionDispositionActionKey(
+	action:
+		| ReleaseProofBenchmarkCorpusOwnerAction
+		| ReleaseProofImplementationReadyOwnerAction
+		| ReleaseProofClaimDowngradeOwnerAction,
+): string {
+	const requirementId = 'requirementId' in action ? action.requirementId : undefined
+	return `${action.sourceQueue}:${action.ownerLoop}:${action.name}:${requirementId ?? 'none'}:${action.workBlockDisposition}`
 }
 
 function releaseDecisionDoNotPromoteItem(
@@ -2945,6 +3029,11 @@ function cloneReleaseDecisionBoard(
 			qssContrast: [...row.qssContrast],
 			forbiddenWording: [...row.forbiddenWording],
 		})),
+		ownerActionQueueCoverage: {
+			...board.ownerActionQueueCoverage,
+			uncoveredTopClaimActionKeys: [...board.ownerActionQueueCoverage.uncoveredTopClaimActionKeys],
+			uncoveredBlockedActionKeys: [...board.ownerActionQueueCoverage.uncoveredBlockedActionKeys],
+		},
 		rows: board.rows.map((row) => ({
 			...row,
 			proofRequired: { ...row.proofRequired },

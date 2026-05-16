@@ -1191,6 +1191,18 @@ describe('release proof evidence index', () => {
 			)
 			expect(row.boundary).toContain('Claim downgrade owner-action queue row')
 		}
+		expect(index.releaseDecisionBoard.ownerActionQueueCoverage).toMatchObject({
+			status: 'all-owner-actions-covered-by-disposition-queues',
+			sourceTopClaimActionCount: 9,
+			sourceBlockedActionCount: 14,
+			benchmarkCorpusActionCount: 7,
+			implementationReadyActionCount: 14,
+			claimDowngradeActionCount: 2,
+			coveredActionCount: 23,
+			uncoveredTopClaimActionKeys: [],
+			uncoveredBlockedActionKeys: [],
+			boundary: expect.stringContaining('Owner action queue coverage only'),
+		})
 		expect(
 			index.releaseDecisionBoard.doNotPromoteYet.every(
 				(item) => item.status === 'do-not-promote-yet',
@@ -2271,6 +2283,17 @@ describe('release proof evidence index', () => {
 				],
 			}),
 		])
+		expect(handoff.releaseDecisionBoard.ownerActionQueueCoverage).toMatchObject({
+			status: 'all-owner-actions-covered-by-disposition-queues',
+			sourceTopClaimActionCount: 9,
+			sourceBlockedActionCount: 14,
+			benchmarkCorpusActionCount: 7,
+			implementationReadyActionCount: 14,
+			claimDowngradeActionCount: 2,
+			coveredActionCount: 23,
+			uncoveredTopClaimActionKeys: [],
+			uncoveredBlockedActionKeys: [],
+		})
 		const releaseDecisionCoverage = new Set([
 			...handoff.releaseDecisionBoard.rows.map((row) => row.artifact),
 			...handoff.releaseDecisionBoard.doNotPromoteYet.map((item) => item.name),
@@ -2500,6 +2523,17 @@ describe('release proof evidence index', () => {
 				readonly forbiddenWording?: readonly string[]
 				readonly nextOwnerAction?: string
 			}[]
+			readonly ownerActionQueueCoverage?: {
+				readonly status?: string
+				readonly sourceTopClaimActionCount?: number
+				readonly sourceBlockedActionCount?: number
+				readonly benchmarkCorpusActionCount?: number
+				readonly implementationReadyActionCount?: number
+				readonly claimDowngradeActionCount?: number
+				readonly coveredActionCount?: number
+				readonly uncoveredTopClaimActionKeys?: readonly string[]
+				readonly uncoveredBlockedActionKeys?: readonly string[]
+			}
 		}
 		expect(board.status).toBe('top-two-only')
 		expect(board.releaseGate).toBe('blocked-by-publication-policy')
@@ -2820,6 +2854,17 @@ describe('release proof evidence index', () => {
 			expect(row.forbiddenWording).toEqual(expect.arrayContaining([expect.any(String)]))
 			expect(row.nextOwnerAction).toEqual(expect.any(String))
 		}
+		expect(board.ownerActionQueueCoverage).toMatchObject({
+			status: 'all-owner-actions-covered-by-disposition-queues',
+			sourceTopClaimActionCount: 9,
+			sourceBlockedActionCount: 14,
+			benchmarkCorpusActionCount: 7,
+			implementationReadyActionCount: 14,
+			claimDowngradeActionCount: 2,
+			coveredActionCount: 23,
+			uncoveredTopClaimActionKeys: [],
+			uncoveredBlockedActionKeys: [],
+		})
 		expect(board.doNotPromoteYet?.every((item) => item.status === 'do-not-promote-yet')).toBe(true)
 		for (const item of board.doNotPromoteYet ?? []) {
 			expect([

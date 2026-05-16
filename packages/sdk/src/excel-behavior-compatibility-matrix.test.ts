@@ -30,6 +30,7 @@ const REQUIRED_COMMANDS = [
 	'bun test packages/core/src/protection.test.ts packages/engine/src/operations.test.ts packages/sdk/src/ops-schema.test.ts packages/sdk/src/sdk.test.ts',
 	'bun test fixtures/corpus/table-contract.test.ts',
 	'bun test fixtures/corpus/conditional-format-contract.test.ts',
+	'bun test fixtures/corpus/chart-contract.test.ts',
 	'bun test fixtures/corpus/feature-contract.test.ts',
 	'bun run fixtures/corpus/audit.ts',
 	'bun run fixtures/benchmarks/package-action-proof.ts --json',

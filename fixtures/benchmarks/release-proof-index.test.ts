@@ -889,6 +889,11 @@ describe('release proof evidence index', () => {
 					boundary: expect.stringContaining('MCP workflow guidance evidence only'),
 				}),
 				expect.objectContaining({
+					evidenceId: 'api-custom-ui-active-content-proof',
+					acceptedScope: expect.stringContaining('3653fd6f'),
+					boundary: expect.stringContaining('Generated custom UI agent-context proof only'),
+				}),
+				expect.objectContaining({
 					evidenceId: 'release-rc-gate',
 					command: 'bun run release:rc:gate',
 					path: 'scripts/release-rc-gate.ts',
@@ -2212,6 +2217,7 @@ describe('release proof evidence index', () => {
 				expect.objectContaining({ evidenceId: 'safe-open-proof-tests' }),
 				expect.objectContaining({ evidenceId: 'safe-open-encrypted-password-no-echo-tests' }),
 				expect.objectContaining({ evidenceId: 'mcp-agent-workflow-open-plan-first' }),
+				expect.objectContaining({ evidenceId: 'api-custom-ui-active-content-proof' }),
 				expect.objectContaining({ evidenceId: 'release-proof-index-owner-handoff' }),
 			]),
 		)

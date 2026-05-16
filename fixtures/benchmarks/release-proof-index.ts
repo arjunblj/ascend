@@ -3034,6 +3034,17 @@ function safeOpenQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceItem[] {
 				'MCP workflow guidance evidence only; it does not prove every outside-user workflow, latency, or safe-open publication policy.',
 		},
 		{
+			evidenceId: 'api-custom-ui-active-content-proof',
+			kind: 'test',
+			command:
+				'bun test apps/api/src/server.test.ts -t "/active-content reports custom UI callbacks" --timeout 30000',
+			path: 'apps/api/src/server.ts; apps/api/src/server.test.ts; docs/EXCEL_BEHAVIOR_COMPATIBILITY_MATRIX.md; packages/sdk/src/excel-behavior-compatibility-matrix.test.ts',
+			acceptedScope:
+				'Commit 3653fd6f reports generated RibbonX custom UI callbacks through API /active-content with relationship provenance, preservedCustomUi compatibility metadata, blocked execution policy, and active-content warnings.',
+			boundary:
+				'Generated custom UI agent-context proof only; it does not replace broader public custom UI fixture coverage or authorize Custom UI safety, macro safety, active-content safety, or trust wording.',
+		},
+		{
 			evidenceId: 'release-proof-index-owner-handoff',
 			kind: 'proof-artifact',
 			command:

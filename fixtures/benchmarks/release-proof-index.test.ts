@@ -1073,6 +1073,51 @@ describe('release proof evidence index', () => {
 				.map((row) => row.name),
 		).toEqual(['formula-oracle-routing', 'columnar-scan-sidecars', 'practical-latency-contracts'])
 		expect(
+			index.releaseDecisionBoard.benchmarkCorpusOwnerActionQueue.map(
+				(row) => `${row.sourceQueue}:${row.ownerLoop}:${row.name}:${row.requirementId ?? 'none'}`,
+			),
+		).toEqual([
+			'top-claim-owner-action:product:safe-open-proof:public-edge-fixtures',
+			'top-claim-owner-action:performance:safe-open-proof:release-latency-run',
+			'top-claim-owner-action:product:package-action-proof:edge-fixture-policy',
+			'top-claim-owner-action:performance:package-action-proof:streaming-matrix-boundary',
+			'blocked-owner-action:correctness:formula-oracle-routing:none',
+			'blocked-owner-action:performance:columnar-scan-sidecars:none',
+			'blocked-owner-action:performance:practical-latency-contracts:none',
+		])
+		for (const row of index.releaseDecisionBoard.benchmarkCorpusOwnerActionQueue) {
+			expect(row.workBlockDisposition).toBe('benchmark-corpus-blocker')
+			expect(row.validationCommands).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(row.evidenceWeHave).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(row.evidenceMissing).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(row.qssContrast).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(row.allowedWording.length).toBeGreaterThan(0)
+			expect(row.forbiddenWording).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(row.nextOwnerAction.length).toBeGreaterThan(0)
+			expect(row.boundary).toContain('Benchmark/corpus owner-action queue row')
+		}
+		expect(index.releaseDecisionBoard.benchmarkCorpusOwnerActionQueue).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					sourceQueue: 'top-claim-owner-action',
+					name: 'safe-open-proof',
+					requirementId: 'release-latency-run',
+					validationCommands: [
+						'bun run fixtures/benchmarks/safe-open-proof.ts --repeat 10 --warmup 3 --json',
+					],
+				}),
+				expect.objectContaining({
+					sourceQueue: 'blocked-owner-action',
+					name: 'practical-latency-contracts',
+					validationCommands: expect.arrayContaining([
+						expect.stringContaining(
+							'--input-preset public-tracked --contract all --repeat 3 --warmup 1 --json',
+						),
+					]),
+				}),
+			]),
+		)
+		expect(
 			index.releaseDecisionBoard.doNotPromoteYet.every(
 				(item) => item.status === 'do-not-promote-yet',
 			),
@@ -2056,6 +2101,43 @@ describe('release proof evidence index', () => {
 				}),
 			]),
 		)
+		expect(handoff.releaseDecisionBoard.benchmarkCorpusOwnerActionQueue).toHaveLength(7)
+		expect(handoff.releaseDecisionBoard.benchmarkCorpusOwnerActionQueue).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					sourceQueue: 'top-claim-owner-action',
+					ownerLoop: 'product',
+					name: 'safe-open-proof',
+					requirementId: 'public-edge-fixtures',
+					validationCommands: ['bun run fixtures/benchmarks/safe-open-fixture-scan.ts --json'],
+				}),
+				expect.objectContaining({
+					sourceQueue: 'top-claim-owner-action',
+					ownerLoop: 'performance',
+					name: 'package-action-proof',
+					requirementId: 'streaming-matrix-boundary',
+					validationCommands: [
+						'bun run fixtures/benchmarks/package-action-proof.ts --no-timings --json',
+					],
+				}),
+				expect.objectContaining({
+					sourceQueue: 'blocked-owner-action',
+					ownerLoop: 'correctness',
+					name: 'formula-oracle-routing',
+					validationCommands: expect.arrayContaining([
+						expect.stringContaining('formula-corpus-correctness.ts'),
+					]),
+				}),
+				expect.objectContaining({
+					sourceQueue: 'blocked-owner-action',
+					ownerLoop: 'performance',
+					name: 'columnar-scan-sidecars',
+					validationCommands: expect.arrayContaining([
+						expect.stringContaining('columnar-sidecar.ts'),
+					]),
+				}),
+			]),
+		)
 		const releaseDecisionCoverage = new Set([
 			...handoff.releaseDecisionBoard.rows.map((row) => row.artifact),
 			...handoff.releaseDecisionBoard.doNotPromoteYet.map((item) => item.name),
@@ -2235,6 +2317,20 @@ describe('release proof evidence index', () => {
 			readonly blockedOwnerActionQueue?: readonly {
 				readonly name?: string
 				readonly ownerLoop?: string
+				readonly workBlockDisposition?: string
+				readonly validationCommands?: readonly string[]
+				readonly evidenceWeHave?: readonly string[]
+				readonly evidenceMissing?: readonly string[]
+				readonly qssContrast?: readonly string[]
+				readonly allowedWording?: string
+				readonly forbiddenWording?: readonly string[]
+				readonly nextOwnerAction?: string
+			}[]
+			readonly benchmarkCorpusOwnerActionQueue?: readonly {
+				readonly sourceQueue?: string
+				readonly name?: string
+				readonly ownerLoop?: string
+				readonly requirementId?: string
 				readonly workBlockDisposition?: string
 				readonly validationCommands?: readonly string[]
 				readonly evidenceWeHave?: readonly string[]
@@ -2431,6 +2527,51 @@ describe('release proof evidence index', () => {
 					ownerLoop: 'performance',
 					name: 'practical-latency-contracts',
 					workBlockDisposition: 'benchmark-corpus-blocker',
+					validationCommands: expect.arrayContaining([
+						expect.stringContaining(
+							'--input-preset public-tracked --contract all --repeat 3 --warmup 1 --json',
+						),
+					]),
+				}),
+			]),
+		)
+		expect(board.benchmarkCorpusOwnerActionQueue).toHaveLength(7)
+		expect(
+			board.benchmarkCorpusOwnerActionQueue?.map(
+				(row) => `${row.sourceQueue}:${row.ownerLoop}:${row.name}:${row.requirementId ?? 'none'}`,
+			),
+		).toEqual([
+			'top-claim-owner-action:product:safe-open-proof:public-edge-fixtures',
+			'top-claim-owner-action:performance:safe-open-proof:release-latency-run',
+			'top-claim-owner-action:product:package-action-proof:edge-fixture-policy',
+			'top-claim-owner-action:performance:package-action-proof:streaming-matrix-boundary',
+			'blocked-owner-action:correctness:formula-oracle-routing:none',
+			'blocked-owner-action:performance:columnar-scan-sidecars:none',
+			'blocked-owner-action:performance:practical-latency-contracts:none',
+		])
+		for (const row of board.benchmarkCorpusOwnerActionQueue ?? []) {
+			expect(row.workBlockDisposition).toBe('benchmark-corpus-blocker')
+			expect(row.validationCommands).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(row.evidenceWeHave).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(row.evidenceMissing).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(row.qssContrast).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(row.allowedWording).toEqual(expect.any(String))
+			expect(row.forbiddenWording).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(row.nextOwnerAction).toEqual(expect.any(String))
+		}
+		expect(board.benchmarkCorpusOwnerActionQueue).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					sourceQueue: 'top-claim-owner-action',
+					name: 'safe-open-proof',
+					requirementId: 'release-latency-run',
+					validationCommands: [
+						'bun run fixtures/benchmarks/safe-open-proof.ts --repeat 10 --warmup 3 --json',
+					],
+				}),
+				expect.objectContaining({
+					sourceQueue: 'blocked-owner-action',
+					name: 'practical-latency-contracts',
 					validationCommands: expect.arrayContaining([
 						expect.stringContaining(
 							'--input-preset public-tracked --contract all --repeat 3 --warmup 1 --json',

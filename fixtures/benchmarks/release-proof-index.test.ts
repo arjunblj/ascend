@@ -1844,6 +1844,12 @@ describe('release proof evidence index', () => {
 			readonly doNotPromoteYet?: readonly {
 				readonly name?: string
 				readonly status?: string
+				readonly evidenceWeHave?: readonly string[]
+				readonly evidenceMissing?: readonly string[]
+				readonly qssContrast?: readonly string[]
+				readonly allowedWording?: string
+				readonly forbiddenWording?: readonly string[]
+				readonly nextOwnerAction?: string
 			}[]
 		}
 		expect(board.status).toBe('top-two-only')
@@ -1862,9 +1868,50 @@ describe('release proof evidence index', () => {
 		expect(stdout).toContain('public external-link/query-table refresh metadata fixtures')
 		expect(stdout).toContain('full chart editing support')
 		expect(stdout).toContain('Classify current research files')
-		expect(board.doNotPromoteYet?.map((item) => item.name)).toContain('columnar-scan-sidecars')
-		expect(board.doNotPromoteYet?.map((item) => item.name)).toContain('research-surface-hygiene')
+		expect(board.doNotPromoteYet?.map((item) => item.name)).toEqual([
+			'formula-language-service-primitives',
+			'token-bounded-agent-view',
+			'retained-viewport-patch-history',
+			'release-proof-bundle',
+			'formula-oracle-routing',
+			'property-journal-laws',
+			'columnar-scan-sidecars',
+			'agent-workflow-observability',
+			'research-surface-hygiene',
+			'practical-latency-contracts',
+		])
 		expect(board.doNotPromoteYet?.every((item) => item.status === 'do-not-promote-yet')).toBe(true)
+		for (const item of board.doNotPromoteYet ?? []) {
+			expect(item.evidenceWeHave).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(item.evidenceMissing).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(item.qssContrast).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(item.qssContrast?.join('\n')).not.toContain(
+				'QSS contrast is blocked until this diagnostic evidence changes a top-two release claim.',
+			)
+			expect(item.allowedWording).toContain('Do not promote')
+			expect(item.allowedWording).not.toContain('owner planning or research evidence')
+			expect(item.forbiddenWording).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(item.nextOwnerAction).toEqual(expect.any(String))
+			expect(item.nextOwnerAction).not.toContain(
+				'No owner action is release-blocking until this claim changes the top-two release gate.',
+			)
+		}
+		expect(board.doNotPromoteYet).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					name: 'research-surface-hygiene',
+					nextOwnerAction: expect.stringContaining(
+						'git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager',
+					),
+				}),
+				expect.objectContaining({
+					name: 'practical-latency-contracts',
+					nextOwnerAction: expect.stringContaining(
+						'--input-preset public-tracked --contract all --repeat 3 --warmup 1 --json',
+					),
+				}),
+			]),
+		)
 		expect(stdout).not.toContain('"claimBlockerBoard"')
 		expect(stdout).not.toContain('"fixturePolicy"')
 		expect(stdout).not.toContain('"deferredClaims"')

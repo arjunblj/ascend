@@ -1418,6 +1418,113 @@ Next action: defer production optimization. The next highest-impact blockers are
 metadata-only same-lane coverage, feature-rich semantic mismatches for SheetJS
 and Calamine, and the unavailable fastxlsx runner.
 
+## Cycle: Selected-Sheet Current Same-Lane Read
+
+Classification: comparable external evidence plus timing-boundary downgrade.
+The current clean same-lane row confirms a `readXlsx` selected-sheet win against
+SheetJS, openpyxl, and python-calamine. It also exposes a boundary: the
+`ascend-external-values` SDK runner is not used for speed wording here because
+it times assertion/materialization work that the external open-only rows do not.
+No production optimization is justified from this evidence.
+
+Workflow: XLSX selected-sheet open/inspect value read for the `Data` sheet from
+a generated three-sheet workbook.
+
+Why it matters for release: selected-sheet read is the first open/inspect step
+for agents that only need one worksheet from a larger workbook. This row closes
+the current selected-sheet timing-boundary rerun without counting unsupported
+or mixed-timing rows as wins.
+
+Public/tracked-clean input: `competitive-io` generated the `selected-sheet`
+raw OOXML workload from tracked benchmark code in a clean detached worktree at
+commit `27af69d4`, 2000 rows x 20 columns, 40,000 `Data` cells plus auxiliary
+`Summary` and `Archive` sheets, 114,747 input bytes. No private corpus or local
+research workbook was used.
+
+Commands:
+
+```bash
+git worktree add --detach /private/tmp/ascend-selected-current-27af69d4 27af69d4
+cd /private/tmp/ascend-selected-current-27af69d4
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun install --frozen-lockfile
+mkdir -p /private/tmp/ascend-selected-current-27af69d4-runs
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-io.ts --json --category read --competitor all --execution-scope external-process --libraries ascend-external-values,ascend-readxlsx-selected-values,sheetjs,openpyxl,python-calamine --workload selected-sheet --read-source raw-ooxml --repeat 15 --warmup 3 --validation-mode each --runner-manifest fixtures/benchmarks/runners/selected-sheet-readers.manifest.json > /private/tmp/ascend-selected-current-27af69d4-runs/selected-sheet-same-lane-repeat15.json
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-scoreboard.ts /private/tmp/ascend-selected-current-27af69d4-runs/selected-sheet-same-lane-repeat15.json --json --metric medianMs --require-profile xlsx-read-sota --assert-profile-leader ascend > /private/tmp/ascend-selected-current-27af69d4-runs/selected-sheet-same-lane-repeat15-scoreboard.json
+```
+
+Environment:
+
+- Commit: `27af69d411dec7007c32d29e0727ce02d4662e84`
+- Worktree: clean detached worktree at
+  `/private/tmp/ascend-selected-current-27af69d4`
+- Bun runtime: `1.3.13`
+- Node: `24.3.0`
+- Python: `3.13.3`
+- Platform: Darwin arm64, macOS `26.4`, kernel
+  `25.4.0` on `RELEASE_ARM64_T6041`
+- Runtime profile: `category read`, `executionScope external-process`,
+  `workload selected-sheet`, `readSource raw-ooxml`, `validationMode each`.
+
+Raw output:
+
+```text
+/private/tmp/ascend-selected-current-27af69d4-runs/selected-sheet-same-lane-repeat15.json
+/private/tmp/ascend-selected-current-27af69d4-runs/selected-sheet-same-lane-repeat15-scoreboard.json
+```
+
+Focused same-lane selected-sheet row, repeat 15 after 3 warmups:
+
+| Runner | Status vs `readXlsx` | Median ms | P95 ms | CV | Peak RSS | Semantic comparability |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| `ascend-readxlsx-selected-values` | ran/won | 6.579 | 8.909 | 0.173 | 95.3 MiB | `readXlsx` selected-sheet open-only row. Loads only `Data`; shape and value hashes match. |
+| `python-calamine` | ran/lost vs `readXlsx` | 25.791 | 72.888 | 0.413 | 44.0 MiB | Same selected-sheet value semantics; lower RSS but noisier and 3.92x slower by median. |
+| `sheetjs` | ran/lost vs `readXlsx` | 58.808 | 80.457 | 0.128 | 254.9 MiB | Same selected-sheet value semantics; ordered value hash matches. |
+| `openpyxl` | ran/lost vs `readXlsx` | 413.117 | 689.932 | 0.226 | 96.8 MiB | Same selected-sheet value semantics; much slower by median. |
+| `ascend-external-values` | timing-boundary, not used for speed wording | 49.792 | 68.437 | 0.150 | 156.5 MiB | SDK `Ascend.open` row loads only `Data`, but the runner times assertion/materialization work; do not compare it to open-only rows. |
+
+Scoreboard result:
+
+- Focused selected-sheet row winner: `ascend-readxlsx-selected-values`.
+- `leaderFailures: []` and `profileLeaderFailures: []`.
+- The scoreboard command exits nonzero for the full profile because this row is
+  not full `xlsx-read-sota` coverage.
+- Remaining selected-sheet `coverageGaps` include ExcelJS, Apache POI, and
+  ClosedXML unsupported-operation rows. The scorer also still reports a
+  `Calamine` unsupported-operation profile gap even though `python-calamine`
+  ran in this focused row, so broad Calamine wording remains downgraded until
+  profile policy and runner naming agree.
+
+Semantic comparability: all listed rows assert `selectedSheetRead: true`,
+`sourceSheetCount: 3`, `loadedSheetCount: 1`, `loadedSheetNames: Data`,
+`hasAllSheets: false`, `selectedSheetMatches: true`, `cellCountMatches: true`,
+and `semanticCellValuesHashMatches: true`. The `readXlsx`, python-calamine,
+openpyxl, and SDK Ascend rows do not match ordered semantic value hashes, so
+ordered output claims are forbidden. This is selected-sheet value-read evidence,
+not style, formula calculation, package preservation, or edit-safety evidence.
+
+Humble allowed wording:
+
+> On the generated `selected-sheet` raw OOXML workload at commit `27af69d4`,
+> Ascend's `readXlsx` selected-sheet open row was faster by median and p95 than
+> the same-lane SheetJS, openpyxl, and python-calamine rows that successfully
+> ran. This is scoped selected-sheet value-read evidence, not a broad
+> `xlsx-read-sota` claim.
+
+Forbidden wording:
+
+- "Ascend has a full selected-sheet SOTA claim."
+- "Ascend beats ExcelJS, Apache POI, or ClosedXML on selected-sheet reads."
+- "Ascend beats Calamine in the full profile" while the scorer still reports a
+  Calamine selected-sheet coverage gap.
+- "Ascend's SDK `Ascend.open` selected-sheet path beats python-calamine."
+- Any wording that treats unsupported competitors, mixed timing boundaries, or
+  ordered-hash mismatches as wins.
+
+Next action: defer production optimization for low-level `readXlsx`
+selected-sheet. If release wording needs the SDK `Ascend.open` selected-sheet
+workflow, first produce a same-timing SDK open-only row or classify the current
+SDK runner as a benchmark timing bug before optimizing production code.
+
 ## Cycle: Dense Value Read
 
 Classification: defer. No production optimization is justified from this cycle.

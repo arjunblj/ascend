@@ -1,4 +1,5 @@
-import { readFile, writeFile } from 'node:fs/promises'
+import { readFile, rename, unlink, writeFile } from 'node:fs/promises'
+import { dirname, join as joinPath } from 'node:path'
 import {
 	type Cell,
 	createWorkbook,
@@ -1445,12 +1446,12 @@ export class AscendWorkbook extends WorkbookReadView {
 				const result =
 					ext === 'tsv' ? writeCsv(this.wb, { dialect: { delimiter: '\t' } }) : writeCsv(this.wb)
 				if (!result.ok) throw new AscendException(result.error)
-				await writeFile(path, result.value, 'utf-8')
+				await writeFileAtomically(path, result.value)
 				return
 			}
 
 			const bytes = this.toBytes()
-			await writeFile(path, bytes)
+			await writeFileAtomically(path, bytes)
 		} catch (error) {
 			this.restoreMutationRollbackSnapshot(rollbackSnapshot)
 			throw error
@@ -2413,6 +2414,25 @@ function resolveRecalcOptions(
 	if (fullRecalc) return undefined
 	if (dirtyRefs.length === 0) return undefined
 	return { dirtyOnly: true, dirtyRefs }
+}
+
+async function writeFileAtomically(path: string, data: string | Uint8Array): Promise<void> {
+	const ext = path.split('.').pop()?.toLowerCase() ?? ''
+	const temp = joinPath(
+		dirname(path),
+		`.${Date.now()}.${process.pid}.ascend-save-tmp${ext ? `.${ext}` : ''}`,
+	)
+	try {
+		if (typeof data === 'string') {
+			await writeFile(temp, data, 'utf-8')
+		} else {
+			await writeFile(temp, data)
+		}
+		await rename(temp, path)
+	} catch (error) {
+		await unlink(temp).catch(() => undefined)
+		throw error
+	}
 }
 
 function deriveDirtyRefsFromOps(ops: readonly Operation[]): string[] | null {

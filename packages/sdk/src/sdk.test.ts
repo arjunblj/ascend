@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { Buffer } from 'node:buffer'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -1768,6 +1768,7 @@ describe('AscendWorkbook', () => {
 			expect(internal.dirty).toBe(true)
 
 			await expect(wb.save(blockedOutput)).rejects.toThrow()
+			expect(readdirSync(dir).filter((name) => name.includes('.ascend-save-tmp'))).toHaveLength(0)
 			expect(internal.dirty).toBe(true)
 			expect(wb.sheet('Strings')?.cell('Z14')?.value).toEqual({
 				kind: 'string',

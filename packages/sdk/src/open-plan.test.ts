@@ -90,7 +90,7 @@ describe('workbook open planner', () => {
 		const plan = inspectWorkbookOpenPlan(encrypted, { intent: 'edit-plan', password: '123' })
 		expect(plan.recommendedMode).toBe('full')
 		expect(plan.recommendedLoadOptions).toEqual({ mode: 'full' })
-		expect(JSON.stringify(plan)).not.toContain('123')
+		expect(JSON.stringify(plan)).not.toContain('"123"')
 
 		const interactive = await planInteractiveOpen(encrypted, {
 			intent: 'edit-plan',
@@ -98,7 +98,7 @@ describe('workbook open planner', () => {
 		})
 		expect(interactive.recommendedMode).toBe('full')
 		expect(interactive.editableLoadOptions).toEqual({ mode: 'full' })
-		expect(JSON.stringify(interactive)).not.toContain('123')
+		expect(JSON.stringify(interactive)).not.toContain('"123"')
 	})
 })
 

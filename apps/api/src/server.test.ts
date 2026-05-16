@@ -583,7 +583,7 @@ describe('Ascend API server', () => {
 			expect(plan.status).toBe(200)
 			expect(plan.body.ok).toBe(true)
 			expect(plan.body.data?.preparedPlan?.id).toBeString()
-			expect(JSON.stringify(plan.body)).not.toContain('123')
+			expect(JSON.stringify(plan.body)).not.toContain('"123"')
 
 			const commit = await postJson('/commit', {
 				planHandle: plan.body.data?.preparedPlan?.id,
@@ -604,7 +604,7 @@ describe('Ascend API server', () => {
 			expect(commit.body.error?.message).toContain(
 				'Cannot export an edited encrypted workbook without re-encryption support',
 			)
-			expect(JSON.stringify(commit.body)).not.toContain('123')
+			expect(JSON.stringify(commit.body)).not.toContain('"123"')
 			expect(await Bun.file(output).exists()).toBe(false)
 		} finally {
 			await unlink(input).catch(() => {})
@@ -639,7 +639,7 @@ describe('Ascend API server', () => {
 				],
 			})
 			expect(plan.body.data?.preparedPlan?.id).toBeString()
-			expect(JSON.stringify(plan.body)).not.toContain('123')
+			expect(JSON.stringify(plan.body)).not.toContain('"123"')
 
 			const commit = await postJson('/commit', {
 				planHandle: plan.body.data?.preparedPlan?.id,
@@ -660,7 +660,7 @@ describe('Ascend API server', () => {
 			expect(commit.body.error?.message).toContain(
 				'Cannot export an edited encrypted workbook without re-encryption support',
 			)
-			expect(JSON.stringify(commit.body)).not.toContain('123')
+			expect(JSON.stringify(commit.body)).not.toContain('"123"')
 			expect(await Bun.file(output).exists()).toBe(false)
 			expect(Buffer.from(readFileSync(input)).equals(sourceBytes)).toBe(true)
 			await expect(

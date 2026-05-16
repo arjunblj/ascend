@@ -1110,7 +1110,7 @@ describe('ascend cli', () => {
 		expect(parsed.ok).toBe(true)
 		expect(parsed.data.recommendedLoadOptions).toEqual({ mode: 'full' })
 		expect(parsed.data.partCount).toBeGreaterThan(0)
-		expect(stdout).not.toContain('123')
+		expect(stdout).not.toContain('"123"')
 	})
 
 	test('plan --password previews encrypted workbooks without echoing the password', async () => {

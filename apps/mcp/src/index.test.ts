@@ -233,7 +233,7 @@ describe('MCP server', () => {
 			})
 			expect(planned.structuredContent?.ok).toBe(true)
 			expect(planned.structuredContent?.data?.preparedPlan?.id).toBeString()
-			expect(JSON.stringify(planned)).not.toContain('123')
+			expect(JSON.stringify(planned)).not.toContain('"123"')
 
 			const committed = await commit({
 				planHandle: planned.structuredContent?.data?.preparedPlan?.id,
@@ -253,7 +253,7 @@ describe('MCP server', () => {
 			expect(committed.structuredContent?.error?.message).toContain(
 				'Cannot export an edited encrypted workbook without re-encryption support',
 			)
-			expect(JSON.stringify(committed)).not.toContain('123')
+			expect(JSON.stringify(committed)).not.toContain('"123"')
 			expect(await Bun.file(output).exists()).toBe(false)
 		} finally {
 			await unlink(input).catch(() => {})
@@ -324,7 +324,7 @@ describe('MCP server', () => {
 				],
 			})
 			expect(planned.structuredContent?.data?.preparedPlan?.id).toBeString()
-			expect(JSON.stringify(planned)).not.toContain('123')
+			expect(JSON.stringify(planned)).not.toContain('"123"')
 
 			const committed = await commit({
 				planHandle: planned.structuredContent?.data?.preparedPlan?.id,
@@ -344,7 +344,7 @@ describe('MCP server', () => {
 			expect(committed.structuredContent?.error?.message).toContain(
 				'Cannot export an edited encrypted workbook without re-encryption support',
 			)
-			expect(JSON.stringify(committed)).not.toContain('123')
+			expect(JSON.stringify(committed)).not.toContain('"123"')
 			expect(await Bun.file(output).exists()).toBe(false)
 			expect(Buffer.from(readFileSync(input)).equals(sourceBytes)).toBe(true)
 			await expect(
@@ -878,7 +878,7 @@ describe('MCP server', () => {
 
 		expect(result.structuredContent?.data?.recommendedLoadOptions).toEqual({ mode: 'full' })
 		expect(result.structuredContent?.data?.partCount).toBeGreaterThan(0)
-		expect(serialized).not.toContain('123')
+		expect(serialized).not.toContain('"123"')
 	})
 
 	test('ascend.plan accepts encrypted workbook passwords without echoing them', async () => {

@@ -41,7 +41,7 @@ export type ReleaseProofPortfolioClaimName =
 	| 'release-proof-bundle'
 	| 'property-journal-laws'
 export type ReleaseProofPortfolioClaimStatus =
-	| 'claim-wording-allowed-today'
+	| 'local-evidence-wording-owner-gated'
 	| 'needs-one-more-fold-in'
 	| 'speculative-do-not-promote'
 export type ReleaseProofPortfolioHandoffDecision =
@@ -2669,14 +2669,15 @@ function releaseDecisionBoard(
 		const handoff = readiness.implementationHandoffs.find(
 			(candidate) => candidate.artifact === row.artifact,
 		)
+		const allowedWording = releaseDecisionAllowedWording(row.artifact)
 		return {
 			rank: row.rank,
 			artifact: row.artifact,
-			claimWordingAllowedToday: row.claim,
+			claimWordingAllowedToday: allowedWording,
 			evidenceWeHave: row.acceptedEvidence.map((item) => ({ ...item })),
 			evidenceMissing: [...row.missingEvidence],
 			qssContrast: releaseDecisionQssContrast(row),
-			allowedWording: releaseDecisionAllowedWording(row.artifact),
+			allowedWording,
 			forbiddenWording: [...row.claimsWeMustNotMake],
 			nextOwnerActions: row.ownerActions.map(cloneNextOwnerAction),
 			ownerDecisionArtifacts: ownerDecisionArtifactsFor(row.artifact),
@@ -3848,7 +3849,7 @@ const CLAIM_PORTFOLIO: readonly ReleaseProofPortfolioClaim[] = [
 		name: 'safe-open-proof',
 		claim: 'safe unknown workbook opening',
 		northStarLink: 'Preservation-first XLSX and trustworthy agent workflows.',
-		status: 'claim-wording-allowed-today',
+		status: 'local-evidence-wording-owner-gated',
 		evidenceNeeded: claimProofRequired('safe-open-proof'),
 		likelyHandoffOwner: ['product', 'performance', 'release'],
 		handoffDecision: 'top-implementation-handoff',
@@ -3861,7 +3862,7 @@ const CLAIM_PORTFOLIO: readonly ReleaseProofPortfolioClaim[] = [
 		name: 'package-action-proof',
 		claim: 'auditable package-part mutation',
 		northStarLink: 'Trustworthy mutation planning and preservation-first writes.',
-		status: 'claim-wording-allowed-today',
+		status: 'local-evidence-wording-owner-gated',
 		evidenceNeeded: claimProofRequired('package-action-proof'),
 		likelyHandoffOwner: ['correctness', 'product', 'performance', 'release'],
 		handoffDecision: 'top-implementation-handoff',

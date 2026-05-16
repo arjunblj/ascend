@@ -601,7 +601,7 @@ describe('release proof evidence index', () => {
 		])
 		expect(index.claimPortfolio[0]).toMatchObject({
 			claim: 'safe unknown workbook opening',
-			status: 'claim-wording-allowed-today',
+			status: 'local-evidence-wording-owner-gated',
 			handoffDecision: 'top-implementation-handoff',
 			likelyHandoffOwner: ['product', 'performance', 'release'],
 			evidenceNeeded: {
@@ -1602,7 +1602,10 @@ describe('release proof evidence index', () => {
 		)
 		expect(practicalLatencyNextOwnerAction).toContain('--dry-run --json')
 		const safeOpenDecision = index.releaseDecisionBoard.rows[0]
-		expect(safeOpenDecision.claimWordingAllowedToday).toBe('safe unknown workbook opening')
+		expect(safeOpenDecision.claimWordingAllowedToday).toBe(safeOpenDecision.allowedWording)
+		expect(safeOpenDecision.claimWordingAllowedToday).toContain(
+			'pre-hydration package-feature routing',
+		)
 		expect(safeOpenDecision.evidenceWeHave.map((item) => item.evidenceId)).toContain(
 			'safe-open-proof-harness',
 		)
@@ -1657,7 +1660,12 @@ describe('release proof evidence index', () => {
 			),
 		).toContain('release-latency-run/performance')
 		const packageActionDecision = index.releaseDecisionBoard.rows[1]
-		expect(packageActionDecision.claimWordingAllowedToday).toBe('auditable package-part mutation')
+		expect(packageActionDecision.claimWordingAllowedToday).toBe(
+			packageActionDecision.allowedWording,
+		)
+		expect(packageActionDecision.claimWordingAllowedToday).toContain(
+			'per-part package action accounting',
+		)
 		expect(packageActionDecision.evidenceMissing.join('\n')).toContain('edge-fixture-policy')
 		expect(packageActionDecision.allowedWording).toContain('per-part package action accounting')
 		expect(packageActionDecision.ownerDecisionArtifacts).toEqual(
@@ -2109,7 +2117,7 @@ describe('release proof evidence index', () => {
 		expect(handoff.releaseDecisionBoard.rows).toHaveLength(2)
 		expect(handoff.releaseDecisionBoard.rows[0]).toMatchObject({
 			artifact: 'safe-open-proof',
-			claimWordingAllowedToday: 'safe unknown workbook opening',
+			claimWordingAllowedToday: expect.stringContaining('pre-hydration package-feature routing'),
 			headlineClaimAllowed: false,
 			implementationSurfacePromotionAllowed: false,
 			acceptedEvidence: expect.arrayContaining([
@@ -2130,7 +2138,7 @@ describe('release proof evidence index', () => {
 		})
 		expect(handoff.releaseDecisionBoard.rows[1]).toMatchObject({
 			artifact: 'package-action-proof',
-			claimWordingAllowedToday: 'auditable package-part mutation',
+			claimWordingAllowedToday: expect.stringContaining('per-part package action accounting'),
 			ownerDecisionArtifacts: expect.arrayContaining([
 				expect.objectContaining({
 					artifactId: 'package-action-streaming-matrix-evidence',
@@ -3833,9 +3841,11 @@ describe('release proof evidence index', () => {
 		expect(markdown).toContain(
 			'| Rank | Claim | Status | North Star link | Owner loops | Handoff decision | Proof command | Kill criterion | Boundary |',
 		)
-		expect(markdown).toContain('| 1 | safe unknown workbook opening | claim-wording-allowed-today')
 		expect(markdown).toContain(
-			'| 2 | auditable package-part mutation | claim-wording-allowed-today',
+			'| 1 | safe unknown workbook opening | local-evidence-wording-owner-gated',
+		)
+		expect(markdown).toContain(
+			'| 2 | auditable package-part mutation | local-evidence-wording-owner-gated',
 		)
 		expect(markdown).toContain('| 6 | release proof bundle | needs-one-more-fold-in')
 		expect(markdown).toContain('| 8 | property-style journal laws | speculative-do-not-promote')

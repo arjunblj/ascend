@@ -3049,10 +3049,10 @@ function safeOpenQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceItem[] {
 			evidenceId: 'cli-agent-facing-open-diagnostics-proof',
 			kind: 'test',
 			command:
-				'bun test apps/cli/src/cli.test.ts apps/cli/src/file-errors.test.ts -t "custom UI callbacks|open-plan --json reports missing files|raw ENOENT noise|missing ops sidecar" --timeout 30000',
-			path: 'apps/cli/src/index.ts; apps/cli/src/commands/inspect.ts; apps/cli/src/cli.test.ts; apps/cli/src/file-errors.test.ts',
+				'bun test apps/cli/src/cli.test.ts apps/cli/src/file-errors.test.ts -t "custom UI callbacks|open-plan --json reports missing files|raw ENOENT noise|missing ops sidecar|structured missing workflow input guidance" --timeout 30000',
+			path: 'apps/cli/src/index.ts; apps/cli/src/commands/inspect.ts; apps/cli/src/commands/plan.ts; apps/cli/src/commands/commit.ts; apps/cli/src/cli.test.ts; apps/cli/src/file-errors.test.ts',
 			acceptedScope:
-				'Commit d837689e makes CLI inspect --detail active-content report generated RibbonX custom UI callbacks and makes CLI open-plan --json return retryable FILE_NOT_FOUND guidance for missing workbook paths; commit 9b155c7f extends missing-file guidance to non-JSON CLI output without raw ENOENT noise; commit 3d4d5374 reports missing plan/commit ops sidecar paths directly and leaves commit output absent.',
+				'Commit d837689e makes CLI inspect --detail active-content report generated RibbonX custom UI callbacks and makes CLI open-plan --json return retryable FILE_NOT_FOUND guidance for missing workbook paths; commit 9b155c7f extends missing-file guidance to non-JSON CLI output without raw ENOENT noise; commit 3d4d5374 reports missing plan/commit ops sidecar paths directly and leaves commit output absent; commit ff38e8f4 makes CLI plan/commit --json return structured retryable missing workflow input guidance for file/ops gaps.',
 			boundary:
 				'CLI agent-facing diagnostics only; it does not prove public custom UI fixture coverage, file recovery, path discovery, Custom UI safety, active-content safety, or trust wording.',
 		},

@@ -15,6 +15,7 @@ No broad XLSX read, SOTA, or QSS-leapfrog speed claim is promotable from this ar
 - `competitive-scoreboard --require-profile xlsx-read-sota` still fails for a single-run full-profile promotion because several unsupported and semantic-mismatch rows remain explicit blockers. ClosedXML was subsequently unblocked in a focused clean head-to-head run and is recorded as ran/lost, not as blocked. FastXLSX was subsequently unblocked in an isolated Python 3.12 environment for same-lane cell-materialization value rows and is recorded as ran/lost there, not as unavailable for those rows.
 - The recorded cycles cover public/reproducible generated `dense-values`, `sparse-wide`, `styles-heavy`, `formula-heavy`, `table-heavy`, `feature-rich`, `selected-sheet`, `metadata-only`, `warm-workflow`, and `string-heavy` workloads over `raw-ooxml`, but they are per-workload evidence rows rather than one clean all-workload promotion run.
 - Current harness evidence now supports an OpenPyXL selected-sheet projection row. Treat older `openpyxl` selected-sheet `unsupported-operation` wording as historical for the recorded clean runs; the current blocker is a clean repeat-5 selected-sheet rerun plus timing-boundary handling, not OpenPyXL runner capability.
+- Current harness evidence now supports a SheetJS feature-rich rich-metadata row using SheetJS `bookFiles`; older SheetJS `semantic-mismatch` wording is historical for the pre-runner-fix cycles. Calamine-family rich-metadata rows remain not comparable.
 - Several external runners were unavailable or blocked in the clean benchmark worktree. They are recorded as blockers, not wins.
 - Several timing lanes are semantically related but not one unified timing boundary. Do not collapse in-process, preloaded-bytes, file-path, row-stream, and materialized-workbook timings into a single "wins everything" claim.
 
@@ -917,6 +918,91 @@ Forbidden wording:
 - Any wording that counts semantic mismatches, blocked runners, unavailable runners, or the incomplete full profile as wins.
 
 Next action: optimize no further on this row. Continue profile expansion with `selected-sheet`; keep ClosedXML, fastxlsx, and rich-metadata semantic mismatches as external-baseline blockers unless their runners are fixed.
+
+## Cycle: SheetJS Feature-Rich Rich Metadata
+
+Classification: defer. The previous SheetJS feature-rich row was cooked as a
+head-to-head because it used SheetJS' cell/comment/hyperlink surface but did not
+enable the public `bookFiles` option needed to inspect the workbook package for
+data validations and conditional formatting. This cycle fixes the runner
+semantics and records SheetJS as a measured `ran/lost` row. No production
+optimization is justified because Ascend wins the comparable in-process
+feature-rich rich-metadata workflow.
+
+Workflow: XLSX open/inspect value read with rich workbook metadata for a
+feature-rich worksheet.
+
+Why it matters for release: feature-rich inspection is the workflow behind
+trustworthy agent decisions on comments, hyperlinks, data validations,
+conditional formatting, and defined names. Counting a feature-dropping SheetJS
+row as a win would be dishonest; making it comparable strengthens the claim.
+
+Public/tracked-clean input: `competitive-io` generated the `feature-rich`
+raw OOXML workload from detached commit `15119c8d`, 2000 rows x 20 columns,
+40,000 logical cells, 40,000 populated cells, 114,404 input bytes. No private
+corpus or local research workbook was used.
+
+Commands:
+
+```bash
+git worktree add --detach /private/tmp/ascend-perf-hillclimb-15119c8d 15119c8d
+cd /private/tmp/ascend-perf-hillclimb-15119c8d
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun install --frozen-lockfile
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-io.ts --json --category read --libraries ascend,sheetjs --workload feature-rich --read-source raw-ooxml --repeat 5 --warmup 1 --validation-mode each > /private/tmp/ascend-perf-hillclimb-15119c8d-runs/feature-rich-sheetjs-inprocess.json
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-scoreboard.ts /private/tmp/ascend-perf-hillclimb-15119c8d-runs/feature-rich-sheetjs-inprocess.json --json --metric medianMs > /private/tmp/ascend-perf-hillclimb-15119c8d-runs/feature-rich-sheetjs-inprocess-scoreboard.json
+```
+
+Environment:
+
+- Commit: `15119c8d828e52493866c760c7fe28972e4a3bee`
+- Worktree: clean detached worktree at `/private/tmp/ascend-perf-hillclimb-15119c8d`; `git status --short --branch` reported `## HEAD (no branch)` with no changed paths after the run.
+- OS: Darwin 25.4.0 arm64
+- Bun: `1.3.13`
+- Node: `24.3.0`
+- SheetJS: `xlsx@0.18.5`
+- Runtime profile: `category read`, `workload feature-rich`, `readSource raw-ooxml`, `validationMode each`, `repeat 5`, `warmup 1`.
+
+Raw output:
+
+```text
+/private/tmp/ascend-perf-hillclimb-15119c8d-runs/feature-rich-sheetjs-inprocess.json
+/private/tmp/ascend-perf-hillclimb-15119c8d-runs/feature-rich-sheetjs-inprocess-scoreboard.json
+```
+
+Both rows below use 5 measured samples after 1 warmup and share
+`in-process-generated-feature-rich`. Both rows assert 1 comment, 1 hyperlink,
+1 data validation, 1 conditional format, 1 defined name, and
+`readFeatureRichSemanticMatches: true`.
+
+| Competitor | Status | Representative row | Median ms | P95 ms | CV | Peak RSS | Semantic comparability |
+| --- | --- | --- | ---: | ---: | ---: | ---: | --- |
+| Ascend | ran/won | `ascend` | 5.123 | 5.575 | 0.048 | 222.7 MiB | In-process rich-metadata value read with exact feature-rich semantic assertions. |
+| SheetJS | ran/lost | `sheetjs` | 31.211 | 32.814 | 0.035 | 328.1 MiB | In-process SheetJS read with `bookFiles` package inspection for data validation and conditional formatting; 6.09x slower than Ascend by median. |
+| Calamine-family runners | not comparable | n/a | n/a | n/a | n/a | n/a | Still do not expose the required rich metadata assertions in the current harness. |
+
+Scoreboard result for the focused SheetJS run:
+
+- `leaderFailures: []`
+- `profileLeaderFailures: []`
+- `coverageFailures: []`
+- `coverageGaps: []`
+- The `feature-rich` group winner was `ascend`.
+
+Humble allowed wording:
+
+> On the generated `feature-rich` raw OOXML workload at commit `15119c8d`, SheetJS `xlsx@0.18.5` was made semantically comparable by enabling `bookFiles` and checking the package metadata needed for comments, hyperlinks, data validations, conditional formatting, and defined names. Ascend was faster by median in this focused in-process comparison.
+
+Forbidden wording:
+
+- "Ascend beats Calamine-family readers on feature-rich rich-metadata reads."
+- "SheetJS was always comparable in older feature-rich runs."
+- Any wording that treats raw value-only Calamine-family rows as rich-metadata losses.
+
+Next action: defer production optimization. Keep Calamine-family feature-rich
+rich-metadata rows as not comparable unless their public APIs can expose the
+required metadata, then assemble a current full-profile or merged
+`xlsx-read-sota` gate using the cleaned selected-sheet, metadata-only,
+FastXLSX, ClosedXML, and SheetJS evidence.
 
 ## Cycle: Selected-Sheet Value Read
 

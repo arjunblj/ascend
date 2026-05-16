@@ -54,6 +54,9 @@ describe('performance claim baseline matrix', () => {
 		expect(markdown).toContain(
 			'Current harness evidence now supports an OpenPyXL selected-sheet projection row.',
 		)
+		expect(markdown).toContain(
+			'Current harness evidence now supports a SheetJS feature-rich rich-metadata row',
+		)
 		for (const workload of RECORDED_WORKLOADS) expect(markdown).toContain(`\`${workload}\``)
 		expect(markdown).toContain('Humble allowed wording:')
 		expect(markdown).toContain('Forbidden wording:')
@@ -285,6 +288,30 @@ describe('performance claim baseline matrix', () => {
 			'"Ascend beats SheetJS, fastexcel, Calamine, FastExcel Java, Polars, or pyopenxlsx" from this rich-metadata run.',
 		)
 		expect(markdown).toContain('Continue profile expansion with `selected-sheet`')
+
+		expect(markdown).toContain('## Cycle: SheetJS Feature-Rich Rich Metadata')
+		expect(markdown).toContain('enable the public `bookFiles` option')
+		expect(markdown).toContain('Commit: `15119c8d828e52493866c760c7fe28972e4a3bee`')
+		expect(markdown).toContain(
+			'/private/tmp/ascend-perf-hillclimb-15119c8d-runs/feature-rich-sheetjs-inprocess.json',
+		)
+		expect(markdown).toContain(
+			'/private/tmp/ascend-perf-hillclimb-15119c8d-runs/feature-rich-sheetjs-inprocess-scoreboard.json',
+		)
+		expect(markdown).toContain(
+			'Both rows assert 1 comment, 1 hyperlink,\n1 data validation, 1 conditional format, 1 defined name',
+		)
+		expect(markdown).toContain(
+			'| Ascend | ran/won | `ascend` | 5.123 | 5.575 | 0.048 | 222.7 MiB |',
+		)
+		expect(markdown).toContain(
+			'| SheetJS | ran/lost | `sheetjs` | 31.211 | 32.814 | 0.035 | 328.1 MiB |',
+		)
+		expect(markdown).toContain('| Calamine-family runners | not comparable | n/a')
+		expect(markdown).toContain('The `feature-rich` group winner was `ascend`.')
+		expect(markdown).toContain(
+			'"Ascend beats Calamine-family readers on feature-rich rich-metadata reads."',
+		)
 
 		expect(markdown).toContain('## Cycle: Selected-Sheet Value Read')
 		expect(markdown).toContain('generated `selected-sheet` workbook')

@@ -921,6 +921,12 @@ describe('release proof evidence index', () => {
 					boundary: expect.stringContaining('API request-shape diagnostics only'),
 				}),
 				expect.objectContaining({
+					evidenceId: 'mcp-open-workflow-reference-proof',
+					acceptedScope: expect.stringContaining('da273900'),
+					command:
+						'bun test apps/mcp/src/index.test.ts -t "missing workbook references" --timeout 30000',
+				}),
+				expect.objectContaining({
 					evidenceId: 'release-rc-gate',
 					command: 'bun run release:rc:gate',
 					path: 'scripts/release-rc-gate.ts',
@@ -2247,6 +2253,7 @@ describe('release proof evidence index', () => {
 				expect.objectContaining({ evidenceId: 'api-custom-ui-active-content-proof' }),
 				expect.objectContaining({ evidenceId: 'cli-agent-facing-open-diagnostics-proof' }),
 				expect.objectContaining({ evidenceId: 'api-open-workflow-reference-proof' }),
+				expect.objectContaining({ evidenceId: 'mcp-open-workflow-reference-proof' }),
 				expect.objectContaining({ evidenceId: 'release-proof-index-owner-handoff' }),
 			]),
 		)

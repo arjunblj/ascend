@@ -3067,6 +3067,17 @@ function safeOpenQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceItem[] {
 				'API request-shape diagnostics only; it does not prove file recovery, path discovery, source workbook existence, edit correctness, latency, or trust wording.',
 		},
 		{
+			evidenceId: 'mcp-open-workflow-reference-proof',
+			kind: 'test',
+			command:
+				'bun test apps/mcp/src/index.test.ts -t "missing workbook references" --timeout 30000',
+			path: 'apps/mcp/src/index.ts; apps/mcp/src/index.test.ts',
+			acceptedScope:
+				'Commit da273900 returns structured retryable missing-workbook-reference errors for MCP commit requests without file or planHandle instead of generic missing-file responses.',
+			boundary:
+				'MCP request-shape diagnostics only; it does not prove file recovery, path discovery, source workbook existence, edit correctness, latency, or trust wording.',
+		},
+		{
 			evidenceId: 'release-proof-index-owner-handoff',
 			kind: 'proof-artifact',
 			command:

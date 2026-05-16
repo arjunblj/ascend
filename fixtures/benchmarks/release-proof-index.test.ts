@@ -1731,6 +1731,38 @@ describe('release proof evidence index', () => {
 				expect.objectContaining({ requirementId: 'provenance-boundary' }),
 			]),
 		})
+		expect(handoff.releaseDecisionBoard.doNotPromoteYet).toHaveLength(10)
+		for (const item of handoff.releaseDecisionBoard.doNotPromoteYet) {
+			const qssContrast = item.qssContrast.join('\n')
+			expect(item.evidenceWeHave).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(item.evidenceMissing).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(qssContrast).not.toContain(
+				'QSS contrast is blocked until this diagnostic evidence changes a top-two release claim.',
+			)
+			expect(item.allowedWording).toContain('Do not promote')
+			expect(item.allowedWording).not.toContain('owner planning or research evidence')
+			expect(item.forbiddenWording).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(item.nextOwnerAction.length).toBeGreaterThan(0)
+			expect(item.nextOwnerAction).not.toContain(
+				'No owner action is release-blocking until this claim changes the top-two release gate.',
+			)
+		}
+		expect(handoff.releaseDecisionBoard.doNotPromoteYet).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					name: 'research-surface-hygiene',
+					nextOwnerAction: expect.stringContaining(
+						'git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager',
+					),
+				}),
+				expect.objectContaining({
+					name: 'practical-latency-contracts',
+					nextOwnerAction: expect.stringContaining(
+						'--input-preset public-tracked --contract all --repeat 3 --warmup 1 --json',
+					),
+				}),
+			]),
+		)
 		expect(handoff.implementationHandoffs[0]).toMatchObject({
 			claim: 'safe unknown workbook opening',
 			proofCommand: 'bun run fixtures/benchmarks/safe-open-proof.ts --no-timings --json',

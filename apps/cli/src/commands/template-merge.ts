@@ -47,13 +47,40 @@ export async function templateMergeCommand(
 		return 1
 	}
 	if (flags.has('values-only') && flags.has('formulas-only')) {
-		cliError('Use either --values-only or --formulas-only, not both.', flags)
+		cliError(
+			ascendError('INVALID_ARGUMENT', 'Use either --values-only or --formulas-only, not both.', {
+				retryable: true,
+				retryStrategy: 'modified',
+				details: {
+					command: 'template-merge',
+					conflictingFlags: ['values-only', 'formulas-only'],
+					workflow: ['inspect', 'template-merge', 'plan'],
+				},
+				suggestedFix:
+					'Remove one flag so template placeholders are scanned in values, formulas, or both.',
+			}),
+			flags,
+		)
 		return 1
 	}
 
 	const data = await readTemplateData(dataArg)
 	if (!data || Array.isArray(data) || typeof data !== 'object') {
-		cliError('Template data must be a JSON object.', flags)
+		cliError(
+			ascendError('INVALID_ARGUMENT', 'Template data must be a JSON object.', {
+				retryable: true,
+				retryStrategy: 'modified',
+				details: {
+					command: 'template-merge',
+					flag: 'data',
+					expected: 'JSON object',
+					workflow: ['inspect', 'template-merge', 'plan'],
+				},
+				suggestedFix:
+					'Pass --data with an object such as {"name":"Acme"} or a path to a JSON object file.',
+			}),
+			flags,
+		)
 		return 1
 	}
 

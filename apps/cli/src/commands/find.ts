@@ -65,7 +65,26 @@ export async function findCommand(args: string[], flags: Map<string, string>): P
 
 	const matchMode = parseMatchMode(flags.get('match'))
 	if (flags.has('match') && matchMode === null) {
-		cliError('Invalid --match. Use one of: exact, contains, startsWith, endsWith', flags)
+		cliError(
+			ascendError(
+				'INVALID_ARGUMENT',
+				'Invalid --match. Use one of: exact, contains, startsWith, endsWith',
+				{
+					retryable: true,
+					retryStrategy: 'modified',
+					details: {
+						command: 'find',
+						flag: 'match',
+						received: flags.get('match'),
+						allowed: ['exact', 'contains', 'startsWith', 'endsWith'],
+						workflow: ['inspect', 'read', 'find'],
+					},
+					suggestedFix:
+						'Use --match exact, contains, startsWith, or endsWith after inspecting the target sheet.',
+				},
+			),
+			flags,
+		)
 		return 1
 	}
 

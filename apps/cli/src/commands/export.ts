@@ -43,7 +43,26 @@ export async function exportCommand(args: string[], flags: Map<string, string>):
 	const { workbook: wb } = await openWorkbookWithProgress(file)
 	const format = normalizeExportFormat(flags.get('format') ?? '') ?? inferExportFormat(output)
 	if (!format) {
-		cliError('Invalid export format. Use one of: csv, tsv, json, xlsx, xlsm', flags)
+		cliError(
+			ascendError(
+				'INVALID_ARGUMENT',
+				'Invalid export format. Use one of: csv, tsv, json, xlsx, xlsm',
+				{
+					retryable: true,
+					retryStrategy: 'modified',
+					details: {
+						command: 'export',
+						flag: flags.has('format') ? 'format' : 'output',
+						received: flags.get('format') ?? output,
+						allowed: ['csv', 'tsv', 'json', 'xlsx', 'xlsm'],
+						workflow: ['reopen', 'verify', 'export'],
+					},
+					suggestedFix:
+						'Pass --format csv, tsv, json, xlsx, or xlsm, or choose an output path with one of those extensions.',
+				},
+			),
+			flags,
+		)
 		return 1
 	}
 

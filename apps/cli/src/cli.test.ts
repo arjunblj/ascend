@@ -1090,6 +1090,72 @@ describe('ascend cli', () => {
 		})
 		expect(parsedInvalidAgentViewTokens.error.suggestedFix).toContain('--tokens 1')
 
+		const invalidFindMatch = await run('find', TEST_FILE, 'needle', '--match', 'fuzzy', '--json')
+		expect(invalidFindMatch.exitCode).toBe(1)
+		const parsedInvalidFindMatch = JSON.parse(invalidFindMatch.stdout)
+		expect(parsedInvalidFindMatch).toMatchObject({
+			ok: false,
+			error: {
+				code: 'INVALID_ARGUMENT',
+				message: 'Invalid --match. Use one of: exact, contains, startsWith, endsWith',
+				retryable: true,
+				retryStrategy: 'modified',
+				details: {
+					command: 'find',
+					flag: 'match',
+					received: 'fuzzy',
+					allowed: ['exact', 'contains', 'startsWith', 'endsWith'],
+					workflow: ['inspect', 'read', 'find'],
+				},
+			},
+		})
+		expect(parsedInvalidFindMatch.error.suggestedFix).toContain('--match exact')
+
+		const invalidDumpFlags = await run(
+			'dump',
+			TEST_FILE,
+			'--values-only',
+			'--formulas-only',
+			'--json',
+		)
+		expect(invalidDumpFlags.exitCode).toBe(1)
+		const parsedInvalidDumpFlags = JSON.parse(invalidDumpFlags.stdout)
+		expect(parsedInvalidDumpFlags).toMatchObject({
+			ok: false,
+			error: {
+				code: 'INVALID_ARGUMENT',
+				message: 'Use either --values-only or --formulas-only, not both.',
+				retryable: true,
+				retryStrategy: 'modified',
+				details: {
+					command: 'dump',
+					conflictingFlags: ['values-only', 'formulas-only'],
+					workflow: ['inspect', 'dump', 'plan'],
+				},
+			},
+		})
+		expect(parsedInvalidDumpFlags.error.suggestedFix).toContain('Remove one flag')
+
+		const invalidTemplateData = await run('template-merge', TEST_FILE, '--data', '[]', '--json')
+		expect(invalidTemplateData.exitCode).toBe(1)
+		const parsedInvalidTemplateData = JSON.parse(invalidTemplateData.stdout)
+		expect(parsedInvalidTemplateData).toMatchObject({
+			ok: false,
+			error: {
+				code: 'INVALID_ARGUMENT',
+				message: 'Template data must be a JSON object.',
+				retryable: true,
+				retryStrategy: 'modified',
+				details: {
+					command: 'template-merge',
+					flag: 'data',
+					expected: 'JSON object',
+					workflow: ['inspect', 'template-merge', 'plan'],
+				},
+			},
+		})
+		expect(parsedInvalidTemplateData.error.suggestedFix).toContain('--data')
+
 		const unknownFormula = await run('formula', 'wat', '--json')
 		expect(unknownFormula.exitCode).toBe(1)
 		const parsedUnknownFormula = JSON.parse(unknownFormula.stdout)
@@ -2479,6 +2545,27 @@ describe('ascend cli', () => {
 			const bad = await run('export', TEST_FILE, 'out.weird', '--format', 'weird')
 			expect(bad.exitCode).toBe(1)
 			expect(bad.stderr).toContain('Invalid export format')
+
+			const badJson = await run('export', TEST_FILE, 'out.weird', '--format', 'weird', '--json')
+			expect(badJson.exitCode).toBe(1)
+			const parsedBadJson = JSON.parse(badJson.stdout)
+			expect(parsedBadJson).toMatchObject({
+				ok: false,
+				error: {
+					code: 'INVALID_ARGUMENT',
+					message: 'Invalid export format. Use one of: csv, tsv, json, xlsx, xlsm',
+					retryable: true,
+					retryStrategy: 'modified',
+					details: {
+						command: 'export',
+						flag: 'format',
+						received: 'weird',
+						allowed: ['csv', 'tsv', 'json', 'xlsx', 'xlsm'],
+						workflow: ['reopen', 'verify', 'export'],
+					},
+				},
+			})
+			expect(parsedBadJson.error.suggestedFix).toContain('--format csv')
 		},
 		{ timeout: 15_000 },
 	)

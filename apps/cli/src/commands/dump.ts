@@ -38,7 +38,19 @@ export async function dumpCommand(args: string[], flags: Map<string, string>): P
 		return 1
 	}
 	if (flags.has('values-only') && flags.has('formulas-only')) {
-		cliError('Use either --values-only or --formulas-only, not both.', flags)
+		cliError(
+			ascendError('INVALID_ARGUMENT', 'Use either --values-only or --formulas-only, not both.', {
+				retryable: true,
+				retryStrategy: 'modified',
+				details: {
+					command: 'dump',
+					conflictingFlags: ['values-only', 'formulas-only'],
+					workflow: ['inspect', 'dump', 'plan'],
+				},
+				suggestedFix: 'Remove one flag so the replay batch contains values, formulas, or both.',
+			}),
+			flags,
+		)
 		return 1
 	}
 

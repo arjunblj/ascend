@@ -970,6 +970,12 @@ describe('release proof evidence index', () => {
 		expect(researchSurfaceDecision?.evidenceMissing.join('\n')).toContain(
 			'Inventory of current research files',
 		)
+		expect(researchSurfaceDecision?.evidenceWeHave.join('\n')).toContain(
+			'scripts/ascend-loop-manager.ts',
+		)
+		expect(researchSurfaceDecision?.evidenceMissing.join('\n')).toContain(
+			'git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager',
+		)
 		expect(researchSurfaceDecision?.allowedWording).toContain(
 			'Do not promote research-surface-hygiene',
 		)
@@ -979,7 +985,15 @@ describe('release proof evidence index', () => {
 		expect(researchSurfaceDecision?.forbiddenWording.join('\n')).toContain(
 			'Untriaged research files are not release evidence',
 		)
-		expect(researchSurfaceDecision?.nextOwnerAction).toContain('Classify current research files')
+		expect(researchSurfaceDecision?.forbiddenWording.join('\n')).toContain(
+			'Do not cite `research/` or `tmp/` files',
+		)
+		expect(researchSurfaceDecision?.nextOwnerAction).toContain(
+			'git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager',
+		)
+		expect(researchSurfaceDecision?.nextOwnerAction).toContain(
+			'bun test fixtures/benchmarks/release-proof-index.test.ts',
+		)
 		for (const item of index.releaseDecisionBoard.doNotPromoteYet) {
 			expect(item.evidenceWeHave).toEqual(expect.arrayContaining([expect.any(String)]))
 			expect(item.evidenceMissing).toEqual(expect.arrayContaining([expect.any(String)]))
@@ -1896,6 +1910,10 @@ describe('release proof evidence index', () => {
 		expect(markdown).toContain('Release Readiness Gate')
 		expect(markdown).toContain('## Release Decision Board')
 		expect(markdown).toContain('Do not promote yet:')
+		expect(markdown).toContain(
+			'git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager',
+		)
+		expect(markdown).toContain('Do not cite `research/` or `tmp/` files')
 		expect(markdown).toContain(
 			'| Rank | Claim | Evidence we have | Evidence missing | QSS contrast | Allowed wording | Forbidden wording | Next owner action | Owner decision artifact | Headline claim allowed | Implementation promotion allowed | Exact proof | Must not claim | A+ blocking owner action | Boundary |',
 		)

@@ -2245,6 +2245,8 @@ function releaseDecisionDoNotPromoteItem(
 	const deferredClaim = DEFERRED_CLAIMS.find((claim) => claim.name === note.name)
 	const excludedEvidence = EXCLUDED_EVIDENCE.find((evidence) => evidence.name === note.name)
 	const proof = portfolioClaim?.evidenceNeeded
+	const researchHygieneBlocker =
+		note.name === 'research-surface-hygiene' ? RESEARCH_SURFACE_HYGIENE_BLOCKER : undefined
 	return {
 		name: note.name,
 		status: 'do-not-promote-yet',
@@ -2252,6 +2254,7 @@ function releaseDecisionDoNotPromoteItem(
 		reason: note.reason,
 		evidenceWeHave: [
 			note.reason,
+			...(researchHygieneBlocker?.evidenceWeHave ?? []),
 			...(portfolioClaim?.proofCommand
 				? [`Existing proof command: \`${portfolioClaim.proofCommand}\`.`]
 				: []),
@@ -2262,6 +2265,7 @@ function releaseDecisionDoNotPromoteItem(
 		evidenceMissing: [
 			...(deferredClaim ? [deferredClaim.proofNeeded] : []),
 			...(excludedEvidence ? [excludedEvidence.eligibilityRule] : []),
+			...(researchHygieneBlocker?.evidenceMissing ?? []),
 			...(proof ? [proof.fixture, proof.benchmark, proof.surface, proof.validationGate] : []),
 		],
 		qssContrast: [
@@ -2271,10 +2275,12 @@ function releaseDecisionDoNotPromoteItem(
 		allowedWording: `Do not promote ${note.name} as release wording today; use it only as owner planning or research evidence.`,
 		forbiddenWording: [
 			note.killCriterion,
+			...(researchHygieneBlocker?.forbiddenWording ?? []),
 			...(proof ? [proof.honestBoundary] : []),
 			...(excludedEvidence ? [excludedEvidence.boundary] : []),
 		],
 		nextOwnerAction:
+			researchHygieneBlocker?.ownerAction ??
 			deferredClaim?.proofNeeded ??
 			excludedEvidence?.eligibilityRule ??
 			proof?.validationGate ??
@@ -2860,6 +2866,22 @@ const DEFERRED_CLAIMS: readonly ReleaseProofDeferredClaim[] = [
 			'Untriaged research files are not release evidence and must not be cited for product, correctness, or performance claims.',
 	},
 ]
+
+const RESEARCH_SURFACE_HYGIENE_BLOCKER = {
+	ownerAction:
+		'Product/release owner runs `git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager`, classifies each untriaged path as accepted evidence, active owner blocker, or archive-only, and reruns `bun test fixtures/benchmarks/release-proof-index.test.ts` before citing any research-derived claim.',
+	evidenceWeHave: [
+		'Current board/state shows unclassified research surface in `research/`, `research/experiments/`, `research/docs-archive/`, `research/excel-corpus/`, `research/topics/`, `scripts/ascend-loop-manager.ts`, and `tmp/ascend-loop-manager/`.',
+		'Release-proof index already blocks research-surface-hygiene promotion and keeps untriaged research files out of top-two release wording.',
+	],
+	evidenceMissing: [
+		'Owner-classified inventory from `git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager` with each path mapped to accepted evidence, active owner blocker, or archive-only.',
+		'Passing `bun test fixtures/benchmarks/release-proof-index.test.ts` proving any promoted research item has evidence we have, evidence missing, QSS contrast, allowed wording, forbidden wording, and next owner action.',
+	],
+	forbiddenWording: [
+		'Do not cite `research/` or `tmp/` files as product, correctness, performance, QSS, or release evidence until they are classified and routed through the release-proof index.',
+	],
+} as const
 
 const RELEASE_PACKAGE_ACTION_KINDS: readonly ReleaseProofPackageActionKind[] = [
 	'passthrough',

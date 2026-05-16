@@ -26,6 +26,7 @@ const REQUIRED_COMMANDS = [
 	'bun run fixtures/benchmarks/package-action-fixture-scan.ts --json',
 	'bun run fixtures/benchmarks/safe-open-fixture-scan.ts --json',
 	'bun test packages/sdk/src/open-plan.test.ts',
+	'bun test fixtures/corpus/formula-binding-contract.test.ts',
 	'bun test packages/core/src/protection.test.ts packages/engine/src/operations.test.ts packages/sdk/src/ops-schema.test.ts packages/sdk/src/sdk.test.ts',
 	'bun test fixtures/corpus/table-contract.test.ts',
 	'bun test fixtures/corpus/conditional-format-contract.test.ts',

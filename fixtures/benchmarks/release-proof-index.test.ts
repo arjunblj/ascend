@@ -1028,8 +1028,8 @@ describe('release proof evidence index', () => {
 					validationCommand:
 						'bun test packages/sdk/src/excel-behavior-compatibility-matrix.test.ts',
 					decision: expect.stringContaining('protection metadata'),
-					nextAction: expect.stringContaining('conditional-format fixtures as accepted'),
-					forbiddenShortcut: expect.stringContaining('full Excel compatibility'),
+					nextAction: expect.stringContaining('classic/x14 conditional-format fixtures'),
+					forbiddenShortcut: expect.stringContaining('full chart editing support'),
 				}),
 				expect.objectContaining({
 					ownerLoop: 'performance',
@@ -1593,6 +1593,8 @@ describe('release proof evidence index', () => {
 		])
 		expect(board.rows?.every((row) => row.headlineClaimAllowed === false)).toBe(true)
 		expect(board.rows?.every((row) => (row.aPlusBlockingOwnerActions?.length ?? 0) > 0)).toBe(true)
+		expect(stdout).toContain('bounded chart series-source fixtures as accepted evidence')
+		expect(stdout).toContain('full chart editing support')
 		expect(board.doNotPromoteYet?.map((item) => item.name)).toContain('columnar-scan-sidecars')
 		expect(board.doNotPromoteYet?.every((item) => item.status === 'do-not-promote-yet')).toBe(true)
 		expect(stdout).not.toContain('"claimBlockerBoard"')

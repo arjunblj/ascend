@@ -3785,6 +3785,15 @@ function releaseDecisionClaimDowngradeOwnerFiles(
 			'fixtures/benchmarks/columnar-sidecar.test.ts',
 		]
 	}
+	if (name === 'property-journal-laws') {
+		return [
+			'fixtures/benchmarks/release-proof-index.ts',
+			'fixtures/benchmarks/release-proof-index.test.ts',
+			'fixtures/benchmarks/journal-law-proof.ts',
+			'fixtures/benchmarks/journal-law-proof.test.ts',
+			'packages/sdk/src/journal-exactness.test.ts',
+		]
+	}
 	if (name !== 'research-surface-hygiene') return []
 	return [
 		'research/',
@@ -4111,9 +4120,8 @@ function releaseDecisionValidationCommands(
 			]
 		case 'property-journal-laws':
 			return [
-				'bun test fixtures/benchmarks/journal-law-proof.test.ts --timeout 30000',
-				'bun run fixtures/benchmarks/journal-law-proof.ts --exact-cases 48 --sequence-length 5 --claim-report --json',
-				'bun test packages/sdk/src/journal-exactness.test.ts --timeout 30000',
+				'bun run fixtures/benchmarks/release-proof-index.ts --no-timings --release-decision-json',
+				'bun test fixtures/benchmarks/release-proof-index.test.ts --timeout 30000',
 			]
 		case 'columnar-scan-sidecars':
 			return [
@@ -4154,13 +4162,13 @@ function releaseDecisionWorkBlockDisposition(
 		case 'practical-latency-contracts':
 			return 'benchmark-corpus-blocker'
 		case 'columnar-scan-sidecars':
+		case 'property-journal-laws':
 		case 'research-surface-hygiene':
 			return 'claim-downgrade-do-not-promote'
 		case 'formula-language-service-primitives':
 		case 'token-bounded-agent-view':
 		case 'retained-viewport-patch-history':
 		case 'release-proof-bundle':
-		case 'property-journal-laws':
 		case 'agent-workflow-observability':
 			return 'implementation-ready-blocker'
 	}
@@ -4676,18 +4684,19 @@ const CLAIM_PORTFOLIO: readonly ReleaseProofPortfolioClaim[] = [
 		status: 'speculative-do-not-promote',
 		evidenceNeeded: claimEvidenceNeeded({
 			fixture:
-				'Generated operation sequences covering cells, rows, columns, sheets, formulas, styles, tables, and explicit lossy boundaries.',
+				'No new property-generation harness until a release owner ties it to a specific public workflow claim; existing deterministic cases remain local correctness guardrails.',
 			benchmark:
-				'Shrink time, failing-case minimization size, seed stability, and changed-test integration cost.',
-			surface: 'Test harness only until laws and exclusions stabilize.',
+				'No benchmark or changed-test integration claim; shrink time and failing-case minimization stay out of scope for release wording.',
+			surface:
+				'Test-strategy-only evidence; no product undo, audit, rollback, SDK, CLI, API, or MCP surface.',
 			validationGate:
-				'fast-check shrinking, deterministic seeds, explicit exclusions, and journal compatibility assertions.',
+				'Release-proof-index downgrade first; deterministic journal-law and journal-exactness tests remain regression guards only.',
 			competitorContrast:
 				'Property-based tests prove invariants over operation spaces instead of adding hand-written fixture examples.',
 			honestBoundary:
 				'Generated laws are scoped to covered operations and excluded lossy metadata/style boundaries.',
 			killCriterion:
-				'Do not promote broad inverse-law claims until generated coverage is shrinkable and lossy boundaries are explicit.',
+				'Do not start fast-check/shrinking work or promote broad inverse-law claims without a product-approved release workflow claim.',
 		}),
 		likelyHandoffOwner: ['correctness'],
 		handoffDecision: 'do-not-promote-yet',
@@ -4916,22 +4925,23 @@ const RELEASE_PROOF_BUNDLE_BLOCKER = {
 
 const PROPERTY_JOURNAL_LAW_BLOCKER = {
 	ownerAction:
-		'Correctness owner keeps property-journal-laws out of release wording, accepts deterministic journal-law evidence only as local correctness proof, and either adds shrinkable/replayable fast-check generation or records a permanent test-strategy-only downgrade; validate with `bun test fixtures/benchmarks/journal-law-proof.test.ts --timeout 30000`, `bun run fixtures/benchmarks/journal-law-proof.ts --exact-cases 48 --sequence-length 5 --claim-report --json`, and focused journal exactness coverage before any inverse-law wording.',
+		'Correctness owner downgrades property-journal-laws to permanent test-strategy-only evidence and stops fast-check/shrinking harness work from the current release evidence. Keep deterministic journal-law and journal-exactness tests as local regression guards only; restart property generation only if product first defines a public workflow claim that generated inverse laws would directly prove. Validate the downgrade with `bun run fixtures/benchmarks/release-proof-index.ts --no-timings --release-decision-json` and `bun test fixtures/benchmarks/release-proof-index.test.ts --timeout 30000`.',
 	allowedWording:
-		'Do not promote property-journal-laws as release wording today. Allowed wording: deterministic local journal-law tests are correctness guardrails for covered exact operations and explicit lossy boundaries, not product undo or audit claims.',
+		'Do not promote property-journal-laws as release wording today. Allowed wording: deterministic local journal-law tests are regression guardrails for covered exact operations and explicit lossy boundaries, not product undo, audit, rollback, or property-based testing claims.',
 	evidenceWeHave: [
 		'Journal-law proof command exists: `bun test fixtures/benchmarks/journal-law-proof.test.ts --timeout 30000` covers generated exact inverse-law sequences, lossy metadata boundaries, operation-family counts, issue reasons, and claim-safe markdown.',
 		'Journal-law claim report exists: `bun run fixtures/benchmarks/journal-law-proof.ts --exact-cases 48 --sequence-length 5 --claim-report --json` emits exact case count, lossy boundary count, exact operation families, lossy issue reasons, do-not-promote wording, and next proof.',
 		'SDK journal exactness tests cover allowed lossy issue reasons, representative exact inverse restoration, saved package-state lossiness, formula-binding lossiness, dynamic spill lossiness, table-style metadata boundaries, and journal surface classifications in `packages/sdk/src/journal-exactness.test.ts`.',
 		'Claim report wording already limits the proof to deterministic local journal evidence and reports style, table-style, package-part, data-validation, and conditional-format lossy boundaries.',
+		'No product owner has tied shrinkable property generation to a release workflow claim; current evidence is therefore a test-strategy downgrade, not an implementation blocker.',
 	],
 	evidenceMissing: [
-		'Shrinkable and replayable property generation with stable seeds, replay paths, minimized failing cases, and operation-family coverage thresholds.',
-		'Public inverse operations or explicit permanent downgrade for style exactness, table-style exactness, package-part preservation, data-validation ordering/duplicate metadata, and conditional-format ordering/duplicate metadata.',
-		'Owner-approved changed-test integration cost and failure triage workflow before any broad inverse-law or rollback wording.',
+		'Product-approved public workflow claim explaining why generated inverse laws would change release wording rather than add harness surface area.',
+		'Only after product approval: shrinkable and replayable property generation with stable seeds, replay paths, minimized failing cases, operation-family coverage thresholds, and failure triage workflow.',
+		'Public inverse operations or explicit release wording exclusions for style exactness, table-style exactness, package-part preservation, data-validation ordering/duplicate metadata, and conditional-format ordering/duplicate metadata.',
 	],
 	forbiddenWording: [
-		'Do not claim property-based testing, full undo coverage, exact rollback for every operation, style/table-style exactness, package-byte restoration, or signed audit/release attestation from deterministic journal-law proof.',
+		'Do not claim property-based testing, shrinkable generated coverage, full undo coverage, exact rollback for every operation, style/table-style exactness, package-byte restoration, product audit, or signed audit/release attestation from deterministic journal-law proof.',
 	],
 } as const
 

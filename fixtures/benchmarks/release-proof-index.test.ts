@@ -1022,7 +1022,7 @@ describe('release proof evidence index', () => {
 			'retained-viewport-patch-history:implementation-ready-blocker',
 			'release-proof-bundle:implementation-ready-blocker',
 			'formula-oracle-routing:benchmark-corpus-blocker',
-			'property-journal-laws:implementation-ready-blocker',
+			'property-journal-laws:claim-downgrade-do-not-promote',
 			'columnar-scan-sidecars:claim-downgrade-do-not-promote',
 			'agent-workflow-observability:implementation-ready-blocker',
 			'research-surface-hygiene:claim-downgrade-do-not-promote',
@@ -1034,11 +1034,14 @@ describe('release proof evidence index', () => {
 				'token-bounded-agent-view',
 				'retained-viewport-patch-history',
 				'release-proof-bundle',
-				'property-journal-laws',
 				'agent-workflow-observability',
 			],
 			benchmarkCorpusBlockerNames: ['formula-oracle-routing', 'practical-latency-contracts'],
-			claimDowngradeDoNotPromoteNames: ['columnar-scan-sidecars', 'research-surface-hygiene'],
+			claimDowngradeDoNotPromoteNames: [
+				'property-journal-laws',
+				'columnar-scan-sidecars',
+				'research-surface-hygiene',
+			],
 			boundary: expect.stringContaining('Routing summary for blocked claims only'),
 		})
 		expect(index.releaseDecisionBoard.releaseWordingDecisionSummary).toMatchObject({
@@ -1093,7 +1096,7 @@ describe('release proof evidence index', () => {
 			'product:release-proof-bundle:implementation-ready-blocker',
 			'release:release-proof-bundle:implementation-ready-blocker',
 			'correctness:formula-oracle-routing:benchmark-corpus-blocker',
-			'correctness:property-journal-laws:implementation-ready-blocker',
+			'correctness:property-journal-laws:claim-downgrade-do-not-promote',
 			'performance:columnar-scan-sidecars:claim-downgrade-do-not-promote',
 			'product:agent-workflow-observability:implementation-ready-blocker',
 			'product:research-surface-hygiene:claim-downgrade-do-not-promote',
@@ -1191,7 +1194,6 @@ describe('release proof evidence index', () => {
 			'blocked-owner-action:performance:retained-viewport-patch-history:none',
 			'blocked-owner-action:product:release-proof-bundle:none',
 			'blocked-owner-action:release:release-proof-bundle:none',
-			'blocked-owner-action:correctness:property-journal-laws:none',
 			'blocked-owner-action:product:agent-workflow-observability:none',
 		])
 		for (const row of index.releaseDecisionBoard.implementationReadyOwnerActionQueue) {
@@ -1230,6 +1232,7 @@ describe('release proof evidence index', () => {
 				(row) => `${row.sourceQueue}:${row.ownerLoop}:${row.name}`,
 			),
 		).toEqual([
+			'blocked-owner-action:correctness:property-journal-laws',
 			'blocked-owner-action:performance:columnar-scan-sidecars',
 			'blocked-owner-action:product:research-surface-hygiene',
 			'blocked-owner-action:release:research-surface-hygiene',
@@ -1249,6 +1252,20 @@ describe('release proof evidence index', () => {
 				])
 				expect(row.allowedWording).toContain('Do not promote columnar-scan-sidecars')
 				expect(row.nextOwnerAction).toContain('stops benchmark expansion')
+			} else if (row.name === 'property-journal-laws') {
+				expect(row.ownerFiles).toEqual(
+					expect.arrayContaining([
+						'fixtures/benchmarks/release-proof-index.ts',
+						'fixtures/benchmarks/journal-law-proof.ts',
+						'packages/sdk/src/journal-exactness.test.ts',
+					]),
+				)
+				expect(row.validationCommands).toEqual([
+					'bun run fixtures/benchmarks/release-proof-index.ts --no-timings --release-decision-json',
+					'bun test fixtures/benchmarks/release-proof-index.test.ts --timeout 30000',
+				])
+				expect(row.allowedWording).toContain('Do not promote property-journal-laws')
+				expect(row.nextOwnerAction).toContain('stops fast-check/shrinking harness work')
 			} else {
 				expect(row.ownerFiles).toEqual(
 					expect.arrayContaining([
@@ -1281,8 +1298,8 @@ describe('release proof evidence index', () => {
 			sourceTopClaimActionCount: 9,
 			sourceBlockedActionCount: 14,
 			benchmarkCorpusActionCount: 6,
-			implementationReadyActionCount: 14,
-			claimDowngradeActionCount: 3,
+			implementationReadyActionCount: 13,
+			claimDowngradeActionCount: 4,
 			coveredActionCount: 23,
 			uncoveredTopClaimActionKeys: [],
 			uncoveredBlockedActionKeys: [],
@@ -1302,8 +1319,8 @@ describe('release proof evidence index', () => {
 			status: 'all-disposition-owner-actions-have-execution-contract',
 			actionCount: 23,
 			benchmarkCorpusActionCount: 6,
-			implementationReadyActionCount: 14,
-			claimDowngradeActionCount: 3,
+			implementationReadyActionCount: 13,
+			claimDowngradeActionCount: 4,
 			missingOwnerFileActionKeys: [],
 			missingCommandActionKeys: [],
 			missingFailureEvidenceActionKeys: [],
@@ -1546,19 +1563,20 @@ describe('release proof evidence index', () => {
 		expect(propertyJournalEvidence).toContain('journal-law-proof.ts --exact-cases 48')
 		expect(propertyJournalEvidence).toContain('packages/sdk/src/journal-exactness.test.ts')
 		expect(propertyJournalEvidence).toContain('deterministic local journal evidence')
-		expect(propertyJournalMissing).toContain('Generated operation sequences')
-		expect(propertyJournalMissing).toContain('Shrinkable and replayable property generation')
+		expect(propertyJournalEvidence).toContain('test-strategy downgrade')
+		expect(propertyJournalMissing).toContain('Product-approved public workflow claim')
+		expect(propertyJournalMissing).toContain('shrinkable and replayable property generation')
 		expect(propertyJournalMissing).toContain('style exactness')
-		expect(propertyJournalForbidden).toContain('Do not promote broad inverse-law claims')
+		expect(propertyJournalForbidden).toContain('property-based testing')
+		expect(propertyJournalForbidden).toContain('shrinkable generated coverage')
 		expect(propertyJournalForbidden).toContain('full undo coverage')
 		expect(propertyJournalForbidden).toContain('signed audit')
-		expect(propertyJournalNextOwnerAction).toContain('fast-check')
-		expect(propertyJournalNextOwnerAction).toContain('journal-law-proof.test.ts')
-		expect(propertyJournalNextOwnerAction).toContain('--claim-report --json')
+		expect(propertyJournalNextOwnerAction).toContain('stops fast-check/shrinking harness work')
+		expect(propertyJournalNextOwnerAction).toContain('public workflow claim')
+		expect(propertyJournalNextOwnerAction).toContain('release-decision-json')
 		expect(propertyJournalDecision?.validationCommands).toEqual([
-			'bun test fixtures/benchmarks/journal-law-proof.test.ts --timeout 30000',
-			'bun run fixtures/benchmarks/journal-law-proof.ts --exact-cases 48 --sequence-length 5 --claim-report --json',
-			'bun test packages/sdk/src/journal-exactness.test.ts --timeout 30000',
+			'bun run fixtures/benchmarks/release-proof-index.ts --no-timings --release-decision-json',
+			'bun test fixtures/benchmarks/release-proof-index.test.ts --timeout 30000',
 		])
 		const columnarSidecarDecision = index.releaseDecisionBoard.doNotPromoteYet.find(
 			(item) => item.name === 'columnar-scan-sidecars',
@@ -2363,11 +2381,14 @@ describe('release proof evidence index', () => {
 				'token-bounded-agent-view',
 				'retained-viewport-patch-history',
 				'release-proof-bundle',
-				'property-journal-laws',
 				'agent-workflow-observability',
 			],
 			benchmarkCorpusBlockerNames: ['formula-oracle-routing', 'practical-latency-contracts'],
-			claimDowngradeDoNotPromoteNames: ['columnar-scan-sidecars', 'research-surface-hygiene'],
+			claimDowngradeDoNotPromoteNames: [
+				'property-journal-laws',
+				'columnar-scan-sidecars',
+				'research-surface-hygiene',
+			],
 		})
 		expect(handoff.releaseDecisionBoard.blockedOwnerActionQueue).toHaveLength(14)
 		for (const row of handoff.releaseDecisionBoard.blockedOwnerActionQueue) {
@@ -2383,6 +2404,14 @@ describe('release proof evidence index', () => {
 					workBlockDisposition: 'benchmark-corpus-blocker',
 					validationCommands: expect.arrayContaining([
 						expect.stringContaining('formula-corpus-correctness.ts'),
+					]),
+				}),
+				expect.objectContaining({
+					ownerLoop: 'correctness',
+					name: 'property-journal-laws',
+					workBlockDisposition: 'claim-downgrade-do-not-promote',
+					validationCommands: expect.arrayContaining([
+						expect.stringContaining('release-proof-index.ts'),
 					]),
 				}),
 				expect.objectContaining({
@@ -2465,7 +2494,7 @@ describe('release proof evidence index', () => {
 				}),
 			]),
 		)
-		expect(handoff.releaseDecisionBoard.implementationReadyOwnerActionQueue).toHaveLength(14)
+		expect(handoff.releaseDecisionBoard.implementationReadyOwnerActionQueue).toHaveLength(13)
 		for (const row of handoff.releaseDecisionBoard.implementationReadyOwnerActionQueue) {
 			expect(row.ownerFiles).toEqual(expect.arrayContaining([expect.any(String)]))
 			expect(row.commandsToRun).toEqual(row.validationCommands)
@@ -2517,6 +2546,25 @@ describe('release proof evidence index', () => {
 			]),
 		)
 		expect(handoff.releaseDecisionBoard.claimDowngradeOwnerActionQueue).toEqual([
+			expect.objectContaining({
+				sourceQueue: 'blocked-owner-action',
+				ownerLoop: 'correctness',
+				name: 'property-journal-laws',
+				workBlockDisposition: 'claim-downgrade-do-not-promote',
+				ownerFiles: expect.arrayContaining([
+					'fixtures/benchmarks/release-proof-index.ts',
+					'fixtures/benchmarks/journal-law-proof.ts',
+					'packages/sdk/src/journal-exactness.test.ts',
+				]),
+				validationCommands: [
+					'bun run fixtures/benchmarks/release-proof-index.ts --no-timings --release-decision-json',
+					'bun test fixtures/benchmarks/release-proof-index.test.ts --timeout 30000',
+				],
+				failureEvidence: expect.arrayContaining([
+					expect.stringContaining('Product-approved public workflow claim'),
+				]),
+				acceptanceCriteria: expect.stringContaining('stops fast-check/shrinking harness work'),
+			}),
 			expect.objectContaining({
 				sourceQueue: 'blocked-owner-action',
 				ownerLoop: 'performance',
@@ -2574,8 +2622,8 @@ describe('release proof evidence index', () => {
 			sourceTopClaimActionCount: 9,
 			sourceBlockedActionCount: 14,
 			benchmarkCorpusActionCount: 6,
-			implementationReadyActionCount: 14,
-			claimDowngradeActionCount: 3,
+			implementationReadyActionCount: 13,
+			claimDowngradeActionCount: 4,
 			coveredActionCount: 23,
 			uncoveredTopClaimActionKeys: [],
 			uncoveredBlockedActionKeys: [],
@@ -2593,8 +2641,8 @@ describe('release proof evidence index', () => {
 			status: 'all-disposition-owner-actions-have-execution-contract',
 			actionCount: 23,
 			benchmarkCorpusActionCount: 6,
-			implementationReadyActionCount: 14,
-			claimDowngradeActionCount: 3,
+			implementationReadyActionCount: 13,
+			claimDowngradeActionCount: 4,
 			missingOwnerFileActionKeys: [],
 			missingCommandActionKeys: [],
 			missingFailureEvidenceActionKeys: [],
@@ -2692,7 +2740,7 @@ describe('release proof evidence index', () => {
 		expect(handoff.claimPortfolio[7]).toMatchObject({
 			name: 'property-journal-laws',
 			status: 'speculative-do-not-promote',
-			killCriterion: expect.stringContaining('Do not promote broad inverse-law claims'),
+			killCriterion: expect.stringContaining('Do not start fast-check/shrinking work'),
 		})
 		expect(handoff.claimPortfolio[10]).toMatchObject({
 			name: 'research-surface-hygiene',
@@ -3056,7 +3104,7 @@ describe('release proof evidence index', () => {
 			'retained-viewport-patch-history:implementation-ready-blocker',
 			'release-proof-bundle:implementation-ready-blocker',
 			'formula-oracle-routing:benchmark-corpus-blocker',
-			'property-journal-laws:implementation-ready-blocker',
+			'property-journal-laws:claim-downgrade-do-not-promote',
 			'columnar-scan-sidecars:claim-downgrade-do-not-promote',
 			'agent-workflow-observability:implementation-ready-blocker',
 			'research-surface-hygiene:claim-downgrade-do-not-promote',
@@ -3068,11 +3116,14 @@ describe('release proof evidence index', () => {
 				'token-bounded-agent-view',
 				'retained-viewport-patch-history',
 				'release-proof-bundle',
-				'property-journal-laws',
 				'agent-workflow-observability',
 			],
 			benchmarkCorpusBlockerNames: ['formula-oracle-routing', 'practical-latency-contracts'],
-			claimDowngradeDoNotPromoteNames: ['columnar-scan-sidecars', 'research-surface-hygiene'],
+			claimDowngradeDoNotPromoteNames: [
+				'property-journal-laws',
+				'columnar-scan-sidecars',
+				'research-surface-hygiene',
+			],
 		})
 		expect(board.blockedOwnerActionQueue).toHaveLength(14)
 		expect(
@@ -3088,7 +3139,7 @@ describe('release proof evidence index', () => {
 			'product:release-proof-bundle:implementation-ready-blocker',
 			'release:release-proof-bundle:implementation-ready-blocker',
 			'correctness:formula-oracle-routing:benchmark-corpus-blocker',
-			'correctness:property-journal-laws:implementation-ready-blocker',
+			'correctness:property-journal-laws:claim-downgrade-do-not-promote',
 			'performance:columnar-scan-sidecars:claim-downgrade-do-not-promote',
 			'product:agent-workflow-observability:implementation-ready-blocker',
 			'product:research-surface-hygiene:claim-downgrade-do-not-promote',
@@ -3186,7 +3237,7 @@ describe('release proof evidence index', () => {
 				}),
 			]),
 		)
-		expect(board.implementationReadyOwnerActionQueue).toHaveLength(14)
+		expect(board.implementationReadyOwnerActionQueue).toHaveLength(13)
 		expect(
 			board.implementationReadyOwnerActionQueue?.map(
 				(row) => `${row.sourceQueue}:${row.ownerLoop}:${row.name}:${row.requirementId ?? 'none'}`,
@@ -3204,7 +3255,6 @@ describe('release proof evidence index', () => {
 			'blocked-owner-action:performance:retained-viewport-patch-history:none',
 			'blocked-owner-action:product:release-proof-bundle:none',
 			'blocked-owner-action:release:release-proof-bundle:none',
-			'blocked-owner-action:correctness:property-journal-laws:none',
 			'blocked-owner-action:product:agent-workflow-observability:none',
 		])
 		for (const row of board.implementationReadyOwnerActionQueue ?? []) {
@@ -3257,6 +3307,25 @@ describe('release proof evidence index', () => {
 			]),
 		)
 		expect(board.claimDowngradeOwnerActionQueue).toEqual([
+			expect.objectContaining({
+				sourceQueue: 'blocked-owner-action',
+				ownerLoop: 'correctness',
+				name: 'property-journal-laws',
+				workBlockDisposition: 'claim-downgrade-do-not-promote',
+				ownerFiles: expect.arrayContaining([
+					'fixtures/benchmarks/release-proof-index.ts',
+					'fixtures/benchmarks/journal-law-proof.ts',
+					'packages/sdk/src/journal-exactness.test.ts',
+				]),
+				validationCommands: [
+					'bun run fixtures/benchmarks/release-proof-index.ts --no-timings --release-decision-json',
+					'bun test fixtures/benchmarks/release-proof-index.test.ts --timeout 30000',
+				],
+				commandsToRun: [
+					'bun run fixtures/benchmarks/release-proof-index.ts --no-timings --release-decision-json',
+					'bun test fixtures/benchmarks/release-proof-index.test.ts --timeout 30000',
+				],
+			}),
 			expect.objectContaining({
 				sourceQueue: 'blocked-owner-action',
 				ownerLoop: 'performance',
@@ -3323,8 +3392,8 @@ describe('release proof evidence index', () => {
 			sourceTopClaimActionCount: 9,
 			sourceBlockedActionCount: 14,
 			benchmarkCorpusActionCount: 6,
-			implementationReadyActionCount: 14,
-			claimDowngradeActionCount: 3,
+			implementationReadyActionCount: 13,
+			claimDowngradeActionCount: 4,
 			coveredActionCount: 23,
 			uncoveredTopClaimActionKeys: [],
 			uncoveredBlockedActionKeys: [],
@@ -3342,8 +3411,8 @@ describe('release proof evidence index', () => {
 			status: 'all-disposition-owner-actions-have-execution-contract',
 			actionCount: 23,
 			benchmarkCorpusActionCount: 6,
-			implementationReadyActionCount: 14,
-			claimDowngradeActionCount: 3,
+			implementationReadyActionCount: 13,
+			claimDowngradeActionCount: 4,
 			missingOwnerFileActionKeys: [],
 			missingCommandActionKeys: [],
 			missingFailureEvidenceActionKeys: [],

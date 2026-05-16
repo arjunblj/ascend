@@ -31,6 +31,7 @@ const RECORDED_WORKLOADS = [
 	'sparse-wide',
 	'styles-heavy',
 	'formula-heavy',
+	'table-heavy',
 	'string-heavy',
 ]
 
@@ -54,7 +55,7 @@ describe('performance claim baseline matrix', () => {
 		expect(markdown).toContain('Owner: benchmarking/external baselines.')
 		expect(markdown).toContain('broad read-speed and QSS-leapfrog performance wording is blocked')
 		expect(markdown).toContain(
-			'do not optimize from the partial `dense-values`, `sparse-wide`,\n`styles-heavy`, `formula-heavy`, and `string-heavy` rows',
+			'do not optimize from the partial `dense-values`, `sparse-wide`,\n`styles-heavy`, `formula-heavy`, `table-heavy`, and `string-heavy` rows',
 		)
 		expect(markdown).toContain(
 			'Failed, missing, or semantically mismatched runners are not counted as wins.',
@@ -132,13 +133,27 @@ describe('performance claim baseline matrix', () => {
 		)
 		expect(markdown).toContain('Continue profile expansion with `table-heavy`')
 
+		expect(markdown).toContain('## Cycle: Table-Heavy Value Read')
+		expect(markdown).toContain('generated `table-heavy` workbook')
+		expect(markdown).toContain('Commit: `65520519`')
+		expect(markdown).toContain('151,994 input bytes')
+		expect(markdown).toContain(
+			'| Ascend | ran/won | `ascend-readxlsx-raw-values-operation-path` | 8.822 | 9.551 | 0.052 | 115.2 MiB |',
+		)
+		expect(markdown).toContain('| Polars calamine | not comparable | `polars-calamine`')
+		expect(markdown).toContain('| fastexcel Python | not comparable | `fastexcel`')
+		expect(markdown).toContain(
+			'"Ascend beats fastexcel Python, Polars calamine, Polars xlsx2csv, or Polars openpyxl" from this run.',
+		)
+		expect(markdown).toContain('Continue profile expansion with `feature-rich`')
+
 		expect(markdown).toContain('Promote: no.')
 		expect(markdown).toContain(
 			'Optimize: no production optimization from the partial profile rows.',
 		)
 		expect(markdown).toContain('Defer: yes.')
 		expect(markdown).toContain(
-			'The immediate next action is `table-heavy` profile expansion plus runner hardening for FastExcel Java on `sparse-wide`, ClosedXML, and fastxlsx',
+			'The immediate next action is `feature-rich` profile expansion plus runner hardening for FastExcel Java on `sparse-wide`, ClosedXML, fastxlsx, and table-heavy semantic mismatches',
 		)
 	})
 })

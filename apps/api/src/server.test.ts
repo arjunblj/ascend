@@ -524,6 +524,20 @@ async function postApiFetch(
 }
 
 describe('Ascend API server', () => {
+	test('string API failures return coded JSON envelopes', async () => {
+		const missingRoute = await postJson('/not-a-real-endpoint', {})
+
+		expect(missingRoute.status).toBe(404)
+		expect(missingRoute.body.ok).toBe(false)
+		expect(missingRoute.body.error).toMatchObject({
+			code: 'INVALID_ARGUMENT',
+			message: 'Not Found',
+			retryable: true,
+			retryStrategy: 'modified',
+			suggestedFix: expect.stringContaining('supported Ascend API endpoint'),
+		})
+	})
+
 	test('/open-plan rejects missing workbook references with structured retry guidance', async () => {
 		const result = await postJson('/open-plan', { intent: 'edit-plan' })
 

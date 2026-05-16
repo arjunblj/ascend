@@ -1,5 +1,4 @@
-import type { AscendError } from '@ascend/schema'
-import { machineFailure, machineSuccess } from '@ascend/schema'
+import { type AscendError, ascendError, machineFailure, machineSuccess } from '@ascend/schema'
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' }
 
@@ -11,7 +10,7 @@ export function jsonSuccess(body: unknown, status = 200): Response {
 }
 
 export function jsonFailure(message: string, status: number): Response {
-	return new Response(JSON.stringify(machineFailure(message)), {
+	return new Response(JSON.stringify(machineFailure(structuredStringFailure(message, status))), {
 		status,
 		headers: JSON_HEADERS,
 	})
@@ -31,5 +30,23 @@ export function binaryResponse(body: Uint8Array, contentType: string): Response 
 		headers: {
 			'Content-Type': contentType,
 		},
+	})
+}
+
+function structuredStringFailure(message: string, status: number): AscendError {
+	if (status >= 500) {
+		return ascendError('INTERNAL_ERROR', message, {
+			retryable: false,
+			retryStrategy: 'none',
+			suggestedFix: 'Inspect server logs, fix the server-side failure, and retry the request.',
+		})
+	}
+	return ascendError('INVALID_ARGUMENT', message, {
+		retryable: true,
+		retryStrategy: 'modified',
+		suggestedFix:
+			status === 404
+				? 'Use a supported Ascend API endpoint and retry the request.'
+				: 'Adjust the request body or endpoint arguments and retry.',
 	})
 }

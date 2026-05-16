@@ -773,6 +773,54 @@ describe('Ascend API server', () => {
 		expect(serialized).not.toContain('"123"')
 	})
 
+	test('/plan rejects non-string encrypted workbook passwords with retry guidance', async () => {
+		const result = await postJson('/plan', {
+			file: ENCRYPTED_FIXTURE,
+			password: 123,
+			ops: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'planned' }] }],
+		})
+
+		expect(result.status).toBe(400)
+		expect(result.body.ok).toBe(false)
+		expect(result.body.error).toMatchObject({
+			code: 'VALIDATION_ERROR',
+			message: 'Invalid plan password',
+			details: { field: 'password', receivedType: 'number' },
+			suggestedFix: 'Pass password as a string or omit it.',
+		})
+	})
+
+	test('/commit rejects non-string encrypted workbook passwords before direct commit', async () => {
+		const input = join(
+			tmpdir(),
+			`ascend-api-invalid-password-${Date.now()}-${Math.random().toString(16).slice(2)}.xlsx`,
+		)
+		const output = `${input}.out.xlsx`
+		try {
+			const wb = AscendWorkbook.create()
+			await wb.save(input)
+			const result = await postJson('/commit', {
+				file: input,
+				password: 123,
+				output,
+				ops: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'planned' }] }],
+			})
+
+			expect(result.status).toBe(400)
+			expect(result.body.ok).toBe(false)
+			expect(result.body.error).toMatchObject({
+				code: 'VALIDATION_ERROR',
+				message: 'Invalid commit password',
+				details: { field: 'password', receivedType: 'number' },
+				suggestedFix: 'Pass password as a string or omit it.',
+			})
+			expect(await Bun.file(output).exists()).toBe(false)
+		} finally {
+			await unlink(input).catch(() => {})
+			await unlink(output).catch(() => {})
+		}
+	})
+
 	test('dump emits replayable operation batches', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

@@ -181,6 +181,17 @@ function agentPlanLoadOptionsError(options: readonly string[]): AscendError {
 	)
 }
 
+function optionalPasswordError(
+	body: Record<string, unknown> | null,
+	context: 'open-plan' | 'plan' | 'commit',
+): AscendError | null {
+	if (body?.password === undefined || typeof body.password === 'string') return null
+	return ascendError('VALIDATION_ERROR', `Invalid ${context} password`, {
+		details: { field: 'password', receivedType: typeof body.password },
+		suggestedFix: 'Pass password as a string or omit it.',
+	})
+}
+
 function replayBatchLoadOptionsError(kind: string, options: readonly string[]): AscendError {
 	return ascendError(
 		'VALIDATION_ERROR',
@@ -549,16 +560,9 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 					)
 				}
 				try {
-					if (body?.password !== undefined && typeof body.password !== 'string') {
-						return jsonFailureError(
-							ascendError('VALIDATION_ERROR', 'Invalid open-plan password', {
-								details: { receivedType: typeof body.password },
-								suggestedFix: 'Pass password as a string or omit it.',
-							}),
-							400,
-						)
-					}
-					const password = body?.password
+					const passwordError = optionalPasswordError(body, 'open-plan')
+					if (passwordError) return jsonFailureError(passwordError, 400)
+					const password = body?.password as string | undefined
 					return jsonSuccess(
 						inspectWorkbookOpenPlan(new Uint8Array(readFileSync(file)), {
 							...(intent.intent ? { intent: intent.intent } : {}),
@@ -981,6 +985,8 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 					if (unsupportedLoadOptions.length > 0) {
 						return jsonFailureError(agentPlanLoadOptionsError(unsupportedLoadOptions), 400)
 					}
+					const passwordError = optionalPasswordError(body, 'plan')
+					if (passwordError) return jsonFailureError(passwordError, 400)
 					const password = body ? requireString(body, 'password') : null
 					const inputShape = resolveOperationInputShape(operationInputSourceFromBody(body))
 					if (!inputShape.ok) return jsonFailureError(inputShape.error, 400)
@@ -1083,6 +1089,8 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 					if (unsupportedLoadOptions.length > 0) {
 						return jsonFailureError(agentPlanLoadOptionsError(unsupportedLoadOptions), 400)
 					}
+					const passwordError = optionalPasswordError(body, 'commit')
+					if (passwordError) return jsonFailureError(passwordError, 400)
 					const output = body ? requireString(body, 'output') : null
 					const backup = body ? requireString(body, 'backup') : null
 					const password = body ? requireString(body, 'password') : null

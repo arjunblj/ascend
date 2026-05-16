@@ -69,6 +69,8 @@ export type {
 	PostWriteDataValidationSummary,
 	PostWriteDefinedNameEntry,
 	PostWriteDefinedNameSummary,
+	PostWriteDrawingObjectEntry,
+	PostWriteDrawingObjectRelationshipEntry,
 	PostWriteExternalReferenceEntry,
 	PostWriteExternalReferenceSummary,
 	PostWriteFormulaCacheValueKindCount,

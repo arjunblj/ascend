@@ -888,6 +888,30 @@ export interface PostWriteSheetVisualEntry {
 	readonly drawingPartPaths: readonly string[]
 	readonly mediaPartPaths: readonly string[]
 	readonly vmlPartPaths: readonly string[]
+	readonly drawingObjects: readonly PostWriteDrawingObjectEntry[]
+}
+
+export interface PostWriteDrawingObjectEntry {
+	readonly index: number
+	readonly drawingPartPath: string
+	readonly source?: SheetDrawingObjectRef['source']
+	readonly kind: SheetDrawingObjectRef['kind']
+	readonly id?: number
+	readonly name?: string
+	readonly description?: string
+	readonly text?: string
+	readonly vmlShapeId?: string
+	readonly vmlObjectType?: string
+	readonly visible?: boolean
+	readonly relIds: readonly string[]
+	readonly relationships: readonly PostWriteDrawingObjectRelationshipEntry[]
+}
+
+export interface PostWriteDrawingObjectRelationshipEntry {
+	readonly id: string
+	readonly type: string
+	readonly target: string
+	readonly targetMode?: string
 }
 
 export interface PostWriteChartEntry {
@@ -3347,6 +3371,26 @@ function postWriteVisualSummary(workbook: Workbook): PostWriteVisualSummary {
 				(object) => object.source !== 'vml',
 			)
 			const vmlObjectRefs = sheet.drawingObjectRefs.filter((object) => object.source === 'vml')
+			const drawingObjects = sheet.drawingObjectRefs.map((object, index) => ({
+				index,
+				drawingPartPath: object.drawingPartPath,
+				...(object.source !== undefined ? { source: object.source } : {}),
+				kind: object.kind,
+				...(object.id !== undefined ? { id: object.id } : {}),
+				...(object.name !== undefined ? { name: object.name } : {}),
+				...(object.description !== undefined ? { description: object.description } : {}),
+				...(object.text !== undefined ? { text: object.text } : {}),
+				...(object.vmlShapeId !== undefined ? { vmlShapeId: object.vmlShapeId } : {}),
+				...(object.vmlObjectType !== undefined ? { vmlObjectType: object.vmlObjectType } : {}),
+				...(object.visible !== undefined ? { visible: object.visible } : {}),
+				relIds: object.relIds ?? [],
+				relationships: (object.relationshipRefs ?? []).map((relationship) => ({
+					id: relationship.id,
+					type: relationship.type,
+					target: relationship.target,
+					...(relationship.targetMode !== undefined ? { targetMode: relationship.targetMode } : {}),
+				})),
+			}))
 			return {
 				sheetName: sheet.name,
 				hasDrawingMl: sheet.drawingRefs.hasDrawing,
@@ -3361,6 +3405,7 @@ function postWriteVisualSummary(workbook: Workbook): PostWriteVisualSummary {
 				]),
 				mediaPartPaths: uniqueStrings(sheet.imageRefs.map((image) => image.targetPath)),
 				vmlPartPaths: uniqueStrings(vmlObjectRefs.map((object) => object.drawingPartPath)),
+				drawingObjects,
 			}
 		})
 		.filter(

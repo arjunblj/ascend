@@ -18,6 +18,8 @@ import type {
 	PostWriteDataValidationSummary,
 	PostWriteDefinedNameEntry,
 	PostWriteDefinedNameSummary,
+	PostWriteDrawingObjectEntry,
+	PostWriteDrawingObjectRelationshipEntry,
 	PostWriteExternalReferenceEntry,
 	PostWriteExternalReferenceSummary,
 	PostWriteFormulaCacheValueKindCount,
@@ -58,6 +60,8 @@ type CommitProofExportSurface = {
 	readonly commitTimings?: AgentCommitTimings
 	readonly definedName?: PostWriteDefinedNameEntry
 	readonly definedNames?: PostWriteDefinedNameSummary
+	readonly drawingObject?: PostWriteDrawingObjectEntry
+	readonly drawingObjectRelationship?: PostWriteDrawingObjectRelationshipEntry
 	readonly externalReference?: PostWriteExternalReferenceEntry
 	readonly externalReferences?: PostWriteExternalReferenceSummary
 	readonly formulaCacheValueKind?: PostWriteFormulaCacheValueKindCount
@@ -100,6 +104,8 @@ test('root SDK exports commit proof audit types for release consumers', () => {
 		'commitTimings',
 		'definedName',
 		'definedNames',
+		'drawingObject',
+		'drawingObjectRelationship',
 		'externalReference',
 		'externalReferences',
 		'formulaCacheValueKind',

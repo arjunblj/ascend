@@ -3376,6 +3376,50 @@ describe('agent workflow loss audit', () => {
 				}),
 			],
 		})
+		expect(committed.postWrite.visuals).toMatchObject({
+			sheetsWithVisuals: 1,
+			drawingObjects: 2,
+			drawingMlObjects: 2,
+			vmlObjects: 0,
+			chartParts: 1,
+			drawingPartPaths: ['xl/drawings/drawing1.xml'],
+			chartPartPaths: ['xl/charts/chart1.xml'],
+			sheets: [
+				expect.objectContaining({
+					sheetName: 'Auswertung',
+					drawingObjectCount: 2,
+					drawingObjects: [
+						expect.objectContaining({
+							index: 0,
+							drawingPartPath: 'xl/drawings/drawing1.xml',
+							source: 'drawingml',
+							kind: 'graphicFrame',
+							id: 2,
+							name: 'Diagramm 1',
+							relIds: ['rId1'],
+							relationships: [
+								{
+									id: 'rId1',
+									type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart',
+									target: 'xl/charts/chart1.xml',
+								},
+							],
+						}),
+						expect.objectContaining({
+							index: 1,
+							drawingPartPath: 'xl/drawings/drawing1.xml',
+							source: 'drawingml',
+							kind: 'textBox',
+							id: 7,
+							name: 'Abgerundetes Rechteck 6',
+							text: 'Datenimport+ Auswertung',
+							relIds: [],
+							relationships: [],
+						}),
+					],
+				}),
+			],
+		})
 		expect(compactAgentCommitResult(committed).postWrite.activeContent).toMatchObject({
 			total: 1,
 			shapeMacros: 1,

@@ -68,8 +68,7 @@ const AGENT_INIT: AgentInitInfo = {
 		repair: 'ascend repair-plan <file> --json',
 	},
 	examples: {
-		installedSdkSafeEdit:
-			'bun node_modules/@ascend/sdk/examples/package-install-safe-edit.ts <file.xlsx> <out.xlsx>',
+		installedSdkSafeEdit: 'node_modules/.bin/ascend-sdk-safe-edit <file.xlsx> <out.xlsx>',
 		sdkSafeEdit: 'bun run example:safe-edit <file.xlsx> <out.xlsx>',
 		apiSafeEdit: 'bun run example:safe-edit:http <file.xlsx> <out.xlsx>',
 		mcpSafeEdit: 'bun run example:safe-edit:mcp <file.xlsx> <out.xlsx>',

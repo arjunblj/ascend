@@ -2,7 +2,7 @@
 /**
  * Safe edit workflow that runs from an installed @ascend/sdk package.
  * Usage after install:
- *   bun node_modules/@ascend/sdk/examples/package-install-safe-edit.ts <input.xlsx> [output.xlsx]
+ *   node_modules/.bin/ascend-sdk-safe-edit <input.xlsx> [output.xlsx]
  */
 import { existsSync, readFileSync } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
@@ -11,9 +11,7 @@ import { Ascend, createPreparedAgentPlan, inspectWorkbookOpenPlan } from '@ascen
 
 const input = process.argv[2]
 if (!input) {
-	console.error(
-		'Usage: bun node_modules/@ascend/sdk/examples/package-install-safe-edit.ts <input.xlsx> [output.xlsx]',
-	)
+	console.error('Usage: node_modules/.bin/ascend-sdk-safe-edit <input.xlsx> [output.xlsx]')
 	process.exit(1)
 }
 
@@ -164,7 +162,7 @@ console.log(
 			workflow: 'installed-sdk-open-plan-trust-inspect-read-plan-commit-reopen-verify',
 			install: {
 				package: '@ascend/sdk',
-				example: 'node_modules/@ascend/sdk/examples/package-install-safe-edit.ts',
+				example: 'node_modules/.bin/ascend-sdk-safe-edit',
 			},
 			input: {
 				file: input,

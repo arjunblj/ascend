@@ -475,7 +475,7 @@ describe('ascend cli', () => {
 		expect(parsed.data.commands.encryptedOpenPlan).toContain('--password <value>')
 		expect(parsed.data.commands.trust).toContain('inspect <file> --agent --json')
 		expect(parsed.data.examples.installedSdkSafeEdit).toBe(
-			'bun node_modules/@ascend/sdk/examples/package-install-safe-edit.ts <file.xlsx> <out.xlsx>',
+			'node_modules/.bin/ascend-sdk-safe-edit <file.xlsx> <out.xlsx>',
 		)
 		expect(parsed.data.examples.sdkSafeEdit).toBe(
 			'bun run example:safe-edit <file.xlsx> <out.xlsx>',

@@ -119,7 +119,13 @@ async function buildPackage(name: string): Promise<void> {
 		throw new Error(`build failed for ${name}`)
 	}
 
-	await writePublishManifest(packageRoot, distDir)
+	await writePublishManifest(
+		packageRoot,
+		distDir,
+		name === 'sdk'
+			? { 'ascend-sdk-safe-edit': './examples/package-install-safe-edit.ts' }
+			: undefined,
+	)
 	if (name === 'sdk') await copySdkAgentDocs(distDir)
 }
 

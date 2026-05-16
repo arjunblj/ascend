@@ -69,7 +69,7 @@ describe('package-install-safe-edit example', () => {
 			)
 			expect(result.install).toMatchObject({
 				package: '@ascend/sdk',
-				example: 'node_modules/@ascend/sdk/examples/package-install-safe-edit.ts',
+				example: 'node_modules/.bin/ascend-sdk-safe-edit',
 			})
 			expect(result.input?.read?.cellCount).toBeGreaterThan(0)
 			expect(result.plan).toMatchObject({ changedCells: ['B2'], approvalCount: 0 })

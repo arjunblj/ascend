@@ -125,7 +125,8 @@ const output = '${join(appRoot, 'output.xlsx')}'
 const preparedOutput = '${join(appRoot, 'prepared-output.xlsx')}'
 const installedExampleInput = '${join(appRoot, 'installed-example-input.xlsx')}'
 const installedExampleOutput = '${join(appRoot, 'installed-example-output.xlsx')}'
-const installedExample = '${join(appRoot, 'node_modules', '@ascend', 'sdk', 'examples', 'package-install-safe-edit.ts')}'
+const installedExampleBin = '${join(appRoot, 'node_modules', '.bin', 'ascend-sdk-safe-edit')}'
+const installedSdkManifest = '${join(appRoot, 'node_modules', '@ascend', 'sdk', 'package.json')}'
 
 const created = AscendWorkbook.create()
 created.set('Sheet1!A1', 'Revenue')
@@ -168,6 +169,7 @@ const examplesReadme = await readAgentDoc('examples/README.md')
 const packageInstallExample = await readAgentDoc('examples/package-install-safe-edit.ts')
 const apiExample = await readAgentDoc('examples/agent-safe-edit-http.ts')
 const mcpExample = await readAgentDoc('examples/agent-safe-edit-mcp.ts')
+const sdkManifest = await Bun.file(installedSdkManifest).json()
 const docHits = await searchAgentDocs({ query: 'plan commit' })
 const rootExampleHits = await searchAgentDocs({ query: 'example:safe-edit root workflow' })
 const packageInstallExampleHits = await searchAgentDocs({ query: 'installed SDK package safe edit workflow' })
@@ -191,8 +193,11 @@ if (!llms?.includes('Ascend')) throw new Error('installed SDK could not read bun
 if (!examplesReadme?.includes('bun run example:safe-edit')) {
 	throw new Error('installed SDK missing root safe-edit workflow examples')
 }
-if (!packageInstallExample?.includes('node_modules/@ascend/sdk/examples/package-install-safe-edit.ts')) {
+if (!packageInstallExample?.includes('ascend-sdk-safe-edit')) {
 	throw new Error('installed SDK missing package-install safe-edit example')
+}
+if (sdkManifest.bin?.['ascend-sdk-safe-edit'] !== './examples/package-install-safe-edit.ts') {
+	throw new Error('installed SDK manifest missing safe-edit bin: ' + JSON.stringify(sdkManifest.bin))
 }
 if (!apiExample?.includes("from '@ascend/api'")) {
 	throw new Error('installed SDK missing runnable HTTP API safe-edit example')
@@ -214,7 +219,7 @@ if (!mcpExampleHits.some((hit) => hit.path === 'examples/agent-safe-edit-mcp.ts'
 	throw new Error('installed SDK docs search did not find runnable MCP safe-edit example')
 }
 const installedExampleProc = Bun.spawn(
-	[process.execPath, installedExample, installedExampleInput, installedExampleOutput],
+	[installedExampleBin, installedExampleInput, installedExampleOutput],
 	{
 		cwd: process.cwd(),
 		stdout: 'pipe',
@@ -228,7 +233,7 @@ const [installedExampleStdout, installedExampleStderr, installedExampleExitCode]
 ])
 if (installedExampleExitCode !== 0) {
 	throw new Error(
-		\`installed SDK safe-edit example failed with exit \${installedExampleExitCode}: \${installedExampleStdout}\${installedExampleStderr}\`,
+		\`installed SDK safe-edit bin failed with exit \${installedExampleExitCode}: \${installedExampleStdout}\${installedExampleStderr}\`,
 	)
 }
 const installedExampleProof = JSON.parse(installedExampleStdout)
@@ -270,6 +275,7 @@ console.log(JSON.stringify({
 	docHits: docHits.length,
 	rootExampleHits: rootExampleHits.length,
 	packageInstallExampleHits: packageInstallExampleHits.length,
+	installedExampleCommand: 'node_modules/.bin/ascend-sdk-safe-edit',
 	installedExampleWorkflow: installedExampleProof.workflow,
 	installedExampleCell: installedExampleProof.verify?.cell,
 	installedExampleProofBundle: {

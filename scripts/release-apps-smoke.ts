@@ -265,7 +265,7 @@ if (cliAgentInit.mcpTools?.workflow !== 'ascend.agent_workflow') {
 }
 if (
 	cliAgentInit.examples?.installedSdkSafeEdit !==
-	'bun node_modules/@ascend/sdk/examples/package-install-safe-edit.ts <file.xlsx> <out.xlsx>'
+	'node_modules/.bin/ascend-sdk-safe-edit <file.xlsx> <out.xlsx>'
 ) {
 	throw new Error('CLI agent-init missing installed SDK safe-edit example: ' + JSON.stringify(cliAgentInit))
 }
@@ -332,7 +332,7 @@ if (apiWorkflow.examples?.apiSafeEdit !== 'bun run example:safe-edit:http <file.
 }
 if (
 	apiWorkflow.examples?.installedSdkSafeEdit !==
-	'bun node_modules/@ascend/sdk/examples/package-install-safe-edit.ts <file.xlsx> <out.xlsx>'
+	'node_modules/.bin/ascend-sdk-safe-edit <file.xlsx> <out.xlsx>'
 ) {
 	throw new Error('installed API agent workflow contract missing installed SDK safe-edit example')
 }
@@ -394,7 +394,7 @@ if (mcpWorkflow.examples?.mcpSafeEdit !== 'bun run example:safe-edit:mcp <file.x
 }
 if (
 	mcpWorkflow.examples?.installedSdkSafeEdit !==
-	'bun node_modules/@ascend/sdk/examples/package-install-safe-edit.ts <file.xlsx> <out.xlsx>'
+	'node_modules/.bin/ascend-sdk-safe-edit <file.xlsx> <out.xlsx>'
 ) {
 	throw new Error('installed MCP agent workflow contract missing installed SDK safe-edit example')
 }

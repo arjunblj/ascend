@@ -33,7 +33,7 @@ bun run example:safe-edit:mcp ./path/to/file.xlsx ./path/to/file.mcp-agent.xlsx
 After installing `@ascend/sdk`, run the packaged SDK-only workflow example from a consumer app:
 
 ```bash
-bun node_modules/@ascend/sdk/examples/package-install-safe-edit.ts ./path/to/file.xlsx ./path/to/file.sdk-agent.xlsx
+node_modules/.bin/ascend-sdk-safe-edit ./path/to/file.xlsx ./path/to/file.sdk-agent.xlsx
 ```
 
 `agent-safe-edit.ts` is the golden path for coding agents: trust preflight, inspect, prepare a safe plan, commit with the prepared handle, verify, and print expected JSON fields.

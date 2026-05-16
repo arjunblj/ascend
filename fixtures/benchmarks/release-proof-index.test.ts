@@ -2106,6 +2106,13 @@ describe('release proof evidence index', () => {
 		expect(handoff.researchHygieneDecisionPacket.localExcelCorpus.boundary).toContain(
 			'not permission to use these files in release wording',
 		)
+		expect(handoff.researchHygieneDecisionPacket.loopManagerState).toMatchObject({
+			paths: ['scripts/ascend-loop-manager.ts', 'tmp/ascend-loop-manager'],
+			releaseDecision: 'active-owner-blocker-not-release-evidence',
+		})
+		expect(handoff.researchHygieneDecisionPacket.loopManagerState.boundary).toContain(
+			'not Ascend runtime proof',
+		)
 		expect(
 			handoff.researchHygieneDecisionPacket.classificationBuckets.map((item) => item.bucket),
 		).toEqual(['accepted-evidence', 'active-owner-blocker', 'archive-only'])
@@ -3718,6 +3725,23 @@ describe('release proof evidence index', () => {
 				readonly forbiddenWording?: readonly string[]
 				readonly boundary?: string
 			}
+			readonly loopManagerState?: {
+				readonly paths?: readonly string[]
+				readonly status?: string
+				readonly releaseDecision?: string
+				readonly fileCount?: number
+				readonly totalBytes?: number
+				readonly files?: readonly {
+					readonly path?: string
+					readonly sizeBytes?: number
+					readonly stateKind?: string
+					readonly releaseStatus?: string
+					readonly nextOwnerAction?: string
+				}[]
+				readonly ownerAction?: string
+				readonly forbiddenWording?: readonly string[]
+				readonly boundary?: string
+			}
 			readonly validationCommands?: readonly string[]
 			readonly ownerFiles?: readonly string[]
 			readonly classificationBuckets?: readonly {
@@ -3850,6 +3874,35 @@ describe('release proof evidence index', () => {
 			expect(packet.localExcelCorpus.ownerAction).toContain('redistribution license')
 			expect(packet.localExcelCorpus.forbiddenWording?.join('\n')).toContain(
 				'Do not cite research/excel-corpus workbooks as public release fixtures',
+			)
+		}
+		expect(packet.loopManagerState).toMatchObject({
+			paths: ['scripts/ascend-loop-manager.ts', 'tmp/ascend-loop-manager'],
+			releaseDecision: 'active-owner-blocker-not-release-evidence',
+			boundary: expect.stringContaining('not permission to use these files in release wording'),
+		})
+		if (packet.loopManagerState?.status === 'loop-manager-state-present') {
+			expect(packet.loopManagerState.fileCount).toBe(packet.loopManagerState.files?.length ?? 0)
+			expect(packet.loopManagerState.totalBytes).toBe(
+				(packet.loopManagerState.files ?? []).reduce((sum, file) => sum + (file.sizeBytes ?? 0), 0),
+			)
+			expect(packet.loopManagerState.files?.map((file) => file.path)).toContain(
+				'scripts/ascend-loop-manager.ts',
+			)
+			expect(packet.loopManagerState.files?.map((file) => file.path)).toContain(
+				'tmp/ascend-loop-manager/board.md',
+			)
+			expect(
+				packet.loopManagerState.files?.find(
+					(file) => file.path === 'tmp/ascend-loop-manager/board.md',
+				),
+			).toMatchObject({
+				stateKind: 'current-board',
+				releaseStatus: 'operational-state-owner-review-required',
+			})
+			expect(packet.loopManagerState.ownerAction).toContain('tracked operational tooling')
+			expect(packet.loopManagerState.forbiddenWording?.join('\n')).toContain(
+				'Do not cite scripts/ascend-loop-manager.ts or tmp/ascend-loop-manager',
 			)
 		}
 		expect(packet.validationCommands).toEqual([

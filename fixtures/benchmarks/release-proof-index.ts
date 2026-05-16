@@ -298,6 +298,7 @@ export interface ReleaseProofResearchHygieneDecisionPacket {
 	readonly dirtyInventoryCommand: string
 	readonly inventorySnapshot: ReleaseProofResearchHygieneInventorySnapshot
 	readonly localExcelCorpus: ReleaseProofResearchHygieneLocalExcelCorpus
+	readonly loopManagerState: ReleaseProofResearchHygieneLoopManagerState
 	readonly validationCommands: readonly string[]
 	readonly ownerFiles: readonly string[]
 	readonly classificationBuckets: readonly ReleaseProofResearchHygieneClassificationBucket[]
@@ -381,6 +382,35 @@ export interface ReleaseProofResearchHygieneLocalExcelCorpusFile {
 	readonly workbookKind: 'xlsx' | 'xlsm' | 'metadata'
 	readonly featureSignals: readonly string[]
 	readonly releaseStatus: 'local-only-owner-review-required'
+	readonly nextOwnerAction: string
+}
+
+export interface ReleaseProofResearchHygieneLoopManagerState {
+	readonly paths: readonly ['scripts/ascend-loop-manager.ts', 'tmp/ascend-loop-manager']
+	readonly status:
+		| 'loop-manager-state-present'
+		| 'loop-manager-state-missing'
+		| 'loop-manager-state-unreadable'
+	readonly releaseDecision: 'active-owner-blocker-not-release-evidence'
+	readonly fileCount: number
+	readonly totalBytes: number
+	readonly files: readonly ReleaseProofResearchHygieneLoopManagerStateFile[]
+	readonly ownerAction: string
+	readonly forbiddenWording: readonly string[]
+	readonly failure?: string
+	readonly boundary: string
+}
+
+export interface ReleaseProofResearchHygieneLoopManagerStateFile {
+	readonly path: string
+	readonly sizeBytes: number
+	readonly stateKind:
+		| 'manager-script'
+		| 'current-board'
+		| 'manual-steers'
+		| 'north-star-reflection'
+		| 'manager-state-file'
+	readonly releaseStatus: 'operational-state-owner-review-required'
 	readonly nextOwnerAction: string
 }
 
@@ -2287,6 +2317,7 @@ export function releaseProofResearchHygieneDecisionPacket(
 		dirtyInventoryCommand,
 		inventorySnapshot: researchHygieneInventorySnapshot(dirtyInventoryCommand),
 		localExcelCorpus: researchHygieneLocalExcelCorpus(),
+		loopManagerState: researchHygieneLoopManagerState(),
 		validationCommands,
 		ownerFiles,
 		classificationBuckets: [
@@ -2606,6 +2637,93 @@ function researchHygieneFeatureSignals(
 		.filter(([, value]) => value === true)
 		.map(([feature]) => feature)
 		.sort()
+}
+
+function researchHygieneLoopManagerState(): ReleaseProofResearchHygieneLoopManagerState {
+	const scriptPath = 'scripts/ascend-loop-manager.ts'
+	const statePath = 'tmp/ascend-loop-manager'
+	const ownerAction =
+		'Release owner decides whether the loop-manager script and tmp steering state should be tracked operational tooling, ignored local state, or archived; keep it out of product, correctness, performance, and QSS claims until that decision is made.'
+	const forbiddenWording = [
+		'Do not cite scripts/ascend-loop-manager.ts or tmp/ascend-loop-manager as Ascend runtime proof, product capability, benchmark evidence, or release artifact.',
+		'Do not treat manager board text, manual steers, or session-derived state as owner approval, public documentation, or claim evidence.',
+	]
+
+	try {
+		if (!existsSync(scriptPath) && !existsSync(statePath)) {
+			return {
+				paths: [scriptPath, statePath],
+				status: 'loop-manager-state-missing',
+				releaseDecision: 'active-owner-blocker-not-release-evidence',
+				fileCount: 0,
+				totalBytes: 0,
+				files: [],
+				ownerAction,
+				forbiddenWording,
+				boundary:
+					'Loop-manager operational state is absent. This creates no release claim and is not permission to cite manager state in release wording.',
+			}
+		}
+
+		const filePaths = [
+			...(existsSync(scriptPath) ? [scriptPath] : []),
+			...(existsSync(statePath)
+				? execFileSync('find', [statePath, '-maxdepth', '1', '-type', 'f', '-print'], {
+						cwd: process.cwd(),
+						encoding: 'utf8',
+					})
+						.split('\n')
+						.map((line) => line.trim())
+						.filter((line) => line.length > 0)
+						.sort()
+				: []),
+		]
+		const files = filePaths.map((path) => ({
+			path,
+			sizeBytes: statSync(path).size,
+			stateKind: researchHygieneLoopManagerStateKind(path),
+			releaseStatus: 'operational-state-owner-review-required' as const,
+			nextOwnerAction:
+				'Release owner classifies this manager state as tracked operational tooling, ignored local state, or archive-only material before any release workflow cites it.',
+		}))
+
+		return {
+			paths: [scriptPath, statePath],
+			status: 'loop-manager-state-present',
+			releaseDecision: 'active-owner-blocker-not-release-evidence',
+			fileCount: files.length,
+			totalBytes: files.reduce((sum, file) => sum + file.sizeBytes, 0),
+			files,
+			ownerAction,
+			forbiddenWording,
+			boundary:
+				'Loop-manager state inventory is owner-routing evidence only. It is operational steering state, not Ascend runtime proof, not product documentation, not benchmark evidence, and not permission to use these files in release wording.',
+		}
+	} catch (error) {
+		return {
+			paths: [scriptPath, statePath],
+			status: 'loop-manager-state-unreadable',
+			releaseDecision: 'active-owner-blocker-not-release-evidence',
+			fileCount: 0,
+			totalBytes: 0,
+			files: [],
+			ownerAction,
+			forbiddenWording,
+			failure: error instanceof Error ? error.message : String(error),
+			boundary:
+				'Loop-manager operational state inventory could not be read. Release owners must rerun the research hygiene packet before citing manager-derived evidence; this is not permission to use these files in release wording.',
+		}
+	}
+}
+
+function researchHygieneLoopManagerStateKind(
+	path: string,
+): ReleaseProofResearchHygieneLoopManagerStateFile['stateKind'] {
+	if (path === 'scripts/ascend-loop-manager.ts') return 'manager-script'
+	if (path.endsWith('/board.md')) return 'current-board'
+	if (path.endsWith('/manual-steers.md')) return 'manual-steers'
+	if (path.endsWith('/north-star-reflection.md')) return 'north-star-reflection'
+	return 'manager-state-file'
 }
 
 function researchHygieneInventoryRootCounts(

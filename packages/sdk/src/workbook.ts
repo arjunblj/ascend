@@ -1499,6 +1499,7 @@ export class AscendWorkbook extends WorkbookReadView {
 		}
 		const result = writeXlsx(this.wb, this.caps.length > 0 ? this.caps : undefined, writeOptions)
 		if (!result.ok) throw new AscendException(result.error)
+		if (this.sourceWasEncrypted && options.allowDecryptedExport) return result.value
 		this.captureSerializedState(result.value)
 		return result.value
 	}

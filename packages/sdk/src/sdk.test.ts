@@ -63,7 +63,11 @@ describe('AscendWorkbook', () => {
 		expect(() => wb.toBytes()).toThrow(
 			'Cannot export an edited encrypted workbook without re-encryption support',
 		)
-		expect(() => extractZip(wb.toBytes({ allowDecryptedExport: true }))).not.toThrow()
+		const decrypted = wb.toBytes({ allowDecryptedExport: true })
+		expect(() => extractZip(decrypted)).not.toThrow()
+		expect(() => wb.toBytes()).toThrow(
+			'Cannot export an edited encrypted workbook without re-encryption support',
+		)
 		await expect(Ascend.open(new Uint8Array(encrypted))).rejects.toThrow('requires a password')
 	})
 

@@ -167,6 +167,9 @@ describe('high-risk package corpus contract', () => {
 		)
 		const saved = workbook.toBytes({ allowDecryptedExport: true })
 		expect(Array.from(saved.slice(0, 4))).toEqual(ZIP_MAGIC)
+		expect(() => workbook.toBytes()).toThrow(
+			'Cannot export an edited encrypted workbook without re-encryption support',
+		)
 		const reopened = await AscendWorkbook.open(saved)
 		expect(reopened.sheet('Sheet1')?.cell('Z10')?.value).toEqual({
 			kind: 'string',

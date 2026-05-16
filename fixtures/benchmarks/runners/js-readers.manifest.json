@@ -39,6 +39,7 @@
 		"capabilities": {
 			"internalTiming": true,
 			"valueOnlyRead": true,
+			"selectedSheetRead": true,
 			"xlsmRoundtrip": false
 		}
 	},

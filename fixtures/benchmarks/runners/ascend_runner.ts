@@ -38,6 +38,7 @@ export interface Args {
 	readonly file: string
 	readonly mode: Mode
 	readonly source: Source
+	readonly selectedSheet: string | undefined
 	readonly richMetadata: boolean
 	readonly orderedHashes: boolean
 	readonly streamOrderedHashes: boolean
@@ -76,6 +77,7 @@ function parseArgs(): Args {
 		file,
 		mode,
 		source,
+		selectedSheet: readOption(args, '--selected-sheet'),
 		richMetadata: hasFlag(args, '--rich-metadata'),
 		orderedHashes: hasFlag(args, '--ordered-hashes'),
 		streamOrderedHashes: hasFlag(args, '--stream-ordered-hashes'),
@@ -103,7 +105,11 @@ async function openWorkbookFromSource(
 	const openOptions =
 		args.mode === 'full' && !args.richMetadata
 			? undefined
-			: { mode: args.mode, ...(args.richMetadata ? { richMetadata: true } : {}) }
+			: {
+					mode: args.mode,
+					...(args.richMetadata ? { richMetadata: true } : {}),
+					...(args.selectedSheet ? { sheets: [args.selectedSheet] } : {}),
+				}
 	return Ascend.open(bytes ?? args.file, openOptions)
 }
 
@@ -126,6 +132,7 @@ function readAssertions(
 			runnerLoadMode: args.mode,
 		}
 	}
+	if (args.selectedSheet) return selectedSheetAssertions(workbook, args)
 	if (args.orderedHashes) return orderedReadAssertions(workbook, args)
 	return {
 		...workbookShapeAssertions(summarizeAscendWorkbook(workbook)),
@@ -133,6 +140,66 @@ function readAssertions(
 		runnerVersion: 'workspace',
 		runnerSource: args.source,
 		runnerLoadMode: args.mode,
+		runnerRichMetadata: args.richMetadata,
+	}
+}
+
+function selectedSheetAssertions(
+	workbook: Awaited<ReturnType<typeof Ascend.open>>,
+	args: Args,
+): Record<string, string | number | boolean | null> {
+	const info = workbook.inspect()
+	const selectedSheetName = args.selectedSheet ?? ''
+	const model = workbook.getWorkbookModel()
+	const sheet = model.getSheet(selectedSheetName)
+	const semanticCellRefs: string[] = []
+	const semanticCellValues: string[] = []
+	const formulaTexts: string[] = []
+	let cellCount = 0
+	let formulaCount = 0
+	let usedRangeText = `${selectedSheetName}!empty`
+	if (sheet) {
+		formulaCount = sheet.cells.formulaCellCount()
+		const usedRange = sheet.cells.usedRange()
+		usedRangeText = usedRange
+			? `${sheet.name}!${indexToColumn(usedRange.start.col)}${usedRange.start.row + 1}:${indexToColumn(
+					usedRange.end.col,
+				)}${usedRange.end.row + 1}`
+			: `${sheet.name}!empty`
+		for (const [row, col, cell] of sheet.cells.iterate()) {
+			cellCount++
+			const ref = `${sheet.name}!${indexToColumn(col)}${row + 1}`
+			semanticCellRefs.push(ref)
+			semanticCellValues.push(`${ref}\t${serializeCellValue(cell.value)}`)
+			if (cell.formula)
+				formulaTexts.push(`${ref}=${storedFormulaText(sheet, row, col, cell.formula)}`)
+		}
+	}
+	return {
+		sheetCount: sheet ? 1 : 0,
+		sheetNamesHash: hashOrdered([`0:${selectedSheetName}`]),
+		cellCount,
+		physicalCellCount: null,
+		formulaCount,
+		usedRangeCount: sheet ? 1 : 0,
+		firstUsedRange: usedRangeText,
+		firstPhysicalUsedRange: null,
+		usedRangesHash: hashOrdered([usedRangeText]),
+		physicalUsedRangesHash: hashOrdered([]),
+		semanticCellRefsHash: hashOrdered([...semanticCellRefs].sort()),
+		semanticCellValuesHash: hashOrdered([...semanticCellValues].sort()),
+		formulaTextHash: hashOrdered([...formulaTexts].sort()),
+		...workbookReadFeatureAssertions(model),
+		selectedSheetRead: true,
+		sourceSheetCount: info.load.sourceSheets.length,
+		loadedSheetCount: info.load.loadedSheets.length,
+		loadedSheetNames: info.load.loadedSheets.join(','),
+		hasAllSheets: info.load.hasAllSheets,
+		cellsHydrated: info.load.cellsHydrated,
+		runnerVersion: 'workspace',
+		runnerSource: args.source,
+		runnerLoadMode: args.mode,
+		runnerSelectedSheet: args.selectedSheet,
 		runnerRichMetadata: args.richMetadata,
 	}
 }

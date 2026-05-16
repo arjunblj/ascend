@@ -949,6 +949,23 @@ describe('evaluateAssertions', () => {
 		}
 	})
 
+	test('selected-sheet reader manifest keeps required competitors on one timing lane', () => {
+		const specs = normalizeExternalRunnerSpecs(
+			JSON.parse(
+				readFileSync('fixtures/benchmarks/runners/selected-sheet-readers.manifest.json', 'utf-8'),
+			) as unknown,
+		)
+		expect(specs.map((spec) => spec.name)).toEqual([
+			'ascend-external-values',
+			'sheetjs',
+			'openpyxl',
+		])
+		expect(specs.every((spec) => spec.timingModel === 'external-internal-operation-timing')).toBe(
+			true,
+		)
+		expect(specs.every((spec) => spec.capabilities?.selectedSheetRead === true)).toBe(true)
+	})
+
 	test('corpus target selection resolves manifest filters to benchmark paths', () => {
 		const entries = normalizeManifest([
 			corpusEntry('pivot.xlsx', {

@@ -568,6 +568,62 @@ describe('competitive IO helpers', () => {
 		{ timeout: 30_000 },
 	)
 
+	test.skipIf(!openpyxlRunnerAvailable)(
+		'selected-sheet external runners share a comparable timing lane',
+		async () => {
+			const payload = await runCompetitiveIoJson([
+				'--runner-manifest',
+				'fixtures/benchmarks/runners/selected-sheet-readers.manifest.json',
+				'--workload',
+				'selected-sheet',
+				'--category',
+				'read',
+				'--competitor',
+				'all',
+				'--execution-scope',
+				'external-process',
+				'--libraries',
+				'ascend-external-values,sheetjs,openpyxl',
+				'--rows',
+				'5',
+				'--cols',
+				'4',
+				'--repeat',
+				'1',
+				'--warmup',
+				'0',
+				'--json',
+			])
+			const results = payload.cases.map((entry) => ({
+				library: entry.dimensions.library,
+				status: entry.dimensions.correctnessStatus,
+				timingLane: entry.dimensions.timingLane,
+				selectedSheetRead: entry.assertions?.selectedSheetRead,
+			}))
+			expect(results).toEqual([
+				{
+					library: 'ascend-external-values',
+					status: 'pass',
+					timingLane: 'external-internal-operation-timing:selected-sheet',
+					selectedSheetRead: true,
+				},
+				{
+					library: 'sheetjs',
+					status: 'pass',
+					timingLane: 'external-internal-operation-timing:selected-sheet',
+					selectedSheetRead: true,
+				},
+				{
+					library: 'openpyxl',
+					status: 'pass',
+					timingLane: 'external-internal-operation-timing:selected-sheet',
+					selectedSheetRead: true,
+				},
+			])
+		},
+		{ timeout: 30_000 },
+	)
+
 	test('metadata-only workload checks workbook metadata without hydrating cells', async () => {
 		const input = await buildWorkloadDataSet('metadata-only', 5, 4, 'raw-ooxml')
 		const read = readXlsx(input.xlsxBytes, { mode: 'metadata-only' })

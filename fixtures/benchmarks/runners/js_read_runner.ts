@@ -12,6 +12,7 @@ interface Args {
 	readonly warmup: number
 	readonly json: boolean
 	readonly metadataOnly: boolean
+	readonly selectedSheet: string | undefined
 }
 
 type PrimitiveAssertion = string | number | boolean | null
@@ -53,6 +54,7 @@ function parseArgs(): Args {
 		warmup: nonNegativeInt(readOption(argv, '--warmup'), 0),
 		json: hasFlag(argv, '--json'),
 		metadataOnly: hasFlag(argv, '--metadata-only'),
+		selectedSheet: readOption(argv, '--selected-sheet'),
 	}
 }
 
@@ -135,15 +137,28 @@ function valueAssertions(
 }
 
 async function readWorkbook(args: Args): Promise<unknown> {
-	if (args.library === 'sheetjs') return readSheetJs(args.file, args.metadataOnly)
+	if (args.library === 'sheetjs')
+		return readSheetJs(args.file, args.metadataOnly, args.selectedSheet)
 	if (args.metadataOnly) throw new Error('--metadata-only is only supported for sheetjs')
+	if (args.selectedSheet) throw new Error('--selected-sheet is only supported for sheetjs')
 	return readExcelJs(args.file)
 }
 
-async function readSheetJs(file: string, metadataOnly: boolean): Promise<import('xlsx').WorkBook> {
+async function readSheetJs(
+	file: string,
+	metadataOnly: boolean,
+	selectedSheet: string | undefined,
+): Promise<import('xlsx').WorkBook> {
 	const sheetJs = await import('xlsx')
+	if (metadataOnly && selectedSheet)
+		throw new Error('--metadata-only cannot be combined with --selected-sheet')
 	if (metadataOnly) return sheetJs.readFile(file, { bookSheets: true })
-	return sheetJs.readFile(file, { cellFormula: true, cellHTML: false, cellStyles: false })
+	return sheetJs.readFile(file, {
+		cellFormula: true,
+		cellHTML: false,
+		cellStyles: false,
+		...(selectedSheet ? { sheets: selectedSheet } : {}),
+	})
 }
 
 async function readExcelJs(file: string): Promise<import('exceljs').Workbook> {
@@ -160,6 +175,9 @@ async function assertions(
 	if (args.library === 'sheetjs') {
 		if (args.metadataOnly) {
 			return sheetJsMetadataOnlyAssertions(workbook as import('xlsx').WorkBook)
+		}
+		if (args.selectedSheet) {
+			return sheetJsSelectedSheetAssertions(workbook as import('xlsx').WorkBook, args.selectedSheet)
 		}
 		return sheetJsAssertions(workbook as import('xlsx').WorkBook)
 	}
@@ -205,6 +223,23 @@ function sheetJsFeatureAssertions(
 		readDataValidationCount: 0,
 		readConditionalFormatCount: 0,
 		readDefinedNameCount: workbook.Workbook?.Names?.length ?? 0,
+	}
+}
+
+function sheetJsSelectedSheetAssertions(
+	workbook: import('xlsx').WorkBook,
+	selectedSheet: string,
+): Record<string, PrimitiveAssertion> {
+	const loadedSheetNames = Object.keys(workbook.Sheets)
+	return {
+		...sheetJsAssertions(workbook),
+		sheetCount: loadedSheetNames.length,
+		selectedSheetRead: true,
+		sourceSheetCount: workbook.SheetNames.length,
+		loadedSheetCount: loadedSheetNames.length,
+		loadedSheetNames: loadedSheetNames.join(','),
+		hasAllSheets: loadedSheetNames.length === workbook.SheetNames.length,
+		cellsHydrated: loadedSheetNames.includes(selectedSheet),
 	}
 }
 
@@ -302,7 +337,12 @@ async function main(): Promise<void> {
 			runnerVersion: await libraryVersion(args),
 			runnerApi: args.library === 'sheetjs' ? 'xlsx.readFile' : 'exceljs.xlsx.readFile',
 			runnerSource: 'path',
-			runnerLoadMode: args.metadataOnly ? 'metadata-only' : 'values',
+			runnerLoadMode: args.metadataOnly
+				? 'metadata-only'
+				: args.selectedSheet
+					? 'selected-sheet'
+					: 'values',
+			runnerSelectedSheet: args.selectedSheet ?? null,
 		},
 		samples,
 	}

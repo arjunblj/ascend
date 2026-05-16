@@ -183,6 +183,7 @@ describe('XLSX package graph', () => {
 			preservationPolicy: 'preserve-exact',
 		})
 		expect(graph.parts.find((part) => part.path === 'xl/links/bookLink.xml')).toMatchObject({
+			ownerScope: 'external-link',
 			sourceRelationshipId: 'rIdExternalLink',
 			featureFamily: 'preservedExternalLink',
 			preservationPolicy: 'preserve-exact',

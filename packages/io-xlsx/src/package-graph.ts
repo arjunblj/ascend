@@ -429,6 +429,7 @@ function classifyOwnerScope(
 	) {
 		return 'timeline'
 	}
+	if (primary?.type === REL_EXTERNAL_LINK) return 'external-link'
 	if (/(^|\/)externalLinks\//.test(partPath)) return 'external-link'
 	if (partPath.startsWith('customXml/')) return 'custom-xml'
 	if (/(^|\/)(activeX|ctrlProps|embeddings)\//i.test(partPath)) return 'active-content'

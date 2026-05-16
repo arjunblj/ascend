@@ -55,6 +55,28 @@ describe('API', () => {
 				(capability: { id: string }) => capability.id === 'analytics.pivots',
 			),
 		).toBe(true)
+
+		const workflow = await api(`/agent-workflow`)
+		expect(workflow.status).toBe(200)
+		const workflowBody = await workflow.json()
+		expect(workflowBody.ok).toBe(true)
+		expect(workflowBody.data.workflow).toContainEqual(
+			expect.objectContaining({
+				step: 'plan',
+				endpoint: 'POST /plan',
+				proof: expect.arrayContaining(['inputSha256', 'planDigest', 'preparedPlan']),
+			}),
+		)
+		expect(workflowBody.data.workflow).toContainEqual(
+			expect.objectContaining({
+				step: 'reopen-verify',
+				endpoints: expect.arrayContaining(['POST /check', 'POST /lint', 'POST /diff']),
+			}),
+		)
+		expect(workflowBody.data.preparedHandles).toMatchObject({
+			scope: 'process-local',
+			oneShot: true,
+		})
 	})
 
 	test('plan and commit endpoints provide the safe write workflow', async () => {
@@ -705,6 +727,7 @@ describe('API', () => {
 				path: '/unknown',
 				supportedRoutes: expect.arrayContaining([
 					{ method: 'GET', path: '/operations' },
+					{ method: 'GET', path: '/agent-workflow' },
 					{ method: 'POST', path: '/open-plan' },
 					{ method: 'POST', path: '/plan' },
 					{ method: 'POST', path: '/commit' },

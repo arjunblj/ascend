@@ -557,6 +557,7 @@ describe('Ascend API server', () => {
 				path: '/not-a-real-endpoint',
 				supportedRoutes: expect.arrayContaining([
 					{ method: 'GET', path: '/operations' },
+					{ method: 'GET', path: '/agent-workflow' },
 					{ method: 'POST', path: '/open-plan' },
 					{ method: 'POST', path: '/plan' },
 					{ method: 'POST', path: '/commit' },
@@ -565,6 +566,48 @@ describe('Ascend API server', () => {
 			},
 			suggestedFix: expect.stringContaining('GET /operations'),
 		})
+	})
+
+	test('/agent-workflow exposes the API safe edit contract', async () => {
+		const apiFetch = createApiFetch()
+		const response = await apiFetch(new Request('http://ascend.local/agent-workflow'))
+		const body = (await response.json()) as ApiEnvelope
+
+		expect(response.status).toBe(200)
+		expect(body.ok).toBe(true)
+		expect(body.data).toMatchObject({
+			endpoints: {
+				operations: 'GET /operations',
+				openPlan: 'POST /open-plan',
+				plan: 'POST /plan',
+				commit: 'POST /commit',
+				check: 'POST /check',
+				lint: 'POST /lint',
+			},
+			preparedHandles: {
+				scope: 'process-local',
+				oneShot: true,
+			},
+		})
+		expect(body.data?.workflow).toContainEqual(
+			expect.objectContaining({
+				step: 'open-plan',
+				endpoint: 'POST /open-plan',
+			}),
+		)
+		expect(body.data?.workflow).toContainEqual(
+			expect.objectContaining({
+				step: 'commit',
+				endpoint: 'POST /commit',
+				proof: expect.arrayContaining(['outputSha256', 'postWrite']),
+			}),
+		)
+		expect(body.data?.workflow).toContainEqual(
+			expect.objectContaining({
+				step: 'reopen-verify',
+				endpoints: expect.arrayContaining(['POST /check', 'POST /lint', 'POST /diff']),
+			}),
+		)
 	})
 
 	test('/open-plan rejects missing workbook references with structured retry guidance', async () => {

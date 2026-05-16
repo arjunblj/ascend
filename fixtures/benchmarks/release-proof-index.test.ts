@@ -1033,6 +1033,18 @@ describe('release proof evidence index', () => {
 			}),
 			expect.objectContaining({
 				evidenceId: 'cli-agent-facing-open-diagnostics-proof',
+				acceptedScope: expect.stringContaining('baf140bd'),
+				command: expect.stringContaining('inspect --json reports missing sheets'),
+				path: expect.stringContaining('apps/cli/src/commands/inspect.ts'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'cli-agent-facing-open-diagnostics-proof',
+				acceptedScope: expect.stringContaining('82b2bed5'),
+				command: expect.stringContaining('agent-view --json reports missing sheets'),
+				path: expect.stringContaining('apps/cli/src/commands/agent-view.ts'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'cli-agent-facing-open-diagnostics-proof',
 				acceptedScope: expect.stringContaining('9b155c7f'),
 				boundary: expect.stringContaining('CLI agent-facing diagnostics only'),
 			}),
@@ -4010,6 +4022,9 @@ describe('release proof evidence index', () => {
 			'Commit bb31bebe pins current FastXLSX carry-forward evidence',
 		)
 		expect(packet.benchmarkBlocker?.evidenceWeHave?.join('\n')).toContain(
+			'Commit f8846cf8 records a current clean metadata-only Calamine recheck',
+		)
+		expect(packet.benchmarkBlocker?.evidenceWeHave?.join('\n')).toContain(
 			'Commit bbf875b4 adds an Ascend readXlsx selected-sheet external-process row',
 		)
 		expect(packet.benchmarkBlocker?.evidenceWeHave?.join('\n')).toContain(
@@ -4020,6 +4035,9 @@ describe('release proof evidence index', () => {
 		)
 		expect(packet.benchmarkBlocker?.evidenceMissing?.join('\n')).toContain(
 			'Current full-profile gate that carries the isolated FastXLSX setup forward',
+		)
+		expect(packet.benchmarkBlocker?.evidenceMissing?.join('\n')).toContain(
+			'Named metadata-only production cost center from profiling',
 		)
 		expect(packet.benchmarkBlocker?.evidenceMissing?.join('\n')).toContain(
 			'Clean repeat-5 selected-sheet rerun that includes the new ascend-readXlsx selected-sheet row',
@@ -4040,11 +4058,17 @@ describe('release proof evidence index', () => {
 			'Do not claim Ascend leads metadata-only reads while the Calamine metadata-only baseline is comparable and may win the row.',
 		)
 		expect(packet.benchmarkBlocker?.forbiddenWording).toContain(
+			'Do not claim Ascend beats Calamine on metadata-only open or that a capsule-skip optimization improved the current measured workflow.',
+		)
+		expect(packet.benchmarkBlocker?.forbiddenWording).toContain(
 			'Do not claim Ascend beats FastXLSX on memory, feature-rich rich-metadata reads, or every XLSX workflow.',
 		)
 		expect(packet.benchmarkBlocker?.nextAction).toContain('Downgrade broad read-speed wording')
 		expect(packet.benchmarkBlocker?.nextAction).toContain(
 			'Calamine metadata-only baseline is not an Ascend win',
+		)
+		expect(packet.benchmarkBlocker?.nextAction).toContain(
+			'f8846cf8 kills the capsule-skip metadata-only optimization target',
 		)
 		expect(packet.benchmarkBlocker?.nextAction).toContain(
 			'current FastXLSX value/warm rows are scoped wins',
@@ -4066,6 +4090,9 @@ describe('release proof evidence index', () => {
 		)
 		expect(packet.benchmarkBlocker?.nextOwnerAction).toContain(
 			'current full-profile FastXLSX carry-forward policy',
+		)
+		expect(packet.benchmarkBlocker?.nextOwnerAction).toContain(
+			'profiling-named metadata-only cost center',
 		)
 		expect(packet.benchmarkBlocker?.benchmarkCommands?.join('\n')).toContain(
 			'--runner-manifest fixtures/benchmarks/runners/ascend-python-readers.manifest.json',
@@ -4091,6 +4118,9 @@ describe('release proof evidence index', () => {
 		)
 		expect(packet.benchmarkBlocker?.acceptanceEvidence?.join('\n')).toContain(
 			'Commit bb31bebe pins current FastXLSX evidence',
+		)
+		expect(packet.benchmarkBlocker?.acceptanceEvidence?.join('\n')).toContain(
+			'Commit f8846cf8 records the current metadata-only Calamine recheck',
 		)
 		expect(packet.benchmarkBlocker?.acceptanceEvidence?.join('\n')).toContain(
 			'current full-profile run at commit 9ddfff91',

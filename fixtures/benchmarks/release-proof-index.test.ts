@@ -879,6 +879,16 @@ describe('release proof evidence index', () => {
 					path: 'fixtures/benchmarks/safe-open-proof.ts',
 				}),
 				expect.objectContaining({
+					evidenceId: 'safe-open-encrypted-password-no-echo-tests',
+					acceptedScope: expect.stringContaining('92acf61e'),
+					boundary: expect.stringContaining('No password recovery'),
+				}),
+				expect.objectContaining({
+					evidenceId: 'mcp-agent-workflow-open-plan-first',
+					acceptedScope: expect.stringContaining('d4ee22e1'),
+					boundary: expect.stringContaining('MCP workflow guidance evidence only'),
+				}),
+				expect.objectContaining({
 					evidenceId: 'release-rc-gate',
 					command: 'bun run release:rc:gate',
 					path: 'scripts/release-rc-gate.ts',
@@ -2200,6 +2210,8 @@ describe('release proof evidence index', () => {
 		expect(handoff.qssLeapfrogReleaseMatrix.rows[0].acceptedEvidence).toEqual(
 			expect.arrayContaining([
 				expect.objectContaining({ evidenceId: 'safe-open-proof-tests' }),
+				expect.objectContaining({ evidenceId: 'safe-open-encrypted-password-no-echo-tests' }),
+				expect.objectContaining({ evidenceId: 'mcp-agent-workflow-open-plan-first' }),
 				expect.objectContaining({ evidenceId: 'release-proof-index-owner-handoff' }),
 			]),
 		)

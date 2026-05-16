@@ -3013,6 +3013,27 @@ function safeOpenQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceItem[] {
 			boundary: 'Tracked corpus evidence only; not proof that no public fixture exists elsewhere.',
 		},
 		{
+			evidenceId: 'safe-open-encrypted-password-no-echo-tests',
+			kind: 'test',
+			command:
+				'bun test packages/sdk/src/open-plan.test.ts apps/cli/src/cli.test.ts apps/api/src/server.test.ts apps/mcp/src/index.test.ts -t "encrypted workbook passwords|open-plan --password|plan --password" --timeout 30000',
+			path: 'packages/sdk/src/open-plan.test.ts; apps/cli/src/cli.test.ts; apps/api/src/server.test.ts; apps/mcp/src/index.test.ts',
+			acceptedScope:
+				'Commit 92acf61e tightens SDK/CLI/API/MCP encrypted-workbook password no-echo assertions while preserving fail-closed encrypted edit/export behavior.',
+			boundary:
+				'No password recovery, encryption removal, re-encrypted export support, or guarantee that arbitrary logs outside these surfaces are scrubbed.',
+		},
+		{
+			evidenceId: 'mcp-agent-workflow-open-plan-first',
+			kind: 'test',
+			command: 'bun test apps/mcp/src/index.test.ts -t "agent workflow" --timeout 30000',
+			path: 'apps/mcp/src/index.ts; apps/mcp/src/index.test.ts',
+			acceptedScope:
+				'Commit d4ee22e1 makes MCP agent workflow guidance start with ascend.open_plan before hydrating unknown XLSX/XLSM files and keeps encrypted-password handling explicit.',
+			boundary:
+				'MCP workflow guidance evidence only; it does not prove every outside-user workflow, latency, or safe-open publication policy.',
+		},
+		{
 			evidenceId: 'release-proof-index-owner-handoff',
 			kind: 'proof-artifact',
 			command:

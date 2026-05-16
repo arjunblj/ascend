@@ -327,6 +327,30 @@ describe('performance claim baseline matrix', () => {
 		)
 		expect(markdown).toContain('Continue profile expansion with `warm-workflow`')
 
+		expect(markdown).toContain('## Cycle: Metadata-Only Same-Lane External Read')
+		expect(markdown).toContain('mixed a preloaded-bytes\nAscend external lane')
+		expect(markdown).toContain('Commit: `fa3a13dc1f72de489d6d301bf1f81cbe3400df0f`')
+		expect(markdown).toContain('fixtures/benchmarks/runners/metadata-only-readers.manifest.json')
+		expect(markdown).toContain(
+			'/private/tmp/ascend-perf-hillclimb-fa3a13dc-runs/metadata-only-same-lane.json',
+		)
+		expect(markdown).toContain(
+			'/private/tmp/ascend-perf-hillclimb-fa3a13dc-runs/metadata-only-same-lane-scoreboard.json',
+		)
+		expect(markdown).toContain(
+			'| Ascend | ran/won | `ascend-external-metadata-only` | 0.394 | 0.457 | 0.148 | 91.2 MiB |',
+		)
+		expect(markdown).toContain('| SheetJS | ran/lost | `sheetjs-metadata-only` | 0.941')
+		expect(markdown).toContain('| openpyxl | ran/lost | `openpyxl-metadata-only` | 2.050')
+		expect(markdown).toContain(
+			'No metadata-only `coverageFailures` remain for Ascend, SheetJS, or openpyxl.',
+		)
+		expect(markdown).toContain(
+			'Metadata-only `coverageGaps` remain for ExcelJS, Calamine, Apache POI, and\n  ClosedXML',
+		)
+		expect(markdown).toContain('"Ascend has a full metadata-only SOTA claim across every library."')
+		expect(markdown).toContain('feature-rich semantic mismatches for SheetJS and Calamine')
+
 		expect(markdown).toContain('## Cycle: Warm Workflow Value Read')
 		expect(markdown).toContain('generated `warm-workflow` workbook')
 		expect(markdown).toContain('Commit: `add13c79`')

@@ -1141,6 +1141,93 @@ Forbidden wording:
 
 Next action: defer production optimization. Continue profile expansion with `warm-workflow`.
 
+## Cycle: Metadata-Only Same-Lane External Read
+
+Classification: defer. The previous metadata-only row mixed a preloaded-bytes
+Ascend external lane with in-process SheetJS and external openpyxl timing lanes.
+This cycle fixes the evidence boundary by running Ascend, SheetJS, and openpyxl
+through one external-process metadata-only load lane. No production optimization
+is justified because Ascend wins the comparable rows.
+
+Workflow: XLSX metadata-only open/inspect without hydrating cells.
+
+Why it matters for release: this is the fastest safe first-pass workflow for an
+agent that needs workbook sheet inventory before deciding which cells to hydrate.
+It is also a required `xlsx-read-sota` coverage row.
+
+Public/tracked-clean input: `competitive-io` generated the `metadata-only` raw
+OOXML workload from detached commit `fa3a13dc`, 200 rows x 20 columns, 4,000
+logical cells, 4,000 populated cells, 15,347 input bytes. No private corpus or
+local research workbook was used.
+
+Commands:
+
+```bash
+git worktree add --detach /private/tmp/ascend-perf-hillclimb-fa3a13dc fa3a13dc
+cd /private/tmp/ascend-perf-hillclimb-fa3a13dc
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun install --frozen-lockfile
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-io.ts --json --category read --competitor all --execution-scope external-process --libraries ascend-external-metadata-only,sheetjs-metadata-only,openpyxl-metadata-only --workload metadata-only --read-source raw-ooxml --repeat 5 --warmup 1 --validation-mode each --runner-manifest fixtures/benchmarks/runners/metadata-only-readers.manifest.json > /private/tmp/ascend-perf-hillclimb-fa3a13dc-runs/metadata-only-same-lane.json
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-scoreboard.ts /private/tmp/ascend-perf-hillclimb-fa3a13dc-runs/metadata-only-same-lane.json --json --metric medianMs --require-profile xlsx-read-sota > /private/tmp/ascend-perf-hillclimb-fa3a13dc-runs/metadata-only-same-lane-scoreboard.json
+```
+
+Environment:
+
+- Commit: `fa3a13dc1f72de489d6d301bf1f81cbe3400df0f`
+- Worktree: clean detached worktree at `/private/tmp/ascend-perf-hillclimb-fa3a13dc`; `git status --short --branch` reported `## HEAD (no branch)` with no changed paths after the run.
+- OS: Darwin 25.4.0 arm64
+- Bun: `1.3.13`
+- Node: `22.22.0`
+- Python: `3.9.6`
+- SheetJS: `xlsx@0.18.5`
+- openpyxl: `3.1.5`
+- Runtime profile: `category read`, `executionScope external-process`, `workload metadata-only`, `readSource raw-ooxml`, `validationMode each`, `repeat 5`, `warmup 1`.
+
+Raw output:
+
+```text
+/private/tmp/ascend-perf-hillclimb-fa3a13dc-runs/metadata-only-same-lane.json
+/private/tmp/ascend-perf-hillclimb-fa3a13dc-runs/metadata-only-same-lane-scoreboard.json
+```
+
+All successful timing rows below use 5 measured samples after 1 warmup. All
+three rows share `external-internal-metadata-only-load-timing:metadata-only` and
+assert `metadataOnlyRead: true`, `sourceSheetCount: 3`, `loadedSheetCount: 3`,
+`loadedSheetNames: Data,Summary,Archive`, and `cellsHydrated: false`.
+
+| Competitor | Status | Representative row | Median ms | P95 ms | CV | Peak RSS | Semantic comparability |
+| --- | --- | --- | ---: | ---: | ---: | ---: | --- |
+| Ascend | ran/won | `ascend-external-metadata-only` | 0.394 | 0.457 | 0.148 | 91.2 MiB | External-process metadata-only read from file path; same timing lane as SheetJS and openpyxl; no cells hydrated. |
+| SheetJS | ran/lost | `sheetjs-metadata-only` | 0.941 | 1.106 | 0.110 | 148.8 MiB | External-process SheetJS `bookSheets` metadata load; 2.39x slower than Ascend by median. |
+| openpyxl | ran/lost | `openpyxl-metadata-only` | 2.050 | 3.284 | 0.257 | 50.9 MiB | External-process read-only metadata inventory; lower memory than Ascend but 5.21x slower by median and noisier. |
+| ExcelJS | not comparable | n/a | n/a | n/a | n/a | n/a | Still skipped: metadata-only read is unsupported by this harness. |
+| Calamine | not comparable | n/a | n/a | n/a | n/a | n/a | Still a profile `unsupported-operation` gap. |
+| Apache POI | not comparable | n/a | n/a | n/a | n/a | n/a | Still a profile `unsupported-operation` gap. |
+| ClosedXML | not comparable | n/a | n/a | n/a | n/a | n/a | Still a profile `unsupported-operation` gap. |
+
+Scoreboard result for the focused same-lane run:
+
+- `leaderFailures: []`
+- `profileLeaderFailures: []`
+- No metadata-only `coverageFailures` remain for Ascend, SheetJS, or openpyxl.
+- Metadata-only `coverageGaps` remain for ExcelJS, Calamine, Apache POI, and
+  ClosedXML because their metadata-only operation is unsupported in the current
+  profile.
+
+Humble allowed wording:
+
+> On the generated `metadata-only` raw OOXML workload at commit `fa3a13dc`, Ascend's external-process metadata-only read was faster by median than same-lane SheetJS and openpyxl rows while proving that cells were not hydrated. ExcelJS, Calamine, Apache POI, and ClosedXML remain unsupported-operation gaps, so this is scoped metadata-only evidence, not a broad XLSX-read claim.
+
+Forbidden wording:
+
+- "Ascend has a full metadata-only SOTA claim across every library."
+- "Ascend beats ExcelJS, Calamine, Apache POI, or ClosedXML" from this metadata-only run.
+- Any wording that treats unsupported metadata-only competitors as wins.
+
+Next action: defer production optimization. The next highest-impact blockers are
+feature-rich semantic mismatches for SheetJS and Calamine, the unavailable
+fastxlsx runner, and assembling a current full-profile gate from the cleaned
+same-lane evidence.
+
 ## Cycle: Warm Workflow Value Read
 
 Classification: defer. No production optimization is justified from this cycle.

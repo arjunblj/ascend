@@ -4499,7 +4499,7 @@ describe('Ascend API server', () => {
 		}
 	})
 
-	test('prepared plan handles report failed writes and require a fresh plan', async () => {
+	test('prepared plan handles report failed writes and remain retryable', async () => {
 		const wb = AscendWorkbook.create()
 		await wb.save(TEMP_FILE)
 		const blockedOutput = join(
@@ -4533,19 +4533,8 @@ describe('Ascend API server', () => {
 			})
 			expect(await Bun.file(blockedOutput).exists()).toBe(false)
 
-			const reused = await postJson('/commit', {
-				planHandle: plan.body.data?.preparedPlan?.id,
-				output: retryOutput,
-				approvals: [],
-			})
-			expect(reused.status).toBe(400)
-			expect(reused.body.error?.message).toBe('Prepared plan handle has already been used')
-			expect(await Bun.file(retryOutput).exists()).toBe(false)
-
-			const retryPlan = await postJson('/plan', { file: TEMP_FILE, ops })
-			expect(retryPlan.status).toBe(200)
 			const retried = await postJson('/commit', {
-				planHandle: retryPlan.body.data?.preparedPlan?.id,
+				planHandle: plan.body.data?.preparedPlan?.id,
 				output: retryOutput,
 				approvals: [],
 				compact: true,
@@ -4555,8 +4544,17 @@ describe('Ascend API server', () => {
 			expect(retried.body.data?.postWrite?.auditsPassed).toBe(true)
 			const reopened = await AscendWorkbook.open(retryOutput)
 			expect(reopened.sheets).toContain('PreparedRetry')
+
+			const reused = await postJson('/commit', {
+				planHandle: plan.body.data?.preparedPlan?.id,
+				output: `${retryOutput}.reuse.xlsx`,
+				approvals: [],
+			})
+			expect(reused.status).toBe(400)
+			expect(reused.body.error?.message).toBe('Prepared plan handle has already been used')
 		} finally {
 			await unlink(retryOutput).catch(() => {})
+			await unlink(`${retryOutput}.reuse.xlsx`).catch(() => {})
 		}
 	})
 

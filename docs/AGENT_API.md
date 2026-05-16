@@ -94,7 +94,7 @@ Use these workbook tools for normal work:
 - Ascend preserves macros, ActiveX/OLE, signatures, Custom UI, embedded packages, DDE formulas, external links, and data connections; it does not execute active content or refresh external content.
 - Prefer non-destructive output paths over in-place edits.
 - Use `inputSha256` from plan as `expectSha256` during commit.
-- API/MCP plans default to `prepare: true` and return `preparedPlan` metadata. Prefer `commit({ planHandle })`; handles are in-memory, one-shot, process-local, and expire, so re-plan before retrying a failed commit. CLI does not persist prepared handles between commands; use the same `ops.json` plus `--expect-sha256`.
+- API/MCP plans default to `prepare: true` and return `preparedPlan` metadata. Prefer `commit({ planHandle })`; handles are in-memory, process-local, expire, and are consumed after a successful commit. Failed commit attempts keep the handle retryable until expiry; re-plan only when the handle is unavailable, expired, evicted, or already used. CLI does not persist prepared handles between commands; use the same `ops.json` plus `--expect-sha256`.
 - Use CLI `--package-actions` or API/MCP `includePackageActions: true` when an agent needs passthrough/regenerate/add/drop/error proof evidence for package parts.
 - Pass only approval IDs emitted by plan in `approvals`; it accepts comma-separated strings, string arrays, or `"all"` after explicit user approval.
 - Pass `allowLoss` only for user-approved feature keys, `feature:tier` keys, generated loss approval IDs, or `"all"` after explicit user approval.
@@ -182,7 +182,7 @@ ascend diff model.xlsx model.updated.xlsx --json
 
 Expected JSON fields: `data.output`, `data.outputSha256`, `data.postWrite.valid`, `data.postWrite.auditsPassed`, `data.postWrite.check.valid`, lint `data.clean`, and diff `data.changes`.
 
-API/MCP equivalent: call `plan` with `prepare` omitted or `true`, then call `commit` with `planHandle: preparedPlan.id`. If the handle is unavailable, expired, or already used, re-run `plan`; do not reuse stale handles.
+API/MCP equivalent: call `plan` with `prepare` omitted or `true`, then call `commit` with `planHandle: preparedPlan.id`. If commit returns a retryable error, fix the request and retry the same handle before it expires. If the handle is unavailable, expired, or already used, re-run `plan`; do not reuse stale handles.
 
 HTTP and MCP runnable transcripts live in `examples/agent-safe-edit-http.md` and `examples/agent-safe-edit-mcp.md`. The trust-report preflight example lives in `examples/untrusted-workbook-report.md`.
 

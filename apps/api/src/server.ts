@@ -1100,7 +1100,13 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 					if (planHandle) {
 						const prepared = preparedPlans.take(planHandle)
 						if (!prepared.ok) return jsonFailureError(prepared.error, 400)
-						const result = await prepared.handle.commit(options)
+						let result: AgentCommitResult
+						try {
+							result = await prepared.handle.commit(options)
+						} catch (error) {
+							prepared.restore()
+							throw error
+						}
 						recentCheckCache = recentCheckCacheEntry(result.output, result)
 						const payload = compact
 							? compactAgentCommitResult(result, {

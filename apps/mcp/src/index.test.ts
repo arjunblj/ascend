@@ -4884,7 +4884,7 @@ describe('MCP server', () => {
 		}
 	})
 
-	test('ascend.commit prepared plan handles report failed writes and require a fresh plan', async () => {
+	test('ascend.commit prepared plan handles report failed writes and remain retryable', async () => {
 		const wb = AscendWorkbook.create()
 		await wb.save(TEMP_FILE)
 		const blockedOutput = join(
@@ -4950,20 +4950,8 @@ describe('MCP server', () => {
 			})
 			expect(await Bun.file(blockedOutput).exists()).toBe(false)
 
-			const reused = await commit({
-				planHandle: planned.structuredContent?.data?.preparedPlan?.id,
-				output: retryOutput,
-				approvals: [],
-			})
-			expect(reused.structuredContent?.error?.message).toBe(
-				'Prepared plan handle has already been used',
-			)
-			expect(await Bun.file(retryOutput).exists()).toBe(false)
-
-			const retryPlan = await plan({ file: TEMP_FILE, ops })
-			expect(retryPlan.structuredContent?.data?.preparedPlan?.id).toBeString()
 			const retried = await commit({
-				planHandle: retryPlan.structuredContent?.data?.preparedPlan?.id,
+				planHandle: planned.structuredContent?.data?.preparedPlan?.id,
 				output: retryOutput,
 				approvals: [],
 				compact: true,
@@ -4973,8 +4961,18 @@ describe('MCP server', () => {
 			expect(retried.structuredContent?.data?.postWrite?.auditsPassed).toBe(true)
 			const reopened = await AscendWorkbook.open(retryOutput)
 			expect(reopened.sheets).toContain('PreparedRetryMcp')
+
+			const reused = await commit({
+				planHandle: planned.structuredContent?.data?.preparedPlan?.id,
+				output: `${retryOutput}.reuse.xlsx`,
+				approvals: [],
+			})
+			expect(reused.structuredContent?.error?.message).toBe(
+				'Prepared plan handle has already been used',
+			)
 		} finally {
 			await unlink(retryOutput).catch(() => {})
+			await unlink(`${retryOutput}.reuse.xlsx`).catch(() => {})
 		}
 	})
 

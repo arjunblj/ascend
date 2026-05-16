@@ -12,7 +12,7 @@ Use this workflow for headless spreadsheet edits:
 8. Verify: `ascend check`, `ascend lint`, `ascend diff`, `ascend trace`, or `ascend export`
 9. Recover: `ascend repair-plan <file> --json`
 
-For API/MCP, prefer the default `prepare: true` response and pass its `planHandle` to the write step. Prepared handles are in-memory, process-local, one-shot, and expire; if the write fails or the handle is unavailable, create a fresh plan before retrying. CLI plan/commit is process-per-command and does not persist prepared handles; reuse `ops.json` with the plan `inputSha256` as API `expectSha256` or CLI `--expect-sha256`.
+For API/MCP, prefer the default `prepare: true` response and pass its `planHandle` to the write step. Prepared handles are in-memory, process-local, expire, and are consumed after a successful commit; retryable failed commits keep the same handle available until expiry. If the handle is unavailable, expired, evicted, or already used, create a fresh plan before retrying. CLI plan/commit is process-per-command and does not persist prepared handles; reuse `ops.json` with the plan `inputSha256` as API `expectSha256` or CLI `--expect-sha256`.
 
 Open planning is package-level and does not replace trust review. Use CLI `open-plan`, API `POST /open-plan`, or MCP `ascend.open_plan` to choose between metadata, values, formula, and rich-metadata-oriented reads before hydrating an unknown XLSX/XLSM.
 

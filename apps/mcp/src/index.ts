@@ -1534,7 +1534,13 @@ export function createServer(options: McpServerOptions = {}): McpServer {
 				if (planHandle) {
 					const prepared = preparedPlans.take(planHandle)
 					if (!prepared.ok) return errorResponse(prepared.error)
-					const result = await prepared.handle.commit(options)
+					let result: AgentCommitResult
+					try {
+						result = await prepared.handle.commit(options)
+					} catch (error) {
+						prepared.restore()
+						throw error
+					}
 					const payload = compact
 						? compactAgentCommitResult(result, {
 								...(maxAffectedCells !== undefined ? { maxAffectedCells } : {}),

@@ -56,7 +56,7 @@ interface PreparedPlanRecord {
 export type PreparedPlanUnavailableReason = 'expired' | 'evicted' | 'already-used' | 'unknown'
 
 export type PreparedPlanTakeResult =
-	| { readonly ok: true; readonly handle: PreparedPlanHandle }
+	| { readonly ok: true; readonly handle: PreparedPlanHandle; restore: () => void }
 	| { readonly ok: false; readonly error: AscendError }
 
 const DEFAULT_PREPARED_PLAN_MAX_HANDLES = 64
@@ -113,7 +113,15 @@ export class PreparedPlanStore {
 		}
 		this.handles.delete(id)
 		this.rememberUnavailable(id, 'already-used')
-		return { ok: true, handle: record.handle }
+		return {
+			ok: true,
+			handle: record.handle,
+			restore: () => {
+				if (record.expiresAtMs <= this.now() || this.handles.has(id)) return
+				this.unavailableReasons.delete(id)
+				this.handles.set(id, record)
+			},
+		}
 	}
 
 	private pruneExpired(): void {

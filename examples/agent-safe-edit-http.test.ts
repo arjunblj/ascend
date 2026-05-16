@@ -32,6 +32,7 @@ describe('agent-safe-edit HTTP example', () => {
 				workflow?: string
 				input?: {
 					openPlan?: { reviewBeforeHydration?: boolean }
+					trust?: { trust?: string; posture?: string; findingCount?: number }
 					read?: { cellCount?: number }
 				}
 				plan?: {
@@ -64,8 +65,15 @@ describe('agent-safe-edit HTTP example', () => {
 			}
 
 			expect(result.ok).toBe(true)
-			expect(result.workflow).toBe('api-open-plan-inspect-read-plan-prepared-commit-reopen-verify')
+			expect(result.workflow).toBe(
+				'api-open-plan-trust-inspect-read-plan-prepared-commit-reopen-verify',
+			)
 			expect(result.input?.openPlan?.reviewBeforeHydration).toBe(false)
+			expect(result.input?.trust).toMatchObject({
+				trust: 'untrusted',
+				posture: 'safe-parser-preserver',
+				findingCount: 0,
+			})
 			expect(result.input?.read?.cellCount).toBeGreaterThan(0)
 			expect(result.plan?.inputSha256).toMatch(/^[a-f0-9]{64}$/)
 			expect(result.plan?.planDigest).toMatch(/^[a-f0-9]{64}$/)

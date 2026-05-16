@@ -12,12 +12,12 @@ const workflows = [
 	},
 	{
 		script: 'example:safe-edit:http',
-		expectedWorkflow: 'api-open-plan-inspect-read-plan-prepared-commit-reopen-verify',
+		expectedWorkflow: 'api-open-plan-trust-inspect-read-plan-prepared-commit-reopen-verify',
 		expectedProofRef: 'B2',
 	},
 	{
 		script: 'example:safe-edit:mcp',
-		expectedWorkflow: 'mcp-open-plan-inspect-read-plan-prepared-commit-reopen-verify',
+		expectedWorkflow: 'mcp-open-plan-trust-inspect-read-plan-prepared-commit-reopen-verify',
 		expectedProofRef: 'B2',
 	},
 ]

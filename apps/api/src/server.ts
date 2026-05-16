@@ -826,6 +826,11 @@ const API_AGENT_WORKFLOW = {
 			proof: ['recommendedLoadOptions', 'reviewBeforeHydration', 'riskFeatures'],
 		},
 		{
+			step: 'trust-preflight',
+			endpoint: 'POST /trust-report',
+			proof: ['trust', 'posture', 'findingCount', 'nextActions'],
+		},
+		{
 			step: 'inspect',
 			endpoint: 'POST /inspect',
 			proof: ['sheetCount', 'compatibility', 'load'],

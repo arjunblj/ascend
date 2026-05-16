@@ -74,6 +74,11 @@ const MCP_AGENT_WORKFLOW = {
 			proof: ['recommendedLoadOptions', 'reviewBeforeHydration', 'riskFeatures'],
 		},
 		{
+			step: 'trust-preflight',
+			tool: 'ascend.trust_report',
+			proof: ['trust', 'posture', 'findingCount', 'nextActions'],
+		},
+		{
 			step: 'inspect',
 			tools: ['ascend.inspect', 'ascend.read', 'ascend.read_table', 'ascend.agent_view'],
 			proof: ['sheets', 'ranges', 'tables', 'partialLoad'],

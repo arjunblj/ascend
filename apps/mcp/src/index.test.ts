@@ -577,6 +577,13 @@ describe('MCP server', () => {
 		})
 		expect(result.structuredContent?.data?.workflow).toContainEqual(
 			expect.objectContaining({
+				step: 'trust-preflight',
+				tool: 'ascend.trust_report',
+				proof: expect.arrayContaining(['trust', 'posture', 'findingCount']),
+			}),
+		)
+		expect(result.structuredContent?.data?.workflow).toContainEqual(
+			expect.objectContaining({
 				step: 'plan',
 				tool: 'ascend.plan',
 				proof: expect.arrayContaining(['inputSha256', 'planDigest', 'preparedPlan']),

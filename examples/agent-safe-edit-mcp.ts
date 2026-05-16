@@ -96,6 +96,31 @@ if (openPlan.reviewBeforeHydration) {
 	process.exit(1)
 }
 
+const trustReport = await callTool<{
+	trust?: string
+	posture?: string
+	summary?: { findingCount?: number }
+	findings?: Array<{ code?: string }>
+	nextActions?: string[]
+}>('ascend.trust_report', { file: input, maxFindings: 20 })
+
+if (trustReport.trust === 'unsafe') {
+	console.log(
+		JSON.stringify(
+			{
+				ok: false,
+				step: 'trust-preflight',
+				trust: trustReport.trust,
+				posture: trustReport.posture,
+				nextActions: trustReport.nextActions,
+			},
+			null,
+			2,
+		),
+	)
+	process.exit(1)
+}
+
 const inspected = await callTool<{
 	sheets?: Array<{ name?: string }>
 	load?: Record<string, unknown>
@@ -174,7 +199,7 @@ console.log(
 	JSON.stringify(
 		{
 			ok: true,
-			workflow: 'mcp-open-plan-inspect-read-plan-prepared-commit-reopen-verify',
+			workflow: 'mcp-open-plan-trust-inspect-read-plan-prepared-commit-reopen-verify',
 			discovery: {
 				workflowSteps: workflow.workflow?.length ?? 0,
 				planTool: workflow.tools.plan,
@@ -187,6 +212,13 @@ console.log(
 					reviewBeforeHydration: openPlan.reviewBeforeHydration,
 					riskFeatureCount: openPlan.riskFeatures?.length ?? 0,
 					reasons: openPlan.reasons,
+				},
+				trust: {
+					trust: trustReport.trust,
+					posture: trustReport.posture,
+					findingCount: trustReport.summary?.findingCount ?? 0,
+					codes: trustReport.findings?.map((finding) => finding.code) ?? [],
+					nextActions: trustReport.nextActions ?? [],
 				},
 				inspect: {
 					sheet,

@@ -621,6 +621,13 @@ describe('Ascend API server', () => {
 		)
 		expect(body.data?.workflow).toContainEqual(
 			expect.objectContaining({
+				step: 'trust-preflight',
+				endpoint: 'POST /trust-report',
+				proof: expect.arrayContaining(['trust', 'posture', 'findingCount']),
+			}),
+		)
+		expect(body.data?.workflow).toContainEqual(
+			expect.objectContaining({
 				step: 'commit',
 				endpoint: 'POST /commit',
 				proof: expect.arrayContaining(['outputSha256', 'postWrite']),

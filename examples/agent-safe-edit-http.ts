@@ -85,6 +85,31 @@ if (openPlan.reviewBeforeHydration) {
 	process.exit(1)
 }
 
+const trustReport = await postJson<{
+	trust?: string
+	posture?: string
+	summary?: { findingCount?: number }
+	findings?: Array<{ code?: string }>
+	nextActions?: string[]
+}>('/trust-report', { file: input, maxFindings: 20 })
+
+if (trustReport.trust === 'unsafe') {
+	console.log(
+		JSON.stringify(
+			{
+				ok: false,
+				step: 'trust-preflight',
+				trust: trustReport.trust,
+				posture: trustReport.posture,
+				nextActions: trustReport.nextActions,
+			},
+			null,
+			2,
+		),
+	)
+	process.exit(1)
+}
+
 const inspected = await postJson<{
 	sheets?: Array<{ name?: string }>
 	load?: Record<string, unknown>
@@ -158,7 +183,7 @@ console.log(
 	JSON.stringify(
 		{
 			ok: true,
-			workflow: 'api-open-plan-inspect-read-plan-prepared-commit-reopen-verify',
+			workflow: 'api-open-plan-trust-inspect-read-plan-prepared-commit-reopen-verify',
 			input: {
 				file: input,
 				openPlan: {
@@ -166,6 +191,13 @@ console.log(
 					reviewBeforeHydration: openPlan.reviewBeforeHydration,
 					riskFeatureCount: openPlan.riskFeatures?.length ?? 0,
 					reasons: openPlan.reasons,
+				},
+				trust: {
+					trust: trustReport.trust,
+					posture: trustReport.posture,
+					findingCount: trustReport.summary?.findingCount ?? 0,
+					codes: trustReport.findings?.map((finding) => finding.code) ?? [],
+					nextActions: trustReport.nextActions ?? [],
 				},
 				inspect: {
 					sheet,

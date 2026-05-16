@@ -311,6 +311,8 @@ describe('AscendWorkbook', () => {
 		const signedApproved = join(dir, 'signed-approved.tsv')
 		const macroBlocked = join(dir, 'macro-blocked.csv')
 		const macroApproved = join(dir, 'macro-approved.csv')
+		const signedMacroBlocked = join(dir, 'signed-macro-blocked.csv')
+		const signedMacroApproved = join(dir, 'signed-macro-approved.csv')
 		try {
 			mkdirSync(dir, { recursive: true })
 			const encrypted = await Ascend.open(
@@ -404,6 +406,38 @@ describe('AscendWorkbook', () => {
 			})
 			expect(macroReopened.inspect().activeContent).toContainEqual(
 				expect.objectContaining({ kind: 'vbaProject', partPath: 'xl/vbaProject.bin' }),
+			)
+
+			const signedMacro = await Ascend.open(makeSignedVbaXlsm())
+			signedMacro.apply([
+				{
+					op: 'setCells',
+					sheet: 'Sheet1',
+					updates: [{ ref: 'A1', value: 'signed macro values' }],
+				},
+			])
+			await expect(
+				signedMacro.save(signedMacroBlocked, { allowSignatureInvalidation: true }),
+			).rejects.toThrow(
+				'Cannot export a workbook with active content to text without explicit active content loss approval',
+			)
+			await expect(
+				signedMacro.save(signedMacroBlocked, { allowActiveContentLoss: true }),
+			).rejects.toThrow(
+				'Cannot export a signed workbook to text without explicit signature loss approval',
+			)
+			expect(existsSync(signedMacroBlocked)).toBe(false)
+			await signedMacro.save(signedMacroApproved, {
+				allowSignatureInvalidation: true,
+				allowActiveContentLoss: true,
+			})
+			const signedMacroCsv = readFileSync(signedMacroApproved, 'utf8')
+			expect(Ascend.fromCsv(signedMacroCsv).sheet('Sheet1')?.cell('A1')?.value).toEqual({
+				kind: 'string',
+				value: 'signed macro values',
+			})
+			expect(() => signedMacro.toBytes()).toThrow(
+				'Cannot export an edited signed workbook without explicit signature invalidation approval',
 			)
 		} finally {
 			rmSync(dir, { recursive: true, force: true })

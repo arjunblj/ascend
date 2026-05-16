@@ -71,6 +71,45 @@ describe('AscendWorkbook', () => {
 		await expect(Ascend.open(new Uint8Array(encrypted))).rejects.toThrow('requires a password')
 	})
 
+	test('encrypted workbook saves fail closed unless decrypted export is explicit', async () => {
+		const dir = join(
+			tmpdir(),
+			`ascend-encrypted-save-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+		)
+		const blockedOutput = join(dir, 'blocked.xlsx')
+		const approvedOutput = join(dir, 'approved.xlsx')
+		try {
+			mkdirSync(dir, { recursive: true })
+			const encrypted = readFileSync('fixtures/xlsx/calamine/pass_protected.xlsx')
+			const wb = await Ascend.open(new Uint8Array(encrypted), { password: '123' })
+			const changed = wb.apply([
+				{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'Z11', value: 'decrypted edit' }] },
+			])
+			expect(changed.errors).toEqual([])
+
+			await expect(wb.save(blockedOutput)).rejects.toThrow(
+				'Cannot export an edited encrypted workbook without re-encryption support',
+			)
+			expect(existsSync(blockedOutput)).toBe(false)
+			expect(() => wb.toBytes()).toThrow(
+				'Cannot export an edited encrypted workbook without re-encryption support',
+			)
+
+			await wb.save(approvedOutput, { allowDecryptedExport: true })
+			expect(() => extractZip(new Uint8Array(readFileSync(approvedOutput)))).not.toThrow()
+			const reopened = await Ascend.open(new Uint8Array(readFileSync(approvedOutput)))
+			expect(reopened.sheet('Sheet1')?.cell('Z11')?.value).toEqual({
+				kind: 'string',
+				value: 'decrypted edit',
+			})
+			expect(() => wb.toBytes()).toThrow(
+				'Cannot export an edited encrypted workbook without re-encryption support',
+			)
+		} finally {
+			rmSync(dir, { recursive: true, force: true })
+		}
+	})
+
 	test('dirty signed workbooks require explicit signature invalidation before export', async () => {
 		const signed = makeSignedXlsx()
 		const wb = await Ascend.open(signed)

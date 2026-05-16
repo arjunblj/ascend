@@ -211,6 +211,9 @@ type AgentWorkflowFileContext =
 	| 'check'
 	| 'lint'
 	| 'trace'
+	| 'write'
+	| 'preview'
+	| 'calc'
 
 function missingAgentWorkflowFileError(context: AgentWorkflowFileContext): AscendError {
 	const requirement = (() => {
@@ -251,6 +254,12 @@ function missingAgentWorkflowFileError(context: AgentWorkflowFileContext): Ascen
 				return 'Pass file so Ascend can run formula lint verification on the workbook.'
 			case 'trace':
 				return 'Pass file so Ascend can trace a cell dependency or issue.'
+			case 'write':
+				return 'Pass file so Ascend can apply operations to a workbook. Prefer /plan then /commit for agent-safe edits.'
+			case 'preview':
+				return 'Pass file so Ascend can preview operations before writing. Prefer /plan for full agent-safe edit audits.'
+			case 'calc':
+				return 'Pass file so Ascend can recalculate and save the workbook.'
 		}
 	})()
 	return ascendError('VALIDATION_ERROR', `Missing or invalid ${context} workbook reference`, {
@@ -1310,7 +1319,7 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 				const body = await parseJson<Record<string, unknown>>(req)
 				const file = body ? requireString(body, 'file') : null
 				const journal = body?.journal === true
-				if (!file) return jsonFailure('Missing or invalid file', 400)
+				if (!file) return jsonFailureError(missingAgentWorkflowFileError('write'), 400)
 				try {
 					pathMutationPlanCache = undefined
 					recentCheckCache = undefined
@@ -1358,7 +1367,7 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 				const body = await parseJson<Record<string, unknown>>(req)
 				const file = body ? requireString(body, 'file') : null
 				const journal = body?.journal === true
-				if (!file) return jsonFailure('Missing or invalid file', 400)
+				if (!file) return jsonFailureError(missingAgentWorkflowFileError('preview'), 400)
 				try {
 					const wb = await AscendWorkbook.open(file)
 					const input = resolveOperationInputForWorkbook(wb, body)
@@ -1387,7 +1396,7 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 			if (method === 'POST' && path === '/calc') {
 				const body = await parseJson<{ file?: string; range?: string }>(req)
 				const file = body ? requireString(body, 'file') : null
-				if (!file) return jsonFailure('Missing or invalid file', 400)
+				if (!file) return jsonFailureError(missingAgentWorkflowFileError('calc'), 400)
 				try {
 					const wb = await AscendWorkbook.open(file)
 					const result = wb.recalc(body?.range ? { range: body.range } : undefined)

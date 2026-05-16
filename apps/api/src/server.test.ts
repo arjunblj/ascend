@@ -860,6 +860,55 @@ describe('Ascend API server', () => {
 		})
 	})
 
+	test('/write rejects missing workbook references with structured retry guidance', async () => {
+		const result = await postJson('/write', {
+			ops: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] }],
+		})
+
+		expect(result.status).toBe(400)
+		expect(result.body.ok).toBe(false)
+		expect(result.body.error).toMatchObject({
+			code: 'VALIDATION_ERROR',
+			message: 'Missing or invalid write workbook reference',
+			retryable: true,
+			retryStrategy: 'modified',
+			details: { required: ['file'] },
+			suggestedFix: expect.stringContaining('Prefer /plan then /commit'),
+		})
+	})
+
+	test('/preview rejects missing workbook references with structured retry guidance', async () => {
+		const result = await postJson('/preview', {
+			ops: [{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 1 }] }],
+		})
+
+		expect(result.status).toBe(400)
+		expect(result.body.ok).toBe(false)
+		expect(result.body.error).toMatchObject({
+			code: 'VALIDATION_ERROR',
+			message: 'Missing or invalid preview workbook reference',
+			retryable: true,
+			retryStrategy: 'modified',
+			details: { required: ['file'] },
+			suggestedFix: expect.stringContaining('Prefer /plan'),
+		})
+	})
+
+	test('/calc rejects missing workbook references with structured retry guidance', async () => {
+		const result = await postJson('/calc', {})
+
+		expect(result.status).toBe(400)
+		expect(result.body.ok).toBe(false)
+		expect(result.body.error).toMatchObject({
+			code: 'VALIDATION_ERROR',
+			message: 'Missing or invalid calc workbook reference',
+			retryable: true,
+			retryStrategy: 'modified',
+			details: { required: ['file'] },
+			suggestedFix: expect.stringContaining('recalculate and save'),
+		})
+	})
+
 	test('/plan reports missing workbook files with structured retry guidance', async () => {
 		const missing = join(tmpdir(), `ascend-api-missing-${Date.now()}.xlsx`)
 		const result = await postJson('/plan', {

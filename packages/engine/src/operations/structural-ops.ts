@@ -67,6 +67,8 @@ function applyAxisShift(
 	const result = getSheet(workbook, sheetName)
 	if (!result.ok) return result
 	const sheet = result.value
+	const protectionBlocker = validateStructuralProtection(sheet, axis, delta)
+	if (protectionBlocker) return err(protectionBlocker)
 	const formulaBindingBlocker = findWorkbookFormulaBinding(workbook)
 	if (formulaBindingBlocker) return err(formulaBindingStructuralEditError(formulaBindingBlocker))
 	const deletedTableColumns =
@@ -117,6 +119,35 @@ function applyAxisShift(
 	removeDeletedQueryTableConnectionParts(workbook, deletedQueryTablePartPaths)
 
 	return ok(patch([...affected], [...sheetsModified], true))
+}
+
+function validateStructuralProtection(sheet: Sheet, axis: 'row' | 'col', delta: number) {
+	const protection = sheet.protection
+	if (!protection || protection.sheet === false) return null
+	const operation =
+		axis === 'row'
+			? delta > 0
+				? 'insertRows'
+				: 'deleteRows'
+			: delta > 0
+				? 'insertColumns'
+				: 'deleteColumns'
+	const allowed = protection[operation] === true
+	if (allowed) return null
+	return ascendError(
+		'PROTECTION_ERROR',
+		`Cannot ${operation} on protected sheet "${sheet.name}" because sheet protection does not allow it`,
+		{
+			refs: [`sheet:${sheet.name}:protection:${operation}`],
+			suggestedFix: `Unprotect the sheet or set sheet protection ${operation}=true before applying this structural edit.`,
+			details: {
+				kind: 'sheet-protection-structural-edit-blocked',
+				sheetName: sheet.name,
+				operation,
+				allowed,
+			},
+		},
+	)
 }
 
 function validateAxisSpan(axis: 'row' | 'col', at: number, count: number) {

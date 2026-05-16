@@ -5110,6 +5110,56 @@ describe('applyOperation', () => {
 		])
 	})
 
+	test('row and column structural edits fail closed when sheet protection disallows them', () => {
+		const cases: readonly {
+			readonly op: Operation
+			readonly allowedOption: NonNullable<Sheet['protection']>
+		}[] = [
+			{
+				op: { op: 'insertRows', sheet: 'Sheet1', at: 1, count: 1 },
+				allowedOption: { insertRows: true },
+			},
+			{
+				op: { op: 'deleteRows', sheet: 'Sheet1', at: 1, count: 1 },
+				allowedOption: { deleteRows: true },
+			},
+			{
+				op: { op: 'insertCols', sheet: 'Sheet1', at: 1, count: 1 },
+				allowedOption: { insertColumns: true },
+			},
+			{
+				op: { op: 'deleteCols', sheet: 'Sheet1', at: 0, count: 1 },
+				allowedOption: { deleteColumns: true },
+			},
+		]
+
+		for (const { op, allowedOption } of cases) {
+			const blocked = setup()
+			const blockedSheet = blocked.getSheet('Sheet1')
+			if (!blockedSheet) throw new Error('missing sheet')
+			blockedSheet.protection = { sheet: true }
+			const beforeCells = [...blockedSheet.cells.iterate()]
+			const beforeProtection = blockedSheet.protection
+
+			const blockedResult = applyOperation(blocked, op)
+
+			expectErr(blockedResult)
+			expect(blockedResult.error.code, op.op).toBe('PROTECTION_ERROR')
+			expect(blockedResult.error.details, op.op).toMatchObject({
+				kind: 'sheet-protection-structural-edit-blocked',
+				sheetName: 'Sheet1',
+			})
+			expect([...blockedSheet.cells.iterate()], op.op).toEqual(beforeCells)
+			expect(blockedSheet.protection, op.op).toBe(beforeProtection)
+
+			const allowed = setup()
+			const allowedSheet = allowed.getSheet('Sheet1')
+			if (!allowedSheet) throw new Error('missing sheet')
+			allowedSheet.protection = { sheet: true, ...allowedOption }
+			expectOk(applyOperation(allowed, op))
+		}
+	})
+
 	test('deleteRows shrinks overlapping table, filter, and validation ranges', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')

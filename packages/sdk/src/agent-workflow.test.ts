@@ -3695,6 +3695,80 @@ describe('agent workflow loss audit', () => {
 		)
 	})
 
+	test('commits public query-table refresh metadata edits through save and reopen', async () => {
+		const input = join(TEMP_DIR, 'query-table-refresh.xlsx')
+		const output = join(TEMP_DIR, 'query-table-refresh-out.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		const sourceBytes = new Uint8Array(
+			readFileSync('fixtures/xlsx/libreoffice/TableEmptyHeaders.xlsx'),
+		)
+		await Bun.write(input, sourceBytes)
+		const ops = [
+			{
+				op: 'setConnectionRefresh' as const,
+				partPath: 'xl/queryTables/queryTable1.xml',
+				connectionId: 2,
+				refreshOnLoad: false,
+				saveData: true,
+				refreshedVersion: 6,
+			},
+		]
+
+		const plan = await createAgentPlan(input, ops)
+		expect(plan.writePolicy.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: 'table-preservation-risk',
+				severity: 'info',
+				partPaths: expect.arrayContaining([
+					'xl/queryTables/queryTable1.xml',
+					'xl/tables/table1.xml',
+				]),
+			}),
+		)
+		expect(plan.writePolicy.diagnostics).toContainEqual(
+			expect.objectContaining({
+				code: 'approval-required-feature',
+				severity: 'warning',
+				featureFamily: 'preservedQueryTable',
+			}),
+		)
+		const committed = await commitAgentPlan(input, ops, {
+			output,
+			approvals: plan.approvals.map((approval) => approval.id),
+		})
+
+		expect(committed.postWrite.reopened).toBe(true)
+		expect(committed.postWrite.auditsPassed).toBe(true)
+		const reopened = await AscendWorkbook.open(new Uint8Array(readFileSync(output)))
+		expect(reopened.connectionParts()).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					kind: 'queryTable',
+					partPath: 'xl/queryTables/queryTable1.xml',
+					name: 'ExternalData_1',
+					connectionId: 2,
+					refreshOnLoad: false,
+					saveData: true,
+					refreshedVersion: 6,
+				}),
+			]),
+		)
+		expect(reopened.refreshMetadata().entries).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					kind: 'queryTable',
+					partPath: 'xl/queryTables/queryTable1.xml',
+					state: 'cached',
+					warnings: [
+						'Query table refresh metadata is inspectable and editable without executing the query.',
+					],
+					recommendedOps: [],
+				}),
+			]),
+		)
+		expect(Buffer.from(readFileSync(input)).equals(Buffer.from(sourceBytes))).toBe(true)
+	})
+
 	test('routes analytics package graph issues into analytics diagnostics', async () => {
 		const input = join(TEMP_DIR, 'stale-pivot-override.xlsx')
 		mkdirSync(TEMP_DIR, { recursive: true })

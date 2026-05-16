@@ -924,6 +924,7 @@ export interface AgentModelOutput {
 interface ExpectedPostWritePackageGraphChanges {
 	readonly removedPartPaths: ReadonlySet<string>
 	readonly addedPartPaths: ReadonlySet<string>
+	readonly rewrittenPartPaths: ReadonlySet<string>
 }
 
 export interface ApprovalRequirement {
@@ -3472,6 +3473,7 @@ function postWritePhase(
 	expectedPackageGraphChanges: ExpectedPostWritePackageGraphChanges = {
 		removedPartPaths: new Set(),
 		addedPartPaths: new Set(),
+		rewrittenPartPaths: new Set(),
 	},
 ): AgentTracePhase {
 	const checkErrors = postWrite.check.issues.filter((issue) => issue.severity === 'error')
@@ -3694,6 +3696,7 @@ function expectedPackageGraphChangesForOperations(
 ): ExpectedPostWritePackageGraphChanges {
 	const removedPartPaths = new Set<string>()
 	const addedPartPaths = new Set<string>()
+	const rewrittenPartPaths = new Set<string>()
 	let nextTableNumber = nextGeneratedTablePartNumber(workbook, sourceGraph)
 	for (const op of ops) {
 		if (op.op === 'deleteSheet') {
@@ -3711,13 +3714,16 @@ function expectedPackageGraphChangesForOperations(
 				}
 			}
 		}
+		if (op.op === 'setConnectionRefresh' && op.partPath) {
+			rewrittenPartPaths.add(op.partPath)
+		}
 	}
 	if (ops.some((op) => operationInvalidatesCalcChain(workbook, op))) {
 		for (const part of sourceGraph.parts) {
 			if (part.featureFamily === 'preservedCalcChain') removedPartPaths.add(part.path)
 		}
 	}
-	return { removedPartPaths, addedPartPaths }
+	return { removedPartPaths, addedPartPaths, rewrittenPartPaths }
 }
 
 function isExpectedPostWritePackageGraphIssue(
@@ -3730,6 +3736,12 @@ function isExpectedPostWritePackageGraphIssue(
 		expected.addedPartPaths.has(targetPath) &&
 		issue.code === 'package_content_type_override' &&
 		issue.featureFamily === 'preservedTable'
+	) {
+		return true
+	}
+	if (
+		expected.rewrittenPartPaths.has(targetPath) &&
+		issue.code === 'package_preserved_part_bytes'
 	) {
 		return true
 	}

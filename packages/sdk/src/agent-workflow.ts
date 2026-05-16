@@ -412,6 +412,7 @@ export interface CompactAgentPostWriteVerification {
 	readonly preservation: CompactWritePlanSummary
 	readonly opaquePayloads: PostWriteOpaquePayloadSummary
 	readonly comments: PostWriteCommentSummary
+	readonly hyperlinks: PostWriteHyperlinkSummary
 	readonly tables: PostWriteTableSummary
 	readonly definedNames: PostWriteDefinedNameSummary
 	readonly externalReferences: PostWriteExternalReferenceSummary
@@ -454,6 +455,7 @@ export interface AgentPostWriteVerification {
 	readonly preservation: ReturnType<AscendWorkbook['writePlanSummary']>
 	readonly opaquePayloads: PostWriteOpaquePayloadSummary
 	readonly comments: PostWriteCommentSummary
+	readonly hyperlinks: PostWriteHyperlinkSummary
 	readonly tables: PostWriteTableSummary
 	readonly definedNames: PostWriteDefinedNameSummary
 	readonly externalReferences: PostWriteExternalReferenceSummary
@@ -484,6 +486,30 @@ export interface PostWriteCommentSummary {
 	readonly locations: readonly string[]
 	readonly threadedCommentPartPaths: readonly string[]
 	readonly verification: 'reopened-output'
+}
+
+export interface PostWriteHyperlinkSummary {
+	readonly total: number
+	readonly externalTargets: number
+	readonly internalLocations: number
+	readonly displayed: number
+	readonly withTooltips: number
+	readonly locations: readonly string[]
+	readonly targets: readonly string[]
+	readonly internalLocationTargets: readonly string[]
+	readonly links: readonly PostWriteHyperlinkEntry[]
+	readonly preservationMode: 'generated' | 'none'
+	readonly verification: 'reopened-output'
+}
+
+export interface PostWriteHyperlinkEntry {
+	readonly sheetName: string
+	readonly ref: string
+	readonly location: string
+	readonly target?: string
+	readonly internalLocation?: string
+	readonly display?: string
+	readonly tooltip?: string
 }
 
 export interface PostWriteTableSummary {
@@ -1856,6 +1882,7 @@ function compactPostWriteVerification(
 		preservation: compactWritePlanSummary(postWrite.preservation),
 		opaquePayloads: postWrite.opaquePayloads,
 		comments: postWrite.comments,
+		hyperlinks: postWrite.hyperlinks,
 		tables: postWrite.tables,
 		definedNames: postWrite.definedNames,
 		externalReferences: postWrite.externalReferences,
@@ -2358,6 +2385,7 @@ async function verifyWrittenWorkbook(
 	const workbook = reopened.value.getWorkbookModel()
 	const opaquePayloads = postWriteOpaquePayloadSummary(workbook)
 	const comments = postWriteCommentSummary(workbook)
+	const hyperlinks = postWriteHyperlinkSummary(workbook)
 	const tables = postWriteTableSummary(workbook)
 	const definedNames = postWriteDefinedNameSummary(workbook)
 	const externalReferences = postWriteExternalReferenceSummary(workbook)
@@ -2419,6 +2447,7 @@ async function verifyWrittenWorkbook(
 		preservation: preservation.value,
 		opaquePayloads,
 		comments,
+		hyperlinks,
 		tables,
 		definedNames,
 		externalReferences,
@@ -2448,6 +2477,35 @@ function postWriteCommentSummary(workbook: Workbook): PostWriteCommentSummary {
 		threadedCommentPartPaths: uniqueStrings(
 			threadedComments.flatMap((comment) => (comment.partPath ? [comment.partPath] : [])),
 		),
+		verification: 'reopened-output',
+	}
+}
+
+function postWriteHyperlinkSummary(workbook: Workbook): PostWriteHyperlinkSummary {
+	const links = workbook.sheets.flatMap((sheet) =>
+		[...sheet.hyperlinks.entries()].map(([ref, hyperlink]) => ({
+			sheetName: sheet.name,
+			ref,
+			location: `${sheet.name}!${ref}`,
+			...(hyperlink.target ? { target: hyperlink.target } : {}),
+			...(hyperlink.location ? { internalLocation: hyperlink.location } : {}),
+			...(hyperlink.display ? { display: hyperlink.display } : {}),
+			...(hyperlink.tooltip ? { tooltip: hyperlink.tooltip } : {}),
+		})),
+	)
+	return {
+		total: links.length,
+		externalTargets: links.filter((link) => link.target !== undefined).length,
+		internalLocations: links.filter((link) => link.internalLocation !== undefined).length,
+		displayed: links.filter((link) => link.display !== undefined).length,
+		withTooltips: links.filter((link) => link.tooltip !== undefined).length,
+		locations: links.map((link) => link.location),
+		targets: uniqueStrings(links.flatMap((link) => (link.target ? [link.target] : []))),
+		internalLocationTargets: uniqueStrings(
+			links.flatMap((link) => (link.internalLocation ? [link.internalLocation] : [])),
+		),
+		links,
+		preservationMode: links.length > 0 ? 'generated' : 'none',
 		verification: 'reopened-output',
 	}
 }

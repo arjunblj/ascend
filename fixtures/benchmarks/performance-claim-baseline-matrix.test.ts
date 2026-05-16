@@ -26,6 +26,8 @@ const UNAVAILABLE_RUNNER_ROWS = [
 	'fastxlsx',
 ]
 
+const RECORDED_WORKLOADS = ['dense-values', 'sparse-wide', 'string-heavy']
+
 describe('performance claim baseline matrix', () => {
 	test('pins scoped read evidence as a defer decision, not a speed claim', () => {
 		const markdown = readRepoFile(MATRIX_PATH)
@@ -35,6 +37,7 @@ describe('performance claim baseline matrix', () => {
 		expect(markdown).toContain(
 			'No broad XLSX read, SOTA, or QSS-leapfrog speed claim is promotable',
 		)
+		for (const workload of RECORDED_WORKLOADS) expect(markdown).toContain(`\`${workload}\``)
 		expect(markdown).toContain('Humble allowed wording:')
 		expect(markdown).toContain('Forbidden wording:')
 		expect(markdown).toContain('"Ascend is the fastest XLSX reader."')
@@ -44,7 +47,9 @@ describe('performance claim baseline matrix', () => {
 		expect(markdown).toContain('## Owner-Ready Benchmark Blocker')
 		expect(markdown).toContain('Owner: benchmarking/external baselines.')
 		expect(markdown).toContain('broad read-speed and QSS-leapfrog performance wording is blocked')
-		expect(markdown).toContain('do not optimize from this single `string-heavy` row')
+		expect(markdown).toContain(
+			'do not optimize from the partial `dense-values`, `sparse-wide`,\nand `string-heavy` rows',
+		)
 		expect(markdown).toContain(
 			'Failed, missing, or semantically mismatched runners are not counted as wins.',
 		)
@@ -76,9 +81,32 @@ describe('performance claim baseline matrix', () => {
 		expect(markdown).toContain('SheetJS `xlsx@0.18.5`')
 		expect(markdown).toContain('ExcelJS `4.4.0`')
 
+		expect(markdown).toContain('## Cycle: Sparse-Wide Value Read')
+		expect(markdown).toContain('Classification: defer. No production optimization is justified')
+		expect(markdown).toContain('generated `sparse-wide` workbook')
+		expect(markdown).toContain('Commit: `2e71900f`')
+		expect(markdown).toContain('5000 rows x 256 columns')
+		expect(markdown).toContain('23,093 populated cells')
+		expect(markdown).toContain('Median ms | P95 ms | CV')
+		expect(markdown).toContain(
+			'| Ascend | ran/won | `ascend-readxlsx-raw-values-operation-path` | 11.651 | 20.132 | 0.344 | 120.9 MiB |',
+		)
+		expect(markdown).toContain('| FastExcel Java | blocked | `fastexcel-java` | n/a')
+		expect(markdown).toContain('| ClosedXML | blocked | `closedxml` | n/a')
+		expect(markdown).toContain('| fastxlsx | runner unavailable | `fastxlsx` | n/a')
+		expect(markdown).toContain(
+			'"Ascend beats FastExcel Java, ClosedXML, or fastxlsx" from this run.',
+		)
+		expect(markdown).toContain('Continue profile expansion with `styles-heavy`')
+
 		expect(markdown).toContain('Promote: no.')
-		expect(markdown).toContain('Optimize: no production optimization from this single row.')
+		expect(markdown).toContain(
+			'Optimize: no production optimization from the partial profile rows.',
+		)
 		expect(markdown).toContain('Defer: yes.')
+		expect(markdown).toContain(
+			'The immediate next action is `styles-heavy` profile expansion plus runner hardening for FastExcel Java on `sparse-wide`, ClosedXML, and fastxlsx',
+		)
 	})
 })
 

@@ -10,10 +10,10 @@ This document is the tracked release claim artifact. `/private/tmp` paths below
 are reproducibility pointers to the clean run outputs, not required context for
 release wording.
 
-No broad XLSX read, SOTA, or QSS-leapfrog speed claim is promotable from this artifact. The run below is useful external baseline evidence for one release workflow, but it is not a clean full-profile claim because:
+No broad XLSX read, SOTA, or QSS-leapfrog speed claim is promotable from this artifact. The cycles below are useful external baseline evidence for scoped release workflows, but they are not a clean full-profile claim because:
 
 - `competitive-scoreboard --require-profile xlsx-read-sota` fails coverage for the rest of the profile.
-- The run covered one public/reproducible generated workload: `string-heavy`, `read-values`, `raw-ooxml`.
+- The recorded cycles cover public/reproducible generated `dense-values`, `sparse-wide`, and `string-heavy` `read-values` workloads over `raw-ooxml`, not the full profile.
 - Several external runners were unavailable or blocked in the clean benchmark worktree. They are recorded as blockers, not wins.
 - Several timing lanes are semantically related but not one unified timing boundary. Do not collapse in-process, preloaded-bytes, file-path, row-stream, and materialized-workbook timings into a single "wins everything" claim.
 
@@ -55,9 +55,10 @@ Acceptance evidence:
   input shape, and semantic comparability are recorded for each comparable row.
 - Failed, missing, or semantically mismatched runners are not counted as wins.
 
-Stop condition: do not optimize from this single `string-heavy` row. Optimize
-only after the full profile identifies one release workflow as a meaningful
-loss, unstable tail, or memory/latency tradeoff worth production work.
+Stop condition: do not optimize from the partial `dense-values`, `sparse-wide`,
+and `string-heavy` rows. Optimize only after the full profile identifies one
+release workflow as a meaningful loss, unstable tail, or memory/latency tradeoff
+worth production work.
 
 ## Cycle: Dense Value Read
 
@@ -303,8 +304,8 @@ Diagnostic note: an earlier run from the dirty main worktree had more Python/.NE
 
 Promote: no.
 
-Optimize: no production optimization from this single row. The top release action is not another micro-optimization; it is clean, broader external evidence.
+Optimize: no production optimization from the partial profile rows. The top release action is not another micro-optimization; it is clean, broader external evidence and runner hardening.
 
 Kill: no current optimization is killed by this row.
 
-Defer: yes. Defer all broad read-speed wording until a clean-tree full `xlsx-read-sota` run either passes coverage or records per-runner blockers without counting them as wins. The immediate next action is runner-environment hardening for `fastexcel`, `python-calamine`, Polars engines, `pyopenxlsx`, `fastxlsx`, and ClosedXML, followed by the full profile run.
+Defer: yes. Defer all broad read-speed wording until a clean-tree full `xlsx-read-sota` run either passes coverage or records per-runner blockers without counting them as wins. The immediate next action is `styles-heavy` profile expansion plus runner hardening for FastExcel Java on `sparse-wide`, ClosedXML, and fastxlsx, followed by the full profile run.

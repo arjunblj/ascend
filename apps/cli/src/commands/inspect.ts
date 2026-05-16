@@ -57,23 +57,61 @@ export async function inspectCommand(args: string[], flags: Map<string, string>)
 		detail === 'visuals'
 	const parsedMode = parseInspectMode(flags.get('mode'))
 	if (flags.has('mode') && parsedMode === null) {
-		cliError('Invalid --mode. Use one of: metadata, values, full', flags)
+		cliError(
+			invalidInspectArgumentError('Invalid --mode. Use one of: metadata, values, full', {
+				flag: 'mode',
+				received: flags.get('mode'),
+				allowed: ['metadata', 'values', 'full'],
+				suggestedFix: 'Use --mode metadata, --mode values, or --mode full before planning edits.',
+			}),
+			flags,
+		)
 		return 1
 	}
 	if (agentTrustReport && detail) {
 		cliError(
-			'Use --agent without --detail; the trust report includes agent-facing findings.',
+			invalidInspectArgumentError(
+				'Use --agent without --detail; the trust report includes agent-facing findings.',
+				{
+					flag: 'detail',
+					received: detail,
+					conflictsWith: 'agent',
+					suggestedFix:
+						'Run ascend inspect <file> --agent --json for trust reporting, or remove --agent for detail views.',
+				},
+			),
 			flags,
 		)
 		return 1
 	}
 	if (agentTrustReport && sheetArg) {
-		cliError('Use --agent without a sheet name; trust reports are workbook-level.', flags)
+		cliError(
+			invalidInspectArgumentError(
+				'Use --agent without a sheet name; trust reports are workbook-level.',
+				{
+					flag: 'sheet',
+					received: sheetArg,
+					conflictsWith: 'agent',
+					suggestedFix:
+						'Run ascend inspect <file> --agent --json for workbook-level trust reporting, then inspect a sheet separately.',
+				},
+			),
+			flags,
+		)
 		return 1
 	}
 	const explicitMode = parsedMode ?? undefined
 	if (detail && sheetArg && explicitMode && explicitMode !== 'full') {
-		cliError('Sheet detail views require --mode full', flags)
+		cliError(
+			invalidInspectArgumentError('Sheet detail views require --mode full', {
+				flag: 'mode',
+				received: flags.get('mode'),
+				required: 'full',
+				suggestedFix:
+					'Run ascend inspect <file> <sheet> --detail <type> --mode full --json for sheet detail views.',
+			}),
+			flags,
+		)
 		return 1
 	}
 
@@ -357,6 +395,33 @@ function parseInspectMode(
 		default:
 			return null
 	}
+}
+
+function invalidInspectArgumentError(
+	message: string,
+	details: {
+		flag: string
+		received?: string | undefined
+		allowed?: readonly string[]
+		conflictsWith?: string
+		required?: string
+		suggestedFix: string
+	},
+) {
+	return ascendError('INVALID_ARGUMENT', message, {
+		retryable: true,
+		retryStrategy: 'modified',
+		details: {
+			command: 'inspect',
+			flag: details.flag,
+			...(details.received !== undefined ? { received: details.received } : {}),
+			...(details.allowed ? { allowed: details.allowed } : {}),
+			...(details.conflictsWith ? { conflictsWith: details.conflictsWith } : {}),
+			...(details.required ? { required: details.required } : {}),
+			workflow: ['open-plan', 'inspect', 'plan'],
+		},
+		suggestedFix: details.suggestedFix,
+	})
 }
 
 function printSheetDetail(

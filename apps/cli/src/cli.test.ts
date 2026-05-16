@@ -1026,7 +1026,7 @@ describe('ascend cli', () => {
 		}
 	})
 
-	test('legacy string cli errors still return coded JSON failures', async () => {
+	test('CLI JSON validation errors include command-specific guidance and fallback codes', async () => {
 		const invalidMode = await run('inspect', TEST_FILE, '--mode', 'bad', '--json')
 		expect(invalidMode.exitCode).toBe(1)
 		const parsedInvalidMode = JSON.parse(invalidMode.stdout)
@@ -1037,9 +1037,37 @@ describe('ascend cli', () => {
 				message: 'Invalid --mode. Use one of: metadata, values, full',
 				retryable: true,
 				retryStrategy: 'modified',
-				suggestedFix: 'Adjust the command arguments or flags and retry.',
+				details: {
+					command: 'inspect',
+					flag: 'mode',
+					received: 'bad',
+					allowed: ['metadata', 'values', 'full'],
+					workflow: ['open-plan', 'inspect', 'plan'],
+				},
 			},
 		})
+		expect(parsedInvalidMode.error.suggestedFix).toContain('--mode metadata')
+
+		const invalidReadLimit = await run('read', TEST_FILE, 'Sheet1!A1', '--row-limit', '0', '--json')
+		expect(invalidReadLimit.exitCode).toBe(1)
+		const parsedInvalidReadLimit = JSON.parse(invalidReadLimit.stdout)
+		expect(parsedInvalidReadLimit).toMatchObject({
+			ok: false,
+			error: {
+				code: 'INVALID_ARGUMENT',
+				message: 'Invalid --row-limit. Use a positive integer.',
+				retryable: true,
+				retryStrategy: 'modified',
+				details: {
+					command: 'read',
+					flag: 'row-limit',
+					received: '0',
+					expected: 'positive integer',
+					workflow: ['inspect', 'read', 'plan'],
+				},
+			},
+		})
+		expect(parsedInvalidReadLimit.error.suggestedFix).toContain('--row-limit 1')
 
 		const unknownFormula = await run('formula', 'wat', '--json')
 		expect(unknownFormula.exitCode).toBe(1)

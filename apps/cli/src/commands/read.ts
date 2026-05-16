@@ -46,17 +46,44 @@ export async function readCommand(args: string[], flags: Map<string, string>): P
 	const requestedSheet = flags.get('sheet')
 	const explicitMode = parseReadMode(flags.get('mode'))
 	if (flags.has('mode') && explicitMode === null) {
-		cliError('Invalid --mode. Use one of: values, full', flags)
+		cliError(
+			invalidReadArgumentError('Invalid --mode. Use one of: values, full', {
+				flag: 'mode',
+				received: flags.get('mode'),
+				allowed: ['values', 'full'],
+				suggestedFix:
+					'Use --mode values for fast reads or --mode full when rich metadata is required.',
+			}),
+			flags,
+		)
 		return 1
 	}
 	const rowOffset = parseOptionalInt(flags.get('row-offset'))
 	if (flags.has('row-offset') && rowOffset == null) {
-		cliError('Invalid --row-offset. Use a non-negative integer.', flags)
+		cliError(
+			invalidReadArgumentError('Invalid --row-offset. Use a non-negative integer.', {
+				flag: 'row-offset',
+				received: flags.get('row-offset'),
+				expected: 'non-negative integer',
+				suggestedFix:
+					'Use --row-offset 0 or another non-negative integer when paging large read results.',
+			}),
+			flags,
+		)
 		return 1
 	}
 	const rowLimit = parseOptionalInt(flags.get('row-limit'))
 	if (flags.has('row-limit') && (rowLimit == null || rowLimit < 1)) {
-		cliError('Invalid --row-limit. Use a positive integer.', flags)
+		cliError(
+			invalidReadArgumentError('Invalid --row-limit. Use a positive integer.', {
+				flag: 'row-limit',
+				received: flags.get('row-limit'),
+				expected: 'positive integer',
+				suggestedFix:
+					'Use --row-limit 1 or another positive integer to cap read output for agent context.',
+			}),
+			flags,
+		)
 		return 1
 	}
 	const validatedRowOffset = rowOffset ?? undefined
@@ -416,4 +443,29 @@ function parseReadMode(mode: string | undefined): 'values' | 'full' | undefined 
 		default:
 			return null
 	}
+}
+
+function invalidReadArgumentError(
+	message: string,
+	details: {
+		flag: string
+		received?: string | undefined
+		allowed?: readonly string[]
+		expected?: string
+		suggestedFix: string
+	},
+) {
+	return ascendError('INVALID_ARGUMENT', message, {
+		retryable: true,
+		retryStrategy: 'modified',
+		details: {
+			command: 'read',
+			flag: details.flag,
+			...(details.received !== undefined ? { received: details.received } : {}),
+			...(details.allowed ? { allowed: details.allowed } : {}),
+			...(details.expected ? { expected: details.expected } : {}),
+			workflow: ['inspect', 'read', 'plan'],
+		},
+		suggestedFix: details.suggestedFix,
+	})
 }

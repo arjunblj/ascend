@@ -825,6 +825,15 @@ export interface PostWriteChartEntry {
 	readonly chartType?: string
 	readonly title?: string
 	readonly seriesCount: number
+	readonly series: readonly PostWriteChartSeriesEntry[]
+}
+
+export interface PostWriteChartSeriesEntry {
+	readonly index: number
+	readonly nameRef?: string
+	readonly nameText?: string
+	readonly categoryRef?: string
+	readonly valueRef?: string
 }
 
 export interface AgentPostWriteVerificationTimings {
@@ -3093,6 +3102,13 @@ function postWriteVisualSummary(workbook: Workbook): PostWriteVisualSummary {
 		...(chart.chartType ? { chartType: chart.chartType } : {}),
 		...(chart.title ? { title: chart.title } : {}),
 		seriesCount: chart.series.length,
+		series: chart.series.map((series, index) => ({
+			index,
+			...(series.nameRef ? { nameRef: series.nameRef } : {}),
+			...(series.nameText ? { nameText: series.nameText } : {}),
+			...(series.categoryRef ? { categoryRef: series.categoryRef } : {}),
+			...(series.valueRef ? { valueRef: series.valueRef } : {}),
+		})),
 	}))
 	const chartSheetPartPaths = workbook.chartSheets.flatMap(
 		(chartSheet) => chartSheet.chartPartPaths,

@@ -1,7 +1,15 @@
-import { describe, expect, test } from 'bun:test'
-import { readFileSync } from 'node:fs'
+import { afterEach, describe, expect, test } from 'bun:test'
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { auditXlsxPackageGraphSafeEditIntegrity, inspectXlsxPackageGraph } from '@ascend/io-xlsx'
-import { AscendWorkbook, type ChartPartInfo } from '@ascend/sdk'
+import { AscendWorkbook, type ChartPartInfo, commitAgentPlan, createAgentPlan } from '@ascend/sdk'
+
+const TEMP_DIR = join(tmpdir(), `ascend-chart-contract-${process.pid}`)
+
+afterEach(() => {
+	if (existsSync(TEMP_DIR)) rmSync(TEMP_DIR, { recursive: true, force: true })
+})
 
 function loadFixture(path: string): Uint8Array {
 	return new Uint8Array(readFileSync(new URL(path, import.meta.url)))
@@ -35,6 +43,64 @@ async function openChartContract(bytes: Uint8Array, partPath: string): Promise<u
 }
 
 describe('chart corpus contract', () => {
+	test('commit proof reports reopened public chart series sources after approved edit', async () => {
+		const input = join(TEMP_DIR, 'closedxml-chart.xlsx')
+		const output = join(TEMP_DIR, 'closedxml-chart-out.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		const source = loadFixture('../xlsx/closedxml/Other_Charts_PreserveCharts_inputfile.xlsx')
+		await Bun.write(input, source)
+		const ops = [
+			{
+				op: 'setChartSeriesSource' as const,
+				partPath: 'xl/charts/chart1.xml',
+				seriesIndex: 0,
+				valueRef: 'Sheet1!$C$2:$C$8',
+			},
+		]
+
+		const plan = await createAgentPlan(input, ops)
+		expect(
+			plan.writePolicy.diagnostics.some((diagnostic) => diagnostic.severity === 'blocker'),
+		).toBe(false)
+		const committed = await commitAgentPlan(input, ops, {
+			output,
+			approvals: plan.approvals.map((approval) => approval.id),
+		})
+
+		expect(committed.postWrite.auditsPassed).toBe(true)
+		expect(committed.postWrite.visuals.charts).toContainEqual(
+			expect.objectContaining({
+				partPath: 'xl/charts/chart1.xml',
+				sheetName: 'Sheet2',
+				chartType: 'lineChart',
+				seriesCount: 1,
+				series: [
+					{
+						index: 0,
+						nameRef: 'Sheet1!$B$1',
+						nameText: 'Value',
+						categoryRef: 'Sheet1!$A$2:$A$8',
+						valueRef: 'Sheet1!$C$2:$C$8',
+					},
+				],
+			}),
+		)
+		const reopened = await AscendWorkbook.open(new Uint8Array(readFileSync(output)))
+		expect(chartContract(chartByPart(reopened, 'xl/charts/chart1.xml'))).toMatchObject({
+			partPath: 'xl/charts/chart1.xml',
+			sheetName: 'Sheet2',
+			series: [
+				expect.objectContaining({
+					nameRef: 'Sheet1!$B$1',
+					nameText: 'Value',
+					categoryRef: 'Sheet1!$A$2:$A$8',
+					valueRef: 'Sheet1!$C$2:$C$8',
+				}),
+			],
+		})
+		expect(Buffer.from(readFileSync(input)).equals(Buffer.from(source))).toBe(true)
+	})
+
 	test('edits a public ClosedXML worksheet chart series source with exact journal and clean reopen', async () => {
 		const source = loadFixture('../xlsx/closedxml/Other_Charts_PreserveCharts_inputfile.xlsx')
 		const workbook = await AscendWorkbook.open(source)

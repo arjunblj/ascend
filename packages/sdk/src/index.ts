@@ -57,6 +57,7 @@ export type {
 	PostWriteActiveContentSummary,
 	PostWriteAnalyticsSummary,
 	PostWriteChartEntry,
+	PostWriteChartSeriesEntry,
 	PostWriteCommentSummary,
 	PostWriteDataConnectionEntry,
 	PostWriteDataConnectionSummary,

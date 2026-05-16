@@ -7,6 +7,7 @@ import type {
 	PostWriteActiveContentSummary,
 	PostWriteAnalyticsSummary,
 	PostWriteChartEntry,
+	PostWriteChartSeriesEntry,
 	PostWriteCommentSummary,
 	PostWriteDataConnectionEntry,
 	PostWriteDataConnectionSummary,
@@ -39,6 +40,7 @@ type CommitProofExportSurface = {
 	readonly activeContentSummary?: PostWriteActiveContentSummary
 	readonly analytics?: PostWriteAnalyticsSummary
 	readonly chart?: PostWriteChartEntry
+	readonly chartSeries?: PostWriteChartSeriesEntry
 	readonly comment?: PostWriteCommentSummary
 	readonly dataConnection?: PostWriteDataConnectionEntry
 	readonly dataConnections?: PostWriteDataConnectionSummary
@@ -75,6 +77,7 @@ test('root SDK exports commit proof audit types for release consumers', () => {
 		'activeContentSummary',
 		'analytics',
 		'chart',
+		'chartSeries',
 		'comment',
 		'dataConnection',
 		'dataConnections',

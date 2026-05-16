@@ -50,6 +50,7 @@ describe('XLSX package graph', () => {
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rIdChart" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="../charts/chart1.xml"/>
   <Relationship Id="rIdImage" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image%201.png"/>
+  <Relationship Id="rIdLinkedImage" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="https://example.invalid/logo.png" TargetMode="External"/>
 </Relationships>`,
 			'xl/charts/chart1.xml': '<c:chartSpace/>',
 			'xl/charts/style1.xml': '<cs:chartStyle/>',
@@ -95,6 +96,15 @@ describe('XLSX package graph', () => {
 			type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image',
 			rawTarget: '../media/image%201.png',
 			resolvedTarget: 'xl/media/image 1.png',
+			featureFamily: 'preservedMedia',
+		})
+		expect(graph.relationships).toContainEqual({
+			sourcePartPath: 'xl/drawings/drawing1.xml',
+			relationshipPartPath: 'xl/drawings/_rels/drawing1.xml.rels',
+			id: 'rIdLinkedImage',
+			type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image',
+			rawTarget: 'https://example.invalid/logo.png',
+			targetMode: 'External',
 			featureFamily: 'preservedMedia',
 		})
 		expect(graph.parts.find((part) => part.path === 'xl/workbook.xml')).toMatchObject({

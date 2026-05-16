@@ -12,6 +12,7 @@ import {
 	REL_COMMENTS,
 	REL_CONNECTIONS,
 	REL_DRAWING,
+	REL_IMAGE,
 	REL_MACROSHEET,
 	REL_OFFICE_DOC,
 	REL_PIVOT_CACHE_DEFINITION,
@@ -455,6 +456,7 @@ function classifyRelationshipFeatureFamily(
 	if (relationship.type === REL_DRAWING) return 'preservedDrawing'
 	if (relationship.type === REL_VML_DRAWING) return 'preservedVml'
 	if (relationship.type === REL_CHART) return 'preservedChart'
+	if (relationship.type === REL_IMAGE) return 'preservedMedia'
 	if (isExternalLinkPathRelationshipType(relationship.type)) return 'preservedExternalLink'
 	if (
 		relationship.type === REL_PIVOT_TABLE ||

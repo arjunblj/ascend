@@ -71,6 +71,46 @@ describe('AscendWorkbook', () => {
 		await expect(Ascend.open(new Uint8Array(encrypted))).rejects.toThrow('requires a password')
 	})
 
+	test('dirty signed workbooks require explicit signature invalidation before export', async () => {
+		const signed = makeSignedXlsx()
+		const wb = await Ascend.open(signed)
+		expect(wb.trustReport().findings).toContainEqual(
+			expect.objectContaining({
+				code: 'workbook.signature',
+			}),
+		)
+		expect(Buffer.from(wb.toBytes()).equals(Buffer.from(signed))).toBe(true)
+
+		const changed = wb.apply([
+			{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'unsigned edit' }] },
+		])
+		expect(changed.errors).toEqual([])
+		expect(() => wb.toBytes()).toThrow(
+			'Cannot export an edited signed workbook without explicit signature invalidation approval',
+		)
+		const unsignedGraph = wb.packageGraph()
+		expect(unsignedGraph.parts.map((part) => part.path)).not.toContain('_xmlsignatures/origin.sigs')
+		expect(() => wb.toBytes()).toThrow(
+			'Cannot export an edited signed workbook without explicit signature invalidation approval',
+		)
+
+		const unsigned = wb.toBytes({ allowSignatureInvalidation: true })
+		const archive = extractZip(unsigned)
+		expect(archive.readBytes('_xmlsignatures/origin.sigs')).toBeUndefined()
+		expect(archive.readBytes('_xmlsignatures/sig1.xml')).toBeUndefined()
+		const reopened = await Ascend.open(unsigned)
+		expect(reopened.trustReport().findings).not.toContainEqual(
+			expect.objectContaining({ code: 'workbook.signature' }),
+		)
+		expect(reopened.sheet('Sheet1')?.cell('A1')?.value).toEqual({
+			kind: 'string',
+			value: 'unsigned edit',
+		})
+		expect(() => wb.toBytes()).toThrow(
+			'Cannot export an edited signed workbook without explicit signature invalidation approval',
+		)
+	})
+
 	test('writes sheet protection from plaintext as a legacy Excel hash', async () => {
 		const wb = Ascend.create()
 		const result = wb.apply([
@@ -4603,4 +4643,40 @@ function makeSyntheticXlsx(parts: Record<string, string | Uint8Array>): Uint8Arr
 		entries.set(path, typeof content === 'string' ? encode(content) : content)
 	}
 	return createZip(entries)
+}
+
+function makeSignedXlsx(): Uint8Array {
+	return makeSyntheticXlsx({
+		'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/_xmlsignatures/origin.sigs" ContentType="application/vnd.openxmlformats-package.digital-signature-origin"/>
+  <Override PartName="/_xmlsignatures/sig1.xml" ContentType="application/vnd.openxmlformats-package.digital-signature-xmlsignature+xml"/>
+</Types>`,
+		'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+  <Relationship Id="rIdSignatureOrigin" Type="http://schemas.openxmlformats.org/package/2006/relationships/digital-signature/origin" Target="_xmlsignatures/origin.sigs"/>
+</Relationships>`,
+		'_xmlsignatures/_rels/origin.sigs.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSignature" Type="http://schemas.openxmlformats.org/package/2006/relationships/digital-signature/signature" Target="sig1.xml"/>
+</Relationships>`,
+		'xl/workbook.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Sheet1" sheetId="1" r:id="rIdSheet1"/></sheets>
+</workbook>`,
+		'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSheet1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`,
+		'xl/worksheets/sheet1.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`,
+		'_xmlsignatures/origin.sigs': '',
+		'_xmlsignatures/sig1.xml':
+			'<?xml version="1.0"?><Signature xmlns="http://www.w3.org/2000/09/xmldsig#"/>',
+	})
 }

@@ -120,6 +120,7 @@ export interface ApplyOptions {
 export interface WorkbookBytesOptions {
 	readonly compressionProfile?: ZipCompressionProfile
 	readonly allowDecryptedExport?: boolean
+	readonly allowSignatureInvalidation?: boolean
 }
 
 interface WorkbookMutationRollbackSnapshot {
@@ -1494,6 +1495,24 @@ export class AscendWorkbook extends WorkbookReadView {
 				),
 			)
 		}
+		if (this.hasInvalidatedSignatureContent() && !options.allowSignatureInvalidation) {
+			throw new AscendException(
+				ascendError(
+					'EXPORT_ERROR',
+					'Cannot export an edited signed workbook without explicit signature invalidation approval.',
+					{
+						details: {
+							signatureInvalidationSupported: true,
+							reSigningSupported: false,
+							requestedExport: 'xlsx',
+							signatureParts: this.invalidatedSignaturePartPaths(),
+						},
+						suggestedFix:
+							'Reopen the original signed workbook without editing, or pass allowSignatureInvalidation: true only when the caller explicitly accepts an unsigned output and will re-sign outside Ascend if signature trust matters.',
+					},
+				),
+			)
+		}
 		const sourceArchive = this.getSourceArchive()
 		const dirtyCellPatches = this.dirtyCellPatchOptions()
 		const writeOptions: import('@ascend/io-xlsx').WriteXlsxOptions = {
@@ -1511,6 +1530,9 @@ export class AscendWorkbook extends WorkbookReadView {
 		const result = writeXlsx(this.wb, this.caps.length > 0 ? this.caps : undefined, writeOptions)
 		if (!result.ok) throw new AscendException(result.error)
 		if (this.sourceWasEncrypted && options.allowDecryptedExport) return result.value
+		if (this.hasInvalidatedSignatureContent() && options.allowSignatureInvalidation) {
+			return result.value
+		}
 		this.captureSerializedState(result.value)
 		return result.value
 	}
@@ -1562,7 +1584,10 @@ export class AscendWorkbook extends WorkbookReadView {
 				? this.wb.sourceArchiveBytes
 				: this.originalBytes && !this.dirty
 					? this.originalBytes
-					: this.toBytes({ allowDecryptedExport: this.sourceWasEncrypted })
+					: this.toBytes({
+							allowDecryptedExport: this.sourceWasEncrypted,
+							allowSignatureInvalidation: this.hasInvalidatedSignatureContent(),
+						})
 		if (this.packageGraphCache?.bytes === bytes) return this.packageGraphCache.graph
 		const graph = inspectXlsxPackageGraph(bytes)
 		this.packageGraphCache = { bytes, graph }
@@ -1574,6 +1599,20 @@ export class AscendWorkbook extends WorkbookReadView {
 		const packageGraph =
 			options.packageGraph ?? (info.sourceFormat === 'xlsx' ? this.packageGraph() : undefined)
 		return super.trustReport({ ...options, ...(packageGraph ? { packageGraph } : {}) })
+	}
+
+	private hasInvalidatedSignatureContent(): boolean {
+		return this.dirty && this.invalidatedSignaturePartPaths().length > 0
+	}
+
+	private invalidatedSignaturePartPaths(): readonly string[] {
+		return this.wb.activeContent
+			.filter(
+				(entry) =>
+					(entry.kind === 'digitalSignature' || entry.kind === 'vbaSignature') &&
+					entry.invalidationPolicy === 'invalidatedByPackageEdit',
+			)
+			.map((entry) => entry.partPath)
 	}
 
 	rawPackagePart(options: RawPackagePartOptions): RawPackagePartInfo {

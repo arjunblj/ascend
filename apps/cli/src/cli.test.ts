@@ -425,6 +425,46 @@ describe('ascend cli', () => {
 		expect(parsed.data.safetyDefaults.join('\n')).toContain('must not echo the password')
 	})
 
+	test('open-plan --json returns structured missing workbook guidance', async () => {
+		const result = await run('open-plan', '--json')
+		expect(result.exitCode).toBe(1)
+		const parsed = JSON.parse(result.stdout)
+		expect(parsed.ok).toBe(false)
+		expect(parsed.error).toMatchObject({
+			code: 'INVALID_ARGUMENT',
+			message: 'Missing required open-plan input',
+			retryable: true,
+			retryStrategy: 'modified',
+			details: {
+				command: 'open-plan',
+				required: ['file'],
+				missing: ['file'],
+				workflow: ['open-plan', 'inspect', 'plan', 'commit', 'reopen', 'verify'],
+			},
+		})
+		expect(parsed.error.suggestedFix).toContain('ascend open-plan <file> --json')
+	})
+
+	test('inspect --json returns structured missing workbook guidance', async () => {
+		const result = await run('inspect', '--json')
+		expect(result.exitCode).toBe(1)
+		const parsed = JSON.parse(result.stdout)
+		expect(parsed.ok).toBe(false)
+		expect(parsed.error).toMatchObject({
+			code: 'INVALID_ARGUMENT',
+			message: 'Missing required inspect input',
+			retryable: true,
+			retryStrategy: 'modified',
+			details: {
+				command: 'inspect',
+				required: ['file'],
+				missing: ['file'],
+				workflow: ['open-plan', 'inspect', 'plan', 'commit', 'reopen', 'verify'],
+			},
+		})
+		expect(parsed.error.suggestedFix).toContain('ascend inspect <file> --agent --json')
+	})
+
 	test('plan and commit implement safe agent workflow', async () => {
 		const wb = AscendWorkbook.create()
 		await wb.save(`${import.meta.dir}/${TEST_FILE}`)

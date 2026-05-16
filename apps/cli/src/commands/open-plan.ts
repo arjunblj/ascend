@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs'
+import { ascendError } from '@ascend/schema'
 import {
 	inspectWorkbookOpenPlan,
 	type WorkbookOpenIntent,
@@ -23,7 +24,21 @@ Flags:
 export async function openPlanCommand(args: string[], flags: Map<string, string>): Promise<number> {
 	const file = args[0]
 	if (!file) {
-		cliError('Usage: ascend open-plan <file>', flags)
+		cliError(
+			ascendError('INVALID_ARGUMENT', 'Missing required open-plan input', {
+				retryable: true,
+				retryStrategy: 'modified',
+				details: {
+					command: 'open-plan',
+					required: ['file'],
+					missing: ['file'],
+					workflow: ['open-plan', 'inspect', 'plan', 'commit', 'reopen', 'verify'],
+				},
+				suggestedFix:
+					'Run ascend open-plan <file> --json before hydrating an unknown XLSX/XLSM workbook.',
+			}),
+			flags,
+		)
 		return 1
 	}
 

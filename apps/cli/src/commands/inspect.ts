@@ -1,3 +1,4 @@
+import { ascendError } from '@ascend/schema'
 import type { WorkbookDocument } from '@ascend/sdk'
 import { cliError, jsonOut } from '../output/json.ts'
 import { bullet, formatCellValue, heading, table } from '../output/pretty.ts'
@@ -23,7 +24,21 @@ Flags:
 export async function inspectCommand(args: string[], flags: Map<string, string>): Promise<number> {
 	const file = args[0]
 	if (!file) {
-		cliError('Usage: ascend inspect <file> [sheet]', flags)
+		cliError(
+			ascendError('INVALID_ARGUMENT', 'Missing required inspect input', {
+				retryable: true,
+				retryStrategy: 'modified',
+				details: {
+					command: 'inspect',
+					required: ['file'],
+					missing: ['file'],
+					workflow: ['open-plan', 'inspect', 'plan', 'commit', 'reopen', 'verify'],
+				},
+				suggestedFix:
+					'Run ascend inspect <file> --agent --json for an agent-safe trust report, or ascend inspect <file> --json for workbook structure.',
+			}),
+			flags,
+		)
 		return 1
 	}
 

@@ -4243,17 +4243,18 @@ function releaseDecisionBenchmarkCorpusRunContract(
 	if (name === 'formula-oracle-routing') {
 		return {
 			runInputScope:
-				'Public LibreOffice formula corpus manifest, formula-fidelity tag, and max-workbooks 5 smoke profile.',
+				'Full public LibreOffice formula corpus manifest with formula-fidelity tag, 34 workbooks, 418 formulas, and 402 cached formulas compared.',
 			runEnvironment:
 				'Local public-corpus run only; cached-value routing evidence cannot count private corpora or unavailable Excel oracle execution as parity.',
 			requiredOutputEvidence: [
-				'Mismatch classes, skip counters, divergence counters, and route counts for cached/static/oracle gaps.',
+				'Thresholded JSON proves 23 accepted mismatches, 0 unaccepted mismatches, 0 semantic mismatches, 22 numeric-drift mismatches, 1 stale-oracle mismatch, and 34 semantic-perfect workbooks.',
+				'Strict zero-mismatch command remains captured as blocker evidence until accepted mismatches have owner-approved wording and non-accepted oracle routes have real artifacts.',
 				'Named HyperFormula, LibreOffice, Excel, or static-golden adapter gaps before any Excel-compatible formula wording.',
 			],
 			promotionCondition:
-				'Promote only after public corpus artifacts and real oracle adapters emit reproducible skip/divergence evidence with owner-approved thresholds.',
+				'Promote only after public corpus artifacts and real oracle adapters emit reproducible non-accepted route, skip, divergence, and verifier evidence with owner-approved thresholds.',
 			stopCondition:
-				'Stop at a corpus blocker or adapter blocker; do not add formula compatibility wording from cached-value routing alone.',
+				'Stop at the public-corpus threshold gate plus a named corpus-class or adapter blocker; do not add formula compatibility wording from cached-value routing alone.',
 		}
 	}
 	if (name === 'columnar-scan-sidecars') {
@@ -4803,8 +4804,9 @@ function releaseDecisionValidationCommands(
 			]
 		case 'formula-oracle-routing':
 			return [
-				'bun test fixtures/benchmarks/formula-corpus-correctness.test.ts --timeout 30000',
-				'bun run fixtures/benchmarks/formula-corpus-correctness.ts --corpus-root fixtures/xlsx/libreoffice --manifest fixtures/xlsx/libreoffice/manifest.ts --tag formula-fidelity --max-workbooks 5 --json',
+				'bun test fixtures/benchmarks/formula-corpus-correctness.test.ts fixtures/xlsx/libreoffice-fixtures.test.ts --timeout 60000',
+				'bun run fixtures/benchmarks/formula-corpus-correctness.ts --corpus-root fixtures/xlsx/libreoffice --manifest fixtures/xlsx/libreoffice/manifest.ts --tag formula-fidelity --max-mismatches 23 --max-unaccepted-mismatches 0 --max-semantic-mismatches 0 --max-errors 0 --min-workbooks 34 --min-formulas 418 --min-compared-formulas 402 --min-semantic-perfect-workbooks 34 --json',
+				'bun run fixtures/benchmarks/formula-corpus-correctness.ts --corpus-root fixtures/xlsx/libreoffice --manifest fixtures/xlsx/libreoffice/manifest.ts --tag formula-fidelity --max-mismatches 0 --max-accepted-mismatches 0 --max-unaccepted-mismatches 0 --max-semantic-mismatches 0 --max-volatile-oracle-skips 0 --max-errors 0 --json',
 			]
 		case 'property-journal-laws':
 			return [
@@ -5663,17 +5665,18 @@ const COLUMNAR_SIDECAR_BLOCKER = {
 
 const FORMULA_ORACLE_ROUTING_BLOCKER = {
 	ownerAction:
-		'Correctness owner keeps formula-oracle-routing out of release wording, reruns `bun test fixtures/benchmarks/formula-corpus-correctness.test.ts --timeout 30000` and `bun run fixtures/benchmarks/formula-corpus-correctness.ts --corpus-root fixtures/xlsx/libreoffice --manifest fixtures/xlsx/libreoffice/manifest.ts --tag formula-fidelity --max-workbooks 5 --json`, then adds public corpus artifacts and real HyperFormula/LibreOffice/Excel/static-golden oracle adapters with skip/divergence counters before any Excel-compatible formula wording.',
+		'Formula/Calc correctness owner keeps formula-oracle-routing out of release wording, reruns `bun test fixtures/benchmarks/formula-corpus-correctness.test.ts fixtures/xlsx/libreoffice-fixtures.test.ts --timeout 60000` and the full public LibreOffice command `bun run fixtures/benchmarks/formula-corpus-correctness.ts --corpus-root fixtures/xlsx/libreoffice --manifest fixtures/xlsx/libreoffice/manifest.ts --tag formula-fidelity --max-mismatches 23 --max-unaccepted-mismatches 0 --max-semantic-mismatches 0 --max-errors 0 --min-workbooks 34 --min-formulas 418 --min-compared-formulas 402 --min-semantic-perfect-workbooks 34 --json`, then adds public oracle-class fixtures or real HyperFormula/LibreOffice/Excel/static-golden adapters that make non-accepted route counts, skip counters, divergence counters, and verifier artifacts reproducible before any Excel-compatible formula wording.',
 	allowedWording:
 		'Do not promote formula-oracle-routing as release wording today. Allowed wording: public cached-value corpus routing can report sampled formula counts, skips, mismatch classes, and oracle gaps; it does not prove Excel-compatible formulas.',
 	evidenceWeHave: [
 		'Formula corpus correctness tests cover TypeScript corpus manifests, cached-value comparisons, date-system-sensitive formulas, control-character strings, mismatch references, no-cached-value skips, volatile oracle skips, accepted numeric drift, stale oracle routing, assertion gates, and CLI threshold gates in `fixtures/benchmarks/formula-corpus-correctness.test.ts`.',
-		'Public cached-value corpus command exists: `bun run fixtures/benchmarks/formula-corpus-correctness.ts --corpus-root fixtures/xlsx/libreoffice --manifest fixtures/xlsx/libreoffice/manifest.ts --tag formula-fidelity --max-workbooks 5 --json` reports workbook/formula/compared counts, mismatch classes, skip counts, route counts, and source URLs.',
+		'Public LibreOffice fixture gate in `fixtures/xlsx/libreoffice-fixtures.test.ts` over `fixtures/xlsx/libreoffice/manifest.ts` pins 34 workbooks, 418 formulas, 402 compared formulas, 23 accepted mismatches, 0 unaccepted mismatches, 0 semantic mismatches, 22 numeric-drift mismatches, 1 stale-oracle mismatch, 32 perfect workbooks, and 34 semantic-perfect workbooks.',
+		'Strict zero-mismatch release wording is currently blocked by real public output: `formula corpus correctness failed: mismatches 23 exceeded 0; accepted mismatches 23 exceeded 0` from the full LibreOffice formula-fidelity corpus with zero-mismatch thresholds.',
 		'HyperFormula comparator smoke tests exist in `fixtures/benchmarks/formula-sota.test.ts`, but they are performance/correctness comparator evidence, not a formula-corpus oracle replacement.',
 	],
 	evidenceMissing: [
 		'Runnable public corpus artifacts for cached-only, volatile, numeric drift, unsupported function, external refs, dynamic arrays, structured refs, and date-system mismatch classes with stable expected route counts.',
-		'Actual HyperFormula, LibreOffice, Excel, and static-golden oracle adapters that emit skip counters, divergence counters, oracle artifacts, and reproducible failure output without private corpora.',
+		'Actual HyperFormula, LibreOffice, Excel, and static-golden oracle adapters that emit skip counters, divergence counters, oracle artifacts, and reproducible failure output without private corpora; the current public LibreOffice route counts exercise accepted-mismatch only, not real adapter execution.',
 		'Owner-approved thresholds and artifact verifier before changing formula compatibility, cached-value freshness, or QSS/SOTA wording.',
 	],
 	forbiddenWording: [

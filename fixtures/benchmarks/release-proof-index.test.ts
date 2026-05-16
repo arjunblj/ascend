@@ -2019,6 +2019,21 @@ describe('release proof evidence index', () => {
 				}),
 				expect.objectContaining({
 					sourceQueue: 'blocked-owner-action',
+					name: 'formula-oracle-routing',
+					runInputScope: expect.stringContaining('34 workbooks'),
+					validationCommands: expect.arrayContaining([
+						expect.stringContaining('--min-workbooks 34'),
+						expect.stringContaining('--max-mismatches 0'),
+					]),
+					requiredOutputEvidence: expect.arrayContaining([
+						expect.stringContaining('23 accepted mismatches'),
+						expect.stringContaining('Strict zero-mismatch command'),
+					]),
+					promotionCondition: expect.stringContaining('real oracle adapters'),
+					stopCondition: expect.stringContaining('public-corpus threshold gate'),
+				}),
+				expect.objectContaining({
+					sourceQueue: 'blocked-owner-action',
 					name: 'practical-latency-contracts',
 					runInputScope: expect.stringContaining('Public-tracked practical workflow'),
 					runEnvironment: expect.stringContaining('Tracked-clean worktree'),
@@ -2388,20 +2403,28 @@ describe('release proof evidence index', () => {
 		const formulaOracleForbidden = formulaOracleDecision?.forbiddenWording.join('\n') ?? ''
 		const formulaOracleNextOwnerAction = formulaOracleDecision?.nextOwnerAction ?? ''
 		expect(formulaOracleEvidence).toContain('formula-corpus-correctness.test.ts')
+		expect(formulaOracleEvidence).toContain('fixtures/xlsx/libreoffice-fixtures.test.ts')
 		expect(formulaOracleEvidence).toContain('fixtures/xlsx/libreoffice/manifest.ts')
+		expect(formulaOracleEvidence).toContain('34 workbooks')
+		expect(formulaOracleEvidence).toContain('23 accepted mismatches')
+		expect(formulaOracleEvidence).toContain('mismatches 23 exceeded 0')
 		expect(formulaOracleEvidence).toContain('formula-sota.test.ts')
 		expect(formulaOracleMissing).toContain('unsupported function')
 		expect(formulaOracleMissing).toContain('HyperFormula, LibreOffice, Excel')
 		expect(formulaOracleMissing).toContain('artifact verifier')
+		expect(formulaOracleMissing).toContain('accepted-mismatch only')
 		expect(formulaOracleForbidden).toContain('Excel-compatible formulas')
 		expect(formulaOracleForbidden).toContain('fresh cached values')
 		expect(formulaOracleForbidden).toContain('QSS/SOTA formula superiority')
 		expect(formulaOracleNextOwnerAction).toContain('formula-corpus-correctness.test.ts')
+		expect(formulaOracleNextOwnerAction).toContain('libreoffice-fixtures.test.ts')
 		expect(formulaOracleNextOwnerAction).toContain('--tag formula-fidelity')
+		expect(formulaOracleNextOwnerAction).toContain('--min-workbooks 34')
 		expect(formulaOracleDecision?.validationCommands).toEqual(
 			expect.arrayContaining([
-				'bun test fixtures/benchmarks/formula-corpus-correctness.test.ts --timeout 30000',
+				'bun test fixtures/benchmarks/formula-corpus-correctness.test.ts fixtures/xlsx/libreoffice-fixtures.test.ts --timeout 60000',
 				expect.stringContaining('--tag formula-fidelity'),
+				expect.stringContaining('--max-mismatches 0'),
 			]),
 		)
 		const propertyJournalDecision = index.releaseDecisionBoard.doNotPromoteYet.find(

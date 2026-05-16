@@ -2099,6 +2099,27 @@ describe('ascend cli', () => {
 		expect(parsed.data.normalizedFormula).toBe('Sheet1!A1:A3')
 		expect(parsed.data.references[0].text).toBe('Sheet1!A1:A3')
 		expect(parsed.data.resolutionKind).toBe('range')
+
+		const missing = await run('read', NAMED_RANGE_FILE, 'name:Missing', '--json')
+		expect(missing.exitCode).toBe(1)
+		const missingParsed = JSON.parse(missing.stdout)
+		expect(missingParsed).toMatchObject({
+			ok: false,
+			error: {
+				code: 'NAME_NOT_FOUND',
+				message: 'Defined name "Missing" not found',
+				retryable: true,
+				retryStrategy: 'modified',
+				details: {
+					command: 'read',
+					selector: 'name:Missing',
+					name: 'Missing',
+					availableNames: ['Budget'],
+					workflow: ['inspect', 'read', 'plan'],
+				},
+			},
+		})
+		expect(missingParsed.error.suggestedFix).toContain('Budget')
 	})
 
 	test('read table --json exposes table metadata and paginated rows', async () => {
@@ -2183,6 +2204,32 @@ describe('ascend cli', () => {
 			},
 		})
 		expect(missingParsed.error.suggestedFix).toContain('MyTable')
+	})
+
+	test('read --json reports missing sheets with structured retry guidance', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 2 }] }])
+		await wb.save(`${import.meta.dir}/${TEST_FILE}`)
+
+		const result = await run('read', TEST_FILE, 'A1', '--sheet', 'Missing', '--json')
+		expect(result.exitCode).toBe(1)
+		const parsed = JSON.parse(result.stdout)
+		expect(parsed).toMatchObject({
+			ok: false,
+			error: {
+				code: 'SHEET_NOT_FOUND',
+				message: 'Sheet "Missing" not found',
+				retryable: true,
+				retryStrategy: 'modified',
+				details: {
+					command: 'read',
+					sheet: 'Missing',
+					availableSheets: ['Sheet1'],
+					workflow: ['inspect', 'read', 'plan'],
+				},
+			},
+		})
+		expect(parsed.error.suggestedFix).toContain('Sheet1')
 	})
 
 	test('write requires an explicit sheet when workbook has multiple sheets', async () => {

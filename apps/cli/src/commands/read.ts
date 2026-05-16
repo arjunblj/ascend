@@ -1,5 +1,5 @@
 import { ascendError } from '@ascend/schema'
-import type { CompactCellInfo, WorkbookDocument } from '@ascend/sdk'
+import { type CompactCellInfo, WorkbookDocument } from '@ascend/sdk'
 import { cliError, jsonOut } from '../output/json.ts'
 import { formatCellValue, table } from '../output/pretty.ts'
 import { openWorkbookDocumentWithProgress } from '../progress.ts'
@@ -140,7 +140,7 @@ export async function readCommand(args: string[], flags: Map<string, string>): P
 		case 'name': {
 			const handle = wb.definedName(selector.name, selector.sheetName)
 			if (!handle) {
-				cliError(`Defined name "${selector.name}" not found`, flags)
+				cliError(definedNameNotFoundError(selector.name, selector.sheetName, wb), flags)
 				return 1
 			}
 			const resolvedRange = resolveNamedRead(handle)
@@ -178,6 +178,7 @@ export async function readCommand(args: string[], flags: Map<string, string>): P
 			if (!resolvedRange) return 0
 			return readRangeLike(
 				wb,
+				file,
 				resolvedRange.sheet,
 				resolvedRange.range,
 				validatedRowOffset,
@@ -190,6 +191,7 @@ export async function readCommand(args: string[], flags: Map<string, string>): P
 		case 'range':
 			return readRangeLike(
 				wb,
+				file,
 				resolveSheetName(wb, selector.sheet),
 				selector.range,
 				validatedRowOffset,
@@ -228,8 +230,9 @@ function inferOpenOptions(
 	return { mode, ...(maxRows !== undefined ? { maxRows } : {}) }
 }
 
-function readRangeLike(
+async function readRangeLike(
 	wb: WorkbookDocument,
+	file: string,
 	sheetName: string | undefined,
 	range: string,
 	rowOffset: number | undefined,
@@ -237,20 +240,18 @@ function readRangeLike(
 	asJson = false,
 	display = false,
 	flags: Map<string, string> = new Map(),
-): number {
+): Promise<number> {
 	if (!sheetName) {
-		cliError(
-			wb.sheets.length === 0
-				? 'No sheets in workbook'
-				: 'Multiple sheets available; specify a sheet explicitly',
-			flags,
-		)
+		cliError(missingReadSheetError(wb), flags)
 		return 1
 	}
 
 	const sheet = wb.sheet(sheetName)
 	if (!sheet) {
-		cliError(`Sheet "${sheetName}" not found`, flags)
+		cliError(
+			readSheetNotFoundError(sheetName, await loadAvailableSheetsForRead(file, wb.sheets)),
+			flags,
+		)
 		return 1
 	}
 
@@ -464,6 +465,86 @@ function tableNotFoundError(name: string, wb: WorkbookDocument) {
 			availableTables.length > 0
 				? `Use one of the available tables: ${availableTables.join(', ')}.`
 				: 'Run ascend inspect <file> --json to list workbook tables before retrying ascend read.',
+	})
+}
+
+function definedNameNotFoundError(
+	name: string,
+	sheetName: string | undefined,
+	wb: WorkbookDocument,
+) {
+	const availableNames = wb
+		.definedNames(sheetName)
+		.map((entry) => entry.name)
+		.sort()
+	return ascendError('NAME_NOT_FOUND', `Defined name "${name}" not found`, {
+		retryable: true,
+		retryStrategy: availableNames.length > 0 ? 'modified' : 'none',
+		details: {
+			command: 'read',
+			selector: `name:${name}`,
+			name,
+			...(sheetName ? { sheet: sheetName } : {}),
+			availableNames,
+			workflow: ['inspect', 'read', 'plan'],
+		},
+		suggestedFix:
+			availableNames.length > 0
+				? `Use one of the available defined names: ${availableNames.join(', ')}.`
+				: 'Run ascend inspect <file> --json to list workbook defined names before retrying ascend read.',
+	})
+}
+
+function missingReadSheetError(wb: WorkbookDocument) {
+	return ascendError(
+		'INVALID_ARGUMENT',
+		wb.sheets.length === 0
+			? 'No sheets in workbook'
+			: 'Multiple sheets available; specify a sheet explicitly',
+		{
+			retryable: wb.sheets.length > 0,
+			retryStrategy: wb.sheets.length > 0 ? 'modified' : 'none',
+			details: {
+				command: 'read',
+				required: ['sheet'],
+				availableSheets: wb.sheets,
+				workflow: ['inspect', 'read', 'plan'],
+			},
+			suggestedFix:
+				wb.sheets.length > 0
+					? `Retry with --sheet set to one of: ${wb.sheets.join(', ')}.`
+					: 'Open or create a workbook with at least one sheet before reading ranges.',
+		},
+	)
+}
+
+async function loadAvailableSheetsForRead(
+	file: string,
+	fallbackSheets: readonly string[],
+): Promise<readonly string[]> {
+	if (fallbackSheets.length > 0) return fallbackSheets
+	try {
+		const workbook = await WorkbookDocument.open(file, { mode: 'metadata-only' })
+		return workbook.sheets
+	} catch {
+		return fallbackSheets
+	}
+}
+
+function readSheetNotFoundError(sheetName: string, availableSheets: readonly string[]) {
+	return ascendError('SHEET_NOT_FOUND', `Sheet "${sheetName}" not found`, {
+		retryable: true,
+		retryStrategy: availableSheets.length > 0 ? 'modified' : 'none',
+		details: {
+			command: 'read',
+			sheet: sheetName,
+			availableSheets,
+			workflow: ['inspect', 'read', 'plan'],
+		},
+		suggestedFix:
+			availableSheets.length > 0
+				? `Retry with --sheet set to one of: ${availableSheets.join(', ')}.`
+				: 'Run ascend inspect <file> --json to confirm workbook sheets before retrying ascend read.',
 	})
 }
 

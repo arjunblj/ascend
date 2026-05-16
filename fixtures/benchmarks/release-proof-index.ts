@@ -346,6 +346,7 @@ export interface ReleaseProofReleaseDecisionBoard {
 	readonly topClaimOwnerActionQueue: readonly ReleaseProofTopClaimOwnerAction[]
 	readonly doNotPromoteYet: readonly ReleaseProofReleaseDecisionDoNotPromoteItem[]
 	readonly doNotPromoteDispositionSummary: ReleaseProofReleaseDecisionDispositionSummary
+	readonly releaseWordingDecisionSummary: ReleaseProofReleaseWordingDecisionSummary
 	readonly blockedOwnerActionQueue: readonly ReleaseProofBlockedOwnerAction[]
 	readonly benchmarkCorpusOwnerActionQueue: readonly ReleaseProofBenchmarkCorpusOwnerAction[]
 	readonly implementationReadyOwnerActionQueue: readonly ReleaseProofImplementationReadyOwnerAction[]
@@ -358,6 +359,24 @@ export interface ReleaseProofReleaseDecisionDispositionSummary {
 	readonly implementationReadyBlockerNames: readonly ReleaseProofReleaseDecisionDoNotPromoteItem['name'][]
 	readonly benchmarkCorpusBlockerNames: readonly ReleaseProofReleaseDecisionDoNotPromoteItem['name'][]
 	readonly claimDowngradeDoNotPromoteNames: readonly ReleaseProofReleaseDecisionDoNotPromoteItem['name'][]
+	readonly boundary: string
+}
+
+export interface ReleaseProofReleaseWordingDecisionSummary {
+	readonly status: 'headline-claims-blocked-local-wording-only'
+	readonly headlineClaimsAllowed: false
+	readonly localAllowedClaimNames: readonly ReleaseProofIndexArtifactName[]
+	readonly doNotPromoteClaimNames: readonly ReleaseProofReleaseDecisionDoNotPromoteItem['name'][]
+	readonly localAllowedWordingByClaim: Readonly<Record<ReleaseProofIndexArtifactName, string>>
+	readonly doNotPromoteAllowedWordingByClaim: Readonly<
+		Record<ReleaseProofReleaseDecisionDoNotPromoteItem['name'], string>
+	>
+	readonly forbiddenWordingByClaim: Readonly<
+		Record<
+			ReleaseProofIndexArtifactName | ReleaseProofReleaseDecisionDoNotPromoteItem['name'],
+			readonly string[]
+		>
+	>
 	readonly boundary: string
 }
 
@@ -1480,6 +1499,7 @@ export function releaseProofIndexMarkdown(result: ReleaseProofIndexResult): stri
 		'## Release Decision Board',
 		'',
 		result.releaseDecisionBoard.boundary,
+		`Release wording summary: status=${result.releaseDecisionBoard.releaseWordingDecisionSummary.status}; localAllowed=${result.releaseDecisionBoard.releaseWordingDecisionSummary.localAllowedClaimNames.join(',')}; doNotPromote=${result.releaseDecisionBoard.releaseWordingDecisionSummary.doNotPromoteClaimNames.join(',')}`,
 		'',
 		'| Rank | Claim | Evidence we have | Evidence missing | QSS contrast | Allowed wording | Forbidden wording | Next owner action | Owner decision artifact | Headline claim allowed | Implementation promotion allowed | Exact proof | Must not claim | A+ blocking owner action | Boundary |',
 		'| ---: | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
@@ -2444,6 +2464,7 @@ function releaseDecisionBoard(
 		topClaimOwnerActionQueue,
 		doNotPromoteYet,
 		doNotPromoteDispositionSummary: releaseDecisionDispositionSummary(doNotPromoteYet),
+		releaseWordingDecisionSummary: releaseWordingDecisionSummary(rows, doNotPromoteYet),
 		blockedOwnerActionQueue,
 		benchmarkCorpusOwnerActionQueue,
 		implementationReadyOwnerActionQueue,
@@ -2475,6 +2496,35 @@ function releaseDecisionDispositionSummary(
 			.map((item) => item.name),
 		boundary:
 			'Routing summary for blocked claims only. It groups do-not-promote decisions by the next work block type without changing claim wording, owner approval, or release gates.',
+	}
+}
+
+function releaseWordingDecisionSummary(
+	rows: readonly ReleaseProofReleaseDecisionBoardRow[],
+	doNotPromoteYet: readonly ReleaseProofReleaseDecisionDoNotPromoteItem[],
+): ReleaseProofReleaseWordingDecisionSummary {
+	return {
+		status: 'headline-claims-blocked-local-wording-only',
+		headlineClaimsAllowed: false,
+		localAllowedClaimNames: rows.map((row) => row.artifact),
+		doNotPromoteClaimNames: doNotPromoteYet.map((item) => item.name),
+		localAllowedWordingByClaim: Object.fromEntries(
+			rows.map((row) => [row.artifact, row.allowedWording]),
+		) as Readonly<Record<ReleaseProofIndexArtifactName, string>>,
+		doNotPromoteAllowedWordingByClaim: Object.fromEntries(
+			doNotPromoteYet.map((item) => [item.name, item.allowedWording]),
+		) as Readonly<Record<ReleaseProofReleaseDecisionDoNotPromoteItem['name'], string>>,
+		forbiddenWordingByClaim: Object.fromEntries([
+			...rows.map((row) => [row.artifact, [...row.forbiddenWording]] as const),
+			...doNotPromoteYet.map((item) => [item.name, [...item.forbiddenWording]] as const),
+		]) as Readonly<
+			Record<
+				ReleaseProofIndexArtifactName | ReleaseProofReleaseDecisionDoNotPromoteItem['name'],
+				readonly string[]
+			>
+		>,
+		boundary:
+			'Release wording decision summary only. It is for copy review and owner routing; headline claims remain blocked until release gates and owner approvals pass.',
 	}
 }
 
@@ -2987,6 +3037,22 @@ function cloneReleaseDecisionBoard(
 			claimDowngradeDoNotPromoteNames: [
 				...board.doNotPromoteDispositionSummary.claimDowngradeDoNotPromoteNames,
 			],
+		},
+		releaseWordingDecisionSummary: {
+			...board.releaseWordingDecisionSummary,
+			localAllowedClaimNames: [...board.releaseWordingDecisionSummary.localAllowedClaimNames],
+			doNotPromoteClaimNames: [...board.releaseWordingDecisionSummary.doNotPromoteClaimNames],
+			localAllowedWordingByClaim: {
+				...board.releaseWordingDecisionSummary.localAllowedWordingByClaim,
+			},
+			doNotPromoteAllowedWordingByClaim: {
+				...board.releaseWordingDecisionSummary.doNotPromoteAllowedWordingByClaim,
+			},
+			forbiddenWordingByClaim: Object.fromEntries(
+				Object.entries(board.releaseWordingDecisionSummary.forbiddenWordingByClaim).map(
+					([name, forbiddenWording]) => [name, [...forbiddenWording]],
+				),
+			) as ReleaseProofReleaseWordingDecisionSummary['forbiddenWordingByClaim'],
 		},
 		doNotPromoteYet: board.doNotPromoteYet.map((item) => ({
 			...item,

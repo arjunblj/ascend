@@ -1036,6 +1036,32 @@ describe('release proof evidence index', () => {
 			claimDowngradeDoNotPromoteNames: ['research-surface-hygiene'],
 			boundary: expect.stringContaining('Routing summary for blocked claims only'),
 		})
+		expect(index.releaseDecisionBoard.releaseWordingDecisionSummary).toMatchObject({
+			status: 'headline-claims-blocked-local-wording-only',
+			headlineClaimsAllowed: false,
+			localAllowedClaimNames: ['safe-open-proof', 'package-action-proof'],
+			doNotPromoteClaimNames: index.releaseDecisionBoard.doNotPromoteYet.map((item) => item.name),
+			boundary: expect.stringContaining('Release wording decision summary only'),
+		})
+		expect(
+			index.releaseDecisionBoard.releaseWordingDecisionSummary.localAllowedWordingByClaim[
+				'safe-open-proof'
+			],
+		).toBe(index.releaseDecisionBoard.rows[0].allowedWording)
+		expect(
+			index.releaseDecisionBoard.releaseWordingDecisionSummary.doNotPromoteAllowedWordingByClaim[
+				'research-surface-hygiene'
+			],
+		).toBe(
+			index.releaseDecisionBoard.doNotPromoteYet.find(
+				(item) => item.name === 'research-surface-hygiene',
+			)?.allowedWording,
+		)
+		expect(
+			index.releaseDecisionBoard.releaseWordingDecisionSummary.forbiddenWordingByClaim[
+				'package-action-proof'
+			],
+		).toEqual(index.releaseDecisionBoard.rows[1].forbiddenWording)
 		expect(
 			index.releaseDecisionBoard.blockedOwnerActionQueue.map(
 				(row) => `${row.ownerLoop}:${row.name}:${row.workBlockDisposition}`,
@@ -2126,6 +2152,21 @@ describe('release proof evidence index', () => {
 				}),
 			]),
 		)
+		expect(handoff.releaseDecisionBoard.releaseWordingDecisionSummary).toMatchObject({
+			status: 'headline-claims-blocked-local-wording-only',
+			headlineClaimsAllowed: false,
+			localAllowedClaimNames: ['safe-open-proof', 'package-action-proof'],
+			doNotPromoteClaimNames: handoff.releaseDecisionBoard.doNotPromoteYet.map((item) => item.name),
+		})
+		expect(
+			handoff.releaseDecisionBoard.releaseWordingDecisionSummary.forbiddenWordingByClaim[
+				'formula-language-service-primitives'
+			],
+		).toEqual(
+			handoff.releaseDecisionBoard.doNotPromoteYet.find(
+				(item) => item.name === 'formula-language-service-primitives',
+			)?.forbiddenWording,
+		)
 		expect(handoff.releaseDecisionBoard.doNotPromoteDispositionSummary).toMatchObject({
 			implementationReadyBlockerNames: [
 				'formula-language-service-primitives',
@@ -2470,6 +2511,15 @@ describe('release proof evidence index', () => {
 				readonly benchmarkCorpusBlockerNames?: readonly string[]
 				readonly claimDowngradeDoNotPromoteNames?: readonly string[]
 			}
+			readonly releaseWordingDecisionSummary?: {
+				readonly status?: string
+				readonly headlineClaimsAllowed?: boolean
+				readonly localAllowedClaimNames?: readonly string[]
+				readonly doNotPromoteClaimNames?: readonly string[]
+				readonly localAllowedWordingByClaim?: Record<string, string>
+				readonly doNotPromoteAllowedWordingByClaim?: Record<string, string>
+				readonly forbiddenWordingByClaim?: Record<string, readonly string[]>
+			}
 			readonly blockedOwnerActionQueue?: readonly {
 				readonly name?: string
 				readonly ownerLoop?: string
@@ -2584,6 +2634,23 @@ describe('release proof evidence index', () => {
 				expect.stringContaining('Full streaming parity'),
 			]),
 		})
+		expect(board.releaseWordingDecisionSummary).toMatchObject({
+			status: 'headline-claims-blocked-local-wording-only',
+			headlineClaimsAllowed: false,
+			localAllowedClaimNames: ['safe-open-proof', 'package-action-proof'],
+			doNotPromoteClaimNames: board.doNotPromoteYet?.map((item) => item.name),
+		})
+		expect(
+			board.releaseWordingDecisionSummary?.localAllowedWordingByClaim?.['safe-open-proof'],
+		).toContain('pre-hydration package-feature routing')
+		expect(
+			board.releaseWordingDecisionSummary?.forbiddenWordingByClaim?.['package-action-proof'],
+		).toEqual(board.rows?.[1].forbiddenWording)
+		expect(
+			board.releaseWordingDecisionSummary?.doNotPromoteAllowedWordingByClaim?.[
+				'research-surface-hygiene'
+			],
+		).toContain('Do not promote research-surface-hygiene')
 		expect(board.topClaimOwnerActionQueue).toHaveLength(9)
 		expect(
 			board.topClaimOwnerActionQueue?.map(

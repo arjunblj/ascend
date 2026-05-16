@@ -321,6 +321,102 @@ Next action: defer production optimization from this row. Continue write-profile
 coverage with the next release workflow only after a clean multi-workload
 `xlsx-write-sota` gate identifies a durable leader failure.
 
+## Cycle: Plain Text Write SOTA Gate
+
+Classification: comparable external evidence plus defer. The clean
+external-process `plain-text` write row has no leader failure among passing
+comparable writers: Ascend is the median winner. ClosedXML failed during its
+.NET build and is recorded as runner unavailable, not as a win. No production
+optimization is justified from this evidence.
+
+Workflow: generated XLSX write for plain text values, 2000 rows x 20 columns.
+
+Why it matters for release: text-heavy generated exports are a common
+agent-produced workbook output, and `plain-text` is one of the value-write rows
+required by the existing `xlsx-write-sota` profile.
+
+Public/tracked-clean input: `competitive-io` generated the `plain-text`
+`source-mode generated-write` workload from tracked benchmark code at commit
+`98752c84`. No private corpus or local research workbook was used.
+
+Commands:
+
+```bash
+git worktree add --detach /private/tmp/ascend-write-plain-text-current-98752c84 98752c84
+cd /private/tmp/ascend-write-plain-text-current-98752c84
+bun install --frozen-lockfile
+mkdir -p /private/tmp/ascend-write-plain-text-current-98752c84-runs
+TMPDIR=/private/tmp ACCEPT_NPOI_OSMF_LICENSE=1 env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-io.ts --json --category write --competitor all --execution-scope external-process --source-mode generated-write --libraries ascend-external-writer,sheetjs,exceljs,xlsxwriter,xlsxwriter-constant-memory,pyexcelerate,pyexcelerate-range,pyexcelerate-cell,openpyxl,openpyxl-write-only,apache-poi,closedxml,rust-xlsxwriter,excelize,fastexcel-java --workload plain-text --repeat 5 --warmup 1 --validation-mode each --write-runner-manifest fixtures/benchmarks/runners/sota-writers.manifest.json > /private/tmp/ascend-write-plain-text-current-98752c84-runs/write-plain-text-head-to-head.json
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-scoreboard.ts /private/tmp/ascend-write-plain-text-current-98752c84-runs/write-plain-text-head-to-head.json --json --metric medianMs --require-profile xlsx-write-sota --assert-profile-leader ascend > /private/tmp/ascend-write-plain-text-current-98752c84-runs/write-plain-text-scoreboard.json
+```
+
+Environment:
+
+- Commit: `98752c84e93e0058d6d646138fb1b1c17ebfa389`
+- Worktree: clean detached worktree at
+  `/private/tmp/ascend-write-plain-text-current-98752c84`
+- Bun runtime: `1.3.13`
+- Node: `24.3.0`
+- Platform: Darwin arm64
+- Runtime profile: `category write`, `executionScope external-process`,
+  `sourceMode generated-write`, `workload plain-text`, `validationMode each`.
+
+Raw output:
+
+```text
+/private/tmp/ascend-write-plain-text-current-98752c84-runs/write-plain-text-head-to-head.json
+/private/tmp/ascend-write-plain-text-current-98752c84-runs/write-plain-text-scoreboard.json
+```
+
+External row, repeat 5 after 1 warmup:
+
+| Runner | Status vs Ascend | Median ms | P95 ms | CV | Peak RSS | Output bytes |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| `ascend-external-writer` | ran/won | 16.937 | 29.104 | 0.313 | 64.4 MiB | 169099 |
+| `excelize` | ran/lost vs Ascend | 28.623 | 39.311 | 0.197 | 21.2 MiB | 142890 |
+| `rust-xlsxwriter` | ran/lost vs Ascend | 39.684 | 40.941 | 0.066 | 24.1 MiB | 229138 |
+| `sheetjs` | ran/lost vs Ascend | 49.825 | 62.671 | 0.119 | 244.0 MiB | 1832541 |
+| `fastexcel-java` | ran/lost vs Ascend | 57.577 | 80.924 | 0.173 | 680.0 MiB | 227254 |
+| `pyexcelerate` | ran/lost vs Ascend | 125.436 | 141.870 | 0.091 | 72.7 MiB | 144372 |
+| `pyexcelerate-range` | ran/lost vs Ascend | 128.641 | 141.047 | 0.062 | 74.3 MiB | 144372 |
+| `xlsxwriter-constant-memory` | ran/lost vs Ascend | 131.639 | 144.159 | 0.060 | 59.4 MiB | 141061 |
+| `xlsxwriter` | ran/lost vs Ascend | 135.849 | 149.731 | 0.048 | 87.5 MiB | 230174 |
+| `exceljs` | ran/lost vs Ascend | 137.375 | 161.997 | 0.106 | 263.7 MiB | 232106 |
+| `pyexcelerate-cell` | ran/lost vs Ascend | 147.762 | 886.007 | 1.127 | 74.4 MiB | 144372 |
+| `openpyxl-write-only` | ran/lost vs Ascend | 177.626 | 200.032 | 0.073 | 92.3 MiB | 140903 |
+| `openpyxl` | ran/lost vs Ascend | 246.598 | 290.885 | 0.134 | 96.2 MiB | 140929 |
+| `apache-poi` | ran/lost vs Ascend | 422.230 | 728.093 | 0.302 | 952.0 MiB | 229438 |
+| `closedxml` | runner unavailable | n/a | n/a | n/a | n/a | n/a |
+
+Scoreboard result:
+
+- `profileLeaderFailures: []`
+- The full `xlsx-write-sota` gate still fails coverage because this is a single
+  row and because `closedxml` is ineligible for `plain-text`.
+- `closedxml` failed with `CSSM_ModuleLoad()` during the .NET build. It is not
+  counted as a win.
+
+Semantic comparability: all passing rows write the same generated plain-text
+sheet and pass external post-write semantic validation for one sheet and 40,000
+cells. File-size and memory are not equal: Ascend is not the smallest output and
+uses more RSS than Excelize, rust_xlsxwriter, and constant-memory XlsxWriter.
+
+Humble allowed wording:
+
+> On the generated 2000 x 20 plain-text write row, Ascend was the median winner
+> among passing comparable external writers. This is scoped value-write evidence,
+> not a broad `xlsx-write-sota` claim.
+
+Forbidden wording:
+
+- "Ascend is SOTA for XLSX write."
+- "Ascend beats every generated XLSX writer."
+- "Ascend beats ClosedXML on plain-text writes."
+- "Ascend produces the smallest plain-text XLSX."
+
+Next action: defer production optimization from this row and continue only with
+another existing `xlsx-write-sota` row or a measured workflow loss.
+
 ## Owner-Ready Benchmark Blocker
 
 Owner: benchmarking/external baselines.

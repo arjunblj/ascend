@@ -183,6 +183,28 @@ describe('performance claim baseline matrix', () => {
 		expect(markdown).toContain('"Ascend is SOTA for XLSX write."')
 		expect(markdown).toContain('defer production optimization from this row')
 
+		expect(markdown).toContain('## Cycle: Plain Text Write SOTA Gate')
+		expect(markdown).toContain('Classification: comparable external evidence plus defer.')
+		expect(markdown).toContain('commit\n`98752c84`')
+		expect(markdown).toContain(
+			'/private/tmp/ascend-write-plain-text-current-98752c84-runs/write-plain-text-head-to-head.json',
+		)
+		expect(markdown).toContain(
+			'| `ascend-external-writer` | ran/won | 16.937 | 29.104 | 0.313 | 64.4 MiB | 169099 |',
+		)
+		expect(markdown).toContain(
+			'| `excelize` | ran/lost vs Ascend | 28.623 | 39.311 | 0.197 | 21.2 MiB | 142890 |',
+		)
+		expect(markdown).toContain(
+			'| `rust-xlsxwriter` | ran/lost vs Ascend | 39.684 | 40.941 | 0.066 | 24.1 MiB | 229138 |',
+		)
+		expect(markdown).toContain('`profileLeaderFailures: []`')
+		expect(markdown).toContain('`closedxml` failed with `CSSM_ModuleLoad()`')
+		expect(markdown).toContain('"Ascend beats ClosedXML on plain-text writes."')
+		expect(markdown).toContain(
+			'defer production optimization from this row and continue only with\nanother existing `xlsx-write-sota` row',
+		)
+
 		expect(markdown).toContain('## Full Current-Commit Gate: XLSX Read SOTA')
 		expect(markdown).toContain(
 			'Classification: blocked/defer. No production optimization is justified',

@@ -1026,6 +1026,29 @@ describe('ascend cli', () => {
 		}
 	})
 
+	test('legacy string cli errors still return coded JSON failures', async () => {
+		const invalidMode = await run('inspect', TEST_FILE, '--mode', 'bad', '--json')
+		expect(invalidMode.exitCode).toBe(1)
+		const parsedInvalidMode = JSON.parse(invalidMode.stdout)
+		expect(parsedInvalidMode).toMatchObject({
+			ok: false,
+			error: {
+				code: 'INVALID_ARGUMENT',
+				message: 'Invalid --mode. Use one of: metadata, values, full',
+				retryable: true,
+				retryStrategy: 'modified',
+				suggestedFix: 'Adjust the command arguments or flags and retry.',
+			},
+		})
+
+		const unknownFormula = await run('formula', 'wat', '--json')
+		expect(unknownFormula.exitCode).toBe(1)
+		const parsedUnknownFormula = JSON.parse(unknownFormula.stdout)
+		expect(parsedUnknownFormula.ok).toBe(false)
+		expect(parsedUnknownFormula.error.code).toBe('INVALID_ARGUMENT')
+		expect(parsedUnknownFormula.error.message).toContain('Unknown formula subcommand')
+	})
+
 	test('dump --json emits a replayable operation batch', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([

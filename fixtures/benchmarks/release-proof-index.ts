@@ -612,6 +612,7 @@ export interface ReleaseProofSafeOpenFixturePolicyEvidence {
 	readonly corpus: SafeOpenFixtureScanResult['corpus']
 	readonly scanned: number
 	readonly rejected: number
+	readonly rejectedFixtures: readonly string[]
 	readonly replacementStatus: SafeOpenFixtureScanResult['replacementStatus']
 	readonly riskFamilyCounts: Readonly<Record<string, number>>
 	readonly signatureOrUnknownMatches: number
@@ -4158,6 +4159,7 @@ function fixturePolicyEvidence(
 		corpus: safeOpen.corpus,
 		scanned: safeOpen.scanned,
 		rejected: safeOpen.rejected,
+		rejectedFixtures: [...safeOpen.rejectedFixtures],
 		replacementStatus: safeOpen.replacementStatus,
 		riskFamilyCounts: { ...safeOpen.riskFamilyCounts },
 		signatureOrUnknownMatches: safeOpen.signatureOrUnknownMatches.length,
@@ -4308,7 +4310,7 @@ function fixtureAcquisitionPlan(): ReleaseProofFixtureAcquisitionPlan {
 				relatedGates: ['public-edge-fixtures'],
 				task: 'Decide whether generated malformed bytes are sufficient for fail-closed rejection proof or whether a public malformed workbook fixture is required.',
 				evidenceAlreadyPresent:
-					'Safe-open proof already includes a generated malformed package rejection path and the tracked scan reports one rejected fixture.',
+					'Safe-open proof already includes a generated malformed package rejection path. The tracked scan reports one rejected fixture, `fixtures/xlsx/calamine/pass_protected.xlsx`, but that is an encrypted/password fixture and not a public malformed-package replacement.',
 				proofStillMissing:
 					'Owner approval for generated bad bytes as rejection-path proof, or an approved public malformed fixture with clear redistribution rights.',
 				validationCommand: 'bun run fixtures/benchmarks/safe-open-proof.ts --no-timings --json',
@@ -4368,6 +4370,7 @@ function cloneFixturePolicyEvidence(
 		...evidence,
 		safeOpen: {
 			...evidence.safeOpen,
+			rejectedFixtures: [...evidence.safeOpen.rejectedFixtures],
 			riskFamilyCounts: { ...evidence.safeOpen.riskFamilyCounts },
 			currentGeneratedStructuralCases: [...evidence.safeOpen.currentGeneratedStructuralCases],
 			externalCandidateEvidence: evidence.safeOpen.externalCandidateEvidence.map((entry) => ({
@@ -4412,7 +4415,7 @@ function generatedFixtureDecisionEvidence(
 			gateId: 'public-edge-fixtures',
 			caseName: 'malformed',
 			generatedKind: 'generated-malformed-package',
-			replacementEvidence: `tracked safe-open scan rejected ${fixtureEvidence.safeOpen.rejected} fixture(s); malformed proof input remains generated structural bytes`,
+			replacementEvidence: `tracked safe-open scan rejected ${fixtureEvidence.safeOpen.rejected} fixture(s): ${fixtureEvidence.safeOpen.rejectedFixtures.join(', ') || 'none'}; none are accepted public malformed-package replacements, so malformed proof input remains generated structural bytes`,
 			ownerDecisionNeeded:
 				'Accept disclosed generated malformed-package bytes as rejection-path proof, or provide an approved public malformed workbook fixture.',
 			recommendedOwnerAction:

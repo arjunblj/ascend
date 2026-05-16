@@ -146,6 +146,9 @@ describe('release proof evidence index', () => {
 			currentGeneratedStructuralCases: ['signed', 'malformed'],
 		})
 		expect(index.fixturePolicyEvidence.safeOpen.scanned).toBeGreaterThan(0)
+		expect(index.fixturePolicyEvidence.safeOpen.rejectedFixtures).toEqual([
+			'fixtures/xlsx/calamine/pass_protected.xlsx',
+		])
 		expect(
 			Object.values(safeOpenRiskFamilyCounts).reduce((sum, count) => sum + count, 0),
 		).toBeGreaterThan(0)
@@ -191,6 +194,14 @@ describe('release proof evidence index', () => {
 			evidenceAlreadyPresent: expect.stringContaining('signaturePackage=0'),
 			boundary: expect.stringContaining('signature validation'),
 		})
+		const malformedFixtureEvidence = index.fixtureAcquisitionPlan.tasks[1].evidenceAlreadyPresent
+		expect(index.fixtureAcquisitionPlan.tasks[1]).toMatchObject({
+			caseName: 'malformed-package',
+			evidenceAlreadyPresent: expect.stringContaining('pass_protected.xlsx'),
+		})
+		expect(malformedFixtureEvidence).toEqual(
+			expect.stringContaining('not a public malformed-package replacement'),
+		)
 		expect(index.generatedFixtureDecisionEvidence).toMatchObject({
 			ownerLoop: 'product',
 			status: 'generated-structural-cases-disclosed-owner-approval-required',
@@ -217,6 +228,7 @@ describe('release proof evidence index', () => {
 		expect(index.generatedFixtureDecisionEvidence.cases[1]).toMatchObject({
 			caseName: 'malformed',
 			generatedKind: 'generated-malformed-package',
+			replacementEvidence: expect.stringContaining('pass_protected.xlsx'),
 			recommendedOwnerAction: expect.stringContaining('fail-closed rejection-path proof'),
 			allowedUse: expect.stringContaining('malformed-package rejection'),
 			forbiddenUse: expect.stringContaining('arbitrary malformed files'),
@@ -1277,6 +1289,9 @@ describe('release proof evidence index', () => {
 			ownerApprovalRequired: true,
 		})
 		expect(handoff.fixturePolicyEvidence.safeOpen.signatureOrUnknownMatches).toBe(1)
+		expect(handoff.fixturePolicyEvidence.safeOpen.rejectedFixtures).toEqual([
+			'fixtures/xlsx/calamine/pass_protected.xlsx',
+		])
 		expect(handoff.fixturePolicyEvidence.packageAction.missingReplacementFeatures).toEqual([
 			'signaturePackage',
 		])
@@ -1382,6 +1397,9 @@ describe('release proof evidence index', () => {
 		expect(handoff.fixturePolicyEvidence.safeOpen.signatureOrUnknownMatches).toBe(1)
 		expect(JSON.stringify(handoff.generatedFixtureDecisionEvidence)).toContain(
 			'generated-malformed-package',
+		)
+		expect(JSON.stringify(handoff.generatedFixtureDecisionEvidence)).toContain(
+			'none are accepted public malformed-package replacements',
 		)
 		expect(JSON.stringify(handoff.performancePolicy)).toContain('safe-open-proof.ts --repeat 10')
 		expect(JSON.stringify(handoff.safeOpenLatencyValidationEvidence)).toContain(

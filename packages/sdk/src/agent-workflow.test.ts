@@ -416,6 +416,47 @@ describe('agent workflow loss audit', () => {
 		expect(createHash('sha256').update(readFileSync(output)).digest('hex')).toBe(replacementSha256)
 	})
 
+	test('progress callback failures do not suppress write and reopen proof', async () => {
+		const input = join(TEMP_DIR, 'progress-failure-source.xlsx')
+		const output = join(TEMP_DIR, 'progress-failure-out.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		const sourceBytes = new Uint8Array(readFileSync('fixtures/xlsx/xlsxwriter/strings_links.xlsx'))
+		await Bun.write(input, sourceBytes)
+		const wb = await AscendWorkbook.open(sourceBytes)
+		const inputSha256 = createHash('sha256').update(sourceBytes).digest('hex')
+		const ops = [
+			{ op: 'setCells' as const, sheet: 'Strings', updates: [{ ref: 'Z13', value: 'proved' }] },
+		]
+		const seenEvents: string[] = []
+
+		const committed = await commitAgentPlanFromWorkbook(
+			input,
+			inputSha256,
+			wb,
+			ops,
+			{
+				output,
+				onProgress: (event) => {
+					seenEvents.push(`${event.phase}:${event.status}`)
+					if (event.phase === 'write' && event.status === 'ok') {
+						throw new Error('progress sink failed')
+					}
+				},
+			},
+			{ sourceBytes },
+		)
+
+		expect(seenEvents).toContain('write:ok')
+		expect(seenEvents).toContain('post-write:ok')
+		expect(committed.postWrite.valid).toBe(true)
+		expect(committed.postWrite.auditsPassed).toBe(true)
+		const reopened = await AscendWorkbook.open(new Uint8Array(readFileSync(output)))
+		expect(reopened.sheet('Strings')?.cell('Z13')?.value).toEqual({
+			kind: 'string',
+			value: 'proved',
+		})
+	})
+
 	test('in-place backup failures roll back before writing and remain retryable', async () => {
 		const input = join(TEMP_DIR, 'backup-source.xlsx')
 		const blockedBackup = join(TEMP_DIR, 'blocked-backup.xlsx')

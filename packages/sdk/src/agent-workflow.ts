@@ -3126,15 +3126,19 @@ function createProgressEmitter(
 	return async (phase, status, summary, extras = {}) => {
 		if (!handler) return
 		sequence += 1
-		await handler({
-			formatVersion: 1,
-			sequence,
-			kind,
-			phase,
-			status,
-			summary,
-			...definedProgressExtras(extras),
-		})
+		try {
+			await handler({
+				formatVersion: 1,
+				sequence,
+				kind,
+				phase,
+				status,
+				summary,
+				...definedProgressExtras(extras),
+			})
+		} catch {
+			// Progress handlers are observers; workbook writes and proof generation must stay authoritative.
+		}
 	}
 }
 

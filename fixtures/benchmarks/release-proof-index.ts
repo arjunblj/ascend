@@ -3048,6 +3048,17 @@ function safeOpenQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceItem[] {
 				'Generated custom UI agent-context proof only; it does not replace broader public custom UI fixture coverage or authorize Custom UI safety, macro safety, active-content safety, or trust wording.',
 		},
 		{
+			evidenceId: 'public-shape-macro-active-content-proof',
+			kind: 'test',
+			command:
+				'bun test fixtures/corpus/active-content-contract.test.ts -t "drawing shape macro bindings" --timeout 60000',
+			path: 'packages/core/src/active-content.ts; packages/io-xlsx/src/reader/active-content.ts; packages/io-xlsx/src/reader/index.ts; packages/sdk/src/read-view.ts; packages/sdk/src/workbook-trust.ts; fixtures/corpus/active-content-contract.test.ts',
+			acceptedScope:
+				'Commit c44c5480 reports public LibreOffice drawing shape macro bindings as blocked active content with shape identity, trust findings, read-view warnings, and safe-edit reopen/package-preservation proof.',
+			boundary:
+				'Public shape-macro reporting and preservation evidence only; it does not authorize macro execution, malware scanning, active-content safety, trusted-source behavior, or broad custom UI safety wording.',
+		},
+		{
 			evidenceId: 'cli-agent-facing-open-diagnostics-proof',
 			kind: 'test',
 			command:

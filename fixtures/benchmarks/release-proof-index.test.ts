@@ -894,6 +894,12 @@ describe('release proof evidence index', () => {
 				boundary: expect.stringContaining('Generated custom UI agent-context proof only'),
 			}),
 			expect.objectContaining({
+				evidenceId: 'public-shape-macro-active-content-proof',
+				acceptedScope: expect.stringContaining('c44c5480'),
+				command: expect.stringContaining('drawing shape macro bindings'),
+				boundary: expect.stringContaining('Public shape-macro reporting'),
+			}),
+			expect.objectContaining({
 				evidenceId: 'cli-agent-facing-open-diagnostics-proof',
 				acceptedScope: expect.stringContaining('d837689e'),
 				command: expect.stringContaining('apps/cli/src/file-errors.test.ts'),
@@ -2458,6 +2464,7 @@ describe('release proof evidence index', () => {
 				expect.objectContaining({ evidenceId: 'safe-open-encrypted-password-no-echo-tests' }),
 				expect.objectContaining({ evidenceId: 'mcp-agent-workflow-open-plan-first' }),
 				expect.objectContaining({ evidenceId: 'api-custom-ui-active-content-proof' }),
+				expect.objectContaining({ evidenceId: 'public-shape-macro-active-content-proof' }),
 				expect.objectContaining({ evidenceId: 'cli-agent-facing-open-diagnostics-proof' }),
 				expect.objectContaining({ evidenceId: 'api-open-workflow-reference-proof' }),
 				expect.objectContaining({ evidenceId: 'mcp-open-workflow-reference-proof' }),

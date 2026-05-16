@@ -40,6 +40,9 @@ describe('XLSX package graph', () => {
   <Relationship Id="rIdPowerQuery" Type="http://schemas.microsoft.com/office/2014/relationships/powerQueryMashup" Target="customData/item1.data"/>
   <Relationship Id="rIdPowerQueryOpaque" Type="http://schemas.microsoft.com/office/2014/relationships/powerQueryMashup" Target="opaque-mashup.bin"/>
   <Relationship Id="rIdDataModelOpaque" Type="http://schemas.microsoft.com/office/2011/relationships/model" Target="opaque-model.bin"/>
+  <Relationship Id="rIdCustomXmlOpaque" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml" Target="opaque-custom.xml"/>
+  <Relationship Id="rIdVbaOpaque" Type="http://schemas.microsoft.com/office/2006/relationships/vbaProject" Target="opaque-vba.bin"/>
+  <Relationship Id="rIdVbaSignatureOpaque" Type="http://schemas.microsoft.com/office/2006/relationships/vbaProjectSignature" Target="opaque-signature.bin"/>
   <Relationship Id="rIdConnections" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/connections" Target="data/connectionsPayload.xml"/>
   <Relationship Id="rIdExternalLink" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLink" Target="links/bookLink.xml"/>
   <Relationship Id="rIdRevisionHeaders" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/revisionHeaders" Target="revisions/revisionHeaders.xml"/>
@@ -50,6 +53,7 @@ describe('XLSX package graph', () => {
   <Relationship Id="rIdDrawing" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/>
   <Relationship Id="rIdHyperlink" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.invalid/report" TargetMode="External"/>
   <Relationship Id="rIdControlProps" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/ctrlProp" Target="https://example.invalid/control.xml" TargetMode="External"/>
+  <Relationship Id="rIdControlPropsOpaque" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/ctrlProp" Target="opaque-control.bin"/>
   <Relationship Id="rIdActiveX" Type="http://schemas.microsoft.com/office/2006/relationships/activeXControl" Target="https://example.invalid/control.ocx" TargetMode="External"/>
 </Relationships>`,
 			'xl/drawings/drawing1.xml': '<xdr:wsDr/>',
@@ -59,6 +63,7 @@ describe('XLSX package graph', () => {
   <Relationship Id="rIdImage" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image%201.png"/>
   <Relationship Id="rIdLinkedImage" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="https://example.invalid/logo.png" TargetMode="External"/>
   <Relationship Id="rIdOleObject" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObject" Target="file:///C:/objects/report.bin" TargetMode="External"/>
+  <Relationship Id="rIdOleObjectOpaque" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObject" Target="opaque-ole.bin"/>
   <Relationship Id="rIdOpaqueChartStyle" Type="http://schemas.microsoft.com/office/2011/relationships/chartStyle" Target="style-package.bin"/>
   <Relationship Id="rIdOpaqueChartColors" Type="http://schemas.microsoft.com/office/2011/relationships/chartColorStyle" Target="color-package.bin"/>
 </Relationships>`,
@@ -70,9 +75,14 @@ describe('XLSX package graph', () => {
 			'xl/diagrams/data1.xml': '<dgm:dataModel/>',
 			'xl/model/item.data': 'data-model-bytes',
 			'xl/customData/item1.data': 'power-query-bytes',
+			'xl/opaque-custom.xml': '<custom/>',
+			'xl/opaque-vba.bin': 'vba-bytes',
+			'xl/opaque-signature.bin': 'signature-bytes',
 			'xl/data/connectionsPayload.xml': '<connections/>',
 			'xl/links/bookLink.xml': '<externalLink/>',
 			'xl/revisions/revisionHeaders.xml': '<headers/>',
+			'xl/worksheets/opaque-control.bin': 'control-bytes',
+			'xl/drawings/opaque-ole.bin': 'ole-bytes',
 			'xl/media/image 1.png': 'not-really-a-png',
 		})
 
@@ -254,6 +264,33 @@ describe('XLSX package graph', () => {
 			featureFamily: 'preservedPowerQuery',
 			preservationPolicy: 'inspect-only',
 			bytePreservationExpected: true,
+		})
+		expect(graph.parts.find((part) => part.path === 'xl/opaque-custom.xml')).toMatchObject({
+			ownerScope: 'custom-xml',
+			sourceRelationshipId: 'rIdCustomXmlOpaque',
+			featureFamily: 'preservedCustomXml',
+		})
+		expect(graph.parts.find((part) => part.path === 'xl/opaque-vba.bin')).toMatchObject({
+			ownerScope: 'active-content',
+			sourceRelationshipId: 'rIdVbaOpaque',
+			featureFamily: 'preservedMacro',
+		})
+		expect(graph.parts.find((part) => part.path === 'xl/opaque-signature.bin')).toMatchObject({
+			ownerScope: 'security',
+			sourceRelationshipId: 'rIdVbaSignatureOpaque',
+			featureFamily: 'preservedSignature',
+		})
+		expect(
+			graph.parts.find((part) => part.path === 'xl/worksheets/opaque-control.bin'),
+		).toMatchObject({
+			ownerScope: 'active-content',
+			sourceRelationshipId: 'rIdControlPropsOpaque',
+			featureFamily: 'preservedControl',
+		})
+		expect(graph.parts.find((part) => part.path === 'xl/drawings/opaque-ole.bin')).toMatchObject({
+			ownerScope: 'active-content',
+			sourceRelationshipId: 'rIdOleObjectOpaque',
+			featureFamily: 'preservedEmbedding',
 		})
 		expect(
 			graph.parts.find((part) => part.path === 'xl/data/connectionsPayload.xml'),

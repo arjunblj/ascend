@@ -240,6 +240,12 @@ export function classifyPackageFeatureFamily(
 	if (/(^|\/)sharedStrings\.xml$/i.test(path)) return 'sharedStrings'
 	if (/(^|\/)worksheets\/sheet\d+\.xml$/i.test(path)) return 'worksheet'
 	if (/^xl\/worksheets\/sheet\d+_[^/]+\.xml$/i.test(path)) return 'preservedWorksheetSidecar'
+	if (lowerRelType.endsWith('/relationships/vbaprojectsignature')) return 'preservedSignature'
+	if (lowerRelType.endsWith('/relationships/vbaproject')) return 'preservedMacro'
+	if (lowerRelType.includes('/relationships/activexcontrol')) return 'preservedActiveX'
+	if (lowerRelType.endsWith('/relationships/ctrlprop')) return 'preservedControl'
+	if (lowerRelType.endsWith('/relationships/oleobject')) return 'preservedEmbedding'
+	if (lowerRelType.endsWith('/relationships/customxml')) return 'preservedCustomXml'
 	if (path.includes('/chartsheets/')) return 'preservedChartSheet'
 	if (path.includes('/macrosheets/')) return 'preservedMacroSheet'
 	if (
@@ -478,7 +484,18 @@ function classifyOwnerScope(
 	}
 	if (primary?.type === REL_EXTERNAL_LINK) return 'external-link'
 	if (/(^|\/)externalLinks\//.test(partPath)) return 'external-link'
+	if (primary?.type === REL_CUSTOM_XML) return 'custom-xml'
 	if (/(^|\/)customXml\//i.test(partPath)) return 'custom-xml'
+	if (primary?.type === REL_VBA_PROJECT_SIGNATURE) return 'security'
+	if (
+		primary?.type === REL_ACTIVE_X_CONTROL ||
+		primary?.type === REL_ACTIVE_X_CONTROL_BINARY ||
+		primary?.type === REL_CONTROL_PROP ||
+		primary?.type === REL_OLE_OBJECT ||
+		primary?.type === REL_VBA_PROJECT
+	) {
+		return 'active-content'
+	}
 	if (/(^|\/)(activeX|ctrlProps|embeddings)\//i.test(partPath)) return 'active-content'
 	if (/(^|\/)(metadata|calcChain)\.xml$/i.test(partPath)) return 'metadata'
 	if (primary?.sourcePartPath.includes('/worksheets/')) return 'worksheet'

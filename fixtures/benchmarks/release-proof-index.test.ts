@@ -968,6 +968,23 @@ describe('release proof evidence index', () => {
 			'research-surface-hygiene:claim-downgrade-do-not-promote',
 			'practical-latency-contracts:benchmark-corpus-blocker',
 		])
+		expect(index.releaseDecisionBoard.doNotPromoteDispositionSummary).toMatchObject({
+			implementationReadyBlockerNames: [
+				'formula-language-service-primitives',
+				'token-bounded-agent-view',
+				'retained-viewport-patch-history',
+				'release-proof-bundle',
+				'property-journal-laws',
+				'agent-workflow-observability',
+			],
+			benchmarkCorpusBlockerNames: [
+				'formula-oracle-routing',
+				'columnar-scan-sidecars',
+				'practical-latency-contracts',
+			],
+			claimDowngradeDoNotPromoteNames: ['research-surface-hygiene'],
+			boundary: expect.stringContaining('Routing summary for blocked claims only'),
+		})
 		expect(
 			index.releaseDecisionBoard.doNotPromoteYet.every(
 				(item) => item.status === 'do-not-promote-yet',
@@ -1789,6 +1806,22 @@ describe('release proof evidence index', () => {
 				}),
 			]),
 		)
+		expect(handoff.releaseDecisionBoard.doNotPromoteDispositionSummary).toMatchObject({
+			implementationReadyBlockerNames: [
+				'formula-language-service-primitives',
+				'token-bounded-agent-view',
+				'retained-viewport-patch-history',
+				'release-proof-bundle',
+				'property-journal-laws',
+				'agent-workflow-observability',
+			],
+			benchmarkCorpusBlockerNames: [
+				'formula-oracle-routing',
+				'columnar-scan-sidecars',
+				'practical-latency-contracts',
+			],
+			claimDowngradeDoNotPromoteNames: ['research-surface-hygiene'],
+		})
 		const releaseDecisionCoverage = new Set([
 			...handoff.releaseDecisionBoard.rows.map((row) => row.artifact),
 			...handoff.releaseDecisionBoard.doNotPromoteYet.map((item) => item.name),
@@ -1943,6 +1976,11 @@ describe('release proof evidence index', () => {
 				readonly forbiddenWording?: readonly string[]
 				readonly nextOwnerAction?: string
 			}[]
+			readonly doNotPromoteDispositionSummary?: {
+				readonly implementationReadyBlockerNames?: readonly string[]
+				readonly benchmarkCorpusBlockerNames?: readonly string[]
+				readonly claimDowngradeDoNotPromoteNames?: readonly string[]
+			}
 		}
 		expect(board.status).toBe('top-two-only')
 		expect(board.releaseGate).toBe('blocked-by-publication-policy')
@@ -2024,6 +2062,22 @@ describe('release proof evidence index', () => {
 			'research-surface-hygiene:claim-downgrade-do-not-promote',
 			'practical-latency-contracts:benchmark-corpus-blocker',
 		])
+		expect(board.doNotPromoteDispositionSummary).toMatchObject({
+			implementationReadyBlockerNames: [
+				'formula-language-service-primitives',
+				'token-bounded-agent-view',
+				'retained-viewport-patch-history',
+				'release-proof-bundle',
+				'property-journal-laws',
+				'agent-workflow-observability',
+			],
+			benchmarkCorpusBlockerNames: [
+				'formula-oracle-routing',
+				'columnar-scan-sidecars',
+				'practical-latency-contracts',
+			],
+			claimDowngradeDoNotPromoteNames: ['research-surface-hygiene'],
+		})
 		expect(board.doNotPromoteYet?.every((item) => item.status === 'do-not-promote-yet')).toBe(true)
 		for (const item of board.doNotPromoteYet ?? []) {
 			expect([

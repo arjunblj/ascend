@@ -344,6 +344,14 @@ export interface ReleaseProofReleaseDecisionBoard {
 	readonly missingRequirementCount: number
 	readonly rows: readonly ReleaseProofReleaseDecisionBoardRow[]
 	readonly doNotPromoteYet: readonly ReleaseProofReleaseDecisionDoNotPromoteItem[]
+	readonly doNotPromoteDispositionSummary: ReleaseProofReleaseDecisionDispositionSummary
+	readonly boundary: string
+}
+
+export interface ReleaseProofReleaseDecisionDispositionSummary {
+	readonly implementationReadyBlockerNames: readonly ReleaseProofReleaseDecisionDoNotPromoteItem['name'][]
+	readonly benchmarkCorpusBlockerNames: readonly ReleaseProofReleaseDecisionDoNotPromoteItem['name'][]
+	readonly claimDowngradeDoNotPromoteNames: readonly ReleaseProofReleaseDecisionDoNotPromoteItem['name'][]
 	readonly boundary: string
 }
 
@@ -1373,6 +1381,7 @@ export function releaseProofIndexMarkdown(result: ReleaseProofIndexResult): stri
 		...result.releaseDecisionBoard.rows.map(releaseDecisionBoardMarkdownRow),
 		'',
 		'Do not promote yet:',
+		`Disposition summary: implementation-ready-blocker=${result.releaseDecisionBoard.doNotPromoteDispositionSummary.implementationReadyBlockerNames.join(',')}; benchmark-corpus-blocker=${result.releaseDecisionBoard.doNotPromoteDispositionSummary.benchmarkCorpusBlockerNames.join(',')}; claim-downgrade-do-not-promote=${result.releaseDecisionBoard.doNotPromoteDispositionSummary.claimDowngradeDoNotPromoteNames.join(',')}`,
 		...result.releaseDecisionBoard.doNotPromoteYet.map(
 			(item) =>
 				`- ${item.name}: Disposition: ${item.workBlockDisposition}. ${item.reason} Missing: ${item.evidenceMissing.join('; ')} Allowed: ${item.allowedWording} Forbidden: ${item.forbiddenWording.join('; ')} Next: ${item.nextOwnerAction}`,
@@ -2253,6 +2262,7 @@ function releaseDecisionBoard(
 	readiness: ReleaseProofReadinessSummary,
 	qssMatrix: ReleaseProofQssLeapfrogReleaseMatrix,
 ): ReleaseProofReleaseDecisionBoard {
+	const doNotPromoteYet = qssMatrix.archivedResearchNotes.map(releaseDecisionDoNotPromoteItem)
 	return {
 		status: 'top-two-only',
 		releaseGate: readiness.releaseGate,
@@ -2287,9 +2297,28 @@ function releaseDecisionBoard(
 					'Release decision row only. It names allowed local claim wording, exact proof pointers, forbidden shortcuts, and owner blockers without satisfying any gate.',
 			}
 		}),
-		doNotPromoteYet: qssMatrix.archivedResearchNotes.map(releaseDecisionDoNotPromoteItem),
+		doNotPromoteYet,
+		doNotPromoteDispositionSummary: releaseDecisionDispositionSummary(doNotPromoteYet),
 		boundary:
 			'Top-two release-decision artifact for claim stewardship. It is derived from committed release proof gates and must not be treated as a product surface, benchmark threshold, signed provenance, or owner approval.',
+	}
+}
+
+function releaseDecisionDispositionSummary(
+	items: readonly ReleaseProofReleaseDecisionDoNotPromoteItem[],
+): ReleaseProofReleaseDecisionDispositionSummary {
+	return {
+		implementationReadyBlockerNames: items
+			.filter((item) => item.workBlockDisposition === 'implementation-ready-blocker')
+			.map((item) => item.name),
+		benchmarkCorpusBlockerNames: items
+			.filter((item) => item.workBlockDisposition === 'benchmark-corpus-blocker')
+			.map((item) => item.name),
+		claimDowngradeDoNotPromoteNames: items
+			.filter((item) => item.workBlockDisposition === 'claim-downgrade-do-not-promote')
+			.map((item) => item.name),
+		boundary:
+			'Routing summary for blocked claims only. It groups do-not-promote decisions by the next work block type without changing claim wording, owner approval, or release gates.',
 	}
 }
 
@@ -2483,6 +2512,18 @@ function cloneReleaseDecisionBoard(
 ): ReleaseProofReleaseDecisionBoard {
 	return {
 		...board,
+		doNotPromoteDispositionSummary: {
+			...board.doNotPromoteDispositionSummary,
+			implementationReadyBlockerNames: [
+				...board.doNotPromoteDispositionSummary.implementationReadyBlockerNames,
+			],
+			benchmarkCorpusBlockerNames: [
+				...board.doNotPromoteDispositionSummary.benchmarkCorpusBlockerNames,
+			],
+			claimDowngradeDoNotPromoteNames: [
+				...board.doNotPromoteDispositionSummary.claimDowngradeDoNotPromoteNames,
+			],
+		},
 		doNotPromoteYet: board.doNotPromoteYet.map((item) => ({
 			...item,
 			ownerLoops: [...item.ownerLoops],

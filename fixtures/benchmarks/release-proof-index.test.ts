@@ -1751,6 +1751,78 @@ describe('release proof evidence index', () => {
 		expect(stdout).not.toContain('"qssLeapfrogReleaseMatrix"')
 	})
 
+	test('emits a compact performance boundary packet JSON mode', async () => {
+		const proc = Bun.spawn(
+			[Bun.argv[0], runnerPath, '--no-timings', '--performance-boundary-json'],
+			{
+				cwd: process.cwd(),
+				stderr: 'pipe',
+				stdout: 'pipe',
+			},
+		)
+		const [stdout, stderr, exitCode] = await Promise.all([
+			new Response(proc.stdout).text(),
+			new Response(proc.stderr).text(),
+			proc.exited,
+		])
+
+		expect(exitCode, stderr).toBe(0)
+		expect(stderr.trim()).toBe('')
+		const packet = JSON.parse(stdout) as {
+			readonly ownerLoop?: string
+			readonly status?: string
+			readonly releaseGate?: string
+			readonly headlineClaimsAllowed?: boolean
+			readonly ownerApprovalRequired?: boolean
+			readonly broadSpeedClaimAllowed?: boolean
+			readonly benchmarkBlocker?: {
+				readonly artifactId?: string
+				readonly path?: string
+				readonly validationCommand?: string
+				readonly nextAction?: string
+				readonly benchmarkCommands?: readonly string[]
+				readonly acceptanceEvidence?: readonly string[]
+				readonly stopCondition?: string
+			}
+			readonly approvalChecklist?: readonly {
+				readonly gateId?: string
+				readonly ownerLoop?: string
+			}[]
+			readonly validationCommands?: readonly string[]
+			readonly forbiddenShortcuts?: readonly string[]
+		}
+		expect(packet).toMatchObject({
+			ownerLoop: 'performance',
+			status: 'owner-decision-required',
+			releaseGate: 'blocked-by-publication-policy',
+			headlineClaimsAllowed: false,
+			ownerApprovalRequired: true,
+			broadSpeedClaimAllowed: false,
+			benchmarkBlocker: {
+				artifactId: 'performance-claim-baseline-matrix',
+				path: 'docs/PERFORMANCE_CLAIM_BASELINE_MATRIX.md',
+				validationCommand: 'bun test fixtures/benchmarks/performance-claim-baseline-matrix.test.ts',
+			},
+		})
+		expect(packet.benchmarkBlocker?.nextAction).toContain('full-profile `xlsx-read-sota` gate')
+		expect(packet.benchmarkBlocker?.benchmarkCommands?.join('\n')).toContain(
+			'competitive-scoreboard.ts <suite.json> --json --metric medianMs --require-profile xlsx-read-sota',
+		)
+		expect(packet.benchmarkBlocker?.acceptanceEvidence?.join('\n')).toContain('not counted as wins')
+		expect(packet.approvalChecklist?.map((item) => `${item.ownerLoop}/${item.gateId}`)).toEqual([
+			'performance/release-latency-run',
+			'performance/streaming-matrix-boundary',
+		])
+		expect(packet.validationCommands?.join('\n')).toContain(
+			'bun test fixtures/benchmarks/performance-claim-baseline-matrix.test.ts',
+		)
+		expect(packet.forbiddenShortcuts?.join('\n')).toContain('fastest XLSX reader')
+		expect(stdout).not.toContain('"claimBlockerBoard"')
+		expect(stdout).not.toContain('"fixturePolicy"')
+		expect(stdout).not.toContain('"deferredClaims"')
+		expect(stdout).not.toContain('"qssLeapfrogReleaseMatrix"')
+	})
+
 	test('renders honest non-attestation boundaries', async () => {
 		const markdown = releaseProofIndexMarkdown(
 			await runReleaseProofIndex({ includeTimings: false }),

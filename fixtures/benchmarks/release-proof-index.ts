@@ -250,6 +250,29 @@ export interface ReleaseProofCorrectnessBoundaryDecisionPacket {
 	readonly boundary: string
 }
 
+export interface ReleaseProofPerformanceBoundaryDecisionPacket {
+	readonly ownerLoop: 'performance'
+	readonly status: 'owner-decision-required'
+	readonly releaseGate: ReleaseProofReadinessSummary['releaseGate']
+	readonly headlineClaimsAllowed: boolean
+	readonly ownerApprovalRequired: true
+	readonly broadSpeedClaimAllowed: false
+	readonly benchmarkBlocker: {
+		readonly artifactId: 'performance-claim-baseline-matrix'
+		readonly path: 'docs/PERFORMANCE_CLAIM_BASELINE_MATRIX.md'
+		readonly validationCommand: 'bun test fixtures/benchmarks/performance-claim-baseline-matrix.test.ts'
+		readonly nextAction: string
+		readonly benchmarkCommands: readonly string[]
+		readonly acceptanceEvidence: readonly string[]
+		readonly stopCondition: string
+	}
+	readonly approvalChecklist: readonly ReleaseProofPerformancePolicyApprovalItem[]
+	readonly validationCommands: readonly string[]
+	readonly sourceReferences: readonly ReleaseProofSourceReference[]
+	readonly forbiddenShortcuts: readonly string[]
+	readonly boundary: string
+}
+
 export interface ReleaseProofFixtureDecisionTrackedScan {
 	readonly artifact: ReleaseProofIndexArtifactName
 	readonly gateId: 'public-edge-fixtures' | 'edge-fixture-policy'
@@ -1758,6 +1781,59 @@ export function releaseProofCorrectnessBoundaryDecisionPacket(
 		],
 		boundary:
 			'Compact correctness unsupported-feature boundary packet. It is not owner approval, semantic support for unsupported features, release wording approval, or permission to promote package-action parity claims.',
+	}
+}
+
+export function releaseProofPerformanceBoundaryDecisionPacket(
+	result: ReleaseProofIndexResult,
+): ReleaseProofPerformanceBoundaryDecisionPacket {
+	const approvalChecklist = result.performancePolicy.approvalChecklist.map((item) => ({ ...item }))
+	const benchmarkValidationCommand =
+		'bun test fixtures/benchmarks/performance-claim-baseline-matrix.test.ts'
+	const benchmarkCommands = [
+		'env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-io.ts --json --category read --competitor all --workload <xlsx-read-sota-workload> --read-source raw-ooxml --repeat 5 --warmup 1 --validation-mode each --runner-manifest fixtures/benchmarks/runners/ascend-python-readers.manifest.json',
+		'env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-scoreboard.ts <suite.json> --json --metric medianMs --require-profile xlsx-read-sota',
+	]
+	return {
+		ownerLoop: 'performance',
+		status: 'owner-decision-required',
+		releaseGate: result.readiness.releaseGate,
+		headlineClaimsAllowed: result.readiness.headlineClaimsAllowed,
+		ownerApprovalRequired: true,
+		broadSpeedClaimAllowed: false,
+		benchmarkBlocker: {
+			artifactId: 'performance-claim-baseline-matrix',
+			path: 'docs/PERFORMANCE_CLAIM_BASELINE_MATRIX.md',
+			validationCommand: benchmarkValidationCommand,
+			nextAction:
+				'Run or assemble a current-commit full-profile `xlsx-read-sota` gate next; if it still fails only for explicit blocked, unavailable, unsupported, or semantic-mismatch rows, keep the claim scoped and attack the highest-impact blocker.',
+			benchmarkCommands,
+			acceptanceEvidence: [
+				'Clean detached worktree or clean release benchmark environment.',
+				'Every `xlsx-read-sota` workload either has comparable Ascend and external rows or an explicit runner unavailable, blocked, unsupported-operation, or not-comparable status.',
+				'Median, p95, CV/noise, memory, environment, runner/library versions, command, input shape, and semantic comparability are recorded for each comparable row.',
+				'Failed, missing, or semantically mismatched runners are not counted as wins.',
+			],
+			stopCondition:
+				'Do not optimize further from measured winning rows; continue only on the next named loss, unstable tail, or memory/latency tradeoff worth production work.',
+		},
+		approvalChecklist,
+		validationCommands: [
+			...new Set([
+				benchmarkValidationCommand,
+				...benchmarkCommands,
+				...approvalChecklist.map((item) => item.validationCommand),
+			]),
+		],
+		sourceReferences: result.performancePolicy.sourceReferences.map((entry) => ({ ...entry })),
+		forbiddenShortcuts: [
+			'Do not claim Ascend is the fastest XLSX reader.',
+			'Do not claim SOTA or QSS-leapfrog read speed from partial profile rows.',
+			'Do not count unavailable runners, blocked runners, unsupported operations, semantic mismatches, dirty-worktree timings, or one-workload medians as wins.',
+			'Do not turn local safe-open timing into a release threshold, SLA, or QSS performance comparison.',
+		],
+		boundary:
+			'Compact performance boundary packet. It is not a release speed claim, benchmark promotion, production optimization mandate, or owner approval.',
 	}
 }
 
@@ -4845,32 +4921,36 @@ if (import.meta.main) {
 	const releaseDecisionJson = process.argv.includes('--release-decision-json')
 	const fixtureDecisionJson = process.argv.includes('--fixture-decision-json')
 	const correctnessBoundaryJson = process.argv.includes('--correctness-boundary-json')
+	const performanceBoundaryJson = process.argv.includes('--performance-boundary-json')
 	const result = await runReleaseProofIndex({
 		includeTimings: !process.argv.includes('--no-timings'),
 	})
 	console.log(
 		releaseDecisionJson
 			? JSON.stringify(result.releaseDecisionBoard, null, 2)
-			: correctnessBoundaryJson
-				? JSON.stringify(releaseProofCorrectnessBoundaryDecisionPacket(result), null, 2)
-				: fixtureDecisionJson
-					? JSON.stringify(releaseProofFixtureDecisionPacket(result), null, 2)
-					: ownerHandoffsJson
-						? JSON.stringify(releaseProofOwnerHandoffIndex(result), null, 2)
-						: json
-							? JSON.stringify(result, null, 2)
-							: releaseProofIndexMarkdown(result),
+			: performanceBoundaryJson
+				? JSON.stringify(releaseProofPerformanceBoundaryDecisionPacket(result), null, 2)
+				: correctnessBoundaryJson
+					? JSON.stringify(releaseProofCorrectnessBoundaryDecisionPacket(result), null, 2)
+					: fixtureDecisionJson
+						? JSON.stringify(releaseProofFixtureDecisionPacket(result), null, 2)
+						: ownerHandoffsJson
+							? JSON.stringify(releaseProofOwnerHandoffIndex(result), null, 2)
+							: json
+								? JSON.stringify(result, null, 2)
+								: releaseProofIndexMarkdown(result),
 	)
 	if (
 		!json &&
 		!ownerHandoffsJson &&
 		!releaseDecisionJson &&
 		!fixtureDecisionJson &&
-		!correctnessBoundaryJson
+		!correctnessBoundaryJson &&
+		!performanceBoundaryJson
 	) {
 		console.error(`Indexed ${result.artifactCount} release proof evidence artifacts.`)
 		console.error(
-			`Run with --json, --owner-handoffs-json, --release-decision-json, --fixture-decision-json, or --correctness-boundary-json for machine-readable output from ${basename(import.meta.path)}.`,
+			`Run with --json, --owner-handoffs-json, --release-decision-json, --fixture-decision-json, --correctness-boundary-json, or --performance-boundary-json for machine-readable output from ${basename(import.meta.path)}.`,
 		)
 	}
 }

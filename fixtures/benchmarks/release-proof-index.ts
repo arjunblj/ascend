@@ -406,6 +406,7 @@ export interface ReleaseProofReleaseDecisionBoard {
 	readonly benchmarkCorpusOwnerActionQueue: readonly ReleaseProofBenchmarkCorpusOwnerAction[]
 	readonly implementationReadyOwnerActionQueue: readonly ReleaseProofImplementationReadyOwnerAction[]
 	readonly claimDowngradeOwnerActionQueue: readonly ReleaseProofClaimDowngradeOwnerAction[]
+	readonly benchmarkCorpusRunContractCoverage: ReleaseProofBenchmarkCorpusRunContractCoverage
 	readonly ownerActionQueueCoverage: ReleaseProofOwnerActionQueueCoverage
 	readonly ownerActionExecutionContractCoverage: ReleaseProofOwnerActionExecutionContractCoverage
 	readonly boundary: string
@@ -561,6 +562,11 @@ export interface ReleaseProofBenchmarkCorpusOwnerAction {
 	readonly commandsToRun: readonly string[]
 	readonly failureEvidence: readonly string[]
 	readonly acceptanceCriteria: string
+	readonly runInputScope: string
+	readonly runEnvironment: string
+	readonly requiredOutputEvidence: readonly string[]
+	readonly promotionCondition: string
+	readonly stopCondition: string
 	readonly evidenceWeHave: readonly string[]
 	readonly evidenceMissing: readonly string[]
 	readonly qssContrast: readonly string[]
@@ -608,6 +614,19 @@ export interface ReleaseProofClaimDowngradeOwnerAction {
 	readonly allowedWording: string
 	readonly forbiddenWording: readonly string[]
 	readonly nextOwnerAction: string
+	readonly boundary: string
+}
+
+export interface ReleaseProofBenchmarkCorpusRunContractCoverage {
+	readonly status:
+		| 'all-benchmark-corpus-actions-have-run-contract'
+		| 'benchmark-corpus-run-contract-gap'
+	readonly actionCount: number
+	readonly missingInputScopeActionKeys: readonly string[]
+	readonly missingRunEnvironmentActionKeys: readonly string[]
+	readonly missingRequiredOutputEvidenceActionKeys: readonly string[]
+	readonly missingPromotionConditionActionKeys: readonly string[]
+	readonly missingStopConditionActionKeys: readonly string[]
 	readonly boundary: string
 }
 
@@ -1610,7 +1629,7 @@ export function releaseProofIndexMarkdown(result: ReleaseProofIndexResult): stri
 		'Benchmark/corpus owner action queue:',
 		...result.releaseDecisionBoard.benchmarkCorpusOwnerActionQueue.map(
 			(row) =>
-				`- ${row.ownerLoop}/${row.name}${row.requirementId ? `/${row.requirementId}` : ''}: ${row.sourceQueue}. Files: ${row.ownerFiles.map((file) => `\`${file}\``).join('; ')} Commands: ${row.commandsToRun.map((command) => `\`${command}\``).join('; ')} Failure evidence: ${row.failureEvidence.join('; ')} Accept: ${row.acceptanceCriteria} Next: ${row.nextOwnerAction}`,
+				`- ${row.ownerLoop}/${row.name}${row.requirementId ? `/${row.requirementId}` : ''}: ${row.sourceQueue}. Files: ${row.ownerFiles.map((file) => `\`${file}\``).join('; ')} Commands: ${row.commandsToRun.map((command) => `\`${command}\``).join('; ')} Input: ${row.runInputScope} Environment: ${row.runEnvironment} Required output: ${row.requiredOutputEvidence.join('; ')} Promote only if: ${row.promotionCondition} Stop: ${row.stopCondition} Failure evidence: ${row.failureEvidence.join('; ')} Accept: ${row.acceptanceCriteria} Next: ${row.nextOwnerAction}`,
 		),
 		'Implementation-ready owner action queue:',
 		...result.releaseDecisionBoard.implementationReadyOwnerActionQueue.map(
@@ -1622,6 +1641,7 @@ export function releaseProofIndexMarkdown(result: ReleaseProofIndexResult): stri
 			(row) =>
 				`- ${row.ownerLoop}/${row.name}: ${row.sourceQueue}. Files: ${row.ownerFiles.map((file) => `\`${file}\``).join('; ')} Commands: ${row.commandsToRun.map((command) => `\`${command}\``).join('; ')} Failure evidence: ${row.failureEvidence.join('; ')} Accept: ${row.acceptanceCriteria} Next: ${row.nextOwnerAction}`,
 		),
+		`Benchmark/corpus run contract coverage: status=${result.releaseDecisionBoard.benchmarkCorpusRunContractCoverage.status}; actions=${result.releaseDecisionBoard.benchmarkCorpusRunContractCoverage.actionCount}; missingInputScope=${result.releaseDecisionBoard.benchmarkCorpusRunContractCoverage.missingInputScopeActionKeys.join(',')}; missingRunEnvironment=${result.releaseDecisionBoard.benchmarkCorpusRunContractCoverage.missingRunEnvironmentActionKeys.join(',')}; missingRequiredOutput=${result.releaseDecisionBoard.benchmarkCorpusRunContractCoverage.missingRequiredOutputEvidenceActionKeys.join(',')}; missingPromotion=${result.releaseDecisionBoard.benchmarkCorpusRunContractCoverage.missingPromotionConditionActionKeys.join(',')}; missingStop=${result.releaseDecisionBoard.benchmarkCorpusRunContractCoverage.missingStopConditionActionKeys.join(',')}`,
 		`Owner action queue coverage: status=${result.releaseDecisionBoard.ownerActionQueueCoverage.status}; top=${result.releaseDecisionBoard.ownerActionQueueCoverage.sourceTopClaimActionCount}; blocked=${result.releaseDecisionBoard.ownerActionQueueCoverage.sourceBlockedActionCount}; covered=${result.releaseDecisionBoard.ownerActionQueueCoverage.coveredActionCount}; uncoveredTop=${result.releaseDecisionBoard.ownerActionQueueCoverage.uncoveredTopClaimActionKeys.join(',')}; uncoveredBlocked=${result.releaseDecisionBoard.ownerActionQueueCoverage.uncoveredBlockedActionKeys.join(',')}`,
 		`Owner action execution contract coverage: status=${result.releaseDecisionBoard.ownerActionExecutionContractCoverage.status}; actions=${result.releaseDecisionBoard.ownerActionExecutionContractCoverage.actionCount}; missingFiles=${result.releaseDecisionBoard.ownerActionExecutionContractCoverage.missingOwnerFileActionKeys.join(',')}; missingCommands=${result.releaseDecisionBoard.ownerActionExecutionContractCoverage.missingCommandActionKeys.join(',')}; missingFailureEvidence=${result.releaseDecisionBoard.ownerActionExecutionContractCoverage.missingFailureEvidenceActionKeys.join(',')}; missingAcceptanceCriteria=${result.releaseDecisionBoard.ownerActionExecutionContractCoverage.missingAcceptanceCriteriaActionKeys.join(',')}`,
 		'',
@@ -2705,6 +2725,9 @@ function releaseDecisionBoard(
 	)
 	const claimDowngradeOwnerActionQueue =
 		releaseDecisionClaimDowngradeOwnerActionQueue(blockedOwnerActionQueue)
+	const benchmarkCorpusRunContractCoverage = releaseDecisionBenchmarkCorpusRunContractCoverage(
+		benchmarkCorpusOwnerActionQueue,
+	)
 	return {
 		status: 'top-two-only',
 		releaseGate: readiness.releaseGate,
@@ -2724,6 +2747,7 @@ function releaseDecisionBoard(
 		benchmarkCorpusOwnerActionQueue,
 		implementationReadyOwnerActionQueue,
 		claimDowngradeOwnerActionQueue,
+		benchmarkCorpusRunContractCoverage,
 		ownerActionQueueCoverage: releaseDecisionOwnerActionQueueCoverage(
 			topClaimOwnerActionQueue,
 			blockedOwnerActionQueue,
@@ -2944,6 +2968,7 @@ function releaseDecisionBenchmarkCorpusOwnerActionQueue(
 		...topClaimActions
 			.filter((action) => action.workBlockDisposition === 'benchmark-corpus-blocker')
 			.map((action) => ({
+				...releaseDecisionBenchmarkCorpusRunContract(action.artifact, action.requirementId),
 				sourceQueue: 'top-claim-owner-action' as const,
 				name: action.artifact,
 				claim: action.claim,
@@ -2969,6 +2994,7 @@ function releaseDecisionBenchmarkCorpusOwnerActionQueue(
 		...blockedActions
 			.filter((action) => action.workBlockDisposition === 'benchmark-corpus-blocker')
 			.map((action) => ({
+				...releaseDecisionBenchmarkCorpusRunContract(action.name),
 				sourceQueue: 'blocked-owner-action' as const,
 				name: action.name,
 				claim: action.name,
@@ -3027,6 +3053,140 @@ function releaseDecisionBenchmarkCorpusOwnerFiles(
 			]
 		default:
 			return []
+	}
+}
+
+type ReleaseProofBenchmarkCorpusRunContract = Pick<
+	ReleaseProofBenchmarkCorpusOwnerAction,
+	| 'runInputScope'
+	| 'runEnvironment'
+	| 'requiredOutputEvidence'
+	| 'promotionCondition'
+	| 'stopCondition'
+>
+
+function releaseDecisionBenchmarkCorpusRunContract(
+	name: ReleaseProofIndexArtifactName | ReleaseProofReleaseDecisionDoNotPromoteItem['name'],
+	requirementId?: string,
+): ReleaseProofBenchmarkCorpusRunContract {
+	if (name === 'safe-open-proof' && requirementId === 'public-edge-fixtures') {
+		return {
+			runInputScope:
+				'Tracked safe-open fixture corpus: public unknown-part fixture plus disclosed generated signed and malformed structural packages.',
+			runEnvironment:
+				'Current repo fixture scan only; do not count private or license-unclear binary replacements unless product approves them.',
+			requiredOutputEvidence: [
+				'JSON scan output names generated structural cases, public replacement gaps, and tracked-corpus status.',
+				'Owner decision either accepts disclosed generated topology fixtures or names public binary replacements.',
+			],
+			promotionCondition:
+				'Promote only if product accepts disclosed generated signed/malformed topology proof or replaces those cases with approved public fixtures.',
+			stopCondition:
+				'Stop after the fixture scan and owner decision; do not broaden fixture search unless product rejects the disclosed generated cases.',
+		}
+	}
+	if (name === 'safe-open-proof' && requirementId === 'release-latency-run') {
+		return {
+			runInputScope:
+				'Standardized public safe-open cases from the release-latency owner-review profile.',
+			runEnvironment:
+				'Tracked-clean release environment with repeat 10, warmup 3, timing metadata, and no dirty-worktree or private-corpus timings counted.',
+			requiredOutputEvidence: [
+				'Open-plan and full-open median, p95, and CV for each required public case.',
+				'Timing environment metadata and product-approved non-threshold wording.',
+			],
+			promotionCondition:
+				'Promote only bounded latency wording after the public profile passes CV/noise guardrails and product approves non-threshold copy.',
+			stopCondition:
+				'Stop at a bounded performance decision: accepted public profile, explicit no-target decision, or rerun blocker with failure output.',
+		}
+	}
+	if (name === 'package-action-proof' && requirementId === 'edge-fixture-policy') {
+		return {
+			runInputScope:
+				'Tracked package-action fixture corpus with disclosed generated signature-invalidation topology and public unknown-part candidates.',
+			runEnvironment:
+				'Current repo fixture scan only; generated topology remains owner-gated and cannot be hidden as public binary evidence.',
+			requiredOutputEvidence: [
+				'JSON scan output names generated structural cases, signature replacement gaps, and tracked-corpus status.',
+				'Owner decision accepts disclosed generated signature topology or names public binary replacements.',
+			],
+			promotionCondition:
+				'Promote only if product accepts disclosed generated signature topology for guarded proof or replaces it with approved public fixtures.',
+			stopCondition:
+				'Stop after fixture scan and owner decision; do not imply real signature verification or signed provenance.',
+		}
+	}
+	if (name === 'package-action-proof' && requirementId === 'streaming-matrix-boundary') {
+		return {
+			runInputScope:
+				'Package-action proof cases covering passthrough, regenerate, add, drop, macro/chart accounting, and known non-streaming cases.',
+			runEnvironment:
+				'No-timings proof run; representative streaming scope only, not a speed benchmark or full streaming parity run.',
+			requiredOutputEvidence: [
+				'Covered action kinds, missing action kinds, non-streaming cases, and public non-streaming cases.',
+				'Performance owner decision accepting representative scope or naming the matrix expansion required.',
+			],
+			promotionCondition:
+				'Promote only narrow representative streaming wording after owner approval; otherwise keep full streaming parity forbidden.',
+			stopCondition:
+				'Stop at representative-scope approval or an explicit matrix-expansion blocker.',
+		}
+	}
+	if (name === 'formula-oracle-routing') {
+		return {
+			runInputScope:
+				'Public LibreOffice formula corpus manifest, formula-fidelity tag, and max-workbooks 5 smoke profile.',
+			runEnvironment:
+				'Local public-corpus run only; cached-value routing evidence cannot count private corpora or unavailable Excel oracle execution as parity.',
+			requiredOutputEvidence: [
+				'Mismatch classes, skip counters, divergence counters, and route counts for cached/static/oracle gaps.',
+				'Named HyperFormula, LibreOffice, Excel, or static-golden adapter gaps before any Excel-compatible formula wording.',
+			],
+			promotionCondition:
+				'Promote only after public corpus artifacts and real oracle adapters emit reproducible skip/divergence evidence with owner-approved thresholds.',
+			stopCondition:
+				'Stop at a corpus blocker or adapter blocker; do not add formula compatibility wording from cached-value routing alone.',
+		}
+	}
+	if (name === 'columnar-scan-sidecars') {
+		return {
+			runInputScope:
+				'Public SEC MMF workbook Table 9 claim report plus follow-on structurally diverse public table/range fixtures.',
+			runEnvironment:
+				'Benchmark-only sidecar run with repeats, checksum parity, build cost, invalidation cost, and memory or payload guardrails.',
+			requiredOutputEvidence: [
+				'Repeated-scan median, p95 or noise/CV, sidecar build cost, invalidation cost, memory overhead, and checksum parity.',
+				'Decision that the result remains benchmark-only or names a real SDK/API/MCP product surface.',
+			],
+			promotionCondition:
+				'Promote only if diverse public fixtures show end-to-end wins including build/invalidation cost and bounded memory with checksum parity.',
+			stopCondition:
+				'Stop at benchmark-only evidence, a production-surface owner blocker, or a do-not-promote speed/product decision.',
+		}
+	}
+	if (name === 'practical-latency-contracts') {
+		return {
+			runInputScope:
+				'Public-tracked practical workflow contract preset covering first-view, edit-verify, and repeated-inspection envelopes.',
+			runEnvironment:
+				'Tracked-clean worktree; run the dry-run first, then repeat 3 warmup 1 with no private inputs or dirty-worktree timings counted.',
+			requiredOutputEvidence: [
+				'Summary/profile JSON with median, p95, CV/noise, input provenance, and memory or payload guardrails.',
+				'One profile-backed production target or explicit no-target decision plus product-approved non-threshold wording.',
+			],
+			promotionCondition:
+				'Promote only after tracked-clean public profile artifacts support non-threshold workflow wording approved by product and performance.',
+			stopCondition:
+				'Stop at accepted public profile evidence, explicit no-target decision, or rerun blocker with command failure evidence.',
+		}
+	}
+	return {
+		runInputScope: '',
+		runEnvironment: '',
+		requiredOutputEvidence: [],
+		promotionCondition: '',
+		stopCondition: '',
 	}
 }
 
@@ -3231,6 +3391,45 @@ function releaseDecisionOwnerActionQueueCoverage(
 		uncoveredBlockedActionKeys,
 		boundary:
 			'Owner action queue coverage only. It proves routing rows are present in the disposition queues without satisfying any claim gate, approving wording, or executing validation commands.',
+	}
+}
+
+function releaseDecisionBenchmarkCorpusRunContractCoverage(
+	benchmarkCorpusActions: readonly ReleaseProofBenchmarkCorpusOwnerAction[],
+): ReleaseProofBenchmarkCorpusRunContractCoverage {
+	const missingInputScopeActionKeys = benchmarkCorpusActions
+		.filter((action) => action.runInputScope.trim().length === 0)
+		.map(releaseDecisionDispositionActionKey)
+	const missingRunEnvironmentActionKeys = benchmarkCorpusActions
+		.filter((action) => action.runEnvironment.trim().length === 0)
+		.map(releaseDecisionDispositionActionKey)
+	const missingRequiredOutputEvidenceActionKeys = benchmarkCorpusActions
+		.filter((action) => action.requiredOutputEvidence.length === 0)
+		.map(releaseDecisionDispositionActionKey)
+	const missingPromotionConditionActionKeys = benchmarkCorpusActions
+		.filter((action) => action.promotionCondition.trim().length === 0)
+		.map(releaseDecisionDispositionActionKey)
+	const missingStopConditionActionKeys = benchmarkCorpusActions
+		.filter((action) => action.stopCondition.trim().length === 0)
+		.map(releaseDecisionDispositionActionKey)
+	const status =
+		missingInputScopeActionKeys.length === 0 &&
+		missingRunEnvironmentActionKeys.length === 0 &&
+		missingRequiredOutputEvidenceActionKeys.length === 0 &&
+		missingPromotionConditionActionKeys.length === 0 &&
+		missingStopConditionActionKeys.length === 0
+			? 'all-benchmark-corpus-actions-have-run-contract'
+			: 'benchmark-corpus-run-contract-gap'
+	return {
+		status,
+		actionCount: benchmarkCorpusActions.length,
+		missingInputScopeActionKeys,
+		missingRunEnvironmentActionKeys,
+		missingRequiredOutputEvidenceActionKeys,
+		missingPromotionConditionActionKeys,
+		missingStopConditionActionKeys,
+		boundary:
+			'Benchmark/corpus run contract coverage only. It proves each benchmark or corpus blocker names input scope, run environment, required output evidence, promotion condition, and stop condition without executing commands or promoting claims.',
 	}
 }
 
@@ -3627,6 +3826,7 @@ function cloneReleaseDecisionBoard(
 			validationCommands: [...row.validationCommands],
 			commandsToRun: [...row.commandsToRun],
 			failureEvidence: [...row.failureEvidence],
+			requiredOutputEvidence: [...row.requiredOutputEvidence],
 			evidenceWeHave: [...row.evidenceWeHave],
 			evidenceMissing: [...row.evidenceMissing],
 			qssContrast: [...row.qssContrast],
@@ -3658,6 +3858,24 @@ function cloneReleaseDecisionBoard(
 			...board.ownerActionQueueCoverage,
 			uncoveredTopClaimActionKeys: [...board.ownerActionQueueCoverage.uncoveredTopClaimActionKeys],
 			uncoveredBlockedActionKeys: [...board.ownerActionQueueCoverage.uncoveredBlockedActionKeys],
+		},
+		benchmarkCorpusRunContractCoverage: {
+			...board.benchmarkCorpusRunContractCoverage,
+			missingInputScopeActionKeys: [
+				...board.benchmarkCorpusRunContractCoverage.missingInputScopeActionKeys,
+			],
+			missingRunEnvironmentActionKeys: [
+				...board.benchmarkCorpusRunContractCoverage.missingRunEnvironmentActionKeys,
+			],
+			missingRequiredOutputEvidenceActionKeys: [
+				...board.benchmarkCorpusRunContractCoverage.missingRequiredOutputEvidenceActionKeys,
+			],
+			missingPromotionConditionActionKeys: [
+				...board.benchmarkCorpusRunContractCoverage.missingPromotionConditionActionKeys,
+			],
+			missingStopConditionActionKeys: [
+				...board.benchmarkCorpusRunContractCoverage.missingStopConditionActionKeys,
+			],
 		},
 		ownerActionExecutionContractCoverage: {
 			...board.ownerActionExecutionContractCoverage,

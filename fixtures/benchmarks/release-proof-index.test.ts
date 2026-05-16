@@ -1130,6 +1130,11 @@ describe('release proof evidence index', () => {
 			expect(row.evidenceWeHave).toEqual(expect.arrayContaining([expect.any(String)]))
 			expect(row.evidenceMissing).toEqual(expect.arrayContaining([expect.any(String)]))
 			expect(row.qssContrast).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(row.runInputScope.length).toBeGreaterThan(0)
+			expect(row.runEnvironment.length).toBeGreaterThan(0)
+			expect(row.requiredOutputEvidence).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(row.promotionCondition.length).toBeGreaterThan(0)
+			expect(row.stopCondition.length).toBeGreaterThan(0)
 			expect(row.allowedWording.length).toBeGreaterThan(0)
 			expect(row.forbiddenWording).toEqual(expect.arrayContaining([expect.any(String)]))
 			expect(row.nextOwnerAction.length).toBeGreaterThan(0)
@@ -1144,10 +1149,19 @@ describe('release proof evidence index', () => {
 					validationCommands: [
 						'bun run fixtures/benchmarks/safe-open-proof.ts --repeat 10 --warmup 3 --json',
 					],
+					runInputScope: expect.stringContaining('Standardized public safe-open cases'),
+					runEnvironment: expect.stringContaining('Tracked-clean release environment'),
+					requiredOutputEvidence: expect.arrayContaining([
+						expect.stringContaining('median, p95, and CV'),
+					]),
+					promotionCondition: expect.stringContaining('non-threshold'),
+					stopCondition: expect.stringContaining('bounded performance decision'),
 				}),
 				expect.objectContaining({
 					sourceQueue: 'blocked-owner-action',
 					name: 'practical-latency-contracts',
+					runInputScope: expect.stringContaining('Public-tracked practical workflow'),
+					runEnvironment: expect.stringContaining('Tracked-clean worktree'),
 					validationCommands: expect.arrayContaining([
 						expect.stringContaining(
 							'--input-preset public-tracked --contract all --repeat 3 --warmup 1 --json',
@@ -1252,6 +1266,16 @@ describe('release proof evidence index', () => {
 			uncoveredTopClaimActionKeys: [],
 			uncoveredBlockedActionKeys: [],
 			boundary: expect.stringContaining('Owner action queue coverage only'),
+		})
+		expect(index.releaseDecisionBoard.benchmarkCorpusRunContractCoverage).toMatchObject({
+			status: 'all-benchmark-corpus-actions-have-run-contract',
+			actionCount: 7,
+			missingInputScopeActionKeys: [],
+			missingRunEnvironmentActionKeys: [],
+			missingRequiredOutputEvidenceActionKeys: [],
+			missingPromotionConditionActionKeys: [],
+			missingStopConditionActionKeys: [],
+			boundary: expect.stringContaining('Benchmark/corpus run contract coverage only'),
 		})
 		expect(index.releaseDecisionBoard.ownerActionExecutionContractCoverage).toMatchObject({
 			status: 'all-disposition-owner-actions-have-execution-contract',
@@ -2326,6 +2350,11 @@ describe('release proof evidence index', () => {
 			expect(row.commandsToRun).toEqual(row.validationCommands)
 			expect(row.failureEvidence).toEqual(expect.arrayContaining([expect.any(String)]))
 			expect(row.acceptanceCriteria.length).toBeGreaterThan(0)
+			expect(row.runInputScope.length).toBeGreaterThan(0)
+			expect(row.runEnvironment.length).toBeGreaterThan(0)
+			expect(row.requiredOutputEvidence).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(row.promotionCondition.length).toBeGreaterThan(0)
+			expect(row.stopCondition.length).toBeGreaterThan(0)
 		}
 		expect(handoff.releaseDecisionBoard.benchmarkCorpusOwnerActionQueue).toEqual(
 			expect.arrayContaining([
@@ -2336,6 +2365,7 @@ describe('release proof evidence index', () => {
 					requirementId: 'public-edge-fixtures',
 					ownerFiles: ['fixtures/benchmarks/safe-open-fixture-scan.ts'],
 					validationCommands: ['bun run fixtures/benchmarks/safe-open-fixture-scan.ts --json'],
+					runInputScope: expect.stringContaining('Tracked safe-open fixture corpus'),
 				}),
 				expect.objectContaining({
 					sourceQueue: 'top-claim-owner-action',
@@ -2346,6 +2376,9 @@ describe('release proof evidence index', () => {
 					validationCommands: [
 						'bun run fixtures/benchmarks/package-action-proof.ts --no-timings --json',
 					],
+					requiredOutputEvidence: expect.arrayContaining([
+						expect.stringContaining('Covered action kinds'),
+					]),
 				}),
 				expect.objectContaining({
 					sourceQueue: 'blocked-owner-action',
@@ -2462,6 +2495,15 @@ describe('release proof evidence index', () => {
 			coveredActionCount: 23,
 			uncoveredTopClaimActionKeys: [],
 			uncoveredBlockedActionKeys: [],
+		})
+		expect(handoff.releaseDecisionBoard.benchmarkCorpusRunContractCoverage).toMatchObject({
+			status: 'all-benchmark-corpus-actions-have-run-contract',
+			actionCount: 7,
+			missingInputScopeActionKeys: [],
+			missingRunEnvironmentActionKeys: [],
+			missingRequiredOutputEvidenceActionKeys: [],
+			missingPromotionConditionActionKeys: [],
+			missingStopConditionActionKeys: [],
 		})
 		expect(handoff.releaseDecisionBoard.ownerActionExecutionContractCoverage).toMatchObject({
 			status: 'all-disposition-owner-actions-have-execution-contract',
@@ -2680,6 +2722,11 @@ describe('release proof evidence index', () => {
 				readonly commandsToRun?: readonly string[]
 				readonly failureEvidence?: readonly string[]
 				readonly acceptanceCriteria?: string
+				readonly runInputScope?: string
+				readonly runEnvironment?: string
+				readonly requiredOutputEvidence?: readonly string[]
+				readonly promotionCondition?: string
+				readonly stopCondition?: string
 				readonly evidenceWeHave?: readonly string[]
 				readonly evidenceMissing?: readonly string[]
 				readonly qssContrast?: readonly string[]
@@ -2746,6 +2793,15 @@ describe('release proof evidence index', () => {
 				readonly coveredActionCount?: number
 				readonly uncoveredTopClaimActionKeys?: readonly string[]
 				readonly uncoveredBlockedActionKeys?: readonly string[]
+			}
+			readonly benchmarkCorpusRunContractCoverage?: {
+				readonly status?: string
+				readonly actionCount?: number
+				readonly missingInputScopeActionKeys?: readonly string[]
+				readonly missingRunEnvironmentActionKeys?: readonly string[]
+				readonly missingRequiredOutputEvidenceActionKeys?: readonly string[]
+				readonly missingPromotionConditionActionKeys?: readonly string[]
+				readonly missingStopConditionActionKeys?: readonly string[]
 			}
 			readonly ownerActionExecutionContractCoverage?: {
 				readonly status?: string
@@ -3003,6 +3059,11 @@ describe('release proof evidence index', () => {
 			expect(row.commandsToRun).toEqual(row.validationCommands)
 			expect(row.failureEvidence).toEqual(expect.arrayContaining([expect.any(String)]))
 			expect(row.acceptanceCriteria).toEqual(expect.any(String))
+			expect(row.runInputScope).toEqual(expect.any(String))
+			expect(row.runEnvironment).toEqual(expect.any(String))
+			expect(row.requiredOutputEvidence).toEqual(expect.arrayContaining([expect.any(String)]))
+			expect(row.promotionCondition).toEqual(expect.any(String))
+			expect(row.stopCondition).toEqual(expect.any(String))
 			expect(row.evidenceWeHave).toEqual(expect.arrayContaining([expect.any(String)]))
 			expect(row.evidenceMissing).toEqual(expect.arrayContaining([expect.any(String)]))
 			expect(row.qssContrast).toEqual(expect.arrayContaining([expect.any(String)]))
@@ -3023,6 +3084,10 @@ describe('release proof evidence index', () => {
 					commandsToRun: [
 						'bun run fixtures/benchmarks/safe-open-proof.ts --repeat 10 --warmup 3 --json',
 					],
+					runEnvironment: expect.stringContaining('Tracked-clean release environment'),
+					requiredOutputEvidence: expect.arrayContaining([
+						expect.stringContaining('Open-plan and full-open median'),
+					]),
 					failureEvidence: expect.arrayContaining([expect.stringContaining('release-latency-run')]),
 				}),
 				expect.objectContaining({
@@ -3160,6 +3225,15 @@ describe('release proof evidence index', () => {
 			coveredActionCount: 23,
 			uncoveredTopClaimActionKeys: [],
 			uncoveredBlockedActionKeys: [],
+		})
+		expect(board.benchmarkCorpusRunContractCoverage).toMatchObject({
+			status: 'all-benchmark-corpus-actions-have-run-contract',
+			actionCount: 7,
+			missingInputScopeActionKeys: [],
+			missingRunEnvironmentActionKeys: [],
+			missingRequiredOutputEvidenceActionKeys: [],
+			missingPromotionConditionActionKeys: [],
+			missingStopConditionActionKeys: [],
 		})
 		expect(board.ownerActionExecutionContractCoverage).toMatchObject({
 			status: 'all-disposition-owner-actions-have-execution-contract',
@@ -3812,6 +3886,11 @@ describe('release proof evidence index', () => {
 		expect(markdown).toContain('owner-decision-or-fixture-replacement')
 		expect(markdown).toContain('owner-decision-or-harness-expansion')
 		expect(markdown).toContain('validation-run')
+		expect(markdown).toContain(
+			'Benchmark/corpus run contract coverage: status=all-benchmark-corpus-actions-have-run-contract',
+		)
+		expect(markdown).toContain('Input: Standardized public safe-open cases')
+		expect(markdown).toContain('Promote only if: Promote only bounded latency wording')
 		expect(markdown).toContain('Headline claim allowed')
 		expect(markdown).toContain('blocked-by-publication-policy')
 		expect(markdown).toContain('public-edge-fixtures(missing,product)')

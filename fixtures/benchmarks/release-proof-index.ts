@@ -3063,7 +3063,7 @@ function safeOpenQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceItem[] {
 				'bun test apps/api/src/server.test.ts -t "missing workbook references" --timeout 30000',
 			path: 'apps/api/src/server.ts; apps/api/src/server.test.ts',
 			acceptedScope:
-				'Commits 215d6e57, 7c1a9708, 8ce0fbe2, 43781bef, ea67f3b3, 6490a0e6, e090fe13, and 8d12c141 return structured retryable missing-workbook-reference errors for API plan/commit/open-plan/inspect/active-content/trust-report/package-graph/raw-part/visuals/pivots/dump/template-merge/read/agent-view workflow requests instead of generic missing-file responses. Commit 346410a9 also returns structured retryable missing-range errors for API read/agent-view requests.',
+				'Commits 215d6e57, 7c1a9708, 8ce0fbe2, 43781bef, ea67f3b3, 6490a0e6, e090fe13, 8d12c141, and 2cb02045 return structured retryable missing-workbook-reference errors for API plan/commit/open-plan/inspect/active-content/trust-report/package-graph/raw-part/visuals/pivots/dump/template-merge/read/agent-view/repair-plan workflow requests instead of generic missing-file responses. Commit 346410a9 also returns structured retryable missing-range errors for API read/agent-view requests.',
 			boundary:
 				'API request-shape diagnostics only; it does not prove file recovery, path discovery, source workbook existence, edit correctness, latency, or trust wording.',
 		},
@@ -5104,6 +5104,7 @@ const AGENT_WORKFLOW_OBSERVABILITY_BLOCKER = {
 		'Installed SDK prepared-plan smoke evidence is accepted as internal workflow proof: `568e32cd test(release): smoke sdk prepared plans` exercises `createPreparedAgentPlan` from packaged `@ascend/sdk`, plan digest/input hash guards, commit, reopen/check, post-write audits, and formula recalculation in `scripts/release-sdk-smoke.ts`.',
 		'CLI trace and repair tests expose trace depth, formula precedents, structured batch repair details, and check metadata for agent repair in `apps/cli/src/cli.test.ts`.',
 		'API and MCP tests expose capped formula-view trace diagnostics, structured repair details, compact trace artifact counts, and blocked post-write audit output in `apps/api/src/server.test.ts` and `apps/mcp/src/index.test.ts`.',
+		'API repair-plan input diagnostics are accepted as internal workflow proof: `2cb02045 fix(api): structure repair plan inputs` returns a structured retryable missing-workbook-reference error for `/repair-plan` instead of a generic missing-file response.',
 		'Workflow docs list inspect, plan, commit, verify, trace, and repair-plan recovery paths in `docs/AGENT_WORKFLOW.md`, but documentation is guidance rather than release proof.',
 	],
 	evidenceMissing: [

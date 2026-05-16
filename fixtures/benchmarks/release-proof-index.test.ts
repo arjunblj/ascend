@@ -950,6 +950,10 @@ describe('release proof evidence index', () => {
 				}),
 				expect.objectContaining({
 					evidenceId: 'api-open-workflow-reference-proof',
+					acceptedScope: expect.stringContaining('2cb02045'),
+				}),
+				expect.objectContaining({
+					evidenceId: 'api-open-workflow-reference-proof',
 					acceptedScope: expect.stringContaining('active-content/trust-report'),
 				}),
 				expect.objectContaining({
@@ -959,6 +963,10 @@ describe('release proof evidence index', () => {
 				expect.objectContaining({
 					evidenceId: 'api-open-workflow-reference-proof',
 					acceptedScope: expect.stringContaining('visuals/pivots/dump/template-merge'),
+				}),
+				expect.objectContaining({
+					evidenceId: 'api-open-workflow-reference-proof',
+					acceptedScope: expect.stringContaining('repair-plan'),
 				}),
 				expect.objectContaining({
 					evidenceId: 'api-open-workflow-reference-proof',
@@ -1717,6 +1725,8 @@ describe('release proof evidence index', () => {
 		expect(agentWorkflowEvidence).toContain('apps/cli/src/cli.test.ts')
 		expect(agentWorkflowEvidence).toContain('apps/api/src/server.test.ts')
 		expect(agentWorkflowEvidence).toContain('apps/mcp/src/index.test.ts')
+		expect(agentWorkflowEvidence).toContain('2cb02045')
+		expect(agentWorkflowEvidence).toContain('structured retryable missing-workbook-reference')
 		expect(agentWorkflowEvidence).toContain('docs/AGENT_WORKFLOW.md')
 		expect(agentWorkflowMissing).toContain('inspect, plan, commit, reopen, diff, audit')
 		expect(agentWorkflowMissing).toContain('Trace payload size')

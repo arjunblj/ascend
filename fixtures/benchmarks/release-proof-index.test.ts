@@ -942,20 +942,24 @@ describe('release proof evidence index', () => {
 		}
 		expect(
 			index.releaseDecisionBoard.topClaimOwnerActionQueue.map(
-				(row) => `${row.ownerLoop}:${row.artifact}:${row.requirementId}:${row.nextStepKind}`,
+				(row) =>
+					`${row.ownerLoop}:${row.artifact}:${row.requirementId}:${row.nextStepKind}:${row.workBlockDisposition}`,
 			),
 		).toEqual([
-			'product:safe-open-proof:public-edge-fixtures:owner-decision-or-fixture-replacement',
-			'performance:safe-open-proof:release-latency-run:validation-run',
-			'release:safe-open-proof:publication-boundary:publication-policy',
-			'release:safe-open-proof:compact-report-publication-policy:publication-policy',
-			'product:package-action-proof:edge-fixture-policy:owner-decision-or-fixture-replacement',
-			'correctness:package-action-proof:unsupported-feature-boundary:owner-boundary-approval',
-			'performance:package-action-proof:streaming-matrix-boundary:owner-decision-or-harness-expansion',
-			'release:package-action-proof:provenance-boundary:publication-policy',
-			'release:package-action-proof:compact-report-publication-policy:publication-policy',
+			'product:safe-open-proof:public-edge-fixtures:owner-decision-or-fixture-replacement:benchmark-corpus-blocker',
+			'performance:safe-open-proof:release-latency-run:validation-run:benchmark-corpus-blocker',
+			'release:safe-open-proof:publication-boundary:publication-policy:implementation-ready-blocker',
+			'release:safe-open-proof:compact-report-publication-policy:publication-policy:implementation-ready-blocker',
+			'product:package-action-proof:edge-fixture-policy:owner-decision-or-fixture-replacement:benchmark-corpus-blocker',
+			'correctness:package-action-proof:unsupported-feature-boundary:owner-boundary-approval:implementation-ready-blocker',
+			'performance:package-action-proof:streaming-matrix-boundary:owner-decision-or-harness-expansion:benchmark-corpus-blocker',
+			'release:package-action-proof:provenance-boundary:publication-policy:implementation-ready-blocker',
+			'release:package-action-proof:compact-report-publication-policy:publication-policy:implementation-ready-blocker',
 		])
 		for (const row of index.releaseDecisionBoard.topClaimOwnerActionQueue) {
+			expect(['implementation-ready-blocker', 'benchmark-corpus-blocker']).toContain(
+				row.workBlockDisposition,
+			)
 			expect(row.evidenceWeHave).toEqual(expect.arrayContaining([expect.any(Object)]))
 			expect(row.evidenceMissing).toEqual(expect.arrayContaining([expect.any(String)]))
 			expect(row.qssContrast).toEqual(expect.arrayContaining([expect.any(String)]))
@@ -1923,12 +1927,14 @@ describe('release proof evidence index', () => {
 					ownerLoop: 'product',
 					artifact: 'safe-open-proof',
 					requirementId: 'public-edge-fixtures',
+					workBlockDisposition: 'benchmark-corpus-blocker',
 					validationCommand: 'bun run fixtures/benchmarks/safe-open-fixture-scan.ts --json',
 				}),
 				expect.objectContaining({
 					ownerLoop: 'correctness',
 					artifact: 'package-action-proof',
 					requirementId: 'unsupported-feature-boundary',
+					workBlockDisposition: 'implementation-ready-blocker',
 					acceptanceEvidence: expect.stringContaining(
 						'Correctness approves allowed/forbidden wording',
 					),
@@ -1937,6 +1943,7 @@ describe('release proof evidence index', () => {
 					ownerLoop: 'performance',
 					artifact: 'package-action-proof',
 					requirementId: 'streaming-matrix-boundary',
+					workBlockDisposition: 'benchmark-corpus-blocker',
 					validationCommand:
 						'bun run fixtures/benchmarks/package-action-proof.ts --no-timings --json',
 				}),
@@ -1944,6 +1951,7 @@ describe('release proof evidence index', () => {
 					ownerLoop: 'release',
 					artifact: 'package-action-proof',
 					requirementId: 'provenance-boundary',
+					workBlockDisposition: 'implementation-ready-blocker',
 					forbiddenShortcut: expect.stringContaining('signed provenance'),
 				}),
 			]),
@@ -2195,6 +2203,7 @@ describe('release proof evidence index', () => {
 				readonly artifact?: string
 				readonly ownerLoop?: string
 				readonly requirementId?: string
+				readonly workBlockDisposition?: string
 				readonly nextStepKind?: string
 				readonly evidenceWeHave?: readonly unknown[]
 				readonly evidenceMissing?: readonly string[]
@@ -2288,20 +2297,24 @@ describe('release proof evidence index', () => {
 		expect(board.topClaimOwnerActionQueue).toHaveLength(9)
 		expect(
 			board.topClaimOwnerActionQueue?.map(
-				(row) => `${row.ownerLoop}:${row.artifact}:${row.requirementId}:${row.nextStepKind}`,
+				(row) =>
+					`${row.ownerLoop}:${row.artifact}:${row.requirementId}:${row.nextStepKind}:${row.workBlockDisposition}`,
 			),
 		).toEqual([
-			'product:safe-open-proof:public-edge-fixtures:owner-decision-or-fixture-replacement',
-			'performance:safe-open-proof:release-latency-run:validation-run',
-			'release:safe-open-proof:publication-boundary:publication-policy',
-			'release:safe-open-proof:compact-report-publication-policy:publication-policy',
-			'product:package-action-proof:edge-fixture-policy:owner-decision-or-fixture-replacement',
-			'correctness:package-action-proof:unsupported-feature-boundary:owner-boundary-approval',
-			'performance:package-action-proof:streaming-matrix-boundary:owner-decision-or-harness-expansion',
-			'release:package-action-proof:provenance-boundary:publication-policy',
-			'release:package-action-proof:compact-report-publication-policy:publication-policy',
+			'product:safe-open-proof:public-edge-fixtures:owner-decision-or-fixture-replacement:benchmark-corpus-blocker',
+			'performance:safe-open-proof:release-latency-run:validation-run:benchmark-corpus-blocker',
+			'release:safe-open-proof:publication-boundary:publication-policy:implementation-ready-blocker',
+			'release:safe-open-proof:compact-report-publication-policy:publication-policy:implementation-ready-blocker',
+			'product:package-action-proof:edge-fixture-policy:owner-decision-or-fixture-replacement:benchmark-corpus-blocker',
+			'correctness:package-action-proof:unsupported-feature-boundary:owner-boundary-approval:implementation-ready-blocker',
+			'performance:package-action-proof:streaming-matrix-boundary:owner-decision-or-harness-expansion:benchmark-corpus-blocker',
+			'release:package-action-proof:provenance-boundary:publication-policy:implementation-ready-blocker',
+			'release:package-action-proof:compact-report-publication-policy:publication-policy:implementation-ready-blocker',
 		])
 		for (const row of board.topClaimOwnerActionQueue ?? []) {
+			expect(['implementation-ready-blocker', 'benchmark-corpus-blocker']).toContain(
+				row.workBlockDisposition,
+			)
 			expect(row.evidenceWeHave).toEqual(expect.arrayContaining([expect.any(Object)]))
 			expect(row.evidenceMissing).toEqual(expect.arrayContaining([expect.any(String)]))
 			expect(row.qssContrast).toEqual(expect.arrayContaining([expect.any(String)]))
@@ -2320,6 +2333,7 @@ describe('release proof evidence index', () => {
 					ownerLoop: 'correctness',
 					artifact: 'package-action-proof',
 					requirementId: 'unsupported-feature-boundary',
+					workBlockDisposition: 'implementation-ready-blocker',
 					acceptanceEvidence: expect.stringContaining(
 						'Correctness approves allowed/forbidden wording',
 					),
@@ -2328,6 +2342,7 @@ describe('release proof evidence index', () => {
 					ownerLoop: 'performance',
 					artifact: 'safe-open-proof',
 					requirementId: 'release-latency-run',
+					workBlockDisposition: 'benchmark-corpus-blocker',
 					validationCommand:
 						'bun run fixtures/benchmarks/safe-open-proof.ts --repeat 10 --warmup 3 --json',
 				}),

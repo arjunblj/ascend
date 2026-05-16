@@ -426,6 +426,7 @@ export interface ReleaseProofTopClaimOwnerAction {
 	readonly claim: string
 	readonly ownerLoop: ReleaseProofReadinessOwner
 	readonly requirementId: string
+	readonly workBlockDisposition: ReleaseProofReleaseDecisionDoNotPromoteItem['workBlockDisposition']
 	readonly rank: number
 	readonly priority: ReleaseProofNextOwnerAction['priority']
 	readonly nextStepKind: ReleaseProofNextOwnerAction['nextStepKind']
@@ -2381,6 +2382,7 @@ function releaseDecisionTopClaimOwnerActionQueue(
 			claim: row.claimWordingAllowedToday,
 			ownerLoop: action.ownerLoop,
 			requirementId: action.requirementId,
+			workBlockDisposition: releaseDecisionTopClaimWorkBlockDisposition(action),
 			rank: action.rank,
 			priority: action.priority,
 			nextStepKind: action.nextStepKind,
@@ -2397,6 +2399,20 @@ function releaseDecisionTopClaimOwnerActionQueue(
 				'Owner-action queue row for top claims only. It exposes missing readyWhen gates and exact validation commands without satisfying gates or promoting stronger wording.',
 		})),
 	)
+}
+
+function releaseDecisionTopClaimWorkBlockDisposition(
+	action: ReleaseProofNextOwnerAction,
+): ReleaseProofReleaseDecisionDoNotPromoteItem['workBlockDisposition'] {
+	switch (action.nextStepKind) {
+		case 'owner-decision-or-fixture-replacement':
+		case 'validation-run':
+		case 'owner-decision-or-harness-expansion':
+			return 'benchmark-corpus-blocker'
+		case 'owner-boundary-approval':
+		case 'publication-policy':
+			return 'implementation-ready-blocker'
+	}
 }
 
 function releaseDecisionBlockedOwnerActionQueue(

@@ -1085,6 +1085,21 @@ describe('Ascend API server', () => {
 		})
 	})
 
+	test('formula-assist rejects missing formulas with structured retry guidance', async () => {
+		const result = await postJson('/formula-assist', { cursor: 1 })
+
+		expect(result.status).toBe(400)
+		expect(result.body.ok).toBe(false)
+		expect(result.body.error).toMatchObject({
+			code: 'VALIDATION_ERROR',
+			message: 'Missing or invalid formula-assist formula',
+			retryable: true,
+			retryStrategy: 'modified',
+			details: { required: ['formula'] },
+			suggestedFix: expect.stringContaining('Pass formula text'),
+		})
+	})
+
 	test('/plan accepts encrypted workbook passwords without echoing them', async () => {
 		const result = await postJson('/plan', {
 			file: ENCRYPTED_FIXTURE,

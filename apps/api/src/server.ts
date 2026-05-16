@@ -273,6 +273,15 @@ function missingReadRangeError(context: 'read' | 'agent-view'): AscendError {
 	})
 }
 
+function missingFormulaAssistFormulaError(): AscendError {
+	return ascendError('VALIDATION_ERROR', 'Missing or invalid formula-assist formula', {
+		retryable: true,
+		retryStrategy: 'modified',
+		details: { required: ['formula'] },
+		suggestedFix: 'Pass formula text such as =SUM(A1:B2) for formula diagnostics and repair hints.',
+	})
+}
+
 function replayBatchLoadOptionsError(kind: string, options: readonly string[]): AscendError {
 	return ascendError(
 		'VALIDATION_ERROR',
@@ -1039,7 +1048,7 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 			if (method === 'POST' && path === '/formula-assist') {
 				const body = await parseJson<Record<string, unknown>>(req)
 				const formula = body ? requireString(body, 'formula') : null
-				if (!formula) return jsonFailure('Missing or invalid formula', 400)
+				if (!formula) return jsonFailureError(missingFormulaAssistFormulaError(), 400)
 				const cursor = body ? requireOptionalNumber(body, 'cursor') : undefined
 				const completionLimit = body ? requireOptionalNumber(body, 'completionLimit') : undefined
 				const prefix = body ? requireString(body, 'prefix') : null

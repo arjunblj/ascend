@@ -1645,9 +1645,13 @@ export class AscendWorkbook extends WorkbookReadView {
 	}
 
 	rawPackagePart(options: RawPackagePartOptions): RawPackagePartInfo {
-		if (this.originalBytes && !this.dirty) {
+		const cleanSourceBytes =
+			this.sourceWasEncrypted && this.wb.sourceArchiveBytes
+				? this.wb.sourceArchiveBytes
+				: this.originalBytes
+		if (cleanSourceBytes && !this.dirty) {
 			return {
-				...inspectRawPackagePart(this.originalBytes, { ...options, origin: 'source' }),
+				...inspectRawPackagePart(cleanSourceBytes, { ...options, origin: 'source' }),
 				load: this.loadInfo,
 			}
 		}

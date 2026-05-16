@@ -3469,6 +3469,24 @@ describe('AscendWorkbook', () => {
 		expect(dirtyRaw.load?.mode).toBe('full')
 	})
 
+	test('rawPackagePart inspects decrypted package parts after password open', async () => {
+		const encrypted = new Uint8Array(readFileSync('fixtures/xlsx/calamine/pass_protected.xlsx'))
+		const wb = await AscendWorkbook.open(encrypted, { password: '123' })
+		expect(wb.packageGraph().parts.some((part) => part.path === 'xl/workbook.xml')).toBe(true)
+
+		const raw = wb.rawPackagePart({ partPath: 'xl/workbook.xml', maxBytes: 128 })
+		expect(raw.found).toBe(true)
+		expect(raw.origin).toBe('source')
+		expect(raw.load?.mode).toBe('full')
+		expect(raw.featureFamily).toBe('workbook')
+		expect(raw.text).toContain('<workbook')
+
+		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'dirty' }] }])
+		expect(() => wb.rawPackagePart({ partPath: 'xl/workbook.xml', maxBytes: 128 })).toThrow(
+			'Cannot export an edited encrypted workbook without re-encryption support',
+		)
+	})
+
 	test('report returns compatibility info', () => {
 		const wb = AscendWorkbook.create()
 		expect(wb.report.status).toBe('clean')

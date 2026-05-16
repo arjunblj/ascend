@@ -1763,6 +1763,45 @@ describe('release proof evidence index', () => {
 				}),
 			]),
 		)
+		const releaseDecisionCoverage = new Set([
+			...handoff.releaseDecisionBoard.rows.map((row) => row.artifact),
+			...handoff.releaseDecisionBoard.doNotPromoteYet.map((item) => item.name),
+		])
+		expect(
+			handoff.claimPortfolio
+				.map((claim) => claim.name)
+				.filter((name) => !releaseDecisionCoverage.has(name)),
+		).toEqual([])
+		expect(
+			handoff.deferredClaims
+				.map((claim) => claim.name)
+				.filter((name) => !releaseDecisionCoverage.has(name)),
+		).toEqual([])
+		expect(
+			handoff.excludedEvidence
+				.map((evidence) => evidence.name)
+				.filter((name) => !releaseDecisionCoverage.has(name)),
+		).toEqual([])
+		for (const claim of handoff.claimPortfolio.filter(
+			(entry) => entry.handoffDecision === 'top-implementation-handoff',
+		)) {
+			const decision = handoff.releaseDecisionBoard.rows.find((row) => row.artifact === claim.name)
+			if (!decision) {
+				throw new Error(`Missing release decision row for ${claim.name}`)
+			}
+			expect(decision.headlineClaimAllowed).toBe(false)
+			expect(decision.implementationSurfacePromotionAllowed).toBe(false)
+			expect(decision.evidenceWeHave.length).toBeGreaterThan(0)
+			expect(decision.evidenceWeHave.every((item) => item.evidenceId.length > 0)).toBe(true)
+			expect(decision.evidenceMissing.length).toBeGreaterThan(0)
+			expect(decision.qssContrast.length).toBeGreaterThan(0)
+			expect(decision.allowedWording.length).toBeGreaterThan(0)
+			expect(decision.forbiddenWording.length).toBeGreaterThan(0)
+			expect(decision.nextOwnerActions.length).toBeGreaterThan(0)
+			expect(decision.nextOwnerActions.every((action) => action.requirementId.length > 0)).toBe(
+				true,
+			)
+		}
 		expect(handoff.implementationHandoffs[0]).toMatchObject({
 			claim: 'safe unknown workbook opening',
 			proofCommand: 'bun run fixtures/benchmarks/safe-open-proof.ts --no-timings --json',

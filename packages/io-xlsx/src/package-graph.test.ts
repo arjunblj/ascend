@@ -22,6 +22,7 @@ describe('XLSX package graph', () => {
   <Override PartName="/xl/model/item.data" ContentType="application/vnd.ms-excel.model"/>
   <Override PartName="/xl/customData/item1.data" ContentType="application/vnd.ms-excel.customData"/>
   <Override PartName="/xl/data/connectionsPayload.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.connections+xml"/>
+  <Override PartName="/xl/links/bookLink.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.externalLink+xml"/>
   <Override PartName="/xl/revisions/revisionHeaders.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.revisionHeaders+xml"/>
 </Types>`,
 			'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -38,6 +39,7 @@ describe('XLSX package graph', () => {
   <Relationship Id="rIdDataModel" Type="http://schemas.microsoft.com/office/2011/relationships/model" Target="model/item.data"/>
   <Relationship Id="rIdPowerQuery" Type="http://schemas.microsoft.com/office/2014/relationships/powerQueryMashup" Target="customData/item1.data"/>
   <Relationship Id="rIdConnections" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/connections" Target="data/connectionsPayload.xml"/>
+  <Relationship Id="rIdExternalLink" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLink" Target="links/bookLink.xml"/>
   <Relationship Id="rIdRevisionHeaders" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/revisionHeaders" Target="revisions/revisionHeaders.xml"/>
 </Relationships>`,
 			'xl/worksheets/sheet1.xml': '<worksheet/>',
@@ -61,6 +63,7 @@ describe('XLSX package graph', () => {
 			'xl/model/item.data': 'data-model-bytes',
 			'xl/customData/item1.data': 'power-query-bytes',
 			'xl/data/connectionsPayload.xml': '<connections/>',
+			'xl/links/bookLink.xml': '<externalLink/>',
 			'xl/revisions/revisionHeaders.xml': '<headers/>',
 			'xl/media/image 1.png': 'not-really-a-png',
 		})
@@ -88,6 +91,15 @@ describe('XLSX package graph', () => {
 			rawTarget: 'data/connectionsPayload.xml',
 			resolvedTarget: 'xl/data/connectionsPayload.xml',
 			featureFamily: 'preservedConnection',
+		})
+		expect(graph.relationships).toContainEqual({
+			sourcePartPath: 'xl/workbook.xml',
+			relationshipPartPath: 'xl/_rels/workbook.xml.rels',
+			id: 'rIdExternalLink',
+			type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLink',
+			rawTarget: 'links/bookLink.xml',
+			resolvedTarget: 'xl/links/bookLink.xml',
+			featureFamily: 'preservedExternalLink',
 		})
 		expect(graph.relationships).toContainEqual({
 			sourcePartPath: 'xl/drawings/drawing1.xml',
@@ -168,6 +180,11 @@ describe('XLSX package graph', () => {
 		).toMatchObject({
 			sourceRelationshipId: 'rIdConnections',
 			featureFamily: 'preservedConnection',
+			preservationPolicy: 'preserve-exact',
+		})
+		expect(graph.parts.find((part) => part.path === 'xl/links/bookLink.xml')).toMatchObject({
+			sourceRelationshipId: 'rIdExternalLink',
+			featureFamily: 'preservedExternalLink',
 			preservationPolicy: 'preserve-exact',
 		})
 		expect(

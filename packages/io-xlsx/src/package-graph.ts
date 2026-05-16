@@ -12,6 +12,7 @@ import {
 	REL_COMMENTS,
 	REL_CONNECTIONS,
 	REL_DRAWING,
+	REL_EXTERNAL_LINK,
 	REL_IMAGE,
 	REL_MACROSHEET,
 	REL_OFFICE_DOC,
@@ -250,7 +251,9 @@ export function classifyPackageFeatureFamily(
 		return 'preservedMetadata'
 	}
 	if (lowerPath.includes('/volatiledependencies/')) return 'preservedMetadata'
-	if (/(^|\/)externalLinks\//.test(path)) return 'preservedExternalLink'
+	if (/(^|\/)externalLinks\//.test(path) || lowerRelType.endsWith('/relationships/externallink')) {
+		return 'preservedExternalLink'
+	}
 	if (/(^|\/)pivotTables\//.test(path) || /(^|\/)pivotCache\//.test(path)) {
 		return 'preservedPivot'
 	}
@@ -457,6 +460,7 @@ function classifyRelationshipFeatureFamily(
 	if (relationship.type === REL_VML_DRAWING) return 'preservedVml'
 	if (relationship.type === REL_CHART) return 'preservedChart'
 	if (relationship.type === REL_IMAGE) return 'preservedMedia'
+	if (relationship.type === REL_EXTERNAL_LINK) return 'preservedExternalLink'
 	if (isExternalLinkPathRelationshipType(relationship.type)) return 'preservedExternalLink'
 	if (
 		relationship.type === REL_PIVOT_TABLE ||

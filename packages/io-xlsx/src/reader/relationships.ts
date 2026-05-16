@@ -50,6 +50,8 @@ export const REL_THREADED_COMMENT =
 	'http://schemas.microsoft.com/office/2017/10/relationships/threadedComment'
 export const REL_EXTERNAL_LINK_PATH =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLinkPath'
+export const REL_EXTERNAL_LINK =
+	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLink'
 export const REL_EXTERNAL_LINK_STARTUP_PATH =
 	'http://schemas.microsoft.com/office/2006/relationships/xlExternalLinkPath/xlStartup'
 export const REL_EXTERNAL_LINK_ALTERNATE_STARTUP_PATH =

@@ -1022,6 +1022,10 @@ describe('release proof evidence index', () => {
 				boundary: expect.stringContaining('Installed SDK generated-workbook proof only'),
 			}),
 			expect.objectContaining({
+				evidenceId: 'installed-sdk-safe-edit-example-proof',
+				acceptedScope: expect.stringContaining('56cd4aa0'),
+			}),
+			expect.objectContaining({
 				evidenceId: 'installed-sdk-workflow-discovery-proof',
 				acceptedScope: expect.stringContaining('f8d63593'),
 				command: expect.stringContaining('agent-init prints the canonical agent workflow contract'),
@@ -1030,6 +1034,10 @@ describe('release proof evidence index', () => {
 			expect.objectContaining({
 				evidenceId: 'installed-sdk-workflow-discovery-proof',
 				acceptedScope: expect.stringContaining('cc689bcc'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'installed-sdk-workflow-discovery-proof',
+				acceptedScope: expect.stringContaining('56cd4aa0'),
 			}),
 			expect.objectContaining({
 				evidenceId: 'cli-agent-init-workflow-examples-proof',
@@ -1691,13 +1699,14 @@ describe('release proof evidence index', () => {
 						'5915794f',
 						'f8d63593',
 						'cc689bcc',
+						'56cd4aa0',
 						'868add46',
 						'1eaf28ff',
 						'31141dd4',
 						'74f63b73',
 						'62f45cb5',
 					]),
-					allowedWording: expect.stringContaining('hidden-sheet topology commit proof'),
+					allowedWording: expect.stringContaining('installed-SDK package-bin'),
 					forbiddenWording: expect.arrayContaining([
 						expect.stringContaining('complete API package health'),
 					]),
@@ -1720,7 +1729,7 @@ describe('release proof evidence index', () => {
 				}),
 				expect.objectContaining({
 					claimArea: 'external-baselines',
-					commits: expect.arrayContaining(['df349629']),
+					commits: expect.arrayContaining(['df349629', '1908f3f5']),
 					ownerLoop: 'performance',
 					nextOwnerAction: expect.stringContaining('same-timing SDK selected-sheet'),
 				}),
@@ -2309,8 +2318,10 @@ describe('release proof evidence index', () => {
 		expect(agentWorkflowEvidence).toContain('5981764c')
 		expect(agentWorkflowEvidence).toContain('5915794f')
 		expect(agentWorkflowEvidence).toContain('Installed SDK safe-edit workflow proof is accepted')
+		expect(agentWorkflowEvidence).toContain('node_modules/.bin/ascend-sdk-safe-edit')
 		expect(agentWorkflowEvidence).toContain('f8d63593')
 		expect(agentWorkflowEvidence).toContain('cc689bcc')
+		expect(agentWorkflowEvidence).toContain('56cd4aa0')
 		expect(agentWorkflowEvidence).toContain('Installed safe-edit workflow discovery is accepted')
 		expect(agentWorkflowEvidence).toContain('full `bun test apps/api/api.test.ts --timeout 30000`')
 		expect(agentWorkflowEvidence).toContain('docs/AGENT_WORKFLOW.md')
@@ -2424,6 +2435,9 @@ describe('release proof evidence index', () => {
 		)
 		expect(performanceOwnerArtifact?.nextAction).toContain(
 			'df349629 current selected-sheet same-lane read proof',
+		)
+		expect(performanceOwnerArtifact?.nextAction).toContain(
+			'1908f3f5 current metadata-only Calamine loss',
 		)
 		expect(performanceOwnerArtifact?.nextAction).toContain('67b900ed plain-text write baseline')
 		expect(performanceOwnerArtifact?.nextAction).toContain('e22eb86a string-heavy write baseline')
@@ -4433,6 +4447,9 @@ describe('release proof evidence index', () => {
 			'Commit f8846cf8 records a current clean metadata-only Calamine recheck',
 		)
 		expect(packet.benchmarkBlocker?.evidenceWeHave?.join('\n')).toContain(
+			'Commit 1908f3f5 records the current metadata-only Calamine recheck',
+		)
+		expect(packet.benchmarkBlocker?.evidenceWeHave?.join('\n')).toContain(
 			'Commit 187548bf pins dense-values write evidence',
 		)
 		expect(packet.benchmarkBlocker?.evidenceWeHave?.join('\n')).toContain(
@@ -4493,7 +4510,7 @@ describe('release proof evidence index', () => {
 			'df349629 keeps selected-sheet wording scoped',
 		)
 		expect(packet.benchmarkBlocker?.nextAction).toContain(
-			'f8846cf8 kills the capsule-skip metadata-only optimization target',
+			'commits f8846cf8 and 1908f3f5 kill metadata-only optimization targets',
 		)
 		expect(packet.benchmarkBlocker?.nextAction).toContain(
 			'generated-write wins remain scoped to plain-text/string-heavy/dense-values/styles-heavy comparable rows',
@@ -4555,6 +4572,9 @@ describe('release proof evidence index', () => {
 		)
 		expect(packet.benchmarkBlocker?.acceptanceEvidence?.join('\n')).toContain(
 			'Commit f8846cf8 records the current metadata-only Calamine recheck',
+		)
+		expect(packet.benchmarkBlocker?.acceptanceEvidence?.join('\n')).toContain(
+			'Commit 1908f3f5 records a newer metadata-only Calamine loss',
 		)
 		expect(packet.benchmarkBlocker?.acceptanceEvidence?.join('\n')).toContain(
 			'Commit 187548bf records scoped dense-values write evidence',

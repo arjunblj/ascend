@@ -468,7 +468,12 @@ function hlookup(args: EvalArg[], ctx?: FunctionEvalContext): CellValue {
 function indexFn(args: EvalArg[]): CellValue {
 	const sourceError = scalarInputError(args[0])
 	if (sourceError) return sourceError
-	const array = getRange(args[0])
+	const areaNum = args.length > 3 ? numArg(args[3]) : 1
+	if (typeof areaNum !== 'number') return areaNum
+	const areaIndex = Math.floor(areaNum) - 1
+	if (areaIndex < 0) return errorValue('#VALUE!')
+	const array = indexSourceRange(args[0], areaIndex)
+	if ('kind' in array) return array
 	const rowNum = numArg(args[1])
 	if (typeof rowNum !== 'number') return rowNum
 	const row = Math.floor(rowNum)
@@ -498,6 +503,18 @@ function indexFn(args: EvalArg[]): CellValue {
 	}
 	if (row < 1 || row > array.length) return errorValue('#REF!')
 	return array[row - 1]?.[0] ?? EMPTY
+}
+
+function indexSourceRange(
+	arg: EvalArg | undefined,
+	areaIndex: number,
+): readonly (readonly CellValue[])[] | CellValue {
+	if (arg?.areas?.length) {
+		const area = arg.areas[areaIndex]
+		return area ? area.values : errorValue('#VALUE!')
+	}
+	if (areaIndex > 0) return errorValue('#VALUE!')
+	return getRange(arg)
 }
 
 function matchFn(args: EvalArg[], ctx?: FunctionEvalContext): CellValue {
@@ -833,7 +850,7 @@ function columnFn(args: EvalArg[], ctx?: FunctionEvalContext): CellValue {
 export const lookupFunctions: FunctionDef[] = [
 	{ name: 'VLOOKUP', minArgs: 3, maxArgs: 4, evaluate: vlookup },
 	{ name: 'HLOOKUP', minArgs: 3, maxArgs: 4, evaluate: hlookup },
-	{ name: 'INDEX', minArgs: 2, maxArgs: 3, evaluate: indexFn },
+	{ name: 'INDEX', minArgs: 2, maxArgs: 4, evaluate: indexFn },
 	{ name: 'MATCH', minArgs: 2, maxArgs: 3, evaluate: matchFn },
 	{ name: 'XLOOKUP', minArgs: 3, maxArgs: 6, evaluate: xlookup },
 	{ name: 'XMATCH', minArgs: 2, maxArgs: 4, evaluate: xmatch },

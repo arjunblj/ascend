@@ -37,6 +37,7 @@ const REQUIRED_COMMANDS = [
 	'bun test fixtures/corpus/high-risk-package-contract.test.ts',
 	'bun test packages/sdk/src/agent-workflow.test.ts -t "encrypted workbook commits fail closed"',
 	'bun test packages/sdk/src/agent-workflow.test.ts -t "blocked atomic workbook writes remove temp packages"',
+	'bun test packages/sdk/src/agent-workflow.test.ts -t "prepared agent commits roll back failed writes"',
 	'bun test packages/sdk/src/agent-workflow.test.ts -t "in-place backup failures roll back"',
 	'bun test packages/sdk/src/agent-workflow.test.ts -t "post-write verification fails closed"',
 	'bun test packages/sdk/src/agent-workflow.test.ts -t "progress callback failures"',

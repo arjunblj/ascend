@@ -346,6 +346,66 @@ describe('agent workflow loss audit', () => {
 		})
 	})
 
+	test('prepared agent commits roll back failed writes and remain retryable', async () => {
+		const input = join(TEMP_DIR, 'prepared-blocked-write.xlsx')
+		const blockedOutput = join(TEMP_DIR, 'prepared-blocked-output.xlsx')
+		const retryOutput = join(TEMP_DIR, 'prepared-retry-output.xlsx')
+		mkdirSync(TEMP_DIR, { recursive: true })
+		mkdirSync(blockedOutput, { recursive: true })
+		const sourceBytes = new Uint8Array(readFileSync('fixtures/xlsx/xlsxwriter/strings_links.xlsx'))
+		await Bun.write(input, sourceBytes)
+		const prepared = await createPreparedAgentPlan(input, [
+			{ op: 'addSheet' as const, name: 'RetrySheet' },
+		])
+		const progressEvents: { readonly phase: string; readonly status: string }[] = []
+
+		let blockedError: unknown
+		try {
+			await prepared.commit({
+				output: blockedOutput,
+				onProgress: (event) => progressEvents.push(event),
+			})
+		} catch (error) {
+			blockedError = error
+		}
+		expect(
+			(
+				blockedError as {
+					readonly ascendError?: {
+						readonly code?: string
+						readonly retryable?: boolean
+						readonly retryStrategy?: string
+						readonly details?: {
+							readonly output?: string
+							readonly operation?: string
+						}
+					}
+				}
+			).ascendError,
+		).toMatchObject({
+			code: 'EXPORT_ERROR',
+			retryable: true,
+			retryStrategy: 'modified',
+			details: {
+				output: blockedOutput,
+				operation: 'atomic-workbook-write',
+			},
+		})
+		expect(progressEvents).toContainEqual(
+			expect.objectContaining({ phase: 'write', status: 'failed' }),
+		)
+		expect(readdirSync(TEMP_DIR).filter((name) => name.includes('.ascend-tmp'))).toHaveLength(0)
+
+		const committed = await prepared.commit({ output: retryOutput })
+		expect(committed.postWrite.valid).toBe(true)
+		expect(committed.postWrite.auditsPassed).toBe(true)
+		const reopened = await AscendWorkbook.open(new Uint8Array(readFileSync(retryOutput)))
+		expect(reopened.sheets).toContain('RetrySheet')
+		await expect(prepared.commit({ output: `${retryOutput}.again.xlsx` })).rejects.toThrow(
+			'Prepared agent plan has already been committed',
+		)
+	})
+
 	test('post-write verification fails closed when output changes after write', async () => {
 		const input = join(TEMP_DIR, 'post-write-race-source.xlsx')
 		const output = join(TEMP_DIR, 'post-write-race-out.xlsx')

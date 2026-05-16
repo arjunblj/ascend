@@ -1028,6 +1028,10 @@ describe('release proof evidence index', () => {
 				boundary: expect.stringContaining('Installed workflow-discovery evidence only'),
 			}),
 			expect.objectContaining({
+				evidenceId: 'installed-sdk-workflow-discovery-proof',
+				acceptedScope: expect.stringContaining('cc689bcc'),
+			}),
+			expect.objectContaining({
 				evidenceId: 'cli-agent-init-workflow-examples-proof',
 				acceptedScope: expect.stringContaining('0d1b33f7'),
 				command: expect.stringContaining('agent-init prints the canonical agent workflow contract'),
@@ -1680,6 +1684,7 @@ describe('release proof evidence index', () => {
 						'5981764c',
 						'5915794f',
 						'f8d63593',
+						'cc689bcc',
 						'868add46',
 						'1eaf28ff',
 						'31141dd4',
@@ -1687,10 +1692,10 @@ describe('release proof evidence index', () => {
 					]),
 					allowedWording: expect.stringContaining('calc-chain formula commit proof'),
 					forbiddenWording: expect.arrayContaining([
-						expect.stringContaining('registry download proof'),
+						expect.stringContaining('complete API package health'),
 					]),
 					ownerLoop: 'release',
-					nextOwnerAction: expect.stringContaining('package publication/install smoke'),
+					nextOwnerAction: expect.stringContaining('export-format test expectation'),
 				}),
 				expect.objectContaining({
 					claimArea: 'signed-encrypted-macro-handling',
@@ -2298,7 +2303,9 @@ describe('release proof evidence index', () => {
 		expect(agentWorkflowEvidence).toContain('5915794f')
 		expect(agentWorkflowEvidence).toContain('Installed SDK safe-edit workflow proof is accepted')
 		expect(agentWorkflowEvidence).toContain('f8d63593')
+		expect(agentWorkflowEvidence).toContain('cc689bcc')
 		expect(agentWorkflowEvidence).toContain('Installed safe-edit workflow discovery is accepted')
+		expect(agentWorkflowEvidence).toContain('full `bun test apps/api/api.test.ts --timeout 30000`')
 		expect(agentWorkflowEvidence).toContain('docs/AGENT_WORKFLOW.md')
 		expect(agentWorkflowMissing).toContain('inspect, plan, commit, reopen, diff, audit')
 		expect(agentWorkflowMissing).toContain('Trace payload size')

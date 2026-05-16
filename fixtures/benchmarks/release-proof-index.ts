@@ -3279,9 +3279,9 @@ function safeOpenQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceItem[] {
 				'bun test apps/cli/src/cli.test.ts apps/api/src/server.test.ts apps/mcp/src/index.test.ts -t "agent-init prints the canonical agent workflow contract|/agent-workflow exposes the API safe edit contract|ascend.agent_workflow exposes machine-readable safe edit guidance" --timeout 30000',
 			path: 'apps/cli/src/commands/agent-init.ts; apps/cli/src/cli.test.ts; apps/api/src/server.ts; apps/api/src/server.test.ts; apps/mcp/src/index.ts; apps/mcp/src/index.test.ts; scripts/release-apps-smoke.ts',
 			acceptedScope:
-				'Commit f8d63593 exposes the installed SDK safe-edit example and proof-bundle context through CLI agent-init, API /agent-workflow, MCP ascend.agent_workflow, the MCP workflow resource, and installed app smoke checks.',
+				'Commits f8d63593 and cc689bcc expose the installed SDK safe-edit example and proof-bundle context through CLI agent-init, API /agent-workflow, MCP ascend.agent_workflow, the MCP workflow resource, API package tests, and installed app smoke checks.',
 			boundary:
-				'Installed workflow-discovery evidence only; it does not prove registry download success, arbitrary workbook safety, hosted service readiness, public workbook behavior, or package publication.',
+				'Installed workflow-discovery evidence only; it does not prove registry download success, arbitrary workbook safety, hosted service readiness, public workbook behavior, package publication, or full API package test health.',
 		},
 		{
 			evidenceId: 'api-custom-ui-active-content-proof',
@@ -3613,6 +3613,7 @@ function todayCommitClaimMatrix(): readonly ReleaseProofTodayCommitClaimMatrixRo
 				'5981764c',
 				'5915794f',
 				'f8d63593',
+				'cc689bcc',
 				'868add46',
 				'1eaf28ff',
 				'31141dd4',
@@ -3624,20 +3625,22 @@ function todayCommitClaimMatrix(): readonly ReleaseProofTodayCommitClaimMatrixRo
 				'bun test examples/agent-safe-edit-mcp.test.ts --timeout 30000',
 				'bun test examples/root-scripts.test.ts --timeout 30000',
 				'bun test apps/cli/src/cli.test.ts apps/api/src/server.test.ts apps/mcp/src/index.test.ts -t "agent-init prints the canonical agent workflow contract|/agent-workflow exposes the API safe edit contract|ascend.agent_workflow exposes machine-readable safe edit guidance" --timeout 30000',
+				'bun test apps/api/api.test.ts -t "operations and capabilities endpoints expose agent schemas" --timeout 30000',
 				'bun test examples/package-install-safe-edit.test.ts --timeout 30000',
 				'bun test packages/sdk/src/agent-workflow.test.ts -t "commits public query-table refresh metadata edits through save and reopen" --timeout 30000',
 				'bun test packages/sdk/src/agent-workflow.test.ts -t "commits public chart source edits through save and reopen audits" --timeout 30000',
 				'bun test packages/sdk/src/agent-workflow.test.ts -t "commits public calc-chain formula edits through save and reopen audits" --timeout 30000',
 				'fixtures/benchmarks/release-proof-index.test.ts pins workflow example evidence, proof context, and RC-gate scope.',
+				'Blocked adjacent API package sweep: bun test apps/api/api.test.ts --timeout 30000 currently fails outside workflow discovery because the export-format assertion expects "Unsupported format" while the current response is "Unsupported export format: weird".',
 			],
 			allowedWording:
 				'Ascend provides local runnable SDK, installed-SDK, API, and MCP safe-edit workflow examples with root commands, public query-table refresh metadata, chart-source, and calc-chain formula commit proof, and machine-readable proof context for generated/public workbooks.',
 			forbiddenWording: [
-				'Do not claim arbitrary workbook safety, package publication, registry download proof, hosted service readiness, public-workbook generality, or complete workflow observability from the local generated/public-workbook examples.',
+				'Do not claim arbitrary workbook safety, package publication, registry download proof, hosted service readiness, public-workbook generality, complete API package health, or complete workflow observability from the local generated/public-workbook examples.',
 			],
 			ownerLoop: 'release',
 			nextOwnerAction:
-				'Release-code owner stops adding discovery-only workflow affordances; next accepted work must either run package publication/install smoke in a clean release environment or add one public inspect/plan/commit/reopen/diff/audit/trace workflow that changes an agent repair decision.',
+				'Release-code owner stops adding discovery-only workflow affordances; next accepted work must either fix the unrelated API export-format test expectation, run package publication/install smoke in a clean release environment, or add one public inspect/plan/commit/reopen/diff/audit/trace workflow that changes an agent repair decision.',
 			boundary:
 				'Compact current-commit claim row only; evidence is local workflow proof, not a broad product or publication claim.',
 		},
@@ -5595,7 +5598,7 @@ const AGENT_WORKFLOW_OBSERVABILITY_BLOCKER = {
 		'Workflow discovery surfaces expose runnable-example proof context through `f3347e17 feat(api): expose workflow example proof context`, including repository-root workdir, setup prerequisites, and `bun test examples/root-scripts.test.ts` as the proof command.',
 		'Packaged proof surfaces expose workflow examples through `58a7f579 test(release): expose workflow examples in packaged proof`, including MCP agent-workflow resource text and installed smoke output.',
 		'Installed SDK safe-edit workflow proof is accepted after `5915794f feat(sdk): summarize installed safe edit proof`: `bun test examples/package-install-safe-edit.test.ts --timeout 30000` now proves safeToUse, changed-cell before/after evidence, gate outcomes, hashes, check/lint validity, and post-write audit validity from the installed-SDK example. This closes the earlier `5981764c` blank/empty proof contract blocker for generated-workbook wording.',
-		'Installed safe-edit workflow discovery is accepted after `f8d63593 feat(apps): expose installed safe edit workflow`: CLI, API, MCP, MCP resources, and installed app smoke output expose the installed SDK example command plus proofBundle output contract.',
+		'Installed safe-edit workflow discovery is accepted after `f8d63593 feat(apps): expose installed safe edit workflow` and `cc689bcc test(api): prove installed workflow discovery`: CLI, API, MCP, MCP resources, API package tests, and installed app smoke output expose the installed SDK example command plus proofBundle output contract. The full `bun test apps/api/api.test.ts --timeout 30000` sweep remains blocked by an unrelated export-format message expectation, so package health wording is not accepted.',
 		'Workflow docs list inspect, plan, commit, verify, trace, and repair-plan recovery paths in `docs/AGENT_WORKFLOW.md`, but documentation is guidance rather than release proof.',
 	],
 	evidenceMissing: [

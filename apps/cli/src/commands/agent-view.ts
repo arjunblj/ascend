@@ -1,4 +1,5 @@
 import { ascendError } from '@ascend/schema'
+import { WorkbookDocument } from '@ascend/sdk'
 import { cliError, jsonOut } from '../output/json.ts'
 import { bullet, formatCellValue, heading } from '../output/pretty.ts'
 import { openWorkbookDocumentWithProgress } from '../progress.ts'
@@ -77,7 +78,13 @@ export async function agentViewCommand(
 
 	const sheet = wb.sheet(targetSheet)
 	if (!sheet) {
-		cliError(`Sheet "${targetSheet}" not found`, flags)
+		cliError(
+			agentViewSheetNotFoundError(
+				targetSheet,
+				await loadAvailableSheetsForAgentView(file, wb.sheets),
+			),
+			flags,
+		)
 		return 1
 	}
 
@@ -148,6 +155,36 @@ export async function agentViewCommand(
 	}
 
 	return 0
+}
+
+async function loadAvailableSheetsForAgentView(
+	file: string,
+	fallbackSheets: readonly string[],
+): Promise<readonly string[]> {
+	if (fallbackSheets.length > 0) return fallbackSheets
+	try {
+		const workbook = await WorkbookDocument.open(file, { mode: 'metadata-only' })
+		return workbook.sheets
+	} catch {
+		return fallbackSheets
+	}
+}
+
+function agentViewSheetNotFoundError(sheetName: string, availableSheets: readonly string[]) {
+	return ascendError('SHEET_NOT_FOUND', `Sheet "${sheetName}" not found`, {
+		retryable: true,
+		retryStrategy: availableSheets.length > 0 ? 'modified' : 'none',
+		details: {
+			command: 'agent-view',
+			sheet: sheetName,
+			availableSheets,
+			workflow: ['inspect', 'agent-view', 'plan'],
+		},
+		suggestedFix:
+			availableSheets.length > 0
+				? `Retry with --sheet set to one of: ${availableSheets.join(', ')}.`
+				: 'Run ascend inspect <file> --json to confirm workbook sheets before retrying agent-view.',
+	})
 }
 
 function rangeRefToString(ref: {

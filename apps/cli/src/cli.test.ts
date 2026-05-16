@@ -279,6 +279,39 @@ describe('ascend cli', () => {
 		).toBeGreaterThan(0)
 	})
 
+	test('agent-view --json reports missing sheets with structured retry guidance', async () => {
+		const wb = AscendWorkbook.create()
+		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 2 }] }])
+		await wb.save(`${import.meta.dir}/${AGENT_VIEW_FILE}`)
+
+		const { stdout, exitCode } = await run(
+			'agent-view',
+			AGENT_VIEW_FILE,
+			'--sheet',
+			'Missing',
+			'--json',
+		)
+
+		expect(exitCode).toBe(1)
+		const parsed = JSON.parse(stdout)
+		expect(parsed).toMatchObject({
+			ok: false,
+			error: {
+				code: 'SHEET_NOT_FOUND',
+				message: 'Sheet "Missing" not found',
+				retryable: true,
+				retryStrategy: 'modified',
+				details: {
+					command: 'agent-view',
+					sheet: 'Missing',
+					availableSheets: ['Sheet1'],
+					workflow: ['inspect', 'agent-view', 'plan'],
+				},
+			},
+		})
+		expect(parsed.error.suggestedFix).toContain('Sheet1')
+	})
+
 	test('tui renders a non-TTY first frame and telemetry JSON', async () => {
 		const { stdout, exitCode } = await run('tui', '--telemetry-json')
 		expect(exitCode).toBe(0)

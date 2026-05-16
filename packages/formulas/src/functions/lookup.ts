@@ -806,9 +806,11 @@ function areasFn(args: EvalArg[]): CellValue {
 	return errorValue('#VALUE!')
 }
 
-function rowFn(args: EvalArg[]): CellValue {
+function rowFn(args: EvalArg[], ctx?: FunctionEvalContext): CellValue {
 	const ref = args[0]?.ref
-	if (!ref) return errorValue('#VALUE!')
+	if (!ref) {
+		return ctx?.row === undefined ? errorValue('#VALUE!') : numberValue(ctx.row + 1)
+	}
 	const endRow = ref.endRow ?? ref.row
 	if (endRow === ref.row) return numberValue(ref.row + 1)
 	const rows: ScalarCellValue[][] = []
@@ -816,9 +818,11 @@ function rowFn(args: EvalArg[]): CellValue {
 	return arrayValue(rows)
 }
 
-function columnFn(args: EvalArg[]): CellValue {
+function columnFn(args: EvalArg[], ctx?: FunctionEvalContext): CellValue {
 	const ref = args[0]?.ref
-	if (!ref) return errorValue('#VALUE!')
+	if (!ref) {
+		return ctx?.col === undefined ? errorValue('#VALUE!') : numberValue(ctx.col + 1)
+	}
 	const endCol = ref.endCol ?? ref.col
 	if (endCol === ref.col) return numberValue(ref.col + 1)
 	const row: ScalarCellValue[] = []

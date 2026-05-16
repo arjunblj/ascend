@@ -885,6 +885,21 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(4, 1)?.value).toEqual(numberValue(4))
 	})
 
+	test('ROW and COLUMN without references use the formula cell position', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(4, 2, { value: EMPTY, formula: 'ROW()', styleId: sid })
+		sheet.cells.set(4, 3, { value: EMPTY, formula: 'COLUMN()', styleId: sid })
+		sheet.cells.set(4, 4, { value: EMPTY, formula: 'ADDRESS(ROW(),COLUMN())', styleId: sid })
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(4, 2)?.value).toEqual(numberValue(5))
+		expect(sheet.cells.get(4, 3)?.value).toEqual(numberValue(4))
+		expect(sheet.cells.get(4, 4)?.value).toEqual(stringValue('$E$5'))
+	})
+
 	test('conditional aggregates return arrays for array criteria', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

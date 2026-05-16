@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { basename } from 'node:path'
 import {
@@ -283,6 +284,7 @@ export interface ReleaseProofResearchHygieneDecisionPacket {
 	readonly claim: 'research-surface-hygiene'
 	readonly workBlockDisposition: 'claim-downgrade-do-not-promote'
 	readonly dirtyInventoryCommand: string
+	readonly inventorySnapshot: ReleaseProofResearchHygieneInventorySnapshot
 	readonly validationCommands: readonly string[]
 	readonly ownerFiles: readonly string[]
 	readonly classificationBuckets: readonly ReleaseProofResearchHygieneClassificationBucket[]
@@ -300,6 +302,21 @@ export interface ReleaseProofResearchHygieneClassificationBucket {
 	readonly bucket: 'accepted-evidence' | 'active-owner-blocker' | 'archive-only'
 	readonly requirement: string
 	readonly forbiddenShortcut: string
+}
+
+export interface ReleaseProofResearchHygieneInventorySnapshot {
+	readonly command: string
+	readonly status: 'inventory-collected' | 'inventory-command-failed'
+	readonly dirtyPathCount: number
+	readonly unclassifiedEntries: readonly ReleaseProofResearchHygieneInventoryEntry[]
+	readonly failure?: string
+	readonly boundary: string
+}
+
+export interface ReleaseProofResearchHygieneInventoryEntry {
+	readonly statusCode: string
+	readonly path: string
+	readonly classification: 'unclassified-owner-decision-required'
 }
 
 export interface ReleaseProofFixtureDecisionTrackedScan {
@@ -2139,6 +2156,8 @@ export function releaseProofResearchHygieneDecisionPacket(
 	)
 	const ownerFiles = [...new Set(downgradeRows.flatMap((row) => row.ownerFiles))]
 	const validationCommands = [...new Set(downgradeRows.flatMap((row) => row.commandsToRun))]
+	const dirtyInventoryCommand =
+		'git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager'
 	return {
 		ownerLoops: ['product', 'release'],
 		status: 'claim-downgrade-do-not-promote',
@@ -2147,8 +2166,8 @@ export function releaseProofResearchHygieneDecisionPacket(
 		ownerApprovalRequired: true,
 		claim: 'research-surface-hygiene',
 		workBlockDisposition: 'claim-downgrade-do-not-promote',
-		dirtyInventoryCommand:
-			'git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager',
+		dirtyInventoryCommand,
+		inventorySnapshot: researchHygieneInventorySnapshot(dirtyInventoryCommand),
 		validationCommands,
 		ownerFiles,
 		classificationBuckets: [
@@ -2190,6 +2209,54 @@ export function releaseProofResearchHygieneDecisionPacket(
 			'Stop only when every path reported by the dirty inventory command is classified as accepted evidence, active owner blocker, or archive-only, and release-proof-index tests pass.',
 		boundary:
 			'Compact research hygiene decision packet. It is not research approval, not archive deletion, not owner classification by itself, and not permission to cite untriaged research in release wording.',
+	}
+}
+
+function researchHygieneInventorySnapshot(
+	command: string,
+): ReleaseProofResearchHygieneInventorySnapshot {
+	try {
+		const stdout = execFileSync(
+			'git',
+			[
+				'status',
+				'--short',
+				'research',
+				'scripts/ascend-loop-manager.ts',
+				'tmp/ascend-loop-manager',
+			],
+			{
+				cwd: process.cwd(),
+				encoding: 'utf8',
+			},
+		)
+		const unclassifiedEntries = stdout
+			.split('\n')
+			.map((line) => line.trimEnd())
+			.filter((line) => line.length > 0)
+			.map((line) => ({
+				statusCode: line.slice(0, 2).trim(),
+				path: line.slice(3),
+				classification: 'unclassified-owner-decision-required' as const,
+			}))
+		return {
+			command,
+			status: 'inventory-collected',
+			dirtyPathCount: unclassifiedEntries.length,
+			unclassifiedEntries,
+			boundary:
+				'Inventory snapshot is current git-status routing evidence only. It is not owner classification, accepted evidence, or permission to cite research paths in release wording.',
+		}
+	} catch (error) {
+		return {
+			command,
+			status: 'inventory-command-failed',
+			dirtyPathCount: 0,
+			unclassifiedEntries: [],
+			failure: error instanceof Error ? error.message : String(error),
+			boundary:
+				'Inventory snapshot failed to collect. Owners must rerun the dirty inventory command before citing any research-derived claim.',
+		}
 	}
 }
 

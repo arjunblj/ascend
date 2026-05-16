@@ -3412,6 +3412,17 @@ describe('release proof evidence index', () => {
 			readonly claim?: string
 			readonly workBlockDisposition?: string
 			readonly dirtyInventoryCommand?: string
+			readonly inventorySnapshot?: {
+				readonly command?: string
+				readonly status?: string
+				readonly dirtyPathCount?: number
+				readonly unclassifiedEntries?: readonly {
+					readonly statusCode?: string
+					readonly path?: string
+					readonly classification?: string
+				}[]
+				readonly boundary?: string
+			}
 			readonly validationCommands?: readonly string[]
 			readonly ownerFiles?: readonly string[]
 			readonly classificationBuckets?: readonly {
@@ -3439,6 +3450,24 @@ describe('release proof evidence index', () => {
 			dirtyInventoryCommand:
 				'git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager',
 		})
+		expect(packet.inventorySnapshot).toMatchObject({
+			command: packet.dirtyInventoryCommand,
+			status: 'inventory-collected',
+			boundary: expect.stringContaining(
+				'Inventory snapshot is current git-status routing evidence',
+			),
+		})
+		expect(typeof packet.inventorySnapshot?.dirtyPathCount).toBe('number')
+		expect(packet.inventorySnapshot?.dirtyPathCount).toBe(
+			packet.inventorySnapshot?.unclassifiedEntries?.length ?? 0,
+		)
+		for (const entry of packet.inventorySnapshot?.unclassifiedEntries ?? []) {
+			expect(entry.path).toMatch(
+				/^(research|scripts\/ascend-loop-manager\.ts|tmp\/ascend-loop-manager)/,
+			)
+			expect(entry.statusCode?.length).toBeGreaterThan(0)
+			expect(entry.classification).toBe('unclassified-owner-decision-required')
+		}
 		expect(packet.validationCommands).toEqual([
 			'git status --short research scripts/ascend-loop-manager.ts tmp/ascend-loop-manager',
 			'bun test fixtures/benchmarks/release-proof-index.test.ts',

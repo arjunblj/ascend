@@ -33,6 +33,7 @@ const RECORDED_WORKLOADS = [
 	'formula-heavy',
 	'table-heavy',
 	'feature-rich',
+	'selected-sheet',
 	'string-heavy',
 ]
 
@@ -167,13 +168,27 @@ describe('performance claim baseline matrix', () => {
 		)
 		expect(markdown).toContain('Continue profile expansion with `selected-sheet`')
 
+		expect(markdown).toContain('## Cycle: Selected-Sheet Value Read')
+		expect(markdown).toContain('generated `selected-sheet` workbook')
+		expect(markdown).toContain('Commit: `5055d794`')
+		expect(markdown).toContain('114,747 input bytes')
+		expect(markdown).toContain(
+			'| Ascend | ran/won | `ascend` | 3.054 | 3.156 | 0.042 | 198.0 MiB |',
+		)
+		expect(markdown).toContain('| SheetJS | ran/lost | `sheetjs` | 29.149')
+		expect(markdown).toContain('| ExcelJS | not comparable | n/a')
+		expect(markdown).toContain(
+			'"Ascend beats ExcelJS, openpyxl, Calamine, Apache POI, or ClosedXML" from this selected-sheet run.',
+		)
+		expect(markdown).toContain('Continue profile expansion with `metadata-only`')
+
 		expect(markdown).toContain('Promote: no.')
 		expect(markdown).toContain(
 			'Optimize: no production optimization from the partial profile rows.',
 		)
 		expect(markdown).toContain('Defer: yes.')
 		expect(markdown).toContain(
-			'The immediate next action is `selected-sheet` profile expansion plus runner hardening for FastExcel Java on `sparse-wide`, ClosedXML, fastxlsx, and rich-metadata semantic mismatches',
+			'The immediate next action is `metadata-only` profile expansion plus runner hardening for FastExcel Java on `sparse-wide`, ClosedXML, fastxlsx, rich-metadata semantic mismatches, and selected-sheet unsupported-operation gaps',
 		)
 	})
 })

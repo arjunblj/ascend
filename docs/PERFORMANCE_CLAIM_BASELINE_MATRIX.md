@@ -13,7 +13,7 @@ release wording.
 No broad XLSX read, SOTA, or QSS-leapfrog speed claim is promotable from this artifact. The cycles below are useful external baseline evidence for scoped release workflows, but they are not a clean full-profile claim because:
 
 - `competitive-scoreboard --require-profile xlsx-read-sota` fails coverage for the rest of the profile.
-- The recorded cycles cover public/reproducible generated `dense-values`, `sparse-wide`, `styles-heavy`, `formula-heavy`, `table-heavy`, `feature-rich`, and `string-heavy` workloads over `raw-ooxml`, not the full profile.
+- The recorded cycles cover public/reproducible generated `dense-values`, `sparse-wide`, `styles-heavy`, `formula-heavy`, `table-heavy`, `feature-rich`, `selected-sheet`, and `string-heavy` workloads over `raw-ooxml`, not the full profile.
 - Several external runners were unavailable or blocked in the clean benchmark worktree. They are recorded as blockers, not wins.
 - Several timing lanes are semantically related but not one unified timing boundary. Do not collapse in-process, preloaded-bytes, file-path, row-stream, and materialized-workbook timings into a single "wins everything" claim.
 
@@ -554,6 +554,71 @@ Forbidden wording:
 
 Next action: optimize no further on this row. Continue profile expansion with `selected-sheet`; keep ClosedXML, fastxlsx, and rich-metadata semantic mismatches as external-baseline blockers unless their runners are fixed.
 
+## Cycle: Selected-Sheet Value Read
+
+Classification: defer. No production optimization is justified from this cycle.
+
+Workflow: XLSX open/inspect value read for one selected worksheet out of a multi-sheet workbook.
+
+Why it matters for release: this is a required `xlsx-read-sota` workload and a common agent workflow when a user asks to inspect or operate on one named sheet without hydrating the rest of the workbook.
+
+Public/tracked-clean input: `competitive-io` generated `selected-sheet` workbook using tracked benchmark code from detached commit `5055d794`, `raw-ooxml` source, 2000 rows x 20 columns in the selected `Data` sheet, 40,000 logical cells, 40,000 populated cells, 114,747 input bytes. No private corpus or local research workbook was used.
+
+Commands:
+
+```bash
+git worktree add --detach /private/tmp/ascend-perf-hillclimb-5055d794 5055d794
+cd /private/tmp/ascend-perf-hillclimb-5055d794
+bun install --frozen-lockfile
+env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-io.ts --json --category read --competitor all --workload selected-sheet --read-source raw-ooxml --repeat 5 --warmup 1 --validation-mode each --runner-manifest fixtures/benchmarks/runners/ascend-python-readers.manifest.json > /private/tmp/ascend-perf-hillclimb-5055d794-runs/selected-sheet-read-values.json
+env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-scoreboard.ts /private/tmp/ascend-perf-hillclimb-5055d794-runs/selected-sheet-read-values.json --json --metric medianMs --require-profile xlsx-read-sota > /private/tmp/ascend-perf-hillclimb-5055d794-runs/selected-sheet-scoreboard.json
+```
+
+Environment:
+
+- Commit: `5055d794`
+- Worktree: clean detached worktree at `/private/tmp/ascend-perf-hillclimb-5055d794`; `git status --short --branch` reported `## HEAD (no branch)` with no changed paths after the run.
+- OS: Darwin 25.4.0 arm64
+- Bun: `1.3.13`
+- Python: `3.13.3`
+- Cargo: `1.91.1`
+- Maven: `3.9.15`, Java runtime `25.0.2` as reported by Maven
+- .NET: `8.0.125`
+- Go: `go1.26.3 darwin/arm64`
+
+Raw output:
+
+```text
+/private/tmp/ascend-perf-hillclimb-5055d794-runs/selected-sheet-read-values.json
+/private/tmp/ascend-perf-hillclimb-5055d794-runs/selected-sheet-scoreboard.json
+```
+
+All successful timing rows below use 5 measured samples after 1 warmup. Unsupported-operation rows are non-ranking status rows for claim wording and are not counted as wins.
+
+| Competitor | Status | Representative row | Median ms | P95 ms | CV | Peak RSS/heap | Semantic comparability |
+| --- | --- | --- | ---: | ---: | ---: | ---: | --- |
+| Ascend | ran/won | `ascend` | 3.054 | 3.156 | 0.042 | 198.0 MiB | Selected-sheet value read. Assertions loaded only `Data`, source sheet count 3, loaded sheet count 1, and `selectedSheetMatches=true`. |
+| SheetJS | ran/lost | `sheetjs` | 29.149 | 30.395 | 0.039 | 290.7 MiB | Selected-sheet value read. Bounded gap versus Ascend is 9.54x slower by median. |
+| ExcelJS | not comparable | n/a | n/a | n/a | n/a | n/a | Unsupported operation for this profile; not counted. |
+| openpyxl | not comparable | n/a | n/a | n/a | n/a | n/a | Unsupported operation for this profile; not counted. |
+| Calamine | not comparable | n/a | n/a | n/a | n/a | n/a | Unsupported operation for this profile; not counted. |
+| Apache POI | not comparable | n/a | n/a | n/a | n/a | n/a | Unsupported operation for this profile; not counted. |
+| ClosedXML | not comparable | n/a | n/a | n/a | n/a | n/a | Unsupported operation for this profile; not counted. |
+
+Coverage gate result: failed, as expected for a partial profile. The selected-sheet row is only comparable against SheetJS in the current profile; ExcelJS, openpyxl, Calamine, Apache POI, and ClosedXML are explicit unsupported-operation gaps. The profile remains missing `string-heavy` from current commit, `metadata-only`, and `warm-workflow` coverage.
+
+Humble allowed wording:
+
+> On the generated `selected-sheet` raw OOXML workload at commit `5055d794`, Ascend loaded the selected `Data` sheet faster than the only completed comparable external selected-sheet runner, SheetJS. Other libraries in the profile are unsupported for this operation and are not counted as wins.
+
+Forbidden wording:
+
+- "Ascend is the fastest XLSX reader."
+- "Ascend beats ExcelJS, openpyxl, Calamine, Apache POI, or ClosedXML" from this selected-sheet run.
+- Any wording that counts unsupported operations or the incomplete full profile as wins.
+
+Next action: defer production optimization. Continue profile expansion with `metadata-only`.
+
 ## Workflow
 
 Workflow: XLSX open/inspect value read for a string-heavy worksheet.
@@ -651,4 +716,4 @@ Optimize: no production optimization from the partial profile rows. The top rele
 
 Kill: no current optimization is killed by this row.
 
-Defer: yes. Defer all broad read-speed wording until a clean-tree full `xlsx-read-sota` run either passes coverage or records per-runner blockers without counting them as wins. The immediate next action is `selected-sheet` profile expansion plus runner hardening for FastExcel Java on `sparse-wide`, ClosedXML, fastxlsx, and rich-metadata semantic mismatches, followed by the full profile run.
+Defer: yes. Defer all broad read-speed wording until a clean-tree full `xlsx-read-sota` run either passes coverage or records per-runner blockers without counting them as wins. The immediate next action is `metadata-only` profile expansion plus runner hardening for FastExcel Java on `sparse-wide`, ClosedXML, fastxlsx, rich-metadata semantic mismatches, and selected-sheet unsupported-operation gaps, followed by the full profile run.

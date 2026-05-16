@@ -1121,6 +1121,24 @@ describe('release proof evidence index', () => {
 		expect(propertyJournalForbidden).toContain('signed audit')
 		expect(propertyJournalNextOwnerAction).toContain('fast-check')
 		expect(propertyJournalNextOwnerAction).toContain('journal-law-proof.test.ts')
+		const columnarSidecarDecision = index.releaseDecisionBoard.doNotPromoteYet.find(
+			(item) => item.name === 'columnar-scan-sidecars',
+		)
+		const columnarSidecarEvidence = columnarSidecarDecision?.evidenceWeHave.join('\n') ?? ''
+		const columnarSidecarMissing = columnarSidecarDecision?.evidenceMissing.join('\n') ?? ''
+		const columnarSidecarForbidden = columnarSidecarDecision?.forbiddenWording.join('\n') ?? ''
+		const columnarSidecarNextOwnerAction = columnarSidecarDecision?.nextOwnerAction ?? ''
+		expect(columnarSidecarEvidence).toContain('columnar-sidecar.test.ts')
+		expect(columnarSidecarEvidence).toContain('sec-mmf-statistics-2022-02.xlsx')
+		expect(columnarSidecarEvidence).toContain('workbook grid as source of truth')
+		expect(columnarSidecarMissing).toContain('structurally diverse external public workbook')
+		expect(columnarSidecarMissing).toContain('memory caps')
+		expect(columnarSidecarMissing).toContain('generation-key invalidation')
+		expect(columnarSidecarForbidden).toContain('Arrow ABI')
+		expect(columnarSidecarForbidden).toContain('QSS/SOTA speed win')
+		expect(columnarSidecarForbidden).toContain('SDK/API/MCP sidecar product surface')
+		expect(columnarSidecarNextOwnerAction).toContain('columnar-sidecar.test.ts')
+		expect(columnarSidecarNextOwnerAction).toContain('claim-report --json')
 		expect(index.releaseDecisionBoard.doNotPromoteYet.at(-1)).toMatchObject({
 			name: 'practical-latency-contracts',
 			evidenceWeHave: expect.arrayContaining([
@@ -2245,6 +2263,8 @@ describe('release proof evidence index', () => {
 		expect(markdown).toContain('Do not claim edit-producing rename')
 		expect(markdown).toContain('journal-law-proof.test.ts')
 		expect(markdown).toContain('Do not claim property-based testing')
+		expect(markdown).toContain('columnar-sidecar.test.ts')
+		expect(markdown).toContain('Do not claim a production cache')
 		expect(markdown).toContain('columnar scan sidecars')
 		expect(markdown).toContain('do-not-promote-yet')
 	})

@@ -2255,6 +2255,8 @@ function releaseDecisionDoNotPromoteItem(
 		note.name === 'property-journal-laws' ? PROPERTY_JOURNAL_LAW_BLOCKER : undefined
 	const researchHygieneBlocker =
 		note.name === 'research-surface-hygiene' ? RESEARCH_SURFACE_HYGIENE_BLOCKER : undefined
+	const columnarSidecarBlocker =
+		note.name === 'columnar-scan-sidecars' ? COLUMNAR_SIDECAR_BLOCKER : undefined
 	const tokenBoundedAgentViewBlocker =
 		note.name === 'token-bounded-agent-view' ? TOKEN_BOUNDED_AGENT_VIEW_BLOCKER : undefined
 	const retainedViewportPatchBlocker =
@@ -2270,6 +2272,7 @@ function releaseDecisionDoNotPromoteItem(
 			...(releaseProofBundleBlocker?.evidenceWeHave ?? []),
 			...(propertyJournalLawBlocker?.evidenceWeHave ?? []),
 			...(researchHygieneBlocker?.evidenceWeHave ?? []),
+			...(columnarSidecarBlocker?.evidenceWeHave ?? []),
 			...(tokenBoundedAgentViewBlocker?.evidenceWeHave ?? []),
 			...(retainedViewportPatchBlocker?.evidenceWeHave ?? []),
 			...(portfolioClaim?.proofCommand
@@ -2286,6 +2289,7 @@ function releaseDecisionDoNotPromoteItem(
 			...(releaseProofBundleBlocker?.evidenceMissing ?? []),
 			...(propertyJournalLawBlocker?.evidenceMissing ?? []),
 			...(researchHygieneBlocker?.evidenceMissing ?? []),
+			...(columnarSidecarBlocker?.evidenceMissing ?? []),
 			...(tokenBoundedAgentViewBlocker?.evidenceMissing ?? []),
 			...(retainedViewportPatchBlocker?.evidenceMissing ?? []),
 			...(proof ? [proof.fixture, proof.benchmark, proof.surface, proof.validationGate] : []),
@@ -2301,6 +2305,7 @@ function releaseDecisionDoNotPromoteItem(
 			...(releaseProofBundleBlocker?.forbiddenWording ?? []),
 			...(propertyJournalLawBlocker?.forbiddenWording ?? []),
 			...(researchHygieneBlocker?.forbiddenWording ?? []),
+			...(columnarSidecarBlocker?.forbiddenWording ?? []),
 			...(tokenBoundedAgentViewBlocker?.forbiddenWording ?? []),
 			...(retainedViewportPatchBlocker?.forbiddenWording ?? []),
 			...(proof ? [proof.honestBoundary] : []),
@@ -2311,6 +2316,7 @@ function releaseDecisionDoNotPromoteItem(
 			releaseProofBundleBlocker?.ownerAction ??
 			propertyJournalLawBlocker?.ownerAction ??
 			researchHygieneBlocker?.ownerAction ??
+			columnarSidecarBlocker?.ownerAction ??
 			tokenBoundedAgentViewBlocker?.ownerAction ??
 			retainedViewportPatchBlocker?.ownerAction ??
 			deferredClaim?.proofNeeded ??
@@ -2950,6 +2956,24 @@ const PROPERTY_JOURNAL_LAW_BLOCKER = {
 	],
 	forbiddenWording: [
 		'Do not claim property-based testing, full undo coverage, exact rollback for every operation, style/table-style exactness, package-byte restoration, or signed audit/release attestation from deterministic journal-law proof.',
+	],
+} as const
+
+const COLUMNAR_SIDECAR_BLOCKER = {
+	ownerAction:
+		'Performance owner treats columnar-scan-sidecars as benchmark-only evidence, reruns `bun test fixtures/benchmarks/columnar-sidecar.test.ts --timeout 30000` plus a public external claim report such as `bun run fixtures/benchmarks/columnar-sidecar.ts --fixture fixtures/xlsx/external/sec-mmf-statistics-2022-02.xlsx --sheet "Table 9" --repeats 8 --claim-report --json`, then adds multiple structurally diverse public workbook tables with build cost, invalidation cost, memory cap, checksum parity, and noise before any product or speed wording.',
+	evidenceWeHave: [
+		'Columnar sidecar proof command exists: `bun test fixtures/benchmarks/columnar-sidecar.test.ts --timeout 30000` covers synthetic checksum parity, generation invalidation, claim-safe markdown, a tracked public fixture range, and an externally sourced public workbook range.',
+		'External claim-report command exists: `bun run fixtures/benchmarks/columnar-sidecar.ts --fixture fixtures/xlsx/external/sec-mmf-statistics-2022-02.xlsx --sheet "Table 9" --repeats 8 --claim-report --json` reports checksum parity and boundaries for one public numeric/date-like imported range.',
+		'Claim report already labels the sidecar disposable and keeps the workbook grid as source of truth.',
+	],
+	evidenceMissing: [
+		'Multiple larger and structurally diverse external public workbook tables/ranges with numbers, dates, blanks, strings, formulas, filters, hidden rows, styles, table totals, and query-backed shapes.',
+		'Repeated-scan wins that include sidecar build cost, invalidation cost, memory caps, checksum parity, noise/CV, and end-to-end comparisons against canonical workbook reads.',
+		'Owner-approved decision to keep this as benchmark-only or define a real SDK/API/MCP product surface with generation-key invalidation and bounded memory semantics.',
+	],
+	forbiddenWording: [
+		'Do not claim a production cache, Arrow ABI, DuckDB integration, storage engine, workbook rewrite path, mixed-type table engine, guaranteed acceleration, QSS/SOTA speed win, or SDK/API/MCP sidecar product surface from current columnar sidecar evidence.',
 	],
 } as const
 

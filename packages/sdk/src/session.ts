@@ -419,6 +419,7 @@ export class WorkbookDocument {
 	private readonly capsules: LoadedWorkbookSource['capsules']
 	private readonly originalBytes: Uint8Array | null
 	private readonly sourceWasEncrypted: boolean
+	private decryptedPackageBytes: Uint8Array | undefined
 
 	private constructor(
 		cacheKey: string,
@@ -438,6 +439,9 @@ export class WorkbookDocument {
 		this.capsules = capsules
 		this.originalBytes = originalBytes
 		this.sourceWasEncrypted = sourceWasEncrypted
+		this.decryptedPackageBytes = sourceWasEncrypted
+			? (view.getWorkbookModel().sourceArchiveBytes ?? undefined)
+			: undefined
 	}
 
 	static async open(
@@ -629,12 +633,12 @@ export class WorkbookDocument {
 	}
 
 	async packageGraph(): Promise<XlsxPackageGraph> {
-		return inspectXlsxPackageGraph(await this.readSourceBytes())
+		return inspectXlsxPackageGraph(await this.readPackageBytes())
 	}
 
 	async rawPackagePart(options: RawPackagePartOptions): Promise<RawPackagePartInfo> {
 		return {
-			...inspectRawPackagePart(await this.readSourceBytes(), { ...options, origin: 'source' }),
+			...inspectRawPackagePart(await this.readPackageBytes(), { ...options, origin: 'source' }),
 			load: this.inspect().load,
 		}
 	}
@@ -700,6 +704,22 @@ export class WorkbookDocument {
 		return typeof Bun !== 'undefined'
 			? Bun.file(this.source).bytes()
 			: new Uint8Array(await readFile(this.source))
+	}
+
+	private async readPackageBytes(): Promise<Uint8Array> {
+		const archiveBytes = this.view.getWorkbookModel().sourceArchiveBytes
+		if (this.sourceWasEncrypted && archiveBytes) return archiveBytes
+		if (this.sourceWasEncrypted) {
+			if (this.decryptedPackageBytes) return this.decryptedPackageBytes
+			const loaded = await openWorkbookSource(await this.readSourceBytes(), {
+				...(this.options.password !== undefined ? { password: this.options.password } : {}),
+			})
+			if (loaded.workbook.sourceArchiveBytes) {
+				this.decryptedPackageBytes = loaded.workbook.sourceArchiveBytes
+				return this.decryptedPackageBytes
+			}
+		}
+		return this.readSourceBytes()
 	}
 
 	readRows(

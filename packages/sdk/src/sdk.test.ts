@@ -3485,6 +3485,16 @@ describe('AscendWorkbook', () => {
 		expect(() => wb.rawPackagePart({ partPath: 'xl/workbook.xml', maxBytes: 128 })).toThrow(
 			'Cannot export an edited encrypted workbook without re-encryption support',
 		)
+
+		const doc = await WorkbookDocument.open(encrypted, { password: '123', mode: 'metadata-only' })
+		expect((await doc.packageGraph()).parts.some((part) => part.path === 'xl/workbook.xml')).toBe(
+			true,
+		)
+		const docRaw = await doc.rawPackagePart({ partPath: 'xl/workbook.xml', maxBytes: 128 })
+		expect(docRaw.found).toBe(true)
+		expect(docRaw.origin).toBe('source')
+		expect(docRaw.load?.mode).toBe('metadata-only')
+		expect(docRaw.text).toContain('<workbook')
 	})
 
 	test('report returns compatibility info', () => {

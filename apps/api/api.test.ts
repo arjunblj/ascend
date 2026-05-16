@@ -695,7 +695,24 @@ describe('API', () => {
 		const body = await res.json()
 		expect(body.formatVersion).toBe(1)
 		expect(body.ok).toBe(false)
-		expect(body.error.message).toBe('Not Found')
+		expect(body.error).toMatchObject({
+			code: 'INVALID_ARGUMENT',
+			message: 'Unsupported API route: GET /unknown',
+			retryable: true,
+			retryStrategy: 'modified',
+			details: {
+				method: 'GET',
+				path: '/unknown',
+				supportedRoutes: expect.arrayContaining([
+					{ method: 'GET', path: '/operations' },
+					{ method: 'POST', path: '/open-plan' },
+					{ method: 'POST', path: '/plan' },
+					{ method: 'POST', path: '/commit' },
+				]),
+				workflow: ['open-plan', 'inspect', 'plan', 'commit'],
+			},
+			suggestedFix: expect.stringContaining('GET /operations'),
+		})
 	})
 
 	test('export returns TSV bytes and rejects unsupported formats', async () => {

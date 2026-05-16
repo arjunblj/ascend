@@ -549,10 +549,21 @@ describe('Ascend API server', () => {
 		expect(missingRoute.body.ok).toBe(false)
 		expect(missingRoute.body.error).toMatchObject({
 			code: 'INVALID_ARGUMENT',
-			message: 'Not Found',
+			message: 'Unsupported API route: POST /not-a-real-endpoint',
 			retryable: true,
 			retryStrategy: 'modified',
-			suggestedFix: expect.stringContaining('supported Ascend API endpoint'),
+			details: {
+				method: 'POST',
+				path: '/not-a-real-endpoint',
+				supportedRoutes: expect.arrayContaining([
+					{ method: 'GET', path: '/operations' },
+					{ method: 'POST', path: '/open-plan' },
+					{ method: 'POST', path: '/plan' },
+					{ method: 'POST', path: '/commit' },
+				]),
+				workflow: ['open-plan', 'inspect', 'plan', 'commit'],
+			},
+			suggestedFix: expect.stringContaining('GET /operations'),
 		})
 	})
 

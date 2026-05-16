@@ -682,11 +682,56 @@ const CORS_HEADERS: Record<string, string> = {
 	'Access-Control-Allow-Headers': 'Content-Type',
 }
 
+const SUPPORTED_API_ROUTES = [
+	{ method: 'GET', path: '/health' },
+	{ method: 'GET', path: '/operations' },
+	{ method: 'GET', path: '/capabilities' },
+	{ method: 'POST', path: '/open-plan' },
+	{ method: 'POST', path: '/inspect' },
+	{ method: 'POST', path: '/active-content' },
+	{ method: 'POST', path: '/trust-report' },
+	{ method: 'POST', path: '/package-graph' },
+	{ method: 'POST', path: '/raw-part' },
+	{ method: 'POST', path: '/visuals' },
+	{ method: 'POST', path: '/dump' },
+	{ method: 'POST', path: '/template-merge' },
+	{ method: 'POST', path: '/pivots' },
+	{ method: 'POST', path: '/read' },
+	{ method: 'POST', path: '/agent-view' },
+	{ method: 'POST', path: '/formula-assist' },
+	{ method: 'POST', path: '/plan' },
+	{ method: 'POST', path: '/commit' },
+	{ method: 'POST', path: '/repair-plan' },
+	{ method: 'POST', path: '/write' },
+	{ method: 'POST', path: '/preview' },
+	{ method: 'POST', path: '/calc' },
+	{ method: 'POST', path: '/check' },
+	{ method: 'POST', path: '/lint' },
+	{ method: 'POST', path: '/trace' },
+	{ method: 'POST', path: '/diff' },
+	{ method: 'POST', path: '/export' },
+] as const
+
 function withCors(res: Response): Response {
 	for (const [k, v] of Object.entries(CORS_HEADERS)) {
 		res.headers.set(k, v)
 	}
 	return res
+}
+
+function unsupportedApiRouteError(method: string, path: string): AscendError {
+	return ascendError('INVALID_ARGUMENT', `Unsupported API route: ${method} ${path}`, {
+		retryable: true,
+		retryStrategy: 'modified',
+		details: {
+			method,
+			path,
+			supportedRoutes: SUPPORTED_API_ROUTES,
+			workflow: ['open-plan', 'inspect', 'plan', 'commit'],
+		},
+		suggestedFix:
+			'Use one of the supported Ascend API routes; start with GET /operations or POST /open-plan for agent-safe workflows.',
+	})
 }
 
 export function createApiFetch(options: ApiFetchOptions = {}) {
@@ -1633,7 +1678,7 @@ export function createApiFetch(options: ApiFetchOptions = {}) {
 				}
 			}
 
-			return withCors(jsonFailure('Not Found', 404))
+			return withCors(jsonFailureError(unsupportedApiRouteError(method, path), 404))
 		} catch (e) {
 			const msg = e instanceof Error ? e.message : String(e)
 			return withCors(jsonFailure(msg, 500))

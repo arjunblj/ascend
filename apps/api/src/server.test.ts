@@ -606,6 +606,7 @@ describe('Ascend API server', () => {
 					'proofBundle.whatChanged',
 					'proofBundle.whySafe',
 					'postWrite.dataConnections',
+					'postWrite.visuals',
 				]),
 			},
 			exampleContext: {
@@ -631,7 +632,12 @@ describe('Ascend API server', () => {
 			expect.objectContaining({
 				step: 'commit',
 				endpoint: 'POST /commit',
-				proof: expect.arrayContaining(['outputSha256', 'postWrite', 'postWrite.dataConnections']),
+				proof: expect.arrayContaining([
+					'outputSha256',
+					'postWrite',
+					'postWrite.dataConnections',
+					'postWrite.visuals',
+				]),
 			}),
 		)
 		expect(body.data?.workflow).toContainEqual(

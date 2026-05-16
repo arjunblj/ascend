@@ -91,6 +91,7 @@ describe('API', () => {
 				'proofBundle.whatChanged',
 				'proofBundle.whySafe',
 				'postWrite.dataConnections',
+				'postWrite.visuals',
 			]),
 		})
 		expect(workflowBody.data.exampleContext).toMatchObject({

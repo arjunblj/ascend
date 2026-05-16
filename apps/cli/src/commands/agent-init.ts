@@ -86,6 +86,7 @@ const AGENT_INIT: AgentInitInfo = {
 			'proofBundle.whatChanged',
 			'proofBundle.whySafe',
 			'postWrite.dataConnections',
+			'postWrite.visuals',
 		],
 	},
 	exampleContext: {
@@ -132,7 +133,7 @@ const AGENT_INIT: AgentInitInfo = {
 		'For encrypted workbook workflows, pass --password only to commands that open source bytes; responses must not echo the password.',
 		'Prefer non-destructive --output writes over --in-place.',
 		'Use --expect-sha256 from plan output to reject stale inputs.',
-		'Use --proof on commit JSON to get proofBundle.safeToUse, proofBundle.whatChanged, proofBundle.whySafe, and postWrite.dataConnections.',
+		'Use --proof on commit JSON to get proofBundle.safeToUse, proofBundle.whatChanged, proofBundle.whySafe, postWrite.dataConnections, and postWrite.visuals.',
 		'CLI plan/commit do not persist prepared handles; API/MCP planHandle values are one-shot and process-local.',
 		'Pass --approval only for approval ids emitted by plan.',
 		'Pass --allow-loss only for feature loss explicitly accepted by the user.',

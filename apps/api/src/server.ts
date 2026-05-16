@@ -852,6 +852,7 @@ const API_AGENT_WORKFLOW = {
 				'outputSha256',
 				'postWrite',
 				'postWrite.dataConnections',
+				'postWrite.visuals',
 				'packageActions',
 				'proofBundle',
 			],
@@ -897,6 +898,7 @@ const API_AGENT_WORKFLOW = {
 			'proofBundle.whatChanged',
 			'proofBundle.whySafe',
 			'postWrite.dataConnections',
+			'postWrite.visuals',
 		],
 	},
 	exampleContext: {

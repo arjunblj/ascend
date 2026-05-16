@@ -352,6 +352,7 @@ export interface ReleaseProofReleaseDecisionBoard {
 	readonly implementationReadyOwnerActionQueue: readonly ReleaseProofImplementationReadyOwnerAction[]
 	readonly claimDowngradeOwnerActionQueue: readonly ReleaseProofClaimDowngradeOwnerAction[]
 	readonly ownerActionQueueCoverage: ReleaseProofOwnerActionQueueCoverage
+	readonly ownerActionExecutionContractCoverage: ReleaseProofOwnerActionExecutionContractCoverage
 	readonly boundary: string
 }
 
@@ -551,6 +552,21 @@ export interface ReleaseProofOwnerActionQueueCoverage {
 	readonly coveredActionCount: number
 	readonly uncoveredTopClaimActionKeys: readonly string[]
 	readonly uncoveredBlockedActionKeys: readonly string[]
+	readonly boundary: string
+}
+
+export interface ReleaseProofOwnerActionExecutionContractCoverage {
+	readonly status:
+		| 'all-disposition-owner-actions-have-execution-contract'
+		| 'execution-contract-gap'
+	readonly actionCount: number
+	readonly benchmarkCorpusActionCount: number
+	readonly implementationReadyActionCount: number
+	readonly claimDowngradeActionCount: number
+	readonly missingOwnerFileActionKeys: readonly string[]
+	readonly missingCommandActionKeys: readonly string[]
+	readonly missingFailureEvidenceActionKeys: readonly string[]
+	readonly missingAcceptanceCriteriaActionKeys: readonly string[]
 	readonly boundary: string
 }
 
@@ -1537,6 +1553,7 @@ export function releaseProofIndexMarkdown(result: ReleaseProofIndexResult): stri
 				`- ${row.ownerLoop}/${row.name}: ${row.sourceQueue}. Files: ${row.ownerFiles.map((file) => `\`${file}\``).join('; ')} Commands: ${row.commandsToRun.map((command) => `\`${command}\``).join('; ')} Failure evidence: ${row.failureEvidence.join('; ')} Accept: ${row.acceptanceCriteria} Next: ${row.nextOwnerAction}`,
 		),
 		`Owner action queue coverage: status=${result.releaseDecisionBoard.ownerActionQueueCoverage.status}; top=${result.releaseDecisionBoard.ownerActionQueueCoverage.sourceTopClaimActionCount}; blocked=${result.releaseDecisionBoard.ownerActionQueueCoverage.sourceBlockedActionCount}; covered=${result.releaseDecisionBoard.ownerActionQueueCoverage.coveredActionCount}; uncoveredTop=${result.releaseDecisionBoard.ownerActionQueueCoverage.uncoveredTopClaimActionKeys.join(',')}; uncoveredBlocked=${result.releaseDecisionBoard.ownerActionQueueCoverage.uncoveredBlockedActionKeys.join(',')}`,
+		`Owner action execution contract coverage: status=${result.releaseDecisionBoard.ownerActionExecutionContractCoverage.status}; actions=${result.releaseDecisionBoard.ownerActionExecutionContractCoverage.actionCount}; missingFiles=${result.releaseDecisionBoard.ownerActionExecutionContractCoverage.missingOwnerFileActionKeys.join(',')}; missingCommands=${result.releaseDecisionBoard.ownerActionExecutionContractCoverage.missingCommandActionKeys.join(',')}; missingFailureEvidence=${result.releaseDecisionBoard.ownerActionExecutionContractCoverage.missingFailureEvidenceActionKeys.join(',')}; missingAcceptanceCriteria=${result.releaseDecisionBoard.ownerActionExecutionContractCoverage.missingAcceptanceCriteriaActionKeys.join(',')}`,
 		'',
 		'Do not promote yet:',
 		`Disposition summary: implementation-ready-blocker=${result.releaseDecisionBoard.doNotPromoteDispositionSummary.implementationReadyBlockerNames.join(',')}; benchmark-corpus-blocker=${result.releaseDecisionBoard.doNotPromoteDispositionSummary.benchmarkCorpusBlockerNames.join(',')}; claim-downgrade-do-not-promote=${result.releaseDecisionBoard.doNotPromoteDispositionSummary.claimDowngradeDoNotPromoteNames.join(',')}`,
@@ -2488,6 +2505,11 @@ function releaseDecisionBoard(
 			implementationReadyOwnerActionQueue,
 			claimDowngradeOwnerActionQueue,
 		),
+		ownerActionExecutionContractCoverage: releaseDecisionOwnerActionExecutionContractCoverage(
+			benchmarkCorpusOwnerActionQueue,
+			implementationReadyOwnerActionQueue,
+			claimDowngradeOwnerActionQueue,
+		),
 		boundary:
 			'Top-two release-decision artifact for claim stewardship. It is derived from committed release proof gates and must not be treated as a product surface, benchmark threshold, signed provenance, or owner approval.',
 	}
@@ -2901,6 +2923,55 @@ function releaseDecisionOwnerActionQueueCoverage(
 	}
 }
 
+type ReleaseProofDispositionOwnerAction =
+	| ReleaseProofBenchmarkCorpusOwnerAction
+	| ReleaseProofImplementationReadyOwnerAction
+	| ReleaseProofClaimDowngradeOwnerAction
+
+function releaseDecisionOwnerActionExecutionContractCoverage(
+	benchmarkCorpusActions: readonly ReleaseProofBenchmarkCorpusOwnerAction[],
+	implementationReadyActions: readonly ReleaseProofImplementationReadyOwnerAction[],
+	claimDowngradeActions: readonly ReleaseProofClaimDowngradeOwnerAction[],
+): ReleaseProofOwnerActionExecutionContractCoverage {
+	const actions: readonly ReleaseProofDispositionOwnerAction[] = [
+		...benchmarkCorpusActions,
+		...implementationReadyActions,
+		...claimDowngradeActions,
+	]
+	const missingOwnerFileActionKeys = actions
+		.filter((action) => action.ownerFiles.length === 0)
+		.map(releaseDecisionDispositionActionKey)
+	const missingCommandActionKeys = actions
+		.filter((action) => action.commandsToRun.length === 0)
+		.map(releaseDecisionDispositionActionKey)
+	const missingFailureEvidenceActionKeys = actions
+		.filter((action) => action.failureEvidence.length === 0)
+		.map(releaseDecisionDispositionActionKey)
+	const missingAcceptanceCriteriaActionKeys = actions
+		.filter((action) => action.acceptanceCriteria.trim().length === 0)
+		.map(releaseDecisionDispositionActionKey)
+	const status =
+		missingOwnerFileActionKeys.length === 0 &&
+		missingCommandActionKeys.length === 0 &&
+		missingFailureEvidenceActionKeys.length === 0 &&
+		missingAcceptanceCriteriaActionKeys.length === 0
+			? 'all-disposition-owner-actions-have-execution-contract'
+			: 'execution-contract-gap'
+	return {
+		status,
+		actionCount: actions.length,
+		benchmarkCorpusActionCount: benchmarkCorpusActions.length,
+		implementationReadyActionCount: implementationReadyActions.length,
+		claimDowngradeActionCount: claimDowngradeActions.length,
+		missingOwnerFileActionKeys,
+		missingCommandActionKeys,
+		missingFailureEvidenceActionKeys,
+		missingAcceptanceCriteriaActionKeys,
+		boundary:
+			'Execution contract coverage only. It proves disposition queue rows name owner files, commands to run, failure evidence, and acceptance criteria without executing those commands or satisfying release gates.',
+	}
+}
+
 function releaseDecisionTopClaimActionKey(action: ReleaseProofTopClaimOwnerAction): string {
 	return `top-claim-owner-action:${action.ownerLoop}:${action.artifact}:${action.requirementId}:${action.workBlockDisposition}`
 }
@@ -3260,6 +3331,21 @@ function cloneReleaseDecisionBoard(
 			...board.ownerActionQueueCoverage,
 			uncoveredTopClaimActionKeys: [...board.ownerActionQueueCoverage.uncoveredTopClaimActionKeys],
 			uncoveredBlockedActionKeys: [...board.ownerActionQueueCoverage.uncoveredBlockedActionKeys],
+		},
+		ownerActionExecutionContractCoverage: {
+			...board.ownerActionExecutionContractCoverage,
+			missingOwnerFileActionKeys: [
+				...board.ownerActionExecutionContractCoverage.missingOwnerFileActionKeys,
+			],
+			missingCommandActionKeys: [
+				...board.ownerActionExecutionContractCoverage.missingCommandActionKeys,
+			],
+			missingFailureEvidenceActionKeys: [
+				...board.ownerActionExecutionContractCoverage.missingFailureEvidenceActionKeys,
+			],
+			missingAcceptanceCriteriaActionKeys: [
+				...board.ownerActionExecutionContractCoverage.missingAcceptanceCriteriaActionKeys,
+			],
 		},
 		rows: board.rows.map((row) => ({
 			...row,

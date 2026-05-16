@@ -1735,6 +1735,7 @@ describe('release proof evidence index', () => {
 						'c297ba4c',
 						'27af69d4',
 						'2029dfab',
+						'9cab723f',
 					]),
 					allowedWording: expect.stringContaining('dense-values'),
 					forbiddenWording: expect.arrayContaining([expect.stringContaining('fastest XLSX')]),
@@ -2464,7 +2465,7 @@ describe('release proof evidence index', () => {
 			'c297ba4c dense-values current repeat-15 comparable win',
 		)
 		expect(performanceOwnerArtifact?.nextAction).toContain(
-			'27af69d4 string-heavy current repeat-15 comparable win',
+			'commits 27af69d4 and 9cab723f string-heavy current repeat-15 comparable wins',
 		)
 		expect(performanceOwnerArtifact?.nextAction).toContain(
 			'2029dfab current styles-heavy repeat-15 comparable win',

@@ -3707,12 +3707,13 @@ function todayCommitClaimMatrix(): readonly ReleaseProofTodayCommitClaimMatrixRo
 				'c297ba4c',
 				'27af69d4',
 				'2029dfab',
+				'9cab723f',
 			],
 			releaseOrSotaClaimBecameMoreTrue:
 				'Dense-values, string-heavy, and styles-heavy generated XLSX write rows now have scoped current comparable wins, but broad XLSX write/SOTA/QSS speed wording remains downgraded.',
 			evidenceProvesIt: [
 				'bun test fixtures/benchmarks/performance-claim-baseline-matrix.test.ts --timeout 30000',
-				'performance owner artifact in release-proof-index names the plain-text baseline, string-heavy baseline, 0d0c9632 string-heavy optimization proof, 905ecb5e styles-heavy write baseline win, c297ba4c dense-values current repeat-15 comparable win, 27af69d4 string-heavy current repeat-15 comparable win, and 2029dfab current styles-heavy repeat-15 comparable win as bounded evidence.',
+				'performance owner artifact in release-proof-index names the plain-text baseline, string-heavy baseline, 0d0c9632 string-heavy optimization proof, 905ecb5e styles-heavy write baseline win, c297ba4c dense-values current repeat-15 comparable win, 27af69d4 and 9cab723f string-heavy current repeat-15 comparable wins, and 2029dfab current styles-heavy repeat-15 comparable win as bounded evidence.',
 			],
 			allowedWording:
 				'Ascend has bounded local evidence of dense-values, string-heavy, and styles-heavy generated write rows where focused comparable external reruns favor Ascend; treat them as scoped generated-write evidence, not broad speed leadership.',
@@ -5000,7 +5001,7 @@ function ownerDecisionArtifactsFor(
 					decision:
 						'Use the performance matrix as a defer decision: no broad XLSX read, SOTA, or QSS-leapfrog speed claim is promotable from the current partial baseline.',
 					nextAction:
-						'Benchmarking owner treats the focused ClosedXML, same-lane selected-sheet, same-lane metadata-only, current-worktree python-calamine selected-sheet runner proof, current full-profile/merged scoreboard runs, commit df349629 current selected-sheet same-lane read proof, commit 1908f3f5 current metadata-only Calamine loss, commit 67b900ed plain-text write baseline, commit e22eb86a string-heavy write baseline, commit 0d0c9632 string-heavy write optimization proof, commit 905ecb5e styles-heavy write baseline win, commit c297ba4c dense-values current repeat-15 comparable win, commit 27af69d4 string-heavy current repeat-15 comparable win, and commit 2029dfab current styles-heavy repeat-15 comparable win as accepted bounded evidence, downgrades broad speed wording, and stops production optimization unless the next work is explicit blocker resolution for ClosedXML coverage, feature-rich semantic mismatches, remaining unsupported selected-sheet/metadata-only competitors, FastXLSX environment coverage, a same-timing SDK selected-sheet open-only row, a clean multi-workload xlsx-write-sota gate, or another named public workflow loss.',
+						'Benchmarking owner treats the focused ClosedXML, same-lane selected-sheet, same-lane metadata-only, current-worktree python-calamine selected-sheet runner proof, current full-profile/merged scoreboard runs, commit df349629 current selected-sheet same-lane read proof, commit 1908f3f5 current metadata-only Calamine loss, commit 67b900ed plain-text write baseline, commit e22eb86a string-heavy write baseline, commit 0d0c9632 string-heavy write optimization proof, commit 905ecb5e styles-heavy write baseline win, commit c297ba4c dense-values current repeat-15 comparable win, commits 27af69d4 and 9cab723f string-heavy current repeat-15 comparable wins, and commit 2029dfab current styles-heavy repeat-15 comparable win as accepted bounded evidence, downgrades broad speed wording, and stops production optimization unless the next work is explicit blocker resolution for ClosedXML coverage, feature-rich semantic mismatches, remaining unsupported selected-sheet/metadata-only competitors, FastXLSX environment coverage, a same-timing SDK selected-sheet open-only row, a clean multi-workload xlsx-write-sota gate, or another named public workflow loss.',
 					forbiddenShortcut:
 						'Do not count unavailable runners, blocked runners, dirty-worktree timings, one-workload medians, the 2000x20 plain-text/dense/string/styles rows, or focused fastest-comparable reruns as broad XLSX write/SOTA/QSS speed wins.',
 					boundary:

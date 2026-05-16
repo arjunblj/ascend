@@ -1318,7 +1318,10 @@ describe('release proof evidence index', () => {
 		expect(formulaLanguageDecision?.validationCommands).toEqual(
 			expect.arrayContaining([
 				'bun run fixtures/benchmarks/formula-assist-proof.ts --sample 250 --no-timings --json',
-				expect.stringContaining('packages/sdk/src/formula-edit.test.ts'),
+				'bun test packages/sdk/src/formula-edit.test.ts --timeout 30000',
+				'bun test apps/cli/src/cli.test.ts -t "formula assist returns formula IDE help without opening a workbook" --timeout 30000',
+				'bun test apps/api/src/server.test.ts -t "formula-assist exposes diagnostics, completions, signature help, and reference edits" --timeout 30000',
+				'bun test apps/mcp/src/index.test.ts -t "ascend.formula_assist exposes formula IDE helpers for agents" --timeout 30000',
 			]),
 		)
 		const researchSurfaceDecision = index.releaseDecisionBoard.doNotPromoteYet.find(

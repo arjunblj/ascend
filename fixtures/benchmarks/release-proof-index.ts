@@ -3635,7 +3635,10 @@ function releaseDecisionValidationCommands(
 		case 'formula-language-service-primitives':
 			return [
 				'bun run fixtures/benchmarks/formula-assist-proof.ts --sample 250 --no-timings --json',
-				'bun test packages/sdk/src/formula-edit.test.ts apps/cli/src/cli.test.ts apps/api/src/server.test.ts apps/mcp/src/index.test.ts --timeout 30000',
+				'bun test packages/sdk/src/formula-edit.test.ts --timeout 30000',
+				'bun test apps/cli/src/cli.test.ts -t "formula assist returns formula IDE help without opening a workbook" --timeout 30000',
+				'bun test apps/api/src/server.test.ts -t "formula-assist exposes diagnostics, completions, signature help, and reference edits" --timeout 30000',
+				'bun test apps/mcp/src/index.test.ts -t "ascend.formula_assist exposes formula IDE helpers for agents" --timeout 30000',
 			]
 		case 'token-bounded-agent-view':
 			return [

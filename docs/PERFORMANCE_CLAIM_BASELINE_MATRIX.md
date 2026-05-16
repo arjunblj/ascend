@@ -12,7 +12,7 @@ release wording.
 
 No broad XLSX read, SOTA, or QSS-leapfrog speed claim is promotable from this artifact. The cycles below are useful external baseline evidence for scoped release workflows, but they are not a clean full-profile claim because:
 
-- `competitive-scoreboard --require-profile xlsx-read-sota` still fails for a single-run full-profile promotion because ClosedXML, fastxlsx, and several unsupported/semantic-mismatch rows remain explicit blockers.
+- `competitive-scoreboard --require-profile xlsx-read-sota` still fails for a single-run full-profile promotion because fastxlsx and several unsupported/semantic-mismatch rows remain explicit blockers. ClosedXML was subsequently unblocked in a focused clean head-to-head run and is recorded as ran/lost, not as blocked.
 - The recorded cycles cover public/reproducible generated `dense-values`, `sparse-wide`, `styles-heavy`, `formula-heavy`, `table-heavy`, `feature-rich`, `selected-sheet`, `metadata-only`, `warm-workflow`, and `string-heavy` workloads over `raw-ooxml`, but they are per-workload evidence rows rather than one clean all-workload promotion run.
 - Several external runners were unavailable or blocked in the clean benchmark worktree. They are recorded as blockers, not wins.
 - Several timing lanes are semantically related but not one unified timing boundary. Do not collapse in-process, preloaded-bytes, file-path, row-stream, and materialized-workbook timings into a single "wins everything" claim.
@@ -60,7 +60,8 @@ Stop condition: do not optimize further from the measured winning rows
 `selected-sheet`, `metadata-only`, `warm-workflow`, and `string-heavy`. The
 `feature-rich` row identified a meaningful loss and was optimized at `05656d4e`;
 continue only on the next named loss, unstable tail, or memory/latency tradeoff
-worth production work.
+worth production work. The ClosedXML runner blocker was resolved by restoring
+the runner in a clean worktree and is now a measured bounded-gap row.
 
 ## Full Current-Commit Gate: XLSX Read SOTA
 
@@ -153,6 +154,100 @@ Next action: attack the highest-impact blocker, starting with the ClosedXML
 runner because it blocks the most required head-to-head read rows. If the runner
 cannot be made comparable in the local release environment, record a tighter
 blocked decision and keep the broad claim downgraded.
+
+## Cycle: ClosedXML Focused Head-to-Head Read
+
+Classification: defer. ClosedXML is no longer a runner blocker for the required
+value-read rows, but no production optimization is justified because the focused
+clean head-to-head run shows Ascend ahead on the comparable workflows.
+
+Workflow: XLSX open/inspect value read against ClosedXML for the required
+`xlsx-read-sota` read rows.
+
+Why it matters for release: ClosedXML was the largest remaining missing
+competitor in the full current-commit gate. Converting it from `blocked` to
+measured rows strengthens the external claim matrix without counting a failed
+runner as a win.
+
+Public/tracked-clean input: `competitive-io` generated `workload all` raw OOXML
+inputs from tracked benchmark code in detached commit `2f5c1761`. Required
+profile rows covered here are `dense-values`, `sparse-wide`, `string-heavy`,
+`styles-heavy`, `formula-heavy`, `table-heavy`, `feature-rich`, and
+`warm-workflow`. `selected-sheet` and `metadata-only` remain unsupported for
+ClosedXML in the profile and are not counted as wins.
+
+Commands:
+
+```bash
+git worktree add --detach /private/tmp/ascend-perf-hillclimb-2f5c1761 2f5c1761
+cd /private/tmp/ascend-perf-hillclimb-2f5c1761
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun install --frozen-lockfile
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin DOTNET_CLI_HOME=/private/tmp/ascend-dotnet-home NUGET_PACKAGES=/private/tmp/ascend-nuget-packages dotnet build fixtures/benchmarks/runners/closedxml/ClosedXmlRunner.csproj --configuration Release -v minimal
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-io.ts --json --category read --competitor external --libraries closedxml --workload all --read-source raw-ooxml --repeat 5 --warmup 1 --validation-mode each --runner-manifest fixtures/benchmarks/runners/ascend-python-readers.manifest.json > /private/tmp/ascend-perf-hillclimb-2f5c1761-runs/closedxml-read-all-after-restore.json
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-io.ts --json --category read --competitor external --libraries ascend-readxlsx-raw-values-operation-path,ascend-readxlsx-raw-values-operation-bytes,ascend-readxlsx-values-rich-metadata-bytes,closedxml --workload all --read-source raw-ooxml --repeat 5 --warmup 1 --validation-mode each --runner-manifest fixtures/benchmarks/runners/ascend-python-readers.manifest.json > /private/tmp/ascend-perf-hillclimb-2f5c1761-runs/ascend-closedxml-head-to-head-all.json
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-scoreboard.ts /private/tmp/ascend-perf-hillclimb-2f5c1761-runs/ascend-closedxml-head-to-head-all.json --json --metric medianMs --require-profile xlsx-read-sota > /private/tmp/ascend-perf-hillclimb-2f5c1761-runs/ascend-closedxml-head-to-head-all-scoreboard.json
+```
+
+Environment:
+
+- Commit: `2f5c17617ae2c41cac84558edebe3b3174c30a09`
+- Worktree: clean detached worktree at `/private/tmp/ascend-perf-hillclimb-2f5c1761`; `git status --short --branch` reported `## HEAD (no branch)` with no changed paths after the run.
+- OS: Darwin 25.4.0 arm64
+- Bun: `1.3.13`
+- Node: `24.3.0`
+- .NET SDK: `8.0.125`
+- ClosedXML runner version: `0.105.0.0`
+- Runtime profile: `category read`, `competitor external`, `workload all`, `readSource raw-ooxml`, `validationMode each`, `repeat 5`, `warmup 1`, `sourceMode full`.
+
+Raw output:
+
+```text
+/private/tmp/ascend-perf-hillclimb-2f5c1761-runs/closedxml-read-all-after-restore.json
+/private/tmp/ascend-perf-hillclimb-2f5c1761-runs/ascend-closedxml-head-to-head-all.json
+/private/tmp/ascend-perf-hillclimb-2f5c1761-runs/ascend-closedxml-head-to-head-all-scoreboard.json
+```
+
+All successful timing rows below use 5 measured samples after 1 warmup. The
+Ascend column uses the fastest eligible Ascend row for the workflow from the
+same focused harness invocation. These rows support bounded ClosedXML
+comparisons only; they do not convert the full profile into a coverage pass.
+
+| Workflow | Ascend row | Ascend median / p95 / CV / RSS | ClosedXML median / p95 / CV / RSS | Status | Semantic comparability |
+| --- | --- | ---: | ---: | --- | --- |
+| `dense-values` | `ascend-readxlsx-raw-values-operation-bytes` | 9.394 ms / 11.905 ms / 0.165 / 85.6 MiB | 369.344 ms / 884.345 ms / 0.514 / 113.4 MiB | ran/won | Value-read assertions pass for both. ClosedXML materializes a workbook; use only as a bounded gap for open/inspect value reads. |
+| `sparse-wide` | `ascend-readxlsx-raw-values-operation-bytes` | 18.495 ms / 50.346 ms / 0.628 / 119.6 MiB | 507.483 ms / 683.386 ms / 0.261 / 144.4 MiB | ran/won | Value-read assertions pass for both; Ascend tail is noisy. |
+| `string-heavy` | `ascend-readxlsx-raw-values-operation-bytes` | 26.880 ms / 52.719 ms / 0.355 / 107.2 MiB | 320.998 ms / 1353.840 ms / 0.911 / 123.6 MiB | ran/won | Value-read assertions pass for both; ClosedXML tail is very noisy. |
+| `styles-heavy` | `ascend-readxlsx-raw-values-operation-path` | 13.035 ms / 14.260 ms / 0.057 / 101.2 MiB | 322.689 ms / 560.705 ms / 0.306 / 123.0 MiB | ran/won | Value-read assertions pass for both; this does not prove style fidelity or preservation. |
+| `formula-heavy` | `ascend-readxlsx-raw-values-operation-path` | 10.298 ms / 10.660 ms / 0.029 / 96.5 MiB | 358.916 ms / 513.109 ms / 0.234 / 132.7 MiB | ran/won | Value-read assertions pass for both; this does not prove formula calculation or preservation. |
+| `table-heavy` | `ascend-readxlsx-raw-values-operation-bytes` | 19.329 ms / 32.379 ms / 0.320 / 114.0 MiB | 307.502 ms / 413.116 ms / 0.210 / 125.4 MiB | ran/won | Value-read assertions pass for both; this does not prove table preservation. |
+| `feature-rich` | `ascend-readxlsx-values-rich-metadata-bytes` | 50.600 ms / 52.510 ms / 0.036 / 169.3 MiB | 194.255 ms / 610.081 ms / 0.618 / 142.5 MiB | ran/won | Rich-metadata assertions pass for both; ClosedXML has lower RSS but a much slower and noisier tail. |
+| `warm-workflow` | `ascend-readxlsx-raw-values-operation-bytes` | 3.544 ms / 3.623 ms / 0.028 / 90.8 MiB | 249.849 ms / 318.092 ms / 0.275 / 120.8 MiB | ran/won | Warm value-read assertions pass for both. |
+| `selected-sheet` | n/a | n/a | n/a | not comparable | ClosedXML remains `unsupported-operation` for selected-sheet read in the profile. |
+| `metadata-only` | n/a | n/a | n/a | not comparable | ClosedXML remains `unsupported-operation` for metadata-only read in the profile. |
+
+Scoreboard result for the focused run:
+
+- `leaderFailures: []`
+- `profileLeaderFailures: []`
+- The scoreboard still fails full profile coverage because this focused run
+  intentionally omits SheetJS, ExcelJS, openpyxl, Calamine, and Apache POI rows,
+  and because selected-sheet and metadata-only unsupported-operation gaps remain.
+
+Humble allowed wording:
+
+> In a clean focused `xlsx-read-sota` head-to-head run at `2f5c1761`, ClosedXML `0.105.0.0` successfully ran the required comparable value-read rows and was slower than Ascend's measured value-read path on those workflows. This is bounded ClosedXML evidence only, not a full-profile XLSX-read speed claim.
+
+Forbidden wording:
+
+- "Ascend is the fastest XLSX reader."
+- "Ascend is SOTA for XLSX read."
+- "Ascend beats ClosedXML for selected-sheet or metadata-only reads."
+- Any wording that hides the different timing models, noisy tails, or remaining full-profile coverage gaps.
+
+Next action: defer production optimization. The next highest-impact gaps are no
+longer ClosedXML value-read coverage; they are selected-sheet/metadata-only
+unsupported-operation gaps, feature-rich semantic mismatches for SheetJS and
+Calamine, and the unavailable fastxlsx runner.
 
 ## Cycle: Dense Value Read
 

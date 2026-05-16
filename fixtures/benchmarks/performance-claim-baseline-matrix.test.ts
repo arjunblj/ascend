@@ -48,6 +48,9 @@ describe('performance claim baseline matrix', () => {
 		expect(markdown).toContain(
 			'No broad XLSX read, SOTA, or QSS-leapfrog speed claim is promotable',
 		)
+		expect(markdown).toContain(
+			'ClosedXML was subsequently unblocked in a focused clean head-to-head run and is recorded as ran/lost, not as blocked.',
+		)
 		for (const workload of RECORDED_WORKLOADS) expect(markdown).toContain(`\`${workload}\``)
 		expect(markdown).toContain('Humble allowed wording:')
 		expect(markdown).toContain('Forbidden wording:')
@@ -95,7 +98,35 @@ describe('performance claim baseline matrix', () => {
 		expect(markdown).toContain(
 			'"Ascend beats ClosedXML, fastxlsx, unsupported runners, or semantic-mismatch rows."',
 		)
-		expect(markdown).toContain('starting with the ClosedXML\nrunner')
+
+		expect(markdown).toContain('## Cycle: ClosedXML Focused Head-to-Head Read')
+		expect(markdown).toContain('ClosedXML is no longer a runner blocker')
+		expect(markdown).toContain('Commit: `2f5c17617ae2c41cac84558edebe3b3174c30a09`')
+		expect(markdown).toContain('ClosedXML runner version: `0.105.0.0`')
+		expect(markdown).toContain(
+			'/private/tmp/ascend-perf-hillclimb-2f5c1761-runs/ascend-closedxml-head-to-head-all.json',
+		)
+		expect(markdown).toContain(
+			'/private/tmp/ascend-perf-hillclimb-2f5c1761-runs/ascend-closedxml-head-to-head-all-scoreboard.json',
+		)
+		expect(markdown).toContain(
+			'| `dense-values` | `ascend-readxlsx-raw-values-operation-bytes` | 9.394 ms / 11.905 ms / 0.165 / 85.6 MiB | 369.344 ms / 884.345 ms / 0.514 / 113.4 MiB | ran/won |',
+		)
+		expect(markdown).toContain(
+			'| `feature-rich` | `ascend-readxlsx-values-rich-metadata-bytes` | 50.600 ms / 52.510 ms / 0.036 / 169.3 MiB | 194.255 ms / 610.081 ms / 0.618 / 142.5 MiB | ran/won |',
+		)
+		expect(markdown).toContain(
+			'| `selected-sheet` | n/a | n/a | n/a | not comparable | ClosedXML remains `unsupported-operation`',
+		)
+		expect(markdown).toContain(
+			'| `metadata-only` | n/a | n/a | n/a | not comparable | ClosedXML remains `unsupported-operation`',
+		)
+		expect(markdown).toContain('`leaderFailures: []`')
+		expect(markdown).toContain('`profileLeaderFailures: []`')
+		expect(markdown).toContain(
+			'"Ascend beats ClosedXML for selected-sheet or metadata-only reads."',
+		)
+		expect(markdown).toContain('no\nlonger ClosedXML value-read coverage')
 
 		expect(markdown).toContain(
 			'bun run fixtures/benchmarks/competitive-io.ts --json --category read --competitor all',

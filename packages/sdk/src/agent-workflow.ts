@@ -413,6 +413,7 @@ export interface CompactAgentPostWriteVerification {
 	readonly opaquePayloads: PostWriteOpaquePayloadSummary
 	readonly comments: PostWriteCommentSummary
 	readonly hyperlinks: PostWriteHyperlinkSummary
+	readonly dataValidations: PostWriteDataValidationSummary
 	readonly tables: PostWriteTableSummary
 	readonly definedNames: PostWriteDefinedNameSummary
 	readonly externalReferences: PostWriteExternalReferenceSummary
@@ -456,6 +457,7 @@ export interface AgentPostWriteVerification {
 	readonly opaquePayloads: PostWriteOpaquePayloadSummary
 	readonly comments: PostWriteCommentSummary
 	readonly hyperlinks: PostWriteHyperlinkSummary
+	readonly dataValidations: PostWriteDataValidationSummary
 	readonly tables: PostWriteTableSummary
 	readonly definedNames: PostWriteDefinedNameSummary
 	readonly externalReferences: PostWriteExternalReferenceSummary
@@ -510,6 +512,32 @@ export interface PostWriteHyperlinkEntry {
 	readonly internalLocation?: string
 	readonly display?: string
 	readonly tooltip?: string
+}
+
+export interface PostWriteDataValidationSummary {
+	readonly total: number
+	readonly formulaBacked: number
+	readonly listValidations: number
+	readonly x14Validations: number
+	readonly ranges: readonly string[]
+	readonly types: readonly string[]
+	readonly validations: readonly PostWriteDataValidationEntry[]
+	readonly preservationMode: 'generated' | 'none'
+	readonly verification: 'reopened-output'
+}
+
+export interface PostWriteDataValidationEntry {
+	readonly sheetName: string
+	readonly sqref: string
+	readonly location: string
+	readonly type?: string
+	readonly operator?: string
+	readonly source?: string
+	readonly formula1?: string
+	readonly formula2?: string
+	readonly allowBlank?: boolean
+	readonly showInputMessage?: boolean
+	readonly showErrorMessage?: boolean
 }
 
 export interface PostWriteTableSummary {
@@ -1883,6 +1911,7 @@ function compactPostWriteVerification(
 		opaquePayloads: postWrite.opaquePayloads,
 		comments: postWrite.comments,
 		hyperlinks: postWrite.hyperlinks,
+		dataValidations: postWrite.dataValidations,
 		tables: postWrite.tables,
 		definedNames: postWrite.definedNames,
 		externalReferences: postWrite.externalReferences,
@@ -2386,6 +2415,7 @@ async function verifyWrittenWorkbook(
 	const opaquePayloads = postWriteOpaquePayloadSummary(workbook)
 	const comments = postWriteCommentSummary(workbook)
 	const hyperlinks = postWriteHyperlinkSummary(workbook)
+	const dataValidations = postWriteDataValidationSummary(workbook)
 	const tables = postWriteTableSummary(workbook)
 	const definedNames = postWriteDefinedNameSummary(workbook)
 	const externalReferences = postWriteExternalReferenceSummary(workbook)
@@ -2448,6 +2478,7 @@ async function verifyWrittenWorkbook(
 		opaquePayloads,
 		comments,
 		hyperlinks,
+		dataValidations,
 		tables,
 		definedNames,
 		externalReferences,
@@ -2506,6 +2537,43 @@ function postWriteHyperlinkSummary(workbook: Workbook): PostWriteHyperlinkSummar
 		),
 		links,
 		preservationMode: links.length > 0 ? 'generated' : 'none',
+		verification: 'reopened-output',
+	}
+}
+
+function postWriteDataValidationSummary(workbook: Workbook): PostWriteDataValidationSummary {
+	const validations = workbook.sheets.flatMap((sheet) =>
+		sheet.dataValidations.map((validation) => ({
+			sheetName: sheet.name,
+			sqref: validation.sqref,
+			location: `${sheet.name}!${validation.sqref}`,
+			...(validation.type !== undefined ? { type: validation.type } : {}),
+			...(validation.operator !== undefined ? { operator: validation.operator } : {}),
+			...(validation.source !== undefined ? { source: validation.source } : {}),
+			...(validation.formula1 !== undefined ? { formula1: validation.formula1 } : {}),
+			...(validation.formula2 !== undefined ? { formula2: validation.formula2 } : {}),
+			...(validation.allowBlank !== undefined ? { allowBlank: validation.allowBlank } : {}),
+			...(validation.showInputMessage !== undefined
+				? { showInputMessage: validation.showInputMessage }
+				: {}),
+			...(validation.showErrorMessage !== undefined
+				? { showErrorMessage: validation.showErrorMessage }
+				: {}),
+		})),
+	)
+	return {
+		total: validations.length,
+		formulaBacked: validations.filter(
+			(validation) => validation.formula1 !== undefined || validation.formula2 !== undefined,
+		).length,
+		listValidations: validations.filter((validation) => validation.type === 'list').length,
+		x14Validations: validations.filter((validation) => validation.source === 'x14').length,
+		ranges: validations.map((validation) => validation.location),
+		types: uniqueStrings(
+			validations.flatMap((validation) => (validation.type ? [validation.type] : [])),
+		),
+		validations,
+		preservationMode: validations.length > 0 ? 'generated' : 'none',
 		verification: 'reopened-output',
 	}
 }

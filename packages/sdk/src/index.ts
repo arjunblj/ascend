@@ -58,6 +58,8 @@ export type {
 	PostWriteAnalyticsSummary,
 	PostWriteChartEntry,
 	PostWriteCommentSummary,
+	PostWriteDataValidationEntry,
+	PostWriteDataValidationSummary,
 	PostWriteDefinedNameEntry,
 	PostWriteDefinedNameSummary,
 	PostWriteExternalReferenceEntry,

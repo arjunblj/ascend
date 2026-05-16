@@ -8,6 +8,8 @@ import type {
 	PostWriteAnalyticsSummary,
 	PostWriteChartEntry,
 	PostWriteCommentSummary,
+	PostWriteDataValidationEntry,
+	PostWriteDataValidationSummary,
 	PostWriteDefinedNameEntry,
 	PostWriteDefinedNameSummary,
 	PostWriteExternalReferenceEntry,
@@ -36,6 +38,8 @@ type CommitProofExportSurface = {
 	readonly analytics?: PostWriteAnalyticsSummary
 	readonly chart?: PostWriteChartEntry
 	readonly comment?: PostWriteCommentSummary
+	readonly dataValidation?: PostWriteDataValidationEntry
+	readonly dataValidations?: PostWriteDataValidationSummary
 	readonly commitTimings?: AgentCommitTimings
 	readonly definedName?: PostWriteDefinedNameEntry
 	readonly definedNames?: PostWriteDefinedNameSummary
@@ -68,6 +72,8 @@ test('root SDK exports commit proof audit types for release consumers', () => {
 		'analytics',
 		'chart',
 		'comment',
+		'dataValidation',
+		'dataValidations',
 		'commitTimings',
 		'definedName',
 		'definedNames',

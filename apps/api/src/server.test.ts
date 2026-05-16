@@ -4499,6 +4499,67 @@ describe('Ascend API server', () => {
 		}
 	})
 
+	test('prepared plan handles report failed writes and require a fresh plan', async () => {
+		const wb = AscendWorkbook.create()
+		await wb.save(TEMP_FILE)
+		const blockedOutput = join(
+			tmpdir(),
+			`ascend-api-prepared-missing-parent-${Date.now()}`,
+			'out.xlsx',
+		)
+		const retryOutput = `${OUTPUT_FILE}.prepared-failed-write-retry.xlsx`
+		const ops = [{ op: 'addSheet' as const, name: 'PreparedRetry' }]
+		try {
+			const plan = await postJson('/plan', { file: TEMP_FILE, ops })
+			expect(plan.status).toBe(200)
+			expect(plan.body.data?.preparedPlan?.id).toBeString()
+
+			const blocked = await postJson('/commit', {
+				planHandle: plan.body.data?.preparedPlan?.id,
+				output: blockedOutput,
+				approvals: [],
+				compact: true,
+			})
+			expect(blocked.status).toBe(500)
+			expect(blocked.body.ok).toBe(false)
+			expect(blocked.body.error).toMatchObject({
+				code: 'EXPORT_ERROR',
+				retryable: true,
+				retryStrategy: 'modified',
+				details: {
+					output: blockedOutput,
+					operation: 'atomic-workbook-write',
+				},
+			})
+			expect(await Bun.file(blockedOutput).exists()).toBe(false)
+
+			const reused = await postJson('/commit', {
+				planHandle: plan.body.data?.preparedPlan?.id,
+				output: retryOutput,
+				approvals: [],
+			})
+			expect(reused.status).toBe(400)
+			expect(reused.body.error?.message).toBe('Prepared plan handle has already been used')
+			expect(await Bun.file(retryOutput).exists()).toBe(false)
+
+			const retryPlan = await postJson('/plan', { file: TEMP_FILE, ops })
+			expect(retryPlan.status).toBe(200)
+			const retried = await postJson('/commit', {
+				planHandle: retryPlan.body.data?.preparedPlan?.id,
+				output: retryOutput,
+				approvals: [],
+				compact: true,
+			})
+			expect(retried.status).toBe(200)
+			expect(retried.body.data?.postWrite?.valid).toBe(true)
+			expect(retried.body.data?.postWrite?.auditsPassed).toBe(true)
+			const reopened = await AscendWorkbook.open(retryOutput)
+			expect(reopened.sheets).toContain('PreparedRetry')
+		} finally {
+			await unlink(retryOutput).catch(() => {})
+		}
+	})
+
 	test('path mutation plans reuse a guarded open until a prepared handle owns it', async () => {
 		const input = join(
 			tmpdir(),

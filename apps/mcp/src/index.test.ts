@@ -4884,6 +4884,100 @@ describe('MCP server', () => {
 		}
 	})
 
+	test('ascend.commit prepared plan handles report failed writes and require a fresh plan', async () => {
+		const wb = AscendWorkbook.create()
+		await wb.save(TEMP_FILE)
+		const blockedOutput = join(
+			tmpdir(),
+			`ascend-mcp-prepared-missing-parent-${Date.now()}`,
+			'out.xlsx',
+		)
+		const retryOutput = `${TEMP_FILE}.prepared-failed-write-retry-mcp.xlsx`
+		const ops = [{ op: 'addSheet' as const, name: 'PreparedRetryMcp' }]
+		const server = createServer()
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const plan = (server as any)._registeredTools['ascend.plan'].handler as (args: {
+			file: string
+			ops: readonly Record<string, unknown>[]
+		}) => Promise<{
+			structuredContent?: {
+				data?: { preparedPlan?: { id?: string } }
+			}
+		}>
+		// biome-ignore lint/suspicious/noExplicitAny: using MCP registration internals for behavior testing
+		const commit = (server as any)._registeredTools['ascend.commit'].handler as (args: {
+			planHandle?: string
+			output?: string
+			approvals?: string[]
+			compact?: boolean
+		}) => Promise<{
+			isError?: boolean
+			structuredContent?: {
+				ok?: boolean
+				error?: {
+					code?: string
+					message?: string
+					retryable?: boolean
+					retryStrategy?: string
+					details?: { output?: string; operation?: string }
+				}
+				data?: { postWrite?: { valid?: boolean; auditsPassed?: boolean } }
+			}
+		}>
+
+		try {
+			const planned = await plan({ file: TEMP_FILE, ops })
+			expect(planned.structuredContent?.data?.preparedPlan?.id).toBeString()
+
+			const blocked = await commit({
+				planHandle: planned.structuredContent?.data?.preparedPlan?.id,
+				output: blockedOutput,
+				approvals: [],
+				compact: true,
+			})
+			expect(blocked.isError).toBe(true)
+			expect(blocked.structuredContent).toMatchObject({
+				ok: false,
+				error: {
+					code: 'EXPORT_ERROR',
+					retryable: true,
+					retryStrategy: 'modified',
+					details: {
+						output: blockedOutput,
+						operation: 'atomic-workbook-write',
+					},
+				},
+			})
+			expect(await Bun.file(blockedOutput).exists()).toBe(false)
+
+			const reused = await commit({
+				planHandle: planned.structuredContent?.data?.preparedPlan?.id,
+				output: retryOutput,
+				approvals: [],
+			})
+			expect(reused.structuredContent?.error?.message).toBe(
+				'Prepared plan handle has already been used',
+			)
+			expect(await Bun.file(retryOutput).exists()).toBe(false)
+
+			const retryPlan = await plan({ file: TEMP_FILE, ops })
+			expect(retryPlan.structuredContent?.data?.preparedPlan?.id).toBeString()
+			const retried = await commit({
+				planHandle: retryPlan.structuredContent?.data?.preparedPlan?.id,
+				output: retryOutput,
+				approvals: [],
+				compact: true,
+			})
+			expect(retried.structuredContent?.ok).toBe(true)
+			expect(retried.structuredContent?.data?.postWrite?.valid).toBe(true)
+			expect(retried.structuredContent?.data?.postWrite?.auditsPassed).toBe(true)
+			const reopened = await AscendWorkbook.open(retryOutput)
+			expect(reopened.sheets).toContain('PreparedRetryMcp')
+		} finally {
+			await unlink(retryOutput).catch(() => {})
+		}
+	})
+
 	test('direct MCP path mutation commits preserve in-place backups and post-write truth', async () => {
 		const wb = AscendWorkbook.create()
 		wb.apply([{ op: 'setCells', sheet: 'Sheet1', updates: [{ ref: 'A1', value: 'original' }] }])

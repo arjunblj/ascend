@@ -44,6 +44,8 @@ const REQUIRED_COMMANDS = [
 	'bun test packages/sdk/src/sdk.test.ts -t "failed workbook saves keep dirty state"',
 	'bun test apps/api/src/server.test.ts -t "missing workbook files"',
 	'bun test apps/mcp/src/index.test.ts -t "missing workbook files"',
+	'bun test apps/api/src/server.test.ts -t "prepared plan handles report failed writes"',
+	'bun test apps/mcp/src/index.test.ts -t "prepared plan handles report failed writes"',
 	'bun test fixtures/corpus/feature-contract.test.ts',
 	'bun run fixtures/corpus/audit.ts',
 	'bun run fixtures/benchmarks/package-action-proof.ts --json',

@@ -341,6 +341,12 @@ export interface ReleaseProofReleaseDecisionDoNotPromoteItem {
 	readonly status: 'do-not-promote-yet'
 	readonly ownerLoops: readonly ReleaseProofReadinessOwner[]
 	readonly reason: string
+	readonly evidenceWeHave: readonly string[]
+	readonly evidenceMissing: readonly string[]
+	readonly qssContrast: readonly string[]
+	readonly allowedWording: string
+	readonly forbiddenWording: readonly string[]
+	readonly nextOwnerAction: string
 	readonly killCriterion: string
 	readonly boundary: string
 }
@@ -1307,7 +1313,10 @@ export function releaseProofIndexMarkdown(result: ReleaseProofIndexResult): stri
 		...result.releaseDecisionBoard.rows.map(releaseDecisionBoardMarkdownRow),
 		'',
 		'Do not promote yet:',
-		...result.releaseDecisionBoard.doNotPromoteYet.map((item) => `- ${item.name}: ${item.reason}`),
+		...result.releaseDecisionBoard.doNotPromoteYet.map(
+			(item) =>
+				`- ${item.name}: ${item.reason} Missing: ${item.evidenceMissing.join('; ')} Allowed: ${item.allowedWording} Forbidden: ${item.forbiddenWording.join('; ')} Next: ${item.nextOwnerAction}`,
+		),
 		'',
 		'## Release Packageability Evidence',
 		'',
@@ -2083,17 +2092,56 @@ function releaseDecisionBoard(
 					'Release decision row only. It names allowed local claim wording, exact proof pointers, forbidden shortcuts, and owner blockers without satisfying any gate.',
 			}
 		}),
-		doNotPromoteYet: qssMatrix.archivedResearchNotes.map((note) => ({
-			name: note.name,
-			status: 'do-not-promote-yet',
-			ownerLoops: [...note.ownerLoops],
-			reason: note.reason,
-			killCriterion: note.killCriterion,
-			boundary:
-				'Archived research note for release stewardship. Do not turn this into release wording or a new implementation surface until it changes the top-two claim gate.',
-		})),
+		doNotPromoteYet: qssMatrix.archivedResearchNotes.map(releaseDecisionDoNotPromoteItem),
 		boundary:
 			'Top-two release-decision artifact for claim stewardship. It is derived from committed release proof gates and must not be treated as a product surface, benchmark threshold, signed provenance, or owner approval.',
+	}
+}
+
+function releaseDecisionDoNotPromoteItem(
+	note: ReleaseProofQssArchivedResearchNote,
+): ReleaseProofReleaseDecisionDoNotPromoteItem {
+	const portfolioClaim = CLAIM_PORTFOLIO.find((claim) => claim.name === note.name)
+	const deferredClaim = DEFERRED_CLAIMS.find((claim) => claim.name === note.name)
+	const excludedEvidence = EXCLUDED_EVIDENCE.find((evidence) => evidence.name === note.name)
+	const proof = portfolioClaim?.evidenceNeeded
+	return {
+		name: note.name,
+		status: 'do-not-promote-yet',
+		ownerLoops: [...note.ownerLoops],
+		reason: note.reason,
+		evidenceWeHave: [
+			note.reason,
+			...(portfolioClaim?.proofCommand
+				? [`Existing proof command: \`${portfolioClaim.proofCommand}\`.`]
+				: []),
+			...(excludedEvidence
+				? [`Excluded diagnostic command: \`${excludedEvidence.command}\`.`]
+				: []),
+		],
+		evidenceMissing: [
+			...(deferredClaim ? [deferredClaim.proofNeeded] : []),
+			...(excludedEvidence ? [excludedEvidence.eligibilityRule] : []),
+			...(proof ? [proof.fixture, proof.benchmark, proof.surface, proof.validationGate] : []),
+		],
+		qssContrast: [
+			proof?.competitorContrast ??
+				'QSS contrast is blocked until this diagnostic evidence changes a top-two release claim.',
+		],
+		allowedWording: `Do not promote ${note.name} as release wording today; use it only as owner planning or research evidence.`,
+		forbiddenWording: [
+			note.killCriterion,
+			...(proof ? [proof.honestBoundary] : []),
+			...(excludedEvidence ? [excludedEvidence.boundary] : []),
+		],
+		nextOwnerAction:
+			deferredClaim?.proofNeeded ??
+			excludedEvidence?.eligibilityRule ??
+			proof?.validationGate ??
+			'No owner action is release-blocking until this claim changes the top-two release gate.',
+		killCriterion: note.killCriterion,
+		boundary:
+			'Archived research note for release stewardship. Do not turn this into release wording or a new implementation surface until it changes the top-two claim gate.',
 	}
 }
 
@@ -2145,6 +2193,10 @@ function cloneReleaseDecisionBoard(
 		doNotPromoteYet: board.doNotPromoteYet.map((item) => ({
 			...item,
 			ownerLoops: [...item.ownerLoops],
+			evidenceWeHave: [...item.evidenceWeHave],
+			evidenceMissing: [...item.evidenceMissing],
+			qssContrast: [...item.qssContrast],
+			forbiddenWording: [...item.forbiddenWording],
 		})),
 		rows: board.rows.map((row) => ({
 			...row,

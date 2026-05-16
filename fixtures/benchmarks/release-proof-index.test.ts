@@ -924,6 +924,40 @@ describe('release proof evidence index', () => {
 		expect(index.releaseDecisionBoard.doNotPromoteYet[0].boundary).toContain(
 			'Do not turn this into release wording',
 		)
+		for (const item of index.releaseDecisionBoard.doNotPromoteYet) {
+			expect(item.evidenceWeHave.length).toBeGreaterThan(0)
+			expect(item.evidenceMissing.length).toBeGreaterThan(0)
+			expect(item.qssContrast.length).toBeGreaterThan(0)
+			expect(item.allowedWording).toContain('Do not promote')
+			expect(item.forbiddenWording.length).toBeGreaterThan(0)
+			expect(item.nextOwnerAction.length).toBeGreaterThan(0)
+		}
+		expect(index.releaseDecisionBoard.doNotPromoteYet[0]).toMatchObject({
+			evidenceWeHave: expect.arrayContaining([
+				expect.stringContaining('rejection-first prepareRename'),
+				expect.stringContaining('formula-assist-proof'),
+			]),
+			evidenceMissing: expect.arrayContaining([
+				expect.stringContaining('Workbook-context ownership'),
+				expect.stringContaining('Public formula corpus'),
+			]),
+			qssContrast: expect.arrayContaining([expect.stringContaining('HyperFormula')]),
+			forbiddenWording: expect.arrayContaining([
+				expect.stringContaining('Do not promote rename'),
+				expect.stringContaining('No edit-producing rename'),
+			]),
+			nextOwnerAction: expect.stringContaining('Workbook-context ownership'),
+		})
+		expect(index.releaseDecisionBoard.doNotPromoteYet.at(-1)).toMatchObject({
+			name: 'practical-latency-contracts',
+			evidenceWeHave: expect.arrayContaining([
+				expect.stringContaining('practical-latency-contracts.ts'),
+			]),
+			evidenceMissing: expect.arrayContaining([
+				expect.stringContaining('tracked-clean run over standardized public inputs'),
+			]),
+			forbiddenWording: expect.arrayContaining([expect.stringContaining('No local timing report')]),
+		})
 		const safeOpenDecision = index.releaseDecisionBoard.rows[0]
 		expect(safeOpenDecision.claimWordingAllowedToday).toBe('safe unknown workbook opening')
 		expect(safeOpenDecision.evidenceWeHave.map((item) => item.evidenceId)).toContain(

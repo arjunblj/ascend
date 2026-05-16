@@ -245,7 +245,6 @@ describe('mutation journal exactness model', () => {
 			lossyCreatedLayoutJournal(),
 			lossyThreadedCommentSelectorJournal(),
 			lossyDrawingSelectorJournal(),
-			lossyChartSeriesUnsetJournal(),
 			lossyPivotCacheUnsetJournal(),
 			lossyConditionalFormatOrderJournal(),
 			lossyConditionalFormatReplacementOrderJournal(),
@@ -294,6 +293,19 @@ describe('mutation journal exactness model', () => {
 				expect(rule.lossReasons).toContain(classification.reason)
 			}
 		}
+	})
+
+	test('classifies chart source insertion as an unsupported journal operation', () => {
+		const analysis = analyzeMutationJournalExactness(unsupportedChartSeriesSourceInsertionJournal())
+		expect(analysis).toMatchObject({
+			supported: false,
+			exact: false,
+			issueCount: 1,
+			surfaces: ['charts'],
+			reasons: ['operation-unsupported'],
+			hasUnsupportedOperation: true,
+			hasMatrixViolation: false,
+		})
 	})
 
 	test('classifies autofilter losses by column extension and sort reasons', () => {
@@ -4496,7 +4508,7 @@ function lossyDrawingSelectorJournal(): MutationJournal {
 	])
 }
 
-function lossyChartSeriesUnsetJournal(): MutationJournal {
+function unsupportedChartSeriesSourceInsertionJournal(): MutationJournal {
 	const wb = AscendWorkbook.create()
 	wb.getWorkbookModel().chartParts.push({
 		partPath: 'xl/charts/chart1.xml',

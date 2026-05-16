@@ -586,9 +586,10 @@ export const MUTATION_JOURNAL_EXACTNESS_MATRIX: readonly MutationJournalExactnes
 		publicInverse: 'conditional',
 		constraints: [
 			'chart series refs restore when every touched field had a prior public value',
+			'adding a new chart series source formula fails closed until chart formula insertion is supported',
 			'unsetting chart refs and unrelated chart payloads remain package-preserved metadata',
 		],
-		lossReasons: ['chart-series-unsettable', 'package-part-preservation'],
+		lossReasons: ['operation-unsupported', 'chart-series-unsettable', 'package-part-preservation'],
 		representativeOps: ['setChartSeriesSource'],
 	},
 	{
@@ -5579,6 +5580,25 @@ function journalSetChartSeriesSource(
 	opIndex: number,
 ): DraftJournalEntry {
 	const preimage = chartSeriesPreimage(workbook, op)
+	const unsupportedInsertedFields = preimage.series
+		? unsupportedChartSeriesSourceInsertions(op, preimage.series)
+		: []
+	if (unsupportedInsertedFields.length > 0) {
+		return {
+			opIndex,
+			op,
+			inverseOps: [],
+			preimages: [{ kind: 'chart-series', chartSeries: preimage }],
+			issues: [
+				{
+					code: 'UNSUPPORTED_OPERATION',
+					message: `setChartSeriesSource cannot add ${formatChartSeriesFieldList(unsupportedInsertedFields)} because the selected chart series has no existing source formula for ${unsupportedInsertedFields.length === 1 ? 'that field' : 'those fields'}`,
+					surface: 'charts',
+					reason: 'operation-unsupported',
+				},
+			],
+		}
+	}
 	const inverse = chartSeriesInverseOperation(op, preimage)
 	const issues: MutationJournalIssue[] = inverse.exact
 		? []
@@ -10891,6 +10911,23 @@ function chartSeriesStableSelector(
 
 function hasChartSeriesRefUpdate(op: Extract<Operation, { op: 'setChartSeriesSource' }>): boolean {
 	return op.nameRef !== undefined || op.categoryRef !== undefined || op.valueRef !== undefined
+}
+
+function unsupportedChartSeriesSourceInsertions(
+	op: Extract<Operation, { op: 'setChartSeriesSource' }>,
+	series: { readonly nameRef?: string; readonly categoryRef?: string; readonly valueRef?: string },
+): string[] {
+	const fields: string[] = []
+	if (op.nameRef !== undefined && series.nameRef === undefined) fields.push('nameRef')
+	if (op.categoryRef !== undefined && series.categoryRef === undefined) fields.push('categoryRef')
+	if (op.valueRef !== undefined && series.valueRef === undefined) fields.push('valueRef')
+	return fields
+}
+
+function formatChartSeriesFieldList(fields: readonly string[]): string {
+	if (fields.length <= 1) return fields[0] ?? 'field'
+	if (fields.length === 2) return `${fields[0]} or ${fields[1]}`
+	return `${fields.slice(0, -1).join(', ')}, or ${fields[fields.length - 1]}`
 }
 
 function pivotCachePreimage(

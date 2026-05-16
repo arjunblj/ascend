@@ -2398,6 +2398,28 @@ describe('applyOperation', () => {
 		expect(result.error.message).toContain('matched 2 charts')
 	})
 
+	test('setChartSeriesSource rejects source fields absent from parsed chart series', () => {
+		const wb = setup()
+		wb.chartParts.push({
+			partPath: 'xl/charts/chart1.xml',
+			sheetName: 'Sheet1',
+			series: [{ nameText: 'Actual', valueRef: 'Sheet1!$B$2:$B$4' }],
+		})
+		const before = JSON.parse(JSON.stringify(wb.chartParts))
+
+		const result = applyOperation(wb, {
+			op: 'setChartSeriesSource',
+			partPath: 'xl/charts/chart1.xml',
+			seriesIndex: 0,
+			nameRef: 'Sheet1!$B$1',
+			valueRef: 'Sheet1!$C$2:$C$4',
+		})
+
+		expectErr(result)
+		expect(result.error.message).toContain('cannot add nameRef')
+		expect(wb.chartParts).toEqual(before)
+	})
+
 	test('setSparklineGroup updates source ranges and display flags', () => {
 		const wb = setup()
 		const sheet = wb.getSheet('Sheet1')

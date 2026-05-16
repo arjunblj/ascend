@@ -6995,7 +6995,7 @@ describe('interactive client contract', () => {
 		})
 	})
 
-	test('chart series journals mark rollback lossy when refs cannot be unset', () => {
+	test('chart series journals fail closed when source fields cannot be serialized', () => {
 		const wb = AscendWorkbook.create()
 		wb.getWorkbookModel().chartParts.push({
 			partPath: 'xl/charts/chart1.xml',
@@ -7013,24 +7013,18 @@ describe('interactive client contract', () => {
 			},
 		])
 
-		expect(journal.supported).toBe(true)
+		expect(journal.supported).toBe(false)
 		expect(journal.exact).toBe(false)
 		expect(journal.issues).toEqual([
 			{
-				code: 'LOSSY_INVERSE',
-				message: 'Chart series selector cannot be restored exactly for series 0',
-				reason: 'chart-series-unsettable',
+				code: 'UNSUPPORTED_OPERATION',
+				message:
+					'setChartSeriesSource cannot add nameRef because the selected chart series has no existing source formula for that field',
+				reason: 'operation-unsupported',
 				surface: 'charts',
 			},
 		])
-		expect(journal.inverseOps).toEqual([
-			{
-				op: 'setChartSeriesSource',
-				partPath: 'xl/charts/chart1.xml',
-				seriesIndex: 0,
-				valueRef: 'Sheet1!$B$2:$B$4',
-			},
-		])
+		expect(journal.inverseOps).toEqual([])
 	})
 
 	test('journal inverse ops restore pivot cache source and refresh metadata', () => {

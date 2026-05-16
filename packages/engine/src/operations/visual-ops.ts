@@ -383,6 +383,19 @@ export function handleSetChartSeriesSource(
 			}),
 		)
 	}
+	const unsupportedInsertedFields = unsupportedChartSeriesSourceInsertions(op, series)
+	if (unsupportedInsertedFields.length > 0) {
+		return err(
+			ascendError(
+				'VALIDATION_ERROR',
+				`setChartSeriesSource cannot add ${formatFieldList(unsupportedInsertedFields)} because the selected chart series has no existing source formula for ${unsupportedInsertedFields.length === 1 ? 'that field' : 'those fields'}`,
+				{
+					suggestedFix:
+						'Only update chart source fields already shown by visualInventory, or preserve the chart unchanged until chart formula insertion is supported.',
+				},
+			),
+		)
+	}
 
 	workbook.chartParts[match.index] = {
 		...match.chart,
@@ -399,6 +412,23 @@ export function handleSetChartSeriesSource(
 	}
 
 	return ok(patch([], match.chart.sheetName ? [match.chart.sheetName] : [], false))
+}
+
+function unsupportedChartSeriesSourceInsertions(
+	op: SetChartSeriesSourceOp,
+	series: { readonly nameRef?: string; readonly categoryRef?: string; readonly valueRef?: string },
+): string[] {
+	const fields: string[] = []
+	if (op.nameRef !== undefined && series.nameRef === undefined) fields.push('nameRef')
+	if (op.categoryRef !== undefined && series.categoryRef === undefined) fields.push('categoryRef')
+	if (op.valueRef !== undefined && series.valueRef === undefined) fields.push('valueRef')
+	return fields
+}
+
+function formatFieldList(fields: readonly string[]): string {
+	if (fields.length <= 1) return fields[0] ?? 'field'
+	if (fields.length === 2) return `${fields[0]} or ${fields[1]}`
+	return `${fields.slice(0, -1).join(', ')}, or ${fields[fields.length - 1]}`
 }
 
 function decodeBase64(input: string): Result<Uint8Array> {

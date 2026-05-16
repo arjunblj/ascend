@@ -175,4 +175,51 @@ describe('chart corpus contract', () => {
 			),
 		).toEqual([])
 	})
+
+	test('fails closed when a public chart edit would add an unserializable series source field', async () => {
+		const source = loadFixture('../xlsx/poi/WithChart.xlsx')
+		const workbook = await AscendWorkbook.open(source)
+		const before = chartContract(chartByPart(workbook, 'xl/charts/chart1.xml'))
+		expect(before).toEqual(
+			expect.objectContaining({
+				partPath: 'xl/charts/chart1.xml',
+				sheetName: 'Sheet2',
+				series: expect.arrayContaining([
+					expect.objectContaining({
+						nameText: '1st Column',
+						valueRef: 'Sheet1!$A$1:$A$6',
+					}),
+				]),
+			}),
+		)
+
+		const blocked = workbook.apply(
+			[
+				{
+					op: 'setChartSeriesSource',
+					partPath: 'xl/charts/chart1.xml',
+					seriesIndex: 0,
+					nameRef: 'Sheet1!$B$1',
+				},
+			],
+			{ journal: true },
+		)
+
+		expect(blocked.errors.map((error) => error.message).join('\n')).toContain('cannot add nameRef')
+		expect(blocked.journal).toMatchObject({
+			supported: false,
+			exact: false,
+			inverseOps: [],
+		})
+		expect(chartContract(chartByPart(workbook, 'xl/charts/chart1.xml'))).toEqual(before)
+
+		const saved = workbook.toBytes()
+		expect(await openChartContract(saved, 'xl/charts/chart1.xml')).toEqual(before)
+		expect(
+			auditXlsxPackageGraphSafeEditIntegrity(
+				inspectXlsxPackageGraph(source),
+				inspectXlsxPackageGraph(saved),
+			),
+		).toEqual([])
+	})
 })

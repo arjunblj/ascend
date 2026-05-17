@@ -451,6 +451,8 @@ const ARRAY_CONTEXT_MAPPABLE_FUNCTIONS = new Set([
 	'MOD',
 	'MONTH',
 	'MROUND',
+	'NETWORKDAYS',
+	'NETWORKDAYS.INTL',
 	'NEGBINOMDIST',
 	'NEGBINOM.DIST',
 	'NOMINAL',
@@ -526,8 +528,17 @@ const ARRAY_CONTEXT_MAPPABLE_FUNCTIONS = new Set([
 	'WEIBULL.DIST',
 	'WEEKDAY',
 	'WEEKNUM',
+	'WORKDAY',
+	'WORKDAY.INTL',
 	'YEAR',
 	'YEARFRAC',
+])
+
+const ARRAY_MAPPED_RANGE_PRESERVING_ARGS = new Map<string, ReadonlySet<number>>([
+	['NETWORKDAYS', new Set([2])],
+	['NETWORKDAYS.INTL', new Set([3])],
+	['WORKDAY', new Set([2])],
+	['WORKDAY.INTL', new Set([3])],
 ])
 
 const LEGACY_TOP_LEVEL_SCALAR_FUNCTIONS = new Set([
@@ -1410,7 +1421,12 @@ function evalFunction(name: string, argNodes: readonly FormulaNode[], ctx: EvalC
 	}
 	if (ARRAY_CONTEXT_MAPPABLE_FUNCTIONS.has(upperName) && usesFormulaArraySemantics(ctx)) {
 		const mappedArgs = argNodes.map((node) => resolveArg(node, ctx))
-		const mapped = evalMappedScalarFunction(def, mappedArgs, ctx)
+		const mapped = evalMappedScalarFunction(
+			def,
+			mappedArgs,
+			ctx,
+			ARRAY_MAPPED_RANGE_PRESERVING_ARGS.get(upperName),
+		)
 		if (mapped) return mapped
 	}
 
@@ -1441,20 +1457,24 @@ function evalMappedScalarFunction(
 	def: FunctionDef,
 	args: readonly EvalArg[],
 	ctx: EvalContext,
+	preserveRangeArgIndexes?: ReadonlySet<number>,
 ): CellValue | null {
 	let rows = 1
 	let cols = 1
-	const ranges = args.map((arg) => {
+	const ranges = args.map((arg, index) => {
+		if (preserveRangeArgIndexes?.has(index))
+			return { arg, range: [[EMPTY]], rows: 1, cols: 1, preserve: true }
 		const range = getRange(arg)
 		const rangeRows = range.length
 		let rangeCols = 0
 		for (const row of range) rangeCols = Math.max(rangeCols, row.length)
 		rows = Math.max(rows, rangeRows)
 		cols = Math.max(cols, rangeCols)
-		return { arg, range, rows: rangeRows, cols: rangeCols }
+		return { arg, range, rows: rangeRows, cols: rangeCols, preserve: false }
 	})
 	if (rows === 1 && cols === 1) return null
 	for (const range of ranges) {
+		if (range.preserve) continue
 		if ((range.rows !== 1 && range.rows !== rows) || (range.cols !== 1 && range.cols !== cols)) {
 			return errorValue('#VALUE!')
 		}
@@ -1463,7 +1483,8 @@ function evalMappedScalarFunction(
 	for (let row = 0; row < rows; row++) {
 		const mappedRow: ScalarCellValue[] = []
 		for (let col = 0; col < cols; col++) {
-			const cellArgs = ranges.map(({ range, rows: rangeRows, cols: rangeCols }) => {
+			const cellArgs = ranges.map(({ arg, range, rows: rangeRows, cols: rangeCols, preserve }) => {
+				if (preserve) return arg
 				const sourceRow = rangeRows === 1 ? 0 : row
 				const sourceCol = rangeCols === 1 ? 0 : col
 				return { value: topLeftScalar(range[sourceRow]?.[sourceCol] ?? EMPTY) }

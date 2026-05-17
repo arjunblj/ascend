@@ -3837,6 +3837,80 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(2, 7)?.value).toEqual(numberValue(1))
 	})
 
+	test('workday scalar functions spill while preserving holiday range operands', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		const starts = [dateToSerial(2024, 1, 2), dateToSerial(2024, 1, 10), dateToSerial(2024, 2, 1)]
+		const ends = [dateToSerial(2024, 1, 12), dateToSerial(2024, 1, 24), dateToSerial(2024, 2, 16)]
+		const offsets = [5, -3, 10]
+		const weekendCodes = [1, 11, 2]
+		const holidays = [dateToSerial(2024, 1, 15), dateToSerial(2024, 2, 9)]
+		for (let row = 0; row < 3; row++) {
+			sheet.cells.set(row, 0, {
+				value: numberValue(starts[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+			sheet.cells.set(row, 1, {
+				value: numberValue(ends[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+			sheet.cells.set(row, 2, {
+				value: numberValue(offsets[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+			sheet.cells.set(row, 3, {
+				value: numberValue(weekendCodes[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+		}
+		for (let row = 0; row < holidays.length; row++) {
+			sheet.cells.set(row, 7, {
+				value: numberValue(holidays[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+		}
+		const arrayFormulas = [
+			'NETWORKDAYS(A1:A3,B1:B3,H1:H2)+0',
+			'WORKDAY(A1:A3,C1:C3,H1:H2)+0',
+			'NETWORKDAYS.INTL(A1:A3,B1:B3,D1:D3,H1:H2)+0',
+			'WORKDAY.INTL(A1:A3,C1:C3,D1:D3,H1:H2)+0',
+		]
+		const scalarFormulas = [
+			'NETWORKDAYS(A{r},B{r},H1:H2)+0',
+			'WORKDAY(A{r},C{r},H1:H2)+0',
+			'NETWORKDAYS.INTL(A{r},B{r},D{r},H1:H2)+0',
+			'WORKDAY.INTL(A{r},C{r},D{r},H1:H2)+0',
+		]
+		for (let col = 0; col < arrayFormulas.length; col++) {
+			sheet.cells.set(0, 8 + col, {
+				value: EMPTY,
+				formula: arrayFormulas[col] as string,
+				styleId: sid,
+			})
+			for (let row = 0; row < 3; row++) {
+				sheet.cells.set(row, 13 + col, {
+					value: EMPTY,
+					formula: (scalarFormulas[col] as string).replaceAll('{r}', String(row + 1)),
+					styleId: sid,
+				})
+			}
+		}
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		for (let row = 0; row < 3; row++) {
+			for (let col = 0; col < arrayFormulas.length; col++) {
+				expect(sheet.cells.get(row, 8 + col)?.value).toEqual(sheet.cells.get(row, 13 + col)?.value)
+			}
+		}
+	})
+
 	test('RAND is deterministic per cell and seed', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

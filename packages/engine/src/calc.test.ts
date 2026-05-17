@@ -1302,6 +1302,93 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(2, 5)?.value).toEqual(numberValue(Math.exp(2)))
 	})
 
+	test('trigonometric scalar functions spill over range operands in array formulas', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(0), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(30), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: numberValue(45), formula: null, styleId: sid })
+		sheet.cells.set(3, 0, { value: numberValue(60), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: numberValue(0), formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: numberValue(0.5), formula: null, styleId: sid })
+		sheet.cells.set(2, 1, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(0, 2, {
+			value: EMPTY,
+			formula: 'SIN(RADIANS(A1:A4))+0',
+			styleId: sid,
+		})
+		sheet.cells.set(0, 3, {
+			value: EMPTY,
+			formula: 'COS(RADIANS(A1:A4))+0',
+			styleId: sid,
+		})
+		sheet.cells.set(0, 4, {
+			value: EMPTY,
+			formula: 'TAN(RADIANS(A1:A4))+0',
+			styleId: sid,
+		})
+		sheet.cells.set(0, 5, {
+			value: EMPTY,
+			formula: 'DEGREES(ASIN(B1:B3))+0',
+			styleId: sid,
+		})
+		sheet.cells.set(0, 6, {
+			value: EMPTY,
+			formula: 'DEGREES(ACOS(B1:B3))+0',
+			styleId: sid,
+		})
+		sheet.cells.set(0, 7, {
+			value: EMPTY,
+			formula: 'DEGREES(ATAN(B1:B3))+0',
+			styleId: sid,
+		})
+		sheet.cells.set(0, 8, {
+			value: EMPTY,
+			formula: 'DEGREES(ATAN2(1,B1:B3))+0',
+			styleId: sid,
+		})
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		for (let row = 0; row < 4; row++) {
+			const degrees = sheet.cells.get(row, 0)?.value
+			expect(degrees?.kind).toBe('number')
+			if (degrees?.kind !== 'number') continue
+			const radians = (degrees.value * Math.PI) / 180
+			const sin = sheet.cells.get(row, 2)?.value
+			const cos = sheet.cells.get(row, 3)?.value
+			const tan = sheet.cells.get(row, 4)?.value
+			expect(sin?.kind).toBe('number')
+			expect(cos?.kind).toBe('number')
+			expect(tan?.kind).toBe('number')
+			if (sin?.kind === 'number') expect(sin.value).toBeCloseTo(Math.sin(radians), 12)
+			if (cos?.kind === 'number') expect(cos.value).toBeCloseTo(Math.cos(radians), 12)
+			if (tan?.kind === 'number') expect(tan.value).toBeCloseTo(Math.tan(radians), 12)
+		}
+		for (let row = 0; row < 3; row++) {
+			const input = sheet.cells.get(row, 1)?.value
+			expect(input?.kind).toBe('number')
+			if (input?.kind !== 'number') continue
+			const asin = sheet.cells.get(row, 5)?.value
+			const acos = sheet.cells.get(row, 6)?.value
+			const atan = sheet.cells.get(row, 7)?.value
+			const atan2 = sheet.cells.get(row, 8)?.value
+			expect(asin?.kind).toBe('number')
+			expect(acos?.kind).toBe('number')
+			expect(atan?.kind).toBe('number')
+			expect(atan2?.kind).toBe('number')
+			if (asin?.kind === 'number')
+				expect(asin.value).toBeCloseTo((Math.asin(input.value) * 180) / Math.PI, 12)
+			if (acos?.kind === 'number')
+				expect(acos.value).toBeCloseTo((Math.acos(input.value) * 180) / Math.PI, 12)
+			if (atan?.kind === 'number')
+				expect(atan.value).toBeCloseTo((Math.atan(input.value) * 180) / Math.PI, 12)
+			if (atan2?.kind === 'number')
+				expect(atan2.value).toBeCloseTo((Math.atan2(input.value, 1) * 180) / Math.PI, 12)
+		}
+	})
+
 	test('FREQUENCY formulas can count unique filtered numeric ids from array expressions', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

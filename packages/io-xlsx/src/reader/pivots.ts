@@ -191,7 +191,7 @@ export function parsePivotCacheDefinitionXml(
 	const cacheSource = childNode(root, 'cacheSource')
 	const worksheetSource = childNode(cacheSource, 'worksheetSource')
 	const recordCount = numAttr(root, 'recordCount')
-	const recordsRelId = attr(root, 'r:id') ?? attr(root, 'id')
+	const recordsRelId = relationshipIdFromNode(root)
 	const recordsRel = recordsRelId
 		? relationships.find((relationship) => relationship.id === recordsRelId)
 		: undefined
@@ -252,6 +252,15 @@ export function parsePivotCacheDefinitionXml(
 	if (sourceName) parsed.sourceName = sourceName
 	if (recordsRel) parsed.recordsPartPath = resolvePath(partPath, recordsRel.target)
 	return parsed as PivotCacheInfo
+}
+
+function relationshipIdFromNode(node: XmlNode): string | undefined {
+	const direct = attr(node, 'r:id') ?? attr(node, 'id')
+	if (direct !== undefined) return direct
+	for (const [name, value] of Object.entries(node)) {
+		if (name.startsWith('@_') && name.endsWith(':id')) return String(value)
+	}
+	return undefined
 }
 
 function setNumberIfDefined(

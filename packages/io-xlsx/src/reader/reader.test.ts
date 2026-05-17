@@ -2060,8 +2060,8 @@ describe('readXlsx', () => {
 </pivotTableDefinition>`,
 			'xl/pivotCache/pivotCacheDefinition1.xml': `<?xml version="1.0"?>
 <pivotCacheDefinition xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
-  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
-  r:id="rIdRecords" recordCount="25" refreshOnLoad="1" enableRefresh="1" saveData="0"
+  xmlns:rel="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+  rel:id="rIdRecords" recordCount="25" refreshOnLoad="1" enableRefresh="1" saveData="0"
   invalid="1" optimizeMemory="1" refreshedVersion="7" minRefreshableVersion="3"
   createdVersion="6" refreshedBy="Ascend" refreshedDate="45123.5">
   <cacheSource type="worksheet">

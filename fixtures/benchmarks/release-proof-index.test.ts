@@ -1720,7 +1720,7 @@ describe('release proof evidence index', () => {
 				}),
 				expect.objectContaining({
 					evidenceId: 'relationship-root-attribute-preservation-proof',
-					acceptedScope: expect.stringMatching(/cb99d093.*e6c314fb/),
+					acceptedScope: expect.stringMatching(/cb99d093.*e6c314fb.*9fabfc8e/),
 					command: expect.stringContaining('preserves relationship root attributes'),
 					boundary: expect.stringContaining('relationship-part root-attribute preservation'),
 				}),

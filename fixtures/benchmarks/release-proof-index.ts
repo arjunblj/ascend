@@ -3661,10 +3661,10 @@ function packageActionQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceIte
 			evidenceId: 'relationship-root-attribute-preservation-proof',
 			kind: 'test',
 			command:
-				'bun test packages/io-xlsx/src/writer/writer.test.ts -t "preserves relationship root attributes when relationship parts are regenerated|preserves strict table queryTable relationship dialect when dirty writes regenerate table rels" --timeout 30000',
+				'bun test packages/io-xlsx/src/writer/writer.test.ts -t "preserves relationship root attributes when relationship parts are regenerated|preserves strict table queryTable relationship dialect when dirty writes regenerate table rels|preserves external link relationship root attributes when rewriting targets" --timeout 30000',
 			path: 'packages/io-xlsx/src/writer/relationships.ts; packages/io-xlsx/src/writer/index.ts; packages/io-xlsx/src/writer/writer.test.ts',
 			acceptedScope:
-				'Commit cb99d093 proves regenerated root/workbook relationship parts preserve source Relationships root attributes such as mc:Ignorable and namespace-qualified origin markers. Commit e6c314fb extends that preservation to regenerated table relationship parts while keeping strict queryTable relationship dialects reopenable.',
+				'Commit cb99d093 proves regenerated root/workbook relationship parts preserve source Relationships root attributes such as mc:Ignorable and namespace-qualified origin markers. Commit e6c314fb extends that preservation to regenerated table relationship parts while keeping strict queryTable relationship dialects reopenable. Commit 9fabfc8e extends the same root-attribute preservation to external-link relationship parts while rewriting external link targets.',
 			boundary:
 				'Generated relationship-part root-attribute preservation evidence only; it does not prove public-workbook generality, arbitrary OPC relationship recovery, relationship target safety, markup-compatibility behavior, relationship semantic interpretation, or Excel UI equivalence.',
 		},

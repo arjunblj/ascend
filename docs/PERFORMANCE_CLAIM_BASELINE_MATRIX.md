@@ -58,10 +58,10 @@ No broad XLSX read, XLSX write, SOTA, or QSS-leapfrog speed claim is promotable 
   contract, and ExcelJS runs but is semantically ineligible because it misses a
   tracked comment obligation. Do not count that as a speed win over JS writers.
 - Current formula/calc evidence includes focused HyperFormula indexed
-  `INDEX/MATCH`, indexed dirty-key/dirty-value edits, and prefix-range
-  dirty-head/dirty-tail rows. They are useful formula-engine performance
-  evidence, but they are not XLSX behavior parity, Excel compatibility, or
-  broad formula SOTA evidence.
+  `INDEX/MATCH`, indexed dirty-key/dirty-value edits, prefix-range full-calc
+  `SUM`, and prefix-range dirty-head/dirty-tail rows. They are useful
+  formula-engine performance evidence, but they are not XLSX behavior parity,
+  Excel compatibility, or broad formula SOTA evidence.
 - Current real-workbook evidence includes a tracked `strings_links.xlsx`
   open/inspect boundary. Ascend's SDK value-open surface is correct and faster
   than OpenPyXL/POI/ClosedXML on that row, but Rust Calamine is faster on its
@@ -279,6 +279,93 @@ Forbidden wording:
   changed-cell reporting differences.
 
 Next action: defer production optimization from these winning rows. Continue
+formula/calc performance work only with a named HyperFormula workflow that
+loses, an external formula oracle boundary, or an attributable all-profile gate
+that emits complete JSON.
+
+## Cycle: Formula SOTA Prefix Full-Calc HyperFormula Row at `0a9c2b80`
+
+Classification: comparable formula-engine evidence plus defer. Ascend is the
+median and p95 winner on this focused full-calculation prefix range workflow.
+No production optimization is justified from the row.
+
+Workflow: initial calculation of 5,000 growing `SUM(A$1:A<n>)` formulas over
+5,000 source rows, comparing Ascend's formula engine with HyperFormula on the
+documented optimized range-composition shape.
+
+Why it matters for release: this is the base full-calc version of the
+HyperFormula dependency-graph range composition example. It is a direct JS
+formula-engine comparison for a prefix aggregation shape, but it is generated
+in-memory formula-engine evidence only; it does not prove Excel-compatible
+formula coverage, cached formula truth, or XLSX roundtrip behavior.
+
+Public/tracked-clean input: `formula-sota` generated the
+`hf-prefix-range-sum` workload from tracked benchmark code in a clean detached
+worktree at commit `0a9c2b80`. No private corpus or local research workbook was
+used. The row used 5,000 source rows, 5,000 formulas, `SUM`, 30 measured
+samples, and 5 warmups.
+
+Commands:
+
+```bash
+git worktree add --detach /private/tmp/ascend-formula-prefix-current-0a9c2b80 0a9c2b801f509b96c4733bbd1f7d91945a0090ee
+cd /private/tmp/ascend-formula-prefix-current-0a9c2b80
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun install --frozen-lockfile
+mkdir -p /private/tmp/ascend-formula-prefix-current-0a9c2b80-runs
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/sbin:/sbin /usr/bin/time -l /Users/arjun/.bun/bin/bun run fixtures/benchmarks/formula-sota.ts --profile hf-prefix-range-sum --aggregate SUM --repeat 30 --warmup 5 --assert-correctness --json > /private/tmp/ascend-formula-prefix-current-0a9c2b80-runs/hf-prefix-range-sum-repeat30.json 2> /private/tmp/ascend-formula-prefix-current-0a9c2b80-runs/hf-prefix-range-sum-repeat30-time.txt
+```
+
+Environment:
+
+- Commit: `0a9c2b801f509b96c4733bbd1f7d91945a0090ee`
+- Worktree: clean detached worktree at
+  `/private/tmp/ascend-formula-prefix-current-0a9c2b80`; `git status --short
+  --branch` reported `## HEAD (no branch)`.
+- Bun runtime: `1.3.13`
+- Node: `22.22.0`
+- HyperFormula dependency: `^3.2.0`
+- Platform: Darwin arm64, macOS kernel `25.4.0`
+- Runtime profile: `profile hf-prefix-range-sum`, `aggregate SUM`, `rows
+  5000`, `formulas 5000`, `repeat 30`, `warmup 5`, `assertCorrectness true`.
+
+Raw output:
+
+```text
+/private/tmp/ascend-formula-prefix-current-0a9c2b80-runs/hf-prefix-range-sum-repeat30.json
+/private/tmp/ascend-formula-prefix-current-0a9c2b80-runs/hf-prefix-range-sum-repeat30-time.txt
+```
+
+Focused formula-engine row, repeat 30 after 5 warmups:
+
+| Engine | Status | Setup median / p95 / CV | Operation median / p95 / CV | Total median / p95 / CV | Correctness | Memory |
+| --- | --- | ---: | ---: | ---: | --- | --- |
+| Ascend | ran/won | 0.564 ms / 0.694 ms / 0.091 | 4.185 ms / 5.461 ms / 0.137 | 4.744 ms / 6.070 ms / 0.121 | 5,000 changed cells, 0 errors, last value matched expected `12502500`. | Process-level peak RSS shared by both engines: 239.6 MiB maximum resident set size; 191.7 MiB peak memory footprint. |
+| HyperFormula | ran/lost vs Ascend | 18.994 ms / 21.820 ms / 0.063 | 10.610 ms / 11.687 ms / 0.048 | 29.536 ms / 32.812 ms / 0.049 | Last value matched expected `12502500`. | Process-level peak RSS shared by both engines: 239.6 MiB maximum resident set size; 191.7 MiB peak memory footprint. |
+
+Comparison: `operationSpeedupVsHyperFormula: 2.536x`;
+`totalSpeedupVsHyperFormula: 6.226x`. Operation sample ranges were
+`3.784..5.585 ms` for Ascend and `10.058..11.910 ms` for HyperFormula.
+
+Semantic boundary: both engines calculate the same generated in-memory prefix
+`SUM` formulas and pass the same final-value assertion. This row is
+formula-engine timing evidence, not XLSX behavior, formula-corpus parity, or
+Excel/LibreOffice oracle evidence.
+
+Humble allowed wording:
+
+> On the generated `hf-prefix-range-sum/SUM` workflow at commit `0a9c2b80`,
+> Ascend had faster median and p95 full calculation than HyperFormula `^3.2.0`
+> on the same generated prefix-range formulas. This is scoped formula-engine
+> evidence, not broad formula parity or XLSX behavior evidence.
+
+Forbidden wording:
+
+- "Ascend is SOTA for formula calculation."
+- "Ascend beats HyperFormula on every full-calculation workflow."
+- "Ascend proves Excel-compatible formula parity."
+- "Ascend proves workbook formula preservation or cached formula truth."
+
+Next action: defer production optimization from this winning row. Continue
 formula/calc performance work only with a named HyperFormula workflow that
 loses, an external formula oracle boundary, or an attributable all-profile gate
 that emits complete JSON.

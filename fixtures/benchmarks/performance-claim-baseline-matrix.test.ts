@@ -89,7 +89,7 @@ describe('performance claim baseline matrix', () => {
 			"Current focused TS/JS/Rust `styles-heavy` write coverage proves Ascend's\n  generated writer is faster by median and p95 than SheetJS, ExcelJS, and\n  rust_xlsxwriter",
 		)
 		expect(markdown).toContain(
-			'Current formula/calc evidence includes focused HyperFormula indexed\n  `INDEX/MATCH`, indexed dirty-key/dirty-value edits, and prefix-range\n  dirty-head/dirty-tail rows.',
+			'Current formula/calc evidence includes focused HyperFormula indexed\n  `INDEX/MATCH`, indexed dirty-key/dirty-value edits, prefix-range full-calc\n  `SUM`, and prefix-range dirty-head/dirty-tail rows.',
 		)
 		for (const workload of RECORDED_WORKLOADS) expect(markdown).toContain(`\`${workload}\``)
 		expect(markdown).toContain('Humble allowed wording:')
@@ -146,6 +146,25 @@ describe('performance claim baseline matrix', () => {
 		expect(markdown).toContain('`operationSpeedupVsHyperFormula: 4.335x`')
 		expect(markdown).toContain('`operationSpeedupVsHyperFormula: 3532.498x`')
 		expect(markdown).toContain('Ascend operation samples are noisy at sub-millisecond\nscale')
+
+		expect(markdown).toContain(
+			'## Cycle: Formula SOTA Prefix Full-Calc HyperFormula Row at `0a9c2b80`',
+		)
+		expect(markdown).toContain('`hf-prefix-range-sum`')
+		expect(markdown).toContain(
+			'/private/tmp/ascend-formula-prefix-current-0a9c2b80-runs/hf-prefix-range-sum-repeat30.json',
+		)
+		expect(markdown).toContain(
+			'| Ascend | ran/won | 0.564 ms / 0.694 ms / 0.091 | 4.185 ms / 5.461 ms / 0.137 | 4.744 ms / 6.070 ms / 0.121 |',
+		)
+		expect(markdown).toContain(
+			'| HyperFormula | ran/lost vs Ascend | 18.994 ms / 21.820 ms / 0.063 | 10.610 ms / 11.687 ms / 0.048 | 29.536 ms / 32.812 ms / 0.049 |',
+		)
+		expect(markdown).toContain('`operationSpeedupVsHyperFormula: 2.536x`')
+		expect(markdown).toContain(
+			'Operation sample ranges were\n`3.784..5.585 ms` for Ascend and `10.058..11.910 ms` for HyperFormula',
+		)
+		expect(markdown).toContain('"Ascend beats HyperFormula on every full-calculation workflow."')
 
 		expect(markdown).toContain(
 			'## Cycle: Formula SOTA Prefix Dirty-Tail HyperFormula Row at `c06bba18`',

@@ -4201,6 +4201,48 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(1, 0)?.value).toEqual(errorValue('#N/A'))
 	})
 
+	test('TEXTBEFORE and TEXTAFTER spill over range operands in array formulas', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, {
+			value: stringValue('alpha-beta-gamma'),
+			formula: null,
+			styleId: sid,
+		})
+		sheet.cells.set(1, 0, {
+			value: stringValue('north/east/south'),
+			formula: null,
+			styleId: sid,
+		})
+		sheet.cells.set(2, 0, { value: stringValue('one|two'), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: stringValue('-'), formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: stringValue('/'), formula: null, styleId: sid })
+		sheet.cells.set(2, 1, { value: stringValue('|'), formula: null, styleId: sid })
+		sheet.cells.set(0, 2, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(1, 2, { value: numberValue(-1), formula: null, styleId: sid })
+		sheet.cells.set(2, 2, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(0, 3, {
+			value: EMPTY,
+			formula: 'TEXTBEFORE(A1:A3,B1:B3,C1:C3)&""',
+			styleId: sid,
+		})
+		sheet.cells.set(0, 4, {
+			value: EMPTY,
+			formula: 'TEXTAFTER(A1:A3,B1:B3,C1:C3)&""',
+			styleId: sid,
+		})
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(0, 3)?.value).toEqual(stringValue('alpha-beta'))
+		expect(sheet.cells.get(1, 3)?.value).toEqual(stringValue('north/east'))
+		expect(sheet.cells.get(2, 3)?.value).toEqual(stringValue('one'))
+		expect(sheet.cells.get(0, 4)?.value).toEqual(stringValue('gamma'))
+		expect(sheet.cells.get(1, 4)?.value).toEqual(stringValue('south'))
+		expect(sheet.cells.get(2, 4)?.value).toEqual(stringValue('two'))
+	})
+
 	test('TEXTSPLIT spills rows and columns from delimited text', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

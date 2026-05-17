@@ -795,6 +795,8 @@ const ARRAY_MAPPING_FUNCTIONS = new Set([
 	'TAN',
 	'TANH',
 	'TEXT',
+	'TEXTAFTER',
+	'TEXTBEFORE',
 	'TRIM',
 	'TRUNC',
 	'UNICHAR',

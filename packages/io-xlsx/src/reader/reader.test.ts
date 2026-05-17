@@ -2715,6 +2715,7 @@ describe('readXlsx', () => {
 			'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
   xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+  xmlns:rel="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
   xmlns:x14ac="http://schemas.microsoft.com/office/spreadsheetml/2009/9/ac">
   <sheetPr codeName="SheetCode1" filterMode="1" enableFormatConditionsCalculation="0">
     <pageSetUpPr fitToPage="1" autoPageBreaks="0"/>
@@ -2739,14 +2740,14 @@ describe('readXlsx', () => {
   </sheetData>
   <autoFilter ref="A1:B10"/>
   <pageMargins left="0.7" right="0.7" top="0.75" bottom="0.75" header="0.3" footer="0.3"/>
-  <pageSetup orientation="landscape" fitToWidth="1" fitToHeight="2" firstPageNumber="2" copies="3" horizontalDpi="600" verticalDpi="600" pageOrder="overThenDown" cellComments="asDisplayed" errors="dash" blackAndWhite="1" draft="1" useFirstPageNumber="1" usePrinterDefaults="0" r:id="rIdPrinter"/>
+  <pageSetup orientation="landscape" fitToWidth="1" fitToHeight="2" firstPageNumber="2" copies="3" horizontalDpi="600" verticalDpi="600" pageOrder="overThenDown" cellComments="asDisplayed" errors="dash" blackAndWhite="1" draft="1" useFirstPageNumber="1" usePrinterDefaults="0" rel:id="rIdPrinter"/>
   <printOptions gridLines="1" gridLinesSet="1" headings="1"/>
   <headerFooter differentOddEven="1" differentFirst="1" scaleWithDoc="0" alignWithMargins="1"><oddHeader>&amp;LTest</oddHeader><oddFooter>&amp;R1</oddFooter></headerFooter>
   <phoneticPr fontId="1" type="noConversion" alignment="center"/>
   <rowBreaks count="1" manualBreakCount="1"><brk id="5" min="0" max="16383" man="1"/></rowBreaks>
   <colBreaks count="1" manualBreakCount="1"><brk id="2" min="0" max="1048575" man="1"/></colBreaks>
   <ignoredErrors><ignoredError sqref="A1:B2" numberStoredAsText="1"/></ignoredErrors>
-  <hyperlinks><hyperlink ref="A1" r:id="rIdHyper" display="Docs" tooltip="Open docs"/></hyperlinks>
+  <hyperlinks><hyperlink ref="A1" rel:id="rIdHyper" display="Docs" tooltip="Open docs"/></hyperlinks>
 </worksheet>`,
 			'xl/worksheets/_rels/sheet1.xml.rels': `<?xml version="1.0"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">

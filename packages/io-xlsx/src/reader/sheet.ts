@@ -6514,7 +6514,7 @@ function parsePageSetup(ws: XmlNode, sheet: Sheet): void {
 	setIfDefined(parsed, 'draft', readBoolAttribute(pageSetup, 'draft'))
 	setIfDefined(parsed, 'useFirstPageNumber', readBoolAttribute(pageSetup, 'useFirstPageNumber'))
 	setIfDefined(parsed, 'usePrinterDefaults', readBoolAttribute(pageSetup, 'usePrinterDefaults'))
-	setIfDefined(parsed, 'printerSettingsRelId', attr(pageSetup, 'r:id'))
+	setIfDefined(parsed, 'printerSettingsRelId', relationshipIdFromNode(pageSetup))
 	sheet.pageSetup = parsed
 }
 
@@ -6620,7 +6620,7 @@ function parseHyperlinks(
 	for (const hyperlink of asArray<XmlNode>(hyperlinks.hyperlink as XmlNode | XmlNode[])) {
 		const ref = attr(hyperlink, 'ref')
 		if (!ref) continue
-		const relId = attr(hyperlink, 'r:id') ?? attr(hyperlink, 'id')
+		const relId = relationshipIdFromNode(hyperlink)
 		const rel = relId ? relMap.get(relId) : undefined
 		const parsed: Record<string, string> = {}
 		setIfDefined(
@@ -6657,6 +6657,15 @@ function parseHyperlinks(
 		)
 		sheet.hyperlinks.set(ref, parsed)
 	}
+}
+
+function relationshipIdFromNode(node: XmlNode): string | undefined {
+	const direct = attr(node, 'r:id') ?? attr(node, 'id')
+	if (direct !== undefined) return direct
+	for (const [name, value] of Object.entries(node)) {
+		if (name.startsWith('@_') && name.endsWith(':id')) return String(value)
+	}
+	return undefined
 }
 
 function parseConditionalFormatting(

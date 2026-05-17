@@ -3431,6 +3431,17 @@ function safeOpenQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceItem[] {
 				'Local table append fail-closed evidence only; it does not prove public workbook table-growth parity, successful append save/reopen behavior, totals-row insert shifting, structured-reference updates, arbitrary table repair, full sheet-protection parity, or Excel UI-equivalent table expansion.',
 		},
 		{
+			evidenceId: 'table-resize-protection-fail-closed-proof',
+			kind: 'test',
+			command:
+				'bun test packages/engine/src/operations.test.ts -t "resizeTable rejects protected table growth unless row insertion is allowed" --timeout 30000',
+			path: 'packages/engine/src/operations.test.ts; packages/engine/src/operations/table-ops.ts',
+			acceptedScope:
+				'Commit a2c2bd3f proves resizeTable rejects protected-sheet table growth before mutating the table range, while still allowing protected-table row growth when row insertion is explicitly allowed.',
+			boundary:
+				'Local table resize protection evidence only; it does not prove public workbook table-resize parity, save/reopen behavior, structured-reference updates, arbitrary table repair, full sheet-protection parity, or Excel UI-equivalent table expansion.',
+		},
+		{
 			evidenceId: 'public-calc-chain-formula-commit-proof',
 			kind: 'test',
 			command:

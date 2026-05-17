@@ -1209,6 +1209,12 @@ describe('release proof evidence index', () => {
 				boundary: expect.stringContaining('Local table append fail-closed evidence only'),
 			}),
 			expect.objectContaining({
+				evidenceId: 'table-resize-protection-fail-closed-proof',
+				acceptedScope: expect.stringContaining('a2c2bd3f'),
+				command: expect.stringContaining('resizeTable rejects protected table growth'),
+				boundary: expect.stringContaining('Local table resize protection evidence only'),
+			}),
+			expect.objectContaining({
 				evidenceId: 'public-calc-chain-formula-commit-proof',
 				acceptedScope: expect.stringContaining('31141dd4'),
 				command: expect.stringContaining('commits public calc-chain formula edits'),

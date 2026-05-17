@@ -2033,6 +2033,7 @@ describe('release proof evidence index', () => {
 						'd8eec728',
 						'1aabe18c',
 						'05de2c46',
+						'dcf2abb4',
 					]),
 					allowedWording: expect.stringContaining('NOT'),
 					evidenceProvesIt: expect.arrayContaining([
@@ -2051,6 +2052,9 @@ describe('release proof evidence index', () => {
 							'common date and time scalar functions spill over range operands',
 						),
 						expect.stringContaining('date interval scalar functions spill over range operands'),
+						expect.stringContaining(
+							'statistical distribution scalar functions spill over range operands',
+						),
 						expect.stringContaining('loan financial scalar functions spill over range operands'),
 						expect.stringContaining(
 							'depreciation financial scalar functions spill over range operands',

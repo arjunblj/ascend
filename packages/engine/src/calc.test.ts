@@ -2660,6 +2660,98 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(4, 4)?.value).toEqual(stringValue('$E$5'))
 	})
 
+	test('ADDRESS spills over range row and column arguments in array formulas', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		const rows = [1, 12, 104]
+		const cols = [1, 27, 703]
+		const modes = [1, 4, 2]
+		const useA1 = [true, true, false]
+		for (let row = 0; row < 3; row++) {
+			sheet.cells.set(row, 0, {
+				value: numberValue(rows[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+			sheet.cells.set(row, 1, {
+				value: numberValue(cols[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+			sheet.cells.set(row, 2, {
+				value: numberValue(modes[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+			sheet.cells.set(row, 3, {
+				value: booleanValue(useA1[row] as boolean),
+				formula: null,
+				styleId: sid,
+			})
+		}
+		sheet.cells.set(0, 4, {
+			value: EMPTY,
+			formula: 'ADDRESS(A1:A3,B1:B3,C1:C3,D1:D3)&""',
+			styleId: sid,
+		})
+		for (let row = 0; row < 3; row++) {
+			sheet.cells.set(row, 5, {
+				value: EMPTY,
+				formula: `ADDRESS(A${row + 1},B${row + 1},C${row + 1},D${row + 1})&""`,
+				styleId: sid,
+			})
+		}
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		for (let row = 0; row < 3; row++) {
+			expect(sheet.cells.get(row, 4)?.value).toEqual(sheet.cells.get(row, 5)?.value)
+		}
+	})
+
+	test('top-level ADDRESS implicitly intersects range row and column arguments', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		const rows = [1, 12, 104]
+		const cols = [1, 27, 703]
+		const modes = [1, 4, 2]
+		const useA1 = [true, true, false]
+		for (let row = 0; row < 3; row++) {
+			sheet.cells.set(row, 0, {
+				value: numberValue(rows[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+			sheet.cells.set(row, 1, {
+				value: numberValue(cols[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+			sheet.cells.set(row, 2, {
+				value: numberValue(modes[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+			sheet.cells.set(row, 3, {
+				value: booleanValue(useA1[row] as boolean),
+				formula: null,
+				styleId: sid,
+			})
+		}
+		sheet.cells.set(1, 4, {
+			value: EMPTY,
+			formula: 'ADDRESS(A1:A3,B1:B3,C1:C3,D1:D3)',
+			styleId: sid,
+		})
+		sheet.cells.set(1, 5, { value: EMPTY, formula: 'ADDRESS(A2,B2,C2,D2)', styleId: sid })
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(1, 4)?.value).toEqual(sheet.cells.get(1, 5)?.value)
+	})
+
 	test('conditional aggregates return arrays for array criteria', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

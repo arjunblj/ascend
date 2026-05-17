@@ -715,6 +715,7 @@ const ARRAY_MAPPING_FUNCTIONS = new Set([
 	'ACOSH',
 	'ACOT',
 	'ACOTH',
+	'ADDRESS',
 	'ASIN',
 	'ASINH',
 	'ATAN',

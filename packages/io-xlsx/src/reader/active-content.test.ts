@@ -3,7 +3,11 @@ import { readFileSync } from 'node:fs'
 import { unzipSync } from 'fflate'
 import { makeXlsx } from '../../test/helpers.ts'
 import { writeXlsx } from '../writer/index.ts'
-import { parseActiveXControlInfo, parseWorksheetControlInfos } from './active-content.ts'
+import {
+	parseActiveXControlInfo,
+	parseVmlControlInfos,
+	parseWorksheetControlInfos,
+} from './active-content.ts'
 import { readXlsx } from './index.ts'
 
 function expectOk<T, E extends { message: string }>(
@@ -51,6 +55,36 @@ describe('active content inventory', () => {
 				controlPrRelationshipType:
 					'http://schemas.openxmlformats.org/officeDocument/2006/relationships/ctrlProp',
 				controlPrTarget: 'xl/ctrlProps/ctrlProp1.xml',
+			},
+		])
+
+		expect(
+			parseVmlControlInfos(
+				`<xml xmlns:v="urn:schemas-microsoft-com:vml" xmlns:img="urn:excel-image-links" xmlns:o="urn:schemas-microsoft-com:office:office">
+  <v:shape id="Button 1" o:spid="_x0000_s1025">
+    <v:imagedata img:relid="rIdImage"/>
+    <x:ClientData xmlns:x="urn:schemas-microsoft-com:office:excel" ObjectType="Button"/>
+  </v:shape>
+</xml>`,
+				'xl/drawings/vmlDrawing1.vml',
+				[
+					{
+						id: 'rIdImage',
+						type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image',
+						target: '../media/button1.png',
+					},
+				],
+			),
+		).toEqual([
+			{
+				shapeId: 1025,
+				shapeName: 'Button 1',
+				shapeSpid: '_x0000_s1025',
+				objectType: 'Button',
+				imageRelationshipId: 'rIdImage',
+				imageRelationshipType:
+					'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image',
+				imageTarget: 'xl/media/button1.png',
 			},
 		])
 	})

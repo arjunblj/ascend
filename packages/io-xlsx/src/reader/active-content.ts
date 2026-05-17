@@ -177,7 +177,7 @@ export function parseVmlControlInfos(
 		const shapeName = attrs.get('id')
 		const shapeSpid = attrs.get('o:spid')
 		const imageAttrs = firstTagAttrs(body, 'imagedata')
-		const imageRelationshipId = imageAttrs.get('o:relid') ?? imageAttrs.get('relid')
+		const imageRelationshipId = relationshipRelIdFromAttributes(imageAttrs)
 		const imageRelationship = imageRelationshipId
 			? relationshipsById.get(imageRelationshipId)
 			: undefined
@@ -313,6 +313,15 @@ function relationshipIdFromAttributes(attrs: ReadonlyMap<string, string>): strin
 	if (direct !== undefined) return direct
 	for (const [name, value] of attrs) {
 		if (name.endsWith(':id')) return value
+	}
+	return undefined
+}
+
+function relationshipRelIdFromAttributes(attrs: ReadonlyMap<string, string>): string | undefined {
+	const direct = attrs.get('o:relid') ?? attrs.get('relid')
+	if (direct !== undefined) return direct
+	for (const [name, value] of attrs) {
+		if (name.endsWith(':relid')) return value
 	}
 	return undefined
 }

@@ -8,7 +8,7 @@ import type {
 	WorkbookView,
 	WorkbookViewAttribute,
 } from '@ascend/core'
-import type { CalcSettings } from '@ascend/schema'
+import type { CalcSettings, CalcSettingsAttribute } from '@ascend/schema'
 import { DEFAULT_CALC_SETTINGS } from '@ascend/schema'
 import { asArray, attr, boolAttr, numAttr, parseXml, type XmlNode } from '../xml.ts'
 import {
@@ -247,6 +247,7 @@ function scanCalcSettings(xml: string): CalcSettings {
 	const iterate = booleanAttr(calcPrAttrs, 'iterate') ?? false
 	const iterateCount = numberAttr(calcPrAttrs, 'iterateCount') ?? 100
 	const iterateDelta = numberAttr(calcPrAttrs, 'iterateDelta') ?? 0.001
+	const extraAttributes = calcSettingsExtraAttributes(calcPrAttrs)
 
 	return {
 		calcMode,
@@ -261,6 +262,7 @@ function scanCalcSettings(xml: string): CalcSettings {
 			maxIterations: iterateCount,
 			maxChange: iterateDelta,
 		},
+		...(extraAttributes.length > 0 ? { extraAttributes } : {}),
 	}
 }
 
@@ -556,6 +558,7 @@ function parseCalcSettings(wb: XmlNode): CalcSettings {
 	const iterate = boolAttr(calcPr, 'iterate') ?? false
 	const iterateCount = numAttr(calcPr, 'iterateCount') ?? 100
 	const iterateDelta = numAttr(calcPr, 'iterateDelta') ?? 0.001
+	const extraAttributes = calcSettingsExtraAttributesFromNode(calcPr)
 
 	return {
 		calcMode,
@@ -570,7 +573,42 @@ function parseCalcSettings(wb: XmlNode): CalcSettings {
 			maxIterations: iterateCount,
 			maxChange: iterateDelta,
 		},
+		...(extraAttributes.length > 0 ? { extraAttributes } : {}),
 	}
+}
+
+function calcSettingsExtraAttributes(attrs: ReadonlyMap<string, string>): CalcSettingsAttribute[] {
+	const extraAttributes: CalcSettingsAttribute[] = []
+	for (const [name, value] of attrs) {
+		if (isCoreCalcSettingAttribute(name)) continue
+		extraAttributes.push({ name, value })
+	}
+	return extraAttributes
+}
+
+function calcSettingsExtraAttributesFromNode(node: XmlNode): CalcSettingsAttribute[] {
+	const extraAttributes: CalcSettingsAttribute[] = []
+	for (const [key, value] of Object.entries(node)) {
+		if (!key.startsWith('@_')) continue
+		const name = key.slice(2)
+		if (isCoreCalcSettingAttribute(name) || value === undefined || value === null) continue
+		extraAttributes.push({ name, value: String(value) })
+	}
+	return extraAttributes
+}
+
+function isCoreCalcSettingAttribute(name: string): boolean {
+	return (
+		name === 'calcMode' ||
+		name === 'fullCalcOnLoad' ||
+		name === 'calcCompleted' ||
+		name === 'calcOnSave' ||
+		name === 'forceFullCalc' ||
+		name === 'calcId' ||
+		name === 'iterate' ||
+		name === 'iterateCount' ||
+		name === 'iterateDelta'
+	)
 }
 
 function parseWorkbookProperties(wb: XmlNode): WorkbookProperties {

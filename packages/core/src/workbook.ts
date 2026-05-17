@@ -335,6 +335,13 @@ export class Workbook {
 		clone.calcSettings = {
 			...this.calcSettings,
 			iterativeCalc: { ...this.calcSettings.iterativeCalc },
+			...(this.calcSettings.extraAttributes
+				? {
+						extraAttributes: this.calcSettings.extraAttributes.map((attr) => ({
+							...attr,
+						})),
+					}
+				: {}),
 		}
 		clone.workbookProperties = {
 			...this.workbookProperties,

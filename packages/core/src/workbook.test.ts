@@ -51,6 +51,7 @@ describe('Workbook.clone', () => {
 		wb.calcSettings = {
 			...wb.calcSettings,
 			iterativeCalc: { enabled: true, maxIterations: 10, maxChange: 0.1 },
+			extraAttributes: [{ name: 'fullPrecision', value: '0' }],
 		}
 		wb.preservedStyles = {
 			xfByStyleId: { 0: 1 },
@@ -71,6 +72,7 @@ describe('Workbook.clone', () => {
 
 		const clone = wb.clone()
 		;(clone.calcSettings.iterativeCalc as { enabled: boolean }).enabled = false
+		;(clone.calcSettings.extraAttributes?.[0] as { value: string }).value = '1'
 		if (clone.preservedStyles) {
 			;(clone.preservedStyles.xfByStyleId as Record<number, number>)[0] = 99
 		}
@@ -79,6 +81,7 @@ describe('Workbook.clone', () => {
 		;(clone.workbookViews[0]?.extraAttributes?.[0] as { value: string }).value = '9000'
 
 		expect(wb.calcSettings.iterativeCalc.enabled).toBe(true)
+		expect(wb.calcSettings.extraAttributes?.[0]?.value).toBe('0')
 		expect(wb.preservedStyles?.xfByStyleId[0]).toBe(1)
 		expect(wb.workbookProperties.extraAttributes?.[0]?.value).toBe('1')
 		expect(wb.workbookProtection?.extraAttributes?.[0]?.value).toBe('strict')

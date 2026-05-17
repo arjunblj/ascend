@@ -1,3 +1,8 @@
+export interface CalcSettingsAttribute {
+	readonly name: string
+	readonly value: string
+}
+
 export interface CalcSettings {
 	readonly calcMode: 'auto' | 'manual' | 'autoNoTable'
 	readonly fullCalcOnLoad: boolean
@@ -11,6 +16,7 @@ export interface CalcSettings {
 		readonly maxIterations: number
 		readonly maxChange: number
 	}
+	readonly extraAttributes?: readonly CalcSettingsAttribute[]
 }
 
 export const DEFAULT_CALC_SETTINGS: CalcSettings = {

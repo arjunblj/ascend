@@ -7,6 +7,7 @@ export type {
 export { emptyReport } from './compatibility.ts'
 export type {
 	CalcSettings,
+	CalcSettingsAttribute,
 	CsvDialect,
 	ExportOptions,
 	ImportOptions,

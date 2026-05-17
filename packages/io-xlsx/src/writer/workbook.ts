@@ -206,6 +206,10 @@ export function buildWorkbookXml(workbook: Workbook, options: WorkbookXmlOptions
 		calcAttrs.push(`iterateCount="${cs.iterativeCalc.maxIterations}"`)
 		calcAttrs.push(`iterateDelta="${cs.iterativeCalc.maxChange}"`)
 	}
+	for (const extra of cs.extraAttributes ?? []) {
+		if (isCoreCalcSettingAttribute(extra.name) || !isXmlAttributeName(extra.name)) continue
+		calcAttrs.push(`${extra.name}="${escapeXml(extra.value)}"`)
+	}
 	if (calcAttrs.length > 0) {
 		out.push(`<calcPr ${calcAttrs.join(' ')}/>`)
 	} else {
@@ -375,6 +379,20 @@ function parseRawXmlAttributes(rawAttrs: string): Map<string, string> {
 
 function isCoreDefinedNameAttribute(name: string): boolean {
 	return name === 'name' || name === 'localSheetId' || name === 'hidden'
+}
+
+function isCoreCalcSettingAttribute(name: string): boolean {
+	return (
+		name === 'calcMode' ||
+		name === 'fullCalcOnLoad' ||
+		name === 'calcCompleted' ||
+		name === 'calcOnSave' ||
+		name === 'forceFullCalc' ||
+		name === 'calcId' ||
+		name === 'iterate' ||
+		name === 'iterateCount' ||
+		name === 'iterateDelta'
+	)
 }
 
 function isXmlAttributeName(name: string): boolean {

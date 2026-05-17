@@ -2321,7 +2321,7 @@ describe('readXlsx', () => {
   <externalReferences>
     <externalReference r:id="rId2"/>
   </externalReferences>
-  <calcPr calcMode="manual" fullCalcOnLoad="1"/>
+  <calcPr calcMode="manual" fullCalcOnLoad="1" refMode="R1C1" fullPrecision="0"/>
 </workbook>`,
 			'xl/worksheets/sheet1.xml': `<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`,
 			'xl/externalLinks/externalLink1.xml': `<?xml version="1.0"?><externalLink xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><externalBook r:id="rIdExt"/></externalLink>`,
@@ -2357,6 +2357,10 @@ describe('readXlsx', () => {
 					{ name: 'windowHeight', value: '9000' },
 				],
 			},
+		])
+		expect(result.value.workbook.calcSettings.extraAttributes).toEqual([
+			{ name: 'refMode', value: 'R1C1' },
+			{ name: 'fullPrecision', value: '0' },
 		])
 		expect(result.value.workbook.externalReferences).toEqual(['xl/externalLinks/externalLink1.xml'])
 		expect(result.value.workbook.externalReferenceDetails).toEqual([

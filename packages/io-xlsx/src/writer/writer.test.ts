@@ -5173,6 +5173,13 @@ describe('writeXlsx', () => {
 				{ name: 'autoCompressPictures', value: '0' },
 			],
 		}
+		wb.calcSettings = {
+			...wb.calcSettings,
+			extraAttributes: [
+				{ name: 'refMode', value: 'R1C1' },
+				{ name: 'fullPrecision', value: '0' },
+			],
+		}
 		wb.externalReferences.push('xl/externalLinks/externalLink1.xml')
 
 		const capsules: PreservationCapsule[] = [
@@ -5210,6 +5217,10 @@ describe('writeXlsx', () => {
 				],
 			},
 		])
+		expect(result.workbook.calcSettings.extraAttributes).toEqual([
+			{ name: 'refMode', value: 'R1C1' },
+			{ name: 'fullPrecision', value: '0' },
+		])
 		expect(result.workbook.externalReferences).toEqual(['xl/externalLinks/externalLink1.xml'])
 
 		const fingerprint = fingerprintXlsx(bytes)
@@ -5226,6 +5237,8 @@ describe('writeXlsx', () => {
 		expect(workbookXml).toContain('minimized="1"')
 		expect(workbookXml).toContain('showSheetTabs="0"')
 		expect(workbookXml).toContain('windowWidth="16800"')
+		expect(workbookXml).toContain('refMode="R1C1"')
+		expect(workbookXml).toContain('fullPrecision="0"')
 	})
 
 	it('rewrites external link relationship targets while preserving link parts', () => {

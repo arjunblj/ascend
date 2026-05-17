@@ -90,7 +90,8 @@
 			"internalTiming": true,
 			"valueOnlyRead": true,
 			"xlsmRoundtrip": false,
-			"writeFormulas": true
+			"writeFormulas": true,
+			"writeTables": true
 		}
 	},
 	{

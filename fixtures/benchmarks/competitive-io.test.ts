@@ -1311,6 +1311,40 @@ describe('competitive IO helpers', () => {
 		expect(payload.cases[0]?.assertions?.featureRichSemanticMatches).toBe(false)
 	})
 
+	test('ExcelJS table writer is table-heavy comparable', async () => {
+		const payload = await runCompetitiveIoJson([
+			'--category',
+			'write',
+			'--workload',
+			'table-heavy',
+			'--rows',
+			'20',
+			'--cols',
+			'6',
+			'--repeat',
+			'1',
+			'--warmup',
+			'0',
+			'--libraries',
+			'exceljs,sheetjs',
+			'--write-runner-manifest',
+			'fixtures/benchmarks/runners/sota-writers.manifest.json',
+			'--validation-mode',
+			'final',
+			'--json',
+		])
+		expect(payload.cases.map((entry) => entry.dimensions.library)).toEqual(['exceljs'])
+		expect(payload.cases[0]?.dimensions.correctnessStatus).toBe('pass')
+		expect(payload.cases[0]?.assertions?.tablePartMatches).toBe(true)
+		expect(payload.cases[0]?.assertions?.tablePartCount).toBe(1)
+		expect(
+			payload.metadata.skipped.some(
+				(entry) =>
+					entry.library === 'sheetjs' && entry.reason?.includes('capabilities.writeTables=true'),
+			),
+		).toBe(true)
+	})
+
 	test('external competitor selector includes non-JS SOTA runners', () => {
 		expect(competitorMatches('sheetjs', 'external')).toBe(false)
 		expect(competitorMatches('fastexcel', 'external')).toBe(true)
@@ -1392,6 +1426,8 @@ describe('competitive IO helpers', () => {
 		})
 		expect(specs.find((spec) => spec.name === 'sheetjs')?.capabilities?.writeFormulas).toBe(true)
 		expect(specs.find((spec) => spec.name === 'exceljs')?.capabilities?.writeFormulas).toBe(true)
+		expect(specs.find((spec) => spec.name === 'sheetjs')?.capabilities?.writeTables).toBe(undefined)
+		expect(specs.find((spec) => spec.name === 'exceljs')?.capabilities?.writeTables).toBe(true)
 		expect(specs.find((spec) => spec.name === 'xlsxwriter')?.capabilities).toMatchObject({
 			writeFormulas: true,
 			writeTables: true,

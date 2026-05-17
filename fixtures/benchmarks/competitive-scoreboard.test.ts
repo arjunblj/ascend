@@ -872,6 +872,27 @@ describe('buildCompetitiveScoreboard', () => {
 		expect(inspection.gaps).toContain(
 			'xlsx-write-sota coverage-gap competitor=ExcelJS category=write operationProfile=write-styles workload=styles-heavy reason=unsupported-operation',
 		)
+		expect(inspection.gaps).not.toContain(
+			'xlsx-write-sota coverage-gap competitor=SheetJS category=write operationProfile=write-formulas workload=formula-heavy reason=unsupported-operation',
+		)
+		expect(inspection.gaps).not.toContain(
+			'xlsx-write-sota coverage-gap competitor=ExcelJS category=write operationProfile=write-formulas workload=formula-heavy reason=unsupported-operation',
+		)
+		expect(inspection.failures).toContain(
+			'xlsx-write-sota missing competitor=SheetJS category=write operationProfile=write-formulas workload=formula-heavy',
+		)
+		expect(inspection.failures).toContain(
+			'xlsx-write-sota missing competitor=ExcelJS category=write operationProfile=write-formulas workload=formula-heavy',
+		)
+		expect(inspection.gaps).toContain(
+			'xlsx-write-sota coverage-gap competitor=SheetJS category=write operationProfile=write-tables workload=table-heavy reason=unsupported-operation',
+		)
+		expect(inspection.gaps).not.toContain(
+			'xlsx-write-sota coverage-gap competitor=ExcelJS category=write operationProfile=write-tables workload=table-heavy reason=unsupported-operation',
+		)
+		expect(inspection.failures).toContain(
+			'xlsx-write-sota missing competitor=ExcelJS category=write operationProfile=write-tables workload=table-heavy',
+		)
 	})
 
 	test('xlsx write SOTA profile reports missing non-JS writers', () => {

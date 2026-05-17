@@ -191,6 +191,17 @@ async function writeExcelJs(args: Args): Promise<Uint8Array> {
 			}
 		}
 	}
+	if (args.workload === 'table-heavy' && args.rows > 0 && args.cols > 0) {
+		sheet.addTable({
+			name: 'DataTable',
+			ref: 'A1',
+			headerRow: true,
+			totalsRow: false,
+			style: { theme: 'TableStyleMedium2', showRowStripes: true },
+			columns: Array.from({ length: args.cols }, (_, index) => ({ name: `Column ${index + 1}` })),
+			rows: values.slice(1).map((row) => [...row]),
+		})
+	}
 	const bytes = (await workbook.xlsx.writeBuffer()) as ArrayBuffer
 	return new Uint8Array(bytes)
 }

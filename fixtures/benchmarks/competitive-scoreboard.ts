@@ -348,12 +348,12 @@ const CLAIM_PROFILES: Record<ClaimProfileName, ClaimProfile> = {
 				workloads: ['formula-heavy'],
 				competitors: [
 					{ label: 'Ascend', libraries: ASCEND_WRITE_LIBRARIES },
+					{ label: 'SheetJS', libraries: ['sheetjs'] },
+					{ label: 'ExcelJS', libraries: ['exceljs'] },
 					{ label: 'XlsxWriter', libraries: ['xlsxwriter', 'xlsxwriter-constant-memory'] },
 					{ label: 'rust_xlsxwriter', libraries: ['rust-xlsxwriter', 'rust_xlsxwriter'] },
 				],
 				capabilityGaps: [
-					{ label: 'SheetJS', libraries: ['sheetjs'] },
-					{ label: 'ExcelJS', libraries: ['exceljs'] },
 					{
 						label: 'pyexcelerate',
 						libraries: ['pyexcelerate', 'pyexcelerate-range', 'pyexcelerate-cell'],
@@ -372,13 +372,13 @@ const CLAIM_PROFILES: Record<ClaimProfileName, ClaimProfile> = {
 				workloads: ['table-heavy'],
 				competitors: [
 					{ label: 'Ascend', libraries: ASCEND_WRITE_LIBRARIES },
+					{ label: 'ExcelJS', libraries: ['exceljs'] },
 					{ label: 'XlsxWriter', libraries: ['xlsxwriter'] },
 					{ label: 'openpyxl', libraries: ['openpyxl'] },
 					{ label: 'rust_xlsxwriter', libraries: ['rust-xlsxwriter', 'rust_xlsxwriter'] },
 				],
 				capabilityGaps: [
 					{ label: 'SheetJS', libraries: ['sheetjs'] },
-					{ label: 'ExcelJS', libraries: ['exceljs'] },
 					{
 						label: 'pyexcelerate',
 						libraries: ['pyexcelerate', 'pyexcelerate-range', 'pyexcelerate-cell'],

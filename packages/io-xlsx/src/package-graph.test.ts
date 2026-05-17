@@ -63,6 +63,7 @@ describe('XLSX package graph', () => {
   <Relationship Id="rIdCalcChainOpaque" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/calcChain" Target="opaque-calc.bin"/>
   <Relationship Id="rIdSheetMetadataOpaque" Type="http://purl.oclc.org/ooxml/officeDocument/relationships/sheetMetadata" Target="opaque-sheet-metadata.bin"/>
   <Relationship Id="rIdCustomXmlOpaque" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml" Target="opaque-custom.xml"/>
+  <Relationship Id="rIdCustomXmlPackage" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml" Target="../customXml/item1.xml"/>
   <Relationship Id="rIdVbaOpaque" Type="http://schemas.microsoft.com/office/2006/relationships/vbaProject" Target="opaque-vba.bin"/>
   <Relationship Id="rIdVbaSignatureOpaque" Type="http://schemas.microsoft.com/office/2006/relationships/vbaProjectSignature" Target="opaque-signature.bin"/>
   <Relationship Id="rIdConnections" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/connections" Target="data/connectionsPayload.xml"/>
@@ -112,6 +113,12 @@ describe('XLSX package graph', () => {
 			'xl/opaque-calc.bin': 'calc-chain-bytes',
 			'xl/opaque-sheet-metadata.bin': 'metadata-bytes',
 			'xl/opaque-custom.xml': '<custom/>',
+			'customXml/item1.xml': '<root/>',
+			'customXml/_rels/item1.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdCustomXmlPropsOpaque" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXmlProps" Target="opaque-props.bin"/>
+</Relationships>`,
+			'customXml/opaque-props.bin': 'custom-xml-props',
 			'xl/opaque-vba.bin': 'vba-bytes',
 			'xl/opaque-signature.bin': 'signature-bytes',
 			'xl/data/connectionsPayload.xml': '<connections/>',
@@ -309,6 +316,15 @@ describe('XLSX package graph', () => {
 			rawTarget: 'opaque-revision.bin',
 			resolvedTarget: 'xl/opaque-revision.bin',
 			featureFamily: 'preservedRevision',
+		})
+		expect(graph.relationships).toContainEqual({
+			sourcePartPath: 'customXml/item1.xml',
+			relationshipPartPath: 'customXml/_rels/item1.xml.rels',
+			id: 'rIdCustomXmlPropsOpaque',
+			type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXmlProps',
+			rawTarget: 'opaque-props.bin',
+			resolvedTarget: 'customXml/opaque-props.bin',
+			featureFamily: 'preservedCustomXml',
 		})
 		expect(graph.relationships).toContainEqual({
 			sourcePartPath: 'xl/drawings/drawing1.xml',
@@ -559,6 +575,12 @@ describe('XLSX package graph', () => {
 			ownerScope: 'custom-xml',
 			sourceRelationshipId: 'rIdCustomXmlOpaque',
 			featureFamily: 'preservedCustomXml',
+		})
+		expect(graph.parts.find((part) => part.path === 'customXml/opaque-props.bin')).toMatchObject({
+			ownerScope: 'custom-xml',
+			sourceRelationshipId: 'rIdCustomXmlPropsOpaque',
+			featureFamily: 'preservedCustomXml',
+			preservationPolicy: 'preserve-exact',
 		})
 		expect(graph.parts.find((part) => part.path === 'xl/opaque-vba.bin')).toMatchObject({
 			ownerScope: 'active-content',

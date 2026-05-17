@@ -22,6 +22,7 @@ import {
 	REL_CUSTOM_PROPERTY,
 	REL_CUSTOM_UI,
 	REL_CUSTOM_XML,
+	REL_CUSTOM_XML_PROPS,
 	REL_DATA_MODEL,
 	REL_DATA_MODEL_TABLE,
 	REL_DIAGRAM_DATA,
@@ -272,6 +273,7 @@ export function classifyPackageFeatureFamily(
 	if (lowerRelType.endsWith('/relationships/ctrlprop')) return 'preservedControl'
 	if (lowerRelType.endsWith('/relationships/oleobject')) return 'preservedEmbedding'
 	if (lowerRelType.endsWith('/relationships/customxml')) return 'preservedCustomXml'
+	if (lowerRelType.endsWith('/relationships/customxmlprops')) return 'preservedCustomXml'
 	if (lowerRelType.endsWith('/relationships/xmlmaps')) return 'preservedCustomXml'
 	if (lowerRelType.endsWith('/relationships/customproperty')) return 'preservedMetadata'
 	if (lowerRelType.includes('/relationships/diagram')) return 'preservedDrawing'
@@ -538,6 +540,7 @@ function classifyOwnerScope(
 	if (primary?.type === REL_EXTERNAL_LINK) return 'external-link'
 	if (/(^|\/)externalLinks\//.test(partPath)) return 'external-link'
 	if (primary?.type === REL_CUSTOM_XML) return 'custom-xml'
+	if (primary?.type === REL_CUSTOM_XML_PROPS) return 'custom-xml'
 	if (primary?.type === REL_XML_MAPS) return 'custom-xml'
 	if (/(^|\/)customXml\//i.test(partPath)) return 'custom-xml'
 	if (
@@ -620,6 +623,7 @@ function classifyRelationshipFeatureFamily(
 	if (relationship.type === REL_POWER_QUERY_MASHUP) return 'preservedPowerQuery'
 	if (relationship.type === REL_HYPERLINK) return 'preservedHyperlink'
 	if (relationship.type === REL_CUSTOM_XML) return 'preservedCustomXml'
+	if (relationship.type === REL_CUSTOM_XML_PROPS) return 'preservedCustomXml'
 	if (relationship.type === REL_XML_MAPS) return 'preservedCustomXml'
 	if (relationship.type === REL_CUSTOM_PROPERTY) return 'preservedMetadata'
 	if (relationship.type === REL_DIAGRAM_DATA) return 'preservedDrawing'

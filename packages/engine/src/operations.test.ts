@@ -5866,6 +5866,49 @@ describe('applyOperation', () => {
 		}
 	})
 
+	test('row and column inserts reject populated edge cells before shifting them out of grid', () => {
+		const cases: readonly {
+			readonly op: Operation
+			readonly populated: readonly [number, number][]
+			readonly expectedRef: string
+		}[] = [
+			{
+				op: { op: 'insertRows', sheet: 'Sheet1', at: 0, count: 1 },
+				populated: [[1_048_575, 0]],
+				expectedRef: 'Sheet1!A1048576',
+			},
+			{
+				op: { op: 'insertCols', sheet: 'Sheet1', at: 0, count: 1 },
+				populated: [[0, 16_383]],
+				expectedRef: 'Sheet1!XFD1',
+			},
+			{
+				op: { op: 'insertRows', sheet: 'Sheet1', at: 1_048_574, count: 2 },
+				populated: [[1_048_574, 1]],
+				expectedRef: 'Sheet1!B1048575',
+			},
+		]
+
+		for (const { op, populated, expectedRef } of cases) {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			for (const [row, col] of populated) {
+				sheet.cells.set(row, col, cell(numberValue(row + col + 1)))
+			}
+			const beforeCells = [...sheet.cells.iterate()]
+
+			const result = applyOperation(wb, op)
+
+			expectErr(result)
+			expect(result.error.code, op.op).toBe('INVALID_RANGE')
+			expect(result.error.refs, op.op).toEqual([expectedRef])
+			expect(result.error.details, op.op).toMatchObject({
+				kind: 'structural-insert-shifts-cell-out-of-bounds',
+			})
+			expect([...sheet.cells.iterate()], op.op).toEqual(beforeCells)
+		}
+	})
+
 	test('visibility and outline layout operations reject invalid booleans without mutation', () => {
 		const cases: readonly Operation[] = [
 			{ op: 'hideSheet', sheet: 'Sheet1', hidden: 'false' as never },

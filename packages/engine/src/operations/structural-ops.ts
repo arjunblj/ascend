@@ -82,6 +82,11 @@ function applyAxisShift(
 	const sheet = result.value
 	const protectionBlocker = validateStructuralProtection(sheet, axis, delta)
 	if (protectionBlocker) return err(protectionBlocker)
+	const insertOverflowBlocker =
+		delta > 0 ? findInsertShiftedCellOutOfBounds(sheet, axis, at, count) : null
+	if (insertOverflowBlocker) {
+		return err(insertShiftedCellOutOfBoundsError(sheet, axis, at, count, insertOverflowBlocker))
+	}
 	const ambiguousDefinedName = findAmbiguousWorkbookDefinedNameStructuralReference(workbook)
 	if (ambiguousDefinedName) {
 		return err(ambiguousWorkbookDefinedNameStructuralEditError(ambiguousDefinedName))
@@ -233,6 +238,59 @@ function validateAxisSpan(axis: 'row' | 'col', at: number, count: number) {
 		)
 	}
 	return null
+}
+
+interface InsertOverflowCell {
+	readonly ref: string
+	readonly shiftedRef: string
+}
+
+function findInsertShiftedCellOutOfBounds(
+	sheet: Sheet,
+	axis: 'row' | 'col',
+	at: number,
+	count: number,
+): InsertOverflowCell | null {
+	const limit = axis === 'row' ? EXCEL_MAX_ROWS : EXCEL_MAX_COLS
+	const overflowStart = limit - count
+	for (const [row, col] of sheet.cells.iterate()) {
+		const coordinate = axis === 'row' ? row : col
+		if (coordinate < at || coordinate < overflowStart) continue
+		return {
+			ref: toA1({ row, col }),
+			shiftedRef:
+				axis === 'row' ? toA1({ row: row + count, col }) : toA1({ row, col: col + count }),
+		}
+	}
+	return null
+}
+
+function insertShiftedCellOutOfBoundsError(
+	sheet: Sheet,
+	axis: 'row' | 'col',
+	at: number,
+	count: number,
+	cell: InsertOverflowCell,
+) {
+	const label = axis === 'row' ? 'row' : 'column'
+	const maxRef = axis === 'row' ? '1048576' : 'XFD'
+	const qualifiedRef = `${formatSheetName(sheet.name)}!${cell.ref}`
+	return ascendError(
+		'INVALID_RANGE',
+		`Cannot insert ${label}s because ${qualifiedRef} would shift outside Excel worksheet bounds`,
+		{
+			refs: [qualifiedRef],
+			suggestedFix: `Clear or move populated cells that would shift past ${maxRef}, then retry the insert.`,
+			details: {
+				kind: 'structural-insert-shifts-cell-out-of-bounds',
+				axis,
+				at,
+				count,
+				ref: qualifiedRef,
+				shiftedRef: cell.shiftedRef,
+			},
+		},
+	)
 }
 
 function validateTransferRangeWithinGrid(range: RangeRef, role: 'source' | 'target') {

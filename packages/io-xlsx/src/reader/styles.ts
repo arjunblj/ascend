@@ -13,6 +13,7 @@ import type {
 	VerticalAlign,
 } from '@ascend/core'
 import { asArray, attr, boolAttr, numAttr, parseXml, type XmlNode } from '../xml.ts'
+import { normalizeMainSpreadsheetNamespacePrefix } from './xml-utils.ts'
 
 type WritablePartial<T> = { -readonly [K in keyof T]?: T[K] }
 
@@ -77,7 +78,7 @@ export function parseStyles(xml: string): ParsedStyles {
 	const fast = parseStylesFast(xml)
 	if (fast) return fast
 
-	const doc = parseXml(xml)
+	const doc = parseXml(normalizeMainSpreadsheetNamespacePrefix(xml))
 	const ss = doc.styleSheet as XmlNode | undefined
 	if (!ss) {
 		return {
@@ -272,20 +273,21 @@ function buildCellStylesFast(
 }
 
 export function parseStylesLite(xml: string): ParsedStylesLite {
-	const numFmts = parseNumFmtsLite(xml)
-	const cellXfsXml = extractXmlSection(xml, 'cellXfs')
+	const normalized = normalizeMainSpreadsheetNamespacePrefix(xml)
+	const numFmts = parseNumFmtsLite(normalized)
+	const cellXfsXml = extractXmlSection(normalized, 'cellXfs')
 	const cellXfCount = countXmlChildren(cellXfsXml, 'xf')
 	const isDateFormat = buildDateFormatFlagsLite(cellXfsXml, numFmts)
 	return {
 		isDateFormat,
 		metadata: {
 			numFmtCount: Math.max(0, numFmts.size - BUILTIN_NUM_FMTS.size),
-			fontCount: countXmlChildren(extractXmlSection(xml, 'fonts'), 'font'),
-			fillCount: countXmlChildren(extractXmlSection(xml, 'fills'), 'fill'),
-			borderCount: countXmlChildren(extractXmlSection(xml, 'borders'), 'border'),
+			fontCount: countXmlChildren(extractXmlSection(normalized, 'fonts'), 'font'),
+			fillCount: countXmlChildren(extractXmlSection(normalized, 'fills'), 'fill'),
+			borderCount: countXmlChildren(extractXmlSection(normalized, 'borders'), 'border'),
 			cellXfCount: Math.max(0, cellXfCount),
-			dxfCount: countXmlChildren(extractXmlSection(xml, 'dxfs'), 'dxf'),
-			tableStyleCount: countXmlChildren(extractXmlSection(xml, 'tableStyles'), 'tableStyle'),
+			dxfCount: countXmlChildren(extractXmlSection(normalized, 'dxfs'), 'dxf'),
+			tableStyleCount: countXmlChildren(extractXmlSection(normalized, 'tableStyles'), 'tableStyle'),
 		},
 	}
 }

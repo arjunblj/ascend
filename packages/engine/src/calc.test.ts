@@ -1512,6 +1512,188 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(2, 8)?.value).toEqual(stringValue('FF'))
 	})
 
+	test('engineering special and complex scalar functions spill over range operands in array formulas', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		const xs = [0.5, 1, 1.5]
+		const orders = [0, 1, 2]
+		const positiveXs = [1, 2, 3]
+		const imaginaries = [4, -1, 2]
+		const complexValues = ['3+4i', '2-1i', '1+2i']
+		const divisorValues = ['1+i', '2+3i', '4-2i']
+		for (let row = 0; row < 3; row++) {
+			for (const [col, value] of [
+				[0, xs[row]],
+				[1, orders[row]],
+				[2, positiveXs[row]],
+				[3, imaginaries[row]],
+			] as const) {
+				sheet.cells.set(row, col, {
+					value: numberValue(value as number),
+					formula: null,
+					styleId: sid,
+				})
+			}
+			sheet.cells.set(row, 4, {
+				value: stringValue(complexValues[row] as string),
+				formula: null,
+				styleId: sid,
+			})
+			sheet.cells.set(row, 5, {
+				value: stringValue(divisorValues[row] as string),
+				formula: null,
+				styleId: sid,
+			})
+		}
+		const arrayFormulas = [
+			'CONVERT(A1:A3,"m","ft")+0',
+			'ERF(A1:A3)+0',
+			'ERF.PRECISE(A1:A3)+0',
+			'ERFC(A1:A3)+0',
+			'ERFC.PRECISE(A1:A3)+0',
+			'BESSELI(A1:A3,B1:B3)+0',
+			'BESSELJ(A1:A3,B1:B3)+0',
+			'BESSELK(C1:C3,B1:B3)+0',
+			'BESSELY(C1:C3,B1:B3)+0',
+			'COMPLEX(A1:A3,D1:D3)&""',
+			'IMREAL(E1:E3)+0',
+			'IMAGINARY(E1:E3)+0',
+			'IMABS(E1:E3)+0',
+			'IMARGUMENT(E1:E3)+0',
+			'IMCONJUGATE(E1:E3)&""',
+			'IMSUB(E1:E3,F1:F3)&""',
+			'IMDIV(E1:E3,F1:F3)&""',
+			'IMPOWER(E1:E3,B1:B3)&""',
+			'IMSQRT(E1:E3)&""',
+			'IMEXP(E1:E3)&""',
+			'IMLN(E1:E3)&""',
+			'IMSIN(E1:E3)&""',
+			'IMCOS(E1:E3)&""',
+			'IMLOG10(E1:E3)&""',
+			'IMLOG2(E1:E3)&""',
+			'IMTAN(E1:E3)&""',
+			'IMSINH(E1:E3)&""',
+			'IMCOSH(E1:E3)&""',
+			'IMSEC(E1:E3)&""',
+			'IMCSC(E1:E3)&""',
+			'IMCOT(E1:E3)&""',
+			'IMSECH(E1:E3)&""',
+			'IMCSCH(E1:E3)&""',
+		]
+		const scalarFormulas = [
+			'CONVERT(A{r},"m","ft")+0',
+			'ERF(A{r})+0',
+			'ERF.PRECISE(A{r})+0',
+			'ERFC(A{r})+0',
+			'ERFC.PRECISE(A{r})+0',
+			'BESSELI(A{r},B{r})+0',
+			'BESSELJ(A{r},B{r})+0',
+			'BESSELK(C{r},B{r})+0',
+			'BESSELY(C{r},B{r})+0',
+			'COMPLEX(A{r},D{r})&""',
+			'IMREAL(E{r})+0',
+			'IMAGINARY(E{r})+0',
+			'IMABS(E{r})+0',
+			'IMARGUMENT(E{r})+0',
+			'IMCONJUGATE(E{r})&""',
+			'IMSUB(E{r},F{r})&""',
+			'IMDIV(E{r},F{r})&""',
+			'IMPOWER(E{r},B{r})&""',
+			'IMSQRT(E{r})&""',
+			'IMEXP(E{r})&""',
+			'IMLN(E{r})&""',
+			'IMSIN(E{r})&""',
+			'IMCOS(E{r})&""',
+			'IMLOG10(E{r})&""',
+			'IMLOG2(E{r})&""',
+			'IMTAN(E{r})&""',
+			'IMSINH(E{r})&""',
+			'IMCOSH(E{r})&""',
+			'IMSEC(E{r})&""',
+			'IMCSC(E{r})&""',
+			'IMCOT(E{r})&""',
+			'IMSECH(E{r})&""',
+			'IMCSCH(E{r})&""',
+		]
+		for (let col = 0; col < arrayFormulas.length; col++) {
+			sheet.cells.set(0, 6 + col, {
+				value: EMPTY,
+				formula: arrayFormulas[col] as string,
+				styleId: sid,
+			})
+			for (let row = 0; row < 3; row++) {
+				sheet.cells.set(row, 45 + col, {
+					value: EMPTY,
+					formula: (scalarFormulas[col] as string).replaceAll('{r}', String(row + 1)),
+					styleId: sid,
+				})
+			}
+		}
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		for (let row = 0; row < 3; row++) {
+			for (let col = 0; col < arrayFormulas.length; col++) {
+				expect(sheet.cells.get(row, 6 + col)?.value).toEqual(sheet.cells.get(row, 45 + col)?.value)
+			}
+		}
+	})
+
+	test('engineering special and complex scalar functions implicitly intersect range operands', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		for (let row = 0; row < 3; row++) {
+			sheet.cells.set(row, 0, { value: numberValue(row + 1), formula: null, styleId: sid })
+			sheet.cells.set(row, 1, { value: numberValue(row), formula: null, styleId: sid })
+			sheet.cells.set(row, 2, {
+				value: stringValue(row === 1 ? '3+4i' : '1+i'),
+				formula: null,
+				styleId: sid,
+			})
+			sheet.cells.set(row, 3, {
+				value: stringValue(row === 1 ? '1+i' : '2+i'),
+				formula: null,
+				styleId: sid,
+			})
+		}
+		const rangeFormulas = [
+			'CONVERT(A1:A3,"m","ft")',
+			'ERF(A1:A3)',
+			'BESSELJ(A1:A3,B1:B3)',
+			'COMPLEX(A1:A3,B1:B3)',
+			'IMABS(C1:C3)',
+			'IMSUB(C1:C3,D1:D3)',
+		]
+		const scalarFormulas = [
+			'CONVERT(A2,"m","ft")',
+			'ERF(A2)',
+			'BESSELJ(A2,B2)',
+			'COMPLEX(A2,B2)',
+			'IMABS(C2)',
+			'IMSUB(C2,D2)',
+		]
+		for (let col = 0; col < rangeFormulas.length; col++) {
+			sheet.cells.set(1, 4 + col, {
+				value: EMPTY,
+				formula: rangeFormulas[col] as string,
+				styleId: sid,
+			})
+			sheet.cells.set(1, 12 + col, {
+				value: EMPTY,
+				formula: scalarFormulas[col] as string,
+				styleId: sid,
+			})
+		}
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		for (let col = 0; col < rangeFormulas.length; col++) {
+			expect(sheet.cells.get(1, 4 + col)?.value).toEqual(sheet.cells.get(1, 12 + col)?.value)
+		}
+	})
+
 	test('rounding scalar functions spill over range operands in array formulas', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

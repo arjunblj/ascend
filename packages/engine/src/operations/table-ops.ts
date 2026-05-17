@@ -45,6 +45,8 @@ import {
 	safeParseRange,
 } from './helpers.ts'
 
+const EXCEL_MAX_ROWS = 1_048_576
+
 export function handleCreateTable(
 	workbook: Workbook,
 	op: Extract<Operation, { op: 'createTable' }>,
@@ -140,6 +142,9 @@ export function handleAppendRows(
 	const nextTableRef = {
 		start: table.ref.start,
 		end: { row: originalEndRow + rowDelta, col: table.ref.end.col },
+	}
+	if (nextTableRef.end.row >= EXCEL_MAX_ROWS) {
+		return err(tableAppendOutOfBoundsError(table, nextTableRef, op.rows.length))
 	}
 	const overlappingTable = findOverlappingTable(sheet, nextTableRef, table.id)
 	if (overlappingTable) {
@@ -523,6 +528,30 @@ function tableRangeOverlapError(
 					ref: rangeToA1(overlappingTable.ref),
 					...(overlappingTable.partPath ? { partPath: overlappingTable.partPath } : {}),
 				},
+			},
+		},
+	)
+}
+
+function tableAppendOutOfBoundsError(
+	table: Table,
+	ref: RangeRef,
+	rowCount: number,
+): ReturnType<typeof ascendError> {
+	return ascendError(
+		'INVALID_RANGE',
+		`Cannot append ${rowCount} row${rowCount === 1 ? '' : 's'} to table "${table.name}" because ${rangeToA1(ref)} would extend beyond Excel worksheet bounds`,
+		{
+			refs: [rangeToA1(table.ref), rangeToA1(ref)],
+			suggestedFix:
+				'Append fewer rows, move or resize the table away from the worksheet edge, or create a new table on another sheet.',
+			details: {
+				kind: 'append-rows-table-out-of-bounds',
+				tableName: table.name,
+				currentRef: rangeToA1(table.ref),
+				attemptedRef: rangeToA1(ref),
+				rowCount,
+				maxRef: '1048576',
 			},
 		},
 	)

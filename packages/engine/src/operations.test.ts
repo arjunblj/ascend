@@ -10884,6 +10884,39 @@ describe('applyOperation', () => {
 		}
 	})
 
+	test('appendRows rejects table growth past the worksheet bounds', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.tables.push({
+			id: createTableId(),
+			name: 'EdgeTable',
+			sheetId: sheet.id,
+			ref: { start: { row: 1_048_574, col: 0 }, end: { row: 1_048_575, col: 1 } },
+			columns: [{ name: 'Name' }, { name: 'Amount' }],
+			hasHeaders: true,
+			hasTotals: false,
+		})
+		const beforeTable = JSON.stringify(sheet.tables[0])
+
+		const result = applyOperation(wb, {
+			op: 'appendRows',
+			table: 'EdgeTable',
+			rows: [['Debt', 20]],
+		})
+
+		expectErr(result)
+		expect(result.error.code).toBe('INVALID_RANGE')
+		expect(result.error.details).toMatchObject({
+			kind: 'append-rows-table-out-of-bounds',
+			tableName: 'EdgeTable',
+			currentRef: 'A1048575:B1048576',
+			attemptedRef: 'A1048575:B1048577',
+			rowCount: 1,
+		})
+		expect(JSON.stringify(sheet.tables[0])).toBe(beforeTable)
+		expect(sheet.cells.get(1_048_576, 0)).toBeUndefined()
+	})
+
 	test('appendRows rejects expansion into another table range', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

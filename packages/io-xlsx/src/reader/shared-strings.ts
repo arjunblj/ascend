@@ -426,6 +426,7 @@ function parseEagerSharedStringEntriesBytes(bytes: Uint8Array):
 		plainTextEntries.push(fastPlain.text)
 		cursor = fastPlain.next
 	}
+	if (!sawSharedString && bytesIncludePrefixedSharedStringOpen(bytes)) return undefined
 	return sawSharedString || !bytesIncludeSharedStringOpen(bytes) ? { plainTextEntries } : undefined
 }
 
@@ -493,6 +494,38 @@ function indexOfSharedStringOpenBytes(bytes: Uint8Array, start: number): number 
 
 function bytesIncludeSharedStringOpen(bytes: Uint8Array): boolean {
 	return indexOfSharedStringOpenBytes(bytes, 0) !== -1
+}
+
+function bytesIncludePrefixedSharedStringOpen(bytes: Uint8Array): boolean {
+	let cursor = 0
+	while (cursor + 4 < bytes.length) {
+		const open = bytes.indexOf(60, cursor)
+		if (open === -1 || open + 4 >= bytes.length) return false
+		let idx = open + 1
+		while (idx < bytes.length && isXmlNameStartOrChar(bytes[idx] ?? -1)) idx++
+		if (
+			idx > open + 1 &&
+			bytes[idx] === 58 &&
+			bytes[idx + 1] === 115 &&
+			bytes[idx + 2] === 105 &&
+			isXmlNameTerminator(bytes[idx + 3] ?? -1)
+		) {
+			return true
+		}
+		cursor = open + 1
+	}
+	return false
+}
+
+function isXmlNameStartOrChar(code: number): boolean {
+	return (
+		(code >= 0x41 && code <= 0x5a) ||
+		(code >= 0x61 && code <= 0x7a) ||
+		(code >= 0x30 && code <= 0x39) ||
+		code === 0x5f ||
+		code === 0x2d ||
+		code === 0x2e
+	)
 }
 
 function startsSimplePlainSharedString(xml: string, start: number): boolean {

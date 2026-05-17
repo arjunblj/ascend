@@ -74,6 +74,9 @@ describe('performance claim baseline matrix', () => {
 			"Current focused TS/JS/Rust `plain-text` write coverage proves Ascend's\n  generated writer is faster by median and p95 than SheetJS, ExcelJS, and\n  rust_xlsxwriter",
 		)
 		expect(markdown).toContain(
+			"Current focused TS/JS/Rust `styles-heavy` write coverage proves Ascend's\n  generated writer is faster by median and p95 than SheetJS, ExcelJS, and\n  rust_xlsxwriter",
+		)
+		expect(markdown).toContain(
 			'Current formula/calc evidence includes focused HyperFormula indexed\n  `INDEX/MATCH`, indexed dirty-key/dirty-value edits, and prefix-range\n  dirty-head/dirty-tail rows.',
 		)
 		for (const workload of RECORDED_WORKLOADS) expect(markdown).toContain(`\`${workload}\``)
@@ -578,6 +581,36 @@ describe('performance claim baseline matrix', () => {
 		)
 		expect(markdown).toContain('"Ascend improved every write workload."')
 		expect(markdown).toContain('do not optimize this same plain-text workbook-buffered row again')
+
+		expect(markdown).toContain('## Cycle: Styles Heavy TS/JS/Rust Write Head-to-Head at `38feccee`')
+		expect(markdown).toContain('cross-library style-fidelity claim')
+		expect(markdown).toContain(
+			'/private/tmp/ascend-write-styles-js-rust-current-38feccee-runs/write-styles-heavy-js-rust-repeat15.json',
+		)
+		expect(markdown).toContain(
+			'/private/tmp/ascend-write-styles-js-rust-current-38feccee-runs/write-styles-heavy-js-rust-repeat15-p95-scoreboard.json',
+		)
+		expect(markdown).toContain(
+			'| `ascend-external-writer` | ran/won median and p95 | 9.450 | 12.501 | 0.095 | 177.8 MiB | 434417 |',
+		)
+		expect(markdown).toContain(
+			'| `rust-xlsxwriter` | ran/lost vs Ascend | 21.331 | 22.837 | 0.026 | 18.7 MiB | 227731 |',
+		)
+		expect(markdown).toContain(
+			'| `sheetjs` | ran/lost vs Ascend | 28.374 | 32.362 | 0.062 | 245.3 MiB | 1165452 |',
+		)
+		expect(markdown).toContain(
+			'| `exceljs` | ran/lost vs Ascend | 64.839 | 130.125 | 0.248 | 248.5 MiB | 215294 |',
+		)
+		expect(markdown).toContain(
+			'P95 scoreboard: styles-heavy group winner was `ascend-external-writer`',
+		)
+		expect(markdown).toContain(
+			'"Ascend proves style-fidelity equivalence against SheetJS, ExcelJS, or rust_xlsxwriter."',
+		)
+		expect(markdown).toContain(
+			'"Ascend uses less memory than rust_xlsxwriter on styles-heavy writes."',
+		)
 
 		expect(markdown).toContain('## Full Current-Commit Gate: XLSX Read SOTA')
 		expect(markdown).toContain(

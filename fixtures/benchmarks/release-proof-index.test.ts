@@ -1150,8 +1150,8 @@ describe('release proof evidence index', () => {
 			}),
 			expect.objectContaining({
 				evidenceId: 'public-activex-blocked-execution-policy-proof',
-				acceptedScope: expect.stringContaining('2459f79a'),
-				command: expect.stringContaining('ActiveX control'),
+				acceptedScope: expect.stringMatching(/2459f79a.*29bdf501/),
+				command: expect.stringContaining('parses active content relationship ids'),
 				boundary: expect.stringContaining('ActiveX/form-control execution metadata only'),
 			}),
 			expect.objectContaining({

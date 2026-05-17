@@ -3335,10 +3335,10 @@ function safeOpenQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceItem[] {
 			evidenceId: 'public-activex-blocked-execution-policy-proof',
 			kind: 'test',
 			command:
-				'bun test fixtures/corpus/active-content-contract.test.ts packages/io-xlsx/src/reader/active-content.test.ts -t "ActiveX control|ActiveX controls" --timeout 60000',
+				'bun test fixtures/corpus/active-content-contract.test.ts packages/io-xlsx/src/reader/active-content.test.ts -t "ActiveX control|ActiveX controls|parses active content relationship ids with non-r prefixes" --timeout 60000',
 			path: 'packages/io-xlsx/src/reader/index.ts; packages/io-xlsx/src/reader/active-content.test.ts; fixtures/corpus/active-content-contract.test.ts',
 			acceptedScope:
-				'Commit 2459f79a marks public ActiveX and macro-bearing form-control inventory with blocked executionPolicy metadata while preserving ActiveX XML, binary, worksheet, and VML identity through safe edit/reopen evidence.',
+				'Commit 2459f79a marks public ActiveX and macro-bearing form-control inventory with blocked executionPolicy metadata while preserving ActiveX XML, binary, worksheet, and VML identity through safe edit/reopen evidence. Commit 29bdf501 proves ActiveX and worksheet control inventory reads non-r namespace prefixes for relationship ids instead of dropping active-content relationship provenance.',
 			boundary:
 				'ActiveX/form-control execution metadata only; it does not execute, sandbox, scan, trust, or semantically edit ActiveX controls.',
 		},

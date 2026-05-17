@@ -24,8 +24,10 @@ export interface ContentTypeEntryAttribute {
 	readonly value: string
 }
 
-const DEFAULT_RE = /<Default\b([^>]*?)(?:\/>|>\s*<\/Default>)/g
-const OVERRIDE_RE = /<Override\b([^>]*?)(?:\/>|>\s*<\/Override>)/g
+const DEFAULT_RE =
+	/<(?:[A-Za-z_][\w.-]*:)?Default\b([^>]*?)(?:\/>|>\s*<\/(?:[A-Za-z_][\w.-]*:)?Default>)/g
+const OVERRIDE_RE =
+	/<(?:[A-Za-z_][\w.-]*:)?Override\b([^>]*?)(?:\/>|>\s*<\/(?:[A-Za-z_][\w.-]*:)?Override>)/g
 
 export function parseContentTypes(xml: string): ContentTypes {
 	const defaults = new Map<string, string>()

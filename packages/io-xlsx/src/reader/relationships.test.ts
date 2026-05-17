@@ -71,6 +71,28 @@ describe('relationships', () => {
 		])
 	})
 
+	test('parses namespace-prefixed relationship elements', () => {
+		const rels = parseRelationships(`<?xml version="1.0" encoding="UTF-8"?>
+<pkg:Relationships xmlns:pkg="http://schemas.openxmlformats.org/package/2006/relationships">
+  <pkg:Relationship Id="rIdWorkbook" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+  <pkg:Relationship Id="rIdSheet" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml">
+  </pkg:Relationship>
+</pkg:Relationships>`)
+
+		expect(rels).toEqual([
+			{
+				id: 'rIdWorkbook',
+				type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument',
+				target: 'xl/workbook.xml',
+			},
+			{
+				id: 'rIdSheet',
+				type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet',
+				target: 'worksheets/sheet1.xml',
+			},
+		])
+	})
+
 	test('recognizes Excel external workbook path relationship types', () => {
 		expect(
 			isExternalLinkPathRelationshipType(

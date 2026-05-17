@@ -75,4 +75,23 @@ describe('content types', () => {
 			},
 		])
 	})
+
+	test('parses namespace-prefixed content type entries', () => {
+		const contentTypes = parseContentTypes(`<?xml version="1.0" encoding="UTF-8"?>
+<ct:Types xmlns:ct="http://schemas.openxmlformats.org/package/2006/content-types">
+  <ct:Default Extension="xml" ContentType="application/xml"/>
+  <ct:Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml">
+  </ct:Override>
+</ct:Types>`)
+
+		expect(contentTypes.defaultEntries).toEqual([
+			{ extension: 'xml', contentType: 'application/xml' },
+		])
+		expect(contentTypes.overrideEntries).toEqual([
+			{
+				partPath: 'xl/workbook.xml',
+				contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml',
+			},
+		])
+	})
 })

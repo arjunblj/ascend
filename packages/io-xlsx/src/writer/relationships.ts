@@ -56,7 +56,7 @@ function extractSourceRelationshipsRootAttrs(
 	sourceXml: string | undefined,
 ): readonly [string, string][] {
 	if (!sourceXml) return []
-	const rootMatch = /<Relationships\b([^>]*)>/i.exec(sourceXml)
+	const rootMatch = /<(?:[A-Za-z_][\w.-]*:)?Relationships\b([^>]*)>/i.exec(sourceXml)
 	if (!rootMatch) return []
 	const rawAttrs = rootMatch[1]
 	if (!rawAttrs) return []

@@ -143,7 +143,8 @@ const EXTERNAL_LINK_PATH_REL_TYPES = new Set([
 	REL_EXTERNAL_LINK_MISSING_PATH,
 ])
 
-const RELATIONSHIP_RE = /<Relationship\b([^>]*?)(?:\/>|>\s*<\/Relationship>)/g
+const RELATIONSHIP_RE =
+	/<(?:[A-Za-z_][\w.-]*:)?Relationship\b([^>]*?)(?:\/>|>\s*<\/(?:[A-Za-z_][\w.-]*:)?Relationship>)/g
 
 export function parseRelationships(xml: string): Relationship[] {
 	const rels: Relationship[] = []

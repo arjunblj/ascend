@@ -163,7 +163,7 @@ function buildTypesOpenTag(sourceXml: string | undefined): string {
 
 function extractSourceTypesRootAttrs(sourceXml: string | undefined): readonly [string, string][] {
 	if (!sourceXml) return []
-	const rootMatch = /<Types\b([^>]*)>/i.exec(sourceXml)
+	const rootMatch = /<(?:[A-Za-z_][\w.-]*:)?Types\b([^>]*)>/i.exec(sourceXml)
 	if (!rootMatch) return []
 	const rawAttrs = rootMatch[1]
 	if (!rawAttrs) return []

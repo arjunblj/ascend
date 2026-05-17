@@ -974,6 +974,10 @@ describe('release proof evidence index', () => {
 				acceptedScope: expect.stringContaining('adc9c1e1'),
 			}),
 			expect.objectContaining({
+				evidenceId: 'agent-safe-edit-example-proof',
+				acceptedScope: expect.stringContaining('b93f3493'),
+			}),
+			expect.objectContaining({
 				evidenceId: 'api-agent-safe-edit-example-proof',
 				acceptedScope: expect.stringContaining('01d08512'),
 				command: expect.stringContaining('examples/agent-safe-edit-http.ts'),
@@ -996,6 +1000,10 @@ describe('release proof evidence index', () => {
 				acceptedScope: expect.stringContaining('a8e15d9b'),
 			}),
 			expect.objectContaining({
+				evidenceId: 'api-agent-safe-edit-example-proof',
+				acceptedScope: expect.stringContaining('b93f3493'),
+			}),
+			expect.objectContaining({
 				evidenceId: 'mcp-agent-safe-edit-example-proof',
 				acceptedScope: expect.stringContaining('de45eb83'),
 				command: 'bun test examples/agent-safe-edit-mcp.test.ts --timeout 30000',
@@ -1012,6 +1020,10 @@ describe('release proof evidence index', () => {
 			expect.objectContaining({
 				evidenceId: 'mcp-agent-safe-edit-example-proof',
 				acceptedScope: expect.stringContaining('a8e15d9b'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'mcp-agent-safe-edit-example-proof',
+				acceptedScope: expect.stringContaining('b93f3493'),
 			}),
 			expect.objectContaining({
 				evidenceId: 'examples-package-safe-edit-scripts-proof',
@@ -1036,6 +1048,10 @@ describe('release proof evidence index', () => {
 				acceptedScope: expect.stringContaining('a8e15d9b'),
 			}),
 			expect.objectContaining({
+				evidenceId: 'examples-package-safe-edit-scripts-proof',
+				acceptedScope: expect.stringContaining('b93f3493'),
+			}),
+			expect.objectContaining({
 				evidenceId: 'root-package-safe-edit-scripts-proof',
 				acceptedScope: expect.stringContaining('a09660be'),
 				command: 'bun test examples/root-scripts.test.ts --timeout 30000',
@@ -1052,6 +1068,10 @@ describe('release proof evidence index', () => {
 			expect.objectContaining({
 				evidenceId: 'root-package-safe-edit-scripts-proof',
 				acceptedScope: expect.stringContaining('a8e15d9b'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'root-package-safe-edit-scripts-proof',
+				acceptedScope: expect.stringContaining('b93f3493'),
 			}),
 			expect.objectContaining({
 				evidenceId: 'workflow-example-proof-context',
@@ -1897,11 +1917,15 @@ describe('release proof evidence index', () => {
 						'1a620712',
 						'd519c5a7',
 						'62f45cb5',
+						'b93f3493',
 					]),
 					allowedWording: expect.stringMatching(
-						/workflow discovery that points agents to postWrite\.dataConnections, postWrite\.formulaState, and postWrite\.visuals.*workbook connection scheduling metadata edits/,
+						/workflow discovery that points agents to postWrite\.dataConnections, postWrite\.formulaState, and postWrite\.visuals.*generated safe-edit example output.*workbook connection scheduling metadata edits/,
 					),
 					evidenceProvesIt: expect.arrayContaining([
+						expect.stringContaining(
+							'examples/agent-safe-edit.test.ts examples/agent-safe-edit-http.test.ts',
+						),
 						expect.stringContaining(
 							'commits public workbook connection scheduling edits through save and reopen',
 						),
@@ -2623,6 +2647,9 @@ describe('release proof evidence index', () => {
 		expect(agentWorkflowEvidence).toContain(
 			'API and MCP trust-preflight workflow proof is accepted',
 		)
+		expect(agentWorkflowEvidence).toContain('b93f3493')
+		expect(agentWorkflowEvidence).toContain('Safe-edit post-write proof output is accepted')
+		expect(agentWorkflowEvidence).toContain('reopened-output dataConnections')
 		expect(agentWorkflowEvidence).toContain('caa08959')
 		expect(agentWorkflowEvidence).toContain('62566e09')
 		expect(agentWorkflowEvidence).toContain('hasConnectionString')

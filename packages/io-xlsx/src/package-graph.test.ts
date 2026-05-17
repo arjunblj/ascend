@@ -20,12 +20,22 @@ describe('XLSX package graph', () => {
   <Override PartName="/xl/customProperty1.bin" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.customProperty"/>
   <Override PartName="/xl/diagrams/data1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.diagramData+xml"/>
   <Override PartName="/xl/model/item.data" ContentType="application/vnd.ms-excel.model"/>
+  <Override PartName="/xl/opaque-model.payload" ContentType="application/vnd.ms-excel.model+data"/>
   <Override PartName="/xl/customData/item1.data" ContentType="application/vnd.ms-excel.customData"/>
+  <Override PartName="/xl/opaque-power-query.payload" ContentType="application/vnd.ms-excel.customData"/>
+  <Override PartName="/xl/opaque-table.payload" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml"/>
   <Override PartName="/xl/data/connectionsPayload.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.connections+xml"/>
   <Override PartName="/xl/opaque-connection.payload" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.connections+xml"/>
   <Override PartName="/xl/opaque-query.payload" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.queryTable+xml"/>
   <Override PartName="/xl/links/bookLink.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.externalLink+xml"/>
   <Override PartName="/xl/opaque-link.payload" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.externalLink+xml"/>
+  <Override PartName="/xl/opaque-pivot.payload" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.pivotCacheDefinition+xml"/>
+  <Override PartName="/xl/opaque-comments.payload" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.comments+xml"/>
+  <Override PartName="/xl/opaque-threaded.payload" ContentType="application/vnd.ms-excel.threadedcomments+xml"/>
+  <Override PartName="/xl/opaque-person.payload" ContentType="application/vnd.ms-excel.person+xml"/>
+  <Override PartName="/xl/opaque-calc.payload" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.calcChain+xml"/>
+  <Override PartName="/xl/opaque-sheet-meta.payload" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheetMetadata+xml"/>
+  <Override PartName="/xl/opaque-printer.payload" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.printerSettings"/>
   <Override PartName="/xl/revisions/revisionHeaders.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.revisionHeaders+xml"/>
 </Types>`,
 			'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -133,6 +143,9 @@ describe('XLSX package graph', () => {
 </Relationships>`,
 			'xl/model/opaque-model-table.bin': 'opaque-model-table-bytes',
 			'xl/customData/item1.data': 'power-query-bytes',
+			'xl/opaque-model.payload': 'model-by-content-type',
+			'xl/opaque-power-query.payload': 'power-query-by-content-type',
+			'xl/opaque-table.payload': '<table/>',
 			'xl/opaque-mashup.bin': 'opaque-power-query-bytes',
 			'xl/opaque-model.bin': 'opaque-data-model-bytes',
 			'xl/opaque-calc.bin': 'calc-chain-bytes',
@@ -151,6 +164,13 @@ describe('XLSX package graph', () => {
 			'xl/opaque-query.payload': '<queryTable/>',
 			'xl/links/bookLink.xml': '<externalLink/>',
 			'xl/opaque-link.payload': '<externalLink/>',
+			'xl/opaque-pivot.payload': '<pivotCacheDefinition/>',
+			'xl/opaque-comments.payload': '<comments/>',
+			'xl/opaque-threaded.payload': '<threadedComments/>',
+			'xl/opaque-person.payload': '<personList/>',
+			'xl/opaque-calc.payload': '<calcChain/>',
+			'xl/opaque-sheet-meta.payload': '<metadata/>',
+			'xl/opaque-printer.payload': 'printer-settings',
 			'xl/revisions/revisionHeaders.xml': '<headers/>',
 			'xl/opaque-revision.bin': 'revision-bytes',
 			'xl/opaque-slicer.bin': 'slicer-bytes',
@@ -751,6 +771,26 @@ describe('XLSX package graph', () => {
 			preservationPolicy: 'inspect-only',
 			bytePreservationExpected: true,
 		})
+		expect(graph.parts.find((part) => part.path === 'xl/opaque-model.payload')).toMatchObject({
+			ownerScope: 'unknown',
+			contentTypeSource: 'override',
+			featureFamily: 'preservedDataModel',
+			preservationPolicy: 'inspect-only',
+		})
+		expect(graph.parts.find((part) => part.path === 'xl/opaque-power-query.payload')).toMatchObject(
+			{
+				ownerScope: 'unknown',
+				contentTypeSource: 'override',
+				featureFamily: 'preservedPowerQuery',
+				preservationPolicy: 'inspect-only',
+			},
+		)
+		expect(graph.parts.find((part) => part.path === 'xl/opaque-table.payload')).toMatchObject({
+			ownerScope: 'unknown',
+			contentTypeSource: 'override',
+			featureFamily: 'preservedTable',
+			preservationPolicy: 'preserve-exact',
+		})
 		expect(graph.parts.find((part) => part.path === 'xl/opaque-mashup.bin')).toMatchObject({
 			ownerScope: 'analytics',
 			sourceRelationshipId: 'rIdPowerQueryOpaque',
@@ -881,6 +921,49 @@ describe('XLSX package graph', () => {
 			ownerScope: 'unknown',
 			contentTypeSource: 'override',
 			featureFamily: 'preservedExternalLink',
+			preservationPolicy: 'preserve-exact',
+		})
+		expect(graph.parts.find((part) => part.path === 'xl/opaque-pivot.payload')).toMatchObject({
+			ownerScope: 'unknown',
+			contentTypeSource: 'override',
+			featureFamily: 'preservedPivot',
+			preservationPolicy: 'preserve-exact',
+		})
+		expect(graph.parts.find((part) => part.path === 'xl/opaque-comments.payload')).toMatchObject({
+			ownerScope: 'unknown',
+			contentTypeSource: 'override',
+			featureFamily: 'preservedComments',
+			preservationPolicy: 'preserve-exact',
+		})
+		expect(graph.parts.find((part) => part.path === 'xl/opaque-threaded.payload')).toMatchObject({
+			ownerScope: 'unknown',
+			contentTypeSource: 'override',
+			featureFamily: 'preservedThreadedComments',
+			preservationPolicy: 'preserve-exact',
+		})
+		expect(graph.parts.find((part) => part.path === 'xl/opaque-person.payload')).toMatchObject({
+			ownerScope: 'unknown',
+			contentTypeSource: 'override',
+			featureFamily: 'preservedThreadedComments',
+			preservationPolicy: 'preserve-exact',
+		})
+		expect(graph.parts.find((part) => part.path === 'xl/opaque-calc.payload')).toMatchObject({
+			ownerScope: 'unknown',
+			contentTypeSource: 'override',
+			featureFamily: 'preservedCalcChain',
+			preservationPolicy: 'discard-on-recalc',
+			bytePreservationExpected: false,
+		})
+		expect(graph.parts.find((part) => part.path === 'xl/opaque-sheet-meta.payload')).toMatchObject({
+			ownerScope: 'unknown',
+			contentTypeSource: 'override',
+			featureFamily: 'preservedMetadata',
+			preservationPolicy: 'preserve-exact',
+		})
+		expect(graph.parts.find((part) => part.path === 'xl/opaque-printer.payload')).toMatchObject({
+			ownerScope: 'unknown',
+			contentTypeSource: 'override',
+			featureFamily: 'preservedPrinterSettings',
 			preservationPolicy: 'preserve-exact',
 		})
 		expect(

@@ -318,11 +318,14 @@ export function classifyPackageFeatureFamily(
 	if (
 		path.includes('/model/') ||
 		lowerRelType.endsWith('/relationships/model') ||
-		lowerRelType.endsWith('/relationships/modeltable')
+		lowerRelType.endsWith('/relationships/modeltable') ||
+		lowerContentType.includes('vnd.ms-excel.model')
 	) {
 		return 'preservedDataModel'
 	}
-	if (path.includes('/tables/')) return 'preservedTable'
+	if (path.includes('/tables/') || lowerContentType.includes('spreadsheetml.table')) {
+		return 'preservedTable'
+	}
 	if (
 		path.includes('/queryTables/') ||
 		lowerRelType.endsWith('/relationships/querytable') ||
@@ -331,8 +334,17 @@ export function classifyPackageFeatureFamily(
 		return 'preservedQueryTable'
 	}
 	if (lowerRelType.endsWith('/relationships/hyperlink')) return 'preservedHyperlink'
-	if (lowerRelType.endsWith('/relationships/comments')) return 'preservedComments'
-	if (lowerRelType.endsWith('/relationships/threadedcomment')) {
+	if (
+		lowerRelType.endsWith('/relationships/comments') ||
+		lowerContentType.includes('spreadsheetml.comments')
+	) {
+		return 'preservedComments'
+	}
+	if (
+		lowerRelType.endsWith('/relationships/threadedcomment') ||
+		lowerContentType.includes('ms-excel.threadedcomments') ||
+		lowerContentType.includes('ms-excel.person')
+	) {
 		return 'preservedThreadedComments'
 	}
 	if (/\/comments\d+\.xml$/i.test(path)) return 'preservedComments'
@@ -355,7 +367,11 @@ export function classifyPackageFeatureFamily(
 	) {
 		return 'preservedExternalLink'
 	}
-	if (/(^|\/)pivotTables\//.test(path) || /(^|\/)pivotCache\//.test(path)) {
+	if (
+		/(^|\/)pivotTables\//.test(path) ||
+		/(^|\/)pivotCache\//.test(path) ||
+		lowerContentType.includes('spreadsheetml.pivot')
+	) {
 		return 'preservedPivot'
 	}
 	if (
@@ -381,7 +397,11 @@ export function classifyPackageFeatureFamily(
 	) {
 		return 'preservedConnection'
 	}
-	if (path.includes('/customData/') || lowerRelType.endsWith('/relationships/powerquerymashup')) {
+	if (
+		path.includes('/customData/') ||
+		lowerRelType.endsWith('/relationships/powerquerymashup') ||
+		lowerContentType.includes('vnd.ms-excel.customdata')
+	) {
 		return 'preservedPowerQuery'
 	}
 	if (path.includes('/theme/')) return 'preservedTheme'
@@ -404,7 +424,10 @@ export function classifyPackageFeatureFamily(
 	) {
 		return 'preservedRevision'
 	}
-	if (path.endsWith('/calcChain.xml')) return 'preservedCalcChain'
+	if (path.endsWith('/calcChain.xml') || lowerContentType.includes('spreadsheetml.calcchain')) {
+		return 'preservedCalcChain'
+	}
+	if (lowerContentType.includes('spreadsheetml.sheetmetadata')) return 'preservedMetadata'
 	if (
 		path.includes('/vbaProjectSignature') ||
 		path.startsWith('_xmlsignatures/') ||
@@ -423,7 +446,8 @@ export function classifyPackageFeatureFamily(
 	}
 	if (
 		path.includes('/printerSettings/') ||
-		lowerRelType.endsWith('/relationships/printersettings')
+		lowerRelType.endsWith('/relationships/printersettings') ||
+		lowerContentType.includes('spreadsheetml.printersettings')
 	) {
 		return 'preservedPrinterSettings'
 	}

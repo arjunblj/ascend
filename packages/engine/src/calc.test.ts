@@ -1018,6 +1018,26 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(2, 1)?.value).toEqual(stringValue('no'))
 	})
 
+	test('text extraction functions spill over range operands in array formulas', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: stringValue('AX-100'), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: stringValue('BY-205'), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: stringValue('CZ-330'), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, {
+			value: EMPTY,
+			formula: 'LEFT(A1:A3,2)&MID(A1:A3,4,1)&RIGHT(A1:A3,1)',
+			styleId: sid,
+		})
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(0, 1)?.value).toEqual(stringValue('AX10'))
+		expect(sheet.cells.get(1, 1)?.value).toEqual(stringValue('BY25'))
+		expect(sheet.cells.get(2, 1)?.value).toEqual(stringValue('CZ30'))
+	})
+
 	test('FREQUENCY formulas can count unique filtered numeric ids from array expressions', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

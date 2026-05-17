@@ -44,6 +44,7 @@ import {
 	patch,
 	safeParseRange,
 } from './helpers.ts'
+import { handleInsertRows } from './structural-ops.ts'
 
 const EXCEL_MAX_ROWS = 1_048_576
 
@@ -137,6 +138,7 @@ export function handleAppendRows(
 		}
 	}
 	const affected = new Set<string>()
+	const sheetsModified = new Set<string>([sheet.name])
 	const originalEndRow = table.ref.end.row
 	const rowDelta = op.rows.length
 	const nextTableRef = {
@@ -165,8 +167,18 @@ export function handleAppendRows(
 	if (legacyArrayImpact) {
 		return err(legacyArrayFormulaEditError(legacyArrayImpact.targetRef, legacyArrayImpact.ref))
 	}
+	let activeTable = table
 	if (table.hasTotals) {
-		sheet.cells.insertRows(originalEndRow, op.rows.length)
+		const insertResult = handleInsertRows(workbook, {
+			op: 'insertRows',
+			sheet: sheet.name,
+			at: originalEndRow,
+			count: rowDelta,
+		})
+		if (!insertResult.ok) return insertResult
+		for (const ref of insertResult.value.affectedCells) affected.add(ref)
+		for (const sheetName of insertResult.value.sheetsModified) sheetsModified.add(sheetName)
+		activeTable = sheet.tables.find((candidate) => candidate.id === table.id) ?? table
 	}
 	for (const ref of materializeFormulaBindingGroupsForRangeEdit(workbook, sheet, appendRange)) {
 		affected.add(ref)
@@ -189,7 +201,7 @@ export function handleAppendRows(
 					),
 				)
 			} else {
-				const formula = table.columns[colOffset]?.formula
+				const formula = activeTable.columns[colOffset]?.formula
 				sheet.cells.set(
 					nextRow,
 					col,
@@ -208,21 +220,22 @@ export function handleAppendRows(
 	const tableIndex = sheet.tables.findIndex((candidate) => candidate.id === table.id)
 	if (tableIndex >= 0) {
 		sheet.ensureWritable()
-		const autoFilter = table.autoFilter
-			? resizeTableAutoFilter(table.autoFilter, table.ref, nextTableRef)
+		const currentTable = sheet.tables[tableIndex] ?? activeTable
+		const autoFilter = currentTable.autoFilter
+			? resizeTableAutoFilter(currentTable.autoFilter, currentTable.ref, nextTableRef)
 			: undefined
-		const sortState = resizeTableSortState(table.sortState, table.ref, nextTableRef)
+		const sortState = resizeTableSortState(currentTable.sortState, currentTable.ref, nextTableRef)
 		sheet.tables.splice(tableIndex, 1, {
-			...table,
+			...currentTable,
 			ref: {
-				start: table.ref.start,
+				start: currentTable.ref.start,
 				end: { row: originalEndRow + rowDelta, col: table.ref.end.col },
 			},
 			...(autoFilter ? { autoFilter } : {}),
 			...(sortState ? { sortState } : {}),
 		})
 	}
-	return ok(patch([...affected], [sheet.name], true))
+	return ok(patch([...affected], [...sheetsModified], true))
 }
 
 export function handleSortRange(

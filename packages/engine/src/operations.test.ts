@@ -10801,8 +10801,13 @@ describe('applyOperation', () => {
 	test('appendRows inserts before totals row when hasTotals', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')
+		const summary = wb.addSheet('Summary')
 		sheet.cells.set(0, 0, { value: stringValue('Name'), formula: null, styleId: sid })
 		sheet.cells.set(1, 0, { value: stringValue('Cash'), formula: null, styleId: sid })
+		sheet.comments.set('A2', { text: 'totals note' })
+		sheet.dataValidations.push({ sqref: 'A2', type: 'list', formula1: 'A2' })
+		summary.cells.set(0, 0, { value: EMPTY, formula: 'Sheet1!A2', styleId: sid })
+		wb.definedNames.set('TotalsCell', 'Sheet1!A2')
 		applyOperation(wb, {
 			op: 'createTable',
 			sheet: 'Sheet1',
@@ -10823,6 +10828,14 @@ describe('applyOperation', () => {
 		expect(sheet.tables[0]?.ref.end.row).toBe(2)
 		expect(sheet.cells.get(1, 0)?.value).toEqual(stringValue('Debt'))
 		expect(sheet.cells.get(2, 0)?.value).toEqual(stringValue('Cash'))
+		expect(sheet.comments.has('A2')).toBe(false)
+		expect(sheet.comments.get('A3')).toEqual({ text: 'totals note' })
+		expect(sheet.dataValidations[0]?.sqref).toBe('A3')
+		expect(sheet.dataValidations[0]?.formula1).toBe('A3')
+		expect(summary.cells.get(0, 0)?.formula).toBe('Sheet1!A3')
+		expect(wb.definedNames.get('TotalsCell')).toBe('Sheet1!A3')
+		expect(result.value.affectedCells).toContain('Summary!A1')
+		expect(result.value.sheetsModified).toEqual(['Sheet1', 'Summary'])
 	})
 
 	test('appendRows validates row width before shifting totals rows', () => {

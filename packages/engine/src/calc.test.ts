@@ -2527,6 +2527,122 @@ describe('recalculate', () => {
 		}
 	})
 
+	test('percentrank functions spill over lookup and significance arguments while preserving data ranges', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		const values = [1, 3, 2, 4, 8, 10]
+		const lookups = [2, 4, 8]
+		const significance = [3, 4, 2]
+		for (let row = 0; row < values.length; row++) {
+			sheet.cells.set(row, 0, {
+				value: numberValue(values[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+		}
+		for (let row = 0; row < lookups.length; row++) {
+			sheet.cells.set(row, 1, {
+				value: numberValue(lookups[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+			sheet.cells.set(row, 2, {
+				value: numberValue(significance[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+		}
+		const arrayFormulas = [
+			'PERCENTRANK(A1:A6,B1:B3,C1:C3)+0',
+			'PERCENTRANK.INC(A1:A6,B1:B3,C1:C3)+0',
+			'PERCENTRANK.EXC(A1:A6,B1:B3,C1:C3)+0',
+		]
+		const scalarFormulas = [
+			'PERCENTRANK(A1:A6,B{r},C{r})+0',
+			'PERCENTRANK.INC(A1:A6,B{r},C{r})+0',
+			'PERCENTRANK.EXC(A1:A6,B{r},C{r})+0',
+		]
+		for (let col = 0; col < arrayFormulas.length; col++) {
+			sheet.cells.set(0, 3 + col, {
+				value: EMPTY,
+				formula: arrayFormulas[col] as string,
+				styleId: sid,
+			})
+			for (let row = 0; row < lookups.length; row++) {
+				sheet.cells.set(row, 8 + col, {
+					value: EMPTY,
+					formula: (scalarFormulas[col] as string).replaceAll('{r}', String(row + 1)),
+					styleId: sid,
+				})
+			}
+		}
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		for (let row = 0; row < lookups.length; row++) {
+			for (let col = 0; col < arrayFormulas.length; col++) {
+				expect(sheet.cells.get(row, 3 + col)?.value).toEqual(sheet.cells.get(row, 8 + col)?.value)
+			}
+		}
+	})
+
+	test('top-level percentrank functions implicitly intersect lookup and significance ranges', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		const values = [1, 3, 2, 4, 8, 10]
+		const lookups = [2, 4, 8]
+		const significance = [3, 4, 2]
+		for (let row = 0; row < values.length; row++) {
+			sheet.cells.set(row, 0, {
+				value: numberValue(values[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+		}
+		for (let row = 0; row < lookups.length; row++) {
+			sheet.cells.set(row, 1, {
+				value: numberValue(lookups[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+			sheet.cells.set(row, 2, {
+				value: numberValue(significance[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+		}
+		const rangeFormulas = [
+			'PERCENTRANK(A1:A6,B1:B3,C1:C3)',
+			'PERCENTRANK.INC(A1:A6,B1:B3,C1:C3)',
+			'PERCENTRANK.EXC(A1:A6,B1:B3,C1:C3)',
+		]
+		const scalarFormulas = [
+			'PERCENTRANK(A1:A6,B2,C2)',
+			'PERCENTRANK.INC(A1:A6,B2,C2)',
+			'PERCENTRANK.EXC(A1:A6,B2,C2)',
+		]
+		for (let col = 0; col < rangeFormulas.length; col++) {
+			sheet.cells.set(1, 3 + col, {
+				value: EMPTY,
+				formula: rangeFormulas[col] as string,
+				styleId: sid,
+			})
+			sheet.cells.set(1, 8 + col, {
+				value: EMPTY,
+				formula: scalarFormulas[col] as string,
+				styleId: sid,
+			})
+		}
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		for (let col = 0; col < rangeFormulas.length; col++) {
+			expect(sheet.cells.get(1, 3 + col)?.value).toEqual(sheet.cells.get(1, 8 + col)?.value)
+		}
+	})
+
 	test('legacy statistical compatibility functions spill over range operands in array formulas', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

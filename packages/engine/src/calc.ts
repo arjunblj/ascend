@@ -712,6 +712,7 @@ const REFERENCE_RETURNING_FUNCTIONS = new Set(['INDEX', 'INDIRECT', 'OFFSET'])
 const ARRAY_MAPPING_FUNCTIONS = new Set([
 	'COLUMN',
 	'ERROR.TYPE',
+	'EXACT',
 	'FIND',
 	'IF',
 	'IFERROR',
@@ -732,6 +733,7 @@ const ARRAY_MAPPING_FUNCTIONS = new Set([
 	'LOWER',
 	'MID',
 	'N',
+	'PROPER',
 	'REPLACE',
 	'RIGHT',
 	'ROW',
@@ -741,6 +743,7 @@ const ARRAY_MAPPING_FUNCTIONS = new Set([
 	'SWITCH',
 	'TRIM',
 	'UPPER',
+	'VALUE',
 ])
 
 const REFERENCE_SENSITIVE_SHARED_FUNCTIONS = new Set(['INDIRECT', 'OFFSET'])

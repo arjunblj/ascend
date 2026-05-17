@@ -1102,6 +1102,43 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(2, 3)?.value).toEqual(stringValue('Q3-FY25-North'))
 	})
 
+	test('EXACT, PROPER, and VALUE spill over range operands in array formulas', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: stringValue('sku-01'), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: stringValue('SKU-02'), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: stringValue('sku-03'), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: stringValue('sku-01'), formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: stringValue('sku-02'), formula: null, styleId: sid })
+		sheet.cells.set(2, 1, { value: stringValue('SKU-03'), formula: null, styleId: sid })
+		sheet.cells.set(0, 3, { value: stringValue('$1,200'), formula: null, styleId: sid })
+		sheet.cells.set(1, 3, { value: stringValue('75%'), formula: null, styleId: sid })
+		sheet.cells.set(2, 3, { value: stringValue('40'), formula: null, styleId: sid })
+		sheet.cells.set(0, 4, { value: stringValue('north region'), formula: null, styleId: sid })
+		sheet.cells.set(1, 4, { value: stringValue('east region'), formula: null, styleId: sid })
+		sheet.cells.set(2, 4, { value: stringValue('south region'), formula: null, styleId: sid })
+		sheet.cells.set(0, 2, {
+			value: EMPTY,
+			formula: 'IF(EXACT(A1:A3,B1:B3),"same","diff")',
+			styleId: sid,
+		})
+		sheet.cells.set(0, 5, {
+			value: EMPTY,
+			formula: 'IF(VALUE(D1:D3)>100,PROPER(E1:E3),"small")',
+			styleId: sid,
+		})
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(0, 2)?.value).toEqual(stringValue('same'))
+		expect(sheet.cells.get(1, 2)?.value).toEqual(stringValue('diff'))
+		expect(sheet.cells.get(2, 2)?.value).toEqual(stringValue('diff'))
+		expect(sheet.cells.get(0, 5)?.value).toEqual(stringValue('North Region'))
+		expect(sheet.cells.get(1, 5)?.value).toEqual(stringValue('small'))
+		expect(sheet.cells.get(2, 5)?.value).toEqual(stringValue('small'))
+	})
+
 	test('FREQUENCY formulas can count unique filtered numeric ids from array expressions', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

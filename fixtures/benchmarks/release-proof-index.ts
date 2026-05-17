@@ -3680,6 +3680,17 @@ function packageActionQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceIte
 				'Package relationship and content-type classification evidence only; it does not execute active content, refresh Power Query or connections, understand Data Model semantics, edit custom UI or custom XML, render or edit drawings/images/charts, edit chart styles/colors, refresh slicers/timelines/pivots, author comments, execute or validate macro-sheet logic, prove shared-string generation equivalence, prove table/style/theme semantics, prove document-property or calc metadata freshness, validate external-link contents, verify signatures, or guarantee arbitrary unknown-part recovery.',
 		},
 		{
+			evidenceId: 'prefixed-shared-strings-reader-proof',
+			kind: 'test',
+			command:
+				'bun test packages/io-xlsx/src/reader/shared-strings.test.ts -t "byte parser falls back for prefixed SpreadsheetML shared strings" --timeout 30000',
+			path: 'packages/io-xlsx/src/reader/shared-strings.ts; packages/io-xlsx/src/reader/shared-strings.test.ts',
+			acceptedScope:
+				'Commit 6b9d5be9 proves the shared-string byte parser falls back to the XML parser for SpreadsheetML sharedStrings using alternate namespace prefixes, preserving plain and rich shared-string text values instead of treating the table as empty.',
+			boundary:
+				'Local shared-string namespace-prefix reader evidence only; it does not prove public workbook generality, shared-string write equivalence, rich text formatting fidelity, phonetic text parity, or arbitrary XML namespace compatibility.',
+		},
+		{
 			evidenceId: 'content-types-root-attribute-preservation-proof',
 			kind: 'test',
 			command:

@@ -1736,6 +1736,12 @@ describe('release proof evidence index', () => {
 					boundary: expect.stringContaining('does not execute active content'),
 				}),
 				expect.objectContaining({
+					evidenceId: 'prefixed-shared-strings-reader-proof',
+					acceptedScope: expect.stringContaining('6b9d5be9'),
+					command: expect.stringContaining('prefixed SpreadsheetML shared strings'),
+					boundary: expect.stringContaining('Local shared-string namespace-prefix reader'),
+				}),
+				expect.objectContaining({
 					evidenceId: 'content-types-root-attribute-preservation-proof',
 					acceptedScope: expect.stringMatching(/7b600b1b.*86d0cefc/),
 					command: expect.stringContaining('keeps extension attributes on content type entries'),

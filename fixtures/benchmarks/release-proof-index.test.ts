@@ -2003,9 +2003,11 @@ describe('release proof evidence index', () => {
 						'b553aafb',
 						'910ce4f2',
 						'0ad3ee36',
+						'2289b6f1',
 					]),
-					allowedWording: expect.stringContaining('SQRTPI'),
+					allowedWording: expect.stringContaining('NOT'),
 					evidenceProvesIt: expect.arrayContaining([
+						expect.stringContaining('NOT spills boolean masks'),
 						expect.stringContaining('common IS predicates spill boolean masks'),
 						expect.stringContaining('IFS spills results for array conditions'),
 						expect.stringContaining('FIND and SEARCH spill over range operands'),

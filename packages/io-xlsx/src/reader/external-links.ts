@@ -1,4 +1,4 @@
-import { asArray, attr, numAttr, parseXml, type XmlNode } from '../xml.ts'
+import { asArray, attr, boolAttr, numAttr, parseXml, type XmlNode } from '../xml.ts'
 import { parseXmlAttributes } from './xml-utils.ts'
 
 const NS_PREFIX = String.raw`(?:[A-Za-z_][\w.-]*:)?`
@@ -19,12 +19,20 @@ export interface ExternalLinkInfo {
 	readonly externalBookDefinedNames?: readonly ExternalBookDefinedNameInfo[]
 	readonly ddeService?: string
 	readonly ddeTopic?: string
+	readonly ddeItems?: readonly ExternalLinkDdeItemInfo[]
 }
 
 export interface ExternalBookDefinedNameInfo {
 	readonly name: string
 	readonly refersTo?: string
 	readonly sheetId?: number
+}
+
+export interface ExternalLinkDdeItemInfo {
+	readonly name: string
+	readonly advise?: boolean
+	readonly preferPicture?: boolean
+	readonly ole?: boolean
 }
 
 export function parseExternalBookRelationshipId(xml: string): string | undefined {
@@ -42,10 +50,12 @@ export function parseExternalLinkInfo(xml: string): ExternalLinkInfo | undefined
 	const attrs = parseXmlAttributes(rawAttrs)
 	const relationshipId = readRelationshipId(attrs, namespaces)
 	const externalBookMetadata = kind === 'externalBook' ? parseExternalBookMetadata(xml) : {}
+	const ddeMetadata = kind === 'ddeLink' ? parseDdeLinkMetadata(xml) : {}
 	return {
 		kind,
 		...(relationshipId ? { relationshipId } : {}),
 		...externalBookMetadata,
+		...ddeMetadata,
 		...(kind === 'ddeLink' && attrs.get('ddeService')
 			? { ddeService: attrs.get('ddeService') as string }
 			: {}),
@@ -53,6 +63,34 @@ export function parseExternalLinkInfo(xml: string): ExternalLinkInfo | undefined
 			? { ddeTopic: attrs.get('ddeTopic') as string }
 			: {}),
 	}
+}
+
+function parseDdeLinkMetadata(xml: string): Pick<ExternalLinkInfo, 'ddeItems'> {
+	let doc: XmlNode
+	try {
+		doc = parseXml(xml)
+	} catch {
+		return {}
+	}
+	const externalLink = firstElement(doc, 'externalLink')
+	const ddeLink = childNode(externalLink, 'ddeLink') ?? firstElement(doc, 'ddeLink')
+	if (!ddeLink) return {}
+	const ddeItems = childNodes(childNode(ddeLink, 'ddeItems'), 'ddeItem')
+		.map((node) => {
+			const name = attr(node, 'name')
+			if (!name) return undefined
+			const advise = boolAttr(node, 'advise')
+			const preferPicture = boolAttr(node, 'preferPic')
+			const ole = boolAttr(node, 'ole')
+			return {
+				name,
+				...(advise !== undefined ? { advise } : {}),
+				...(preferPicture !== undefined ? { preferPicture } : {}),
+				...(ole !== undefined ? { ole } : {}),
+			}
+		})
+		.filter((value): value is ExternalLinkDdeItemInfo => value !== undefined)
+	return ddeItems.length > 0 ? { ddeItems } : {}
 }
 
 function parseExternalBookMetadata(

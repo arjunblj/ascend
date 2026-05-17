@@ -321,6 +321,7 @@ export function readXlsxArchive(
 					? { externalLinkDdeService: externalLinkInfo.ddeService }
 					: {}),
 				...(externalLinkInfo?.ddeTopic ? { externalLinkDdeTopic: externalLinkInfo.ddeTopic } : {}),
+				...(externalLinkInfo?.ddeItems ? { externalLinkDdeItems: externalLinkInfo.ddeItems } : {}),
 				...(linkRelationship?.id ? { linkRelId: linkRelationship.id } : {}),
 				...(linkRelationship ? { linkRelationshipPart: getRelsPath(partPath) } : {}),
 				...(linkRelationship?.type

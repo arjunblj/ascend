@@ -86,12 +86,23 @@ describe('external link metadata', () => {
 	test('parses DDE and OLE external link source metadata', () => {
 		expect(
 			parseExternalLinkInfo(
-				'<externalLink xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><ddeLink ddeService="Excel" ddeTopic="Sheet1!R1C1"/></externalLink>',
+				`<externalLink xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <ddeLink ddeService="Excel" ddeTopic="Sheet1!R1C1">
+    <ddeItems count="2">
+      <ddeItem name="R1C1" advise="1" preferPic="0"/>
+      <ddeItem name="R2C1" ole="1"/>
+    </ddeItems>
+  </ddeLink>
+</externalLink>`,
 			),
 		).toEqual({
 			kind: 'ddeLink',
 			ddeService: 'Excel',
 			ddeTopic: 'Sheet1!R1C1',
+			ddeItems: [
+				{ name: 'R1C1', advise: true, preferPicture: false },
+				{ name: 'R2C1', ole: true },
+			],
 		})
 		expect(
 			parseExternalLinkInfo(
@@ -131,6 +142,34 @@ describe('external link metadata', () => {
 		})
 	})
 
+	test('inventories DDE external link item metadata across save and reopen', () => {
+		const source = readXlsx(ddeLinkWorkbook())
+		expectOk(source)
+		expect(source.value.workbook.externalReferenceDetails[0]).toMatchObject({
+			partPath: 'xl/externalLinks/externalLink1.xml',
+			externalLinkKind: 'ddeLink',
+			externalLinkDdeService: 'Excel',
+			externalLinkDdeTopic: 'Sheet1!R1C1',
+			externalLinkDdeItems: [
+				{ name: 'R1C1', advise: true, preferPicture: false },
+				{ name: 'R2C1', ole: true },
+			],
+			linkBindingStatus: 'missingPathRelationship',
+		})
+
+		const written = writeXlsx(source.value.workbook, source.value.capsules)
+		expectOk(written)
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+		expect(reopened.value.workbook.externalReferenceDetails[0]).toMatchObject({
+			externalLinkKind: 'ddeLink',
+			externalLinkDdeItems: [
+				{ name: 'R1C1', advise: true, preferPicture: false },
+				{ name: 'R2C1', ole: true },
+			],
+		})
+	})
+
 	test('inventories externalBook sheet and defined-name metadata across save and reopen', () => {
 		const source = readXlsx(externalBookWorkbook())
 		expectOk(source)
@@ -163,6 +202,45 @@ describe('external link metadata', () => {
 		})
 	})
 })
+
+function ddeLinkWorkbook(): Uint8Array {
+	return makeXlsx({
+		'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/externalLinks/externalLink1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.externalLink+xml"/>
+</Types>`,
+		'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+		'xl/workbook.xml': `<?xml version="1.0"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <externalReferences><externalReference r:id="rIdExternal"/></externalReferences>
+  <sheets><sheet name="Sheet1" sheetId="1" r:id="rIdSheet"/></sheets>
+</workbook>`,
+		'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSheet" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rIdExternal" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLink" Target="externalLinks/externalLink1.xml"/>
+</Relationships>`,
+		'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`,
+		'xl/externalLinks/externalLink1.xml': `<?xml version="1.0"?>
+<externalLink xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <ddeLink ddeService="Excel" ddeTopic="Sheet1!R1C1">
+    <ddeItems count="2">
+      <ddeItem name="R1C1" advise="1" preferPic="0"/>
+      <ddeItem name="R2C1" ole="1"/>
+    </ddeItems>
+  </ddeLink>
+</externalLink>`,
+	})
+}
 
 function externalLinkWorkbook(): Uint8Array {
 	return makeXlsx({

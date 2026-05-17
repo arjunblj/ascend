@@ -2261,14 +2261,14 @@ describe('readXlsx', () => {
 			'xl/workbook.xml': WORKBOOK_XML,
 			'xl/worksheets/sheet1.xml': `<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`,
 			'xl/slicerCaches/slicerCache1.xml': `<?xml version="1.0"?>
-<slicerCacheDefinition xmlns="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main" name="Slicer_Product_Category" sourceName="Product_Category">
-  <pivotTables><pivotTable name="PivotTable1"/></pivotTables>
-  <data><tabular pivotCacheId="1332190931"><items count="3"><i x="0" s="1"/><i x="1"/><i x="2" nd="1"/></items></tabular></data>
-</slicerCacheDefinition>`,
+<x14:slicerCacheDefinition xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main" name="Slicer_Product_Category" sourceName="Product_Category">
+  <x14:pivotTables><x14:pivotTable name="PivotTable1"/></x14:pivotTables>
+  <x14:data><x14:tabular pivotCacheId="1332190931"><x14:items count="3"><x14:i x="0" s="1"/><x14:i x="1"/><x14:i x="2" nd="1"/></x14:items></x14:tabular></x14:data>
+</x14:slicerCacheDefinition>`,
 			'xl/slicers/slicer1.xml': `<?xml version="1.0"?>
-<slicers xmlns="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main">
-  <slicer name="Product_Category" cache="Slicer_Product_Category" caption="Product Category"/>
-</slicers>`,
+<x14:slicers xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main">
+  <x14:slicer name="Product_Category" cache="Slicer_Product_Category" caption="Product Category"/>
+</x14:slicers>`,
 		})
 
 		const result = readXlsx(bytes)

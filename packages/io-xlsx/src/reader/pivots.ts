@@ -922,16 +922,12 @@ function localPart(name: string): string {
 
 export function parseSlicerCacheXml(xml: string, partPath: string): SlicerCacheInfo | null {
 	const doc = parseXml(xml)
-	const root = (doc.slicerCacheDefinition ??
-		doc['x14:slicerCacheDefinition'] ??
-		doc['s:slicerCacheDefinition']) as XmlNode | undefined
+	const root = childNode(doc, 'slicerCacheDefinition')
 	if (!root) return null
-	const pivotTablesNode = root.pivotTables as XmlNode | undefined
-	const pivotTableNodes = pivotTablesNode
-		? ((pivotTablesNode.pivotTable as XmlNode | XmlNode[] | undefined) ?? [])
-		: []
-	const dataNode = root.data as XmlNode | undefined
-	const tabular = dataNode ? ((dataNode.tabular as XmlNode | undefined) ?? undefined) : undefined
+	const pivotTablesNode = childNode(root, 'pivotTables')
+	const pivotTableNodes = childNodes(pivotTablesNode, 'pivotTable')
+	const dataNode = childNode(root, 'data')
+	const tabular = childNode(dataNode, 'tabular')
 	const parsed: {
 		partPath: string
 		name?: string
@@ -945,8 +941,7 @@ export function parseSlicerCacheXml(xml: string, partPath: string): SlicerCacheI
 		}[]
 	} = {
 		partPath,
-		pivotTableNames: (Array.isArray(pivotTableNodes) ? pivotTableNodes : [pivotTableNodes])
-			.filter(Boolean)
+		pivotTableNames: pivotTableNodes
 			.map((pivotTable) => attr(pivotTable as XmlNode, 'name') ?? '')
 			.filter(Boolean),
 	}
@@ -966,8 +961,8 @@ function parseSlicerCacheItems(tabular: XmlNode): {
 	readonly selected?: boolean
 	readonly noData?: boolean
 }[] {
-	const itemsNode = tabular.items as XmlNode | undefined
-	return asArray<XmlNode>(itemsNode?.i as XmlNode | XmlNode[] | undefined)
+	const itemsNode = childNode(tabular, 'items')
+	return childNodes(itemsNode, 'i')
 		.map((node) => {
 			const index = numAttr(node, 'x')
 			if (index === undefined) return null
@@ -983,11 +978,9 @@ function parseSlicerCacheItems(tabular: XmlNode): {
 
 export function parseSlicerXml(xml: string, partPath: string): readonly SlicerInfo[] {
 	const doc = parseXml(xml)
-	const root = (doc.slicers ?? doc['x14:slicers']) as XmlNode | undefined
+	const root = childNode(doc, 'slicers')
 	if (!root) return []
-	const slicerNodes = root.slicer as XmlNode | XmlNode[] | undefined
-	const nodes = Array.isArray(slicerNodes) ? slicerNodes : slicerNodes ? [slicerNodes] : []
-	return nodes.map((node) => {
+	return childNodes(root, 'slicer').map((node) => {
 		const parsed: {
 			partPath: string
 			name?: string
@@ -1006,16 +999,12 @@ export function parseSlicerXml(xml: string, partPath: string): readonly SlicerIn
 
 export function parseTimelineCacheXml(xml: string, partPath: string): TimelineCacheInfo | null {
 	const doc = parseXml(xml)
-	const root = (doc.timelineCacheDefinition ??
-		doc['x15:timelineCacheDefinition'] ??
-		doc['x14:timelineCacheDefinition']) as XmlNode | undefined
+	const root = childNode(doc, 'timelineCacheDefinition')
 	if (!root) return null
-	const pivotTablesNode = root.pivotTables as XmlNode | undefined
-	const pivotTableNodes = pivotTablesNode
-		? ((pivotTablesNode.pivotTable as XmlNode | XmlNode[] | undefined) ?? [])
-		: []
-	const dataNode = root.data as XmlNode | undefined
-	const tabular = dataNode ? ((dataNode.tabular as XmlNode | undefined) ?? undefined) : undefined
+	const pivotTablesNode = childNode(root, 'pivotTables')
+	const pivotTableNodes = childNodes(pivotTablesNode, 'pivotTable')
+	const dataNode = childNode(root, 'data')
+	const tabular = childNode(dataNode, 'tabular')
 	const stateNode = childNode(root, 'state')
 	const parsed: {
 		partPath: string
@@ -1026,8 +1015,7 @@ export function parseTimelineCacheXml(xml: string, partPath: string): TimelineCa
 		state?: TimelineStateInfo
 	} = {
 		partPath,
-		pivotTableNames: (Array.isArray(pivotTableNodes) ? pivotTableNodes : [pivotTableNodes])
-			.filter(Boolean)
+		pivotTableNames: pivotTableNodes
 			.map((pivotTable) => attr(pivotTable as XmlNode, 'name') ?? '')
 			.filter(Boolean),
 	}
@@ -1079,13 +1067,9 @@ function parseTimelineRange(node: XmlNode | undefined): TimelineRangeInfo | unde
 
 export function parseTimelineXml(xml: string, partPath: string): readonly TimelineInfo[] {
 	const doc = parseXml(xml)
-	const root = (doc.timelines ?? doc['x15:timelines'] ?? doc['x14:timelines']) as
-		| XmlNode
-		| undefined
+	const root = childNode(doc, 'timelines')
 	if (!root) return []
-	const timelineNodes = root.timeline as XmlNode | XmlNode[] | undefined
-	const nodes = Array.isArray(timelineNodes) ? timelineNodes : timelineNodes ? [timelineNodes] : []
-	return nodes.map((node) => {
+	return childNodes(root, 'timeline').map((node) => {
 		const parsed: {
 			partPath: string
 			name?: string

@@ -36,18 +36,18 @@ describe('timeline inventory', () => {
 </workbook>`,
 			'xl/worksheets/sheet1.xml': `<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`,
 			'xl/timelineCaches/timelineCache1.xml': `<?xml version="1.0"?>
-<timelineCacheDefinition xmlns="http://schemas.microsoft.com/office/spreadsheetml/2010/11/main" name="Timeline_Order_Date" sourceName="Order Date">
-  <data><tabular pivotCacheId="3"/></data>
-  <pivotTables><pivotTable name="PivotTable1"/></pivotTables>
-  <state filterId="7" filterPivotName="PivotTable1" filterType="dateRange" filterTabId="2" lastRefreshVersion="6" minimalRefreshVersion="4" pivotCacheId="3" singleRangeFilterState="1">
-    <selection startDate="2024-01-01T00:00:00" endDate="2024-03-31T00:00:00"/>
-    <bounds startDate="2023-01-01T00:00:00" endDate="2024-12-31T00:00:00"/>
-  </state>
-</timelineCacheDefinition>`,
+<x15:timelineCacheDefinition xmlns:x15="http://schemas.microsoft.com/office/spreadsheetml/2010/11/main" name="Timeline_Order_Date" sourceName="Order Date">
+  <x15:data><x15:tabular pivotCacheId="3"/></x15:data>
+  <x15:pivotTables><x15:pivotTable name="PivotTable1"/></x15:pivotTables>
+  <x15:state filterId="7" filterPivotName="PivotTable1" filterType="dateRange" filterTabId="2" lastRefreshVersion="6" minimalRefreshVersion="4" pivotCacheId="3" singleRangeFilterState="1">
+    <x15:selection startDate="2024-01-01T00:00:00" endDate="2024-03-31T00:00:00"/>
+    <x15:bounds startDate="2023-01-01T00:00:00" endDate="2024-12-31T00:00:00"/>
+  </x15:state>
+</x15:timelineCacheDefinition>`,
 			'xl/timelines/timeline1.xml': `<?xml version="1.0"?>
-<timelines xmlns="http://schemas.microsoft.com/office/spreadsheetml/2010/11/main">
-  <timeline name="Order_Date" cache="Timeline_Order_Date" caption="Order Date"/>
-</timelines>`,
+<x15:timelines xmlns:x15="http://schemas.microsoft.com/office/spreadsheetml/2010/11/main">
+  <x15:timeline name="Order_Date" cache="Timeline_Order_Date" caption="Order Date"/>
+</x15:timelines>`,
 		})
 
 		const result = readXlsx(bytes)

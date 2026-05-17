@@ -65,10 +65,10 @@ describe('performance claim baseline matrix', () => {
 			'Current harness evidence now supports a SheetJS feature-rich rich-metadata row',
 		)
 		expect(markdown).toContain(
-			'Current focused JS `feature-rich` write evidence is a quality boundary',
+			'Current focused external JS/Rust `feature-rich` write evidence is a quality',
 		)
 		expect(markdown).toContain(
-			'ExcelJS runs but is semantically ineligible because it misses a\n  tracked comment obligation',
+			'ExcelJS runs in an external process and emits the tracked rich\n  metadata parts, but remains semantically ineligible because it misses the\n  tracked comment obligation',
 		)
 		expect(markdown).toContain(
 			'Current focused `plain-text` and `string-heavy` write coverage proves\n  ClosedXML and NPOI now run and pass validation',
@@ -794,6 +794,38 @@ describe('performance claim baseline matrix', () => {
 		expect(markdown).toContain('"Ascend beats SheetJS on table-heavy writes."')
 		expect(markdown).toContain(
 			'"Ascend uses less memory than rust_xlsxwriter on table-heavy writes."',
+		)
+
+		expect(markdown).toContain(
+			'## Cycle: External Feature Rich JS/Rust Write Quality Boundary at `6bdb5e57`',
+		)
+		expect(markdown).toContain(
+			'Classification: comparable external-process quality boundary plus defer',
+		)
+		expect(markdown).toContain(
+			'/private/tmp/ascend-write-feature-js-rust-current-6bdb5e57-runs/write-feature-rich-js-rust-repeat15.json',
+		)
+		expect(markdown).toContain(
+			'/private/tmp/ascend-write-feature-js-rust-current-6bdb5e57-runs/write-feature-rich-js-rust-repeat15-p95-scoreboard.json',
+		)
+		expect(markdown).toContain(
+			'Runner versions: ExcelJS `4.4.0`; Ascend writer `workspace`. SheetJS `0.18.5`\n  and rust_xlsxwriter `0.1.0` were skipped before timing because their runner',
+		)
+		expect(markdown).toContain(
+			'| `ascend-external-writer` | ran/pass, eligible winner | 7.716 | 8.191 | 0.027 | 170.8 MiB | 271114 |',
+		)
+		expect(markdown).toContain(
+			'| `exceljs` | ran/semantic-mismatch, not ranking eligible | 68.252 | 69.609 | 0.015 | 291.0 MiB | 123692 |',
+		)
+		expect(markdown).toContain(
+			'| `rust-xlsxwriter` | unsupported by harness | n/a | n/a | n/a | n/a | n/a | skipped: runner does not declare `writeRichMetadata=true` |',
+		)
+		expect(markdown).toContain(
+			'ExcelJS also emitted one comments part, one VML drawing part, one\nworksheet hyperlink, one data validation, one conditional formatting block, and\none defined name',
+		)
+		expect(markdown).toContain('"Ascend beats rust_xlsxwriter on feature-rich writes."')
+		expect(markdown).toContain(
+			'"rust_xlsxwriter is feature-rich-write comparable for this release claim."',
 		)
 
 		expect(markdown).toContain('## Cycle: Feature Rich JS Write Quality Boundary at `9fabfc8e`')

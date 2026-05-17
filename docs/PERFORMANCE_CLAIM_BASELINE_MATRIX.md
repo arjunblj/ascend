@@ -61,10 +61,12 @@ No broad XLSX read, XLSX write, SOTA, or QSS-leapfrog speed claim is promotable 
   contract. Ascend beats SheetJS and OpenPyXL on that row, but the metadata-only
   speed claim remains downgraded against the Rust floor.
 - Current harness evidence now supports a SheetJS feature-rich rich-metadata row using SheetJS `bookFiles`; older SheetJS `semantic-mismatch` wording is historical for the pre-runner-fix cycles. Calamine-family rich-metadata rows remain not comparable.
-- Current focused JS `feature-rich` write evidence is a quality boundary:
-  SheetJS is explicitly unsupported for the tracked rich-metadata write
-  contract, and ExcelJS runs but is semantically ineligible because it misses a
-  tracked comment obligation. Do not count that as a speed win over JS writers.
+- Current focused external JS/Rust `feature-rich` write evidence is a quality
+  boundary: ExcelJS runs in an external process and emits the tracked rich
+  metadata parts, but remains semantically ineligible because it misses the
+  tracked comment obligation. SheetJS and rust_xlsxwriter are explicitly
+  unsupported for this rich-metadata write contract. Do not count this as a
+  speed win over JS or Rust writers.
 - Current formula/calc evidence includes focused HyperFormula indexed
   `INDEX/MATCH`, indexed dirty-key/dirty-value edits, prefix-range full-calc
   `SUM`, and prefix-range dirty-head/dirty-tail rows. They are useful
@@ -91,6 +93,122 @@ Forbidden wording:
 - Any wording that treats failed or unavailable runners as wins.
 
 Next action: downgrade the broad speed claim and stop production optimization from winning rows. Continue only if the performance loop is explicitly attacking a remaining claim blocker or measured loss: ClosedXML coverage, feature-rich semantic mismatches for SheetJS/Calamine, metadata-only versus Calamine, remaining unsupported selected-sheet/metadata-only competitors, or FastXLSX environment coverage.
+
+## Cycle: External Feature Rich JS/Rust Write Quality Boundary at `6bdb5e57`
+
+Classification: comparable external-process quality boundary plus defer. No
+production optimization is justified because Ascend is the only ranking-eligible
+runner for the tracked feature-rich write contract. ExcelJS is timed and writes
+the same values plus rich metadata parts, but it remains semantically ineligible
+because the comment obligation fails. SheetJS and rust_xlsxwriter are explicit
+unsupported skips for this contract.
+
+Workflow: generated XLSX write for feature-rich workbooks, 2000 rows x 20
+columns, including defined name, hyperlink, comment, data validation, and
+conditional formatting obligations.
+
+Why it matters for release: this is the JS/Rust floor for user-visible rich
+headless export quality. A value-equivalent writer is not enough for Ascend's
+feature-rich write claim when comments, validations, conditional formatting,
+hyperlinks, and defined names are part of the workbook contract.
+
+Public/tracked-clean input: `competitive-io` generated the `feature-rich`
+workload from tracked benchmark code in a clean detached worktree at commit
+`6bdb5e575a61cc6493b82c38bb980e648917f624`. No private corpus or local
+research workbook was used.
+
+Commands:
+
+```bash
+git worktree add --detach /private/tmp/ascend-write-feature-js-rust-current-6bdb5e57 6bdb5e575a61cc6493b82c38bb980e648917f624
+cd /private/tmp/ascend-write-feature-js-rust-current-6bdb5e57
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun install --frozen-lockfile
+mkdir -p /private/tmp/ascend-write-feature-js-rust-current-6bdb5e57-runs
+TMPDIR=/private/tmp ACCEPT_NPOI_OSMF_LICENSE=1 env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /usr/bin/time -l /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-io.ts --json --category write --competitor all --execution-scope external-process --source-mode generated-write --libraries ascend-external-writer,sheetjs,exceljs,rust-xlsxwriter --workload feature-rich --repeat 15 --warmup 3 --validation-mode each --write-runner-manifest fixtures/benchmarks/runners/sota-writers.manifest.json > /private/tmp/ascend-write-feature-js-rust-current-6bdb5e57-runs/write-feature-rich-js-rust-repeat15.json 2> /private/tmp/ascend-write-feature-js-rust-current-6bdb5e57-runs/write-feature-rich-js-rust-repeat15-time.txt
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-scoreboard.ts /private/tmp/ascend-write-feature-js-rust-current-6bdb5e57-runs/write-feature-rich-js-rust-repeat15.json --json --metric medianMs --assert-leader ascend > /private/tmp/ascend-write-feature-js-rust-current-6bdb5e57-runs/write-feature-rich-js-rust-repeat15-scoreboard.json
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-scoreboard.ts /private/tmp/ascend-write-feature-js-rust-current-6bdb5e57-runs/write-feature-rich-js-rust-repeat15.json --json --metric p95Ms --assert-leader ascend > /private/tmp/ascend-write-feature-js-rust-current-6bdb5e57-runs/write-feature-rich-js-rust-repeat15-p95-scoreboard.json
+```
+
+Environment:
+
+- Commit: `6bdb5e575a61cc6493b82c38bb980e648917f624`
+- Worktree: clean detached worktree at
+  `/private/tmp/ascend-write-feature-js-rust-current-6bdb5e57`; `git status
+  --short --branch` reported `## HEAD (no branch)`.
+- Bun runtime: `1.3.13`
+- Node: `26.0.0`
+- Platform: Darwin arm64, macOS kernel `25.4.0`
+- Runner versions: ExcelJS `4.4.0`; Ascend writer `workspace`. SheetJS `0.18.5`
+  and rust_xlsxwriter `0.1.0` were skipped before timing because their runner
+  capabilities do not declare `writeRichMetadata=true`.
+- Runtime profile: `category write`, `executionScope external-process`,
+  `sourceMode generated-write`, `workload feature-rich`, `repeat 15`,
+  `warmup 3`, `validationMode each`.
+
+Raw output:
+
+```text
+/private/tmp/ascend-write-feature-js-rust-current-6bdb5e57-runs/write-feature-rich-js-rust-repeat15.json
+/private/tmp/ascend-write-feature-js-rust-current-6bdb5e57-runs/write-feature-rich-js-rust-repeat15-time.txt
+/private/tmp/ascend-write-feature-js-rust-current-6bdb5e57-runs/write-feature-rich-js-rust-repeat15-scoreboard.json
+/private/tmp/ascend-write-feature-js-rust-current-6bdb5e57-runs/write-feature-rich-js-rust-repeat15-p95-scoreboard.json
+```
+
+Focused external JS/Rust feature-rich write row, repeat 15 after 3 warmups:
+
+| Runner | Status | Median ms | P95 ms | CV | Peak RSS | Output bytes | Feature result |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
+| `ascend-external-writer` | ran/pass, eligible winner | 7.716 | 8.191 | 0.027 | 170.8 MiB | 271114 | all tracked feature obligations pass |
+| `exceljs` | ran/semantic-mismatch, not ranking eligible | 68.252 | 69.609 | 0.015 | 291.0 MiB | 123692 | values, order, hyperlink, defined name, validation, conditional formatting, and comment part pass; comment semantic obligation fails |
+| `sheetjs` | unsupported by harness | n/a | n/a | n/a | n/a | n/a | skipped: runner does not declare `writeRichMetadata=true` |
+| `rust-xlsxwriter` | unsupported by harness | n/a | n/a | n/a | n/a | n/a | skipped: runner does not declare `writeRichMetadata=true` |
+
+Process-level `/usr/bin/time -l`: `2.64 real`, `3.61 user`, `0.31 sys`,
+`321929216` maximum resident set size, `124191560` peak memory footprint.
+
+Scoreboard result:
+
+- Median scoreboard: feature-rich group winner was `ascend-external-writer`;
+  `leaderFailures: []`, `profileLeaderFailures: []`.
+- P95 scoreboard: feature-rich group winner was `ascend-external-writer`;
+  `leaderFailures: []`, `profileLeaderFailures: []`.
+- ExcelJS had `correctnessStatus: semantic-mismatch` and
+  `rankingEligible: false`, so its slower timing is not counted as a speed
+  win.
+
+Semantic comparability: Ascend and ExcelJS both wrote the generated
+feature-rich 40,000-cell value grid and matched sorted and ordered semantic
+cell hashes. ExcelJS also emitted one comments part, one VML drawing part, one
+worksheet hyperlink, one data validation, one conditional formatting block, and
+one defined name. It is not comparable for the tracked contract because
+`featureRichSemanticMatches=false` and `featureRichCommentMatches=false`.
+SheetJS and rust_xlsxwriter were skipped before timing and are not counted as
+losses or wins.
+
+Humble allowed wording:
+
+> On the generated external-process `feature-rich` write row at commit
+> `6bdb5e57`, ExcelJS `4.4.0` wrote the values and emitted the tracked rich
+> metadata parts, but missed the tracked comment semantic obligation, so it was
+> marked semantically ineligible. SheetJS and rust_xlsxwriter were unsupported
+> for the tracked rich-metadata write contract. This is a JS/Rust feature-rich
+> write quality boundary, not a speed win over JS or Rust writers.
+
+Forbidden wording:
+
+- "Ascend beats ExcelJS on feature-rich write speed."
+- "Ascend beats SheetJS on feature-rich writes."
+- "Ascend beats rust_xlsxwriter on feature-rich writes."
+- "ExcelJS is feature-rich-write comparable for this release claim."
+- "SheetJS is feature-rich-write comparable for this release claim."
+- "rust_xlsxwriter is feature-rich-write comparable for this release claim."
+- "Ascend beats every JS/Rust writer on feature-rich writes."
+- "Ascend produces the smallest feature-rich XLSX."
+
+Next action: keep feature-rich write wording honest. Move to another JS/Rust
+floor row or improve a competitor runner only if the library can natively emit
+the full tracked rich-metadata contract; do not treat unsupported or
+semantically ineligible output as a speed win.
 
 ## Cycle: Formula SOTA Indexed Lookup HyperFormula Row at `cd1c0415`
 

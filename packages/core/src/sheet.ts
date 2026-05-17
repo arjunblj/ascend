@@ -720,6 +720,10 @@ export class Sheet {
 		this.preservedCellMetadata = new Map(
 			[...this.preservedCellMetadata.entries()].map(([key, attrs]) => [key, { ...attrs }]),
 		)
+		this.sheetView = this.sheetView ? { ...this.sheetView } : null
+		this.tabColor = this.tabColor ? { ...this.tabColor } : null
+		this.outlinePr = this.outlinePr ? { ...this.outlinePr } : null
+		this.sheetFormatPr = this.sheetFormatPr ? { ...this.sheetFormatPr } : null
 		this.comments = new Map(
 			[...this.comments.entries()].map(([ref, comment]) => [ref, cloneSheetComment(comment)]),
 		)
@@ -746,6 +750,7 @@ export class Sheet {
 		this.x14ConditionalFormats = this.x14ConditionalFormats.map(cloneX14ConditionalFormatInfo)
 		this.x14DataValidations = this.x14DataValidations.map(cloneX14DataValidationInfo)
 		this.advancedFilters = this.advancedFilters.map(cloneAdvancedFilterInfo)
+		this.drawingRefs = { ...this.drawingRefs }
 		this.autoFilter = this.autoFilter ? cloneAutoFilter(this.autoFilter) : null
 		this.preservedAutoFilterSortStateAttributes = this.preservedAutoFilterSortStateAttributes
 			? { ...this.preservedAutoFilterSortStateAttributes }
@@ -756,7 +761,11 @@ export class Sheet {
 			: null
 		this.protection = this.protection ? { ...this.protection } : null
 		this.protectedRanges = this.protectedRanges.map((range) => ({ ...range }))
+		this.pageMargins = this.pageMargins ? { ...this.pageMargins } : null
+		this.pageSetup = this.pageSetup ? { ...this.pageSetup } : null
 		this.pageSetupPr = this.pageSetupPr ? { ...this.pageSetupPr } : null
+		this.printOptions = this.printOptions ? { ...this.printOptions } : null
+		this.headerFooter = this.headerFooter ? { ...this.headerFooter } : null
 		this.phoneticPr = this.phoneticPr ? { ...this.phoneticPr } : null
 		this._shared = false
 	}

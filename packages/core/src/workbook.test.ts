@@ -6,9 +6,18 @@ describe('Workbook.clone', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')
 		sheet.autoFilter = { ref: 'A1:B3', columns: [], sortState: { ref: 'A2:B3', conditions: [] } }
+		sheet.sheetView = { zoomScale: 125, showGridLines: false }
 		sheet.preservedSheetViewSelections = [{ pane: 'bottomRight', activeCell: 'B2', sqref: 'B2' }]
 		sheet.preservedCellMetadata.set('0:0', { cm: 1 })
+		sheet.tabColor = { rgb: 'FFFF0000' }
+		sheet.outlinePr = { summaryBelow: false }
+		sheet.sheetFormatPr = { defaultRowHeight: 15 }
+		sheet.drawingRefs = { hasDrawing: true, hasLegacyDrawing: false }
+		sheet.pageMargins = { left: 0.7, right: 0.7 }
+		sheet.pageSetup = { paperSize: 9, orientation: 'portrait' }
 		sheet.pageSetupPr = { fitToPage: true, autoPageBreaks: false }
+		sheet.printOptions = { gridLines: true }
+		sheet.headerFooter = { oddHeader: '&CReport' }
 		sheet.tables.push({
 			id: createTableId(),
 			name: 'Data',
@@ -36,14 +45,32 @@ describe('Workbook.clone', () => {
 		;(cloneSheet.autoFilter as { ref: string }).ref = 'C1:D3'
 		;(cloneSheet.preservedSheetViewSelections?.[0] as { activeCell: string }).activeCell = 'C3'
 		;(cloneSheet.preservedCellMetadata.get('0:0') as { cm: number }).cm = 2
+		;(cloneSheet.sheetView as { zoomScale: number }).zoomScale = 90
+		;(cloneSheet.tabColor as { rgb: string }).rgb = 'FF00FF00'
+		;(cloneSheet.outlinePr as { summaryBelow: boolean }).summaryBelow = true
+		;(cloneSheet.sheetFormatPr as { defaultRowHeight: number }).defaultRowHeight = 20
+		;(cloneSheet.drawingRefs as { hasDrawing: boolean }).hasDrawing = false
+		;(cloneSheet.pageMargins as { left: number }).left = 1.25
+		;(cloneSheet.pageSetup as { paperSize: number }).paperSize = 5
 		;(cloneSheet.pageSetupPr as { fitToPage: boolean }).fitToPage = false
+		;(cloneSheet.printOptions as { gridLines: boolean }).gridLines = false
+		;(cloneSheet.headerFooter as { oddHeader: string }).oddHeader = '&CChanged'
 
 		expect(sheet.tables[0]?.ref.start.row).toBe(0)
 		expect(sheet.tables[0]?.columns[0]?.name).toBe('Name')
 		expect(sheet.autoFilter?.ref).toBe('A1:B3')
 		expect(sheet.preservedSheetViewSelections?.[0]?.activeCell).toBe('B2')
 		expect(sheet.preservedCellMetadata.get('0:0')?.cm).toBe(1)
+		expect(sheet.sheetView?.zoomScale).toBe(125)
+		expect(sheet.tabColor?.rgb).toBe('FFFF0000')
+		expect(sheet.outlinePr?.summaryBelow).toBe(false)
+		expect(sheet.sheetFormatPr?.defaultRowHeight).toBe(15)
+		expect(sheet.drawingRefs.hasDrawing).toBe(true)
+		expect(sheet.pageMargins?.left).toBe(0.7)
+		expect(sheet.pageSetup?.paperSize).toBe(9)
 		expect(sheet.pageSetupPr?.fitToPage).toBe(true)
+		expect(sheet.printOptions?.gridLines).toBe(true)
+		expect(sheet.headerFooter?.oddHeader).toBe('&CReport')
 	})
 
 	test('clones workbook settings and preserved metadata without aliasing', () => {

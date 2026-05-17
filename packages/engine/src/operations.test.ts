@@ -3212,6 +3212,30 @@ describe('applyOperation', () => {
 		}
 	})
 
+	test('range transfers reject out-of-grid ranges before mutation', () => {
+		const operations: readonly Extract<Operation, { op: 'copyRange' | 'moveRange' }>[] = [
+			{ op: 'copyRange', sheet: 'Sheet1', source: 'XFE1:XFE1', target: 'A1' },
+			{ op: 'copyRange', sheet: 'Sheet1', source: 'A1:B1', target: 'XFD1' },
+			{ op: 'moveRange', sheet: 'Sheet1', source: 'A1:A2', target: 'A1048576' },
+		]
+
+		for (const op of operations) {
+			const wb = setup()
+			const sheet = wb.getSheet('Sheet1')
+			if (!sheet) throw new Error('missing sheet')
+			const beforeCells = [...sheet.cells.iterate()]
+
+			const result = applyOperation(wb, op)
+
+			expectErr(result)
+			expect(result.error.code, op.op).toBe('INVALID_RANGE')
+			expect(result.error.details, op.op).toMatchObject({
+				kind: 'range-transfer-out-of-bounds',
+			})
+			expect([...sheet.cells.iterate()], op.op).toEqual(beforeCells)
+		}
+	})
+
 	test('copyRange can paste formats without changing values or formulas', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

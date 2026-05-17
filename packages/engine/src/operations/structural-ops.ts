@@ -64,6 +64,9 @@ import {
 	translateFormula,
 } from './helpers.ts'
 
+const EXCEL_MAX_ROWS = 1_048_576
+const EXCEL_MAX_COLS = 16_384
+
 function applyAxisShift(
 	workbook: Workbook,
 	sheetName: string,
@@ -214,6 +217,32 @@ function validateAxisSpan(axis: 'row' | 'col', at: number, count: number) {
 	return null
 }
 
+function validateTransferRangeWithinGrid(range: RangeRef, role: 'source' | 'target') {
+	if (
+		range.start.row >= 0 &&
+		range.end.row < EXCEL_MAX_ROWS &&
+		range.start.col >= 0 &&
+		range.end.col < EXCEL_MAX_COLS
+	) {
+		return null
+	}
+	const ref = rangeToA1(range)
+	return ascendError(
+		'INVALID_RANGE',
+		`Cannot transfer ${role} range ${ref} because it is outside Excel worksheet bounds`,
+		{
+			refs: [ref],
+			suggestedFix: `Choose a ${role} range within A1:XFD1048576.`,
+			details: {
+				kind: 'range-transfer-out-of-bounds',
+				role,
+				ref,
+				maxRef: 'XFD1048576',
+			},
+		},
+	)
+}
+
 export function handleInsertRows(
 	workbook: Workbook,
 	op: Extract<Operation, { op: 'insertRows' }>,
@@ -262,15 +291,19 @@ export function handleTransferRange(
 	if (!targetStartResult.ok) return targetStartResult
 	const targetStart = targetStartResult.value
 	const source = sourceResult.value
+	const sourceBoundsError = validateTransferRangeWithinGrid(source, 'source')
+	if (sourceBoundsError) return err(sourceBoundsError)
 	const rowDelta = targetStart.row - source.start.row
 	const colDelta = targetStart.col - source.start.col
+	const targetRange = shiftRange(source, rowDelta, colDelta)
+	const targetBoundsError = validateTransferRangeWithinGrid(targetRange, 'target')
+	if (targetBoundsError) return err(targetBoundsError)
 	const mode = op.mode ?? 'all'
 	const affected = new Set<string>()
 	const sheetsModified = new Set<string>([sourceSheet.name, targetSheet.name])
 
 	if (overwritesTargetFormulas(mode) || (op.op === 'moveRange' && clearsSourceCellContent(mode))) {
 		const targetLegacyArrayIndex = createLegacyArrayFormulaIndex(targetSheet)
-		const targetRange = shiftRange(source, rowDelta, colDelta)
 		if (overwritesTargetFormulas(mode)) {
 			const blockedTarget = targetLegacyArrayIndex.findIntersection(targetRange)
 			if (blockedTarget) {

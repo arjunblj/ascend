@@ -7,7 +7,8 @@ import {
 import { asArray, attr, boolAttr, parseXml, type XmlNode } from '../xml.ts'
 import { normalizeMainSpreadsheetNamespacePrefix } from './xml-utils.ts'
 
-const VML_SHAPE_RE = /<v:shape\b([^>]*)>([\s\S]*?)<\/v:shape>/gi
+const VML_SHAPE_RE =
+	/<(?:[A-Za-z_][\w.-]*:)?shape\b([^>]*)>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?shape>/gi
 const ATTR_RE = /([A-Za-z_][\w:.-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/g
 const NOTE_CLIENT_DATA_RE =
 	/<(?:[A-Za-z_][\w.-]*:)?ClientData\b([^>]*)ObjectType\s*=\s*(?:"Note"|'Note')([^>]*)>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?ClientData>/i

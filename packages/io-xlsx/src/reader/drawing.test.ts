@@ -146,22 +146,22 @@ describe('drawing inventory', () => {
 
 	test('parses VML drawing objects with anchors, notes, text, and relationships', () => {
 		const refs = parseVmlDrawingObjectRefs(
-			`<xml xmlns:v="urn:schemas-microsoft-com:vml"
+			`<xml xmlns:vm="urn:schemas-microsoft-com:vml"
   xmlns:o="urn:schemas-microsoft-com:office:office"
   xmlns:x="urn:schemas-microsoft-com:office:excel">
-  <v:shape id="_x0000_s1025" type="#_x0000_t201" style='position:absolute;
+  <vm:shape id="_x0000_s1025" type="#_x0000_t201" style='position:absolute;
     margin-left:106.5pt;margin-top:49.5pt;width:87.75pt;height:70.5pt;
     visibility:visible' o:button="t">
-    <v:textbox><div><font><b>Multi<br/>Line<br/>Text</b></font></div></v:textbox>
-    <v:imagedata o:relid="rIdImage"/>
+    <vm:textbox><div><font><b>Multi<br/>Line<br/>Text</b></font></div></vm:textbox>
+    <vm:imagedata o:relid="rIdImage"/>
     <x:ClientData ObjectType="Button">
       <x:Anchor>2, 14, 3, 6, 4, 3, 8, 0</x:Anchor>
       <x:FmlaMacro>[0]!Button1_Click</x:FmlaMacro>
     </x:ClientData>
-  </v:shape>
-  <v:shape id="_x0000_s1026">
+  </vm:shape>
+  <vm:shape id="_x0000_s1026">
     <x:ClientData ObjectType="Note"><x:Row>1</x:Row><x:Column>1</x:Column></x:ClientData>
-  </v:shape>
+  </vm:shape>
 </xml>`,
 			'xl/drawings/vmlDrawing1.vml',
 			[

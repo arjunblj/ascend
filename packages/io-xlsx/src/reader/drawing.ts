@@ -69,7 +69,6 @@ export function parseVmlDrawingObjectRefs(
 	vmlPath: string,
 	relationships: readonly Relationship[] = [],
 ): readonly SheetDrawingObjectRef[] {
-	if (!vmlXml.includes('<v:shape')) return []
 	const relsById = new Map(
 		relationships.map(
 			(rel) => [rel.id, { ...rel, target: resolveRelationshipTarget(vmlPath, rel) }] as const,
@@ -309,7 +308,8 @@ function collectRelationshipIds(node: XmlNode): readonly string[] {
 	return [...relIds]
 }
 
-const VML_SHAPE_RE = /<v:shape\b([^>]*)>([\s\S]*?)<\/v:shape>/gi
+const VML_SHAPE_RE =
+	/<(?:[A-Za-z_][\w.-]*:)?shape\b([^>]*)>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?shape>/gi
 const RAW_ATTR_RE = /([A-Za-z_][\w:.-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/g
 
 function parseRawAttrs(rawAttrs: string): ReadonlyMap<string, string> {

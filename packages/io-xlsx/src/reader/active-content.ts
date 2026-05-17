@@ -168,7 +168,7 @@ export function parseVmlControlInfos(
 	vmlPath: string,
 	relationships: readonly Relationship[],
 ): readonly VmlControlInfo[] {
-	if (!xml || !xml.includes('<v:shape')) return []
+	if (!xml) return []
 	const relationshipsById = new Map(relationships.map((rel) => [rel.id, rel]))
 	const controls: VmlControlInfo[] = []
 	for (const match of xml.matchAll(VML_SHAPE_RE)) {
@@ -229,7 +229,8 @@ function assignVmlControlInfo(info: WorksheetControlBuilder, vml: VmlControlInfo
 const CONTROL_RE =
 	/<(?:[A-Za-z_][\w.-]*:)?control\b([^/>]*?)>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?control>|<(?:[A-Za-z_][\w.-]*:)?control\b([^/>]*?)\/>/g
 const CONTROLS_CONTAINER_RE = /<(?:[A-Za-z_][\w.-]*:)?controls\b/
-const VML_SHAPE_RE = /<v:shape\b([^>]*)>([\s\S]*?)<\/v:shape>/g
+const VML_SHAPE_RE =
+	/<(?:[A-Za-z_][\w.-]*:)?shape\b([^>]*)>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?shape>/g
 const DRAWING_MACRO_SHAPE_RE =
 	/<((?:[A-Za-z_][\w.-]*:)?(?:sp|graphicFrame|cxnSp|pic))\b([^>]*)>([\s\S]*?)<\/\1>/g
 const ATTR_RE = /([A-Za-z_][\w:.-]*)=(?:"([^"]*)"|'([^']*)')/g

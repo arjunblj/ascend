@@ -60,11 +60,11 @@ describe('active content inventory', () => {
 
 		expect(
 			parseVmlControlInfos(
-				`<xml xmlns:v="urn:schemas-microsoft-com:vml" xmlns:img="urn:excel-image-links" xmlns:o="urn:schemas-microsoft-com:office:office">
-  <v:shape id="Button 1" o:spid="_x0000_s1025">
-    <v:imagedata img:relid="rIdImage"/>
+				`<xml xmlns:vm="urn:schemas-microsoft-com:vml" xmlns:img="urn:excel-image-links" xmlns:o="urn:schemas-microsoft-com:office:office">
+  <vm:shape id="Button 1" o:spid="_x0000_s1025">
+    <vm:imagedata img:relid="rIdImage"/>
     <x:ClientData xmlns:x="urn:schemas-microsoft-com:office:excel" ObjectType="Button"/>
-  </v:shape>
+  </vm:shape>
 </xml>`,
 				'xl/drawings/vmlDrawing1.vml',
 				[

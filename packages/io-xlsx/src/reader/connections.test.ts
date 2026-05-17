@@ -27,10 +27,12 @@ describe('connection part inventory', () => {
 				connectionType: 6,
 				description: 'CSV import',
 				deleted: false,
+				newConnection: true,
 				backgroundRefresh: true,
 				keepAlive: true,
 				refreshInterval: 15,
 				refreshOnLoad: true,
+				reconnectionMethod: 1,
 				saveData: false,
 				savePassword: false,
 				refreshedVersion: 8,
@@ -65,6 +67,7 @@ describe('connection part inventory', () => {
 				adjustColumnWidth: false,
 				fillFormulas: true,
 				disableEdit: true,
+				disableRefresh: true,
 			},
 			{
 				kind: 'powerQueryMashup',
@@ -108,6 +111,8 @@ describe('connection part inventory', () => {
 			partPath: 'xl/connections.xml',
 			connectionId: 1,
 			refreshedVersion: 8,
+			reconnectionMethod: 1,
+			newConnection: true,
 			refreshedDateIso: '2026-05-16T18:42:00Z',
 			minRefreshableVersion: 5,
 			credentials: 'integrated',
@@ -166,14 +171,14 @@ function connectionWorkbook(): Uint8Array {
 </Relationships>`,
 		'xl/connections.xml': `<?xml version="1.0"?>
 <x:connections xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-  <x:connection id="1" name="SalesConnection" description="CSV import" type="6" deleted="0" background="1" keepAlive="1" interval="15" refreshOnLoad="1" saveData="0" savePassword="0" refreshedVersion="8" refreshedDateIso="2026-05-16T18:42:00Z" minRefreshableVersion="5" credentials="integrated" singleSignOnId="corp-sso">
+  <x:connection id="1" name="SalesConnection" description="CSV import" type="6" deleted="0" new="1" background="1" keepAlive="1" interval="15" refreshOnLoad="1" reconnectionMethod="1" saveData="0" savePassword="0" refreshedVersion="8" refreshedDateIso="2026-05-16T18:42:00Z" minRefreshableVersion="5" credentials="integrated" singleSignOnId="corp-sso">
     <x:dbPr connection="Provider=Microsoft.ACE.OLEDB.12.0;" command="SELECT * FROM [Sales]" commandType="2" serverCommand="1"/>
     <x:textPr sourceFile="C:\\data\\sales.csv"/>
     <x:webPr url="https://example.test/sales" htmlTables="1" xml="0" sourceData="1"/>
   </x:connection>
 </x:connections>`,
 		'xl/queryTables/queryTable1.xml': `<?xml version="1.0"?>
-<x:queryTable xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main" name="SalesQuery" connectionId="1" backgroundRefresh="0" firstBackgroundRefresh="1" refreshOnLoad="1" removeDataOnSave="1" preserveFormatting="1" adjustColumnWidth="0" fillFormulas="1" disableEdit="1"/>`,
+<x:queryTable xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main" name="SalesQuery" connectionId="1" backgroundRefresh="0" firstBackgroundRefresh="1" refreshOnLoad="1" removeDataOnSave="1" preserveFormatting="1" adjustColumnWidth="0" fillFormulas="1" disableEdit="1" disableRefresh="1"/>`,
 		'xl/customData/item1.data': 'mashup-bytes',
 	})
 }

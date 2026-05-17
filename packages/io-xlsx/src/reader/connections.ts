@@ -8,16 +8,19 @@ interface ParsedConnectionAttrs {
 	connectionType?: number
 	description?: string
 	deleted?: boolean
+	newConnection?: boolean
 	backgroundRefresh?: boolean
 	firstBackgroundRefresh?: boolean
 	keepAlive?: boolean
 	refreshInterval?: number
 	refreshOnLoad?: boolean
+	reconnectionMethod?: number
 	saveData?: boolean
 	preserveFormatting?: boolean
 	adjustColumnWidth?: boolean
 	fillFormulas?: boolean
 	disableEdit?: boolean
+	disableRefresh?: boolean
 	savePassword?: boolean
 	refreshedVersion?: number
 	refreshedDateIso?: string
@@ -115,6 +118,8 @@ function readConnectionAttrs(
 	if (description) parsed.description = description
 	const deleted = boolAttr(node, 'deleted')
 	if (deleted !== undefined) parsed.deleted = deleted
+	const newConnection = boolAttr(node, 'new')
+	if (!options.queryTable && newConnection !== undefined) parsed.newConnection = newConnection
 	const backgroundRefresh = boolAttr(node, options.queryTable ? 'backgroundRefresh' : 'background')
 	if (backgroundRefresh !== undefined) parsed.backgroundRefresh = backgroundRefresh
 	const firstBackgroundRefresh = boolAttr(node, 'firstBackgroundRefresh')
@@ -127,6 +132,10 @@ function readConnectionAttrs(
 	if (refreshInterval !== undefined) parsed.refreshInterval = refreshInterval
 	const refreshOnLoad = boolAttr(node, 'refreshOnLoad')
 	if (refreshOnLoad !== undefined) parsed.refreshOnLoad = refreshOnLoad
+	const reconnectionMethod = numAttr(node, 'reconnectionMethod')
+	if (!options.queryTable && reconnectionMethod !== undefined) {
+		parsed.reconnectionMethod = reconnectionMethod
+	}
 	const saveData = boolAttr(node, 'saveData')
 	if (saveData !== undefined) parsed.saveData = saveData
 	const savePassword = boolAttr(node, 'savePassword')
@@ -144,6 +153,8 @@ function readConnectionAttrs(
 		if (fillFormulas !== undefined) parsed.fillFormulas = fillFormulas
 		const disableEdit = boolAttr(node, 'disableEdit')
 		if (disableEdit !== undefined) parsed.disableEdit = disableEdit
+		const disableRefresh = boolAttr(node, 'disableRefresh')
+		if (disableRefresh !== undefined) parsed.disableRefresh = disableRefresh
 	}
 	const refreshedVersion = numAttr(node, 'refreshedVersion')
 	if (refreshedVersion !== undefined) parsed.refreshedVersion = refreshedVersion

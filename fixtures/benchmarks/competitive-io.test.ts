@@ -1270,14 +1270,10 @@ describe('competitive IO helpers', () => {
 			'final',
 			'--json',
 		])
-		expect(payload.cases).toHaveLength(0)
-		for (const library of [
-			'sheetjs',
-			'openpyxl',
-			'pyexcelerate',
-			'pyexcelerate-range',
-			'pyexcelerate-cell',
-		]) {
+		expect(payload.cases.map((entry) => entry.dimensions.library).sort()).toEqual(['sheetjs'])
+		expect(payload.cases[0]?.dimensions.correctnessStatus).toBe('pass')
+		expect(payload.cases[0]?.assertions?.formulaCountMatches).toBe(true)
+		for (const library of ['openpyxl', 'pyexcelerate', 'pyexcelerate-range', 'pyexcelerate-cell']) {
 			expect(
 				payload.metadata.skipped.some(
 					(entry) =>
@@ -1394,9 +1390,8 @@ describe('competitive IO helpers', () => {
 			writeTables: true,
 			writeRichMetadata: true,
 		})
-		expect(specs.find((spec) => spec.name === 'sheetjs')?.capabilities?.writeFormulas).toBe(
-			undefined,
-		)
+		expect(specs.find((spec) => spec.name === 'sheetjs')?.capabilities?.writeFormulas).toBe(true)
+		expect(specs.find((spec) => spec.name === 'exceljs')?.capabilities?.writeFormulas).toBe(true)
 		expect(specs.find((spec) => spec.name === 'xlsxwriter')?.capabilities).toMatchObject({
 			writeFormulas: true,
 			writeTables: true,

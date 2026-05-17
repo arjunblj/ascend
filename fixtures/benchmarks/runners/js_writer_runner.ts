@@ -143,6 +143,12 @@ function buildInput(args: Args, bytes: Uint8Array): CompetitiveDataSet {
 	}
 }
 
+function formulaForWorkload(workload: WorkloadName, row: number, col: number): string | undefined {
+	if (workload !== 'formula-heavy' || col < 2) return undefined
+	const currentRow = row + 1
+	return `A${currentRow}+B${currentRow}+${col}`
+}
+
 async function writeWorkbook(args: Args): Promise<Uint8Array> {
 	if (args.library === 'sheetjs') return writeSheetJs(args)
 	return writeExcelJs(args)
@@ -152,6 +158,16 @@ async function writeSheetJs(args: Args): Promise<Uint8Array> {
 	const sheetJs = await import('xlsx')
 	const values = buildWorkloadValues(args.workload, args.rows, args.cols)
 	const worksheet = sheetJs.utils.aoa_to_sheet(values)
+	if (args.workload === 'formula-heavy') {
+		for (let row = 0; row < args.rows; row++) {
+			for (let col = 2; col < args.cols; col++) {
+				const address = sheetJs.utils.encode_cell({ r: row, c: col })
+				const cell = worksheet[address]
+				if (!cell) continue
+				cell.f = formulaForWorkload(args.workload, row, col)
+			}
+		}
+	}
 	const workbook = sheetJs.utils.book_new()
 	sheetJs.utils.book_append_sheet(workbook, worksheet, 'Data')
 	const bytes = sheetJs.write(workbook, { type: 'buffer', bookType: 'xlsx' }) as Uint8Array
@@ -164,6 +180,17 @@ async function writeExcelJs(args: Args): Promise<Uint8Array> {
 	const sheet = workbook.addWorksheet('Data')
 	const values = buildWorkloadValues(args.workload, args.rows, args.cols)
 	for (const row of values) sheet.addRow(row)
+	if (args.workload === 'formula-heavy') {
+		for (let row = 0; row < args.rows; row++) {
+			for (let col = 2; col < args.cols; col++) {
+				const cell = sheet.getCell(row + 1, col + 1)
+				cell.value = {
+					formula: formulaForWorkload(args.workload, row, col),
+					result: values[row]?.[col] ?? null,
+				}
+			}
+		}
+	}
 	const bytes = (await workbook.xlsx.writeBuffer()) as ArrayBuffer
 	return new Uint8Array(bytes)
 }

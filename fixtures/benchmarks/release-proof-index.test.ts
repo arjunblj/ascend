@@ -1225,6 +1225,12 @@ describe('release proof evidence index', () => {
 				boundary: expect.stringContaining('fileVersion/fileSharing semantic interpretation'),
 			}),
 			expect.objectContaining({
+				evidenceId: 'workbook-metadata-attribute-preservation-proof',
+				acceptedScope: expect.stringMatching(/1bd995e5.*4d292666/),
+				command: expect.stringContaining('preserves unsupported workbook child XML'),
+				boundary: expect.stringContaining('unsupported workbook child semantics'),
+			}),
+			expect.objectContaining({
 				evidenceId: 'public-workbook-view-protection-proof',
 				acceptedScope: expect.stringContaining('033be30c'),
 				command: expect.stringContaining(

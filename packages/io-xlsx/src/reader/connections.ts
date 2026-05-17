@@ -30,6 +30,10 @@ interface ParsedConnectionAttrs {
 	command?: string
 	commandType?: number
 	serverCommand?: boolean
+	webUrl?: string
+	webHtmlTables?: boolean
+	webXml?: boolean
+	webSourceData?: boolean
 	hasConnectionString?: boolean
 }
 
@@ -153,6 +157,7 @@ function readConnectionAttrs(
 	if (singleSignOnId) parsed.singleSignOnId = singleSignOnId
 	const textPr = node.textPr as XmlNode | undefined
 	const dbPr = node.dbPr as XmlNode | undefined
+	const webPr = node.webPr as XmlNode | undefined
 	const sourceFile = attr(node, 'sourceFile') ?? (textPr ? attr(textPr, 'sourceFile') : undefined)
 	if (sourceFile) parsed.sourceFile = sourceFile
 	const odcFile = attr(node, 'odcFile')
@@ -165,6 +170,14 @@ function readConnectionAttrs(
 	if (commandType !== undefined) parsed.commandType = commandType
 	const serverCommand = dbPr ? boolAttr(dbPr, 'serverCommand') : undefined
 	if (serverCommand !== undefined) parsed.serverCommand = serverCommand
+	const webUrl = webPr ? attr(webPr, 'url') : undefined
+	if (webUrl) parsed.webUrl = webUrl
+	const webHtmlTables = webPr ? boolAttr(webPr, 'htmlTables') : undefined
+	if (webHtmlTables !== undefined) parsed.webHtmlTables = webHtmlTables
+	const webXml = webPr ? boolAttr(webPr, 'xml') : undefined
+	if (webXml !== undefined) parsed.webXml = webXml
+	const webSourceData = webPr ? boolAttr(webPr, 'sourceData') : undefined
+	if (webSourceData !== undefined) parsed.webSourceData = webSourceData
 	const connectionString = dbPr ? attr(dbPr, 'connection') : undefined
 	if (connectionString) parsed.hasConnectionString = true
 	return parsed

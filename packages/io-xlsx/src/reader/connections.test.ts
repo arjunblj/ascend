@@ -42,6 +42,10 @@ describe('connection part inventory', () => {
 				command: 'SELECT * FROM [Sales]',
 				commandType: 2,
 				serverCommand: true,
+				webUrl: 'https://example.test/sales',
+				webHtmlTables: true,
+				webXml: false,
+				webSourceData: true,
 				hasConnectionString: true,
 			},
 			{
@@ -110,6 +114,10 @@ describe('connection part inventory', () => {
 			singleSignOnId: 'corp-sso',
 			commandType: 2,
 			serverCommand: true,
+			webUrl: 'https://example.test/sales',
+			webHtmlTables: true,
+			webXml: false,
+			webSourceData: true,
 			hasConnectionString: true,
 		})
 		expect(
@@ -161,6 +169,7 @@ function connectionWorkbook(): Uint8Array {
   <connection id="1" name="SalesConnection" description="CSV import" type="6" deleted="0" background="1" keepAlive="1" interval="15" refreshOnLoad="1" saveData="0" savePassword="0" refreshedVersion="8" refreshedDateIso="2026-05-16T18:42:00Z" minRefreshableVersion="5" credentials="integrated" singleSignOnId="corp-sso">
     <dbPr connection="Provider=Microsoft.ACE.OLEDB.12.0;" command="SELECT * FROM [Sales]" commandType="2" serverCommand="1"/>
     <textPr sourceFile="C:\\data\\sales.csv"/>
+    <webPr url="https://example.test/sales" htmlTables="1" xml="0" sourceData="1"/>
   </connection>
 </connections>`,
 		'xl/queryTables/queryTable1.xml': `<?xml version="1.0"?>

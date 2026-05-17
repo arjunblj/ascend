@@ -34,5 +34,9 @@ export interface WorkbookConnectionPartInfo {
 	readonly command?: string
 	readonly commandType?: number
 	readonly serverCommand?: boolean
+	readonly webUrl?: string
+	readonly webHtmlTables?: boolean
+	readonly webXml?: boolean
+	readonly webSourceData?: boolean
 	readonly hasConnectionString?: boolean
 }

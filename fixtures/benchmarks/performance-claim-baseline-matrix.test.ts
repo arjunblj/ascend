@@ -92,6 +92,9 @@ describe('performance claim baseline matrix', () => {
 			'Current focused TS/JS/Rust `formula-heavy` write coverage now includes\n  formula-capable SheetJS and ExcelJS rows.',
 		)
 		expect(markdown).toContain(
+			'Current focused TS/JS/Rust `table-heavy` write coverage now includes an\n  ExcelJS table-capable row.',
+		)
+		expect(markdown).toContain(
 			'Current formula/calc evidence includes focused HyperFormula indexed\n  `INDEX/MATCH`, indexed dirty-key/dirty-value edits, prefix-range full-calc\n  `SUM`, and prefix-range dirty-head/dirty-tail rows.',
 		)
 		for (const workload of RECORDED_WORKLOADS) expect(markdown).toContain(`\`${workload}\``)
@@ -757,6 +760,40 @@ describe('performance claim baseline matrix', () => {
 		)
 		expect(markdown).toContain(
 			'"Ascend proves byte/order-equivalent output against rust_xlsxwriter."',
+		)
+
+		expect(markdown).toContain('## Cycle: Table Heavy TS/JS/Rust Write Head-to-Head at `6034b7d3`')
+		expect(markdown).toContain(
+			'The ExcelJS writer runner now emits an actual XLSX table part for\n`table-heavy`',
+		)
+		expect(markdown).toContain(
+			'/private/tmp/ascend-write-table-js-current-6034b7d3-runs/write-table-heavy-js-rust-repeat15.json',
+		)
+		expect(markdown).toContain(
+			'/private/tmp/ascend-write-table-js-current-6034b7d3-runs/write-table-heavy-js-rust-repeat15-p95-scoreboard.json',
+		)
+		expect(markdown).toContain('Runner versions: ExcelJS `4.4.0`, rust_xlsxwriter `0.1.0`.')
+		expect(markdown).toContain(
+			'| `ascend-external-writer` | ran/won median and p95 | 8.247 | 11.817 | 0.116 | 175.9 MiB | 274212 |',
+		)
+		expect(markdown).toContain(
+			'| `rust-xlsxwriter` | ran/lost vs Ascend | 20.461 | 23.203 | 0.040 | 23.3 MiB | 185657 |',
+		)
+		expect(markdown).toContain(
+			'| `exceljs` | ran/lost vs Ascend | 73.303 | 76.408 | 0.024 | 280.9 MiB | 192189 |',
+		)
+		expect(markdown).toContain(
+			'| `sheetjs` | unsupported by harness | n/a | n/a | n/a | n/a | n/a | skipped: runner does not declare `writeTables=true` |',
+		)
+		expect(markdown).toContain(
+			'Full `xlsx-write-sota` coverage still fails, with 63 coverage failures',
+		)
+		expect(markdown).toContain(
+			'Ascend, ExcelJS, and rust_xlsxwriter reopened\nsuccessfully, matched the expected one-sheet and 40,000-cell shape, emitted one\ntable part',
+		)
+		expect(markdown).toContain('"Ascend beats SheetJS on table-heavy writes."')
+		expect(markdown).toContain(
+			'"Ascend uses less memory than rust_xlsxwriter on table-heavy writes."',
 		)
 
 		expect(markdown).toContain('## Cycle: Feature Rich JS Write Quality Boundary at `9fabfc8e`')

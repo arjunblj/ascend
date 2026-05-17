@@ -49,6 +49,10 @@ No broad XLSX read, XLSX write, SOTA, or QSS-leapfrog speed claim is promotable 
   formula-capable SheetJS and ExcelJS rows. Ascend is faster by median and p95
   than SheetJS, ExcelJS, and rust_xlsxwriter on that formula-write row, but
   rust_xlsxwriter uses less RSS and ExcelJS/rust_xlsxwriter emit smaller files.
+- Current focused TS/JS/Rust `table-heavy` write coverage now includes an
+  ExcelJS table-capable row. Ascend is faster by median and p95 than ExcelJS
+  and rust_xlsxwriter on that table-write row; SheetJS remains unsupported for
+  the tracked table metadata contract.
 - The recorded cycles cover public/reproducible generated `dense-values`, `sparse-wide`, `styles-heavy`, `formula-heavy`, `table-heavy`, `feature-rich`, `selected-sheet`, `metadata-only`, `warm-workflow`, and `string-heavy` workloads over `raw-ooxml`, but they are per-workload evidence rows rather than one clean all-workload promotion run.
 - Current harness evidence now supports same-lane selected-sheet rows for Ascend, SheetJS, OpenPyXL, and python-calamine. Treat older `openpyxl` and Calamine selected-sheet `unsupported-operation` wording as historical for the recorded clean runs.
 - Current harness evidence now supports same-lane metadata-only rows for Ascend, SheetJS, OpenPyXL, and python-calamine. Calamine wins that head-to-head; treat older metadata-only `missing-comparable` or Calamine `unsupported-operation` wording as historical.
@@ -3589,6 +3593,115 @@ Forbidden wording:
 Next action: defer production optimization for table-heavy from this current
 winning row. Continue only with a measured release workflow loss, a full-profile
 coverage blocker, or an explicit claim downgrade.
+
+## Cycle: Table Heavy TS/JS/Rust Write Head-to-Head at `6034b7d3`
+
+Classification: comparable external evidence plus benchmark-runner unlock.
+The ExcelJS writer runner now emits an actual XLSX table part for
+`table-heavy`, making ExcelJS a ranking-eligible table-write baseline. Ascend
+is the median and p95 winner against ExcelJS and rust_xlsxwriter in this
+focused row. SheetJS remains unsupported for the tracked table metadata
+contract and is not counted as a win or loss.
+
+Workflow: generated XLSX write for table-heavy workbooks, 2000 rows x 20
+columns, including one emitted XLSX table part.
+
+Why it matters for release: the user explicitly prioritizes TS/JS head-to-heads
+and Rust as the minimum performance floor. This closes the previous ExcelJS
+capability gap for a table-bearing generated write workflow, while keeping
+SheetJS honestly marked unsupported for table metadata.
+
+Public/tracked-clean input: `competitive-io` generated the `table-heavy`
+`source-mode generated-write` workload from tracked benchmark code in a clean
+detached worktree at commit `6034b7d3`. No private corpus or local research
+workbook was used.
+
+Commands:
+
+```bash
+git worktree add --detach /private/tmp/ascend-write-table-js-current-6034b7d3 6034b7d3
+cd /private/tmp/ascend-write-table-js-current-6034b7d3
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun install --frozen-lockfile
+mkdir -p /private/tmp/ascend-write-table-js-current-6034b7d3-runs
+TMPDIR=/private/tmp ACCEPT_NPOI_OSMF_LICENSE=1 env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /usr/bin/time -l /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-io.ts --json --category write --competitor all --execution-scope external-process --source-mode generated-write --libraries ascend-external-writer,sheetjs,exceljs,rust-xlsxwriter --workload table-heavy --repeat 15 --warmup 3 --validation-mode each --write-runner-manifest fixtures/benchmarks/runners/sota-writers.manifest.json > /private/tmp/ascend-write-table-js-current-6034b7d3-runs/write-table-heavy-js-rust-repeat15.json 2> /private/tmp/ascend-write-table-js-current-6034b7d3-runs/write-table-heavy-js-rust-repeat15-time.txt
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-scoreboard.ts /private/tmp/ascend-write-table-js-current-6034b7d3-runs/write-table-heavy-js-rust-repeat15.json --json --metric medianMs --require-profile xlsx-write-sota --assert-profile-leader ascend > /private/tmp/ascend-write-table-js-current-6034b7d3-runs/write-table-heavy-js-rust-repeat15-scoreboard.json
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-scoreboard.ts /private/tmp/ascend-write-table-js-current-6034b7d3-runs/write-table-heavy-js-rust-repeat15.json --json --metric p95Ms --require-profile xlsx-write-sota --assert-profile-leader ascend > /private/tmp/ascend-write-table-js-current-6034b7d3-runs/write-table-heavy-js-rust-repeat15-p95-scoreboard.json
+```
+
+Environment:
+
+- Commit: `6034b7d36a2c734eec7a85a611126da5b90506a7`
+- Worktree: clean detached worktree at
+  `/private/tmp/ascend-write-table-js-current-6034b7d3`; `git status --short
+  --branch` reported `## HEAD (no branch)`.
+- Bun runtime: `1.3.13`
+- Benchmark payload Node runtime: `24.3.0`; shell `node --version` reported
+  `v22.22.0`.
+- Platform: Darwin arm64, macOS kernel `25.4.0`
+- Runner versions: ExcelJS `4.4.0`, rust_xlsxwriter `0.1.0`.
+- Runtime profile: `category write`, `executionScope external-process`,
+  `sourceMode generated-write`, `workload table-heavy`, `validationMode each`,
+  `repeat 15`, `warmup 3`.
+
+Raw output:
+
+```text
+/private/tmp/ascend-write-table-js-current-6034b7d3-runs/write-table-heavy-js-rust-repeat15.json
+/private/tmp/ascend-write-table-js-current-6034b7d3-runs/write-table-heavy-js-rust-repeat15-time.txt
+/private/tmp/ascend-write-table-js-current-6034b7d3-runs/write-table-heavy-js-rust-repeat15-scoreboard.json
+/private/tmp/ascend-write-table-js-current-6034b7d3-runs/write-table-heavy-js-rust-repeat15-p95-scoreboard.json
+```
+
+Table-heavy JS/Rust writer row, repeat 15 after 3 warmups:
+
+| Runner | Status vs Ascend | Median ms | P95 ms | CV | Peak RSS | Output bytes |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| `ascend-external-writer` | ran/won median and p95 | 8.247 | 11.817 | 0.116 | 175.9 MiB | 274212 |
+| `rust-xlsxwriter` | ran/lost vs Ascend | 20.461 | 23.203 | 0.040 | 23.3 MiB | 185657 |
+| `exceljs` | ran/lost vs Ascend | 73.303 | 76.408 | 0.024 | 280.9 MiB | 192189 |
+| `sheetjs` | unsupported by harness | n/a | n/a | n/a | n/a | n/a | skipped: runner does not declare `writeTables=true` |
+
+Scoreboard result:
+
+- Median scoreboard: table-heavy group winner was `ascend-external-writer`;
+  `leaderFailures: []` and `profileLeaderFailures: []`.
+- P95 scoreboard: table-heavy group winner was `ascend-external-writer`;
+  `leaderFailures: []` and `profileLeaderFailures: []`.
+- Full `xlsx-write-sota` coverage still fails, with 63 coverage failures and
+  34 coverage gaps, because this row intentionally covers only `table-heavy`
+  and only Ascend, ExcelJS, SheetJS, and rust_xlsxwriter. Missing workloads,
+  omitted writers, and unsupported table writers are not counted as wins.
+
+Semantic comparability: Ascend, ExcelJS, and rust_xlsxwriter reopened
+successfully, matched the expected one-sheet and 40,000-cell shape, emitted one
+table part, and passed sorted semantic cell value validation. Ascend and
+ExcelJS matched ordered semantic cell hashes; rust_xlsxwriter matched sorted
+semantic values but not ordered cell hashes. This is table-write semantic
+evidence, not byte-equivalent output evidence. Ascend uses more RSS and emits a
+larger XLSX than rust_xlsxwriter and ExcelJS.
+
+Humble allowed wording:
+
+> On the generated 2000 x 20 `table-heavy` write row at commit `6034b7d3`,
+> Ascend's external writer was faster by median and p95 than ExcelJS `4.4.0`
+> and rust_xlsxwriter `0.1.0`, with all ranking rows emitting one table part
+> and passing value validation. SheetJS did not declare table-write support for
+> this contract. This is scoped table-write evidence, not broad
+> `xlsx-write-sota` evidence.
+
+Forbidden wording:
+
+- "Ascend is SOTA for XLSX write."
+- "Ascend beats every TS/JS or Rust writer on every workload."
+- "Ascend beats SheetJS on table-heavy writes."
+- "Ascend beats omitted, unsupported, blocked, or untested table writers."
+- "Ascend produces the smallest table-heavy XLSX."
+- "Ascend uses less memory than rust_xlsxwriter on table-heavy writes."
+- "Ascend proves byte/order-equivalent output against rust_xlsxwriter."
+
+Next action: defer production optimization from this winning row. Continue with
+the next JS/Rust frontier gap: feature-rich JS quality boundaries or a current
+full-profile write gate split into attributable JS/Rust workload groups.
 
 ## Cycle: Feature Rich Write Current Comparable Boundary at `a5fa3006`
 

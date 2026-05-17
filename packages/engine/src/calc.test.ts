@@ -2643,6 +2643,106 @@ describe('recalculate', () => {
 		}
 	})
 
+	test('forecast functions spill over target x values while preserving known ranges', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		const knownXs = [1, 2, 3, 4, 5]
+		const knownYs = [3, 5, 7, 9, 11]
+		const targetXs = [6, 7, 8]
+		for (let row = 0; row < knownXs.length; row++) {
+			sheet.cells.set(row, 0, {
+				value: numberValue(knownXs[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+			sheet.cells.set(row, 1, {
+				value: numberValue(knownYs[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+		}
+		for (let row = 0; row < targetXs.length; row++) {
+			sheet.cells.set(row, 2, {
+				value: numberValue(targetXs[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+		}
+		const arrayFormulas = ['FORECAST(C1:C3,B1:B5,A1:A5)+0', 'FORECAST.LINEAR(C1:C3,B1:B5,A1:A5)+0']
+		const scalarFormulas = ['FORECAST(C{r},B1:B5,A1:A5)+0', 'FORECAST.LINEAR(C{r},B1:B5,A1:A5)+0']
+		for (let col = 0; col < arrayFormulas.length; col++) {
+			sheet.cells.set(0, 3 + col, {
+				value: EMPTY,
+				formula: arrayFormulas[col] as string,
+				styleId: sid,
+			})
+			for (let row = 0; row < targetXs.length; row++) {
+				sheet.cells.set(row, 8 + col, {
+					value: EMPTY,
+					formula: (scalarFormulas[col] as string).replaceAll('{r}', String(row + 1)),
+					styleId: sid,
+				})
+			}
+		}
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		for (let row = 0; row < targetXs.length; row++) {
+			for (let col = 0; col < arrayFormulas.length; col++) {
+				expect(sheet.cells.get(row, 3 + col)?.value).toEqual(sheet.cells.get(row, 8 + col)?.value)
+			}
+		}
+	})
+
+	test('top-level forecast functions implicitly intersect target x ranges', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		const knownXs = [1, 2, 3, 4, 5]
+		const knownYs = [3, 5, 7, 9, 11]
+		const targetXs = [6, 7, 8]
+		for (let row = 0; row < knownXs.length; row++) {
+			sheet.cells.set(row, 0, {
+				value: numberValue(knownXs[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+			sheet.cells.set(row, 1, {
+				value: numberValue(knownYs[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+		}
+		for (let row = 0; row < targetXs.length; row++) {
+			sheet.cells.set(row, 2, {
+				value: numberValue(targetXs[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+		}
+		const rangeFormulas = ['FORECAST(C1:C3,B1:B5,A1:A5)', 'FORECAST.LINEAR(C1:C3,B1:B5,A1:A5)']
+		const scalarFormulas = ['FORECAST(C2,B1:B5,A1:A5)', 'FORECAST.LINEAR(C2,B1:B5,A1:A5)']
+		for (let col = 0; col < rangeFormulas.length; col++) {
+			sheet.cells.set(1, 3 + col, {
+				value: EMPTY,
+				formula: rangeFormulas[col] as string,
+				styleId: sid,
+			})
+			sheet.cells.set(1, 8 + col, {
+				value: EMPTY,
+				formula: scalarFormulas[col] as string,
+				styleId: sid,
+			})
+		}
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		for (let col = 0; col < rangeFormulas.length; col++) {
+			expect(sheet.cells.get(1, 3 + col)?.value).toEqual(sheet.cells.get(1, 8 + col)?.value)
+		}
+	})
+
 	test('legacy statistical compatibility functions spill over range operands in array formulas', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

@@ -220,6 +220,8 @@ const SCALAR_IMPLICIT_INTERSECTION_FUNCTIONS = new Set([
 	'FLOOR',
 	'FLOOR.MATH',
 	'FLOOR.PRECISE',
+	'FORECAST',
+	'FORECAST.LINEAR',
 	'FV',
 	'GAMMADIST',
 	'GAMMA',
@@ -484,6 +486,8 @@ const ARRAY_CONTEXT_MAPPABLE_FUNCTIONS = new Set([
 	'FLOOR',
 	'FLOOR.MATH',
 	'FLOOR.PRECISE',
+	'FORECAST',
+	'FORECAST.LINEAR',
 	'FV',
 	'GAMMADIST',
 	'GAMMA',
@@ -649,6 +653,8 @@ const ARRAY_CONTEXT_MAPPABLE_FUNCTIONS = new Set([
 ])
 
 const ARRAY_MAPPED_RANGE_PRESERVING_ARGS = new Map<string, ReadonlySet<number>>([
+	['FORECAST', new Set([1, 2])],
+	['FORECAST.LINEAR', new Set([1, 2])],
 	['LARGE', new Set([0])],
 	['NETWORKDAYS', new Set([2])],
 	['NETWORKDAYS.INTL', new Set([3])],

@@ -2287,6 +2287,118 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(1, 4)?.value).toEqual(sheet.cells.get(1, 5)?.value)
 	})
 
+	test('rank functions spill over number and order arguments while preserving reference ranges', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		const values = [9, 4, 7, 7, 5]
+		const numbers = [9, 7, 4]
+		const orders = [0, 0, 1]
+		for (let row = 0; row < values.length; row++) {
+			sheet.cells.set(row, 0, {
+				value: numberValue(values[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+		}
+		for (let row = 0; row < numbers.length; row++) {
+			sheet.cells.set(row, 1, {
+				value: numberValue(numbers[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+			sheet.cells.set(row, 2, {
+				value: numberValue(orders[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+		}
+		const arrayFormulas = [
+			'RANK(B1:B3,A1:A5,C1:C3)+0',
+			'RANK.EQ(B1:B3,A1:A5,C1:C3)+0',
+			'RANK.AVG(B1:B3,A1:A5,C1:C3)+0',
+		]
+		const scalarFormulas = [
+			'RANK(B{r},A1:A5,C{r})+0',
+			'RANK.EQ(B{r},A1:A5,C{r})+0',
+			'RANK.AVG(B{r},A1:A5,C{r})+0',
+		]
+		for (let col = 0; col < arrayFormulas.length; col++) {
+			sheet.cells.set(0, 3 + col, {
+				value: EMPTY,
+				formula: arrayFormulas[col] as string,
+				styleId: sid,
+			})
+			for (let row = 0; row < numbers.length; row++) {
+				sheet.cells.set(row, 8 + col, {
+					value: EMPTY,
+					formula: (scalarFormulas[col] as string).replaceAll('{r}', String(row + 1)),
+					styleId: sid,
+				})
+			}
+		}
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		for (let row = 0; row < numbers.length; row++) {
+			for (let col = 0; col < arrayFormulas.length; col++) {
+				expect(sheet.cells.get(row, 3 + col)?.value).toEqual(sheet.cells.get(row, 8 + col)?.value)
+			}
+		}
+	})
+
+	test('top-level rank functions implicitly intersect number and order ranges', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		const values = [9, 4, 7, 7, 5]
+		const numbers = [9, 7, 4]
+		const orders = [0, 0, 1]
+		for (let row = 0; row < values.length; row++) {
+			sheet.cells.set(row, 0, {
+				value: numberValue(values[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+		}
+		for (let row = 0; row < numbers.length; row++) {
+			sheet.cells.set(row, 1, {
+				value: numberValue(numbers[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+			sheet.cells.set(row, 2, {
+				value: numberValue(orders[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+		}
+		const rangeFormulas = [
+			'RANK(B1:B3,A1:A5,C1:C3)',
+			'RANK.EQ(B1:B3,A1:A5,C1:C3)',
+			'RANK.AVG(B1:B3,A1:A5,C1:C3)',
+		]
+		const scalarFormulas = ['RANK(B2,A1:A5,C2)', 'RANK.EQ(B2,A1:A5,C2)', 'RANK.AVG(B2,A1:A5,C2)']
+		for (let col = 0; col < rangeFormulas.length; col++) {
+			sheet.cells.set(1, 3 + col, {
+				value: EMPTY,
+				formula: rangeFormulas[col] as string,
+				styleId: sid,
+			})
+			sheet.cells.set(1, 8 + col, {
+				value: EMPTY,
+				formula: scalarFormulas[col] as string,
+				styleId: sid,
+			})
+		}
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		for (let col = 0; col < rangeFormulas.length; col++) {
+			expect(sheet.cells.get(1, 3 + col)?.value).toEqual(sheet.cells.get(1, 8 + col)?.value)
+		}
+	})
+
 	test('legacy statistical compatibility functions spill over range operands in array formulas', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

@@ -345,6 +345,7 @@ const SCALAR_IMPLICIT_INTERSECTION_FUNCTIONS = new Set([
 	'SQRT',
 	'SQRTPI',
 	'STANDARDIZE',
+	'SUBTOTAL',
 	'SUBSTITUTE',
 	'SYD',
 	'T',
@@ -1396,6 +1397,7 @@ function rangePreservingArgIndexesForFunction(
 	argNodes: readonly FormulaNode[],
 ): ReadonlySet<number> | undefined {
 	if (upperName === 'AGGREGATE') return aggregateRangePreservingArgIndexes(argNodes)
+	if (upperName === 'SUBTOTAL') return restArgIndexes(argNodes, 1)
 	return ARRAY_MAPPED_RANGE_PRESERVING_ARGS.get(upperName)
 }
 
@@ -1404,6 +1406,12 @@ function aggregateRangePreservingArgIndexes(argNodes: readonly FormulaNode[]): R
 	if (code !== null && code >= 14 && code <= 19) return new Set([2])
 	const indexes = new Set<number>()
 	for (let i = 2; i < argNodes.length; i++) indexes.add(i)
+	return indexes
+}
+
+function restArgIndexes(argNodes: readonly FormulaNode[], start: number): ReadonlySet<number> {
+	const indexes = new Set<number>()
+	for (let i = start; i < argNodes.length; i++) indexes.add(i)
 	return indexes
 }
 

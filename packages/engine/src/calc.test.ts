@@ -2969,6 +2969,45 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(1, 2)).toBeUndefined()
 	})
 
+	test('top-level SUBTOTAL implicitly intersects function_num ranges and preserves reference ranges', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		const functionNumbers = [9, 2, 4]
+		for (let row = 0; row < 3; row++) {
+			sheet.cells.set(row, 0, {
+				value: numberValue(row + 1),
+				formula: null,
+				styleId: sid,
+			})
+			sheet.cells.set(row, 1, {
+				value: numberValue(functionNumbers[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+			sheet.cells.set(row, 2, {
+				value: numberValue(row + 4),
+				formula: null,
+				styleId: sid,
+			})
+		}
+		sheet.cells.set(1, 3, {
+			value: EMPTY,
+			formula: 'SUBTOTAL(B1:B3,A1:A3,C1:C3)',
+			styleId: sid,
+		})
+		sheet.cells.set(1, 4, {
+			value: EMPTY,
+			formula: 'SUBTOTAL(B2,A1:A3,C1:C3)',
+			styleId: sid,
+		})
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(1, 3)?.value).toEqual(sheet.cells.get(1, 4)?.value)
+		expect(sheet.cells.get(1, 3)?.value).toEqual(numberValue(6))
+	})
+
 	test('legacy statistical compatibility functions spill over range operands in array formulas', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

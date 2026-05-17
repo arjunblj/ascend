@@ -5,7 +5,7 @@ import type {
 	SheetImageAnchor,
 	SheetImageRef,
 } from '@ascend/core'
-import { asArray, attr, numAttr, parseXml, type XmlNode } from '../xml.ts'
+import { attr, numAttr, parseXml, type XmlNode } from '../xml.ts'
 import type { Relationship } from './relationships.ts'
 import { resolvePath } from './relationships.ts'
 
@@ -15,7 +15,7 @@ export function parseDrawingImageRefs(
 	relationships: readonly Relationship[],
 ): readonly SheetImageRef[] {
 	const doc = parseXml(drawingXml)
-	const wsDr = (doc['xdr:wsDr'] ?? doc.wsDr) as XmlNode | undefined
+	const wsDr = childNode(doc, 'wsDr')
 	if (!wsDr) return []
 
 	const imageRels = new Map(
@@ -25,21 +25,15 @@ export function parseDrawingImageRefs(
 	)
 	const refs: SheetImageRef[] = []
 
-	for (const anchor of asArray<XmlNode>(
-		wsDr['xdr:oneCellAnchor'] as XmlNode | XmlNode[] | undefined,
-	)) {
+	for (const anchor of childNodes(wsDr, 'oneCellAnchor')) {
 		const parsed = parseAnchoredImage(anchor, drawingPath, imageRels, 'oneCell')
 		if (parsed) refs.push(parsed)
 	}
-	for (const anchor of asArray<XmlNode>(
-		wsDr['xdr:twoCellAnchor'] as XmlNode | XmlNode[] | undefined,
-	)) {
+	for (const anchor of childNodes(wsDr, 'twoCellAnchor')) {
 		const parsed = parseAnchoredImage(anchor, drawingPath, imageRels, 'twoCell')
 		if (parsed) refs.push(parsed)
 	}
-	for (const anchor of asArray<XmlNode>(
-		wsDr['xdr:absoluteAnchor'] as XmlNode | XmlNode[] | undefined,
-	)) {
+	for (const anchor of childNodes(wsDr, 'absoluteAnchor')) {
 		const parsed = parseAnchoredImage(anchor, drawingPath, imageRels, 'absolute')
 		if (parsed) refs.push(parsed)
 	}
@@ -53,7 +47,7 @@ export function parseDrawingObjectRefs(
 	relationships: readonly Relationship[] = [],
 ): readonly SheetDrawingObjectRef[] {
 	const doc = parseXml(drawingXml)
-	const wsDr = (doc['xdr:wsDr'] ?? doc.wsDr) as XmlNode | undefined
+	const wsDr = childNode(doc, 'wsDr')
 	if (!wsDr) return []
 
 	const relsById = new Map(
@@ -96,15 +90,12 @@ function iterAnchors(
 	wsDr: XmlNode,
 ): Array<{ node: XmlNode; kind: 'oneCell' | 'twoCell' | 'absolute' }> {
 	return [
-		...asArray<XmlNode>(wsDr['xdr:oneCellAnchor'] as XmlNode | XmlNode[] | undefined).map(
-			(node) => ({ node, kind: 'oneCell' as const }),
-		),
-		...asArray<XmlNode>(wsDr['xdr:twoCellAnchor'] as XmlNode | XmlNode[] | undefined).map(
-			(node) => ({ node, kind: 'twoCell' as const }),
-		),
-		...asArray<XmlNode>(wsDr['xdr:absoluteAnchor'] as XmlNode | XmlNode[] | undefined).map(
-			(node) => ({ node, kind: 'absolute' as const }),
-		),
+		...childNodes(wsDr, 'oneCellAnchor').map((node) => ({ node, kind: 'oneCell' as const })),
+		...childNodes(wsDr, 'twoCellAnchor').map((node) => ({ node, kind: 'twoCell' as const })),
+		...childNodes(wsDr, 'absoluteAnchor').map((node) => ({
+			node,
+			kind: 'absolute' as const,
+		})),
 	]
 }
 
@@ -141,27 +132,25 @@ function drawingObjectCandidates(anchorNode: XmlNode): Array<{
 	nonVisualNames: readonly string[]
 }> {
 	return [
-		...asArray<XmlNode>(anchorNode['xdr:sp'] as XmlNode | XmlNode[] | undefined).map((node) => ({
+		...childNodes(anchorNode, 'sp').map((node) => ({
 			node,
 			kind: hasTextBoxContent(node) ? ('textBox' as const) : ('shape' as const),
-			nonVisualNames: ['xdr:nvSpPr', 'nvSpPr'],
+			nonVisualNames: ['nvSpPr'],
 		})),
-		...asArray<XmlNode>(anchorNode['xdr:graphicFrame'] as XmlNode | XmlNode[] | undefined).map(
-			(node) => ({
-				node,
-				kind: 'graphicFrame' as const,
-				nonVisualNames: ['xdr:nvGraphicFramePr', 'nvGraphicFramePr'],
-			}),
-		),
-		...asArray<XmlNode>(anchorNode['xdr:cxnSp'] as XmlNode | XmlNode[] | undefined).map((node) => ({
+		...childNodes(anchorNode, 'graphicFrame').map((node) => ({
+			node,
+			kind: 'graphicFrame' as const,
+			nonVisualNames: ['nvGraphicFramePr'],
+		})),
+		...childNodes(anchorNode, 'cxnSp').map((node) => ({
 			node,
 			kind: 'connector' as const,
-			nonVisualNames: ['xdr:nvCxnSpPr', 'nvCxnSpPr'],
+			nonVisualNames: ['nvCxnSpPr'],
 		})),
-		...asArray<XmlNode>(anchorNode['xdr:grpSp'] as XmlNode | XmlNode[] | undefined).map((node) => ({
+		...childNodes(anchorNode, 'grpSp').map((node) => ({
 			node,
 			kind: 'groupShape' as const,
-			nonVisualNames: ['xdr:nvGrpSpPr', 'nvGrpSpPr'],
+			nonVisualNames: ['nvGrpSpPr'],
 		})),
 	]
 }
@@ -267,15 +256,15 @@ function extractVmlMacro(xml: string): string | undefined {
 
 function findNonVisualProps(node: XmlNode, names: readonly string[]): XmlNode | undefined {
 	for (const name of names) {
-		const nonVisual = node[name] as XmlNode | undefined
-		const cNvPr = (nonVisual?.['xdr:cNvPr'] ?? nonVisual?.cNvPr) as XmlNode | undefined
+		const nonVisual = childNode(node, name)
+		const cNvPr = childNode(nonVisual, 'cNvPr')
 		if (cNvPr) return cNvPr
 	}
 	return undefined
 }
 
 function hasTextBoxContent(node: XmlNode): boolean {
-	return Boolean(node['xdr:txBody'] ?? node.txBody ?? node['xdr:txbx'] ?? node.txbx)
+	return Boolean(childNode(node, 'txBody') ?? childNode(node, 'txbx'))
 }
 
 function extractDrawingText(node: XmlNode): string | undefined {
@@ -294,7 +283,7 @@ function collectTextRuns(value: unknown, chunks: string[]): void {
 	if (!value || typeof value !== 'object') return
 	const node = value as XmlNode
 	for (const [key, child] of Object.entries(node)) {
-		if (key === 'a:t' || key === 't') {
+		if (localPart(key) === 't') {
 			if (typeof child === 'string' || typeof child === 'number') chunks.push(String(child))
 			else collectTextRuns(child, chunks)
 			continue
@@ -453,10 +442,10 @@ function parseAnchoredImage(
 	relationships: ReadonlyMap<string, Relationship & { target: string }>,
 	kind: 'oneCell' | 'twoCell' | 'absolute',
 ): SheetImageRef | null {
-	const pic = (anchorNode['xdr:pic'] ?? anchorNode.pic) as XmlNode | undefined
+	const pic = childNode(anchorNode, 'pic')
 	if (!pic) return null
-	const blipFill = (pic['xdr:blipFill'] ?? pic.blipFill) as XmlNode | undefined
-	const blip = (blipFill?.['a:blip'] ?? blipFill?.blip) as XmlNode | undefined
+	const blipFill = childNode(pic, 'blipFill')
+	const blip = childNode(blipFill, 'blip')
 	const relId = blip ? relationshipEmbedFromNode(blip) : undefined
 	if (!relId) return null
 	const relationship = relationships.get(relId)
@@ -475,8 +464,8 @@ function parseAnchoredImage(
 		targetPath: relationship.target,
 	}
 
-	const nonVisual = (pic['xdr:nvPicPr'] ?? pic.nvPicPr) as XmlNode | undefined
-	const cNvPr = (nonVisual?.['xdr:cNvPr'] ?? nonVisual?.cNvPr) as XmlNode | undefined
+	const nonVisual = childNode(pic, 'nvPicPr')
+	const cNvPr = childNode(nonVisual, 'cNvPr')
 	const name = cNvPr ? attr(cNvPr, 'name') : undefined
 	if (name) imageRef.name = name
 	const description = cNvPr ? attr(cNvPr, 'descr') : undefined
@@ -509,9 +498,9 @@ function resolveRelationshipTarget(drawingPath: string, relationship: Relationsh
 }
 
 function parseOneCellAnchor(node: XmlNode): SheetImageAnchor | null {
-	const from = parseMarker((node['xdr:from'] ?? node.from) as XmlNode | undefined)
+	const from = parseMarker(childNode(node, 'from'))
 	if (!from) return null
-	const ext = (node['xdr:ext'] ?? node.ext) as XmlNode | undefined
+	const ext = childNode(node, 'ext')
 	const cx = ext ? numAttr(ext, 'cx') : undefined
 	const cy = ext ? numAttr(ext, 'cy') : undefined
 	return {
@@ -523,16 +512,16 @@ function parseOneCellAnchor(node: XmlNode): SheetImageAnchor | null {
 }
 
 function parseTwoCellAnchor(node: XmlNode): SheetImageAnchor | null {
-	const from = parseMarker((node['xdr:from'] ?? node.from) as XmlNode | undefined)
-	const to = parseMarker((node['xdr:to'] ?? node.to) as XmlNode | undefined)
+	const from = parseMarker(childNode(node, 'from'))
+	const to = parseMarker(childNode(node, 'to'))
 	if (!from || !to) return null
 	const editAs = attr(node, 'editAs')
 	return editAs ? { kind: 'twoCell', from, to, editAs } : { kind: 'twoCell', from, to }
 }
 
 function parseAbsoluteAnchor(node: XmlNode): SheetImageAnchor | null {
-	const pos = (node['xdr:pos'] ?? node.pos) as XmlNode | undefined
-	const ext = (node['xdr:ext'] ?? node.ext) as XmlNode | undefined
+	const pos = childNode(node, 'pos')
+	const ext = childNode(node, 'ext')
 	const x = pos ? numAttr(pos, 'x') : undefined
 	const y = pos ? numAttr(pos, 'y') : undefined
 	if (x === undefined || y === undefined) return null
@@ -549,8 +538,8 @@ function parseAbsoluteAnchor(node: XmlNode): SheetImageAnchor | null {
 
 function parseMarker(node: XmlNode | undefined): SheetAnchorMarker | null {
 	if (!node) return null
-	const col = readChildNumber(node, 'xdr:col', 'col')
-	const row = readChildNumber(node, 'xdr:row', 'row')
+	const col = readChildNumber(node, 'col')
+	const row = readChildNumber(node, 'row')
 	if (col === undefined || row === undefined) return null
 	const marker: {
 		col: number
@@ -558,19 +547,50 @@ function parseMarker(node: XmlNode | undefined): SheetAnchorMarker | null {
 		colOff?: number
 		rowOff?: number
 	} = { col, row }
-	const colOff = readChildNumber(node, 'xdr:colOff', 'colOff')
+	const colOff = readChildNumber(node, 'colOff')
 	if (colOff !== undefined) marker.colOff = colOff
-	const rowOff = readChildNumber(node, 'xdr:rowOff', 'rowOff')
+	const rowOff = readChildNumber(node, 'rowOff')
 	if (rowOff !== undefined) marker.rowOff = rowOff
 	return marker as SheetAnchorMarker
 }
 
-function readChildNumber(node: XmlNode, namespaced: string, local: string): number | undefined {
-	const child = node[namespaced] ?? node[local]
+function readChildNumber(node: XmlNode, localName: string): number | undefined {
+	const child = childValue(node, localName)
 	if (typeof child === 'number') return child
 	if (typeof child === 'string') {
 		const parsed = Number(child)
 		return Number.isNaN(parsed) ? undefined : parsed
 	}
 	return undefined
+}
+
+function childNode(node: XmlNode | undefined, localName: string): XmlNode | undefined {
+	return childNodes(node, localName)[0]
+}
+
+function childValue(node: XmlNode | undefined, localName: string): unknown {
+	return childValues(node, localName)[0]
+}
+
+function childValues(node: XmlNode | undefined, localName: string): unknown[] {
+	if (!node) return []
+	const values: unknown[] = []
+	for (const [key, value] of Object.entries(node)) {
+		if (key.startsWith('@_') || localPart(key) !== localName) continue
+		if (Array.isArray(value)) values.push(...value)
+		else values.push(value)
+	}
+	return values
+}
+
+function childNodes(node: XmlNode | undefined, localName: string): XmlNode[] {
+	return childValues(node, localName).filter(isXmlNode)
+}
+
+function isXmlNode(value: unknown): value is XmlNode {
+	return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function localPart(name: string): string {
+	return name.includes(':') ? (name.split(':').pop() ?? name) : name
 }

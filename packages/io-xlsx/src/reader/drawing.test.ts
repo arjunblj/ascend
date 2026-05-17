@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import { parseDrawingObjectRefs, parseVmlDrawingObjectRefs } from './drawing.ts'
+import {
+	parseDrawingImageRefs,
+	parseDrawingObjectRefs,
+	parseVmlDrawingObjectRefs,
+} from './drawing.ts'
 
 describe('drawing inventory', () => {
 	test('parses shape, text box, connector, and graphic frame anchors', () => {
@@ -65,6 +69,76 @@ describe('drawing inventory', () => {
 				name: 'Chart Frame',
 				macro: 'Book.xlsm!RefreshChart',
 				relIds: ['rIdChart'],
+				anchor: { kind: 'absolute', x: 7, y: 8, cx: 9, cy: 10 },
+			},
+		])
+	})
+
+	test('parses DrawingML images and objects when the spreadsheet drawing namespace is prefixed differently', () => {
+		const drawingXml = `<?xml version="1.0"?>
+<sd:wsDr xmlns:sd="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing"
+  xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sd:twoCellAnchor editAs="oneCell">
+    <sd:from><sd:col>1</sd:col><sd:row>2</sd:row></sd:from>
+    <sd:to><sd:col>3</sd:col><sd:row>4</sd:row></sd:to>
+    <sd:pic>
+      <sd:nvPicPr><sd:cNvPr id="1" name="Image 1" descr="Hero"/></sd:nvPicPr>
+      <sd:blipFill><a:blip r:embed="rIdImg"/></sd:blipFill>
+    </sd:pic>
+  </sd:twoCellAnchor>
+  <sd:absoluteAnchor>
+    <sd:pos x="7" y="8"/><sd:ext cx="9" cy="10"/>
+    <sd:graphicFrame macro="Book.xlsm!RefreshChart">
+      <sd:nvGraphicFramePr><sd:cNvPr id="12" name="Chart Frame"/></sd:nvGraphicFramePr>
+      <a:graphic><a:graphicData><c:chart xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" r:id="rIdChart"/></a:graphicData></a:graphic>
+    </sd:graphicFrame>
+  </sd:absoluteAnchor>
+</sd:wsDr>`
+		const relationships = [
+			{
+				id: 'rIdImg',
+				type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image',
+				target: '../media/image1.png',
+			},
+			{
+				id: 'rIdChart',
+				type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart',
+				target: '../charts/chart1.xml',
+			},
+		]
+
+		expect(parseDrawingImageRefs(drawingXml, 'xl/drawings/drawing1.xml', relationships)).toEqual([
+			{
+				drawingPartPath: 'xl/drawings/drawing1.xml',
+				relId: 'rIdImg',
+				targetPath: 'xl/media/image1.png',
+				name: 'Image 1',
+				description: 'Hero',
+				anchor: {
+					kind: 'twoCell',
+					editAs: 'oneCell',
+					from: { col: 1, row: 2 },
+					to: { col: 3, row: 4 },
+				},
+			},
+		])
+		expect(parseDrawingObjectRefs(drawingXml, 'xl/drawings/drawing1.xml', relationships)).toEqual([
+			{
+				drawingPartPath: 'xl/drawings/drawing1.xml',
+				source: 'drawingml',
+				kind: 'graphicFrame',
+				id: 12,
+				name: 'Chart Frame',
+				macro: 'Book.xlsm!RefreshChart',
+				relIds: ['rIdChart'],
+				relationshipRefs: [
+					{
+						id: 'rIdChart',
+						type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart',
+						target: 'xl/charts/chart1.xml',
+					},
+				],
 				anchor: { kind: 'absolute', x: 7, y: 8, cx: 9, cy: 10 },
 			},
 		])

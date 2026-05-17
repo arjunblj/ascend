@@ -15,7 +15,7 @@ permissions:
   contents: read
 
 jobs:
-  quality:
+  core:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -33,30 +33,5 @@ jobs:
 
       - run: bun ci
 
-      - name: Lint, typecheck, build, and graph check
-        run: bunx biome ci && bunx tsc --build && bun run build:js && bun run ci:graph
-
-  test:
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: true
-      matrix:
-        shard: [1, 2, 3, 4]
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version-file: package.json
-
-      - name: Cache Bun packages
-        uses: actions/cache@v5
-        with:
-          path: ~/.bun/install/cache
-          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
-          restore-keys: ${{ runner.os }}-bun-
-
-      - run: bun ci
-
-      - name: Test shard ${{ matrix.shard }}/4
-        run: bun test --recursive --parallel=8 --timeout 30000 --only-failures --shard=${{ matrix.shard }}/4
+      - name: Lint and core tests
+        run: bun run ci:check

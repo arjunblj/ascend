@@ -18,6 +18,8 @@ coverage/
 *.log
 profiles/
 private/
+tmp/
+benchmark-results/
 benchmark-results.json
 bench-current.json
 bench-results.json

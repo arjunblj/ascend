@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { unzipSync } from 'fflate'
 import { makeXlsx } from '../../test/helpers.ts'
 import { writeXlsx } from '../writer/index.ts'
+import { parseActiveXControlInfo, parseWorksheetControlInfos } from './active-content.ts'
 import { readXlsx } from './index.ts'
 
 function expectOk<T, E extends { message: string }>(
@@ -13,6 +14,47 @@ function expectOk<T, E extends { message: string }>(
 }
 
 describe('active content inventory', () => {
+	test('parses active content relationship ids with non-r prefixes', () => {
+		expect(
+			parseActiveXControlInfo(
+				`<?xml version="1.0"?><ax:ocx ax:classid="{8BD21D40-EC42-11CE-9E0D-00AA006002F3}" ax:persistence="persistStreamInit" rel:id="rIdBinary" xmlns:ax="http://schemas.microsoft.com/office/2006/activeX" xmlns:rel="http://schemas.openxmlformats.org/officeDocument/2006/relationships"/>`,
+				[],
+			),
+		).toMatchObject({
+			classId: '{8BD21D40-EC42-11CE-9E0D-00AA006002F3}',
+			persistence: 'persistStreamInit',
+			relationshipId: 'rIdBinary',
+		})
+
+		expect(
+			parseWorksheetControlInfos(
+				`<x:controls xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:rel="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <x:control rel:id="rIdControl" shapeId="7" name="Button 1">
+    <x:controlPr rel:id="rIdControlPr"/>
+  </x:control>
+</x:controls>`,
+				'xl/worksheets/sheet1.xml',
+				[
+					{
+						id: 'rIdControlPr',
+						type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/ctrlProp',
+						target: '../ctrlProps/ctrlProp1.xml',
+					},
+				],
+			),
+		).toEqual([
+			{
+				shapeId: 7,
+				name: 'Button 1',
+				relationshipId: 'rIdControl',
+				controlPrRelationshipId: 'rIdControlPr',
+				controlPrRelationshipType:
+					'http://schemas.openxmlformats.org/officeDocument/2006/relationships/ctrlProp',
+				controlPrTarget: 'xl/ctrlProps/ctrlProp1.xml',
+			},
+		])
+	})
+
 	test('discovers and preserves workbook Custom UI callbacks by UI extensibility relationship', () => {
 		const bytes = makeXlsx({
 			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

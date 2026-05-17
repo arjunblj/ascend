@@ -55,7 +55,7 @@ export function parseActiveXControlInfo(
 
 	assignText(info, 'classId', attr(root, 'ax:classid') ?? attr(root, 'classid'))
 	assignText(info, 'persistence', attr(root, 'ax:persistence') ?? attr(root, 'persistence'))
-	assignText(info, 'relationshipId', attr(root, 'r:id') ?? attr(root, 'id'))
+	assignText(info, 'relationshipId', relationshipIdFromNode(root))
 	return nonEmpty(info)
 }
 
@@ -119,7 +119,7 @@ export function parseWorksheetControlInfos(
 	relationships: readonly Relationship[],
 	vmlControls: readonly VmlControlInfo[] = [],
 ): readonly WorksheetControlInfo[] {
-	if (!xml || !xml.includes('<controls')) return []
+	if (!xml || !CONTROLS_CONTAINER_RE.test(xml)) return []
 	const controls: WorksheetControlInfo[] = []
 	const relationshipsById = new Map(relationships.map((rel) => [rel.id, rel]))
 	const vmlByShapeId = new Map(
@@ -130,11 +130,11 @@ export function parseWorksheetControlInfos(
 	)
 
 	for (const { attrs, body } of extractControlNodes(xml)) {
-		const relationshipId = attrs.get('r:id') ?? attrs.get('id')
+		const relationshipId = relationshipIdFromAttributes(attrs)
 		const shapeId = parseOptionalNumber(attrs.get('shapeId'))
 		const name = attrs.get('name')
 		const controlPrAttrs = firstTagAttrs(body, 'controlPr')
-		const controlPrRelationshipId = controlPrAttrs.get('r:id') ?? controlPrAttrs.get('id')
+		const controlPrRelationshipId = relationshipIdFromAttributes(controlPrAttrs)
 		const controlPrRelationship = controlPrRelationshipId
 			? relationshipsById.get(controlPrRelationshipId)
 			: undefined
@@ -228,6 +228,7 @@ function assignVmlControlInfo(info: WorksheetControlBuilder, vml: VmlControlInfo
 
 const CONTROL_RE =
 	/<(?:[A-Za-z_][\w.-]*:)?control\b([^/>]*?)>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?control>|<(?:[A-Za-z_][\w.-]*:)?control\b([^/>]*?)\/>/g
+const CONTROLS_CONTAINER_RE = /<(?:[A-Za-z_][\w.-]*:)?controls\b/
 const VML_SHAPE_RE = /<v:shape\b([^>]*)>([\s\S]*?)<\/v:shape>/g
 const DRAWING_MACRO_SHAPE_RE =
 	/<((?:[A-Za-z_][\w.-]*:)?(?:sp|graphicFrame|cxnSp|pic))\b([^>]*)>([\s\S]*?)<\/\1>/g
@@ -272,9 +273,9 @@ function extractControlNodes(
 	for (const match of xml.matchAll(CONTROL_RE)) {
 		const attrs = parseAttrs(match[1] ?? match[3] ?? '')
 		const body = match[2] ?? ''
-		const key = `${attrs.get('r:id') ?? attrs.get('id') ?? ''}:${attrs.get('shapeId') ?? ''}`
+		const key = `${relationshipIdFromAttributes(attrs) ?? ''}:${attrs.get('shapeId') ?? ''}`
 		const existing = controls.findIndex((control) => {
-			const existingKey = `${control.attrs.get('r:id') ?? control.attrs.get('id') ?? ''}:${control.attrs.get('shapeId') ?? ''}`
+			const existingKey = `${relationshipIdFromAttributes(control.attrs) ?? ''}:${control.attrs.get('shapeId') ?? ''}`
 			return existingKey === key
 		})
 		if (existing >= 0) {
@@ -296,6 +297,24 @@ function parseAttrs(raw: string): ReadonlyMap<string, string> {
 		if (name && value !== undefined) attrs.set(name, value)
 	}
 	return attrs
+}
+
+function relationshipIdFromNode(node: XmlNode): string | undefined {
+	const direct = attr(node, 'r:id') ?? attr(node, 'id')
+	if (direct !== undefined) return direct
+	for (const [name, value] of Object.entries(node)) {
+		if (name.startsWith('@_') && name.endsWith(':id')) return String(value)
+	}
+	return undefined
+}
+
+function relationshipIdFromAttributes(attrs: ReadonlyMap<string, string>): string | undefined {
+	const direct = attrs.get('r:id') ?? attrs.get('id')
+	if (direct !== undefined) return direct
+	for (const [name, value] of attrs) {
+		if (name.endsWith(':id')) return value
+	}
+	return undefined
 }
 
 function firstTagAttrs(xml: string, localName: string): ReadonlyMap<string, string> {

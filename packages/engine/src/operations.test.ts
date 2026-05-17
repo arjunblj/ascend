@@ -4543,6 +4543,45 @@ describe('applyOperation', () => {
 		})
 	})
 
+	test('moveRange relocates same-sheet autoFilter and sortState contained in the source range', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, cell(numberValue(1)))
+		sheet.autoFilter = {
+			ref: 'A1:C4',
+			columns: [{ colId: 1, kind: 'filters', values: ['West'] }],
+			sortState: {
+				ref: 'A2:C4',
+				conditions: [{ ref: 'C2:C4', descending: true }],
+			},
+		}
+		sheet.sortState = {
+			ref: 'A2:C4',
+			conditions: [{ ref: 'B2:B4' }],
+		}
+
+		const result = applyOperation(wb, {
+			op: 'moveRange',
+			sheet: 'Sheet1',
+			source: 'A1:C4',
+			target: 'E2',
+		})
+		expectOk(result)
+
+		expect(sheet.autoFilter).toEqual({
+			ref: 'E2:G5',
+			columns: [{ colId: 1, kind: 'filters', values: ['West'] }],
+			sortState: {
+				ref: 'E3:G5',
+				conditions: [{ ref: 'G3:G5', descending: true }],
+			},
+		})
+		expect(sheet.sortState).toEqual({
+			ref: 'E3:G5',
+			conditions: [{ ref: 'F3:F5' }],
+		})
+	})
+
 	test('range transfers fail closed for unsupported visual anchor copies and partial moves', () => {
 		const copyWorkbook = createWorkbook()
 		const copySheet = copyWorkbook.addSheet('Sheet1')
@@ -4616,6 +4655,96 @@ describe('applyOperation', () => {
 			to: { row: 3, col: 3 },
 		})
 		expect(moveSheet.cells.get(5, 5)).toBeUndefined()
+	})
+
+	test('range transfers fail closed for unsupported autoFilter copies and partial moves', () => {
+		const copyWorkbook = createWorkbook()
+		const copySheet = copyWorkbook.addSheet('Sheet1')
+		copySheet.cells.set(0, 0, cell(numberValue(1)))
+		copySheet.autoFilter = { ref: 'A1:C4', columns: [] }
+
+		const copyResult = applyOperation(copyWorkbook, {
+			op: 'copyRange',
+			sheet: 'Sheet1',
+			source: 'A1:C4',
+			target: 'E1',
+		})
+		expectErr(copyResult)
+		expect(copyResult.error.details).toMatchObject({
+			kind: 'unsupported-sheet-filter-range-transfer',
+			action: 'copy',
+			filterKind: 'autoFilter',
+			filterRef: 'A1:C4',
+			source: 'A1:C4',
+		})
+		expect(copySheet.autoFilter?.ref).toBe('A1:C4')
+		expect(copySheet.cells.get(0, 4)).toBeUndefined()
+
+		const moveWorkbook = createWorkbook()
+		const moveSheet = moveWorkbook.addSheet('Sheet1')
+		moveSheet.cells.set(0, 0, cell(numberValue(1)))
+		moveSheet.autoFilter = { ref: 'A1:C4', columns: [] }
+
+		const partialMove = applyOperation(moveWorkbook, {
+			op: 'moveRange',
+			sheet: 'Sheet1',
+			source: 'A1:B4',
+			target: 'E1',
+		})
+		expectErr(partialMove)
+		expect(partialMove.error.details).toMatchObject({
+			kind: 'partial-sheet-filter-range-transfer',
+			filterKind: 'autoFilter',
+			filterRef: 'A1:C4',
+			source: 'A1:B4',
+		})
+		expect(moveSheet.autoFilter?.ref).toBe('A1:C4')
+		expect(moveSheet.cells.get(0, 4)).toBeUndefined()
+
+		const sortWorkbook = createWorkbook()
+		const sortSheet = sortWorkbook.addSheet('Sheet1')
+		sortSheet.cells.set(1, 1, cell(numberValue(1)))
+		sortSheet.sortState = { ref: 'B2:D4', conditions: [{ ref: 'C2:C4' }] }
+
+		const partialSortMove = applyOperation(sortWorkbook, {
+			op: 'moveRange',
+			sheet: 'Sheet1',
+			source: 'C2:D4',
+			target: 'F2',
+		})
+		expectErr(partialSortMove)
+		expect(partialSortMove.error.details).toMatchObject({
+			kind: 'partial-sheet-filter-range-transfer',
+			filterKind: 'sortState',
+			filterRef: 'B2:D4',
+			source: 'C2:D4',
+		})
+		expect(sortSheet.sortState?.ref).toBe('B2:D4')
+		expect(sortSheet.cells.get(1, 5)).toBeUndefined()
+
+		const crossSheetWorkbook = createWorkbook()
+		const sourceSheet = crossSheetWorkbook.addSheet('Sheet1')
+		const targetSheet = crossSheetWorkbook.addSheet('Sheet2')
+		sourceSheet.cells.set(0, 0, cell(numberValue(1)))
+		sourceSheet.autoFilter = { ref: 'A1:C4', columns: [] }
+
+		const crossSheetMove = applyOperation(crossSheetWorkbook, {
+			op: 'moveRange',
+			sheet: 'Sheet1',
+			source: 'A1:C4',
+			targetSheet: 'Sheet2',
+			target: 'A1',
+		})
+		expectErr(crossSheetMove)
+		expect(crossSheetMove.error.details).toMatchObject({
+			kind: 'unsupported-sheet-filter-range-transfer',
+			action: 'move to another sheet',
+			filterKind: 'autoFilter',
+			filterRef: 'A1:C4',
+			source: 'A1:C4',
+		})
+		expect(sourceSheet.autoFilter?.ref).toBe('A1:C4')
+		expect(targetSheet.cells.get(0, 0)).toBeUndefined()
 	})
 
 	test('range transfers fail closed for unsupported advanced filter copies and partial moves', () => {

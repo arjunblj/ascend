@@ -303,6 +303,16 @@ export function handleTransferRange(
 		op.op,
 	)
 	if (!visualPlan.ok) return visualPlan
+	const sheetFilterPlan = planSheetFilterTransfer(
+		sourceSheet,
+		targetSheet,
+		source,
+		rowDelta,
+		colDelta,
+		mode,
+		op.op,
+	)
+	if (!sheetFilterPlan.ok) return sheetFilterPlan
 	const advancedFilterPlan = planAdvancedFilterTransfer(
 		sourceSheet,
 		targetSheet,
@@ -418,6 +428,7 @@ export function handleTransferRange(
 	)
 	applyMergeTransfer(sourceSheet, targetSheet, mergePlan.value)
 	applyVisualTransfer(visualPlan.value)
+	applySheetFilterTransfer(sheetFilterPlan.value)
 	applyAdvancedFilterTransfer(advancedFilterPlan.value)
 
 	if (op.op === 'moveRange') {
@@ -766,6 +777,12 @@ interface VisualTransferPlan {
 	readonly entries: readonly VisualTransferEntry[]
 }
 
+interface SheetFilterTransferPlan {
+	readonly sheet: Sheet
+	readonly autoFilter?: AutoFilter
+	readonly sortState?: SortState
+}
+
 interface AdvancedFilterTransferPlan {
 	readonly sheet: Sheet
 	readonly entries: readonly AdvancedFilterTransferEntry[]
@@ -783,6 +800,13 @@ interface VisualTransferEntry {
 }
 
 interface VisualAnchorIntersection extends VisualTransferEntry {
+	readonly contained: boolean
+	readonly ref: string
+	readonly label: string
+}
+
+interface SheetFilterIntersection {
+	readonly kind: 'autoFilter' | 'sortState'
 	readonly contained: boolean
 	readonly ref: string
 	readonly label: string
@@ -893,6 +917,87 @@ function applyVisualTransfer(plan: VisualTransferPlan): void {
 	}
 }
 
+function planSheetFilterTransfer(
+	sourceSheet: Sheet,
+	targetSheet: Sheet,
+	source: RangeRef,
+	rowDelta: number,
+	colDelta: number,
+	mode: PasteMode,
+	operation: 'copyRange' | 'moveRange',
+): Result<SheetFilterTransferPlan> {
+	if (mode !== 'all') return ok({ sheet: sourceSheet })
+	const intersecting = collectIntersectingSheetFilters(sourceSheet, source)
+	if (intersecting.length === 0) return ok({ sheet: sourceSheet })
+	const first = intersecting[0]
+	if (!first) return ok({ sheet: sourceSheet })
+	if (operation === 'copyRange') {
+		return err(unsupportedSheetFilterTransferError('copy', source, first))
+	}
+	if (sourceSheet !== targetSheet) {
+		return err(unsupportedSheetFilterTransferError('move to another sheet', source, first))
+	}
+
+	let autoFilter: AutoFilter | undefined
+	let sortState: SortState | undefined
+	for (const entry of intersecting) {
+		if (!entry.contained) return err(partialSheetFilterTransferError(source, entry))
+		if (entry.kind === 'autoFilter') {
+			if (!sourceSheet.autoFilter) continue
+			const translated = translateAutoFilter(sourceSheet.autoFilter, rowDelta, colDelta, source, {
+				label: 'sheet autoFilter',
+				kind: 'sheet-filter',
+			})
+			if (!translated.ok) return translated
+			autoFilter = translated.value
+		} else {
+			if (!sourceSheet.sortState) continue
+			const translated = translateSortState(sourceSheet.sortState, rowDelta, colDelta, source, {
+				label: 'sheet sortState',
+				kind: 'sheet-sort-state',
+			})
+			if (!translated.ok) return translated
+			sortState = translated.value
+		}
+	}
+	return ok({
+		sheet: sourceSheet,
+		...(autoFilter ? { autoFilter } : {}),
+		...(sortState ? { sortState } : {}),
+	})
+}
+
+function applySheetFilterTransfer(plan: SheetFilterTransferPlan): void {
+	if (plan.autoFilter) plan.sheet.autoFilter = plan.autoFilter
+	if (plan.sortState) plan.sheet.sortState = plan.sortState
+}
+
+function collectIntersectingSheetFilters(
+	sheet: Sheet,
+	source: RangeRef,
+): SheetFilterIntersection[] {
+	const entries: SheetFilterIntersection[] = []
+	const autoFilterRange = sheet.autoFilter ? parseOptionalRange(sheet.autoFilter.ref) : null
+	if (autoFilterRange && rangesOverlap(autoFilterRange, source)) {
+		entries.push({
+			kind: 'autoFilter',
+			contained: rangeContainsRange(source, autoFilterRange),
+			ref: rangeToA1(autoFilterRange),
+			label: 'sheet autoFilter',
+		})
+	}
+	const sortStateRange = sheet.sortState ? parseOptionalRange(sheet.sortState.ref) : null
+	if (sortStateRange && rangesOverlap(sortStateRange, source)) {
+		entries.push({
+			kind: 'sortState',
+			contained: rangeContainsRange(source, sortStateRange),
+			ref: rangeToA1(sortStateRange),
+			label: 'sheet sortState',
+		})
+	}
+	return entries
+}
+
 function planAdvancedFilterTransfer(
 	sourceSheet: Sheet,
 	targetSheet: Sheet,
@@ -956,12 +1061,18 @@ function collectIntersectingAdvancedFilters(
 
 function advancedFilterRange(filter: SheetAdvancedFilterInfo): RangeRef | null {
 	for (const ref of [filter.autoFilter?.ref, filter.ref]) {
-		if (!ref) continue
-		try {
-			return parseRange(ref)
-		} catch {}
+		const range = ref ? parseOptionalRange(ref) : null
+		if (range) return range
 	}
 	return null
+}
+
+function parseOptionalRange(ref: string): RangeRef | null {
+	try {
+		return parseRange(ref)
+	} catch {
+		return null
+	}
 }
 
 function translateAdvancedFilter(
@@ -970,12 +1081,16 @@ function translateAdvancedFilter(
 	colDelta: number,
 	source: RangeRef,
 ): Result<SheetAdvancedFilterInfo> {
+	const owner: RangeTransferOwner = {
+		label: filter.viewName ? `advanced filter "${filter.viewName}"` : 'advanced filter metadata',
+		kind: 'advanced-filter',
+	}
 	const ref = filter.ref
-		? translateContainedRangeRef(filter.ref, rowDelta, colDelta, source)
+		? translateContainedRangeRef(filter.ref, rowDelta, colDelta, source, owner)
 		: ok(undefined)
 	if (!ref.ok) return ref
 	const autoFilter = filter.autoFilter
-		? translateAutoFilter(filter.autoFilter, rowDelta, colDelta, source)
+		? translateAutoFilter(filter.autoFilter, rowDelta, colDelta, source, owner)
 		: ok(undefined)
 	if (!autoFilter.ok) return autoFilter
 	const nextRef = autoFilter.value?.ref ?? ref.value
@@ -997,11 +1112,12 @@ function translateAutoFilter(
 	rowDelta: number,
 	colDelta: number,
 	source: RangeRef,
+	owner: RangeTransferOwner,
 ): Result<AutoFilter> {
-	const ref = translateContainedRangeRef(autoFilter.ref, rowDelta, colDelta, source)
+	const ref = translateContainedRangeRef(autoFilter.ref, rowDelta, colDelta, source, owner)
 	if (!ref.ok) return ref
 	const sortState = autoFilter.sortState
-		? translateSortState(autoFilter.sortState, rowDelta, colDelta, source)
+		? translateSortState(autoFilter.sortState, rowDelta, colDelta, source, owner)
 		: ok(undefined)
 	if (!sortState.ok) return sortState
 	const { ref: _ref, columns: _columns, sortState: _sortState, ...rest } = autoFilter
@@ -1018,16 +1134,28 @@ function translateSortState(
 	rowDelta: number,
 	colDelta: number,
 	source: RangeRef,
+	owner: RangeTransferOwner,
 ): Result<SortState> {
-	const ref = translateContainedRangeRef(sortState.ref, rowDelta, colDelta, source)
+	const ref = translateContainedRangeRef(sortState.ref, rowDelta, colDelta, source, owner)
 	if (!ref.ok) return ref
 	const conditions: SortState['conditions'][number][] = []
 	for (const condition of sortState.conditions) {
-		const conditionRef = translateContainedRangeRef(condition.ref, rowDelta, colDelta, source)
+		const conditionRef = translateContainedRangeRef(
+			condition.ref,
+			rowDelta,
+			colDelta,
+			source,
+			owner,
+		)
 		if (!conditionRef.ok) return conditionRef
 		conditions.push({ ...condition, ref: conditionRef.value })
 	}
 	return ok({ ...sortState, ref: ref.value, conditions })
+}
+
+interface RangeTransferOwner {
+	readonly label: string
+	readonly kind: 'advanced-filter' | 'sheet-filter' | 'sheet-sort-state'
 }
 
 function translateContainedRangeRef(
@@ -1035,39 +1163,36 @@ function translateContainedRangeRef(
 	rowDelta: number,
 	colDelta: number,
 	source: RangeRef,
+	owner: RangeTransferOwner,
 ): Result<string> {
 	let range: RangeRef
 	try {
 		range = parseRange(ref)
 	} catch {
 		return err(
-			ascendError(
-				'VALIDATION_ERROR',
-				`Cannot move advanced filter metadata with invalid range ${ref}`,
-				{
-					refs: [ref, rangeToA1(source)],
-					suggestedFix:
-						'Repair or remove the advanced filter metadata before moving the filtered range.',
-					details: {
-						kind: 'invalid-advanced-filter-range-transfer',
-						reference: ref,
-						source: rangeToA1(source),
-					},
+			ascendError('VALIDATION_ERROR', `Cannot move ${owner.label} with invalid range ${ref}`, {
+				refs: [ref, rangeToA1(source)],
+				suggestedFix:
+					'Repair or remove the filter or sort metadata before moving the filtered range.',
+				details: {
+					kind: `invalid-${owner.kind}-range-transfer`,
+					reference: ref,
+					source: rangeToA1(source),
 				},
-			),
+			}),
 		)
 	}
 	if (!rangeContainsRange(source, range)) {
 		return err(
 			ascendError(
 				'VALIDATION_ERROR',
-				`Cannot move ${rangeToA1(source)} because advanced filter metadata references ${ref} outside the moved cells`,
+				`Cannot move ${rangeToA1(source)} because ${owner.label} references ${ref} outside the moved cells`,
 				{
 					refs: [rangeToA1(source), ref],
 					suggestedFix:
-						'Move the full advanced filter range and its sort references together, or remove the advanced filter before moving the cells.',
+						'Move the full filter or sort range and its references together, or remove the metadata before moving the cells.',
 					details: {
-						kind: 'advanced-filter-reference-outside-transfer',
+						kind: `${owner.kind}-reference-outside-transfer`,
 						reference: ref,
 						source: rangeToA1(source),
 					},
@@ -1249,6 +1374,52 @@ function partialVisualTransferError(
 				kind: 'partial-visual-range-transfer',
 				visualKind: entry.kind,
 				visualRef: entry.ref,
+				source: rangeToA1(source),
+			},
+		},
+	)
+}
+
+function unsupportedSheetFilterTransferError(
+	action: 'copy' | 'move to another sheet',
+	source: RangeRef,
+	entry: SheetFilterIntersection,
+): ReturnType<typeof ascendError> {
+	return ascendError(
+		'VALIDATION_ERROR',
+		`Cannot ${action} ${rangeToA1(source)} because it contains ${entry.label} at ${entry.ref}`,
+		{
+			refs: [rangeToA1(source), entry.ref],
+			suggestedFix:
+				action === 'copy'
+					? 'Copy the cells without mode "all", or recreate the filter or sort metadata explicitly after copying the range.'
+					: 'Move the range within the same sheet, or recreate the filter or sort metadata explicitly on the target sheet after moving the cells.',
+			details: {
+				kind: 'unsupported-sheet-filter-range-transfer',
+				action,
+				filterKind: entry.kind,
+				filterRef: entry.ref,
+				source: rangeToA1(source),
+			},
+		},
+	)
+}
+
+function partialSheetFilterTransferError(
+	source: RangeRef,
+	entry: SheetFilterIntersection,
+): ReturnType<typeof ascendError> {
+	return ascendError(
+		'VALIDATION_ERROR',
+		`Cannot move ${rangeToA1(source)} because it partially overlaps ${entry.label} at ${entry.ref}`,
+		{
+			refs: [rangeToA1(source), entry.ref],
+			suggestedFix:
+				'Move the full filter or sort range, move the cells without mode "all", or remove the metadata before moving the cells.',
+			details: {
+				kind: 'partial-sheet-filter-range-transfer',
+				filterKind: entry.kind,
+				filterRef: entry.ref,
 				source: rangeToA1(source),
 			},
 		},

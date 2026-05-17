@@ -1853,6 +1853,162 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(2, 6)?.value).toEqual(numberValue(35))
 	})
 
+	test('statistical distribution scalar functions spill over range operands in array formulas', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		const xValues = [0.5, 1.25, 2.5]
+		const probabilities = [0.2, 0.5, 0.8]
+		const means = [0, 1, 2]
+		const standardDeviations = [1, 1.5, 2]
+		const trials = [10, 20, 30]
+		const successes = [2, 5, 12]
+		const successProbabilities = [0.2, 0.3, 0.4]
+		const upperSuccesses = [4, 8, 15]
+		const degrees1 = [5, 10, 15]
+		const degrees2 = [6, 12, 18]
+		const alphas = [2, 3, 4]
+		const betas = [3, 4, 5]
+		const populations = [50, 60, 70]
+		for (let row = 0; row < 3; row++) {
+			for (const [col, values] of [
+				[0, xValues],
+				[1, probabilities],
+				[2, means],
+				[3, standardDeviations],
+				[4, trials],
+				[5, successes],
+				[6, successProbabilities],
+				[7, upperSuccesses],
+				[8, degrees1],
+				[9, degrees2],
+				[10, alphas],
+				[11, betas],
+				[12, populations],
+			] as const) {
+				sheet.cells.set(row, col, {
+					value: numberValue(values[row] as number),
+					formula: null,
+					styleId: sid,
+				})
+			}
+		}
+		const arrayFormulas = [
+			'NORM.DIST(A1:A3,C1:C3,D1:D3,TRUE)+0',
+			'NORM.INV(B1:B3,C1:C3,D1:D3)+0',
+			'NORM.S.DIST(A1:A3,TRUE)+0',
+			'NORM.S.INV(B1:B3)+0',
+			'BINOM.DIST(F1:F3,E1:E3,G1:G3,TRUE)+0',
+			'BINOM.INV(E1:E3,G1:G3,B1:B3)+0',
+			'BINOM.DIST.RANGE(E1:E3,G1:G3,F1:F3,H1:H3)+0',
+			'POISSON.DIST(F1:F3,K1:K3,TRUE)+0',
+			'EXPON.DIST(A1:A3,K1:K3,TRUE)+0',
+			'WEIBULL.DIST(A1:A3,K1:K3,L1:L3,TRUE)+0',
+			'GAMMA.DIST(A1:A3,K1:K3,L1:L3,TRUE)+0',
+			'GAMMA.INV(B1:B3,K1:K3,L1:L3)+0',
+			'LOGNORM.DIST(A1:A3,C1:C3,D1:D3,TRUE)+0',
+			'LOGNORM.INV(B1:B3,C1:C3,D1:D3)+0',
+			'NEGBINOM.DIST(F1:F3,E1:E3,G1:G3,TRUE)+0',
+			'HYPGEOM.DIST(F1:F3,E1:E3,H1:H3,M1:M3,TRUE)+0',
+			'BETA.DIST(B1:B3,K1:K3,L1:L3,TRUE)+0',
+			'BETA.INV(B1:B3,K1:K3,L1:L3)+0',
+			'CHISQ.DIST(A1:A3,I1:I3,TRUE)+0',
+			'CHISQ.DIST.RT(A1:A3,I1:I3)+0',
+			'CHISQ.INV(B1:B3,I1:I3)+0',
+			'CHISQ.INV.RT(B1:B3,I1:I3)+0',
+			'T.DIST(A1:A3,I1:I3,TRUE)+0',
+			'T.DIST.2T(A1:A3,I1:I3)+0',
+			'T.DIST.RT(A1:A3,I1:I3)+0',
+			'T.INV(B1:B3,I1:I3)+0',
+			'T.INV.2T(B1:B3,I1:I3)+0',
+			'F.DIST(A1:A3,I1:I3,J1:J3,TRUE)+0',
+			'F.DIST.RT(A1:A3,I1:I3,J1:J3)+0',
+			'F.INV(B1:B3,I1:I3,J1:J3)+0',
+			'F.INV.RT(B1:B3,I1:I3,J1:J3)+0',
+			'FISHER(B1:B3/2)+0',
+			'FISHERINV(A1:A3)+0',
+			'STANDARDIZE(A1:A3,C1:C3,D1:D3)+0',
+			'PHI(A1:A3)+0',
+			'GAUSS(A1:A3)+0',
+			'GAMMA(A1:A3)+0',
+			'GAMMALN(A1:A3)+0',
+			'GAMMALN.PRECISE(A1:A3)+0',
+			'CONFIDENCE.NORM(B1:B3,D1:D3,E1:E3)+0',
+			'CONFIDENCE.T(B1:B3,D1:D3,E1:E3)+0',
+		]
+		const scalarFormulas = [
+			'NORM.DIST(A{r},C{r},D{r},TRUE)+0',
+			'NORM.INV(B{r},C{r},D{r})+0',
+			'NORM.S.DIST(A{r},TRUE)+0',
+			'NORM.S.INV(B{r})+0',
+			'BINOM.DIST(F{r},E{r},G{r},TRUE)+0',
+			'BINOM.INV(E{r},G{r},B{r})+0',
+			'BINOM.DIST.RANGE(E{r},G{r},F{r},H{r})+0',
+			'POISSON.DIST(F{r},K{r},TRUE)+0',
+			'EXPON.DIST(A{r},K{r},TRUE)+0',
+			'WEIBULL.DIST(A{r},K{r},L{r},TRUE)+0',
+			'GAMMA.DIST(A{r},K{r},L{r},TRUE)+0',
+			'GAMMA.INV(B{r},K{r},L{r})+0',
+			'LOGNORM.DIST(A{r},C{r},D{r},TRUE)+0',
+			'LOGNORM.INV(B{r},C{r},D{r})+0',
+			'NEGBINOM.DIST(F{r},E{r},G{r},TRUE)+0',
+			'HYPGEOM.DIST(F{r},E{r},H{r},M{r},TRUE)+0',
+			'BETA.DIST(B{r},K{r},L{r},TRUE)+0',
+			'BETA.INV(B{r},K{r},L{r})+0',
+			'CHISQ.DIST(A{r},I{r},TRUE)+0',
+			'CHISQ.DIST.RT(A{r},I{r})+0',
+			'CHISQ.INV(B{r},I{r})+0',
+			'CHISQ.INV.RT(B{r},I{r})+0',
+			'T.DIST(A{r},I{r},TRUE)+0',
+			'T.DIST.2T(A{r},I{r})+0',
+			'T.DIST.RT(A{r},I{r})+0',
+			'T.INV(B{r},I{r})+0',
+			'T.INV.2T(B{r},I{r})+0',
+			'F.DIST(A{r},I{r},J{r},TRUE)+0',
+			'F.DIST.RT(A{r},I{r},J{r})+0',
+			'F.INV(B{r},I{r},J{r})+0',
+			'F.INV.RT(B{r},I{r},J{r})+0',
+			'FISHER(B{r}/2)+0',
+			'FISHERINV(A{r})+0',
+			'STANDARDIZE(A{r},C{r},D{r})+0',
+			'PHI(A{r})+0',
+			'GAUSS(A{r})+0',
+			'GAMMA(A{r})+0',
+			'GAMMALN(A{r})+0',
+			'GAMMALN.PRECISE(A{r})+0',
+			'CONFIDENCE.NORM(B{r},D{r},E{r})+0',
+			'CONFIDENCE.T(B{r},D{r},E{r})+0',
+		]
+		for (let col = 0; col < arrayFormulas.length; col++) {
+			sheet.cells.set(0, 13 + col, {
+				value: EMPTY,
+				formula: arrayFormulas[col] as string,
+				styleId: sid,
+			})
+			for (let row = 0; row < 3; row++) {
+				sheet.cells.set(row, 60 + col, {
+					value: EMPTY,
+					formula: (scalarFormulas[col] as string).replaceAll('{r}', String(row + 1)),
+					styleId: sid,
+				})
+			}
+		}
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		for (let row = 0; row < 3; row++) {
+			for (let col = 0; col < arrayFormulas.length; col++) {
+				const actual = sheet.cells.get(row, 13 + col)?.value
+				const expected = sheet.cells.get(row, 60 + col)?.value
+				expect(actual?.kind).toBe('number')
+				expect(expected?.kind).toBe('number')
+				if (actual?.kind === 'number' && expected?.kind === 'number') {
+					expect(actual.value).toBeCloseTo(expected.value, 10)
+				}
+			}
+		}
+	})
+
 	test('loan financial scalar functions spill over range operands in array formulas', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

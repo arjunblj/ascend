@@ -2941,6 +2941,101 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(0, 0)?.value).toEqual(numberValue(1))
 	})
 
+	test('common date and time scalar functions spill over range operands in array formulas', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		const dates = [dateToSerial(2024, 1, 31), dateToSerial(2024, 2, 29), dateToSerial(2025, 12, 15)]
+		const times = [
+			(12 * 3600) / 86_400,
+			(6 * 3600 + 30 * 60 + 15) / 86_400,
+			(23 * 3600 + 59 * 60 + 59) / 86_400,
+		]
+		const offsets = [1, -1, 2]
+		const dateText = ['2024-01-31', '2024-02-29', '12/15/2025']
+		const timeText = ['12:00 PM', '6:30:15', '11:59:59 PM']
+		for (let row = 0; row < 3; row++) {
+			sheet.cells.set(row, 0, {
+				value: numberValue(dates[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+			sheet.cells.set(row, 1, {
+				value: numberValue(offsets[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+			sheet.cells.set(row, 2, {
+				value: numberValue(times[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+			sheet.cells.set(row, 3, {
+				value: stringValue(dateText[row] as string),
+				formula: null,
+				styleId: sid,
+			})
+			sheet.cells.set(row, 4, {
+				value: stringValue(timeText[row] as string),
+				formula: null,
+				styleId: sid,
+			})
+		}
+		sheet.cells.set(0, 5, { value: EMPTY, formula: 'YEAR(A1:A3)+0', styleId: sid })
+		sheet.cells.set(0, 6, { value: EMPTY, formula: 'MONTH(A1:A3)*100+DAY(A1:A3)', styleId: sid })
+		sheet.cells.set(0, 7, { value: EMPTY, formula: 'EOMONTH(A1:A3,B1:B3)+0', styleId: sid })
+		sheet.cells.set(0, 8, { value: EMPTY, formula: 'EDATE(A1:A3,B1:B3)+0', styleId: sid })
+		sheet.cells.set(0, 9, {
+			value: EMPTY,
+			formula: 'HOUR(C1:C3)*10000+MINUTE(C1:C3)*100+SECOND(C1:C3)',
+			styleId: sid,
+		})
+		sheet.cells.set(0, 10, { value: EMPTY, formula: 'DATEVALUE(D1:D3)+0', styleId: sid })
+		sheet.cells.set(0, 11, { value: EMPTY, formula: 'TIMEVALUE(E1:E3)+0', styleId: sid })
+		sheet.cells.set(0, 12, {
+			value: EMPTY,
+			formula: 'DATE(YEAR(A1:A3),MONTH(A1:A3),DAY(A1:A3))+0',
+			styleId: sid,
+		})
+		sheet.cells.set(0, 13, {
+			value: EMPTY,
+			formula: 'TIME(HOUR(C1:C3),MINUTE(C1:C3),SECOND(C1:C3))+0',
+			styleId: sid,
+		})
+		sheet.cells.set(0, 14, { value: EMPTY, formula: 'DAYS(A1:A3,DATE(2024,1,1))+0', styleId: sid })
+		sheet.cells.set(0, 15, { value: EMPTY, formula: 'WEEKDAY(A1:A3,2)+0', styleId: sid })
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(0, 5)?.value).toEqual(numberValue(2024))
+		expect(sheet.cells.get(1, 5)?.value).toEqual(numberValue(2024))
+		expect(sheet.cells.get(2, 5)?.value).toEqual(numberValue(2025))
+		expect(sheet.cells.get(0, 6)?.value).toEqual(numberValue(131))
+		expect(sheet.cells.get(1, 6)?.value).toEqual(numberValue(229))
+		expect(sheet.cells.get(2, 6)?.value).toEqual(numberValue(1215))
+		expect(sheet.cells.get(0, 7)?.value).toEqual(numberValue(dateToSerial(2024, 2, 29)))
+		expect(sheet.cells.get(1, 7)?.value).toEqual(numberValue(dateToSerial(2024, 1, 31)))
+		expect(sheet.cells.get(2, 7)?.value).toEqual(numberValue(dateToSerial(2026, 2, 28)))
+		expect(sheet.cells.get(0, 8)?.value).toEqual(numberValue(dateToSerial(2024, 2, 29)))
+		expect(sheet.cells.get(1, 8)?.value).toEqual(numberValue(dateToSerial(2024, 1, 29)))
+		expect(sheet.cells.get(2, 8)?.value).toEqual(numberValue(dateToSerial(2026, 2, 15)))
+		expect(sheet.cells.get(0, 9)?.value).toEqual(numberValue(120000))
+		expect(sheet.cells.get(1, 9)?.value).toEqual(numberValue(63015))
+		expect(sheet.cells.get(2, 9)?.value).toEqual(numberValue(235959))
+		for (let row = 0; row < 3; row++) {
+			expect(sheet.cells.get(row, 10)?.value).toEqual(numberValue(dates[row] as number))
+			expect(sheet.cells.get(row, 11)?.value).toEqual(numberValue(times[row] as number))
+			expect(sheet.cells.get(row, 12)?.value).toEqual(numberValue(dates[row] as number))
+			expect(sheet.cells.get(row, 13)?.value).toEqual(numberValue(times[row] as number))
+			expect(sheet.cells.get(row, 14)?.value).toEqual(
+				numberValue((dates[row] as number) - dateToSerial(2024, 1, 1)),
+			)
+		}
+		expect(sheet.cells.get(0, 15)?.value).toEqual(numberValue(3))
+		expect(sheet.cells.get(1, 15)?.value).toEqual(numberValue(4))
+		expect(sheet.cells.get(2, 15)?.value).toEqual(numberValue(1))
+	})
+
 	test('RAND is deterministic per cell and seed', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

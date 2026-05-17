@@ -1853,6 +1853,82 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(2, 6)?.value).toEqual(numberValue(35))
 	})
 
+	test('loan financial scalar functions spill over range operands in array formulas', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		const rates = [0.005, 0.004, 0.006]
+		const periods = [12, 24, 36]
+		const presentValues = [1000, 5000, 8000]
+		const payments = [-86.06642970708324, -218.9093792032636, -246.27134933277662]
+		const futureValues = [0, 0, 0]
+		const types = [0, 0, 1]
+		const paymentPeriods = [1, 6, 12]
+		for (let row = 0; row < 3; row++) {
+			for (const [col, values] of [
+				[0, rates],
+				[1, periods],
+				[2, presentValues],
+				[3, payments],
+				[4, futureValues],
+				[5, types],
+				[6, paymentPeriods],
+			] as const) {
+				sheet.cells.set(row, col, {
+					value: numberValue(values[row] as number),
+					formula: null,
+					styleId: sid,
+				})
+			}
+		}
+		const arrayFormulas = [
+			'PMT(A1:A3,B1:B3,C1:C3,E1:E3,F1:F3)+0',
+			'FV(A1:A3,B1:B3,D1:D3,C1:C3,F1:F3)+0',
+			'PV(A1:A3,B1:B3,D1:D3,E1:E3,F1:F3)+0',
+			'NPER(A1:A3,D1:D3,C1:C3,E1:E3,F1:F3)+0',
+			'RATE(B1:B3,D1:D3,C1:C3,E1:E3,F1:F3)+0',
+			'IPMT(A1:A3,G1:G3,B1:B3,C1:C3,E1:E3,F1:F3)+0',
+			'PPMT(A1:A3,G1:G3,B1:B3,C1:C3,E1:E3,F1:F3)+0',
+		]
+		const scalarFormulas = [
+			'PMT(A{r},B{r},C{r},E{r},F{r})+0',
+			'FV(A{r},B{r},D{r},C{r},F{r})+0',
+			'PV(A{r},B{r},D{r},E{r},F{r})+0',
+			'NPER(A{r},D{r},C{r},E{r},F{r})+0',
+			'RATE(B{r},D{r},C{r},E{r},F{r})+0',
+			'IPMT(A{r},G{r},B{r},C{r},E{r},F{r})+0',
+			'PPMT(A{r},G{r},B{r},C{r},E{r},F{r})+0',
+		]
+		for (let col = 0; col < arrayFormulas.length; col++) {
+			sheet.cells.set(0, 7 + col, {
+				value: EMPTY,
+				formula: arrayFormulas[col] as string,
+				styleId: sid,
+			})
+			for (let row = 0; row < 3; row++) {
+				sheet.cells.set(row, 14 + col, {
+					value: EMPTY,
+					formula: (scalarFormulas[col] as string).replaceAll('{r}', String(row + 1)),
+					styleId: sid,
+				})
+			}
+		}
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		for (let row = 0; row < 3; row++) {
+			for (let col = 0; col < arrayFormulas.length; col++) {
+				const actual = sheet.cells.get(row, 7 + col)?.value
+				const expected = sheet.cells.get(row, 14 + col)?.value
+				expect(actual?.kind).toBe('number')
+				expect(expected?.kind).toBe('number')
+				if (actual?.kind === 'number' && expected?.kind === 'number') {
+					expect(actual.value).toBeCloseTo(expected.value, 10)
+				}
+			}
+		}
+	})
+
 	test('FREQUENCY formulas can count unique filtered numeric ids from array expressions', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

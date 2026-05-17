@@ -98,6 +98,9 @@ describe('performance claim baseline matrix', () => {
 			'Current focused TS/JS/Rust `mixed-closedxml-10text-5number` write coverage\n  proves Ascend',
 		)
 		expect(markdown).toContain(
+			'Current focused TS/JS/Rust `mixed-50pct-text` read coverage proves Ascend is\n  faster by median and p95 than SheetJS and ExcelJS',
+		)
+		expect(markdown).toContain(
 			"Current focused TS/JS/Rust `styles-heavy` write coverage proves Ascend's\n  generated writer is faster by median and p95 than SheetJS, ExcelJS, and\n  rust_xlsxwriter",
 		)
 		expect(markdown).toContain(
@@ -833,6 +836,35 @@ describe('performance claim baseline matrix', () => {
 		expect(markdown).toContain(
 			'"Ascend uses less memory than rust_xlsxwriter on table-heavy writes."',
 		)
+
+		expect(markdown).toContain(
+			'## Cycle: Mixed 50 Percent Text TS/JS/Rust Read Head-to-Head at `1909afdf`',
+		)
+		expect(markdown).toContain(
+			'/private/tmp/ascend-read-mixed50-js-rust-current-1909afdf-runs/read-mixed50-js-rust-repeat15.json',
+		)
+		expect(markdown).toContain(
+			'/private/tmp/ascend-read-mixed50-js-rust-current-1909afdf-runs/read-mixed50-js-rust-repeat15-p95-scoreboard.json',
+		)
+		expect(markdown).toContain(
+			'| JS file-path operation | `ascend-readxlsx-raw-values-operation-path` | ran/won median and p95 | 4.895 | 5.785 | 0.071 | 108.2 MiB |',
+		)
+		expect(markdown).toContain(
+			'| JS file-path operation | `sheetjs` | ran/lost vs Ascend | 44.599 | 73.815 | 0.182 | 304.1 MiB |',
+		)
+		expect(markdown).toContain(
+			'| JS file-path operation | `exceljs` | ran/lost vs Ascend | 71.343 | 98.126 | 0.112 | 234.5 MiB |',
+		)
+		expect(markdown).toContain(
+			'| Ordered file-path values | `ascend-external-values-ordered` | ran/won median and p95 | 17.720 | 21.877 | 0.083 | 154.7 MiB |',
+		)
+		expect(markdown).toContain(
+			'| Ordered file-path values | `rust-calamine` | ran/lost vs Ascend | 28.959 | 31.332 | 0.036 | 7.4 MiB |',
+		)
+		expect(markdown).toContain(
+			'Do not compare the raw `readXlsx` operation-only lane directly\nagainst Rust Calamine',
+		)
+		expect(markdown).toContain('"Ascend uses less memory than Rust Calamine on mixed reads."')
 
 		expect(markdown).toContain(
 			'## Cycle: Mixed ClosedXML Shape TS/JS/Rust Write Head-to-Head at `942e7c87`',

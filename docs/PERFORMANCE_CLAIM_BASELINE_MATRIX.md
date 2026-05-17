@@ -55,6 +55,11 @@ No broad XLSX read, XLSX write, SOTA, or QSS-leapfrog speed claim is promotable 
   proves Ascend's generated writer is faster by median and p95 than SheetJS,
   ExcelJS, and rust_xlsxwriter on that generated mixed value-write row. Treat it
   as scoped JS/Rust evidence only; this run did not time ClosedXML.
+- Current focused TS/JS/Rust `mixed-50pct-text` read coverage proves Ascend is
+  faster by median and p95 than SheetJS and ExcelJS on the external file-path
+  operation lane, and faster by median and p95 than Rust Calamine on the ordered
+  file-path values lane. Treat those as two scoped timing lanes, not one broad
+  read-speed claim.
 - Current focused TS/JS/Rust `styles-heavy` write coverage proves Ascend's
   generated writer is faster by median and p95 than SheetJS, ExcelJS, and
   rust_xlsxwriter on that value-write row. Treat it as scoped value evidence,
@@ -107,6 +112,106 @@ Forbidden wording:
 - Any wording that treats failed or unavailable runners as wins.
 
 Next action: downgrade the broad speed claim and stop production optimization from winning rows. Continue only if the performance loop is explicitly attacking a remaining claim blocker or measured loss: ClosedXML coverage, feature-rich semantic mismatches for SheetJS/Calamine, metadata-only versus Calamine, remaining unsupported selected-sheet/metadata-only competitors, or FastXLSX environment coverage.
+
+## Cycle: Mixed 50 Percent Text TS/JS/Rust Read Head-to-Head at `1909afdf`
+
+Classification: comparable external-process evidence plus defer. Ascend wins
+both focused timing lanes on this generated value-read row, so no production
+optimization is justified.
+
+Workflow: generated XLSX open/inspect value read for a dense 2000 row x 20
+column worksheet where half the 40,000 cells are strings and half are numbers.
+
+Why it matters for release: this is the read-side counterpart to the mixed
+writer rows. It tests direct JS/TS replacement pressure against SheetJS and
+ExcelJS, plus the Rust read floor against Calamine.
+
+Public/tracked-clean input: `competitive-io` generated the `mixed-50pct-text`
+`raw-ooxml` workload from tracked benchmark code in a clean detached worktree at
+commit `1909afdf50601d3071c158f5183326d78fdef2a1`. The generated workbook was
+145,834 bytes. No private corpus or local research workbook was used.
+
+Commands:
+
+```bash
+git worktree add --detach /private/tmp/ascend-read-mixed50-js-rust-current-1909afdf 1909afdf
+cd /private/tmp/ascend-read-mixed50-js-rust-current-1909afdf
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun install --frozen-lockfile
+jq -s '.[0] + [.[1][0], .[2][1]]' fixtures/benchmarks/runners/js-readers.manifest.json fixtures/benchmarks/runners/nyc311-sota-readers.manifest.json fixtures/benchmarks/runners/nyc311-sota-readers.manifest.json > /private/tmp/ascend-read-mixed50-current-1909afdf-js-rust.manifest.json
+mkdir -p /private/tmp/ascend-read-mixed50-js-rust-current-1909afdf-runs
+TMPDIR=/private/tmp ACCEPT_NPOI_OSMF_LICENSE=1 env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /usr/bin/time -l /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-io.ts --json --category read --competitor all --execution-scope external-process --libraries ascend-readxlsx-raw-values-operation-path,sheetjs,exceljs,ascend-external-values-ordered,rust-calamine --workload mixed-50pct-text --read-source raw-ooxml --repeat 15 --warmup 3 --validation-mode each --runner-manifest /private/tmp/ascend-read-mixed50-current-1909afdf-js-rust.manifest.json > /private/tmp/ascend-read-mixed50-js-rust-current-1909afdf-runs/read-mixed50-js-rust-repeat15.json 2> /private/tmp/ascend-read-mixed50-js-rust-current-1909afdf-runs/read-mixed50-js-rust-repeat15-time.txt
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-scoreboard.ts /private/tmp/ascend-read-mixed50-js-rust-current-1909afdf-runs/read-mixed50-js-rust-repeat15.json --json --metric medianMs > /private/tmp/ascend-read-mixed50-js-rust-current-1909afdf-runs/read-mixed50-js-rust-repeat15-scoreboard.json
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-scoreboard.ts /private/tmp/ascend-read-mixed50-js-rust-current-1909afdf-runs/read-mixed50-js-rust-repeat15.json --json --metric p95Ms > /private/tmp/ascend-read-mixed50-js-rust-current-1909afdf-runs/read-mixed50-js-rust-repeat15-p95-scoreboard.json
+```
+
+Environment:
+
+- Commit: `1909afdf50601d3071c158f5183326d78fdef2a1`
+- Worktree: clean detached worktree at
+  `/private/tmp/ascend-read-mixed50-js-rust-current-1909afdf`
+- Bun runtime: `1.3.13`
+- Node: `24.3.0`
+- Platform: Darwin arm64
+- Runner versions: SheetJS `0.18.5`, ExcelJS `4.4.0`, Rust Calamine runner
+  `0.1.0`, Calamine crate `0.34.0`, Ascend `workspace`.
+- Runtime profile: `category read`, `executionScope external-process`,
+  `workload mixed-50pct-text`, `readSource raw-ooxml`, `repeat 15`, `warmup 3`,
+  `validationMode each`.
+
+Raw output:
+
+```text
+/private/tmp/ascend-read-mixed50-js-rust-current-1909afdf-runs/read-mixed50-js-rust-repeat15.json
+/private/tmp/ascend-read-mixed50-js-rust-current-1909afdf-runs/read-mixed50-js-rust-repeat15-time.txt
+/private/tmp/ascend-read-mixed50-js-rust-current-1909afdf-runs/read-mixed50-js-rust-repeat15-scoreboard.json
+/private/tmp/ascend-read-mixed50-js-rust-current-1909afdf-runs/read-mixed50-js-rust-repeat15-p95-scoreboard.json
+```
+
+Focused external JS/Rust mixed-50pct-text read row, repeat 15 after 3 warmups:
+
+| Timing lane | Runner | Status | Median ms | P95 ms | CV | Peak RSS | Semantic comparability |
+| --- | --- | --- | ---: | ---: | ---: | ---: | --- |
+| JS file-path operation | `ascend-readxlsx-raw-values-operation-path` | ran/won median and p95 | 4.895 | 5.785 | 0.071 | 108.2 MiB | one sheet, 40,000 cells, sorted and ordered semantic values match |
+| JS file-path operation | `sheetjs` | ran/lost vs Ascend | 44.599 | 73.815 | 0.182 | 304.1 MiB | same sorted and ordered semantic values; noisy tail |
+| JS file-path operation | `exceljs` | ran/lost vs Ascend | 71.343 | 98.126 | 0.112 | 234.5 MiB | same sorted and ordered semantic values |
+| Ordered file-path values | `ascend-external-values-ordered` | ran/won median and p95 | 17.720 | 21.877 | 0.083 | 154.7 MiB | one sheet, 40,000 cells, ordered semantic values match |
+| Ordered file-path values | `rust-calamine` | ran/lost vs Ascend | 28.959 | 31.332 | 0.036 | 7.4 MiB | same ordered semantic values; much lower RSS |
+
+Process-level `/usr/bin/time -l`: `18.08 real`, `9.46 user`, `1.46 sys`,
+`319995904` maximum resident set size, `122930040` peak memory footprint.
+
+Scoreboard result:
+
+- Median scoreboard: `ascend-readxlsx-raw-values-operation-path` won the JS
+  file-path operation lane, and `ascend-external-values-ordered` won the Rust
+  ordered file-path values lane; `leaderFailures: []`,
+  `profileLeaderFailures: []`.
+- P95 scoreboard: both Ascend lanes also won by p95; `leaderFailures: []`,
+  `profileLeaderFailures: []`.
+- All five rows had `correctnessStatus: pass` and `rankingEligible: true`.
+
+Semantic boundary: this row has two comparable timing lanes, not one unified
+timing boundary. Do not compare the raw `readXlsx` operation-only lane directly
+against Rust Calamine's ordered materialization lane, and do not count Rust
+Calamine's much lower RSS as an Ascend memory win.
+
+Humble allowed wording:
+
+> On the generated `mixed-50pct-text` 2000x20 raw OOXML read workload at
+> `1909afdf`, Ascend was faster by median and p95 than SheetJS and ExcelJS on
+> the external file-path operation lane, and faster by median and p95 than Rust
+> Calamine on the ordered file-path values lane. These are scoped lane-specific
+> wins, not a broad XLSX read-speed claim.
+
+Forbidden wording:
+
+- "Ascend is SOTA for XLSX read."
+- "Ascend is fastest across one unified mixed-50pct-text read lane."
+- "Ascend uses less memory than Rust Calamine on mixed reads."
+- "Ascend beats every Calamine-family reader on mixed reads."
+
+Next action: defer production optimization from this winning row. Continue only
+on another missing JS/Rust read row, a measured loss, or a semantic blocker.
 
 ## Cycle: Mixed ClosedXML Shape TS/JS/Rust Write Head-to-Head at `942e7c87`
 

@@ -78,9 +78,9 @@ export function parseFormControlInfo(xml: string | undefined): FormControlInfo |
 
 export function parseCustomUiInfo(xml: string | undefined): CustomUiInfo | undefined {
 	if (!xml) return undefined
-	const root = firstElement(parseXml(xml), 'customUI')
+	const root = firstElementEntry(parseXml(xml), 'customUI')
 	const callbacks = collectCustomUiCallbacks(xml)
-	const namespaceUri = root ? attr(root, 'xmlns') : undefined
+	const namespaceUri = root ? elementNamespaceUri(root.name, root.node) : undefined
 	return {
 		callbackCount: callbacks.length,
 		callbacks,
@@ -401,11 +401,25 @@ function parseOptionalNumber(value: string | undefined): number | undefined {
 }
 
 function firstElement(doc: XmlNode, localName: string): XmlNode | undefined {
+	return firstElementEntry(doc, localName)?.node
+}
+
+function firstElementEntry(
+	doc: XmlNode,
+	localName: string,
+): { name: string; node: XmlNode } | undefined {
 	for (const [key, value] of Object.entries(doc)) {
 		if (localPart(key) !== localName || typeof value !== 'object' || value === null) continue
-		return value as XmlNode
+		return { name: key, node: value as XmlNode }
 	}
 	return undefined
+}
+
+function elementNamespaceUri(qualifiedName: string, node: XmlNode): string | undefined {
+	const separator = qualifiedName.indexOf(':')
+	if (separator === -1) return attr(node, 'xmlns')
+	const prefix = qualifiedName.slice(0, separator)
+	return attr(node, `xmlns:${prefix}`) ?? attr(node, 'xmlns')
 }
 
 function localPart(qualifiedName: string): string {

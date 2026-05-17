@@ -116,13 +116,13 @@ describe('active content inventory', () => {
 			'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`,
 			'customUI/customUI2.xml': `<?xml version="1.0"?>
-<customUI xmlns="http://schemas.microsoft.com/office/2009/07/customui" onLoad="Ribbon.OnLoad" loadImage="Ribbon.LoadImage">
-  <ribbon><tabs><tab id="tabAscend" label="Ascend">
-    <group id="grpActions" label="Actions">
-      <button id="runReport" label="Run" onAction="Module1.RunReport" getEnabled="Ribbon.CanRun"/>
-    </group>
-  </tab></tabs></ribbon>
-</customUI>`,
+<mso:customUI xmlns:mso="http://schemas.microsoft.com/office/2009/07/customui" onLoad="Ribbon.OnLoad" loadImage="Ribbon.LoadImage">
+  <mso:ribbon><mso:tabs><mso:tab id="tabAscend" label="Ascend">
+    <mso:group id="grpActions" label="Actions">
+      <mso:button id="runReport" label="Run" onAction="Module1.RunReport" getEnabled="Ribbon.CanRun"/>
+    </mso:group>
+  </mso:tab></mso:tabs></mso:ribbon>
+</mso:customUI>`,
 			'customUI/_rels/customUI2.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rIdImage" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../xl/media/image1.png"/>

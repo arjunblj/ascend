@@ -3545,6 +3545,66 @@ describe('writeXlsx', () => {
 		expect(reopened.value.workbook.sheets[0]?.name).toBe('Data')
 	})
 
+	it('preserves relationship root attributes when relationship parts are regenerated', () => {
+		const sourceBytes = makeXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`,
+			'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"
+  xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+  xmlns:pkgrel="urn:ascend:package-relationships"
+  mc:Ignorable="pkgrel"
+  pkgrel:origin="root">
+  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"
+  xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+  xmlns:wbrel="urn:ascend:workbook-relationships"
+  mc:Ignorable="wbrel"
+  wbrel:origin="workbook">
+  <Relationship Id="rIdSheet" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`,
+			'xl/workbook.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Data" sheetId="1" r:id="rIdSheet"/></sheets>
+</workbook>`,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData>
+</worksheet>`,
+		})
+		const source = readXlsx(sourceBytes)
+		expectOk(source)
+
+		const written = writeXlsx(source.value.workbook, source.value.capsules, {
+			workbookMetaDirty: true,
+		})
+		expectOk(written)
+
+		const zip = unzipSync(written.value)
+		const rootRels = new TextDecoder().decode(zip['_rels/.rels'] ?? new Uint8Array())
+		const workbookRels = new TextDecoder().decode(
+			zip['xl/_rels/workbook.xml.rels'] ?? new Uint8Array(),
+		)
+		expect(rootRels).toContain('xmlns:pkgrel="urn:ascend:package-relationships"')
+		expect(rootRels).toContain('mc:Ignorable="pkgrel"')
+		expect(rootRels).toContain('pkgrel:origin="root"')
+		expect(workbookRels).toContain('xmlns:wbrel="urn:ascend:workbook-relationships"')
+		expect(workbookRels).toContain('mc:Ignorable="wbrel"')
+		expect(workbookRels).toContain('wbrel:origin="workbook"')
+
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+		expect(reopened.value.workbook.sheets[0]?.name).toBe('Data')
+	})
+
 	it('preserves worksheet autoFilter criteria and sort state on round-trip', () => {
 		const wb = new Workbook()
 		const sheet = wb.addSheet('Filter')

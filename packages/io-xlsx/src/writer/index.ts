@@ -1802,7 +1802,12 @@ export function planWriteXlsx(
 						owner: { kind: 'sheet', sheetName: sheet.name },
 						origin: 'generated',
 					},
-					() => buildRelsXml(sheetRels),
+					() =>
+						buildRelsXml(sheetRels, {
+							...(preservedSheetRelsText
+								? { preservedRelationshipsXml: preservedSheetRelsText }
+								: {}),
+						}),
 				)
 			}
 		}
@@ -2010,7 +2015,10 @@ export function planWriteXlsx(
 				owner: { kind: 'package' },
 				origin: 'generated',
 			},
-			() => buildRelsXml(orderedRootRels),
+			() =>
+				buildRelsXml(orderedRootRels, {
+					...(preservedRootRelsText ? { preservedRelationshipsXml: preservedRootRelsText } : {}),
+				}),
 		)
 
 		if (capsules) {
@@ -2354,7 +2362,11 @@ export function planWriteXlsx(
 				() =>
 					preserveWorkbookRels && preservedWorkbookRelsText
 						? preservedWorkbookRelsText
-						: buildRelsXml(orderedWbRels),
+						: buildRelsXml(orderedWbRels, {
+								...(preservedWorkbookRelsTextForTargets
+									? { preservedRelationshipsXml: preservedWorkbookRelsTextForTargets }
+									: {}),
+							}),
 			)
 		}
 

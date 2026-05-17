@@ -278,7 +278,7 @@ function dget(args: EvalArg[]): CellValue {
 	const { values, error } = databaseFilter(args)
 	if (error) return error
 	if (values.length === 0) return errorValue('#VALUE!')
-	if (values.length > 1) return errorValue('#VALUE!')
+	if (values.length > 1) return errorValue('#NUM!')
 	return values[0] ?? EMPTY
 }
 

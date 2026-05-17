@@ -1757,6 +1757,26 @@ describe('formula functions', () => {
 			recalc(wb)
 			expect(getResult(wb, 7, 0)).toEqual(numberValue(50))
 		})
+
+		test('DGET returns #NUM! when multiple records match', () => {
+			const wb = makeWorkbook()
+			setStr(wb, 0, 0, 'Team')
+			setStr(wb, 0, 1, 'Score')
+			setStr(wb, 1, 0, 'A')
+			setNum(wb, 1, 1, 10)
+			setStr(wb, 2, 0, 'B')
+			setNum(wb, 2, 1, 20)
+			setStr(wb, 3, 0, 'B')
+			setNum(wb, 3, 1, 30)
+			setStr(wb, 5, 0, 'Team')
+			setStr(wb, 6, 0, 'A')
+			setStr(wb, 7, 0, 'B')
+			setFormula(wb, 8, 0, 'DGET(A1:B4,2,A6:A7)')
+			setFormula(wb, 8, 1, 'DGET(A1:B4,2,A6:A8)')
+			recalc(wb)
+			expect(getResult(wb, 8, 0)).toEqual(numberValue(10))
+			expect(getResult(wb, 8, 1)).toEqual(errorValue('#NUM!'))
+		})
 	})
 
 	describe('dynamic array functions', () => {

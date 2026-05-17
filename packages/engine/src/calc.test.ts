@@ -48,6 +48,38 @@ function populateRegionSalesRows(sheet: Sheet): void {
 	sheet.cells.set(3, 1, { value: numberValue(40), formula: null, styleId: sid })
 }
 
+function populateDatabaseRows(sheet: Sheet): void {
+	const rows = [
+		['Region', 'Units', 'Revenue'],
+		['West', 2, 20],
+		['East', 3, 30],
+		['West', 5, 50],
+		['North', 7, 70],
+	] as const
+	for (let row = 0; row < rows.length; row++) {
+		const values = rows[row] as readonly (string | number)[]
+		for (let col = 0; col < values.length; col++) {
+			const value = values[col] as string | number
+			sheet.cells.set(row, col, {
+				value: typeof value === 'number' ? numberValue(value) : stringValue(value),
+				formula: null,
+				styleId: sid,
+			})
+		}
+	}
+	sheet.cells.set(0, 4, { value: stringValue('Region'), formula: null, styleId: sid })
+	sheet.cells.set(1, 4, { value: stringValue('West'), formula: null, styleId: sid })
+	sheet.cells.set(0, 5, { value: stringValue('Region'), formula: null, styleId: sid })
+	sheet.cells.set(1, 5, { value: stringValue('East'), formula: null, styleId: sid })
+	for (const [row, value] of [
+		[0, numberValue(2)],
+		[1, stringValue('Revenue')],
+		[2, stringValue('Units')],
+	] as const) {
+		sheet.cells.set(row, 6, { value, formula: null, styleId: sid })
+	}
+}
+
 describe('recalculate', () => {
 	test('simple SUM formula', () => {
 		const wb = createWorkbook()
@@ -3146,6 +3178,113 @@ describe('recalculate', () => {
 		expect(result.errors).toEqual([])
 		expect(sheet.cells.get(1, 3)?.value).toEqual(sheet.cells.get(1, 4)?.value)
 		expect(sheet.cells.get(1, 3)?.value).toEqual(numberValue(6))
+	})
+
+	test('database functions spill over field selectors while preserving database and criteria ranges', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		populateDatabaseRows(sheet)
+		const functions = [
+			'DSUM',
+			'DAVERAGE',
+			'DCOUNT',
+			'DCOUNTA',
+			'DMAX',
+			'DMIN',
+			'DPRODUCT',
+			'DSTDEV',
+			'DSTDEVP',
+			'DVAR',
+			'DVARP',
+			'DGET',
+		]
+		for (let col = 0; col < functions.length; col++) {
+			const name = functions[col] as string
+			sheet.cells.set(0, 8 + col, {
+				value: EMPTY,
+				formula: `${name}(A1:C5,G1:G3,E1:E2)+0`,
+				styleId: sid,
+			})
+			for (let row = 0; row < 3; row++) {
+				sheet.cells.set(row, 24 + col, {
+					value: EMPTY,
+					formula: `${name}(A1:C5,G${row + 1},E1:E2)+0`,
+					styleId: sid,
+				})
+			}
+		}
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		for (let row = 0; row < 3; row++) {
+			for (let col = 0; col < functions.length; col++) {
+				expect(sheet.cells.get(row, 8 + col)?.value).toEqual(sheet.cells.get(row, 24 + col)?.value)
+			}
+		}
+	})
+
+	test('top-level database functions implicitly intersect field ranges', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		populateDatabaseRows(sheet)
+		const functions = [
+			'DSUM',
+			'DAVERAGE',
+			'DCOUNT',
+			'DCOUNTA',
+			'DMAX',
+			'DMIN',
+			'DPRODUCT',
+			'DSTDEV',
+			'DSTDEVP',
+			'DVAR',
+			'DVARP',
+			'DGET',
+		]
+		for (let col = 0; col < functions.length; col++) {
+			const name = functions[col] as string
+			sheet.cells.set(1, 8 + col, {
+				value: EMPTY,
+				formula: `${name}(A1:C5,G1:G3,E1:E2)`,
+				styleId: sid,
+			})
+			sheet.cells.set(1, 24 + col, {
+				value: EMPTY,
+				formula: `${name}(A1:C5,G2,E1:E2)`,
+				styleId: sid,
+			})
+		}
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		for (let col = 0; col < functions.length; col++) {
+			expect(sheet.cells.get(1, 8 + col)?.value).toEqual(sheet.cells.get(1, 24 + col)?.value)
+		}
+		expect(sheet.cells.get(1, 8)?.value).toEqual(numberValue(70))
+	})
+
+	test('DGET returns one matching record and #NUM! for multiple matching records', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		populateDatabaseRows(sheet)
+		sheet.cells.set(0, 8, {
+			value: EMPTY,
+			formula: 'DGET(A1:C5,"Revenue",F1:F2)',
+			styleId: sid,
+		})
+		sheet.cells.set(1, 8, {
+			value: EMPTY,
+			formula: 'DGET(A1:C5,"Revenue",E1:E2)',
+			styleId: sid,
+		})
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(0, 8)?.value).toEqual(numberValue(30))
+		expect(sheet.cells.get(1, 8)?.value).toEqual(errorValue('#NUM!'))
 	})
 
 	test('legacy statistical compatibility functions spill over range operands in array formulas', () => {

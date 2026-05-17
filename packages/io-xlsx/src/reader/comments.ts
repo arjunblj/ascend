@@ -14,22 +14,22 @@ const NOTE_CLIENT_DATA_RE =
 
 export function parseCommentsXml(xml: string): Map<string, SheetComment> {
 	const doc = parseXml(normalizeMainSpreadsheetNamespacePrefix(xml))
-	const comments = doc.comments as XmlNode | undefined
+	const comments = firstElement(doc, 'comments')
 	if (!comments) return new Map()
 
-	const authorsNode = comments.authors as XmlNode | undefined
+	const authorsNode = childNode(comments, 'authors')
 	const authors = asArray<XmlNode | string>(
-		authorsNode?.author as XmlNode | XmlNode[] | string[] | undefined,
+		childValues(authorsNode, 'author') as XmlNode | XmlNode[] | string[] | undefined,
 	).map((author) => readNodeText(author) ?? '')
 	const entries = new Map<string, SheetComment>()
-	const commentList = comments.commentList as XmlNode | undefined
+	const commentList = childNode(comments, 'commentList')
 	if (!commentList) return entries
 
-	for (const comment of asArray<XmlNode>(commentList.comment as XmlNode | XmlNode[])) {
+	for (const comment of childNodes(commentList, 'comment')) {
 		const ref = attr(comment, 'ref')
 		if (!ref) continue
 		const authorId = Number(attr(comment, 'authorId') ?? '-1')
-		const textNode = comment.text as XmlNode | undefined
+		const textNode = childNode(comment, 'text')
 		const text = extractCommentText(textNode)
 		const author = authorId >= 0 ? authors[authorId] : undefined
 		entries.set(ref, author ? { text, author } : { text })
@@ -81,35 +81,32 @@ export function parseThreadedCommentsXml(
 	people: ReadonlyMap<string, string> = new Map(),
 ): SheetThreadedComment[] {
 	const doc = parseXml(xml)
-	const comments =
-		(doc.ThreadedComments as XmlNode | undefined) ?? (doc.threadedComments as XmlNode | undefined)
+	const comments = firstElement(doc, 'ThreadedComments') ?? firstElement(doc, 'threadedComments')
 	if (!comments) return []
 
-	return asArray<XmlNode>(comments.threadedComment as XmlNode | XmlNode[] | undefined).flatMap(
-		(comment) => {
-			const ref = attr(comment, 'ref')
-			if (!ref) return []
-			const id = attr(comment, 'id')
-			const parentId = attr(comment, 'parentId')
-			const personId = attr(comment, 'personId')
-			const author = personId ? people.get(personId) : undefined
-			const dateTime = attr(comment, 'dT')
-			const done = boolAttr(comment, 'done')
-			const text = readNodeText(comment.text) ?? ''
-			const parsed: SheetThreadedComment = {
-				ref,
-				text,
-				partPath,
-				...(id !== undefined ? { id } : {}),
-				...(parentId !== undefined ? { parentId } : {}),
-				...(personId !== undefined ? { personId } : {}),
-				...(author !== undefined ? { author } : {}),
-				...(dateTime !== undefined ? { dateTime } : {}),
-				...(done !== undefined ? { done } : {}),
-			}
-			return [parsed]
-		},
-	)
+	return childNodes(comments, 'threadedComment').flatMap((comment) => {
+		const ref = attr(comment, 'ref')
+		if (!ref) return []
+		const id = attr(comment, 'id')
+		const parentId = attr(comment, 'parentId')
+		const personId = attr(comment, 'personId')
+		const author = personId ? people.get(personId) : undefined
+		const dateTime = attr(comment, 'dT')
+		const done = boolAttr(comment, 'done')
+		const text = readNodeText(childValue(comment, 'text')) ?? ''
+		const parsed: SheetThreadedComment = {
+			ref,
+			text,
+			partPath,
+			...(id !== undefined ? { id } : {}),
+			...(parentId !== undefined ? { parentId } : {}),
+			...(personId !== undefined ? { personId } : {}),
+			...(author !== undefined ? { author } : {}),
+			...(dateTime !== undefined ? { dateTime } : {}),
+			...(done !== undefined ? { done } : {}),
+		}
+		return [parsed]
+	})
 }
 
 export function parseThreadedCommentPersonsXml(xml: string): Map<string, string> {
@@ -132,12 +129,12 @@ export function parseThreadedCommentPersonEntriesXml(
 ): readonly ThreadedCommentPersonEntry[] {
 	const doc = parseXml(xml)
 	const root =
-		(doc.personList as XmlNode | undefined) ??
-		(doc.persons as XmlNode | undefined) ??
-		(doc.PersonList as XmlNode | undefined)
+		firstElement(doc, 'personList') ??
+		firstElement(doc, 'persons') ??
+		firstElement(doc, 'PersonList')
 	const entries: ThreadedCommentPersonEntry[] = []
 	if (!root) return entries
-	const persons = asArray<XmlNode>(root.person as XmlNode | XmlNode[] | undefined)
+	const persons = childNodes(root, 'person')
 	for (let index = 0; index < persons.length; index++) {
 		const person = persons[index]
 		if (!person) continue
@@ -151,11 +148,49 @@ export function parseThreadedCommentPersonEntriesXml(
 
 function extractCommentText(textNode: XmlNode | undefined): string {
 	if (!textNode) return ''
-	if (textNode.t !== undefined) return String(textNode.t)
-	const runs = asArray<XmlNode>(textNode.r as XmlNode | XmlNode[]).map(
-		(run) => readNodeText(run.t) ?? '',
-	)
+	const directText = childValue(textNode, 't')
+	if (directText !== undefined) return readNodeText(directText) ?? ''
+	const runs = childNodes(textNode, 'r').map((run) => readNodeText(childValue(run, 't')) ?? '')
 	return runs.join('')
+}
+
+function firstElement(doc: XmlNode, localName: string): XmlNode | undefined {
+	for (const [key, value] of Object.entries(doc)) {
+		if (key.startsWith('@_') || localPart(key) !== localName || !isXmlNode(value)) continue
+		return value
+	}
+	return undefined
+}
+
+function childNode(node: XmlNode | undefined, localName: string): XmlNode | undefined {
+	return childNodes(node, localName)[0]
+}
+
+function childValue(node: XmlNode | undefined, localName: string): unknown {
+	return childValues(node, localName)[0]
+}
+
+function childValues(node: XmlNode | undefined, localName: string): unknown[] {
+	if (!node) return []
+	const values: unknown[] = []
+	for (const [key, value] of Object.entries(node)) {
+		if (key.startsWith('@_') || localPart(key) !== localName) continue
+		if (Array.isArray(value)) values.push(...value)
+		else values.push(value)
+	}
+	return values
+}
+
+function childNodes(node: XmlNode | undefined, localName: string): XmlNode[] {
+	return childValues(node, localName).filter(isXmlNode)
+}
+
+function isXmlNode(value: unknown): value is XmlNode {
+	return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function localPart(name: string): string {
+	return name.includes(':') ? (name.split(':').pop() ?? name) : name
 }
 
 function readNodeText(node: unknown): string | undefined {

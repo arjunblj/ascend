@@ -51,11 +51,11 @@ describe('threaded comment inventory', () => {
 
 	test('preserves duplicate threaded comment person ids in package graph metadata', () => {
 		const bytes = threadedCommentWorkbook(`<?xml version="1.0"?>
-<personList xmlns="http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments">
-  <person id="0" displayName="Ada Lovelace"/>
-  <person id="0" displayName="Ada Duplicate"/>
-  <person id="1" displayName="Grace Hopper"/>
-</personList>`)
+<tc:personList xmlns:tc="http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments">
+  <tc:person id="0" displayName="Ada Lovelace"/>
+  <tc:person id="0" displayName="Ada Duplicate"/>
+  <tc:person id="1" displayName="Grace Hopper"/>
+</tc:personList>`)
 		const result = readXlsx(bytes)
 		expectOk(result)
 
@@ -103,19 +103,19 @@ function threadedCommentWorkbook(personsXml = DEFAULT_PERSONS_XML): Uint8Array {
 </Relationships>`,
 		'xl/persons/person.xml': personsXml,
 		'xl/threadedComments/threadedComment1.xml': `<?xml version="1.0"?>
-<ThreadedComments xmlns="http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments">
-  <threadedComment ref="A1" personId="0" id="tc1" dT="2024-01-01T00:00:00.000">
-    <text>Please review</text>
-  </threadedComment>
-  <threadedComment ref="A1" personId="1" id="tc2" parentId="tc1" dT="2024-01-02T00:00:00.000" done="1">
-    <text>Reviewed</text>
-  </threadedComment>
-</ThreadedComments>`,
+<tc:ThreadedComments xmlns:tc="http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments">
+  <tc:threadedComment ref="A1" personId="0" id="tc1" dT="2024-01-01T00:00:00.000">
+    <tc:text>Please review</tc:text>
+  </tc:threadedComment>
+  <tc:threadedComment ref="A1" personId="1" id="tc2" parentId="tc1" dT="2024-01-02T00:00:00.000" done="1">
+    <tc:text>Reviewed</tc:text>
+  </tc:threadedComment>
+</tc:ThreadedComments>`,
 	})
 }
 
 const DEFAULT_PERSONS_XML = `<?xml version="1.0"?>
-<personList xmlns="http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments">
-  <person id="0" displayName="Ada Lovelace"/>
-  <person id="1" displayName="Grace Hopper"/>
-</personList>`
+<tc:personList xmlns:tc="http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments">
+  <tc:person id="0" displayName="Ada Lovelace"/>
+  <tc:person id="1" displayName="Grace Hopper"/>
+</tc:personList>`

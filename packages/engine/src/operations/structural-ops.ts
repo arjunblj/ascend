@@ -104,6 +104,19 @@ function applyAxisShift(
 			),
 		)
 	}
+	const insertVisualAnchorOverflowBlocker =
+		delta > 0 ? findInsertShiftedVisualAnchorOutOfBounds(sheet, axis, at, count) : null
+	if (insertVisualAnchorOverflowBlocker) {
+		return err(
+			insertShiftedVisualAnchorOutOfBoundsError(
+				sheet,
+				axis,
+				at,
+				count,
+				insertVisualAnchorOverflowBlocker,
+			),
+		)
+	}
 	const insertMergeOverflowBlocker =
 		delta > 0 ? findInsertShiftedMergeOutOfBounds(sheet, axis, at, count) : null
 	if (insertMergeOverflowBlocker) {
@@ -445,6 +458,80 @@ function insertShiftedCellMetadataOutOfBoundsError(
 				label: metadata.label,
 				ref: qualifiedRef,
 				shiftedRef: metadata.shiftedRef,
+			},
+		},
+	)
+}
+
+interface InsertOverflowVisualAnchor {
+	readonly label: string
+	readonly ref: string
+	readonly shiftedRef: string
+}
+
+function findInsertShiftedVisualAnchorOutOfBounds(
+	sheet: Sheet,
+	axis: 'row' | 'col',
+	at: number,
+	count: number,
+): InsertOverflowVisualAnchor | null {
+	const checkAnchor = (
+		label: string,
+		anchor: SheetImageAnchor | undefined,
+	): InsertOverflowVisualAnchor | null => {
+		if (!anchor) return null
+		const range = sheetImageAnchorRange(anchor)
+		if (!range || !insertAffectsRange(range, axis, at)) return null
+		const shiftedRange = shiftInsertedRange(range, axis, at, count)
+		if (rangeWithinGrid(shiftedRange)) return null
+		return {
+			label,
+			ref: rangeToA1(range),
+			shiftedRef: rangeToA1(shiftedRange),
+		}
+	}
+
+	for (const [index, image] of sheet.imageRefs.entries()) {
+		const issue = checkAnchor(
+			image.name ? `image "${image.name}"` : `image ${index + 1}`,
+			image.anchor,
+		)
+		if (issue) return issue
+	}
+	for (const [index, object] of sheet.drawingObjectRefs.entries()) {
+		const issue = checkAnchor(
+			object.name ? `drawing object "${object.name}"` : `drawing object ${index + 1}`,
+			object.anchor,
+		)
+		if (issue) return issue
+	}
+	return null
+}
+
+function insertShiftedVisualAnchorOutOfBoundsError(
+	sheet: Sheet,
+	axis: 'row' | 'col',
+	at: number,
+	count: number,
+	anchor: InsertOverflowVisualAnchor,
+) {
+	const label = axis === 'row' ? 'row' : 'column'
+	const maxRef = axis === 'row' ? '1048576' : 'XFD'
+	const qualifiedRef = `${formatSheetName(sheet.name)}!${anchor.ref}`
+	return ascendError(
+		'INVALID_RANGE',
+		`Cannot insert ${label}s because ${anchor.label} anchor ${qualifiedRef} would shift outside Excel worksheet bounds`,
+		{
+			refs: [qualifiedRef],
+			suggestedFix: `Move or remove visual anchors that would shift past ${maxRef}, then retry the insert.`,
+			details: {
+				kind: 'structural-insert-shifts-visual-anchor-out-of-bounds',
+				axis,
+				at,
+				count,
+				label: anchor.label,
+				ref: qualifiedRef,
+				shiftedRef: anchor.shiftedRef,
 			},
 		},
 	)

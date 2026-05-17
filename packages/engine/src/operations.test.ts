@@ -5988,6 +5988,74 @@ describe('applyOperation', () => {
 		}
 	})
 
+	test('row and column inserts reject visual anchors before shifting them out of grid', () => {
+		const cases: readonly {
+			readonly op: Operation
+			readonly setup: (sheet: Sheet) => void
+			readonly expectedRef: string
+			readonly expectedLabel: string
+		}[] = [
+			{
+				op: { op: 'insertRows', sheet: 'Sheet1', at: 0, count: 1 },
+				setup: (sheet) => {
+					sheet.imageRefs.push({
+						drawingPartPath: 'xl/drawings/drawing1.xml',
+						relId: 'rId1',
+						targetPath: '../media/image1.png',
+						name: 'Logo',
+						anchor: { kind: 'oneCell', from: { row: 1_048_575, col: 0 } },
+					})
+				},
+				expectedRef: 'Sheet1!A1048576',
+				expectedLabel: 'image "Logo"',
+			},
+			{
+				op: { op: 'insertCols', sheet: 'Sheet1', at: 0, count: 1 },
+				setup: (sheet) => {
+					sheet.drawingObjectRefs.push({
+						drawingPartPath: 'xl/drawings/drawing1.xml',
+						kind: 'shape',
+						name: 'Callout',
+						anchor: {
+							kind: 'twoCell',
+							from: { row: 0, col: 16_383 },
+							to: { row: 1, col: 16_383 },
+						},
+					})
+				},
+				expectedRef: 'Sheet1!XFD1:XFD2',
+				expectedLabel: 'drawing object "Callout"',
+			},
+		]
+
+		for (const { op, setup: setupSheet, expectedRef, expectedLabel } of cases) {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setupSheet(sheet)
+			const beforeVisuals = JSON.stringify({
+				imageRefs: sheet.imageRefs,
+				drawingObjectRefs: sheet.drawingObjectRefs,
+			})
+
+			const result = applyOperation(wb, op)
+
+			expectErr(result)
+			expect(result.error.code, op.op).toBe('INVALID_RANGE')
+			expect(result.error.refs, op.op).toEqual([expectedRef])
+			expect(result.error.details, op.op).toMatchObject({
+				kind: 'structural-insert-shifts-visual-anchor-out-of-bounds',
+				label: expectedLabel,
+			})
+			expect(
+				JSON.stringify({
+					imageRefs: sheet.imageRefs,
+					drawingObjectRefs: sheet.drawingObjectRefs,
+				}),
+				op.op,
+			).toBe(beforeVisuals)
+		}
+	})
+
 	test('row and column inserts reject merged ranges before shifting them out of grid', () => {
 		const cases: readonly {
 			readonly op: Operation

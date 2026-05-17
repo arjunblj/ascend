@@ -994,6 +994,28 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(4, 6)?.value).toEqual(stringValue('odd'))
 	})
 
+	test('ISFORMULA spills formula masks for range operands in array formulas', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: EMPTY, formula: '1+1', styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(4), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: EMPTY, formula: 'NA()', styleId: sid })
+		sheet.cells.set(3, 0, { value: EMPTY, formula: null, styleId: sid })
+		sheet.cells.set(0, 1, {
+			value: EMPTY,
+			formula: 'IF(ISFORMULA(A1:A4),"formula","value")',
+			styleId: sid,
+		})
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(0, 1)?.value).toEqual(stringValue('formula'))
+		expect(sheet.cells.get(1, 1)?.value).toEqual(stringValue('value'))
+		expect(sheet.cells.get(2, 1)?.value).toEqual(stringValue('formula'))
+		expect(sheet.cells.get(3, 1)?.value).toEqual(stringValue('value'))
+	})
+
 	test('ERROR.TYPE spills error codes for range operands', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

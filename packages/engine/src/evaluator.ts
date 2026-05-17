@@ -4259,6 +4259,21 @@ function evalIsFormula(argNodes: readonly FormulaNode[], ctx: EvalContext): Cell
 		if (arg.value.kind === 'error') return arg.value
 		return booleanValue(false)
 	}
+	if (usesFormulaArraySemantics(ctx)) {
+		const rows = arg.shapeRows ?? getRange(arg).length
+		const cols = arg.shapeCols ?? getRange(arg)[0]?.length ?? 1
+		if (rows > 1 || cols > 1) {
+			const mappedRows: ScalarCellValue[][] = []
+			for (let row = 0; row < rows; row++) {
+				const mappedRow: ScalarCellValue[] = []
+				for (let col = 0; col < cols; col++) {
+					mappedRow.push(topLeftScalar(booleanValue(arg.formulaAtOffset?.(row, col) != null)))
+				}
+				mappedRows.push(mappedRow)
+			}
+			return arrayValue(mappedRows)
+		}
+	}
 	return booleanValue(arg.formulaAtOffset?.(0, 0) != null)
 }
 

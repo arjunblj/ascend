@@ -3768,6 +3768,98 @@ describe('applyOperation', () => {
 		])
 	})
 
+	test('range transfers reject legacy comment anchors that would land off grid', () => {
+		const cases: readonly {
+			readonly op: Operation
+			readonly setup: (sheet: Sheet) => void
+			readonly expectedAction: 'copy' | 'move'
+			readonly expectedSourceRef: string
+			readonly expectedTargetOwner: string
+			readonly expectedTargetRef: string
+		}[] = [
+			{
+				op: {
+					op: 'copyRange',
+					sheet: 'Sheet1',
+					source: 'A1',
+					target: 'B1',
+					mode: 'comments',
+				},
+				setup: (sheet) => {
+					sheet.comments.set('A1', {
+						text: 'edge note',
+						legacyDrawing: {
+							shapeId: '_x0000_s1025',
+							row: 0,
+							column: 0,
+							anchor: [16_383, 15, 0, 2, 16_383, 15, 1, 16],
+						},
+					})
+				},
+				expectedAction: 'copy',
+				expectedSourceRef: 'Sheet1!XFD1:XFD2',
+				expectedTargetOwner: 'Sheet1!comment(B1).legacyDrawing.anchor',
+				expectedTargetRef: 'Sheet1!XFE1:XFE2',
+			},
+			{
+				op: {
+					op: 'moveRange',
+					sheet: 'Sheet1',
+					source: 'A1',
+					target: 'A2',
+					mode: 'comments',
+				},
+				setup: (sheet) => {
+					sheet.comments.set('A1', {
+						text: 'edge note',
+						legacyDrawing: {
+							shapeId: '_x0000_s1025',
+							row: 0,
+							column: 0,
+							anchor: [0, 15, 1_048_575, 2, 1, 15, 1_048_575, 16],
+						},
+					})
+				},
+				expectedAction: 'move',
+				expectedSourceRef: 'Sheet1!A1048576:B1048576',
+				expectedTargetOwner: 'Sheet1!comment(A2).legacyDrawing.anchor',
+				expectedTargetRef: 'Sheet1!A1048577:B1048577',
+			},
+		]
+
+		for (const {
+			op,
+			setup: setupSheet,
+			expectedAction,
+			expectedSourceRef,
+			expectedTargetOwner,
+			expectedTargetRef,
+		} of cases) {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setupSheet(sheet)
+			const beforeComments = JSON.stringify([...sheet.comments])
+
+			const result = applyOperation(wb, op)
+
+			expectErr(result)
+			expect(result.error.code, op.op).toBe('INVALID_RANGE')
+			expect(result.error.refs, op.op).toEqual([
+				'Sheet1!comment(A1).legacyDrawing.anchor',
+				expectedSourceRef,
+			])
+			expect(result.error.details, op.op).toMatchObject({
+				kind: 'range-transfer-comment-anchor-out-of-bounds',
+				action: expectedAction,
+				sourceOwner: 'Sheet1!comment(A1).legacyDrawing.anchor',
+				targetOwner: expectedTargetOwner,
+				sourceReference: expectedSourceRef,
+				targetReference: expectedTargetRef,
+			})
+			expect(JSON.stringify([...sheet.comments]), op.op).toBe(beforeComments)
+		}
+	})
+
 	test('moveRange relocates source cells and clears original range', () => {
 		const wb = setup()
 		const sheet = wb.getSheet('Sheet1')

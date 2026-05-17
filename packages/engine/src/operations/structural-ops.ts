@@ -1324,6 +1324,23 @@ export function handleTransferRange(
 		op.op,
 	)
 	if (!advancedFilterPlan.ok) return advancedFilterPlan
+	if (mode === 'all' || mode === 'comments') {
+		const commentAnchorBlocker = findTransferCommentAnchorOutOfBounds(
+			sourceSheet,
+			targetSheet,
+			source,
+			rowDelta,
+			colDelta,
+		)
+		if (commentAnchorBlocker) {
+			return err(
+				transferCommentAnchorOutOfBoundsError(
+					op.op === 'moveRange' ? 'move' : 'copy',
+					commentAnchorBlocker,
+				),
+			)
+		}
+	}
 
 	const partialMetadataBlocker = findPartialMetadataRangeTransfer(sourceSheet, source, mode)
 	if (partialMetadataBlocker) {
@@ -2805,6 +2822,62 @@ function partialMoveFormulaReferenceError(
 				formula: blocker.formula,
 				reference: blocker.reference,
 				source: rangeToA1(source),
+			},
+		},
+	)
+}
+
+interface TransferOverflowCommentAnchor {
+	readonly sourceOwner: string
+	readonly targetOwner: string
+	readonly sourceReference: string
+	readonly targetReference: string
+}
+
+function findTransferCommentAnchorOutOfBounds(
+	sourceSheet: Sheet,
+	targetSheet: Sheet,
+	source: RangeRef,
+	rowDelta: number,
+	colDelta: number,
+): TransferOverflowCommentAnchor | null {
+	for (const [commentRef, comment] of sourceSheet.comments) {
+		const sourceCell = parseA1(commentRef)
+		if (!rangeContainsCell(source, sourceCell)) continue
+		const anchor = comment.legacyDrawing?.anchor
+		if (!anchor) continue
+		const sourceAnchorRange = legacyCommentAnchorRange(anchor)
+		const targetAnchorRange = shiftRange(sourceAnchorRange, rowDelta, colDelta)
+		if (rangeWithinGrid(targetAnchorRange)) continue
+		const targetCellRef = toA1({ row: sourceCell.row + rowDelta, col: sourceCell.col + colDelta })
+		return {
+			sourceOwner: `${formatSheetName(sourceSheet.name)}!comment(${commentRef}).legacyDrawing.anchor`,
+			targetOwner: `${formatSheetName(targetSheet.name)}!comment(${targetCellRef}).legacyDrawing.anchor`,
+			sourceReference: `${formatSheetName(sourceSheet.name)}!${rangeToA1(sourceAnchorRange)}`,
+			targetReference: `${formatSheetName(targetSheet.name)}!${rangeToA1(targetAnchorRange)}`,
+		}
+	}
+	return null
+}
+
+function transferCommentAnchorOutOfBoundsError(
+	action: 'copy' | 'move',
+	anchor: TransferOverflowCommentAnchor,
+) {
+	return ascendError(
+		'INVALID_RANGE',
+		`Cannot ${action} comments because legacy comment drawing anchor ${anchor.sourceOwner} would land at ${anchor.targetReference} outside Excel worksheet bounds`,
+		{
+			refs: [anchor.sourceOwner, anchor.sourceReference],
+			suggestedFix:
+				'Choose a target that keeps legacy comment drawing anchors within A1:XFD1048576, or remove the legacy anchor before retrying.',
+			details: {
+				kind: 'range-transfer-comment-anchor-out-of-bounds',
+				action,
+				sourceOwner: anchor.sourceOwner,
+				targetOwner: anchor.targetOwner,
+				sourceReference: anchor.sourceReference,
+				targetReference: anchor.targetReference,
 			},
 		},
 	)

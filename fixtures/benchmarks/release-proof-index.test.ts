@@ -1713,6 +1713,12 @@ describe('release proof evidence index', () => {
 					boundary: expect.stringContaining('does not execute active content'),
 				}),
 				expect.objectContaining({
+					evidenceId: 'content-types-root-attribute-preservation-proof',
+					acceptedScope: expect.stringContaining('7b600b1b'),
+					command: expect.stringContaining('preserves content type root attributes'),
+					boundary: expect.stringContaining('content-type root-attribute preservation'),
+				}),
+				expect.objectContaining({
 					evidenceId: 'public-formula-cache-post-write-proof',
 					acceptedScope: expect.stringContaining('f7338c91'),
 					command: expect.stringContaining(

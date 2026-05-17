@@ -3647,6 +3647,17 @@ function packageActionQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceIte
 				'Package relationship and content-type classification evidence only; it does not execute active content, refresh Power Query or connections, understand Data Model semantics, edit custom UI or custom XML, render or edit drawings/images/charts, edit chart styles/colors, refresh slicers/timelines/pivots, author comments, execute or validate macro-sheet logic, prove shared-string generation equivalence, prove table/style/theme semantics, prove document-property or calc metadata freshness, validate external-link contents, verify signatures, or guarantee arbitrary unknown-part recovery.',
 		},
 		{
+			evidenceId: 'content-types-root-attribute-preservation-proof',
+			kind: 'test',
+			command:
+				'bun test packages/io-xlsx/src/writer/writer.test.ts -t "preserves content type root attributes when package content types are regenerated" --timeout 30000',
+			path: 'packages/io-xlsx/src/writer/content-types.ts; packages/io-xlsx/src/writer/writer.test.ts',
+			acceptedScope:
+				'Commit 7b600b1b proves regenerated [Content_Types].xml preserves source Types root attributes such as mc:Ignorable and custom namespace-qualified package flavor markers while retaining reopenable workbook output.',
+			boundary:
+				'Generated package content-type root-attribute preservation evidence only; it does not prove public-workbook generality, arbitrary OPC package recovery, content-type semantic interpretation, markup-compatibility behavior, or Excel UI equivalence.',
+		},
+		{
 			evidenceId: 'public-formula-cache-post-write-proof',
 			kind: 'test',
 			command:

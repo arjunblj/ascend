@@ -2082,9 +2082,10 @@ describe('release proof evidence index', () => {
 						'03e1866c',
 						'1a0cd1e3',
 						'ef994de0',
+						'ece36397',
 					]),
 					allowedWording: expect.stringContaining(
-						'scalar ADDRESS/date/workday/order-statistic/rank/percentile-quartile/percentrank/forecast/forecast-ets/trimmean/aggregate/subtotal implicit intersection',
+						'scalar ADDRESS/date/workday/order-statistic/rank/percentile-quartile/percentrank/forecast/forecast-ets/trimmean/aggregate/subtotal/database-field implicit intersection',
 					),
 					evidenceProvesIt: expect.arrayContaining([
 						expect.stringContaining('NOT spills boolean masks'),
@@ -2128,6 +2129,12 @@ describe('release proof evidence index', () => {
 						expect.stringContaining('top-level AGGREGATE selector functions implicitly intersect'),
 						expect.stringContaining('AGGREGATE reference form preserves multiple range arguments'),
 						expect.stringContaining('top-level SUBTOTAL implicitly intersects function_num ranges'),
+						expect.stringContaining('database functions spill over field selectors'),
+						expect.stringContaining(
+							'top-level database functions implicitly intersect field ranges',
+						),
+						expect.stringContaining('DGET returns one matching record'),
+						expect.stringContaining('DGET returns #NUM! when multiple records match'),
 						expect.stringContaining('legacy statistical compatibility functions spill'),
 						expect.stringContaining('loan financial scalar functions spill over range operands'),
 						expect.stringContaining('financial helper scalar functions spill over range operands'),

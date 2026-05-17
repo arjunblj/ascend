@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { Sheet, StyleId, Workbook } from '@ascend/core'
+import type { RangeRef, Sheet, StyleId, Workbook } from '@ascend/core'
 import { createTableId, createWorkbook } from '@ascend/core'
 import { EMPTY, errorValue, numberValue, type Operation, stringValue } from '@ascend/schema'
 import { analyzeWorkbook } from './analysis.ts'
@@ -5906,6 +5906,50 @@ describe('applyOperation', () => {
 				kind: 'structural-insert-shifts-cell-out-of-bounds',
 			})
 			expect([...sheet.cells.iterate()], op.op).toEqual(beforeCells)
+		}
+	})
+
+	test('row and column inserts reject merged ranges before shifting them out of grid', () => {
+		const cases: readonly {
+			readonly op: Operation
+			readonly merge: RangeRef
+			readonly expectedRef: string
+		}[] = [
+			{
+				op: { op: 'insertRows', sheet: 'Sheet1', at: 0, count: 1 },
+				merge: { start: { row: 1_048_575, col: 0 }, end: { row: 1_048_575, col: 1 } },
+				expectedRef: 'Sheet1!A1048576:B1048576',
+			},
+			{
+				op: { op: 'insertCols', sheet: 'Sheet1', at: 0, count: 1 },
+				merge: { start: { row: 0, col: 16_383 }, end: { row: 1, col: 16_383 } },
+				expectedRef: 'Sheet1!XFD1:XFD2',
+			},
+			{
+				op: { op: 'insertRows', sheet: 'Sheet1', at: 1_048_574, count: 2 },
+				merge: { start: { row: 1_048_574, col: 1 }, end: { row: 1_048_574, col: 2 } },
+				expectedRef: 'Sheet1!B1048575:C1048575',
+			},
+		]
+
+		for (const { op, merge, expectedRef } of cases) {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			sheet.merges.push(merge)
+			const beforeMerges = sheet.merges.map((entry) => ({
+				start: { ...entry.start },
+				end: { ...entry.end },
+			}))
+
+			const result = applyOperation(wb, op)
+
+			expectErr(result)
+			expect(result.error.code, op.op).toBe('INVALID_RANGE')
+			expect(result.error.refs, op.op).toEqual([expectedRef])
+			expect(result.error.details, op.op).toMatchObject({
+				kind: 'structural-insert-shifts-merge-out-of-bounds',
+			})
+			expect(sheet.merges, op.op).toEqual(beforeMerges)
 		}
 	})
 

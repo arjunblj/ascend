@@ -87,6 +87,13 @@ function applyAxisShift(
 	if (insertOverflowBlocker) {
 		return err(insertShiftedCellOutOfBoundsError(sheet, axis, at, count, insertOverflowBlocker))
 	}
+	const insertMergeOverflowBlocker =
+		delta > 0 ? findInsertShiftedMergeOutOfBounds(sheet, axis, at, count) : null
+	if (insertMergeOverflowBlocker) {
+		return err(
+			insertShiftedMergeOutOfBoundsError(sheet, axis, at, count, insertMergeOverflowBlocker),
+		)
+	}
 	const ambiguousDefinedName = findAmbiguousWorkbookDefinedNameStructuralReference(workbook)
 	if (ambiguousDefinedName) {
 		return err(ambiguousWorkbookDefinedNameStructuralEditError(ambiguousDefinedName))
@@ -288,6 +295,78 @@ function insertShiftedCellOutOfBoundsError(
 				count,
 				ref: qualifiedRef,
 				shiftedRef: cell.shiftedRef,
+			},
+		},
+	)
+}
+
+interface InsertOverflowMerge {
+	readonly ref: string
+	readonly shiftedRef: string
+}
+
+function findInsertShiftedMergeOutOfBounds(
+	sheet: Sheet,
+	axis: 'row' | 'col',
+	at: number,
+	count: number,
+): InsertOverflowMerge | null {
+	const limit = axis === 'row' ? EXCEL_MAX_ROWS : EXCEL_MAX_COLS
+	const overflowStart = limit - count
+	for (const merge of sheet.merges) {
+		const coordinate = axis === 'row' ? merge.end.row : merge.end.col
+		if (coordinate < at || coordinate < overflowStart) continue
+		return {
+			ref: rangeToA1(merge),
+			shiftedRef: rangeToA1(
+				axis === 'row'
+					? {
+							start: {
+								row: shiftInsertedCoordinate(merge.start.row, at, count),
+								col: merge.start.col,
+							},
+							end: { row: shiftInsertedCoordinate(merge.end.row, at, count), col: merge.end.col },
+						}
+					: {
+							start: {
+								row: merge.start.row,
+								col: shiftInsertedCoordinate(merge.start.col, at, count),
+							},
+							end: { row: merge.end.row, col: shiftInsertedCoordinate(merge.end.col, at, count) },
+						},
+			),
+		}
+	}
+	return null
+}
+
+function shiftInsertedCoordinate(coordinate: number, at: number, count: number): number {
+	return coordinate >= at ? coordinate + count : coordinate
+}
+
+function insertShiftedMergeOutOfBoundsError(
+	sheet: Sheet,
+	axis: 'row' | 'col',
+	at: number,
+	count: number,
+	merge: InsertOverflowMerge,
+) {
+	const label = axis === 'row' ? 'row' : 'column'
+	const maxRef = axis === 'row' ? '1048576' : 'XFD'
+	const qualifiedRef = `${formatSheetName(sheet.name)}!${merge.ref}`
+	return ascendError(
+		'INVALID_RANGE',
+		`Cannot insert ${label}s because merged range ${qualifiedRef} would shift outside Excel worksheet bounds`,
+		{
+			refs: [qualifiedRef],
+			suggestedFix: `Move or unmerge ranges that would shift past ${maxRef}, then retry the insert.`,
+			details: {
+				kind: 'structural-insert-shifts-merge-out-of-bounds',
+				axis,
+				at,
+				count,
+				ref: qualifiedRef,
+				shiftedRef: merge.shiftedRef,
 			},
 		},
 	)

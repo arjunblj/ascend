@@ -337,8 +337,22 @@ export function classifyPackageFeatureFamily(
 	if (/(^|\/)pivotTables\//.test(path) || /(^|\/)pivotCache\//.test(path)) {
 		return 'preservedPivot'
 	}
-	if (path.includes('/slicers/') || path.includes('/slicerCaches/')) return 'preservedSlicer'
-	if (path.includes('/timelines/') || path.includes('/timelineCaches/')) return 'preservedTimeline'
+	if (
+		path.includes('/slicers/') ||
+		path.includes('/slicerCaches/') ||
+		lowerRelType.endsWith('/relationships/slicer') ||
+		lowerRelType.endsWith('/relationships/slicercache')
+	) {
+		return 'preservedSlicer'
+	}
+	if (
+		path.includes('/timelines/') ||
+		path.includes('/timelineCaches/') ||
+		lowerRelType.endsWith('/relationships/timeline') ||
+		lowerRelType.endsWith('/relationships/timelinecache')
+	) {
+		return 'preservedTimeline'
+	}
 	if (path.endsWith('/connections.xml') || lowerRelType.endsWith('/relationships/connections')) {
 		return 'preservedConnection'
 	}
@@ -529,10 +543,15 @@ function classifyOwnerScope(
 	) {
 		return 'pivot'
 	}
-	if (primary?.type === REL_SLICER_CACHE || /(^|\/)(slicerCaches|slicers)\//i.test(partPath)) {
+	if (
+		primary?.type === REL_SLICER ||
+		primary?.type === REL_SLICER_CACHE ||
+		/(^|\/)(slicerCaches|slicers)\//i.test(partPath)
+	) {
 		return 'slicer'
 	}
 	if (
+		primary?.type === REL_TIMELINE ||
 		primary?.type === REL_TIMELINE_CACHE ||
 		/(^|\/)(timelineCaches|timelines)\//i.test(partPath)
 	) {

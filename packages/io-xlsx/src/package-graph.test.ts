@@ -72,6 +72,10 @@ describe('XLSX package graph', () => {
   <Relationship Id="rIdExternalLink" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLink" Target="links/bookLink.xml"/>
   <Relationship Id="rIdRevisionHeaders" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/revisionHeaders" Target="revisions/revisionHeaders.xml"/>
   <Relationship Id="rIdRevisionHeadersOpaque" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/revisionHeaders" Target="opaque-revision.bin"/>
+  <Relationship Id="rIdSlicerOpaque" Type="http://schemas.microsoft.com/office/2007/relationships/slicer" Target="opaque-slicer.bin"/>
+  <Relationship Id="rIdSlicerCacheOpaque" Type="http://schemas.microsoft.com/office/2007/relationships/slicerCache" Target="opaque-slicer-cache.bin"/>
+  <Relationship Id="rIdTimelineOpaque" Type="http://schemas.microsoft.com/office/2011/relationships/timeline" Target="opaque-timeline.bin"/>
+  <Relationship Id="rIdTimelineCacheOpaque" Type="http://schemas.microsoft.com/office/2011/relationships/timelineCache" Target="opaque-timeline-cache.bin"/>
 </Relationships>`,
 			'xl/worksheets/sheet1.xml': '<worksheet/>',
 			'xl/worksheets/_rels/sheet1.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -127,6 +131,10 @@ describe('XLSX package graph', () => {
 			'xl/links/bookLink.xml': '<externalLink/>',
 			'xl/revisions/revisionHeaders.xml': '<headers/>',
 			'xl/opaque-revision.bin': 'revision-bytes',
+			'xl/opaque-slicer.bin': 'slicer-bytes',
+			'xl/opaque-slicer-cache.bin': 'slicer-cache-bytes',
+			'xl/opaque-timeline.bin': 'timeline-bytes',
+			'xl/opaque-timeline-cache.bin': 'timeline-cache-bytes',
 			'xl/worksheets/opaque-query.bin': 'query-table-bytes',
 			'xl/worksheets/opaque-control.bin': 'control-bytes',
 			'xl/drawings/opaque-ole.bin': 'ole-bytes',
@@ -336,6 +344,42 @@ describe('XLSX package graph', () => {
 			rawTarget: 'opaque-props.bin',
 			resolvedTarget: 'customXml/opaque-props.bin',
 			featureFamily: 'preservedCustomXml',
+		})
+		expect(graph.relationships).toContainEqual({
+			sourcePartPath: 'xl/workbook.xml',
+			relationshipPartPath: 'xl/_rels/workbook.xml.rels',
+			id: 'rIdSlicerOpaque',
+			type: 'http://schemas.microsoft.com/office/2007/relationships/slicer',
+			rawTarget: 'opaque-slicer.bin',
+			resolvedTarget: 'xl/opaque-slicer.bin',
+			featureFamily: 'preservedSlicer',
+		})
+		expect(graph.relationships).toContainEqual({
+			sourcePartPath: 'xl/workbook.xml',
+			relationshipPartPath: 'xl/_rels/workbook.xml.rels',
+			id: 'rIdSlicerCacheOpaque',
+			type: 'http://schemas.microsoft.com/office/2007/relationships/slicerCache',
+			rawTarget: 'opaque-slicer-cache.bin',
+			resolvedTarget: 'xl/opaque-slicer-cache.bin',
+			featureFamily: 'preservedSlicer',
+		})
+		expect(graph.relationships).toContainEqual({
+			sourcePartPath: 'xl/workbook.xml',
+			relationshipPartPath: 'xl/_rels/workbook.xml.rels',
+			id: 'rIdTimelineOpaque',
+			type: 'http://schemas.microsoft.com/office/2011/relationships/timeline',
+			rawTarget: 'opaque-timeline.bin',
+			resolvedTarget: 'xl/opaque-timeline.bin',
+			featureFamily: 'preservedTimeline',
+		})
+		expect(graph.relationships).toContainEqual({
+			sourcePartPath: 'xl/workbook.xml',
+			relationshipPartPath: 'xl/_rels/workbook.xml.rels',
+			id: 'rIdTimelineCacheOpaque',
+			type: 'http://schemas.microsoft.com/office/2011/relationships/timelineCache',
+			rawTarget: 'opaque-timeline-cache.bin',
+			resolvedTarget: 'xl/opaque-timeline-cache.bin',
+			featureFamily: 'preservedTimeline',
 		})
 		expect(graph.relationships).toContainEqual({
 			sourcePartPath: 'xl/drawings/drawing1.xml',
@@ -651,6 +695,30 @@ describe('XLSX package graph', () => {
 			featureFamily: 'preservedRevision',
 			preservationPolicy: 'inspect-only',
 			bytePreservationExpected: true,
+		})
+		expect(graph.parts.find((part) => part.path === 'xl/opaque-slicer.bin')).toMatchObject({
+			ownerScope: 'slicer',
+			sourceRelationshipId: 'rIdSlicerOpaque',
+			featureFamily: 'preservedSlicer',
+			preservationPolicy: 'preserve-exact',
+		})
+		expect(graph.parts.find((part) => part.path === 'xl/opaque-slicer-cache.bin')).toMatchObject({
+			ownerScope: 'slicer',
+			sourceRelationshipId: 'rIdSlicerCacheOpaque',
+			featureFamily: 'preservedSlicer',
+			preservationPolicy: 'preserve-exact',
+		})
+		expect(graph.parts.find((part) => part.path === 'xl/opaque-timeline.bin')).toMatchObject({
+			ownerScope: 'timeline',
+			sourceRelationshipId: 'rIdTimelineOpaque',
+			featureFamily: 'preservedTimeline',
+			preservationPolicy: 'preserve-exact',
+		})
+		expect(graph.parts.find((part) => part.path === 'xl/opaque-timeline-cache.bin')).toMatchObject({
+			ownerScope: 'timeline',
+			sourceRelationshipId: 'rIdTimelineCacheOpaque',
+			featureFamily: 'preservedTimeline',
+			preservationPolicy: 'preserve-exact',
 		})
 	})
 

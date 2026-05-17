@@ -207,5 +207,6 @@ export type {
 	WorkbookThemeColor,
 	WorkbookThemeMetadata,
 	WorkbookView,
+	WorkbookViewAttribute,
 } from './workbook.ts'
 export { createWorkbook, Workbook } from './workbook.ts'

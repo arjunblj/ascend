@@ -5148,7 +5148,17 @@ describe('writeXlsx', () => {
 		const wb = new Workbook()
 		const sheet = wb.addSheet('Data')
 		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: S0 })
-		wb.workbookViews.push({ activeTab: 1, firstSheet: 0, visibility: 'visible', tabRatio: 600 })
+		wb.workbookViews.push({
+			activeTab: 1,
+			firstSheet: 0,
+			visibility: 'visible',
+			tabRatio: 600,
+			extraAttributes: [
+				{ name: 'minimized', value: '1' },
+				{ name: 'showSheetTabs', value: '0' },
+				{ name: 'windowWidth', value: '16800' },
+			],
+		})
 		wb.workbookProperties = { codeName: 'Model', filterPrivacy: true }
 		wb.externalReferences.push('xl/externalLinks/externalLink1.xml')
 
@@ -5167,7 +5177,17 @@ describe('writeXlsx', () => {
 
 		const { result, bytes } = roundTrip(wb, capsules)
 		expect(result.workbook.workbookViews).toEqual([
-			{ activeTab: 1, firstSheet: 0, visibility: 'visible', tabRatio: 600 },
+			{
+				activeTab: 1,
+				firstSheet: 0,
+				visibility: 'visible',
+				tabRatio: 600,
+				extraAttributes: [
+					{ name: 'minimized', value: '1' },
+					{ name: 'showSheetTabs', value: '0' },
+					{ name: 'windowWidth', value: '16800' },
+				],
+			},
 		])
 		expect(result.workbook.externalReferences).toEqual(['xl/externalLinks/externalLink1.xml'])
 
@@ -5179,6 +5199,10 @@ describe('writeXlsx', () => {
 			externalReference: 1,
 			calcPr: 1,
 		})
+		const workbookXml = new TextDecoder().decode(unzipSync(bytes)['xl/workbook.xml'])
+		expect(workbookXml).toContain('minimized="1"')
+		expect(workbookXml).toContain('showSheetTabs="0"')
+		expect(workbookXml).toContain('windowWidth="16800"')
 	})
 
 	it('rewrites external link relationship targets while preserving link parts', () => {

@@ -56,15 +56,21 @@ describe('Workbook.clone', () => {
 			xfByStyleId: { 0: 1 },
 			baseStyleIdByStyleId: { 0: 0 },
 		}
+		wb.workbookViews.push({
+			activeTab: 0,
+			extraAttributes: [{ name: 'windowWidth', value: '16800' }],
+		})
 
 		const clone = wb.clone()
 		;(clone.calcSettings.iterativeCalc as { enabled: boolean }).enabled = false
 		if (clone.preservedStyles) {
 			;(clone.preservedStyles.xfByStyleId as Record<number, number>)[0] = 99
 		}
+		;(clone.workbookViews[0]?.extraAttributes?.[0] as { value: string }).value = '9000'
 
 		expect(wb.calcSettings.iterativeCalc.enabled).toBe(true)
 		expect(wb.preservedStyles?.xfByStyleId[0]).toBe(1)
+		expect(wb.workbookViews[0]?.extraAttributes?.[0]?.value).toBe('16800')
 	})
 
 	test('clones document properties without aliasing nested collections', () => {

@@ -69,6 +69,9 @@ export function buildWorkbookXml(workbook: Workbook, options: WorkbookXmlOptions
 			if (view.firstSheet !== undefined) attrs.push(`firstSheet="${view.firstSheet}"`)
 			if (view.visibility) attrs.push(`visibility="${escapeXml(view.visibility)}"`)
 			if (view.tabRatio !== undefined) attrs.push(`tabRatio="${view.tabRatio}"`)
+			for (const extra of view.extraAttributes ?? []) {
+				attrs.push(`${extra.name}="${escapeXml(extra.value)}"`)
+			}
 			out.push(`<workbookView ${attrs.join(' ')}/>`)
 		}
 		out.push('</bookViews>')

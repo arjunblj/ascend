@@ -2315,7 +2315,7 @@ describe('readXlsx', () => {
   xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
   <workbookPr date1904="1" filterPrivacy="1" codeName="Model"/>
   <bookViews>
-    <workbookView activeTab="1" firstSheet="2" visibility="visible" tabRatio="600"/>
+    <workbookView activeTab="1" firstSheet="2" visibility="visible" tabRatio="600" minimized="1" showSheetTabs="0" windowWidth="16800" windowHeight="9000"/>
   </bookViews>
   <sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets>
   <externalReferences>
@@ -2341,7 +2341,18 @@ describe('readXlsx', () => {
 			codeName: 'Model',
 		})
 		expect(result.value.workbook.workbookViews).toEqual([
-			{ activeTab: 1, firstSheet: 2, visibility: 'visible', tabRatio: 600 },
+			{
+				activeTab: 1,
+				firstSheet: 2,
+				visibility: 'visible',
+				tabRatio: 600,
+				extraAttributes: [
+					{ name: 'minimized', value: '1' },
+					{ name: 'showSheetTabs', value: '0' },
+					{ name: 'windowWidth', value: '16800' },
+					{ name: 'windowHeight', value: '9000' },
+				],
+			},
 		])
 		expect(result.value.workbook.externalReferences).toEqual(['xl/externalLinks/externalLink1.xml'])
 		expect(result.value.workbook.externalReferenceDetails).toEqual([
@@ -2357,6 +2368,8 @@ describe('readXlsx', () => {
 				sourceRelationshipRawTarget: 'externalLinks/externalLink1.xml',
 				sourceRelationshipResolvedTarget: 'xl/externalLinks/externalLink1.xml',
 				externalBookRelId: 'rIdExt',
+				externalLinkKind: 'externalBook',
+				externalLinkRelId: 'rIdExt',
 				linkRelId: 'rIdExt',
 				linkRelationshipPart: 'xl/externalLinks/_rels/externalLink1.xml.rels',
 				linkRelationshipKind: 'externalLinkPath',
@@ -2417,6 +2430,8 @@ describe('readXlsx', () => {
 				sourceRelationshipRawTarget: 'externalLinks/externalLink1.xml',
 				sourceRelationshipResolvedTarget: 'xl/externalLinks/externalLink1.xml',
 				externalBookRelId: 'rIdChosen',
+				externalLinkKind: 'externalBook',
+				externalLinkRelId: 'rIdChosen',
 				linkRelId: 'rIdChosen',
 				linkRelationshipPart: 'xl/externalLinks/_rels/externalLink1.xml.rels',
 				linkRelationshipKind: 'xlStartup',
@@ -2476,6 +2491,8 @@ describe('readXlsx', () => {
 				sourceRelationshipRawTarget: 'externalLinks/externalLink1.xml',
 				sourceRelationshipResolvedTarget: 'xl/externalLinks/externalLink1.xml',
 				externalBookRelId: 'rIdMissing',
+				externalLinkKind: 'externalBook',
+				externalLinkRelId: 'rIdMissing',
 				linkRelId: 'rIdPath',
 				linkRelationshipPart: 'xl/externalLinks/_rels/externalLink1.xml.rels',
 				linkRelationshipKind: 'xlLibrary',
@@ -2536,6 +2553,8 @@ describe('readXlsx', () => {
 				sourceRelationshipRawTarget: 'externalLinks/externalLink1.xml',
 				sourceRelationshipResolvedTarget: 'xl/externalLinks/externalLink1.xml',
 				externalBookRelId: 'rIdChosen',
+				externalLinkKind: 'externalBook',
+				externalLinkRelId: 'rIdChosen',
 				linkRelId: 'rIdPath',
 				linkRelationshipPart: 'xl/externalLinks/_rels/externalLink1.xml.rels',
 				linkRelationshipKind: 'externalLinkPath',

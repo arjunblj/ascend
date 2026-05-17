@@ -4,6 +4,7 @@ import type {
 	WorkbookProperties,
 	WorkbookProtection,
 	WorkbookView,
+	WorkbookViewAttribute,
 } from '@ascend/core'
 import type { CalcSettings } from '@ascend/schema'
 import { DEFAULT_CALC_SETTINGS } from '@ascend/schema'
@@ -287,6 +288,8 @@ function scanWorkbookViews(xml: string): readonly WorkbookView[] {
 		if (visibility) parsed.visibility = visibility
 		const tabRatio = numberAttr(attrs, 'tabRatio')
 		if (tabRatio !== undefined) parsed.tabRatio = tabRatio
+		const extraAttributes = workbookViewExtraAttributes(attrs)
+		if (extraAttributes.length > 0) parsed.extraAttributes = extraAttributes
 		views.push(parsed as WorkbookView)
 	})
 	return views
@@ -550,8 +553,36 @@ function parseWorkbookViews(wb: XmlNode): readonly WorkbookView[] {
 		if (visibility) parsed.visibility = visibility
 		const tabRatio = numAttr(view, 'tabRatio')
 		if (tabRatio !== undefined) parsed.tabRatio = tabRatio
+		const extraAttributes = workbookViewExtraAttributesFromNode(view)
+		if (extraAttributes.length > 0) parsed.extraAttributes = extraAttributes
 		return parsed as WorkbookView
 	})
+}
+
+function workbookViewExtraAttributes(attrs: ReadonlyMap<string, string>): WorkbookViewAttribute[] {
+	const extraAttributes: WorkbookViewAttribute[] = []
+	for (const [name, value] of attrs) {
+		if (isCoreWorkbookViewAttribute(name)) continue
+		extraAttributes.push({ name, value })
+	}
+	return extraAttributes
+}
+
+function workbookViewExtraAttributesFromNode(node: XmlNode): WorkbookViewAttribute[] {
+	const extraAttributes: WorkbookViewAttribute[] = []
+	for (const [key, value] of Object.entries(node)) {
+		if (!key.startsWith('@_')) continue
+		const name = key.slice(2)
+		if (isCoreWorkbookViewAttribute(name) || value === undefined || value === null) continue
+		extraAttributes.push({ name, value: String(value) })
+	}
+	return extraAttributes
+}
+
+function isCoreWorkbookViewAttribute(name: string): boolean {
+	return (
+		name === 'activeTab' || name === 'firstSheet' || name === 'visibility' || name === 'tabRatio'
+	)
 }
 
 function parseExternalReferenceRelIds(wb: XmlNode): readonly string[] {

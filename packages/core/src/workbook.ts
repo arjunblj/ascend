@@ -19,11 +19,17 @@ import type { CellStyle } from './style.ts'
 import { cloneCellStyle } from './style-clone.ts'
 import { StyleRegistry } from './style-registry.ts'
 
+export interface WorkbookViewAttribute {
+	readonly name: string
+	readonly value: string
+}
+
 export interface WorkbookView {
 	readonly activeTab?: number
 	readonly firstSheet?: number
 	readonly visibility?: string
 	readonly tabRatio?: number
+	readonly extraAttributes?: readonly WorkbookViewAttribute[]
 }
 
 export interface WorkbookProperties {
@@ -389,7 +395,14 @@ export class Workbook {
 		clone.connectionParts.push(...this.connectionParts.map((entry) => ({ ...entry })))
 		clone.dataModelParts.push(...this.dataModelParts.map((entry) => ({ ...entry })))
 		clone.activeContent.push(...this.activeContent.map(cloneActiveContentInfo))
-		clone.workbookViews.push(...this.workbookViews.map((view) => ({ ...view })))
+		clone.workbookViews.push(
+			...this.workbookViews.map((view) => ({
+				...view,
+				...(view.extraAttributes
+					? { extraAttributes: view.extraAttributes.map((attr) => ({ ...attr })) }
+					: {}),
+			})),
+		)
 		clone.externalReferences.push(...this.externalReferences)
 		clone.externalReferenceDetails.push(
 			...this.externalReferenceDetails.map((entry) => ({ ...entry })),

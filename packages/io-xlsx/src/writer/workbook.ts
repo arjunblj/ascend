@@ -463,5 +463,27 @@ function collectWorkbookProtectionAttrs(
 	if (protection.revisionsSpinCount !== undefined) {
 		attrs.push(`revisionsSpinCount="${protection.revisionsSpinCount}"`)
 	}
+	for (const extra of protection.extraAttributes ?? []) {
+		if (isCoreWorkbookProtectionAttribute(extra.name) || !isXmlAttributeName(extra.name)) continue
+		attrs.push(`${extra.name}="${escapeXml(extra.value)}"`)
+	}
 	return attrs
+}
+
+function isCoreWorkbookProtectionAttribute(name: string): boolean {
+	return (
+		name === 'lockStructure' ||
+		name === 'lockWindows' ||
+		name === 'lockRevision' ||
+		name === 'workbookPassword' ||
+		name === 'revisionsPassword' ||
+		name === 'workbookAlgorithmName' ||
+		name === 'workbookHashValue' ||
+		name === 'workbookSaltValue' ||
+		name === 'workbookSpinCount' ||
+		name === 'revisionsAlgorithmName' ||
+		name === 'revisionsHashValue' ||
+		name === 'revisionsSaltValue' ||
+		name === 'revisionsSpinCount'
+	)
 }

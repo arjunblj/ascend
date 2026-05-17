@@ -4,6 +4,7 @@ import type {
 	WorkbookProperties,
 	WorkbookPropertyAttribute,
 	WorkbookProtection,
+	WorkbookProtectionAttribute,
 	WorkbookView,
 	WorkbookViewAttribute,
 } from '@ascend/core'
@@ -133,7 +134,7 @@ function scanWorkbookProtection(xml: string): WorkbookProtection | null {
 	const attrs = scanSingleTagAttributes(xml, WORKBOOK_PROTECTION_RE)
 	if (!attrs) return null
 
-	const parsed: Record<string, string | number | boolean> = {}
+	const parsed: Record<string, unknown> = {}
 	setBoolAttrFromMap(parsed, 'lockStructure', attrs, 'lockStructure')
 	setBoolAttrFromMap(parsed, 'lockWindows', attrs, 'lockWindows')
 	setBoolAttrFromMap(parsed, 'lockRevision', attrs, 'lockRevision')
@@ -147,11 +148,13 @@ function scanWorkbookProtection(xml: string): WorkbookProtection | null {
 	setStringAttrFromMap(parsed, 'revisionsHashValue', attrs, 'revisionsHashValue')
 	setStringAttrFromMap(parsed, 'revisionsSaltValue', attrs, 'revisionsSaltValue')
 	setNumberAttrFromMap(parsed, 'revisionsSpinCount', attrs, 'revisionsSpinCount')
+	const extraAttributes = workbookProtectionExtraAttributes(attrs)
+	if (extraAttributes.length > 0) parsed.extraAttributes = extraAttributes
 	return parsed as WorkbookProtection
 }
 
 function setBoolAttrFromMap(
-	target: Record<string, string | number | boolean>,
+	target: Record<string, unknown>,
 	key: string,
 	attrs: Map<string, string>,
 	attrName: string,
@@ -161,7 +164,7 @@ function setBoolAttrFromMap(
 }
 
 function setStringAttrFromMap(
-	target: Record<string, string | number | boolean>,
+	target: Record<string, unknown>,
 	key: string,
 	attrs: Map<string, string>,
 	attrName: string,
@@ -171,7 +174,7 @@ function setStringAttrFromMap(
 }
 
 function setNumberAttrFromMap(
-	target: Record<string, string | number | boolean>,
+	target: Record<string, unknown>,
 	key: string,
 	attrs: Map<string, string>,
 	attrName: string,
@@ -368,7 +371,7 @@ function parseWorkbookProtection(wb: XmlNode): WorkbookProtection | null {
 	const protection = wb.workbookProtection as XmlNode | undefined
 	if (!protection) return null
 
-	const parsed: Record<string, string | number | boolean> = {}
+	const parsed: Record<string, unknown> = {}
 	setBoolAttr(parsed, 'lockStructure', protection, 'lockStructure')
 	setBoolAttr(parsed, 'lockWindows', protection, 'lockWindows')
 	setBoolAttr(parsed, 'lockRevision', protection, 'lockRevision')
@@ -382,11 +385,55 @@ function parseWorkbookProtection(wb: XmlNode): WorkbookProtection | null {
 	setStringAttr(parsed, 'revisionsHashValue', protection, 'revisionsHashValue')
 	setStringAttr(parsed, 'revisionsSaltValue', protection, 'revisionsSaltValue')
 	setNumberAttr(parsed, 'revisionsSpinCount', protection, 'revisionsSpinCount')
+	const extraAttributes = workbookProtectionExtraAttributesFromNode(protection)
+	if (extraAttributes.length > 0) parsed.extraAttributes = extraAttributes
 	return parsed as WorkbookProtection
 }
 
+function workbookProtectionExtraAttributes(
+	attrs: ReadonlyMap<string, string>,
+): WorkbookProtectionAttribute[] {
+	const extraAttributes: WorkbookProtectionAttribute[] = []
+	for (const [name, value] of attrs) {
+		if (isCoreWorkbookProtectionAttribute(name)) continue
+		extraAttributes.push({ name, value })
+	}
+	return extraAttributes
+}
+
+function workbookProtectionExtraAttributesFromNode(node: XmlNode): WorkbookProtectionAttribute[] {
+	const extraAttributes: WorkbookProtectionAttribute[] = []
+	for (const [key, value] of Object.entries(node)) {
+		if (!key.startsWith('@_')) continue
+		const name = key.slice(2)
+		if (isCoreWorkbookProtectionAttribute(name) || value === undefined || value === null) {
+			continue
+		}
+		extraAttributes.push({ name, value: String(value) })
+	}
+	return extraAttributes
+}
+
+function isCoreWorkbookProtectionAttribute(name: string): boolean {
+	return (
+		name === 'lockStructure' ||
+		name === 'lockWindows' ||
+		name === 'lockRevision' ||
+		name === 'workbookPassword' ||
+		name === 'revisionsPassword' ||
+		name === 'workbookAlgorithmName' ||
+		name === 'workbookHashValue' ||
+		name === 'workbookSaltValue' ||
+		name === 'workbookSpinCount' ||
+		name === 'revisionsAlgorithmName' ||
+		name === 'revisionsHashValue' ||
+		name === 'revisionsSaltValue' ||
+		name === 'revisionsSpinCount'
+	)
+}
+
 function setBoolAttr(
-	target: Record<string, string | number | boolean>,
+	target: Record<string, unknown>,
 	key: string,
 	node: XmlNode,
 	attrName: string,
@@ -396,7 +443,7 @@ function setBoolAttr(
 }
 
 function setStringAttr(
-	target: Record<string, string | number | boolean>,
+	target: Record<string, unknown>,
 	key: string,
 	node: XmlNode,
 	attrName: string,
@@ -406,7 +453,7 @@ function setStringAttr(
 }
 
 function setNumberAttr(
-	target: Record<string, string | number | boolean>,
+	target: Record<string, unknown>,
 	key: string,
 	node: XmlNode,
 	attrName: string,

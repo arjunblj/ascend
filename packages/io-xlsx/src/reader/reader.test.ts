@@ -2580,7 +2580,7 @@ describe('readXlsx', () => {
 			'xl/workbook.xml': `<?xml version="1.0"?>
 <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
   xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
-  <workbookProtection lockStructure="1" workbookPassword="ABCD" workbookAlgorithmName="SHA-512" workbookSpinCount="100000"/>
+  <workbookProtection lockStructure="1" workbookPassword="ABCD" workbookAlgorithmName="SHA-512" workbookSpinCount="100000" futureProtectionMode="strict"/>
   <sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets>
 </workbook>`,
 			'xl/sharedStrings.xml': SHARED_STRINGS,
@@ -2602,6 +2602,7 @@ describe('readXlsx', () => {
 			workbookPassword: 'ABCD',
 			workbookAlgorithmName: 'SHA-512',
 			workbookSpinCount: 100000,
+			extraAttributes: [{ name: 'futureProtectionMode', value: 'strict' }],
 		})
 		expect(result.value.workbook.sheets[0]?.protection).toEqual({
 			sheet: true,

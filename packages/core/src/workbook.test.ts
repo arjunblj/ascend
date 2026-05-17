@@ -60,6 +60,10 @@ describe('Workbook.clone', () => {
 			codeName: 'Model',
 			extraAttributes: [{ name: 'checkCompatibility', value: '1' }],
 		}
+		wb.workbookProtection = {
+			lockStructure: true,
+			extraAttributes: [{ name: 'futureProtectionMode', value: 'strict' }],
+		}
 		wb.workbookViews.push({
 			activeTab: 0,
 			extraAttributes: [{ name: 'windowWidth', value: '16800' }],
@@ -71,11 +75,13 @@ describe('Workbook.clone', () => {
 			;(clone.preservedStyles.xfByStyleId as Record<number, number>)[0] = 99
 		}
 		;(clone.workbookProperties.extraAttributes?.[0] as { value: string }).value = '0'
+		;(clone.workbookProtection?.extraAttributes?.[0] as { value: string }).value = 'legacy'
 		;(clone.workbookViews[0]?.extraAttributes?.[0] as { value: string }).value = '9000'
 
 		expect(wb.calcSettings.iterativeCalc.enabled).toBe(true)
 		expect(wb.preservedStyles?.xfByStyleId[0]).toBe(1)
 		expect(wb.workbookProperties.extraAttributes?.[0]?.value).toBe('1')
+		expect(wb.workbookProtection?.extraAttributes?.[0]?.value).toBe('strict')
 		expect(wb.workbookViews[0]?.extraAttributes?.[0]?.value).toBe('16800')
 	})
 

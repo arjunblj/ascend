@@ -3671,6 +3671,7 @@ describe('writeXlsx', () => {
 			workbookPassword: 'ABCD',
 			workbookAlgorithmName: 'SHA-512',
 			workbookSpinCount: 100000,
+			extraAttributes: [{ name: 'futureProtectionMode', value: 'strict' }],
 		}
 		sheet.protection = {
 			sheet: true,
@@ -3689,6 +3690,7 @@ describe('writeXlsx', () => {
 			workbookPassword: 'ABCD',
 			workbookAlgorithmName: 'SHA-512',
 			workbookSpinCount: 100000,
+			extraAttributes: [{ name: 'futureProtectionMode', value: 'strict' }],
 		})
 		expect(result.workbook.sheets[0]?.protection).toEqual({
 			sheet: true,
@@ -3711,6 +3713,10 @@ describe('writeXlsx', () => {
 			protectedRanges: 1,
 			protectedRange: 1,
 		})
+		const workbookXml = new TextDecoder().decode(
+			unzipSync(bytes)['xl/workbook.xml'] ?? new Uint8Array(),
+		)
+		expect(workbookXml).toContain('futureProtectionMode="strict"')
 	})
 
 	it('preserves hyperlinks on round-trip', () => {

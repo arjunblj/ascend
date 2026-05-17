@@ -204,6 +204,7 @@ export type {
 	WorkbookProperties,
 	WorkbookPropertyAttribute,
 	WorkbookProtection,
+	WorkbookProtectionAttribute,
 	WorkbookStyleMetadata,
 	WorkbookThemeColor,
 	WorkbookThemeMetadata,

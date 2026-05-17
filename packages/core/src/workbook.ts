@@ -29,6 +29,11 @@ export interface WorkbookPropertyAttribute {
 	readonly value: string
 }
 
+export interface WorkbookProtectionAttribute {
+	readonly name: string
+	readonly value: string
+}
+
 export interface WorkbookView {
 	readonly activeTab?: number
 	readonly firstSheet?: number
@@ -112,6 +117,7 @@ export interface WorkbookProtection {
 	readonly revisionsHashValue?: string
 	readonly revisionsSaltValue?: string
 	readonly revisionsSpinCount?: number
+	readonly extraAttributes?: readonly WorkbookProtectionAttribute[]
 }
 
 export interface WorkbookThemeMetadata {
@@ -341,7 +347,18 @@ export class Workbook {
 				: {}),
 		}
 		clone.documentProperties = cloneDocumentProperties(this.documentProperties)
-		clone.workbookProtection = this.workbookProtection ? { ...this.workbookProtection } : null
+		clone.workbookProtection = this.workbookProtection
+			? {
+					...this.workbookProtection,
+					...(this.workbookProtection.extraAttributes
+						? {
+								extraAttributes: this.workbookProtection.extraAttributes.map((attr) => ({
+									...attr,
+								})),
+							}
+						: {}),
+				}
+			: null
 		clone.styleMetadata = { ...this.styleMetadata }
 		clone.themeMetadata = { ...this.themeMetadata }
 		clone.themeColors.push(...this.themeColors.map((color) => ({ ...color })))

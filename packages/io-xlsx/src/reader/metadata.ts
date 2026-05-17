@@ -1,4 +1,5 @@
 import { asArray, attr, boolAttr, numAttr, parseXml, type XmlNode } from '../xml.ts'
+import { normalizeMainSpreadsheetNamespacePrefix } from './xml-utils.ts'
 
 export interface DynamicArrayMetadataRecord {
 	readonly metadataIndex: number
@@ -10,7 +11,7 @@ export interface ParsedMetadataPart {
 }
 
 export function parseMetadataXml(xml: string): ParsedMetadataPart {
-	const doc = parseXml(xml)
+	const doc = parseXml(normalizeMainSpreadsheetNamespacePrefix(xml))
 	const metadata = doc.metadata as XmlNode | undefined
 	if (!metadata) {
 		return { dynamicArrayByCellMetadataIndex: new Map() }

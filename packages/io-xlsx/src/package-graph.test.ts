@@ -52,6 +52,8 @@ describe('XLSX package graph', () => {
 			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rIdSheet" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rIdChartSheetOpaque" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chartsheet" Target="opaque-chartsheet.bin"/>
+  <Relationship Id="rIdMacroSheetOpaque" Type="http://schemas.microsoft.com/office/2006/relationships/xlMacrosheet" Target="opaque-macrosheet.bin"/>
   <Relationship Id="rIdXmlMaps" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/xmlMaps" Target="xmlMaps.xml"/>
   <Relationship Id="rIdXmlMapsOpaque" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/xmlMaps" Target="opaque-xmlmaps.bin"/>
   <Relationship Id="rIdCustomProperty" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/customProperty" Target="customProperty1.bin"/>
@@ -81,6 +83,8 @@ describe('XLSX package graph', () => {
   <Relationship Id="rIdTimelineCacheOpaque" Type="http://schemas.microsoft.com/office/2011/relationships/timelineCache" Target="opaque-timeline-cache.bin"/>
 </Relationships>`,
 			'xl/worksheets/sheet1.xml': '<worksheet/>',
+			'xl/opaque-chartsheet.bin': 'chart-sheet-bytes',
+			'xl/opaque-macrosheet.bin': 'macro-sheet-bytes',
 			'xl/worksheets/_rels/sheet1.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rIdDrawing" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/>
@@ -255,6 +259,24 @@ describe('XLSX package graph', () => {
 			rawTarget: 'links/bookLink.xml',
 			resolvedTarget: 'xl/links/bookLink.xml',
 			featureFamily: 'preservedExternalLink',
+		})
+		expect(graph.relationships).toContainEqual({
+			sourcePartPath: 'xl/workbook.xml',
+			relationshipPartPath: 'xl/_rels/workbook.xml.rels',
+			id: 'rIdChartSheetOpaque',
+			type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/chartsheet',
+			rawTarget: 'opaque-chartsheet.bin',
+			resolvedTarget: 'xl/opaque-chartsheet.bin',
+			featureFamily: 'preservedChartSheet',
+		})
+		expect(graph.relationships).toContainEqual({
+			sourcePartPath: 'xl/workbook.xml',
+			relationshipPartPath: 'xl/_rels/workbook.xml.rels',
+			id: 'rIdMacroSheetOpaque',
+			type: 'http://schemas.microsoft.com/office/2006/relationships/xlMacrosheet',
+			rawTarget: 'opaque-macrosheet.bin',
+			resolvedTarget: 'xl/opaque-macrosheet.bin',
+			featureFamily: 'preservedMacroSheet',
 		})
 		expect(graph.relationships).toContainEqual({
 			sourcePartPath: 'xl/workbook.xml',
@@ -651,6 +673,18 @@ describe('XLSX package graph', () => {
 			ownerScope: 'workbook',
 			sourceRelationshipId: 'rIdThemeOpaque',
 			featureFamily: 'preservedTheme',
+			preservationPolicy: 'preserve-exact',
+		})
+		expect(graph.parts.find((part) => part.path === 'xl/opaque-chartsheet.bin')).toMatchObject({
+			ownerScope: 'chartsheet',
+			sourceRelationshipId: 'rIdChartSheetOpaque',
+			featureFamily: 'preservedChartSheet',
+			preservationPolicy: 'preserve-exact',
+		})
+		expect(graph.parts.find((part) => part.path === 'xl/opaque-macrosheet.bin')).toMatchObject({
+			ownerScope: 'macrosheet',
+			sourceRelationshipId: 'rIdMacroSheetOpaque',
+			featureFamily: 'preservedMacroSheet',
 			preservationPolicy: 'preserve-exact',
 		})
 		expect(graph.parts.find((part) => part.path === 'xl/model/item.data')).toMatchObject({

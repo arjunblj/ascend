@@ -291,6 +291,8 @@ export function classifyPackageFeatureFamily(
 	if (lowerRelType.endsWith('/relationships/ui/extensibility')) return 'preservedCustomUi'
 	if (lowerRelType.endsWith('/relationships/calcchain')) return 'preservedCalcChain'
 	if (lowerRelType.endsWith('/relationships/sheetmetadata')) return 'preservedMetadata'
+	if (lowerRelType.endsWith('/relationships/chartsheet')) return 'preservedChartSheet'
+	if (lowerRelType.endsWith('/relationships/xlmacrosheet')) return 'preservedMacroSheet'
 	if (path.includes('/chartsheets/')) return 'preservedChartSheet'
 	if (path.includes('/macrosheets/')) return 'preservedMacroSheet'
 	if (

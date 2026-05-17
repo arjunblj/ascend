@@ -6,6 +6,12 @@ export interface Relationship {
 	readonly rawType?: string
 	readonly target: string
 	readonly targetMode?: string
+	readonly extraAttributes?: readonly RelationshipAttribute[]
+}
+
+export interface RelationshipAttribute {
+	readonly name: string
+	readonly value: string
 }
 
 export const REL_OFFICE_DOC =
@@ -157,10 +163,26 @@ export function parseRelationships(xml: string): Relationship[] {
 				...(normalizedType !== type ? { rawType: type } : {}),
 				target,
 				...(targetMode ? { targetMode } : {}),
+				...relationshipExtraAttributes(attrs),
 			})
 		}
 	}
 	return rels
+}
+
+function relationshipExtraAttributes(
+	attrs: ReadonlyMap<string, string>,
+): { readonly extraAttributes: readonly RelationshipAttribute[] } | Record<string, never> {
+	const extraAttributes: RelationshipAttribute[] = []
+	for (const [name, value] of attrs) {
+		if (isKnownRelationshipAttribute(name)) continue
+		extraAttributes.push({ name, value })
+	}
+	return extraAttributes.length > 0 ? { extraAttributes } : {}
+}
+
+function isKnownRelationshipAttribute(name: string): boolean {
+	return name === 'Id' || name === 'Type' || name === 'Target' || name === 'TargetMode'
 }
 
 export function isExternalLinkPathRelationshipType(type: string): boolean {

@@ -10,6 +10,12 @@ export interface RelEntry {
 	readonly rawType?: string
 	readonly target: string
 	readonly targetMode?: string
+	readonly extraAttributes?: readonly RelEntryAttribute[]
+}
+
+export interface RelEntryAttribute {
+	readonly name: string
+	readonly value: string
 }
 
 export interface RelsXmlOptions {
@@ -28,6 +34,10 @@ export function buildRelsXml(entries: readonly RelEntry[], options: RelsXmlOptio
 			`Target="${escapeXmlAttr(e.target)}"`,
 		]
 		if (e.targetMode) attrs.push(`TargetMode="${escapeXmlAttr(e.targetMode)}"`)
+		for (const extra of e.extraAttributes ?? []) {
+			if (isKnownRelationshipAttribute(extra.name) || !isXmlAttributeName(extra.name)) continue
+			attrs.push(`${extra.name}="${escapeXmlAttr(extra.value)}"`)
+		}
 		out.push(`<Relationship ${attrs.join(' ')}/>`)
 	}
 	out.push('</Relationships>')
@@ -63,6 +73,10 @@ function extractSourceRelationshipsRootAttrs(
 
 function isXmlAttributeName(name: string): boolean {
 	return /^[A-Za-z_][\w:.-]*$/.test(name)
+}
+
+function isKnownRelationshipAttribute(name: string): boolean {
+	return name === 'Id' || name === 'Type' || name === 'Target' || name === 'TargetMode'
 }
 
 function escapeXmlAttr(value: string): string {

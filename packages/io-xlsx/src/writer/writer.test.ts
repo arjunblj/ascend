@@ -6704,7 +6704,7 @@ describe('writeXlsx', () => {
   xmlns:chartrel="urn:ascend:chart-relationships"
   mc:Ignorable="chartrel"
   chartrel:origin="source">
-  <Relationship Id="rIdStyle" Type="http://schemas.microsoft.com/office/2011/relationships/chartStyle" Target="style1.xml"/>
+  <Relationship Id="rIdStyle" Type="http://schemas.microsoft.com/office/2011/relationships/chartStyle" Target="style1.xml" chartrel:checksum="source&amp;safe"/>
 </Relationships>`,
 			'xl/charts/style1.xml': `<?xml version="1.0"?><cs:chartStyle xmlns:cs="http://schemas.microsoft.com/office/drawing/2012/chartStyle"/>`,
 		})
@@ -6729,6 +6729,7 @@ describe('writeXlsx', () => {
 						id: 'rIdStyle',
 						type: 'http://schemas.microsoft.com/office/2011/relationships/chartStyle',
 						target: 'style1.xml',
+						extraAttributes: [{ name: 'chartrel:checksum', value: 'source&safe' }],
 					},
 				],
 				anchor: { kind: 'workbook' },
@@ -6758,6 +6759,7 @@ describe('writeXlsx', () => {
 		expect(relsXml).toContain('xmlns:chartrel="urn:ascend:chart-relationships"')
 		expect(relsXml).toContain('mc:Ignorable="chartrel"')
 		expect(relsXml).toContain('chartrel:origin="source"')
+		expect(relsXml).toContain('chartrel:checksum="source&amp;safe"')
 		expect(relsXml).toContain(
 			'Type="http://schemas.microsoft.com/office/2011/relationships/chartStyle"',
 		)

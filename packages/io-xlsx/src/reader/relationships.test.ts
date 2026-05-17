@@ -29,6 +29,26 @@ describe('relationships', () => {
 		])
 	})
 
+	test('keeps extension attributes on relationship entries', () => {
+		const rels = parseRelationships(`<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"
+  xmlns:x15="http://schemas.microsoft.com/office/spreadsheetml/2010/11/main">
+  <Relationship Id="rIdChart" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="../charts/chart1.xml" x15:uid="{1234}" x15:checksum="Tom&amp;Jane"/>
+</Relationships>`)
+
+		expect(rels).toEqual([
+			{
+				id: 'rIdChart',
+				type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart',
+				target: '../charts/chart1.xml',
+				extraAttributes: [
+					{ name: 'x15:uid', value: '{1234}' },
+					{ name: 'x15:checksum', value: 'Tom&Jane' },
+				],
+			},
+		])
+	})
+
 	test('recognizes Excel external workbook path relationship types', () => {
 		expect(
 			isExternalLinkPathRelationshipType(

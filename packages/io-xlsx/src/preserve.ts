@@ -8,10 +8,16 @@ export interface PreservationCapsule {
 		rawType?: string
 		target: string
 		targetMode?: string
+		extraAttributes?: readonly RelationshipAttribute[]
 	}>
 	content?: Uint8Array
 	anchor: { kind: 'workbook' } | { kind: 'sheet'; sheetId: string; sheetName?: string }
 	relType?: string
 	relTypeRaw?: string
 	relId?: string
+}
+
+export interface RelationshipAttribute {
+	readonly name: string
+	readonly value: string
 }

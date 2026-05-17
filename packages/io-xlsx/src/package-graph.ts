@@ -265,6 +265,9 @@ export function classifyPackageFeatureFamily(
 	if (lowerRelType.includes('/relationships/digital-signature/')) return 'preservedSignature'
 	if (path.startsWith('docProps/')) return 'preservedDocumentProperties'
 	if (path === 'xl/workbook.xml') return 'workbook'
+	if (lowerRelType.endsWith('/relationships/sharedstrings')) return 'sharedStrings'
+	if (lowerRelType.endsWith('/relationships/styles')) return 'preservedStyles'
+	if (lowerRelType.endsWith('/relationships/theme')) return 'preservedTheme'
 	if (/(^|\/)sharedStrings\.xml$/i.test(path)) return 'sharedStrings'
 	if (/(^|\/)worksheets\/sheet\d+\.xml$/i.test(path)) return 'worksheet'
 	if (/^xl\/worksheets\/sheet\d+_[^/]+\.xml$/i.test(path)) return 'preservedWorksheetSidecar'
@@ -538,6 +541,13 @@ function classifyOwnerScope(
 	if (primary?.type === REL_WORKSHEET) return 'worksheet'
 	if (primary?.type === REL_CHARTSHEET) return 'chartsheet'
 	if (primary?.type === REL_MACROSHEET) return 'macrosheet'
+	if (
+		primary?.type === REL_SHARED_STRINGS ||
+		primary?.type === REL_STYLES ||
+		primary?.type === REL_THEME
+	) {
+		return 'workbook'
+	}
 	if (primary?.type === REL_DRAWING || primary?.type === REL_VML_DRAWING) return 'drawing'
 	if (primary?.type === REL_CHART) return 'chart'
 	if (

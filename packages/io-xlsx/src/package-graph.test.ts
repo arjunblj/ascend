@@ -58,6 +58,9 @@ describe('XLSX package graph', () => {
   <Relationship Id="rIdCustomPropertyOpaque" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/customProperty" Target="opaque-custom-property.bin"/>
   <Relationship Id="rIdDiagramData" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/diagramData" Target="diagrams/data1.xml"/>
   <Relationship Id="rIdDiagramDataOpaque" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/diagramData" Target="opaque-diagram.bin"/>
+  <Relationship Id="rIdSharedStringsOpaque" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="opaque-shared-strings.bin"/>
+  <Relationship Id="rIdStylesOpaque" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="opaque-styles.bin"/>
+  <Relationship Id="rIdThemeOpaque" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="opaque-theme.bin"/>
   <Relationship Id="rIdDataModel" Type="http://schemas.microsoft.com/office/2011/relationships/model" Target="model/item.data"/>
   <Relationship Id="rIdPowerQuery" Type="http://schemas.microsoft.com/office/2014/relationships/powerQueryMashup" Target="customData/item1.data"/>
   <Relationship Id="rIdPowerQueryOpaque" Type="http://schemas.microsoft.com/office/2014/relationships/powerQueryMashup" Target="opaque-mashup.bin"/>
@@ -109,6 +112,9 @@ describe('XLSX package graph', () => {
 			'xl/opaque-custom-property.bin': 'custom-property-opaque-bytes',
 			'xl/diagrams/data1.xml': '<dgm:dataModel/>',
 			'xl/opaque-diagram.bin': 'diagram-bytes',
+			'xl/opaque-shared-strings.bin': '<sst/>',
+			'xl/opaque-styles.bin': '<styleSheet/>',
+			'xl/opaque-theme.bin': '<a:theme/>',
 			'xl/model/item.data': 'data-model-bytes',
 			'xl/model/_rels/item.data.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
@@ -267,6 +273,33 @@ describe('XLSX package graph', () => {
 			rawTarget: 'opaque-model.bin',
 			resolvedTarget: 'xl/opaque-model.bin',
 			featureFamily: 'preservedDataModel',
+		})
+		expect(graph.relationships).toContainEqual({
+			sourcePartPath: 'xl/workbook.xml',
+			relationshipPartPath: 'xl/_rels/workbook.xml.rels',
+			id: 'rIdSharedStringsOpaque',
+			type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings',
+			rawTarget: 'opaque-shared-strings.bin',
+			resolvedTarget: 'xl/opaque-shared-strings.bin',
+			featureFamily: 'sharedStrings',
+		})
+		expect(graph.relationships).toContainEqual({
+			sourcePartPath: 'xl/workbook.xml',
+			relationshipPartPath: 'xl/_rels/workbook.xml.rels',
+			id: 'rIdStylesOpaque',
+			type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles',
+			rawTarget: 'opaque-styles.bin',
+			resolvedTarget: 'xl/opaque-styles.bin',
+			featureFamily: 'preservedStyles',
+		})
+		expect(graph.relationships).toContainEqual({
+			sourcePartPath: 'xl/workbook.xml',
+			relationshipPartPath: 'xl/_rels/workbook.xml.rels',
+			id: 'rIdThemeOpaque',
+			type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme',
+			rawTarget: 'opaque-theme.bin',
+			resolvedTarget: 'xl/opaque-theme.bin',
+			featureFamily: 'preservedTheme',
 		})
 		expect(graph.relationships).toContainEqual({
 			sourcePartPath: 'xl/model/item.data',
@@ -599,6 +632,25 @@ describe('XLSX package graph', () => {
 			ownerScope: 'drawing',
 			sourceRelationshipId: 'rIdDiagramDataOpaque',
 			featureFamily: 'preservedDrawing',
+			preservationPolicy: 'preserve-exact',
+		})
+		expect(graph.parts.find((part) => part.path === 'xl/opaque-shared-strings.bin')).toMatchObject({
+			ownerScope: 'workbook',
+			sourceRelationshipId: 'rIdSharedStringsOpaque',
+			featureFamily: 'sharedStrings',
+			preservationPolicy: 'generated',
+			bytePreservationExpected: false,
+		})
+		expect(graph.parts.find((part) => part.path === 'xl/opaque-styles.bin')).toMatchObject({
+			ownerScope: 'workbook',
+			sourceRelationshipId: 'rIdStylesOpaque',
+			featureFamily: 'preservedStyles',
+			preservationPolicy: 'preserve-exact',
+		})
+		expect(graph.parts.find((part) => part.path === 'xl/opaque-theme.bin')).toMatchObject({
+			ownerScope: 'workbook',
+			sourceRelationshipId: 'rIdThemeOpaque',
+			featureFamily: 'preservedTheme',
 			preservationPolicy: 'preserve-exact',
 		})
 		expect(graph.parts.find((part) => part.path === 'xl/model/item.data')).toMatchObject({

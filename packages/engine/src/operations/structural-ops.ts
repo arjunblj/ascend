@@ -104,6 +104,19 @@ function applyAxisShift(
 			),
 		)
 	}
+	const insertHyperlinkLocationOverflowBlocker =
+		delta > 0 ? findInsertShiftedHyperlinkLocationOutOfBounds(sheet, axis, at, count) : null
+	if (insertHyperlinkLocationOverflowBlocker) {
+		return err(
+			insertShiftedHyperlinkLocationOutOfBoundsError(
+				sheet,
+				axis,
+				at,
+				count,
+				insertHyperlinkLocationOverflowBlocker,
+			),
+		)
+	}
 	const insertVisualAnchorOverflowBlocker =
 		delta > 0 ? findInsertShiftedVisualAnchorOutOfBounds(sheet, axis, at, count) : null
 	if (insertVisualAnchorOverflowBlocker) {
@@ -458,6 +471,70 @@ function insertShiftedCellMetadataOutOfBoundsError(
 				label: metadata.label,
 				ref: qualifiedRef,
 				shiftedRef: metadata.shiftedRef,
+			},
+		},
+	)
+}
+
+interface InsertOverflowHyperlinkLocation {
+	readonly ownerRef: string
+	readonly reference: string
+	readonly shiftedReference: string
+}
+
+function findInsertShiftedHyperlinkLocationOutOfBounds(
+	sheet: Sheet,
+	axis: 'row' | 'col',
+	at: number,
+	count: number,
+): InsertOverflowHyperlinkLocation | null {
+	for (const [ownerRef, hyperlink] of sheet.hyperlinks) {
+		const location = hyperlink.location
+		if (!location) continue
+		const split = splitSheetQualifiedLocation(location)
+		if (!split || !sameSheetName(split.sheet, sheet.name)) continue
+		let range: RangeRef
+		try {
+			range = parseRange(split.ref)
+		} catch {
+			continue
+		}
+		if (!insertAffectsRange(range, axis, at)) continue
+		const shifted = shiftInsertedRange(range, axis, at, count)
+		if (rangeWithinGrid(shifted)) continue
+		return {
+			ownerRef,
+			reference: `${formatSheetName(split.sheet)}!${rangeToA1(range)}`,
+			shiftedReference: `${formatSheetName(split.sheet)}!${rangeToA1(shifted)}`,
+		}
+	}
+	return null
+}
+
+function insertShiftedHyperlinkLocationOutOfBoundsError(
+	sheet: Sheet,
+	axis: 'row' | 'col',
+	at: number,
+	count: number,
+	hyperlink: InsertOverflowHyperlinkLocation,
+) {
+	const label = axis === 'row' ? 'row' : 'column'
+	const maxRef = axis === 'row' ? '1048576' : 'XFD'
+	const owner = `${formatSheetName(sheet.name)}!hyperlink(${hyperlink.ownerRef}).location`
+	return ascendError(
+		'INVALID_RANGE',
+		`Cannot insert ${label}s because hyperlink location ${owner} references ${hyperlink.reference} which would shift outside Excel worksheet bounds`,
+		{
+			refs: [owner, hyperlink.reference],
+			suggestedFix: `Move or remove hyperlink locations that would shift past ${maxRef}, then retry the insert.`,
+			details: {
+				kind: 'structural-insert-shifts-hyperlink-location-out-of-bounds',
+				axis,
+				at,
+				count,
+				owner,
+				reference: hyperlink.reference,
+				shiftedReference: hyperlink.shiftedReference,
 			},
 		},
 	)
@@ -3205,6 +3282,18 @@ function columnName(col: number): string {
 function formatSheetName(sheet: string): string {
 	if (/^[A-Za-z_][A-Za-z0-9_.]*$/.test(sheet)) return sheet
 	return `'${sheet.replace(/'/g, "''")}'`
+}
+
+function splitSheetQualifiedLocation(input: string): { sheet: string; ref: string } | null {
+	const bang = input.lastIndexOf('!')
+	if (bang === -1) return null
+	const sheet = input.slice(0, bang).replace(/^'|'$/g, '').replace(/''/g, "'")
+	const ref = input.slice(bang + 1)
+	return sheet && ref ? { sheet, ref } : null
+}
+
+function sameSheetName(left: string, right: string): boolean {
+	return left.toLowerCase() === right.toLowerCase()
 }
 
 function translateMetadataFormula(formula: string, rowDelta: number, colDelta: number): string {

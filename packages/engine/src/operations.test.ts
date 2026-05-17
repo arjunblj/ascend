@@ -5988,6 +5988,44 @@ describe('applyOperation', () => {
 		}
 	})
 
+	test('row and column inserts reject hyperlink locations before shifting them out of grid', () => {
+		const cases: readonly {
+			readonly op: Operation
+			readonly location: string
+			readonly expectedReference: string
+		}[] = [
+			{
+				op: { op: 'insertRows', sheet: 'Sheet1', at: 0, count: 1 },
+				location: 'Sheet1!A1048576',
+				expectedReference: 'Sheet1!A1048576',
+			},
+			{
+				op: { op: 'insertCols', sheet: 'Sheet1', at: 0, count: 1 },
+				location: 'Sheet1!XFD1:XFD2',
+				expectedReference: 'Sheet1!XFD1:XFD2',
+			},
+		]
+
+		for (const { op, location, expectedReference } of cases) {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			sheet.hyperlinks.set('A1', { location, display: 'Jump' })
+			const beforeHyperlinks = [...sheet.hyperlinks]
+
+			const result = applyOperation(wb, op)
+
+			expectErr(result)
+			expect(result.error.code, op.op).toBe('INVALID_RANGE')
+			expect(result.error.refs, op.op).toEqual(['Sheet1!hyperlink(A1).location', expectedReference])
+			expect(result.error.details, op.op).toMatchObject({
+				kind: 'structural-insert-shifts-hyperlink-location-out-of-bounds',
+				owner: 'Sheet1!hyperlink(A1).location',
+				reference: expectedReference,
+			})
+			expect([...sheet.hyperlinks], op.op).toEqual(beforeHyperlinks)
+		}
+	})
+
 	test('row and column inserts reject visual anchors before shifting them out of grid', () => {
 		const cases: readonly {
 			readonly op: Operation

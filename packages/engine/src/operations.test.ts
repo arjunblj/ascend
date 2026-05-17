@@ -6385,6 +6385,58 @@ describe('applyOperation', () => {
 		})
 	})
 
+	test('row and column inserts reject chart source refs before shifting them out of grid', () => {
+		const cases: readonly {
+			readonly op: Operation
+			readonly sourceKind: 'categoryRef' | 'valueRef'
+			readonly sourceRef: string
+			readonly expectedReference: string
+		}[] = [
+			{
+				op: { op: 'insertRows', sheet: 'Data', at: 0, count: 1 },
+				sourceKind: 'valueRef',
+				sourceRef: 'Data!$B$1048576',
+				expectedReference: 'Data!$B$1048576',
+			},
+			{
+				op: { op: 'insertCols', sheet: 'Data', at: 0, count: 1 },
+				sourceKind: 'categoryRef',
+				sourceRef: 'Data!$XFD$2:$XFD$4',
+				expectedReference: 'Data!$XFD$2:$XFD$4',
+			},
+		]
+
+		for (const { op, sourceKind, sourceRef, expectedReference } of cases) {
+			const wb = createWorkbook()
+			wb.addSheet('Data')
+			wb.addSheet('Dashboard')
+			wb.chartParts.push({
+				partPath: 'xl/charts/chart1.xml',
+				sheetName: 'Dashboard',
+				chartType: 'lineChart',
+				series: [
+					{
+						[sourceKind]: sourceRef,
+					},
+				],
+			})
+			const beforeCharts = JSON.stringify(wb.chartParts)
+			const owner = `xl/charts/chart1.xml#chart0.series0.${sourceKind}`
+
+			const result = applyOperation(wb, op)
+
+			expectErr(result)
+			expect(result.error.code, op.op).toBe('INVALID_RANGE')
+			expect(result.error.refs, op.op).toEqual([owner])
+			expect(result.error.details, op.op).toMatchObject({
+				kind: 'structural-insert-shifts-chart-source-out-of-bounds',
+				owner,
+				reference: expectedReference,
+			})
+			expect(JSON.stringify(wb.chartParts), op.op).toBe(beforeCharts)
+		}
+	})
+
 	test('row and column shifts update sparkline source and location ranges', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Data')

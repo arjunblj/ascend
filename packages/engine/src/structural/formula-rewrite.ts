@@ -8,6 +8,8 @@ type ConditionalFormatRule = Sheet['conditionalFormats'][number]['rules'][number
 type X14ConditionalFormat = Sheet['x14ConditionalFormats'][number]
 type FormulaTextRewriter = (formula: string | undefined) => string | undefined
 const REF_ERROR_NODE: FormulaNode = { type: 'error', value: '#REF!' }
+const EXCEL_MAX_ROWS = 1_048_576
+const EXCEL_MAX_COLS = 16_384
 
 export interface PartialFormulaMoveReference {
 	readonly ownerKind:
@@ -29,6 +31,13 @@ export interface FormulaMoveSkipRange {
 export interface FormulaRewriteCell {
 	readonly sheetName: string
 	readonly ref: string
+}
+
+export interface InsertShiftedChartSourceRefOutOfBounds {
+	readonly owner: string
+	readonly formula: string
+	readonly reference: string
+	readonly shiftedReference: string
 }
 
 export function rewriteWorkbookFormulasForShift(
@@ -806,6 +815,230 @@ export function rewriteWorkbookChartSourceRefsForShift(
 		if (chart.sheetName) modifiedSheets.add(chart.sheetName)
 	}
 	return [...modifiedSheets]
+}
+
+export function findInsertShiftedChartSourceRefOutOfBounds(
+	workbook: Workbook,
+	targetSheet: string,
+	axis: 'row' | 'col',
+	at: number,
+	count: number,
+): InsertShiftedChartSourceRefOutOfBounds | null {
+	for (const [chartIndex, chart] of workbook.chartParts.entries()) {
+		if (!chart) continue
+		const formulaSheet = chart.sheetName
+		for (const [seriesIndex, series] of chart.series.entries()) {
+			for (const sourceKind of ['nameRef', 'categoryRef', 'valueRef'] as const) {
+				const formula = series[sourceKind]
+				const issue = findInsertShiftedFormulaRefOutOfBounds(
+					formula,
+					targetSheet,
+					formulaSheet,
+					axis,
+					at,
+					count,
+				)
+				if (!issue || !formula) continue
+				return {
+					owner: `${chart.partPath}#chart${chartIndex}.series${seriesIndex}.${sourceKind}`,
+					formula,
+					reference: issue.reference,
+					shiftedReference: issue.shiftedReference,
+				}
+			}
+		}
+	}
+	return null
+}
+
+function findInsertShiftedFormulaRefOutOfBounds(
+	formula: string | undefined,
+	targetSheet: string,
+	formulaSheet: string | undefined,
+	axis: 'row' | 'col',
+	at: number,
+	count: number,
+): { readonly reference: string; readonly shiftedReference: string } | null {
+	if (!formula) return null
+	const parsed = cachedParseFormula(formula)
+	if (!parsed.ok) return null
+	if (formulaSheet === undefined && !formulaAstReferencesSheet(parsed.value, targetSheet)) {
+		return null
+	}
+	return findInsertShiftedFormulaRefOutOfBoundsAst(
+		parsed.value,
+		targetSheet,
+		formulaSheet ?? targetSheet,
+		axis,
+		at,
+		count,
+	)
+}
+
+function findInsertShiftedFormulaRefOutOfBoundsAst(
+	node: FormulaNode,
+	targetSheet: string,
+	formulaSheet: string,
+	axis: 'row' | 'col',
+	at: number,
+	count: number,
+): { readonly reference: string; readonly shiftedReference: string } | null {
+	const onTarget = (refSheet: string | undefined) =>
+		sameSheetName(refSheet ?? formulaSheet, targetSheet)
+	switch (node.type) {
+		case 'cellRef': {
+			if (!onTarget(node.sheet)) return null
+			const shiftedRef = shiftInsertedFormulaCellRef(node.ref, axis, at, count)
+			if (formulaCellRefWithinGrid(shiftedRef)) return null
+			const shifted = { ...node, ref: shiftedRef }
+			return { reference: printFormula(node), shiftedReference: printFormula(shifted) }
+		}
+		case 'rangeRef': {
+			if (!onTarget(node.sheet) || !insertAffectsFormulaRange(node, axis, at)) return null
+			const shifted = {
+				...node,
+				start: shiftInsertedFormulaCellRef(node.start, axis, at, count),
+				end: shiftInsertedFormulaCellRef(node.end, axis, at, count),
+			}
+			if (formulaCellRefWithinGrid(shifted.start) && formulaCellRefWithinGrid(shifted.end)) {
+				return null
+			}
+			return { reference: printFormula(node), shiftedReference: printFormula(shifted) }
+		}
+		case 'wholeRowRange': {
+			if (!onTarget(node.sheet) || axis !== 'row' || node.endRow < at) return null
+			const shifted = {
+				...node,
+				startRow: shiftInsertedCoordinate(node.startRow, at, count),
+				endRow: shiftInsertedCoordinate(node.endRow, at, count),
+			}
+			if (shifted.startRow >= 0 && shifted.endRow < EXCEL_MAX_ROWS) return null
+			return { reference: printFormula(node), shiftedReference: printFormula(shifted) }
+		}
+		case 'wholeColumnRange': {
+			if (!onTarget(node.sheet) || axis !== 'col' || node.endCol < at) return null
+			const shifted = {
+				...node,
+				startCol: shiftInsertedCoordinate(node.startCol, at, count),
+				endCol: shiftInsertedCoordinate(node.endCol, at, count),
+			}
+			if (shifted.startCol >= 0 && shifted.endCol < EXCEL_MAX_COLS) return null
+			return { reference: printFormula(node), shiftedReference: printFormula(shifted) }
+		}
+		case 'binary':
+			return (
+				findInsertShiftedFormulaRefOutOfBoundsAst(
+					node.left,
+					targetSheet,
+					formulaSheet,
+					axis,
+					at,
+					count,
+				) ??
+				findInsertShiftedFormulaRefOutOfBoundsAst(
+					node.right,
+					targetSheet,
+					formulaSheet,
+					axis,
+					at,
+					count,
+				)
+			)
+		case 'dynamicRangeRef':
+			return (
+				findInsertShiftedFormulaRefOutOfBoundsAst(
+					node.start,
+					targetSheet,
+					formulaSheet,
+					axis,
+					at,
+					count,
+				) ??
+				findInsertShiftedFormulaRefOutOfBoundsAst(
+					node.end,
+					targetSheet,
+					formulaSheet,
+					axis,
+					at,
+					count,
+				)
+			)
+		case 'unary':
+			return findInsertShiftedFormulaRefOutOfBoundsAst(
+				node.operand,
+				targetSheet,
+				formulaSheet,
+				axis,
+				at,
+				count,
+			)
+		case 'spillRef':
+			return findInsertShiftedFormulaRefOutOfBoundsAst(
+				node.target,
+				targetSheet,
+				formulaSheet,
+				axis,
+				at,
+				count,
+			)
+		case 'function':
+			for (const arg of node.args) {
+				const issue = findInsertShiftedFormulaRefOutOfBoundsAst(
+					arg,
+					targetSheet,
+					formulaSheet,
+					axis,
+					at,
+					count,
+				)
+				if (issue) return issue
+			}
+			return null
+		case 'array':
+			for (const row of node.rows) {
+				for (const cell of row) {
+					const issue = findInsertShiftedFormulaRefOutOfBoundsAst(
+						cell,
+						targetSheet,
+						formulaSheet,
+						axis,
+						at,
+						count,
+					)
+					if (issue) return issue
+				}
+			}
+			return null
+		default:
+			return null
+	}
+}
+
+function insertAffectsFormulaRange(
+	node: { readonly start: FormulaCellRef; readonly end: FormulaCellRef },
+	axis: 'row' | 'col',
+	at: number,
+): boolean {
+	return axis === 'row' ? node.end.row >= at : node.end.col >= at
+}
+
+function shiftInsertedFormulaCellRef(
+	ref: FormulaCellRef,
+	axis: 'row' | 'col',
+	at: number,
+	count: number,
+): FormulaCellRef {
+	return axis === 'row'
+		? { ...ref, row: shiftInsertedCoordinate(ref.row, at, count) }
+		: { ...ref, col: shiftInsertedCoordinate(ref.col, at, count) }
+}
+
+function shiftInsertedCoordinate(coordinate: number, at: number, count: number): number {
+	return coordinate >= at ? coordinate + count : coordinate
+}
+
+function formulaCellRefWithinGrid(ref: FormulaCellRef): boolean {
+	return ref.row >= 0 && ref.row < EXCEL_MAX_ROWS && ref.col >= 0 && ref.col < EXCEL_MAX_COLS
 }
 
 function rewriteChartSourceRefForShift(

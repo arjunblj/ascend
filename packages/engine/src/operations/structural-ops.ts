@@ -19,8 +19,10 @@ import type { Operation, PasteMode, Result } from '@ascend/schema'
 import { ascendError, EMPTY, err, ok } from '@ascend/schema'
 import { resolveCellFormulaText } from '../analysis.ts'
 import {
+	findInsertShiftedChartSourceRefOutOfBounds,
 	findPartialFormulaMoveReference,
 	formulaAstHasLocalStructuralReference,
+	type InsertShiftedChartSourceRefOutOfBounds,
 	type PartialFormulaMoveReference,
 	retargetExplicitFormulaSheetRefsInRange,
 	rewriteDefinedNameFormulasForMove,
@@ -107,6 +109,15 @@ function applyAxisShift(
 	}
 	const formulaBindingBlocker = findWorkbookFormulaBinding(workbook)
 	if (formulaBindingBlocker) return err(formulaBindingStructuralEditError(formulaBindingBlocker))
+	const insertChartSourceOverflowBlocker =
+		delta > 0
+			? findInsertShiftedChartSourceRefOutOfBounds(workbook, sheetName, axis, at, count)
+			: null
+	if (insertChartSourceOverflowBlocker) {
+		return err(
+			insertShiftedChartSourceOutOfBoundsError(axis, at, count, insertChartSourceOverflowBlocker),
+		)
+	}
 	const deletedTableColumns =
 		axis === 'col' && delta < 0 ? collectDeletedTableColumns(sheet, at, count) : []
 	const deletedTableColumnBlocker = findDeletedTableColumnReference(workbook, deletedTableColumns, {
@@ -477,6 +488,34 @@ function insertShiftedSqrefOutOfBoundsError(
 				label: blocker.label,
 				ref: qualifiedRef,
 				shiftedRef: blocker.shiftedRef,
+			},
+		},
+	)
+}
+
+function insertShiftedChartSourceOutOfBoundsError(
+	axis: 'row' | 'col',
+	at: number,
+	count: number,
+	blocker: InsertShiftedChartSourceRefOutOfBounds,
+) {
+	const label = axis === 'row' ? 'row' : 'column'
+	const maxRef = axis === 'row' ? '1048576' : 'XFD'
+	return ascendError(
+		'INVALID_RANGE',
+		`Cannot insert ${label}s because chart source ${blocker.owner} reference ${blocker.reference} would shift outside Excel worksheet bounds`,
+		{
+			refs: [blocker.owner],
+			suggestedFix: `Move or remove chart source ranges that would shift past ${maxRef}, then retry the insert.`,
+			details: {
+				kind: 'structural-insert-shifts-chart-source-out-of-bounds',
+				axis,
+				at,
+				count,
+				owner: blocker.owner,
+				formula: blocker.formula,
+				reference: blocker.reference,
+				shiftedReference: blocker.shiftedReference,
 			},
 		},
 	)

@@ -53,13 +53,13 @@ export function parseConnectionPartInfos(
 	}
 	if (!xml) return [base]
 	if (kind === 'queryTable') {
-		const root = parseXml(xml).queryTable as XmlNode | undefined
+		const root = firstElement(parseXml(xml), 'queryTable')
 		return [{ ...base, ...readConnectionAttrs(root, { queryTable: true }) }]
 	}
 	if (kind === 'connection') {
 		const doc = parseXml(xml)
-		const root = doc.connections as XmlNode | undefined
-		const connections = asArray(root?.connection as XmlNode | XmlNode[] | undefined)
+		const root = firstElement(doc, 'connections')
+		const connections = childNodes(root, 'connection')
 		if (connections.length === 0) return [base]
 		return connections.map((connection) => ({
 			...base,
@@ -155,9 +155,9 @@ function readConnectionAttrs(
 	if (credentials) parsed.credentials = credentials
 	const singleSignOnId = attr(node, 'singleSignOnId')
 	if (singleSignOnId) parsed.singleSignOnId = singleSignOnId
-	const textPr = node.textPr as XmlNode | undefined
-	const dbPr = node.dbPr as XmlNode | undefined
-	const webPr = node.webPr as XmlNode | undefined
+	const textPr = childNode(node, 'textPr')
+	const dbPr = childNode(node, 'dbPr')
+	const webPr = childNode(node, 'webPr')
 	const sourceFile = attr(node, 'sourceFile') ?? (textPr ? attr(textPr, 'sourceFile') : undefined)
 	if (sourceFile) parsed.sourceFile = sourceFile
 	const odcFile = attr(node, 'odcFile')
@@ -181,4 +181,36 @@ function readConnectionAttrs(
 	const connectionString = dbPr ? attr(dbPr, 'connection') : undefined
 	if (connectionString) parsed.hasConnectionString = true
 	return parsed
+}
+
+function firstElement(doc: XmlNode, localName: string): XmlNode | undefined {
+	for (const [key, value] of Object.entries(doc)) {
+		if (key.startsWith('@_') || localPart(key) !== localName || !isXmlNode(value)) continue
+		return value
+	}
+	return undefined
+}
+
+function childNode(node: XmlNode | undefined, localName: string): XmlNode | undefined {
+	return childNodes(node, localName)[0]
+}
+
+function childNodes(node: XmlNode | undefined, localName: string): XmlNode[] {
+	if (!node) return []
+	const matches: XmlNode[] = []
+	for (const [key, value] of Object.entries(node)) {
+		if (key.startsWith('@_') || localPart(key) !== localName) continue
+		for (const item of asArray(value as XmlNode | XmlNode[] | undefined)) {
+			if (isXmlNode(item)) matches.push(item)
+		}
+	}
+	return matches
+}
+
+function isXmlNode(value: unknown): value is XmlNode {
+	return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function localPart(name: string): string {
+	return name.includes(':') ? (name.split(':').pop() ?? name) : name
 }

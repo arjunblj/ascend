@@ -2743,6 +2743,146 @@ describe('recalculate', () => {
 		}
 	})
 
+	test('FORECAST.ETS family spills over selector arguments while preserving values and timelines', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		const timeline = [1, 2, 3, 4, 5, 6, 7, 8]
+		const values = [12, 14, 16, 18, 20, 22, 24, 26]
+		const targets = [9, 10, 11]
+		const confidence = [0.8, 0.9, 0.95]
+		const statisticTypes = [1, 7, 8]
+		const dataCompletion = [0, 1, 1]
+		for (let row = 0; row < timeline.length; row++) {
+			sheet.cells.set(row, 0, {
+				value: numberValue(timeline[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+			sheet.cells.set(row, 1, {
+				value: numberValue(values[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+		}
+		for (let row = 0; row < targets.length; row++) {
+			for (const [col, source] of [
+				[2, targets],
+				[3, confidence],
+				[4, statisticTypes],
+				[5, dataCompletion],
+			] as const) {
+				sheet.cells.set(row, col, {
+					value: numberValue(source[row] as number),
+					formula: null,
+					styleId: sid,
+				})
+			}
+		}
+		const arrayFormulas = [
+			'FORECAST.ETS(C1:C3,B1:B8,A1:A8,0)+0',
+			'FORECAST.ETS.CONFINT(C1:C3,B1:B8,A1:A8,D1:D3,0)+0',
+			'FORECAST.ETS.STAT(B1:B8,A1:A8,E1:E3,0)+0',
+			'FORECAST.ETS.SEASONALITY(B1:B8,A1:A8,F1:F3)+0',
+		]
+		const scalarFormulas = [
+			'FORECAST.ETS(C{r},B1:B8,A1:A8,0)+0',
+			'FORECAST.ETS.CONFINT(C{r},B1:B8,A1:A8,D{r},0)+0',
+			'FORECAST.ETS.STAT(B1:B8,A1:A8,E{r},0)+0',
+			'FORECAST.ETS.SEASONALITY(B1:B8,A1:A8,F{r})+0',
+		]
+		for (let col = 0; col < arrayFormulas.length; col++) {
+			sheet.cells.set(0, 6 + col, {
+				value: EMPTY,
+				formula: arrayFormulas[col] as string,
+				styleId: sid,
+			})
+			for (let row = 0; row < targets.length; row++) {
+				sheet.cells.set(row, 12 + col, {
+					value: EMPTY,
+					formula: (scalarFormulas[col] as string).replaceAll('{r}', String(row + 1)),
+					styleId: sid,
+				})
+			}
+		}
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		for (let row = 0; row < targets.length; row++) {
+			for (let col = 0; col < arrayFormulas.length; col++) {
+				expect(sheet.cells.get(row, 6 + col)?.value).toEqual(sheet.cells.get(row, 12 + col)?.value)
+			}
+		}
+	})
+
+	test('top-level FORECAST.ETS family implicitly intersects selector ranges', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		const timeline = [1, 2, 3, 4, 5, 6, 7, 8]
+		const values = [12, 14, 16, 18, 20, 22, 24, 26]
+		const targets = [9, 10, 11]
+		const confidence = [0.8, 0.9, 0.95]
+		const statisticTypes = [1, 7, 8]
+		const dataCompletion = [0, 1, 1]
+		for (let row = 0; row < timeline.length; row++) {
+			sheet.cells.set(row, 0, {
+				value: numberValue(timeline[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+			sheet.cells.set(row, 1, {
+				value: numberValue(values[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+		}
+		for (let row = 0; row < targets.length; row++) {
+			for (const [col, source] of [
+				[2, targets],
+				[3, confidence],
+				[4, statisticTypes],
+				[5, dataCompletion],
+			] as const) {
+				sheet.cells.set(row, col, {
+					value: numberValue(source[row] as number),
+					formula: null,
+					styleId: sid,
+				})
+			}
+		}
+		const rangeFormulas = [
+			'FORECAST.ETS(C1:C3,B1:B8,A1:A8,0)',
+			'FORECAST.ETS.CONFINT(C1:C3,B1:B8,A1:A8,D1:D3,0)',
+			'FORECAST.ETS.STAT(B1:B8,A1:A8,E1:E3,0)',
+			'FORECAST.ETS.SEASONALITY(B1:B8,A1:A8,F1:F3)',
+		]
+		const scalarFormulas = [
+			'FORECAST.ETS(C2,B1:B8,A1:A8,0)',
+			'FORECAST.ETS.CONFINT(C2,B1:B8,A1:A8,D2,0)',
+			'FORECAST.ETS.STAT(B1:B8,A1:A8,E2,0)',
+			'FORECAST.ETS.SEASONALITY(B1:B8,A1:A8,F2)',
+		]
+		for (let col = 0; col < rangeFormulas.length; col++) {
+			sheet.cells.set(1, 6 + col, {
+				value: EMPTY,
+				formula: rangeFormulas[col] as string,
+				styleId: sid,
+			})
+			sheet.cells.set(1, 12 + col, {
+				value: EMPTY,
+				formula: scalarFormulas[col] as string,
+				styleId: sid,
+			})
+		}
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		for (let col = 0; col < rangeFormulas.length; col++) {
+			expect(sheet.cells.get(1, 6 + col)?.value).toEqual(sheet.cells.get(1, 12 + col)?.value)
+		}
+	})
+
 	test('TRIMMEAN spills over percent arguments while preserving the data range', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

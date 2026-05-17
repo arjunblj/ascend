@@ -818,6 +818,10 @@ const ARRAY_MAPPING_FUNCTIONS = new Set([
 	'FLOOR.MATH',
 	'FLOOR.PRECISE',
 	'FORECAST',
+	'FORECAST.ETS',
+	'FORECAST.ETS.CONFINT',
+	'FORECAST.ETS.SEASONALITY',
+	'FORECAST.ETS.STAT',
 	'FORECAST.LINEAR',
 	'FV',
 	'GAMMADIST',
@@ -995,6 +999,10 @@ const ARRAY_MAPPING_FUNCTIONS = new Set([
 
 const ARRAY_MAPPING_RANGE_PRESERVING_ARGS = new Map<string, ReadonlySet<number>>([
 	['FORECAST', new Set([1, 2])],
+	['FORECAST.ETS', new Set([1, 2])],
+	['FORECAST.ETS.CONFINT', new Set([1, 2])],
+	['FORECAST.ETS.SEASONALITY', new Set([0, 1])],
+	['FORECAST.ETS.STAT', new Set([0, 1])],
 	['FORECAST.LINEAR', new Set([1, 2])],
 	['LARGE', new Set([0])],
 	['NETWORKDAYS', new Set([2])],

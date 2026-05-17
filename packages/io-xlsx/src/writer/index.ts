@@ -1883,7 +1883,10 @@ export function planWriteXlsx(
 				capsules,
 				corePropsPath,
 				'application/vnd.openxmlformats-package.core-properties+xml',
-				() => buildCorePropsXml(workbook.documentProperties.core),
+				(sourceXml) =>
+					buildCorePropsXml(workbook.documentProperties.core, {
+						...(sourceXml ? { sourceXml } : {}),
+					}),
 				!documentPropertiesDirty,
 			)
 			recordDocPropsPart(
@@ -1892,7 +1895,10 @@ export function planWriteXlsx(
 				capsules,
 				appPropsPath,
 				'application/vnd.openxmlformats-officedocument.extended-properties+xml',
-				() => buildAppPropsXml(workbook.documentProperties.app),
+				(sourceXml) =>
+					buildAppPropsXml(workbook.documentProperties.app, {
+						...(sourceXml ? { sourceXml } : {}),
+					}),
 				!documentPropertiesDirty,
 			)
 			if (shouldWriteCustomDocProps) {
@@ -1902,7 +1908,10 @@ export function planWriteXlsx(
 					capsules,
 					customPropsPath,
 					'application/vnd.openxmlformats-officedocument.custom-properties+xml',
-					() => buildCustomPropsXml(customDocumentProperties),
+					(sourceXml) =>
+						buildCustomPropsXml(customDocumentProperties, {
+							...(sourceXml ? { sourceXml } : {}),
+						}),
 					!documentPropertiesDirty,
 				)
 				plan.addOverride(
@@ -2696,7 +2705,7 @@ function recordDocPropsPart(
 	capsules: readonly PreservationCapsule[] | undefined,
 	path: string,
 	contentType: string,
-	buildXml: () => string,
+	buildXml: (sourceXml?: string) => string,
 	preserveExisting = true,
 ): void {
 	const capsule = capsules?.find((entry) => entry.partPath === path)
@@ -2711,7 +2720,8 @@ function recordDocPropsPart(
 		return
 	}
 	if (capsule) plan.skipCapsulePath(path)
-	plan.putXml(path, buildXml(), {
+	const sourceXml = content ? new TextDecoder().decode(content) : sourceArchive?.readText(path)
+	plan.putXml(path, buildXml(sourceXml), {
 		owner: { kind: 'package' },
 		origin: 'generated',
 		contentType,

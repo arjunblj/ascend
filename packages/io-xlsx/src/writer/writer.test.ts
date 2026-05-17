@@ -2500,10 +2500,11 @@ describe('writeXlsx', () => {
   <Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/custom-properties" Target="docProps/custom.xml"/>
 </Relationships>`,
 			'docProps/core.xml':
-				'<cp:coreProperties xmlns:cp="old"><dc:title>Old</dc:title></cp:coreProperties>',
-			'docProps/app.xml': '<Properties><Application>Old</Application></Properties>',
+				'<cp:coreProperties xmlns:cp="old" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:corex="urn:ascend:core-props" mc:Ignorable="corex" corex:origin="source"><dc:title>Old</dc:title></cp:coreProperties>',
+			'docProps/app.xml':
+				'<Properties xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:appx="urn:ascend:app-props" mc:Ignorable="appx" appx:origin="source"><Application>Old</Application></Properties>',
 			'docProps/custom.xml':
-				'<Properties><property name="Old"><vt:lpwstr>stale</vt:lpwstr></property></Properties>',
+				'<Properties xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:custx="urn:ascend:custom-props" mc:Ignorable="custx" custx:origin="source"><property name="Old"><vt:lpwstr>stale</vt:lpwstr></property></Properties>',
 			'xl/workbook.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
   xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
@@ -2538,6 +2539,12 @@ describe('writeXlsx', () => {
 		expect(decode('docProps/custom.xml')).toContain('name="Reviewed"')
 		expect(decode('docProps/custom.xml')).toContain('<vt:bool>true</vt:bool>')
 		expect(decode('docProps/custom.xml')).not.toContain('stale')
+		expect(decode('docProps/core.xml')).toContain('xmlns:corex="urn:ascend:core-props"')
+		expect(decode('docProps/core.xml')).toContain('mc:Ignorable="corex"')
+		expect(decode('docProps/app.xml')).toContain('xmlns:appx="urn:ascend:app-props"')
+		expect(decode('docProps/app.xml')).toContain('mc:Ignorable="appx"')
+		expect(decode('docProps/custom.xml')).toContain('xmlns:custx="urn:ascend:custom-props"')
+		expect(decode('docProps/custom.xml')).toContain('mc:Ignorable="custx"')
 		expect(decode('_rels/.rels')).toContain(
 			'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/custom-properties"',
 		)

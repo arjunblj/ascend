@@ -16,6 +16,7 @@ const XSI_NS = 'http://www.w3.org/2001/XMLSchema-instance'
 const APP_PROPS_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/extended-properties'
 const CUSTOM_PROPS_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/custom-properties'
 const VT_NS = 'http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes'
+const XML_ATTR_RE = /([A-Za-z_][\w:.-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/g
 
 const CORE_TEXT_TAGS = [
 	['title', 'dc:title'],
@@ -32,15 +33,30 @@ const CORE_TEXT_TAGS = [
 	['version', 'cp:version'],
 ] as const satisfies readonly (readonly [keyof WorkbookCoreDocumentProperties, string])[]
 
-export function buildCorePropsXml(properties?: WorkbookCoreDocumentProperties): string {
+export interface DocPropsXmlOptions {
+	readonly sourceXml?: string
+}
+
+export function buildCorePropsXml(
+	properties?: WorkbookCoreDocumentProperties,
+	options: DocPropsXmlOptions = {},
+): string {
 	const now = new Date().toISOString()
 	const out = new ChunkedStringBuilder()
 	out.push(XML_HEADER)
-	out.push('<cp:coreProperties')
-	out.push(` xmlns:cp="${CORE_PROPS_NS}"`)
-	out.push(` xmlns:dc="${DC_NS}"`)
-	out.push(` xmlns:dcterms="${DCTERMS_NS}"`)
-	out.push(` xmlns:xsi="${XSI_NS}">`)
+	out.push(
+		buildRootOpenTag(
+			'cp:coreProperties',
+			'coreProperties',
+			[
+				['xmlns:cp', CORE_PROPS_NS],
+				['xmlns:dc', DC_NS],
+				['xmlns:dcterms', DCTERMS_NS],
+				['xmlns:xsi', XSI_NS],
+			],
+			options.sourceXml,
+		),
+	)
 	for (const [field, tag] of CORE_TEXT_TAGS) {
 		const value = properties?.[field]
 		if (value !== undefined) out.push(`<${tag}>${escapeXml(value)}</${tag}>`)
@@ -58,10 +74,21 @@ export function buildCorePropsXml(properties?: WorkbookCoreDocumentProperties): 
 
 export function buildAppPropsXml(
 	properties?: Readonly<Record<string, WorkbookDocumentPropertyAppValue>>,
+	options: DocPropsXmlOptions = {},
 ): string {
 	const out = new ChunkedStringBuilder()
 	out.push(XML_HEADER)
-	out.push(`<Properties xmlns="${APP_PROPS_NS}" xmlns:vt="${VT_NS}">`)
+	out.push(
+		buildRootOpenTag(
+			'Properties',
+			'Properties',
+			[
+				['xmlns', APP_PROPS_NS],
+				['xmlns:vt', VT_NS],
+			],
+			options.sourceXml,
+		),
+	)
 	if (properties && Object.keys(properties).length > 0) {
 		for (const [key, value] of Object.entries(properties)) {
 			if (Array.isArray(value)) {
@@ -102,10 +129,23 @@ function buildTypedValueXml(value: WorkbookDocumentPropertyScalar, forcedType?: 
 	return `<vt:${type}>${escapeXml(text)}</vt:${type}>`
 }
 
-export function buildCustomPropsXml(properties: readonly WorkbookCustomDocumentProperty[]): string {
+export function buildCustomPropsXml(
+	properties: readonly WorkbookCustomDocumentProperty[],
+	options: DocPropsXmlOptions = {},
+): string {
 	const out = new ChunkedStringBuilder()
 	out.push(XML_HEADER)
-	out.push(`<Properties xmlns="${CUSTOM_PROPS_NS}" xmlns:vt="${VT_NS}">`)
+	out.push(
+		buildRootOpenTag(
+			'Properties',
+			'Properties',
+			[
+				['xmlns', CUSTOM_PROPS_NS],
+				['xmlns:vt', VT_NS],
+			],
+			options.sourceXml,
+		),
+	)
 	for (let index = 0; index < properties.length; index++) {
 		const property = properties[index]
 		if (!property) continue
@@ -126,6 +166,45 @@ function customPropertyType(value: string | number | boolean): string {
 	if (typeof value === 'boolean') return 'bool'
 	if (typeof value === 'number') return Number.isInteger(value) ? 'i4' : 'r8'
 	return 'lpwstr'
+}
+
+function buildRootOpenTag(
+	qualifiedName: string,
+	localName: string,
+	requiredAttrs: readonly (readonly [string, string])[],
+	sourceXml: string | undefined,
+): string {
+	const attrs = new Map<string, string>(requiredAttrs)
+	for (const [name, value] of extractSourceRootAttrs(sourceXml, localName)) {
+		if (!attrs.has(name)) attrs.set(name, value)
+	}
+	return `<${qualifiedName} ${Array.from(attrs, ([name, value]) => `${name}="${escapeXml(value)}"`).join(' ')}>`
+}
+
+function extractSourceRootAttrs(
+	sourceXml: string | undefined,
+	localName: string,
+): readonly [string, string][] {
+	if (!sourceXml) return []
+	const rootMatch = new RegExp(`<(?:[A-Za-z_][\\w.-]*:)?${localName}\\b([^>]*)>`, 'i').exec(
+		sourceXml,
+	)
+	if (!rootMatch) return []
+	const rawAttrs = rootMatch[1]
+	if (!rawAttrs) return []
+	const attrs: [string, string][] = []
+	XML_ATTR_RE.lastIndex = 0
+	for (const match of rawAttrs.matchAll(XML_ATTR_RE)) {
+		const name = match[1]
+		const value = match[2] ?? match[3]
+		if (!name || value === undefined || !isXmlAttributeName(name)) continue
+		attrs.push([name, value])
+	}
+	return attrs
+}
+
+function isXmlAttributeName(name: string): boolean {
+	return /^[A-Za-z_][\w:.-]*$/.test(name)
 }
 
 function customPropertyValueText(value: string | number | boolean): string {

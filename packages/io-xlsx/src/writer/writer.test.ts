@@ -6686,6 +6686,86 @@ describe('writeXlsx', () => {
 		expect(xml).not.toContain('<c:numCache>')
 	})
 
+	it('preserves chart relationship root attributes when regenerating chart capsules', () => {
+		const wb = new Workbook()
+		wb.addSheet('Sheet1')
+		wb.sourceArchiveBytes = makeXlsx({
+			'xl/charts/chart1.xml': `<?xml version="1.0"?>
+<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart">
+  <c:chart><c:plotArea><c:barChart><c:ser>
+    <c:tx><c:strRef><c:f>Data!$B$1</c:f></c:strRef></c:tx>
+    <c:cat><c:strRef><c:f>Data!$A$2:$A$4</c:f><c:strCache><c:pt idx="0"><c:v>Jan</c:v></c:pt></c:strCache></c:strRef></c:cat>
+    <c:val><c:numRef><c:f>Data!$B$2:$B$4</c:f><c:numCache><c:pt idx="0"><c:v>3</c:v></c:pt></c:numCache></c:numRef></c:val>
+  </c:ser></c:barChart></c:plotArea></c:chart>
+</c:chartSpace>`,
+			'xl/charts/_rels/chart1.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"
+  xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+  xmlns:chartrel="urn:ascend:chart-relationships"
+  mc:Ignorable="chartrel"
+  chartrel:origin="source">
+  <Relationship Id="rIdStyle" Type="http://schemas.microsoft.com/office/2011/relationships/chartStyle" Target="style1.xml"/>
+</Relationships>`,
+			'xl/charts/style1.xml': `<?xml version="1.0"?><cs:chartStyle xmlns:cs="http://schemas.microsoft.com/office/drawing/2012/chartStyle"/>`,
+		})
+		wb.chartParts.push({
+			partPath: 'xl/charts/chart1.xml',
+			chartType: 'barChart',
+			series: [
+				{
+					nameRef: 'Data!$C$1',
+					categoryRef: 'Data!$A$2:$A$10',
+					valueRef: 'Data!$C$2:$C$10',
+				},
+			],
+		})
+
+		const written = writeXlsx(wb, [
+			{
+				partPath: 'xl/charts/chart1.xml',
+				contentType: 'application/vnd.openxmlformats-officedocument.drawingml.chart+xml',
+				relationships: [
+					{
+						id: 'rIdStyle',
+						type: 'http://schemas.microsoft.com/office/2011/relationships/chartStyle',
+						target: 'style1.xml',
+					},
+				],
+				anchor: { kind: 'workbook' },
+				relType: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart',
+			},
+			{
+				partPath: 'xl/charts/style1.xml',
+				contentType: 'application/vnd.ms-office.chartstyle+xml',
+				relationships: [],
+				anchor: { kind: 'workbook' },
+			},
+		])
+		expectOk(written)
+
+		const entries = unzipSync(written.value)
+		const chartXml = decodeTestXml(entries['xl/charts/chart1.xml'])
+		expect(chartXml).toContain('<c:f>Data!$C$1</c:f>')
+		expect(chartXml).toContain('<c:f>Data!$A$2:$A$10</c:f>')
+		expect(chartXml).toContain('<c:f>Data!$C$2:$C$10</c:f>')
+		expect(chartXml).not.toContain('<c:strCache>')
+		expect(chartXml).not.toContain('<c:numCache>')
+
+		const relsXml = decodeTestXml(entries['xl/charts/_rels/chart1.xml.rels'])
+		expect(relsXml).toContain(
+			'xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"',
+		)
+		expect(relsXml).toContain('xmlns:chartrel="urn:ascend:chart-relationships"')
+		expect(relsXml).toContain('mc:Ignorable="chartrel"')
+		expect(relsXml).toContain('chartrel:origin="source"')
+		expect(relsXml).toContain(
+			'Type="http://schemas.microsoft.com/office/2011/relationships/chartStyle"',
+		)
+
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+	})
+
 	it('invalidates stale caches in real ClosedXML chart edits', () => {
 		const source = readXlsx(
 			readFileSync(

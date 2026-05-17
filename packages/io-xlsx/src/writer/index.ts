@@ -678,12 +678,21 @@ export function planWriteXlsx(
 					owner,
 					origin: 'capsule',
 				},
-				() => buildRelsXml(resolveCapsuleRelationships(workbook, capsule)),
+				() => buildCapsuleRelsXml(capsule),
 			)
 		}
 		const sourceArchive =
 			options.sourceArchive ??
 			(workbook.sourceArchiveBytes ? extractZip(workbook.sourceArchiveBytes) : undefined)
+		function buildCapsuleRelsXml(
+			capsule: PreservationCapsule,
+			relationships: readonly RelEntry[] = resolveCapsuleRelationships(workbook, capsule),
+		): string {
+			const preservedRelationshipsXml = sourceArchive?.readText(getRelsPath(capsule.partPath))
+			return buildRelsXml(relationships, {
+				...(preservedRelationshipsXml ? { preservedRelationshipsXml } : {}),
+			})
+		}
 		const preservedRootRelsText = sourceArchive?.readText('_rels/.rels')
 		const preservedWorkbookRelsTextForTargets =
 			sourceArchive && workbook.preservedXml
@@ -2062,7 +2071,7 @@ export function planWriteXlsx(
 								owner,
 								origin: 'capsule',
 							},
-							() => buildRelsXml(resolveCapsuleRelationships(workbook, capsule)),
+							() => buildCapsuleRelsXml(capsule),
 						)
 					}
 					continue
@@ -2097,7 +2106,7 @@ export function planWriteXlsx(
 								owner,
 								origin: 'capsule',
 							},
-							() => buildRelsXml(capsule.relationships),
+							() => buildCapsuleRelsXml(capsule, capsule.relationships),
 						)
 					}
 					continue
@@ -2127,7 +2136,7 @@ export function planWriteXlsx(
 								owner,
 								origin: 'capsule',
 							},
-							() => buildRelsXml(capsule.relationships),
+							() => buildCapsuleRelsXml(capsule, capsule.relationships),
 						)
 					}
 					continue
@@ -2159,7 +2168,7 @@ export function planWriteXlsx(
 								owner,
 								origin: 'capsule',
 							},
-							() => buildRelsXml(capsule.relationships),
+							() => buildCapsuleRelsXml(capsule, capsule.relationships),
 						)
 					}
 					continue
@@ -2191,7 +2200,7 @@ export function planWriteXlsx(
 								owner,
 								origin: 'capsule',
 							},
-							() => buildRelsXml(capsule.relationships),
+							() => buildCapsuleRelsXml(capsule, capsule.relationships),
 						)
 					}
 					continue
@@ -2223,7 +2232,7 @@ export function planWriteXlsx(
 								owner,
 								origin: 'capsule',
 							},
-							() => buildRelsXml(capsule.relationships),
+							() => buildCapsuleRelsXml(capsule, capsule.relationships),
 						)
 					}
 					continue
@@ -2248,7 +2257,7 @@ export function planWriteXlsx(
 								owner,
 								origin: 'capsule',
 							},
-							() => buildRelsXml(capsule.relationships),
+							() => buildCapsuleRelsXml(capsule, capsule.relationships),
 						)
 					}
 					continue
@@ -2275,7 +2284,7 @@ export function planWriteXlsx(
 									owner,
 									origin: 'capsule',
 								},
-								() => buildRelsXml(resolveCapsuleRelationships(workbook, capsule)),
+								() => buildCapsuleRelsXml(capsule),
 							)
 						}
 						continue
@@ -2305,7 +2314,7 @@ export function planWriteXlsx(
 									owner,
 									origin: 'capsule',
 								},
-								() => buildRelsXml(capsule.relationships),
+								() => buildCapsuleRelsXml(capsule, capsule.relationships),
 							)
 						}
 						continue
@@ -2323,19 +2332,13 @@ export function planWriteXlsx(
 
 				if (capsule.relationships.length > 0) {
 					const capsuleRelsPath = getRelsPath(capsule.partPath)
-					const preservedCapsuleRelsText = sourceArchive?.readText(capsuleRelsPath)
 					recordXml(
 						capsuleRelsPath,
 						{
 							owner,
 							origin: 'capsule',
 						},
-						() =>
-							buildRelsXml(resolveCapsuleRelationships(workbook, capsule), {
-								...(preservedCapsuleRelsText
-									? { preservedRelationshipsXml: preservedCapsuleRelsText }
-									: {}),
-							}),
+						() => buildCapsuleRelsXml(capsule),
 					)
 				} else {
 					const generatedExternalLinkRels = buildGeneratedExternalLinkRelationships(
@@ -2344,19 +2347,13 @@ export function planWriteXlsx(
 					)
 					if (generatedExternalLinkRels.length > 0) {
 						const capsuleRelsPath = getRelsPath(capsule.partPath)
-						const preservedCapsuleRelsText = sourceArchive?.readText(capsuleRelsPath)
 						recordXml(
 							capsuleRelsPath,
 							{
 								owner,
 								origin: 'generated',
 							},
-							() =>
-								buildRelsXml(generatedExternalLinkRels, {
-									...(preservedCapsuleRelsText
-										? { preservedRelationshipsXml: preservedCapsuleRelsText }
-										: {}),
-								}),
+							() => buildCapsuleRelsXml(capsule, generatedExternalLinkRels),
 						)
 					}
 				}

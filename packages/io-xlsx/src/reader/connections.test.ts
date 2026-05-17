@@ -77,6 +77,11 @@ describe('connection part inventory', () => {
 				applyPatternFormats: false,
 				applyAlignmentFormats: true,
 				applyWidthHeightFormats: false,
+				queryTableRefreshNextId: 3,
+				queryTableFields: [
+					{ id: 1, name: 'Name', tableColumnId: 3 },
+					{ id: 2, name: 'Value', tableColumnId: 2 },
+				],
 			},
 			{
 				kind: 'powerQueryMashup',
@@ -146,6 +151,11 @@ describe('connection part inventory', () => {
 			applyPatternFormats: false,
 			applyAlignmentFormats: true,
 			applyWidthHeightFormats: false,
+			queryTableRefreshNextId: 3,
+			queryTableFields: [
+				{ id: 1, name: 'Name', tableColumnId: 3 },
+				{ id: 2, name: 'Value', tableColumnId: 2 },
+			],
 		})
 		expect(
 			reopened.value.report.features.find((feature) => feature.feature === 'preservedConnection'),
@@ -200,7 +210,7 @@ function connectionWorkbook(): Uint8Array {
   </x:connection>
 </x:connections>`,
 		'xl/queryTables/queryTable1.xml': `<?xml version="1.0"?>
-<x:queryTable xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main" name="SalesQuery" connectionId="1" backgroundRefresh="0" firstBackgroundRefresh="1" refreshOnLoad="1" removeDataOnSave="1" preserveFormatting="1" adjustColumnWidth="0" fillFormulas="1" disableEdit="1" disableRefresh="1" headers="1" rowNumbers="0" autoFormatId="16" applyNumberFormats="1" applyBorderFormats="0" applyFontFormats="1" applyPatternFormats="0" applyAlignmentFormats="1" applyWidthHeightFormats="0"/>`,
+<x:queryTable xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main" name="SalesQuery" connectionId="1" backgroundRefresh="0" firstBackgroundRefresh="1" refreshOnLoad="1" removeDataOnSave="1" preserveFormatting="1" adjustColumnWidth="0" fillFormulas="1" disableEdit="1" disableRefresh="1" headers="1" rowNumbers="0" autoFormatId="16" applyNumberFormats="1" applyBorderFormats="0" applyFontFormats="1" applyPatternFormats="0" applyAlignmentFormats="1" applyWidthHeightFormats="0"><x:queryTableRefresh nextId="3"><x:queryTableFields count="2"><x:queryTableField id="1" name="Name" tableColumnId="3"/><x:queryTableField id="2" name="Value" tableColumnId="2"/></x:queryTableFields></x:queryTableRefresh></x:queryTable>`,
 		'xl/customData/item1.data': 'mashup-bytes',
 	})
 }

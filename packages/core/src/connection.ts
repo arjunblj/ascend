@@ -34,6 +34,8 @@ export interface WorkbookConnectionPartInfo {
 	readonly applyPatternFormats?: boolean
 	readonly applyAlignmentFormats?: boolean
 	readonly applyWidthHeightFormats?: boolean
+	readonly queryTableRefreshNextId?: number
+	readonly queryTableFields?: readonly QueryTableFieldInfo[]
 	readonly savePassword?: boolean
 	readonly refreshedVersion?: number
 	readonly refreshedDateIso?: string
@@ -51,4 +53,10 @@ export interface WorkbookConnectionPartInfo {
 	readonly webXml?: boolean
 	readonly webSourceData?: boolean
 	readonly hasConnectionString?: boolean
+}
+
+export interface QueryTableFieldInfo {
+	readonly id: number
+	readonly name?: string
+	readonly tableColumnId?: number
 }

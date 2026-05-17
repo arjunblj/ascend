@@ -347,6 +347,27 @@ describe('LibreOffice XLSX fixture corpus', () => {
 				dataDxfId: 0,
 			}),
 		])
+		expect(
+			initial.value.workbook.connectionParts.find(
+				(part) => part.partPath === 'xl/queryTables/queryTable1.xml',
+			),
+		).toMatchObject({
+			kind: 'queryTable',
+			name: 'ExternalData_1',
+			connectionId: 2,
+			autoFormatId: 16,
+			applyNumberFormats: false,
+			applyBorderFormats: false,
+			applyFontFormats: false,
+			applyPatternFormats: false,
+			applyAlignmentFormats: false,
+			applyWidthHeightFormats: false,
+			queryTableRefreshNextId: 3,
+			queryTableFields: [
+				{ id: 1, name: 'Name', tableColumnId: 3 },
+				{ id: 2, name: 'Value', tableColumnId: 2 },
+			],
+		})
 
 		const written = writeXlsx(initial.value.workbook, initial.value.capsules, {
 			dirtySheetNames: ['BTC'],
@@ -364,6 +385,17 @@ describe('LibreOffice XLSX fixture corpus', () => {
 		expect(reopenedTable?.columns[0]).toMatchObject({
 			uniqueName: '3',
 			queryTableFieldId: 1,
+		})
+		expect(
+			reopened.value.workbook.connectionParts.find(
+				(part) => part.partPath === 'xl/queryTables/queryTable1.xml',
+			),
+		).toMatchObject({
+			queryTableRefreshNextId: 3,
+			queryTableFields: [
+				{ id: 1, name: 'Name', tableColumnId: 3 },
+				{ id: 2, name: 'Value', tableColumnId: 2 },
+			],
 		})
 	})
 

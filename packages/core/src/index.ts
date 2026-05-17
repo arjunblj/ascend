@@ -13,7 +13,11 @@ export {
 	type WorksheetControlInfo,
 } from './active-content.ts'
 export type { ChartPartInfo, ChartSeriesInfo, ChartSheetInfo } from './chart.ts'
-export type { WorkbookConnectionPartInfo, WorkbookConnectionPartKind } from './connection.ts'
+export type {
+	QueryTableFieldInfo,
+	WorkbookConnectionPartInfo,
+	WorkbookConnectionPartKind,
+} from './connection.ts'
 export type { WorkbookDataModelPartInfo, WorkbookDataModelPartKind } from './data-model.ts'
 export type {
 	DefinedName,

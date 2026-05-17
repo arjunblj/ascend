@@ -1,4 +1,8 @@
-import type { WorkbookConnectionPartInfo, WorkbookConnectionPartKind } from '@ascend/core'
+import type {
+	QueryTableFieldInfo,
+	WorkbookConnectionPartInfo,
+	WorkbookConnectionPartKind,
+} from '@ascend/core'
 import type { PreservationCapsule } from '../preserve.ts'
 import { asArray, attr, boolAttr, numAttr, parseXml, type XmlNode } from '../xml.ts'
 
@@ -30,6 +34,8 @@ interface ParsedConnectionAttrs {
 	applyPatternFormats?: boolean
 	applyAlignmentFormats?: boolean
 	applyWidthHeightFormats?: boolean
+	queryTableRefreshNextId?: number
+	queryTableFields?: readonly QueryTableFieldInfo[]
 	savePassword?: boolean
 	refreshedVersion?: number
 	refreshedDateIso?: string
@@ -184,6 +190,15 @@ function readConnectionAttrs(
 		if (applyWidthHeightFormats !== undefined) {
 			parsed.applyWidthHeightFormats = applyWidthHeightFormats
 		}
+		const queryTableRefresh = childNode(node, 'queryTableRefresh')
+		const queryTableRefreshNextId = queryTableRefresh
+			? numAttr(queryTableRefresh, 'nextId')
+			: undefined
+		if (queryTableRefreshNextId !== undefined) {
+			parsed.queryTableRefreshNextId = queryTableRefreshNextId
+		}
+		const queryTableFields = parseQueryTableFields(queryTableRefresh)
+		if (queryTableFields.length > 0) parsed.queryTableFields = queryTableFields
 	}
 	const refreshedVersion = numAttr(node, 'refreshedVersion')
 	if (refreshedVersion !== undefined) parsed.refreshedVersion = refreshedVersion
@@ -221,6 +236,23 @@ function readConnectionAttrs(
 	const connectionString = dbPr ? attr(dbPr, 'connection') : undefined
 	if (connectionString) parsed.hasConnectionString = true
 	return parsed
+}
+
+function parseQueryTableFields(queryTableRefresh: XmlNode | undefined): QueryTableFieldInfo[] {
+	const fieldsRoot = childNode(queryTableRefresh, 'queryTableFields')
+	const fields: QueryTableFieldInfo[] = []
+	for (const field of childNodes(fieldsRoot, 'queryTableField')) {
+		const id = numAttr(field, 'id')
+		if (id === undefined) continue
+		const name = attr(field, 'name')
+		const tableColumnId = numAttr(field, 'tableColumnId')
+		fields.push({
+			id,
+			...(name ? { name } : {}),
+			...(tableColumnId !== undefined ? { tableColumnId } : {}),
+		})
+	}
+	return fields
 }
 
 function firstElement(doc: XmlNode, localName: string): XmlNode | undefined {

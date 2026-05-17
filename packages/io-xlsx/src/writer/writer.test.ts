@@ -5284,6 +5284,49 @@ describe('writeXlsx', () => {
 		expect(workbookXml).toContain('fullPrecision="0"')
 	})
 
+	it('preserves unsupported workbook child XML when workbook metadata is regenerated', () => {
+		const wb = new Workbook()
+		const sheet = wb.addSheet('Data')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: S0 })
+		wb.preservedXml = {
+			workbookXml: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+  xmlns:mx="urn:ascend:test-workbook-child">
+  <workbookPr codeName="Book1"/>
+  <bookViews><workbookView activeTab="0"/></bookViews>
+  <sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets>
+  <functionGroups><functionGroup name="Engineering"/></functionGroups>
+  <customWorkbookViews><customWorkbookView name="Review" guid="{11111111-1111-1111-1111-111111111111}" activeSheetId="1"/></customWorkbookViews>
+  <webPublishing css="1" thicket="0"/>
+  <fileRecoveryPr autoRecover="1" crashSave="1"/>
+  <mx:workbookProbe mx:flag="1"/>
+  <calcPr calcMode="manual"/>
+</workbook>`,
+		}
+
+		const written = writeXlsx(wb, undefined, { workbookMetaDirty: true })
+		expectOk(written)
+
+		const zip = unzipSync(written.value)
+		const workbookXml = new TextDecoder().decode(zip['xl/workbook.xml'] ?? new Uint8Array())
+		expect(workbookXml).toContain('xmlns:mx="urn:ascend:test-workbook-child"')
+		expect(workbookXml).toContain(
+			'<functionGroups><functionGroup name="Engineering"/></functionGroups>',
+		)
+		expect(workbookXml).toContain(
+			'<customWorkbookViews><customWorkbookView name="Review" guid="{11111111-1111-1111-1111-111111111111}" activeSheetId="1"/></customWorkbookViews>',
+		)
+		expect(workbookXml).toContain('<webPublishing css="1" thicket="0"/>')
+		expect(workbookXml).toContain('<fileRecoveryPr autoRecover="1" crashSave="1"/>')
+		expect(workbookXml).toContain('<mx:workbookProbe mx:flag="1"/>')
+		expect(workbookXml).not.toContain('<workbookPr codeName="Book1"/>')
+
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+		expect(reopened.value.workbook.sheets.map((entry) => entry.name)).toEqual(['Data'])
+	})
+
 	it('rewrites external link relationship targets while preserving link parts', () => {
 		const wb = new Workbook()
 		const sheet = wb.addSheet('Data')

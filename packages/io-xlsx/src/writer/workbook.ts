@@ -226,6 +226,9 @@ export function buildWorkbookXml(workbook: Workbook, options: WorkbookXmlOptions
 		out.push('<calcPr/>')
 	}
 
+	const preservedChildrenXml = buildPreservedWorkbookChildrenXml(options)
+	if (preservedChildrenXml) out.push(preservedChildrenXml)
+
 	const extLstXml = buildWorkbookExtLstXml(options)
 	if (extLstXml) out.push(extLstXml)
 
@@ -250,6 +253,34 @@ function buildWorkbookExtLstXml(options: WorkbookXmlOptions): string {
 		)
 	}
 	return extXml.length > 0 ? `<extLst>${extXml.join('')}</extLst>` : ''
+}
+
+function buildPreservedWorkbookChildrenXml(options: WorkbookXmlOptions): string {
+	if (!options.preservedWorkbookXml) return ''
+	return extractDirectChildElements(options.preservedWorkbookXml, 'workbook')
+		.filter((child) => {
+			const openTagEnd = child.xml.indexOf('>')
+			const localName = localNameFromTag(child.xml.slice(1, openTagEnd))
+			return !isGeneratedWorkbookChild(localName)
+		})
+		.map((child) => child.xml)
+		.join('')
+}
+
+function isGeneratedWorkbookChild(localName: string): boolean {
+	return (
+		localName === 'fileVersion' ||
+		localName === 'fileSharing' ||
+		localName === 'workbookPr' ||
+		localName === 'workbookProtection' ||
+		localName === 'bookViews' ||
+		localName === 'sheets' ||
+		localName === 'externalReferences' ||
+		localName === 'definedNames' ||
+		localName === 'calcPr' ||
+		localName === 'pivotCaches' ||
+		localName === 'extLst'
+	)
 }
 
 function extractSourceWorkbookNamespaceAttrs(
@@ -290,7 +321,7 @@ interface XmlElementSlice {
 function extractDirectChildElements(
 	xml: string,
 	parentLocalName: string,
-	childLocalName: string,
+	childLocalName?: string,
 ): XmlElementSlice[] {
 	const parent = findFirstElement(xml, parentLocalName, 0, xml.length)
 	if (!parent || parent.selfClosing) return []
@@ -299,7 +330,10 @@ function extractDirectChildElements(
 	while (cursor < parent.end) {
 		const child = findFirstElement(xml, undefined, cursor, parent.end)
 		if (!child || child.start >= parent.end) break
-		if (localNameFromTag(xml.slice(child.start + 1, child.openEnd)) === childLocalName) {
+		if (
+			childLocalName === undefined ||
+			localNameFromTag(xml.slice(child.start + 1, child.openEnd)) === childLocalName
+		) {
 			children.push(child)
 		}
 		cursor = child.end

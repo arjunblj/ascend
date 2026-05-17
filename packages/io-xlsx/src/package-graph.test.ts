@@ -22,7 +22,10 @@ describe('XLSX package graph', () => {
   <Override PartName="/xl/model/item.data" ContentType="application/vnd.ms-excel.model"/>
   <Override PartName="/xl/customData/item1.data" ContentType="application/vnd.ms-excel.customData"/>
   <Override PartName="/xl/data/connectionsPayload.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.connections+xml"/>
+  <Override PartName="/xl/opaque-connection.payload" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.connections+xml"/>
+  <Override PartName="/xl/opaque-query.payload" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.queryTable+xml"/>
   <Override PartName="/xl/links/bookLink.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.externalLink+xml"/>
+  <Override PartName="/xl/opaque-link.payload" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.externalLink+xml"/>
   <Override PartName="/xl/revisions/revisionHeaders.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.revisionHeaders+xml"/>
 </Types>`,
 			'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -144,7 +147,10 @@ describe('XLSX package graph', () => {
 			'xl/opaque-vba.bin': 'vba-bytes',
 			'xl/opaque-signature.bin': 'signature-bytes',
 			'xl/data/connectionsPayload.xml': '<connections/>',
+			'xl/opaque-connection.payload': '<connections/>',
+			'xl/opaque-query.payload': '<queryTable/>',
 			'xl/links/bookLink.xml': '<externalLink/>',
+			'xl/opaque-link.payload': '<externalLink/>',
 			'xl/revisions/revisionHeaders.xml': '<headers/>',
 			'xl/opaque-revision.bin': 'revision-bytes',
 			'xl/opaque-slicer.bin': 'slicer-bytes',
@@ -853,9 +859,27 @@ describe('XLSX package graph', () => {
 			featureFamily: 'preservedConnection',
 			preservationPolicy: 'preserve-exact',
 		})
+		expect(graph.parts.find((part) => part.path === 'xl/opaque-connection.payload')).toMatchObject({
+			ownerScope: 'unknown',
+			contentTypeSource: 'override',
+			featureFamily: 'preservedConnection',
+			preservationPolicy: 'preserve-exact',
+		})
+		expect(graph.parts.find((part) => part.path === 'xl/opaque-query.payload')).toMatchObject({
+			ownerScope: 'unknown',
+			contentTypeSource: 'override',
+			featureFamily: 'preservedQueryTable',
+			preservationPolicy: 'preserve-exact',
+		})
 		expect(graph.parts.find((part) => part.path === 'xl/links/bookLink.xml')).toMatchObject({
 			ownerScope: 'external-link',
 			sourceRelationshipId: 'rIdExternalLink',
+			featureFamily: 'preservedExternalLink',
+			preservationPolicy: 'preserve-exact',
+		})
+		expect(graph.parts.find((part) => part.path === 'xl/opaque-link.payload')).toMatchObject({
+			ownerScope: 'unknown',
+			contentTypeSource: 'override',
 			featureFamily: 'preservedExternalLink',
 			preservationPolicy: 'preserve-exact',
 		})

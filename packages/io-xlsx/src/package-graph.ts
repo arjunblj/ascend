@@ -323,7 +323,11 @@ export function classifyPackageFeatureFamily(
 		return 'preservedDataModel'
 	}
 	if (path.includes('/tables/')) return 'preservedTable'
-	if (path.includes('/queryTables/') || lowerRelType.endsWith('/relationships/querytable')) {
+	if (
+		path.includes('/queryTables/') ||
+		lowerRelType.endsWith('/relationships/querytable') ||
+		lowerContentType.includes('spreadsheetml.querytable')
+	) {
 		return 'preservedQueryTable'
 	}
 	if (lowerRelType.endsWith('/relationships/hyperlink')) return 'preservedHyperlink'
@@ -344,7 +348,11 @@ export function classifyPackageFeatureFamily(
 		return 'preservedMetadata'
 	}
 	if (lowerPath.includes('/volatiledependencies/')) return 'preservedMetadata'
-	if (/(^|\/)externalLinks\//.test(path) || lowerRelType.endsWith('/relationships/externallink')) {
+	if (
+		/(^|\/)externalLinks\//.test(path) ||
+		lowerRelType.endsWith('/relationships/externallink') ||
+		lowerContentType.includes('spreadsheetml.externallink')
+	) {
 		return 'preservedExternalLink'
 	}
 	if (/(^|\/)pivotTables\//.test(path) || /(^|\/)pivotCache\//.test(path)) {
@@ -366,7 +374,11 @@ export function classifyPackageFeatureFamily(
 	) {
 		return 'preservedTimeline'
 	}
-	if (path.endsWith('/connections.xml') || lowerRelType.endsWith('/relationships/connections')) {
+	if (
+		path.endsWith('/connections.xml') ||
+		lowerRelType.endsWith('/relationships/connections') ||
+		lowerContentType.includes('spreadsheetml.connections')
+	) {
 		return 'preservedConnection'
 	}
 	if (path.includes('/customData/') || lowerRelType.endsWith('/relationships/powerquerymashup')) {

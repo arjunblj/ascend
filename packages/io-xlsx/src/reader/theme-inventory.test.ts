@@ -61,19 +61,19 @@ function themeWorkbook(): Uint8Array {
 		'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`,
 		'xl/theme/theme1.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="Office Twist">
-  <a:themeElements>
-    <a:clrScheme name="Office">
-      <a:dk1><a:sysClr val="windowText" lastClr="000000"/></a:dk1>
-      <a:lt1><a:sysClr val="window" lastClr="FFFFFF"/></a:lt1>
-      <a:accent1><a:srgbClr val="4F81BD"/></a:accent1>
-      <a:hlink><a:srgbClr val="0000FF"/></a:hlink>
-    </a:clrScheme>
-    <a:fontScheme name="Office">
-      <a:majorFont><a:latin typeface="Aptos Display"/></a:majorFont>
-      <a:minorFont><a:latin typeface="Aptos"/></a:minorFont>
-    </a:fontScheme>
-  </a:themeElements>
-</a:theme>`,
+<d:theme xmlns:d="http://schemas.openxmlformats.org/drawingml/2006/main" name="Office Twist">
+  <d:themeElements>
+    <d:clrScheme name="Office">
+      <d:dk1><d:sysClr val="windowText" lastClr="000000"/></d:dk1>
+      <d:lt1><d:sysClr val="window" lastClr="FFFFFF"/></d:lt1>
+      <d:accent1><d:srgbClr val="4F81BD"/></d:accent1>
+      <d:hlink><d:srgbClr val="0000FF"/></d:hlink>
+    </d:clrScheme>
+    <d:fontScheme name="Office">
+      <d:majorFont><d:latin typeface="Aptos Display"/></d:majorFont>
+      <d:minorFont><d:latin typeface="Aptos"/></d:minorFont>
+    </d:fontScheme>
+  </d:themeElements>
+</d:theme>`,
 	})
 }

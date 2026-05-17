@@ -3,18 +3,14 @@ import { attr, parseXml, type XmlNode } from '../xml.ts'
 
 export function parseThemeXml(xml: string): WorkbookThemeMetadata {
 	const doc = parseXml(xml)
-	const theme = (doc['a:theme'] ?? doc.theme) as XmlNode | undefined
+	const theme = firstElement(doc, 'theme')
 	if (!theme) return { colorCount: 0 }
 
-	const themeElements = (theme['a:themeElements'] ?? theme.themeElements) as XmlNode | undefined
-	const colorScheme = (themeElements?.['a:clrScheme'] ?? themeElements?.clrScheme) as
-		| XmlNode
-		| undefined
-	const fontScheme = (themeElements?.['a:fontScheme'] ?? themeElements?.fontScheme) as
-		| XmlNode
-		| undefined
-	const majorFont = (fontScheme?.['a:majorFont'] ?? fontScheme?.majorFont) as XmlNode | undefined
-	const minorFont = (fontScheme?.['a:minorFont'] ?? fontScheme?.minorFont) as XmlNode | undefined
+	const themeElements = childNode(theme, 'themeElements')
+	const colorScheme = childNode(themeElements, 'clrScheme')
+	const fontScheme = childNode(themeElements, 'fontScheme')
+	const majorFont = childNode(fontScheme, 'majorFont')
+	const minorFont = childNode(fontScheme, 'minorFont')
 
 	const metadata: WorkbookThemeMetadata = {
 		colorCount: countChildElements(colorScheme),
@@ -46,23 +42,23 @@ export function parseThemeColorsXml(xml: string): WorkbookThemeColor[] {
 
 function readLatinTypeface(node: XmlNode | undefined): string | undefined {
 	if (!node) return undefined
-	const latin = (node['a:latin'] ?? node.latin) as XmlNode | undefined
+	const latin = childNode(node, 'latin')
 	return latin ? attr(latin, 'typeface') : undefined
 }
 
 function readColorScheme(doc: XmlNode): XmlNode | undefined {
-	const theme = (doc['a:theme'] ?? doc.theme) as XmlNode | undefined
-	const themeElements = (theme?.['a:themeElements'] ?? theme?.themeElements) as XmlNode | undefined
-	return (themeElements?.['a:clrScheme'] ?? themeElements?.clrScheme) as XmlNode | undefined
+	const theme = firstElement(doc, 'theme')
+	const themeElements = childNode(theme, 'themeElements')
+	return childNode(themeElements, 'clrScheme')
 }
 
 function readThemeColor(slot: string, node: XmlNode): WorkbookThemeColor | null {
-	const srgb = (node['a:srgbClr'] ?? node.srgbClr) as XmlNode | undefined
+	const srgb = childNode(node, 'srgbClr')
 	if (srgb) {
 		const rgb = attr(srgb, 'val')
 		return rgb ? { slot, rgb } : { slot }
 	}
-	const system = (node['a:sysClr'] ?? node.sysClr) as XmlNode | undefined
+	const system = childNode(node, 'sysClr')
 	if (system) {
 		const systemColor = attr(system, 'val')
 		const lastColor = attr(system, 'lastClr')
@@ -73,6 +69,28 @@ function readThemeColor(slot: string, node: XmlNode): WorkbookThemeColor | null 
 		}
 	}
 	return { slot }
+}
+
+function firstElement(doc: XmlNode, localName: string): XmlNode | undefined {
+	for (const [key, value] of Object.entries(doc)) {
+		if (key.startsWith('@_') || stripNamespace(key) !== localName || !isXmlNode(value)) continue
+		return value
+	}
+	return undefined
+}
+
+function childNode(node: XmlNode | undefined, localName: string): XmlNode | undefined {
+	if (!node) return undefined
+	for (const [key, value] of Object.entries(node)) {
+		if (key.startsWith('@_') || stripNamespace(key) !== localName) continue
+		const child = Array.isArray(value) ? value[0] : value
+		return isXmlNode(child) ? child : undefined
+	}
+	return undefined
+}
+
+function isXmlNode(value: unknown): value is XmlNode {
+	return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 function stripNamespace(name: string): string {

@@ -11996,6 +11996,55 @@ describe('applyOperation', () => {
 		})
 	})
 
+	test('resizeTable rejects protected table growth unless row insertion is allowed', () => {
+		const blocked = createWorkbook()
+		const blockedSheet = blocked.addSheet('Sheet1')
+		blockedSheet.protection = { sheet: true }
+		blockedSheet.tables.push({
+			id: createTableId(),
+			name: 'Sales',
+			sheetId: blockedSheet.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 1, col: 1 } },
+			columns: [{ name: 'Region' }, { name: 'Amount' }],
+			hasHeaders: true,
+			hasTotals: false,
+		})
+
+		const blockedResult = applyOperation(blocked, {
+			op: 'resizeTable',
+			table: 'Sales',
+			ref: 'A1:B4',
+		})
+
+		expectErr(blockedResult)
+		expect(blockedResult.error.code).toBe('PROTECTION_ERROR')
+		expect(blockedResult.error.details).toMatchObject({
+			kind: 'sheet-protection-structural-edit-blocked',
+			sheetName: 'Sheet1',
+			operation: 'insertRows',
+		})
+		expect(blockedSheet.tables[0]?.ref).toEqual({
+			start: { row: 0, col: 0 },
+			end: { row: 1, col: 1 },
+		})
+
+		const allowed = createWorkbook()
+		const allowedSheet = allowed.addSheet('Sheet1')
+		allowedSheet.protection = { sheet: true, insertRows: true }
+		allowedSheet.tables.push({
+			id: createTableId(),
+			name: 'Sales',
+			sheetId: allowedSheet.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 1, col: 1 } },
+			columns: [{ name: 'Region' }, { name: 'Amount' }],
+			hasHeaders: true,
+			hasTotals: false,
+		})
+
+		expectOk(applyOperation(allowed, { op: 'resizeTable', table: 'Sales', ref: 'A1:B4' }))
+		expect(allowedSheet.tables[0]?.ref.end.row).toBe(3)
+	})
+
 	test('resizeTable rejects dropping table fields referenced by cell formulas', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

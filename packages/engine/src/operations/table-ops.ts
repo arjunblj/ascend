@@ -386,6 +386,8 @@ export function handleResizeTable(
 	if (overlappingTable) {
 		return err(tableRangeOverlapError('resize', table.name, op.ref, overlappingTable))
 	}
+	const protectionBlocker = findTableResizeProtectionBlocker(sheet, table.ref, ref)
+	if (protectionBlocker) return err(protectionBlocker)
 	if (table.queryTable && tableColumnsChanged(table.ref, ref)) {
 		return err(queryTableColumnResizeError(table, op.ref))
 	}
@@ -422,6 +424,26 @@ export function handleResizeTable(
 
 function tableColumnsChanged(before: RangeRef, after: RangeRef): boolean {
 	return before.start.col !== after.start.col || before.end.col !== after.end.col
+}
+
+function findTableResizeProtectionBlocker(sheet: Sheet, before: RangeRef, after: RangeRef) {
+	if (after.start.row < before.start.row || after.end.row > before.end.row) {
+		const blocker = validateStructuralProtection(sheet, 'row', 1)
+		if (blocker) return blocker
+	}
+	if (after.start.row > before.start.row || after.end.row < before.end.row) {
+		const blocker = validateStructuralProtection(sheet, 'row', -1)
+		if (blocker) return blocker
+	}
+	if (after.start.col < before.start.col || after.end.col > before.end.col) {
+		const blocker = validateStructuralProtection(sheet, 'col', 1)
+		if (blocker) return blocker
+	}
+	if (after.start.col > before.start.col || after.end.col < before.end.col) {
+		const blocker = validateStructuralProtection(sheet, 'col', -1)
+		if (blocker) return blocker
+	}
+	return null
 }
 
 function resolveUniqueTable(

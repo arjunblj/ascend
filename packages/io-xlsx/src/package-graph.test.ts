@@ -12,10 +12,18 @@ describe('XLSX package graph', () => {
   <Default Extension="png" ContentType="image/png"/>
   <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
   <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/opaque-shared-strings.payload" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>
+  <Override PartName="/xl/opaque-styles.payload" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>
+  <Override PartName="/xl/opaque-theme.payload" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>
   <Override PartName="/xl/drawings/drawing1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>
+  <Override PartName="/xl/opaque-drawing.payload" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>
+  <Override PartName="/xl/opaque-vml.payload" ContentType="application/vnd.openxmlformats-officedocument.vmlDrawing"/>
   <Override PartName="/xl/charts/chart1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>
+  <Override PartName="/xl/opaque-chart.payload" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>
   <Override PartName="/xl/charts/style1.xml" ContentType="application/vnd.ms-office.chartstyle+xml"/>
+  <Override PartName="/xl/opaque-chart-style.payload" ContentType="application/vnd.ms-office.chartstyle+xml"/>
   <Override PartName="/xl/charts/colors1.xml" ContentType="application/vnd.ms-office.chartcolorstyle+xml"/>
+  <Override PartName="/xl/opaque-chart-colors.payload" ContentType="application/vnd.ms-office.chartcolorstyle+xml"/>
   <Override PartName="/xl/xmlMaps.xml" ContentType="application/xml"/>
   <Override PartName="/xl/customProperty1.bin" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.customProperty"/>
   <Override PartName="/xl/diagrams/data1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.diagramData+xml"/>
@@ -62,6 +70,9 @@ describe('XLSX package graph', () => {
 			'package/ui/custom-ui.bin': '<customUI/>',
 			'package/ui/custom-ui-2007.bin': '<customUI/>',
 			'xl/workbook.xml': '<workbook/>',
+			'xl/opaque-shared-strings.payload': '<sst/>',
+			'xl/opaque-styles.payload': '<styleSheet/>',
+			'xl/opaque-theme.payload': '<a:theme/>',
 			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rIdSheet" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
@@ -186,6 +197,11 @@ describe('XLSX package graph', () => {
 			'xl/drawings/opaque-ole.bin': 'ole-bytes',
 			'xl/drawings/opaque-chart.bin': 'chart-bytes',
 			'xl/drawings/opaque-image.bin': 'image-bytes',
+			'xl/opaque-drawing.payload': '<xdr:wsDr/>',
+			'xl/opaque-vml.payload': '<xml/>',
+			'xl/opaque-chart.payload': '<c:chartSpace/>',
+			'xl/opaque-chart-style.payload': '<cs:chartStyle/>',
+			'xl/opaque-chart-colors.payload': '<cs:colors/>',
 			'xl/media/image 1.png': 'not-really-a-png',
 		})
 
@@ -745,6 +761,27 @@ describe('XLSX package graph', () => {
 			featureFamily: 'preservedTheme',
 			preservationPolicy: 'preserve-exact',
 		})
+		expect(
+			graph.parts.find((part) => part.path === 'xl/opaque-shared-strings.payload'),
+		).toMatchObject({
+			ownerScope: 'unknown',
+			contentTypeSource: 'override',
+			featureFamily: 'sharedStrings',
+			preservationPolicy: 'generated',
+			bytePreservationExpected: false,
+		})
+		expect(graph.parts.find((part) => part.path === 'xl/opaque-styles.payload')).toMatchObject({
+			ownerScope: 'unknown',
+			contentTypeSource: 'override',
+			featureFamily: 'preservedStyles',
+			preservationPolicy: 'preserve-exact',
+		})
+		expect(graph.parts.find((part) => part.path === 'xl/opaque-theme.payload')).toMatchObject({
+			ownerScope: 'unknown',
+			contentTypeSource: 'override',
+			featureFamily: 'preservedTheme',
+			preservationPolicy: 'preserve-exact',
+		})
 		expect(graph.parts.find((part) => part.path === 'xl/opaque-chartsheet.bin')).toMatchObject({
 			ownerScope: 'chartsheet',
 			sourceRelationshipId: 'rIdChartSheetOpaque',
@@ -889,6 +926,40 @@ describe('XLSX package graph', () => {
 			ownerScope: 'drawing',
 			sourceRelationshipId: 'rIdImageOpaque',
 			featureFamily: 'preservedMedia',
+			preservationPolicy: 'preserve-exact',
+		})
+		expect(graph.parts.find((part) => part.path === 'xl/opaque-drawing.payload')).toMatchObject({
+			ownerScope: 'unknown',
+			contentTypeSource: 'override',
+			featureFamily: 'preservedDrawing',
+			preservationPolicy: 'preserve-exact',
+		})
+		expect(graph.parts.find((part) => part.path === 'xl/opaque-vml.payload')).toMatchObject({
+			ownerScope: 'unknown',
+			contentTypeSource: 'override',
+			featureFamily: 'preservedVml',
+			preservationPolicy: 'preserve-exact',
+		})
+		expect(graph.parts.find((part) => part.path === 'xl/opaque-chart.payload')).toMatchObject({
+			ownerScope: 'unknown',
+			contentTypeSource: 'override',
+			featureFamily: 'preservedChart',
+			preservationPolicy: 'preserve-exact',
+		})
+		expect(graph.parts.find((part) => part.path === 'xl/opaque-chart-style.payload')).toMatchObject(
+			{
+				ownerScope: 'unknown',
+				contentTypeSource: 'override',
+				featureFamily: 'preservedChartStyle',
+				preservationPolicy: 'preserve-exact',
+			},
+		)
+		expect(
+			graph.parts.find((part) => part.path === 'xl/opaque-chart-colors.payload'),
+		).toMatchObject({
+			ownerScope: 'unknown',
+			contentTypeSource: 'override',
+			featureFamily: 'preservedChartColor',
 			preservationPolicy: 'preserve-exact',
 		})
 		expect(

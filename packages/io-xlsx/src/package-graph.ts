@@ -265,9 +265,24 @@ export function classifyPackageFeatureFamily(
 	if (lowerRelType.includes('/relationships/digital-signature/')) return 'preservedSignature'
 	if (path.startsWith('docProps/')) return 'preservedDocumentProperties'
 	if (path === 'xl/workbook.xml') return 'workbook'
-	if (lowerRelType.endsWith('/relationships/sharedstrings')) return 'sharedStrings'
-	if (lowerRelType.endsWith('/relationships/styles')) return 'preservedStyles'
-	if (lowerRelType.endsWith('/relationships/theme')) return 'preservedTheme'
+	if (
+		lowerRelType.endsWith('/relationships/sharedstrings') ||
+		lowerContentType.includes('spreadsheetml.sharedstrings')
+	) {
+		return 'sharedStrings'
+	}
+	if (
+		lowerRelType.endsWith('/relationships/styles') ||
+		lowerContentType.includes('spreadsheetml.styles')
+	) {
+		return 'preservedStyles'
+	}
+	if (
+		lowerRelType.endsWith('/relationships/theme') ||
+		lowerContentType.includes('officedocument.theme')
+	) {
+		return 'preservedTheme'
+	}
 	if (/(^|\/)sharedStrings\.xml$/i.test(path)) return 'sharedStrings'
 	if (/(^|\/)worksheets\/sheet\d+\.xml$/i.test(path)) return 'worksheet'
 	if (/^xl\/worksheets\/sheet\d+_[^/]+\.xml$/i.test(path)) return 'preservedWorksheetSidecar'
@@ -299,21 +314,35 @@ export function classifyPackageFeatureFamily(
 	if (lowerRelType.endsWith('/relationships/vmldrawing')) return 'preservedVml'
 	if (
 		/(^|\/)charts\/style\d+\.xml$/i.test(path) ||
-		lowerRelType.endsWith('/relationships/chartstyle')
+		lowerRelType.endsWith('/relationships/chartstyle') ||
+		lowerContentType.includes('chartstyle')
 	) {
 		return 'preservedChartStyle'
 	}
 	if (
 		/(^|\/)charts\/colors\d+\.xml$/i.test(path) ||
-		lowerRelType.endsWith('/relationships/chartcolorstyle')
+		lowerRelType.endsWith('/relationships/chartcolorstyle') ||
+		lowerContentType.includes('chartcolorstyle')
 	) {
 		return 'preservedChartColor'
 	}
-	if (lowerRelType.endsWith('/relationships/chart')) return 'preservedChart'
+	if (
+		lowerRelType.endsWith('/relationships/chart') ||
+		lowerContentType.includes('drawingml.chart')
+	) {
+		return 'preservedChart'
+	}
 	if (lowerRelType.endsWith('/relationships/image')) return 'preservedMedia'
 	if (path.includes('/charts/') || path.includes('/chartEx/')) return 'preservedChart'
-	if (path.includes('/drawings/') && path.endsWith('.vml')) return 'preservedVml'
-	if (path.includes('/drawings/')) return 'preservedDrawing'
+	if (
+		(path.includes('/drawings/') && path.endsWith('.vml')) ||
+		lowerContentType.includes('officedocument.vmldrawing')
+	) {
+		return 'preservedVml'
+	}
+	if (path.includes('/drawings/') || lowerContentType.includes('officedocument.drawing+xml')) {
+		return 'preservedDrawing'
+	}
 	if (path.includes('/media/')) return 'preservedMedia'
 	if (
 		path.includes('/model/') ||

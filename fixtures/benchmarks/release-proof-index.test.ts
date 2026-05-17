@@ -1966,12 +1966,16 @@ describe('release proof evidence index', () => {
 						'6ad8923f',
 						'1b40c0fb',
 						'fd616906',
+						'80473fae',
+						'7cae1d37',
 					]),
-					allowedWording: expect.stringContaining('SEARCH'),
+					allowedWording: expect.stringContaining('VALUE'),
 					evidenceProvesIt: expect.arrayContaining([
 						expect.stringContaining('common IS predicates spill boolean masks'),
 						expect.stringContaining('IFS spills results for array conditions'),
 						expect.stringContaining('FIND and SEARCH spill over range operands'),
+						expect.stringContaining('SUBSTITUTE and REPLACE spill over range operands'),
+						expect.stringContaining('EXACT, PROPER, and VALUE spill over range operands'),
 					]),
 					forbiddenWording: expect.arrayContaining([
 						expect.stringContaining('Excel-compatible formulas'),

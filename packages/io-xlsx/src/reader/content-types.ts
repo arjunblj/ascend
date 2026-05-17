@@ -24,8 +24,8 @@ export interface ContentTypeEntryAttribute {
 	readonly value: string
 }
 
-const DEFAULT_RE = /<Default\b([^>]*)\/>/g
-const OVERRIDE_RE = /<Override\b([^>]*)\/>/g
+const DEFAULT_RE = /<Default\b([^>]*?)(?:\/>|>\s*<\/Default>)/g
+const OVERRIDE_RE = /<Override\b([^>]*?)(?:\/>|>\s*<\/Override>)/g
 
 export function parseContentTypes(xml: string): ContentTypes {
 	const defaults = new Map<string, string>()

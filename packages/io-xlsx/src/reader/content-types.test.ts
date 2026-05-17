@@ -56,4 +56,23 @@ describe('content types', () => {
 			},
 		])
 	})
+
+	test('parses explicitly closed empty Default and Override elements', () => {
+		const contentTypes = parseContentTypes(`<?xml version="1.0" encoding="UTF-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="xml" ContentType="application/xml"></Default>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml">
+  </Override>
+</Types>`)
+
+		expect(contentTypes.defaultEntries).toEqual([
+			{ extension: 'xml', contentType: 'application/xml' },
+		])
+		expect(contentTypes.overrideEntries).toEqual([
+			{
+				partPath: 'xl/workbook.xml',
+				contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml',
+			},
+		])
+	})
 })

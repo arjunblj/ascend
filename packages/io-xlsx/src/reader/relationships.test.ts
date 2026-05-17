@@ -49,6 +49,28 @@ describe('relationships', () => {
 		])
 	})
 
+	test('parses explicitly closed empty relationship elements', () => {
+		const rels = parseRelationships(`<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdWorkbook" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"></Relationship>
+  <Relationship Id="rIdSheet" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml">
+  </Relationship>
+</Relationships>`)
+
+		expect(rels).toEqual([
+			{
+				id: 'rIdWorkbook',
+				type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument',
+				target: 'xl/workbook.xml',
+			},
+			{
+				id: 'rIdSheet',
+				type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet',
+				target: 'worksheets/sheet1.xml',
+			},
+		])
+	})
+
 	test('recognizes Excel external workbook path relationship types', () => {
 		expect(
 			isExternalLinkPathRelationshipType(

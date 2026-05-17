@@ -10770,7 +10770,7 @@ describe('applyOperation', () => {
 		})
 	})
 
-	test('appendRows detaches imported formula bindings under expanded table rows', () => {
+	test('appendRows rejects imported formula bindings under expanded table rows', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')
 		sheet.cells.set(0, 0, { value: stringValue('Value'), formula: null, styleId: sid })
@@ -10788,14 +10788,56 @@ describe('applyOperation', () => {
 			table: 'Values',
 			rows: [[9]],
 		})
-		expectOk(result)
+		expectErr(result)
+		expect(result.error.code).toBe('VALIDATION_ERROR')
+		expect(result.error.details).toMatchObject({
+			kind: 'append-rows-target-occupied',
+			tableName: 'Values',
+			ref: 'A2',
+		})
 
-		expect(result.value.affectedCells).toEqual(['A2', 'A3'])
-		expect(sheet.cells.get(1, 0)?.value).toEqual(numberValue(9))
-		expect(sheet.cells.get(1, 0)?.formula).toBeNull()
-		expect(sheet.cells.get(1, 0)?.formulaInfo).toBeUndefined()
-		expect(sheet.cells.get(2, 0)?.formula).toBe('B2*2')
-		expect(sheet.cells.get(2, 0)?.formulaInfo).toBeUndefined()
+		expect(sheet.tables[0]?.ref.end.row).toBe(0)
+		expect(sheet.cells.get(1, 0)?.value).toEqual(numberValue(20))
+		expect(sheet.cells.get(1, 0)?.formula).toBe('B1*2')
+		expect(sheet.cells.get(1, 0)?.formulaInfo).toEqual({
+			kind: 'shared',
+			sharedIndex: '0',
+			isMaster: true,
+			masterRef: 'A2',
+			ref: 'A2:A3',
+		})
+		expect(sheet.cells.get(2, 0)?.value).toEqual(numberValue(40))
+	})
+
+	test('appendRows rejects occupied worksheet cells below the table', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: stringValue('Name'), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: stringValue('Cash'), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: stringValue('Notes'), formula: null, styleId: sid })
+		applyOperation(wb, {
+			op: 'createTable',
+			sheet: 'Sheet1',
+			ref: 'A1:A2',
+			name: 'BalanceTable',
+			hasHeaders: true,
+		})
+
+		const result = applyOperation(wb, {
+			op: 'appendRows',
+			table: 'BalanceTable',
+			rows: [['Debt']],
+		})
+
+		expectErr(result)
+		expect(result.error.code).toBe('VALIDATION_ERROR')
+		expect(result.error.details).toMatchObject({
+			kind: 'append-rows-target-occupied',
+			tableName: 'BalanceTable',
+			ref: 'A3',
+		})
+		expect(sheet.tables[0]?.ref.end.row).toBe(1)
+		expect(sheet.cells.get(2, 0)?.value).toEqual(stringValue('Notes'))
 	})
 
 	test('appendRows inserts before totals row when hasTotals', () => {

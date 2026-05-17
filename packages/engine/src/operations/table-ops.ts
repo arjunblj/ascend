@@ -13,7 +13,15 @@ import type {
 import { createTableId, parseA1, parseRange, toA1 } from '@ascend/core'
 import { normalizeFormulaInput } from '@ascend/formulas'
 import type { Operation, Result } from '@ascend/schema'
-import { ascendError, EMPTY, err, ok, stringValue, validateExcelTableName } from '@ascend/schema'
+import {
+	ascendError,
+	EMPTY,
+	err,
+	isEmpty,
+	ok,
+	stringValue,
+	validateExcelTableName,
+} from '@ascend/schema'
 import {
 	rewriteFormulaTextForTableColumnRename,
 	rewriteTableColumnInDefinedNames,
@@ -168,6 +176,10 @@ export function handleAppendRows(
 	const legacyArrayImpact = createLegacyArrayFormulaIndex(sheet).findIntersection(appendRange)
 	if (legacyArrayImpact) {
 		return err(legacyArrayFormulaEditError(legacyArrayImpact.targetRef, legacyArrayImpact.ref))
+	}
+	if (!table.hasTotals) {
+		const occupiedTarget = findOccupiedAppendTarget(sheet, table, appendRange)
+		if (occupiedTarget) return err(tableAppendTargetOccupiedError(table, occupiedTarget))
 	}
 	let activeTable = table
 	if (table.hasTotals) {
@@ -594,6 +606,23 @@ function tableAppendOutOfBoundsError(
 	)
 }
 
+function tableAppendTargetOccupiedError(table: Table, ref: string): ReturnType<typeof ascendError> {
+	return ascendError(
+		'VALIDATION_ERROR',
+		`Cannot append rows to table "${table.name}" because target cell ${ref} already contains worksheet data`,
+		{
+			refs: [ref],
+			suggestedFix:
+				'Move or clear worksheet data below the table, or append before a totals row so existing cells are shifted.',
+			details: {
+				kind: 'append-rows-target-occupied',
+				tableName: table.name,
+				ref,
+			},
+		},
+	)
+}
+
 function queryTableColumnResizeError(table: Table, ref: string): ReturnType<typeof ascendError> {
 	return ascendError(
 		'VALIDATION_ERROR',
@@ -686,6 +715,23 @@ function tableDeleteReferenceError(
 				'Rewrite or remove structured references to the table before deleting the table metadata.',
 		},
 	)
+}
+
+function findOccupiedAppendTarget(
+	sheet: Sheet,
+	table: Table,
+	appendRange: RangeRef,
+): string | null {
+	for (let row = appendRange.start.row; row <= appendRange.end.row; row++) {
+		for (let col = table.ref.start.col; col <= table.ref.end.col; col++) {
+			const existing = sheet.cells.get(row, col)
+			if (!existing) continue
+			if (existing.formula !== null || !isEmpty(existing.value) || existing.formulaInfo) {
+				return toA1({ row, col })
+			}
+		}
+	}
+	return null
 }
 
 function buildResizedTableColumns(

@@ -168,8 +168,12 @@ const SCALAR_IMPLICIT_INTERSECTION_FUNCTIONS = new Set([
 	'CSCH',
 	'CUMIPMT',
 	'CUMPRINC',
+	'DATE',
+	'DATEVALUE',
 	'CRITBINOM',
 	'DATEDIF',
+	'DAY',
+	'DAYS',
 	'DAYS360',
 	'DB',
 	'DECIMAL',
@@ -182,7 +186,9 @@ const SCALAR_IMPLICIT_INTERSECTION_FUNCTIONS = new Set([
 	'DOLLAR',
 	'DOLLARDE',
 	'DOLLARFR',
+	'EDATE',
 	'EFFECT',
+	'EOMONTH',
 	'EVEN',
 	'EXACT',
 	'EXP',
@@ -216,6 +222,7 @@ const SCALAR_IMPLICIT_INTERSECTION_FUNCTIONS = new Set([
 	'HEX2BIN',
 	'HEX2DEC',
 	'HEX2OCT',
+	'HOUR',
 	'HYPGEOM.DIST',
 	'HYPGEOMDIST',
 	'INT',
@@ -233,8 +240,12 @@ const SCALAR_IMPLICIT_INTERSECTION_FUNCTIONS = new Set([
 	'LOGNORM.INV',
 	'LOWER',
 	'MID',
+	'MINUTE',
 	'MOD',
+	'MONTH',
 	'MROUND',
+	'NETWORKDAYS',
+	'NETWORKDAYS.INTL',
 	'NEGBINOMDIST',
 	'NEGBINOM.DIST',
 	'NOMINAL',
@@ -275,6 +286,7 @@ const SCALAR_IMPLICIT_INTERSECTION_FUNCTIONS = new Set([
 	'SEARCH',
 	'SEC',
 	'SECH',
+	'SECOND',
 	'SIGN',
 	'SIN',
 	'SINH',
@@ -295,6 +307,8 @@ const SCALAR_IMPLICIT_INTERSECTION_FUNCTIONS = new Set([
 	'TEXTAFTER',
 	'TEXTBEFORE',
 	'TEXTSPLIT',
+	'TIME',
+	'TIMEVALUE',
 	'TINV',
 	'T.INV',
 	'T.INV.2T',
@@ -306,7 +320,11 @@ const SCALAR_IMPLICIT_INTERSECTION_FUNCTIONS = new Set([
 	'VALUE',
 	'WEIBULL',
 	'WEIBULL.DIST',
+	'WEEKDAY',
 	'WEEKNUM',
+	'WORKDAY',
+	'WORKDAY.INTL',
+	'YEAR',
 	'YEARFRAC',
 ])
 SCALAR_IMPLICIT_INTERSECTION_FUNCTIONS.delete('T')
@@ -1236,11 +1254,16 @@ function evalLegacyTopLevelFunction(
 	if (!def) return null
 	if (argNodes.length < def.minArgs || argNodes.length > def.maxArgs) return errorValue('#VALUE!')
 	const args: EvalArg[] = new Array(argNodes.length)
+	const rangePreservingArgIndexes = ARRAY_MAPPED_RANGE_PRESERVING_ARGS.get(upperName)
 	for (let i = 0; i < argNodes.length; i++) {
 		const node = argNodes[i] as FormulaNode
 		const ref = resolveReferenceNode(node, ctx)
 		args[i] =
-			ref && upperName !== 'ISREF' && upperName !== 'AND' && upperName !== 'OR'
+			ref &&
+			upperName !== 'ISREF' &&
+			upperName !== 'AND' &&
+			upperName !== 'OR' &&
+			rangePreservingArgIndexes?.has(i) !== true
 				? { value: implicitIntersect(ref, ctx) }
 				: resolveArg(node, ctx)
 	}
@@ -1436,8 +1459,14 @@ function evalFunction(name: string, argNodes: readonly FormulaNode[], ctx: EvalC
 	// calc benchmarks show no allocation bottleneck. Pooling would require lifecycle management
 	// (reset between cell evals) and conditional fill logic, adding complexity without proven gain.
 	const args: EvalArg[] = new Array(argNodes.length)
+	const rangePreservingArgIndexes = ARRAY_MAPPED_RANGE_PRESERVING_ARGS.get(upperName)
 	for (let i = 0; i < argNodes.length; i++) {
-		args[i] = resolveFunctionArg(argNodes[i] as FormulaNode, ctx, upperName)
+		args[i] = resolveFunctionArg(
+			argNodes[i] as FormulaNode,
+			ctx,
+			upperName,
+			rangePreservingArgIndexes?.has(i) === true,
+		)
 	}
 	return def.evaluate(args, sharedFnCtx.update(ctx))
 }
@@ -1496,8 +1525,13 @@ function evalMappedScalarFunction(
 	return arrayValue(mappedRows)
 }
 
-function resolveFunctionArg(node: FormulaNode, ctx: EvalContext, functionName: string): EvalArg {
-	if (SCALAR_IMPLICIT_INTERSECTION_FUNCTIONS.has(functionName)) {
+function resolveFunctionArg(
+	node: FormulaNode,
+	ctx: EvalContext,
+	functionName: string,
+	preserveRange = false,
+): EvalArg {
+	if (SCALAR_IMPLICIT_INTERSECTION_FUNCTIONS.has(functionName) && !preserveRange) {
 		if (node.type === 'name' && !node.sheet && ctx.letBindings?.has(node.name.toLowerCase())) {
 			return resolveArg(node, ctx)
 		}

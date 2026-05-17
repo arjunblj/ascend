@@ -3911,6 +3911,116 @@ describe('recalculate', () => {
 		}
 	})
 
+	test('date and workday scalar functions implicitly intersect date arguments and preserve holiday ranges', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		const years = [2024, 2025, 2026]
+		const months = [1, 2, 3]
+		const days = [8, 10, 12]
+		const starts = [dateToSerial(2024, 1, 8), dateToSerial(2024, 1, 10), dateToSerial(2024, 2, 1)]
+		const ends = [dateToSerial(2024, 1, 12), dateToSerial(2024, 1, 16), dateToSerial(2024, 2, 16)]
+		const offsets = [1, 3, 5]
+		const weekendCodes = [1, 1, 1]
+		const dateText = ['2024-01-08', '2024-01-10', '2024-02-01']
+		const timeText = ['08:15:30', '09:45:15', '17:05:10']
+		for (let row = 0; row < 3; row++) {
+			for (const [col, value] of [
+				[0, years[row]],
+				[1, months[row]],
+				[2, days[row]],
+				[3, starts[row]],
+				[4, ends[row]],
+				[5, offsets[row]],
+				[6, weekendCodes[row]],
+			] as const) {
+				sheet.cells.set(row, col, {
+					value: numberValue(value as number),
+					formula: null,
+					styleId: sid,
+				})
+			}
+			sheet.cells.set(row, 7, {
+				value: stringValue(dateText[row] as string),
+				formula: null,
+				styleId: sid,
+			})
+			sheet.cells.set(row, 8, {
+				value: stringValue(timeText[row] as string),
+				formula: null,
+				styleId: sid,
+			})
+		}
+		sheet.cells.set(0, 9, {
+			value: numberValue(dateToSerial(2024, 1, 15)),
+			formula: null,
+			styleId: sid,
+		})
+		sheet.cells.set(1, 9, {
+			value: numberValue(dateToSerial(2024, 2, 9)),
+			formula: null,
+			styleId: sid,
+		})
+		const rangeFormulas = [
+			'DATE(A1:A3,B1:B3,C1:C3)',
+			'DATEVALUE(H1:H3)',
+			'YEAR(D1:D3)',
+			'MONTH(D1:D3)',
+			'DAY(D1:D3)',
+			'EDATE(D1:D3,F1:F3)',
+			'EOMONTH(D1:D3,F1:F3)',
+			'DAYS(E1:E3,D1:D3)',
+			'HOUR(I1:I3)',
+			'MINUTE(I1:I3)',
+			'SECOND(I1:I3)',
+			'TIME(A1:A3,B1:B3,C1:C3)',
+			'TIMEVALUE(I1:I3)',
+			'WEEKDAY(D1:D3,2)',
+			'NETWORKDAYS(D1:D3,E1:E3,J1:J2)',
+			'WORKDAY(D1:D3,F1:F3,J1:J2)',
+			'NETWORKDAYS.INTL(D1:D3,E1:E3,G1:G3,J1:J2)',
+			'WORKDAY.INTL(D1:D3,F1:F3,G1:G3,J1:J2)',
+		]
+		const scalarFormulas = [
+			'DATE(A2,B2,C2)',
+			'DATEVALUE(H2)',
+			'YEAR(D2)',
+			'MONTH(D2)',
+			'DAY(D2)',
+			'EDATE(D2,F2)',
+			'EOMONTH(D2,F2)',
+			'DAYS(E2,D2)',
+			'HOUR(I2)',
+			'MINUTE(I2)',
+			'SECOND(I2)',
+			'TIME(A2,B2,C2)',
+			'TIMEVALUE(I2)',
+			'WEEKDAY(D2,2)',
+			'NETWORKDAYS(D2,E2,J1:J2)',
+			'WORKDAY(D2,F2,J1:J2)',
+			'NETWORKDAYS.INTL(D2,E2,G2,J1:J2)',
+			'WORKDAY.INTL(D2,F2,G2,J1:J2)',
+		]
+		for (let col = 0; col < rangeFormulas.length; col++) {
+			sheet.cells.set(1, 10 + col, {
+				value: EMPTY,
+				formula: rangeFormulas[col] as string,
+				styleId: sid,
+			})
+			sheet.cells.set(1, 30 + col, {
+				value: EMPTY,
+				formula: scalarFormulas[col] as string,
+				styleId: sid,
+			})
+		}
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		for (let col = 0; col < rangeFormulas.length; col++) {
+			expect(sheet.cells.get(1, 10 + col)?.value).toEqual(sheet.cells.get(1, 30 + col)?.value)
+		}
+	})
+
 	test('RAND is deterministic per cell and seed', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

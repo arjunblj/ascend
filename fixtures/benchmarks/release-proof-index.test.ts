@@ -2087,9 +2087,11 @@ describe('release proof evidence index', () => {
 						'1a0cd1e3',
 						'ef994de0',
 						'ece36397',
+						'4eede4ff',
+						'2d04e675',
 					]),
 					allowedWording: expect.stringContaining(
-						'scalar ADDRESS/date/workday/order-statistic/rank/percentile-quartile/percentrank/forecast/forecast-ets/trimmean/aggregate/subtotal/database-field implicit intersection',
+						'scalar ADDRESS/text-conversion/date/workday/statistical-test/order-statistic/rank/percentile-quartile/percentrank/forecast/forecast-ets/trimmean/aggregate/subtotal/database-field implicit intersection',
 					),
 					evidenceProvesIt: expect.arrayContaining([
 						expect.stringContaining('NOT spills boolean masks'),
@@ -2099,6 +2101,10 @@ describe('release proof evidence index', () => {
 						expect.stringContaining('FIND and SEARCH spill over range operands'),
 						expect.stringContaining('SUBSTITUTE and REPLACE spill over range operands'),
 						expect.stringContaining('EXACT, PROPER, and VALUE spill over range operands'),
+						expect.stringContaining('text conversion functions spill over selector arguments'),
+						expect.stringContaining(
+							'top-level text conversion functions implicitly intersect selector ranges',
+						),
 						expect.stringContaining(
 							'character code and repeat text functions spill over range operands',
 						),
@@ -2112,6 +2118,10 @@ describe('release proof evidence index', () => {
 						expect.stringContaining('date and workday scalar functions implicitly intersect'),
 						expect.stringContaining(
 							'statistical distribution scalar functions spill over range operands',
+						),
+						expect.stringContaining('statistical test functions spill over selector arguments'),
+						expect.stringContaining(
+							'top-level statistical test functions implicitly intersect selector ranges',
 						),
 						expect.stringContaining('order statistic functions spill over array k arguments'),
 						expect.stringContaining('top-level order statistic functions implicitly intersect'),

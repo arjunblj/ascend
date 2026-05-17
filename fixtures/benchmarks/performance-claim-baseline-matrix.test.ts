@@ -71,6 +71,9 @@ describe('performance claim baseline matrix', () => {
 			'Current focused TS/JS/Rust `sparse-wide` write coverage supersedes the older\n  sparse-wide p95 boundary',
 		)
 		expect(markdown).toContain(
+			"Current focused TS/JS/Rust `plain-text` write coverage proves Ascend's\n  generated writer is faster by median and p95 than SheetJS, ExcelJS, and\n  rust_xlsxwriter",
+		)
+		expect(markdown).toContain(
 			'Current formula/calc evidence includes focused HyperFormula indexed\n  `INDEX/MATCH`, indexed dirty-key/dirty-value edits, and prefix-range\n  dirty-head/dirty-tail rows.',
 		)
 		for (const workload of RECORDED_WORKLOADS) expect(markdown).toContain(`\`${workload}\``)
@@ -411,6 +414,33 @@ describe('performance claim baseline matrix', () => {
 		expect(markdown).toContain('"Ascend beats ClosedXML on plain-text writes."')
 		expect(markdown).toContain(
 			'defer production optimization from this row and continue only with\nanother existing `xlsx-write-sota` row',
+		)
+
+		expect(markdown).toContain('## Cycle: Plain Text TS/JS/Rust Write Head-to-Head at `1bd995e5`')
+		expect(markdown).toContain('Classification: comparable external evidence plus defer.')
+		expect(markdown).toContain(
+			'/private/tmp/ascend-write-plain-js-rust-current-1bd995e5-runs/write-plain-text-js-rust-repeat15.json',
+		)
+		expect(markdown).toContain(
+			'/private/tmp/ascend-write-plain-js-rust-current-1bd995e5-runs/write-plain-text-js-rust-repeat15-p95-scoreboard.json',
+		)
+		expect(markdown).toContain(
+			'| `ascend-external-writer` | ran/won median and p95 | 3.898 | 4.080 | 0.033 | 96.9 MiB | 169097 |',
+		)
+		expect(markdown).toContain(
+			'| `sheetjs` | ran/lost vs Ascend | 29.548 | 42.209 | 0.124 | 278.4 MiB | 1832541 |',
+		)
+		expect(markdown).toContain(
+			'| `rust-xlsxwriter` | ran/lost vs Ascend | 29.865 | 33.282 | 0.038 | 28.7 MiB | 229139 |',
+		)
+		expect(markdown).toContain(
+			'| `exceljs` | ran/lost vs Ascend | 91.269 | 112.351 | 0.067 | 302.8 MiB | 232106 |',
+		)
+		expect(markdown).toContain(
+			'P95 scoreboard: plain-text group winner was `ascend-external-writer`',
+		)
+		expect(markdown).toContain(
+			'"Ascend uses less memory than rust_xlsxwriter on plain-text writes."',
 		)
 
 		expect(markdown).toContain('## Cycle: Plain Text ClosedXML/NPOI Write Coverage at `e0c41fe5`')

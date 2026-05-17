@@ -1295,6 +1295,54 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(2, 7)?.value).toEqual(numberValue(-8))
 	})
 
+	test('math conversion scalar functions spill over range operands in array formulas', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(5), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(16), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: numberValue(255), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: numberValue(8), formula: null, styleId: sid })
+		sheet.cells.set(2, 1, { value: numberValue(16), formula: null, styleId: sid })
+		sheet.cells.set(0, 2, { value: numberValue(4), formula: null, styleId: sid })
+		sheet.cells.set(1, 2, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(2, 2, { value: numberValue(4), formula: null, styleId: sid })
+		sheet.cells.set(0, 3, { value: stringValue('101'), formula: null, styleId: sid })
+		sheet.cells.set(1, 3, { value: stringValue('20'), formula: null, styleId: sid })
+		sheet.cells.set(2, 3, { value: stringValue('FF'), formula: null, styleId: sid })
+		sheet.cells.set(0, 4, { value: stringValue('V'), formula: null, styleId: sid })
+		sheet.cells.set(1, 4, { value: stringValue('XVI'), formula: null, styleId: sid })
+		sheet.cells.set(2, 4, { value: stringValue('MCMXCIX'), formula: null, styleId: sid })
+		sheet.cells.set(0, 5, { value: EMPTY, formula: 'QUOTIENT(A1:A3,C1:C3)+0', styleId: sid })
+		sheet.cells.set(0, 6, { value: EMPTY, formula: 'BASE(A1:A3,B1:B3)&""', styleId: sid })
+		sheet.cells.set(0, 7, { value: EMPTY, formula: 'DECIMAL(D1:D3,B1:B3)+0', styleId: sid })
+		sheet.cells.set(0, 8, { value: EMPTY, formula: 'ROMAN(A1:A3)&""', styleId: sid })
+		sheet.cells.set(0, 9, { value: EMPTY, formula: 'ARABIC(E1:E3)+0', styleId: sid })
+		sheet.cells.set(0, 10, { value: EMPTY, formula: 'SQRTPI(A1:A3)+0', styleId: sid })
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(0, 5)?.value).toEqual(numberValue(1))
+		expect(sheet.cells.get(1, 5)?.value).toEqual(numberValue(8))
+		expect(sheet.cells.get(2, 5)?.value).toEqual(numberValue(63))
+		expect(sheet.cells.get(0, 6)?.value).toEqual(stringValue('101'))
+		expect(sheet.cells.get(1, 6)?.value).toEqual(stringValue('20'))
+		expect(sheet.cells.get(2, 6)?.value).toEqual(stringValue('FF'))
+		expect(sheet.cells.get(0, 7)?.value).toEqual(numberValue(5))
+		expect(sheet.cells.get(1, 7)?.value).toEqual(numberValue(16))
+		expect(sheet.cells.get(2, 7)?.value).toEqual(numberValue(255))
+		expect(sheet.cells.get(0, 8)?.value).toEqual(stringValue('V'))
+		expect(sheet.cells.get(1, 8)?.value).toEqual(stringValue('XVI'))
+		expect(sheet.cells.get(2, 8)?.value).toEqual(stringValue('CCLV'))
+		expect(sheet.cells.get(0, 9)?.value).toEqual(numberValue(5))
+		expect(sheet.cells.get(1, 9)?.value).toEqual(numberValue(16))
+		expect(sheet.cells.get(2, 9)?.value).toEqual(numberValue(1999))
+		expect(sheet.cells.get(0, 10)?.value).toEqual(numberValue(Math.sqrt(5 * Math.PI)))
+		expect(sheet.cells.get(1, 10)?.value).toEqual(numberValue(Math.sqrt(16 * Math.PI)))
+		expect(sheet.cells.get(2, 10)?.value).toEqual(numberValue(Math.sqrt(255 * Math.PI)))
+	})
+
 	test('rounding scalar functions spill over range operands in array formulas', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')
@@ -1302,6 +1350,10 @@ describe('recalculate', () => {
 		sheet.cells.set(1, 0, { value: numberValue(-2.5), formula: null, styleId: sid })
 		sheet.cells.set(2, 0, { value: numberValue(6.3), formula: null, styleId: sid })
 		sheet.cells.set(3, 0, { value: numberValue(-6.7), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: numberValue(-1), formula: null, styleId: sid })
+		sheet.cells.set(2, 1, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(3, 1, { value: numberValue(-1), formula: null, styleId: sid })
 		sheet.cells.set(0, 2, {
 			value: EMPTY,
 			formula: 'CEILING(A1:A4,1)+0',
@@ -1325,6 +1377,11 @@ describe('recalculate', () => {
 		sheet.cells.set(0, 6, {
 			value: EMPTY,
 			formula: 'EVEN(A1:A4)+ODD(A1:A4)',
+			styleId: sid,
+		})
+		sheet.cells.set(0, 7, {
+			value: EMPTY,
+			formula: 'MROUND(A1:A4,B1:B4)+0',
 			styleId: sid,
 		})
 
@@ -1351,6 +1408,10 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(1, 6)?.value).toEqual(numberValue(-7))
 		expect(sheet.cells.get(2, 6)?.value).toEqual(numberValue(15))
 		expect(sheet.cells.get(3, 6)?.value).toEqual(numberValue(-15))
+		expect(sheet.cells.get(0, 7)?.value).toEqual(numberValue(3))
+		expect(sheet.cells.get(1, 7)?.value).toEqual(numberValue(-3))
+		expect(sheet.cells.get(2, 7)?.value).toEqual(numberValue(6))
+		expect(sheet.cells.get(3, 7)?.value).toEqual(numberValue(-7))
 	})
 
 	test('logarithmic scalar functions spill over range operands in array formulas', () => {

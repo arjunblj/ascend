@@ -1389,6 +1389,114 @@ describe('recalculate', () => {
 		}
 	})
 
+	test('hyperbolic and reciprocal trig scalar functions spill over range operands in array formulas', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(0.5), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: numberValue(3), formula: null, styleId: sid })
+		sheet.cells.set(2, 1, { value: numberValue(4), formula: null, styleId: sid })
+		sheet.cells.set(0, 2, {
+			value: EMPTY,
+			formula: 'SINH(A1:A3)+0',
+			styleId: sid,
+		})
+		sheet.cells.set(0, 3, {
+			value: EMPTY,
+			formula: 'COSH(A1:A3)+0',
+			styleId: sid,
+		})
+		sheet.cells.set(0, 4, {
+			value: EMPTY,
+			formula: 'TANH(A1:A3)+0',
+			styleId: sid,
+		})
+		sheet.cells.set(0, 5, {
+			value: EMPTY,
+			formula: 'COT(A1:A3)+0',
+			styleId: sid,
+		})
+		sheet.cells.set(0, 6, {
+			value: EMPTY,
+			formula: 'SEC(A1:A3)+CSC(A1:A3)',
+			styleId: sid,
+		})
+		sheet.cells.set(0, 7, {
+			value: EMPTY,
+			formula: 'COTH(A1:A3)+CSCH(A1:A3)+SECH(A1:A3)',
+			styleId: sid,
+		})
+		sheet.cells.set(0, 8, {
+			value: EMPTY,
+			formula: 'ACOT(A1:A3)+0',
+			styleId: sid,
+		})
+		sheet.cells.set(0, 9, {
+			value: EMPTY,
+			formula: 'ACOSH(B1:B3)+ASINH(A1:A3)+ATANH(A1:A3/4)+ACOTH(B1:B3)',
+			styleId: sid,
+		})
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		for (let row = 0; row < 3; row++) {
+			const input = sheet.cells.get(row, 0)?.value
+			const acoshInput = sheet.cells.get(row, 1)?.value
+			expect(input?.kind).toBe('number')
+			expect(acoshInput?.kind).toBe('number')
+			if (input?.kind !== 'number' || acoshInput?.kind !== 'number') continue
+			const sinh = sheet.cells.get(row, 2)?.value
+			const cosh = sheet.cells.get(row, 3)?.value
+			const tanh = sheet.cells.get(row, 4)?.value
+			const cot = sheet.cells.get(row, 5)?.value
+			const reciprocal = sheet.cells.get(row, 6)?.value
+			const hyperbolicReciprocal = sheet.cells.get(row, 7)?.value
+			const acot = sheet.cells.get(row, 8)?.value
+			const inverseHyperbolic = sheet.cells.get(row, 9)?.value
+			expect(sinh?.kind).toBe('number')
+			expect(cosh?.kind).toBe('number')
+			expect(tanh?.kind).toBe('number')
+			expect(cot?.kind).toBe('number')
+			expect(reciprocal?.kind).toBe('number')
+			expect(hyperbolicReciprocal?.kind).toBe('number')
+			expect(acot?.kind).toBe('number')
+			expect(inverseHyperbolic?.kind).toBe('number')
+			if (sinh?.kind === 'number') expect(sinh.value).toBeCloseTo(Math.sinh(input.value), 12)
+			if (cosh?.kind === 'number') expect(cosh.value).toBeCloseTo(Math.cosh(input.value), 12)
+			if (tanh?.kind === 'number') expect(tanh.value).toBeCloseTo(Math.tanh(input.value), 12)
+			if (cot?.kind === 'number')
+				expect(cot.value).toBeCloseTo(Math.cos(input.value) / Math.sin(input.value), 12)
+			if (reciprocal?.kind === 'number') {
+				expect(reciprocal.value).toBeCloseTo(
+					1 / Math.cos(input.value) + 1 / Math.sin(input.value),
+					12,
+				)
+			}
+			if (hyperbolicReciprocal?.kind === 'number') {
+				expect(hyperbolicReciprocal.value).toBeCloseTo(
+					Math.cosh(input.value) / Math.sinh(input.value) +
+						1 / Math.sinh(input.value) +
+						1 / Math.cosh(input.value),
+					12,
+				)
+			}
+			if (acot?.kind === 'number')
+				expect(acot.value).toBeCloseTo(Math.PI / 2 - Math.atan(input.value), 12)
+			if (inverseHyperbolic?.kind === 'number') {
+				expect(inverseHyperbolic.value).toBeCloseTo(
+					Math.acosh(acoshInput.value) +
+						Math.asinh(input.value) +
+						Math.atanh(input.value / 4) +
+						0.5 * Math.log((acoshInput.value + 1) / (acoshInput.value - 1)),
+					12,
+				)
+			}
+		}
+	})
+
 	test('FREQUENCY formulas can count unique filtered numeric ids from array expressions', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

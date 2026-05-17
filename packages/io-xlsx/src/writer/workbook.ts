@@ -29,19 +29,22 @@ export interface WorkbookXmlOptions {
 export function buildWorkbookXml(workbook: Workbook, options: WorkbookXmlOptions = {}): string {
 	const out = new ChunkedStringBuilder()
 	out.push(XML_HEADER)
-	const workbookNamespaceAttrs = new Map<string, string>([
+	const workbookRootAttrs = new Map<string, string>([
 		['xmlns', NS_MAIN],
 		['xmlns:r', NS_R],
 	])
 	for (const [name, value] of extractSourceWorkbookNamespaceAttrs(options.preservedWorkbookXml)) {
-		if (!workbookNamespaceAttrs.has(name)) workbookNamespaceAttrs.set(name, value)
+		if (!workbookRootAttrs.has(name)) workbookRootAttrs.set(name, value)
 	}
-	if ((options.slicerCacheRelIds?.length ?? 0) > 0) workbookNamespaceAttrs.set('xmlns:x14', NS_X14)
+	for (const [name, value] of extractSourceWorkbookRootAttrs(options.preservedWorkbookXml)) {
+		if (!workbookRootAttrs.has(name)) workbookRootAttrs.set(name, value)
+	}
+	if ((options.slicerCacheRelIds?.length ?? 0) > 0) workbookRootAttrs.set('xmlns:x14', NS_X14)
 	if ((options.timelineCacheRelIds?.length ?? 0) > 0) {
-		workbookNamespaceAttrs.set('xmlns:x15', NS_X15)
+		workbookRootAttrs.set('xmlns:x15', NS_X15)
 	}
 	out.push(
-		`<workbook ${Array.from(workbookNamespaceAttrs, ([name, value]) => `${name}="${escapeXml(value)}"`).join(' ')}>`,
+		`<workbook ${Array.from(workbookRootAttrs, ([name, value]) => `${name}="${escapeXml(value)}"`).join(' ')}>`,
 	)
 
 	if (workbook.workbookFileVersion) {
@@ -294,6 +297,20 @@ function extractSourceWorkbookNamespaceAttrs(
 		for (const [name, value] of parseRawXmlAttributes(element.attrs)) {
 			if (name.startsWith('xmlns:')) attrs.push([name, value])
 		}
+	}
+	return attrs
+}
+
+function extractSourceWorkbookRootAttrs(
+	sourceXml: string | undefined,
+): readonly [string, string][] {
+	if (!sourceXml) return []
+	const root = findFirstElement(sourceXml, 'workbook', 0, sourceXml.length)
+	if (!root) return []
+	const attrs: [string, string][] = []
+	for (const [name, value] of parseRawXmlAttributes(root.attrs)) {
+		if (name === 'xmlns' || name.startsWith('xmlns:') || !isXmlAttributeName(name)) continue
+		attrs.push([name, value])
 	}
 	return attrs
 }

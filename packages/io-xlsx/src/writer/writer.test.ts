@@ -5292,7 +5292,11 @@ describe('writeXlsx', () => {
 			workbookXml: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
   xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
-  xmlns:mx="urn:ascend:test-workbook-child">
+  xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+  xmlns:mx="urn:ascend:test-workbook-child"
+  xmlns:xr="http://schemas.microsoft.com/office/spreadsheetml/2014/revision"
+  mc:Ignorable="xr mx"
+  xr:uid="{WORKBOOK-UID}">
   <workbookPr codeName="Book1"/>
   <bookViews><workbookView activeTab="0"/></bookViews>
   <sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets>
@@ -5310,7 +5314,15 @@ describe('writeXlsx', () => {
 
 		const zip = unzipSync(written.value)
 		const workbookXml = new TextDecoder().decode(zip['xl/workbook.xml'] ?? new Uint8Array())
+		expect(workbookXml).toContain(
+			'xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"',
+		)
 		expect(workbookXml).toContain('xmlns:mx="urn:ascend:test-workbook-child"')
+		expect(workbookXml).toContain(
+			'xmlns:xr="http://schemas.microsoft.com/office/spreadsheetml/2014/revision"',
+		)
+		expect(workbookXml).toContain('mc:Ignorable="xr mx"')
+		expect(workbookXml).toContain('xr:uid="{WORKBOOK-UID}"')
 		expect(workbookXml).toContain(
 			'<functionGroups><functionGroup name="Engineering"/></functionGroups>',
 		)

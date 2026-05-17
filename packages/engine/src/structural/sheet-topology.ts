@@ -38,6 +38,7 @@ export function shiftSheetCellMetadata(
 	shiftRowOrColMap(sheet.colWidths, axis === 'col', at, delta)
 	shiftRowDefs(sheet, axis, at, delta)
 	shiftColDefs(sheet, axis, at, delta)
+	shiftPageBreaks(sheet, axis, at, delta)
 	shiftSqrefEntries(sheet.dataValidations, axis, at, delta)
 	shiftConditionalFormats(sheet.conditionalFormats, axis, at, delta)
 	shiftX14SqrefEntries(sheet.x14DataValidations, axis, at, delta)
@@ -50,6 +51,19 @@ export function shiftSheetCellMetadata(
 	shiftSheetTables(sheet, axis, at, delta)
 	shiftSparklineGroups(sheet, axis, at, delta)
 	rewriteSheetMetadataFormulasForShift(sheet, axis, at, delta)
+}
+
+function shiftPageBreaks(sheet: Sheet, axis: 'row' | 'col', at: number, delta: number): void {
+	const breaks = axis === 'row' ? sheet.rowBreaks : sheet.colBreaks
+	if (breaks.length === 0) return
+	const shifted = breaks
+		.map((brk) => {
+			const next = shiftIndex(brk.id, at, delta)
+			return next === null ? null : { ...brk, id: next }
+		})
+		.filter((brk): brk is NonNullable<typeof brk> => brk !== null)
+	if (axis === 'row') sheet.rowBreaks = shifted
+	else sheet.colBreaks = shifted
 }
 
 function shiftRowDefs(sheet: Sheet, axis: 'row' | 'col', at: number, delta: number): void {

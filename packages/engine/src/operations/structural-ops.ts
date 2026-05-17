@@ -498,6 +498,15 @@ function findInsertShiftedCellMetadataOutOfBounds(
 			const issue = checkIndex('row definition', row, rowRangeRef(row), rowRangeRef(row + count))
 			if (issue) return issue
 		}
+		for (const [index, brk] of sheet.rowBreaks.entries()) {
+			const issue = checkIndex(
+				`row page break ${index + 1}`,
+				brk.id,
+				rowRangeRef(brk.id),
+				rowRangeRef(brk.id + count),
+			)
+			if (issue) return issue
+		}
 	} else {
 		for (const col of sheet.colWidths.keys()) {
 			const issue = checkIndex(
@@ -518,6 +527,15 @@ function findInsertShiftedCellMetadataOutOfBounds(
 					shiftInsertedCoordinate(def.max, at, count),
 				),
 			}
+		}
+		for (const [index, brk] of sheet.colBreaks.entries()) {
+			const issue = checkIndex(
+				`column page break ${index + 1}`,
+				brk.id,
+				columnRangeRef(brk.id, brk.id),
+				columnRangeRef(brk.id + count, brk.id + count),
+			)
+			if (issue) return issue
 		}
 	}
 	return null

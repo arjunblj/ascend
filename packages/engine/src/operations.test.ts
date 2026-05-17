@@ -6130,6 +6130,22 @@ describe('applyOperation', () => {
 				expectedRef: 'Sheet1!XFD:XFD',
 				expectedLabel: 'column definition 1',
 			},
+			{
+				op: { op: 'insertRows', sheet: 'Sheet1', at: 1_048_575, count: 1 },
+				setup: (sheet) => {
+					sheet.rowBreaks.push({ id: 1_048_575, min: 0, max: 16_383, man: true })
+				},
+				expectedRef: 'Sheet1!1048576:1048576',
+				expectedLabel: 'row page break 1',
+			},
+			{
+				op: { op: 'insertCols', sheet: 'Sheet1', at: 16_383, count: 1 },
+				setup: (sheet) => {
+					sheet.colBreaks.push({ id: 16_383, min: 0, max: 1_048_575, man: true })
+				},
+				expectedRef: 'Sheet1!XFD:XFD',
+				expectedLabel: 'column page break 1',
+			},
 		]
 
 		for (const { op, setup: setupSheet, expectedRef, expectedLabel } of cases) {
@@ -6144,6 +6160,8 @@ describe('applyOperation', () => {
 				rowDefs: [...sheet.rowDefs],
 				colWidths: [...sheet.colWidths],
 				colDefs: sheet.colDefs,
+				rowBreaks: sheet.rowBreaks,
+				colBreaks: sheet.colBreaks,
 			})
 
 			const result = applyOperation(wb, op)
@@ -6164,6 +6182,8 @@ describe('applyOperation', () => {
 					rowDefs: [...sheet.rowDefs],
 					colWidths: [...sheet.colWidths],
 					colDefs: sheet.colDefs,
+					rowBreaks: sheet.rowBreaks,
+					colBreaks: sheet.colBreaks,
 				}),
 				op.op,
 			).toBe(beforeMetadata)
@@ -6845,6 +6865,38 @@ describe('applyOperation', () => {
 			allowedSheet.protection = { sheet: true, ...allowedOption }
 			expectOk(applyOperation(allowed, op))
 		}
+	})
+
+	test('row and column shifts update matching manual page breaks', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Sheet1')
+		s.rowBreaks = [
+			{ id: 1, min: 0, max: 16_383, man: true },
+			{ id: 5, min: 0, max: 16_383, man: true },
+		]
+		s.colBreaks = [
+			{ id: 1, min: 0, max: 1_048_575, man: true },
+			{ id: 5, min: 0, max: 1_048_575, man: true },
+		]
+
+		expectOk(applyOperation(wb, { op: 'insertRows', sheet: 'Sheet1', at: 1, count: 2 }))
+		expectOk(applyOperation(wb, { op: 'deleteRows', sheet: 'Sheet1', at: 4, count: 1 }))
+		expectOk(applyOperation(wb, { op: 'insertCols', sheet: 'Sheet1', at: 1, count: 2 }))
+		expectOk(applyOperation(wb, { op: 'deleteCols', sheet: 'Sheet1', at: 4, count: 1 }))
+
+		expect(s.rowBreaks).toEqual([
+			{ id: 3, min: 0, max: 16_383, man: true },
+			{ id: 6, min: 0, max: 16_383, man: true },
+		])
+		expect(s.colBreaks).toEqual([
+			{ id: 3, min: 0, max: 1_048_575, man: true },
+			{ id: 6, min: 0, max: 1_048_575, man: true },
+		])
+
+		expectOk(applyOperation(wb, { op: 'deleteRows', sheet: 'Sheet1', at: 3, count: 1 }))
+		expectOk(applyOperation(wb, { op: 'deleteCols', sheet: 'Sheet1', at: 3, count: 1 }))
+		expect(s.rowBreaks).toEqual([{ id: 5, min: 0, max: 16_383, man: true }])
+		expect(s.colBreaks).toEqual([{ id: 5, min: 0, max: 1_048_575, man: true }])
 	})
 
 	test('row and column shifts update protected range sqrefs', () => {

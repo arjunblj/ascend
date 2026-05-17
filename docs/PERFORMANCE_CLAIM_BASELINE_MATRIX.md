@@ -41,6 +41,11 @@ No broad XLSX read, XLSX write, SOTA, or QSS-leapfrog speed claim is promotable 
   rust_xlsxwriter on that value-write row. This supersedes the older noisy
   string-heavy tail boundary for current TS/JS/Rust wording, but not for
   lowest-memory or smallest-file wording.
+- Current focused TS/JS/Rust `mixed-50pct-text` write coverage proves Ascend's
+  generated writer is faster by median and p95 than SheetJS, ExcelJS, and
+  rust_xlsxwriter on that mixed text/number value-write row. Treat it as scoped
+  row evidence, not a broad write-speed, lowest-memory, smallest-file, or
+  byte/order-equivalence claim.
 - Current focused TS/JS/Rust `styles-heavy` write coverage proves Ascend's
   generated writer is faster by median and p95 than SheetJS, ExcelJS, and
   rust_xlsxwriter on that value-write row. Treat it as scoped value evidence,
@@ -53,7 +58,7 @@ No broad XLSX read, XLSX write, SOTA, or QSS-leapfrog speed claim is promotable 
   ExcelJS table-capable row. Ascend is faster by median and p95 than ExcelJS
   and rust_xlsxwriter on that table-write row; SheetJS remains unsupported for
   the tracked table metadata contract.
-- The recorded cycles cover public/reproducible generated `dense-values`, `sparse-wide`, `styles-heavy`, `formula-heavy`, `table-heavy`, `feature-rich`, `selected-sheet`, `metadata-only`, `warm-workflow`, and `string-heavy` workloads over `raw-ooxml`, but they are per-workload evidence rows rather than one clean all-workload promotion run.
+- The recorded cycles cover public/reproducible generated `dense-values`, `sparse-wide`, `styles-heavy`, `formula-heavy`, `table-heavy`, `feature-rich`, `selected-sheet`, `metadata-only`, `warm-workflow`, `string-heavy`, and `mixed-50pct-text` workloads over `raw-ooxml`, but they are per-workload evidence rows rather than one clean all-workload promotion run.
 - Current harness evidence now supports same-lane selected-sheet rows for Ascend, SheetJS, OpenPyXL, and python-calamine. Treat older `openpyxl` and Calamine selected-sheet `unsupported-operation` wording as historical for the recorded clean runs.
 - Current harness evidence now supports same-lane metadata-only rows for Ascend, SheetJS, OpenPyXL, and python-calamine. Calamine wins that head-to-head; treat older metadata-only `missing-comparable` or Calamine `unsupported-operation` wording as historical.
 - Current `0e53a446` metadata-only repeat-30 recheck still has python-calamine as the
@@ -93,6 +98,102 @@ Forbidden wording:
 - Any wording that treats failed or unavailable runners as wins.
 
 Next action: downgrade the broad speed claim and stop production optimization from winning rows. Continue only if the performance loop is explicitly attacking a remaining claim blocker or measured loss: ClosedXML coverage, feature-rich semantic mismatches for SheetJS/Calamine, metadata-only versus Calamine, remaining unsupported selected-sheet/metadata-only competitors, or FastXLSX environment coverage.
+
+## Cycle: Mixed 50 Percent Text TS/JS/Rust Write Head-to-Head at `c0fbfcb7`
+
+Classification: comparable external-process evidence plus defer. Ascend is the
+median and p95 winner on this focused generated value-write row, so no
+production optimization is justified.
+
+Workflow: generated XLSX write for a dense 2000 row x 20 column worksheet where
+half the 40,000 cells are strings and half are numbers.
+
+Why it matters for release: mixed text/number export is a practical value-write
+floor for replacing JS/TS writers in developer workflows while staying above
+the Rust writer performance bar.
+
+Public/tracked-clean input: `competitive-io` generated the `mixed-50pct-text`
+workload from tracked benchmark code in a clean detached worktree at commit
+`c0fbfcb75d8f6f26bc291603583b4247e085da2d`. No private corpus or local
+research workbook was used.
+
+Commands:
+
+```bash
+git worktree add --detach /private/tmp/ascend-write-mixed50-current-c0fbfcb7 c0fbfcb7
+cd /private/tmp/ascend-write-mixed50-current-c0fbfcb7
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun install --frozen-lockfile
+mkdir -p /private/tmp/ascend-write-mixed50-current-c0fbfcb7-runs
+TMPDIR=/private/tmp ACCEPT_NPOI_OSMF_LICENSE=1 env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /usr/bin/time -l /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-io.ts --json --category write --competitor all --execution-scope external-process --source-mode generated-write --libraries ascend-external-writer,sheetjs,exceljs,rust-xlsxwriter --workload mixed-50pct-text --repeat 15 --warmup 3 --validation-mode each --write-runner-manifest fixtures/benchmarks/runners/sota-writers.manifest.json > /private/tmp/ascend-write-mixed50-current-c0fbfcb7-runs/write-mixed50-js-rust-repeat15.json 2> /private/tmp/ascend-write-mixed50-current-c0fbfcb7-runs/write-mixed50-js-rust-repeat15-time.txt
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-scoreboard.ts /private/tmp/ascend-write-mixed50-current-c0fbfcb7-runs/write-mixed50-js-rust-repeat15.json --json --metric medianMs --assert-leader ascend > /private/tmp/ascend-write-mixed50-current-c0fbfcb7-runs/write-mixed50-js-rust-repeat15-scoreboard.json
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-scoreboard.ts /private/tmp/ascend-write-mixed50-current-c0fbfcb7-runs/write-mixed50-js-rust-repeat15.json --json --metric p95Ms --assert-leader ascend > /private/tmp/ascend-write-mixed50-current-c0fbfcb7-runs/write-mixed50-js-rust-repeat15-p95-scoreboard.json
+```
+
+Environment:
+
+- Commit: `c0fbfcb75d8f6f26bc291603583b4247e085da2d`
+- Worktree: clean detached worktree at
+  `/private/tmp/ascend-write-mixed50-current-c0fbfcb7`
+- Bun runtime: `1.3.13`
+- Node: `24.3.0`
+- Platform: Darwin arm64
+- Runner versions: SheetJS `0.18.5`, ExcelJS `4.4.0`,
+  rust_xlsxwriter runner `0.1.0`, rust_xlsxwriter crate `0.94.0`, Ascend writer
+  `workspace`.
+- Runtime profile: `category write`, `executionScope external-process`,
+  `sourceMode generated-write`, `workload mixed-50pct-text`, `repeat 15`,
+  `warmup 3`, `validationMode each`.
+
+Raw output:
+
+```text
+/private/tmp/ascend-write-mixed50-current-c0fbfcb7-runs/write-mixed50-js-rust-repeat15.json
+/private/tmp/ascend-write-mixed50-current-c0fbfcb7-runs/write-mixed50-js-rust-repeat15-time.txt
+/private/tmp/ascend-write-mixed50-current-c0fbfcb7-runs/write-mixed50-js-rust-repeat15-scoreboard.json
+/private/tmp/ascend-write-mixed50-current-c0fbfcb7-runs/write-mixed50-js-rust-repeat15-p95-scoreboard.json
+```
+
+Focused external JS/Rust mixed-50pct-text write row, repeat 15 after 3 warmups:
+
+| Runner | Status | Median ms | P95 ms | CV | Peak RSS | Output bytes | Semantic comparability |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
+| `ascend-external-writer` | ran/won median and p95 | 4.577 | 4.920 | 0.035 | 88.5 MiB | 175882 | one sheet, 40,000 cells, sorted and ordered semantic values match |
+| `rust-xlsxwriter` | ran/lost vs Ascend | 24.848 | 26.857 | 0.037 | 21.6 MiB | 187422 | same sorted semantic values; ordered hash differs, so do not claim byte/order equivalence |
+| `sheetjs` | ran/lost vs Ascend | 31.391 | 34.167 | 0.048 | 266.4 MiB | 1506986 | same sorted and ordered semantic values |
+| `exceljs` | ran/lost vs Ascend | 96.759 | 261.600 | 0.394 | 283.5 MiB | 190313 | same sorted and ordered semantic values; noisy tail |
+
+Process-level `/usr/bin/time -l`: `6.60 real`, `6.64 user`, `0.61 sys`,
+`318177280` maximum resident set size, `124224328` peak memory footprint.
+
+Scoreboard result:
+
+- Median scoreboard: mixed-50pct-text group winner was
+  `ascend-external-writer`; `leaderFailures: []`, `profileLeaderFailures: []`.
+- P95 scoreboard: mixed-50pct-text group winner was
+  `ascend-external-writer`; `leaderFailures: []`, `profileLeaderFailures: []`.
+- All four rows had `correctnessStatus: pass` and `rankingEligible: true`.
+
+Semantic boundary: this row compares generated value-write behavior only. It
+does not prove rich metadata, style fidelity, smallest file size, lowest memory,
+or byte/order-equivalent output against rust_xlsxwriter.
+
+Humble allowed wording:
+
+> On the generated `mixed-50pct-text` 2000x20 value-write workload at
+> `c0fbfcb7`, Ascend's external generated writer was faster by median and p95
+> than SheetJS, ExcelJS, and rust_xlsxwriter, with all four rows passing the
+> same semantic validation.
+
+Forbidden wording:
+
+- "Ascend is SOTA for XLSX write."
+- "Ascend uses less memory than rust_xlsxwriter on mixed text writes."
+- "Ascend emits smaller files than every JS/Rust writer."
+- "Ascend proves byte/order-equivalent output against rust_xlsxwriter."
+
+Next action: defer production optimization from this winning row. Continue the
+JS/TS and Rust floor sweep only on another missing mixed write row, a measured
+loss, or a semantic blocker.
 
 ## Cycle: External Feature Rich JS/Rust Write Quality Boundary at `6bdb5e57`
 
@@ -4243,8 +4344,9 @@ Acceptance evidence:
 
 Stop condition: do not optimize further from the measured winning rows
 `dense-values`, `sparse-wide`, `styles-heavy`, `formula-heavy`, `table-heavy`,
-`selected-sheet`, `metadata-only`, `warm-workflow`, and `string-heavy`. The
-`feature-rich` row identified a meaningful loss and was optimized at `05656d4e`;
+`selected-sheet`, `metadata-only`, `warm-workflow`, `string-heavy`, and
+`mixed-50pct-text`. The `feature-rich` row identified a meaningful loss and was
+optimized at `05656d4e`;
 continue only on the next named loss, unstable tail, or memory/latency tradeoff
 worth production work. The ClosedXML runner blocker was resolved by restoring
 the runner in a clean worktree and is now a measured bounded-gap row. OpenPyXL

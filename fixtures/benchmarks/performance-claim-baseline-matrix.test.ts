@@ -37,6 +37,7 @@ const RECORDED_WORKLOADS = [
 	'metadata-only',
 	'warm-workflow',
 	'string-heavy',
+	'mixed-50pct-text',
 ]
 
 describe('performance claim baseline matrix', () => {
@@ -84,6 +85,9 @@ describe('performance claim baseline matrix', () => {
 		)
 		expect(markdown).toContain(
 			"Current focused TS/JS/Rust `string-heavy` write coverage proves Ascend's\n  generated writer is faster by median and p95 than SheetJS, ExcelJS, and\n  rust_xlsxwriter",
+		)
+		expect(markdown).toContain(
+			"Current focused TS/JS/Rust `mixed-50pct-text` write coverage proves Ascend's\n  generated writer is faster by median and p95 than SheetJS, ExcelJS, and\n  rust_xlsxwriter",
 		)
 		expect(markdown).toContain(
 			"Current focused TS/JS/Rust `styles-heavy` write coverage proves Ascend's\n  generated writer is faster by median and p95 than SheetJS, ExcelJS, and\n  rust_xlsxwriter",
@@ -217,7 +221,7 @@ describe('performance claim baseline matrix', () => {
 			'broad read-speed and QSS-leapfrog performance wording is downgraded',
 		)
 		expect(markdown).toContain(
-			'do not optimize further from the measured winning rows\n`dense-values`, `sparse-wide`, `styles-heavy`, `formula-heavy`, `table-heavy`,\n`selected-sheet`, `metadata-only`, `warm-workflow`, and `string-heavy`',
+			'do not optimize further from the measured winning rows\n`dense-values`, `sparse-wide`, `styles-heavy`, `formula-heavy`, `table-heavy`,\n`selected-sheet`, `metadata-only`, `warm-workflow`, `string-heavy`, and\n`mixed-50pct-text`',
 		)
 		expect(markdown).toContain(
 			'Failed, missing, or semantically mismatched runners are not counted as wins.',
@@ -820,6 +824,41 @@ describe('performance claim baseline matrix', () => {
 		expect(markdown).toContain('"Ascend beats SheetJS on table-heavy writes."')
 		expect(markdown).toContain(
 			'"Ascend uses less memory than rust_xlsxwriter on table-heavy writes."',
+		)
+
+		expect(markdown).toContain(
+			'## Cycle: Mixed 50 Percent Text TS/JS/Rust Write Head-to-Head at `c0fbfcb7`',
+		)
+		expect(markdown).toContain('Classification: comparable external-process evidence plus defer.')
+		expect(markdown).toContain(
+			'/private/tmp/ascend-write-mixed50-current-c0fbfcb7-runs/write-mixed50-js-rust-repeat15.json',
+		)
+		expect(markdown).toContain(
+			'/private/tmp/ascend-write-mixed50-current-c0fbfcb7-runs/write-mixed50-js-rust-repeat15-p95-scoreboard.json',
+		)
+		expect(markdown).toContain(
+			'Runner versions: SheetJS `0.18.5`, ExcelJS `4.4.0`,\n  rust_xlsxwriter runner `0.1.0`, rust_xlsxwriter crate `0.94.0`',
+		)
+		expect(markdown).toContain(
+			'| `ascend-external-writer` | ran/won median and p95 | 4.577 | 4.920 | 0.035 | 88.5 MiB | 175882 |',
+		)
+		expect(markdown).toContain(
+			'| `rust-xlsxwriter` | ran/lost vs Ascend | 24.848 | 26.857 | 0.037 | 21.6 MiB | 187422 |',
+		)
+		expect(markdown).toContain(
+			'| `sheetjs` | ran/lost vs Ascend | 31.391 | 34.167 | 0.048 | 266.4 MiB | 1506986 |',
+		)
+		expect(markdown).toContain(
+			'| `exceljs` | ran/lost vs Ascend | 96.759 | 261.600 | 0.394 | 283.5 MiB | 190313 |',
+		)
+		expect(markdown).toContain(
+			'P95 scoreboard: mixed-50pct-text group winner was\n  `ascend-external-writer`',
+		)
+		expect(markdown).toContain(
+			'"Ascend uses less memory than rust_xlsxwriter on mixed text writes."',
+		)
+		expect(markdown).toContain(
+			'"Ascend proves byte/order-equivalent output against rust_xlsxwriter."',
 		)
 
 		expect(markdown).toContain(

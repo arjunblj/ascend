@@ -2245,6 +2245,198 @@ describe('recalculate', () => {
 		}
 	})
 
+	test('statistical test functions spill over selector arguments while preserving data ranges', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		const xRange = [1, 2, 3, 4]
+		const probRange = [0.1, 0.2, 0.3, 0.4]
+		const sample1 = [10, 12, 13, 15, 16]
+		const sample2 = [9, 11, 14, 14, 17]
+		const lowerLimits = [1, 2, 3]
+		const upperLimits = [2, 3, 4]
+		const tails = [1, 2, 1]
+		const testTypes = [1, 2, 3]
+		const zXs = [10, 12, 14]
+		const sigmas = [2, 2.5, 3]
+		for (let row = 0; row < xRange.length; row++) {
+			sheet.cells.set(row, 0, {
+				value: numberValue(xRange[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+			sheet.cells.set(row, 1, {
+				value: numberValue(probRange[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+		}
+		for (let row = 0; row < sample1.length; row++) {
+			sheet.cells.set(row, 4, {
+				value: numberValue(sample1[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+			sheet.cells.set(row, 5, {
+				value: numberValue(sample2[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+		}
+		for (let row = 0; row < lowerLimits.length; row++) {
+			for (const [col, source] of [
+				[2, lowerLimits],
+				[3, upperLimits],
+				[6, tails],
+				[7, testTypes],
+				[8, zXs],
+				[9, sigmas],
+			] as const) {
+				sheet.cells.set(row, col, {
+					value: numberValue(source[row] as number),
+					formula: null,
+					styleId: sid,
+				})
+			}
+		}
+		const arrayFormulas = [
+			'PROB(A1:A4,B1:B4,C1:C3,D1:D3)+0',
+			'T.TEST(E1:E5,F1:F5,G1:G3,H1:H3)+0',
+			'TTEST(E1:E5,F1:F5,G1:G3,H1:H3)+0',
+			'Z.TEST(E1:E5,I1:I3,J1:J3)+0',
+			'ZTEST(E1:E5,I1:I3,J1:J3)+0',
+		]
+		const scalarFormulas = [
+			'PROB(A1:A4,B1:B4,C{r},D{r})+0',
+			'T.TEST(E1:E5,F1:F5,G{r},H{r})+0',
+			'TTEST(E1:E5,F1:F5,G{r},H{r})+0',
+			'Z.TEST(E1:E5,I{r},J{r})+0',
+			'ZTEST(E1:E5,I{r},J{r})+0',
+		]
+		for (let col = 0; col < arrayFormulas.length; col++) {
+			sheet.cells.set(0, 11 + col, {
+				value: EMPTY,
+				formula: arrayFormulas[col] as string,
+				styleId: sid,
+			})
+			for (let row = 0; row < lowerLimits.length; row++) {
+				sheet.cells.set(row, 20 + col, {
+					value: EMPTY,
+					formula: (scalarFormulas[col] as string).replaceAll('{r}', String(row + 1)),
+					styleId: sid,
+				})
+			}
+		}
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		for (let row = 0; row < lowerLimits.length; row++) {
+			for (let col = 0; col < arrayFormulas.length; col++) {
+				const actual = sheet.cells.get(row, 11 + col)?.value
+				const expected = sheet.cells.get(row, 20 + col)?.value
+				expect(actual?.kind).toBe('number')
+				expect(expected?.kind).toBe('number')
+				if (actual?.kind === 'number' && expected?.kind === 'number') {
+					expect(actual.value).toBeCloseTo(expected.value, 10)
+				}
+			}
+		}
+	})
+
+	test('top-level statistical test functions implicitly intersect selector ranges', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		const xRange = [1, 2, 3, 4]
+		const probRange = [0.1, 0.2, 0.3, 0.4]
+		const sample1 = [10, 12, 13, 15, 16]
+		const sample2 = [9, 11, 14, 14, 17]
+		const lowerLimits = [1, 2, 3]
+		const upperLimits = [2, 3, 4]
+		const tails = [1, 2, 1]
+		const testTypes = [1, 2, 3]
+		const zXs = [10, 12, 14]
+		const sigmas = [2, 2.5, 3]
+		for (let row = 0; row < xRange.length; row++) {
+			sheet.cells.set(row, 0, {
+				value: numberValue(xRange[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+			sheet.cells.set(row, 1, {
+				value: numberValue(probRange[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+		}
+		for (let row = 0; row < sample1.length; row++) {
+			sheet.cells.set(row, 4, {
+				value: numberValue(sample1[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+			sheet.cells.set(row, 5, {
+				value: numberValue(sample2[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+		}
+		for (let row = 0; row < lowerLimits.length; row++) {
+			for (const [col, source] of [
+				[2, lowerLimits],
+				[3, upperLimits],
+				[6, tails],
+				[7, testTypes],
+				[8, zXs],
+				[9, sigmas],
+			] as const) {
+				sheet.cells.set(row, col, {
+					value: numberValue(source[row] as number),
+					formula: null,
+					styleId: sid,
+				})
+			}
+		}
+		const rangeFormulas = [
+			'PROB(A1:A4,B1:B4,C1:C3,D1:D3)',
+			'T.TEST(E1:E5,F1:F5,G1:G3,H1:H3)',
+			'TTEST(E1:E5,F1:F5,G1:G3,H1:H3)',
+			'Z.TEST(E1:E5,I1:I3,J1:J3)',
+			'ZTEST(E1:E5,I1:I3,J1:J3)',
+		]
+		const scalarFormulas = [
+			'PROB(A1:A4,B1:B4,C2,D2)',
+			'T.TEST(E1:E5,F1:F5,G2,H2)',
+			'TTEST(E1:E5,F1:F5,G2,H2)',
+			'Z.TEST(E1:E5,I2,J2)',
+			'ZTEST(E1:E5,I2,J2)',
+		]
+		for (let col = 0; col < rangeFormulas.length; col++) {
+			sheet.cells.set(1, 11 + col, {
+				value: EMPTY,
+				formula: rangeFormulas[col] as string,
+				styleId: sid,
+			})
+			sheet.cells.set(1, 20 + col, {
+				value: EMPTY,
+				formula: scalarFormulas[col] as string,
+				styleId: sid,
+			})
+		}
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		for (let col = 0; col < rangeFormulas.length; col++) {
+			const actual = sheet.cells.get(1, 11 + col)?.value
+			const expected = sheet.cells.get(1, 20 + col)?.value
+			expect(actual?.kind).toBe('number')
+			expect(expected?.kind).toBe('number')
+			if (actual?.kind === 'number' && expected?.kind === 'number') {
+				expect(actual.value).toBeCloseTo(expected.value, 10)
+			}
+		}
+	})
+
 	test('order statistic functions spill over array k arguments while preserving data ranges', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

@@ -328,6 +328,7 @@ const SCALAR_IMPLICIT_INTERSECTION_FUNCTIONS = new Set([
 	'PERCENTRANK.INC',
 	'POISSON',
 	'POISSON.DIST',
+	'PROB',
 	'PROPER',
 	'POWER',
 	'PPMT',
@@ -368,6 +369,8 @@ const SCALAR_IMPLICIT_INTERSECTION_FUNCTIONS = new Set([
 	'TAN',
 	'TANH',
 	'TDIST',
+	'TTEST',
+	'T.TEST',
 	'T.DIST',
 	'T.DIST.2T',
 	'T.DIST.RT',
@@ -395,6 +398,8 @@ const SCALAR_IMPLICIT_INTERSECTION_FUNCTIONS = new Set([
 	'WORKDAY.INTL',
 	'YEAR',
 	'YEARFRAC',
+	'ZTEST',
+	'Z.TEST',
 ])
 SCALAR_IMPLICIT_INTERSECTION_FUNCTIONS.delete('T')
 
@@ -624,6 +629,7 @@ const ARRAY_CONTEXT_MAPPABLE_FUNCTIONS = new Set([
 	'POISSON.DIST',
 	'POWER',
 	'PPMT',
+	'PROB',
 	'PROPER',
 	'PV',
 	'QUARTILE',
@@ -660,6 +666,8 @@ const ARRAY_CONTEXT_MAPPABLE_FUNCTIONS = new Set([
 	'TAN',
 	'TANH',
 	'TDIST',
+	'TTEST',
+	'T.TEST',
 	'T.DIST',
 	'T.DIST.2T',
 	'T.DIST.RT',
@@ -687,6 +695,8 @@ const ARRAY_CONTEXT_MAPPABLE_FUNCTIONS = new Set([
 	'WORKDAY.INTL',
 	'YEAR',
 	'YEARFRAC',
+	'ZTEST',
+	'Z.TEST',
 ])
 
 const ARRAY_MAPPED_RANGE_PRESERVING_ARGS = new Map<string, ReadonlySet<number>>([
@@ -717,6 +727,7 @@ const ARRAY_MAPPED_RANGE_PRESERVING_ARGS = new Map<string, ReadonlySet<number>>(
 	['PERCENTRANK', new Set([0])],
 	['PERCENTRANK.EXC', new Set([0])],
 	['PERCENTRANK.INC', new Set([0])],
+	['PROB', new Set([0, 1])],
 	['QUARTILE', new Set([0])],
 	['QUARTILE.EXC', new Set([0])],
 	['QUARTILE.INC', new Set([0])],
@@ -724,9 +735,13 @@ const ARRAY_MAPPED_RANGE_PRESERVING_ARGS = new Map<string, ReadonlySet<number>>(
 	['RANK.AVG', new Set([1])],
 	['RANK.EQ', new Set([1])],
 	['SMALL', new Set([0])],
+	['TTEST', new Set([0, 1])],
+	['T.TEST', new Set([0, 1])],
 	['TRIMMEAN', new Set([0])],
 	['WORKDAY', new Set([2])],
 	['WORKDAY.INTL', new Set([3])],
+	['ZTEST', new Set([0])],
+	['Z.TEST', new Set([0])],
 ])
 
 const LEGACY_TOP_LEVEL_SCALAR_FUNCTIONS = new Set([

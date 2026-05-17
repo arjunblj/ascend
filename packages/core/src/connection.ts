@@ -27,5 +27,7 @@ export interface WorkbookConnectionPartInfo {
 	readonly odcFile?: string
 	readonly onlyUseConnectionFile?: boolean
 	readonly command?: string
+	readonly commandType?: number
+	readonly serverCommand?: boolean
 	readonly hasConnectionString?: boolean
 }

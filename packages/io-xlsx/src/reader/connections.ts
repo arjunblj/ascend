@@ -23,6 +23,8 @@ interface ParsedConnectionAttrs {
 	odcFile?: string
 	onlyUseConnectionFile?: boolean
 	command?: string
+	commandType?: number
+	serverCommand?: boolean
 	hasConnectionString?: boolean
 }
 
@@ -140,6 +142,10 @@ function readConnectionAttrs(
 	if (onlyUseConnectionFile !== undefined) parsed.onlyUseConnectionFile = onlyUseConnectionFile
 	const command = dbPr ? attr(dbPr, 'command') : undefined
 	if (command) parsed.command = command
+	const commandType = dbPr ? numAttr(dbPr, 'commandType') : undefined
+	if (commandType !== undefined) parsed.commandType = commandType
+	const serverCommand = dbPr ? boolAttr(dbPr, 'serverCommand') : undefined
+	if (serverCommand !== undefined) parsed.serverCommand = serverCommand
 	const connectionString = dbPr ? attr(dbPr, 'connection') : undefined
 	if (connectionString) parsed.hasConnectionString = true
 	return parsed

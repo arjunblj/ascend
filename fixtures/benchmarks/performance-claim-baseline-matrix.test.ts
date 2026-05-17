@@ -62,7 +62,7 @@ describe('performance claim baseline matrix', () => {
 			'Current harness evidence now supports a SheetJS feature-rich rich-metadata row',
 		)
 		expect(markdown).toContain(
-			'Current formula/calc evidence includes focused HyperFormula indexed\n  `INDEX/MATCH` plus prefix-range dirty-head and dirty-tail rows.',
+			'Current formula/calc evidence includes focused HyperFormula indexed\n  `INDEX/MATCH`, indexed dirty-key/dirty-value edits, and prefix-range\n  dirty-head/dirty-tail rows.',
 		)
 		for (const workload of RECORDED_WORKLOADS) expect(markdown).toContain(`\`${workload}\``)
 		expect(markdown).toContain('Humble allowed wording:')
@@ -94,6 +94,31 @@ describe('performance claim baseline matrix', () => {
 		expect(markdown).toContain(
 			'defer production optimization from this winning row. Continue\nformula/calc performance work only with a named HyperFormula workflow',
 		)
+
+		expect(markdown).toContain('## Cycle: Formula SOTA Indexed Lookup Dirty Edits at `2700c72a`')
+		expect(markdown).toContain('`hf-indexed-index-match-dirty-key`')
+		expect(markdown).toContain('`hf-indexed-index-match-dirty-value`')
+		expect(markdown).toContain(
+			'/private/tmp/ascend-formula-indexed-dirty-current-2700c72a-runs/hf-indexed-index-match-dirty-key-repeat30.json',
+		)
+		expect(markdown).toContain(
+			'/private/tmp/ascend-formula-indexed-dirty-current-2700c72a-runs/hf-indexed-index-match-dirty-value-repeat30.json',
+		)
+		expect(markdown).toContain(
+			'| Dirty key edit | Ascend | ran/won | 17.453 ms / 23.353 ms / 0.206 | 0.152 ms / 0.552 ms / 1.406 | 17.591 ms / 23.494 ms / 0.212 |',
+		)
+		expect(markdown).toContain(
+			'| Dirty key edit | HyperFormula | ran/lost vs Ascend | 1252.808 ms / 2396.354 ms / 0.401 | 0.659 ms / 2.049 ms / 0.631 | 1254.083 ms / 2397.869 ms / 0.401 |',
+		)
+		expect(markdown).toContain(
+			'| Dirty return-value edit | Ascend | ran/won | 17.903 ms / 27.906 ms / 0.240 | 0.098 ms / 0.221 ms / 1.761 | 18.008 ms / 28.001 ms / 0.237 |',
+		)
+		expect(markdown).toContain(
+			'| Dirty return-value edit | HyperFormula | ran/lost vs Ascend | 1463.408 ms / 3140.009 ms / 0.373 | 347.289 ms / 951.250 ms / 0.448 | 1834.094 ms / 3740.465 ms / 0.354 |',
+		)
+		expect(markdown).toContain('`operationSpeedupVsHyperFormula: 4.335x`')
+		expect(markdown).toContain('`operationSpeedupVsHyperFormula: 3532.498x`')
+		expect(markdown).toContain('Ascend operation samples are noisy at sub-millisecond\nscale')
 
 		expect(markdown).toContain(
 			'## Cycle: Formula SOTA Prefix Dirty-Tail HyperFormula Row at `c06bba18`',

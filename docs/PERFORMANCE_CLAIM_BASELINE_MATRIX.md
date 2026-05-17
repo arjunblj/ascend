@@ -24,9 +24,10 @@ No broad XLSX read, XLSX write, SOTA, or QSS-leapfrog speed claim is promotable 
 - Current harness evidence now supports same-lane metadata-only rows for Ascend, SheetJS, OpenPyXL, and python-calamine. Calamine wins that head-to-head; treat older metadata-only `missing-comparable` or Calamine `unsupported-operation` wording as historical.
 - Current harness evidence now supports a SheetJS feature-rich rich-metadata row using SheetJS `bookFiles`; older SheetJS `semantic-mismatch` wording is historical for the pre-runner-fix cycles. Calamine-family rich-metadata rows remain not comparable.
 - Current formula/calc evidence includes focused HyperFormula indexed
-  `INDEX/MATCH` plus prefix-range dirty-head and dirty-tail rows. They are
-  useful formula-engine performance evidence, but they are not XLSX behavior
-  parity, Excel compatibility, or broad formula SOTA evidence.
+  `INDEX/MATCH`, indexed dirty-key/dirty-value edits, and prefix-range
+  dirty-head/dirty-tail rows. They are useful formula-engine performance
+  evidence, but they are not XLSX behavior parity, Excel compatibility, or
+  broad formula SOTA evidence.
 - Several external runners were unavailable or blocked in the clean benchmark worktree. They are recorded as blockers, not wins.
 - Several timing lanes are semantically related but not one unified timing boundary. Do not collapse in-process, preloaded-bytes, file-path, row-stream, and materialized-workbook timings into a single "wins everything" claim.
 
@@ -136,6 +137,112 @@ Next action: defer production optimization from this winning row. Continue
 formula/calc performance work only with a named HyperFormula workflow that
 loses, an external formula oracle boundary, or a smaller attributable all-profile
 gate that emits complete JSON.
+
+## Cycle: Formula SOTA Indexed Lookup Dirty Edits at `2700c72a`
+
+Classification: comparable formula-engine evidence plus defer. Ascend is the
+median and p95 winner on both focused indexed `INDEX/MATCH` incremental edit
+workflows. No production optimization is justified from these rows.
+
+Workflow: after initial calculation of exact
+`INDEX(C$1:C$8000,MATCH(E<n>,A$1:A$8000,0))` formulas over an 8,000-row keyed
+table, measure two incremental edits: changing one lookup key and changing one
+indexed return value.
+
+Why it matters for release: these rows exercise dependency-update performance
+for lookup-heavy models after an agent edits either the lookup key or the
+matched return value. HyperFormula runs with `useColumnIndex` enabled, making it
+the relevant OSS formula-engine baseline for this shape. These are generated
+in-memory formula-engine rows only; they do not prove Excel-compatible formula
+coverage, cached formula truth, dependency updates after XLSX structural edits,
+or XLSX roundtrip behavior.
+
+Public/tracked-clean input: `formula-sota` generated the
+`hf-indexed-index-match-dirty-key` and `hf-indexed-index-match-dirty-value`
+workloads from tracked benchmark code in a clean detached worktree at commit
+`2700c72a`. No private corpus or local research workbook was used. Both rows
+used 8,000 data rows, 1,000 formulas, 30 measured samples, and 5 warmups.
+
+Commands:
+
+```bash
+git worktree add --detach /private/tmp/ascend-formula-indexed-dirty-current-2700c72a 2700c72a8d844fcab6f080547fafe7fbce831b5e
+cd /private/tmp/ascend-formula-indexed-dirty-current-2700c72a
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun install --frozen-lockfile
+mkdir -p /private/tmp/ascend-formula-indexed-dirty-current-2700c72a-runs
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/sbin:/sbin /usr/bin/time -l /Users/arjun/.bun/bin/bun run fixtures/benchmarks/formula-sota.ts --profile hf-indexed-index-match-dirty-key --repeat 30 --warmup 5 --assert-correctness --json > /private/tmp/ascend-formula-indexed-dirty-current-2700c72a-runs/hf-indexed-index-match-dirty-key-repeat30.json 2> /private/tmp/ascend-formula-indexed-dirty-current-2700c72a-runs/hf-indexed-index-match-dirty-key-repeat30-time.txt
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/sbin:/sbin /usr/bin/time -l /Users/arjun/.bun/bin/bun run fixtures/benchmarks/formula-sota.ts --profile hf-indexed-index-match-dirty-value --repeat 30 --warmup 5 --assert-correctness --json > /private/tmp/ascend-formula-indexed-dirty-current-2700c72a-runs/hf-indexed-index-match-dirty-value-repeat30.json 2> /private/tmp/ascend-formula-indexed-dirty-current-2700c72a-runs/hf-indexed-index-match-dirty-value-repeat30-time.txt
+```
+
+Environment:
+
+- Commit: `2700c72a8d844fcab6f080547fafe7fbce831b5e`
+- Worktree: clean detached worktree at
+  `/private/tmp/ascend-formula-indexed-dirty-current-2700c72a`; `git status
+  --short --branch` reported `## HEAD (no branch)`.
+- Bun runtime: `1.3.13`
+- Node: `22.22.0`
+- HyperFormula dependency: `^3.2.0`
+- Platform: Darwin arm64, macOS kernel `25.4.0`
+- Runtime profile: `rows 8000`, `formulas 1000`, `repeat 30`, `warmup 5`,
+  `assertCorrectness true`.
+
+Raw output:
+
+```text
+/private/tmp/ascend-formula-indexed-dirty-current-2700c72a-runs/hf-indexed-index-match-dirty-key-repeat30.json
+/private/tmp/ascend-formula-indexed-dirty-current-2700c72a-runs/hf-indexed-index-match-dirty-key-repeat30-time.txt
+/private/tmp/ascend-formula-indexed-dirty-current-2700c72a-runs/hf-indexed-index-match-dirty-value-repeat30.json
+/private/tmp/ascend-formula-indexed-dirty-current-2700c72a-runs/hf-indexed-index-match-dirty-value-repeat30-time.txt
+```
+
+Focused formula-engine rows, repeat 30 after 5 warmups:
+
+| Workflow | Engine | Status | Setup median / p95 / CV | Operation median / p95 / CV | Total median / p95 / CV | Correctness | Memory |
+| --- | --- | --- | ---: | ---: | ---: | --- | --- |
+| Dirty key edit | Ascend | ran/won | 17.453 ms / 23.353 ms / 0.206 | 0.152 ms / 0.552 ms / 1.406 | 17.591 ms / 23.494 ms / 0.212 | Edited `Sheet1!E1000`, changed 1 cell, 0 errors, probe value matched expected `49259`. | Process-level peak RSS shared by both engines: 458.6 MiB maximum resident set size; 317.9 MiB peak memory footprint. |
+| Dirty key edit | HyperFormula | ran/lost vs Ascend | 1252.808 ms / 2396.354 ms / 0.401 | 0.659 ms / 2.049 ms / 0.631 | 1254.083 ms / 2397.869 ms / 0.401 | Edit changed 2 cells; probe value matched expected `49259`. | Process-level peak RSS shared by both engines: 458.6 MiB maximum resident set size; 317.9 MiB peak memory footprint. |
+| Dirty return-value edit | Ascend | ran/won | 17.903 ms / 27.906 ms / 0.240 | 0.098 ms / 0.221 ms / 1.761 | 18.008 ms / 28.001 ms / 0.237 | Edited `Sheet1!C3037`, changed 1 cell, 0 errors, probe value matched expected `9000999`. | Process-level peak RSS shared by both engines: 417.9 MiB maximum resident set size; 276.9 MiB peak memory footprint. |
+| Dirty return-value edit | HyperFormula | ran/lost vs Ascend | 1463.408 ms / 3140.009 ms / 0.373 | 347.289 ms / 951.250 ms / 0.448 | 1834.094 ms / 3740.465 ms / 0.354 | Edit changed 2 cells; probe value matched expected `9000999`. | Process-level peak RSS shared by both engines: 417.9 MiB maximum resident set size; 276.9 MiB peak memory footprint. |
+
+Comparisons:
+
+- Dirty key edit: `operationSpeedupVsHyperFormula: 4.335x`;
+  `totalSpeedupVsHyperFormula: 71.290x`.
+- Dirty return-value edit: `operationSpeedupVsHyperFormula: 3532.498x`;
+  `totalSpeedupVsHyperFormula: 101.851x`.
+
+Semantic boundary: both engines calculate the same generated in-memory edits
+and pass the same probe-value assertions. Changed-cell counts differ because
+Ascend reports one changed output cell while HyperFormula reports two changed
+cells from its edit API. Ascend operation samples are noisy at sub-millisecond
+scale (`opCv 1.406` for dirty-key and `1.761` for dirty-value), so wording
+should prefer median/p95 row evidence over microsecond-scale precision. These
+rows are formula-engine timing evidence, not XLSX behavior, formula-corpus
+parity, or Excel/LibreOffice oracle evidence.
+
+Humble allowed wording:
+
+> On the generated indexed `INDEX/MATCH` dirty-key and dirty-return-value
+> workflows at commit `2700c72a`, Ascend had faster median and p95 incremental
+> recalculation than HyperFormula `^3.2.0` with `useColumnIndex` enabled. This
+> is scoped generated formula-engine evidence, not broad formula parity or XLSX
+> behavior evidence.
+
+Forbidden wording:
+
+- "Ascend is SOTA for formula calculation."
+- "Ascend beats HyperFormula on every lookup or incremental recalculation
+  workflow."
+- "Ascend proves Excel-compatible formula parity."
+- "Ascend proves workbook formula preservation or cached formula truth."
+- Any wording that hides the noisy sub-millisecond Ascend operation samples or
+  changed-cell reporting differences.
+
+Next action: defer production optimization from these winning rows. Continue
+formula/calc performance work only with a named HyperFormula workflow that
+loses, an external formula oracle boundary, or an attributable all-profile gate
+that emits complete JSON.
 
 ## Cycle: Formula SOTA Prefix Dirty-Tail HyperFormula Row at `c06bba18`
 

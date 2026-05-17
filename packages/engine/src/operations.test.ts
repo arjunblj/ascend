@@ -4582,6 +4582,35 @@ describe('applyOperation', () => {
 		})
 	})
 
+	test('moveRange relocates same-sheet protected ranges contained in the source range', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(1, 1, cell(numberValue(1)))
+		sheet.protectedRanges = [
+			{
+				name: 'EditableBudget',
+				sqref: 'B2:B4 D2:D4 A10',
+				password: '83AF',
+			},
+		]
+
+		const result = applyOperation(wb, {
+			op: 'moveRange',
+			sheet: 'Sheet1',
+			source: 'B2:D4',
+			target: 'F6',
+		})
+		expectOk(result)
+
+		expect(sheet.protectedRanges).toEqual([
+			{
+				name: 'EditableBudget',
+				sqref: 'F6:F8 H6:H8 A10',
+				password: '83AF',
+			},
+		])
+	})
+
 	test('range transfers fail closed for unsupported visual anchor copies and partial moves', () => {
 		const copyWorkbook = createWorkbook()
 		const copySheet = copyWorkbook.addSheet('Sheet1')
@@ -4744,6 +4773,72 @@ describe('applyOperation', () => {
 			source: 'A1:C4',
 		})
 		expect(sourceSheet.autoFilter?.ref).toBe('A1:C4')
+		expect(targetSheet.cells.get(0, 0)).toBeUndefined()
+	})
+
+	test('range transfers fail closed for unsupported protected range copies and partial moves', () => {
+		const copyWorkbook = createWorkbook()
+		const copySheet = copyWorkbook.addSheet('Sheet1')
+		copySheet.cells.set(0, 0, cell(numberValue(1)))
+		copySheet.protectedRanges = [{ name: 'Editable', sqref: 'A1:C4' }]
+
+		const copyResult = applyOperation(copyWorkbook, {
+			op: 'copyRange',
+			sheet: 'Sheet1',
+			source: 'A1:C4',
+			target: 'E1',
+		})
+		expectErr(copyResult)
+		expect(copyResult.error.details).toMatchObject({
+			kind: 'unsupported-protected-range-transfer',
+			action: 'copy',
+			protectedRangeRef: 'A1:C4',
+			source: 'A1:C4',
+		})
+		expect(copySheet.protectedRanges[0]?.sqref).toBe('A1:C4')
+		expect(copySheet.cells.get(0, 4)).toBeUndefined()
+
+		const moveWorkbook = createWorkbook()
+		const moveSheet = moveWorkbook.addSheet('Sheet1')
+		moveSheet.cells.set(0, 0, cell(numberValue(1)))
+		moveSheet.protectedRanges = [{ name: 'PartialEditable', sqref: 'A1:C4' }]
+
+		const partialMove = applyOperation(moveWorkbook, {
+			op: 'moveRange',
+			sheet: 'Sheet1',
+			source: 'A1:B4',
+			target: 'E1',
+		})
+		expectErr(partialMove)
+		expect(partialMove.error.details).toMatchObject({
+			kind: 'partial-protected-range-transfer',
+			protectedRangeRef: 'A1:C4',
+			source: 'A1:B4',
+		})
+		expect(moveSheet.protectedRanges[0]?.sqref).toBe('A1:C4')
+		expect(moveSheet.cells.get(0, 4)).toBeUndefined()
+
+		const crossSheetWorkbook = createWorkbook()
+		const sourceSheet = crossSheetWorkbook.addSheet('Sheet1')
+		const targetSheet = crossSheetWorkbook.addSheet('Sheet2')
+		sourceSheet.cells.set(0, 0, cell(numberValue(1)))
+		sourceSheet.protectedRanges = [{ name: 'CrossSheetEditable', sqref: 'A1:C4' }]
+
+		const crossSheetMove = applyOperation(crossSheetWorkbook, {
+			op: 'moveRange',
+			sheet: 'Sheet1',
+			source: 'A1:C4',
+			targetSheet: 'Sheet2',
+			target: 'A1',
+		})
+		expectErr(crossSheetMove)
+		expect(crossSheetMove.error.details).toMatchObject({
+			kind: 'unsupported-protected-range-transfer',
+			action: 'move to another sheet',
+			protectedRangeRef: 'A1:C4',
+			source: 'A1:C4',
+		})
+		expect(sourceSheet.protectedRanges[0]?.sqref).toBe('A1:C4')
 		expect(targetSheet.cells.get(0, 0)).toBeUndefined()
 	})
 

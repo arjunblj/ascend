@@ -9,6 +9,7 @@ import type {
 	SheetConditionalFormatValueObject,
 	SheetDataValidation,
 	SheetImageAnchor,
+	SheetProtectedRange,
 	SortState,
 	Workbook,
 } from '@ascend/core'
@@ -313,6 +314,16 @@ export function handleTransferRange(
 		op.op,
 	)
 	if (!sheetFilterPlan.ok) return sheetFilterPlan
+	const protectedRangePlan = planProtectedRangeTransfer(
+		sourceSheet,
+		targetSheet,
+		source,
+		rowDelta,
+		colDelta,
+		mode,
+		op.op,
+	)
+	if (!protectedRangePlan.ok) return protectedRangePlan
 	const advancedFilterPlan = planAdvancedFilterTransfer(
 		sourceSheet,
 		targetSheet,
@@ -429,6 +440,7 @@ export function handleTransferRange(
 	applyMergeTransfer(sourceSheet, targetSheet, mergePlan.value)
 	applyVisualTransfer(visualPlan.value)
 	applySheetFilterTransfer(sheetFilterPlan.value)
+	applyProtectedRangeTransfer(protectedRangePlan.value)
 	applyAdvancedFilterTransfer(advancedFilterPlan.value)
 
 	if (op.op === 'moveRange') {
@@ -783,6 +795,16 @@ interface SheetFilterTransferPlan {
 	readonly sortState?: SortState
 }
 
+interface ProtectedRangeTransferPlan {
+	readonly sheet: Sheet
+	readonly entries: readonly ProtectedRangeTransferEntry[]
+}
+
+interface ProtectedRangeTransferEntry {
+	readonly index: number
+	readonly range: SheetProtectedRange
+}
+
 interface AdvancedFilterTransferPlan {
 	readonly sheet: Sheet
 	readonly entries: readonly AdvancedFilterTransferEntry[]
@@ -810,6 +832,15 @@ interface SheetFilterIntersection {
 	readonly contained: boolean
 	readonly ref: string
 	readonly label: string
+}
+
+interface ProtectedRangeIntersection {
+	readonly range: SheetProtectedRange
+	readonly index: number
+	readonly ref: string
+	readonly label: string
+	readonly overlappingRanges: readonly RangeRef[]
+	readonly partialRange?: RangeRef
 }
 
 interface AdvancedFilterIntersection {
@@ -996,6 +1027,84 @@ function collectIntersectingSheetFilters(
 		})
 	}
 	return entries
+}
+
+function planProtectedRangeTransfer(
+	sourceSheet: Sheet,
+	targetSheet: Sheet,
+	source: RangeRef,
+	rowDelta: number,
+	colDelta: number,
+	mode: PasteMode,
+	operation: 'copyRange' | 'moveRange',
+): Result<ProtectedRangeTransferPlan> {
+	if (mode !== 'all') return ok({ sheet: sourceSheet, entries: [] })
+	const intersecting = collectIntersectingProtectedRanges(sourceSheet, source)
+	if (intersecting.length === 0) return ok({ sheet: sourceSheet, entries: [] })
+	const first = intersecting[0]
+	if (!first) return ok({ sheet: sourceSheet, entries: [] })
+	if (operation === 'copyRange') {
+		return err(unsupportedProtectedRangeTransferError('copy', source, first))
+	}
+	if (sourceSheet !== targetSheet) {
+		return err(unsupportedProtectedRangeTransferError('move to another sheet', source, first))
+	}
+
+	const entries: ProtectedRangeTransferEntry[] = []
+	for (const entry of intersecting) {
+		if (entry.partialRange) return err(partialProtectedRangeTransferError(source, entry))
+		const translated = translateProtectedRange(entry.range, source, rowDelta, colDelta)
+		if (!translated.ok) return translated
+		entries.push({ index: entry.index, range: translated.value })
+	}
+	return ok({ sheet: sourceSheet, entries })
+}
+
+function applyProtectedRangeTransfer(plan: ProtectedRangeTransferPlan): void {
+	for (const entry of plan.entries) {
+		if (plan.sheet.protectedRanges[entry.index]) {
+			plan.sheet.protectedRanges[entry.index] = entry.range
+		}
+	}
+}
+
+function collectIntersectingProtectedRanges(
+	sheet: Sheet,
+	source: RangeRef,
+): ProtectedRangeIntersection[] {
+	const entries: ProtectedRangeIntersection[] = []
+	for (const [index, range] of sheet.protectedRanges.entries()) {
+		const refs = parseSqref(range.sqref)
+		if (refs.length === 0) continue
+		const overlappingRanges = refs.filter((ref) => rangesOverlap(ref, source))
+		if (overlappingRanges.length === 0) continue
+		const partialRange = overlappingRanges.find((ref) => !rangeContainsRange(source, ref))
+		entries.push({
+			range,
+			index,
+			ref: rangesToSqref(overlappingRanges),
+			label: range.name ? `protected range "${range.name}"` : `protected range ${index + 1}`,
+			overlappingRanges,
+			...(partialRange ? { partialRange } : {}),
+		})
+	}
+	return entries
+}
+
+function translateProtectedRange(
+	entry: SheetProtectedRange,
+	source: RangeRef,
+	rowDelta: number,
+	colDelta: number,
+): Result<SheetProtectedRange> {
+	const ranges = parseSqref(entry.sqref)
+	if (ranges.length === 0) {
+		return err(invalidProtectedRangeTransferError(entry.sqref, source))
+	}
+	const translated = ranges.map((range) =>
+		rangeContainsRange(source, range) ? shiftRange(range, rowDelta, colDelta) : range,
+	)
+	return ok({ ...entry, sqref: rangesToSqref(translated) })
 }
 
 function planAdvancedFilterTransfer(
@@ -1420,6 +1529,72 @@ function partialSheetFilterTransferError(
 				kind: 'partial-sheet-filter-range-transfer',
 				filterKind: entry.kind,
 				filterRef: entry.ref,
+				source: rangeToA1(source),
+			},
+		},
+	)
+}
+
+function unsupportedProtectedRangeTransferError(
+	action: 'copy' | 'move to another sheet',
+	source: RangeRef,
+	entry: ProtectedRangeIntersection,
+): ReturnType<typeof ascendError> {
+	return ascendError(
+		'VALIDATION_ERROR',
+		`Cannot ${action} ${rangeToA1(source)} because it contains ${entry.label} at ${entry.ref}`,
+		{
+			refs: [rangeToA1(source), entry.ref],
+			suggestedFix:
+				action === 'copy'
+					? 'Copy the cells without mode "all", or recreate the protected range explicitly after copying the range.'
+					: 'Move the range within the same sheet, or recreate the protected range explicitly on the target sheet after moving the cells.',
+			details: {
+				kind: 'unsupported-protected-range-transfer',
+				action,
+				protectedRangeIndex: entry.index,
+				protectedRangeRef: entry.ref,
+				source: rangeToA1(source),
+			},
+		},
+	)
+}
+
+function partialProtectedRangeTransferError(
+	source: RangeRef,
+	entry: ProtectedRangeIntersection,
+): ReturnType<typeof ascendError> {
+	const partialRef = entry.partialRange ? rangeToA1(entry.partialRange) : entry.ref
+	return ascendError(
+		'VALIDATION_ERROR',
+		`Cannot move ${rangeToA1(source)} because it partially overlaps ${entry.label} at ${partialRef}`,
+		{
+			refs: [rangeToA1(source), partialRef],
+			suggestedFix:
+				'Move the full protected range, move the cells without mode "all", or remove the protected range before moving the cells.',
+			details: {
+				kind: 'partial-protected-range-transfer',
+				protectedRangeIndex: entry.index,
+				protectedRangeRef: partialRef,
+				source: rangeToA1(source),
+			},
+		},
+	)
+}
+
+function invalidProtectedRangeTransferError(
+	ref: string,
+	source: RangeRef,
+): ReturnType<typeof ascendError> {
+	return ascendError(
+		'VALIDATION_ERROR',
+		`Cannot move protected range metadata with invalid sqref ${ref}`,
+		{
+			refs: [ref, rangeToA1(source)],
+			suggestedFix: 'Repair or remove the protected range before moving the cells.',
+			details: {
+				kind: 'invalid-protected-range-transfer',
+				protectedRangeRef: ref,
 				source: rangeToA1(source),
 			},
 		},

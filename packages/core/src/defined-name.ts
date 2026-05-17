@@ -117,12 +117,10 @@ export class DefinedNameCollection {
 		this.items.length = 0
 		this.workbookIndex.clear()
 		this.sheetIndex.clear()
-		this.items.push(...other.items)
-		for (const [name, entry] of other.workbookIndex) {
-			this.workbookIndex.set(name, entry)
-		}
-		for (const [sheetId, names] of other.sheetIndex) {
-			this.sheetIndex.set(sheetId, new Map(names))
+		for (const item of other.items) {
+			const entry = cloneDefinedName(item)
+			this.items.push(entry)
+			if (this.getFromIndex(entry.name, entry.scope) === undefined) this.addToIndex(entry)
 		}
 	}
 
@@ -183,6 +181,16 @@ export class DefinedNameCollection {
 			else names.delete(lower)
 		}
 		if (names.size === 0) this.sheetIndex.delete(sheetId)
+	}
+}
+
+function cloneDefinedName(entry: DefinedName): DefinedName {
+	return {
+		...entry,
+		scope: { ...entry.scope },
+		...(entry.extraAttributes
+			? { extraAttributes: entry.extraAttributes.map((attr) => ({ ...attr })) }
+			: {}),
 	}
 }
 

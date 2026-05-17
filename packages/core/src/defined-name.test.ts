@@ -34,6 +34,32 @@ describe('DefinedNameCollection', () => {
 		expect(names.resolve('Rate', 'sheet-1')?.formula).toBe('0.2')
 	})
 
+	test('copyFrom clones defined-name entries and extra attributes without aliasing', () => {
+		const names = new DefinedNameCollection()
+		names.set(
+			'_xlnm._FilterDatabase',
+			'Data!$A$1:$B$10',
+			{ kind: 'sheet', sheetId: 'sheet-1' },
+			{
+				hidden: true,
+				extraAttributes: [{ name: 'comment', value: 'Filter menu' }],
+			},
+		)
+
+		const clone = names.clone()
+		const clonedEntry = clone.resolve('_xlnm._FilterDatabase', 'sheet-1')
+		expect(clonedEntry).toBeDefined()
+		if (!clonedEntry) return
+
+		;(clonedEntry.extraAttributes?.[0] as { value: string }).value = 'Changed'
+		;(clonedEntry.scope as { sheetId: string }).sheetId = 'sheet-2'
+
+		const originalEntry = names.resolve('_xlnm._FilterDatabase', 'sheet-1')
+		expect(originalEntry?.extraAttributes?.[0]?.value).toBe('Filter menu')
+		expect(originalEntry?.scope).toEqual({ kind: 'sheet', sheetId: 'sheet-1' })
+		expect(clone.resolve('_xlnm._FilterDatabase', 'sheet-1')).toBe(clonedEntry)
+	})
+
 	test('add preserves duplicate names while keeping deterministic lookup', () => {
 		const names = new DefinedNameCollection()
 		names.add('_xlnm._FilterDatabase', 'Data!$A$1:$B$2', { kind: 'sheet', sheetId: 'sheet-1' })

@@ -2047,9 +2047,10 @@ describe('release proof evidence index', () => {
 						'662cb462',
 						'0a9c2b80',
 						'ca57e475',
+						'fe34f483',
 					]),
 					allowedWording: expect.stringContaining(
-						'scalar engineering-special/complex implicit intersection',
+						'scalar ADDRESS/date/workday implicit intersection',
 					),
 					evidenceProvesIt: expect.arrayContaining([
 						expect.stringContaining('NOT spills boolean masks'),
@@ -2093,6 +2094,8 @@ describe('release proof evidence index', () => {
 						expect.stringContaining(
 							'engineering special and complex scalar functions implicitly intersect',
 						),
+						expect.stringContaining('ADDRESS spills over range row and column arguments'),
+						expect.stringContaining('top-level ADDRESS implicitly intersects range row'),
 						expect.stringContaining('rounding scalar functions spill over range operands'),
 						expect.stringContaining('logarithmic scalar functions spill over range operands'),
 						expect.stringContaining('trigonometric scalar functions spill over range operands'),

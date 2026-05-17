@@ -14,7 +14,8 @@ import type {
 	Workbook,
 } from '@ascend/core'
 import { parseA1, parseRange, toA1 } from '@ascend/core'
-import { cachedParseFormula } from '@ascend/formulas'
+import type { FormulaRef } from '@ascend/formulas'
+import { cachedParseFormula, extractRefs } from '@ascend/formulas'
 import type { Operation, PasteMode, Result } from '@ascend/schema'
 import { ascendError, EMPTY, err, ok } from '@ascend/schema'
 import { resolveCellFormulaText } from '../analysis.ts'
@@ -1349,6 +1350,23 @@ export function handleTransferRange(
 				op.op === 'moveRange' ? 'move' : 'copy',
 				source,
 				partialMetadataBlocker,
+			),
+		)
+	}
+	const metadataFormulaBlocker = findTransferMetadataFormulaOutOfBounds(
+		sourceSheet,
+		targetSheet,
+		source,
+		rowDelta,
+		colDelta,
+		mode,
+		op.op === 'moveRange',
+	)
+	if (metadataFormulaBlocker) {
+		return err(
+			transferMetadataFormulaOutOfBoundsError(
+				op.op === 'moveRange' ? 'move' : 'copy',
+				metadataFormulaBlocker,
 			),
 		)
 	}
@@ -2799,6 +2817,208 @@ function partialMetadataRangeTransferError(
 				metadataIndex: blocker.index,
 				metadataRef: blocker.ref,
 				source: rangeToA1(source),
+			},
+		},
+	)
+}
+
+interface TransferMetadataFormulaOutOfBounds {
+	readonly owner: string
+	readonly formula: string
+	readonly translatedFormula: string
+	readonly shiftedReference: string
+}
+
+function findTransferMetadataFormulaOutOfBounds(
+	sourceSheet: Sheet,
+	targetSheet: Sheet,
+	source: RangeRef,
+	rowDelta: number,
+	colDelta: number,
+	mode: PasteMode,
+	move: boolean,
+): TransferMetadataFormulaOutOfBounds | null {
+	const targetRange = shiftRange(source, rowDelta, colDelta)
+	const check = (
+		formula: string | undefined,
+		owner: string,
+	): TransferMetadataFormulaOutOfBounds | null => {
+		if (!formula) return null
+		const translatedFormula = translateTransferMetadataFormula(
+			formula,
+			sourceSheet.name,
+			targetSheet.name,
+			targetRange,
+			rowDelta,
+			colDelta,
+			move,
+		)
+		const shiftedReference = findFormulaReferenceOutsideGrid(translatedFormula)
+		if (!shiftedReference) return null
+		return { owner, formula, translatedFormula, shiftedReference }
+	}
+	const entryContainedInSource = (sqref: string): boolean =>
+		parseSqref(sqref).some((range) => rangeContainsRange(source, range))
+
+	if (pasteValidations(mode)) {
+		for (const [index, validation] of sourceSheet.dataValidations.entries()) {
+			if (!entryContainedInSource(validation.sqref)) continue
+			const owner = `${formatSheetName(sourceSheet.name)}!dataValidation[${index}]`
+			const formula1 = check(validation.formula1, `${owner}.formula1`)
+			if (formula1) return formula1
+			const formula2 = check(validation.formula2, `${owner}.formula2`)
+			if (formula2) return formula2
+		}
+		for (const [index, validation] of sourceSheet.x14DataValidations.entries()) {
+			if (validation.deleted || !entryContainedInSource(validation.sqref)) continue
+			const owner = `${formatSheetName(sourceSheet.name)}!x14DataValidation[${index}]`
+			const formula1 = check(validation.formula1, `${owner}.formula1`)
+			if (formula1) return formula1
+			const formula2 = check(validation.formula2, `${owner}.formula2`)
+			if (formula2) return formula2
+		}
+	}
+
+	if (pasteConditionalFormats(mode)) {
+		for (const [formatIndex, format] of sourceSheet.conditionalFormats.entries()) {
+			if (!entryContainedInSource(format.sqref)) continue
+			for (const [ruleIndex, rule] of format.rules.entries()) {
+				const owner = `${formatSheetName(sourceSheet.name)}!conditionalFormat[${formatIndex}].rules[${ruleIndex}]`
+				for (const [formulaIndex, formula] of rule.formulas.entries()) {
+					const issue = check(formula, `${owner}.formulas[${formulaIndex}]`)
+					if (issue) return issue
+				}
+				const colorScale = findTransferValueObjectFormulaOutOfBounds(
+					rule.colorScale?.cfvo,
+					check,
+					`${owner}.colorScale.cfvo`,
+				)
+				if (colorScale) return colorScale
+				const dataBar = findTransferValueObjectFormulaOutOfBounds(
+					rule.dataBar?.cfvo,
+					check,
+					`${owner}.dataBar.cfvo`,
+				)
+				if (dataBar) return dataBar
+				const iconSet = findTransferValueObjectFormulaOutOfBounds(
+					rule.iconSet?.cfvo,
+					check,
+					`${owner}.iconSet.cfvo`,
+				)
+				if (iconSet) return iconSet
+			}
+		}
+		for (const [formatIndex, format] of sourceSheet.x14ConditionalFormats.entries()) {
+			if (format.deleted || !entryContainedInSource(format.sqref)) continue
+			const owner = `${formatSheetName(sourceSheet.name)}!x14ConditionalFormat[${formatIndex}]`
+			for (const [formulaIndex, formula] of format.formulas.entries()) {
+				const issue = check(formula, `${owner}.formulas[${formulaIndex}]`)
+				if (issue) return issue
+			}
+			const dataBar = findTransferValueObjectFormulaOutOfBounds(
+				format.dataBar?.cfvo,
+				check,
+				`${owner}.dataBar.cfvo`,
+			)
+			if (dataBar) return dataBar
+			const iconSet = findTransferValueObjectFormulaOutOfBounds(
+				format.iconSet?.cfvo,
+				check,
+				`${owner}.iconSet.cfvo`,
+			)
+			if (iconSet) return iconSet
+		}
+	}
+
+	return null
+}
+
+function findTransferValueObjectFormulaOutOfBounds<T extends { readonly value?: string }>(
+	entries: readonly T[] | undefined,
+	check: (formula: string | undefined, owner: string) => TransferMetadataFormulaOutOfBounds | null,
+	owner: string,
+): TransferMetadataFormulaOutOfBounds | null {
+	if (!entries) return null
+	for (const [index, entry] of entries.entries()) {
+		const issue = check(entry.value, `${owner}[${index}]`)
+		if (issue) return issue
+	}
+	return null
+}
+
+function findFormulaReferenceOutsideGrid(formula: string): string | null {
+	const parsed = cachedParseFormula(formula)
+	if (!parsed.ok) return null
+	for (const ref of extractRefs(parsed.value)) {
+		const outside = formulaRefOutsideGrid(ref)
+		if (outside) return outside
+	}
+	return null
+}
+
+function formulaRefOutsideGrid(ref: FormulaRef): string | null {
+	switch (ref.kind) {
+		case 'cell':
+			return formulaCellRefWithinGrid(ref.ref) ? null : formulaRefToA1(ref)
+		case 'range':
+			return formulaCellRefWithinGrid(ref.start) && formulaCellRefWithinGrid(ref.end)
+				? null
+				: formulaRefToA1(ref)
+		case 'wholeRowRange':
+			return ref.startRow >= 0 && ref.endRow < EXCEL_MAX_ROWS ? null : formulaRefToA1(ref)
+		case 'wholeColumnRange':
+			return ref.startCol >= 0 && ref.endCol < EXCEL_MAX_COLS ? null : formulaRefToA1(ref)
+		case 'sheetSpan': {
+			const target = formulaRefOutsideGrid(ref.target)
+			return target ? formulaRefToA1(ref) : null
+		}
+	}
+}
+
+function formulaCellRefWithinGrid(ref: { readonly row: number; readonly col: number }): boolean {
+	return ref.row >= 0 && ref.row < EXCEL_MAX_ROWS && ref.col >= 0 && ref.col < EXCEL_MAX_COLS
+}
+
+function formulaRefToA1(ref: FormulaRef): string {
+	switch (ref.kind) {
+		case 'cell':
+			return formulaSheetPrefix(ref.sheet) + toA1(ref.ref)
+		case 'range': {
+			const start = toA1(ref.start)
+			const end = toA1(ref.end)
+			return formulaSheetPrefix(ref.sheet) + (start === end ? start : `${start}:${end}`)
+		}
+		case 'wholeRowRange':
+			return formulaSheetPrefix(ref.sheet) + rowRangeRef(ref.startRow)
+		case 'wholeColumnRange':
+			return formulaSheetPrefix(ref.sheet) + columnRangeRef(ref.startCol, ref.endCol)
+		case 'sheetSpan':
+			return `${formatSheetName(ref.startSheet)}:${formatSheetName(ref.endSheet)}!${formulaRefToA1(ref.target).replace(/^.*!/, '')}`
+	}
+}
+
+function formulaSheetPrefix(sheet: string | undefined): string {
+	return sheet === undefined ? '' : `${formatSheetName(sheet)}!`
+}
+
+function transferMetadataFormulaOutOfBoundsError(
+	action: 'copy' | 'move',
+	blocker: TransferMetadataFormulaOutOfBounds,
+) {
+	return ascendError(
+		'INVALID_RANGE',
+		`Cannot ${action} worksheet metadata because formula ${blocker.owner} would translate reference ${blocker.shiftedReference} outside Excel worksheet bounds`,
+		{
+			refs: [blocker.owner, blocker.shiftedReference],
+			suggestedFix:
+				'Choose a target that keeps validation and conditional-format formulas within A1:XFD1048576, or edit the metadata formula before retrying.',
+			details: {
+				kind: 'range-transfer-metadata-formula-out-of-bounds',
+				action,
+				owner: blocker.owner,
+				formula: blocker.formula,
+				translatedFormula: blocker.translatedFormula,
+				shiftedReference: blocker.shiftedReference,
 			},
 		},
 	)

@@ -5459,6 +5459,96 @@ describe('applyOperation', () => {
 		])
 	})
 
+	test('range transfers reject metadata formulas that would land off grid', () => {
+		const cases: readonly {
+			readonly op: Operation
+			readonly setup: (sheet: Sheet) => void
+			readonly expectedAction: 'copy' | 'move'
+			readonly expectedOwner: string
+			readonly expectedFormula: string
+			readonly expectedTranslatedFormula: string
+			readonly expectedShiftedReference: string
+		}[] = [
+			{
+				op: {
+					op: 'copyRange',
+					sheet: 'Sheet1',
+					source: 'A1',
+					target: 'B1',
+					mode: 'validations',
+				},
+				setup: (sheet) => {
+					sheet.dataValidations.push({ sqref: 'A1', type: 'whole', formula1: 'XFD1' })
+				},
+				expectedAction: 'copy',
+				expectedOwner: 'Sheet1!dataValidation[0].formula1',
+				expectedFormula: 'XFD1',
+				expectedTranslatedFormula: 'XFE1',
+				expectedShiftedReference: 'XFE1',
+			},
+			{
+				op: {
+					op: 'moveRange',
+					sheet: 'Sheet1',
+					source: 'A1',
+					target: 'A2',
+					mode: 'formats',
+				},
+				setup: (sheet) => {
+					sheet.conditionalFormats.push({
+						sqref: 'A1',
+						rules: [{ type: 'expression', formulas: ['A1048576>0'] }],
+					})
+				},
+				expectedAction: 'move',
+				expectedOwner: 'Sheet1!conditionalFormat[0].rules[0].formulas[0]',
+				expectedFormula: 'A1048576>0',
+				expectedTranslatedFormula: 'A1048577>0',
+				expectedShiftedReference: 'A1048577',
+			},
+		]
+
+		for (const {
+			op,
+			setup: setupSheet,
+			expectedAction,
+			expectedOwner,
+			expectedFormula,
+			expectedTranslatedFormula,
+			expectedShiftedReference,
+		} of cases) {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			sheet.cells.set(0, 0, cell(numberValue(10)))
+			setupSheet(sheet)
+			const beforeMetadata = JSON.stringify({
+				dataValidations: sheet.dataValidations,
+				conditionalFormats: sheet.conditionalFormats,
+			})
+
+			const result = applyOperation(wb, op)
+
+			expectErr(result)
+			expect(result.error.code, op.op).toBe('INVALID_RANGE')
+			expect(result.error.refs, op.op).toEqual([expectedOwner, expectedShiftedReference])
+			expect(result.error.details, op.op).toMatchObject({
+				kind: 'range-transfer-metadata-formula-out-of-bounds',
+				action: expectedAction,
+				owner: expectedOwner,
+				formula: expectedFormula,
+				translatedFormula: expectedTranslatedFormula,
+				shiftedReference: expectedShiftedReference,
+			})
+			expect(
+				JSON.stringify({
+					dataValidations: sheet.dataValidations,
+					conditionalFormats: sheet.conditionalFormats,
+				}),
+				op.op,
+			).toBe(beforeMetadata)
+		}
+	})
+
 	test('range transfers fail closed for partial validation and conditional-format sqrefs', () => {
 		function expectBlocked(
 			setupMetadata: (sheet: Sheet) => void,

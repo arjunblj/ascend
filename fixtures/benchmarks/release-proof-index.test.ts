@@ -1204,8 +1204,8 @@ describe('release proof evidence index', () => {
 			}),
 			expect.objectContaining({
 				evidenceId: 'table-append-bounds-fail-closed-proof',
-				acceptedScope: expect.stringContaining('d88b9104'),
-				command: expect.stringContaining('appendRows rejects table growth'),
+				acceptedScope: expect.stringMatching(/d88b9104.*681086a9/),
+				command: expect.stringMatching(/appendRows rejects table growth.*protected table growth/),
 				boundary: expect.stringContaining('Local table append fail-closed evidence only'),
 			}),
 			expect.objectContaining({

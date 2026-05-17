@@ -6,6 +6,7 @@ Updated: 2026-05-15
 
 | Run | Status | Fold-in target |
 | --- | --- | --- |
+| [Fixture decision packet](runs/2026/2026-05-15-fixture-decision-packet/log.md) | folded product-owned generated fixture decisions into compact `--fixture-decision-json` output so safe-open/package-action public replacement gaps can be reviewed without expanding release claims | product loop, release loop |
 | [Release decision do-not-promote gate](runs/2026/2026-05-15-release-decision-do-not-promote-gate/log.md) | folded archived research notes into compact release-decision JSON and Markdown so owner loops see top-two release claims plus explicit do-not-promote directions without exposing broader policy payloads | release loop, product loop, correctness loop, performance loop |
 | [Release decision board gate](runs/2026/2026-05-15-release-decision-board-gate/log.md) | folded top-two release-decision artifact into release-proof index, owner handoff JSON, and compact `--release-decision-json` output so claim wording, exact proof, forbidden claims, and A+ blockers are machine-readable | release loop, product loop, correctness loop, performance loop |
 | [Practical latency noisy target boundary](runs/2026/2026-05-15-practical-latency-noisy-target-boundary/log.md) | folded noisy above-floor benchmark envelopes into guarded performance-owner targets while preserving the release boundary that practical-latency reports are diagnostic, not headline claim proof | performance loop, release downgrade |

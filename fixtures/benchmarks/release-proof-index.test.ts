@@ -1203,6 +1203,22 @@ describe('release proof evidence index', () => {
 				acceptedScope: expect.stringContaining('033be30c'),
 			}),
 			expect.objectContaining({
+				evidenceId: 'workbook-property-view-attribute-preservation-proof',
+				acceptedScope: expect.stringContaining('824e57c5'),
+				command: expect.stringContaining(
+					'parses workbook views, workbook properties, and external references',
+				),
+				boundary: expect.stringContaining('Generated workbook metadata preservation evidence only'),
+			}),
+			expect.objectContaining({
+				evidenceId: 'workbook-property-view-attribute-preservation-proof',
+				acceptedScope: expect.stringContaining('64f63423'),
+				command: expect.stringContaining(
+					'preserves workbook views and external reference wiring on round-trip',
+				),
+				boundary: expect.stringContaining('full workbook-view parity'),
+			}),
+			expect.objectContaining({
 				evidenceId: 'public-workbook-view-protection-proof',
 				acceptedScope: expect.stringContaining('033be30c'),
 				command: expect.stringContaining(

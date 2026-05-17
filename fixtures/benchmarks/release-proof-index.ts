@@ -3420,6 +3420,17 @@ function safeOpenQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceItem[] {
 				'Public hidden-sheet topology commit evidence only; it does not prove workbook protection security, visibility authorization, full workbook-view parity, or arbitrary topology editing support.',
 		},
 		{
+			evidenceId: 'workbook-property-view-attribute-preservation-proof',
+			kind: 'test',
+			command:
+				'bun test packages/core/src/workbook.test.ts packages/io-xlsx/src/reader/reader.test.ts packages/io-xlsx/src/writer/writer.test.ts -t "clones workbook settings and preserved metadata without aliasing|parses workbook views, workbook properties, and external references|preserves workbook views and external reference wiring on round-trip" --timeout 30000',
+			path: 'packages/core/src/workbook.ts; packages/core/src/workbook.test.ts; packages/io-xlsx/src/reader/workbook.ts; packages/io-xlsx/src/reader/reader.test.ts; packages/io-xlsx/src/writer/workbook.ts; packages/io-xlsx/src/writer/writer.test.ts',
+			acceptedScope:
+				'Commit 824e57c5 proves generated workbookView extra attributes such as minimized, showSheetTabs, and windowWidth are cloned, read, written, and reopened without being collapsed to the core workbook-view fields. Commit 64f63423 extends the same preservation shape to workbookPr extra attributes such as checkCompatibility and autoCompressPictures.',
+			boundary:
+				'Generated workbook metadata preservation evidence only; it does not prove public-workbook generality, full workbook-view parity, workbook protection/security behavior, Excel UI layout equivalence, or arbitrary workbookPr/workbookView semantic interpretation.',
+		},
+		{
 			evidenceId: 'public-workbook-view-protection-proof',
 			kind: 'test',
 			command:

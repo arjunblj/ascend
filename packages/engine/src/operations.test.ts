@@ -6958,6 +6958,54 @@ describe('applyOperation', () => {
 		expect(s.tables[0]?.columns[1]?.totalsRowFormula).toBe('SUM(A1:A2)')
 	})
 
+	test('row and column inserts reject formulas and defined names before shifting them out of grid', () => {
+		const formulaWb = createWorkbook()
+		formulaWb.addSheet('Data')
+		const summary = formulaWb.addSheet('Summary')
+		summary.cells.set(0, 0, cell(EMPTY, 'Data!$B$1048576'))
+
+		const formulaResult = applyOperation(formulaWb, {
+			op: 'insertRows',
+			sheet: 'Data',
+			at: 0,
+			count: 1,
+		})
+
+		expectErr(formulaResult)
+		expect(formulaResult.error.code).toBe('INVALID_RANGE')
+		expect(formulaResult.error.refs).toEqual(['Summary!A1'])
+		expect(formulaResult.error.details).toMatchObject({
+			kind: 'structural-insert-shifts-formula-out-of-bounds',
+			owner: 'Summary!A1',
+			reference: 'Data!$B$1048576',
+		})
+		expect(summary.cells.get(0, 0)?.formula).toBe('Data!$B$1048576')
+
+		const nameWb = createWorkbook()
+		const data = nameWb.addSheet('Data')
+		nameWb.definedNames.set('LocalEdge', '$XFD$1:$XFD$2', {
+			kind: 'sheet',
+			sheetId: data.id,
+		})
+
+		const nameResult = applyOperation(nameWb, {
+			op: 'insertCols',
+			sheet: 'Data',
+			at: 0,
+			count: 1,
+		})
+
+		expectErr(nameResult)
+		expect(nameResult.error.code).toBe('INVALID_RANGE')
+		expect(nameResult.error.refs).toEqual(['definedName:LocalEdge@sheet:Data'])
+		expect(nameResult.error.details).toMatchObject({
+			kind: 'structural-insert-shifts-defined-name-out-of-bounds',
+			owner: 'definedName:LocalEdge@sheet:Data',
+			reference: '$XFD$1:$XFD$2',
+		})
+		expect(nameWb.definedNames.resolve('LocalEdge', data.id)?.formula).toBe('$XFD$1:$XFD$2')
+	})
+
 	test('structural shifts update sheet-scoped local names and block ambiguous workbook names', () => {
 		const wb = createWorkbook()
 		const data = wb.addSheet('Data')

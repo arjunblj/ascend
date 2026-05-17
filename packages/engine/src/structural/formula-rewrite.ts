@@ -47,6 +47,20 @@ export interface InsertShiftedSparklineRefOutOfBounds {
 	readonly shiftedReference: string
 }
 
+export interface InsertShiftedWorkbookFormulaRefOutOfBounds {
+	readonly owner: string
+	readonly formula: string
+	readonly reference: string
+	readonly shiftedReference: string
+}
+
+export interface InsertShiftedDefinedNameRefOutOfBounds {
+	readonly owner: string
+	readonly formula: string
+	readonly reference: string
+	readonly shiftedReference: string
+}
+
 export function rewriteWorkbookFormulasForShift(
 	workbook: Workbook,
 	targetSheet: string,
@@ -913,6 +927,71 @@ export function findInsertShiftedSparklineRefOutOfBounds(
 				count,
 			)
 			if (sparklineLocationRange) return sparklineLocationRange
+		}
+	}
+	return null
+}
+
+export function findInsertShiftedWorkbookFormulaRefOutOfBounds(
+	workbook: Workbook,
+	targetSheet: string,
+	axis: 'row' | 'col',
+	at: number,
+	count: number,
+): InsertShiftedWorkbookFormulaRefOutOfBounds | null {
+	for (const sheet of workbook.sheets) {
+		for (const [row, col, cell] of sheet.cells.iterate()) {
+			if (!cell.formula) continue
+			const issue = findInsertShiftedFormulaRefOutOfBounds(
+				cell.formula,
+				targetSheet,
+				sheet.name,
+				axis,
+				at,
+				count,
+			)
+			if (!issue) continue
+			return {
+				owner: `${formatSheetName(sheet.name)}!${toA1({ row, col })}`,
+				formula: cell.formula,
+				reference: issue.reference,
+				shiftedReference: issue.shiftedReference,
+			}
+		}
+	}
+	return null
+}
+
+export function findInsertShiftedDefinedNameRefOutOfBounds(
+	workbook: Workbook,
+	targetSheet: string,
+	axis: 'row' | 'col',
+	at: number,
+	count: number,
+): InsertShiftedDefinedNameRefOutOfBounds | null {
+	for (const entry of workbook.definedNames.list()) {
+		const scope = entry.scope.kind === 'sheet' ? entry.scope : undefined
+		const scopeSheet = scope
+			? workbook.sheets.find((sheet) => sheet.id === scope.sheetId)?.name
+			: undefined
+		const formulaSheet = scopeSheet ?? targetSheet
+		const issue = findInsertShiftedFormulaRefOutOfBounds(
+			entry.formula,
+			targetSheet,
+			formulaSheet,
+			axis,
+			at,
+			count,
+		)
+		if (!issue) continue
+		return {
+			owner:
+				entry.scope.kind === 'sheet'
+					? `definedName:${entry.name}@sheet:${scopeSheet ?? entry.scope.sheetId}`
+					: `definedName:${entry.name}`,
+			formula: entry.formula,
+			reference: issue.reference,
+			shiftedReference: issue.shiftedReference,
 		}
 	}
 	return null
@@ -2746,6 +2825,11 @@ function rewriteSheetName(node: FormulaNode, oldName: string, newName: string): 
 
 function sameSheetName(left: string | undefined, right: string): boolean {
 	return left !== undefined && left.toLowerCase() === right.toLowerCase()
+}
+
+function formatSheetName(sheet: string): string {
+	if (/^[A-Za-z_][A-Za-z0-9_.]*$/.test(sheet)) return sheet
+	return `'${sheet.replace(/'/g, "''")}'`
 }
 
 function rewriteTableName(node: FormulaNode, oldName: string, newName: string): FormulaNode {

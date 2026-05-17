@@ -20,11 +20,15 @@ import { ascendError, EMPTY, err, ok } from '@ascend/schema'
 import { resolveCellFormulaText } from '../analysis.ts'
 import {
 	findInsertShiftedChartSourceRefOutOfBounds,
+	findInsertShiftedDefinedNameRefOutOfBounds,
 	findInsertShiftedSparklineRefOutOfBounds,
+	findInsertShiftedWorkbookFormulaRefOutOfBounds,
 	findPartialFormulaMoveReference,
 	formulaAstHasLocalStructuralReference,
 	type InsertShiftedChartSourceRefOutOfBounds,
+	type InsertShiftedDefinedNameRefOutOfBounds,
 	type InsertShiftedSparklineRefOutOfBounds,
+	type InsertShiftedWorkbookFormulaRefOutOfBounds,
 	type PartialFormulaMoveReference,
 	retargetExplicitFormulaSheetRefsInRange,
 	rewriteDefinedNameFormulasForMove,
@@ -170,6 +174,24 @@ function applyAxisShift(
 	}
 	const formulaBindingBlocker = findWorkbookFormulaBinding(workbook)
 	if (formulaBindingBlocker) return err(formulaBindingStructuralEditError(formulaBindingBlocker))
+	const insertFormulaOverflowBlocker =
+		delta > 0
+			? findInsertShiftedWorkbookFormulaRefOutOfBounds(workbook, sheetName, axis, at, count)
+			: null
+	if (insertFormulaOverflowBlocker) {
+		return err(
+			insertShiftedWorkbookFormulaOutOfBoundsError(axis, at, count, insertFormulaOverflowBlocker),
+		)
+	}
+	const insertDefinedNameOverflowBlocker =
+		delta > 0
+			? findInsertShiftedDefinedNameRefOutOfBounds(workbook, sheetName, axis, at, count)
+			: null
+	if (insertDefinedNameOverflowBlocker) {
+		return err(
+			insertShiftedDefinedNameOutOfBoundsError(axis, at, count, insertDefinedNameOverflowBlocker),
+		)
+	}
 	const insertChartSourceOverflowBlocker =
 		delta > 0
 			? findInsertShiftedChartSourceRefOutOfBounds(workbook, sheetName, axis, at, count)
@@ -818,6 +840,62 @@ function insertShiftedChartSourceOutOfBoundsError(
 			suggestedFix: `Move or remove chart source ranges that would shift past ${maxRef}, then retry the insert.`,
 			details: {
 				kind: 'structural-insert-shifts-chart-source-out-of-bounds',
+				axis,
+				at,
+				count,
+				owner: blocker.owner,
+				formula: blocker.formula,
+				reference: blocker.reference,
+				shiftedReference: blocker.shiftedReference,
+			},
+		},
+	)
+}
+
+function insertShiftedWorkbookFormulaOutOfBoundsError(
+	axis: 'row' | 'col',
+	at: number,
+	count: number,
+	blocker: InsertShiftedWorkbookFormulaRefOutOfBounds,
+) {
+	const label = axis === 'row' ? 'row' : 'column'
+	const maxRef = axis === 'row' ? '1048576' : 'XFD'
+	return ascendError(
+		'INVALID_RANGE',
+		`Cannot insert ${label}s because formula ${blocker.owner} reference ${blocker.reference} would shift outside Excel worksheet bounds`,
+		{
+			refs: [blocker.owner],
+			suggestedFix: `Edit or remove formula references that would shift past ${maxRef}, then retry the insert.`,
+			details: {
+				kind: 'structural-insert-shifts-formula-out-of-bounds',
+				axis,
+				at,
+				count,
+				owner: blocker.owner,
+				formula: blocker.formula,
+				reference: blocker.reference,
+				shiftedReference: blocker.shiftedReference,
+			},
+		},
+	)
+}
+
+function insertShiftedDefinedNameOutOfBoundsError(
+	axis: 'row' | 'col',
+	at: number,
+	count: number,
+	blocker: InsertShiftedDefinedNameRefOutOfBounds,
+) {
+	const label = axis === 'row' ? 'row' : 'column'
+	const maxRef = axis === 'row' ? '1048576' : 'XFD'
+	return ascendError(
+		'INVALID_RANGE',
+		`Cannot insert ${label}s because defined name ${blocker.owner} reference ${blocker.reference} would shift outside Excel worksheet bounds`,
+		{
+			refs: [blocker.owner],
+			suggestedFix: `Edit or remove defined names that would shift past ${maxRef}, then retry the insert.`,
+			details: {
+				kind: 'structural-insert-shifts-defined-name-out-of-bounds',
 				axis,
 				at,
 				count,

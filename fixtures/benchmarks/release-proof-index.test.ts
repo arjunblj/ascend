@@ -1721,8 +1721,10 @@ describe('release proof evidence index', () => {
 				}),
 				expect.objectContaining({
 					evidenceId: 'relationship-root-attribute-preservation-proof',
-					acceptedScope: expect.stringMatching(/cb99d093.*e6c314fb.*9fabfc8e/),
-					command: expect.stringContaining('preserves relationship root attributes'),
+					acceptedScope: expect.stringMatching(/cb99d093.*e6c314fb.*9fabfc8e.*691b3868/),
+					command: expect.stringContaining(
+						'preserves chart relationship root attributes when regenerating chart capsules',
+					),
 					boundary: expect.stringContaining('relationship-part root-attribute preservation'),
 				}),
 				expect.objectContaining({

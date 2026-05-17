@@ -1176,9 +1176,9 @@ describe('release proof evidence index', () => {
 			}),
 			expect.objectContaining({
 				evidenceId: 'sparkline-structural-edit-proof',
-				acceptedScope: expect.stringMatching(/8357e5de.*16eb2c43/),
-				command: expect.stringContaining('moveRange rewrites sparkline ranges'),
-				boundary: expect.stringContaining('Sparkline structural edit evidence only'),
+				acceptedScope: expect.stringMatching(/8357e5de.*f91587b9/),
+				command: expect.stringContaining('moveRange rewrites advanced filters'),
+				boundary: expect.stringContaining('advanced-filter structural edit evidence only'),
 			}),
 			expect.objectContaining({
 				evidenceId: 'visual-anchor-structural-edit-proof',
@@ -1940,6 +1940,7 @@ describe('release proof evidence index', () => {
 						expect.stringContaining('commits structural row edits with shifted chart source refs'),
 						expect.stringContaining('commits moved chart source refs after save and reopen'),
 						expect.stringContaining('moveRange rewrites sparkline ranges'),
+						expect.stringContaining('moveRange rewrites advanced filters'),
 						expect.stringContaining(
 							'commits public workbook strong-hash protection with honest metadata reporting',
 						),
@@ -1950,6 +1951,7 @@ describe('release proof evidence index', () => {
 						expect.stringContaining('linked-workbook fetch/validation'),
 						expect.stringContaining('full chart authoring'),
 						expect.stringContaining('full sparkline rendering'),
+						expect.stringContaining('advanced-filter criteria authoring'),
 						expect.stringContaining('external workbook chart-reference rewriting'),
 					]),
 					ownerLoop: 'release',

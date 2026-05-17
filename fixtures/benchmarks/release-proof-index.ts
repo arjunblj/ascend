@@ -3661,10 +3661,10 @@ function packageActionQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceIte
 			evidenceId: 'content-types-root-attribute-preservation-proof',
 			kind: 'test',
 			command:
-				'bun test packages/io-xlsx/src/writer/writer.test.ts -t "preserves content type root attributes when package content types are regenerated" --timeout 30000',
-			path: 'packages/io-xlsx/src/writer/content-types.ts; packages/io-xlsx/src/writer/writer.test.ts',
+				'bun test packages/io-xlsx/src/reader/content-types.test.ts packages/io-xlsx/src/writer/writer.test.ts -t "keeps extension attributes on content type entries|preserves content type root attributes when package content types are regenerated" --timeout 30000',
+			path: 'packages/core/src/workbook.ts; packages/io-xlsx/src/reader/content-types.ts; packages/io-xlsx/src/reader/content-types.test.ts; packages/io-xlsx/src/writer/content-types.ts; packages/io-xlsx/src/writer/writer.test.ts',
 			acceptedScope:
-				'Commit 7b600b1b proves regenerated [Content_Types].xml preserves source Types root attributes such as mc:Ignorable and custom namespace-qualified package flavor markers while retaining reopenable workbook output.',
+				'Commit 7b600b1b proves regenerated [Content_Types].xml preserves source Types root attributes such as mc:Ignorable and custom namespace-qualified package flavor markers while retaining reopenable workbook output. Commit 86d0cefc extends that preservation to Default and Override entry extension attributes while retaining reopenable workbook output.',
 			boundary:
 				'Generated package content-type root-attribute preservation evidence only; it does not prove public-workbook generality, arbitrary OPC package recovery, content-type semantic interpretation, markup-compatibility behavior, or Excel UI equivalence.',
 		},
@@ -3672,10 +3672,10 @@ function packageActionQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceIte
 			evidenceId: 'relationship-root-attribute-preservation-proof',
 			kind: 'test',
 			command:
-				'bun test packages/io-xlsx/src/writer/writer.test.ts -t "preserves relationship root attributes when relationship parts are regenerated|preserves strict table queryTable relationship dialect when dirty writes regenerate table rels|preserves external link relationship root attributes when rewriting targets|preserves chart relationship root attributes when regenerating chart capsules" --timeout 30000',
-			path: 'packages/io-xlsx/src/writer/relationships.ts; packages/io-xlsx/src/writer/index.ts; packages/io-xlsx/src/writer/writer.test.ts',
+				'bun test packages/io-xlsx/src/reader/relationships.test.ts packages/io-xlsx/src/writer/writer.test.ts -t "keeps extension attributes on relationship entries|preserves relationship root attributes when relationship parts are regenerated|preserves strict table queryTable relationship dialect when dirty writes regenerate table rels|preserves external link relationship root attributes when rewriting targets|preserves chart relationship root attributes when regenerating chart capsules" --timeout 30000',
+			path: 'packages/io-xlsx/src/preserve.ts; packages/io-xlsx/src/reader/relationships.ts; packages/io-xlsx/src/reader/relationships.test.ts; packages/io-xlsx/src/writer/relationships.ts; packages/io-xlsx/src/writer/index.ts; packages/io-xlsx/src/writer/writer.test.ts',
 			acceptedScope:
-				'Commit cb99d093 proves regenerated root/workbook relationship parts preserve source Relationships root attributes such as mc:Ignorable and namespace-qualified origin markers. Commit e6c314fb extends that preservation to regenerated table relationship parts while keeping strict queryTable relationship dialects reopenable. Commit 9fabfc8e extends the same root-attribute preservation to external-link relationship parts while rewriting external link targets. Commit 691b3868 extends the same preservation to regenerated capsule relationship parts, including chart capsules with custom relationship-root namespaces and attributes.',
+				'Commit cb99d093 proves regenerated root/workbook relationship parts preserve source Relationships root attributes such as mc:Ignorable and namespace-qualified origin markers. Commit e6c314fb extends that preservation to regenerated table relationship parts while keeping strict queryTable relationship dialects reopenable. Commit 9fabfc8e extends the same root-attribute preservation to external-link relationship parts while rewriting external link targets. Commit 691b3868 extends the same preservation to regenerated capsule relationship parts, including chart capsules with custom relationship-root namespaces and attributes. Commit 3db3af5e extends relationship preservation to Relationship entry extension attributes.',
 			boundary:
 				'Generated relationship-part root-attribute preservation evidence only; it does not prove public-workbook generality, arbitrary OPC relationship recovery, relationship target safety, markup-compatibility behavior, relationship semantic interpretation, or Excel UI equivalence.',
 		},

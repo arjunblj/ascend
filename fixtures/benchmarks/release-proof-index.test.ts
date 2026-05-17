@@ -1721,16 +1721,14 @@ describe('release proof evidence index', () => {
 				}),
 				expect.objectContaining({
 					evidenceId: 'content-types-root-attribute-preservation-proof',
-					acceptedScope: expect.stringContaining('7b600b1b'),
-					command: expect.stringContaining('preserves content type root attributes'),
+					acceptedScope: expect.stringMatching(/7b600b1b.*86d0cefc/),
+					command: expect.stringContaining('keeps extension attributes on content type entries'),
 					boundary: expect.stringContaining('content-type root-attribute preservation'),
 				}),
 				expect.objectContaining({
 					evidenceId: 'relationship-root-attribute-preservation-proof',
-					acceptedScope: expect.stringMatching(/cb99d093.*e6c314fb.*9fabfc8e.*691b3868/),
-					command: expect.stringContaining(
-						'preserves chart relationship root attributes when regenerating chart capsules',
-					),
+					acceptedScope: expect.stringMatching(/cb99d093.*e6c314fb.*9fabfc8e.*691b3868.*3db3af5e/),
+					command: expect.stringContaining('keeps extension attributes on relationship entries'),
 					boundary: expect.stringContaining('relationship-part root-attribute preservation'),
 				}),
 				expect.objectContaining({

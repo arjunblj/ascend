@@ -1678,7 +1678,7 @@ describe('release proof evidence index', () => {
 				}),
 				expect.objectContaining({
 					evidenceId: 'opaque-relationship-classification-proof',
-					acceptedScope: expect.stringMatching(/1410d809.*690a1642/),
+					acceptedScope: expect.stringMatching(/1410d809.*c51f5f70/),
 					command: expect.stringContaining(
 						'normalizes content types, relationship identity, owners, and feature families',
 					),

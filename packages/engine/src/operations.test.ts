@@ -6208,6 +6208,98 @@ describe('applyOperation', () => {
 		}
 	})
 
+	test('row and column inserts reject filter and table ranges before shifting them out of grid', () => {
+		const cases: readonly {
+			readonly op: Operation
+			readonly setup: (sheet: Sheet) => void
+			readonly expectedRef: string
+			readonly expectedLabel: string
+		}[] = [
+			{
+				op: { op: 'insertRows', sheet: 'Sheet1', at: 0, count: 1 },
+				setup: (sheet) => {
+					sheet.autoFilter = { ref: 'A1048576:B1048576', columns: [] }
+				},
+				expectedRef: 'Sheet1!A1048576:B1048576',
+				expectedLabel: 'sheet autoFilter',
+			},
+			{
+				op: { op: 'insertCols', sheet: 'Sheet1', at: 0, count: 1 },
+				setup: (sheet) => {
+					sheet.sortState = {
+						ref: 'XFD1:XFD2',
+						conditions: [{ ref: 'XFD1:XFD2', descending: true }],
+					}
+				},
+				expectedRef: 'Sheet1!XFD1:XFD2',
+				expectedLabel: 'sheet sortState',
+			},
+			{
+				op: { op: 'insertCols', sheet: 'Sheet1', at: 0, count: 1 },
+				setup: (sheet) => {
+					sheet.advancedFilters.push({
+						viewName: 'SavedView',
+						ref: 'XFD1:XFD2',
+						autoFilter: { ref: 'XFD1:XFD2', columns: [] },
+						filterColumnCount: 0,
+						sortConditionCount: 0,
+					})
+				},
+				expectedRef: 'Sheet1!XFD1:XFD2',
+				expectedLabel: 'advanced filter 1 autoFilter',
+			},
+			{
+				op: { op: 'insertRows', sheet: 'Sheet1', at: 1_048_575, count: 1 },
+				setup: (sheet) => {
+					sheet.tables.push({
+						id: createTableId(),
+						name: 'Sales',
+						sheetId: sheet.id,
+						ref: { start: { row: 1_048_575, col: 0 }, end: { row: 1_048_575, col: 1 } },
+						columns: [{ name: 'Region' }, { name: 'Amount' }],
+						hasHeaders: true,
+						hasTotals: false,
+						autoFilter: { ref: 'A1048576:B1048576', columns: [] },
+					})
+				},
+				expectedRef: 'Sheet1!A1048576:B1048576',
+				expectedLabel: 'table Sales',
+			},
+		]
+
+		for (const { op, setup: setupSheet, expectedRef, expectedLabel } of cases) {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setupSheet(sheet)
+			const beforeTopology = JSON.stringify({
+				autoFilter: sheet.autoFilter,
+				sortState: sheet.sortState,
+				advancedFilters: sheet.advancedFilters,
+				tables: sheet.tables,
+			})
+
+			const result = applyOperation(wb, op)
+
+			expectErr(result)
+			expect(result.error.code, op.op).toBe('INVALID_RANGE')
+			expect(result.error.refs, op.op).toEqual([expectedRef])
+			expect(result.error.details, op.op).toMatchObject({
+				kind: 'structural-insert-shifts-topology-range-out-of-bounds',
+				label: expectedLabel,
+				ref: expectedRef,
+			})
+			expect(
+				JSON.stringify({
+					autoFilter: sheet.autoFilter,
+					sortState: sheet.sortState,
+					advancedFilters: sheet.advancedFilters,
+					tables: sheet.tables,
+				}),
+				op.op,
+			).toBe(beforeTopology)
+		}
+	})
+
 	test('visibility and outline layout operations reject invalid booleans without mutation', () => {
 		const cases: readonly Operation[] = [
 			{ op: 'hideSheet', sheet: 'Sheet1', hidden: 'false' as never },

@@ -144,6 +144,19 @@ function applyAxisShift(
 			insertShiftedSqrefOutOfBoundsError(sheet, axis, at, count, insertSqrefOverflowBlocker),
 		)
 	}
+	const insertTopologyRangeOverflowBlocker =
+		delta > 0 ? findInsertShiftedTopologyRangeOutOfBounds(sheet, axis, at, count) : null
+	if (insertTopologyRangeOverflowBlocker) {
+		return err(
+			insertShiftedTopologyRangeOutOfBoundsError(
+				sheet,
+				axis,
+				at,
+				count,
+				insertTopologyRangeOverflowBlocker,
+			),
+		)
+	}
 	const insertSparklineOverflowBlocker =
 		delta > 0 ? findInsertShiftedSparklineRefOutOfBounds(sheet, axis, at, count) : null
 	if (insertSparklineOverflowBlocker) {
@@ -812,6 +825,108 @@ function insertShiftedChartSourceOutOfBoundsError(
 				formula: blocker.formula,
 				reference: blocker.reference,
 				shiftedReference: blocker.shiftedReference,
+			},
+		},
+	)
+}
+
+interface InsertOverflowTopologyRange {
+	readonly label: string
+	readonly ref: string
+	readonly shiftedRef: string
+}
+
+function findInsertShiftedTopologyRangeOutOfBounds(
+	sheet: Sheet,
+	axis: 'row' | 'col',
+	at: number,
+	count: number,
+): InsertOverflowTopologyRange | null {
+	const checkRange = (label: string, range: RangeRef): InsertOverflowTopologyRange | null => {
+		if (!insertAffectsRange(range, axis, at)) return null
+		const shifted = shiftInsertedRange(range, axis, at, count)
+		if (rangeWithinGrid(shifted)) return null
+		return {
+			label,
+			ref: rangeToA1(range),
+			shiftedRef: rangeToA1(shifted),
+		}
+	}
+	const checkSqref = (
+		label: string,
+		sqref: string | undefined,
+	): InsertOverflowTopologyRange | null => {
+		if (!sqref) return null
+		for (const range of parseSqref(sqref)) {
+			const issue = checkRange(label, range)
+			if (issue) return issue
+		}
+		return null
+	}
+	const checkAutoFilter = (
+		label: string,
+		autoFilter: AutoFilter | null | undefined,
+	): InsertOverflowTopologyRange | null => {
+		const refIssue = checkSqref(label, autoFilter?.ref)
+		if (refIssue) return refIssue
+		return checkSortState(`${label} sortState`, autoFilter?.sortState)
+	}
+	const checkSortState = (
+		label: string,
+		sortState: SortState | null | undefined,
+	): InsertOverflowTopologyRange | null => {
+		const refIssue = checkSqref(label, sortState?.ref)
+		if (refIssue) return refIssue
+		for (const [index, condition] of sortState?.conditions.entries() ?? []) {
+			const issue = checkSqref(`${label} condition ${index + 1}`, condition.ref)
+			if (issue) return issue
+		}
+		return null
+	}
+
+	const sheetAutoFilterIssue = checkAutoFilter('sheet autoFilter', sheet.autoFilter)
+	if (sheetAutoFilterIssue) return sheetAutoFilterIssue
+	const sheetSortStateIssue = checkSortState('sheet sortState', sheet.sortState)
+	if (sheetSortStateIssue) return sheetSortStateIssue
+	for (const [index, filter] of sheet.advancedFilters.entries()) {
+		const issue = checkAutoFilter(`advanced filter ${index + 1} autoFilter`, filter.autoFilter)
+		if (issue) return issue
+	}
+	for (const table of sheet.tables) {
+		const tableIssue = checkRange(`table ${table.name}`, table.ref)
+		if (tableIssue) return tableIssue
+		const autoFilterIssue = checkAutoFilter(`table ${table.name} autoFilter`, table.autoFilter)
+		if (autoFilterIssue) return autoFilterIssue
+		const sortStateIssue = checkSortState(`table ${table.name} sortState`, table.sortState)
+		if (sortStateIssue) return sortStateIssue
+	}
+	return null
+}
+
+function insertShiftedTopologyRangeOutOfBoundsError(
+	sheet: Sheet,
+	axis: 'row' | 'col',
+	at: number,
+	count: number,
+	blocker: InsertOverflowTopologyRange,
+) {
+	const label = axis === 'row' ? 'row' : 'column'
+	const maxRef = axis === 'row' ? '1048576' : 'XFD'
+	const qualifiedRef = `${formatSheetName(sheet.name)}!${blocker.ref}`
+	return ascendError(
+		'INVALID_RANGE',
+		`Cannot insert ${label}s because ${blocker.label} range ${qualifiedRef} would shift outside Excel worksheet bounds`,
+		{
+			refs: [qualifiedRef],
+			suggestedFix: `Move or remove filter, sort, or table ranges that would shift past ${maxRef}, then retry the insert.`,
+			details: {
+				kind: 'structural-insert-shifts-topology-range-out-of-bounds',
+				axis,
+				at,
+				count,
+				label: blocker.label,
+				ref: qualifiedRef,
+				shiftedRef: blocker.shiftedRef,
 			},
 		},
 	)

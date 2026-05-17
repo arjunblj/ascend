@@ -83,6 +83,8 @@ describe('XLSX package graph', () => {
   <Relationship Id="rIdDrawing" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/>
   <Relationship Id="rIdQueryTableOpaque" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/queryTable" Target="opaque-query.bin"/>
   <Relationship Id="rIdHyperlink" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.invalid/report" TargetMode="External"/>
+  <Relationship Id="rIdCommentsOpaque" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments" Target="opaque-comments.bin"/>
+  <Relationship Id="rIdThreadedOpaque" Type="http://schemas.microsoft.com/office/2017/10/relationships/threadedComment" Target="opaque-threaded-comments.bin"/>
   <Relationship Id="rIdControlProps" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/ctrlProp" Target="https://example.invalid/control.xml" TargetMode="External"/>
   <Relationship Id="rIdControlPropsOpaque" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/ctrlProp" Target="opaque-control.bin"/>
   <Relationship Id="rIdActiveX" Type="http://schemas.microsoft.com/office/2006/relationships/activeXControl" Target="https://example.invalid/control.ocx" TargetMode="External"/>
@@ -136,6 +138,8 @@ describe('XLSX package graph', () => {
 			'xl/opaque-timeline.bin': 'timeline-bytes',
 			'xl/opaque-timeline-cache.bin': 'timeline-cache-bytes',
 			'xl/worksheets/opaque-query.bin': 'query-table-bytes',
+			'xl/worksheets/opaque-comments.bin': 'comments-bytes',
+			'xl/worksheets/opaque-threaded-comments.bin': 'threaded-comments-bytes',
 			'xl/worksheets/opaque-control.bin': 'control-bytes',
 			'xl/drawings/opaque-ole.bin': 'ole-bytes',
 			'xl/media/image 1.png': 'not-really-a-png',
@@ -407,6 +411,24 @@ describe('XLSX package graph', () => {
 			rawTarget: 'https://example.invalid/report',
 			targetMode: 'External',
 			featureFamily: 'preservedHyperlink',
+		})
+		expect(graph.relationships).toContainEqual({
+			sourcePartPath: 'xl/worksheets/sheet1.xml',
+			relationshipPartPath: 'xl/worksheets/_rels/sheet1.xml.rels',
+			id: 'rIdCommentsOpaque',
+			type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments',
+			rawTarget: 'opaque-comments.bin',
+			resolvedTarget: 'xl/worksheets/opaque-comments.bin',
+			featureFamily: 'preservedComments',
+		})
+		expect(graph.relationships).toContainEqual({
+			sourcePartPath: 'xl/worksheets/sheet1.xml',
+			relationshipPartPath: 'xl/worksheets/_rels/sheet1.xml.rels',
+			id: 'rIdThreadedOpaque',
+			type: 'http://schemas.microsoft.com/office/2017/10/relationships/threadedComment',
+			rawTarget: 'opaque-threaded-comments.bin',
+			resolvedTarget: 'xl/worksheets/opaque-threaded-comments.bin',
+			featureFamily: 'preservedThreadedComments',
 		})
 		expect(graph.relationships).toContainEqual({
 			sourcePartPath: 'xl/worksheets/sheet1.xml',
@@ -718,6 +740,22 @@ describe('XLSX package graph', () => {
 			ownerScope: 'timeline',
 			sourceRelationshipId: 'rIdTimelineCacheOpaque',
 			featureFamily: 'preservedTimeline',
+			preservationPolicy: 'preserve-exact',
+		})
+		expect(
+			graph.parts.find((part) => part.path === 'xl/worksheets/opaque-comments.bin'),
+		).toMatchObject({
+			ownerScope: 'worksheet',
+			sourceRelationshipId: 'rIdCommentsOpaque',
+			featureFamily: 'preservedComments',
+			preservationPolicy: 'preserve-exact',
+		})
+		expect(
+			graph.parts.find((part) => part.path === 'xl/worksheets/opaque-threaded-comments.bin'),
+		).toMatchObject({
+			ownerScope: 'worksheet',
+			sourceRelationshipId: 'rIdThreadedOpaque',
+			featureFamily: 'preservedThreadedComments',
 			preservationPolicy: 'preserve-exact',
 		})
 	})

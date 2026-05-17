@@ -318,6 +318,10 @@ export function classifyPackageFeatureFamily(
 		return 'preservedQueryTable'
 	}
 	if (lowerRelType.endsWith('/relationships/hyperlink')) return 'preservedHyperlink'
+	if (lowerRelType.endsWith('/relationships/comments')) return 'preservedComments'
+	if (lowerRelType.endsWith('/relationships/threadedcomment')) {
+		return 'preservedThreadedComments'
+	}
 	if (/\/comments\d+\.xml$/i.test(path)) return 'preservedComments'
 	if (path.includes('/threadedComments/') || path.includes('/persons/')) {
 		return 'preservedThreadedComments'

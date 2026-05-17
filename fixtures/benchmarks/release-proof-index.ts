@@ -3620,9 +3620,9 @@ function packageActionQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceIte
 				'bun test packages/io-xlsx/src/package-graph.test.ts -t "normalizes content types, relationship identity, owners, and feature families" --timeout 30000',
 			path: 'packages/io-xlsx/src/package-graph.ts; packages/io-xlsx/src/package-graph.test.ts; packages/io-xlsx/src/reader/relationships.ts',
 			acceptedScope:
-				'Commits 1410d809, 8e351092, 75698a98, 346da8b1, and 844336cb classify package relationships and parts for active content/control/embedding, Power Query/Data Model, chart style/color, custom XML/VBA/signature, calc-chain, and sheet metadata surfaces with owner scopes and preservation policies.',
+				'Commits 1410d809, 8e351092, 75698a98, 346da8b1, 844336cb, 2700c72a, 33169e31, 9f22a961, 6370a2f2, 8e5b8422, 5a027510, c942f981, 9b66af81, and 4c463d5e classify package relationships and parts for active content/control/embedding/custom UI, Power Query/Data Model/model-table, chart style/color, document properties/thumbnails, custom XML/custom XML props/XML maps, diagram data, revision metadata, VBA/signature, calc-chain, and sheet metadata surfaces with owner scopes and preservation policies.',
 			boundary:
-				'Package relationship classification evidence only; it does not execute active content, refresh Power Query, understand Data Model semantics, edit chart styles/colors, prove calc metadata freshness, or guarantee arbitrary unknown-part recovery.',
+				'Package relationship classification evidence only; it does not execute active content, refresh Power Query, understand Data Model semantics, edit custom UI or custom XML, edit chart styles/colors, prove document-property or calc metadata freshness, verify signatures, or guarantee arbitrary unknown-part recovery.',
 		},
 		{
 			evidenceId: 'public-formula-cache-post-write-proof',

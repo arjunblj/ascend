@@ -2038,8 +2038,9 @@ describe('release proof evidence index', () => {
 						'070d3b15',
 						'ea287a71',
 						'77e9d6a8',
+						'662cb462',
 					]),
-					allowedWording: expect.stringContaining('BETADIST'),
+					allowedWording: expect.stringContaining('WORKDAY.INTL'),
 					evidenceProvesIt: expect.arrayContaining([
 						expect.stringContaining('NOT spills boolean masks'),
 						expect.stringContaining('common IS predicates spill boolean masks'),
@@ -2057,6 +2058,7 @@ describe('release proof evidence index', () => {
 							'common date and time scalar functions spill over range operands',
 						),
 						expect.stringContaining('date interval scalar functions spill over range operands'),
+						expect.stringContaining('workday scalar functions spill'),
 						expect.stringContaining(
 							'statistical distribution scalar functions spill over range operands',
 						),

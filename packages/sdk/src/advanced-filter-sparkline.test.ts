@@ -75,7 +75,9 @@ describe('advanced filter and sparkline SDK inventory', () => {
 
 	test('moveRange rewrites sparkline ranges through SDK save and reopen', async () => {
 		const wb = await AscendWorkbook.open(advancedFilterSparklineWorkbook())
-		const applied = wb.apply([{ op: 'moveRange', sheet: 'Data', source: 'B2:D4', target: 'G2' }])
+		const applied = wb.apply([
+			{ op: 'moveRange', sheet: 'Data', source: 'B2:D4', target: 'G2', mode: 'values' },
+		])
 		expect(applied.errors).toEqual([])
 
 		const reopened = await AscendWorkbook.open(wb.toBytes())
@@ -86,6 +88,29 @@ describe('advanced filter and sparkline SDK inventory', () => {
 			count: 1,
 			markers: true,
 			sparklines: [{ range: 'Data!G2:G4', locationRange: 'I2:I4' }],
+		})
+	})
+
+	test('moveRange rewrites advanced filters through SDK save and reopen', async () => {
+		const wb = await AscendWorkbook.open(advancedFilterSparklineWorkbook())
+		const applied = wb.apply([{ op: 'moveRange', sheet: 'Data', source: 'A1:D20', target: 'F1' }])
+		expect(applied.errors).toEqual([])
+
+		const reopened = await AscendWorkbook.open(wb.toBytes())
+		expect(reopened.inspectSheet('Data')?.advancedFilters?.[0]).toMatchObject({
+			viewName: 'WestOnly',
+			guid: '{11111111-1111-1111-1111-111111111111}',
+			ref: 'F1:H20',
+			filterColumnCount: 1,
+			sortConditionCount: 1,
+			autoFilter: {
+				ref: 'F1:H20',
+				columns: [{ colId: 0, kind: 'filters', values: ['West'] }],
+				sortState: {
+					ref: 'F2:H20',
+					conditions: [{ ref: 'H2:H20', descending: true }],
+				},
+			},
 		})
 	})
 

@@ -4498,6 +4498,51 @@ describe('applyOperation', () => {
 		})
 	})
 
+	test('moveRange relocates same-sheet advanced filters contained in the source range', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, cell(numberValue(1)))
+		sheet.advancedFilters.push({
+			viewName: 'WestOnly',
+			guid: '{11111111-1111-1111-1111-111111111111}',
+			ref: 'A1:C4',
+			autoFilter: {
+				ref: 'A1:C4',
+				columns: [{ colId: 1, kind: 'filters', values: ['West'] }],
+				sortState: {
+					ref: 'A2:C4',
+					conditions: [{ ref: 'C2:C4', descending: true }],
+				},
+			},
+			filterColumnCount: 1,
+			sortConditionCount: 1,
+		})
+
+		const result = applyOperation(wb, {
+			op: 'moveRange',
+			sheet: 'Sheet1',
+			source: 'A1:C4',
+			target: 'E2',
+		})
+		expectOk(result)
+
+		expect(sheet.advancedFilters[0]).toEqual({
+			viewName: 'WestOnly',
+			guid: '{11111111-1111-1111-1111-111111111111}',
+			ref: 'E2:G5',
+			autoFilter: {
+				ref: 'E2:G5',
+				columns: [{ colId: 1, kind: 'filters', values: ['West'] }],
+				sortState: {
+					ref: 'E3:G5',
+					conditions: [{ ref: 'G3:G5', descending: true }],
+				},
+			},
+			filterColumnCount: 1,
+			sortConditionCount: 1,
+		})
+	})
+
 	test('range transfers fail closed for unsupported visual anchor copies and partial moves', () => {
 		const copyWorkbook = createWorkbook()
 		const copySheet = copyWorkbook.addSheet('Sheet1')
@@ -4571,6 +4616,90 @@ describe('applyOperation', () => {
 			to: { row: 3, col: 3 },
 		})
 		expect(moveSheet.cells.get(5, 5)).toBeUndefined()
+	})
+
+	test('range transfers fail closed for unsupported advanced filter copies and partial moves', () => {
+		const copyWorkbook = createWorkbook()
+		const copySheet = copyWorkbook.addSheet('Sheet1')
+		copySheet.cells.set(0, 0, cell(numberValue(1)))
+		copySheet.advancedFilters.push({
+			viewName: 'SavedView',
+			ref: 'A1:C4',
+			autoFilter: { ref: 'A1:C4', columns: [] },
+			filterColumnCount: 0,
+			sortConditionCount: 0,
+		})
+
+		const copyResult = applyOperation(copyWorkbook, {
+			op: 'copyRange',
+			sheet: 'Sheet1',
+			source: 'A1:C4',
+			target: 'E1',
+		})
+		expectErr(copyResult)
+		expect(copyResult.error.details).toMatchObject({
+			kind: 'unsupported-advanced-filter-range-transfer',
+			action: 'copy',
+			filterRef: 'A1:C4',
+			source: 'A1:C4',
+		})
+		expect(copySheet.advancedFilters[0]?.ref).toBe('A1:C4')
+		expect(copySheet.cells.get(0, 4)).toBeUndefined()
+
+		const moveWorkbook = createWorkbook()
+		const moveSheet = moveWorkbook.addSheet('Sheet1')
+		moveSheet.cells.set(0, 0, cell(numberValue(1)))
+		moveSheet.advancedFilters.push({
+			viewName: 'PartialView',
+			ref: 'A1:C4',
+			autoFilter: { ref: 'A1:C4', columns: [] },
+			filterColumnCount: 0,
+			sortConditionCount: 0,
+		})
+
+		const partialMove = applyOperation(moveWorkbook, {
+			op: 'moveRange',
+			sheet: 'Sheet1',
+			source: 'A1:B4',
+			target: 'E1',
+		})
+		expectErr(partialMove)
+		expect(partialMove.error.details).toMatchObject({
+			kind: 'partial-advanced-filter-range-transfer',
+			filterRef: 'A1:C4',
+			source: 'A1:B4',
+		})
+		expect(moveSheet.advancedFilters[0]?.ref).toBe('A1:C4')
+		expect(moveSheet.cells.get(0, 4)).toBeUndefined()
+
+		const crossSheetWorkbook = createWorkbook()
+		const sourceSheet = crossSheetWorkbook.addSheet('Sheet1')
+		const targetSheet = crossSheetWorkbook.addSheet('Sheet2')
+		sourceSheet.cells.set(0, 0, cell(numberValue(1)))
+		sourceSheet.advancedFilters.push({
+			viewName: 'CrossSheetView',
+			ref: 'A1:C4',
+			autoFilter: { ref: 'A1:C4', columns: [] },
+			filterColumnCount: 0,
+			sortConditionCount: 0,
+		})
+
+		const crossSheetMove = applyOperation(crossSheetWorkbook, {
+			op: 'moveRange',
+			sheet: 'Sheet1',
+			source: 'A1:C4',
+			targetSheet: 'Sheet2',
+			target: 'A1',
+		})
+		expectErr(crossSheetMove)
+		expect(crossSheetMove.error.details).toMatchObject({
+			kind: 'unsupported-advanced-filter-range-transfer',
+			action: 'move to another sheet',
+			filterRef: 'A1:C4',
+			source: 'A1:C4',
+		})
+		expect(sourceSheet.advancedFilters[0]?.ref).toBe('A1:C4')
+		expect(targetSheet.cells.get(0, 0)).toBeUndefined()
 	})
 
 	test('copyRange rejects partial merged-cell sources and target overlaps', () => {

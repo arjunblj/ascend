@@ -2314,6 +2314,7 @@ describe('readXlsx', () => {
 <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
   xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
   <fileVersion appName="xl" lastEdited="7" lowestEdited="7" rupBuild="23420" productRelease="2021"/>
+  <fileSharing readOnlyRecommended="1" userName="Analyst" reservationPassword="ABCD" algorithmName="SHA-512" hashValue="HASH" saltValue="SALT" spinCount="100000" sharingMode="review"/>
   <workbookPr date1904="1" filterPrivacy="1" codeName="Model" checkCompatibility="1" autoCompressPictures="0"/>
   <bookViews>
     <workbookView activeTab="1" firstSheet="2" visibility="visible" tabRatio="600" minimized="1" showSheetTabs="0" windowWidth="16800" windowHeight="9000"/>
@@ -2342,6 +2343,16 @@ describe('readXlsx', () => {
 			lowestEdited: '7',
 			rupBuild: '23420',
 			extraAttributes: [{ name: 'productRelease', value: '2021' }],
+		})
+		expect(result.value.workbook.workbookFileSharing).toEqual({
+			readOnlyRecommended: true,
+			userName: 'Analyst',
+			reservationPassword: 'ABCD',
+			algorithmName: 'SHA-512',
+			hashValue: 'HASH',
+			saltValue: 'SALT',
+			spinCount: 100000,
+			extraAttributes: [{ name: 'sharingMode', value: 'review' }],
 		})
 		expect(result.value.workbook.workbookProperties).toEqual({
 			date1904: true,

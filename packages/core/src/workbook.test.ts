@@ -62,6 +62,12 @@ describe('Workbook.clone', () => {
 			rupBuild: '23420',
 			extraAttributes: [{ name: 'productRelease', value: '2021' }],
 		}
+		wb.workbookFileSharing = {
+			readOnlyRecommended: true,
+			userName: 'Analyst',
+			reservationPassword: 'ABCD',
+			extraAttributes: [{ name: 'sharingMode', value: 'review' }],
+		}
 		wb.workbookProperties = {
 			codeName: 'Model',
 			extraAttributes: [{ name: 'checkCompatibility', value: '1' }],
@@ -82,6 +88,7 @@ describe('Workbook.clone', () => {
 			;(clone.preservedStyles.xfByStyleId as Record<number, number>)[0] = 99
 		}
 		;(clone.workbookFileVersion?.extraAttributes?.[0] as { value: string }).value = '2024'
+		;(clone.workbookFileSharing?.extraAttributes?.[0] as { value: string }).value = 'draft'
 		;(clone.workbookProperties.extraAttributes?.[0] as { value: string }).value = '0'
 		;(clone.workbookProtection?.extraAttributes?.[0] as { value: string }).value = 'legacy'
 		;(clone.workbookViews[0]?.extraAttributes?.[0] as { value: string }).value = '9000'
@@ -90,6 +97,7 @@ describe('Workbook.clone', () => {
 		expect(wb.calcSettings.extraAttributes?.[0]?.value).toBe('0')
 		expect(wb.preservedStyles?.xfByStyleId[0]).toBe(1)
 		expect(wb.workbookFileVersion?.extraAttributes?.[0]?.value).toBe('2021')
+		expect(wb.workbookFileSharing?.extraAttributes?.[0]?.value).toBe('review')
 		expect(wb.workbookProperties.extraAttributes?.[0]?.value).toBe('1')
 		expect(wb.workbookProtection?.extraAttributes?.[0]?.value).toBe('strict')
 		expect(wb.workbookViews[0]?.extraAttributes?.[0]?.value).toBe('16800')

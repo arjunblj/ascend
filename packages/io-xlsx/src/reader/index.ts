@@ -243,6 +243,9 @@ export function readXlsxArchive(
 		workbook.workbookFileVersion = wbInfo.workbookFileVersion
 			? { ...wbInfo.workbookFileVersion }
 			: null
+		workbook.workbookFileSharing = wbInfo.workbookFileSharing
+			? { ...wbInfo.workbookFileSharing }
+			: null
 		workbook.workbookProperties = { ...wbInfo.workbookProperties }
 		workbook.workbookProtection = wbInfo.workbookProtection
 			? { ...wbInfo.workbookProtection }

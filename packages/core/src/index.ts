@@ -195,6 +195,8 @@ export type {
 	WorkbookDocumentProperties,
 	WorkbookDocumentPropertyAppValue,
 	WorkbookDocumentPropertyScalar,
+	WorkbookFileSharing,
+	WorkbookFileSharingAttribute,
 	WorkbookFileVersion,
 	WorkbookFileVersionAttribute,
 	WorkbookMacroSheetInfo,

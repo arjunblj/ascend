@@ -49,6 +49,11 @@ export function buildWorkbookXml(workbook: Workbook, options: WorkbookXmlOptions
 		if (attrs.length > 0) out.push(`<fileVersion ${attrs.join(' ')}/>`)
 	}
 
+	if (workbook.workbookFileSharing) {
+		const attrs = collectWorkbookFileSharingAttrs(workbook.workbookFileSharing)
+		if (attrs.length > 0) out.push(`<fileSharing ${attrs.join(' ')}/>`)
+	}
+
 	const workbookPrAttrs: string[] = []
 	if (workbook.calcSettings.dateSystem === '1904' || workbook.workbookProperties.date1904) {
 		workbookPrAttrs.push('date1904="1"')
@@ -427,6 +432,44 @@ function isCoreWorkbookFileVersionAttribute(name: string): boolean {
 		name === 'lowestEdited' ||
 		name === 'rupBuild' ||
 		name === 'codeName'
+	)
+}
+
+function collectWorkbookFileSharingAttrs(
+	fileSharing: NonNullable<Workbook['workbookFileSharing']>,
+): string[] {
+	const attrs: string[] = []
+	if (fileSharing.readOnlyRecommended !== undefined) {
+		attrs.push(`readOnlyRecommended="${fileSharing.readOnlyRecommended ? '1' : '0'}"`)
+	}
+	if (fileSharing.userName) attrs.push(`userName="${escapeXml(fileSharing.userName)}"`)
+	if (fileSharing.reservationPassword) {
+		attrs.push(`reservationPassword="${escapeXml(fileSharing.reservationPassword)}"`)
+	}
+	if (fileSharing.algorithmName) {
+		attrs.push(`algorithmName="${escapeXml(fileSharing.algorithmName)}"`)
+	}
+	if (fileSharing.hashValue) attrs.push(`hashValue="${escapeXml(fileSharing.hashValue)}"`)
+	if (fileSharing.saltValue) attrs.push(`saltValue="${escapeXml(fileSharing.saltValue)}"`)
+	if (fileSharing.spinCount !== undefined) attrs.push(`spinCount="${fileSharing.spinCount}"`)
+	for (const extra of fileSharing.extraAttributes ?? []) {
+		if (isCoreWorkbookFileSharingAttribute(extra.name) || !isXmlAttributeName(extra.name)) {
+			continue
+		}
+		attrs.push(`${extra.name}="${escapeXml(extra.value)}"`)
+	}
+	return attrs
+}
+
+function isCoreWorkbookFileSharingAttribute(name: string): boolean {
+	return (
+		name === 'readOnlyRecommended' ||
+		name === 'userName' ||
+		name === 'reservationPassword' ||
+		name === 'algorithmName' ||
+		name === 'hashValue' ||
+		name === 'saltValue' ||
+		name === 'spinCount'
 	)
 }
 

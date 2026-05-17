@@ -48,6 +48,22 @@ export interface WorkbookFileVersion {
 	readonly extraAttributes?: readonly WorkbookFileVersionAttribute[]
 }
 
+export interface WorkbookFileSharingAttribute {
+	readonly name: string
+	readonly value: string
+}
+
+export interface WorkbookFileSharing {
+	readonly readOnlyRecommended?: boolean
+	readonly userName?: string
+	readonly reservationPassword?: string
+	readonly algorithmName?: string
+	readonly hashValue?: string
+	readonly saltValue?: string
+	readonly spinCount?: number
+	readonly extraAttributes?: readonly WorkbookFileSharingAttribute[]
+}
+
 export interface WorkbookView {
 	readonly activeTab?: number
 	readonly firstSheet?: number
@@ -280,6 +296,7 @@ export class Workbook {
 	readonly externalReferences: string[] = []
 	readonly externalReferenceDetails: ExternalReferenceInfo[] = []
 	workbookFileVersion: WorkbookFileVersion | null = null
+	workbookFileSharing: WorkbookFileSharing | null = null
 	workbookProperties: WorkbookProperties = {}
 	documentProperties: WorkbookDocumentProperties = {}
 	workbookProtection: WorkbookProtection | null = null
@@ -364,6 +381,18 @@ export class Workbook {
 					...(this.workbookFileVersion.extraAttributes
 						? {
 								extraAttributes: this.workbookFileVersion.extraAttributes.map((attr) => ({
+									...attr,
+								})),
+							}
+						: {}),
+				}
+			: null
+		clone.workbookFileSharing = this.workbookFileSharing
+			? {
+					...this.workbookFileSharing,
+					...(this.workbookFileSharing.extraAttributes
+						? {
+								extraAttributes: this.workbookFileSharing.extraAttributes.map((attr) => ({
 									...attr,
 								})),
 							}

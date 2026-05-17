@@ -5161,6 +5161,16 @@ describe('writeXlsx', () => {
 			rupBuild: '23420',
 			extraAttributes: [{ name: 'productRelease', value: '2021' }],
 		}
+		wb.workbookFileSharing = {
+			readOnlyRecommended: true,
+			userName: 'Analyst',
+			reservationPassword: 'ABCD',
+			algorithmName: 'SHA-512',
+			hashValue: 'HASH',
+			saltValue: 'SALT',
+			spinCount: 100000,
+			extraAttributes: [{ name: 'sharingMode', value: 'review' }],
+		}
 		wb.workbookViews.push({
 			activeTab: 1,
 			firstSheet: 0,
@@ -5210,6 +5220,16 @@ describe('writeXlsx', () => {
 			rupBuild: '23420',
 			extraAttributes: [{ name: 'productRelease', value: '2021' }],
 		})
+		expect(result.workbook.workbookFileSharing).toEqual({
+			readOnlyRecommended: true,
+			userName: 'Analyst',
+			reservationPassword: 'ABCD',
+			algorithmName: 'SHA-512',
+			hashValue: 'HASH',
+			saltValue: 'SALT',
+			spinCount: 100000,
+			extraAttributes: [{ name: 'sharingMode', value: 'review' }],
+		})
 		expect(result.workbook.workbookProperties).toEqual({
 			codeName: 'Model',
 			filterPrivacy: true,
@@ -5240,6 +5260,7 @@ describe('writeXlsx', () => {
 		const fingerprint = fingerprintXlsx(bytes)
 		expect(fingerprint.workbook?.tagCounts).toMatchObject({
 			fileVersion: 1,
+			fileSharing: 1,
 			bookViews: 1,
 			workbookView: 1,
 			externalReferences: 1,
@@ -5250,6 +5271,10 @@ describe('writeXlsx', () => {
 		expect(workbookXml).toContain('appName="xl"')
 		expect(workbookXml).toContain('rupBuild="23420"')
 		expect(workbookXml).toContain('productRelease="2021"')
+		expect(workbookXml).toContain('readOnlyRecommended="1"')
+		expect(workbookXml).toContain('userName="Analyst"')
+		expect(workbookXml).toContain('reservationPassword="ABCD"')
+		expect(workbookXml).toContain('sharingMode="review"')
 		expect(workbookXml).toContain('checkCompatibility="1"')
 		expect(workbookXml).toContain('autoCompressPictures="0"')
 		expect(workbookXml).toContain('minimized="1"')

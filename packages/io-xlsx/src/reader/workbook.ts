@@ -1,6 +1,8 @@
 import type {
 	DefinedNameAttribute,
 	SheetState,
+	WorkbookFileSharing,
+	WorkbookFileSharingAttribute,
 	WorkbookFileVersion,
 	WorkbookFileVersionAttribute,
 	WorkbookProperties,
@@ -39,6 +41,7 @@ export interface WorkbookInfo {
 	readonly definedNames: DefinedNameEntry[]
 	readonly calcSettings: CalcSettings
 	readonly workbookFileVersion: WorkbookFileVersion | null
+	readonly workbookFileSharing: WorkbookFileSharing | null
 	readonly workbookProperties: WorkbookProperties
 	readonly workbookProtection: WorkbookProtection | null
 	readonly workbookViews: readonly WorkbookView[]
@@ -54,6 +57,7 @@ const DEFINED_NAME_RE = new RegExp(
 	'g',
 )
 const FILE_VERSION_RE = new RegExp(`<${NS_PREFIX}fileVersion\\b([^>]*)/?>`)
+const FILE_SHARING_RE = new RegExp(`<${NS_PREFIX}fileSharing\\b([^>]*)/?>`)
 const WORKBOOK_PR_RE = new RegExp(`<${NS_PREFIX}workbookPr\\b([^>]*)/?>`)
 const CALC_PR_RE = new RegExp(`<${NS_PREFIX}calcPr\\b([^>]*)/?>`)
 const WORKBOOK_PROTECTION_RE = new RegExp(`<${NS_PREFIX}workbookProtection\\b([^>]*)/?>`)
@@ -75,6 +79,7 @@ function scanWorkbookXml(xml: string): WorkbookInfo | null {
 		definedNames: scanDefinedNames(xml),
 		calcSettings: scanCalcSettings(xml),
 		workbookFileVersion: scanWorkbookFileVersion(xml),
+		workbookFileSharing: scanWorkbookFileSharing(xml),
 		workbookProperties: scanWorkbookProperties(xml),
 		workbookProtection: scanWorkbookProtection(xml),
 		workbookViews: scanWorkbookViews(xml),
@@ -94,6 +99,7 @@ function parseWorkbookXmlWithDom(xml: string): WorkbookInfo {
 	const definedNames = parseDefinedNames(wb)
 	const calcSettings = parseCalcSettings(wb)
 	const workbookFileVersion = parseWorkbookFileVersion(wb)
+	const workbookFileSharing = parseWorkbookFileSharing(wb)
 	const workbookProperties = parseWorkbookProperties(wb)
 	const workbookProtection = parseWorkbookProtection(wb)
 	const workbookViews = parseWorkbookViews(wb)
@@ -105,6 +111,7 @@ function parseWorkbookXmlWithDom(xml: string): WorkbookInfo {
 		definedNames,
 		calcSettings,
 		workbookFileVersion,
+		workbookFileSharing,
 		workbookProperties,
 		workbookProtection,
 		workbookViews,
@@ -119,6 +126,7 @@ function emptyWorkbookInfo(): WorkbookInfo {
 		definedNames: [],
 		calcSettings: DEFAULT_CALC_SETTINGS,
 		workbookFileVersion: null,
+		workbookFileSharing: null,
 		workbookProperties: {},
 		workbookProtection: null,
 		workbookViews: [],
@@ -310,6 +318,30 @@ function scanWorkbookFileVersion(xml: string): WorkbookFileVersion | null {
 	const extraAttributes = workbookFileVersionExtraAttributes(attrs)
 	if (extraAttributes.length > 0) version.extraAttributes = extraAttributes
 	return version as WorkbookFileVersion
+}
+
+function scanWorkbookFileSharing(xml: string): WorkbookFileSharing | null {
+	const attrs = scanSingleTagAttributes(xml, FILE_SHARING_RE)
+	if (!attrs) return null
+
+	const sharing: Record<string, unknown> = {}
+	const readOnlyRecommended = booleanAttr(attrs, 'readOnlyRecommended')
+	if (readOnlyRecommended !== undefined) sharing.readOnlyRecommended = readOnlyRecommended
+	const userName = attrs.get('userName')
+	if (userName) sharing.userName = userName
+	const reservationPassword = attrs.get('reservationPassword')
+	if (reservationPassword) sharing.reservationPassword = reservationPassword
+	const algorithmName = attrs.get('algorithmName')
+	if (algorithmName) sharing.algorithmName = algorithmName
+	const hashValue = attrs.get('hashValue')
+	if (hashValue) sharing.hashValue = hashValue
+	const saltValue = attrs.get('saltValue')
+	if (saltValue) sharing.saltValue = saltValue
+	const spinCount = numberAttr(attrs, 'spinCount')
+	if (spinCount !== undefined) sharing.spinCount = spinCount
+	const extraAttributes = workbookFileSharingExtraAttributes(attrs)
+	if (extraAttributes.length > 0) sharing.extraAttributes = extraAttributes
+	return sharing as WorkbookFileSharing
 }
 
 function scanWorkbookViews(xml: string): readonly WorkbookView[] {
@@ -657,6 +689,66 @@ function parseWorkbookFileVersion(wb: XmlNode): WorkbookFileVersion | null {
 	const extraAttributes = workbookFileVersionExtraAttributesFromNode(fileVersion)
 	if (extraAttributes.length > 0) version.extraAttributes = extraAttributes
 	return version as WorkbookFileVersion
+}
+
+function parseWorkbookFileSharing(wb: XmlNode): WorkbookFileSharing | null {
+	const fileSharing = wb.fileSharing as XmlNode | undefined
+	if (!fileSharing) return null
+
+	const sharing: Record<string, unknown> = {}
+	const readOnlyRecommended = boolAttr(fileSharing, 'readOnlyRecommended')
+	if (readOnlyRecommended !== undefined) sharing.readOnlyRecommended = readOnlyRecommended
+	const userName = attr(fileSharing, 'userName')
+	if (userName) sharing.userName = userName
+	const reservationPassword = attr(fileSharing, 'reservationPassword')
+	if (reservationPassword) sharing.reservationPassword = reservationPassword
+	const algorithmName = attr(fileSharing, 'algorithmName')
+	if (algorithmName) sharing.algorithmName = algorithmName
+	const hashValue = attr(fileSharing, 'hashValue')
+	if (hashValue) sharing.hashValue = hashValue
+	const saltValue = attr(fileSharing, 'saltValue')
+	if (saltValue) sharing.saltValue = saltValue
+	const spinCount = numAttr(fileSharing, 'spinCount')
+	if (spinCount !== undefined) sharing.spinCount = spinCount
+	const extraAttributes = workbookFileSharingExtraAttributesFromNode(fileSharing)
+	if (extraAttributes.length > 0) sharing.extraAttributes = extraAttributes
+	return sharing as WorkbookFileSharing
+}
+
+function workbookFileSharingExtraAttributes(
+	attrs: ReadonlyMap<string, string>,
+): WorkbookFileSharingAttribute[] {
+	const extraAttributes: WorkbookFileSharingAttribute[] = []
+	for (const [name, value] of attrs) {
+		if (isCoreWorkbookFileSharingAttribute(name)) continue
+		extraAttributes.push({ name, value })
+	}
+	return extraAttributes
+}
+
+function workbookFileSharingExtraAttributesFromNode(node: XmlNode): WorkbookFileSharingAttribute[] {
+	const extraAttributes: WorkbookFileSharingAttribute[] = []
+	for (const [key, value] of Object.entries(node)) {
+		if (!key.startsWith('@_')) continue
+		const name = key.slice(2)
+		if (isCoreWorkbookFileSharingAttribute(name) || value === undefined || value === null) {
+			continue
+		}
+		extraAttributes.push({ name, value: String(value) })
+	}
+	return extraAttributes
+}
+
+function isCoreWorkbookFileSharingAttribute(name: string): boolean {
+	return (
+		name === 'readOnlyRecommended' ||
+		name === 'userName' ||
+		name === 'reservationPassword' ||
+		name === 'algorithmName' ||
+		name === 'hashValue' ||
+		name === 'saltValue' ||
+		name === 'spinCount'
+	)
 }
 
 function workbookFileVersionExtraAttributes(

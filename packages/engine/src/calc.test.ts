@@ -1139,6 +1139,64 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(2, 5)?.value).toEqual(stringValue('small'))
 	})
 
+	test('common math scalar functions spill over range operands in array formulas', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(-1.25), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(2.55), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: numberValue(-4.41), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: numberValue(3), formula: null, styleId: sid })
+		sheet.cells.set(2, 1, { value: numberValue(4), formula: null, styleId: sid })
+		sheet.cells.set(0, 3, { value: numberValue(-5), formula: null, styleId: sid })
+		sheet.cells.set(1, 3, { value: numberValue(4), formula: null, styleId: sid })
+		sheet.cells.set(2, 3, { value: numberValue(7), formula: null, styleId: sid })
+		sheet.cells.set(0, 2, {
+			value: EMPTY,
+			formula: 'ROUND(ABS(A1:A3),1)+0',
+			styleId: sid,
+		})
+		sheet.cells.set(0, 4, {
+			value: EMPTY,
+			formula: 'MOD(D1:D3,2)+0',
+			styleId: sid,
+		})
+		sheet.cells.set(0, 5, {
+			value: EMPTY,
+			formula: 'POWER(B1:B3,2)+0',
+			styleId: sid,
+		})
+		sheet.cells.set(0, 6, {
+			value: EMPTY,
+			formula: 'IF(SIGN(A1:A3)<0,INT(A1:A3),ROUNDUP(A1:A3,0))',
+			styleId: sid,
+		})
+		sheet.cells.set(0, 7, {
+			value: EMPTY,
+			formula: 'ROUNDDOWN(A1:A3,0)+TRUNC(A1:A3)',
+			styleId: sid,
+		})
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(0, 2)?.value).toEqual(numberValue(1.3))
+		expect(sheet.cells.get(1, 2)?.value).toEqual(numberValue(2.6))
+		expect(sheet.cells.get(2, 2)?.value).toEqual(numberValue(4.4))
+		expect(sheet.cells.get(0, 4)?.value).toEqual(numberValue(1))
+		expect(sheet.cells.get(1, 4)?.value).toEqual(numberValue(0))
+		expect(sheet.cells.get(2, 4)?.value).toEqual(numberValue(1))
+		expect(sheet.cells.get(0, 5)?.value).toEqual(numberValue(4))
+		expect(sheet.cells.get(1, 5)?.value).toEqual(numberValue(9))
+		expect(sheet.cells.get(2, 5)?.value).toEqual(numberValue(16))
+		expect(sheet.cells.get(0, 6)?.value).toEqual(numberValue(-2))
+		expect(sheet.cells.get(1, 6)?.value).toEqual(numberValue(3))
+		expect(sheet.cells.get(2, 6)?.value).toEqual(numberValue(-5))
+		expect(sheet.cells.get(0, 7)?.value).toEqual(numberValue(-2))
+		expect(sheet.cells.get(1, 7)?.value).toEqual(numberValue(4))
+		expect(sheet.cells.get(2, 7)?.value).toEqual(numberValue(-8))
+	})
+
 	test('FREQUENCY formulas can count unique filtered numeric ids from array expressions', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

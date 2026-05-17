@@ -62,6 +62,9 @@ describe('performance claim baseline matrix', () => {
 			'Current harness evidence now supports a SheetJS feature-rich rich-metadata row',
 		)
 		expect(markdown).toContain(
+			'Current focused `plain-text` and `string-heavy` write coverage proves\n  ClosedXML and NPOI now run and pass validation',
+		)
+		expect(markdown).toContain(
 			'Current formula/calc evidence includes focused HyperFormula indexed\n  `INDEX/MATCH`, indexed dirty-key/dirty-value edits, and prefix-range\n  dirty-head/dirty-tail rows.',
 		)
 		for (const workload of RECORDED_WORKLOADS) expect(markdown).toContain(`\`${workload}\``)
@@ -419,6 +422,30 @@ describe('performance claim baseline matrix', () => {
 		expect(markdown).toContain(
 			'continue optimizing or bounding the next existing `xlsx-write-sota`\ngap',
 		)
+
+		expect(markdown).toContain('## Cycle: String Heavy ClosedXML/NPOI Write Coverage at `6cc5076f`')
+		expect(markdown).toContain('Classification: comparable external evidence plus blocker update.')
+		expect(markdown).toContain(
+			'/private/tmp/ascend-write-dotnet-current-6cc5076f-runs/write-string-heavy-closedxml-npoi-repeat15.json',
+		)
+		expect(markdown).toContain('ClosedXML `0.105.0.0`; NPOI `2.8.0.0`')
+		expect(markdown).toContain(
+			'| `ascend-external-writer` | ran/won | 4.131 | 4.820 | 0.064 | 91.9 MiB | 201984 |',
+		)
+		expect(markdown).toContain(
+			'| `closedxml` | ran/lost vs Ascend | 113.223 | 317.533 | 0.502 | 140.0 MiB | 246941 |',
+		)
+		expect(markdown).toContain(
+			'| `npoi` | ran/lost vs Ascend | 206.278 | 480.695 | 0.376 | 146.6 MiB | 234032 |',
+		)
+		expect(markdown).toContain(
+			'Full `xlsx-write-sota` coverage still fails, with 61 coverage failures',
+		)
+		expect(markdown).toContain(
+			'ClosedXML and NPOI matched sorted semantic values\nbut not ordered semantic hashes',
+		)
+		expect(markdown).toContain('"Ascend beats ClosedXML or NPOI on every write workload."')
+		expect(markdown).toContain('"ClosedXML and NPOI broad write coverage is complete."')
 
 		expect(markdown).toContain(
 			'## Cycle: Plain Text Workbook Writer Metadata-Key Optimization at `fd616906`',

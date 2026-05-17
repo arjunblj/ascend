@@ -1,6 +1,6 @@
 # Performance Claim Baseline Matrix
 
-Updated: 2026-05-16
+Updated: 2026-05-17
 
 ## Current Claim Gate
 
@@ -19,11 +19,11 @@ No broad XLSX read, XLSX write, SOTA, or QSS-leapfrog speed claim is promotable 
   gate at `eca32509` was killed as an operational blocker after producing no
   JSON. Treat broad write wording as downgraded until the gate is split into
   attributable workload groups or produces complete coverage.
-- Current focused `plain-text` write coverage proves ClosedXML and NPOI now run
-  and pass validation on that generated value-write row. Older ClosedXML
-  `CSSM_ModuleLoad()`/unavailable wording is historical for prior clean runs,
-  not current evidence for the focused `plain-text` row. Broad write wording is
-  still blocked by missing multi-workload/full-profile coverage.
+- Current focused `plain-text` and `string-heavy` write coverage proves
+  ClosedXML and NPOI now run and pass validation on those generated value-write
+  rows. Older ClosedXML `CSSM_ModuleLoad()`/unavailable wording is historical
+  for prior clean runs, not current evidence for the focused rows. Broad write
+  wording is still blocked by missing multi-workload/full-profile coverage.
 - The recorded cycles cover public/reproducible generated `dense-values`, `sparse-wide`, `styles-heavy`, `formula-heavy`, `table-heavy`, `feature-rich`, `selected-sheet`, `metadata-only`, `warm-workflow`, and `string-heavy` workloads over `raw-ooxml`, but they are per-workload evidence rows rather than one clean all-workload promotion run.
 - Current harness evidence now supports same-lane selected-sheet rows for Ascend, SheetJS, OpenPyXL, and python-calamine. Treat older `openpyxl` and Calamine selected-sheet `unsupported-operation` wording as historical for the recorded clean runs.
 - Current harness evidence now supports same-lane metadata-only rows for Ascend, SheetJS, OpenPyXL, and python-calamine. Calamine wins that head-to-head; treat older metadata-only `missing-comparable` or Calamine `unsupported-operation` wording as historical.
@@ -1638,8 +1638,9 @@ Forbidden wording:
   promotion.
 
 Next action: use current ClosedXML/NPOI runner availability to split additional
-write-values blockers only where they close named coverage gaps; keep broad
-write wording downgraded until multi-workload/full-profile coverage is complete.
+write-values blockers beyond `plain-text` and `string-heavy` only where they
+close named coverage gaps; keep broad write wording downgraded until
+multi-workload/full-profile coverage is complete.
 
 ## Cycle: String Heavy Write SOTA Gate
 
@@ -2202,6 +2203,111 @@ Forbidden wording:
 Next action: defer production optimization for string-heavy from this current
 winning row. Continue with the next priority workflow only if it can produce a
 validated optimization, comparable baseline row, or explicit claim downgrade.
+
+## Cycle: String Heavy ClosedXML/NPOI Write Coverage at `6cc5076f`
+
+Classification: comparable external evidence plus blocker update. ClosedXML
+and NPOI now run and pass validation on the generated `string-heavy` write row,
+so the earlier omitted/unavailable-runner wording is historical for this focused
+row. Ascend is the median and p95 winner against both .NET writers here. This
+is still not a broad `xlsx-write-sota` claim.
+
+Workflow: generated XLSX write for varied string values, 2000 rows x 20 columns.
+
+Why it matters for release: `string-heavy` is a required value-write workflow in
+the existing `xlsx-write-sota` profile, and the previous current fastest row
+omitted ClosedXML and NPOI. This run closes that specific .NET writer coverage
+gap for the generated string-write shape without promoting the full write
+profile.
+
+Public/tracked-clean input: `competitive-io` generated the `string-heavy`
+`source-mode generated-write` workload from tracked benchmark code in a clean
+detached worktree at commit `6cc5076f`. No private corpus or local research
+workbook was used. The generated sheet has one sheet, 2,000 rows, 20 columns,
+and 40,000 logical cells.
+
+Commands:
+
+```bash
+git worktree add --detach /private/tmp/ascend-write-dotnet-current-6cc5076f 6cc5076f85ce995a55bb6d83a5c8d31a9e7540b1
+cd /private/tmp/ascend-write-dotnet-current-6cc5076f
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun install --frozen-lockfile
+mkdir -p /private/tmp/ascend-write-dotnet-current-6cc5076f-runs
+TMPDIR=/private/tmp ACCEPT_NPOI_OSMF_LICENSE=1 env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /usr/bin/time -l /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-io.ts --json --category write --competitor all --execution-scope external-process --source-mode generated-write --libraries ascend-external-writer,closedxml,npoi --workload string-heavy --repeat 15 --warmup 3 --validation-mode each --write-runner-manifest fixtures/benchmarks/runners/sota-writers.manifest.json > /private/tmp/ascend-write-dotnet-current-6cc5076f-runs/write-string-heavy-closedxml-npoi-repeat15.json 2> /private/tmp/ascend-write-dotnet-current-6cc5076f-runs/write-string-heavy-closedxml-npoi-repeat15-time.txt
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-scoreboard.ts /private/tmp/ascend-write-dotnet-current-6cc5076f-runs/write-string-heavy-closedxml-npoi-repeat15.json --json --metric medianMs --require-profile xlsx-write-sota --assert-profile-leader ascend > /private/tmp/ascend-write-dotnet-current-6cc5076f-runs/write-string-heavy-closedxml-npoi-repeat15-scoreboard.json
+```
+
+Environment:
+
+- Commit: `6cc5076f85ce995a55bb6d83a5c8d31a9e7540b1`
+- Worktree: clean detached worktree at
+  `/private/tmp/ascend-write-dotnet-current-6cc5076f`; `git status --short
+  --branch` reported `## HEAD (no branch)`.
+- Bun runtime: `1.3.13`
+- Node: `24.3.0`
+- Platform: Darwin arm64
+- Runtime profile: `category write`, `executionScope external-process`,
+  `sourceMode generated-write`, `workload string-heavy`, `validationMode each`,
+  `repeat 15`, `warmup 3`.
+- .NET runners: ClosedXML `0.105.0.0`; NPOI `2.8.0.0`, with
+  `ACCEPT_NPOI_OSMF_LICENSE=1`.
+
+Raw output:
+
+```text
+/private/tmp/ascend-write-dotnet-current-6cc5076f-runs/write-string-heavy-closedxml-npoi-repeat15.json
+/private/tmp/ascend-write-dotnet-current-6cc5076f-runs/write-string-heavy-closedxml-npoi-repeat15-time.txt
+/private/tmp/ascend-write-dotnet-current-6cc5076f-runs/write-string-heavy-closedxml-npoi-repeat15-scoreboard.json
+```
+
+Focused .NET writer row, repeat 15 after 3 warmups:
+
+| Runner | Status vs Ascend | Median ms | P95 ms | CV | Peak RSS | Output bytes |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| `ascend-external-writer` | ran/won | 4.131 | 4.820 | 0.064 | 91.9 MiB | 201984 |
+| `closedxml` | ran/lost vs Ascend | 113.223 | 317.533 | 0.502 | 140.0 MiB | 246941 |
+| `npoi` | ran/lost vs Ascend | 206.278 | 480.695 | 0.376 | 146.6 MiB | 234032 |
+
+Process-level `/usr/bin/time -l` for the full command reported `26.62 real`,
+209,207,296 bytes maximum resident set size, and 120,062,840 bytes peak memory
+footprint.
+
+Scoreboard result:
+
+- Focused repeat-15 .NET writer row: group winner was
+  `ascend-external-writer`; `leaderFailures: []` and
+  `profileLeaderFailures: []`.
+- Full `xlsx-write-sota` coverage still fails, with 61 coverage failures,
+  because this row intentionally covers only `string-heavy` and only Ascend,
+  ClosedXML, and NPOI. Missing workloads and omitted writers are not wins.
+
+Semantic comparability: all three rows reopened successfully, matched one sheet
+and 40,000 cells, and passed semantic cell value validation. Ascend matched
+ordered semantic cell hashes. ClosedXML and NPOI matched sorted semantic values
+but not ordered semantic hashes, so the .NET rows are comparable value-write
+timing evidence, not byte/order-equivalent output claims. Ascend wins median
+and p95 here but does not produce the smallest XLSX.
+
+Humble allowed wording:
+
+> On the generated 2000 x 20 `string-heavy` write row at commit `6cc5076f`,
+> Ascend's focused external repeat-15 run was faster by median and p95 than
+> ClosedXML `0.105.0.0` and NPOI `2.8.0.0`, with all three rows passing
+> semantic value validation. This is scoped generated string-write evidence, not
+> a broad `xlsx-write-sota` claim.
+
+Forbidden wording:
+
+- "Ascend is SOTA for XLSX write."
+- "Ascend beats ClosedXML or NPOI on every write workload."
+- "Ascend proves byte/order-equivalent output against ClosedXML or NPOI."
+- "Ascend produces the smallest string-heavy XLSX."
+- "ClosedXML and NPOI broad write coverage is complete."
+
+Next action: use current ClosedXML/NPOI runner availability to split any
+remaining write-values blockers only where they close named coverage gaps. Do
+not revisit `string-heavy` optimization unless a current full-profile or
+fastest-writer row regresses it.
 
 ## Cycle: Styles Heavy Write Fastest Comparable Row
 

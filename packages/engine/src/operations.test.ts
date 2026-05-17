@@ -7437,6 +7437,12 @@ describe('applyOperation', () => {
 
 		expectErr(result)
 		expect(result.error.message).toContain('header row')
+		expect(result.error.details).toMatchObject({
+			kind: 'partial-table-boundary-row-delete',
+			tableName: 'HeaderedTable',
+			boundary: 'header',
+			ref: 'A1:B4',
+		})
 		expect(s.tables[0]?.ref).toEqual({
 			start: { row: 0, col: 0 },
 			end: { row: 3, col: 1 },
@@ -7461,6 +7467,12 @@ describe('applyOperation', () => {
 
 		expectErr(result)
 		expect(result.error.message).toContain('totals row')
+		expect(result.error.details).toMatchObject({
+			kind: 'partial-table-boundary-row-delete',
+			tableName: 'TotalsTable',
+			boundary: 'totals',
+			ref: 'A1:B5',
+		})
 		expect(s.tables[0]?.hasTotals).toBe(true)
 		expect(s.tables[0]?.ref.end.row).toBe(4)
 	})
@@ -7815,6 +7827,13 @@ describe('applyOperation', () => {
 
 		expectErr(result)
 		expect(result.error.message).toContain('Sales[Rep]')
+		expect(result.error.details).toMatchObject({
+			kind: 'deleted-table-column-reference',
+			sourceKind: 'cell formula',
+			sourceRef: 'Sheet1!E1',
+			tableName: 'Sales',
+			columnName: 'Rep',
+		})
 		expect(s.tables[0]?.columns.map((column) => column.name)).toEqual(['Region', 'Rep', 'Amount'])
 	})
 
@@ -8830,6 +8849,12 @@ describe('applyOperation', () => {
 				expect(result.error.message).toContain(
 					`imported ${binding.formulaInfo.kind} formula metadata`,
 				)
+				expect(result.error.details).toMatchObject({
+					kind: 'formula-binding-structural-edit-blocked',
+					formulaKind: binding.formulaInfo.kind,
+					sheetName: 'Shared',
+					ref: 'A1',
+				})
 				expect(source.cells.get(0, 0)?.formulaInfo).toEqual(binding.formulaInfo)
 				expect(other.cells.get(4, 4)?.value).toEqual(numberValue(5))
 			}

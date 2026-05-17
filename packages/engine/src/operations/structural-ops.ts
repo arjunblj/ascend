@@ -1645,6 +1645,12 @@ function formulaBindingStructuralEditError(blocker: {
 			refs: [`${blocker.sheetName}!${blocker.ref}`],
 			suggestedFix:
 				'Materialize or rewrite the imported formula binding before applying row or column structural edits.',
+			details: {
+				kind: 'formula-binding-structural-edit-blocked',
+				formulaKind: blocker.kind,
+				sheetName: blocker.sheetName,
+				ref: blocker.ref,
+			},
 		},
 	)
 }
@@ -1659,6 +1665,13 @@ function deletedTableColumnStructuralEditError(
 			refs: [blocker.sourceRef],
 			suggestedFix:
 				'Rewrite or remove structured references to the table field before deleting the column.',
+			details: {
+				kind: 'deleted-table-column-reference',
+				sourceKind: blocker.sourceKind,
+				sourceRef: blocker.sourceRef,
+				tableName: blocker.tableName,
+				columnName: blocker.columnName,
+			},
 		},
 	)
 }
@@ -1705,6 +1718,12 @@ function tableBoundaryRowStructuralEditError(
 			refs: [blocker.ref],
 			suggestedFix:
 				'Resize or delete the table explicitly before removing its header or totals row, or delete the full table range in one structural edit.',
+			details: {
+				kind: 'partial-table-boundary-row-delete',
+				tableName: blocker.tableName,
+				boundary: blocker.boundary,
+				ref: blocker.ref,
+			},
 		},
 	)
 }

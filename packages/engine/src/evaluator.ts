@@ -210,9 +210,11 @@ const ARRAY_CONTEXT_MAPPABLE_FUNCTIONS = new Set([
 	'LEN',
 	'LOWER',
 	'MID',
+	'REPLACE',
 	'RIGHT',
 	'SEARCH',
 	'SQRT',
+	'SUBSTITUTE',
 	'TRIM',
 	'UPPER',
 ])

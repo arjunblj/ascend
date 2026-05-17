@@ -1066,6 +1066,42 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(2, 2)?.value).toEqual(numberValue(0))
 	})
 
+	test('SUBSTITUTE and REPLACE spill over range operands in array formulas', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: stringValue('Q1-2024-East'), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: stringValue('Q2-2024-West'), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: stringValue('Q3-2024-North'), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, {
+			value: EMPTY,
+			formula: 'SUBSTITUTE(A1:A3,"-","/")&""',
+			styleId: sid,
+		})
+		sheet.cells.set(0, 2, {
+			value: EMPTY,
+			formula: 'SUBSTITUTE(A1:A3,"-","/",2)&""',
+			styleId: sid,
+		})
+		sheet.cells.set(0, 3, {
+			value: EMPTY,
+			formula: 'REPLACE(A1:A3,4,4,"FY25")&""',
+			styleId: sid,
+		})
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(0, 1)?.value).toEqual(stringValue('Q1/2024/East'))
+		expect(sheet.cells.get(1, 1)?.value).toEqual(stringValue('Q2/2024/West'))
+		expect(sheet.cells.get(2, 1)?.value).toEqual(stringValue('Q3/2024/North'))
+		expect(sheet.cells.get(0, 2)?.value).toEqual(stringValue('Q1-2024/East'))
+		expect(sheet.cells.get(1, 2)?.value).toEqual(stringValue('Q2-2024/West'))
+		expect(sheet.cells.get(2, 2)?.value).toEqual(stringValue('Q3-2024/North'))
+		expect(sheet.cells.get(0, 3)?.value).toEqual(stringValue('Q1-FY25-East'))
+		expect(sheet.cells.get(1, 3)?.value).toEqual(stringValue('Q2-FY25-West'))
+		expect(sheet.cells.get(2, 3)?.value).toEqual(stringValue('Q3-FY25-North'))
+	})
+
 	test('FREQUENCY formulas can count unique filtered numeric ids from array expressions', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

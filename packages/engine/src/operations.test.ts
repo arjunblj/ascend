@@ -7006,6 +7006,73 @@ describe('applyOperation', () => {
 		expect(nameWb.definedNames.resolve('LocalEdge', data.id)?.formula).toBe('$XFD$1:$XFD$2')
 	})
 
+	test('row and column inserts reject worksheet metadata formulas before shifting them out of grid', () => {
+		const cases: readonly {
+			readonly op: Operation
+			readonly setup: (input: Sheet, summary: Sheet) => void
+			readonly expectedOwner: string
+			readonly expectedReference: string
+		}[] = [
+			{
+				op: { op: 'insertRows', sheet: 'Input', at: 0, count: 1 },
+				setup: (_input, summary) => {
+					summary.dataValidations.push({
+						sqref: 'A1',
+						type: 'list',
+						formula1: 'Input!$A$1048576',
+					})
+				},
+				expectedOwner: 'Summary!dataValidation(A1).formula1',
+				expectedReference: 'Input!$A$1048576',
+			},
+			{
+				op: { op: 'insertCols', sheet: 'Input', at: 0, count: 1 },
+				setup: (input) => {
+					input.tables.push({
+						id: createTableId(),
+						name: 'Inputs',
+						sheetId: input.id,
+						ref: { start: { row: 0, col: 0 }, end: { row: 1, col: 1 } },
+						columns: [{ name: 'Name' }, { name: 'Calc', formula: '$XFD$1' }],
+						hasHeaders: true,
+						hasTotals: false,
+					})
+				},
+				expectedOwner: 'Input!table(Inputs).columns[1].formula',
+				expectedReference: '$XFD$1',
+			},
+		]
+
+		for (const { op, setup: setupSheets, expectedOwner, expectedReference } of cases) {
+			const wb = createWorkbook()
+			const input = wb.addSheet('Input')
+			const summary = wb.addSheet('Summary')
+			setupSheets(input, summary)
+			const beforeMetadata = JSON.stringify({
+				inputTables: input.tables,
+				summaryValidations: summary.dataValidations,
+			})
+
+			const result = applyOperation(wb, op)
+
+			expectErr(result)
+			expect(result.error.code, op.op).toBe('INVALID_RANGE')
+			expect(result.error.refs, op.op).toEqual([expectedOwner])
+			expect(result.error.details, op.op).toMatchObject({
+				kind: 'structural-insert-shifts-worksheet-metadata-formula-out-of-bounds',
+				owner: expectedOwner,
+				reference: expectedReference,
+			})
+			expect(
+				JSON.stringify({
+					inputTables: input.tables,
+					summaryValidations: summary.dataValidations,
+				}),
+				op.op,
+			).toBe(beforeMetadata)
+		}
+	})
+
 	test('structural shifts update sheet-scoped local names and block ambiguous workbook names', () => {
 		const wb = createWorkbook()
 		const data = wb.addSheet('Data')

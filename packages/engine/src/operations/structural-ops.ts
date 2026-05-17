@@ -23,12 +23,14 @@ import {
 	findInsertShiftedDefinedNameRefOutOfBounds,
 	findInsertShiftedSparklineRefOutOfBounds,
 	findInsertShiftedWorkbookFormulaRefOutOfBounds,
+	findInsertShiftedWorksheetMetadataRefOutOfBounds,
 	findPartialFormulaMoveReference,
 	formulaAstHasLocalStructuralReference,
 	type InsertShiftedChartSourceRefOutOfBounds,
 	type InsertShiftedDefinedNameRefOutOfBounds,
 	type InsertShiftedSparklineRefOutOfBounds,
 	type InsertShiftedWorkbookFormulaRefOutOfBounds,
+	type InsertShiftedWorksheetMetadataRefOutOfBounds,
 	type PartialFormulaMoveReference,
 	retargetExplicitFormulaSheetRefsInRange,
 	rewriteDefinedNameFormulasForMove,
@@ -190,6 +192,20 @@ function applyAxisShift(
 	if (insertDefinedNameOverflowBlocker) {
 		return err(
 			insertShiftedDefinedNameOutOfBoundsError(axis, at, count, insertDefinedNameOverflowBlocker),
+		)
+	}
+	const insertMetadataFormulaOverflowBlocker =
+		delta > 0
+			? findInsertShiftedWorksheetMetadataRefOutOfBounds(workbook, sheetName, axis, at, count)
+			: null
+	if (insertMetadataFormulaOverflowBlocker) {
+		return err(
+			insertShiftedWorksheetMetadataOutOfBoundsError(
+				axis,
+				at,
+				count,
+				insertMetadataFormulaOverflowBlocker,
+			),
 		)
 	}
 	const insertChartSourceOverflowBlocker =
@@ -896,6 +912,34 @@ function insertShiftedDefinedNameOutOfBoundsError(
 			suggestedFix: `Edit or remove defined names that would shift past ${maxRef}, then retry the insert.`,
 			details: {
 				kind: 'structural-insert-shifts-defined-name-out-of-bounds',
+				axis,
+				at,
+				count,
+				owner: blocker.owner,
+				formula: blocker.formula,
+				reference: blocker.reference,
+				shiftedReference: blocker.shiftedReference,
+			},
+		},
+	)
+}
+
+function insertShiftedWorksheetMetadataOutOfBoundsError(
+	axis: 'row' | 'col',
+	at: number,
+	count: number,
+	blocker: InsertShiftedWorksheetMetadataRefOutOfBounds,
+) {
+	const label = axis === 'row' ? 'row' : 'column'
+	const maxRef = axis === 'row' ? '1048576' : 'XFD'
+	return ascendError(
+		'INVALID_RANGE',
+		`Cannot insert ${label}s because worksheet metadata formula ${blocker.owner} reference ${blocker.reference} would shift outside Excel worksheet bounds`,
+		{
+			refs: [blocker.owner],
+			suggestedFix: `Edit or remove worksheet metadata formulas that would shift past ${maxRef}, then retry the insert.`,
+			details: {
+				kind: 'structural-insert-shifts-worksheet-metadata-formula-out-of-bounds',
 				axis,
 				at,
 				count,

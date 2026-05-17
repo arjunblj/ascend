@@ -61,6 +61,13 @@ export interface InsertShiftedDefinedNameRefOutOfBounds {
 	readonly shiftedReference: string
 }
 
+export interface InsertShiftedWorksheetMetadataRefOutOfBounds {
+	readonly owner: string
+	readonly formula: string
+	readonly reference: string
+	readonly shiftedReference: string
+}
+
 export function rewriteWorkbookFormulasForShift(
 	workbook: Workbook,
 	targetSheet: string,
@@ -932,6 +939,27 @@ export function findInsertShiftedSparklineRefOutOfBounds(
 	return null
 }
 
+export function findInsertShiftedWorksheetMetadataRefOutOfBounds(
+	workbook: Workbook,
+	targetSheet: string,
+	axis: 'row' | 'col',
+	at: number,
+	count: number,
+): InsertShiftedWorksheetMetadataRefOutOfBounds | null {
+	for (const sheet of workbook.sheets) {
+		const issue = findInsertShiftedMetadataFormulaRefOutOfBoundsInSheet(
+			sheet,
+			targetSheet,
+			sheet.name,
+			axis,
+			at,
+			count,
+		)
+		if (issue) return issue
+	}
+	return null
+}
+
 export function findInsertShiftedWorkbookFormulaRefOutOfBounds(
 	workbook: Workbook,
 	targetSheet: string,
@@ -993,6 +1021,131 @@ export function findInsertShiftedDefinedNameRefOutOfBounds(
 			reference: issue.reference,
 			shiftedReference: issue.shiftedReference,
 		}
+	}
+	return null
+}
+
+function findInsertShiftedMetadataFormulaRefOutOfBoundsInSheet(
+	sheet: Sheet,
+	targetSheet: string,
+	formulaSheet: string,
+	axis: 'row' | 'col',
+	at: number,
+	count: number,
+): InsertShiftedWorksheetMetadataRefOutOfBounds | null {
+	const check = (
+		formula: string | undefined,
+		owner: string,
+	): InsertShiftedWorksheetMetadataRefOutOfBounds | null => {
+		const issue = findInsertShiftedFormulaRefOutOfBounds(
+			formula,
+			targetSheet,
+			formulaSheet,
+			axis,
+			at,
+			count,
+		)
+		if (!issue || !formula) return null
+		return {
+			owner,
+			formula,
+			reference: issue.reference,
+			shiftedReference: issue.shiftedReference,
+		}
+	}
+
+	for (const validation of sheet.dataValidations) {
+		const owner = `${sheet.name}!dataValidation(${validation.sqref})`
+		const formula1 = check(validation.formula1, `${owner}.formula1`)
+		if (formula1) return formula1
+		const formula2 = check(validation.formula2, `${owner}.formula2`)
+		if (formula2) return formula2
+	}
+	for (const format of sheet.conditionalFormats) {
+		for (const [ruleIndex, rule] of format.rules.entries()) {
+			const owner = `${sheet.name}!conditionalFormat(${format.sqref}).rules[${ruleIndex}]`
+			for (const [formulaIndex, formula] of rule.formulas.entries()) {
+				const issue = check(formula, `${owner}.formulas[${formulaIndex}]`)
+				if (issue) return issue
+			}
+			const colorScale = findInsertShiftedValueObjectRefOutOfBounds(
+				rule.colorScale?.cfvo,
+				check,
+				`${owner}.colorScale.cfvo`,
+			)
+			if (colorScale) return colorScale
+			const dataBar = findInsertShiftedValueObjectRefOutOfBounds(
+				rule.dataBar?.cfvo,
+				check,
+				`${owner}.dataBar.cfvo`,
+			)
+			if (dataBar) return dataBar
+			const iconSet = findInsertShiftedValueObjectRefOutOfBounds(
+				rule.iconSet?.cfvo,
+				check,
+				`${owner}.iconSet.cfvo`,
+			)
+			if (iconSet) return iconSet
+		}
+	}
+	for (const validation of sheet.x14DataValidations) {
+		if (validation.deleted) continue
+		const owner = `${sheet.name}!x14DataValidation(${validation.sqref})`
+		const formula1 = check(validation.formula1, `${owner}.formula1`)
+		if (formula1) return formula1
+		const formula2 = check(validation.formula2, `${owner}.formula2`)
+		if (formula2) return formula2
+	}
+	for (const format of sheet.x14ConditionalFormats) {
+		if (format.deleted) continue
+		const owner = `${sheet.name}!x14ConditionalFormat(${format.sqref})`
+		for (const [formulaIndex, formula] of format.formulas.entries()) {
+			const issue = check(formula, `${owner}.formulas[${formulaIndex}]`)
+			if (issue) return issue
+		}
+		const colorScale = findInsertShiftedValueObjectRefOutOfBounds(
+			format.colorScale?.cfvo,
+			check,
+			`${owner}.colorScale.cfvo`,
+		)
+		if (colorScale) return colorScale
+		const dataBar = findInsertShiftedValueObjectRefOutOfBounds(
+			format.dataBar?.cfvo,
+			check,
+			`${owner}.dataBar.cfvo`,
+		)
+		if (dataBar) return dataBar
+		const iconSet = findInsertShiftedValueObjectRefOutOfBounds(
+			format.iconSet?.cfvo,
+			check,
+			`${owner}.iconSet.cfvo`,
+		)
+		if (iconSet) return iconSet
+	}
+	for (const table of sheet.tables) {
+		for (const [columnIndex, column] of table.columns.entries()) {
+			const owner = `${sheet.name}!table(${table.name}).columns[${columnIndex}]`
+			const formula = check(column.formula, `${owner}.formula`)
+			if (formula) return formula
+			const totalsRowFormula = check(column.totalsRowFormula, `${owner}.totalsRowFormula`)
+			if (totalsRowFormula) return totalsRowFormula
+		}
+	}
+	return null
+}
+
+function findInsertShiftedValueObjectRefOutOfBounds<T extends { readonly value?: string }>(
+	entries: readonly T[] | undefined,
+	check: (
+		formula: string | undefined,
+		owner: string,
+	) => InsertShiftedWorksheetMetadataRefOutOfBounds | null,
+	owner: string,
+): InsertShiftedWorksheetMetadataRefOutOfBounds | null {
+	if (!entries) return null
+	for (const [index, entry] of entries.entries()) {
+		const issue = check(entry.value, `${owner}[${index}]`)
+		if (issue) return issue
 	}
 	return null
 }

@@ -2085,6 +2085,96 @@ describe('recalculate', () => {
 		}
 	})
 
+	test('financial helper scalar functions spill over range operands in array formulas', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		const rates = [0.1, 0.08, 0.12]
+		const periods = [4, 6, 8]
+		const presentValues = [1000, 2500, 5000]
+		const startPeriods = [1, 2, 3]
+		const endPeriods = [1, 4, 6]
+		const types = [0, 1, 0]
+		const paymentPeriods = [1, 3, 5]
+		const compoundsPerYear = [4, 12, 2]
+		const futureValues = [2000, 3200, 9000]
+		const fractionalDollars = [1.02, 12.08, 100.16]
+		const fractions = [16, 8, 32]
+		const decimalDollars = [1.125, 12.5, 100.75]
+		for (let row = 0; row < 3; row++) {
+			for (const [col, values] of [
+				[0, rates],
+				[1, periods],
+				[2, presentValues],
+				[3, startPeriods],
+				[4, endPeriods],
+				[5, types],
+				[6, paymentPeriods],
+				[7, compoundsPerYear],
+				[8, futureValues],
+				[9, fractionalDollars],
+				[10, fractions],
+				[11, decimalDollars],
+			] as const) {
+				sheet.cells.set(row, col, {
+					value: numberValue(values[row] as number),
+					formula: null,
+					styleId: sid,
+				})
+			}
+		}
+		const arrayFormulas = [
+			'ISPMT(A1:A3,G1:G3,B1:B3,C1:C3)+0',
+			'CUMIPMT(A1:A3,B1:B3,C1:C3,D1:D3,E1:E3,F1:F3)+0',
+			'CUMPRINC(A1:A3,B1:B3,C1:C3,D1:D3,E1:E3,F1:F3)+0',
+			'EFFECT(A1:A3,H1:H3)+0',
+			'NOMINAL(A1:A3,H1:H3)+0',
+			'PDURATION(A1:A3,C1:C3,I1:I3)+0',
+			'RRI(B1:B3,C1:C3,I1:I3)+0',
+			'DOLLARDE(J1:J3,K1:K3)+0',
+			'DOLLARFR(L1:L3,K1:K3)+0',
+		]
+		const scalarFormulas = [
+			'ISPMT(A{r},G{r},B{r},C{r})+0',
+			'CUMIPMT(A{r},B{r},C{r},D{r},E{r},F{r})+0',
+			'CUMPRINC(A{r},B{r},C{r},D{r},E{r},F{r})+0',
+			'EFFECT(A{r},H{r})+0',
+			'NOMINAL(A{r},H{r})+0',
+			'PDURATION(A{r},C{r},I{r})+0',
+			'RRI(B{r},C{r},I{r})+0',
+			'DOLLARDE(J{r},K{r})+0',
+			'DOLLARFR(L{r},K{r})+0',
+		]
+		for (let col = 0; col < arrayFormulas.length; col++) {
+			sheet.cells.set(0, 12 + col, {
+				value: EMPTY,
+				formula: arrayFormulas[col] as string,
+				styleId: sid,
+			})
+			for (let row = 0; row < 3; row++) {
+				sheet.cells.set(row, 30 + col, {
+					value: EMPTY,
+					formula: (scalarFormulas[col] as string).replaceAll('{r}', String(row + 1)),
+					styleId: sid,
+				})
+			}
+		}
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		for (let row = 0; row < 3; row++) {
+			for (let col = 0; col < arrayFormulas.length; col++) {
+				const actual = sheet.cells.get(row, 12 + col)?.value
+				const expected = sheet.cells.get(row, 30 + col)?.value
+				expect(actual?.kind).toBe('number')
+				expect(expected?.kind).toBe('number')
+				if (actual?.kind === 'number' && expected?.kind === 'number') {
+					expect(actual.value).toBeCloseTo(expected.value, 10)
+				}
+			}
+		}
+	})
+
 	test('depreciation financial scalar functions spill over range operands in array formulas', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

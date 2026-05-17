@@ -5544,6 +5544,85 @@ describe('writeXlsx', () => {
 		})
 	})
 
+	it('preserves external link relationship root attributes when rewriting targets', () => {
+		const sourceBytes = makeXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/externalLinks/externalLink1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.externalLink+xml"/>
+</Types>`,
+			'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+			'xl/workbook.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <externalReferences><externalReference r:id="rIdExternal"/></externalReferences>
+  <sheets><sheet name="Data" sheetId="1" r:id="rIdSheet"/></sheets>
+</workbook>`,
+			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSheet" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rIdExternal" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLink" Target="externalLinks/externalLink1.xml"/>
+</Relationships>`,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData>
+</worksheet>`,
+			'xl/externalLinks/externalLink1.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<externalLink xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <externalBook r:id="rIdExt"/>
+</externalLink>`,
+			'xl/externalLinks/_rels/externalLink1.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"
+  xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+  xmlns:extrel="urn:ascend:external-link-relationships"
+  mc:Ignorable="extrel"
+  extrel:origin="source">
+  <Relationship Id="rIdMetadata" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml" Target="../customXml/item1.xml"/>
+  <Relationship Id="rIdExt" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLinkPath" Target="../sources/source.xlsx" TargetMode="External"/>
+</Relationships>`,
+			'xl/customXml/item1.xml': '<metadata/>',
+		})
+		const source = readXlsx(sourceBytes)
+		expectOk(source)
+		const applied = applyOperations(source.value.workbook, [
+			{
+				op: 'rewriteExternalLink',
+				partPath: 'xl/externalLinks/externalLink1.xml',
+				newTarget: '../sources/reforecast.xlsx',
+			},
+		])
+		expectOk(applied)
+
+		const written = writeXlsx(source.value.workbook, source.value.capsules, {
+			workbookMetaDirty: true,
+		})
+		expectOk(written)
+
+		const parts = unzipSync(written.value)
+		const rels = new TextDecoder().decode(
+			parts['xl/externalLinks/_rels/externalLink1.xml.rels'] ?? new Uint8Array(),
+		)
+		expect(rels).toContain('Target="../sources/reforecast.xlsx"')
+		expect(rels).toContain('xmlns:extrel="urn:ascend:external-link-relationships"')
+		expect(rels).toContain('mc:Ignorable="extrel"')
+		expect(rels).toContain('extrel:origin="source"')
+
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+		expect(reopened.value.workbook.externalReferenceDetails[0]).toMatchObject({
+			partPath: 'xl/externalLinks/externalLink1.xml',
+			linkRelId: 'rIdExt',
+			target: '../sources/reforecast.xlsx',
+		})
+	})
+
 	it('repairs missing externalBook relationship ids when rewriting external link targets', () => {
 		const wb = new Workbook()
 		const sheet = wb.addSheet('Data')

@@ -2323,13 +2323,19 @@ export function planWriteXlsx(
 
 				if (capsule.relationships.length > 0) {
 					const capsuleRelsPath = getRelsPath(capsule.partPath)
+					const preservedCapsuleRelsText = sourceArchive?.readText(capsuleRelsPath)
 					recordXml(
 						capsuleRelsPath,
 						{
 							owner,
 							origin: 'capsule',
 						},
-						() => buildRelsXml(resolveCapsuleRelationships(workbook, capsule)),
+						() =>
+							buildRelsXml(resolveCapsuleRelationships(workbook, capsule), {
+								...(preservedCapsuleRelsText
+									? { preservedRelationshipsXml: preservedCapsuleRelsText }
+									: {}),
+							}),
 					)
 				} else {
 					const generatedExternalLinkRels = buildGeneratedExternalLinkRelationships(
@@ -2338,13 +2344,19 @@ export function planWriteXlsx(
 					)
 					if (generatedExternalLinkRels.length > 0) {
 						const capsuleRelsPath = getRelsPath(capsule.partPath)
+						const preservedCapsuleRelsText = sourceArchive?.readText(capsuleRelsPath)
 						recordXml(
 							capsuleRelsPath,
 							{
 								owner,
 								origin: 'generated',
 							},
-							() => buildRelsXml(generatedExternalLinkRels),
+							() =>
+								buildRelsXml(generatedExternalLinkRels, {
+									...(preservedCapsuleRelsText
+										? { preservedRelationshipsXml: preservedCapsuleRelsText }
+										: {}),
+								}),
 						)
 					}
 				}

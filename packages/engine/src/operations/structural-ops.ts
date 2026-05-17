@@ -110,6 +110,19 @@ function applyAxisShift(
 			),
 		)
 	}
+	const insertCommentAnchorOverflowBlocker =
+		delta > 0 ? findInsertShiftedCommentAnchorOutOfBounds(sheet, axis, at, count) : null
+	if (insertCommentAnchorOverflowBlocker) {
+		return err(
+			insertShiftedCommentAnchorOutOfBoundsError(
+				sheet,
+				axis,
+				at,
+				count,
+				insertCommentAnchorOverflowBlocker,
+			),
+		)
+	}
 	const insertHyperlinkLocationOverflowBlocker =
 		delta > 0 ? findInsertShiftedHyperlinkLocationOutOfBounds(sheet, axis, at, count) : null
 	if (insertHyperlinkLocationOverflowBlocker) {
@@ -522,6 +535,80 @@ function insertShiftedCellMetadataOutOfBoundsError(
 				label: metadata.label,
 				ref: qualifiedRef,
 				shiftedRef: metadata.shiftedRef,
+			},
+		},
+	)
+}
+
+type LegacyCommentAnchor = NonNullable<NonNullable<SheetComment['legacyDrawing']>['anchor']>
+
+interface InsertOverflowCommentAnchor {
+	readonly ownerRef: string
+	readonly ref: string
+	readonly shiftedRef: string
+}
+
+function findInsertShiftedCommentAnchorOutOfBounds(
+	sheet: Sheet,
+	axis: 'row' | 'col',
+	at: number,
+	count: number,
+): InsertOverflowCommentAnchor | null {
+	for (const [ownerRef, comment] of sheet.comments) {
+		const anchor = comment.legacyDrawing?.anchor
+		if (!anchor) continue
+		const range = legacyCommentAnchorRange(anchor)
+		if (!insertAffectsRange(range, axis, at)) continue
+		const shifted = shiftInsertedRange(range, axis, at, count)
+		if (rangeWithinGrid(shifted)) continue
+		return {
+			ownerRef,
+			ref: rangeToA1(range),
+			shiftedRef: rangeToA1(shifted),
+		}
+	}
+	return null
+}
+
+function legacyCommentAnchorRange(anchor: LegacyCommentAnchor): RangeRef {
+	return {
+		start: {
+			row: Math.min(anchor[2], anchor[6]),
+			col: Math.min(anchor[0], anchor[4]),
+		},
+		end: {
+			row: Math.max(anchor[2], anchor[6]),
+			col: Math.max(anchor[0], anchor[4]),
+		},
+	}
+}
+
+function insertShiftedCommentAnchorOutOfBoundsError(
+	sheet: Sheet,
+	axis: 'row' | 'col',
+	at: number,
+	count: number,
+	anchor: InsertOverflowCommentAnchor,
+) {
+	const label = axis === 'row' ? 'row' : 'column'
+	const maxRef = axis === 'row' ? '1048576' : 'XFD'
+	const owner = `${formatSheetName(sheet.name)}!comment(${anchor.ownerRef}).legacyDrawing.anchor`
+	const reference = `${formatSheetName(sheet.name)}!${anchor.ref}`
+	const shiftedReference = `${formatSheetName(sheet.name)}!${anchor.shiftedRef}`
+	return ascendError(
+		'INVALID_RANGE',
+		`Cannot insert ${label}s because legacy comment drawing anchor ${owner} references ${reference} which would shift outside Excel worksheet bounds`,
+		{
+			refs: [owner, reference],
+			suggestedFix: `Move or remove legacy comment drawing anchors that would shift past ${maxRef}, then retry the insert.`,
+			details: {
+				kind: 'structural-insert-shifts-comment-anchor-out-of-bounds',
+				axis,
+				at,
+				count,
+				owner,
+				reference,
+				shiftedReference,
 			},
 		},
 	)

@@ -6094,6 +6094,71 @@ describe('applyOperation', () => {
 		}
 	})
 
+	test('row and column inserts reject legacy comment anchors before shifting them out of grid', () => {
+		const cases: readonly {
+			readonly op: Operation
+			readonly setup: (sheet: Sheet) => void
+			readonly expectedRef: string
+			readonly expectedShiftedRef: string
+		}[] = [
+			{
+				op: { op: 'insertRows', sheet: 'Sheet1', at: 0, count: 1 },
+				setup: (sheet) => {
+					sheet.comments.set('A1', {
+						text: 'edge note',
+						legacyDrawing: {
+							shapeId: '_x0000_s1025',
+							row: 0,
+							column: 0,
+							anchor: [0, 15, 1_048_575, 2, 1, 15, 1_048_575, 16],
+						},
+					})
+				},
+				expectedRef: 'Sheet1!A1048576:B1048576',
+				expectedShiftedRef: 'Sheet1!A1048577:B1048577',
+			},
+			{
+				op: { op: 'insertCols', sheet: 'Sheet1', at: 0, count: 1 },
+				setup: (sheet) => {
+					sheet.comments.set('A1', {
+						text: 'edge note',
+						legacyDrawing: {
+							shapeId: '_x0000_s1025',
+							row: 0,
+							column: 0,
+							anchor: [16_383, 15, 0, 2, 16_383, 15, 1, 16],
+						},
+					})
+				},
+				expectedRef: 'Sheet1!XFD1:XFD2',
+				expectedShiftedRef: 'Sheet1!XFE1:XFE2',
+			},
+		]
+
+		for (const { op, setup: setupSheet, expectedRef, expectedShiftedRef } of cases) {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setupSheet(sheet)
+			const beforeComments = JSON.stringify([...sheet.comments])
+
+			const result = applyOperation(wb, op)
+
+			expectErr(result)
+			expect(result.error.code, op.op).toBe('INVALID_RANGE')
+			expect(result.error.refs, op.op).toEqual([
+				'Sheet1!comment(A1).legacyDrawing.anchor',
+				expectedRef,
+			])
+			expect(result.error.details, op.op).toMatchObject({
+				kind: 'structural-insert-shifts-comment-anchor-out-of-bounds',
+				owner: 'Sheet1!comment(A1).legacyDrawing.anchor',
+				reference: expectedRef,
+				shiftedReference: expectedShiftedRef,
+			})
+			expect(JSON.stringify([...sheet.comments]), op.op).toBe(beforeComments)
+		}
+	})
+
 	test('row and column inserts reject merged ranges before shifting them out of grid', () => {
 		const cases: readonly {
 			readonly op: Operation

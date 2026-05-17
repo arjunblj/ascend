@@ -1,18 +1,30 @@
 import type { ChartPartInfo, ChartSeriesInfo } from '@ascend/core'
 import { decodeXmlText } from './xml-utils.ts'
 
-const CHART_TYPE_RE = /<(?:c:)?([A-Za-z]+Chart)\b/
-const TITLE_RE = /<(?:c:)?title\b[\s\S]*?<a:t>([\s\S]*?)<\/a:t>[\s\S]*?<\/(?:c:)?title>/
-const SERIES_RE = /<(?:c:)?ser\b[\s\S]*?<\/(?:c:)?ser>/g
-const TX_REF_RE = /<(?:c:)?tx\b[\s\S]*?<(?:c:)?strRef\b[\s\S]*?<(?:c:)?f>([\s\S]*?)<\/(?:c:)?f>/
-const TX_TEXT_RE = /<(?:c:)?tx\b[\s\S]*?<(?:c:)?v>([\s\S]*?)<\/(?:c:)?v>[\s\S]*?<\/(?:c:)?tx>/
-const CAT_REF_RE =
-	/<(?:c:)?cat\b[\s\S]*?<(?:c:)?(?:strRef|numRef|multiLvlStrRef)\b[\s\S]*?<(?:c:)?f>([\s\S]*?)<\/(?:c:)?f>/
-const VAL_REF_RE = /<(?:c:)?val\b[\s\S]*?<(?:c:)?numRef\b[\s\S]*?<(?:c:)?f>([\s\S]*?)<\/(?:c:)?f>/
-const X_VAL_REF_RE =
-	/<(?:c:)?xVal\b[\s\S]*?<(?:c:)?(?:strRef|numRef)\b[\s\S]*?<(?:c:)?f>([\s\S]*?)<\/(?:c:)?f>/
-const Y_VAL_REF_RE =
-	/<(?:c:)?yVal\b[\s\S]*?<(?:c:)?numRef\b[\s\S]*?<(?:c:)?f>([\s\S]*?)<\/(?:c:)?f>/
+const NS_PREFIX = String.raw`(?:[A-Za-z_][\w.-]*:)?`
+const CHART_TYPE_RE = new RegExp(`<${NS_PREFIX}([A-Za-z]+Chart)\\b`)
+const TITLE_RE = new RegExp(
+	`<${NS_PREFIX}title\\b[\\s\\S]*?<${NS_PREFIX}t>([\\s\\S]*?)<\\/${NS_PREFIX}t>[\\s\\S]*?<\\/${NS_PREFIX}title>`,
+)
+const SERIES_RE = new RegExp(`<${NS_PREFIX}ser\\b[\\s\\S]*?<\\/${NS_PREFIX}ser>`, 'g')
+const TX_REF_RE = new RegExp(
+	`<${NS_PREFIX}tx\\b[\\s\\S]*?<${NS_PREFIX}strRef\\b[\\s\\S]*?<${NS_PREFIX}f>([\\s\\S]*?)<\\/${NS_PREFIX}f>`,
+)
+const TX_TEXT_RE = new RegExp(
+	`<${NS_PREFIX}tx\\b[\\s\\S]*?<${NS_PREFIX}v>([\\s\\S]*?)<\\/${NS_PREFIX}v>[\\s\\S]*?<\\/${NS_PREFIX}tx>`,
+)
+const CAT_REF_RE = new RegExp(
+	`<${NS_PREFIX}cat\\b[\\s\\S]*?<${NS_PREFIX}(?:strRef|numRef|multiLvlStrRef)\\b[\\s\\S]*?<${NS_PREFIX}f>([\\s\\S]*?)<\\/${NS_PREFIX}f>`,
+)
+const VAL_REF_RE = new RegExp(
+	`<${NS_PREFIX}val\\b[\\s\\S]*?<${NS_PREFIX}numRef\\b[\\s\\S]*?<${NS_PREFIX}f>([\\s\\S]*?)<\\/${NS_PREFIX}f>`,
+)
+const X_VAL_REF_RE = new RegExp(
+	`<${NS_PREFIX}xVal\\b[\\s\\S]*?<${NS_PREFIX}(?:strRef|numRef)\\b[\\s\\S]*?<${NS_PREFIX}f>([\\s\\S]*?)<\\/${NS_PREFIX}f>`,
+)
+const Y_VAL_REF_RE = new RegExp(
+	`<${NS_PREFIX}yVal\\b[\\s\\S]*?<${NS_PREFIX}numRef\\b[\\s\\S]*?<${NS_PREFIX}f>([\\s\\S]*?)<\\/${NS_PREFIX}f>`,
+)
 
 export function parseChartXml(xml: string, partPath: string, sheetName?: string): ChartPartInfo {
 	const chartType = CHART_TYPE_RE.exec(xml)?.[1]

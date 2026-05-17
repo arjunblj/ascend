@@ -1195,6 +1195,12 @@ describe('release proof evidence index', () => {
 				boundary: expect.stringContaining('Visual-anchor structural edit evidence only'),
 			}),
 			expect.objectContaining({
+				evidenceId: 'structural-insert-bounds-fail-closed-proof',
+				acceptedScope: expect.stringMatching(/4e58852c.*e4335064.*36b927f9.*ec1ae480.*7d01d067/),
+				command: expect.stringContaining('row and column inserts reject edge cell metadata'),
+				boundary: expect.stringContaining('Local structural insert fail-closed evidence only'),
+			}),
+			expect.objectContaining({
 				evidenceId: 'public-calc-chain-formula-commit-proof',
 				acceptedScope: expect.stringContaining('31141dd4'),
 				command: expect.stringContaining('commits public calc-chain formula edits'),

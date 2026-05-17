@@ -3409,6 +3409,17 @@ function safeOpenQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceItem[] {
 				'Visual-anchor structural edit evidence only; it does not prove full drawing/layout parity, public workbook generality, arbitrary DrawingML/VML preservation, chart layout editing, image rendering fidelity, cross-sheet visual transfers, copyRange visual duplication, or Excel UI-equivalent placement.',
 		},
 		{
+			evidenceId: 'structural-insert-bounds-fail-closed-proof',
+			kind: 'test',
+			command:
+				'bun test packages/engine/src/operations.test.ts -t "row and column inserts reject chart source refs before shifting them out of grid|row and column inserts reject sparkline ranges before shifting them out of grid|row and column inserts reject edge cell metadata before shifting it out of grid|row and column inserts reject visual anchors before shifting them out of grid|row and column inserts reject hyperlink locations before shifting them out of grid" --timeout 30000',
+			path: 'packages/engine/src/operations.test.ts; packages/engine/src/operations/structural-ops.ts; packages/engine/src/structural/formula-rewrite.ts',
+			acceptedScope:
+				'Commits 4e58852c, e4335064, 36b927f9, ec1ae480, and 7d01d067 prove structural row/column inserts fail closed before mutation when chart source refs, sparkline ranges, comments/threaded comments/hyperlinks/row-column metadata, visual anchors, or hyperlink locations would be shifted outside Excel worksheet bounds.',
+			boundary:
+				'Local structural insert fail-closed evidence only; it does not prove successful rewrite semantics, SDK save/reopen coverage, public workbook generality, Excel UI-equivalent insert behavior, arbitrary visual layout preservation, or complete metadata rewrite parity.',
+		},
+		{
 			evidenceId: 'public-calc-chain-formula-commit-proof',
 			kind: 'test',
 			command:

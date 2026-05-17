@@ -123,6 +123,7 @@ const SCALAR_IMPLICIT_INTERSECTION_FUNCTIONS = new Set([
 	'ACOT',
 	'ACOTH',
 	'ADDRESS',
+	'AGGREGATE',
 	'ASIN',
 	'ASINH',
 	'ATAN',
@@ -387,6 +388,7 @@ const ARRAY_CONTEXT_MAPPABLE_FUNCTIONS = new Set([
 	'ACOT',
 	'ACOTH',
 	'ADDRESS',
+	'AGGREGATE',
 	'ASIN',
 	'ASINH',
 	'ATAN',
@@ -1373,7 +1375,7 @@ function evalLegacyTopLevelFunction(
 	if (!def) return null
 	if (argNodes.length < def.minArgs || argNodes.length > def.maxArgs) return errorValue('#VALUE!')
 	const args: EvalArg[] = new Array(argNodes.length)
-	const rangePreservingArgIndexes = ARRAY_MAPPED_RANGE_PRESERVING_ARGS.get(upperName)
+	const rangePreservingArgIndexes = rangePreservingArgIndexesForFunction(upperName, argNodes)
 	for (let i = 0; i < argNodes.length; i++) {
 		const node = argNodes[i] as FormulaNode
 		const ref = resolveReferenceNode(node, ctx)
@@ -1387,6 +1389,32 @@ function evalLegacyTopLevelFunction(
 				: resolveArg(node, ctx)
 	}
 	return def.evaluate(args, sharedFnCtx.update(ctx))
+}
+
+function rangePreservingArgIndexesForFunction(
+	upperName: string,
+	argNodes: readonly FormulaNode[],
+): ReadonlySet<number> | undefined {
+	if (upperName === 'AGGREGATE') return aggregateRangePreservingArgIndexes(argNodes)
+	return ARRAY_MAPPED_RANGE_PRESERVING_ARGS.get(upperName)
+}
+
+function aggregateRangePreservingArgIndexes(argNodes: readonly FormulaNode[]): ReadonlySet<number> {
+	const code = literalNumber(argNodes[0])
+	if (code !== null && code >= 14 && code <= 19) return new Set([2])
+	const indexes = new Set<number>()
+	for (let i = 2; i < argNodes.length; i++) indexes.add(i)
+	return indexes
+}
+
+function literalNumber(node: FormulaNode | undefined): number | null {
+	if (!node) return null
+	if (node.type === 'number') return Math.trunc(node.value)
+	if (node.type === 'unary' && node.operand.type === 'number') {
+		if (node.op === '+') return Math.trunc(node.operand.value)
+		if (node.op === '-') return Math.trunc(-node.operand.value)
+	}
+	return null
 }
 
 function evalArrayUnary(op: string, operand: Extract<CellValue, { kind: 'array' }>): CellValue {
@@ -1567,7 +1595,7 @@ function evalFunction(name: string, argNodes: readonly FormulaNode[], ctx: EvalC
 			def,
 			mappedArgs,
 			ctx,
-			ARRAY_MAPPED_RANGE_PRESERVING_ARGS.get(upperName),
+			rangePreservingArgIndexesForFunction(upperName, argNodes),
 		)
 		if (mapped) return mapped
 	}
@@ -1578,7 +1606,7 @@ function evalFunction(name: string, argNodes: readonly FormulaNode[], ctx: EvalC
 	// calc benchmarks show no allocation bottleneck. Pooling would require lifecycle management
 	// (reset between cell evals) and conditional fill logic, adding complexity without proven gain.
 	const args: EvalArg[] = new Array(argNodes.length)
-	const rangePreservingArgIndexes = ARRAY_MAPPED_RANGE_PRESERVING_ARGS.get(upperName)
+	const rangePreservingArgIndexes = rangePreservingArgIndexesForFunction(upperName, argNodes)
 	for (let i = 0; i < argNodes.length; i++) {
 		args[i] = resolveFunctionArg(
 			argNodes[i] as FormulaNode,

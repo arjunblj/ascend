@@ -1109,6 +1109,7 @@ function nodeCanReturnArray(node: FormulaNode): boolean {
 
 function functionCanReturnArray(node: Extract<FormulaNode, { type: 'function' }>): boolean {
 	const name = node.name.toUpperCase()
+	if (name === 'AGGREGATE') return aggregateSelectorCanReturnArray(node)
 	return (
 		ARRAY_RETURNING_FUNCTIONS.has(name) ||
 		(ARRAY_MAPPING_FUNCTIONS.has(name) &&
@@ -1118,6 +1119,26 @@ function functionCanReturnArray(node: Extract<FormulaNode, { type: 'function' }>
 					nodeCanReturnArray(arg),
 			))
 	)
+}
+
+function aggregateSelectorCanReturnArray(
+	node: Extract<FormulaNode, { type: 'function' }>,
+): boolean {
+	if (node.args.length < 4) return false
+	const code = literalNumber(node.args[0])
+	return (
+		code !== null && code >= 14 && code <= 19 && nodeCanReturnArray(node.args[3] as FormulaNode)
+	)
+}
+
+function literalNumber(node: FormulaNode | undefined): number | null {
+	if (!node) return null
+	if (node.type === 'number') return Math.trunc(node.value)
+	if (node.type === 'unary' && node.operand.type === 'number') {
+		if (node.op === '+') return Math.trunc(node.operand.value)
+		if (node.op === '-') return Math.trunc(-node.operand.value)
+	}
+	return null
 }
 
 function hasExternalWorkbookReference(node: FormulaNode): boolean {

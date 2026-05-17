@@ -2819,6 +2819,156 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(1, 2)?.value).toEqual(sheet.cells.get(1, 4)?.value)
 	})
 
+	test('AGGREGATE selector functions spill over k while preserving the data range', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		const values = [1, 3, 2, 4, 8, 10]
+		const indexes = [1, 2, 3]
+		const percentiles = [0.25, 0.5, 0.75]
+		for (let row = 0; row < values.length; row++) {
+			sheet.cells.set(row, 0, {
+				value: numberValue(values[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+		}
+		for (let row = 0; row < indexes.length; row++) {
+			sheet.cells.set(row, 1, {
+				value: numberValue(indexes[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+			sheet.cells.set(row, 2, {
+				value: numberValue(percentiles[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+		}
+		const arrayFormulas = [
+			'AGGREGATE(14,0,A1:A6,B1:B3)+0',
+			'AGGREGATE(15,0,A1:A6,B1:B3)+0',
+			'AGGREGATE(16,0,A1:A6,C1:C3)+0',
+			'AGGREGATE(17,0,A1:A6,B1:B3)+0',
+			'AGGREGATE(18,0,A1:A6,C1:C3)+0',
+			'AGGREGATE(19,0,A1:A6,B1:B3)+0',
+		]
+		const scalarFormulas = [
+			'AGGREGATE(14,0,A1:A6,B{r})+0',
+			'AGGREGATE(15,0,A1:A6,B{r})+0',
+			'AGGREGATE(16,0,A1:A6,C{r})+0',
+			'AGGREGATE(17,0,A1:A6,B{r})+0',
+			'AGGREGATE(18,0,A1:A6,C{r})+0',
+			'AGGREGATE(19,0,A1:A6,B{r})+0',
+		]
+		for (let col = 0; col < arrayFormulas.length; col++) {
+			sheet.cells.set(0, 3 + col, {
+				value: EMPTY,
+				formula: arrayFormulas[col] as string,
+				styleId: sid,
+			})
+			for (let row = 0; row < indexes.length; row++) {
+				sheet.cells.set(row, 12 + col, {
+					value: EMPTY,
+					formula: (scalarFormulas[col] as string).replaceAll('{r}', String(row + 1)),
+					styleId: sid,
+				})
+			}
+		}
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		for (let row = 0; row < indexes.length; row++) {
+			for (let col = 0; col < arrayFormulas.length; col++) {
+				expect(sheet.cells.get(row, 3 + col)?.value).toEqual(sheet.cells.get(row, 12 + col)?.value)
+			}
+		}
+	})
+
+	test('top-level AGGREGATE selector functions implicitly intersect k ranges', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		const values = [1, 3, 2, 4, 8, 10]
+		const indexes = [1, 2, 3]
+		const percentiles = [0.25, 0.5, 0.75]
+		for (let row = 0; row < values.length; row++) {
+			sheet.cells.set(row, 0, {
+				value: numberValue(values[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+		}
+		for (let row = 0; row < indexes.length; row++) {
+			sheet.cells.set(row, 1, {
+				value: numberValue(indexes[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+			sheet.cells.set(row, 2, {
+				value: numberValue(percentiles[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+		}
+		const rangeFormulas = [
+			'AGGREGATE(14,0,A1:A6,B1:B3)',
+			'AGGREGATE(16,0,A1:A6,C1:C3)',
+			'AGGREGATE(19,0,A1:A6,B1:B3)',
+		]
+		const scalarFormulas = [
+			'AGGREGATE(14,0,A1:A6,B2)',
+			'AGGREGATE(16,0,A1:A6,C2)',
+			'AGGREGATE(19,0,A1:A6,B2)',
+		]
+		for (let col = 0; col < rangeFormulas.length; col++) {
+			sheet.cells.set(1, 3 + col, {
+				value: EMPTY,
+				formula: rangeFormulas[col] as string,
+				styleId: sid,
+			})
+			sheet.cells.set(1, 8 + col, {
+				value: EMPTY,
+				formula: scalarFormulas[col] as string,
+				styleId: sid,
+			})
+		}
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		for (let col = 0; col < rangeFormulas.length; col++) {
+			expect(sheet.cells.get(1, 3 + col)?.value).toEqual(sheet.cells.get(1, 8 + col)?.value)
+		}
+	})
+
+	test('AGGREGATE reference form preserves multiple range arguments instead of spilling them', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		for (let row = 0; row < 3; row++) {
+			sheet.cells.set(row, 0, {
+				value: numberValue(row + 1),
+				formula: null,
+				styleId: sid,
+			})
+			sheet.cells.set(row, 1, {
+				value: numberValue(row + 4),
+				formula: null,
+				styleId: sid,
+			})
+		}
+		sheet.cells.set(0, 2, {
+			value: EMPTY,
+			formula: 'AGGREGATE(9,4,A1:A3,B1:B3)+0',
+			styleId: sid,
+		})
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(0, 2)?.value).toEqual(numberValue(21))
+		expect(sheet.cells.get(1, 2)).toBeUndefined()
+	})
+
 	test('legacy statistical compatibility functions spill over range operands in array formulas', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

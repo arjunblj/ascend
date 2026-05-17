@@ -1,5 +1,6 @@
 import type {
 	AutoFilter,
+	PivotTableInfo,
 	RangeRef,
 	Sheet,
 	SheetAdvancedFilterInfo,
@@ -191,6 +192,9 @@ function applyAxisShift(
 			insertShiftedSparklineOutOfBoundsError(axis, at, count, insertSparklineOverflowBlocker),
 		)
 	}
+	const pivotTableBlocker = findPivotTableStructuralEditBlocker(workbook, sheetName, axis, at)
+	if (pivotTableBlocker)
+		return err(pivotTableStructuralEditError(axis, at, count, pivotTableBlocker))
 	const ambiguousDefinedName = findAmbiguousWorkbookDefinedNameStructuralReference(workbook)
 	if (ambiguousDefinedName) {
 		return err(ambiguousWorkbookDefinedNameStructuralEditError(ambiguousDefinedName))
@@ -1247,6 +1251,73 @@ function insertShiftedSparklineOutOfBoundsError(
 				formula: blocker.formula,
 				reference: blocker.reference,
 				shiftedReference: blocker.shiftedReference,
+			},
+		},
+	)
+}
+
+interface PivotTableStructuralEditBlocker {
+	readonly pivotTable: PivotTableInfo
+	readonly ref: string | null
+	readonly reason: 'location-shift' | 'unparsed-location'
+}
+
+function findPivotTableStructuralEditBlocker(
+	workbook: Workbook,
+	sheetName: string,
+	axis: 'row' | 'col',
+	at: number,
+): PivotTableStructuralEditBlocker | null {
+	for (const pivotTable of workbook.pivotTables) {
+		if (!sameSheetName(pivotTable.sheetName, sheetName)) continue
+		const ref = pivotTable.location?.ref ?? pivotTable.locationRef ?? null
+		if (!ref) return { pivotTable, ref: null, reason: 'unparsed-location' }
+		let range: RangeRef
+		try {
+			range = parseRange(ref)
+		} catch {
+			return { pivotTable, ref, reason: 'unparsed-location' }
+		}
+		if (range.sheet !== undefined && !sameSheetName(range.sheet, sheetName)) {
+			return { pivotTable, ref, reason: 'unparsed-location' }
+		}
+		if (!structuralEditAffectsRange(range, axis, at)) continue
+		return { pivotTable, ref: rangeToA1(range), reason: 'location-shift' }
+	}
+	return null
+}
+
+function structuralEditAffectsRange(range: RangeRef, axis: 'row' | 'col', at: number): boolean {
+	const end = axis === 'row' ? range.end.row : range.end.col
+	return at <= end
+}
+
+function pivotTableStructuralEditError(
+	axis: 'row' | 'col',
+	at: number,
+	count: number,
+	blocker: PivotTableStructuralEditBlocker,
+): ReturnType<typeof ascendError> {
+	const label = axis === 'row' ? 'rows' : 'columns'
+	const name = blocker.pivotTable.name ?? blocker.pivotTable.partPath
+	const ref = blocker.ref ?? 'unknown'
+	return ascendError(
+		'VALIDATION_ERROR',
+		`Cannot structurally edit ${label} because pivot table "${name}" location ${ref} would require pivot-table layout rewrite`,
+		{
+			refs: [`pivotTable:${name}`],
+			suggestedFix:
+				'Move, refresh, or rebuild the pivot table explicitly before applying row or column structural edits that affect its layout.',
+			details: {
+				kind: 'pivot-table-structural-edit-blocked',
+				axis,
+				at,
+				count,
+				reason: blocker.reason,
+				pivotTableName: blocker.pivotTable.name,
+				partPath: blocker.pivotTable.partPath,
+				sheetName: blocker.pivotTable.sheetName,
+				ref: blocker.ref,
 			},
 		},
 	)

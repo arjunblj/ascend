@@ -6675,6 +6675,70 @@ describe('applyOperation', () => {
 		expect(wb.slicerCaches).toHaveLength(0)
 	})
 
+	test('row and column structural edits fail closed for affected pivot table locations', () => {
+		const cases: readonly {
+			readonly op: Operation
+			readonly expectedAxis: 'row' | 'col'
+			readonly expectedRef: string
+		}[] = [
+			{
+				op: { op: 'insertRows', sheet: 'Report', at: 1, count: 1 },
+				expectedAxis: 'row',
+				expectedRef: 'B3:D8',
+			},
+			{
+				op: { op: 'deleteCols', sheet: 'Report', at: 0, count: 1 },
+				expectedAxis: 'col',
+				expectedRef: 'B3:D8',
+			},
+		]
+
+		for (const { op, expectedAxis, expectedRef } of cases) {
+			const wb = createWorkbook()
+			const report = wb.addSheet('Report')
+			wb.addSheet('Data')
+			report.cells.set(0, 0, cell(numberValue(1)))
+			wb.pivotTables.push({
+				partPath: 'xl/pivotTables/pivotTable1.xml',
+				sheetName: 'report',
+				name: 'SalesPivot',
+				cacheId: 1,
+				location: { ref: expectedRef, firstHeaderRow: 0 },
+				fields: [],
+				rowFields: [],
+				columnFields: [],
+				pageFields: [],
+				dataFields: [],
+			})
+			const beforePivot = JSON.stringify(wb.pivotTables)
+
+			const result = applyOperation(wb, op)
+
+			expectErr(result)
+			expect(result.error.code, op.op).toBe('VALIDATION_ERROR')
+			expect(result.error.refs, op.op).toEqual(['pivotTable:SalesPivot'])
+			expect(result.error.details, op.op).toMatchObject({
+				kind: 'pivot-table-structural-edit-blocked',
+				axis: expectedAxis,
+				reason: 'location-shift',
+				pivotTableName: 'SalesPivot',
+				partPath: 'xl/pivotTables/pivotTable1.xml',
+				sheetName: 'report',
+				ref: expectedRef,
+			})
+			expect(JSON.stringify(wb.pivotTables), op.op).toBe(beforePivot)
+			expect(report.cells.get(0, 0)?.value, op.op).toEqual(numberValue(1))
+
+			const otherSheet = applyOperation(wb, {
+				op: expectedAxis === 'row' ? 'insertRows' : 'deleteCols',
+				sheet: 'Data',
+				at: 0,
+				count: 1,
+			})
+			expectOk(otherSheet)
+		}
+	})
+
 	test('insertRows shifts cells down', () => {
 		const wb = setup()
 		const result = applyOperation(wb, {

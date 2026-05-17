@@ -44,7 +44,7 @@ import {
 	patch,
 	safeParseRange,
 } from './helpers.ts'
-import { handleInsertRows } from './structural-ops.ts'
+import { handleInsertRows, validateStructuralProtection } from './structural-ops.ts'
 
 const EXCEL_MAX_ROWS = 1_048_576
 
@@ -154,6 +154,8 @@ export function handleAppendRows(
 			tableRangeOverlapError('append', table.name, rangeToA1(nextTableRef), overlappingTable),
 		)
 	}
+	const protectionBlocker = validateStructuralProtection(sheet, 'row', rowDelta)
+	if (protectionBlocker) return err(protectionBlocker)
 	if (table.hasTotals) {
 		const shiftedTable = findTableShiftedByTotalsAppend(sheet, table, originalEndRow)
 		if (shiftedTable) return err(tableAppendTotalsShiftError(table, shiftedTable))

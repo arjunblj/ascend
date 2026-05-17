@@ -290,7 +290,7 @@ function applyAxisShift(
 	return ok(patch([...affected], [...sheetsModified], true))
 }
 
-function validateStructuralProtection(sheet: Sheet, axis: 'row' | 'col', delta: number) {
+export function validateStructuralProtection(sheet: Sheet, axis: 'row' | 'col', delta: number) {
 	const protection = sheet.protection
 	if (!protection || protection.sheet === false) return null
 	const operation =

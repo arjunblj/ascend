@@ -10930,6 +10930,62 @@ describe('applyOperation', () => {
 		expect(sheet.cells.get(1_048_576, 0)).toBeUndefined()
 	})
 
+	test('appendRows rejects protected table growth unless row insertion is allowed', () => {
+		const blocked = createWorkbook()
+		const blockedSheet = blocked.addSheet('Sheet1')
+		blockedSheet.cells.set(0, 0, { value: stringValue('Name'), formula: null, styleId: sid })
+		blockedSheet.protection = { sheet: true }
+		blockedSheet.tables.push({
+			id: createTableId(),
+			name: 'ProtectedTable',
+			sheetId: blockedSheet.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 0, col: 0 } },
+			columns: [{ name: 'Name' }],
+			hasHeaders: true,
+			hasTotals: false,
+		})
+
+		const blockedResult = applyOperation(blocked, {
+			op: 'appendRows',
+			table: 'ProtectedTable',
+			rows: [['Debt']],
+		})
+
+		expectErr(blockedResult)
+		expect(blockedResult.error.code).toBe('PROTECTION_ERROR')
+		expect(blockedResult.error.details).toMatchObject({
+			kind: 'sheet-protection-structural-edit-blocked',
+			sheetName: 'Sheet1',
+			operation: 'insertRows',
+		})
+		expect(blockedSheet.tables[0]?.ref.end.row).toBe(0)
+		expect(blockedSheet.cells.get(1, 0)).toBeUndefined()
+
+		const allowed = createWorkbook()
+		const allowedSheet = allowed.addSheet('Sheet1')
+		allowedSheet.cells.set(0, 0, { value: stringValue('Name'), formula: null, styleId: sid })
+		allowedSheet.protection = { sheet: true, insertRows: true }
+		allowedSheet.tables.push({
+			id: createTableId(),
+			name: 'AllowedTable',
+			sheetId: allowedSheet.id,
+			ref: { start: { row: 0, col: 0 }, end: { row: 0, col: 0 } },
+			columns: [{ name: 'Name' }],
+			hasHeaders: true,
+			hasTotals: false,
+		})
+
+		expectOk(
+			applyOperation(allowed, {
+				op: 'appendRows',
+				table: 'AllowedTable',
+				rows: [['Debt']],
+			}),
+		)
+		expect(allowedSheet.tables[0]?.ref.end.row).toBe(1)
+		expect(allowedSheet.cells.get(1, 0)?.value).toEqual(stringValue('Debt'))
+	})
+
 	test('appendRows rejects expansion into another table range', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

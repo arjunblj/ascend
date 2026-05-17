@@ -294,6 +294,13 @@ export function handleTransferRange(
 				removeSourceMerges: false,
 			})
 	if (!mergePlan.ok) return mergePlan
+	if (
+		op.op === 'moveRange' &&
+		sourceSheet === targetSheet &&
+		rangesOverlap(source, mergePlan.value.targetRange)
+	) {
+		return err(overlappingMoveRangeError(source, mergePlan.value.targetRange))
+	}
 	const visualPlan = planVisualTransfer(
 		sourceSheet,
 		targetSheet,
@@ -1545,6 +1552,26 @@ function partialTargetMergeError(
 			refs: [rangeToA1(target), rangeToA1(merge)],
 			suggestedFix:
 				'Choose a target that fully covers the existing merged range, unmerge it first, or paste without formats.',
+		},
+	)
+}
+
+function overlappingMoveRangeError(
+	source: RangeRef,
+	target: RangeRef,
+): ReturnType<typeof ascendError> {
+	return ascendError(
+		'VALIDATION_ERROR',
+		'Cannot move a range onto an overlapping target range on the same sheet',
+		{
+			refs: [rangeToA1(source), rangeToA1(target)],
+			suggestedFix:
+				'Choose a target range that does not overlap the moved cells, or copy the range first and clear the source explicitly after reviewing the result.',
+			details: {
+				kind: 'overlapping-move-range',
+				source: rangeToA1(source),
+				target: rangeToA1(target),
+			},
 		},
 	)
 }

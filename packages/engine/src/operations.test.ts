@@ -3742,6 +3742,70 @@ describe('applyOperation', () => {
 		expect(sheet.cells.get(1, 0)).toBeUndefined()
 	})
 
+	test('moveRange rejects same-sheet overlapping targets before mutation', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		const sourceStyle = wb.styles.register({ numberFormat: '$#,##0.00' })
+		sheet.cells.set(0, 0, { value: numberValue(10), formula: null, styleId: sourceStyle })
+		sheet.cells.set(1, 0, { value: numberValue(20), formula: 'A1*2', styleId: sourceStyle })
+		sheet.cells.set(0, 1, cell(numberValue(30)))
+
+		const result = applyOperation(wb, {
+			op: 'moveRange',
+			sheet: 'Sheet1',
+			source: 'A1:B2',
+			target: 'A2',
+			mode: 'all',
+		})
+
+		expectErr(result)
+		expect(result.error.details).toMatchObject({
+			kind: 'overlapping-move-range',
+			source: 'A1:B2',
+			target: 'A2:B3',
+		})
+		expect(sheet.cells.get(0, 0)).toEqual({
+			value: numberValue(10),
+			formula: null,
+			styleId: sourceStyle,
+		})
+		expect(sheet.cells.get(1, 0)).toEqual({
+			value: numberValue(20),
+			formula: 'A1*2',
+			styleId: sourceStyle,
+		})
+		expect(sheet.cells.get(0, 1)).toEqual(cell(numberValue(30)))
+		expect(sheet.cells.get(2, 0)).toBeUndefined()
+	})
+
+	test('moveRange rejects same-sheet overlapping format-only targets before mutation', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		const sourceStyle = wb.styles.register({ numberFormat: '$#,##0.00' })
+		const targetStyle = wb.styles.register({ numberFormat: '0.0%' })
+		sheet.cells.set(0, 0, { value: numberValue(10), formula: null, styleId: sourceStyle })
+		sheet.cells.set(1, 0, { value: numberValue(20), formula: null, styleId: sourceStyle })
+		sheet.cells.set(1, 1, { value: numberValue(30), formula: null, styleId: targetStyle })
+
+		const result = applyOperation(wb, {
+			op: 'moveRange',
+			sheet: 'Sheet1',
+			source: 'A1:A2',
+			target: 'A2',
+			mode: 'formats',
+		})
+
+		expectErr(result)
+		expect(result.error.details).toMatchObject({
+			kind: 'overlapping-move-range',
+			source: 'A1:A2',
+			target: 'A2:A3',
+		})
+		expect(sheet.cells.get(0, 0)?.styleId).toBe(sourceStyle)
+		expect(sheet.cells.get(1, 0)?.styleId).toBe(sourceStyle)
+		expect(sheet.cells.get(1, 1)?.styleId).toBe(targetStyle)
+	})
+
 	test('moveRange format-only moves styles without deleting source formulas or bindings', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

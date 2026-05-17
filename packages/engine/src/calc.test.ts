@@ -3244,6 +3244,55 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(2, 15)?.value).toEqual(numberValue(1))
 	})
 
+	test('date interval scalar functions spill over range operands in array formulas', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		const starts = [dateToSerial(2024, 1, 1), dateToSerial(2024, 2, 29), dateToSerial(2024, 12, 31)]
+		const ends = [dateToSerial(2024, 1, 31), dateToSerial(2025, 2, 28), dateToSerial(2025, 12, 31)]
+		const units = ['D', 'M', 'Y']
+		for (let row = 0; row < 3; row++) {
+			sheet.cells.set(row, 0, {
+				value: numberValue(starts[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+			sheet.cells.set(row, 1, {
+				value: numberValue(ends[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+			sheet.cells.set(row, 2, {
+				value: stringValue(units[row] as string),
+				formula: null,
+				styleId: sid,
+			})
+		}
+		sheet.cells.set(0, 3, { value: EMPTY, formula: 'DATEDIF(A1:A3,B1:B3,C1:C3)+0', styleId: sid })
+		sheet.cells.set(0, 4, { value: EMPTY, formula: 'DAYS360(A1:A3,B1:B3)+0', styleId: sid })
+		sheet.cells.set(0, 5, { value: EMPTY, formula: 'YEARFRAC(A1:A3,B1:B3,0)+0', styleId: sid })
+		sheet.cells.set(0, 6, { value: EMPTY, formula: 'WEEKNUM(A1:A3,2)+0', styleId: sid })
+		sheet.cells.set(0, 7, { value: EMPTY, formula: 'ISOWEEKNUM(A1:A3)+0', styleId: sid })
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(0, 3)?.value).toEqual(numberValue(30))
+		expect(sheet.cells.get(1, 3)?.value).toEqual(numberValue(11))
+		expect(sheet.cells.get(2, 3)?.value).toEqual(numberValue(1))
+		expect(sheet.cells.get(0, 4)?.value).toEqual(numberValue(30))
+		expect(sheet.cells.get(1, 4)?.value).toEqual(numberValue(360))
+		expect(sheet.cells.get(2, 4)?.value).toEqual(numberValue(360))
+		expect(sheet.cells.get(0, 5)?.value).toEqual(numberValue(30 / 360))
+		expect(sheet.cells.get(1, 5)?.value).toEqual(numberValue(1))
+		expect(sheet.cells.get(2, 5)?.value).toEqual(numberValue(1))
+		expect(sheet.cells.get(0, 6)?.value).toEqual(numberValue(1))
+		expect(sheet.cells.get(1, 6)?.value).toEqual(numberValue(9))
+		expect(sheet.cells.get(2, 6)?.value).toEqual(numberValue(53))
+		expect(sheet.cells.get(0, 7)?.value).toEqual(numberValue(1))
+		expect(sheet.cells.get(1, 7)?.value).toEqual(numberValue(9))
+		expect(sheet.cells.get(2, 7)?.value).toEqual(numberValue(1))
+	})
+
 	test('RAND is deterministic per cell and seed', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

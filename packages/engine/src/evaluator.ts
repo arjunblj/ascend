@@ -263,6 +263,7 @@ const SCALAR_IMPLICIT_INTERSECTION_FUNCTIONS = new Set([
 	'IPMT',
 	'ISPMT',
 	'ISOWEEKNUM',
+	'LARGE',
 	'LEFT',
 	'LEN',
 	'LN',
@@ -324,6 +325,7 @@ const SCALAR_IMPLICIT_INTERSECTION_FUNCTIONS = new Set([
 	'SIGN',
 	'SIN',
 	'SINH',
+	'SMALL',
 	'SLN',
 	'SQRT',
 	'SQRTPI',
@@ -522,6 +524,7 @@ const ARRAY_CONTEXT_MAPPABLE_FUNCTIONS = new Set([
 	'ISNONTEXT',
 	'ISODD',
 	'ISTEXT',
+	'LARGE',
 	'LEFT',
 	'LEN',
 	'LN',
@@ -583,6 +586,7 @@ const ARRAY_CONTEXT_MAPPABLE_FUNCTIONS = new Set([
 	'SIGN',
 	'SIN',
 	'SINH',
+	'SMALL',
 	'SLN',
 	'SQRT',
 	'SQRTPI',
@@ -621,8 +625,10 @@ const ARRAY_CONTEXT_MAPPABLE_FUNCTIONS = new Set([
 ])
 
 const ARRAY_MAPPED_RANGE_PRESERVING_ARGS = new Map<string, ReadonlySet<number>>([
+	['LARGE', new Set([0])],
 	['NETWORKDAYS', new Set([2])],
 	['NETWORKDAYS.INTL', new Set([3])],
+	['SMALL', new Set([0])],
 	['WORKDAY', new Set([2])],
 	['WORKDAY.INTL', new Set([3])],
 ])

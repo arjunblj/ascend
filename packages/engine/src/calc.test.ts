@@ -2213,6 +2213,80 @@ describe('recalculate', () => {
 		}
 	})
 
+	test('order statistic functions spill over array k arguments while preserving data ranges', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		const values = [9, 4, 7, 1, 5]
+		const ks = [1, 2, 4]
+		for (let row = 0; row < values.length; row++) {
+			sheet.cells.set(row, 0, {
+				value: numberValue(values[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+		}
+		for (let row = 0; row < ks.length; row++) {
+			sheet.cells.set(row, 1, {
+				value: numberValue(ks[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+		}
+		sheet.cells.set(0, 2, { value: EMPTY, formula: 'LARGE(A1:A5,B1:B3)+0', styleId: sid })
+		sheet.cells.set(0, 3, { value: EMPTY, formula: 'SMALL(A1:A5,B1:B3)+0', styleId: sid })
+		for (let row = 0; row < ks.length; row++) {
+			sheet.cells.set(row, 4, {
+				value: EMPTY,
+				formula: `LARGE(A1:A5,B${row + 1})+0`,
+				styleId: sid,
+			})
+			sheet.cells.set(row, 5, {
+				value: EMPTY,
+				formula: `SMALL(A1:A5,B${row + 1})+0`,
+				styleId: sid,
+			})
+		}
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		for (let row = 0; row < ks.length; row++) {
+			expect(sheet.cells.get(row, 2)?.value).toEqual(sheet.cells.get(row, 4)?.value)
+			expect(sheet.cells.get(row, 3)?.value).toEqual(sheet.cells.get(row, 5)?.value)
+		}
+	})
+
+	test('top-level order statistic functions implicitly intersect range k arguments', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		const values = [9, 4, 7, 1, 5]
+		const ks = [1, 2, 4]
+		for (let row = 0; row < values.length; row++) {
+			sheet.cells.set(row, 0, {
+				value: numberValue(values[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+		}
+		for (let row = 0; row < ks.length; row++) {
+			sheet.cells.set(row, 1, {
+				value: numberValue(ks[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+		}
+		sheet.cells.set(1, 2, { value: EMPTY, formula: 'LARGE(A1:A5,B1:B3)', styleId: sid })
+		sheet.cells.set(1, 3, { value: EMPTY, formula: 'LARGE(A1:A5,B2)', styleId: sid })
+		sheet.cells.set(1, 4, { value: EMPTY, formula: 'SMALL(A1:A5,B1:B3)', styleId: sid })
+		sheet.cells.set(1, 5, { value: EMPTY, formula: 'SMALL(A1:A5,B2)', styleId: sid })
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(1, 2)?.value).toEqual(sheet.cells.get(1, 3)?.value)
+		expect(sheet.cells.get(1, 4)?.value).toEqual(sheet.cells.get(1, 5)?.value)
+	})
+
 	test('legacy statistical compatibility functions spill over range operands in array formulas', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

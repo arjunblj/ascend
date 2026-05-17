@@ -875,6 +875,7 @@ const ARRAY_MAPPING_FUNCTIONS = new Set([
 	'ISPMT',
 	'ISOWEEKNUM',
 	'ISTEXT',
+	'LARGE',
 	'LEFT',
 	'LEN',
 	'LN',
@@ -938,6 +939,7 @@ const ARRAY_MAPPING_FUNCTIONS = new Set([
 	'SIGN',
 	'SIN',
 	'SINH',
+	'SMALL',
 	'SLN',
 	'SQRT',
 	'SQRTPI',
@@ -974,6 +976,15 @@ const ARRAY_MAPPING_FUNCTIONS = new Set([
 	'WORKDAY.INTL',
 	'YEAR',
 	'YEARFRAC',
+])
+
+const ARRAY_MAPPING_RANGE_PRESERVING_ARGS = new Map<string, ReadonlySet<number>>([
+	['LARGE', new Set([0])],
+	['NETWORKDAYS', new Set([2])],
+	['NETWORKDAYS.INTL', new Set([3])],
+	['SMALL', new Set([0])],
+	['WORKDAY', new Set([2])],
+	['WORKDAY.INTL', new Set([3])],
 ])
 
 const REFERENCE_SENSITIVE_SHARED_FUNCTIONS = new Set(['INDIRECT', 'OFFSET'])
@@ -1070,7 +1081,12 @@ function functionCanReturnArray(node: Extract<FormulaNode, { type: 'function' }>
 	const name = node.name.toUpperCase()
 	return (
 		ARRAY_RETURNING_FUNCTIONS.has(name) ||
-		(ARRAY_MAPPING_FUNCTIONS.has(name) && node.args.some(nodeCanReturnArray))
+		(ARRAY_MAPPING_FUNCTIONS.has(name) &&
+			node.args.some(
+				(arg, index) =>
+					ARRAY_MAPPING_RANGE_PRESERVING_ARGS.get(name)?.has(index) !== true &&
+					nodeCanReturnArray(arg),
+			))
 	)
 }
 

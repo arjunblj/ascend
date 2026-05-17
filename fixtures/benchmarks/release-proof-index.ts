@@ -3835,14 +3835,23 @@ function todayCommitClaimMatrix(): readonly ReleaseProofTodayCommitClaimMatrixRo
 		},
 		{
 			claimArea: 'formula-calc-behavior',
-			commits: ['f6a71088', '104c38c0', '64d82251', 'ba8ea5fb', '0604c9f3'],
+			commits: [
+				'f6a71088',
+				'104c38c0',
+				'64d82251',
+				'ba8ea5fb',
+				'0604c9f3',
+				'6ad8923f',
+				'1b40c0fb',
+				'fd616906',
+			],
 			releaseOrSotaClaimBecameMoreTrue:
-				'Ascend formula/calc behavior is more credible for dynamic-array-style workflows because common IS predicates, ERROR.TYPE, SWITCH, and IFS now map over range or array operands and spill through focused conditional contexts instead of collapsing to a top-left scalar.',
+				'Ascend formula/calc behavior is more credible for dynamic-array-style workflows because common IS predicates, ERROR.TYPE, SWITCH, IFS, and text scalar/extraction/search functions now map over range or array operands and spill through focused conditional contexts instead of collapsing to a top-left scalar.',
 			evidenceProvesIt: [
-				'bun test packages/engine/src/calc.test.ts packages/formulas/src/functions/functions.test.ts -t "error predicates map over arrays inside IF conditions|common IS predicates spill boolean masks for range operands|ERROR.TYPE spills error codes for range operands|IS predicates do not coerce text as numbers|SWITCH spills results for array expressions|SWITCH array expressions preserve lazy branch evaluation|IFS spills results for array conditions|IFS array conditions preserve selected array results and lazy branch evaluation" --timeout 30000',
+				'bun test packages/engine/src/calc.test.ts packages/formulas/src/functions/functions.test.ts -t "error predicates map over arrays inside IF conditions|common IS predicates spill boolean masks for range operands|ERROR.TYPE spills error codes for range operands|IS predicates do not coerce text as numbers|SWITCH spills results for array expressions|SWITCH array expressions preserve lazy branch evaluation|IFS spills results for array conditions|IFS array conditions preserve selected array results and lazy branch evaluation|common text scalar functions spill over range operands in array formulas|text extraction functions spill over range operands in array formulas|FIND and SEARCH spill over range operands in array formulas" --timeout 30000',
 			],
 			allowedWording:
-				'Ascend has local regression proof for array/range mapping of ISERROR, ISERR, ISNA, ISBLANK, ISTEXT, ISLOGICAL, ISNONTEXT, ISEVEN, ISODD, ERROR.TYPE, SWITCH, and IFS in focused formula-engine cases, including spilled IF/IFERROR/SWITCH/IFS masks and lazy branch handling.',
+				'Ascend has local regression proof for array/range mapping of ISERROR, ISERR, ISNA, ISBLANK, ISTEXT, ISLOGICAL, ISNONTEXT, ISEVEN, ISODD, ERROR.TYPE, SWITCH, IFS, LEN, UPPER, LOWER, TRIM, LEFT, MID, RIGHT, FIND, and SEARCH in focused formula-engine cases, including spilled IF/IFERROR/SWITCH/IFS masks and lazy branch handling.',
 			forbiddenWording: [
 				'Do not claim Excel-compatible formulas, dynamic-array completeness, full INFO-function parity, external-oracle parity, fresh cached values, or QSS/SOTA formula superiority from these local unit regressions.',
 			],

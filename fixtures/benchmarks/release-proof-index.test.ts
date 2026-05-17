@@ -1962,11 +1962,15 @@ describe('release proof evidence index', () => {
 						'64d82251',
 						'ba8ea5fb',
 						'0604c9f3',
+						'6ad8923f',
+						'1b40c0fb',
+						'fd616906',
 					]),
-					allowedWording: expect.stringContaining('SWITCH'),
+					allowedWording: expect.stringContaining('SEARCH'),
 					evidenceProvesIt: expect.arrayContaining([
 						expect.stringContaining('common IS predicates spill boolean masks'),
 						expect.stringContaining('IFS spills results for array conditions'),
+						expect.stringContaining('FIND and SEARCH spill over range operands'),
 					]),
 					forbiddenWording: expect.arrayContaining([
 						expect.stringContaining('Excel-compatible formulas'),

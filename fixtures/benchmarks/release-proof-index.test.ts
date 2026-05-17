@@ -1686,8 +1686,9 @@ describe('release proof evidence index', () => {
 				}),
 				expect.objectContaining({
 					evidenceId: 'query-table-post-write-data-connections-proof',
-					acceptedScope: expect.stringContaining('62566e09'),
+					acceptedScope: expect.stringMatching(/62566e09.*a7585a67.*5f7875c5.*8c127e93.*9ddcdc01/),
 					path: expect.stringContaining('packages/io-xlsx/src/reader/connections.ts'),
+					command: expect.stringContaining('packages/sdk/src/connection-inventory.test.ts'),
 					boundary: expect.stringContaining('does not execute connections'),
 				}),
 				expect.objectContaining({
@@ -1973,7 +1974,7 @@ describe('release proof evidence index', () => {
 						'b93f3493',
 					]),
 					allowedWording: expect.stringMatching(
-						/workflow discovery that points agents to postWrite\.dataConnections, postWrite\.formulaState, and postWrite\.visuals.*generated safe-edit example output.*workbook connection scheduling metadata edits/,
+						/workflow discovery that points agents to postWrite\.dataConnections, postWrite\.formulaState, and postWrite\.visuals.*generated safe-edit example output.*web-query url.*workbook connection scheduling metadata edits/,
 					),
 					evidenceProvesIt: expect.arrayContaining([
 						expect.stringContaining(

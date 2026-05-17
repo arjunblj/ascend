@@ -722,6 +722,7 @@ const ARRAY_MAPPING_FUNCTIONS = new Set([
 	'ATAN2',
 	'ATANH',
 	'ARABIC',
+	'ARRAYTOTEXT',
 	'BASE',
 	'BESSELI',
 	'BESSELJ',
@@ -915,6 +916,7 @@ const ARRAY_MAPPING_FUNCTIONS = new Set([
 	'NEGBINOMDIST',
 	'NEGBINOM.DIST',
 	'NOMINAL',
+	'NUMBERVALUE',
 	'NORMDIST',
 	'NORM.DIST',
 	'NORMINV',
@@ -989,6 +991,7 @@ const ARRAY_MAPPING_FUNCTIONS = new Set([
 	'TEXT',
 	'TEXTAFTER',
 	'TEXTBEFORE',
+	'TEXTJOIN',
 	'TIME',
 	'TIMEVALUE',
 	'TINV',
@@ -1001,6 +1004,7 @@ const ARRAY_MAPPING_FUNCTIONS = new Set([
 	'UNICODE',
 	'UPPER',
 	'VALUE',
+	'VALUETOTEXT',
 	'VDB',
 	'WEIBULL',
 	'WEIBULL.DIST',
@@ -1015,6 +1019,7 @@ const ARRAY_MAPPING_FUNCTIONS = new Set([
 ])
 
 const ARRAY_MAPPING_RANGE_PRESERVING_ARGS = new Map<string, ReadonlySet<number>>([
+	['ARRAYTOTEXT', new Set([0])],
 	['DAVERAGE', new Set([0, 2])],
 	['DCOUNT', new Set([0, 2])],
 	['DCOUNTA', new Set([0, 2])],
@@ -1157,10 +1162,24 @@ function functionCanReturnArray(node: Extract<FormulaNode, { type: 'function' }>
 		(ARRAY_MAPPING_FUNCTIONS.has(name) &&
 			node.args.some(
 				(arg, index) =>
-					ARRAY_MAPPING_RANGE_PRESERVING_ARGS.get(name)?.has(index) !== true &&
+					arrayMappingRangePreservingArgIndexes(name, node.args)?.has(index) !== true &&
 					nodeCanReturnArray(arg),
 			))
 	)
+}
+
+function arrayMappingRangePreservingArgIndexes(
+	name: string,
+	argNodes: readonly FormulaNode[],
+): ReadonlySet<number> | undefined {
+	if (name === 'TEXTJOIN') return restArgIndexes(argNodes, 2)
+	return ARRAY_MAPPING_RANGE_PRESERVING_ARGS.get(name)
+}
+
+function restArgIndexes(argNodes: readonly FormulaNode[], start: number): ReadonlySet<number> {
+	const indexes = new Set<number>()
+	for (let i = start; i < argNodes.length; i++) indexes.add(i)
+	return indexes
 }
 
 function aggregateSelectorCanReturnArray(

@@ -1211,6 +1211,157 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(2, 5)?.value).toEqual(stringValue('small'))
 	})
 
+	test('text conversion functions spill over selector arguments while preserving joined ranges', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		const numericTexts = ['1.234,5', '2,500.25', '3.333,75']
+		const decimalSeparators = [',', '.', ',']
+		const groupSeparators = ['.', ',', '.']
+		const values = ['north', 'east', 'south']
+		const formats = [0, 1, 0]
+		const delimiters = [',', '|', '/']
+		const ignoreEmpty = [true, false, true]
+		const joinValues = ['alpha', '', 'omega']
+		for (let row = 0; row < numericTexts.length; row++) {
+			for (const [col, value] of [
+				[0, numericTexts[row]],
+				[1, decimalSeparators[row]],
+				[2, groupSeparators[row]],
+				[3, values[row]],
+				[6, delimiters[row]],
+				[9, joinValues[row]],
+			] as const) {
+				sheet.cells.set(row, col, {
+					value: stringValue(value as string),
+					formula: null,
+					styleId: sid,
+				})
+			}
+			sheet.cells.set(row, 4, {
+				value: numberValue(formats[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+			sheet.cells.set(row, 7, {
+				value: booleanValue(ignoreEmpty[row] as boolean),
+				formula: null,
+				styleId: sid,
+			})
+		}
+		const arrayFormulas = [
+			'NUMBERVALUE(A1:A3,B1:B3,C1:C3)+0',
+			'VALUETOTEXT(D1:D3,E1:E3)&""',
+			'ARRAYTOTEXT(D1:D3,E1:E3)&""',
+			'TEXTJOIN(G1:G3,H1:H3,J1:J3)&""',
+		]
+		const scalarFormulas = [
+			'NUMBERVALUE(A{r},B{r},C{r})+0',
+			'VALUETOTEXT(D{r},E{r})&""',
+			'ARRAYTOTEXT(D1:D3,E{r})&""',
+			'TEXTJOIN(G{r},H{r},J1:J3)&""',
+		]
+		for (let col = 0; col < arrayFormulas.length; col++) {
+			sheet.cells.set(0, 11 + col, {
+				value: EMPTY,
+				formula: arrayFormulas[col] as string,
+				styleId: sid,
+			})
+			for (let row = 0; row < numericTexts.length; row++) {
+				sheet.cells.set(row, 20 + col, {
+					value: EMPTY,
+					formula: (scalarFormulas[col] as string).replaceAll('{r}', String(row + 1)),
+					styleId: sid,
+				})
+			}
+		}
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		for (let row = 0; row < numericTexts.length; row++) {
+			for (let col = 0; col < arrayFormulas.length; col++) {
+				expect(sheet.cells.get(row, 11 + col)?.value).toEqual(sheet.cells.get(row, 20 + col)?.value)
+			}
+		}
+		expect(sheet.cells.get(0, 13)?.value).toEqual(stringValue('north, east, south'))
+		expect(sheet.cells.get(1, 13)?.value).toEqual(stringValue('{"north";"east";"south"}'))
+		expect(sheet.cells.get(0, 14)?.value).toEqual(stringValue('alpha,omega'))
+		expect(sheet.cells.get(1, 14)?.value).toEqual(stringValue('alpha||omega'))
+	})
+
+	test('top-level text conversion functions implicitly intersect selector ranges', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		const numericTexts = ['1.234,5', '2,500.25', '3.333,75']
+		const decimalSeparators = [',', '.', ',']
+		const groupSeparators = ['.', ',', '.']
+		const values = ['north', 'east', 'south']
+		const formats = [0, 1, 0]
+		const delimiters = [',', '|', '/']
+		const ignoreEmpty = [true, false, true]
+		const joinValues = ['alpha', '', 'omega']
+		for (let row = 0; row < numericTexts.length; row++) {
+			for (const [col, value] of [
+				[0, numericTexts[row]],
+				[1, decimalSeparators[row]],
+				[2, groupSeparators[row]],
+				[3, values[row]],
+				[6, delimiters[row]],
+				[9, joinValues[row]],
+			] as const) {
+				sheet.cells.set(row, col, {
+					value: stringValue(value as string),
+					formula: null,
+					styleId: sid,
+				})
+			}
+			sheet.cells.set(row, 4, {
+				value: numberValue(formats[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+			sheet.cells.set(row, 7, {
+				value: booleanValue(ignoreEmpty[row] as boolean),
+				formula: null,
+				styleId: sid,
+			})
+		}
+		const rangeFormulas = [
+			'NUMBERVALUE(A1:A3,B1:B3,C1:C3)',
+			'VALUETOTEXT(D1:D3,E1:E3)',
+			'ARRAYTOTEXT(D1:D3,E1:E3)',
+			'TEXTJOIN(G1:G3,H1:H3,J1:J3)',
+		]
+		const scalarFormulas = [
+			'NUMBERVALUE(A2,B2,C2)',
+			'VALUETOTEXT(D2,E2)',
+			'ARRAYTOTEXT(D1:D3,E2)',
+			'TEXTJOIN(G2,H2,J1:J3)',
+		]
+		for (let col = 0; col < rangeFormulas.length; col++) {
+			sheet.cells.set(1, 11 + col, {
+				value: EMPTY,
+				formula: rangeFormulas[col] as string,
+				styleId: sid,
+			})
+			sheet.cells.set(1, 20 + col, {
+				value: EMPTY,
+				formula: scalarFormulas[col] as string,
+				styleId: sid,
+			})
+		}
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		for (let col = 0; col < rangeFormulas.length; col++) {
+			expect(sheet.cells.get(1, 11 + col)?.value).toEqual(sheet.cells.get(1, 20 + col)?.value)
+		}
+		expect(sheet.cells.get(1, 11)?.value).toEqual(numberValue(2500.25))
+		expect(sheet.cells.get(1, 13)?.value).toEqual(stringValue('{"north";"east";"south"}'))
+		expect(sheet.cells.get(1, 14)?.value).toEqual(stringValue('alpha||omega'))
+	})
+
 	test('character code and repeat text functions spill over range operands in array formulas', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

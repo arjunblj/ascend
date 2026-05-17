@@ -130,6 +130,7 @@ const SCALAR_IMPLICIT_INTERSECTION_FUNCTIONS = new Set([
 	'ATAN2',
 	'ATANH',
 	'ARABIC',
+	'ARRAYTOTEXT',
 	'BASE',
 	'BESSELI',
 	'BESSELJ',
@@ -303,6 +304,7 @@ const SCALAR_IMPLICIT_INTERSECTION_FUNCTIONS = new Set([
 	'NEGBINOMDIST',
 	'NEGBINOM.DIST',
 	'NOMINAL',
+	'NUMBERVALUE',
 	'NORMDIST',
 	'NORM.DIST',
 	'NORMINV',
@@ -377,6 +379,7 @@ const SCALAR_IMPLICIT_INTERSECTION_FUNCTIONS = new Set([
 	'TEXT',
 	'TEXTAFTER',
 	'TEXTBEFORE',
+	'TEXTJOIN',
 	'TEXTSPLIT',
 	'TIME',
 	'TIMEVALUE',
@@ -390,6 +393,7 @@ const SCALAR_IMPLICIT_INTERSECTION_FUNCTIONS = new Set([
 	'UNICODE',
 	'UPPER',
 	'VALUE',
+	'VALUETOTEXT',
 	'WEIBULL',
 	'WEIBULL.DIST',
 	'WEEKDAY',
@@ -417,6 +421,7 @@ const ARRAY_CONTEXT_MAPPABLE_FUNCTIONS = new Set([
 	'ATAN2',
 	'ATANH',
 	'ARABIC',
+	'ARRAYTOTEXT',
 	'BASE',
 	'BESSELI',
 	'BESSELJ',
@@ -602,6 +607,7 @@ const ARRAY_CONTEXT_MAPPABLE_FUNCTIONS = new Set([
 	'NEGBINOMDIST',
 	'NEGBINOM.DIST',
 	'NOMINAL',
+	'NUMBERVALUE',
 	'NORMDIST',
 	'NORM.DIST',
 	'NORMINV',
@@ -674,6 +680,7 @@ const ARRAY_CONTEXT_MAPPABLE_FUNCTIONS = new Set([
 	'TEXT',
 	'TEXTAFTER',
 	'TEXTBEFORE',
+	'TEXTJOIN',
 	'TIME',
 	'TIMEVALUE',
 	'TINV',
@@ -686,6 +693,7 @@ const ARRAY_CONTEXT_MAPPABLE_FUNCTIONS = new Set([
 	'UNICODE',
 	'UPPER',
 	'VALUE',
+	'VALUETOTEXT',
 	'VDB',
 	'WEIBULL',
 	'WEIBULL.DIST',
@@ -700,6 +708,7 @@ const ARRAY_CONTEXT_MAPPABLE_FUNCTIONS = new Set([
 ])
 
 const ARRAY_MAPPED_RANGE_PRESERVING_ARGS = new Map<string, ReadonlySet<number>>([
+	['ARRAYTOTEXT', new Set([0])],
 	['DAVERAGE', new Set([0, 2])],
 	['DCOUNT', new Set([0, 2])],
 	['DCOUNTA', new Set([0, 2])],
@@ -1461,6 +1470,7 @@ function rangePreservingArgIndexesForFunction(
 ): ReadonlySet<number> | undefined {
 	if (upperName === 'AGGREGATE') return aggregateRangePreservingArgIndexes(argNodes)
 	if (upperName === 'SUBTOTAL') return restArgIndexes(argNodes, 1)
+	if (upperName === 'TEXTJOIN') return restArgIndexes(argNodes, 2)
 	return ARRAY_MAPPED_RANGE_PRESERVING_ARGS.get(upperName)
 }
 

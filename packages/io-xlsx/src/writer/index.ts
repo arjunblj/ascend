@@ -1579,13 +1579,20 @@ export function planWriteXlsx(
 						tablePartPath,
 					)
 					if (tablePartRelationships.length > 0) {
+						const tableRelsPath = getRelsPath(tablePartPath)
+						const preservedTableRelsText = sourceArchive?.readText(tableRelsPath)
 						recordXml(
-							getRelsPath(tablePartPath),
+							tableRelsPath,
 							{
 								owner: { kind: 'sheet', sheetName: sheet.name },
 								origin: tableCapsule ? 'capsule' : 'generated',
 							},
-							() => buildRelsXml(tablePartRelationships),
+							() =>
+								buildRelsXml(tablePartRelationships, {
+									...(preservedTableRelsText
+										? { preservedRelationshipsXml: preservedTableRelsText }
+										: {}),
+								}),
 						)
 					}
 					plan.addOverride(tablePartPath, tableContentType)

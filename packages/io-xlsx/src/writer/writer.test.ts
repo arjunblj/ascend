@@ -494,7 +494,11 @@ describe('writeXlsx', () => {
   </tableColumns>
 </table>`,
 			'xl/tables/_rels/table1.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"
+  xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+  xmlns:tblrel="urn:ascend:table-relationships"
+  mc:Ignorable="tblrel"
+  tblrel:origin="query-table">
   <Relationship Id="rIdQuery99" Type="http://purl.oclc.org/ooxml/officeDocument/relationships/queryTable" Target="../queryTables/queryTable1.xml"/>
 </Relationships>`,
 			'xl/queryTables/queryTable1.xml': `<?xml version="1.0"?>
@@ -528,6 +532,9 @@ describe('writeXlsx', () => {
 		expect(tableRels).toContain(
 			'Type="http://purl.oclc.org/ooxml/officeDocument/relationships/queryTable"',
 		)
+		expect(tableRels).toContain('xmlns:tblrel="urn:ascend:table-relationships"')
+		expect(tableRels).toContain('mc:Ignorable="tblrel"')
+		expect(tableRels).toContain('tblrel:origin="query-table"')
 		const reopened = readXlsx(written.value)
 		expectOk(reopened)
 		expect(reopened.value.workbook.sheets[0]?.tables[0]?.queryTable).toMatchObject({

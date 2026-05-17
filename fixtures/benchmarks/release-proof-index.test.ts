@@ -2037,8 +2037,9 @@ describe('release proof evidence index', () => {
 						'dcf2abb4',
 						'070d3b15',
 						'ea287a71',
+						'77e9d6a8',
 					]),
-					allowedWording: expect.stringContaining('ISFORMULA'),
+					allowedWording: expect.stringContaining('BETADIST'),
 					evidenceProvesIt: expect.arrayContaining([
 						expect.stringContaining('NOT spills boolean masks'),
 						expect.stringContaining('common IS predicates spill boolean masks'),
@@ -2059,6 +2060,7 @@ describe('release proof evidence index', () => {
 						expect.stringContaining(
 							'statistical distribution scalar functions spill over range operands',
 						),
+						expect.stringContaining('legacy statistical compatibility functions spill'),
 						expect.stringContaining('loan financial scalar functions spill over range operands'),
 						expect.stringContaining('financial helper scalar functions spill over range operands'),
 						expect.stringContaining(

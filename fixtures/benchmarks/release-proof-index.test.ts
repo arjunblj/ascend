@@ -1700,7 +1700,7 @@ describe('release proof evidence index', () => {
 				}),
 				expect.objectContaining({
 					evidenceId: 'query-table-post-write-data-connections-proof',
-					acceptedScope: expect.stringContaining('caa08959'),
+					acceptedScope: expect.stringMatching(/caa08959.*a8fef5e7/),
 					command: expect.stringContaining(
 						'commit proof reports reopened public query-table connection metadata',
 					),

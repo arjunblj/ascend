@@ -89,6 +89,9 @@ describe('performance claim baseline matrix', () => {
 			"Current focused TS/JS/Rust `styles-heavy` write coverage proves Ascend's\n  generated writer is faster by median and p95 than SheetJS, ExcelJS, and\n  rust_xlsxwriter",
 		)
 		expect(markdown).toContain(
+			'Current focused TS/JS/Rust `formula-heavy` write coverage now includes\n  formula-capable SheetJS and ExcelJS rows.',
+		)
+		expect(markdown).toContain(
 			'Current formula/calc evidence includes focused HyperFormula indexed\n  `INDEX/MATCH`, indexed dirty-key/dirty-value edits, prefix-range full-calc\n  `SUM`, and prefix-range dirty-head/dirty-tail rows.',
 		)
 		for (const workload of RECORDED_WORKLOADS) expect(markdown).toContain(`\`${workload}\``)
@@ -713,6 +716,47 @@ describe('performance claim baseline matrix', () => {
 		)
 		expect(markdown).toContain(
 			'"Ascend uses less memory than rust_xlsxwriter on styles-heavy writes."',
+		)
+
+		expect(markdown).toContain(
+			'## Cycle: Formula Heavy TS/JS/Rust Write Head-to-Head at `2116ddd1`',
+		)
+		expect(markdown).toContain(
+			'The JS writer runners now emit real formula cells for `formula-heavy`',
+		)
+		expect(markdown).toContain(
+			'/private/tmp/ascend-write-formula-js-current-2116ddd1-runs/write-formula-heavy-js-rust-repeat15.json',
+		)
+		expect(markdown).toContain(
+			'/private/tmp/ascend-write-formula-js-current-2116ddd1-runs/write-formula-heavy-js-rust-repeat15-p95-scoreboard.json',
+		)
+		expect(markdown).toContain('SheetJS `0.18.5`, ExcelJS `4.4.0`, rust_xlsxwriter `0.1.0`')
+		expect(markdown).toContain(
+			'| `ascend-external-writer` | ran/won median and p95 | 14.459 | 19.666 | 0.101 | 203.6 MiB | 405795 |',
+		)
+		expect(markdown).toContain(
+			'| `rust-xlsxwriter` | ran/lost vs Ascend | 29.363 | 32.129 | 0.029 | 19.9 MiB | 245490 |',
+		)
+		expect(markdown).toContain(
+			'| `sheetjs` | ran/lost vs Ascend | 31.515 | 33.897 | 0.049 | 264.0 MiB | 1844573 |',
+		)
+		expect(markdown).toContain(
+			'| `exceljs` | ran/lost vs Ascend | 98.246 | 110.177 | 0.040 | 305.9 MiB | 235051 |',
+		)
+		expect(markdown).toContain(
+			'Full `xlsx-write-sota` coverage still fails, with 61 coverage failures',
+		)
+		expect(markdown).toContain(
+			'all four rows reopened successfully, matched the\nexpected one-sheet and 40,000-cell shape, emitted 36,000 formula cells',
+		)
+		expect(markdown).toContain(
+			'rust_xlsxwriter matched sorted semantic\nvalues but not ordered cell hashes',
+		)
+		expect(markdown).toContain(
+			'"Ascend uses less memory than rust_xlsxwriter on formula-heavy writes."',
+		)
+		expect(markdown).toContain(
+			'"Ascend proves byte/order-equivalent output against rust_xlsxwriter."',
 		)
 
 		expect(markdown).toContain('## Cycle: Feature Rich JS Write Quality Boundary at `9fabfc8e`')

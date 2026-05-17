@@ -48,6 +48,10 @@ No broad XLSX read, XLSX write, SOTA, or QSS-leapfrog speed claim is promotable 
 - The recorded cycles cover public/reproducible generated `dense-values`, `sparse-wide`, `styles-heavy`, `formula-heavy`, `table-heavy`, `feature-rich`, `selected-sheet`, `metadata-only`, `warm-workflow`, and `string-heavy` workloads over `raw-ooxml`, but they are per-workload evidence rows rather than one clean all-workload promotion run.
 - Current harness evidence now supports same-lane selected-sheet rows for Ascend, SheetJS, OpenPyXL, and python-calamine. Treat older `openpyxl` and Calamine selected-sheet `unsupported-operation` wording as historical for the recorded clean runs.
 - Current harness evidence now supports same-lane metadata-only rows for Ascend, SheetJS, OpenPyXL, and python-calamine. Calamine wins that head-to-head; treat older metadata-only `missing-comparable` or Calamine `unsupported-operation` wording as historical.
+- Current `36b927f9` metadata-only recheck still has python-calamine as the
+  median and p95 winner for the comparable plain sheet-list/no-cell-hydration
+  contract. Ascend beats SheetJS and OpenPyXL on that row, but the metadata-only
+  speed claim remains downgraded against the Rust floor.
 - Current harness evidence now supports a SheetJS feature-rich rich-metadata row using SheetJS `bookFiles`; older SheetJS `semantic-mismatch` wording is historical for the pre-runner-fix cycles. Calamine-family rich-metadata rows remain not comparable.
 - Current focused JS `feature-rich` write evidence is a quality boundary:
   SheetJS is explicitly unsupported for the tracked rich-metadata write
@@ -856,6 +860,128 @@ Next action: keep the metadata-only speed claim downgraded. Do not revisit this
 row with another reader patch until a profile names a larger production cost
 center than complete-relationship recovery scans, or until the benchmark moves
 to a broader safe-open metadata contract that Calamine can also satisfy.
+
+## Cycle: Current Metadata-Only Rust Floor Recheck at `36b927f9`
+
+Classification: current claim downgrade. The current clean HEAD still has
+`python-calamine-metadata-only` as the median and p95 winner for the comparable
+plain metadata-only sheet-list/no-cell-hydration contract. Ascend is ahead of
+SheetJS and OpenPyXL on the same external-process timing lane, but this remains
+a Rust-floor loss and not an optimization win.
+
+Workflow: generated XLSX metadata-only open/inspect, loading workbook and sheet
+metadata without hydrating cells.
+
+Why it matters for release: metadata-only open is the first safe inspection path
+for unknown workbooks. The Rust floor matters here because Calamine is the
+fastest credible open/inspect baseline for plain workbook sheet metadata. Any
+metadata-only speed wording must remain downgraded while this comparable row
+loses.
+
+Public/tracked-clean input: `competitive-io` generated `metadata-only`
+`raw-ooxml`, 200 rows x 20 columns, three workbook sheets, 15,347 input bytes,
+from tracked benchmark code at commit `36b927f9`. No private corpus or local
+research workbook was used.
+
+Commands:
+
+```bash
+git worktree add --detach /private/tmp/ascend-metadata-rust-current-36b927f9 36b927f9af6e954de08978c3ca93e4f3834ddaa7
+cd /private/tmp/ascend-metadata-rust-current-36b927f9
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun install --frozen-lockfile
+mkdir -p /private/tmp/ascend-metadata-rust-current-36b927f9-runs
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /usr/bin/time -l /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-io.ts --json --category read --competitor all --execution-scope external-process --libraries ascend-external-metadata-only,sheetjs-metadata-only,openpyxl-metadata-only,python-calamine-metadata-only --workload metadata-only --read-source raw-ooxml --repeat 15 --warmup 3 --validation-mode each --runner-manifest fixtures/benchmarks/runners/metadata-only-readers.manifest.json > /private/tmp/ascend-metadata-rust-current-36b927f9-runs/metadata-calamine-head-to-head.json 2> /private/tmp/ascend-metadata-rust-current-36b927f9-runs/metadata-calamine-head-to-head-time.txt
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-scoreboard.ts /private/tmp/ascend-metadata-rust-current-36b927f9-runs/metadata-calamine-head-to-head.json --json --metric medianMs --require-profile xlsx-read-sota --assert-profile-leader ascend > /private/tmp/ascend-metadata-rust-current-36b927f9-runs/metadata-calamine-head-to-head-scoreboard.json
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-scoreboard.ts /private/tmp/ascend-metadata-rust-current-36b927f9-runs/metadata-calamine-head-to-head.json --json --metric p95Ms --require-profile xlsx-read-sota --assert-profile-leader ascend > /private/tmp/ascend-metadata-rust-current-36b927f9-runs/metadata-calamine-head-to-head-p95-scoreboard.json
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/xlsx-read-phase.ts --json --workload metadata-only --read-source raw-ooxml --rows 200 --cols 20 --phase read --repeat 60 --warmup 10 --validation-mode sample --gc-between-samples > /private/tmp/ascend-metadata-rust-current-36b927f9-runs/metadata-read-phase-repeat60.json
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-io.ts --json --category read --competitor all --execution-scope external-process --libraries ascend-external-metadata-only --workload metadata-only --read-source raw-ooxml --repeat 60 --warmup 10 --validation-mode each --runner-manifest fixtures/benchmarks/runners/metadata-only-readers.manifest.json > /private/tmp/ascend-metadata-rust-current-36b927f9-runs/metadata-ascend-only-repeat60.json
+```
+
+Environment:
+
+- Commit: `36b927f9af6e954de08978c3ca93e4f3834ddaa7`
+- Worktree: clean detached worktree at
+  `/private/tmp/ascend-metadata-rust-current-36b927f9`; `git status --short
+  --branch` reported `## HEAD (no branch)`.
+- Bun runtime: `1.3.13`
+- Node: `26.0.0`
+- Python: `3.13.3`
+- Platform: Darwin arm64, macOS kernel `25.4.0`
+- Runtime profile: `category read`, `executionScope external-process`,
+  `workload metadata-only`, `readSource raw-ooxml`, `validationMode each`,
+  `repeat 15`, `warmup 3`.
+
+Raw output:
+
+```text
+/private/tmp/ascend-metadata-rust-current-36b927f9-runs/metadata-calamine-head-to-head.json
+/private/tmp/ascend-metadata-rust-current-36b927f9-runs/metadata-calamine-head-to-head-time.txt
+/private/tmp/ascend-metadata-rust-current-36b927f9-runs/metadata-calamine-head-to-head-scoreboard.json
+/private/tmp/ascend-metadata-rust-current-36b927f9-runs/metadata-calamine-head-to-head-p95-scoreboard.json
+/private/tmp/ascend-metadata-rust-current-36b927f9-runs/metadata-read-phase-repeat60.json
+/private/tmp/ascend-metadata-rust-current-36b927f9-runs/metadata-ascend-only-repeat60.json
+```
+
+Current Rust-floor head-to-head, repeat 15 after 3 warmups:
+
+| Runner | Status | Median ms | P95 ms | CV | Peak RSS | Semantic comparability |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| `python-calamine-metadata-only` | ran/won median and p95 | 0.068 | 0.212 | 0.625 | 28.3 MiB | Same plain sheet-list/no-cell-hydration contract: three sheets loaded, cells not hydrated. |
+| `ascend-external-metadata-only` | ran/lost vs Calamine, ran/won vs SheetJS/openpyxl | 0.342 | 0.579 | 0.240 | 91.3 MiB | Same plain metadata contract plus Ascend's SDK metadata-only inspection surface. |
+| `sheetjs-metadata-only` | ran/lost | 0.584 | 0.875 | 0.173 | 152.1 MiB | Same plain metadata contract using SheetJS `bookSheets`. |
+| `openpyxl-metadata-only` | ran/lost | 2.032 | 3.525 | 0.252 | 53.0 MiB | Same plain metadata contract using read-only OpenPyXL metadata inventory. |
+
+Process-level `/usr/bin/time -l`: `1.58 real`, `1.10 user`, `0.28 sys`,
+`160972800` maximum resident set size, `123306824` peak memory footprint.
+
+Scoreboard result:
+
+- Median scoreboard: metadata-only group winner was
+  `python-calamine-metadata-only`; `profileLeaderFailures` contains
+  `winner=python-calamine-metadata-only expected=ascend`.
+- P95 scoreboard: metadata-only group winner was
+  `python-calamine-metadata-only`; `profileLeaderFailures` contains
+  `winner=python-calamine-metadata-only expected=ascend`.
+- Both scoreboards still have 59 full-profile coverage failures and 7 coverage
+  gaps because this is a focused row, not a full `xlsx-read-sota` promotion run.
+
+Phase/profile result: focused `xlsx-read-phase` with sample validation and GC
+reported `readXlsxMedianMs: 0.274`, 15,347 input bytes, and 119.9 MiB peak RSS.
+Ascend-only external repeat-60 reported median `0.391 ms`, p95 `0.589 ms`, CV
+`0.590`, and 94.2 MiB peak RSS. A validation-free CPU-profile run reported
+`readXlsxMedianMs: 0.063`; most profile time was harness/module loading rather
+than a larger safe production hotspot. The remaining release-facing gap is
+therefore mostly the broader SDK/assertion surface and safety inventory, not a
+clear isolated reader loop to remove without narrowing semantics.
+
+Semantic boundary: this row is comparable only for the generated plain
+metadata-only sheet-list/no-cell-hydration contract. It is not evidence that
+Calamine supports Ascend's broader safe-open trust inspection for document
+properties, active-content inventory, package risk reporting, or edit-planning
+decisions. Conversely, Ascend beating SheetJS and OpenPyXL here is not a
+metadata-only SOTA claim because the Rust floor still wins.
+
+Humble allowed wording:
+
+> On the generated plain metadata-only workload at `36b927f9`, Ascend was faster
+> than SheetJS and OpenPyXL on the same external-process metadata-only timing
+> lane, but python-calamine remained faster by median and p95 for the comparable
+> sheet-list/no-cell-hydration contract. Metadata-only speed wording remains
+> downgraded against the Rust floor.
+
+Forbidden wording:
+
+- "Ascend is fastest for metadata-only XLSX reads."
+- "Ascend beats Calamine on metadata-only open."
+- "Ascend has closed the metadata-only Rust-floor gap."
+- "Ascend beating SheetJS/OpenPyXL proves a metadata-only SOTA claim."
+- "Calamine proves faster safe-open trust inspection than Ascend."
+
+Next action: keep the metadata-only speed claim downgraded. Do not trade away
+document-property, active-content, or package-risk metadata to win this plain
+sheet-list row. Revisit production optimization only with a profile that names
+a larger safe reader hot spot or with a broader Calamine-comparable safe-open
+contract.
 
 ## Cycle: Dense Values Write SOTA Gate
 

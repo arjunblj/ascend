@@ -59,6 +59,9 @@ describe('performance claim baseline matrix', () => {
 		)
 		expect(markdown).toContain('Calamine wins that head-to-head')
 		expect(markdown).toContain(
+			'Current `36b927f9` metadata-only recheck still has python-calamine as the\n  median and p95 winner',
+		)
+		expect(markdown).toContain(
 			'Current harness evidence now supports a SheetJS feature-rich rich-metadata row',
 		)
 		expect(markdown).toContain(
@@ -294,6 +297,39 @@ describe('performance claim baseline matrix', () => {
 		)
 		expect(markdown).toContain(
 			'"The relationship-recovery early-return patch improves metadata-only reads."',
+		)
+
+		expect(markdown).toContain('## Cycle: Current Metadata-Only Rust Floor Recheck at `36b927f9`')
+		expect(markdown).toContain('Classification: current claim downgrade.')
+		expect(markdown).toContain(
+			'/private/tmp/ascend-metadata-rust-current-36b927f9-runs/metadata-calamine-head-to-head.json',
+		)
+		expect(markdown).toContain(
+			'/private/tmp/ascend-metadata-rust-current-36b927f9-runs/metadata-calamine-head-to-head-p95-scoreboard.json',
+		)
+		expect(markdown).toContain(
+			'/private/tmp/ascend-metadata-rust-current-36b927f9-runs/metadata-read-phase-repeat60.json',
+		)
+		expect(markdown).toContain(
+			'| `python-calamine-metadata-only` | ran/won median and p95 | 0.068 | 0.212 | 0.625 | 28.3 MiB |',
+		)
+		expect(markdown).toContain(
+			'| `ascend-external-metadata-only` | ran/lost vs Calamine, ran/won vs SheetJS/openpyxl | 0.342 | 0.579 | 0.240 | 91.3 MiB |',
+		)
+		expect(markdown).toContain(
+			'| `sheetjs-metadata-only` | ran/lost | 0.584 | 0.875 | 0.173 | 152.1 MiB |',
+		)
+		expect(markdown).toContain(
+			'| `openpyxl-metadata-only` | ran/lost | 2.032 | 3.525 | 0.252 | 53.0 MiB |',
+		)
+		expect(markdown).toContain('`winner=python-calamine-metadata-only expected=ascend`')
+		expect(markdown).toContain('`readXlsxMedianMs: 0.274`')
+		expect(markdown).toContain(
+			'validation-free CPU-profile run reported\n`readXlsxMedianMs: 0.063`',
+		)
+		expect(markdown).toContain('"Ascend has closed the metadata-only Rust-floor gap."')
+		expect(markdown).toContain(
+			'Do not trade away\ndocument-property, active-content, or package-risk metadata',
 		)
 
 		expect(markdown).toContain('## Cycle: Dense Values Write SOTA Gate')

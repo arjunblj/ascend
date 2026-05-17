@@ -2047,8 +2047,9 @@ describe('release proof evidence index', () => {
 						'ea287a71',
 						'77e9d6a8',
 						'662cb462',
+						'0a9c2b80',
 					]),
-					allowedWording: expect.stringContaining('WORKDAY.INTL'),
+					allowedWording: expect.stringContaining('scalar date/workday implicit intersection'),
 					evidenceProvesIt: expect.arrayContaining([
 						expect.stringContaining('NOT spills boolean masks'),
 						expect.stringContaining('common IS predicates spill boolean masks'),
@@ -2067,6 +2068,7 @@ describe('release proof evidence index', () => {
 						),
 						expect.stringContaining('date interval scalar functions spill over range operands'),
 						expect.stringContaining('workday scalar functions spill'),
+						expect.stringContaining('date and workday scalar functions implicitly intersect'),
 						expect.stringContaining(
 							'statistical distribution scalar functions spill over range operands',
 						),

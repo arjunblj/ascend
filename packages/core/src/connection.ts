@@ -13,10 +13,15 @@ export interface WorkbookConnectionPartInfo {
 	readonly description?: string
 	readonly deleted?: boolean
 	readonly backgroundRefresh?: boolean
+	readonly firstBackgroundRefresh?: boolean
 	readonly keepAlive?: boolean
 	readonly refreshInterval?: number
 	readonly refreshOnLoad?: boolean
 	readonly saveData?: boolean
+	readonly preserveFormatting?: boolean
+	readonly adjustColumnWidth?: boolean
+	readonly fillFormulas?: boolean
+	readonly disableEdit?: boolean
 	readonly savePassword?: boolean
 	readonly refreshedVersion?: number
 	readonly refreshedDateIso?: string

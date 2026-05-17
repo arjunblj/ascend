@@ -53,8 +53,14 @@ describe('connection part inventory', () => {
 				relationshipCount: 0,
 				name: 'SalesQuery',
 				connectionId: 1,
+				backgroundRefresh: false,
+				firstBackgroundRefresh: true,
 				refreshOnLoad: true,
 				saveData: false,
+				preserveFormatting: true,
+				adjustColumnWidth: false,
+				fillFormulas: true,
+				disableEdit: true,
 			},
 			{
 				kind: 'powerQueryMashup',
@@ -158,7 +164,7 @@ function connectionWorkbook(): Uint8Array {
   </connection>
 </connections>`,
 		'xl/queryTables/queryTable1.xml': `<?xml version="1.0"?>
-<queryTable xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" name="SalesQuery" connectionId="1" refreshOnLoad="1" removeDataOnSave="1"/>`,
+<queryTable xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" name="SalesQuery" connectionId="1" backgroundRefresh="0" firstBackgroundRefresh="1" refreshOnLoad="1" removeDataOnSave="1" preserveFormatting="1" adjustColumnWidth="0" fillFormulas="1" disableEdit="1"/>`,
 		'xl/customData/item1.data': 'mashup-bytes',
 	})
 }

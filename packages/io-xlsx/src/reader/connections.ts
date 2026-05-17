@@ -9,10 +9,15 @@ interface ParsedConnectionAttrs {
 	description?: string
 	deleted?: boolean
 	backgroundRefresh?: boolean
+	firstBackgroundRefresh?: boolean
 	keepAlive?: boolean
 	refreshInterval?: number
 	refreshOnLoad?: boolean
 	saveData?: boolean
+	preserveFormatting?: boolean
+	adjustColumnWidth?: boolean
+	fillFormulas?: boolean
+	disableEdit?: boolean
 	savePassword?: boolean
 	refreshedVersion?: number
 	refreshedDateIso?: string
@@ -106,8 +111,12 @@ function readConnectionAttrs(
 	if (description) parsed.description = description
 	const deleted = boolAttr(node, 'deleted')
 	if (deleted !== undefined) parsed.deleted = deleted
-	const backgroundRefresh = boolAttr(node, 'background')
+	const backgroundRefresh = boolAttr(node, options.queryTable ? 'backgroundRefresh' : 'background')
 	if (backgroundRefresh !== undefined) parsed.backgroundRefresh = backgroundRefresh
+	const firstBackgroundRefresh = boolAttr(node, 'firstBackgroundRefresh')
+	if (options.queryTable && firstBackgroundRefresh !== undefined) {
+		parsed.firstBackgroundRefresh = firstBackgroundRefresh
+	}
 	const keepAlive = boolAttr(node, 'keepAlive')
 	if (keepAlive !== undefined) parsed.keepAlive = keepAlive
 	const refreshInterval = numAttr(node, 'interval')
@@ -121,6 +130,16 @@ function readConnectionAttrs(
 	const removeDataOnSave = boolAttr(node, 'removeDataOnSave')
 	if (options.queryTable && saveData === undefined && removeDataOnSave !== undefined) {
 		parsed.saveData = !removeDataOnSave
+	}
+	if (options.queryTable) {
+		const preserveFormatting = boolAttr(node, 'preserveFormatting')
+		if (preserveFormatting !== undefined) parsed.preserveFormatting = preserveFormatting
+		const adjustColumnWidth = boolAttr(node, 'adjustColumnWidth')
+		if (adjustColumnWidth !== undefined) parsed.adjustColumnWidth = adjustColumnWidth
+		const fillFormulas = boolAttr(node, 'fillFormulas')
+		if (fillFormulas !== undefined) parsed.fillFormulas = fillFormulas
+		const disableEdit = boolAttr(node, 'disableEdit')
+		if (disableEdit !== undefined) parsed.disableEdit = disableEdit
 	}
 	const refreshedVersion = numAttr(node, 'refreshedVersion')
 	if (refreshedVersion !== undefined) parsed.refreshedVersion = refreshedVersion

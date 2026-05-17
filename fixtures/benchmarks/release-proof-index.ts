@@ -3420,6 +3420,17 @@ function safeOpenQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceItem[] {
 				'Local structural insert fail-closed evidence only; it does not prove successful rewrite semantics, SDK save/reopen coverage, public workbook generality, Excel UI-equivalent insert behavior, arbitrary visual layout preservation, or complete metadata rewrite parity.',
 		},
 		{
+			evidenceId: 'table-append-bounds-fail-closed-proof',
+			kind: 'test',
+			command:
+				'bun test packages/engine/src/operations.test.ts -t "appendRows rejects table growth past the worksheet bounds" --timeout 30000',
+			path: 'packages/engine/src/operations.test.ts; packages/engine/src/operations/table-ops.ts',
+			acceptedScope:
+				'Commit d88b9104 proves appendRows rejects table growth past Excel worksheet bounds before mutating the table range or writing out-of-grid cells.',
+			boundary:
+				'Local table append fail-closed evidence only; it does not prove public workbook table-growth parity, successful append save/reopen behavior, totals-row insert shifting, structured-reference updates, arbitrary table repair, or Excel UI-equivalent table expansion.',
+		},
+		{
 			evidenceId: 'public-calc-chain-formula-commit-proof',
 			kind: 'test',
 			command:

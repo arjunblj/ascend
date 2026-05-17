@@ -73,6 +73,22 @@ describe('advanced filter and sparkline SDK inventory', () => {
 		})
 	})
 
+	test('moveRange rewrites sparkline ranges through SDK save and reopen', async () => {
+		const wb = await AscendWorkbook.open(advancedFilterSparklineWorkbook())
+		const applied = wb.apply([{ op: 'moveRange', sheet: 'Data', source: 'B2:D4', target: 'G2' }])
+		expect(applied.errors).toEqual([])
+
+		const reopened = await AscendWorkbook.open(wb.toBytes())
+		expect(reopened.inspectSheet('Data')?.sparklineGroups?.[0]).toMatchObject({
+			type: 'line',
+			range: 'Data!G2:G4',
+			locationRange: 'I2:I4',
+			count: 1,
+			markers: true,
+			sparklines: [{ range: 'Data!G2:G4', locationRange: 'I2:I4' }],
+		})
+	})
+
 	test('setAdvancedFilter edits custom sheet view filter criteria through SDK save and reopen', async () => {
 		const wb = await AscendWorkbook.open(advancedFilterSparklineWorkbook())
 		const applied = wb.apply([

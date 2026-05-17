@@ -1381,6 +1381,87 @@ function rewriteSheetMetadataFormulasForMove(
 		})
 		sheet.tables[i] = { ...table, columns }
 	}
+	rewriteSparklineGroupsForMove(
+		sheet,
+		sourceSheet,
+		targetSheet,
+		formulaSheet,
+		sourceRange,
+		targetRange,
+	)
+}
+
+function rewriteSparklineGroupsForMove(
+	sheet: Sheet,
+	sourceSheet: string,
+	targetSheet: string,
+	formulaSheet: string,
+	sourceRange: RangeRef,
+	targetRange: RangeRef,
+): void {
+	for (let i = 0; i < sheet.sparklineGroups.length; i++) {
+		const group = sheet.sparklineGroups[i]
+		if (!group) continue
+		const range = rewriteFormulaTextForMove(
+			group.range,
+			sourceSheet,
+			targetSheet,
+			formulaSheet,
+			sourceRange,
+			targetRange,
+		)
+		const locationRange = rewriteFormulaTextForMove(
+			group.locationRange,
+			sourceSheet,
+			targetSheet,
+			formulaSheet,
+			sourceRange,
+			targetRange,
+		)
+		const dateAxisRange = rewriteFormulaTextForMove(
+			group.dateAxisRange,
+			sourceSheet,
+			targetSheet,
+			formulaSheet,
+			sourceRange,
+			targetRange,
+		)
+		sheet.sparklineGroups[i] = {
+			...group,
+			...(range !== undefined ? { range } : {}),
+			...(locationRange !== undefined ? { locationRange } : {}),
+			...(dateAxisRange !== undefined ? { dateAxisRange } : {}),
+			...(group.sparklines
+				? {
+						sparklines: group.sparklines.map((sparkline) => {
+							const sparklineRange = rewriteFormulaTextForMove(
+								sparkline.range,
+								sourceSheet,
+								targetSheet,
+								formulaSheet,
+								sourceRange,
+								targetRange,
+							)
+							const sparklineLocationRange = rewriteFormulaTextForMove(
+								sparkline.locationRange,
+								sourceSheet,
+								targetSheet,
+								formulaSheet,
+								sourceRange,
+								targetRange,
+							)
+							return {
+								...sparkline,
+								...(sparklineRange !== undefined ? { range: sparklineRange } : {}),
+								...(sparklineLocationRange !== undefined
+									? { locationRange: sparklineLocationRange }
+									: {}),
+							}
+						}),
+					}
+				: {}),
+		}
+	}
 }
 
 function findPartialMoveReferenceInSheetMetadata(
@@ -1473,6 +1554,25 @@ function findPartialMoveReferenceInSheetMetadata(
 			if (formula) return formula
 			const totalsRowFormula = check(column.totalsRowFormula, `${owner}.totalsRowFormula`)
 			if (totalsRowFormula) return totalsRowFormula
+		}
+	}
+	for (const group of sheet.sparklineGroups) {
+		const owner = `${sheet.name}!sparklineGroup(${group.groupIndex})`
+		const range = check(group.range, `${owner}.range`)
+		if (range) return range
+		const locationRange = check(group.locationRange, `${owner}.locationRange`)
+		if (locationRange) return locationRange
+		const dateAxisRange = check(group.dateAxisRange, `${owner}.dateAxisRange`)
+		if (dateAxisRange) return dateAxisRange
+		for (const [sparklineIndex, sparkline] of (group.sparklines ?? []).entries()) {
+			const sparklineOwner = `${owner}.sparklines[${sparklineIndex}]`
+			const sparklineRange = check(sparkline.range, `${sparklineOwner}.range`)
+			if (sparklineRange) return sparklineRange
+			const sparklineLocationRange = check(
+				sparkline.locationRange,
+				`${sparklineOwner}.locationRange`,
+			)
+			if (sparklineLocationRange) return sparklineLocationRange
 		}
 	}
 	return null

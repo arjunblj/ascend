@@ -4116,6 +4116,13 @@ describe('applyOperation', () => {
 			hasHeaders: true,
 			hasTotals: true,
 		})
+		summary.sparklineGroups.push({
+			groupIndex: 0,
+			range: 'Sheet1!A1',
+			locationRange: 'Sheet1!A1',
+			dateAxisRange: 'Sheet1!A1',
+			sparklines: [{ range: 'Sheet1!A1', locationRange: 'Sheet1!A1' }],
+		})
 
 		const result = applyOperation(wb, {
 			op: 'moveRange',
@@ -4135,6 +4142,12 @@ describe('applyOperation', () => {
 		expect(summary.x14ConditionalFormats[0]?.dataBar?.cfvo[0]?.value).toBe('Sheet2!B2')
 		expect(summary.tables[0]?.columns[0]?.formula).toBe('Sheet2!B2')
 		expect(summary.tables[0]?.columns[0]?.totalsRowFormula).toBe('SUM(Sheet2!B2)')
+		expect(summary.sparklineGroups[0]).toMatchObject({
+			range: 'Sheet2!B2',
+			locationRange: 'Sheet2!B2',
+			dateAxisRange: 'Sheet2!B2',
+			sparklines: [{ range: 'Sheet2!B2', locationRange: 'Sheet2!B2' }],
+		})
 	})
 
 	test('moveRange rejects cell formulas with partially moved range references before mutation', () => {
@@ -4329,6 +4342,18 @@ describe('applyOperation', () => {
 					}),
 				ownerKind: 'worksheet-metadata',
 				ownerIncludes: 'table(SummaryTable)',
+			},
+			{
+				label: 'sparkline group range',
+				setup: (_wb, _source, summary) =>
+					summary.sparklineGroups.push({
+						groupIndex: 0,
+						range: 'Sheet1!A1:A3',
+						locationRange: 'B1:B3',
+						sparklines: [{ range: 'Sheet1!A1:A3', locationRange: 'B1:B3' }],
+					}),
+				ownerKind: 'worksheet-metadata',
+				ownerIncludes: 'sparklineGroup(0)',
 			},
 		]
 

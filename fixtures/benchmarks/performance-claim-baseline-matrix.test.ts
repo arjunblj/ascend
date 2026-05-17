@@ -62,6 +62,12 @@ describe('performance claim baseline matrix', () => {
 			'Current harness evidence now supports a SheetJS feature-rich rich-metadata row',
 		)
 		expect(markdown).toContain(
+			'Current focused JS `feature-rich` write evidence is a quality boundary',
+		)
+		expect(markdown).toContain(
+			'ExcelJS runs but is semantically ineligible because it misses a\n  tracked comment obligation',
+		)
+		expect(markdown).toContain(
 			'Current focused `plain-text` and `string-heavy` write coverage proves\n  ClosedXML and NPOI now run and pass validation',
 		)
 		expect(markdown).toContain(
@@ -653,6 +659,36 @@ describe('performance claim baseline matrix', () => {
 		expect(markdown).toContain(
 			'"Ascend uses less memory than rust_xlsxwriter on styles-heavy writes."',
 		)
+
+		expect(markdown).toContain('## Cycle: Feature Rich JS Write Quality Boundary at `9fabfc8e`')
+		expect(markdown).toContain(
+			'This is not a speed win over JS writers. SheetJS\nis explicitly unsupported',
+		)
+		expect(markdown).toContain(
+			'/private/tmp/ascend-write-feature-exceljs-current-9fabfc8e-runs/write-feature-rich-js-repeat15.json',
+		)
+		expect(markdown).toContain(
+			'/private/tmp/ascend-write-feature-exceljs-current-9fabfc8e-runs/write-feature-rich-js-repeat15-p95-scoreboard.json',
+		)
+		expect(markdown).toContain(
+			'SheetJS `0.18.5` was skipped before timing\n  because the write runner does not declare `writeRichMetadata`',
+		)
+		expect(markdown).toContain(
+			'| `ascend` | ran/pass | 7.727 | 8.233 | 0.040 | 222.8 MiB | 271114 | all tracked feature obligations pass |',
+		)
+		expect(markdown).toContain(
+			'| `exceljs` | ran/semantic-mismatch, not ranking eligible | 63.092 | 65.992 | 0.023 | 348.4 MiB | 123693 | values, order, hyperlink, defined name, validation, and conditional formatting pass; comment obligation fails |',
+		)
+		expect(markdown).toContain(
+			'| `sheetjs` | unsupported by harness | n/a | n/a | n/a | n/a | n/a | skipped: runner does not declare `writeRichMetadata=true` |',
+		)
+		expect(markdown).toContain(
+			'ExcelJS had `correctnessStatus: semantic-mismatch` and\n  `rankingEligible: false`',
+		)
+		expect(markdown).toContain('`featureRichSemanticMatches=false` because')
+		expect(markdown).toContain('`featureRichCommentMatches=false`')
+		expect(markdown).toContain('"Ascend beats ExcelJS on feature-rich write speed."')
+		expect(markdown).toContain('"SheetJS is feature-rich-write comparable for this release claim."')
 
 		expect(markdown).toContain('## Full Current-Commit Gate: XLSX Read SOTA')
 		expect(markdown).toContain(

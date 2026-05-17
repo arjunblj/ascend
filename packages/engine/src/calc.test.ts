@@ -1255,6 +1255,53 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(3, 6)?.value).toEqual(numberValue(-15))
 	})
 
+	test('logarithmic scalar functions spill over range operands in array formulas', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(10), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: numberValue(100), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: numberValue(0), formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(2, 1, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(0, 2, {
+			value: EMPTY,
+			formula: 'LOG10(A1:A3)+0',
+			styleId: sid,
+		})
+		sheet.cells.set(0, 3, {
+			value: EMPTY,
+			formula: 'LOG(A1:A3,10)+0',
+			styleId: sid,
+		})
+		sheet.cells.set(0, 4, {
+			value: EMPTY,
+			formula: 'LN(A1:A3)+0',
+			styleId: sid,
+		})
+		sheet.cells.set(0, 5, {
+			value: EMPTY,
+			formula: 'EXP(B1:B3)+0',
+			styleId: sid,
+		})
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(0, 2)?.value).toEqual(numberValue(0))
+		expect(sheet.cells.get(1, 2)?.value).toEqual(numberValue(1))
+		expect(sheet.cells.get(2, 2)?.value).toEqual(numberValue(2))
+		expect(sheet.cells.get(0, 3)?.value).toEqual(numberValue(0))
+		expect(sheet.cells.get(1, 3)?.value).toEqual(numberValue(1))
+		expect(sheet.cells.get(2, 3)?.value).toEqual(numberValue(2))
+		expect(sheet.cells.get(0, 4)?.value).toEqual(numberValue(0))
+		expect(sheet.cells.get(1, 4)?.value).toEqual(numberValue(Math.LN10))
+		expect(sheet.cells.get(2, 4)?.value).toEqual(numberValue(Math.log(100)))
+		expect(sheet.cells.get(0, 5)?.value).toEqual(numberValue(1))
+		expect(sheet.cells.get(1, 5)?.value).toEqual(numberValue(Math.E))
+		expect(sheet.cells.get(2, 5)?.value).toEqual(numberValue(Math.exp(2)))
+	})
+
 	test('FREQUENCY formulas can count unique filtered numeric ids from array expressions', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

@@ -68,6 +68,9 @@ describe('performance claim baseline matrix', () => {
 			"Current focused TS/JS/Rust `dense-values` write coverage proves Ascend's\n  generated writer is faster by median and p95 than SheetJS, ExcelJS, and\n  rust_xlsxwriter",
 		)
 		expect(markdown).toContain(
+			'Current focused TS/JS/Rust `sparse-wide` write coverage supersedes the older\n  sparse-wide p95 boundary',
+		)
+		expect(markdown).toContain(
 			'Current formula/calc evidence includes focused HyperFormula indexed\n  `INDEX/MATCH`, indexed dirty-key/dirty-value edits, and prefix-range\n  dirty-head/dirty-tail rows.',
 		)
 		for (const workload of RECORDED_WORKLOADS) expect(markdown).toContain(`\`${workload}\``)
@@ -355,6 +358,38 @@ describe('performance claim baseline matrix', () => {
 		expect(markdown).toContain('P95 scoreboard: sparse-wide group winner was `rust-xlsxwriter`.')
 		expect(markdown).toContain('"Ascend has the best sparse-wide write tail latency."')
 		expect(markdown).toContain('Keep sparse-wide\nwrite-speed wording scoped to median')
+
+		expect(markdown).toContain('## Cycle: Sparse Wide TS/JS/Rust Write Head-to-Head at `a328b573`')
+		expect(markdown).toContain(
+			'Classification: comparable external evidence plus stale-boundary update.',
+		)
+		expect(markdown).toContain(
+			'/private/tmp/ascend-write-sparse-js-rust-current-a328b573-runs/write-sparse-wide-js-rust-repeat15.json',
+		)
+		expect(markdown).toContain(
+			'/private/tmp/ascend-write-sparse-js-rust-current-a328b573-runs/write-sparse-wide-js-rust-repeat15-p95-scoreboard.json',
+		)
+		expect(markdown).toContain(
+			'| `ascend-external-writer` | ran/won median and p95 | 15.530 | 20.085 | 0.134 | 169.9 MiB | 228209 |',
+		)
+		expect(markdown).toContain(
+			'| `rust-xlsxwriter` | ran/lost vs Ascend | 21.016 | 23.789 | 0.048 | 52.7 MiB | 175581 |',
+		)
+		expect(markdown).toContain(
+			'| `sheetjs` | ran/lost vs Ascend | 402.837 | 593.206 | 0.185 | 351.3 MiB | 883673 |',
+		)
+		expect(markdown).toContain(
+			'| `exceljs` | ran/lost vs Ascend | 3892.681 | 7766.345 | 0.353 | 1563.6 MiB | 184376 |',
+		)
+		expect(markdown).toContain(
+			'P95 scoreboard: sparse-wide group winner was `ascend-external-writer`',
+		)
+		expect(markdown).toContain(
+			'Full `xlsx-write-sota` coverage still fails, with 59 coverage failures',
+		)
+		expect(markdown).toContain(
+			'"Ascend uses less memory than rust_xlsxwriter on sparse-wide writes."',
+		)
 
 		expect(markdown).toContain('## Cycle: Plain Text Write SOTA Gate')
 		expect(markdown).toContain('Classification: comparable external evidence plus defer.')

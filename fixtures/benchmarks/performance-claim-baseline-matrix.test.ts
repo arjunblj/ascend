@@ -817,6 +817,32 @@ describe('performance claim baseline matrix', () => {
 			'Next action: defer production optimization on FastXLSX value materialization.',
 		)
 
+		expect(markdown).toContain(
+			'## Cycle: Tracked Real Workbook Strings/Links Open Boundary at `e8654a0b`',
+		)
+		expect(markdown).toContain(
+			'Classification: scoped real-workbook evidence plus claim downgrade.',
+		)
+		expect(markdown).toContain('fixtures/xlsx/xlsxwriter/strings_links.xlsx')
+		expect(markdown).toContain('e46b7e597607b4d4819ae83265f8d160904e7b01537637db68bff698c46d522b')
+		expect(markdown).toContain(
+			'/private/tmp/ascend-real-workbook-current-e8654a0b-runs/xlsxwriter-strings-links-read-nonordered-repeat15.json',
+		)
+		expect(markdown).toContain('Used range: `Strings!A2:D200`')
+		expect(markdown).toContain(
+			'| `rust-calamine` | ran/won on its lane | 0.650 | 0.759 | 0.073 | 3.0 MiB |',
+		)
+		expect(markdown).toContain(
+			'| `ascend-external-values` | ran/won on its lane | 2.162 | 2.813 | 0.109 | 114.7 MiB |',
+		)
+		expect(markdown).toContain(
+			'| `openpyxl-read-only-values` | ran/won on its lane, slower than Ascend | 5.367 | 5.727 | 0.040 | 48.9 MiB |',
+		)
+		expect(markdown).toContain('`external-internal-file-path-materialization-timing`')
+		expect(markdown).toContain('Rust Calamine is faster on the narrower materialization lane')
+		expect(markdown).toContain('"Ascend is fastest for real-workbook open/inspect."')
+		expect(markdown).toContain('do not collapse them\ninto a single cross-library leaderboard')
+
 		expect(markdown).toContain('## Cycle: Warm Workflow Value Read')
 		expect(markdown).toContain('generated `warm-workflow` workbook')
 		expect(markdown).toContain('Commit: `add13c79`')

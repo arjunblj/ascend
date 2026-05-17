@@ -28,6 +28,11 @@ No broad XLSX read, XLSX write, SOTA, or QSS-leapfrog speed claim is promotable 
   dirty-head/dirty-tail rows. They are useful formula-engine performance
   evidence, but they are not XLSX behavior parity, Excel compatibility, or
   broad formula SOTA evidence.
+- Current real-workbook evidence includes a tracked `strings_links.xlsx`
+  open/inspect boundary. Ascend's SDK value-open surface is correct and faster
+  than OpenPyXL/POI/ClosedXML on that row, but Rust Calamine is faster on its
+  materialization lane and several lower-level or alternate readers are
+  semantic mismatches. Do not promote a broad real-workbook speed claim from it.
 - Several external runners were unavailable or blocked in the clean benchmark worktree. They are recorded as blockers, not wins.
 - Several timing lanes are semantically related but not one unified timing boundary. Do not collapse in-process, preloaded-bytes, file-path, row-stream, and materialized-workbook timings into a single "wins everything" claim.
 
@@ -4441,6 +4446,140 @@ Next action: defer production optimization on FastXLSX value materialization.
 Carry this current FastXLSX setup into the next full-profile gate and keep
 attacking feature-rich rich-metadata semantic mismatches or the metadata-only
 Calamine loss.
+
+## Cycle: Tracked Real Workbook Strings/Links Open Boundary at `e8654a0b`
+
+Classification: scoped real-workbook evidence plus claim downgrade. Ascend's
+SDK value-open surface correctly reads the tracked `strings_links.xlsx` fixture
+and is faster than OpenPyXL read-only, Apache POI, and ClosedXML on their
+completed lanes, but this row does not support a broad fastest real-workbook
+claim. Rust Calamine is faster on its file-path materialization lane, and several
+other readers are semantic mismatches on this workbook.
+
+Workflow: real XLSX open/inspect value read for a tracked XlsxWriter workbook
+with strings and hyperlinks.
+
+Why it matters for release: this is a real workbook, not a generated synthetic
+matrix row. It exercises the first user-visible step of a headless workflow:
+open an existing workbook, inspect values, and preserve enough shape information
+to reason about the workbook. The row also prevents overclaiming: Ascend has a
+correct SDK safe-open result, but a native Calamine reader is faster on a narrower
+value materialization lane.
+
+Public/tracked-clean input: `fixtures/xlsx/xlsxwriter/strings_links.xlsx` from
+tracked git fixtures in a clean detached worktree at commit
+`e8654a0bf7b8689cb203a582b80026fa59dd507c`. The file is 8,801 bytes with SHA256
+`e46b7e597607b4d4819ae83265f8d160904e7b01537637db68bff698c46d522b`. No
+private corpus or local research workbook was used. A candidate POI workbook was
+rejected because it was present only in the dirty local fixture directory and not
+tracked in the detached worktree.
+
+Commands:
+
+```bash
+git worktree add --detach /private/tmp/ascend-real-workbook-current-e8654a0b e8654a0b
+cd /private/tmp/ascend-real-workbook-current-e8654a0b
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun install --frozen-lockfile
+mkdir -p /private/tmp/ascend-real-workbook-current-e8654a0b-runs
+TMPDIR=/private/tmp ACCEPT_NPOI_OSMF_LICENSE=1 env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /usr/bin/time -l /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-real-workbook.ts --json --category read --competitor external --libraries ascend-external-values,rust-calamine,python-calamine,openpyxl-read-only-values,apache-poi,closedxml,polars-calamine,polars-xlsx2csv,polars-openpyxl,excelize --runner-manifest fixtures/benchmarks/runners/ascend-python-readers.manifest.json --repeat 15 --warmup 3 fixtures/xlsx/xlsxwriter/strings_links.xlsx > /private/tmp/ascend-real-workbook-current-e8654a0b-runs/xlsxwriter-strings-links-read-nonordered-repeat15.json 2> /private/tmp/ascend-real-workbook-current-e8654a0b-runs/xlsxwriter-strings-links-read-nonordered-repeat15-time.txt
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-scoreboard.ts /private/tmp/ascend-real-workbook-current-e8654a0b-runs/xlsxwriter-strings-links-read-nonordered-repeat15.json --json --metric medianMs > /private/tmp/ascend-real-workbook-current-e8654a0b-runs/xlsxwriter-strings-links-read-nonordered-repeat15-scoreboard-noassert.json
+```
+
+Rejected/non-promoted commands:
+
+```bash
+TMPDIR=/private/tmp ACCEPT_NPOI_OSMF_LICENSE=1 env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /usr/bin/time -l /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-real-workbook.ts --json --category read --competitor external --libraries ascend-external-values-ordered,rust-calamine,openpyxl-read-only-values,apache-poi,closedxml,polars-calamine,polars-xlsx2csv,polars-openpyxl,excelize --runner-manifest fixtures/benchmarks/runners/nyc311-sota-readers.manifest.json --repeat 15 --warmup 3 fixtures/xlsx/xlsxwriter/styles_formulas.xlsx > /private/tmp/ascend-real-workbook-current-e8654a0b-runs/xlsxwriter-styles-formulas-read-repeat15.json 2> /private/tmp/ascend-real-workbook-current-e8654a0b-runs/xlsxwriter-styles-formulas-read-repeat15-time.txt
+TMPDIR=/private/tmp ACCEPT_NPOI_OSMF_LICENSE=1 env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /usr/bin/time -l /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-real-workbook.ts --json --category read --competitor external --libraries ascend-external-values-ordered,rust-calamine,openpyxl-read-only-values,apache-poi,closedxml,polars-calamine,polars-xlsx2csv,polars-openpyxl,excelize --runner-manifest fixtures/benchmarks/runners/nyc311-sota-readers.manifest.json --repeat 15 --warmup 3 fixtures/xlsx/xlsxwriter/strings_links.xlsx > /private/tmp/ascend-real-workbook-current-e8654a0b-runs/xlsxwriter-strings-links-read-repeat15.json 2> /private/tmp/ascend-real-workbook-current-e8654a0b-runs/xlsxwriter-strings-links-read-repeat15-time.txt
+```
+
+The `styles_formulas.xlsx` row and the ordered `strings_links.xlsx` row are
+not speed evidence because all or several rows were `semantic-mismatch` under
+the ordered/hash contract. They are timing-boundary diagnostics only.
+
+Environment:
+
+- Commit: `e8654a0bf7b8689cb203a582b80026fa59dd507c`
+- Worktree: clean detached worktree at
+  `/private/tmp/ascend-real-workbook-current-e8654a0b`
+- Bun runtime: `1.3.13`
+- Node: `24.3.0`
+- Platform: Darwin arm64
+- Runtime profile: `category read`, `competitor external`, `repeat 15`,
+  `warmup 3`, tracked file `fixtures/xlsx/xlsxwriter/strings_links.xlsx`.
+
+Raw output:
+
+```text
+/private/tmp/ascend-real-workbook-current-e8654a0b-runs/xlsxwriter-strings-links-read-nonordered-repeat15.json
+/private/tmp/ascend-real-workbook-current-e8654a0b-runs/xlsxwriter-strings-links-read-nonordered-repeat15-time.txt
+/private/tmp/ascend-real-workbook-current-e8654a0b-runs/xlsxwriter-strings-links-read-nonordered-repeat15-scoreboard-noassert.json
+/private/tmp/ascend-real-workbook-current-e8654a0b-runs/xlsxwriter-styles-formulas-read-repeat15.json
+/private/tmp/ascend-real-workbook-current-e8654a0b-runs/xlsxwriter-strings-links-read-repeat15.json
+```
+
+Tracked fixture shape:
+
+- Sheet: `Strings`
+- Used range: `Strings!A2:D200`
+- Cells: 600 logical and physical cells
+- Formulas: 0
+- Workbook features: 2 worksheet hyperlinks
+
+Repeat 15 after 3 warmups:
+
+| Runner | Status | Median ms | P95 ms | CV | Peak RSS | Timing lane | Semantic comparability |
+| --- | --- | ---: | ---: | ---: | ---: | --- | --- |
+| `rust-calamine` | ran/won on its lane | 0.650 | 0.759 | 0.073 | 3.0 MiB | `external-internal-file-path-materialization-timing` | Passed shape and value assertions for the 600-cell workbook. Faster and lower RSS than Ascend, but not Ascend's SDK safe-open surface. |
+| `ascend-external-values` | ran/won on its lane | 2.162 | 2.813 | 0.109 | 114.7 MiB | `external-internal-file-path-timing` | Passed shape and value assertions through Ascend's SDK value-open path. |
+| `openpyxl-read-only-values` | ran/won on its lane, slower than Ascend | 5.367 | 5.727 | 0.040 | 48.9 MiB | `external-internal-read-only-data-only-stream-materialization-timing` | Passed read-only data-only materialization assertions. |
+| `closedxml` | ran/won on its lane, slower than Ascend | 12.565 | 22.549 | 0.252 | 112.3 MiB | `external-internal-materialized-workbook-timing` | Passed materialized workbook assertions. |
+| `apache-poi` | ran/lost vs ClosedXML, slower than Ascend | 20.145 | 32.402 | 0.185 | 104.0 MiB | `external-internal-materialized-workbook-timing` | Passed materialized workbook assertions. |
+| `python-calamine` | not comparable | 0.450 | 0.547 | 0.078 | 28.9 MiB | `external-internal-file-path-materialization-timing` | `semantic-mismatch`; not counted as a win or loss. |
+| `polars-calamine` | not comparable | 1.686 | 2.809 | 0.298 | 89.5 MiB | `external-internal-operation-timing` | `semantic-mismatch`; not counted as a win or loss. |
+| `polars-xlsx2csv` | not comparable | 5.225 | 9.243 | 0.270 | 63.5 MiB | `external-internal-operation-timing` | `semantic-mismatch`; not counted as a win or loss. |
+| `polars-openpyxl` | not comparable | 9.270 | 12.759 | 0.125 | 81.5 MiB | `external-internal-operation-timing` | `semantic-mismatch`; not counted as a win or loss. |
+| `excelize` | not comparable | 10.233 | 14.899 | 0.190 | 14.9 MiB | `external-internal-file-path-materialization-timing` | `semantic-mismatch`; not counted as a win or loss. |
+
+Scoreboard result:
+
+- `rust-calamine` was the only eligible row and winner in
+  `external-internal-file-path-materialization-timing`.
+- `ascend-external-values` was the only eligible row and winner in
+  `external-internal-file-path-timing`.
+- `openpyxl-read-only-values` was the only eligible row in its read-only stream
+  lane.
+- `closedxml` beat `apache-poi` in `external-internal-materialized-workbook-timing`.
+- Polars, Python Calamine, and Excelize rows were semantic mismatches and are
+  not counted as wins or losses.
+
+Semantic boundary: this is tracked real-workbook evidence for value open/inspect
+only. It does not prove formula calculation, style fidelity, package
+preservation, hyperlink preservation after save, or broad real-workbook speed.
+The timing lanes are not one unified timing boundary, so do not collapse them
+into a single cross-library leaderboard. The row is still a concrete downgrade
+for any broad wording that would imply Ascend is fastest on real-workbook
+open/inspect; Rust Calamine is faster on the narrower materialization lane.
+
+Humble allowed wording:
+
+> On the tracked `strings_links.xlsx` real workbook at commit `e8654a0b`,
+> Ascend's SDK value-open path passed the 600-cell shape/value contract and was
+> faster than completed OpenPyXL, Apache POI, and ClosedXML rows. Rust Calamine
+> was faster and lower-memory on its narrower materialization lane, while several
+> other readers were semantic mismatches. This is scoped real-workbook
+> open/inspect evidence, not a broad speed claim.
+
+Forbidden wording:
+
+- "Ascend is fastest for real-workbook open/inspect."
+- "Ascend beats Calamine on real workbooks."
+- "Ascend beats every reader on `strings_links.xlsx`."
+- "Ascend beats Python Calamine, Polars, or Excelize on this row."
+- Any wording that treats semantic mismatches or different timing lanes as wins.
+
+Next action: keep broad real-workbook speed wording downgraded. Continue with a
+larger tracked fixture or a claim-specific same-lane runner only if it can
+produce comparable semantics without using unapproved local research workbooks.
 
 ## Cycle: Warm Workflow Value Read
 

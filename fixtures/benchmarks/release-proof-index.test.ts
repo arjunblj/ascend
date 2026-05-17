@@ -1725,6 +1725,12 @@ describe('release proof evidence index', () => {
 					boundary: expect.stringContaining('relationship-part root-attribute preservation'),
 				}),
 				expect.objectContaining({
+					evidenceId: 'docprops-root-attribute-preservation-proof',
+					acceptedScope: expect.stringContaining('71943673'),
+					command: expect.stringContaining('writes edited package document properties'),
+					boundary: expect.stringContaining('document-property root-attribute preservation'),
+				}),
+				expect.objectContaining({
 					evidenceId: 'public-formula-cache-post-write-proof',
 					acceptedScope: expect.stringContaining('f7338c91'),
 					command: expect.stringContaining(

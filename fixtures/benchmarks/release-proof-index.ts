@@ -3669,6 +3669,17 @@ function packageActionQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceIte
 				'Generated relationship-part root-attribute preservation evidence only; it does not prove public-workbook generality, arbitrary OPC relationship recovery, relationship target safety, markup-compatibility behavior, relationship semantic interpretation, or Excel UI equivalence.',
 		},
 		{
+			evidenceId: 'docprops-root-attribute-preservation-proof',
+			kind: 'test',
+			command:
+				'bun test packages/io-xlsx/src/writer/writer.test.ts -t "writes edited package document properties without preserving stale docProps XML" --timeout 30000',
+			path: 'packages/io-xlsx/src/writer/doc-props.ts; packages/io-xlsx/src/writer/index.ts; packages/io-xlsx/src/writer/writer.test.ts',
+			acceptedScope:
+				'Commit 71943673 proves regenerated core, app, and custom document-property parts preserve source root attributes such as mc:Ignorable and namespace-qualified origin markers while replacing stale document-property values with edited metadata.',
+			boundary:
+				'Generated document-property root-attribute preservation evidence only; it does not prove public-workbook generality, document-property semantic freshness, arbitrary custom property type support, markup-compatibility behavior, or Excel UI equivalence.',
+		},
+		{
 			evidenceId: 'public-formula-cache-post-write-proof',
 			kind: 'test',
 			command:

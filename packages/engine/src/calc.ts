@@ -976,6 +976,7 @@ const ARRAY_MAPPING_FUNCTIONS = new Set([
 	'T.INV',
 	'T.INV.2T',
 	'TRIM',
+	'TRIMMEAN',
 	'TRUNC',
 	'UNICHAR',
 	'UNICODE',
@@ -1011,6 +1012,7 @@ const ARRAY_MAPPING_RANGE_PRESERVING_ARGS = new Map<string, ReadonlySet<number>>
 	['RANK.AVG', new Set([1])],
 	['RANK.EQ', new Set([1])],
 	['SMALL', new Set([0])],
+	['TRIMMEAN', new Set([0])],
 	['WORKDAY', new Set([2])],
 	['WORKDAY.INTL', new Set([3])],
 ])

@@ -363,6 +363,7 @@ const SCALAR_IMPLICIT_INTERSECTION_FUNCTIONS = new Set([
 	'T.INV',
 	'T.INV.2T',
 	'TRIM',
+	'TRIMMEAN',
 	'TRUNC',
 	'UNICHAR',
 	'UNICODE',
@@ -636,6 +637,7 @@ const ARRAY_CONTEXT_MAPPABLE_FUNCTIONS = new Set([
 	'T.INV',
 	'T.INV.2T',
 	'TRIM',
+	'TRIMMEAN',
 	'TRUNC',
 	'UNICHAR',
 	'UNICODE',
@@ -671,6 +673,7 @@ const ARRAY_MAPPED_RANGE_PRESERVING_ARGS = new Map<string, ReadonlySet<number>>(
 	['RANK.AVG', new Set([1])],
 	['RANK.EQ', new Set([1])],
 	['SMALL', new Set([0])],
+	['TRIMMEAN', new Set([0])],
 	['WORKDAY', new Set([2])],
 	['WORKDAY.INTL', new Set([3])],
 ])

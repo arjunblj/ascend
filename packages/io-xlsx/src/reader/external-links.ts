@@ -1,3 +1,4 @@
+import { asArray, attr, numAttr, parseXml, type XmlNode } from '../xml.ts'
 import { parseXmlAttributes } from './xml-utils.ts'
 
 const NS_PREFIX = String.raw`(?:[A-Za-z_][\w.-]*:)?`
@@ -14,8 +15,16 @@ export type ExternalLinkKind = 'externalBook' | 'ddeLink' | 'oleLink'
 export interface ExternalLinkInfo {
 	readonly kind: ExternalLinkKind
 	readonly relationshipId?: string
+	readonly externalBookSheetNames?: readonly string[]
+	readonly externalBookDefinedNames?: readonly ExternalBookDefinedNameInfo[]
 	readonly ddeService?: string
 	readonly ddeTopic?: string
+}
+
+export interface ExternalBookDefinedNameInfo {
+	readonly name: string
+	readonly refersTo?: string
+	readonly sheetId?: number
 }
 
 export function parseExternalBookRelationshipId(xml: string): string | undefined {
@@ -32,15 +41,51 @@ export function parseExternalLinkInfo(xml: string): ExternalLinkInfo | undefined
 	const namespaces = relationshipNamespacePrefixes(xml, match.index)
 	const attrs = parseXmlAttributes(rawAttrs)
 	const relationshipId = readRelationshipId(attrs, namespaces)
+	const externalBookMetadata = kind === 'externalBook' ? parseExternalBookMetadata(xml) : {}
 	return {
 		kind,
 		...(relationshipId ? { relationshipId } : {}),
+		...externalBookMetadata,
 		...(kind === 'ddeLink' && attrs.get('ddeService')
 			? { ddeService: attrs.get('ddeService') as string }
 			: {}),
 		...(kind === 'ddeLink' && attrs.get('ddeTopic')
 			? { ddeTopic: attrs.get('ddeTopic') as string }
 			: {}),
+	}
+}
+
+function parseExternalBookMetadata(
+	xml: string,
+): Pick<ExternalLinkInfo, 'externalBookSheetNames' | 'externalBookDefinedNames'> {
+	let doc: XmlNode
+	try {
+		doc = parseXml(xml)
+	} catch {
+		return {}
+	}
+	const externalLink = firstElement(doc, 'externalLink')
+	const externalBook = childNode(externalLink, 'externalBook') ?? firstElement(doc, 'externalBook')
+	if (!externalBook) return {}
+	const sheetNames = childNodes(childNode(externalBook, 'sheetNames'), 'sheetName')
+		.map((node) => attr(node, 'val'))
+		.filter((value): value is string => value !== undefined)
+	const definedNames = childNodes(childNode(externalBook, 'definedNames'), 'definedName')
+		.map((node) => {
+			const name = attr(node, 'name')
+			if (!name) return undefined
+			const refersTo = attr(node, 'refersTo')
+			const sheetId = numAttr(node, 'sheetId')
+			return {
+				name,
+				...(refersTo ? { refersTo } : {}),
+				...(sheetId !== undefined ? { sheetId } : {}),
+			}
+		})
+		.filter((value): value is ExternalBookDefinedNameInfo => value !== undefined)
+	return {
+		...(sheetNames.length > 0 ? { externalBookSheetNames: sheetNames } : {}),
+		...(definedNames.length > 0 ? { externalBookDefinedNames: definedNames } : {}),
 	}
 }
 
@@ -79,4 +124,36 @@ function relationshipNamespacePrefixes(
 		cursor = end + 1
 	}
 	return namespaces
+}
+
+function firstElement(doc: XmlNode, localName: string): XmlNode | undefined {
+	for (const [key, value] of Object.entries(doc)) {
+		if (key.startsWith('@_') || localPart(key) !== localName || !isXmlNode(value)) continue
+		return value
+	}
+	return undefined
+}
+
+function childNode(node: XmlNode | undefined, localName: string): XmlNode | undefined {
+	return childNodes(node, localName)[0]
+}
+
+function childNodes(node: XmlNode | undefined, localName: string): XmlNode[] {
+	if (!node) return []
+	const matches: XmlNode[] = []
+	for (const [key, value] of Object.entries(node)) {
+		if (key.startsWith('@_') || localPart(key) !== localName) continue
+		for (const item of asArray(value as XmlNode | XmlNode[] | undefined)) {
+			if (isXmlNode(item)) matches.push(item)
+		}
+	}
+	return matches
+}
+
+function isXmlNode(value: unknown): value is XmlNode {
+	return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function localPart(name: string): string {
+	return name.includes(':') ? (name.split(':').pop() ?? name) : name
 }

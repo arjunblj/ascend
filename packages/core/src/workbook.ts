@@ -252,6 +252,8 @@ export interface ExternalReferenceInfo {
 	readonly externalLinkKind?: ExternalLinkKind
 	readonly externalLinkRelId?: string
 	readonly externalBookRelId?: string
+	readonly externalBookSheetNames?: readonly string[]
+	readonly externalBookDefinedNames?: readonly ExternalBookDefinedNameInfo[]
 	readonly externalLinkDdeService?: string
 	readonly externalLinkDdeTopic?: string
 	readonly linkRelId?: string
@@ -266,6 +268,12 @@ export interface ExternalReferenceInfo {
 }
 
 export type ExternalLinkKind = 'externalBook' | 'ddeLink' | 'oleLink'
+
+export interface ExternalBookDefinedNameInfo {
+	readonly name: string
+	readonly refersTo?: string
+	readonly sheetId?: number
+}
 
 export type ExternalReferenceLinkRelationshipKind =
 	| 'externalLinkPath'

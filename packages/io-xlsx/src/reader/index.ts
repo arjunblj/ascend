@@ -311,6 +311,12 @@ export function readXlsxArchive(
 				...(externalLinkInfo?.kind ? { externalLinkKind: externalLinkInfo.kind } : {}),
 				...(externalLinkRelId ? { externalLinkRelId } : {}),
 				...(externalBookRelId ? { externalBookRelId } : {}),
+				...(externalLinkInfo?.externalBookSheetNames
+					? { externalBookSheetNames: externalLinkInfo.externalBookSheetNames }
+					: {}),
+				...(externalLinkInfo?.externalBookDefinedNames
+					? { externalBookDefinedNames: externalLinkInfo.externalBookDefinedNames }
+					: {}),
 				...(externalLinkInfo?.ddeService
 					? { externalLinkDdeService: externalLinkInfo.ddeService }
 					: {}),

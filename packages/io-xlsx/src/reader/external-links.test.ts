@@ -26,6 +26,33 @@ describe('external link metadata', () => {
 		expect(parseExternalBookRelationshipId('<externalLink/>')).toBeUndefined()
 	})
 
+	test('parses externalBook sheet names and external defined names', () => {
+		expect(
+			parseExternalLinkInfo(
+				`<x:externalLink xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <x:externalBook r:id="rIdBook">
+    <x:sheetNames>
+      <x:sheetName val="Summary &amp; Ops"/>
+      <x:sheetName val="Data"/>
+    </x:sheetNames>
+    <x:definedNames>
+      <x:definedName name="ExtTotal" refersTo="'Summary &amp; Ops'!$B$2" sheetId="0"/>
+      <x:definedName name="GlobalFlag" refersTo="TRUE"/>
+    </x:definedNames>
+  </x:externalBook>
+</x:externalLink>`,
+			),
+		).toEqual({
+			kind: 'externalBook',
+			relationshipId: 'rIdBook',
+			externalBookSheetNames: ['Summary & Ops', 'Data'],
+			externalBookDefinedNames: [
+				{ name: 'ExtTotal', refersTo: "'Summary & Ops'!$B$2", sheetId: 0 },
+				{ name: 'GlobalFlag', refersTo: 'TRUE' },
+			],
+		})
+	})
+
 	test('ignores externalBook id attributes outside the relationships namespace', () => {
 		expect(
 			parseExternalBookRelationshipId(
@@ -103,6 +130,38 @@ describe('external link metadata', () => {
 			target: '../linked/source.xlsx',
 		})
 	})
+
+	test('inventories externalBook sheet and defined-name metadata across save and reopen', () => {
+		const source = readXlsx(externalBookWorkbook())
+		expectOk(source)
+		expect(source.value.workbook.externalReferenceDetails[0]).toMatchObject({
+			partPath: 'xl/externalLinks/externalLink1.xml',
+			externalLinkKind: 'externalBook',
+			externalBookRelId: 'rIdBook',
+			externalBookSheetNames: ['Summary', 'Data'],
+			externalBookDefinedNames: [
+				{ name: 'ExtTotal', refersTo: 'Summary!$B$2', sheetId: 0 },
+				{ name: 'GlobalFlag', refersTo: 'TRUE' },
+			],
+			linkBindingStatus: 'externalBookRelId',
+			target: '../linked/source.xlsx',
+			targetMode: 'External',
+		})
+
+		const written = writeXlsx(source.value.workbook, source.value.capsules)
+		expectOk(written)
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+		expect(reopened.value.workbook.externalReferenceDetails[0]).toMatchObject({
+			externalLinkKind: 'externalBook',
+			externalBookSheetNames: ['Summary', 'Data'],
+			externalBookDefinedNames: [
+				{ name: 'ExtTotal', refersTo: 'Summary!$B$2', sheetId: 0 },
+				{ name: 'GlobalFlag', refersTo: 'TRUE' },
+			],
+			target: '../linked/source.xlsx',
+		})
+	})
 })
 
 function externalLinkWorkbook(): Uint8Array {
@@ -140,6 +199,54 @@ function externalLinkWorkbook(): Uint8Array {
 		'xl/externalLinks/_rels/externalLink1.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rIdOle" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLinkPath" Target="../linked/source.xlsx" TargetMode="External"/>
+</Relationships>`,
+	})
+}
+
+function externalBookWorkbook(): Uint8Array {
+	return makeXlsx({
+		'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  <Override PartName="/xl/externalLinks/externalLink1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.externalLink+xml"/>
+</Types>`,
+		'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdOffice" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+		'xl/workbook.xml': `<?xml version="1.0"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <externalReferences><externalReference r:id="rIdExternal"/></externalReferences>
+  <sheets><sheet name="Sheet1" sheetId="1" r:id="rIdSheet"/></sheets>
+</workbook>`,
+		'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdSheet" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  <Relationship Id="rIdExternal" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLink" Target="externalLinks/externalLink1.xml"/>
+</Relationships>`,
+		'xl/worksheets/sheet1.xml': `<?xml version="1.0"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData/></worksheet>`,
+		'xl/externalLinks/externalLink1.xml': `<?xml version="1.0"?>
+<externalLink xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <externalBook r:id="rIdBook">
+    <sheetNames>
+      <sheetName val="Summary"/>
+      <sheetName val="Data"/>
+    </sheetNames>
+    <definedNames>
+      <definedName name="ExtTotal" refersTo="Summary!$B$2" sheetId="0"/>
+      <definedName name="GlobalFlag" refersTo="TRUE"/>
+    </definedNames>
+  </externalBook>
+</externalLink>`,
+		'xl/externalLinks/_rels/externalLink1.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdBook" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/externalLinkPath" Target="../linked/source.xlsx" TargetMode="External"/>
 </Relationships>`,
 	})
 }

@@ -5402,6 +5402,94 @@ describe('applyOperation', () => {
 		])
 	})
 
+	test('range transfers preserve quoted sheet-qualified metadata sqrefs', () => {
+		const copyWorkbook = createWorkbook()
+		const copySheet = copyWorkbook.addSheet('Data Sheet')
+		copySheet.cells.set(0, 0, cell(numberValue(10)))
+		copySheet.cells.set(0, 1, cell(numberValue(20)))
+		copySheet.dataValidations.push({
+			sqref: "'Data Sheet'!A1:B1",
+			type: 'whole',
+			formula1: 'A1',
+		})
+		copySheet.conditionalFormats.push({
+			sqref: "'Data Sheet'!A1:B1",
+			rules: [{ type: 'expression', formulas: ['A1>0'] }],
+		})
+
+		expectOk(
+			applyOperation(copyWorkbook, {
+				op: 'copyRange',
+				sheet: 'Data Sheet',
+				source: 'A1:B1',
+				target: 'D2',
+				mode: 'all',
+			}),
+		)
+
+		expect(copySheet.dataValidations.at(-1)).toEqual({
+			sqref: "'Data Sheet'!D2:E2",
+			type: 'whole',
+			formula1: 'D2',
+		})
+		expect(copySheet.conditionalFormats.at(-1)).toEqual({
+			sqref: "'Data Sheet'!D2:E2",
+			rules: [{ type: 'expression', formulas: ['D2>0'] }],
+		})
+
+		const moveWorkbook = createWorkbook()
+		const moveSheet = moveWorkbook.addSheet('Data Sheet')
+		moveSheet.cells.set(0, 0, cell(numberValue(10)))
+		moveSheet.cells.set(0, 1, cell(numberValue(20)))
+		moveSheet.x14DataValidations.push({
+			index: 3,
+			sqref: "'Data Sheet'!A1:B1",
+			type: 'whole',
+			formula1: 'A1',
+		})
+		moveSheet.x14ConditionalFormats.push({
+			index: 4,
+			sqref: "'Data Sheet'!A1:B1",
+			formulas: ['A1>0'],
+		})
+		moveSheet.protectedRanges.push({
+			name: 'Locked',
+			sqref: "'Data Sheet'!A1:B1",
+		})
+
+		expectOk(
+			applyOperation(moveWorkbook, {
+				op: 'moveRange',
+				sheet: 'Data Sheet',
+				source: 'A1:B1',
+				target: 'D2',
+				mode: 'all',
+			}),
+		)
+
+		expect(moveSheet.x14DataValidations).toEqual([
+			{
+				index: 3,
+				sqref: "'Data Sheet'!D2:E2",
+				type: 'whole',
+				formula1: 'D2',
+			},
+		])
+		expect(moveSheet.x14ConditionalFormats).toEqual([
+			{
+				index: 4,
+				sqref: "'Data Sheet'!D2:E2",
+				formulas: ['D2>0'],
+			},
+		])
+		expect(moveSheet.protectedRanges).toEqual([
+			{
+				name: 'Locked',
+				sqref: "'Data Sheet'!D2:E2",
+			},
+		])
+	})
+
 	test('hideSheet hideRows and hideCols update sheet visibility metadata', () => {
 		const wb = setup()
 		const result1 = applyOperation(wb, {
@@ -5906,6 +5994,52 @@ describe('applyOperation', () => {
 			{ name: 'ExpandsWithRows', sqref: 'A1:A3', password: '1234' },
 			{ name: 'MovesWithColumns', sqref: 'B3:D3 E3' },
 		])
+	})
+
+	test('row and column shifts preserve quoted sheet-qualified metadata sqrefs', () => {
+		const wb = createWorkbook()
+		const s = wb.addSheet('Data Sheet')
+		s.dataValidations.push({
+			sqref: "'Data Sheet'!A2:A4 'Data Sheet'!C2",
+			type: 'list',
+			formula1: 'A2',
+		})
+		s.conditionalFormats.push({
+			sqref: "'Data Sheet'!B2:B4",
+			rules: [{ type: 'expression', formulas: ['B2>0'] }],
+		})
+		s.x14DataValidations.push({
+			index: 0,
+			sqref: "'Data Sheet'!D2",
+			type: 'whole',
+			formula1: 'D2',
+		})
+		s.x14ConditionalFormats.push({
+			index: 0,
+			sqref: "'Data Sheet'!E2:E4",
+			formulas: ['E2>0'],
+		})
+		s.protectedRanges.push({
+			name: 'Locked',
+			sqref: "'Data Sheet'!F2:F4",
+		})
+
+		expectOk(applyOperation(wb, { op: 'insertRows', sheet: 'Data Sheet', at: 0, count: 1 }))
+		expectOk(applyOperation(wb, { op: 'insertCols', sheet: 'Data Sheet', at: 0, count: 1 }))
+
+		expect(s.dataValidations[0]).toMatchObject({
+			sqref: "'Data Sheet'!B3:B5 'Data Sheet'!D3",
+			formula1: 'B3',
+		})
+		expect(s.conditionalFormats[0]?.sqref).toBe("'Data Sheet'!C3:C5")
+		expect(s.conditionalFormats[0]?.rules[0]?.formulas).toEqual(['C3>0'])
+		expect(s.x14DataValidations[0]).toMatchObject({
+			sqref: "'Data Sheet'!E3",
+			formula1: 'E3',
+		})
+		expect(s.x14ConditionalFormats[0]?.sqref).toBe("'Data Sheet'!F3:F5")
+		expect(s.x14ConditionalFormats[0]?.formulas).toEqual(['F3>0'])
+		expect(s.protectedRanges[0]?.sqref).toBe("'Data Sheet'!G3:G5")
 	})
 
 	test('row and column shifts update chart source refs', () => {

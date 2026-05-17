@@ -2499,7 +2499,7 @@ function translateConditionalFormatValueObject(
 
 function parseSqref(sqref: string): RangeRef[] {
 	const ranges: RangeRef[] = []
-	for (const token of sqref.trim().split(/\s+/)) {
+	for (const token of splitSqrefTokens(sqref)) {
 		if (!token) continue
 		try {
 			ranges.push(parseRange(token))
@@ -2508,6 +2508,33 @@ function parseSqref(sqref: string): RangeRef[] {
 		}
 	}
 	return ranges
+}
+
+function splitSqrefTokens(sqref: string): string[] {
+	const refs: string[] = []
+	let current = ''
+	let quoted = false
+	for (let index = 0; index < sqref.length; index++) {
+		const ch = sqref[index] ?? ''
+		if (ch === "'") {
+			current += ch
+			if (quoted && sqref[index + 1] === "'") {
+				current += "'"
+				index++
+			} else {
+				quoted = !quoted
+			}
+		} else if (/\s/.test(ch) && !quoted) {
+			if (current) {
+				refs.push(current)
+				current = ''
+			}
+		} else {
+			current += ch
+		}
+	}
+	if (current) refs.push(current)
+	return refs
 }
 
 function rangeContainsCell(range: RangeRef, ref: { row: number; col: number }): boolean {
@@ -2536,6 +2563,7 @@ function shiftRange(range: RangeRef, rowDelta: number, colDelta: number): RangeR
 	return {
 		start: { row: range.start.row + rowDelta, col: range.start.col + colDelta },
 		end: { row: range.end.row + rowDelta, col: range.end.col + colDelta },
+		...(range.sheet !== undefined ? { sheet: range.sheet } : {}),
 	}
 }
 
@@ -2546,7 +2574,13 @@ function rangesToSqref(ranges: readonly RangeRef[]): string {
 function rangeToA1(range: RangeRef): string {
 	const start = toA1(range.start)
 	const end = toA1(range.end)
-	return start === end ? start : `${start}:${end}`
+	const body = start === end ? start : `${start}:${end}`
+	return range.sheet !== undefined ? `${formatSheetName(range.sheet)}!${body}` : body
+}
+
+function formatSheetName(sheet: string): string {
+	if (/^[A-Za-z_][A-Za-z0-9_.]*$/.test(sheet)) return sheet
+	return `'${sheet.replace(/'/g, "''")}'`
 }
 
 function translateMetadataFormula(formula: string, rowDelta: number, colDelta: number): string {

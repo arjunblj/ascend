@@ -7,8 +7,7 @@ export function shiftSqref(
 	at: number,
 	delta: number,
 ): string | null {
-	const shifted = sqref
-		.split(/\s+/)
+	const shifted = splitSqrefParts(sqref)
 		.map((part) => shiftA1RangeOrCell(part, axis, at, delta))
 		.filter((part): part is string => part !== null && part.length > 0)
 	return shifted.length > 0 ? shifted.join(' ') : null
@@ -41,9 +40,7 @@ export function shiftA1RangeOrCell(
 		const range = parseRange(input)
 		const shifted = shiftRangeRef(range, axis, at, delta)
 		if (!shifted) return null
-		const start = toA1(shifted.start)
-		const end = toA1(shifted.end)
-		return start === end ? start : `${start}:${end}`
+		return rangeToA1Ref(shifted)
 	} catch {
 		return shiftA1Ref(input, axis, at, delta)
 	}
@@ -63,12 +60,53 @@ export function shiftRangeRef(
 		return {
 			start: { ...range.start, row: shifted.start },
 			end: { ...range.end, row: shifted.end },
+			...(range.sheet !== undefined ? { sheet: range.sheet } : {}),
 		}
 	}
 	return {
 		start: { ...range.start, col: shifted.start },
 		end: { ...range.end, col: shifted.end },
+		...(range.sheet !== undefined ? { sheet: range.sheet } : {}),
 	}
+}
+
+function splitSqrefParts(sqref: string): string[] {
+	const refs: string[] = []
+	let current = ''
+	let quoted = false
+	for (let index = 0; index < sqref.length; index++) {
+		const ch = sqref[index] ?? ''
+		if (ch === "'") {
+			current += ch
+			if (quoted && sqref[index + 1] === "'") {
+				current += "'"
+				index++
+			} else {
+				quoted = !quoted
+			}
+		} else if (/\s/.test(ch) && !quoted) {
+			if (current) {
+				refs.push(current)
+				current = ''
+			}
+		} else {
+			current += ch
+		}
+	}
+	if (current) refs.push(current)
+	return refs
+}
+
+function rangeToA1Ref(range: RangeRef): string {
+	const start = toA1(range.start)
+	const end = toA1(range.end)
+	const body = start === end ? start : `${start}:${end}`
+	return range.sheet !== undefined ? `${formatSheetName(range.sheet)}!${body}` : body
+}
+
+function formatSheetName(sheet: string): string {
+	if (/^[A-Za-z_][A-Za-z0-9_.]*$/.test(sheet)) return sheet
+	return `'${sheet.replace(/'/g, "''")}'`
 }
 
 export function shiftRangeBounds(

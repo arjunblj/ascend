@@ -2070,9 +2070,10 @@ describe('release proof evidence index', () => {
 						'a086f2a2',
 						'03e1866c',
 						'1a0cd1e3',
+						'ef994de0',
 					]),
 					allowedWording: expect.stringContaining(
-						'scalar ADDRESS/date/workday/order-statistic/rank/percentile-quartile/percentrank/forecast/trimmean/aggregate/subtotal implicit intersection',
+						'scalar ADDRESS/date/workday/order-statistic/rank/percentile-quartile/percentrank/forecast/forecast-ets/trimmean/aggregate/subtotal implicit intersection',
 					),
 					evidenceProvesIt: expect.arrayContaining([
 						expect.stringContaining('NOT spills boolean masks'),
@@ -2108,6 +2109,8 @@ describe('release proof evidence index', () => {
 						expect.stringContaining('top-level percentrank functions implicitly intersect'),
 						expect.stringContaining('forecast functions spill over target x values'),
 						expect.stringContaining('top-level forecast functions implicitly intersect'),
+						expect.stringContaining('FORECAST.ETS family spills over selector arguments'),
+						expect.stringContaining('top-level FORECAST.ETS family implicitly intersects'),
 						expect.stringContaining('TRIMMEAN spills over percent arguments'),
 						expect.stringContaining('top-level TRIMMEAN implicitly intersects'),
 						expect.stringContaining('AGGREGATE selector functions spill over k'),

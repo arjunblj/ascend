@@ -295,6 +295,8 @@ export function classifyPackageFeatureFamily(
 	if (lowerRelType.endsWith('/relationships/xlmacrosheet')) return 'preservedMacroSheet'
 	if (path.includes('/chartsheets/')) return 'preservedChartSheet'
 	if (path.includes('/macrosheets/')) return 'preservedMacroSheet'
+	if (lowerRelType.endsWith('/relationships/drawing')) return 'preservedDrawing'
+	if (lowerRelType.endsWith('/relationships/vmldrawing')) return 'preservedVml'
 	if (
 		/(^|\/)charts\/style\d+\.xml$/i.test(path) ||
 		lowerRelType.endsWith('/relationships/chartstyle')
@@ -307,6 +309,8 @@ export function classifyPackageFeatureFamily(
 	) {
 		return 'preservedChartColor'
 	}
+	if (lowerRelType.endsWith('/relationships/chart')) return 'preservedChart'
+	if (lowerRelType.endsWith('/relationships/image')) return 'preservedMedia'
 	if (path.includes('/charts/') || path.includes('/chartEx/')) return 'preservedChart'
 	if (path.includes('/drawings/') && path.endsWith('.vml')) return 'preservedVml'
 	if (path.includes('/drawings/')) return 'preservedDrawing'

@@ -88,6 +88,8 @@ describe('XLSX package graph', () => {
 			'xl/worksheets/_rels/sheet1.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rIdDrawing" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/>
+  <Relationship Id="rIdDrawingOpaque" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="opaque-drawing.bin"/>
+  <Relationship Id="rIdVmlOpaque" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/vmlDrawing" Target="opaque-vml.bin"/>
   <Relationship Id="rIdQueryTableOpaque" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/queryTable" Target="opaque-query.bin"/>
   <Relationship Id="rIdHyperlink" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.invalid/report" TargetMode="External"/>
   <Relationship Id="rIdCommentsOpaque" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments" Target="opaque-comments.bin"/>
@@ -100,7 +102,9 @@ describe('XLSX package graph', () => {
 			'xl/drawings/_rels/drawing1.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rIdChart" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="../charts/chart1.xml"/>
+  <Relationship Id="rIdChartOpaque" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="opaque-chart.bin"/>
   <Relationship Id="rIdImage" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image%201.png"/>
+  <Relationship Id="rIdImageOpaque" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="opaque-image.bin"/>
   <Relationship Id="rIdLinkedImage" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="https://example.invalid/logo.png" TargetMode="External"/>
   <Relationship Id="rIdOleObject" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObject" Target="file:///C:/objects/report.bin" TargetMode="External"/>
   <Relationship Id="rIdOleObjectOpaque" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/oleObject" Target="opaque-ole.bin"/>
@@ -148,10 +152,14 @@ describe('XLSX package graph', () => {
 			'xl/opaque-timeline.bin': 'timeline-bytes',
 			'xl/opaque-timeline-cache.bin': 'timeline-cache-bytes',
 			'xl/worksheets/opaque-query.bin': 'query-table-bytes',
+			'xl/worksheets/opaque-drawing.bin': 'drawing-bytes',
+			'xl/worksheets/opaque-vml.bin': 'vml-bytes',
 			'xl/worksheets/opaque-comments.bin': 'comments-bytes',
 			'xl/worksheets/opaque-threaded-comments.bin': 'threaded-comments-bytes',
 			'xl/worksheets/opaque-control.bin': 'control-bytes',
 			'xl/drawings/opaque-ole.bin': 'ole-bytes',
+			'xl/drawings/opaque-chart.bin': 'chart-bytes',
+			'xl/drawings/opaque-image.bin': 'image-bytes',
 			'xl/media/image 1.png': 'not-really-a-png',
 		})
 
@@ -342,6 +350,24 @@ describe('XLSX package graph', () => {
 			featureFamily: 'preservedQueryTable',
 		})
 		expect(graph.relationships).toContainEqual({
+			sourcePartPath: 'xl/worksheets/sheet1.xml',
+			relationshipPartPath: 'xl/worksheets/_rels/sheet1.xml.rels',
+			id: 'rIdDrawingOpaque',
+			type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing',
+			rawTarget: 'opaque-drawing.bin',
+			resolvedTarget: 'xl/worksheets/opaque-drawing.bin',
+			featureFamily: 'preservedDrawing',
+		})
+		expect(graph.relationships).toContainEqual({
+			sourcePartPath: 'xl/worksheets/sheet1.xml',
+			relationshipPartPath: 'xl/worksheets/_rels/sheet1.xml.rels',
+			id: 'rIdVmlOpaque',
+			type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/vmlDrawing',
+			rawTarget: 'opaque-vml.bin',
+			resolvedTarget: 'xl/worksheets/opaque-vml.bin',
+			featureFamily: 'preservedVml',
+		})
+		expect(graph.relationships).toContainEqual({
 			sourcePartPath: 'xl/workbook.xml',
 			relationshipPartPath: 'xl/_rels/workbook.xml.rels',
 			id: 'rIdCalcChainOpaque',
@@ -443,10 +469,28 @@ describe('XLSX package graph', () => {
 		expect(graph.relationships).toContainEqual({
 			sourcePartPath: 'xl/drawings/drawing1.xml',
 			relationshipPartPath: 'xl/drawings/_rels/drawing1.xml.rels',
+			id: 'rIdChartOpaque',
+			type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart',
+			rawTarget: 'opaque-chart.bin',
+			resolvedTarget: 'xl/drawings/opaque-chart.bin',
+			featureFamily: 'preservedChart',
+		})
+		expect(graph.relationships).toContainEqual({
+			sourcePartPath: 'xl/drawings/drawing1.xml',
+			relationshipPartPath: 'xl/drawings/_rels/drawing1.xml.rels',
 			id: 'rIdImage',
 			type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image',
 			rawTarget: '../media/image%201.png',
 			resolvedTarget: 'xl/media/image 1.png',
+			featureFamily: 'preservedMedia',
+		})
+		expect(graph.relationships).toContainEqual({
+			sourcePartPath: 'xl/drawings/drawing1.xml',
+			relationshipPartPath: 'xl/drawings/_rels/drawing1.xml.rels',
+			id: 'rIdImageOpaque',
+			type: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image',
+			rawTarget: 'opaque-image.bin',
+			resolvedTarget: 'xl/drawings/opaque-image.bin',
 			featureFamily: 'preservedMedia',
 		})
 		expect(graph.relationships).toContainEqual({
@@ -729,6 +773,20 @@ describe('XLSX package graph', () => {
 			featureFamily: 'preservedQueryTable',
 			preservationPolicy: 'preserve-exact',
 		})
+		expect(
+			graph.parts.find((part) => part.path === 'xl/worksheets/opaque-drawing.bin'),
+		).toMatchObject({
+			ownerScope: 'drawing',
+			sourceRelationshipId: 'rIdDrawingOpaque',
+			featureFamily: 'preservedDrawing',
+			preservationPolicy: 'preserve-exact',
+		})
+		expect(graph.parts.find((part) => part.path === 'xl/worksheets/opaque-vml.bin')).toMatchObject({
+			ownerScope: 'drawing',
+			sourceRelationshipId: 'rIdVmlOpaque',
+			featureFamily: 'preservedVml',
+			preservationPolicy: 'preserve-exact',
+		})
 		expect(graph.parts.find((part) => part.path === 'xl/opaque-calc.bin')).toMatchObject({
 			ownerScope: 'metadata',
 			sourceRelationshipId: 'rIdCalcChainOpaque',
@@ -774,6 +832,18 @@ describe('XLSX package graph', () => {
 			ownerScope: 'active-content',
 			sourceRelationshipId: 'rIdOleObjectOpaque',
 			featureFamily: 'preservedEmbedding',
+		})
+		expect(graph.parts.find((part) => part.path === 'xl/drawings/opaque-chart.bin')).toMatchObject({
+			ownerScope: 'chart',
+			sourceRelationshipId: 'rIdChartOpaque',
+			featureFamily: 'preservedChart',
+			preservationPolicy: 'preserve-exact',
+		})
+		expect(graph.parts.find((part) => part.path === 'xl/drawings/opaque-image.bin')).toMatchObject({
+			ownerScope: 'drawing',
+			sourceRelationshipId: 'rIdImageOpaque',
+			featureFamily: 'preservedMedia',
+			preservationPolicy: 'preserve-exact',
 		})
 		expect(
 			graph.parts.find((part) => part.path === 'xl/data/connectionsPayload.xml'),

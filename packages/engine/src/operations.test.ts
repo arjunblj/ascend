@@ -6476,6 +6476,76 @@ describe('applyOperation', () => {
 		})
 	})
 
+	test('row and column inserts reject sparkline ranges before shifting them out of grid', () => {
+		const cases: readonly {
+			readonly op: Operation
+			readonly setup: (sheet: Sheet) => void
+			readonly expectedOwner: string
+			readonly expectedReference: string
+		}[] = [
+			{
+				op: { op: 'insertRows', sheet: 'Data', at: 0, count: 1 },
+				setup: (sheet) => {
+					sheet.sparklineGroups.push({
+						groupIndex: 0,
+						type: 'line',
+						range: 'Data!$B$1048576',
+						locationRange: '$D$2',
+						count: 1,
+					})
+				},
+				expectedOwner: 'Data!sparklineGroup(0).range',
+				expectedReference: 'Data!$B$1048576',
+			},
+			{
+				op: { op: 'insertCols', sheet: 'Data', at: 0, count: 1 },
+				setup: (sheet) => {
+					sheet.sparklineGroups.push({
+						groupIndex: 0,
+						type: 'line',
+						range: 'Data!$B$2',
+						locationRange: '$XFD$2:$XFD$4',
+						count: 1,
+					})
+				},
+				expectedOwner: 'Data!sparklineGroup(0).locationRange',
+				expectedReference: '$XFD$2:$XFD$4',
+			},
+			{
+				op: { op: 'insertRows', sheet: 'Data', at: 1_048_575, count: 1 },
+				setup: (sheet) => {
+					sheet.sparklineGroups.push({
+						groupIndex: 0,
+						type: 'line',
+						count: 1,
+						sparklines: [{ range: 'Data!$C$1048576', locationRange: '$E$2' }],
+					})
+				},
+				expectedOwner: 'Data!sparklineGroup(0).sparklines[0].range',
+				expectedReference: 'Data!$C$1048576',
+			},
+		]
+
+		for (const { op, setup: setupSheet, expectedOwner, expectedReference } of cases) {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Data')
+			setupSheet(sheet)
+			const beforeSparklines = JSON.stringify(sheet.sparklineGroups)
+
+			const result = applyOperation(wb, op)
+
+			expectErr(result)
+			expect(result.error.code, op.op).toBe('INVALID_RANGE')
+			expect(result.error.refs, op.op).toEqual([expectedOwner])
+			expect(result.error.details, op.op).toMatchObject({
+				kind: 'structural-insert-shifts-sparkline-out-of-bounds',
+				owner: expectedOwner,
+				reference: expectedReference,
+			})
+			expect(JSON.stringify(sheet.sparklineGroups), op.op).toBe(beforeSparklines)
+		}
+	})
+
 	test('deleteRows shrinks overlapping table, filter, and validation ranges', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')

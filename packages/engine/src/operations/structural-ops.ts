@@ -20,9 +20,11 @@ import { ascendError, EMPTY, err, ok } from '@ascend/schema'
 import { resolveCellFormulaText } from '../analysis.ts'
 import {
 	findInsertShiftedChartSourceRefOutOfBounds,
+	findInsertShiftedSparklineRefOutOfBounds,
 	findPartialFormulaMoveReference,
 	formulaAstHasLocalStructuralReference,
 	type InsertShiftedChartSourceRefOutOfBounds,
+	type InsertShiftedSparklineRefOutOfBounds,
 	type PartialFormulaMoveReference,
 	retargetExplicitFormulaSheetRefsInRange,
 	rewriteDefinedNameFormulasForMove,
@@ -101,6 +103,13 @@ function applyAxisShift(
 	if (insertSqrefOverflowBlocker) {
 		return err(
 			insertShiftedSqrefOutOfBoundsError(sheet, axis, at, count, insertSqrefOverflowBlocker),
+		)
+	}
+	const insertSparklineOverflowBlocker =
+		delta > 0 ? findInsertShiftedSparklineRefOutOfBounds(sheet, axis, at, count) : null
+	if (insertSparklineOverflowBlocker) {
+		return err(
+			insertShiftedSparklineOutOfBoundsError(axis, at, count, insertSparklineOverflowBlocker),
 		)
 	}
 	const ambiguousDefinedName = findAmbiguousWorkbookDefinedNameStructuralReference(workbook)
@@ -509,6 +518,34 @@ function insertShiftedChartSourceOutOfBoundsError(
 			suggestedFix: `Move or remove chart source ranges that would shift past ${maxRef}, then retry the insert.`,
 			details: {
 				kind: 'structural-insert-shifts-chart-source-out-of-bounds',
+				axis,
+				at,
+				count,
+				owner: blocker.owner,
+				formula: blocker.formula,
+				reference: blocker.reference,
+				shiftedReference: blocker.shiftedReference,
+			},
+		},
+	)
+}
+
+function insertShiftedSparklineOutOfBoundsError(
+	axis: 'row' | 'col',
+	at: number,
+	count: number,
+	blocker: InsertShiftedSparklineRefOutOfBounds,
+) {
+	const label = axis === 'row' ? 'row' : 'column'
+	const maxRef = axis === 'row' ? '1048576' : 'XFD'
+	return ascendError(
+		'INVALID_RANGE',
+		`Cannot insert ${label}s because sparkline range ${blocker.owner} reference ${blocker.reference} would shift outside Excel worksheet bounds`,
+		{
+			refs: [blocker.owner],
+			suggestedFix: `Move or remove sparkline ranges that would shift past ${maxRef}, then retry the insert.`,
+			details: {
+				kind: 'structural-insert-shifts-sparkline-out-of-bounds',
 				axis,
 				at,
 				count,

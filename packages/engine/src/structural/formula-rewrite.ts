@@ -40,6 +40,13 @@ export interface InsertShiftedChartSourceRefOutOfBounds {
 	readonly shiftedReference: string
 }
 
+export interface InsertShiftedSparklineRefOutOfBounds {
+	readonly owner: string
+	readonly formula: string
+	readonly reference: string
+	readonly shiftedReference: string
+}
+
 export function rewriteWorkbookFormulasForShift(
 	workbook: Workbook,
 	targetSheet: string,
@@ -849,6 +856,91 @@ export function findInsertShiftedChartSourceRefOutOfBounds(
 		}
 	}
 	return null
+}
+
+export function findInsertShiftedSparklineRefOutOfBounds(
+	sheet: Sheet,
+	axis: 'row' | 'col',
+	at: number,
+	count: number,
+): InsertShiftedSparklineRefOutOfBounds | null {
+	for (const group of sheet.sparklineGroups) {
+		const owner = `${sheet.name}!sparklineGroup(${group.groupIndex})`
+		const range = findInsertShiftedSparklineFieldOutOfBounds(
+			group.range,
+			`${owner}.range`,
+			sheet.name,
+			axis,
+			at,
+			count,
+		)
+		if (range) return range
+		const locationRange = findInsertShiftedSparklineFieldOutOfBounds(
+			group.locationRange,
+			`${owner}.locationRange`,
+			sheet.name,
+			axis,
+			at,
+			count,
+		)
+		if (locationRange) return locationRange
+		const dateAxisRange = findInsertShiftedSparklineFieldOutOfBounds(
+			group.dateAxisRange,
+			`${owner}.dateAxisRange`,
+			sheet.name,
+			axis,
+			at,
+			count,
+		)
+		if (dateAxisRange) return dateAxisRange
+		for (const [sparklineIndex, sparkline] of (group.sparklines ?? []).entries()) {
+			const sparklineOwner = `${owner}.sparklines[${sparklineIndex}]`
+			const sparklineRange = findInsertShiftedSparklineFieldOutOfBounds(
+				sparkline.range,
+				`${sparklineOwner}.range`,
+				sheet.name,
+				axis,
+				at,
+				count,
+			)
+			if (sparklineRange) return sparklineRange
+			const sparklineLocationRange = findInsertShiftedSparklineFieldOutOfBounds(
+				sparkline.locationRange,
+				`${sparklineOwner}.locationRange`,
+				sheet.name,
+				axis,
+				at,
+				count,
+			)
+			if (sparklineLocationRange) return sparklineLocationRange
+		}
+	}
+	return null
+}
+
+function findInsertShiftedSparklineFieldOutOfBounds(
+	formula: string | undefined,
+	owner: string,
+	formulaSheet: string,
+	axis: 'row' | 'col',
+	at: number,
+	count: number,
+): InsertShiftedSparklineRefOutOfBounds | null {
+	const issue = findInsertShiftedFormulaRefOutOfBounds(
+		formula,
+		formulaSheet,
+		formulaSheet,
+		axis,
+		at,
+		count,
+	)
+	if (!issue || !formula) return null
+	return {
+		owner,
+		formula,
+		reference: issue.reference,
+		shiftedReference: issue.shiftedReference,
+	}
 }
 
 function findInsertShiftedFormulaRefOutOfBounds(

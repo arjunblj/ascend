@@ -149,6 +149,60 @@ function formulaForWorkload(workload: WorkloadName, row: number, col: number): s
 	return `A${currentRow}+B${currentRow}+${col}`
 }
 
+function indexToColumn(index: number): string {
+	let value = index + 1
+	let name = ''
+	while (value > 0) {
+		const remainder = (value - 1) % 26
+		name = String.fromCharCode(65 + remainder) + name
+		value = Math.floor((value - 1) / 26)
+	}
+	return name
+}
+
+function featureRange(args: Args): string {
+	return `Data!$A$1:$${indexToColumn(Math.max(0, args.cols - 1))}$${Math.max(1, args.rows)}`
+}
+
+function applyExcelJsFeatureRich(
+	workbook: import('exceljs').Workbook,
+	sheet: import('exceljs').Worksheet,
+	args: Args,
+): void {
+	sheet.getCell('A1').value = {
+		text: 'Ascend',
+		hyperlink: 'https://example.com/ascend',
+		tooltip: 'Open Ascend',
+	}
+	if (args.rows > 1 && args.cols > 1) sheet.getCell('B2').note = 'Review'
+	if (args.rows > 1 && args.cols > 2) {
+		const dataValidations = (
+			sheet as unknown as {
+				readonly dataValidations?: { add(address: string, validation: unknown): unknown }
+			}
+		).dataValidations
+		dataValidations?.add(`C2:C${args.rows}`, {
+			type: 'list',
+			allowBlank: true,
+			showInputMessage: true,
+			formulae: ['"Q1,Q2,Q3"'],
+		})
+	}
+	sheet.addConditionalFormatting({
+		ref: `A1:A${Math.max(1, args.rows)}`,
+		rules: [
+			{
+				type: 'cellIs',
+				operator: 'greaterThan',
+				priority: 1,
+				formulae: [0],
+				style: { font: { bold: true } },
+			},
+		],
+	})
+	workbook.definedNames.add(featureRange(args), 'FeatureRange')
+}
+
 async function writeWorkbook(args: Args): Promise<Uint8Array> {
 	if (args.library === 'sheetjs') return writeSheetJs(args)
 	return writeExcelJs(args)
@@ -202,6 +256,7 @@ async function writeExcelJs(args: Args): Promise<Uint8Array> {
 			rows: values.slice(1).map((row) => [...row]),
 		})
 	}
+	if (args.workload === 'feature-rich') applyExcelJsFeatureRich(workbook, sheet, args)
 	const bytes = (await workbook.xlsx.writeBuffer()) as ArrayBuffer
 	return new Uint8Array(bytes)
 }

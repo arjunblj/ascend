@@ -1299,8 +1299,6 @@ describe('competitive IO helpers', () => {
 			'0',
 			'--libraries',
 			'exceljs',
-			'--write-runner-manifest',
-			'fixtures/benchmarks/runners/sota-writers.manifest.json',
 			'--validation-mode',
 			'final',
 			'--json',
@@ -1341,6 +1339,51 @@ describe('competitive IO helpers', () => {
 			payload.metadata.skipped.some(
 				(entry) =>
 					entry.library === 'sheetjs' && entry.reason?.includes('capabilities.writeTables=true'),
+			),
+		).toBe(true)
+	})
+
+	test('ExcelJS external writer attempts feature-rich metadata but remains comment-ineligible', async () => {
+		const payload = await runCompetitiveIoJson([
+			'--category',
+			'write',
+			'--execution-scope',
+			'external-process',
+			'--source-mode',
+			'generated-write',
+			'--workload',
+			'feature-rich',
+			'--rows',
+			'20',
+			'--cols',
+			'6',
+			'--repeat',
+			'1',
+			'--warmup',
+			'0',
+			'--libraries',
+			'exceljs,sheetjs',
+			'--write-runner-manifest',
+			'fixtures/benchmarks/runners/sota-writers.manifest.json',
+			'--validation-mode',
+			'final',
+			'--json',
+		])
+		expect(payload.cases.map((entry) => entry.dimensions.library)).toEqual(['exceljs'])
+		expect(payload.cases[0]?.dimensions.correctnessStatus).toBe('semantic-mismatch')
+		expect(payload.cases[0]?.assertions?.featureRichMatches).toBe(false)
+		expect(payload.cases[0]?.assertions?.featureRichSemanticMatches).toBe(false)
+		expect(payload.cases[0]?.assertions?.featureRichCommentMatches).toBe(false)
+		expect(payload.cases[0]?.assertions?.commentPartCount).toBe(1)
+		expect(payload.cases[0]?.assertions?.worksheetHyperlinkCount).toBe(1)
+		expect(payload.cases[0]?.assertions?.worksheetDataValidationCount).toBe(1)
+		expect(payload.cases[0]?.assertions?.worksheetConditionalFormattingCount).toBe(1)
+		expect(payload.cases[0]?.assertions?.definedNameCount).toBe(1)
+		expect(
+			payload.metadata.skipped.some(
+				(entry) =>
+					entry.library === 'sheetjs' &&
+					entry.reason?.includes('capabilities.writeRichMetadata=true'),
 			),
 		).toBe(true)
 	})
@@ -1428,6 +1471,9 @@ describe('competitive IO helpers', () => {
 		expect(specs.find((spec) => spec.name === 'exceljs')?.capabilities?.writeFormulas).toBe(true)
 		expect(specs.find((spec) => spec.name === 'sheetjs')?.capabilities?.writeTables).toBe(undefined)
 		expect(specs.find((spec) => spec.name === 'exceljs')?.capabilities?.writeTables).toBe(true)
+		expect(specs.find((spec) => spec.name === 'exceljs')?.capabilities?.writeRichMetadata).toBe(
+			true,
+		)
 		expect(specs.find((spec) => spec.name === 'xlsxwriter')?.capabilities).toMatchObject({
 			writeFormulas: true,
 			writeTables: true,

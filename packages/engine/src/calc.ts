@@ -785,6 +785,7 @@ const ARRAY_MAPPING_FUNCTIONS = new Set([
 	'MONTH',
 	'MROUND',
 	'N',
+	'NOT',
 	'ODD',
 	'POWER',
 	'PROPER',

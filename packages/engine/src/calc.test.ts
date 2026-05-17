@@ -865,6 +865,24 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(1, 1)?.value).toEqual(numberValue(0))
 	})
 
+	test('NOT spills boolean masks for range operands in array formulas', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: booleanValue(true), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: booleanValue(false), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: numberValue(0), formula: null, styleId: sid })
+		sheet.cells.set(3, 0, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: EMPTY, formula: 'IF(NOT(A1:A4),"no","yes")', styleId: sid })
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(0, 1)?.value).toEqual(stringValue('yes'))
+		expect(sheet.cells.get(1, 1)?.value).toEqual(stringValue('no'))
+		expect(sheet.cells.get(2, 1)?.value).toEqual(stringValue('no'))
+		expect(sheet.cells.get(3, 1)?.value).toEqual(stringValue('yes'))
+	})
+
 	test('IFERROR and IFNA replace matching errors inside arrays', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

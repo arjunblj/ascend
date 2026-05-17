@@ -5953,6 +5953,76 @@ describe('applyOperation', () => {
 		}
 	})
 
+	test('row and column inserts reject metadata sqrefs before shifting them out of grid', () => {
+		const cases: readonly {
+			readonly op: Operation
+			readonly setup: (sheet: Sheet) => void
+			readonly expectedRef: string
+			readonly expectedLabel: string
+		}[] = [
+			{
+				op: { op: 'insertRows', sheet: 'Sheet1', at: 0, count: 1 },
+				setup: (sheet) => {
+					sheet.dataValidations.push({
+						sqref: 'A1048576:B1048576',
+						type: 'list',
+						formula1: '"yes,no"',
+					})
+				},
+				expectedRef: 'Sheet1!A1048576:B1048576',
+				expectedLabel: 'data validation 1',
+			},
+			{
+				op: { op: 'insertCols', sheet: 'Sheet1', at: 0, count: 1 },
+				setup: (sheet) => {
+					sheet.conditionalFormats.push({
+						sqref: 'XFD1:XFD2',
+						rules: [{ type: 'expression', formulas: ['XFD1>0'] }],
+					})
+				},
+				expectedRef: 'Sheet1!XFD1:XFD2',
+				expectedLabel: 'conditional format 1',
+			},
+			{
+				op: { op: 'insertRows', sheet: 'Sheet1', at: 1_048_574, count: 2 },
+				setup: (sheet) => {
+					sheet.protectedRanges.push({ name: 'LockedTail', sqref: 'C1048575:C1048575' })
+				},
+				expectedRef: 'Sheet1!C1048575',
+				expectedLabel: 'protected range 1',
+			},
+		]
+
+		for (const { op, setup: setupSheet, expectedRef, expectedLabel } of cases) {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setupSheet(sheet)
+			const beforeMetadata = JSON.stringify({
+				dataValidations: sheet.dataValidations,
+				conditionalFormats: sheet.conditionalFormats,
+				protectedRanges: sheet.protectedRanges,
+			})
+
+			const result = applyOperation(wb, op)
+
+			expectErr(result)
+			expect(result.error.code, op.op).toBe('INVALID_RANGE')
+			expect(result.error.refs, op.op).toEqual([expectedRef])
+			expect(result.error.details, op.op).toMatchObject({
+				kind: 'structural-insert-shifts-sqref-out-of-bounds',
+				label: expectedLabel,
+			})
+			expect(
+				JSON.stringify({
+					dataValidations: sheet.dataValidations,
+					conditionalFormats: sheet.conditionalFormats,
+					protectedRanges: sheet.protectedRanges,
+				}),
+				op.op,
+			).toBe(beforeMetadata)
+		}
+	})
+
 	test('visibility and outline layout operations reject invalid booleans without mutation', () => {
 		const cases: readonly Operation[] = [
 			{ op: 'hideSheet', sheet: 'Sheet1', hidden: 'false' as never },

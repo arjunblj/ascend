@@ -94,6 +94,13 @@ function applyAxisShift(
 			insertShiftedMergeOutOfBoundsError(sheet, axis, at, count, insertMergeOverflowBlocker),
 		)
 	}
+	const insertSqrefOverflowBlocker =
+		delta > 0 ? findInsertShiftedSqrefOutOfBounds(sheet, axis, at, count) : null
+	if (insertSqrefOverflowBlocker) {
+		return err(
+			insertShiftedSqrefOutOfBoundsError(sheet, axis, at, count, insertSqrefOverflowBlocker),
+		)
+	}
 	const ambiguousDefinedName = findAmbiguousWorkbookDefinedNameStructuralReference(workbook)
 	if (ambiguousDefinedName) {
 		return err(ambiguousWorkbookDefinedNameStructuralEditError(ambiguousDefinedName))
@@ -372,13 +379,111 @@ function insertShiftedMergeOutOfBoundsError(
 	)
 }
 
-function validateTransferRangeWithinGrid(range: RangeRef, role: 'source' | 'target') {
-	if (
+interface InsertOverflowSqref {
+	readonly label: string
+	readonly ref: string
+	readonly shiftedRef: string
+}
+
+function findInsertShiftedSqrefOutOfBounds(
+	sheet: Sheet,
+	axis: 'row' | 'col',
+	at: number,
+	count: number,
+): InsertOverflowSqref | null {
+	const groups: readonly {
+		readonly label: string
+		readonly entries: readonly { readonly sqref: string; readonly deleted?: boolean }[]
+	}[] = [
+		{ label: 'data validation', entries: sheet.dataValidations },
+		{ label: 'conditional format', entries: sheet.conditionalFormats },
+		{ label: 'x14 data validation', entries: sheet.x14DataValidations },
+		{ label: 'x14 conditional format', entries: sheet.x14ConditionalFormats },
+		{ label: 'ignored error', entries: sheet.ignoredErrors },
+		{ label: 'protected range', entries: sheet.protectedRanges },
+	]
+	for (const group of groups) {
+		for (const [index, entry] of group.entries.entries()) {
+			if (entry.deleted) continue
+			const ranges = parseSqref(entry.sqref)
+			for (const range of ranges) {
+				if (!insertAffectsRange(range, axis, at)) continue
+				const shifted = shiftInsertedRange(range, axis, at, count)
+				if (rangeWithinGrid(shifted)) continue
+				return {
+					label: `${group.label} ${index + 1}`,
+					ref: rangeToA1(range),
+					shiftedRef: rangeToA1(shifted),
+				}
+			}
+		}
+	}
+	return null
+}
+
+function insertAffectsRange(range: RangeRef, axis: 'row' | 'col', at: number): boolean {
+	return axis === 'row' ? range.end.row >= at : range.end.col >= at
+}
+
+function shiftInsertedRange(
+	range: RangeRef,
+	axis: 'row' | 'col',
+	at: number,
+	count: number,
+): RangeRef {
+	return axis === 'row'
+		? {
+				start: { row: shiftInsertedCoordinate(range.start.row, at, count), col: range.start.col },
+				end: { row: shiftInsertedCoordinate(range.end.row, at, count), col: range.end.col },
+				...(range.sheet !== undefined ? { sheet: range.sheet } : {}),
+			}
+		: {
+				start: { row: range.start.row, col: shiftInsertedCoordinate(range.start.col, at, count) },
+				end: { row: range.end.row, col: shiftInsertedCoordinate(range.end.col, at, count) },
+				...(range.sheet !== undefined ? { sheet: range.sheet } : {}),
+			}
+}
+
+function rangeWithinGrid(range: RangeRef): boolean {
+	return (
 		range.start.row >= 0 &&
 		range.end.row < EXCEL_MAX_ROWS &&
 		range.start.col >= 0 &&
 		range.end.col < EXCEL_MAX_COLS
-	) {
+	)
+}
+
+function insertShiftedSqrefOutOfBoundsError(
+	sheet: Sheet,
+	axis: 'row' | 'col',
+	at: number,
+	count: number,
+	blocker: InsertOverflowSqref,
+) {
+	const label = axis === 'row' ? 'row' : 'column'
+	const maxRef = axis === 'row' ? '1048576' : 'XFD'
+	const qualifiedRef = `${formatSheetName(sheet.name)}!${blocker.ref}`
+	return ascendError(
+		'INVALID_RANGE',
+		`Cannot insert ${label}s because ${blocker.label} range ${qualifiedRef} would shift outside Excel worksheet bounds`,
+		{
+			refs: [qualifiedRef],
+			suggestedFix: `Move or remove metadata ranges that would shift past ${maxRef}, then retry the insert.`,
+			details: {
+				kind: 'structural-insert-shifts-sqref-out-of-bounds',
+				axis,
+				at,
+				count,
+				label: blocker.label,
+				ref: qualifiedRef,
+				shiftedRef: blocker.shiftedRef,
+			},
+		},
+	)
+}
+
+function validateTransferRangeWithinGrid(range: RangeRef, role: 'source' | 'target') {
+	if (rangeWithinGrid(range)) {
 		return null
 	}
 	const ref = rangeToA1(range)

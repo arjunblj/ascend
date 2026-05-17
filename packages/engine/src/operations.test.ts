@@ -5839,6 +5839,33 @@ describe('applyOperation', () => {
 		}
 	})
 
+	test('row and column structural edits reject out-of-grid spans before mutation', () => {
+		const cases: readonly Operation[] = [
+			{ op: 'insertRows', sheet: 'Sheet1', at: 1_048_576, count: 1 },
+			{ op: 'insertRows', sheet: 'Sheet1', at: 1_048_575, count: 2 },
+			{ op: 'deleteRows', sheet: 'Sheet1', at: 1_048_575, count: 2 },
+			{ op: 'insertCols', sheet: 'Sheet1', at: 16_384, count: 1 },
+			{ op: 'insertCols', sheet: 'Sheet1', at: 16_383, count: 2 },
+			{ op: 'deleteCols', sheet: 'Sheet1', at: 16_383, count: 2 },
+		]
+
+		for (const op of cases) {
+			const wb = setup()
+			const sheet = wb.getSheet('Sheet1')
+			if (!sheet) throw new Error('missing sheet')
+			const beforeCells = [...sheet.cells.iterate()]
+
+			const result = applyOperation(wb, op)
+
+			expectErr(result)
+			expect(result.error.code, op.op).toBe('INVALID_RANGE')
+			expect(result.error.details, op.op).toMatchObject({
+				kind: 'structural-axis-span-out-of-bounds',
+			})
+			expect([...sheet.cells.iterate()], op.op).toEqual(beforeCells)
+		}
+	})
+
 	test('visibility and outline layout operations reject invalid booleans without mutation', () => {
 		const cases: readonly Operation[] = [
 			{ op: 'hideSheet', sheet: 'Sheet1', hidden: 'false' as never },

@@ -208,11 +208,29 @@ function ambiguousWorkbookDefinedNameStructuralEditError(
 
 function validateAxisSpan(axis: 'row' | 'col', at: number, count: number) {
 	const label = axis === 'row' ? 'row' : 'column'
+	const limit = axis === 'row' ? EXCEL_MAX_ROWS : EXCEL_MAX_COLS
+	const maxRef = axis === 'row' ? '1048576' : 'XFD'
 	if (!Number.isInteger(at) || at < 0) {
 		return ascendError('VALIDATION_ERROR', `${label} index must be a non-negative integer`)
 	}
 	if (!Number.isInteger(count) || count <= 0) {
 		return ascendError('VALIDATION_ERROR', `${label} count must be a positive integer`)
+	}
+	if (at >= limit || count > limit - at) {
+		return ascendError(
+			'INVALID_RANGE',
+			`Cannot structurally edit ${label}s starting at ${at + 1} with count ${count} because the span is outside Excel worksheet bounds`,
+			{
+				suggestedFix: `Choose a ${label} span within Excel's ${limit} ${label} limit ending no later than ${maxRef}.`,
+				details: {
+					kind: 'structural-axis-span-out-of-bounds',
+					axis,
+					at,
+					count,
+					limit,
+				},
+			},
+		)
 	}
 	return null
 }

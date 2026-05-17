@@ -2060,9 +2060,10 @@ describe('release proof evidence index', () => {
 						'd65c595b',
 						'1d6ccb24',
 						'4269fb6a',
+						'49c1c2a5',
 					]),
 					allowedWording: expect.stringContaining(
-						'scalar ADDRESS/date/workday/order-statistic/rank/percentile-quartile/percentrank implicit intersection',
+						'scalar ADDRESS/date/workday/order-statistic/rank/percentile-quartile/percentrank/forecast implicit intersection',
 					),
 					evidenceProvesIt: expect.arrayContaining([
 						expect.stringContaining('NOT spills boolean masks'),
@@ -2096,6 +2097,8 @@ describe('release proof evidence index', () => {
 						),
 						expect.stringContaining('percentrank functions spill over lookup'),
 						expect.stringContaining('top-level percentrank functions implicitly intersect'),
+						expect.stringContaining('forecast functions spill over target x values'),
+						expect.stringContaining('top-level forecast functions implicitly intersect'),
 						expect.stringContaining('legacy statistical compatibility functions spill'),
 						expect.stringContaining('loan financial scalar functions spill over range operands'),
 						expect.stringContaining('financial helper scalar functions spill over range operands'),

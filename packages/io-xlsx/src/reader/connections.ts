@@ -21,6 +21,15 @@ interface ParsedConnectionAttrs {
 	fillFormulas?: boolean
 	disableEdit?: boolean
 	disableRefresh?: boolean
+	headers?: boolean
+	rowNumbers?: boolean
+	autoFormatId?: number
+	applyNumberFormats?: boolean
+	applyBorderFormats?: boolean
+	applyFontFormats?: boolean
+	applyPatternFormats?: boolean
+	applyAlignmentFormats?: boolean
+	applyWidthHeightFormats?: boolean
 	savePassword?: boolean
 	refreshedVersion?: number
 	refreshedDateIso?: string
@@ -155,6 +164,26 @@ function readConnectionAttrs(
 		if (disableEdit !== undefined) parsed.disableEdit = disableEdit
 		const disableRefresh = boolAttr(node, 'disableRefresh')
 		if (disableRefresh !== undefined) parsed.disableRefresh = disableRefresh
+		const headers = boolAttr(node, 'headers')
+		if (headers !== undefined) parsed.headers = headers
+		const rowNumbers = boolAttr(node, 'rowNumbers')
+		if (rowNumbers !== undefined) parsed.rowNumbers = rowNumbers
+		const autoFormatId = numAttr(node, 'autoFormatId')
+		if (autoFormatId !== undefined) parsed.autoFormatId = autoFormatId
+		const applyNumberFormats = boolAttr(node, 'applyNumberFormats')
+		if (applyNumberFormats !== undefined) parsed.applyNumberFormats = applyNumberFormats
+		const applyBorderFormats = boolAttr(node, 'applyBorderFormats')
+		if (applyBorderFormats !== undefined) parsed.applyBorderFormats = applyBorderFormats
+		const applyFontFormats = boolAttr(node, 'applyFontFormats')
+		if (applyFontFormats !== undefined) parsed.applyFontFormats = applyFontFormats
+		const applyPatternFormats = boolAttr(node, 'applyPatternFormats')
+		if (applyPatternFormats !== undefined) parsed.applyPatternFormats = applyPatternFormats
+		const applyAlignmentFormats = boolAttr(node, 'applyAlignmentFormats')
+		if (applyAlignmentFormats !== undefined) parsed.applyAlignmentFormats = applyAlignmentFormats
+		const applyWidthHeightFormats = boolAttr(node, 'applyWidthHeightFormats')
+		if (applyWidthHeightFormats !== undefined) {
+			parsed.applyWidthHeightFormats = applyWidthHeightFormats
+		}
 	}
 	const refreshedVersion = numAttr(node, 'refreshedVersion')
 	if (refreshedVersion !== undefined) parsed.refreshedVersion = refreshedVersion

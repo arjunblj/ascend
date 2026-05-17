@@ -25,6 +25,15 @@ export interface WorkbookConnectionPartInfo {
 	readonly fillFormulas?: boolean
 	readonly disableEdit?: boolean
 	readonly disableRefresh?: boolean
+	readonly headers?: boolean
+	readonly rowNumbers?: boolean
+	readonly autoFormatId?: number
+	readonly applyNumberFormats?: boolean
+	readonly applyBorderFormats?: boolean
+	readonly applyFontFormats?: boolean
+	readonly applyPatternFormats?: boolean
+	readonly applyAlignmentFormats?: boolean
+	readonly applyWidthHeightFormats?: boolean
 	readonly savePassword?: boolean
 	readonly refreshedVersion?: number
 	readonly refreshedDateIso?: string

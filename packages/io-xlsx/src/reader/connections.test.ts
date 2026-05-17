@@ -68,6 +68,15 @@ describe('connection part inventory', () => {
 				fillFormulas: true,
 				disableEdit: true,
 				disableRefresh: true,
+				headers: true,
+				rowNumbers: false,
+				autoFormatId: 16,
+				applyNumberFormats: true,
+				applyBorderFormats: false,
+				applyFontFormats: true,
+				applyPatternFormats: false,
+				applyAlignmentFormats: true,
+				applyWidthHeightFormats: false,
 			},
 			{
 				kind: 'powerQueryMashup',
@@ -125,6 +134,19 @@ describe('connection part inventory', () => {
 			webSourceData: true,
 			hasConnectionString: true,
 		})
+		expect(reopened.value.workbook.connectionParts[1]).toMatchObject({
+			kind: 'queryTable',
+			connectionId: 1,
+			headers: true,
+			rowNumbers: false,
+			autoFormatId: 16,
+			applyNumberFormats: true,
+			applyBorderFormats: false,
+			applyFontFormats: true,
+			applyPatternFormats: false,
+			applyAlignmentFormats: true,
+			applyWidthHeightFormats: false,
+		})
 		expect(
 			reopened.value.report.features.find((feature) => feature.feature === 'preservedConnection'),
 		).toMatchObject({
@@ -178,7 +200,7 @@ function connectionWorkbook(): Uint8Array {
   </x:connection>
 </x:connections>`,
 		'xl/queryTables/queryTable1.xml': `<?xml version="1.0"?>
-<x:queryTable xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main" name="SalesQuery" connectionId="1" backgroundRefresh="0" firstBackgroundRefresh="1" refreshOnLoad="1" removeDataOnSave="1" preserveFormatting="1" adjustColumnWidth="0" fillFormulas="1" disableEdit="1" disableRefresh="1"/>`,
+<x:queryTable xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main" name="SalesQuery" connectionId="1" backgroundRefresh="0" firstBackgroundRefresh="1" refreshOnLoad="1" removeDataOnSave="1" preserveFormatting="1" adjustColumnWidth="0" fillFormulas="1" disableEdit="1" disableRefresh="1" headers="1" rowNumbers="0" autoFormatId="16" applyNumberFormats="1" applyBorderFormats="0" applyFontFormats="1" applyPatternFormats="0" applyAlignmentFormats="1" applyWidthHeightFormats="0"/>`,
 		'xl/customData/item1.data': 'mashup-bytes',
 	})
 }

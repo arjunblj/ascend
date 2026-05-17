@@ -3423,12 +3423,12 @@ function safeOpenQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceItem[] {
 			evidenceId: 'table-append-bounds-fail-closed-proof',
 			kind: 'test',
 			command:
-				'bun test packages/engine/src/operations.test.ts -t "appendRows rejects table growth past the worksheet bounds|appendRows rejects protected table growth unless row insertion is allowed" --timeout 30000',
+				'bun test packages/engine/src/operations.test.ts -t "appendRows rejects table growth past the worksheet bounds|appendRows rejects protected table growth unless row insertion is allowed|appendRows rejects imported formula bindings under expanded table rows|appendRows rejects occupied worksheet cells below the table" --timeout 30000',
 			path: 'packages/engine/src/operations.test.ts; packages/engine/src/operations/table-ops.ts',
 			acceptedScope:
-				'Commits d88b9104 and 681086a9 prove appendRows rejects table growth past Excel worksheet bounds and protected-sheet table growth before mutating the table range or writing cells, while still allowing protected-table appends when row insertion is explicitly allowed.',
+				'Commits d88b9104, 681086a9, and f569e13d prove appendRows rejects table growth past Excel worksheet bounds, protected-sheet table growth, and occupied target cells before mutating the table range or writing cells, while still allowing protected-table appends when row insertion is explicitly allowed.',
 			boundary:
-				'Local table append fail-closed evidence only; it does not prove public workbook table-growth parity, successful append save/reopen behavior, totals-row insert shifting, structured-reference updates, arbitrary table repair, full sheet-protection parity, or Excel UI-equivalent table expansion.',
+				'Local table append fail-closed evidence only; it does not prove public workbook table-growth parity, successful append save/reopen behavior, totals-row insert shifting, structured-reference updates, arbitrary table repair, full sheet-protection parity, occupied-target repair, or Excel UI-equivalent table expansion.',
 		},
 		{
 			evidenceId: 'table-resize-protection-fail-closed-proof',

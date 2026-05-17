@@ -194,7 +194,7 @@ export function inspectXlsxPackageGraph(
 				path: entry.path,
 				contentType: contentType.value,
 				contentTypeSource: contentType.source,
-				ownerScope: classifyOwnerScope(entry.path, incomingRelationships),
+				ownerScope: classifyOwnerScope(entry.path, incomingRelationships, featureFamily),
 				...(primaryRelationship
 					? {
 							sourceRelationshipPart: primaryRelationship.relationshipPartPath,
@@ -592,6 +592,7 @@ function resolvePackageContentType(
 function classifyOwnerScope(
 	partPath: string,
 	incomingRelationships: readonly XlsxPackageGraphRelationship[],
+	featureFamily = '',
 ): XlsxPackageOwnerScope {
 	if (partPath === '[Content_Types].xml' || partPath === '_rels/.rels') return 'package'
 	if (partPath.endsWith('.rels')) return 'relationship-part'
@@ -691,7 +692,63 @@ function classifyOwnerScope(
 	if (primary?.sourcePartPath.includes('/tables/')) return 'worksheet'
 	if (primary?.sourcePartPath.includes('/drawings/')) return 'drawing'
 	if (primary?.sourcePartPath.includes('/charts/')) return 'chart'
+	const featureScope = ownerScopeForFeatureFamily(featureFamily)
+	if (featureScope) return featureScope
 	return 'unknown'
+}
+
+function ownerScopeForFeatureFamily(featureFamily: string): XlsxPackageOwnerScope | undefined {
+	switch (featureFamily) {
+		case 'sharedStrings':
+		case 'preservedStyles':
+		case 'preservedTheme':
+			return 'workbook'
+		case 'preservedChartSheet':
+			return 'chartsheet'
+		case 'preservedMacroSheet':
+			return 'macrosheet'
+		case 'preservedDrawing':
+		case 'preservedVml':
+		case 'preservedMedia':
+			return 'drawing'
+		case 'preservedChart':
+		case 'preservedChartStyle':
+		case 'preservedChartColor':
+			return 'chart'
+		case 'preservedTable':
+		case 'preservedComments':
+		case 'preservedThreadedComments':
+		case 'preservedPrinterSettings':
+			return 'worksheet'
+		case 'preservedConnection':
+		case 'preservedDataModel':
+		case 'preservedPowerQuery':
+		case 'preservedQueryTable':
+			return 'analytics'
+		case 'preservedExternalLink':
+			return 'external-link'
+		case 'preservedPivot':
+			return 'pivot'
+		case 'preservedCustomXml':
+			return 'custom-xml'
+		case 'preservedCalcChain':
+		case 'preservedMetadata':
+		case 'preservedRevision':
+			return 'metadata'
+		case 'preservedMacro':
+		case 'preservedActiveX':
+		case 'preservedControl':
+		case 'preservedEmbedding':
+		case 'preservedCustomUi':
+			return 'active-content'
+		case 'preservedSignature':
+		case 'preservedVendorSecurity':
+			return 'security'
+		case 'preservedDocumentProperties':
+			return 'document-properties'
+		default:
+			return undefined
+	}
 }
 
 function classifyRelationshipFeatureFamily(

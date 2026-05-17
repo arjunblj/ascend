@@ -764,20 +764,20 @@ describe('XLSX package graph', () => {
 		expect(
 			graph.parts.find((part) => part.path === 'xl/opaque-shared-strings.payload'),
 		).toMatchObject({
-			ownerScope: 'unknown',
+			ownerScope: 'workbook',
 			contentTypeSource: 'override',
 			featureFamily: 'sharedStrings',
 			preservationPolicy: 'generated',
 			bytePreservationExpected: false,
 		})
 		expect(graph.parts.find((part) => part.path === 'xl/opaque-styles.payload')).toMatchObject({
-			ownerScope: 'unknown',
+			ownerScope: 'workbook',
 			contentTypeSource: 'override',
 			featureFamily: 'preservedStyles',
 			preservationPolicy: 'preserve-exact',
 		})
 		expect(graph.parts.find((part) => part.path === 'xl/opaque-theme.payload')).toMatchObject({
-			ownerScope: 'unknown',
+			ownerScope: 'workbook',
 			contentTypeSource: 'override',
 			featureFamily: 'preservedTheme',
 			preservationPolicy: 'preserve-exact',
@@ -809,21 +809,21 @@ describe('XLSX package graph', () => {
 			bytePreservationExpected: true,
 		})
 		expect(graph.parts.find((part) => part.path === 'xl/opaque-model.payload')).toMatchObject({
-			ownerScope: 'unknown',
+			ownerScope: 'analytics',
 			contentTypeSource: 'override',
 			featureFamily: 'preservedDataModel',
 			preservationPolicy: 'inspect-only',
 		})
 		expect(graph.parts.find((part) => part.path === 'xl/opaque-power-query.payload')).toMatchObject(
 			{
-				ownerScope: 'unknown',
+				ownerScope: 'analytics',
 				contentTypeSource: 'override',
 				featureFamily: 'preservedPowerQuery',
 				preservationPolicy: 'inspect-only',
 			},
 		)
 		expect(graph.parts.find((part) => part.path === 'xl/opaque-table.payload')).toMatchObject({
-			ownerScope: 'unknown',
+			ownerScope: 'worksheet',
 			contentTypeSource: 'override',
 			featureFamily: 'preservedTable',
 			preservationPolicy: 'preserve-exact',
@@ -929,26 +929,26 @@ describe('XLSX package graph', () => {
 			preservationPolicy: 'preserve-exact',
 		})
 		expect(graph.parts.find((part) => part.path === 'xl/opaque-drawing.payload')).toMatchObject({
-			ownerScope: 'unknown',
+			ownerScope: 'drawing',
 			contentTypeSource: 'override',
 			featureFamily: 'preservedDrawing',
 			preservationPolicy: 'preserve-exact',
 		})
 		expect(graph.parts.find((part) => part.path === 'xl/opaque-vml.payload')).toMatchObject({
-			ownerScope: 'unknown',
+			ownerScope: 'drawing',
 			contentTypeSource: 'override',
 			featureFamily: 'preservedVml',
 			preservationPolicy: 'preserve-exact',
 		})
 		expect(graph.parts.find((part) => part.path === 'xl/opaque-chart.payload')).toMatchObject({
-			ownerScope: 'unknown',
+			ownerScope: 'chart',
 			contentTypeSource: 'override',
 			featureFamily: 'preservedChart',
 			preservationPolicy: 'preserve-exact',
 		})
 		expect(graph.parts.find((part) => part.path === 'xl/opaque-chart-style.payload')).toMatchObject(
 			{
-				ownerScope: 'unknown',
+				ownerScope: 'chart',
 				contentTypeSource: 'override',
 				featureFamily: 'preservedChartStyle',
 				preservationPolicy: 'preserve-exact',
@@ -957,7 +957,7 @@ describe('XLSX package graph', () => {
 		expect(
 			graph.parts.find((part) => part.path === 'xl/opaque-chart-colors.payload'),
 		).toMatchObject({
-			ownerScope: 'unknown',
+			ownerScope: 'chart',
 			contentTypeSource: 'override',
 			featureFamily: 'preservedChartColor',
 			preservationPolicy: 'preserve-exact',
@@ -971,13 +971,13 @@ describe('XLSX package graph', () => {
 			preservationPolicy: 'preserve-exact',
 		})
 		expect(graph.parts.find((part) => part.path === 'xl/opaque-connection.payload')).toMatchObject({
-			ownerScope: 'unknown',
+			ownerScope: 'analytics',
 			contentTypeSource: 'override',
 			featureFamily: 'preservedConnection',
 			preservationPolicy: 'preserve-exact',
 		})
 		expect(graph.parts.find((part) => part.path === 'xl/opaque-query.payload')).toMatchObject({
-			ownerScope: 'unknown',
+			ownerScope: 'analytics',
 			contentTypeSource: 'override',
 			featureFamily: 'preservedQueryTable',
 			preservationPolicy: 'preserve-exact',
@@ -989,50 +989,50 @@ describe('XLSX package graph', () => {
 			preservationPolicy: 'preserve-exact',
 		})
 		expect(graph.parts.find((part) => part.path === 'xl/opaque-link.payload')).toMatchObject({
-			ownerScope: 'unknown',
+			ownerScope: 'external-link',
 			contentTypeSource: 'override',
 			featureFamily: 'preservedExternalLink',
 			preservationPolicy: 'preserve-exact',
 		})
 		expect(graph.parts.find((part) => part.path === 'xl/opaque-pivot.payload')).toMatchObject({
-			ownerScope: 'unknown',
+			ownerScope: 'pivot',
 			contentTypeSource: 'override',
 			featureFamily: 'preservedPivot',
 			preservationPolicy: 'preserve-exact',
 		})
 		expect(graph.parts.find((part) => part.path === 'xl/opaque-comments.payload')).toMatchObject({
-			ownerScope: 'unknown',
+			ownerScope: 'worksheet',
 			contentTypeSource: 'override',
 			featureFamily: 'preservedComments',
 			preservationPolicy: 'preserve-exact',
 		})
 		expect(graph.parts.find((part) => part.path === 'xl/opaque-threaded.payload')).toMatchObject({
-			ownerScope: 'unknown',
+			ownerScope: 'worksheet',
 			contentTypeSource: 'override',
 			featureFamily: 'preservedThreadedComments',
 			preservationPolicy: 'preserve-exact',
 		})
 		expect(graph.parts.find((part) => part.path === 'xl/opaque-person.payload')).toMatchObject({
-			ownerScope: 'unknown',
+			ownerScope: 'worksheet',
 			contentTypeSource: 'override',
 			featureFamily: 'preservedThreadedComments',
 			preservationPolicy: 'preserve-exact',
 		})
 		expect(graph.parts.find((part) => part.path === 'xl/opaque-calc.payload')).toMatchObject({
-			ownerScope: 'unknown',
+			ownerScope: 'metadata',
 			contentTypeSource: 'override',
 			featureFamily: 'preservedCalcChain',
 			preservationPolicy: 'discard-on-recalc',
 			bytePreservationExpected: false,
 		})
 		expect(graph.parts.find((part) => part.path === 'xl/opaque-sheet-meta.payload')).toMatchObject({
-			ownerScope: 'unknown',
+			ownerScope: 'metadata',
 			contentTypeSource: 'override',
 			featureFamily: 'preservedMetadata',
 			preservationPolicy: 'preserve-exact',
 		})
 		expect(graph.parts.find((part) => part.path === 'xl/opaque-printer.payload')).toMatchObject({
-			ownerScope: 'unknown',
+			ownerScope: 'worksheet',
 			contentTypeSource: 'override',
 			featureFamily: 'preservedPrinterSettings',
 			preservationPolicy: 'preserve-exact',

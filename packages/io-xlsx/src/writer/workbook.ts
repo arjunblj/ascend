@@ -57,6 +57,9 @@ export function buildWorkbookXml(workbook: Workbook, options: WorkbookXmlOptions
 	if (workbook.workbookProperties.filterPrivacy !== undefined) {
 		workbookPrAttrs.push(`filterPrivacy="${workbook.workbookProperties.filterPrivacy ? '1' : '0'}"`)
 	}
+	for (const extra of workbook.workbookProperties.extraAttributes ?? []) {
+		workbookPrAttrs.push(`${extra.name}="${escapeXml(extra.value)}"`)
+	}
 	if (workbookPrAttrs.length > 0) {
 		out.push(`<workbookPr ${workbookPrAttrs.join(' ')}/>`)
 	}

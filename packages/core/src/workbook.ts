@@ -24,6 +24,11 @@ export interface WorkbookViewAttribute {
 	readonly value: string
 }
 
+export interface WorkbookPropertyAttribute {
+	readonly name: string
+	readonly value: string
+}
+
 export interface WorkbookView {
 	readonly activeTab?: number
 	readonly firstSheet?: number
@@ -37,6 +42,7 @@ export interface WorkbookProperties {
 	readonly defaultThemeVersion?: number
 	readonly filterPrivacy?: boolean
 	readonly date1904?: boolean
+	readonly extraAttributes?: readonly WorkbookPropertyAttribute[]
 }
 
 export interface WorkbookCoreDocumentProperties {
@@ -324,7 +330,16 @@ export class Workbook {
 			...this.calcSettings,
 			iterativeCalc: { ...this.calcSettings.iterativeCalc },
 		}
-		clone.workbookProperties = { ...this.workbookProperties }
+		clone.workbookProperties = {
+			...this.workbookProperties,
+			...(this.workbookProperties.extraAttributes
+				? {
+						extraAttributes: this.workbookProperties.extraAttributes.map((attr) => ({
+							...attr,
+						})),
+					}
+				: {}),
+		}
 		clone.documentProperties = cloneDocumentProperties(this.documentProperties)
 		clone.workbookProtection = this.workbookProtection ? { ...this.workbookProtection } : null
 		clone.styleMetadata = { ...this.styleMetadata }

@@ -2313,7 +2313,7 @@ describe('readXlsx', () => {
 			'xl/workbook.xml': `<?xml version="1.0"?>
 <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
   xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
-  <workbookPr date1904="1" filterPrivacy="1" codeName="Model"/>
+  <workbookPr date1904="1" filterPrivacy="1" codeName="Model" checkCompatibility="1" autoCompressPictures="0"/>
   <bookViews>
     <workbookView activeTab="1" firstSheet="2" visibility="visible" tabRatio="600" minimized="1" showSheetTabs="0" windowWidth="16800" windowHeight="9000"/>
   </bookViews>
@@ -2339,6 +2339,10 @@ describe('readXlsx', () => {
 			date1904: true,
 			filterPrivacy: true,
 			codeName: 'Model',
+			extraAttributes: [
+				{ name: 'checkCompatibility', value: '1' },
+				{ name: 'autoCompressPictures', value: '0' },
+			],
 		})
 		expect(result.value.workbook.workbookViews).toEqual([
 			{

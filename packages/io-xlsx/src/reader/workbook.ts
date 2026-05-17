@@ -2,6 +2,7 @@ import type {
 	DefinedNameAttribute,
 	SheetState,
 	WorkbookProperties,
+	WorkbookPropertyAttribute,
 	WorkbookProtection,
 	WorkbookView,
 	WorkbookViewAttribute,
@@ -273,6 +274,8 @@ function scanWorkbookProperties(xml: string): WorkbookProperties {
 	if (filterPrivacy !== undefined) props.filterPrivacy = filterPrivacy
 	const date1904 = booleanAttr(attrs, 'date1904')
 	if (date1904 !== undefined) props.date1904 = date1904
+	const extraAttributes = workbookPropertyExtraAttributes(attrs)
+	if (extraAttributes.length > 0) props.extraAttributes = extraAttributes
 	return props as WorkbookProperties
 }
 
@@ -536,7 +539,40 @@ function parseWorkbookProperties(wb: XmlNode): WorkbookProperties {
 	if (filterPrivacy !== undefined) props.filterPrivacy = filterPrivacy
 	const date1904 = boolAttr(wbPr, 'date1904')
 	if (date1904 !== undefined) props.date1904 = date1904
+	const extraAttributes = workbookPropertyExtraAttributesFromNode(wbPr)
+	if (extraAttributes.length > 0) props.extraAttributes = extraAttributes
 	return props as WorkbookProperties
+}
+
+function workbookPropertyExtraAttributes(
+	attrs: ReadonlyMap<string, string>,
+): WorkbookPropertyAttribute[] {
+	const extraAttributes: WorkbookPropertyAttribute[] = []
+	for (const [name, value] of attrs) {
+		if (isCoreWorkbookPropertyAttribute(name)) continue
+		extraAttributes.push({ name, value })
+	}
+	return extraAttributes
+}
+
+function workbookPropertyExtraAttributesFromNode(node: XmlNode): WorkbookPropertyAttribute[] {
+	const extraAttributes: WorkbookPropertyAttribute[] = []
+	for (const [key, value] of Object.entries(node)) {
+		if (!key.startsWith('@_')) continue
+		const name = key.slice(2)
+		if (isCoreWorkbookPropertyAttribute(name) || value === undefined || value === null) continue
+		extraAttributes.push({ name, value: String(value) })
+	}
+	return extraAttributes
+}
+
+function isCoreWorkbookPropertyAttribute(name: string): boolean {
+	return (
+		name === 'codeName' ||
+		name === 'defaultThemeVersion' ||
+		name === 'filterPrivacy' ||
+		name === 'date1904'
+	)
 }
 
 function parseWorkbookViews(wb: XmlNode): readonly WorkbookView[] {

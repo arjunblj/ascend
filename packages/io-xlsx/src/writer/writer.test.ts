@@ -5159,7 +5159,14 @@ describe('writeXlsx', () => {
 				{ name: 'windowWidth', value: '16800' },
 			],
 		})
-		wb.workbookProperties = { codeName: 'Model', filterPrivacy: true }
+		wb.workbookProperties = {
+			codeName: 'Model',
+			filterPrivacy: true,
+			extraAttributes: [
+				{ name: 'checkCompatibility', value: '1' },
+				{ name: 'autoCompressPictures', value: '0' },
+			],
+		}
 		wb.externalReferences.push('xl/externalLinks/externalLink1.xml')
 
 		const capsules: PreservationCapsule[] = [
@@ -5176,6 +5183,14 @@ describe('writeXlsx', () => {
 		]
 
 		const { result, bytes } = roundTrip(wb, capsules)
+		expect(result.workbook.workbookProperties).toEqual({
+			codeName: 'Model',
+			filterPrivacy: true,
+			extraAttributes: [
+				{ name: 'checkCompatibility', value: '1' },
+				{ name: 'autoCompressPictures', value: '0' },
+			],
+		})
 		expect(result.workbook.workbookViews).toEqual([
 			{
 				activeTab: 1,
@@ -5200,6 +5215,8 @@ describe('writeXlsx', () => {
 			calcPr: 1,
 		})
 		const workbookXml = new TextDecoder().decode(unzipSync(bytes)['xl/workbook.xml'])
+		expect(workbookXml).toContain('checkCompatibility="1"')
+		expect(workbookXml).toContain('autoCompressPictures="0"')
 		expect(workbookXml).toContain('minimized="1"')
 		expect(workbookXml).toContain('showSheetTabs="0"')
 		expect(workbookXml).toContain('windowWidth="16800"')

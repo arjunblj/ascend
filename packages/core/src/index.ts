@@ -202,6 +202,7 @@ export type {
 	WorkbookPreservedTheme,
 	WorkbookPreservedXml,
 	WorkbookProperties,
+	WorkbookPropertyAttribute,
 	WorkbookProtection,
 	WorkbookStyleMetadata,
 	WorkbookThemeColor,

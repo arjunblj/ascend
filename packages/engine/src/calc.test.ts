@@ -1421,6 +1421,75 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(3, 10)?.value).toEqual(numberValue(0))
 	})
 
+	test('engineering radix conversion functions spill over range operands in array formulas', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		const decimals = [9, 64, 255]
+		const places = [4, 7, 8]
+		const binaries = ['1001', '1000000', '11111111']
+		const hexes = ['9', '40', 'FF']
+		const octals = ['11', '100', '377']
+		for (let row = 0; row < 3; row++) {
+			sheet.cells.set(row, 0, {
+				value: numberValue(decimals[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+			sheet.cells.set(row, 1, {
+				value: numberValue(places[row] as number),
+				formula: null,
+				styleId: sid,
+			})
+			sheet.cells.set(row, 2, {
+				value: stringValue(binaries[row] as string),
+				formula: null,
+				styleId: sid,
+			})
+			sheet.cells.set(row, 3, {
+				value: stringValue(hexes[row] as string),
+				formula: null,
+				styleId: sid,
+			})
+			sheet.cells.set(row, 4, {
+				value: stringValue(octals[row] as string),
+				formula: null,
+				styleId: sid,
+			})
+		}
+		sheet.cells.set(0, 5, { value: EMPTY, formula: 'BIN2DEC(C1:C3)+0', styleId: sid })
+		sheet.cells.set(0, 6, { value: EMPTY, formula: 'DEC2BIN(A1:A3,B1:B3)&""', styleId: sid })
+		sheet.cells.set(0, 7, { value: EMPTY, formula: 'HEX2DEC(D1:D3)+0', styleId: sid })
+		sheet.cells.set(0, 8, { value: EMPTY, formula: 'DEC2HEX(A1:A3,2)&""', styleId: sid })
+		sheet.cells.set(0, 9, { value: EMPTY, formula: 'OCT2DEC(E1:E3)+0', styleId: sid })
+		sheet.cells.set(0, 10, { value: EMPTY, formula: 'DEC2OCT(A1:A3)&""', styleId: sid })
+		sheet.cells.set(0, 11, { value: EMPTY, formula: 'BIN2HEX(C1:C3)&""', styleId: sid })
+		sheet.cells.set(0, 12, { value: EMPTY, formula: 'BIN2OCT(C1:C3)&""', styleId: sid })
+		sheet.cells.set(0, 13, { value: EMPTY, formula: 'HEX2BIN(D1:D3,B1:B3)&""', styleId: sid })
+		sheet.cells.set(0, 14, { value: EMPTY, formula: 'HEX2OCT(D1:D3)&""', styleId: sid })
+		sheet.cells.set(0, 15, { value: EMPTY, formula: 'OCT2BIN(E1:E3,B1:B3)&""', styleId: sid })
+		sheet.cells.set(0, 16, { value: EMPTY, formula: 'OCT2HEX(E1:E3)&""', styleId: sid })
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		for (let row = 0; row < 3; row++) {
+			expect(sheet.cells.get(row, 5)?.value).toEqual(numberValue(decimals[row] as number))
+			expect(sheet.cells.get(row, 6)?.value).toEqual(stringValue(binaries[row] as string))
+			expect(sheet.cells.get(row, 7)?.value).toEqual(numberValue(decimals[row] as number))
+			expect(sheet.cells.get(row, 9)?.value).toEqual(numberValue(decimals[row] as number))
+			expect(sheet.cells.get(row, 10)?.value).toEqual(stringValue(octals[row] as string))
+			expect(sheet.cells.get(row, 11)?.value).toEqual(stringValue(hexes[row] as string))
+			expect(sheet.cells.get(row, 12)?.value).toEqual(stringValue(octals[row] as string))
+			expect(sheet.cells.get(row, 13)?.value).toEqual(stringValue(binaries[row] as string))
+			expect(sheet.cells.get(row, 14)?.value).toEqual(stringValue(octals[row] as string))
+			expect(sheet.cells.get(row, 15)?.value).toEqual(stringValue(binaries[row] as string))
+			expect(sheet.cells.get(row, 16)?.value).toEqual(stringValue(hexes[row] as string))
+		}
+		expect(sheet.cells.get(0, 8)?.value).toEqual(stringValue('09'))
+		expect(sheet.cells.get(1, 8)?.value).toEqual(stringValue('40'))
+		expect(sheet.cells.get(2, 8)?.value).toEqual(stringValue('FF'))
+	})
+
 	test('rounding scalar functions spill over range operands in array formulas', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

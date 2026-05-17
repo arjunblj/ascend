@@ -65,6 +65,9 @@ describe('performance claim baseline matrix', () => {
 			'Current focused `plain-text` and `string-heavy` write coverage proves\n  ClosedXML and NPOI now run and pass validation',
 		)
 		expect(markdown).toContain(
+			"Current focused TS/JS/Rust `dense-values` write coverage proves Ascend's\n  generated writer is faster by median and p95 than SheetJS, ExcelJS, and\n  rust_xlsxwriter",
+		)
+		expect(markdown).toContain(
 			'Current formula/calc evidence includes focused HyperFormula indexed\n  `INDEX/MATCH`, indexed dirty-key/dirty-value edits, and prefix-range\n  dirty-head/dirty-tail rows.',
 		)
 		for (const workload of RECORDED_WORKLOADS) expect(markdown).toContain(`\`${workload}\``)
@@ -303,6 +306,35 @@ describe('performance claim baseline matrix', () => {
 		expect(markdown).toContain('`closedxml` was `runner unavailable`')
 		expect(markdown).toContain('"Ascend is SOTA for XLSX write."')
 		expect(markdown).toContain('defer production optimization from this row')
+
+		expect(markdown).toContain('## Cycle: Dense Values TS/JS/Rust Write Head-to-Head at `7cc7e2c3`')
+		expect(markdown).toContain(
+			'Classification: comparable external evidence plus defer. This refreshes the\ngenerated dense-value write row against the TS/JS and Rust libraries',
+		)
+		expect(markdown).toContain(
+			'/private/tmp/ascend-write-js-rust-current-7cc7e2c3-runs/write-dense-values-js-rust-repeat15.json',
+		)
+		expect(markdown).toContain('SheetJS `0.18.5`, ExcelJS `4.4.0`, rust_xlsxwriter `0.1.0`')
+		expect(markdown).toContain(
+			'| `ascend-external-writer` | ran/won | 6.013 | 7.776 | 0.103 | 81.0 MiB | 172259 |',
+		)
+		expect(markdown).toContain(
+			'| `rust-xlsxwriter` | ran/lost vs Ascend | 70.629 | 148.107 | 0.343 | 21.0 MiB | 119134 |',
+		)
+		expect(markdown).toContain(
+			'| `sheetjs` | ran/lost vs Ascend | 65.011 | 119.687 | 0.253 | 240.6 MiB | 1181431 |',
+		)
+		expect(markdown).toContain(
+			'| `exceljs` | ran/lost vs Ascend | 124.324 | 188.872 | 0.169 | 244.2 MiB | 121315 |',
+		)
+		expect(markdown).toContain(
+			'Full `xlsx-write-sota` coverage still fails, with 59 coverage failures',
+		)
+		expect(markdown).toContain('rust_xlsxwriter and ExcelJS emit smaller\nXLSX files')
+		expect(markdown).toContain('"Ascend beats every TS/JS or Rust writer on every workload."')
+		expect(markdown).toContain(
+			'"Ascend uses less memory than rust_xlsxwriter on dense-value writes."',
+		)
 
 		expect(markdown).toContain('## Cycle: Sparse Wide Write Current Tail Boundary at `6595d42c`')
 		expect(markdown).toContain(

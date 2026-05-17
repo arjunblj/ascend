@@ -24,6 +24,10 @@ No broad XLSX read, XLSX write, SOTA, or QSS-leapfrog speed claim is promotable 
   rows. Older ClosedXML `CSSM_ModuleLoad()`/unavailable wording is historical
   for prior clean runs, not current evidence for the focused rows. Broad write
   wording is still blocked by missing multi-workload/full-profile coverage.
+- Current focused TS/JS/Rust `dense-values` write coverage proves Ascend's
+  generated writer is faster by median and p95 than SheetJS, ExcelJS, and
+  rust_xlsxwriter on that value-write row. Treat it as scoped row evidence, not
+  a broad write-speed or smallest-file claim.
 - The recorded cycles cover public/reproducible generated `dense-values`, `sparse-wide`, `styles-heavy`, `formula-heavy`, `table-heavy`, `feature-rich`, `selected-sheet`, `metadata-only`, `warm-workflow`, and `string-heavy` workloads over `raw-ooxml`, but they are per-workload evidence rows rather than one clean all-workload promotion run.
 - Current harness evidence now supports same-lane selected-sheet rows for Ascend, SheetJS, OpenPyXL, and python-calamine. Treat older `openpyxl` and Calamine selected-sheet `unsupported-operation` wording as historical for the recorded clean runs.
 - Current harness evidence now supports same-lane metadata-only rows for Ascend, SheetJS, OpenPyXL, and python-calamine. Calamine wins that head-to-head; treat older metadata-only `missing-comparable` or Calamine `unsupported-operation` wording as historical.
@@ -1132,6 +1136,112 @@ Forbidden wording:
 Next action: defer production optimization for dense-values from this current
 winning row. Continue with the next priority workflow only if it can produce a
 validated optimization, comparable baseline row, or explicit claim downgrade.
+
+## Cycle: Dense Values TS/JS/Rust Write Head-to-Head at `7cc7e2c3`
+
+Classification: comparable external evidence plus defer. This refreshes the
+generated dense-value write row against the TS/JS and Rust libraries that matter
+most for the current performance bar. Ascend is the median and p95 winner
+against SheetJS, ExcelJS, and rust_xlsxwriter in this row. No production
+optimization is justified from a winning row.
+
+Workflow: generated XLSX write for dense numeric values, 2000 rows x 20 columns.
+
+Why it matters for release: TS/JS and Rust are the key head-to-head ecosystems
+for Ascend's agent-native TypeScript runtime and low-level performance bar. The
+older dense row included SheetJS and rust_xlsxwriter but omitted ExcelJS and was
+tied to an older commit; this run provides current clean-commit evidence for
+the focused TS/JS/Rust comparison.
+
+Public/tracked-clean input: `competitive-io` generated the `dense-values`
+`source-mode generated-write` workload from tracked benchmark code in a clean
+detached worktree at commit `7cc7e2c3`. No private corpus or local research
+workbook was used. The generated sheet has one sheet, 2,000 rows, 20 columns,
+and 40,000 logical cells.
+
+Commands:
+
+```bash
+git worktree add --detach /private/tmp/ascend-write-js-rust-current-7cc7e2c3 7cc7e2c352014d551392b6b9e52cbbf9deb0cd21
+cd /private/tmp/ascend-write-js-rust-current-7cc7e2c3
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun install --frozen-lockfile
+mkdir -p /private/tmp/ascend-write-js-rust-current-7cc7e2c3-runs
+TMPDIR=/private/tmp ACCEPT_NPOI_OSMF_LICENSE=1 env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /usr/bin/time -l /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-io.ts --json --category write --competitor all --execution-scope external-process --source-mode generated-write --libraries ascend-external-writer,sheetjs,exceljs,rust-xlsxwriter --workload dense-values --repeat 15 --warmup 3 --validation-mode each --write-runner-manifest fixtures/benchmarks/runners/sota-writers.manifest.json > /private/tmp/ascend-write-js-rust-current-7cc7e2c3-runs/write-dense-values-js-rust-repeat15.json 2> /private/tmp/ascend-write-js-rust-current-7cc7e2c3-runs/write-dense-values-js-rust-repeat15-time.txt
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-scoreboard.ts /private/tmp/ascend-write-js-rust-current-7cc7e2c3-runs/write-dense-values-js-rust-repeat15.json --json --metric medianMs --require-profile xlsx-write-sota --assert-profile-leader ascend > /private/tmp/ascend-write-js-rust-current-7cc7e2c3-runs/write-dense-values-js-rust-repeat15-scoreboard.json
+```
+
+Environment:
+
+- Commit: `7cc7e2c352014d551392b6b9e52cbbf9deb0cd21`
+- Worktree: clean detached worktree at
+  `/private/tmp/ascend-write-js-rust-current-7cc7e2c3`; `git status --short
+  --branch` reported `## HEAD (no branch)`.
+- Bun runtime: `1.3.13`
+- Node: `24.3.0`
+- Platform: Darwin arm64
+- Runtime profile: `category write`, `executionScope external-process`,
+  `sourceMode generated-write`, `workload dense-values`, `validationMode each`,
+  `repeat 15`, `warmup 3`.
+- Runner versions: SheetJS `0.18.5`, ExcelJS `4.4.0`, rust_xlsxwriter `0.1.0`.
+
+Raw output:
+
+```text
+/private/tmp/ascend-write-js-rust-current-7cc7e2c3-runs/write-dense-values-js-rust-repeat15.json
+/private/tmp/ascend-write-js-rust-current-7cc7e2c3-runs/write-dense-values-js-rust-repeat15-time.txt
+/private/tmp/ascend-write-js-rust-current-7cc7e2c3-runs/write-dense-values-js-rust-repeat15-scoreboard.json
+```
+
+Focused TS/JS/Rust row, repeat 15 after 3 warmups:
+
+| Runner | Status vs Ascend | Median ms | P95 ms | CV | Peak RSS | Output bytes |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| `ascend-external-writer` | ran/won | 6.013 | 7.776 | 0.103 | 81.0 MiB | 172259 |
+| `sheetjs` | ran/lost vs Ascend | 65.011 | 119.687 | 0.253 | 240.6 MiB | 1181431 |
+| `rust-xlsxwriter` | ran/lost vs Ascend | 70.629 | 148.107 | 0.343 | 21.0 MiB | 119134 |
+| `exceljs` | ran/lost vs Ascend | 124.324 | 188.872 | 0.169 | 244.2 MiB | 121315 |
+
+Process-level `/usr/bin/time -l` for the full command reported `56.65 real`,
+273,678,336 bytes maximum resident set size, and 112,116,552 bytes peak memory
+footprint.
+
+Scoreboard result:
+
+- Focused repeat-15 TS/JS/Rust row: group winner was
+  `ascend-external-writer`; `leaderFailures: []` and
+  `profileLeaderFailures: []`.
+- Full `xlsx-write-sota` coverage still fails, with 59 coverage failures,
+  because this row intentionally covers only `dense-values` and only Ascend,
+  SheetJS, ExcelJS, and rust_xlsxwriter. Missing workloads and omitted writers
+  are not wins.
+
+Semantic comparability: all four rows reopened successfully, matched one sheet
+and 40,000 cells, and passed semantic cell value validation. Ascend, SheetJS,
+and ExcelJS matched ordered semantic cell hashes. rust_xlsxwriter matched
+sorted semantic values but not ordered semantic hashes, so its row is useful
+value-write timing evidence but not byte/order-equivalent output evidence.
+Ascend wins median and p95 here, but rust_xlsxwriter and ExcelJS emit smaller
+XLSX files and rust_xlsxwriter uses less RSS.
+
+Humble allowed wording:
+
+> On the generated 2000 x 20 `dense-values` write row at commit `7cc7e2c3`,
+> Ascend's focused external repeat-15 run was faster by median and p95 than
+> SheetJS `0.18.5`, ExcelJS `4.4.0`, and rust_xlsxwriter `0.1.0`, with all rows
+> passing semantic value validation. This is scoped TS/JS/Rust generated-write
+> evidence, not a broad `xlsx-write-sota` claim.
+
+Forbidden wording:
+
+- "Ascend is SOTA for XLSX write."
+- "Ascend beats every TS/JS or Rust writer on every workload."
+- "Ascend proves byte/order-equivalent output against rust_xlsxwriter."
+- "Ascend produces the smallest dense-value XLSX."
+- "Ascend uses less memory than rust_xlsxwriter on dense-value writes."
+
+Next action: keep TS/JS/Rust benchmark work focused on rows where Ascend lacks
+current evidence or loses. Do not re-optimize this dense-value row unless a
+current JS/Rust rerun regresses it.
 
 ## Cycle: Sparse Wide Write Current Split Row at `ddb0eb77`
 

@@ -2000,9 +2000,10 @@ describe('release proof evidence index', () => {
 						'd519c5a7',
 						'62f45cb5',
 						'b93f3493',
+						'4d85f436',
 					]),
 					allowedWording: expect.stringMatching(
-						/workflow discovery that points agents to postWrite\.dataConnections, postWrite\.formulaState, and postWrite\.visuals.*generated safe-edit example output.*web-query url.*workbook connection scheduling metadata edits/,
+						/workflow discovery that points agents to postWrite\.dataConnections, postWrite\.formulaState, and postWrite\.visuals.*generated safe-edit example output.*web-query url.*workbook connection scheduling metadata edits.*DDE item metadata/,
 					),
 					evidenceProvesIt: expect.arrayContaining([
 						expect.stringContaining(
@@ -2012,6 +2013,7 @@ describe('release proof evidence index', () => {
 							'commits public workbook connection scheduling edits through save and reopen',
 						),
 						expect.stringContaining('inventories OLE external link relationship binding'),
+						expect.stringContaining('inventories DDE external link item metadata'),
 						expect.stringContaining('commits structural row edits with shifted chart source refs'),
 						expect.stringContaining('commits moved chart source refs after save and reopen'),
 						expect.stringContaining('moveRange rewrites sparkline ranges'),
@@ -2024,6 +2026,7 @@ describe('release proof evidence index', () => {
 					forbiddenWording: expect.arrayContaining([
 						expect.stringContaining('arbitrary connection authoring'),
 						expect.stringContaining('external-link execution'),
+						expect.stringContaining('DDE execution'),
 						expect.stringContaining('linked-workbook fetch/validation'),
 						expect.stringContaining('full chart authoring'),
 						expect.stringContaining('full sparkline rendering'),

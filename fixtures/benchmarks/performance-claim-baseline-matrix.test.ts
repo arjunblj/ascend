@@ -39,6 +39,7 @@ const RECORDED_WORKLOADS = [
 	'string-heavy',
 	'mixed-10pct-text',
 	'mixed-50pct-text',
+	'mixed-closedxml-10text-5number',
 ]
 
 describe('performance claim baseline matrix', () => {
@@ -92,6 +93,9 @@ describe('performance claim baseline matrix', () => {
 		)
 		expect(markdown).toContain(
 			"Current focused TS/JS/Rust `mixed-50pct-text` write coverage proves Ascend's\n  generated writer is faster by median and p95 than SheetJS, ExcelJS, and\n  rust_xlsxwriter",
+		)
+		expect(markdown).toContain(
+			'Current focused TS/JS/Rust `mixed-closedxml-10text-5number` write coverage\n  proves Ascend',
 		)
 		expect(markdown).toContain(
 			"Current focused TS/JS/Rust `styles-heavy` write coverage proves Ascend's\n  generated writer is faster by median and p95 than SheetJS, ExcelJS, and\n  rust_xlsxwriter",
@@ -225,7 +229,7 @@ describe('performance claim baseline matrix', () => {
 			'broad read-speed and QSS-leapfrog performance wording is downgraded',
 		)
 		expect(markdown).toContain(
-			'do not optimize further from the measured winning rows\n`dense-values`, `sparse-wide`, `styles-heavy`, `formula-heavy`, `table-heavy`,\n`selected-sheet`, `metadata-only`, `warm-workflow`, `string-heavy`,\n`mixed-10pct-text`, and `mixed-50pct-text`',
+			'do not optimize further from the measured winning rows\n`dense-values`, `sparse-wide`, `styles-heavy`, `formula-heavy`, `table-heavy`,\n`selected-sheet`, `metadata-only`, `warm-workflow`, `string-heavy`,\n`mixed-10pct-text`, `mixed-50pct-text`, and\n`mixed-closedxml-10text-5number`',
 		)
 		expect(markdown).toContain(
 			'Failed, missing, or semantically mismatched runners are not counted as wins.',
@@ -829,6 +833,32 @@ describe('performance claim baseline matrix', () => {
 		expect(markdown).toContain(
 			'"Ascend uses less memory than rust_xlsxwriter on table-heavy writes."',
 		)
+
+		expect(markdown).toContain(
+			'## Cycle: Mixed ClosedXML Shape TS/JS/Rust Write Head-to-Head at `942e7c87`',
+		)
+		expect(markdown).toContain(
+			'/private/tmp/ascend-write-mixedclosed-current-942e7c87-runs/write-mixedclosed-js-rust-repeat15.json',
+		)
+		expect(markdown).toContain(
+			'/private/tmp/ascend-write-mixedclosed-current-942e7c87-runs/write-mixedclosed-js-rust-repeat15-p95-scoreboard.json',
+		)
+		expect(markdown).toContain(
+			'| `ascend-external-writer` | ran/won median and p95 | 1.083 | 1.275 | 0.068 | 58.9 MiB | 20173 |',
+		)
+		expect(markdown).toContain(
+			'| `rust-xlsxwriter` | ran/lost vs Ascend; p95 noisy | 15.866 | 39.309 | 0.342 | 20.7 MiB | 107294 |',
+		)
+		expect(markdown).toContain(
+			'| `sheetjs` | ran/lost vs Ascend | 24.152 | 26.469 | 0.046 | 242.3 MiB | 1392541 |',
+		)
+		expect(markdown).toContain(
+			'| `exceljs` | ran/lost vs Ascend | 51.839 | 59.537 | 0.044 | 252.8 MiB | 107933 |',
+		)
+		expect(markdown).toContain(
+			'P95 scoreboard: mixed-closedxml-10text-5number group winner was\n  `ascend-external-writer`',
+		)
+		expect(markdown).toContain('"Ascend beats ClosedXML on mixed-closedxml writes."')
 
 		expect(markdown).toContain(
 			'## Cycle: Mixed 10 Percent Text TS/JS/Rust Write Head-to-Head at `1f357ee2`',

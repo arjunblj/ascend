@@ -58,6 +58,7 @@ import {
 	legacyArrayFormulaEditError,
 	materializeFormulaBindingGroupsForRangeEdit,
 	patch,
+	safeParseA1,
 	safeParseRange,
 	shiftMerges,
 	translateFormula,
@@ -257,7 +258,9 @@ export function handleTransferRange(
 	const sheetIndex = workbook.sheets.indexOf(sourceSheet)
 	const sourceResult = safeParseRange(op.source)
 	if (!sourceResult.ok) return sourceResult
-	const targetStart = parseA1(op.target)
+	const targetStartResult = safeParseA1(op.target)
+	if (!targetStartResult.ok) return targetStartResult
+	const targetStart = targetStartResult.value
 	const source = sourceResult.value
 	const rowDelta = targetStart.row - source.start.row
 	const colDelta = targetStart.col - source.start.col

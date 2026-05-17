@@ -1,6 +1,7 @@
 import type {
 	Cell,
 	CellFormulaBinding,
+	CellRef,
 	CellStyle,
 	RangeRef,
 	Sheet,
@@ -117,6 +118,16 @@ export function safeParseRange(range: string): Result<RangeRef> {
 			}),
 		)
 	}
+}
+
+export function safeParseA1(ref: string): Result<CellRef> {
+	const parsed = parseA1Safe(ref)
+	if (parsed) return ok(parsed)
+	return err(
+		ascendError('INVALID_RANGE', `Invalid cell reference: ${ref}`, {
+			suggestedFix: 'Expected format: A1 for a single target cell',
+		}),
+	)
 }
 
 export interface LegacyArrayFormulaBlocker {

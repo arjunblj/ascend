@@ -3191,6 +3191,27 @@ describe('applyOperation', () => {
 		expect(result.value.recalcRequired).toBe(true)
 	})
 
+	test('range transfers reject invalid targets before mutation', () => {
+		const operations: readonly Extract<Operation, { op: 'copyRange' | 'moveRange' }>[] = [
+			{ op: 'copyRange', sheet: 'Sheet1', source: 'A1:A2', target: 'not-a-cell' },
+			{ op: 'moveRange', sheet: 'Sheet1', source: 'A1:A2', target: 'B:B' },
+		]
+
+		for (const op of operations) {
+			const wb = setup()
+			const sheet = wb.getSheet('Sheet1')
+			if (!sheet) throw new Error('missing sheet')
+			const beforeCells = [...sheet.cells.iterate()]
+
+			const result = applyOperation(wb, op)
+
+			expectErr(result)
+			expect(result.error.code, op.op).toBe('INVALID_RANGE')
+			expect(result.error.message, op.op).toContain('Invalid cell reference')
+			expect([...sheet.cells.iterate()], op.op).toEqual(beforeCells)
+		}
+	})
+
 	test('copyRange can paste formats without changing values or formulas', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

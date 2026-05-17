@@ -34,6 +34,7 @@ describe('XLSX package graph', () => {
   <Relationship Id="rIdOpaqueCustomProps" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/custom-properties" Target="package/services/custom.bin"/>
   <Relationship Id="rIdOpaqueSignatureOrigin" Type="http://schemas.openxmlformats.org/package/2006/relationships/digital-signature/origin" Target="package/signatures/origin.sigs"/>
   <Relationship Id="rIdOpaqueCustomUi" Type="http://schemas.microsoft.com/office/2006/relationships/ui/extensibility" Target="package/ui/custom-ui.bin"/>
+  <Relationship Id="rIdOpaqueCustomUi2007" Type="http://schemas.microsoft.com/office/2007/relationships/ui/extensibility" Target="package/ui/custom-ui-2007.bin"/>
 </Relationships>`,
 			'package/services/metadata/core-properties/source.psmdcp': '<core/>',
 			'package/services/metadata/thumbnail.bin': 'thumbnail-bytes',
@@ -46,6 +47,7 @@ describe('XLSX package graph', () => {
 </Relationships>`,
 			'package/signatures/signature-package.bin': '<Signature/>',
 			'package/ui/custom-ui.bin': '<customUI/>',
+			'package/ui/custom-ui-2007.bin': '<customUI/>',
 			'xl/workbook.xml': '<workbook/>',
 			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
@@ -207,6 +209,15 @@ describe('XLSX package graph', () => {
 			type: 'http://schemas.microsoft.com/office/2006/relationships/ui/extensibility',
 			rawTarget: 'package/ui/custom-ui.bin',
 			resolvedTarget: 'package/ui/custom-ui.bin',
+			featureFamily: 'preservedCustomUi',
+		})
+		expect(graph.relationships).toContainEqual({
+			sourcePartPath: '',
+			relationshipPartPath: '_rels/.rels',
+			id: 'rIdOpaqueCustomUi2007',
+			type: 'http://schemas.microsoft.com/office/2007/relationships/ui/extensibility',
+			rawTarget: 'package/ui/custom-ui-2007.bin',
+			resolvedTarget: 'package/ui/custom-ui-2007.bin',
 			featureFamily: 'preservedCustomUi',
 		})
 		expect(graph.relationships).toContainEqual({
@@ -462,6 +473,14 @@ describe('XLSX package graph', () => {
 			featureFamily: 'preservedCustomUi',
 			preservationPolicy: 'preserve-exact',
 		})
+		expect(graph.parts.find((part) => part.path === 'package/ui/custom-ui-2007.bin')).toMatchObject(
+			{
+				ownerScope: 'active-content',
+				sourceRelationshipId: 'rIdOpaqueCustomUi2007',
+				featureFamily: 'preservedCustomUi',
+				preservationPolicy: 'preserve-exact',
+			},
+		)
 		expect(graph.parts.find((part) => part.path === 'xl/worksheets/sheet1.xml')).toMatchObject({
 			ownerScope: 'worksheet',
 			sourceRelationshipId: 'rIdSheet',

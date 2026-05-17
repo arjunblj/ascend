@@ -21,6 +21,7 @@ import {
 	REL_CUSTOM_PROPERTIES,
 	REL_CUSTOM_PROPERTY,
 	REL_CUSTOM_UI,
+	REL_CUSTOM_UI_2007,
 	REL_CUSTOM_XML,
 	REL_CUSTOM_XML_PROPS,
 	REL_DATA_MODEL,
@@ -563,7 +564,8 @@ function classifyOwnerScope(
 		primary?.type === REL_CONTROL_PROP ||
 		primary?.type === REL_OLE_OBJECT ||
 		primary?.type === REL_VBA_PROJECT ||
-		primary?.type === REL_CUSTOM_UI
+		primary?.type === REL_CUSTOM_UI ||
+		primary?.type === REL_CUSTOM_UI_2007
 	) {
 		return 'active-content'
 	}
@@ -634,7 +636,9 @@ function classifyRelationshipFeatureFamily(
 	) {
 		return 'preservedRevision'
 	}
-	if (relationship.type === REL_CUSTOM_UI) return 'preservedCustomUi'
+	if (relationship.type === REL_CUSTOM_UI || relationship.type === REL_CUSTOM_UI_2007) {
+		return 'preservedCustomUi'
+	}
 	if (relationship.type === REL_COMMENTS) return 'preservedComments'
 	if (relationship.type === REL_THREADED_COMMENT) return 'preservedThreadedComments'
 	if (relationship.type === REL_DRAWING) return 'preservedDrawing'

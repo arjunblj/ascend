@@ -59,7 +59,7 @@ describe('performance claim baseline matrix', () => {
 		)
 		expect(markdown).toContain('Calamine wins that head-to-head')
 		expect(markdown).toContain(
-			'Current `36b927f9` metadata-only recheck still has python-calamine as the\n  median and p95 winner',
+			'Current `0e53a446` metadata-only repeat-30 recheck still has python-calamine as the\n  median and p95 winner',
 		)
 		expect(markdown).toContain(
 			'Current harness evidence now supports a SheetJS feature-rich rich-metadata row',
@@ -322,6 +322,32 @@ describe('performance claim baseline matrix', () => {
 		)
 		expect(markdown).toContain(
 			'"The relationship-recovery early-return patch improves metadata-only reads."',
+		)
+
+		expect(markdown).toContain('## Cycle: Current Metadata-Only Rust Floor Recheck at `0e53a446`')
+		expect(markdown).toContain(
+			'The current clean repeat-30 rerun\nkeeps `python-calamine-metadata-only` as both the median and p95 winner',
+		)
+		expect(markdown).toContain(
+			'/private/tmp/ascend-metadata-current-0e53a446-runs/metadata-calamine-head-to-head-repeat30.json',
+		)
+		expect(markdown).toContain(
+			'/private/tmp/ascend-metadata-current-0e53a446-runs/metadata-calamine-head-to-head-repeat30-p95-scoreboard.json',
+		)
+		expect(markdown).toContain(
+			'| `python-calamine-metadata-only` | ran/won median and p95 | 0.041 | 0.048 | 0.065 | 28.3 MiB |',
+		)
+		expect(markdown).toContain(
+			'| `ascend-external-metadata-only` | ran/lost vs Calamine, ran/won vs SheetJS/openpyxl | 0.408 | 0.675 | 0.295 | 91.0 MiB |',
+		)
+		expect(markdown).toContain(
+			'| `sheetjs-metadata-only` | ran/lost | 0.642 | 0.914 | 0.166 | 150.7 MiB |',
+		)
+		expect(markdown).toContain(
+			'median and p95 scoreboards both picked\n`python-calamine-metadata-only` as the winner',
+		)
+		expect(markdown).toContain(
+			'Do not do more production\nwork on this row until profiling identifies a narrower measured cost center',
 		)
 
 		expect(markdown).toContain('## Cycle: Current Metadata-Only Rust Floor Recheck at `36b927f9`')

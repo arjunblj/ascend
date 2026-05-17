@@ -2864,10 +2864,19 @@ function postWriteDataConnectionSummary(workbook: Workbook): PostWriteDataConnec
 		...(part.description !== undefined ? { description: part.description } : {}),
 		...(part.deleted !== undefined ? { deleted: part.deleted } : {}),
 		...(part.backgroundRefresh !== undefined ? { backgroundRefresh: part.backgroundRefresh } : {}),
+		...(part.firstBackgroundRefresh !== undefined
+			? { firstBackgroundRefresh: part.firstBackgroundRefresh }
+			: {}),
 		...(part.keepAlive !== undefined ? { keepAlive: part.keepAlive } : {}),
 		...(part.refreshInterval !== undefined ? { refreshInterval: part.refreshInterval } : {}),
 		...(part.refreshOnLoad !== undefined ? { refreshOnLoad: part.refreshOnLoad } : {}),
 		...(part.saveData !== undefined ? { saveData: part.saveData } : {}),
+		...(part.preserveFormatting !== undefined
+			? { preserveFormatting: part.preserveFormatting }
+			: {}),
+		...(part.adjustColumnWidth !== undefined ? { adjustColumnWidth: part.adjustColumnWidth } : {}),
+		...(part.fillFormulas !== undefined ? { fillFormulas: part.fillFormulas } : {}),
+		...(part.disableEdit !== undefined ? { disableEdit: part.disableEdit } : {}),
 		...(part.savePassword !== undefined ? { savePassword: part.savePassword } : {}),
 		...(part.refreshedVersion !== undefined ? { refreshedVersion: part.refreshedVersion } : {}),
 		...(part.refreshedDateIso !== undefined ? { refreshedDateIso: part.refreshedDateIso } : {}),
@@ -2882,6 +2891,12 @@ function postWriteDataConnectionSummary(workbook: Workbook): PostWriteDataConnec
 			? { onlyUseConnectionFile: part.onlyUseConnectionFile }
 			: {}),
 		...(part.command !== undefined ? { command: part.command } : {}),
+		...(part.commandType !== undefined ? { commandType: part.commandType } : {}),
+		...(part.serverCommand !== undefined ? { serverCommand: part.serverCommand } : {}),
+		...(part.webUrl !== undefined ? { webUrl: part.webUrl } : {}),
+		...(part.webHtmlTables !== undefined ? { webHtmlTables: part.webHtmlTables } : {}),
+		...(part.webXml !== undefined ? { webXml: part.webXml } : {}),
+		...(part.webSourceData !== undefined ? { webSourceData: part.webSourceData } : {}),
 		...(part.hasConnectionString !== undefined
 			? { hasConnectionString: part.hasConnectionString }
 			: {}),

@@ -1929,6 +1929,82 @@ describe('recalculate', () => {
 		}
 	})
 
+	test('depreciation financial scalar functions spill over range operands in array formulas', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		const costs = [1000, 2400, 5000]
+		const salvageValues = [100, 300, 500]
+		const lives = [6, 10, 5]
+		const periods = [1, 2, 3]
+		const months = [7, 12, 12]
+		const startPeriods = [0, 1, 2]
+		const endPeriods = [1, 2.5, 3]
+		const factors = [2, 1.5, 2]
+		const noSwitches = [0, 1, 0]
+		for (let row = 0; row < 3; row++) {
+			for (const [col, values] of [
+				[0, costs],
+				[1, salvageValues],
+				[2, lives],
+				[3, periods],
+				[4, months],
+				[5, startPeriods],
+				[6, endPeriods],
+				[7, factors],
+				[8, noSwitches],
+			] as const) {
+				sheet.cells.set(row, col, {
+					value: numberValue(values[row] as number),
+					formula: null,
+					styleId: sid,
+				})
+			}
+		}
+		const arrayFormulas = [
+			'SLN(A1:A3,B1:B3,C1:C3)+0',
+			'SYD(A1:A3,B1:B3,C1:C3,D1:D3)+0',
+			'DDB(A1:A3,B1:B3,C1:C3,D1:D3,H1:H3)+0',
+			'DB(A1:A3,B1:B3,C1:C3,D1:D3,E1:E3)+0',
+			'VDB(A1:A3,B1:B3,C1:C3,F1:F3,G1:G3,H1:H3,I1:I3)+0',
+		]
+		const scalarFormulas = [
+			'SLN(A{r},B{r},C{r})+0',
+			'SYD(A{r},B{r},C{r},D{r})+0',
+			'DDB(A{r},B{r},C{r},D{r},H{r})+0',
+			'DB(A{r},B{r},C{r},D{r},E{r})+0',
+			'VDB(A{r},B{r},C{r},F{r},G{r},H{r},I{r})+0',
+		]
+		for (let col = 0; col < arrayFormulas.length; col++) {
+			sheet.cells.set(0, 9 + col, {
+				value: EMPTY,
+				formula: arrayFormulas[col] as string,
+				styleId: sid,
+			})
+			for (let row = 0; row < 3; row++) {
+				sheet.cells.set(row, 14 + col, {
+					value: EMPTY,
+					formula: (scalarFormulas[col] as string).replaceAll('{r}', String(row + 1)),
+					styleId: sid,
+				})
+			}
+		}
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		for (let row = 0; row < 3; row++) {
+			for (let col = 0; col < arrayFormulas.length; col++) {
+				const actual = sheet.cells.get(row, 9 + col)?.value
+				const expected = sheet.cells.get(row, 14 + col)?.value
+				expect(actual?.kind).toBe('number')
+				expect(expected?.kind).toBe('number')
+				if (actual?.kind === 'number' && expected?.kind === 'number') {
+					expect(actual.value).toBeCloseTo(expected.value, 10)
+				}
+			}
+		}
+	})
+
 	test('FREQUENCY formulas can count unique filtered numeric ids from array expressions', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

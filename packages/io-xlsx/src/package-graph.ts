@@ -23,6 +23,7 @@ import {
 	REL_CUSTOM_UI,
 	REL_CUSTOM_XML,
 	REL_DATA_MODEL,
+	REL_DATA_MODEL_TABLE,
 	REL_DIAGRAM_DATA,
 	REL_DIGITAL_SIGNATURE,
 	REL_DIGITAL_SIGNATURE_ORIGIN,
@@ -302,7 +303,11 @@ export function classifyPackageFeatureFamily(
 	if (path.includes('/drawings/') && path.endsWith('.vml')) return 'preservedVml'
 	if (path.includes('/drawings/')) return 'preservedDrawing'
 	if (path.includes('/media/')) return 'preservedMedia'
-	if (path.includes('/model/') || lowerRelType.endsWith('/relationships/model')) {
+	if (
+		path.includes('/model/') ||
+		lowerRelType.endsWith('/relationships/model') ||
+		lowerRelType.endsWith('/relationships/modeltable')
+	) {
 		return 'preservedDataModel'
 	}
 	if (path.includes('/tables/')) return 'preservedTable'
@@ -538,6 +543,7 @@ function classifyOwnerScope(
 	if (
 		primary?.type === REL_CONNECTIONS ||
 		primary?.type === REL_DATA_MODEL ||
+		primary?.type === REL_DATA_MODEL_TABLE ||
 		primary?.type === REL_POWER_QUERY_MASHUP ||
 		primary?.type === REL_QUERY_TABLE
 	) {
@@ -610,6 +616,7 @@ function classifyRelationshipFeatureFamily(
 	if (relationship.type === REL_QUERY_TABLE) return 'preservedQueryTable'
 	if (relationship.type === REL_CONNECTIONS) return 'preservedConnection'
 	if (relationship.type === REL_DATA_MODEL) return 'preservedDataModel'
+	if (relationship.type === REL_DATA_MODEL_TABLE) return 'preservedDataModel'
 	if (relationship.type === REL_POWER_QUERY_MASHUP) return 'preservedPowerQuery'
 	if (relationship.type === REL_HYPERLINK) return 'preservedHyperlink'
 	if (relationship.type === REL_CUSTOM_XML) return 'preservedCustomXml'

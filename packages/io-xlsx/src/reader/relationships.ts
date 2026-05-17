@@ -96,6 +96,8 @@ export const REL_EXTERNAL_LINK_MISSING_PATH =
 export const REL_CONNECTIONS =
 	'http://schemas.openxmlformats.org/officeDocument/2006/relationships/connections'
 export const REL_DATA_MODEL = 'http://schemas.microsoft.com/office/2011/relationships/model'
+export const REL_DATA_MODEL_TABLE =
+	'http://schemas.microsoft.com/office/2011/relationships/modelTable'
 export const REL_POWER_QUERY_MASHUP =
 	'http://schemas.microsoft.com/office/2014/relationships/powerQueryMashup'
 export const REL_PRINTER_SETTINGS =

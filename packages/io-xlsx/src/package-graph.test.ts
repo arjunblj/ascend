@@ -101,6 +101,11 @@ describe('XLSX package graph', () => {
 			'xl/diagrams/data1.xml': '<dgm:dataModel/>',
 			'xl/opaque-diagram.bin': 'diagram-bytes',
 			'xl/model/item.data': 'data-model-bytes',
+			'xl/model/_rels/item.data.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rIdModelTableOpaque" Type="http://schemas.microsoft.com/office/2011/relationships/modelTable" Target="opaque-model-table.bin"/>
+</Relationships>`,
+			'xl/model/opaque-model-table.bin': 'opaque-model-table-bytes',
 			'xl/customData/item1.data': 'power-query-bytes',
 			'xl/opaque-mashup.bin': 'opaque-power-query-bytes',
 			'xl/opaque-model.bin': 'opaque-data-model-bytes',
@@ -231,6 +236,15 @@ describe('XLSX package graph', () => {
 			type: 'http://schemas.microsoft.com/office/2011/relationships/model',
 			rawTarget: 'opaque-model.bin',
 			resolvedTarget: 'xl/opaque-model.bin',
+			featureFamily: 'preservedDataModel',
+		})
+		expect(graph.relationships).toContainEqual({
+			sourcePartPath: 'xl/model/item.data',
+			relationshipPartPath: 'xl/model/_rels/item.data.rels',
+			id: 'rIdModelTableOpaque',
+			type: 'http://schemas.microsoft.com/office/2011/relationships/modelTable',
+			rawTarget: 'opaque-model-table.bin',
+			resolvedTarget: 'xl/model/opaque-model-table.bin',
 			featureFamily: 'preservedDataModel',
 		})
 		expect(graph.relationships).toContainEqual({
@@ -509,6 +523,14 @@ describe('XLSX package graph', () => {
 		expect(graph.parts.find((part) => part.path === 'xl/opaque-model.bin')).toMatchObject({
 			ownerScope: 'analytics',
 			sourceRelationshipId: 'rIdDataModelOpaque',
+			featureFamily: 'preservedDataModel',
+			preservationPolicy: 'inspect-only',
+		})
+		expect(
+			graph.parts.find((part) => part.path === 'xl/model/opaque-model-table.bin'),
+		).toMatchObject({
+			ownerScope: 'analytics',
+			sourceRelationshipId: 'rIdModelTableOpaque',
 			featureFamily: 'preservedDataModel',
 			preservationPolicy: 'inspect-only',
 		})

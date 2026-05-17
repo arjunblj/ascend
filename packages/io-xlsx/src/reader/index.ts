@@ -240,6 +240,9 @@ export function readXlsxArchive(
 		const workbook = new Workbook()
 		workbook.sourceArchiveBytes = archiveBytes
 		workbook.calcSettings = wbInfo.calcSettings
+		workbook.workbookFileVersion = wbInfo.workbookFileVersion
+			? { ...wbInfo.workbookFileVersion }
+			: null
 		workbook.workbookProperties = { ...wbInfo.workbookProperties }
 		workbook.workbookProtection = wbInfo.workbookProtection
 			? { ...wbInfo.workbookProtection }

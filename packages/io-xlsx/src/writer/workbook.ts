@@ -44,6 +44,11 @@ export function buildWorkbookXml(workbook: Workbook, options: WorkbookXmlOptions
 		`<workbook ${Array.from(workbookNamespaceAttrs, ([name, value]) => `${name}="${escapeXml(value)}"`).join(' ')}>`,
 	)
 
+	if (workbook.workbookFileVersion) {
+		const attrs = collectWorkbookFileVersionAttrs(workbook.workbookFileVersion)
+		if (attrs.length > 0) out.push(`<fileVersion ${attrs.join(' ')}/>`)
+	}
+
 	const workbookPrAttrs: string[] = []
 	if (workbook.calcSettings.dateSystem === '1904' || workbook.workbookProperties.date1904) {
 		workbookPrAttrs.push('date1904="1"')
@@ -392,6 +397,36 @@ function isCoreCalcSettingAttribute(name: string): boolean {
 		name === 'iterate' ||
 		name === 'iterateCount' ||
 		name === 'iterateDelta'
+	)
+}
+
+function collectWorkbookFileVersionAttrs(
+	fileVersion: NonNullable<Workbook['workbookFileVersion']>,
+): string[] {
+	const attrs: string[] = []
+	if (fileVersion.appName) attrs.push(`appName="${escapeXml(fileVersion.appName)}"`)
+	if (fileVersion.lastEdited) attrs.push(`lastEdited="${escapeXml(fileVersion.lastEdited)}"`)
+	if (fileVersion.lowestEdited) {
+		attrs.push(`lowestEdited="${escapeXml(fileVersion.lowestEdited)}"`)
+	}
+	if (fileVersion.rupBuild) attrs.push(`rupBuild="${escapeXml(fileVersion.rupBuild)}"`)
+	if (fileVersion.codeName) attrs.push(`codeName="${escapeXml(fileVersion.codeName)}"`)
+	for (const extra of fileVersion.extraAttributes ?? []) {
+		if (isCoreWorkbookFileVersionAttribute(extra.name) || !isXmlAttributeName(extra.name)) {
+			continue
+		}
+		attrs.push(`${extra.name}="${escapeXml(extra.value)}"`)
+	}
+	return attrs
+}
+
+function isCoreWorkbookFileVersionAttribute(name: string): boolean {
+	return (
+		name === 'appName' ||
+		name === 'lastEdited' ||
+		name === 'lowestEdited' ||
+		name === 'rupBuild' ||
+		name === 'codeName'
 	)
 }
 

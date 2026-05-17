@@ -1,6 +1,8 @@
 import type {
 	DefinedNameAttribute,
 	SheetState,
+	WorkbookFileVersion,
+	WorkbookFileVersionAttribute,
 	WorkbookProperties,
 	WorkbookPropertyAttribute,
 	WorkbookProtection,
@@ -36,6 +38,7 @@ export interface WorkbookInfo {
 	readonly sheets: SheetEntry[]
 	readonly definedNames: DefinedNameEntry[]
 	readonly calcSettings: CalcSettings
+	readonly workbookFileVersion: WorkbookFileVersion | null
 	readonly workbookProperties: WorkbookProperties
 	readonly workbookProtection: WorkbookProtection | null
 	readonly workbookViews: readonly WorkbookView[]
@@ -50,6 +53,7 @@ const DEFINED_NAME_RE = new RegExp(
 	`<${NS_PREFIX}definedName\\b([^>]*)>([\\s\\S]*?)</${NS_PREFIX}definedName>`,
 	'g',
 )
+const FILE_VERSION_RE = new RegExp(`<${NS_PREFIX}fileVersion\\b([^>]*)/?>`)
 const WORKBOOK_PR_RE = new RegExp(`<${NS_PREFIX}workbookPr\\b([^>]*)/?>`)
 const CALC_PR_RE = new RegExp(`<${NS_PREFIX}calcPr\\b([^>]*)/?>`)
 const WORKBOOK_PROTECTION_RE = new RegExp(`<${NS_PREFIX}workbookProtection\\b([^>]*)/?>`)
@@ -70,6 +74,7 @@ function scanWorkbookXml(xml: string): WorkbookInfo | null {
 		sheets: scanSheets(xml),
 		definedNames: scanDefinedNames(xml),
 		calcSettings: scanCalcSettings(xml),
+		workbookFileVersion: scanWorkbookFileVersion(xml),
 		workbookProperties: scanWorkbookProperties(xml),
 		workbookProtection: scanWorkbookProtection(xml),
 		workbookViews: scanWorkbookViews(xml),
@@ -88,6 +93,7 @@ function parseWorkbookXmlWithDom(xml: string): WorkbookInfo {
 	const sheets = parseSheets(wb)
 	const definedNames = parseDefinedNames(wb)
 	const calcSettings = parseCalcSettings(wb)
+	const workbookFileVersion = parseWorkbookFileVersion(wb)
 	const workbookProperties = parseWorkbookProperties(wb)
 	const workbookProtection = parseWorkbookProtection(wb)
 	const workbookViews = parseWorkbookViews(wb)
@@ -98,6 +104,7 @@ function parseWorkbookXmlWithDom(xml: string): WorkbookInfo {
 		sheets,
 		definedNames,
 		calcSettings,
+		workbookFileVersion,
 		workbookProperties,
 		workbookProtection,
 		workbookViews,
@@ -111,6 +118,7 @@ function emptyWorkbookInfo(): WorkbookInfo {
 		sheets: [],
 		definedNames: [],
 		calcSettings: DEFAULT_CALC_SETTINGS,
+		workbookFileVersion: null,
 		workbookProperties: {},
 		workbookProtection: null,
 		workbookViews: [],
@@ -282,6 +290,26 @@ function scanWorkbookProperties(xml: string): WorkbookProperties {
 	const extraAttributes = workbookPropertyExtraAttributes(attrs)
 	if (extraAttributes.length > 0) props.extraAttributes = extraAttributes
 	return props as WorkbookProperties
+}
+
+function scanWorkbookFileVersion(xml: string): WorkbookFileVersion | null {
+	const attrs = scanSingleTagAttributes(xml, FILE_VERSION_RE)
+	if (!attrs) return null
+
+	const version: Record<string, unknown> = {}
+	const appName = attrs.get('appName')
+	if (appName) version.appName = appName
+	const lastEdited = attrs.get('lastEdited')
+	if (lastEdited) version.lastEdited = lastEdited
+	const lowestEdited = attrs.get('lowestEdited')
+	if (lowestEdited) version.lowestEdited = lowestEdited
+	const rupBuild = attrs.get('rupBuild')
+	if (rupBuild) version.rupBuild = rupBuild
+	const codeName = attrs.get('codeName')
+	if (codeName) version.codeName = codeName
+	const extraAttributes = workbookFileVersionExtraAttributes(attrs)
+	if (extraAttributes.length > 0) version.extraAttributes = extraAttributes
+	return version as WorkbookFileVersion
 }
 
 function scanWorkbookViews(xml: string): readonly WorkbookView[] {
@@ -608,6 +636,60 @@ function isCoreCalcSettingAttribute(name: string): boolean {
 		name === 'iterate' ||
 		name === 'iterateCount' ||
 		name === 'iterateDelta'
+	)
+}
+
+function parseWorkbookFileVersion(wb: XmlNode): WorkbookFileVersion | null {
+	const fileVersion = wb.fileVersion as XmlNode | undefined
+	if (!fileVersion) return null
+
+	const version: Record<string, unknown> = {}
+	const appName = attr(fileVersion, 'appName')
+	if (appName) version.appName = appName
+	const lastEdited = attr(fileVersion, 'lastEdited')
+	if (lastEdited) version.lastEdited = lastEdited
+	const lowestEdited = attr(fileVersion, 'lowestEdited')
+	if (lowestEdited) version.lowestEdited = lowestEdited
+	const rupBuild = attr(fileVersion, 'rupBuild')
+	if (rupBuild) version.rupBuild = rupBuild
+	const codeName = attr(fileVersion, 'codeName')
+	if (codeName) version.codeName = codeName
+	const extraAttributes = workbookFileVersionExtraAttributesFromNode(fileVersion)
+	if (extraAttributes.length > 0) version.extraAttributes = extraAttributes
+	return version as WorkbookFileVersion
+}
+
+function workbookFileVersionExtraAttributes(
+	attrs: ReadonlyMap<string, string>,
+): WorkbookFileVersionAttribute[] {
+	const extraAttributes: WorkbookFileVersionAttribute[] = []
+	for (const [name, value] of attrs) {
+		if (isCoreWorkbookFileVersionAttribute(name)) continue
+		extraAttributes.push({ name, value })
+	}
+	return extraAttributes
+}
+
+function workbookFileVersionExtraAttributesFromNode(node: XmlNode): WorkbookFileVersionAttribute[] {
+	const extraAttributes: WorkbookFileVersionAttribute[] = []
+	for (const [key, value] of Object.entries(node)) {
+		if (!key.startsWith('@_')) continue
+		const name = key.slice(2)
+		if (isCoreWorkbookFileVersionAttribute(name) || value === undefined || value === null) {
+			continue
+		}
+		extraAttributes.push({ name, value: String(value) })
+	}
+	return extraAttributes
+}
+
+function isCoreWorkbookFileVersionAttribute(name: string): boolean {
+	return (
+		name === 'appName' ||
+		name === 'lastEdited' ||
+		name === 'lowestEdited' ||
+		name === 'rupBuild' ||
+		name === 'codeName'
 	)
 }
 

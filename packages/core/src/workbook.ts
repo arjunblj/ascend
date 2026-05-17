@@ -34,6 +34,20 @@ export interface WorkbookProtectionAttribute {
 	readonly value: string
 }
 
+export interface WorkbookFileVersionAttribute {
+	readonly name: string
+	readonly value: string
+}
+
+export interface WorkbookFileVersion {
+	readonly appName?: string
+	readonly lastEdited?: string
+	readonly lowestEdited?: string
+	readonly rupBuild?: string
+	readonly codeName?: string
+	readonly extraAttributes?: readonly WorkbookFileVersionAttribute[]
+}
+
 export interface WorkbookView {
 	readonly activeTab?: number
 	readonly firstSheet?: number
@@ -265,6 +279,7 @@ export class Workbook {
 	readonly workbookViews: WorkbookView[] = []
 	readonly externalReferences: string[] = []
 	readonly externalReferenceDetails: ExternalReferenceInfo[] = []
+	workbookFileVersion: WorkbookFileVersion | null = null
 	workbookProperties: WorkbookProperties = {}
 	documentProperties: WorkbookDocumentProperties = {}
 	workbookProtection: WorkbookProtection | null = null
@@ -343,6 +358,18 @@ export class Workbook {
 					}
 				: {}),
 		}
+		clone.workbookFileVersion = this.workbookFileVersion
+			? {
+					...this.workbookFileVersion,
+					...(this.workbookFileVersion.extraAttributes
+						? {
+								extraAttributes: this.workbookFileVersion.extraAttributes.map((attr) => ({
+									...attr,
+								})),
+							}
+						: {}),
+				}
+			: null
 		clone.workbookProperties = {
 			...this.workbookProperties,
 			...(this.workbookProperties.extraAttributes

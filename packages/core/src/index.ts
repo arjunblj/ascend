@@ -195,6 +195,8 @@ export type {
 	WorkbookDocumentProperties,
 	WorkbookDocumentPropertyAppValue,
 	WorkbookDocumentPropertyScalar,
+	WorkbookFileVersion,
+	WorkbookFileVersionAttribute,
 	WorkbookMacroSheetInfo,
 	WorkbookPreservedMetadata,
 	WorkbookPreservedSheetEntry,

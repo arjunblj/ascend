@@ -2313,6 +2313,7 @@ describe('readXlsx', () => {
 			'xl/workbook.xml': `<?xml version="1.0"?>
 <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
   xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <fileVersion appName="xl" lastEdited="7" lowestEdited="7" rupBuild="23420" productRelease="2021"/>
   <workbookPr date1904="1" filterPrivacy="1" codeName="Model" checkCompatibility="1" autoCompressPictures="0"/>
   <bookViews>
     <workbookView activeTab="1" firstSheet="2" visibility="visible" tabRatio="600" minimized="1" showSheetTabs="0" windowWidth="16800" windowHeight="9000"/>
@@ -2335,6 +2336,13 @@ describe('readXlsx', () => {
 		const result = readXlsx(bytes)
 		expectOk(result)
 
+		expect(result.value.workbook.workbookFileVersion).toEqual({
+			appName: 'xl',
+			lastEdited: '7',
+			lowestEdited: '7',
+			rupBuild: '23420',
+			extraAttributes: [{ name: 'productRelease', value: '2021' }],
+		})
 		expect(result.value.workbook.workbookProperties).toEqual({
 			date1904: true,
 			filterPrivacy: true,

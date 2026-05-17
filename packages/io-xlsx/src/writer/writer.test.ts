@@ -5154,6 +5154,13 @@ describe('writeXlsx', () => {
 		const wb = new Workbook()
 		const sheet = wb.addSheet('Data')
 		sheet.cells.set(0, 0, { value: numberValue(1), formula: null, styleId: S0 })
+		wb.workbookFileVersion = {
+			appName: 'xl',
+			lastEdited: '7',
+			lowestEdited: '7',
+			rupBuild: '23420',
+			extraAttributes: [{ name: 'productRelease', value: '2021' }],
+		}
 		wb.workbookViews.push({
 			activeTab: 1,
 			firstSheet: 0,
@@ -5196,6 +5203,13 @@ describe('writeXlsx', () => {
 		]
 
 		const { result, bytes } = roundTrip(wb, capsules)
+		expect(result.workbook.workbookFileVersion).toEqual({
+			appName: 'xl',
+			lastEdited: '7',
+			lowestEdited: '7',
+			rupBuild: '23420',
+			extraAttributes: [{ name: 'productRelease', value: '2021' }],
+		})
 		expect(result.workbook.workbookProperties).toEqual({
 			codeName: 'Model',
 			filterPrivacy: true,
@@ -5225,6 +5239,7 @@ describe('writeXlsx', () => {
 
 		const fingerprint = fingerprintXlsx(bytes)
 		expect(fingerprint.workbook?.tagCounts).toMatchObject({
+			fileVersion: 1,
 			bookViews: 1,
 			workbookView: 1,
 			externalReferences: 1,
@@ -5232,6 +5247,9 @@ describe('writeXlsx', () => {
 			calcPr: 1,
 		})
 		const workbookXml = new TextDecoder().decode(unzipSync(bytes)['xl/workbook.xml'])
+		expect(workbookXml).toContain('appName="xl"')
+		expect(workbookXml).toContain('rupBuild="23420"')
+		expect(workbookXml).toContain('productRelease="2021"')
 		expect(workbookXml).toContain('checkCompatibility="1"')
 		expect(workbookXml).toContain('autoCompressPictures="0"')
 		expect(workbookXml).toContain('minimized="1"')

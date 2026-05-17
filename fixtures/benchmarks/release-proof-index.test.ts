@@ -2062,9 +2062,10 @@ describe('release proof evidence index', () => {
 						'4269fb6a',
 						'49c1c2a5',
 						'a086f2a2',
+						'03e1866c',
 					]),
 					allowedWording: expect.stringContaining(
-						'scalar ADDRESS/date/workday/order-statistic/rank/percentile-quartile/percentrank/forecast/trimmean implicit intersection',
+						'scalar ADDRESS/date/workday/order-statistic/rank/percentile-quartile/percentrank/forecast/trimmean/aggregate implicit intersection',
 					),
 					evidenceProvesIt: expect.arrayContaining([
 						expect.stringContaining('NOT spills boolean masks'),
@@ -2102,6 +2103,9 @@ describe('release proof evidence index', () => {
 						expect.stringContaining('top-level forecast functions implicitly intersect'),
 						expect.stringContaining('TRIMMEAN spills over percent arguments'),
 						expect.stringContaining('top-level TRIMMEAN implicitly intersects'),
+						expect.stringContaining('AGGREGATE selector functions spill over k'),
+						expect.stringContaining('top-level AGGREGATE selector functions implicitly intersect'),
+						expect.stringContaining('AGGREGATE reference form preserves multiple range arguments'),
 						expect.stringContaining('legacy statistical compatibility functions spill'),
 						expect.stringContaining('loan financial scalar functions spill over range operands'),
 						expect.stringContaining('financial helper scalar functions spill over range operands'),

@@ -712,6 +712,7 @@ const REFERENCE_RETURNING_FUNCTIONS = new Set(['INDEX', 'INDIRECT', 'OFFSET'])
 const ARRAY_MAPPING_FUNCTIONS = new Set([
 	'COLUMN',
 	'ERROR.TYPE',
+	'FIND',
 	'IF',
 	'IFERROR',
 	'IFNA',
@@ -733,6 +734,7 @@ const ARRAY_MAPPING_FUNCTIONS = new Set([
 	'N',
 	'RIGHT',
 	'ROW',
+	'SEARCH',
 	'SQRT',
 	'SWITCH',
 	'TRIM',

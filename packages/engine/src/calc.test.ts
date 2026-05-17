@@ -1038,6 +1038,34 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(2, 1)?.value).toEqual(stringValue('CZ30'))
 	})
 
+	test('FIND and SEARCH spill over range operands in array formulas', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: stringValue('East Region'), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: stringValue('west'), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: stringValue('southeast'), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, {
+			value: EMPTY,
+			formula: 'IF(ISNUMBER(SEARCH("east",A1:A3)),"match","miss")',
+			styleId: sid,
+		})
+		sheet.cells.set(0, 2, {
+			value: EMPTY,
+			formula: 'IFERROR(FIND("E",A1:A3),0)',
+			styleId: sid,
+		})
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(0, 1)?.value).toEqual(stringValue('match'))
+		expect(sheet.cells.get(1, 1)?.value).toEqual(stringValue('miss'))
+		expect(sheet.cells.get(2, 1)?.value).toEqual(stringValue('match'))
+		expect(sheet.cells.get(0, 2)?.value).toEqual(numberValue(1))
+		expect(sheet.cells.get(1, 2)?.value).toEqual(numberValue(0))
+		expect(sheet.cells.get(2, 2)?.value).toEqual(numberValue(0))
+	})
+
 	test('FREQUENCY formulas can count unique filtered numeric ids from array expressions', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

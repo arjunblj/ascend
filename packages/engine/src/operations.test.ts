@@ -5909,6 +5909,85 @@ describe('applyOperation', () => {
 		}
 	})
 
+	test('row and column inserts reject edge cell metadata before shifting it out of grid', () => {
+		const cases: readonly {
+			readonly op: Operation
+			readonly setup: (sheet: Sheet) => void
+			readonly expectedRef: string
+			readonly expectedLabel: string
+		}[] = [
+			{
+				op: { op: 'insertRows', sheet: 'Sheet1', at: 0, count: 1 },
+				setup: (sheet) => {
+					sheet.comments.set('A1048576', { text: 'edge note' })
+				},
+				expectedRef: 'Sheet1!A1048576',
+				expectedLabel: 'comment',
+			},
+			{
+				op: { op: 'insertCols', sheet: 'Sheet1', at: 0, count: 1 },
+				setup: (sheet) => {
+					sheet.hyperlinks.set('XFD1', { target: 'https://example.com/edge' })
+				},
+				expectedRef: 'Sheet1!XFD1',
+				expectedLabel: 'hyperlink',
+			},
+			{
+				op: { op: 'insertRows', sheet: 'Sheet1', at: 1_048_575, count: 1 },
+				setup: (sheet) => {
+					sheet.rowHeights.set(1_048_575, 24)
+				},
+				expectedRef: 'Sheet1!1048576:1048576',
+				expectedLabel: 'row height',
+			},
+			{
+				op: { op: 'insertCols', sheet: 'Sheet1', at: 16_383, count: 1 },
+				setup: (sheet) => {
+					sheet.colDefs.push({ min: 16_383, max: 16_383, width: 18, customWidth: true })
+				},
+				expectedRef: 'Sheet1!XFD:XFD',
+				expectedLabel: 'column definition 1',
+			},
+		]
+
+		for (const { op, setup: setupSheet, expectedRef, expectedLabel } of cases) {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			setupSheet(sheet)
+			const beforeMetadata = JSON.stringify({
+				comments: [...sheet.comments],
+				threadedComments: sheet.threadedComments,
+				hyperlinks: [...sheet.hyperlinks],
+				rowHeights: [...sheet.rowHeights],
+				rowDefs: [...sheet.rowDefs],
+				colWidths: [...sheet.colWidths],
+				colDefs: sheet.colDefs,
+			})
+
+			const result = applyOperation(wb, op)
+
+			expectErr(result)
+			expect(result.error.code, op.op).toBe('INVALID_RANGE')
+			expect(result.error.refs, op.op).toEqual([expectedRef])
+			expect(result.error.details, op.op).toMatchObject({
+				kind: 'structural-insert-shifts-cell-metadata-out-of-bounds',
+				label: expectedLabel,
+			})
+			expect(
+				JSON.stringify({
+					comments: [...sheet.comments],
+					threadedComments: sheet.threadedComments,
+					hyperlinks: [...sheet.hyperlinks],
+					rowHeights: [...sheet.rowHeights],
+					rowDefs: [...sheet.rowDefs],
+					colWidths: [...sheet.colWidths],
+					colDefs: sheet.colDefs,
+				}),
+				op.op,
+			).toBe(beforeMetadata)
+		}
+	})
+
 	test('row and column inserts reject merged ranges before shifting them out of grid', () => {
 		const cases: readonly {
 			readonly op: Operation

@@ -91,6 +91,19 @@ function applyAxisShift(
 	if (insertOverflowBlocker) {
 		return err(insertShiftedCellOutOfBoundsError(sheet, axis, at, count, insertOverflowBlocker))
 	}
+	const insertCellMetadataOverflowBlocker =
+		delta > 0 ? findInsertShiftedCellMetadataOutOfBounds(sheet, axis, at, count) : null
+	if (insertCellMetadataOverflowBlocker) {
+		return err(
+			insertShiftedCellMetadataOutOfBoundsError(
+				sheet,
+				axis,
+				at,
+				count,
+				insertCellMetadataOverflowBlocker,
+			),
+		)
+	}
 	const insertMergeOverflowBlocker =
 		delta > 0 ? findInsertShiftedMergeOutOfBounds(sheet, axis, at, count) : null
 	if (insertMergeOverflowBlocker) {
@@ -322,6 +335,116 @@ function insertShiftedCellOutOfBoundsError(
 				count,
 				ref: qualifiedRef,
 				shiftedRef: cell.shiftedRef,
+			},
+		},
+	)
+}
+
+interface InsertOverflowCellMetadata {
+	readonly label: string
+	readonly ref: string
+	readonly shiftedRef: string
+}
+
+function findInsertShiftedCellMetadataOutOfBounds(
+	sheet: Sheet,
+	axis: 'row' | 'col',
+	at: number,
+	count: number,
+): InsertOverflowCellMetadata | null {
+	const overflowStart = (axis === 'row' ? EXCEL_MAX_ROWS : EXCEL_MAX_COLS) - count
+	const checkCellRef = (label: string, ref: string): InsertOverflowCellMetadata | null => {
+		try {
+			const cell = parseA1(ref)
+			const coordinate = axis === 'row' ? cell.row : cell.col
+			if (coordinate < at || coordinate < overflowStart) return null
+			const shiftedRef =
+				axis === 'row'
+					? toA1({ row: cell.row + count, col: cell.col })
+					: toA1({ row: cell.row, col: cell.col + count })
+			return { label, ref, shiftedRef }
+		} catch {
+			return null
+		}
+	}
+	const checkIndex = (
+		label: string,
+		index: number,
+		ref: string,
+		shiftedRef: string,
+	): InsertOverflowCellMetadata | null =>
+		index >= at && index >= overflowStart ? { label, ref, shiftedRef } : null
+
+	for (const ref of sheet.comments.keys()) {
+		const issue = checkCellRef('comment', ref)
+		if (issue) return issue
+	}
+	for (const comment of sheet.threadedComments) {
+		const issue = checkCellRef('threaded comment', comment.ref)
+		if (issue) return issue
+	}
+	for (const ref of sheet.hyperlinks.keys()) {
+		const issue = checkCellRef('hyperlink', ref)
+		if (issue) return issue
+	}
+	if (axis === 'row') {
+		for (const row of sheet.rowHeights.keys()) {
+			const issue = checkIndex('row height', row, rowRangeRef(row), rowRangeRef(row + count))
+			if (issue) return issue
+		}
+		for (const row of sheet.rowDefs.keys()) {
+			const issue = checkIndex('row definition', row, rowRangeRef(row), rowRangeRef(row + count))
+			if (issue) return issue
+		}
+	} else {
+		for (const col of sheet.colWidths.keys()) {
+			const issue = checkIndex(
+				'column width',
+				col,
+				columnRangeRef(col, col),
+				columnRangeRef(col + count, col + count),
+			)
+			if (issue) return issue
+		}
+		for (const [index, def] of sheet.colDefs.entries()) {
+			if (def.max < at || def.max < overflowStart) continue
+			return {
+				label: `column definition ${index + 1}`,
+				ref: columnRangeRef(def.min, def.max),
+				shiftedRef: columnRangeRef(
+					shiftInsertedCoordinate(def.min, at, count),
+					shiftInsertedCoordinate(def.max, at, count),
+				),
+			}
+		}
+	}
+	return null
+}
+
+function insertShiftedCellMetadataOutOfBoundsError(
+	sheet: Sheet,
+	axis: 'row' | 'col',
+	at: number,
+	count: number,
+	metadata: InsertOverflowCellMetadata,
+) {
+	const label = axis === 'row' ? 'row' : 'column'
+	const maxRef = axis === 'row' ? '1048576' : 'XFD'
+	const qualifiedRef = `${formatSheetName(sheet.name)}!${metadata.ref}`
+	return ascendError(
+		'INVALID_RANGE',
+		`Cannot insert ${label}s because ${metadata.label} at ${qualifiedRef} would shift outside Excel worksheet bounds`,
+		{
+			refs: [qualifiedRef],
+			suggestedFix: `Move or remove cell metadata that would shift past ${maxRef}, then retry the insert.`,
+			details: {
+				kind: 'structural-insert-shifts-cell-metadata-out-of-bounds',
+				axis,
+				at,
+				count,
+				label: metadata.label,
+				ref: qualifiedRef,
+				shiftedRef: metadata.shiftedRef,
 			},
 		},
 	)
@@ -2975,6 +3098,21 @@ function rangeToA1(range: RangeRef): string {
 	const end = toA1(range.end)
 	const body = start === end ? start : `${start}:${end}`
 	return range.sheet !== undefined ? `${formatSheetName(range.sheet)}!${body}` : body
+}
+
+function rowRangeRef(row: number): string {
+	const label = String(row + 1)
+	return `${label}:${label}`
+}
+
+function columnRangeRef(startCol: number, endCol: number): string {
+	const start = columnName(startCol)
+	const end = columnName(endCol)
+	return start === end ? `${start}:${start}` : `${start}:${end}`
+}
+
+function columnName(col: number): string {
+	return toA1({ row: 0, col }).replace(/\d+$/, '')
 }
 
 function formatSheetName(sheet: string): string {

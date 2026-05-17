@@ -103,6 +103,41 @@ describe('Workbook.clone', () => {
 		expect(wb.workbookViews[0]?.extraAttributes?.[0]?.value).toBe('16800')
 	})
 
+	test('clones connection and external-link inventories without aliasing nested metadata', () => {
+		const wb = createWorkbook()
+		wb.connectionParts.push({
+			kind: 'queryTable',
+			partPath: 'xl/queryTables/queryTable1.xml',
+			contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.queryTable+xml',
+			relationshipCount: 0,
+			queryTableFields: [{ id: 1, name: 'Name', tableColumnId: 3 }],
+		})
+		wb.externalReferenceDetails.push({
+			partPath: 'xl/externalLinks/externalLink1.xml',
+			externalLinkKind: 'externalBook',
+			externalBookSheetNames: ['Summary'],
+			externalBookDefinedNames: [{ name: 'ExtTotal', refersTo: 'Summary!$B$2', sheetId: 0 }],
+			externalLinkDdeItems: [{ name: 'R1C1', advise: true }],
+		})
+
+		const clone = wb.clone()
+		const clonedField = clone.connectionParts[0]?.queryTableFields?.[0]
+		const clonedExternal = clone.externalReferenceDetails[0]
+		expect(clonedField).toBeDefined()
+		expect(clonedExternal).toBeDefined()
+		if (!clonedField || !clonedExternal) return
+
+		;(clonedField as { name: string }).name = 'Changed'
+		;(clonedExternal.externalBookSheetNames as string[])[0] = 'ChangedSheet'
+		;(clonedExternal.externalBookDefinedNames?.[0] as { name: string }).name = 'ChangedName'
+		;(clonedExternal.externalLinkDdeItems?.[0] as { name: string }).name = 'R9C9'
+
+		expect(wb.connectionParts[0]?.queryTableFields?.[0]?.name).toBe('Name')
+		expect(wb.externalReferenceDetails[0]?.externalBookSheetNames).toEqual(['Summary'])
+		expect(wb.externalReferenceDetails[0]?.externalBookDefinedNames?.[0]?.name).toBe('ExtTotal')
+		expect(wb.externalReferenceDetails[0]?.externalLinkDdeItems?.[0]?.name).toBe('R1C1')
+	})
+
 	test('clones document properties without aliasing nested collections', () => {
 		const wb = createWorkbook()
 		wb.documentProperties = {

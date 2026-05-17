@@ -511,7 +511,7 @@ export class Workbook {
 			})),
 		)
 		clone.macroSheets.push(...this.macroSheets.map((entry) => ({ ...entry })))
-		clone.connectionParts.push(...this.connectionParts.map((entry) => ({ ...entry })))
+		clone.connectionParts.push(...this.connectionParts.map(cloneConnectionPartInfo))
 		clone.dataModelParts.push(...this.dataModelParts.map((entry) => ({ ...entry })))
 		clone.activeContent.push(...this.activeContent.map(cloneActiveContentInfo))
 		clone.workbookViews.push(
@@ -524,9 +524,37 @@ export class Workbook {
 		)
 		clone.externalReferences.push(...this.externalReferences)
 		clone.externalReferenceDetails.push(
-			...this.externalReferenceDetails.map((entry) => ({ ...entry })),
+			...this.externalReferenceDetails.map(cloneExternalReferenceInfo),
 		)
 		return clone
+	}
+}
+
+function cloneConnectionPartInfo(entry: WorkbookConnectionPartInfo): WorkbookConnectionPartInfo {
+	return {
+		...entry,
+		...(entry.queryTableFields
+			? { queryTableFields: entry.queryTableFields.map((field) => ({ ...field })) }
+			: {}),
+	}
+}
+
+function cloneExternalReferenceInfo(entry: ExternalReferenceInfo): ExternalReferenceInfo {
+	return {
+		...entry,
+		...(entry.externalBookSheetNames
+			? { externalBookSheetNames: [...entry.externalBookSheetNames] }
+			: {}),
+		...(entry.externalBookDefinedNames
+			? {
+					externalBookDefinedNames: entry.externalBookDefinedNames.map((definedName) => ({
+						...definedName,
+					})),
+				}
+			: {}),
+		...(entry.externalLinkDdeItems
+			? { externalLinkDdeItems: entry.externalLinkDdeItems.map((item) => ({ ...item })) }
+			: {}),
 	}
 }
 

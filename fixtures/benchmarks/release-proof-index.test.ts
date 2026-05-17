@@ -1181,6 +1181,14 @@ describe('release proof evidence index', () => {
 				boundary: expect.stringContaining('sheet-filter structural edit evidence only'),
 			}),
 			expect.objectContaining({
+				evidenceId: 'worksheet-metadata-sqref-structural-edit-proof',
+				acceptedScope: expect.stringMatching(/6cc5076f.*72d454c7/),
+				command: expect.stringContaining(
+					'range transfers fail closed for partial validation and conditional-format sqrefs',
+				),
+				boundary: expect.stringContaining('Local worksheet-metadata structural edit evidence only'),
+			}),
+			expect.objectContaining({
 				evidenceId: 'visual-anchor-structural-edit-proof',
 				acceptedScope: expect.stringMatching(/db987bff.*07167f8e/),
 				command: expect.stringContaining('moveRange shifts contained image anchors'),

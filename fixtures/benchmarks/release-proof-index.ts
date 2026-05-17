@@ -3387,6 +3387,17 @@ function safeOpenQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceItem[] {
 				'Sparkline, advanced-filter, and sheet-filter structural edit evidence only; it does not prove Excel rendering parity, arbitrary sparkline OOXML preservation, unsupported sparkline settings, public workbook generality, filter criteria authoring, cross-sheet filter moves, or copied filter preservation.',
 		},
 		{
+			evidenceId: 'worksheet-metadata-sqref-structural-edit-proof',
+			kind: 'test',
+			command:
+				'bun test packages/engine/src/operations.test.ts -t "range transfers fail closed for partial validation and conditional-format sqrefs|value-only range transfers can ignore partial validation and conditional-format sqrefs|range transfers preserve quoted sheet-qualified metadata sqrefs|row and column shifts preserve quoted sheet-qualified metadata sqrefs" --timeout 30000',
+			path: 'packages/engine/src/operations.test.ts; packages/engine/src/operations/structural-ops.ts; packages/engine/src/structural/ref-shift.ts',
+			acceptedScope:
+				'Commit 6cc5076f proves copyRange and moveRange fail closed before mutation when data-validation or conditional-format sqrefs partially overlap the source range, while value-only transfers can leave that metadata untouched. Commit 72d454c7 proves range transfers plus row/column shifts preserve quoted sheet-qualified sqrefs for data validations, conditional formats, x14 metadata, and protected ranges instead of dropping the sheet qualifier.',
+			boundary:
+				'Local worksheet-metadata structural edit evidence only; it does not prove SDK save/reopen coverage, public workbook generality, Excel UI-equivalent paste behavior, copied filter preservation, arbitrary x14 OOXML preservation, or complete worksheet metadata rewrite parity.',
+		},
+		{
 			evidenceId: 'visual-anchor-structural-edit-proof',
 			kind: 'test',
 			command:

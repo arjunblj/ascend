@@ -1978,7 +1978,7 @@ describe('release proof evidence index', () => {
 						'0d2cf4b4',
 						'1c107bcf',
 						'aff89b6f',
-						'80e03eb9',
+						'b553aafb',
 					]),
 					allowedWording: expect.stringContaining('TEXTAFTER'),
 					evidenceProvesIt: expect.arrayContaining([

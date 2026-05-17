@@ -3854,7 +3854,7 @@ function todayCommitClaimMatrix(): readonly ReleaseProofTodayCommitClaimMatrixRo
 				'0d2cf4b4',
 				'1c107bcf',
 				'aff89b6f',
-				'80e03eb9',
+				'b553aafb',
 			],
 			releaseOrSotaClaimBecameMoreTrue:
 				'Ascend formula/calc behavior is more credible for dynamic-array-style workflows because common IS predicates, ERROR.TYPE, SWITCH, IFS, text scalar/extraction/search/replacement/comparison/value-conversion/formatting/slicing functions, and common math/rounding/logarithmic/trigonometric/combinatorics scalar functions now map over range or array operands and spill through focused conditional contexts instead of collapsing to a top-left scalar.',

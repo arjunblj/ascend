@@ -2031,6 +2031,130 @@ describe('recalculate', () => {
 		}
 	})
 
+	test('legacy statistical compatibility functions spill over range operands in array formulas', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		const xValues = [0.5, 1.25, 2.5]
+		const probabilities = [0.2, 0.5, 0.8]
+		const means = [0, 1, 2]
+		const standardDeviations = [1, 1.5, 2]
+		const trials = [10, 20, 30]
+		const successes = [2, 5, 12]
+		const successProbabilities = [0.2, 0.3, 0.4]
+		const upperSuccesses = [4, 8, 15]
+		const degrees1 = [5, 10, 15]
+		const degrees2 = [6, 12, 18]
+		const alphas = [2, 3, 4]
+		const betas = [3, 4, 5]
+		const populations = [50, 60, 70]
+		const tails = [1, 2, 1]
+		for (let row = 0; row < 3; row++) {
+			for (const [col, values] of [
+				[0, xValues],
+				[1, probabilities],
+				[2, means],
+				[3, standardDeviations],
+				[4, trials],
+				[5, successes],
+				[6, successProbabilities],
+				[7, upperSuccesses],
+				[8, degrees1],
+				[9, degrees2],
+				[10, alphas],
+				[11, betas],
+				[12, populations],
+				[13, tails],
+			] as const) {
+				sheet.cells.set(row, col, {
+					value: numberValue(values[row] as number),
+					formula: null,
+					styleId: sid,
+				})
+			}
+		}
+		const arrayFormulas = [
+			'BETADIST(B1:B3,K1:K3,L1:L3)+0',
+			'BETAINV(B1:B3,K1:K3,L1:L3)+0',
+			'BINOMDIST(F1:F3,E1:E3,G1:G3,TRUE)+0',
+			'CRITBINOM(E1:E3,G1:G3,B1:B3)+0',
+			'CHIDIST(A1:A3,I1:I3)+0',
+			'CHIINV(B1:B3,I1:I3)+0',
+			'CONFIDENCE(B1:B3,D1:D3,E1:E3)+0',
+			'EXPONDIST(A1:A3,K1:K3,TRUE)+0',
+			'FDIST(A1:A3,I1:I3,J1:J3)+0',
+			'FINV(B1:B3,I1:I3,J1:J3)+0',
+			'GAMMADIST(A1:A3,K1:K3,L1:L3,TRUE)+0',
+			'GAMMAINV(B1:B3,K1:K3,L1:L3)+0',
+			'HYPGEOMDIST(F1:F3,E1:E3,H1:H3,M1:M3)+0',
+			'LOGINV(B1:B3,C1:C3,D1:D3)+0',
+			'LOGNORMDIST(A1:A3,C1:C3,D1:D3)+0',
+			'NEGBINOMDIST(F1:F3,E1:E3,G1:G3)+0',
+			'NORMDIST(A1:A3,C1:C3,D1:D3,TRUE)+0',
+			'NORMINV(B1:B3,C1:C3,D1:D3)+0',
+			'NORMSDIST(A1:A3)+0',
+			'NORMSINV(B1:B3)+0',
+			'POISSON(F1:F3,K1:K3,TRUE)+0',
+			'TDIST(A1:A3,I1:I3,N1:N3)+0',
+			'TINV(B1:B3,I1:I3)+0',
+			'WEIBULL(A1:A3,K1:K3,L1:L3,TRUE)+0',
+		]
+		const scalarFormulas = [
+			'BETADIST(B{r},K{r},L{r})+0',
+			'BETAINV(B{r},K{r},L{r})+0',
+			'BINOMDIST(F{r},E{r},G{r},TRUE)+0',
+			'CRITBINOM(E{r},G{r},B{r})+0',
+			'CHIDIST(A{r},I{r})+0',
+			'CHIINV(B{r},I{r})+0',
+			'CONFIDENCE(B{r},D{r},E{r})+0',
+			'EXPONDIST(A{r},K{r},TRUE)+0',
+			'FDIST(A{r},I{r},J{r})+0',
+			'FINV(B{r},I{r},J{r})+0',
+			'GAMMADIST(A{r},K{r},L{r},TRUE)+0',
+			'GAMMAINV(B{r},K{r},L{r})+0',
+			'HYPGEOMDIST(F{r},E{r},H{r},M{r})+0',
+			'LOGINV(B{r},C{r},D{r})+0',
+			'LOGNORMDIST(A{r},C{r},D{r})+0',
+			'NEGBINOMDIST(F{r},E{r},G{r})+0',
+			'NORMDIST(A{r},C{r},D{r},TRUE)+0',
+			'NORMINV(B{r},C{r},D{r})+0',
+			'NORMSDIST(A{r})+0',
+			'NORMSINV(B{r})+0',
+			'POISSON(F{r},K{r},TRUE)+0',
+			'TDIST(A{r},I{r},N{r})+0',
+			'TINV(B{r},I{r})+0',
+			'WEIBULL(A{r},K{r},L{r},TRUE)+0',
+		]
+		for (let col = 0; col < arrayFormulas.length; col++) {
+			sheet.cells.set(0, 14 + col, {
+				value: EMPTY,
+				formula: arrayFormulas[col] as string,
+				styleId: sid,
+			})
+			for (let row = 0; row < 3; row++) {
+				sheet.cells.set(row, 40 + col, {
+					value: EMPTY,
+					formula: (scalarFormulas[col] as string).replaceAll('{r}', String(row + 1)),
+					styleId: sid,
+				})
+			}
+		}
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		for (let row = 0; row < 3; row++) {
+			for (let col = 0; col < arrayFormulas.length; col++) {
+				const actual = sheet.cells.get(row, 14 + col)?.value
+				const expected = sheet.cells.get(row, 40 + col)?.value
+				expect(actual?.kind).toBe('number')
+				expect(expected?.kind).toBe('number')
+				if (actual?.kind === 'number' && expected?.kind === 'number') {
+					expect(actual.value).toBeCloseTo(expected.value, 10)
+				}
+			}
+		}
+	})
+
 	test('loan financial scalar functions spill over range operands in array formulas', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

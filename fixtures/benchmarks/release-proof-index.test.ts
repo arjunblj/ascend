@@ -2046,8 +2046,11 @@ describe('release proof evidence index', () => {
 						'77e9d6a8',
 						'662cb462',
 						'0a9c2b80',
+						'ca57e475',
 					]),
-					allowedWording: expect.stringContaining('scalar date/workday implicit intersection'),
+					allowedWording: expect.stringContaining(
+						'scalar engineering-special/complex implicit intersection',
+					),
 					evidenceProvesIt: expect.arrayContaining([
 						expect.stringContaining('NOT spills boolean masks'),
 						expect.stringContaining('common IS predicates spill boolean masks'),
@@ -2083,6 +2086,12 @@ describe('release proof evidence index', () => {
 						),
 						expect.stringContaining(
 							'engineering radix conversion functions spill over range operands',
+						),
+						expect.stringContaining(
+							'engineering special and complex scalar functions spill over range operands',
+						),
+						expect.stringContaining(
+							'engineering special and complex scalar functions implicitly intersect',
 						),
 						expect.stringContaining('rounding scalar functions spill over range operands'),
 						expect.stringContaining('logarithmic scalar functions spill over range operands'),

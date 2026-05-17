@@ -5258,6 +5258,150 @@ describe('applyOperation', () => {
 		])
 	})
 
+	test('range transfers fail closed for partial validation and conditional-format sqrefs', () => {
+		function expectBlocked(
+			setupMetadata: (sheet: Sheet) => void,
+			op: Extract<Operation, { op: 'copyRange' | 'moveRange' }>,
+			expectedDetails: Record<string, unknown>,
+			expectMetadataUnchanged: (sheet: Sheet) => void,
+		) {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			sheet.cells.set(0, 0, cell(numberValue(10)))
+			setupMetadata(sheet)
+
+			const result = applyOperation(wb, op)
+
+			expectErr(result)
+			expect(result.error.details).toMatchObject(expectedDetails)
+			expect(sheet.cells.get(0, 0)?.value).toEqual(numberValue(10))
+			expect(sheet.cells.get(0, 4)).toBeUndefined()
+			expectMetadataUnchanged(sheet)
+		}
+
+		expectBlocked(
+			(sheet) => {
+				sheet.dataValidations.push({ sqref: 'A1:C3', type: 'whole', formula1: 'A1' })
+			},
+			{ op: 'copyRange', sheet: 'Sheet1', source: 'A1:B2', target: 'E1', mode: 'all' },
+			{
+				kind: 'partial-data-validation-range-transfer',
+				action: 'copy',
+				metadataKind: 'dataValidation',
+				metadataIndex: 0,
+				metadataRef: 'A1:C3',
+				source: 'A1:B2',
+			},
+			(sheet) => {
+				expect(sheet.dataValidations).toEqual([{ sqref: 'A1:C3', type: 'whole', formula1: 'A1' }])
+			},
+		)
+
+		expectBlocked(
+			(sheet) => {
+				sheet.x14DataValidations.push({
+					index: 3,
+					sqref: 'A1:C3',
+					type: 'list',
+					formula1: 'A1:A3',
+				})
+			},
+			{ op: 'moveRange', sheet: 'Sheet1', source: 'A1:B2', target: 'E1', mode: 'all' },
+			{
+				kind: 'partial-x14-data-validation-range-transfer',
+				action: 'move',
+				metadataKind: 'x14DataValidation',
+				metadataIndex: 0,
+				metadataRef: 'A1:C3',
+				source: 'A1:B2',
+			},
+			(sheet) => {
+				expect(sheet.x14DataValidations).toEqual([
+					{ index: 3, sqref: 'A1:C3', type: 'list', formula1: 'A1:A3' },
+				])
+			},
+		)
+
+		expectBlocked(
+			(sheet) => {
+				sheet.conditionalFormats.push({
+					sqref: 'A1:C3',
+					rules: [{ type: 'expression', formulas: ['A1>0'] }],
+				})
+			},
+			{ op: 'copyRange', sheet: 'Sheet1', source: 'A1:B2', target: 'E1', mode: 'formats' },
+			{
+				kind: 'partial-conditional-format-range-transfer',
+				action: 'copy',
+				metadataKind: 'conditionalFormat',
+				metadataIndex: 0,
+				metadataRef: 'A1:C3',
+				source: 'A1:B2',
+			},
+			(sheet) => {
+				expect(sheet.conditionalFormats).toEqual([
+					{ sqref: 'A1:C3', rules: [{ type: 'expression', formulas: ['A1>0'] }] },
+				])
+			},
+		)
+
+		expectBlocked(
+			(sheet) => {
+				sheet.x14ConditionalFormats.push({
+					index: 4,
+					sqref: 'A1:C3',
+					formulas: ['A1>0'],
+					dataBar: { cfvo: [{ type: 'formula', value: 'A1' }] },
+				})
+			},
+			{ op: 'moveRange', sheet: 'Sheet1', source: 'A1:B2', target: 'E1', mode: 'styles' },
+			{
+				kind: 'partial-x14-conditional-format-range-transfer',
+				action: 'move',
+				metadataKind: 'x14ConditionalFormat',
+				metadataIndex: 0,
+				metadataRef: 'A1:C3',
+				source: 'A1:B2',
+			},
+			(sheet) => {
+				expect(sheet.x14ConditionalFormats).toEqual([
+					{
+						index: 4,
+						sqref: 'A1:C3',
+						formulas: ['A1>0'],
+						dataBar: { cfvo: [{ type: 'formula', value: 'A1' }] },
+					},
+				])
+			},
+		)
+	})
+
+	test('value-only range transfers can ignore partial validation and conditional-format sqrefs', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, cell(numberValue(10)))
+		sheet.dataValidations.push({ sqref: 'A1:C3', type: 'whole', formula1: 'A1' })
+		sheet.conditionalFormats.push({
+			sqref: 'A1:C3',
+			rules: [{ type: 'expression', formulas: ['A1>0'] }],
+		})
+
+		const result = applyOperation(wb, {
+			op: 'copyRange',
+			sheet: 'Sheet1',
+			source: 'A1:B2',
+			target: 'E1',
+			mode: 'values',
+		})
+
+		expectOk(result)
+		expect(sheet.cells.get(0, 4)?.value).toEqual(numberValue(10))
+		expect(sheet.dataValidations).toEqual([{ sqref: 'A1:C3', type: 'whole', formula1: 'A1' }])
+		expect(sheet.conditionalFormats).toEqual([
+			{ sqref: 'A1:C3', rules: [{ type: 'expression', formulas: ['A1>0'] }] },
+		])
+	})
+
 	test('hideSheet hideRows and hideCols update sheet visibility metadata', () => {
 		const wb = setup()
 		const result1 = applyOperation(wb, {

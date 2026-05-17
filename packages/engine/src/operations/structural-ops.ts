@@ -335,6 +335,17 @@ export function handleTransferRange(
 	)
 	if (!advancedFilterPlan.ok) return advancedFilterPlan
 
+	const partialMetadataBlocker = findPartialMetadataRangeTransfer(sourceSheet, source, mode)
+	if (partialMetadataBlocker) {
+		return err(
+			partialMetadataRangeTransferError(
+				op.op === 'moveRange' ? 'move' : 'copy',
+				source,
+				partialMetadataBlocker,
+			),
+		)
+	}
+
 	if (op.op === 'moveRange' && clearsSourceCellContent(mode)) {
 		const skipCells = [{ sheetName: sourceSheet.name, range: source }]
 		if (overwritesTargetFormulas(mode)) {
@@ -553,6 +564,14 @@ function pasteMerges(mode: PasteMode): boolean {
 	return mode === 'all' || mode === 'formats' || mode === 'styles'
 }
 
+function pasteValidations(mode: PasteMode): boolean {
+	return mode === 'all' || mode === 'validations'
+}
+
+function pasteConditionalFormats(mode: PasteMode): boolean {
+	return mode === 'all' || mode === 'formats' || mode === 'styles'
+}
+
 function pasteRequiresRecalc(mode: PasteMode): boolean {
 	return mode === 'all' || mode === 'values' || mode === 'formulas'
 }
@@ -766,11 +785,11 @@ function copyTransferMetadata(
 	if (mode === 'all' || mode === 'hyperlinks') {
 		copyCellMap(sourceSheet.hyperlinks, targetSheet.hyperlinks, source, rowDelta, colDelta, move)
 	}
-	if (mode === 'all' || mode === 'validations') {
+	if (pasteValidations(mode)) {
 		copyDataValidations(sourceSheet, targetSheet, source, rowDelta, colDelta, move)
 		copyX14DataValidations(sourceSheet, targetSheet, source, rowDelta, colDelta, move)
 	}
-	if (mode === 'all' || mode === 'formats' || mode === 'styles') {
+	if (pasteConditionalFormats(mode)) {
 		copyConditionalFormats(sourceSheet, targetSheet, source, rowDelta, colDelta, move)
 		copyX14ConditionalFormats(sourceSheet, targetSheet, source, rowDelta, colDelta, move)
 	}
@@ -813,6 +832,22 @@ interface AdvancedFilterTransferPlan {
 interface AdvancedFilterTransferEntry {
 	readonly index: number
 	readonly filter: SheetAdvancedFilterInfo
+}
+
+interface PartialMetadataRangeTransfer {
+	readonly detailKind:
+		| 'partial-data-validation-range-transfer'
+		| 'partial-x14-data-validation-range-transfer'
+		| 'partial-conditional-format-range-transfer'
+		| 'partial-x14-conditional-format-range-transfer'
+	readonly metadataKind:
+		| 'dataValidation'
+		| 'x14DataValidation'
+		| 'conditionalFormat'
+		| 'x14ConditionalFormat'
+	readonly index: number
+	readonly ref: string
+	readonly label: string
 }
 
 interface VisualTransferEntry {
@@ -1144,6 +1179,77 @@ function applyAdvancedFilterTransfer(plan: AdvancedFilterTransferPlan): void {
 			plan.sheet.advancedFilters[entry.index] = entry.filter
 		}
 	}
+}
+
+function findPartialMetadataRangeTransfer(
+	sheet: Sheet,
+	source: RangeRef,
+	mode: PasteMode,
+): PartialMetadataRangeTransfer | null {
+	if (pasteValidations(mode)) {
+		const dataValidation = findPartialSqrefMetadataRange(
+			sheet.dataValidations,
+			source,
+			'partial-data-validation-range-transfer',
+			'dataValidation',
+			'data validation',
+		)
+		if (dataValidation) return dataValidation
+
+		const x14DataValidation = findPartialSqrefMetadataRange(
+			sheet.x14DataValidations,
+			source,
+			'partial-x14-data-validation-range-transfer',
+			'x14DataValidation',
+			'x14 data validation',
+		)
+		if (x14DataValidation) return x14DataValidation
+	}
+
+	if (pasteConditionalFormats(mode)) {
+		const conditionalFormat = findPartialSqrefMetadataRange(
+			sheet.conditionalFormats,
+			source,
+			'partial-conditional-format-range-transfer',
+			'conditionalFormat',
+			'conditional format',
+		)
+		if (conditionalFormat) return conditionalFormat
+
+		const x14ConditionalFormat = findPartialSqrefMetadataRange(
+			sheet.x14ConditionalFormats,
+			source,
+			'partial-x14-conditional-format-range-transfer',
+			'x14ConditionalFormat',
+			'x14 conditional format',
+		)
+		if (x14ConditionalFormat) return x14ConditionalFormat
+	}
+
+	return null
+}
+
+function findPartialSqrefMetadataRange(
+	entries: readonly { readonly sqref: string; readonly deleted?: boolean }[],
+	source: RangeRef,
+	detailKind: PartialMetadataRangeTransfer['detailKind'],
+	metadataKind: PartialMetadataRangeTransfer['metadataKind'],
+	label: string,
+): PartialMetadataRangeTransfer | null {
+	for (const [index, entry] of entries.entries()) {
+		if (entry.deleted) continue
+		for (const range of parseSqref(entry.sqref)) {
+			if (!rangesOverlap(range, source) || rangeContainsRange(source, range)) continue
+			return {
+				detailKind,
+				metadataKind,
+				index,
+				ref: rangeToA1(range),
+				label: `${label} ${index + 1}`,
+			}
+		}
+	}
+	return null
 }
 
 function collectIntersectingAdvancedFilters(
@@ -1641,6 +1747,30 @@ function partialAdvancedFilterTransferError(
 				kind: 'partial-advanced-filter-range-transfer',
 				filterIndex: entry.index,
 				filterRef: entry.ref,
+				source: rangeToA1(source),
+			},
+		},
+	)
+}
+
+function partialMetadataRangeTransferError(
+	action: 'copy' | 'move',
+	source: RangeRef,
+	blocker: PartialMetadataRangeTransfer,
+): ReturnType<typeof ascendError> {
+	return ascendError(
+		'VALIDATION_ERROR',
+		`Cannot ${action} ${rangeToA1(source)} because ${blocker.label} at ${blocker.ref} partially overlaps the source range`,
+		{
+			refs: [rangeToA1(source), blocker.ref],
+			suggestedFix:
+				'Select the full validation or conditional-format range, use a paste mode that does not transfer that metadata, or remove the metadata before editing the cells.',
+			details: {
+				kind: blocker.detailKind,
+				action,
+				metadataKind: blocker.metadataKind,
+				metadataIndex: blocker.index,
+				metadataRef: blocker.ref,
 				source: rangeToA1(source),
 			},
 		},

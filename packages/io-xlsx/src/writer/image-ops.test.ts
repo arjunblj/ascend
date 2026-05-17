@@ -81,6 +81,43 @@ describe('image lifecycle operations', () => {
 		})
 	})
 
+	test('moveRange shifts contained image anchors through write and reopen', () => {
+		const wb = new Workbook()
+		wb.addSheet('Images')
+		const applied = applyOperations(wb, [
+			{
+				op: 'insertImage',
+				sheet: 'Images',
+				contentBase64: 'iVBORw0KGgo=',
+				contentType: 'image/png',
+				name: 'Logo',
+				anchor: {
+					kind: 'twoCell',
+					from: { row: 1, col: 1 },
+					to: { row: 3, col: 3 },
+					editAs: 'oneCell',
+				},
+			},
+			{ op: 'moveRange', sheet: 'Images', source: 'B2:D4', target: 'F6' },
+		])
+		expectOk(applied)
+
+		const written = writeXlsx(wb)
+		expectOk(written)
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+
+		expect(reopened.value.workbook.sheets[0]?.imageRefs[0]).toMatchObject({
+			name: 'Logo',
+			anchor: {
+				kind: 'twoCell',
+				from: { row: 5, col: 5 },
+				to: { row: 7, col: 7 },
+				editAs: 'oneCell',
+			},
+		})
+	})
+
 	test('deleteImage removes generated drawing when last image is deleted', () => {
 		const wb = new Workbook()
 		wb.addSheet('Images')

@@ -4421,6 +4421,133 @@ describe('applyOperation', () => {
 		])
 	})
 
+	test('moveRange relocates same-sheet visual anchors contained in the source range', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(1, 1, cell(numberValue(1)))
+		sheet.imageRefs.push({
+			drawingPartPath: 'xl/drawings/drawing1.xml',
+			relId: 'rIdImage1',
+			targetPath: 'xl/media/image1.png',
+			name: 'Logo',
+			anchor: {
+				kind: 'twoCell',
+				from: { row: 1, col: 1, rowOff: 10, colOff: 20 },
+				to: { row: 3, col: 3 },
+				editAs: 'oneCell',
+			},
+		})
+		sheet.drawingObjectRefs.push({
+			drawingPartPath: 'xl/drawings/drawing1.xml',
+			kind: 'textBox',
+			source: 'drawingml',
+			name: 'Callout',
+			text: 'Watch this',
+			anchor: {
+				kind: 'oneCell',
+				from: { row: 2, col: 2 },
+				cx: 100000,
+				cy: 200000,
+			},
+		})
+
+		const result = applyOperation(wb, {
+			op: 'moveRange',
+			sheet: 'Sheet1',
+			source: 'B2:D4',
+			target: 'F6',
+		})
+		expectOk(result)
+
+		expect(sheet.imageRefs[0]?.anchor).toEqual({
+			kind: 'twoCell',
+			from: { row: 5, col: 5, rowOff: 10, colOff: 20 },
+			to: { row: 7, col: 7 },
+			editAs: 'oneCell',
+		})
+		expect(sheet.drawingObjectRefs[0]?.anchor).toEqual({
+			kind: 'oneCell',
+			from: { row: 6, col: 6 },
+			cx: 100000,
+			cy: 200000,
+		})
+	})
+
+	test('range transfers fail closed for unsupported visual anchor copies and partial moves', () => {
+		const copyWorkbook = createWorkbook()
+		const copySheet = copyWorkbook.addSheet('Sheet1')
+		copySheet.cells.set(1, 1, cell(numberValue(1)))
+		copySheet.imageRefs.push({
+			drawingPartPath: 'xl/drawings/drawing1.xml',
+			relId: 'rIdImage1',
+			targetPath: 'xl/media/image1.png',
+			name: 'Logo',
+			anchor: {
+				kind: 'oneCell',
+				from: { row: 1, col: 1 },
+				cx: 100000,
+				cy: 100000,
+			},
+		})
+
+		const copyResult = applyOperation(copyWorkbook, {
+			op: 'copyRange',
+			sheet: 'Sheet1',
+			source: 'B2',
+			target: 'D4',
+		})
+		expectErr(copyResult)
+		expect(copyResult.error.details).toMatchObject({
+			kind: 'unsupported-visual-range-transfer',
+			action: 'copy',
+			visualKind: 'image',
+			visualRef: 'B2',
+			source: 'B2',
+		})
+		expect(copySheet.imageRefs[0]?.anchor).toEqual({
+			kind: 'oneCell',
+			from: { row: 1, col: 1 },
+			cx: 100000,
+			cy: 100000,
+		})
+		expect(copySheet.cells.get(3, 3)).toBeUndefined()
+
+		const moveWorkbook = createWorkbook()
+		const moveSheet = moveWorkbook.addSheet('Sheet1')
+		moveSheet.cells.set(1, 1, cell(numberValue(1)))
+		moveSheet.drawingObjectRefs.push({
+			drawingPartPath: 'xl/drawings/drawing1.xml',
+			kind: 'shape',
+			source: 'drawingml',
+			name: 'Process box',
+			anchor: {
+				kind: 'twoCell',
+				from: { row: 1, col: 1 },
+				to: { row: 3, col: 3 },
+			},
+		})
+
+		const partialMove = applyOperation(moveWorkbook, {
+			op: 'moveRange',
+			sheet: 'Sheet1',
+			source: 'B2:C3',
+			target: 'F6',
+		})
+		expectErr(partialMove)
+		expect(partialMove.error.details).toMatchObject({
+			kind: 'partial-visual-range-transfer',
+			visualKind: 'drawingObject',
+			visualRef: 'B2:D4',
+			source: 'B2:C3',
+		})
+		expect(moveSheet.drawingObjectRefs[0]?.anchor).toEqual({
+			kind: 'twoCell',
+			from: { row: 1, col: 1 },
+			to: { row: 3, col: 3 },
+		})
+		expect(moveSheet.cells.get(5, 5)).toBeUndefined()
+	})
+
 	test('copyRange rejects partial merged-cell sources and target overlaps', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

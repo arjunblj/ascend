@@ -1,10 +1,12 @@
 import type {
 	RangeRef,
 	Sheet,
+	SheetAnchorMarker,
 	SheetComment,
 	SheetConditionalFormat,
 	SheetConditionalFormatValueObject,
 	SheetDataValidation,
+	SheetImageAnchor,
 	Workbook,
 } from '@ascend/core'
 import { parseA1, parseRange, toA1 } from '@ascend/core'
@@ -288,6 +290,16 @@ export function handleTransferRange(
 				removeSourceMerges: false,
 			})
 	if (!mergePlan.ok) return mergePlan
+	const visualPlan = planVisualTransfer(
+		sourceSheet,
+		targetSheet,
+		source,
+		rowDelta,
+		colDelta,
+		mode,
+		op.op,
+	)
+	if (!visualPlan.ok) return visualPlan
 
 	if (op.op === 'moveRange' && clearsSourceCellContent(mode)) {
 		const skipCells = [{ sheetName: sourceSheet.name, range: source }]
@@ -392,6 +404,7 @@ export function handleTransferRange(
 		op.op === 'moveRange',
 	)
 	applyMergeTransfer(sourceSheet, targetSheet, mergePlan.value)
+	applyVisualTransfer(visualPlan.value)
 
 	if (op.op === 'moveRange') {
 		for (const entry of snapshot) {
@@ -734,6 +747,23 @@ interface MergeTransferPlan {
 	readonly removeSourceMerges: boolean
 }
 
+interface VisualTransferPlan {
+	readonly sheet: Sheet
+	readonly entries: readonly VisualTransferEntry[]
+}
+
+interface VisualTransferEntry {
+	readonly kind: 'image' | 'drawingObject'
+	readonly index: number
+	readonly anchor: SheetImageAnchor
+}
+
+interface VisualAnchorIntersection extends VisualTransferEntry {
+	readonly contained: boolean
+	readonly ref: string
+	readonly label: string
+}
+
 function planMergeTransfer(
 	sourceSheet: Sheet,
 	targetSheet: Sheet,
@@ -786,6 +816,140 @@ function planMergeTransfer(
 	})
 }
 
+function planVisualTransfer(
+	sourceSheet: Sheet,
+	targetSheet: Sheet,
+	source: RangeRef,
+	rowDelta: number,
+	colDelta: number,
+	mode: PasteMode,
+	operation: 'copyRange' | 'moveRange',
+): Result<VisualTransferPlan> {
+	if (mode !== 'all') return ok({ sheet: sourceSheet, entries: [] })
+	const intersecting = collectIntersectingVisualAnchors(sourceSheet, source)
+	if (intersecting.length === 0) return ok({ sheet: sourceSheet, entries: [] })
+	const first = intersecting[0]
+	if (!first) return ok({ sheet: sourceSheet, entries: [] })
+	if (operation === 'copyRange') {
+		return err(unsupportedVisualTransferError('copy', source, first))
+	}
+	if (sourceSheet !== targetSheet) {
+		return err(unsupportedVisualTransferError('move to another sheet', source, first))
+	}
+
+	const entries: VisualTransferEntry[] = []
+	for (const entry of intersecting) {
+		if (!entry.contained) return err(partialVisualTransferError(source, entry))
+		entries.push({
+			kind: entry.kind,
+			index: entry.index,
+			anchor: translateSheetImageAnchor(entry.anchor, rowDelta, colDelta),
+		})
+	}
+	return ok({ sheet: sourceSheet, entries })
+}
+
+function applyVisualTransfer(plan: VisualTransferPlan): void {
+	for (const entry of plan.entries) {
+		if (entry.kind === 'image') {
+			const image = plan.sheet.imageRefs[entry.index]
+			if (image) plan.sheet.imageRefs[entry.index] = { ...image, anchor: entry.anchor }
+		} else {
+			const object = plan.sheet.drawingObjectRefs[entry.index]
+			if (object) plan.sheet.drawingObjectRefs[entry.index] = { ...object, anchor: entry.anchor }
+		}
+	}
+}
+
+function collectIntersectingVisualAnchors(
+	sheet: Sheet,
+	source: RangeRef,
+): VisualAnchorIntersection[] {
+	const entries: VisualAnchorIntersection[] = []
+	for (const [index, image] of sheet.imageRefs.entries()) {
+		if (!image.anchor) continue
+		const range = sheetImageAnchorRange(image.anchor)
+		if (!range || !rangesOverlap(range, source)) continue
+		entries.push({
+			kind: 'image',
+			index,
+			anchor: image.anchor,
+			contained: rangeContainsRange(source, range),
+			ref: rangeToA1(range),
+			label: image.name ? `image "${image.name}"` : `image ${index + 1}`,
+		})
+	}
+	for (const [index, object] of sheet.drawingObjectRefs.entries()) {
+		if (!object.anchor) continue
+		const range = sheetImageAnchorRange(object.anchor)
+		if (!range || !rangesOverlap(range, source)) continue
+		entries.push({
+			kind: 'drawingObject',
+			index,
+			anchor: object.anchor,
+			contained: rangeContainsRange(source, range),
+			ref: rangeToA1(range),
+			label: object.name ? `drawing object "${object.name}"` : `drawing object ${index + 1}`,
+		})
+	}
+	return entries
+}
+
+function sheetImageAnchorRange(anchor: SheetImageAnchor): RangeRef | null {
+	switch (anchor.kind) {
+		case 'absolute':
+			return null
+		case 'oneCell':
+			return markerRange(anchor.from, anchor.from)
+		case 'twoCell':
+			return markerRange(anchor.from, anchor.to)
+	}
+}
+
+function markerRange(from: SheetAnchorMarker, to: SheetAnchorMarker): RangeRef {
+	return {
+		start: {
+			row: Math.min(from.row, to.row),
+			col: Math.min(from.col, to.col),
+		},
+		end: {
+			row: Math.max(from.row, to.row),
+			col: Math.max(from.col, to.col),
+		},
+	}
+}
+
+function translateSheetImageAnchor(
+	anchor: SheetImageAnchor,
+	rowDelta: number,
+	colDelta: number,
+): SheetImageAnchor {
+	switch (anchor.kind) {
+		case 'absolute':
+			return anchor
+		case 'oneCell':
+			return { ...anchor, from: translateAnchorMarker(anchor.from, rowDelta, colDelta) }
+		case 'twoCell':
+			return {
+				...anchor,
+				from: translateAnchorMarker(anchor.from, rowDelta, colDelta),
+				to: translateAnchorMarker(anchor.to, rowDelta, colDelta),
+			}
+	}
+}
+
+function translateAnchorMarker(
+	marker: SheetAnchorMarker,
+	rowDelta: number,
+	colDelta: number,
+): SheetAnchorMarker {
+	return {
+		...marker,
+		row: Math.max(0, marker.row + rowDelta),
+		col: Math.max(0, marker.col + colDelta),
+	}
+}
+
 function applyMergeTransfer(sourceSheet: Sheet, targetSheet: Sheet, plan: MergeTransferPlan): void {
 	if (plan.sourceMerges.length === 0 && plan.targetReplacedMerges.length === 0) return
 	const targetRemove = new Set(plan.targetReplacedMerges.map(rangeKey))
@@ -824,6 +988,52 @@ function partialTargetMergeError(
 			refs: [rangeToA1(target), rangeToA1(merge)],
 			suggestedFix:
 				'Choose a target that fully covers the existing merged range, unmerge it first, or paste without formats.',
+		},
+	)
+}
+
+function unsupportedVisualTransferError(
+	action: 'copy' | 'move to another sheet',
+	source: RangeRef,
+	entry: VisualAnchorIntersection,
+): ReturnType<typeof ascendError> {
+	return ascendError(
+		'VALIDATION_ERROR',
+		`Cannot ${action} ${rangeToA1(source)} because it contains ${entry.label} at ${entry.ref}`,
+		{
+			refs: [rangeToA1(source), entry.ref],
+			suggestedFix:
+				action === 'copy'
+					? 'Copy the cell data without mode "all", or insert a new image/drawing object explicitly after copying the range.'
+					: 'Move the range within the same sheet, or recreate the image/drawing object on the target sheet explicitly after moving the cells.',
+			details: {
+				kind: 'unsupported-visual-range-transfer',
+				action,
+				visualKind: entry.kind,
+				visualRef: entry.ref,
+				source: rangeToA1(source),
+			},
+		},
+	)
+}
+
+function partialVisualTransferError(
+	source: RangeRef,
+	entry: VisualAnchorIntersection,
+): ReturnType<typeof ascendError> {
+	return ascendError(
+		'VALIDATION_ERROR',
+		`Cannot move ${rangeToA1(source)} because it partially overlaps ${entry.label} at ${entry.ref}`,
+		{
+			refs: [rangeToA1(source), entry.ref],
+			suggestedFix:
+				'Move the full visual anchor range, move the cells without mode "all", or reposition the image/drawing object explicitly before moving the cells.',
+			details: {
+				kind: 'partial-visual-range-transfer',
+				visualKind: entry.kind,
+				visualRef: entry.ref,
+				source: rangeToA1(source),
+			},
 		},
 	)
 }

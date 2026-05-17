@@ -399,6 +399,41 @@ describe('performance claim baseline matrix', () => {
 			'continue optimizing or bounding the next existing `xlsx-write-sota`\ngap',
 		)
 
+		expect(markdown).toContain(
+			'## Cycle: Plain Text Workbook Writer Metadata-Key Optimization at `fd616906`',
+		)
+		expect(markdown).toContain(
+			'Classification: validated optimization. The workbook-buffered sheet writer was',
+		)
+		expect(markdown).toContain(
+			'`packages/io-xlsx/src/writer/sheet.ts` now computes `formulaStorageKey(row,\n  col)` only when `storedFormulaText` or `preservedCellMetadata` is non-empty.',
+		)
+		expect(markdown).toContain(
+			'/private/tmp/ascend-writer-key-current-fd616906-runs/plain-text-baseline-repeat40.json',
+		)
+		expect(markdown).toContain(
+			'/private/tmp/ascend-writer-key-current-fd616906-runs/plain-text-patched-repeat40.json',
+		)
+		expect(markdown).toContain(
+			'| Baseline | 4.780 | 6.607 | 0.211 | 8.126 | 10.175 | 0.135 | 8.367 M cells/s | 161.8 MiB | 176828 |',
+		)
+		expect(markdown).toContain(
+			'| Patched | 4.094 | 4.762 | 0.076 | 7.024 | 7.999 | 0.058 | 9.771 M cells/s | 161.1 MiB | 176828 |',
+		)
+		expect(markdown).toContain('patched write median improved by `14.36%`')
+		expect(markdown).toContain('write p95 improved by\n`27.92%`')
+		expect(markdown).toContain(
+			'(pass) writeXlsx > preserves original stored formula text when unrelated edits dirty the sheet',
+		)
+		expect(markdown).toContain(
+			'| `ascend-external-writer` | ran/won | 4.319 | 4.615 | 0.033 | 97.5 MiB | 169097 |',
+		)
+		expect(markdown).toContain(
+			'| `fastexcel-java` | ran/lost vs Ascend | 46.587 | 239.669 | 0.851 | 1584.0 MiB | 227254 |',
+		)
+		expect(markdown).toContain('"Ascend improved every write workload."')
+		expect(markdown).toContain('do not optimize this same plain-text workbook-buffered row again')
+
 		expect(markdown).toContain('## Full Current-Commit Gate: XLSX Read SOTA')
 		expect(markdown).toContain(
 			'Classification: blocked/defer. No production optimization is justified',

@@ -244,6 +244,8 @@ function buildSheetXmlToSink(
 		.sort((a, b) => a[0] - b[0])
 	const rowIterator = sheet.cells.iterateRows()
 	const columnNameCache: string[] = []
+	const hasStoredFormulaText = sheet.storedFormulaText.size > 0
+	const hasPreservedCellMetadata = sheet.preservedCellMetadata.size > 0
 	let nextRow = rowIterator.next()
 	let rowHeightIndex = 0
 	let rowDefIndex = 0
@@ -345,6 +347,8 @@ function buildSheetXmlToSink(
 				continue
 			}
 			const resolvedRef = ref ?? `${cachedColumnName(columnNameCache, col)}${rowNumber}`
+			const metadataKey =
+				hasStoredFormulaText || hasPreservedCellMetadata ? formulaStorageKey(row, col) : undefined
 			pushCellXml(
 				rowOut,
 				resolvedRef,
@@ -352,8 +356,8 @@ function buildSheetXmlToSink(
 				ssTable,
 				xfMap,
 				sharedFormulaExpansions,
-				sheet.storedFormulaText.get(formulaStorageKey(row, col)),
-				sheet.preservedCellMetadata.get(formulaStorageKey(row, col)),
+				metadataKey === undefined ? undefined : sheet.storedFormulaText.get(metadataKey),
+				metadataKey === undefined ? undefined : sheet.preservedCellMetadata.get(metadataKey),
 				options.useInlineStrings,
 				options.usePlainStrings,
 			)

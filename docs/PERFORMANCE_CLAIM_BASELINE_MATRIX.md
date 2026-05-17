@@ -1762,6 +1762,146 @@ Forbidden wording:
 Next action: continue optimizing or bounding the next existing `xlsx-write-sota`
 gap; do not revisit string-heavy unless a full-profile rerun regresses this row.
 
+## Cycle: Plain Text Workbook Writer Metadata-Key Optimization at `fd616906`
+
+Classification: validated optimization. The workbook-buffered sheet writer was
+computing a per-cell formula metadata key even when the sheet had no stored
+formula text and no preserved formula cell metadata. The patched writer checks
+those maps once per sheet and only computes the key when a lookup is possible.
+
+Workflow: generated XLSX write for plain text values, 2000 rows x 20 columns,
+using the workbook-buffered writer path.
+
+Why it matters for release: this is the small workbook writer path used by
+normal `writeXlsx` value exports. The result improves a user-visible generated
+write workflow without changing workbook semantics. It is not a broad
+`xlsx-write-sota` claim because it is a focused phase A/B and the full write
+profile still has coverage blockers.
+
+Public/tracked-clean input: `xlsx-write-phase` generated the `plain-text`
+workload from tracked benchmark code in a clean detached worktree at base commit
+`fd6169060eba7e45edbdf83d1f18d97ddcda11b4`. The patched run applied only the
+production diff for `packages/io-xlsx/src/writer/sheet.ts`. No private corpus or
+local research workbook was used.
+
+Production change:
+
+- `packages/io-xlsx/src/writer/sheet.ts` now computes `formulaStorageKey(row,
+  col)` only when `storedFormulaText` or `preservedCellMetadata` is non-empty.
+- Existing writer tests continue to prove stored formula text and formula cell
+  metadata survive unrelated dirty-sheet edits.
+
+Commands:
+
+```bash
+git worktree add --detach /private/tmp/ascend-writer-key-current-fd616906 fd6169060eba7e45edbdf83d1f18d97ddcda11b4
+cd /private/tmp/ascend-writer-key-current-fd616906
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun install --frozen-lockfile
+mkdir -p /private/tmp/ascend-writer-key-current-fd616906-runs
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /usr/bin/time -l /Users/arjun/.bun/bin/bun run fixtures/benchmarks/xlsx-write-phase.ts --workload plain-text --rows 2000 --cols 20 --repeat 40 --warmup 5 --gc-between-samples --json > /private/tmp/ascend-writer-key-current-fd616906-runs/plain-text-baseline-repeat40.json 2> /private/tmp/ascend-writer-key-current-fd616906-runs/plain-text-baseline-repeat40-time.txt
+git apply /private/tmp/ascend-writer-sheet-metadata-key.patch
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /usr/bin/time -l /Users/arjun/.bun/bin/bun run fixtures/benchmarks/xlsx-write-phase.ts --workload plain-text --rows 2000 --cols 20 --repeat 40 --warmup 5 --gc-between-samples --json > /private/tmp/ascend-writer-key-current-fd616906-runs/plain-text-patched-repeat40.json 2> /private/tmp/ascend-writer-key-current-fd616906-runs/plain-text-patched-repeat40-time.txt
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /usr/bin/time -l /Users/arjun/.bun/bin/bun run fixtures/benchmarks/xlsx-write-phase.ts --workload plain-text --rows 2000 --cols 20 --repeat 3 --warmup 1 --gc-between-samples --validate --json > /private/tmp/ascend-writer-key-current-fd616906-runs/plain-text-patched-validate.json 2> /private/tmp/ascend-writer-key-current-fd616906-runs/plain-text-patched-validate-time.txt
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun test packages/io-xlsx/src/writer/writer.test.ts -t 'preserves original stored formula text when unrelated edits dirty the sheet|preserves formula cell metadata when unrelated edits dirty the sheet'
+TMPDIR=/private/tmp ACCEPT_NPOI_OSMF_LICENSE=1 env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /usr/bin/time -l /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-io.ts --json --category write --competitor all --execution-scope external-process --source-mode generated-write --libraries ascend-external-writer,rust-xlsxwriter,excelize,sheetjs,fastexcel-java --workload plain-text --repeat 15 --warmup 3 --validation-mode each --write-runner-manifest fixtures/benchmarks/runners/sota-writers.manifest.json > /private/tmp/ascend-writer-key-current-fd616906-runs/plain-text-patched-external-repeat15.json 2> /private/tmp/ascend-writer-key-current-fd616906-runs/plain-text-patched-external-repeat15-time.txt
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-scoreboard.ts /private/tmp/ascend-writer-key-current-fd616906-runs/plain-text-patched-external-repeat15.json --json --metric medianMs --require-profile xlsx-write-sota --assert-profile-leader ascend > /private/tmp/ascend-writer-key-current-fd616906-runs/plain-text-patched-external-repeat15-scoreboard.json
+```
+
+Environment:
+
+- Base commit: `fd6169060eba7e45edbdf83d1f18d97ddcda11b4`
+- Worktree: clean detached worktree at
+  `/private/tmp/ascend-writer-key-current-fd616906`; patched worktree reported
+  only `packages/io-xlsx/src/writer/sheet.ts` dirty.
+- Bun runtime: `1.3.13`
+- Node CLI: `v26.0.0`; competitive harness runtime metadata reported Node
+  `24.3.0`
+- Platform: Darwin arm64, macOS kernel `25.4.0`
+- Runtime profile: `workload plain-text`, `rows 2000`, `cols 20`, `repeat 40`,
+  `warmup 5`, `gcBetweenSamples true`, `streaming false`,
+  `writerPath workbook-buffered`.
+
+Raw output:
+
+```text
+/private/tmp/ascend-writer-key-current-fd616906-runs/plain-text-baseline-repeat40.json
+/private/tmp/ascend-writer-key-current-fd616906-runs/plain-text-baseline-repeat40-time.txt
+/private/tmp/ascend-writer-key-current-fd616906-runs/plain-text-patched-repeat40.json
+/private/tmp/ascend-writer-key-current-fd616906-runs/plain-text-patched-repeat40-time.txt
+/private/tmp/ascend-writer-key-current-fd616906-runs/plain-text-patched-validate.json
+/private/tmp/ascend-writer-key-current-fd616906-runs/plain-text-patched-external-repeat15.json
+/private/tmp/ascend-writer-key-current-fd616906-runs/plain-text-patched-external-repeat15-scoreboard.json
+```
+
+Focused workbook-buffered phase A/B, repeat 40 after 5 warmups:
+
+| Run | Write median ms | Write p95 ms | Write CV | Total median ms | Total p95 ms | Total CV | Median throughput | Peak RSS | Bytes |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Baseline | 4.780 | 6.607 | 0.211 | 8.126 | 10.175 | 0.135 | 8.367 M cells/s | 161.8 MiB | 176828 |
+| Patched | 4.094 | 4.762 | 0.076 | 7.024 | 7.999 | 0.058 | 9.771 M cells/s | 161.1 MiB | 176828 |
+
+Comparison: patched write median improved by `14.36%`, write p95 improved by
+`27.92%`, and total median improved by `13.57%`. Output size was unchanged.
+Process-level `/usr/bin/time -l` reported 170,082,304 bytes maximum resident set
+size for baseline and 169,394,176 bytes for patched.
+
+Correctness: patched `--validate` repeat 3 passed reopen validation for the same
+40,000 cells, with `validateMedianMs 68.985` and unchanged `176828` median
+bytes. Focused writer tests passed:
+
+```text
+packages/io-xlsx/src/writer/writer.test.ts:
+(pass) writeXlsx > preserves original stored formula text when unrelated edits dirty the sheet
+(pass) writeXlsx > preserves formula cell metadata when unrelated edits dirty the sheet
+```
+
+Current external context, patched repeat 15 after 3 warmups:
+
+| Runner | Status vs Ascend | Median ms | P95 ms | CV | Peak RSS | Output bytes |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| `ascend-external-writer` | ran/won | 4.319 | 4.615 | 0.033 | 97.5 MiB | 169097 |
+| `excelize` | ran/lost vs Ascend | 26.881 | 52.524 | 0.273 | 23.5 MiB | 142890 |
+| `sheetjs` | ran/lost vs Ascend | 28.253 | 30.247 | 0.041 | 280.7 MiB | 1832541 |
+| `rust-xlsxwriter` | ran/lost vs Ascend | 33.953 | 36.438 | 0.034 | 26.7 MiB | 229138 |
+| `fastexcel-java` | ran/lost vs Ascend | 46.587 | 239.669 | 0.851 | 1584.0 MiB | 227254 |
+
+Scoreboard result:
+
+- Focused patched external row: `leaderFailures: []` and
+  `profileLeaderFailures: []`.
+- The full `xlsx-write-sota` gate still fails coverage because this row omits
+  other workloads and several required writers for `plain-text`.
+
+Semantic comparability: the phase A/B measures the same generated workbook
+writer path and validates reopen semantics after the patch. The external row
+uses generated-write post-operation validation for the same 40,000-cell plain
+text shape, but it is current patched context, not a before/after external A/B.
+Memory and file size are not normalized across external writers; Excelize and
+rust_xlsxwriter use less RSS, while Ascend is faster by median and p95 on the
+completed focused row.
+
+Humble allowed wording:
+
+> On the generated 2000 x 20 plain-text workbook-buffered write phase at base
+> commit `fd616906`, skipping impossible formula metadata key lookups improved
+> Ascend's median write time by 14.36% and p95 by 27.92% without changing output
+> size or reopen validation. A current patched external plain-text row remained
+> faster by median and p95 than the completed Excelize, SheetJS,
+> rust_xlsxwriter, and FastExcel Java rows.
+
+Forbidden wording:
+
+- "Ascend is SOTA for XLSX write."
+- "Ascend beats every generated XLSX writer."
+- "Ascend improved every write workload."
+- "Ascend has the smallest plain-text XLSX."
+- Any wording that treats this focused phase A/B as a full-profile promotion.
+
+Next action: do not optimize this same plain-text workbook-buffered row again
+unless a current full write gate regresses it. Continue with remaining broad
+write coverage blockers, feature-rich comparability, or real-workbook workflow
+latency.
+
 ## Cycle: String Heavy Write Current Fastest Comparable Row
 
 Classification: comparable external evidence. This row refreshes the optimized

@@ -1139,6 +1139,104 @@ describe('recalculate', () => {
 		expect(sheet.cells.get(2, 5)?.value).toEqual(stringValue('small'))
 	})
 
+	test('character code and repeat text functions spill over range operands in array formulas', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(65), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(66), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: numberValue(67), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, { value: stringValue('A\u0001B'), formula: null, styleId: sid })
+		sheet.cells.set(1, 1, { value: stringValue('\u0002CD'), formula: null, styleId: sid })
+		sheet.cells.set(2, 1, { value: stringValue('EF\u0003'), formula: null, styleId: sid })
+		sheet.cells.set(0, 2, { value: stringValue('x'), formula: null, styleId: sid })
+		sheet.cells.set(1, 2, { value: stringValue('ab'), formula: null, styleId: sid })
+		sheet.cells.set(2, 2, { value: stringValue('Q'), formula: null, styleId: sid })
+		sheet.cells.set(0, 3, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(1, 3, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(2, 3, { value: numberValue(3), formula: null, styleId: sid })
+		sheet.cells.set(0, 4, { value: stringValue('A'), formula: null, styleId: sid })
+		sheet.cells.set(1, 4, { value: stringValue('BC'), formula: null, styleId: sid })
+		sheet.cells.set(2, 4, { value: stringValue('DEF'), formula: null, styleId: sid })
+		sheet.cells.set(0, 5, {
+			value: EMPTY,
+			formula: 'CHAR(A1:A3)&UNICHAR(A1:A3)',
+			styleId: sid,
+		})
+		sheet.cells.set(0, 6, {
+			value: EMPTY,
+			formula: 'CODE(E1:E3)+UNICODE(E1:E3)',
+			styleId: sid,
+		})
+		sheet.cells.set(0, 7, {
+			value: EMPTY,
+			formula: 'CLEAN(B1:B3)&""',
+			styleId: sid,
+		})
+		sheet.cells.set(0, 8, {
+			value: EMPTY,
+			formula: 'REPT(C1:C3,D1:D3)&""',
+			styleId: sid,
+		})
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(0, 5)?.value).toEqual(stringValue('AA'))
+		expect(sheet.cells.get(1, 5)?.value).toEqual(stringValue('BB'))
+		expect(sheet.cells.get(2, 5)?.value).toEqual(stringValue('CC'))
+		expect(sheet.cells.get(0, 6)?.value).toEqual(numberValue(130))
+		expect(sheet.cells.get(1, 6)?.value).toEqual(numberValue(132))
+		expect(sheet.cells.get(2, 6)?.value).toEqual(numberValue(136))
+		expect(sheet.cells.get(0, 7)?.value).toEqual(stringValue('AB'))
+		expect(sheet.cells.get(1, 7)?.value).toEqual(stringValue('CD'))
+		expect(sheet.cells.get(2, 7)?.value).toEqual(stringValue('EF'))
+		expect(sheet.cells.get(0, 8)?.value).toEqual(stringValue('x'))
+		expect(sheet.cells.get(1, 8)?.value).toEqual(stringValue('abab'))
+		expect(sheet.cells.get(2, 8)?.value).toEqual(stringValue('QQQ'))
+	})
+
+	test('numeric text formatting functions spill over range operands in array formulas', () => {
+		const wb = createWorkbook()
+		const sheet = wb.addSheet('Sheet1')
+		sheet.cells.set(0, 0, { value: numberValue(0.125), formula: null, styleId: sid })
+		sheet.cells.set(1, 0, { value: numberValue(0.5), formula: null, styleId: sid })
+		sheet.cells.set(2, 0, { value: numberValue(1.25), formula: null, styleId: sid })
+		sheet.cells.set(0, 2, { value: numberValue(1234.56), formula: null, styleId: sid })
+		sheet.cells.set(1, 2, { value: numberValue(-1234.56), formula: null, styleId: sid })
+		sheet.cells.set(2, 2, { value: numberValue(0.125), formula: null, styleId: sid })
+		sheet.cells.set(0, 3, { value: numberValue(1), formula: null, styleId: sid })
+		sheet.cells.set(1, 3, { value: numberValue(0), formula: null, styleId: sid })
+		sheet.cells.set(2, 3, { value: numberValue(2), formula: null, styleId: sid })
+		sheet.cells.set(0, 1, {
+			value: EMPTY,
+			formula: 'TEXT(A1:A3,"0.0%")&""',
+			styleId: sid,
+		})
+		sheet.cells.set(0, 4, {
+			value: EMPTY,
+			formula: 'DOLLAR(C1:C3,D1:D3)&""',
+			styleId: sid,
+		})
+		sheet.cells.set(0, 5, {
+			value: EMPTY,
+			formula: 'FIXED(C1:C3,D1:D3,FALSE)&""',
+			styleId: sid,
+		})
+
+		const result = recalculate(wb, makeCtx())
+
+		expect(result.errors).toEqual([])
+		expect(sheet.cells.get(0, 1)?.value).toEqual(stringValue('12.5%'))
+		expect(sheet.cells.get(1, 1)?.value).toEqual(stringValue('50.0%'))
+		expect(sheet.cells.get(2, 1)?.value).toEqual(stringValue('125.0%'))
+		expect(sheet.cells.get(0, 4)?.value).toEqual(stringValue('$1,234.6'))
+		expect(sheet.cells.get(1, 4)?.value).toEqual(stringValue('($1,235)'))
+		expect(sheet.cells.get(2, 4)?.value).toEqual(stringValue('$0.13'))
+		expect(sheet.cells.get(0, 5)?.value).toEqual(stringValue('1,234.6'))
+		expect(sheet.cells.get(1, 5)?.value).toEqual(stringValue('-1,235'))
+		expect(sheet.cells.get(2, 5)?.value).toEqual(stringValue('0.13'))
+	})
+
 	test('common math scalar functions spill over range operands in array formulas', () => {
 		const wb = createWorkbook()
 		const sheet = wb.addSheet('Sheet1')

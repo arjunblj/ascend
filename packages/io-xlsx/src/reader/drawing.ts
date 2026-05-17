@@ -457,7 +457,7 @@ function parseAnchoredImage(
 	if (!pic) return null
 	const blipFill = (pic['xdr:blipFill'] ?? pic.blipFill) as XmlNode | undefined
 	const blip = (blipFill?.['a:blip'] ?? blipFill?.blip) as XmlNode | undefined
-	const relId = blip ? (attr(blip, 'r:embed') ?? attr(blip, 'embed')) : undefined
+	const relId = blip ? relationshipEmbedFromNode(blip) : undefined
 	if (!relId) return null
 	const relationship = relationships.get(relId)
 	if (!relationship) return null
@@ -491,6 +491,15 @@ function parseAnchoredImage(
 	if (parsedAnchor) imageRef.anchor = parsedAnchor
 
 	return imageRef as SheetImageRef
+}
+
+function relationshipEmbedFromNode(node: XmlNode): string | undefined {
+	const direct = attr(node, 'r:embed') ?? attr(node, 'embed')
+	if (direct !== undefined) return direct
+	for (const [name, value] of Object.entries(node)) {
+		if (name.startsWith('@_') && name.endsWith(':embed')) return String(value)
+	}
+	return undefined
 }
 
 function resolveRelationshipTarget(drawingPath: string, relationship: Relationship): string {

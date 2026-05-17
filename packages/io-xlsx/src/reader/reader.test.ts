@@ -2953,13 +2953,13 @@ describe('readXlsx', () => {
 			'xl/drawings/drawing1.xml': `<?xml version="1.0"?>
 <xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing"
   xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
-  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  xmlns:rel="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
   <xdr:twoCellAnchor editAs="oneCell">
     <xdr:from><xdr:col>1</xdr:col><xdr:row>2</xdr:row><xdr:colOff>10</xdr:colOff><xdr:rowOff>20</xdr:rowOff></xdr:from>
     <xdr:to><xdr:col>3</xdr:col><xdr:row>4</xdr:row><xdr:colOff>30</xdr:colOff><xdr:rowOff>40</xdr:rowOff></xdr:to>
     <xdr:pic>
       <xdr:nvPicPr><xdr:cNvPr id="1" name="Image 1" descr="Hero"/></xdr:nvPicPr>
-      <xdr:blipFill><a:blip r:embed="rIdImg"/></xdr:blipFill>
+      <xdr:blipFill><a:blip rel:embed="rIdImg"/></xdr:blipFill>
     </xdr:pic>
   </xdr:twoCellAnchor>
 </xdr:wsDr>`,

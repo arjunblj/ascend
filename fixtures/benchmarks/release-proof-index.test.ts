@@ -2012,6 +2012,7 @@ describe('release proof evidence index', () => {
 						'2289b6f1',
 						'58b3e8e4',
 						'b3563bc4',
+						'd8eec728',
 					]),
 					allowedWording: expect.stringContaining('NOT'),
 					evidenceProvesIt: expect.arrayContaining([
@@ -2029,6 +2030,7 @@ describe('release proof evidence index', () => {
 						expect.stringContaining(
 							'common date and time scalar functions spill over range operands',
 						),
+						expect.stringContaining('date interval scalar functions spill over range operands'),
 						expect.stringContaining('common math scalar functions spill over range operands'),
 						expect.stringContaining('math conversion scalar functions spill over range operands'),
 						expect.stringContaining(

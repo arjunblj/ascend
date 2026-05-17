@@ -254,6 +254,7 @@ export function readXlsxArchive(
 		const workbookContentType = contentTypes.overrides.get(workbookPath)
 		workbook.preservedXml = {
 			workbookPath,
+			...(contentTypesXml ? { contentTypesXml } : {}),
 			...(wbRelsXml ? { workbookRelsPath: wbRelsPath } : {}),
 			...(workbookContentType ? { contentType: workbookContentType } : {}),
 			contentTypeDefaults: Array.from(contentTypes.defaults, ([extension, contentType]) => ({

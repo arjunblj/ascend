@@ -1,4 +1,5 @@
 import type { PreservationCapsule } from '../preserve.ts'
+import { escapeXml } from '../xml.ts'
 import { ChunkedStringBuilder } from './chunked-string-builder.ts'
 
 const XML_HEADER = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
@@ -13,6 +14,7 @@ const CT_SHARED_STRINGS =
 const CT_STYLES = 'application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml'
 const CT_CORE_PROPS = 'application/vnd.openxmlformats-package.core-properties+xml'
 const CT_APP_PROPS = 'application/vnd.openxmlformats-officedocument.extended-properties+xml'
+const XML_ATTR_RE = /([A-Za-z_][\w:.-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/g
 
 export interface ContentTypeDefault {
 	readonly extension: string
@@ -31,7 +33,11 @@ export function buildContentTypesXml(
 		corePropsPath: 'docProps/core.xml',
 		appPropsPath: 'docProps/app.xml',
 	},
-	options: { readonly includeStyles?: boolean; readonly includeDocProps?: boolean } = {},
+	options: {
+		readonly includeStyles?: boolean
+		readonly includeDocProps?: boolean
+		readonly preservedContentTypesXml?: string
+	} = {},
 ): string {
 	const out = new ChunkedStringBuilder()
 	const defaults = new Map<string, string>()
@@ -53,7 +59,7 @@ export function buildContentTypesXml(
 		out.push(`<Override PartName="${pn}" ContentType="${contentType}"/>`)
 	}
 	out.push(XML_HEADER)
-	out.push(`<Types xmlns="${NS}">`)
+	out.push(buildTypesOpenTag(options.preservedContentTypesXml))
 	if (preservedDefaults) {
 		for (const entry of preservedDefaults) {
 			pushDefault(entry.extension, entry.contentType)
@@ -105,4 +111,33 @@ export function buildContentTypesXml(
 
 	out.push('</Types>')
 	return out.toString()
+}
+
+function buildTypesOpenTag(sourceXml: string | undefined): string {
+	const attrs = new Map<string, string>([['xmlns', NS]])
+	for (const [name, value] of extractSourceTypesRootAttrs(sourceXml)) {
+		if (!attrs.has(name)) attrs.set(name, value)
+	}
+	return `<Types ${Array.from(attrs, ([name, value]) => `${name}="${escapeXml(value)}"`).join(' ')}>`
+}
+
+function extractSourceTypesRootAttrs(sourceXml: string | undefined): readonly [string, string][] {
+	if (!sourceXml) return []
+	const rootMatch = /<Types\b([^>]*)>/i.exec(sourceXml)
+	if (!rootMatch) return []
+	const rawAttrs = rootMatch[1]
+	if (!rawAttrs) return []
+	const attrs: [string, string][] = []
+	XML_ATTR_RE.lastIndex = 0
+	for (const match of rawAttrs.matchAll(XML_ATTR_RE)) {
+		const name = match[1]
+		const value = match[2] ?? match[3]
+		if (!name || value === undefined || name === 'xmlns' || !isXmlAttributeName(name)) continue
+		attrs.push([name, value])
+	}
+	return attrs
+}
+
+function isXmlAttributeName(name: string): boolean {
+	return /^[A-Za-z_][\w:.-]*$/.test(name)
 }

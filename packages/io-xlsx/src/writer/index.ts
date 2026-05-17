@@ -2419,7 +2419,13 @@ export function planWriteXlsx(
 						finalPartPaths,
 					),
 					{ corePropsPath, appPropsPath },
-					{ includeStyles: shouldWriteStyles, includeDocProps: shouldWriteDocProps },
+					{
+						includeStyles: shouldWriteStyles,
+						includeDocProps: shouldWriteDocProps,
+						...(workbook.preservedXml?.contentTypesXml
+							? { preservedContentTypesXml: workbook.preservedXml.contentTypesXml }
+							: {}),
+					},
 				)
 			},
 		)

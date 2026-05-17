@@ -198,6 +198,7 @@ export interface WorkbookPreservedXml {
 	readonly workbookXml?: string
 	readonly workbookRelsPath?: string
 	readonly workbookRelsXml?: string
+	readonly contentTypesXml?: string
 	readonly contentType?: string
 	readonly contentTypeDefaults?: readonly WorkbookPreservedContentTypeDefault[]
 	readonly contentTypeOverrides?: readonly WorkbookPreservedContentTypeOverride[]

@@ -3487,6 +3487,64 @@ describe('writeXlsx', () => {
 		expect(contentTypes).toContain('PartName="/xl/_rels/workbook.xml.rels"')
 	})
 
+	it('preserves content type root attributes when package content types are regenerated', () => {
+		const sourceBytes = makeXlsx({
+			'[Content_Types].xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"
+  xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+  xmlns:ct2="urn:ascend:test-content-types"
+  mc:Ignorable="ct2"
+  ct2:packageFlavor="review">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+</Types>`,
+			'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>
+</Relationships>`,
+			'xl/_rels/workbook.xml.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+</Relationships>`,
+			'xl/workbook.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+  xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+  <sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets>
+</workbook>`,
+			'xl/worksheets/sheet1.xml': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData>
+</worksheet>`,
+		})
+		const source = readXlsx(sourceBytes)
+		expectOk(source)
+		const sheet = source.value.workbook.sheets[0]
+		if (!sheet) throw new Error('Expected source workbook to contain a sheet')
+		sheet.cells.set(0, 0, { value: numberValue(2), formula: null, styleId: S0 })
+
+		const written = writeXlsx(source.value.workbook, source.value.capsules, {
+			dirtySheetNames: ['Data'],
+		})
+		expectOk(written)
+
+		const contentTypes = new TextDecoder().decode(
+			unzipSync(written.value)['[Content_Types].xml'] ?? new Uint8Array(),
+		)
+		expect(contentTypes).toContain(
+			'xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"',
+		)
+		expect(contentTypes).toContain('xmlns:ct2="urn:ascend:test-content-types"')
+		expect(contentTypes).toContain('mc:Ignorable="ct2"')
+		expect(contentTypes).toContain('ct2:packageFlavor="review"')
+		expect(contentTypes).toContain('PartName="/xl/workbook.xml"')
+
+		const reopened = readXlsx(written.value)
+		expectOk(reopened)
+		expect(reopened.value.workbook.sheets[0]?.name).toBe('Data')
+	})
+
 	it('preserves worksheet autoFilter criteria and sort state on round-trip', () => {
 		const wb = new Workbook()
 		const sheet = wb.addSheet('Filter')

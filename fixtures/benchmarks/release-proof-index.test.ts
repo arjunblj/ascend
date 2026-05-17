@@ -1176,8 +1176,8 @@ describe('release proof evidence index', () => {
 			}),
 			expect.objectContaining({
 				evidenceId: 'sparkline-structural-edit-proof',
-				acceptedScope: expect.stringContaining('8357e5de'),
-				command: expect.stringContaining('structural row edits shift sparkline ranges'),
+				acceptedScope: expect.stringMatching(/8357e5de.*16eb2c43/),
+				command: expect.stringContaining('moveRange rewrites sparkline ranges'),
 				boundary: expect.stringContaining('Sparkline structural edit evidence only'),
 			}),
 			expect.objectContaining({
@@ -1914,6 +1914,7 @@ describe('release proof evidence index', () => {
 						'0fc4370a',
 						'c06bba18',
 						'8357e5de',
+						'16eb2c43',
 						'31141dd4',
 						'f7338c91',
 						'019f457e',
@@ -1938,7 +1939,7 @@ describe('release proof evidence index', () => {
 						expect.stringContaining('inventories OLE external link relationship binding'),
 						expect.stringContaining('commits structural row edits with shifted chart source refs'),
 						expect.stringContaining('commits moved chart source refs after save and reopen'),
-						expect.stringContaining('structural row edits shift sparkline ranges'),
+						expect.stringContaining('moveRange rewrites sparkline ranges'),
 						expect.stringContaining(
 							'commits public workbook strong-hash protection with honest metadata reporting',
 						),

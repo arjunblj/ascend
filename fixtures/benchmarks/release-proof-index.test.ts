@@ -1700,7 +1700,9 @@ describe('release proof evidence index', () => {
 				}),
 				expect.objectContaining({
 					evidenceId: 'query-table-post-write-data-connections-proof',
-					acceptedScope: expect.stringMatching(/caa08959.*a8fef5e7/),
+					acceptedScope: expect.stringMatching(
+						/caa08959.*a8fef5e7.*f0f075ac.*e55c94e6.*query-table refresh nextId and field mappings/,
+					),
 					command: expect.stringContaining(
 						'commit proof reports reopened public query-table connection metadata',
 					),
@@ -2001,9 +2003,11 @@ describe('release proof evidence index', () => {
 						'62f45cb5',
 						'b93f3493',
 						'4d85f436',
+						'f0f075ac',
+						'e55c94e6',
 					]),
 					allowedWording: expect.stringMatching(
-						/workflow discovery that points agents to postWrite\.dataConnections, postWrite\.formulaState, and postWrite\.visuals.*generated safe-edit example output.*web-query url.*workbook connection scheduling metadata edits.*DDE item metadata/,
+						/workflow discovery that points agents to postWrite\.dataConnections, postWrite\.formulaState, and postWrite\.visuals.*generated safe-edit example output.*web-query url.*query-table refresh nextId and field mappings.*workbook connection scheduling metadata edits.*DDE item metadata/,
 					),
 					evidenceProvesIt: expect.arrayContaining([
 						expect.stringContaining(

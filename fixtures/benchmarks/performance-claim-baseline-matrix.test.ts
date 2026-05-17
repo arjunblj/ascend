@@ -74,6 +74,9 @@ describe('performance claim baseline matrix', () => {
 			"Current focused TS/JS/Rust `plain-text` write coverage proves Ascend's\n  generated writer is faster by median and p95 than SheetJS, ExcelJS, and\n  rust_xlsxwriter",
 		)
 		expect(markdown).toContain(
+			"Current focused TS/JS/Rust `string-heavy` write coverage proves Ascend's\n  generated writer is faster by median and p95 than SheetJS, ExcelJS, and\n  rust_xlsxwriter",
+		)
+		expect(markdown).toContain(
 			"Current focused TS/JS/Rust `styles-heavy` write coverage proves Ascend's\n  generated writer is faster by median and p95 than SheetJS, ExcelJS, and\n  rust_xlsxwriter",
 		)
 		expect(markdown).toContain(
@@ -521,6 +524,45 @@ describe('performance claim baseline matrix', () => {
 		expect(markdown).toContain('"Ascend beats ClosedXML or NPOI on string-heavy writes."')
 		expect(markdown).toContain(
 			'continue optimizing or bounding the next existing `xlsx-write-sota`\ngap',
+		)
+
+		expect(markdown).toContain('## Cycle: String Heavy TS/JS/Rust Write Head-to-Head at `05de2c46`')
+		expect(markdown).toContain(
+			'the older string-heavy matrix row had a noisy\nrepeat-15 tail and omitted ExcelJS',
+		)
+		expect(markdown).toContain(
+			'/private/tmp/ascend-write-string-js-rust-current-05de2c46-runs/write-string-heavy-js-rust-repeat15.json',
+		)
+		expect(markdown).toContain(
+			'/private/tmp/ascend-write-string-js-rust-current-05de2c46-runs/write-string-heavy-js-rust-repeat15-p95-scoreboard.json',
+		)
+		expect(markdown).toContain('SheetJS `0.18.5`, ExcelJS `4.4.0`, rust_xlsxwriter runner')
+		expect(markdown).toContain(
+			'| `ascend-external-writer` | ran/won median and p95 | 4.056 | 4.198 | 0.028 | 90.8 MiB | 201984 |',
+		)
+		expect(markdown).toContain(
+			'| `rust-xlsxwriter` | ran/lost vs Ascend | 27.591 | 28.267 | 0.022 | 23.7 MiB | 237837 |',
+		)
+		expect(markdown).toContain(
+			'| `sheetjs` | ran/lost vs Ascend | 33.028 | 34.293 | 0.024 | 272.2 MiB | 2016032 |',
+		)
+		expect(markdown).toContain(
+			'| `exceljs` | ran/lost vs Ascend | 83.537 | 114.802 | 0.108 | 282.1 MiB | 240319 |',
+		)
+		expect(markdown).toContain(
+			'P95 scoreboard: string-heavy group winner was `ascend-external-writer`',
+		)
+		expect(markdown).toContain(
+			'Full `xlsx-write-sota` coverage still fails, with 59 coverage failures',
+		)
+		expect(markdown).toContain(
+			'rust_xlsxwriter matches sorted semantic values but not ordered cell hashes',
+		)
+		expect(markdown).toContain(
+			'"Ascend uses less memory than rust_xlsxwriter on string-heavy writes."',
+		)
+		expect(markdown).toContain(
+			'"Ascend proves byte/order-equivalent output against rust_xlsxwriter."',
 		)
 
 		expect(markdown).toContain('## Cycle: String Heavy ClosedXML/NPOI Write Coverage at `6cc5076f`')

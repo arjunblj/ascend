@@ -36,6 +36,11 @@ No broad XLSX read, XLSX write, SOTA, or QSS-leapfrog speed claim is promotable 
   generated writer is faster by median and p95 than SheetJS, ExcelJS, and
   rust_xlsxwriter on that value-write row. Treat it as scoped row evidence, not
   a broad write-speed, lowest-memory, or smallest-file claim.
+- Current focused TS/JS/Rust `string-heavy` write coverage proves Ascend's
+  generated writer is faster by median and p95 than SheetJS, ExcelJS, and
+  rust_xlsxwriter on that value-write row. This supersedes the older noisy
+  string-heavy tail boundary for current TS/JS/Rust wording, but not for
+  lowest-memory or smallest-file wording.
 - Current focused TS/JS/Rust `styles-heavy` write coverage proves Ascend's
   generated writer is faster by median and p95 than SheetJS, ExcelJS, and
   rust_xlsxwriter on that value-write row. Treat it as scoped value evidence,
@@ -2207,6 +2212,114 @@ Forbidden wording:
 
 Next action: continue optimizing or bounding the next existing `xlsx-write-sota`
 gap; do not revisit string-heavy unless a full-profile rerun regresses this row.
+
+## Cycle: String Heavy TS/JS/Rust Write Head-to-Head at `05de2c46`
+
+Classification: comparable external evidence plus stale-boundary update. This
+refreshes the generated string-heavy write row against the primary TS/JS and
+Rust floor after the string-heavy optimization and later writer/calc commits.
+Ascend is the median and p95 winner against SheetJS, ExcelJS, and
+rust_xlsxwriter in this row, so no production optimization is justified from
+the current JS/Rust floor.
+
+Workflow: generated XLSX write for varied string values, 2000 rows x 20 columns,
+40,000 populated cells.
+
+Why it matters for release: the older string-heavy matrix row had a noisy
+repeat-15 tail and omitted ExcelJS from the focused fastest-writer rerun. The
+user explicitly prioritizes heads-up JS/TS comparisons and Rust as the minimum
+performance floor, so this run closes that exact evidence gap for current
+wording.
+
+Public/tracked-clean input: `competitive-io` generated the `string-heavy`
+`source-mode generated-write` workload from tracked benchmark code at commit
+`05de2c46`. No private corpus or local research workbook was used.
+
+Commands:
+
+```bash
+git worktree add --detach /private/tmp/ascend-write-string-js-rust-current-05de2c46 05de2c463a455c57d6d85284e4808cbfd87b9c5a
+cd /private/tmp/ascend-write-string-js-rust-current-05de2c46
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun install --frozen-lockfile
+mkdir -p /private/tmp/ascend-write-string-js-rust-current-05de2c46-runs
+TMPDIR=/private/tmp ACCEPT_NPOI_OSMF_LICENSE=1 env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /usr/bin/time -l /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-io.ts --json --category write --competitor all --execution-scope external-process --source-mode generated-write --libraries ascend-external-writer,sheetjs,exceljs,rust-xlsxwriter --workload string-heavy --repeat 15 --warmup 3 --validation-mode each --write-runner-manifest fixtures/benchmarks/runners/sota-writers.manifest.json > /private/tmp/ascend-write-string-js-rust-current-05de2c46-runs/write-string-heavy-js-rust-repeat15.json 2> /private/tmp/ascend-write-string-js-rust-current-05de2c46-runs/write-string-heavy-js-rust-repeat15-time.txt
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-scoreboard.ts /private/tmp/ascend-write-string-js-rust-current-05de2c46-runs/write-string-heavy-js-rust-repeat15.json --json --metric medianMs --require-profile xlsx-write-sota --assert-profile-leader ascend > /private/tmp/ascend-write-string-js-rust-current-05de2c46-runs/write-string-heavy-js-rust-repeat15-scoreboard.json
+TMPDIR=/private/tmp env PATH=/Users/arjun/.pyenv/shims:/Users/arjun/.bun/bin:/Users/arjun/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin /Users/arjun/.bun/bin/bun run fixtures/benchmarks/competitive-scoreboard.ts /private/tmp/ascend-write-string-js-rust-current-05de2c46-runs/write-string-heavy-js-rust-repeat15.json --json --metric p95Ms --require-profile xlsx-write-sota --assert-profile-leader ascend > /private/tmp/ascend-write-string-js-rust-current-05de2c46-runs/write-string-heavy-js-rust-repeat15-p95-scoreboard.json
+```
+
+Environment:
+
+- Commit: `05de2c463a455c57d6d85284e4808cbfd87b9c5a`
+- Worktree: clean detached worktree at
+  `/private/tmp/ascend-write-string-js-rust-current-05de2c46`; `git status
+  --short --branch` reported `## HEAD (no branch)`.
+- Bun runtime: `1.3.13`
+- Node: `22.22.0`
+- Rust: `rustc 1.91.1`
+- Platform: Darwin arm64, macOS kernel `25.4.0`
+- Runner versions: SheetJS `0.18.5`, ExcelJS `4.4.0`, rust_xlsxwriter runner
+  `0.1.0` using `rust_xlsxwriter` `0.94.0`.
+- Runtime profile: `category write`, `executionScope external-process`,
+  `sourceMode generated-write`, `workload string-heavy`, `repeat 15`,
+  `warmup 3`, `validationMode each`.
+
+Raw output:
+
+```text
+/private/tmp/ascend-write-string-js-rust-current-05de2c46-runs/write-string-heavy-js-rust-repeat15.json
+/private/tmp/ascend-write-string-js-rust-current-05de2c46-runs/write-string-heavy-js-rust-repeat15-time.txt
+/private/tmp/ascend-write-string-js-rust-current-05de2c46-runs/write-string-heavy-js-rust-repeat15-scoreboard.json
+/private/tmp/ascend-write-string-js-rust-current-05de2c46-runs/write-string-heavy-js-rust-repeat15-p95-scoreboard.json
+```
+
+Focused TS/JS/Rust writer row, repeat 15 after 3 warmups:
+
+| Runner | Status vs Ascend | Median ms | P95 ms | CV | Peak RSS | Output bytes |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| `ascend-external-writer` | ran/won median and p95 | 4.056 | 4.198 | 0.028 | 90.8 MiB | 201984 |
+| `rust-xlsxwriter` | ran/lost vs Ascend | 27.591 | 28.267 | 0.022 | 23.7 MiB | 237837 |
+| `sheetjs` | ran/lost vs Ascend | 33.028 | 34.293 | 0.024 | 272.2 MiB | 2016032 |
+| `exceljs` | ran/lost vs Ascend | 83.537 | 114.802 | 0.108 | 282.1 MiB | 240319 |
+
+Process-level `/usr/bin/time -l`: `16.00 real`, `6.01 user`, `0.55 sys`,
+`318128128` maximum resident set size, `123110264` peak memory footprint.
+
+Scoreboard result:
+
+- Median scoreboard: string-heavy group winner was `ascend-external-writer`;
+  `leaderFailures: []`, `profileLeaderFailures: []`.
+- P95 scoreboard: string-heavy group winner was `ascend-external-writer`;
+  `leaderFailures: []`, `profileLeaderFailures: []`.
+- Full `xlsx-write-sota` coverage still fails, with 59 coverage failures,
+  because this is a focused row rather than a full-profile promotion run.
+
+Semantic comparability: all four rows write the same generated string-heavy
+sheet and pass external post-write semantic validation for one sheet and 40,000
+cells. Ascend and the JS writers match ordered semantic cell hashes;
+rust_xlsxwriter matches sorted semantic values but not ordered cell hashes.
+Memory and size tradeoffs remain material: rust_xlsxwriter uses less RSS, and
+ExcelJS/rust_xlsxwriter emit larger than Ascend but much smaller than SheetJS.
+
+Humble allowed wording:
+
+> On the generated 2000 x 20 string-heavy write row at commit `05de2c46`,
+> Ascend's external generated writer was faster by median and p95 than SheetJS
+> `0.18.5`, ExcelJS `4.4.0`, and rust_xlsxwriter `0.94.0`, with all rows
+> passing post-write semantic validation. This supersedes the older noisy
+> string-heavy p95 boundary for current TS/JS/Rust wording, but remains scoped
+> generated value-write evidence.
+
+Forbidden wording:
+
+- "Ascend is SOTA for XLSX write."
+- "Ascend beats every TS/JS or Rust writer on every workload."
+- "Ascend uses less memory than rust_xlsxwriter on string-heavy writes."
+- "Ascend produces the smallest string-heavy XLSX."
+- "Ascend proves byte/order-equivalent output against rust_xlsxwriter."
+
+Next action: defer production optimization from this winning row. Continue with
+another blocked JS/Rust floor row, a true current loss, or a full-profile write
+gate split that can produce complete attributable coverage.
 
 ## Cycle: Plain Text Workbook Writer Metadata-Key Optimization at `fd616906`
 

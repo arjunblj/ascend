@@ -1181,6 +1181,12 @@ describe('release proof evidence index', () => {
 				boundary: expect.stringContaining('Sparkline structural edit evidence only'),
 			}),
 			expect.objectContaining({
+				evidenceId: 'visual-anchor-structural-edit-proof',
+				acceptedScope: expect.stringMatching(/db987bff.*07167f8e/),
+				command: expect.stringContaining('moveRange shifts contained image anchors'),
+				boundary: expect.stringContaining('Visual-anchor structural edit evidence only'),
+			}),
+			expect.objectContaining({
 				evidenceId: 'public-calc-chain-formula-commit-proof',
 				acceptedScope: expect.stringContaining('31141dd4'),
 				command: expect.stringContaining('commits public calc-chain formula edits'),

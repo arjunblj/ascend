@@ -3387,6 +3387,17 @@ function safeOpenQssEvidence(): readonly ReleaseProofQssAcceptedEvidenceItem[] {
 				'Sparkline structural edit evidence only; it does not prove Excel rendering parity, arbitrary sparkline OOXML preservation, unsupported sparkline settings, or public workbook generality.',
 		},
 		{
+			evidenceId: 'visual-anchor-structural-edit-proof',
+			kind: 'test',
+			command:
+				'bun test packages/engine/src/operations.test.ts packages/io-xlsx/src/writer/image-ops.test.ts -t "row and column shifts update image and drawing object anchors|row and column deletes clamp surviving visual anchors|structural edits shift image anchors through write and reopen|moveRange relocates same-sheet visual anchors contained in the source range|range transfers fail closed for unsupported visual anchor copies and partial moves|moveRange shifts contained image anchors through write and reopen" --timeout 30000',
+			path: 'packages/engine/src/operations.test.ts; packages/engine/src/structural/sheet-topology.ts; packages/engine/src/operations/structural-ops.ts; packages/io-xlsx/src/writer/image-ops.test.ts',
+			acceptedScope:
+				'Commit db987bff proves row/column insert and delete operations shift or clamp image and drawing-object anchors while leaving absolute anchors unchanged, with generated image write/reopen coverage. Commit 07167f8e proves same-sheet moveRange relocates contained image and drawing-object anchors, rejects copyRange and cross/partial visual transfers before mutation, and keeps generated image anchors shifted through write and reopen.',
+			boundary:
+				'Visual-anchor structural edit evidence only; it does not prove full drawing/layout parity, public workbook generality, arbitrary DrawingML/VML preservation, chart layout editing, image rendering fidelity, cross-sheet visual transfers, copyRange visual duplication, or Excel UI-equivalent placement.',
+		},
+		{
 			evidenceId: 'public-calc-chain-formula-commit-proof',
 			kind: 'test',
 			command:

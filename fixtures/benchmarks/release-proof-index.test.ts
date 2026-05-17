@@ -1971,8 +1971,10 @@ describe('release proof evidence index', () => {
 						'80473fae',
 						'7cae1d37',
 						'a0348fed',
+						'4c2da81e',
+						'49486ffe',
 					]),
-					allowedWording: expect.stringContaining('TRUNC'),
+					allowedWording: expect.stringContaining('EXP'),
 					evidenceProvesIt: expect.arrayContaining([
 						expect.stringContaining('common IS predicates spill boolean masks'),
 						expect.stringContaining('IFS spills results for array conditions'),
@@ -1980,6 +1982,8 @@ describe('release proof evidence index', () => {
 						expect.stringContaining('SUBSTITUTE and REPLACE spill over range operands'),
 						expect.stringContaining('EXACT, PROPER, and VALUE spill over range operands'),
 						expect.stringContaining('common math scalar functions spill over range operands'),
+						expect.stringContaining('rounding scalar functions spill over range operands'),
+						expect.stringContaining('logarithmic scalar functions spill over range operands'),
 					]),
 					forbiddenWording: expect.arrayContaining([
 						expect.stringContaining('Excel-compatible formulas'),

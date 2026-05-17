@@ -343,6 +343,27 @@ describe('performance claim baseline matrix', () => {
 			'defer production optimization from this row and continue only with\nanother existing `xlsx-write-sota` row',
 		)
 
+		expect(markdown).toContain('## Cycle: Plain Text ClosedXML/NPOI Write Coverage at `e0c41fe5`')
+		expect(markdown).toContain('Classification: comparable external evidence plus blocker update.')
+		expect(markdown).toContain(
+			'/private/tmp/ascend-write-closedxml-current-e0c41fe5-runs/write-plain-text-closedxml-npoi-repeat15.json',
+		)
+		expect(markdown).toContain('`ACCEPT_NPOI_OSMF_LICENSE=1`')
+		expect(markdown).toContain(
+			'| `ascend-external-writer` | ran/won | 4.008 | 4.203 | 0.029 | 98.3 MiB | 169097 |',
+		)
+		expect(markdown).toContain(
+			'| `closedxml` | ran/lost vs Ascend | 102.203 | 189.116 | 0.323 | 167.5 MiB | 224794 |',
+		)
+		expect(markdown).toContain(
+			'| `npoi` | ran/lost vs Ascend | 201.248 | 312.078 | 0.244 | 150.4 MiB | 224417 |',
+		)
+		expect(markdown).toContain('Full `xlsx-write-sota` coverage still fails')
+		expect(markdown).toContain('"ClosedXML and NPOI broad write coverage is complete."')
+		expect(markdown).toContain(
+			'use current ClosedXML/NPOI runner availability to split additional\nwrite-values blockers',
+		)
+
 		expect(markdown).toContain('## Cycle: String Heavy Write SOTA Gate')
 		expect(markdown).toContain('commit\n`67b900ed`')
 		expect(markdown).toContain(

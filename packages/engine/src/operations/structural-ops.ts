@@ -150,6 +150,13 @@ function applyAxisShift(
 			),
 		)
 	}
+	const deletedVisualAnchorBlocker =
+		delta < 0 ? findDeletedVisualAnchor(sheet, axis, at, count) : null
+	if (deletedVisualAnchorBlocker) {
+		return err(
+			deletedVisualAnchorStructuralEditError(sheet, axis, at, count, deletedVisualAnchorBlocker),
+		)
+	}
 	const insertMergeOverflowBlocker =
 		delta > 0 ? findInsertShiftedMergeOutOfBounds(sheet, axis, at, count) : null
 	if (insertMergeOverflowBlocker) {
@@ -748,6 +755,81 @@ function insertShiftedVisualAnchorOutOfBoundsError(
 				label: anchor.label,
 				ref: qualifiedRef,
 				shiftedRef: anchor.shiftedRef,
+			},
+		},
+	)
+}
+
+interface DeletedVisualAnchor {
+	readonly kind: 'image' | 'drawingObject'
+	readonly label: string
+	readonly ref: string
+}
+
+function findDeletedVisualAnchor(
+	sheet: Sheet,
+	axis: 'row' | 'col',
+	at: number,
+	count: number,
+): DeletedVisualAnchor | null {
+	const deleteEnd = at + count
+	const checkAnchor = (
+		kind: DeletedVisualAnchor['kind'],
+		label: string,
+		anchor: SheetImageAnchor | undefined,
+	): DeletedVisualAnchor | null => {
+		if (!anchor) return null
+		const range = sheetImageAnchorRange(anchor)
+		if (!range) return null
+		const start = axis === 'row' ? range.start.row : range.start.col
+		const end = axis === 'row' ? range.end.row : range.end.col
+		if (start < at || end >= deleteEnd) return null
+		return { kind, label, ref: rangeToA1(range) }
+	}
+
+	for (const [index, image] of sheet.imageRefs.entries()) {
+		const issue = checkAnchor(
+			'image',
+			image.name ? `image "${image.name}"` : `image ${index + 1}`,
+			image.anchor,
+		)
+		if (issue) return issue
+	}
+	for (const [index, object] of sheet.drawingObjectRefs.entries()) {
+		const issue = checkAnchor(
+			'drawingObject',
+			object.name ? `drawing object "${object.name}"` : `drawing object ${index + 1}`,
+			object.anchor,
+		)
+		if (issue) return issue
+	}
+	return null
+}
+
+function deletedVisualAnchorStructuralEditError(
+	sheet: Sheet,
+	axis: 'row' | 'col',
+	at: number,
+	count: number,
+	anchor: DeletedVisualAnchor,
+): ReturnType<typeof ascendError> {
+	const label = axis === 'row' ? 'rows' : 'columns'
+	const qualifiedRef = `${formatSheetName(sheet.name)}!${anchor.ref}`
+	return ascendError(
+		'VALIDATION_ERROR',
+		`Cannot delete ${label} because ${anchor.label} anchor ${qualifiedRef} would be removed by the structural edit`,
+		{
+			refs: [qualifiedRef],
+			suggestedFix:
+				'Remove or reposition the image/drawing object explicitly before deleting the rows or columns containing its anchor.',
+			details: {
+				kind: 'structural-delete-removes-visual-anchor',
+				axis,
+				at,
+				count,
+				visualKind: anchor.kind,
+				label: anchor.label,
+				ref: qualifiedRef,
 			},
 		},
 	)

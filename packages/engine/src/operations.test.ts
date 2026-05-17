@@ -8497,6 +8497,83 @@ describe('applyOperation', () => {
 		})
 	})
 
+	test('row and column deletes reject fully removed visual anchors before mutation', () => {
+		const cases: readonly {
+			readonly op: Operation
+			readonly setup: (sheet: Sheet) => void
+			readonly expectedRef: string
+			readonly expectedVisualKind: 'image' | 'drawingObject'
+		}[] = [
+			{
+				op: { op: 'deleteRows', sheet: 'Sheet1', at: 2, count: 1 },
+				setup: (sheet) => {
+					sheet.imageRefs.push({
+						drawingPartPath: 'xl/drawings/drawing1.xml',
+						relId: 'rIdImage1',
+						targetPath: 'xl/media/image1.png',
+						name: 'Logo',
+						anchor: {
+							kind: 'oneCell',
+							from: { row: 2, col: 1 },
+							cx: 100000,
+							cy: 100000,
+						},
+					})
+				},
+				expectedRef: 'Sheet1!B3',
+				expectedVisualKind: 'image',
+			},
+			{
+				op: { op: 'deleteCols', sheet: 'Sheet1', at: 2, count: 2 },
+				setup: (sheet) => {
+					sheet.drawingObjectRefs.push({
+						drawingPartPath: 'xl/drawings/drawing1.xml',
+						kind: 'shape',
+						source: 'drawingml',
+						name: 'Process box',
+						anchor: {
+							kind: 'twoCell',
+							from: { row: 1, col: 2 },
+							to: { row: 3, col: 3 },
+						},
+					})
+				},
+				expectedRef: 'Sheet1!C2:D4',
+				expectedVisualKind: 'drawingObject',
+			},
+		]
+
+		for (const { op, setup: setupSheet, expectedRef, expectedVisualKind } of cases) {
+			const wb = createWorkbook()
+			const sheet = wb.addSheet('Sheet1')
+			sheet.cells.set(0, 0, cell(numberValue(1)))
+			setupSheet(sheet)
+			const beforeVisuals = JSON.stringify({
+				imageRefs: sheet.imageRefs,
+				drawingObjectRefs: sheet.drawingObjectRefs,
+			})
+
+			const result = applyOperation(wb, op)
+
+			expectErr(result)
+			expect(result.error.code, op.op).toBe('VALIDATION_ERROR')
+			expect(result.error.refs, op.op).toEqual([expectedRef])
+			expect(result.error.details, op.op).toMatchObject({
+				kind: 'structural-delete-removes-visual-anchor',
+				visualKind: expectedVisualKind,
+				ref: expectedRef,
+			})
+			expect(
+				JSON.stringify({
+					imageRefs: sheet.imageRefs,
+					drawingObjectRefs: sheet.drawingObjectRefs,
+				}),
+				op.op,
+			).toBe(beforeVisuals)
+			expect(sheet.cells.get(0, 0)?.value, op.op).toEqual(numberValue(1))
+		}
+	})
+
 	test('row and column deletes remove comments whose refs are deleted', () => {
 		const wb = createWorkbook()
 		const s = wb.addSheet('Sheet1')

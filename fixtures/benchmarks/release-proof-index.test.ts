@@ -1196,8 +1196,10 @@ describe('release proof evidence index', () => {
 			}),
 			expect.objectContaining({
 				evidenceId: 'structural-insert-bounds-fail-closed-proof',
-				acceptedScope: expect.stringMatching(/4e58852c.*e4335064.*36b927f9.*ec1ae480.*7d01d067/),
-				command: expect.stringContaining('row and column inserts reject edge cell metadata'),
+				acceptedScope: expect.stringMatching(
+					/4e58852c.*e4335064.*36b927f9.*ec1ae480.*7d01d067.*a5d971f2.*70517573.*f8e99b9d.*969b2587/,
+				),
+				command: expect.stringMatching(/edge cell metadata.*legacy comment anchors/),
 				boundary: expect.stringContaining('Local structural insert fail-closed evidence only'),
 			}),
 			expect.objectContaining({

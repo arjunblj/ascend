@@ -3510,8 +3510,8 @@ describe('writeXlsx', () => {
   mc:Ignorable="ct2"
   ct2:packageFlavor="review">
   <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
-  <Default Extension="xml" ContentType="application/xml"/>
-  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
+  <Default Extension="xml" ContentType="application/xml" ct2:defaultRole="generic"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml" ct2:overrideRole="main" ct2:checksum="source&amp;safe"/>
   <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
 </Types>`,
 			'_rels/.rels': `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -3552,6 +3552,9 @@ describe('writeXlsx', () => {
 		expect(contentTypes).toContain('xmlns:ct2="urn:ascend:test-content-types"')
 		expect(contentTypes).toContain('mc:Ignorable="ct2"')
 		expect(contentTypes).toContain('ct2:packageFlavor="review"')
+		expect(contentTypes).toContain('ct2:defaultRole="generic"')
+		expect(contentTypes).toContain('ct2:overrideRole="main"')
+		expect(contentTypes).toContain('ct2:checksum="source&amp;safe"')
 		expect(contentTypes).toContain('PartName="/xl/workbook.xml"')
 
 		const reopened = readXlsx(written.value)

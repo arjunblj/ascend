@@ -208,11 +208,18 @@ export interface WorkbookPreservedXml {
 export interface WorkbookPreservedContentTypeDefault {
 	readonly extension: string
 	readonly contentType: string
+	readonly extraAttributes?: readonly WorkbookPreservedContentTypeAttribute[]
 }
 
 export interface WorkbookPreservedContentTypeOverride {
 	readonly partPath: string
 	readonly contentType: string
+	readonly extraAttributes?: readonly WorkbookPreservedContentTypeAttribute[]
+}
+
+export interface WorkbookPreservedContentTypeAttribute {
+	readonly name: string
+	readonly value: string
 }
 
 export interface WorkbookPreservedSheetEntry {

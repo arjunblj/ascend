@@ -257,14 +257,8 @@ export function readXlsxArchive(
 			...(contentTypesXml ? { contentTypesXml } : {}),
 			...(wbRelsXml ? { workbookRelsPath: wbRelsPath } : {}),
 			...(workbookContentType ? { contentType: workbookContentType } : {}),
-			contentTypeDefaults: Array.from(contentTypes.defaults, ([extension, contentType]) => ({
-				extension,
-				contentType,
-			})),
-			contentTypeOverrides: Array.from(contentTypes.overrides, ([partPath, contentType]) => ({
-				partPath,
-				contentType,
-			})),
+			contentTypeDefaults: contentTypes.defaultEntries,
+			contentTypeOverrides: contentTypes.overrideEntries,
 			sheetEntries: wbInfo.sheets.map((entry) => ({
 				kind: workbookSheetEntryKind(relMap.get(entry.rId)?.type),
 				sheetId: entry.sheetId,

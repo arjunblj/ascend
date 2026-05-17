@@ -17,5 +17,43 @@ describe('content types', () => {
 			'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml',
 		)
 		expect(contentTypes.overrides.get('customXml/item1.xml')).toBe('application/xml')
+		expect(contentTypes.defaultEntries).toEqual([
+			{ extension: 'xml', contentType: 'application/xml' },
+			{ extension: 'bin', contentType: 'application/vnd.ms-office.vbaProject' },
+		])
+		expect(contentTypes.overrideEntries).toEqual([
+			{
+				partPath: 'xl/workbook.xml',
+				contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml',
+			},
+			{ partPath: 'customXml/item1.xml', contentType: 'application/xml' },
+		])
+	})
+
+	test('keeps extension attributes on content type entries', () => {
+		const contentTypes = parseContentTypes(`<?xml version="1.0" encoding="UTF-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"
+  xmlns:ct2="urn:ascend:content-type-entry">
+  <Default Extension="xml" ContentType="application/xml" ct2:role="generic"/>
+  <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml" ct2:role="main" ct2:checksum="Tom&amp;Jane"/>
+</Types>`)
+
+		expect(contentTypes.defaultEntries).toEqual([
+			{
+				extension: 'xml',
+				contentType: 'application/xml',
+				extraAttributes: [{ name: 'ct2:role', value: 'generic' }],
+			},
+		])
+		expect(contentTypes.overrideEntries).toEqual([
+			{
+				partPath: 'xl/workbook.xml',
+				contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml',
+				extraAttributes: [
+					{ name: 'ct2:role', value: 'main' },
+					{ name: 'ct2:checksum', value: 'Tom&Jane' },
+				],
+			},
+		])
 	})
 })

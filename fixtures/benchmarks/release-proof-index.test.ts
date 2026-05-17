@@ -2003,8 +2003,9 @@ describe('release proof evidence index', () => {
 						'1c107bcf',
 						'aff89b6f',
 						'b553aafb',
+						'910ce4f2',
 					]),
-					allowedWording: expect.stringContaining('TEXTAFTER'),
+					allowedWording: expect.stringContaining('WEEKDAY'),
 					evidenceProvesIt: expect.arrayContaining([
 						expect.stringContaining('common IS predicates spill boolean masks'),
 						expect.stringContaining('IFS spills results for array conditions'),
@@ -2016,6 +2017,9 @@ describe('release proof evidence index', () => {
 						),
 						expect.stringContaining('numeric text formatting functions spill over range operands'),
 						expect.stringContaining('TEXTBEFORE and TEXTAFTER spill over range operands'),
+						expect.stringContaining(
+							'common date and time scalar functions spill over range operands',
+						),
 						expect.stringContaining('common math scalar functions spill over range operands'),
 						expect.stringContaining('rounding scalar functions spill over range operands'),
 						expect.stringContaining('logarithmic scalar functions spill over range operands'),
